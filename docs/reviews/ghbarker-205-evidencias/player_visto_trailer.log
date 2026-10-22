@@ -1,0 +1,54 @@
+[dados] gravando em /var/folders/tb/3tdgxb_151x63831hfnszg1n9cg9nz/T//nuvio-visto-trailer.we0w9Q/dados
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.1 ms, DENTRO da trava 0.0 ms, progresso do disco 0.1 ms (fora da trava), total 0.1 ms
+[t] 6053369 episodios: baixando meta
+[t] 6053369 abrir: url ao pipeline
+[player] pronto em 1 ms desde a abertura (retomada 0%)
+[player] load->1o quadro 0 ms
+[fonte] duracao incompatível: real=129s esperada=6360s automatico=0
+[player] tocando em 2 ms desde a abertura (retomada 0%)
+[relogio] pipeline=0.000 legenda=0.000 (+0 ms; amostra de 0 ms atras)
+[player] duracao 129s contra 6360s no catalogo: trailer ou fonte que nao e este titulo — progresso e visto NAO gravados
+[player] saida: video parar 0 ms, resto 0 ms
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[t] 6053371 abrir: url ao pipeline
+[player] pronto em 0 ms desde a abertura (retomada 0%)
+[player] load->1o quadro 0 ms
+[fonte] duracao incompatível: real=129s esperada=6360s automatico=0
+[player] tocando em 0 ms desde a abertura (retomada 0%)
+[player] duracao 129s contra 6360s no catalogo: trailer ou fonte que nao e este titulo — progresso e visto NAO gravados
+[player] saida: video parar 0 ms, resto 0 ms
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[t] 6053371 abrir: url ao pipeline
+[player] pronto em 0 ms desde a abertura (retomada 0%)
+[player] load->1o quadro 0 ms
+[fonte] duracao incompatível: real=129s esperada=2580s automatico=0
+[player] tocando em 0 ms desde a abertura (retomada 0%)
+[posplay] sem proximo episodio depois de T1E1: lista com 1 episodios (ainda carregando)
+[player] duracao 129s contra 2580s no catalogo: trailer ou fonte que nao e este titulo — progresso e visto NAO gravados
+[player] saida: video parar 0 ms, resto 0 ms
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[t] 6053371 abrir: url ao pipeline
+[player] pronto em 0 ms desde a abertura (retomada 0%)
+[player] load->1o quadro 0 ms
+[player] tocando em 0 ms desde a abertura (retomada 0%)
+[player] saida: video parar 0 ms, resto 0 ms
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 0 da conta, 0 repetido(s); 0 na fileira
+[cat] continuar assistindo refeita: 0 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[t] 6053372 abrir: url ao pipeline
+[player] pronto em 0 ms desde a abertura (retomada 0%)
+[player] load->1o quadro 0 ms
+[player] tocando em 0 ms desde a abertura (retomada 0%)
+[posplay] sem proximo episodio depois de T1E1: lista com 0 episodios (ainda carregando)
+[player] saida: video parar 0 ms, resto 0 ms
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 0 da conta, 0 repetido(s); 0 na fileira
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[cat] continuar assistindo refeita: 0 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[t] 6053372 abrir: url ao pipeline
+[player] pronto em 0 ms desde a abertura (retomada 0%)
+[player] load->1o quadro 0 ms
+[player] tocando em 0 ms desde a abertura (retomada 0%)
+[player] saida: video parar 0 ms, resto 0 ms
+PASS: duracao de trailer nao marca visto nem grava progresso; titulo real continua marcando

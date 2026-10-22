@@ -406,7 +406,8 @@ GLuint gfx_desfocado(GLuint src, const char *chave);
 int gfx_desfocado_px(GLuint tex, float u, float v, unsigned char rgb[3]);
 int  gfx_snap_ok(void);        // 1 quando o FBO do snapshot existe
 void gfx_snap_comecar(void);   // redireciona o desenho para o snapshot
-void gfx_snap_terminar(void);  // volta para a tela
+void gfx_snap_terminar(void);   // volta para a tela
+int  gfx_snap_vazio(int *maxCanal);   // 1 = o snapshot (alvo ligado) saiu preto
 void gfx_snap_desenhar(void);  // pinta o snapshot ocupando a tela toda
 void gfx_snap_encerrar(void);
 int  gfx_snap_ativo(void);     // 1 enquanto o desenho vai para o snapshot
@@ -415,6 +416,7 @@ int  gfx_snap_ativo(void);     // 1 enquanto o desenho vai para o snapshot
 unsigned gfx_snap_geracao(void);
 
 void gfx_tamanho_alvo(int w, int h);
+float gfx_px_por_unidade(void);   // pixels do alvo da tela por unidade de layout (assrender.c, #335)
 
 // MINIATURA: uma tela DE VERDADE desenhada num alvo proprio e mostrada
 // reduzida (previa das Novidades da 1.8.0, inspetor do Guia de uso). Entre
@@ -544,6 +546,9 @@ void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca);
 // Multiplicador de COR (nao de alfa) aplicado a GFX_COR/TEXTO/ANEL/MARCA: o brilho
 // da interface do player (esmaecer.h). 1 = sem efeito; quem muda restaura.
 extern float gfx_osd_mult;
+// UI em HDR (esmaecer.h): HDR_UI_BRILHO enquanto o video do player esta em
+// HDR/DV, 1 fora. Vale para texto, cor e logos; quem muda restaura.
+extern float gfx_hdr_ui;
 // A mancha GFX_SOMBRA em `s` sem o miolo `furo`, que um painel OPACO pintado em
 // seguida cobre inteiro (mesmo pixel, menos preenchimento). Ver gfx.c.
 void gfx_sombra_vazada(GfxRect s, float foco, float parx, float raio, float cr, float cg, float cb, float ca,
@@ -605,6 +610,9 @@ void gfx_ambiente(float alfa);
 // Pinta a luz que gfx_ambiente deixou pendente, se ainda houver (ver a nota
 // em gfx.c). main.c chama no fim do desenho do quadro; e inofensivo repetir.
 void gfx_ambiente_descarregar(void);
+// O mesmo, sem pintar dentro dos `n` (<= 4) furos que paineis opacos cobrem em
+// seguida com alfa 1 (o MESMO quad em faixas uSub: mesmo pixel fora deles).
+void gfx_ambiente_descarregar_fora(const GfxRect *furos, int n);
 // --- FUNDO DA HOME DINAMICA (GFX_FUNDO_DIN) ---------------------------------
 // Um quad de tela cheia, OPACO e sem mistura, com um degrade vertical de uma
 // cor: `topo` no alto e topo*`queda` na base. E o unico custo do fundo — nada
@@ -623,6 +631,9 @@ void          gfx_mascara_opaca(GfxRect r, float raioPx);
 // normalizado pela altura, como em gfx_cor.
 void gfx_anel(GfxRect r, float raio, float esp,
               float cr, float cg, float cb, float ca);
+// Painel opaco grande de cor com canto arredondado: clear tesourado no miolo,
+// faixa de borda pelo shader (mesmo pixel de gfx_cor; bem mais barato na GPU).
+void gfx_cor_painel(GfxRect r, float raio, float cr, float cg, float cb, float ca);
 // Anel de foco POR FORA de uma peca: `folga` px de vao e `esp` px de traco,
 // concentrico com ela (o raio em pixels cresce folga + esp). `raio` e o da
 // PECA. E o jeito de desenhar anel em volta de botao, cartao ou celula.

@@ -13,6 +13,15 @@
 #include <assert.h>
 int ctx_aberto(void) { return 0; }   // home.c asks whether the context menu is open
 #include "../src/home.c"
+// heroAquecerVizinhos (home_atualizar) pede a arte dos vizinhos: sem textura aqui.
+unsigned long tex_hash_public(const char *c) { (void)c; return 0; }
+GLuint tex_obter_hero_quente(const char *c) { (void)c; return 0; }
+GLuint tex_obter_larg(const char *c, float w) { (void)c; (void)w; return 0; }
+GLuint tex_obter_logo_larg_qualquer(const char *c, float w) { (void)c; (void)w; return 0; }
+void marco(const char *m) { (void)m; }
+// O destaque pede a sinopse dos candidatos assim que monta o conjunto.
+static int sinPedidos, sinUltimoN;
+void desc_sinopse_hero(const int *idx, int n) { (void)idx; sinPedidos++; sinUltimoN = n; }
 
 void cachearte_marcar_grupo(int grupo, const char *url, int variante, int essencial, int emUso) {
   (void)grupo; (void)url; (void)variante; (void)essencial; (void)emUso;
@@ -33,6 +42,9 @@ int   perfis_ativo(void) { return 1; }
 void dados_marcar_sujo(int leve) { (void)leve; }
 const char *ling_legenda(void) { return ""; }
 const char *ling_audio(void) { return ""; }
+const char *ling_conta_legenda_valor(void) { return ""; }
+const char *ling_conta_legenda2_valor(void) { return ""; }
+const char *ling_conta_audio_valor(void) { return ""; }
 void ling_conta_legenda(const char *v) { (void)v; }
 void ling_conta_legenda2(const char *v) { (void)v; }
 void ling_conta_audio(const char *v) { (void)v; }
@@ -97,6 +109,9 @@ int main(void) {
   quadro(2);
   assert(focoHero && heroNLista() >= 3);
 
+  assert(sinPedidos >= 1 && sinUltimoN == heroNLista());
+  puts("ok  conjunto do destaque montado: a sinopse dos candidatos e pedida");
+
   // (1) Parada, a rotacao gira: 12 s de ocio + o intervalo de 7 s.
   heroDesejado = -1;
   avanca_s(20);
@@ -148,6 +163,60 @@ int main(void) {
   avanca_s(20);
   assert(heroDesejado >= 0);
   puts("ok  trailer terminado: a rotacao segue");
+
+  // (6) PRE-BUSCA COM O TRAILER SENDO PROCURADO (C9, 08/10, 2.0.3). Cada titulo
+  // do carrossel tem a busca do trailer, e durante ela heroTrailerSegurando e
+  // verdadeiro: a pre-busca (3 s antes da troca) nunca saia e o log da TV nao
+  // tinha uma unica linha `pre-busca`. Agora a busca nao a impede; o trailer
+  // TOCANDO continua impedindo (pode durar minutos).
+  if (ajustes_trailer_hero()) {
+    const CatItem *ci;
+    heroAutoDesligado = 0;
+    heroTrailerItem = heroAtual;
+    ci = cat_item_exato(heroAtual);
+    assert(ci);
+    snprintf(heroTrailerImdb, sizeof heroTrailerImdb, "%s", ci->imdb);
+    heroTrailerTentado = 0;
+    heroTrailerDesde = relogio;
+    trAberto = 0; trTocando = 0;            // so procurando, nada no ar
+    heroDesejado = -1;
+    heroTrocaEm = relogio + 2000;           // dentro dos NV_HERO_PRE_MS finais
+    quadro(1);
+    assert(heroTrailerSegurando(relogio));  // o carrossel esta segurado...
+    assert(heroPreItem >= 0 && heroPreItem != heroAtual);   // ...e a pre-busca sai
+    puts("ok  busca do trailer segurando o carrossel: a pre-busca do proximo sai");
+    trAberto = 1; trTocando = 1;            // agora o trailer toca
+    heroTrocaEm = relogio + 2000;
+    quadro(1);
+    assert(heroPreItem < 0);
+    puts("ok  trailer tocando: sem pre-busca (arte ficaria parada)");
+    trAberto = 0; trTocando = 0;
+    heroTrailerTentado = 1;
+  } else puts("--  ajuste do trailer do destaque desligado: caso (6) nao se aplica");
+
+  // (7) HOME ESCONDIDA POR TRAS DA ESCOLHA DE PERFIL (C9, 08/10, 2.0.3): app.c
+  // chama home_atualizar com a tela de escolha na frente, o desenho NUNCA roda e
+  // quem efetiva a troca e o desenho. O carrossel marcava heroDesejado a cada
+  // 7 s e ele ficava preso (log: 38 min, 0 `[hero] espera`, 327 `desejado=322`).
+  // Escondida, a home nao escolhe nada e a diagnostica nao fala; ao voltar, o
+  // carrossel recomeca do relogio rearmado.
+  heroAutoDesligado = 0;
+  heroTrailerTentado = 1;
+  trAberto = 0; trTocando = 0;
+  heroDesejado = -1;
+  heroPendente = heroAtual;
+#ifndef SEM_OCULTA
+  home_oculta(1);
+#endif
+  avanca_s(60);
+  assert(heroDesejado < 0);
+  puts("ok  home escondida (escolha de perfil): o carrossel nao marca troca");
+#ifndef SEM_OCULTA
+  home_oculta(0);
+#endif
+  avanca_s(30);
+  assert(heroDesejado >= 0);
+  puts("ok  home de volta: a rotacao recomeca");
   puts("herorotacao: PASS");
   return 0;
 }

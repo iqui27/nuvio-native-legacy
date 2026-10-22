@@ -11,6 +11,7 @@
 #include "idiomacod.h"
 #define NV_ESCALA_TELA_ATIVA   // mede pela tela do fator ativo (escala.h)
 #include "escala.h"
+#include "ponteiro.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -81,11 +82,19 @@ static void tlNeutro(GfxRect r, float raioPx, float vidA, float sr, float sg, fl
   if (ajustes_vidro()) gfx_cor(r, raioPx / r.h, 1, 1, 1, vidA * a);
   else gfx_cor(r, raioPx / r.h, sr, sg, sb, a);
 }
-static float tlBotao(const char *rot, float x, float y, int f, float a) {
+// PONTEIRO (#99): foco pela mesma variavel das setas; o OK do clique fecha
+// pelo caminho de sempre (telemetria_evento).
+static void ponteiroFoco(int i, int b) { (void)b; if (aberto && (i == 0 || i == 1)) foco = i; }
+int telemetria_teste_foco(void) { return foco; }
+
+static float tlBotao(const char *rot, float x, float y, int id, float a) {
+  int f = foco == id;
   float ar, ag, ab, w;
   int t = ajustes_tinta_foco();
   TxtLinha l = f ? txt_linha(TXT_ILHA_ITEM, rot, t, t, t, 255) : tlT(TXT_ILHA_ITEM, rot);
   w = 28 + l.w + 28;
+  if (aberto && entrada > 0.99f)   // so assentado (sem o deslize da entrada)
+    ponteiro_alvo(x, y, w, 60, ponteiroFoco, NULL, id, 0);
   if (f) {
     ajustes_acento(&ar, &ag, &ab);
     gfx_rect((GfxRect){ x - 14, y - 2, w + 28, 60 + 30 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, 0.32f * a);
@@ -151,8 +160,8 @@ static void telemetria_desenharCorpo_(Uint32 agora) {
   }
   y += cartH + 34;
   { float bx = x;
-    bx += tlBotao(i18n("Sim, pode mandar"), bx, y, foco == 0, a) + 12;
-    tlBotao(i18n("Agora não"), bx, y, foco == 1, a);
+    bx += tlBotao(i18n("Sim, pode mandar"), bx, y, 0, a) + 12;
+    tlBotao(i18n("Agora não"), bx, y, 1, a);
     { TxtLinha l = tlT(TXT_ILHA_GENERO, i18n("pergunta uma vez por instalação"));
       txt_desenhar_alpha(l, x + cw - l.w, y + 30 - l.h * 0.5f, 0.45f * a); } }
 }

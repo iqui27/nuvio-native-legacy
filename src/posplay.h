@@ -5,8 +5,8 @@
 // fonte e nao escolhidas aqui:
 //   - FILME: quando o progresso passa de 90% da duracao
 //     (DEFAULT_POST_PLAY_MOVIE_THRESHOLD_PERCENT).
-//   - SERIE: nos ultimos segundos, com contagem regressiva de 5
-//     (POST_PLAY_RECOMMENDATION_FINAL_COUNTDOWN_SECONDS).
+//   - SERIE: nos creditos; autoplay opcional com contagem configuravel
+//     (desligado de fabrica, 5 s como valor inicial).
 //   - Em qualquer caso, no fim do fluxo.
 //
 // O QUE MOSTRA e diferente do web, e de proposito:
@@ -50,8 +50,16 @@ int  posplay_desfocar_thumb(int idxCatalogo, int temporada, int episodio);
 void posplay_desenhar(Uint32 agora, float baseY);
 // O topo do que o painel ocupa (baseY quando ele nao esta no ar).
 float posplay_topo(float baseY);
+// Teste do ponteiro (#99): o cartaz em foco (filme).
+int  posplay_teste_foco(void);
 // Fecha e zera. Chamado quando o player abre outra coisa.
 void posplay_fechar(void);
+// Recuo manual: cancela contagem e pedido automatico, mantendo o OK manual.
+// A contagem volta a valer ao sair da janela final ou abrir outro titulo.
+void posplay_recuar(void);
+// Seek automatico em voo: suspende so a contagem/pedido automatico. OK segue
+// disponivel; o player libera quando o video progride ou termina de verdade.
+void posplay_aguardar_busca(int aguardar);
 // O titulo do cartao, ja conferido pelo id (-1 = nenhum). Para teste (#190).
 int  posplay_indice(void);
 
@@ -59,6 +67,8 @@ int  posplay_indice(void);
 // proximo episodio (temporada/episodio) ou titulo relacionado (indice).
 int  posplay_pediu_episodio(int *temporada, int *episodio);
 int  posplay_pediu_titulo(void);
+// Contagem desde a abertura do cartao (#470). Instante de disparo, 0 = sem contagem.
+Uint32 posplay_contagem(Uint32 agora, Uint32 fecharEm, double restaReal, int autoplay, int contagemSeg);
 #ifdef NV_SHOT_HOOKS
 void posplay_shot(int idxCatalogo, int ehSerie, int t, int e, Uint32 fecha);
 #endif

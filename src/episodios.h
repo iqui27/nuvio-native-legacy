@@ -2,6 +2,7 @@
 #define NV_EPISODIOS_H
 #include <SDL2/SDL.h>
 #include "vistoep.h"
+#include "gfx.h"
 void episodios_abrir(int titulo, int temporada, int episodio);
 int episodios_aberto(void);
 float episodios_anim(void);   // 0..1, a entrada da folha
@@ -38,6 +39,27 @@ int  episodios_menu_pediu_fontes(void);
 // temporada como assistida" e "Desmarcar temporada". `temporada` e o NUMERO.
 // Eventos e desenho pelas mesmas episodios_menu_evento/desenhar.
 void episodios_menu_temporada(int idxCat, int temporada);
+// O MENU TEM MOLA (abre, fecha, foco das linhas): quem o hospeda sobre a
+// propria tela chama uma vez por quadro. Dentro da folha do player quem anda
+// com ela e episodios_atualizar.
+void episodios_menu_atualizar(float dt);
+// 1 enquanto ha o que desenhar — aberto, ou fechando (a mola ainda nao pousou).
+// episodios_menu_aberto cai no instante do Voltar e devolve as teclas a pagina;
+// este segura o desenho ate o fim do caminho de volta.
+int  episodios_menu_visivel(void);
+// DE ONDE O MENU SAIU, na tela virtual (escala.h), a cada quadro e antes de
+// episodios_menu_desenhar. No menu do EPISODIO e o card: a ilha fica ao lado
+// dele, como a do cartaz na home, e quem chamou redesenha o card por cima do
+// veu. No da TEMPORADA e a aba: ela se abre para baixo num painel com as
+// acoes (episodios_menu_painel() = 1), e quem chamou redesenha a aba por cima,
+// de cabecalho. Sem ancora o menu vai para o meio da tela.
+void episodios_menu_ancora(GfxRect r);
+int  episodios_menu_painel(void);
+// Para teste: a caixa (tela virtual) do menu ou do painel ABERTO no ultimo
+// quadro desenhado, a mola de abertura 0..1 e a linha em foco.
+int   episodios_menu_caixa(GfxRect *r);
+float episodios_menu_anim(void);
+int   episodios_menu_foco(void);
 // 1 com o menu aberto no modo temporada (para teste).
 int  episodios_menu_modo_temporada(void);
 // O lote que "temporada inteira" aplica: catalogo + mapa, sem o que nao foi ao

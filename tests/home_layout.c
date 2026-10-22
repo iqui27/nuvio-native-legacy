@@ -4,7 +4,13 @@
 // Antes do home.c: os dois acessores viram os do teste (ver homeCom).
 #define ajustes_home_layout teste_home_layout
 #define ajustes_hero_ligado teste_hero_ligado
+#define ajustes_espaco_titulos teste_espaco_titulos
+#define ajustes_espaco_fileiras teste_espaco_fileiras
+static float espacoTit = 1.0f, espacoFil = 1.0f;
+static float teste_espaco_titulos(void) { return espacoTit; }
+static float teste_espaco_fileiras(void) { return espacoFil; }
 #include "../src/home.c"
+void desc_sinopse_hero(const int *idx, int n) { (void)idx; (void)n; }
 
 void cachearte_marcar_grupo(int grupo, const char *url, int variante, int essencial, int emUso) {
   (void)grupo; (void)url; (void)variante; (void)essencial; (void)emUso;
@@ -75,6 +81,21 @@ int main(void) {
   assert(gapDe(FILEIRA_DESTAQUE) == NV_CARD_GAP_GRANDE);
   assert(gapDe(FILEIRA_DESTAQUE_QUADRADO) == NV_CARD_GAP_GRANDE);
   assert(gapDe(FILEIRA_NORMAL) == NV_CARD_GAP);
+  // Espaco entre titulos/fileiras (Ajustes): 100 % e o de sempre; o resto escala
+  // so o vao medido, e o vao dos cards grandes nunca desce do comum.
+  { float f; int l;
+    for (f = 0.5f; f <= 1.51f; f += 0.25f) {
+      espacoTit = f; espacoFil = f;
+      assert(fabsf(gapDe(FILEIRA_NORMAL) - (NV_CARD_GAP * f + xOffTipo(FILEIRA_NORMAL))) < 0.01f);
+      assert(gapDe(FILEIRA_DESTAQUE) >= NV_CARD_GAP);
+      assert(gapDe(FILEIRA_DESTAQUE_QUADRADO) >= NV_CARD_GAP);
+      for (l = 0; l < 3; l++) {
+        float base;
+        espacoFil = 1.0f; homeCom(l, 0); base = fileiraGap();
+        espacoFil = f; assert(fabsf(fileiraGap() - base * f) < 0.01f);
+      }
+    }
+    espacoTit = 1.0f; espacoFil = 1.0f; homeCom(HOME_LAYOUT_MODERNA, 0); }
   assert(larguraDe(FILEIRA_COLECAO) > larguraDe(FILEIRA_SERVICO));
   assert(!temRotulo(FILEIRA_DESTAQUE));
   assert(!temRotulo(FILEIRA_CATALOGOS));

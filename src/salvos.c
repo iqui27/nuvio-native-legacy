@@ -125,10 +125,11 @@ int salvos_tem(const char *imdb) { return acharLocal(imdb) >= 0; }
 // app — foi assim que ajustes.c se protegeu (ver a nota de CHAVE la).
 
 static void gravar(void) {
-  // ~800 bytes de campos por item + folga, do tamanho da lista DE AGORA. No
+  // ~1330 bytes de campos por item + folga, do tamanho da lista DE AGORA. No
   // heap e nao na pilha: a pilha do fio principal no webOS nao tem centenas de
-  // KB de sobra para um buffer temporario.
-  size_t cap = (size_t)nItens * 900u + 64u;
+  // KB de sobra para um buffer temporario. Acompanha sizeof(SalvoItem): com o
+  // poster de 1024 (#361) os 900 de antes cortariam o fim da lista.
+  size_t cap = (size_t)nItens * (sizeof(SalvoItem) + 64u) + 64u;
   char *buf = (char *)malloc(cap);
   size_t k = 0;
   int i;

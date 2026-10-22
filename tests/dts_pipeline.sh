@@ -13,7 +13,7 @@ for abi in 0 1; do
   g++ -std=c++11 -fPIC -shared -D_GLIBCXX_USE_CXX11_ABI=$abi -Isrc -Isrc/dts/adapter -Itests/dts_pipeline_sdk src/dts/adapter/starfish.cpp "$tmp/js.o" -o "$tmp/good/dts-starfish-webos$generation.so" -ldl -pthread
  done
 cc -fPIC -shared -Isrc -Isrc/dts/adapter tests/dts_pipeline_bad.c -o "$tmp/bad/dts-starfish-webos4.so"
-cc -std=c11 -Wall -Wextra -Werror -Isrc tests/dts_pipeline.c src/dts/dts_pipeline.c -ldl -pthread -o "$tmp/test"
+cc -std=c11 -Wall -Wextra -Werror -Isrc tests/dts_pipeline.c src/dts/dts_pipeline.c src/webosver.c -ldl -pthread -o "$tmp/test"
 # Each runtime exports only its real generation Feed ABI. Auto probe must fall back correctly.
 for generation in 3 4; do
   ln -sf "libplayerAPIs.so.$generation" "$tmp/native/libplayerAPIs.so"

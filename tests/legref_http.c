@@ -2,8 +2,11 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdlib.h>
+static const char *cabs(void) { return getenv("CABS"); }
 int main(int c, char **v) {
   LegRef *r = legref_criar(NULL, NULL);
+  legref_fonte_cabecalhos(cabs);
   LegRefOrcamento o = { 12LL << 20, 6000, 50 };
   uint64_t id = legref_pedir(r, v[1], 1, "en", NULL, 0, &o);
   LegRefStatus s;

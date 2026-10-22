@@ -15,8 +15,8 @@ const char *sessao_usuario(void) { return ""; }
 int perfis_ativo(void) { return 1; }
 const char *desc_genero_pt(const char *s) { return s; }
 int prog_ler(ProgRegistro *v, int n) { (void)v; (void)n; return 0; }
-int prog_gravar_local(const char *id, int t, int e, double p, double d) {
-  (void)id; (void)t; (void)e; (void)p; (void)d; return 0;
+int prog_gravar_local(const char *id, int t, int e, double p, double d, int tocou) {
+  (void)id; (void)t; (void)e; (void)p; (void)d; (void)tocou; return 0;
 }
 
 static int gancho;

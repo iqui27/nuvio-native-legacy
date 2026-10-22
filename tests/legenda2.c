@@ -140,6 +140,12 @@ int main(void) {
   { LegendaCue c[2];
     assert(legenda_cues(10.5, 0, c, 2) == 1 && !strcmp(c[0].texto, "principal"));
     assert(legenda_cues(9.5, 0, c, 2) == 0); }      // primary not shifted by the secondary
+  legenda2_definir_offset_auto(0);
+  legenda2_definir_offset_manual(60000); assert(legenda2_offset_total() == 60000);
+  legenda2_definir_offset_manual(-60000); assert(legenda2_offset_total() == -60000);
+  legenda2_definir_offset_manual(90000); assert(legenda2_offset_manual() == 60000);
+  legenda2_definir_offset_auto(90000); assert(legenda2_offset_total() == 60000);
+  legenda2_definir_offset_manual(0); assert(legenda2_offset_total() == 30000); // AutoSync bound unchanged
   legenda2_definir_offset_manual(0); legenda2_definir_offset_auto(0);
 
   // 3. Stale download after a NEW SELECTION: the first file never shows.

@@ -1,3 +1,4 @@
+import { conquistasDe } from "./conquista.js";
 // Redesenho do Social (02/10/2026): pessoa por perfil, nome de exibicao,
 // nivel de atividade, eventos do player, feed, perfil do amigo.
 // Contrato com a TV: docs/social-contrato.md. Tabelas: migracao-006-social.sql.
@@ -8,7 +9,16 @@
 // Nada e gravado com alcance < 1, e baixar para 0 apaga o que havia.
 
 const EVENTOS = new Set(["inicio", "progresso", "fim", "abandono", "reacao", "salvo", "junto"]);
-const NO_FEED = ["inicio", "fim", "abandono", "reacao", "salvo", "junto"];
+// O FEED SO MOSTRA O QUE DIZ ALGO (dono, 06/10/2026: "muito sujo"): terminou,
+// reagiu e — so na primeira vez de uma serie — comecou. "abandono" (saiu do
+// player), "salvo" e o "inicio" de cada episodio/filme ficam fora: o "agora"
+// ja diz quem esta vendo. As linhas antigas continuam na tabela, so nao saem.
+const NO_FEED = ["inicio", "fim", "reacao", "junto"];
+// Nao vira linha da tabela `evento`: e so sinal (fecha o "agora", soma tempo).
+// "abandono" e o cliente antigo; o novo manda "progresso" com parou=1.
+const SO_SINAL = new Set(["progresso", "abandono"]);
+const FEED_BRUTO = 150;             // linhas lidas antes de agrupar (sai FEED_MAX)
+const DEDUPE_FEED_S = 3600;          // junto: mesmo titulo na mesma hora = uma linha
 const AGORA_S = 15 * 60;            // "assistindo agora" vence em 15 min
 const RETENCAO = 90 * 86400;
 const SEG_MAX = 4 * 3600;           // um trecho nao passa de 4 h
@@ -17,7 +27,6 @@ const GOSTOU_MAX = 10;
 const RECS_MAX = 20;
 const DEDUPE_S = 600;               // mesmo evento do mesmo titulo em 10 min = um so
 const NOME_MAX = 32;
-const DEDUPE_FEED_S = 3600;          // mesmo fato da mesma pessoa em 1 h = uma linha no feed
 
 // NOME: letras (qualquer alfabeto), numeros, espaco, apostrofo e hifen. Sem
 // ponto, arroba, barra ou dois-pontos — nao cabe e-mail, link nem @usuario.
@@ -147,18 +156,21 @@ export async function rotaEvento(env, quem, corpo, h, limitar) {
     cmds.push(env.DB.prepare("INSERT OR IGNORE INTO agregado_titulo VALUES (?, ?, ?, 'filme')")
       .bind(quem.id, mes, imdb));
 
-  if (ev === "inicio" || ev === "progresso") cmds.push(env.DB.prepare(
+  // SAIU DO PLAYER: o cliente novo manda "progresso" com parou=1 (o antigo,
+  // "abandono"). Fecha o "agora" em vez de renova-lo por mais 15 min.
+  const parou = ev === "abandono" || (ev === "progresso" && (corpo?.parou === 1 || corpo?.parou === true));
+  if ((ev === "inicio" || ev === "progresso") && !parou) cmds.push(env.DB.prepare(
     "INSERT INTO agora (pessoa, imdb, midia, titulo, poster, temporada, episodio, pct, atualizado) " +
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(pessoa) DO UPDATE SET imdb = excluded.imdb, " +
     "midia = excluded.midia, titulo = excluded.titulo, poster = excluded.poster, " +
     "temporada = excluded.temporada, episodio = excluded.episodio, pct = excluded.pct, " +
     "atualizado = excluded.atualizado"
   ).bind(quem.id, imdb, midia, titulo, poster, temporada, episodio, pct, t));
-  if (ev === "fim" || ev === "abandono")
+  if (ev === "fim" || parou)
     cmds.push(env.DB.prepare("DELETE FROM agora WHERE pessoa = ? AND imdb = ?").bind(quem.id, imdb));
 
   let gravou = 0;
-  if (ev !== "progresso") {
+  if (!SO_SINAL.has(ev)) {
     // Retomar o mesmo episodio tres vezes em dez minutos nao sao tres "comecou".
     // Reacao so repete a ULTIMA: gostei -> nao gostei -> gostei precisa guardar
     // a mudanca final, mesmo que o primeiro gostei ainda esteja na janela.
@@ -220,14 +232,20 @@ async function idPublico(env, x, garantirPerfil) {
 export async function rotaFeed(env, quem, url, req, h, garantirPerfil) {
   const desde = Math.max(0, parseInt(url.searchParams.get("desde") || "0", 10) || 0);
   const marcas = NO_FEED.map((_, i) => `?${i + 5}`).join(",");
+  // "COMECOU" SO A PRIMEIRA VEZ DE UMA SERIE: um inicio de serie sem nenhum
+  // inicio/fim anterior da mesma pessoa no mesmo titulo. Filme comecado nao e
+  // noticia (o "agora" ja mostra), episodio 2, 3, 4... tambem nao.
   const r = await env.DB.prepare(
     VISIVEIS +
     "SELECT e.id, e.pessoa, e.ev, e.imdb, e.midia, e.titulo, e.poster, e.temporada, e.episodio, " +
     "e.pct, e.reacao, e.criado, visl.grau, visl.via, p.nome AS nome, p.avatar AS avatar, f.pub AS pub " +
     "FROM evento e JOIN visl ON visl.pessoa = e.pessoa JOIN pessoa p ON p.id = e.pessoa " +
     "LEFT JOIN perfil f ON f.pessoa = e.pessoa " +
-    `WHERE e.id > ?2 AND e.criado > ?3 AND e.ev IN (${marcas}) ORDER BY e.id DESC LIMIT ?4`
-  ).bind(quem.id, desde, h.agora() - RETENCAO, FEED_MAX, ...NO_FEED).all();
+    `WHERE e.id > ?2 AND e.criado > ?3 AND e.ev IN (${marcas}) ` +
+    "AND (e.ev <> 'inicio' OR (e.midia = 'series' AND NOT EXISTS (SELECT 1 FROM evento o " +
+    " WHERE o.pessoa = e.pessoa AND o.imdb = e.imdb AND o.id < e.id AND o.ev IN ('inicio', 'fim')))) " +
+    "ORDER BY e.id DESC LIMIT ?4"
+  ).bind(quem.id, desde, h.agora() - RETENCAO, FEED_BRUTO, ...NO_FEED).all();
   const linhas = r.results || [];
   const maior = linhas.reduce((m, x) => (x.id > m ? x.id : m), desde);
   // ETag pelo maior id E pela quantidade: alguem que baixa o nivel tira linhas
@@ -236,26 +254,23 @@ export async function rotaFeed(env, quem, url, req, h, garantirPerfil) {
   if (req.headers.get("if-none-match") === etag)
     return new Response(null, { status: 304, headers: { etag } });
   const itens = [];
-  // DEDUPE DO FEED (F08): o mesmo fato da mesma pessoa contado duas vezes perto
-  // no tempo — tipicamente duas TVs dela (uma antiga pelo Trakt, outra pela conta
-  // Nuvio, ja fundidas na mesma pessoa) mandando "inicio" do mesmo episodio —
-  // vira uma linha so, a mais nova. A escrita ja deduplica 10 min por pessoa;
-  // aqui a janela e de 1 h, a mesma do merge no cliente (rec_eventos_unir).
-  const ultimo = new Map();
-  for (const x of linhas) {
-    const chave = [x.pessoa, x.ev, x.imdb, x.midia, x.temporada, x.episodio,
-                   x.ev === "reacao" ? x.reacao : ""].join("|");
-    const t0 = ultimo.get(chave);
-    if (t0 !== undefined && Math.abs(t0 - x.criado) <= DEDUPE_FEED_S) continue;
-    ultimo.set(chave, x.criado);
-    itens.push({
+  for (const g of agruparFeed(linhas)) {
+    if (itens.length >= FEED_MAX) break;
+    const x = g.linha;
+    const item = {
       id: x.id, de: await idPublico(env, x, garantirPerfil),
       deNome: x.nome || "", deAvatar: x.grau === 1 ? (x.avatar || "") : "",
       grau: x.grau, via: x.grau === 2 ? (x.via || "") : "",
       ev: x.ev, imdb: x.imdb, midia: x.midia, titulo: x.titulo, poster: x.poster,
       temporada: x.temporada, episodio: x.episodio, pct: x.pct,
       reacao: x.reacao, criado: x.criado,
-    });
+    };
+    // Episodios distintos concluidos (serie): "assistiu 3 episodios de X".
+    if (g.eps > 1) item.eps = g.eps;
+    // A reacao que veio junto do "terminou" (a mesma pessoa no mesmo titulo):
+    // uma linha "terminou e gostou" no lugar de duas.
+    if (x.ev === "fim" && g.reac !== null) { item.reac = g.reac; item.reacao = g.reac; }
+    itens.push(item);
   }
   // "ASSISTIRAM JUNTOS" (Watch Together, decisao 8): cada membro manda o
   // proprio evento `junto` no fim da sessao; aqui os do mesmo titulo/episodio
@@ -271,6 +286,36 @@ export async function rotaFeed(env, quem, url, req, h, garantirPerfil) {
     juntos.push(it);
   }
   return h.json({ cursor: maior, itens: juntos }, 200, { etag });
+}
+
+// UMA LINHA POR PESSOA E TITULO (dono, 06/10/2026). Entra `linhas` do mais
+// novo para o mais velho; sai, na ordem da linha mais nova de cada grupo, a
+// linha que mais diz: terminou (com a contagem de episodios e a reacao mais
+// nova) > reagiu (a mais nova: mudar de ideia nao vira duas linhas) > comecou.
+// A linha fica com o id e a hora da mais nova do grupo, para a ordem do feed.
+export function agruparFeed(linhas) {
+  const grupos = new Map();
+  const ordem = [];
+  for (const x of linhas) {
+    // `junto` (Watch Together) nao agrupa: cada linha segue sozinha e e
+    // fundida por titulo/hora em rotaFeed.
+    if (x.ev === "junto") { ordem.push({ solta: x }); continue; }
+    const k = `${x.pessoa}|${x.imdb}|${x.midia}`;
+    let g = grupos.get(k);
+    if (!g) { g = { fim: null, reacao: null, inicio: null, eps: new Set(), id: x.id, criado: x.criado }; grupos.set(k, g); ordem.push(g); }
+    if (x.ev === "fim") { if (!g.fim) g.fim = x; g.eps.add(`${x.temporada}:${x.episodio}`); }
+    else if (x.ev === "reacao") { if (!g.reacao) g.reacao = x; }
+    else if (x.ev === "inicio") { if (!g.inicio) g.inicio = x; }
+  }
+  return ordem.map((g) => {
+    if (g.solta) return { linha: g.solta, eps: 0, reac: null };
+    const base = g.fim || g.reacao || g.inicio;
+    return {
+      linha: { ...base, id: g.id, criado: g.criado },
+      eps: g.fim && g.fim.midia === "series" ? g.eps.size : 0,
+      reac: g.reacao ? g.reacao.reacao : null,
+    };
+  });
 }
 
 // --- GET /v1/amigo?id= --------------------------------------------------------------
@@ -342,6 +387,8 @@ export async function rotaAmigo(env, quem, url, h, garantirPerfil) {
       "SELECT imdb, midia, titulo, poster, temporada, episodio, pct, atualizado FROM agora " +
       "WHERE pessoa = ? AND atualizado > ?").bind(alvo, t - AGORA_S).first();
     saida.agora = a || null;
+    // Ate 6 conquistas visiveis (conquista.js confere o alcance do dono).
+    saida.conquistas = await conquistasDe(env, alvo);
     const g = await env.DB.prepare(
       "SELECT imdb, midia, titulo, poster, temporada, episodio, criado FROM evento " +
       "WHERE id IN (SELECT MAX(id) FROM evento WHERE pessoa = ?1 AND ev = 'reacao' " +

@@ -27,6 +27,15 @@ void player_aprender_creditos(void);
 int player_indice(void);
 const char *player_linha_episodio(void);
 int player_pediu_fontes(void);
+// Troca pelo caminho VOD existente: 1 = OK no aviso, 2 = salto automatico.
+int player_pediu_proxima_fonte(void);
+// A explicacao da espera na ilha do player (inicio.h, #202): texto ja traduzido
+// por quadro, "" = nada. O OK no cartao de abertura com texto pede Ajustes >
+// Fontes e addons > Escolha da fonte; o app.c consome com este.
+void player_definir_motivo_inicio(const char *texto);
+int  player_pediu_ajustes_fonte(void);
+// Ha quantos ms o player abriu (o Play); 0 fechado. Para o log do inicio (#202).
+Uint32 player_aberto_ha_ms(void);
 int player_pediu_proximo(int *temporada, int *episodio);
 const CatEp *player_proximo_episodio(void);
 // A REGRA DO CARTAO DE PROXIMO EPISODIO, isolada do estado do player para
@@ -34,6 +43,12 @@ const CatEp *player_proximo_episodio(void);
 // comecam (0 quando nenhuma das duas fontes tem marcador). Devolve 1 quando o
 // cartao deve estar no ar.
 int player_regra_proximo(double posSeg, double durSeg, double cred);
+// Mesma janela do cartao, antecipada em segundos reais (0 = agora).
+int player_janela_proximo(double antecedencia);
+// Base (y, tela de 1080) da legenda principal: sobe para 690 so com o cartao
+// do proximo episodio NA TELA (posplay_sobre_video), e volta no quadro em que
+// ele some — dispensado, aceito ou contagem encerrada (2.0.3).
+float player_base_legenda(float baseNormal, int cartaoProximoNoAr);
 // A duracao do pipeline e menos de um terco da minutagem do catalogo (>= 15
 // min): ela nao descreve este episodio e a estimativa de fim nao pode usa-la.
 int player_duracao_suspeita(double durSeg, double catSeg);
@@ -54,6 +69,12 @@ int player_duracao_suspeita(double durSeg, double catSeg);
 // Um numero so: o mesmo que abre o cartao. Mais os 60 s de folga de sempre,
 // para quem sai por cima do fim sem passar pelo cartao.
 int player_regra_concluiu(double posSeg, double durSeg, double cred);
+// VISTO (#205): `tocado` segundos de midia tocados desde `base` (o ponto
+// retomado, 0 quando ele nao foi alcancado tocando) cobrem o trecho ate `pos`?
+// `*chegou` e o `tocou` gravado com a posicao. Visto = `fim` (concluiu) com
+// cobertura e ao menos 2 min no total: o seek ate o fim nao marca, e 70 s
+// contra a duracao falsa de 129 s de um trailer tambem nao.
+int player_regra_visto(double base, double tocado, double pos, int fim, int *chegou);
 void player_erro_fonte(void);
 // O mesmo cartao, com a causa no lugar das frases genericas (issue #112):
 // `titulo` substitui "Nao foi possivel abrir a fonte" e `dica` a linha de
@@ -99,9 +120,11 @@ void  player_limpar_legenda_nativa(char *s);
 int   player_texto_legenda_nativa(char *dst, int tam);
 float player_posicao_seg(void);
 int   player_pausado(void);
+int   player_pausa_pessoa(void);   // so a pausa pedida pela pessoa (#302)
 // Fator de cor do OSD do player (Ajustes > Brilho da interface no player + degrau
 // automatico com a barra parada). 1 = sem efeito. Ver esmaecer.h.
 float player_osd_brilho(void);
+float player_ui_hdr(void);   // HDR_UI_BRILHO com o video em HDR/DV, senao 1 (esmaecer.h)
 float player_duracao_seg(void);
 int   player_eh_canal(void);
 // StreamFit (F03): 1 + real backend duration of the player's own source.
@@ -144,6 +167,8 @@ void player_atualizar(float dt, Uint32 agora);
 void player_desenhar(Uint32 agora);
 int  player_quer_sair(void);  // 1 assim que o Back foi apertado
 void player_encerrar(void);
+// 1 uma vez se a ultima saida marcou o titulo como visto (aviso das Conquistas).
+int player_saiu_visto(void);
 // VOD na ilha: pausa antecipada durante a saida, conserva somente com ack,
 // depois retoma o mesmo IMDb/episodio sem reabrir fonte ou buscar posicao.
 void player_preparar_retencao(void);
@@ -174,6 +199,12 @@ void player_manter_mini(void);
 void player_restaurar(void);
 void player_fechar_mini(void);
 void player_mini_desenhar(Uint32 agora);
+#ifdef NV_TOUCH_UI
+// The app supplies its current modal eligibility; saved touch callbacks check
+// it again before restoring or closing the PiP. Drawing keeps page targets.
+void player_mini_toque_guarda(int (*pode)(void));
+void player_toque_modal_guarda(int (*pode)(void));
+#endif
 // MINI NO GUIA: o "mini" cujo destino e o preview do guia (sem moldura: o
 // guia fura e desenha em volta). `player_mini_no_guia` define a caixa e liga
 // o modo — antes de player_manter_mini()+abrir, a sessao nova ja nasce no
@@ -272,6 +303,7 @@ void player_shot_estado(Uint32 agora, float pos, float dur, int tocando, int bot
 void player_shot_foco(int botao, int barra);
 void player_shot_toast(Uint32 agora, const char *texto, const char *icone, int ambar, int modo);
 void player_shot_esconder(void);
+const char *player_shot_toast_texto(Uint32 agora);
 void player_shot_carregando(int sim);
 void player_shot_buscando(int sim);
 void player_shot_video(int sim);

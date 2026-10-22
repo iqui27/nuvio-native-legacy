@@ -55,6 +55,8 @@ void central_teste_foco(int foco, int editar);
 // Um "Tocando agora" de mentira (NULL tira) e a lista de atalhos pelo texto do arquivo.
 void central_teste_tocando(const char *tit, const char *meta);
 void central_teste_lista(const char *texto);
+void central_teste_cor(int foco);           // o seletor da cor de destaque aberto
+void central_teste_estatisticas(int sim);   // o botao das estatisticas, sem player
 #endif
 
 #endif

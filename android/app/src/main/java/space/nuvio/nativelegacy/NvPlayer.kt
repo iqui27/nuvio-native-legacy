@@ -8,6 +8,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
+import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
 import android.widget.FrameLayout
@@ -25,7 +26,9 @@ import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
@@ -42,7 +45,7 @@ import java.util.concurrent.atomic.AtomicInteger
 // Sessao monotonica: cada abrir/parar sobe `sessao`, e todo callback confere o
 // numero em que nasceu. Um player velho nao fala mais depois de liberado.
 //
-// Eventos (nativeEvento): 1 PRONTO(durMs) 2 TOCANDO 3 PAUSADO 4 FIM 5 ERRO(cod)
+// Eventos (nativeEvento): 1 PRONTO(durMs) 2 TOCANDO 3 PAUSADO 4 FIM 5 ERRO(cod, C.TRACK_TYPE_* do renderer)
 // 6 TAMANHO(w,h) 7 BUFFER(pct) 8 PRIMEIRO_QUADRO, e a extensao 9 = a fonte tem
 // audio mas nenhuma faixa tem decoder aqui (o C responde video_audio_nao_suportado).
 //
@@ -61,6 +64,7 @@ object NvPlayer {
     private const val EV_BUFFER = 7
     private const val EV_PRIMEIRO_QUADRO = 8
     private const val EV_AUDIO_SEM_DECODER = 9
+    private const val EV_SUPERFICIE_ESTAVEL = 10
 
     private const val TELA_W = 1920   // coordenadas de layout do app
     private const val TELA_H = 1080
@@ -71,7 +75,14 @@ object NvPlayer {
     private val principal = Handler(Looper.getMainLooper())
     private var activity: Activity? = null
     private var camada: FrameLayout? = null
+    private var interfaceMobile = false
     private var superficie: SurfaceView? = null
+    // #202: a TCL segurou o AudioFlinger por 27-38 s ao soltar o audio do filme
+    // anterior; release() no fio principal congelava o app. Cada abertura tem a
+    // sua SurfaceView e o player velho e solto num fio proprio.
+    private val liberacoesEmCurso = AtomicInteger()
+    private var ouvinteAtual: Player.Listener? = null
+    private var analiticoAtual: AnalyticsListener? = null
 
     // Tudo abaixo so no fio principal.
     private var player: ExoPlayer? = null
@@ -81,6 +92,11 @@ object NvPlayer {
     private val pedidos = AtomicInteger()
     private var pedidoAtivo = 0
     private var inicioAtualMs = 0
+    // 2.0.3: retomada so com percentual (centesimos de ponto, 0 = nada). Fica
+    // pendente ate a timeline trazer a duracao do container; aplicada antes
+    // do primeiro quadro, o C nao busca depois do "pronto".
+    private var fracaoAtual = 0
+    private var fracaoPendente = 0
     private var geracaoNative = 0
     private var urlAtual = ""
     private var cabAtual = ""
@@ -104,19 +120,34 @@ object NvPlayer {
     private var ultDv = -1
     private var ultAtmos = -1
     private var avisouSemAudio = false
+    private var quadrosPerdidos = 0L
+    private var statsTiques = 0
+    private var bufferAlvoMs = androidx.media3.exoplayer.DefaultLoadControl.DEFAULT_MAX_BUFFER_MS
 
     // --- natives (src/video_android.c, Java_space_nuvio_nativelegacy_NvPlayer_*) ---
     @JvmStatic external fun nativeIniciar()
     @JvmStatic external fun nativeEvento(tipo: Int, a: Int, b: Int)
-    @JvmStatic external fun nativeFaixa(tipo: Int, idx: Int, lingua: String)
+    // flags (#287): 1 = forcada (SELECTION_FLAG_FORCED), 2 = SDH
+    // (ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND); nome = Format.label.
+    // mime/canais (#293): codec e canais da faixa de audio.
+    @JvmStatic external fun nativeFaixa(tipo: Int, idx: Int, lingua: String, flags: Int, nome: String, mime: String, canais: Int)
     @JvmStatic external fun nativeFaixasFim(selAudio: Int, selLeg: Int)
     @JvmStatic external fun nativeLegenda(texto: String, durMs: Int)
     @JvmStatic external fun nativePos(ms: Int)
+    @JvmStatic external fun nativeDecoder4k(hevc: Int, avc: Int, vp9: Int, av1: Int)
+    @JvmStatic external fun nativeTela(hdr: Int, dv: Int)
     @JvmStatic external fun nativeHdr(hdr: String, dv: Int, atmos: Int)
+    @JvmStatic external fun nativeErroTexto(texto: String)
     @JvmStatic external fun nativeRetomada(geracao: Int, aceita: Int)
     @JvmStatic external fun nativeFitPassiva(rede: Long, geracao: Int, origem: String, kbps: IntArray, fimMs: Long)
     @JvmStatic external fun nativeAudioPcm(pcm: ShortArray, n: Int, ptsUs: Long)
     @JvmStatic external fun nativeAudioEstado(fmt: Int)
+    // Estatisticas ao vivo (src/estatvivo.h), 1x/s pelo tique: bytes do socket
+    // (-1 = esta abertura nao passou pelo ParaleloDataSource, ex. HLS), buffer
+    // a frente e o alvo do DefaultLoadControl em ms, conexoes abertas, 1o byte,
+    // quadros perdidos (onDroppedVideoFrames) e entregues; host final.
+    @JvmStatic external fun nativeStats(bytes: Long, bufferMs: Int, alvoMs: Int, conexoes: Int,
+                                        primeiroByteMs: Int, perdidos: Long, quadros: Long, host: String)
 
     // F06 sincronia por audio (AudioSyncTap.kt / AudioSyncSink.kt). Fio de
     // reproducao; o C so copia para um anel limitado (src/audsync.c).
@@ -185,6 +216,12 @@ object NvPlayer {
 
     // --- ciclo de vida (NuvioActivity) ---------------------------------------
 
+    // UI-thread mode changes use the same coordinate policy as the native canvas.
+    fun interfaceModo(mobile: Boolean) {
+        interfaceMobile = mobile
+        reaplicarJanela()
+    }
+
     // onCreate, DEPOIS do super.onCreate (a libmain.so ja carregada pelo SDL).
     @JvmStatic
     fun iniciar(activity: Activity, camada: FrameLayout) {
@@ -192,17 +229,63 @@ object NvPlayer {
         this.camada = camada
         // F07: seek cache folders of a process that died (crash, kill) go now.
         CacheMidia.limparSobras(activity.cacheDir)
-        val sv = SurfaceView(activity)
-        sv.visibility = View.GONE
-        camada.addView(sv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        superficie = sv
+        novaSuperficie(activity)
         // A camada so tem tamanho depois do layout: reaplica a janela quando mudar.
         camada.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or2, ob ->
-            if (r - l != or2 - ol || b - t != ob - ot) aplicarJanela()
+            if (r - l != or2 - ol || b - t != ob - ot) reaplicarJanela()
         }
         try { nativeIniciar() } catch (e: UnsatisfiedLinkError) {
             Log.w(TAG, "nativeIniciar sem a lib ainda; o C acha a classe pelo ClassLoader da Activity: $e")
         }
+        informarTela(activity)
+        val d = decoders4k
+        try { nativeDecoder4k(d[0], d[1], d[2], d[3]) }
+        catch (e: UnsatisfiedLinkError) { Log.w(TAG, "decoder4k sem lib: $e") }
+    }
+
+    // Capacidade HDR/Dolby Vision da tela, para o automatico de fontes. Lista
+    // vazia ou erro = -1 (desconhecido); nunca assume que a tela NAO tem HDR.
+    private fun informarTela(activity: Activity) {
+        try {
+            @Suppress("DEPRECATION")
+            val tipos = activity.windowManager.defaultDisplay.hdrCapabilities?.supportedHdrTypes
+            if (tipos == null || tipos.isEmpty()) { nativeTela(-1, -1); return }
+            val dv = if (tipos.contains(android.view.Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)) 1 else 0
+            nativeTela(1, dv)
+        } catch (e: Throwable) { Log.w(TAG, "informarTela: $e") }
+    }
+
+    // #409: uma consulta por processo, independente da resolucao da tela.
+    // 24 fps e o piso UHD de filme; nao promete 4K60 nem suporte a todo perfil.
+    private val decoders4k: IntArray by lazy {
+        val mimes = arrayOf("video/hevc", "video/avc", "video/x-vnd.on2.vp9", "video/av01")
+        val resultado = IntArray(4) { -1 }
+        try {
+            val codecs = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
+            if (codecs.isEmpty()) return@lazy resultado
+            for ((i, mime) in mimes.withIndex()) {
+                var suporta = false
+                var incerto = false
+                for (codec in codecs) {
+                    try {
+                        val nome = codec.name.lowercase(java.util.Locale.ROOT)
+                        if (codec.isEncoder || nome.endsWith(".secure") ||
+                            nome.startsWith("omx.google.") || nome.startsWith("c2.android.") ||
+                            nome.startsWith("c2.google.") || nome.contains(".sw.") ||
+                            (android.os.Build.VERSION.SDK_INT >= 29 && codec.isSoftwareOnly)) continue
+                        if (!codec.supportedTypes.any { it.equals(mime, ignoreCase = true) }) continue
+                        val v = codec.getCapabilitiesForType(mime).videoCapabilities
+                        if (v == null) { incerto = true; continue }
+                        if (v.isSizeSupported(3840, 2160) && v.areSizeAndRateSupported(3840, 2160, 24.0)) {
+                            suporta = true
+                            break
+                        }
+                    } catch (e: Exception) { incerto = true; Log.w(TAG, "decoder4k $mime: $e") }
+                }
+                resultado[i] = if (suporta) 1 else if (incerto) -1 else 0
+            }
+        } catch (e: Exception) { Log.w(TAG, "decoder4k: $e") }
+        resultado
     }
 
     // onPause: pausa (o C fica sabendo pelo evento 3) e guarda a posicao; o
@@ -233,11 +316,21 @@ object NvPlayer {
             if (pedido == pedidos.get()) abrirMain(url, cabecalhos, false, inicioMs.coerceAtLeast(0), geracao, pedido)
         }
     }
+    @JvmStatic fun abrirRetomada(url: String, cabecalhos: String, inicioMs: Int, fracao: Int, geracao: Int) {
+        val pedido = pedidos.incrementAndGet()
+        principal.post {
+            if (pedido == pedidos.get())
+                abrirMain(url, cabecalhos, false, inicioMs.coerceAtLeast(0), geracao, pedido, fracao.coerceIn(0, 9999))
+        }
+    }
     @JvmStatic fun parar() {
         val pedido = pedidos.incrementAndGet()
         principal.post { if (pedido == pedidos.get()) liberar() }
     }
-    @JvmStatic fun pausar(p: Int) { principal.post { player?.playWhenReady = (p == 0) } }
+    private var pausaPedida = false
+    @JvmStatic fun pausar(p: Int) {
+        principal.post { pausaPedida = p != 0; player?.playWhenReady = !pausaPedida }
+    }
     @JvmStatic fun buscar(ms: Int) {
         val pedido = pedidos.get()
         principal.post { if (pedido == pedidos.get()) player?.seekTo(ms.coerceAtLeast(0).toLong()) }
@@ -245,6 +338,9 @@ object NvPlayer {
     @JvmStatic fun volume(pct: Int) { principal.post { player?.volume = pct.coerceIn(0, 100) / 100f } }
     // F07: cache limit for the NEXT opens (MB, 0 = off) and the session volume
     // 0..200 (above 100 only while the audio is PCM).
+    // #338: buffer size preset (0 Auto, 1 Low, 2 Medium, 3 High), sticky, read at open.
+    @Volatile private var bufferPreset = 0
+    @JvmStatic fun buffer(preset: Int) { bufferPreset = preset.coerceIn(0, 3) }
     @JvmStatic fun cache(mb: Int) { cacheMbPedido = mb.coerceIn(0, 1024) }
     @JvmStatic fun ganho(pct: Int) {
         principal.post { ganhoPct = GanhoMath.pct(pct); aplicarGanho() }
@@ -261,19 +357,43 @@ object NvPlayer {
     // --- abrir / liberar ------------------------------------------------------
 
     private fun abrirMain(url: String, cabecalhos: String, reabrindo: Boolean,
-                          inicioMs: Int, geracao: Int, pedido: Int) {
+                          inicioMs: Int, geracao: Int, pedido: Int, fracao: Int = 0, esperaInicio: Long = -1L) {
+        if (pedido != pedidos.get()) return
         val act = activity
         if (act == null) { confirmarRetomada(geracao, false); return }
-        liberar()
+        val espera = if (esperaInicio < 0) SystemClock.elapsedRealtime() else esperaInicio
+        if (esperaInicio < 0) {
+            liberar()
+            // O C envia ganho/pausa depois de abrir; a espera nao pode apaga-los.
+            ganhoPct = 100
+            if (!reabrindo) pausaPedida = false
+        }
+        // MStar/Amlogic: o overlay e o decoder antigos precisam sair antes do novo.
+        // Poll no Handler deixa Back/parar funcionar enquanto o release corre em fundo.
+        if (semRecriar) {
+            val ms = SystemClock.elapsedRealtime() - espera
+            if (liberacoesEmCurso.get() > 0 && ms < 3000) {
+                principal.postDelayed({
+                    abrirMain(url, cabecalhos, reabrindo, inicioMs, geracao, pedido, fracao, espera)
+                }, 25)
+                return
+            }
+            Log.i(TAG, "[player] esperou o release anterior $ms ms (pendentes=${liberacoesEmCurso.get()})")
+        }
+        novaSuperficie(act)
         pedidoAtivo = pedido
         hdrRecriado = false; hdrRecriadoPara = ""; quadroVisto = false
+        hdrSegundaFeita = false; estavelEmitido = false
         principal.removeCallbacks(recriar)
         principal.removeCallbacks(hdrSegunda)
+        principal.removeCallbacks(estavelRun)
         val minha = sessao
         urlAtual = url
         cabAtual = cabecalhos
         inicioAtualMs = inicioMs
         geracaoNative = geracao
+        fracaoAtual = if (inicioMs > 0) 0 else fracao
+        fracaoPendente = 0
         abriuEm = SystemClock.elapsedRealtime()
         if (!reabrindo) retentou = false
         try {
@@ -297,6 +417,8 @@ object NvPlayer {
             // A geracao e a sessao nativa desta abertura (0 numa casca antiga:
             // o C nunca aceita a telemetria passiva dela).
             medidorToken = medidor.sessao(geracao)
+            ParaleloDataSource.Estat.zerar()
+            quadrosPerdidos = 0L; statsTiques = 0
             val rede = ParaleloDataSource.Factory(ua, props, http, medidor, medidorToken)
 
             // F07: SEEK CACHE over the chain above, progressive HTTP VOD only.
@@ -324,10 +446,8 @@ object NvPlayer {
             }
             relatarCache(minha)
 
-            // F07: VOLUME BOOST. Every open starts at 100% (the C side re-sends
-            // the session volume right after the open); the gain processor is
-            // per player, inside the audio sink.
-            ganhoPct = 100
+            // F07: VOLUME BOOST. Preserve the gain received during release;
+            // the processor is per player, inside the audio sink.
             val proc = GanhoAudioProcessor()
             processador = proc
 
@@ -359,31 +479,61 @@ object NvPlayer {
             // do heap, entre 32 e 96 MB, ainda segura dezenas de segundos de 4K.
             val tetoBuffer = (Runtime.getRuntime().maxMemory() / 4)
                 .coerceIn(32L shl 20, 96L shl 20).toInt()
+            // #338: presets mudam so quanto buffer, nunca a qualidade. Auto = o de
+            // sempre (50 s / teto em bytes). Em bytes o limite segue o heap: Alto
+            // sobe o teto ate 1/3 do heap (max 96 MB), nunca ao do DefaultLoadControl.
+            val heap = Runtime.getRuntime().maxMemory()
+            val (minMs, maxMs, bytes) = when (bufferPreset) {
+                1 -> Triple(15_000, 25_000, tetoBuffer / 2)
+                2 -> Triple(50_000, 80_000, tetoBuffer)
+                3 -> Triple(90_000, 150_000, (heap / 3).coerceIn(32L shl 20, 96L shl 20).toInt())
+                else -> Triple(50_000, 50_000, tetoBuffer)
+            }
+            bufferAlvoMs = maxMs
+            Log.i(TAG, "[player] buffer preset=$bufferPreset min=${minMs / 1000}s max=${maxMs / 1000}s teto=${bytes shr 20}MB")
             val carga = androidx.media3.exoplayer.DefaultLoadControl.Builder()
-                .setTargetBufferBytes(tetoBuffer)
+                .setBufferDurationsMs(minMs, maxMs, 2_500, 5_000)
+                .setTargetBufferBytes(bytes)
                 .setPrioritizeTimeOverSizeThresholds(false)
                 .build()
             val p = ExoPlayer.Builder(act, renderizadores)
                 .setLoadControl(carga)
                 .setMediaSourceFactory(DefaultMediaSourceFactory(act)
+                    // ParaleloDataSource faz as tres tentativas de transporte;
+                    // nao empilhar outra rodada invisivel do Loader antes da
+                    // maquina de reconexao 3/10/25 s do nucleo.
+                    .setLoadErrorHandlingPolicy(PoliticaErroParalelo())
                     // DefaultDataSource e nao so http: o trailer da Apple chega como
                     // file:// (master reduzido a uma variante em dados/trailer, trailerapple.c).
                     .setDataSourceFactory(DefaultDataSource.Factory(act, origem)))
                 .build()
             player = p
+            aplicarGanho()
+            semTravaDeFio(p)
+            // Release anterior ainda preso no HAL de audio: sessao de audio nova,
+            // para o AudioTrack deste filme nao esperar o patch do velho.
+            if (liberacoesEmCurso.get() > 0) {
+                try {
+                    p.audioSessionId = androidx.media3.common.util.Util.generateAudioSessionIdV21(act)
+                    Log.i(TAG, "[player] release anterior em curso; sessao de audio nova")
+                } catch (e: Exception) { Log.w(TAG, "sessao de audio nova: $e") }
+            }
             // Foco de audio GAIN; perder o foco pausa (o C ve o evento 3).
             p.setAudioAttributes(
                 AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
             // Legenda desligada ate o app escolher: quem desenha e o C.
             p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
-            p.addListener(ouvinte(minha))
-            p.addAnalyticsListener(analitico(minha))
+            val ouv = ouvinte(minha); val ana = analitico(minha)
+            ouvinteAtual = ouv; analiticoAtual = ana
+            p.addListener(ouv)
+            p.addAnalyticsListener(ana)
 
             val sv = superficie
             if (sv != null) {
                 sv.visibility = View.VISIBLE
                 p.setVideoSurfaceView(sv)
+                sv.holder.addCallback(depoisDoMedia3)
             }
             temJanela = false
             aplicarEncaixe()
@@ -404,8 +554,13 @@ object NvPlayer {
                     p.setMediaItem(mediaItem)
                 }
             } else p.setMediaItem(mediaItem)
-            confirmarRetomada(geracao, inicioAceito)
-            p.playWhenReady = true
+            // So percentual: o ack sai quando a timeline der a duracao (ou
+            // recusado no READY); ate la o C espera, sem seek proprio.
+            if (inicioMs <= 0 && fracaoAtual > 0) fracaoPendente = fracaoAtual
+            else confirmarRetomada(geracao, inicioAceito)
+            p.playWhenReady = !pausaPedida
+            // false -> false nao gera callback quando a pausa chegou sem player.
+            if (pausaPedida) ev(EV_PAUSADO)
             p.prepare()
             principal.postDelayed(tique(minha), TIQUE_MS)
         } catch (e: Exception) {
@@ -431,10 +586,19 @@ object NvPlayer {
         decoderDv = false
         ultHdr = ""; ultDv = -1; ultAtmos = -1
         avisouSemAudio = false
+        val sv = superficie
+        val ouv = ouvinteAtual; val ana = analiticoAtual
+        ouvinteAtual = null; analiticoAtual = null
+        soltando = null
         if (p != null) {
-            try { p.stop() } catch (e: Exception) { }
-            try { p.clearVideoSurface() } catch (e: Exception) { }
-            try { p.release() } catch (e: Exception) { Log.w(TAG, "release: $e") }
+            // Listeners fora ja (so mexem em lista local); o resto, no fio de fundo.
+            try { if (ouv != null) p.removeListener(ouv) } catch (e: Exception) { }
+            try { if (ana != null) p.removeAnalyticsListener(ana) } catch (e: Exception) { }
+            // Esconde sem destruir a superficie (destruir acorda o callback do Media3).
+            try { sv?.layoutParams = FrameLayout.LayoutParams(1, 1) } catch (e: Exception) { }
+            // A superficie velha fica com o player velho; a proxima abertura cria outra.
+            superficie = null
+            liberarEmFundo(p, sv)
         }
         // F07: the session cache goes with its player (released and deleted
         // off the main thread, after the canceled loaders unwind).
@@ -448,18 +612,110 @@ object NvPlayer {
         superficie?.visibility = View.GONE
     }
 
+    // Media3 1.8: permite o descarte em fundo do player ja sem listeners.
+    private fun semTravaDeFio(p: ExoPlayer) {
+        try {
+            val m = p.javaClass.getDeclaredMethod("setThrowsWhenUsingWrongThread", Boolean::class.javaPrimitiveType)
+            m.isAccessible = true
+            m.invoke(p, false)
+        } catch (e: Throwable) {
+            Log.w(TAG, "[player] sem destravar o fio do release: $e")
+        }
+    }
+
+    private fun novaSuperficie(act: Activity) {
+        if (superficie != null) return
+        val c = camada ?: return
+        val sv = SurfaceView(act)
+        sv.visibility = View.GONE
+        // A superficie de video nunca pega o foco do controle: as teclas chegam
+        // ao app pelo foco da SDLSurface (SDLSurface.onKey), e foco em outra
+        // View deixa o processo vivo e a tela sem resposta (#318).
+        sv.isFocusable = false
+        sv.isFocusableInTouchMode = false
+        sv.holder.addCallback(antesDoMedia3)
+        c.addView(sv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        superficie = sv
+    }
+
+    // QUANTO O MEDIA3 SEGUROU O FIO PRINCIPAL ao perder a superficie (recriar,
+    // ou o sistema ao esconder o app: tecla de ajustes da TV, Home). O callback
+    // dele entra na lista entre estes dois (setVideoSurfaceView, em abrirMain).
+    private var destruirIni = 0L
+    private val antesDoMedia3 = object : SurfaceHolder.Callback {
+        override fun surfaceCreated(h: SurfaceHolder) {
+            Log.i(TAG, "[dvtrace] created sessao=$sessao holder=${System.identityHashCode(h)} atual=${h === superficie?.holder} hdr=$ultHdr frame=${h.surfaceFrame}")
+        }
+        override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, a: Int) {
+            Log.i(TAG, "[dvtrace] changed sessao=$sessao holder=${System.identityHashCode(h)} atual=${h === superficie?.holder} tamanho=${w}x$a formato=$f hdr=$ultHdr")
+        }
+        override fun surfaceDestroyed(h: SurfaceHolder) {
+            destruirIni = SystemClock.elapsedRealtime()
+            Log.i(TAG, "[dvtrace] destroyed sessao=$sessao holder=${System.identityHashCode(h)} atual=${h === superficie?.holder} hdr=$ultHdr")
+        }
+    }
+    private val depoisDoMedia3 = object : SurfaceHolder.Callback {
+        override fun surfaceCreated(h: SurfaceHolder) {}
+        override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, a: Int) {}
+        override fun surfaceDestroyed(h: SurfaceHolder) {
+            Log.i(TAG, "[player] superficie destruida: Media3 segurou o fio principal por ${SystemClock.elapsedRealtime() - destruirIni} ms")
+        }
+    }
+
+    // stop+release fora do fio principal. A SurfaceView so sai depois do
+    // descarte: remover antes faz o Media3 esperar o decoder no fio da UI.
+    private fun liberarEmFundo(p: ExoPlayer, sv: SurfaceView?) {
+        liberacoesEmCurso.incrementAndGet()
+        val corpo = Runnable {
+            val ini = SystemClock.elapsedRealtime()
+            try { p.stop() } catch (e: Exception) { Log.w(TAG, "stop: $e") }
+            try { p.release() } catch (e: Exception) { Log.w(TAG, "release: $e") }
+            val ms = SystemClock.elapsedRealtime() - ini
+            if (ms > 5000) Log.w(TAG, "[player] release anterior levou $ms ms (>5 s: HAL de audio preso?)")
+            else Log.i(TAG, "[player] release anterior levou $ms ms")
+            liberacoesEmCurso.decrementAndGet()
+            principal.post {
+                if (sv != null && sv !== superficie) (sv.parent as? FrameLayout)?.removeView(sv)
+            }
+        }
+        val t = Thread(corpo, "nv-release")
+        t.isDaemon = true
+        t.start()
+    }
+
     // Tique de 250 ms: a posicao que o C le sem esperar ninguem.
     private fun tique(minha: Int): Runnable = object : Runnable {
         override fun run() {
             if (!atual(minha)) return
             val p = player ?: return
             try { nativePos(p.currentPosition.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()) } catch (e: UnsatisfiedLinkError) { }
+            if (++statsTiques >= 4) { statsTiques = 0; relatarStats(p) }
             if (cacheMidia != null && cacheEstado == CacheSessao.ATIVO && ++cacheTiques >= CACHE_RELATO_TIQUES) {
                 cacheTiques = 0
                 relatarCache(minha)
             }
             principal.postDelayed(this, TIQUE_MS)
         }
+    }
+
+    // Uma vez por segundo, do fio principal: leituras baratas, nada alocado
+    // alem da string do host (que o JNI copia).
+    private fun relatarStats(p: ExoPlayer) {
+        val e = ParaleloDataSource.Estat
+        val buf = (p.bufferedPosition - p.currentPosition).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+        var quadros = -1L
+        var perdidos = -1L
+        p.videoDecoderCounters?.let { c ->
+            c.ensureUpdated()
+            quadros = (c.renderedOutputBufferCount + c.droppedBufferCount).toLong()
+            perdidos = quadrosPerdidos
+        }
+        try {
+            nativeStats(if (e.usado) e.bytes.get() else -1L, buf,
+                bufferAlvoMs,
+                if (e.usado) e.conexoes.get().coerceAtLeast(0) else -1,
+                e.primeiroByteMs, perdidos, quadros, e.host)
+        } catch (t: UnsatisfiedLinkError) { }
     }
 
     // --- janela ---------------------------------------------------------------
@@ -478,6 +734,7 @@ object NvPlayer {
         pedX = x; pedY = y; pedW = w; pedH = h; pedEncaixa = encaixa
         temJanela = true
         calcularJanela()
+        Log.i(TAG, "[dvtrace] janela sessao=$sessao holder=${System.identityHashCode(superficie?.holder)} pedido=$x,$y ${w}x$h encaixa=$encaixa calculada=$jx,$jy ${jw}x$jh hdr=$ultHdr semRecriar=$semRecriar")
     }
 
     private fun calcularJanela() {
@@ -493,17 +750,35 @@ object NvPlayer {
         aplicarJanela()
     }
 
+    private fun larguraLogica(): Float {
+        val c = camada
+        return if (interfaceMobile && c != null && c.width > 0 && c.height > 0)
+            TELA_H.toFloat() * c.width / minOf(c.width, c.height) else TELA_W.toFloat()
+    }
+
+    private fun alturaLogica(): Float {
+        val c = camada
+        return if (interfaceMobile && c != null && c.width > 0 && c.height > 0)
+            TELA_H.toFloat() * c.height / minOf(c.width, c.height) else TELA_H.toFloat()
+    }
+
+    private fun reaplicarJanela() {
+        if (!temJanela) aplicarEncaixe() else aplicarJanela()
+    }
+
     // Sem janela pedida ainda: o quadro inteiro encaixado (letterbox) na tela.
     private fun aplicarEncaixe() {
         if (temJanela) return
+        val largura = larguraLogica()
+        val altura = alturaLogica()
         if (videoW > 0 && videoH > 0) {
-            val esc = minOf(TELA_W.toFloat() / videoW, TELA_H.toFloat() / videoH)
+            val esc = minOf(largura / videoW, altura / videoH)
             jw = (videoW * esc + 0.5f).toInt()
             jh = (videoH * esc + 0.5f).toInt()
-            jx = (TELA_W - jw) / 2
-            jy = (TELA_H - jh) / 2
+            jx = ((largura - jw) / 2).toInt()
+            jy = ((altura - jh) / 2).toInt()
         } else {
-            jx = 0; jy = 0; jw = TELA_W; jh = TELA_H
+            jx = 0; jy = 0; jw = Math.round(largura); jh = Math.round(altura)
         }
         aplicarJanela()
     }
@@ -517,8 +792,8 @@ object NvPlayer {
             val m = c.resources.displayMetrics
             cw = m.widthPixels; ch = m.heightPixels
         }
-        val ex = cw.toFloat() / TELA_W
-        val ey = ch.toFloat() / TELA_H
+        val ex = cw.toFloat() / larguraLogica()
+        val ey = ch.toFloat() / alturaLogica()
         // As BORDAS arredondam e o tamanho sai da diferenca: tela cheia cai
         // exatamente em 0,0,cw,ch, sem fresta.
         val x0 = Math.round(jx * ex)
@@ -545,23 +820,94 @@ object NvPlayer {
         // recortado e nao sai; entra no esticar e fica esticado"). Recriar a
         // Surface (GONE -> VISIBLE) faz o compositor montar camada nova com a
         // geometria nova; o ExoPlayer troca a saida do decoder sem recarregar.
-        recriarSuperficie(RECRIA_ESPERA_MS)
+        //
+        // SO EM SDR. No HDR/DV cada recriacao aqui obrigava o Media3 a soltar a
+        // saida do decoder e o C2MtkVdecTv a religar o DispLink: o aspecto salvo
+        // aplicado apos o primeiro quadro, e cada troca manual de modo, mudava o
+        // tamanho e recriava (~12 vezes em 30 s; TCL 2160p DV, 11/10), com o fio
+        // principal parado no glClear ("renderer soltou em 7057 ms", pior quadro
+        // 6612.7 ms). No HDR a recriacao fica so nas TRANSICOES DE MODO
+        // (hdrNaSuperficie: a primeira 200 ms apos o primeiro quadro e a segunda
+        // 1,5 s depois), que existem para a TV ligar o HDR.
+        //
+        // MAS SEM NENHUMA o plano fica preso no primeiro tamanho e so o Crop
+        // funcionava (dono, 12/10: "so funciona o crop"). Depois da superficie
+        // estavel a troca de tamanho recria UMA vez, RECRIA_ESPERA_HDR_MS apos
+        // a ultima troca; antes disso as recriacoes do HDR ja pegam o layout novo.
+        if (ultHdr.isEmpty() || ultHdr == "none") recriarSuperficie(RECRIA_ESPERA_MS)
+        else if (estavelEmitido) recriarSuperficie(RECRIA_ESPERA_HDR_MS)
     }
 
     // Recriar a Surface custa um quadro preto e, em rajada (aspecto apertado
     // varias vezes), travava: as trocas JUNTAM numa so, RECRIA_ESPERA_MS depois
     // da ultima. A mesma recriacao liga o HDR da TCL (ver onRenderedFirstFrame).
     private const val RECRIA_ESPERA_MS = 350L
+    // HDR/DV: recriar e caro (DispLink religa), so depois de o modo parar.
+    private const val RECRIA_ESPERA_HDR_MS = 600L
     private var hdrRecriado = false
     private var quadroVisto = false
-    private val recriar = Runnable {
-        val sv = superficie
-        if (player != null && sv != null && sv.visibility == View.VISIBLE && sv.holder.surface?.isValid == true) {
-            sv.visibility = View.GONE
-            principal.post { if (player != null) sv.visibility = View.VISIBLE }
+    // SOLTAR A SAIDA SEM ESPERAR (2.0.3). Destruir a Surface com o decoder
+    // ainda ligado nela faz o Media3 esperar o fio de reproducao DENTRO do
+    // surfaceDestroyed, no fio principal (setVideoOutputInternal: ate 2 s, e
+    // no estouro derruba o player com timeout). Na TCL do dono o `recriar`
+    // segurou o fio principal por 7470 ms (logcat 08/10 00:49:48, "Slow
+    // dispatch"): controle morto, e tecla nesse meio = ANR. O pedido vai como
+    // mensagem ao fio de reproducao e `depois` so roda, de volta no fio
+    // principal, com o renderer ja sem a superficie: a espera do Media3 que
+    // vem em seguida encontra o trabalho feito. Player liberado no meio = a
+    // mensagem e descartada e `depois` nao roda (a superficie foi com ele).
+    private var soltando: ExoPlayer? = null
+    private fun soltarSaida(p: ExoPlayer, depois: Runnable) {
+        val ini = SystemClock.elapsedRealtime()
+        try {
+            for (i in 0 until p.rendererCount) {
+                if (p.getRendererType(i) != C.TRACK_TYPE_VIDEO) continue
+                p.createMessage(p.getRenderer(i)).setType(Renderer.MSG_SET_VIDEO_OUTPUT).setPayload(null).send()
+            }
+            p.createMessage { _, _ ->
+                Log.i(TAG, "[player] superficie: renderer soltou em ${SystemClock.elapsedRealtime() - ini} ms")
+                principal.post(depois)
+            }.send()
+        } catch (e: Exception) {
+            // Sem a mensagem, o caminho antigo: o Media3 espera no surfaceDestroyed.
+            Log.w(TAG, "soltarSaida: $e")
+            depois.run()
         }
     }
+    private val recriar = Runnable {
+        val p = player
+        val sv = superficie
+        Log.i(TAG, "[dvtrace] recriar player=${System.identityHashCode(p)} holder=${System.identityHashCode(sv?.holder)} soltando=${soltando === p} vis=${sv?.visibility} valida=${sv?.holder?.surface?.isValid}")
+        if (p != null && sv != null && soltando !== p && sv.visibility == View.VISIBLE && sv.holder.surface?.isValid == true) {
+            soltando = p
+            soltarSaida(p) {
+                if (soltando === p) soltando = null
+                if (player !== p || superficie !== sv) return@soltarSaida
+                val ini = SystemClock.elapsedRealtime()
+                sv.visibility = View.GONE
+                Log.i(TAG, "[player] superficie: destruir levou ${SystemClock.elapsedRealtime() - ini} ms no fio principal")
+                principal.post {
+                    if (player != null) sv.visibility = View.VISIBLE
+                    Log.i(TAG, "[dvtrace] visible player=${System.identityHashCode(p)} holder=${System.identityHashCode(sv.holder)} atual=${player === p && superficie === sv}")
+                    (activity as? NuvioActivity)?.devolverFoco()
+                }
+            }
+        }
+    }
+    // Familias que nao recriam a superficie no HDR (RecriaHdr.kt): MStar e
+    // Amlogic. A recriacao existe por causa da TCL; nelas so custa.
+    private val semRecriar: Boolean by lazy {
+        try {
+            val nomes = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
+                .filter { !it.isEncoder }.map { it.name }
+            val f = RecriaHdr.dispensa(nomes)
+            Log.i(TAG, "[player] recriar superficie no HDR: ${f?.let { "nao ($it)" } ?: "sim"}")
+            f != null
+        } catch (e: Throwable) { false }
+    }
     private fun recriarSuperficie(atrasoMs: Long) {
+        Log.i(TAG, "[dvtrace] pedido sessao=$sessao holder=${System.identityHashCode(superficie?.holder)} atrasoMs=$atrasoMs hdr=$ultHdr quadro=$quadroVisto semRecriar=$semRecriar soltando=${soltando != null}")
+        if (semRecriar) return
         principal.removeCallbacks(recriar)
         principal.postDelayed(recriar, atrasoMs)
     }
@@ -581,8 +927,45 @@ object NvPlayer {
             Log.i(TAG, "HDR ($ultHdr): segunda recriacao da superficie")
             recriarSuperficie(0)
         }
+        hdrSegundaFeita = true
+        avaliarEstavel()
+    }
+    // SUPERFICIE ESTAVEL (DV escuro, 2.0.3): o C so aplica o aspecto salvo
+    // depois da ULTIMA recriacao agendada. SDR (ou MStar, que nao recria):
+    // logo apos o primeiro quadro. HDR/DV: depois da segunda recriacao.
+    private var hdrSegundaFeita = false
+    private var estavelEmitido = false
+    private val estavelRun = Runnable {
+        if (player != null && quadroVisto && !estavelEmitido) {
+            estavelEmitido = true
+            Log.i(TAG, "[aspect] superficie estavel (hdr=$ultHdr) sessao=$sessao soltando=${soltando != null} segunda=$hdrSegundaFeita holder=${System.identityHashCode(superficie?.holder)}")
+            ev(EV_SUPERFICIE_ESTAVEL)
+        }
+    }
+    private fun avaliarEstavel() {
+        if (!quadroVisto || estavelEmitido) return
+        val hdr = ultHdr.isNotEmpty() && ultHdr != "none" && !semRecriar
+        principal.removeCallbacks(estavelRun)
+        if (hdr && !hdrSegundaFeita) return   // a segunda recriacao chama de novo
+        principal.postDelayed(estavelRun, 150L)
+    }
+    // Evidencia para "a TV nao acompanha o fps do filme": fps do video, modos que o
+    // painel oferece e o ativo. TCL do dono (06/10): so existe 3840x2160@60, entao
+    // nao ha modo para trocar; o Media3 ja vota Surface.setFrameRate sozinho.
+    private fun logTaxaDeQuadros() {
+        try {
+            val fps = player?.videoFormat?.frameRate ?: -1f
+            val d = activity?.windowManager?.defaultDisplay ?: return
+            val modos = d.supportedModes.joinToString(",") { "${it.modeId}:${it.physicalWidth}x${it.physicalHeight}@${it.refreshRate}" }
+            Log.i(TAG, "[quadro] video=${fps}fps tela=${d.mode.modeId}@${d.refreshRate} modos=[$modos]")
+            val a = player?.audioFormat
+            Log.i(TAG, "[audio] ${a?.sampleMimeType} ${a?.channelCount}ch ${a?.sampleRate}Hz atraso=${atrasoMs}ms")
+        } catch (e: Exception) { Log.w(TAG, "logTaxaDeQuadros: $e") }
     }
     private fun hdrNaSuperficie() {
+        // MStar/Amlogic nao recriam (RecriaHdr.kt): sem log de "recria" nem a
+        // segunda rodada; avaliarEstavel ja trata esse caso como SDR.
+        if (semRecriar) return
         if (!quadroVisto || ultHdr.isEmpty() || ultHdr == "none" || ultHdr == hdrRecriadoPara) return
         val primeira = !hdrRecriado
         hdrRecriado = true
@@ -625,11 +1008,18 @@ object NvPlayer {
         override fun onPlaybackStateChanged(state: Int) {
             if (!atual(minha)) return
             val p = player ?: return
+            Log.i(TAG, "[player] onPlaybackStateChanged state=$state renderer=audio(${p.audioFormat?.sampleMimeType}),video(${p.videoFormat?.sampleMimeType}) loadMs=${SystemClock.elapsedRealtime() - abriuEm}")
             when (state) {
                 Player.STATE_BUFFERING -> ev(EV_BUFFER, 0)
                 Player.STATE_READY -> {
                     ev(EV_BUFFER, 100)
                     if (!pronto) {
+                        // Antes do EV_PRONTO: o C le o ack ao ver o "pronto".
+                        if (fracaoPendente > 0) {
+                            fracaoPendente = 0
+                            Log.w(TAG, "[player] retomada: sem duracao antes do pronto; o C busca depois")
+                            confirmarRetomada(geracaoNative, false)
+                        }
                         pronto = true
                         duracaoEnviada = duracaoMs(p)
                         ev(EV_PRONTO, duracaoEnviada)
@@ -660,17 +1050,21 @@ object NvPlayer {
         }
 
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-            if (!atual(minha) || !pronto) return
+            if (!atual(minha)) return
             val p = player ?: return
+            if (!pronto) { aplicarFracao(p); return }
             val d = duracaoMs(p)
             if (d != duracaoEnviada) { duracaoEnviada = d; ev(EV_PRONTO, d) }   // so a duracao muda
         }
 
         override fun onRenderedFirstFrame() {
             if (!atual(minha)) return
+            Log.i(TAG, "[player] onRenderedFirstFrame renderer=video loadMs=${SystemClock.elapsedRealtime() - abriuEm} sessao=$sessao hdr=$ultHdr holder=${System.identityHashCode(superficie?.holder)} soltando=${soltando != null}")
             ev(EV_PRIMEIRO_QUADRO)
             quadroVisto = true
+            logTaxaDeQuadros()
             hdrNaSuperficie()
+            avaliarEstavel()
         }
 
         override fun onVideoSizeChanged(v: VideoSize) {
@@ -703,7 +1097,24 @@ object NvPlayer {
 
         override fun onPlayerError(error: PlaybackException) {
             if (!atual(minha)) return
-            Log.w(TAG, "erro ${error.errorCodeName} (${error.errorCode}): ${error.message}")
+            val exo = error as? ExoPlaybackException
+            val p = player
+            val tipo = if (exo?.type == ExoPlaybackException.TYPE_RENDERER && p != null &&
+                exo.rendererIndex in 0 until p.rendererCount) p.getRendererType(exo.rendererIndex)
+                else C.TRACK_TYPE_UNKNOWN
+            val renderer = when (tipo) {
+                C.TRACK_TYPE_AUDIO -> "audio"
+                C.TRACK_TYPE_VIDEO -> "video"
+                else -> "desconhecido"
+            }
+            Log.w(TAG, "[player] onPlayerError renderer=$renderer nome=${exo?.rendererName} loadMs=${SystemClock.elapsedRealtime() - abriuEm} erro ${error.errorCodeName} (${error.errorCode}): ${error.message}")
+            // The app log (what "Enviar registro" uploads) only got the bare
+            // code: 2000 (IO_UNSPECIFIED) says nothing without its cause. URLs
+            // lose their query, where addons put tokens.
+            val causa = generateSequence(error.cause) { it.cause }.take(3)
+                .joinToString(" <- ") { "${it.javaClass.simpleName}: ${it.message ?: ""}" }
+                .replace(Regex("""\?[^\s"]*"""), "?…").take(400)
+            try { nativeErroTexto("${error.errorCodeName} (${error.errorCode}) renderer=$renderer causa=$causa") } catch (_: Throwable) {}
             // Decoder que falha nos primeiros 5 s: o recurso pode estar sendo
             // solto por outro app (ResourceConflict do Tizen); reabre uma vez.
             val cedo = SystemClock.elapsedRealtime() - abriuEm < RETRY_DECODER_MS
@@ -717,14 +1128,19 @@ object NvPlayer {
                     ?: inicioAtualMs
                 val geracao = geracaoNative
                 val pedido = pedidoAtivo
-                principal.postDelayed({ if (atual(minha)) abrirMain(u, c, true, inicio, geracao, pedido) }, 400)
+                val fracao = if (inicio > 0) 0 else fracaoAtual
+                principal.postDelayed({ if (atual(minha)) abrirMain(u, c, true, inicio, geracao, pedido, fracao) }, 400)
                 return
             }
-            ev(EV_ERRO, error.errorCode, 0)
+            ev(EV_ERRO, error.errorCode, tipo)
         }
     }
 
     private fun analitico(minha: Int) = object : AnalyticsListener {
+
+        override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
+            if (atual(minha)) quadrosPerdidos += droppedFrames
+        }
 
         override fun onVideoDecoderInitialized(
             eventTime: AnalyticsListener.EventTime, decoderName: String,
@@ -734,9 +1150,33 @@ object NvPlayer {
             // DV so conta com decoder DV de verdade: OMX.dolby.* / c2.dolby.* e,
             // na MediaTek, c2.mtk.dvhe.* / c2.mtk.dvav.* (TCL Smart TV Pro: o
             // painel engatou Dolby Vision e o selo dizia HDR10, 30/09/2026).
+            Log.i(TAG, "[player] decoder de video: $decoderName")
             val n = decoderName.lowercase()
             decoderDv = n.contains("dolby") || Regex("""\.dv(he|h1|av|a1)""").containsMatchIn(n)
             player?.let { publicarHdr(it.currentTracks) }
+        }
+    }
+
+    // A duracao chega na timeline assim que o container e lido (MKV: Info +
+    // Cues; MP4: moov), antes de o periodo preparar e decodificar. O seek
+    // aqui troca o ponto de partida sem um primeiro quadro em 0.
+    private fun aplicarFracao(p: ExoPlayer) {
+        val f = fracaoPendente
+        if (f <= 0) return
+        if (p.isCurrentMediaItemLive) {
+            fracaoPendente = 0; confirmarRetomada(geracaoNative, false); return
+        }
+        val d = p.duration
+        if (d == C.TIME_UNSET || d <= 1000L || !p.isCurrentMediaItemSeekable) return
+        val alvo = d * f / 10000L
+        fracaoPendente = 0
+        try {
+            p.seekTo(alvo)
+            Log.i(TAG, "[player] retomada na preparacao: ${alvo} ms de ${d} ms (${f / 100}.${"%02d".format(f % 100)}%)")
+            confirmarRetomada(geracaoNative, true)
+        } catch (e: Exception) {
+            Log.w(TAG, "retomada por percentual recusada: $e")
+            confirmarRetomada(geracaoNative, false)
         }
     }
 
@@ -787,9 +1227,15 @@ object NvPlayer {
             for ((n, par) in a.withIndex()) {
                 val (g, i) = par
                 if (sel < 0 && g.isTrackSelected(i)) sel = n
-                nativeFaixa(0, n, g.getTrackFormat(i).language ?: "")
+                val fmt = g.getTrackFormat(i)
+                nativeFaixa(0, n, fmt.language ?: "", 0, "", fmt.sampleMimeType ?: "", fmt.channelCount.coerceAtLeast(0))
             }
-            for ((n, par) in l.withIndex()) nativeFaixa(1, n, par.first.getTrackFormat(par.second).language ?: "")
+            for ((n, par) in l.withIndex()) {
+                val f = par.first.getTrackFormat(par.second)
+                val flags = (if (f.selectionFlags and C.SELECTION_FLAG_FORCED != 0) 1 else 0) or
+                    (if (f.roleFlags and C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND != 0) 2 else 0)
+                nativeFaixa(1, n, f.language ?: "", flags, f.label ?: "", "", 0)
+            }
             nativeFaixasFim(sel, -1)
         } catch (e: UnsatisfiedLinkError) { Log.w(TAG, "faixas sem lib: $e") }
     }
@@ -815,6 +1261,7 @@ object NvPlayer {
             }
         }
         if (hdr == ultHdr && dv == ultDv && atmos == ultAtmos) return
+        Log.i(TAG, "[dvtrace] hdr sessao=$sessao $ultHdr->$hdr decoderDv=$decoderDv quadro=$quadroVisto estavel=$estavelEmitido segunda=$hdrSegundaFeita soltando=${soltando != null}")
         ultHdr = hdr; ultDv = dv; ultAtmos = atmos
         try { nativeHdr(hdr, dv, atmos) } catch (e: UnsatisfiedLinkError) { }
         hdrNaSuperficie()

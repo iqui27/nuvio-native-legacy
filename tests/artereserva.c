@@ -370,16 +370,25 @@ int main(void) {
   OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdbalt/w1280/tt0000404", s, sizeof s) == -1 && pedidos == 1, "outro desconhecido: um /find");
   OK(arte_fonte_resolver("https://nuvio.invalid/arte/tmdbalt/w1280/tt0000404", s, sizeof s) == -1 && pedidos == 1, "outro desconhecido: negativa guardada");
   // Apple: pelo registro do main (trailerapple_arte), com titulo e ano.
-  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1920/tt15239678/m/2024/Dune%3A%20Part%20Two", s, sizeof s) == -1,
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1920/v2/tt15239678/m/2024/Dune%3A%20Part%20Two", s, sizeof s) == -1,
      "apple sem registro: nao existe");
   arte_fonte_definir_apple(appleDuble);
-  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1920/tt15239678/m/2024/Dune%3A%20Part%20Two", s, sizeof s) == 1 &&
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1920/v2/tt15239678/m/2024/Dune%3A%20Part%20Two", s, sizeof s) == 1 &&
      !strcmp(s, "https://is1-ssl.mzstatic.com/image/thumb/X/1920x1080.jpg"), "apple -> mzstatic 1920x1080");
   OK(!strcmp(appleTitulo, "Dune: Part Two") && appleAno == 2024 && !appleSerie, "apple recebe titulo decodificado, ano e tipo");
   appleChamadas = 0;
-  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1280/tt15239678/m/2024/Dune%3A%20Part%20Two", s, sizeof s) == 1 &&
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1280/v2/tt15239678/m/2024/Dune%3A%20Part%20Two", s, sizeof s) == 1 &&
      strstr(s, "/1280x720.jpg") && appleChamadas == 0, "apple 1280 sai da memoria");
-  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1920/tt1/m/0/X", s, sizeof s) == -1, "apple sem ano: malformada");
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1920/v2/tt1/m/0/X", s, sizeof s) == -1, "apple sem ano: malformada");
+  OK(arte_fonte_resolvida("https://nuvio.invalid/arte/apple/1920/v2/tt15239678/s/2024/Dune%3A%20Part%20Two", s, sizeof s) == 0,
+     "apple cache externo nao confunde tipo");
+  OK(arte_fonte_resolvida("https://nuvio.invalid/arte/apple/1920/v2/tt15239678/m/2019/Dune%3A%20Part%20Two", s, sizeof s) == 0,
+     "apple cache externo nao confunde ano");
+  appleChamadas = 0;
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1920/v2/tt15239678/s/2024/Dune%3A%20Part%20Two", s, sizeof s) == 1 &&
+     appleChamadas == 1 && appleSerie == 1, "apple revalida tipo antes de reutilizar arte");
+  OK(arte_fonte_resolver("https://nuvio.invalid/arte/apple/1920/v2/tt15239678/m/2019/Dune%3A%20Part%20Two", s, sizeof s) == 1 &&
+     appleChamadas == 2 && appleAno == 2019, "apple revalida ano antes de reutilizar arte");
   // fanart.tv: sem chave nao pergunta; com chave, filme pelo tt.
   pedidos = 0;
   OK(arte_fonte_resolver("https://nuvio.invalid/arte/fanart/full/tt0111161/m/278", s, sizeof s) == -1 && pedidos == 0,

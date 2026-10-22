@@ -10,7 +10,7 @@ static int liberar, baixando, maxBaixando, chamadas, listaFim = 1, fonteTs;
 static size_t tamSegmento = TAM_SEG;
 static unsigned sessaoPedido;
 
-char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
+char *rede_baixar_trecho_st(const char *url, int segundos, long long ini, long long fim,
                             long *n, int *st, int *erro, char *final, unsigned nf) {
   const char *lista = "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:120\n"
     "#EXTINF:1,\ns0.ts\n#EXTINF:1,\ns1.ts\n#EXTINF:1,\ns2.ts\n"
@@ -29,6 +29,13 @@ char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
   *n = (long)strlen(corpo); *st = 200; *erro = 0;
   snprintf(final, nf, "%s", url);
   return corpo;
+}
+// So o caminho com cabecalhos do addon (#283) chama; este teste nao usa.
+int rede_url_final_cab(const char *url, int segundos, const char *const *cab,
+                       char *dst, unsigned tam, int *st) {
+  (void)url; (void)segundos; (void)cab; (void)st;
+  if (dst && tam) dst[0] = 0;
+  return 0;
 }
 char *rede_baixar_bin_medido_controle(const char *url, int segundos,
     const char *const *cab, const RedeControle *ctl, long *n, RedeMedida *md) {

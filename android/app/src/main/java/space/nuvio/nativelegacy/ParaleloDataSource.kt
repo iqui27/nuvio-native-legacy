@@ -3,14 +3,18 @@ package space.nuvio.nativelegacy
 import android.net.Uri
 import android.util.Log
 import androidx.media3.common.C
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import java.io.IOException
 import java.io.InputStream
+import java.io.InterruptedIOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Collections
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -30,6 +34,20 @@ import java.util.concurrent.TimeUnit
 // So entra para http(s) que nao seja manifesto/segmento de HLS/DASH (esses ja
 // sao pedacos pequenos) e so se o servidor honrar Range (206 com Content-Range).
 // Senao, devolve o fluxo da conexao unica, como o DefaultHttpDataSource.
+internal class FalhaDownloadParalelo(causa: IOException) : IOException(causa)
+
+/** Nao repete no Loader o ciclo de tentativas que este DataSource ja esgotou. */
+internal class PoliticaErroParalelo : DefaultLoadErrorHandlingPolicy() {
+    override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+        var causa: Throwable? = loadErrorInfo.exception
+        repeat(16) {
+            if (causa is FalhaDownloadParalelo) return C.TIME_UNSET
+            causa = causa?.cause ?: return super.getRetryDelayMsFor(loadErrorInfo)
+        }
+        return super.getRetryDelayMsFor(loadErrorInfo)
+    }
+}
+
 class ParaleloDataSource(
     private val ua: String?,
     private val props: Map<String, String>,
@@ -39,7 +57,26 @@ class ParaleloDataSource(
     // por estas transferencias, nunca a entrega de memoria ao ExoPlayer.
     private val medidor: PassivoMedidor? = null,
     private val token: Long = 0L,
+    // Injetaveis para os testes de falha/cancelamento; producao usa a rede real.
+    private val novaConexao: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
+    private val dormir: (Long) -> Unit = { Thread.sleep(it) },
 ) : BaseDataSource(true) {
+
+    // ESTATISTICAS AO VIVO (src/estatvivo.h, via NvPlayer.nativeStats): o que
+    // ESTAS transferencias contam, por abertura do player (NvPlayer zera). So
+    // contadores atomicos, nenhuma alocacao no caminho do byte.
+    object Estat {
+        val bytes = java.util.concurrent.atomic.AtomicLong()
+        val conexoes = java.util.concurrent.atomic.AtomicInteger()
+        @Volatile var usado = false
+        @Volatile var primeiroByteMs = -1
+        @Volatile var host = ""
+        fun zerar() { bytes.set(0); conexoes.set(0); usado = false; primeiroByteMs = -1; host = "" }
+        fun hostDe(u: URL) {
+            val porta = if (u.port < 0 || u.port == u.defaultPort) "" else ":${u.port}"
+            host = (u.host ?: "").lowercase() + porta
+        }
+    }
 
     companion object {
         private const val TAG = "nuvio-paralelo"
@@ -47,6 +84,7 @@ class ParaleloDataSource(
         const val PEDACO = 4 shl 20           // 4 MB por pedido
         private const val ADIANTE = 3         // pedacos em voo por conexao
         private const val TENTATIVAS = 3
+        private val ESPERA_TENTATIVA_MS = longArrayOf(250L, 750L)
         // O primeiro pedido e menor: a imagem nao espera 4 MB chegarem.
         private const val PRIMEIRO = 1 shl 20
 
@@ -108,9 +146,43 @@ class ParaleloDataSource(
     private var unicaIn: InputStream? = null
     private var unicaOrigem: String? = null
     private var aberto = false
+    @Volatile private var fechado = false
+    // Future.cancel(true) nao interrompe connect/read de HttpURLConnection em
+    // todos os Androids. Guardar as conexoes permite que close() as desconecte.
+    private val ativas = Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<HttpURLConnection, Boolean>())
+
+    private class Cancelamento(causa: Throwable? = null) : InterruptedIOException("cancelado") {
+        init { if (causa != null) initCause(causa) }
+    }
+
+    private fun cancelado(causa: Throwable? = null): InterruptedIOException = Cancelamento(causa)
+
+    private fun foiCancelado(e: IOException): Boolean =
+        fechado || Thread.currentThread().isInterrupted || e is Cancelamento
+
+    private fun conferirCancelamento() {
+        if (fechado || Thread.currentThread().isInterrupted) throw cancelado()
+    }
+
+    private fun desconectar(c: HttpURLConnection?) {
+        if (c == null) return
+        ativas.remove(c)
+        c.disconnect()
+    }
+
+    private fun esperarTentativa(indice: Int) {
+        conferirCancelamento()
+        try { dormir(ESPERA_TENTATIVA_MS[indice.coerceAtMost(ESPERA_TENTATIVA_MS.lastIndex)]) }
+        catch (e: InterruptedException) { Thread.currentThread().interrupt(); throw cancelado(e) }
+        conferirCancelamento()
+    }
 
     private fun conectar1(u: URL, ini: Long, ultimo: Long): HttpURLConnection {
-        val c = u.openConnection() as HttpURLConnection
+        conferirCancelamento()
+        val c = novaConexao(u)
+        ativas.add(c)
+        if (fechado) { desconectar(c); throw cancelado() }
         c.connectTimeout = 15000
         c.readTimeout = 20000
         // Redirecionamento seguido A MAO (conectar): o HttpURLConnection nao
@@ -127,35 +199,69 @@ class ParaleloDataSource(
     private fun conectar(u0: URL, ini: Long, ultimo: Long): HttpURLConnection {
         var u = u0
         repeat(10) {
+            val t0 = android.os.SystemClock.elapsedRealtime()
             val c = conectar1(u, ini, ultimo)
-            val code = c.responseCode
+            val code = try { c.responseCode } catch (e: IOException) {
+                desconectar(c)
+                throw e
+            }
+            if (fechado) { desconectar(c); throw cancelado() }
+            Estat.primeiroByteMs = (android.os.SystemClock.elapsedRealtime() - t0).toInt()
             if (code in 300..399 && code != 304) {
                 val loc = c.getHeaderField("Location")
-                c.disconnect()
+                desconectar(c)
                 if (loc.isNullOrEmpty()) throw IOException("HTTP $code sem Location")
                 u = URL(u, loc)
                 return@repeat
             }
+            Estat.hostDe(c.url)
             return c
         }
         throw IOException("redirecionamentos demais")
+    }
+
+    // A abertura inicial depois de um seek antes nao tinha retry algum. Um
+    // ConnectException escapava daqui e encerrava a fonte, embora os pedacos
+    // posteriores aparentassem ter TENTATIVAS. Mantem o retry no Loader (nao no
+    // fio do player) e curto o bastante para nao esconder uma rota morta.
+    internal fun conectarComRetry(u: URL, ini: Long, ultimo: Long): HttpURLConnection {
+        var erro: IOException? = null
+        repeat(TENTATIVAS) { tentativa ->
+            try { return conectar(u, ini, ultimo) }
+            catch (e: IOException) {
+                erro = e
+                // SocketTimeoutException tambem herda InterruptedIOException:
+                // so a nossa sentinela (ou close/interrupcao real) cancela.
+                if (foiCancelado(e)) throw cancelado(e)
+                if (tentativa + 1 < TENTATIVAS) {
+                    Log.w(TAG, "conexao ${tentativa + 1}/$TENTATIVAS falhou em ${u.host}; tentando de novo")
+                    esperarTentativa(tentativa)
+                }
+            }
+        }
+        throw FalhaDownloadParalelo(erro ?: IOException("conexao falhou"))
     }
 
     override fun open(dataSpec: DataSpec): Long {
         // Conectar, esperar o primeiro byte e baixar o primeiro pedaco e
         // transferencia ativa (o tempo entra na cobertura do segundo).
         medidor?.inicio(token)
-        try { return abrir(dataSpec) } finally { medidor?.fim(token) }
+        Estat.usado = true
+        Estat.conexoes.incrementAndGet()
+        try { return abrir(dataSpec) }
+        catch (e: IOException) { if (foiCancelado(e)) throw cancelado(e) else throw e }
+        finally { Estat.conexoes.decrementAndGet(); medidor?.fim(token) }
     }
 
     private fun abrir(dataSpec: DataSpec): Long {
+        fechado = false
         uri = dataSpec.uri
         transferInitializing(dataSpec)
         Log.i(TAG, "abrindo ${dataSpec.uri.host} a partir de ${dataSpec.position}")
         pos = dataSpec.position
         // Primeiro pedaco pela URL original: segue os redirecionamentos do debrid
         // uma vez so; os pedacos seguintes vao direto ao endereco final.
-        val c = conectar(URL(dataSpec.uri.toString()), pos, pos + PRIMEIRO - 1)
+        val c = conectarComRetry(URL(dataSpec.uri.toString()), pos, pos + PRIMEIRO - 1)
         val code = c.responseCode
         if (code == 206) {
             val cr = c.getHeaderField("Content-Range") ?: ""
@@ -166,12 +272,18 @@ class ParaleloDataSource(
             // Sem Range (ou pequeno demais para valer a pena): conexao unica.
             if (code == 206 || code == 200) {
                 // 206 de um pedaco so: reabre sem teto para o arquivo inteiro.
-                if (code == 206) { c.disconnect(); unicaCon = conectar(URL(dataSpec.uri.toString()), pos, -1) }
+                if (code == 206) { desconectar(c); unicaCon = conectarComRetry(URL(dataSpec.uri.toString()), pos, -1) }
                 else unicaCon = c
                 val uc = unicaCon!!
-                if (uc.responseCode !in 200..299) throw HttpDataSource.InvalidResponseCodeException(
-                    uc.responseCode, uc.responseMessage, null, uc.headerFields, dataSpec, ByteArray(0))
+                if (uc.responseCode !in 200..299) {
+                    val erro = HttpDataSource.InvalidResponseCodeException(
+                        uc.responseCode, uc.responseMessage, null, uc.headerFields, dataSpec, ByteArray(0))
+                    desconectar(uc)
+                    unicaCon = null
+                    throw erro
+                }
                 unicaIn = uc.inputStream
+                Estat.conexoes.incrementAndGet()
                 unicaOrigem = PassivoMedidor.origemDe(uc.url)
                 if (code == 200 && pos > 0) unicaIn!!.skip(pos)   // servidor ignorou Range
                 aberto = true
@@ -182,13 +294,12 @@ class ParaleloDataSource(
             }
             val msg = c.responseMessage
             val hdr = c.headerFields
-            c.disconnect()
+            desconectar(c)
             throw HttpDataSource.InvalidResponseCodeException(code, msg, null, hdr, dataSpec, ByteArray(0))
         }
         urlFinal = c.url
         fim = if (dataSpec.length != C.LENGTH_UNSET.toLong()) minOf(total, pos + dataSpec.length) else total
-        val primeiro = lerTudo(c)
-        c.disconnect()
+        val primeiro = try { lerTudo(c) } finally { desconectar(c) }
         bufIni = pos
         buf = primeiro
         proximoPedido = pos + primeiro.size
@@ -204,12 +315,17 @@ class ParaleloDataSource(
         val esperado = c.contentLengthLong
         val out = java.io.ByteArrayOutputStream(if (esperado > 0) esperado.toInt() else pedaco)
         val origem = PassivoMedidor.origemDe(c.url)
+        conferirCancelamento()
         c.inputStream.use { inp ->
             val tmp = ByteArray(64 * 1024)
             while (true) {
-                val n = inp.read(tmp); if (n < 0) break
+                conferirCancelamento()
+                val n = inp.read(tmp)
+                conferirCancelamento()
+                if (n < 0) break
                 out.write(tmp, 0, n)
                 medidor?.bytes(token, origem, n)
+                Estat.bytes.addAndGet(n.toLong())
             }
         }
         return out.toByteArray()
@@ -230,35 +346,43 @@ class ParaleloDataSource(
     private fun baixar(u: URL, ini: Long, ult: Long): ByteArray {
         var ultimoErro: IOException? = null
         repeat(TENTATIVAS) {
-            if (Thread.currentThread().isInterrupted) throw IOException("cancelado")
+            conferirCancelamento()
             // Uma conexao paralela ativa, do connect ao ultimo byte. As outras
             // somam no mesmo segundo do medidor; nada e contado duas vezes.
             medidor?.inicio(token)
-            val c = try { conectar(u, ini, ult) } catch (e: IOException) { medidor?.fim(token); throw e }
+            Estat.conexoes.incrementAndGet()
+            var c: HttpURLConnection? = null
             try {
+                c = conectar(u, ini, ult)
                 if (c.responseCode != 206) throw IOException("HTTP ${c.responseCode} no pedaco $ini-$ult")
                 val d = lerTudo(c)
                 if (d.size.toLong() != ult - ini + 1) throw IOException("pedaco curto: ${d.size} de ${ult - ini + 1}")
                 return d
             } catch (e: IOException) {
                 ultimoErro = e
+                if (foiCancelado(e)) throw cancelado(e)
             } finally {
-                c.disconnect()
+                desconectar(c)
+                Estat.conexoes.decrementAndGet()
                 medidor?.fim(token)
             }
+            if (it + 1 < TENTATIVAS) esperarTentativa(it)
         }
-        throw ultimoErro ?: IOException("pedaco $ini-$ult falhou")
+        throw FalhaDownloadParalelo(ultimoErro ?: IOException("pedaco $ini-$ult falhou"))
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
+        conferirCancelamento()
         unicaIn?.let { inp ->
             // Conexao unica: so o tempo DENTRO do read e transferencia (um
             // stall bloqueia aqui); o intervalo entre reads e o ExoPlayer
             // parado com o buffer cheio, e nao conta.
             medidor?.inicio(token)
-            val n = try { inp.read(buffer, offset, length) } finally { medidor?.fim(token) }
-            if (n > 0) medidor?.bytes(token, unicaOrigem, n)
+            val n = try { inp.read(buffer, offset, length).also { conferirCancelamento() } }
+                catch (e: IOException) { if (foiCancelado(e)) throw cancelado(e) else throw e }
+                finally { medidor?.fim(token) }
+            if (n > 0) { medidor?.bytes(token, unicaOrigem, n); Estat.bytes.addAndGet(n.toLong()) }
             if (n < 0) return C.RESULT_END_OF_INPUT
             bytesTransferred(n)
             return n
@@ -271,7 +395,9 @@ class ParaleloDataSource(
             b = try { f.get(60, TimeUnit.SECONDS) }
                 catch (e: java.util.concurrent.ExecutionException) { throw (e.cause as? IOException) ?: IOException(e.cause) }
                 catch (e: java.util.concurrent.TimeoutException) { throw IOException("pedaco $pos demorou mais de 60 s") }
-                catch (e: InterruptedException) { Thread.currentThread().interrupt(); throw java.io.InterruptedIOException() }
+                catch (e: InterruptedException) { Thread.currentThread().interrupt(); throw cancelado(e) }
+                catch (e: java.util.concurrent.CancellationException) { throw cancelado(e) }
+            conferirCancelamento()
             buf = b; bufIni = pos
             encher()
         }
@@ -286,15 +412,19 @@ class ParaleloDataSource(
     override fun getUri(): Uri? = uri
 
     override fun close() {
+        fechado = true
         exec?.shutdownNow()
         exec = null
         for (f in pedidos.values) f.cancel(true)
         pedidos.clear()
+        // Interrompe connect/read antigos imediatamente ao buscar outra posicao.
+        for (c in ativas.toList()) desconectar(c)
         buf = null
+        if (unicaIn != null) Estat.conexoes.decrementAndGet()
         try { unicaIn?.close() } catch (_: IOException) {}
         unicaIn = null
         unicaOrigem = null
-        unicaCon?.disconnect()
+        desconectar(unicaCon)
         unicaCon = null
         if (aberto) { aberto = false; transferEnded() }
         uri = null

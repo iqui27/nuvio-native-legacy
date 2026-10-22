@@ -24,9 +24,12 @@
 #include "idioma.h"
 #include "linguas.h"
 #include "mkv.h"
+#include "capmkv.h"
 #include "mkvass.h"
+#include "rede.h"
 #include "faixasmkv.h"
 #include "velocidade.h"
+#include "vazao.h"
 #include <SDL2/SDL.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -44,6 +47,11 @@ static FnAbrir  hAbrir;
 static FnSemArg hParar;
 static FnInt    hPausar, hBuscar, hVolume;
 static FnRet    hJanela;
+typedef void (*FnAspecto)(int, int, int, int, int, int, int, int);
+static FnAspecto hAspecto;
+static int ultRoiX, ultRoiY, ultRoiW, ultRoiH, temRoi;
+static int planoX, planoY, planoW, planoH;
+static int ultLegX, ultLegY, ultLegW, ultLegH;
 static FnPos    hPos;
 typedef void (*FnEscolher)(int tipo, int idx);
 static FnEscolher hEscolher;
@@ -83,6 +91,7 @@ static volatile int durMs, bufferando;
 // e a recusa a esconde pelo resto da execucao.
 static volatile int velPedida = 100, velEnviada = 100, velRecusada;
 static volatile Uint32 bufferDesde;
+static volatile int bufPct;   // o ultimo evento 7 do host (0..100)
 static unsigned sessao;
 // The host reports numeric errors from another thread. Preserve that evidence
 // for the source failure screen without guessing a codec or network cause.
@@ -110,6 +119,21 @@ static volatile int reconErroPend, reconErroCod, reconLinhaRede;
 static int reconAudio = -1, reconLeg = -1;
 static volatile int reconFaixasPend;
 static int reconBuscarMs = -1;
+// #412: relogio congelado com estado Playing, fora de pausa/buffer/seek.
+#define TPK_PRESO_MS 15000u
+static Uint32 progressoEm;
+static double progressoPos;
+static int vigiaAtiva, pausaPedida;
+static atomic_int vigiaReiniciar;
+static atomic_int playerPreso;
+// Ultima consulta de >= 5 s (0 = nenhuma). So vale recente: uma consulta lenta
+// isolada nao pode armar o watchdog numa pausa legitima.
+#define TPK_LENTA_VALE_MS 11000u   // ~2 consultas de 5 s seguidas
+static atomic_uint consultaLentaEm;
+static int reconPausa = -1;
+// Seek enviado sem confirmacao do host: a recuperacao retoma nele.
+static atomic_int buscaAlvoMs = -1;
+static int reconAlvoMs = -1;
 
 // CABECALHO DO MKV (#206). O player do host so da o idioma de cada faixa; o
 // Name ("Forced", "DD 5.1"), a FlagForced e os canais estao nas TrackEntry, e
@@ -125,6 +149,16 @@ static volatile int mkvN, mkvEstado, faixasNovas;
 // sonda pela rede voltou sem TrackEntry nenhuma (nao e MKV).
 static volatile int mkvSondarJa, mkvNaoMkv;
 static unsigned mkvGeracao;
+// AUDIO QUE A TV RECUSA (#313). A Samsung nao toca DTS (2018+) nem TrueHD: o
+// player so lista as faixas que decodifica, entao um MKV so com DTS chega com a
+// lista de audio vazia e o filme roda mudo, sem erro nenhum. O cabecalho do MKV
+// (mkvFx) diz o que o arquivo tem; a lista do player (nAudio) diz o que a TV
+// aceitou. audioNaoSup = 1 so quando TODA faixa de audio do arquivo e de um
+// codec que a TV nao toca E a TV nao listou nenhuma (lista com ao menos uma
+// faixa quer dizer que ha audio saindo: nao se avisa). NAO PROVADO em TV: o que
+// o Player devolve exatamente nesse caso; a linha [audio] do log e a prova.
+static volatile int audioNaoSup, faixasLidas;
+static int audioLogado;
 static int fonteMp4;
 static Uint32 mkvOlhou;
 
@@ -137,6 +171,9 @@ void nv_tpk_video_registrar(FnAbrir abrir, FnSemArg parar, FnInt pausar, FnInt b
 
 __attribute__((visibility("default")))
 void nv_tpk_video_registrar_faixas(FnEscolher escolher) { hEscolher = escolher; }
+
+__attribute__((visibility("default")))
+void nv_tpk_video_registrar_aspecto(FnAspecto janela) { hAspecto = janela; }
 
 void video_escolher_audio(int i);
 
@@ -192,6 +229,8 @@ void nv_tpk_video_faixas_fim(int selAudio, int selLeg) {
   nAudio = nNovasA;
   nNovasA = nNovasL = 0;
   faixasNovas = 1;   // video_bombear reaplica o cabecalho do MKV, se ja lido
+  faixasLidas = 1;
+  audioLogado = 0; audioNaoSup = 0;   // o host rele o audio em 2 s (#165): decide de novo
   printf("[video] faixas: %d audio, %d legenda\n", nAudio, nLeg);
   fflush(stdout);
   // Recarregar de reconexao: as faixas que a pessoa tinha, e nao a preferencia.
@@ -238,11 +277,26 @@ void nv_tpk_video_legenda(const char *texto, int durMs) {
 }
 
 enum { EV_PRONTO = 1, EV_TOCANDO = 2, EV_PAUSADO = 3, EV_FIM = 4, EV_ERRO = 5,
-       EV_TAMANHO = 6, EV_BUFFER = 7, EV_VELOCIDADE = 8 };
+       EV_TAMANHO = 6, EV_BUFFER = 7, EV_VELOCIDADE = 8,
+       EV_PRESO = 9, EV_CONSULTA_LENTA = 10, EV_BUSCOU = 11 };
 
 __attribute__((visibility("default")))
 void nv_tpk_video_evento(int tipo, int a, int b) {
+  if (!ativo) return; // evento tardio depois de sair
+  if ((tipo == EV_TOCANDO && !tocando) || tipo == EV_PAUSADO ||
+      (tipo == EV_BUFFER && bufferando != (a < 100)))
+    atomic_store(&vigiaReiniciar, 1);
   switch (tipo) {
+    case EV_PRESO: { // -1 = ultimo relogio; GetState nao apaga alvo de seek.
+      int vazio = -2;
+      if (a >= 0) atomic_store(&playerPreso, a);
+      else atomic_compare_exchange_strong(&playerPreso, &vazio, -1);
+      break;
+    }
+    case EV_BUSCOU:
+      atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1);
+      break;
+    case EV_CONSULTA_LENTA: atomic_store(&consultaLentaEm, SDL_GetTicks() | 1u); break;
     case EV_PRONTO:  durMs = a; pronto = 1; break;
     case EV_TOCANDO: tocando = 1; bufferando = 0; break;
     case EV_PAUSADO: tocando = 0; break;
@@ -254,6 +308,7 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
                      printf("[video] tpk: player error 0x%08x (%d)\n", (unsigned)a, b); break;
     case EV_TAMANHO: largura = a; altura = b; break;
     case EV_BUFFER:
+      bufPct = a < 0 ? 0 : a > 100 ? 100 : a;
       if (a < 100 && !bufferando) { bufferando = 1; bufferDesde = SDL_GetTicks(); }
       else if (a >= 100) bufferando = 0;
       break;
@@ -326,30 +381,52 @@ int  video_iniciar_auto(void) { return hAbrir != NULL; }
 int  video_registro_negado(void) { return 0; }
 
 static int emTrailer = 0;   // ver video_tpk_trailer_marcar
+static int emCartao = 0;    // ver video_tpk_cartao_marcar
+// #471: o cover do cartao caiu no encaixe nesta sessao (plano maior que o
+// painel, ou o host recusou o ROI). O furo da home segue isto.
+static volatile int cartaoSemCover = 0;
 // Abre urlAtual no host. Serve a fonte nova e ao recarregar da reconexao.
 static int abrirSessao(void) {
+  // video_iniciar() NAO e chamada no .tpk (so video.c, o ramo da LG, a chama;
+  // aqui o trailer usa video_iniciar_auto, que nao a chama), entao a flag do
+  // texto simples ficava em 0 e toda faixa S_TEXT/UTF8 saia do mkvass como
+  // "no-go: faixa nao e ASS" e voltava para a TV (2.0.1: 13 pessoas, 125 logs,
+  // e nenhuma linha "e texto simples"). Ligada a cada sessao, antes de o app
+  // escolher qualquer faixa.
+  mkvass_aceitar_texto(1);
   atomic_store(&temErroDetalhe, 0);
+  vigiaAtiva = 0; buscaAlvoMs = -1;
+  atomic_store(&vigiaReiniciar, 1);
   ativo = 1; pronto = falhou = terminou = tocando = 0;
-  largura = altura = durMs = 0; bufferando = 1; bufferDesde = SDL_GetTicks();
+  largura = altura = durMs = 0; bufferando = 1; bufferDesde = SDL_GetTicks(); bufPct = 0;
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1;
+  audioNaoSup = faixasLidas = audioLogado = 0;
   comecou = 0; comecouEm = 0; audioComecou = 0; audioPend = legPend = -1;
   if (!travaLeg) travaLeg = SDL_CreateMutex();
   legendaLimpar(1);
   legendaMarcarEnvio(-1);
   if (travaLeg) { SDL_LockMutex(travaLeg); legCueSessao = 0; legAbriuEm = SDL_GetTicks(); SDL_UnlockMutex(travaLeg); }
-  emTrailer = 0;
+  emTrailer = emCartao = 0;
+  cartaoSemCover = 0;
+  planoW = planoH = 0;
+  temRoi = 0;
   sessao++;
   velEnviada = 100;   // Player novo no host: nasce em 1x
   if (!hAbrir) { falhou = 1; printf("[video] tpk: host sem player\n"); return 0; }
   hAbrir(urlAtual, cabecalhos);
+  // Depois do hAbrir: o host troca de sessao nele, e um aviso da sessao velha
+  // emitido antes disso nao pode sobrar para matar a nova.
+  atomic_store(&playerPreso, -2); atomic_store(&consultaLentaEm, 0);
   return 1;
 }
 
 int video_tocar(const char *u) {
   snprintf(urlAtual, sizeof urlAtual, "%s", u ? u : "");
+  capmkv_iniciar(urlAtual);
   mkvGeracao++; mkvN = 0; faixasNovas = 0; mkvOlhou = 0; mkvSondarJa = 0; mkvNaoMkv = 0;
   // Um fio da fonte anterior ainda na rede ve a geracao mudada e descarta.
   mkvEstado = urlAtual[0] ? 1 : 0;
+  pausaPedida = 0; reconPausa = -1;
   nv_recon_zerar(&recon);
   reconPermitida = reconProxima; reconProxima = 0;
   reconIniciou = 0; reconErroPend = 0; reconLinhaRede = 0;
@@ -379,7 +456,11 @@ static void guardarMkv(const MkvFaixa *fx, int n) {
 static void *fioMkv(void *arg) {
   PedidoMkv *p = arg;
   MkvFaixa *fx = calloc(MKV_MAX_FAIXAS, sizeof *fx);
-  int n = fx ? mkv_faixas(p->url, fx, MKV_MAX_FAIXAS) : 0;
+  int n;
+  // #385: a sonda e leitura LATERAL ao video. Host que acabou de recusar
+  // conexao (pre-busca da legenda, capitulos) nao recebe outra daqui.
+  rede_lateral(1);
+  n = fx ? mkv_faixas(p->url, fx, MKV_MAX_FAIXAS) : 0;
   if (p->geracao == mkvGeracao) {
     printf("[mkv] sonda pela rede: %d faixa(s)\n", n);
     if (n > 0) guardarMkv(fx, n);
@@ -388,6 +469,45 @@ static void *fioMkv(void *arg) {
   }
   free(fx); free(p);
   return NULL;
+}
+
+// Codec de audio do MKV que a Samsung nao toca (DTS em todas as variantes,
+// TrueHD, MLP). Puro: o teste do Mac chama por video_tpk_codec_recusado.
+int video_tpk_codec_recusado(const char *codecId) {
+  return codecId && (!strncmp(codecId, "A_DTS", 5) || !strncmp(codecId, "A_TRUEHD", 8) ||
+                     !strncmp(codecId, "A_MLP", 5));
+}
+
+// Cruza o arquivo com o que a TV listou. Roda a cada tick ate decidir, e loga
+// uma vez por sessao quando ha codec recusado no arquivo.
+static void avaliarAudioTv(void) {
+  int i, nArq = 0, nRec = 0;
+  char lista[128] = "", recusados[48] = "";
+  if (audioLogado || !faixasLidas || mkvN <= 0) return;
+  for (i = 0; i < mkvN; i++) {
+    const char *nome;
+    if (mkvFx[i].tipo != 2) continue;
+    nArq++;
+    nome = faixasmkv_codec(mkvFx[i].codec);
+    if (!nome[0]) nome = mkvFx[i].codec;
+    if (strlen(lista) + strlen(nome) + 2 < sizeof lista) {
+      if (lista[0]) strcat(lista, ",");
+      strcat(lista, nome);
+    }
+    if (video_tpk_codec_recusado(mkvFx[i].codec)) {
+      nRec++;
+      if (!strstr(recusados, nome) && strlen(recusados) + strlen(nome) + 2 < sizeof recusados) {
+        if (recusados[0]) strcat(recusados, "/");
+        strcat(recusados, nome);
+      }
+    }
+  }
+  audioLogado = 1;
+  if (!nRec) return;
+  printf("[audio] TV recusou %s: faixas da TV=%d, no arquivo=%d [%s]%s\n", recusados, nAudio, nArq, lista,
+         nRec == nArq && nAudio == 0 ? " -> sem audio tocavel" : "");
+  fflush(stdout);
+  if (nRec == nArq && nAudio == 0) audioNaoSup = 1;
 }
 
 // Fio do app. Procura o cabecalho e, quando ha faixas novas, reescreve os
@@ -429,6 +549,7 @@ static void sondaMkv(double pos) {
     // O idioma pode ter chegado so agora: a preferencia de audio vale de novo.
     if (m && !reconFaixasPend) escolherAudioPreferido();
   }
+  avaliarAudioTv();
 }
 
 // A deferred choice leaves once playback has really started. AUDIO leaves on the
@@ -479,6 +600,33 @@ static void escolhasPendentes(void) {
   }
 }
 
+static void recuperarPlayer(int alvoMs) {
+  if (reconErroPend) return; // ja ha recuperacao/erro neste quadro: um hParar so
+  reconAlvoMs = alvoMs >= 0 ? alvoMs : buscaAlvoMs;
+  reconPausa = pausaPedida;
+  reconErroCod = -2; reconErroPend = 1; reconLinhaRede = 1; reconIniciou = 1;
+  tocando = 0; vigiaAtiva = 0;
+  if (hParar) hParar(); // host confirma/libera antes de aceitar outra abertura
+}
+
+static void vigiarPlayer(double pos) {
+  Uint32 agora = SDL_GetTicks(), lentaEm = atomic_load(&consultaLentaEm);
+  int lenta = lentaEm && agora - lentaEm < TPK_LENTA_VALE_MS;
+  if (atomic_exchange(&vigiaReiniciar, 0)) vigiaAtiva = 0;
+  if (!ativo || !reconPermitida || !pronto || ((!tocando || pausaPedida || bufferando) && !lenta) || terminou ||
+      falhou || recon.pendente || reconBuscarMs >= 0) { vigiaAtiva = 0; return; }
+  if (!vigiaAtiva || pos != progressoPos) {
+    if (vigiaAtiva && pos != progressoPos) atomic_store(&consultaLentaEm, 0);
+    vigiaAtiva = 1; progressoPos = pos; progressoEm = agora; return;
+  }
+  if (agora - progressoEm < TPK_PRESO_MS) return;
+  printf("[video] tpk preso: relogio %.3fs sem andar ha %u ms; parar e recuperar\n",
+         pos, (unsigned)(agora - progressoEm));
+  fflush(stdout);
+  // Mesma maquina limitada da reconexao: nao cria um loop paralelo infinito.
+  recuperarPlayer(-1);
+}
+
 void video_bombear(void) {
   escolhasPendentes();
   legendaVigiarSilencio(SDL_GetTicks());
@@ -489,6 +637,10 @@ void video_bombear(void) {
     hEscolher(3, velEnviada);
   }
   double pos = video_pos();
+  int preso = atomic_exchange(&playerPreso, -2);
+  // Ao vivo (sem reconexao) a tecla recusada so e ignorada, como antes do #412.
+  if (preso >= -1 && ativo && reconPermitida && !recon.pendente && !falhou) recuperarPlayer(preso);
+  vigiarPlayer(pos);
   sondaMkv(pos);
   if (pronto && pos > 0.5) reconIniciou = 1;
   if (pronto && reconBuscarMs < 0) nv_recon_progresso(&recon, pos);
@@ -496,16 +648,24 @@ void video_bombear(void) {
   // depois do prepare, e um seek no meio disso concorre com ele.
   if (reconBuscarMs >= 0 && pronto && tocando) {
     if (hBuscar) hBuscar(reconBuscarMs);
+    vigiaAtiva = 0;
     printf("[video] reconexao: retomado em %ds\n", reconBuscarMs / 1000);
     fflush(stdout);
     reconBuscarMs = -1;
+  }
+  if (reconPausa >= 0 && pronto && tocando && reconBuscarMs < 0 && !reconErroPend && !recon.pendente) {
+    if (hPausar) hPausar(reconPausa);
+    reconPausa = -1;
   }
   if (reconErroPend) {
     int antes = recon.tentativa;
     int rede = nv_recon_rede_tpk(reconErroCod, NULL) || reconLinhaRede;
     reconErroPend = 0; reconLinhaRede = 0;
+    int alvoMs = reconAlvoMs;
+    reconAlvoMs = -1;
     if (reconPermitida && urlAtual[0] && (reconIniciou || recon.tentativa) &&
-        nv_recon_erro(&recon, rede, SDL_GetTicks(), pos)) {
+        nv_recon_erro(&recon, rede, SDL_GetTicks(), alvoMs >= 0 ? alvoMs / 1000.0 : pos)) {
+      if (alvoMs >= 0) recon.alvo = alvoMs / 1000.0;
       if (!antes) { reconAudio = audioAtual; reconLeg = legAtual; }
       if (recon.tentativa != antes) {
         printf("[video] conexao caiu (0x%x): tentativa %d/%d, espera %us\n",
@@ -528,22 +688,38 @@ void video_bombear(void) {
   }
 }
 void video_parar(void) {
-  emTrailer = 0;
+  emTrailer = emCartao = 0;
+  cartaoSemCover = 0;
+  planoW = planoH = 0;
+  temRoi = 0;
+  capmkv_zerar();   // fio de capitulos em voo nao alimenta o proximo titulo
   audioPend = legPend = -1; comecou = 0; comecouEm = 0; audioComecou = 0;
   legendaLimpar(1);
   nv_recon_zerar(&recon);
-  reconErroPend = 0; reconFaixasPend = 0; reconBuscarMs = -1;
+  reconErroPend = 0; reconFaixasPend = 0; reconBuscarMs = -1; reconPausa = -1;
+  reconAlvoMs = buscaAlvoMs = -1;
+  atomic_store(&playerPreso, -2); // aviso de antes da saida nao reabre o video
   if (ativo && hParar) hParar();
   ativo = pronto = tocando = 0;
 }
-void video_pausar(int p) { if (hPausar) hPausar(p); }
+void video_pausar(int p) { pausaPedida = p != 0; vigiaAtiva = 0; if (nv_recon_ativa(&recon) && (recon.pendente || reconErroPend || !pronto || reconBuscarMs >= 0)) reconPausa = pausaPedida; else if (hPausar) hPausar(p); }
 int video_pausa_confirmada(void) { return 0; } // host nao fornece ack por sessao
 void video_volume(int pct) { if (hVolume) hVolume(pct); }
 void video_buscar(double s) {
+  if (nv_recon_ativa(&recon)) {
+    recon.alvo = s;
+    if (recon.pendente || reconErroPend || !pronto || reconBuscarMs >= 0) { reconBuscarMs = (int)(s * 1000.0); return; }
+  }
+  progressoEm = SDL_GetTicks(); progressoPos = video_pos(); vigiaAtiva = 1;
+  buscaAlvoMs = (int)(s * 1000.0);
   if (hBuscar) hBuscar((int)(s * 1000.0));
   terminou = 0;
 }
-void video_janela(int x, int y, int w, int h) { if (hJanela) hJanela(x, y, w, h); }
+void video_janela(int x, int y, int w, int h) {
+  planoX=x; planoY=y; planoW=w; planoH=h;
+  temRoi = 0;   // reposicionar invalida o recorte do destino anterior
+  if (hJanela) hJanela(x, y, w, h);
+}
 
 // RECORTE DE FONTE EMULADO PELO RETANGULO DE DESTINO (ROI).
 //
@@ -586,33 +762,109 @@ void video_janela(int x, int y, int w, int h) { if (hJanela) hJanela(x, y, w, h)
 #ifndef NV_TPK_ZOOM_ROI
 #define NV_TPK_ZOOM_ROI 0
 #endif
-// Flag de EXECUCAO (#241): Ajustes > Trailers > "Zoom do trailer (experimental)"
-// deixa cada dono testar na propria TV. Comeca no padrao de compilacao acima.
+// #203: no 4/5 (NV_TPK40) o botao de aspecto do PLAYER ficava sem efeito: sem
+// recorte o ciclo so oferece "Original". O host 4/5 aplica o destino movendo a
+// janela do video (Video.cs JanelaTizen45), que nao e o ROI que apagava o plano
+// no Tizen 9, entao o player libera os modos de recorte la. O trailer segue
+// sem zoom (video_recorte_fonte_trailer) a nao ser que o ajuste esteja ligado.
+#ifdef NV_TPK40
+#define NV_TPK_PLAYER_RECORTE 1
+#else
+#define NV_TPK_PLAYER_RECORTE 0
+#endif
+// Flag de EXECUCAO (#241, #290): Ajustes > Trailers > "Zoom no trailer e no
+// player (experimental)" deixa cada dono testar na propria TV. Comeca no padrao de compilacao acima.
 static int zoomRoi = 0;
 // 1 so enquanto o que toca e um TRAILER (trailer.c marca depois do video_tocar);
-// zerado a cada abertura e em video_parar. O player normal nunca ganha ROI fora da tela.
+// zerado a cada abertura e em video_parar. So informativo desde o #290: com o
+// ajuste ligado o player tambem ganha ROI fora da tela.
 void video_tpk_trailer_marcar(int sim) { emTrailer = sim ? 1 : 0; }
+// #471: o destino atual e o furo do cartao da home (trailer.c, trailer_no_cartao).
+void video_tpk_cartao_marcar(int sim) { emCartao = sim ? 1 : 0; }
 void video_tpk_zoom_roi_definir(int ligado) {
   ligado = ligado ? 1 : 0;
   if (ligado == zoomRoi) return;
   zoomRoi = ligado;
-  printf("[trailer] tpk zoom ROI: %s (setting)\n", ligado ? "on" : "off");
+  printf("[trailer] tpk zoom ROI (trailer + player): %s (setting)\n", ligado ? "on" : "off");
   fflush(stdout);
 }
 int video_tpk_zoom_roi(void) { return zoomRoi; }
 #define TPK_TELA_W 1920   // o host (Program.cs) usa 1920x1080 e o layout tambem
 #define TPK_TELA_H 1080
-static int ultRoiX, ultRoiY, ultRoiW, ultRoiH, temRoi;
 static unsigned roiForaLogado;
 static int roiNaTela(int x, int y, int w, int h) {
   return w > 0 && h > 0 && x >= 0 && y >= 0 && x + w <= TPK_TELA_W && y + h <= TPK_TELA_H;
 }
+// Quadro (largura x altura) inteiro, proporcional, centrado em (x,y,w,h).
+static void encaixar(int x, int y, int w, int h, int *fx, int *fy, int *fw, int *fh) {
+  int ew = w, eh = h;
+  if ((double)w * altura > (double)h * largura) ew = (int)((double)h * largura / altura + 0.5) & ~1;
+  else eh = (int)((double)w * altura / largura + 0.5) & ~1;
+  *fx = x + (w - ew) / 2; *fy = y + (h - eh) / 2; *fw = ew; *fh = eh;
+}
+// Versao da Tizen (gpunivel.c le platform.version); so o maior importa.
+static int tizenMaior;
+void video_tpk_tizen_definir(const char *v) { tizenMaior = v ? atoi(v) : 0; }
+// COVER NO CARTAO (#471): so na Tizen 6.x (a TV do relato, uma AU7000 6.0) ou com
+// o zoom experimental ligado. ROI com origem negativa nunca foi visto no 4/5 (#426)
+// e apaga o plano na Tizen 9 (#188), entao as demais familias ficam no quadro
+// inteiro encaixado. A prova visual do cover nesta TV ainda e do dono.
+static int coverCartao(void) { return tizenMaior == 6 || NV_TPK_ZOOM_ROI || zoomRoi; }
+// O modo EFETIVO: home.c abre o furo e trailer.c espera o recorte por aqui.
+int video_tpk_cartao_cover(void) { return coverCartao() && !cartaoSemCover; }
+void video_tpk_cartao_destino(float x, float y, float w, float h, float *ox, float *oy, float *ow, float *oh) {
+  float fx=x, fy=y, fw=w, fh=h;
+  if (!video_tpk_cartao_cover()) {
+    float asp = (largura > 0 && altura > 0) ? (float)largura / (float)altura : 16.0f / 9.0f;
+    if (w / h > asp) { fw = h * asp; fx = x + (w - fw) * 0.5f; }
+    else             { fh = w / asp; fy = y + (h - fh) * 0.5f; }
+    fx = (float)(int)(fx + 0.5f); fy = (float)(int)(fy + 0.5f);
+    fw = (float)((int)(fw + 0.5f) & ~1); fh = (float)((int)(fh + 0.5f) & ~1);
+  }
+  if (ox) *ox=fx; if (oy) *oy=fy; if (ow) *ow=fw; if (oh) *oh=fh;
+}
+// O furo e a intersecao do plano final com o cartao: cover nunca apaga fora dele.
+void video_tpk_cartao_furo(float x, float y, float w, float h, float *ox, float *oy, float *ow, float *oh) {
+  float fx, fy, fw, fh;
+  if (emTrailer && emCartao && planoW > 0 && planoH > 0) {
+    fx=planoX; fy=planoY; fw=planoW; fh=planoH;
+  } else video_tpk_cartao_destino(x,y,w,h,&fx,&fy,&fw,&fh);
+  float right = fx + fw < x + w ? fx + fw : x + w;
+  float bottom = fy + fh < y + h ? fy + fh : y + h;
+  if (fx < x) fx=x; if (fy < y) fy=y;
+  fw = right > fx ? right - fx : 0; fh = bottom > fy ? bottom - fy : 0;
+  if (ox) *ox=fx; if (oy) *oy=fy; if (ow) *ow=fw; if (oh) *oh=fh;
+}
+static unsigned cartaoLogado;
+static void cartaoModo(const char *modo, const char *porque) {
+  if (cartaoLogado == sessao) return;
+  cartaoLogado = sessao;
+  printf("[trailer] tpk cartao: %s (%s, tizen %d)\n", modo, porque, tizenMaior);
+  fflush(stdout);
+}
+static void cartaoEncaixar(int x, int y, int w, int h, const char *porque) {
+  int fx, fy, fw, fh;
+  encaixar(x, y, w, h, &fx, &fy, &fw, &fh);
+  cartaoModo("letterbox", porque);
+  video_janela(fx, fy, fw, fh);
+}
 void video_janela_fonte(int sx, int sy, int sw, int sh, int dx, int dy, int dw, int dh) {
   double qw = largura, qh = altura, ex, ey;
-  int X, Y, W, H;
+  int X, Y, W, H, lx, ly, lw, lh, cartao;
 
   // Sem as dimensoes do quadro, ou sem recorte de verdade, o destino cru serve.
   if (qw < 2.0 || qh < 2.0 || sw <= 0 || sh <= 0) { temRoi = 0; video_janela(dx, dy, dw, dh); return; }
+  // Trailer do CARTAO: quadro inteiro encaixado (ver video_tpk_cartao_marcar).
+  // Hero, detalhe e tela cheia seguem o caminho de sempre, abaixo.
+  cartao = emTrailer && emCartao;
+  if (cartao && !video_tpk_cartao_cover()) {
+    // A home ja encaixou o destino pelo mesmo retangulo usado no furo.
+    // Encaixar de novo perde pixels por arredondamento e expoe o fundo da TV.
+    cartaoModo("letterbox", cartaoSemCover ? "cover recusado nesta sessao" : "cover sem prova nesta familia");
+    video_janela(dx, dy, dw, dh);
+    return;
+  }
+  if (cartao && sx <= 0 && sy <= 0 && sw >= (int)qw && sh >= (int)qh) { cartaoEncaixar(dx, dy, dw, dh, "quadro inteiro"); return; }
   // Recorte que cobre o quadro inteiro E o caso sem zoom: mesma coisa.
   if (sx <= 0 && sy <= 0 && sw >= (int)qw && sh >= (int)qh) { temRoi = 0; video_janela(dx, dy, dw, dh); return; }
 
@@ -623,11 +875,32 @@ void video_janela_fonte(int sx, int sy, int sw, int sh, int dx, int dy, int dw, 
   X  = (int)(dx - sx * ex + 0.5);
   Y  = (int)(dy - sy * ey + 0.5);
 
+  // O plano maior que o painel (retrato no cartao) nao tem cover possivel.
+  if (cartao && (W > TPK_TELA_W || H > TPK_TELA_H)) { cartaoSemCover = 1; cartaoEncaixar(dx, dy, dw, dh, "cover maior que o painel"); return; }
+
   printf("[video] tpk recorte %d,%d %dx%d de %.0fx%.0f -> roi %d,%d %dx%d\n",
          sx, sy, sw, sh, qw, qh, X, Y, W, H);
   fflush(stdout);
+  if (cartao) cartaoModo("cover", "recorte de fonte");
 
-  if (!NV_TPK_ZOOM_ROI && !(zoomRoi && emTrailer) && !roiNaTela(X, Y, W, H)) {
+  // Preserve the exact 2.0.4 fallback rectangle, including its opt-in gate.
+  lx = X; ly = Y; lw = W; lh = H;
+  if (cartao) encaixar(dx, dy, dw, dh, &lx, &ly, &lw, &lh);   // host sem ROI: encaixe
+  else if (!NV_TPK_ZOOM_ROI && !NV_TPK_PLAYER_RECORTE && !zoomRoi && !roiNaTela(X,Y,W,H)) {
+    lx = dx; ly = dy; lw = dw; lh = dh;
+  }
+  planoX=X; planoY=Y; planoW=W; planoH=H;
+  // New hosts accept B without a diagnostic/experimental flag for the player.
+  // Trailer zoom remains opt-in. Old staged hosts retain the previous gate.
+  if (hAspecto && (!emTrailer || cartao || NV_TPK_ZOOM_ROI || zoomRoi || roiNaTela(X,Y,W,H))) {
+    ultRoiX=X; ultRoiY=Y; ultRoiW=W; ultRoiH=H; temRoi=1;
+    ultLegX=lx; ultLegY=ly; ultLegW=lw; ultLegH=lh;
+    hAspecto(X,Y,W,H,lx,ly,lw,lh);
+    return;
+  }
+
+  // #290: old host / trailer path.
+  if (!cartao && !NV_TPK_ZOOM_ROI && !NV_TPK_PLAYER_RECORTE && !zoomRoi && !roiNaTela(X, Y, W, H)) {
     if (roiForaLogado != sessao) {
       roiForaLogado = sessao;
       printf("[video] tpk: roi fora da tela nao vai ao plano, fica o destino %d,%d %dx%d (sem zoom)\n",
@@ -640,14 +913,23 @@ void video_janela_fonte(int sx, int sy, int sw, int sh, int dx, int dy, int dw, 
   }
 
   ultRoiX = X; ultRoiY = Y; ultRoiW = W; ultRoiH = H; temRoi = 1;
-  video_janela(X, Y, W, H);
+  ultLegX=lx; ultLegY=ly; ultLegW=lw; ultLegH=lh;
+  if (hJanela) hJanela(X, Y, W, H);
 }
-int  video_recorte_fonte(void) { return NV_TPK_ZOOM_ROI; }   // player: nunca o ajuste do trailer
+// #290 ("aspect ratio still doesn't work"): sem recorte o ciclo do player so
+// oferecia modos que cabem na tela, e num 16:9 todos dao o mesmo retangulo. O
+// mesmo ajuste experimental do trailer (desligado por padrao) libera os modos
+// de recorte/zoom no player.
+int  video_recorte_fonte(void) { return hAspecto != NULL || NV_TPK_ZOOM_ROI || NV_TPK_PLAYER_RECORTE || zoomRoi; }
 int  video_recorte_fonte_trailer(void) { return NV_TPK_ZOOM_ROI || zoomRoi; }
 // O host prende o plano em mais de um ponto depois do prepare; um ROI pedido
 // cedo pode ser engolido. trailer.c/player.c repetem o pedido nos primeiros
 // segundos por aqui — reenvia o ultimo ROI calculado, sem recalcular.
-void video_recorte_reaplicar(void) { if (temRoi) video_janela(ultRoiX, ultRoiY, ultRoiW, ultRoiH); }
+void video_recorte_reaplicar(void) {
+  if (!temRoi) return;
+  if (hAspecto) hAspecto(ultRoiX,ultRoiY,ultRoiW,ultRoiH,ultLegX,ultLegY,ultLegW,ultLegH);
+  else if (hJanela) hJanela(ultRoiX,ultRoiY,ultRoiW,ultRoiH);
+}
 const char *video_url_atual(void) { return urlAtual; }
 double video_pos(void) { return (hPos && pronto) ? hPos() / 1000.0 : 0; }
 double video_pos_amostra(Uint64 *t) {
@@ -656,8 +938,16 @@ double video_pos_amostra(Uint64 *t) {
   return p;
 }
 double video_duracao(void) { return durMs / 1000.0; }
-double video_creditos(void) { return 0.0; }
+// Capitulos do MKV lidos por um fio lateral (capmkv.c, 203-capitulos).
+double video_creditos(void) { return capmkv_creditos(video_duracao()); }
 double video_buffer_fim(void) { return 0; }
+// SAMSUNG (.tpk): o host so repassa a PORCENTAGEM do buffering (evento 7);
+// nada de bytes, segundos, conexoes ou quadros. O host e o do link pedido.
+void video_estatisticas(VideoStats *s) {
+  video_stats_vazio(s);
+  if (urlAtual[0]) s->bufferPct = bufPct;
+  vazao_host_publico(urlAtual, s->host, sizeof s->host);
+}
 unsigned video_bufferando_ms(void) {
   // Esperando para reconectar: o watchdog (app.c) nao troca de fonte.
   if (nv_recon_ativa(&recon)) return 0;
@@ -665,12 +955,14 @@ unsigned video_bufferando_ms(void) {
 }
 void video_definir_dv(int dv) { (void)dv; }
 void video_definir_cabecalhos(const char *c) { snprintf(cabecalhos, sizeof cabecalhos, "%s", c ? c : ""); }
+const char *video_cabecalhos(void) { return cabecalhos; }
 void video_definir_mp4(int m) { fonteMp4 = m != 0; }
 int  video_tocando(void) { return tocando; }
 int  video_pronto(void) { return pronto; }
 int  video_ativo(void) { return ativo; }
 int  video_falhou(void) { return falhou; }
-int  video_audio_nao_suportado(void) { return 0; }
+int  video_audio_nao_suportado(void) { return audioNaoSup; }
+int  video_seek_desistiu(void) { return 0; }
 int  video_terminou(void) { return terminou; }
 int  video_conflito_recurso(void) { return conflito; }
 
@@ -692,6 +984,18 @@ void video_tpk_log_host(const char *linha) {
   if (!linha) return;
   // "erro ConnectionFailed" vem logo antes do evento 5 (Video.cs).
   if (!strncmp(linha, "erro ", 5) && nv_recon_rede_tpk(0, linha)) reconLinhaRede = 1;
+  // O player acusa o codec sem lista vazia: mesmo aviso, com a linha de prova.
+  if (!strncmp(linha, "erro NotSupportedAudioCodec", 27)) {
+    printf("[audio] TV recusou o audio da fonte: player acusou NotSupportedAudioCodec (faixas da TV=%d)\n", nAudio);
+    fflush(stdout);
+    audioNaoSup = 1;
+  }
+  // Video.cs: DisplayRoi recusado -> o plano foi para o encaixe (lx..lh).
+  if (!strncmp(linha, "[aspecto] ", 10) && strstr(linha, " DisplayRoi") && emTrailer && emCartao) {
+    cartaoSemCover = 1;
+    if (temRoi) { planoX=ultLegX; planoY=ultLegY; planoW=ultLegW; planoH=ultLegH; }
+    return;
+  }
   if (strstr(linha, "[janela] principal visivel=")) {
     janelaVisivel = strstr(linha, "visivel=True") != NULL;
     return;

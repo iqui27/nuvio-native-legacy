@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Run NvPlayer's actual layout method on JVM doubles, without a TV/emulator.
+"""Run NvPlayer's actual TV/Mobile layout on JVM doubles, without an emulator.
 
-The method is extracted so tests exercise production arithmetic/guards rather
+The methods are extracted so tests exercise production arithmetic/guards rather
 than a second implementation. Doubles count allocation/layout/recreation and
 simulate a layout assignment failure. Android runtime behavior still needs TV
 validation; compileDebugKotlin checks the real SDK types separately.
@@ -13,14 +13,16 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 source = (root / 'android/app/src/main/java/space/nuvio/nativelegacy/NvPlayer.kt').read_text()
-start = source.index('    private fun aplicarJanela() {')
-brace = source.index('{', start)
-depth = 1
-end = brace + 1
-while depth:
-    depth += (source[end] == '{') - (source[end] == '}')
-    end += 1
-method = source[start:end]
+methods = []
+for signature in ('larguraLogica(): Float', 'alturaLogica(): Float', 'aplicarJanela()'):
+    start = source.index(f'    private fun {signature} {{')
+    brace = source.index('{', start)
+    depth = 1
+    end = brace + 1
+    while depth:
+        depth += (source[end] == '{') - (source[end] == '}')
+        end += 1
+    methods.append(source[start:end])
 fixture = r'''
 object Gravity { const val TOP = 48; const val START = 8388611 }
 object Counts { var allocations = 0; var assignments = 0; var recreations = 0 }
@@ -48,6 +50,8 @@ object PlayerFixture {
     var camada: Layer? = Layer(1920, 1080)
     var superficie: Surface? = Surface()
     var jx = 0; var jy = 0; var jw = 1920; var jh = 1080
+    var ultHdr = "none"
+    var interfaceMobile = false
     fun recriarSuperficie(delay: Long) { check(delay == 350L); Counts.recreations++ }
     fun apply() = aplicarJanela()
 METHOD
@@ -83,9 +87,65 @@ fun main() {
     check(lp.leftMargin == 10 && lp.width == 200)
     p.superficie = null; p.apply()
     check(Counts.assignments == 7 && Counts.recreations == 7)
-    println("android_window_layout: repeated requests, resize, replacement, external mutation and retry ok")
+    // HDR/DV (TCL 2160p DV, 11/10): mudanca de TAMANHO nao pode recriar a
+    // superficie. Cada recriacao no HDR obriga o Media3 a soltar a saida do
+    // decoder e religa o DispLink; o aspecto salvo aplicado apos o primeiro
+    // quadro e cada troca manual recriavam ~12 vezes em 30 s, com o fio
+    // principal parado no glClear (pior quadro 6612.7 ms). No HDR a recriacao
+    // fica so nas transicoes de modo (hdrNaSuperficie), fora daqui.
+    p.superficie = Surface(); p.ultHdr = "DolbyVision"
+    val recriacoesHdr = Counts.recreations
+    p.jx = -189; p.jy = -80; p.jw = 2300; p.jh = 1242; p.apply()
+    lp = p.superficie!!.layoutParams as FrameLayout.LayoutParams
+    check(lp.width == 2300 && lp.height == 1242 && lp.leftMargin == -189 && lp.topMargin == -80)
+    check(Counts.assignments == 8 && Counts.recreations == recriacoesHdr)
+    p.jx = 0; p.jy = 21; p.jw = 1920; p.jh = 1037; p.apply()
+    check(Counts.assignments == 9 && Counts.recreations == recriacoesHdr)
+    p.ultHdr = "HDR10"; p.jw = 2083; p.jh = 1125; p.apply()
+    check(Counts.assignments == 10 && Counts.recreations == recriacoesHdr)
+    p.ultHdr = "none"   // SDR continua recriando: a TCL prende a geometria do plano
+    p.jw = 2300; p.apply()
+    check(Counts.assignments == 11 && Counts.recreations == recriacoesHdr + 1)
+    p.ultHdr = ""        // HDR ainda desconhecido: recria como SDR, como sempre
+    p.jw = 1920; p.apply()
+    check(Counts.assignments == 12 && Counts.recreations == recriacoesHdr + 2)
+    // Switch modes on the same layer, then rotate/resize. Fullscreen logical
+    // requests must cover every physical pixel in TV and Mobile alike.
+    for (case in listOf(
+        intArrayOf(2560, 1080, 0, 1920, 1080),
+        intArrayOf(2560, 1080, 1, 2560, 1080),
+        intArrayOf(1080, 2400, 1, 1080, 2400),
+        intArrayOf(1080, 2400, 0, 1920, 1080),
+        intArrayOf(720, 1600, 1, 1080, 2400),
+        intArrayOf(1600, 720, 1, 2400, 1080)
+    )) {
+        p.camada!!.width = case[0]; p.camada!!.height = case[1]
+        p.interfaceMobile = case[2] == 1
+        p.jx = 0; p.jy = 0; p.jw = case[3]; p.jh = case[4]; p.apply()
+        lp = p.superficie!!.layoutParams as FrameLayout.LayoutParams
+        check(lp.leftMargin == 0 && lp.topMargin == 0)
+        check(lp.width == case[0] && lp.height == case[1])
+        val assignments = Counts.assignments
+        val recreations = Counts.recreations
+        p.apply()
+        check(Counts.assignments == assignments && Counts.recreations == recreations)
+    }
+    // Fractional scaling rounds the edges, not width/height independently.
+    p.camada!!.width = 720; p.camada!!.height = 1600
+    p.jx = 101; p.jy = 61; p.jw = 200; p.jh = 100; p.apply()
+    lp = p.superficie!!.layoutParams as FrameLayout.LayoutParams
+    check(lp.leftMargin == 67 && lp.topMargin == 41 && lp.width == 134 && lp.height == 66)
+    // Before layout, Mobile also falls back to the TV canvas and metrics.
+    p.camada!!.width = 0; p.camada!!.height = 0
+    p.jx = 0; p.jy = 0; p.jw = 1920; p.jh = 1080; p.apply()
+    lp = p.superficie!!.layoutParams as FrameLayout.LayoutParams
+    check(lp.leftMargin == 0 && lp.topMargin == 0 && lp.width == 1920 && lp.height == 1080)
+    val assignments = Counts.assignments
+    p.camada = null; p.apply()
+    check(Counts.assignments == assignments)
+    println("android_window_layout: TV/Mobile geometry, mode switch, rotation, rounding, fallback, repeated requests, retry and HDR/DV ok")
 }
-'''.replace('METHOD', method)
+'''.replace('METHOD', '\n\n'.join(methods))
 cache = Path.home() / '.gradle/caches/modules-2/files-2.1'
 def jar(group, artifact, version):
     matches = list((cache / group / artifact / version).glob('*/*.jar'))

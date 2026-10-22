@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // ATIVIDADE DE REPRODUCAO PARA O SERVICO SOCIAL — o lado do app de
 // POST /v1/atividade (servidor/recomendacoes/, dono: outro modulo).
 //
@@ -6,8 +7,11 @@
 //   progresso a cada 5 min TOCANDO (pausado nao conta), e na parada entre
 //             20% e o fim
 //   fim       passou de 90% ou entrou nos creditos (player_regra_concluiu)
-//   abandono  parou antes de 20%. "Nao voltou em 7 dias" e decisao do
-//             SERVIDOR: daqui so sai a parada com o pct.
+//   (parada)  SAIR DO PLAYER antes do fim NAO E MAIS EVENTO DE FEED (dono,
+//             06/10/2026: "muito sujo"). Sai um "progresso" com parou=1, que
+//             o servidor usa so para fechar o "assistindo agora" e somar o
+//             tempo — nao vira linha de atividade. O antigo "abandono" (parada
+//             abaixo de 20%) nao sai mais deste cliente.
 //   salvo     o "+" salvou em qualquer destino (Nuvio, Trakt, Simkl)
 //   reacao    Gostei / Mais ou menos / Nao gostei (reacao.c)
 // `seg` e o que foi ASSISTIDO (tocando) desde o evento anterior do mesmo
@@ -35,7 +39,6 @@
 
 #define ATIV_FILA_MAX     32
 #define ATIV_PROGRESSO_S  300.0    // 5 min tocando entre dois "progresso"
-#define ATIV_ABANDONO_PCT 20       // parada abaixo disto e "abandono"
 #define ATIV_FIM_PCT      90       // a partir disto e "fim", com ou sem creditos
 
 typedef struct {
@@ -43,12 +46,13 @@ typedef struct {
   char imdb[24];        // sempre "tt..." puro, sem ":T:E"
   char midia[8];        // "movie" | "series"
   char titulo[160];
-  char poster[512];
+  char poster[NV_ARTE_URL_MAX];
   int  temporada, episodio;   // 0 em filme
   int  pct;             // 0..100
   int  seg;             // segundos assistidos neste trecho
   int  reacao;          // 1 | 0 | -1, so em ev=reacao
   long long rec;        // id da recomendacao de origem, 0 = nenhuma
+  int  parou;           // so "progresso": 1 = a pessoa saiu do player (fecha o "agora")
 } AtivEvento;
 
 // --- inicializacao e privacidade --------------------------------------------
@@ -69,8 +73,8 @@ int  atividade_envia(void);
 void atividade_player_passo(const CatItem *ci, int temporada, int episodio,
                             double posSeg, double durSeg, int tocando,
                             int concluiu, float dt);
-// Na saida do player (fecharSessao). Fecha o trecho: fim, abandono ou
-// progresso, conforme o pct. Sem `inicio` antes, nao manda nada.
+// Na saida do player (fecharSessao). Fecha o trecho: fim (pelo pct ou pelos
+// creditos) ou a parada (progresso com parou=1). Sem `inicio` antes, nada.
 void atividade_player_saiu(double posSeg, double durSeg, int concluiu);
 
 // --- outros ganchos ---------------------------------------------------------

@@ -1,5 +1,9 @@
 #include "rede.h"
+#ifdef NV_ANDROID
+#include "android.h"
+#endif
 #include "negcache.h"
+#include "addonurl.h"
 #include "negcache.inc"
 #include <pthread.h>
 #include <stdint.h>
@@ -132,6 +136,7 @@ typedef struct {
   UsoHost usoHost[REDE_HOSTS_POR_FIO];
   long teto;
   int restoRecusado;
+  int lateral;
   char erroTxt[200];
   char erroBuf[256];
 } RedeFio;
@@ -165,6 +170,7 @@ long *rede_teto_ptr(void) { return &redeFio()->teto; }
 #define redeParcialOk     (redeFio()->parcialOk)
 #define usoHost           (redeFio()->usoHost)
 #define redeRestoRecusado (redeFio()->restoRecusado)
+#define redeLateral       (redeFio()->lateral)
 #else
 /* Controle local da requisicao corrente. O estado nunca e compartilhado
  * entre sondagens: cada fio recebe seu teto e seu cancel token. */
@@ -173,6 +179,8 @@ static _Thread_local volatile int *redeCancelLocal;
 static _Thread_local int redeLimitouLocal;
 static _Thread_local int redeCancelouLocal;
 static _Thread_local long redeBytesLocal;
+// 1 = este fio e leitura lateral ao video (rede_lateral, #385).
+static _Thread_local int redeLateral;
 #endif
 static unsigned long redeAgoraMs(void);
 
@@ -287,10 +295,54 @@ static _Thread_local unsigned redeFinalTam;
 
 void rede_preparar(void) { }   // nao ha biblioteca para carregar
 unsigned rede_pedido_capacidades(void) { return 0; }
+// WGT: somente GET publico sem redirects, em fluxo; nunca usa responseText.
+EM_JS_DEPS(nv_fluxo_deps, "$wasmTable");
+EM_ASYNC_JS(int, nv_http_fluxo, (const char *url, unsigned prazo, unsigned teto,
+                                int callback, void *usuario, int *status, unsigned *total), {
+  if (typeof ReadableStream === 'undefined' || typeof AbortController === 'undefined') return 2;
+  var controle = new AbortController(), expirou = false, bloco = _malloc(16384);
+  if (!bloco) return 3;
+  var timer = setTimeout(function() { expirou = true; controle.abort(); }, prazo);
+  try {
+    var resposta = await fetch(UTF8ToString(url), {
+      redirect: 'error', credentials: 'omit', signal: controle.signal
+    });
+    HEAP32[status >> 2] = resposta.status;
+    if (!resposta.body || !resposta.body.getReader) return 2;
+    var leitor = resposta.body.getReader(), n = 0;
+    while (true) {
+      var parte = await leitor.read();
+      if (parte.done) break;
+      if (parte.value.length > teto - n) return 8;
+      n += parte.value.length; HEAPU32[total >> 2] = n;
+      if (resposta.status >= 200 && resposta.status < 300) {
+        for (var i = 0; i < parte.value.length; i += 16384) {
+          var pedaco = parte.value.subarray(i, i + 16384);
+          HEAPU8.set(pedaco, bloco);
+          if (!wasmTable.get(callback)(bloco, pedaco.length, usuario)) return 4;
+        }
+      }
+    }
+    return 0;
+  } catch (e) { return expirou ? 5 : 4; }
+  finally { clearTimeout(timer); controle.abort(); _free(bloco); }
+});
 int rede_pedir(const RedePedido *p, RedeResposta *r) {
-  (void)p;
   if (!r) return 0;
   memset(r, 0, sizeof *r);
+  // Os demais pedidos continuam indisponiveis: o XHR nao cumpre o contrato.
+  if (p && p->receber_corpo && p->url && !strncmp(p->url,"https://",8) &&
+      (!p->metodo || !strcmp(p->metodo,"GET")) && !p->seguir && !p->cabecalhos &&
+      !p->corpo && !p->n_corpo && !p->job && !p->parar && !p->intervalo &&
+      !p->janela_corpo_ms && !p->ca_arquivo && !p->tls_pessoal &&
+      !p->max_cabecalhos && p->prazo_ms<=300000 && p->max_bytes<=REDE_CORPO_MAXIMO) {
+    unsigned total=0;
+    r->erro=nv_http_fluxo(p->url,p->prazo_ms?p->prazo_ms:15000,
+        p->max_bytes?p->max_bytes:REDE_CORPO_PADRAO,
+        (int)p->receber_corpo,p->corpo_usuario,&r->status,&total);
+    r->n_corpo=total;
+    return r->erro==REDE_OK;
+  }
   r->erro = REDE_INDISPONIVEL;
   return 0; /* nenhum XHR: nao prometer teto, timeout ou cancel inexistentes */
 }
@@ -435,7 +487,7 @@ char *rede_baixar_st_retry(const char *url, int segundos, const char *const *cab
 // UM pedido de Range (o laco em pedacos e rede_baixar_trecho_st, no fim do
 // arquivo). XHR nao entrega corpo cortado: uma conexao que fecha antes do
 // Content-Length e erro de rede e o corpo some — aqui nunca ha "parcial".
-static char *trechoUmaVez(const char *url, int segundos, long ini, long fim,
+static char *trechoUmaVez(const char *url, int segundos, long long ini, long long fim,
                           long *tam, int *status, int *erro,
                           char *final, unsigned tamFinal) {
   char faixa[80];
@@ -445,9 +497,9 @@ static char *trechoUmaVez(const char *url, int segundos, long ini, long fim,
   (void)segundos;
   if (erro) *erro = 0;
   if (final && tamFinal) final[0] = 0;
-  snprintf(faixa, sizeof faixa, "Range: bytes=%ld-%ld", ini, fim);
+  snprintf(faixa, sizeof faixa, "Range: bytes=%lld-%lld", ini, fim);
   cab[0] = faixa; cab[1] = NULL;
-  rede_teto = fim - ini + 1;
+  rede_teto = (long)(fim - ini + 1);
   redeFinalDst = final; redeFinalTam = final ? tamFinal : 0;
   r = pedir("GET", url, cab, NULL, NULL, tam, &st);
   redeFinalDst = NULL; redeFinalTam = 0;
@@ -483,8 +535,8 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
   return r;
 }
 
-char *rede_postar_st(const char *url, int segundos, const char *const *cab,
-                     const char *corpo, int *status) {
+static char *escrever_st(const char *metodo, const char *url, int segundos,
+                         const char *const *cab, const char *corpo, int *status) {
   int temCt = 0, k;
   char *r;
   (void)segundos;
@@ -492,12 +544,21 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
   // (Real-Debrid quer form-urlencoded) nao recebe um segundo.
   for (k = 0; cab && cab[k]; k++)
     if (!strncasecmp(cab[k], "Content-Type:", 13)) temCt = 1;
-  r = pedir("POST", url, cab, temCt ? NULL : "Content-Type: application/json",
+  r = pedir(metodo, url, cab, temCt ? NULL : "Content-Type: application/json",
             corpo ? corpo : "", NULL, status);
   // Falha de TRANSPORTE continua sendo NULL; corpo de 4xx e devolvido. Um POST
   // que respondeu com corpo vazio devolve "" e nao NULL, como no outro caminho.
   if (!r && status && *status > 0) return strdup("");
   return r;
+}
+
+char *rede_postar_st(const char *url, int segundos, const char *const *cab,
+                     const char *corpo, int *status) {
+  return escrever_st("POST", url, segundos, cab, corpo, status);
+}
+char *rede_putar_st(const char *url, int segundos, const char *const *cab,
+                    const char *corpo, int *status) {
+  return escrever_st("PUT", url, segundos, cab, corpo, status);
 }
 
 void rede_discord_ca(const char *caminho) { (void)caminho; }
@@ -513,7 +574,7 @@ char *rede_postar_seguro_st(const char *url, int segundos, const char *const *ca
 // Sonda sem corpo atravessando a ponte. O XHR ainda recebe o corpo inteiro se
 // o servidor ignorar Range, mas nao aloca essa copia no heap do WASM.
 EM_JS(int, nv_url_sonda, (const char *url, const char *cabs, char *dst,
-                         int tam, int *status), {
+                         int tam, int *status, char *mime, int mimeTam, long *corpo), {
   var xhr = new XMLHttpRequest();
   if (status) HEAP32[status >> 2] = 0;
   try {
@@ -527,6 +588,16 @@ EM_JS(int, nv_url_sonda, (const char *url, const char *cabs, char *dst,
     xhr.send(null);
   } catch (e) { return 0; }
   if (status) HEAP32[status >> 2] = xhr.status;
+  if (mime && mimeTam > 0) {
+    var ct = (xhr.getResponseHeader("Content-Type") || "").split(";")[0].trim().toLowerCase();
+    stringToUTF8(ct, mime, mimeTam);
+  }
+  if (corpo) {
+    // Pelo Content-Length, sem ler o corpo (nao copia midia para o JS).
+    var cl = xhr.getResponseHeader("Content-Length");
+    var len = (xhr.status === 200 && cl !== null && /^\d+$/.test(cl.trim())) ? parseInt(cl, 10) : -1;
+    HEAP32[corpo >> 2] = len > 64 ? -1 : len;
+  }
   var finalUrl = xhr.responseURL || "";
   var bytes = 0;
   for (var k = 0; k < finalUrl.length; k++) {
@@ -541,10 +612,19 @@ EM_JS(int, nv_url_sonda, (const char *url, const char *cabs, char *dst,
 
 int rede_url_final_cab(const char *url, int segundos, const char *const *cab,
                        char *dst, unsigned tam, int *status) {
+  return rede_url_final_tipo(url, segundos, cab, dst, tam, status, NULL, 0, NULL);
+}
+
+int rede_url_final_tipo(const char *url, int segundos, const char *const *cab,
+                        char *dst, unsigned tam, int *status,
+                        char *mime, unsigned mimeTam, long *corpo) {
   char *cabs;
   int ok, http = 0;
+  long c32 = -1;
   (void)segundos;
   if (status) *status = 0;
+  if (mime && mimeTam) mime[0] = 0;
+  if (corpo) *corpo = -1;
   if (dst && tam) dst[0] = 0;
   if (!url || !*url || !dst || !tam || tam > INT_MAX) return 0;
   // Um pedaco minusculo em vez de HEAD, pelo mesmo motivo do outro caminho:
@@ -552,8 +632,10 @@ int rede_url_final_cab(const char *url, int segundos, const char *const *cab,
   // mas honram Range.
   cabs = juntarCabs(cab, NULL);
   if (cab && cab[0] && !cabs) return 0;
-  ok = nv_url_sonda(url, cabs, dst, (int)tam, &http);
+  ok = nv_url_sonda(url, cabs, dst, (int)tam, &http, mime,
+                    mime && mimeTam < INT_MAX ? (int)mimeTam : 0, &c32);
   free(cabs);
+  if (corpo) *corpo = c32;
   if (status) *status = http;
   return ok;
 }
@@ -660,6 +742,12 @@ int rede_medir_vazao(const char *url, const char *const *cab, int segundos,
   return nSeg;
 }
 
+// Aquecer conexao: o navegador gerencia as dele, nao ha o que abrir daqui.
+int rede_aquecer_lote(const char *const *origens, int n, unsigned *ms) {
+  (void)origens; (void)n; (void)ms;
+  return 0;
+}
+
 // Navegador nao abre socket. O websocket do Tizen web usa o WebSocket do
 // proprio navegador (discordws.c); estes existem para o modulo linkar.
 RedeTls *rede_tls_abrir(const char *url, int segundos) { (void)url; (void)segundos; return NULL; }
@@ -724,6 +812,10 @@ static _Thread_local int redeParcialOk;
 #define INFO_RESPONSE_CODE   2097154
 // CURLINFO_TOTAL_TIME = CURLINFO_DOUBLE (0x300000) + 3: segundos do pedido.
 #define INFO_TEMPO_TOTAL     3145731
+// CURLINFO_NAMELOOKUP/CONNECT/APPCONNECT_TIME = CURLINFO_DOUBLE + 4/5/33.
+#define INFO_TEMPO_DNS       3145732
+#define INFO_TEMPO_TCP       3145733
+#define INFO_TEMPO_TLS       3145761
 // Cabecalhos de RESPOSTA. So rede_baixar_etag os pede; ver a nota la.
 #define OPT_HEADERFUNCTION  20079
 #define OPT_HEADERDATA      10029
@@ -764,7 +856,48 @@ static void (*avisoHost)(const char *url, int codigo, int http, unsigned ms);
 void rede_avisar_host(void (*f)(const char *url, int codigo, int http, unsigned ms)) { avisoHost = f; }
 
 static void *(*curl_init)(void);
-static int   (*curl_setopt)(void *, int, ...);
+static int   (*curl_setopt_f)(void *, int, ...);
+// #203: o OPT_URL passa por aqui para um APELIDO de addon com URL grande
+// (addonurl.h) voltar a ser a URL inteira. O curl copia a string no setopt,
+// entao a expandida e liberada logo depois. Macro, e nao funcao variadica:
+// cada ramo recebe o valor com o tipo que ja tinha.
+// #416/#419: um alias oficial, ligado para todos os fios so apos responder.
+static int tmdbAlternativo;
+static char *tmdbUrl(const char *url) {
+  const char *h, *fim;
+  char *nova;
+  size_t prefixo;
+  if (!url || strncasecmp(url, "https://", 8)) return NULL;
+  h = url + 8;
+  fim = h + strcspn(h, "/?#");
+  // So o host exato; preserva esquema, porta, caminho e query byte a byte.
+  if (strncasecmp(h, "api.themoviedb.org", 18) ||
+      (h + 18 != fim && (h[18] != ':' || h + 19 == fim ||
+       h + 19 + strspn(h + 19, "0123456789") != fim))) return NULL;
+  prefixo = (size_t)(h - url);
+  nova = malloc(strlen(url) + 1);
+  if (!nova) return NULL;
+  memcpy(nova, url, prefixo);
+  strcpy(nova + prefixo, "api.tmdb.org");
+  strcat(nova, h + 18);
+  return nova;
+}
+static void tmdbLigou(void) {
+  if (!__atomic_exchange_n(&tmdbAlternativo, 1, __ATOMIC_ACQ_REL)) {
+    printf("[rede] api.themoviedb.org bloqueado aqui; usando api.tmdb.org\n");
+    fflush(stdout);
+  }
+}
+static int urlSetopt(void *c, const char *url) {
+  char *grande = nv_longa_expandir(url);
+  char *alias = __atomic_load_n(&tmdbAlternativo, __ATOMIC_ACQUIRE) ?
+                tmdbUrl(grande ? grande : url) : NULL;
+  int r = curl_setopt_f(c, 10002 /* OPT_URL */, alias ? alias : grande ? grande : url);
+  free(alias); free(grande);
+  return r;
+}
+#define curl_setopt(c, op, v) ((op) == 10002 ? urlSetopt((c), (const char *)(uintptr_t)(v)) \
+                                              : curl_setopt_f((c), (op), (v)))
 static int   (*curl_perform)(void *);
 static void  (*curl_cleanup)(void *);
 static int   (*curl_global)(long);
@@ -773,6 +906,33 @@ static void  (*slist_free)(void *);
 static int   (*curl_getinfo)(void *, int, ...);
 static void  (*curl_reset)(void *);
 static time_t (*curl_getdate_fn)(const char *, const time_t *);
+
+// Chamado depois da repeticao existente do GET, diretamente nos demais caminhos.
+// So falha de TRANSPORTE que falhou RAPIDO: conexao recusada (7), aperto de mao
+// TLS que nao fechou (35), resposta vazia (52) e recepcao que caiu (56). O curl
+// 28 (timeout) NAO entra: ele so acontece quando o prazo do pedido ja foi
+// gasto inteiro, e a tentativa no alias dobraria a espera maxima de quem
+// chamou — o mesmo principio de valeRepetir logo abaixo ("o que ja custou o
+// prazo inteiro nao repete").
+static int tmdbFallback(void *c, int r, const char *pedido) {
+  char *url = NULL, *alias, *origem;
+  long http = 0;
+  if (!(r == 35 || r == 7 || r == 56 || r == 52) ||
+      redeCancelouLocal || !curl_getinfo) return r;
+  // Um redirect de outro host ao TMDB nao autoriza reenviar seus cabecalhos.
+  origem = tmdbUrl(pedido);
+  if (!origem) return r;
+  free(origem);
+  if (curl_getinfo(c, INFO_RESPONSE_CODE, &http) || http ||
+      curl_getinfo(c, INFO_URL_FINAL, &url) || !(alias = tmdbUrl(url))) return r;
+  if (!curl_setopt_f(c, OPT_URL, alias)) {
+    r = curl_perform(c); /* uma unica tentativa, sem recursao */
+    if (!r) tmdbLigou();
+  }
+  free(alias);
+  return r;
+}
+static int performTmdb(void *c, const char *url) { return tmdbFallback(c, curl_perform(c), url); }
 
 static int retrySegundos(const char *s, size_t n) {
   char b[128], *fim;
@@ -868,10 +1028,18 @@ static void hostDaUrl(const char *u, char *h, size_t n) {
   h[0] = 0;
   if (!p || n == 0) return;
   p += 3;
-  k = (size_t)(p - u) + strcspn(p, "/?#");
-  if (k >= n) k = n - 1;
-  memcpy(h, u, k);
-  h[k] = 0;
+  // Userinfo (`usuario:senha@`) NUNCA vai para o log nem para a chave de host:
+  // addons IPTV carregam credencial ali. Guarda esquema + host(+porta).
+  { const char *fim = p + strcspn(p, "/?#"), *q, *at = NULL;
+    size_t e = (size_t)(p - u);
+    for (q = p; q < fim; q++) if (*q == '@') at = q;
+    if (at) p = at + 1;
+    k = (size_t)(fim - p);
+    if (e + k >= n) { if (e >= n) e = n - 1; k = n - 1 - e; }
+    memcpy(h, u, e);
+    memcpy(h + e, p, k);
+    h[e + k] = 0;
+  }
 }
 static void hostsEsquecer(void) { memset(usoHost, 0, sizeof usoHost); }
 static void hostUsado(const char *url, unsigned long agora) {
@@ -900,11 +1068,67 @@ static int hostOcioso(const char *url, unsigned long agora) {
   return 0;
 }
 
+// HANDLES AQUECIDOS (2.0.2). O handle e do FIO, e o fio que confere a fonte
+// nasce a cada escolha: uma conexao aberta antes por outro fio morreria com ele.
+// rede_aquecer_lote abre DNS + TCP + TLS dos hosts que vem a seguir e ESTACIONA o
+// handle aqui; o primeiro fio que pedir um destes hosts sem ter handle proprio o
+// adota (curl_easy_reset preserva as conexoes). So adota dentro de
+// REDE_ESTAC_VALE_MS: conexao parada demais pode ter morrido sem aviso (ver
+// REDE_OCIOSO_PADRAO_MS acima), e ai o pedido esperaria o prazo inteiro.
+#define REDE_ESTAC_MAX 3
+#define REDE_ESTAC_HOSTS 6
+#define REDE_ESTAC_VALE_MS 15000UL
+typedef struct { void *c; unsigned long ms; int nh; char h[REDE_ESTAC_HOSTS][96]; } Estac;
+static Estac estac[REDE_ESTAC_MAX];
+static pthread_mutex_t estacTrava = PTHREAD_MUTEX_INITIALIZER;
+// Chamar com estacTrava: joga fora os que passaram da validade.
+static void estacVelhos(unsigned long agora) {
+  int i;
+  for (i = 0; i < REDE_ESTAC_MAX; i++)
+    if (estac[i].c && agora - estac[i].ms > REDE_ESTAC_VALE_MS) {
+      if (curl_cleanup) curl_cleanup(estac[i].c);
+      estac[i].c = NULL;
+    }
+}
+static void estacionar(void *c, char h[][96], int nh) {
+  unsigned long agora = redeAgoraMs();
+  int i, livre = -1, velho = 0;
+  pthread_mutex_lock(&estacTrava);
+  estacVelhos(agora);
+  for (i = 0; i < REDE_ESTAC_MAX; i++) {
+    if (!estac[i].c) { livre = i; break; }
+    if (estac[i].ms < estac[velho].ms) velho = i;
+  }
+  if (livre < 0) { livre = velho; if (curl_cleanup) curl_cleanup(estac[livre].c); }
+  estac[livre].c = c; estac[livre].ms = agora; estac[livre].nh = nh;
+  for (i = 0; i < nh && i < REDE_ESTAC_HOSTS; i++) snprintf(estac[livre].h[i], 96, "%s", h[i]);
+  pthread_mutex_unlock(&estacTrava);
+}
+static void *estacTomar(const char *url) {
+  char h[96];
+  unsigned long agora = redeAgoraMs();
+  void *c = NULL;
+  int i, k;
+  hostDaUrl(url, h, sizeof h);
+  if (!h[0]) return NULL;
+  pthread_mutex_lock(&estacTrava);
+  estacVelhos(agora);
+  for (i = 0; i < REDE_ESTAC_MAX && !c; i++)
+    for (k = 0; estac[i].c && k < estac[i].nh; k++)
+      if (!strcmp(estac[i].h[k], h)) { c = estac[i].c; estac[i].c = NULL; break; }
+  pthread_mutex_unlock(&estacTrava);
+  return c;
+}
+
 static void *pegarHandle(const char *url) {
   void *c;
   if (!curl_reset) return curl_init();     // libcurl sem reset: como antes
   pthread_once(&handleUma, handleCriarChave);
   c = pthread_getspecific(handleChave);
+  if (!c) {
+    c = estacTomar(url);
+    if (c) pthread_setspecific(handleChave, c);
+  }
   if (c && hostOcioso(url, redeAgoraMs())) {
     curl_cleanup(c);
     pthread_setspecific(handleChave, NULL);
@@ -938,6 +1162,25 @@ static void soltarHandleR(void *c, int r, const char *url) {
     if (curl_getinfo) { curl_getinfo(c, INFO_RESPONSE_CODE, &http); curl_getinfo(c, INFO_TEMPO_TOTAL, &seg); }
     avisoHost(url, r, (int)http, seg > 0 ? (unsigned)(seg * 1000.0 + 0.5) : 0u);
   }
+#ifdef NV_ANDROID
+  // #266/#332: tempos dos primeiros pedidos e de toda falha — DNS, TCP e TLS
+  // separados (CURLINFO_*_TIME, acumulados desde o inicio). So o host vai ao log.
+  { static int vistos;
+    int n = __atomic_add_fetch(&vistos, 1, __ATOMIC_RELAXED);
+    if ((n <= 6 || r != 0) && curl_getinfo) {
+      double dns = 0, tcp = 0, tls = 0, tot = 0;
+      long http = 0, novas = -1;
+      char h[96];
+      curl_getinfo(c, INFO_TEMPO_DNS, &dns); curl_getinfo(c, INFO_TEMPO_TCP, &tcp);
+      curl_getinfo(c, INFO_TEMPO_TLS, &tls); curl_getinfo(c, INFO_TEMPO_TOTAL, &tot);
+      curl_getinfo(c, INFO_RESPONSE_CODE, &http); curl_getinfo(c, INFO_NUM_CONNECTS, &novas);
+      hostDaUrl(url, h, sizeof h);
+      printf("[rede] tempo #%d %s curl=%d http=%ld dns=%.0f tcp=%.0f tls=%.0f total=%.0f ms conexoes_novas=%ld\n",
+             n, h[0] ? h : "?", r, http, dns * 1000, tcp * 1000, tls * 1000, tot * 1000, novas);
+      fflush(stdout);
+    }
+  }
+#endif
   if (!curl_reset) { curl_cleanup(c); return; }
   if (r != 0) {
     curl_cleanup(c);
@@ -1227,7 +1470,39 @@ static void prepararOpenSSL(void) {
   fflush(stdout);
 }
 
-static int abrir(void) {
+#ifdef NV_ANDROID
+#include <fcntl.h>
+#include <poll.h>
+#include <unistd.h>
+#include <sys/utsname.h>
+// #266/#332: o curl_global_init da libcurl do APK semeia o PSA e o CTR-DRBG do
+// mbedTLS. Ate a 266.1 a semente vinha de /dev/random (o mbedTLS so usa
+// getrandom com glibc), que BLOQUEIA em kernel < 5.6 com pouca entropia
+// estimada. A deps.sh agora aponta para /dev/urandom; esta linha diz, no log, o
+// kernel e se /dev/random estava travado naquela hora — prova ou derruba a tese.
+static void entropiaLog(void) {
+  struct utsname u;
+  char ea[32] = "?";
+  const char *rnd = "?";
+  FILE *f = fopen("/proc/sys/kernel/random/entropy_avail", "r");
+  int fd;
+  if (f) { if (!fgets(ea, sizeof ea, f)) snprintf(ea, sizeof ea, "?"); fclose(f); }
+  ea[strcspn(ea, "\r\n")] = 0;
+  fd = open("/dev/random", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+  if (fd >= 0) {
+    struct pollfd p = { fd, POLLIN, 0 };
+    int r = poll(&p, 1, 0);
+    rnd = r > 0 && (p.revents & POLLIN) ? "legivel" : r == 0 ? "BLOQUEARIA" : "erro";
+    close(fd);
+  } else rnd = "sem-acesso";
+  if (uname(&u) != 0) snprintf(u.release, sizeof u.release, "?");
+  printf("[rede] kernel=%s entropy_avail=%s /dev/random=%s\n",
+         u.release, ea, rnd);
+  fflush(stdout);
+}
+#endif
+
+static int abrirReal(void) {
   void *h;
   int r = __atomic_load_n(&pronto, __ATOMIC_ACQUIRE);
   // Acquire publica tambem os ponteiros dlsym e o global_init para os outros
@@ -1256,7 +1531,14 @@ static int abrir(void) {
 #ifdef NV_ANDROID
   // Android: o sistema nao oferece libcurl a apps; ela vai no APK (jniLibs) com
   // o nome "libcurl.so", e o dlopen por nome acha na pasta nativa do app.
-  h = dlopen("libcurl.so", RTLD_NOW);
+  printf("[rede] dlopen libcurl.so\n"); fflush(stdout);
+  { unsigned long t0 = redeAgoraMs();
+    const char *e;
+    h = dlopen("libcurl.so", RTLD_NOW);
+    e = h ? "" : dlerror();
+    printf("[rede] dlopen libcurl.so %s em %lu ms%s%s\n", h ? "ok" : "FALHOU", redeAgoraMs() - t0,
+           h ? "" : ": ", e ? e : "?");
+    fflush(stdout); }
   if (!h)
 #endif
   h = dlopen("libcurl.so.5", RTLD_NOW);
@@ -1267,7 +1549,7 @@ static int abrir(void) {
   if (!h) { printf("[rede] sem libcurl: %s\n", dlerror());
             __atomic_store_n(&pronto, -1, __ATOMIC_RELEASE); pthread_mutex_unlock(&abrirTrava); return 0; }
   *(void **)(&curl_init)    = dlsym(h, "curl_easy_init");
-  *(void **)(&curl_setopt)  = dlsym(h, "curl_easy_setopt");
+  *(void **)(&curl_setopt_f)  = dlsym(h, "curl_easy_setopt");
   *(void **)(&curl_perform) = dlsym(h, "curl_easy_perform");
   *(void **)(&curl_cleanup) = dlsym(h, "curl_easy_cleanup");
   *(void **)(&curl_global)  = dlsym(h, "curl_global_init");
@@ -1291,13 +1573,24 @@ static int abrir(void) {
     if (!(r && r[0] == '0')) *(void **)(&curl_reset) = dlsym(h, "curl_easy_reset"); }
   { const char *o = getenv("NUVIO_REDE_OCIOSO_MS");
     if (o && *o) ociosoMaxMs = strtoul(o, NULL, 10); }
-  if (!curl_init || !curl_setopt || !curl_perform) {
+  if (!curl_init || !curl_setopt_f || !curl_perform) {
     printf("[rede] libcurl sem os simbolos esperados\n");
     __atomic_store_n(&pronto, -1, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&abrirTrava);
     return 0;
   }
+#ifdef NV_ANDROID
+  // #266: a Shield (Tegra) para em "rede_preparar" sem imprimir mais nada; a
+  // libcurl 8 + mbedTLS 3.6 inicia o PSA/entropia aqui dentro. Marca cada lado.
+  entropiaLog();
+  printf("[rede] curl_global_init\n"); fflush(stdout);
+  { unsigned long t0 = redeAgoraMs();
+    int gi = curl_global ? curl_global(3 /* CURL_GLOBAL_DEFAULT */) : -1;
+    printf("[rede] curl_global_init ok (r=%d) em %lu ms\n", gi, redeAgoraMs() - t0);
+    fflush(stdout); }
+#else
   if (curl_global) curl_global(3 /* CURL_GLOBAL_DEFAULT */);
+#endif
   // DEPOIS do global_init e ANTES de soltar a trava: a partir daqui qualquer fio
   // pode entrar em curl_easy_perform, e e la que o OpenSSL comeca a ser usado.
 #ifndef NV_ANDROID   // libcurl do APK nao usa libcrypto 1.0 (e dlopen de libcrypto.so seria do sistema)
@@ -1308,7 +1601,132 @@ static int abrir(void) {
   return 1;
 }
 
+#ifdef NV_ANDROID
+// #266: na Shield (Tegra, Android 11) o app nunca terminava de abrir, parado em
+// rede_preparar. Suspeita nao provada: dlopen da libcurl / curl_global_init
+// (mbedTLS 3.6 PSA/entropia) bloqueando. No Android isso roda num fio proprio;
+// a interface segue abrindo e quem precisa de rede espera pela bandeira, com
+// limite. Se a init nunca voltar, o log diz.
+static int fioIniciado;
+static void *fioCurl(void *a) {
+  struct timespec t0, t1;
+  (void)a;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  abrirReal();
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  printf("[rede] libcurl pronta em %ld ms (pronto=%d)\n",
+         (long)((t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000),
+         __atomic_load_n(&pronto, __ATOMIC_ACQUIRE));
+  fflush(stdout);
+  return NULL;
+}
+static void iniciarFioCurl(void) {
+  pthread_t t;
+  if (__atomic_exchange_n(&fioIniciado, 1, __ATOMIC_ACQ_REL)) return;
+  if (pthread_create(&t, NULL, fioCurl, NULL) != 0) { fioCurl(NULL); return; }
+  pthread_detach(t);
+}
+// Espera a libcurl ate `ms`. Depois que UMA espera estourou, ninguem mais
+// espera: sem isso cada imagem e cada chamada pagaria os 20 s de novo enquanto
+// a init segue presa (a 266.1 fazia isso, e a tela de login ficava parada).
+static int esgotou;
+static int abrirAte(unsigned long ms) {
+  int r = __atomic_load_n(&pronto, __ATOMIC_ACQUIRE);
+  unsigned long t0;
+  if (r == 1 || r == -1) return r > 0;
+  iniciarFioCurl();
+  if (__atomic_load_n(&esgotou, __ATOMIC_ACQUIRE)) ms = 0;
+  t0 = redeAgoraMs();
+  for (;;) {
+    struct timespec d = { 0, 10 * 1000 * 1000 };
+    r = __atomic_load_n(&pronto, __ATOMIC_ACQUIRE);
+    if (r == 1 || r == -1) return r > 0;
+    if (redeAgoraMs() - t0 >= ms) {
+      if (ms && !__atomic_exchange_n(&esgotou, 1, __ATOMIC_ACQ_REL)) {
+        printf("[rede] libcurl nao ficou pronta em %lu ms (pronto=%d); pedidos simples vao pelo Android\n", ms, r);
+        fflush(stdout);
+      }
+      return 0;
+    }
+    nanosleep(&d, NULL);
+  }
+}
+static int abrir(void) { return abrirAte(20000); }
+
+// RESERVA PELO ANDROID (#266/#332). Pedido simples (GET/POST de texto, com
+// cabecalhos) que a libcurl nao pode atender — nao ficou pronta, ou caiu no
+// transporte — vai por NuvioActivity.httpPedir (HttpURLConnection). A conta, o
+// login e o Supabase passam por aqui (nuvem.c: rede_*_st), e assim o login
+// nunca depende so da nossa libcurl. `curlRuim` gruda na sessao: se a libcurl
+// falhou onde o Android respondeu, os proximos pedidos simples vao direto.
+static int curlRuim;
+static char *viaAndroid(const char *verbo, const char *url, int segundos,
+                        const char *const *cab, const char *corpo, int *status,
+                        long *tam, const char *porque) {
+  char *cabs, *r, erro[200], h[96];
+  size_t n = 1;
+  int k, st = 0, temCt = 0;
+  long bytes = 0;
+  unsigned long t0 = redeAgoraMs();
+  static int logados;
+  if (status) *status = 0;
+  for (k = 0; cab && cab[k]; k++) {
+    n += strlen(cab[k]) + 1;
+    if (!strncasecmp(cab[k], "Content-Type:", 13)) temCt = 1;
+  }
+  if (corpo && !temCt) n += 32;
+  cabs = (char *)malloc(n);
+  if (!cabs) return NULL;
+  cabs[0] = 0;
+  for (k = 0; cab && cab[k]; k++) { strcat(cabs, cab[k]); strcat(cabs, "\n"); }
+  // Mesmo padrao do postarNativo: JSON, salvo quem mandou o proprio.
+  if (corpo && !temCt) strcat(cabs, "Content-Type: application/json\n");
+  char *alias = __atomic_load_n(&tmdbAlternativo, __ATOMIC_ACQUIRE) ? tmdbUrl(url) : NULL;
+  r = android_http(verbo, alias ? alias : url, cabs, corpo, (segundos > 0 ? segundos : 20) * 1000,
+                   &st, &bytes, erro, sizeof erro);
+  if (!r && !st && !alias && !redeCancelouLocal && (alias = tmdbUrl(url))) {
+    r = android_http(verbo, alias, cabs, corpo, (segundos > 0 ? segundos : 20) * 1000,
+                     &st, &bytes, erro, sizeof erro);
+    if (r) tmdbLigou();
+  }
+  free(alias); free(cabs);
+  hostDaUrl(url, h, sizeof h);
+  if (__atomic_add_fetch(&logados, 1, __ATOMIC_RELAXED) <= 12 || !r) {
+    printf("[rede] via Android (%s) %s %s: http=%d em %lu ms%s%s\n", porque, verbo,
+           h[0] ? h : "?", st, redeAgoraMs() - t0, r ? "" : " FALHOU: ", r ? "" : erro);
+    fflush(stdout);
+  }
+  if (!r) { snprintf(redeErroTxt, sizeof redeErroTxt, "android: %.180s", erro); return NULL; }
+  redeErroTxt[0] = 0;
+  if (st == 401 && aviso401) aviso401(url);
+  if (status) *status = st;
+  else if (st < 200 || st > 299) { free(r); return NULL; }  // como rede_baixar sem status
+  if (tam) *tam = bytes;
+  return r;
+}
+// 1 = este pedido simples vai direto pelo Android (sem tocar na libcurl).
+static int androidPrimeiro(void) {
+  if (__atomic_load_n(&curlRuim, __ATOMIC_ACQUIRE)) return 1;
+  // 8 s, e nao 20: a tela de login nao fica parada esperando a libcurl.
+  return !abrirAte(8000);
+}
+// Falha de TRANSPORTE da libcurl num pedido simples: tenta o Android uma vez.
+static char *androidDepois(const char *verbo, const char *url, int segundos,
+                           const char *const *cab, const char *corpo, int *status) {
+  char *r;
+  if (redeCancelouLocal || (redeCancelLocal && *redeCancelLocal)) return NULL;
+  r = viaAndroid(verbo, url, segundos, cab, corpo, status, NULL, "curl falhou");
+  if (r && !__atomic_exchange_n(&curlRuim, 1, __ATOMIC_ACQ_REL)) {
+    printf("[rede] libcurl falhou onde o Android respondeu: pedidos simples ficam pelo Android nesta sessao\n");
+    fflush(stdout);
+  }
+  return r;
+}
+void rede_preparar(void) { iniciarFioCurl(); }
+#else
+static int abrir(void) { return abrirReal(); }
 void rede_preparar(void) { abrir(); }
+#endif
 
 /* Request novo isolado do handle/controles por fio dos wrappers. */
 // Trusted Mozilla bundle configured once at startup. Android's libcurl has
@@ -1336,7 +1754,7 @@ char *rede_baixar(const char *url, int segundos) {
 // CORPO CORTADO FICA (#92): um 206 que fecha antes do Content-Length (curl 18,
 // ou 56 no meio do corpo) devolve o que veio, com o codigo em *erro. So quem
 // sabe pedir o resto (o laco) liga isto; o resto do modulo segue igual.
-static char *trechoUmaVez(const char *url, int segundos, long ini, long fim,
+static char *trechoUmaVez(const char *url, int segundos, long long ini, long long fim,
                           long *tam, int *status, int *erro,
                           char *final, unsigned tamFinal) {
   char faixa[80];
@@ -1344,10 +1762,10 @@ static char *trechoUmaVez(const char *url, int segundos, long ini, long fim,
   char *r;
   int st = 0;
   if (final && tamFinal) final[0] = 0;
-  snprintf(faixa, sizeof faixa, "Range: bytes=%ld-%ld", ini, fim);
+  snprintf(faixa, sizeof faixa, "Range: bytes=%lld-%lld", ini, fim);
   cab[0] = faixa; cab[1] = NULL;
   redeCurlLocal = 0;
-  rede_teto = fim - ini + 1;
+  rede_teto = (long)(fim - ini + 1);
   redeFinalDst = final; redeFinalTam = final ? tamFinal : 0;
   redeParcialOk = 1;
   // Com `status` o interno2 devolve o corpo de um 4xx (e o contrato do
@@ -1374,7 +1792,25 @@ char *rede_baixar_com(const char *url, int segundos, const char *const *cab) {
 
 char *rede_baixar_st(const char *url, int segundos, const char *const *cab,
                      int *status) {
+#ifdef NV_ANDROID
+  char *r;
+  int st = 0;
+  if (!url || !*url) { if (status) *status = 0; return NULL; }
+  if (androidPrimeiro()) {   // st local: com status NULL o 4xx tambem volta com corpo, como no curl
+    r = viaAndroid("GET", url, segundos, cab, NULL, &st, NULL, "libcurl fora");
+    if (status) *status = st;
+    return r;
+  }
+  r = rede_baixar_interno2(url, segundos, NULL, cab, &st, NULL, 0);
+  if (status) *status = st;
+  if (!r && st == 0) {
+    r = androidDepois("GET", url, segundos, cab, NULL, &st);
+    if (status) *status = st;
+  }
+  return r;
+#else
   return rede_baixar_interno2(url, segundos, NULL, cab, status, NULL, 0);
+#endif
 }
 char *rede_baixar_st_retry(const char *url, int segundos, const char *const *cab,
                            int *status, int *retryAfter) {
@@ -1398,8 +1834,15 @@ static char *rede_baixar_interno(const char *url, int segundos, long *tam,
 // o prazo inteiro nao repete: o prazo e do pedido, nao de cada tentativa, e
 // quem chama continua sabendo quanto vai esperar no maximo. Corte de proposito
 // (teto, curl 23), cancelamento e resposta HTTP de erro nunca repetem.
+//
+// EXCECAO (#385): Range de leitura LATERAL ao video (rede_lateral) cuja
+// conexao foi recusada ou nao fechou o aperto de mao. No registro do .tpk o no
+// do CDN do TorBox recusava toda conexao nossa com o video aberto, e cada
+// Range da pre-busca virava duas. A segunda conexao ao host que acabou de
+// recusar nao ajuda a legenda e e mais uma batida no CDN que o player usa.
 static int valeRepetir(int r, const Vigia *v, size_t bytes) {
   if (redeCancelouLocal) return 0;
+  if (redeLateral && redeParcialOk && (r == 6 || r == 7 || r == 35)) return 0;
   if (r == 42) return v->parou;            // vigia: corpo parado
   if (bytes > 0) return 0;
   return r == 7 || r == 28 || r == 35 || r == 52 || r == 55 || r == 56;
@@ -1429,7 +1872,12 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
   // Endereco de API de metadados que ja respondeu "nao existe" (ou host em
   // recuo por timeout): nao pede de novo — ver negcache.h.
   if (!status && negcache_barra(url, (long)time(NULL))) return NULL;
+#ifdef NV_ANDROID
+  // libcurl nunca ficou pronta: GET simples (catalogo, imagem) pelo Android.
+  if (!abrir()) return viaAndroid("GET", url, segundos, cab, NULL, status, tam, "libcurl fora");
+#else
   if (!abrir()) return NULL;
+#endif
   inicio = redeAgoraMs();
   prazoMs = (unsigned long)(segundos > 0 ? segundos : 30) * 1000UL;
   for (tentativa = 0; ; tentativa++) {
@@ -1491,9 +1939,9 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
       if (etag && tamEtag) etag[0] = 0;
       continue;
     }
+    r = tmdbFallback(c, r == 42 && vigia.parou ? 28 : r, url);
     break;
   }
-  if (r == 42 && vigia.parou) r = 28;      // para quem chama, e prazo
   redeCurlLocal = r;
   anotarErro(r);
   if (redeFinalDst && redeFinalTam && curl_getinfo) {
@@ -1573,6 +2021,8 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
 }
 
 typedef struct { size_t n; int limitado; } UrlSonda;
+// CURLINFO_CONTENT_TYPE = CURLINFO_STRING (0x100000) + 18.
+#define INFO_CONTENT_TYPE 1048594
 static size_t receberSonda(void *dados, size_t tam, size_t qtd, void *u) {
   UrlSonda *s = u;
   size_t bytes;
@@ -1587,6 +2037,12 @@ static size_t receberSonda(void *dados, size_t tam, size_t qtd, void *u) {
 
 int rede_url_final_cab(const char *url, int segundos, const char *const *cab,
                        char *dst, unsigned tam, int *status) {
+  return rede_url_final_tipo(url, segundos, cab, dst, tam, status, NULL, 0, NULL);
+}
+
+int rede_url_final_tipo(const char *url, int segundos, const char *const *cab,
+                        char *dst, unsigned tam, int *status,
+                        char *mime, unsigned mimeTam, long *corpo) {
   UrlSonda s = {0};
   Vigia vigia;
   void *c, *lista = NULL;
@@ -1595,6 +2051,8 @@ int rede_url_final_cab(const char *url, int segundos, const char *const *cab,
   unsigned long prazoMs;
   int r, ok, k;
   if (status) *status = 0;
+  if (mime && mimeTam) mime[0] = 0;
+  if (corpo) *corpo = -1;
   if (dst && tam) dst[0] = 0;
   if (!url || !*url || !dst || !tam || tam > INT_MAX || !abrir() || !curl_getinfo) return 0;
   if (cab && cab[0] && (!slist_append || !slist_free)) return 0;
@@ -1616,10 +2074,20 @@ int rede_url_final_cab(const char *url, int segundos, const char *const *cab,
     lista = nova;
   }
   if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
-  r = curl_perform(c);
+  r = performTmdb(c, url);
   curl_getinfo(c, INFO_RESPONSE_CODE, &http);
   curl_getinfo(c, INFO_URL_FINAL, &fim);
   if (status) *status = (int)http;
+  if (mime && mimeTam) {
+    char *ct = NULL, *pv;
+    unsigned k2 = 0;
+    curl_getinfo(c, INFO_CONTENT_TYPE, &ct);
+    for (pv = ct; pv && *pv && *pv != ';' && k2 + 1 < mimeTam; pv++)
+      if (*pv != ' ' && *pv != '\t') mime[k2++] = (char)tolower((unsigned char)*pv);
+    mime[k2] = 0;
+  }
+  // Corpo inteiro conhecido so num 200 que acabou antes do nosso teto de 64 B.
+  if (corpo && http == 200 && !s.limitado && !r) *corpo = (long)s.n;
   // Curl23 so vale quando NOS cortamos o corpo apos o teto. Um corpo cortado
   // pelo servidor (curl18/56) ou outro erro continua falha de transporte.
   ok = (!r || (r == 23 && s.limitado)) && !redeCancelouLocal &&
@@ -1643,6 +2111,53 @@ int rede_url_final_cab(const char *url, int segundos, const char *const *cab,
 
 int rede_url_final(const char *url, int segundos, char *dst, unsigned tam) {
   return rede_url_final_cab(url, segundos, NULL, dst, tam, NULL);
+}
+
+// AQUECER CONEXOES (2.0.2): abre DNS + TCP + TLS de cada origem ("https://host")
+// com um HEAD em "/", SEM seguir redirecionamento e sem ler corpo, e deixa o
+// handle estacionado para o fio que for pedir esses hosts (estacTomar). Nunca
+// toca um caminho de stream: um HEAD na raiz nao resolve link nem cria arquivo
+// no debrid. Chamar de um fio proprio e descartavel (aquecer.c): o handle do fio
+// sai da chave para ficar no estacionamento. ms[i] = tempo da origem i (0 =
+// falhou). Devolve quantas abriram.
+static size_t descartarCorpo(void *d, size_t t, size_t q, void *u) { (void)d; (void)u; return t * q; }
+int rede_aquecer_lote(const char *const *origens, int n, unsigned *ms) {
+  char ok[REDE_ESTAC_HOSTS][96];
+  int i, abriu = 0, nok = 0;
+  void *c;
+  if (!origens || n < 1 || !abrir() || !curl_reset || !curl_getinfo) return 0;
+  for (i = 0; i < n; i++) {
+    char u[200], h[96];
+    unsigned long t0;
+    int r;
+    if (ms) ms[i] = 0;
+    hostDaUrl(origens[i], h, sizeof h);
+    if (!h[0] || strlen(h) + 2 > sizeof u) continue;
+    snprintf(u, sizeof u, "%s/", h);
+    c = pegarHandle(u);
+    if (!c) continue;
+    curl_setopt(c, OPT_URL, u);
+    curl_setopt(c, OPT_NOBODY, (long)1);
+    curl_setopt(c, OPT_WRITEFUNCTION, descartarCorpo);
+    curl_setopt(c, OPT_FOLLOWLOCATION, (long)0);
+    opcoesComuns(c, 4000UL);
+    t0 = redeAgoraMs();
+    r = performTmdb(c, u);
+    if (ms) { unsigned long dt = redeAgoraMs() - t0; ms[i] = r ? 0 : (unsigned)(dt ? dt : 1); }
+    soltarHandleR(c, r, u);
+    if (!r) {
+      abriu++;
+      if (nok < REDE_ESTAC_HOSTS) snprintf(ok[nok++], 96, "%s", h);
+    }
+  }
+  // O handle, com as conexoes que abriu, sai deste fio e vai para o estacionamento.
+  c = pthread_getspecific(handleChave);
+  if (c && nok > 0) {
+    pthread_setspecific(handleChave, NULL);
+    hostsEsquecer();
+    estacionar(c, ok, nok);
+  }
+  return abriu;
 }
 
 char *rede_postar(const char *url, int segundos, const char *const *cab,
@@ -1671,7 +2186,7 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
     for (k = 0; cab && cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = curl_perform(c);
+  r = performTmdb(c, url);
   { long h = 0;
     if (!r && curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &h);
     if (status) *status = (int)h;
@@ -1723,7 +2238,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
     for (k = 0; cab && cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = curl_perform(c);
+  r = performTmdb(c, url);
   anotarErro(r);
   if (r != 0) { char seg[120];
     printf("[rede] POST falhou em %s: %s\n", rede_url_publica(url, seg, sizeof seg), redeErroTxt);
@@ -1744,7 +2259,25 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
 
 char *rede_postar_st(const char *url, int segundos, const char *const *cab,
                      const char *corpo, int *status) {
+#ifdef NV_ANDROID
+  char *r;
+  int st = 0;
+  if (!url || !*url) { if (status) *status = 0; return NULL; }
+  if (androidPrimeiro()) {   // st local: com status NULL o 4xx tambem volta com corpo, como no curl
+    r = viaAndroid("POST", url, segundos, cab, corpo ? corpo : "", &st, NULL, "libcurl fora");
+    if (status) *status = st;
+    return r;
+  }
+  r = postarNativo(url, segundos, cab, corpo, &st, 0);
+  if (status) *status = st;
+  if (!r && st == 0) {
+    r = androidDepois("POST", url, segundos, cab, corpo ? corpo : "", &st);
+    if (status) *status = st;
+  }
+  return r;
+#else
   return postarNativo(url, segundos, cab, corpo, status, 0);
+#endif
 }
 
 char *rede_postar_seguro_st(const char *url, int segundos, const char *const *cab,
@@ -1917,7 +2450,7 @@ int rede_medir_vazao(const char *url, const char *const *cab, int segundos,
     for (k = 0; cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = curl_perform(c);
+  r = performTmdb(c, url);
   { long http = 0;
     if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
     if (http > 0) ct.status = (int)http; }
@@ -2009,7 +2542,7 @@ RedeTls *rede_tls_abrir(const char *url, int segundos) {
   curl_setopt(c, OPT_SSL_VERIFYPEER, (long)1);
   curl_setopt(c, OPT_SSL_VERIFYHOST, (long)2);
   if (discordCa[0]) curl_setopt(c, OPT_CAINFO, discordCa);
-  r = curl_perform(c);
+  r = performTmdb(c, url);
   if (r == 0 && curl_getinfo) curl_getinfo(c, INFO_LASTSOCKET, &fd);
   if (r != 0 || fd < 0) {
     printf("[rede] tls: falhou (curl %d)\n", r);
@@ -2191,15 +2724,20 @@ static void *dtsRangeHeaders(const char *raw, int public_only) {
   free(copy);
   return list;
 }
-char *rede_baixar_trecho64_cab(const char *url, const char *headers,
+/* `final` (8192 bytes, optional) receives the address that answered 206 when
+ * at least one redirect was followed, "" otherwise; `cross` says whether that
+ * address is on another origin (credential headers were NOT sent to it). */
+char *rede_baixar_trecho64_final(const char *url, const char *headers,
                               int64_t start, int64_t end, long *size,
                               int64_t *total, int *status,
-                              volatile int *cancelled) {
+                              volatile int *cancelled, char *final, int *cross) {
   char current[8192], range[64], origin[128];
-  int hop, public_only = 0;
+  int hop, public_only = 0, downgraded = 0;
   if (size) *size = 0;
   if (total) *total = -1;
   if (status) *status = 0;
+  if (final) final[0] = 0;
+  if (cross) *cross = 0;
   if (!url || strlen(url) >= sizeof current || start < 0 || end < start ||
       end - start >= 4 * 1024 * 1024 || !abrir()) return NULL;
   if (strncmp(url, "http://", 7) && strncmp(url, "https://", 8)) return NULL;
@@ -2233,9 +2771,9 @@ char *rede_baixar_trecho64_cab(const char *url, const char *headers,
     curl_setopt(c, OPT_XFERINFOFUNCTION, dtsRangeProgress);
     curl_setopt(c, OPT_XFERINFODATA, &r);
     curl_setopt(c, OPT_NOPROGRESS, (long)0);
-    list = dtsRangeHeaders(headers, public_only);
+    list = downgraded ? NULL : dtsRangeHeaders(headers, public_only);
     if (list) curl_setopt(c, OPT_HTTPHEADER, list);
-    result = curl_perform(c);
+    result = performTmdb(c, url);
     if (curl_getinfo) {
       curl_getinfo(c, INFO_RESPONSE_CODE, &http);
       /* CURLINFO_REDIRECT_URL resolves relative Location without following it. */
@@ -2252,8 +2790,19 @@ char *rede_baixar_trecho64_cab(const char *url, const char *headers,
       if (strncmp(redirected, "http://", 7) && strncmp(redirected, "https://", 8)) return NULL;
       if (!dtsRangeOrigin(redirected, host, sizeof host)) return NULL;
       if (strcmp(host, origin)) public_only = 1;
-      /* Never send credentials over a redirect from HTTPS to HTTP. */
-      if (!strncmp(current, "https://", 8) && !strncmp(redirected, "http://", 7)) return NULL;
+      /* HTTPS -> HTTP: followed (debrid CDNs answer on plain HTTP: Real-Debrid
+       * via Debridio, where the TV's own player plays), but NO caller header
+       * goes to the downgraded hop or anything after it: not credentials, not
+       * even Referer/User-Agent/Origin. Only the URL travels. */
+      if (!strncmp(current, "https://", 8) && !strncmp(redirected, "http://", 7)) {
+        static int logged;
+        downgraded = public_only = 1;
+        if (!logged) {
+          logged = 1;
+          printf("[rede] range: HTTPS redirect to HTTP followed without request headers\n");
+          fflush(stdout);
+        }
+      }
       snprintf(current, sizeof current, "%s", redirected);
       continue;
     }
@@ -2262,12 +2811,20 @@ char *rede_baixar_trecho64_cab(const char *url, const char *headers,
         (uint64_t)(r.end - r.start + 1) == r.body.n) {
       if (size) *size = (long)r.body.n;
       if (total) *total = r.total;
+      if (final && hop > 0) snprintf(final, 8192, "%s", current);
+      if (cross) *cross = public_only;
       return baldeFinal(&r.body);
     }
     free(r.body.p);
     return NULL;
   }
   return NULL;
+}
+char *rede_baixar_trecho64_cab(const char *url, const char *headers,
+                              int64_t start, int64_t end, long *size,
+                              int64_t *total, int *status,
+                              volatile int *cancelled) {
+  return rede_baixar_trecho64_final(url, headers, start, end, size, total, status, cancelled, NULL, NULL);
 }
 
 #endif  /* __EMSCRIPTEN__ */
@@ -2337,6 +2894,99 @@ static void corteHostDe(const char *u, char *h, size_t n) {
   h[k] = 0;
 }
 
+// PAUSA DO HOST QUE RECUSOU CONEXAO (#385), so para a leitura LATERAL ao
+// video (rede_lateral). No registro do .tpk o no do CDN do TorBox recusou 11
+// conexoes nossas em 13-15 s logo depois de o video abrir: a pre-busca da
+// legenda (5 Ranges, cada um em duas conexoes) e a sonda do MKV pela rede, ao
+// mesmo tempo, e o player caiu com ConnectionFailed. Recusa de CONEXAO e o CDN
+// pedindo calma tanto quanto o curl 28 / 429 / 5xx do #308, entao o mesmo
+// ritmo: 10 s, dobrando ate 60 s, solta no primeiro Range lateral que der
+// certo. Por host (esquema, host e porta) do endereco pedido E do endereco em
+// que a conexao falhou (o redirecionador do addon e o no do CDN): o proximo
+// Range lateral nao paga nem o 302. O player, o proxy do player, a conferencia
+// da fonte e o resto do app nao passam por aqui.
+#ifndef REDE_CALMA_INI_MS
+#define REDE_CALMA_INI_MS 10000UL
+#endif
+#ifndef REDE_CALMA_MAX_MS
+#define REDE_CALMA_MAX_MS 60000UL
+#endif
+#define REDE_CALMA_HOSTS 8
+typedef struct { char h[96]; unsigned long ate, pausa; int erro, avisou; } CalmaHost;
+static CalmaHost calmaHost[REDE_CALMA_HOSTS];
+static int calmaProx;
+static pthread_mutex_t calmaTrava = PTHREAD_MUTEX_INITIALIZER;
+
+void rede_lateral(int sim) { redeLateral = sim ? 1 : 0; }
+
+// curl 6 (o nome do no nao resolve), 7 (conexao recusada / sem rota) e 35 (o
+// aperto de mao TLS caiu): a conexao nem abriu. Prazo (28) e HTTP ficam com
+// quem ja tratava deles (rede.c repete, o mkvass pausa pelo #308).
+static int conexaoRecusada(int e) { return e == 6 || e == 7 || e == 35; }
+
+// O host de `url` esta em pausa? Devolve os ms que faltam (0 = livre) e o
+// codigo que a abriu. `*avisar` = 1 so na primeira consulta desta pausa.
+static unsigned long calmaFalta(const char *url, int *erro, int *avisar) {
+  char h[96];
+  unsigned long agora = redeAgoraMs(), falta = 0;
+  int i;
+  *avisar = 0;
+  corteHostDe(url, h, sizeof h);
+  if (!h[0]) return 0;
+  pthread_mutex_lock(&calmaTrava);
+  for (i = 0; i < REDE_CALMA_HOSTS; i++)
+    if (calmaHost[i].h[0] && !strcmp(calmaHost[i].h, h) && calmaHost[i].ate > agora) {
+      falta = calmaHost[i].ate - agora;
+      *erro = calmaHost[i].erro;
+      if (!calmaHost[i].avisou) { calmaHost[i].avisou = 1; *avisar = 1; }
+      break;
+    }
+  pthread_mutex_unlock(&calmaTrava);
+  return falta;
+}
+
+// A conexao a `url` falhou com `erro`: abre (ou dobra) a pausa do host.
+// Devolve a pausa aplicada em ms (0 = sem host).
+static unsigned long calmaAbrir(const char *url, int erro) {
+  char h[96];
+  unsigned long agora = redeAgoraMs(), pausa;
+  int i, achou = -1;
+  corteHostDe(url, h, sizeof h);
+  if (!h[0]) return 0;
+  pthread_mutex_lock(&calmaTrava);
+  for (i = 0; i < REDE_CALMA_HOSTS; i++)
+    if (calmaHost[i].h[0] && !strcmp(calmaHost[i].h, h)) { achou = i; break; }
+  if (achou < 0) {
+    achou = calmaProx; calmaProx = (calmaProx + 1) % REDE_CALMA_HOSTS;
+    snprintf(calmaHost[achou].h, sizeof calmaHost[achou].h, "%s", h);
+    calmaHost[achou].pausa = 0;
+  }
+  // Ainda dentro da pausa (outro fio lateral ja abriu): nao dobra de novo.
+  if (calmaHost[achou].pausa && calmaHost[achou].ate > agora) pausa = calmaHost[achou].pausa;
+  else {
+    pausa = calmaHost[achou].pausa ? calmaHost[achou].pausa * 2 : REDE_CALMA_INI_MS;
+    if (pausa > REDE_CALMA_MAX_MS) pausa = REDE_CALMA_MAX_MS;
+    calmaHost[achou].pausa = pausa;
+    calmaHost[achou].ate = agora + pausa;
+    calmaHost[achou].avisou = 0;
+  }
+  calmaHost[achou].erro = erro;
+  pthread_mutex_unlock(&calmaTrava);
+  return pausa;
+}
+
+// Range lateral que deu certo: o host atendeu, a pausa (e o dobro) acabam.
+static void calmaSoltar(const char *url) {
+  char h[96];
+  int i;
+  corteHostDe(url, h, sizeof h);
+  if (!h[0]) return;
+  pthread_mutex_lock(&calmaTrava);
+  for (i = 0; i < REDE_CALMA_HOSTS; i++)
+    if (calmaHost[i].h[0] && !strcmp(calmaHost[i].h, h)) calmaHost[i].h[0] = 0;
+  pthread_mutex_unlock(&calmaTrava);
+}
+
 long rede_corte_host(const char *url) {
   char h[96];
   long t = 0;
@@ -2374,12 +3024,12 @@ static void corteAprender(const char *url, long veio) {
   }
 }
 
-char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
+char *rede_baixar_trecho_st(const char *url, int segundos, long long ini, long long fim,
                             long *tam, int *status, int *erro,
                             char *final, unsigned tamFinal) {
   unsigned long t0 = redeAgoraMs(),
                 prazo = (unsigned long)(segundos > 0 ? segundos : 30) * 1000UL;
-  long pedido = fim - ini + 1, veio = 0;
+  long pedido = (long)(fim - ini + 1), veio = 0;
   char *buf = NULL;
   int st = 0, e = 0, pedacos = 0, cortes = 0;
   // `atual`: o endereco dos pedacos seguintes (o final, depois do primeiro:
@@ -2390,10 +3040,27 @@ char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
   if (erro) *erro = 0;
   if (final && tamFinal) final[0] = 0;
   redeRestoRecusado = 0;
+  // #385: host em pausa por conexao recusada. Nenhuma conexao: o mesmo codigo,
+  // na hora, para quem chama tratar como a falha que ja foi.
+  if (redeLateral && url) {
+    int e0 = 0, avisar = 0;
+    unsigned long falta = calmaFalta(url, &e0, &avisar);
+    if (falta) {
+      if (avisar) {
+        char h[96];
+        corteHostDe(url, h, sizeof h);
+        printf("[rede] %s em pausa (recusou conexao, curl %d): Range lateral sem conexao por mais %lu ms\n",
+               h, e0, falta);
+        fflush(stdout);
+      }
+      if (erro) *erro = e0;
+      return NULL;
+    }
+  }
   if (!url || pedido <= 0) return trechoUmaVez(url, segundos, ini, fim, tam, status, erro, final, tamFinal);
   snprintf(atual, sizeof atual, "%s", url);
   for (;;) {
-    long a = ini + veio, b = fim, n = 0, teto = rede_corte_host(atual);
+    long long a = ini + veio, b = fim; long n = 0, teto = rede_corte_host(atual);
     int seg = segundos, cortado;
     char *r;
     if (teto <= 0) teto = rede_corte_host(url);
@@ -2410,10 +3077,25 @@ char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
     // servidor recusou o resto. A diferenca para "rede lenta" e o que decide o
     // recuo longo no mkvass.
     if (!r && veio > 0 && n == 0 && e != 28) redeRestoRecusado = 1;
+    if (!r && redeLateral && conexaoRecusada(e)) {
+      // #385: a conexao nem abriu. Pausa no host pedido e no que recusou (o
+      // no do CDN, quando houve redirecionamento); uma linha so por pausa.
+      char h[96];
+      unsigned long p = calmaAbrir(atual, e);
+      if (strcmp(atual, url)) calmaAbrir(url, e);
+      if (fin[0]) { char hf[96], ha[96];
+        corteHostDe(fin, hf, sizeof hf); corteHostDe(atual, ha, sizeof ha);
+        if (hf[0] && strcmp(hf, ha)) calmaAbrir(fin, e); }
+      corteHostDe(atual, h, sizeof h);
+      printf("[rede] %s recusou conexao (curl %d, Range lateral ao video): sem conexao nova a este host por %lu ms\n",
+             h, e, p);
+      fflush(stdout);
+    }
     if (!r) goto falhou;
     // Sem 206 o servidor ignorou o Range (200 com o comeco do arquivo): no
     // primeiro pedido e o contrato de sempre (quem chama recebe o que veio);
     // no meio de um trecho ja em pedacos, o que viria nao e o resto.
+    if (redeLateral) calmaSoltar(atual);
     if (st != 206) {
       if (pedacos == 1) { if (tam) *tam = n; if (status) *status = st; return r; }
       free(r); goto falhou;
@@ -2426,7 +3108,7 @@ char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
       cortes++;
       corteAprender(atual, n);
       if (strcmp(atual, url)) corteAprender(url, n);
-      printf("[rede] Range %ld+%ld: %ld de %ld bytes ate aqui, pedindo o resto (pedaco %d)\n",
+      printf("[rede] Range %lld+%ld: %ld de %ld bytes ate aqui, pedindo o resto (pedaco %d)\n",
              ini, pedido, veio, pedido, pedacos);
       fflush(stdout);
     }
@@ -2443,7 +3125,7 @@ falhou:
   // Sem progresso: o que ja veio se perde (quem chama pede o trecho de novo,
   // e o teto aprendido faz o pedido seguinte caber).
   if (veio > 0) {
-    printf("[rede] Range %ld+%ld sem progresso depois de %ld bytes em %d pedaco(s) (HTTP %d, curl %d%s)\n",
+    printf("[rede] Range %lld+%ld sem progresso depois de %ld bytes em %d pedaco(s) (HTTP %d, curl %d%s)\n",
            ini, pedido, veio, pedacos, st, e,
            redeRestoRecusado ? ", o servidor recusou o resto" : "");
     fflush(stdout);

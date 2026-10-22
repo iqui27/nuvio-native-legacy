@@ -1,8 +1,11 @@
+#include "intro.h"
+#include "arteurl.h"
 #include "imdbnota.h"
 #include "extras.h"
 #include "streams.h"
 #include "marco.h"
 #include "vistoep.h"
+#include "contalib.h"
 #include "trakt.h"
 #include "rede.h"
 #include "js.h"
@@ -137,7 +140,7 @@ static int  epFioVivo;
 static char epShow[24];
 static int  epPedTemp, epPedNum;
 static int  nComent;
-static struct { char titulo[120], ano[8], imdb[16], poster[200]; } rel[EX_REL_MAX];
+static struct { char titulo[120], ano[8], imdb[16], poster[NV_ARTE_URL_MAX]; } rel[EX_REL_MAX];
 // Vistos: um bit por episodio, ate 40 episodios em 20 temporadas. Vetor fixo
 // porque a consulta acontece no DESENHO de cada card, a cada quadro — uma
 // busca em lista ali custaria mais que a resposta.
@@ -151,6 +154,14 @@ static int progressoPronto, proximoT, proximoE;
 // "aired" do Trakt ja desconta episodio que ainda nao foi ao ar, que e
 // justamente o denominador certo para uma porcentagem.
 static int epsExibidos, epsVistos;
+// QUANTOS VISTOS O MAPA (vistoep) TINHA quando epsVistos foi lido do Trakt. O
+// hero mostra epsVistos + (mapa agora - epsBase): marcar/desmarcar pelo menu,
+// player ou Agenda mexe no mapa na hora, e sem isto a linha "% assistido"
+// ficava congelada ate reabrir a pagina.
+static int epsBase;
+// Revisao do mapa vistoep na leitura do Trakt: se mudou, o que o Trakt disse do
+// "proximo episodio" e da matriz `vistos` ficou velho e o mapa manda.
+static unsigned epsRev;
 static int  nRel;
 static struct { int numero; int nEps; struct { int ep, nota; } eps[EX_EP_MAX]; }
             temps[EX_TEMP_MAX];
@@ -310,6 +321,9 @@ static void urlFicha(char *dst, size_t cap, int serie, long idT,
     snprintf(extra, sizeof extra, "&include_video_language=%s", langs);
   }
   if (mais) snprintf(append + strlen(append), sizeof append - strlen(append), "%srecommendations", append[0] ? "," : "");
+  // keywords junto da ficha: o sinal de cena pos-creditos vem no MESMO corpo
+  // (TMDB 179430/179431), sem viagem nova.
+  if (!serie) snprintf(append + strlen(append), sizeof append - strlen(append), "%skeywords", append[0] ? "," : "");
   snprintf(dst, cap, "%s/%s/%ld?api_key=%s&language=%s%s%s%s",
            "https://api.themoviedb.org/3", serie ? "tv" : "movie", idT,
            chave, idioma, append[0] ? "&append_to_response=" : "", append, extra);
@@ -491,9 +505,11 @@ static void *buscar(void *arg) {
   if (parte != 1 && serie && temTrakt) {
     snprintf(url, sizeof url,
              "https://api.trakt.tv/shows/%s/progress/watched", id);
+    printf("[vistoep] %s: consulta trakt progress/watched\n", id);
     corpo = rede_baixar_com(url, 20, cab);
     if (corpo) {
       unsigned char novo[EX_VIS_T][EX_VIS_E];
+      VistoFonte fonte;
       const char *p = js_array(corpo, NULL, "seasons");
       // OS DOIS CONTADORES SAEM DO CABECALHO, antes do array — e tem de ser
       // antes MESMO: "completed" reaparece como BOOLEANO em cada episodio, e
@@ -505,6 +521,7 @@ static void *buscar(void *arg) {
         exib = (int)js_num(corpo, fimCab, "aired", 0.0);
         vist = (int)js_num(corpo, fimCab, "completed", 0.0); }
       memset(novo, 0, sizeof novo);
+      memset(&fonte, 0, sizeof fonte);
       while (p) {
         const char *f = js_fim(p);
         int t = (int)js_num(p, f, "number", -1.0);
@@ -526,13 +543,34 @@ static void *buscar(void *arg) {
             if (c && c < qf) { const char *v = c + 12;
                                while (*v == ' ' || *v == ':') v++;
                                visto = (*v == 't'); }
-            if (visto && t < EX_VIS_T && en > 0 && en < EX_VIS_E) novo[t][en] = 1;
             // O MAPA SEM TETO recebe o episodio inteiro, visto ou nao. A matriz
-            // acima so guarda o "sim" e nao distingue "nao viu" de "nao sei";
+            // abaixo so guarda o "sim" e nao distingue "nao viu" de "nao sei";
             // vistoep distingue, e e nisso que as acoes de marcar em lote se
             // apoiam. A matriz continua porque extras_ep_visto tem chamador no
             // desenho, e trocar as duas coisas no mesmo passo seria demais.
-            if (en > 0) vistoep_definir(id, t, en, visto);
+            //
+            // PELA PORTA DAS FONTES (vistoep_fonte), e nao por vistoep_definir:
+            // o Trakt repete `completed:true` enquanto o historico dele tiver o
+            // episodio, e era esta linha que re-marcava o que a pessoa tinha
+            // acabado de desmarcar (Silo, tt14688458). last_watched_at vai junto
+            // porque um visto MAIS NOVO que a desmarcacao ganha dela.
+            if (en > 0) {
+              int barrados = fonte.bloqueados;
+              long long quandoMs = 0;
+              if (visto) {
+                char quando[40];
+                if (js_texto(q, qf, "last_watched_at", quando, sizeof quando) && quando[0])
+                  quandoMs = js_ms_iso(quando);
+              }
+              vistoep_fonte(id, t, en, visto, quandoMs, &fonte);
+              { char cru[16] = "ausente";
+                js_bruto(q, qf, "completed", cru, sizeof cru);
+                printf("[vistoep] %s T%dE%d: trakt completed=%s lido=%d last_ms=%lld mapa=%d\n",
+                       id, t, en, cru, visto, quandoMs, vistoep_estado(id, t, en)); }
+              // Barrado nao entra na matriz nem na conta de vistos do topo.
+              if (fonte.bloqueados != barrados) visto = 0;
+            }
+            if (visto && t < EX_VIS_T && en > 0 && en < EX_VIS_E) novo[t][en] = 1;
             q = js_prox(qf);
           }
         }
@@ -544,7 +582,20 @@ static void *buscar(void *arg) {
       // teto estourado. Foi exatamente essa duvida que custou tres deploys no
       // dia em que o mapa nasceu.
       printf("[vistoep] %s: %d episodios no mapa (%d vistos)\n",
-             id, vistoep_conhecido(id) ? vistoep_n() : 0, vistoep_contar(id));
+             id, vistoep_total(id), vistoep_contar(id));
+      // E A LINHA POR FONTE: quantos o TRAKT marcou nesta leitura, quantos ele
+      // tentou marcar e a desmarcacao da pessoa barrou (e quais). A conta Nuvio
+      // nao escreve no mapa com o Trakt ativo (sync.c), mas o que ela TEM para
+      // este titulo sai na linha seguinte — e o que responde, lendo o log da
+      // TV, "quem ainda acha que o episodio foi visto?".
+      vistoep_fonte_log(id, "trakt", &fonte);
+      { int discordam = 0, daConta = contalib_vistos_do_titulo(id, &discordam);
+        printf("[vistoep] %s: conta Nuvio tem %d episodios (%d deles desmarcados aqui); "
+               "nao aplicada ao mapa com Trakt ativo\n", id, daConta, discordam); }
+      // O TOPO DO TRAKT conta o que a pessoa desmarcou: sem descontar, a serie
+      // voltava a "100% assistida" e ao selo de vista com episodios desmarcados.
+      vist -= fonte.bloqueados;
+      if (vist < 0) vist = 0;
       // A SERIE INTEIRA (#212): o selo do cartaz e o olho do detalhe leem o
       // historico de titulo (cat_visto), e /sync/history nunca diz "serie
       // vista" — so episodios. Os contadores do topo dizem: tudo o que ja foi
@@ -562,6 +613,14 @@ static void *buscar(void *arg) {
           pe = (int)js_num(prox, fim, "number", 0);
         }
       }
+      // O "PROXIMO" DO TRAKT e o seguinte ao ultimo que ELE tem como visto. Com
+      // episodio barrado ele aponta para depois do que a pessoa desmarcou; o
+      // primeiro nao visto do mapa e a resposta certa (a mesma regra de
+      // extras_proximo_episodio quando o mapa muda depois da leitura).
+      if (fonte.bloqueados > 0) {
+        int mt = 0, me = 0;
+        if (vistoep_primeiro_nao_visto(id, &mt, &me)) { pt = mt; pe = me; }
+      }
       int valido = strstr(corpo, "\"seasons\"") != NULL;
       free(corpo);
       pthread_mutex_lock(&trava);
@@ -569,8 +628,13 @@ static void *buscar(void *arg) {
         memcpy(vistos, novo, sizeof vistos);
         proximoT = pt; proximoE = pe; progressoPronto = 1;
         epsExibidos = exib; epsVistos = vist;
+        epsBase = vistoep_contar(id);
+        epsRev = vistoep_revisao();
       }
       pthread_mutex_unlock(&trava);
+    } else {
+      printf("[vistoep] %s: consulta trakt sem corpo; mapa preservado\n", id);
+      fflush(stdout);
     }
   }
 
@@ -818,6 +882,12 @@ static void *buscar(void *arg) {
           return NULL;
         }
         const char *fimC = corpo + strlen(corpo);
+        intro_registrar_tmdb(id,idT,corpo);
+        // CENA POS-CREDITOS (TMDB 179430/179431), no mesmo corpo da ficha.
+        // Serie traz keywords em /tv/<id>/keywords (viagem propria em
+        // descoberta.c); aqui e so filme. Grava o bit direto no item: este fio
+        // nao tem o CatItem `edit` do detalhe.
+        if (!serie) cat_marcar_pos_creditos(id, desc_tmdb_pos_creditos(corpo));
         // Uma linha, no corpo que ja esta na mao. Ver a nota em
         // fichaIdiomaOrig.
         js_texto(corpo, fimC, "original_language",
@@ -1372,7 +1442,7 @@ static void zerarPublicado(void) {
   agTemp = agEp = 0;
   memset(vistos, 0, sizeof vistos);
   progressoPronto = proximoT = proximoE = 0;
-  epsExibidos = epsVistos = 0;
+  epsExibidos = epsVistos = epsBase = 0;
   memset(notas, 0, sizeof notas);
 }
 
@@ -1417,6 +1487,9 @@ void extras_pedir(const char *imdb, int serie, long tmdbId) {
   // ("anime") abre como filme e o /meta o resolve como serie — ai os extras
   // tem de ser refeitos por /tv e /shows (detail.c repede).
   if (!strcmp(idPedido, imdb) && seriePedido == serie) {
+    printf("[vistoep] %s: extras reutilizados; fio=%d pronto=%d; sem nova consulta\n",
+           imdb, fioVivo, progressoPronto);
+    fflush(stdout);
     pthread_mutex_unlock(&trava); return; }
   snprintf(idPedido, sizeof idPedido, "%s", imdb);
   seriePedido = serie;
@@ -1894,12 +1967,17 @@ const char *extras_relacionado_poster(int i) {
 }
 
 int extras_ep_visto(int temporada, int episodio) {
-  if (temporada < 0 || temporada >= EX_VIS_T) return 0;
-  if (episodio < 0 || episodio >= EX_VIS_E) return 0;
+  char id[sizeof idPedido];
+  int visto, m;
   pthread_mutex_lock(&trava);
-  int visto = vistos[temporada][episodio];
+  snprintf(id, sizeof id, "%s", idPedido);
+  visto = (temporada >= 0 && temporada < EX_VIS_T && episodio >= 0 && episodio < EX_VIS_E)
+              ? vistos[temporada][episodio] : 0;
   pthread_mutex_unlock(&trava);
-  return visto;
+  // O MAPA LOCAL MANDA: marcar/desmarcar muda o vistoep na hora, a matriz so
+  // muda no proximo fetch. -1 = o mapa nao sabe, vale a matriz.
+  m = id[0] ? vistoep_estado(id, temporada, episodio) : -1;
+  return m >= 0 ? m : visto;
 }
 
 int extras_progresso_pronto(void) {
@@ -1912,11 +1990,15 @@ int extras_progresso_pronto(void) {
 // exibidos nao e "0% assistido": e serie que ainda nao estreou, e 0% ali seria
 // uma afirmacao sobre nada.
 int extras_progresso_serie(int *vistosEp, int *exibidos) {
-  int pronto, v, e;
+  int pronto, v, e, base;
+  char idAtual[sizeof idPedido];
   pthread_mutex_lock(&trava);
   pronto = progressoPronto; v = epsVistos; e = epsExibidos;
+  base = epsBase; snprintf(idAtual, sizeof idAtual, "%s", idPedido);
   pthread_mutex_unlock(&trava);
   if (!pronto || e <= 0) return 0;
+  if (idAtual[0] && vistoep_conhecido(idAtual))
+    v = vistoep_ajustar_vistos(v, base, vistoep_contar(idAtual), e);
   if (v > e) v = e;      // o Trakt conta reprise; a porcentagem nao passa de 100
   if (vistosEp) *vistosEp = v;
   if (exibidos) *exibidos = e;
@@ -1926,8 +2008,17 @@ int extras_progresso_serie(int *vistosEp, int *exibidos) {
 int extras_proximo_episodio(int *t, int *e) {
   pthread_mutex_lock(&trava);
   int ok = progressoPronto && proximoT > 0 && proximoE > 0;
+  unsigned rev = epsRev;
+  char id[sizeof idPedido];
+  snprintf(id, sizeof id, "%s", idPedido);
   if (ok) { *t = proximoT; *e = proximoE; }
   pthread_mutex_unlock(&trava);
+  // Mapa mexido depois do fetch: o proximo e o primeiro nao visto DO MAPA.
+  if (ok && id[0] && rev != vistoep_revisao() && vistoep_conhecido(id)) {
+    int pt, pe;
+    if (!vistoep_primeiro_nao_visto(id, &pt, &pe)) return 0;
+    *t = pt; *e = pe;
+  }
   return ok;
 }
 
@@ -1945,3 +2036,223 @@ void extras_shot_relacionados(const char *const *titulo, const char *const *ano,
   }
 }
 #endif
+
+// --- RESUMO PARA O MENU DO CARTAZ ---------------------------------------------
+//
+// A extensao de informacoes do menu (ctxinfo.c) quer as notas de um titulo QUE
+// NAO ESTA ABERTO. extras_pedir nao serve: ele e o estado da pagina de titulo,
+// e o menu abre tambem POR CIMA dela (Recomendacoes, filmografia, saga) — pedir
+// ali trocaria as notas, os comentarios e a ficha da pagina que esta embaixo.
+//
+// Por isso um caminho a parte, como o do trailer do hero: um fio, uma vaga de
+// pedido (o ultimo vence — quem passeia segurando OK em varios cartazes so
+// precisa do atual) e um cache pequeno por IMDb, para reabrir o menu no mesmo
+// titulo nao custar viagem. O que se pede e o minimo:
+//   1. Trakt /<tipo>/<id>?extended=full com a chave publica do pacote: nota do
+//      Trakt, duracao, classificacao, sinopse (ingles) e situacao — UMA viagem;
+//   2. TMDB /find so quando o titulo nao trouxe sinopse (a do TMDB vem no
+//      idioma da interface) — e a nota do TMDB vem junto;
+//   3. MDBList so para as fontes que a linha do titulo mostra
+//      (ajustes_nota_titulo), um POST por fonte, como extras.c faz.
+// Cada passo publica ao terminar; quem desenha mostra o que ja chegou.
+#define EXR_CACHE 16
+typedef struct { char id[24]; int serie; ExResumo r; } ExrVaga;
+static ExrVaga exrCache[EXR_CACHE];
+static int exrProx;
+static char exrPedido[24];
+static int exrSerie, exrSinopse, exrFio;
+static unsigned long exrGer, exrFeita;
+static pthread_mutex_t exrTrava = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t exrCv = PTHREAD_COND_INITIALIZER;
+
+static void exrId(const char *imdb, char *dst, size_t cap) {
+  const char *dp;
+  size_t n;
+  dst[0] = 0;
+  if (!imdb || imdb[0] != 't' || imdb[1] != 't') return;
+  dp = strchr(imdb, ':');
+  n = dp ? (size_t)(dp - imdb) : strlen(imdb);
+  if (n >= cap) n = cap - 1;
+  memcpy(dst, imdb, n); dst[n] = 0;
+}
+
+// Vaga do id (com a trava). `criar` recicla a mais antiga.
+static ExrVaga *exrVaga(const char *id, int criar) {
+  int i;
+  for (i = 0; i < EXR_CACHE; i++)
+    if (exrCache[i].id[0] && !strcmp(exrCache[i].id, id)) return &exrCache[i];
+  if (!criar) return NULL;
+  i = exrProx; exrProx = (exrProx + 1) % EXR_CACHE;
+  memset(&exrCache[i], 0, sizeof exrCache[i]);
+  snprintf(exrCache[i].id, sizeof exrCache[i].id, "%s", id);
+  return &exrCache[i];
+}
+
+static void *lacoResumo(void *ignorado) {
+  (void)ignorado;
+  for (;;) {
+    char id[24], url[400], chaveT[140], chaveTmdb[140];
+    const char *cabPub[3];
+    char *corpo;
+    int serie, querSinopse, k, cortado = 0;
+    pthread_mutex_lock(&exrTrava);
+    while (exrFeita == exrGer) pthread_cond_wait(&exrCv, &exrTrava);
+    exrFeita = exrGer;
+    snprintf(id, sizeof id, "%s", exrPedido);
+    serie = exrSerie; querSinopse = exrSinopse;
+    pthread_mutex_unlock(&exrTrava);
+
+    // 1. Trakt, uma viagem.
+    if (trakt_cabecalhos_publicos(cabPub, chaveT, sizeof chaveT)) {
+      snprintf(url, sizeof url, "https://api.trakt.tv/%s/%s?extended=full",
+               serie ? "shows" : "movies", id);
+      corpo = rede_baixar_com(url, 8, cabPub);
+      if (corpo) {
+        ExResumo t;
+        memset(&t, 0, sizeof t);
+        t.cru[EX_TRAKT] = para100(js_num(corpo, NULL, "rating", 0.0)) * 10;
+        t.duracao = (int)js_num(corpo, NULL, "runtime", 0.0);
+        js_texto_raiz(corpo, "certification", t.cert, sizeof t.cert);
+        js_texto_raiz(corpo, "overview", t.sinopseEn, sizeof t.sinopseEn);
+        js_texto_raiz(corpo, "status", t.status, sizeof t.status);
+        numaLinha(t.sinopseEn);
+        free(corpo);
+        pthread_mutex_lock(&exrTrava);
+        { ExrVaga *v = exrVaga(id, 1);
+          if (!v->r.cru[EX_TRAKT]) v->r.cru[EX_TRAKT] = t.cru[EX_TRAKT];
+          v->r.duracao = t.duracao;
+          snprintf(v->r.cert, sizeof v->r.cert, "%s", t.cert);
+          snprintf(v->r.sinopseEn, sizeof v->r.sinopseEn, "%s", t.sinopseEn);
+          snprintf(v->r.status, sizeof v->r.status, "%s", t.status); }
+        pthread_mutex_unlock(&exrTrava);
+      }
+    }
+
+    // 2. TMDB, so pela sinopse no idioma da interface.
+    snprintf(chaveTmdb, sizeof chaveTmdb, "%s", desc_chave_tmdb());
+    if (querSinopse && chaveTmdb[0]) {
+      snprintf(url, sizeof url,
+               "https://api.themoviedb.org/3/find/%s?api_key=%s&external_source=imdb_id&language=%s",
+               id, chaveTmdb, desc_tmdb_idioma());
+      corpo = rede_baixar(url, 6);
+      if (corpo) {
+        const char *v = js_array(corpo, NULL, serie ? "tv_results" : "movie_results");
+        if (v) {
+          char sin[sizeof ((ExResumo *)0)->sinopse] = "";
+          double nota = js_num(v, js_fim(v), "vote_average", 0.0);
+          js_texto(v, js_fim(v), "overview", sin, sizeof sin);
+          numaLinha(sin);
+          pthread_mutex_lock(&exrTrava);
+          { ExrVaga *g = exrVaga(id, 1);
+            if (sin[0]) snprintf(g->r.sinopse, sizeof g->r.sinopse, "%s", sin);
+            if (!g->r.cru[EX_TMDB] && nota > 0.0) g->r.cru[EX_TMDB] = emDecimos(nota * 10.0); }
+          pthread_mutex_unlock(&exrTrava);
+        }
+        free(corpo);
+      }
+    }
+
+    // 3. MDBList, so o que a linha do titulo mostra.
+    if (mdbChave[0] && ajustes_mdblist_ligado()) {
+      const char *cabJ[2] = { "content-type: application/json", NULL };
+      char corpoPost[80];
+      snprintf(corpoPost, sizeof corpoPost, "{\"ids\":[\"%s\"],\"provider\":\"imdb\"}", id);
+      for (k = 0; k < EX_NFONTES; k++) {
+        char *rp;
+        int ja;
+        if (!ajustes_nota_titulo(k) || !ajustes_mdblist_fonte(k)) continue;
+        pthread_mutex_lock(&exrTrava);
+        { ExrVaga *g = exrVaga(id, 0); ja = g && g->r.cru[k] > 0 && k == EX_TRAKT; }
+        // Outro titulo pedido no meio: este para aqui e o fio pega o novo.
+        if (exrGer != exrFeita) ja = -1;
+        pthread_mutex_unlock(&exrTrava);
+        if (ja < 0) { cortado = 1; break; }
+        if (ja) continue;
+        snprintf(url, sizeof url, "https://api.mdblist.com/rating/%s/%s?apikey=%s",
+                 serie ? "show" : "movie", FONTE[k], mdbChave);
+        rp = rede_postar(url, 8, cabJ, corpoPost);
+        if (!rp) continue;
+        { double v = js_num(rp, NULL, "rating", -1.0);
+          free(rp);
+          if (v >= 0.0) {
+            int c = emDecimos(v);
+            pthread_mutex_lock(&exrTrava);
+            { ExrVaga *g = exrVaga(id, 1); g->r.cru[k] = c; }
+            pthread_mutex_unlock(&exrTrava);
+            if (k == EX_IMDB) imdbnota_publicar(id, c);
+          } }
+      }
+    }
+
+    pthread_mutex_lock(&exrTrava);
+    { ExrVaga *g = exrVaga(id, 1); g->r.pronto = !cortado; g->r.carregando = 0; }
+    pthread_mutex_unlock(&exrTrava);
+  }
+  return NULL;
+}
+
+void extras_resumo_pedir(const char *imdb, int serie, int semSinopse) {
+  char id[24];
+  exrId(imdb, id, sizeof id);
+  if (!id[0]) return;
+  pthread_mutex_lock(&exrTrava);
+  { ExrVaga *v = exrVaga(id, 0);
+    if (v && (v->r.pronto || v->r.carregando)) { pthread_mutex_unlock(&exrTrava); return; }
+    v = exrVaga(id, 1);
+    v->serie = serie;
+    v->r.carregando = 1; }
+  snprintf(exrPedido, sizeof exrPedido, "%s", id);
+  exrSerie = serie; exrSinopse = semSinopse;
+  exrGer++;
+  if (!exrFio) {
+    pthread_t t;
+    if (pthread_create(&t, NULL, lacoResumo, NULL) == 0) { pthread_detach(t); exrFio = 1; }
+    else { ExrVaga *v = exrVaga(id, 0); if (v) v->r.carregando = 0; }
+  }
+  // Pedido anterior ainda sem resposta deixa de estar "carregando": o fio so
+  // atende o ultimo, e o anterior volta a ser pedido quando o menu reabrir.
+  { int i;
+    for (i = 0; i < EXR_CACHE; i++)
+      if (exrCache[i].id[0] && strcmp(exrCache[i].id, id) && exrCache[i].r.carregando &&
+          !exrCache[i].r.pronto)
+        exrCache[i].r.carregando = 0; }
+  pthread_cond_signal(&exrCv);
+  pthread_mutex_unlock(&exrTrava);
+}
+
+int extras_resumo_obter(const char *imdb, ExResumo *saida) {
+  char id[24];
+  int ok = 0, k;
+  exrId(imdb, id, sizeof id);
+  if (!id[0] || !saida) return 0;
+  pthread_mutex_lock(&exrTrava);
+  { ExrVaga *v = exrVaga(id, 0);
+    if (v) { *saida = v->r; ok = 1; } }
+  pthread_mutex_unlock(&exrTrava);
+  // O que a pessoa escondeu em Ajustes > MDBList some na LEITURA, como em
+  // extras_nota.
+  if (ok) for (k = 0; k < EX_NFONTES; k++) if (!ajustes_mdblist_fonte(k)) saida->cru[k] = 0;
+  return ok;
+}
+
+void extras_resumo_definir(const char *imdb, const ExResumo *r) {
+  char id[24];
+  exrId(imdb, id, sizeof id);
+  if (!id[0] || !r) return;
+  pthread_mutex_lock(&exrTrava);
+  { ExrVaga *v = exrVaga(id, 1); v->r = *r; }
+  pthread_mutex_unlock(&exrTrava);
+}
+
+// Costura de teste: o estado que o fetch de /progress/watched deixa. Sem rede.
+// INTENCIONAL na build de release: nenhum codigo de src/ a chama (so tests/progresso_serie.c); inalcancavel na TV.
+void extras_teste_progresso(const char *id, int nVistos, int exibidos, int pt, int pe) {
+  pthread_mutex_lock(&trava);
+  snprintf(idPedido, sizeof idPedido, "%s", id);
+  proximoT = pt; proximoE = pe; progressoPronto = 1;
+  epsExibidos = exibidos; epsVistos = nVistos;
+  epsBase = vistoep_contar(id); epsRev = vistoep_revisao();
+  memset(vistos, 0, sizeof vistos);
+  { int t, e; for (t = 1; t <= 3; t++) for (e = 1; e < 8 && t < 3; e++) vistos[t][e] = 1; }
+  pthread_mutex_unlock(&trava);
+}

@@ -85,6 +85,7 @@ static void quadros(int n) {
 static void tecla(SDL_Keycode k) {
   SDL_Event ev; memset(&ev, 0, sizeof ev);
   ev.type = SDL_KEYDOWN; ev.key.keysym.sym = k; faixas_evento(&ev);
+  ev.type = SDL_KEYUP; faixas_evento(&ev);
   quadros(3);
 }
 
@@ -121,11 +122,17 @@ static void estado(int controles) {
   v.largura = 3840; v.altura = 2160; v.pronto = 1; v.pos = 12.0; v.duracao = 3360.0;
   v.nAudio = 1;
   faixa(&v.audio[0], 1, "Ingl\xc3\xaas  \xc2\xb7  E-AC3 \xc2\xb7 5.1", "en", "", 0);
-  v.nLeg = 4; v.legAtual = -1;
+  v.nLeg = 5; v.legAtual = -1;
+  // #287: full + forced + signs of the same language, and an SDH one: the
+  // simple list says which is which next to "Embutida".
   faixa(&v.leg[0], 3, "Portugu\xc3\xaas (Brasil)", "pt", "S_TEXT/UTF8", 0);
-  faixa(&v.leg[1], 4, "Portugu\xc3\xaas \xe2\x80\x94 Letreiros", "pt", "S_TEXT/ASS", 1);
-  faixa(&v.leg[2], 5, "English", "en", "S_TEXT/UTF8", 0);
-  faixa(&v.leg[3], 6, "Espa\xc3\xb1ol", "es", "S_HDMV/PGS", 0);
+  faixa(&v.leg[1], 4, "Portugu\xc3\xaas  \xc2\xb7  For\xc3\xa7" "ada", "pt", "S_TEXT/UTF8", 1);
+  v.leg[1].tipoLeg = LING_LEG_FORCADA;
+  faixa(&v.leg[2], 5, "Portugu\xc3\xaas  \xc2\xb7  Signs & Songs", "pt", "S_TEXT/ASS", 1);
+  v.leg[2].tipoLeg = LING_LEG_LETREIROS;
+  faixa(&v.leg[3], 6, "English  \xc2\xb7  English SDH", "en", "S_TEXT/UTF8", 0);
+  v.leg[3].tipoLeg = LING_LEG_SDH;
+  faixa(&v.leg[4], 7, "Espa\xc3\xb1ol", "es", "S_HDMV/PGS", 0);
   video_simular(&v);
   player_shot_estado(relogio, 12.0f, 3360.0f, 1, 0, 0, 0);
   if (!controles) player_shot_esconder();
@@ -224,18 +231,49 @@ int main(int argc, char **argv) {
   faixas_abrir_em(1);
   quadros(60);
   salvar("legendas-seletor-simples");
-  tecla(SDLK_RETURN);                                     // #202: the active pt row has 2 versions -> their list
-  quadros(30);
-  assert(legendasui_versoes());
+  salvar("painel-depois-curta");
+  salvar("painel-v2-lista");
+  // Hold OK on the row: the dropdown opens below it (#425 v2). Right goes to Estilo.
+  { SDL_Event ev; memset(&ev, 0, sizeof ev);
+    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_RETURN; faixas_evento(&ev);
+    SDL_Delay(780); quadros(30);
+    ev.type = SDL_KEYUP; faixas_evento(&ev); quadros(30); }
+  salvar("painel-depois-menu");
+  salvar("painel-v2-menu");
+  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RETURN);
+  quadros(30); assert(legendasui_versoes());
   salvar("legendas-seletor-versoes");
-  tecla(SDLK_ESCAPE);                                     // Back to the main list, focus on that language
-  quadros(20);
-  assert(!legendasui_versoes());
+  tecla(SDLK_ESCAPE); quadros(20); assert(!legendasui_versoes());
+  tecla(SDLK_RIGHT); quadros(40); salvar("painel-v2-estilo");
+  // Estilo tab controls (owner, 11/10): each opens in place, same panel height.
+  { VideoLegendaEstilo guardado = *player_leg_estilo();
+    float h0 = legendasui_altura();
+    quadros(60); salvar("estilo-grade");
+    tecla(SDLK_RETURN); quadros(60); assert(faixas_estilo_controle() == 0);          // Tamanho
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); quadros(40);
+    assert(player_leg_estilo()->tamanho == guardado.tamanho + 30);
+    salvar("estilo-slider-tamanho");
+    tecla(SDLK_ESCAPE); quadros(30); assert(faixas_estilo_controle() < 0 && faixas_estilo_topo());
+    tecla(SDLK_DOWN); tecla(SDLK_RETURN); quadros(60); assert(faixas_estilo_controle() == 5);   // Posicao
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); quadros(40);
+    salvar("estilo-posicao");
+    tecla(SDLK_RETURN); tecla(SDLK_UP); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);               // item 2, Cor
+    tecla(SDLK_RETURN); quadros(60); assert(faixas_estilo_controle() == 2);
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); quadros(40);
+    salvar("estilo-cores");
+    tecla(SDLK_RETURN); tecla(SDLK_LEFT);                                                   // item 1, Fonte
+    tecla(SDLK_RETURN); quadros(60); assert(faixas_estilo_controle() == 1);
+    tecla(SDLK_RIGHT); tecla(SDLK_DOWN); quadros(40);
+    salvar("estilo-fontes");
+    tecla(SDLK_RETURN); quadros(20);
+    *player_leg_estilo() = guardado; player_leg_estilo_mudou();
+    tecla(SDLK_LEFT); tecla(SDLK_LEFT); quadros(20); (void)h0; }
   { int i; for (i = 0; i < 12; i++) tecla(SDLK_DOWN); }   // last row: Mais opcoes
   tecla(SDLK_RETURN);
   quadros(40);
   assert(legendasui_mais());
   salvar("legendas-mais-opcoes");
+  salvar("painel-depois-todas");
   tecla(SDLK_RIGHT);                                      // aim at the second slot? no: candidate row -> Estilo
   tecla(SDLK_LEFT);
   tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_UP);         // to the "Usar como" row
@@ -245,7 +283,18 @@ int main(int argc, char **argv) {
   { int i; for (i = 0; i < 8; i++) tecla(SDLK_DOWN); }   // the addon files, with details
   quadros(30);
   salvar("legendas-mais-opcoes-addons");
+  // Read the real persisted preference, including both manual-delay endpoints.
+  player_dir(getenv("NUVIO_DADOS"));
+  { char nome[700]; const int offsets[] = { 60000, -60000, 15000, 60001 };
+    for (int j = 0; j < 4; j++) {
+      snprintf(nome, sizeof nome, "%s/player.txt", getenv("NUVIO_DADOS"));
+      FILE *f = fopen(nome, "w"); assert(f); fprintf(f, "leg_atraso %d\n", offsets[j]); fclose(f);
+      player_leg_estilo()->atrasoMs = 0;
+      player_abrir(0, NULL);
+      assert(player_leg_estilo()->atrasoMs == (j == 3 ? 0 : offsets[j]));
+    }
+  }
   legenda2_encerrar();
-  puts("legendas_shot: ok");
+  puts("legendas_shot: captures and ±60 s preference reload OK");
   return 0;
 }

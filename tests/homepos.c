@@ -12,6 +12,7 @@
 // Sem janela, rede ou TV, como tests/home_layout.c: inclui src/home.c direto.
 #include <assert.h>
 #include "../src/home.c"
+void desc_sinopse_hero(const int *idx, int n) { (void)idx; (void)n; }
 
 void cachearte_marcar_grupo(int grupo, const char *url, int variante, int essencial, int emUso) {
   (void)grupo; (void)url; (void)variante; (void)essencial; (void)emUso;

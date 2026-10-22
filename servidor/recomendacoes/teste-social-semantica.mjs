@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { rotaAmigo, rotaEvento, rotaRecResposta } from "./src/social.js";
+import { rotaAmigo, rotaEvento, rotaFeed, rotaRecResposta } from "./src/social.js";
 
 const NOW = 1791054000;
 const ME = "nuvio:reader", FRIEND = "nuvio:friend";
@@ -60,7 +60,13 @@ function fixture(t) {
     const response = await rotaRecResposta(env, { id: who }, body, h, async () => true, clean);
     return { status: response.status, body: response.status === 200 ? await response.json() : null };
   };
-  return { sqlite, friend, event, reply };
+  const feed = async () => {
+    const response = await rotaFeed(env, { id: ME }, new URL("https://example.test/v1/feed"),
+      new Request("https://example.test/v1/feed"), h, async () => null);
+    assert.equal(response.status, 200);
+    return (await response.json()).itens;
+  };
+  return { sqlite, friend, event, reply, feed };
 }
 
 test("recommendation completion remains independent of reactions and opening", async (t) => {
@@ -195,4 +201,51 @@ test("GET /v1/rec returns watched/reply state of every rec, old ids included, an
   const etag1 = res.headers.get("etag");
   await reply({ id: fresh });
   assert.notEqual((await get(fresh)).headers.get("etag"), etag1);
+});
+
+test("the feed shows only meaningful events, one line per person and title", async (t) => {
+  const { sqlite, event, feed } = fixture(t);
+  const raw = (ev, imdb, midia, temporada, episodio, criado, reacao = 0) => sqlite.prepare(
+    "INSERT INTO evento (pessoa, ev, imdb, midia, titulo, poster, temporada, episodio, pct, reacao, rec, criado) " +
+    "VALUES (?, ?, ?, ?, 'T', '', ?, ?, 0, ?, 0, ?)").run(FRIEND, ev, imdb, midia, temporada, episodio, reacao, criado);
+  // legacy noise already stored: exits, saves, a started movie
+  raw("abandono", "tt10", "movie", 0, 0, NOW - 900);
+  raw("salvo", "tt11", "movie", 0, 0, NOW - 800);
+  raw("inicio", "tt12", "movie", 0, 0, NOW - 700);
+  // a series: started, three episodes finished, the last one liked
+  raw("inicio", "tt20", "series", 1, 1, NOW - 600);
+  raw("fim", "tt20", "series", 1, 1, NOW - 500);
+  raw("inicio", "tt20", "series", 1, 2, NOW - 450);
+  raw("fim", "tt20", "series", 1, 2, NOW - 400);
+  raw("fim", "tt20", "series", 1, 3, NOW - 300);
+  raw("reacao", "tt20", "series", 1, 3, NOW - 290, 1);
+  // a brand-new series, only started
+  raw("inicio", "tt30", "series", 2, 1, NOW - 200);
+  // a movie: disliked, changed mind to "meh", no completion seen
+  raw("reacao", "tt40", "movie", 0, 0, NOW - 100, -1);
+  raw("reacao", "tt40", "movie", 0, 0, NOW - 90, 0);
+  const itens = await feed();
+  assert.deepEqual(itens.map((x) => [x.imdb, x.ev]), [
+    ["tt40", "reacao"], ["tt30", "inicio"], ["tt20", "fim"],
+  ], "no exits, saves or started movies; one line per title, newest first");
+  const serie = itens.find((x) => x.imdb === "tt20");
+  assert.equal(serie.eps, 3, "three distinct episodes finished");
+  assert.equal(serie.episodio, 3, "the newest finished episode");
+  assert.equal(serie.reac, 1, "the reaction rides on the finished line");
+  assert.equal(itens.find((x) => x.imdb === "tt40").reacao, 0, "the latest reaction wins");
+  assert.ok(!("eps" in itens.find((x) => x.imdb === "tt30")));
+});
+
+test("leaving the player closes 'watching now' and is never stored as an event", async (t) => {
+  const { sqlite, event } = fixture(t);
+  const agora = () => sqlite.prepare("SELECT COUNT(*) AS n FROM agora").get().n;
+  await event({ ev: "inicio", imdb: "tt1", midia: "series", temporada: 1, episodio: 1 });
+  assert.equal(agora(), 1);
+  await event({ ev: "progresso", imdb: "tt1", midia: "series", temporada: 1, episodio: 1, pct: 10, seg: 60, parou: 1 });
+  assert.equal(agora(), 0, "the new client's stop signal");
+  await event({ ev: "inicio", imdb: "tt2", midia: "movie" });
+  await event({ ev: "abandono", imdb: "tt2", midia: "movie", pct: 5, seg: 30 });
+  assert.equal(agora(), 0, "an old client's abandono still closes it");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM evento WHERE ev IN ('abandono', 'progresso')").get().n, 0);
+  assert.equal(sqlite.prepare("SELECT seg FROM agregado").get().seg, 90, "the watched time still counts");
 });

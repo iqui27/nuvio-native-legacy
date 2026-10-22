@@ -285,6 +285,43 @@ int main(int argc, char **argv) {
     assert(n == 3); }
   shot("homonimos");
 
+  /* 13c. GOSTO PARECIDO (#202): cada linha diz POR QUE a pessoa foi sugerida.
+     lerPessoa e o parser real da resposta de /v1/perfis/sugeridos; o ultimo
+     perfil vem de um servidor ANTIGO (sem "motivo") e cai na bio, como antes. */
+  { static const char *json[5] = {
+      "{\"pub\":\"g000000001\",\"apelido\":\"fabi cine\",\"bio\":\"fa de terror\",\"generos\":[\"terror\"],"
+        "\"relacao\":\"\",\"emComum\":4,\"motivo\":{\"tipo\":\"titulos\",\"n\":4,\"generos\":[\"terror\"]}}",
+      "{\"pub\":\"g000000002\",\"apelido\":\"helena tv\",\"bio\":\"\",\"generos\":[\"terror\",\"ficcao\",\"drama\"],"
+        "\"relacao\":\"\",\"emComum\":0,\"motivo\":{\"tipo\":\"generos\",\"generos\":[\"terror\",\"ficcao\"]}}",
+      "{\"pub\":\"g000000003\",\"apelido\":\"marcos 4k\",\"bio\":\"\",\"generos\":[],"
+        "\"relacao\":\"\",\"emComum\":0,\"motivo\":{\"tipo\":\"ativos\"}}",
+      "{\"pub\":\"g000000004\",\"apelido\":\"ana series\",\"bio\":\"maratonista de series\",\"generos\":[\"drama\"],"
+        "\"relacao\":\"\",\"emComum\":0}",
+      "{\"pub\":\"g000000005\",\"apelido\":\"leo docs\",\"bio\":\"\",\"generos\":[\"documentario\"],"
+        "\"relacao\":\"\",\"emComum\":0,\"motivo\":{\"tipo\":\"inventado\"}}" };
+    for (k = 0; k < 5; k++) assert(lerPessoa(json[k], json[k] + strlen(json[k]), &achados[k]));
+    assert(achados[0].motivo == REC_MOTIVO_TITULOS && achados[0].emComum == 4);
+    assert(achados[1].motivo == REC_MOTIVO_GENEROS && achados[1].motivoGeneros == ((1u << 13) | (1u << 9)));
+    assert(achados[1].generos != achados[1].motivoGeneros);   /* nao confunde os generos do cartao */
+    assert(achados[2].motivo == REC_MOTIVO_ATIVOS);
+    assert(achados[3].motivo == REC_MOTIVO_NENHUM && achados[4].motivo == REC_MOTIVO_NENHUM);
+    nAchados = 4; achadosOrigem = 2; }
+  irPara(PG_LISTA); listaOrigem = 2; listaErro = 0; listaCarregando = 0;
+  montar();
+  { char c[160]; int vistos = 0, i;
+    for (i = 0; i < nL; i++) if (linhas[i].tipo == T_PESSOA) {
+      contexto(c, sizeof c, &linhas[i].p);
+      if (!strcmp(linhas[i].p.pub, "g000000001")) { assert(!strcmp(c, "4 títulos em comum")); vistos++; }
+      if (!strcmp(linhas[i].p.pub, "g000000002")) { assert(!strcmp(c, "Também gosta de Ficção científica, Terror")); vistos++; }
+      if (!strcmp(linhas[i].p.pub, "g000000003")) { assert(!strcmp(c, "Perfil ativo na comunidade")); vistos++; }
+      if (!strcmp(linhas[i].p.pub, "g000000004")) { assert(!strcmp(c, "maratonista de series")); vistos++; }
+    }
+    assert(vistos == 4); }
+  shot("gosto");
+  nAchados = 0;
+  irPara(PG_LISTA); listaOrigem = 2;
+  shot("gosto-vazio");
+
   /* 14. PEDIDOS */
   irPara(PG_PEDIDOS);
   shot("pedidos");

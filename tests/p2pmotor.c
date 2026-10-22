@@ -24,7 +24,7 @@ void debrid_episodio(int *t, int *e) { *t = 0; *e = 0; }
 const char *dados_dir(void) { return "/nao/usado"; }
 char *rede_baixar_st(const char *u, int s, const char *const *c, int *st) { (void)u; (void)s; (void)c; if (st) *st = 0; return NULL; }
 char *rede_postar_st(const char *u, int s, const char *const *c, const char *b, int *st) { (void)u; (void)s; (void)c; (void)b; if (st) *st = 0; return NULL; }
-char *rede_baixar_trecho_st(const char *u, int s, long a, long b, long *t, int *st, int *e, char *f, unsigned n) {
+char *rede_baixar_trecho_st(const char *u, int s, long long a, long long b, long *t, int *st, int *e, char *f, unsigned n) {
   (void)u; (void)s; (void)a; (void)b; (void)t; (void)e; (void)f; (void)n; if (st) *st = 0; return NULL; }
 int rede_pedir(const RedePedido *p, RedeResposta *r) { (void)p; r->erro = REDE_INDISPONIVEL; return 0; }
 void rede_resposta_limpar(RedeResposta *r) { (void)r; }
@@ -67,6 +67,7 @@ static _Atomic uint64_t livreAtual;
 static _Atomic int livreFalha;
 static _Atomic int criados, destruidos, escreveuSemPasta;
 static _Atomic int vivos;   // motores falsos vivos
+static _Atomic uint64_t janelaRecebida;   // #334: config.janela do ultimo criar
 
 static void agendar(Falso *f, unsigned emMs, const P2pmEvento *ev) {
   pthread_mutex_lock(&f->t);
@@ -107,6 +108,7 @@ static int fCriar(const P2pmConfig *c, void **m) {
   // O teto mole tem de vir do orcamento: nunca mais que 1/4 do livre.
   assert(c->disco <= atomic_load(&livreAtual) / 4);
   assert(c->ram == (uint64_t)P2PM_RAM_MB << 20);
+  atomic_store(&janelaRecebida, c->janela);
   f = calloc(1, sizeof *f);
   pthread_mutex_init(&f->t, NULL);
   snprintf(f->cache, sizeof f->cache, "%s", c->cache);
@@ -491,6 +493,32 @@ int main(void) {
   printf("p2pmotor: corrida (40 voltas) ok; motores criados %d, destruidos %d\n",
          atomic_load(&criados), atomic_load(&destruidos));
   assert(atomic_load(&criados) == atomic_load(&destruidos));
+  // #334: tamanho do arquivo escolhido fica para a tela; sobra apagada no inicio.
+  padrao();
+  r = p2pmotor_resolver(H1, -1, NULL, 0, 0, url, sizeof url);
+  assert(r == P2P_OK);
+  { uint64_t tam = 0, teto = 0, livre = 0;
+    p2pmotor_arquivo_atual(&tam, &teto, &livre);
+    assert(tam == 2000000000ull && teto == (uint64_t)P2PM_DURO_MAX_MB << 20 && livre == 8ull << 30);
+    // a janela que o motor recebeu e a do teto duro
+    assert(atomic_load(&janelaRecebida) == p2pmotor_janela(teto)); }
+  // limpar com o motor de pe: nao mexe na pasta (quem esta ai cuida dela)
+  p2pmotor_limpar_sobra();
+  assert(existe(RAIZ));
+  pararTudo();
+  { uint64_t tam = 0; p2pmotor_arquivo_atual(&tam, NULL, NULL); assert(tam == 2000000000ull); }
+  mkdir(RAIZ, 0700);
+  { char s2[700]; snprintf(s2, sizeof s2, "%s/dados", RAIZ); mkdir(s2, 0700);
+    snprintf(s2, sizeof s2, "%s/dados/video.mkv", RAIZ); FILE *a2 = fopen(s2, "w"); fputs("x", a2); fclose(a2); }
+  p2pmotor_limpar_sobra();
+  { double fim = agora() + 2; while (existe(RAIZ) && agora() < fim) ms(5); }
+  assert(!existe(RAIZ));
+  p2pmotor_limpar_sobra();     // sem pasta: nada, sem fio
+  r = p2pmotor_resolver(H1, -1, NULL, 0, 0, url, sizeof url);
+  assert(r == P2P_OK);
+  pararTudo();
+  puts("p2pmotor: #334 tamanho do arquivo e sobra apagada no inicio ok");
+
   { char mae[600]; snprintf(mae, sizeof mae, "/tmp/nv-p2pmotor-%d", (int)getpid()); rmdir(mae); }
   puts("p2pmotor: ok (motor FALSO: nao prova o nuvio-engine)");
   return 0;

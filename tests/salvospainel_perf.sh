@@ -7,7 +7,7 @@
 #   bash tests/salvospainel_perf.sh /outra/arvore   # ex.: worktree da v1.4.5
 #
 # PERF_SEM_HOME=1 mede so o painel.
-set -eu
+set -euo pipefail
 aqui="$(cd "$(dirname "$0")/.." && pwd)"
 raiz="${1:-$aqui}"
 cd "$raiz"

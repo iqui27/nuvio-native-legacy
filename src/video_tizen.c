@@ -86,6 +86,8 @@
 #include "idioma.h"
 #include "marco.h"
 #include "mkv.h"
+#include "capmkv.h"
+#include "vazao.h"
 #include <SDL2/SDL.h>
 #include <emscripten.h>
 #include <emscripten/threading.h>
@@ -111,7 +113,7 @@
 //   * o buffer vem de malloc/pilha do C e a escrita e feita DEPOIS, entao a
 //     view (HEAPF64/HEAPU8) tem de ser indexada na hora do uso — nunca guardada
 //     entre chamadas. Aqui isso e automatico porque cada operacao reindexa.
-//   * "estado" devolve SO DOUBLES, oito deles, e nao uma struct mista. Um
+//   * "estado" devolve SO DOUBLES, dez deles, e nao uma struct mista. Um
 //     campo int no meio obrigaria a acertar deslocamento e alinhamento em duas
 //     linguagens; um vetor de um tipo so nao tem como sair de fase.
 EM_JS(double, nv_av, (const char *cmd, const char *txt,
@@ -401,6 +403,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     // aqui mesmo) ou outra coisa no mesmo quadro. So depois disso vale
     // tentar pause/seek/play ou outra estrategia.
     S.legTxt = ""; S.legAte = 0;   // a fala de antes do salto nao vale no destino
+    S.fim = 0;                    // um fim anterior nao vale depois da busca
     S.tSeek = Date.now();          // o "estado" volta a ler getCurrentTime por 1,5 s
     var t0 = performance.now();
     try { p4.seekTo(a | 0, function () {}, function () {}); } catch (e) { return 0; }
@@ -442,9 +445,9 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   }
 
   if (op === "estado") {
-    // Ten doubles, same order as EST_* in C. One type, no padding.
+    // Twelve doubles, same order as EST_* in C. One type, no padding.
     // dstTam vem em BYTES, como em "faixas": um so contrato para o buffer.
-    if (!dst || dstTam < 64) return 0;
+    if (!dst || dstTam < 96) return 0;
     var p6 = pl();
     var dur = 0;
     if (p6 && S.aberto && S.pronto) {
@@ -495,10 +498,10 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     HEAPF64[o + 5] = S.larg;
     HEAPF64[o + 6] = S.alt;
     HEAPF64[o + 7] = S.erro ? 1 : 0;
-    if (dstTam >= 80) {
-      HEAPF64[o + 8] = S.posMs / 1000.0;
-      HEAPF64[o + 9] = S.tPos && S.tPosMono ? Math.max(0, performance.now() - S.tPosMono) : 0;
-    }
+    HEAPF64[o + 8] = S.bufPct;
+    HEAPF64[o + 9] = S.fim ? 1 : 0;
+    HEAPF64[o + 10] = S.posMs / 1000.0;
+    HEAPF64[o + 11] = S.tPos && S.tPosMono ? Math.max(0, performance.now() - S.tPosMono) : 0;
     return 1;
   }
 
@@ -723,7 +726,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
 // Indices do vetor devolvido por "estado". Precisam casar com a ordem escrita
 // no JS acima, e sao a UNICA coisa combinada entre os dois lados.
 enum { EST_POS, EST_DUR, EST_TOCANDO, EST_PRONTO, EST_ABERTO,
-       EST_LARG, EST_ALT, EST_ERRO, EST_POS_CRUA, EST_POS_IDADE, EST_N };
+       EST_LARG, EST_ALT, EST_ERRO, EST_BUFPCT, EST_FIM, EST_POS_CRUA, EST_POS_IDADE, EST_N };
 
 // O pedido que atravessa para o fio principal. Fica na PILHA do chamador: com
 // -pthread a memoria e compartilhada e avChamar() e sincrona, entao o quadro
@@ -798,9 +801,12 @@ static double avChamar(const char *cmd, const char *txt,
 // callback do navegador e um dos jeitos conhecidos de travar tudo sem mensagem.
 static int    ligado;        // video_iniciar deu certo
 static int    temAvplay;     // o firmware oferece webapis.avplay
+static Uint32 aberturaEm;   // avplay open (log do inicio, #202)
 static int    ativo;         // ha sessao aberta — e o que abre o furo
-static int    tocando, pronto;
-static double posSeg, durSeg, posAmostra;
+static int    tocando, pronto, terminou;
+static double posSeg, durSeg;
+static int    bufPct;
+static double posAmostra;
 static Uint64 posAmostraEm;
 static int    vidW, vidH;
 static int    houveErro;
@@ -898,6 +904,7 @@ int video_tocar(const char *url) {
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; faixasLidas = 0;
   posSeg = durSeg = posAmostra = 0; posAmostraEm = SDL_GetTicks64();
   vidW = vidH = 0; houveErro = 0; erroTexto[0] = 0;
+  terminou = 0;
   seekEm = 0;
   // Sonda de MKV so faz sentido em MKV. Num MP4 e descida garantidamente
   // perdida pela MESMA conexao que esta transmitindo — o log da LG dizia
@@ -917,6 +924,7 @@ int video_tocar(const char *url) {
   // caso o evento nao venha. Mesma decisao do caminho da LG (video_ativo la usa
   // o mediaId, nao o loadCompleted).
   ativo = 1;
+  aberturaEm = SDL_GetTicks();
   marco("avplay open");
   // O retangulo corrente vai junto: quem pediu a janela antes de haver sessao
   // (main.c faz exatamente isso) seria ignorado de outra forma.
@@ -1152,10 +1160,11 @@ static void *lerMkv(void *arg) {
   n = mkv_faixas_e_caps(url, fx, MKV_MAX_FAIXAS, caps, MKV_MAX_CAPS, &nCaps);
   if (nCaps > 0) {
     creditosNomeado = mkv_creditos_nomeados(caps, nCaps);
-    creditosUltimo  = nCaps > 1 ? caps[nCaps - 1].inicio : 0.0;
+    creditosUltimo  = mkv_creditos_ultimo(caps, nCaps);
     printf("[mkv] %d capitulos; creditos nomeados em %.0fs, ultimo em %.0fs\n",
            nCaps, creditosNomeado, creditosUltimo);
     fflush(stdout);
+    capmkv_aplicar(caps, nCaps);   // abertura/creditos/previa do arquivo -> modulo de intro
   }
   if (n < 1) marco("mkv: nenhuma faixa lida (nao e MKV, ou Range falhou)");
   else aplicarIdiomasDoMkv(fx, n);
@@ -1202,9 +1211,11 @@ void video_bombear(void) {
     Uint64 now = SDL_GetTicks64(), age = (Uint64)est[EST_POS_IDADE];
     posAmostraEm = age <= now ? now - age : 0;
   }
+  bufPct   = (int)est[EST_BUFPCT];
   durSeg   = est[EST_DUR];
   tocando  = est[EST_TOCANDO] != 0;
   pronto   = est[EST_PRONTO]  != 0;
+  terminou = est[EST_FIM]     != 0;
   if (est[EST_LARG] > 0) vidW = (int)est[EST_LARG];
   if (est[EST_ALT]  > 0) vidH = (int)est[EST_ALT];
   if (pronto && posSeg > 0.5) reconIniciou = 1;
@@ -1236,6 +1247,9 @@ void video_bombear(void) {
 
   if (pronto && !estavaPronto) {
     marco("avplay prepared");
+    // #202: o trecho que o .wgt nao separava no log (open -> prepared).
+    if (aberturaEm) printf("[player] load->1o quadro %u ms (avplay prepared)\n",
+                           (unsigned)(SDL_GetTicks() - aberturaEm));
     lerFaixas();
     lerInfoFluxo();
   }
@@ -1272,7 +1286,7 @@ void video_parar(void) {
   reconFaixasPend = 0; reconBuscar = -1.0;
   seekEm = 0; mkvPendente = 0;
   if (temAvplay) AV0("parar");
-  ativo = tocando = pronto = 0;
+  ativo = tocando = pronto = terminou = 0;
   posSeg = durSeg = posAmostra = 0; posAmostraEm = SDL_GetTicks64();
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; faixasLidas = 0;
   urlAtual[0] = 0;
@@ -1302,6 +1316,7 @@ void video_buscar(double segundos) {
   if (!temAvplay || !ativo) return;
   if (segundos < 0) segundos = 0;
   posSeg   = segundos;         // a barra responde na hora
+  terminou = 0;
   seekAlvo = segundos;
   seekEm   = SDL_GetTicks() + SEEK_REPOUSO_MS;
 }
@@ -1464,6 +1479,14 @@ double video_duracao(void)    { return durSeg; }
 // O AVPlay so informa PORCENTAGEM de buffering (onbufferingprogress), nunca um
 // instante. 0 e o que video.h define como "desconhecido"; quem chama ja trata.
 double video_buffer_fim(void) { return 0; }
+// SAMSUNG (.wgt): o AVPlay so da a PORCENTAGEM do buffering
+// (onbufferingprogress, 100 no onbufferingcomplete); nada de bytes, segundos,
+// conexoes ou quadros. O host e o do link pedido.
+void video_estatisticas(VideoStats *s) {
+  video_stats_vazio(s);
+  if (urlAtual[0]) s->bufferPct = bufPct < 0 ? 0 : bufPct > 100 ? 100 : bufPct;
+  vazao_host_publico(urlAtual, s->host, sizeof s->host);
+}
 // O AVPlay nao expoe o par bufferingStart/End; sem sinal, nunca afirma travo.
 unsigned video_bufferando_ms(void) { return 0; }
 void video_definir_reconexao(int sim) { reconProxima = sim ? 1 : 0; }
@@ -1481,9 +1504,9 @@ const char *video_erro_texto(void) { return houveErro ? erroTexto : ""; }
 int    video_decoder_anunciou(void) { return 1; }
 // O AVPlay nao separa "audio nao suportado" de erro geral; sem sinal proprio.
 int    video_audio_nao_suportado(void) { return 0; }
-// O trailer deste alvo nao passa pelo AVPlay (ver trailer.c); nao ha fim a
-// contar aqui.
-int    video_terminou(void)   { return 0; }
+int  video_seek_desistiu(void) { return 0; }
+// Fim real do AVPlay (onstreamcompleted), nao o destino mostrado de um seek.
+int    video_terminou(void)   { return terminou; }
 int    video_conflito_recurso(void) { return 0; }
 
 double video_creditos(void) {
@@ -1551,6 +1574,7 @@ int  video_velocidade_bloqueada(void) { return 0; }
 // CABECALHOS DO ADDON NO ALVO TIZEN: AINDA NAO IMPLEMENTADO, DE PROPOSITO.
 // Ver a nota longa no fim deste arquivo.
 void video_definir_cabecalhos(const char *cabs) { (void)cabs; }
+const char *video_cabecalhos(void) { return ""; }
 
 void video_definir_dv(int dv) { dvPedido = dv ? 1 : 0; (void)dvPedido; }
 void video_definir_mp4(int ehMp4) { fonteMp4 = ehMp4; }

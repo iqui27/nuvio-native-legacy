@@ -21,6 +21,8 @@
 #ifndef NV_SESSAO_H
 #define NV_SESSAO_H
 
+#include <stddef.h>
+
 typedef enum {
   SES_DESLOGADO = 0,
   SES_PEDINDO,      // buscando codigo
@@ -51,7 +53,20 @@ const char *sessao_usuario(void);         // `sub` do JWT; "" quando deslogado
 // do fluxo acima) tem token e nao tem dono, e mandar aquele token a outro
 // servidor criaria uma "pessoa" nova a cada arranque. Quem chama nunca deve
 // gravar o valor em disco nem em log.
-const char *sessao_token(void);
+//
+// COPIA, nao ponteiro (#203): o token e reescrito pela renovacao em outro fio
+// (sync, contapend, visto...), e quem lia o buffer interno enquanto ele era
+// trocado podia mandar um JWT pela metade. Copia o token para dst (n bytes,
+// 3000 bastam) sob a trava da sessao; devolve 1 quando ha token de USUARIO,
+// 0 (e dst = "") quando nao ha. O antigo sessao_token() saiu de proposito:
+// nao ha como devolver ponteiro para um buffer que outro fio reescreve.
+int sessao_token_copiar(char *dst, size_t n);
+// Token vencido (ou a 60 s de vencer) NAO sai: a copia renova antes, uma vez,
+// pela mesma renovacao unica do 401. Renovacao falha (servidor fora, sem
+// refresh token, recusa) = 0 e dst = "": nada vai ao Worker.
+// Worker recusou com 401 o token `tok` que mandamos: renova UMA vez, se ainda
+// for o token da sessao. Quem ja trocou o token nao renova de novo.
+void sessao_token_recusado(const char *tok);
 
 // Comeca o fluxo de login num fio proprio (as chamadas bloqueiam). Idempotente
 // enquanto um fluxo estiver em andamento.
@@ -82,10 +97,12 @@ void sessao_email_erro_de(int status, const char *corpo, char *dst, unsigned tam
 void sessao_sair(void);
 
 // RPC AUTENTICADA como o usuario. Devolve o corpo (free pelo chamador) ou NULL.
-// Em 401 renova o token e repete UMA vez; se a renovacao falhar, a sessao cai
-// para SES_DESLOGADO em vez de ficar num limbo em que o app parece logado e
+// Em 401 renova o token e repete UMA vez; se a renovacao for RECUSADA (4xx), a
+// sessao cai para SES_DESLOGADO em vez de ficar num limbo em que o app parece logado e
 // nada sincroniza. BLOQUEIA — chamar de um fio de sync, nunca do laco de
-// desenho.
+// desenho. Seguro de varios fios ao mesmo tempo (#203): a renovacao e unica —
+// quem leva 401 com um token que outro fio ja trocou so repete com o novo, e
+// quem chega durante uma renovacao espera o resultado dela.
 char *sessao_rpc(const char *funcao, const char *corpoJson, int *status);
 
 // Mesma coisa para /functions/v1/<nome>.

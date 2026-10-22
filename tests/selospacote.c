@@ -171,6 +171,31 @@ int main(void) {
     { char ruim[4000]; memset(ruim, 'a', sizeof ruim - 1); ruim[sizeof ruim - 1] = 0;
       assert(r && !regexjs_testar(r, ruim, strlen(ruim))); }
     regexjs_liberar(r);
+    { char longo[1008];
+      const char *padroes[] = {
+        "(?<=WEB-)DL", "(?<=BD-|WEB-)DL", "(?<=[A-Z]{2,3}-)DL",
+        "(?<=W(?:E|X)?B-)DL", "(?<=WEB-(?=DL))DL", "(?<!BD-)DL"
+      };
+      memset(longo, 'x', 1000); strcpy(longo + 1000, " WEB-DL");
+      for (size_t i = 0; i < sizeof padroes / sizeof *padroes; i++) {
+        r = regexjs_compilar_web(padroes[i], e, sizeof e);
+        assert(r && regexjs_testar(r, longo, strlen(longo))); regexjs_liberar(r);
+      }
+      r = regexjs_compilar_web("(?<!WEB-)DL", e, sizeof e);
+      assert(r && !regexjs_testar(r, longo, strlen(longo))); regexjs_liberar(r);
+    }
+    // O limite conta bytes, inclusive para ponto, classe e literal UTF-8.
+    { const char *padroes[] = { "(?<=.)DL", "(?<=[^x])DL", "(?<=\\u{1F600})DL" };
+      const char *t = "\xF0\x9F\x98\x80" "DL";
+      for (size_t i = 0; i < sizeof padroes / sizeof *padroes; i++) {
+        r = regexjs_compilar_web(padroes[i], e, sizeof e);
+        assert(r && regexjs_testar(r, t, strlen(t))); regexjs_liberar(r);
+      }
+    }
+    r = regexjs_compilar_web("(?<=W.*-)DL", e, sizeof e);
+    assert(r && regexjs_testar(r, "WEB-DL", 6)); regexjs_liberar(r);
+    r = regexjs_compilar_web("(?<=a{0})DL", e, sizeof e);
+    assert(r && regexjs_testar(r, "DL", 2)); regexjs_liberar(r);
     r = regexjs_compilar_web("(?<=\\.)DV(?=\\.)", e, sizeof e);
     assert(r && regexjs_testar(r, ARQ, strlen(ARQ))); regexjs_liberar(r);
     r = regexjs_compilar_web("(?i)^(?:(?!remux).)*$", e, sizeof e);

@@ -58,6 +58,8 @@ static pthread_t fio;
 static int    vivo, criado;
 static char   emCurso[64];
 static int    cancelar;
+static int    emCursoVod;
+static FontecacheEscopo preEscopo;
 
 static int expirada(const Entrada *e, Uint32 agora) {
   return (Uint32)(agora - e->quando) > FONTECACHE_VALIDADE_MS;
@@ -139,7 +141,7 @@ int fontecache_pegar(const char *id, const char *tipo, Stream **lista, int *n) {
     if (n) *n = cache[i].n;
     soltar(&cache[i]);
     r = FC_ACERTO;
-  } else if (vivo && !cancelar && !strcmp(emCurso, id) && !strcmp(FC_TIPO, tipo)) {
+  } else if (vivo && !emCursoVod && !cancelar && !strcmp(emCurso, id) && !strcmp(FC_TIPO, tipo)) {
     r = FC_EM_CURSO;
   }
   pthread_mutex_unlock(&trava);
@@ -187,11 +189,12 @@ unsigned fontecache_vod_geracao(void) {
 void fontecache_vod_limpar(void) {
   pthread_mutex_lock(&trava);
   vodGeracao++;
+  if (emCursoVod && vivo) cancelar = 1;
   for (int i = 0; i < FONTECACHE_VOD_MAX; i++) soltar(&vod[i].resposta);
   pthread_mutex_unlock(&trava);
 }
 
-void fontecache_vod_guardar(const char *id, const char *tipo, const char *origem,
+static int guardarVodSemTrava(const char *id, const char *tipo, const char *origem,
                             const FontecacheEscopo *escopo,
                             const Stream *lista, int n, Uint32 quando) {
   int alvo = -1;
@@ -203,10 +206,9 @@ void fontecache_vod_guardar(const char *id, const char *tipo, const char *origem
       strlen(id) >= sizeof vod[0].resposta.id ||
       strlen(origem) >= sizeof vod[0].origem ||
       (size_t)n > FONTECACHE_VOD_BYTES / sizeof(Stream) ||
-      (Uint32)(agora - quando) >= FONTECACHE_VOD_VALIDADE_MS) return;
+      (Uint32)(agora - quando) >= FONTECACHE_VOD_VALIDADE_MS) return 0;
   bytes = sizeof(Stream) * (size_t)n;
-  pthread_mutex_lock(&trava);
-  if (escopo->geracao != vodGeracao) { pthread_mutex_unlock(&trava); return; }
+  if (escopo->geracao != vodGeracao) return 0;
   podarVod(escopo, agora);
   for (int i = 0; i < FONTECACHE_VOD_MAX; i++)
     if (vod[i].resposta.lista && !strcmp(vod[i].resposta.id, id) &&
@@ -234,6 +236,14 @@ void fontecache_vod_guardar(const char *id, const char *tipo, const char *origem
     vod[alvo].escopo = *escopo;
     snprintf(vod[alvo].origem, sizeof vod[alvo].origem, "%s", origem);
   }
+  return copia != NULL;
+}
+
+void fontecache_vod_guardar(const char *id, const char *tipo, const char *origem,
+                            const FontecacheEscopo *escopo,
+                            const Stream *lista, int n, Uint32 quando) {
+  pthread_mutex_lock(&trava);
+  guardarVodSemTrava(id, tipo, origem, escopo, lista, n, quando);
   pthread_mutex_unlock(&trava);
 }
 
@@ -294,19 +304,25 @@ static void *prefetch(void *u) {
   Stream *lista = NULL;
   char id[64], base[600];
   int n;
+  Uint32 inicio = FC_AGORA();
   (void)u;
   pthread_mutex_lock(&trava);
   snprintf(id, sizeof id, "%s", emCurso);
   snprintf(base, sizeof base, "%s", emCursoBase);
   pthread_mutex_unlock(&trava);
 
-  n = addons_consultar(id, FC_TIPO, base, FONTECACHE_FIOS, cancelado, NULL, &lista);
+  n = addons_consultar(id, emCursoVod ? "series" : FC_TIPO, base,
+                       FONTECACHE_FIOS, cancelado, NULL, &lista);
 
   pthread_mutex_lock(&trava);
   if (cancelar) {
     // Cedeu a um pedido real, ou o app esta fechando. O que veio pode estar
     // pela metade: fora.
     printf("[fontecache] %s: prefetch cedeu (%d fontes descartadas)\n", id, n > 0 ? n : 0);
+  } else if (emCursoVod) {
+    if (guardarVodSemTrava(id, "series", "", &preEscopo, lista, n, FC_AGORA()))
+      printf("[proximo] fontes do proximo pre-carregadas: %s %d fontes (%u ms)\n",
+             id, n, (unsigned)(FC_AGORA() - inicio));
   } else if (n > 0) {
     guardarSemTrava(id, FC_TIPO, lista, n, FC_AGORA());
     printf("[fontecache] %s: %d fontes engatilhadas\n", id, n);
@@ -350,12 +366,43 @@ static void tentar(void) {
 
   pthread_mutex_lock(&trava);
   criado = 0;
+  emCursoVod = 0;
   cancelar = 0;
   vivo = 1;
   snprintf(emCurso, sizeof emCurso, "%s", id);
   snprintf(emCursoBase, sizeof emCursoBase, "%s", base);
   if (pthread_create(&fio, NULL, prefetch, NULL) != 0) { vivo = 0; emCurso[0] = 0; }
   else criado = 1;
+  pthread_mutex_unlock(&trava);
+}
+
+// Mesmo fio, limite de concorrencia e cancelamento do guia. Chamado pela UI;
+// nunca ocupa o estado/resultado da busca real de addons.c.
+int fontecache_precarregar_proximo(const char *id, const FontecacheEscopo *escopo) {
+  int juntar, ok;
+  if (!id || !*id || strlen(id) >= sizeof emCurso || !escopo || addons_ocupado()) return 0;
+  pthread_mutex_lock(&trava);
+  if (vivo) { pthread_mutex_unlock(&trava); return 0; }
+  juntar = criado;
+  pthread_mutex_unlock(&trava);
+  if (juntar) pthread_join(fio, NULL);
+  pthread_mutex_lock(&trava);
+  criado = 0; cancelar = 0; vivo = 1; emCursoVod = 1;
+  preEscopo = *escopo;
+  snprintf(emCurso, sizeof emCurso, "%s", id);
+  emCursoBase[0] = 0;
+  // Vizinhos de um guia anterior nao devem arrancar durante o episodio.
+  pend[0][0] = pend[1][0] = 0;
+  ok = pthread_create(&fio, NULL, prefetch, NULL) == 0;
+  if (ok) criado = 1;
+  else { vivo = 0; emCurso[0] = 0; }
+  pthread_mutex_unlock(&trava);
+  return ok;
+}
+
+void fontecache_cancelar_proximo(void) {
+  pthread_mutex_lock(&trava);
+  if (emCursoVod && vivo) cancelar = 1;
   pthread_mutex_unlock(&trava);
 }
 

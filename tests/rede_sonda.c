@@ -23,6 +23,17 @@ int main(int argc, char **argv) {
   assert(stream_url_serve(url, "Referer: https://media.example/\nUser-Agent: Nuvio-test"));
   snprintf(url, sizeof url, "%s/ref-redirect", argv[1]);
   assert(rede_url_final_cab(url, 2, cab, fim, sizeof fim, &http) && http == 200 && strstr(fim, "/referer"));
+  { char mime[64]; long corpo = 7;
+    // O tipo e o tamanho do corpo vem da mesma sonda (2.0.2, naovideo.h).
+    snprintf(url, sizeof url, "%s/html", argv[1]);
+    assert(rede_url_final_tipo(url, 2, NULL, fim, sizeof fim, &http, mime, sizeof mime, &corpo));
+    assert(!strcmp(mime, "text/html") && corpo == -1 && !stream_url_serve(url, NULL));
+    snprintf(url, sizeof url, "%s/json", argv[1]);
+    assert(rede_url_final_tipo(url, 2, NULL, fim, sizeof fim, &http, mime, sizeof mime, &corpo));
+    assert(!strcmp(mime, "application/json") && corpo == 7 && !stream_url_serve(url, NULL));
+    snprintf(url, sizeof url, "%s/video", argv[1]);
+    assert(rede_url_final_tipo(url, 2, NULL, fim, sizeof fim, &http, mime, sizeof mime, &corpo));
+    assert(!strcmp(mime, "video/mp4") && corpo == 64 && stream_url_serve(url, NULL)); }
   snprintf(url, sizeof url, "%s/partial", argv[1]);
   assert(rede_url_final_cab(url, 2, NULL, fim, sizeof fim, &http) && http == 206);
   snprintf(url, sizeof url, "%s/redirect", argv[1]);

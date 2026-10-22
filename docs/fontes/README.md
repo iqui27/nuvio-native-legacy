@@ -39,6 +39,7 @@ A Inter não tem kana nem hanzi. `text.c` manda a linha para uma fonte de reserv
 
 - Origem: Droid Sans Fallback 2.54, copyright Google 2006, Apache License 2.0 (o texto está em `DroidSansFallback-LICENSE.txt`). Foi lida de `/usr/share/fonts/DroidSansFallback.ttf` de uma LG C9.
 - Modificada: subconjunto de 7.943 caracteres (ASCII, Latin-1, pontuação, kana, GB2312 nível 1, JIS X 0208 nível 1, Big5 de uso corrente e tudo o que as tabelas ja/zhcn/zhtw usam), sem hinting. Um subconjunto só dos textos da interface teria 0,34 MB; este tem 1,2 MB porque títulos e sinopses do TMDB em chinês ou japonês também aparecem com a interface em outro idioma.
+- Negrito arabe (#335): `NotoNaskhArabic-Bold.ttf` inteiro (OFL, mesma licenca), usado pelo SDL_ttf e pelo libass quando presente; sem ele, arabe fica sem negrito sintetico.
 - Regerar: `python3 tools/fonte-cjk.py /tmp/DroidSansFallback.ttf` (precisa de fontTools).
 - Quem usa: só a reserva CJK, depois das fontes de sistema (`LG_Display_JP`, `DroidSansFallback`, `LG_Display-Regular`, `LG_Display_HK-Regular`; no Mac Hiragino/STHeiti). `tools/idiomas.py` confere que o que as tabelas ja/zh usam existe nela.
 - Ver o que o WASM desenha, no Mac: `NUVIO_SEM_RESERVA_DE_SISTEMA=1 bash tests/idioma_shot.sh /tmp/x 27,28,29`.
@@ -53,6 +54,7 @@ A Samsung não traz fonte árabe e o texto saía em quadrados (#253, #258). O pa
 
 - Origem: Noto Naskh Arabic Regular 2.021, The Noto Project Authors, SIL OFL 1.1 (`NotoNaskhArabic-OFL.txt`), de github.com/notofonts/arabic.
 - Modificada: subconjunto com ASCII, U+0600–06FF, U+0750–077F e as formas de apresentação U+FB50–FDFF e U+FE70–FEFF, sem hinting e sem tabelas de layout. As formas de apresentação são obrigatórias: `src/bidi.c` faz a junção trocando cada letra por elas, não há HarfBuzz.
+- Negrito arabe (#335): `NotoNaskhArabic-Bold.ttf` inteiro (OFL, mesma licenca), usado pelo SDL_ttf e pelo libass quando presente; sem ele, arabe fica sem negrito sintetico.
 - Regerar: `python3 tools/fonte-arabe.py /caminho/NotoNaskhArabic-Regular.ttf` (precisa de fontTools).
 - Conferir no Mac: `bash tests/text_familias.sh` (reabre o renderer com `NUVIO_SEM_RESERVA_DE_SISTEMA=1`).
 

@@ -11,6 +11,7 @@
 // stream_definir_lista, e a tela so precisa olhar addons_estado().
 #ifndef NV_ADDONS_H
 #define NV_ADDONS_H
+#include "watchstate.h"
 #include "addonurl.h"
 
 typedef enum { ADD_PARADO = 0, ADD_BUSCANDO, ADD_PRONTO, ADD_VAZIO } AddEstado;
@@ -48,6 +49,13 @@ int  addons_perfil_da_lista(void);
 
 // Lista atual, para o sync poder empurrar de volta o que este aparelho tem.
 int  addons_exportar(AddonRemoto *saida, int max);
+
+// Quantos addons ENTRARAM e quantos SAIRAM entre duas listas, comparados pela
+// URL (e nao pelo nome: dois addons podem se chamar igual), e quantos dos que
+// ficaram MUDARAM (ligado/desligado ou ordem). E o que o botao "Sincronizar
+// addons" (#360) diz depois da volta. Qualquer ponteiro de saida pode ser NULL.
+void addons_diferenca(const AddonRemoto *antes, int na, const AddonRemoto *depois, int nd,
+                      int *entraram, int *sairam, int *mudaram);
 
 // Esquece a lista da conta. Chamado ao SAIR: sem isto, a proxima pessoa a usar
 // esta TV navega com os addons da anterior — e como as chaves de debrid vao
@@ -109,10 +117,25 @@ unsigned addons_busca_ms(void);
 int  addons_faltam(char *nomes, unsigned tam);
 // O mesmo contando tambem os scrapers de plugin; *plugins = quantos deles.
 int  addons_faltam_tipo(char *nomes, unsigned tam, int *plugins);
+// Quantos ainda seguram a decisao AUTOMATICA: addons_faltam sem quem e mudo
+// seguido ou mais lento que a espera de Ajustes nesta TV (addonstats.h, #202).
+// Quem sai daqui continua sendo consultado e entra na lista quando responde.
+int  addons_faltam_decisivos(void);
+// A espera de Ajustes em ms, que e o limite do "lento"; <= 0 = ninguem sai.
+void addons_definir_espera_decisao(int ms);
+// Para a ilha explicar a espera (inicio.h).
+typedef struct {
+  int pendentes, pendenteMudo, semResposta;
+  char pendente[64], semRespostaNome[64];
+} AddonsInicioInfo;
+void addons_inicio_info(AddonsInicioInfo *o);
 // Algum addon de indice menor que `idx` (ordem de instalacao) ainda falta?
 int  addons_pendente_antes(int idx);
 // O addon com este nome (Stream.provedor) ainda falta?
 int  addons_pendente_nome(const char *nome);
+// O menor grupo de auto-play (fonteregra.h, #202) que um pendente pode trazer;
+// `f` recebe o nome e se e plugin e devolve o grupo (-1 = nunca). 99 = nenhum.
+int  addons_pendente_grupo_min(int (*f)(const char *nome, int plugin, void *u), void *u);
 
 // A mesma consulta, SINCRONA E REENTRANTE, e addons_consultar — declarada em
 // fontecache.h, e nao aqui, porque a assinatura precisa de Stream (streams.h,
@@ -124,7 +147,11 @@ int  addons_pendente_nome(const char *nome);
 // {"subtitles":[{lang,url,subtitleFileName,...}]}. Sao dezenas por titulo, a
 // maioria em idiomas que nao interessam — por isso a lista e FILTRADA por
 // idioma antes de chegar na tela: 70 linhas para rolar seria pior que nenhuma.
-#define LEG_MAX 12
+// 36 = 12 por idioma com tres grupos (principal, secundario, ingles); com um
+// grupo so ("Todas"/sem preferencia) sao 36 de uma vez (#268). Cada Legenda tem
+// ~1,3 KB: copias de LEG_MAX NAO vao para a pilha (fio de 128 KB na LG/Tizen),
+// usam malloc (faixas.c, legendasui.c, addons.c).
+#define LEG_MAX 36
 
 typedef struct {
   char rotulo[64];   // "Portugues (BR)  ·  Silo.S01E05.WEB"
@@ -136,6 +163,8 @@ typedef struct {
   char url[1024];
   char provedor[64]; // nome do addon que devolveu esta legenda
   char arquivo[96];  // subtitleFileName / movieReleaseName as sent; "" = not sent
+  char id[256];      // identidade enviada pelo addon; "" = nao enviada
+  int addonIndice;   // origem para dedup por id+addon
 } Legenda;
 
 void addons_buscar_legendas(const char *imdb, const char *tipo);
@@ -145,8 +174,8 @@ void addons_buscar_legendas(const char *imdb, const char *tipo);
 // `videoSize` e `videoHash`. `hash` e o behaviorHints.videoHash quando o addon
 // de fonte manda; vazio, ele e medido aqui por dois Range de 64 KiB em
 // `urlVideo` (so link remoto, sem cabecalho exigido e com `tamanho` exato).
-// A lista que ja esta na tela FICA ate a busca nova terminar inteira: trocar a
-// fonte nao pode esvaziar a folha de legendas por segundos. Mesmo id e mesmos
+// Soma a lista nova a atual sem mover indices, ate LEG_MAX; erro/vazio mantem
+// o que ja existe. Duplicatas por URL ou id+addon ficam fora. Mesmo id e mesmos
 // extras de antes: nao faz nada.
 void addons_legendas_fonte(const char *imdb, const char *tipo, const char *arquivo,
                            unsigned long long tamanho, const char *hash,
@@ -192,9 +221,11 @@ enum { ADD_CATALOGO = 0, ADD_STREAM, ADD_LEGENDA, ADD_META };
 
 const char *addons_nome(int i);
 int  addons_ativo(int i);
+int  addons_base_desligada(const char *base);   // 1 = addon da lista desligado na conta
 int  addons_alternar(int i);          // devolve o estado NOVO
 // Acrescenta um addon sem refazer a lista (ver a nota em addons.c). 1 = entrou,
-// 0 = lista cheia, ja instalado ou URL que nao cabe (addonurl.h). Quem chama deve chamar sync_sujar_addons().
+// 0 = lista cheia, ja instalado ou URL que nao cabe (addonurl.h). #360 mao
+// unica: o acrescimo vale so nesta TV; o proximo pull traz a conta por cima.
 int  addons_adicionar(const char *nome, const char *urlManifest);
 // O addon fornece este recurso? Ate a sonda responder e uma suposicao
 // otimista; addons_sondado() diz qual dos dois casos e.
@@ -207,6 +238,14 @@ int  addons_sondado(int i);
 //  -1 = nao da para saber (manifesto nao lido, ou sem idPrefixes).
 // `tipo` vazio nao filtra por tipo.
 int  addons_aceita_id(int i, const char *tipo, const char *id);
+// O addon `i` (ligado, manifesto lido) declara push watch_state v2? Copia a
+// declaracao para `out` e devolve 1; 0 = nao participa. Quem empurra e
+// watchstate.c, que cruza isto com tipo/ids/evento (ws_decl_aceita).
+int  addons_watchstate(int i, WsDecl *out);
+// Protege snapshots de base/identidade/declaracao com a mesma trava dos
+// escritores da lista e do manifesto. Soltar antes de rede ou wsenvio_podar.
+void addons_lista_travar(void);
+void addons_lista_destravar(void);
 // Le o manifesto de cada addon num fio proprio, uma vez por lista.
 //
 // SO SERVE COMO RESERVA hoje, e a distincao importa: ela era chamada de um
@@ -233,6 +272,15 @@ void addons_sondar_manifestos(void);
 // dele (vertudo.c) reconfere por quadro. `base`, que e o campo que os fios de
 // busca usam, nao e tocado aqui.
 void addons_manifesto_lido(int i, const char *corpo);
+
+// O MESMO, com recheck da base/configuracao, destino (conta/perfil) e versao
+// copiados sob a trava ANTES do download: so grava se o slot ainda e o mesmo.
+// E o caminho da descoberta, que baixa com a lista de um instante e pode receber a resposta
+// depois de a conta ter trocado/reordenado a lista — o manifesto atrasado de
+// um addon nao pode instalar capacidades nem declaracao watch_state no slot
+// de outro (ver addons_manifesto_lido_base em addons.c).
+void addons_manifesto_lido_base(int i, const char *base, const char *destino,
+                                unsigned versao, const char *corpo);
 
 // OS CATALOGOS DE CANAL QUE O MANIFESTO DECLARA (type tv/channel/channels/
 // live/iptv), lidos pela mesma passagem de addons_manifesto_lido. Existe para

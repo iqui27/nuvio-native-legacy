@@ -10,6 +10,7 @@ body:
         - LG webOS (.ipk)
         - Samsung Tizen (.wgt)
         - Samsung Tizen native (.tpk)
+        - Android TV / Google TV (.apk)
         - Hisense VIDAA
     validations:
       required: true
@@ -17,7 +18,7 @@ body:
     id: tv
     attributes:
       label: TV model and system version
-      placeholder: "e.g. LG OLED65C9, webOS 4.10 / Samsung QE55Q60A, Tizen 6.0"
+      placeholder: "e.g. LG OLED65C9, webOS 4.10 / Samsung QE55Q60A, Tizen 6.0 / NVIDIA Shield, Android 11"
     validations:
       required: true
   - type: input

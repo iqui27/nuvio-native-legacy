@@ -10,8 +10,11 @@
 
 static int statusSonda;
 static char cabEnviado[512];
-int rede_url_final_cab(const char *u, int seg, const char *const *cab,
-                       char *dst, unsigned n, int *status) {
+int rede_url_final_tipo(const char *u, int seg, const char *const *cab,
+                        char *dst, unsigned n, int *status,
+                        char *mime, unsigned mimeTam, long *corpo) {
+  if (mime && mimeTam) mime[0] = 0;
+  if (corpo) *corpo = -1;
   int i;
   assert(seg > 0); cabEnviado[0] = 0; dst[0] = 0; *status = statusSonda;
   for (i = 0; cab && cab[i]; i++) {

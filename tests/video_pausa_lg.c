@@ -22,6 +22,9 @@
 #include <unistd.h>
 #include <dlfcn.h>
 #include <assert.h>
+// Antes do #undef __APPLE__: gl_compat.h (via ajustes.h) escolhe o GL do Mac.
+#include "ajustes.h"
+#include "webosver.h"
 #undef __APPLE__
 #include "../src/video.c"
 
@@ -43,6 +46,7 @@ static const char *fakePayload(LSMessage *m) { return (const char *)m; }
 static void evento(const char *p, unsigned geracao) {
   aoEvento(NULL, (LSMessage *)p, (void *)(uintptr_t)geracao);
 }
+static void *fakeLoop(void *u) { return u; }
 static int windowCalls;
 static int fakeWindow(long handle, long x, long y, long w, long h, int full, long *task) {
   (void)handle; (void)x; (void)y; (void)w; (void)h; (void)full; (void)task;
@@ -50,6 +54,17 @@ static int fakeWindow(long handle, long x, long y, long w, long h, int full, lon
 }
 
 int main(void) {
+  // webosMaior(): a TV de 2017 (webOS 3.9) so tem o nyx e NAO e webOS 4.
+  {
+    FILE *f = fopen("/tmp/nv-webos-test.json", "w");
+    assert(f); fputs("{\"webos_release\":\"3.9\"}", f); fclose(f);
+    nv_webos_testar("/tmp/nv-webos-test.json", "/nonexistent/starfish-release");
+    assert(webosMaior() == 3);
+    assert(!dvVersaoLiberada(webosMaior()));   // a porta do Dolby Vision em MKV
+    assert(dvVersaoLiberada(4));
+    remove("/tmp/nv-webos-test.json");
+    puts("webosMaior: nyx 3.9 sem starfish-release -> 3, Dolby Vision MKV fechado");
+  }
   // Exercise the production LG path: settled geometry must not call ACB
   // every frame; PiP/fullscreen transitions must still reach the backend.
   acbJanela = fakeWindow; acb = 1; ligado = 1;
@@ -63,6 +78,7 @@ int main(void) {
   puts("video_window_lg: 1001 stable requests -> 1 native call; transitions preserved");
 
   lsCall = fakeCall; lsPayload = fakePayload;
+  bus = (LSHandle *)(uintptr_t)1;
   ligado = pronto = tocando = 1; sessao = 7;
   snprintf(midia, sizeof midia, "fixture-media-id");
   Uint64 stamp, same, before = SDL_GetTicks64();
@@ -110,23 +126,47 @@ int main(void) {
   assert(assinaturas == 1 && protetorLigado && screensaverCallback);
   protegerScreensaver(); assert(assinaturas == 1); // sem duplicar assinatura
   const char *active = "{\"state\":\"Active\",\"timestamp\":1700000000123456}";
-  tocando = 1;
+  evento("{\"playing\":true}", sessao);
+  video_bombear(); // ultimo quadro: tocando; os proximos eventos nao desenham
   screensaverCallback(NULL, (LSMessage *)active, NULL);
   assert(respostas == 1 && strstr(resposta, "\"ack\":false") &&
          strstr(resposta, "\"timestamp\":1700000000123456}"));
-  pausaPedida = 1;
+  // Sem a tela de descanso do Nuvio (esmaecer real, linkado): ela segura o protetor da TV.
+  esmaecer_estilo(ESM_ESTILO_ESCURECER);
+  video_pausar(1);
   screensaverCallback(NULL, (LSMessage *)active, NULL);
   assert(strstr(resposta, "\"ack\":true"));
-  pausaPedida = 0; tocando = 0; // pausa enviada pelo pipeline
+  video_pausar(0); video_bombear();
+  evento("{\"paused\":true}", sessao); // pausa do pipeline, sem quadro
   screensaverCallback(NULL, (LSMessage *)active, NULL);
   assert(strstr(resposta, "\"ack\":true"));
-  tocando = 1; terminou = 1;
+  evento("{\"playing\":true}", sessao); video_bombear();
+  evento("{\"errorCode\":100,\"errorText\":\"Playing error\"}", sessao);
   screensaverCallback(NULL, (LSMessage *)active, NULL);
   assert(strstr(resposta, "\"ack\":true"));
-  terminou = 0; falhou = 1;
+  evento("{\"playing\":true}", sessao); // retomada publicada sem quadro
+  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  assert(strstr(resposta, "\"ack\":false"));
+  evento("{\"errorCode\":200,\"errorText\":\"Audio Codec Not Supported\"}", sessao);
+  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  assert(strstr(resposta, "\"ack\":false")); // aviso nao para o video
+  evento("{\"endOfStream\":true}", sessao);
   screensaverCallback(NULL, (LSMessage *)active, NULL);
   assert(strstr(resposta, "\"ack\":true"));
-  falhou = 0; midia[0] = 0;
+  video_parar();
+  evento("{\"playing\":true}", sessao - 1); // sessao encerrada nao revive ACK
+  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  assert(strstr(resposta, "\"ack\":true"));
+  // A politica tambem muda sem quadros (sem filme).
+  esmaecer_estilo(ESM_ESTILO_VITRINE);
+  esmaecer_escolha(ESM_PADRAO);
+  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  assert(strstr(resposta, "\"ack\":false"));
+  esmaecer_escolha(0);
+  screensaverCallback(NULL, (LSMessage *)active, NULL);
+  assert(strstr(resposta, "\"ack\":true"));
+  esmaecer_escolha(ESM_PADRAO);
+  esmaecer_estilo(ESM_ESTILO_ESCURECER);
   screensaverCallback(NULL, (LSMessage *)active, NULL);
   assert(strstr(resposta, "\"ack\":true"));
   int antes = respostas;
@@ -141,6 +181,7 @@ int main(void) {
   protegerScreensaver(); assert(!protetorLigado && assinaturas == 2);
   aceita = 1; protegerScreensaver(); assert(protetorLigado && assinaturas == 3);
   // Fechar LS2 permite uma nova assinatura no proximo ciclo do backend.
+  assert(pthread_create(&fio, NULL, fakeLoop, NULL) == 0);
   video_encerrar(); assert(!protetorLigado);
   antes = respostas;
   screensaverCallback(NULL, (LSMessage *)active, NULL); assert(respostas == antes);

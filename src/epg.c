@@ -1278,18 +1278,29 @@ int epg_total(int epg) {
   return (int)P.canais[epg].evN;
 }
 
-int epg_faixa(int epg, time_t de, time_t ate, EpgProg *out, int cap) {
+// `pular`: quantos da sequencia (a mesma de epg_faixa, em ordem do indice) ja
+// foram entregues — o cursor de quem pagina e POSICAO, nao horario: a XMLTV nao
+// rejeita sobreposicao e o fim dos programas nao e monotono (#344).
+int epg_faixa_desde(int epg, time_t de, time_t ate, int pular, EpgProg *out, int cap) {
   long m, topo;
-  int n = 0;
-  if (epg < 0 || epg >= P.nCanais || ate <= de) return 0;
+  int n = 0, v = 0;
+  if (epg < 0 || epg >= P.nCanais || ate <= de || (out && cap <= 0)) return 0;
+  if (pular < 0) pular = 0;
   pthread_mutex_lock(&trava);
   topo = P.canais[epg].evIni + P.canais[epg].evN;
   m = pubPrimeiroVivo(epg, de);           // primeiro com fim > de
   if (m >= 0)
-    for (; m < topo && P.evs[m].ini < ate; m++, n++)
-      if (out && n < cap) pubProg(m, &out[n]);
+    for (; m < topo && P.evs[m].ini < ate && (!out || n < cap); m++) {
+      if (v++ < pular) continue;
+      if (out) pubProg(m, &out[n]);
+      n++;
+    }
   pthread_mutex_unlock(&trava);
   return n;
+}
+
+int epg_faixa(int epg, time_t de, time_t ate, EpgProg *out, int cap) {
+  return epg_faixa_desde(epg, de, ate, 0, out, cap);
 }
 
 // --- teste ----------------------------------------------------------------------------

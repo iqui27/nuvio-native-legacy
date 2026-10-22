@@ -33,6 +33,24 @@ const char *ling_nome(const char *codigo);
 // escolhida por engano parece "a legenda some no meio da cena".
 int ling_letreiro(const char *nome, int forcado);
 
+// TIPO DA LEGENDA (#287): o que a lista mostra ao lado de "Embutida" e o que
+// a escolha automatica pesa. `nome` e o Name da faixa (MKV) ou o label do
+// player; `forcado` a FlagForced / SELECTION_FLAG_FORCED; `sdh` a
+// FlagHearingImpaired / ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND.
+//   FORCADA   = so as falas em lingua estrangeira (flag ou "Forced" no nome)
+//   LETREIROS = "Signs", "Songs", "Signs & Songs" (placas e musicas)
+//   SDH       = para surdos ("SDH", "CC", "Hearing Impaired")
+//   COMPLETA  = o nome diz ("Full", "Complete", "Dialogue")
+// ling_letreiro(n, f) == (tipo FORCADA ou LETREIROS), sempre.
+#define LING_LEG_COMUM     0
+#define LING_LEG_FORCADA   1
+#define LING_LEG_LETREIROS 2
+#define LING_LEG_SDH       3
+#define LING_LEG_COMPLETA  4
+int ling_tipo_legenda(const char *nome, int forcado, int sdh);
+// Rotulo curto do tipo, ainda em portugues (passar por i18n). NULL no COMUM.
+const char *ling_tipo_legenda_rotulo(int tipo);
+
 // Idioma que o NOME da faixa diz com todas as letras ("Português", "English",
 // "Español", "Brazilian Portuguese"). NULL quando o nome nao cita idioma, ou
 // cita dois de familias diferentes — ai nao ha como saber qual vale, e
@@ -52,6 +70,11 @@ int ling_afinidade(const char *cod, const char *pref);
 const char *ling_legenda(void);
 const char *ling_legenda2(void);
 const char *ling_audio(void);
+
+// So a parte da CONTA, sem a escolha local por cima (para o log, #378).
+const char *ling_conta_legenda_valor(void);
+const char *ling_conta_legenda2_valor(void);
+const char *ling_conta_audio_valor(void);
 
 // Vindas da CONTA (blob de ajustes). Nao sobrescrevem escolha local.
 void ling_conta_legenda(const char *v);
@@ -101,5 +124,17 @@ const char *ling_opcao_codigo(int i);   // "" para conta, "*" para sem filtro
 int ling_legenda_auto(const char *pref,
                       const char *const *emb, int nEmb, int embFechado,
                       const char *const *add, int nAdd, int addFechado);
+
+// A MESMA decisao sabendo o TIPO de cada embutida (#287) e o idioma do AUDIO
+// que toca. `tipoEmb` = LING_LEG_* por faixa (NULL = todas comuns); `audio` =
+// idioma da faixa de audio atual ("" = nao se sabe).
+//   - `forcadaAuto` ligado e audio no idioma da legenda: a pessoa entende o
+//     dialogo, so precisa das falas estrangeiras e placas. Liga a FORCADA (ou,
+//     sem ela, a de LETREIROS) desse idioma; sem nenhuma, NADA. Nunca a de addon.
+//   - fora disso: a legenda inteira. Forcada e letreiros nunca ligam como
+//     principal; entre as que servem, SDH so se nao houver outra.
+int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
+                           const char *const *emb, const int *tipoEmb, int nEmb, int embFechado,
+                           const char *const *add, int nAdd, int addFechado);
 
 #endif

@@ -1,23 +1,17 @@
 // SUBTITLE SELECTOR (F04, 1.8): the island panel that grows from the clock
 // when the person opens Subtitles in the player.
 //
-// SIMPLE VIEW. One row per language + origin ("Português · Embutida",
-// "Português · OpenSubtitles"), filtered to the configured MAIN and SECOND
-// subtitle languages (Ajustes / account). Each row carries its slot marker
-// (Principal / Secundária) and the check of the slot it is active in. Each
-// slot has its own "Nenhuma". "Mais opções" lists every candidate with the
-// real details we have (release name, codec, letreiro flag, provider, format,
-// offset/state) and lets the person aim at either slot. No configured
-// language = no filter (the primary slot lists everything).
+// #425: Off + best primary/backup language + current pair. OK applies the
+// primary; hold OK opens a dropdown below the row (RIGHT goes to Estilo). All tracks remain accessible.
+// No primary preference, or "Todas" in Settings: open the full list.
 //
 // FOCUS is an opaque row identity, never an index: embedded tracks discovered
 // late and addon results arriving late insert rows without moving focus or
 // closing the panel.
 //
-// SECOND SUBTITLE: only external SRT/VTT files (legenda2.h). The simple view
-// never offers an embedded track or an ASS file for the second slot (its
-// "Nenhuma" row says why); More options lists them dimmed with the reason, and
-// choosing one there changes nothing — no check, the primary is never touched.
+// SECOND SUBTITLE: only external SRT/VTT files (legenda2.h). The recommended
+// language action resolves its best drawable external file. The full list
+// keeps embedded/ASS choices dimmed with the existing refusal message.
 //
 // The full Estilo bar stays in faixas.c; this module is reached through
 // faixas_abrir_em(1) and hands control back with LEGUI_ESTILO / LEGUI_FECHAR.
@@ -25,12 +19,17 @@
 #define NV_LEGENDASUI_H
 #include "gfx.h"
 #include "addons.h"
+#include "legenda.h"
 #include "video.h"
 #include <SDL2/SDL.h>
 
+// Manual delay bounds shared by every platform and both UI entry points.
+#define LEGUI_ATRASO_MAX LEG_ATRASO_MANUAL_MAX
+void legendasui_atualizar(float dt);
+
 // --- panel, driven by faixas.c -----------------------------------------------
 void  legendasui_abrir(void);
-// 1 = the person is in "Mais opções".
+// 1 = the person is in "Todas as legendas".
 int   legendasui_mais(void);
 // 1 while the versions list of one language row is open (#202).
 int   legendasui_versoes(void);
@@ -40,6 +39,9 @@ float legendasui_altura(void);
 void  legendasui_corpo(GfxRect corpo, float a);
 // Media change (faixas_reiniciar): drops the second subtitle and the focus.
 void  legendasui_reiniciar(void);
+// Tests (#99 pointer): focused row index (-1 = panel closed), and the "Usar
+// como" slot (0 primary, 1 second) and the chosen AutoSync action.
+int   legendasui_teste_foco(int *alvo, int *syncAcao);
 
 // --- second subtitle on screen, called by player.c -----------------------------
 // Geometry is passed explicitly by the player (real 1920x1080 coordinates).
@@ -93,6 +95,9 @@ typedef struct {
   char codec[24];    // Matroska CodecID when probed
   char formato[8];   // "SRT"/"VTT"/"ASS"/"PGS" when actually known, else ""
   int  letreiro;     // forced / signs track
+  int  tipo;         // LING_LEG_* of an embedded track (#287); 0 for addons
+  int  completaPar;  // 1 = plain embedded track whose language also has a forced/signs one:
+                     // shown as "Legenda completa" so the two read apart (#287)
   Legenda leg;       // private copy (URL never shown or logged)
 } LegUiCand;
 // Identity helpers: stable within a media session.
@@ -100,6 +105,9 @@ void legendasui_id_embutida(const VideoFaixa *f, char out[24]);
 void legendasui_id_addon(const Legenda *l, char out[24]);
 int  legendasui_montar(const VideoFaixa *const *emb, int nEmb,
                        const Legenda *add, int nAdd, LegUiCand *out, int max);
+// Short translated kind of an embedded candidate ("Forçada", "Letreiros",
+// "SDH", "Legenda completa"); NULL when there is nothing to say (#287).
+const char *legendasui_tipo_rotulo(const LegUiCand *c);
 // 1 when the candidate can be the SECOND subtitle (external, not ASS).
 int  legendasui_cand_secundaria_ok(const LegUiCand *c);
 

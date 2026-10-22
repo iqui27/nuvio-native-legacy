@@ -141,6 +141,16 @@ const char *debrid_chave_mascarada(const char *servico, char *dst, unsigned n) {
 // So conta servico que PODE resolver: com todas as chaves em conta sem plano,
 // streams.c descarta os torrents sem url logo na lista (como sem debrid) e a
 // verificacao vai direto as fontes diretas, em vez de gastar o lote nelas.
+// As origens das APIs dos servicos com chave que PODEM resolver, para aquecer.c.
+// Sem caminho, sem chave: so "https://host".
+int debrid_origens(const char **o, int max) {
+  static const char *const API[SN] = { "https://api.real-debrid.com", "https://api.torbox.app",
+                                       "https://www.premiumize.me", "https://api.alldebrid.com" };
+  int q, k = 0;
+  for (q = 0; q < SN && k < max; q++)
+    if (chave[q][0] && !atomic_load(&semPlano[q])) o[k++] = API[q];
+  return k;
+}
 int debrid_ativo(void) {
   int q;
   for (q = 0; q < SN; q++) if (chave[q][0] && !atomic_load(&semPlano[q])) return 1;
@@ -1079,12 +1089,22 @@ static int volta(const char *infoHash, int fileIdx, char *url, unsigned n,
   return qb && *qb >= 0 ? DEBRID_BAIXANDO : 0;
 }
 
-int debrid_resolver(const char *infoHash, int fileIdx, char *url, unsigned n) {
+int debrid_resolver_cache(const char *infoHash, int fileIdx, char *url, unsigned n, int *foraResultado) {
   int fora = 0, r;
+  if (foraResultado) *foraResultado = 0;
   if (!infoHash || !*infoHash || !url || n == 0) return 0;
   r = volta(infoHash, fileIdx, url, n, 0, -1, NULL, NULL, &fora);
   if (r != 1 && fora) atomic_fetch_add(&foraCache, 1);
+  if (foraResultado && r != 1 && fora) {
+    int ativos = 0;
+    for (int q = 0; q < SN; q++) if (chave[q][0]) ativos |= 1 << q;
+    // Negativa de um servico + erro/sem resposta de outro ainda e desconhecido.
+    *foraResultado = (fora & ativos) == ativos;
+  }
   return r == 1;
+}
+int debrid_resolver(const char *infoHash, int fileIdx, char *url, unsigned n) {
+  return debrid_resolver_cache(infoHash, fileIdx, url, n, NULL);
 }
 
 int debrid_resolver_escolhido(const char *infoHash, int fileIdx, char *url,

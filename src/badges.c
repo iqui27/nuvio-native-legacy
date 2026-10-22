@@ -446,3 +446,31 @@ float badge_imdb(float x, float y, int nota, int escuro, float a) {
   txt_desenhar_alpha(l, x + BADGE_IMDB_W + BADGE_IMDB_GAP, y + (BADGE_H - (float)l.h) * 0.5f, a);
   return BADGE_IMDB_W + BADGE_IMDB_GAP + (float)l.w;
 }
+
+// SELO DE ASSISTIDO: pilula escura translucida (material da ilha) com um check
+// no acento e a palavra "Assistido". Altura e recuo acompanham a largura do
+// cartao (26..32); abaixo de 150 de largura so o check, num disco da mesma
+// altura. Sombra rasa separa o selo de um poster claro. Moravam em home.c; a
+// Biblioteca usa o MESMO desenho (#352), entao mora aqui. `a` e o alfa do
+// cartao (1.0 = o da Home). Devolve a borda esquerda do selo.
+float badges_selo_visto(float px, float py, float w, float a) {
+  float h = w * 0.13f, m = w * 0.06f, ic, pw;
+  float ar, ag, ab;
+  int compacto = w < 150.0f;
+  TxtLinha t = { 0 };
+  if (h < 26.0f) h = 26.0f;
+  if (h > 32.0f) h = 32.0f;
+  if (m < 8.0f) m = 8.0f;
+  if (m > 14.0f) m = 14.0f;
+  ic = h * 0.58f;
+  if (!compacto) t = txt_linha(TXT_CAPTION, i18n("Assistido"), 240, 240, 245, 255);
+  pw = compacto ? h : h * 0.36f + ic + 6.0f + (float)t.w + h * 0.46f;
+  { float mx = px + w - pw - m, my = py + m;
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_cor((GfxRect){ mx, my + 3.0f, pw, h }, 0.5f, 0, 0, 0, 0.28f * a);
+    gfx_cor((GfxRect){ mx, my, pw, h }, 0.5f, 0.05f, 0.055f, 0.067f, 0.80f * a);
+    { float ix = compacto ? mx + (h - ic) * 0.5f : mx + h * 0.36f;
+      gfx_icone((GfxRect){ ix, my + (h - ic) * 0.5f, ic, ic }, "check", ar, ag, ab, a);
+      if (!compacto) txt_desenhar_alpha(t, ix + ic + 6.0f, my + (h - t.h) * 0.5f, a); }
+    return mx; }
+}

@@ -1,7 +1,7 @@
 #!/bin/bash
 # #244 (cinco cards iguais, remocao parcial) e #243 ("14" inventado, nota ausente).
 #   bash tests/trakt_cw_dup.sh
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 dir=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-traktcwdup.XXXXXX")
 trap 'rm -rf "$dir"' EXIT

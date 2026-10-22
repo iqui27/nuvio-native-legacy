@@ -10,7 +10,8 @@
 // estado que ja tinham. Tambem e daqui que sai o que cada botao de modal faz.
 //
 // O QUE ESTA LIGADO (texto, tipo, prazo e chave do mockup):
-//   pedido de amizade   ACENTO 10 s "pedido:<pub>"  modal Aceitar / Recusar
+//   pedido de amizade   ACENTO  6 s "pedido:<pub>"  modal Aceitar / Recusar;
+//                       "dito" (avisodisp) so depois de APARECER (ilha_mostrou)
 //   amizade nova        OK      6 s "amigo:<id>"    (contatos que entraram)
 //   Trakt desconectado  ERRO    9 s "trakt"         modal Reconectar / Depois
 //   debrid sem plano    ERRO    8 s "debrid-plano"  uma vez por servico/sessao
@@ -51,5 +52,7 @@ void ilhasinais_perfil_trocado(void);
 void ilhasinais_debrid_baixando(const char *servico, const char *titulo);
 // app.c: o "Reconectar" do Trakt pediu os Ajustes (consumido uma vez).
 int  ilhasinais_pediu_trakt(void);
+// OK no aviso agregado "N pedidos de amizade": app.c abre a aba Amigos.
+int  ilhasinais_pediu_amigos(void);
 
 #endif

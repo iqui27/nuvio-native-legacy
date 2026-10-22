@@ -1,6 +1,9 @@
 // Regression: unknown logo language and fullscreen carousel edge navigation.
 #define desc_pedir_titulo_semente capturar_rota_tmdb
 #define extras_relacionado_imdb relacionado_tmdb_fixture
+#include "../src/notasui.h"
+#define notasui_fontes_n notas_n_fixture
+int notas_n_fixture(const NotasSecao *s);
 #include "../src/detail.c"
 #undef desc_pedir_titulo_semente
 #undef extras_relacionado_imdb
@@ -15,6 +18,8 @@ void capturar_rota_tmdb(const char *imdb, long id, const char *tipo, const char 
   rotaId = id;
   snprintf(rotaTipo, sizeof rotaTipo, "%s", tipo);
 }
+// Five sources with a rating: the section must still be ONE focus stop.
+int notas_n_fixture(const NotasSecao *s) { (void)s; return 5; }
 const char *relacionado_tmdb_fixture(int i) {
   return i == 0 ? "tmdb:42" : "";
 }
@@ -28,8 +33,8 @@ int main(void) {
   // Ratings first below the hero on movies; right after the episodes on series,
   // followed by the season numbers block (SEC_NUMEROS) before the tabs.
   assert(ORDEM_FILME[0] == SEC_NOTAS);
-  assert(ORDEM_SERIE[1] == SEC_EPISODIOS && ORDEM_SERIE[2] == SEC_NOTAS &&
-         ORDEM_SERIE[3] == SEC_NUMEROS && ORDEM_SERIE[4] == SEC_ABAS_INFO);
+  assert(ORDEM_SERIE[1] == SEC_EPISODIOS && ORDEM_SERIE[2] == SEC_PROGTEMP &&
+         ORDEM_SERIE[3] == SEC_NOTAS && ORDEM_SERIE[4] == SEC_NUMEROS && ORDEM_SERIE[5] == SEC_ABAS_INFO);
   CatItem c = {0};
   const char *u = "https://image.tmdb.org/t/p/w500/image.png";
   assert(!mostrarNomeLogo(&c, u, 1, "pt-BR"));
@@ -48,6 +53,8 @@ int main(void) {
   assert(!mostrarNomeLogo(&c, u, 1, "pt-BR"));
   snprintf(c.tipo, sizeof c.tipo, "movie");
   cat_definir_tudo(&c, 1, NULL, 0); idx = 0;
+  // Ratings: focus stops only on the big score, never per source chip.
+  assert(secaoN(SEC_NOTAS) == 1);
   carro = 1; carCheia = 1; carN = 3; carPos = carAplicado = 1;
   nivel = 0; saindo = 0;
   SDL_Event e = {0}; e.type = SDL_KEYDOWN;
@@ -131,26 +138,60 @@ int main(void) {
   colListaAberta = 1; detail_evento(&e);
   assert(colListaAberta && !saindo && detail_pediu_menu());
   colListaAberta = 0;
+  // #407: CIMA no alto da pagina de titulo (sobre os botoes) NAO abre o painel
+  // de Salvos/Avisos. O atalho existia para controles sem tecla AZUL, mas na
+  // Samsung o CH+ ja abre o painel (e o relogio continua clicavel); a seta
+  // disparando um menu era o que o relato pedia para sair.
+  nivel = 0; focoAmigos = 0; botao = 0; saindo = 0;
+  e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_UP;
+  detail_evento(&e);
+  assert(!detail_pediu_social() && !saindo && nivel == 0 && botao == 0);
   // Back never carries a menu request.
   nivel = 0; e.key.keysym.sym = SDLK_ESCAPE; detail_evento(&e);
   assert(saindo && !detail_pediu_menu());
-  // "Explorar" (Explorar 2.0): the LAST circular for a movie with a title; OK
-  // on it asks the router once to open the rabbit hole on this title.
+  // "MAIS OPCOES" (06/10/2026): Trailer, Explorar, Trocar arte and Recomendar
+  // left the row. The LAST circular is "...", OK on it opens the island; the
+  // row of a movie is Play, +, watched, sources, "..." (5, no resume).
   { CatItem m = {0};
+    int i, achou = -1;
     snprintf(m.tipo, sizeof m.tipo, "movie");
     snprintf(m.titulo, sizeof m.titulo, "Prisoners");
     snprintf(m.imdb, sizeof m.imdb, "tt1392214");
     cat_definir_tudo(&m, 1, NULL, 0); idx = 0;
     carro = 0; saindo = 0; nivel = 0; pessoaAberta = 0; maisAcoes = 1;
-    assert(temExplorar() && acaoEm(nBotoesTodos() - 1) == ACAO_EXPLORAR);
+    assert(temExplorar() && temMais());
+    assert(nBotoesTodos() == 5 && acaoEm(nBotoesTodos() - 1) == ACAO_MAIS);
+    for (i = 0; i < nBotoesTodos(); i++) {
+      int ac = acaoEm(i);
+      assert(ac != ACAO_TRAILER && ac != ACAO_EXPLORAR && ac != ACAO_ARTE && ac != ACAO_RECOMENDAR);
+    }
     botao = nBotoesTodos() - 1;
     SDL_Delay(2);
     e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RETURN; detail_evento(&e);
     e.type = SDL_KEYUP; detail_evento(&e);
+    assert(detmais_aberto() && !detail_pediu_explorar());
+    for (i = 0; i < detmais_n(); i++) if (detmais_acao(i) == DMAIS_EXPLORAR) achou = i;
+    // Fixed order, only what this title has: no Recomendar without the service.
+    assert(achou >= 0 && detmais_acao(detmais_n()) == -1);
+    for (i = 1; i < detmais_n(); i++) assert(detmais_acao(i) > detmais_acao(i - 1));
+    assert(temArte() && detmais_n() == (temTrailer() ? 1 : 0) + 2 + (temRecomendar() ? 1 : 0));
+    // Back closes the island and keeps the focus on "..." (the page stays).
+    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_ESCAPE; detail_evento(&e);
+    assert(!detmais_aberto() && !saindo && botao == nBotoesTodos() - 1);
+    // Reopen, walk down to Explorar, OK: the router gets one request.
+    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RETURN; detail_evento(&e);
+    e.type = SDL_KEYUP; detail_evento(&e);
+    // The KEYUP of the OK that opened it must not pick a row.
+    assert(detmais_aberto() && detmais_foco() == 0);
+    for (i = 0; i < achou; i++) { e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_DOWN; detail_evento(&e); }
+    assert(detmais_foco() == achou);
+    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RETURN; detail_evento(&e);
+    e.type = SDL_KEYUP; detail_evento(&e);
+    assert(!detmais_aberto());
     assert(detail_pediu_explorar() && !detail_pediu_explorar());
     snprintf(m.tipo, sizeof m.tipo, "tv");
     cat_definir_tudo(&m, 1, NULL, 0);
-    assert(!temExplorar()); }
+    assert(!temExplorar() && !temMais()); }
   puts("PASS: title/navigation and focus-only action group");
   return 0;
 }

@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // Recomendacoes entre amigos — ver a nota longa em recomenda.h para o porque
 // do servico proprio e por que "realtime" aqui e sondagem.
 //
@@ -13,6 +14,7 @@
 // O QUE ELE NAO GUARDA: token. A identidade e montada a cada ciclo a partir de
 // trakt.c ou de sessao.c e vai so no cabecalho do pedido.
 #include "recomenda.h"
+#include "atividade.h"
 #include "dados.h"
 #include "rede.h"
 #include "js.h"
@@ -27,6 +29,7 @@
 #include "idioma.h"
 #include "ajustes.h"
 #include "progresso.h"
+#include "salvos.h"
 #include "logotitulo.h"
 #include "artemetahub.h"
 #include "perfis.h"
@@ -64,6 +67,17 @@
 #define REC_ESPERA_MS      2000u   // sem identidade ainda: tentar de novo logo
 #define REC_CONTATOS_MS  600000u   // a lista de contatos muda devagar
 #define REC_TEMPO_REDE       12    // segundos por requisicao
+// RECUO QUANDO O SERVIDOR NAO RESPONDE (#203). 36 pessoas viam o Worker passar
+// de 12 s entre 22h e 1h; cada TV insistia a cada 60 s, somando carga a um
+// servidor que ja estava lento. Cada falha seguida (sem resposta ou 5xx)
+// dobra a espera, ate 8x (8 min); a primeira resposta boa volta ao normal.
+// Roda no fio proprio: nada disso toca a interface.
+#define REC_RECUO_MAX        3
+static int recFalhas;
+static void recMarcarRede(int st) {
+  if (st >= 200 && st < 500) recFalhas = 0;
+  else if (recFalhas < REC_RECUO_MAX) recFalhas++;
+}
 
 // Cartao de abertura, com a mesma pegada do de atualizacao.c.
 // LARGO E COM O CARTAZ MENOR, e a medida saiu da primeira captura: com 1120 de
@@ -167,7 +181,7 @@ static int  pedirTrakt, traktEstado, traktAchados;
 // escolho frase, confirmo" — nao ha como o dono disparar dois antes de ver o
 // resultado do primeiro, e uma fila de verdade seria estrutura sem uso.
 static struct {
-  char imdb[24], tipo[8], titulo[160], poster[512], ano[16];
+  char imdb[24], tipo[8], titulo[160], poster[NV_ARTE_URL_MAX], ano[16];
   char para[96], texto[72];
   int  modelo;
   int  nota;                  // centesimos, como o `nota` do CatItem
@@ -282,7 +296,9 @@ static void socNovoCarregar(void);
 static void socNovoRegistrado(const char *nome, const char *exib, int alcance);
 static void avisarAlcance(void);
 
-int recomenda_ativo(void) { return NV_REC_URL[0] != 0; }
+// "Recursos sociais" desligado (por perfil, ajustes.h) tira o servico inteiro:
+// nenhuma chamada de rede, nenhuma tela. Cada funcao daqui ja começa por esta.
+int recomenda_ativo(void) { return NV_REC_URL[0] != 0 && ajustes_social(); }
 int recomenda_aberta(void) { return cartaoAberto; }
 
 const char *recomenda_modelo(int i) {
@@ -346,7 +362,7 @@ static void gravar(void) {
   // 1400 E NAO 1000 desde a v2: poster (512) + deAvatar (256) + titulo (160) +
   // de (96) + deNome (64) + o resto ja passam de 1100 bytes numa linha cheia, e
   // com o teto antigo a ultima linha sairia cortada no meio de uma URL.
-  size_t cap = (size_t)REC_MAX * 1400u + 64u;
+  size_t cap = (size_t)REC_MAX * (1400u + NV_ARTE_URL_MAX - 512u) + 64u;
   char *buf = (char *)malloc(cap);
   size_t k = 0;
   int i;
@@ -569,7 +585,7 @@ int recomenda_identidade_situacao(void) {
   SDL_LockMutex(mtx);
   r = !identRecurso ? REC_IDENT_INDISPONIVEL
     : identTrakt[0] ? REC_IDENT_UNIDA
-    : (trakt_ativo() && sessao_token()[0]) ? REC_IDENT_PODE_UNIR : REC_IDENT_SEM_TRAKT;
+    : (trakt_ativo() && sessao_logada()) ? REC_IDENT_PODE_UNIR : REC_IDENT_SEM_TRAKT;
   SDL_UnlockMutex(mtx);
   return r;
 }
@@ -1079,7 +1095,25 @@ int recomenda_buscar(const char *texto) {
   }
   return socIniciar(SOC_BUSCAR, q);
 }
-int recomenda_sugeridos_gosto(void)   { return socIniciar(SOC_GOSTO, ""); }
+// Os salvos (lista local) entram como sinal de gosto alem do que foi concluido.
+// salvos.c nao e thread-safe e o pedido sai do fio de rede, entao os ids sao
+// copiados AQUI, no fio da interface, antes de enfileirar.
+#define GOSTO_SALVOS_MAX 20
+static char gostoSalvos[GOSTO_SALVOS_MAX][24];
+static int  nGostoSalvos;
+int recomenda_sugeridos_gosto(void) {
+  int i, n = 0, total = salvos_n();
+  for (i = 0; i < total && n < GOSTO_SALVOS_MAX; i++) {
+    const SalvoItem *it = salvos_item(i);
+    if (!it || strncmp(it->id, "tt", 2)) continue;
+    SDL_LockMutex(mtx);
+    snprintf(gostoSalvos[n], sizeof gostoSalvos[n], "%s", it->id);
+    SDL_UnlockMutex(mtx);
+    n++;
+  }
+  SDL_LockMutex(mtx); nGostoSalvos = n; SDL_UnlockMutex(mtx);
+  return socIniciar(SOC_GOSTO, "");
+}
 int recomenda_comunidade(int pagina) {
   char arg[16];
   if (pagina < 0) pagina = 0;
@@ -1188,16 +1222,25 @@ int recomenda_bloqueado(int i, char *pub, size_t tp, char *nome, size_t tn) {
 
 // --- atividade (o player avisa; ESTE modulo decide se algo sai) --------------
 
+// UNICO PONTO que prepara um imdb para o servico. O card de Continuar assistindo
+// de serie traz "tt123:S:E" e o servidor so aceita /^tt\d{1,10}$/ (HTTP 400,
+// issues #363 e a atividade). Tudo que sai com imdb passa por aqui: o id da serie.
+static void imdbServidor(char *dst, size_t tam, const char *src) {
+  atividade_id_puro(dst, tam, src);
+}
+
 // Chamar com o mutex TOMADO.
 static void ativEnfileirar(const CatItem *ci, int agora) {
   int i, k = 0;
+  char idPuro[24];
   if (nAtivFila >= ATIV_FILA) return;
+  imdbServidor(idPuro, sizeof idPuro, ci->imdb);
   // Um titulo por vez na fila: o ultimo estado dele e o que vale.
   for (i = 0; i < nAtivFila; i++)
-    if (strcmp(ativFila[i].imdb, ci->imdb)) ativFila[k++] = ativFila[i];
+    if (strcmp(ativFila[i].imdb, idPuro)) ativFila[k++] = ativFila[i];
   nAtivFila = k;
   memset(&ativFila[nAtivFila], 0, sizeof ativFila[0]);
-  snprintf(ativFila[nAtivFila].imdb,   sizeof ativFila[0].imdb,   "%s", ci->imdb);
+  snprintf(ativFila[nAtivFila].imdb,   sizeof ativFila[0].imdb,   "%s", idPuro);
   snprintf(ativFila[nAtivFila].tipo,   sizeof ativFila[0].tipo,   "%s",
            !strcmp(ci->tipo, "series") ? "series" : "movie");
   snprintf(ativFila[nAtivFila].titulo, sizeof ativFila[0].titulo, "%s", ci->titulo);
@@ -1347,14 +1390,24 @@ static int perfilCab(char *dst, size_t tam, int viaNuvio) {
 // amigos pronta (users/me/following), entao ela vira contatos sem o dono
 // digitar codigo nenhum. 0 quando nao ha identidade — e "nao ha" e um estado
 // normal, nao um erro: o app pode estar no primeiro segundo do arranque.
+// "Authorization: Bearer <token da conta>" em dst; 0 sem sessao de usuario.
+// Pela COPIA do token (#203): a renovacao reescreve o buffer da sessao em
+// outro fio, e ler direto dele podia mandar um JWT pela metade.
+static int bearerSessao(char *dst, size_t n) {
+  char t[3000];
+  int ok = sessao_token_copiar(t, sizeof t);
+  if (ok) snprintf(dst, n, "Authorization: Bearer %s", t);
+  memset(t, 0, sizeof t);
+  return ok;
+}
+
 static int identidade(const char **cab) {
   const char *tcab[4];
   char chave[160];
   if (trakt_ativo() && trakt_cabecalhos(tcab, fioAut, sizeof fioAut,
                                         chave, sizeof chave)) {
     snprintf(fioVia, sizeof fioVia, "X-Nuvio-Auth: trakt");
-  } else if (sessao_token()[0]) {
-    snprintf(fioAut, sizeof fioAut, "Authorization: Bearer %s", sessao_token());
+  } else if (bearerSessao(fioAut, sizeof fioAut)) {
     snprintf(fioVia, sizeof fioVia, "X-Nuvio-Auth: nuvio");
   } else {
     return 0;
@@ -1407,6 +1460,7 @@ static int registrar(const char **cab) {
     } }
   url("/v1/eu");
   r = rede_postar_st(fioUrl, REC_TEMPO_REDE, cab, corpoEu, &st);
+  recMarcarRede(st);
   if (r && st >= 200 && st < 300) {
     alc = (int)js_num(r, r + strlen(r), "alcance", -1.0);
     js_texto_raiz(r, "nome", nome, sizeof nome);
@@ -1859,6 +1913,7 @@ static int lerRecs(const char **cab) {
     snprintf(fioUrl + k, sizeof fioUrl - k, "%lld", desde); }
   r = rede_baixar_etag(fioUrl, REC_TEMPO_REDE, cabs, &st,
                        etagNovo, sizeof etagNovo);
+  recMarcarRede(st);
   // 304: nada mudou desde a ultima vez, e e o caso comum. Sem corpo, sem
   // trabalho, e o ETag guardado continua valendo.
   if (st == 304) { free(r); return 1; }
@@ -1899,8 +1954,8 @@ static int lerRecs(const char **cab) {
 }
 
 static void enviarFila(const char **cab) {
-  char corpo[2200];
-  char t[400], po[1100], ti[64], an[48], pa[260], tx[200];
+  char corpo[NV_ARTE_URL_MAX * 2 + 1600];
+  char t[400], po[NV_ARTE_URL_MAX * 2], ti[64], an[48], pa[260], tx[200];
   char *r;
   int st = 0, ok;
   SDL_LockMutex(mtx);
@@ -2109,6 +2164,17 @@ static int lerPessoa(const char *p, const char *f, RecPessoa *x) {
   semTab(x->vendo); semTab(x->nome);
   x->emComum = (int)js_num(p, f, "emComum", 0.0);
   x->generos = mascaraGeneros(p, f);
+  {
+    const char *m = strstr(p, "\"motivo\"");
+    if (m && m < f) {
+      char tp[16];
+      js_texto(m, f, "tipo", tp, sizeof tp);
+      x->motivo = !strcmp(tp, "titulos") ? REC_MOTIVO_TITULOS
+                : !strcmp(tp, "generos") ? REC_MOTIVO_GENEROS
+                : !strcmp(tp, "ativos")  ? REC_MOTIVO_ATIVOS : REC_MOTIVO_NENHUM;
+      x->motivoGeneros = mascaraGeneros(m, f);
+    }
+  }
   semTab(x->apelido); semTab(x->bio); semTab(x->avatar);
   // Handle malformado ou sem nome: nao ha o que mostrar nem como agir.
   return x->pub[0] && (x->apelido[0] || x->nome[0]);
@@ -2257,7 +2323,7 @@ static int corpoGosto(char *corpo, size_t tam) {
   ProgRegistro *reg = (ProgRegistro *)malloc(sizeof *reg * 120);
   size_t k;
   int i, n = 0, achou;
-  char vistos[40][24];
+  char vistos[40][24], idv[24];
   if (!reg) { snprintf(corpo, tam, "{\"imdbs\":[]}"); return 0; }
   achou = prog_ler(reg, 120);
   k = (size_t)snprintf(corpo, tam, "{\"imdbs\":[");
@@ -2265,12 +2331,24 @@ static int corpoGosto(char *corpo, size_t tam) {
     int j, dup = 0;
     if (reg[i].durSeg < 120.0 || reg[i].posSeg < reg[i].durSeg * 0.8) continue;
     if (strncmp(reg[i].contentId, "tt", 2)) continue;
-    for (j = 0; j < n; j++) if (!strcmp(vistos[j], reg[i].contentId)) dup = 1;
+    imdbServidor(idv, sizeof idv, reg[i].contentId);   // serie: "tt:S:E" -> "tt"
+    for (j = 0; j < n; j++) if (!strcmp(vistos[j], idv)) dup = 1;
     if (dup) continue;
-    snprintf(vistos[n], sizeof vistos[n], "%s", reg[i].contentId);
+    snprintf(vistos[n], sizeof vistos[n], "%s", idv);
     k += (size_t)snprintf(corpo + k, tam - k, "%s\"%s\"", n ? "," : "", vistos[n]);
     n++;
   }
+  // Salvos: so os que ainda nao entraram como concluidos (copiados sob mutex).
+  int nFim = n;
+  SDL_LockMutex(mtx);
+  for (i = 0; i < nGostoSalvos && n < 60 && k + 32 < tam; i++) {
+    int j, dup = 0;
+    for (j = 0; j < nFim; j++) if (!strcmp(vistos[j], gostoSalvos[i])) dup = 1;
+    if (dup) continue;
+    k += (size_t)snprintf(corpo + k, tam - k, "%s\"%s\"", n ? "," : "", gostoSalvos[i]);
+    n++;
+  }
+  SDL_UnlockMutex(mtx);
   snprintf(corpo + k, tam - k, "]}");
   free(reg);
   return n;
@@ -2376,11 +2454,13 @@ static void tratarIdentidade(const char **cab) {
       // confere no Supabase que o indice e desta conta).
       const ContaPerfil *pf = perfis_item_ativo();
       int indice = (pf && !pf->primario && pf->indice >= 1) ? pf->indice : 0;
-      if (sessao_token()[0]) {
-        jsonEsc(tok, sizeof tok, sessao_token());
+      char st0[3000];
+      if (sessao_token_copiar(st0, sizeof st0)) {
+        jsonEsc(tok, sizeof tok, st0);
         if (indice) snprintf(corpo, sizeof corpo, "{\"provedor\":\"nuvio\",\"token\":\"%s\",\"perfil\":%d}", tok, indice);
         else snprintf(corpo, sizeof corpo, "{\"provedor\":\"nuvio\",\"token\":\"%s\"}", tok);
       }
+      memset(st0, 0, sizeof st0);
     } else {
       // Pela conta Nuvio: a prova e o token do Trakt.
       const char *tcab[4];
@@ -2567,8 +2647,7 @@ static int identidadeEm(const char **cab, char *aut, size_t na, char *via, size_
   char chave[160];
   if (trakt_ativo() && trakt_cabecalhos(tcab, aut, na, chave, sizeof chave)) {
     snprintf(via, nv, "X-Nuvio-Auth: trakt");
-  } else if (sessao_token()[0]) {
-    snprintf(aut, na, "Authorization: Bearer %s", sessao_token());
+  } else if (bearerSessao(aut, na)) {
     snprintf(via, nv, "X-Nuvio-Auth: nuvio");
   } else return 0;
   cab[0] = aut; cab[1] = via; cab[2] = NULL; cab[3] = NULL;
@@ -2796,6 +2875,13 @@ static int lerEvento(const char *p, const char *f, RecEvento *e) {
       if (n[0]) k += (size_t)snprintf(e->com + k, sizeof e->com - k, "%s%s", k ? ", " : "", n);
       c = js_prox(cf);
     } }
+  // O servidor agrupado (06/10/2026): episodios contados e a reacao junto do
+  // "terminou". Servidor antigo nao manda: 0 e "nenhuma".
+  e->eps = (int)js_num(p, f, "eps", 0.0);
+  if (e->eps < 0 || e->eps > 9999) e->eps = 0;
+  e->reacFim = (int)js_num(p, f, "reac", -2.0);
+  e->temReacFim = e->reacFim >= -1 && e->reacFim <= 1;
+  if (!e->temReacFim) e->reacFim = 0;
   semTab(nome); semTab(e->titulo); semTab(e->via); semTab(e->com);
   e->acao = acaoDeEv(ev);
   if (!e->acao || strncmp(e->imdb, "tt", 2) || !e->pessoa[0]) return 0;
@@ -3055,8 +3141,7 @@ int recomenda_cabecalhos(const char **cab, char *aut, size_t na, char *via, size
   if (!recomenda_ativo() || !cab || !aut || !via || !perfil) return 0;
   if (trakt_ativo() && trakt_cabecalhos(tcab, aut, na, chave, sizeof chave)) {
     snprintf(via, nv, "X-Nuvio-Auth: trakt");
-  } else if (sessao_token()[0]) {
-    snprintf(aut, na, "Authorization: Bearer %s", sessao_token());
+  } else if (bearerSessao(aut, na)) {
     snprintf(via, nv, "X-Nuvio-Auth: nuvio");
   } else return 0;
   cab[0] = aut; cab[1] = via; cab[2] = NULL; cab[3] = NULL;
@@ -3111,7 +3196,11 @@ void recomenda_responder_alcance(int nivel) {
 
 int recomenda_atividade(const RecAtiv *a) {
   int i, progresso;
+  RecAtiv pura;
   if (!recomenda_ativo() || !a || strncmp(a->imdb, "tt", 2)) return 0;
+  pura = *a;                    // o id que viaja e o da serie, nao o do episodio
+  imdbServidor(pura.imdb, sizeof pura.imdb, a->imdb);
+  a = &pura;
   if (!(!strcmp(a->ev, "inicio") || !strcmp(a->ev, "progresso") || !strcmp(a->ev, "fim") ||
         !strcmp(a->ev, "abandono") || !strcmp(a->ev, "reacao") || !strcmp(a->ev, "salvo")))
     return 0;
@@ -3377,7 +3466,7 @@ static void enviarAtivNova(const char **cab) {
   int n = 0;
   while (n < 8) {
     RecAtiv a;
-    char corpo[1600], t[400], po[1100], *r;
+    char corpo[NV_ARTE_URL_MAX * 2 + 800], t[400], po[NV_ARTE_URL_MAX * 2], *r;
     int st = 0;
     SDL_LockMutex(mtx);
     // A fila so vale com o nivel ligado E o servidor sabendo disso: com o
@@ -3521,12 +3610,21 @@ static int ciclo(void) {
     lerPedidos(cab);
     lerFeedNovo(cab, 1);
     contatosMs = SDL_GetTicks() + REC_CONTATOS_MS;
-  } else if ((Sint32)(SDL_GetTicks() - contatosMs) >= 0) {
-    lerContatos(cab);
-    lerSugestoes(cab);
+  } else {
+    if ((Sint32)(SDL_GetTicks() - contatosMs) >= 0) {
+      lerContatos(cab);
+      lerSugestoes(cab);
+      lerFeedNovo(cab, 1);
+      contatosMs = SDL_GetTicks() + REC_CONTATOS_MS;
+    }
+    // OS PEDIDOS NAO ESPERAM OS DEZ MINUTOS DOS CONTATOS (06/10, relato do
+    // dono: "nao da pra ver quando alguem te adicionou, e nao mostra na ilha").
+    // Eles moravam neste bloco: um pedido feito com a TV ligada so chegava na
+    // proxima volta do relogio de 600 s — nem a ilha, nem a aba Amigos (que so
+    // chama recomenda_pedir_agora, que nao mexe nesse relogio) ficavam sabendo.
+    // Agora sao lidos a cada ciclo (60 s, ou na hora em que a aba abre): um
+    // GET pequeno, do tamanho do feed que ja sai a cada ciclo.
     lerPedidos(cab);
-    lerFeedNovo(cab, 1);
-    contatosMs = SDL_GetTicks() + REC_CONTATOS_MS;
   }
   lerFeedNovo(cab, 0);
   enviarAparecer(cab);
@@ -3565,7 +3663,10 @@ static int fioLaco(void *arg) {
     SDL_UnlockMutex(mtx);
     if (agir) {
       int falou = ciclo();
-      proximoMs = SDL_GetTicks() + (falou ? REC_INTERVALO_MS : REC_ESPERA_MS);
+      // Jitter de ate ~12% para as TVs nao baterem juntas no servidor.
+      Uint32 passo = falou ? (REC_INTERVALO_MS << recFalhas) : REC_ESPERA_MS;
+      if (falou) passo += (SDL_GetTicks() * 2654435761u >> 16) % (passo / 8);
+      proximoMs = SDL_GetTicks() + passo;
     }
     // 200 ms e a granularidade de reacao a um envio ou a abertura da aba. Com
     // a sondagem em 60 s, o laco acorda 300 vezes para fazer uma requisicao —
@@ -3620,7 +3721,10 @@ int recomenda_enviar(const CatItem *ci, const char *paraId, int modelo,
   SDL_LockMutex(mtx);
   if (fila.cheia || envioEstado == REC_ENVIO_INDO) { SDL_UnlockMutex(mtx); return 0; }
   memset(&fila, 0, sizeof fila);
-  snprintf(fila.imdb,   sizeof fila.imdb,   "%s", ci->imdb);
+  // O CARD DE CONTINUAR ASSISTINDO DE SERIE TRAZ "tt123:S:E" (descoberta.c), e
+  // o servidor so aceita /^tt\d+$/ (HTTP 400, issue #363). A recomendacao e do
+  // titulo, nao do episodio: corta no primeiro ':'.
+  imdbServidor(fila.imdb, sizeof fila.imdb, ci->imdb);
   snprintf(fila.tipo,   sizeof fila.tipo,   "%s", ci->tipo[0] ? ci->tipo : "movie");
   snprintf(fila.titulo, sizeof fila.titulo, "%s", ci->titulo);
   snprintf(fila.poster, sizeof fila.poster, "%s", ci->poster);
@@ -3650,28 +3754,35 @@ int recomenda_enviar(const CatItem *ci, const char *paraId, int modelo,
 
 // --- CARTAO DE ABERTURA ------------------------------------------------------
 
+// GANCHO DE TODO QUADRO COM A HOME DE PE — E JA NAO ABRE NADA. Antes abria o
+// cartao modal assim que a sondagem trazia "N nova(s)" (e uma vez por
+// recomendacao), por cima da home: toda tecla de quem estava rolando uma
+// fileira era descartada ate a pessoa apertar OK ou Voltar (so os dois
+// saiam). Quem anuncia a recomendacao que chega e a ILHA ("Ana recomendou
+// Fallout", avisos.c anunciarItem), que nao pega tecla nenhuma: a navegacao
+// segue livre e o modal dela (Ver / Salvar / Dispensar) so abre quando a
+// pessoa o aciona. O cartao continua existindo para a abertura de proposito
+// (recomenda_abrir_cartao). Fica a funcao porque app.c e os testes a chamam.
 void recomenda_mostrar_se_houver(void) {
-  char *visto;
-  long long ultimo = 0;
+}
+
+// Abre o cartao AGORA, de proposito (nao a chegada de uma recomendacao): a
+// mais nova nao lida, sem a marca de "uma vez por recomendacao".
+void recomenda_abrir_cartao(void) {
   int i, achou = -1;
-  if (!recomenda_ativo() || !mtx) return;
-  if (cartaoMostrado || cartaoAberto) return;
+  if (!recomenda_ativo() || !mtx || cartaoAberto) return;
   SDL_LockMutex(mtx);
   for (i = 0; i < nItens; i++)
-    if (!itens[i].visto) { achou = i; break; }   // a lista ja vem da mais nova
+    if (!itens[i].visto) { achou = i; break; }
   if (achou >= 0) cartaoItem = itens[achou];
   SDL_UnlockMutex(mtx);
-  if (achou < 0) return;
-  cartaoMostrado = 1;
-  // UMA VEZ POR RECOMENDACAO. A marca guarda o maior id ja anunciado; uma
-  // recomendacao mais velha que ela nunca volta a abrir cartao.
-  visto = dados_ler(REC_ARQ_CARTAO);
-  if (visto) { ultimo = atoll(visto); free(visto); }
-  if (cartaoItem.id <= ultimo) return;
-  { char s[48];
-    snprintf(s, sizeof s, "%lld\n", cartaoItem.id);
-    dados_gravar(REC_ARQ_CARTAO, s); }
-  cartaoAberto = 1;
+  if (achou >= 0) { cartaoMostrado = 1; cartaoAberto = 1; }
+}
+
+int recomenda_tecla(const SDL_Event *e) {
+  if (!cartaoAberto) return 0;
+  recomenda_evento(e);
+  return 1;
 }
 
 void recomenda_evento(const SDL_Event *e) {

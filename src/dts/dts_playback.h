@@ -11,6 +11,12 @@ typedef struct {
 /* All expensive work and native Feed calls are serialized on one worker.
  * Callers own a session; close joins it before freeing callback context. */
 int dts_playback_enabled(void);
+/* Error text of a Dolby Vision session whose source could not keep up. */
+#define DTS_PLAYBACK_STARVED "Source too slow for the Dolby Vision path"
+/* Main thread, right before dts_playback_start: the next session is a Dolby
+ * Vision one (AC-3/E-AC-3 passthrough, larger direct ranges, starvation
+ * fallback). Consumed by that start. */
+void dts_playback_next_dv(int enabled);
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,
                                int paused, const char *window, int webos_major,

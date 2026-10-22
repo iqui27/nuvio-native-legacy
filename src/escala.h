@@ -19,8 +19,15 @@
 #include "layout.h"
 #include "gfx.h"
 
-#define NV_VTELA_W (1920.0f / gfx_escala_ui())
-#define NV_VTELA_H (1080.0f / gfx_escala_ui())
+#ifdef NV_TOUCH_UI
+#define NV_LAYOUT_REAL_W nv_layout_w
+#define NV_LAYOUT_REAL_H nv_layout_h
+#else
+#define NV_LAYOUT_REAL_W NV_TELA_BASE_W
+#define NV_LAYOUT_REAL_H NV_TELA_BASE_H
+#endif
+#define NV_VTELA_W (NV_LAYOUT_REAL_W / gfx_escala_ui())
+#define NV_VTELA_H (NV_LAYOUT_REAL_H / gfx_escala_ui())
 
 // Liga a escala configurada ate o fim do bloco. Aninhar e seguro.
 #define ESCALA_INI() float escalaAnt_ = gfx_escala_entrar()
@@ -46,7 +53,7 @@ static inline float escala_min(float m) {
 // (NV_ESCALA_TELA_ATIVA abaixo), porque o fator depende do cartao.
 #define ESCALA_SE_COUBER_INI(w, h) \
   float escalaAnt_ = gfx_escala(); \
-  gfx_escala_sair(((w) * gfx_escala_ui() <= 1888.0f && (h) * gfx_escala_ui() <= 1048.0f) \
+  gfx_escala_sair(((w) * gfx_escala_ui() <= NV_LAYOUT_REAL_W - 32.0f && (h) * gfx_escala_ui() <= NV_LAYOUT_REAL_H - 32.0f) \
                   ? gfx_escala_ui() : 1.0f)
 #define ESCALA_SE_COUBER_FIM() gfx_escala_sair(escalaAnt_)
 
@@ -55,8 +62,8 @@ static inline float escala_min(float m) {
 #ifdef NV_ESCALA_TELA_ATIVA
 #undef NV_TELA_W
 #undef NV_TELA_H
-#define NV_TELA_W (1920.0f / gfx_escala())
-#define NV_TELA_H (1080.0f / gfx_escala())
+#define NV_TELA_W (NV_LAYOUT_REAL_W / gfx_escala())
+#define NV_TELA_H (NV_LAYOUT_REAL_H / gfx_escala())
 #endif
 
 #ifdef NV_ESCALA_TELA
@@ -65,3 +72,4 @@ static inline float escala_min(float m) {
 #define NV_TELA_W NV_VTELA_W
 #define NV_TELA_H NV_VTELA_H
 #endif
+

@@ -64,6 +64,7 @@ static void quadros(int n) {
 static void tecla(SDL_Keycode k) {
   SDL_Event ev; memset(&ev, 0, sizeof ev);
   ev.type = SDL_KEYDOWN; ev.key.keysym.sym = k; faixas_evento(&ev);
+  ev.type = SDL_KEYUP; faixas_evento(&ev);
   quadros(2);
 }
 
@@ -105,7 +106,7 @@ int main(int argc, char **argv) {
   quadros(60);
   snprintf(nome, sizeof nome, "%s-folha.bmp", saida); salvar(nome);
   assert(!faixas_estilo_topo());
-  tecla(SDLK_RIGHT);                 // foco no Estilo: vira barra
+  faixas_aba_estilo(1);              // explicit Estilo tab; RIGHT now opens subtitle options
   quadros(60);
   assert(faixas_estilo_topo());
   snprintf(nome, sizeof nome, "%s-barra-pos4.bmp", saida); salvar(nome);

@@ -169,9 +169,10 @@ int legref_cues(const unsigned char *p, long n, int faixa, double escala,
 // --- O MODULO -----------------------------------------------------------------
 typedef struct {
   uint64_t id, sessao;
-  char url[4096], idioma[24];
+  char url[4096], idioma[24], cabs[2048];
   int excl[16], nExcl;
   LegRefOrcamento orc;
+  LegendaDocumento *(*local)(const char *, uint64_t, const int *, int);
 } Pedido;
 
 struct LegRef {
@@ -965,7 +966,14 @@ static void *trabalhar(void *u) {
     snprintf(j.urlFinal, sizeof j.urlFinal, "%s", j.p.url);
     pthread_mutex_unlock(&r->m);
     memset(&st, 0, sizeof st);
-    doc = coletar(&j, &st);
+    doc = j.p.local ? j.p.local(j.p.url, j.p.sessao, j.p.excl, j.p.nExcl) : NULL;
+    if (doc) {
+      const LegendaDocumentoInfo *info = legenda_documento_info(doc);
+      int n = 0, faixa = 0; legenda_documento_dados(doc, &n);
+      sscanf(info->identidade, "mkv-track:%d", &faixa);
+      anunciar(&j, &st, faixa, info->idioma, "S_TEXT/ASS");
+      progresso(&j, n, n);
+    } else doc = coletar(&j, &st);
     pthread_mutex_lock(&r->m);
     if (r->st.pedido == j.id && r->ped.id == j.id && !r->sair) {
       r->st.bytes = j.bytes; r->st.pedidos = j.pedidos;
@@ -975,7 +983,9 @@ static void *trabalhar(void *u) {
         r->st.motivo = j.erro;
       }
       fprintf(stderr, "[legref] reference %s reason=%s track=%d events=%d/%d requests=%d bytes=%lld\n",
-              r->st.fase == LEGREF_PRONTO ? "complete" : "unavailable", legref_motivo(r->st.motivo),
+              r->st.fase == LEGREF_PRONTO ?
+                (legenda_documento_info(r->doc)->flags & LEGENDA_DOC_JANELA ? "window" : "complete") : "unavailable",
+              legref_motivo(r->st.motivo),
               r->st.faixa, r->st.feitos, r->st.total, j.pedidos, j.bytes);
     }
     pthread_mutex_unlock(&r->m);
@@ -987,12 +997,21 @@ static void *trabalhar(void *u) {
 typedef struct { int (*parar)(void *); void *u; } PararHttp;
 static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, long *tam,
                               int *status, int (*parar)(void *), void *pu) {
-  char range[80]; const char *cab[2]; RedePedido p; RedeResposta r; unsigned char *b = NULL;
+  char range[80], linhas[2048]; const char *cab[18]; RedePedido p; RedeResposta r; unsigned char *b = NULL;
+  int k = 0; char *s, *nl;
   (void)u;
   snprintf(range, sizeof range, "Range: bytes=%lld-%lld", ini, ini + n - 1);
-  cab[0] = range; cab[1] = NULL;
+  cab[k++] = range;
+  // Os mesmos cabecalhos com que o player abre a fonte (proxyHeaders do addon).
+  snprintf(linhas, sizeof linhas, "%s", pu ? ((Job *)pu)->p.cabs : "");
+  for (s = linhas; *s && k < 17; s = nl) {
+    nl = strchr(s, '\n');
+    if (nl) *nl++ = 0; else nl = s + strlen(s);
+    if (*s && strchr(s, ':') && strncasecmp(s, "Range:", 6)) cab[k++] = s;
+  }
+  cab[k] = NULL;
   memset(&p, 0, sizeof p);
-  p.url = url; p.cabecalhos = cab; p.seguir = 1;
+  p.url = url; p.cabecalhos = cab; p.seguir = 1; p.rebaixar_midia = 1;
   p.prazo_ms = 20000u + (unsigned)(n / 64);
   p.max_bytes = (size_t)n;
   p.parar = parar; p.parar_usuario = pu;
@@ -1003,7 +1022,9 @@ static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, l
     b = (unsigned char *)r.corpo; r.corpo = NULL; *tam = (long)r.n_corpo;
     // Endereco final para os proximos Ranges (o Job guarda; nunca vai a log).
     if (r.final[0] && pu) { Job *j = pu; snprintf(j->urlFinal, sizeof j->urlFinal, "%s", r.final); }
-  } else if (r.status == 200 && r.final[0] && pu) {
+  } else if (r.status != 200)
+    fprintf(stderr, "[legref] range falhou http=%d erro=%d cabecalhos=%d\n", r.status, (int)r.erro, k - 1);
+  if (!b && r.status == 200 && r.final[0] && pu) {
     Job *j = pu; snprintf(j->urlFinal, sizeof j->urlFinal, "%s", r.final);
   }
   rede_resposta_limpar(&r);
@@ -1011,7 +1032,9 @@ static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, l
 }
 
 int legref_disponivel(void) {
-#if defined(__EMSCRIPTEN__) || defined(NV_TPK) || defined(NV_TPK40)
+  // Samsung: desligado ate provar em TV. -DNV_LEGREF_TPK liga no .tpk 6+
+  // (canario; o 4/5 fica fora: rede sem TLS por fio, outro carregador).
+#if defined(__EMSCRIPTEN__) || defined(NV_TPK40) || (defined(NV_TPK) && !defined(NV_LEGREF_TPK))
   return 0;
 #else
   return (rede_pedido_capacidades() & REDE_CAP_JOB) != 0;
@@ -1039,6 +1062,11 @@ void legref_destruir(LegRef *r) {
   pthread_cond_destroy(&r->c); pthread_mutex_destroy(&r->m); free(r);
 }
 
+static const char *(*fonteCabs)(void);
+static LegendaDocumento *(*fonteLocal)(const char *, uint64_t, const int *, int);
+void legref_fonte_local(LegendaDocumento *(*f)(const char *, uint64_t, const int *, int)) { fonteLocal = f; }
+void legref_fonte_cabecalhos(const char *(*f)(void)) { fonteCabs = f; }
+
 uint64_t legref_pedir(LegRef *r, const char *url, uint64_t sessao, const char *idioma,
                       const int *excluidas, int nExcluidas, const LegRefOrcamento *orc) {
   LegendaDocumento *velho; uint64_t id; int i;
@@ -1048,9 +1076,10 @@ uint64_t legref_pedir(LegRef *r, const char *url, uint64_t sessao, const char *i
   velho = r->doc; r->doc = NULL;
   id = ++r->gerador;
   memset(&r->ped, 0, sizeof r->ped);
-  r->ped.id = id; r->ped.sessao = sessao; r->ped.orc = *orc;
+  r->ped.id = id; r->ped.sessao = sessao; r->ped.orc = *orc; r->ped.local = fonteLocal;
   snprintf(r->ped.url, sizeof r->ped.url, "%s", url);
   snprintf(r->ped.idioma, sizeof r->ped.idioma, "%s", idioma ? idioma : "");
+  snprintf(r->ped.cabs, sizeof r->ped.cabs, "%s", fonteCabs && fonteCabs() ? fonteCabs() : "");
   for (i = 0; i < nExcluidas && i < 16; i++) r->ped.excl[i] = excluidas[i];
   r->ped.nExcl = i;
   r->temPedido = 1;

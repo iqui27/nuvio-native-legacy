@@ -28,5 +28,7 @@ int  glem_pediu_assistir(char *id, size_t tam, char *nome, size_t tamNome,
                          char *base, size_t tamBase);
 // Para a captura (tests/guia_shot): monta o cartao como se o lembrete venceu.
 void glem_teste_cartao(const char *titulo, const char *canal, int curto);
+// Teste do ponteiro (#99): 0 = Assistir, 1 = Dispensar.
+int  glem_teste_foco(void);
 
 #endif

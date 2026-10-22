@@ -138,6 +138,44 @@ int main(void) {
   ok(k == 4 && mkv_creditos_nomeados(caps, k) > 6899.0,
      "abertura e final nomeados: vale o final");
 
+  // 5c. 2.0.3, ANIME: "Opening", "Part A", "Part B", "Ending", "Preview". O ED
+  //     e o inicio dos creditos; a previa (ultimo capitulo) nao e.
+  comeca();
+  { long c = abreChapters(); long e;
+    id2(0x45B9UL); e = tam4();
+      capitulo(0ULL, "Opening");
+      capitulo(90ULL*1000000000ULL, "Part A");
+      capitulo(700ULL*1000000000ULL, "Part B");
+      capitulo(1320ULL*1000000000ULL, "Ending");
+      capitulo(1410ULL*1000000000ULL, "Preview");
+    fecha(e); fecha(c); }
+  k = lerCapitulos(buf + 8, n - 8, caps, MKV_MAX_CAPS);
+  ok(k == 5 && mkv_creditos_nomeados(caps, k) > 1319.0 && mkv_creditos_nomeados(caps, k) < 1321.0,
+     "anime: \"Ending\" e os creditos");
+  ok(k == 5 && mkv_creditos_ultimo(caps, k) > 1319.0 && mkv_creditos_ultimo(caps, k) < 1321.0,
+     "anime: o ultimo capitulo util pula a previa");
+  comeca();
+  { long c = abreChapters(); long e;
+    id2(0x45B9UL); e = tam4();
+      capitulo(0ULL, "OP");
+      capitulo(600ULL*1000000000ULL, "Bed Scene");
+      capitulo(1330ULL*1000000000ULL, "ED");
+      capitulo(1420ULL*1000000000ULL, "Next Episode");
+    fecha(e); fecha(c); }
+  k = lerCapitulos(buf + 8, n - 8, caps, MKV_MAX_CAPS);
+  ok(k == 4 && mkv_creditos_nomeados(caps, k) > 1329.0 && mkv_creditos_nomeados(caps, k) < 1331.0,
+     "anime: \"ED\" casa como palavra (\"Bed\" nao)");
+  // So "Opening Credits": e abertura, nao o fim.
+  comeca();
+  { long c = abreChapters(); long e;
+    id2(0x45B9UL); e = tam4();
+      capitulo(0ULL, "Cold Open");
+      capitulo(90ULL*1000000000ULL, "Opening Credits");
+      capitulo(3000ULL*1000000000ULL, "Act II");
+    fecha(e); fecha(c); }
+  k = lerCapitulos(buf + 8, n - 8, caps, MKV_MAX_CAPS);
+  ok(k == 3 && mkv_creditos_nomeados(caps, k) == 0.0, "\"Opening Credits\" sozinho nao e o fim");
+
   // 6. Lixo: nao pode travar nem devolver numero absurdo.
   comeca();
   { int i; for (i = 0; i < 64; i++) { unsigned char b = (unsigned char)(i * 7); put(&b, 1); } }

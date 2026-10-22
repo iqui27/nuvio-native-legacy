@@ -29,6 +29,7 @@ typedef struct {
   char ordenar[48];    // sort_by do TMDB / sort_by da lista Trakt
   char ordem[8];       // sort_how do Trakt: "asc" | "desc"
   long traktLista;     // id da lista no Trakt
+  int traktPropria;    // lista vinda de /users/me/lists
   char filtros[384];   // objeto "filters" cru; o montador da URL traduz
 } ColSource;
 typedef struct {
@@ -121,6 +122,14 @@ unsigned col_revisao(void);
 // A complete account snapshot was accepted for this profile, even when empty.
 int col_tem_conta(void);
 const ColFolder *col_folder(int i);
+// IMPRESSAO DA ESTRUTURA das colecoes para o snapshot da Home (homeestado.c):
+// grupo, id e fontes de cada pasta, SEM arte (URL de arte muda sem criar
+// fileira nova). Calculada inteira sob a trava das colecoes (#203): pode ser
+// chamada de qualquer fio. Antes homeestado lia col_folder(i)->sources[s] no
+// fio da montagem, sem trava, enquanto o sync no laco principal liberava o
+// bloco de fontes (fecharMontagem / col_esquecer_perfil) — leitura de memoria
+// ja liberada. Mesmo valor que o hashColecoes antigo de homeestado.c.
+unsigned col_hash_estrutura(void);
 // Identity-based grouping: two collections can have the same display title.
 void col_chave_pasta(const ColFolder *pasta, char *dst, unsigned n);
 int col_grupo_chave(const char *chave, int *indices, int max);

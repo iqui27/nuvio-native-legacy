@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // MAPA DO GOSTO: o que a pessoa viu, cruzado pelo que as historias tem em
 // comum. E a camada de DADOS da tela Explorar (explorar.c so desenha).
 //
@@ -38,7 +39,7 @@ typedef struct {
   long tmdb;            // 0 = desconhecido
   char tipo[8];         // "movie" | "series"
   char titulo[120];
-  char poster[200];     // URL pronta
+  char poster[NV_ARTE_URL_MAX];     // URL pronta
   char fundo[200];      // backdrop, URL pronta
   char sinopse[300];
   int  ano;             // 0 = desconhecido

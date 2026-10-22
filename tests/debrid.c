@@ -259,13 +259,15 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
 
 // o parser puxa badges; duble
 unsigned long long badges_detectar(const char *t) { (void)t; return 0; }
+unsigned long long badges_bit(const char *id) { (void)id; return 0; }
 
 // ---------------------------------------------------------------- testes
 
 static void semChaves(void) {
   char url[4096] = "";
+  int fora = 1;
   assert(!debrid_ativo());
-  assert(!debrid_resolver("deadbeef", -1, url, sizeof url));
+  assert(!debrid_resolver_cache("deadbeef", -1, url, sizeof url, &fora) && !fora);
   debrid_definir_chave("offcloud", "k");     // servico que ninguem resolve aqui
   assert(!debrid_ativo());
   OK("sem chave nao resolve, e servico desconhecido continua ignorado");
@@ -325,7 +327,9 @@ static void torbox(void) {
   // da casa e nunca pedir ao servico que comece a baixar
   memset(bateuTB, 0, sizeof bateuTB);
   tbEmCache = 0; url[0] = 0;
-  assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  int fora = 0;
+  assert(!debrid_resolver_cache("DEADBEEF", -1, url, sizeof url, &fora));
+  assert(fora); // a negativa desta consulta chega a linha, sem nova viagem
   assert(!url[0]);
   assert(bateuTB[0] == 1 && bateuTB[1] == 0 && bateuTB[2] == 0 && bateuTB[3] == 0);
   OK("TorBox fora de cache devolve 0 sem criar torrent");
@@ -746,6 +750,24 @@ static void ordem(void) {
   assert(!debrid_ativo());
 }
 
+static void negativaParcial(void) {
+  char url[4096] = "";
+  int fora = 1;
+  debrid_esquecer();
+  debrid_definir_chave("torbox", K_TB);
+  debrid_definir_chave("premiumize", K_PM);
+  tbEmCache = 0; tbCriar403 = 0; pmEmCache = 1; pmSemPlano = 1;
+  assert(!debrid_resolver_cache("deadbeef", -1, url, sizeof url, &fora) && !fora);
+  debrid_esquecer();
+  debrid_definir_chave("torbox", K_TB);
+  debrid_definir_chave("premiumize", K_PM);
+  pmEmCache = 0; pmSemPlano = 0;
+  assert(!debrid_resolver_cache("deadbeef", -1, url, sizeof url, &fora) && fora);
+  tbEmCache = pmEmCache = 1;
+  debrid_esquecer();
+  OK("cache parcial + erro e desconhecido; negativas de todos sao fora de cache");
+}
+
 static void parser(void) {
   Stream *v = NULL;
   int n = stream_extrair(
@@ -801,6 +823,7 @@ int main(void) {
   alldebridLocal();
   alldebridTeste();
   ordem();
+  negativaParcial();
   parser();
 
   fflush(stdout);

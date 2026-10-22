@@ -30,8 +30,11 @@
 //     barra de tempo do player, o fundo que fecha uma folha) chama ele em vez
 //     do OK.
 //   - RODINHA vira seta: cima/baixo, e esquerda/direita na rodinha lateral.
-//   - DEDO (#216): tocar = focar + OK; arrastar rola (vira setas, com
-//     inercia na soltura); arrastar sobre alvo arrastavel chama o ativar.
+//   - DEDO (#216): tocar = focar + OK; arrastar entrega deltas a camada,
+//     com inercia na soltura. No preview, arrasto sem camada rolavel e
+//     consumido; nas TVs conserva as setas. Alvo arrastavel chama o ativar.
+//     Segurar sem arrastar confirma um OK longo uma vez no limiar; soltar
+//     depois disso nao vira outro clique.
 //   - SETA DO CONTROLE esconde o cursor; ele volta com um movimento de
 //     verdade (janela curta e limiar de distancia: o tremor de quem aperta a
 //     seta nao conta). Parado alguns segundos ele some sozinho.
@@ -50,6 +53,17 @@
 
 typedef void (*PonteiroFn)(int a, int b);
 
+enum {
+  PONT_ROL_INICIO, PONT_ROL_MOVER, PONT_ROL_SOLTAR,
+  PONT_ROL_INERCIA, PONT_ROL_FIM, PONT_ROL_CANCELAR
+};
+typedef struct {
+  int fase, eixoY;             // eixo travado: 1 vertical, 0 horizontal
+  float delta, velocidade;     // sentido do dedo: px logicos e px/ms
+  float x, y;                 // origem do DOWN, na tela logica atual
+} PonteiroRolagem;
+typedef int (*PonteiroRolagemFn)(const PonteiroRolagem *e);
+
 typedef struct {
   float x, y, w, h;
   PonteiroFn focar;    // hover (e antes do OK do clique). Pode ser NULL.
@@ -57,9 +71,15 @@ typedef struct {
                        // Os dois NULL = anteparo: absorve o clique, nao faz nada.
   int a, b;
   int arrasta;         // ponteiro_alvo_arrastavel: o dedo arrasta, nao rola
+  PonteiroFn segurar;  // foco proprio antes do OK longo de um alvo com ativar
 } PonteiroAlvo;
 
 void ponteiro_iniciar(void);
+// Cancela o gesto de dedo no fio de eventos, antes de uma soltura do sistema.
+void ponteiro_cancelar_toque(void);
+// Cancela somente uma ativacao pendente do alvo com este foco. Gestos de
+// outra camada, arrastos e toques longos ja consumidos ficam como estavam.
+int ponteiro_cancelar_alvo(PonteiroFn focar);
 // Diagnostico: loga eventos que nao sao tecla (ver ponteiro.c). Todo evento.
 void ponteiro_diag(const SDL_Event *e);
 
@@ -84,15 +104,55 @@ int  ponteiro_ativo(void);
 void ponteiro_alvo(float x, float y, float w, float h,
                    PonteiroFn focar, PonteiroFn ativar, int a, int b);
 void ponteiro_camada(void);
+// Rolagem continua da camada atual, registrada durante o desenho. INICIO
+// recebe delta/velocidade zero: retornar 1 captura o gesto. MOVER entrega o
+// deslocamento completo desde o DOWN e depois cada trecho no eixo travado;
+// subtraia delta do offset para o conteudo acompanhar o dedo. SOLTAR precede
+// INERCIA/FIM. Retornar 0 em INERCIA para no limite; nos demais eventos, fora
+// INICIO, o retorno e ignorado. CANCELAR encerra uma captura invalidada.
+// Capturado nunca vira seta nem OK. ponteiro_camada descarta o registro de
+// tras. No preview, sem registro ou com INICIO recusado o arrasto e consumido
+// sem navegacao nem clique. Nas TVs, conserva a rolagem por setas.
+void ponteiro_rolagem(PonteiroRolagemFn fn);
+#ifdef NV_TOUCH_UI
+// Puxar a borda esquerda da camada para a direita abre a navegacao diretamente.
+// A largura segue a escala do desenho. Nova camada descarta o registro.
+typedef void (*PonteiroBordaFn)(void);
+void ponteiro_borda_esquerda(float largura, PonteiroBordaFn ativar);
+// A pilula/rail so recebe toque enquanto a mesma camada permite abrir o menu.
+int ponteiro_borda_registrada(void);
+void ponteiro_borda_ativar(void);
+#endif
+// O mesmo alvo, recortado a faixa vertical [y0, y1) — a janela de uma grade
+// que rola por baixo de um cabecalho fixo. O pedaco do cartao que a rolagem
+// escondeu nao recebe o ponteiro (por cima dele mora o cabecalho). E o caminho
+// unico das grades: cada tela so diz a sua faixa.
+void ponteiro_alvo_faixa(float x, float y, float w, float h, float y0, float y1,
+                         PonteiroFn focar, PonteiroFn ativar, int a, int b);
 // Marca o ULTIMO alvo registrado como arrastavel por dedo (#216): arrastar
 // sobre ele chama o `ativar` a cada movimento, em vez de rolar a tela. E a
 // barra de tempo do player.
 void ponteiro_alvo_arrastavel(void);
+// Alvo com ativar proprio: opcionalmente permite OK longo por dedo usando
+// este foco (a aba de temporada, por exemplo). Nao altera clique nem hover.
+void ponteiro_alvo_segurar(PonteiroFn focar);
+// 1 somente durante o par RETURN que confirma um dedo segurado. As telas
+// decidem pelo caminho do OK longo; teclado e mouse mantem seu relogio.
+int  ponteiro_ok_longo(void);
 // 1 enquanto focar/ativar estao rodando por causa de um DEDO (e nao do Magic
 // Remote). O player usa para tocar = mostrar controles e arrastar = procurar.
 int  ponteiro_toque(void);
 // Ha tela de toque (Android, ou um dedo ja chegou): alvos pequenos crescem.
 int  ponteiro_tem_toque(void);
+
+// When the pointer last moved, by the pointer's own clock (0 = never). A touch
+// counts too: a finger resting on the screen is still a hand on the remote.
+//
+// It exists because motion does NOT reach the player as an event: main.c consumes
+// it in the pointer, and inside a single target `mover()` returns early (the hover
+// only fires when the target CHANGES), so a hand resting on a button produces
+// nothing at all. Whoever needs "is the person still moving the remote?" asks here.
+Uint32 ponteiro_last_motion(void);
 
 // Posicao logica atual (para quem ativa por coordenada, como a barra de tempo).
 float ponteiro_x(void);
@@ -108,6 +168,9 @@ void ponteiro_teste_relogio(Uint32 (*fn)(void));
 void ponteiro_teste_janela(int w, int h);
 // Disponibilidade de toque injetavel, sem precisar de hardware no teste.
 void ponteiro_teste_toque(int ligado);
+// A lista que o hit-test le agora (a do ultimo quadro fechado): os testes de
+// tela conferem o que cada tela registrou, sem saber a geometria dela.
+int  ponteiro_teste_lista(const PonteiroAlvo **v);
 // SDL_webOSCursorVisibility de mentira (so com -DNV_PONT_WEBOS_TESTE).
 void ponteiro_teste_cursor_sistema(SDL_bool (*fn)(SDL_bool));
 

@@ -5,7 +5,7 @@
 # comparador com o cheerio (ver o relatorio do PoC de plugins).
 #
 #   bash tests/htmlq.sh
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 flags=(-O1 -g -Isrc)
 if [ "${SANITIZE:-1}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi

@@ -1,3 +1,7 @@
+// A medicao inclui torrents esparsos >2 GB nos ARM de 32 bits (#297).
+#ifndef _FILE_OFFSET_BITS
+#define _FILE_OFFSET_BITS 64
+#endif
 #include "app_id.h"
 #include "dados.h"
 #include <stdio.h>
@@ -7,6 +11,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <pthread.h>
+
+#ifndef __EMSCRIPTEN__
+static void espacoGravado(const char *nome);
+#endif
 
 #if defined(__EMSCRIPTEN__) || defined(NV_DADOS_TEST)
 static volatile int sujo, sujoLeve;
@@ -520,7 +528,11 @@ int dados_gravar(const char *nome, const char *conteudo) {
 }
 
 int dados_gravar_leve(const char *nome, const char *conteudo) {
-  return gravarInterno(nome, conteudo, 1);
+  int ok = gravarInterno(nome, conteudo, 1);
+#ifndef __EMSCRIPTEN__
+  if (ok) espacoGravado(nome);
+#endif
+  return ok;
 }
 
 char *dados_ler(const char *nome) {
@@ -654,3 +666,5 @@ int dados_persistente(void) {
   return dir[0] != 0;
 #endif
 }
+
+#include "espaco.inc"

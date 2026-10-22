@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // Cache de texturas com decode FORA da thread de desenho.
 //
 // Por que thread: decode medido no aparelho custa ~30ms por imagem. A 60fps o
@@ -18,7 +19,7 @@
 // estava no byte ~517 e caia fora, e o servico, sem idioma, desenhava o cartaz
 // em ingles (MEDIDO: a mesma URL sem o parametro devolve o cartaz ingles). O
 // CatItem.poster usa o mesmo teto (catalogo.h).
-#define NV_TEX_URL_MAX 1024
+#define NV_TEX_URL_MAX NV_ARTE_URL_MAX
 
 int  tex_iniciar(int max_itens);
 
@@ -39,6 +40,8 @@ GLuint tex_obter(const char *caminho);
 // home, backdrop do detalhe, arte do player). Com o teto comum de 960 essas
 // tres eram decodificadas com metade da resolucao e ampliadas na tela.
 GLuint tex_obter_hero(const char *caminho);
+// Idem, sem furar a fila (vizinho do carrossel; ver tex_cache.c).
+GLuint tex_obter_hero_quente(const char *caminho);
 
 // Escala entre o pixel do BUFFER e o pixel de layout (1 na TV, 2 no Mac
 // retina). Definir uma vez no arranque, junto com a do texto.
@@ -212,6 +215,9 @@ void tex_threads_info(int *usadas, int *disponiveis);
 // Teto escolhido em Ajustes, em MB, aplicado ao vivo e travado pelo que a RAM
 // da TV suporta; 0 volta ao automatico. `fixo` passa a 3 quando esta em vigor.
 void tex_definir_orcamento_mb(int mb);
+// O maior teto, em MB, que a RAM desta TV deixa Ajustes pedir (o mesmo que
+// tex_definir_orcamento_mb aplica): Ajustes usa para mostrar o valor efetivo.
+int tex_teto_ram_mb(void);
 // Aviso de pressao de memoria do sistema (Android onTrimMemory, de qualquer fio):
 // baixa o teto por 30 s e o proximo quadro despeja arte fria ate caber.
 // `tex_pressao_pct` e a tabela nivel -> % do teto que fica (100 = sem efeito).

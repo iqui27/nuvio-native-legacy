@@ -96,6 +96,9 @@ int main(void) {
     assert(fontevolta_decidir(&g0, &m) == FV_RECUAR && !strcmp(m, "conferencia falhou"));
     g0.conferencia = FV_OK; g0.desdeMs = FONTEVOLTA_PRAZO_MS + 1;
     assert(fontevolta_decidir(&g0, &m) == FV_RECUAR && !strcmp(m, "prazo"));
+    g0.quadro = 1;   // ja desenhou quadro: o prazo nao descarta (12/10)
+    assert(fontevolta_decidir(&g0, &m) == FV_ESPERAR && !m);
+    g0.quadro = 0;
     g0.desdeMs = 900; g0.falhou = 1;
     assert(fontevolta_decidir(&g0, &m) == FV_RECUAR && !strcmp(m, "erro do player"));
     g0.falhou = 0; g0.pronto = 1; g0.carregando = 0; g0.duracao = 30;
@@ -117,6 +120,8 @@ int main(void) {
     assert(!fontevolta_abertura_vencida(&g1, FONTE_MANUAL_PRAZO_MS));
     g1.desdeMs = FONTE_MANUAL_PRAZO_MS + 1;
     assert(fontevolta_abertura_vencida(&g1, FONTE_MANUAL_PRAZO_MS));
+    g1.quadro = 1; assert(!fontevolta_abertura_vencida(&g1, FONTE_MANUAL_PRAZO_MS));
+    g1.quadro = 0;
     g1.falhou = 1; assert(!fontevolta_abertura_vencida(&g1, FONTE_MANUAL_PRAZO_MS));
     g1.falhou = 0; g1.pronto = 1; assert(!fontevolta_abertura_vencida(&g1, FONTE_MANUAL_PRAZO_MS));
     g1.pronto = 0; g1.carregando = 0; assert(!fontevolta_abertura_vencida(&g1, FONTE_MANUAL_PRAZO_MS));

@@ -66,13 +66,13 @@ static void lista(void) {
   char buf[512];
   int i, n;
   centrallista_padrao(&l);
-  CONFERE(l.n == 6, "padrao: 6 atalhos (%d)", l.n);
+  CONFERE(l.n == 7, "padrao: 7 atalhos (%d)", l.n);
   for (i = 0; i < l.n; i++) CONFERE(central_catalogo(l.item[i]) != NULL, "padrao: item %d no catalogo", i);
   centrallista_escrever(&l, buf, sizeof buf);
   centrallista_ler(&m, buf);
   CONFERE(m.n == l.n && !memcmp(m.item, l.item, sizeof(int) * (size_t)l.n), "ida e volta");
   centrallista_ler(&m, NULL);
-  CONFERE(m.n == 6, "sem arquivo: padrao");
+  CONFERE(m.n == 7, "sem arquivo: padrao");
   m.n = 0;
   centrallista_escrever(&m, buf, sizeof buf);
   CONFERE(!strcmp(buf, "-\n"), "vazia grava '-' (%s)", buf);
@@ -100,6 +100,8 @@ static void ajustesRapido(const char *dir) {
   for (i = 0; i < central_catalogo_n(); i++) {
     const CentralItem *c = central_catalogo(i);
     op = ajustes_rapido_op(c->chave);
+    // A sincronia por audio so existe no Android (escondida nos outros builds).
+    if (op < 0 && !strcmp(c->chave, "legendaSyncAudioLocal")) continue;
     CONFERE(op >= 0, "catalogo: %s nao vira atalho neste build", c->chave);
     if (op >= 0) { n++; CONFERE(ajustes_rapido_rotulo(op)[0] && ajustes_rapido_valor(op)[0], "%s sem texto", c->chave); }
   }
@@ -110,6 +112,14 @@ static void ajustesRapido(const char *dir) {
   CONFERE(ajustes_rapido_ligado(ajustes_rapido_op("qualidade")) == -1, "qualidade nao e interruptor");
   op = ajustes_rapido_op("dolbyVision");
   CONFERE(op >= 0 && ajustes_rapido_ligado(op) >= 0, "dolbyVision e interruptor");
+  // A cor de destaque: 18 fixos, o atual muda e persiste como em Ajustes.
+  CONFERE(ajustes_rapido_op("corDestaque") == AJ_RAPIDO_COR && ajustes_rapido_cor_n() == 18, "corDestaque");
+  CONFERE(ajustes_rapido_ligado(AJ_RAPIDO_COR) == -1, "cor nao e interruptor");
+  CONFERE(ajustes_rapido_cor_definir(15) == 1 && ajustes_rapido_cor_atual() == 15 &&
+          !strcmp(ajustes_rapido_valor(AJ_RAPIDO_COR), "Oceano"), "cor: Oceano gravada");
+  CONFERE(ajustes_rapido_passo(AJ_RAPIDO_COR, 1) && ajustes_rapido_cor_atual() == 16, "cor: passo adiante");
+  CONFERE(ajustes_rapido_cor_definir(18) == 0 && ajustes_rapido_cor_definir(-1) == 0, "cor: indice invalido");
+  ajustes_rapido_cor_definir(0);
   snprintf(antes, sizeof antes, "%s", ajustes_rapido_valor(op));
   { int l0 = ajustes_rapido_ligado(op);
     CONFERE(ajustes_rapido_passo(op, 1) == 1, "passo grava");

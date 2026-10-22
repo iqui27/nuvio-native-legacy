@@ -2,6 +2,8 @@
 #define NV_BADGES_H
 #include <stdint.h>
 #include "text.h"
+// Selo "Assistido" do cartaz (Home e Biblioteca). Devolve a borda esquerda dele.
+float badges_selo_visto(float px, float py, float w, float a);
 void badges_carregar(const char *dir);
 uint64_t badges_detectar(const char *metadata);
 uint64_t badges_provedor(const char *name);

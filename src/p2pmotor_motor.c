@@ -1,4 +1,5 @@
-// Fronteira com o nuvio-engine real (API C, NUVIO_ENGINE_API_VERSION 3).
+// Fronteira com o nuvio-engine real (API C, NUVIO_ENGINE_API_VERSION 4: o 0.1.3
+// mais tools/p2p-motor/janela-334.patch, janela de streaming do #334).
 // So compila o motor com -DNV_P2P_MOTOR e as bibliotecas ligadas
 // (tools/p2p-motor/). Sem isso, p2pmotor_ops_reais() devolve NULL e o resto do
 // app ve "sem motor neste pacote".
@@ -145,6 +146,7 @@ static int criar(const P2pmConfig *c, void **m) {
   k.upload_mode = NUVIO_ENGINE_UPLOAD_LIMITED;
   k.upload_limit_bytes_per_second = c->upload_bps;
   k.torrent_profile = NUVIO_ENGINE_TORRENT_PROFILE_BALANCED;
+  k.streaming_window_bytes = c->janela;   // #334; 0 = arquivo inteiro, como antes
   st = nuvio_engine_create(&k, &e);
   if (st != NUVIO_ENGINE_STATUS_OK || !e) {
     printf("[p2p-motor] create: %s\n", nuvio_engine_status_message(st));
@@ -228,7 +230,11 @@ static int stats(void *m, P2pmStats *s) {
   s->ram_usada = st.memory_cache_used_bytes;
   s->disco_motor = st.disk_cache_used_bytes;
   s->baixando_bps = st.download_rate_bytes_per_second;
+  s->baixado = st.total_payload_download_bytes;
   s->pares = st.connected_peers;
+  s->janela_apagado = st.window_freed_bytes;
+  s->janela_rebaixadas = st.window_refetched_pieces;
+  s->janela_sem_suporte = st.window_unsupported != 0;
   return 0;
 }
 

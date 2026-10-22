@@ -11,6 +11,41 @@
 #include <assert.h>
 
 int main(void) {
+  // #439: keep persisted indices 0..6, then every 10% up to 300%.
+  assert(OPCOES[AJ_LEG2_TAMANHO].n == 21);
+  for (int i = 0; i < 21; i++) {
+    valor[AJ_LEG2_TAMANHO] = i;
+    assert(ajustes_leg2_tamanho() == (i == 0 ? 0 : i <= 6 ? 40 + i * 20 : 100 + i * 10));
+  }
+  valor[AJ_LEG2_TAMANHO] = 0;
+  // TCL: opção ligada de fábrica, local, antes da sincronia por áudio.
+  int syncAuto = -1, naTela = -1, audioTela = -1;
+  for (int i = 0; i < AJ_N; i++) if (!strcmp(CHAVE[i], "legendaSyncAutoLocal")) syncAuto = i;
+  assert(syncAuto >= 0);
+  assert(valor[syncAuto] == 0 && somenteDesteAparelho(syncAuto));
+  montarTela();
+  for (int i = 0; i < AJ_N_TELA; i++) if (TELA[i].tipo == IT_OPC) {
+    if (TELA[i].op == syncAuto) naTela = i;
+    if (TELA[i].op == AJ_LEG_SYNC_AUDIO) audioTela = i;
+  }
+  assert(naTela >= 0 && (audioTela < 0 || audioTela == naTela + 1));
+  assert(!strcmp(OPCOES[syncAuto].rotulo, "Sincronia automática da legenda"));
+  assert(valor[AJ_LEG_MOSTRAR] == 0 && somenteDesteAparelho(AJ_LEG_MOSTRAR));
+  assert(!strcmp(CHAVE[AJ_LEG_MOSTRAR], "legendaMostrarLocal"));
+  assert(!ajustes_legendas_todas());
+  valor[AJ_LEG_MOSTRAR] = 1; assert(ajustes_legendas_todas()); valor[AJ_LEG_MOSTRAR] = 0;
+  assert(ajCenaSecao(AJ_LEG_MOSTRAR) == AJC_IDI_FAIXAS);
+  // #205: Brilho da interface em HDR: Automatico de fabrica, local, chave propria.
+  assert(valor[AJ_HDR_UI] == 0 && ajustes_hdr_ui() && somenteDesteAparelho(AJ_HDR_UI));
+  assert(!strcmp(CHAVE[AJ_HDR_UI], "hdrUiLocal"));
+  valor[AJ_HDR_UI] = 1; assert(!ajustes_hdr_ui()); valor[AJ_HDR_UI] = 0;
+  // #205: a tela ao abrir o video nasce Cinema, local, em Reproducao > Durante.
+  { int ab = -1;
+    for (int i = 0; i < AJ_N; i++) if (!strcmp(CHAVE[i], "telaAberturaLocal")) ab = i;
+    assert(ab >= 0 && valor[ab] == 0 && somenteDesteAparelho(ab) && OPCOES[ab].n == 2);
+    assert(!ajustes_abertura_detalhada());
+    valor[ab] = 1; assert(ajustes_abertura_detalhada()); valor[ab] = 0;
+    assert(ajCenaSecao(ab) == AJC_REP_DURANTE); }
   // Home: layout e arte do destaque.
   assert(valor[AJ_HERO_FUNDO] == 0);          // Automatico
   assert(valor[AJ_HERO_ARTE_DIF] == 1);       // Desligado: mesma foto do card
@@ -43,20 +78,21 @@ int main(void) {
   assert(somenteDesteAparelho(AJ_TRAILER_FONTE));
   assert(valor[AJ_EXPANDIR] == 0);
   assert(valor[AJ_EXPANDIR_ATRASO] == 3);
-  assert(valor[AJ_PROF] == 1);                // profundidade desligada
+  assert(valor[AJ_PROF] == 0);                // profundidade ligada (2.0.5: reflexo do foco)
   assert(valor[AJ_PROF_BORDA] == 28);         // cardDepthEdgeStrength
-  assert(valor[AJ_PROF_BRILHO] == 10);        // cardDepthSheenStrength
+  assert(valor[AJ_PROF_BRILHO] == 100);       // cardDepthSheenStrength = intensidade
   assert(valor[AJ_LARGURA_DP] == 126);
   assert(valor[AJ_RAIO_DP] == 12);            // canto normal, nao pilula
   assert(valor[AJ_QUALIDADE_IMG] == 1);       // Padrao
   assert(valor[AJ_IDIOMA] == 0);              // Automatico
   assert(ajustes_idioma() == IDIOMA_EN);      // sem conta nem TV: English (release publico)
   assert(valor[AJ_ANIM] == 0);                // animacoes completas
-  assert(valor[AJ_RESOLUCAO] == 0);           // 1080p
+  assert(valor[AJ_RESOLUCAO] == RES_AUTO);    // Automatica (06/10: 1080p, nunca 720p sozinha)
   assert(!ajustes_4k() && !ajustes_720p());
-  valor[AJ_RESOLUCAO] = 1; assert(ajustes_4k() && !ajustes_720p());    // 4K: valor 1, como sempre
-  valor[AJ_RESOLUCAO] = 2; assert(!ajustes_4k() && ajustes_720p());    // 720p: valor novo no fim
-  valor[AJ_RESOLUCAO] = 0;
+  valor[AJ_RESOLUCAO] = RES_1080; assert(!ajustes_4k() && !ajustes_720p());
+  valor[AJ_RESOLUCAO] = RES_4K;   assert(ajustes_4k() && !ajustes_720p());
+  valor[AJ_RESOLUCAO] = RES_720;  assert(!ajustes_4k() && ajustes_720p());
+  valor[AJ_RESOLUCAO] = RES_AUTO;
   assert(ajustes_relogio_ligado() && ajustes_relogio_pos() == 0);   // relogio: ligado, automatico
   assert(ajustes_selo_visto());   // selo de visto no cartaz: ligado (#212)
   assert(valor[AJ_TEMA] == AJ_TEMA_DINAMICA && valor[AJ_FUNDO] == 2);   // aparencia de fabrica da 2.0: Da arte + Frost
@@ -105,6 +141,17 @@ int main(void) {
   assert(!strcmp(CHAVE[AJ_FANART_CHAVE + 1], "-diagnostico"));
   assert(valor[AJ_FANART_CHAVE] == 0 && valor[AJ_DIAGNOSTICO] == 0);
   assert(valor[AJ_MDB_MAL] == 0);
+  assert(valor[AJ_PULAR_CREDITOS] == 1 && !ajustes_pular_creditos());
+  assert(!strcmp(CHAVE[AJ_PULAR_CREDITOS], "pularCreditosLocal"));
+  assert(somenteDesteAparelho(AJ_PULAR_CREDITOS) && !dePerfil(AJ_PULAR_CREDITOS));
+  assert(!strcmp(i18n(OPCOES[AJ_PULAR_CREDITOS].rotulo), "Skip the credits automatically"));
+  assert(!ajustes_proximo_auto() && ajustes_proximo_contagem() == 5);
+  assert(AJ_INTERFACE_MODO == AJ_PROXIMO_CONTAGEM + 1);
+  assert(AJ_MIC_BUSCA == AJ_INTERFACE_MODO + 1);
+  assert(AJ_MENU_TOPO == AJ_MIC_BUSCA + 1);
+  assert(AJ_N == AJ_CONQ_DICAS + 1 && AJ_CONQ_LIGADO == AJ_MENU_TOPO + 1);
+  assert(ajustes_conquistas() && ajustes_conquistas_aviso() && ajustes_conquistas_dicas());
+  for (int i = 0; i < AJ_N; i++) assert(strcmp(CHAVE[i], "autoCreditosLocal"));
   puts("ajustes_padroes: ok");
   return 0;
 }

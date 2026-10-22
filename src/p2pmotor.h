@@ -1,7 +1,8 @@
 // MOTOR P2P EMBUTIDO: o proprio aparelho baixa o torrent (#171, F10).
 //
 // E o nuvio-engine (github.com/NuvioMedia/nuvio-engine, GPL-3.0, commit
-// 02938d7 = 0.1.3): libtorrent 2.0.12 por baixo, agendamento de pecas pela
+// 02938d7 = 0.1.3, mais tools/p2p-motor/janela-334.patch = API 4, janela de
+// streaming): libtorrent 2.0.12 por baixo, agendamento de pecas pela
 // posicao que o player pede e um servidor HTTP com Range em 127.0.0.1 (porta
 // livre). O player (Media3 no Android, uMS na LG, Tizen.Multimedia no .tpk)
 // toca a URL local como qualquer link direto.
@@ -23,6 +24,13 @@
 //     pela VIGIA, um fio proprio a cada P2PM_VIGIA_MS. Passou: o motor para
 //     e p2pmotor_motivo_parada() diz por que (o fio da tela so le um atomico).
 //   - statvfs que falha = recusa (P2P_ERR_DISCO), ao subir e na vigia.
+//   - #334, JANELA: arquivo maior que o teto duro nao para mais no meio. O
+//     motor recebe janela = teto duro - P2PM_JANELA_FOLGA_MB e, para arquivo
+//     maior que ela, apaga do disco as pecas ja tocadas (e as muito a frente
+//     depois de um seek para tras); voltar para um trecho apagado baixa de
+//     novo. Arquivo que cabe: igual a antes. Janela menor que
+//     P2PM_JANELA_MIN_MB com arquivo maior que o teto: recusa ANTES de tocar,
+//     com os numeros (P2P_ERR_SEM_ESPACO + p2pmotor_arquivo_atual).
 //   - Parar: o destroy roda num fio solto, so depois que todo usuario do motor
 //     (pedido, vigia) soltou a referencia; a pasta de cache so e apagada
 //     DEPOIS do destroy (escritores do libtorrent parados).
@@ -41,7 +49,12 @@
 #define P2PM_DURO_MAX_MB 1536
 #endif
 #define P2PM_LIVRE_MIN_MB 256   // menos livre que isto ao subir: recusa
+#define P2PM_RESERVA_MB   512   // limite FIXO (Ajustes): deixa ao menos isto livre na TV (#334)
 #define P2PM_LIVRE_PISO_MB 128  // vigia: o livre caiu abaixo disto (outro app): para
+#ifndef P2PM_JANELA_MIN_MB      // #334: menor janela que toca um 4K (read-ahead + cabeca/cauda)
+#define P2PM_JANELA_MIN_MB 300
+#endif
+#define P2PM_JANELA_FOLGA_MB 32 // #334: janela = teto duro menos isto (resume, pecas de borda)
 #define P2PM_RAM_MB       16    // cache em memoria do motor
 #define P2PM_RAM_DURO_MB  32    // vigia: memory_cache_used acima disto: para
 #define P2PM_VIGIA_MS     2000
@@ -59,6 +72,26 @@ const char *p2pmotor_motivo_indisponivel(void);
 int p2pmotor_resumo(char *detalhe, unsigned n);
 // Teto duro (MB) medido no ultimo resumo/subida; 0 sem medida.
 unsigned p2pmotor_teto_mb(void);
+
+// LIMITE DE ESPACO (#334, "Limite de espaço do P2P" em Ajustes). escolhaMb 0 =
+// Automatico (o de sempre: min(P2PM_DURO_MAX_MB, metade do livre)); > 0 = a
+// pessoa pediu ate tanto, limitado ao livre menos P2PM_RESERVA_MB e nunca
+// abaixo do Automatico. Vale na proxima subida do motor. Qualquer fio.
+void p2pmotor_definir_limite_mb(unsigned mb);
+// A conta acima, pura (testes).
+uint64_t p2pmotor_teto_duro(uint64_t livre, unsigned escolhaMb);
+// #334: janela de streaming que o motor recebe para um teto duro (0 = sem
+// janela), e se um arquivo de `tam` bytes toca com esse teto (1) ou e recusado
+// antes de tocar (0: maior que o teto e a janela abaixo de P2PM_JANELA_MIN_MB).
+uint64_t p2pmotor_janela(uint64_t duro);
+int p2pmotor_cabe(uint64_t tam, uint64_t duro);
+// Tamanho do arquivo do ultimo pedido, o teto duro e o livre de quando o motor
+// subiu (0 = desconhecido). Para a tela explicar a parada por espaco.
+void p2pmotor_arquivo_atual(uint64_t *tam, uint64_t *teto, uint64_t *livre);
+// Inicio do app: apaga a pasta do motor que sobrou de uma sessao que caiu (TV
+// desligada com o filme tocando), em fio solto, sem abrir o motor. Sem pasta
+// nao cria fio. Um pedido que chegue durante a limpeza espera por ela.
+void p2pmotor_limpar_sobra(void);
 
 // BLOQUEIA (fio proprio). Sobe o motor se preciso, registra o magnet (com os
 // trackers do addon), espera os metadados (P2P_PRAZO_METADADOS), escolhe o
@@ -120,10 +153,15 @@ typedef struct {
 typedef struct {
   const char *dados, *cache;
   uint64_t ram, disco, upload_bps;
+  uint64_t janela;           // #334: streaming_window_bytes (0 = arquivo inteiro)
 } P2pmConfig;
 typedef struct {
   uint64_t ram_usada, disco_motor, baixando_bps;
+  uint64_t baixado;          // bytes do torrent recebidos desde que o motor subiu
   unsigned pares;
+  uint64_t janela_apagado;   // #334: bytes ja apagados pela janela
+  uint64_t janela_rebaixadas;// pecas apagadas e baixadas de novo (seek para tras)
+  int janela_sem_suporte;    // o sistema de arquivos nao abre buraco: so o teto vale
 } P2pmStats;
 typedef struct {
   const char *(*versao)(void);

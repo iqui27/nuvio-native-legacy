@@ -26,7 +26,7 @@ def qtd(nome):
     return int(m.group(1))
 cw = vetor("V_CW_FONTE")
 sv = vetor("V_SALVOS")
-esperado_cw = ["Ambas", "Conta Nuvio", "Trakt", "Simkl"]
+esperado_cw = ["Todas as fontes", "Conta Nuvio", "Trakt", "Simkl"]
 esperado_sv = ["Lista do Nuvio", "Watchlist do Trakt", "Plan to Watch do Simkl"]
 assert cw == esperado_cw, cw
 assert sv == esperado_sv, sv
@@ -48,5 +48,5 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-simkl-cw-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 cc -O1 -g -Wall -Wextra -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -Wno-deprecated-declarations -Wno-macro-redefined \
-  src/simkl.c src/js.c tests/simkl_cw.c -o "$tmp/simkl_cw" -lpthread
+  src/simkl.c src/js.c src/traktscrobble.c tests/simkl_cw.c -o "$tmp/simkl_cw" -lpthread
 "$tmp/simkl_cw"

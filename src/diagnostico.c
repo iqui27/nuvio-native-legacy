@@ -45,6 +45,7 @@
 #include "idioma.h"
 #include "ajustes.h"
 #include "layout.h"
+#include "teclavoltar.h"
 #include "perfiltv.h"
 #include "rede.h"
 #include "redemarca.h"
@@ -56,6 +57,11 @@
 #include "tex_cache.h"
 #include "text.h"
 #include "js.h"
+#include "ponteiro.h"
+#include "rolagemtoque.h"
+#include "telefoneui.h"
+#include "telefonecartao.h"
+#include "plrui.h"
 #include <stdatomic.h>
 #include <math.h>
 #include <stdio.h>
@@ -345,6 +351,9 @@ static int sairTela;
 static int velocidadePedida, soVelocidade;
 static int introGlobal;
 static int introDecidido;
+#ifdef NV_TOUCH_UI
+static void dgPhoneReiniciar(void);
+#endif
 
 static const char *gargaloPrincipal(void);
 
@@ -1893,6 +1902,11 @@ static void acionarVazBotao(int b) {
 }
 
 #define VAZ_LINHAS_RANKING 8
+#ifdef NV_TOUCH_UI
+static ToqueRolagem toqueRanking;
+static float toqueRankingOffset;
+static int toqueRankingRolar(const PonteiroRolagem *e) { return toquerol_evento(&toqueRanking, e); }
+#endif
 
 // O teste acabou (fio de desenho). Com um relatorio de diagnostico ja
 // montado, ele e remontado com a vazao e o "Enviar de novo" aparece: o
@@ -1932,6 +1946,9 @@ void diagnostico_iniciar(void) {
     return;
   }
   juntarFios(1);
+#ifdef NV_TOUCH_UI
+  dgPhoneReiniciar();
+#endif
   free(d.cfgAntes);
   memset(&d, 0, sizeof d);
   if (vz.fio) { SDL_WaitThread(vz.fio, NULL); vz.fio = NULL; }
@@ -2071,20 +2088,21 @@ static void acionarBotao(int b) {
   d.botao = 0;
 }
 
-static int teclaVoltar(const SDL_Event *e) {
-  SDL_Keycode k = e->key.keysym.sym;
-  return k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
-         e->key.keysym.scancode == NV_SCANCODE_BACK;
-}
 
 void diagnostico_evento(const SDL_Event *e) {
+#ifdef NV_TOUCH_UI
+  if (toquerol_navegacao(e)) {
+    if (toqueRanking.livre) vz.rolagem = (int)(toqueRankingOffset / 62.0f);
+    toquerol_limpar(&toqueRanking);
+  }
+#endif
   SDL_Keycode k;
   int estado;
   if (!e || e->type != SDL_KEYDOWN) return;
   k = e->key.keysym.sym;
   estado = atomic_load(&d.estado);
   if (d.intro) {
-    if (teclaVoltar(e)) {
+    if (nv_tecla_voltar(e)) {
       sairTela = 1;
     } else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
       marcarApresentacaoVista();
@@ -2096,7 +2114,7 @@ void diagnostico_evento(const SDL_Event *e) {
   // resultado e volta ao que estava (objetivo ou resultado do diagnostico).
   if (vz.aberto) {
     int ve = atomic_load(&vz.estado);
-    if (teclaVoltar(e)) {
+    if (nv_tecla_voltar(e)) {
       if (ve == 1) atomic_store(&vz.cancelado, 1);
       else {
         vz.aberto = 0;
@@ -2115,7 +2133,7 @@ void diagnostico_evento(const SDL_Event *e) {
     }
     return;
   }
-  if (teclaVoltar(e)) {
+  if (nv_tecla_voltar(e)) {
     if (estado == 1 || d.sugEstado == DS_TESTANDO) atomic_store(&d.cancelado, 1);
     else sairTela = 1;
     return;
@@ -2328,6 +2346,9 @@ void diagnostico_intro_primeira_vez(void) {
 }
 
 int diagnostico_intro_aberto(void) { return introGlobal; }
+#ifdef NV_TOUCH_UI
+int diagnostico_apresentacao_aberta(void) { return introGlobal || d.intro; }
+#endif
 
 void diagnostico_intro_dispensar(int marcarVista) {
   introDecidido = 1;
@@ -2701,9 +2722,22 @@ static void desenharCicloRanking(GfxRect r, float ar, float ag, float ab) {
   max = tot - VAZ_LINHAS_RANKING;
   if (max < 0) max = 0;
   if (vz.rolagem > max) vz.rolagem = max;
-  for (i = vz.rolagem; i < tot && i < vz.rolagem + VAZ_LINHAS_RANKING; i++) {
+  int primeira = vz.rolagem, quantidade = VAZ_LINHAS_RANKING;
+  float resto = 0.0f;
+#ifdef NV_TOUCH_UI
+  if (!toqueRanking.livre) toqueRankingOffset = vz.rolagem * 62.0f;
+  toquerol_vincular(&toqueRanking, (GfxRect){r.x + 28.0f, r.y + 96.0f, r.w - 56.0f, VAZ_LINHAS_RANKING * 62.0f},
+                   gfx_escala(), 0.0f, max * 62.0f, 1, &toqueRankingOffset);
+  ponteiro_rolagem(toqueRankingRolar);
+  primeira = (int)(toqueRankingOffset / 62.0f);
+  vz.rolagem = primeira;
+  resto = toqueRankingOffset - primeira * 62.0f;
+  quantidade++;
+  gfx_recorte(r.x + 28.0f, r.y + 96.0f, r.w - 56.0f, VAZ_LINHAS_RANKING * 62.0f);
+#endif
+  for (i = primeira; i < tot && i < primeira + quantidade; i++) {
     const VazCicloRes *x = &vz.cic[ordem[i]];
-    float y = r.y + 96.0f + (float)(i - vz.rolagem) * 62.0f;
+    float y = r.y + 96.0f + (float)(i - primeira) * 62.0f - resto;
     float esq1, esq2;
     int cor, cr, cg, cb;
     const char *vt = veredito(x, &cor);
@@ -2743,6 +2777,9 @@ static void desenharCicloRanking(GfxRect r, float ar, float ag, float ab) {
     t = txt_linha_corta(TXT_CAPTION, a, 150, 160, 174, 255, esq2);
     txt_desenhar(t, r.x + 28.0f, y + 32.0f);
   }
+#ifdef NV_TOUCH_UI
+  gfx_sem_recorte();
+#endif
   if (tot > VAZ_LINHAS_RANKING) {
     snprintf(a, sizeof a, i18n("linhas %d-%d de %d"), vz.rolagem + 1,
              vz.rolagem + VAZ_LINHAS_RANKING < tot ? vz.rolagem + VAZ_LINHAS_RANKING : tot, tot);
@@ -2913,10 +2950,65 @@ static void desenharVazao(float y0, float ar, float ag, float ab, Uint32 agora) 
                x0, y0 + (ve != 1 ? 736.0f : 668.0f));
 }
 
+// PONTEIRO (#99). Os alvos das ilhas poem o foco nas MESMAS variaveis das
+// setas (focoModo/focoLinha no objetivo, d.botao no resultado, vz.botao no
+// teste de velocidade); o OK do clique segue o caminho de sempre. So foco:
+// nada abre, nada roda, e o que ja esta em foco nao e mexido.
+static int dgPonteiroLivre(void) {
+  return !d.intro && !introGlobal && !sairTela;
+}
+// Cartao de objetivo: hover e clique so ESCOLHEM o modo (ativar proprio); o
+// OK do teclado nessa fileira inicia o teste, mas um clique no cartao nao
+// pode disparar oito minutos de rede.
+static void ponteiroModo(int i, int b) {
+  (void)b;
+  if (!dgPonteiroLivre() || vz.aberto || atomic_load(&d.estado) != 0 || i < 0 || i > 1) return;
+  if (focoModo == i && !focoLinha) return;
+  focoModo = i; focoLinha = 0;
+}
+// Os dois botoes do objetivo: linha 0 = "Iniciar diagnostico", 1 = "Teste
+// de velocidade".
+static void ponteiroLinhaObj(int l, int b) {
+  (void)b;
+  if (!dgPonteiroLivre() || vz.aberto || atomic_load(&d.estado) != 0 || l < 0 || l > 1) return;
+  focoLinha = l;
+}
+static void ponteiroBotaoRes(int i, int b) {
+  int lista[B_N];
+  (void)b;
+  if (!dgPonteiroLivre() || vz.aberto || atomic_load(&d.estado) != 2 || d.sugEstado == DS_TESTANDO) return;
+  if (i < 0 || i >= botoesVisiveis(lista)) return;
+  d.botao = i;
+}
+static void ponteiroBotaoVaz(int i, int b) {
+  int lista[VB_N];
+  (void)b;
+  if (!vz.aberto || atomic_load(&vz.estado) == 1 || i < 0 || i >= vazBotoes(lista)) return;
+  vz.botao = i;
+}
+int diagnostico_teste_foco(int *modo, int *linha, int *botao, int *vzBotao) {
+  if (modo) *modo = focoModo;
+  if (linha) *linha = focoLinha;
+  if (botao) *botao = d.botao;
+  if (vzBotao) *vzBotao = vz.botao;
+  return atomic_load(&d.estado);
+}
+
 static void diagnosticoAntigo(Uint32 agora);
 #include "diagnostico_ilha.inc"
 
 void diagnostico_desenhar(Uint32 agora) {
+#ifdef NV_TOUCH_UI
+  toqueRanking.offset = NULL;
+  if (telefoneui_ativo()) {
+    float anterior = gfx_escala();
+    gfx_escala_sair(gfx_escala_ui());
+    dgTelefone(agora);
+    gfx_escala_sair(anterior);
+    if (d.intro) { ponteiro_camada(); dgApresentacao(0); }
+    return;
+  }
+#endif
   // GLASS UI: as ilhas de diagnostico_ilha.inc sobre a arte, como Ajustes.
   { int est = atomic_load(&d.estado);
     ajustes_ui_fundo();
@@ -2929,7 +3021,7 @@ void diagnostico_desenhar(Uint32 agora) {
       if (d.intro) gfx_opacidade_grupo = 0.16f;   // a tela RECUA atras do modal
       dgObjetivo();
       gfx_opacidade_grupo = 1.0f;
-      if (d.intro) dgApresentacao(0);
+      if (d.intro) { ponteiro_camada(); dgApresentacao(0); }
       return;
     }
     if (est == 1) { dgAndamento(agora); return; }
@@ -2937,7 +3029,7 @@ void diagnostico_desenhar(Uint32 agora) {
       if (d.intro) gfx_opacidade_grupo = 0.16f;
       dgResultado();
       gfx_opacidade_grupo = 1.0f;
-      if (d.intro) dgApresentacao(0);
+      if (d.intro) { ponteiro_camada(); dgApresentacao(0); }
       return;
     }
   }

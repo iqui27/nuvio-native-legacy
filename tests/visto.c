@@ -28,9 +28,16 @@
 #define OK(s) fprintf(stderr, "ok  %s\n", s)
 
 // ---------------------------------------------------------------- stubs
+unsigned int SDL_GetTicks(void) { return 0; }
+void marco(const char *m) { (void)m; }
 static const char *tokenSimkl = "";
 static int logada = 1;
 const char *simklauth_token(void) { return tokenSimkl; }
+unsigned long long simklauth_credencial_copiar(char *dst, size_t tam) {
+  if (dst && tam) snprintf(dst, tam, "%s", tokenSimkl);
+  return 1;
+}
+int simklauth_invalidar_se(unsigned long long cred) { (void)cred; tokenSimkl = ""; return 1; }
 const char *nuvem_simkl_cliente(void) { return "cid-teste"; }
 const char *nuvem_simkl_app(void) { return "nuvio"; }
 const char *nuvem_trakt_cliente(void) { return "cli-trakt"; }
@@ -48,6 +55,7 @@ int dados_apagar(const char *n) { (void)n; return 1; }
 int cat_indice_por_imdb(const char *imdb) { (void)imdb; return -1; }
 void cat_aplicar_progresso(int i, double p, double d, int t, int e) { (void)i; (void)p; (void)d; (void)t; (void)e; }
 void cat_historico_definir_id(const char *i, const char *t, int v) { (void)i; (void)t; (void)v; }
+void cat_historico_definir_tempo(const char *i, const char *t, int v, long long ms) { (void)ms; cat_historico_definir_id(i, t, v); }
 unsigned long long cat_historico_geracao(void) { return 1; }
 int cat_historico_definir_se_geracao(const char *i, const char *t, int v,
                                      unsigned long long g) {
@@ -55,6 +63,8 @@ int cat_historico_definir_se_geracao(const char *i, const char *t, int v,
   cat_historico_definir_id(i, t, v); return 1;
 }
 const char *cat_tipo_por_imdb(const char *imdb) { (void)imdb; return "series"; }
+int ajustes_social(void) { return 1; }
+int ajustes_hist_conta(void) { return 1; }
 int ajustes_tmdb_cw(void) { return 0; }
 const char *ajustes_tmdb_idioma(void) { return "en-US"; }
 const char *desc_chave_tmdb(void) { return ""; }

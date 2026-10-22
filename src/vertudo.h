@@ -30,4 +30,7 @@ void vertudo_desenhar(Uint32 agora);
 int  vertudo_pediu_abrir(void);
 // 1 uma vez: ESQUERDA na coluna 0 pediu a barra lateral (abre por cima).
 int  vertudo_pediu_menu(void);
+// Posicao do cartao em foco na grade (testes: o foco volta ao mesmo cartao
+// depois do menu do cartaz).
+int  vertudo_foco(void);
 #endif

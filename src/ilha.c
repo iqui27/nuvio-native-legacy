@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // A ilha do relogio — ver ilha.h.
 //
 // CUSTO, porque a C9 e o teto: por quadro sao no maximo uma sombra do tamanho
@@ -14,6 +15,7 @@
 #include "ilha_voo.h"
 #include "ajustes.h"
 #include "anim.h"
+#include "movimento.h"
 #include "botoes.h"
 #include "ponteiro.h"
 #include "tex_cache.h"
@@ -29,6 +31,8 @@
 #include "idiomacod.h"
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
+#include "telefoneui.h"
+#include "rolagemtoque.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -41,7 +45,7 @@ typedef struct {
   int tipo, tecla, prior, grupo, vivo, cartao;
   int conta;                    // quantos avisos este representa ("N avisos novos")
   unsigned ms, ordem;           // ordem: chegada, para o FIFO dentro da prioridade
-  char rosto[256], rostoNome[64], capa[512], meta[64];
+  char rosto[256], rostoNome[64], capa[NV_ARTE_URL_MAX], meta[64];
   int temModal, abrir;
   IlhaModal modal;
   char titulo[120], kicker[48], dica[64];   // o aviso v2 (ilha.h, IlhaAvisoEx)
@@ -122,6 +126,16 @@ static IlhaCartao pedidoC;
 static int avPedido;
 static char avPedidoChave[80];
 static float modalAvisoH = 414.0f;   // altura do modal de aviso (layoutModalAviso)
+#ifdef NV_TOUCH_UI
+static ToqueRolagem toqueModal;
+static float toqueModalY;
+static void modalToqueReiniciar(void) {
+  toqueModalY = 0; memset(&toqueModal, 0, sizeof toqueModal);
+}
+static int modalToqueRolar(const PonteiroRolagem *e) {
+  return modalAberto ? toquerol_evento(&toqueModal, e) : 0;
+}
+#endif
 static int   modalAvisoMedido;       // 0 = medir no proximo quadro
 
 // MINIMIZAR NA ILHA (ilha_minimizar): o quadro do video encolhe ate a mini capa.
@@ -130,7 +144,7 @@ static float vooT;              // 0 -> 1, sem repique
 static Uint32 vooDesde;
 static GfxRect vooAlvo;
 static int vooAlvoOk;
-static char vooArte[1024], vooCapa[1024];
+static char vooArte[NV_ARTE_URL_MAX], vooCapa[NV_ARTE_URL_MAX];
 // DISSOLVER (Android, sessao retida): o video parado continua no plano de
 // baixo, entao o primeiro quadro do voo e ELE (a tela inteira transparente) e
 // a arte + home entram por cima em VOO_DISSOLVE_MS, ja encolhendo. Sem isso o
@@ -145,7 +159,7 @@ static int svooQuer, svoo;           // quer = pedido a espera do aviso na tela
 static float svooT, svooIconeA = 1.0f;
 static Uint32 svooDesde;
 static GfxRect svooDe;
-static char svooPoster[1024];
+static char svooPoster[NV_ARTE_URL_MAX];
 static Uint32 pousouEm;          // o pulso da pilula conta daqui
 static Uint32 altBase;           // a alternancia dos cartoes conta daqui
 
@@ -279,6 +293,42 @@ void ilha_retirar(const char *chave) {
     if (strcmp(fila[i].chave, chave)) fila[j++] = fila[i];
   nFila = j;
   if (temCur && !strcmp(cur.chave, chave)) proximo();
+}
+
+// AS CHAVES QUE APARECERAM (ilha_mostrou). Um anel curto: quem pergunta o faz
+// a cada 2 s (ilhasinais.c), muito antes de 16 avisos passarem.
+#define MOSTRADOS 16
+static char mostrados[MOSTRADOS][sizeof(((Aviso *)0)->chave)];
+static int nMostrados;
+static void marcarMostrado(const char *chave) {
+  if (nMostrados == MOSTRADOS) {
+    memmove(mostrados[0], mostrados[1], sizeof mostrados[0] * (MOSTRADOS - 1));
+    nMostrados--;
+  }
+  snprintf(mostrados[nMostrados++], sizeof mostrados[0], "%s", chave);
+}
+int ilha_mostrou(const char *chave) {
+  int i, achou = 0;
+  if (!chave) return 0;
+  for (i = 0; i < nMostrados; ) {
+    if (!strcmp(mostrados[i], chave)) {
+      memmove(mostrados[i], mostrados[i + 1], sizeof mostrados[0] * (size_t)(nMostrados - i - 1));
+      nMostrados--; achou = 1;
+    } else i++;
+  }
+  return achou;
+}
+// O AVISO DA VEZ ENTRA NA TELA: o prazo comeca a contar e a chave vira "dita".
+// COBERTA (o painel de Salvos nascido da pilula, o cartao da atualizacao) o
+// prazo NAO comeca e, se ja corria, fica parado: antes ele vencia por baixo
+// do painel e o pedido de amizade sumia sem ninguem ter lido.
+static void vezNaTela(Uint32 agora, Uint32 antes) {
+  if (!temCur) return;
+  if (coberta) {
+    if (curAte && antes && agora > antes) curAte += agora - antes;
+    return;
+  }
+  if (!curAte) { curAte = agora + cur.ms; marcarMostrado(cur.chave); }
 }
 
 int ilha_tem(const char *chave) {
@@ -447,6 +497,9 @@ static const char *iconeBotao(int i) {
 static int modalTemSalvos(void) { return !modalAtividade && (modalAviso ? modalM.salvos : 1); }
 
 static void abrirCartao(int qual) {
+#ifdef NV_TOUCH_UI
+  modalToqueReiniciar();
+#endif
   modalAtividade = 0;
   modalAberto = 1;
   modalAviso = 0;
@@ -459,6 +512,9 @@ static void abrirCartao(int qual) {
 
 int ilha_modal_abrir(void) {
   if (modalAberto || !relogioQuer) return 0;
+#ifdef NV_TOUCH_UI
+  modalToqueReiniciar();
+#endif
   modalAtividade = ilha_atividade_expansivel();
   if (!modalAtividade && cartaoVez < 0) return 0;
   if (!modalAtividade) abrirCartao(cartaoVez);
@@ -486,6 +542,9 @@ static int abrirDoAviso(void) {
     return 1;
   }
   if (!cur.temModal) return 0;
+#ifdef NV_TOUCH_UI
+  modalToqueReiniciar();
+#endif
   modalAberto = 1;
   modalAviso = 1;
   modalAvisoMedido = 0;
@@ -637,20 +696,13 @@ int ilha_ocupada(void) { return temCur || atividadeViva(SDL_GetTicks()); }
 // repique) — aqui o repique E o efeito, e so na forma, nunca no texto.
 // w mais baixo = mais devagar. Pilula ~0,45 s ate assentar; modal ~0,7 s
 // (o dono achou 15 rad/s rapido demais: "ta abrindo muito rapido a ilha").
-#define ILHA_MOLA_W   10.0f
-#define ILHA_MOLA_Z   0.72f
-#define MODAL_MOLA_W  7.5f
-#define MODAL_MOLA_Z  0.80f
+#define ILHA_MOLA_W   MOV_PILULA_W
+#define ILHA_MOLA_Z   MOV_PILULA_Z
+#define MODAL_MOLA_W  MOV_MODAL_W
+#define MODAL_MOLA_Z  MOV_MODAL_Z
+// A mola mora em movimento.h (a Central e o painel Social andam nela tambem).
 static float molaIlhaWZ(float *v, float x, float alvo, float dt, float w, float z) {
-  int k;
-  if (anim_politica_reduzida || ajustes_animacoes_reduzidas()) { *v = 0.0f; return alvo; }
-  if (dt > 0.05f) dt = 0.05f;
-  for (k = 0; k < 4; k++) {
-    float h = dt * 0.25f, ac = w * w * (alvo - x) - 2.0f * z * w * (*v);
-    *v += ac * h;
-    x += *v * h;
-  }
-  return x;
+  return mov_mola(v, x, alvo, dt, w, z);
 }
 static float molaIlha(float *v, float x, float alvo, float dt) {
   return molaIlhaWZ(v, x, alvo, dt, ILHA_MOLA_W, ILHA_MOLA_Z);
@@ -1177,6 +1229,13 @@ static GfxRect modalAlvo(GfxRect p, int dir) {
   int compacto = modalAtividade && atvTemCarga;
   float mw = compacto ? AT_W : modalAviso && modalM.cabecalho ? MC_W : MD_W;
   GfxRect m = { dir ? p.x + p.w - mw : p.x, p.y, mw, compacto ? AT_H : modalAviso ? modalAvisoH : MD_H };
+  if (telefoneui_ativo()) {
+    m.w = telefoneui_largura(mw, NV_TELA_W, 40);
+    m.h = fminf(m.h, NV_TELA_H - 80);
+    m.x = (NV_TELA_W - m.w) * .5f;
+    m.y = fmaxf(40, fminf(m.y, NV_TELA_H - 40 - m.h));
+    return m;
+  }
   if (m.x + m.w > NV_TELA_W - 40.0f) m.x = NV_TELA_W - 40.0f - m.w;
   if (m.x < 40.0f) m.x = 40.0f;
   return m;
@@ -1192,6 +1251,98 @@ static GfxRect modalAlvo(GfxRect p, int dir) {
 // vez por abertura (desenha = 0) antes da mola, para a pilula crescer direto
 // para o tamanho certo.
 #define MG_LADO   150.0f
+static float arteLadoW(const char *url);
+#ifdef NV_TOUCH_UI
+/* Media and text share a scrollable body; the real action buttons stay
+ * inside its bounded footer. The original TV renderer remains below. */
+static float modalTelefone(GfxRect m, const IlhaModal *c, float a, int desenha) {
+  float w = m.w - 64, x = m.x + 32, footer = 92, bx = 0, by = 0;
+  GfxRect buttons[ILHA_MODAL_BOTOES];
+  int n = nBotoes(), salvos = modalTemSalvos();
+  for (int i = 0; i < n; i++) {
+    float bw = fminf(w, plrui_botao_largura(rotuloBotao(i), iconeBotao(i)));
+    if (bx > 0 && bx + bw > w) { bx = 0; by += 72; }
+    buttons[i] = (GfxRect){x + bx, 0, bw, 60};
+    buttons[i].y = by; bx += bw + 12;
+  }
+  footer += by + (salvos || c->rodape[0] ? 48 : 0);
+  float area = fmaxf(60, m.h - footer - 32), y = m.y + 32;
+  if (desenha) {
+    float natural = modalTelefone(m, c, a, 0);
+    toqueModalY = toquerol_clamp(toqueModalY, 0, fmaxf(0, natural - footer - 32 - area));
+  }
+  float scroll = desenha ? toqueModalY : 0;
+  if (desenha) {
+    if (a > .3f) {
+      ponteiro_camada();
+      ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, pontFora, 0, 0);
+      ponteiro_alvo(m.x, m.y, m.w, m.h, NULL, NULL, 0, 0);
+    }
+    gfx_recorte(x, m.y + 32, w, area);
+  }
+  y -= scroll;
+  float ad = desenha ? a : 0;
+  if (c->arte[0]) {
+    float aw = fminf(w, arteLadoW(c->arte)), ah = aw / (arteLadoW(c->arte) / MD_ARTE_H);
+    GfxRect r = {x, y, aw, ah}; GLuint tex = desenha ? tex_obter_larg(c->arte, aw) : 0;
+    if (desenha) {
+      gfx_tex_aspect_atual = tex_aspecto(c->arte);
+      gfx_rect(r, tex, GFX_CARD, 0, 0, 0, 18 / ah, 0.1f, .1f, .12f, a);
+      gfx_tex_aspect_atual = 0;
+    }
+    y += ah + 24;
+  } else if (c->rosto[0] || c->rostoNome[0]) {
+    if (desenha) rostoEm((GfxRect){x, y, MG_LADO, MG_LADO}, c->rosto, c->rostoNome, a);
+    y += MG_LADO + 24;
+  } else if (c->icone[0]) {
+    if (desenha) gfx_icone((GfxRect){x, y, 40, 40}, c->icone, 1, 1, 1, a);
+    y += 56;
+  }
+  const char *lines[] = {c->kicker, c->titulo, c->linha, c->nota, c->texto, c->fala};
+  for (int i = 0; i < 6; i++) if (lines[i][0]) {
+    TxtEstilo e = i == 1 ? TXT_TITULO3 : i == 0 ? TXT_MINI : TXT_CAPTION;
+    float lead = i == 1 ? 52 : 30;
+    y += txt_bloco_corta(e, lines[i], 243, 242, 239, x, y, w, lead, ad, 20) + 12;
+  }
+  for (int i = 0; i < 3 && c->lista[i][0]; i++) {
+    y += txt_bloco_corta(TXT_CAPTION, c->lista[i], 243, 242, 239, x, y, w, 30, ad, 8) + 8;
+    if (c->resultado) {
+      float pct = anim_clamp(c->pct[i] / 100.0f, 0, 1);
+      if (desenha) plrui_trilho((GfxRect){x, y, w, 6}, pct, -1, 0, 0, a);
+      y += 20;
+    }
+  }
+  for (int i = 0; i < 3 && c->chips[i][0]; i++)
+    y += txt_bloco_corta(TXT_CAPTION, c->chips[i], 200, 202, 206, x, y, w, 30, ad, 3) + 8;
+  if (!modalAviso && !modalAtividade && modalQual == ILHA_VIVO) {
+    if (desenha) plrui_trilho((GfxRect){x, y, w, 6}, anim_clamp(modalC.progresso, 0, 1), -1, 0, 0, a);
+    y += 22;
+  }
+  if (c->estado[0]) y += txt_bloco_corta(TXT_CAPTION, c->estado, 168, 170, 176, x, y, w, 30, ad, 3) + 8;
+  float bodyH = y + scroll - (m.y + 32), natural = 32 + bodyH + footer;
+  if (!desenha) return natural;
+  gfx_sem_recorte();
+  toquerol_vincular(&toqueModal, (GfxRect){x, m.y + 32, w, area}, gfx_escala(), 0, bodyH - area, 1, &toqueModalY);
+  if (a > .3f) ponteiro_rolagem(modalToqueRolar);
+  float footY = m.y + m.h - footer + 16;
+  for (int i = 0; i < n; i++) {
+    GfxRect r = buttons[i]; r.y += footY;
+    if (modalFocoA[i] > .5f) plrui_pilula_foco(r, a); else plrui_botao_repouso(r, a);
+    int cr = 243, cg = 242, cb = 239;
+    if (modalFocoA[i] > .5f) cr = cg = cb = ajustes_tinta_foco();
+    TxtLinha l = txt_linha_corta(TXT_G21B, rotuloBotao(i), cr, cg, cb, 255, r.w - 32);
+    txt_desenhar_alpha(l, r.x + 16, r.y + (r.h - l.h) * .5f, a);
+    if (a > .3f) ponteiro_alvo(r.x, r.y, r.w, r.h, pontFoco, NULL, i, 0);
+  }
+  if (salvos || c->rodape[0]) {
+    GfxRect r = {x, footY + by + 72, w, 40};
+    TxtLinha l = txt_linha_corta(TXT_CAPTION2, salvos ? i18n("Salvos") : c->rodape, 176, 180, 190, 255, w);
+    txt_desenhar_alpha(l, r.x, r.y + (40 - l.h) * .5f, a);
+    if (salvos && a > .3f) ponteiro_alvo(r.x, r.y, r.w, r.h, NULL, pontSalvos, 0, 0);
+  }
+  return natural;
+}
+#endif
 // A variante com cabecalho (IlhaModal.cabecalho): a ilha do relogio crescida.
 static float layoutModalCabecalho(GfxRect m, float a, int desenha) {
   const IlhaModal *c = &modalM;
@@ -1254,6 +1405,9 @@ static float arteLadoW(const char *url) {
 }
 static float layoutModalAviso(GfxRect m, float a, int desenha) {
   const IlhaModal *c = &modalM;
+#ifdef NV_TOUCH_UI
+  if (telefoneui_ativo()) return modalTelefone(m, c, a, desenha);
+#endif
   if (c->cabecalho) return layoutModalCabecalho(m, a, desenha);
   float ax = m.x + MD_PAD, ay = m.y + MD_PAD;
   int arte = c->arte[0] != 0, rosto = !arte && (c->rosto[0] || c->rostoNome[0]);
@@ -1437,6 +1591,23 @@ static float layoutModalAviso(GfxRect m, float a, int desenha) {
 static void desenharModal(GfxRect m, float a) {
   const IlhaCartao *c = &modalC;
   if (modalAviso) { if (a >= 0.01f) layoutModalAviso(m, a, 1); return; }
+#ifdef NV_TOUCH_UI
+  if (telefoneui_ativo() && !modalAtividade) {
+    IlhaModal mobile = {0};
+    snprintf(mobile.titulo, sizeof mobile.titulo, "%s", c->titulo);
+    snprintf(mobile.arte, sizeof mobile.arte, "%s", c->arte[0] ? c->arte : c->poster);
+    snprintf(mobile.texto, sizeof mobile.texto, "%s", c->sinopse);
+    if (c->serie && c->t > 0 && c->e > 0)
+      snprintf(mobile.linha, sizeof mobile.linha, i18n("T%dE%d · %s"), c->t, c->e, c->epNome);
+    if (modalQual == ILHA_VIVO)
+      snprintf(mobile.estado, sizeof mobile.estado, i18n("%d min restantes"), c->restanteMin < 1 ? 1 : c->restanteMin);
+    else if (modalQual == ILHA_AMIGO)
+      snprintf(mobile.estado, sizeof mobile.estado, i18n("%s · agora"), c->pessoa);
+    else snprintf(mobile.estado, sizeof mobile.estado, "%s", c->quando);
+    modalTelefone(m, &mobile, a, 1);
+    return;
+  }
+#endif
   float ax = m.x + MD_PAD, ay = m.y + MD_PAD;
   // Cartaz em pe (o amigo assistindo traz so o poster) numa moldura 2:3, como
   // no modal de aviso; antes ia centrado no 16:9 com sobra preta dos lados.
@@ -1808,12 +1979,13 @@ static void ilha_desenharCorpo_(Uint32 agora) {
   float alvoW, alvoH, x, y;
   TxtLinha t1, t2;
   GfxRect vooPf;
+  Uint32 antes = ultQuadro;
   ultQuadro = agora;
   if (dt > 0.1f) dt = 0.1f;
 
   // Aviso vencido sai; o prazo so comeca a contar quando ele aparece.
-  if (temCur && curAte && (Sint32)(agora - curAte) >= 0) proximo();
-  if (temCur && !curAte) curAte = agora + cur.ms;
+  vezNaTela(agora, antes);
+  if (temCur && curAte && !coberta && (Sint32)(agora - curAte) >= 0) { proximo(); vezNaTela(agora, antes); }
   // Aviso que pediu `abrir`: a pilula cresce ate o modal no primeiro quadro.
   if (temCur && cur.abrir && curAte) { cur.abrir = 0; abrirDoAviso(); }
   atualizarHora();
@@ -1836,7 +2008,7 @@ static void ilha_desenharCorpo_(Uint32 agora) {
     // Linha que o orcamento de texto do quadro recusou mede 0: mede de novo
     // no quadro seguinte, senao o modal nasceria curto para sempre.
     int antes = txt_pendentes;
-    modalAvisoH = layoutModalAviso((GfxRect){ 0, 0, modalM.cabecalho ? MC_W : MD_W, MD_H }, 0.0f, 0);
+    modalAvisoH = layoutModalAviso((GfxRect){ 0, 0, telefoneui_largura(modalM.cabecalho ? MC_W : MD_W, NV_TELA_W, 40), MD_H }, 0.0f, 0);
     modalAvisoMedido = txt_pendentes == antes;
   }
   alvo = temCur ? M_AVISO : atividadeViva(agora) ? M_ATIVIDADE

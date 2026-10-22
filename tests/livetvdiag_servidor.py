@@ -53,6 +53,24 @@ class H(http.server.BaseHTTPRequestHandler):
             self.send_response(200); self.send_header('Content-Type', 'application/vnd.apple.mpegurl'); self.end_headers()
             self.wfile.write(corpo); return
         if p.startswith('/hls/seg'): return mandar(self, os.path.join(DIR, p.lstrip('/')), 'video/mp2t')
+        # CANAL DE ADDON QUE EXIGE CABECALHO (#283, proxyts): sem o Referer
+        # declarado em behaviorHints.proxyHeaders o CDN responde 403 na
+        # playlist E nos segmentos. /addon/r redireciona para a playlist, que
+        # aponta os segmentos por caminho RELATIVO ao endereco final.
+        if p.startswith('/addon/'):
+            if (self.headers.get('Referer', '') != 'https://addon.example/' or
+                self.headers.get('Origin', '') != 'https://addon.example' or
+                self.headers.get('User-Agent', '') != 'Teste/1'):
+                self.send_response(403); self.end_headers(); self.wfile.write(b'<html>403</html>'); return
+            if p == '/addon/r':
+                self.send_response(302); self.send_header('Location', '/addon/v/canal.m3u8'); self.end_headers(); return
+            if p == '/addon/v/canal.m3u8' or p == '/addon/v/cifrado.m3u8':
+                corpo = open(os.path.join(DIR, 'hls/media.m3u8'), 'rb').read().replace(b'#EXT-X-ENDLIST', b'')
+                if 'cifrado' in p:
+                    corpo = corpo.replace(b'#EXTINF', b'#EXT-X-KEY:METHOD=AES-128,URI="k.bin"\n#EXTINF', 1)
+                self.send_response(200); self.send_header('Content-Type', 'application/vnd.apple.mpegurl'); self.end_headers()
+                self.wfile.write(corpo); return
+            if p.startswith('/addon/v/seg'): return mandar(self, os.path.join(DIR, 'hls', p[len('/addon/v/'):]), 'video/mp2t')
         self.send_response(404); self.end_headers(); self.wfile.write(b'not found')
 class S(socketserver.ThreadingMixIn, http.server.HTTPServer): daemon_threads = True
 S(('127.0.0.1', int(sys.argv[1]) if len(sys.argv) > 1 else 8765), H).serve_forever()

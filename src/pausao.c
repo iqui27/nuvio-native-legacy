@@ -5,6 +5,7 @@
 #include "text.h"
 #include "anim.h"
 #include "layout.h"
+#include "telefoneui.h"
 #include "idioma.h"
 #include "relogiofim.h"
 #include "plrui.h"
@@ -13,6 +14,7 @@
 #include "tex_cache.h"
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
+#include "ponteiro.h"
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
@@ -45,6 +47,12 @@ static Uint32 desdeQuando;     // quando a condicao passou a valer; 0 = nao vale
 static int    idxItem = -1;
 static char   idItem[64];      // o titulo de idxItem (#190; ver pausao.h)
 static char   epLinha[220];
+
+// See pausao.h. Clearing `desdeQuando` makes pausao_atualizar re-arm from NOW
+// on the next frame, which is exactly what the web's schedulePauseOverlay() does.
+void pausao_activity(void) {
+  desdeQuando = 0;
+}
 
 void pausao_fechar(void) {
   visivel = 0;
@@ -157,6 +165,12 @@ static float metaPontos(const char *meta, float x, float y, float maxW, float a)
   return (float)txt_linha(TXT_CAPTION2, "Ag", 0, 0, 0, 255).h;
 }
 
+// PONTEIRO (#99): a ficha nao tem item focavel (o player para de registrar os
+// controles com ela no ar). Um alvo na tela inteira, com focar que nao mexe em
+// nada, faz o clique ser o OK de sempre (pausao_evento: derruba a ficha e
+// retoma, o gesto do web) mesmo com a pilula da ilha registrando o dela.
+static void ponteiroFicha(int a, int b) { (void)a; (void)b; }
+
 static void pausao_desenharCorpo_(Uint32 agora, const PausaoCena *cena);
 // Camada ampliada (escala.h): o corpo desenha na tela virtual.
 void pausao_desenhar(Uint32 agora, const PausaoCena *cena) {
@@ -174,6 +188,7 @@ static void pausao_desenharCorpo_(Uint32 agora, const PausaoCena *cena) {
   (void)agora;
 
   if (a <= 0.004f) return;
+  if (visivel) ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, ponteiroFicha, NULL, 0, 0);
   // PELO TITULO, e nao so pelo indice (#190): uma troca de bloco entre o
   // pausao_atualizar e este desenho poe outro titulo na mesma posicao.
   { int i = cat_indice_vivo(idxItem, idItem);
@@ -270,7 +285,8 @@ static void pausao_desenharCorpo_(Uint32 agora, const PausaoCena *cena) {
     { TxtLinha l2 = txt_linha(TXT_ILHA_NOME, t2, 243, 242, 239, 128);
       TxtLinha l1 = txt_linha(TXT_ILHA_NOME, t1, 243, 242, 239, 235);
       float xr = NV_TELA_W - PAUSAO_X - l2.w;
-      txt_desenhar_alpha(l2, xr, 938.0f, a);
-      txt_desenhar_alpha(l1, xr - 8.0f - l1.w, 938.0f, a); }
+      float timeY = telefoneui_ativo() ? PAUSAO_BARRA_Y - 52.0f : 938.0f;
+      txt_desenhar_alpha(l2, xr, timeY, a);
+      txt_desenhar_alpha(l1, xr - 8.0f - l1.w, timeY, a); }
   }
 }

@@ -109,6 +109,14 @@ int main(void) {
     { falta = txt_visual_da_linha(fam, TXT_DET_SIN, "يعود جون ويك…", v, sizeof v, &nc);
       CHECK(falta == 0 && !strncmp(v, "…", 3)); } }
 
+  // 6. #335: arabe em negrito usa a face Bold REAL (largura diferente da
+  // Regular), nunca o TTF_STYLE_BOLD sintetico; o latim da mesma linha segue sintetico.
+  { const char *ar = "يعود جون ويك إلى الشاشة الكبيرة";
+    TxtLinha r = txt_linha_corta_enfase(TXT_DET_SIN, ar, 255, 255, 255, 255, 1800.0f, fam, 0);
+    TxtLinha b = txt_linha_corta_enfase(TXT_DET_SIN, ar, 255, 255, 255, 255, 1800.0f, fam, TXT_ENF_NEGRITO);
+    printf("[teste] arabe regular w=%d, negrito w=%d\n", r.w, b.w);
+    CHECK(r.w > 0 && b.w > 0 && b.w != r.w); }
+
   if (falhas) { printf("arabe_texto: %d falha(s)\n", falhas); return 1; }
   puts("arabe_texto: ok");
   return 0;

@@ -4,6 +4,9 @@
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <stdio.h>
+// A entrega real tem o harness watchstate_poda.sh; aqui nao ha diario.
+void wsenvio_podar(void) {}
+void wsenvio_podar_addon(const char *base) { (void)base; }
 #include <string.h>
 #include <unistd.h>
 #include "../src/fontecache.c"
@@ -13,6 +16,8 @@
 void ondever_pedir(const char *id, int series, long tmdb) {
   (void)id; (void)series; (void)tmdb;
 }
+
+int dados_gravar_leve(const char *nome, const char *conteudo) { (void)nome; (void)conteudo; return 1; }
 
 static _Atomic Uint32 relogio = 100000;
 static _Atomic int pedidos;
@@ -29,7 +34,8 @@ int perfis_ativo(void) { return perfil; }
 int player_carregando(void) { return 0; }
 void debrid_nova_busca(void) { }
 void debrid_definir_episodio(int t, int e) { (void)t; (void)e; }
-int debrid_resolver(const char *hash, int indice, char *url, unsigned tam) {
+int debrid_resolver_cache(const char *hash, int indice, char *url, unsigned tam, int *fora) {
+  *fora = 0;
   (void)hash; (void)indice; (void)url; (void)tam;
   assert(!"cache VOD nao pode resolver debrid"); return 0;
 }

@@ -7,7 +7,7 @@ flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 # ${arr[@]+...}: o bash 3.2 do macOS chama "${flags[@]}" de unbound quando o
 # vetor esta vazio e set -u esta ligado.
-cc ${flags[@]+"${flags[@]}"} src/traktauth.c src/js.c src/jsw.c \
+cc ${flags[@]+"${flags[@]}"} src/traktauth.c src/credfio.c src/js.c src/jsw.c \
   tests/traktauth_renov.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -o /tmp/nuvio-traktauth-tests -O1 -g \
@@ -16,7 +16,7 @@ cc ${flags[@]+"${flags[@]}"} src/traktauth.c src/js.c src/jsw.c \
 
 # Vinculo por perfil: trakt-p<N>.txt, migracao do trakt.txt antigo so para o
 # perfil 1, troca de perfil com fio no ar. Disco e rede sao dubles em memoria.
-cc ${flags[@]+"${flags[@]}"} src/traktauth.c src/js.c src/jsw.c \
+cc ${flags[@]+"${flags[@]}"} src/traktauth.c src/credfio.c src/js.c src/jsw.c \
   tests/traktauth_perfil.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -o /tmp/nuvio-traktauth-perfil-tests -O1 -g -lpthread \

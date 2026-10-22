@@ -1,5 +1,5 @@
 #!/bin/sh
-# Minimal static LGPL FFmpeg: DTS decode and stereo AAC encode only. No FFmpeg
+# Minimal static LGPL FFmpeg: DTS decode, stereo AAC and AC3 5.1 encode (no GPL/nonfree). No FFmpeg
 # network/TLS protocols or software video decoders enter the TV executable.
 set -eu
 VERSION=7.1.5
@@ -25,7 +25,7 @@ fi
   --disable-programs --disable-doc --disable-debug --disable-network \
   --disable-avdevice --disable-avfilter --disable-swscale --disable-postproc \
   --enable-avcodec --enable-avformat --enable-avutil --enable-swresample \
-  --enable-decoder=dca,dvdsub,pgssub,ass,ssa,subrip,movtext,webvtt --enable-encoder=aac \
+  --enable-decoder=dca,dvdsub,pgssub,ass,ssa,subrip,movtext,webvtt --enable-encoder=aac,ac3 \
   --enable-demuxer=matroska,mov --enable-parser=dca,h264,hevc,aac \
   --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,dca_core \
   --extra-cflags="${CFLAGS:--O2}"

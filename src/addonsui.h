@@ -17,5 +17,8 @@ void addonsui_evento(const SDL_Event *e);
 void addonsui_atualizar(float dt, Uint32 agora);
 void addonsui_desenhar(Uint32 agora);
 int  addonsui_quer_sair(void);
+// Ponteiro (#99): foca a linha i (PonteiroFn). addonsui_foco para os testes.
+void addonsui_ponteiro(int i, int b);
+int  addonsui_foco(void);
 
 #endif

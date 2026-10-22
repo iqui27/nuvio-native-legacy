@@ -103,6 +103,16 @@ int main(void) {
     assert(NV_TEX_URL_MAX >= sizeof d.poster); }
   puts("ok  URL de ~720 bytes do PostersPlus chega inteira (logo_language=ru)");
 
+  // #433: 2047 cabe; 2048/mais nao pode virar prefixo valido.
+  { char url[2201], json[2500];
+    for (size_t n = 2047; n <= 2200; n += n == 2047 ? 1 : 152) {
+      memset(url, 'a', n); memcpy(url, "https://posters.invalid/", 24); url[n] = 0;
+      snprintf(json, sizeof json, "{\"name\":\"Matchbox\",\"poster\":\"%s\"}", url);
+      assert(deMeta(json, json + strlen(json), "movie", &d));
+      assert(n == 2047 ? !strcmp(d.poster, url) : !d.poster[0]);
+    }
+  }
+  puts("ok  limite do cartaz: 2047 inteiro, 2048/2200 descartados");
   puts("posteraddon: tudo ok");
   return 0;
 }

@@ -5,6 +5,7 @@
 #include "dados.h"
 #include "recomenda.h"
 #include "ajustes.h"
+#include "idioma.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -44,7 +45,9 @@ int main(void) {
   assert(socialvis_amigo(0)->agora == 1);
   assert(socialvis_amigo(1)->nTit == 2);                   // tt1 uma vez so
   assert(socialvis_n_ao_vivo() == 1);
-  assert(socialvis_n_eventos() == 4);                      // sem a SV_ATIVIDADE
+  // Feed LIMPO: sem a SV_ATIVIDADE, sem o "comecou" de filme (tt2) e com a
+  // reacao de tt1 dentro do "terminou" (uma linha por pessoa e titulo).
+  assert(socialvis_n_eventos() == 2);
   assert(socialvis_evento(0)->acao == SV_AGORA);
   { int i;
     for (i = 0; i < socialvis_n_eventos(); i++) assert(socialvis_evento(i)->acao != SV_ATIVIDADE); }
@@ -97,6 +100,43 @@ int main(void) {
     socialvis_atualizar();
     assert(!socialvis_ultima_enviada("nuvio:p", &m));
     assert(socialvis_n_amigos() == 0 && socialvis_n_eventos() == 0); }
+  // --- A LIMPEZA DO FEED (dono, 06/10/2026: "muito sujo") -----------------------
+  { SvEvento in[12], out[12];
+    int m = 0, k;
+    char vb[120];
+    in[m] = ev("nuvio:a", "Ana", SV_FIM, "tt50", "Serie", agora - 100); snprintf(in[m].tipo, 8, "series");
+    in[m].temporada = 1; in[m].episodio = 3; m++;
+    in[m] = ev("nuvio:a", "Ana", SV_REACAO, "tt50", "Serie", agora - 110); snprintf(in[m].tipo, 8, "series");
+    in[m].reacao = SV_REAC_GOSTOU; m++;
+    in[m] = ev("nuvio:a", "Ana", SV_FIM, "tt50", "Serie", agora - 200); snprintf(in[m].tipo, 8, "series");
+    in[m].temporada = 1; in[m].episodio = 2; m++;
+    in[m] = ev("nuvio:a", "Ana", SV_INICIO, "tt50", "Serie", agora - 250); snprintf(in[m].tipo, 8, "series");
+    in[m].temporada = 1; in[m].episodio = 2; m++;
+    in[m] = ev("nuvio:a", "Ana", SV_FIM, "tt50", "Serie", agora - 300); snprintf(in[m].tipo, 8, "series");
+    in[m].temporada = 1; in[m].episodio = 1; m++;
+    in[m] = ev("nuvio:a", "Ana", SV_ABANDONO, "tt51", "Parou", agora - 400); m++;
+    in[m] = ev("nuvio:a", "Ana", SV_SALVO, "tt52", "Salvou", agora - 500); m++;
+    in[m] = ev("nuvio:b", "Bia", SV_INICIO, "tt53", "Filme", agora - 600); snprintf(in[m].tipo, 8, "movie"); m++;
+    in[m] = ev("nuvio:b", "Bia", SV_INICIO, "tt54", "Nova", agora - 700); snprintf(in[m].tipo, 8, "series");
+    in[m].temporada = 1; in[m].episodio = 1; m++;
+    in[m] = ev("nuvio:b", "Bia", SV_AVALIOU, "tt55", "Nota", agora - 800); in[m].nota = 80; m++;
+    k = socialvis_feed_limpar(in, m, out, 12);
+    assert(k == 3);
+    assert(out[0].acao == SV_FIM && !strcmp(out[0].imdb, "tt50") && out[0].eps == 3);
+    assert(out[0].reacao == SV_REAC_GOSTOU && out[0].episodio == 3 && out[0].quando == agora - 100);
+    assert(out[1].acao == SV_INICIO && !strcmp(out[1].imdb, "tt54"));   // so a serie nova
+    assert(out[2].acao == SV_AVALIOU && out[2].nota == 80);
+    snprintf(vb, sizeof vb, "%s", socialvis_verbo(&out[0]));
+    printf("verbo agrupado: %s\n", vb);
+    assert(strstr(vb, "3"));
+    assert(!strcmp(socialvis_verbo(&out[1]), i18n("começou a série")));
+    // O mesmo episodio terminado duas vezes conta um.
+    m = 0;
+    in[m] = ev("nuvio:a", "Ana", SV_FIM, "tt60", "S", agora - 1); snprintf(in[m].tipo, 8, "series");
+    in[m].temporada = 1; in[m].episodio = 1; m++;
+    in[m] = in[0]; in[m].quando = agora - 2; m++;
+    k = socialvis_feed_limpar(in, m, out, 12);
+    assert(k == 1 && out[0].eps == 0); }
   printf("socialvis: ok\n");
   return 0;
 }

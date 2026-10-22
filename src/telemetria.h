@@ -14,5 +14,7 @@ int  telemetria_aberto(void);
 void telemetria_evento(const SDL_Event *e);
 void telemetria_atualizar(float dt, Uint32 agora);
 void telemetria_desenhar(Uint32 agora);
+// Teste do ponteiro (#99): 0 = "Sim, pode mandar", 1 = "Agora nao".
+int  telemetria_teste_foco(void);
 
 #endif

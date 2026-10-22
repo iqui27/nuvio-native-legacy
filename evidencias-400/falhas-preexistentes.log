@@ -1,0 +1,347 @@
+### before tests/colecoes_teto.sh
+Undefined symbols for architecture arm64:
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-02fe99.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-02fe99.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-02fe99.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### after tests/colecoes_teto.sh
+Undefined symbols for architecture arm64:
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-b09a21.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-b09a21.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-b09a21.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### before tests/colfileiras_home.sh
+Undefined symbols for architecture arm64:
+  "_ajlog_mudou", referenced from:
+      _gravar in ajustes-94a0ef.o
+  "_fonteregra_do_blob", referenced from:
+      _ajustes_aplicar_blob in ajustes-94a0ef.o
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-94a0ef.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-94a0ef.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-94a0ef.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### after tests/colfileiras_home.sh
+Undefined symbols for architecture arm64:
+  "_ajlog_mudou", referenced from:
+      _gravar in ajustes-4f62c2.o
+  "_fonteregra_do_blob", referenced from:
+      _ajustes_aplicar_blob in ajustes-4f62c2.o
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-4f62c2.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-4f62c2.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-4f62c2.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### before tests/cwordem.sh
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 12 da conta, 0 repetido(s); 12 na fileira
+ok  conta sem vistos puxados: nao semeia
+[desc] continuar assistindo local: 12
+[desc] continuar assistindo: a seguir da conta: 4 da conta, 1 ja pausada(s), 1 vista(s) em outra fonte, 0 velha(s) (>60 dias), 2 consultada(s), 1 confirmada(s), 1 na lista
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 12 da conta, 0 repetido(s); 12 na fileira
+ok  conta + Trakt: episodio visto em outra fonte nao volta
+[desc] continuar assistindo local: 12
+[desc] continuar assistindo: a seguir da conta: 4 da conta, 1 ja pausada(s), 0 vista(s) em outra fonte, 1 velha(s) (>60 dias), 2 consultada(s), 1 confirmada(s), 1 na lista
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 12 da conta, 0 repetido(s); 12 na fileira
+[desc] continuar assistindo local: 12
+[desc] continuar assistindo: a seguir da conta: 4 da conta, 1 ja pausada(s), 0 vista(s) em outra fonte, 0 velha(s) (>60 dias), 3 consultada(s), 2 confirmada(s), 2 na lista
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 12 da conta, 0 repetido(s); 12 na fileira
+ok  conta + Trakt: serie parada ha 61 dias nao ressuscita
+cwordem_desc: tudo ok
+Undefined symbols for architecture arm64:
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-a837e8.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-a837e8.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-a837e8.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### after tests/cwordem.sh
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 12 da conta, 0 repetido(s); 12 na fileira
+ok  conta sem vistos puxados: nao semeia
+[desc] continuar assistindo local: 12
+[desc] continuar assistindo: a seguir da conta: 4 da conta, 1 ja pausada(s), 1 vista(s) em outra fonte, 0 velha(s) (>60 dias), 2 consultada(s), 1 confirmada(s), 1 na lista
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 12 da conta, 0 repetido(s); 12 na fileira
+ok  conta + Trakt: episodio visto em outra fonte nao volta
+[desc] continuar assistindo local: 12
+[desc] continuar assistindo: a seguir da conta: 4 da conta, 1 ja pausada(s), 0 vista(s) em outra fonte, 1 velha(s) (>60 dias), 2 consultada(s), 1 confirmada(s), 1 na lista
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 12 da conta, 0 repetido(s); 12 na fileira
+[desc] continuar assistindo local: 12
+[desc] continuar assistindo: a seguir da conta: 4 da conta, 1 ja pausada(s), 0 vista(s) em outra fonte, 0 velha(s) (>60 dias), 3 consultada(s), 2 confirmada(s), 2 na lista
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 12 da conta, 0 repetido(s); 12 na fileira
+ok  conta + Trakt: serie parada ha 61 dias nao ressuscita
+cwordem_desc: tudo ok
+Undefined symbols for architecture arm64:
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-22b127.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-22b127.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-22b127.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### before tests/cwremover.sh
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: 3 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 1 repetido(s); 3 na fileira
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: 4 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 1 repetido(s); 4 na fileira
+[cat] continuar assistindo refeita: 4 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[perf] cat_definir_tudo: 5 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[desc] continuar assistindo: a refacao feita durante a montagem fica (4 item(ns))
+[cat] continuar assistindo refeita: 4 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[perf] publicarMontagem: 5 itens, 2 fileiras, 0.0 ms
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: 3 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 1 repetido(s); 3 na fileira
+[perf] cat_definir_tudo: 5 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[perf] publicarMontagem: 5 itens, 2 fileiras, 0.0 ms
+ok  refacao feita no meio da montagem nao e coberta pela publicacao do fim
+cwremover: tudo ok
+Undefined symbols for architecture arm64:
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-2ae93f.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-2ae93f.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-2ae93f.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### after tests/cwremover.sh
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: 3 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 1 repetido(s); 3 na fileira
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: 4 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 1 repetido(s); 4 na fileira
+[cat] continuar assistindo refeita: 4 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[perf] cat_definir_tudo: 5 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[desc] continuar assistindo: a refacao feita durante a montagem fica (4 item(ns))
+[cat] continuar assistindo refeita: 4 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[perf] publicarMontagem: 5 itens, 2 fileiras, 0.0 ms
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: 3 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 1 repetido(s); 3 na fileira
+[perf] cat_definir_tudo: 5 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[perf] publicarMontagem: 5 itens, 2 fileiras, 0.0 ms
+ok  refacao feita no meio da montagem nao e coberta pela publicacao do fim
+cwremover: tudo ok
+Undefined symbols for architecture arm64:
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-6c381c.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-6c381c.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-6c381c.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### before tests/cwretido.sh
+Undefined symbols for architecture arm64:
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-b073b6.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-b073b6.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-b073b6.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### after tests/cwretido.sh
+Undefined symbols for architecture arm64:
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-4d6ccc.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-4d6ccc.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-4d6ccc.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### before tests/cwthumb.sh
+Undefined symbols for architecture arm64:
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-daf131.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-daf131.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-daf131.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### after tests/cwthumb.sh
+Undefined symbols for architecture arm64:
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-15bea1.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-15bea1.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-15bea1.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### before tests/heroidentidade.sh
+Undefined symbols for architecture arm64:
+  "_ajlog_mudou", referenced from:
+      _gravar in ajustes-4bc8f9.o
+  "_fonteregra_do_blob", referenced from:
+      _ajustes_aplicar_blob in ajustes-4bc8f9.o
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-4bc8f9.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-4bc8f9.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-4bc8f9.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### after tests/heroidentidade.sh
+Undefined symbols for architecture arm64:
+  "_ajlog_mudou", referenced from:
+      _gravar in ajustes-ee0157.o
+  "_fonteregra_do_blob", referenced from:
+      _ajustes_aplicar_blob in ajustes-ee0157.o
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-ee0157.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-ee0157.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-ee0157.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### before tests/herorotacao.sh
+Undefined symbols for architecture arm64:
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-ca1e7a.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-ca1e7a.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-ca1e7a.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### after tests/herorotacao.sh
+Undefined symbols for architecture arm64:
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-b374f4.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-b374f4.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-b374f4.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### before tests/proximo_desfoque_home.sh
+Undefined symbols for architecture arm64:
+  "_ajlog_mudou", referenced from:
+      _gravar in ajustes-72ddef.o
+  "_fonteregra_do_blob", referenced from:
+      _ajustes_aplicar_blob in ajustes-72ddef.o
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-72ddef.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-72ddef.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-72ddef.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### after tests/proximo_desfoque_home.sh
+Undefined symbols for architecture arm64:
+  "_ajlog_mudou", referenced from:
+      _gravar in ajustes-fb3b35.o
+  "_fonteregra_do_blob", referenced from:
+      _ajustes_aplicar_blob in ajustes-fb3b35.o
+  "_ling_conta_audio_valor", referenced from:
+      _idiomasDoBlob in ajustes-fb3b35.o
+  "_ling_conta_legenda2_valor", referenced from:
+      _idiomasDoBlob in ajustes-fb3b35.o
+  "_ling_conta_legenda_valor", referenced from:
+      _idiomasDoBlob in ajustes-fb3b35.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### before tests/rede_sonda.sh
+Traceback (most recent call last):
+  File "<stdin>", line 38, in <module>
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+cat: /var/folders/tb/3tdgxb_151x63831hfnszg1n9cg9nz/T//nuvio-rede-sonda.c4tUHi/porta: No such file or directory
+[rede] url final falhou: curl 7, HTTP 0 em http://127.0.0.1:/...
+[rede] url final falhou: curl 7, HTTP 0 em http://127.0.0.1:/...
+[rede] url final falhou: curl 7, HTTP 0 em http://127.0.0.1:/...
+Assertion failed: (!rede_url_final_cab(url, 2, cab, fim, sizeof fim, &http) && http == 500 && !fim[0]), function main, file rede_sonda.c, line 19.
+tests/rede_sonda.sh: line 55: 23308 Abort trap: 6              "$tmp/teste" "http://127.0.0.1:$(cat "$tmp/porta")"
+
+### after tests/rede_sonda.sh
+Traceback (most recent call last):
+  File "<stdin>", line 38, in <module>
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+cat: /var/folders/tb/3tdgxb_151x63831hfnszg1n9cg9nz/T//nuvio-rede-sonda.9kDQeu/porta: No such file or directory
+[rede] url final falhou: curl 7, HTTP 0 em http://127.0.0.1:/...
+[rede] url final falhou: curl 7, HTTP 0 em http://127.0.0.1:/...
+[rede] url final falhou: curl 7, HTTP 0 em http://127.0.0.1:/...
+Assertion failed: (!rede_url_final_cab(url, 2, cab, fim, sizeof fim, &http) && http == 500 && !fim[0]), function main, file rede_sonda.c, line 19.
+tests/rede_sonda.sh: line 55: 37748 Abort trap: 6              "$tmp/teste" "http://127.0.0.1:$(cat "$tmp/porta")"
+
+### before tests/streams_idade.sh
+Undefined symbols for architecture arm64:
+  "_ajustes_selos_coloridos", referenced from:
+      _selosAgendar in streams-881ed8.o
+  "_selospacote_colorido", referenced from:
+      _selosAgendar in streams-881ed8.o
+  "_selospacote_embutidos_ok", referenced from:
+      _selosAgendar in streams-881ed8.o
+  "_selospacote_filtro", referenced from:
+      _selosFio in streams-881ed8.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+### after tests/streams_idade.sh
+Undefined symbols for architecture arm64:
+  "_ajustes_selos_coloridos", referenced from:
+      _selosAgendar in streams-c9a57d.o
+  "_selospacote_colorido", referenced from:
+      _selosAgendar in streams-c9a57d.o
+  "_selospacote_embutidos_ok", referenced from:
+      _selosAgendar in streams-c9a57d.o
+  "_selospacote_filtro", referenced from:
+      _selosFio in streams-c9a57d.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)

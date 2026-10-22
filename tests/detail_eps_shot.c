@@ -93,6 +93,7 @@ static float fx_titulo_bloco(TxtEstilo estilo, const char *s, int r, int g, int 
 #define plrui_kicker fx_kicker
 #include "../src/detail.c"
 #include "menu.h"
+#include "intro.h"
 #include "ilha.h"
 #undef txt_bloco
 #undef gfx_icone
@@ -521,6 +522,8 @@ int main(int argc, char **argv) {
     // NUVIO_SHOT_IDIOMA=N troca o idioma das capturas que nao sao as das notas
     // da release (0 pt ... 7 es; ver idiomacod.h): serve a conferir traducao.
     fprintf(f, "idioma %d\n", getenv("NUVIO_SHOT_IDIOMA") ? atoi(getenv("NUVIO_SHOT_IDIOMA")) : 0);
+    // Pular ligado: sem isto nenhuma marca A/R/C aparece (2.1, "Vai tocar").
+    fprintf(f, "pularAberturaLocal 0\npularCreditosLocal 0\n");
     if (getenv("NV_APPLE_EP")) fprintf(f,"homeLayoutLocal %d\n",HOME_LAYOUT_DINAMICA);
     fclose(f);
     ajustes_dir(dados_dir()); }
@@ -920,6 +923,61 @@ int main(int argc, char **argv) {
     printf("desfoque: %d artes desfocadas, %d desenhos com a copia pronta\n",
            fxDesfN, fxDesfOk);
   }
+
+#ifdef NV_SHOT_HOOKS
+  // --- 21. 2.1 "Vai tocar": a faixa embaixo dos botoes (fonte que o automatico
+  //         tocaria + o que da para pular e de onde vem) e os chips A/R/C nos
+  //         cards dos episodios cujas marcas ja estao em memoria. Sem lista de
+  //         fontes a faixa nao existe; com ela, a altura reservada acompanha.
+  {
+    static Stream lv[3];
+    IntroTrecho tr[2];
+    int t, e, k;
+    char alvo[64];
+    const char *ARQ = "Breaking.Bad.S01E01.2160p.WEB-DL.DV.HDR.EAC3.Atmos.mkv";
+    badges_carregar("deploy/app/art");
+    parado = 0;
+    abrir(0, 0);
+    quadros(20);
+    assert(!vaiTocar.tem && hVaiVis < 0.5f);   // sem lista de fontes: sem faixa
+    t = vaiTocarT; e = vaiTocarE;
+    for (k = 0; k < 3; k++) {
+      memset(&lv[k], 0, sizeof lv[k]);
+      snprintf(lv[k].provedor, sizeof lv[k].provedor, k == 1 ? "AIOStreams" : "Torrentio");
+      snprintf(lv[k].rotulo, sizeof lv[k].rotulo, "%s", k == 2 ? "1080p WEB-DL" : "4K DV HDR");
+      snprintf(lv[k].arquivo, sizeof lv[k].arquivo, "%s", k == 2 ? "Breaking.Bad.S01E01.1080p.WEB-DL.mkv" : ARQ);
+      snprintf(lv[k].descricao, sizeof lv[k].descricao, "%s", lv[k].rotulo);
+      snprintf(lv[k].url, sizeof lv[k].url, "https://exemplo.invalido/%d.mkv", k);
+      lv[k].altura = k == 2 ? 1080 : 2160; lv[k].fileIdx = -1;
+      lv[k].tamanhoMB = k == 2 ? 4096 : 11264; lv[k].tamanhoBytes = (uint64_t)lv[k].tamanhoMB << 20;
+      lv[k].dolbyVision = k != 2;
+      { char tx[800]; snprintf(tx, sizeof tx, "%s %s", lv[k].rotulo, lv[k].arquivo);
+        lv[k].badges = badges_detectar(tx); }
+    }
+    if (t > 0 && e > 0) snprintf(alvo, sizeof alvo, "%s:%d:%d", IMDB_SERIE, t, e);
+    else snprintf(alvo, sizeof alvo, "%s", IMDB_SERIE);
+    stream_definir_alvo(alvo);
+    stream_definir_lista(lv, 3);
+    memset(tr, 0, sizeof tr);
+    tr[0].tipo = INTRO_ABERTURA; tr[0].inicio = 5; tr[0].fim = 95;
+    tr[1].tipo = INTRO_CREDITOS; tr[1].inicio = 2700; tr[1].fim = 2820;
+    intro_shot_marcas(IMDB_SERIE, t, e, tr, 2, 0);
+    intro_shot_marcas(IMDB_SERIE, t, e + 1, tr, 1, 0);   // so a abertura
+    abrir(0, 0);
+    quadros(120);
+    { int k; for (k = 0; k < 40; k++) { SDL_Delay(25); quadros(1); } }  // a faixa anima em tempo real   // a altura reservada anda por relogio real (90 ms)
+    assert(vaiTocar.tem && vaiTocar.pularOn);
+    assert(fabsf(hVaiVis - (vtui_altura(&vaiTocar) + DET_VAI_GAP)) < 1.0f);
+    assert(vaiTocar.marcas == (VT_T_A | VT_T_C) && vaiTocar.origem == VT_O_THEINTRODB);
+    assert(!strcmp(vaiTocar.res, "4K"));
+    snprintf(nome, sizeof nome, "%s-21-vai-tocar.png", saida);
+    gravar(nome);
+    nosEpisodios(0);
+    snprintf(nome, sizeof nome, "%s-21-vai-tocar-episodios.png", saida);
+    gravar(nome);
+    printf("vai tocar: %s %s, altura da faixa %.0f\n", vaiTocar.res, vaiTocar.hdr, hVaiVis);
+  }
+#endif
 
   SDL_GL_DeleteContext(gl);
   SDL_DestroyWindow(janela);

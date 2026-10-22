@@ -117,6 +117,9 @@ static const char *familia(const char *c, char *buf) {
     // legendas): ja->"jp", cs->"cz", nl->"du", el->"gr", id->"in", ms->"ma".
     // Nenhum deles e codigo ISO de outro idioma.
     { "jp","ja" },{ "cz","cs" },{ "du","nl" },{ "gr","el" },{ "in","id" },{ "ma","ms" },
+    // #429: servo-croata. "hbs"/"sh" e o codigo conjunto que muitos MKV usam
+    // para croata, servio e bosnio; ling_casa trata "sh" como os tres.
+    { "bos","bs" },{ "hbs","sh" },
   };
   size_t i;
   for (i = 0; i < sizeof F / sizeof *F; i++)
@@ -130,14 +133,28 @@ static const char *familia(const char *c, char *buf) {
     return d; }
 }
 
+// FORCA do casamento (#429 + revisao #205): 1 = familia igual (ou etiqueta
+// identica), 0 = casa so pela regra do conjunto "hbs"/"sh", -1 = nao casa.
+// Quem escolhe faixa ranqueia: o match EXATO de familia (hr/sr/bs pedido e
+// ofertado) vence a faixa etiquetada pelo codigo conjunto.
+static int ling_casa_forca(const char *codigo, const char *pref) {
+  if (!pref || !*pref) return 1;
+  if (!codigo || !*codigo) return -1;
+  if (!strcasecmp(codigo, pref)) return 1;
+  { char a[8], b[8];
+    const char *fa = familia(codigo, a), *fb = familia(pref, b);
+    if (!strcasecmp(fa, fb)) return 1;
+    if (!strcmp(fa, "sh") || !strcmp(fb, "sh")) {
+      const char *o = !strcmp(fa, "sh") ? fb : fa;
+      return !strcmp(o, "hr") || !strcmp(o, "sr") || !strcmp(o, "bs") ? 0 : -1;
+    }
+    return -1; }
+}
+
 // Duas etiquetas sao o MESMO idioma quando a familia coincide. Codigo que a
 // tabela nao conhece cai na comparacao crua, sem inventar parentesco.
 int ling_casa(const char *codigo, const char *pref) {
-  if (!pref || !*pref) return 1;            // sem preferencia: passa tudo
-  if (!codigo || !*codigo) return 0;
-  if (!strcasecmp(codigo, pref)) return 1;
-  { char a[8], b[8];
-    return !strcasecmp(familia(codigo, a), familia(pref, b)); }
+  return ling_casa_forca(codigo, pref) >= 0;
 }
 
 // NORMALIZA a etiqueta de idioma que o addon manda. Um addon (AIOStreams)
@@ -209,13 +226,20 @@ static void guardar(char *dest, size_t n, const char *v) {
   if (!v || !*v) { dest[0] = 0; return; }
   if (!strcasecmp(v, "off") || !strcasecmp(v, "device") ||
       !strcasecmp(v, "default") || !strcasecmp(v, "original") ||
-      !strcasecmp(v, "system") || !strcmp(v, "*")) { dest[0] = 0; return; }
+      !strcasecmp(v, "system") || !strcmp(v, "*") ||
+      // #378: "forced" e o "Usar legendas forcadas" do app oficial, nao um
+      // idioma; como codigo nao casa com faixa nenhuma e "Da conta" ficava sem
+      // legenda. Vale como conta sem idioma (a escolha a mao decide).
+      !strcasecmp(v, "forced") || !strcasecmp(v, "force")) { dest[0] = 0; return; }
   snprintf(dest, n, "%s", v);
 }
 
 void ling_conta_legenda(const char *v)  { guardar(contaLeg,  sizeof contaLeg,  v); }
 void ling_conta_legenda2(const char *v) { guardar(contaLeg2, sizeof contaLeg2, v); }
 void ling_conta_audio(const char *v)    { guardar(contaAud,  sizeof contaAud,  v); }
+const char *ling_conta_legenda_valor(void)  { return contaLeg; }
+const char *ling_conta_legenda2_valor(void) { return contaLeg2; }
+const char *ling_conta_audio_valor(void)    { return contaAud; }
 // A escolha LOCAL preserva o "*": "Todas" e uma decisao ("nao filtre"), nao a
 // ausencia de decisao. Tratar as duas como vazio fazia escolher "Todas" cair de
 // volta na preferencia da conta — ou seja, o ajuste nao obedecia.
@@ -334,21 +358,59 @@ static int temRadical(const char *nome, const char *radical) {
   return 0;
 }
 
-int ling_letreiro(const char *nome, int forcado) {
+// `nome` tem a palavra `w` inteira (sem caixa)? Para siglas curtas ("CC"),
+// que como radical casariam com o comeco de outra palavra.
+static int temPalavra(const char *nome, const char *w) {
+  size_t n = strlen(w);
+  const char *p;
+  for (p = nome; *p; p++) {
+    unsigned char c;
+    if (!inicioPalavra(nome, p) || strncasecmp(p, w, n)) continue;
+    c = (unsigned char)p[n];
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= 0x80)) return 1;
+  }
+  return 0;
+}
+
+int ling_tipo_legenda(const char *nome, int forcado, int sdh) {
   // "forçad" em bytes, e nao como literal: a varredura de i18n (tools/)
   // acusaria um radical de busca como texto de tela sem traducao.
   static const char FORCAD[] = { 'f', 'o', 'r', (char)0xc3, (char)0xa7, 'a', 'd', 0 };
-  static const char *const R[] = { "sign", "song", "forced", FORCAD, "letreiro" };
+  static const char *const SIGNS[] = { "sign", "song", "letreiro" };
+  static const char *const FORC[] = { "forced", FORCAD, "forzad" };
+  static const char *const SURDO[] = { "sdh", "hearing", "surdo", "deaf" };
+  int temSigns = 0, temForc = 0, temSurdo = sdh != 0;
   size_t i;
-  if (forcado) return 1;
-  if (!nome || !*nome) return 0;
+  if (!nome) nome = "";
+  for (i = 0; i < sizeof SIGNS / sizeof *SIGNS; i++) if (temRadical(nome, SIGNS[i])) temSigns = 1;
+  for (i = 0; i < sizeof FORC / sizeof *FORC; i++) if (temRadical(nome, FORC[i])) temForc = 1;
+  for (i = 0; i < sizeof SURDO / sizeof *SURDO; i++) if (temRadical(nome, SURDO[i])) temSurdo = 1;
+  if (temPalavra(nome, "cc")) temSurdo = 1;
+  // A FLAG manda: o arquivo diz que a faixa e forcada, seja qual for o nome.
+  if (forcado) return temSigns ? LING_LEG_LETREIROS : LING_LEG_FORCADA;
   // "Full + Songs", "Dialogue & Signs": a faixa inteira que TAMBEM traz as
   // placas. Essa e a legenda de verdade, nao a de letreiros.
   if (temRadical(nome, "full") || temRadical(nome, "dialog") || temRadical(nome, "complet"))
-    return 0;
-  for (i = 0; i < sizeof R / sizeof *R; i++)
-    if (temRadical(nome, R[i])) return 1;
-  return 0;
+    return temSurdo ? LING_LEG_SDH : LING_LEG_COMPLETA;
+  if (temSigns) return LING_LEG_LETREIROS;
+  if (temForc) return LING_LEG_FORCADA;
+  if (temSurdo) return LING_LEG_SDH;
+  return LING_LEG_COMUM;
+}
+
+int ling_letreiro(const char *nome, int forcado) {
+  int t = ling_tipo_legenda(nome, forcado, 0);
+  return t == LING_LEG_FORCADA || t == LING_LEG_LETREIROS;
+}
+
+const char *ling_tipo_legenda_rotulo(int tipo) {
+  switch (tipo) {
+    case LING_LEG_FORCADA:   return "For\xc3\xa7" "ada";
+    case LING_LEG_LETREIROS: return "Letreiros";
+    case LING_LEG_SDH:       return "SDH";
+    case LING_LEG_COMPLETA:  return "Legenda completa";   // "Completa" ja e outra chave (legsyncui)
+    default:                 return NULL;
+  }
 }
 
 // Radicais em ASCII, a partir do comeco da palavra: "portugu" cobre
@@ -413,12 +475,54 @@ int ling_legenda_auto(const char *pref,
   // este corte. A do addon e um arquivo de outra pessoa para outro release.
   // Faixa sem etiqueta ("") nunca casa: ling_casa so aceita tudo quando a
   // PREFERENCIA e vazia, e aqui ela nao e.
-  for (i = 0; i < nEmb; i++)
-    if (emb[i] && emb[i][0] && ling_casa(emb[i], pref)) return i;
+  // Dois passes (#205): quem pediu "hr" prefere a faixa "hr" a uma "hbs" que
+  // apenas serve — o casamento EXATO de familia vem antes do conjunto.
+  { int forca;
+    for (forca = 1; forca >= 0; forca--)
+      for (i = 0; i < nEmb; i++)
+        if (emb[i] && emb[i][0] && ling_casa_forca(emb[i], pref) == forca) return i; }
   // Os idiomas embutidos ainda podem chegar (a sonda do MKV nao voltou): pular
   // para o addon agora trocaria a legenda certa do arquivo por uma de fora.
   if (!embFechado) return LING_AUTO_ESPERA;
-  for (i = 0; i < nAdd; i++)
-    if (add[i] && add[i][0] && ling_casa(add[i], pref)) return nEmb + i;
+  { int forca;
+    for (forca = 1; forca >= 0; forca--)
+      for (i = 0; i < nAdd; i++)
+        if (add[i] && add[i][0] && ling_casa_forca(add[i], pref) == forca) return nEmb + i; }
+  return addFechado ? LING_AUTO_NADA : LING_AUTO_ESPERA;
+}
+
+int ling_legenda_auto_tipo(const char *pref, const char *audio, int forcadaAuto,
+                           const char *const *emb, const int *tipoEmb, int nEmb, int embFechado,
+                           const char *const *add, int nAdd, int addFechado) {
+  int i, passo, forca;
+  if (!pref || !*pref || !strcasecmp(pref, "none")) return LING_AUTO_NADA;
+  // AUDIO NO IDIOMA DA LEGENDA: a forcada daquele idioma, ou nada. So a
+  // embutida tem tipo; legenda de addon e sempre a inteira. Dentro de cada
+  // tipo o casamento exato de familia vem antes do conjunto (#205).
+  if (forcadaAuto && audio && *audio && ling_casa(audio, pref)) {
+    for (passo = 0; passo < 2; passo++)
+      for (forca = 1; forca >= 0; forca--)
+        for (i = 0; i < nEmb; i++) {
+          int t = tipoEmb ? tipoEmb[i] : LING_LEG_COMUM;
+          if (t != (passo ? LING_LEG_LETREIROS : LING_LEG_FORCADA)) continue;
+          if (emb[i] && emb[i][0] && ling_casa_forca(emb[i], pref) == forca) return i;
+        }
+    // A forcada pode estar numa faixa cujo tipo ainda nao chegou (sonda do MKV).
+    return embFechado ? LING_AUTO_NADA : LING_AUTO_ESPERA;
+  }
+  // A inteira: comum/completa primeiro, SDH so se nao houver outra — e, dentro
+  // de cada tipo, familia exata antes do conjunto "hbs".
+  for (passo = 0; passo < 2; passo++)
+    for (forca = 1; forca >= 0; forca--)
+      for (i = 0; i < nEmb; i++) {
+        int t = tipoEmb ? tipoEmb[i] : LING_LEG_COMUM;
+        if (t == LING_LEG_FORCADA || t == LING_LEG_LETREIROS) continue;
+        if ((t == LING_LEG_SDH) != passo) continue;
+        if (emb[i] && emb[i][0] && ling_casa_forca(emb[i], pref) == forca) return i;
+      }
+  if (!embFechado) return LING_AUTO_ESPERA;
+  for (forca = 1; forca >= 0; forca--)
+    for (i = 0; i < nAdd; i++)
+      if (add[i] && add[i][0] && ling_casa_forca(add[i], pref) == forca) return nEmb + i;
   return addFechado ? LING_AUTO_NADA : LING_AUTO_ESPERA;
 }

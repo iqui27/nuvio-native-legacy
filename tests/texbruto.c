@@ -24,7 +24,17 @@
 
 #define LOGO   "https://image.tmdb.org/t/p/w780/4AmlH0mEn8gL6HEmSX0QYbdItmA.png"
 #define POSTER "https://images.metahub.space/poster/medium/tt35672862/img"
-#define DIR    "/tmp/nuvio-texbruto-cache"
+// Um diretorio POR PROCESSO. Fixo (/tmp/nuvio-texbruto-cache), duas execucoes
+// ao mesmo tempo — varios agentes/worktrees na mesma maquina — pisam no cartaz
+// e no tmp.png uma da outra e falham ao acaso ("slot nao chegou ao estado",
+// fread/assert no PNG). Medido: 4 execucoes simultaneas, ~8 de 12 abortam.
+//
+// CARGA SO NAO QUEBRA ESTE TESTE: as esperas (400 x 5 ms = 2 s por estado)
+// cobrem de longe um decode de PNG 64x64, e com 24 lacos ocupados (load 24 em
+// 12 nucleos) 8 execucoes seguidas passaram. Se voltar a falhar sob carga,
+// procure primeiro outra execucao concorrente deste teste.
+static char DIR_[128];
+#define DIR    DIR_
 
 // PNG com ruido, para passar dos 512 bytes que acertoDisco exige. `r`/`b`
 // dizem de que cor ele e: o logo vermelho, o cartaz azul.
@@ -45,7 +55,7 @@ static SDL_Surface *imagem(int r, int b) {
 }
 
 static unsigned char *bytesPng(SDL_Surface *s, long *n) {
-  const char *tmp = DIR "/tmp.png";
+  char tmp[160]; snprintf(tmp, sizeof tmp, "%s/tmp.png", DIR);
   unsigned char *buf;
   FILE *f;
   assert(IMG_SavePNG(s, tmp) == 0);
@@ -81,6 +91,7 @@ int main(void) {
   long nLogo;
   int a, b;
 
+  snprintf(DIR_, sizeof DIR_, "%s/nuvio-texbruto-cache-%d", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp", (int)getpid());
   mkdir(DIR, 0755);
   memset(itens, 0, sizeof itens);
   nMax = 8;

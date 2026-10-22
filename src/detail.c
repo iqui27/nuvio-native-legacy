@@ -27,10 +27,13 @@
 #include "fontepref.h"
 #include "idioma.h"
 #include "ctxmenu.h"
+#include "ctxlista.h"
 #include "ilha.h"
 #include "idiomacod.h"
 #include "badges.h"
 #include "marco.h"
+#include "titulotempo.h"
+static TituloTempo detalheTempo;
 #include "ajustes.h"
 #include "home.h"
 #include "extras.h"
@@ -42,6 +45,7 @@
 #include "agenda.h"
 #include "agendaui.h"
 #include "vistoep.h"
+#include "vaitocarui.h"
 #include "pessoa.h"
 #include "streams.h"
 #include "descoberta.h"
@@ -59,6 +63,8 @@
 #include "layout.h"
 #include "corviva.h"
 #include "trocaarte.h"
+#include "telefoneui.h"
+#include "detmais.h"
 #include "catalogo.h"
 #include "artehero.h"
 #include "recomenda.h"
@@ -73,14 +79,43 @@
 #include <strings.h>
 #include <math.h>
 #include "ponteiro.h"
+#include "rolagemtoque.h"
 #include "plrui.h"
+#include "avisodisp.h"
 #include "svdesenho.h"
 #include "amigostitulo.h"
 #include "juntos.h"
 #include "juntosui.h"
+#include "amigostitulo_ui.h"
+#include "temporadas_grafico.h"
+#include "detrotulo.h"
 static void ponteiroDetalhe(int r, int c);   // ponteiro do Magic Remote (#99)
 static int moverFileira(int dy);
 static void heroReiniciar(void);
+
+static int detalheRetrato(void) {
+#ifdef NV_TOUCH_UI
+  return NV_TELA_W < NV_TELA_H;
+#else
+  return 0;
+#endif
+}
+static float larguraTextoHero(void) {
+  return detalheRetrato() ? fminf(NV_DETW2_TEXTO_W, NV_TELA_W - 192.0f) : NV_DETW2_TEXTO_W;
+}
+static float larguraLogoHero(void) {
+  return detalheRetrato() ? fminf(NV_DETW_LOGO_MAXW, larguraTextoHero()) : NV_DETW_LOGO_MAXW;
+}
+static float larguraDetalhes(void) {
+  return detalheRetrato() ? fminf(NV_DETF_DET_W, NV_TELA_W - NV_DETP_X * 2) : NV_DETF_DET_W;
+}
+static GfxRect heroAcaoRect(float *x, float *cy, float w, float h) {
+  if (detalheRetrato() && *x + w > NV_TELA_W - 96.0f) {
+    *x = 96.0f;
+    *cy += NV_DETW2_CIRC + NV_DETW2_BTN_GAP;
+  }
+  return (GfxRect){*x, *cy - h * .5f, w, h};
+}
 
 // Teto de itens por secao. 24 e nao 8: uma temporada de "Silo" tem 10
 // episodios e o vetor de 8 escondia os dois ultimos — a lista parecia menor do
@@ -126,6 +161,12 @@ static void heroReiniciar(void);
 #define COLL_PO_W    140.0f
 #define COLL_PO_H    210.0f
 
+static float colecaoTopo(void) { return detalheRetrato() ? 480.0f : COLL_TOPO; }
+static GfxRect colecaoListaRect(void) {
+  float x = detalheRetrato() ? NV_DETP_X : COLL_X;
+  return (GfxRect){x, colecaoTopo(), NV_TELA_W - NV_DETP_X - x, NV_TELA_H - colecaoTopo() - 60.0f};
+}
+
 // Cartao de produtora/rede: o dobro aproximado do `.detail-company-card` do web
 // (180x70 em px de CSS) — na TV 1080p os cards medem em torno disto.
 // Glass UI (mockup "Detalhe", "Producao"): o .estu e uma pilula de 52 com o
@@ -157,7 +198,7 @@ static void heroReiniciar(void);
 #define FR_COL_W    1040.0f
 #define FR_COL_GAP    96.0f
 
-#define N_SECOES    16
+#define N_SECOES    17
 // Trilho do segmentado de temporadas (.seg): 5 px de folga em volta dos itens.
 #define DET_SEG_PAD   5.0f
 #define N_ELENCO    6
@@ -174,6 +215,9 @@ static CatItem idxCopia;
 static int  idxTemCopia;
 // Ultima revisao do catalogo que esta pagina ja tratou. Ver detail_atualizar.
 static unsigned revistaVista;
+// cat_geracao_episodios() da ultima vez que se conferiu a lista. Zerada na
+// abertura (abrirInterno) para o primeiro quadro conferir sempre.
+static unsigned epGerVista; static int epGerConferido;
 // O tipo (serie ou nao) com que os extras foram pedidos nesta abertura. Item
 // de tipo incerto ("anime" de catalogo do AIOMetadata) abre como filme e o
 // /meta o resolve como serie depois (descoberta.c, buscarEps): ai os extras
@@ -187,6 +231,12 @@ static int  nivel = 0;
 // Ficha da pessoa por cima da tela de titulo. Nao e um `nivel` a mais porque
 // nao e um estado da MESMA pagina: e outra tela, que aparece e sai inteira.
 static int  pessoaAberta;
+// SEGURAR OK NUMA LISTA DA PAGINA = o menu do cartaz (ctxlista.h): filmografia,
+// lista da saga e a fileira "Recomendações". Os retangulos sao os do ultimo
+// desenho do cartao em foco (antes do zoom do foco).
+static CtxHold holdLista;
+static GfxRect relFocoRect, colFocoRect, pesFocoRect;
+static char    relFocoArte[NV_TEX_URL_MAX], colFocoArte[NV_TEX_URL_MAX], pesFocoArte[NV_TEX_URL_MAX];
 static int  pessoaFoco;
 // Primeira LINHA visivel da filmografia. A grade tem 6 por linha e cabem duas
 // linhas na tela; sem isto o resto dos creditos era cortado sem aviso.
@@ -206,6 +256,7 @@ static int  relFoco;
 static int   colListaAberta, colListaFoco;
 static float colListaScroll, colListaVel;
 static void abrirListaColecao(void);
+static void abrirParteColecao(void);
 static void eventoListaColecao(const SDL_Event *e);
 static void desenhaListaColecao(float a);
 // Temporada escolhida no painel de notas por episodio (indice em extras).
@@ -220,9 +271,15 @@ static int  ratSinc;
 #define PES_CARD_H   318.0f
 #define PES_CARD_GAP  32.0f
 #define PES_POR_LINHA  6
+static int pessoaColunas(void) {
+  if (!detalheRetrato()) return PES_POR_LINHA;
+  int n = (int)((NV_TELA_W - NV_DETP_X - PES_COL_X + PES_CARD_GAP) / (PES_CARD_W + PES_CARD_GAP));
+  return n < 1 ? 1 : n > PES_POR_LINHA ? PES_POR_LINHA : n;
+}
 
 static int maisAcoes;
 static int  botao = 0;      // botao em foco no hero
+static GfxRect maisAncora;  // onde o "..." foi desenhado (ilha detmais.h)
 // A ILHA DE AMIGOS (quem assistiu/gostou deste titulo), logo abaixo dos botoes:
 // um alvo focavel do nivel 0, entre os botoes e as secoes. Baixo nos botoes cai
 // nela, baixo nela entra nas secoes, cima volta aos botoes. OK pede ao roteador
@@ -237,6 +294,9 @@ static int  amigosDoTitulo(AmigosTitulo *t) {
   const CatItem *c = cat_item(idx);
   return c && c->imdb[0] && amigostitulo_obter(c->imdb, t);
 }
+// O ULTIMO EPISODIO da serie (a ultima temporada que o extras conhece), para
+// "Rafa terminou a série". 0/0 = nao se sabe ainda: a frase nunca e afirmada.
+static void ultimoEpisodio(int *t, int *e);
 static int  pedReproduzir = 0, pedMarcar = 0, pedFontes = 0;
 // Marcar como ASSISTIDO. Separado de pedMarcar, que e "adicionar a lista".
 static int  pedAssistido = 0;
@@ -247,10 +307,24 @@ static Foco foco;
 static float animFoco[N_SECOES][N_ITENS];
 static float scrollSec[N_SECOES];    // rolagem HORIZONTAL de cada fileira
 static float scrollY = 0.0f;         // rolagem VERTICAL do documento
+static float corpoAlpha(float entrada) { return detalheRetrato() ? entrada : pg; }
+// No telefone o documento ja aparece no topo; a grade de arte precisa ser
+// a unica camada de conteudo durante a entrada e a saida tambem.
+static int corpoSobArte(void) {
+  return telefoneui_ativo() && trocaarte_visivel() > 0.005f;
+}
+static int corpoOculto(int serie) {
+  return !detalheRetrato() && !serie && pg <= .01f && scrollY < 1.0f;
+}
 // Velocidade da mola de 2a ordem da rolagem (anim_mola2): partida macia e
 // cauda exponencial, a MESMA curva que a home mede. A de 1a ordem que estava
 // aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
 static float velSec[N_SECOES], velY = 0.0f;
+#ifdef NV_TOUCH_UI
+static ToqueRolagem toqueDetalhe, toqueSec[N_SECOES], toqueColecao, toquePessoa;
+static int toqueSecAtiva = -1;
+static float toquePessoaOffset;
+#endif
 // Miniatura de episodio e cartaz relacionado chegando: esvanecem sobre o
 // esqueleto em vez de trocar num quadro (revela.h). Um registro por coluna.
 #define DET_REV_EP 64
@@ -274,7 +348,6 @@ static Uint32 trailerPrazo = 0;
 // 03/10: "pode abrir por cima"). Antes a tecla ligava `saindo` junto e a
 // pagina fechava para a barra abrir sobre a tela de baixo. Voltar/DIREITA na
 // barra devolvem o foco aqui; um destino escolhido fecha a pagina (app.c).
-static int    pediuSocial = 0; // CIMA no alto da pagina: abrir Salvos/Avisos (ver app.c)
 static int    pediuMenu = 0;   // ESQUERDA na borda: abrir a barra por cima (ver app.c)
 // A barra esta aberta por cima (detail_sob_menu): o trailer segue tocando,
 // MUDO, e o som volta quando ela fecha. `somAntesMenu` lembra se tinha som.
@@ -320,6 +393,7 @@ static float  trailerFade = 0.0f;
 static int   carro;                 // 1 = esta abertura e o carrossel
 static int   carN, carIdx[CAR_MAX];  // titulos da fileira (indices do catalogo)
 static int   carPos;                // titulo pedido pelo D-pad
+static char  carPre[CAR_MAX];       // 1 = vizinho ja pre-buscado (ou nada a buscar) nesta abertura
 static int   carAplicado;           // titulo cuja pagina esta montada (= idx)
 static int   carBotaoFim;           // chegou pela direita: foco no ultimo botao
 static int   carFocou;              // a home ja recebeu o titulo da volta
@@ -448,6 +522,13 @@ static int comentEp = 0;
 // le o foco ENQUANTO ele esta na fileira; ao descer ate os cartoes o foco ja
 // saiu de la e a conta caia no "retomar"/"proximo", que e outro episodio.
 static int comEpT = 0, comEpE = 0;
+// Escolhendo o episodio dos comentarios (segurar OK na pilula "Episódio"): o
+// foco foi para as fileiras de temporada/episodio e o OK volta para a pilula
+// em vez de reproduzir.
+static int comPicando = 0;
+// Dica de primeira vez da pilula, por perfil (avisodisp.h).
+#define COM_DICA_CHAVE "dica:comentarios-episodio"
+static int comDicaPend;   // enfileirada, ainda nao vista na ilha
 static int abaInfo = 0;              // aba de informacao escolhida
 
 // AS DUAS SECOES QUE SO CARREGAM QUANDO ALGUEM ENTRA NELAS.
@@ -530,7 +611,10 @@ typedef enum { SEC_TEMPORADAS, SEC_EPISODIOS, SEC_ABAS_INFO, SEC_ELENCO, SEC_REL
                // COLECAO do filme (#194): logo abaixo das recomendacoes, as
                // duas respondem "o que ver depois deste".
                SEC_COLECAO, SEC_COMENTARIOS,
-               SEC_ESTUDIOS, SEC_FRASES, SEC_DETALHES } TipoSecao;
+               SEC_ESTUDIOS, SEC_FRASES, SEC_DETALHES,
+               // SEU PROGRESSO (grafico de temporadas, temporadas_grafico.h):
+               // so na serie, entre os episodios e as Notas.
+               SEC_PROGTEMP } TipoSecao;
 // A ORDEM DO FILME no Glass UI (mockup "Detalhe", 03/10): Trailers e extras,
 // Elenco, Notas, O que estao dizendo, Mais como este, Colecao, Frases, Ficha
 // tecnica e Producao. Ela NAO e a ordem do enum, porque o enum tambem e a
@@ -545,12 +629,12 @@ static const int ORDEM_FILME[] = {
   SEC_NOTAS, SEC_TEMPORADAS, SEC_EPISODIOS, SEC_ABAS_INFO, SEC_ELENCO, SEC_RELACIONADOS,
   SEC_AUD_ARCO, SEC_AUD_RADAR, SEC_AUD_DIGITAL, SEC_NOTAS_EP,
   SEC_TRAILERS, SEC_COLECAO, SEC_COMENTARIOS,
-  SEC_ESTUDIOS, SEC_FRASES, SEC_DETALHES };
+  SEC_ESTUDIOS, SEC_FRASES, SEC_DETALHES, SEC_PROGTEMP };
 // NUMEROS DA TEMPORADA (Glass UI 1.8, mockup "Notas e graficos"): os tres
 // graficos da serie viraram UM bloco logo depois das Notas. Ele usa a fileira
 // SEC_AUD_ARCO (SEC_NUMEROS); RADAR, DIGITAL e NOTAS_EP ficaram sem colunas.
 static const int ORDEM_SERIE[] = {
-  SEC_TEMPORADAS, SEC_EPISODIOS, SEC_NOTAS, SEC_AUD_ARCO, SEC_ABAS_INFO, SEC_ELENCO,
+  SEC_TEMPORADAS, SEC_EPISODIOS, SEC_PROGTEMP, SEC_NOTAS, SEC_AUD_ARCO, SEC_ABAS_INFO, SEC_ELENCO,
   SEC_RELACIONADOS, SEC_AUD_RADAR, SEC_AUD_DIGITAL, SEC_NOTAS_EP,
   SEC_TRAILERS, SEC_COLECAO, SEC_COMENTARIOS,
   SEC_ESTUDIOS, SEC_FRASES, SEC_DETALHES };
@@ -570,6 +654,7 @@ static float epExtraAltura(void);
 static float epAppleExtra(void);
 static float notasBloco(void);
 static float notasTopoSerie(void);
+static float progTopoSerie(void);
 static float numerosTopoSerie(void);
 static float alturaSecao(int r);
 static float epTempY(void);
@@ -752,6 +837,34 @@ static void irParaTemporada(int c, int moverFoco) {
   if (moverFoco && epVisiveis() > 0) { foco.fileira = SEC_EPISODIOS; foco.coluna = 0; }
 }
 
+// OK NUMA COLUNA DO GRAFICO "Seu progresso": a pagina passa para aquela
+// temporada e o foco sobe para a fileira de episodios, no primeiro episodio
+// que voce ainda nao viu (o primeiro de todos se ja viu a temporada inteira).
+static void progAbrirTemporada(int col) {
+  const TgDados *d = tgraf_dados(idx);
+  const CatItem *ci = cat_item(idx);
+  int k, c, q;
+  if (!ci || col < 0 || col >= d->n) return;
+  for (k = 0; k < ci->nTemporadas; k++) if (ci->temporadas[k] == d->t[col].numero) break;
+  if (k >= ci->nTemporadas) return;
+  temporada = k;
+  foco.colunaLembrada[SEC_TEMPORADAS] = k;
+  irParaTemporada(k, 0);
+  q = epVisiveis();
+  if (q < 1) return;
+  for (c = 0; c < q; c++) {
+    const CatEp *e = cat_episodio(idx, epAbsoluto(c));
+    if (e && vistoep_estado(ci->imdb, e->temporada, e->episodio) != 1) break;
+  }
+  if (c >= q) c = 0;
+  foco.nColunas[SEC_EPISODIOS] = q;
+  foco.colunaLembrada[SEC_PROGTEMP] = col;
+  foco.fileira = SEC_EPISODIOS; foco.coluna = c;
+  epAncora = c; foco.colunaLembrada[SEC_EPISODIOS] = c;
+  { const CatEp *ep = cat_episodio(idx, epAbsoluto(c));
+    comEpT = ep ? ep->temporada : 0; comEpE = ep ? ep->episodio : 0; }
+}
+
 // Troca de temporada pela PONTA da fileira de episodios (dir=+1 direita,
 // -1 esquerda). Devolve 1 se trocou. So age quando o foco ja esta na ultima
 // (dir>0) ou primeira (dir<0) coluna e existe temporada do outro lado.
@@ -844,11 +957,13 @@ static void recalcularLayout(void) {
       }
       // NUMEROS DA TEMPORADA logo depois das Notas; o titulo e do proprio bloco.
       if (r == SEC_NUMEROS) topoSec[r] = conteudoSec[r] = numerosTopoSerie();
+      if (r == SEC_PROGTEMP) topoSec[r] = conteudoSec[r] = progTopoSerie();
       alvoSec[r] = (r == SEC_ABAS_INFO) ? NV_DETP_ALVO_ABAS
                                         : NV_DETP_ALVO_FILEIRA;
     }
     alvoSec[SEC_NOTAS] = alvoQueCabe(alturaSecao(SEC_NOTAS));
     alvoSec[SEC_NUMEROS] = alvoQueCabe(alturaSecao(SEC_NUMEROS));
+    alvoSec[SEC_PROGTEMP] = alvoQueCabe(alturaSecao(SEC_PROGTEMP));
     docFim = NV_DETP_FIM;
     // SECAO DO TRAKT NA SERIE: empilhada abaixo do elenco, como na referencia.
     // Era o "falta a secao do trakt na de series" — ela existia so em filme.
@@ -1093,7 +1208,10 @@ static const char *sinopseDe(int i) {
 // sao essas. O enriquecimento continua acontecendo e fica no catalogo — a
 // proxima abertura, e a home, ja veem o logo localizado. Sem logo nenhum ao
 // abrir, o que chegar entra (vazio nao e "arte boa").
-static char arteFixa[512], logoFixo[512], logoCatalogoFixo[512];
+// arteFixa no teto da textura (#361): quando o titulo nao tem fundo ela e o
+// PROPRIO poster, que vai a 2048 — com 512 o cartaz de ~600 caracteres virava
+// um 404 so na pagina do titulo. Logo segue o CatItem.logo (512).
+static char arteFixa[NV_TEX_URL_MAX], logoFixo[512], logoCatalogoFixo[512];
 static int  arteFixaPoster;
 
 static const char *logoDe(int i) {
@@ -1236,8 +1354,24 @@ static void txt_peso(TxtLinha l, float x, float y, float a, float grossura) {
   if (grossura > 0.9f)  txt_desenhar_alpha(l, x + grossura, y, a);
 }
 
+// AUDITORIA (tools/auditoria-release.sh): uma linha quando o numero de
+// episodios da pagina aberta muda. E o que o smoke do Mac le para dizer se a
+// serie abriu com a lista; a captura de tela nao diz isso sozinha.
+static int audIdx = -1, audN = -2;
+static void auditoriaEpisodios(void) {
+  const CatItem *ci;
+  int n;
+  if (!aberto || saindo || !ehSerie() || !(ci = cat_item(idx))) return;
+  n = cat_n_episodios(idx);
+  if (idx == audIdx && n == audN) return;
+  audIdx = idx; audN = n;
+  printf("[detail] episodios na pagina: %s %d\n", ci->imdb, n);
+  fflush(stdout);
+}
+
 static void abrirInterno(const HomeItem *it) {
   pediuMenu = 0;
+  audIdx = -1;
   marco("detail_abrir");
   // O TITULO ANTERIOR PODE TER DEIXADO FIO NO AR. Trocar de titulo por dentro
   // (um credito de ator, um "Mais como este") reabre esta tela sem passar pelo
@@ -1251,8 +1385,17 @@ static void abrirInterno(const HomeItem *it) {
   audAberta = 0; audTempAberta = -1; audTempVista = -1; frasesAberta = 0;
   item = *it;
   aberto = 1; saindo = 0; nivel = 0; botao = 0; focoAmigos = 0;
+  amtui_fechar();
+  detmais_zerar();
   heroReiniciar();
   t = 0.0f; pg = 0.0f; scrollY = 0.0f; velY = 0.0f; abaInfo = 0; pessoaAberta = 0;
+#ifdef NV_TOUCH_UI
+  memset(&toqueDetalhe, 0, sizeof toqueDetalhe);
+  memset(toqueSec, 0, sizeof toqueSec);
+  memset(&toqueColecao, 0, sizeof toqueColecao);
+  memset(&toquePessoa, 0, sizeof toquePessoa);
+  toqueSecAtiva = -1; toquePessoaOffset = 0;
+#endif
   relFoco = 0; colListaAberta = 0; colListaFoco = 0;
   colListaScroll = colListaVel = 0.0f; pedAbrir = -1; ratTemp = 0; ratSinc = 0;
   trailerDesde = 0; trailerTentado = 0; trailerFade = 0.0f;
@@ -1260,6 +1403,7 @@ static void abrirInterno(const HomeItem *it) {
   trailerSemFonteLogado = 0;
   trailercinema_zerar(&trailerCinema);
   idx = it->indice;
+  titulo_tempo_inicio(&detalheTempo, "detalhe", cat_item(idx));
   // O TRAILER DO CARTAZ CONTINUA AQUI, COM SOM (pedido do rawldon, canario
   // tpk-janela; so o .tpk, NV_TRAILER_CONTINUA_DETALHE em trailerfonte.h).
   // Se o destaque da home esta tocando o trailer DESTE titulo, a pagina o
@@ -1291,6 +1435,11 @@ static void abrirInterno(const HomeItem *it) {
 #endif
     if (!adotou) trailer_fechar(); }
   revistaVista = cat_revisao();
+  // A PAGINA PEDE A PROPRIA LISTA. Quem pedia era so app.c, e so quando o alvo
+  // de fontes MUDA: reabrir a serie que esta tocando (pela ilha, pelo mini
+  // player) tem o mesmo alvo, e a pagina abria com a faixa vazia e sem pedido
+  // nenhum — sem os cartoes de episodio (TCL do dono, 2.0.3).
+  epGerConferido = 0;
   // Guarda identidade e copia ANTES de qualquer republicacao. Ver revalidarIdx.
   arteFixa[0] = logoFixo[0] = logoCatalogoFixo[0] = 0;
   arteFixaPoster = 0;   // arte nova por abertura
@@ -1301,7 +1450,11 @@ static void abrirInterno(const HomeItem *it) {
       idxCopia = *ci0; idxTemCopia = 1;
     } }
   { const CatItem *ci0 = cat_item(idx);
-    artehero_logo_sessao_iniciar(ci0); }
+    artehero_logo_sessao_iniciar(ci0);
+    const char *logo = logoDe(idx);
+    GLuint tex = logo ? tex_obter_logo_larg_qualquer(logo, NV_DETW_LOGO_MAXW) : 0;
+    titulo_tempo_logo(&detalheTempo, "detalhe", logo, tex, 0);
+  }
   // Nota do Trakt, comentarios e relacionados. Pedido na ABERTURA e nao no
   // desenho: as abas so aparecem depois que o dado chega, e pedir no desenho
   // faria a barra de abas surgir com o titulo ja na tela.
@@ -1337,6 +1490,7 @@ static void abrirInterno(const HomeItem *it) {
   temporada = 0;
   epAncora = 0;
   comEpT = comEpE = 0;
+  comPicando = 0;
   { const CatItem *ci0 = cat_item(idx);
     int t = 0, e = 0, achou = 0;
     if (ci0 && ci0->progresso > 0 && ci0->progresso < ajustes_cw_concluido() &&
@@ -1396,6 +1550,9 @@ void detail_mostrar_pessoa(long tmdb, const char *nome, const char *foto) {
   pessoaAberta = 1;
   pessoaFoco = 0;
   pessoaLinha = 0;
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toquePessoa); toquePessoaOffset = 0;
+#endif
 }
 
 void detail_abrir(const HomeItem *it) {
@@ -1407,11 +1564,12 @@ void detail_abrir(const HomeItem *it) {
   // (o item aberto e o focado na home). Trocar de titulo por dentro (credito,
   // "Mais como este") e os outros caminhos de abertura seguem como sempre.
   carro = 0;
-  if (!(aberto && !saindo) && it && ajustes_home_layout() == HOME_LAYOUT_DINAMICA)
+  if (!detalheRetrato() && !(aberto && !saindo) && it && ajustes_home_layout() == HOME_LAYOUT_DINAMICA)
     n = home_fileira_titulos(carIdx, CAR_MAX, &pos);
   if (n > 0 && pos >= 0 && carIdx[pos] == it->indice) {
     carro = 1; carN = n; carPos = carAplicado = pos; carBotaoFim = 0; carFocou = 0; carEsperaRect = 0;
     carOff = (float)pos; carVel = 0.0f; cartao = 1.0f; cartaoVel = 0.0f;
+    memset(carPre, 0, sizeof carPre);
     carCheia = 0; carTxt = 1.0f; carTxtVel = 0.0f;
     carOrigem = it->rect;
     if (carOrigem.w < 8.0f || carOrigem.h < 8.0f)
@@ -1419,6 +1577,9 @@ void detail_abrir(const HomeItem *it) {
     printf("[carrossel] abre %d/%d da fileira\n", pos + 1, n); fflush(stdout);
   }
   abrirInterno(it);
+  // Quem abre o detalhe por fora do roteador de app.c (ilha, player, pos-play)
+  // tambem fica sem a lista de episodios; pedir aqui e idempotente.
+  if (it) desc_episodios_garantir(it->indice);
   if (replacing) t = pg = 1.0f; // Switch titles directly without exposing Home.
 }
 
@@ -1444,6 +1605,32 @@ static void carAplicar(void) {
   botao = carBotaoFim ? nBotoes() - 1 : 0;
   if (botao < 0) botao = 0;
   printf("[carrossel] titulo %d/%d: %s\n", carPos + 1, carN, ci->titulo); fflush(stdout);
+}
+// PRE-BUSCA DOS VIZINHOS (+1, depois -1): meta e lista de episodios prontas
+// antes de o foco chegar (C9, 2.0.3: "[meta]" e "[desc]" saiam na chegada).
+// So com o titulo em cena assentado e sem pedido proprio em voo; um fio de
+// cada vez e uma tentativa por titulo e por abertura (rede fora nao vira laco).
+static void carPreBuscar(void) {
+  static const int passo[2] = { 1, -1 };
+  static int ligada = -1;
+  int j;
+  // So para medir (A/B na bancada): NUVIO_CARROSSEL_PREBUSCA=0 desliga. Nao e ajuste.
+  if (ligada < 0) { const char *e = getenv("NUVIO_CARROSSEL_PREBUSCA"); ligada = !(e && e[0] == '0'); }
+  if (!ligada) return;
+  if (desc_episodios_carregando(carIdx[carPos])) return;
+  for (j = 0; j < 2; j++) {
+    int k = carPos + passo[j], r;
+    if (k < 0 || k >= carN || carPre[k]) continue;
+    r = desc_episodios_precarregar(carIdx[k]);
+    if (r < 0) return;
+    carPre[k] = 1;
+    if (r > 0) {
+      const CatItem *ci = cat_item(carIdx[k]);
+      printf("[carrossel] pre-busca %d/%d: %s\n", k + 1, carN, ci ? ci->titulo : "");
+      fflush(stdout);
+      return;
+    }
+  }
 }
 static void carPasso(int d) {
   if (carCheia || nivel > 0) return;
@@ -1485,7 +1672,10 @@ static int carDesenhaFundo(void) {
 
 int detail_aberto(void) { return aberto; }
 int detail_relogio_oculto(void) { return aberto && carro && !carCheia && nivel == 0; }
-int detail_pediu_social(void) { int p = pediuSocial; pediuSocial = 0; return p; }
+// #407: detail_pediu_social saiu (CIMA no topo nao abre mais o painel); a
+// accessor fica para o linkage e diz 0, para o caminho de app.c nao crescer
+// um #ifdef a mais por causa de um atalho que nao existe mais.
+int detail_pediu_social(void) { return 0; }
 
 // 0..1 de quanto o detalhe ja tomou a tela. A home le isto para DESCER as
 // fileiras enquanto ele entra: e o movimento que o dono descreve como "so os
@@ -1582,6 +1772,51 @@ static int episodioDosComentarios(int *temp, int *epis) {
     *temp = comEpT; *epis = comEpE; return 1;
   }
   return episodioAlvo(temp, epis, NULL);
+}
+
+// De volta a pilula "Episódio" com o episodio que o foco pisou (comEpT/comEpE
+// seguem o foco na fileira de episodios, ver detail_atualizar).
+static void comentariosVoltar(void) {
+  // Captura o episodio focado AQUI: o laco SDL processa todos os eventos antes
+  // de detail_atualizar, entao Direita + OK no mesmo lote deixava comEpT/comEpE
+  // um episodio atras. A coluna lembrada tambem e a que a reabertura usa.
+  if (foco.fileira == SEC_EPISODIOS) {
+    const CatEp *ep = cat_episodio(idx, epAbsoluto(foco.coluna));
+    if (ep) { comEpT = ep->temporada; comEpE = ep->episodio; }
+    epAncora = foco.coluna;
+    foco.colunaLembrada[SEC_EPISODIOS] = foco.coluna;
+  }
+  comPicando = 0;
+  comentEp = 1;
+  foco.fileira = SEC_COMENTARIOS;
+  foco.coluna = 1;
+}
+
+static void comentariosEscolher(void) {
+  int n = foco.nColunas[SEC_EPISODIOS], k, c;
+  const CatItem *ci = cat_item(idx);
+  if (n <= 0) return;
+  // Voltar das temporadas deixa a pagina em outra temporada que a confirmada:
+  // reabrir volta para a do episodio de comEpT/comEpE.
+  if (comEpT > 0 && ci && ci->nTemporadas > 0 && temporadaEm(temporada) != comEpT)
+    for (k = 0; k < ci->nTemporadas; k++)
+      if (ci->temporadas[k] == comEpT) {
+        temporada = k;
+        irParaTemporada(k, 0);
+        foco.colunaLembrada[SEC_TEMPORADAS] = k;
+        n = foco.nColunas[SEC_EPISODIOS] = epVisiveis();
+        for (c = 0; c < n; c++) {
+          const CatEp *e = cat_episodio(idx, epAbsoluto(c));
+          if (e && e->episodio == comEpE) { epAncora = c; foco.colunaLembrada[SEC_EPISODIOS] = c; break; }
+        }
+        break;
+      }
+  comPicando = 1;
+  foco.fileira = SEC_EPISODIOS;
+  foco.coluna = foco.colunaLembrada[SEC_EPISODIOS];
+  if (foco.coluna < 0 || foco.coluna >= n) foco.coluna = n - 1 < epAncora ? n - 1 : epAncora;
+  ilha_avisar("det-com-ep", ILHA_INFO, NULL,
+              i18n("Escolha a temporada e o episódio e aperte OK"), 6000u, 0);
 }
 
 int detail_ep_foco(int *temp, int *epis) {
@@ -1717,7 +1952,12 @@ static float epAppleExtra(void) { return epApple() ? epCardH() - 414.0f : 0.0f; 
 // elenco; 0 enquanto as notas nao chegaram.
 // Topo do cabecalho: fundo dos cartoes de episodio + o vao antes das notas (60,
 // o mesmo de vaoAntes).
-static float notasTopoSerie(void) { return epRowY() + epCardH() + 60.0f; }
+// O GRAFICO DE TEMPORADAS ("Seu progresso") vem antes das Notas e as empurra.
+static float progTopoSerie(void) { return epRowY() + epCardH() + 60.0f; }
+static float progBloco(void) {
+  return secaoN(SEC_PROGTEMP) > 0 ? alturaSecao(SEC_PROGTEMP) + 60.0f : 0.0f;
+}
+static float notasTopoSerie(void) { return progTopoSerie() + progBloco(); }
 // Fim das Notas (= topo dos Numeros da temporada, que vem logo depois).
 static float numerosTopoSerie(void) {
   float y = notasTopoSerie();
@@ -1728,7 +1968,8 @@ static float numerosTopoSerie(void) {
 // Notas + Numeros da temporada empurram abas e elenco juntos.
 static float notasBloco(void) {
   float fim;
-  if (!ehSerie() || (secaoN(SEC_NOTAS) <= 0 && secaoN(SEC_NUMEROS) <= 0)) return 0.0f;
+  if (!ehSerie() || (secaoN(SEC_NOTAS) <= 0 && secaoN(SEC_NUMEROS) <= 0 &&
+                     secaoN(SEC_PROGTEMP) <= 0)) return 0.0f;
   fim = numerosTopoSerie();
   if (secaoN(SEC_NUMEROS) > 0) fim += alturaSecao(SEC_NUMEROS) + NV_DETF_SEC_GAP;
   return fim - NV_DETP_G_ABAS - epAppleExtra();
@@ -1770,6 +2011,7 @@ static float alturaSecao(int r) {
     case SEC_FRASES:    return frasesAberta ? frasesAlt : CHAMADA_H;
     case SEC_NOTAS:     return notasui_fontes_altura(notasDados());
     case SEC_NOTAS_EP:  return 0.0f;
+    case SEC_PROGTEMP:  return tgraf_altura_dados(tgraf_dados(idx));
   }
   return 0.0f;
 }
@@ -1833,7 +2075,13 @@ static int secaoN(int r) {
     // filme: os dados sempre estiveram la (o log mostra "coment=8 rel=12"),
     // mas sem aba e sem secao nao havia como chegar neles.
     case SEC_TRAILERS:
+#ifdef __EMSCRIPTEN__
       return extras_n_trailers();
+#else
+      // #417: no nativo nao ha player de YouTube; todo cartao tocava o MESMO
+      // trailer do titulo (Apple/IMDb). Um cartao so, que e o que de fato toca.
+      return extras_n_trailers() > 0 ? 1 : 0;
+#endif
     case SEC_RELACIONADOS: {
       int n;
       n = extras_n_relacionados();
@@ -1917,12 +2165,21 @@ static int secaoN(int r) {
     case SEC_FRASES:
       return (ci && ci->imdb[0]) ? 1 : 0;
     // Sem nenhuma nota a secao nao existe (nada de painel vazio).
-    // UM BLOCO POR FONTE na grade de duas colunas (detail_evento anda nela).
+    // UMA PARADA SO: o numero grande. Os blocos por fonte nao tomam foco
+    // (dono 11/10/2026: "so focar no numero grande e depois ja desce").
     case SEC_NOTAS:
-      return notasui_fontes_n(notasDados());
+      return notasui_fontes_n(notasDados()) > 0 ? 1 : 0;
     // A grade de episodios virou o cartao "Notas por episodio" do bloco acima.
     case SEC_NOTAS_EP:
       return 0;
+    // SEU PROGRESSO: uma coluna por temporada do grafico; esquerda/direita
+    // anda nelas e OK leva a fileira de episodios para aquela temporada.
+    case SEC_PROGTEMP: {
+      const TgDados *d;
+      if (!ehSerie()) return 0;
+      d = tgraf_dados(idx);
+      return tgraf_existe(d) ? (d->n < N_ITENS ? d->n : N_ITENS) : 0;
+    }
   }
   return 0;
 }
@@ -1952,7 +2209,7 @@ static int temInicio(void) {
   { int t0 = 0, e0 = 0, de = 0;
     return episodioAlvo(&t0, &e0, &de) && de == 2; }
 }
-// O QUINTO CIRCULAR: "Recomendar a um amigo".
+// "RECOMENDAR A UM AMIGO" — hoje uma linha da ilha "Mais opcoes" (detmais.h).
 //
 // SO EXISTE SE O PACOTE TEM O SERVICO. Sem NUVIO_REC_URL compilada,
 // recomenda_ativo() e 0 e o botao nao aparece — a mesma regra do item de menu
@@ -1996,7 +2253,7 @@ static const char *rotuloLembrar(void) {
 // Instante em que o dono ligou o lembrete, para o despertador tocar inteiro
 // no quadro seguinte ao OK. 0 = nao houve troca nesta sessao.
 static Uint32 lembreteEm;
-// "TROCAR ARTE" (#142): o ULTIMO circular da linha, depois do recomendar. So
+// "TROCAR ARTE" (#142): linha da ilha "Mais opcoes" (detmais.h). So
 // filme e serie com id — e o id que guarda a escolha (arteescolha.h), e canal
 // e evento nao tem backdrop de fonte nenhuma para escolher.
 static int temArte(void) {
@@ -2004,7 +2261,7 @@ static int temArte(void) {
   if (!ci || (!ci->imdb[0] && ci->tmdb <= 0)) return 0;
   return !strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series");
 }
-// "ASSISTIR TRAILER" (#234): circular proprio na linha de acoes, o ULTIMO. So
+// "ASSISTIR TRAILER" (#234): a primeira linha da ilha "Mais opcoes". So
 // existe quando ha trailer para tocar (fonte conhecida na ordem do ajuste, ou
 // um trailer do YouTube onde o navegador e o caminho) — sem fonte o botao some
 // em vez de prometer o que nao toca. Independe do "Trailer automatico": com o
@@ -2015,7 +2272,7 @@ static int temTrailer(void) {
   if (trailer_suportado() && trailerFonte(0, NULL, 1)) return 1;
   return extras_n_trailers() > 0;
 }
-// "EXPLORAR" (Explorar 2.0): o ULTIMO circular, depois do trailer. Abre a toca
+// "EXPLORAR" (Explorar 2.0): linha da ilha "Mais opcoes". Abre a toca
 // do coelho neste titulo (explorar.h); so filme e serie, que sao o que a
 // vizinhanca sabe cruzar.
 static int temExplorar(void) {
@@ -2031,13 +2288,29 @@ static int temJuntos(void) {
   if (!juntos_disponivel() || !ci || !ci->imdb[0] || strncmp(ci->imdb, "tt", 2)) return 0;
   return !strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series");
 }
+// "MAIS OPCOES" (dono, 06/10/2026: "muitos botoes na pagina de titulos"): o
+// trailer, o Explorar, o Trocar arte e o Recomendar sairam da linha e moram
+// na ilha do circular "..." (detmais.h), o ULTIMO da linha. Ele so existe
+// quando ha ao menos uma delas — senao seria um botao que abre nada.
+static void maisDisponiveis(int d[DMAIS_N]) {
+  d[DMAIS_TRAILER] = temTrailer();
+  d[DMAIS_EXPLORAR] = temExplorar();
+  d[DMAIS_ARTE] = temArte();
+  d[DMAIS_RECOMENDAR] = temRecomendar();
+}
+static int temMais(void) {
+  int d[DMAIS_N], i;
+  maisDisponiveis(d);
+  for (i = 0; i < DMAIS_N; i++) if (d[i]) return 1;
+  return 0;
+}
 static int nBotoesTodos(void) {
   return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0) + (temLembrar() ? 1 : 0)
-         + (temRecomendar() ? 1 : 0) + (temArte() ? 1 : 0) + (temTrailer() ? 1 : 0)
-         + (temExplorar() ? 1 : 0) + (temJuntos() ? 1 : 0);
+         + (temMais() ? 1 : 0) + (temJuntos() ? 1 : 0);
 }
 
 static int acoesAgrupadas(void) {
+  if (detalheRetrato()) return 0;
   return carro || ajustes_home_layout() == HOME_LAYOUT_DINAMICA ||
          ajustes_home_layout() == HOME_LAYOUT_MODERNA;
 }
@@ -2054,7 +2327,7 @@ static int nBotoes(void) {
 // e os circulares escorregam um para a direita.
 enum { ACAO_PRIMARIO = 0, ACAO_LISTA = 1, ACAO_ASSISTIDO = 2, ACAO_FONTES = 3,
        ACAO_INICIO = 4, ACAO_RECOMENDAR = 5, ACAO_LEMBRAR = 6, ACAO_ARTE = 7,
-       ACAO_TRAILER = 8, ACAO_EXPLORAR = 9, ACAO_JUNTOS = 10 };
+       ACAO_TRAILER = 8, ACAO_EXPLORAR = 9, ACAO_MAIS = 10, ACAO_JUNTOS = 11 };
 static int acaoEm(int n) {
   if (n == 0) return ACAO_PRIMARIO;
   if (temInicio()) {
@@ -2073,24 +2346,11 @@ static int acaoEm(int n) {
     n--;
   }
   if (acoesAgrupadas() && n > 0) n++; // skip the list action already used as group anchor
-  // O RECOMENDAR E O ULTIMO DA LINHA e a conferencia vem ANTES do salto da
-  // serie: com 3 circulares numa serie, a ultima posicao e n == 3, e a regra
-  // de baixo devolveria 4 — que e ACAO_INICIO, o botao de texto. O OK ali
-  // abriria "assistir do comeco" a partir de um circular de enviar.
-  // O "Trocar arte" vem DEPOIS do recomendar, e a conta e a mesma: a ultima
-  // posicao da linha, antes do salto da serie.
-  // O "Assistir trailer" e o ultimo, depois do "Trocar arte".
-  if (temJuntos() && n == (ehSerie() ? 3 : 4) + (temRecomendar() ? 1 : 0) + (temArte() ? 1 : 0)
-                          + (temTrailer() ? 1 : 0) + (temExplorar() ? 1 : 0))
-    return ACAO_JUNTOS;
-  if (temExplorar() && n == (ehSerie() ? 3 : 4) + (temRecomendar() ? 1 : 0) + (temArte() ? 1 : 0)
-                            + (temTrailer() ? 1 : 0))
-    return ACAO_EXPLORAR;
-  if (temTrailer() && n == (ehSerie() ? 3 : 4) + (temRecomendar() ? 1 : 0) + (temArte() ? 1 : 0))
-    return ACAO_TRAILER;
-  if (temArte() && n == (ehSerie() ? 3 : 4) + (temRecomendar() ? 1 : 0))
-    return ACAO_ARTE;
-  if (temRecomendar() && n == (ehSerie() ? 3 : 4)) return ACAO_RECOMENDAR;
+  if (temJuntos() && n == (ehSerie() ? 3 : 4) + (temMais() ? 1 : 0)) return ACAO_JUNTOS;
+  // O "..." E O ULTIMO DA LINHA e a conferencia vem ANTES do salto da serie:
+  // com 3 circulares numa serie, a ultima posicao e n == 3, e a regra de
+  // baixo devolveria 4 — que e ACAO_INICIO, o botao de texto.
+  if (temMais() && n == (ehSerie() ? 3 : 4)) return ACAO_MAIS;
   if (n >= 2 && ehSerie()) return n + 1;   // serie pula o olho
   return n;
 }
@@ -2122,7 +2382,111 @@ static void tocarTrailerCheio(int k) {
 #endif
 }
 
+// ---- segurar OK numa lista da pagina (ctxlista.h) -------------------------
+// A celula em foco aceita o menu? Filmografia e saga: sempre que ha obra (o
+// titulo fora do catalogo e pedido e o menu abre quando ele chega).
+// Recomendacoes: a fileira com o foco nela.
+static int listaAceitaMenu(void) {
+  if (colListaAberta)
+    return colListaFoco >= 0 && colListaFoco < extras_n_colecao() &&
+           extras_colecao_tmdb(colListaFoco) > 0;
+  if (pessoaAberta)
+    return pessoaFoco >= 0 && pessoaFoco < pessoa_n_creditos() &&
+           (pessoa_credito_imdb(pessoaFoco)[0] || pessoa_credito_tmdb(pessoaFoco) > 0);
+  return nivel >= 1 && foco.fileira == SEC_RELACIONADOS && !focoAmigos &&
+         foco.coluna >= 0 && foco.coluna < extras_n_relacionados() &&
+         extras_relacionado_imdb(foco.coluna)[0];
+}
+
+// 1 se o menu abriu ou foi pedido (abre quando o titulo chegar).
+static int menuNaLista(void) {
+  if (colListaAberta) {
+    long t = extras_colecao_tmdb(colListaFoco);
+    int idx = ctxlista_indice(NULL, t);
+    if (idx >= 0) return ctxlista_abrir(idx, colFocoRect, colFocoArte);
+    return ctxlista_pedir(NULL, t, "movie", extras_colecao_titulo(colListaFoco),
+                          extras_colecao_ano(colListaFoco),
+                          extras_colecao_poster(colListaFoco), colFocoRect, colFocoArte);
+  }
+  if (pessoaAberta) {
+    const char *id = pessoa_credito_imdb(pessoaFoco);
+    long t = pessoa_credito_tmdb(pessoaFoco);
+    int idx = ctxlista_indice(id, t);
+    if (idx >= 0) return ctxlista_abrir(idx, pesFocoRect, pesFocoArte);
+    return ctxlista_pedir(id, t, pessoa_credito_tipo(pessoaFoco),
+                          pessoa_credito_titulo(pessoaFoco), pessoa_credito_ano(pessoaFoco),
+                          pessoa_credito_poster(pessoaFoco), pesFocoRect, pesFocoArte);
+  }
+  { const char *id = extras_relacionado_imdb(foco.coluna);
+    long t = !strncmp(id, "tmdb:", 5) ? atol(id + 5) : 0;
+    int idx = ctxlista_indice(id, t);
+    if (idx >= 0) return ctxlista_abrir(idx, relFocoRect, relFocoArte);
+    return ctxlista_pedir(t > 0 ? "" : id, t, ehSerie() ? (t > 0 ? "tv" : "series") : "movie",
+                          extras_relacionado_titulo(foco.coluna),
+                          extras_relacionado_ano(foco.coluna),
+                          extras_relacionado_poster(foco.coluna), relFocoRect, relFocoArte);
+  }
+}
+
+// O OK numa obra da filmografia (toque curto): abre o titulo.
+static void abrirCredito(void) {
+  // Abre o titulo, quando ele for um dos que o catalogo ja tem meta.
+  // Quem troca de fato e o roteador (app.c) — daqui so sai o pedido.
+  //
+  // Keep the person page visible until the router opens the title.
+  const char *id = pessoa_credito_imdb(pessoaFoco);
+  int alvo = id[0] ? cat_indice_por_imdb(id) : -1;
+  if (alvo >= 0) { pedAbrir = alvo; }
+  // Nao esta no catalogo: busca o meta e abre quando chegar. Quem
+  // termina o trabalho e o roteador, que ja acompanha o resultado.
+  // O credito quase nunca traz imdb_id, entao o caminho normal e pelo
+  // id do TMDB.
+  else if (id[0]) {
+    desc_pedir_titulo_semente(id, 0, pessoa_credito_tipo(pessoaFoco),
+                              pessoa_credito_titulo(pessoaFoco), pessoa_credito_ano(pessoaFoco),
+                              pessoa_credito_poster(pessoaFoco));
+  }
+  else if (pessoa_credito_tmdb(pessoaFoco) > 0) {
+    desc_pedir_titulo_semente("", pessoa_credito_tmdb(pessoaFoco),
+                              pessoa_credito_tipo(pessoaFoco),
+                              pessoa_credito_titulo(pessoaFoco), pessoa_credito_ano(pessoaFoco),
+                              pessoa_credito_poster(pessoaFoco));
+  }
+}
+
+// O QUE A ILHA "MAIS OPCOES" ESCOLHEU (detmais.h). Eram os ramos dos quatro
+// circulares que sairam da linha; o comportamento de cada um e o mesmo.
+static void executarMais(int dm) {
+  if (dm == DMAIS_TRAILER) {
+    tocarTrailerCheio(0);
+  } else if (dm == DMAIS_EXPLORAR) {
+    // O roteador (app.c) fecha a pagina e abre a toca neste titulo.
+    trailer_fechar();
+    pedExplorar = 1;
+  } else if (dm == DMAIS_ARTE) {
+    // A tela de escolha come o teclado ate fechar (topo de detail_evento).
+    trailer_fechar();
+    trocaarte_abrir(cat_item(idx));
+  } else if (dm == DMAIS_RECOMENDAR) {
+    // A MESMA MODAL DO MENU DO CARTAZ, e nao uma segunda copia dela: ver
+    // recenviar.h. Aberta, ela fica acima desta tela no roteador de app.c e
+    // recebe o D-pad ate fechar.
+    const CatItem *ci = cat_item(idx);
+    if (ci) recenviar_abrir(ci);
+  }
+}
+
 void detail_evento(const SDL_Event *e) {
+  if (corpoSobArte()) {
+    if (trocaarte_aberto()) trocaarte_evento(e);
+    return;
+  }
+#ifdef NV_TOUCH_UI
+  if (toquerol_navegacao(e)) {
+    toquerol_limpar(&toqueDetalhe); toquerol_limpar(&toqueColecao); toquerol_limpar(&toquePessoa);
+    for (int r = 0; r < N_SECOES; r++) toquerol_limpar(&toqueSec[r]);
+  }
+#endif
   if (saindo) return;
   // O CARTAO "O QUE ACHOU?" aberto pela pagina e modal: a tecla e dele.
   if (reacao_aberta() && reacao_evento(e, 1)) return;
@@ -2144,6 +2508,14 @@ void detail_evento(const SDL_Event *e) {
   // "TROCAR ARTE" COME TUDO enquanto aberta (#142): e a coisa mais recente na
   // tela, e o Voltar dela fecha so ela.
   if (trocaarte_aberto()) { trocaarte_evento(e); return; }
+  // A LISTA DOS AMIGOS (OK na ilha de amigos) e modal enquanto aberta.
+  if (amtui_aberta()) { amtui_evento(e); return; }
+  // "MAIS OPCOES" aberta come o teclado; o OK nela devolve a acao.
+  if (detmais_aberto()) {
+    int dm = detmais_evento(e);
+    if (dm >= 0) executarMais(dm);
+    return;
+  }
   // MODO CINEMA: a primeira tecla so devolve o bloco de texto (o trailer
   // segue); Voltar fecha o trailer e fica na pagina.
   if (trailerCinema.oculta && e->type == SDL_KEYDOWN && !e->key.repeat) {
@@ -2174,6 +2546,22 @@ void detail_evento(const SDL_Event *e) {
   // dentro de `if (pessoaAberta)` exigindo `!pessoaAberta`, ou seja, nunca
   // rodavam. Era por isso que nao dava para andar nem abrir nada nas
   // recomendacoes: o codigo estava escrito e era inalcancavel.
+  // SEGURAR OK NA FILMOGRAFIA, NA LISTA DA SAGA OU NAS RECOMENDACOES = o menu do
+  // cartaz. Filmografia e saga sao telas proprias: o gesto decide na soltura.
+  // Nas Recomendacoes o resto da pagina segue como estava (OK no KEYDOWN arma o
+  // okDesceEm); aqui so se mede o limiar, que detail_atualizar dispara.
+  { int r = ctxhold_evento(&holdLista, e, listaAceitaMenu());
+    if (r == CTXH_LONGO) {
+      if (menuNaLista()) { okDesceEm = 0; return; }
+      r = CTXH_TOQUE;
+    }
+    if (colListaAberta || pessoaAberta) {
+      if (r == CTXH_CONSUMIDO) return;
+      if (r == CTXH_TOQUE) {
+        if (colListaAberta) abrirParteColecao(); else abrirCredito();
+        return;
+      }
+    } }
   if (colListaAberta) { eventoListaColecao(e); return; }
   if (pessoaAberta) {
     if (e->type != SDL_KEYDOWN) return;
@@ -2182,49 +2570,26 @@ void detail_evento(const SDL_Event *e) {
         // Coluna 0 da filmografia: a barra lateral por cima (dono, 03/10);
         // antes a ESQUERDA voltava para o ultimo da linha de cima.
         case SDLK_LEFT:
-          if (pessoaFoco % PES_POR_LINHA == 0) pediuMenu = 1;
+          if (pessoaFoco % pessoaColunas() == 0) pediuMenu = 1;
           else pessoaFoco--;
           return;
         case SDLK_RIGHT: if (pessoaFoco + 1 < n) pessoaFoco++; return;
         case SDLK_UP:
-          if (pessoaFoco >= PES_POR_LINHA) pessoaFoco -= PES_POR_LINHA;
-          if (pessoaFoco / PES_POR_LINHA < pessoaLinha) pessoaLinha--;
+          if (pessoaFoco >= pessoaColunas()) pessoaFoco -= pessoaColunas();
+          if (pessoaFoco / pessoaColunas() < pessoaLinha) pessoaLinha--;
           return;
         case SDLK_DOWN:
-          if (pessoaFoco + PES_POR_LINHA < n) pessoaFoco += PES_POR_LINHA;
+          if (pessoaFoco + pessoaColunas() < n) pessoaFoco += pessoaColunas();
           // A grade ROLA quando o foco passa da segunda linha visivel. Duas
           // linhas cabem na tela; a terceira em diante entra empurrando.
-          if (pessoaFoco / PES_POR_LINHA > pessoaLinha + 1) pessoaLinha++;
+          if (pessoaFoco / pessoaColunas() > pessoaLinha + 1) pessoaLinha++;
           return;
         case SDLK_ESCAPE:
         case SDLK_BACKSPACE:
         case SDLK_DELETE:
         case SDLK_AC_BACK: pessoaAberta = 0; return;
         case SDLK_RETURN:
-        case SDLK_KP_ENTER: {
-          // Abre o titulo, quando ele for um dos que o catalogo ja tem meta.
-          // Quem troca de fato e o roteador (app.c) — daqui so sai o pedido.
-          //
-          // Keep the person page visible until the router opens the title.
-          const char *id = pessoa_credito_imdb(pessoaFoco);
-          int alvo = id[0] ? cat_indice_por_imdb(id) : -1;
-          if (alvo >= 0) { pedAbrir = alvo; }
-          // Nao esta no catalogo: busca o meta e abre quando chegar. Quem
-          // termina o trabalho e o roteador, que ja acompanha o resultado.
-          // O credito quase nunca traz imdb_id, entao o caminho normal e pelo
-          // id do TMDB.
-          else if (id[0]) {
-            desc_pedir_titulo_semente(id, 0, pessoa_credito_tipo(pessoaFoco),
-                                      pessoa_credito_titulo(pessoaFoco), pessoa_credito_ano(pessoaFoco),
-                                      pessoa_credito_poster(pessoaFoco));
-          }
-          else if (pessoa_credito_tmdb(pessoaFoco) > 0) {
-            desc_pedir_titulo_semente("", pessoa_credito_tmdb(pessoaFoco),
-                                      pessoa_credito_tipo(pessoaFoco),
-                                      pessoa_credito_titulo(pessoaFoco), pessoa_credito_ano(pessoaFoco),
-                                      pessoa_credito_poster(pessoaFoco));
-          }
-          return; }
+        case SDLK_KP_ENTER: abrirCredito(); return;
         default: break;
       } }
     if (e->key.keysym.scancode == NV_SCANCODE_BACK) pessoaAberta = 0;
@@ -2319,10 +2684,17 @@ void detail_evento(const SDL_Event *e) {
     // caia em nenhum caso. Passar os botoes para o nivel 0 (que e onde o web os
     // poe) descobriu o defeito que ja existia.
     if (!okDesceEm) return;
-    dur = SDL_GetTicks() - okDesceEm;
+    dur = ponteiro_ok_longo() ? NV_HOLD_MS : SDL_GetTicks() - okDesceEm;
     okDesceEm = 0;
     if (nivel == 0 && focoAmigos) {
-      pedAmigos = 1;
+      // A lista do que cada amigo achou, AQUI (dono, 06/10/2026), e nao mais a
+      // aba Atividade do painel — que repetia so "viu".
+      AmigosTitulo at;
+      int ut, ue;
+      if (amigosDoTitulo(&at)) {
+        ultimoEpisodio(&ut, &ue);
+        amtui_abrir(&at, ut, ue, tituloDe(idx));
+      }
     } else if (nivel == 0) {
       // Ordem FIXA: primario, adicionar a lista, marcar como visto, fontes.
       //
@@ -2349,28 +2721,16 @@ void detail_evento(const SDL_Event *e) {
         pedMarcar = 1;
       } else if (acao == ACAO_ASSISTIDO) {
         pedAssistido = 1;
-      } else if (acao == ACAO_TRAILER) {
-        tocarTrailerCheio(0);
       } else if (acao == ACAO_JUNTOS) {
         // A folha "Assistir juntos" (juntosui) para o episodio do primario.
         int t0 = 0, e0 = 0, de = 0;
         trailer_fechar();
         if (ehSerie()) episodioAlvo(&t0, &e0, &de);
         juntosui_abrir_folha(idx, t0, e0);
-      } else if (acao == ACAO_EXPLORAR) {
-        // O roteador (app.c) fecha a pagina e abre a toca neste titulo.
-        trailer_fechar();
-        pedExplorar = 1;
-      } else if (acao == ACAO_ARTE) {
-        // A tela de escolha come o teclado ate fechar (topo de detail_evento).
-        trailer_fechar();
-        trocaarte_abrir(cat_item(idx));
-      } else if (acao == ACAO_RECOMENDAR) {
-        // A MESMA MODAL DO MENU DO CARTAZ, e nao uma segunda copia dela: ver
-        // recenviar.h. Aberta, ela fica acima desta tela no roteador de app.c e
-        // recebe o D-pad ate fechar.
-        const CatItem *ci = cat_item(idx);
-        if (ci) recenviar_abrir(ci);
+      } else if (acao == ACAO_MAIS) {
+        int d[DMAIS_N];
+        maisDisponiveis(d);
+        detmais_abrir(d);
       } else {
         pedFontes = 1;
       }
@@ -2393,6 +2753,8 @@ void detail_evento(const SDL_Event *e) {
     } else if (foco.fileira == SEC_COLECAO) {
       // O mini card abre a LISTA da saga; e la que se escolhe a parte.
       abrirListaColecao();
+    } else if (foco.fileira == SEC_PROGTEMP) {
+      progAbrirTemporada(foco.coluna);
     } else if (foco.fileira == SEC_TEMPORADAS && dur >= NV_HOLD_MS) {
       // PRESSAO LONGA NA ABA: o menu da temporada (issue #108, "Pressing
       // 'Season' brings up option to mark all as watched"). O toque curto
@@ -2419,6 +2781,9 @@ void detail_evento(const SDL_Event *e) {
         pessoaAberta = 1;
         pessoaFoco = 0;
         pessoaLinha = 0;
+#ifdef NV_TOUCH_UI
+        toquerol_limpar(&toquePessoa); toquePessoaOffset = 0;
+#endif
       }
     } else if (foco.fileira == SEC_ABAS_INFO) {
       abaInfo = foco.coluna;
@@ -2426,6 +2791,9 @@ void detail_evento(const SDL_Event *e) {
       // "Série | Episódio": a pilula escolhe a fonte dos cartoes (ver a nota
       // em detail_atualizar sobre por que nao e ao passar o foco).
       comentEp = foco.coluna;
+      // Segurar OK em "Episódio": escolher temporada e episodio nas proprias
+      // fileiras da pagina; o OK de la devolve o foco para ca.
+      if (comentEp && dur >= NV_HOLD_MS) comentariosEscolher();
     } else if (foco.fileira == SEC_TRAILERS) {
       // OK num trailer. Onde ha pagina (Samsung), o trailer toca AQUI, em
       // tela cheia e com som, atras do canvas (trailer.h) — era o #82: o
@@ -2478,7 +2846,8 @@ void detail_evento(const SDL_Event *e) {
       // a folha so abre de dentro do player. Quem estava na pagina de detalhe —
       // que e onde qualquer um iria procurar — segurava o card e via as fontes.
       const CatEp *ep = cat_episodio(idx, epAbsoluto(foco.coluna));
-      if (dur >= NV_HOLD_MS && ep)
+      if (comPicando) comentariosVoltar();
+      else if (dur >= NV_HOLD_MS && ep)
         episodios_menu_visto(idx, ep->temporada, ep->episodio, ep->nome);
       else
         // ISSUE #57, SEGUNDA VOLTA. O toque curto no card do episodio abria a
@@ -2516,7 +2885,8 @@ void detail_evento(const SDL_Event *e) {
 
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE) {
-    if (acoesAgrupadas() && maisAcoes && nivel == 0) { maisAcoes = 0; botao = temInicio() ? 1 : 0; }
+    if (comPicando) comentariosVoltar();
+    else if (acoesAgrupadas() && maisAcoes && nivel == 0) { maisAcoes = 0; botao = temInicio() ? 1 : 0; }
     else if (nivel > 0) nivel = 0;
     else if (carro && carCheia) carCheia = 0;   // tela cheia no topo -> cartao
     else if (nVolta > 0) { pedAbrir = voltaPilha[--nVolta]; voltando = 1; }   // volta ao titulo de onde veio
@@ -2538,7 +2908,10 @@ void detail_evento(const SDL_Event *e) {
       if (amigosDoTitulo(&at)) { focoAmigos = 1; return; }
     }
     if (k == SDLK_UP && reacao_detalhe_abrir(cat_item(idx))) return;
-    if (k == SDLK_UP && !e->key.repeat) { pediuSocial = 1; return; }
+    // #407: CIMA no alto da pagina NAO abre mais o painel de Salvos/Avisos.
+    // O atalho de cef8c3e8 (alcançar o painel sem tecla AZUL) ficou
+    // redundante com o relogio clicavel e com o CH+/AZUL, e a seta no topo da
+    // pagina abrindo um menu surpreendia (relato #407, Samsung).
     // CARROSSEL: a primeira seta para baixo so estica o cartao (ver carCheia).
     if (k == SDLK_DOWN && carro && !carCheia) { carCheia = 1; return; }
     if (k == SDLK_DOWN) {
@@ -2595,22 +2968,10 @@ void detail_evento(const SDL_Event *e) {
   // primeiro da T1 continua pedindo o menu lateral).
   if (ehSerie() && foco.fileira == SEC_EPISODIOS && (k == SDLK_LEFT || k == SDLK_RIGHT) &&
       detail_ep_borda(k == SDLK_RIGHT ? 1 : -1)) return;
-  // NOTAS: os blocos de fonte sao uma grade de DUAS colunas. Cima/baixo anda
-  // dentro dela antes de sair da secao; esquerda/direita nao atravessa a linha
-  // (esquerda na coluna da esquerda pede o menu, como nas outras fileiras).
+  // NOTAS: uma parada so (o numero grande); esquerda pede o menu, direita nao
+  // anda, cima/baixo saem pela regra comum.
   if (foco.fileira == SEC_NOTAS) {
-    int nc = foco.nColunas[SEC_NOTAS], c = foco.coluna;
-    // Linha de baixo incompleta: da coluna da direita desce para o ultimo bloco.
-    if (k == SDLK_DOWN && c / NOTASUI_COLUNAS < (nc - 1) / NOTASUI_COLUNAS) {
-      foco.coluna = c + NOTASUI_COLUNAS < nc ? c + NOTASUI_COLUNAS : nc - 1;
-      return;
-    }
-    if (k == SDLK_UP && c >= NOTASUI_COLUNAS) { foco.coluna -= NOTASUI_COLUNAS; return; }
-    if (k == SDLK_RIGHT) {
-      if (c % NOTASUI_COLUNAS < NOTASUI_COLUNAS - 1 && c + 1 < nc) foco.coluna++;
-      return;
-    }
-    if (k == SDLK_LEFT && c % NOTASUI_COLUNAS > 0) { foco.coluna--; return; }
+    if (k == SDLK_RIGHT) return;
     if (k == SDLK_LEFT) { pediuMenu = 1; return; }
   }
   if (k == SDLK_RIGHT) {
@@ -2697,7 +3058,7 @@ static float larguraItem(int r, int c) {
     // a ela a largura de um avatar de elenco, e o culling horizontal cortaria
     // a tabela fora da tela.
     case SEC_ESTUDIOS:    return EST_CARD_W;
-    case SEC_DETALHES:    return NV_DETF_DET_W;
+    case SEC_DETALHES:    return larguraDetalhes();
     // Bloco unico da largura do conteudo: os graficos e os dois paineis de
     // frases ocupam a faixa inteira. Cair no `default` daria a eles a largura
     // de um avatar e o recorte horizontal cortaria tudo fora da tela.
@@ -2706,6 +3067,7 @@ static float larguraItem(int r, int c) {
     case SEC_AUD_DIGITAL:
     case SEC_NOTAS:
     case SEC_NOTAS_EP:
+    case SEC_PROGTEMP:
     case SEC_FRASES:      return NV_TELA_W - NV_DETP_X * 2;
     case SEC_COLECAO:     return COL_CARD_W;
     default:              return NV_DETP_EL_W;
@@ -2735,7 +3097,8 @@ static float xItem(int r, int c) {
     // lado: sao posicoes dentro de um grafico que ocupa a faixa inteira. Todas
     // comecam em NV_DETP_X, e quem marca a escolhida e serieaud_selecionar.
     // Frases idem, com a coluna unica.
-    if (EH_AUD(r) || r == SEC_FRASES || r == SEC_NOTAS || r == SEC_NOTAS_EP) continue;
+    if (EH_AUD(r) || r == SEC_FRASES || r == SEC_NOTAS || r == SEC_NOTAS_EP ||
+        r == SEC_PROGTEMP) continue;
     if (r == SEC_TEMPORADAS) x += larguraTemporada(k) + NV_DETP_TEMP_GAP;
     else x += larguraAbaInfo(k) + NV_DETP_ABA_SEP * 2 + 9.0f;  // 9 = largura do "|"
   }
@@ -2858,14 +3221,62 @@ static void revalidarIdx(void) {
 // ficam no heroi (mockup "detalhe-retomar"): a pagina fica no topo, com a arte.
 static int focoNoTopo(void) { return 0; }
 
-static float blocoAnt[2] = { -1.0f, -1.0f };   // Notas / Numeros no quadro anterior
+#ifdef NV_TOUCH_UI
+static void trailerDetalheTela(void) {
+  if (trailer_aberto() && (trailer_cheia() || trailer_dono() != TRAILER_DONO_HOME))
+    trailer_rect((GfxRect){0, 0, NV_TELA_W, NV_TELA_H});
+}
+static int toqueDetalheRolar(const PonteiroRolagem *e) {
+  int r = 0;
+  if (!aberto || saindo || pessoaAberta || colListaAberta || trailer_cheia() || corpoSobArte()) return 0;
+  if (e->eixoY) r = toquerol_evento(&toqueDetalhe, e);
+  else {
+    if (e->fase == PONT_ROL_INICIO) {
+      toqueSecAtiva = -1;
+      for (int i = 0; i < N_SECOES; i++) if (toquerol_evento(&toqueSec[i], e)) { toqueSecAtiva = i; r = 1; break; }
+    } else if (toqueSecAtiva >= 0) r = toquerol_evento(&toqueSec[toqueSecAtiva], e);
+  }
+  if (r) {
+    toqueDetalhe.livre = 1; velY = 0;
+    if (toqueSecAtiva >= 0) velSec[toqueSecAtiva] = 0;
+    if (e->eixoY) { nivel = 1; carCheia = 1; }
+    ctxhold_cancelar(&holdLista); okDesceEm = 0;
+  }
+  return r;
+}
+static int toqueColecaoRolar(const PonteiroRolagem *e) {
+  int r;
+  if (!colListaAberta) return 0;
+  r = toquerol_evento(&toqueColecao, e);
+  if (r) { colListaVel = 0; ctxhold_cancelar(&holdLista); okDesceEm = 0; }
+  return r;
+}
+static int toquePessoaRolar(const PonteiroRolagem *e) {
+  int r;
+  if (!pessoaAberta) return 0;
+  r = toquerol_evento(&toquePessoa, e);
+  if (r) { ctxhold_cancelar(&holdLista); okDesceEm = 0; }
+  return r;
+}
+static void toqueColecaoFocar(int i, int b) { (void)b; colListaFoco = i; }
+static void toquePessoaFocar(int i, int b) { (void)b; pessoaFoco = i; }
+#endif
+
+static float blocoAnt[3] = { -1.0f, -1.0f, -1.0f };   // Notas / Numeros / Progresso no quadro anterior
 
 void detail_atualizar(float dt, Uint32 agora) {
   // `agora` ficou sem uso quando o repouso da troca de temporada saiu (ver a
   // nota mais abaixo). Fica na assinatura porque ela e a mesma de todas as
   // telas e app.c chama todas do mesmo jeito.
   (void)agora;
-  if (!aberto) { blocoAnt[0] = blocoAnt[1] = -1.0f; return; }
+  episodios_menu_atualizar(dt);   // as molas do menu de visto / painel da temporada
+  if (!aberto) { blocoAnt[0] = blocoAnt[1] = blocoAnt[2] = -1.0f; return; }
+#ifdef NV_TOUCH_UI
+  trailerDetalheTela();
+  if (detalheRetrato() && carro) {
+    carCheia = 1; cartao = carTxt = cartaoVel = carTxtVel = 0;
+  }
+#endif
   // SAINDO: interrompe os dois fios antes mesmo de a mola terminar. Chamar todo
   // quadro nao custa nada (e um flag sob mutex) e evita precisar de uma borda:
   // `saindo` tambem e ligado por caminhos que nao passam pelo Voltar, como o
@@ -2875,11 +3286,15 @@ void detail_atualizar(float dt, Uint32 agora) {
     // A linha em foco mira ~35% da altura, como o resto do app rola.
     float passo = COLL_LIN_H + COLL_LIN_GAP;
     int n = extras_n_colecao();
-    float alvo = (float)colListaFoco * passo - (NV_TELA_H * 0.35f - COLL_TOPO);
-    float maxY = (float)n * passo - (NV_TELA_H - COLL_TOPO - 60.0f);
+    float alvo = (float)colListaFoco * passo - (NV_TELA_H * 0.35f - colecaoTopo());
+    float maxY = (float)n * passo - (NV_TELA_H - colecaoTopo() - 60.0f);
     if (maxY < 0.0f) maxY = 0.0f;
     if (alvo > maxY) alvo = maxY;
     if (alvo < 0.0f) alvo = 0.0f;
+#ifdef NV_TOUCH_UI
+    if (toqueColecao.livre) { colListaScroll = toquerol_clamp(colListaScroll, 0, maxY); colListaVel = 0; }
+    else
+#endif
     colListaScroll = anim_mola2(&colListaVel, colListaScroll, alvo, dt, NV_MOLA2_SCROLL);
   }
   revalidarIdx();
@@ -3000,10 +3415,13 @@ void detail_atualizar(float dt, Uint32 agora) {
       extrasSerie = ehSerie();
       extras_pedir(ci->imdb, extrasSerie, ci->tmdb);
     } }
-  { unsigned rev = cat_revisao();
-    if (rev != revistaVista) {
-      revistaVista = rev;
-      if (ehSerie() && cat_n_episodios(idx) < 1) {
+  // TAMBEM QUANDO SO A GERACAO DAS FAIXAS ANDOU (cat_geracao_episodios): a
+  // volta do vetor de episodios apaga a lista sem subir a revisao. E na
+  // abertura (epGerConferido = 0), sem esperar alguem republicar.
+  { unsigned rev = cat_revisao(), eg = cat_geracao_episodios();
+    if (rev != revistaVista || eg != epGerVista || !epGerConferido) {
+      revistaVista = rev; epGerVista = eg; epGerConferido = 1;
+      if (ehSerie() && cat_n_episodios(idx) < 1 && !desc_episodios_carregando(idx)) {
         const CatItem *ci = cat_item(idx);
         desc_episodios(idx, ci ? ci->temporada : 0);
       }
@@ -3012,6 +3430,7 @@ void detail_atualizar(float dt, Uint32 agora) {
   // Solta o pedido de episodios que ficou guardado por ter chegado com outro
   // carregamento em voo.
   desc_episodios_pendente();
+  auditoriaEpisodios();
 
   // TROCA DE TEMPORADA PELO MOVIMENTO DO FOCO, nao pelo OK.
   //
@@ -3041,6 +3460,30 @@ void detail_atualizar(float dt, Uint32 agora) {
     { const CatEp *ep = cat_episodio(idx, epAbsoluto(foco.coluna));
       if (ep) { comEpT = ep->temporada; comEpE = ep->episodio; } }
   }
+
+  // "Seu progresso" entra pela coluna da temporada escolhida na pagina.
+  if (ehSerie() && foco.fileira != SEC_PROGTEMP) {
+    int c = tgraf_coluna(tgraf_dados(idx), temporadaEm(temporada));
+    if (c >= 0) foco.colunaLembrada[SEC_PROGTEMP] = c;
+  }
+
+  // Saiu das fileiras de temporada/episodio sem confirmar: desfaz o modo.
+  if (comPicando && foco.fileira != SEC_EPISODIOS && foco.fileira != SEC_TEMPORADAS)
+    comPicando = 0;
+  // Primeira vez que o foco chega na pilula "Episódio" (por perfil): a ilha diz
+  // que segurar OK escolhe temporada e episodio. O rotulo "Segure OK" ao lado
+  // da pilula e a versao permanente.
+  // A dispensa so e gravada depois de a ilha MOSTRAR (ilha_mostrou): com a fila
+  // cheia ela descarta o aviso, e o perfil nunca mais veria a dica.
+  if (comDicaPend && ilha_mostrou(COM_DICA_CHAVE)) { avisodisp_por(COM_DICA_CHAVE); comDicaPend = 0; }
+  if (nivel >= 1 && foco.fileira == SEC_COMENTARIOS && ehSerie() && foco.coluna == 1 &&
+      !avisodisp_tem(COM_DICA_CHAVE)) {
+    if (!comDicaPend) {
+      ilha_avisar(COM_DICA_CHAVE, ILHA_INFO, NULL,
+                  i18n("Segure OK em Episódio para escolher a temporada e o episódio"), 6000u, 0);
+      comDicaPend = 1;
+    }
+  } else comDicaPend = 0;
 
   // SELETOR DE COMENTARIOS: a fonte troca no OK, NAO ao passar o foco.
   //
@@ -3144,6 +3587,9 @@ void detail_atualizar(float dt, Uint32 agora) {
   // cinco telas por quadro e cai para 40 FPS (medido na TCL, 05/10). A ida
   // continua com o tempo do web.
   { float alvoPg = nivel >= 1 && !focoNoTopo() ? 1.0f : 0.0f;
+#ifdef NV_TOUCH_UI
+    if (toqueDetalhe.livre) alvoPg = scrollY > 1.0f ? 1.0f : 0.0f;
+#endif
     pg = anim_mola(pg, alvoPg, dt, alvoPg < pg ? NV_MOLA_PAGINA * 2.0f : NV_MOLA_PAGINA); }
   if (carro) {
     int k;
@@ -3156,11 +3602,14 @@ void detail_atualizar(float dt, Uint32 agora) {
     if (carAplicado != carPos && fabsf(carOff - (float)carPos) < 0.25f && !saindo)
       carAplicar();
     // ARTE DOS VIZINHOS PRE-CARREGADA: dois para cada lado, para o passo
-    // seguinte ja encontrar a foto na tira.
+    // seguinte ja encontrar a foto na tira. So o titulo em cena e URGENTE: os
+    // vizinhos eram pedidos urgentes tambem, e o hero de quem chegava entrava
+    // em FIFO atras deles (a chegada o promove e ele fura a fila).
     for (k = carPos - 2; k <= carPos + 2; k++) {
       const char *a = (k >= 0 && k < carN) ? arteDe(carIdx[k]) : NULL;
-      if (a) (void)tex_obter_hero(a);
+      if (a) (void)(k == carPos ? tex_obter_hero(a) : tex_obter_hero_quente(a));
     }
+    if (carAplicado == carPos && !saindo && !carCheia) carPreBuscar();
     // VOLTA: a fileira recebe o titulo em cena e o cartao encolhe ate o cartaz
     // dele, que a home volta a desenhar (detail_cobre_tela = 0 saindo).
     if (saindo) {
@@ -3202,12 +3651,20 @@ void detail_atualizar(float dt, Uint32 agora) {
   if (okDesceEm && !ctx_aberto()) {
     Uint32 dur = agora - okDesceEm;
     int alvoHold = (nivel >= 1 && (foco.fileira == SEC_EPISODIOS || foco.fileira == SEC_TEMPORADAS)) ||
+                   (nivel >= 1 && foco.fileira == SEC_COMENTARIOS && ehSerie() && foco.coluna == 1) ||
                    (nivel == 0 && !focoAmigos && acaoEm(botao) == ACAO_PRIMARIO);
     if (alvoHold && dur >= 150u) {
       float p = (float)(dur - 150u) / (float)(NV_HOLD_MS - 150);
       if (p > 1.0f) p = 1.0f;
       ilha_atividade(i18n(p >= 1.0f ? "Solte para abrir opções" : "Segure para opções"), p);
     }
+  }
+
+  // SEGUROU OK NUMA LISTA ATE O LIMIAR: o menu do cartaz, com o dedo ainda no
+  // botao. okDesceEm zera: o KEYUP vai ao menu, nao a pagina.
+  if (!ctx_aberto() && ctxhold_passo(&holdLista, agora, 1) && menuNaLista()) {
+    ctxhold_cancelar(&holdLista);
+    okDesceEm = 0;
   }
 
   for (int r = 0; r < N_SECOES; r++)
@@ -3238,18 +3695,25 @@ void detail_atualizar(float dt, Uint32 agora) {
         // posicao DENTRO de um desenho de largura fixa, nao um item que possa
         // sair da tela. Sem esta linha a regra geral abaixo empurrava a secao
         // inteira 24 px para a esquerda assim que o foco saia da coluna 0.
-        else if (EH_AUD(r) || r == SEC_FRASES || r == SEC_NOTAS || r == SEC_NOTAS_EP) alvo = 0.0f;
+        else if (EH_AUD(r) || r == SEC_FRASES || r == SEC_NOTAS || r == SEC_NOTAS_EP ||
+                 r == SEC_PROGTEMP) alvo = 0.0f;
         else if (foco.coluna == 0) alvo = 0.0f;
         else if (x + w > alvo + vista - 24.0f) alvo = x + w - vista + 24.0f;
         else if (x < alvo + 24.0f)             alvo = x - 24.0f;
       }
       if (alvo < 0.0f) alvo = 0.0f;
+#ifdef NV_TOUCH_UI
+      if (!toqueSec[r].livre)
+#endif
       scrollSec[r] = anim_mola2(&velSec[r], scrollSec[r], alvo, dt, NV_MOLA2_SCROLL);
     }
     // A fileira de episodios rola ATRAS da aba de temporada mesmo sem o foco:
     // e o que da ao seletor a resposta visual que ele perdeu ao deixar de
     // arrastar o foco junto.
     if (r != SEC_EPISODIOS && secaoN(SEC_EPISODIOS) > 0 &&
+#ifdef NV_TOUCH_UI
+        !toqueSec[SEC_EPISODIOS].livre &&
+#endif
         epAncora < foco.nColunas[SEC_EPISODIOS]) {
       float ax = xItem(SEC_EPISODIOS, epAncora) - NV_DETP_X;
       if (ax < 0.0f) ax = 0.0f;
@@ -3267,9 +3731,9 @@ void detail_atualizar(float dt, Uint32 agora) {
   // onde estava na tela) em vez de a mola arrastar a pagina depois.
   // O MESMO vale para os NUMEROS DA TEMPORADA (serie), que nascem logo abaixo
   // das Notas quando a lista de episodios do Trakt chega.
-  { static const int BLOCOS[2] = { SEC_NOTAS, SEC_NUMEROS };
+  { static const int BLOCOS[3] = { SEC_NOTAS, SEC_NUMEROS, SEC_PROGTEMP };
     int kb;
-    for (kb = 0; kb < 2; kb++) {
+    for (kb = 0; kb < 3; kb++) {
       int sec = BLOCOS[kb];
       float bloco = secaoN(sec) > 0
           ? conteudoSec[sec] - topoSec[sec] + alturaSecao(sec) + NV_DETF_SEC_GAP
@@ -3281,7 +3745,11 @@ void detail_atualizar(float dt, Uint32 agora) {
           if (ordem[o] == sec) visto = 1;
           else if (ordem[o] == foco.fileira) { depois = visto; break; }
         }
-        if (depois) scrollY += bloco - blocoAnt[kb];
+        if (depois
+#ifdef NV_TOUCH_UI
+            && !toqueDetalhe.livre
+#endif
+           ) scrollY += bloco - blocoAnt[kb];
       }
       blocoAnt[kb] = bloco;
     } }
@@ -3312,6 +3780,10 @@ void detail_atualizar(float dt, Uint32 agora) {
     if (alvoY > maxY) alvoY = maxY;
     if (alvoY < 0.0f) alvoY = 0.0f;
   }
+#ifdef NV_TOUCH_UI
+  if (toqueDetalhe.livre) { scrollY = toquerol_clamp(scrollY, 0, fmaxf(0, docFim - NV_TELA_H)); velY = 0; }
+  else
+#endif
   scrollY = anim_mola2(&velY, scrollY, alvoY, dt, NV_MOLA2_SCROLL);
 }
 
@@ -3349,6 +3821,41 @@ static void luzFoco(GfxRect r, float a) {
   // A luz da tabela de botoes (botoes.h), para ser a MESMA do menu do cartaz
   // e dos cartoes — o Play nao tem luz propria.
   botao_luz(r, 1.0f, a);
+}
+
+// PROGRESSO NO BOTAO DE RETOMAR, no estilo do app da Apple TV (dono,
+// 12/10/2026): triangulo, trilho curto com o quanto ja foi visto e o tempo que
+// falta. -1 = botao sem trilho. Vale so para o primario, ligado em volta dele.
+static int primarioPct = -1;
+#define NV_DETW2_TRILHO_W 56.0f
+#define NV_DETW2_TRILHO_H  5.0f
+
+// "142 min", "2h 22min", "1 h 53 min" -> minutos; 0 quando nao da para ler.
+static int minutosDe(const char *s) {
+  int total = 0, v;
+  if (!s) return 0;
+  while (*s) {
+    if (*s < '0' || *s > '9') { s++; continue; }
+    v = 0;
+    while (*s >= '0' && *s <= '9') v = v * 10 + (*s++ - '0');
+    while (*s == ' ') s++;
+    total += (*s == 'h' || *s == 'H') ? v * 60 : v;
+  }
+  return total;
+}
+
+static void desenhaDicaBotao(GfxRect rc, const char *texto, float a) {
+  float ar, ag, ab;
+  TxtLinha label = txt_linha_corta(TXT_CAPTION2, texto, 232, 235, 240, 255,
+                                   NV_DETW2_TEXTO_W - 28.0f);
+  float w = label.w + 28.0f, h = 34.0f;
+  GfxRect pill = { rc.x + (rc.w - w) * 0.5f, rc.y - h - 14.0f, w, h };
+  if (pill.x < NV_DETW2_X) pill.x = NV_DETW2_X;
+  ajustes_acento(&ar, &ag, &ab);
+  gfx_cor(pill, .5f, ar, ag, ab, .16f * a);
+  gfx_cor((GfxRect){ pill.x + 1, pill.y + 1, pill.w - 2, pill.h - 2 }, .5f,
+          .075f, .08f, .095f, .76f * a);
+  txt_desenhar_alpha(label, pill.x + 14.0f, pill.y + (h - label.h) * .5f, a);
 }
 
 static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, float a) {
@@ -3417,24 +3924,11 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
       // so `progresso >= 90`, e filme visto em outro aparelho (ou marcado pelo
       // menu do cartaz, que zera o progresso) ficava com o olho riscado.
       gfx_icone(ig, cat_visto(cat_item(idx)) ? "visto" : "naovisto", ic, ic, ic, a);
-    } else if (icone == ACAO_TRAILER) {
-      gfx_icone(ig, "aj_clapperboard", ic, ic, ic, a);
     } else if (icone == ACAO_JUNTOS) {
       gfx_icone(ig, "aj_users", ic, ic, ic, a);
-    } else if (icone == ACAO_EXPLORAR) {
-      // BUSSOLA do Lucide (aj_compass.png, ja no pacote): o mesmo traco dos
-      // vizinhos, e o glifo universal de "explorar".
-      gfx_icone(ig, "aj_compass", ic, ic, ic, a);
-    } else if (icone == ACAO_ARTE) {
-      // MOLDURA COM MONTANHA: o glifo universal de "imagem". PNG de
-      // deploy/app/art/icones como os vizinhos; arte.svg descreve o desenho.
-      gfx_icone(ig, "arte", ic, ic, ic, a);
-    } else if (icone == ACAO_RECOMENDAR) {
-      // AVIAO DE PAPEL — o mesmo vocabulario dos vizinhos: um PNG de
-      // deploy/app/art/icones com a forma na alpha, desenhado com GFX_MARCA e
-      // colorido daqui. Nao e glifo de fonte e nao e forma montada no shader:
-      // o dono ja recusou os desenhados a mao ("usa SVG reais", ver gfx.h).
-      gfx_icone(ig, "recomendar", ic, ic, ic, a);
+    } else if (icone == ACAO_MAIS) {
+      // RETICENCIAS do Lucide: o "tem mais aqui" de qualquer interface.
+      gfx_icone(ig, "aj_ellipsis", ic, ic, ic, a);
     } else {
       gfx_icone(ig, "fontes", ic, ic, ic, a);
     }
@@ -3484,30 +3978,26 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
   { float s = r.h / NV_DETW2_BTN_H;
     float iw = NV_DETW2_BTN_ICONE_W * s, ih = NV_DETW2_BTN_ICONE_H * s;
     int c = (int)(tintaBotao * 255.0f + 0.5f);
-    TxtLinha l = txt_linha(TXT_DET_BOTAO, rot, c, c, c, 255);
-    float grupo = iw + NV_DETW2_BTN_GAPI * s + l.w;
+    TxtLinha l = detalheRetrato() ?
+      txt_linha_corta(TXT_DET_BOTAO, rot, c, c, c, 255,
+                      r.w - NV_DETW2_BTN_PADX * 2 - iw - NV_DETW2_BTN_GAPI * s) :
+      txt_linha(TXT_DET_BOTAO, rot, c, c, c, 255);
+    float tw = primarioPct >= 0 ? NV_DETW2_TRILHO_W * s + NV_DETW2_BTN_GAPI * s : 0.0f;
+    float grupo = iw + NV_DETW2_BTN_GAPI * s + tw + l.w;
     float x = r.x + (r.w - grupo) * 0.5f;
     GfxRect tri = { x, r.y + (r.h - ih) * 0.5f, iw, ih };
     gfx_rect(tri, 0, GFX_PLAY, 0, 0, 0, 0.0f, tintaBotao, tintaBotao, tintaBotao, a);
-    txt_desenhar_alpha(l, x + iw + NV_DETW2_BTN_GAPI * s,
+    if (primarioPct >= 0) {
+      float th = NV_DETW2_TRILHO_H * s;
+      GfxRect t = { x + iw + NV_DETW2_BTN_GAPI * s, r.y + (r.h - th) * 0.5f,
+                    NV_DETW2_TRILHO_W * s, th };
+      gfx_cor(t, 0.5f, tintaBotao, tintaBotao, tintaBotao, 0.30f * a);
+      t.w *= (float)primarioPct / 100.0f;
+      if (t.w < th) t.w = th;
+      gfx_cor(t, 0.5f, tintaBotao, tintaBotao, tintaBotao, a);
+    }
+    txt_desenhar_alpha(l, x + iw + NV_DETW2_BTN_GAPI * s + tw,
                        r.y + (r.h - l.h) * 0.5f, a); }
-}
-
-// DICA DO CIRCULAR EM FOCO (so o "Assistir trailer"): o circular e mudo, e uma
-// acao que abre video nao pode ser adivinhada pelo glifo. Pilula escura com o
-// nome logo acima do botao, no mesmo vocabulario da legenda do carrossel.
-static void desenhaDicaBotao(GfxRect rc, const char *texto, float a) {
-  float ar, ag, ab;
-  TxtLinha label = txt_linha_corta(TXT_CAPTION2, texto, 232, 235, 240, 255,
-                                   NV_DETW2_TEXTO_W - 28.0f);
-  float w = label.w + 28.0f, h = 34.0f;
-  GfxRect pill = { rc.x + (rc.w - w) * 0.5f, rc.y - h - 14.0f, w, h };
-  if (pill.x < NV_DETW2_X) pill.x = NV_DETW2_X;
-  ajustes_acento(&ar, &ag, &ab);
-  gfx_cor(pill, .5f, ar, ag, ab, .16f * a);
-  gfx_cor((GfxRect){ pill.x + 1, pill.y + 1, pill.w - 2, pill.h - 2 }, .5f,
-          .075f, .08f, .095f, .76f * a);
-  txt_desenhar_alpha(label, pill.x + 14.0f, pill.y + (h - label.h) * .5f, a);
 }
 
 // Botao secundario: 345x96, raio 64, fundo #222 e texto branco; focado, fundo
@@ -3519,7 +4009,13 @@ static void desenhaSecundario(GfxRect r, const char *rot, int focado, float a) {
   // repouso, realce + tinta + luz em foco. A largura e a altura continuam
   // as medidas desta tela.
   if (focado) foco_anel(r, NV_RAIO_PILL, 1.0f, a);   // so com "Foco no cartaz" ligado
-  botao_pilula(r, rot, NULL, focado ? 1.0f : 0.0f, 0, 0, a);
+  if (detalheRetrato()) {
+    botao_pilula(r, "", NULL, focado ? 1.0f : 0.0f, 0, 0, a);
+    int c = focado ? (int)(ajustes_acento_tinta(NULL, NULL, NULL) * 255.0f) : 235;
+    if (ajustes_vidro()) c = gfx_vidro_tinta(focado ? 1.0f : 0.0f);
+    TxtLinha l = txt_linha_corta(TXT_DET_BOTAO, rot, c, c, c, 255, r.w - NV_DETW_BTN2_PADX * 2);
+    txt_desenhar_alpha(l, r.x + (r.w - l.w) * .5f, r.y + (r.h - l.h) * .5f, a);
+  } else botao_pilula(r, rot, NULL, focado ? 1.0f : 0.0f, 0, 0, a);
 }
 
 // Largura do botao primario: padding 54 + icone 28 + vao 21 + texto. A conta e
@@ -3528,11 +4024,14 @@ static void desenhaSecundario(GfxRect r, const char *rot, int focado, float a) {
 // estourar por baixo do texto.
 static float larguraPrimario(const char *rot) {
   TxtLinha l = txt_linha(TXT_DET_BOTAO, rot, 0, 0, 0, 255);
-  return NV_DETW2_BTN_PADX * 2 + NV_DETW2_BTN_ICONE_W + NV_DETW2_BTN_GAPI + l.w;
+  float w = NV_DETW2_BTN_PADX * 2 + NV_DETW2_BTN_ICONE_W + NV_DETW2_BTN_GAPI + l.w;
+  if (primarioPct >= 0) w += NV_DETW2_TRILHO_W + NV_DETW2_BTN_GAPI;
+  return detalheRetrato() ? fminf(w, (larguraTextoHero() - NV_DETW2_BTN_GAP) * .5f) : w;
 }
 static float larguraSecundario(const char *rot) {
   TxtLinha l = txt_linha(TXT_DET_BOTAO, rot, 255, 255, 255, 255);
-  return NV_DETW_BTN2_PADX * 2 + l.w;
+  float w = NV_DETW_BTN2_PADX * 2 + l.w;
+  return detalheRetrato() ? fminf(w, (larguraTextoHero() - NV_DETW2_BTN_GAP) * .5f) : w;
 }
 
 // O BOTAO DO LEMBRETE — so o relogio, e verde quando esta armado.
@@ -3650,52 +4149,6 @@ static float desenhaSeloImdb(float x, float yCentro, int nota, float a) {
   return badge_imdb(x, yCentro - BADGE_H * 0.5f, nota, 0, a);
 }
 
-// Selo de CONTORNO da segunda linha de meta. Ele carrega DUAS coisas dentro da
-// mesma caixa — classificacao indicativa e status da producao —, separadas por
-// uma barra vertical: "TV-MA | RENOVADA" na serie, "R | LANÇADO" no filme. A
-// classificacao sai em rgb(179,179,179) e o status em BRANCO, o que faz o olho
-// ler primeiro o que interessa.
-//
-// Antes eram duas coisas soltas na linha e o contorno era falsificado com um
-// retangulo cheio 1px maior por baixo — que so funciona sobre fundo chapado.
-// Aqui e GFX_ANEL, que desenha contorno de verdade e deixa a arte aparecer no
-// miolo, como no aparelho.
-//
-// `dir` pode ser NULL: sem status o selo tem so a classificacao e NENHUMA
-// divisoria. Nao ha valor de reserva — o CatItem nao tem campo de status, e
-// carimbar "LANÇADO" em tudo seria dado inventado, que ja custou caro aqui.
-static float desenhaSeloMeta(float x, float y, const char *esq, const char *dir,
-                             float a) {
-  if (!dir || !dir[0]) {
-    // Classificacao isolada e um badge, nao um contorno de outra altura. O
-    // caso composto (classificacao + status) conserva a divisoria propria.
-    return badge_desenhar(x, y + (NV_DETW2_SELO_H - BADGE_H) * 0.5f, esq,
-                          BADGE_NEUTRO, a);
-  }
-  TxtLinha le = txt_linha(TXT_DET_META2, esq, 179, 179, 179, 255);
-  TxtLinha ld = { 0, 0, 0 };
-  float w = NV_DETW2_SELO_PADX * 2 + le.w;
-  if (dir && dir[0]) {
-    ld = txt_linha(TXT_DET_META2, dir, 255, 255, 255, 255);
-    w += NV_DETW2_DIV_PAD * 2 + NV_DETW2_DIV_W + ld.w;
-  }
-  GfxRect caixa = { x, y, w, NV_DETW2_SELO_H };
-  gfx_rect(caixa, 0, GFX_ANEL, 0, NV_DETW2_SELO_BORDA / NV_DETW2_SELO_H, 0,
-           NV_DETW2_SELO_R / NV_DETW2_SELO_H, 0.42f, 0.42f, 0.42f, a);
-  float cx = x + NV_DETW2_SELO_PADX;
-  float cy = y + NV_DETW2_SELO_H * 0.5f;
-  txt_desenhar_alpha(le, cx, cy - le.h * 0.5f, a);
-  cx += le.w;
-  if (dir && dir[0]) {
-    GfxRect bar = { cx + NV_DETW2_DIV_PAD, cy - NV_DETW2_DIV_H * 0.5f,
-                    NV_DETW2_DIV_W, NV_DETW2_DIV_H };
-    gfx_cor(bar, 0.0f, 0.42f, 0.42f, 0.42f, a);
-    cx += NV_DETW2_DIV_PAD * 2 + NV_DETW2_DIV_W;
-    txt_desenhar_alpha(ld, cx, cy - ld.h * 0.5f, a);
-  }
-  return w;
-}
-
 // Ponto separador: disco de 6, e nao a barrinha de 1x14 do web. Sao dois usos
 // com a MESMA forma e cores diferentes, e a diferenca de cor e o que agrupa a
 // linha: entre generos ele e rgb(179,179,179) (a cor do proprio texto, porque
@@ -3710,7 +4163,7 @@ static void desenhaPonto(float x, float yCentro, float lum, float a) {
 // trailer toca: metade do tamanho do logo do heroi, base a 96 px do fundo.
 static void logoCinema(float a) {
   const char *arqLogo = logoDe(idx);
-  GLuint texLogo = arqLogo ? tex_obter_logo_larg_qualquer(arqLogo, NV_DETW_LOGO_MAXW) : 0;
+  GLuint texLogo = arqLogo ? tex_obter_logo_larg_qualquer(arqLogo, larguraLogoHero()) : 0;
   float baseY = trailercinema_base();
   if (a <= 0.005f || ajustes_esconder_logo_trailer()) return;
   if (texLogo) {
@@ -3724,7 +4177,7 @@ static void logoCinema(float a) {
     const CatItem *ci = cat_item(idx);
     const char *nome = ci ? ci->titulo : NULL;
     if (nome && nome[0]) {
-      TxtLinha t2 = txt_linha_corta(TXT_TITULO2, nome, 255, 255, 255, 255, NV_DETW_LOGO_MAXW * 0.5f);
+      TxtLinha t2 = txt_linha_corta(TXT_TITULO2, nome, 255, 255, 255, 255, larguraLogoHero() * 0.5f);
       txt_desenhar_alpha(t2, NV_DETW2_X, baseY - t2.h, a);
     }
   }
@@ -3752,6 +4205,15 @@ static Uint32 sinTrocaDesde;
 static float  hSinVis;            // altura reservada, suavizada
 static int    hSinInit;
 static Uint32 hSinTick;
+// FAIXA "VAI TOCAR" (2.1): a fonte que o automatico escolheria agora. Refeita
+// a cada 250 ms (ou ao mudar o alvo do botao primario) e a altura reservada
+// assenta suave, para a chegada da lista de fontes nao dar salto no hero.
+#define DET_VAI_GAP 18.0f
+static VaiTocar vaiTocar;
+static Uint32 vaiTocarEm;
+static int    vaiTocarIdx = -1, vaiTocarT, vaiTocarE;
+static float  hVaiVis;
+static Uint32 hVaiTick;
 static int    metaEsqVisto;       // o esqueleto da linha de meta foi mostrado
 static Uint32 metaChegouEm;
 
@@ -3759,8 +4221,11 @@ static void heroReiniciar(void) {
   textogate_reiniciar(&gateHero);
   notasui_reiniciar();
   serieaud_bloco_reiniciar();
+  tgraf_reiniciar();
   sinVisto[0] = sinAnt[0] = 0; sinVistoInit = 0; sinTrocaDesde = 0;
   hSinVis = 0.0f; hSinInit = 0; hSinTick = 0;
+  memset(&vaiTocar, 0, sizeof vaiTocar); vaiTocarEm = 0; vaiTocarIdx = -1;
+  hVaiVis = 0.0f; hVaiTick = 0;
   metaEsqVisto = 0; metaChegouEm = 0;
 }
 
@@ -3777,7 +4242,7 @@ static void esqueletoSinopse(float x, float y, float a) {
   static const float frac[DET_SIN_ESQ_LINHAS] = { 1.0f, 0.94f, 0.58f };
   for (int i = 0; i < DET_SIN_ESQ_LINHAS; i++)
     esqueletoTexto(x, y + i * NV_DETW2_LD_SIN + 8.0f,
-                   NV_DETW2_TEXTO_W * frac[i], 18.0f, a);
+                   larguraTextoHero() * frac[i], 18.0f, a);
 }
 
 // O bloco do heroi anda junto com o cartao do carrossel (heroDx; 0 fora dele).
@@ -3807,8 +4272,10 @@ static void heroWeb(float a, float desloc) {
   const CatItem *ci = cat_item(idx);
 
   char ano[32], dur[64];
+  int durMin = 0;   // minutos do filme, lidos do texto cru (antes da traducao)
   partirMeta(fichaDe(idx), ano, sizeof ano, dur, sizeof dur);
   { char cru[64]; snprintf(cru, sizeof cru, "%s", dur);
+    durMin = minutosDe(cru);
     desc_duracao_txt(cru, dur, sizeof dur); }   // "142 min" -> forma do idioma da UI
 
   const char *sin = sinopseDe(idx);
@@ -3855,10 +4322,12 @@ static void heroWeb(float a, float desloc) {
   // Aqui eram duas linhas — uma so com generos, outra com ano e duracao — e o
   // selo do IMDb ficava sozinho encostado na borda direita da tela, a meio
   // metro do bloco de texto a que pertence.
-  float temRetom = (ci && ci->progresso > 0) ? 1.0f : 0.0f;
+  // A linha "Retomada disponivel N% Episodio TxEy" saiu (dono, 12/10/2026):
+  // o progresso agora e uma barra dentro do proprio botao de retomar.
+  float temRetom = 0.0f;
   float hSin = 0.0f;
-  if (sin) hSin = txt_bloco(TXT_DET_SIN, sin, 255, 255, 255, -1.0f, 0.0f,
-                            NV_DETW2_TEXTO_W, NV_DETW2_LD_SIN, 0.0f,
+  if (sin) hSin = txt_bloco_corta(TXT_DET_SIN, sin, 255, 255, 255, -1.0f, 0.0f,
+                            larguraTextoHero(), NV_DETW2_LD_SIN, 0.0f,
                             NV_DETW2_SIN_LINHAS);
   // DADO A CAMINHO: sinopse e meta chegam da rede depois que a pagina abre.
   // Enquanto o pedido esta em voo desenha-se o ESQUELETO do texto no lugar e
@@ -3900,16 +4369,42 @@ static void heroWeb(float a, float desloc) {
                                     0, desc_tmdb_idioma()) ? tituloDe(idx) : NULL;
   int nomeAbaixo = nome && arqLogo && !tex_falhou(arqLogo);
   float hNome = nome ? txt_bloco(TXT_DET_META2, nome, 255, 255, 255,
-                                -1, 0, NV_DETW_LOGO_MAXW, 34, 0, 0) : 0;
+                                -1, 0, larguraLogoHero(), 34, 0, 0) : 0;
   float hCaption = nomeAbaixo ? hNome + 16.0f : 0;
-  float yMeta2 = NV_DETW2_BASE - NV_DETW2_SELO_H;
-  float yMeta1 = yMeta2 - NV_DETW2_META_GAP - NV_DETW2_M1_H;
+  // UMA LINHA DE META SO (dono, 12/10/2026): a de baixo (selo de
+  // classificacao/status, pais, direcao) saiu e a duracao do filme subiu para
+  // a linha dos generos. O bloco inteiro desce o que ela ocupava.
+  float yMeta1 = NV_DETW2_BASE - NV_DETW2_M1_H;
   float ySin   = yMeta1 - NV_DETW2_GAP_SIN - hSin;
   AmigosTitulo amg;
   int temAmg = amigosDoTitulo(&amg);
   if (!temAmg) focoAmigos = 0;
   float hAmg = temAmg ? NV_DETW_AMIGOS_H + NV_DETW_AMIGOS_GAP : 0.0f;
-  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hCaption - hAmg;
+  float hAcoesExtra = detalheRetrato() ? NV_DETW2_CIRC + NV_DETW2_BTN_GAP : 0;
+  // Faixa "Vai tocar": embaixo dos botoes (e da ilha de amigos), reservada na
+  // pilha de baixo para cima como a ilha. Alvo = o mesmo episodio do botao
+  // primario, para a faixa e o botao nunca falarem de episodios diferentes.
+  float hVai;
+  { const CatItem *ciVt = cat_item(idx);
+    int vt_t = 0, vt_e = 0;
+    if (ehSerie() && !episodioAlvo(&vt_t, &vt_e, NULL)) vt_t = vt_e = 0;
+    if (vaiTocarIdx != idx || vaiTocarT != vt_t || vaiTocarE != vt_e ||
+        (Uint32)(agoraH - vaiTocarEm) > 250u) {
+      if (ciVt && ciVt->imdb[0]) vt_montar(&vaiTocar, ciVt->imdb, vt_t, vt_e);
+      else memset(&vaiTocar, 0, sizeof vaiTocar);
+      vaiTocarIdx = idx; vaiTocarT = vt_t; vaiTocarE = vt_e; vaiTocarEm = agoraH;
+    }
+    { float alvo = vaiTocar.tem ? vtui_altura(&vaiTocar) + DET_VAI_GAP : 0.0f;
+      float dt = hVaiTick ? (float)(Uint32)(agoraH - hVaiTick) : 0.0f;
+      hVaiTick = agoraH;
+      if (dt > 100.0f) dt = 100.0f;
+      if (anim_politica_reduzida) hVaiVis = alvo;
+      else {
+        hVaiVis += (alvo - hVaiVis) * (1.0f - expf(-dt / 90.0f));
+        if (fabsf(alvo - hVaiVis) < 0.5f) hVaiVis = alvo;
+      }
+      hVai = hVaiVis; } }
+  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai;
   // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
   // botoes. Sao duas, e a ordem tem razao: a retomada explica o BOTAO e fica
   // colada nele; a agenda ("Próximo episódio T2E5 · em 3 dias") explica o
@@ -3930,7 +4425,7 @@ static void heroWeb(float a, float desloc) {
   // Sobe alguns pixels enquanto entra: continua o movimento da arte em vez de
   // aparecer pronto no lugar. `desloc` e a rolagem do documento.
   float sobe = (1.0f - a) * 26.0f + desloc;
-  yMeta2 += sobe; yMeta1 += sobe; ySin += sobe;
+  yMeta1 += sobe; ySin += sobe;
   yRetom += sobe; yAgenda += sobe; yAcoes += sobe; yEstado += sobe;
 
   // --- logo -----------------------------------------------------------------
@@ -3943,7 +4438,9 @@ static void heroWeb(float a, float desloc) {
   // textura menor enquanto reprocessa se ela tiver ao menos metade do
   // pedido. Pedindo o teto, o logo sumia por um instante ao abrir o titulo;
   // pedindo a largura real, aparece na hora e troca pela nitida em seguida.
-  GLuint texLogo = arqLogo ? tex_obter_logo_larg_qualquer(arqLogo, NV_DETW_LOGO_MAXW) : 0;
+  GLuint texLogo = arqLogo ? tex_obter_logo_larg_qualquer(arqLogo, larguraLogoHero()) : 0;
+  titulo_tempo_logo(&detalheTempo, "detalhe", arqLogo, texLogo, 0);
+  if (a > 0.05f) titulo_tempo_info(&detalheTempo, "detalhe", ci, 0);
   float baseLogo = ((temRetom > 0.0f || agLinha[0]) ? yEstado : yAcoes)
                    - NV_DETW_LOGO_GAP;
   float espacoLogo = baseLogo - 110.0f - (!nomeAbaixo ? hNome : 0);
@@ -3981,7 +4478,7 @@ static void heroWeb(float a, float desloc) {
       }
       snprintf(hLogoDe, sizeof hLogoDe, "%s", arqLogo); }
     float h = hLogoVis, w = h * asp;
-    if (w > NV_DETW_LOGO_MAXW) { w = NV_DETW_LOGO_MAXW; h = w / asp; }
+    if (w > larguraLogoHero()) { w = larguraLogoHero(); h = w / asp; }
     GfxRect r = { NV_DETW2_X, baseLogo - h, w, h };
     gfx_tex_aspect_atual = 0.0f;   // o logo ja vem na proporcao certa
     // LOGO PRETO VIRA BRANCO. O TMDB serve a mesma marca em versao clara e
@@ -3999,12 +4496,14 @@ static void heroWeb(float a, float desloc) {
     // -1 = ainda carregando: trata como clara e nao tinge. Errar para o lado de
     // nao mexer na arte e o certo enquanto nao se sabe.
     { GfxModo m = tex_marca_escura(arqLogo) ? GFX_MARCA : GFX_TEXTO;
-      if (r.w > 0 && r.h > 0)
-        gfx_rect(r, texLogo, m, 0, 0, 0, 0.0f, 1, 1, 1, aLogo); }
+      if (r.w > 0 && r.h > 0) {
+        gfx_rect(r, texLogo, m, 0, 0, 0, 0.0f, 1, 1, 1, aLogo);
+        titulo_tempo_logo(&detalheTempo, "detalhe", arqLogo, texLogo, aLogo > 0.05f);
+      } }
   } else if (nome && !nomeAbaixo) {
     txt_bloco(TXT_DET_META2, nome, 255, 255, 255, NV_DETW2_X,
               baseLogo - fminf(NV_DETW_LOGO_H, espacoLogo) - hNome,
-              NV_DETW_LOGO_MAXW, 34, a, 0);
+              larguraLogoHero(), 34, a, 0);
   }
 
   // --- botoes ---------------------------------------------------------------
@@ -4022,18 +4521,41 @@ static void heroWeb(float a, float desloc) {
   // (primeiro nao assistido) e "Reproduzir" (nunca aberto). O terceiro estado
   // era dado como impossivel aqui; e possivel desde que extras_ep_visto existe.
   char rot[48];
+  int retomando = 0;
   { int t = 0, e = 0, de = 0;
     if (ehSerie() && episodioAlvo(&t, &e, &de) && t > 0 && e > 0 && de >= 2)
       // i18n NO FORMATO E NA PALAVRA. A frase montada nunca casa com uma chave
       // (ver idioma.h), entao traduzir so no desenho deixava "Retomar T1E1" em
       // portugues com a interface em ingles — o issue #12. O T/E tambem muda:
       // em ingles a abreviacao e S/E.
-      snprintf(rot, sizeof rot, i18n("%s T%dE%d"),
-               i18n(de == 2 ? "Retomar" : "Próximo"), t, e);
-    else if (ci && ci->progresso > 0) snprintf(rot, sizeof rot, "Retomar");
-    else snprintf(rot, sizeof rot, "Reproduzir"); }
+      { snprintf(rot, sizeof rot, i18n("%s T%dE%d"),
+                 i18n(de == 2 ? "Retomar" : "Próximo"), t, e);
+        retomando = de == 2; }
+    else { snprintf(rot, sizeof rot, "%s",
+                    det_rotulo_primario(ci ? ci->progresso : 0, ajustes_cw_concluido()));
+           retomando = !ehSerie(); } }
+  // Retomando com progresso: trilho no botao e, no lugar de "Retomar", o tempo
+  // que falta, como o app da Apple TV ("1 h 51 min"). Serie mantem o TxEy na
+  // frente. Sem duracao conhecida o rotulo fica como estava.
+  primarioPct = -1;
+  if (retomando && ci && ci->progresso > 0 && ci->progresso < 100) {
+    int total = durMin;   // serie: a duracao do episodio que a ficha traz ("54 min")
+    primarioPct = ci->progresso;
+    if (total > 0) {
+      int falta = (total * (100 - ci->progresso) + 99) / 100;
+      char tf[32];
+      desc_duracao_min(falta > 0 ? falta : 1, tf, sizeof tf);
+      if (ehSerie()) {
+        int t = 0, e = 0, de = 0;
+        if (episodioAlvo(&t, &e, &de) && t > 0 && e > 0) {
+          char ep[16];
+          snprintf(ep, sizeof ep, i18n("T%dE%d"), t, e);
+          snprintf(rot, sizeof rot, "%s · %s", ep, tf);
+        }
+      } else snprintf(rot, sizeof rot, "%s", tf);
+    }
+  }
 
-  float larguraAcoes = 0;
   { float cyBtn = yAcoes + NV_DETW2_BTN_H * 0.5f;
     if (acoesAgrupadas()) {
       int grupo = 1 + (temInicio() ? 1 : 0);
@@ -4046,8 +4568,9 @@ static void heroWeb(float a, float desloc) {
     // todo quadro passa.
     if (botao >= n) botao = n - 1;
     float bx = NV_DETW2_X;
-    GfxRect rp = { bx, yAcoes, larguraPrimario(rot), NV_DETW2_BTN_H };
+    GfxRect rp = heroAcaoRect(&bx, &cyBtn, larguraPrimario(rot), NV_DETW2_BTN_H);
     desenhaBotao(rp, rot, 0, nivel == 0 && botao == nb, a);
+    primarioPct = -1;   // os outros botoes nao tem trilho
     if (a > 0.3f) ponteiro_alvo(rp.x, rp.y, rp.w, rp.h, ponteiroDetalhe, NULL, -1, nb);
     bx += rp.w + NV_DETW2_BTN_GAP; nb++;
     if (temInicio()) {
@@ -4071,6 +4594,7 @@ static void heroWeb(float a, float desloc) {
         acoesAgrupadas() ? fechado+(abertoIni-fechado)*inicioExp : fechado,
         acoesAgrupadas() ? NV_DETW2_CIRC : NV_DETW2_BTN_H };
       rs.y = cyBtn - rs.h*.5f;
+      if (detalheRetrato()) rs = heroAcaoRect(&bx, &cyBtn, rs.w, rs.h);
       if (acoesAgrupadas()) {
         botao_pilula(rs, "", NULL, selIni ? 1.0f : 0.0f, 0, 0, a);
         float tinta = selIni ? ajustes_acento_tinta(NULL,NULL,NULL) : 235.0f/255.0f;
@@ -4085,11 +4609,11 @@ static void heroWeb(float a, float desloc) {
       if (a > 0.3f) ponteiro_alvo(rs.x, rs.y, rs.w, rs.h, ponteiroDetalhe, NULL, -1, nb);
       bx += rs.w + NV_DETW2_BTN_GAP; nb++;
     }
-    larguraAcoes = larguraPrimario(rot);
     if (temLembrar() && !acoesAgrupadas()) {
       const CatItem *ciL = cat_item(idx);
       GfxRect rs = { bx, cyBtn - NV_DETW2_CIRC * 0.5f,
                      NV_DETW2_CIRC, NV_DETW2_CIRC };
+      if (detalheRetrato()) rs = heroAcaoRect(&bx, &cyBtn, rs.w, rs.h);
       desenhaLembrete(rs, ciL && agenda_lembrete(ciL->imdb),
                       nivel == 0 && botao == nb, a);
       if (a > 0.3f) ponteiro_alvo(rs.x, rs.y, rs.w, rs.h, ponteiroDetalhe, NULL, -1, nb);
@@ -4119,12 +4643,9 @@ static void heroWeb(float a, float desloc) {
         if (action == ACAO_LEMBRAR)
           desenhaLembrete(rc,ci && agenda_lembrete(ci->imdb),selected,a*stagger);
         else desenhaBotao(rc,NULL,action,selected,a*stagger);
-        if (selected && action == ACAO_TRAILER && stagger > .85f)
-          desenhaDicaBotao(rc, i18n("Assistir trailer"), a);
-        if (selected && action == ACAO_EXPLORAR && stagger > .85f)
-          desenhaDicaBotao(rc, i18n("Explorar a partir daqui"), a);
         if (selected && action == ACAO_JUNTOS && stagger > .85f)
           desenhaDicaBotao(rc, i18n("Assistir Juntos"), a);
+        if (action == ACAO_MAIS) maisAncora = rc;
         if (maisAcoes && a > .3f && stagger > .85f)
           ponteiro_alvo(rc.x,rc.y,rc.w,rc.h,ponteiroDetalhe,NULL,-1,j);
       }
@@ -4133,13 +4654,11 @@ static void heroWeb(float a, float desloc) {
     } else for (; nb < n; nb++) {
       GfxRect rc = { bx, cyBtn - NV_DETW2_CIRC * 0.5f,
                      NV_DETW2_CIRC, NV_DETW2_CIRC };
+      if (detalheRetrato()) rc = heroAcaoRect(&bx, &cyBtn, rc.w, rc.h);
       desenhaBotao(rc, NULL, acaoEm(nb), nivel == 0 && botao == nb, a);
-      if (nivel == 0 && botao == nb && acaoEm(nb) == ACAO_TRAILER)
-        desenhaDicaBotao(rc, i18n("Assistir trailer"), a);
-      if (nivel == 0 && botao == nb && acaoEm(nb) == ACAO_EXPLORAR)
-        desenhaDicaBotao(rc, i18n("Explorar a partir daqui"), a);
       if (nivel == 0 && botao == nb && acaoEm(nb) == ACAO_JUNTOS)
         desenhaDicaBotao(rc, i18n("Assistir Juntos"), a);
+      if (acaoEm(nb) == ACAO_MAIS) maisAncora = rc;
       if (a > 0.3f) ponteiro_alvo(rc.x, rc.y, rc.w, rc.h, ponteiroDetalhe, NULL, -1, nb);
       bx += NV_DETW2_CIRC + NV_DETW2_BTN_GAP;
     }
@@ -4148,17 +4667,20 @@ static void heroWeb(float a, float desloc) {
   // --- ILHA DE AMIGOS, logo abaixo dos botoes ----------------------------------
   if (temAmg) {
     static const float ANEL[3] = { 0.075f, 0.08f, 0.095f };
-    float y0 = yAcoes + NV_DETW2_BTN_H + hCaption + NV_DETW_AMIGOS_GAP;
+    float y0 = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + hCaption + NV_DETW_AMIGOS_GAP;
     float d = 52.0f, pad = (NV_DETW_AMIGOS_H - d) * 0.5f;
     int foc = nivel == 0 && focoAmigos;
-    char l1[200];
+    char l1[200], l2[220];
     TxtLinha t1, t2;
     float pw, larg, tintaF = ajustes_acento_tinta(NULL, NULL, NULL);
     int c1 = foc ? (int)(tintaF * 255.0f) : 255, c2 = foc ? (int)(tintaF * 255.0f * 0.85f) : 179;
-    int nr = amg.n < 3 ? amg.n : 3;
-    amigostitulo_linha_ilha(&amg, l1, sizeof l1);
-    t1 = txt_linha_corta(TXT_DET_META2, l1, c1, c1, c1, 255, NV_DETW2_TEXTO_W - 200.0f);
-    t2 = txt_linha(TXT_HERO_META, i18n("Abrir para ver o que acharam"), c2, c2, c2, 255);
+    int nr = amg.n < 3 ? amg.n : 3, ut, ue;
+    // Informacao UTIL e nao so "viu" (dono, 06/10/2026): quem recomendou, o
+    // que acharam, ate onde foram — e embaixo o que nao coube na manchete.
+    ultimoEpisodio(&ut, &ue);
+    amigostitulo_resumo(&amg, ut, ue, (long long)time(NULL), l1, sizeof l1, l2, sizeof l2);
+    t1 = txt_linha_corta(TXT_DET_META2, l1, c1, c1, c1, 255, larguraTextoHero() - 200.0f);
+    t2 = txt_linha_corta(TXT_HERO_META, l2, c2, c2, c2, 255, larguraTextoHero() - 200.0f);
     pw = d + d * 0.71f * (float)(nr - 1);
     larg = pad + pw + 18.0f + (t1.w > t2.w ? t1.w : t2.w) + 30.0f;
     { GfxRect ilha = { NV_DETW2_X, y0, larg, NV_DETW_AMIGOS_H };
@@ -4170,6 +4692,15 @@ static void heroWeb(float a, float desloc) {
         txt_desenhar_alpha(t1, tx, ty, a);
         txt_desenhar_alpha(t2, tx, ty + t1.h + 2.0f, a * (foc ? 0.9f : 0.8f)); }
       if (a > 0.3f) ponteiro_alvo(ilha.x, ilha.y, ilha.w, ilha.h, ponteiroDetalhe, NULL, -1, DET_PTR_AMIGOS); } }
+
+  // --- FAIXA "VAI TOCAR", logo abaixo dos botoes (e da ilha de amigos) ---------
+  if (vaiTocar.tem && hVai > 1.0f) {
+    float alvoH = vtui_altura(&vaiTocar) + DET_VAI_GAP;
+    float yV = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + hCaption + hAmg + DET_VAI_GAP;
+    float wV = larguraTextoHero() < 1000.0f ? larguraTextoHero() : 1000.0f;
+    float fV = hVai / alvoH;
+    vtui_desenhar(&vaiTocar, NV_DETW2_X - 24.0f, yV, wV, a * (fV > 1.0f ? 1.0f : fV));
+  }
 
   // --- linha da AGENDA ------------------------------------------------------
   // Cor de realce e nao branco: e a unica linha do hero que fala de uma data
@@ -4200,10 +4731,11 @@ static void heroWeb(float a, float desloc) {
     }
     if (carro && !emFoco) {
       TxtLinha label = txt_linha_corta(TXT_CAPTION2, leg, 232, 235, 240, 255,
-                                      NV_DETW2_TEXTO_W - 28.0f);
+                                      larguraTextoHero() - 28.0f);
       float w = label.w + 28.0f, h = 34.0f;
-      GfxRect pill = {NV_DETW2_X + (larguraAcoes - w) * .5f, yAgenda, w, h};
-      if (pill.x < NV_DETW2_X) pill.x = NV_DETW2_X;
+      // O TEXTO do selo na margem do texto, como logo e sinopse (dono,
+      // 12/10/2026); o fundo sai 14px para a esquerda, como o foco do botao.
+      GfxRect pill = {NV_DETW2_X - 14.0f, yAgenda, w, h};
       ajustes_acento(&ar, &ag, &ab);
       gfx_cor(pill, .5f, ar, ag, ab, .16f*a);
       gfx_cor((GfxRect){pill.x+1, pill.y+1, pill.w-2, pill.h-2}, .5f,
@@ -4218,22 +4750,9 @@ static void heroWeb(float a, float desloc) {
     { TxtLinha l = txt_linha_corta(TXT_CAPTION, leg, (int)(ar * 255.0f + 0.5f),
                                    (int)(ag * 255.0f + 0.5f),
                                    (int)(ab * 255.0f + 0.5f), 255,
-                                   NV_DETW2_TEXTO_W);
+                                   larguraTextoHero());
       txt_desenhar_alpha(l, NV_DETW2_X, yAgenda + (NV_DETW_RETOM_H - l.h) * 0.5f, a); }
     }
-  }
-
-  // --- linha de retomada ----------------------------------------------------
-  if (ci && ci->progresso > 0) {
-    char ln[160];
-    if (ci->temporada > 0)
-      snprintf(ln, sizeof ln, i18n("Retomada disponível   %d%%   Episódio T%dE%d"),
-               ci->progresso, ci->temporada, ci->episodio);
-    else
-      snprintf(ln, sizeof ln, i18n("Retomada disponível   %d%%"), ci->progresso);
-    TxtLinha l = txt_linha(TXT_CAPTION, ln, 255, 255, 255, 255);
-    txt_desenhar_alpha(l, NV_DETW2_X, yRetom + (NV_DETW_RETOM_H - l.h) * 0.5f,
-                       a * 0.82f);
   }
 
   // A confirmed foreign image keeps its localized caption after actions.
@@ -4241,7 +4760,7 @@ static void heroWeb(float a, float desloc) {
   // in the artwork slot, without truncating it.
   if (nomeAbaixo)
     txt_bloco(TXT_DET_META2, nome, 255, 255, 255, NV_DETW2_X,
-               yAcoes + NV_DETW2_BTN_H + 16.0f, NV_DETW_LOGO_MAXW, 34, a, 0);
+               yAcoes + NV_DETW2_BTN_H + hAcoesExtra + 16.0f, larguraLogoHero(), 34, a, 0);
 
   // --- sinopse --------------------------------------------------------------
   { float f = 1.0f;
@@ -4251,13 +4770,13 @@ static void heroWeb(float a, float desloc) {
       else f = revela_saida(f);
     }
     if (f < 1.0f) {   // o que saiu esvanece por baixo do que entra
-      if (sinAnt[0]) txt_bloco(TXT_DET_SIN, sinAnt, 255, 255, 255, NV_DETW2_X, ySin,
-                               NV_DETW2_TEXTO_W, NV_DETW2_LD_SIN, a * (1.0f - f),
+      if (sinAnt[0]) txt_bloco_corta(TXT_DET_SIN, sinAnt, 255, 255, 255, NV_DETW2_X, ySin,
+                               larguraTextoHero(), NV_DETW2_LD_SIN, a * (1.0f - f),
                                NV_DETW2_SIN_LINHAS);
       else esqueletoSinopse(NV_DETW2_X, ySin, a * (1.0f - f));
     }
-    if (sin) txt_bloco(TXT_DET_SIN, sin, 255, 255, 255, NV_DETW2_X, ySin,
-                       NV_DETW2_TEXTO_W, NV_DETW2_LD_SIN, a * f,
+    if (sin) txt_bloco_corta(TXT_DET_SIN, sin, 255, 255, 255, NV_DETW2_X, ySin,
+                       larguraTextoHero(), NV_DETW2_LD_SIN, a * f,
                        NV_DETW2_SIN_LINHAS);
     else if (esqSin) esqueletoSinopse(NV_DETW2_X, ySin, a * f); }
 
@@ -4271,6 +4790,7 @@ static void heroWeb(float a, float desloc) {
   // Dois pontos separadores diferentes, e a diferenca de cor e o que agrupa a
   // linha — ver desenhaPonto.
   const float aHero = a;
+  if (detalheRetrato()) gfx_recorte(96, 0, larguraTextoHero(), NV_TELA_H);
   float fMeta = 1.0f;
   { const char *g0 = generoDe(idx);
     int vazia = !ano[0] && !(ci && ci->nota > 0) &&
@@ -4316,7 +4836,7 @@ static void heroWeb(float a, float desloc) {
             desenhaPonto(x + NV_DETW2_BULLET_SEP, yc, 0.702f, a);   // 179
             x += NV_DETW2_BULLET_SEP * 2 + NV_DETW2_PONTO_D;
           }
-          TxtLinha lt = txt_linha(TXT_DET_SIN, termo, 179, 179, 179, 255);
+          TxtLinha lt = txt_linha(TXT_DET_META_GEN, termo, 179, 179, 179, 255);
           txt_desenhar_alpha(lt, x, yc - lt.h * 0.5f, a);
           x += lt.w; algo = 1;
         }
@@ -4330,9 +4850,18 @@ static void heroWeb(float a, float desloc) {
     if (ano[0]) {
       if (algo) { desenhaPonto(x + NV_DETW2_SEP, yc, 0.502f, a);    // 128
                   x += NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D; }
-      TxtLinha la = txt_linha(TXT_DET_SIN, ano, 179, 179, 179, 255);
+      TxtLinha la = txt_linha(TXT_DET_META_FORTE, ano, 255, 255, 255, 255);
       txt_desenhar_alpha(la, x, yc - la.h * 0.5f, a);
       x += la.w; algo = 1;
+    }
+    // DURACAO so em FILME: em serie o campo e a contagem de temporadas, que
+    // as abas logo abaixo ja mostram.
+    if (!ehSerie() && dur[0]) {
+      if (algo) { desenhaPonto(x + NV_DETW2_SEP, yc, 0.502f, a);
+                  x += NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D; }
+      TxtLinha ld = txt_linha(TXT_DET_META_FORTE, dur, 255, 255, 255, 255);
+      txt_desenhar_alpha(ld, x, yc - ld.h * 0.5f, a);
+      x += ld.w; algo = 1;
     }
     // NOTAS DA LINHA: as fontes que a pessoa escolheu em Ajustes > Notas no
     // titulo, cada uma com a marca e a escala do proprio site (IMDb 7,8;
@@ -4342,7 +4871,7 @@ static void heroWeb(float a, float desloc) {
     { NotasPlano plano;
       float pontoW = NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D;
       notasui_planejar(&plano, notasDados()->cru,
-                       NV_DETW2_X + NV_DETW2_TEXTO_W - x,
+                       NV_DETW2_X + larguraTextoHero() - x,
                        algo ? pontoW : 0.0f, NULL);
       if (plano.n > 0) {
         if (algo) { desenhaPonto(x + NV_DETW2_SEP, yc, 0.502f, a);
@@ -4375,7 +4904,7 @@ static void heroWeb(float a, float desloc) {
                  p100, vis, exib);
         { TxtLinha lp = txt_linha(TXT_DET_SIN, pct, 179, 179, 179, 255);
           if (x + NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D + lp.w
-              <= NV_DETW2_X + NV_DETW2_TEXTO_W) {
+              <= NV_DETW2_X + larguraTextoHero()) {
             desenhaPonto(x + NV_DETW2_SEP, yc, 0.502f, a);
             x += NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D;
             txt_desenhar_alpha(lp, x, yc - lp.h * 0.5f, a);
@@ -4385,73 +4914,7 @@ static void heroWeb(float a, float desloc) {
     }
   }
 
-  // --- meta linha 2: [classificacao | status]  ·  duracao  ·  pais -----------
-  //
-  // A classificacao indicativa e o status da producao vivem DENTRO do mesmo
-  // selo de contorno, com uma divisoria entre eles ("TV-MA | RENOVADA",
-  // "R | LANÇADO"). Aqui a classificacao era um selo solto na linha de cima.
-  //
-  // STATUS: o CatItem nao tem o campo. Fica NULL, e o selo sai so com a
-  // classificacao — sem divisoria e sem texto de reserva. Carimbar "LANÇADO"
-  // em tudo seria repetir o erro que ja tirou a classificacao "14" fixa e o
-  // elenco de demonstracao daqui.
-  //
-  // DURACAO so em FILME. Em serie o segundo campo de `meta` e a contagem de
-  // temporadas ("3 temporadas"), e a referencia nao a mostra no hero — quem
-  // conta temporadas sao as abas logo abaixo da dobra, que esta tela ja
-  // desenha. Repetir a informacao aqui seria acrescentar o que o aparelho
-  // tirou.
-  {
-    float a = aHero * fMeta;
-    float x = NV_DETW2_X, yc = yMeta2 + NV_DETW2_SELO_H * 0.5f;
-    int algo = 0;
-    // STATUS: o do Trakt (fichaStatus, so com conta) ou, na falta, o que o TMDB
-    // trouxe na agenda da serie — antes so a grafia minuscula do Trakt casava, e
-    // "Returning Series"/"Ended" do TMDB nunca virava selo. Traduz pela tabela e
-    // poe em MAIUSCULAS como o selo sempre foi.
-    char statusTxt[48] = "";
-    const char *status=NULL;
-    if(ehSerie()) {
-      const char *raw = extras_ficha_status();
-      const char *k = desc_status_chave(raw, 1);
-      if(!k) k = desc_status_chave(extras_agenda_status(), 1);
-      if(k && strcmp(k, "Piloto") && strcmp(k, "Em breve") && strcmp(k, "Planejado")) {
-        idioma_maiusc_em(ajustes_idioma(), statusTxt, sizeof statusTxt, i18n(k));
-        status = statusTxt;
-      }
-    }
-    if ((ci && ci->classificacao[0]) || status) {
-      x += desenhaSeloMeta(x, yMeta2, ci && ci->classificacao[0] ? ci->classificacao : status,
-                           ci && ci->classificacao[0] ? status : NULL, a);
-      algo = 1;
-    }
-    if (!ehSerie() && dur[0]) {
-      if (algo) { desenhaPonto(x + NV_DETW2_SEP, yc, 0.502f, a);
-                  x += NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D; }
-      TxtLinha ld = txt_linha(TXT_DET_META2, dur, 255, 255, 255, 255);
-      txt_desenhar_alpha(ld, x, yc - ld.h * 0.5f, a);
-      x += ld.w; algo = 1;
-    }
-    if (ci && ci->pais[0]) {
-      if (algo) { desenhaPonto(x + NV_DETW2_SEP, yc, 0.502f, a);
-                  x += NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D; }
-      char paisTxt[128];
-      desc_pais_txt(ci->pais, paisTxt, sizeof paisTxt);
-      TxtLinha lp = txt_linha(TXT_DET_META2, paisTxt, 255, 255, 255, 255);
-      txt_desenhar_alpha(lp, x, yc - lp.h * 0.5f, a);
-      x += lp.w; algo = 1;
-    }
-    if (ci && ci->direcao[0]) {
-      float gap = algo ? NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D : 0;
-      float remaining = NV_DETW2_X + NV_DETW2_TEXTO_W - x - gap;
-      if (remaining > 100.0f) {
-        if (algo) desenhaPonto(x + NV_DETW2_SEP, yc, 0.502f, a);
-        TxtLinha ld = txt_linha_corta(TXT_DET_META2, ci->direcao,
-                                     255, 255, 255, 255, remaining);
-        txt_desenhar_alpha(ld, x + gap, yc - ld.h * 0.5f, a);
-      }
-    }
-  }
+  if (detalheRetrato()) gfx_sem_recorte();
 }
 #pragma pop_macro("NV_DETW2_X")
 
@@ -4688,32 +5151,33 @@ static void veuEpisodio(GfxRect th, float a) {
   gfx_rect(th, 0, GFX_VEU_CARD, 0, 0, 0, raio, 0, 0, 0, a);
 }
 
-static float desenhaNotaEpisodio(float x, float y, const char *fonte,
-                                 int nota, float a) {
+// O SELO DE NOTA DO EPISODIO: o LOGO da fonte e o numero em NEGRITO (dono,
+// 08/10). Era "• Trakt 8.1": a palavra em 15 px cinza e o numero em Regular —
+// o que se lia primeiro era o nome do servico, e a nota, que e a informacao,
+// vinha depois e mais fraca. O logo diz a fonte sem leitura (o disco vermelho,
+// o letreiro azul) e sobra peso para o numero. `fonte` e EX_TRAKT ou EX_TMDB.
+static float desenhaNotaEpisodio(float x, float y, int fonte, int nota, float a) {
   char valor[12];
   float ar, ag, ab;
-  TxtLinha lf, lv;
+  TxtLinha lv;
   GfxRect selo;
-  float ponto = 6.0f, pad = 10.0f, gap = 7.0f;
+  const float pad = 9.0f, gap = 8.0f, hm = fonte == EX_TMDB ? 19.0f : 20.0f;
+  float wm;
   if (nota <= 0) return 0.0f;
   snprintf(valor, sizeof valor, idioma_ponto_decimal(ajustes_idioma()) ? "%d.%d" : "%d,%d",
            nota / 10, nota % 10);
-  lf = txt_linha(TXT_MINI, fonte, 154, 159, 172, 255);
-  lv = txt_linha(TXT_CAPTION2, valor, 242, 245, 250, 255);
-  selo = (GfxRect){ x, y, pad + ponto + gap + lf.w + gap + lv.w + pad, 28.0f };
+  lv = txt_linha(TXT_G21B, valor, 242, 245, 250, 255);
+  wm = notasui_marca_largura(fonte, hm);
+  selo = (GfxRect){ x, y, pad + wm + gap + lv.w + pad + 2.0f, 30.0f };
   ajustes_acento(&ar, &ag, &ab);
   // Fundo quase-preto com uma lavagem mínima do accent: a marca continua
   // discreta sobre a foto e deixa de parecer um bloco cinza genérico.
-  if (ajustes_vidro()) gfx_vidro_painel(selo, 0.5f, 0.6f, a);   // o ponto segue no realce
+  if (ajustes_vidro()) gfx_vidro_painel(selo, 0.5f, 0.6f, a);
   else
   gfx_cor(selo, 0.5f, .055f + ar * .06f, .062f + ag * .06f,
           .078f + ab * .07f, .94f * a);
-  gfx_cor((GfxRect){x + pad, y + (selo.h - ponto) * .5f, ponto, ponto},
-          0.5f, ar, ag, ab, a);
-  txt_desenhar_alpha(lf, x + pad + ponto + gap,
-                     y + (selo.h - lf.h) * .5f + 1.0f, a);
-  txt_desenhar_alpha(lv, x + pad + ponto + gap + lf.w + gap,
-                     y + (selo.h - lv.h) * .5f, a);
+  notasui_marca(fonte, x + pad, y + selo.h * .5f, hm, a);
+  txt_desenhar_alpha(lv, x + pad + wm + gap, y + (selo.h - lv.h) * .5f, a);
   return selo.w + 12.0f;
 }
 
@@ -4787,7 +5251,6 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
     gfx_esqueleto(th, raioTh, 0.133f, 0.133f, 0.133f, a);
   else gfx_cor(th, raioTh, 0.133f, 0.133f, 0.133f, a);
   veuEpisodio(th, a);
-  if (!epApple()) foco_profundidade(th, raioTh, ajustes_profundidade_episodios(), a);
   if (ajustes_vidro()) gfx_vidro_aro(th, raioTh, 1.5f, 1, 1, 1, 0.14f * a);   // vidro: aro fino na miniatura
 
   // A mesma fonte que o menu modifica: desconhecido (-1) nao recebe selo.
@@ -4849,6 +5312,13 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
       }
     } else if (epDur)
       txt_desenhar_alpha(txt_linha(TXT_CAPTION,epDur,235,237,240,255),durationX,metaY,a);
+    if (!(progress > 0 && progress < 100) && ep && serie && serie->imdb[0] &&
+        vt_pular_ligado()) {
+      int mk = vt_marcas_episodio(serie->imdb, ep->temporada, ep->episodio);
+      float cw = mk ? vtui_chips_episodio(mk, -1.0f, 0, a) : 0.0f;
+      if (cw > 0.0f)
+        vtui_chips_episodio(mk, r.x + r.w - 18.0f - cw, metaY + 2.0f, a);
+    }
     char number[32]; snprintf(number,sizeof number,i18n("EPISÓDIO %d"),epNum);
     txt_desenhar_alpha(txt_linha(TXT_CAPTION2,number,164,169,176,255),textX,textY,a);
     char fallback[40]; snprintf(fallback,sizeof fallback,i18n("Episódio %d"),epNum);
@@ -4948,8 +5418,12 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
   // Sinopse: tres linhas, como a referencia, com truncamento do bloco.
   // Sem sinopse o espaco
   // fica vazio: melhor um card com menos texto que um card com texto errado.
+  // TXT_CAPTION (22/400) e nao TXT_DET_SIN (26), dono 08/10: no corpo do card a
+  // sinopse da pagina pesava tanto quanto o titulo e empurrava o nome, os logos
+  // e as notas em negrito para segundo plano. E o estilo que a sinopse ja usa no
+  // card do layout Apple (logo acima), com a entrelinha dele (NV_LD_CAPTION).
   if (epSin)
-    txt_bloco_corta(TXT_DET_SIN, epSin, 255, 255, 255, tx,
+    txt_bloco_corta(TXT_CAPTION, epSin, 255, 255, 255, tx,
                     r.y + NV_DETP_EP_SIN_Y, NV_DETP_EP_TEXTO_W,
                     NV_DETP_EP_LD_SIN, a * 0.9f, 3);
 
@@ -4990,12 +5464,30 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
       break;
     }
     if (nota > 0)
-      x += desenhaNotaEpisodio(x, y - 3, "Trakt", nota, a);
+      x += desenhaNotaEpisodio(x, y - 4, EX_TRAKT, nota, a);
     // O voto do TMDB entra AO LADO do do Trakt, no mesmo selo compacto
-    // (issue #87). Sao fontes diferentes — o rotulo diz qual e qual, e um
+    // (issue #87). Sao fontes diferentes — o logo diz qual e qual, e um
     // episodio pode ter uma, a outra ou as duas.
     if (ep && ep->nota > 0)
-      x += desenhaNotaEpisodio(x, y - 3, "TMDB", ep->nota, a);
+      x += desenhaNotaEpisodio(x, y - 4, EX_TMDB, ep->nota, a);
+    // CHIPS A/R/C (2.1): so com "Pular" ligado e so do episodio cujas marcas o
+    // intro.c ja tem em cache (vt_marcas_episodio). Cabem entre a meta e a data;
+    // sem lugar, saem — a data e a duracao ganham.
+    { int mk = (ep && serie && serie->imdb[0] && vt_pular_ligado())
+               ? vt_marcas_episodio(serie->imdb, ep->temporada, ep->episodio) : 0;
+      if (mk) {
+        float cw = vtui_chips_episodio(mk, -1.0f, 0, a), reserva = 0;
+        if (epData) {
+          const char *d0 = epData;
+          size_t n0 = strlen(epData);
+          if (!ajustes_data_completa() && n0 >= 4) d0 = epData + n0 - 4;
+          reserva = txt_linha_corta(TXT_CAPTION2, d0, 179, 179, 179, 255, 400.0f).w + 16.0f;
+        }
+        if (x + cw + reserva <= r.x + r.w - NV_DETP_EP_PAD) {
+          vtui_chips_episodio(mk, x, y + (NV_DETP_EP_ICONE - VTUI_CHIP_H) * 0.5f, a);
+          x += cw + 16.0f;
+        }
+      } }
     // A DATA vai para a direita do card, como na referencia: a esquerda fica so
     // a duracao, e as duas deixam de disputar a mesma linha corrida.
     if (epData) {
@@ -5075,7 +5567,6 @@ static void desenhaTrailer(float x, float y, int c, float f, float a) {
   } else {
     gfx_cor(v, raio, 0.13f, 0.13f, 0.13f, a);
   }
-  foco_profundidade(v, raio, ajustes_profundidade_trailers(), a);
 
   // Selo de play: disco escuro e o triangulo por cima, centrados na miniatura.
   { float d = NV_DETF_TR_PLAY_D;
@@ -5113,17 +5604,18 @@ static void desenhaDetalhes(float x, float y, float f, float a) {
     float yc = ly + NV_DETF_DET_LINHA * 0.5f;
     TxtLinha lk = txt_linha(TXT_DET_META2, l[i].chave, 150, 154, 163, 255);
     TxtLinha lv = txt_linha_corta(TXT_DET_META, l[i].valor, 235, 238, 245, 255,
-                                  NV_DETF_DET_W - NV_DETF_DET_CHAVE_W);
+                                  larguraDetalhes() - NV_DETF_DET_CHAVE_W);
     txt_desenhar_alpha(lk, x, yc - lk.h * 0.5f, a * 0.9f);
     txt_desenhar_alpha(lv, x + NV_DETF_DET_CHAVE_W, yc - lv.h * 0.5f, a);
     if (i < n - 1) {
-      GfxRect d = { x, ly + NV_DETF_DET_LINHA - 1.0f, NV_DETF_DET_W, 1.0f };
+      GfxRect d = { x, ly + NV_DETF_DET_LINHA - 1.0f, larguraDetalhes(), 1.0f };
       gfx_cor(d, 0.0f, 1, 1, 1, a * (0.10f + 0.06f * f));
     }
   }
 }
 
 static void desenhaElenco(float x, float y, int c, float f, float a) {
+  if (a > 0.05f) titulo_tempo_info(&detalheTempo, "detalhe", cat_item(idx), 1);
   const CatItem *ci = cat_item(idx);
   const char *nome = NULL, *papel = NULL, *foto = NULL;
   if (ci && c < ci->nElenco) {
@@ -5175,7 +5667,6 @@ static void desenhaElenco(float x, float y, int c, float f, float a) {
     txt_desenhar_alpha(li, av.x + (av.w - li.w) * 0.5f,
                        av.y + (av.h - li.h) * 0.5f, a * 0.9f);
   }
-  foco_profundidade(av, 0.5f, ajustes_profundidade_elenco(), a);
   float yn = y + NV_DETP_EL_AVATAR + NV_DETP_EL_NOME_DY;
   TxtLinha ln = txt_linha_corta(TXT_CALLOUT, nome, epApple()?238:179, epApple()?240:179, epApple()?244:179, 255, NV_DETP_EL_W);
   txt_desenhar_alpha(ln, x + (NV_DETP_EL_W-ln.w)*.5f, yn, a);
@@ -5441,6 +5932,7 @@ static void desenhaRelacionados(float x, float y, float a, int primeiro, int lim
     const char *ano = extras_relacionado_ano(i);
     GLuint t = po[0] ? tex_obter_larg(po, REL_CARD_W) : 0;
     float raio = raioCartaz(REL_CARD_W, REL_CARD_H);
+    if (aceso) { relFocoRect = r; snprintf(relFocoArte, sizeof relFocoArte, "%s", po); }
     // O realce de foco e o da Home (focoprof.h): so apple (Dinamica) tem o
     // painel da legenda. O cartao de vidro/accent que envolvia arte e legenda
     // era um contorno de 8 px que ignorava "Foco no cartaz".
@@ -5465,8 +5957,7 @@ static void desenhaRelacionados(float x, float y, float a, int primeiro, int lim
         gfx_esqueleto(r, raio, 0.133f, 0.133f, 0.133f, a);
       } else {
         gfx_cor(r, raio, 0.133f, 0.133f, 0.133f, a);
-      }
-      foco_profundidade(r, raio, ajustes_profundidade_posters(), a); }
+      } }
     { int c = aceso ? 255 : 225;
       TxtLinha lt = txt_linha_corta(TXT_DET_META2, extras_relacionado_titulo(i),
                                     c, c, c, 255, REL_CARD_W);
@@ -5521,7 +6012,6 @@ static void desenhaEstudio(float x, float y, int i, float f, float a) {
   moldura(r, 14.0f, a);
   if (!ajustes_borda_foco() && f > 0.01f) plrui_linha_foco(r, 14.0f, f * a);
   if (ajustes_vidro()) foco_anel(r0, raio, f, a);
-  foco_profundidade(r, raio, ajustes_profundidade_posters(), a);
   // Logo pedido pela largura com que o cartao desenha (h=52, w<=204; cap 256
   // com a folga cobrindo o crescimento do foco) — o 640 unico decodificava um
   // wordmark inteiro para 52 px de altura. Ver tests/artemenor.c.
@@ -5684,11 +6174,24 @@ static void abrirListaColecao(void) {
   int atual = parteAtualColecao();
   if (extras_n_colecao() < 1) return;
   colListaAberta = 1;
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toqueColecao);
+#endif
   colListaFoco = atual >= 0 ? atual : 0;
   { float passo = COLL_LIN_H + COLL_LIN_GAP;
-    float alvo = (float)colListaFoco * passo - (NV_TELA_H * 0.35f - COLL_TOPO);
+    float alvo = (float)colListaFoco * passo - (NV_TELA_H * 0.35f - colecaoTopo());
     colListaScroll = alvo > 0.0f ? alvo : 0.0f;
     colListaVel = 0.0f; }
+}
+
+// O OK numa parte da saga (toque curto). A parte traz so o id do TMDB: o
+// caminho e o mesmo do credito de um ator. OK na parte que ja esta aberta so
+// fecha a lista.
+static void abrirParteColecao(void) {
+  long t = extras_colecao_tmdb(colListaFoco);
+  if (colListaFoco != parteAtualColecao() && t > 0)
+    desc_pedir_titulo_tmdb(t, "movie");
+  colListaAberta = 0;
 }
 
 static void eventoListaColecao(const SDL_Event *e) {
@@ -5702,14 +6205,7 @@ static void eventoListaColecao(const SDL_Event *e) {
   if (k == SDLK_LEFT) { pediuMenu = 1; return; }
   if (k == SDLK_DOWN && colListaFoco + 1 < n) colListaFoco++;
   else if (k == SDLK_UP && colListaFoco > 0) colListaFoco--;
-  else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-    // A parte traz so o id do TMDB: o caminho e o mesmo do credito de um ator.
-    // OK na parte que ja esta aberta so fecha a lista.
-    long t = extras_colecao_tmdb(colListaFoco);
-    if (colListaFoco != parteAtualColecao() && t > 0)
-      desc_pedir_titulo_tmdb(t, "movie");
-    colListaAberta = 0;
-  }
+  else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) abrirParteColecao();
 }
 
 static void desenhaListaColecao(float a) {
@@ -5717,7 +6213,8 @@ static void desenhaListaColecao(float a) {
   const char *fundo = extras_colecao_fundo();
   GLuint tf = fundo[0] ? tex_obter(fundo) : 0;
   int n = extras_n_colecao(), atual = parteAtualColecao(), i;
-  float lx = COLL_X, lw = NV_TELA_W - NV_DETP_X - COLL_X;
+  GfxRect areaLista = colecaoListaRect();
+  float lx = areaLista.x, lw = areaLista.w;
   float passo = COLL_LIN_H + COLL_LIN_GAP;
 
   // FUNDO DA LISTA: SEMPRE Frost ou arte borrada, nunca a arte crua ("em
@@ -5734,29 +6231,45 @@ static void desenhaListaColecao(float a) {
   // --- coluna da colecao --------------------------------------------------
   { const char *capa = extras_colecao_capa();
     GfxRect rc = { NV_DETP_X, COLL_TOPO, 240.0f, 360.0f };
-    float y;
+    float y, tx = NV_DETP_X, tw = COLL_ESQ_W;
+    if (detalheRetrato()) {
+      rc.w = COLL_PO_W; rc.h = COLL_PO_H;
+      tx += rc.w + 32.0f; tw = NV_TELA_W - NV_DETP_X - tx;
+    }
     char meta[64];
     if (!capa[0]) capa = extras_colecao_poster(0);
     cartazColecao(rc, capa, a);
     y = rc.y + rc.h + 30.0f;
+    if (detalheRetrato()) y = COLL_TOPO;
     y += txt_bloco_corta(TXT_TITULO3, extras_colecao_nome(), 250, 251, 255,
-                         NV_DETP_X, y, COLL_ESQ_W, 56.0f, a, 3) + 10.0f;
+                         tx, y, tw, 56.0f, a, 3) + 10.0f;
     metaColecao(meta, sizeof meta);
-    { TxtLinha lm = txt_linha_corta(TXT_DET_META2, meta, 175, 180, 190, 255, COLL_ESQ_W);
-      txt_desenhar_alpha(lm, NV_DETP_X, y, a);
+    { TxtLinha lm = txt_linha_corta(TXT_DET_META2, meta, 175, 180, 190, 255, tw);
+      txt_desenhar_alpha(lm, tx, y, a);
       y += lm.h + 20.0f; }
     if (extras_colecao_sinopse()[0])
       txt_bloco_corta(TXT_DET_META2, extras_colecao_sinopse(), 190, 195, 205,
-                      NV_DETP_X, y, COLL_ESQ_W, 32.0f, a * 0.9f, 7);
+                      tx, y, tw, 32.0f, a * 0.9f, detalheRetrato() ? 3 : 7);
   }
 
   // --- partes -----------------------------------------------------------
+#ifdef NV_TOUCH_UI
+  { float area = areaLista.h;
+    toquerol_vincular(&toqueColecao, areaLista, gfx_escala(),
+                     0, n * passo - area, 1, &colListaScroll);
+    ponteiro_rolagem(toqueColecaoRolar);
+    gfx_recorte(lx, areaLista.y, lw, area); }
+#endif
   for (i = 0; i < n; i++) {
-    float ly = COLL_TOPO + (float)i * passo - colListaScroll;
+    float ly = colecaoTopo() + (float)i * passo - colListaScroll;
     GfxRect lin = { lx, ly, lw, COLL_LIN_H };
     int foc = (i == colListaFoco);
     float tx = lx + 13.0f + COLL_PO_W + 32.0f, tw = lx + lw - 32.0f - tx, ty;
     if (ly + COLL_LIN_H < 0.0f || ly > NV_TELA_H) continue;
+#ifdef NV_TOUCH_UI
+    ponteiro_alvo_faixa(lx, ly, lw, COLL_LIN_H, colecaoTopo(), NV_TELA_H - 60,
+                       toqueColecaoFocar, NULL, i, 0);
+#endif
     if (foc) {
       plrui_linha_foco(lin, 20.0f, a);   // a mesma linha em foco dos Ajustes/Agenda
     } else {
@@ -5764,6 +6277,7 @@ static void desenhaListaColecao(float a) {
     }
     { GfxRect rp = { lx + 13.0f, ly + (COLL_LIN_H - COLL_PO_H) * 0.5f,
                      COLL_PO_W, COLL_PO_H };
+      if (foc) { colFocoRect = rp; snprintf(colFocoArte, sizeof colFocoArte, "%s", extras_colecao_poster(i)); }
       cartazColecao(rp, extras_colecao_poster(i), a); }
     ty = ly + 30.0f;
     { int c = foc ? 255 : 232;
@@ -5812,6 +6326,9 @@ static void desenhaListaColecao(float a) {
                       foc ? 205 : 170, foc ? 210 : 175, foc ? 220 : 185,
                       tx, ty, tw, 31.0f, a, 3);
   }
+#ifdef NV_TOUCH_UI
+  gfx_sem_recorte();
+#endif
 }
 
 // Aba "Comentarios": /comments/likes do Trakt, os mais curtidos primeiro. Uma
@@ -6006,6 +6523,7 @@ static float cabecalhoComentarios(float x, float y, float a) {
           txt_peso(l, r.x + (r.w - l.w) * 0.5f, r.y + (r.h - l.h) * 0.5f, a, 0.5f); } }
       px += w + COM_PILL_GAP;
     }
+    // O gesto (segurar OK) so aparece na ilha, na primeira vez (COM_DICA_CHAVE).
     yy += COM_PILL_H + 28.0f;
   }
   return yy;
@@ -6157,11 +6675,15 @@ static void desenhaNumeros(float x, float y, float a) {
 // 12 series; a ficha do Wikidata quase sempre tem algum campo —, e e por isso
 // que elas ficam lado a lado e nao uma sob a outra: a coluna da direita e o que
 // impede a secao de ser uma tela inteira com uma linha de "nao tem" no meio.
+static GfxRect frasesColuna(float x, float y, float hq, int fatos) {
+  if (detalheRetrato())
+    return (GfxRect){x, y + (fatos ? hq + 48.0f : 0), NV_TELA_W - NV_DETP_X * 2, 0};
+  return (GfxRect){x + (fatos ? FR_COL_W + FR_COL_GAP : 0), y,
+    fatos ? NV_TELA_W - NV_DETP_X * 2 - FR_COL_W - FR_COL_GAP : FR_COL_W, 0};
+}
 static float desenhaFrases(float x, float y, float a) {
   // 1.7.4: o componente antigo (frases | ficha de producao), em filme e serie.
-  GfxRect q = { x, y, FR_COL_W, 0.0f };
-  GfxRect f = { x + FR_COL_W + FR_COL_GAP, y,
-                NV_TELA_W - NV_DETP_X * 2 - FR_COL_W - FR_COL_GAP, 0.0f };
+  GfxRect q = frasesColuna(x, y, 0, 0), f;
   float hq, hf;
   if (!frasesAberta)
     return desenhaChamada(x, y, "Frases e ficha de produção",
@@ -6169,13 +6691,16 @@ static float desenhaFrases(float x, float y, float a) {
                           "Duas consultas: carrega quando você desce até aqui",
                           a);
   hq = seriefrases_desenhar(q);
+  f = frasesColuna(x, y, hq, 1);
   hf = seriefrases_desenhar_fatos(f);
+  if (detalheRetrato()) return hq + 48.0f + hf;
   return hq > hf ? hq : hf;
 }
 
 // PONTEIRO (#99). r < 0 = botao `c` do hero (nivel 0); senao secao r, coluna
 // c (nivel 1) — as mesmas variaveis que as setas mexem em detail_evento.
 static void ponteiroDetalhe(int r, int c) {
+  if (corpoSobArte()) return;
   if (r < 0 && c == DET_PTR_AMIGOS) { nivel = 0; focoAmigos = 1; return; }
   if (r < 0) {
     focoAmigos = 0;
@@ -6249,7 +6774,32 @@ static int moverFileira(int dy) {
   return 0;
 }
 
+// DE ONDE O MENU DE VISTO SAI (episodios.h): a caixa, neste quadro, do card do
+// episodio ou da aba da temporada em foco. O menu se ancora nela e, depois que
+// ele pinta o veu (episodio) ou a superficie do painel (temporada), a pagina
+// redesenha a peca por cima com a MESMA funcao da fileira — o card ao lado da
+// ilha, a aba de cabecalho do painel. Em pixels reais; o menu mede pela tela
+// virtual (escala.h) e a conversao e uma divisao.
+static GfxRect menuOrigem;
+static int     menuOrigemCol;
+static float   menuOrigemF, menuOrigemA;
+static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora);
+static void menuDeVisto(Uint32 agora) {
+  if (!episodios_menu_visivel()) { episodios_menu_desenhar(); return; }
+  if (menuOrigem.w > 8.0f && (foco.fileira == SEC_EPISODIOS || foco.fileira == SEC_TEMPORADAS)) {
+    float e = gfx_escala_ui();
+    episodios_menu_ancora((GfxRect){ menuOrigem.x / e, menuOrigem.y / e, menuOrigem.w / e, menuOrigem.h / e });
+  }
+  episodios_menu_desenhar();
+  if (menuOrigem.w <= 8.0f) return;
+  if (episodios_menu_painel()) desenhaTemporada(menuOrigem, menuOrigemCol, menuOrigemF, menuOrigemA);
+  else if (foco.fileira == SEC_EPISODIOS)
+    desenhaEpisodio(menuOrigem, menuOrigemCol, menuOrigemF, menuOrigemA * anim_clamp(episodios_menu_anim(), 0.0f, 1.0f), agora);
+  menuOrigem.w = 0.0f;   // so vale a caixa do quadro em que a peca foi desenhada
+}
+
 static void desenhaSecao(int r, float a, Uint32 agora) {
+  if (corpoSobArte()) return;
   int n = secaoN(r);
   // Aba de informacao que nao seja "Criador e elenco": o web TROCA o conteudo
   // da secao (avaliacoes por episodio, fileira de similares, trailer). Nenhum
@@ -6306,6 +6856,7 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     case SEC_AUD_DIGITAL:
     case SEC_NOTAS:
     case SEC_NOTAS_EP:
+    case SEC_PROGTEMP:
     case SEC_TRAILERS:
     case SEC_RELACIONADOS:
     case SEC_FRASES:
@@ -6314,6 +6865,15 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     default:             y = epElencoY();   break;
   }
   y -= scrollY;
+
+#ifdef NV_TOUCH_UI
+  if (!(EH_AUD(r) || r == SEC_FRASES || r == SEC_NOTAS || r == SEC_NOTAS_EP || r == SEC_PROGTEMP)) {
+    float fim = 0.0f, topo = fmaxf(0.0f, y), base = fminf(NV_TELA_H, y + alturaSecao(r));
+    for (int i = 0; i < n; i++) fim = fmaxf(fim, xItem(r, i) + larguraItem(r, i));
+    toquerol_vincular(&toqueSec[r], (GfxRect){NV_DETP_X, topo, NV_TELA_W - NV_DETP_X * 2, fmaxf(0, base - topo)},
+                     gfx_escala(), 0, fim - (NV_TELA_W - NV_DETP_X), 0, &scrollSec[r]);
+  }
+#endif
 
   // TITULO DA SECAO ("Temporadas", "Elenco"), como a referencia. O port nao
   // tinha cabecalho nenhum e as fileiras apareciam soltas, sem dizer o que
@@ -6345,6 +6905,13 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
   // porque nao pertence a nenhuma pilula: e uma linha por FILEIRA. Em filme
   // secaoN(SEC_TEMPORADAS) ja devolveu 0 e nao se chega aqui.
   if (r == SEC_TEMPORADAS) resumoTemporada(NV_DETP_X, y, a);
+  // O grafico e UM desenho; as colunas focaveis sao posicoes dentro dele.
+  if (r == SEC_PROGTEMP) {
+    tgraf_desenhar(tgraf_dados(idx), NV_DETP_X, y, NV_TELA_W - NV_DETP_X * 2,
+                   nivel >= 1 && foco.fileira == SEC_PROGTEMP ? foco.coluna : -1,
+                   temporadaEm(temporada), a, agora);
+    return;
+  }
 
   for (int c = 0; c < n && c < N_ITENS; c++) {
     float f = animFoco[r][c];
@@ -6357,10 +6924,12 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     switch (r) {
       case SEC_TEMPORADAS: {
         GfxRect b = { x, y, w, NV_DETP_TEMP_H };
+        if (foco.fileira == r && c == foco.coluna) { menuOrigem = b; menuOrigemCol = c; menuOrigemF = f; menuOrigemA = a; }
         desenhaTemporada(b, c, f, a); break;
       }
       case SEC_EPISODIOS: {
         GfxRect b = { x, y, epCardW(), epCardH() };
+        if (foco.fileira == r && c == foco.coluna) { menuOrigem = b; menuOrigemCol = c; menuOrigemF = f; menuOrigemA = a; }
         desenhaEpisodio(b, c, f, a, agora); break;
       }
       case SEC_ABAS_INFO: {
@@ -6528,15 +7097,33 @@ static void desenhaPessoa(float a) {
     float x0 = PES_COL_X;
     TxtLinha lt = txt_linha(TXT_HEADLINE, "Filmografia", 245, 248, 255, 255);
     txt_desenhar_alpha(lt, x0, 96.0f, a);
+#ifdef NV_TOUCH_UI
+    float topo = 96.0f + lt.h + 28.0f, area = NV_TELA_H - 24.0f - topo;
+    if (!toquePessoa.livre) toquePessoaOffset = pessoaLinha * (PES_CARD_H + 92.0f);
+    toquerol_vincular(&toquePessoa, (GfxRect){x0, topo, NV_TELA_W - x0, area}, gfx_escala(),
+                     0, ((n + pessoaColunas() - 1) / pessoaColunas()) * (PES_CARD_H + 92.0f) - area, 1, &toquePessoaOffset);
+    ponteiro_rolagem(toquePessoaRolar);
+    gfx_recorte(x0, topo, NV_TELA_W - x0, area);
+#endif
     for (i = 0; i < n; i++) {
-      int col = i % PES_POR_LINHA, lin = i / PES_POR_LINHA;
+      int col = i % pessoaColunas(), lin = i / pessoaColunas();
       float x = x0 + col * (PES_CARD_W + PES_CARD_GAP);
       float y = 96.0f + lt.h + 28.0f + (lin - pessoaLinha) * (PES_CARD_H + 92.0f);
+#ifdef NV_TOUCH_UI
+      y = topo + lin * (PES_CARD_H + 92.0f) - toquePessoaOffset;
+      if (y + PES_CARD_H + 92.0f < topo || y > topo + area) continue;
+#else
       if (lin < pessoaLinha) continue;
+#endif
       GfxRect r = { x, y, PES_CARD_W, PES_CARD_H };
       const char *po = pessoa_credito_poster(i);
       GLuint t = po[0] ? tex_obter_larg(po, PES_CARD_W) : 0;
+#ifdef NV_TOUCH_UI
+      ponteiro_alvo_faixa(r.x, r.y, r.w, PES_CARD_H + 92.0f, topo, topo + area, toquePessoaFocar, NULL, i, 0);
+#else
       if (y + PES_CARD_H > NV_TELA_H - 24.0f) break;
+#endif
+      if (i == pessoaFoco) { pesFocoRect = r; snprintf(pesFocoArte, sizeof pesFocoArte, "%s", po); }
       // Foco da Home (focoprof.h): anel so com o ajuste ligado, senao cresce.
       { float fp = i == pessoaFoco ? 1.0f : 0.0f;
         foco_anel(r, raioCartaz(PES_CARD_W, PES_CARD_H), fp, a);
@@ -6549,7 +7136,6 @@ static void desenhaPessoa(float a) {
       } else {
         gfx_cor(r, raioCartaz(PES_CARD_W, PES_CARD_H), 0.13f, 0.13f, 0.13f, a);
       }
-      foco_profundidade(r, raioCartaz(PES_CARD_W, PES_CARD_H), ajustes_profundidade_posters(), a);
       { TxtLinha lc = txt_linha_corta(TXT_DET_META2, pessoa_credito_titulo(i),
                                       230, 234, 242, 255, PES_CARD_W);
         txt_desenhar_alpha(lc, x, y + PES_CARD_H + 12.0f, a);
@@ -6564,7 +7150,11 @@ static void desenhaPessoa(float a) {
             txt_desenhar_alpha(ls, x, y + PES_CARD_H + 12.0f + lc.h + 6.0f,
                                a * 0.9f);
           } } }
-    } }
+    }
+#ifdef NV_TOUCH_UI
+    gfx_sem_recorte();
+#endif
+  }
 }
 
 
@@ -6622,7 +7212,7 @@ static void carFundo(void) {
     GLuint tex;
     if (r.x >= NV_TELA_W || r.x + r.w <= 0.0f) continue;
     arte = arteDe(carIdx[k]);
-    tex = arte ? tex_obter_hero(arte) : 0;
+    tex = arte ? (k == carPos || k == carAplicado ? tex_obter_hero(arte) : tex_obter_hero_quente(arte)) : 0;
     // Os VIZINHOS entram tarde na abertura e saem cedo na volta: por cima da
     // home meio apagada, um cartao grande a meia forca le como borrao.
     { float ak = k == carAplicado ? a : anim_clamp((s - 0.55f) * 2.2f, 0.0f, 1.0f);
@@ -6673,7 +7263,8 @@ static void carFundo(void) {
 // inferior direito, so no topo da pagina e sem nada aberto por cima. CIMA na
 // linha de botoes abre o cartao (detail_evento); aberto, ele desenha aqui.
 static void reacaoPendente(float s) {
-  int livre = nivel == 0 && scrollY < 1.0f && !pessoaAberta && !colListaAberta &&
+  int livre = nivel == 0 && scrollY < 1.0f && !pessoaAberta && !colListaAberta && !amtui_aberta() &&
+              !detmais_aberto() &&
               !episodios_menu_aberto() && trocaarte_visivel() < 0.005f;
   if (!livre && !reacao_aberta()) return;
   reacao_detalhe_dica(cat_item(idx), livre ? s : 0.0f);
@@ -6764,6 +7355,13 @@ static void detalheFundo(float s) {
   }
 }
 
+// A ILHA "MAIS OPCOES" por cima da pagina, ancorada no "..." onde ele foi
+// desenhado neste quadro. Rolou a pagina (nivel 1) com ela fechando: some.
+static void maisDesenhar(void) {
+  if (detmais_aberto() && nivel != 0) detmais_fechar();
+  detmais_desenhar(maisAncora, 1.0f - trocaarte_visivel());
+}
+
 void detail_desenhar(Uint32 agora) {
   if (!aberto) return;
   amigostitulo_atualizar();   // barato: so remonta quando o feed social mudou
@@ -6788,6 +7386,12 @@ void detail_desenhar(Uint32 agora) {
       trailer_osd_desenhar(ct ? ct->titulo : "", 1.0f); }
     return;
   }
+#ifdef NV_TOUCH_UI
+  for (int r = 0; r < N_SECOES; r++) toqueSec[r].regiao.w = 0;
+  toquerol_vincular(&toqueDetalhe, (GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, gfx_escala(),
+                   0, docFim - NV_TELA_H, 1, &scrollY);
+  if (t > .99f && !saindo) ponteiro_rolagem(toqueDetalheRolar);
+#endif
   detalheFundo(s);
   // O veu de leitura do heroi: fora do fundo, para valer sobre qualquer fundo
   // (arte nitida, borrada ou frost). Sai com a rolagem, com o modo cinema do
@@ -6839,21 +7443,24 @@ void detail_desenhar(Uint32 agora) {
     if (ta > 0.005f) trocaarte_desenhar(logoDe(idx)); }
 
 
-  if (!ehSerie() && pg <= 0.01f && scrollY < 1.0f) {
+  if (corpoSobArte()) return;
+  if (corpoOculto(ehSerie())) {
     if (pessoaAberta) { ponteiro_camada(); desenhaPessoa(s); }
     if (colListaAberta) { ponteiro_camada(); desenhaListaColecao(s); }
     if (episodios_menu_aberto()) ponteiro_camada();
     reacaoPendente(s);
+    maisDesenhar();
+    if (amtui_aberta()) { ponteiro_camada(); amtui_desenhar(agora); }
     return;
   }
   desenhaEsqueletoEpisodios(a2 > pg ? a2 : pg);
-  desenhaEsqueletoElenco(pg);
+  desenhaEsqueletoElenco(corpoAlpha(a2));
   // As duas fileiras da primeira tela da serie entram com o heroi, e nao com
   // a rolagem (pg fica em 0 com o foco nelas).
   { float aTopo = a2 * (1.0f - trailercinema_t(&trailerCinema)) * (1.0f - trocaarte_visivel());
     for (int r = 0; r < N_SECOES; r++)
       desenhaSecao(r, (ehSerie() && (r == SEC_TEMPORADAS || r == SEC_EPISODIOS))
-                      ? (aTopo > pg ? aTopo : pg) : pg, agora); }
+                      ? (aTopo > corpoAlpha(a2) ? aTopo : corpoAlpha(a2)) : corpoAlpha(a2), agora); }
   // POR CIMA de tudo: a ficha e outra tela, nao uma secao desta.
   // O ponteiro (#99) nao alcanca a pagina por baixo de nenhuma das duas.
   if (pessoaAberta) { ponteiro_camada(); desenhaPessoa(s); }
@@ -6861,7 +7468,22 @@ void detail_desenhar(Uint32 agora) {
   // E o menu de visto por cima da ficha tambem: ele e o ultimo a abrir.
   if (episodios_menu_aberto()) ponteiro_camada();
   reacaoPendente(s);
-  episodios_menu_desenhar();
+  menuDeVisto(agora);
+  maisDesenhar();
+  if (amtui_aberta()) { ponteiro_camada(); amtui_desenhar(agora); }
+}
+
+static void ultimoEpisodio(int *t, int *e) {
+  int nt, ti;
+  *t = *e = 0;
+  if (!ehSerie()) return;
+  nt = extras_n_temporadas();
+  for (ti = nt - 1; ti >= 0; ti--) {
+    int num = extras_temporada_numero(ti), ne = extras_n_eps(ti);
+    if (num <= 0 || ne <= 0) continue;     // especiais (T0) nao fecham a serie
+    *t = num; *e = extras_ep_numero(ti, ne - 1);
+    return;
+  }
 }
 
 int detail_indice(void) { return idx; }

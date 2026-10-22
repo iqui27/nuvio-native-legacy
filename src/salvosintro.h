@@ -27,6 +27,8 @@ int  sintro_aberto(void);
 void sintro_evento(const SDL_Event *e);
 void sintro_atualizar(float dt, Uint32 agora);
 void sintro_desenhar(Uint32 agora);
+// Teste do ponteiro (#99): 0 = Lista do Nuvio, 1 = Watchlist do Trakt.
+int  sintro_teste_foco(void);
 // O BOTAO QUE ABRE, desenhado: disco azul na LG, metade de cima do rocker de
 // canal na Samsung. O toast de avisos usa o mesmo desenho — a mesma tecla, o
 // mesmo glifo, em todo lugar que a nomeia.

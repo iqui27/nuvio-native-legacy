@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nuvio 2.1 · Começar</title>
+<link rel="stylesheet" href="tv.css">
+<style>
+.tv{background:radial-gradient(90% 80% at 85% 10%,#1d1a26,#0D0D0D 60%)}
+.marca{position:absolute;left:120px;top:64px;font-size:34px;font-weight:800;letter-spacing:-.02em}
+.passos{position:absolute;left:520px;right:120px;top:70px;display:flex;gap:12px}
+.passo{flex:1}
+.passo i{display:block;height:5px;border-radius:3px;background:rgba(255,255,255,.12)}
+.passo.feito i{background:rgba(255,255,255,.55)}
+.passo.agora i{background:var(--ac)}
+.passo span{display:block;margin-top:12px;font-size:16px;font-weight:600;color:var(--mut2)}
+.passo.agora span,.passo.feito span{color:var(--mut)}
+.esq{position:absolute;left:120px;top:200px;width:820px}
+.dir{position:absolute;right:120px;top:200px;width:760px}
+.h1{font-size:64px}
+.sub{font-size:23px;margin:18px 0 0}
+.opc{display:flex;align-items:center;gap:22px;border-radius:24px;padding:22px 26px;margin-top:10px}
+.opc .tit{font-size:24px;font-weight:600}
+.opc .ds{font-size:18px;color:var(--mut);margin-top:4px}
+.opc .fim{margin-left:auto;color:var(--mut2)}
+.bola{width:64px;height:64px;border-radius:20px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;flex:none;font-size:22px;font-weight:800}
+.cores{display:flex;gap:18px;margin-top:34px}
+.cores .av{width:72px;height:72px;font-size:28px;position:relative}
+.cores .av.foco{transform:scale(1.14);box-shadow:0 12px 30px rgba(0,0,0,.5)}
+.cores .av.sel{box-shadow:0 0 0 4px var(--bg),0 0 0 7px rgba(255,255,255,.85)}
+.campo{margin-top:30px;height:84px;border-radius:24px;display:flex;align-items:center;padding:0 28px;font-size:30px;font-weight:600;gap:16px}
+.campo .cur{width:3px;height:38px;background:var(--ac)}
+.lig{display:inline-flex;width:64px;height:36px;border-radius:18px;background:rgba(255,255,255,.14);position:relative;flex:none}
+.lig::after{content:"";position:absolute;left:4px;top:4px;width:28px;height:28px;border-radius:50%;background:#bbb}
+.lig.on{background:var(--ac)}
+.lig.on::after{left:32px;background:var(--tinta)}
+.painel{border-radius:32px;padding:44px}
+.qr{width:300px;height:300px;background:#fff;border-radius:20px;padding:16px;flex:none}
+.cod{font-size:52px;font-weight:800;letter-spacing:.12em}
+.espera{display:flex;align-items:center;gap:12px;font-size:20px;color:var(--mut)}
+.espera i{width:10px;height:10px;border-radius:50%;background:var(--ac);opacity:.35}
+.espera i:nth-child(2){opacity:.65}.espera i:nth-child(3){opacity:1}
+.chk{display:flex;gap:18px;align-items:flex-start;padding:16px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.chk .c{width:36px;height:36px;border-radius:50%;background:var(--ac);color:var(--tinta);display:flex;align-items:center;justify-content:center;flex:none}
+.chk .c .ic{width:20px;height:20px}
+.chk .c.vai{background:none;border:3px solid rgba(255,255,255,.2);border-top-color:var(--ac)}
+.chk .t{font-size:22px;font-weight:600}
+.chk .d{font-size:17px;color:var(--mut);margin-top:3px}
+.rodape{position:absolute;left:120px;right:120px;bottom:72px;display:flex;gap:16px;align-items:center}
+.rodape .dica{margin-left:auto;font-size:17px;color:var(--mut2)}
+.trk{border-radius:28px;padding:30px;height:330px;display:flex;flex-direction:column}
+.trk .nm{font-size:30px;font-weight:700;margin-top:22px}
+.trk .ds{font-size:18px;color:var(--mut);margin-top:8px;line-height:1.4}
+.trk .st{margin-top:auto;display:flex;align-items:center;gap:10px;font-size:18px;font-weight:600}
+.mini{position:relative;width:760px;height:428px;border-radius:24px;overflow:hidden;box-shadow:0 30px 60px rgba(0,0,0,.5)}
+</style>
+</head>
+<body>
+
+<section class="quadro">
+<p class="leg"><b>3A · Começar, passo 1</b> — primeiro perfil: nome, cor, infantil e idioma. Tudo tem padrão; só o nome pede ação.</p>
+<div class="caixa"><div class="tv">
+  <div class="marca">nuvio</div>
+  <div class="passos"><div class="passo agora"><i></i><span>1 · Perfil</span></div><div class="passo"><i></i><span>2 · Trazer suas coisas</span></div><div class="passo"><i></i><span>3 · Acompanhar</span></div><div class="passo"><i></i><span>4 · Pronto</span></div></div>
+  <div class="esq">
+    <h1 class="h1">Quem vai assistir?</h1>
+    <p class="sub">Cada perfil tem o próprio Continuar, as próprias listas e os próprios Ajustes. Dá para criar outros depois.</p>
+    <div class="vid campo" data-f><span>Marina</span><span class="cur"></span><span style="margin-left:auto;font-size:18px;font-weight:500;color:var(--mut2)">ou digite pelo celular</span></div>
+    <div class="cores">
+      <span class="av sel" data-f style="background:#7c5cff">M</span><span class="av" data-f style="background:#e0565b">M</span><span class="av" data-f style="background:#00a88f">M</span><span class="av" data-f style="background:#e39b2d">M</span><span class="av" data-f style="background:#3d8bff">M</span><span class="av" data-f style="background:#8a8f99">M</span>
+    </div>
+    <div class="vid opc" data-f style="margin-top:34px"><span class="bola"><span data-i="cadeado"></span></span><div><div class="tit">Perfil infantil</div><div class="ds">Só classificação livre e 10 anos; sem TV ao vivo</div></div><span class="fim"><span class="lig"></span></span></div>
+    <div class="vid opc" data-f><span class="bola"><span data-i="idioma"></span></span><div><div class="tit">Idioma e legendas</div><div class="ds">Português (Brasil) · legendas em português quando houver</div></div><span class="fim"><span data-i="dir"></span></span></div>
+  </div>
+  <div class="dir" style="top:250px;display:flex;flex-direction:column;align-items:center">
+    <div class="vid painel" style="width:520px;display:flex;flex-direction:column;align-items:center">
+      <span class="av" style="width:200px;height:200px;font-size:88px;background:#7c5cff">M</span>
+      <div style="font-size:38px;font-weight:700;margin-top:28px">Marina</div>
+      <div class="sub" style="font-size:19px;margin-top:6px">Perfil principal · desta TV</div>
+    </div>
+    <div style="margin-top:28px;font-size:19px;color:var(--mut2);text-align:center;width:520px">Já usa o Nuvio em outra TV? No próximo passo, “Conta Nuvio” traz os perfis de lá.</div>
+  </div>
+  <div class="rodape"><span class="btn" data-f>Voltar</span><span class="btn foco" data-f>Continuar</span><span class="dica">Leva uns 2 minutos · tudo pode mudar depois em Ajustes</span></div>
+</div></div>
+</section>
+
+<section class="quadro">
+<p class="leg"><b>3B · Começar, passo 2</b> — trazer add-ons e biblioteca de onde a pessoa já usa; o login acontece no celular, pelo QR.</p>
+<div class="caixa"><div class="tv">
+  <div class="marca">nuvio</div>
+  <div class="passos"><div class="passo feito"><i></i><span>1 · Perfil</span></div><div class="passo agora"><i></i><span>2 · Trazer suas coisas</span></div><div class="passo"><i></i><span>3 · Acompanhar</span></div><div class="passo"><i></i><span>4 · Pronto</span></div></div>
+  <div class="esq" style="width:860px">
+    <h1 class="h1">Traga o que você já usa</h1>
+    <p class="sub">Add-ons, catálogos e o que estava assistindo. Escolha uma; dá para juntar outra depois.</p>
+    <div style="margin-top:34px">
+      <div class="vid opc foco" data-f><span class="bola">S</span><div><div class="tit">Conta Stremio</div><div class="ds">Add-ons na mesma ordem, biblioteca e Continuar assistindo</div></div><span class="fim"><span data-i="dir"></span></span></div>
+      <div class="vid opc" data-f><span class="bola"><span data-i="camadas"></span></span><div><div class="tit">AIOManager</div><div class="ds">Sua configuração de AIOStreams e AIOMetadata, já pronta</div></div><span class="fim"><span data-i="dir"></span></span></div>
+      <div class="vid opc" data-f><span class="bola">N</span><div><div class="tit">Conta Nuvio</div><div class="ds">Perfis, Ajustes e salvos de outra TV</div></div><span class="fim"><span data-i="dir"></span></span></div>
+      <div class="vid opc" data-f><span class="bola"><span data-i="brilho"></span></span><div><div class="tit">Começar do zero</div><div class="ds">Um conjunto pequeno de add-ons públicos para experimentar</div></div><span class="fim"><span data-i="dir"></span></span></div>
+    </div>
+  </div>
+  <div class="dir" style="top:220px;width:700px">
+    <div class="vid painel">
+      <div class="kick">Conta Stremio · pelo celular</div>
+      <div style="display:flex;gap:36px;margin-top:24px;align-items:center">
+        <div class="qr"><svg id="qr" viewBox="0 0 29 29" width="268" height="268" shape-rendering="crispEdges"></svg></div>
+        <div>
+          <div style="font-size:22px;line-height:1.45;color:rgba(243,242,239,.86)">Aponte a câmera do celular e entre na sua conta lá.</div>
+          <div style="font-size:17px;color:var(--mut2);margin-top:22px">ou digite no site do Nuvio</div>
+          <div class="cod">K7Q 2MX</div>
+        </div>
+      </div>
+      <div class="espera" style="margin-top:30px"><i></i><i></i><i></i>Esperando o celular · código vale 10 min</div>
+      <div style="margin-top:26px;padding-top:22px;border-top:1px solid rgba(255,255,255,.08);font-size:18px;color:var(--mut);line-height:1.5">Sua senha fica no celular; a TV recebe só a chave da conta. Os add-ons chegam na ordem em que estão no Stremio.</div>
+    </div>
+  </div>
+  <div class="rodape"><span class="btn" data-f>Voltar</span><span class="btn" data-f>Pular este passo</span><span class="dica">Back volta um passo, nada é perdido</span></div>
+</div></div>
+</section>
+
+<section class="quadro">
+<p class="leg"><b>3C · Começar, passo 3</b> — trackers: o que já está ligado aparece pronto; o padrão de cada escolha vem preenchido.</p>
+<div class="caixa"><div class="tv">
+  <div class="marca">nuvio</div>
+  <div class="passos"><div class="passo feito"><i></i><span>1 · Perfil</span></div><div class="passo feito"><i></i><span>2 · Trazer suas coisas</span></div><div class="passo agora"><i></i><span>3 · Acompanhar</span></div><div class="passo"><i></i><span>4 · Pronto</span></div></div>
+  <div class="esq" style="width:1680px">
+    <h1 class="h1">Onde marcar o que você assiste</h1>
+    <p class="sub">O Nuvio avisa o tracker quando você termina um episódio e lê de lá o que falta ver. Pode ligar mais de um.</p>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:40px">
+      <div class="vid trk" data-f><span class="bola">T</span><div class="nm">Trakt</div><div class="ds">Veio junto com a conta Stremio.<br>Histórico, watchlist e Próximos episódios.</div><div class="st" style="color:var(--ac)"><span data-i="ok"></span>Ligado</div></div>
+      <div class="vid trk foco" data-f style="flex-direction:row;gap:28px"><div style="display:flex;flex-direction:column;flex:1"><span class="bola">S</span><div class="nm">Simkl</div><div class="ds">Bom para anime. Entre pelo celular com o código:</div><div class="cod" style="font-size:40px;margin-top:14px">PX4 9TD</div><div class="st espera" style="font-weight:500"><i></i><i></i><i></i>Esperando</div></div><div class="qr" style="width:160px;height:160px;padding:10px;align-self:center"><svg class="qrm" viewBox="0 0 29 29" width="140" height="140" shape-rendering="crispEdges"></svg></div></div>
+      <div class="vid trk" data-f><span class="bola"><span data-i="tela"></span></span><div class="nm">Só nesta TV</div><div class="ds">Sem conta externa. O progresso fica guardado neste perfil.</div><div class="st" style="color:var(--mut2)">Sempre ligado</div></div>
+    </div>
+    <div class="kick" style="margin-top:46px">Escolhemos por você · mude se quiser</div>
+    <div style="display:flex;gap:14px;margin-top:16px">
+      <span class="chip" data-f>Continuar assistindo vem de <span class="v">Trakt</span></span>
+      <span class="chip" data-f>O + salva em <span class="v">Trakt e Simkl</span></span>
+      <span class="chip on" data-f>Importar o que já foi visto</span>
+    </div>
+  </div>
+  <div class="rodape"><span class="btn" data-f>Voltar</span><span class="btn" data-f>Continuar</span><span class="dica">Simkl pode ser ligado depois em Ajustes › Contas</span></div>
+</div></div>
+</section>
+
+<section class="quadro">
+<p class="leg"><b>3D · Começar, pronto</b> — o resumo do que foi feito sozinho, inclusive o que a TV aceita; tour opcional de 1 minuto.</p>
+<div class="caixa"><div class="tv">
+  <div class="marca">nuvio</div>
+  <div class="passos"><div class="passo feito"><i></i><span>1 · Perfil</span></div><div class="passo feito"><i></i><span>2 · Trazer suas coisas</span></div><div class="passo feito"><i></i><span>3 · Acompanhar</span></div><div class="passo agora"><i></i><span>4 · Pronto</span></div></div>
+  <div class="esq" style="width:860px">
+    <h1 class="h1">Pronto, Marina.</h1>
+    <p class="sub">Arrumamos isto enquanto você lia:</p>
+    <div style="margin-top:20px">
+      <div class="chk"><span class="c"><span data-i="ok"></span></span><div><div class="t">12 add-ons ativos</div><div class="d">Na ordem do Stremio. 2 não responderam e ficaram desligados.</div></div></div>
+      <div class="chk"><span class="c"><span data-i="ok"></span></span><div><div class="t">Biblioteca: 48 para ver, 312 assistidos</div><div class="d">Trakt e Simkl juntos, sem repetir título.</div></div></div>
+      <div class="chk"><span class="c"><span data-i="ok"></span></span><div><div class="t">9 coleções viraram fileiras na Home</div><div class="d">Vindas do AIOMetadata. Fixe, mova ou esconda segurando OK.</div></div></div>
+      <div class="chk"><span class="c"><span data-i="ok"></span></span><div><div class="t">Fonte automática ajustada a esta TV</div><div class="d">4K · Dolby Vision perfil 8 · HDR10 · áudio até 5.1. DTS vira 5.1 compatível.</div></div></div>
+      <div class="chk" style="border:0"><span class="c vai"></span><div><div class="t">Pular abertura e créditos</div><div class="d">Ligado. Baixando marcas dos 4 títulos do Continuar…</div></div></div>
+    </div>
+  </div>
+  <div class="dir" style="top:210px">
+    <div class="mini">
+      <div class="arte a2"></div><div class="veu"></div>
+      <div style="position:absolute;left:44px;top:120px;font-size:46px;font-weight:800;letter-spacing:.04em">ESTAÇÃO ÔMEGA</div>
+      <div style="position:absolute;left:44px;top:182px;font-size:15px;color:var(--mut)">Continuar T1:E8 · faltam 19 min</div>
+      <div style="position:absolute;left:44px;bottom:30px;display:flex;gap:12px"><div class="cz a2" style="width:150px;height:84px;border-radius:10px"></div><div class="cz a1" style="width:150px;height:84px;border-radius:10px"></div><div class="cz a8" style="width:150px;height:84px;border-radius:10px"></div><div class="cz a7" style="width:150px;height:84px;border-radius:10px"></div></div>
+    </div>
+    <div style="font-size:18px;color:var(--mut2);margin-top:18px">Sua Home, já com o que você estava vendo.</div>
+  </div>
+  <div class="rodape"><span class="btn foco" data-f><span data-i="home"></span>Ir para a Home</span><span class="btn" data-f><span data-i="brilho"></span>Fazer o tour · 1 min</span><span class="dica">O tour mostra o rail, a ilha do relógio e o botão de Fontes</span></div>
+</div></div>
+</section>
+
+<script src="tv.js"></script>
+</body>
+</html>

@@ -26,9 +26,12 @@
 void xtepg_querer(const char *id);          // fio de desenho; nao bloqueia
 void xtepg_passo(void);                     // fio de desenho, por quadro
 int  xtepg_tem(const char *id);             // ha programa guardado
+int  xtepg_carregando(const char *id);      // pedido ainda sem resposta
 int  xtepg_agora(const char *id, time_t t, EpgProg *p);
 int  xtepg_proximo(const char *id, time_t t, int k, EpgProg *p);
+// Como epg_faixa: com `out` devolve no maximo `cap`; com out NULL, o total.
 int  xtepg_faixa(const char *id, time_t de, time_t ate, EpgProg *out, int cap);
+int  xtepg_faixa_desde(const char *id, time_t de, time_t ate, int pular, EpgProg *out, int cap);
 // Esquece tudo (troca de perfil ou de cadastro do Xtream).
 void xtepg_limpar(void);
 

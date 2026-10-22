@@ -1,69 +1,14 @@
-// Tela de perfil e estatisticas do Trakt.
+// Tela de perfil e estatisticas de Trakt ou Simkl.
 //
 // O modulo e deliberadamente "burro" sobre rede: ele recebe um snapshot de
-// dados pronto, guarda uma copia e desenha. Isso permite ao app buscar Trakt em
-// uma worker sem jamais bloquear o quadro de SDL/GLES da TV.
+// dados pronto, guarda uma copia e desenha. Isso permite ao app buscar o
+// historico em uma worker sem jamais bloquear o quadro de SDL/GLES da TV.
 #ifndef NV_PERFIL_H
 #define NV_PERFIL_H
 
 #include <SDL2/SDL.h>
-#include <stdint.h>
+#include "perfildados.h"
 #include <stddef.h>
-
-// QUATRO, e nao oito e seis. A tela nao rola mais: cabem quatro cards de
-// destaque e quatro pastilhas de genero, e buscar mais do que se desenha so
-// produz campo morto no snapshot.
-#define PERFIL_MAX_GENEROS    4
-#define PERFIL_MAX_DESTAQUES  4
-#define PERFIL_MAX_DIAS       42
-
-typedef struct {
-  char nome[40];
-  int  quantidade;
-  uint32_t cor;              // 0xRRGGBB; zero usa a paleta da tela
-} PerfilGenero;
-
-typedef struct {
-  char id[64];               // imdb/trakt/slug, devolvido sem interpretacao
-  char titulo[128];
-  char detalhe[96];          // ex.: "T2E3 · Solo" ou "Filme"
-  char poster[768];
-  char backdrop[768];
-  int  plays;
-  int  minutos;
-} PerfilDestaque;
-
-typedef struct {
-  char nome[96];
-  char usuario[64];
-  char avatar[768];
-  char periodo[48];          // ex.: "SETEMBRO 2026"
-
-  int minutos;
-  int plays;
-  int filmes;
-  int episodios;
-
-  int streakAtual;
-  // streakAnterior FOI REMOVIDO: era declarado, zerado por memset e nunca lido
-  // nem escrito por ninguem — nem pelo produtor (trakt.c), nem pela tela.
-  int diasAtivosMes;
-  int diasAtivosAno;
-  int primeiroDiaSemana;     // 0=domingo..6=sabado
-  int nDias;
-  unsigned short atividade[PERFIL_MAX_DIAS];
-
-  int nGeneros;
-  PerfilGenero generos[PERFIL_MAX_GENEROS];
-  int nDestaques;
-  PerfilDestaque destaques[PERFIL_MAX_DESTAQUES];
-  // Zero e o padrao seguro para produtores antigos. O snapshot mensal nao
-  // comprova cobertura anual nem uma sequencia que cruza a virada do mes.
-  int parcial;
-  int anoCompleto;
-  int streakCompleto;
-  char aviso[160];
-} PerfilDados;
 
 typedef enum {
   PERFIL_ESTADO_CARREGANDO = 0,
@@ -110,6 +55,10 @@ void perfil_definir_erro(const char *mensagem);
 void perfil_definir_estado(PerfilEstado estado, const char *mensagem);
 PerfilEstado perfil_estado(void);
 int  perfil_pediu_atualizar(void);
+// Botao Conquistas do cabecalho (resumo): OK nele pede a tela de conquistas;
+// quem a abre e o roteador. O segundo diz se o foco esta nele (testes).
+int  perfil_pediu_conquistas(void);
+int  perfil_foco_conquistas(void);
 
 void perfil_evento(const SDL_Event *e);
 void perfil_atualizar(float dt, Uint32 agora);

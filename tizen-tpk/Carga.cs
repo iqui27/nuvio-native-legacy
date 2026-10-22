@@ -206,6 +206,31 @@ namespace NuvioTpk
                 try { string p = Path.Combine(dados, nome); if (File.Exists(p)) File.Delete(p); } catch { }
         }
 
+        // So depois de nv_tpk_iniciar confirmar o arranque. A copia empacotada
+        // e a reserva; staging + pacote ja sao duas versoes, sem arquivo extra.
+        public static void LimparAntigos(string dados)
+        {
+            if (string.IsNullOrEmpty(dados)) return;
+            try
+            {
+                foreach (string p in Directory.GetFiles(dados, "libnuvio*.so"))
+                {
+                    string n = Path.GetFileName(p);
+                    if (n == ARQ_SO || !(n.StartsWith("libnuvio-", StringComparison.Ordinal) ||
+                                         n.StartsWith("libnuvio.previous", StringComparison.Ordinal))) continue;
+                    try
+                    {
+                        File.Delete(p);
+                        foreach (string ext in new[] { ".sha256", ".ver" })
+                            File.Delete(Path.ChangeExtension(p, ext));
+                    }
+                    catch { }
+                }
+                File.Delete(Path.Combine(dados, ARQ_DL));
+            }
+            catch { } // Pasta sem permissao nunca impede o arranque.
+        }
+
         static string Sha256Hex(string arquivo)
         {
             using (var s = File.OpenRead(arquivo))

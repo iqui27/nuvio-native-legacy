@@ -11,5 +11,7 @@ int  pipintro_aberto(void);
 void pipintro_evento(const SDL_Event *e);
 void pipintro_atualizar(float dt, Uint32 agora);
 void pipintro_desenhar(Uint32 agora);
+// Teste do ponteiro (#99): 0 = "Continuar no canto", 1 = "Fechar o video".
+int  pipintro_teste_foco(void);
 
 #endif

@@ -23,8 +23,8 @@ printf '1\n00:00:01,000 --> 00:00:02,000\nx\n' > "$DIR/s.srt"
   -metadata:s:s:0 language=hun \
   -metadata:s:s:1 language=hun -metadata:s:s:1 title="Forced" \
   -metadata:s:s:2 language=eng -disposition:s:2 forced \
-  -metadata:s:s:3 language=eng -metadata:s:s:3 title="English SDH" \
+  -metadata:s:s:3 language=eng -metadata:s:s:3 title="English SDH" -disposition:s:3 hearing_impaired \
   "$DIR/f.mkv"
-cc -Isrc tests/faixasmkv.c src/faixasmkv.c src/mkv.c src/linguas.c src/rede.c src/redeurl.c \
+cc -Isrc tests/faixasmkv.c src/faixasmkv.c src/mkv.c src/linguas.c src/rede.c src/redeurl.c src/audioinfo.c \
   -o "$DIR/t" -O1 -g -Wall -I/opt/homebrew/include -Wno-deprecated-declarations
 "$DIR/t" "$DIR/f.mkv"

@@ -13,7 +13,8 @@
 //   bash tests/detalhe_glass_shot.sh <saida> [id...]
 //   NUVIO_SHOT_VIDRO=1 -> material vidro; sem ele, solido.
 //
-// Ids: filme-topo filme-trailers filme-elenco filme-notas filme-comentarios
+// Ids: filme-topo filme-explorar ("..." em foco) filme-mais serie-mais
+//      filme-trailers filme-elenco filme-notas filme-comentarios
 //      filme-relacionados filme-colecao filme-fim serie-topo serie-ep
 //      serie-temp serie-baixo
 #include <SDL2/SDL.h>
@@ -395,21 +396,40 @@ int main(int argc, char **argv) {
   { char ar[1024]; if (realpath("deploy/app/art", ar)) extras_carregar(ar); }
   montarCatalogo();
   cacheFrases();
-  // NUVIO_SHOT_AMIGOS=1: amigos falsos (feed externo) no filme e na serie.
+  // NUVIO_SHOT_AMIGOS=1: amigos falsos (feed externo) no filme e na serie —
+  // o que a ilha e a lista "O que os amigos acharam" mostram (06/10/2026):
+  // quem recomendou, reacao, nota de tracker, progresso, "parou" e "terminou".
   if (getenv("NUVIO_SHOT_AMIGOS")) {
-    SvEvento e[5]; memset(e, 0, sizeof e);
-    for (int i = 0; i < 5; i++) { e[i].pct = -1; e[i].restanteMin = -1; e[i].quando = (long long)time(NULL) - 600 * i;
-      snprintf(e[i].imdb, sizeof e[i].imdb, "%s", i < 3 ? IMDB_FILME : IMDB_SERIE); }
-    snprintf(e[0].pessoaId, 96, "nuvio:mari"); snprintf(e[0].pessoaNome, 64, "Mari"); e[0].acao = SV_REACAO; e[0].reacao = SV_REAC_GOSTOU;
-    snprintf(e[1].pessoaId, 96, "nuvio:fabi"); snprintf(e[1].pessoaNome, 64, "Fabi"); e[1].acao = SV_FIM; e[1].temporada = 1; e[1].episodio = 8;
-    snprintf(e[2].pessoaId, 96, "nuvio:rafa"); snprintf(e[2].pessoaNome, 64, "Rafa"); e[2].acao = SV_FIM;
-    snprintf(e[3].pessoaId, 96, "nuvio:mari"); snprintf(e[3].pessoaNome, 64, "Mari"); e[3].acao = SV_REACAO; e[3].reacao = SV_REAC_GOSTOU;
-    snprintf(e[4].pessoaId, 96, "nuvio:fabi"); snprintf(e[4].pessoaNome, 64, "Fabi"); e[4].acao = SV_FIM; e[4].temporada = 1; e[4].episodio = 8;
-    socialvis_definir_feed(e, 5);
+    static SvEvento e[12];
+    long long ag = (long long)time(NULL);
+    int n = 0;
+#define AMG(pid, nome, av, im, ac) do { memset(&e[n], 0, sizeof e[n]); e[n].pct = -1; e[n].restanteMin = -1; \
+      e[n].reacao = SV_REAC_NADA; e[n].quando = ag - 600 * n; e[n].acao = (ac); \
+      snprintf(e[n].pessoaId, 96, "%s", pid); snprintf(e[n].pessoaNome, 64, "%s", nome); \
+      snprintf(e[n].pessoaAvatar, 512, "%s", av); snprintf(e[n].imdb, 24, "%s", im); \
+      snprintf(e[n].tipo, 8, "%s", !strcmp(im, IMDB_SERIE) ? "series" : "movie"); } while (0)
+    AMG("nuvio:ana", "Ana", A "elenco/00_0.jpg", IMDB_FILME, SV_MANDOU);
+    snprintf(e[n].texto, sizeof e[n].texto, "Imperdível, vai por mim"); n++;
+    AMG("nuvio:mari", "Mari", A "elenco/00_1.jpg", IMDB_FILME, SV_REACAO); e[n].reacao = SV_REAC_GOSTOU; n++;
+    AMG("nuvio:mari", "Mari", A "elenco/00_1.jpg", IMDB_FILME, SV_FIM); n++;
+    AMG("trakt:rafa", "Rafa", "", IMDB_FILME, SV_AVALIOU); e[n].nota = 80; n++;
+    AMG("nuvio:fabi", "Fabi", A "elenco/00_2.jpg", IMDB_FILME, SV_REACAO); e[n].reacao = SV_REAC_MEIO; n++;
+    AMG("nuvio:leo", "Leo", "", IMDB_FILME, SV_FIM); n++;
+    AMG("nuvio:mari", "Mari", A "elenco/00_1.jpg", IMDB_SERIE, SV_AGORA); e[n].temporada = 2; e[n].episodio = 3; n++;
+    AMG("nuvio:rafa", "Rafa", "", IMDB_SERIE, SV_FIM); e[n].temporada = 2; e[n].episodio = 5; n++;
+    AMG("nuvio:bia", "Bia", A "elenco/00_3.jpg", IMDB_SERIE, SV_FIM); e[n].temporada = 2; e[n].episodio = 8;
+    e[n].reacao = SV_REAC_GOSTOU; n++;
+    AMG("nuvio:duda", "Duda", "", IMDB_SERIE, SV_FIM); e[n].temporada = 1; e[n].episodio = 3;
+    e[n].quando = ag - 34 * 86400LL; n++;
+#undef AMG
+    socialvis_definir_feed(e, n);
+    { SvPerfil p; memset(&p, 0, sizeof p);
+      p.gostoPct = 82; p.gostoTotal = 11; p.estado = SV_PERFIL_OK;
+      socialvis_definir_perfil_extra("nuvio:mari", &p); }
   }
 
   if (quer(argc, argv, "filme-topo")) { abrir(1, 0, 0, 0); gravar("filme-topo"); }
-  // O circular "Explorar" (Explorar 2.0), ultimo da linha aberta, em foco.
+  // O ULTIMO circular da linha aberta em foco: hoje o "..." (Mais opcoes).
   if (quer(argc, argv, "filme-explorar")) {
     abrir(1, 0, 0, 0);
     maisAcoes = 1; botao = nBotoesTodos() - 1;
@@ -417,6 +437,49 @@ int main(int argc, char **argv) {
     for (int k = 0; k < 50; k++) { quadros(1); SDL_Delay(16); }
     quadros(4);
     gravar("filme-explorar");
+  }
+  // "MAIS OPCOES" (06/10/2026): OK no "..." abre a ilha com Trailer, Explorar,
+  // Trocar arte (e Recomendar com o servico), foco na segunda linha.
+  if (quer(argc, argv, "filme-mais") || quer(argc, argv, "serie-mais")) {
+    int k, serie;
+    for (serie = 0; serie < 2; serie++) {
+      int d[DMAIS_N];
+      if (!quer(argc, argv, serie ? "serie-mais" : "filme-mais")) continue;
+      abrir(serie ? 0 : 1, 0, 0, 0);
+      maisAcoes = 1; botao = nBotoesTodos() - 1;
+      for (k = 0; k < 30; k++) { quadros(1); SDL_Delay(16); }
+      maisDisponiveis(d);
+      detmais_abrir(d);
+      { SDL_Event e; memset(&e, 0, sizeof e);
+        e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_DOWN; detail_evento(&e); }
+      for (k = 0; k < 40; k++) { quadros(1); SDL_Delay(16); }
+      quadros(4);
+      gravar(serie ? "serie-mais" : "filme-mais");
+      detmais_zerar();
+    }
+  }
+  // A ILHA DE AMIGOS em foco e a lista que o OK abre (06/10/2026).
+  if (quer(argc, argv, "filme-amigos")) {
+    abrir(1, 0, 0, 0); focoAmigos = 1; quadros(30); gravar("filme-amigos");
+  }
+  if (quer(argc, argv, "filme-amigos-lista")) {
+    AmigosTitulo at; int ut, ue;
+    abrir(1, 0, 0, 0); focoAmigos = 1;
+    if (amigosDoTitulo(&at)) { ultimoEpisodio(&ut, &ue); amtui_abrir(&at, ut, ue, tituloDe(idx)); }
+    for (int k = 0; k < 30; k++) { quadros(1); SDL_Delay(16); }
+    gravar("filme-amigos-lista");
+    amtui_fechar();
+  }
+  if (quer(argc, argv, "serie-amigos")) {
+    abrir(0, 0, 0, 0); focoAmigos = 1; quadros(30); gravar("serie-amigos");
+  }
+  if (quer(argc, argv, "serie-amigos-lista")) {
+    AmigosTitulo at; int ut, ue;
+    abrir(0, 0, 0, 0); focoAmigos = 1;
+    if (amigosDoTitulo(&at)) { ultimoEpisodio(&ut, &ue); amtui_abrir(&at, ut, ue, tituloDe(idx)); }
+    for (int k = 0; k < 30; k++) { quadros(1); SDL_Delay(16); }
+    gravar("serie-amigos-lista");
+    amtui_fechar();
   }
   if (quer(argc, argv, "filme-trailers")) { abrir(1, 1, SEC_TRAILERS, 0); gravar("filme-trailers"); }
   if (quer(argc, argv, "filme-elenco")) { abrir(1, 1, SEC_ELENCO, 0); gravar("filme-elenco"); }

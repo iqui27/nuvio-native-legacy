@@ -14,6 +14,8 @@
 #include "gfx.h"
 
 int  ajustes_iniciar(void);
+// Per device: 0 = TV (default), 1 = Mobile. Applied before the initial viewport.
+int  ajustes_interface_mobile(void);
 
 // Pasta onde os ajustes sao lidos e gravados. Chamar uma vez, no inicio.
 void ajustes_dir(const char *dir);
@@ -33,8 +35,15 @@ int  ajustes_menu_explorar(void);
 int  ajustes_menu_guia(void);
 int  ajustes_menu_agenda(void);
 int  ajustes_menu_perfil(void);
-// "Trailer do cartaz em foco" (#124, focusedPosterBackdropTrailerEnabled),
-// ja considerando a dependencia: 1 so com expandir ou cartaz deitado ligados.
+// "Trailer do cartaz em foco" (#124; tres modos desde 08/10/2026). Na conta
+// continua o booleano do web (focusedPosterBackdropTrailerEnabled): true =
+// qualquer modo ligado. O modo seguro devolve DESLIGADO.
+//   DESLIGADO  nada toca com o foco num cartaz;
+//   CHEIA      o trailer toca no lugar da arte do destaque e a home entra no
+//              modo cinema, como o trailer do destaque (so o logo fica);
+//   CARD       o trailer toca DENTRO do cartaz em foco (home.c: cartaz deitado
+//              e 4:3 na hora; cartaz em pe so aberto por "Expandir poster").
+enum { AJ_TRAILER_CARTAZ_DESLIGADO = 0, AJ_TRAILER_CARTAZ_CHEIA = 1, AJ_TRAILER_CARTAZ_CARD = 2 };
 int  ajustes_trailer_cartaz(void);
 // "Itens por fileira" da Home (#163): 12, 18 ou 24. Padrao 12.
 int  ajustes_itens_fileira(void);
@@ -53,6 +62,9 @@ void ajustes_abrir_no_vidro(void);
 // O "Reconectar" do modal do Trakt na ilha (02/10): pousa na linha do Trakt,
 // onde o OK comeca o pareamento.
 void ajustes_abrir_no_trakt(void);
+// Fontes e addons > Escolha da fonte, na linha "Espera pelos add-ons": o destino
+// do OK na explicacao da espera na ilha do player (#202).
+void ajustes_abrir_na_espera_fonte(void);
 // GUIA DE USO (Ajustes › Sobre e ajuda): a proxima abertura vai direto ao
 // guia. `daNovidades` = 1 quando quem abriu foi o cartao da 1.8.0: o guia
 // ganha "Voltar às novidades" e o Voltar dele devolve ao cartao
@@ -83,6 +95,10 @@ int  ajustes_opcao_em_foco(void);
 // 1 = o foco esta na coluna de categorias, que e onde a tela abre sempre —
 // menos logo depois de ajustes_abrir_na_cor, que pousa na lista.
 int  ajustes_foco_no_indice(void);
+// Testes do ponteiro (#99): o editor aberto (0 fechado, 1 painel/linha,
+// 2 dependencia), o valor pendente, se o foco esta no rodape "Restaurar
+// padrao" e se a pergunta de restaurar esta na tela (com o botao em foco).
+int  ajustes_teste_editor(int *pendente, int *rodape, int *restaurar, int *confirmar);
 void ajustes_encerrar(void);
 
 // Leitura pelo resto do app. "Animacoes reduzidas" e a que mais importa: com
@@ -94,6 +110,9 @@ int ajustes_animacoes_reduzidas(void);
 // V_BRILHO_PLAYER (padrao 1 = 80%).
 int ajustes_esmaecer(void);
 int ajustes_brilho_player(void);
+int ajustes_hdr_ui(void);   // #205: 1 = Automatico (padrao), 0 = Desligado
+// #202: -1 = ultimo modo usado (padrao); 0..7 = PlrAspecto aplicado ao abrir o video.
+int ajustes_proporcao_padrao(void);
 int ajustes_descanso_estilo(void);   // ESM_ESTILO_* (esmaecer.h)
 int ajustes_descanso_fonte(void);    // DESC_FONTE_* (descanso.h)
 int ajustes_dolby_vision(void);
@@ -101,8 +120,17 @@ int ajustes_dolby_atmos(void);
 // pauseOverlayEnabled: o painel de ficha que sobe alguns segundos depois de
 // pausar o video. Ver pausao.h.
 int ajustes_pausa_overlay(void);
+int ajustes_classif_player(void);   // 1 = mostra a classificacao/guia parental no player (padrao)
 // "O que achou?" nos creditos (reacao.h). Ligado de fabrica.
 int ajustes_reacao_creditos(void);
+// #329: pula abertura/resumo sozinho quando ha marcador (desligado de fabrica).
+int ajustes_pular_abertura(void);
+int ajustes_pular_resumo(void);
+// #331: a contagem do proximo episodio nos creditos (desligado de fabrica; contagem configuravel, padrao 5 s).
+int ajustes_proximo_auto(void);
+int ajustes_proximo_contagem(void);
+// Pula os creditos sozinho, so com inicio e fim reais do marcador (desligado de fabrica).
+int ajustes_pular_creditos(void);
 // Medidor de desempenho na ilha do relogio (desempenho.h): Desempenho desta TV,
 // local. 0 = desligado, 1 = Minimo, 2 = Menor, 3 = Grande (DS_* de desempenho.h).
 int ajustes_medidor_desempenho(void);
@@ -124,6 +152,8 @@ int ajustes_fonte_manual(void);
 // primeira fonte na ordem do addon e confere SO ela. 0 = "Melhor fonte", a
 // regra de pontuacao de streams.c. Ver fonteauto.h.
 int ajustes_fonte_primeira(void);
+// #400: ordem visual do addon, local; nao altera autoplay.
+int ajustes_fonte_ordem_addon(void);
 // 1 = a folha de Fontes mostra o nome e a descricao do addon como vieram.
 int ajustes_fonte_texto_addon(void);
 int ajustes_fonte_texto_logo(void);
@@ -131,9 +161,21 @@ int ajustes_fonte_texto_logo(void);
 // escolhida nao abre (0..3; 0 = nenhuma). Nao vale para escolha manual nem
 // para canal ao vivo, que tem o watchdog proprio em app.c.
 int ajustes_fonte_repor(void);
-// Prazo, em ms, da escolha automatica com a lista ainda enchendo (#221); 0 =
-// esperar todos os addons. "Espera pelos add-ons" em Ajustes.
+// Prazo, em ms, da escolha automatica com a lista ainda enchendo (#221);
+// 0 = INSTANTANEO (#202), -1 = esperar todos os addons. "Espera pelos
+// add-ons" em Ajustes.
 int ajustes_fonte_prazo_ms(void);
+// Auto-play como no oficial (#202, fonteregra.h): FR_ESCOPO_*, FR_REGEX_* e
+// "Usar os outros se nao houver" (1 = ligado).
+int ajustes_fonte_tocar_conferindo(void);
+int ajustes_fonte_aquecer(void);
+int ajustes_fonte_conferir_varias(void);
+int ajustes_fonte_preparar(void);
+int ajustes_fonte_escopo(void);
+int ajustes_fonte_regex_modo(void);
+// "Usar a ordem" dos add-ons (FR_ORDEM_*); 0 tambem quando nao ha ordem.
+int ajustes_fonte_ordem_uso(void);
+int ajustes_fonte_usar_outros(void);
 // R9b: 0 Equilibrio, 1 Qualidade maxima, 2 Começar rápido / 0 Preferir, 1 Indiferente, 2 Evitar HDR e DV.
 int ajustes_fonte_prioridade(void);
 int ajustes_fonte_hdr(void);
@@ -156,6 +198,8 @@ int ajustes_idioma_ingles(void);
 // _tick: por quadro, recolhe o locale da webOS, que chega de um fio.
 void ajustes_idioma_auto_iniciar(void (*aoMudar)(const char *codigo, int fonte, int notificar));
 void ajustes_idioma_auto_tick(void);
+void ajustes_log_vazar_tudo(void);   // saida do app: nada pendente fica sem sair
+void ajustes_log_vazar(void);   // imprime as rajadas de mudanca paradas (a cada quadro)
 
 // COR DO ANEL DE FOCO, escolhida em "Cor de destaque" ou herdada da conta
 // (selected_theme). Um "tema" neste app e so isto: ver TEMA_ACENTO em
@@ -221,6 +265,9 @@ const char *ajustes_qualidade(void);
 // Faixa de tamanho da escolha automatica, em GB (0 = sem limite).
 int ajustes_tamanho_max_gb(void);
 int ajustes_tamanho_min_gb(void);
+float ajustes_espaco_fator(int pct);   // 50..150 % -> 0,5..1,5 (fora da faixa e preso)
+float ajustes_espaco_fileiras(void);   // espaco vertical entre fileiras da Home
+float ajustes_espaco_titulos(void);    // espaco horizontal entre cartazes
 // LIVE TV. Resolucao principal: 0 Automatica, 1 4K, 2 1080p, 3 720p, 4 SD
 // (livetv_regras.h converte em altura). Formato do Xtream: 0 Automatico,
 // 1 HLS, 2 TS. Espera: 0 = a automatica de cada caminho, senao o prazo em ms.
@@ -238,6 +285,9 @@ void  ajustes_livetv_aplicar_modo(int modo);
 
 // --- LAYOUT: estrutura da home ----------------------------------------------
 int   ajustes_rail_recolhida(void);     // collapseSidebar
+// #461: 1 = o menu e uma barra no topo (menu.c), sem rail na esquerda. 0 no
+// layout Dinamica e no telefone em retrato.
+int   ajustes_menu_topo(void);
 int   ajustes_rail_moderna(void);       // modernSidebar
 int   ajustes_rail_moderna_blur(void);  // modernSidebarBlur
 int   ajustes_hero_ligado(void);        // heroSectionEnabled
@@ -270,6 +320,9 @@ void  ajustes_desenhar_addons(int foco);
 // (liga/desliga, adicionar, repositorios); 1 = scrapers do repositorio `repo`.
 typedef struct { int nivel, foco, repo, armado; const char *aviso; } AjPluginsVista;
 void  ajustes_desenhar_plugins(const AjPluginsVista *v);
+// 2.0.3: a lista de addons (0) ou de plugins (1) fechou: Ajustes reabre na
+// categoria dela, com o foco na linha que a abriu.
+void  ajustes_voltar_de_lista(int plugins);
 // KIT DAS ILHAS (Glass UI) para as telas que saem de Ajustes: diagnostico,
 // teste de velocidade e diagnostico da Live TV. Mesmo material e mesmas pecas
 // da tela de Ajustes (ajustes_ux_ilha.inc).
@@ -335,6 +388,9 @@ int   ajustes_envio_auto(void);
 float ajustes_detalhe_veu(void);
 int   ajustes_trailer_auto(void);      // trailer mudo no fundo da pagina de titulo
 int   ajustes_trailer_hero(void);      // trailer no destaque da home
+// GPU que nao aguenta o trailer automatico da home (Utgard): desliga o do
+// destaque e o do cartaz em foco nesta sessao, sem gravar. Uma linha no log.
+void  ajustes_trailer_hero_vetar(const char *gpu);
 int   ajustes_hero_deslizar(void);     // troca do destaque desliza de lado (senao esmaece)
 // ARTE DO ADDON (locais, desligadas de fabrica). 1 = a imagem que o addon
 // mandou no meta vence a substituicao do app; sem ela, a fonte de sempre.
@@ -358,6 +414,10 @@ void  ajustes_definir_envio_auto(int ligado);
 // N3: "Receber enquetes" (padrao ligado). O espelho local do opt-out da conta:
 // enquete.c grava aqui o que o servidor disse, sem refazer o pedido.
 int   ajustes_enquetes(void);
+// 2.1 Conquistas (Ajustes › Conta e serviços): chave geral, aviso depois dos creditos e dicas das secretas.
+int   ajustes_conquistas(void);
+int   ajustes_conquistas_aviso(void);   // chave geral E aviso
+int   ajustes_conquistas_dicas(void);
 void  ajustes_espelhar_enquetes(int ligado);
 // Fonte do destaque (ARTEHERO_*) e "Destaque com outra arte", gravados na hora.
 void  ajustes_definir_destaque(int fonte, int diferente);
@@ -368,11 +428,16 @@ int   ajustes_local_descobrir(void);
 int   ajustes_descobrir_na_busca(void); // searchDiscoverEnabled (derivado)
 
 // --- LAYOUT: continuar assistindo -------------------------------------------
-// 1 = pedir uma superficie 3840x2160 na criacao da janela. A TV pode ignorar,
-// e a maioria ignora — a linha `janela=... drawable=...` do log diz o que ela
-// respondeu. Ver a nota em main.c.
+// "Resolucao da interface" (RES_* em resolucao.h; padrao Automatica = 1080p).
+// ajustes_4k: 1 = a pessoa escolheu 4K: pedir uma superficie 3840x2160 na
+// criacao da janela. A TV pode ignorar — a linha `janela=... drawable=...` do
+// log diz o que ela respondeu — e se conceder e nao aguentar, main.c recua
+// para 1080p (resolucao.h). Ver a nota em main.c.
 int   ajustes_4k(void);
-// 1 = desenhar a interface em 1280x720 e ampliar para a janela (gpun_forcar_720).
+// 1 = Automatica: 1080p, sondando o 4K onde a tela for 4K (resolucao.h, RES_AUTO_*).
+int   ajustes_res_auto(void);
+// 1 = a pessoa escolheu 720p: desenhar em 1280x720 e ampliar (gpun_forcar_720).
+// Nunca automatico.
 int   ajustes_720p(void);
 // Ilha do relogio (ilha.h). _ligado: 0 = sem pilula em repouso (os avisos
 // continuam saindo dela). _pos: 0 automatica, 1 esquerda, 2 direita.
@@ -383,17 +448,27 @@ int   ajustes_relogio_12h(void);   // 1 = 12 h com AM/PM (relogio.h)
 float ajustes_tamanho_ui(void);
 // Settings only: 0.8/0.9/1.0, default 0.9; independent of global UI zoom.
 float ajustes_tamanho_ajustes(void);
+// #339: 1 = Settings as a single stacked list (Ajustes › Aparência › Layout dos Ajustes). LOCAL.
+int   ajustes_layout_lista(void);
 int   ajustes_esconder_logo_trailer(void);   // 1 = hide the corner title logo while a trailer plays
 // R4: second subtitle placement and own style (local). junto: 1 = stacked right above the
 // primary at the bottom, 0 = top band. tamanho: percent (60..160), 0 = automatic (90% of the
 // primary). cor/fundo/borda: the same indices as the primary style (VideoLegendaEstilo), -1 = same as primary.
+int   ajustes_legendas_todas(void); // #425: abrir todas as faixas
+// #205: 1 = tela de abertura Detalhada (o cartao com fonte e passos); 0 = Cinema.
+int   ajustes_abertura_detalhada(void);
 int   ajustes_leg2_junto(void);
 int   ajustes_leg2_tamanho(void);
 int   ajustes_leg2_cor(void);
 int   ajustes_leg2_fundo(void);
 int   ajustes_leg2_borda(void);
+int   ajustes_legenda_forcada_auto(void);    // #287: 1 = audio in the subtitle language -> only the forced track (local, default on)
+int   ajustes_legenda_sync_auto(void);       // local, ligada por padrão
 int   ajustes_legenda_sync_audio(void);      // 1 = offer "Por audio" in subtitle AutoSync (F06; local, default off)
 int   ajustes_trailer_zoom_tpk(void);        // #241: 1 = experimental trailer zoom on the native .tpk (local, default off)
+int   ajustes_mic_busca(void);               // Samsung (.tpk/.wgt) search mic button: 0 automatic, 1 on, 2 off (local)
+unsigned ajustes_p2p_limite_mb(void);           // #334: P2P space limit in MB (0 = Automatic)
+int   ajustes_buffer_preset(void);           // #338: 0 Automatico, 1 Baixo, 2 Medio, 3 Alto (0 fora do Android)
 int   ajustes_cache_seek_mb(void);           // F07: seek cache limit in MB for the next video (0 = off / not on this TV)
 #ifdef AJUSTES_TESTE
 void  ajustes_teste_escala(int percentual); // fixture only; does not persist
@@ -432,12 +507,20 @@ int   ajustes_cw_thumb_episodio(void);  // useEpisodeThumbnailsInCw
 int   ajustes_cw_fonte(void);
 int   ajustes_cw_desfocar_proximo(void);// blurContinueWatchingNextUp
 int   ajustes_cw_do_episodio_mais_alto(void); // nextUpFromFurthestEpisode
+int   ajustes_cw_proximo(void);   // 1 = 'a seguir' entra em Continuar assistindo (padrao)
 int   ajustes_cw_mostrar_nao_exibidos(void);  // showUnairedNextUp
 // continueWatchingSortMode: 0 default, 1 streaming_style, 2 split_upcoming
 int   ajustes_cw_ordem(void);
+int   ajustes_dts_ac3(void);             // 1 = DTS convertido em AC3 5.1 (LG); 0 = AAC estereo
+int   ajustes_ps_continuar(void);        // #303: 0 = sem o cartao "continuar" na escolha de perfil
+int   ajustes_hist_conta(void);          // 1 = this profile's history goes to the Nuvio account (per profile, default on)
+int   ajustes_social(void);              // 1 = friends/social features on (per profile, default on)
+int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)
+int   ajustes_cw_retido_tambem(void);   // 1 = o titulo da ilha/Retomar tambem fica em Continuar assistindo
 // Percentual (70-98, padrao 90) a partir do qual o episodio conta como
 // assistido: sai do Continuar assistindo e o card passa ao proximo. Local.
 int   ajustes_cw_concluido(void);
+int   ajustes_cw_minimo(void);    // 1..20 %: piso do Continuar assistindo (#326); 1 = como sempre
 
 // --- LAYOUT: pagina de detalhe (efeito vive em detail.c) ---------------------
 int   ajustes_desfocar_nao_assistidos(void); // blurUnwatchedEpisodes
@@ -445,6 +528,8 @@ int   ajustes_botao_trailer(void);           // detailPageTrailerButtonEnabled
 int   ajustes_meta_externo(void);            // preferExternalMetaAddonDetail
 // "Usar sempre o Cinemeta": 1 = a ficha e os episodios vem so do Cinemeta (como
 // antes); 0 (padrao) = catalogo primeiro, ver descoberta.c (metaCatalogo).
+int   ajustes_busca_nuvio(void);      // 0 = Primeiro (padrao), 1 = Por ultimo, 2 = Desligado (#311)
+int   ajustes_busca_origem(void);     // 0 = sem "de <fonte>" nos grupos da busca (#311)
 int   ajustes_busca_cinemeta(void);   // 0 = Cinemeta fora da busca (#231)
 int   ajustes_meta_so_cinemeta(void);
 
@@ -463,11 +548,6 @@ int   ajustes_profundidade(void);            // cardDepthEnabled
 float ajustes_profundidade_borda(void);      // 0..1 (cardDepthEdgeStrength/100)
 float ajustes_profundidade_brilho(void);     // 0..1 (cardDepthSheenStrength/100)
 float ajustes_profundidade_cobertura(void);  // 0..1 (cardDepthEdgeCoverage/100)
-int   ajustes_profundidade_posters(void);
-int   ajustes_profundidade_cw(void);
-int   ajustes_profundidade_episodios(void);
-int   ajustes_profundidade_elenco(void);
-int   ajustes_profundidade_trailers(void);
 
 // --- LAYOUT: tamanho do item -------------------------------------------------
 // ATENCAO, e a armadilha que ja custou uma medida errada: no layout MODERNO
@@ -534,7 +614,15 @@ int         ajustes_nota_titulo(int fonte);
 // Chave ausente no blob NAO mexe na opcao, e valor de texto que este app nao
 // reconhece tambem nao: trocar por um padrao seria inventar uma escolha que o
 // usuario nunca fez.
+// EXCECAO (#378): os idiomas de legenda, legenda secundaria e audio da conta.
+// Eles nao sao opcao desta tabela, sao a parte "da conta" de linguas.c, e o
+// blob e o retrato inteiro dela: chave ausente = a conta nao tem idioma (sem
+// isso, os do perfil anterior ficavam valendo). A escolha local nao e tocada.
 int ajustes_aplicar_blob(const char *json);
+// #378: so os idiomas de legenda/audio da conta, para o blob que chega com os
+// ajustes locais protegidos (sync.c nao o aplica). Nao mexe em escolha local.
+// NULL esquece os idiomas da conta (troca de perfil/conta).
+void ajustes_idiomas_da_conta(const char *json);
 
 // AJUSTES POR PERFIL NESTA TV (ajustes-p<N>.txt). _guardar grava os ajustes que
 // sao do perfil (os mesmos que a conta guarda; nunca os deste aparelho).
@@ -571,11 +659,24 @@ void ajustes_tmdb_idioma_relatar(const char *blob);
 // portugues (text.c traduz ao desenhar). _ligado: 1/0 num interruptor, -1 nos
 // outros. _passo: proximo (dir 1) ou anterior (-1) valor, gravado e com os
 // mesmos efeitos do OK na tela de Ajustes; 0 se nao gravou.
+// "corDestaque" nao e uma opcao de 2 a 6 valores: o op e o AJ_RAPIDO_COR e a
+// central abre o seletor de cores (ajustes_rapido_cor_*, logo abaixo).
+#define AJ_RAPIDO_COR 9000
 int         ajustes_rapido_op(const char *chave);
 const char *ajustes_rapido_rotulo(int op);
 const char *ajustes_rapido_valor(int op);
 int         ajustes_rapido_ligado(int op);
 int         ajustes_rapido_passo(int op, int dir);
+// A COR DE DESTAQUE (seletor da central): os 18 acentos fixos na ordem da
+// regua de Ajustes (0-8 claros, 9-17 profundos). `cor` devolve a tinta que
+// contrasta com o preenchimento (como ajustes_acento_tinta); `atual` = -1 com
+// um acento dinamico; `definir` grava como a tela de Ajustes (0 = falhou).
+int         ajustes_rapido_cor_n(void);
+const char *ajustes_rapido_cor_nome(int i);
+float       ajustes_rapido_cor(int i, float *r, float *g, float *b);
+int         ajustes_rapido_cor_atual(void);
+const char *ajustes_rapido_cor_atual_nome(void);
+int         ajustes_rapido_cor_definir(int i);
 
 #ifdef NV_SHOT_HOOKS
 int ajustes_shot_valor(const char *chave, int v);   // capturas: opcao pela chave

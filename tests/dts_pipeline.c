@@ -32,8 +32,8 @@ int main(int argc,char **argv) {
  setenv("NUVIO_DTS_ADAPTER_DIR","/no-such-dts-directory",1);
  assert(!dts_pipeline_available(0)); assert(!dts_pipeline_available(2));
  assert(!dts_pipeline_create("app","",0,event,&loads));
- setenv("NUVIO_DTS_ADAPTER_DIR",argv[2],1); assert(!dts_pipeline_available(4));
- setenv("NUVIO_DTS_ADAPTER_DIR",argv[1],1);
+ setenv("NUVIO_DTS_ADAPTER_DIR",argv[2],1); dts_pipeline_available_esquecer(); assert(!dts_pipeline_available(4));
+ setenv("NUVIO_DTS_ADAPTER_DIR",argv[1],1); dts_pipeline_available_esquecer();
  assert(dts_pipeline_available(0));
  void *native=dlopen("libplayerAPIs.so",RTLD_NOW|RTLD_LOCAL);assert(native);
  int (*play_calls)(void),(*pause_calls)(void);
@@ -46,7 +46,7 @@ int main(int argc,char **argv) {
  DtsPipeline *p=dts_pipeline_create("app","\"window",0,event,&loads); assert(p);
  assert(!strcmp(dts_pipeline_media_id(p),getenv("DTS_MEDIA_ID_PHASE") ? "" : "fake-media"));
  DtsMediaInfo m={0}; strcpy(m.video_codec,"hevc"); strcpy(m.audio_codec,"aac"); m.channels=2;m.sample_rate=48000;m.width=1920;m.height=1080;
- strcpy(m.audio_codec,"ac3");assert(!dts_pipeline_load(p,&m,2.5));
+ strcpy(m.audio_codec,"ac3");m.channels=4;assert(!dts_pipeline_load(p,&m,2.5));m.channels=2;
  strcpy(m.audio_codec,"eac3");assert(!dts_pipeline_load(p,&m,2.5));strcpy(m.audio_codec,"aac");
  m.channels=6;assert(!dts_pipeline_load(p,&m,2.5));m.channels=2;
  m.sample_rate=44100;assert(!dts_pipeline_load(p,&m,2.5));m.sample_rate=48000;

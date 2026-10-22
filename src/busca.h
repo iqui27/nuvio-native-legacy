@@ -42,5 +42,8 @@ int  busca_item_focado(HomeItem *out);
 const char *busca_consulta(void);
 // Foco na barra: 0 teclado, 1 campo, 2 Falar, 3 celular. Para testes.
 int  busca_foco_campo(void);
+#ifdef NV_TESTE
+void busca_teste_layout_recentes(void);
+#endif
 
 #endif

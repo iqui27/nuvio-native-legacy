@@ -55,3 +55,19 @@ nv_p2p_resolver() {  # $1 = android | arm | tpk
   NV_P2P_DIR="$d"
   echo "  motor P2P: LIGADO ($d)" >&2
 }
+
+# Fonte do motor: o commit fixado do nuvio-engine + tools/p2p-motor/janela-334.patch
+# (#334, janela de streaming, API 4; vive aqui ate subir para o nuvio-engine).
+# Idempotente: patch ja aplicado = nada; outro estado = volta ao commit e aplica.
+# So mexe em src/ include/ tests/ cmake/ do clone (o build pode estar dentro dele).
+NV_P2P_COMMIT=02938d7
+nv_p2p_fonte() {  # $1 = clone do nuvio-engine
+  local p
+  p="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/janela-334.patch"
+  git -C "$1" checkout -q "$NV_P2P_COMMIT"
+  if git -C "$1" apply -R --check "$p" 2>/dev/null; then return 0; fi
+  git -C "$1" reset -q --hard "$NV_P2P_COMMIT"
+  git -C "$1" clean -fdq -- src include tests cmake
+  git -C "$1" apply "$p"
+  echo "  motor P2P: $NV_P2P_COMMIT + janela-334.patch" >&2
+}

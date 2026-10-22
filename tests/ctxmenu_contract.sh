@@ -41,7 +41,9 @@ ctx_max=$(rg -n '^#define CTX_MAX ' src/ctxmenu.c | sed 's/.*CTX_MAX *//')
 # O menu de LISTA (72fc391f: Abrir lista / Biblioteca / Home, ops OP_L_*) e um
 # ramo que termina em `return` dentro de montar(): nunca empilha com as demais,
 # entao so as linhas de juntar() de fora dele contam contra o teto.
-n_juntar=$(rg '^\s*juntar\(' src/ctxmenu.c | rg -vc 'OP_L_')
+# O menu da FILEIRA (Home 2.1: fixar, mover, ocultar; ops OP_F_*) e o mesmo tipo
+# de ramo, com `return` no fim: nao empilha com as opcoes do cartaz.
+n_juntar=$(rg '^\s*juntar\(' src/ctxmenu.c | rg -vc 'OP_L_|OP_F_')
 [ "$n_juntar" -le "$ctx_max" ] || {
   echo "ctxmenu: $n_juntar opcoes possiveis para CTX_MAX=$ctx_max" >&2; exit 1; }
 rg -q 'ops\[nOps\]\.rot = rot' src/ctxmenu.c

@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // SOCIALVIS — o MODELO DA TELA do social: o que a fileira "Amigos assistindo"
 // (amigosfil.c), o painel da tecla azul (abas Atividade e Amigos, em
 // salvospainel.c) e o perfil do amigo (amigoperfil.c) desenham. Nenhuma dessas
@@ -29,7 +30,7 @@
 //     char acao[12];         // "agora" | "inicio" | "fim" | "reacao" | "salvo"
 //                            // | "abandono"
 //     char titulo[160], imdb[24], tipo[8];   // tipo "movie" | "series"
-//     char poster[512];      // 2:3
+//     char poster[NV_ARTE_URL_MAX];      // 2:3
 //     char arte[512];        // 16:9 (backdrop); vazio = cai no poster  [NOVO]
 //     int  temporada, episodio;              // 0 = filme
 //     int  pct;              // 0..100, -1 = nao se sabe
@@ -52,7 +53,7 @@
 //     int  minutosMes, filmesMes, seriesCurso;   // do mes corrente; -1 = ?
 //     int  recsVistas, recsTotal; // das MINHAS recomendacoes para ele
 //     int  nEnviadas;
-//     struct { char imdb[24], titulo[160], poster[512];
+//     struct { char imdb[24], titulo[160], poster[NV_ARTE_URL_MAX];
 //              int estado;        // 0 entregue, 1 abriu, 2 viu
 //              int reacao;        // como em RecEvento
 //              long long quando; } enviadas[8];   // mais nova primeiro
@@ -98,7 +99,7 @@ typedef struct {
   int  acao;            // SV_*
   int  reacao;          // SV_REAC_*
   char imdb[24], tipo[8], titulo[160];
-  char poster[512];     // 2:3
+  char poster[NV_ARTE_URL_MAX];     // 2:3
   char arte[512];       // 16:9; vazio = o desenho cai no poster
   int  temporada, episodio;
   int  pct;             // 0..100, -1 = nao se sabe
@@ -107,6 +108,11 @@ typedef struct {
   int  sobreMinhaRec;
   int  nota;            // so SV_AVALIOU: nota do tracker 0..100; 0 = nao se sabe
   char com[96];         // so SV_JUNTO: com quem assistiu ("Rafa, Fabi")
+  // SV_FIM de serie agrupado: quantos episodios distintos a pessoa terminou
+  // (o servidor ja manda agrupado; o feed do Trakt e agrupado aqui). 0/1 = um.
+  int  eps;
+  // SV_MANDOU: a frase da recomendacao (rec_frase), "" = nenhuma.
+  char texto[72];
 } SvEvento;
 
 typedef struct {
@@ -122,7 +128,7 @@ typedef struct {
 } SvAmigo;
 
 typedef struct {
-  char imdb[24], titulo[160], poster[512];
+  char imdb[24], titulo[160], poster[NV_ARTE_URL_MAX];
   int  estado;          // SV_REC_*
   int  reacao;          // SV_REAC_*
   long long quando;
@@ -185,10 +191,28 @@ const SvAmigo *socialvis_amigo(int i);         // NULL fora da faixa
 int  socialvis_amigo_indice(const char *id);   // -1 se nao ha
 int  socialvis_n_ao_vivo(void);
 
-// O feed da aba Atividade: so o que conta (sem SV_ATIVIDADE), mais novo
-// primeiro; "agora" na frente de tudo.
+// O feed da aba Atividade: so o que conta, mais novo primeiro; "agora" na
+// frente de tudo. LIMPO (dono, 06/10/2026: "muito sujo"): sem saida do player
+// (SV_ABANDONO), sem SV_SALVO, sem SV_ATIVIDADE e sem "comecou" de filme ou de
+// episodio — so o comeco de uma serie nova. UMA LINHA POR PESSOA E TITULO: os
+// episodios terminados viram "assistiu 3 episodios" e a reacao vai junto do
+// "terminou" ("terminou e gostou"). Ver socialvis_feed_limpar.
 int  socialvis_n_eventos(void);
 const SvEvento *socialvis_evento(int i);
+// Os eventos CRUS (antes da limpeza), mais novo primeiro, com o que me
+// mandaram (SV_MANDOU). E de onde amigostitulo.c tira progresso e reacoes.
+int  socialvis_n_brutos(void);
+const SvEvento *socialvis_bruto(int i);
+// A limpeza do feed, pura (para o teste). `ev` ja ordenado (agora na frente,
+// mais novo primeiro). Devolve quantos foram para `saida`.
+int  socialvis_feed_limpar(const SvEvento *ev, int n, SvEvento *saida, int max);
+
+// O QUE O AMIGO RESPONDEU a uma recomendacao MINHA deste titulo ("Ja assisti",
+// gostei, "valeu pela dica"), do perfil dele ja carregado. 1 = ha.
+int  socialvis_enviada_titulo(const char *pessoaId, const char *imdb, SvEnviada *saida);
+// "Gosto parecido" com essa pessoa, do perfil ja carregado: o % de reacoes
+// iguais quando ha pares suficientes (SV_CMP_MIN); -1 = nao se sabe.
+int  socialvis_gosto_pct(const char *pessoaId);
 
 // Refresh explicitly on each opening, including reopening the same friend.
 void socialvis_abrir_perfil(const char *id);

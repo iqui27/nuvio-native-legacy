@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // Ver perfilcont.h.
 #include "perfilcont.h"
 #include "progresso.h"
@@ -14,7 +15,7 @@
 typedef struct {
   int  perfil, t, e;
   char contentId[48];
-  char titulo[160], poster[400], epNome[96];
+  char titulo[160], poster[NV_ARTE_URL_MAX], epNome[96];
 } Snap;
 
 static Snap snaps[SNAP_MAX];
@@ -55,13 +56,14 @@ static void carregarSnaps(void) {
 }
 
 static void gravarSnaps(void) {
-  char *b = malloc((size_t)nSnaps * 800 + 16);
+  size_t cap = (size_t)nSnaps * (sizeof(Snap) + 64u) + 16u;
+  char *b = malloc(cap);
   int i;
   size_t n = 0;
   if (!b) return;
   b[0] = 0;
   for (i = 0; i < nSnaps; i++)
-    n += (size_t)snprintf(b + n, 800, "%d\t%s\t%d\t%d\t%s\t%s\t%s\n", snaps[i].perfil,
+    n += (size_t)snprintf(b + n, cap - n, "%d\t%s\t%d\t%d\t%s\t%s\t%s\n", snaps[i].perfil,
                           snaps[i].contentId, snaps[i].t, snaps[i].e, snaps[i].titulo,
                           snaps[i].poster, snaps[i].epNome);
   dados_gravar(ARQ, b);
@@ -85,7 +87,7 @@ int perfilcont_de(const ContaPerfil *p, PerfilCont *saida) {
   ProgRegistro r;
   int i;
   if (!p || !saida || p->temPin) return 0;
-  if (!prog_continuar_de_perfil(p->indice, ajustes_cw_concluido(), &r)) return 0;
+  if (!prog_continuar_de_perfil_min(p->indice, ajustes_cw_minimo(), ajustes_cw_concluido(), &r)) return 0;
   memset(saida, 0, sizeof *saida);
   if (doCatalogo(&r)) {
     snprintf(saida->titulo, sizeof saida->titulo, "%s", rascunho.titulo);
@@ -118,7 +120,7 @@ void perfilcont_registrar(void) {
     ProgRegistro r;
     Snap s;
     int k;
-    if (!p || p->temPin || !prog_continuar_de_perfil(p->indice, ajustes_cw_concluido(), &r) ||
+    if (!p || p->temPin || !prog_continuar_de_perfil_min(p->indice, ajustes_cw_minimo(), ajustes_cw_concluido(), &r) ||
         !doCatalogo(&r) || strlen(rascunho.poster) >= sizeof s.poster) continue;
     memset(&s, 0, sizeof s);
     s.perfil = p->indice; s.t = r.temporada; s.e = r.episodio;

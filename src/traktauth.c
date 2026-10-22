@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include "credfio.h"
 #include <time.h>
 
 // O VINCULO E POR PERFIL: trakt-p<N>.txt e trakt-fluxo-p<N>.txt.
@@ -82,6 +83,7 @@ static char refreshFio[300], deviceCodeFio[128];
 // aplicou. Aplicar dentro do fio mexeria em trakt.c enquanto a UI le dele.
 static int tokenNovo;
 static long criadoEm, expiraSeg;   // do token: o web exige os dois na conta
+static int  pushGeracaoAtual, pushGeracao; // geracao do token (a cada vinculo) e a do push no ar
 static int  pushPendente;          // a conta ainda nao tem este token (push falhou ou nunca saiu)
 
 static char *postar(const char *caminho, const char *corpo, int *status) {
@@ -436,11 +438,11 @@ static void *fioPoll(void *u) {
     pollMs += 5000u;
     if (pollMs > 60000u) pollMs = 60000u;
   } else if (st == 409) {
-    snprintf(erro, sizeof erro, "este codigo ja foi usado");
+    snprintf(erro, sizeof erro, "este código já foi usado");
     esquecerFluxo();
     estado = TRA_ERRO;
   } else if (st == 410) {
-    snprintf(erro, sizeof erro, "o codigo expirou");
+    snprintf(erro, sizeof erro, "o código expirou");
     esquecerFluxo();
     estado = TRA_ERRO;
   } else if (st == 418) {
@@ -471,10 +473,12 @@ static void empurrarParaConta(void) {
   jsw_ci(&c, "created_at", (int)(criadoEm ? criadoEm : (long)time(NULL)));
   jsw_ci(&c, "expires_in", (int)(expiraSeg > 0 ? expiraSeg : 86400));
   jsw_obj_fim(&c);
+  // Fora do laco (#203): rede sincrona aqui travava o quadro. O resultado volta
+  // por credfio_resultado, lido em traktauth_passo.
   // Recusa 4xx tambem encerra a pendencia: este servidor nao aceita "trakt"
   // (400 22023, igual ao que o web ve) e insistir a cada ciclo seria ruido.
   // O vinculo continua valendo nesta TV, guardado em disco.
-  if (sync_empurrar_credencial("trakt", jsw_texto_final(&c)) != 0) { pushPendente = 0; gravar(); }
+  if (credfio_iniciar("trakt", jsw_texto_final(&c))) pushGeracao = pushGeracaoAtual;
   jsw_livre(&c);
 }
 
@@ -570,6 +574,10 @@ void traktauth_comecar(void) {
 }
 
 void traktauth_passo(unsigned agoraMs) {
+  { int res;   // resultado do push de credencial que saiu em fio proprio (#203)
+    if (credfio_resultado("trakt", &res) && res != 0 && pushGeracao == pushGeracaoAtual) {
+      pushPendente = 0; gravar();
+    } }
   if (fioVivo && fioPronto) { fioVivo = 0; fioPronto = 0; }
   if (fioVivo) return;
   // PEDINDO sem fio no ar: o pedido foi feito enquanto um fio do perfil
@@ -616,6 +624,7 @@ void traktauth_passo(unsigned agoraMs) {
     renovacaoPend = 0;
     trakt_definir(token, nuvem_trakt_cliente());
     pushPendente = 1;
+    pushGeracaoAtual++;
     empurrarParaConta();
     gravar();
     // O catalogo foi montado SEM Trakt: continuar assistindo, "entre amigos" e
@@ -629,7 +638,7 @@ void traktauth_passo(unsigned agoraMs) {
   if (estado != TRA_AGUARDANDO) return;
   if (!comecouMs) comecouMs = agoraMs;
   if (expiraEm && (long)time(NULL) >= expiraEm) {
-    snprintf(erro, sizeof erro, "o codigo expirou");
+    snprintf(erro, sizeof erro, "o código expirou");
     esquecerFluxo();
     estado = TRA_ERRO;
     return;

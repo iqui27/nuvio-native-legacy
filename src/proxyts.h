@@ -21,7 +21,7 @@
 #define NV_PROXYTS_H
 #include <stddef.h>
 
-// 1 nesta plataforma (webOS e Mac; nao no navegador nem no .tpk).
+// 1 nesta plataforma (webOS, .tpk e Mac; nao no navegador nem no Android).
 int  proxyts_disponivel(void);
 // Abre uma sessao para `fonte` e escreve em `saida` a URL local que o player
 // deve tocar. 0 = o proxy nao subiu (use a fonte direto).
@@ -35,5 +35,17 @@ void proxyts_parar(void);
 const char *proxyts_resolver(const char *url, char *buf, size_t n);
 // 1 quando `url` e uma URL deste proxy.
 int  proxyts_e_url(const char *url);
+// CABECALHOS DA PROXIMA SESSAO (#283): as linhas "Nome: valor" que o addon
+// exigiu (behaviorHints.proxyHeaders.request). O proxy as manda em todo pedido
+// a fonte — sonda, playlist e segmentos —, o que o motor HLS do uMS nao faz nos
+// pedidos de segmento. Vazio/NULL = nenhum. Vale para a proxima proxyts_url;
+// chamar antes de cada fonte, como video_definir_cabecalhos.
+void proxyts_definir_cabecalhos(const char *cabs);
+// 1 quando a sessao em curso so redirecionou o player para a fonte (ela nao
+// era playlist HLS): tocar a mesma fonte direto seria repetir a tentativa.
+int  proxyts_redirecionou(void);
+// 1 se `url` (sem o prefixo) e candidata ao proxy num canal de addon: http(s)
+// e nao arquivo progressivo (.mp4/.mkv). Puro, testavel em qualquer alvo.
+int  proxyts_candidata(const char *url, int mp4);
 
 #endif

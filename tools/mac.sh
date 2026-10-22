@@ -22,8 +22,12 @@ cd "$(dirname "$0")/.."
 ENV_D=$(tools/env.sh)
 # Fora da pasta do pacote: o Mac nao deve gravar sessao dentro de deploy/.
 export NUVIO_DADOS="${NUVIO_DADOS:-$HOME/.nuvio}"
-eval cc src/*.c src/dts/*.c -o /tmp/nuvio-native-legacy-mac -O1 -g "$ENV_D" \
+# NUVIO_MAC_BIN: outro binario (a auditoria nao pisa no /tmp/nuvio-native-legacy-mac
+# de quem estiver rodando o app). NUVIO_MAC_SO_COMPILAR=1: compila e sai.
+BIN="${NUVIO_MAC_BIN:-/tmp/nuvio-native-legacy-mac}"
+eval cc src/*.c src/dts/*.c -o "$BIN" -O1 -g "$ENV_D" \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz \
   -framework OpenGL -Wno-deprecated-declarations
-exec /tmp/nuvio-native-legacy-mac "$(pwd)/deploy/app/art" "$@"
+[ -n "$NUVIO_MAC_SO_COMPILAR" ] && exit 0
+exec "$BIN" "$(pwd)/deploy/app/art" "$@"

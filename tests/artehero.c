@@ -37,7 +37,35 @@ static CatItem item(const char *backdrop, const char *poster, const char *imdb) 
   return c;
 }
 
+static const char *escolhaSalva;
+static const char *fundoSalvo(const char *id) {
+  return !strcmp(id, "tt7") ? escolhaSalva : NULL;
+}
+
 int main(void) {
+  // Escolhas Apple antigas precisam sair da chave do arquivo antigo em disco.
+  { CatItem c = item("", "", "tt7");
+    const char *antiga = "https://nuvio.invalid/arte/apple/1920/tt7/m/2015/Silo%20Teste";
+    const char *nova = "https://nuvio.invalid/arte/apple/1920/v2/tt7/m/2015/Silo%20Teste";
+    artehero_definir_escolha(fundoSalvo, NULL);
+    escolhaSalva = antiga;
+    assert(!strcmp(artehero_url_escolhida(&c), nova));
+    assert(!strcmp(artehero_url(&c), nova));
+    assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 1), nova));
+    assert(!strcmp(artehero_url_escolha_grande(antiga), nova));
+    assert(escolhaSalva == antiga);  // migracao somente em memoria
+    escolhaSalva = nova;
+    assert(!strcmp(artehero_url_escolhida(&c), nova));
+    escolhaSalva = "https://nuvio.invalid/arte/apple/1280/tt7/s/2023/Silo";
+    assert(!strcmp(artehero_url_escolhida(&c),
+                   "https://nuvio.invalid/arte/apple/1280/v2/tt7/s/2023/Silo"));
+    escolhaSalva = "https://nuvio.invalid/arte/fanart/full/tt7/m/0";
+    assert(!strcmp(artehero_url_escolhida(&c), escolhaSalva));
+    escolhaSalva = "https://example.com/apple/1920/tt7/m/2015/Silo";
+    assert(!strcmp(artehero_url_escolhida(&c), escolhaSalva));
+    artehero_definir_escolha(NULL, NULL); }
+  puts("ok  escolha Apple salva: migra URL antiga, preserva versionada e outras fontes");
+
   // SAMSUNG: NUNCA `original` NEM /full/ no fundo, em fonte nenhuma, nem na
   // Alta (fundoOriginal(), OOM do registro 1450). tests/artehero.sh roda este
   // mesmo arquivo uma segunda vez com -D__EMSCRIPTEN__.
@@ -47,6 +75,10 @@ int main(void) {
     snprintf(c.backdropTrakt, sizeof c.backdropTrakt, "%s",
              "https://media.trakt.tv/images/movies/000/1/fanarts/medium/x.jpg.webp");
     artehero_qualidade(2);
+    snprintf(c.titulo, sizeof c.titulo, "Silo");
+    snprintf(c.meta, sizeof c.meta, "2015");
+    assert(!strcmp(artehero_url_fonte(&c, ARTEHERO_APPLE),
+                   "https://nuvio.invalid/arte/apple/1280/v2/tt7/m/2015/Silo"));
     for (f = 0; f <= ARTEHERO_TRAKT; f++)
       for (d = 0; d <= 1; d++) {
         const char *u1 = artehero_url_fonte(&c, f);
@@ -148,9 +180,9 @@ int main(void) {
     snprintf(c.meta, sizeof c.meta, "1994 · 142 min");
     snprintf(c.titulo, sizeof c.titulo, "The Shawshank Redemption");
     assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_AUTO, 1),
-                   "https://nuvio.invalid/arte/apple/1920/tt0111161/m/1994/The%20Shawshank%20Redemption"));
+                   "https://nuvio.invalid/arte/apple/1920/v2/tt0111161/m/1994/The%20Shawshank%20Redemption"));
     assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_APPLE, 0),
-                   "https://nuvio.invalid/arte/apple/1920/tt0111161/m/1994/The%20Shawshank%20Redemption"));
+                   "https://nuvio.invalid/arte/apple/1920/v2/tt0111161/m/1994/The%20Shawshank%20Redemption"));
     // Com o id do TMDB no item (moviedb_id do Cinemeta) a virtual o carrega
     // e o resolvedor pula o /find.
     c.tmdb = 278; snprintf(c.tipo, sizeof c.tipo, "movie");
@@ -163,7 +195,7 @@ int main(void) {
     igualA = "https://nuvio.invalid/arte/tmdbalt/w1280/tt0111161/m278"; igualB = mh;
     artehero_definir_igual(igualDuble);
     assert(!strcmp(artehero_url_destaque(&c, ARTEHERO_TMDB, 1),
-                   "https://nuvio.invalid/arte/apple/1920/tt0111161/m/1994/The%20Shawshank%20Redemption"));
+                   "https://nuvio.invalid/arte/apple/1920/v2/tt0111161/m/1994/The%20Shawshank%20Redemption"));
     artehero_definir_igual(NULL);
     // fanart.tv so com chave.
     assert(artehero_url_fonte(&c, ARTEHERO_FANART) == NULL);

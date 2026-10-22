@@ -10,26 +10,15 @@ int cwo_futuro(const CwoItem *it, long long agoraMs) {
 }
 
 int cwo_ordenar(const CwoItem *v, int n, int modo, long long agoraMs, int *perm) {
-  int i, k, w = 0, principal;
+  int i, w = 0, principal;
   if (!v || !perm || n <= 0) return 0;
-  for (i = 0; i < n; i++) perm[i] = i;
-  if (modo != CWO_STREAMING && modo != CWO_SEPARAR) return n;
-  // Particao estavel: exibidos na ordem que chegaram (a do instante), futuros
-  // depois. n <= 36 (tres fontes de 12): um vetor na pilha basta.
-  { int fut[64], nf = 0;
-    if (n > 64) n = 64;
-    for (i = 0; i < n; i++) {
-      if (cwo_futuro(&v[i], agoraMs)) fut[nf++] = i;
-      else perm[w++] = i;
-    }
-    principal = w;
-    // Insercao estavel pela estreia, a mais proxima primeiro.
-    for (i = 1; i < nf; i++) {
-      int t = fut[i];
-      for (k = i - 1; k >= 0 && v[fut[k]].estreiaMs > v[t].estreiaMs; k--) fut[k + 1] = fut[k];
-      fut[k + 1] = t;
-    }
-    for (i = 0; i < nf; i++) perm[w++] = fut[i]; }
+  // Pausados primeiro; recencia recebida preservada dentro de cada grupo.
+  for (i = 0; i < n; i++) if (!v[i].aSeguir) perm[w++] = i;
+  for (i = 0; i < n; i++)
+    if (v[i].aSeguir && (modo == CWO_PADRAO || !cwo_futuro(&v[i], agoraMs))) perm[w++] = i;
+  principal = w;
+  if (modo != CWO_PADRAO)
+    for (i = 0; i < n; i++) if (cwo_futuro(&v[i], agoraMs)) perm[w++] = i;
   return principal;
 }
 
@@ -161,11 +150,27 @@ void cwo_conta_definir(const char *const *ids, int n) {
   pthread_mutex_unlock(&contaTrava);
 }
 
+// Os "a seguir" que a DESMARCACAO moveu (descoberta.c, ajustarASeguir): o id
+// novo ("tt:2:7") nao esta na lista do Trakt/Simkl/conta, que falam do episodio
+// do remoto. Entram aqui e contam como "a seguir" para todo mundo que pergunta.
+static char ajust[CWO_CONTA_MAX][40];
+static int nAjust;
+
+void cwo_ajustados_definir(const char *const *ids, int n) {
+  int i;
+  pthread_mutex_lock(&contaTrava);
+  nAjust = 0;
+  for (i = 0; ids && i < n && nAjust < CWO_CONTA_MAX; i++)
+    if (ids[i] && ids[i][0]) snprintf(ajust[nAjust++], sizeof ajust[0], "%s", ids[i]);
+  pthread_mutex_unlock(&contaTrava);
+}
+
 int cwo_conta_a_seguir(const char *id) {
   int i, sim = 0;
   if (!id || !id[0]) return 0;
   pthread_mutex_lock(&contaTrava);
   for (i = 0; i < nConta && !sim; i++) sim = !strcmp(conta[i], id);
+  for (i = 0; i < nAjust && !sim; i++) sim = !strcmp(ajust[i], id);
   pthread_mutex_unlock(&contaTrava);
   return sim;
 }

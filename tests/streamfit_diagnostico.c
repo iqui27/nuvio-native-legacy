@@ -53,7 +53,9 @@ int main(int argc, char **argv) {
   // cannot become a bandwidth observation. No source URL is guessed valid.
   assert(!medir("/html", 6, 1 << 20, 0, &r) && !foto().n);
   assert(!medir("/fake-video", 6, 1 << 20, 0, &r) && !foto().n);
-  assert(!medir("/unknown", 1, 1 << 20, 0, &r) && !foto().n);
+  // #203: a generic octet-stream body is MEASURED (debrid CDNs serve files so),
+  // but it never becomes a stream-fit observation: that needs a video/ MIME.
+  assert(medir("/unknown", 6, 1 << 20, 0, &r) > 0 && !foto().n);
   // Production diagnostic branch: do not pre-resolve with the legacy HEAD;
   // real final response supplies MIME and authority. Caller header is stripped.
   snprintf(url, sizeof url, "%s/redirect?synthetic=hidden", base);
@@ -61,7 +63,8 @@ int main(int argc, char **argv) {
   VazFonte mf; VazResultado cat; int motivo; char chave[96], pub[96];
   vz.rede = redemarca_atual();
   assert(medirNucleo(&c, 7, NULL, 0, &mf, &r, chave, pub, sizeof pub, &cat, &motivo) == MN_OK);
-  assert(mf.n >= 5 && mf.n < 9 && cat == VR_OK && r.status == 200);
+  // #203: the private header is stripped, but Range reaches the CDN hop (206).
+  assert(mf.n >= 5 && mf.n < 9 && cat == VR_OK && r.status == 206);
   int zeros = 0;
   for (int i = 0; i < mf.n; i++) if (!mf.kbps[i]) zeros++;
   assert(zeros > 0); // measured idle wire interval, included in the budget

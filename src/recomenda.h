@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // RECOMENDAR UM TITULO A UM AMIGO — o lado cliente.
 //
 // POR QUE EXISTE E POR QUE CONTRA UM SERVIDOR PROPRIO: o Supabase do Nuvio nao
@@ -62,7 +63,7 @@ typedef struct {
   char imdb[24];
   char tipo[8];        // "movie" | "series"
   char titulo[160];
-  char poster[512];
+  char poster[NV_ARTE_URL_MAX];
   char ano[16];
   int  modelo;         // indice do template; -1 = texto livre
   char texto[72];      // so quando modelo == -1
@@ -370,6 +371,8 @@ void recomenda_apagar_dados_sociais(void);
 // 1 quando o perfil esta publicado neste aparelho.
 int  recomenda_pesquisavel(void);
 
+enum { REC_MOTIVO_NENHUM = 0, REC_MOTIVO_TITULOS, REC_MOTIVO_GENEROS, REC_MOTIVO_ATIVOS };
+
 // UMA PESSOA VISTA POR ESTRANHO: so o que ela escolheu mostrar.
 typedef struct {
   char pub[16];               // handle opaco; NUNCA o id da conta
@@ -379,6 +382,11 @@ typedef struct {
   unsigned generos;
   char relacao[12];           // "" | "amigo" | "enviado" | "recebido"
   int  emComum;               // titulos em comum (so nas sugestoes de gosto)
+  // POR QUE o servidor sugeriu esta pessoa (so em "Gosto parecido"). 0 = servidor
+  // antigo, sem o campo: a linha nao diz nada. `motivoGeneros` = generos que as
+  // duas pessoas escolheram (mascara, como `generos`); `emComum` = n de titulos.
+  int  motivo;                // REC_MOTIVO_*
+  unsigned motivoGeneros;
   // Ultimo dos "vistos recentemente" PUBLICOS (so na lista da comunidade, e so
   // de quem ligou "Mostrar o que assisti recentemente"). Nunca "assistindo
   // agora": isso e so para amigo.
@@ -476,6 +484,8 @@ unsigned recomenda_geracao(void);
 // recomendacao, so com a home de pe, e NUNCA por cima de quem esta assistindo.
 void recomenda_mostrar_se_houver(void);
 int  recomenda_aberta(void);
+void recomenda_abrir_cartao(void);   // abre agora, de proposito (sem a marca de "uma vez")
+int  recomenda_tecla(const SDL_Event *e);   // 1 = o cartao pegou a tecla
 void recomenda_evento(const SDL_Event *e);
 void recomenda_atualizar(float dt, Uint32 agora);
 void recomenda_desenhar(Uint32 agora);
@@ -558,7 +568,7 @@ typedef struct {
   char imdb[24];      // "tt..." (obrigatorio)
   char midia[8];      // "movie" | "series"
   char titulo[160];
-  char poster[512];   // so sai no feed se for de host conhecido (servidor)
+  char poster[NV_ARTE_URL_MAX];   // so sai no feed se for de host conhecido (servidor)
   int  temporada, episodio;
   int  pct;           // 0-100
   int  seg;           // segundos assistidos NESTE trecho (desde o evento anterior)
@@ -587,13 +597,15 @@ typedef struct {
   char imdb[24];
   char midia[8];        // "movie" | "series"
   char titulo[160];
-  char poster[512];
+  char poster[NV_ARTE_URL_MAX];
   int  temporada, episodio, pct;
   long long quando;     // epoch s; 0 = desconhecido (vai para o fim)
   int  reacao;          // so REC_ACAO_REACAO
   int  nota;            // so REC_ACAO_NOTA
   long long id;         // id do evento no nosso servidor (0 nas outras fontes)
   char com[96];         // so REC_ACAO_JUNTO: "Rafa, Fabi" (quem tambem aparece)
+  int  eps;             // REC_ACAO_FIM de serie agrupado no servidor: episodios distintos
+  int  temReacFim, reacFim;   // REC_ACAO_FIM: a reacao que veio junto (1/0/-1), se veio
 } RecEvento;
 #define REC_FEED_MAX 50
 
@@ -640,7 +652,7 @@ typedef struct {
   int  nGostou; RecEvento gostou[REC_AMIGO_GOSTOU];
   // recs que EU mandei para ela, mais nova primeiro (so grau 1)
   int  nRecs;
-  struct { long long id, criado; char imdb[24], tipo[8], titulo[160], poster[512];
+  struct { long long id, criado; char imdb[24], tipo[8], titulo[160], poster[NV_ARTE_URL_MAX];
            int estado, temReacao, reacao, terminou;
            // resposta DIRETA de quem recebeu (POST /v1/rec/resposta): a mensagem
            // curta ("" = nenhuma) e o epoch em que respondeu (0 = nao respondeu).

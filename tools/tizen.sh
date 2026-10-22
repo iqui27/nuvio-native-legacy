@@ -15,15 +15,6 @@
 set -e
 cd "$(dirname "$0")/.."
 
-: "${EMSDK_DIR:=$HOME/emsdk}"
-[ -f "$EMSDK_DIR/emsdk_env.sh" ] || {
-  echo "tizen.sh: emsdk nao encontrado em $EMSDK_DIR" >&2
-  echo "  git clone https://github.com/emscripten-core/emsdk ~/emsdk && cd ~/emsdk && ./emsdk install latest && ./emsdk activate latest" >&2
-  exit 2
-}
-# shellcheck disable=SC1091
-source "$EMSDK_DIR/emsdk_env.sh" >/dev/null 2>&1
-
 # --alto-cache: a mesma variante do tools/arm.sh --alto-cache, para quem tem
 # Samsung com RAM sobrando e quer testar o cache de texturas cravado em 300 MB
 # (NV_TEX_MB_FIXO). Sai em build/tizen-highcache, e o tizen-wgt.sh que vier
@@ -55,6 +46,23 @@ if [ "${1:-}" = "--alto-cache" ] || [ "${1:-}" = "--high-cache" ]; then
 fi
 SAIDA="${NUVIO_SAIDA:-build/tizen}"
 mkdir -p "$SAIDA"
+
+# BUILD NOVO OU NADA. O inicio do build e gravado no stamp, e o que sobrou de uma
+# rodada anterior e apagado AGORA: se qualquer passo abaixo falhar (emsdk
+# ausente, link), o tizen-wgt.sh nao encontra stamp nem wasm e recusa, em vez de
+# empacotar o build velho com rc=0 (2.0.3: undefined symbol no link, .wgt velho).
+BUILD_INICIO=$(date +%s)
+rm -f "$SAIDA/.nuvio-build-stamp" "$SAIDA/index.wasm" "$SAIDA/index.js"
+
+: "${EMSDK_DIR:=$HOME/emsdk}"
+[ -f "$EMSDK_DIR/emsdk_env.sh" ] || {
+  echo "tizen.sh: emsdk nao encontrado em $EMSDK_DIR" >&2
+  echo "  git clone https://github.com/emscripten-core/emsdk ~/emsdk && cd ~/emsdk && ./emsdk install latest && ./emsdk activate latest" >&2
+  exit 2
+}
+# shellcheck disable=SC1091
+source "$EMSDK_DIR/emsdk_env.sh" >/dev/null 2>&1
+
 
 # Os mesmos -D de servidor do Mac e da TV LG. O pacote principal precisa falhar
 # antes do emcc se URL, anon key ou base de login estiverem vazios. Harnesses de
@@ -183,19 +191,10 @@ if [ "${NUVIO_ASS_LIBASS:-1}" = "1" ]; then
   # As flags do emcc entram no eval abaixo; um caminho do checkout com espacos
   # vira dois argumentos mesmo dentro de ASS_CFLAGS. O symlink fica fora do
   # repositorio e nunca substitui um caminho preexistente que nao controlamos.
-  ASS_ROOT_SHORT="${TMPDIR:-/tmp}/nuvio-ass-wasm-root-$(id -u)"
-  ASS_ROOT_CANON=$(cd "$ASS_ROOT_REAL" && pwd -P)
-  if [ -L "$ASS_ROOT_SHORT" ]; then
-    [ "$(readlink "$ASS_ROOT_SHORT")" = "$ASS_ROOT_CANON" ] || {
-      echo "tizen.sh: symlink libass inesperado em $ASS_ROOT_SHORT" >&2
-      exit 2
-    }
-  elif [ -e "$ASS_ROOT_SHORT" ]; then
-    echo "tizen.sh: caminho temporario libass ja existe e nao e symlink: $ASS_ROOT_SHORT" >&2
-    exit 2
-  else
-    ln -s "$ASS_ROOT_CANON" "$ASS_ROOT_SHORT"
-  fi
+  ASS_TMP=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-ass-wasm.XXXXXXXX")
+  trap 'rm -rf "$ASS_TMP"' EXIT
+  ASS_ROOT_SHORT="$ASS_TMP/root"
+  ln -s "$(cd "$ASS_ROOT_REAL" && pwd -P)" "$ASS_ROOT_SHORT"
   ASS_ROOT="$ASS_ROOT_SHORT"
   ASS_CFLAGS="-DNV_ASS_LIBASS -I$ASS_ROOT/include"
   ASS_LIBS="-L$ASS_ROOT/lib -Wl,--start-group -lass -lharfbuzz -lfribidi -lfreetype -Wl,--end-group"
@@ -425,6 +424,7 @@ WASM_SHA=$(sha256 "$SAIDA/index.wasm")
   printf 'format=1\n'
   printf 'config-fingerprint=%s\n' "$CONFIG_FP"
   printf 'wasm-sha256=%s\n' "$WASM_SHA"
+  printf 'build-start=%s\n' "$BUILD_INICIO"
 } > "$SAIDA/.nuvio-build-stamp"
 chmod 600 "$SAIDA/.nuvio-build-stamp"
 

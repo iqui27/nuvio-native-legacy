@@ -47,6 +47,10 @@ void spainel_desenhar(Uint32 agora);
 void spainel_fundo(int podeParar, unsigned rev, void (*fundo)(void *), void *ctx);
 // Quantas vezes a lista foi montada desde o arranque (tests/salvospainel.sh).
 int  spainel_n_reconstrucoes(void);
+// Para os testes de captura: o tipo da linha em foco na aba Amigos ("pedido",
+// "encontrar", "adicionar", "previa", "alcance", "trakt", "simkl",
+// "letterboxd", "aparecer", "amigo", "rec", "sug", "" fora da lista).
+const char *spainel_foco_social(void);
 // Quantas vezes o fundo parado foi pintado no FBO.
 int  spainel_n_fundos(void);
 // Quantas linhas da aba Salvos estao em "Continuar" (com progresso). Testes.
@@ -59,9 +63,14 @@ const char *spainel_pediu_abrir(void);
 // OK na linha de um amigo (aba Amigos): o id da pessoa, uma vez, para app.c
 // abrir o perfil (amigoperfil.h). O painel ja fechou.
 int spainel_pediu_perfil(char *id, size_t tam);
+// 1 uma vez quando a pessoa pediu a tela Agenda completa pela aba Agenda.
+int spainel_pediu_agenda(void);
 // Para os testes: abre direto numa aba (0 Salvos, 1 Atividade, 2 Amigos,
 // 3 Avisos), com o foco na primeira linha da lista.
 void spainel_ir_aba(int aba);
+// Testes: a aba aberta e o indice do foco (< 0: abas ou barra).
+int spainel_aba_atual(void);
+int spainel_foco_indice(void);
 // Abre (se preciso) na aba Atividade e poe o foco no primeiro evento de amigo
 // do titulo `imdb` (a lista rola ate ele). Sem evento desse titulo, so a aba.
 void spainel_abrir_titulo(const char *imdb);

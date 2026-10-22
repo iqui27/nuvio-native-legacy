@@ -167,14 +167,73 @@ static void parsers(void) {
   int total=0;const LegendaCue *dados=legenda_documento_dados(a,&total);
   assert(total==1&&!strcmp(dados[0].texto,"Olá"));legenda_documento_liberar(a);casos++;
   a=legenda_documento_criar("1\n00:00:01,000 --> 00:00:03,000\nGood\n\n2\n00:00:nan --> 00:00:04,000\nBad\n\n",&info);
-  assert(a&&!(legenda_documento_info(a)->flags&LEGENDA_DOC_COMPLETO));
+  {int nb=0;legenda_documento_dados(a,&nb);assert(nb==1&&(legenda_documento_info(a)->flags&LEGENDA_DOC_COMPLETO));}  /* bloco ruim cai sozinho */
   legenda_documento_liberar(a);casos++;
   a=legenda_documento_criar("Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Good\nDialogue: 0,0:00:nan,0:00:04.00,Default,,0,0,0,,Bad\n",&info);
-  assert(a&&!(legenda_documento_info(a)->flags&LEGENDA_DOC_COMPLETO));
+  {int nb=0;legenda_documento_dados(a,&nb);assert(nb==1&&(legenda_documento_info(a)->flags&LEGENDA_DOC_COMPLETO));}  /* bloco ruim cai sozinho */
   legenda_documento_liberar(a);casos++;
+}
+// Prova-janela: o span parcial nao pode ampliar o raio local para CD1/CD2.
+static void janela(void) {
+  LegendaCue ref[42]={0},ext[40]={0};
+  unsigned seed=42;double t=1000;
+  for(int i=0;i<40;i++) {
+    seed=seed*1664525u+1013904223u;t+=1.5+(seed%500)/1000.0;
+    seed=seed*1664525u+1013904223u;
+    ref[i]=(LegendaCue){.inicio=t,.fim=t+1+(seed%1500)/1000.0,.posX=-1,.posY=-1};
+    snprintf(ref[i].texto,sizeof ref[i].texto,"Fala distinta numero %d",i);
+    ext[i]=ref[i];ext[i].inicio+=30;ext[i].fim+=30;
+  }
+  ref[40]=(LegendaCue){.inicio=1000,.fim=1001,.texto="Inicio distinto",.posY=-1};
+  ref[41]=(LegendaCue){.inicio=1118,.fim=1119,.texto="Fim distinto",.posY=-1};
+  LegendaDocumentoInfo ri={.sessao=1,.flags=LEGENDA_DOC_COMPLETO|LEGENDA_DOC_JANELA,
+    .janelaInicio=1000,.janelaFim=1120,.identidade="mkv-track:5"};
+  LegendaDocumentoInfo ei={.sessao=1,.flags=LEGENDA_DOC_COMPLETO,.identidade="externa"};
+  LegendaDocumento *a=legenda_documento_de_cues(ext,40,&ei),*b=legenda_documento_de_cues(ref,42,&ri);
+  AutoSync *s=autosync_criar();assert(a&&b&&s);autosync_iniciar(s,1);
+  for(int modo=0;modo<2;modo++) {
+    AutoSyncConfig cfg=autosync_config((AutoSyncModo)modo);
+    assert(autosync_selecionar(s,0,a)&&autosync_solicitar(s,0,b,&cfg));
+    AutoSyncResultado r=esperar(s,0);
+    printf("janela +30 s: modo=%d estado=%d motivo=%s offset=%d aplicado=%d\n",
+      modo,r.estado,autosync_motivo(r.motivo),r.offsetMs,autosync_offset_ms(s,0));fflush(stdout);
+    assert(r.estado==AUTOSYNC_REJECTED&&r.offsetMs==0&&autosync_offset_ms(s,0)==0);casos++;
+  }
+  legenda_documento_liberar(a);
+  // O refino pode sair da busca grossa: 10 s passa, 10,1 s deve recusar.
+  for(int offset=10000;offset<=10100;offset+=100) {
+    LegendaCue limite[40];memcpy(limite,ref,sizeof limite);
+    for(int i=0;i<40;i++){limite[i].inicio+=offset/1000.0;limite[i].fim+=offset/1000.0;}
+    a=legenda_documento_de_cues(limite,40,&ei);assert(a);
+    assert(autosync_selecionar(s,0,a)&&autosync_solicitar(s,0,b,NULL));
+    AutoSyncResultado r=esperar(s,0);
+    if(offset==10000)assert(r.estado==AUTOSYNC_ACCEPTED&&r.offsetMs==10000&&autosync_offset_ms(s,0)==10000);
+    else assert(r.estado==AUTOSYNC_REJECTED&&r.motivo==AUTOSYNC_REGION_DISAGREEMENT&&r.offsetMs==0&&autosync_offset_ms(s,0)==0);
+    legenda_documento_liberar(a);casos++;
+  }
+  autosync_destruir(s);
+  // Poucas falas, span curto e nenhuma intersecao: falta evidencia local.
+  for(int variante=0;variante<3;variante++) {
+    LegendaCue rec[41];memcpy(rec,ext,sizeof ext);
+    rec[40]=(LegendaCue){.inicio=3500,.fim=3501,.texto="Fala distante da janela",.posY=-1};
+    for(int i=0;i<40;i++) {
+      if(variante==1){rec[i].inicio=1030+i;rec[i].fim=1030.5+i;}
+      if(variante==2||(variante==0&&i>=18)){rec[i].inicio+=2000;rec[i].fim+=2000;}
+    }
+    a=legenda_documento_de_cues(rec,41,&ei);assert(a);
+    AutoSyncResultado r=autosync_comparar(a,b,NULL,NULL,NULL);
+    assert(r.estado==AUTOSYNC_REJECTED&&r.motivo==AUTOSYNC_SPARSE&&r.referenciaInvalida&&r.offsetMs==0);
+    legenda_documento_liberar(a);casos++;
+  }
+  // Falha global da externa nao vira falha da referencia.
+  a=legenda_documento_de_cues(ext,18,&ei);assert(a);
+  AutoSyncResultado r=autosync_comparar(a,b,NULL,NULL,NULL);
+  assert(r.estado==AUTOSYNC_REJECTED&&r.motivo==AUTOSYNC_SPARSE&&!r.referenciaInvalida);
+  legenda_documento_liberar(a);legenda_documento_liberar(b);casos++;
 }
 int main(void) {
   criarCorpus();
+  janela();
   LegendaDocumento *ref=documento("embedded","en",0,1,LEGENDA_DOC_COMPLETO,11,0);assert(ref);
   const int offsets[]={250,-250,1000,-1000,5000,-5000,30000,-30000};
   for(int m=0;m<2;m++)for(int i=0;i<8;i++) {

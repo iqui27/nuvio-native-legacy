@@ -1,5 +1,6 @@
 #include "contalib.h"
 #include "vistoep.h"
+#include <time.h>
 #include "catalogo.h"
 #include "js.h"
 #include "idioma.h"
@@ -29,6 +30,9 @@ static int nVistos;
 // passam por aqui. O resto deste modulo e do fio principal.
 static pthread_mutex_t vistosTrava = PTHREAD_MUTEX_INITIALIZER;
 static unsigned vistosRev;
+// Quando (s, relogio de parede) os vistos foram puxados COM SUCESSO pela ultima
+// vez. 0 = nunca nesta sessao: os vistos vivem so em memoria.
+static time_t vistosPuxadoEm;
 static int temConta;
 
 // Marca de reconciliacao. `marcaCatN` comeca em -1 de proposito: catalogo com
@@ -135,6 +139,24 @@ static int vagaPara(const ContaLibItem *novo, int k, int cap,
   return (velho >= 0 && v->addedMs > novo[velho].addedMs) ? velho : -1;
 }
 
+// URL de arte inteira ou nenhuma (#361): um prefixo cortado por js_texto e um
+// 404 calado. Sem ela, montarItem cai no metahub pelo id; o registro diz qual.
+static void urlInteira(const char *p, const char *f, const char *chave,
+                       char *dst, size_t tam, const char *id) {
+  char v[NV_ARTE_URL_MAX + 1];
+  size_t n;
+  dst[0] = 0;
+  if (!js_texto(p, f, chave, v, sizeof v)) return;
+  n = strlen(v);
+  if (n >= tam) {
+    printf("[contalib] %s de %s tem %s%zu bytes e o campo guarda %zu: descartada, "
+           "nao cortada (#361)\n", chave, id, n + 1 >= sizeof v ? ">=" : "", n, tam - 1);
+    fflush(stdout);
+    return;
+  }
+  memcpy(dst, v, n + 1);
+}
+
 int contalib_ler_biblioteca(const char *json) {
   ContaLibItem *novo;
   ContaLibItem linha;
@@ -172,8 +194,8 @@ int contalib_ler_biblioteca(const char *json) {
              tipoBase(js_texto(p, f, "content_type", t, sizeof t) ? t : NULL));
     if (!js_texto(p, f, "name", d->titulo, sizeof d->titulo))
       js_texto(p, f, "title", d->titulo, sizeof d->titulo);
-    js_texto(p, f, "poster", d->poster, sizeof d->poster);
-    js_texto(p, f, "background", d->backdrop, sizeof d->backdrop);
+    urlInteira(p, f, "poster", d->poster, sizeof d->poster, d->id);
+    urlInteira(p, f, "background", d->backdrop, sizeof d->backdrop, d->id);
     js_texto(p, f, "release_info", d->meta, sizeof d->meta);
     comporGenero(d->genero, sizeof d->genero, d->tipo, p, f);
     // imdb_rating vem 0..10 (e as vezes como string; js_num aceita as duas).
@@ -274,6 +296,7 @@ int contalib_ler_vistos(const char *json) {
   free(vistos);
   vistos = novo;
   nVistos = k;
+  vistosPuxadoEm = time(NULL);
   pthread_mutex_unlock(&vistosTrava);
   printf("[contalib] vistos da conta: %d linhas\n", k);
   return k;
@@ -303,6 +326,7 @@ static void montarItem(CatItem *d, const ContaLibItem *s) {
   snprintf(d->meta, sizeof d->meta, "%s", s->meta);
   d->nota = s->nota;
   d->naLista = 1;
+  d->fontes = CAT_FONTE_NUVIO;
   if (s->poster[0]) snprintf(d->poster, sizeof d->poster, "%s", s->poster);
   if (s->backdrop[0]) snprintf(d->backdrop, sizeof d->backdrop, "%s", s->backdrop);
   snprintf(d->backdropCatalogo, sizeof d->backdropCatalogo, "%s", d->backdrop);
@@ -346,7 +370,7 @@ int contalib_aplicar_catalogo(void) {
     // remota nao re-marca. Sem isto o titulo voltava no ciclo seguinte.
     if (listaOculta && listaOculta(itens[i].id, itens[i].addedMs)) continue;
     k = cat_indice_por_imdb(itens[i].id);
-    if (k >= 0) { cat_definir_na_lista(k, 1); marcados++; ultimo = k; }
+    if (k >= 0) { cat_marcar_fonte(k, CAT_FONTE_NUVIO); marcados++; ultimo = k; }
     else { faltam[i] = 1; nFaltam++; }
   }
 
@@ -391,32 +415,111 @@ void contalib_reconciliar(void) {
   // os acrescentados ficam no fim do vetor.
   if (marcaIdx < 0 || marcaIdx >= cat_n()) return;
   c = cat_item(marcaIdx);
-  if (c && !strcmp(c->imdb, marcaId) && c->naLista) return;
+  // `naLista` SOZINHO NAO PROVA NADA. A descoberta tambem republica titulos
+  // que estao no Trakt com `naLista=1` e so o bit Trakt: aceitar a marca ai
+  // deixava o bit Nuvio apagado para sempre e o titulo sumia de "Conta Nuvio".
+  // A marca e sempre um item da conta — sem o bit Nuvio nele, o catalogo foi
+  // republicado por cima e tudo que a conta marcou tem de ser reaplicado.
+  if (c && !strcmp(c->imdb, marcaId) && c->naLista
+      && (c->fontes & CAT_FONTE_NUVIO)) return;
   contalib_aplicar_catalogo();
 }
 
+int contalib_vistos_do_titulo(const char *id, int *desmarcados) {
+  int i, k = 0, d = 0;
+  if (desmarcados) *desmarcados = 0;
+  if (!id || !id[0]) return 0;
+  pthread_mutex_lock(&vistosTrava);
+  for (i = 0; i < nVistos; i++) {
+    if (vistos[i].episodio <= 0 || strcmp(vistos[i].id, id)) continue;
+    k++;
+    if (vistoep_estado(id, vistos[i].temporada, vistos[i].episodio) == 0) d++;
+  }
+  pthread_mutex_unlock(&vistosTrava);
+  if (desmarcados) *desmarcados = d;
+  return k;
+}
+
+// Titulos com linha barrada num mesmo pull que ganham linha propria no log. O
+// resto entra so no total: e log de diagnostico, nao relatorio.
+#define CL_BARRADOS_LOG 6
+
 int contalib_aplicar_vistos(void) {
-  int i, k = 0, ke = 0;
+  struct { char id[24]; VistoFonte f; } barrado[CL_BARRADOS_LOG];
+  VistoFonte total;
+  int i, j, k = 0, ke = 0, nBarrado = 0, jornal = 0;
+  memset(&total, 0, sizeof total);
   for (i = 0; i < nVistos; i++) {
     if (!vistos[i].id[0]) continue;
     // DESMARCADO NESTA TV depois desta linha: ela nao re-marca (contapend.h).
     if (vistoOculto && vistoOculto(vistos[i].id, vistos[i].temporada,
-                                   vistos[i].episodio, vistos[i].vistoMs)) continue;
+                                   vistos[i].episodio, vistos[i].vistoMs)) {
+      jornal++;
+      continue;
+    }
     // LINHA DE EPISODIO VAI PARA O MAPA DE EPISODIOS, e nao para o historico
     // de titulo. `season` e `episode` sempre vieram nesta resposta
     // (PLANO-CONTA-SYNC.md secao 1.5) e eram lidos e descartados aqui: o
     // `continue` abaixo pulava a linha inteira. E por isso que o app nunca
     // soube quais episodios a pessoa viu, so quais SERIES.
     if (vistos[i].temporada > 0 || vistos[i].episodio > 0) {
-      vistoep_definir(vistos[i].id, vistos[i].temporada, vistos[i].episodio, 1);
+      // PELA PORTA DAS FONTES (vistoep.h): o jornal acima so segura a linha
+      // ate a conta confirmar o delete e a entrada ser podada (contapend_podar).
+      // Uma linha que ainda venha depois disso — copia guardada, pagina velha,
+      // delete aceito e nao aplicado — re-marcava o episodio. A desmarcacao da
+      // pessoa fica guardada a parte e e consultada aqui, com o watched_at da
+      // linha: so um visto MAIS NOVO que o gesto volta a marcar.
+      VistoFonte um;
+      memset(&um, 0, sizeof um);
+      vistoep_fonte(vistos[i].id, vistos[i].temporada, vistos[i].episodio, 1,
+                    vistos[i].vistoMs, &um);
+      total.vistos += um.vistos;
+      total.venceu += um.venceu;
+      if (um.bloqueados) {
+        total.bloqueados++;
+        for (j = 0; j < nBarrado && strcmp(barrado[j].id, vistos[i].id); j++) {}
+        if (j == nBarrado && nBarrado < CL_BARRADOS_LOG) {
+          memset(&barrado[j], 0, sizeof barrado[j]);
+          snprintf(barrado[j].id, sizeof barrado[j].id, "%s", vistos[i].id);
+          nBarrado++;
+        }
+        if (j < nBarrado) {
+          VistoFonte *f = &barrado[j].f;
+          if (f->bloqueados < VE_FONTE_PARES) f->par[f->bloqueados] = um.par[0];
+          f->bloqueados++;
+        }
+        continue;
+      }
       ke++;
       continue;
     }
     cat_historico_definir_id(vistos[i].id, vistos[i].tipo, 1);
     k++;
   }
-  if (k) printf("[contalib] %d titulos marcados como vistos pela conta\n", k);
-  if (ke) printf("[contalib] %d episodios vistos vindos da conta\n", ke);
+  if (k) printf("[visto] marcado por conta-importacao pos=0 dur=0 assistido=0s n=%d titulos (sem reproducao local)\n", k);
+  if (ke) printf("[visto] marcado por conta-importacao pos=0 dur=0 assistido=0s n=%d episodios (sem reproducao local)\n", ke);
+  // O LOG POR FONTE (vistoep.h). A conta fala de TODOS os titulos num pull so,
+  // e este pull roda a cada ciclo: uma linha de total, e uma por titulo SO
+  // onde algo foi barrado — e la que se le "a conta ainda acha que foi visto".
+  if (ke || total.bloqueados || total.venceu || jornal) {
+    printf("[vistoep] conta: +%d episodios (bloqueados %d; remoto mais novo %d)",
+           total.vistos, total.bloqueados, total.venceu);
+    if (jornal) printf(" | %d seguros pelo jornal (delete ainda nao podado)", jornal);
+    printf("\n");
+  }
+  for (j = 0; j < nBarrado; j++) {
+    char quais[VE_FONTE_PARES * 10 + 8];
+    size_t u = 0;
+    int q, lim = barrado[j].f.bloqueados < VE_FONTE_PARES ? barrado[j].f.bloqueados
+                                                          : VE_FONTE_PARES;
+    quais[0] = 0;
+    for (q = 0; q < lim && u + 12 < sizeof quais; q++)
+      u += (size_t)snprintf(quais + u, sizeof quais - u, " T%dE%d",
+                            barrado[j].f.par[q].temporada, barrado[j].f.par[q].episodio);
+    printf("[vistoep] %s: conta bloqueados %d:%s%s\n", barrado[j].id,
+           barrado[j].f.bloqueados, quais, barrado[j].f.bloqueados > lim ? " ..." : "");
+  }
+  fflush(stdout);
   return k;
 }
 
@@ -499,6 +602,14 @@ int contalib_sementes_de(const ContaVisto *v, int n, ContaSemente *saida, int ma
 int contalib_sementes_a_seguir(ContaSemente *saida, int max, int doMaisAlto) {
   int n;
   pthread_mutex_lock(&vistosTrava);
+  // -1: vistos nunca puxados nesta sessao, ou o ultimo pull bom e velho. "Sem
+  // semente" (0) e "nao sei" (-1) sao coisas diferentes: com outra fonte
+  // vinculada, semear de um retrato velho ressuscita o que ja foi visto.
+  if (!vistos || !vistosPuxadoEm ||
+      time(NULL) - vistosPuxadoEm > CONTALIB_VISTOS_VALIDADE_S) {
+    pthread_mutex_unlock(&vistosTrava);
+    return -1;
+  }
   n = contalib_sementes_de(vistos, nVistos, saida, max, doMaisAlto);
   pthread_mutex_unlock(&vistosTrava);
   return n;

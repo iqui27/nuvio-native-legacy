@@ -78,7 +78,13 @@ file(GLOB NUVIO_SRC CONFIGURE_DEPENDS "${NUVIO_RAIZ}/src/*.c" "${NUVIO_RAIZ}/src
 list(FILTER NUVIO_SRC EXCLUDE REGEX "/(video_tizen|video_tpk|tpk)\\.c$")
 add_library(main SHARED ${NUVIO_SRC})
 target_include_directories(main PRIVATE "${NUVIO_RAIZ}/src" "${CMAKE_BINARY_DIR}/inc")
-target_compile_definitions(main PRIVATE NV_ANDROID)
+target_compile_definitions(main PRIVATE NV_ANDROID NV_TOUCH_UI)
+if(ANDROID_ABI STREQUAL "arm64-v8a" OR ANDROID_ABI STREQUAL "x86_64")
+  # Both modes ship in one APK; NDK r27 needs a 16KB-aligned RELRO end.
+  foreach(t main SDL2)
+    target_link_options(${t} PRIVATE "-Wl,-z,max-page-size=16384" "-Wl,-z,common-page-size=16384")
+  endforeach()
+endif()
 target_compile_options(main PRIVATE -O2 -Wno-unused-result)
 
 # Chaves (-D) do tools/env.sh. Sem o arquivo, ou com chave vazia, o build sai
@@ -116,3 +122,4 @@ if(NUVIO_P2P_MOTOR)
     "${P2P_LIB}/libtorrent-rasterbar.a" "${P2P_LIB}/libssl.a" "${P2P_LIB}/libcrypto.a" c++experimental)
   target_link_options(main PRIVATE "-Wl,--gc-sections")
 endif()
+

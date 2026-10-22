@@ -81,10 +81,14 @@ typedef struct {
   // "⏳" do AIOStreams, "[TB download]"/"[RD download]" do Torrentio, "⬇" ou
   // "uncached" no nome/descricao. Abrir o link manda o servico BAIXAR, e o que
   // toca antes de terminar e um clipe de aviso de ~8 s (registros 1136, 2191,
-  // 2501). Serve a duas coisas: o automatico poe estas no fim da fila (pontos()
-  // em streams.c), e a escolha manual avisa na tela que o servico esta
+  // 2501). Tambem recebe a negativa da consulta de debrid ja feita. A folha
+  // poe estas no fim e o automatico as exclui; a escolha manual avisa que esta
   // baixando. Nao exclui nada: escolhida a dedo, toca como na 1.3.5.
   int  foraCache;
+  // A SONDA VIU A URL RESPONDER PAGINA (HTML/JSON/texto) e nao video (2.0.2,
+  // naovideo.h): linha de aviso do addon. A folha a mostra apagada ("Nao e
+  // video") e o automatico a pula. Marcada na verificacao, nunca no parser.
+  int  naoVideo;
   // PACOTE DE SELOS ATIVO (selospacote.h): os filtros que casaram com esta
   // fonte, calculados UMA vez (quando a lista chega, ou quando o pacote muda;
   // `selosPacoteVer` != selospacote_versao() manda recalcular), nunca no
@@ -131,7 +135,12 @@ void stream_lista_acrescentar(const Stream *lista, int n, int ordemAddon);
 int  stream_ordem_addon(int i);
 // A escolha automatica ja pode sair com a lista parcial? Ver
 // fonteauto_pode_decidir. `preferida` e o indice da lembrada nesta lista (-1).
-int  stream_auto_pode_decidir(int preferida, int prefPendente, int prazoPassou);
+// `instantaneo` (#202): "Espera pelos add-ons" = Instantaneo.
+int  stream_auto_pode_decidir(int preferida, int prefPendente, int prazoPassou, int instantaneo);
+// REGRAS DE AUTO-PLAY (#202, fonteregra.h): o grupo da fonte i (-1 = fora,
+// 0..3 = ordem) e se a ultima escolha so falhou por causa delas.
+int  stream_grupo_regra(int i);
+int  stream_regra_bloqueou(void);
 // Candidatas que o automatico ainda pode tentar nesta lista (nao excluidas).
 int  stream_n_candidatas(void);
 
@@ -158,6 +167,11 @@ int  stream_lista_do_alvo(const char *id);
 void stream_invalidar(const char *porque);
 int  stream_n(void);
 const Stream *stream_item(int i);
+// Leituras de texto da fonte para a faixa "Vai tocar" (vaitocar.c): o idioma
+// como a folha o mostra ("Dublado", "Dual áudio", "Legendado", NULL = nao
+// sei) e a pergunta "o addon cita esta palavra?" (nome, descricao, arquivo).
+const char *stream_idioma(const Stream *s);
+int  stream_texto_tem(const Stream *s, const char *palavra);
 // Fileira de selos do pacote ativo (ver selospacote.h) para fora da folha, como
 // o cartao "Abrindo fonte" do player: padrao em cinza `tom`, colorido em pecas.
 // `stream_selos_ha` diz se ha o que desenhar (a resolucao entra); 0 de largura
@@ -167,8 +181,34 @@ float stream_selos_fileira(const Stream *s, float x, float y, float maxW, float 
 
 // Indice do stream que o modo automatico escolhe, ou -1 se a lista esta vazia.
 int  stream_automatico(void);
+// Primeira candidata da MESMA fila usada pelo Play, sem conferir URLs.
+int  stream_play_candidata(void);
+// A candidata que o automatico usaria se `atual` falhar (e nao esta excluida)
+// existe e NAO e pior que ela: mesma resolucao ou maior, Dolby Vision igual ou
+// melhor. 0 = nao ha proxima, ou a proxima baixaria a qualidade (#202).
+int  stream_proxima_sem_perda(int atual);
+// Primeira VOD nao tentada na ordem do addon, inclusive antes da atual.
+// Pula a atual e as ja falhadas; leitura protegida contra troca de lista.
+int  stream_proxima_vod(int atual);
+// Confere a proxima da ordem do addon fora do fio de desenho; -1 se acabou.
+// Devolve tambem quantas candidatas consumiram o orcamento (se nao NULL).
+int  stream_verificar_proxima_vod(int atual, int tentativas, int *conferidas);
+// A fonte `i` pode ser seguida por um grupo lembrado SEM rebaixar o que o
+// automatico escolheria hoje: nao excluida pelas regras do dono, grupo de
+// regras igual ou melhor, resolucao e Dolby Vision iguais ou maiores e, na LG,
+// nunca um nao-MP4 no lugar do MP4 da mesma faixa. Usada so pela memoria do
+// AUTOMATICO (fontepref); a manual nao passa por aqui, e escolha da pessoa.
+int  stream_grupo_sem_perda(int i);
+// O mesmo sem as regras de auto-play (#202): canal ao vivo.
+int  stream_automatico_canal(void);
 // Exclui uma candidata que ja foi entregue ao player e travou no pipeline.
 // A exclusao vale so para a lista atual; uma resposta nova limpa a memoria.
+// 1 = a fonte `indice` existe e ainda nao foi descartada pelo automatico nesta lista.
+int  stream_automatico_disponivel(int indice);
+// O player nao conseguiu abrir a fonte; so VOD, nao canais nem simples sonda.
+void stream_vod_falhou(int indice);
+void stream_vod_tocou(int indice);
+long stream_vod_falhou_ha(int indice);
 int  stream_automatico_excluir(int indice);
 int  stream_automatico_excluida(int indice); // Current-list retry exclusion.
 // Exclui tambem as IRMAS da candidata (mesmo addon e mesmo rotulo), mas so
@@ -207,6 +247,12 @@ Uint32 stream_idade_ms(void);
 // que vai tocar e conferida. As que falham saem da fila desta lista
 // (stream_automatico_excluir) e nao sao conferidas de novo.
 int  stream_primeira_boa(int tentativas);
+// TOCAR ENQUANTO CONFERE (fonteantecipa.h): o indice da candidata que o player
+// ja pode abrir enquanto a conferencia dela roda, e o estado (FA_*). -1 = nada.
+int  stream_antecipada(int *estado);
+// Ate `max` URLs (256 bytes cada; so o host importa) das primeiras fontes que o
+// automatico tentaria, para aquecer.c abrir a conexao antes. Nunca resolve nada.
+int  stream_urls_para_aquecer(char dst[][256], int max);
 // Conferencia de uma URL avulsa, sem lista (bloqueia; chamar de fio proprio).
 int  stream_url_serve(const char *url, const char *cabecalhos);
 
@@ -219,8 +265,18 @@ int  stream_texto_fora_de_cache(const char *texto);
 // titulo aberto: o teste de velocidade do diagnostico mede primeiro a fonte
 // que o automatico escolheria, com a mesma regra, sem copia-la.
 long stream_pontos(const Stream *s);
+// A fonte e MP4: s->mp4 (o addon disse), ".mp4" na URL ou ".mp4" no rotulo.
+// UMA resposta para o cartao (MP4/MKV) e para o anuncio ao video
+// (video_definir_mp4), que decide se a tela/sonda do Dolby Vision em MKV entra.
+int  stream_e_mp4(const Stream *s);
 // R9b: o que a tela mostra (1/0; -1 = desconhecido, o padrao, nao penaliza).
 void stream_definir_tela(int hdr, int dv);
+// Android: -1 desconhecido, 0 sem decoder 3840x2160, 1 suportado. Nao filtra a folha manual.
+void stream_definir_decoder4k(int hevc, int avc, int vp9, int av1);
+// Erro Media3 no automatico: nao repetir tamanho/codec nesta lista. `renderer`
+// diz de onde veio o erro: 0 video, 1 audio, 2 desconhecido. Erros de audio
+// (EAC3/AC4 sem suporte) nao bloqueiam codecs de video.
+void stream_automatico_erro_decoder(int indice, int codigo, int renderer);
 int  stream_cabe_no_teto(const Stream *s);
 
 // TORRENT SEM URL ESCOLHIDO A DEDO NA FOLHA. A escolha manual chamava
@@ -290,6 +346,12 @@ StreamfitClasse stream_fit_folha_estado(int indice, StreamfitResultado *saida);
 // 0 = sem medida: l1/l2 vazias.
 int stream_fit_abrindo(const Stream *s, char *l1, size_t n1, char *l2, size_t n2);
 int  stream_folha_aberta(void);
+// DETALHES DA FONTE (#355): modal sobre a folha com o texto inteiro do addon.
+// Abre com Info / AMARELA / I na linha em foco; enquanto aberta ela come o
+// teclado (Voltar/OK fecham so ela).
+int  stream_detalhe_aberto(void);
+const char *stream_detalhe_texto(void);          // a descricao ja limpa (para testes)
+int  stream_detalhe_tecla_abre(const SDL_Event *e);
 // QUANTAS LINHAS A FOLHA MOSTRA AGORA — issue #132 ("so 1 fonte listada"). A
 // folha lista a lista INTEIRA de stream_definir_lista; so os filtros que a
 // pessoa liga NA PROPRIA FOLHA (provedor, "MP4") tiram linha. A verificacao do
@@ -298,6 +360,10 @@ int  stream_folha_aberta(void);
 // nada. tests/fontes_lista.sh prende isso; abrir a folha escreve a contagem no
 // log ("[fonte] folha: N de M na lista"), para o proximo relato dizer onde caiu.
 int  stream_folha_n(void);
+#ifdef NV_SHOT_HOOKS
+void stream_shot_folha(float *cartao, int *linhas, int *dobradas);   // capturas
+void stream_shot_foco(int *indice, int *dobrada);   // capturas
+#endif
 void stream_folha_evento(const SDL_Event *e);
 void stream_folha_atualizar(float dt, Uint32 agora);
 void stream_folha_desenhar(Uint32 agora);

@@ -286,7 +286,7 @@ static void *fioRenovar(void *u) {
 }
 
 // Arte: o Discord so mostra imagem de fora pelo proxy dele ("mp:external/...").
-static char arteUrl[1024], arteMp[600];
+static char arteUrl[NV_ARTE_URL_MAX], arteMp[600];
 static int arteVivo;
 static unsigned proxArte;
 

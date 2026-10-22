@@ -30,6 +30,7 @@ static int playerCarregando;
 int addons_ocupado(void)       { return buscaOcupada; }
 int player_carregando(void)    { return playerCarregando; }
 int addons_n(void)             { return 3; }
+int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 
 // A "rede": tres addons, cada um esperando o teste soltar (`solto[k]`) ou o
 // cancelamento. Registra o que viu para o teste conferir.

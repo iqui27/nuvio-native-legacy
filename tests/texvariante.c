@@ -165,6 +165,50 @@ int main(int argc, char **argv) {
     soltarBruto(&itens[3]);
     puts("ok  host desconhecido baixa a URL como veio"); }
 
+  /* 6. AQUECIMENTO DO DESTAQUE (07/10, TCL): tex_arquivo pede 128 px, e o
+   *    fio de rede pega o item ANTES de o pedido do destaque (1920) chegar.
+   *    Antes: baixava a variante de 128 (w300), o destaque promovia e ia a
+   *    rede de novo pela grande — dois downloads, prazo de 600 ms estourado.
+   *    Agora: um download so, ja da variante do destaque. */
+  { int foi = 0, k, antes;
+    const char *URL = "https://image.tmdb.org/t/p/original/aquecido.jpg";
+    filaIni = filaFim = 0;
+    memset(itens, 0, sizeof itens);
+    antes = downloads;
+    assert(tex_arquivo(URL) == NULL);
+    for (k = 0; k < nMax && strcmp(itens[k].caminho, URL); k++) {}
+    assert(k < nMax && itens[k].limite == 128 && itens[k].limiteArquivo == tetoDoHeroi());
+    assert(baixarParaItem(k, URL, dst, sizeof dst, &foi, NULL) == 1);
+    printf("    aquecimento baixou: %s\n", ultimaUrl);
+    assert(foi == 1 && downloads == antes + 1 && !strstr(ultimaUrl, "/w300/"));
+    (void)tex_obter_limite(URL, 1920, 1, 0);   /* o destaque, no mesmo quadro */
+    decodificar(k);
+    printf("    destaque: %dx%d tetoUsado=%d\n", itens[k].w, itens[k].h, itens[k].tetoUsado);
+    assert(itens[k].w == 1600 && !promoveu(k, 1920) && downloads == antes + 1);
+    puts("ok  aquecimento + destaque no mesmo quadro: um download, ja grande"); }
+
+  /* 7. Aquecimento decodificado a 128 antes (foco andando na fileira): a
+   *    promocao a heroi le o arquivo aquecido, sem rede. */
+  { int foi = 1, k, antes;
+    const char *URL = "https://image.tmdb.org/t/p/original/aquecido2.jpg";
+    filaIni = filaFim = 0;
+    memset(itens, 0, sizeof itens);
+    antes = downloads;
+    assert(tex_arquivo(URL) == NULL);
+    for (k = 0; k < nMax && strcmp(itens[k].caminho, URL); k++) {}
+    assert(k < nMax);
+    assert(baixarParaItem(k, URL, dst, sizeof dst, &foi, NULL) == 1);
+    decodificar(k);
+    assert(itens[k].w == 128 && downloads == antes + 1);
+    tex_cache_esperar_gravacoes();
+    assert(promoveu(k, 1920));
+    foi = 1;
+    assert(baixarParaItem(k, URL, dst, sizeof dst, &foi, NULL) == 1);
+    assert(foi == 0 && downloads == antes + 1);
+    decodificar(k);
+    assert(itens[k].w == 1600);
+    puts("ok  aquecido a 128, promovido a heroi: le o arquivo, sem segundo download"); }
+
   tex_cache_esperar_gravacoes();
   snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir); assert(system(cmd) == 0);
   puts("texvariante: tudo ok");

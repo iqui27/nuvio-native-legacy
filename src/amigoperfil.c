@@ -11,6 +11,9 @@
 #include "idioma.h"
 #include "recomenda.h"
 #include "badges.h"
+#include "ponteiro.h"
+#include "rolagemtoque.h"
+#include "telefoneui.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -33,6 +36,29 @@ static float fFoco[AP_NFILAS][SV_FILA_MAX];
 static float entrada;
 static int sair, temPedido;
 static char pedido[24];
+static int nFila(int f);
+#ifdef NV_TOUCH_UI
+static ToqueRolagem toque[AP_NFILAS];
+static float toqueX[AP_NFILAS];
+static int toqueFila = -1;
+static int toqueRolar(const PonteiroRolagem *e) {
+  if (e->fase == PONT_ROL_INICIO) {
+    toqueFila = -1;
+    for (int f = 0; f < AP_NFILAS; f++) if (toquerol_evento(&toque[f], e)) { toqueFila = f; return 1; }
+    return 0;
+  }
+  return toqueFila >= 0 && toqueFila < AP_NFILAS ? toquerol_evento(&toque[toqueFila], e) : 0;
+}
+static void toqueRetomar(void) {
+  if (toqueFila >= 0 && toque[toqueFila].livre) {
+    fila = toqueFila;
+    col = (int)((toqueX[fila] + toque[fila].regiao.w * 0.35f) / (AP_PW + AP_PGAP));
+    if (col >= nFila(fila)) col = nFila(fila) - 1;
+    if (col < 0) col = 0;
+  }
+  for (int f = 0; f < AP_NFILAS; f++) toquerol_limpar(&toque[f]);
+}
+#endif
 
 static int nFila(int f) {
   if (!temPerfil) return 0;
@@ -56,6 +82,9 @@ void amigoperfil_abrir(const char *id) {
   fila = -1; col = 0;
   sair = 0; temPedido = 0;
   entrada = 0.0f;
+#ifdef NV_TOUCH_UI
+  memset(toque, 0, sizeof toque); memset(toqueX, 0, sizeof toqueX); toqueFila = -1;
+#endif
   memset(fFoco, 0, sizeof fFoco);
   socialvis_atualizar();
   socialvis_abrir_perfil(pessoa);
@@ -78,9 +107,24 @@ static const char *imdbDe(int f, int c) {
   return "";
 }
 
+// PONTEIRO (#99). O cartaz sob o cursor vira o foco pelas MESMAS variaveis
+// das setas (fila, col); o OK do clique abre o titulo pelo caminho de sempre.
+static void ponteiroCartaz(int f, int c) {
+  if (!temPerfil || f < 0 || f >= AP_NFILAS || c < 0 || c >= nFila(f) || c >= SV_FILA_MAX) return;
+#ifdef NV_TOUCH_UI
+  for (int k = 0; k < AP_NFILAS; k++) toquerol_limpar(&toque[k]);
+#endif
+  if (f == fila && c == col) return;
+  fila = f; col = c;
+}
+int amigoperfil_teste_foco(int *coluna) { if (coluna) *coluna = col; return fila; }
+
 void amigoperfil_evento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!e || e->type != SDL_KEYDOWN) return;
+#ifdef NV_TOUCH_UI
+  if (toquerol_navegacao(e)) toqueRetomar();
+#endif
   k = e->key.keysym.sym;
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
       e->key.keysym.scancode == NV_SCANCODE_BACK) { sair = 1; return; }
@@ -120,7 +164,7 @@ static void cartaz(GfxRect r, const char *url, float f, float a) {
     float ar, ag, ab, menor = r.w;
     GfxRect b = { r.x - NV_ANEL_FOCO, r.y - NV_ANEL_FOCO, r.w + 2 * NV_ANEL_FOCO, r.h + 2 * NV_ANEL_FOCO };
     ajustes_acento(&ar, &ag, &ab);
-    if (ajustes_vidro()) gfx_vidro_cartao(r, raio * menor / r.h, f, a);
+    if (ajustes_vidro()) gfx_vidro_cartao(r, raio, f, a);
     else gfx_cor(b, (raio * menor + NV_ANEL_FOCO) / (menor + 2 * NV_ANEL_FOCO), ar, ag, ab, f * a);
   }
   svd_poster(r, url, raio * r.w / r.h, a);
@@ -155,6 +199,16 @@ static void tituloFila(float x, float y, const char *t, float a) {
 }
 
 static void vazioFila(float x, float y, const char *t, float a) {
+#ifdef NV_TOUCH_UI
+  if (telefoneui_ativo()) {
+    float w = fminf(4.0f * (AP_PW + AP_PGAP) - AP_PGAP, NV_TELA_W - 40 - x);
+    float h = txt_bloco_corta(TXT_CAPTION, t, 140, 138, 150, 0, 0, w - 48, 30, 0, 0);
+    h = fmaxf(90, h + 32);
+    gfx_cor((GfxRect){x, y, w, h}, 18 / h, 1, 1, 1, .04f * a);
+    txt_bloco_corta(TXT_CAPTION, t, 140, 138, 150, x + 24, y + 16, w - 48, 30, a, 0);
+    return;
+  }
+#endif
   TxtLinha l = txt_linha_corta(TXT_CAPTION, t, 140, 138, 150, 255, 4.0f * (AP_PW + AP_PGAP) - AP_PGAP - 48.0f);
   gfx_cor((GfxRect){ x, y, 4.0f * (AP_PW + AP_PGAP) - AP_PGAP, 90.0f }, 18.0f / 90.0f,
           1.0f, 1.0f, 1.0f, 0.04f * a);
@@ -377,11 +431,25 @@ void amigoperfil_desenhar(Uint32 agora) {
   }
 
   // --- as tres fileiras ---
+#ifdef NV_TOUCH_UI
+  ponteiro_rolagem(toqueRolar);
+#endif
   for (f = 0; f < AP_NFILAS; f++) {
     float y = AP_FILA_TOPO + (float)f * AP_FILA_PASSO;
     const char *tit = f == AP_ASSISTINDO ? "Assistindo" : f == AP_GOSTOU ? "Gostou recentemente"
                                                                        : "Você mandou";
     int n = nFila(f);
+#ifdef NV_TOUCH_UI
+    float util = fmaxf(0.0f, NV_TELA_W - 40.0f - rx);
+    float maxX = fmaxf(0.0f, (n - 1) * (AP_PW + AP_PGAP) + AP_PW - util);
+    toquerol_vincular(&toque[f], (GfxRect){ rx, y + 46.0f, util, AP_PH + 40.0f }, gfx_escala(), 0.0f, maxX, 0, &toqueX[f]);
+    if (f == fila && !toque[f].livre) {
+      float esq = col * (AP_PW + AP_PGAP), dir = esq + AP_PW;
+      if (esq < toqueX[f]) toqueX[f] = esq;
+      if (dir > toqueX[f] + util) toqueX[f] = dir - util;
+      toqueX[f] = toquerol_clamp(toqueX[f], 0.0f, maxX);
+    }
+#endif
     tituloFila(rx, y, i18n(tit), a);
     y += 46.0f;
     if (n == 0) {
@@ -396,11 +464,26 @@ void amigoperfil_desenhar(Uint32 agora) {
       vazioFila(rx, y, i18n(st), a);
       continue;
     }
+#ifdef NV_TOUCH_UI
+    gfx_recorte(rx, y - 4.0f, util, AP_PH + 48.0f);
+#endif
     for (c = 0; c < n && c < SV_FILA_MAX; c++) {
       float x = rx + (float)c * (AP_PW + AP_PGAP);
+#ifdef NV_TOUCH_UI
+      x -= toqueX[f];
+#endif
       GfxRect r = { x, y, AP_PW, AP_PH };
       float fc = fFoco[f][c];
+#ifdef NV_TOUCH_UI
+      if (x >= rx + util || x + AP_PW <= rx) continue;
+      if (a > 0.99f) {
+        float ax = fmaxf(r.x, rx), dir = fminf(r.x + r.w, rx + util);
+        ponteiro_alvo(ax, r.y, dir - ax, r.h, ponteiroCartaz, NULL, f, c);
+      }
+#else
       if (x + AP_PW > NV_TELA_W - 40.0f) break;
+      if (a > 0.99f) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroCartaz, NULL, f, c);
+#endif
       if (f == AP_MANDOU) {
         const SvEnviada *m = &perf.mandou[c];
         cartaz(r, m->poster, fc, a);
@@ -426,7 +509,11 @@ void amigoperfil_desenhar(Uint32 agora) {
         }
       }
     }
+#ifdef NV_TOUCH_UI
+    gfx_sem_recorte();
+#endif
   }
   { TxtLinha t = txt_linha(TXT_MINI, i18n("OK · abrir o título   ·   Voltar · fechar"), 150, 148, 160, 255);
     txt_desenhar_alpha(t, lx, NV_TELA_H - 44.0f, a * 0.9f); }
 }
+

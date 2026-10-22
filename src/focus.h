@@ -14,7 +14,13 @@
 // Biblioteca (CAT_MAX + SALVOS_MAX = 4000 titulos / 6). A home tem teto proprio
 // (MAX_FIL, 32) e a busca tambem (BU_MAX_FILEIRAS), entao isto so custa memoria:
 // ~5,6 KB por Foco, e ha cinco no app.
+// ANDROID: CAT_MAX la e 8000 (fileiras ilimitadas), e a grade precisa de
+// (8000 + 2000) / 6 = 1667 linhas. ~13,6 KB por Foco, nunca na pilha.
+#ifdef NV_ANDROID
+#define FOCUS_MAX_FILEIRAS 1700
+#else
 #define FOCUS_MAX_FILEIRAS 700
+#endif
 
 typedef struct {
   int fileira;

@@ -66,6 +66,9 @@ int xtream_canais(XtreamCanal *saida, int max);
 enum { XT_OK, XT_SEM_RESPOSTA, XT_RECUSOU, XT_PAGINA, XT_HTTP };
 int xtream_ultima_falha(void);
 int xtream_ultimo_http(void);
+// Quantos canais o servidor mandou na ULTIMA xtream_canais, mesmo os que nao
+// couberam em `max` (o guia usa para dizer "Mostrando N de M").
+int xtream_ultimo_total(void);
 
 // ----------------------------------------------------------------- conta
 // user_info do player_api.php (#158). Tudo opcional: -1/0/"" = nao veio.

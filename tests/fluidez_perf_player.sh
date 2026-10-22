@@ -5,7 +5,7 @@
 #
 #   bash tests/fluidez_perf_player.sh                  # estados padrao
 #   bash tests/fluidez_perf_player.sh osd fontes       # so estes (nomes de player_glass_shot.c)
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 estados=("$@")
 if [ ${#estados[@]} -eq 0 ]; then estados=(osd osd-barra legendas fontes pausa episodios aovivo-osd); fi

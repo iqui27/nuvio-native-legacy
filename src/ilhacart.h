@@ -17,16 +17,18 @@
 // estreia e Assistir / Depois / Dispensar: "Depois" tira o cartao ate o app
 // fechar, "Dispensar" tira aquele episodio de vez (ver ilha.h, ILHA_PEDIU_*).
 //
-// AMIGO VENDO AGORA (02/10). O evento de inicio mais novo do feed de um amigo,
-// com menos de 15 min: um aviso uma vez por evento ("Ana está vendo
-// Severance", em qualquer tela) e, com o relogio, o terceiro cartao ao lado
-// dele ate o evento envelhecer ou "Fechar" no modal.
+// AMIGO VENDO AGORA (02/10; passageiro desde 06/10). Eventos de inicio de
+// amigos com menos de 15 min viram UM aviso que some sozinho ("Ana está vendo
+// Severance" ou "Ana e mais 2 estão assistindo"), uma vez por amigo + titulo,
+// lembrado em disco (avisodisp). Nao ha mais cartao fixo ao lado do relogio.
 //
 // FIO PRINCIPAL.
 #ifndef NV_ILHACART_H
 #define NV_ILHACART_H
 #include <SDL2/SDL.h>
+#include <stddef.h>
 #include "ilha.h"
+#include "recomenda.h"
 
 void ilhacart_player_saiu(int indice, double posSeg, double durSeg, int t, int e);
 // A atividade ao vivo pertence a conta/perfil que encerrou o player. So
@@ -49,5 +51,16 @@ void ilhacart_atualizar(Uint32 agora, const char *imdbAberto);
 void ilhacart_dispensar(int qual);
 // "Depois" no modal da estreia: sai da pilula so ate o app fechar.
 void ilhacart_adiar(int qual);
+// OK no aviso "vendo:<imdb>" (ilhasinais.c entrega a chave). app.c le com
+// ilhacart_pediu_atividade: imdb "" = varios amigos (so a aba Atividade).
+void ilhacart_vendo_acao(const char *chave);
+int  ilhacart_pediu_atividade(char *imdb, size_t tam);
+// A chave em disco de "ja avisei este amigo neste titulo" (testes).
+void ilhacart_vendo_chave(char *dst, size_t tam, const char *pessoa, const char *imdb);
+// O aviso de um evento de AMIGO do feed, se e noticia (puro, para o teste):
+// 1 = comecou uma serie ("vendo"), 2 = terminou / reagiu / deu nota, 0 = nada
+// (filme comecado, saiu do player, salvo, grau 2, mais velho que 15 min).
+// `txt` sai com o nome e o titulo em negrito.
+int ilhacart_noticia(const RecEvento *ev, long long agora, char *txt, size_t tam);
 
 #endif

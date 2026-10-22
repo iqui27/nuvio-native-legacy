@@ -1,3 +1,4 @@
+#include "arteurl.h"
 #include "social.h"
 #include "idioma.h"
 #include "trakt.h"
@@ -25,7 +26,7 @@
 #define SOCIAL_INDISPONIVEL SOCIAL_ESTADO_INDISPONIVEL
 typedef struct {
   char pessoa[96], acao[64], titulo[160], detalhe[160], horario[32];
-  char imdb[16], poster[512];
+  char imdb[16], poster[NV_ARTE_URL_MAX];
 } Atividade;
 typedef struct {
   unsigned geracao; CatItem pessoa; char bio[640], local[160];

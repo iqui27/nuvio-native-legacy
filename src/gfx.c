@@ -12,6 +12,7 @@
 #include "corviva.h"
 #include "gpunivel.h"
 #include "ajustes.h"
+#include "esmaecer.h"
 
 // A MISTURA, com o estado lembrado. gfx_rect desliga a mistura num desenho
 // opaco e a devolve ao que estava — nao a "ligada" — porque quem gera o
@@ -27,7 +28,7 @@ static void gfxBlend(int on) {
 // shader que usasse a mesma variavel.
 typedef struct {
   GLuint prog;
-  GLint rect, tela, tex, foco, par, raio, cor, asp, texAsp, forcarCover, veuTela, borda, varre, veu, desl, fundo,
+  GLint rect, tela, tex, foco, reflexo, par, raio, cor, asp, texAsp, forcarCover, veuTela, borda, varre, veu, desl, fundo,
         grad0, grad1, grad2, tempo, reg0, reg1, reg2, reg3, vaza;
   GLint amb, ambOn;         // uAmb/uAmbOn: so os tres modos de arte com rampa
   GLint texB, texAspB, alfaB;   // camadas do destaque (gfx_hero_camadas)
@@ -89,18 +90,19 @@ int gfx_veu_na_arte = 0;
 float gfx_desliza_atual = 0.0f;
 float gfx_opacidade_grupo = 1.0f;
 float gfx_osd_mult = 1.0f;
+float gfx_hdr_ui = 1.0f;
 // Tamanho real do alvo da tela (em retina, maior que 1920x1080). Guardado aqui
 // porque toda volta de FBO precisa restaurar o viewport com ele.
-static int telaW = (int)NV_TELA_W, telaH = (int)NV_TELA_H;
+static int telaW = (int)NV_TELA_BASE_W, telaH = (int)NV_TELA_BASE_H;
 // MINIATURA (gfx_mini_*): o espaco de layout que o VS mapeia no viewport e a
 // escala do alvo. Fora dela, a tela cheia de sempre.
-static float uTelaW = NV_TELA_W, uTelaH = NV_TELA_H;
+static float uTelaW = NV_TELA_BASE_W, uTelaH = NV_TELA_BASE_H;
 static int   miniAtiva, miniPxW, miniPxH;
 static float miniX0, miniY0, miniEsc;
 // O alvo da TELA (o ultimo gfx_tamanho_alvo): a unidade de gfx_fill_gpu. Os
 // alvos pequenos (luz assada, snapshot) mudam telaW por dentro e contam pelo
 // tamanho deles.
-static int telaRealW = (int)NV_TELA_W, telaRealH = (int)NV_TELA_H;
+static int telaRealW = (int)NV_TELA_BASE_W, telaRealH = (int)NV_TELA_BASE_H;
 // A tesoura ligada por gfx_recorte, em pixels do alvo (origem embaixo).
 static int recorteAtivo;
 static GLint recorteBox[4];
@@ -125,7 +127,14 @@ static double fillGpuArea(GfxRect r, const float sub[4]) {
   if (x1 <= x0 || y1 <= y0 || telaRealW <= 0 || telaRealH <= 0) return 0.0;
   return (double)(x1 - x0) * (double)(y1 - y0) / ((double)telaRealW * (double)telaRealH);
 }
-void gfx_tamanho_alvo(int w, int h) { telaW = w; telaH = h; telaRealW = w; telaRealH = h; }
+/* Pixels do alvo da tela por unidade de layout (1920 de largura): 1 em 1080p, 2 em 4K. */
+float gfx_px_por_unidade(void) { return (float)telaRealW / NV_TELA_W; }
+void gfx_tamanho_alvo(int w, int h) {
+  telaW = w; telaH = h; telaRealW = w; telaRealH = h;
+#ifdef NV_TOUCH_UI
+  uTelaW = NV_TELA_W; uTelaH = NV_TELA_H;
+#endif
+}
 // Tamanho da interface (gfx.h). escAtiva multiplica o retangulo de layout
 // antes de tudo: o SDF, os raios e as espessuras sao fracoes do proprio rect,
 // e uAlt sai da altura JA ampliada — a rampa de borda segue com 1 px do alvo.
@@ -234,6 +243,12 @@ static const char *VS =
 // registradores livres significa menos fragmentos em voo ao mesmo tempo — a
 // Mali-G71 desta TV entregava ~40fps com apenas duas camadas de tela cheia.
 // Com um programa enxuto por modo cada desenho usa so o que precisa.
+// Tamanho da copia desfocada (gfx_desfocado); o GFX_SNAP precisa dele no shader.
+#define NV_DESF_W 96
+#define NV_DESF_H 54
+#define NV_STR_(x) #x
+#define NV_STR(x) NV_STR_(x)
+
 static const char *FS_CABECA =
   NV_GLSL_PREFIXO
   "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
@@ -426,6 +441,7 @@ static const char *FS_COVER =
 
 static const char *FS_CORPO[GFX_NMODOS] = {
   // GFX_CARD — arte inteira com cantos e especular no foco (sem zoom nem corte)
+  "uniform float uReflexo;\n"
   "void main(){\n"
   "  float d = sdf(vUv, uRaio, uAspect);\n"
   "  float m = borda(d);\n"
@@ -459,7 +475,7 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // inferior esquerdo e desliza ate o repouso; em 0 e o especular de sempre.
   // Um pouco mais forte enquanto anda, para o olho seguir a passagem.
   "    float e = (dot(vUv-0.5, vec2(0.5029,-0.8644)) + uPar.x*3.0 + uVarre) * 3.0;\n"
-  "    cor += exp(-e*e) * (0.16 + 0.10*min(abs(uVarre),1.0)) * uFoco;\n"
+  "    cor += exp(-e*e) * (0.16 + 0.10*min(abs(uVarre),1.0)) * uFoco * uReflexo;\n"
   "    cor *= (0.80 + 0.20*uFoco);\n"
   // O REBORDO E OPCIONAL (Ajustes > Borda no cartaz em foco). O resto do
   // bloco de foco fica: o cartaz em foco continua mais claro e com o
@@ -557,7 +573,8 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // uPar.x > 0.5 = SO AS RAMPAS, como veu com alpha: por cima do trailer que
   // toca atras do canvas no lugar da arte (trailer.h). Mesma regra do
   // GFX_DETALHE.
-  "  if (uPar.x > 0.5) { gl_FragColor = nv_dither(bg, clamp(ah + av - ah*av, 0.0, 1.0) * uCor.a); return; }\n"
+  "  if (uPar.x > 0.5) { vec3 vb = (uAmbOn > 0.5) ? texture2D(uAmb, vAmb).rgb : bg;\n"
+  "    gl_FragColor = nv_dither(vb, clamp(ah + av - ah*av, 0.0, 1.0) * uCor.a); return; }\n"
   "  if (uAmbOn > 0.5) { vec3 amb = texture2D(uAmb, vAmb).rgb;\n"
   "    gl_FragColor = nv_dither(mix(c, amb, clamp(ah + av - ah*av, 0.0, 1.0)), 1.0); return; }\n"
   "  if (uVaza > 0.5) { gl_FragColor = nv_dither(c, uCor.a * dentro * (1.0 - clamp(ah + av - ah*av, 0.0, 1.0))); return; }\n"
@@ -576,8 +593,9 @@ static const char *FS_CORPO[GFX_NMODOS] = {
 
   // GFX_TEXTO — a forma da letra vem do ALPHA da textura, nunca do RGB
   "void main(){\n"
+  // uFoco = 1 - gfx_hdr_ui (UI em HDR, esmaecer.h); 0 fora do HDR.
   "  vec4 g = texture2D(uTex, vUv);\n"
-  "  gl_FragColor = vec4(g.rgb, g.a * uCor.a);\n"
+  "  gl_FragColor = vec4(g.rgb * (1.0 - uFoco), g.a * uCor.a);\n"
   "}\n",
 
   // GFX_FUNDO — arte desfocada por mipmap (uFoco carrega o bias), com o
@@ -615,9 +633,26 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   // de 28% da "Arte borrada", gfx_luz_canal_desenhar); mix com 0 devolve a
   // textura exata. uPar.x > 0.5: a cor sai pelo nv_dither (o Frost). Os outros
   // chamadores passam 0 nos dois.
+  // uPar.x > 1.5: a fonte e a copia desfocada de NV_DESF_W x NV_DESF_H
+  // esticada na tela inteira (o fundo do Cinema). O bilinear puro, ~20x
+  // ampliado, deixa as emendas dos texels a vista em losangos que o dither nao
+  // apaga; o B-spline cubico por 4 leituras bilineares (GPU Gems 2, cap. 20)
+  // tem derivada continua e a rampa sai lisa.
+  "vec3 nv_bspline(vec2 uv){\n"
+  "  vec2 ts = vec2(" NV_STR(NV_DESF_W) ".0, " NV_STR(NV_DESF_H) ".0);\n"
+  "  vec2 p = uv * ts - 0.5, f = fract(p), c = p - f + 0.5;\n"
+  "  vec2 f2 = f * f, f3 = f2 * f, e = 1.0 - f;\n"
+  "  vec2 w0 = e * e * e / 6.0, w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;\n"
+  "  vec2 w3 = f3 / 6.0, w2 = 1.0 - w0 - w1 - w3;\n"
+  "  vec2 g0 = w0 + w1, g1 = w2 + w3;\n"
+  "  vec2 a = (c - 1.0 + w1 / g0) / ts, b = (c + 1.0 + w3 / g1) / ts;\n"
+  "  return g0.y * (g0.x * texture2D(uTex, a).rgb + g1.x * texture2D(uTex, vec2(b.x, a.y)).rgb)\n"
+  "       + g1.y * (g0.x * texture2D(uTex, vec2(a.x, b.y)).rgb + g1.x * texture2D(uTex, b).rgb);\n"
+  "}\n"
   "void main(){\n"
   "  vec2 uv = (uPar.y > 0.5) ? vec2(vUv.x, 1.0 - vUv.y) : vUv;\n"
-  "  vec3 c = mix(texture2D(uTex, uv).rgb, uCor.rgb, uFoco);\n"
+  "  vec3 t = uPar.x > 1.5 ? nv_bspline(uv) : texture2D(uTex, uv).rgb;\n"
+  "  vec3 c = mix(t, uCor.rgb, uFoco);\n"
   "  gl_FragColor = uPar.x > 0.5 ? nv_dither(c, uCor.a) : vec4(c, uCor.a);\n"
   "}\n",
 
@@ -721,7 +756,8 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "                 - clamp((t-0.46)/0.30,0.0,1.0)*0.38\n"
   "                 - clamp((t-0.76)/0.24,0.0,1.0)*0.42;\n"
   "  ah *= step(vUv.x, 0.65);\n"
-  "  if (uPar.x > 0.5) { gl_FragColor = nv_dither(bg, clamp(ah + av - ah*av, 0.0, 1.0) * uCor.a); return; }\n"
+  "  if (uPar.x > 0.5) { vec3 vb = (uAmbOn > 0.5) ? texture2D(uAmb, vAmb).rgb : bg;\n"
+  "    gl_FragColor = nv_dither(vb, clamp(ah + av - ah*av, 0.0, 1.0) * uCor.a); return; }\n"
   "  if (uAmbOn > 0.5) { vec3 amb = texture2D(uAmb, vAmb).rgb;\n"
   "    gl_FragColor = nv_dither(mix(c, amb, clamp(ah + av - ah*av, 0.0, 1.0)), 1.0); return; }\n"
   "  if (uVaza > 0.5) { gl_FragColor = nv_dither(c, uCor.a * dentro * (1.0 - clamp(ah + av - ah*av, 0.0, 1.0))); return; }\n"
@@ -1451,6 +1487,7 @@ int gfx_iniciar(void) {
     progs[m].tela = glGetUniformLocation(p, "uTela");
     progs[m].tex  = glGetUniformLocation(p, "uTex");
     progs[m].foco = glGetUniformLocation(p, "uFoco");
+    progs[m].reflexo = glGetUniformLocation(p, "uReflexo");
     progs[m].par  = glGetUniformLocation(p, "uPar");
     progs[m].raio = glGetUniformLocation(p, "uRaio");
     progs[m].cor  = glGetUniformLocation(p, "uCor");
@@ -1785,6 +1822,62 @@ void gfx_ambiente_descarregar(void) {
   gfx_opacidade_grupo = g;
   if (rec) { glEnable(GL_SCISSOR_TEST); recorteAtivo = 1; }
 }
+// O fundo pendente SO FORA de `furo` (coordenadas de quem chama), que um painel
+// opaco pinta em seguida com alfa 1: as mesmas faixas uSub de gfx_sombra_vazada,
+// cada uma um pedaco do MESMO quad de tela cheia, entao todo pixel visivel e o
+// de ambPintar. Os Ajustes sem vidro (a C9 do dono) pintavam o Frost inteiro
+// embaixo da ilha de 0,82 tela. Sem como recortar, descarrega inteiro.
+static int ambCmpF(const void *a, const void *b) {
+  float x = *(const float *)a, y = *(const float *)b;
+  return x < y ? -1 : x > y;
+}
+void gfx_ambiente_descarregar_fora(const GfxRect *furos, int n) {
+  float fx[4][4], ys[10], sub[4];
+  int rec, i, k, ny = 0;
+  float g;
+  dinDescarregar();
+  if (!ambPendente) return;
+  if (n > 4 || giroOn || ambPendAlfa < 0.999f || progs[GFX_SNAP].sub < 0) { gfx_ambiente_descarregar(); return; }
+  for (i = 0; i < n; i++) {   // em fracao da tela, como o uSub
+    GfxRect f = furos[i];
+    GFX_TR_RECT(f.x, f.y, f.w, f.h);
+    if (escAtiva != 1.0f) { f.x *= escAtiva; f.y *= escAtiva; f.w *= escAtiva; f.h *= escAtiva; }
+    fx[i][0] = fmaxf(f.x / NV_TELA_W, 0.0f); fx[i][2] = fminf((f.x + f.w) / NV_TELA_W, 1.0f);
+    fx[i][1] = fmaxf(f.y / NV_TELA_H, 0.0f); fx[i][3] = fminf((f.y + f.h) / NV_TELA_H, 1.0f);
+    if (fx[i][2] <= fx[i][0] || fx[i][3] <= fx[i][1]) fx[i][0] = fx[i][2] = fx[i][1] = fx[i][3] = 0.0f;
+  }
+  ambPendente = 0;
+  rec = recorteAtivo;
+  g = gfx_opacidade_grupo;
+  if (rec) { glDisable(GL_SCISSOR_TEST); recorteAtivo = 0; }
+  gfx_opacidade_grupo = 1.0f;
+  memcpy(sub, subAtual, sizeof sub);
+  ys[ny++] = 0.0f; ys[ny++] = 1.0f;
+  for (i = 0; i < n; i++) { ys[ny++] = fx[i][1]; ys[ny++] = fx[i][3]; }
+  qsort(ys, (size_t)ny, sizeof ys[0], ambCmpF);
+  // Faixas horizontais entre as bordas dos furos; em cada uma, os vaos entre
+  // os furos que a atravessam viram pedacos do quad (poucos furos: varredura).
+  for (k = 0; k + 1 < ny; k++) {
+    float y0 = ys[k], y1 = ys[k + 1], x = 0.0f;
+    if (y1 - y0 <= 0.0f) continue;
+    for (;;) {
+      float prox = 1.0f, fim = x;
+      for (i = 0; i < n; i++)
+        if (fx[i][1] <= y0 && fx[i][3] >= y1 && fx[i][2] > x) {
+          if (fx[i][0] <= x) { if (fx[i][2] > fim) fim = fx[i][2]; }
+          else if (fx[i][0] < prox) prox = fx[i][0];
+        }
+      if (fim > x) { x = fim; continue; }   // dentro de um furo: pula
+      subAtual[0] = x; subAtual[1] = y0; subAtual[2] = prox; subAtual[3] = y1;
+      if (prox > x) ambPintar(1.0f);
+      if (prox >= 1.0f) break;
+      x = prox;
+    }
+  }
+  memcpy(subAtual, sub, sizeof sub);
+  gfx_opacidade_grupo = g;
+  if (rec) { glEnable(GL_SCISSOR_TEST); recorteAtivo = 1; }
+}
 // O pendente pintado JA com um veu de cor (cr, cg, cb) a `va` por cima, numa
 // passada opaca: o GFX_SNAP faz mix(textura, cor, uFoco), que e o pixel do
 // veu misturado sobre ele. Ver o veu de tela cheia em gfx_rect.
@@ -1794,7 +1887,7 @@ static void ambPintarVeu(float cr, float cg, float cb, float va);
 void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
               float parx, float pary, float raio,
               float cr, float cg, float cb, float ca) {
-  int comAmb = 0, opaco = 0, cheia, clearCor, duplo = 0;
+  int comAmb = 0, veuAmb = 0, opaco = 0, cheia, clearCor, duplo = 0;
   float din[4] = { 0.0f, 0.0f, 0.0f, 0.0f }, dinResto = -1.0f;
   if ((int)modo < 0 || (int)modo >= GFX_NMODOS) return;
   // Grupo a 0 = "desenhar sem aparecer" (quem mede uma previa ou pede as
@@ -1806,6 +1899,11 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
       (modo == GFX_COR || modo == GFX_TEXTO || modo == GFX_ANEL || modo == GFX_MARCA)) {
     cr *= gfx_osd_mult; cg *= gfx_osd_mult; cb *= gfx_osd_mult;
   }
+  // UI EM HDR (esmaecer.h): o texto pelo uFoco do proprio shader (o RGB dele
+  // vem da textura); retangulos de cor e logos pela cor. Arte nao muda.
+  if (modo == GFX_TEXTO) foco = 1.0f - gfx_hdr_ui;
+  else if (gfx_hdr_ui < 0.999f && (!tex || modo == GFX_MARCA))
+    esmaecer_cor_hdr(gfx_hdr_ui, &cr, &cg, &cb, &ca);
   GFX_TR_RECT(r.x, r.y, r.w, r.h);
   if (escAtiva != 1.0f) { r.x *= escAtiva; r.y *= escAtiva; r.w *= escAtiva; r.h *= escAtiva; }
   // A COR DO DESTAQUE E A ASSINATURA. Com o degrade ligado, todo retangulo ou
@@ -1897,6 +1995,14 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
       parx <= 0.5f && ca * gfx_opacidade_grupo >= 0.999f && gfx_desliza_atual == 0.0f &&
       progs[modo].ambOn >= 0)
     comAmb = 1;
+  // SO A RAMPA (uPar.x) SOBRE O TRAILER DO HERO (#290): o veu tem de fundir
+  // no MESMO fundo em que a arte parada funde. Com a luz ambiente esse fundo e
+  // a luz (o caminho comAmb acima mistura nela), entao o veu le a luz como
+  // cor; a mistura continua ligada (o veu e alfa sobre o furo do video).
+  else if ((modo == GFX_HERO || modo == GFX_HERO_CHEIO) && parx > 0.5f && ambFonte &&
+           nv_ambiente_forca > 0.001f && !efeitosMinimos && !snapAtivo &&
+           progs[modo].ambOn >= 0)
+    veuAmb = 1;
   // SEM luz ambiente, a mesma arte com alfa 1 ja saia com alfa 1 em todo
   // pixel (c misturada no fundo pelo proprio shader): a mistura era um no-op
   // que ainda lia a tela. Desliga-la nao muda um pixel.
@@ -1992,6 +2098,10 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   // usam foco/parallax/texAsp, entao o teste barato aqui poupa a chamada cara.
   glUniform4f(P->rect, r.x, r.y, r.w, r.h);
   if (P->foco >= 0)   glUniform1f(P->foco, foco);
+  // #410: o especular da arte tambem obedece a Reflexo/Profundidade.
+  // uFoco continua inteiro: contraste e rebordo nao sao intensidade de reflexo.
+  if (P->reflexo >= 0)
+    glUniform1f(P->reflexo, ajustes_profundidade() ? ajustes_profundidade_brilho() : 0.0f);
   if (P->par >= 0)    glUniform2f(P->par, parx, pary);
   if (P->raio >= 0)   glUniform1f(P->raio, raio);
   if (P->asp >= 0)    glUniform1f(P->asp, r.h > 0 ? r.w / r.h : 1.0f);
@@ -2037,8 +2147,8 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
     glActiveTexture(GL_TEXTURE0);
   }
   if (P->ambOn >= 0) {
-    glUniform1f(P->ambOn, comAmb ? 1.0f : 0.0f);
-    if (comAmb) {
+    glUniform1f(P->ambOn, comAmb || veuAmb ? 1.0f : 0.0f);
+    if (comAmb || veuAmb) {
       glActiveTexture(GL_TEXTURE1);
       glBindTexture(GL_TEXTURE_2D, ambFonte);
       glActiveTexture(GL_TEXTURE0);
@@ -2094,7 +2204,7 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
     if (semMistura) glDisable(GL_BLEND);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     if (semMistura) glEnable(GL_BLEND); }
-  if (comAmb) {
+  if (comAmb || veuAmb) {
     // Solta a luz da unidade 1: ela volta a ser ALVO em gfx_ambiente_preparar,
     // e alvo ligado a uma unidade e o laco que o GLES deixa indefinido.
     glActiveTexture(GL_TEXTURE1);
@@ -2458,14 +2568,25 @@ void gfx_fundo_din_desenhar(const float topo[3], float queda) {
     dinPendente = 1;
     ambPendente = 0; ambIntacta = 0;
     // Adiado ate o fim do quadro (ver dinAdiado): so com a tela ainda vazia e
-    // um buffer de profundidade na janela.
+    // um canal alfa de verdade na janela. Sem alfa (EGL de reserva RGB888 ou
+    // RGB565, main.c) o ONE_MINUS_DST_ALPHA le sempre 0 e o degrade nunca
+    // apareceria: fica o caminho antigo.
+    // #318: ficou ligado. O Xiaomi do relato estava no layout 0 (sem fundo da
+    // Dinamica) e consertou com a teste-318.1 do mesmo jeito; o que foi
+    // desligado de vez foram o descarte (gpunivel.c) e o gputempo.
     if (dinAdiadoOk < 0) {
 #ifdef NV_ANDROID
-      dinAdiadoOk = 1;
+      GLint fboAnt = fboLigado(), bitsA = 0;
+      if (fboAnt) glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      glGetIntegerv(GL_ALPHA_BITS, &bitsA);
+      if (fboAnt) glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)fboAnt);
+      dinAdiadoOk = bitsA >= 8;
+      printf("[fundo-din] adiado para o fim do quadro: %s (alfa da janela %d bits)\n",
+             dinAdiadoOk ? "sim" : "nao", (int)bitsA);
 #else
       dinAdiadoOk = 0;
+      printf("[fundo-din] adiado para o fim do quadro: nao\n");
 #endif
-      printf("[fundo-din] adiado para o fim do quadro: %s\n", dinAdiadoOk ? "sim" : "nao");
     }
     dinAdiado = dinAdiadoOk && gfx_n_rect == 0 && !gfx_modos_desligados;
     if (dinAdiado) {
@@ -2568,6 +2689,31 @@ static void dinResolverAdiado(void) {
     if (x < NV_TELA_W) dinQuad(x, y0, NV_TELA_W, y1);
   }
   glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+  // ALFA 1 SOB OS CARTAZES (#318). Fora deles o degrade (alfa 1) ja fechou o
+  // alfa em 1; dentro, o alfa e o que o cartaz deixou, e um cartaz "opaco" com
+  // aArte 0,999 ou arte com transparencia deixaria alfa < 1 numa superficie
+  // TRANSLUCIDA (NuvioActivity: PixelFormat.TRANSLUCENT, media overlay), e o
+  // compositor mostraria o que estiver atras. Um clear so do alfa, com
+  // tesoura, em cada retangulo: nenhum fragmento sombreado, o RGB (ja
+  // premultiplicado sobre preto) fica igual. Nenhum furo vive ali: os dois
+  // furos resolvem o fundo antes de abrir o buraco (gfx_furo, gfx_furo_raio).
+  if (dinNOp > 0) {
+    float ex = (float)telaW / NV_TELA_W, ey = (float)telaH / NV_TELA_H;
+    glEnable(GL_SCISSOR_TEST);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    for (i = 0; i < dinNOp; i++) {
+      int x0 = (int)floorf(dinOp[i].x * ex + 0.5f), x1 = (int)floorf((dinOp[i].x + dinOp[i].w) * ex + 0.5f);
+      int y0 = (int)floorf((NV_TELA_H - (dinOp[i].y + dinOp[i].h)) * ey + 0.5f);
+      int y1 = (int)floorf((NV_TELA_H - dinOp[i].y) * ey + 0.5f);
+      if (x1 <= x0 || y1 <= y0) continue;
+      glScissor(x0, y0, x1 - x0, y1 - y0);
+      glClear(GL_COLOR_BUFFER_BIT);
+    }
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    if (rec) glScissor(recorteBox[0], recorteBox[1], recorteBox[2], recorteBox[3]);
+    else glDisable(GL_SCISSOR_TEST);
+  }
   gfxBlend(bl);
   memcpy(subAtual, sub, sizeof sub);
   gfx_tex_aspect_atual = aspAnt; gfx_desliza_atual = deslAnt; gfx_opacidade_grupo = g;
@@ -2605,6 +2751,68 @@ void gfx_mascara_opaca(GfxRect r, float raioPx) {
   }
   dinOp[dinNOp++] = a;
   dinOp[dinNOp++] = b;
+}
+
+// PAINEL OPACO GRANDE (o miolo solido das ilhas dos Ajustes, sem vidro): o
+// interior e um glClear tesourado na cor exata — a mistura de alfa 1 devolve
+// a mesma cor e alfa 1 — e so a faixa do canto passa pelo shader, em ate quatro
+// pedacos uSub do MESMO rect (o mesmo pixel do desenho inteiro, como em
+// gfx_sombra_vazada). Na C9 do dono o miolo da ilha (0,82 tela) era a maior
+// camada MISTURADA por quadro dos Ajustes. Sem as condicoes, gfx_cor de sempre.
+void gfx_cor_painel(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
+  GfxRect r0 = r;   // gfx_cor/gfx_rect aplicam a transformacao e a escala sozinhos
+  float m, sub[4], ex, ey, area, x0, y0, x1, y1;
+  int sx0, sy0, sx1, sy1;
+  if (r.w <= 0.0f || r.h <= 0.0f) return;
+  GFX_TR_RECT(r.x, r.y, r.w, r.h);
+  if (escAtiva != 1.0f) { r.x *= escAtiva; r.y *= escAtiva; r.w *= escAtiva; r.h *= escAtiva; }
+  m = raio * r.h + 2.0f;
+  if (raio <= 0.0f || ca * gfx_opacidade_grupo != 1.0f || snapAtivo || miniAtiva || giroOn ||
+      gfxTr.on || recorteAtivo || progs[GFX_COR].sub < 0 ||
+      (nv_grad_ativo && cr == nv_acento_viva[0] && cg == nv_acento_viva[1] && cb == nv_acento_viva[2]) ||
+      gfx_osd_mult < 0.999f || gfx_hdr_ui < 0.999f ||
+      r.w - 2.0f * m < 64.0f || r.h - 2.0f * m < 64.0f) {
+    gfx_cor(r0, raio, cr, cg, cb, ca);
+    return;
+  }
+  // O clear e as faixas so se encontram sem fresta com o miolo alinhado em pixels.
+  ex = (float)telaW / NV_TELA_W; ey = (float)telaH / NV_TELA_H;
+  x0 = (r.x + m) * ex; x1 = (r.x + r.w - m) * ex;
+  y0 = (NV_TELA_H - (r.y + r.h - m)) * ey;
+  y1 = (NV_TELA_H - (r.y + m)) * ey;
+  sx0 = (int)floorf(x0 + 0.5f); sx1 = (int)floorf(x1 + 0.5f);
+  sy0 = (int)floorf(y0 + 0.5f); sy1 = (int)floorf(y1 + 0.5f);
+  if (x0 != sx0 || x1 != sx1 || y0 != sy0 || y1 != sy1 || sx1 <= sx0 || sy1 <= sy0) {
+    gfx_cor(r0, raio, cr, cg, cb, ca);
+    return;
+  }
+  dinDescarregar();
+  if (ambPendente) gfx_ambiente_descarregar();   // o clear do miolo cobriria o fundo
+  // o interior: clear na cor do painel
+  { float cc[4];
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, cc);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(sx0, sy0, sx1 - sx0, sy1 - sy0);
+    glClearColor(cr, cg, cb, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glClearColor(cc[0], cc[1], cc[2], cc[3]);
+    glDisable(GL_SCISSOR_TEST); }
+  area = ((r.w - 2.0f * m) * (r.h - 2.0f * m)) / (NV_TELA_W * NV_TELA_H);
+  gfx_fill += area; gfx_fill_modo[GFX_COR] += area;
+  if (area >= 0.5f) gfx_n_cheio++;
+  ambIntacta = 0;
+  // a faixa do canto, em pedacos do mesmo rect
+  memcpy(sub, subAtual, sizeof sub);
+  { // uSub conta do topo, como o rect.
+    const float f[4][4] = {
+      { 0, 0, 1, m / r.h }, { 0, 1 - m / r.h, 1, 1 },
+      { 0, m / r.h, m / r.w, 1 - m / r.h }, { 1 - m / r.w, m / r.h, 1, 1 - m / r.h } };
+    int k;
+    for (k = 0; k < 4; k++) {
+      memcpy(subAtual, f[k], sizeof subAtual);
+      gfx_rect(r0, 0, GFX_COR, 0, 0, 0, raio, cr, cg, cb, ca);
+    }
+    subAtual[0] = subAtual[1] = 0.0f; subAtual[2] = subAtual[3] = 1.0f; }
 }
 
 void gfx_anel(GfxRect r, float raio, float esp,
@@ -2930,6 +3138,14 @@ void gfx_vidro_cartao(GfxRect r, float raio, float foco, float a) {
   float f = foco < 0.0f ? 0.0f : (foco > 1.0f ? 1.0f : foco), cr, cg, cb;
   if (f <= 0.01f || a <= 0.001f) return;
   ajustes_acento(&cr, &cg, &cb);
+  // "Contorno do vidro" DESLIGADO: sem fio no cartao, so um halo fraco por fora
+  // (a arte cobre o interior, entao o realce fica de fora, na mesma ordem de
+  // desenho de quem chama). Antes o contorno nao era lido aqui: Home, Biblioteca
+  // e Amigos ignoravam a opcao.
+  if (!ajustes_vidro_contorno()) {
+    gfx_anel_fora(r, raio, 1.0f, 9.0f, cr, cg, cb, 0.22f * f * a);
+    return;
+  }
   gfx_anel_fora(r, raio, 2.0f, 3.0f, cr, cg, cb, 0.96f * f * a);
 }
 void gfx_vidro_pilula_cheia(GfxRect r, float raio, float foco, float a) {
@@ -3007,6 +3223,9 @@ void gfx_furo(GfxRect r) {
 }
 
 void gfx_furo_raio(GfxRect r, float raio) {
+  // O fundo adiado sai ANTES do buraco, como no gfx_furo: resolvido depois,
+  // o ONE_MINUS_DST_ALPHA pintaria o degrade dentro do furo e o video sumiria.
+  dinDescarregar();
   gfxBlend(0);
   gfx_rect(r, 0, GFX_COR, 0, 0, 0, raio, 0, 0, 0, 0);
   gfxBlend(1);
@@ -3089,6 +3308,28 @@ void gfx_snap_comecar(void) {
   GFX_OUTRO_FIM();
 }
 
+// 1 se o snapshot (ainda ligado como alvo) saiu PRETO nas faixas de baixo da
+// metade esquerda — onde ha home por baixo do painel. Tres linhas de 1100 px
+// lidas do FBO: uns 13 KB, so quando a copia e (re)pintada. Existe porque a
+// copia parada do painel de Salvos saiu preta na TCL (Android) sem erro de GL:
+// o sintoma do dono e a home sumida atras do Social.
+int gfx_snap_vazio(int *maxCanal) {
+  static unsigned char lin[1100 * 4];
+  int k, i, mx = 0, n = snapW < 1100 ? snapW : 1100;
+  if (!snapFbo || !snapAtivo) return 0;
+  for (k = 0; k < 3; k++) {
+    int y = snapH * (k == 0 ? 3 : k == 1 ? 5 : 7) / 10;
+    glReadPixels(0, y, n, 1, GL_RGBA, GL_UNSIGNED_BYTE, lin);
+    for (i = 0; i < n * 4; i += 4) {
+      if (lin[i] > mx) mx = lin[i];
+      if (lin[i + 1] > mx) mx = lin[i + 1];
+      if (lin[i + 2] > mx) mx = lin[i + 2];
+    }
+  }
+  if (maxCanal) *maxCanal = mx;
+  return mx <= 3;
+}
+
 void gfx_snap_terminar(void) {
   if (!snapFbo || !snapAtivo) return;
   GFX_OUTRO_INI();
@@ -3109,6 +3350,9 @@ void gfx_snap_desenhar(void) {
 }
 
 void gfx_snap_encerrar(void) {
+#ifdef NV_TOUCH_UI
+  snapGeracao++;
+#endif
   if (snapFbo) glDeleteFramebuffers(1, &snapFbo);
   if (snapTex) glDeleteTextures(1, &snapTex);
   snapFbo = snapTex = 0;
@@ -3254,6 +3498,8 @@ void gfx_borrao_gerar(int via, unsigned int tex, float texAspecto) {
   if (!borFbo[a0] || !tex) return;
   GfxRect cheio = { 0, 0, NV_TELA_W, NV_TELA_H };
   gfx_ambiente_descarregar();   // pendente e da tela, nao deste alvo
+  { static int nLog;   // #318: o desfoque em FBO roda quando a tela nova traz arte nova
+    if (nLog < 40) { nLog++; printf("[transicao] desfoque de fundo (FBO %s) t=%u\n", via ? "home" : "detalhe", (unsigned)SDL_GetTicks()); } }
   ESC_REAL_INI();
   GFX_OUTRO_INI();
   GLint fboAnt = fboLigado(), vpAnt[4];
@@ -3319,18 +3565,22 @@ void gfx_borrao_encerrar(void) {
 // quadro, o card desenha essa textura minuscula esticada com filtro linear:
 // o mesmo custo de um card nitido. A geracao sao dois quads de 96x54, limitada
 // a NV_DESF_POR_QUADRO por quadro.
-#define NV_DESF_W 96
-#define NV_DESF_H 54
 #define NV_DESF_N 16            // cards visiveis + folga para a rolagem
 #define NV_DESF_POR_QUADRO 2
 // Passo do gaussiano em texels do alvo. Com 9 amostras o borrao alcanca
 // +-4 passos: 1.6 * 4 / 96 = ~6.7% da largura para cada lado, ~43 px num card
 // de 640. Rosto e texto do still somem; a cor e a composicao continuam.
 #define NV_DESF_PASSO 1.6f
+// A arte chega com 480 px de largura (16:9 -> 270 de altura). A reducao vai em
+// duas passadas, 480x270 -> 96x270 -> 96x54, cada uma so encolhendo um eixo,
+// com taps a um texel da arte. Uma passada direta lia uma linha em cinco
+// (alias): o fundo virava amostra esparsa da imagem, com manchas e listras.
+#define NV_DESF_SRC_W 480
+#define NV_DESF_MID_H 270
 
 typedef struct { GLuint src, tex; unsigned long chave, uso; } Desf;
 static Desf desf[NV_DESF_N];
-static GLuint desfFbo = 0, desfTmp = 0;
+static GLuint desfFbo = 0, desfTmp = 0, desfTmp2 = 0, desfMid = 0;
 static int desfFalhou = 0;
 static unsigned long desfRelogio = 0;
 
@@ -3345,12 +3595,12 @@ static void desfEsquecerFonte(GLuint tex) {
     if (desf[i].src == tex) { desf[i].src = 0; desf[i].chave = 0; }
 }
 
-static GLuint desfNovaTex(void) {
+static GLuint desfNovaTex(int w, int h) {
   GLuint t = 0;
   glGenTextures(1, &t);
   glBindTexture(GL_TEXTURE_2D, t);
   // RGBA e nao RGB: e o unico formato que o WebGL 1 GARANTE renderizavel.
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, NV_DESF_W, NV_DESF_H, 0, GL_RGBA,
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA,
                GL_UNSIGNED_BYTE, NULL);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -3364,7 +3614,9 @@ static int desfPreparar(void) {
   GLenum st;
   if (desfFbo) return 1;
   if (desfFalhou) return 0;
-  desfTmp = desfNovaTex();
+  desfMid = desfNovaTex(NV_DESF_W, NV_DESF_MID_H);
+  desfTmp = desfNovaTex(NV_DESF_W, NV_DESF_H);
+  desfTmp2 = desfNovaTex(NV_DESF_W, NV_DESF_H);
   glGenFramebuffers(1, &desfFbo);
   glBindFramebuffer(GL_FRAMEBUFFER, desfFbo);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, desfTmp, 0);
@@ -3380,6 +3632,16 @@ static int desfPreparar(void) {
   return 1;
 }
 
+// Uma passada de desfoque/reducao de src para dst (w x h). ux/uy: passo em uv.
+static void desfPasso(GLuint src, GLuint dst, int w, int h, float ux, float uy) {
+  GfxRect cheio = { 0, 0, NV_TELA_W, NV_TELA_H };
+  glBindFramebuffer(GL_FRAMEBUFFER, desfFbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, dst, 0);
+  glViewport(0, 0, w, h);
+  gpun_descartar_cor(0);
+  gfx_rect(cheio, src, GFX_BLUR, 0, ux, uy, 0.0f, 0, 0, 0, 1.0f);
+}
+
 GLuint gfx_desfocado(GLuint src, const char *chave) {
   unsigned long h = desfHash(chave);
   int i, vago = -1;
@@ -3392,6 +3654,8 @@ GLuint gfx_desfocado(GLuint src, const char *chave) {
     }
   if (desfGeradosQuadro >= NV_DESF_POR_QUADRO) return 0;
   gfx_ambiente_descarregar();   // pendente e da tela, nao deste alvo
+  { static int nLog;   // #318: idem, a copia desfocada de um cartaz
+    if (nLog < 40) { nLog++; printf("[transicao] copia desfocada (FBO) t=%u\n", (unsigned)SDL_GetTicks()); } }
   // Vaga: primeiro uma sem fonte, senao a usada ha mais tempo.
   for (i = 0; i < NV_DESF_N; i++)
     if (!desf[i].src) { vago = i; break; }
@@ -3406,7 +3670,6 @@ GLuint gfx_desfocado(GLuint src, const char *chave) {
     GLboolean mistura = glIsEnabled(GL_BLEND);
     GLuint dst;
     float aspAnt = gfx_tex_aspect_atual;
-    GfxRect cheio = { 0, 0, NV_TELA_W, NV_TELA_H };
     // Estado lido do GL de proposito, e so aqui: o card pode estar sendo
     // desenhado dentro do snapshot da home ou sob gfx_recorte, e voltar
     // cegamente para o framebuffer 0 com o viewport da tela estragaria os dois.
@@ -3414,27 +3677,21 @@ GLuint gfx_desfocado(GLuint src, const char *chave) {
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fboAnt);
     glGetIntegerv(GL_VIEWPORT, vp);
     if (!desfPreparar()) { glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)fboAnt); return 0; }
-    if (!desf[vago].tex) desf[vago].tex = desfNovaTex();
+    if (!desf[vago].tex) desf[vago].tex = desfNovaTex(NV_DESF_W, NV_DESF_H);
     dst = desf[vago].tex;
     ESC_REAL_INI();
     GFX_OUTRO_INI();
     glDisable(GL_SCISSOR_TEST);
     gfxBlend(0);
-    glViewport(0, 0, NV_DESF_W, NV_DESF_H);
     gfx_tex_aspect_atual = 0.0f;   // a arte INTEIRA, esticada; o card recorta depois
-    // Passada 1: horizontal, lendo a arte original e ja reduzindo. Escrever
-    // num FBO inverte o eixo y (ver GFX_SNAP); a passada 2 inverte de novo, e
-    // o resultado sai de pe para o GFX_CARD, como uma arte comum.
-    glBindFramebuffer(GL_FRAMEBUFFER, desfFbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, desfTmp, 0);
-    gpun_descartar_cor(0);   // a passada cobre o alvo inteiro, opaca
-    gfx_rect(cheio, src, GFX_BLUR, 0, NV_DESF_PASSO / (float)NV_DESF_W, 0.0f,
-             0.0f, 0, 0, 0, 1.0f);
-    // Passada 2: vertical, do intermediario para a textura guardada.
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, dst, 0);
-    gpun_descartar_cor(0);
-    gfx_rect(cheio, desfTmp, GFX_BLUR, 0, 0.0f, NV_DESF_PASSO / (float)NV_DESF_H,
-             0.0f, 0, 0, 0, 1.0f);
+    // Escrever num FBO inverte o eixo y (ver GFX_SNAP): cada passada inverte, e
+    // as quatro deixam o resultado de pe para o GFX_CARD, como uma arte comum.
+    // 1-2: reducao, horizontal e depois vertical, taps a um texel da arte.
+    desfPasso(src, desfMid, NV_DESF_W, NV_DESF_MID_H, 1.0f / NV_DESF_SRC_W, 0.0f);
+    desfPasso(desfMid, desfTmp, NV_DESF_W, NV_DESF_H, 0.0f, 1.0f / NV_DESF_MID_H);
+    // 3-4: desfoque gaussiano, horizontal e depois vertical, no alvo 96x54.
+    desfPasso(desfTmp, desfTmp2, NV_DESF_W, NV_DESF_H, NV_DESF_PASSO / (float)NV_DESF_W, 0.0f);
+    desfPasso(desfTmp2, dst, NV_DESF_W, NV_DESF_H, 0.0f, NV_DESF_PASSO / (float)NV_DESF_H);
     gfx_tex_aspect_atual = aspAnt;
     glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)fboAnt);
     glViewport(vp[0], vp[1], vp[2], vp[3]);
@@ -3479,6 +3736,8 @@ static void desfEncerrar(void) {
   }
   if (desfFbo) { glDeleteFramebuffers(1, &desfFbo); desfFbo = 0; }
   if (desfTmp) { gfx_tex_esquecer(desfTmp); glDeleteTextures(1, &desfTmp); desfTmp = 0; }
+  if (desfTmp2) { gfx_tex_esquecer(desfTmp2); glDeleteTextures(1, &desfTmp2); desfTmp2 = 0; }
+  if (desfMid) { gfx_tex_esquecer(desfMid); glDeleteTextures(1, &desfMid); desfMid = 0; }
 }
 
 // --- MINIATURA ---------------------------------------------------------------------

@@ -77,6 +77,8 @@ double cacheboost_volume_db(int pct);
 // cacheboost.c. `pct` 0..200; `mb` = cache limit for the NEXT open (0 = off).
 void cacheboost_backend_ganho(int pct);
 void cacheboost_backend_cache(int mb);
+// #338: buffer preset (0 Auto, 1 Low, 2 Medium, 3 High) for the NEXT open.
+void cacheboost_backend_buffer(int preset);
 
 // Host captures/tests: pretend the backend supports (1) or not (0) the
 // features; -1 = the build's real answer.

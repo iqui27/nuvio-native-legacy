@@ -34,7 +34,6 @@ const RETENCAO_PEDIDO = 30 * 86400;
 const RETENCAO_RECUSA = 90 * 86400;
 const PEDIDOS_RECEBIDOS_MAX = 100;
 const PEDIDOS_ENVIADOS_MAX = 50;
-const SUG_TASTE_MIN = 3;      // titulos em comum para sugerir alguem
 
 // A lista fechada de generos: o servidor NUNCA guarda texto livre nessa coluna,
 // so ids desta tabela. O cliente traduz o rotulo.
@@ -368,37 +367,83 @@ async function rotaVer(env, quem, corpo, h) {
   return h.json(c);
 }
 
-// Gosto parecido: titulos que EU mandei na consulta (nao ficam guardados)
-// cruzados com os "vistos recentemente" de quem os PUBLICOU. So voltam pessoas
-// pesquisaveis, sem relacao comigo e nunca bloqueadas, com pelo menos
-// SUG_TASTE_MIN titulos em comum. Exige que EU tambem seja pesquisavel: quem
-// nao se mostra nao ganha uma janela para ver os outros.
+// Gosto parecido. Antes so voltava gente com 3+ titulos em comum nos "vistos
+// recentemente" PUBLICADOS — em 06/10/2026 isso eram 15 linhas de 2 pessoas em
+// todo o banco, entao ninguem recebia nada. Agora tres sinais, cada resultado
+// com o MOTIVO honesto:
+//   titulos : n titulos que EU mandei na consulta (nao ficam guardados) tambem
+//             estao na atividade publica (so de quem ligou "recentes") ou no
+//             agregado de titulos da pessoa. SO O NUMERO sai, nunca quais.
+//   generos : generos do "Meu perfil" em comum (ja sao publicos no cartao).
+//   ativos  : perfil publicado mexido ha pouco — o que sobra quando faltam dados.
+// So voltam pessoas pesquisaveis, sem relacao comigo e nunca bloqueadas. Exige
+// que EU tambem seja pesquisavel: quem nao se mostra nao ganha uma janela para
+// ver os outros. Limiar de titulos adaptativo: 1 se mandei poucos, 2 se muitos.
+const SUG_MAX = 10;
+const SUG_RECENTE_S = 45 * 86400;
 async function rotaSugeridos(env, quem, corpo, h) {
   const t = h.agora();
   if (!(await limitar(env, `sug:${quem.id}`, 20, 3600, t))) return h.erro("limite", 429);
-  const eu = await env.DB.prepare("SELECT descobrivel FROM pessoa WHERE id = ?").bind(quem.id).first();
-  if (!eu?.descobrivel) return h.json({ sugeridos: [] });
+  const eu = await env.DB.prepare(
+    "SELECT p.descobrivel AS d, f.generos AS generos FROM pessoa p LEFT JOIN perfil f ON f.pessoa = p.id WHERE p.id = ?"
+  ).bind(quem.id).first();
+  if (!eu?.d) return h.json({ sugeridos: [] });
   const imdbs = [...new Set((Array.isArray(corpo?.imdbs) ? corpo.imdbs : [])
-    .map((s) => String(s)).filter((s) => /^tt\d{1,10}$/.test(s)))].slice(0, 40);
-  if (imdbs.length < SUG_TASTE_MIN) return h.json({ sugeridos: [] });
-  const marcas = imdbs.map(() => "?").join(",");
+    .map((s) => String(s)).filter((s) => /^tt\d{1,10}$/.test(s)))].slice(0, 60);
+  const meus = new Set(listaGeneros(eu.generos));
   const r = await env.DB.prepare(
-    "SELECT a.pessoa AS id, f.pub AS pub, f.apelido AS apelido, f.bio AS bio, f.generos AS generos, " +
-    "f.com_avatar AS comAvatar, p.avatar AS avatar, p.descobrivel AS descobrivel, COUNT(*) AS emComum " +
-    "FROM atividade a JOIN perfil f ON f.pessoa = a.pessoa AND f.recentes = 1 AND f.apelido <> '' " +
-    "JOIN pessoa p ON p.id = a.pessoa AND p.descobrivel = 1 " +
-    `WHERE a.imdb IN (${marcas}) AND a.acao = 0 AND a.pessoa <> ? ` +
-    foraDaConta("a.pessoa") +
+    "SELECT f.pessoa AS id, f.pub AS pub, f.apelido AS apelido, f.bio AS bio, f.generos AS generos, " +
+    "f.com_avatar AS comAvatar, f.recentes AS recentes, f.atualizado AS atualizado, " +
+    "p.avatar AS avatar, p.descobrivel AS descobrivel " +
+    "FROM perfil f JOIN pessoa p ON p.id = f.pessoa AND p.descobrivel = 1 " +
+    "WHERE f.apelido <> '' " +
+    foraDaConta("f.pessoa") +
     semCopia("f", "?") +
-    "AND NOT EXISTS (SELECT 1 FROM contato c WHERE c.a = ? AND c.b = a.pessoa) " +
-    "AND NOT EXISTS (SELECT 1 FROM bloqueio b WHERE (b.quem = ? AND b.alvo = a.pessoa) OR (b.quem = a.pessoa AND b.alvo = ?)) " +
-    "GROUP BY a.pessoa HAVING COUNT(*) >= ? ORDER BY emComum DESC LIMIT 10"
-  ).bind(...imdbs, quem.id, contaDe(quem.id), contaDe(quem.id), contaDe(quem.id),
+    "AND NOT EXISTS (SELECT 1 FROM contato c WHERE c.a = ? AND c.b = f.pessoa) " +
+    "AND NOT EXISTS (SELECT 1 FROM bloqueio b WHERE (b.quem = ? AND b.alvo = f.pessoa) OR (b.quem = f.pessoa AND b.alvo = ?)) " +
+    "ORDER BY f.atualizado DESC LIMIT 200"
+  ).bind(contaDe(quem.id), contaDe(quem.id), contaDe(quem.id),
          quem.id, quem.id, quem.id, quem.id,   // semCopia: os 4 `?` de "sou amigo"
-         quem.id, quem.id, quem.id, SUG_TASTE_MIN).all();
+         quem.id, quem.id, quem.id).all();
+  const cands = new Map((r.results || []).map((x) => [x.id, x]));
+  // titulos em comum: duas consultas pelo imdb (nunca por lista de pessoas — o D1
+  // aceita 100 parametros) e o corte por candidato e feito aqui.
+  const comuns = new Map();
+  if (imdbs.length && cands.size) {
+    const marcas = imdbs.map(() => "?").join(",");
+    const soma = (rows, soRecentes) => {
+      for (const x of rows || []) {
+        const c = cands.get(x.pessoa);
+        if (!c || (soRecentes && !c.recentes)) continue;
+        if (!comuns.has(c.id)) comuns.set(c.id, new Set());
+        comuns.get(c.id).add(x.imdb);
+      }
+    };
+    soma((await env.DB.prepare(
+      `SELECT pessoa, imdb FROM atividade WHERE acao = 0 AND imdb IN (${marcas})`).bind(...imdbs).all()).results, true);
+    soma((await env.DB.prepare(
+      `SELECT pessoa, imdb FROM agregado_titulo WHERE imdb IN (${marcas})`).bind(...imdbs).all()).results, false);
+  }
+  const minTit = imdbs.length >= 10 ? 2 : 1;
+  const minGen = Math.min(2, meus.size);
+  const lista = [];
+  for (const c of cands.values()) {
+    const n = comuns.get(c.id)?.size || 0;
+    const gens = listaGeneros(c.generos).filter((g) => meus.has(g));
+    const recente = t - c.atualizado <= SUG_RECENTE_S;
+    let motivo;
+    if (n >= minTit) motivo = { tipo: "titulos", n, ...(gens.length ? { generos: gens } : {}) };
+    else if (minGen > 0 && gens.length >= minGen) motivo = { tipo: "generos", generos: gens };
+    else if (recente) motivo = { tipo: "ativos" };
+    else continue;
+    const peso = motivo.tipo === "titulos" ? 1000 + n * 10 + gens.length
+      : motivo.tipo === "generos" ? 100 + gens.length : 0;
+    lista.push({ c, motivo, n, peso });
+  }
+  lista.sort((a, b) => b.peso - a.peso || b.c.atualizado - a.c.atualizado);
   return h.json({
-    sugeridos: (r.results || []).map((x) => ({
-      ...cartao({ ...x, nome: "" }, "", env), emComum: x.emComum,
+    sugeridos: lista.slice(0, SUG_MAX).map(({ c, motivo, n }) => ({
+      ...cartao({ ...c, nome: "" }, "", env), emComum: motivo.tipo === "titulos" ? n : 0, motivo,
     })),
   });
 }
@@ -512,6 +557,10 @@ async function rotaPedidosLer(env, quem, h) {
     "p.nome AS nome, p.avatar AS avatar, p.descobrivel AS descobrivel, pe.criado AS criado " +
     "FROM pedido pe JOIN perfil f ON f.pessoa = pe.de JOIN pessoa p ON p.id = pe.de " +
     "WHERE pe.para = ? AND pe.estado = 0 " +
+    // Ja amigos (o vinculo veio por outro caminho: codigo, Trakt, fusao de
+    // identidades) nao sao pedido: aceitar seria um botao sem efeito. Em
+    // 06/10 eram 2 dos 21 pendentes. A linha nao e apagada aqui (GET).
+    "AND NOT EXISTS (SELECT 1 FROM contato c WHERE c.a = pe.para AND c.b = pe.de) " +
     "AND NOT EXISTS (SELECT 1 FROM bloqueio b WHERE (b.quem = pe.para AND b.alvo = pe.de) OR (b.quem = pe.de AND b.alvo = pe.para)) " +
     "ORDER BY pe.criado DESC LIMIT 30"
   ).bind(quem.id).all();

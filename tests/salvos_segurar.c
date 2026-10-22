@@ -9,8 +9,9 @@
 //   3. "Remover dos Salvos" tira da lista local E da marca do catalogo (o mesmo
 //      OP_LISTA do cartaz da home), o menu sai sozinho e o foco fica na linha
 //      SEGUINTE; a lista remonta pela revisao, sem reconstrucao em rajada;
-//   4. "Mais informações" entrega o IMDb pelo contrato de sempre
-//      (spainel_pediu_abrir) e fecha o painel.
+//   4. o menu NAO tem mais "Mais informações" (dono, 06/10/2026): a extensao
+//      de informacoes (ctxinfo.h) abre ao lado dele, a esquerda do painel, e
+//      o toque na linha continua abrindo o titulo.
 // E no atalho:
 //   5. Ajustes › Diagnóstico tem "Teste de velocidade" logo abaixo do
 //      diagnostico, e o OK nele e o pedido que app.c le;
@@ -26,6 +27,8 @@
 #include "idioma.h"
 #include "catalogo.h"
 #include "ctxmenu.h"
+#include "ctxinfo.h"
+#include "extras.h"
 #include "dados.h"
 #include "diagnostico.h"
 #include "gfx.h"
@@ -170,6 +173,18 @@ static void salvarLocal(int k) {
   salvos_definir(&c, 1);
 }
 
+// O resumo do menu ja no cache: sem ele o fio iria a rede (Trakt/MDBList).
+static void semearResumo(const char *imdb, const char *sinopse) {
+  ExResumo r;
+  memset(&r, 0, sizeof r);
+  r.cru[EX_IMDB] = 78; r.cru[EX_TOMATOES] = 910; r.cru[EX_TRAKT] = 810;
+  r.duracao = 128;
+  snprintf(r.cert, sizeof r.cert, "14");
+  snprintf(r.sinopse, sizeof r.sinopse, "%s", sinopse);
+  r.pronto = 1;
+  extras_resumo_definir(imdb, &r);
+}
+
 int main(int argc, char **argv) {
   const char *dir = getenv("NUVIO_DADOS");
   char id1[24], id2[24], id3[24];
@@ -231,6 +246,12 @@ int main(int argc, char **argv) {
   }
   cat_definir_tudo(itens, NCAT, &fil, 1);
   for (i = 0; i < 5; i++) salvarLocal(i);
+  for (i = 0; i < 5; i++) {
+    char id[24];
+    snprintf(id, sizeof id, "tt%07d", 3000000 + i);
+    semearResumo(id, "Uma familia herda uma casa a beira-mar e descobre, carta por carta, "
+                     "o que a avo escondeu durante quarenta anos de silencio.");
+  }
   salvos_reconciliar();
   snprintf(id1, sizeof id1, "tt%07d", 3000000);
   snprintf(id2, sizeof id2, "tt%07d", 3000001);
@@ -270,10 +291,15 @@ int main(int argc, char **argv) {
   empurrar(SDL_KEYUP, SDLK_RETURN);
   capturaAssentada(w, "salvos-segurar-menu.png", 40);
   confere("soltar depois do limiar nao abre o titulo", spainel_pediu_abrir() == NULL);
+  { GfxRect ri, rm; int lado = 0;
+    int tem = ctx_info_caixa(&ri, &rm, &lado);
+    confere("a extensao de informacoes abre junto do menu", tem);
+    confere("no painel ela fica a ESQUERDA do menu, sem cobri-lo",
+            tem && lado < 0 && ri.x + ri.w <= rm.x + 0.5f && ri.x >= 0.0f); }
 
   printf("\nremover dos salvos:\n");
   r0 = spainel_n_reconstrucoes();
-  toque(w, SDLK_DOWN);                         // "Remover dos Salvos"
+  // "Remover dos Salvos" e a PRIMEIRA opcao desde que "Mais informações" saiu.
   capturaAssentada(w, "salvos-segurar-remover.png", 20);
   toque(w, SDLK_RETURN);
   quadros(w, 4);
@@ -289,7 +315,7 @@ int main(int argc, char **argv) {
   confere("o foco ficou na linha SEGUINTE (o terceiro titulo)", p && !strcmp(p, id3));
   durante(w, 300);
 
-  printf("\nmais informacoes:\n");
+  printf("\nextensao no lugar de mais informacoes:\n");
   spainel_abrir();
   durante(w, 400);
   toque(w, SDLK_DOWN); toque(w, SDLK_DOWN);    // quarta linha (a segunda saiu),
@@ -298,13 +324,19 @@ int main(int argc, char **argv) {
   durante(w, NV_HOLD_MS + 120);
   confere("titulo sem indice no catalogo tambem abre o menu", ctx_do_painel());
   empurrar(SDL_KEYUP, SDLK_RETURN);
+  capturaAssentada(w, "salvos-segurar-extensao.png", 40);
+  { char t[1200];
+    ctxinfo_texto(ctx_titulo(), NULL, t, sizeof t);
+    confere("a extensao traz a sinopse e as notas do resumo",
+            strstr(t, "synopsis: Uma familia") && strstr(t, " 1=78") && strstr(t, " 3=910"));
+    confere("e a classificacao e a duracao", strstr(t, "| 14") && strstr(t, "2h 8min")); }
+  toque(w, SDLK_ESCAPE);
   quadros(w, 4);
-  toque(w, SDLK_RETURN);                       // primeira opcao
-  quadros(w, 3);
+  confere("Voltar fecha so o menu", !ctx_aberto() && spainel_aberto());
+  toque(w, SDLK_RETURN);
   p = spainel_pediu_abrir();
-  confere("\"Mais informações\" pede o titulo pelo IMDb",
+  confere("o toque na linha continua abrindo o titulo pelo IMDb",
           p && !strcmp(p, "tt3000004"));
-  confere("e fecha o menu e o painel", !ctx_aberto() && !spainel_aberto());
   durante(w, 300);
 
   printf("\natalho do teste de velocidade:\n");

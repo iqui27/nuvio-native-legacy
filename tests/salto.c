@@ -32,21 +32,31 @@ int main(void) {
     t += salto_tecla(&st, 0, 1, 1050, filme);
     CHECK(t == 10.0f, "repeat=1 dentro de 300 ms e ignorado"); }
   CHECK(segurar(0, 100, filme) == 10.0f, "toque unico deve ser 10 s");
-  unsigned holds[] = {1000, 3000, 10000};
-  float lo[] = {30, 150, 800}, hi[] = {50, 400, 2400};
-  for (int i = 0; i < 3; i++) {
-    float a = segurar(holds[i], 100, filme), b = segurar(holds[i], 40, filme);
-    printf("hold %5u ms: 100ms=%6.0f s  40ms=%6.0f s\n", holds[i], a, b);
-    CHECK(a >= lo[i] && a <= hi[i], "%u ms a 100 ms fora da faixa: %.0f", holds[i], a);
-    CHECK(b >= lo[i] && b <= hi[i], "%u ms a 40 ms fora da faixa: %.0f", holds[i], b);
-    CHECK(fabsf(a - b) <= 0.15f * a, "repeticoes divergem: %.0f x %.0f", a, b);
-  }
-  // Episodio curto: teto de 60 s por passo.
-  CHECK(salto_passo(20000, 1500.0f) == 60.0f, "teto de episodio curto");
-  CHECK(salto_passo(20000, 7200.0f) == 120.0f, "teto de filme");
-  CHECK(salto_passo(1499, 7200.0f) == 10.0f && salto_passo(1500, 7200.0f) == 30.0f, "degrau 1");
-  { float c = segurar(10000, 100, 1500.0f); printf("episodio 25 min, 10 s: %.0f s\n", c);
-    CHECK(c < segurar(10000, 100, filme), "episodio curto deve andar menos"); }
+  // Rampa (#340): toque = 10 s; mais segurado, passo cresce monotonicamente.
+  CHECK(salto_passo(0, filme) == 10.0f && salto_passo(1499, filme) == 10.0f, "ate T1: 10 s");
+  { float ant = 0; for (unsigned h = 0; h <= 12000; h += 100) {
+      float p = salto_passo(h, filme); CHECK(p >= ant, "rampa monotona em %u", h); ant = p; } }
+  CHECK(salto_passo(60000, filme) > salto_passo(60000, 1200.0f), "arquivo maior, passo maior");
+  CHECK(salto_passo(60000, 100.0f) == 10.0f, "arquivo curtissimo: so 10 s");
+  CHECK(salto_passo(60000, 0.0f) == 10.0f, "duracao 0: 10 s");
+  // Atravessar o arquivo inteiro segurando: 8-12 s (20 min, 2 h, 3 h), com
+  // repeticao de 100 ms e de 40 ms, ida e volta, e clamp em [0,dur].
+  { float durs[] = {1200.0f, 7200.0f, 10800.0f};
+    for (int i = 0; i < 3; i++) for (int r = 0; r < 2; r++) {
+      unsigned rep = r ? 40 : 100; SaltoEst st = {0}; float pos = 0, dur = durs[i]; unsigned t = 0;
+      for (; t < 30000 && pos < dur; t += rep) {
+        pos += salto_tecla(&st, t == 0, 0, 1000u + t, dur);
+        if (pos > dur) pos = dur;
+      }
+      printf("dur %5.0f s rep %3u ms: fim em %.1f s\n", dur, rep, t / 1000.0f);
+      CHECK(pos == dur && t >= 8000 && t <= 12000, "travessia de %.0f s levou %u ms", dur, t);
+      float volta = dur; st = (SaltoEst){0};
+      for (t = 0; t < 30000 && volta > 0; t += rep) {
+        volta -= salto_tecla(&st, t == 0, 0, 1000u + t, dur);
+        if (volta < 0) volta = 0;
+      }
+      CHECK(volta == 0 && t >= 8000 && t <= 12000, "volta de %.0f s levou %u ms", dur, t);
+    } }
   // #235: janela de confirmacao. Com Seekr 1 s, sem ele 420 ms; a rajada a 100 ms
   // nunca fecha o avanco no meio (a janela e maior que a repeticao), e uma
   // rajada com pausa de 600 ms continua UMA so decisao com Seekr, duas sem.

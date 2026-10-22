@@ -5,7 +5,7 @@ sources=()
 for source in src/*.c src/dts/*.c; do
   if [ "$source" != src/main.c ]; then sources+=("$source"); fi
 done
-flags=()
+flags=(-DNV_SHOT_HOOKS)
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 # Liga o app inteiro menos o main, como tests/player.sh: posplay.c fala com
 # catalogo, extras e video. Nenhuma janela e aberta — posplay_atualizar nao
@@ -31,3 +31,13 @@ assert draw.count('gfx_desfocado(t, arte)') == 1
 assert 'if (t && posplay_desfocar_thumb(idx, proxT, proxE))' in draw
 print('posplay: next episode thumbnail uses one guarded blur pass (#232)')
 PYTEST
+
+# 2.0.3: a legenda principal sobe pelo CARTAO na tela, nunca pela janela.
+python3 - <<'PYTEST'
+from pathlib import Path
+s = Path('src/player.c').read_text()
+corpo = s.split('static float baseLegendaPrincipal(void) {', 1)[1].split('\n}', 1)[0]
+assert 'ofertaProximo' not in corpo, 'a legenda voltou a subir pela janela do cartao'
+assert 'posplay_sobre_video()' in corpo
+PYTEST
+echo "posplay: legenda segue o cartao, nao a janela (2.0.3)"

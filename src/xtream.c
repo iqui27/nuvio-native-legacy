@@ -340,7 +340,8 @@ static const char *nomeDaCategoria(const XtCat *cats, int n, const char *id) {
 
 // Escrito so pelo fio do guia (o unico que chama xtream_canais) e lido pelo
 // mesmo fio antes de publicar: nao precisa de trava.
-static int ultimaFalha = XT_OK, ultimoHttp;
+static int ultimaFalha = XT_OK, ultimoHttp, ultimoTotal;
+int xtream_ultimo_total(void) { return ultimoTotal; }
 int xtream_ultima_falha(void) { return ultimaFalha; }
 int xtream_ultimo_http(void) { return ultimoHttp; }
 
@@ -349,7 +350,7 @@ int xtream_canais(XtreamCanal *saida, int max) {
   int nCat, n = 0, total = 0, st = 0, classe;
   char *corpo;
   const char *p;
-  ultimaFalha = XT_OK; ultimoHttp = 0;
+  ultimaFalha = XT_OK; ultimoHttp = 0; ultimoTotal = 0;
   if (!xtream_configurado() || !saida || max < 1) return 0;
   // A conta ANTES da lista: e pequena, e o que ela diz (expirada, telas em
   // uso, formatos) e o que a tela precisa quando a lista falha. Sem resposta
@@ -421,6 +422,7 @@ int xtream_canais(XtreamCanal *saida, int max) {
     p = js_prox(fim);
   }
   free(corpo);
+  ultimoTotal = total;
   // Contagem, e so: servidor, usuario e senha nao entram em log (registro.c
   // desenha o stdout na tela).
   printf("[xtream] %d canal(is) em %d categoria(s)\n", n, nCat);

@@ -138,7 +138,7 @@ test("comunidade tambem lista a pessoa uma vez so", async (t) => {
 });
 
 test("gosto parecido: a copia nao conta como outra sugestao", async (t) => {
-  const { api } = cenario(t);
+  const { sqlite, api } = cenario(t);
   await publicarTodos(api);
   const imdbs = ["tt0000001", "tt0000002", "tt0000003"];
   for (const n of [undefined, 1]) {
@@ -147,5 +147,11 @@ test("gosto parecido: a copia nao conta como outra sugestao", async (t) => {
   }
   const r = await api("nuvio", "tok-b", "/v1/perfis/sugeridos", { imdbs });
   assert.equal(r.status, 200);
-  assert.equal(r.body.sugeridos.length, 1);
+  // Desde 8d36a7f0 o gosto parecido tambem sugere quem e ativo ou tem os
+  // mesmos generos (as outras "marina", pessoas distintas). O que importa aqui:
+  // a COPIA da conta aaa nao vira uma segunda sugestao, e a que fica e a principal.
+  const terror = r.body.sugeridos.filter((x) => x.bio === "so terror");
+  assert.equal(terror.length, 1);
+  assert.equal(terror[0].motivo.tipo, "titulos");
+  assert.equal(terror[0].pub, sqlite.prepare("SELECT pub FROM perfil WHERE pessoa = 'nuvio:aaa'").get().pub);
 });

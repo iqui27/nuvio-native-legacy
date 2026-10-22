@@ -6,10 +6,11 @@
 #   NV_ENGINE=<pasta>/nuvio-engine bash tests/p2pmotor_real.sh
 set -eu
 cd "$(dirname "$0")/../.."
+. tools/p2p-motor/pasta.sh
 W="${1:-/tmp/nv-p2p-motor-mac}"
 mkdir -p "$W"
 [ -d "$W/nuvio-engine/.git" ] || git clone -q https://github.com/NuvioMedia/nuvio-engine "$W/nuvio-engine"
-git -C "$W/nuvio-engine" checkout -q 02938d7
+nv_p2p_fonte "$W/nuvio-engine"
 cmake -S "$W/nuvio-engine" -B "$W/nuvio-engine/build/mac" -DCMAKE_BUILD_TYPE=Release \
   -DNUVIO_ENGINE_ENABLE_LIBTORRENT=ON -DNUVIO_ENGINE_BUILD_TESTS=OFF \
   -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" >/dev/null

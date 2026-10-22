@@ -9,6 +9,7 @@
 void novidades148_dir(const char *dirArte);
 void novidades148_primeira_vez(void);
 int  novidades148_aberto(void);
+int  novidades148_teste_foco(void);   // testes do ponteiro (#99): o botao em foco
 void novidades148_evento(const SDL_Event *e);
 void novidades148_atualizar(float dt, Uint32 agora);
 void novidades148_desenhar(Uint32 agora);

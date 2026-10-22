@@ -43,9 +43,8 @@ TRS=$(valor TRAKT_CLIENT_SECRET)
 SMK=$(valor SIMKL_CLIENT_ID)
 SMA=$(valor SIMKL_APP_NAME)
 TMD=$(valor TMDB_API_KEY)
-# Chave do Seekr (miniaturas da barra de tempo) DO DONO, embutida no pacote
-# como a do TMDB. Vazia = o app pede a chave de cada pessoa nos Ajustes.
-SKR=$(valor SEEKR_API_KEY)
+# Seekr exige a chave de cada pessoa nos Ajustes; nunca embutir a do pacote.
+SKR=""
 # Servico de recomendacoes entre amigos (servidor/recomendacoes). VAZIO E UM
 # ESTADO VALIDO E E O PADRAO: sem ele o app nao mostra a aba Social, nao mostra
 # o item "Recomendar a um amigo" e nao abre conexao nenhuma. O dono publica
@@ -69,6 +68,18 @@ if [ -z "$VER" ]; then
 fi
 if [ "$VER" != "$VERT" ]; then
   echo "env.sh: appinfo.json diz $VER e tizen-config.xml diz $VERT -- alinhe antes de compilar" >&2; exit 2
+fi
+
+# Release unificada: conta, Trakt, Simkl e TMDB obrigatorios; demais opcionais.
+if [ "${NUVIO_REQUIRE_ALL:-0}" = 1 ]; then
+  MISSING_ALL=()
+  for k in URL KEY TVB TRK TRS SMK SMA TMD; do
+    v="${!k}"
+    [ -n "${v//[[:space:]]/}" ] || MISSING_ALL+=("$k")
+  done
+  [ "${#MISSING_ALL[@]}" = 0 ] || {
+    echo "env.sh: configuracao de release vazia: ${MISSING_ALL[*]}" >&2; exit 3;
+  }
 fi
 
 MISSING_CORE=()

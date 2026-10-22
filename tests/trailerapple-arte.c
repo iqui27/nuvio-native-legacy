@@ -8,7 +8,16 @@
 char *dados_caminho(char *dst, unsigned tam, const char *nome) { (void)nome; if (tam) dst[0] = 0; return NULL; }
 void dados_marcar_sujo(int leve) { (void)leve; }
 int ajustes_trailer_qualidade(void) { return 0; }
-char *rede_baixar_com(const char *u, int s, const char *const *c) { (void)u; (void)s; (void)c; return NULL; }
+static const char *resposta;
+static int pedidos, falhas;
+char *rede_baixar_com(const char *u, int s, const char *const *c) {
+  (void)u; (void)s; (void)c; pedidos++;
+  return resposta ? strdup(resposta) : NULL;
+}
+static void check(int ok, const char *msg) {
+  printf("%s %s\n", ok ? "PASS" : "FAIL", msg);
+  if (!ok) falhas++;
+}
 
 int main(int argc, char **argv) {
   char c[600], id[80], arte[600];
@@ -36,7 +45,29 @@ int main(int argc, char **argv) {
   assert(escolherNaBusca(b, "Dune: Part Two", 2024, 1, id, sizeof id, arte, sizeof arte) == 0 && !arte[0]);
   assert(escolherNaBusca(b, "Dune: Part Two", 2019, 0, id, sizeof id, arte, sizeof arte) == 0);
   printf("ok  apple: tipo e ano errados nao inventam arte\n");
+  // Homonimos sinteticos: Movie/Season nao sao a serie; dois Shows sao ambiguos.
+  const char *homonimos = "{\"shelves\":[{\"items\":["
+    "{\"type\":\"Movie\",\"id\":\"filme\",\"title\":\"Silo\",\"releaseDate\":1672531200000},"
+    "{\"type\":\"Season\",\"id\":\"temporada\",\"title\":\"Silo\",\"releaseDate\":1672531200000},"
+    "{\"type\":\"Show\",\"id\":\"serie\",\"title\":\"Silo\",\"releaseDate\":1672531200000}]}]}";
+  check(escolherNaBusca(homonimos, "Silo", 2023, 1, id, sizeof id, arte, sizeof arte) == 1 && !strcmp(id, "serie"),
+        "Silo: Show vence Movie/Season homonimos");
+  const char *ambiguos = "{\"shelves\":[{\"items\":["
+    "{\"type\":\"Show\",\"id\":\"serie1\",\"title\":\"Silo\",\"releaseDate\":1672531200000},"
+    "{\"type\":\"Show\",\"id\":\"serie2\",\"title\":\"Silo\",\"releaseDate\":1672531200000}]}]}";
+  check(escolherNaBusca(ambiguos, "Silo", 2023, 1, id, sizeof id, arte, sizeof arte) == 0,
+        "Silo: dois Shows do mesmo ano recusados");
+  // Transporte simulado; exercita o resolvedor publico, nao so o seletor.
+  resposta = b; pedidos = 0;
+  check(trailerapple_arte("tt15239678", "Dune: Part Two", 2024, 1, arte, sizeof arte) == 0 && pedidos == 1,
+        "arte nao tenta filme quando o pedido e serie");
+  check(trailerapple_arte("tt15239678", "Dune: Part Two", 2024, 0, arte, sizeof arte) == 1,
+        "cache negativo de serie nao bloqueia filme");
+  check(trailerapple_arte("tt15239678", "Dune: Part Two", 2019, 0, arte, sizeof arte) == 0,
+        "cache por IMDb nao ignora ano do pedido");
+  check(trailerapple_arte("tt15239678", "Dune: Part Two", 2024, 1, arte, sizeof arte) == 0,
+        "cache positivo de filme nao fornece arte para serie");
   free(b);
-  printf("trailerapple-arte: tudo ok\n");
-  return 0;
+  puts(falhas ? "trailerapple-arte: FALHOU" : "trailerapple-arte: tudo ok");
+  return falhas ? 1 : 0;
 }

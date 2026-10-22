@@ -4,7 +4,7 @@
 # relatorios, nunca imprime pessoa nem addon, e propoe para o destaque com
 # outra arte a mais rapida que NAO repete o card (nunca metahub/catalogo).
 #   bash tests/diag_agregado.sh
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 saida=$(python3 tools/diag-agregado.py --arquivo tests/fixtures/diag_agregado.json)
 echo "$saida" | grep -q "== webos | lg <3GB | 3 relatorio(s) de 3 aparelho(s)" || { echo "FALHOU: grupo C9"; echo "$saida"; exit 1; }

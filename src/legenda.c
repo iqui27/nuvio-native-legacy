@@ -8,6 +8,7 @@
 #include <strings.h>
 #include <ctype.h>
 #include <math.h>
+#include <time.h>
 
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static LegendaCue *cues;
@@ -97,7 +98,9 @@ static int extrairSrt(const char *corpo,LegendaCue **saida,int *parcial) {
     for(char *q=linha;*q;q++)if(*q==',')*q='.';
     for(char *q=seta;*q;q++)if(*q==',')*q='.';
     double ini=tempo(linha),fim=tempo(seta);
-    if(ini<0||fim<=ini){if(parcial)*parcial=1;continue;}
+    // Um bloco com tempo ruim (fim<=inicio, comum em legenda da comunidade) cai
+    // sozinho: nao torna o resto um prefixo. Parcial e so falta de memoria.
+    if(ini<0||fim<=ini)continue;
     char texto[768]={0}; size_t usado=0;
     while(*p) {
       char *nl=strchr(p,'\n'); if(nl)*nl++=0;
@@ -454,7 +457,7 @@ static int extrairAss(const char *corpo,LegendaCue **saida,int *parcial) {
       pt = campoAss(linha,cTexto);
       if (!pt) {if(parcial)*parcial=1;continue;}
       a=tempo(trim(ini)); b=tempo(trim(fim));
-      if (a<0 || b<=a) {if(parcial)*parcial=1;continue;}
+      if (a<0 || b<=a) continue;   // so o bloco ruim cai (ver extrairSrt)
 
       memset(&c,0,sizeof c);
       c.cor=-1; c.posX=c.posY=-1.0f;
@@ -615,15 +618,49 @@ char *legenda_utf8(const char *bytes, long n, const char **origem) {
   return out;
 }
 
+/* LTR tracks keep the existing overlay. Arabic plain text uses libass. */
+static char *documentoTexto(const LegendaCue *v, int n) {
+#ifdef NV_ASS_LIBASS
+  return plainass_document(v, n);
+#else
+  (void)v; (void)n; return NULL;
+#endif
+}
+
 typedef struct { char url[1400]; unsigned g; LegendaBaixada pronto; void *u; } Pedido;
+
+/* So o host do link, para o log de tempo: caminho e query levam a chave do
+ * addon/debrid e nunca saem daqui; "usuario:senha@" tambem cai fora. */
+static void hostDoLink(const char *url, char *dst, size_t n) {
+  const char *a = strstr(url, "://"), *f, *arroba;
+  size_t k;
+  a = a ? a + 3 : url;
+  f = a + strcspn(a, "/?#");
+  for (arroba = a; arroba < f; arroba++) if (*arroba == '@') a = arroba + 1;
+  k = (size_t)(f - a);
+  if (k >= n) k = n - 1;
+  memcpy(dst, a, k); dst[k] = 0;
+  if (!k) snprintf(dst, n, "-");
+}
+
+static double msAgora(void) {
+  struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+  return t.tv_sec * 1000.0 + t.tv_nsec / 1e6;
+}
+
 static void *baixar(void *u) {
   Pedido *p=u; long nb=0; const char *cs="utf-8";
+  char host[128]; double t0=msAgora();
+  hostDoLink(p->url,host,sizeof host);
   char *bruto=rede_baixar_bin(p->url,20,&nb);
+  printf("[legenda] download: host=%s %ld bytes em %.0f ms%s\n",host,bruto?nb:0L,msAgora()-t0,bruto?"":" (falhou)");
+  fflush(stdout);
   char *corpo=bruto?legenda_utf8(bruto,nb,&cs):NULL; LegendaCue *v=NULL;
   free(bruto);
   if (corpo && strcmp(cs,"utf-8")) { printf("[legenda] texto em %s, convertido para UTF-8\n",cs); fflush(stdout); }
   int ass=corpo?legenda_eh_ass(corpo):0;
   int n=corpo?legenda_extrair(corpo,&v):0;
+  char *plain = !ass ? documentoTexto(v, n) : NULL;
   double dur=0;
   int aceitarAss=0;
   int i;
@@ -631,7 +668,7 @@ static void *baixar(void *u) {
   pthread_mutex_lock(&trava);
   if(p->g==geracao&&ligada){
     free(cues);cues=v;nCues=n;maiorDur=dur;v=NULL;
-    aceitarAss=ass;
+    aceitarAss=ass ? 1 : plain ? 2 : 0;
     assrender_geracao(geracao);
   }
   pthread_mutex_unlock(&trava);
@@ -639,16 +676,17 @@ static void *baixar(void *u) {
    * diagnostico. Quando o documento ASS chegou inteiro, libass recebe o
    * corpo original, sem passar pelo limite de 768 bytes de uma cue. */
   if (aceitarAss) {
-    assrender_carregar(corpo, strlen(corpo), p->g);
+    if (aceitarAss == 2) assrender_carregar_texto(plain, strlen(plain), p->g);
+    else assrender_carregar(corpo, strlen(corpo), p->g);
     fprintf(stderr, "[legenda] %s\n", assrender_diagnostico());
   } else if (ass && p->g == geracao) {
     // So o dono atual limpa: um download ATRASADO de outra faixa (a pessoa ja
     // trocou) apagava o libass da faixa nova.
     assrender_limpar();
   }
-  /* AutoSync (legsync.c): o mesmo corpo vira documento imutavel neste fio,
-   * fora do lock do overlay. Sempre chamado, para o dono soltar `u`. */
+  /* Preserve the new AutoSync download callback and its ownership. */
   if (p->pronto) p->pronto(corpo, p->g, legenda_ligada_em(p->g), p->u);
+  free(plain);
   free(corpo);
   free(v);
   printf("[legenda] %s: %d blocos%s\n",ass?"ASS/SSA":"SubRip",n,n?"":" (falha)");
@@ -678,13 +716,14 @@ unsigned legenda_carregar_com(const char *url, LegendaBaixada pronto, void *u) {
 // teste de captura (tests/legenda_ass_shot.c) e a quem um dia entregar cues
 // vindos de dentro do MKV (#92, fase 3).
 static unsigned definirCorpo(const char *corpo, int checar, unsigned dono) {
-  LegendaCue *v=NULL; int n, i; double dur=0; int ass; unsigned g;
+  LegendaCue *v=NULL; int n, i; double dur=0; int ass; unsigned g; char *plain;
   if(!corpo)return 0;
   ass=legenda_eh_ass(corpo);
   n=legenda_extrair(corpo,&v);
+  plain = !ass ? documentoTexto(v, n) : NULL;
   for(i=0;i<n;i++){ double d=v[i].fim-v[i].inicio; if(d>dur)dur=d; }
   pthread_mutex_lock(&trava);
-  if(checar && geracao!=dono){ pthread_mutex_unlock(&trava); free(v); return 0; }
+  if(checar && geracao!=dono){ pthread_mutex_unlock(&trava); free(v); free(plain); return 0; }
   ligada=1;geracao++;g=geracao;free(cues);cues=v;nCues=n;maiorDur=dur;
   pthread_mutex_unlock(&trava);
   assrender_geracao(g);
@@ -693,6 +732,7 @@ static unsigned definirCorpo(const char *corpo, int checar, unsigned dono) {
     assrender_carregar(corpo, strlen(corpo), g);
     fprintf(stderr, "[legenda] %s\n", assrender_diagnostico());
   }
+  if (plain) { assrender_carregar_texto(plain, strlen(plain), g); free(plain); }
   return g;
 }
 

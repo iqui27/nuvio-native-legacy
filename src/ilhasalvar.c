@@ -52,6 +52,10 @@ static void gravarLista(const CatItem *ci, int entrar) {
   if (ajustes_salvos_no_trakt() && trakt_ativo()) trakt_watchlist_tipo(ci->imdb, ci->tipo, entrar);
   else if (ajustes_salvos_no_simkl() && simkl_ativo()) simkl_lista_tipo(ci->imdb, ci->tipo, entrar);
   cat_definir_na_lista_imdb(ci->imdb, entrar);
+  if (entrar) {
+    if (ajustes_salvos_no_trakt() && trakt_ativo()) cat_marcar_fonte_imdb(ci->imdb, CAT_FONTE_TRAKT);
+    else if (ajustes_salvos_no_simkl() && simkl_ativo()) cat_marcar_fonte_imdb(ci->imdb, CAT_FONTE_SIMKL);
+  }
   desc_remontar_fileiras();
 }
 

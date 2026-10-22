@@ -10,6 +10,7 @@
 // Os casos abaixo sao o contrato do Anexo C1, na ordem em que ele o descreve.
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
 #include "catordem.h"
 
 static int falhas;
@@ -38,6 +39,22 @@ static void unir(const char *const *locais, int n, char *dst, size_t tam) {
   dst[0] = 0;
   for (i = 0; i < q; i++)
     k += (size_t)snprintf(dst + k, tam - k, i ? ",%s" : "%s", locais[saida[i]]);
+}
+
+// #203: leitor em outro fio enquanto catordem_ler reescreve. Cada chave lida
+// tem de ser inteira (uma das duas formas), nunca metade de uma e outra.
+static volatile int rodando;
+static volatile int corrompido;
+static void *leitor(void *u) {
+  (void)u;
+  while (rodando) {
+    int n = catordem_n(), i;
+    for (i = 0; i < n; i++) {
+      const char *c = catordem_chave(i);
+      if (c[0] && strncmp(c, "aaa_movie_", 10) && strncmp(c, "bbb_movie_", 10)) corrompido = 1;
+    }
+  }
+  return NULL;
 }
 
 int main(void) {
@@ -174,6 +191,18 @@ int main(void) {
   unir(LOCAIS, 3, linha, sizeof linha);
   confereTexto("volta a ordem local intacta", linha,
                "xperience_movie_foryou,cinemeta_movie_top,cinemeta_series_trending");
+
+  printf("\nleitura concorrente com catordem_ler:\n");
+  { pthread_t t; int k;
+    const char *A = "[{\"settings_json\":{\"catalog_order_keys\":[\"aaa_movie_1\",\"aaa_movie_2\",\"aaa_movie_3\"]}}]";
+    const char *B = "[{\"settings_json\":{\"catalog_order_keys\":[\"bbb_movie_1\",\"bbb_movie_2\"]}}]";
+    rodando = 1;
+    pthread_create(&t, NULL, leitor, NULL);
+    for (k = 0; k < 20000; k++) catordem_ler(k & 1 ? A : B);
+    rodando = 0;
+    pthread_join(t, NULL);
+    confere("nenhuma chave lida pela metade", corrompido, 0);
+  }
 
   printf("\n%s\n", falhas ? "FALHOU" : "PASSOU");
   return falhas ? 1 : 0;

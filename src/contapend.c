@@ -1,3 +1,4 @@
+#include "arteurl.h"
 #include "contapend.h"
 #include "contacache.h"
 #include "sessao.h"
@@ -13,7 +14,7 @@
 #include <time.h>
 
 // Mesmo prototipo que contalib.c e app.c usam; mora em catalogo.c.
-extern void cat_historico_definir_id(const char *imdb, const char *tipo, int visto);
+extern void cat_historico_definir_tempo(const char *imdb, const char *tipo, int visto, long long ms);
 
 // Lote por RPC de vistos. O web manda ate 5000 num corpo so; 200 deixa o corpo
 // abaixo de ~30 KB e uma falha custa pouco para repetir.
@@ -35,7 +36,7 @@ typedef struct {
   long long ms;        // quando a pessoa fez o gesto
   long long confMs;
   char nome[160];
-  char poster[400];
+  char poster[NV_ARTE_URL_MAX];   // o de CatItem.poster (#433); o arquivo e texto com TAB
 } Ent;
 
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
@@ -115,7 +116,7 @@ static void gravar(void) {
   char arq[128], *buf, *p;
   size_t tam = 64;
   int i;
-  for (i = 0; i < nEnt; i++) tam += 700;
+  for (i = 0; i < nEnt; i++) tam += sizeof(Ent) + 64;   // linha <= campos + TABs
   buf = (char *)malloc(tam);
   if (!buf) return;
   p = buf;
@@ -384,6 +385,10 @@ static int enviarVistos(const char *usu, int perfil, const Ent *env, int n, char
   }
   jsw_arr_fim(&w);
   jsw_obj_fim(&w);
+  if (op == '+') {
+    printf("[visto] marcado por conta-jornal-reenvio pos=0 dur=0 assistido=0s perfil=%d n=%d (gestos ja registrados)\n", perfil, n);
+    fflush(stdout);
+  }
   r = sessao_rpc(op == '+' ? "sync_push_watched_items" : "sync_delete_watched_items",
                  jsw_texto_final(&w), &st);
   jsw_livre(&w);
@@ -815,7 +820,9 @@ int contapend_lista_oculta(const char *imdb, long long remotoMs) {
 int contapend_aplicar_local(void) {
   int i, k = 0, perfil = perfis_ativo();
   Ent *copia = NULL;
+  VistoFonte fonte;
   int n = 0;
+  memset(&fonte, 0, sizeof fonte);
   pthread_mutex_lock(&trava);
   if (garantir() && nEnt) {
     copia = (Ent *)malloc(sizeof *copia * (size_t)nEnt);
@@ -826,13 +833,38 @@ int contapend_aplicar_local(void) {
   pthread_mutex_unlock(&trava);
   // Fora da trava: o historico tem a trava dele.
   for (i = 0; i < n; i++) {
-    if (copia[i].ep > 0)
-      vistoep_definir(copia[i].id, copia[i].temp, copia[i].ep, copia[i].op == '+');
-    else
-      cat_historico_definir_id(copia[i].id, copia[i].tipo, copia[i].op == '+');
+    // O JORNAL TAMBEM E FONTE (vistoep_fonte): um '+' daqui e um gesto ANTIGO
+    // sendo reaplicado a cada ciclo, com o instante dele — nao pode passar por
+    // cima de uma desmarcacao mais nova do mesmo episodio.
+    if (copia[i].ep > 0) {
+      int antes = vistoep_estado(copia[i].id, copia[i].temp, copia[i].ep), depois;
+      vistoep_fonte(copia[i].id, copia[i].temp, copia[i].ep, copia[i].op == '+',
+                    copia[i].ms, &fonte);
+      depois = vistoep_estado(copia[i].id, copia[i].temp, copia[i].ep);
+      if (antes != depois) {
+        if (depois == 1)
+          printf("[visto] marcado por conta-jornal-importacao pos=0 dur=0 assistido=0s id=%s T%dE%d\n",
+                 copia[i].id, copia[i].temp, copia[i].ep);
+        printf("[vistoep] %s T%dE%d: jornal perfil=%d op=%c gesto_ms=%lld confirmado=%d "
+               "conf_ms=%lld mapa=%d->%d\n", copia[i].id, copia[i].temp, copia[i].ep,
+               copia[i].perfil, copia[i].op, copia[i].ms, copia[i].conf,
+               copia[i].confMs, antes, depois);
+        fflush(stdout);
+      }
+    } else {
+      if (copia[i].op == '+') {
+        printf("[visto] marcado por conta-jornal-importacao pos=0 dur=0 assistido=0s id=%s\n", copia[i].id);
+        fflush(stdout);
+      }
+      cat_historico_definir_tempo(copia[i].id, copia[i].tipo, copia[i].op == '+', copia[i].ms);
+    }
     k++;
   }
   free(copia);
+  // Mudo no caso normal (roda a cada ciclo); fala quando algo foi barrado.
+  if (fonte.bloqueados || fonte.venceu)
+    printf("[vistoep] jornal da conta: +%d (bloqueados %d; remoto mais novo %d)\n",
+           fonte.vistos, fonte.bloqueados, fonte.venceu);
   return k;
 }
 

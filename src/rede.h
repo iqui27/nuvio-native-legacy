@@ -18,7 +18,9 @@
  * Redirects so HTTP(S), sem downgrade HTTPS. Cabecalhos do dono e corpo nao
  * atravessam origem; 307/308 autenticados entre origens sao recusados.
  * O XHR sincrono WGT nao oferece este contrato: retorna INDISPONIVEL sem
- * iniciar I/O. Os wrappers antigos continuam disponiveis com seus limites.
+ * iniciar I/O, exceto GET publico HTTPS com receber_corpo, sem redirects,
+ * cabecalhos, job ou intervalo (fetch em fluxo). Os wrappers antigos continuam
+ * disponiveis com seus limites.
  */
 typedef struct RedeGrupo RedeGrupo;
 typedef struct RedeJob RedeJob;
@@ -52,6 +54,12 @@ typedef struct {
   size_t max_bytes, max_cabecalhos;
   int seguir;          /* 0 = devolver 3xx; 1 = ate 5 redirects */
   const char *ca_arquivo;
+  /* #290: 1 = servidor PESSOAL configurado pela pessoa (Jellyfin/Emby/Plex),
+   * que costuma ter certificado autoassinado ou de rede local. O certificado
+   * deixa de ser verificado SO enquanto o pedido estiver na MESMA origem
+   * (esquema+host+porta) de `url`; um redirect para outra origem volta a
+   * verificar. Todo o resto do app continua verificando. */
+  int tls_pessoal;
   RedeJob *job;
   void (*intervalo)(const RedeIntervalo *, void *);
   void *intervalo_usuario;
@@ -62,6 +70,13 @@ typedef struct {
   uint64_t max_descartado;    /* required with window; max 2 GiB */
   int (*parar)(void *);       /* additional caller cancellation, no UI work */
   void *parar_usuario;
+  /* Decoded body chunks, without allocating corpo; 0 aborts the request.
+   * Only final HTTP 2xx chunks reach this callback; max_bytes still applies. */
+  int (*receber_corpo)(const void *, size_t, void *);
+  void *corpo_usuario;
+  /* 1 = media Range read: follow an https->http redirect like the player does
+   * (debrid links). Cross-origin hops already drop every caller header. */
+  int rebaixar_midia;
 } RedePedido;
 typedef struct {
   int status, curl_erro;
@@ -103,6 +118,10 @@ RedeErro rede_job_estado(RedeJob *job);
  * are accepted; total is -1 when unknown. Caller frees the returned buffer.
  * Raw headers use one Name: value per line. Credentials are stripped when a
  * redirect changes origin. Cancelling also interrupts an idle transfer. */
+char *rede_baixar_trecho64_final(const char *url, const char *headers,
+                              int64_t start, int64_t end, long *size,
+                              int64_t *total, int *status,
+                              volatile int *cancelled, char *final, int *cross);
 char *rede_baixar_trecho64_cab(const char *url, const char *headers,
                               int64_t start, int64_t end, long *size,
                               int64_t *total, int *status,
@@ -174,7 +193,8 @@ char *rede_baixar_trecho(const char *url, int segundos, long ini, long fim,
 // um teto de pedido lembrado a sessao inteira (rede_corte_host), e os trechos
 // seguintes ja saem em pedacos desse tamanho. `segundos` e o prazo do trecho
 // INTEIRO, nao de cada pedaco. rede_baixar_trecho passa pelo mesmo laco.
-char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
+// `ini`/`fim` em 64 bits: Range alem de 2 GiB num ARM de 32 bits (#269).
+char *rede_baixar_trecho_st(const char *url, int segundos, long long ini, long long fim,
                             long *tam, int *status, int *erro,
                             char *final, unsigned tamFinal);
 
@@ -188,6 +208,17 @@ long rede_corte_host(const char *url);
 // zero bytes e sem estourar o prazo: o servidor recusou continuar (#92, v1.4.7:
 // o Real-Debrid, com o video tocando). Ler logo depois da chamada, no mesmo fio.
 int rede_resto_recusado(void);
+
+// LEITURA LATERAL AO VIDEO (#385). O fio que chama rede_lateral(1) e uma
+// leitura AO LADO do player no mesmo arquivo (pre-busca e colheita do mkvass,
+// sonda do MKV, capitulos): nunca o proprio video nem o proxy dele. Nesses
+// fios um Range cuja CONEXAO falha (curl 6, 7 ou 35: o no do CDN recusou,
+// sumiu ou derrubou o aperto de mao) nao repete "em conexao nova", e o host
+// entra em PAUSA (10 s, dobrando ate 60 s, como o #308): ate ela vencer,
+// todo Range lateral a ele volta na hora com o mesmo codigo, sem abrir
+// conexao. O primeiro Range lateral que da certo solta a pausa. Vale para o
+// fio inteiro: chamar no comeco de um fio proprio.
+void rede_lateral(int sim);
 
 // Teto de bytes da transferencia corrente (0 = sem teto). E interno ao modulo;
 // esta exposto so porque rede_baixar_trecho o usa. Nao mexer de fora.
@@ -220,6 +251,15 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam);
 // controlado pelo navegador de fonte morta: AVPlay pode enviar esse cabecalho.
 int rede_url_final_cab(const char *url, int segundos, const char *const *cabecalhos,
                        char *dst, unsigned tam, int *status);
+// O MESMO PEDIDO, devolvendo tambem o que a resposta final diz ser: `mime`
+// (Content-Type sem parametros, minusculo; vazio quando a resposta nao disse)
+// e `corpo` (bytes do corpo quando a resposta foi um 200 completo de ate 64 B,
+// ou -1 quando nao da para saber: 206, corpo cortado). Qualquer ponteiro de
+// saida pode ser NULL. Nenhum pedido a mais: sao dados da mesma sonda. Serve a
+// naovideo.h (link de aviso que responde HTML/JSON em vez de video).
+int rede_url_final_tipo(const char *url, int segundos, const char *const *cabecalhos,
+                        char *dst, unsigned tam, int *status,
+                        char *mime, unsigned mimeTam, long *corpo);
 
 // POST de JSON. Existe para o Trakt, que so aceita escrita por POST.
 char *rede_postar(const char *url, int segundos, const char *const *cabecalhos,
@@ -241,6 +281,11 @@ char *rede_apagar(const char *url, int segundos, const char *const *cabecalhos,
                   int *status);
 char *rede_postar_st(const char *url, int segundos, const char *const *cabecalhos,
                      const char *corpo, int *status);
+#ifdef __EMSCRIPTEN__
+// PUT pelo mesmo XHR das escritas POST do Trakt.
+char *rede_putar_st(const char *url, int segundos, const char *const *cabecalhos,
+                    const char *corpo, int *status);
+#endif
 
 // GET com cabecalhos E codigo HTTP. Pelo mesmo motivo do POST acima: a leitura
 // de tabela do Supabase precisa distinguir "tabela nao existe" (404 com
@@ -368,6 +413,13 @@ void rede_preparar(void);
 // Texto da falha de transporte do ULTIMO pedido deste fio ("curl 35: ..."), ou
 // "" quando ele passou. Sem URL, corpo ou segredo; serve a tela e ao log (#223).
 const char *rede_ultimo_erro(void);
+
+// AQUECER CONEXOES (2.0.2). Abre DNS + TCP + TLS de cada origem ("https://host")
+// com um HEAD em "/" (sem seguir redirecionamento, sem corpo, nunca um caminho
+// de stream) e deixa o handle guardado para o proximo fio que pedir um destes
+// hosts. ms[i] recebe o tempo de cada origem (0 = falhou). Devolve quantas
+// abriram. Chamar de um fio descartavel; no .wgt nao faz nada (devolve 0).
+int rede_aquecer_lote(const char *const *origens, int n, unsigned *ms);
 const char *rede_url_publica(const char *url, char *dst, unsigned tam);
 
 // URL DE IMAGEM/META PARA LOG, mais util que rede_url_publica mas igualmente

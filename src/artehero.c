@@ -317,7 +317,8 @@ static const char *urlDaFonte(const CatItem *item, int fonte, int grande,
 #endif
       if (!temTt || !ano || !item->titulo[0]) return NULL;
       codificar(item->titulo, enc, sizeof enc);
-      snprintf(saida, tam, "%s" "apple/%s/%s/%c/%d/%s", ARTE_VIRTUAL_PREFIXO,
+      // v2 separa no disco a arte antiga, que podia vir do tipo oposto.
+      snprintf(saida, tam, "%s" "apple/%s/v2/%s/%c/%d/%s", ARTE_VIRTUAL_PREFIXO,
                t, id, ehSerie(item) ? 's' : 'm', ano, enc);
       return saida;
     }
@@ -452,9 +453,16 @@ const char *artehero_url_escolhida(const CatItem *item) {
 // escolha pede a previa por aqui tambem: a textura que ela carrega e a mesma
 // que o destaque vai pedir depois do OK.
 const char *artehero_url_escolha_grande(const char *u) {
+  static const char apple[] = ARTE_VIRTUAL_PREFIXO "apple/";
   char buf[512];
   const char *p;
   if (!u || !u[0]) return u;
+  // Escolha Apple antiga: invalida a chave do disco sem alterar a persistencia.
+  if (!strncmp(u, apple, sizeof apple - 1) &&
+      (p = strchr(u + sizeof apple - 1, '/')) != NULL && !strncmp(p, "/tt", 3)) {
+    if (snprintf(buf, sizeof buf, "%.*s/v2%s", (int)(p - u), u, p) < (int)sizeof buf)
+      return fixar(buf, buf);
+  }
   if ((p = strstr(u, "/t/p/")) != NULL) {
     const char *nome = strchr(p + 5, '/');
     size_t pre = (size_t)(p - u);

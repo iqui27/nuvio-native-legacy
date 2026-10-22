@@ -100,8 +100,8 @@ int main(int argc, char **argv) {
   mkvass_parar(); esperarFio(); legenda_desligar();
 
   mkvass_iniciar_ordinal(argv[1], 1);
-  colher(10);
-  ok(mkvass_estado() == MKVASS_NOGO_FAIXA, "ordinal 1 (SRT) e no-go de codec, volta a TV");
+  ok(colher(10) == MKVASS_COMPLETO, "ordinal 1 (SRT) completa pelo overlay (#421)");
+  ok(cueCom(1.5, "Faixa B"), "SRT selecionado entrega texto ao overlay");
   mkvass_parar(); esperarFio();
 
   printf("\n%s (%d falha%s)\n", falhas ? "FALHOU" : "tudo ok", falhas, falhas == 1 ? "" : "s");

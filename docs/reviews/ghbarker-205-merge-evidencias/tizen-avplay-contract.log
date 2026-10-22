@@ -1,0 +1,32 @@
+PASS: duration uses getDuration in milliseconds
+PASS: video metadata is read in a valid state after async preparation
+PASS: estado rejects an nine-double buffer before writing completion
+PASS: buffer percentage keeps its integration slot
+PASS: native completion reaches the existing C state vector
+PASS: bridge returns all audio and text rows
+PASS: track metadata is reused by the faixas operation
+PASS: repeated subtitle-menu reads reuse native metadata
+PASS: AVPlay timing diagnostics are bounded and contain no URL
+PASS: source logs correlate a source without printing its URL
+PASS: pausa confirmada requires real AVPlay PAUSED state
+PASS: app pumps video before any screen can return
+PASS: choosing embedded text unmutes and selects the absolute TEXT index
+PASS: onsubtitlechange text is exposed to C while it is valid
+PASS: embedded text expires after its duration
+PASS: seek clears the embedded text of the old position
+PASS: turning subtitles off clears the embedded text
+PASS: stale onsubtitlechange from a previous open is ignored
+PASS: estado does not call AVPlay getters every frame (#147)
+PASS: estado reads getCurrentTime right after a seek (#147)
+PASS: position advances between time events while playing (#147)
+PASS: position holds between events while paused (#147)
+PASS: paused fallback read is throttled (#147)
+PASS: faixas fallback caches the first successful metadata read
+PASS: fallback timing diagnostic is emitted without the source URL
+PASS: two opens leave two pending prepare callbacks for the generation test
+PASS: stale listener events do not contaminate the current session
+PASS: stale prepare callback is discarded
+PASS: current prepare callback still starts playback
+PASS: no error text while the session is healthy
+PASS: onerror reason reaches C through the erro operation
+PASS: play failure never publishes a ready or open session

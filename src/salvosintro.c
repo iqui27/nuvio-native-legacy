@@ -29,6 +29,7 @@
 #include "anim.h"
 #include "layout.h"
 #include "idioma.h"
+#include "ponteiro.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -66,7 +67,7 @@ static float entrada, animFoco[2];
 // republicacao e o bloco antigo e liberado. Guardar o ponteiro aqui derrubou o
 // app na TV poucos segundos depois do arranque — e so na TV, porque no Mac sem
 // conta o catalogo nunca era republicado.
-static char minis[SI_N_MINI][512];
+static char minis[SI_N_MINI][NV_TEX_URL_MAX];   // o poster inteiro (#361)
 static int nMinis;
 
 int sintro_aberto(void) { return aberto; }
@@ -230,9 +231,16 @@ static void desenhaFigura(float cx, float y, float a) {
 // FOCO: sao dois estados diferentes e os dois precisam existir, senao mover o
 // foco apaga a indicacao de qual esta valendo — o mesmo erro que as abas de
 // temporada do detalhe ja cometeram.
-static void desenhaOpcao(float x, float y, float f, int vigor,
+// PONTEIRO (#99): foco pela mesma variavel das setas; o OK do clique grava a
+// escolha por sintro_evento.
+static void ponteiroOpcao(int i, int b) { (void)b; if (aberto && (i == 0 || i == 1)) foco = i; }
+int sintro_teste_foco(void) { return foco; }
+
+static void desenhaOpcao(int id, float x, float y, float f, int vigor,
                          const char *tit, const char *desc, float a) {
   GfxRect r = { x, y, SI_INT, SI_OPCAO_H };
+  if (aberto && entrada > 0.99f)   // so assentado (sem o deslize da entrada)
+    ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroOpcao, NULL, id, 0);
   float lum = vigor ? 0.155f : 0.115f;
   int emFoco = f > 0.5f;
   gfx_cor(r, 0.16f, lum, lum + 0.004f, lum + 0.016f, a);
@@ -353,7 +361,7 @@ void sintro_desenhar(Uint32 agora) {
     txt_desenhar_alpha(t, x, y, a * 0.9f); }
   y += 36.0f;
 
-  desenhaOpcao(x, y, animFoco[0], !ajustes_salvos_no_trakt(),
+  desenhaOpcao(0, x, y, animFoco[0], !ajustes_salvos_no_trakt(),
                "Lista do Nuvio",
                // Com conta, o "+" tambem vai para o perfil (contapend.c).
                sessao_logada()
@@ -361,7 +369,7 @@ void sintro_desenhar(Uint32 agora) {
                  : "Fica guardada nesta TV. O que você salvar no celular continua "
                    "chegando aqui pela sua conta.", a);
   y += SI_OPCAO_H + 12.0f;
-  desenhaOpcao(x, y, animFoco[1], ajustes_salvos_no_trakt(),
+  desenhaOpcao(1, x, y, animFoco[1], ajustes_salvos_no_trakt(),
                "Watchlist do Trakt",
                "Aparece também nos apps e no site que leem essa conta.", a);
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Limite de pedidos de episodios do card terminado do Continuar, por titulo.
 #   bash tests/cw_pedidos.sh
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 sources=()
 for source in src/*.c src/dts/*.c; do

@@ -16,5 +16,5 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 # o mapa de episodios vistos, em vez de descarta-la.
 cc ${flags[@]+"${flags[@]}"} src/contalib.c src/js.c src/vistoep.c tests/contalib.c \
   -Isrc -o /tmp/nuvio-contalib-tests -O1 -g \
-  -Wall -Wno-deprecated-declarations -Wno-macro-redefined
+  -Wall -Wno-deprecated-declarations -Wno-macro-redefined -lpthread
 /tmp/nuvio-contalib-tests

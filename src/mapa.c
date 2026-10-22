@@ -1535,13 +1535,13 @@ static size_t escreverObra(char *b, size_t n, const MapaObra *o) {
 }
 
 static void cacheGravar(const Cache *c, const char *nome, const char *idioma) {
-  size_t cap = 64 * 1024 + (size_t)c->n * 24 * 1024 +
-               ((size_t)c->nc * MAPA_CRED_MAX + (size_t)c->nt * VIZ_TEMA_MAX) * 1200, k = 0;
+  size_t cap = 64 * 1024 + (size_t)c->n * (sizeof *c->s + 1024u) +
+               ((size_t)c->nc * MAPA_CRED_MAX + (size_t)c->nt * VIZ_TEMA_MAX) * (sizeof(MapaObra) + 128u), k = 0;
   char *b = malloc(cap);
   int i, j;
   if (!b) return;
   k += (size_t)snprintf(b + k, cap - k, "NVMAPA 1\nL\t%s\n", idioma);
-#define ESPACO (k + 2048 < cap)
+#define ESPACO (k + sizeof(MapaObra) + 128u < cap)
   for (i = 0; i < c->n && ESPACO; i++) {
     const MapaSemente *s = &c->s[i];
     if (!s->quando) continue;
@@ -2352,7 +2352,7 @@ static void climaCacheLer(const char *idioma) {
 }
 
 static void climaCacheGravar(const char *idioma) {
-  size_t cap = 16 * 1024 + (size_t)MAPA_CLIMA_N * CLIMA_REMOTO * 1100, k = 0;
+  size_t cap = 16 * 1024 + (size_t)MAPA_CLIMA_N * CLIMA_REMOTO * (sizeof(MapaObra) + 128u), k = 0;
   char *b = malloc(cap);
   int i, j;
   if (!b) return;
@@ -2363,7 +2363,7 @@ static void climaCacheGravar(const char *idioma) {
   for (i = 0; i < MAPA_CLIMA_N; i++) {
     if (climaRem[i].n <= 0) continue;
     k += (size_t)snprintf(b + k, cap - k, "M\t%d\t%lld\t%d\n", i, climaRem[i].quando, climaRem[i].total);
-    for (j = 0; j < climaRem[i].n && k + 2048 < cap; j++) {
+    for (j = 0; j < climaRem[i].n && k + sizeof(MapaObra) + 128u < cap; j++) {
       k += (size_t)snprintf(b + k, cap - k, "O\t");
       k += escreverObra(b + k, cap - k, &climaRem[i].o[j]);
     }

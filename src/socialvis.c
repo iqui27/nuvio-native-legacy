@@ -248,6 +248,7 @@ static void dasRecomendacoes(void) {
     snprintf(e->tipo, sizeof e->tipo, "%s", r.tipo);
     snprintf(e->titulo, sizeof e->titulo, "%s", r.titulo);
     snprintf(e->poster, sizeof e->poster, "%s", r.poster);
+    snprintf(e->texto, sizeof e->texto, "%s", rec_frase(&r));
     e->quando = r.criado;
   }
 }
@@ -310,6 +311,9 @@ static void svDeRecEvento(const RecEvento *r, SvEvento *e) {
   e->quando = r->quando;
   e->nota = r->acao == REC_ACAO_NOTA ? r->nota : 0;
   snprintf(e->com, sizeof e->com, "%s", r->acao == REC_ACAO_JUNTO ? r->com : "");
+  e->eps = r->eps;
+  // "Terminou e gostou": a reacao que o servidor juntou ao "terminou".
+  if (r->acao == REC_ACAO_FIM && r->temReacFim) e->reacao = r->reacFim;
   // A arte deitada vem do catalogo (o feed so traz o cartaz).
   k = cat_indice_por_imdb(r->imdb);
   if (k >= 0) {
@@ -484,20 +488,81 @@ static int ordemAmigo(const void *pa, const void *pb) {
   return 0;
 }
 
+// --- a limpeza do feed (ver socialvis.h) --------------------------------------
+
+static int mesmoTitulo(const SvEvento *a, const SvEvento *b) {
+  return !strcmp(a->pessoaId, b->pessoaId) && !strcmp(a->imdb, b->imdb);
+}
+// Fica de fora do agrupamento: o ao vivo e o que me mandaram tem linha propria.
+static int agrupavel(int acao) {
+  return acao == SV_FIM || acao == SV_REACAO || acao == SV_AVALIOU || acao == SV_INICIO;
+}
+
+int socialvis_feed_limpar(const SvEvento *ev, int n, SvEvento *saida, int max) {
+  int i, j, k = 0;
+  for (i = 0; ev && i < n && k < max; i++) {
+    const SvEvento *e = &ev[i];
+    SvEvento linha;
+    const SvEvento *fim = NULL, *reac = NULL, *nota = NULL, *ini = NULL;
+    int eps = 0, novo = 1;
+    if (e->acao == SV_AGORA || e->acao == SV_MANDOU) { saida[k++] = *e; continue; }
+    if (!agrupavel(e->acao)) continue;          // abandono, salvo, atividade
+    // O grupo ja saiu na primeira (mais nova) linha dele.
+    for (j = 0; j < i; j++) if (agrupavel(ev[j].acao) && mesmoTitulo(&ev[j], e)) { novo = 0; break; }
+    if (!novo) continue;
+    for (j = i; j < n; j++) {
+      const SvEvento *o = &ev[j];
+      if (!agrupavel(o->acao) || !mesmoTitulo(o, e)) continue;
+      if (o->acao == SV_FIM) {
+        int q, rep = 0;
+        if (!fim) fim = o;
+        // Episodios DISTINTOS: o mesmo episodio visto duas vezes conta um.
+        for (q = i; q < j; q++)
+          if (ev[q].acao == SV_FIM && mesmoTitulo(&ev[q], o) && ev[q].temporada == o->temporada &&
+              ev[q].episodio == o->episodio) rep = 1;
+        if (!rep) eps += o->eps > 1 ? o->eps : 1;
+      }
+      else if (o->acao == SV_REACAO) { if (!reac) reac = o; }
+      else if (o->acao == SV_AVALIOU) { if (!nota) nota = o; }
+      else if (!ini) ini = o;
+    }
+    if (fim) {
+      linha = *fim;
+      linha.eps = !strcmp(fim->tipo, "series") && eps > 1 ? eps : 0;
+      if (linha.reacao == SV_REAC_NADA && reac) linha.reacao = reac->reacao;
+      if (!linha.nota && nota) linha.nota = nota->nota;
+    } else if (reac) {
+      linha = *reac;
+      if (!linha.nota && nota) linha.nota = nota->nota;
+    } else if (nota) {
+      linha = *nota;
+    } else {
+      // So comecou: e noticia uma vez, numa serie. Filme comecado, nao.
+      if (!ini || strcmp(ini->tipo, "series")) continue;
+      linha = *ini;
+    }
+    // A hora e a da linha MAIS NOVA do grupo (a ordem do feed nao muda).
+    linha.quando = e->quando;
+    saida[k++] = linha;
+  }
+  return k;
+}
+
 static void agrupar(void) {
   SvEvento *ord;
   int i;
   ord = brutos;
   // O vetor bruto e ordenado no lugar: ele so serve a isto.
   ordenar(ord, nBrutos, sizeof *ord, ordemEvento);
-  nFeed = 0;
+  nFeed = socialvis_feed_limpar(ord, nBrutos, feed, SV_EVENTOS_MAX);
   nAmigos = 0;
   for (i = 0; i < nBrutos; i++) {
     const SvEvento *e = &ord[i];
     SvAmigo *a;
-    if (e->acao != SV_ATIVIDADE && nFeed < SV_EVENTOS_MAX) feed[nFeed++] = *e;
     // O rosto mostra o que a PESSOA fez; o que ela me mandou fica na aba.
-    if (e->acao == SV_MANDOU) continue;
+    // Sair do player e salvar nao sao noticia (o feed limpo, 06/10/2026):
+    // tambem nao viram cartao ao lado do rosto.
+    if (e->acao == SV_MANDOU || e->acao == SV_ABANDONO || e->acao == SV_SALVO) continue;
     a = amigoDe(e);
     if (!a) continue;
     if (e->acao == SV_AGORA) a->agora = 1;
@@ -599,6 +664,31 @@ int socialvis_n_ao_vivo(void) {
   return n;
 }
 int socialvis_n_eventos(void) { return nFeed; }
+int socialvis_n_brutos(void) { return nBrutos; }
+const SvEvento *socialvis_bruto(int i) { return (i >= 0 && i < nBrutos) ? &brutos[i] : NULL; }
+
+int socialvis_enviada_titulo(const char *id, const char *imdb, SvEnviada *saida) {
+  int i, j;
+  if (!id || !imdb || !imdb[0]) return 0;
+  for (i = 0; i < nExtras; i++) {
+    if (strcmp(extras[i].id, id)) continue;
+    for (j = 0; j < extras[i].p.nMandou && j < SV_FILA_MAX; j++)
+      if (!strcmp(extras[i].p.mandou[j].imdb, imdb)) {
+        if (saida) *saida = extras[i].p.mandou[j];
+        return 1;
+      }
+  }
+  return 0;
+}
+
+int socialvis_gosto_pct(const char *id) {
+  int i;
+  if (!id) return -1;
+  for (i = 0; i < nExtras; i++)
+    if (!strcmp(extras[i].id, id))
+      return extras[i].p.gostoTotal >= SV_CMP_MIN && extras[i].p.gostoPct >= 0 ? extras[i].p.gostoPct : -1;
+  return -1;
+}
 const SvEvento *socialvis_evento(int i) { return (i >= 0 && i < nFeed) ? &feed[i] : NULL; }
 
 void socialvis_definir_feed(const SvEvento *ev, int n) {
@@ -856,9 +946,22 @@ const char *socialvis_verbo(const SvEvento *ev) {
   if (ev->sobreMinhaRec) return i18n("viu o que você mandou");
   switch (ev->acao) {
     case SV_AGORA:    return i18n("está vendo");
-    case SV_INICIO:   return i18n("começou");
-    case SV_FIM:      return ev->reacao == SV_REAC_GOSTOU ? i18n("terminou e gostou")
-                           : i18n("terminou");
+    case SV_INICIO:   return !strcmp(ev->tipo, "series") ? i18n("começou a série") : i18n("começou");
+    case SV_FIM:
+      // "assistiu 3 episódios de" (o feed agrupado), com a reacao quando houve.
+      if (ev->eps > 1) {
+        static char buf[96];
+        // Uma chamada de i18n por frase: a varredura so acha o literal direto.
+        const char *f = ev->reacao == SV_REAC_GOSTOU ? i18n("viu %d episódios e gostou de")
+                      : ev->reacao == SV_REAC_NAO ? i18n("viu %d episódios e não gostou de")
+                      : i18n("assistiu %d episódios de");
+        snprintf(buf, sizeof buf, f, ev->eps);
+        return buf;
+      }
+      return ev->reacao == SV_REAC_GOSTOU ? i18n("terminou e gostou")
+           : ev->reacao == SV_REAC_NAO ? i18n("terminou e não gostou")
+           : ev->reacao == SV_REAC_MEIO ? i18n("terminou, achou mais ou menos")
+           : i18n("terminou");
     case SV_REACAO:   return ev->reacao == SV_REAC_GOSTOU ? i18n("gostou de")
                            : ev->reacao == SV_REAC_NAO ? i18n("não gostou de")
                            : i18n("achou mais ou menos");
@@ -1004,6 +1107,21 @@ void socialvis_demo(int cenario) {
     ev(&v[n++], "trakt:vlern", "vlern", "", SV_FONTE_TRAKT,
        SV_MANDOU, SV_REAC_NADA, "tt0000107", "series", "Andor", 15, 0, 0, -1, -1,
        agora - 11 * 86400);
+    // O FEED LIMPO (06/10/2026): tres episodios de "Ruptura" do vlern viram UMA
+    // linha "assistiu 3 episodios de"; o "salvou" dele some.
+    ev(&v[n++], "trakt:vlern", "vlern", "", SV_FONTE_TRAKT,
+       SV_FIM, SV_REAC_NADA, "tt0000104", "series", "Ruptura", 9, 2, 3, -1, -1,
+       agora - 20 * 3600);
+    ev(&v[n++], "trakt:vlern", "vlern", "", SV_FONTE_TRAKT,
+       SV_FIM, SV_REAC_NADA, "tt0000104", "series", "Ruptura", 9, 2, 2, -1, -1,
+       agora - 22 * 3600);
+    ev(&v[n++], "trakt:vlern", "vlern", "", SV_FONTE_TRAKT,
+       SV_FIM, SV_REAC_NADA, "tt0000104", "series", "Ruptura", 9, 2, 1, -1, -1,
+       agora - 24 * 3600);
+    ev(&v[n++], "trakt:vlern", "vlern", "", SV_FONTE_TRAKT,
+       SV_AVALIOU, SV_REAC_NADA, "tt0000109", "movie", "Blade Runner 2049", 11, 0, 0, -1, -1,
+       agora - 3 * 86400);
+    v[n - 1].nota = 90;
   }
   socialvis_definir_feed(v, n);
   if (cenario >= 1) {

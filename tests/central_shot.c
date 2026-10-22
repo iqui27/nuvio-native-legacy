@@ -135,6 +135,16 @@ int main(int argc, char **argv) {
   central_teste_foco(3, 0);
   snprintf(nome, sizeof nome, "%s-08-tocando.bmp", saida);
   captura(nome, 80);
+  // ESTATISTICAS (mockup stats-velocidade, tela 1): com video, o primeiro
+  // botao e o das estatisticas ao vivo, em foco.
+  central_teste_estatisticas(1);
+  central_teste_tocando("Duna: Parte Dois", "2160p · HDR10 · 42,8 Mbps agora");
+  central_teste_lista("dolbyVision\nqualidade\ntrailerAuto\nesmaecerLocal\nbrilhoPlayerLocal\n");
+  central_teste_foco(0, 0);
+  snprintf(nome, sizeof nome, "%s-08b-estatisticas.bmp", saida);
+  captura(nome, 80);
+  central_teste_estatisticas(0);
+  central_teste_lista(NULL);
   central_teste_tocando(NULL, NULL);
 
   ajustes_definir_vidro(1);
@@ -145,6 +155,32 @@ int main(int argc, char **argv) {
   central_teste_foco(-1, 1);
   snprintf(nome, sizeof nome, "%s-10-edicao.bmp", saida);
   captura(nome, 80);
+
+  // COR DE DESTAQUE e os atalhos novos (203): a central de fabrica agora traz
+  // "Cor"; o seletor e a lista com os novos, o acento Oceano ja aplicado.
+  ajustes_definir_vidro(0);
+  central_teste_lista(NULL);
+  central_teste_foco(5, 0);
+  snprintf(nome, sizeof nome, "%s-13-padrao-com-cor.bmp", saida);
+  captura(nome, 60);
+  central_teste_lista("corDestaque\nfonteAutoLocal\nfonteReporLocal\nlegendaForcadaLocal\n"
+                      "legendaSyncAudioLocal\nqualidade\ntrailerAuto\nesmaecerLocal\n");
+  central_teste_foco(0, 0);
+  snprintf(nome, sizeof nome, "%s-14-novos-atalhos.bmp", saida);
+  captura(nome, 60);
+  central_teste_cor(10);
+  snprintf(nome, sizeof nome, "%s-15-seletor-cor.bmp", saida);
+  captura(nome, 60);
+  ajustes_rapido_cor_definir(15);   // o que o OK faz: o painel recolore
+  central_teste_cor(10);
+  central_teste_lista(NULL);
+  snprintf(nome, sizeof nome, "%s-16-seletor-oceano.bmp", saida);
+  captura(nome, 40);
+  central_teste_foco(-1, 1);
+  central_teste_foco(0, 0);
+  snprintf(nome, sizeof nome, "%s-17-oceano-botoes.bmp", saida);
+  captura(nome, 40);
+  ajustes_rapido_cor_definir(0);
 
   central_fechar();                          // volta para a pilula
   snprintf(nome, sizeof nome, "%s-11-fechando.bmp", saida);

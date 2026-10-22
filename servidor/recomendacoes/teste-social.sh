@@ -83,14 +83,23 @@ ev a '{"ev":"inicio","imdb":"tt0000001","midia":"movie","titulo":"Filme Um"}' > 
 checa "inicio repetido em 10 min conta uma vez" 1 "$(sql "SELECT COUNT(*) FROM evento WHERE pessoa='nuvio:aaa' AND ev='inicio'")"
 ev a '{"ev":"progresso","imdb":"tt0000001","midia":"movie","titulo":"Filme Um","pct":40,"seg":1800}' > /dev/null
 fb=$(api b GET /v1/feed)
-checa "amigo ve o inicio" 1 "$(tem "$fb" '"ev":"inicio"')"
+checa "inicio de filme nao entra no feed (o agora mostra)" 0 "$(tem "$fb" '"ev":"inicio"')"
+ev a '{"ev":"inicio","imdb":"tt0000009","midia":"series","titulo":"Serie","temporada":1,"episodio":1}' > /dev/null
+fb=$(api b GET /v1/feed)
+checa "amigo ve o comeco de uma serie" 1 "$(tem "$fb" '"ev":"inicio"')"
 checa "progresso nao entra no feed" 0 "$(tem "$fb" '"ev":"progresso"')"
 checa "capa de host desconhecido nao sai" 0 "$(tem "$fb" 'evil.example')"
 checa "amigo de amigo (C) nao ve no nivel 1" 1 "$(tem "$(api c GET /v1/feed)" '"itens":\[\]')"
 checa "estranho (D) nao ve" 1 "$(tem "$(api d GET /v1/feed)" '"itens":\[\]')"
 pa=$(api b GET '/v1/amigo?id=nuvio:aaa')
-checa "assistindo agora aparece" 1 "$(tem "$pa" '"agora":{"imdb":"tt0000001"')"
+checa "assistindo agora aparece (o mais novo: a serie)" 1 "$(tem "$pa" '"agora":{"imdb":"tt0000009"')"
 checa "segundos do mes somam" 1 "$(tem "$pa" '"seg":1800')"
+# Sair do player (06/10/2026): fecha o "agora", nunca vira linha de evento/feed.
+ev a '{"ev":"progresso","imdb":"tt0000009","midia":"series","titulo":"Serie","temporada":1,"episodio":1,"pct":30,"seg":60,"parou":1}' > /dev/null
+checa "parou=1 fecha o agora" 1 "$(tem "$(api b GET '/v1/amigo?id=nuvio:aaa')" '"agora":null')"
+ev a '{"ev":"abandono","imdb":"tt0000008","midia":"movie","titulo":"Largado","pct":5,"seg":30}' > /dev/null
+checa "abandono (cliente antigo) nao e guardado" 0 "$(sql "SELECT COUNT(*) FROM evento WHERE ev='abandono'")"
+checa "nem aparece no feed" 0 "$(tem "$(api b GET /v1/feed)" '"ev":"abandono"')"
 checa "C nao abre o perfil de A no nivel 1" 1 "$(tem "$(api c GET "/v1/amigo?id=pub:$(sql "SELECT pub FROM perfil WHERE pessoa='nuvio:aaa'")")" 'nao encontrado')"
 
 # ETag/304
@@ -108,7 +117,7 @@ ev a '{"ev":"progresso","imdb":"tt0000001","midia":"movie","pct":80,"seg":600}' 
 ev a '{"ev":"fim","imdb":"tt0000001","midia":"movie","titulo":"Filme Um","pct":100,"seg":300}' > /dev/null
 ev a '{"ev":"inicio","imdb":"tt0000009","midia":"series","titulo":"Serie","temporada":1,"episodio":2}' > /dev/null
 pa=$(api b GET '/v1/amigo?id=nuvio:aaa')
-checa "agregado: seg, filmes e series do mes" 1 "$(tem "$pa" '"seg":2700,"filmes":1,"series":1')"
+checa "agregado: seg, filmes e series do mes" 1 "$(tem "$pa" '"seg":2790,"filmes":1,"series":1')"
 
 # --- rec de origem: B manda a A, A reage ----------------------------------------
 api b POST /v1/rec '{"para":"nuvio:aaa","imdb":"tt0000002","tipo":"movie","titulo":"Filme Dois"}' > /dev/null

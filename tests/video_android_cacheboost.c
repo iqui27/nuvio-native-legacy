@@ -9,6 +9,10 @@
 void *SDL_AndroidGetJNIEnv(void);
 void *SDL_AndroidGetActivity(void);
 #include "../src/video_android.c"
+// capmkv.c (capitulos do MKV) nao faz parte deste teste.
+void capmkv_iniciar(const char *u) { (void)u; }
+void capmkv_zerar(void) {}
+double capmkv_creditos(double d) { (void)d; return 0.0; }
 #include "../src/cacheboost.c"
 #include "../src/audsync.c"   // F06 nativeAudioEstado feeds the boost state too
 #include "../src/velocidade.c" // #202 speed
@@ -40,6 +44,7 @@ static jmethodID JNICALL metodo(JNIEnv *e, jclass c, const char *nome, const cha
   if (!strcmp(nome, "parar")) return (jmethodID)(uintptr_t)12;
   if (!strcmp(nome, "cache")) return semCache ? NULL : (jmethodID)(uintptr_t)13;
   if (!strcmp(nome, "ganho")) return semCache ? NULL : (jmethodID)(uintptr_t)14;
+  if (!strcmp(nome, "buffer")) return semCache ? NULL : (jmethodID)(uintptr_t)16;
   if (!strcmp(nome, "velocidade")) return semCache ? NULL : (jmethodID)(uintptr_t)15;
   return (jmethodID)(uintptr_t)1;
 }
@@ -58,6 +63,7 @@ static void JNICALL chamar(JNIEnv *e, jclass c, jmethodID m, ...) {
     case 13: snprintf(b, sizeof b, "C%d", va_arg(ap, jint)); anota(b); break;
     case 14: snprintf(b, sizeof b, "G%d", va_arg(ap, jint)); anota(b); break;
     case 15: snprintf(b, sizeof b, "V%d", va_arg(ap, jint)); anota(b); break;
+    case 16: snprintf(b, sizeof b, "B%d", va_arg(ap, jint)); anota(b); break;
     default: break;
   }
   va_end(ap);
@@ -96,7 +102,7 @@ int main(void) {
   // Reconnection reopen of the SAME video: no new arm, same cache (not re-sent),
   // and the volume is re-applied after the open (Kotlin starts each open at 100).
   registro[0] = 0;
-  assert(abrirSessao(0));
+  assert(abrirSessao(0, 0));
   assert(!strcmp(registro, "AG150"));
 
   // Source change inside the title: the player arms again (same limit, not
@@ -162,7 +168,7 @@ int main(void) {
   Java_space_nuvio_nativelegacy_NvPlayer_nativePos(&env, NULL, 12500);
   assert(video_pos_amostra(&stamp) == 12.5 && stamp == 1200);
   registro[0] = 0;
-  assert(abrirSessao(0));                     // reconnection / same playback
+  assert(abrirSessao(0, 0));                     // reconnection / same playback
   Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(&env, NULL, 1, 60000, 0);
   video_bombear();
   assert(!strcmp(registro, "AV150"));
@@ -191,7 +197,27 @@ int main(void) {
   video_velocidade(200); video_bombear();
   assert(!strcmp(registro, "V100"));
 
-  // An older Kotlin shell without cache()/ganho(): nothing crosses, open works.
+  // #338: buffer crosses before open, once per change, with invalid presets reset.
+  registro[0] = 0;
+  cacheboost_backend_buffer(3);
+  assert(video_tocar("https://example.invalid/buffer.mkv"));
+  assert(strstr(registro, "B3") && strstr(registro, "B3") < strchr(registro, 'A'));
+  registro[0] = 0;
+  assert(abrirSessao(0, 0));
+  assert(!strchr(registro, 'B'));
+  registro[0] = 0;
+  cacheboost_backend_buffer(99);
+  assert(abrirSessao(0, 0));
+  assert(strstr(registro, "B0"));
+  { VideoStats st;
+    Java_space_nuvio_nativelegacy_NvPlayer_nativeStats(&env, NULL, 1000, 25000, 150000, 2, 12, 3, 100, NULL);
+    video_estatisticas(&st);
+    assert(st.bytes == 1000 && st.bufferSeg == 25 && st.bufferAlvoSeg == 150 && st.quadrosPerdidos == 3);
+    assert(abrirSessao(0, 0));
+    video_estatisticas(&st);
+    assert(st.bytes == -1 && st.bufferSeg < 0);
+  }
+  // An older Kotlin shell without cache()/ganho()/buffer(): open still works.
   semCache = 1;
   assert(resolverMetodos(&env));
   registro[0] = 0;

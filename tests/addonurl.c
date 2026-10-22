@@ -19,6 +19,9 @@
 //
 // So addons.c e js.c; a rede e um duble que anota a URL pedida.
 #include <stdio.h>
+// A entrega real tem o harness watchstate_poda.sh; aqui nao ha diario.
+void wsenvio_podar(void) {}
+void wsenvio_podar_addon(const char *base) { (void)base; }
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -26,14 +29,18 @@
 #include "fontecache.h"
 
 // ---------------------------------------------------------------- duble
-static char pedido[8192];      // a ultima URL que chegou a rede
+static char pedido[16384];      // a ultima URL que chegou a rede
 static int  nPedidos, nPedidosGrande;
 const char *rede_ultimo_erro(void) { return ""; }
+int dados_gravar_leve(const char *n, const char *c) { (void)n; (void)c; return 1; }
 char *rede_baixar(const char *url, int s) {
   (void)s;
+  // O que rede.c faz no OPT_URL: apelido de URL grande -> URL inteira (#203).
+  char *grande = nv_longa_expandir(url);
   nPedidos++;
   if (strstr(url, "grande.test")) nPedidosGrande++;
-  snprintf(pedido, sizeof pedido, "%s", url);
+  snprintf(pedido, sizeof pedido, "%s", grande ? grande : url);
+  free(grande);
   return strdup("{\"streams\":[{\"url\":\"https://x/a.mp4\"}]}");
 }
 void ondever_pedir(const char *id, int series, long tmdb) { (void)id; (void)series; (void)tmdb; }
@@ -56,6 +63,8 @@ void stream_lista_acrescentar(const Stream *l, int n, int o) { (void)l; (void)n;
 void stream_invalidar(const char *p) { (void)p; }
 int stream_n(void) { return 0; }
 int stream_lista_do_alvo(const char *id) { (void)id; return 0; }
+// addons.c recarimba o id normalizado ("tt:1:1") do pedido.
+void stream_definir_alvo(const char *id) { (void)id; }
 Uint32 SDL_GetTicks(void) { return 1000; }
 const char *sessao_usuario(void) { return ""; }
 int perfis_ativo(void) { return 1; }
@@ -176,13 +185,44 @@ int main(void) {
   conferirUrl("a linha seguinte nao foi comida", addons_base(1), "https://curto.test");
   unlink(caminho); rmdir(dir);
 
-  // ---- acima do limite: recusada, nunca cortada
-  conferir("addon de URL grande NAO entra", addons_adicionar("Grande", grande), 0);
-  conferir("a lista continua com dois", addons_n(), 2);
+  // ---- acima do limite (#203): entra como apelido, e o pedido leva a URL INTEIRA
+  { static char enorme[7001], baseE[7001], exp[7100];
+    static AddonRemoto sai[4];
+    const char *bruto;
+    montarUrl(enorme, 7000, "grande.test");
+    snprintf(baseE, sizeof baseE, "%.*s", 7000 - 14, enorme);
+    conferir("addon de URL de 7 KB entra", addons_adicionar("Grande", enorme), 1);
+    conferir("a lista agora tem tres", addons_n(), 3);
+    conferir("a base guardada e curta", strlen(addons_base(2)) < 100, 1);
+    conferir("o mesmo de novo ja esta instalado", addons_adicionar("Grande", enorme), 0);
+    conferir("exporta tres", addons_exportar(sai, 4), 3);
+    bruto = nv_longa_bruto(sai[2].url);
+    conferir("o apelido volta a URL exata que chegou", bruto != NULL && !strcmp(bruto, enorme), 1);
+    nPedidos = nPedidosGrande = 0;
+    buscar("tt0068646");
+    conferir("os tres addons foram consultados", nPedidos, 3);
+    conferir("um pedido saiu para a URL grande", nPedidosGrande, 1);
+    snprintf(exp, sizeof exp, "%s/stream/movie/tt0068646.json", baseE);
+    { char *e2 = nv_longa_expandir(sai[2].url), *e3;
+      char ped[200];
+      snprintf(ped, sizeof ped, "%s/stream/movie/tt0068646.json", sai[2].url);
+      e3 = nv_longa_expandir(ped);
+      conferir("expandir o pedido de 7 KB", e3 != NULL && !strcmp(e3, exp), 1);
+      free(e2); free(e3); }
+    // com query: o caminho entra antes dela
+    { static char q[7100]; char ped[200], *e;
+      snprintf(q, sizeof q, "%.*s/manifest.json?tok=abc", 6000, enorme);
+      snprintf(baseE, sizeof baseE, "%.*s", 6000, enorme);
+      conferir("URL de 6 KB com query entra", addons_adicionar("Q", q), 1);
+      snprintf(ped, sizeof ped, "%s/catalog/movie/top.json?skip=20", addons_base(3));
+      e = nv_longa_expandir(ped);
+      snprintf(exp, sizeof exp, "%s/catalog/movie/top.json?tok=abc&skip=20", baseE);
+      conferir("query do addon viaja com a do pedido", e != NULL && !strcmp(e, exp), 1);
+      free(e); }
+    addons_esquecer(); addons_adicionar("A", longa); addons_adicionar("B", "https://curto.test/manifest.json"); }
   nPedidos = nPedidosGrande = 0;
   buscar("tt0068646");
-  conferir("os dois addons validos foram consultados", nPedidos, 2);
-  conferir("nenhum pedido saiu para a URL grande", nPedidosGrande, 0);
+  conferir("os dois addons foram consultados", nPedidos, 2);
 
   // ---- paridade com o Nuvio oficial (#202): a query viaja, o id e codificado
   { char u[256];

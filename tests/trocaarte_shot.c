@@ -124,15 +124,21 @@ static void abrirPagina(void) {
   quadros(120);
 }
 
-// O OK no ULTIMO circular da linha, pelo caminho de verdade (detail_evento).
+// O "Trocar arte" mora na ilha "Mais opcoes" (detmais.h): OK no "..." (o
+// ULTIMO circular da linha), desce ate a linha dele e OK — o caminho de
+// verdade, por detail_evento.
 static void abrirTroca(void) {
+  int i, l = -1;
   nivel = 0;
-  // O "Trocar arte" ja nao e o ultimo (trailer e explorar vem depois), e nos
-  // layouts agrupados as acoes moram atras do "Mais": abre o grupo.
-  maisAcoes = 1;
-  for (botao = nBotoes() - 1; botao > 0 && acaoEm(botao) != ACAO_ARTE; botao--) {}
-  assert(acaoEm(botao) == ACAO_ARTE);
+  maisAcoes = 1;   // layouts agrupados: o grupo aberto
+  botao = nBotoes() - 1;
+  assert(acaoEm(botao) == ACAO_MAIS);
   quadros(10);
+  tecla(SDLK_RETURN);
+  assert(detmais_aberto());
+  for (i = 0; i < detmais_n(); i++) if (detmais_acao(i) == DMAIS_ARTE) l = i;
+  assert(l >= 0);
+  for (i = 0; i < l; i++) tecla(SDLK_DOWN);
   tecla(SDLK_RETURN);
   assert(trocaarte_aberto());
 }

@@ -9,9 +9,14 @@
 // ONDE ELE ESCREVE E ONDE NAO ESCREVE — a distincao mais importante do arquivo:
 //
 //   PUXA E EMPURRA (o app tem a informacao de verdade):
-//     addons, credenciais (Trakt, TMDB, mdblist), progresso de reproducao e —
+//     credenciais (Trakt, TMDB, mdblist), progresso de reproducao e —
 //     desde o #85 — os AJUSTES DO PERFIL, costurados no blob que a conta ja
 //     tinha (ver sync_proteger_ajustes_locais e ajustes_mesclar_blob).
+//   ADDONS SAO MAO UNICA (#360, 11/10/2026): a TV so PUXA a lista da conta.
+//     Nada daqui sobe — sync_push_addons e a pendencia de edicao local de
+//     addons deixaram de existir: o push substituia a lista inteira do perfil
+//     e era a origem das duplicatas e remocoes cruzadas do relato. A mudanca
+//     local vale nesta TV ate o proximo pull.
 //
 // MEDIDO na conta do dono: sync_pull_provider_credentials devolve animeskip,
 // debrid:premiumize, debrid:realdebrid, debrid:torbox, introdb, mdblist e tmdb
@@ -50,12 +55,27 @@ typedef enum {
 // Idempotente enquanto um ciclo estiver em andamento.
 void sync_iniciar(void);
 
+// SINCRONIZAR ADD-ONS A MAO (#360). Pede uma volta da conta ja (nao espera os 5
+// minutos) e guarda o resultado para a tela de Add-ons dizer o que mudou. A volta
+// e a mesma de sempre, so que marcada: quando acaba, compara a lista de add-ons de
+// antes com a de depois. Sem conta logada nao faz nada (devolve 0).
+int  sync_manual_addons(void);
+// 0 = nada pedido; 1 = rodando; 2 = acabou bem (add/rem/mud preenchidos: quantos
+// entraram, sairam e mudaram de estado ou ordem); 3 = falhou ou o servidor esta
+// fora. Os estados 2 e 3 sao lidos UMA vez (ilhasinais.c, que avisa) e voltam a 0.
+int  sync_manual_addons_estado(int *add, int *rem, int *mud);
+// So consulta, nao consome: a tela de Add-ons desenha o botao ocupado.
+int  sync_manual_addons_rodando(void);
+
 SyncEstado  sync_estado(void);
 const char *sync_resumo(void);   // uma linha para a tela de ajustes
 
 // Marca uma superficie como suja: o proximo ciclo empurra. Chamar quando o
 // usuario mexe em algo local.
 void sync_sujar_progresso(void);
+// No-op desde a mao unica dos addons (#360): a edicao local nao sobe mais.
+// Resta no cabecalho porque os pontos que mexem na lista (addonsui, guia) o
+// chamavam no mesmo gesto; apagar o simbolo nao muda comportamento nenhum.
 void sync_sujar_addons(void);
 
 // Ultimo instante em que um ciclo terminou bem (SDL_GetTicks); 0 se nunca.

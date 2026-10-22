@@ -24,7 +24,7 @@ typedef struct No {
 
 enum { O_BYTE, O_ANY, O_CLASSE, O_SPLIT, O_JMP, O_MARK, O_CHK, O_BOL, O_EOL, O_WB, O_NWB,
        O_LOOK, O_LOOKB, O_ENDAT, O_MATCH };
-typedef struct { unsigned char op; unsigned char neg; int x, y; } Ins;
+typedef struct { unsigned char op; unsigned char neg; int x, y, maxlen; } Ins;
 
 struct RegexJs {
   Ins *prog; int nprog, capprog;
@@ -397,6 +397,31 @@ static int minlen(const Pr *pr, int n) {
   }
 }
 
+// Limite em bytes para o lookbehind; -1 se pode consumir sem limite.
+// Satura no teto de texto da VM, evitando overflow em repeticoes aninhadas.
+static int maxlen(const Pr *pr, int n) {
+  const No *o = &pr->no[n];
+  int a, b;
+  switch (o->tipo) {
+    case N_BYTE: return 1;
+    case N_ANY: case N_CLASSE: return 4; // um codepoint UTF-8
+    case N_SEQ: case N_ALT:
+      a = maxlen(pr, o->f1); b = maxlen(pr, o->f2);
+      if (a < 0 || b < 0) return -1;
+      a = o->tipo == N_SEQ ? a + b : (a > b ? a : b);
+      break;
+    case N_REP:
+      if (o->b == 0) return 0;
+      a = maxlen(pr, o->f1);
+      if (a == 0) return 0;
+      if (a < 0 || o->b < 0) return -1;
+      a *= o->b;
+      break;
+    default: return 0; // assercoes nao consomem texto
+  }
+  return a > 8192 ? 8192 : a;
+}
+
 static void emiteNo(Em *em, int n);
 
 static void emiteRep(Em *em, const No *o) {
@@ -468,6 +493,7 @@ static void emiteNo(Em *em, int n) {
         int reg = re->nreg++;
         a = emite(em, O_LOOKB, o->b, 0, reg);
         if (em->erro) return;
+        re->prog[a].maxlen = maxlen(em->pr, o->f1);
         emiteNo(em, o->f1);
         emite(em, O_ENDAT, 0, reg, 0);
         emite(em, O_MATCH, 0, 0, 0);
@@ -617,8 +643,9 @@ static int roda(Ctx *cx, int pc, int sp) {
         goto fim; }
       case O_LOOKB: {
         int j, r = 0, antigo = cx->reg[in->y];
+        int inicio = in->maxlen >= 0 && sp > in->maxlen ? sp - in->maxlen : 0;
         cx->reg[in->y] = sp;
-        for (j = sp; j >= 0 && !r && !cx->estourou; j--) {
+        for (j = sp; j >= inicio && !r && !cx->estourou; j--) {
           if (j > 0 && j < cx->n && (cx->s[j] & 0xC0) == 0x80) continue;
           r = roda(cx, pc + 1, j);
         }

@@ -12,7 +12,23 @@
 //
 //   bash tests/socialui_shot.sh /tmp/nv-socialui
 #define NV_REC_URL "http://127.0.0.1:8799"
+// A CONTA TRAKT E O LOGIN DO SIMKL NA TV, so para as linhas de "Contas
+// ligadas" (o resto do app continua com os de verdade, sem login).
+#define trakt_ativo     shot_trakt_ativo
+#define sessao_token_copiar shot_sessao_token_copiar
+#define sessao_logada shot_sessao_logada
+#define simklauth_token shot_simklauth_token
 #include "../src/recomenda.c"
+#undef trakt_ativo
+#undef sessao_token_copiar
+#undef sessao_logada
+#undef simklauth_token
+static int contasNaTv;
+int shot_trakt_ativo(void) { return contasNaTv; }
+// sessao.c (#203) entrega o token por copia.
+int shot_sessao_token_copiar(char *d, size_t n) { snprintf(d, n, "%s", contasNaTv ? "tok-shot" : ""); return contasNaTv; }
+int shot_sessao_logada(void) { return contasNaTv; }
+const char *shot_simklauth_token(void) { return contasNaTv ? "simkl-shot" : ""; }
 #include "ajustes.h"
 #include "amigoperfil.h"
 #include "amigosfil.h"
@@ -22,6 +38,7 @@
 #include "home.h"
 #include "layout.h"
 #include "salvospainel.h"
+#include "avisos.h"
 #include "ctxmenu.h"
 #include "reacao.h"
 #include "recresp.h"
@@ -95,6 +112,26 @@ static void tecla(SDL_Keycode k) {
   home_evento(&e);
   e.type = SDL_KEYUP;
   home_evento(&e);
+}
+
+// Leva o foco da aba Amigos a linha do tipo `nome` (spainel_foco_social).
+static void focar(const char *nome) {
+  SDL_Event e;
+  int k;
+  memset(&e, 0, sizeof e);
+  e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_UP;
+  for (k = 0; k < 40; k++) spainel_evento(&e);      // as abas
+  e.key.keysym.sym = SDLK_DOWN;
+  for (k = 0; k < 60 && strcmp(spainel_foco_social(), nome); k++) spainel_evento(&e);
+  if (strcmp(spainel_foco_social(), nome)) { fprintf(stderr, "sem linha %s\n", nome); exit(1); }
+}
+static void painelTecla(SDL_Keycode k) {
+  SDL_Event e;
+  memset(&e, 0, sizeof e);
+  e.type = SDL_KEYDOWN; e.key.keysym.sym = k;
+  spainel_evento(&e);
+  e.type = SDL_KEYUP;
+  spainel_evento(&e);
 }
 
 static void ajusta(void) {
@@ -279,40 +316,77 @@ int main(int argc, char **argv) {
   quadros(90, NULL);
   snprintf(bmp, sizeof bmp, "%s-painel-amigos.bmp", saida);
   quadros(1, bmp);
-  { SDL_Event e;
-    int k;
-    memset(&e, 0, sizeof e);
-    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_DOWN;
-    for (k = 0; k < 2; k++) spainel_evento(&e); }
+  // --- AMIGOS 06/10: as duas portas, a previa, o nivel em segmentos -------
+  focar("encontrar");
   quadros(90, NULL);
-  snprintf(bmp, sizeof bmp, "%s-painel-amigos-foco.bmp", saida);
+  snprintf(bmp, sizeof bmp, "%s-painel-portas.bmp", saida);
   quadros(1, bmp);
-  { SDL_Event e;
-    int k;
-    memset(&e, 0, sizeof e);
-    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_DOWN;
-    for (k = 0; k < 4; k++) spainel_evento(&e); }   // "Como voce aparece"
+  focar("previa");
   quadros(90, NULL);
-  snprintf(bmp, sizeof bmp, "%s-painel-amigos-nome.bmp", saida);
+  snprintf(bmp, sizeof bmp, "%s-painel-previa.bmp", saida);
   quadros(1, bmp);
-  // --- F08: o Trakt ligado a este perfil (servidor com "identidade1") ---
+  focar("alcance");
+  quadros(60, NULL);
+  snprintf(bmp, sizeof bmp, "%s-painel-alcance-seg.bmp", saida);
+  quadros(1, bmp);
+  painelTecla(SDLK_RIGHT);                           // cursor em "Amigos de amigos"
+  quadros(40, NULL);
+  snprintf(bmp, sizeof bmp, "%s-painel-alcance-cursor.bmp", saida);
+  quadros(1, bmp);
+  painelTecla(SDLK_RETURN);
+  printf("alcance pelo segmento: %d\n", recomenda_alcance());
+  assert(recomenda_alcance() == REC_ALCANCE_AMIGOS2);
+  painelTecla(SDLK_LEFT);
+  painelTecla(SDLK_RETURN);                          // de volta a "Amigos"
+  assert(recomenda_alcance() == REC_ALCANCE_AMIGOS);
+  // --- CONTAS LIGADAS: Trakt e Simkl para ligar, Letterboxd para ligar ------
   SDL_LockMutex(mtx);
   identRecurso = 1;
+  identTrakt[0] = 0;
+  SDL_UnlockMutex(mtx);
+  contasNaTv = 1;
+  spainel_ir_aba(1); quadros(5, NULL); spainel_ir_aba(2);   // reconstroi com as contas
+  quadros(30, NULL);
+  focar("trakt");
+  quadros(90, NULL);
+  snprintf(bmp, sizeof bmp, "%s-painel-contas-antes.bmp", saida);
+  quadros(1, bmp);
+  // LIGANDO: o OK manda o pedido; o fio (de mentira) ainda nao respondeu.
+  SDL_LockMutex(mtx); identOp = REC_IDENT_OP_INDO; SDL_UnlockMutex(mtx);
+  quadros(20, NULL);
+  snprintf(bmp, sizeof bmp, "%s-painel-contas-ligando.bmp", saida);
+  quadros(1, bmp);
+  // O SERVIDOR RESPONDEU: ligado. Tres quadros da animacao e o fim.
+  SDL_LockMutex(mtx);
+  identOp = REC_IDENT_OP_OK;
   snprintf(identTrakt, sizeof identTrakt, "%s", "rique-trakt");
   SDL_UnlockMutex(mtx);
-  quadros(10, NULL);
-  { SDL_Event e;
+  { static const unsigned em[3] = { 180, 420, 640 };
+    Uint32 t0;
     int k;
-    memset(&e, 0, sizeof e);
-    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_DOWN;
-    for (k = 0; k < 2; k++) spainel_evento(&e); }   // "Trakt neste perfil"
-  quadros(90, NULL);
-  snprintf(bmp, sizeof bmp, "%s-painel-ident-unida.bmp", saida);
+    quadros(1, NULL);                                  // o desenho ve a virada
+    t0 = SDL_GetTicks();
+    for (k = 0; k < 3; k++) {
+      while (SDL_GetTicks() - t0 < em[k]) SDL_Delay(2);
+      snprintf(bmp, sizeof bmp, "%s-painel-contas-anim-%d.bmp", saida, k + 1);
+      quadros(1, bmp);
+    } }
+  quadros(60, NULL);
+  snprintf(bmp, sizeof bmp, "%s-painel-contas-depois.bmp", saida);
   quadros(1, bmp);
-  { SDL_Event e;
-    memset(&e, 0, sizeof e);
-    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RETURN;
-    spainel_evento(&e); }                            // 1o OK: pede confirmacao
+  // As tres ligadas, com o foco fora delas.
+  SDL_LockMutex(mtx);
+  identSimklLig = 1;
+  snprintf(identLbUsuario, sizeof identLbUsuario, "%s", "henrique");
+  SDL_UnlockMutex(mtx);
+  quadros(120, NULL);
+  focar("aparecer");
+  quadros(60, NULL);
+  snprintf(bmp, sizeof bmp, "%s-painel-contas-todas.bmp", saida);
+  quadros(1, bmp);
+  // CONFIRMAR SEPARAR (1o OK no Trakt ligado) e o conflito, como antes.
+  focar("trakt");
+  painelTecla(SDLK_RETURN);
   quadros(30, NULL);
   snprintf(bmp, sizeof bmp, "%s-painel-ident-confirma.bmp", saida);
   quadros(1, bmp);
@@ -323,16 +397,18 @@ int main(int argc, char **argv) {
   snprintf(bmp, sizeof bmp, "%s-painel-ident-conflito.bmp", saida);
   quadros(1, bmp);
   SDL_LockMutex(mtx);
-  identRecurso = 0; identOp = REC_IDENT_OP_NADA;    // servidor antigo: a linha some
+  identRecurso = 0; identOp = REC_IDENT_OP_NADA;    // servidor antigo: as linhas somem
+  identSimklLig = 0; identLbUsuario[0] = 0;
   SDL_UnlockMutex(mtx);
+  contasNaTv = 0;
   quadros(30, NULL);
   // --- W10 (03/10): menu do OK longo nas abas, "Ja assisti" e Assistidas ---
   { SDL_Event e;
     int k;
     memset(&e, 0, sizeof e);
-    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_UP;
-    for (k = 0; k < 12; k++) spainel_evento(&e);      // primeira linha (a rec)
-    e.key.keysym.sym = SDLK_DOWN; spainel_evento(&e);
+    e.type = SDL_KEYDOWN;
+    (void)k;
+    focar("rec");                                     // a rec
     quadros(30, NULL);
     e.key.keysym.sym = SDLK_RETURN; spainel_evento(&e);   // segura OK
     SDL_Delay(760);
@@ -342,7 +418,7 @@ int main(int argc, char **argv) {
     e.type = SDL_KEYUP; ctx_evento(&e);
     e.type = SDL_KEYDOWN;
     e.key.keysym.sym = SDLK_DOWN;
-    for (k = 0; k < 3; k++) ctx_evento(&e);           // "Ja assisti"
+    for (k = 0; k < 2; k++) ctx_evento(&e);           // "Ja assisti" (sem "Mais informações")
     e.key.keysym.sym = SDLK_RETURN; ctx_evento(&e);
     quadros(60, NULL);
     snprintf(bmp, sizeof bmp, "%s-painel-ja-assisti.bmp", saida);
@@ -366,6 +442,54 @@ int main(int argc, char **argv) {
     quadros(1, bmp);
     e.key.keysym.sym = SDLK_ESCAPE; ctx_evento(&e);
     quadros(20, NULL); }
+  // --- PEDIDOS DE AMIZADE NA ABA AMIGOS (06/10) ---------------------------
+  // Tres pedidos na caixa: a secao abre a aba, com Aceitar/Recusar por linha.
+  // O OK responde e a linha sai NA HORA (sem esperar o servidor).
+  { static const char *ap[3] = { "cine-ana", "rafa-series", "lu" };
+    static const char *bio[3] = { "Terror e ficção, sempre", "", "Maratono k-drama" };
+    SDL_Event e;
+    int k, antes;
+    SDL_LockMutex(mtx);
+    for (k = 0; k < 3; k++) {
+      memset(&pedidosRec[k], 0, sizeof pedidosRec[k]);
+      snprintf(pedidosRec[k].pub, sizeof pedidosRec[k].pub, "pub000000%d", k);
+      snprintf(pedidosRec[k].apelido, sizeof pedidosRec[k].apelido, "%s", ap[k]);
+      snprintf(pedidosRec[k].bio, sizeof pedidosRec[k].bio, "%s", bio[k]);
+      snprintf(pedidosRec[k].relacao, sizeof pedidosRec[k].relacao, "recebido");
+    }
+    snprintf(pedidosRec[0].avatar, sizeof pedidosRec[0].avatar, "deploy/app/art/elenco/01_0.jpg");
+    nPedidos = 3;
+    SDL_UnlockMutex(mtx);
+    spainel_ir_aba(2);
+    quadros(60, NULL);
+    memset(&e, 0, sizeof e);
+    e.type = SDL_KEYDOWN;
+    e.key.keysym.sym = SDLK_UP;
+    for (k = 0; k < 20; k++) spainel_evento(&e);
+    e.key.keysym.sym = SDLK_DOWN; spainel_evento(&e);   // primeiro pedido
+    quadros(60, NULL);
+    snprintf(bmp, sizeof bmp, "%s-painel-pedidos.bmp", saida);
+    quadros(1, bmp);
+    e.key.keysym.sym = SDLK_RIGHT; spainel_evento(&e);  // Recusar
+    quadros(30, NULL);
+    snprintf(bmp, sizeof bmp, "%s-painel-pedidos-recusar.bmp", saida);
+    quadros(1, bmp);
+    e.key.keysym.sym = SDLK_LEFT; spainel_evento(&e);   // de volta a Aceitar
+    antes = spainel_n_reconstrucoes();
+    e.key.keysym.sym = SDLK_RETURN; spainel_evento(&e);
+    e.type = SDL_KEYUP; spainel_evento(&e); e.type = SDL_KEYDOWN;
+    quadros(40, NULL);
+    printf("pedidos: reconstrucoes %d -> %d\n", antes, spainel_n_reconstrucoes());
+    snprintf(bmp, sizeof bmp, "%s-painel-pedidos-aceito.bmp", saida);
+    quadros(1, bmp);
+    // A linha dos Avisos que leva para a aba.
+    SDL_LockMutex(mtx); socEstado = REC_SOC_NADA; SDL_UnlockMutex(mtx);
+    avisos_atualizar(1.0f / 60.0f, SDL_GetTicks() + 3000u);   // colhe a linha dos pedidos
+    assert(avisos_lista_n() >= 1);
+    spainel_ir_aba(3);
+    quadros(200, NULL);
+    snprintf(bmp, sizeof bmp, "%s-painel-avisos-pedidos.bmp", saida);
+    quadros(1, bmp); }
   spainel_fechar();
   quadros(30, NULL);
 

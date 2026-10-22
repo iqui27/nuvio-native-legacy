@@ -45,6 +45,9 @@ Resposta: `{"ok":1,"guardado":0|1,"evento":0|1}` (`guardado:0` = alcance < 1).
 Detalhes do servidor:
 - `progresso`: so atualiza "assistindo agora" (vence 15 min) e agregados; nao
   vira evento. `inicio` tambem liga "agora"; `fim`/`abandono` desligam.
+- **06/10/2026 — sair do player nao e mais evento.** O cliente novo manda
+  `progresso` com `"parou":1` (fecha o "agora" em vez de renova-lo); o
+  `abandono` de cliente antigo faz o mesmo e tambem NAO vira linha de `evento`.
 - Mesmo ev+titulo+episodio+reacao em 10 min = um evento so.
 - `seg` limitado a 4 h por evento; `poster` so de host conhecido (tmdb,
   metahub, amazon, tvdb, trakt), senao vazio.
@@ -108,9 +111,14 @@ cliente antigo ignora, cliente novo tolera a ausencia):
 
 ## GET /v1/feed?desde=<id>
 
-Eventos `inicio|fim|abandono|reacao|salvo` de quem eu posso ver, mais novo
-primeiro, ate 50, com `ETag`/`If-None-Match` (304). O cliente pede sempre
-`desde=0` (para quem baixa o nivel sumir da lista).
+So o que diz algo (06/10/2026): `fim`, `reacao` e o `inicio` da PRIMEIRA vez
+de uma serie (filme comecado, episodio seguinte, `abandono` e `salvo` ficam de
+fora — as linhas antigas continuam na tabela, so nao saem). UMA LINHA POR
+PESSOA E TITULO: os `fim` de uma serie viram uma linha com `"eps":<episodios
+distintos>` (so quando > 1) e a reacao mais nova do mesmo titulo vai junto do
+`fim` em `"reac":1|0|-1`. De quem eu posso ver, mais novo primeiro, ate 50, com
+`ETag`/`If-None-Match` (304). O cliente pede sempre `desde=0` (para quem baixa
+o nivel sumir da lista).
 
 ```
 {"cursor":11,"itens":[{"id":11,"de":"nuvio:aaa"|"pub:<handle>","deNome":"..",

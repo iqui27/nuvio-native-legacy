@@ -124,6 +124,11 @@ checa "F aceita H" 1 "$(tem "$(api f POST /v1/pedidos/aceitar "{\"pub\":\"$pub_h
 checa "amizade simetrica (F ve H)" 1 "$(tem "$(api f GET /v1/contatos)" 'nuvio:hhh')"
 checa "amizade simetrica (H ve F)" 1 "$(tem "$(api h GET /v1/contatos)" 'nuvio:fff')"
 checa "aceitar sem pedido e 404" 404 "$(cod f /v1/pedidos/aceitar "{\"pub\":\"$pub_g\"}")"
+# pedido pendurado de quem JA e amigo (vinculo por outro caminho) nao aparece
+# na caixa: aceitar seria um botao sem efeito (06/10: 2 de 21 em producao)
+sql "INSERT OR IGNORE INTO pedido (de, para, criado, estado) VALUES ('nuvio:hhh', 'nuvio:fff', strftime('%s','now'), 0)"
+checa "pedido de quem ja e amigo nao aparece" 1 "$(tem "$(api f GET /v1/pedidos)" '"recebidos":\[\]')"
+sql "DELETE FROM pedido WHERE de = 'nuvio:hhh' AND para = 'nuvio:fff'"
 
 # dois pedidos cruzados = amigos sem passo extra
 api g POST /v1/pedidos/enviar "{\"pub\":\"$pub_h\"}" > /dev/null
@@ -173,7 +178,10 @@ checa "e o cartao publico mostra" 1 "$(tem "$(api g POST /v1/perfis/ver "{\"pub\
 checa "mas o feed dos amigos continua vazio (ativ=0)" 1 "$(tem "$(api h GET /v1/amigos/atividade)" '"itens":\[\]')"
 # gosto parecido
 checa "3 titulos em comum sugere" 1 "$(tem "$(api g POST /v1/perfis/sugeridos '{"imdbs":["tt0111161","tt0068646","tt0468569","tt9999999"]}')" '"emComum":3')"
-checa "2 titulos nao bastam" 1 "$(tem "$(api g POST /v1/perfis/sugeridos '{"imdbs":["tt0111161","tt0068646"]}')" '"sugeridos":\[\]')"
+checa "limiar adaptativo: 2 titulos (poucos enviados) ja sugerem, com o motivo" 1 "$(tem "$(api g POST /v1/perfis/sugeridos '{"imdbs":["tt0111161","tt0068646"]}')" '"motivo":{"tipo":"titulos","n":2')"
+checa "o motivo de titulos nunca diz QUAIS titulos" 0 "$(tem "$(api g POST /v1/perfis/sugeridos '{"imdbs":["tt0111161","tt0068646"]}')" 'T tt0111161')"
+checa "sem titulo nenhum: ainda volta alguem, com motivo (generos ou ativos)" 1 "$(tem "$(api g POST /v1/perfis/sugeridos '{"imdbs":[]}')" '"motivo":{"tipo":"\(generos\|ativos\)"')"
+checa "sem titulo em comum o motivo nao inventa titulos" 0 "$(tem "$(api g POST /v1/perfis/sugeridos '{"imdbs":["tt7777777"]}')" '"tipo":"titulos"')"
 checa "o cartao de gosto nao vaza nome/id" 0 "$(tem "$(api g POST /v1/perfis/sugeridos '{"imdbs":["tt0111161","tt0068646","tt0468569"]}')" 'Fabiana\|nuvio:')"
 checa "quem nao e pesquisavel nao ve os outros" 1 "$(tem "$(api a POST /v1/perfis/sugeridos '{"imdbs":["tt0111161","tt0068646","tt0468569"]}')" '"sugeridos":\[\]')"
 # amigo nao vira sugestao
@@ -183,7 +191,7 @@ checa "amigo nao e sugerido" 0 "$(tem "$(api h POST /v1/perfis/sugeridos '{"imdb
 checa "F bloqueia G" 1 "$(tem "$(api f POST /v1/bloquear "{\"pub\":\"$pub_g\"}")" '"ok":1')"
 checa "G nao acha mais F na busca" 1 "$(tem "$(api g POST /v1/perfis/buscar '{"q":"fabi"}')" '"resultados":\[\]')"
 checa "G nao abre o cartao de F" 404 "$(cod g /v1/perfis/ver "{\"pub\":\"$pub_f\"}")"
-checa "sugestao de gosto nao mostra F a G" 1 "$(tem "$(api g POST /v1/perfis/sugeridos '{"imdbs":["tt0111161","tt0068646","tt0468569"]}')" '"sugeridos":\[\]')"
+checa "sugestao de gosto nao mostra F a G" 0 "$(tem "$(api g POST /v1/perfis/sugeridos '{"imdbs":["tt0111161","tt0068646","tt0468569"]}')" 'fabi cine')"
 r=$(api g POST /v1/pedidos/enviar "{\"pub\":\"$pub_f\"}")
 checa "pedido de G parece enviado (nao revela o bloqueio)" 1 "$(tem "$r" '"estado":"enviado"')"
 checa "mas F nao recebe nada" 1 "$(tem "$(api f GET /v1/pedidos)" '"recebidos":\[\]')"

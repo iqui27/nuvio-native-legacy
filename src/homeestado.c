@@ -148,30 +148,11 @@ static unsigned hashOrdemConta(void) {
 }
 
 // Colecoes definem fileiras estruturais. Nomes e ids fazem parte da
-// configuracao; URLs de arte podem atualizar sem criar outra fileira.
-static unsigned hashColecoes(void) {
-  unsigned h = 2166136261u;
-  int i;
-  h = hashBytes(h, &(int){col_n()}, sizeof(int));
-  for (i = 0; i < col_n(); i++) {
-    const ColFolder *f = col_folder(i);
-    int s;
-    if (!f) continue;
-    h = hashTexto(h, f->group);
-    h = hashTexto(h, f->id);
-    h = hashBytes(h, &f->nSources, sizeof f->nSources);
-    for (s = 0; s < f->nSources; s++) {
-      const ColSource *src = &f->sources[s];
-      h = hashTexto(h, src->prov); h = hashTexto(h, src->addonId);
-      h = hashTexto(h, src->base); h = hashTexto(h, src->type);
-      h = hashTexto(h, src->catId); h = hashTexto(h, src->tmdbTipo);
-      h = hashBytes(h, &src->tmdbId, sizeof src->tmdbId);
-      h = hashTexto(h, src->midia); h = hashTexto(h, src->ordenar);
-      h = hashTexto(h, src->ordem); h = hashBytes(h, &src->traktLista, sizeof src->traktLista);
-    }
-  }
-  return h;
-}
+// configuracao; URLs de arte podem atualizar sem criar outra fileira. O hash
+// e feito DENTRO de colecoes.c, sob a trava (#203): este codigo roda no fio da
+// montagem, e ler col_folder(i)->sources aqui era ler um bloco que o sync do
+// laco principal podia liberar no meio.
+static unsigned hashColecoes(void) { return col_hash_estrutura(); }
 
 void homeestado_contexto(HomeContexto *c) {
   const char *u = sessao_usuario();

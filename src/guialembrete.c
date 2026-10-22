@@ -13,6 +13,7 @@
 #include "idioma.h"
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
+#include "ponteiro.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -114,6 +115,15 @@ int glem_pediu_assistir(char *id, size_t tam, char *nome, size_t tamNome,
   return 1;
 }
 
+// PONTEIRO (#99): foco pela mesma variavel das setas (que tambem reiniciam o
+// relogio do cartao); o OK do clique segue por glem_evento.
+static void ponteiroFoco(int i, int b) {
+  (void)b;
+  if (modo != 1 || (i != 0 && i != 1) || foco == i) return;
+  foco = i; desde = SDL_GetTicks();
+}
+int glem_teste_foco(void) { return foco; }
+
 static void glem_desenharCorpo_(Uint32 agora);
 // Camada ampliada (escala.h): o corpo desenha na tela virtual.
 void glem_desenhar(Uint32 agora) {
@@ -161,6 +171,12 @@ static void glem_desenharCorpo_(Uint32 agora) {
     txt_bloco_corta(TXT_G28B, aTexto, 243, 242, 239, x, y, W - 60.0f, lead, a, 2);
     y += hT + 22.0f;
     { float bx = x;
+      if (modo == 1 && a > 0.99f) {   // so assentado (sem o deslize da entrada)
+        float w0 = plrui_botao_largura("Assistir", "pl_play-f");
+        ponteiro_alvo(bx, y, w0, 60.0f, ponteiroFoco, NULL, 0, 0);
+        ponteiro_alvo(bx + w0 + 12.0f, y, plrui_botao_largura("Dispensar", NULL), 60.0f,
+                      ponteiroFoco, NULL, 1, 0);
+      }
       bx += plrui_botao(bx, y, "Assistir", "pl_play-f", foco == 0 ? 1.0f : 0.0f, a) + 12.0f;
       plrui_botao(bx, y, "Dispensar", NULL, foco == 1 ? 1.0f : 0.0f, a); }
     y += 60.0f + 22.0f;

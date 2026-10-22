@@ -134,4 +134,16 @@ int prox_para_item(const CatItem *ci, const CatEp *eps, int n,
 int prox_seguinte(const CatItem *ci, const CatEp *eps, int n, int limiarPct,
                   long long agoraMs, ProxSugestao *saida);
 
+// O EPISODIO SEGUINTE a (temporada, episodio) que esta tocando: o menor par
+// ESTRITAMENTE maior, nao "o indice seguinte" (2.0.3). Indice em `eps` ou -1.
+//   - fim da temporada cai no primeiro episodio da seguinte que exista;
+//   - episodio faltando na lista (E5 ausente) pula para o E6;
+//   - entrada repetida do MESMO episodio (dois videos no /meta) nao e o proximo
+//     — com "indice + 1" o cartao oferecia o episodio que estava tocando;
+//   - temporada 0 (especiais) so e proximo de outro especial;
+//   - o episodio corrente nem precisa estar na lista (numeracao que o addon
+//     nao tem): o seguinte e o primeiro maior que ele.
+// O cartao (posplay.c) e a janela (player.c) usam esta mesma regra: antes cada
+// um tinha a sua e podiam discordar.
+int prox_indice_seguinte(const CatEp *eps, int n, int temporada, int episodio);
 #endif

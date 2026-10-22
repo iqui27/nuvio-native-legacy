@@ -1,4 +1,6 @@
 #!/bin/bash
+# -DNV_DESC_MIN_MS=0ull: este teste e anterior ao minimo de 10 s entre voltas
+# (descdebounce.h, #319); confere a montagem, nao a regra de espera.
 # Trakt (watchlist/colecao) na tela sem esperar os addons; volta condenada para
 # no meio em vez de ir ate o fim; addons novos antes da leitura da lista nao
 # condenam; catalogo pendurado nao segura a rodada. Ver tests/montagem_cedo.c.
@@ -9,7 +11,7 @@ cd "$(dirname "$0")/.."
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 # Tetos de espera do catalogo lento encurtados: o caso 6 nao precisa de 4 s.
-cc ${flags[@]+"${flags[@]}"} -DCAT_ESPERA_SILENCIO_MS=300 -DCAT_ESPERA_MIN_MS=600 \
+cc ${flags[@]+"${flags[@]}"} -DNV_DESC_MIN_MS=0ull -DCAT_ESPERA_SILENCIO_MS=300 -DCAT_ESPERA_MIN_MS=600 \
   src/cwordem.c tests/montagem_cedo.c src/homeestado.c src/catalogo.c \
   src/progresso.c src/js.c src/metaprov.c src/colecoes.c src/redeurl.c src/catordem.c src/cotacat.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \

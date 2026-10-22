@@ -123,7 +123,15 @@ int main(void) {
     CONFERE(f[1].acao == REC_ACAO_INICIO && f[1].temporada == 2 && f[1].episodio == 5, "inicio com episodio");
     CONFERE(!strcmp(f[1].titulo, "Serie \"X\"") && !strcmp(f[1].midia, "series"), "titulo com aspas e midia");
     CONFERE(f[2].grau == 2 && !strcmp(f[2].via, "Gustavo"), "amigo de amigo com via");
-    CONFERE(SEM_NOME(f[2].pessoaNome), "amigo de amigo sem nome nao mostra o handle (\"%s\")", f[2].pessoaNome); }
+    CONFERE(SEM_NOME(f[2].pessoaNome), "amigo de amigo sem nome nao mostra o handle (\"%s\")", f[2].pessoaNome);
+    CONFERE(f[0].eps == 0 && !f[1].temReacFim, "servidor antigo: sem eps, sem reacao junto do fim"); }
+  // O servidor agrupado (06/10/2026): "eps" e a reacao junto do "terminou".
+  { RecEvento f[2];
+    const char *j = "{\"itens\":[{\"id\":9,\"de\":\"nuvio:a\",\"deNome\":\"Ana\",\"ev\":\"fim\","
+                    "\"imdb\":\"tt1\",\"midia\":\"series\",\"temporada\":1,\"episodio\":3,\"eps\":3,"
+                    "\"reac\":-1,\"reacao\":-1,\"criado\":10}]}";
+    CONFERE(feedParse(j, f, 2) == 1 && f[0].eps == 3 && f[0].temReacFim && f[0].reacFim == -1,
+            "feed agrupado: eps e reac lidos"); }
 
   // --- perfil do amigo (JSON real) ----------------------------------------------
   { static RecAmigo a;

@@ -82,6 +82,15 @@ static int gpuFraca = 0;
 void ptv_definir_gpu_fraca(int f) { gpuFraca = f ? 1 : 0; }
 int  ptv_gpu_fraca_atual(void) { return gpuFraca; }
 
+static int gpuUtgardAtual = 0;
+void ptv_definir_gpu_utgard(int u) { gpuUtgardAtual = u ? 1 : 0; }
+int  ptv_gpu_utgard_atual(void) { return gpuUtgardAtual; }
+
+int ptv_gpu_utgard(const char *r) {
+  const char *m = r ? strstr(r, "Mali-") : NULL;
+  return m && m[5] == '4' && m[6] >= '0' && m[6] <= '9';
+}
+
 int ptv_gpu_fraca(const char *r) {
   const char *m;
   if (!r) return 0;
@@ -89,7 +98,7 @@ int ptv_gpu_fraca(const char *r) {
   if (!m) return 0;
   m += 5;
   // Utgard (Mali-400/450/470): so GLES2, o mais fraco de todos.
-  if (m[0] == '4' && m[1] >= '0' && m[1] <= '9') return 1;
+  if (ptv_gpu_utgard(r)) return 1;
   // Midgard (Mali-T6xx/T7xx/T8xx) e o "Mali-TDVX" que a Samsung rebatiza.
   if (m[0] == 'T') return 1;
   return 0;
@@ -182,6 +191,11 @@ void ptv_padrao(PtvPlataforma p, long mem, PtvPerfil *out) {
   out->heroiLarg = p == PTV_TIZEN ? 1280 : ptv_heroi_max(p, mem);
   // .tpk: 1920 so com 2 GB ou mais E GPU que nao e das fracas (tabela acima).
   if (p == PTV_TPK && (gpuFraca || mem < 2000)) out->heroiLarg = 1280;
+  // Utgard (#286, registro 1V5YJY): o heroi decodificado a 1280 chegava depois
+  // do prazo de 600 ms em 26 de 55 trocas, e a TV so tem 2 fios de decode. 960
+  // tem 56% dos pixels de 1280 (decode e upload menores) e a tela de 1920 ja
+  // ampliava a arte; GPUs que nao sao Utgard continuam em 1280/1920.
+  if (p == PTV_TPK && gpuUtgardAtual) out->heroiLarg = 960;
 }
 
 // QUALIDADE = o teto que a RAM permite em tudo. DESEMPENHO = menos pressao:

@@ -5,6 +5,7 @@
 
 static char base[64];
 static unsigned rev;
+static int tambem;
 
 int cw_retido_definir(const char *imdb) {
   char b[64] = "";
@@ -22,5 +23,12 @@ unsigned cw_retido_rev(void) { return rev; }
 
 int cw_retido_exclui(const char *imdb) {
   size_t L = strlen(base);
-  return L && imdb && idbase_len(imdb) == L && !strncmp(imdb, base, L);
+  return !tambem && L && imdb && idbase_len(imdb) == L && !strncmp(imdb, base, L);
+}
+
+void cw_retido_tambem_definir(int ligado) {
+  ligado = ligado ? 1 : 0;
+  if (ligado == tambem) return;
+  tambem = ligado;
+  rev++;
 }

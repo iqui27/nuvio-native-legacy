@@ -1,0 +1,2 @@
+Assertion failed: (creditosAuto.voltou && creditosAuto.voltouDe == 1450), function main, file player_recuo.c, line 17.
+tests/player_recuo.sh: line 16: 72277 Abort trap: 6           NUVIO_DADOS="$dir/dados" "$dir/test"

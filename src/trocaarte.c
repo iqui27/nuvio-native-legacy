@@ -13,6 +13,8 @@
 #include "linguas.h"
 #include "detail.h"
 #include "ponteiro.h"
+#include "rolagemtoque.h"
+#include "telefoneui.h"
 #include "rede.h"
 #include "tex_cache.h"
 #include "text.h"
@@ -54,6 +56,17 @@ static int naFiltro;         // ...e, nela, no chip de idioma
 static char filtro[8];       // idioma mostrado nas duas abas ("" = todos, "-" = sem texto)
 static int foco[2];          // indice em cand[aba], nao na lista visivel
 static int topo[2];          // primeira linha visivel da grade
+#ifdef NV_TOUCH_UI
+static ToqueRolagem toque[2];
+static float toqueY[2];
+static int toqueAba;
+static void toqueRetomar(void);
+static int toqueRolar(const PonteiroRolagem *e) {
+  if (!aberto) return 0;
+  if (e->fase == PONT_ROL_INICIO) toqueAba = aba;
+  return toquerol_evento(&toque[toqueAba], e);
+}
+#endif
 static int okDesceu;
 static int mudou;
 static Uint32 focoDesde;
@@ -69,14 +82,20 @@ static int  previaLogoTem;
 // na margem de 96 da pagina com folga. A primeira linha comeca em 628 para a
 // metade de cima da tela ficar inteira para a previa — e para o que se esta
 // escolhendo, o fundo, ser o assunto.
-#define TA_COLS   5
+#define TA_COLS   taColunas()
 #define TA_LINHAS 2
 #define TA_W      304.0f
 #define TA_H      171.0f
 #define TA_GAP    24.0f
 #define TA_X0     96.0f
-#define TA_Y0     628.0f
+#define TA_Y0     (telefoneui_ativo() && NV_TELA_W < 1500 ? 756.0f : 628.0f)
 #define TA_PASSO  (TA_H + 48.0f)
+
+static int taColunas(void) {
+  if (!telefoneui_ativo()) return 5;
+  int n = (int)((NV_TELA_W - 2 * TA_X0 + TA_GAP) / (TA_W + TA_GAP));
+  return n < 1 ? 1 : n > 5 ? 5 : n;
+}
 
 // A MESMA FOTO em outro tamanho conta como repetida: o catalogo manda o
 // backdrop do TMDB em w1280 e a lista do /images vem com o mesmo arquivo.
@@ -274,6 +293,9 @@ void trocaarte_abrir(const CatItem *it) {
   aberto = 1; aba = 0; naAba = 0; naFiltro = 0; okDesceu = 0; mudou = 0;
   filtro[0] = 0;
   foco[0] = foco[1] = 0; topo[0] = topo[1] = 0;
+#ifdef NV_TOUCH_UI
+  memset(toque, 0, sizeof toque); memset(toqueY, 0, sizeof toqueY);
+#endif
   previa[0] = previaLogo[0] = 0; previaLogoTem = 0;
   focoDesde = SDL_GetTicks();
   { const char *f = arteesc_fundo(chave), *l = arteesc_logo(chave);
@@ -420,6 +442,9 @@ static void filtroProximo(int a) {
     else filtro[0] = 0;
   }
   topo[0] = topo[1] = 0;
+#ifdef NV_TOUCH_UI
+  memset(toque, 0, sizeof toque); memset(toqueY, 0, sizeof toqueY);
+#endif
   previa[0] = 0;
   focoDesde = SDL_GetTicks();
   printf("[arte] trocar arte: filtro de idioma %s\n", filtro[0] ? filtro : "todos");
@@ -456,8 +481,14 @@ void trocaarte_atualizar(float dt) {
       p = posDe(v, n, foco[aba]);
       foco[aba] = v[p];
       // A linha focada sempre a vista.
-      if (p / TA_COLS < topo[aba]) topo[aba] = p / TA_COLS;
-      if (p / TA_COLS >= topo[aba] + TA_LINHAS) topo[aba] = p / TA_COLS - TA_LINHAS + 1;
+#ifdef NV_TOUCH_UI
+      if (!toque[aba].livre) {
+#endif
+        if (p / TA_COLS < topo[aba]) topo[aba] = p / TA_COLS;
+        if (p / TA_COLS >= topo[aba] + TA_LINHAS) topo[aba] = p / TA_COLS - TA_LINHAS + 1;
+#ifdef NV_TOUCH_UI
+      }
+#endif
       // PREVIA: so troca quando a textura grande do foco ja esta pronta — a
       // pagina nunca pisca para o vazio entre uma foto e outra. Pedida so
       // depois de o foco parar (ver trocaarte.h).
@@ -533,6 +564,9 @@ void trocaarte_evento(const SDL_Event *e) {
   if (!aberto) return;
   if (e->type == SDL_KEYDOWN) {
     SDL_Keycode k = e->key.keysym.sym;
+#ifdef NV_TOUCH_UI
+    if (toquerol_navegacao(e)) toqueRetomar();
+#endif
     if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
         k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) {
       trocaarte_fechar();
@@ -568,11 +602,28 @@ void trocaarte_evento(const SDL_Event *e) {
 
 // --- ponteiro ----------------------------------------------------------------
 static void ponteiroFoco(int a, int b) {
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toque[aba]);
+#endif
   if (a == -2) { naAba = 1; naFiltro = 1; return; }
   if (a < 0) { naAba = 1; naFiltro = 0; if (b != aba) { aba = b; previa[0] = 0; } focoDesde = SDL_GetTicks(); return; }
   naAba = 0; naFiltro = 0;
   if (b >= 0 && b < nCand[aba] && foco[aba] != b) { foco[aba] = b; focoDesde = SDL_GetTicks(); }
 }
+#ifdef NV_TOUCH_UI
+static void toqueRetomar(void) {
+  if (toque[aba].livre) {
+    int v[TA_MAX], n, p;
+    pthread_mutex_lock(&trava);
+    n = visiveis(aba, v);
+    p = (int)((toqueY[aba] + toque[aba].regiao.h * 0.35f) / TA_PASSO) * TA_COLS;
+    if (p >= n) p = n - 1;
+    if (p >= 0) { foco[aba] = v[p]; naAba = naFiltro = 0; topo[aba] = (int)(toqueY[aba] / TA_PASSO); }
+    pthread_mutex_unlock(&trava);
+  }
+  toquerol_limpar(&toque[aba]);
+}
+#endif
 
 // --- desenho -----------------------------------------------------------------
 static void desenhaLogo(const char *u, GfxRect caixa, float a, int esq) {
@@ -602,7 +653,8 @@ static void desenhaAba(GfxRect r, const char *rot, int ativa, int focada, float 
   else if (ativa) { cr = cg = cb = 0.92f; tinta = 0.06f; }
   gfx_cor(r, NV_RAIO_PILL, cr, cg, cb, a);
   c = (int)(tinta * 255.0f + 0.5f);
-  { TxtLinha l = txt_linha(TXT_DET_META2, rot, c, c, c, 255);
+  { TxtLinha l = telefoneui_ativo() ? txt_linha_corta(TXT_DET_META2, rot, c, c, c, 255, r.w - 40)
+                                  : txt_linha(TXT_DET_META2, rot, c, c, c, 255);
     txt_desenhar_alpha(l, r.x + (r.w - l.w) * 0.5f, r.y + (r.h - l.h) * 0.5f, a); }
 }
 
@@ -611,6 +663,10 @@ void trocaarte_desenhar(const char *logoPagina) {
   int v[TA_MAX], n, i, p;
   if (a <= 0.005f) return;
   ponteiro_camada();
+  // A transicao ainda cobre o detalhe quando os controles ja apagaram.
+  // O anteparo evita que um toque no vazio vire RETURN na pagina de baixo.
+  if (telefoneui_ativo())
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, NULL, 0, 0);
   pthread_mutex_lock(&trava);
   n = visiveis(aba, v);
   p = posDe(v, n, foco[aba]);
@@ -634,12 +690,14 @@ void trocaarte_desenhar(const char *logoPagina) {
   { TxtLinha t = txt_linha(TXT_HEADLINE, "Trocar arte", 245, 248, 255, 255);
     float x = TA_X0, y = 540.0f;
     txt_desenhar_alpha(t, x, y + (52.0f - t.h) * 0.5f, a);
-    x += t.w + 36.0f;
+    if (telefoneui_ativo() && NV_TELA_W < 1500) y += 64;
+    else x += t.w + 36.0f;
     { const char *rot[2] = { i18n("Fundos"), i18n("Logos") };
       int k;
       for (k = 0; k < 2; k++) {
         TxtLinha l = txt_linha(TXT_DET_META2, rot[k], 255, 255, 255, 255);
         GfxRect r = { x, y, l.w + 56.0f, 52.0f };
+        if (telefoneui_ativo()) r.w = fminf(r.w, (NV_TELA_W - TA_X0 * 2 - 14) * .5f);
         desenhaAba(r, rot[k], aba == k, naAba && !naFiltro && aba == k, a);
         if (a > 0.3f) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroFoco, NULL, -1, k);
         x += r.w + 14.0f;
@@ -653,7 +711,9 @@ void trocaarte_desenhar(const char *logoPagina) {
           GfxRect r;
           rotuloFiltro(aba, rf, sizeof rf);
           lf = txt_linha(TXT_DET_META2, rf, 255, 255, 255, 255);
+          if (telefoneui_ativo() && NV_TELA_W < 1500) { x = TA_X0 - 22; y += 64; }
           r = (GfxRect){ x + 22.0f, y, lf.w + 56.0f, 52.0f };
+          if (telefoneui_ativo()) r.w = fminf(r.w, NV_TELA_W - TA_X0 - r.x);
           desenhaAba(r, rf, filtro[0] != 0, naAba && naFiltro, a);
           if (a > 0.3f) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroFoco, NULL, -2, 0);
         } else if (naFiltro) naFiltro = 0;
@@ -661,15 +721,29 @@ void trocaarte_desenhar(const char *logoPagina) {
     { const char *dica = buscando ? i18n("Buscando mais artes…")
                                   : i18n("OK escolhe  ·  Voltar cancela");
       TxtLinha l = txt_linha(TXT_DET_META2, dica, 170, 174, 184, 255);
-      txt_desenhar_alpha(l, NV_TELA_W - 96.0f - l.w, y + (52.0f - l.h) * 0.5f, a * 0.9f); } }
+      if (!telefoneui_ativo()) txt_desenhar_alpha(l, NV_TELA_W - 96.0f - l.w, y + (52.0f - l.h) * 0.5f, a * 0.9f); } }
 
   // GRADE.
+#ifdef NV_TOUCH_UI
+  if (!toque[aba].livre) toqueY[aba] = topo[aba] * TA_PASSO;
+  toquerol_vincular(&toque[aba], (GfxRect){ TA_X0, TA_Y0, NV_TELA_W - 2.0f * TA_X0, TA_LINHAS * TA_PASSO }, gfx_escala(), 0.0f,
+                    fmaxf(0.0f, ((n + TA_COLS - 1) / TA_COLS - TA_LINHAS) * TA_PASSO), 1, &toqueY[aba]);
+  ponteiro_rolagem(toqueRolar);
+  gfx_recorte(TA_X0 - 12.0f, TA_Y0, NV_TELA_W - 2.0f * TA_X0 + 24.0f, TA_LINHAS * TA_PASSO);
+  for (i = 0; i < n; i++) {
+    float linhaY = TA_Y0 + (i / TA_COLS) * TA_PASSO - toqueY[aba];
+    if (linhaY + TA_PASSO <= TA_Y0 || linhaY >= TA_Y0 + TA_LINHAS * TA_PASSO) continue;
+#else
   for (i = topo[aba] * TA_COLS; i < n && i < (topo[aba] + TA_LINHAS) * TA_COLS; i++) {
+#endif
     const TaCand *c = &cand[aba][v[i]];
     int lin = i / TA_COLS - topo[aba], col = i % TA_COLS;
     int focado = !naAba && i == p;
     int vigente = c->url[0] ? !strcmp(c->url, escolhido[aba]) : !escolhido[aba][0];
     GfxRect r = { TA_X0 + col * (TA_W + TA_GAP), TA_Y0 + lin * TA_PASSO, TA_W, TA_H };
+#ifdef NV_TOUCH_UI
+    r.y = linhaY;
+#endif
     if (focado) {
       float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
       r.w *= 1.06f; r.h *= 1.06f; r.x = cx - r.w * 0.5f; r.y = cy - r.h * 0.5f;
@@ -677,7 +751,12 @@ void trocaarte_desenhar(const char *logoPagina) {
         botao_luz(r, 1.0f, a);
         gfx_cor((GfxRect){ r.x - 5, r.y - 5, r.w + 10, r.h + 10 }, 17.0f / (r.h + 10.0f), fr, fg, fb, a); }
     }
-    if (a > 0.3f) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroFoco, NULL, aba, v[i]);
+    if (a > 0.3f)
+#ifdef NV_TOUCH_UI
+      ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, TA_Y0, TA_Y0 + TA_LINHAS * TA_PASSO, ponteiroFoco, NULL, aba, v[i]);
+#else
+      ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroFoco, NULL, aba, v[i]);
+#endif
     if (aba == 0) {
       GLuint t = tex_obter_larg(c->mostra, TA_W);
       if (t) {
@@ -702,8 +781,15 @@ void trocaarte_desenhar(const char *logoPagina) {
     { TxtLinha l = txt_linha_corta(TXT_MINI, i18n(c->rotulo), focado ? 245 : 170,
                                    focado ? 248 : 174, focado ? 255 : 184, 255, TA_W);
       txt_desenhar_alpha(l, TA_X0 + col * (TA_W + TA_GAP),
+#ifdef NV_TOUCH_UI
+                         r.y + r.h + 12.0f, a); }
+#else
                          TA_Y0 + lin * TA_PASSO + TA_H + 12.0f, a); }
+#endif
   }
+#ifdef NV_TOUCH_UI
+  gfx_sem_recorte();
+#endif
   // Mais linhas abaixo: uma seta discreta, para a grade nao parecer acabar.
   if ((topo[aba] + TA_LINHAS) * TA_COLS < n) {
     TxtLinha l = txt_linha(TXT_MINI, i18n("mais abaixo"), 150, 154, 163, 255);

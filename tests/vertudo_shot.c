@@ -12,7 +12,31 @@
 //
 // Inclui src/vertudo.c: `collection`, `tabFocus`, `tabCursor` e `source` sao
 // estaticos, e semear por dentro e o unico jeito de fotografar sem addon.
+// #359: a grade com titulos, sem rede. vertudo.c le os itens por
+// desc_vertudo_n/desc_vertudo_item; com SHOT_GRADE>0 eles vem daqui.
+static int shotGrade;
+#define desc_vertudo_n shot_vertudo_n
+#define desc_vertudo_item shot_vertudo_item
 #include "../src/vertudo.c"
+#undef desc_vertudo_n
+#undef desc_vertudo_item
+int desc_vertudo_n(void);
+int desc_vertudo_item(int i, CatItem *dst);
+int shot_vertudo_n(void) { return shotGrade ? shotGrade : desc_vertudo_n(); }
+int shot_vertudo_item(int i, CatItem *dst) {
+  if (!shotGrade) return desc_vertudo_item(i, dst);
+  if (i < 0 || i >= shotGrade || !dst) return 0;
+  memset(dst, 0, sizeof *dst);
+  snprintf(dst->imdb, sizeof dst->imdb, "tt%07d", 100 + i);
+  snprintf(dst->tipo, sizeof dst->tipo, "movie");
+  snprintf(dst->titulo, sizeof dst->titulo, "Titulo %d", i + 1);
+  snprintf(dst->genero, sizeof dst->genero, "Filme · Drama");
+  snprintf(dst->meta, sizeof dst->meta, "2025 · 120 min");
+  snprintf(dst->sinopse, sizeof dst->sinopse, "Sinopse de exemplo para o painel da direita.");
+  snprintf(dst->poster, sizeof dst->poster, "deploy/app/art/%02d.jpg", i % 30);
+  snprintf(dst->backdrop, sizeof dst->backdrop, "deploy/app/art/%02d.jpg", i % 30);
+  return 1;
+}
 #include "rail_shot.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -125,6 +149,17 @@ int main(int argc, char **argv) {
   tabFocus = 1; tabCursor = 0;
   snprintf(nome, sizeof nome, "%s-abas-idcru.bmp", saida);
   captura(nome, w);
+
+  // #359: grade com titulos e o painel da direita, foco na 1a coluna. Com a
+  // rail fixa da Moderna a 5a coluna entrava por baixo do painel.
+  memset(pastaFontes, 0, sizeof pastaFontes);
+  fonte(0, "Oscar", "movie");
+  fonte(1, "Oscar", "series");
+  pasta.nSources = 2;
+  shotGrade = 12; tabFocus = 0; tabCursor = 0; foco = 0;
+  snprintf(nome, sizeof nome, "%s-grade-painel.bmp", saida);
+  captura(nome, w);
+  shotGrade = 0;
 
   tex_encerrar();
   txt_encerrar();
