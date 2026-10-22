@@ -1,6 +1,12 @@
 // A server refresh can replace a row without changing catalogue/row counts.
 #define main previous_fixture_main
 #include "cwordem_home.c"
+unsigned cf_revisao(void) { return 0; }
+int cf_n(void) { return 0; }
+const ColFolder *cf_pasta(int i) { (void)i; return NULL; }
+int cf_itens(const ColFolder *p, int *idx, int max) { (void)p; (void)idx; (void)max; return 0; }
+int ov_ativa(const char *chave) { (void)chave; return 0; }
+unsigned ov_revisao(void) { return 0; }
 #undef main
 
 int addons_n(void) { return 0; }

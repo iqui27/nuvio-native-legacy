@@ -23,6 +23,7 @@ static void select_episode(int season, int episode) {
   servidorOrdenar();
   SDL_Event event = {0}; event.type = SDL_KEYDOWN; event.key.keysym.sym = SDLK_RETURN;
   vertudo_evento(&event);
+  event.type = SDL_KEYUP; vertudo_evento(&event);
   int index = vertudo_pediu_abrir();
   assert(index >= 0);
   const CatItem *stored = cat_item(index);

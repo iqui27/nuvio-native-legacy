@@ -2,6 +2,22 @@
 #include "../src/vertudo.c"
 #include <assert.h>
 
+Uint32 SDL_GetTicks(void) { return 0; }
+float ajustes_conteudo_x(void) { return 48; }
+int ajustes_menu_topo(void) { return 0; }
+int cat_visto(const CatItem *c) { (void)c; return 0; }
+void col_nome_fonte(const ColSource *s, const char *m, char *dst, unsigned n) { (void)s; snprintf(dst,n,"%s",m); }
+int ctxhold_evento(CtxHold *h, const SDL_Event *e, int aceita) { (void)h; (void)e; (void)aceita; return CTXH_NADA; }
+int ctxlista_abrir(int i, GfxRect r, const char *a) { (void)i; (void)r; (void)a; return 0; }
+int ctxlista_indice(const char *id, long tmdb) { (void)id; (void)tmdb; return -1; }
+char *dados_caminho(char *dst, unsigned n, const char *nome) { (void)dst; (void)n; (void)nome; return NULL; }
+int dados_gravar(const char *nome, const char *txt) { (void)nome; (void)txt; return 1; }
+const char *desc_nome_catalogo(const char *base, const char *tipo, const char *id) { (void)base; (void)tipo; return id; }
+const char *posterprov_card_addon(const char *origem, const char *imdb, long tmdb, const char *tipo, const char *poster) { (void)origem; (void)imdb; (void)tmdb; (void)tipo; return poster; }
+int ptv_gpu_fraca_atual(void) { return 0; }
+int salvos_perfil_atual(void) { return 0; }
+void tex_orcamento_info(int *mb, long *mem, int *fixo, int *slots) { if(mb)*mb=96; if(mem)*mem=0; if(fixo)*fixo=0; if(slots)*slots=0; }
+
 static CatItem items[3];
 static int count, requested, added;
 static char requestedKey[96];

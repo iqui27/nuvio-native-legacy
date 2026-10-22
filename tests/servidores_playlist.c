@@ -22,6 +22,7 @@ const char *idioma_mes_data(int m, const char *s) { (void)m; return s; }
 const char *nuvem_trakt_cliente(void) { return ""; }
 char *rede_baixar(const char *u, int t) { (void)u; (void)t; return NULL; }
 char *rede_baixar_com(const char *u, int t, const char *const *h) { (void)h; return rede_baixar(u,t); }
+int addons_base_desligada(const char *base) { (void)base; return 0; }
 int addons_n(void) { return 0; }
 const char *addons_base(int i) { (void)i; return ""; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }

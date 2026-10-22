@@ -62,6 +62,7 @@ void shot_filtro(const char *base, const char *type, const char *key, const char
 static void key(SDL_Keycode code) {
   SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = code;
   vertudo_evento(&e);
+  e.type = SDL_KEYUP; vertudo_evento(&e);
 }
 static void capture(const char *dir, const char *name) {
   static Uint32 now = 1000;

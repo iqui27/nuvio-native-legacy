@@ -21,7 +21,7 @@ char *dados_ler(const char *n) { (void)n; return NULL; }
 int dados_gravar(const char *n, const char *c) { (void)n; (void)c; return 1; }
 const char *i18n(const char *s) { return s; }
 int sessao_logada(void) { return logged; }
-const char *sessao_token(void) { return logged ? "test" : ""; }
+int sessao_token_copiar(char *dst, size_t n) { snprintf(dst, n, "%s", logged ? "test" : ""); return logged; }
 char *rede_baixar_st(const char *u, int s, const char *const *c, int *st) { (void)u; (void)s; (void)c; *st = 0; return NULL; }
 char *rede_postar_st(const char *u, int s, const char *const *c, const char *b, int *st) { (void)u; (void)s; (void)c; (void)b; *st = 0; return NULL; }
 void ilha_avisar_ex(const IlhaAvisoEx *a) { (void)a; }
