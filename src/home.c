@@ -4286,10 +4286,22 @@ static int heroNomeLogo(const CatItem *ci, const char *url, int loaded,
   return same && strncmp(ci->logoIdioma, language, 2) != 0;
 }
 
+// Hero size (Settings): 0 Normal, 1 Grande, 2 Muito grande. The logo and the
+// information lines scale together; the layout below measures everything.
+static float heroMetaLinha(void) { return NV_LD_HERO_META * ajustes_hero_escala_info(); }
+static float heroSecLinha(void) {
+  return (ajustes_hero_tamanho() ? fmaxf(NV_LD_HERO_SEC, BADGE_H) : NV_LD_HERO_SEC) * ajustes_hero_escala_info();
+}
+static TxtEstilo heroMetaEstilo(void) {
+  int t = ajustes_hero_tamanho();
+  return t == 2 ? TXT_HERO_META_GG : t == 1 ? TXT_HERO_META_G : TXT_HERO_META;
+}
 static float heroSinEntrelinha(void) {
+  if (ajustes_hero_tamanho() == 2) return 38.0f;
   return ajustes_hero_sinopse_grande() ? 32.0f : NV_LD_HERO_SIN;
 }
 static TxtEstilo heroSinEstilo(void) {
+  if (ajustes_hero_tamanho() == 2) return TXT_SINOPSE_28;
   return ajustes_hero_sinopse_grande() ? TXT_HERO_SIN_GRANDE : TXT_HERO_SIN;
 }
 
@@ -4323,8 +4335,8 @@ static HeroCopyLayout heroCopyLayout(float base, float hSin, int hasMeta,
     gap = fmaxf(0, gap - (sinopse_entrelinha(TXT_HERO_SIN, NV_LD_HERO_SIN) - NV_LD_HERO_SIN));
   p.synopsis = base - slotH * s - hSin;
   p.action = p.synopsis + hSin + btnGap;
-  p.secondary = p.synopsis - (hasSec ? (hSin > 0 ? gap : 0) + (fixed ? ANC(NV_LD_HERO_SEC) : NV_LD_HERO_SEC) : 0);
-  p.meta = p.secondary - (hasMeta ? ((hasSec || hSin > 0) ? gap : 0) + (fixed ? ANC(NV_LD_HERO_META) : NV_LD_HERO_META) : 0);
+  p.secondary = p.synopsis - (hasSec ? (hSin > 0 ? gap : 0) + (fixed ? ANC(heroSecLinha()) : heroSecLinha()) : 0);
+  p.meta = p.secondary - (hasMeta ? ((hasSec || hSin > 0) ? gap : 0) + (fixed ? ANC(heroMetaLinha()) : heroMetaLinha()) : 0);
   // A linha de AMIGOS (quem gostou / assistiu) fica logo acima da meta.
   p.friends = p.meta - (friendsH > 0 ? gap + friendsH : 0);
   p.caption = p.friends - (captionH > 0 ? gap + captionH : 0);
@@ -4424,9 +4436,10 @@ static void desenhaPontosHero(float xDir, float yc, int n, int atual, float a) {
 // desenho e pelos pedidos antecipados (heroPedirLogo): o MESMO teto cai no
 // MESMO item do cache, sem promocao nem segundo decode.
 static float heroLogoMaxW(int lay, int cheio) {
-  if (lay == HOME_LAYOUT_PADRAO) return homeTextoLargura(NV_PAD_LOGO_MAX_W);
-  if (lay == HOME_LAYOUT_DINAMICA) return homeTextoLargura(NV_DIN_LOGO_MAX_W);
-  return homeTextoLargura(cheio ? NV_LOGO_HERO_CHEIO_MAX_W : NV_LOGO_HERO_MAX_W);
+  float e = ajustes_hero_escala_logo();
+  if (lay == HOME_LAYOUT_PADRAO) return homeTextoLargura(NV_PAD_LOGO_MAX_W * e);
+  if (lay == HOME_LAYOUT_DINAMICA) return homeTextoLargura(NV_DIN_LOGO_MAX_W * e);
+  return homeTextoLargura((cheio ? NV_LOGO_HERO_CHEIO_MAX_W : NV_LOGO_HERO_MAX_W) * e);
 }
 
 // O LOGO DO TITULO JUNTO COM A ARTE (07/10, TCL Android 2.0.2). O logo so era
@@ -4512,6 +4525,8 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
                              float sinW, int sinLinhas, float aTexto,
                              float aCopy, float cin, float btnH, float btnGap,
                              float slot) {
+  logoH *= ajustes_hero_escala_logo();
+  sinW = fminf(homeLarguraUtil(), sinW * ajustes_hero_escala_info());
   int contHero = (ci && ci->progresso > 0 && ci->restanteMin > 0);
   int seguirHero = (ci && ci->progresso == 0 && (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb) || cwo_conta_a_seguir(ci->imdb)));
 
@@ -4592,8 +4607,8 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
   int mostraNomeLogo = heroNomeLogo(ci, urlLogo && tex_falhou(urlLogo) ? NULL : urlLogo,
                                     tlogo != 0, desc_tmdb_idioma());
   int caption = mostraNomeLogo && urlLogo && !tex_falhou(urlLogo) && ci && ci->titulo[0];
-  float captionH = caption ? txt_bloco_corta(TXT_HERO_META, ci->titulo, 255, 255, 255,
-                                            -1, 0, sinW, NV_LD_HERO_META, 0, 1) : 0;
+  float captionH = caption ? txt_bloco_corta(heroMetaEstilo(), ci->titulo, 255, 255, 255,
+                                            -1, 0, sinW, heroMetaLinha(), 0, 1) : 0;
   // Padrão has a shorter banner: fit the logo into the measured remaining
   // space when every real information line exists, including a caption.
   float minTop = 24.0f;
@@ -4610,6 +4625,17 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
   HeroCopyLayout copy = heroCopyLayout(base, hSin, metaLinha[0] != 0, temSec,
                                       captionH, logoH, btnH, btnGap, minTop, slot, friendsH);
   TxtLinha tituloTelefone = {0};
+  if (ajustes_hero_tamanho() && !heroCompactoTelefone()) {
+    // Keep the enlarged block above the same row boundary and below the header.
+    while (copy.logo + copy.logoHeight - minTop < logoH && sinopse[0] && sinLinhas > 1) {
+      sinLinhas--;
+      hSin = txt_bloco_corta(heroSinEstilo(), sinopse, 255, 255, 255, -1, 0,
+                             sinW, heroSinEntrelinha(), 0, sinLinhas);
+      hSin += txt_linha(heroSinEstilo(), "Ag", 255, 255, 255, 255).h - heroSinEntrelinha();
+      copy = heroCopyLayout(base, hSin, metaLinha[0] != 0, temSec,
+                            captionH, logoH, btnH, btnGap, minTop, slot, friendsH);
+    }
+  }
   if (vitTeto > 0.0f && !heroCompactoTelefone()) {
     // VITRINE DA COLECAO: o bloco nao sobe no cabecalho (anel, seletor). O
     // logo encolhe ate 88 px (o nome, ate a altura dele); faltando espaco a
@@ -4703,8 +4729,8 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
   }
 
   if (caption && aCopy > 0.004f)
-    txt_bloco_corta(TXT_HERO_META, ci->titulo, 255, 255, 255, x, copy.caption,
-                    sinW, NV_LD_HERO_META, aCopy, 1);
+    txt_bloco_corta(heroMetaEstilo(), ci->titulo, 255, 255, 255, x, copy.caption,
+                    sinW, heroMetaLinha(), aCopy, 1);
 
   if (temAmigos && aCopy > 0.004f) {
     static const float ANEL[3] = { 0.04f, 0.045f, 0.055f };
@@ -4713,14 +4739,14 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
     lx = x + svd_amigos_pilha(x, copy.friends, d, &amigos, amigos.n < 3 ? amigos.n : 3, 1, ANEL, aCopy) + 14.0f;
     amigostitulo_linha_destaque(&amigos, linha, sizeof linha);
     if (linha[0]) {
-      TxtLinha lf = txt_linha_corta(TXT_HERO_META, linha, 214, 217, 224, 255, sinW - (lx - x));
+      TxtLinha lf = txt_linha_corta(heroMetaEstilo(), linha, 214, 217, 224, 255, sinW - (lx - x));
       txt_desenhar_alpha(lf, lx, copy.friends + (d - lf.h) * 0.5f, aCopy);
     }
   }
 
   if (metaLinha[0] && aCopy > 0.004f) {
     float badgeW=ci?badges_desenhar(badges_provedor(ci->provNome),x,yMeta,150,24,aCopy):0;
-    TxtLinha lm = txt_linha_corta(TXT_HERO_META, metaLinha, 179, 179, 179, 255,
+    TxtLinha lm = txt_linha_corta(heroMetaEstilo(), metaLinha, 179, 179, 179, 255,
                                   sinW-badgeW);
     // META E SINOPSE TROCAM NA HORA, sem esvanecer com a arte. MEDIDO: no
     // quadro a 205 ms, com a arte antiga ainda a 85%, a linha de meta e a
@@ -4734,6 +4760,9 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
   if (temSec && aCopy > 0.004f) {
     float cx = x;
     float a = aCopy;
+    float scale = ajustes_hero_escala_info();
+    float rowW = sinW / scale;
+    if (scale != 1.0f) gfx_transformar(x, ySec, scale, 0, 0);
     if (destaque[0]) {
       // .home-modern-hero-highlight: branco cheio, peso 600, tracking 0.04em.
       cx += txt_tracking(TXT_HERO_SEC, destaque, 255, 255, 255, cx, ySec, a,
@@ -4744,16 +4773,17 @@ static float desenhaCopiaHero(const CatItem *ci, int principal, float x,
       // O mesmo selo de 28 px da aba Salvos e do detalhe; classificacao nao
       // ganha uma caixa vermelha propria em cada superficie.
       float bw = badge_largura(selo);
-      if (cx + bw <= x + sinW)
-        cx += badge_desenhar(cx, ySec + (NV_LD_HERO_SEC - BADGE_H) * 0.5f,
+      if (cx + bw <= x + rowW)
+        cx += badge_desenhar(cx, ySec + (heroSecLinha() / scale - BADGE_H) * 0.5f,
                              selo, BADGE_NEUTRO, a) + 14.0f;
     }
     if (nota[0] && imdbRating > 0) {
       float bw = badge_imdb_largura(imdbRating);
-      if (cx + bw <= x + sinW)
-        badge_imdb(cx, ySec + (NV_LD_HERO_SEC - BADGE_H) * 0.5f,
+      if (cx + bw <= x + rowW)
+        badge_imdb(cx, ySec + (heroSecLinha() / scale - BADGE_H) * 0.5f,
                    imdbRating, 0, a);
     }
+    if (scale != 1.0f) gfx_sem_transformar();
   }
 
   if (sinopse[0] && (!(heroCompactoTelefone() || vitTeto > 0.0f) || hSin > 0.0f) && aCopy > 0.004f)

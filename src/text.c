@@ -451,6 +451,8 @@ static const struct { int corpo, peso; } ESTILOS[TXT_NFONTES] = {
   { 28, PESO_REGULAR }, { 29, PESO_REGULAR }, { 30, PESO_REGULAR }, { 31, PESO_REGULAR },
   { 33, PESO_REGULAR }, { 34, PESO_REGULAR }, { 35, PESO_REGULAR }, { 39, PESO_REGULAR },
   { 20, PESO_REGULAR }, // TXT_SINOPSE_20
+  { 24, PESO_MEDIUM },  // TXT_HERO_META_G
+  { 27, PESO_MEDIUM },  // TXT_HERO_META_GG
 };
 
 // CORPO E PESO de um estilo, para teste e diagnostico (o desenho nao usa:
