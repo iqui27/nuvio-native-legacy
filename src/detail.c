@@ -4598,7 +4598,7 @@ static void heroWeb(float a, float desloc) {
   // some, e o hero fica exatamente como era.
   char agLinha[200] = "";
   { const CatItem *ciAg = cat_item(idx);
-    if (ehSerie() && ciAg && ciAg->imdb[0])
+    if (detalheRetrato() && ehSerie() && ciAg && ciAg->imdb[0])
       agenda_frase(ciAg->imdb, agLinha, sizeof agLinha); }
   char pessoal[256];
   topoEstadoTexto(pessoal,sizeof pessoal,durMin,topoPessoal());
