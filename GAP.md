@@ -96,6 +96,36 @@ Statuses describe this baseline, not visual or TV acceptance. The owner's round-
 
 Follow README section order, one tested commit per changed section. Baseline inventory is committed before implementation. Filmography (`agente/21-filmo-impl`), glance (`agente/21-glance-impl`), rewatch (`agente/21-rewatch-impl`) and personal-rating editor (`agente/205-205-avaliar21`) are excluded; only their git logs were read. Missing upstream quote/chronology data must hide blocks, not create empty focus. No push, deploy or stash.
 
+## Delivery status after implementation
+
+Implemented and committed:
+
+- Profile-local Ready / Personal / Both selector, native preview, default Ready, original profile migration guard; same lower document in all modes.
+- Source format chip describes the actual Play candidate; stale targets cannot take focus. OK/Down uses the existing Sources sheet.
+- Personal resume/remaining/ends-at line; ends-at also available in Ready. Unknown watch history is never called unwatched.
+- Episode title/synopsis concealment extends existing blur; hold reveals only that episode. Season controls include a real-data premiere reminder and persisted No spoilers switch. Existing season progress mark retained as a line.
+- Texture-free, bounded episode grid using TMDB scores, watched strokes, same-episode vertical navigation, best available unwatched episode and Play routing. Existing season graph preserved.
+- Cast monograms handle UTF-8; focused cast can show a watched credit already in the catalog, keyed by person ID, with a profile setting. No new filmography worker.
+- Related posters use real watched history; nested title Back restores section, column, season, tab and scroll.
+- Trakt spoiler flags survive parsing/sorting; first OK reveals, second opens full comment. Episode changes clear episode reveals. Comment rail draws once per frame.
+- Empty quotes have zero focus stops, including stale previous-title data; series facts are reachable. Original title, original language and series premiere retained from existing TMDB response.
+- Round-2 movie section order, series trailers before related titles, footer quotes/facts/production, inactive section alpha 0.42; approved existing section geometry retained.
+- Every new label translated in all 28 sibling tables. `python3 tools/varredura-i18n.py` and `python3 tools/idiomas.py` both rc 0.
+- `bash tests/detail21.sh` rc 0 after FAIL-to-PASS iterations. `bash tools/build-local.sh` rc 0, one full build. `bash tests/detail21_shot.sh` rc 0; 1920x1080 native PNGs in `/Volumes/ExternalSSD/tmp/rev/detalhe21-resto-png/`.
+
+Still partial / pending (not claimed complete):
+
+- Parallel rating branch still owns star/editor/Your rating, provider/friend block integration; this branch does not implement or port it. Consequently Personal and Both currently differ by source/status line, not a new rating button.
+- Ready chip opens the existing Sources sheet, not a separate compact checked-version island. It describes a candidate, not a verified-ready count. No new source preparation/debounce job, episode source chip, or loading ring was added.
+- Settings preview is the existing native scene with three choices; separate thumbnail row, full selected frame and detailed profile/history help do not match every `opcao.png` detail.
+- Season progress uses existing line, not a new arc. Future reminder uses real premiere season, without fictitious T6/year. Missing total remaining-hours summary and best-season/pace panel.
+- Same-author timeline has no author bibliography source in current extras; preserve existing real franchise card/list. Series Universe and chronology stay absent without curated relationships/dates.
+- Personalized recommendation reasons are unavailable; no fake rating-based reason is displayed. Trailer rail preserves platform-safe single native clip behavior; watched-video persistence and distinct extra playback remain pending.
+- Facts use actual localized catalog title under Title. The source does not guarantee Brazilian localization, so no false No Brasil label is shipped. Content descriptors beyond real certification remain absent.
+- Existing 700ms expo/header-at-140 behavior, staged network request order, 350/70ms image cascade and strict 30-texture/two-screen eviction are not fully implemented; shared extras workers/cache remain. No hardware performance claim.
+- Existing hero/provider/comment/footer layouts are visibly different from the full round-2 board; exact mock parity is not established. Native shots are evidence of current behavior, not approval.
+- Baseline predates top selector: before movie/series top PNGs represent the common old top; there were no two baseline option states to capture. After PNGs cover all three top modes plus episode/progress/notes/cast/comments/footer and explicit spoiler states.
+
 ## 7. Mock limitations
 
 Mock names, scores, friends, comments, chronology, cast history and quotes are fixtures, not app data. No mock facts are shipped. Native captures will use isolated deterministic fixtures through the existing shot harness; they do not prove low-RAM TV performance.
