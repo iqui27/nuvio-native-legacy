@@ -21,6 +21,8 @@
 #include "recomenda.h"
 #include "atividade.h"
 #include "recenviar.h"
+#include "travatela.h"
+#include "perfis.h"
 #include "botoes.h"
 #include "badges.h"
 #include "idioma.h"
@@ -216,13 +218,13 @@ static int observarHold(void *u, SDL_Event *e) {
 // juntava contava UMA linha para o contrato e escrevia sete — e o teto de sete
 // era exatamente o que deixava o Destaque 4:3 e a faixa com titulo de fora do
 // menu. Agora elas moram em estLin[FIL_TIPO_N], do tamanho do enum.
-#define CTX_MAX 9
+#define CTX_MAX 10
 static struct { const char *rot; int acao; } ops[CTX_MAX];
 static int nOps;
 static float focoAnim[CTX_MAX];
 static int holdObservador;
 enum { OP_DETALHES, OP_LISTA, OP_ASSISTIDO, OP_TIRAR_CONTINUAR, OP_RECOMENDAR, OP_DISPENSAR,
-       OP_ESTILO, OP_CATEGORIA, OP_L_ABRIR, OP_L_FIXAR, OP_L_HOME,
+       OP_ESTILO, OP_CATEGORIA, OP_L_ABRIR, OP_L_FIXAR, OP_L_HOME, OP_TRAVA,
        OP_EXTRA = 100 };   // OP_EXTRA + k = extras[k] (modo social)
 // "Mover para categoria" pedido no modo painel: o IMDb do titulo, consumido
 // uma vez pelo painel (ctx_pediu_categoria), que abre a escolha dele.
@@ -440,6 +442,9 @@ static void montar(void) {
       (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series"))) {
     juntar("Recomendar a um amigo", OP_RECOMENDAR);
   }
+  // Trava de serie na mesma TV: so serie com IMDb e conta com 2+ perfis.
+  if (!doPainel && ci->imdb[0] && !strcmp(ci->tipo, "series") && perfis_n() >= 2)
+    juntar("Travar série", OP_TRAVA);
   // Por ULTIMO: e da fileira, nao do titulo. So quando a home disse qual e a
   // fileira e ela tem forma para escolher (Continuar assistindo, Top 10 e o
   // destaque ficam com o visual deles — a home nem passa a chave).
@@ -925,6 +930,9 @@ static void aplicar(void) {
       // mesma razao que salvospainel.c copia: o vetor do catalogo troca de
       // bloco a cada republicacao da descoberta.
       if (recenviar_abrir(ci)) aberto = 0;
+      break;
+    case OP_TRAVA:
+      if (travatela_abrir(ci->imdb, ci->titulo)) aberto = 0;
       break;
     case OP_DISPENSAR:
       home_retomar_dispensar();
@@ -1742,6 +1750,7 @@ static void ctx_desenharCorpo_(Uint32 agora) {
       case OP_TIRAR_CONTINUAR: icone = "aj_x"; break;
       case OP_DISPENSAR:  icone = "aj_x"; break;
       case OP_RECOMENDAR: icone = "aj_users"; break;
+      case OP_TRAVA:      icone = "aj_link"; break;
       case OP_ESTILO:     icone = "aj_rows-3"; break;
       case OP_CATEGORIA:  icone = "aj_folders"; break;
       default:

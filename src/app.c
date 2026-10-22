@@ -74,6 +74,7 @@
 #include "recomenda.h"
 #include "atividade.h"
 #include "recenviar.h"
+#include "travatela.h"
 #include "pessoas.h"
 #include "salvospainel.h"
 #include "salvosintro.h"
@@ -1790,7 +1791,7 @@ int app_na_home(void) {
 static int azulPodeAbrirSalvos(const SDL_Event *e) {
   if (player_aberto() || player_mini_ativo() || menu_aberto() || ctx_aberto() ||
       faixas_aberta() || episodios_aberto() || stream_folha_aberta() ||
-      guia_overlay_aberta() || pessoas_aberto() || recomenda_aberta() || recenviar_aberto())
+      guia_overlay_aberta() || pessoas_aberto() || recomenda_aberta() || recenviar_aberto() || travatela_aberto())
     return 0;
   // So no teclado de verdade (Mac/desktop). No Android a AZUL, o CH+ e o
   // MENU/BOOKMARK CHEGAM como "s" (NuvioActivity/main.c) e o SDL pode deixar o
@@ -2068,6 +2069,7 @@ void app_evento(const SDL_Event *e) {
   // painel da tecla AZUL — as tres portas que a abrem. Abaixo do cartao de
   // aviso, que e uma pergunta sobre outra recomendacao.
   if (recenviar_aberto()) { recenviar_evento(e); return; }
+  if (travatela_aberto()) { travatela_evento(e); return; }
   // ENCONTRAR PESSOAS (busca, perfil, pedidos): mesma altura da modal de
   // recomendar — abre da aba Social e de Ajustes, e devolve o foco a quem abriu.
   if (pessoas_aberto()) { pessoas_evento(e); return; }
@@ -2325,7 +2327,7 @@ static const char *homeTrailerBloqueio(void) {
       novidades142_aberto() || novidades148_aberto() || novidades170_aberto() || novidades180_aberto() ||
       novidades20_aberto()) return "whats-new";
   if (atualizacao_aberta() || agendaviso_aberto()) return "update-notice";
-  if (recomenda_aberta() || recenviar_aberto() || pessoas_aberto()) return "recommend";
+  if (recomenda_aberta() || recenviar_aberto() || travatela_aberto() || pessoas_aberto()) return "recommend";
   if (faixas_aberta() || episodios_aberto() || stream_folha_aberta()) return "sheet";
   if (guia_overlay_aberta()) return "guide";
   if (registro_aberto()) return "log";
@@ -4050,6 +4052,7 @@ void app_atualizar(float dt, Uint32 agora) {
   spainel_atualizar(dt, agora);
   recomenda_atualizar(dt, agora);
   recenviar_atualizar(dt, agora);
+  travatela_atualizar(dt, agora);
   pessoas_atualizar(dt, agora);
   sintro_atualizar(dt, agora);
   novidades_atualizar(dt, agora);
@@ -4297,7 +4300,7 @@ static int relogioCabe(void) {
       novidades1312_aberto() || novidades142_aberto() || novidades148_aberto() ||
       novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || telemetria_aberto() || recintro_aberto() ||
       atualizacao_aberta() || agendaviso_aberto() || avisos_cartao_aberto() ||
-      glem_cartao_aberto() || recenviar_aberto() || pessoas_aberto() ||
+      glem_cartao_aberto() || recenviar_aberto() || travatela_aberto() || pessoas_aberto() ||
       recomenda_aberta() || pipintro_aberto() || diagnostico_intro_aberto())
     return 0;
   return 1;
@@ -4510,6 +4513,8 @@ void app_desenhar(Uint32 agora) {
     glem_desenhar(agora);
   CAMADA_SE(recenviar_aberto());
   if (!registro_aberto()) recenviar_desenhar(agora);
+  CAMADA_SE(travatela_aberto());
+  if (!registro_aberto()) travatela_desenhar(agora);
   CAMADA_SE(pessoas_aberto());
   if (!registro_aberto()) pessoas_desenhar(agora);
   CAMADA_SE(recomenda_aberta());
