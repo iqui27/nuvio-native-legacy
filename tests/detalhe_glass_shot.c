@@ -297,6 +297,11 @@ static void montarCatalogo(void) {
                i == 2 ? "Lucy, Maximus e o Ghoul disputam a mesma recompensa no deserto."
                       : "Sinopse do episódio.");
       snprintf(e->thumb, sizeof e->thumb, A "ep/00_1_%02d.jpg", (t == 1 ? i : 7 - i) + 1);
+      const char *ref=getenv("NUVIO_SHOT_REFERENCE");
+      if (ref) {
+        snprintf(e->thumb,sizeof e->thumb,"%s/ep%d.jpg",ref,1+i%4);
+        snprintf(e->nome,sizeof e->nome,"Episódio %d",i+1);
+      }
     }
   cat_definir_episodios(0, episodios, n);
   for (i = 1; i <= 8; i++) vistoep_definir(IMDB_SERIE, 1, i, i <= 2);
@@ -423,6 +428,7 @@ int main(int argc, char **argv) {
     fprintf(f, "idioma %d\n", lg && *lg ? atoi(lg) : 0);
     // Acento azul do mockup (#5aa2ff/#42a5f5): o tema Oceano.
     fputs("selected_theme 2\n", f);
+    if (getenv("NUVIO_SHOT_REFERENCE")) fputs("blurUnwatchedEpisodes 1\n",f);
     if (getenv("NUVIO_SHOT_TOPO")) fprintf(f, "detalheTopoLocal %d\n", atoi(getenv("NUVIO_SHOT_TOPO")));
     if (getenv("NUVIO_SHOT_SPOILERS")) fputs("blurUnwatchedEpisodes 0\n",f);
     if (getenv("NUVIO_SHOT_VIDRO") && atoi(getenv("NUVIO_SHOT_VIDRO")))

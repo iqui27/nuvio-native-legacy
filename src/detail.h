@@ -116,9 +116,9 @@ int  detail_pediu_do_inicio(void);
 // Abas de temporada: 269x80 em x=96, passo 321 (gap 52), raio 40, fonte 32/500.
 // A largura sai do texto + padding, e nao e constante: "Especiais" mede 219.
 #define NV_DETP_TEMP_Y      1160.0f
-#define NV_DETP_TEMP_H        60.0f   // Compact season selector
+#define NV_DETP_TEMP_H        56.0f   // Compact season selector
 #define NV_DETP_TEMP_PADX     26.0f
-#define NV_DETP_TEMP_GAP      20.0f
+#define NV_DETP_TEMP_GAP      14.0f
 // Base do resumo da temporada ("12 episódios · 5 assistidos") ao TOPO das
 // pilulas. A folga vive na vaga do cabecalho "Temporadas" que foi retirado: o
 // grupo comeca em NV_DETP_G_TEMP (1080) e a pilula so em 1160, entao ha 80 px
@@ -141,7 +141,7 @@ int  detail_pediu_do_inicio(void);
 #define NV_DETP_EP_H         414.0f   // a caixa E a miniatura: o texto fica dentro
 #define NV_DETP_EP_PASSO     672.0f   // 767 - 96 = 671, arredondado para 640+32
 #define NV_DETP_EP_THUMB_H   414.0f
-#define NV_DETP_EP_RAIO       32.0f
+#define NV_DETP_EP_RAIO       18.0f
 #define NV_DETP_EP_PAD        32.0f   // margem do texto dentro da miniatura
 #define NV_DETP_EP_TEXTO_W   576.0f
 // Selo "EPISÓDIO n": caixa 152x43 em (32,155) dentro do card, tinta do texto
