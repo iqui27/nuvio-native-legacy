@@ -2204,19 +2204,25 @@ int home_iniciar(const char *dirArte) {
 }
 
 static int glanceHomeLinha, glanceHomeHero;
+static HomeItem glanceHomeAlvo;
 static int glanceHomeTotal(void) {
   return glanceHomeHero ? 1 : (glanceHomeLinha >= 0 && glanceHomeLinha < nFileiras ? fileiras[glanceHomeLinha].n : 0);
 }
 static int glanceHomeItem(int i, CatItem *out) {
-  return cat_copiar_item(glanceHomeHero ? heroAtual : fileiraItemIndice(&fileiras[glanceHomeLinha], i), out);
+  return cat_copiar_item(glanceHomeHero ? glanceHomeAlvo.indice : fileiraItemIndice(&fileiras[glanceHomeLinha], i), out);
 }
 static void glanceHomeFoco(int i) {
   if (!glanceHomeHero) { foco.fileira = glanceHomeLinha; foco.coluna = i; foco.colunaLembrada[glanceHomeLinha] = i; }
 }
-static void glanceHomeDetalhes(int i) { glanceHomeFoco(i); pedidoAbrir = 1; }
+static void glanceHomeDetalhes(int i) {
+  glanceHomeFoco(i);
+  if (glanceHomeHero) { itemFoco = glanceHomeAlvo; temItemFoco = 1; }
+  pedidoAbrir = 1;
+}
 static void previaHome(void) {
   static const GlanceFonte f = {glanceHomeTotal, glanceHomeItem, glanceHomeFoco, glanceHomeDetalhes};
   glanceHomeHero = focoHero; glanceHomeLinha = foco.fileira;
+  if (glanceHomeHero) { glanceHomeAlvo = itemFoco; glanceHomeAlvo.indice = heroAtual; }
   glance_abrir(&f, focoHero ? 0 : foco.coluna);
 }
 
