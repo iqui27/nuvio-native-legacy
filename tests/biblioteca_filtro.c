@@ -9,6 +9,7 @@
 
 static CatItem catalogoTeste[127];
 static int ocultar;
+float gfx_escala_ui(void) { return 1.0f; }
 int cat_n(void) { return 127; }
 const CatItem *cat_item(int i) { return i >= 0 && i < 127 ? &catalogoTeste[i] : NULL; }
 int cat_indice_por_imdb(const char *id) {
@@ -77,6 +78,11 @@ int main(void) {
   tipo = TIPO_FILME; confere(11);
   tipo = TIPO_SERIE; confere(118);
   tipo = TIPO_TODOS;
+
+  assert(hdrX() == 200.0f);
+  assert(bibX() == 564.0f && bibW() == 1260.0f);
+  assert(colunasCartaz() == 5);
+  assert(gradeY() == 388.0f && pickerY() == 312.0f);
 
   // Mesmo criterio da Home: desconhecido/passado/ano atual ficam; futuro sai.
   time_t agora = time(NULL);

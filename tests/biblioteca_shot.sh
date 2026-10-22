@@ -15,12 +15,22 @@ sources=()
 for source in src/*.c src/dts/*.c; do
   if [ "$source" != src/main.c ]; then sources+=("$source"); fi
 done
-cc "${sources[@]}" tests/biblioteca_shot.c -Isrc -o "$tmp/shot" \
-  -DNV_TRAKT_CLIENT_ID='"chave-de-teste"' \
-  -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
-  -Wno-deprecated-declarations -Wno-macro-redefined
+mkdir -p "$(dirname "$saida")"
+compiler=(cc)
+command -v ccache >/dev/null && compiler=(ccache cc)
+objects=()
+for source in "${sources[@]}" tests/biblioteca_shot.c; do
+  object="$tmp/$(basename "$source" .c).o"
+  "${compiler[@]}" -c "$source" -Isrc -o "$object" \
+    -DNV_TRAKT_CLIENT_ID='"chave-de-teste"' \
+    -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+    -Wno-deprecated-declarations -Wno-macro-redefined
+  objects+=("$object")
+done
+cc "${objects[@]}" -o "$tmp/shot" -L/opt/homebrew/lib \
+  -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
 NUVIO_DADOS="$tmp/dados" "$tmp/shot" "$saida" "${NV_MODO:-}"
+[ "${NV_MODO:-}" = mock ] && exit 0
 # SEGUNDA VOLTA so para a MEDIDA: comeca em lista, com o cache de textura frio.
 # Ver a nota em tests/biblioteca_shot.c sobre por que uma volta so nao mede.
 echo "--- segunda volta: lista com o cache frio ---"

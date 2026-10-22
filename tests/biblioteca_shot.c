@@ -178,7 +178,9 @@ static void povoar(void) {
     snprintf(it.meta, sizeof it.meta, "%s", AMOSTRA[i].meta);
     snprintf(it.genero, sizeof it.genero, "%s", AMOSTRA[i].genero);
     snprintf(it.sinopse, sizeof it.sinopse, "%s", AMOSTRA[i].sinopse);
-    snprintf(it.poster, sizeof it.poster, "deploy/app/art/%02d.jpg", (int)i);
+    snprintf(it.poster, sizeof it.poster, "deploy/app/art/poster/%02d.jpg", (int)i);
+    it.fontes = i % 3 == 0 ? CAT_FONTE_TRAKT | CAT_FONTE_SIMKL
+              : i % 3 == 1 ? CAT_FONTE_TRAKT : CAT_FONTE_NUVIO;
     it.nota = AMOSTRA[i].nota;
     it.progresso = AMOSTRA[i].progresso;
     it.restanteMin = AMOSTRA[i].restante;
@@ -321,6 +323,8 @@ int main(int argc, char **argv) {
       if (fa) { fprintf(fa, "bordaFocoCartaz 1\n"); fclose(fa); }
     } }
   ajustes_iniciar();
+  dados_gravar("ajustes.txt", "idioma 0\nbordaFocoCartaz 1\n");
+  ajustes_dir(dados_dir());
   { const char *bv = getenv("NUVIO_SHOT_BORDA");
     if (bv && *bv == '0') ajustes_dir(dados_dir()); }
   // NUVIO_SHOT_VIDRO=0: o material solido (Interface de vidro desligada).
@@ -328,6 +332,11 @@ int main(int argc, char **argv) {
     ajustes_definir_vidro(!(v && *v == '0')); }
   povoar();
   biblioteca_iniciar();
+  if (argc > 2 && !strcmp(argv[2], "mock")) {
+    tecla(SDLK_DOWN); tecla(SDLK_RIGHT);
+    snprintf(nome, sizeof nome, "%s-grid.bmp", saida); captura(nome);
+    return 0;
+  }
   if (comecaLista) {
     int k;
     for (k = 0; k < 8; k++) tecla(SDLK_LEFT);
