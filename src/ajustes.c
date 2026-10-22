@@ -6406,10 +6406,15 @@ static int foraDestaPlataforma(int op) {
 #endif
 #if defined(NV_TPK) || defined(NV_ANDROID)
   if (op == AJ_DV_MKV) return 1;
+#endif
+#if defined(NV_TPK) || defined(NV_ANDROID) || !defined(NV_DV7_CONVERSION)
   if (op == AJ_DV7) return 1;
 #endif
+  // 2.0.5: depth is one switch plus one intensity (AJ_PROF, AJ_PROF_BRILHO);
+  // the old per-card edge options stay in the enum only for ajustes.txt.
+  if (op == AJ_PROF_BORDA || (op >= AJ_PROF_COBERTURA && op <= AJ_PROF_TRAILERS)) return 1;
 #ifndef NV_ANDROID
-  if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_TUNNELING) return 1;
+  if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_TUNNELING || op == AJ_LIMPAR_CACHE) return 1;
 #endif
 #if defined(NV_ANDROID) && !defined(NV_P2P_MOTOR)
   if (op == AJ_P2P_LIMITE || op == AJ_P2P_DESTINO) return 1;
