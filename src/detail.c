@@ -2707,10 +2707,10 @@ void detail_evento(const SDL_Event *e) {
   if (e->type == SDL_KEYDOWN && nivel >= 1 && foco.fileira == SEC_FRASES &&
       !pessoaAberta && seriefrases_n() > 0) {
     int i = seriefrases_selecionado(), n = seriefrases_n();
-    if (e->key.keysym.sym == SDLK_DOWN && i + 1 < n) {
+    if (detalheRetrato() && e->key.keysym.sym == SDLK_DOWN && i + 1 < n) {
       seriefrases_selecionar(i + 1); return;
     }
-    if (e->key.keysym.sym == SDLK_UP && i > 0) {
+    if (detalheRetrato() && e->key.keysym.sym == SDLK_UP && i > 0) {
       seriefrases_selecionar(i - 1); return;
     }
   }
@@ -5146,8 +5146,6 @@ static int epsDaTemporada(int c) {
 // Item do SEGMENTADO (.sg do mockup): 19/600 com 20 de cada lado e a
 // contagem de episodios em 16 depois de 9 px.
 static float larguraTemporada(int c) {
-  char rot[32]; rotuloTemporada(c, rot, sizeof rot);
-  TxtLinha l = txt_linha(TXT_CALLOUT, rot, 255, 255, 255, 255);
   return c<nTemporadasReais() ? 212 : 200;
 }
 // As abas da serie no SEGMENTADO do Glass UI (DESIGN.md §5: substitui abas
@@ -7157,7 +7155,10 @@ static void desenhaRodape(int r,float a) {
   txt_tracking(TXT_G20M,caps,243,242,239,x+28,y+24,a*.6f,3.6f);
   if (r==SEC_FRASES) {
     int sel=seriefrases_selecionado(); if (sel<0 || sel>=seriefrases_n()) sel=0;
-    txt_bloco_corta(TXT_DET_SIN,seriefrases_texto(sel),243,242,239,x+28,y+66,500,38,a,4);
+    const char *quote=seriefrases_texto(sel);
+    char text[1200]; snprintf(text,sizeof text,"“%s”",quote);
+    txt_bloco_corta(strlen(quote)<60 ? TXT_LOG_T34 : TXT_DET_SIN,text,243,242,239,
+                    x+28,y+66,500,strlen(quote)<60 ? 50 : 38,a,4);
     txt_desenhar_alpha(txt_linha_corta(TXT_G18R,seriefrases_quem(sel),243,242,239,140,500),x+28,y+252,a);
   } else if (r==SEC_DETALHES) {
     LinhaDet rows[NV_DETF_DET_MAXL]; int n=montarDetalhes(rows,NV_DETF_DET_MAXL);

@@ -152,6 +152,9 @@ int main(void) {
   foco.fileira=SEC_DETALHES;
   assert(!moverFileira(1));
   assert(moverFileira(-1) && foco.fileira==SEC_COMENTARIOS);
+  quoteCount=3; seriefrases_selecionar(1);
+  foco.fileira=SEC_FRASES; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_UP;
+  detail_evento(&e); assert(foco.fileira==SEC_COMENTARIOS);
   quoteCount=0; assert(parEsq(SEC_DETALHES)==-1);
   // Hero enters the current episode; vertical moves keep that episode.
   sincronizarColunas(); nivel=0; botao=1; focoAmigos=0; carro=0; saindo=0;
