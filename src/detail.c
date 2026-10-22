@@ -5949,25 +5949,26 @@ static void desenhaElenco(float x, float y, int c, float f, float a) {
     GfxRect info = {x-12,top,NV_DETP_EL_W+24,76};
     gfx_cor(info,18.0f/info.h,.19f,.21f,.23f,.6f*f*a);
   }
-  GfxRect av = { x + (NV_DETP_EL_W-NV_DETP_EL_AVATAR)*.5f, y, NV_DETP_EL_AVATAR, NV_DETP_EL_AVATAR };
+  GfxRect av = {x,y,190,254};
   // Foco da Home (focoprof.h): anel so com o ajuste ligado, senao o avatar
   // cresce; a profundidade segue o ajuste de Elenco.
-  if (epApple()) { if (ajustes_borda_foco() && f > 0.01f) gfx_anel(av,.5f,1.5f,1,1,1,.22f*f*a); }
-  else foco_anel(av, 0.5f, f, a);
-  av = foco_zoom(av, f);
+  if (f>.005f) {
+    av.x-=4.75f*f; av.y-=6.35f*f; av.w+=9.5f*f; av.h+=12.7f*f;
+    gfx_anel(av,18.0f/254,3,1,1,1,f*a);
+  }
   GLuint t2 = foto ? tex_obter_larg(foto, NV_DETP_EL_AVATAR) : 0;
   if (t2) {
     gfx_tex_aspect_atual = tex_aspecto(foto);
     // GFX_AVATAR faz o cover e a mascara radial no mesmo passe. GFX_CARD
     // arredondava o retangulo, mas preservava a logica de enquadramento de
     // cartaz — sobravam faixas e a foto nao ocupava o circulo inteiro.
-    gfx_rect(av, t2, GFX_AVATAR, 0, 0, 0, 0.0f, 0, 0, 0, a);
+    gfx_rect(av, t2, GFX_CARD, 0, 0, 0, 18.0f/254, 1, 1, 1, a);
     gfx_tex_aspect_atual = 0.0f;
   } else {
     // Sem foto, a inicial sobre #222 (#303030 com foco) — e o que o web faz
     // com `.movie-cast-avatar-fallback`.
     float lum = 0.133f + 0.055f * f;
-    gfx_cor(av, 0.5f, lum, lum, lum, a);
+    gfx_cor(av, 18.0f/254, lum, lum, lum, a);
     char ini[12]; elencoMonograma(nome, ini, sizeof ini);
     TxtLinha li = txt_linha(TXT_TITULO3, ini, 210, 212, 220, 255);
     txt_desenhar_alpha(li, av.x + (av.w - li.w) * 0.5f,
@@ -5987,13 +5988,18 @@ static void desenhaElenco(float x, float y, int c, float f, float a) {
                          NV_DETP_X,y+NV_DETP_EL_AVATAR+NV_DETP_EL_NOME_DY+78,a);
     }
   }
+  if (c==0 && ci->direcao[0]) {
+    char dir[240]; snprintf(dir,sizeof dir,"%s  %s",i18n("Direção"),ci->direcao);
+    TxtLinha l=txt_linha(TXT_G20M,dir,243,242,239,140);
+    txt_desenhar_alpha(l,NV_TELA_W-96-l.w,y-48,a);
+  }
   float yn = y + NV_DETP_EL_AVATAR + NV_DETP_EL_NOME_DY;
-  TxtLinha ln = txt_linha_corta(TXT_CALLOUT, nome, epApple()?238:179, epApple()?240:179, epApple()?244:179, 255, NV_DETP_EL_W);
-  txt_desenhar_alpha(ln, x + (NV_DETP_EL_W-ln.w)*.5f, yn, a);
+  TxtLinha ln = txt_linha_corta(TXT_G22M,nome,243,242,239,255,NV_DETP_EL_W);
+  txt_desenhar_alpha(ln,x,yn,a);
   if (papel && papel[0]) {
     TxtLinha lp = txt_linha_corta(TXT_CAPTION2, papel, epApple()?166:128, epApple()?172:128, epApple()?180:128, 255,
                                   NV_DETP_EL_W);
-    txt_desenhar_alpha(lp, x + (NV_DETP_EL_W-lp.w)*.5f, yn + NV_DETP_EL_PAPEL_DY, a * 0.95f);
+    txt_desenhar_alpha(lp,x,yn+NV_DETP_EL_PAPEL_DY,a*.95f);
   }
 }
 

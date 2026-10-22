@@ -185,11 +185,11 @@ int  detail_pediu_do_inicio(void);
 // ESQUERDA do card (nao centralizado); nome 26/500 rgb(179,179,179) e papel
 // 21/400 rgb(128,128,128) abaixo.
 #define NV_DETP_EL_Y        1817.0f
-#define NV_DETP_EL_W         220.0f
-#define NV_DETP_EL_PASSO     270.0f
-#define NV_DETP_EL_AVATAR    140.0f
-#define NV_DETP_EL_NOME_DY    10.0f   // base do avatar -> topo do nome
-#define NV_DETP_EL_PAPEL_DY   43.0f   // topo do nome -> topo do papel
+#define NV_DETP_EL_W         190.0f
+#define NV_DETP_EL_PASSO     214.0f
+#define NV_DETP_EL_AVATAR    254.0f
+#define NV_DETP_EL_NOME_DY    16.0f   // base do avatar -> topo do nome
+#define NV_DETP_EL_PAPEL_DY   30.0f   // topo do nome -> topo do papel
 // Altura de uma linha de texto do cartao de elenco (nome ou papel), e o vao
 // MEDIDO entre a base do elenco e o topo do wordmark do Trakt na captura da
 // referencia (~105 px em 1920). Existem para o empilhamento da secao de
@@ -347,7 +347,7 @@ int  detail_pediu_do_inicio(void);
 
 // ELENCO. Card 220x193, passo 270, avatar 140 alinhado a ESQUERDA do card.
 // Medido no web (.movie-cast-card / .movie-cast-track).
-#define NV_DETF_EL_ALT        193.0f
+#define NV_DETF_EL_ALT        392.0f
 #define NV_DETF_EL_MAX           18    // .slice(0, 18) do web
 // QUANTOS CABEM NA LINHA, medido na captura tests/detail_secoes_shot.sh
 // (/tmp/nuvio-detsec-10-filme-chamada.png): a fileira comeca no gutter
