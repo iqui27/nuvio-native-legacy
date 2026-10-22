@@ -9,9 +9,13 @@
 #include <unistd.h>
 
 static char pasta[256];
-static int seasonCount;
+static int seasonCount, duplicate;
 int cat_indice_por_imdb(const char *id) { return !strcmp(id, "tt1") ? 0 : -1; }
-int cat_n_episodios(int ix) { return ix == 0 ? seasonCount : 0; }
+int cat_indice_titulo(const char *id, int preferido) {
+  (void)preferido;
+  return !strcmp(id, "tt1") ? duplicate : -1;
+}
+int cat_n_episodios(int ix) { return ix == duplicate ? seasonCount : 0; }
 const CatEp *cat_episodio(int ix, int i) {
   static CatEp ep;
   (void)ix;
@@ -98,6 +102,11 @@ int main(void) {
   assert(!trava_liberado(&t, 1, 2, 1, 0));                  // contagem desconhecida: nao adivinha
   assert(trava_liberado(&t, 1, 1, 10, 0));                  // E+1 da mesma temporada
   seasonCount = 9;
+  assert(!trava_bloqueio("tt1", 1, 2, 1));
+  assert(trava_bloqueio("tt1", 1, 2, 2) == id);
+  // season_rollover_with_duplicate_catalog_entries: CW has no episodes;
+  // the detail copy at index 1 has all nine episodes of season 1.
+  duplicate = 1;
   assert(!trava_bloqueio("tt1", 1, 2, 1));
   assert(trava_bloqueio("tt1", 1, 2, 2) == id);
   seasonCount = 0;

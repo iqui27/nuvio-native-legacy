@@ -277,7 +277,7 @@ int trava_bloqueio(const char *serie, int perfil, int te, int ee) {
       TravaEstado s;
       int eps = 0;
       if (ee == 1 && trava_estado(&t, perfil, &s) && te == s.minT + 1) {
-        int ix = cat_indice_por_imdb(serie), count = ix >= 0 ? cat_n_episodios(ix) : 0;
+        int ix = cat_indice_titulo(serie, -1), count = ix >= 0 ? cat_n_episodios(ix) : 0;
         for (int k = 0; k < count; k++) {
           const CatEp *ep = cat_episodio(ix, k);
           if (ep && ep->temporada == s.minT && ep->episodio > eps) eps = ep->episodio;
