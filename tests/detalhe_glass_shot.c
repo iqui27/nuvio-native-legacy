@@ -153,7 +153,12 @@ static const char *const TR_MINI[] = { A "07.jpg", A "13.jpg", A "30.jpg", A "22
 int fx_n_trailers(void) { return 4; }
 const char *fx_trailer_yt(int i) { (void)i; return "abc"; }
 const char *fx_trailer_nome(int i) { return TR_NOME[i]; }
-const char *fx_trailer_miniatura(int i) { return TR_MINI[i]; }
+const char *fx_trailer_miniatura(int i) {
+  const char *ref=getenv("NUVIO_SHOT_REFERENCE");
+  static char path[1024];
+  if (ref) { snprintf(path,sizeof path,"%s/%s-arte.jpg",ref,ehSerieDeEnsaio() ? "fargo" : "phm"); return path; }
+  return TR_MINI[i];
+}
 int fx_nota_trakt(void) { return 85; }
 int fx_nota(int f) {
   switch (f) {

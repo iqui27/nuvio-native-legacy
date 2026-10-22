@@ -370,14 +370,14 @@ int  detail_pediu_do_inicio(void);
 
 // TRAILERS. Card520 de largura, miniatura520x292 raio24, passo582.
 // O selo de play e um circulo de 96 a rgba(0,0,0,.48) com o triangulo de 44.
-#define NV_DETF_TR_W          520.0f
-#define NV_DETF_TR_PASSO      582.0f
-#define NV_DETF_TR_VIDEO_H    292.0f
-#define NV_DETF_TR_RAIO        24.0f
-#define NV_DETF_TR_NOME_DY    302.0f   // topo do card -> nome (28/500 branco)
+#define NV_DETF_TR_W          400.0f
+#define NV_DETF_TR_PASSO      424.0f
+#define NV_DETF_TR_VIDEO_H    225.0f
+#define NV_DETF_TR_RAIO        18.0f
+#define NV_DETF_TR_NOME_DY    240.0f   // topo do card -> nome (28/500 branco)
 #define NV_DETF_TR_TIPO_DY    344.6f   // topo do card -> subrotulo (24/400 cinza)
-#define NV_DETF_TR_ALT        377.0f
-#define NV_DETF_TR_PLAY_D      96.0f
+#define NV_DETF_TR_ALT        282.0f
+#define NV_DETF_TR_PLAY_D      44.0f
 
 // DETALHES DO FILME. Tabela de duas colunas com divisoria por linha.
 //

@@ -793,13 +793,13 @@ static const char *cabecalhoDe(int r) {
   if (r == SEC_RELACIONADOS) return "Mais como este";
   if (r == SEC_ELENCO && nAbasInfo() <= 1) return "Elenco";
   if (ehSerie()) {
-    if (r == SEC_TRAILERS) return "Trailers";
+    if (r == SEC_TRAILERS) return "Trailers e extras";
     if (r == SEC_ESTUDIOS) return "Redes e estúdios";
     return NULL;
   }
   switch (r) {
     case SEC_ELENCO:   return "Elenco";
-    case SEC_TRAILERS:     return "Trailers";
+    case SEC_TRAILERS:     return "Trailers e extras";
     case SEC_RELACIONADOS: return "Recomendações";
     case SEC_COLECAO:      return "Coleção";
     // Sem cabecalho de secao: a propria secao ja abre com "trakt Comentários" e
@@ -5856,18 +5856,17 @@ static void desenhaTrailer(float x, float y, int c, float f, float a) {
 
   // Selo de play: disco escuro e o triangulo por cima, centrados na miniatura.
   { float d = NV_DETF_TR_PLAY_D;
-    GfxRect disco = { v.x + (v.w - d) * 0.5f,
-                      v.y + (v.h - d) * 0.5f, d, d };
+    GfxRect disco = { v.x + 20,
+                      v.y + v.h - d - 18, d, d };
     GfxRect tri   = { disco.x + d * 0.34f, disco.y + d * 0.28f,
                       d * 0.36f, d * 0.44f };
     gfx_cor(disco, 0.5f, 0.0f, 0.0f, 0.0f, a * 0.48f);
     gfx_rect(tri, 0, GFX_PLAY, 0, 0, 0, 0.0f, 1, 1, 1, a); }
 
-  { TxtLinha ln = txt_linha_corta(TXT_ROW_TITULO, extras_trailer_nome(c),
+  { TxtLinha ln = txt_linha_corta(TXT_G22M, extras_trailer_nome(c),
                                   245, 248, 255, 255, NV_DETF_TR_W);
     txt_desenhar_alpha(ln, x, y + NV_DETF_TR_NOME_DY, a); }
-  { TxtLinha lt = txt_linha(TXT_CAPTION2, "YouTube", 179, 179, 179, 255);
-    txt_desenhar_alpha(lt, x, y + NV_DETF_TR_TIPO_DY, a * 0.9f); }
+
 }
 
 // --- tabela "Detalhes do Filme" ---------------------------------------------
