@@ -93,6 +93,15 @@ int main(void) {
   video_tocar("http://x/filme.mkv");
   nv_tpk_video_evento(6, 1920, 1080);
   nv_tpk_video_evento(1, 100000, 0);
+  Uint64 stamp, before = SDL_GetTicks64();
+  fakePosMs = 12500;
+  ok("native sample reads host position", video_pos_amostra(&stamp) == 12.5 && stamp >= before);
+  fakePosMs = 0;
+  video_velocidade(150); video_taxa_sync(950); video_bombear();
+  ok("sync multiplies without replacing personal speed", ultVel == 143 && video_velocidade_atual() == 150);
+  video_taxa_sync(1000); video_bombear();
+  ok("clearing sync restores personal speed", ultVel == 150);
+  video_velocidade(100); video_bombear(); nVels = 0;
   // 1 audio (ko) and 2 subtitles (ru, en); the file opens on its own default.
   nv_tpk_video_faixa(0, 0, "ko");
   nv_tpk_video_faixa(1, 0, "ru");

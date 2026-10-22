@@ -264,8 +264,10 @@ static unsigned  sessao;
 // app compilar e rodar igual, so sem imagem em movimento. As capturas podem
 // simular um video (video_simular, video.h); zerado e o coto mudo.
 static VideoSimulacao SIM;
+static Uint64 simPosEm;
 void video_simular(const VideoSimulacao *s) {
   if (s) SIM = *s; else memset(&SIM, 0, sizeof SIM);
+  simPosEm = SDL_GetTicks64();
   dtsEstado = SIM.dts;
 }
 int  video_iniciar(void) { return 0; }
@@ -294,6 +296,10 @@ void video_janela_fonte(int sx,int sy,int sw,int sh,int dx,int dy,int dw,int dh)
 void video_recorte_reaplicar(void) {}
 void video_escala_definir(int sw, int sh) { (void)sw; (void)sh; }
 double video_pos(void) { return SIM.pos; }
+double video_pos_amostra(Uint64 *t) {
+  if (t) *t = simPosEm;
+  return SIM.pos;
+}
 double video_duracao(void) { return SIM.duracao; }
 // Sem pipeline nao ha arquivo para ler capitulos: no Mac o pos-reproducao cai
 // no plano B dos ultimos minutos, que e o mesmo caminho de um MKV sem
@@ -588,6 +594,9 @@ static int dvPedido;
 
 static char      midia[64];
 static double    posSeg, durSeg;
+static pthread_mutex_t travaAmostra = PTHREAD_MUTEX_INITIALIZER;
+static double posAmostra;
+static Uint64 posAmostraEm;
 static _Atomic int tocando, falhou, terminou;
 static int       pronto, ligado;
 static _Atomic int ackMidia; // presenca de midia, sem ler a string entre fios
@@ -1403,6 +1412,10 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   { double v = numeroDe(p, "\"currentTime\":");
     if (v >= 0) {
       posSeg = v / 1000.0;
+      pthread_mutex_lock(&travaAmostra);
+      posAmostra = posSeg;
+      posAmostraEm = SDL_GetTicks64();
+      pthread_mutex_unlock(&travaAmostra);
       // Primeiro quadro com avanco: o numero de inicio de verdade.
       if (cronPediu && !cronQuadro && posSeg > 0.0) {
         cronQuadro = 1;
@@ -2481,6 +2494,9 @@ static int tocarInterno(const char *url, int comDV) {
   // entender no titulo seguinte, e insistir so arrisca a imagem de novo.)
   fonX = -1; dstX = dstY = dstW = dstH = -1;
   posSeg = durSeg = bufferSeg = 0; tocando = pronto = 0; midia[0] = 0;
+  pthread_mutex_lock(&travaAmostra);
+  posAmostra = 0; posAmostraEm = SDL_GetTicks64();
+  pthread_mutex_unlock(&travaAmostra);
   ackMidia = 0; ack_publicar();
   velEnviada = 100;   // pipeline novo nasce em 1x; video_bombear reaplica
   bufferandoDesde = 0;
@@ -3349,6 +3365,14 @@ void video_janela_fonte(int sx, int sy, int sw, int sh,
 }
 
 double video_pos(void)      { return posSeg; }
+double video_pos_amostra(Uint64 *t) {
+  double p;
+  pthread_mutex_lock(&travaAmostra);
+  p = posAmostra;
+  if (t) *t = posAmostraEm;
+  pthread_mutex_unlock(&travaAmostra);
+  return p;
+}
 double video_duracao(void)  { return durSeg; }
 double video_buffer_fim(void) { return bufferSeg; }
 // webOS: so o buffer em SEGUNDOS e real (bufferRange do uMS); bytes, conexoes
@@ -3717,7 +3741,7 @@ static int aoVelocidade(LSHandle *h, LSMessage *m, void *u) {
 // espera o play.
 static void velBombear(void) {
   char b[160];
-  int v = velPedida;
+  int v = video_taxa_efetiva();
   if (velRecusada || !ligado || !midia[0] || !pronto || !tocando || v == velEnviada) return;
   velEnviada = v;
   snprintf(b, sizeof b, "{\"mediaId\":\"%s\",\"playRate\":%d.%02d,\"audioOutput\":true}",

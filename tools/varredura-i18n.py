@@ -258,6 +258,18 @@ def contexto(txt, i):
 # "nao sei o que e": sem esta lista a ferramenta nao pode virar teste, e sem
 # virar teste ela nao impede a proxima regressao.
 IGNORAR = {
+    # Verified non-UI literals on the 2.1 feature branch:
+    # fundo.c diagnostics; faixas/player/video_android speed and subtitle logs.
+    " (sem quadro pequeno)", "desenho direto (sem quadro pequeno)",
+    "sem a copia desfocada da arte ainda (arte nao decodificada?): fundo liso",
+    "codec nao e de texto (ASS/SRT/WebVTT): a TV desenha",
+    "confirmada pelo relogio do pipeline", "enviado ao ExoPlayer",
+    # mapa.c canonical genre aliases and legauto.c filename stopwords.
+    "acción", "ação", "ciencia ficción", "com", "comédia", "fantasía",
+    # Remote schema enum, persistence names and trailer diagnostic gate.
+    '"POSTER"', "conta-pend-%s.txt", "perfil-infantil.txt", "escolha-perfil",
+    # Room protocol values and notice IDs; UI resolves these to translated text.
+    "juntos:erro", "juntos:fonte", "nenhuma", "todos", ',"fonte":{"tipo":"%s"}',
     "daqui em diante",  # episodios.c nomeModo: so no log [visto] menu, nunca rotulo
     "fechar",  # main.c: nome do evento de janela so no log "[ciclo] janela="
     # video_tpk.c: motivos de cartaoModo()/cartaoEncaixar(), so no log "[video] tpk cartao".

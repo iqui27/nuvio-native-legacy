@@ -27,6 +27,7 @@ static unsigned relogio = 100;
 void *SDL_AndroidGetJNIEnv(void) { return &env; }
 void *SDL_AndroidGetActivity(void) { return NULL; }
 Uint32 SDL_GetTicks(void) { return relogio; }
+Uint64 SDL_GetTicks64(void) { return relogio; }
 SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex *)(uintptr_t)1; }
 void marco(const char *s) { (void)s; }
 
@@ -153,6 +154,19 @@ int main(void) {
   video_bombear(); video_bombear();
   assert(!strcmp(registro, "V150"));
   assert(video_velocidade_atual() == 150);
+  registro[0] = 0;
+  video_taxa_sync(950); video_bombear();
+  assert(!strcmp(registro, "V143") && video_velocidade_atual() == 150);
+  registro[0] = 0;
+  video_taxa_sync(1000); video_bombear();
+  assert(!strcmp(registro, "V150"));
+  Uint64 stamp;
+  relogio = 1000;
+  Java_space_nuvio_nativelegacy_NvPlayer_nativePos(&env, NULL, 12500);
+  relogio = 1200;
+  assert(video_pos_amostra(&stamp) == 12.5 && stamp == 1000);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativePos(&env, NULL, 12500);
+  assert(video_pos_amostra(&stamp) == 12.5 && stamp == 1200);
   registro[0] = 0;
   assert(abrirSessao(0, 0));                     // reconnection / same playback
   Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(&env, NULL, 1, 60000, 0);

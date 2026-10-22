@@ -16,6 +16,7 @@
 // TV tocando o mesmo arquivo: e o que comprovadamente funciona.
 #ifndef NV_VIDEO_H
 #define NV_VIDEO_H
+#include <SDL2/SDL_stdinc.h>
 
 // Registra no barramento e sobe o laco de eventos. 1 se deu certo.
 // Falhar aqui nao e fatal: o app segue sem video.
@@ -99,6 +100,9 @@ void video_escala_definir(int sw, int sh);
 // esta tocando — e a unica coisa que identifica o arquivo, nos dois alvos.
 const char *video_url_atual(void);
 double video_pos(void);      // segundos decorridos
+// Raw backend sample; timestamp uses SDL_GetTicks64(), never wall time.
+// Repeated reads keep the timestamp until a new native sample arrives.
+double video_pos_amostra(Uint64 *ticksDaAmostra);
 double video_duracao(void);  // 0 enquanto desconhecida
 
 // Segundo em que comecam os CREDITOS, ou 0 quando o arquivo nao diz. Sai do
@@ -461,6 +465,10 @@ void video_forcar_sdr(void);
 int  video_velocidade_suportada(void);
 void video_velocidade(int centesimos);
 int  video_velocidade_atual(void);
+// Room correction in thousandths (950..1050); 1000 clears it. Personal speed
+// remains separate. Effective rate is in hundredths for existing native APIs.
+void video_taxa_sync(int milesimos);
+int  video_taxa_efetiva(void);
 // O PLAYER mediu que o pipeline nao acelerou (velocidade.h, VelMedidor) apesar
 // do "ok" da plataforma: o backend passa a se comportar como depois de uma
 // recusa (suportada = 0, atual = 100) e devolve o pipeline a 1x.

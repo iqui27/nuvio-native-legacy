@@ -86,6 +86,8 @@ static TituloTempo detalheTempo;
 #include "avisodisp.h"
 #include "svdesenho.h"
 #include "amigostitulo.h"
+#include "juntos.h"
+#include "juntosui.h"
 #include "amigostitulo_ui.h"
 #include "temporadas_grafico.h"
 #include "detrotulo.h"
@@ -2286,6 +2288,14 @@ static int temExplorar(void) {
   if (!ci || !ci->titulo[0]) return 0;
   return !strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series");
 }
+// "ASSISTIR JUNTOS" (Watch Together): o ULTIMO circular, depois do explorar.
+// So com o servico social no pacote e a conta ligada (juntos_disponivel), e so
+// filme e serie: a sala sincroniza pelo IMDb.
+static int temJuntos(void) {
+  const CatItem *ci = cat_item(idx);
+  if (!juntos_disponivel() || !ci || !ci->imdb[0] || strncmp(ci->imdb, "tt", 2)) return 0;
+  return !strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series");
+}
 // "MAIS OPCOES" (dono, 06/10/2026: "muitos botoes na pagina de titulos"): o
 // trailer, o Explorar, o Trocar arte e o Recomendar sairam da linha e moram
 // na ilha do circular "..." (detmais.h), o ULTIMO da linha. Ele so existe
@@ -2308,7 +2318,7 @@ static int temMais(void) {
 }
 static int nBotoesTodos(void) {
   return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0) + (temLembrar() ? 1 : 0)
-         + (temMais() ? 1 : 0);
+         + (temMais() ? 1 : 0) + (temJuntos() ? 1 : 0);
 }
 
 static int acoesAgrupadas(void) {
@@ -2329,7 +2339,7 @@ static int nBotoes(void) {
 // e os circulares escorregam um para a direita.
 enum { ACAO_PRIMARIO = 0, ACAO_LISTA = 1, ACAO_ASSISTIDO = 2, ACAO_FONTES = 3,
        ACAO_INICIO = 4, ACAO_RECOMENDAR = 5, ACAO_LEMBRAR = 6, ACAO_ARTE = 7,
-       ACAO_TRAILER = 8, ACAO_EXPLORAR = 9, ACAO_MAIS = 10 };
+       ACAO_TRAILER = 8, ACAO_EXPLORAR = 9, ACAO_MAIS = 10, ACAO_JUNTOS = 11 };
 static int acaoEm(int n) {
   if (n == 0) return ACAO_PRIMARIO;
   if (temInicio()) {
@@ -2348,6 +2358,7 @@ static int acaoEm(int n) {
     n--;
   }
   if (acoesAgrupadas() && n > 0) n++; // skip the list action already used as group anchor
+  if (temJuntos() && n == (ehSerie() ? 3 : 4) + (temMais() ? 1 : 0)) return ACAO_JUNTOS;
   // O "..." E O ULTIMO DA LINHA e a conferencia vem ANTES do salto da serie:
   // com 3 circulares numa serie, a ultima posicao e n == 3, e a regra de
   // baixo devolveria 4 — que e ACAO_INICIO, o botao de texto.
@@ -2733,6 +2744,12 @@ void detail_evento(const SDL_Event *e) {
         pedMarcar = 1;
       } else if (acao == ACAO_ASSISTIDO) {
         pedAssistido = 1;
+      } else if (acao == ACAO_JUNTOS) {
+        // A folha "Assistir juntos" (juntosui) para o episodio do primario.
+        int t0 = 0, e0 = 0, de = 0;
+        trailer_fechar();
+        if (ehSerie()) episodioAlvo(&t0, &e0, &de);
+        juntosui_abrir_folha(idx, t0, e0);
       } else if (acao == ACAO_MAIS) {
         int d[DMAIS_N];
         maisDisponiveis(d);
@@ -3850,6 +3867,20 @@ static int minutosDe(const char *s) {
   return total;
 }
 
+static void desenhaDicaBotao(GfxRect rc, const char *texto, float a) {
+  float ar, ag, ab;
+  TxtLinha label = txt_linha_corta(TXT_CAPTION2, texto, 232, 235, 240, 255,
+                                   NV_DETW2_TEXTO_W - 28.0f);
+  float w = label.w + 28.0f, h = 34.0f;
+  GfxRect pill = { rc.x + (rc.w - w) * 0.5f, rc.y - h - 14.0f, w, h };
+  if (pill.x < NV_DETW2_X) pill.x = NV_DETW2_X;
+  ajustes_acento(&ar, &ag, &ab);
+  gfx_cor(pill, .5f, ar, ag, ab, .16f * a);
+  gfx_cor((GfxRect){ pill.x + 1, pill.y + 1, pill.w - 2, pill.h - 2 }, .5f,
+          .075f, .08f, .095f, .76f * a);
+  txt_desenhar_alpha(label, pill.x + 14.0f, pill.y + (h - label.h) * .5f, a);
+}
+
 static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, float a) {
   // FOCO E TAMANHO, NAO ANEL.
   //
@@ -3916,6 +3947,8 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
       // so `progresso >= 90`, e filme visto em outro aparelho (ou marcado pelo
       // menu do cartaz, que zera o progresso) ficava com o olho riscado.
       gfx_icone(ig, cat_visto(cat_item(idx)) ? "visto" : "naovisto", ic, ic, ic, a);
+    } else if (icone == ACAO_JUNTOS) {
+      gfx_icone(ig, "aj_users", ic, ic, ic, a);
     } else if (icone == ACAO_MAIS) {
       // RETICENCIAS do Lucide: o "tem mais aqui" de qualquer interface.
       gfx_icone(ig, "aj_ellipsis", ic, ic, ic, a);
@@ -4643,6 +4676,8 @@ static void heroWeb(float a, float desloc) {
         if (action == ACAO_LEMBRAR)
           desenhaLembrete(rc,ci && agenda_lembrete(ci->imdb),selected,a*stagger);
         else desenhaBotao(rc,NULL,action,selected,a*stagger);
+        if (selected && action == ACAO_JUNTOS && stagger > .85f)
+          desenhaDicaBotao(rc, i18n("Assistir Juntos"), a);
         if (action == ACAO_MAIS) maisAncora = rc;
         if (maisAcoes && a > .3f && stagger > .85f)
           ponteiro_alvo(rc.x,rc.y,rc.w,rc.h,ponteiroDetalhe,NULL,-1,j);
@@ -4654,6 +4689,8 @@ static void heroWeb(float a, float desloc) {
                      NV_DETW2_CIRC, NV_DETW2_CIRC };
       if (detalheRetrato()) rc = heroAcaoRect(&bx, &cyBtn, rc.w, rc.h);
       desenhaBotao(rc, NULL, acaoEm(nb), nivel == 0 && botao == nb, a);
+      if (nivel == 0 && botao == nb && acaoEm(nb) == ACAO_JUNTOS)
+        desenhaDicaBotao(rc, i18n("Assistir Juntos"), a);
       if (acaoEm(nb) == ACAO_MAIS) maisAncora = rc;
       if (a > 0.3f) ponteiro_alvo(rc.x, rc.y, rc.w, rc.h, ponteiroDetalhe, NULL, -1, nb);
       bx += NV_DETW2_CIRC + NV_DETW2_BTN_GAP;
