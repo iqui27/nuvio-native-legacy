@@ -92,7 +92,7 @@ int main(int argc, char **argv) {
   FILE *f;
   base = argc > 1 ? argv[1] : "/tmp/nuvio-juntos";
   snprintf(aj, sizeof aj, "%s/ajustes.txt", dir);
-  f = fopen(aj, "w"); fprintf(f, "idioma 0\nselected_theme 2\n"); fclose(f);
+  f = fopen(aj, "w"); fprintf(f, "idioma 1\nselected_theme 2\n"); fclose(f);
   ajustes_dir(dir);
   dados_iniciar("deploy/app");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
@@ -148,11 +148,20 @@ int main(int argc, char **argv) {
     snprintf(codigo, sizeof codigo, "K7M2QX"); }
   juntosui_shot_camada(3, -1);
   quadros(20);
-  captura("03-lobby-empty-seat", 1080);
+  captura("03-lobby", 1080);   // 4 de 5 lugares, um vazio
   motor.sala.n = 5;
   juntosui_shot_camada(3, 0);
   quadros(5);
-  captura("03-lobby", 1080);
+  captura("03-lobby-full", 1080);
+  ajustes_shot_valor("animacoes", 1);
+  quadros(5);
+  captura("19-solid-reduced-motion", 1080);
+  ajustes_shot_valor("animacoes", 0);
+  juntosui_shot_camada(7, 0);
+  quadros(15);
+  captura("20-sources", 1080);
+  juntosui_shot_camada(3, 0);
+  quadros(5);
   { SDL_Event e; memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RIGHT; juntosui_evento_sdl(&e);
     e.key.keysym.sym = SDLK_RETURN; juntosui_evento_sdl(&e); }
   // A URL que a sala devolveria (o QR curto: ~87 bytes, cabe no qr.c).
