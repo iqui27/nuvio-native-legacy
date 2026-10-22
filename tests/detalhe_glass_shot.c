@@ -257,6 +257,24 @@ static void montarCatalogo(void) {
     } }
   itens[1].nElenco = 6;
 
+  if (getenv("NUVIO_SHOT_REFERENCE")) {
+    const char *ref=getenv("NUVIO_SHOT_REFERENCE");
+    snprintf(itens[1].titulo,sizeof itens[1].titulo,"Project Hail Mary");
+    snprintf(itens[1].meta,sizeof itens[1].meta,"2026 · 156 min");
+    snprintf(itens[1].genero,sizeof itens[1].genero,"Filme · Ficção científica");
+    snprintf(itens[1].sinopse,sizeof itens[1].sinopse,"Ryland Grace acorda sozinho numa nave a anos-luz da Terra, sem lembrar quem é nem por que está ali. Aos poucos a memória volta — e com ela a missão de salvar o Sol.");
+    snprintf(itens[1].direcao,sizeof itens[1].direcao,"Phil Lord, Christopher Miller");
+    snprintf(itens[0].titulo,sizeof itens[0].titulo,"Fargo");
+    snprintf(itens[0].meta,sizeof itens[0].meta,"2014 · 54 min");
+    snprintf(itens[0].genero,sizeof itens[0].genero,"Série · Crime · Drama");
+    snprintf(itens[0].sinopse,sizeof itens[0].sinopse,"Um vendedor de seguros frustrado cruza o caminho de um assassino de aluguel. A partir daí, uma cidadezinha de Minnesota nunca mais será a mesma.");
+    for (int k=0;k<2;k++) {
+      snprintf(itens[k].backdrop,sizeof itens[k].backdrop,"%s/%s-arte.jpg",ref,k ? "phm" : "fargo");
+      snprintf(itens[k].logo,sizeof itens[k].logo,"%s/%s-logo.png",ref,k ? "phm" : "fargo");
+      for (int j=0;j<6;j++) snprintf(itens[k].elenco[j].foto,sizeof itens[k].elenco[j].foto,"%s/elenco/%c%d.jpg",ref,k ? 'a' : 'b',j);
+      itens[k].elenco[5].foto[0]=0;
+    }
+  }
   fil.ini = 0; fil.n = 2;
   snprintf(fil.titulo, sizeof fil.titulo, "Ensaio");
   snprintf(fil.tipo, sizeof fil.tipo, "series");
@@ -397,7 +415,7 @@ int main(int argc, char **argv) {
     const char *lg = getenv("NUVIO_SHOT_IDIOMA");
     snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dd);
     f = fopen(caminho, "w"); assert(f);
-    if (lg && *lg) fprintf(f, "idioma %d\n", atoi(lg));
+    fprintf(f, "idioma %d\n", lg && *lg ? atoi(lg) : 0);
     // Acento azul do mockup (#5aa2ff/#42a5f5): o tema Oceano.
     fputs("selected_theme 2\n", f);
     if (getenv("NUVIO_SHOT_TOPO")) fprintf(f, "detalheTopoLocal %d\n", atoi(getenv("NUVIO_SHOT_TOPO")));

@@ -245,13 +245,13 @@ int  detail_pediu_do_inicio(void);
 // Padding, icone e vao descem na mesma proporcao (~0,75); o rotulo fica em 25,
 // que e o piso de leitura desta interface. O foco continua por ESCALA, com os
 // mesmos fatores medidos: 72 vira 83 focado.
-#define NV_DETW2_BTN_H        72.0f
+#define NV_DETW2_BTN_H        94.0f
 #define NV_DETW2_BTN_PADX     38.0f
 #define NV_DETW2_BTN_ICONE_W  22.0f   // triangulo 22x24, centrado na vertical
 #define NV_DETW2_BTN_ICONE_H  24.0f
 #define NV_DETW2_BTN_GAPI     16.0f   // fim do triangulo -> tinta do rotulo
-#define NV_DETW2_CIRC         72.0f
-#define NV_DETW2_BTN_GAP      18.0f
+#define NV_DETW2_CIRC         96.0f
+#define NV_DETW2_BTN_GAP      24.0f
 // Glifo dentro do circular: 32 num circulo de 96 em repouso e 36 num de 110
 // focado — 0,333 do diametro nos dois. Estava 0,45, que vinha de uma captura
 // solta do dono e engordava o "+" ate quase encostar na borda.
@@ -264,15 +264,15 @@ int  detail_pediu_do_inicio(void);
 // a pilula vai de 321x94 para 357,6x107,8 (1,114 em x, 1,147 em y) e o circulo
 // de 96 para 110 (1,146 nos dois eixos). Escrever um so fator faria a pilula
 // crescer 10px a mais do que a referencia; ficam os dois, como medidos.
-#define NV_DETW2_FOCO_SX       1.114f
-#define NV_DETW2_FOCO_SY       1.147f
+#define NV_DETW2_FOCO_SX       1.04f
+#define NV_DETW2_FOCO_SY       1.04f
 
 // PILHA DE TEXTO. As duas capturas dao as mesmas coordenadas absolutas para o
 // que esta ABAIXO da sinopse (selo do IMDb em y=938, selo de classificacao em
 // y=999) e a sinopse cresce PARA CIMA — 5 linhas na serie, 4 no filme, e a
 // ULTIMA linha cai no mesmo y nas duas. Por isso a pilha e montada de baixo
 // para cima, e nao do logo para baixo.
-#define NV_DETW2_LD_SIN       40.0f   // passo entre linhas da sinopse (medido)
+#define NV_DETW2_LD_SIN       42.0f   // passo entre linhas da sinopse (medido)
 #define NV_DETW2_SIN_LINHAS       3   // dono, 12/10/2026: 5 linhas pesavam; o resto vira "..."
 #define NV_DETW2_TEXTO_W    1040.0f   // sinopse e linha de apoio (96..1136)
 // Distancia entre TOPOS DE CAIXA de linhas vizinhas, ja descontada a metrica da
@@ -339,7 +339,7 @@ int  detail_pediu_do_inicio(void);
 // medida: o Mac parametriza o espacamento por chamada
 // (DetailSectionContainer(horizontalPadding, contentMaxWidth, bottomPadding)),
 // entao nao ha uma constante unica para ler no bytecode.
-#define NV_DETF_HERO_FIM     1080.0f   // o hero ocupa 0..1080, igual a serie
+#define NV_DETF_HERO_FIM     1000.0f   // o hero ocupa 0..1080, igual a serie
 #define NV_DETF_CAB_H          46.0f   // linha do cabecalho (TXT_HEADLINE, 38)
 #define NV_DETF_CAB_GAP        20.0f   // cabecalho -> conteudo
 #define NV_DETF_SEC_GAP        64.0f   // fim de uma secao -> cabecalho da proxima

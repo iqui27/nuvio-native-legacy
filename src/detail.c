@@ -106,7 +106,7 @@ static float larguraTextoHero(void) {
   return detalheRetrato() ? fminf(NV_DETW2_TEXTO_W, NV_TELA_W - 192.0f) : NV_DETW2_TEXTO_W;
 }
 static float larguraLogoHero(void) {
-  return detalheRetrato() ? fminf(NV_DETW_LOGO_MAXW, larguraTextoHero()) : NV_DETW_LOGO_MAXW;
+  return detalheRetrato() ? fminf(NV_DETW_LOGO_MAXW, larguraTextoHero()) : 640.0f;
 }
 static float larguraDetalhes(void) {
   return detalheRetrato() ? fminf(NV_DETF_DET_W, NV_TELA_W - NV_DETP_X * 2) : NV_DETF_DET_W;
@@ -1353,7 +1353,7 @@ static void desenhaArteDetalhe(GfxRect alvo, GLuint tex, const char *arte,
       // para o logo pequeno do canto nao flutuar sobre uma cena clara).
       gfx_rect(alvo, 0, GFX_DETALHE, veu * (1.0f - 0.85f * trailercinema_t(&trailerCinema)), 1.0f, 0, 0.0f, 0, 0, 0, alpha * trailerFade);
     } else
-      gfx_rect(alvo, tex, GFX_DETALHE, veu, 0, 0, 0.0f, 0, 0, 0, alpha);
+      gfx_rect(alvo, tex, GFX_DETALHE, 1.0f, 0, 1, 0.0f, 0, 0, 0, alpha);
   } else {
     float ap = gfx_tex_aspect_atual > 0.05f ? gfx_tex_aspect_atual : (2.0f / 3.0f);
     float h = alvo.h * 0.90f, w = h * ap, maxW = alvo.w * 0.42f;
@@ -2270,7 +2270,7 @@ static int secaoN(int r) {
 // Este arquivo desenhava TRES nos dois casos.
 static int temInicio(void) {
   const CatItem *ci = cat_item(idx);
-  if (!ci) return 0;
+  if (!ci || !detalheRetrato()) return 0;
   // O MESMO criterio do player (player.c: retomarPct): progresso guardado
   // abaixo do Percentual assistido (ajustes_cw_concluido, 90 de fabrica). Em serie, so quando o episodio-alvo e o "Retomar" — com um
   // episodio em foco na fileira (origem 1) o primario toca AQUELE episodio e
@@ -2375,14 +2375,13 @@ static int temMais(void) {
   return 0;
 }
 static int nBotoesTodos(void) {
+  if (!detalheRetrato()) return 2 + (topoVersao() ? 1 : 0) + (topoPessoal() ? 1 : 0) + (temMais() ? 1 : 0);
   return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0) + (temLembrar() ? 1 : 0)
          + (temMais() ? 1 : 0) + (temJuntos() ? 1 : 0);
 }
 
 static int acoesAgrupadas(void) {
-  if (detalheRetrato()) return 0;
-  return carro || ajustes_home_layout() == HOME_LAYOUT_DINAMICA ||
-         ajustes_home_layout() == HOME_LAYOUT_MODERNA;
+  return 0;
 }
 
 static int nBotoes(void) {
@@ -2397,9 +2396,16 @@ static int nBotoes(void) {
 // e os circulares escorregam um para a direita.
 enum { ACAO_PRIMARIO = 0, ACAO_LISTA = 1, ACAO_ASSISTIDO = 2, ACAO_FONTES = 3,
        ACAO_INICIO = 4, ACAO_RECOMENDAR = 5, ACAO_LEMBRAR = 6, ACAO_ARTE = 7,
-       ACAO_TRAILER = 8, ACAO_EXPLORAR = 9, ACAO_MAIS = 10, ACAO_JUNTOS = 11 };
+       ACAO_TRAILER = 8, ACAO_EXPLORAR = 9, ACAO_MAIS = 10, ACAO_JUNTOS = 11, ACAO_NOTA = 12 };
 static int acaoEm(int n) {
   if (n == 0) return ACAO_PRIMARIO;
+  if (!detalheRetrato()) {
+    if (n==1) return ACAO_LISTA;
+    n-=2;
+    if (topoVersao() && n--==0) return ACAO_ASSISTIDO;
+    if (topoPessoal() && n==0) return ACAO_NOTA;
+    return ACAO_MAIS;
+  }
   if (temInicio()) {
     if (n == 1) return ACAO_INICIO;
     n--;
@@ -2798,6 +2804,8 @@ void detail_evento(const SDL_Event *e) {
         }
       } else if (acao == ACAO_LISTA) {
         pedMarcar = 1;
+      } else if (acao == ACAO_NOTA) {
+        reacao_detalhe_abrir(cat_item(idx));
       } else if (acao == ACAO_ASSISTIDO) {
         pedAssistido = 1;
       } else if (acao == ACAO_JUNTOS) {
@@ -3946,6 +3954,7 @@ static float focoAcento(float *r, float *g, float *b) {
 // alpha 0,35. So o botao focado a tem, entao e uma mancha por tela; para o
 // Play sao ~0,07 tela de preenchimento, longe de mudar a conta da pagina.
 static void luzFoco(GfxRect r, float a) {
+  if (!detalheRetrato()) return;
   // A luz da tabela de botoes (botoes.h), para ser a MESMA do menu do cartaz
   // e dos cartoes — o Play nao tem luz propria.
   botao_luz(r, 1.0f, a);
@@ -4051,7 +4060,10 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
       // O ESTADO E O DE cat_visto (#212), o mesmo do selo do cartaz: antes era
       // so `progresso >= 90`, e filme visto em outro aparelho (ou marcado pelo
       // menu do cartaz, que zera o progresso) ficava com o olho riscado.
-      gfx_icone(ig, cat_visto(cat_item(idx)) ? "visto" : "naovisto", ic, ic, ic, a);
+      gfx_icone(ig, "check", ic, ic, ic, a);
+    } else if (icone == ACAO_NOTA) {
+      TxtLinha star=txt_linha(TXT_G30B,"★",(int)(ic*255),(int)(ic*255),(int)(ic*255),255);
+      txt_desenhar_alpha(star,cx-star.w*.5f,cy-star.h*.5f,a);
     } else if (icone == ACAO_JUNTOS) {
       gfx_icone(ig, "aj_users", ic, ic, ic, a);
     } else if (icone == ACAO_MAIS) {
@@ -4109,7 +4121,7 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
     TxtLinha l = detalheRetrato() ?
       txt_linha_corta(TXT_DET_BOTAO, rot, c, c, c, 255,
                       r.w - NV_DETW2_BTN_PADX * 2 - iw - NV_DETW2_BTN_GAPI * s) :
-      txt_linha(TXT_DET_BOTAO, rot, c, c, c, 255);
+      txt_linha(TXT_G28B, rot, c, c, c, 255);
     float tw = primarioPct >= 0 ? NV_DETW2_TRILHO_W * s + NV_DETW2_BTN_GAPI * s : 0.0f;
     float grupo = iw + NV_DETW2_BTN_GAPI * s + tw + l.w;
     float x = r.x + (r.w - grupo) * 0.5f;
@@ -4153,6 +4165,7 @@ static void desenhaSecundario(GfxRect r, const char *rot, int focado, float a) {
 static float larguraPrimario(const char *rot) {
   TxtLinha l = txt_linha(TXT_DET_BOTAO, rot, 0, 0, 0, 255);
   float w = NV_DETW2_BTN_PADX * 2 + NV_DETW2_BTN_ICONE_W + NV_DETW2_BTN_GAPI + l.w;
+  if (!detalheRetrato()) w = 82 + 22 + 18 + txt_largura(TXT_G28B,rot);
   if (primarioPct >= 0) w += NV_DETW2_TRILHO_W + NV_DETW2_BTN_GAPI;
   return detalheRetrato() ? fminf(w, (larguraTextoHero() - NV_DETW2_BTN_GAP) * .5f) : w;
 }
@@ -4531,12 +4544,12 @@ static void heroWeb(float a, float desloc) {
   // UMA LINHA DE META SO (dono, 12/10/2026): a de baixo (selo de
   // classificacao/status, pais, direcao) saiu e a duracao do filme subiu para
   // a linha dos generos. O bloco inteiro desce o que ela ocupava.
-  float yMeta1 = NV_DETW2_BASE - NV_DETW2_M1_H;
-  float ySin   = yMeta1 - NV_DETW2_GAP_SIN - hSin;
+  float yMeta1 = topoPessoal() ? 540.0f : 548.0f;
+  float ySin = (topoVersao() ? 784.0f : 726.0f) + 4.0f;
   AmigosTitulo amg;
-  int temAmg = amigosDoTitulo(&amg);
+  int temAmg = 0; /* Friends belong to the ratings row in the approved v2 layout. */
   if (!temAmg) focoAmigos = 0;
-  float hAmg = temAmg ? NV_DETW_AMIGOS_H + NV_DETW_AMIGOS_GAP : 0.0f;
+
   float hAcoesExtra = detalheRetrato() ? NV_DETW2_CIRC + NV_DETW2_BTN_GAP : 0;
   // Faixa "Vai tocar": embaixo dos botoes (e da ilha de amigos), reservada na
   // pilha de baixo para cima como a ilha. Alvo = o mesmo episodio do botao
@@ -4561,7 +4574,7 @@ static void heroWeb(float a, float desloc) {
         if (fabsf(alvo - hVaiVis) < 0.5f) hVaiVis = alvo;
       }
       hVai = hVaiVis; } }
-  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai;
+  float yAcoes = 600.0f;
   // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
   // botoes. Sao duas, e a ordem tem razao: a retomada explica o BOTAO e fica
   // colada nele; a agenda ("Próximo episódio T2E5 · em 3 dias") explica o
@@ -4576,11 +4589,13 @@ static void heroWeb(float a, float desloc) {
       agenda_frase(ciAg->imdb, agLinha, sizeof agLinha); }
   char pessoal[256];
   topoEstadoTexto(pessoal,sizeof pessoal,durMin,topoPessoal());
+  if (!topoPessoal()) pessoal[0] = 0;
   if (pessoal[0]) temRetom = 1.0f;
   float yEstado = yAcoes - NV_DETW_GAP_RETOM;
   float yRetom = yEstado, yAgenda = yEstado;
   if (temRetom > 0.0f) { yEstado -= NV_DETW_RETOM_H; yRetom = yEstado; }
   if (agLinha[0]) { yEstado -= carro ? 46.0f : NV_DETW_RETOM_H; yAgenda = yEstado; }
+  yRetom = 494.0f;
 
   // Sobe alguns pixels enquanto entra: continua o movimento da arte em vez de
   // aparecer pronto no lugar. `desloc` e a rolagem do documento.
@@ -4601,8 +4616,7 @@ static void heroWeb(float a, float desloc) {
   GLuint texLogo = arqLogo ? tex_obter_logo_larg_qualquer(arqLogo, larguraLogoHero()) : 0;
   titulo_tempo_logo(&detalheTempo, "detalhe", arqLogo, texLogo, 0);
   if (a > 0.05f) titulo_tempo_info(&detalheTempo, "detalhe", ci, 0);
-  float baseLogo = ((temRetom > 0.0f || agLinha[0]) ? yEstado : yAcoes)
-                   - NV_DETW_LOGO_GAP;
+  float baseLogo = (topoPessoal() ? 470.0f : 520.0f) + sobe;
   float espacoLogo = baseLogo - 110.0f - (!nomeAbaixo ? hNome : 0);
   if (espacoLogo < 0) espacoLogo = 0;
   static char  logoVisto[600];
@@ -4626,7 +4640,7 @@ static void heroWeb(float a, float desloc) {
     static float hLogoVis;
     static Uint32 hLogoTick;
     static char hLogoDe[600];
-    float hAlvo = fminf(NV_DETW_LOGO_H, espacoLogo);
+    float hAlvo = fminf(topoPessoal() ? 170.0f : 190.0f, espacoLogo);
     { Uint32 agoraL = SDL_GetTicks();
       float dtL = hLogoTick ? (float)(Uint32)(agoraL - hLogoTick) : 0.0f;
       hLogoTick = agoraL;
@@ -4694,11 +4708,18 @@ static void heroWeb(float a, float desloc) {
     else { snprintf(rot, sizeof rot, "%s",
                     det_rotulo_primario(ci ? ci->progresso : 0, ajustes_cw_concluido()));
            retomando = !ehSerie(); } }
+  if (!detalheRetrato()) {
+    if (ehSerie()) {
+      int st=0, ep=0;
+      episodioAlvo(&st,&ep,NULL);
+      snprintf(rot,sizeof rot,i18n("%s T%dE%d"),i18n(retomando ? "Continuar" : "Assistir"),st,ep);
+    } else snprintf(rot,sizeof rot,"%s",i18n(retomando && ci && ci->progresso>0 ? "Continuar" : "Assistir"));
+  }
   // Retomando com progresso: trilho no botao e, no lugar de "Retomar", o tempo
   // que falta, como o app da Apple TV ("1 h 51 min"). Serie mantem o TxEy na
   // frente. Sem duracao conhecida o rotulo fica como estava.
   primarioPct = -1;
-  if (retomando && ci && ci->progresso > 0 && ci->progresso < 100) {
+  if (detalheRetrato() && retomando && ci && ci->progresso > 0 && ci->progresso < 100) {
     int total = durMin;   // serie: a duracao do episodio que a ficha traz ("54 min")
     primarioPct = ci->progresso;
     if (total > 0) {
@@ -4769,7 +4790,7 @@ static void heroWeb(float a, float desloc) {
       if (a > 0.3f) ponteiro_alvo(rs.x, rs.y, rs.w, rs.h, ponteiroDetalhe, NULL, -1, nb);
       bx += rs.w + NV_DETW2_BTN_GAP; nb++;
     }
-    if (temLembrar() && !acoesAgrupadas()) {
+    if (detalheRetrato() && temLembrar() && !acoesAgrupadas()) {
       const CatItem *ciL = cat_item(idx);
       GfxRect rs = { bx, cyBtn - NV_DETW2_CIRC * 0.5f,
                      NV_DETW2_CIRC, NV_DETW2_CIRC };
@@ -4862,12 +4883,12 @@ static void heroWeb(float a, float desloc) {
              vaiTocar.audio[0] ? " · " : "", vaiTocar.audio,
              vaiTocar.idiomas[0] ? " · " : "", vaiTocar.idiomas);
     TxtLinha l = txt_linha_corta(TXT_DET_META2, texto, 225, 227, 232, 255, larguraTextoHero() - 48);
-    float yV = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + hCaption + hAmg + DET_VAI_GAP;
-    versaoRect = (GfxRect){NV_DETW2_X, yV, l.w + 40, 38};
+    float yV = 716.0f + sobe;
+    versaoRect = (GfxRect){NV_DETW2_X-12, yV, l.w + 64, 48};
     if (focoVersao) gfx_cor(versaoRect, .5f, .17f, .18f, .20f, a);
     float cr, cg, cb; ajustes_acento(&cr, &cg, &cb);
-    gfx_cor((GfxRect){NV_DETW2_X + 4, yV + 15, 7, 7}, .5f, cr, cg, cb, a);
-    txt_desenhar_alpha(l, NV_DETW2_X + 22, yV + (38 - l.h) * .5f, a);
+    gfx_cor((GfxRect){NV_DETW2_X + 11, yV + 19, 10, 10}, .5f, cr, cg, cb, a);
+    txt_desenhar_alpha(l, NV_DETW2_X + 40, yV + (48 - l.h) * .5f, a);
   }
   if (pessoal[0]) {
     TxtLinha l = txt_linha_corta(TXT_DET_META2, pessoal, 225, 227, 232, 255, larguraTextoHero());
@@ -4947,8 +4968,8 @@ static void heroWeb(float a, float desloc) {
                                NV_DETW2_SIN_LINHAS);
       else esqueletoSinopse(NV_DETW2_X, ySin, a * (1.0f - f));
     }
-    if (sin) txt_bloco_corta(TXT_DET_SIN, sin, 255, 255, 255, NV_DETW2_X, ySin,
-                       larguraTextoHero(), NV_DETW2_LD_SIN, a * f,
+    if (sin) txt_bloco_corta(TXT_DET_SIN, sin, 243, 242, 239, NV_DETW2_X, ySin,
+                       larguraTextoHero(), NV_DETW2_LD_SIN, a * f * .84f,
                        NV_DETW2_SIN_LINHAS);
     else if (esqSin) esqueletoSinopse(NV_DETW2_X, ySin, a * f); }
 
@@ -4963,6 +4984,19 @@ static void heroWeb(float a, float desloc) {
   // linha — ver desenhaPonto.
   const float aHero = a;
   if (detalheRetrato()) gfx_recorte(96, 0, larguraTextoHero(), NV_TELA_H);
+  if (!detalheRetrato()) {
+    char meta[400], fim[160];
+    const char *g=generoDe(idx), *p=g ? strstr(g,"·") : NULL;
+    g=p ? p+2 : g;
+    while (g && *g==' ') g++;
+    topoEstadoTexto(fim,sizeof fim,durMin,0);
+    snprintf(meta,sizeof meta,"%s%s%s%s%s%s%s",ano,g && *g ? " · " : "",g ? g : "",
+             dur[0] ? " · " : "",dur,!topoPessoal() && fim[0] ? " · " : "",!topoPessoal() ? fim : "");
+    TxtLinha lm=txt_linha(TXT_DET_META2,meta,189,189,189,255);
+    txt_desenhar_alpha(lm,NV_DETW2_X,yMeta1,a);
+    desenhaSeloImdb(NV_DETW2_X+lm.w+12,yMeta1+15,notaDe(idx),a);
+    return;
+  }
   float fMeta = 1.0f;
   { const char *g0 = generoDe(idx);
     int vazia = !ano[0] && !(ci && ci->nota > 0) &&
@@ -7653,7 +7687,7 @@ static void detalheFundo(float s) {
     // ~30 fps, clr 22 ms + swap 21 ms). O teto de 0,998 que havia aqui
     // obrigava o caminho misturado; sem fundo intacto o caminho continua o
     // misturado (o "vazar"), com alfa 1 em vez de 0,998.
-    gfx_rect(alvo, tex, GFX_DETALHE, 1.0f, 0, 0, 0.0f, 0, 0, 0, aEntrada * (1.0f - pg));
+    gfx_rect(alvo, tex, GFX_DETALHE, 1.0f, 0, 1, 0.0f, 0, 0, 0, aEntrada * (1.0f - pg));
     gfx_tex_aspect_atual = 0.0f;
     nv_ambiente_forca = salva;
   }
