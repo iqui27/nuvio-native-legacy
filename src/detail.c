@@ -316,15 +316,13 @@ static Foco foco;
 static float animFoco[N_SECOES][N_ITENS];
 static float scrollSec[N_SECOES];    // rolagem HORIZONTAL de cada fileira
 static float scrollY = 0.0f;         // rolagem VERTICAL do documento
-static float corpoAlpha(float entrada) { return detalheRetrato() ? entrada : pg; }
+static float corpoAlpha(float entrada) { return entrada; }
 // No telefone o documento ja aparece no topo; a grade de arte precisa ser
 // a unica camada de conteudo durante a entrada e a saida tambem.
 static int corpoSobArte(void) {
   return telefoneui_ativo() && trocaarte_visivel() > 0.005f;
 }
-static int corpoOculto(int serie) {
-  return !detalheRetrato() && !serie && pg <= .01f && scrollY < 1.0f;
-}
+static int corpoOculto(int serie) { (void)serie; return 0; }
 // Velocidade da mola de 2a ordem da rolagem (anim_mola2): partida macia e
 // cauda exponencial, a MESMA curva que a home mede. A de 1a ordem que estava
 // aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
@@ -686,6 +684,8 @@ static float notasTopoSerie(void);
 static float progTopoSerie(void);
 static float numerosTopoSerie(void);
 static float alturaSecao(int r);
+static int notaFonte(int c);
+static int nNotasTiles(void);
 static float epTempY(void);
 static float epRowY(void);
 static float serieGrupo(int r);
@@ -955,7 +955,7 @@ static int secaoPresente(int r) {
 // nunca acima de 10% nem abaixo dos 33% de sempre.
 static float alvoQueCabe(float h) {
   float a = (NV_TELA_H - h - 40.0f) / NV_TELA_H;
-  if (a > NV_DETP_ALVO_FILEIRA) a = NV_DETP_ALVO_FILEIRA;
+  if (a > 178.0f/NV_TELA_H) a = 178.0f/NV_TELA_H;
   if (a < 0.10f) a = 0.10f;
   return a;
 }
@@ -1084,7 +1084,7 @@ static void recalcularLayout(void) {
       float h;
       r = ORDEM_FILME[o];
       topoSec[r] = conteudoSec[r] = y;
-      alvoSec[r] = NV_DETP_ALVO_FILEIRA;
+      alvoSec[r] = 178.0f/NV_TELA_H;
       // Secao ausente nao ocupa altura — salvo o ELENCO enquanto o meta do
       // filme carrega: a fileira reserva o lugar e recebe o esqueleto, para a
       // pagina nao pular quando os atores chegarem.
@@ -1153,6 +1153,63 @@ static const NotasSecao *notasDados(void) {
 // Quantos itens a aba de Avaliacoes tem para focar: as temporadas, em serie; os
 // cartoes de nota, em filme. Serve so a navegacao — o desenho ja sabe o que
 // mostrar em cada caso.
+/* Only populated sources occupy a tile; the order follows pagina.html. */
+static int notaFonte(int c) {
+  static const int fontes[]={EX_IMDB,EX_TOMATOES,EX_METACRITIC,EX_LETTERBOXD,EX_TRAKT};
+  const NotasSecao *s=notasDados();
+  for (int i=0;i<5;i++) if (s->cru[fontes[i]]>0 && c--==0) return fontes[i];
+  return -1;
+}
+static int nNotasTiles(void) {
+  int n=0; AmigosTitulo am;
+  while (notaFonte(n)>=0) n++;
+  return n+1+(amigosDoTitulo(&am) ? 1 : 0);
+}
+static void desenhaNotasTiles(float x,float y,float a) {
+  int n=nNotasTiles(), nf=0; float ar,ag,ab;
+  ajustes_acento(&ar,&ag,&ab);
+  while (notaFonte(nf)>=0) nf++;
+  for (int i=0;i<n;i++) {
+    int fonte=notaFonte(i), own=i==nf, friend=i>nf;
+    GfxRect b={x+i*196,y,friend ? 436 : 180,150};
+    float f=nivel>=1 && foco.fileira==SEC_NOTAS && foco.coluna==i ? 1 : 0;
+    gfx_cor(b,20.0f/150,1,1,1,a*(.06f+.06f*f));
+    if (own) gfx_anel(b,20.0f/150,1.5f,ar,ag,ab,a);
+    const char *label=own ? "Sua nota" : friend ? "Amigos" : nf_nome(fonte);
+    txt_desenhar_alpha(txt_linha(TXT_G18R,label,243,242,239,153),b.x+22,b.y+18,a);
+    if (fonte>=0) {
+      char val[32]; nf_texto(fonte,notasDados()->cru[fonte],ajustes_idioma()==IDIOMA_PT,0,val,sizeof val);
+      txt_desenhar_alpha(txt_linha(TXT_LOG_N44,val,243,242,239,255),b.x+22,b.y+46,a);
+      GfxRect bar={b.x+22,b.y+125,b.w-44,3};
+      gfx_cor(bar,.5f,1,1,1,.14f*a);
+      bar.w*=nf_norm100(fonte,notasDados()->cru[fonte])*.01f;
+      gfx_cor(bar,.5f,1,1,1,.7f*a);
+    } else if (own) {
+      txt_desenhar_alpha(txt_linha(TXT_G30B,"★",243,242,239,255),b.x+22,b.y+48,a);
+      txt_desenhar_alpha(txt_linha(TXT_G18R,"Avaliar",243,242,239,140),b.x+22,b.y+112,a);
+    } else {
+      AmigosTitulo am;
+      if (amigosDoTitulo(&am)) {
+        static const float anel[3]={.075f,.08f,.095f};
+        svd_amigos_pilha(b.x+22,b.y+52,44,&am,am.n<3 ? am.n : 3,1,anel,a);
+        char l1[200],l2[220]; int ut,ue; ultimoEpisodio(&ut,&ue);
+        amigostitulo_resumo(&am,ut,ue,(long long)time(NULL),l1,sizeof l1,l2,sizeof l2);
+        txt_desenhar_alpha(txt_linha_corta(TXT_G20M,l1,243,242,239,255,264),b.x+150,b.y+52,a);
+        txt_desenhar_alpha(txt_linha_corta(TXT_G18R,l2,243,242,239,140,264),b.x+150,b.y+82,a);
+      }
+    }
+  }
+  const CatItem *ci=cat_item(idx);
+  if (ci && ci->classificacao[0]) {
+    TxtLinha tag=txt_linha(TXT_G20M,ci->classificacao,243,242,239,255);
+    TxtLinha l=txt_linha(TXT_G20M,"Classificação",243,242,239,140);
+    GfxRect chip={NV_TELA_W-96-tag.w-14,y-50,tag.w+14,28};
+    gfx_anel(chip,6.0f/28,1.5f,1,1,1,.5f*a);
+    txt_desenhar_alpha(tag,chip.x+7,y-48,a);
+    txt_desenhar_alpha(l,chip.x-14-l.w,y-48,a);
+  }
+}
+
 static int nAvaliaveis(void) {
   int i, n = 0;
   if (ehSerie() && extras_n_temporadas() > 0) return extras_n_temporadas();
@@ -2079,7 +2136,7 @@ static float alturaSecao(int r) {
     case SEC_AUD_RADAR:
     case SEC_AUD_DIGITAL: return 0.0f;
     case SEC_FRASES:    return frasesAberta ? frasesAlt : CHAMADA_H;
-    case SEC_NOTAS:     return notasui_fontes_altura(notasDados());
+    case SEC_NOTAS:     return 150.0f;
     case SEC_NOTAS_EP:  return 0.0f;
     case SEC_PROGTEMP:  return tgraf_altura_dados(tgraf_dados(idx)) + (progTemNotas() ? 360 : 0);
   }
@@ -2237,7 +2294,7 @@ static int secaoN(int r) {
     // UMA PARADA SO: o numero grande. Os blocos por fonte nao tomam foco
     // (dono 11/10/2026: "so focar no numero grande e depois ja desce").
     case SEC_NOTAS:
-      return notasui_fontes_n(notasDados()) > 0 ? 1 : 0;
+      return nNotasTiles();
     // A grade de episodios virou o cartao "Notas por episodio" do bloco acima.
     case SEC_NOTAS_EP:
       return 0;
@@ -2821,6 +2878,11 @@ void detail_evento(const SDL_Event *e) {
       } else {
         pedFontes = 1;
       }
+    } else if (foco.fileira == SEC_NOTAS) {
+      int c=foco.coluna, nf=0;
+      while (notaFonte(nf)>=0) nf++;
+      if (c==nf) reacao_detalhe_abrir(cat_item(idx));
+      else if (c>nf) pedAmigos=1;
     } else if (foco.fileira == SEC_RELACIONADOS) {
       // Recomendacoes de filme e serie: abre do catalogo quando ja temos
       // meta, senao pede pelo tipo correto e o roteador
@@ -3096,10 +3158,7 @@ void detail_evento(const SDL_Event *e) {
       detail_ep_borda(k == SDLK_RIGHT ? 1 : -1)) return;
   // NOTAS: uma parada so (o numero grande); esquerda pede o menu, direita nao
   // anda, cima/baixo saem pela regra comum.
-  if (foco.fileira == SEC_NOTAS) {
-    if (k == SDLK_RIGHT) return;
-    if (k == SDLK_LEFT) { pediuMenu = 1; return; }
-  }
+
   if (k == SDLK_RIGHT) {
     if (!focus_mover(&foco, 1, 0) && !ehSerie() && parDir(foco.fileira) >= 0 &&
         foco.nColunas[parDir(foco.fileira)] > 0) {
@@ -3178,6 +3237,7 @@ static float larguraItem(int r, int c) {
     case SEC_ABAS_INFO:   return larguraAbaInfo(c);
     case SEC_TRAILERS:     return NV_DETF_TR_W;
     case SEC_RELACIONADOS: return REL_CARD_W;
+    case SEC_NOTAS: return c==nNotasTiles()-1 && notaFonte(c-1)<0 ? 436 : 180;
     case SEC_COMENTARIOS:
       return (c < nPilulasCom()) ? larguraPilulaCom(rotuloPilulaCom(c)) : COM_CARD_W;
     // A tabela e um bloco so, da largura da divisoria. Cair no `default` daria
@@ -3191,7 +3251,6 @@ static float larguraItem(int r, int c) {
     case SEC_AUD_ARCO:
     case SEC_AUD_RADAR:
     case SEC_AUD_DIGITAL:
-    case SEC_NOTAS:
     case SEC_NOTAS_EP:
     case SEC_PROGTEMP:
     case SEC_FRASES:      return NV_TELA_W - NV_DETP_X * 2;
@@ -3205,6 +3264,7 @@ static float xItem(int r, int c) {
   for (int k = 0; k < c; k++) {
     if (r == SEC_EPISODIOS) { x += epCardPasso(); continue; }
     if (r == SEC_ELENCO)    { x += NV_DETP_EL_PASSO; continue; }
+    if (r == SEC_NOTAS) { x+=196; continue; }
     if (r == SEC_TRAILERS)  { x += NV_DETF_TR_PASSO;  continue; }
     if (r == SEC_RELACIONADOS) { x += REL_CARD_W + REL_CARD_GAP; continue; }
     if (r == SEC_ESTUDIOS)     { x += EST_CARD_W + EST_GAP; continue; }
@@ -7228,8 +7288,8 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
   // porque la nao existe a barra de abas para dizer o que e o que.
   { const char *cab = cabecalhoDe(r);   // na serie: Trailers e Estudios
     if (cab) {
-      TxtLinha lc = txt_linha(TXT_HEADLINE, cab, 245, 248, 255, 255);
-      txt_desenhar_alpha(lc, NV_DETP_X, y - lc.h - NV_DETF_CAB_GAP, a);
+      char caps[160]; idioma_maiusc_em(ajustes_idioma(),caps,sizeof caps,i18n(cab));
+      txt_tracking(TXT_G20M,caps,243,242,239,NV_DETP_X,y-48,a*.6f,3.6f);
     } }
   { float alt = alturaSecao(r);
     if (y > NV_TELA_H || y + alt < -40.0f) return; }
@@ -7302,7 +7362,7 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
         if (c == 0) frasesAlt = desenhaFrases(NV_DETP_X, y, a);
         break;
       case SEC_NOTAS:
-        if (c == 0) notasui_fontes_desenhar(notasDados(), NV_DETP_X, y, a, animFoco[SEC_NOTAS]);
+        if (c == 0) desenhaNotasTiles(NV_DETP_X, y, a);
         break;
       case SEC_ESTUDIOS:
         desenhaEstudio(x, y, c, f, a);
@@ -7647,6 +7707,14 @@ static void detalheFundo(float s) {
   backdropRect(&alvo, &aEntrada);
   const char *arte = arteDe(idx);
   if (carDesenhaFundo()) { carFundo(); return; }
+  if (!detalheRetrato()) {
+    gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.043f,.047f,s);
+    GLuint tex=arte ? tex_obter_hero(arte) : 0;
+    alvo.y-=scrollY*.32f;
+    float fade=anim_clamp(1-scrollY/900.0f,0,1);
+    if (tex && fade>.005f) desenhaArteDetalhe(alvo,tex,arte,arteDetalheEhPoster(idx),aEntrada*fade,0);
+    return;
+  }
   int artePoster = arteDetalheEhPoster(idx);
   int modo = fundo_modo();
   // Com o trailer de fundo tocando, o video e o hero: o caminho de sempre.

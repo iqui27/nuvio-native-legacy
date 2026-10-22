@@ -340,9 +340,9 @@ int  detail_pediu_do_inicio(void);
 // (DetailSectionContainer(horizontalPadding, contentMaxWidth, bottomPadding)),
 // entao nao ha uma constante unica para ler no bytecode.
 #define NV_DETF_HERO_FIM     1000.0f   // o hero ocupa 0..1080, igual a serie
-#define NV_DETF_CAB_H          46.0f   // linha do cabecalho (TXT_HEADLINE, 38)
-#define NV_DETF_CAB_GAP        20.0f   // cabecalho -> conteudo
-#define NV_DETF_SEC_GAP        64.0f   // fim de uma secao -> cabecalho da proxima
+#define NV_DETF_CAB_H          24.0f   // linha do cabecalho (TXT_HEADLINE, 38)
+#define NV_DETF_CAB_GAP        24.0f   // cabecalho -> conteudo
+#define NV_DETF_SEC_GAP       132.0f   // fim de uma secao -> cabecalho da proxima
 #define NV_DETF_PAD_FIM       130.0f   // padding-bottom do scroller (clamp(116,12vh,168))
 
 // ELENCO. Card 220x193, passo 270, avatar 140 alinhado a ESQUERDA do card.
