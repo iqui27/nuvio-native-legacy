@@ -7020,6 +7020,18 @@ static void menuDeVisto(Uint32 agora) {
   menuOrigem.w = 0.0f;   // so vale a caixa do quadro em que a peca foi desenhada
 }
 
+static int progMelhorNaoVisto(int *t, int *e) {
+  const CatItem *ci=cat_item(idx); int melhor=0; *t=*e=0;
+  for (int i=0; ci && i<cat_n_episodios(idx); i++) {
+    const CatEp *ep=cat_episodio(idx,i);
+    if (ep && ep->nota>melhor && !epNaoExibido(ep) &&
+        vistoep_estado(ci->imdb,ep->temporada,ep->episodio)!=1) {
+      melhor=ep->nota; *t=ep->temporada; *e=ep->episodio;
+    }
+  }
+  return melhor;
+}
+
 static void desenhaGradeProgresso(float x, float y, float a) {
   int focoGrade=nivel>=1 && foco.fileira==SEC_PROGTEMP;
   int alvo=focoGrade ? foco.coluna : epAbsoluto(epAncora);
@@ -7056,6 +7068,11 @@ static void desenhaGradeProgresso(float x, float y, float a) {
   }
   char pos[48]; snprintf(pos,sizeof pos,i18n("T%dE%d"),ep->temporada,ep->episodio);
   txt_desenhar_alpha(txt_linha(TXT_CALLOUT,pos,235,237,242,255),x+1160,y+64,a);
+  int bt=0,be=0,nota=progMelhorNaoVisto(&bt,&be);
+  if (nota>0) {
+    char melhor[160]; snprintf(melhor,sizeof melhor,i18n("Melhor: T%dE%d  ·  %.1f"),bt,be,nota/10.0);
+    txt_desenhar_alpha(txt_linha_corta(TXT_CAPTION2,melhor,175,181,192,255,560),x+1160,y+112,a);
+  }
 }
 
 static void desenhaSecao(int r, float a, Uint32 agora) {

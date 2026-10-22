@@ -127,7 +127,13 @@ int main(void) {
   agenda_registrar(itemTeste.imdb,"Fixture",NULL,"Returning Series",2,1,"Premiere","2027-01-01","");
   assert(temLembreteTemporada() && secaoN(SEC_TEMPORADAS)==3);
   assert(temporadaLembrete(1));
-  puts("detail21: content, navigation, profiles, facts and season controls OK");
+  int bestT=0,bestE=0;
+  grid[0].nota=72; grid[1].nota=81; grid[2].nota=90; grid[3].nota=79;
+  cat_definir_episodios(0,grid,4);
+  assert(progMelhorNaoVisto(&bestT,&bestE)==90 && bestT==2 && bestE==1);
+  vistoep_definir(itemTeste.imdb,2,1,1);
+  assert(progMelhorNaoVisto(&bestT,&bestE)==81 && bestT==1 && bestE==2);
+  puts("detail21: content, navigation, profiles, season controls and best episode OK");
   SDL_Quit();
   return 0;
 }
