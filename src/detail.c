@@ -33,6 +33,7 @@
 #include "badges.h"
 #include "marco.h"
 #include "titulotempo.h"
+#include "relogiofim.h"
 static TituloTempo detalheTempo;
 #include "ajustes.h"
 #include "home.h"
@@ -278,6 +279,11 @@ static int pessoaColunas(void) {
 }
 
 static int maisAcoes;
+static int topoVersao(void) { return ajustes_detalhe_topo() != 1; }
+static int topoPessoal(void) { return ajustes_detalhe_topo() != 0; }
+static VaiTocar vaiTocar;
+static int focoVersao;
+static GfxRect versaoRect;
 static int  botao = 0;      // botao em foco no hero
 static GfxRect maisAncora;  // onde o "..." foi desenhado (ilha detmais.h)
 // A ILHA DE AMIGOS (quem assistiu/gostou deste titulo), logo abaixo dos botoes:
@@ -1388,6 +1394,7 @@ static void abrirInterno(const HomeItem *it) {
   amtui_fechar();
   detmais_zerar();
   heroReiniciar();
+  focoVersao = 0;
   t = 0.0f; pg = 0.0f; scrollY = 0.0f; velY = 0.0f; abaInfo = 0; pessoaAberta = 0;
 #ifdef NV_TOUCH_UI
   memset(&toqueDetalhe, 0, sizeof toqueDetalhe);
@@ -2686,7 +2693,9 @@ void detail_evento(const SDL_Event *e) {
     if (!okDesceEm) return;
     dur = ponteiro_ok_longo() ? NV_HOLD_MS : SDL_GetTicks() - okDesceEm;
     okDesceEm = 0;
-    if (nivel == 0 && focoAmigos) {
+    if (nivel == 0 && focoVersao) {
+      pedFontes = 1;
+    } else if (nivel == 0 && focoAmigos) {
       // A lista do que cada amigo achou, AQUI (dono, 06/10/2026), e nao mais a
       // aba Atividade do painel — que repetia so "viu".
       AmigosTitulo at;
@@ -2887,13 +2896,22 @@ void detail_evento(const SDL_Event *e) {
       k == SDLK_DELETE) {
     if (comPicando) comentariosVoltar();
     else if (acoesAgrupadas() && maisAcoes && nivel == 0) { maisAcoes = 0; botao = temInicio() ? 1 : 0; }
-    else if (nivel > 0) nivel = 0;
+    else if (focoVersao) { focoVersao = 0; botao = 0; }
+    else if (nivel > 0) { nivel = 0; botao = 0; focoAmigos = 0; }
     else if (carro && carCheia) carCheia = 0;   // tela cheia no topo -> cartao
     else if (nVolta > 0) { pedAbrir = voltaPilha[--nVolta]; voltando = 1; }   // volta ao titulo de onde veio
     else { saindo = 1; pediuMenu = 0; }   // Voltar nao abre um menu pedido antes
     return;
   }
   if (nivel == 0) {
+    if (focoVersao) {
+      if (k == SDLK_UP) { focoVersao = 0; botao = 0; return; }
+      if (k == SDLK_DOWN) { pedFontes = 1; return; }
+      return;
+    }
+    if (k == SDLK_DOWN && topoVersao() && vaiTocar.tem && !(carro && !carCheia)) {
+      focoVersao = 1; return;
+    }
     // CIMA na linha de botoes nao fazia nada; com uma reacao pendente ele abre
     // a pergunta (reacao.h). Sem pendencia, continua sem fazer nada.
     // CIMA na ilha de amigos volta ao botao em que estava; BAIXO entra nas secoes;
@@ -4209,7 +4227,6 @@ static Uint32 hSinTick;
 // a cada 250 ms (ou ao mudar o alvo do botao primario) e a altura reservada
 // assenta suave, para a chegada da lista de fontes nao dar salto no hero.
 #define DET_VAI_GAP 18.0f
-static VaiTocar vaiTocar;
 static Uint32 vaiTocarEm;
 static int    vaiTocarIdx = -1, vaiTocarT, vaiTocarE;
 static float  hVaiVis;
@@ -4394,7 +4411,7 @@ static void heroWeb(float a, float desloc) {
       else memset(&vaiTocar, 0, sizeof vaiTocar);
       vaiTocarIdx = idx; vaiTocarT = vt_t; vaiTocarE = vt_e; vaiTocarEm = agoraH;
     }
-    { float alvo = vaiTocar.tem ? vtui_altura(&vaiTocar) + DET_VAI_GAP : 0.0f;
+    { float alvo = vaiTocar.tem && topoVersao() ? 38.0f + DET_VAI_GAP : 0.0f;
       float dt = hVaiTick ? (float)(Uint32)(agoraH - hVaiTick) : 0.0f;
       hVaiTick = agoraH;
       if (dt > 100.0f) dt = 100.0f;
@@ -4417,6 +4434,23 @@ static void heroWeb(float a, float desloc) {
   { const CatItem *ciAg = cat_item(idx);
     if (ehSerie() && ciAg && ciAg->imdb[0])
       agenda_frase(ciAg->imdb, agLinha, sizeof agLinha); }
+  char pessoal[256] = "";
+  if (topoPessoal() && ci) {
+    int t0 = 0, e0 = 0, de = 0;
+    if (ehSerie() && episodioAlvo(&t0, &e0, &de) && de == 2)
+      snprintf(pessoal, sizeof pessoal, i18n("%s T%dE%d"), i18n("Retomar"), t0, e0);
+    else if (ci->progresso > 0 && ci->progresso < ajustes_cw_concluido())
+      snprintf(pessoal, sizeof pessoal, "%s", i18n("Retomar"));
+    else if (cat_visto(ci)) snprintf(pessoal, sizeof pessoal, "%s", i18n("Assistido"));
+    if (ci->restanteMin > 0 || (!ehSerie() && durMin > 0)) {
+      char fim[160];
+      int minutos = ci->restanteMin > 0 ? ci->restanteMin : durMin;
+      relogio_fim(fim, sizeof fim, time(NULL), minutos * 60.0);
+      size_t len = strlen(pessoal);
+      snprintf(pessoal + len, sizeof pessoal - len, "%s%s", len ? " · " : "", fim);
+    }
+  }
+  if (pessoal[0]) temRetom = 1.0f;
   float yEstado = yAcoes - NV_DETW_GAP_RETOM;
   float yRetom = yEstado, yAgenda = yEstado;
   if (temRetom > 0.0f) { yEstado -= NV_DETW_RETOM_H; yRetom = yEstado; }
@@ -4693,13 +4727,25 @@ static void heroWeb(float a, float desloc) {
         txt_desenhar_alpha(t2, tx, ty + t1.h + 2.0f, a * (foc ? 0.9f : 0.8f)); }
       if (a > 0.3f) ponteiro_alvo(ilha.x, ilha.y, ilha.w, ilha.h, ponteiroDetalhe, NULL, -1, DET_PTR_AMIGOS); } }
 
-  // --- FAIXA "VAI TOCAR", logo abaixo dos botoes (e da ilha de amigos) ---------
-  if (vaiTocar.tem && hVai > 1.0f) {
-    float alvoH = vtui_altura(&vaiTocar) + DET_VAI_GAP;
+  // Same target and source description as Play; no extra resolver or decoder.
+  versaoRect = (GfxRect){0};
+  if (topoVersao() && vaiTocar.tem && hVai > 1.0f) {
+    char texto[240];
+    snprintf(texto, sizeof texto, "%s%s%s%s%s%s%s", vaiTocar.res,
+             vaiTocar.hdr[0] ? " · " : "", vaiTocar.hdr,
+             vaiTocar.audio[0] ? " · " : "", vaiTocar.audio,
+             vaiTocar.idiomas[0] ? " · " : "", vaiTocar.idiomas);
+    TxtLinha l = txt_linha_corta(TXT_DET_META2, texto, 225, 227, 232, 255, larguraTextoHero() - 48);
     float yV = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + hCaption + hAmg + DET_VAI_GAP;
-    float wV = larguraTextoHero() < 1000.0f ? larguraTextoHero() : 1000.0f;
-    float fV = hVai / alvoH;
-    vtui_desenhar(&vaiTocar, NV_DETW2_X - 24.0f, yV, wV, a * (fV > 1.0f ? 1.0f : fV));
+    versaoRect = (GfxRect){NV_DETW2_X, yV, l.w + 40, 38};
+    if (focoVersao) gfx_cor(versaoRect, .5f, .17f, .18f, .20f, a);
+    float cr, cg, cb; ajustes_acento(&cr, &cg, &cb);
+    gfx_cor((GfxRect){NV_DETW2_X + 4, yV + 15, 7, 7}, .5f, cr, cg, cb, a);
+    txt_desenhar_alpha(l, NV_DETW2_X + 22, yV + (38 - l.h) * .5f, a);
+  }
+  if (pessoal[0]) {
+    TxtLinha l = txt_linha_corta(TXT_DET_META2, pessoal, 225, 227, 232, 255, larguraTextoHero());
+    txt_desenhar_alpha(l, NV_DETW2_X, yRetom, a);
   }
 
   // --- linha da AGENDA ------------------------------------------------------

@@ -560,6 +560,7 @@ typedef enum {
   // O estado NAO mora em valor[]: e perfil_infantil_ativo(), reescrito a cada
   // quadro (como Perfil pesquisavel). No fim: valor[]/CHAVE[] posicionais.
   AJ_PERFIL_INFANTIL,
+  AJ_DET_TOPO, // append-only; profile-local title hero mode
   AJ_N
 } OpcaoId;
 
@@ -695,6 +696,7 @@ static const char *V_POSTER_PROV[] = { "Desligado", "SpatialPosters", "RPDB", "M
 // O rotulo da terceira leva "(Apple TV)" porque "Dinâmica" a secas e a chave da
 // traducao dos temas de cor ("Matching color"): o mesmo texto nas duas linhas
 // deixaria a home em ingles com o nome do tema.
+static const char *V_DET_TOPO[] = { "Versão pronta", "Pessoal", "As duas" };
 static const char *V_HOME_LAYOUT[] = { "Moderna", "Padrão", "Dinâmica (Apple TV)" };
 // "Fonte automatica" (issue #130). O INDICE e o gravado (fonteAutoLocal) e o
 // FONTEAUTO_* de fonteauto.h: 0 = a regra de pontuacao, 1 = a primeira da
@@ -1429,6 +1431,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Avisar depois dos créditos", V_LIGA, 2),          // local: conquistasAvisoLocal
   ESC("Dicas das conquistas secretas", V_LIGA, 2),       // local: conquistasDicasLocal
   ESC("Perfil infantil",                 V_LIGA, 2),             // local: perfilinfantil.c (por perfil)
+  ESC("Topo da página", V_DET_TOPO, 3),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -1673,6 +1676,7 @@ static const char *CHAVE[] = {
   "menuTopoLocal",
   "conquistasLocal", "conquistasAvisoLocal", "conquistasDicasLocal",
   "-perfilInfantil",   // estado em perfilinfantil.c, nunca no ajustes.txt
+  "detalheTopoLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2496,6 +2500,7 @@ void ajustes_definir_salvos_destino(int destino) {
   desc_repetir();   // o mesmo que a linha de Ajustes faz ao mudar
 }
 int ajustes_data_completa(void)       { return lig(AJ_DET_DATA_CHEIA); }
+int ajustes_detalhe_topo(void) { return valor[AJ_DET_TOPO] >= 0 && valor[AJ_DET_TOPO] < 3 ? valor[AJ_DET_TOPO] : 0; }
 float ajustes_detalhe_veu(void)       { int v = valor[AJ_DET_VEU]; return (v < 0 ? 0 : v > 100 ? 100 : v) / 100.0f; }
 int   ajustes_trailer_auto(void)      { return lig(AJ_DET_TRAILER_AUTO); }
 // TRAILER AUTOMATICO DA HOME VETADO PELA GPU. Utgard (Mali-400/450/470) roda
@@ -4401,6 +4406,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_TAMANHO_AJUSTES:
     case AJ_LAYOUT_AJUSTES: /* #339: o arranjo dos Ajustes e desta TV */
     case AJ_INTERFACE_MODO: /* TV/Mobile follows this device, never the account */
+    case AJ_DET_TOPO:
     case AJ_MENU_TOPO:      /* #461: o web nao tem; por perfil (perfilLocal) */
     case AJ_LOGO_TRAILER:   /* so a protecao de OLED desta TV */
     case AJ_LEG_MOSTRAR:
@@ -4445,7 +4451,7 @@ static int somenteDesteAparelho(int op) {
 // (ajustes-p<N>.txt) e continuam FORA do blob (somenteDesteAparelho).
 static int perfilLocal(int i) {
   return i == AJ_CW_FONTE || i == AJ_CW_PROXIMO || i == AJ_SALVOS_DEST || i == AJ_HIST_CONTA || i == AJ_SOCIAL ||
-         i == AJ_MENU_TOPO;
+         i == AJ_MENU_TOPO || i == AJ_DET_TOPO;
 }
 
 static int dePerfil(int i) {
@@ -5666,6 +5672,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_ITENS_FILEIRA: return "Quantos títulos cada fileira da Home mostra antes do Ver tudo. Mais itens usam mais memória: em TV com 1 GB de memória a Home pode ficar mais lenta ou fechar. Se o app fechar depois de você aumentar, ele volta sozinho ao valor anterior. Aumentar vale na próxima vez que o app abrir.";
     case AJ_FIL_ORDEM: return "Abre a lista de fileiras para reordenar, ligar, desligar e escolher o card de cada uma. É lá que dá para ver de onde cada fileira vem.";
     case AJ_RAIL: return "A barra de navegação da esquerda fica sempre aberta, ou recolhida até você ir até ela.";
+    case AJ_DET_TOPO: return "Versão pronta · Pessoal · As duas";
     case AJ_MENU_TOPO: return "Na lateral: o menu fica na esquerda, como sempre. No topo: o menu vira uma barra no alto da tela e o conteúdo usa a largura toda. Para cima no primeiro item da tela chega à barra e Para baixo volta. Vale para este perfil.";
     case AJ_RAIL_MODERNA: return "Troca a barra lateral pela versão nova, com ícones maiores. Ela ignora a escolha entre recolhida e fixa.";
     case AJ_RAIL_BLUR: return "Desfoca a arte atrás da barra lateral moderna em vez de usar um fundo sólido.";
@@ -7913,6 +7920,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_CW_ESTILO: case AJ_CW_THUMB: case AJ_CW_BLUR_PROX:
     case AJ_CW_FURTHEST: case AJ_CW_NAO_EXIBIDOS: case AJ_CW_ORDEM: case AJ_CW_RETIDO_TAMBEM:
       return AJPV_CONTINUAR;
+    case AJ_DET_TOPO:
     case AJ_DET_BLUR_NAO_VISTOS: case AJ_DET_TRAILER: case AJ_DET_META_EXT:
     case AJ_DET_SO_CINEMETA: case AJ_BUSCA_CINEMETA: case AJ_BUSCA_NUVIO: case AJ_BUSCA_ORIGEM:
     case AJ_DET_DATA_CHEIA: case AJ_DET_VEU: case AJ_DET_TRAILER_AUTO:
