@@ -445,11 +445,11 @@ static int uxEvento(SDL_Keycode k) {
         // Diferentes do padrao: abre a lista (degrau 1); Voltar devolve a pilula (uxTopo fica nela).
         if (t == AJ2_T_DIF) { uxListarDiferencas(); uxDifFoco = 0; uxIndice = 1; focoIndice = 0; return 1; }
         if (t == AJ2_T_LAYOUT) return uxAlternarLayout();   // o foco fica na pilula
-        // Os cartoes de descoberta abrem o Guia de uso (o tour completo, com
-        // "Ligar agora" por funcao, e da 2.1): o do problema ja no capitulo
-        // "Problemas comuns". Voltar devolve a este cartao.
+        // "O que o Nuvio faz?" abre o tour (2.1); o do problema abre o Guia de uso
+        // ja no capitulo "Problemas comuns". Voltar devolve a este cartao.
+        if (t == AJ2_T_TOUR) { tourAbrir(); return 1; }
         guiaAbrir(0); guiaDoIndice = 1;
-        if (t == AJ2_T_RESOLVER) guiaIrCapitulo("aj_life-buoy");
+        guiaIrCapitulo("aj_life-buoy");
         return 1;
       }
       if (k == SDLK_LEFT) {

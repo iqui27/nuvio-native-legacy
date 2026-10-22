@@ -2557,6 +2557,12 @@ static void guiaEvento(const SDL_Event *e);
 static void guiaDesenhar(void);
 static void guiaAtualizar(float dt);
 static int guiaAberto;
+// O tour "O que o Nuvio faz?" (ajustes_ux_tour.inc), tambem por cima das ilhas.
+static int tourAberto;
+static void tourAbrir(void);
+static void tourEvento(const SDL_Event *e);
+static void tourDesenhar(void);
+static void tourAtualizar(float dt);
 static int apoioAberto;   // painel com os QRs de "Apoiar o projeto" (ajustes_ux_apoio.inc)
 static void apoioAbrir(void);
 static void apoioEvento(const SDL_Event *e);
@@ -9327,6 +9333,7 @@ void ajustes_evento(const SDL_Event *e) {
 #endif
   AJ_ESCALA_INI();
   if (guiaAberto) { guiaEvento(e); AJ_ESCALA_FIM(); return; }
+  if (tourAberto) { tourEvento(e); AJ_ESCALA_FIM(); return; }
   if (apoioAberto) { apoioEvento(e); AJ_ESCALA_FIM(); return; }
   eventoTela(e);
   // FIM DA EDICAO DO LIMITE (issue #197): qualquer tecla que solte a linha
@@ -9644,6 +9651,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   ajLegendaEspelhar(); ajIptvEspelhar();
   AJ_ESCALA_INI();
   guiaAtualizar(dt);
+  tourAtualizar(dt);
   if (uxAviso[0] && SDL_TICKS_PASSED(agora, uxAvisoAte)) uxAviso[0] = 0;
   montarTela();
   valor[AJ_PERFIL_PESQ] = recomenda_pesquisavel() ? 0 : 1;   // V_LIGA: 0 = Ligado
@@ -10467,6 +10475,7 @@ static void ajDesenharTudo(Uint32 agora) {
 #endif
   montarTela();
   if (guiaAberto) { ponteiro_camada(); guiaDesenhar(); return; }
+  if (tourAberto) { ponteiro_camada(); tourDesenhar(); return; }
   ajDesenharTela();
 
   // A folha de fileiras cobre a lista; o vinculo cobre as duas, porque ele e a
@@ -10528,7 +10537,7 @@ int ajustes_relogio_cabe(void) {
 int ajustes_relogio_navegavel(void) {
   DisEstado da = discord_estado();
   return ajustes_relogio_cabe() && !filAberta && !frAberta && !uxEditor &&
-         !guiaAberto && !apoioAberto && !riscoFolha &&
+         !guiaAberto && !tourAberto && !apoioAberto && !riscoFolha &&
          da != DIS_PEDINDO && da != DIS_AGUARDANDO && da != DIS_ERRO;
 }
 
@@ -10581,7 +10590,7 @@ void ajustes_teste_ux_captura(int cenario) {
     ajustes_teste_tema(getenv("NUVIO_SHOT_TEMA") ? atoi(getenv("NUVIO_SHOT_TEMA")) : -1,
                        getenv("NUVIO_SHOT_VIDRO") && atoi(getenv("NUVIO_SHOT_VIDRO")));
   valor[AJ_IDIOMA] = IDIOMA_PT + 1;
-  uxCancelar(); uxAviso[0] = 0; uxRetornarOp = -1;
+  uxCancelar(); uxAviso[0] = 0; uxRetornarOp = -1; tourAberto = 0;
   scrollY = velY = 0; paginaA = 1;
   focarSecao(0); focoIndice = 1;
   if (cenario == 1 || cenario == 2) focarOpcao(AJ_HOME_LAYOUT);
@@ -10607,6 +10616,8 @@ void ajustes_teste_ux_captura(int cenario) {
   if (cenario == 22) { focarOpcao(AJ_FOCO_TRAILER); uxAbrirEditor(AJ_FOCO_TRAILER); }
   // Upscaling algorithm row (needs NUVIO_PANEL_SIZE=3840x2160): FSR 1 shows Sharpness.
   if (cenario == 23 || cenario == 24) { valor[AJ_AMPLIACAO_ALGO] = 3; focarOpcao(AJ_AMPLIACAO_ALGO); }
+  // O tour "O que o Nuvio faz?": 25 abre, 26 com o foco em "Ver onde fica", 27 na segunda fileira.
+  if (cenario >= 25 && cenario <= 27) { tourAbrir(); if (cenario == 26) { tourFoco = 1; tourBtn = 1; } if (cenario == 27) tourFoco = 6; }
   if (cenario == 24) uxAbrirEditor(AJ_AMPLIACAO_ALGO);
   // NUVIO_SHOT_TRAILER_VETO=1: captura da linha Ligada que nao vale (veto de
   // GPU): a ajuda tem de dizer por que, em vez de a linha parecer obedecida.
