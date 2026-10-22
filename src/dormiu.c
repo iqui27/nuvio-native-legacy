@@ -54,10 +54,22 @@ static struct {
 static Foto aguardaCred;    // caso 2 com o player ja fechado
 static Foto ultima;         // candidato do caso 3
 static int limiarExtra = -1, perfilLido = -1;
+static unsigned donoLido;
+
+static void conferirIdentidade(void) {
+  unsigned dono = diario_dono_geracao();
+  if (dono == donoLido && perfilLido == perfis_ativo()) return;
+  donoLido = dono;
+  perfilLido = perfis_ativo();
+  limiarExtra = -1;
+  memset(&S, 0, sizeof S);
+  memset(&aguardaCred, 0, sizeof aguardaCred);
+  memset(&ultima, 0, sizeof ultima);
+}
 
 static const char *arq(char *b, size_t t, const char *base) {
   int p = perfis_ativo();
-  snprintf(b, t, "%s-p%d.txt", base, p > 0 ? p : 1);
+  snprintf(b, t, "%s-%08x-p%d.txt", base, diario_dono_hash(), p > 0 ? p : 1);
   return b;
 }
 
@@ -83,8 +95,8 @@ static void gravarEstado(void) {
 
 static void lerEstado(void) {
   char n[40], *b, *s;
-  if (perfilLido == perfis_ativo() && limiarExtra >= 0) return;
-  perfilLido = perfis_ativo();
+  conferirIdentidade();
+  if (limiarExtra >= 0) return;
   limiarExtra = 0;
   memset(&ultima, 0, sizeof ultima);
   b = dados_ler(arq(n, sizeof n, "dormiu"));
@@ -206,6 +218,7 @@ void dormiu_aprender_nao_dormi(void) {
 void dormiu_player_passo(const char *id, char tipo, int t, int e, double pos,
                          double dur, int tocando, int concluiu, float dt) {
   char base[DIARIO_ID_MAX];
+  conferirIdentidade();
   if (!id || !id[0]) return;
   diario_separar_id(id, base, sizeof base, NULL, NULL);
   if (!S.ativo) {
@@ -254,6 +267,7 @@ void dormiu_player_passo(const char *id, char tipo, int t, int e, double pos,
 
 void dormiu_tecla(void) {
   long long agora = agoraParede();
+  conferirIdentidade();
   if (aguardaCred.ativo) {
     registrar(&aguardaCred, 0, (double)(agora - aguardaCred.quando), -1);
     memset(&aguardaCred, 0, sizeof aguardaCred);
@@ -272,6 +286,7 @@ void dormiu_tecla(void) {
 }
 
 void dormiu_player_saiu(double pos, double dur, int concluiu) {
+  conferirIdentidade();
   if (!S.ativo) return;
   S.pos = pos; if (dur > 0) S.dur = dur;
   if (S.vao >= 60.0) {

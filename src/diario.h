@@ -203,6 +203,7 @@ void diario_parar_de_ouvir(DiarioOuvinte fn, void *ctx);
 #define DIARIO_NUVEM_SIM            1
 #define DIARIO_NUVEM_NAO            2
 unsigned diario_dono_geracao(void);
+unsigned diario_dono_hash(void);
 int  diario_nuvem_consent_pendente(int perfil);
 void diario_nuvem_consent_confirmar(int perfil, int estado);
 int  diario_nuvem_estado(int perfil);

@@ -12,14 +12,31 @@
 #include "idioma.h"
 #include "ilha.h"
 #include "progresso.h"
+#include "perfis.h"
 #include <stdio.h>
 #include <string.h>
 
 #define PERGUNTADOS_MAX 32
 
 static char perguntados[PERGUNTADOS_MAX][DIARIO_ID_MAX];
-static int nPerg;
+static int nPerg, idxVisto = -1, perfilVisto = -1;
+static unsigned donoVisto;
 static struct { int ativo; DiarioEntrada e; } aberta;
+
+static void conferirIdentidade(void) {
+  unsigned dono = diario_dono_geracao();
+  int perfil = perfis_ativo();
+  if (dono == donoVisto && perfil == perfilVisto) return;
+  if (aberta.ativo) {
+    char chave[48];
+    snprintf(chave, sizeof chave, "dormiu:%s", aberta.e.id);
+    ilha_modal_fechar(1);
+    ilha_retirar(chave);
+  }
+  memset(&aberta, 0, sizeof aberta);
+  nPerg = 0; idxVisto = -1;
+  donoVisto = dono; perfilVisto = perfil;
+}
 
 static int jaPerguntou(const char *id) {
   int i;
@@ -36,6 +53,7 @@ void dormiu_perguntar(const char *titulo, const char *poster, const char *arte, 
   static IlhaModal m;     // a ilha copia; estatico so para nao pesar a pilha
   IlhaAvisoEx a;
   char chave[48], forte[200], texto[320], rot[16], ep[24];
+  conferirIdentidade();
   memset(&m, 0, sizeof m);
   memset(&a, 0, sizeof a);
   dormiu_rotulo(e->dormiuSeg, rot, sizeof rot);
@@ -63,11 +81,11 @@ void dormiu_perguntar(const char *titulo, const char *poster, const char *arte, 
 }
 
 void dormiu_passo(void) {
-  static int idxVisto = -1;
   const CatItem *ci;
   DiarioEntrada e;
   char id[DIARIO_ID_MAX];
   int idx;
+  conferirIdentidade();
   if (!detail_aberto() || !detail_assentado()) { idxVisto = -1; return; }
   idx = detail_indice();
   if (idx == idxVisto) return;            // um teste por titulo aberto
@@ -83,6 +101,7 @@ void dormiu_passo(void) {
 void dormiu_acao(const char *chave, int botao) {
   char rot[16], txt[160];
   DiarioEntrada e;
+  conferirIdentidade();
   if (!aberta.ativo || strncmp(chave, "dormiu:", 7) || strcmp(chave + 7, aberta.e.id)) return;
   e = aberta.e;
   aberta.ativo = 0;

@@ -26,6 +26,7 @@ int dados_apagar(const char *nome) { char p[512]; snprintf(p, sizeof p, "%s/%s",
 static int existe(const char *nome) { char *b = dados_ler(nome); free(b); return b != NULL; }
 
 extern long long diario_relogio_teste;
+extern void dormiu_teste_reler(void);
 static long long relogio = 1790000000LL;
 
 // Toca `seg` segundos de (id,t,e) a partir de `pos`, sem tecla, em passos de 1 s.
@@ -72,17 +73,17 @@ int main(void) {
   tocar("tt0001", 'm', 0, 0, 0, 7200, 1200, 0);
   dormiu_tecla();
   tocar("tt0001", 'm', 0, 0, 1200, 7200, 3600, 0);
-  assert(existe("dormiu-vivo-p1.txt"));                 // o arquivo que prova o caso 1
+  assert(existe("dormiu-vivo-00000000-p1.txt"));                 // o arquivo que prova o caso 1
   // ...o app morre aqui. Proximo arranque:
   dormiu_iniciar();
-  assert(!existe("dormiu-vivo-p1.txt"));
+  assert(!existe("dormiu-vivo-00000000-p1.txt"));
   assert(dormiu_suspeita("tt0001", &d));
   assert(d.dormiuSeg == 1200 + 300 && (d.flags & DIARIO_F_PARCIAL) && d.durSeg == 7200);
   // "Nao dormi": a parcial some, e o limiar sobe 10 min.
   dormiu_negar(&d);
   assert(!dormiu_suspeita("tt0001", NULL) && diario_n(0) == 0 && dormiu_limiar_extra() == 10);
   // (o limiar fica para os proximos casos; volta a zero para nao mascarar)
-  { char c[600]; snprintf(c, sizeof c, "rm -f '%s/dormiu-p1.txt'", pasta); system(c); }
+  { char c[600]; snprintf(c, sizeof c, "rm -f '%s/dormiu-00000000-p1.txt'", pasta); system(c); }
   dormiu_iniciar();  // rele estado: limiar 0? so relido se o perfil mudar: forca
   // (o modulo relê o estado na troca de perfil; aqui basta conferir que gravou)
 
@@ -103,7 +104,7 @@ int main(void) {
     assert(!dormiu_suspeita("tt0900", NULL)); }
 
   // limiar de volta a zero (perfil novo relê) e o mesmo caso, agora com vao 55 min
-  { char c[600]; snprintf(c, sizeof c, "printf 'limiar=0\\n' > '%s/dormiu-p1.txt'", pasta); system(c); }
+  { char c[600]; snprintf(c, sizeof c, "printf 'limiar=0\\n' > '%s/dormiu-00000000-p1.txt'", pasta); system(c); }
   { DiarioEntrada fim; double pos;
     memset(&fim, 0, sizeof fim);
     extern void dormiu_teste_reler(void); dormiu_teste_reler();
@@ -116,10 +117,10 @@ int main(void) {
     (void)pos;
     dormiu_player_saiu(3900, 4000, 1);
     assert(!dormiu_suspeita("tt0900", NULL));          // ainda espera a tecla
-    assert(existe("dormiu-vivo-p1.txt"));              // se morrer antes: caso 1
+    assert(existe("dormiu-vivo-00000000-p1.txt"));              // se morrer antes: caso 1
     relogio += 15 * 60; dormiu_relogio_teste = relogio;
     dormiu_tecla();
-    assert(!existe("dormiu-vivo-p1.txt"));
+    assert(!existe("dormiu-vivo-00000000-p1.txt"));
     assert(dormiu_suspeita("tt0900", &d));
     assert(d.episodio == 6 && d.dormiuSeg == 600 && !(d.flags & DIARIO_F_PARCIAL));
     assert(diario_episodio(0, "tt0900", 1, 6, NULL) == 1);   // marcou a vez existente, nao criou outra
@@ -146,6 +147,49 @@ int main(void) {
   { double pos = tocar("tt0003", 'm', 0, 0, 0, 6000, 1000, 0);
     dormiu_tecla(); dormiu_player_saiu(pos, 6000, 0);
     assert(!dormiu_suspeita("tt0003", NULL)); }
+
+  // Account switches reuse profile 1 but must not reuse sleep candidates.
+  diario_dono("account-a");
+  double aPos = tocar("tt9999", 'm', 0, 0, 0, 7200, 600, 0);
+  dormiu_tecla();
+  aPos = tocar("tt9999", 'm', 0, 0, aPos, 7200, 3300, 0);
+  dormiu_tecla();
+  dormiu_player_saiu(aPos, 7200, 0);
+  diario_esquecer();
+  diario_dono("");
+  diario_dono("account-b");
+  tocar("tt9999", 'm', 0, 0, aPos, 7200, 5, 0);
+  dormiu_player_passo("tt9999", 'm', 0, 0, aPos - 1300, 7200, 1, 0, 0);
+  assert(diario_n(0) == 0 && "Previous account sleep candidate entered new account diary");
+  // Reload from disk under B; account A still owns the saved candidate.
+  dormiu_teste_reler();
+  dormiu_iniciar();
+  tocar("tt9999", 'm', 0, 0, aPos, 7200, 5, 0);
+  dormiu_player_passo("tt9999", 'm', 0, 0, aPos - 1300, 7200, 1, 0, 0);
+  assert(diario_n(0) == 0);
+  diario_dono("account-a");
+  tocar("tt9999", 'm', 0, 0, aPos, 7200, 5, 0);
+  dormiu_player_passo("tt9999", 'm', 0, 0, aPos - 1300, 7200, 1, 0, 0);
+  assert(dormiu_suspeita("tt9999", NULL));
+
+  // Neither an active session nor pending credits may cross accounts.
+  diario_dono("account-c");
+  double cPos = tocar("tt9998", 'm', 0, 0, 0, 7200, 3300, 3000);
+  diario_dono("account-d");
+  dormiu_player_saiu(cPos, 7200, 1);
+  dormiu_tecla();
+  dormiu_iniciar();
+  assert(diario_n(0) == 0);
+  diario_dono("account-c");
+  dormiu_iniciar();
+  assert(dormiu_suspeita("tt9998", NULL)); // C's crash file remains C's.
+  cPos = tocar("tt9997", 'm', 0, 0, 0, 7200, 3300, 3000);
+  dormiu_player_saiu(cPos, 7200, 1);
+  relogio += 900; dormiu_relogio_teste = relogio;
+  diario_dono("account-d");
+  dormiu_tecla();
+  dormiu_iniciar();
+  assert(diario_n(0) == 0);
 
   { char c[600]; snprintf(c, sizeof c, "rm -rf '%s'", pasta); system(c); }
   printf("dormiu: ok\n");

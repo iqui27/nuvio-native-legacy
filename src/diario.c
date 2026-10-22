@@ -79,6 +79,7 @@ static void esperarFlush(void) {
 
 unsigned diario_dono_geracao(void) { return donoGeracao; }
 static unsigned donoHash;       // 0 = sem conta
+unsigned diario_dono_hash(void) { return donoHash; }
 
 long long diario_relogio_teste;     // != 0 congela o relogio (testes)
 static long long agora(void) {
