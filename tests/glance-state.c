@@ -4,6 +4,9 @@
 static Uint32 clockNow = 100;
 static int opened, playing, failed, opens, actions, busy, requests;
 static int catalogIndex = -1, episodeBusy, episodeRequests;
+static int miniActive, retained;
+int player_mini_ativo(void) { return miniActive; }
+int player_retido(void) { return retained; }
 void desc_episodios(int idx, int season) { assert(idx == 0 && season == 0); episodeBusy = 1; episodeRequests++; }
 int desc_episodios_carregando(int idx) { assert(idx == 0); return episodeBusy; }
 static CatItem item, result;
@@ -43,6 +46,15 @@ static const GlanceFonte source = { total, getItem, NULL, NULL };
 static void key(int k) { SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = k; glance_evento(&e); }
 int main(void) {
   snprintf(item.imdb, sizeof item.imdb, "tt123"); snprintf(item.tipo, sizeof item.tipo, "movie");
+  miniActive = 1;
+  glance_abrir(&source, 0); glance_atualizar(.016f, clockNow);
+  glance_fechar();
+  assert(opens == 0 && miniActive);
+  miniActive = 0; retained = 1;
+  glance_abrir(&source, 0); glance_atualizar(.016f, clockNow);
+  glance_fechar();
+  assert(opens == 0 && retained);
+  retained = 0;
   glance_abrir(&source, 0); glance_atualizar(.016f, clockNow);
   assert(opens == 1 && !strcmp(lastUrl, "apple"));
   playing = 1;

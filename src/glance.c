@@ -8,6 +8,7 @@
 #include "gfx.h"
 #include "idioma.h"
 #include "layout.h"
+#include "player.h"
 #include "salvos.h"
 #include "teclavoltar.h"
 #include "tex_cache.h"
@@ -151,6 +152,7 @@ void glance_atualizar(float dt, Uint32 agora) {
   if (cat_revisao() != revisao) { glance_fechar(); return; }
   for (int b = 0; b < 4; b++) focoAnim[b] = ajustes_animacoes_reduzidas()
     ? b == botao : anim_mola(focoAnim[b], b == botao, dt, NV_MOLA_FOCO);
+  if (player_mini_ativo() || player_retido()) return;
   if (!trailer_suportado() || trailerFim || !atual.imdb[0]) return;
   if (ctx_aberto()) return;
   if (!trailerPedido) {
