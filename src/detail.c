@@ -184,10 +184,10 @@ static GfxRect colecaoListaRect(void) {
 // 600x340 mantem a proporcao e as seis linhas de texto com leading de 30.
 // Glass UI (mockup "Detalhe", "O que estao dizendo"): tres blocos .gl de
 // 560x230 com vao de 24, padding 28, raio 26.
-#define COM_CARD_W   600.0f
-#define COM_CARD_H   340.0f
+#define COM_CARD_W   556.0f
+#define COM_CARD_H   212.0f
 #define COM_PAD       24.0f
-#define COM_CARD_GAP  22.0f
+#define COM_CARD_GAP  24.0f
 // Altura da CHAMADA das duas secoes sob demanda: a linha do titulo (TXT_HEADLINE,
 // 38), a da procedencia e a do custo (TXT_DET_META2, 23), com os mesmos vaos
 // que o cabecalho dos proprios modulos usa. Constante e nao medida por txt_linha
@@ -6742,9 +6742,7 @@ static float baseDaAbaAtiva(void) {
   }
 }
 
-static float alturaCabComentarios(void) {
-  return NV_DETF_CAB_H + NV_DETF_CAB_GAP + (ehSerie() ? COM_PILL_H + 28.0f : 0.0f);
-}
+static float alturaCabComentarios(void) { return 48; }
 
 // Rotulos do seletor, em escopo de arquivo: a contagem de colunas e a largura
 // de item precisam deles fora do desenho.
@@ -6772,7 +6770,7 @@ static const char *rotuloPilulaCom(int k) {
 // Os cartoes precisavam virar colunas: eles eram desenhados tres e ponto, sem
 // foco, entao os outros cinco que o Trakt manda (EX_COMENT_MAX = 8) eram
 // inalcancaveis — foi o "nao tava dando pra navegar nos comentarios".
-static int nPilulasCom(void) { return ehSerie() ? 2 : 0; }
+static int nPilulasCom(void) { return 0; }
 static int nCartoesCom(void) {
   int n = (ehSerie() && comentEp) ? extras_n_comentarios_ep()
                                  : extras_n_comentarios();
@@ -6786,6 +6784,9 @@ static float larguraPilulaCom(const char *rot) {
 
 // Desenha o cabecalho e devolve o Y onde os CARTOES comecam.
 static float cabecalhoComentarios(float x, float y, float a) {
+  char caps[160]; idioma_maiusc_em(ajustes_idioma(),caps,sizeof caps,i18n("O que estão dizendo"));
+  txt_tracking(TXT_G20M,caps,243,242,239,x,y,a*.6f,3.6f);
+  return y+48;
   float yy = y;
   // O cabecalho .dh do mockup: "O que estão dizendo" em 34/700, o complemento
   // "avaliações no Trakt" a 45% e a contagem a direita a 40%. Era o wordmark
@@ -6926,14 +6927,12 @@ static void desenhaComentarios(float x, float y, float a) {
     // A troca e em DEGRAU e nao interpolada: `txt_linha` guarda a linha ja
     // rasterizada na cor pedida, entao uma cor que varia por quadro seria uma
     // entrada nova de cache por quadro.
-    moldura(card, 20.0f, a);
+    gfx_cor(card,20.0f/COM_CARD_H,1,1,1,(foc ? .12f : .06f)*a);
     int tintaEsc = 1;   // tinta escura sobre o foco (realce claro); 0 = clara
     // Vidro: o cartao em foco segue translucido (contorno no realce), entao o
     // texto NAO inverte; `focCor` e o "foco cheio" das cores abaixo.
-    const int focCor = foc && !ajustes_vidro();
-    if (foc && ajustes_vidro())
-      gfx_vidro_foco(card, 20.0f / (COM_CARD_W < COM_CARD_H ? COM_CARD_W : COM_CARD_H), 1.0f, a);
-    else if (foc) { float fr, fg, fb; tintaEsc = ajustes_acento_tinta(&fr, &fg, &fb) < 0.5f;
+    const int focCor = 0;
+    if (0) {  float fr, fg, fb; tintaEsc = ajustes_acento_tinta(&fr, &fg, &fb) < 0.5f;
       gfx_cor(card, 20.0f / (COM_CARD_W < COM_CARD_H ? COM_CARD_W
                                                      : COM_CARD_H),
               fr, fg, fb, a); }
@@ -6956,22 +6955,31 @@ static void desenhaComentarios(float x, float y, float a) {
         txt_desenhar_alpha(lt, px + larg - lt.w, y + COM_PAD + 6.0f, a * 0.9f);
         larguraTag = lt.w + 14.0f; }
     }
-    { TxtLinha lu = txt_linha_corta(TXT_ROW_TITULO,
+    { TxtLinha lu = txt_linha_corta(TXT_G22M,
                                     daSerie ? extras_comentario_usuario(i)
                                             : extras_comentario_ep_usuario(i),
                                     focCor ? (tintaEsc ? 17 : 255) : 238, focCor ? (tintaEsc ? 17 : 255) : 241,
                                     focCor ? (tintaEsc ? 20 : 255) : 248, 255, larg - larguraTag);
-      txt_desenhar_alpha(lu, px, y + COM_PAD, a); }
+      txt_desenhar_alpha(lu,px+58,y+30,a);
+      int rating=daSerie ? extras_comentario_nota(i) : extras_comentario_ep_nota(i);
+      if (rating>0) { char score[24]; snprintf(score,sizeof score,"★ %d",rating);
+        TxtLinha ls=txt_linha(TXT_G18R,score,243,242,239,140);
+        txt_desenhar_alpha(ls,cx+COM_CARD_W-26-ls.w,y+32,a); }
+      GfxRect av={px,y+22,44,44}; gfx_cor(av,.5f,.62f,.83f,.78f,a);
+      const char *user=daSerie ? extras_comentario_usuario(i) : extras_comentario_ep_usuario(i);
+      char ini[12]; elencoMonograma(user,ini,sizeof ini);
+      TxtLinha initial=txt_linha(TXT_G18M,ini,17,17,17,255);
+      txt_desenhar_alpha(initial,av.x+(44-initial.w)*.5f,av.y+(44-initial.h)*.5f,a); }
 
     // O texto para ANTES do rodape: sem o teto de linhas ele passava por cima
     // das curtidas. 6 linhas de 30 terminam em 246; o rodape comeca em 288.
     if (comOculto(i)) {
-      for (int k=0; k<4; k++) gfx_cor((GfxRect){px,y+COM_PAD+52+k*30,larg-(k%2)*80,10},.5f,.25f,.27f,.29f,a);
-      txt_desenhar_alpha(txt_linha(TXT_CAPTION2,"Contém spoiler · OK para ler",200,203,210,255),px,y+COM_CARD_H-90,a);
-    } else txt_bloco(TXT_DET_META2, daSerie ? extras_comentario_texto(i)
+      for (int k=0; k<3; k++) gfx_cor((GfxRect){px,y+96+k*30,larg-k*60,14},.5f,.25f,.27f,.29f,a);
+      txt_desenhar_alpha(txt_linha(TXT_CAPTION2,"Contém spoiler · OK para ler",200,203,210,255),px,y+176,a);
+    } else txt_bloco(TXT_G22M, daSerie ? extras_comentario_texto(i)
                                      : extras_comentario_ep_texto(i),
               focCor ? (tintaEsc ? 45 : 235) : 190, focCor ? (tintaEsc ? 47 : 236) : 195, focCor ? (tintaEsc ? 52 : 240) : 205,
-              px, y + COM_PAD + 42.0f, larg, 30.0f, a * 0.95f, 6);
+              px,y+84,larg,33,a*.95f,3);
 
     { int nota = daSerie ? extras_comentario_nota(i)
                          : extras_comentario_ep_nota(i);
@@ -6984,7 +6992,7 @@ static void desenhaComentarios(float x, float y, float a) {
       { TxtLinha lr = txt_linha(TXT_CAPTION2, rodape,
                                 foc ? (tintaEsc ? 88 : 215) : 132, foc ? (tintaEsc ? 90 : 216) : 138,
                                 foc ? (tintaEsc ? 96 : 222) : 150, 255);
-        txt_desenhar_alpha(lr, px, y + COM_CARD_H - COM_PAD - lr.h, a * 0.9f); } }
+        (void)lr; } }
   }
 }
 
