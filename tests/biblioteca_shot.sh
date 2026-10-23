@@ -34,11 +34,11 @@ for source in "${sources[@]}" tests/biblioteca_shot.c; do
 done
 cc "${objects[@]}" -o "$tmp/shot" -L/opt/homebrew/lib \
   -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
-if [ "${NV_MODO:-}" = mock ]; then
+if [ "${NV_MODO:-}" = mock ] || [ "${NV_MODO:-}" = servers ]; then
   export NUVIO_RAIL=moderna NUVIO_SHOT_RELOGIO=1 NUVIO_SHOT_PT=1
 fi
 NUVIO_DADOS="$tmp/dados" "$tmp/shot" "$saida" "${NV_MODO:-}"
-[ "${NV_MODO:-}" = mock ] && exit 0
+if [ "${NV_MODO:-}" = mock ] || [ "${NV_MODO:-}" = servers ]; then exit 0; fi
 # SEGUNDA VOLTA so para a MEDIDA: comeca em lista, com o cache de textura frio.
 # Ver a nota em tests/biblioteca_shot.c sobre por que uma volta so nao mede.
 echo "--- segunda volta: lista com o cache frio ---"

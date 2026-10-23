@@ -2,6 +2,7 @@
 #include "ajustes.h"
 #include "idioma.h"
 #include "jsraiz.h"
+#include "fileiras.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -126,6 +127,26 @@ void servidores_atualizar_periodico(void) {
 }
 int servidores_conectado(void) { return jellyfin_conectado() || emby_conectado() || plex_conectado(); }
 
+int servidores_contem_item(const CatItem *it, int provider) {
+  if (!it || !ajustes_jellyfin_ligado()) return 0;
+  if (provider == 0) return plex_tem(it->imdb, it->tipo, NULL);
+  if (provider == 1) return jellyfin_tem(it->imdb, it->tipo, NULL);
+  if (provider == 2) return emby_tem(it->imdb, it->tipo, NULL);
+  return servidores_tem(it->imdb, it->tipo);
+}
+int servidores_catalogo_copiar(CatItem *out, int max) {
+  CatFileira fils[SRV_FIL_MAX]; int n = 0;
+  if (!out || max <= 0 || !ajustes_jellyfin_ligado()) return 0;
+  for (int p = 0; p < 3 && n < max; p++) {
+    int ni = 0;
+    if (p == 0) plex_fileiras_copiar(out + n, max - n, fils, SRV_FIL_MAX, &ni);
+    else if (p == 1) jellyfin_fileiras_copiar(out + n, max - n, fils, SRV_FIL_MAX, &ni);
+    else emby_fileiras_copiar(out + n, max - n, fils, SRV_FIL_MAX, &ni);
+    n += ni;
+  }
+  return n;
+}
+
 unsigned servidores_fileiras_versao(void) {
   return jellyfin_fileiras_versao() * 3u + emby_fileiras_versao() * 7u + plex_fileiras_versao() * 13u;
 }
@@ -171,6 +192,7 @@ int servidores_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, i
       for (r = 0; r < f; r++) {
         CatFileira fila = fils[nf + r];
         int ini = w;
+        if (fil_estado_chave(fila.chave) == FIL_FORA) continue;
         if (strstr(fila.chave, "_nextup"))
           snprintf(fila.titulo, sizeof fila.titulo, "%s · %s", i18n("Próximos episódios"), fils[nf + r].titulo);
         for (k = 0; k < fila.n; k++) {
@@ -197,6 +219,13 @@ int servidores_pagina(const char *chave, int inicio, int limite, CatItem *out, i
   if (total) *total = 0;
   if (!ajustes_jellyfin_ligado() || !out || max <= 0 || inicio < 0 || limite <= 0) return -1;
   if (limite > 100) limite = 100;
+  char recent[192];
+  const char *marker=chave?strstr(chave,"_recent_"):NULL;
+  if(marker) {
+    size_t p=(size_t)(marker-chave)+1;
+    if(p+strlen(marker+8)>=sizeof recent)return -1;
+    memcpy(recent,chave,p);snprintf(recent+p,sizeof recent-p,"%s",marker+8);chave=recent;
+  }
   if (jellyfin_chave_fileira(chave)) return jellyfin_pagina(chave, inicio, limite, out, max, total, raw);
   if (emby_chave_fileira(chave)) return emby_pagina(chave, inicio, limite, out, max, total, raw);
   if (plex_chave_fileira(chave)) return plex_pagina(chave, inicio, limite, out, max, total, raw);

@@ -3447,6 +3447,9 @@ static int automaticoDaFolhaModoCalcular(void) {
 
 
 static int grupo, filtro, soMp4, soCache, soDub;
+static int filtroServidor = -1;
+static int serverSectionN;
+static float serverSectionY;
 
 // BOTOES DO CABECALHO. "Sem HDR" so existe onde ha o que renegociar (webOS);
 // ver o bloco "TELA PRETA COM AUDIO TOCANDO" em video.h. Oferecer um botao que
@@ -3584,6 +3587,10 @@ static const char *fraseVazioChips(void) {
 }
 static int passaFiltro(int i) {
   if (filtro < 0) return 0;
+  if (filtroServidor >= 0) {
+    const char *pre[] = {"plex|", "jellyfin|", "emby|"};
+    if (strncmp(lista[i].bingeGroup, pre[filtroServidor], strlen(pre[filtroServidor]))) return 0;
+  }
   if (!passaChips(i)) return 0;
   if (filtro && !doProvedor(&lista[i], filtro)) return 0;
   return 1;
@@ -4385,10 +4392,11 @@ static float medirDicaTorrents(void) {
 }
 static void montarBase(int automatica) {
   float y;
-  escolhaAtualizar();
-  y = escAlt;
   int g, i, k, m = -1, nt;
   int needed = filtro == -1 ? ondever_n(alvoPedido) : n;
+  serverSectionN = 0;
+  escolhaAtualizar();
+  y = escAlt;
   int saved = !canalFolha && ajustes_fonte_manual() && preferida >= 0 && preferida < n &&
               passaFiltro(preferida) ? preferida : -1;
   if (ordemCap < needed) {
@@ -4441,11 +4449,19 @@ static void montarBase(int automatica) {
   }
   fitAtualizar();
   nOrdem = 0;
-  if (saved >= 0) {
+  // FONTES DO SERVIDOR PRIMEIRO, na sua secao: a copia de casa ganha da
+  // melhor fonte de addon, que so e promovida entre as demais.
+  for (k = 0; k < n; k++) { i = ORD(k); if (ehServidor(&lista[i]) && passaFiltro(i)) serverSectionN++; }
+  if (serverSectionN) {
+    serverSectionY = y; y += FOLHA_SEC_H;
+    for (k = 0; k < n; k++) { i = ORD(k); if (ehServidor(&lista[i]) && passaFiltro(i)) porLinha(i, &y, automatica); }
+    y += FOLHA_SEC_GAP;
+  }
+  if (saved >= 0 && !ehServidor(&lista[saved])) {
     m = saved;
     porLinha(m, &y, automatica);
     y += FOLHA_SEC_GAP - FOLHA_LINHA_GAP;
-  } else if (melhorFolha >= 0 && melhorFolha < n && !lista[melhorFolha].foraCache && passaFiltro(melhorFolha) && nFiltrados() > 1 &&
+  } else if (melhorFolha >= 0 && melhorFolha < n && !ehServidor(&lista[melhorFolha]) && !lista[melhorFolha].foraCache && passaFiltro(melhorFolha) && nFiltrados() > 1 &&
       (melhorFolha >= fitN || fitClasses[melhorFolha] != SF_PESADA)) {
     m = melhorFolha;
     porLinha(m, &y, automatica);
@@ -4458,7 +4474,7 @@ static void montarBase(int automatica) {
     // addon (#221) e o empate de tamanho fica com a ordem do addon.
     for (k = 0; k < n; k++) {
       i = ORD(k);
-      if (i != m && !lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g && !dobravel(i)) grupoTmp[nt++] = i;
+      if (i != m && !ehServidor(&lista[i]) && !lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g && !dobravel(i)) grupoTmp[nt++] = i;
     }
     // Insercao estavel: em tamanho igual vale a ordem do addon.
     for (k = 1; k < nt; k++) {
@@ -4474,7 +4490,7 @@ static void montarBase(int automatica) {
     // secao do grupo as abriga, na ordem do addon.
     for (k = 0; k < n; k++) {
       i = ORD(k);
-      if (i != m && lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g && !dobravel(i)) grupoTmp[nt++] = i;
+      if (i != m && !ehServidor(&lista[i]) && lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g && !dobravel(i)) grupoTmp[nt++] = i;
     }
     if (!nt) continue;
     if (nOrdem) y += FOLHA_SEC_GAP;
@@ -4662,7 +4678,12 @@ static void desenharAudioBars(float x, float y, float alt, float alfa, Uint32 ag
   }
 }
 
+void stream_folha_servidor(int provider) {
+  filtroServidor = provider >= 0 && provider < 3 ? provider : -1;
+  grupo = 1; foco = 0; rolagem = 0;
+}
 void stream_folha_abrir(void) {
+  filtroServidor = -1;
   // A busca nova pode estar na fila enquanto a lista ainda e do episodio
   // anterior. A folha fica vazia ate chegarem fontes do alvo pedido (#513).
   if (alvoPedido[0] && n > 0 && !stream_lista_do_alvo(alvoPedido))
@@ -5145,6 +5166,7 @@ void stream_folha_evento(const SDL_Event *e) {
   // seletor: a lista nao tem nada na horizontal, e subir ate as abas para
   // trocar de addon eram duas teclas a mais a cada troca.
   if(grupo>=0 && (k==SDLK_LEFT || k==SDLK_RIGHT)) {
+    filtroServidor = -1;
     filtro+=k==SDLK_RIGHT?1:-1;
     if(filtro < -1) filtro=-1;
     if(filtro>=nProvedores) filtro=nProvedores-1;
@@ -5315,7 +5337,7 @@ static void ponteiroFolhaFiltro(int i, int b) {
 #endif
   (void)b;
   if (i < -1 || i >= nProvedores) return;
-  filtro = i; foco = 0; rolagem = 0; grupo = 1;
+  filtroServidor = -1; filtro = i; foco = 0; rolagem = 0; grupo = 1;
 }
 static void ponteiroFolhaFora(int a, int b) { (void)a; (void)b; aberta = 0; }
 
@@ -6204,6 +6226,14 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     gfx_recorte(x,cy,w,folhaBase-cy); }
   if (escAlt > 0.0f && FOLHA_TOPO - rolagem + escAlt - ESC_VAO > FOLHA_TOPO - 8)
     escDesenhar(lx, FOLHA_TOPO - rolagem, rw, escAlt - ESC_VAO, ar, ag, ab, anim);
+  if (serverSectionN) {
+    float y = FOLHA_TOPO + serverSectionY - rolagem;
+    if (y + FOLHA_SEC_H >= FOLHA_TOPO - 8 && y <= NV_TELA_H) {
+      txt_desenhar_alpha(txt_linha(TXT_PAINEL_ITEM,"No seu servidor",242,242,240,255),tx,y+8,anim);
+      char count[48]; snprintf(count,sizeof count,i18n(serverSectionN==1?"%d fonte":"%d fontes"),serverSectionN);
+      TxtLinha c=txt_linha(TXT_PG_FIM,count,110,110,108,255); txt_desenhar_alpha(c,tr-c.w,y+12,anim);
+    }
+  }
   // CABECALHOS DE GRUPO: "4K  ULTRA HD ........ 3 fontes", com um fio embaixo.
   for(int g=0;g<FOLHA_GRUPOS;g++){
     float y; char q[48];
@@ -6341,6 +6371,12 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
         caixaAlta("Acima da conexão",204,178,132,mx+16,cy,anim);
       }
       cy+=FOLHA_MARCA_H;
+    }
+    if (ehServidor(s)) {
+      const char *mark = !strncmp(s->bingeGroup,"plex|",5) ? "deploy/app/art/marcas/plex.png" :
+                         !strncmp(s->bingeGroup,"emby|",5) ? "deploy/app/art/marcas/emby.png" : "deploy/app/art/marcas/jellyfin.png";
+      GLuint logo = tex_obter_larg(mark,30);
+      if (logo) gfx_rect((GfxRect){tx-40,cy+4,28,28},logo,GFX_MARCA,0,0,0,0,1,1,1,(sel?.78f:.52f)*anim);
     }
     // TITULO: o nome do conteudo (tituloConteudo). Fora do foco o titulo apaga um
     // degrau: com todas as linhas no mesmo branco a lista lia como uma massa

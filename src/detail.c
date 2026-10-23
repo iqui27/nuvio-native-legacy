@@ -317,6 +317,11 @@ static GfxRect maisAncora;  // onde o "..." foi desenhado (ilha detmais.h)
 // nela, baixo nela entra nas secoes, cima volta aos botoes. OK pede ao roteador
 // (app.c) para abrir o painel Social na atividade deste titulo.
 static int  focoAmigos = 0;
+static int focoServidor = -1, fonteServidorPedida = -1;
+static unsigned char servidoresDisponiveis;
+static int srvAvailabilityIndex = -1;
+static unsigned srvAvailabilityVersion;
+static void ponteiroServidor(int p, int unused) { (void)unused; nivel = 0; focoAmigos = 0; focoServidor = p; }
 static int  pedAmigos = 0;
 static int  pedExplorar = 0;   // circular "Explorar": o roteador abre a toca neste titulo
 #define DET_PTR_AMIGOS 99
@@ -1575,7 +1580,7 @@ static void abrirInterno(const HomeItem *it) {
   trocaarte_fechar();
   audAberta = 0; audTempAberta = -1; audTempVista = -1; frasesAberta = 0;
   item = *it;
-  aberto = 1; saindo = 0; nivel = 0; botao = 0; focoAmigos = 0;
+  aberto = 1; saindo = 0; nivel = 0; botao = 0; focoAmigos = 0; focoServidor = -1; fonteServidorPedida = -1; servidoresDisponiveis = 0; srvAvailabilityIndex = -1;
   amtui_fechar();
   detmais_zerar();
   heroReiniciar();
@@ -3146,7 +3151,8 @@ static void detail_evento_(const SDL_Event *e) {
     if (!okDesceEm) return;
     dur = ponteiro_ok_longo() ? NV_HOLD_MS : SDL_GetTicks() - okDesceEm;
     okDesceEm = 0;
-    if (nivel == 0 && focoAmigos) {
+    if (nivel == 0 && focoServidor >= 0) { pedFontes = 1; fonteServidorPedida = focoServidor; }
+    else if (nivel == 0 && focoAmigos) {
       // A lista do que cada amigo achou, AQUI (dono, 06/10/2026), e nao mais a
       // aba Atividade do painel — que repetia so "viu".
       AmigosTitulo at;
@@ -3388,6 +3394,18 @@ static void detail_evento_(const SDL_Event *e) {
     return;
   }
   if (nivel == 0) {
+    if (focoServidor >= 0) {
+      if (k == SDLK_UP) { focoServidor = -1; return; }
+      if (k == SDLK_LEFT || k == SDLK_RIGHT) {
+        int step = k == SDLK_LEFT ? -1 : 1;
+        for (int p = focoServidor + step; p >= 0 && p < 3; p += step) if (servidoresDisponiveis & (1 << p)) { focoServidor = p; break; }
+        return;
+      }
+      if (k != SDLK_DOWN) return;
+      focoServidor = -1;
+    } else if (k == SDLK_DOWN && servidoresDisponiveis) {
+      for (int p = 0; p < 3; p++) if (servidoresDisponiveis & (1 << p)) { focoServidor = p; return; }
+    }
     // CIMA na linha de botoes nao fazia nada; com uma reacao pendente ele abre
     // a pergunta (reacao.h). Sem pendencia, continua sem fazer nada.
     // CIMA na ilha de amigos volta ao botao em que estava; BAIXO entra nas secoes;
@@ -4909,7 +4927,13 @@ static void heroWeb(float a, float desloc) {
         if (fabsf(alvo - hVaiVis) < 0.5f) hVaiVis = alvo;
       }
       hVai = hVaiVis; } }
-  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai;
+  unsigned srvCurrentVersion = servidores_fileiras_versao();
+  if (srvAvailabilityIndex != idx || srvAvailabilityVersion != srvCurrentVersion) {
+    servidoresDisponiveis = 0;
+    for (int p = 0; ci && p < 3; p++) if (servidores_contem_item(ci, p)) servidoresDisponiveis |= 1 << p;
+    srvAvailabilityIndex = idx; srvAvailabilityVersion = srvCurrentVersion;
+  }
+  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai - (servidoresDisponiveis ? 64 : 0);
   // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
   // botoes. Sao duas, e a ordem tem razao: a retomada explica o BOTAO e fica
   // colada nele; a agenda ("Próximo episódio T2E5 · em 3 dias") explica o
@@ -5320,10 +5344,21 @@ static void heroWeb(float a, float desloc) {
     }
   }
 
-  // --- linha do servidor pessoal -------------------------------------------
-  if (srvLinha[0]) {
-    TxtLinha l = txt_linha_corta(TXT_V2_24, srvLinha, 255, 255, 255, 255, NV_DETW2_TEXTO_W);
-    txt_desenhar_alpha(l, NV_DETW2_X, ySrv + (NV_DETW_RETOM_H - l.h) * 0.5f, a);
+  // Availability chips use the same source picker as the Sources action.
+  if (servidoresDisponiveis) {
+    const char *names[] = {"Plex","Jellyfin","Emby"};
+    const char *logos[] = {"deploy/app/art/marcas/plex.png","deploy/app/art/marcas/jellyfin.png","deploy/app/art/marcas/emby.png"};
+    float x = NV_DETW2_X, y = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + 12;
+    for (int p = 0; p < 3; p++) if (servidoresDisponiveis & (1 << p)) {
+      GfxRect chip = {x,y,180,48}; int sel = nivel == 0 && focoServidor == p;
+      if (sel) gfx_vidro_pilula_cheia(chip,.5f,1,a); else gfx_cor(chip,.5f,1,1,1,.08f*a);
+      int ink = sel ? ajustes_tinta_foco() : 243;
+      GLuint mark = tex_obter_larg(logos[p],28);
+      if (mark) gfx_rect((GfxRect){x+16,y+10,28,28},mark,GFX_MARCA,0,0,0,0,ink/255.f,ink/255.f,ink/255.f,a);
+      txt_desenhar_alpha(txt_linha(TXT_ILHA_SUB,names[p],ink,ink,ink,255),x+56,y+13,a);
+      if (a > .3f) ponteiro_alvo(x,y,180,48,ponteiroServidor,NULL,p,0);
+      x += 192;
+    }
   }
 
   // A confirmed foreign image keeps its localized caption after actions.
@@ -7602,7 +7637,7 @@ static void ponteiroDetalhe(int r, int c) {
   if (corpoSobArte()) return;
   if (r < 0 && c == DET_PTR_AMIGOS) { nivel = 0; focoAmigos = 1; return; }
   if (r < 0) {
-    focoAmigos = 0;
+    focoAmigos = 0; focoServidor = -1;
     if (c < 0 || c >= nBotoes()) return;
     nivel = 0; botao = c;
     return;
@@ -8421,6 +8456,7 @@ int detail_pediu_amigos(char *imdb, size_t tam) {
   if (imdb && tam) snprintf(imdb, tam, "%s", c ? c->imdb : "");
   return 1;
 }
+int detail_fonte_servidor(void) { int p = fonteServidorPedida; fonteServidorPedida = -1; return p; }
 int detail_pediu_fontes(void)     { int v = pedFontes;     pedFontes = 0;     return v; }
 // O episodio travado com o pedido, se havia um card/menu por tras dele.
 // 0/0 = a folha e do titulo (hold no primario, botao "..."): sem trava.

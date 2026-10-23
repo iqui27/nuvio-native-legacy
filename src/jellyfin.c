@@ -6,6 +6,9 @@
 // the POST-only /QuickConnect/Initiate exist there). Older servers answer 404
 // on the item route and the title page stays with the row data.
 #include "jellyfin.h"
+#include "srvprefs.h"
+#include "srvsetup.h"
+#include "servidores.h"
 #include "dados.h"
 #include "js.h"
 #include "jsraiz.h"
@@ -758,6 +761,13 @@ int jf_indice(const JfConta *c, RedeJob *job, int inicio, int limite, long long 
            "%sRecursive=true&IncludeItemTypes=Movie,Series&Fields=ProviderIds,DateLastSaved"
            "&EnableImages=false&EnableUserData=true&SortBy=DateCreated,SortName&SortOrder=Ascending"
            "&StartIndex=%d&Limit=%d%s%s", raiz, inicio, limite, iso[0] ? "&MinDateLastSaved=" : "", iso);
+  if (c->bibliotecas[0]) {
+    char ids[256]; copiar(ids, sizeof ids, c->bibliotecas);
+    for (char *p = ids; *p; p++) if (*p == '\n') *p = ',';
+    if (strspn(ids, "0123456789abcdefABCDEF-,") != strlen(ids)) return JF_ERR_ENTRADA;
+    size_t used = strlen(caminho);
+    if (snprintf(caminho + used, sizeof caminho - used, "&ParentIds=%s", ids) >= (int)(sizeof caminho - used)) return JF_ERR_ENTRADA;
+  }
   e = pedir(c, c->base, job, "GET", caminho, NULL, "library index", JF_PRAZO_LISTA_MS, &r);
   if (e) return e;
   n = jf_ler_indice(r.corpo, r.n_corpo, NULL, x, total);
@@ -1244,6 +1254,11 @@ static int gravarConta(JfInst *I, const JfConta *c, int perfil) {
   linha(txt, sizeof txt, &k, "unome", c->usuarioNome);
   linha(txt, sizeof txt, &k, "dev", c->dispositivoId);
   linha(txt, sizeof txt, &k, "token", c->token);
+  char selection[256]; copiar(selection, sizeof selection, c->bibliotecas);
+  for (char *p = selection; *p; p++) if (*p == '\n') *p = ',';
+  linha(txt, sizeof txt, &k, "libs", selection);
+  linha(txt, sizeof txt, &k, "connectUser", c->connectUser);
+  linha(txt, sizeof txt, &k, "connectKey", c->connectKey);
   if (k >= sizeof txt) { apagarSegredo(txt, sizeof txt); return 0; }
   snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
   dados_fs_travar();
@@ -1323,6 +1338,10 @@ static void carregarLocked(JfInst *I) {
     lerCampo(txt, "unome", I->conta.usuarioNome, sizeof I->conta.usuarioNome);
     lerCampo(txt, "dev", I->conta.dispositivoId, sizeof I->conta.dispositivoId);
     lerCampo(txt, "token", I->conta.token, sizeof I->conta.token);
+    lerCampo(txt, "libs", I->conta.bibliotecas, sizeof I->conta.bibliotecas);
+    lerCampo(txt, "connectUser", I->conta.connectUser, sizeof I->conta.connectUser);
+    lerCampo(txt, "connectKey", I->conta.connectKey, sizeof I->conta.connectKey);
+    for (char *p = I->conta.bibliotecas; *p; p++) if (*p == ',') *p = '\n';
     apagarSegredo(txt, strlen(txt));
     free(txt);
   }
@@ -1428,6 +1447,7 @@ static void jfi_esquecer(JfInst *I) {
   arquivo(I, nome, sizeof nome, perfis_ativo());
   dados_apagar(nome);
   srvidx_apagar(perfis_ativo(), I->idxTipo);
+  servidores_cache_apagar(perfis_ativo(), I->tipo == JF_TIPO_EMBY ? 2 : 1);
   apagarSegredo(&I->conta, sizeof I->conta);
   carregarLocked(I);
   pthread_mutex_unlock(&I->trava);
@@ -1442,7 +1462,7 @@ static void jfi_esquecer_todos(JfInst *I) {
   avancarLocked(I);
   relatoriosDescartarLocked(I);
   for (i = 1; i <= 32; i++) { arquivo(I, nome, sizeof nome, i); dados_apagar(nome); }
-  for (i = 0; i <= 32; i++) srvidx_apagar(i, I->idxTipo);
+  for (i = 0; i <= 32; i++) { srvidx_apagar(i, I->idxTipo); servidores_cache_apagar(i, I->tipo == JF_TIPO_EMBY ? 2 : 1); }
   apagarSegredo(&I->conta, sizeof I->conta);
   carregarLocked(I);
   pthread_mutex_unlock(&I->trava);
@@ -2006,10 +2026,22 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   if (!j) return;
   itens = calloc((size_t)JF_ITENS_MAX, sizeof *itens);
   if (!itens) { fecharTarefa(I, j); return; }
-  nl = jf_bibliotecas(&c, j, libs, JF_FIL_MAX);
+  if (c.tipo == JF_TIPO_EMBY && c.connectKey[0] && c.connectUser[0]) {
+    EmConnectServidor server = {0};
+    copiar(server.id, sizeof server.id, c.servidorId); copiar(server.chave, sizeof server.chave, c.connectKey);
+    copiar(server.local, sizeof server.local, c.base);
+    e = em_connect_trocar(&c, &server, c.connectUser, j); apagarSegredo(&server, sizeof server);
+    if (e == JF_OK) {
+      pthread_mutex_lock(&I->trava);
+      if (aindaVale(I, t, j)) { I->conta = c; gravarConta(I, &c, I->perfilLido); }
+      pthread_mutex_unlock(&I->trava);
+    }
+  }
+  nl = e == JF_OK ? jf_bibliotecas(&c, j, libs, JF_FIL_MAX) : e;
   if (nl < 0) e = nl;
   por = jf_por_fileira(nl);
   for (i = 0; i < nl && e == JF_OK; i++) {
+    if (!srv_biblioteca_selecionada(c.bibliotecas, libs[i].id)) continue;
     int total, n = jf_itens(&c, j, libs[i].id, 0, por, itens + ni, por, &total);
     if (n < 0) { e = n; break; }
     if (!n) continue;
@@ -2544,6 +2576,27 @@ static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
   novo.retomadoMs = item->retomadoMs;
   *item = novo;
   return ne;
+}
+
+unsigned jf_setup_conta(int emby, JfConta *out, int *perfil) {
+  JfInst *I = emby ? &instEm : &instJf;
+  garantir(I); pthread_mutex_lock(&I->trava); conferirPerfilLocked(I);
+  *out = I->conta; *perfil = I->perfilLido; unsigned g = I->geracao;
+  pthread_mutex_unlock(&I->trava); return g;
+}
+int jf_setup_aceitar(int emby, const JfConta *c, int perfil, unsigned generation) {
+  JfInst *I = emby ? &instEm : &instJf; int ok = 0;
+  pthread_mutex_lock(&I->trava);
+  if (perfil == perfis_ativo() && perfil == I->perfilLido && generation == I->geracao &&
+      c->tipo == I->tipo && c->token[0] && c->usuarioId[0] && c->servidorId[0]) {
+    int selectionChanged = strcmp(I->conta.bibliotecas, c->bibliotecas) != 0;
+    avancarLocked(I); I->conta = *c; gravarConta(I, c, perfil);
+    if (selectionChanged) { srvidx_limpar(&I->idx); I->idxTag[0] = 0; srvidx_apagar(perfil, I->idxTipo); }
+    idxConferirLocked(I);
+    definirEstadoLocked(I, JF_EST_CONECTADO, c->servidorNome);
+    enfileirarLocked(I, T_BIBLIOTECAS, "", ""); ok = 1;
+  }
+  pthread_mutex_unlock(&I->trava); return ok;
 }
 
 // ====================================================== public API (2 kinds)

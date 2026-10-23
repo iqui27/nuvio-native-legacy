@@ -92,6 +92,7 @@
 #include "busca.h"
 #include "spotlight.h"
 #include "biblioteca.h"
+#include "srvsetup.h"
 #include "explorar.h"
 #include "agendaui.h"
 #include "agenda.h"
@@ -1084,7 +1085,7 @@ static void trocarTela(Tela nova) {
     case TELA_EXPLORAR:   explorar_iniciar();   break;
     case TELA_GUIA:       guia_abrir();         break;
     case TELA_BUSCA:      busca_iniciar();      break;
-    case TELA_BIBLIOTECA: biblioteca_iniciar(); break;
+    case TELA_BIBLIOTECA: srvsetup_ligar_biblioteca(); biblioteca_iniciar(); break;
     case TELA_AGENDA:     agendaui_iniciar();   break;
     case TELA_PERFIL:     perfil_abrir(); pedirPerfil(); diarionuvem_perguntar_se_preciso(); break;
     case TELA_AJUSTES:    ajustes_iniciar();    break;
@@ -4634,6 +4635,7 @@ void app_evento(const SDL_Event *e) {
   }
   if (spotAtalho(e) && spotPode()) { spotAbrir(e->key.keysym.sym == SPOT_TECLA_VOZ); return; }
   if (player_aberto()) { player_evento(e); return; }
+  if (srvsetup_aberto()) { srvsetup_evento(e); return; }
   // A BARRA LATERAL POR CIMA DA PAGINA DO TITULO (dono, 03/10: "pode abrir por
   // cima"): ESQUERDA no comeco de uma fileira pede a barra e a pagina fica
   // viva embaixo. Aberta, a tecla e dela; recolhendo, ja volta para a pagina.
@@ -5157,8 +5159,8 @@ void app_atualizar(float dt, Uint32 agora) {
   // PERSONAL SERVERS (servidores.h: Jellyfin, Emby, Plex): the modules fetches on its own workers; the
   // Home is rebuilt when its row snapshot changes or the option flips. One
   // integer compare per frame, no network here.
-  if (servidores_passo()) { desc_repetir_silencioso(); desc_refazer_continuar(); }
-  menu_servidores(ajustes_jellyfin_ligado() && servidores_conectado());
+  if (servidores_passo()) { desc_repetir_silencioso(); desc_refazer_continuar(); if (tela == TELA_BIBLIOTECA) srvsetup_ligar_biblioteca(); }
+  menu_servidores(0); // Personal servers belong to Library Origins.
   simklauth_passo((unsigned)agora);
   if (!player_aberto()) simkl_scrobble_retentar();
 
@@ -5849,7 +5851,7 @@ void app_atualizar(float dt, Uint32 agora) {
       case MENU_EXPLORAR:   trocarTela(TELA_EXPLORAR);   break;
       case MENU_BUSCAR:     trocarTela(TELA_BUSCA);      break;
       case MENU_BIBLIOTECA: trocarTela(TELA_BIBLIOTECA); break;
-      case MENU_SERVIDORES: trocarTela(TELA_HOME); vertudo_servidores(NULL); break;
+      case MENU_SERVIDORES: trocarTela(TELA_BIBLIOTECA); srvsetup_abrir(-2); break;
       case MENU_AGENDA:     trocarTela(TELA_AGENDA);     break;
       // DIRETO PARA A TELA, e nao mais para o painel lateral. O item do menu
       // se chama "Perfil e Stats" e abria um resumo de tres botoes por cima da
@@ -6170,6 +6172,7 @@ void app_atualizar(float dt, Uint32 agora) {
       idBaseDoTitulo(base, sizeof base);
       stream_preferir(base[0] ? fontepref_escolher_manual(base) : -1);
       nomeParaFolha(); stream_folha_abrir();
+      stream_folha_servidor(detail_fonte_servidor());
     }
   }
   // Escolher uma fonte na folha inicia a reproducao DELA. Trocar de fonte com o
@@ -7062,6 +7065,8 @@ void app_atualizar(float dt, Uint32 agora) {
       it.meta   = ci ? ci->meta : NULL;
       abrirTitulo(&it, 0, 1);
     } }
+  srvsetup_atualizar(agora);
+  if (tela == TELA_BIBLIOTECA) srvsetup_ligar_biblioteca();
   switch (tela) {
     case TELA_EXPLORAR:   explorar_atualizar(dt, agora);   break;
     case TELA_BUSCA:      busca_atualizar(dt, agora);      break;
@@ -7199,6 +7204,7 @@ static void desenharAtrasDoPainel(void *ctx) {
       default:              home_desenhar(agora);       break;
     }
   }
+  if (srvsetup_aberto()) srvsetup_desenhar(agora);
   CAMADA_SE(vertudo_aberta());
 #ifdef NV_TOUCH_UI
   if (!detail_cobre_tela()) sidebarToqueRegistrar(2);

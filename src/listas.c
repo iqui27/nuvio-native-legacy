@@ -13,6 +13,8 @@
 #include "recomenda.h"
 #include "rede.h"
 #include "js.h"
+#include "servidores.h"
+#include "idioma.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,12 +40,13 @@ typedef struct {
   int fioVivo;
   unsigned geracao;
 } LstFonteTab;
-static LstFonteTab tabs[LST_TAB_N];
+static LstFonteTab tabs[LST_TAB_N + 1]; // +1: LST_TAB_SERVIDOR
 static int fonteAtual = LST_TAB_TRAKT;
 
 // O QUE ESTE FIO FOI PEDIR. Copiado sob trava antes de sair, para o fio nunca
 // ler um pedido que a pessoa ja trocou.
-enum { PED_NADA = 0, PED_TRAKT_MINHAS, PED_TRAKT_BUSCA, PED_SIMKL_ITENS };
+enum { PED_NADA = 0, PED_TRAKT_MINHAS, PED_TRAKT_BUSCA, PED_SIMKL_ITENS, PED_SERVIDORES };
+enum { LST_TAB_SERVIDOR = LST_TAB_N };
 static char termoBusca[96];
 
 // --------------------------------------------------------------- fixadas
@@ -95,16 +98,17 @@ static void limpo(char *dst, size_t tam, const char *s) {
 static void chaveDe(const LstLista *l, char *dst, size_t n) {
   if (!l) { if (n) dst[0] = 0; return; }
   if (l->fonte == LST_TRAKT)      snprintf(dst, n, "%ld", l->traktId);
-  else if (l->fonte == LST_NUVIO) snprintf(dst, n, "%s", l->colId);
+  else if (l->fonte == LST_NUVIO || l->fonte == LST_SERVIDOR) snprintf(dst, n, "%s", l->colId);
   else                            snprintf(dst, n, "%s", l->estado);
 }
 
 static const char *nomeFonte(int f) {
-  return f == LST_TRAKT ? "trakt" : f == LST_SIMKL ? "simkl" : "nuvio";
+  return f == LST_TRAKT ? "trakt" : f == LST_SIMKL ? "simkl" : f == LST_SERVIDOR ? "servidor" : "nuvio";
 }
 static int fonteDeNome(const char *s) {
   if (!strcmp(s, "trakt")) return LST_TRAKT;
   if (!strcmp(s, "simkl")) return LST_SIMKL;
+  if (!strcmp(s, "servidor")) return LST_SERVIDOR;
   return LST_NUVIO;
 }
 
@@ -179,6 +183,7 @@ static int acharFixa(const LstLista *l) {
 
 int lst_fixada(const LstLista *l) { lerFixas(); return acharFixa(l) >= 0; }
 int lst_na_home(const LstLista *l) {
+  if (l && l->fonte == LST_SERVIDOR) return fil_estado_chave(l->colId) >= 0 && fil_estado_chave(l->colId) != FIL_FORA;
   int i;
   lerFixas();
   i = acharFixa(l);
@@ -215,6 +220,10 @@ int lst_alternar_fixada(const LstLista *l) {
 
 int lst_aceita_home(const LstLista *l, const char **porque) {
   if (porque) *porque = "";
+  if (l && l->fonte == LST_SERVIDOR && (strstr(l->colId, "_collections") || strstr(l->colId, "_playlists"))) {
+    if (porque) *porque = "Escolher";
+    return 0;
+  }
   if (!l) return 0;
   if (l->fonte == LST_SIMKL) {
     // Ver listas.h: a fileira de colecao sabe pedir catalogo de addon, TMDB e
@@ -274,6 +283,14 @@ int lst_alternar_home(const LstLista *l) {
   int i;
   const char *porque;
   if (!lst_aceita_home(l, &porque)) return 0;
+  if (l->fonte == LST_SERVIDOR) {
+    fil_registrar(l->colId, l->titulo, "", "", 0); fil_gravar_registro();
+    for (int k = 0; k < fil_n(); k++) if (!strcmp(fil_chave(k), l->colId)) {
+      if (fil_estado(k) == FIL_FORA) { int state; fil_adicionar(k, &state); } else fil_remover(k);
+      desc_repetir_silencioso(); return fil_estado(k) != FIL_FORA;
+    }
+    return 0;
+  }
   lerFixas();
   // Levar para a Home IMPLICA fixar: a pasta que a Home desenha e montada a
   // partir da linha do arquivo, e sem a linha nao ha o que montar.
@@ -666,7 +683,7 @@ static int montarFixadas(void) {
       d->traktId = atol(fixas[i].id);
       d->propria = fixas[i].propria;
     }
-    else if (fixas[i].fonte == LST_NUVIO) snprintf(d->colId, sizeof d->colId, "%s", fixas[i].id);
+    else if (fixas[i].fonte == LST_NUVIO || fixas[i].fonte == LST_SERVIDOR) snprintf(d->colId, sizeof d->colId, "%s", fixas[i].id);
     else                                  snprintf(d->estado, sizeof d->estado, "%s", fixas[i].id);
   }
   tab->n = n;
@@ -694,6 +711,7 @@ typedef struct {
   uint64_t sessao;
   int qual, tab;
   char termo[96], aut[200], chave[200];
+  int provider, profile;
 } ListaTarefa;
 
 static void *fioListas(void *u) {
@@ -702,6 +720,29 @@ static void *fioListas(void *u) {
   char url[300], termo[300], *corpo = NULL;
   int qual = t->qual, st = 0, tentativa;
   escapar(t->termo, termo, sizeof termo);
+  if (qual == PED_SERVIDORES) {
+    const char *pre[] = {"plex_", "jellyfin_", "emby_"}; char key[96];
+    CatItem *items = calloc(LST_MAX, sizeof *items); LstLista lists[LST_MAX]; int n = 0;
+    for (int group = 0; group < 2 && items && n < LST_MAX; group++) {
+      snprintf(key, sizeof key, "%s%s", pre[t->provider], group ? "playlists" : "collections");
+      int total = 0, raw = 0;
+      int got = servidores_pagina(key, 0, LST_MAX - n, items, LST_MAX - n, &total, &raw);
+      for (int i = 0; i < got && n < LST_MAX; i++) {
+        LstLista *l = &lists[n]; memset(l, 0, sizeof *l);
+        if (!lst_servidor_chave(&items[i], l->colId, sizeof l->colId)) continue;
+        l->fonte = LST_SERVIDOR; l->itens = -1; l->curtidas = -1;
+        snprintf(l->titulo, sizeof l->titulo, "%s", items[i].titulo);
+        snprintf(l->autor, sizeof l->autor, "%s", t->provider == 0 ? "Plex" : t->provider == 1 ? "Jellyfin" : "Emby"); n++;
+      }
+    }
+    free(items); pthread_mutex_lock(&trava);
+    if (t->geracao == tab->geracao && t->profile == perfis_ativo()) {
+      memcpy(tab->v, lists, (size_t)n * sizeof *lists); tab->n = n; tab->aviso[0] = 0;
+      if (tab->fioVivo > 0) tab->fioVivo--;
+    }
+    pthread_mutex_unlock(&trava);
+    memset(t, 0, sizeof *t); free(t); return NULL;
+  }
   if (perfis_sessao_atual(t->sessao)) {
     const char *cab[4];
     for (tentativa = 0; tentativa < 2; tentativa++) {
@@ -848,6 +889,44 @@ void lst_buscar(const char *termo) {
   disparar(PED_TRAKT_BUSCA);
 }
 
+int lst_servidor_chave(const CatItem *it, char *out, size_t n) {
+  char tag[JFID_TAG + 1], item[JFID_ITEM + 1];
+  if (!it || (strcmp(it->tipo, "group") && strcmp(it->tipo, "list"))) return 0;
+  const char *p = !strncmp(it->imdb, "px:", 3) ? "px:" : !strncmp(it->imdb, "em:", 3) ? "em:" : "jf:";
+  if (!jfid_partes_p(p, it->imdb, tag, item)) return 0;
+  const char *pre = p[0] == 'p' ? "plex_" : p[0] == 'e' ? "emby_" : "jellyfin_";
+  return snprintf(out, n, "%s%s%s", pre, !strcmp(it->tipo, "list") ? "list_" : p[0] == 'p' ? "group_" : "", item) < (int)n;
+}
+
+int lst_servidor_entrar(const CatItem *item) {
+  char key[96]; if (!lst_servidor_chave(item, key, sizeof key)) return 0;
+  LstLista list; memset(&list, 0, sizeof list); list.fonte = LST_SERVIDOR;
+  snprintf(list.colId, sizeof list.colId, "%s", key);
+  snprintf(list.titulo, sizeof list.titulo, "%s", item->titulo);
+  lst_abrir(&list, ""); return 1;
+}
+
+void lst_pedir_servidores(int provider, int collections) {
+  ListaTarefa *t;
+  uint64_t sessao;
+  if (provider < 0 || provider > 2) return;
+  sessao = perfis_sessao_geracao();
+  t = calloc(1, sizeof *t);
+  if (!t || !perfis_sessao_travar(sessao)) { free(t); return; }
+  t->qual = PED_SERVIDORES; t->sessao = sessao; t->tab = LST_TAB_SERVIDOR;
+  t->provider = provider; t->profile = perfis_ativo();
+  (void)collections;
+  pthread_mutex_lock(&trava);
+  fonteAtual = LST_TAB_SERVIDOR;
+  { LstFonteTab *tab = &tabs[t->tab];
+    t->geracao = ++tab->geracao;
+    tab->aviso[0] = 0; tab->fioVivo++;
+    enfileirar(t);
+  }
+  pthread_mutex_unlock(&trava);
+  perfis_sessao_destravar();
+}
+
 void lst_pedir_fixadas(void) {
   pthread_mutex_lock(&trava);
   fonteAtual = LST_TAB_FIXADAS;
@@ -896,7 +975,7 @@ const char *lst_aviso(void) {
 static struct { int fonte; long id; char chave[96]; LstPrevia arte; } previas[24];
 static unsigned previaVez;
 static const char *previaChave(const LstLista *l) {
-  return l->fonte == LST_NUVIO ? l->colId : l->estado;
+  return l->fonte == LST_NUVIO || l->fonte == LST_SERVIDOR ? l->colId : l->estado;
 }
 void lst_previa_limpar(void) { memset(previas, 0, sizeof previas); previaVez = 0; }
 int lst_previa(const LstLista *l, LstPrevia *out) {
@@ -1061,6 +1140,9 @@ void lst_abrir(const LstLista *l, const char *midia) {
     return;
   }
 
+  if (l->fonte == LST_SERVIDOR) {
+    desc_vertudo_filtro("servidores", "", l->colId, ""); return;
+  }
   memset(&s, 0, sizeof s);
   if (l->fonte == LST_TRAKT) {
     snprintf(s.prov, sizeof s.prov, "trakt");

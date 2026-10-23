@@ -5537,6 +5537,30 @@ static void *montar(void *u) {
     }
     free(jfItens);
   }
+  // Explicit personal-server collection/playlist rows use the same pager as Library.
+  if (ajustes_jellyfin_ligado()) {
+    char keys[SRV_FIL_MAX][FIL_CHAVE]; char names[SRV_FIL_MAX][128]; int nk = 0;
+    for (int i = 0; i < fil_n() && nk < SRV_FIL_MAX; i++) {
+      const char *key = fil_chave(i);
+      if (!servidores_chave_fileira(key) || fil_estado(i) != FIL_NA_HOME ||
+          (!strstr(key, "_group_") && !strstr(key, "_list_") && !strstr(key, "_recent_") && strncmp(key, "jellyfin_", 9) && strncmp(key, "emby_", 5))) continue;
+      int exists = 0; for (int j = 0; j < nFilsLote; j++) if (!strcmp(filsLote[j].chave, key)) { exists = 1; break; }
+      if (exists) continue;
+      snprintf(keys[nk], sizeof keys[nk], "%s", key); snprintf(names[nk], sizeof names[nk], "%s", fil_titulo(i)); nk++;
+    }
+    CatItem *items = nk ? calloc(24, sizeof *items) : NULL;
+    for (int i = 0; items && i < nk && nFilsLote < CAT_FIL_MAX; i++) {
+      int total = 0, raw = 0, count = servidores_pagina(keys[i], 0, 24, items, 24, &total, &raw);
+      if (count <= 0) continue;
+      GARANTE(count); int begin = n;
+      for (int j = 0; j < count && n < cap; j++) if (items[j].imdb[0] && !jfid_e(items[j].imdb)) lote[n++] = items[j];
+      if (n == begin) continue;
+      CatFileira *row = &filsLote[nFilsLote++]; memset(row, 0, sizeof *row);
+      snprintf(row->chave, sizeof row->chave, "%s", keys[i]); snprintf(row->titulo, sizeof row->titulo, "%s", names[i]);
+      snprintf(row->tipo, sizeof row->tipo, "%s", "movie"); row->ini = begin; row->n = n - begin;
+    }
+    free(items);
+  }
 #undef GARANTE
 
   if (n || nFilsLote > 0) {

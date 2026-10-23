@@ -458,6 +458,10 @@ const char *fil_linha_tipo_rotulo(int i);
 // Grava a forma da fileira. 0 quando a chave nao e conhecida, e fixa, ou o
 // tipo nao vale para ela.
 int  fil_definir_tipo(const char *chave, int t);
+// Server content: 0 preserves server order, 1 sorts titles; watched hiding is opt-in.
+int fil_definir_servidor(const char *chave, int ordem, int ocultarVistos);
+int fil_servidor_ordem(const char *chave);
+int fil_servidor_ocultar_vistos(const char *chave);
 void fil_ciclar_tam(int i);
 // Troca a linha com a vizinha e devolve o novo indice dela (o mesmo, se nao deu
 // para mover). E o gesto de "pegar e mover" da tela de reordenar.

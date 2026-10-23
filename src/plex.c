@@ -13,6 +13,8 @@
 // shapes follow Plex's public API documentation and community-documented
 // behaviour, and are pinned by fixture tests (tests/plex.c).
 #include "plex.h"
+#include "srvprefs.h"
+#include "servidores.h"
 #include "dados.h"
 #include "js.h"
 #include "jsraiz.h"
@@ -1355,6 +1357,9 @@ static int gravarConta(const PxConta *c, int perfil) {
   linha(txt, sizeof txt, &k, "dev", c->dispositivoId);
   linha(txt, sizeof txt, &k, "tokc", c->tokenConta);
   linha(txt, sizeof txt, &k, "toks", c->token);
+  char selection[256]; copiar(selection, sizeof selection, c->bibliotecas);
+  for (char *p = selection; *p; p++) if (*p == '\n') *p = ',';
+  linha(txt, sizeof txt, &k, "libs", selection);
   if (k >= sizeof txt) { apagarSegredo(txt, sizeof txt); return 0; }
   snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
   dados_fs_travar();
@@ -1434,6 +1439,8 @@ static void carregarLocked(void) {
     lerCampo(txt, "dev", conta.dispositivoId, sizeof conta.dispositivoId);
     lerCampo(txt, "tokc", conta.tokenConta, sizeof conta.tokenConta);
     lerCampo(txt, "toks", conta.token, sizeof conta.token);
+    lerCampo(txt, "libs", conta.bibliotecas, sizeof conta.bibliotecas);
+    for (char *p = conta.bibliotecas; *p; p++) if (*p == ',') *p = '\n';
     apagarSegredo(txt, strlen(txt));
     free(txt);
   }
@@ -1532,7 +1539,7 @@ void plex_esquecer(void) {
   cancelEntrada++;
   arquivo(nome, sizeof nome, perfis_ativo());
   dados_apagar(nome);
-  srvidx_apagar(perfis_ativo(), "px");
+  srvidx_apagar(perfis_ativo(), "px"); servidores_cache_apagar(perfis_ativo(), 0);
   apagarSegredo(&conta, sizeof conta);
   carregarLocked();
   pthread_mutex_unlock(&trava);
@@ -1550,7 +1557,7 @@ void plex_esquecer_todos(void) {
   relatoriosDescartarLocked();
   cancelEntrada++;
   for (i = 1; i <= 32; i++) { arquivo(nome, sizeof nome, i); dados_apagar(nome); }
-  for (i = 0; i <= 32; i++) srvidx_apagar(i, "px");
+  for (i = 0; i <= 32; i++) { srvidx_apagar(i, "px"); servidores_cache_apagar(i, 0); }
   apagarSegredo(&conta, sizeof conta);
   carregarLocked();
   pthread_mutex_unlock(&trava);
@@ -1673,6 +1680,23 @@ void plex_cancelar_entrada(void) {
   if (estado == PX_EST_CODIGO || estado == PX_EST_ENTRANDO)
     definirEstadoLocked(PX_EST_SEM_CONTA, "");
   pthread_mutex_unlock(&trava);
+}
+
+unsigned px_setup_conta(PxConta *out, int *perfil) {
+  garantir(); pthread_mutex_lock(&trava); conferirPerfilLocked();
+  *out = conta; *perfil = perfilLido; unsigned g = geracao;
+  pthread_mutex_unlock(&trava); return g;
+}
+int px_setup_aceitar(const PxConta *c, int perfil, unsigned generation) {
+  int ok = 0; pthread_mutex_lock(&trava);
+  if (perfil == perfis_ativo() && perfil == perfilLido && generation == geracao && c->token[0] && c->servidorId[0]) {
+    int selectionChanged = strcmp(conta.bibliotecas, c->bibliotecas) != 0;
+    avancarLocked(); conta = *c; gravarConta(c, perfil);
+    if (selectionChanged) { srvidx_limpar(&idx); idxTag[0] = 0; srvidx_apagar(perfil, "px"); }
+    idxConferirLocked();
+    definirEstadoLocked(PX_EST_CONECTADO, c->servidorNome); enfileirarLocked(T_BIBLIOTECAS, ""); ok = 1;
+  }
+  pthread_mutex_unlock(&trava); return ok;
 }
 
 int plex_proximo_servidor(void) {
@@ -1890,6 +1914,18 @@ static void publicarConta(const Tarefa *t, RedeJob *j, PxConta *c, int nServidor
 
 // Finds the server on the account and a reachable connection. `ciclar`: take
 // the server after the current one instead of the current/default one.
+int px_setup_manual(PxConta *c, const char *url, RedeJob *job) {
+  char base[512];
+  if (!url || strchr(url, '@') || jf_url_normalizar(url, base, sizeof base) != JF_OK || strlen(base) >= sizeof c->base) return PX_ERR_ENTRADA;
+  PxServidor s[PX_SERVIDORES_MAX]; int n = px_recursos(c, job, s, PX_SERVIDORES_MAX), e = PX_ERR_SEM_SERVIDOR;
+  for (int i = 0; i < n; i++) {
+    s[i].nCon = 1; memset(s[i].con, 0, sizeof s[i].con);
+    copiar(s[i].con[0].uri, sizeof s[i].con[0].uri, base);
+    e = px_escolher(c, job, &s[i]); if (e == PX_OK) break;
+  }
+  apagarSegredo(s, sizeof s); return n < 0 ? n : e;
+}
+
 static int resolverServidor(PxConta *c, RedeJob *j, int ciclar, int *nServidores) {
   PxServidor *srv = malloc(sizeof *srv * PX_SERVIDORES_MAX);
   int n, i, atual = -1, ini, e = PX_ERR_SEM_SERVIDOR, tentativas;
@@ -2033,6 +2069,7 @@ static void indexar(const Tarefa *t, RedeJob *j, const PxConta *c, const PxBibli
     srvidx_iniciar(&novo);
     totalTodos = 0;
     for (i = 0; i < nl && e == PX_OK; i++) {
+      if (!srv_biblioteca_selecionada(c->bibliotecas, libs[i].id)) continue;
       int inicio = 0, total = 0, vistos;
       if (incremental) {
         e = px_indice(c, j, libs[i].id, 0, 0, 0, &novo, &total);   // the count, nothing else
@@ -2092,6 +2129,7 @@ static void tarefaBibliotecas(const Tarefa *t) {
   nl = px_bibliotecas(&c, j, libs, PX_FIL_MAX);
   if (nl < 0) e = nl;
   for (i = 0; i < nl && e == PX_OK; i++) {
+    if (!srv_biblioteca_selecionada(c.bibliotecas, libs[i].id)) continue;
     int total, n = px_itens(&c, j, libs[i].id, 0, PX_POR_FILEIRA, itens + ni, PX_POR_FILEIRA, &total);
     if (n < 0) { e = n; break; }
     if (!n) continue;
