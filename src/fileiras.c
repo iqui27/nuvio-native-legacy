@@ -286,7 +286,7 @@ static void gravar(void) {
   // 64 linhas de ate ~310 bytes (chave 192 + titulo 96 + quatro numeros), mais
   // o cabecalho. Alocado e nao na pilha: sao ~20 KB e esta funcao roda no fio
   // do desenho.
-  size_t cap = 128 + 64 + (size_t)FIL_MAX * (2 * FIL_CHAVE + FIL_TITULO + 56);
+  size_t cap = 128 + 64 + (size_t)FIL_MAX * (3 * FIL_CHAVE + FIL_TITULO + 80);
   char *txt = malloc(cap);
   size_t k;
   int i;

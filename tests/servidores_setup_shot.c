@@ -1,14 +1,19 @@
 // Offline fixtures, production setup renderer and keyboard navigation.
 #include "../src/srvsetup.c"
 #include "rail_shot.h"
+#include "home.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 static GLuint target;
+static int homeShot;
 static void capture(const char *dir, const char *name) {
-  for (int i=0;i<15;i++) {
+  for (int i=0;i<45;i++) {
+    SDL_Delay(10);
     SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); gfx_novo_quadro();
     glBindFramebuffer(GL_FRAMEBUFFER,target);glViewport(0,0,1920,1080);glClear(GL_COLOR_BUFFER_BIT);
-    srvsetup_desenhar(codeSince+28000); rail_shot_desenhar(MENU_BIBLIOTECA);glFinish();
+    if(homeShot) { home_atualizar(1.0f/60,codeSince+28000+i*16);home_desenhar(codeSince+28000+i*16); }
+    else srvsetup_desenhar(codeSince+28000);
+    rail_shot_desenhar(homeShot?MENU_INICIO:MENU_BIBLIOTECA);glFinish();
   }
   unsigned char *pixels=malloc(1920*1080*4); assert(pixels);
   glReadPixels(0,0,1920,1080,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
@@ -37,16 +42,48 @@ int main(int argc,char **argv){
     {LIBRARIES,0,"setup-plex-bibliotecas"},{LIBRARIES,1,"setup-bibliotecas"},{LIBRARIES,2,"setup-emby-bibliotecas"},
     {READY,0,"setup-plex-pronto"},{READY,1,"setup-pronto"},{READY,2,"setup-emby-pronto"},
     {MANAGE,0,"servidores-gerenciar"},{REMOVE,0,"servidor-remover"},{ERROR_SCREEN,2,"servidor-offline"},
-    {ERROR_SCREEN,1,"setup-credencial-expirada"},{ROWS,0,"fileira-adicionar-servidor"}};
+    {ERROR_SCREEN,1,"setup-credencial-expirada"},{ROWS,0,"fileira-adicionar-servidor"},
+    {PLEX_SERVERS,0,"setup-plex-servidor"},{LOGIN,2,"setup-emby"},
+    {DISCOVER,1,"setup-buscando"},{DISCOVER,1,"setup-nenhum-servidor"}};
   for(unsigned i=0;i<sizeof scenes/sizeof *scenes;i++){
     opened=1;provider=scenes[i].p;change(scenes[i].state);worker.n=2;
     strcpy(code,provider==0?"H7KM":"482916");makeQR(provider==0?"https://plex.tv/link":provider==1?"http://jellyfin.example.test/web/#/quickconnect":"https://emby.media/pin");
-    for(int j=0;j<2;j++){snprintf(worker.servers[j].nome,96,"Servidor %d",j+1);snprintf(worker.users[j].nome,96,"Perfil %d",j+1);}
-    nLibraries=2;memset(libraries,0,sizeof libraries);strcpy(libraries[0].titulo,"Filmes");strcpy(libraries[1].titulo,"Séries");checked[0]=checked[1]=1;
+    recoveryAuth=screen==ERROR_SCREEN&&provider==1;
+    for(int j=0;j<2;j++){
+      const char *name=j?"Cinema":"Home";
+      snprintf(worker.servers[j].nome,96,"%s",name);snprintf(worker.plex[j].nome,96,"%s",name);
+      snprintf(worker.users[j].nome,96,"%s",j?"Diego":"Marina");
+      snprintf(worker.users[j].imagem,640,"/Volumes/ExternalSSD/tmp/servidores-polish/assets/%s.jpg",j?"diego":"marina");
+    }
+    nLibraries=3;memset(libraries,0,sizeof libraries);
+    const char *titles[]={"Filmes","Séries","Concertos"};
+    for(int j=0;j<3;j++){
+      snprintf(libraries[j].titulo,sizeof libraries[j].titulo,"%s",titles[j]);
+      snprintf(libraries[j].chave,sizeof libraries[j].chave,"%s%d",prefix[provider],j+1);
+      snprintf(libraries[j].tipo,sizeof libraries[j].tipo,"%s",j==1?"series":"movie");checked[j]=j<2;
+    }
+    rowChoice=rowStyle=0;
+    if(screen==ROWS){nLibraries=4;snprintf(libraries[3].chave,sizeof libraries[3].chave,"plex_recent_1");snprintf(libraries[3].titulo,sizeof libraries[3].titulo,"Mais recentes");snprintf(libraries[3].tipo,sizeof libraries[3].tipo,"movie");snprintf(libraries[1].titulo,sizeof libraries[1].titulo,"Coleção espacial");snprintf(libraries[1].tipo,sizeof libraries[1].tipo,"group");snprintf(libraries[1].chave,sizeof libraries[1].chave,"plex_group_42");snprintf(libraries[2].titulo,sizeof libraries[2].titulo,"Fila do fim de semana");snprintf(libraries[2].tipo,sizeof libraries[2].tipo,"list");snprintf(libraries[2].chave,sizeof libraries[2].chave,"plex_list_43");rowChoice=selected=1;}
+    if(!strcmp(scenes[i].name,"setup-nenhum-servidor"))worker.n=0;
+    if(!strcmp(scenes[i].name,"setup-buscando"))worker.alive=1;
     strcpy(username,"Marina");strcpy(password,"fixture");strcpy(addressText,"http://media.example.test:8096");
-    capture(argv[1],scenes[i].name);
+    capture(argv[1],scenes[i].name);worker.alive=0;
   }
-  screen=REMOVE;selected=0;key(SDLK_RETURN);assert(screen==MANAGE);
+  static CatItem items[5];CatFileira ready={0};
+  for(int i=0;i<5;i++){
+    snprintf(items[i].imdb,sizeof items[i].imdb,"tt%d",100+i);strcpy(items[i].tipo,"movie");
+    snprintf(items[i].titulo,sizeof items[i].titulo,"Filme %d",i+1);
+    snprintf(items[i].poster,sizeof items[i].poster,"/Volumes/ExternalSSD/tmp/servidores-polish/assets/p%02d.jpg",i+2);
+  }
+  strcpy(ready.chave,"plex_group_42");strcpy(ready.titulo,"Coleção espacial");strcpy(ready.tipo,"movie");ready.n=5;
+  assert(home_iniciar("deploy/app/art"));cat_definir_tudo(items,5,&ready,1);home_ir_topo();home_focar_titulo(0);homeShot=1;capture(argv[1],"fileira-servidor-pronta");homeShot=0;
+  opened=1;screen=ROWS;provider=0;nLibraries=1;rowChoice=0;strcpy(libraries[0].chave,"plex_1");
+  selected=2;key(SDLK_RETURN);assert(fil_servidor_ordem("plex_1")==1);
+  selected=3;key(SDLK_RETURN);assert(fil_servidor_ocultar_vistos("plex_1"));
+  selected=5;key(SDLK_RETURN);assert(screen==READY);
+  screen=ERROR_SCREEN;recoveryAuth=0;selected=3;key(SDLK_RETURN);assert(screen==MANAGE);
+  screen=ERROR_SCREEN;recoveryAuth=1;selected=2;key(SDLK_RETURN);assert(!opened);
+  opened=1;screen=REMOVE;selected=0;key(SDLK_RETURN);assert(screen==MANAGE);
   screen=LIBRARIES;nLibraries=2;selected=0;key(SDLK_RETURN);assert(!checked[0]);
   screen=LIBRARIES;key(SDLK_ESCAPE);assert(screen==MANAGE);
   screen=LOGIN;key(SDLK_ESCAPE);assert(screen==CHOOSE);

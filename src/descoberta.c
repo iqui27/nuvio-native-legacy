@@ -4888,7 +4888,7 @@ static void *montar(void *u) {
     for (int i = 0; i < fil_n() && nk < SRV_FIL_MAX; i++) {
       const char *key = fil_chave(i);
       if (!servidores_chave_fileira(key) || fil_estado(i) != FIL_NA_HOME ||
-          (!strstr(key, "_group_") && !strstr(key, "_list_") && strncmp(key, "jellyfin_", 9) && strncmp(key, "emby_", 5))) continue;
+          (!strstr(key, "_group_") && !strstr(key, "_list_") && !strstr(key, "_recent_") && strncmp(key, "jellyfin_", 9) && strncmp(key, "emby_", 5))) continue;
       int exists = 0; for (int j = 0; j < nFilsLote; j++) if (!strcmp(filsLote[j].chave, key)) { exists = 1; break; }
       if (exists) continue;
       snprintf(keys[nk], sizeof keys[nk], "%s", key); snprintf(names[nk], sizeof names[nk], "%s", fil_titulo(i)); nk++;

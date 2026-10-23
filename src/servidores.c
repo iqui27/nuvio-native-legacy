@@ -219,6 +219,13 @@ int servidores_pagina(const char *chave, int inicio, int limite, CatItem *out, i
   if (total) *total = 0;
   if (!ajustes_jellyfin_ligado() || !out || max <= 0 || inicio < 0 || limite <= 0) return -1;
   if (limite > 100) limite = 100;
+  char recent[192];
+  const char *marker=chave?strstr(chave,"_recent_"):NULL;
+  if(marker) {
+    size_t p=(size_t)(marker-chave)+1;
+    if(p+strlen(marker+8)>=sizeof recent)return -1;
+    memcpy(recent,chave,p);snprintf(recent+p,sizeof recent-p,"%s",marker+8);chave=recent;
+  }
   if (jellyfin_chave_fileira(chave)) return jellyfin_pagina(chave, inicio, limite, out, max, total, raw);
   if (emby_chave_fileira(chave)) return emby_pagina(chave, inicio, limite, out, max, total, raw);
   if (plex_chave_fileira(chave)) return plex_pagina(chave, inicio, limite, out, max, total, raw);
