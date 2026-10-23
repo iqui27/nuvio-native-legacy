@@ -1130,17 +1130,9 @@ static int nivelHdr(const Stream *s) {
     toca = toca && (stream_e_mp4(s) || ajustes_dv_mkv());
 #endif
 #endif
-    // LG, MP4: o perfil 5 toca como DV de verdade (webOS aciona o DV nativo no
-    // MP4), entao conta como DV e nao fica abaixo do HDR10. Em MKV a LG cai em
-    // HDR10 (IPT-PQ, cor lavada) e ele segue rebaixado; com DV desligado em
-    // Ajustes ou tela sem DV tambem. Samsung e Android: nada muda.
-    if (perfil5(s)) {
-#if NV_STREAMS_LG
-      if (ajustes_dolby_vision() && telaDv != 0 && stream_e_mp4(s)) nivel = 4;
-      else
-#endif
-      if (nivel < 1) nivel = 1;
-    }
+    // Profile 5 has no HDR10 base; prefer HDR10 in the same band. Keeping it
+    // below HDR10 also prevents the MP4-first rule from promoting it.
+    if (perfil5(s)) { if (nivel < 1) nivel = 1; }
     else if (toca) nivel = 4;
     // Tela SEM Dolby Vision (telaDv == 0 explicito, ex. Samsung): so o perfil 8
     // com base HDR10 toca como HDR10. DV sem perfil nem base declarada pode ser
@@ -1450,7 +1442,7 @@ static int mp4PrimeiroNasFontes(const Stream *fontes, const char *alvo, const in
     const Stream *s = &fontes[idx ? idx[q] : ORD(q)];
     int g = grp ? grp[q] : 0, d = degrauRes(s), c = classeMp4(s), acima = 0;
     long mq = multasDeAlvo(s, alvo), teto = 0, novo;
-    int temNao = 0;
+    int temNao = 0, hdrNaoMp4 = 0;
     if (!c || (excl && excl[q]) || g < 0) continue;
     for (r = 0; r < total; r++) {
       const Stream *o = &fontes[idx ? idx[r] : ORD(r)];
@@ -1458,12 +1450,23 @@ static int mp4PrimeiroNasFontes(const Stream *fontes, const char *alvo, const in
       if (r == q || (excl && excl[r]) || (grp ? grp[r] : 0) != g || degrauRes(o) != d ||
           multasDeAlvo(o, alvo) != mq) continue;
       co = classeMp4(o);
-      if (!co) { if (!temNao || orig[r] > teto) teto = orig[r]; temNao = 1; continue; }
+      if (!co) {
+        if (!temNao || orig[r] > teto) teto = orig[r];
+        temNao = 1;
+        if (nivelHdr(o) >= 2) hdrNaoMp4 = 1;
+        continue;
+      }
       // Outro MP4 da mesma faixa: quantos ficam ABAIXO deste (classe, pontos,
       // e a ordem da lista no empate) decide o degrau dele acima da nao-MP4.
       if (co < c || (co == c && (orig[r] < orig[q] || (orig[r] == orig[q] && r > q)))) acima++;
     }
     if (!temNao) continue;
+    // Profile 5 has no HDR10 base; automatic promotion cannot put it ahead of
+    // an HDR10 non-MP4 in the same band (IPT-PQ washes out).
+    if (perfil5(s) && hdrNaoMp4) {
+      if (teto < orig[q]) { pts[q] = teto; subiram++; }
+      continue;
+    }
     novo = teto + 1 + acima;
     if (novo > orig[q]) { pts[q] = novo; subiram++; }
   }
@@ -3528,6 +3531,7 @@ static const char *iconeBotao(int b) {
 }
 static char provedores[13][96];
 static char provChaves[13][FONTEFALHA_CHAVE];
+static unsigned char provEstado[13];
 static int doProvedor(const Stream *s, int p) {
   if (s->addonChave[0] || provChaves[p][0])
     return !strcmp(s->addonChave, provChaves[p]);
@@ -3596,21 +3600,80 @@ static int passaFiltro(int i) {
   return 1;
 }
 
+static const char *contagemProvedorAba(int i) {
+  if (i <= 0) return NULL;
+  if (provEstado[i] == ADDON_ABA_BUSCANDO) return "…";
+  if (provEstado[i] == ADDON_ABA_FALHOU) return "0";
+  return NULL;
+}
+
+static const char *fraseVazioAba(int i) {
+  static char frase[192];
+  if (i <= 0) return NULL;
+  if (provEstado[i] == ADDON_ABA_BUSCANDO) {
+    snprintf(frase, sizeof frase, i18n("Buscando fontes em %s…"), provedores[i]);
+    return frase;
+  }
+  if (provEstado[i] == ADDON_ABA_FALHOU) {
+    snprintf(frase, sizeof frase, i18n("%s não respondeu."), provedores[i]);
+    return frase;
+  }
+  return NULL;
+}
+
 // Abas na ORDEM DE EXIBICAO (a dos addons), e a aba escolhida segue pelo
 // NOME: com a lista enchendo (#221) um addon novo pode entrar antes dela.
+typedef struct { char nome[96]; char chave[FONTEFALHA_CHAVE]; int ordem, estado; } ProvAba;
+
 static void atualizarProvedores(void) {
   char escolhido[96], chave[FONTEFALHA_CHAVE];
+  ProvAba abas[13];
+  AddonAba parcial[ADDONS_MAX + 160];
+  int nParcial = addons_parcial_abas(parcial, (int)(sizeof parcial / sizeof *parcial));
+  int nAbas = 0;
   snprintf(escolhido, sizeof escolhido, "%s", filtro > 0 && filtro < nProvedores ? provedores[filtro] : "");
   snprintf(chave, sizeof chave, "%s", filtro > 0 && filtro < nProvedores ? provChaves[filtro] : "");
-  nProvedores = 1;
-  snprintf(provedores[0],sizeof provedores[0],"Todos");
-  for (int k=0;k<n;k++) {
-    int i=ORD(k), j;
-    for(j=1;j<nProvedores;j++) if(doProvedor(&lista[i], j)) break;
-    if(j==nProvedores && nProvedores<13) {
-      snprintf(provChaves[nProvedores], sizeof provChaves[0], "%s", lista[i].addonChave);
-      snprintf(provedores[nProvedores++],96,"%s",lista[i].provedor);
+  for (int k = 0; k < n; k++) {
+    int i = ORD(k), j;
+    for (j = 0; j < nAbas; j++)
+      if (lista[i].addonChave[0] ? !strcmp(abas[j].chave, lista[i].addonChave) :
+          (!abas[j].chave[0] && !strcmp(abas[j].nome, lista[i].provedor))) break;
+    if (j == nAbas && nAbas < 12) {
+      snprintf(abas[nAbas].nome, sizeof abas[nAbas].nome, "%s", lista[i].provedor);
+      snprintf(abas[nAbas].chave, sizeof abas[nAbas].chave, "%s", lista[i].addonChave);
+      abas[nAbas].ordem = stream_ordem_addon(i);
+      abas[nAbas].estado = ADDON_ABA_PRONTO;
+      nAbas++;
     }
+  }
+  for (int p = 0; p < nParcial; p++) {
+    int j;
+    for (j = 0; j < nAbas; j++)
+      if (parcial[p].chave[0] ? !strcmp(abas[j].chave, parcial[p].chave) :
+          (!abas[j].chave[0] && !strcmp(abas[j].nome, parcial[p].nome))) break;
+    if (j < nAbas) {
+      if (abas[j].estado == ADDON_ABA_PRONTO) continue;
+      abas[j].estado = parcial[p].estado;
+      continue;
+    }
+    if (nAbas >= 12) continue;
+    snprintf(abas[nAbas].nome, sizeof abas[nAbas].nome, "%s", parcial[p].nome);
+    snprintf(abas[nAbas].chave, sizeof abas[nAbas].chave, "%s", parcial[p].chave);
+    abas[nAbas].ordem = parcial[p].ordem;
+    abas[nAbas].estado = parcial[p].estado;
+    nAbas++;
+  }
+  for (int i = 0; i < nAbas; i++)
+    for (int j = i + 1; j < nAbas; j++)
+      if (abas[j].ordem < abas[i].ordem) { ProvAba t = abas[i]; abas[i] = abas[j]; abas[j] = t; }
+  nProvedores = 1;
+  snprintf(provedores[0], sizeof provedores[0], "Todos");
+  provEstado[0] = ADDON_ABA_PRONTO;
+  for (int i = 0; i < nAbas && nProvedores < 13; i++) {
+    snprintf(provedores[nProvedores], sizeof provedores[nProvedores], "%s", abas[i].nome);
+    snprintf(provChaves[nProvedores], sizeof provChaves[nProvedores], "%s", abas[i].chave);
+    provEstado[nProvedores] = (unsigned char)abas[i].estado;
+    nProvedores++;
   }
   if (escolhido[0]) {
     int j;
@@ -3619,7 +3682,7 @@ static void atualizarProvedores(void) {
           (!provChaves[j][0] && !strcmp(provedores[j], escolhido))) break;
     filtro = j < nProvedores ? j : 0;
   }
-  if(filtro>=nProvedores) filtro=0;
+  if (filtro >= nProvedores) filtro = 0;
 }
 static int nFiltrados(void) {
   folhaDados();
@@ -4506,7 +4569,7 @@ static unsigned folhaDadosVersao;
 static void folhaDados(void) {
   static int busy, valid;
   static struct FolhaChave {
-    unsigned revisao, regras, mortas;
+    unsigned revisao, regras, mortas, abas;
     int valores[29];
     char audio[96], qualidade[32];
     FonteFalhaConfig falhas;
@@ -4517,6 +4580,9 @@ static void folhaDados(void) {
   key.revisao = atomic_load(&folhaRevisao);
   key.regras = fonteregra_versao();
   key.mortas = fontesmortas_versao();
+  // Addon/plugin que terminou sem fontes ou falhou nao publica Chegada:
+  // sem esta chave a aba dele ficava "…"/"Buscando…" para sempre.
+  key.abas = addons_parcial_rev();
   memcpy(key.decoder, decoder4k, sizeof decoder4k);
   memcpy(key.decoder + 4, decoderFalhaAltura, sizeof decoderFalhaAltura);
   int v[] = {n, (int)listaGeracao, filtro, soMp4, soCache, soDub, atual, preferida,
@@ -6145,7 +6211,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     for(int i=-1;i<nProvedores;i++){
       int qidx=i+1;
       int sel=i==filtro, foc=sel&&grupo==0, c=foc?ajustes_tinta_foco():sel?250:150;
-      char q[16]; snprintf(q,sizeof q,"%d",i<0?ondever_n(alvoPedido):cnt[i]);
+      char q[16];
+      const char *cont = contagemProvedorAba(i);
+      if (cont) snprintf(q, sizeof q, "%s", cont);
+      else snprintf(q, sizeof q, "%d", i < 0 ? ondever_n(alvoPedido) : cnt[i]);
       nome[qidx]=txt_linha_corta(TXT_HERO_META,i<0?"Onde ver":i?provedores[i]:"Todos",c,c,c,255,260);
       num[qidx]=txt_linha(TXT_PG_FIM,q,foc?c:sel?170:100,foc?c:sel?170:100,foc?c:sel?170:100,255);
       iw[qidx]=nome[qidx].w+10.0f+num[qidx].w+44.0f; }
@@ -6552,7 +6621,8 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     // Ordem: torrent descartado por falta de debrid primeiro (se havia fonte,
     // "os addons nao tem" seria falso), depois o resumo da consulta.
     char causa[160], frase[320];
-    const char *s=addons_estado()==ADD_BUSCANDO?"Buscando fontes nos addons…":"Nenhuma fonte direta disponível. Use Recarregar para tentar novamente.";
+    const char *s = fraseVazioAba(filtro);
+    if (!s) s = addons_estado()==ADD_BUSCANDO?"Buscando fontes nos addons…":"Nenhuma fonte direta disponível. Use Recarregar para tentar novamente.";
     if (!canalFolha && addons_estado()!=ADD_BUSCANDO && folhaBloqueada)
       s = "Nenhuma fonte passa pelos filtros";
     if (addons_estado()!=ADD_BUSCANDO && fraseVazioChips()) s = fraseVazioChips();

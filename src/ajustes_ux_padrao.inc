@@ -355,3 +355,4 @@
   0, /* show the audio codec in the format row: On (V_LIGA 0) */
   0, /* gradient smoothing: Automatic */
   0, /* #641 display refresh-rate match (AFR): Off */
+  0, /* hero logo and information size: Normal */

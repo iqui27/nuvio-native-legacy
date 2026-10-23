@@ -139,7 +139,7 @@ foreach(k ${NV_KEYS})
   target_compile_definitions(main PRIVATE "${k}=\"${${k}}\"")
 endforeach()
 
-target_link_libraries(main PRIVATE SDL2::SDL2 SDL2_image SDL2_ttf webpdemux webp GLESv2 EGL log android z m dl)
+target_link_libraries(main PRIVATE SDL2::SDL2 SDL2_image SDL2_ttf webpdemux webp GLESv2 EGL log android jnigraphics z m dl)
 # Todo pthread_create do nucleo passa por __wrap_pthread_create (src/android.c):
 # sem atributo de pilha, o fio nasce com 8 MB como no glibc da LG/Tizen, e nao
 # com o ~1 MB do bionic. O nucleo tem vetores grandes na pilha dos fios.

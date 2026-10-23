@@ -127,6 +127,7 @@ static void ajDesenharInspetor(void) {
   int naMais = !focoIndice && focoOp < 0 && TELA[focoItem].tipo == IT_MAIS;
   int categoria = focoIndice || focoOp < 0;
   int op = categoria ? -1 : focoOp;
+  int rtl = ajustes_idioma() == IDIOMA_AR;
   if (!aj2TemInsp()) return;
   if (ajRetrato()) {
     float pw = fminf(w, 560.0f), px = x + (w - pw) * 0.5f;
@@ -192,8 +193,11 @@ static void ajDesenharInspetor(void) {
       char resumo[400];
       maisContar(secAtual, resumo, sizeof resumo);
       y += ajBloco(TXT_V3_INSP, resumo, x, y, w, 37.0f, 0.70f, maxL);
-    } else
-    y += ajBloco(TXT_V3_INSP, categoria ? SECAO_AJUDA[secAtual] : uxResumo(op), x, y, w, 37.0f, 0.70f, maxL);
+    } else if (rtl)
+      y += txt_bloco_dir(TXT_V3_INSP, categoria ? SECAO_AJUDA[secAtual] : uxResumo(op),
+                        243, 242, 239, x + w, y, w, 37.0f, 0.70f, maxL);
+    else
+      y += ajBloco(TXT_V3_INSP, categoria ? SECAO_AJUDA[secAtual] : uxResumo(op), x, y, w, 37.0f, 0.70f, maxL);
     if (op == AJ_TEMA) {   // a cor PENDENTE, como a previa
       int salvo = valor[AJ_TEMA];
       if (ajEditandoLinha(AJ_TEMA)) valor[AJ_TEMA] = uxPendente;
@@ -216,7 +220,9 @@ static void ajDesenharInspetor(void) {
         size_t u = 0, ult = 0;
         float livre = w - lp.w - 10.0f;
         y += 4.0f;
-        txt_desenhar_alpha(lp, x, y + (37.0f - lp.h) * 0.5f, 0.95f);
+        // Arabic surfaces include tall font padding: match paragraph tops.
+        txt_desenhar_alpha(lp, rtl ? x + w - lp.w : x,
+                           y + (rtl ? 0 : (37.0f - lp.h) * 0.5f), 0.95f);
         while (t[u]) {
           size_t v = u;
           size_t tok;
@@ -231,10 +237,18 @@ static void ajDesenharInspetor(void) {
           if (!t[u]) break;
         }
         memcpy(l1, t, ult); l1[ult] = 0;
-        if (ult) { TxtLinha r1 = ajTxt(TXT_V3_INSP, l1); txt_desenhar_alpha(r1, x + lp.w + 10.0f, y + (37.0f - r1.h) * 0.5f, 0.70f); }
+        if (ult) {
+          TxtLinha r1 = ajTxt(TXT_V3_INSP, l1);
+          txt_desenhar_alpha(r1, rtl ? x + w - lp.w - 10.0f - r1.w : x + lp.w + 10.0f,
+                             y + (rtl ? 0 : (37.0f - r1.h) * 0.5f), 0.70f);
+        }
         y += 37.0f;
         while (t[ult] == ' ') ult++;
-        if (t[ult]) y += ajBloco(TXT_V3_INSP, t + ult, x, y, w, 37.0f, 0.70f, 3);
+        if (t[ult]) {
+          if (rtl) y += txt_bloco_dir(TXT_V3_INSP, t + ult, 243, 242, 239,
+                                     x + w, y, w, 37.0f, 0.70f, 3);
+          else y += ajBloco(TXT_V3_INSP, t + ult, x, y, w, 37.0f, 0.70f, 3);
+        }
       }
     }
     if (uxTemPadrao(op) && op != AJ_TEMA && y + 18.0f + 2 * 57.0f <= fim) {

@@ -116,6 +116,7 @@ void ajustes_encerrar(void);
 // e um ajuste de acessibilidade, nao um gosto, e uma tela que o ignora nao
 // serve para quem o ligou.
 int ajustes_animacoes_reduzidas(void);
+int ajustes_animacoes_reduzidas_usuario(void);
 // Protecao de OLED (esmaecer.h): indice de V_ESMAECER (padrao 2 = 5 min) e de
 // V_BRILHO_PLAYER (padrao 1 = 80%).
 int ajustes_esmaecer(void);
@@ -353,6 +354,9 @@ int   ajustes_hero_notas(void);        // heroNotasLocal: nota do IMDb no destaq
 int   ajustes_hero_ano(void);          // heroAnoLocal: ano no destaque
 int   ajustes_hero_duracao(void);      // heroDuracaoLocal: duracao no destaque
 int   ajustes_hero_sinopse_grande(void); // Normal (22/30) ou Grande (24/32)
+int   ajustes_hero_tamanho(void);       // heroSizeLocal: 0 Normal, 1 Grande, 2 Muito grande (logo + informacoes)
+float ajustes_hero_escala_logo(void);   // hero logo scale for ajustes_hero_tamanho: 1, 1.25, 1.5
+float ajustes_hero_escala_info(void);   // hero info line scale: 1, 1.15, 1.3
 int   ajustes_hero_cheio(void);         // modernHeroFullScreenBackdropEnabled
 // LAYOUT DA HOME (local): a estrutura da tela inicial. Moderna e o desenho de
 // sempre; Padrao contem o destaque num banner; Dinamica e o estilo Apple TV.
