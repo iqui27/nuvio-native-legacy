@@ -202,7 +202,7 @@ void srvsetup_abrir(int p) {
   if (opened) srvsetup_fechar();
   ajustes_definir_servidores(1);
   profile = perfis_ativo(); provider = p >= 0 && p < 3 ? p : 0;
-  opened = 1; restartPin = enterManual = 0; username[0] = password[0] = addressText[0] = code[0] = qrUrl[0] = 0; qr.lado = 0;
+  opened = 1; rowChoice = rowStyle = 0; restartPin = enterManual = 0; username[0] = password[0] = addressText[0] = code[0] = qrUrl[0] = 0; qr.lado = 0;
   change(p == -2 ? MANAGE : p < 0 ? CHOOSE : connected(provider) ? LIBRARIES : provider ? DISCOVER : CODE);
   if (screen == DISCOVER) startWorker(JOB_DISCOVER);
   else if (screen == CODE) enterCode(); else if (screen == LIBRARIES) librariesLoad();
@@ -348,7 +348,11 @@ void srvsetup_evento(const SDL_Event *e) {
     cancelLogin(); stopWorker(); wipe(password, sizeof password);
     if (screen == CHOOSE || screen == MANAGE) srvsetup_fechar();
     else if (screen == REMOVE) change(MANAGE);
+    else if (screen == LIBRARIES) change(MANAGE);
+    else if (screen == READY) { change(LIBRARIES); librariesLoad(); }
+    else if (screen == ROWS) change(READY);
     else if (screen == ADDRESS || screen == DISCOVER || screen == CODE) change(CHOOSE);
+    else if (screen == LOGIN) change(CHOOSE);
     else change(LOGIN);
   } else if (k == SDLK_LEFT || k == SDLK_UP) { if (selected > 0) selected--; }
   else if (k == SDLK_RIGHT || k == SDLK_DOWN) { if (selected + 1 < targets()) selected++; }

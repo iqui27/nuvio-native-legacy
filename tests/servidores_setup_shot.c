@@ -48,6 +48,9 @@ int main(int argc,char **argv){
   }
   screen=REMOVE;selected=0;key(SDLK_RETURN);assert(screen==MANAGE);
   screen=LIBRARIES;nLibraries=2;selected=0;key(SDLK_RETURN);assert(!checked[0]);
+  screen=LIBRARIES;key(SDLK_ESCAPE);assert(screen==MANAGE);
+  screen=LOGIN;key(SDLK_ESCAPE);assert(screen==CHOOSE);
+  screen=ROWS;key(SDLK_ESCAPE);assert(screen==READY);
   puts("Setup D-pad: bounded focus, Back, safe removal default, library toggle: PASS");
   return 0;
 }
