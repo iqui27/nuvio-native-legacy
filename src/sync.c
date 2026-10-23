@@ -1983,6 +1983,7 @@ void sync_esquecer_usuario(void) {
   // pessoa para a proxima que logasse nesta TV.
   stalker_esquecer();
   xtream_esquecer();   // mesma razao: usuario e senha sao a assinatura de quem saiu
+  extern void g5ui_forget(void);g5ui_forget();
   servidores_esquecer_todos();   // personal-server tokens of every profile on this TV
   trakt_esquecer();
   // Os ajustes por perfil guardados nesta TV (e as pendencias deles) sao da

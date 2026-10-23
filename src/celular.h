@@ -49,6 +49,9 @@ int  celular_disponivel(void);
 // i18n aqui) vai para o cabecalho da pagina. 1 = no ar; 0 = sem rede/sem IP.
 // Thread do app (usa i18n).
 int  celular_abrir(const char *titulo);
+/* Optional HTML for the next pairing only; same token/Host/Origin/expiry and
+ * single-use POST. Form action must remain empty (the current token URL). */
+int celular_abrir_pagina(const char *titulo, const char *html, const char *enviado);
 void celular_fechar(void);
 int  celular_estado(void);
 // http://<ip>:<porta>/<token>, ou "" fora do ar.

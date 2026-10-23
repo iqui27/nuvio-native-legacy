@@ -210,6 +210,8 @@ def achar_rotulo_sem_i18n(txt, linha_de, ctx_fn, re_desenho, re_nao_e_tela, nome
 NAO_E_TELA = ("printf", "fprintf", "puts", "fputs", "perror", "marco",
               "strcmp", "strncmp", "strcasecmp", "strstr", "strchr", "strrchr",
               "getenv", "setenv", "fopen", "unlink", "remove", "rename",
+              # Guide state route IDs, never rendered UI copy.
+              "g5ui_open", "go",
               "mkdir", "system", "dlopen", "dlsym", "js_", "jsw_", "rede_",
               "curl_", "SDL_Log",
               # motivo de log da fonte guardada (fontevolta.h): nunca tela
@@ -259,6 +261,8 @@ def contexto(txt, i):
 # "nao sei o que e": sem esta lista a ferramenta nao pode virar teste, e sem
 # virar teste ela nao impede a proxima regressao.
 IGNORAR = {
+    # Guide v5 internal screen routes, never rendered as labels.
+    "fontes-gerenciar", "parental-perfil-infantil", "vod-titulo",
     # Verified non-UI literals on the 2.1 feature branch:
     # fundo.c diagnostics; faixas/player/video_android speed and subtitle logs.
     # Verified diagnostics, protocol/file identifiers, and genre/token match data.

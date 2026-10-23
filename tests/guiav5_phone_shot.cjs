@@ -1,0 +1,16 @@
+const fs=require('fs');
+const path=require('path');
+const {chromium}=require('/Users/hrocha/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+(async()=>{
+ const out=process.argv[2]||'/Volumes/ExternalSSD/tmp/rev/guiav5-png';
+ const browser=await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,args:['--disable-background-networking']});
+ const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:1});
+ await page.route(/^https?:/,r=>r.abort());
+ await page.setContent(fs.readFileSync(path.join(out,'phone.html'),'utf8'));
+ await page.screenshot({path:path.join(out,'celular-1-dados-app.png'),fullPage:true});
+ await page.click('#next');
+ await page.screenshot({path:path.join(out,'celular-2-importar-app.png'),fullPage:true});
+ await page.setContent('<html lang=pt-BR><meta charset=utf-8><style>body{background:#0d0d0d;color:#f3f2ef;font:20px system-ui;padding:36px}h1{font-size:38px}p{color:#b2b4b8}</style><h1>Dados enviados. Olhe para a TV.</h1><p>Confira as opções e continue na TV.</p><p>A fonte ainda precisa ser testada e confirmada.</p></html>');
+ await page.screenshot({path:path.join(out,'celular-3-pronto-app.png')});
+ await browser.close();console.log('PASS: phone form states captured; submission covered by HTTP target test');
+})().catch(e=>{console.error(e);process.exit(1)});

@@ -47,6 +47,20 @@ int g5_parse_xtream(const char *json,int kind,G5Item *out,int cap,int *total) {
   if(total)*total=t;
   return n;
 }
+int g5_parse_episodes(const char *json,int season,G5Item *out,int cap){
+  char key[16];snprintf(key,sizeof key,"%d",season);
+  const char *start=strstr(json,"\"episodes\"");if(!start)return -1;
+  start=strchr(start,'{');if(!start)return -1;
+  const char *end=js_fim(start);if(!end||end[-1]!='}')return -1;
+  const char *p=js_array(start,end,key);int n=0;
+  while(p&&n<cap){const char *e=js_fim(p);if(!e||*p!='{'||e[-1]!='}')return -1;
+    G5Item it={.kind=G5_EPISODE,.age=-1,.season=season};
+    number_id(p,e,"id",it.id,sizeof it.id);js_texto(p,e,"title",it.name,sizeof it.name);
+    js_texto(p,e,"container_extension",it.ext,sizeof it.ext);it.episode=(int)js_num(p,e,"episode_num",0);
+    snprintf(it.source,sizeof it.source,"xtream");
+    if(it.id[0]&&it.name[0])out[n++]=it;p=js_prox(e);
+  }return n;
+}
 static void attr(const char *line,const char *name,char *out,size_t cap) {
   char key[80];snprintf(key,sizeof key,"%s=\"",name);
   const char *p=strstr(line,key);if(!p)return;p+=strlen(key);

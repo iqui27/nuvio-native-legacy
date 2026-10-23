@@ -5,6 +5,7 @@
 #ifdef __EMSCRIPTEN__
 int  celular_disponivel(void) { return 0; }
 int  celular_abrir(const char *t) { (void)t; return 0; }
+int celular_abrir_pagina(const char *t,const char *h,const char *e){(void)t;(void)h;(void)e;return 0;}
 void celular_fechar(void) {}
 int  celular_estado(void) { return CEL_PARADO; }
 const char *celular_url(void) { return ""; }
@@ -49,7 +50,8 @@ static char recebido[CEL_CORPO_MAX + 1];
 static int  temRecebido;
 static time_t expira;
 // Montadas na abertura (thread do app, por causa do i18n); o fio so le.
-static char pagina[12288], pagEnviado[8192], pagUsado[8192];
+static char pagina[24576], pagEnviado[8192], pagUsado[8192];
+static const char *proximaPagina, *proximaEnviado;
 
 int celular_disponivel(void) { return 1; }
 int celular_estado(void) { return estado; }
@@ -482,6 +484,14 @@ void celular_fechar(void) {
   estado = CEL_PARADO;
 }
 
+int celular_abrir_pagina(const char *titulo,const char *html,const char *enviado) {
+  celular_fechar();
+  proximaPagina=html;proximaEnviado=enviado;
+  int ok=celular_abrir(titulo);
+  proximaPagina=proximaEnviado=NULL;
+  return ok;
+}
+
 int celular_abrir(const char *titulo) {
   struct sockaddr_in a;
   socklen_t tam = sizeof a;
@@ -509,6 +519,9 @@ int celular_abrir(const char *titulo) {
   snprintf(origem, sizeof origem, "http://%s", hostLan);
   snprintf(url, sizeof url, "http://%s/%s", hostLan, token);
   montarPaginas(titulo);
+  if(proximaPagina)snprintf(pagina,sizeof pagina,"%s",proximaPagina);
+  if(proximaEnviado)snprintf(pagEnviado,sizeof pagEnviado,"%s",proximaEnviado);
+  proximaPagina=proximaEnviado=NULL;
   expira = time(NULL) + CEL_VALIDADE_S;
   estado = CEL_ESPERANDO;
   if (pthread_create(&fio, NULL, servir, NULL)) { celular_fechar(); return 0; }
