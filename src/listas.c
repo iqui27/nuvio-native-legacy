@@ -293,6 +293,7 @@ int lst_alternar_home(const LstLista *l) {
 }
 
 void lst_iniciar(void) {
+  if (perfilLido != perfis_ativo()) lst_previa_limpar();
   fixasLidas = 0;
   lerFixas();
   aplicarHome();
@@ -303,6 +304,7 @@ void lst_esquecer(void) {
   nTabela = 0; aviso[0] = 0; geracao++;
   pthread_mutex_unlock(&trava);
   nFixas = 0; fixasLidas = 0; perfilLido = -1;
+  lst_previa_limpar();
   col_extra_definir(NULL, 0);
 }
 
@@ -768,6 +770,34 @@ const char *lst_aviso(void) {
   snprintf(copia, sizeof copia, "%s", aviso);
   pthread_mutex_unlock(&trava);
   return copia;
+}
+
+// Bounded to 24 opened lists (about 52 KB of URLs), cleared with the profile.
+static struct { int fonte; long id; char chave[96]; LstPrevia arte; } previas[24];
+static unsigned previaVez;
+static const char *previaChave(const LstLista *l) {
+  return l->fonte == LST_NUVIO ? l->colId : l->estado;
+}
+void lst_previa_limpar(void) { memset(previas, 0, sizeof previas); previaVez = 0; }
+int lst_previa(const LstLista *l, LstPrevia *out) {
+  if (!l || !out) return 0;
+  for (int i = 0; i < 24; i++)
+    if (previas[i].arte.n && previas[i].fonte == l->fonte && previas[i].id == l->traktId &&
+        !strcmp(previas[i].chave, previaChave(l))) { *out = previas[i].arte; return 1; }
+  memset(out, 0, sizeof *out); return 0;
+}
+void lst_previa_registrar(const LstLista *l, const CatItem *v, int n) {
+  if (!l || !v || n <= 0) return;
+  int slot = -1;
+  for (int i = 0; i < 24; i++)
+    if (previas[i].arte.n && previas[i].fonte == l->fonte && previas[i].id == l->traktId &&
+        !strcmp(previas[i].chave, previaChave(l))) { slot = i; break; }
+  if (slot < 0) slot = previaVez++ % 24;
+  previas[slot].fonte = l->fonte; previas[slot].id = l->traktId;
+  snprintf(previas[slot].chave, sizeof previas[slot].chave, "%s", previaChave(l));
+  LstPrevia *p = &previas[slot].arte; p->n = 0;
+  for (int i = 0; i < n && p->n < 4; i++) if (v[i].poster[0])
+    snprintf(p->poster[p->n++], sizeof p->poster[0], "%s", v[i].poster);
 }
 
 // ------------------------------------------------------------ itens da lista

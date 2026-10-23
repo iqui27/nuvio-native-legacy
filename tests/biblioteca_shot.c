@@ -335,6 +335,38 @@ int main(int argc, char **argv) {
   if (argc > 2 && !strcmp(argv[2], "mock")) {
     tecla(SDLK_DOWN); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_DOWN);
     snprintf(nome, sizeof nome, "%s-grid.bmp", saida); captura(nome);
+    // Watched history: real local timestamp API, synthetic account-free data.
+    for (int i = 0; i < 5; i++) {
+      char id[16]; snprintf(id, sizeof id, "tt900%02d", i);
+      cat_historico_definir_tempo(id, AMOSTRA[i].serie ? "series" : "movie", 1, 1791932400000LL - i * 86400000LL);
+    }
+    biblioteca_iniciar();
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-watched.bmp", saida); captura(nome);
+    biblioteca_iniciar();
+    for (int i = 0; i < 4; i++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN); injetarListas();
+    for (int i = 0; i < lst_n(); i++) {
+      CatItem posters[4];
+      for (int j = 0; j < 4; j++) posters[j] = *cat_item((i * 3 + j) % cat_n());
+      LstLista l = *lst_lista(i); lst_previa_registrar(&l, posters, 4);
+    }
+    tecla(SDLK_DOWN); tecla(SDLK_RIGHT); tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-lists.bmp", saida); captura(nome);
+    CatItem trail[8]; DescItemLista notes[8] = {0};
+    for (int i = 0; i < 8; i++) {
+      trail[i] = *cat_item(i);
+      notes[i].rank = i + 1;
+      notes[i].entrouMs = 1791932400000LL - i * 86400000LL;
+      snprintf(notes[i].nota, sizeof notes[i].nota, "Passo %d: observe como a imagem e o som constroem esta história.", i + 1);
+    }
+    lst_teste_itens(trail, 8); lst_teste_extras(notes, 8);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN); quadros(5);
+    snprintf(nome, sizeof nome, "%s-list-page.bmp", saida); captura(nome);
+    for (int i = 0; i < 12; i++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);
+    snprintf(nome, sizeof nome, "%s-trail.bmp", saida); captura(nome);
     return 0;
   }
   if (comecaLista) {
