@@ -5714,6 +5714,8 @@
   T("Sincronizando…", "Đang đồng bộ…"),
   T("Sincronizar addons", "Đồng bộ tiện ích"),
   T("Sincronização", "Đồng bộ"),
+
+  T("Sincronização (LegaSync)", "Đồng bộ (LegaSync)"),
   T("Sincronização automática", "Đồng bộ tự động"),
   T("Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.", "Đồng bộ âm thanh/video ở cấp phần cứng. Có thể cải thiện phát trên một số thiết bị Android TV. Áp dụng từ video tiếp theo."),
   T("Singapura", "Singapore"),

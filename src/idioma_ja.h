@@ -5714,6 +5714,8 @@
   T("Sincronizando…", "同期中…"),
   T("Sincronizar addons", "アドオンを同期"),
   T("Sincronização", "同期"),
+
+  T("Sincronização (LegaSync)", "同期 (LegaSync)"),
   T("Sincronização automática", "自動同期"),
   T("Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.", "ハードウェアによる音声と映像の同期。一部のAndroid TV端末で再生が改善する場合があります。次の動画から適用されます。"),
   T("Singapura", "シンガポール"),

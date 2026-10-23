@@ -5713,6 +5713,8 @@
   T("Sincronizando…", "Synchronisiere…"),
   T("Sincronizar addons", "Add-ons synchronisieren"),
   T("Sincronização", "Synchronisierung"),
+
+  T("Sincronização (LegaSync)", "Synchronisierung (LegaSync)"),
   T("Sincronização automática", "Automatische Synchronisierung"),
   T("Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.", "Hardwarebasierte Audio-/Videosynchronisation. Kann die Wiedergabe auf manchen Android TV-Geräten verbessern. Gilt ab dem nächsten Video."),
   T("Singapura", "Singapur"),

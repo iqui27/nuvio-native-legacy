@@ -5713,6 +5713,7 @@
   { "Sincronizando…", "Syncing…" },
   { "Sincronizar addons", "Sync add-ons" },
   { "Sincronização", "Sync" },
+  { "Sincronização (LegaSync)", "Sync (LegaSync)" },
   { "Sincronização automática", "Automatic sync" },
   { "Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.", "Hardware-level audio/video sync. May improve playback on some Android TV devices. Applies from the next video." },
   { "Singapura", "Singapore" },

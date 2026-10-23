@@ -5714,6 +5714,8 @@
   T("Sincronizando…", "Sinchronizuojama…"),
   T("Sincronizar addons", "Sinchronizuoti priedus"),
   T("Sincronização", "Sinchronizuoti"),
+
+  T("Sincronização (LegaSync)", "Sinchronizuoti (LegaSync)"),
   T("Sincronização automática", "Automatinis sinchronizavimas"),
   T("Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.", "Aparatinis garso ir vaizdo sinchronizavimas. Gali pagerinti atkūrimą kai kuriuose Android TV įrenginiuose. Taikoma nuo kito vaizdo įrašo."),
   T("Singapura", "Singapūras"),
