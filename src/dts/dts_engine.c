@@ -8,6 +8,10 @@
 #include <time.h>
 #include <pthread.h>
 struct DtsEngine;
+/* #605: strip HDR10+ dynamic SEI from HEVC (play as HDR10). Default off. */
+static volatile int g_hdr10p_strip;
+void dts_engine_set_hdr10p_strip(int on) { g_hdr10p_strip = on ? 1 : 0; }
+#include "hdr10plus.h"
 /* Output mode for the NEXT open: 0 = stereo AAC (default, the proven path),
  * 1 = AC3 5.1 at 640 kbps (falls back to AAC when the encoder is absent). */
 static volatile int g_surround_ac3;
@@ -140,6 +144,9 @@ struct DtsEngine {
   int allow_p7, dv7;
   uint8_t *dv7_buffer;
   unsigned dv7_capacity;
+  int hdr10p_strip;            /* #605: HEVC HDR10+ SEI removal snapshot at open */
+  uint8_t *hdr10p_buffer;
+  unsigned hdr10p_capacity;
   AVFrame *decoded, *encoded;
   AVChannelLayout input_layout;
   enum AVSampleFormat input_format;
@@ -697,6 +704,7 @@ static void close_media(DtsEngine *e) {
   avcodec_free_context(&e->dec); avcodec_free_context(&e->enc);
   av_bsf_free(&e->bsf); swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
   av_freep(&e->dv7_buffer); e->dv7_capacity=0; e->dv7=0;
+  av_freep(&e->hdr10p_buffer); e->hdr10p_capacity=0; e->hdr10p_strip=0;
   av_channel_layout_uninit(&e->input_layout);
   avformat_close_input(&e->fmt);
   if (e->io) { av_freep(&e->io->buffer); avio_context_free(&e->io); }
@@ -825,6 +833,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   if (!e || !url || !*url) return -1;
   __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
   close_media(e); memset(&e->info,0,sizeof(e->info)); e->error[0]=0;
+  e->hdr10p_strip=g_hdr10p_strip;   /* #605: snapshot; applies at open */
   memset(&e->metrics,0,sizeof(e->metrics));
 #ifdef NV_DTS_DEBUG
   memset(&e->logged_metrics,0,sizeof(e->logged_metrics)); e->logged_at_ns=0;
@@ -1244,7 +1253,20 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
     result=next_frame(e,f);
     if(result==1 && (f->kind==DTS_AUDIO || f->kind==DTS_VIDEO))
       __atomic_store_n(&e->range_live,1,__ATOMIC_RELAXED);
-    if(result!=1 || !e->dv7 || f->kind!=DTS_VIDEO) break;
+    if(result!=1 || f->kind!=DTS_VIDEO) break;
+    if(e->hdr10p_strip && !strcmp(e->info.video_codec,"hevc")) {
+      size_t size=0;
+      /* Fail-soft like the Samsung remux: a packet the filter cannot rewrite
+       * reaches the TV as it is, never a session error. */
+      if(f->size<=INT_MAX-8192) {
+        av_fast_malloc(&e->hdr10p_buffer,&e->hdr10p_capacity,(size_t)f->size+8192);
+        if(e->hdr10p_buffer &&
+           nv_hdr10plus_annexb(f->data,(size_t)f->size,e->hdr10p_buffer,e->hdr10p_capacity,&size)>=0 && size) {
+          f->data=e->hdr10p_buffer; f->size=(int)size;
+        }
+      }
+    }
+    if(!e->dv7) break;
     size_t size=0;
     if(f->size>INT_MAX-8192) return fail(e,"DV7 packet too large",0);
     av_fast_malloc(&e->dv7_buffer,&e->dv7_capacity,(size_t)f->size+8192);

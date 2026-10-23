@@ -47,6 +47,10 @@ int dts_engine_available(void);
 void dts_engine_dv(DtsEngine *, int enabled);
 /* Explicit opt-in before open: P7 conversion and webOS recovery. Default off. */
 void dts_engine_allow_p7(DtsEngine *, int enabled);
+/* Opt-in (#605): strip SMPTE ST 2094-40 (HDR10+) SEI from HEVC packets of
+ * the next open (raw BUFFERSTREAM feed), so TVs without HDR10+ decode it as
+ * plain HDR10. Static mastering display / content light SEI is kept. */
+void dts_engine_set_hdr10p_strip(int on);
 /* Open and seek return 0 on success, negative on error. */
 int dts_engine_open(DtsEngine *, const char *url, const char *headers,
                     int audio_stream, int core_only, double start_seconds);

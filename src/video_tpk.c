@@ -1130,6 +1130,7 @@ static int ordinalAudio(int numero) {
 // Abre a sessao do conversor (a sonda roda num fio). 0: servidor/FFmpeg indisponivel.
 static int convAbrirSessao(int ordinal, int modo, double pos, char *url, size_t n) {
   dts_remux_set_audio_offset_ms(ajustes_audio_offset_ms());
+  dts_remux_set_hdr10p_strip(ajustes_hdr10p_strip());   // #605
   if (dts_tpk_abrir(urlAtual, cabecalhos, ordinal, !ajustes_dts_ac3(), modo, pos, url, n))
     return 1;
   printf("[dts-tpk] conversao nao comecou (servidor/FFmpeg indisponivel); fica o original\n");
