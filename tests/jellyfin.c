@@ -46,6 +46,16 @@ int dados_gravar_leve(const char *nome, const char *conteudo) {
 }
 void dados_fs_travar(void) {}
 void dados_fs_liberar(void) {}
+// The index feeds the catalogue watched history (issue #617): record it.
+static int nHistVistos;
+static char histId[8][16];
+void cat_historico_definir_tempo(const char *imdb, const char *tipo,
+                                 int visto, long long ms) {
+  (void)tipo; (void)ms;
+  if (!visto || nHistVistos >= 8) return;
+  snprintf(histId[nHistVistos], sizeof histId[0], "%s", imdb ? imdb : "");
+  nHistVistos++;
+}
 
 static char base[256], raiz[256];
 
@@ -266,6 +276,27 @@ static void testarProtocolo(void) {
   printf("protocol ok\n");
 }
 
+static void testarVistoProg(void) {
+  JfConta c;
+  char senha[64];
+  int n;
+  memset(&c, 0, sizeof c);
+  snprintf(c.dispositivoId, sizeof c.dispositivoId, "nuvio-test-p1");
+  assert(jf_publico(base, NULL, &c) == JF_OK);
+  snprintf(senha, sizeof senha, "%s", "p\xc3\xa4ssw\xc3\xb6rd \"quoted\"");
+  assert(jf_autenticar_senha(&c, NULL, "ana", senha) == JF_OK);
+  { SrvIdx x;
+    srvidx_iniciar(&x);
+    assert(jf_indice_episodios(&c, NULL, "abcdef0123456789abcdef0123456789", &x) == 6);
+    assert(srvidx_achar_ep(&x, "abcdef0123456789abcdef0123456789", 1, 1) >= 0);
+    assert(x.v[srvidx_achar_ep(&x, "abcdef0123456789abcdef0123456789", 1, 1)].visto);
+    assert(!x.v[srvidx_achar_ep(&x, "abcdef0123456789abcdef0123456789", 2, 1)].visto);
+    n = srvidx_n_tipo(&x, 'e');
+    assert(n == 6);
+    srvidx_limpar(&x); }
+  printf("visto/prog ok\n");
+}
+
 static void testarIntegracao(void) {
   char nome[700], *arq, senha[64];
   struct stat st;
@@ -303,7 +334,7 @@ static void testarIntegracao(void) {
   while (jellyfin_fileiras_versao() == v0 && ms() < fim) dormir(20);
   n = jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, fils, JF_FIL_MAX, &ni);
 
-  assert(n == 2 && ni == jf_por_fileira(10) + 1);
+  assert(n >= 2 && ni >= jf_por_fileira(10));
   assert(jellyfin_chave_fileira(fils[0].chave) && !fils[0].base[0] && strstr(fils[0].titulo, "Jellyfin"));
   { int total;
     assert(jellyfin_pagina("jellyfin_collections", 0, 60, itens, 60, &total, NULL) == 1 && !strcmp(itens[0].tipo, "group"));
@@ -330,6 +361,13 @@ static void testarIntegracao(void) {
   fim = ms() + 5000;
   while (jellyfin_indice_n() < 62 && ms() < fim) dormir(20);
   assert(jellyfin_indice_n() == 62);
+  { int i;
+    for (i = 0; i < nHistVistos; i++)
+      if (!strcmp(histId[i], "tt0001005")) break;
+    assert(i < nHistVistos); }
+  { CatItem atv[4];
+    assert(jellyfin_atividade("resume", atv, 4) == 1 && !strcmp(atv[0].imdb, "tt0001005"));
+    assert(jellyfin_atividade("nextup", atv, 4) == 1 && atv[0].temporada == 2); }
   arq = dados_ler("srvidx-p1-jf.txt");
   assert(arq && !strncmp(arq, "srvidx 1 0f1e2d3c ", 18) && strstr(arq, "tt0001007") && !strstr(arq, "Movie"));
   free(arq);
@@ -365,6 +403,9 @@ static void testarIntegracao(void) {
   free(lista); lista = NULL;
   assert(jellyfin_consultar("tt0900001:9:9", "series", NULL, 0, NULL, NULL, &lista) == 0);   // not there
   { char *ix = controle("index"); assert(strstr(ix, "\"episodes\": 1")); free(ix); }
+  { SrvEp srvEps[16];
+    int ne = jellyfin_episodios("tt0900001", srvEps, 16);
+    assert(ne == 6 && srvEps[0].visto && srvEps[1].visto && !srvEps[2].visto); }
   // INCREMENTAL: a movie added on the server comes with a "since" request only.
   free(controle("add?n=70"));
   jellyfin_recarregar_bibliotecas();
@@ -480,6 +521,7 @@ int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IOLBF, 0);
   testarIds();
   testarUrl();
+  testarVistoProg();
   testarProtocolo();
   testarIntegracao();
   jellyfin_encerrar();

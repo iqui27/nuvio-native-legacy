@@ -280,6 +280,9 @@ void plex_preparo_liberar(PlexPreparo *p);
 int  plex_casamento_ativo(void);       // connected and the index has entries
 // Offline: the index has this title; fills `info` (name, quality, LAN) when not NULL.
 int  plex_tem(const char *id, const char *tipo, SrvAchado *info);
+// Per-episode user data of a series the server has (issue #617). Same contract
+// as jellyfin_episodios.
+int  plex_episodios(const char *id, SrvEp *out, int max);
 int  plex_indice_n(void);              // entries in the index (tests)
 
 #define PX_PROGRESSO_MS 10000u

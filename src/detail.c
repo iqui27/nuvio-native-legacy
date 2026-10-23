@@ -6223,6 +6223,7 @@ static void desenhaEpisodioCorpo(GfxRect r, int c, float f, float a, Uint32 agor
     const CatItem *ci = cat_item(idx);
     if (ci && ci->progresso > 0 && ep && ci->temporada == ep->temporada &&
         ci->episodio == ep->episodio) prog = ci->progresso;
+    else if (ep) prog = extras_ep_progresso(ep->temporada, ep->episodio);
     if (prog > 2 && prog < 98) {
       GfxRect tr = { tx, r.y + epThumbH() - NV_DETP_EPM_BARRA_DY, r.w - 2 * NV_DETP_EP_PAD,
                      NV_DETP_EP_BARRA_H };

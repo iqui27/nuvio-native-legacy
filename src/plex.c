@@ -21,6 +21,10 @@
 #include "perfis.h"
 #include "srvidx.h"
 #include <ctype.h>
+
+// catalogue.c's watched history (issue #617); tests stub it.
+extern void cat_historico_definir_tempo(const char *imdb, const char *tipo,
+                                        int visto, long long ms);
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -375,6 +379,10 @@ static int linhaIndice(const char *p, const char *f, const char *serieRk, SrvIdx
   e->ano = (short)numRaiz(p, f, "year", 0);
   e->atualizado = (long long)numRaiz(p, f, "updatedAt", 0);
   e->visto = numRaiz(p, f, "viewCount", 0) > 0;
+  e->vistoMs = (long long)numRaiz(p, f, "lastViewedAt", 0) * 1000LL;
+  // Same clock unit as Jellyfin ticks: both are position * 10,000,000.
+  e->retomadoTicks = (long long)(numRaiz(p, f, "viewOffset", 0) * 10000.0 + 0.5);
+  e->duracaoTicks = (long long)(numRaiz(p, f, "duration", 0) * 10000.0 + 0.5);
   if (blocoRaiz(p, f, "Media", &mi, &mf) && (q = elemento(mi + 1, mf)) != NULL && *q == '{') {
     const char *qf = depoisElemento(q);
     if (qf) {
@@ -2063,6 +2071,13 @@ static void indexar(const Tarefa *t, RedeJob *j, const PxConta *c, const PxBibli
       srvidx_iniciar(&novo);
     }
     nAtual = srvidx_n_tipo(&idx, 'm') + srvidx_n_tipo(&idx, 's');
+    // WATCHED STATE BACK (#617), as in jellyfin.c's indexar.
+    { int i;
+      for (i = 0; i < idx.n; i++)
+        if (idx.v[i].visto && (idx.v[i].tipo == 'm' || idx.v[i].tipo == 's') &&
+            idx.v[i].imdb[0])
+          cat_historico_definir_tempo(idx.v[i].imdb, idx.v[i].tipo == 's' ? "series" : "movie",
+                                    1, idx.v[i].vistoMs); }
     pthread_mutex_unlock(&trava);
     srvidx_limpar(&novo);
     if (e != PX_OK) break;
@@ -2436,6 +2451,66 @@ static void epsMarcarLocked(const char *serie) {
   }
   copiar(epsBuscados[alvo].serie, sizeof epsBuscados[alvo].serie, serie);
   epsBuscados[alvo].ms = agoraMs();
+}
+
+// Per-episode user data (issue #617). Offline when the index already has the
+// episodes; otherwise one /library/metadata/<rk>/allLeaves request feeds the
+// index and the answer. Returns episodes filled, 0 none, -1 failed.
+int plex_episodios(const char *id, SrvEp *out, int max) {
+  char rk[SRVIDX_ITEM], tag[JFID_TAG + 1];
+  PxConta c;
+  RedeJob *j = NULL;
+  SrvIdx eps;
+  unsigned g = 0;
+  int k, n = 0, buscar = 0, temSerie = 0;
+  if (!id || !out || max <= 0) return 0;
+  garantir();
+  pthread_mutex_lock(&trava);
+  conferirPerfilLocked();
+  k = grupo ? idxAcharLocked(id, "series", NULL, 0, NULL, NULL) : -1;
+  if (k >= 0) {
+    copiar(rk, sizeof rk, idx.v[k].item);
+    temSerie = 1;
+    buscar = !epsRecentesLocked(rk) && srvidx_n_eps(&idx, rk) == 0;
+    c = conta; g = geracao;
+    copiar(tag, sizeof tag, idxTag);
+    if (buscar) j = rede_job_criar(grupo);
+  }
+  pthread_mutex_unlock(&trava);
+  if (!temSerie) return 0;
+  if (buscar) {
+    char *txt = NULL;
+    int perfil = -1, e;
+    if (!j) return 0;
+    srvidx_iniciar(&eps);
+    e = px_indice_episodios(&c, j, rk, &eps);
+    pthread_mutex_lock(&trava);
+    if (g == geracao && rede_job_estado(j) == REDE_OK && !strcmp(tag, idxTag) && e >= 0) {
+      srvidx_juntar(&idx, &eps); indiceVersao++;
+      epsMarcarLocked(rk);
+      txt = srvidx_serializar(&idx, tag); perfil = perfilLido;
+    }
+    pthread_mutex_unlock(&trava);
+    srvidx_limpar(&eps);
+    if (txt && perfil >= 0) srvidx_gravar_texto(perfil, "px", txt);
+    free(txt);
+    rede_job_soltar(j);
+    if (e < 0) return -1;
+  }
+  pthread_mutex_lock(&trava);
+  for (k = 0; k < idx.n && n < max; k++) {
+    const SrvIdxItem *e = &idx.v[k];
+    if (e->tipo != 'e' || strcmp(e->serie, rk)) continue;
+    out[n].temporada = e->temporada;
+    out[n].episodio = e->episodio;
+    out[n].visto = e->visto;
+    out[n].vistoMs = e->vistoMs;
+    out[n].retomadoTicks = e->retomadoTicks;
+    out[n].duracaoTicks = e->duracaoTicks;
+    n++;
+  }
+  pthread_mutex_unlock(&trava);
+  return n;
 }
 
 // Optional profile-epoch linkage keeps isolated Plex fixtures usable while
