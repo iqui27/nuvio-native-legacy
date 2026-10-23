@@ -1,4 +1,5 @@
 #include "streams.h"
+#include "addonmodo.h"
 #include "vaitocar.h"
 #include "plrui.h"
 #include "ondever.h"
@@ -491,7 +492,7 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   // que nunca toca (shouldListStream do web). O servidor P2P experimental
   // (p2p.h) tambem o resolve, e so quando ligado.
   for (i = 0; i < qtd && nova; i++)
-    if (l[i].url[0] || debrid_ativo() || p2p_ativo()) nova[k++] = l[i];
+    if (addonmodo_permite(l[i].addonIdentidade, l[i].url[0] != 0, debrid_ativo(), p2p_ativo())) nova[k++] = l[i];
   if (nova && qtd - k) printf("[fonte] %d torrents sem debrid descartados\n", qtd - k);
   descartadosSemDebrid = nova ? qtd - k : 0;
   for (i = 0; i < k && nova; i++) nova[i].selosPacoteVer = 0;   // os selos saem do fio de fundo (selosAgendar)
@@ -562,7 +563,7 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   nova = malloc(sizeof(Stream) * (size_t)qtd);
   if (!nova) return;
   for (i = 0; i < qtd; i++)
-    if (l[i].url[0] || debrid_ativo() || p2p_ativo()) nova[k++] = l[i];
+    if (addonmodo_permite(l[i].addonIdentidade, l[i].url[0] != 0, debrid_ativo(), p2p_ativo())) nova[k++] = l[i];
   if (qtd - k) printf("[fonte] %d torrents sem debrid descartados\n", qtd - k);
   descartadosSemDebrid += qtd - k;
   if (!k) { free(nova); return; }
@@ -1291,6 +1292,7 @@ static int resolverUrl(const char *url, const char *cabecalhos, int segundos,
 static int verificarUma(int i, Conferencia *c) {
   char fim[4096], url[4096], cab[512], mime[96], addon[sizeof lista->provedor];
   int fileIdx, ok = 0;
+  AddonModo modo;
   long corpo = -1;
   char infoHash[48];
   mime[0] = 0;
@@ -1310,12 +1312,14 @@ static int verificarUma(int i, Conferencia *c) {
   snprintf(cab, sizeof cab, "%s", lista[i].cabecalhos);
   snprintf(infoHash, sizeof infoHash, "%s", lista[i].infoHash);
   snprintf(addon, sizeof addon, "%s", lista[i].provedor);
+  modo = addonmodo_get(lista[i].addonIdentidade);
   fileIdx = lista[i].fileIdx;
   pthread_mutex_unlock(&verTrava);
 
   if (!url[0] && infoHash[0]) {
     // Link recem-saido do unrestrict: nao precisa da segunda viagem abaixo.
     int fora = 0;
+    if (modo == AM_P2P || modo == AM_DIRETO) return 0;
     if (debrid_resolver_cache(infoHash, fileIdx, url, sizeof url, &fora)) {
       pthread_mutex_lock(&verTrava);
       if (listaGeracao == c->geracao && i < n) {
@@ -1458,6 +1462,7 @@ int stream_resolver_escolhida(int i, unsigned geracao, char *url, unsigned nu,
                               char *servico, unsigned ns, int *pct) {
   char infoHash[48], fontes[sizeof lista->fontes];
   int fileIdx, r;
+  AddonModo modo;
   if (url && nu) url[0] = 0;
   if (!url || !nu) return 0;
   pthread_mutex_lock(&verTrava);
@@ -1475,15 +1480,16 @@ int stream_resolver_escolhida(int i, unsigned geracao, char *url, unsigned nu,
   snprintf(infoHash, sizeof infoHash, "%s", lista[i].infoHash);
   snprintf(fontes, sizeof fontes, "%s", lista[i].fontes);
   fileIdx = lista[i].fileIdx;
+  modo = addonmodo_get(lista[i].addonIdentidade);
   pthread_mutex_unlock(&verTrava);
-  if (!infoHash[0]) return 0;
+  if (!infoHash[0] || modo == AM_DIRETO) return 0;
 
-  r = debrid_resolver_escolhido(infoHash, fileIdx, url, nu, servico, ns, pct);
+  r = modo == AM_P2P ? 0 : debrid_resolver_escolhido(infoHash, fileIdx, url, nu, servico, ns, pct);
   // SEM DEBRID QUE RESOLVA (sem chave, ou a conta recusou): o servidor P2P
   // experimental, se a pessoa ligou. "Baixando" (2) NAO cai aqui: o debrid ja
   // tem o torrent na conta e o certo e esperar por ele, nao abrir um segundo
   // caminho para o mesmo arquivo.
-  if (r == 0 && p2p_ativo()) {
+  if (r == 0 && modo != AM_DEBRID && p2p_ativo()) {
     if (p2p_resolver(infoHash, fileIdx, fontes, url, nu) == P2P_OK) r = 1;
     else { url[0] = 0; r = STREAM_P2P_FALHOU; }
   }
@@ -2157,6 +2163,13 @@ static int proximaVODSemTrava(int atualIdx) {
     if (i != atualIdx && !foraDoAuto(i) && grupoDe(i) >= 0) return i;
   }
   return -1;
+}
+int stream_incompativel(int i) {
+  pthread_mutex_lock(&verTrava);
+  int r = i >= 0 && i < n && (excedeDecoder(&lista[i]) ||
+          (lista[i].dolbyVision && telaDv == 0 && perfil5(&lista[i])));
+  pthread_mutex_unlock(&verTrava);
+  return r;
 }
 int stream_proxima_vod(int atualIdx) {
   int i;

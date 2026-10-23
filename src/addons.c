@@ -1,5 +1,6 @@
 #include "addons.h"
 #include "idbase.h"
+#include "addonmodo.h"
 #include "idioma.h"
 #include "linguas.h"
 #include "streams.h"
@@ -2148,9 +2149,11 @@ static void *fioFontes(void *u) {
     // Prazo da consulta (c->timeout): 30 s para filme/serie, 12 s para canal e
     // prefetch. Ver ADD_PRAZO_VOD_S em consultar().
     prazoS = prazoDoAddon(c, i);
+    RedeMedida medida = {0};
+    uint64_t identidade = addonmodo_id(addon[i].base);
     corpo = pedidoCoube(i, nv_addon_url(url, sizeof url, addon[i].base, "/stream/%s/%s.json",
                                     t1, idUrl), sizeof url) && idUrl[0]
-            ? rede_baixar(url, prazoS) : NULL;
+            ? rede_baixar_medido(url, prazoS, NULL, &medida) : NULL;
     achados = NULL; n = 0;
     if (corpo) n = stream_extrair(corpo, addon[i].nome, &achados);
     // CANAL AO VIVO TEM DOIS NOMES DE TIPO NO PROTOCOLO, e addons diferentes
@@ -2195,6 +2198,14 @@ static void *fioFontes(void *u) {
         } else { free(a2); free(alt); }
       }
     }
+    int diretos = 0, torrents = 0;
+    for (int a = 0; a < n; a++) {
+      achados[a].addonIdentidade = identidade;
+      if (achados[a].url[0]) diretos++;
+      else if (achados[a].infoHash[0]) torrents++;
+    }
+    addonmodo_resposta(identidade, medida.status, corpo && strstr(corpo, "\"streams\"") != NULL,
+                       diretos, torrents);
     if (!corpo) {
       free(achados);
       // O MOTIVO NA MESMA LINHA (#202): "curl 28: Operation timed out after

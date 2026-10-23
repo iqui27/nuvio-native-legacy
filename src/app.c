@@ -114,6 +114,7 @@
 #include "novidades202.h"
 #include "novidades_cartao.h"
 #include "resolver.h"
+#include "addonguia.h"
 #include "apoio.h"
 #include "telemetria.h"
 #include "avisos.h"
@@ -1543,7 +1544,7 @@ static void pedirTorrentEscolhido(int indice) {
   // Sem debrid, quem responde e o servidor P2P, que espera peers: dizer que
   // pode levar meio minuto evita a pessoa achar que travou.
   if (!debrid_ativo() && p2p_usa_motor())
-    player_toast_ex(i18n("Baixando o torrent nesta TV… pode levar até um minuto"), 30000, "aj_download", 0);
+    addonguia_abrir(AG_INICIANDO, stream_ordem_addon(indice), NULL);
   else if (!debrid_ativo() && p2p_ativo())
     player_toast_ex(i18n("Pedindo o torrent ao servidor P2P… pode levar até um minuto"), 30000, "aj_download", 0);
   else
@@ -1608,10 +1609,13 @@ static void processarTorrentJob(void) {
   valido = j->sessao == torrentSessao && player_aberto() && !player_quer_sair() &&
            stream_atual() == j->indice && stream_lista_geracao() == j->geracaoLista;
   if (valido) {
+    if (addonguia_aberto()) addonguia_fechar();
     if (j->resultado == 1 && j->url[0]) {
       definirFonteVOD(j->url);
       if (!player_id_canal()[0]) fonteManualDesde = SDL_GetTicks();
     } else if (j->resultado == DEBRID_BAIXANDO) {
+      addonguia_abrir(AG_DEBRID, stream_ordem_addon(j->indice), NULL);
+      addonguia_progresso(j->servico, j->pct);
       if (!player_id_canal()[0]) marcarFonteMorta(j->indice);
       char titulo[160];
       const char *serv = j->servico[0] ? j->servico : "debrid";
@@ -2675,6 +2679,7 @@ void app_evento(const SDL_Event *e) {
     novidades202_evento(e);
     return;
   }
+  if (addonguia_aberto()) { addonguia_evento(e); return; }
   // RESOLVER UM PROBLEMA (2.1, resolver.h): tela inteira, come o teclado todo.
   // "Ver Fontes e addons" fecha a tela e abre Ajustes no lugar.
   if (resolver_aberto()) {
@@ -4840,6 +4845,31 @@ void app_atualizar(float dt, Uint32 agora) {
   registrarFonteVODTocando();
   fitDuracaoMidia();
   fitPassivaPermitir();
+  addonguia_atualizar(tela == TELA_HOME && homePronta && !player_aberto() &&
+      !detail_aberto() && !resolver_aberto() && !novcartao_aberto() && !comecar_aberto());
+  {
+    int p = addonguia_pedido();
+    if (p == AGP_FONTES && player_aberto()) { nomeParaFolha(); stream_folha_abrir(); }
+    else if (p == AGP_PROXIMA && player_aberto()) {
+      int atual = stream_atual();
+      if (atual >= 0) stream_automatico_excluir(atual);
+      player_voltar_a_esperar(); (void)pedirProximaFonteVOD(atual);
+    } else if (p == AGP_REPETIR && player_aberto()) {
+      int atual = stream_atual();
+      const Stream *s = stream_item(atual);
+      player_voltar_a_esperar();
+      if (s && !s->url[0] && s->infoHash[0]) pedirTorrentEscolhido(atual);
+      else { buscarParaPlayerModo(1); aguardandoFonte = 1; }
+    } else if (p == AGP_FILEIRAS) {
+      ajustes_abrir_fileiras(); trocarTela(TELA_AJUSTES);
+    }
+  }
+  {
+    static int falhaMostrada;
+    int falhou = player_aberto() && !player_id_canal()[0] && player_fonte_falhou();
+    if (!falhou) falhaMostrada = 0;
+    else if (!falhaMostrada && !addonguia_aberto()) { addonguia_falha(); falhaMostrada = 1; }
+  }
   // Mesmo resolver/ranking da troca VOD. A trava de UMA vez mora no player;
   // sem candidata, conserva o video e o aviso (o OK abre a folha existente).
   if (player_aberto() && !player_quer_sair() &&
@@ -5736,6 +5766,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades201_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades202_desenhar(agora);
   if (!registro_aberto()) resolver_desenhar(agora);        // so o esmaecer de saida
+  if (!registro_aberto()) { CAMADA_SE(addonguia_aberto()); addonguia_desenhar(); }
   if (!registro_aberto()) novcartao_desenhar(agora);      // so o esmaecer de saida
   CAMADA_SE(telemetria_aberto());
   if (!registro_aberto()) telemetria_desenhar(agora);

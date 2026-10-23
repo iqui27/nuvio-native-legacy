@@ -1,4 +1,5 @@
 #include "addonsui.h"
+#include "addonguia.h"
 #include "idioma.h"
 #include "descoberta.h"
 #include "addons.h"
@@ -77,11 +78,12 @@ void addonsui_evento(const SDL_Event *e) {
     case SDLK_RETURN: case SDLK_KP_ENTER:
       if (foco >= n) { sincronizar(); break; }
       if (n > 0) {
-        addons_alternar(foco);
-        // #360 mao unica: liga/desliga so nesta TV; o proximo pull da conta
-        // sobrescreve. O aviso da tela (inspetor) diz isso.
-        mexeu = 1;
+        addonguia_abrir(addons_sondado(foco) && !addons_fornece(foco, ADD_STREAM)
+                         ? AG_NOVO_CATALOGO : AG_MODO, foco, NULL);
       }
+      break;
+    case SDLK_SPACE:
+      if (foco < n) { addons_alternar(foco); mexeu = 1; }
       break;
     // Voltar (qualquer tecla de voltar) e Esquerda: de volta a linha "Addons"
     // em Ajustes › Fontes e addons (app.c chama ajustes_voltar_de_lista).
@@ -137,7 +139,7 @@ static const char *capacidades(int i) {
 // arranjo de ilhas de Ajustes, desenhado por ajustes.c (que tem as pecas).
 void addonsui_desenhar(Uint32 agora) {
   (void)agora;
-  ajustes_desenhar_addons(foco);
+  addonguia_lista(foco);
 }
 
 #ifdef AJUSTES_TESTE

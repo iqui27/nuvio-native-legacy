@@ -20,6 +20,7 @@
 typedef struct {
   char rotulo[192];     // Nome curto da fonte
   char provedor[96];
+  uint64_t addonIdentidade; /* Installation identity; survives cache and list reorder. */
   // 1024 e nao 512. MEDIDO: os links de reproducao do AIOStreams tem 525 a 547
   // caracteres (dois segmentos assinados), e com 512 TODOS eram cortados em
   // silencio. O servidor entao respondia com um MP4 de aviso de 120s que TOCA
@@ -190,6 +191,7 @@ int  stream_proxima_sem_perda(int atual);
 // Primeira VOD nao tentada na ordem do addon, inclusive antes da atual.
 // Pula a atual e as ja falhadas; leitura protegida contra troca de lista.
 int  stream_proxima_vod(int atual);
+int  stream_incompativel(int indice);
 // Confere a proxima da ordem do addon fora do fio de desenho; -1 se acabou.
 // Devolve tambem quantas candidatas consumiram o orcamento (se nao NULL).
 int  stream_verificar_proxima_vod(int atual, int tentativas, int *conferidas);
