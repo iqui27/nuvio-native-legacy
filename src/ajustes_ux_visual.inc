@@ -135,6 +135,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_FONTE_MANUAL: return "aj_list-video";
     case AJ_FONTE_AUTO: return "aj_list-video";
     case AJ_FONTE_REPOR: return "aj_list-video";
+    case AJ_FONTE_INFO: return "aj_info";
     case AJ_FONTE_PREPARAR: return "aj_download";
     case AJ_FONTE_PRECARREGAR: return "aj_download";
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: return "aj_rotate-ccw-clock";

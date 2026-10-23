@@ -17,6 +17,7 @@ uint64_t badges_provedor(const char *name);
 uint64_t badges_bit(const char *id);
 // Fileira de logos tingidos (r,g,b em 0..1), para a linha de selos da folha
 // de Fontes. Devolve a largura usada.
+float badges_largura_tom(uint64_t mask, float altura);
 float badges_desenhar_tom(uint64_t mask,float x,float y,float maxW,float h,float r,float g,float b,float a);
 
 // --- MARCA DE FORMATO (29/09/2026) -------------------------------------------

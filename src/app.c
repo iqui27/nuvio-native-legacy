@@ -75,6 +75,7 @@
 #include "home.h"
 #include "trailer.h"
 #include "detail.h"
+#include "fonteinfo.h"
 #include "menu.h"
 #include "busca.h"
 #include "spotlight.h"
@@ -2084,6 +2085,7 @@ static void processarTorrentJob(void) {
 // inteira atravessa o worker e o cache: abrir nao reinicia vagas nem pares
 // tentados. O buffer nativo e opcional e pertence ao token deste alvo.
 static void preparoLimparCache(int cancelar) {
+  fonteinfo_limpar();
 #ifdef NV_ANDROID
   if (cancelar && preparo.token) player_precarregar_cancelar(preparo.token);
 #else
@@ -2135,6 +2137,18 @@ static int preparoVale(const char *alvo, int lembrada) {
   FaAgora a = { alvo, stream_lista_geracao(), lembrada, stream_n(),
                stream_automatico_disponivel(preparo.idx), stream_idade_ms() };
   return fa_preparada_vale_buffer(&p, &a, preparoBufferPronto(), preparo.linkRenovado);
+}
+// Display only: no search, resolution, preload or source selection is started here.
+static void preparoInfoAtualizar(void) {
+  char alvo[64];
+  if (!ajustes_fonte_info() || !detail_aberto() || player_aberto() ||
+      !preparo.tem || preparo.idx < 0 || detail_indice() != preparo.catalogo) {
+    fonteinfo_limpar(); return;
+  }
+  idDoAlvo(cat_item(detail_indice()),alvo,sizeof alvo);
+  if (!preparoVale(alvo,preparo.lembrada)) { fonteinfo_limpar(); return; }
+  fonteinfo_guardar(stream_item(preparo.idx),alvo,preparo.lista,
+                    preparo.contexto.sessaoPerfil,preparo.idx);
 }
 // A sonda pode terminar com um trailer no video. Guarda a mesma fonte e
 // tenta SO o buffer quando esse video sair, sem refazer escolha ou orcamento.
@@ -5752,6 +5766,7 @@ void app_atualizar(float dt, Uint32 agora) {
       } }
     aquecerQuandoChegarem();
     prepararAoAbrir();
+    preparoInfoAtualizar();
     // "Assistir do comeco" (issue #46) segue o MESMO caminho do primario; a
     // unica diferenca e a trava de retomada, armada depois de o episodio ficar
     // definitivo — player_do_inicio sobrevive as re-chamadas tardias de

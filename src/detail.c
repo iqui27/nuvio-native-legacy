@@ -51,6 +51,8 @@ static TituloTempo detalheTempo;
 #include "vistoep.h"
 #include "pessoa.h"
 #include "streams.h"
+#include "fonteinfo.h"
+#include "perfisessao.h"
 #include "descoberta.h"
 #include "diretor.h"
 #include "gfx.h"
@@ -4641,6 +4643,41 @@ static int mostrarNomeLogo(const CatItem *ci, const char *url, int loaded,
      actual && known && !strcmp(actual, known));
   return same && strncmp(ci->logoIdioma, language, 2) != 0;
 }
+// Same specification logos as Sources, with wrapping instead of dropping
+// metadata that does not fit the first line. Measuring never draws anything.
+static float fonteInfoLinha(const FonteInfo *info, float x, float y, float w, float a) {
+  const float h = fmaxf(30.0f, (float)txt_linha(TXT_HERO_META,"Mg",235,235,235,255).h);
+  const float gap = 14.0f, passo = h + 12.0f;
+  float dx = 0, dy = 0;
+  int tem = 0;
+  for (int k = 0; k < 64; k++) if (info->selos & (UINT64_C(1) << k)) {
+    uint64_t bit = UINT64_C(1) << k;
+    float largura = badges_largura_tom(bit,h);
+    if (dx > 0 && dx + largura > w) { dx = 0; dy += passo; }
+    if (a > 0) badges_desenhar_tom(bit,x+dx,y+dy,w-dx,h,0.92f,0.92f,0.92f,a);
+    dx += largura + gap; tem = 1;
+  }
+  for (int k = 0; k < info->nTextos; k++) {
+    char s[sizeof info->texto[0]];
+    snprintf(s,sizeof s,"%s",info->texto[k]);
+    size_t n = strlen(s);
+    if (n >= 3 && (!strcmp(s+n-3," GB") || !strcmp(s+n-3," MB"))) plrui_decimal(s);
+    TxtLinha l = txt_linha_corta(TXT_HERO_META,s,235,235,235,255,w);
+    if (dx > 0 && dx + l.w > w) { dx = 0; dy += passo; }
+    if (a > 0) txt_desenhar_alpha(l,x+dx,y+dy+(h-l.h)*0.5f,a);
+    dx += l.w + gap; tem = 1;
+  }
+  return tem ? dy + h : 0;
+}
+static int fonteInfoDoDetalhe(FonteInfo *info) {
+  const CatItem *ci = cat_item(idx);
+  if (!ajustes_fonte_info() || !ci) return 0;
+  char alvo[64]; int t = 0, e = 0;
+  if (!strcmp(ci->tipo,"series") && detail_ep_foco(&t,&e) && t >= 0 && e > 0)
+    cat_id_stream(idx,t,e,alvo,sizeof alvo);
+  else snprintf(alvo,sizeof alvo,"%s",ci->imdb);
+  return fonteinfo_ler(alvo,stream_lista_geracao(),nv_perfil_sessao_ler(),info);
+}
 static void heroWeb(float a, float desloc) {
   if (a <= 0.005f) return;
   const CatItem *ci = cat_item(idx);
@@ -4756,7 +4793,10 @@ static void heroWeb(float a, float desloc) {
   if (!temAmg) focoAmigos = 0;
   float hAmg = temAmg ? NV_DETW_AMIGOS_H + NV_DETW_AMIGOS_GAP : 0.0f;
   float hAcoesExtra = detalheRetrato() ? NV_DETW2_CIRC + NV_DETW2_BTN_GAP : 0;
-  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg;
+  FonteInfo fonteInfo;
+  int temFonteInfo = fonteInfoDoDetalhe(&fonteInfo);
+  float hFonteInfo = temFonteInfo ? fonteInfoLinha(&fonteInfo,0,0,larguraTextoHero(),0) + 16.0f : 0;
+  float yAcoes = ySin - hFonteInfo - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg;
   // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
   // botoes. Sao duas, e a ordem tem razao: a retomada explica o BOTAO e fica
   // colada nele; a agenda ("Próximo episódio T2E5 · em 3 dias") explica o
@@ -5130,6 +5170,8 @@ static void heroWeb(float a, float desloc) {
   if (nomeAbaixo)
     txt_bloco(TXT_DET_META2, nome, 255, 255, 255, NV_DETW2_X,
                yAcoes + NV_DETW2_BTN_H + hAcoesExtra + 16.0f, larguraLogoHero(), 34, a, 0);
+
+  if (temFonteInfo) fonteInfoLinha(&fonteInfo,NV_DETW2_X,ySin-hFonteInfo,larguraTextoHero(),a);
 
   // --- sinopse --------------------------------------------------------------
   { float f = 1.0f;

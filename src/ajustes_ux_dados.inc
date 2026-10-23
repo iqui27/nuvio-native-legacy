@@ -241,6 +241,7 @@ static const char *uxSinonimos(int op) {
     case AJ_PULAR_CREDITOS: return "pular creditos automatico sozinho final encerramento skip credits auto ending";
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "proximo episodio automatico autoplay creditos contagem netflix sozinho next episode auto play countdown";
     case AJ_CW_MINIMO: return "minimo continuar assistindo porcentagem percentual entrar fileira retomada progresso quanto assistir comecou piso minimum percent continue watching threshold row";
+    case AJ_FONTE_INFO: return "detalhes fonte preparada resolucao hdr audio canais tamanho grupo prepared source details badges size";
     case AJ_FONTE_PREPARAR: return "preparar fonte ao abrir titulo antecipar resolver antecipado play instantaneo inicio rapido debrid painel arquivo prepare source ahead instant start";
     case AJ_COLECAO_EXIBICAO: return "colecao colecoes exibicao padrao automatico grade linha tempo ranking saga decadas mural vitrine global collection collections default view automatic grid timeline showcase";
     case AJ_LOG_REDE: return "registro rede local pagina log ip navegador local network log page browser seek";
@@ -329,6 +330,7 @@ static const char *uxCaminhoAntigo(int op) {
     case AJ_FONTE_MANUAL: case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_PRIORIDADE: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR:
     case AJ_FONTE_GRUPO: case AJ_FONTE_GRUPO_SESSOES:
     case AJ_LINK_REUSAR: case AJ_LINK_PRAZO:
+    case AJ_FONTE_INFO:
     case AJ_FONTE_HDR: case AJ_FONTE_PRAZO: case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_TAM_MAX: case AJ_TAM_MIN:
     case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:
