@@ -7,6 +7,8 @@
 // provedor; sem trava segurada durante a rede.
 //
 // credfio_iniciar: 1 se saiu, 0 se ja ha um no ar para o provedor (ou sem fio).
+// Requests capture account/profile/opening at enqueue; stale completions
+// cannot update the destination profile or block its credential pushes.
 // credfio_resultado: 1 uma vez quando terminou, com o retorno de
 //   sync_empurrar_credencial em *res (1 ok, 0 tentar depois, -1 recusa 4xx).
 int credfio_iniciar(const char *provider, const char *credJson);

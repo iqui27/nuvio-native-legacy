@@ -117,7 +117,7 @@ static void novidades132_desenharCorpo_(Uint32 agora) {
   // (GFX_LUZ). Com o veu de tela cheia ja pago, e a ultima camada grande daqui.
   { GfxRect p = { N132_X, N132_Y + dy, N132_W, N132_H };
     float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-    gfx_cor(p, 28.0f / N132_H, 0.055f, 0.058f, 0.068f, 0.94f * a);
+    gfx_vidro_ou_solido(p, 28.0f / N132_H, GFX_VIDRO_DENS_MODAL, a, 0.055f, 0.058f, 0.068f, 0.94f);
     gfx_luz_canto(p, 28.0f / N132_H, N132_H * 0.1f, -N132_H * 0.1f, N132_H * 0.65f, ar, ag, ab, 0.22f * a);
     gfx_recorte(N132_X, N132_Y + dy, N132_W, N132_H); }
 
@@ -133,13 +133,8 @@ static void novidades132_desenharCorpo_(Uint32 agora) {
   { float fx = N132_TXT_X, fw = N132_TXT_W;
     y += feature(fx, y, fw, "lembrete",
           "Central de avisos",
-#ifdef NV_ANDROID
           "Recomendação de amigo, estreia, versão nova e avisos de quem faz o "
           "app: um toast quando chega, CH+ abre, e a aba Avisos em Salvos.", a);
-#else
-          "Recomendação de amigo, estreia, versão nova e avisos de quem faz o "
-          "app: um toast quando chega, AZUL abre, e a aba Avisos em Salvos.", a);
-#endif
     y += feature(fx, y, fw, "menu_guide",
           "O Guia de TV abre na hora",
           "A última lista de canais fica guardada e aparece de imediato; a rede "

@@ -1,4 +1,5 @@
 #include "streams.h"
+#include "nvtmp.h"
 #include "catalogo.h"
 #include "episodios.h"
 #include "player.h"
@@ -55,6 +56,16 @@ static void teclaMenu(SDL_Keycode k) {
 static int saidaVisto(double pos, double dur, double cred, double assistido, double de) {
   int chegou;
   return player_regra_visto(de, assistido, pos, player_regra_concluiu(pos, dur, cred), &chegou);
+}
+// Fonte simulada pronta: com a fonte ainda abrindo, BAIXO expande o cartao
+// (8bf0ae88) em vez de esconder os controles, que e o que estes casos testam.
+static void comFonte(void) {
+  static const VideoSimulacao sim={.aceita=1,.pronto=1};
+  video_simular(&sim);player_definir_fonte("https://example.invalid/e.mp4");
+}
+// Serie com fonte pronta (cca9acf95): Play, Proximo, Recarregar, Legendas.
+static void paraLegendas(void) {
+  teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);
 }
 static void testar(void) {
   // #205 NAO PODE REGREDIR O #100. Aqui em cima porque nao dependem de estado.
@@ -128,19 +139,11 @@ static void testar(void) {
   assert(stream_n()==40 && stream_automatico()==37 && stream_item(40)==NULL);
   stream_definir_lista(NULL,0);assert(stream_n()==0 && stream_automatico()==-1);
   n=stream_extrair("{\"streams\":[{\"infoHash\":\"abc\"},{\"externalUrl\":\"https://example.invalid\"},{\"url\":\"https://example.invalid/a.mp4\",\"title\":\"4K [DV] Atmos\"}]}","Fixture",&v);
-  // TRES, E NAO UMA. Esta asserção dizia `n==1`, de quando fonte sem URL era
-  // lixo a descartar. O suporte a debrid mudou o contrato e a linha ficou para
-  // tras: infoHash puro E uma fonte valida — a URL nasce depois, em
-  // stream_definir_lista (streams.c:146), e stream_parse.c:40 registra o
-  // porque ("como o AIOStreams manda"). externalUrl tambem entra, como URL.
-  //
-  // O que este caso realmente prova, e por isso ele existe, e que as flags
-  // saem do campo "title" quando nao ha "name" nem "description" — e o unico
-  // lugar onde muitos addons poem a qualidade.
-  assert(n==3);
+  // infoHash e midia resolvivel; externalUrl sozinho abre fora e fica oculto.
+  // As flags ainda saem do title sem name/description.
+  assert(n==2);
   assert(!v[0].url[0] && !strcmp(v[0].infoHash,"abc"));      // torrent puro
-  assert(!strcmp(v[1].url,"https://example.invalid"));       // externalUrl vira url
-  assert(v[2].mp4 && v[2].dolbyVision && v[2].altura==2160); // flags do "title"
+  assert(v[1].mp4 && v[1].dolbyVision && v[1].altura==2160); // flags do "title"
   free(v);
   char longa[4500];memset(longa,'a',sizeof longa);memcpy(longa,"https://example.invalid/",24);longa[4090]=0;
   snprintf(json,sizeof json,"{\"streams\":[{\"url\":\"%s\",\"name\":\"DV/HDR 4K MP4\"}]}",longa);
@@ -159,6 +162,7 @@ static void testar(void) {
   assert(episodios_escolheu(&t,&e) && t==2 && e==5);
   assert(!episodios_escolheu(&t,&e));
   player_abrir(0,NULL);player_definir_episodio(2,4);
+  assert(player_carregando());comFonte();assert(!player_carregando());
   // A ABREVIACAO SEGUE O IDIOMA: T de Temporada em portugues, S de Season em
   // ingles. Foi o conserto do issue #12 — a frase e montada com snprintf, e o
   // i18n passou a envolver o FORMATO, entao "T%dE%d" tem par na tabela.
@@ -170,7 +174,7 @@ static void testar(void) {
   assert(strstr(player_linha_episodio(), ajustes_idioma_ingles() ? "S2E4" : "T2E4"));
   assert(strstr(player_linha_episodio(),"Episódio 24"));
   assert(player_proximo_episodio()&&player_proximo_episodio()->temporada==2&&player_proximo_episodio()->episodio==5);
-  teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RETURN);
+  paraLegendas();teclaPlayer(SDLK_RETURN);
   assert(player_pediu_faixas()==2); /* Play, legendas (ordem do Glass UI): sem saltos. */
   assert(player_controles_visiveis());
   teclaPlayer(SDLK_DOWN);assert(!player_controles_visiveis());
@@ -181,19 +185,19 @@ static void testar(void) {
   teclaPlayer(SDLK_UP);assert(player_controles_visiveis());
   teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RIGHT);teclaPlayer(SDLK_RETURN);
   assert(player_pediu_fontes());   /* legendas -> audio -> proporcao -> fontes */
-  assert(player_carregando());player_encerrar();
+  player_encerrar();
   // #109: a tecla que revela os controles decide o foco. Com o foco em
   // Legendas e os controles escondidos, OK pausa e os controles sobem NO PLAY
   // — o OK seguinte alterna de novo em vez de abrir a folha de legendas.
   // Sessao sem URL tambem nao tem video proprio (registro 1518).
-  player_abrir(0,NULL);assert(!player_tem_video());player_definir_episodio(2,4);
-  teclaPlayer(SDLK_RIGHT);      // foco em Legendas
+  player_abrir(0,NULL);assert(!player_tem_video());player_definir_episodio(2,4);comFonte();
+  paraLegendas();      // foco em Legendas
   teclaPlayer(SDLK_DOWN);assert(!player_controles_visiveis());
   teclaPlayer(SDLK_RETURN);assert(player_controles_visiveis());
   teclaPlayer(SDLK_RETURN);assert(player_pediu_faixas()==0);
   // A tecla fisica Play/Pause (SDLK_PAUSE, traduzida pela casca da Samsung)
   // com os controles EM PE e o foco em Legendas: alterna, nao abre a folha.
-  teclaPlayer(SDLK_RIGHT);
+  paraLegendas();
   teclaPlayer(SDLK_PAUSE);teclaPlayer(SDLK_RETURN);assert(player_pediu_faixas()==0);
   player_encerrar();
   // #122: o texto que o AVPlay entrega no onsubtitlechange vira texto puro
@@ -215,7 +219,7 @@ static void testar(void) {
   // YouTube e na Netflix — os controles sobem com o foco NA BARRA e o primeiro
   // toque ja anda 10 s. Antes subiam com o foco nos botoes e o toque seguinte
   // trocava de botao em vez de avancar.
-  player_abrir(0,NULL);player_definir_episodio(2,4);
+  player_abrir(0,NULL);player_definir_episodio(2,4);comFonte();
   teclaPlayer(SDLK_DOWN);assert(!player_controles_visiveis());
   { float p0=player_posicao_seg();
     teclaPlayer(SDLK_RIGHT);
@@ -233,7 +237,7 @@ static void testar(void) {
   assert(!player_so_barra());
   teclaPlayer(SDLK_RETURN);assert(player_controles_visiveis());   // OK no Play: alterna
   { float p1=player_posicao_seg();
-    teclaPlayer(SDLK_RIGHT);
+    paraLegendas();
     assert(!player_foco_na_barra()&&player_posicao_seg()==p1);
     teclaPlayer(SDLK_RETURN);assert(player_pediu_faixas()==2); }   // Legendas
   // Escondido de novo por BAIXO e revelado por BAIXO: fileira, nao barra.
@@ -247,7 +251,7 @@ static void testar(void) {
   player_encerrar();
   // FOCO NA BARRA (pedido do dono, 03/10): a fileira de botoes FECHA e volta
   // quando o foco desce; e CIMA na barra nao faz NADA — abria o Audio.
-  player_abrir(0,NULL);player_definir_episodio(2,4);
+  player_abrir(0,NULL);player_definir_episodio(2,4);comFonte();
   assert(player_controles_visiveis()&&!player_foco_na_barra());
   { Uint32 t0=SDL_GetTicks();int i;
     for(i=0;i<60;i++)player_atualizar(1.f/60,t0);
@@ -255,14 +259,14 @@ static void testar(void) {
     teclaPlayer(SDLK_UP);assert(player_foco_na_barra());
     for(i=0;i<60;i++)player_atualizar(1.f/60,t0);
     assert(player_fileira()<0.05f);
-    teclaPlayer(SDLK_UP);
-    assert(player_pediu_faixas()==0&&player_foco_na_barra()&&player_controles_visiveis());
+    teclaPlayer(SDLK_UP);   // #305: CIMA na barra esconde, nao abre o Audio
+    assert(player_pediu_faixas()==0&&!player_controles_visiveis());
     teclaPlayer(SDLK_UP);teclaPlayer(SDLK_UP);
     assert(player_pediu_faixas()==0&&player_foco_na_barra());
     teclaPlayer(SDLK_DOWN);assert(!player_foco_na_barra()&&player_controles_visiveis());
     for(i=0;i<60;i++)player_atualizar(1.f/60,t0);
     assert(player_fileira()>0.95f); }
-  player_encerrar();
+  player_encerrar();video_simular(NULL);
   strcpy(c.tipo,"movie");cat_definir(&c,1);player_abrir(0,NULL);
   player_definir_episodio(2,4);assert(!player_linha_episodio()[0]);
   for(int i=0;i<10;i++)teclaPlayer(SDLK_RIGHT);
@@ -362,7 +366,7 @@ static void testar(void) {
   assert(menu_destino()==MENU_BUSCAR && menu_mudou_destino());
   menu_abrir();teclaMenu(SDLK_DOWN);teclaMenu(SDLK_ESCAPE);
   assert(!menu_aberto() && menu_destino()==MENU_BUSCAR);
-  char pasta[]="/tmp/nuvio-progress-test-XXXXXX",arquivo[256];assert(mkdtemp(pasta));
+  char pasta[NVT_MAX],arquivo[256]; nvt_set(pasta, sizeof pasta, "/nuvio-progress-test-XXXXXX");assert(mkdtemp(pasta));
   snprintf(arquivo,sizeof arquivo,"%s/catalogo.txt",pasta);
   FILE *fp=fopen(arquivo,"w");assert(fp);fclose(fp);
   cat_carregar(pasta);strcpy(c.imdb,"tt0000001");cat_definir(&c,1);
@@ -547,15 +551,15 @@ int main(int argc,char **argv) {
     tex_cache_dir("deploy/app/art/cache");
     assert(trakt_carregar("deploy/app/art"));assert(trakt_perfil(&d));
     perfil_iniciar();perfil_abrir();perfil_definir_dados(&d);
-    captura("/tmp/nuvio-profile.bmp",w,5);
+    captura(nvt("/nuvio-profile.bmp"),w,5);
     SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;
-    perfil_evento(&e);captura("/tmp/nuvio-profile-calendar.bmp",w,5);
+    perfil_evento(&e);captura(nvt("/nuvio-profile-calendar.bmp"),w,5);
     for(int i=0;i<6;i++)perfil_evento(&e);
-    captura("/tmp/nuvio-profile-ranks.bmp",w,5);
+    captura(nvt("/nuvio-profile-ranks.bmp"),w,5);
     // O painel lateral do perfil deixou de existir; a captura equivalente hoje
     // e a do painel de Salvos, que ocupa a mesma moldura.
     spainel_abrir();spainel_atualizar(1.0f,SDL_GetTicks());
-    captura("/tmp/nuvio-salvos-painel.bmp",w,5);
+    captura(nvt("/nuvio-salvos-painel.bmp"),w,5);
     return 0;
   }
   cat_carregar("deploy/app/art");
@@ -573,16 +577,16 @@ int main(int argc,char **argv) {
     snprintf(ep[i].sinopse,sizeof ep[i].sinopse,"Juliette sets out on a dangerous quest to retrieve a suit so she can return home.");
   }
   cat_definir_episodios(0,ep,5);player_abrir(0,NULL);player_definir_episodio(2,4);
-  captura("/tmp/nuvio-player-loading.bmp",w,0);
+  captura(nvt("/nuvio-player-loading.bmp"),w,0);
   // #128: busca comecada com os controles escondidos — so barra e tempo. O
   // par de capturas mostra o antes (so a barra) e o depois do BAIXO (tudo).
   { SDL_Event e={0};e.type=SDL_KEYDOWN;
-    e.key.keysym.sym=SDLK_DOWN;player_evento(&e);captura("/tmp/nuvio-player-escondido.bmp",w,0);
+    e.key.keysym.sym=SDLK_DOWN;player_evento(&e);captura(nvt("/nuvio-player-escondido.bmp"),w,0);
     e.key.keysym.sym=SDLK_RIGHT;player_evento(&e);assert(player_so_barra());
-    captura("/tmp/nuvio-player-busca.bmp",w,0);
+    captura(nvt("/nuvio-player-busca.bmp"),w,0);
     e.key.keysym.sym=SDLK_DOWN;player_evento(&e);assert(!player_so_barra());
-    captura("/tmp/nuvio-player-busca-cheio.bmp",w,0); }
-  episodios_abrir(0,2,4);captura("/tmp/nuvio-player-episodes.bmp",w,1);episodios_fechar();
+    captura(nvt("/nuvio-player-busca-cheio.bmp"),w,0); }
+  episodios_abrir(0,2,4);captura(nvt("/nuvio-player-episodes.bmp"),w,1);episodios_fechar();
   Stream s[5]={0};
   for(int i=0;i<5;i++) {
     snprintf(s[i].rotulo,sizeof s[i].rotulo,"Silo S02 E04");snprintf(s[i].provedor,sizeof s[i].provedor,"Addon de teste");
@@ -590,10 +594,10 @@ int main(int argc,char **argv) {
     s[i].mp4=s[i].dolbyVision=s[i].dolbyAtmos=1;s[i].altura=2160;s[i].tamanhoMB=11264;
   }
   stream_definir_lista(s,5);stream_folha_contexto(player_linha_episodio());stream_folha_abrir();
-  captura("/tmp/nuvio-player-sources.bmp",w,2);
-  faixas_abrir_em(1);captura("/tmp/nuvio-player-subtitles.bmp",w,3);
-  menu_iniciar();captura("/tmp/nuvio-player-cards.bmp",w,4);
-  menu_abrir();captura("/tmp/nuvio-player-menu.bmp",w,4);
+  captura(nvt("/nuvio-player-sources.bmp"),w,2);
+  faixas_abrir_em(1);captura(nvt("/nuvio-player-subtitles.bmp"),w,3);
+  menu_iniciar();captura(nvt("/nuvio-player-cards.bmp"),w,4);
+  menu_abrir();captura(nvt("/nuvio-player-menu.bmp"),w,4);
   tex_encerrar();txt_encerrar();gfx_encerrar();SDL_GL_DeleteContext(gl);SDL_DestroyWindow(w);SDL_Quit();
-  puts("PASS: seis capturas de revisão em /tmp/nuvio-player-*.bmp (dados de teste, sem reprodução real).");return 0;
+  printf("PASS: seis capturas de revisão em %s/nuvio-player-*.bmp (dados de teste, sem reprodução real).\n", nvt_dir());return 0;
 }

@@ -8,6 +8,7 @@
 // opcoes desligada, nada muda.
 // Compilado duas vezes pelo .sh: LG (padrao do host) e -DNV_STREAMS_LG=0.
 #include <assert.h>
+#include "nvtmp.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,7 +58,7 @@ static void espera(const char *quem, const char *obtido, const char *caso) {
 
 int main(void) {
   Stream l[4];
-  snprintf(dirAj, sizeof dirAj, "%s/nv-lgmp4-aj-%d", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp", (int)getpid());
+  snprintf(dirAj, sizeof dirAj, "%s/nv-lgmp4-aj-%d", nvt_dir(), (int)getpid());
   { char m[300]; snprintf(m, sizeof m, "mkdir -p %s", dirAj); (void)!system(m); }
   stream_definir_tela(1, 1);   // tela HDR com Dolby Vision (C9)
   streamfit_limpar();

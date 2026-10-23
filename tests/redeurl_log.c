@@ -1,6 +1,7 @@
 // rede_url_log (rede.h): URL de imagem/meta que vai para o log nunca leva a
 // config/chave da pessoa. As chaves aqui sao FALSAS, de formato parecido.
 #include "../src/rede.h"
+#include "nvtmp.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -55,7 +56,7 @@ int main(void) {
   // ultimo segmento longo SEM cara de arquivo de midia: redigido
   caso("https://addon.example.com/d/AbCdEfGhIjKlMnOpQrStUvWxYz", "https://addon.example.com/d/<redigido>");
   // sem esquema: copia
-  caso("/tmp/nuvio/cache/abc.img", "/tmp/nuvio/cache/abc.img");
+  caso(nvt("/nuvio/cache/abc.img"), nvt("/nuvio/cache/abc.img"));
   caso("", "");
   // buffer pequeno: corta sem estourar
   { char b[12]; rede_url_log("https://btttr.cc/a/b/tt1.jpg", b, sizeof b);

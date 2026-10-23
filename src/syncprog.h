@@ -12,16 +12,19 @@
 #include "vistoep.h"
 #ifndef NV_SYNCPROG_H
 #define NV_SYNCPROG_H
+#include <stdint.h>
 
 // FIO DE SYNC. Puxa as linhas do perfil ativo para uma caixa interna. Nao
 // aplica nada: a aplicacao mexe em progresso.c e no catalogo, que sao do fio
 // principal. Devolve quantas linhas vieram; -1 em erro de rede.
 int  syncprog_puxar(void);
+int syncprog_puxar_sessao(int perfil, uint64_t sessao);
 
 // FIO DE SYNC. Empurra as linhas PENDENTES do perfil ativo. Vazio nunca vira
 // push. Em 2xx, marca as chaves enviadas como empurradas. Devolve quantas
 // mandou; -1 em erro.
 int  syncprog_empurrar(void);
+int syncprog_empurrar_sessao(int perfil, uint64_t sessao);
 
 // FIO PRINCIPAL. Aplica a caixa puxada: prog_aplicar_remoto decide (pendente
 // local vence; senao o mais novo), e o que ele aceitou vai para o item do
@@ -36,6 +39,12 @@ int  syncprog_puxadas(void);
 // Esvazia a caixa sem aplicar (logout).
 // Apaga uma entrada de progresso NA CONTA (sync_delete_watch_progress), pela
 // chave de prog_chave. Ver a nota longa em syncprog.c.
+typedef struct {
+  uint64_t sessao; int perfil, autenticada; char usuario[80], jwt[3000];
+} SyncProgRemocao;
+int syncprog_remocao_capturar(SyncProgRemocao *);
+int syncprog_remover_pedido(const SyncProgRemocao *, const char *chave);
+int syncprog_remover_sessao(const char *chave, int perfil, uint64_t sessao, const char *usuario);
 int  syncprog_remover(const char *chave);
 void syncprog_esquecer(void);
 

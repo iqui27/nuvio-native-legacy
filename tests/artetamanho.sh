@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # A variante do tamanho do desenho: a regra (artetamanho.c) e o cache
 # (texvariante.c: chave, disco e promocao a heroi). Sem rede.
 #
@@ -8,9 +10,9 @@ cd "$(dirname "$0")/.."
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc ${flags[@]+"${flags[@]}"} src/artetamanho.c tests/artetamanho.c \
-  -Isrc -o /tmp/nuvio-artetamanho-tests -O1 -g \
+  -Isrc -o ${TMPDIR:-/tmp}/nuvio-artetamanho-tests -O1 -g \
   -Wall -Wextra -Wno-deprecated-declarations
-/tmp/nuvio-artetamanho-tests
+${TMPDIR:-/tmp}/nuvio-artetamanho-tests
 
 sources=()
 for source in src/*.c src/dts/*.c; do
@@ -18,12 +20,12 @@ for source in src/*.c src/dts/*.c; do
   sources+=("$source")
 done
 # Cada tamanho do TMDB com a largura real dele (a "original" em 1600).
-sips -z 439 780 tests/amostra.jpg --out /tmp/nuvio-texvariante-780.jpg >/dev/null
-sips -z 720 1280 tests/amostra.jpg --out /tmp/nuvio-texvariante-1280.jpg >/dev/null
-sips -z 900 1600 tests/amostra.jpg --out /tmp/nuvio-texvariante-1600.jpg >/dev/null
-cc ${flags[@]+"${flags[@]}"} "${sources[@]}" tests/texvariante.c -Isrc -o /tmp/nuvio-texvariante \
+sips -z 439 780 tests/amostra.jpg --out ${TMPDIR:-/tmp}/nuvio-texvariante-780.jpg >/dev/null
+sips -z 720 1280 tests/amostra.jpg --out ${TMPDIR:-/tmp}/nuvio-texvariante-1280.jpg >/dev/null
+sips -z 900 1600 tests/amostra.jpg --out ${TMPDIR:-/tmp}/nuvio-texvariante-1600.jpg >/dev/null
+cc ${flags[@]+"${flags[@]}"} "${sources[@]}" tests/texvariante.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-texvariante \
   -O1 -g -Wall -Wextra -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-texvariante /tmp/nuvio-texvariante-780.jpg \
-  /tmp/nuvio-texvariante-1280.jpg /tmp/nuvio-texvariante-1600.jpg
+${TMPDIR:-/tmp}/nuvio-texvariante ${TMPDIR:-/tmp}/nuvio-texvariante-780.jpg \
+  ${TMPDIR:-/tmp}/nuvio-texvariante-1280.jpg ${TMPDIR:-/tmp}/nuvio-texvariante-1600.jpg

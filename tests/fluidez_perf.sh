@@ -17,6 +17,8 @@ sources=()
 for source in src/*.c src/dts/*.c; do
   if [ "$source" != src/main.c ]; then sources+=("$source"); fi
 done
+# A base tree from before the FPS gate has no src/fpscena.c: borrow ours.
+if [ ! -f src/fpscena.c ]; then sources+=("$aqui/src/fpscena.c"); flags+=("-I$aqui/src"); fi
 cc "${sources[@]}" "$aqui/tests/fluidez_perf.c" -Isrc -o "$tmp/perf" \
   ${flags[@]+"${flags[@]}"} -DNV_FLUIDEZ_PERF -DNV_SHOT_HOOKS -DNV_TRAKT_CLIENT_ID='"chave-de-teste"' \
   -O2 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \

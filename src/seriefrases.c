@@ -549,12 +549,12 @@ static const char *CONSULTA =
 // proposito — e cabecalho de protocolo, nao texto de tela, e em portugues o
 // tests/i18n.sh o acusava de string sem i18n().
 static const char *const CAB[] = {
-  "User-Agent: NuvioTV/1.0 (TV app; contact via the project repository)",
+  "User-Agent: NuvioTV/1.0 (https://github.com/iqui27/nuvio-native-legacy)",
   "Accept: application/sparql-results+json",
   NULL
 };
 static const char *const CAB_WQ[] = {
-  "User-Agent: NuvioTV/1.0 (TV app; contact via the project repository)",
+  "User-Agent: NuvioTV/1.0 (https://github.com/iqui27/nuvio-native-legacy)",
   NULL
 };
 

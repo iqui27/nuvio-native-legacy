@@ -14,6 +14,7 @@ void servidores_perfil_trocou(void);   // servidores.c: cancel in-flight work, l
 void fontepref_definir_perfil(int perfil);
 // Mesma razao: a legenda escolhida a mao (legmemoria.h, 2.0.3) e por perfil.
 void legmem_definir_perfil(int perfil);
+void audiomem_definir_perfil(int perfil);
 // Mesma razao (arteescolha.h nao puxa SDL, mas fica no mesmo molde).
 void arteesc_definir_perfil(int perfil);
 // Mesma razao: ajustes.h puxa SDL. O ajuste "Usar os addons do perfil
@@ -25,6 +26,43 @@ int ajustes_addons_do_principal(void);
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <stdatomic.h>
+
+static _Atomic uint64_t sessaoGeracao = 1;
+static pthread_mutex_t sessaoTrava;
+static pthread_once_t sessaoUmaVez = PTHREAD_ONCE_INIT;
+static void (*sessaoAntes)(void);
+static void sessaoTravaIniciar(void) {
+  pthread_mutexattr_t attr;
+  pthread_mutexattr_init(&attr);
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+  pthread_mutex_init(&sessaoTrava, &attr);
+  pthread_mutexattr_destroy(&attr);
+}
+uint64_t perfis_sessao_geracao(void) {
+  return atomic_load_explicit(&sessaoGeracao, memory_order_acquire);
+}
+int perfis_sessao_atual(uint64_t geracao) { return geracao == perfis_sessao_geracao(); }
+int perfis_sessao_travar(uint64_t geracao) {
+  pthread_once(&sessaoUmaVez, sessaoTravaIniciar);
+  pthread_mutex_lock(&sessaoTrava);
+  if (perfis_sessao_atual(geracao)) return 1;
+  pthread_mutex_unlock(&sessaoTrava);
+  return 0;
+}
+void perfis_sessao_destravar(void) { pthread_mutex_unlock(&sessaoTrava); }
+void perfis_ao_abrir_sessao(void (*antes)(void)) { sessaoAntes = antes; }
+static void sessaoAvancar(void) {
+  uint64_t g = atomic_fetch_add_explicit(&sessaoGeracao, 1, memory_order_acq_rel) + 1;
+  if (!g) atomic_fetch_add_explicit(&sessaoGeracao, 1, memory_order_acq_rel);
+}
+void perfis_invalidar_sessao(void) {
+  pthread_once(&sessaoUmaVez, sessaoTravaIniciar);
+  pthread_mutex_lock(&sessaoTrava);
+  sessaoAvancar();
+  pthread_mutex_unlock(&sessaoTrava);
+}
 
 #define ARQ_ATIVO "perfil.txt"
 #define ARQ_LISTA "perfis.txt"
@@ -32,7 +70,7 @@ int ajustes_addons_do_principal(void);
 static ContaPerfil lista[CONTA_PERFIL_MAX];
 static int n;
 static char dono[64];
-static int ativo = 1;
+static atomic_int ativo = ATOMIC_VAR_INIT(1);
 // ESCOLHIDO E DE SESSAO, GRAVADO E DE DISCO — e a diferenca entre as duas e a
 // mudanca de comportamento inteira desta tela.
 //
@@ -49,28 +87,65 @@ static int ativo = 1;
 static int escolhido;      // 1 depois que o usuario decidiu NESTA sessao
 static int gravado;        // 1 quando perfil.txt existia no arranque
 
-static void lerDono(void) {
+// Existing isolated fixtures omit sessao.c. A complete app always captures
+// both fields locally, without refreshing or doing HTTP on the UI thread.
+#if defined(__APPLE__) && (defined(__GNUC__) || defined(__clang__))
+// This producer must keep its epoch definitions strong. Import only the two
+// optional session helpers; Mach-O needs weak_import for an absent provider.
+extern int sessao_identidade_local_copiar(char *, size_t, char *, size_t) __attribute__((weak_import));
+extern void sessao_token_recusado(const char *) __attribute__((weak_import));
+#elif defined(__GNUC__) || defined(__clang__)
+#pragma weak sessao_identidade_local_copiar
+#pragma weak sessao_token_recusado
+#endif
+typedef struct {
+  uint64_t sessao;
+  char usuario[80], jwt[3000];
+  int legado;
+} PedidoPerfis;
+static int pedidoPerfisAtual(const PedidoPerfis *p) {
+  return perfis_sessao_atual(p->sessao) && !strcmp(p->usuario, sessao_usuario());
+}
+static char *rpcPerfis(PedidoPerfis *p, const char *funcao, int *st) {
+  char *r;
+  int status = 0;
+  if (st) *st = 0;
+  if (!pedidoPerfisAtual(p) || (!p->legado && !p->jwt[0])) return NULL;
+  r = p->legado ? sessao_rpc(funcao, "{}", &status)
+                : nuvem_rpc_com(funcao, "{}", p->jwt, &status);
+  if (!p->legado && status == 401 && pedidoPerfisAtual(p) &&
+      sessao_identidade_local_copiar && sessao_token_recusado) {
+    char usuario[80], jwt[3000];
+    sessao_token_recusado(p->jwt);
+    if (sessao_identidade_local_copiar(usuario, sizeof usuario, jwt, sizeof jwt) &&
+        !strcmp(usuario, p->usuario) && pedidoPerfisAtual(p)) {
+      snprintf(p->jwt, sizeof p->jwt, "%s", jwt);
+      free(r); r = nuvem_rpc_com(funcao, "{}", p->jwt, &status);
+    }
+    memset(jwt, 0, sizeof jwt);
+  }
+  if (!pedidoPerfisAtual(p)) { free(r); return NULL; }
+  if (st) *st = status;
+  return r;
+}
+static void lerDono(PedidoPerfis *pedido, char destino[64]) {
   char *r;
   int st = 0;
-  if (dono[0]) return;
-  r = sessao_rpc("get_sync_owner", "{}", &st);
+  if (destino[0]) return;
+  r = rpcPerfis(pedido, "get_sync_owner", &st);
   if (r && st >= 200 && st < 300) {
-    // MEDIDO: a resposta e uma string JSON CRUA — "441bf572-…" — e nao um
-    // objeto. js_texto nao serve aqui; o valor esta entre as aspas do corpo
-    // inteiro.
+    // get_sync_owner returns a JSON string, rather than an object.
     const char *a = strchr(r, '"');
     const char *b = a ? strchr(a + 1, '"') : NULL;
-    if (a && b && b > a + 1 && (size_t)(b - a - 1) < sizeof dono) {
-      memcpy(dono, a + 1, (size_t)(b - a - 1));
-      dono[b - a - 1] = 0;
+    if (a && b && b > a + 1 && (size_t)(b - a - 1) < 64) {
+      memcpy(destino, a + 1, (size_t)(b - a - 1));
+      destino[b - a - 1] = 0;
     }
   }
   free(r);
-  if (!dono[0]) {
-    // Sem o dono, a leitura da tabela de addons nao tem por quem filtrar. Cair
-    // no `sub` do token e a aproximacao correta: numa conta que nao e
-    // compartilhada os dois sao a mesma coisa.
-    snprintf(dono, sizeof dono, "%s", sessao_usuario());
+  if (!destino[0]) {
+    // The fallback belongs to the request that failed, never the current login.
+    snprintf(destino, 64, "%.63s", pedido->usuario);
     printf("[perfis] get_sync_owner nao respondeu; usando o sub do token\n");
   }
 }
@@ -213,35 +288,42 @@ static int avatarOficial(const char *id, char *dst, size_t tam) {
   return 0;
 }
 
-int perfis_puxar(void) {
+static int puxarPerfis(PedidoPerfis *pedido) {
   char *r;
   int st = 0;
   const char *p;
+  ContaPerfil tmp[CONTA_PERFIL_MAX];
+  char novoDono[64];
+  int novos, publicarCache = 0;
+  if (!perfis_sessao_travar(pedido->sessao)) return 0;
+  if (!pedidoPerfisAtual(pedido)) { perfis_sessao_destravar(); return 0; }
+  memcpy(tmp, lista, sizeof tmp); novos = n;
+  snprintf(novoDono, sizeof novoDono, "%s", dono);
+  perfis_sessao_destravar();
 
-  lerDono();
-
-  r = sessao_rpc("sync_pull_profiles", "{}", &st);
-  if (!r || st < 200 || st >= 300) { free(r); return n; }
+  lerDono(pedido, novoDono);
+  r = rpcPerfis(pedido, "sync_pull_profiles", &st);
+  if (!r || st < 200 || st >= 300) { free(r); goto publicar; }
 
   // Lista vazia NAO apaga o que ja esta em memoria: e a mesma regra que o app
   // web aplica em toda superficie. Resposta vazia pode ser perfil errado, 401
   // mal tratado ou servidor fora do ar, e nenhum desses e "o usuario apagou os
   // perfis".
-  { int novos = 0;
-    ContaPerfil tmp[CONTA_PERFIL_MAX];
-    memset(tmp, 0, sizeof tmp);
-    for (p = js_raiz_array(r); p && novos < CONTA_PERFIL_MAX; p = js_prox(js_fim(p))) {
+  { int recebidos = 0;
+    ContaPerfil recebida[CONTA_PERFIL_MAX];
+    memset(recebida, 0, sizeof recebida);
+    for (p = js_raiz_array(r); p && recebidos < CONTA_PERFIL_MAX; p = js_prox(js_fim(p))) {
       const char *f = js_fim(p);
       double idx = js_num(p, f, "profile_index", 0);
       if (idx <= 0) idx = js_num(p, f, "id", 0);
       if (idx <= 0) continue;
-      tmp[novos].indice = (int)idx;
+      recebida[recebidos].indice = (int)idx;
       // "ContaPerfil %d" ficou aqui quando a struct Perfil virou ContaPerfil
       // para nao colidir com o trakt.h legado. O tipo mudou de nome; o que o
       // usuario le, nao.
-      if (!js_texto(p, f, "name", tmp[novos].nome, sizeof tmp[novos].nome))
-        snprintf(tmp[novos].nome, sizeof tmp[novos].nome, "Perfil %d", (int)idx);
-      js_texto(p, f, "avatar_url", tmp[novos].avatarUrl, sizeof tmp[novos].avatarUrl);
+      if (!js_texto(p, f, "name", recebida[recebidos].nome, sizeof recebida[recebidos].nome))
+        snprintf(recebida[recebidos].nome, sizeof recebida[recebidos].nome, "Perfil %d", (int)idx);
+      js_texto(p, f, "avatar_url", recebida[recebidos].avatarUrl, sizeof recebida[recebidos].avatarUrl);
       // O AVATAR OFICIAL VEM POR ID, e nao por URL. `avatar_url` so e
       // preenchido para foto que a pessoa subiu; quem escolhe um dos avatares
       // do Nuvio guarda `avatar_id` ("avatar_lalo") e a imagem sai do catalogo.
@@ -249,22 +331,22 @@ int perfis_puxar(void) {
       // `avatars` — foi por procurar a tabela que uma medicao antiga concluiu
       // que nao havia como resolver o id, e os perfis ficaram todos com a
       // inicial num circulo colorido.
-      if (!tmp[novos].avatarUrl[0]) {
+      if (!recebida[recebidos].avatarUrl[0]) {
         char aid[64] = "";
         if (js_texto(p, f, "avatar_id", aid, sizeof aid) && aid[0] &&
-            !avatarOficial(aid, tmp[novos].avatarUrl, sizeof tmp[novos].avatarUrl))
+            !avatarOficial(aid, recebida[recebidos].avatarUrl, sizeof recebida[recebidos].avatarUrl))
           // O perfil PEDE um avatar que o catalogo nao tem. Sem esta linha o
           // circulo cai na inicial e nada diz por que — indistinguivel de um
           // perfil que nunca escolheu avatar nenhum.
           printf("[perfis] avatar \"%s\" nao esta no catalogo\n", aid);
       }
-      js_texto(p, f, "profile_background_url", tmp[novos].fundoUrl,
-               sizeof tmp[novos].fundoUrl);
-      if (!js_texto(p, f, "avatar_color_hex", tmp[novos].corHex, sizeof tmp[novos].corHex))
-        snprintf(tmp[novos].corHex, sizeof tmp[novos].corHex, "#1E88E5");
+      js_texto(p, f, "profile_background_url", recebida[recebidos].fundoUrl,
+               sizeof recebida[recebidos].fundoUrl);
+      if (!js_texto(p, f, "avatar_color_hex", recebida[recebidos].corHex, sizeof recebida[recebidos].corHex))
+        snprintf(recebida[recebidos].corHex, sizeof recebida[recebidos].corHex, "#1E88E5");
       { char b[16];
         // Sem o campo, o perfil 1 e o primario — e a mesma regra do web.
-        tmp[novos].primario = js_bruto(p, f, "is_primary", b, sizeof b)
+        recebida[recebidos].primario = js_bruto(p, f, "is_primary", b, sizeof b)
                               ? (strcmp(b, "true") == 0) : ((int)idx == 1); }
       { char b[16];
         // `uses_primary_addons`, NAO `uses_primary_plugins`. Sao DUAS colunas
@@ -277,19 +359,19 @@ int perfis_puxar(void) {
         // vazia, sem erro, e a tela de ajustes dizendo zero.
         // O nome antigo fica como reserva: linha gravada por uma versao que so
         // conhecia aquela coluna continua sendo lida.
-        tmp[novos].usaAddonsDoPrimario =
+        recebida[recebidos].usaAddonsDoPrimario =
           js_bruto(p, f, "uses_primary_addons", b, sizeof b)
           ? (strcmp(b, "true") == 0)
           : (js_bruto(p, f, "uses_primary_plugins", b, sizeof b)
              ? (strcmp(b, "true") == 0) : 0); }
-      novos++;
+      recebidos++;
     }
-    if (novos > 0) { memcpy(lista, tmp, sizeof lista); n = novos; }
+    if (recebidos > 0) { memcpy(tmp, recebida, sizeof tmp); novos = recebidos; }
   }
   free(r);
 
   // Travas: um perfil com PIN nao pode ser aberto so por estar na lista.
-  r = sessao_rpc("sync_pull_profile_locks", "{}", &st);
+  r = rpcPerfis(pedido, "sync_pull_profile_locks", &st);
   if (r && st >= 200 && st < 300) {
     for (p = js_raiz_array(r); p; p = js_prox(js_fim(p))) {
       const char *f = js_fim(p);
@@ -303,17 +385,65 @@ int perfis_puxar(void) {
       // digitacao seria aceita: ninguem entraria na propria conta.
       travado = js_bruto(p, f, "pin_enabled", b, sizeof b)
                 ? (strcmp(b, "true") == 0) : 0;
-      for (i = 0; i < n; i++)
-        if (lista[i].indice == idx) lista[i].temPin = travado;
+      for (i = 0; i < novos; i++)
+        if (tmp[i].indice == idx) tmp[i].temPin = travado;
     }
   }
   free(r);
 
-  gravarCache();
+  publicarCache = 1;
+publicar:
+  if (!perfis_sessao_travar(pedido->sessao)) return 0;
+  if (!pedidoPerfisAtual(pedido)) { perfis_sessao_destravar(); return 0; }
+  memcpy(lista, tmp, sizeof lista); n = novos;
+  snprintf(dono, sizeof dono, "%s", novoDono);
+  if (publicarCache) gravarCache();
   printf("[perfis] %d perfil(is), dono=%s, ativo=%d\n", n, dono, ativo);
-  return n;
+  int quantidade = n;
+  perfis_sessao_destravar();
+  return quantidade;
 }
 
+int perfis_puxar_sessao(uint64_t sessao, const char *usuario, const char *jwt) {
+  PedidoPerfis pedido = { .sessao = sessao };
+  if (!usuario || !*usuario || !jwt || !*jwt ||
+      strlen(usuario) >= sizeof pedido.usuario || strlen(jwt) >= sizeof pedido.jwt) return 0;
+  snprintf(pedido.usuario, sizeof pedido.usuario, "%s", usuario);
+  snprintf(pedido.jwt, sizeof pedido.jwt, "%s", jwt);
+  int quantidade = puxarPerfis(&pedido);
+  memset(pedido.jwt, 0, sizeof pedido.jwt);
+  return quantidade;
+}
+int perfis_puxar(void) {
+  PedidoPerfis pedido = { .sessao = perfis_sessao_geracao() };
+  if (sessao_identidade_local_copiar) {
+    if (!sessao_identidade_local_copiar(pedido.usuario, sizeof pedido.usuario,
+                                      pedido.jwt, sizeof pedido.jwt)) return 0;
+  } else {
+    // Fixtures that omit sessao.c provide their original synchronous RPC fake.
+    pedido.legado = 1;
+    snprintf(pedido.usuario, sizeof pedido.usuario, "%s", sessao_usuario());
+  }
+  int quantidade = puxarPerfis(&pedido);
+  memset(pedido.jwt, 0, sizeof pedido.jwt);
+  return quantidade;
+}
+
+#ifdef AJUSTES_TESTE
+// Capturas de Ajustes: uma lista de perfis de mentira, sem conta nem rede.
+void perfis_teste_definir(const char *const *nomes, const int *pin, int quantos, int ativo_) {
+  int i;
+  n = quantos > CONTA_PERFIL_MAX ? CONTA_PERFIL_MAX : quantos;
+  memset(lista, 0, sizeof lista);
+  for (i = 0; i < n; i++) {
+    lista[i].indice = i + 1;
+    snprintf(lista[i].nome, sizeof lista[i].nome, "%s", nomes[i]);
+    lista[i].primario = i == 0;
+    lista[i].temPin = pin ? pin[i] : 0;
+  }
+  ativo = ativo_;
+}
+#endif
 int           perfis_n(void)         { return n; }
 const ContaPerfil *perfis_item(int i)     { return (i >= 0 && i < n) ? &lista[i] : NULL; }
 
@@ -323,7 +453,12 @@ const ContaPerfil *perfis_item_ativo(void) {
   return NULL;
 }
 const char   *perfis_dono(void)      { return dono; }
-int           perfis_ativo(void)     { return ativo > 0 ? ativo : 1; }
+int           perfis_ativo(void)     { int p = atomic_load_explicit(&ativo, memory_order_acquire); return p > 0 ? p : 1; }
+int           perfis_principal(void) {
+  int i;
+  for (i = 0; i < n; i++) if (lista[i].primario) return lista[i].indice;
+  return 1;
+}
 
 // Addons NAO sao por perfil quando o perfil diz herdar os do primario.
 //
@@ -365,6 +500,7 @@ void perfis_carregar_ativo(void) {
   // escolheu, ate a primeira troca.
   fontepref_definir_perfil(ativo);
   legmem_definir_perfil(ativo);
+  audiomem_definir_perfil(ativo);
   arteesc_definir_perfil(ativo);
   lerCache();
 }
@@ -374,22 +510,27 @@ void plugins_perfil_mudou(void);
 
 void perfis_definir_ativo(int indice) {
   char linha[32];
-  int ativoAntes = ativo;
   if (indice <= 0) return;
   if (ativo != indice) trava_invalidar_autorizacoes();
-  ativo = indice;
+  if (sessaoAntes) sessaoAntes();
+  pthread_once(&sessaoUmaVez, sessaoTravaIniciar);
+  pthread_mutex_lock(&sessaoTrava);
+  sessaoAvancar();
+  atomic_store_explicit(&ativo, indice, memory_order_release);
+  pthread_mutex_unlock(&sessaoTrava);
   fil_definir_perfil(indice);
   cf_definir_perfil(indice);
   ov_definir_perfil(indice);
   fontepref_definir_perfil(indice);
   legmem_definir_perfil(indice);
+  audiomem_definir_perfil(indice);
   arteesc_definir_perfil(indice);
   // O estado dos plugins e da conta+perfil: trocar avanca a geracao, corta os
   // scrapers em voo e relê o liga/desliga e os repositorios do perfil novo.
   plugins_perfil_mudou();
   // Personal servers are per profile: drop the previous profile's in-flight
   // requests and load this profile's connection (jellyfin.h).
-  if (indice != ativoAntes) servidores_perfil_trocou();
+  servidores_perfil_trocou();
   escolhido = 1;
   gravado = 1;
   snprintf(linha, sizeof linha, "%d\n", indice);
@@ -455,10 +596,14 @@ int perfis_verificar_pin(int indice, const char *pin) {
 
 void perfis_esquecer(void) {
   trava_invalidar_autorizacoes();
+  pthread_once(&sessaoUmaVez, sessaoTravaIniciar);
+  pthread_mutex_lock(&sessaoTrava);
+  sessaoAvancar();
   memset(lista, 0, sizeof lista);
   n = 0;
   dono[0] = 0;
   ativo = 1;
+  pthread_mutex_unlock(&sessaoTrava);
   escolhido = 0;
   gravado = 0;
   dados_apagar(ARQ_ATIVO);

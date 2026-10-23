@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 export TMPDIR="${TMPDIR:-/Volumes/ExternalSSD/tmp}"
 dir=$(mktemp -d "$TMPDIR/nuvio-traktplay.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
-cc src/trakt.c tests/stub_fichameta.c src/js.c src/metaprov.c tests/trakt_play_corrida.c \
+cc src/trakt.c src/metaep.c tests/stub_fichameta.c src/js.c src/metaprov.c tests/trakt_play_corrida.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -o "$dir/teste" -O1 -g -fsanitize=thread -Wall -Wextra -Wl,-dead_strip -lpthread
 rc=0

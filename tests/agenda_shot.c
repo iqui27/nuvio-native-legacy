@@ -55,6 +55,7 @@
 // NUVIO_DADOS), como em social_shot.c: assim a foto prova tambem o FORMATO do
 // arquivo — se ele mudar e a leitura nao acompanhar, a tela sai vazia.
 #include "agenda.h"
+#include "nvtmp.h"
 #include "agendaui.h"
 #include "noticias.h"
 #include "layout.h"
@@ -410,7 +411,7 @@ static void esperaFio(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-agenda";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-agenda");
   char nome[600];
   char cache[20000] = "";
   SDL_Window *w;

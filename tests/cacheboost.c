@@ -1,7 +1,7 @@
 // F07: seek cache and volume boost state (src/cacheboost.c): option mapping,
 // backend reports, one-shot notice per session, volume limits and steps, the
 // passthrough cap and the dB math. A reporter thread runs against the UI
-// reads so `NV_TSAN=1 bash tests/cacheboost.sh` can see races.
+// reads so `SANITIZE=thread bash tests/cacheboost.sh` can see races.
 #include "../src/cacheboost.h"
 #include <assert.h>
 #include <math.h>

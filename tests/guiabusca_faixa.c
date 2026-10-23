@@ -5,7 +5,9 @@
 //
 // Contrato: com `out`, o retorno e min(total, cap); sem `out`, e o total.
 // Roda com SANITIZE=1 (ASan): antes do conserto, stack-buffer-overflow.
+#include "stub_perfisessao.h"
 #include "../src/xtepg.c"
+#include "nvtmp.h"
 #include "../src/epg.h"
 #include "../src/rede.h"
 #include <assert.h>
@@ -14,6 +16,10 @@
 #include <time.h>
 
 // --- dubles ------------------------------------------------------------------
+int rede_baixar_fluxo(const char *url, int s, const char *const *cab,
+    int (*cb)(const char *, size_t, void *), void *u, long long max, int *st, long long *n) {
+  (void)url; (void)s; (void)cab; (void)cb; (void)u; (void)max; (void)st; (void)n; return 0;
+}
 char *rede_baixar_bin(const char *u, int s, long *n) { (void)u; (void)s; (void)n; return 0; }
 char *rede_baixar_bin_medido_controle(const char *url, int segundos, const char *const *cab,
                                       const RedeControle *c, long *tam, RedeMedida *m) {
@@ -26,7 +32,7 @@ void  dados_fs_travar(void)           {}
 void  dados_fs_liberar(void)          {}
 char *dados_caminho(char *d, unsigned t, const char *n) { (void)d;(void)t;(void)n; return 0; }
 int   dados_apagar(const char *n)     { (void)n; return 0; }
-const char *dados_dir(void)           { return "/tmp"; }
+const char *dados_dir(void)           { return nvt(""); }
 int xtream_e_id(const char *id) { return id && !strncmp(id, "xtream:", 7); }
 int xtream_ultimo_retry_after(void) { return 0; }
 int xtream_epg_curto(const char *id, XtreamProg *out, int cap, int *st) {

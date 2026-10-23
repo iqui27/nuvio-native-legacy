@@ -38,7 +38,7 @@ static int recvOnce(void *c, void *b, size_t n, size_t *got) {
 }
 int main(void) {
   int st; char *b; RedeTls *t; size_t n = 99;
-  pronto=1; curl_init=init; curl_setopt=option; curl_perform=perform;
+  pronto=1; curl_init=init; curl_setopt_f=option; curl_perform=perform;
   curl_cleanup=cleanup; curl_getinfo=info; curl_send=sendOnce; curl_recv=recvOnce;
   assert(!rede_postar_seguro_st("http://discord.com/api/test",1,NULL,"fixture",&st));
   assert(st==0 && performed==0);

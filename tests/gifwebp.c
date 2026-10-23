@@ -6,6 +6,7 @@
 // decodificador devolve (cor de cada quadro, atraso, volta ao 0), e nao sobre
 // um binario opaco no repositorio.
 #include "gif.h"
+#include "nvtmp.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -92,9 +93,9 @@ int main(void) {
   gif_dec_fechar(d);
   puts("ok  cada quadro sai com a cor dele, reduzido, e volta ao 0 no fim");
 
-  { FILE *f = fopen("/tmp/nuvio-gifwebp.webp", "wb");
+  { FILE *f = fopen(nvt("/nuvio-gifwebp.webp"), "wb");
     assert(f && fwrite(b, 1, n, f) == n); fclose(f);
-    assert(gif_animado("/tmp/nuvio-gifwebp.webp") == 1);
+    assert(gif_animado(nvt("/nuvio-gifwebp.webp")) == 1);
     puts("ok  gif_animado aceita o arquivo WebP animado"); }
 
   { GifFio *f;

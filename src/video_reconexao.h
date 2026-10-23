@@ -23,6 +23,7 @@
 #include <string.h>
 
 #define NV_RECON_MAX 3
+#define NV_RECON_PRAZO_MS 30000u
 // Quanto a reproducao precisa andar, alem do ponto em que caiu, para a queda
 // contar como superada. Sem esta folga um recarregar que abre e cai de novo
 // logo em seguida zeraria o contador a cada vez, e a rede morta viraria um
@@ -34,6 +35,7 @@ typedef struct {
   int      pendente;   // 1 = esperando o prazo para recarregar
   int      esgotou;    // 1 = as NV_RECON_MAX foram e nao voltou: desistir
   unsigned quando;     // instante (ms) do proximo recarregar
+  unsigned abriu;      // last reopen; bounded even without a backend error
   double   alvo;       // posicao (s) em que caiu: onde o recarregar retoma
 } NvReconexao;
 
@@ -68,7 +70,14 @@ static inline int nv_recon_erro(NvReconexao *r, int ehRede, unsigned agora, doub
 static inline int nv_recon_vencida(NvReconexao *r, unsigned agora) {
   if (!r->pendente || (int)(agora - r->quando) < 0) return 0;
   r->pendente = 0;
+  r->abriu = agora;
   return 1;
+}
+
+// A backend that never reports READY/error must still consume its retry.
+static inline int nv_recon_expirou(const NvReconexao *r, unsigned agora) {
+  return r->tentativa && !r->pendente && !r->esgotou &&
+         agora - r->abriu >= NV_RECON_PRAZO_MS;
 }
 
 // Posicao corrente da reproducao. Passou NV_RECON_FIRME_SEG alem do ponto da

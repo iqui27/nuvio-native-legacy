@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # CONEXAO PARADA em rede.c (24/09/2026). Na C9 a arte da Apple TV passou a
 # estourar o prazo (curl 28) no app enquanto o curl da propria TV baixava o
 # mesmo JPEG em 0,29 s. Este teste monta, num servidor HTTP/1.1 local, os
@@ -14,7 +16,7 @@
 #   bash tests/rede_parada.sh
 set -eu
 cd "$(dirname "$0")/.."
-DIR=$(mktemp -d /tmp/nuvio-rede-parada.XXXXXX)
+DIR=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-rede-parada.XXXXXX)
 trap 'kill $SRV 2>/dev/null || true; rm -rf "$DIR"' EXIT
 python3 - "$DIR/porta" <<'PY' &
 import socket, socketserver, sys, threading, time

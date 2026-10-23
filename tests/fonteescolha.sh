@@ -4,7 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 dir=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-fonteescolha.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
-cc -O1 -g -Wall -Isrc ${SANITIZE:+-fsanitize=address,undefined} \
+sani=""; [ "${SANITIZE:-0}" = 1 ] && sani="-fsanitize=address,undefined"
+cc -O1 -g -Wall -Isrc $sani \
   src/fontesonda.c tests/fonteescolha.c -o "$dir/t"
 "$dir/t"
 # A fiacao em app.c: a escolha e a preferencia viram automatico, a manual

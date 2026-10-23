@@ -1,4 +1,5 @@
 #include <string.h>
+#include "nvtmp.h"
 // Exercise sync.c's actual network/copy publication with the actual collection
 // parser and cache. Reuse the account/profile/app doubles from syncordem.
 #define main syncordem_main

@@ -34,7 +34,7 @@ static unsigned revPerf = ~0u;
 static int fila, col;
 static float fFoco[AP_NFILAS][SV_FILA_MAX];
 static float entrada;
-static int sair, temPedido;
+static int sair, temPedido, pediuRelogio;
 static char pedido[24];
 static int nFila(int f);
 #ifdef NV_TOUCH_UI
@@ -50,7 +50,7 @@ static int toqueRolar(const PonteiroRolagem *e) {
   return toqueFila >= 0 && toqueFila < AP_NFILAS ? toquerol_evento(&toque[toqueFila], e) : 0;
 }
 static void toqueRetomar(void) {
-  if (toqueFila >= 0 && toque[toqueFila].livre) {
+  if (toqueFila >= 0 && toquerol_livre(&toque[toqueFila])) {
     fila = toqueFila;
     col = (int)((toqueX[fila] + toque[fila].regiao.w * 0.35f) / (AP_PW + AP_PGAP));
     if (col >= nFila(fila)) col = nFila(fila) - 1;
@@ -80,7 +80,7 @@ static void recarregar(void) {
 void amigoperfil_abrir(const char *id) {
   snprintf(pessoa, sizeof pessoa, "%s", id ? id : "");
   fila = -1; col = 0;
-  sair = 0; temPedido = 0;
+  sair = 0; temPedido = 0; pediuRelogio = 0;
   entrada = 0.0f;
 #ifdef NV_TOUCH_UI
   memset(toque, 0, sizeof toque); memset(toqueX, 0, sizeof toqueX); toqueFila = -1;
@@ -93,6 +93,7 @@ void amigoperfil_abrir(const char *id) {
 }
 
 int amigoperfil_quer_sair(void) { int v = sair; sair = 0; return v; }
+int amigoperfil_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return v; }
 int amigoperfil_pediu_titulo(char *imdb, size_t tam) {
   if (!temPedido) return 0;
   temPedido = 0;
@@ -121,6 +122,7 @@ int amigoperfil_teste_foco(int *coluna) { if (coluna) *coluna = col; return fila
 
 void amigoperfil_evento(const SDL_Event *e) {
   SDL_Keycode k;
+  pediuRelogio = 0;
   if (!e || e->type != SDL_KEYDOWN) return;
 #ifdef NV_TOUCH_UI
   if (toquerol_navegacao(e)) toqueRetomar();
@@ -128,7 +130,7 @@ void amigoperfil_evento(const SDL_Event *e) {
   k = e->key.keysym.sym;
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
       e->key.keysym.scancode == NV_SCANCODE_BACK) { sair = 1; return; }
-  if (fila < 0) return;
+  if (fila < 0) { if (k == SDLK_UP) pediuRelogio = 1; return; }
   if (k == SDLK_LEFT && col > 0) col--;
   else if (k == SDLK_LEFT) { sair = 1; return; }   // comeco da fileira: o app abre a barra
   else if (k == SDLK_RIGHT && col + 1 < nFila(fila)) col++;
@@ -136,6 +138,7 @@ void amigoperfil_evento(const SDL_Event *e) {
     int d = k == SDLK_UP ? -1 : 1, f;
     for (f = fila + d; f >= 0 && f < AP_NFILAS; f += d)
       if (nFila(f) > 0) { fila = f; if (col >= nFila(f)) col = nFila(f) - 1; break; }
+    if (k == SDLK_UP && f < 0) pediuRelogio = 1;
   } else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
     const char *id = imdbDe(fila, col);
     if (id[0]) { snprintf(pedido, sizeof pedido, "%s", id); temPedido = 1; }
@@ -186,7 +189,8 @@ static void numero(GfxRect r, const char *valor, const char *rotulo, TxtEstilo e
   TxtLinha um = txt_linha(estilo, "Hg", 167, 164, 178, 255);
   float lead = (float)um.h + 2.0f;
   int n = rotuloLinhas(estilo, rotulo, lw);
-  gfx_cor(r, 18.0f / r.h, 0.118f, 0.114f, 0.141f, 0.94f * a);
+  if (ajustes_vidro()) gfx_vidro_painel(r, 18.0f / r.h, 0.72f, a);
+  else gfx_cor(r, 18.0f / r.h, 0.118f, 0.114f, 0.141f, 0.94f * a);
   txt_desenhar_alpha(v, r.x + 20.0f, r.y + (compacto ? 8.0f : 10.0f), a);
   txt_bloco_corta(estilo, rotulo, 167, 164, 178,
                   r.x + 20.0f, r.y + r.h - (compacto ? 10.0f : 12.0f) - lead * (float)n + 2.0f,
@@ -442,12 +446,14 @@ void amigoperfil_desenhar(Uint32 agora) {
 #ifdef NV_TOUCH_UI
     float util = fmaxf(0.0f, NV_TELA_W - 40.0f - rx);
     float maxX = fmaxf(0.0f, (n - 1) * (AP_PW + AP_PGAP) + AP_PW - util);
+    if (layout_modo_mobile()) {
     toquerol_vincular(&toque[f], (GfxRect){ rx, y + 46.0f, util, AP_PH + 40.0f }, gfx_escala(), 0.0f, maxX, 0, &toqueX[f]);
-    if (f == fila && !toque[f].livre) {
+    if (f == fila && !toquerol_livre(&toque[f])) {
       float esq = col * (AP_PW + AP_PGAP), dir = esq + AP_PW;
       if (esq < toqueX[f]) toqueX[f] = esq;
       if (dir > toqueX[f] + util) toqueX[f] = dir - util;
       toqueX[f] = toquerol_clamp(toqueX[f], 0.0f, maxX);
+    }
     }
 #endif
     tituloFila(rx, y, i18n(tit), a);
@@ -465,25 +471,28 @@ void amigoperfil_desenhar(Uint32 agora) {
       continue;
     }
 #ifdef NV_TOUCH_UI
-    gfx_recorte(rx, y - 4.0f, util, AP_PH + 48.0f);
+    if (layout_modo_mobile()) gfx_recorte(rx, y - 4.0f, util, AP_PH + 48.0f);
 #endif
     for (c = 0; c < n && c < SV_FILA_MAX; c++) {
       float x = rx + (float)c * (AP_PW + AP_PGAP);
 #ifdef NV_TOUCH_UI
-      x -= toqueX[f];
+      if (layout_modo_mobile()) x -= toqueX[f];
 #endif
       GfxRect r = { x, y, AP_PW, AP_PH };
       float fc = fFoco[f][c];
 #ifdef NV_TOUCH_UI
+      if (layout_modo_mobile()) {
       if (x >= rx + util || x + AP_PW <= rx) continue;
       if (a > 0.99f) {
         float ax = fmaxf(r.x, rx), dir = fminf(r.x + r.w, rx + util);
         ponteiro_alvo(ax, r.y, dir - ax, r.h, ponteiroCartaz, NULL, f, c);
       }
-#else
+      } else
+#endif
+      {
       if (x + AP_PW > NV_TELA_W - 40.0f) break;
       if (a > 0.99f) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroCartaz, NULL, f, c);
-#endif
+      }
       if (f == AP_MANDOU) {
         const SvEnviada *m = &perf.mandou[c];
         cartaz(r, m->poster, fc, a);
@@ -510,7 +519,7 @@ void amigoperfil_desenhar(Uint32 agora) {
       }
     }
 #ifdef NV_TOUCH_UI
-    gfx_sem_recorte();
+    if (layout_modo_mobile()) gfx_sem_recorte();
 #endif
   }
   { TxtLinha t = txt_linha(TXT_MINI, i18n("OK · abrir o título   ·   Voltar · fechar"), 150, 148, 160, 255);

@@ -84,8 +84,9 @@ static void ajcHDestaque(int op) {
 // Espaco entre fileiras / entre titulos: o valor real, com a regua no vao.
 static void ajcHEspaco(int op) {
   int fil = op == AJ_ESPACO_FILEIRAS, i, j;
-  float f = valor[op] > 0 ? (valor[op] < 50 ? 50 : valor[op] > 150 ? 150 : valor[op]) / 100.0f : 1.0f;
-  float g = (fil ? 6.0f + 24.0f * (f - 0.5f) : 6.0f + 28.0f * (f - 0.5f)) + 3.0f * (ajc_onda(2.4f) - 0.5f);
+  float f = valor[op] > 0 ? ajustes_espaco_fator(valor[op]) : 1.0f;
+  // 50..300 % cabe na tela da previa: 3 fileiras ate 34 px, 5 cartazes ate 49.
+  float g = (fil ? 4.0f + 12.0f * (f - 0.5f) : 4.0f + 18.0f * (f - 0.5f)) + 3.0f * (ajc_onda(2.4f) - 0.5f);
   char b[16];
   ajcHTela(60, 24, 520, 280, 1);
   if (fil) {
@@ -111,7 +112,7 @@ static void ajcHEspaco(int op) {
     ajc_icone("aj_move-horizontal", 86 + w + g * 0.5f, 52 + 14 + 42, g > 20 ? 18 : 12, 1);
   }
   snprintf(b, sizeof b, "%d%%", (int)(f * 100.0f + 0.5f));
-  ajcHNum(b, 22, 270, 322, 1);
+  ajcTextoVivo(b, 22, 1, 270, 322, 1);
 }
 // Barra lateral moderna: icones pequenos (antiga) contra ladrilhos grandes.
 static void ajcHRailModerna(int op) {
@@ -423,6 +424,24 @@ static void ajcHSelo(int op) {
   ajc_icone("aj_eye", 320, 282, 22, 0.5f + 0.5f * k);
   ajcChaveCanto(k);
 }
+// Ocultar filmes assistidos: o cartaz marcado sai da descoberta e fecha o vao.
+static void ajcHOcultarVistos(int op) {
+  float k = ajcLig(op), p = k * ajc_onda(3.0f);
+  int i;
+  ajcHTela(60, 24, 520, 280, 1);
+  ajc_barra(86, 52, 80, 0.5f);
+  for (i = 0; i < 5; i++) {
+    float x = 86 + i * 94 - (i > 2 ? p * 94 : 0);
+    float a = i == 2 ? 1 - p : 1;
+    ajcHBloco(x, 72, 82, 130, i, a);
+    if (i == 2) {
+      ajc_bolinha(x + 66, 88, 24, C.ar, C.ag, C.ab, a);
+      ajc_icone_tinta("aj_check", x + 66, 88, 15, a);
+    }
+  }
+  ajc_icone("aj_eye-off", 330, 250, 30, 0.3f + 0.7f * p);
+  ajcChaveCanto(k);
+}
 // Rotulos: o nome escrito abaixo do cartaz.
 static void ajcHRotulos(int op) {
   float k = ajcLig(op);
@@ -729,13 +748,11 @@ static void ajcHVidroOpac(void) {
   }
   ajc_progresso(40, 308, 560, (float)at / 4.0f, 1);
 }
-// Tamanho da interface: o player e seus avisos crescem de 100 a 150 por cento.
+// Preview every size, using the same factors as the actual interface.
 static void ajcHTamanhoUi(void) {
-  static const float E[4] = { 1.0f, 1.2f, 1.3f, 1.5f };
-  static const char *const T[4] = { "100%", "120%", "130%", "150%" };
-  float v = ajcHK(ajcValor(AJ_TAMANHO_UI) / 3.0f) * 3.0f, e, by;
-  int m0 = (int)v, m1 = m0 < 3 ? m0 + 1 : 3;
-  e = ajcHMix(E[m0], E[m1], v - m0);
+  float v = ajcHK(ajcValor(AJ_TAMANHO_UI) / 8.0f) * 8.0f, e, by;
+  int m0 = (int)v, m1 = m0 < 8 ? m0 + 1 : 8;
+  e = ajcHMix(ui_size_choice(m0, tamanhoUiAutomatico()), ui_size_choice(m1, tamanhoUiAutomatico()), v - m0);
   by = 334 - 12 * e - 34 * e;
   ajc_video(0, 0, 640, 360, 0, 1);
   ajc_veu(0, 200, 640, 160, 0, 0.8f);
@@ -750,7 +767,7 @@ static void ajcHTamanhoUi(void) {
   ajc_icone("aj_rotate-ccw-clock", 320 - 80 * e, by, 28 * e, 0.9f);
   ajc_icone("aj_volume-2", 320 + 80 * e, by, 28 * e, 0.9f);
   ajc_icone("aj_captions", 320 + 124 * e, by, 28 * e, 0.9f);
-  ajcSelo(T[(int)(v + 0.5f)], 28, 62, 16, 1.0f, 1);
+  ajcSelo(i18n(V_TAMANHO_UI[(int)(v + 0.5f)]), 28, 62, 16, 1.0f, 1);
 }
 // Tamanho dos ajustes: a lista e o painel dos proprios Ajustes, menores ou maiores.
 static void ajcHTamanhoAj(void) {
@@ -847,6 +864,7 @@ static int ajcNovaHome(int sec, int op) {
     case AJ_OCULTAR_NLANC: ajcHNaoLancados(op); return 1;
     case AJ_NOTAS_HOME: ajcHNotas(op); return 1;
     case AJ_SELO_VISTO: ajcHSelo(op); return 1;
+    case AJ_OCULTAR_FILMES_VISTOS: ajcHOcultarVistos(op); return 1;
     case AJ_ROTULOS: ajcHRotulos(op); return 1;
     case AJ_NOME_ADDON: case AJ_SUFIXO_TIPO: ajcHTituloFileira(op); return 1;
     case AJ_CW_LIGADO: ajcHCwLigado(op); return 1;

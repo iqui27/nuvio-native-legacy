@@ -199,6 +199,19 @@ static void qrDesenhar(const char *u, float x, float y, float a) {
 // lista), sem servidor nem token.
 float celb_qr_lado(void) { return CB_QR + 2 * CB_MOLDURA; }
 void  celb_qr_desenhar(const char *url, float x, float y, float a) { qrDesenhar(url, x, y, a); }
+void celb_desenhar_qr_em(int d, GfxRect r, float alpha) {
+  if (!celb_embutido(d)) return;
+  const char *u = celular_url();
+  if (!u[0]) {
+    txt_bloco(TXT_CAPTION2, i18n("Sem rede local. Conecte a TV ao Wi-Fi e aperte OK."),
+              190, 190, 200, r.x, r.y, r.w, 26, alpha, 4);
+    return;
+  }
+  qrTextura(u);
+  if (!texQr) return;
+  gfx_tex_aspect_atual = 0;
+  gfx_rect(r, texQr, GFX_SNAP, 0, 0, 0, 0, 0, 0, 0, alpha);
+}
 static const char *FRASE_QR = "Aponte a câmera do celular. Mesma rede Wi-Fi, vale por 5 minutos.";
 static const char *msgSemQr(int est) {
   return est == CEL_FALHOU ? "Endereço bloqueado por tentativas erradas. Aperte OK para gerar outro."
@@ -259,9 +272,9 @@ static void celb_desenharCorpo_(void) {
     const float raio = 28.0f / h;
     gfx_rect((GfxRect){ x - 18.0f, y - 8.0f, w + 36.0f, h + 40.0f }, 0, GFX_SOMBRA,
              1.0f, 0, 0, 0.5f, 0, 0, 0, 0.42f * a);
-    if (vid) { gfx_cor(cartao, raio, 0.03f, 0.032f, 0.04f, 0.70f * a); gfx_vidro_folha(cartao, raio, a); }
+    if (vid) gfx_vidro_material(cartao, raio, GFX_VIDRO_DENS, a);
     else gfx_cor(cartao, raio, .098f, .102f, .118f, .99f * a);
-    gfx_luz_canto(cartao, raio, w * .25f, -h * .25f, w * .9f, ar, ag, ab, (vid ? .10f : .08f) * a); }
+    if (!vid) gfx_luz_canto(cartao, raio, w * .25f, -h * .25f, w * .9f, ar, ag, ab, .08f * a); }
 
   { TxtLinha t = txt_linha_corta(TXT_CALLOUT, i18n("Digitar pelo celular"), 245, 248, 255, 255,
                                  w - 2 * CB_PAD - 40.0f);

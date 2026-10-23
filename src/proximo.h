@@ -49,10 +49,11 @@
 //    portadas: sao preferencia de interface, e a janela de 60 dias ja limita o
 //    futuro pelos dois lados.
 //
-// 5. A data do episodio chega por EXTENSO ("27 de janeiro de 2023"), montada
-//    por desc_data_extenso; o web recebe ISO. Data que nao da para ler vira
-//    "sem data", e sem data nao se mostra nada — igual ao JS, que devolve false
-//    quando `parseReleaseEpochMs` da null (nextUpWatchingPolicy.js:36).
+// 5. A data de estreia conserva o ISO do metadata separado do texto traduzido
+//    por desc_data_extenso. O pacote antigo so tem a data por extenso em
+//    portugues. Data que nao da para ler vira "sem data", e sem data nao se
+//    mostra nada — igual ao JS, que devolve false quando `parseReleaseEpochMs`
+//    da null (nextUpWatchingPolicy.js:36).
 #ifndef NV_PROXIMO_H
 #define NV_PROXIMO_H
 #include <limits.h>
@@ -107,6 +108,11 @@ int prox_ancora(const CatEp *eps, int n, int temporada, int episodio,
 // so o ano sobrou, que e o que desc_data_extenso deixa passar com ISO curto.
 long long prox_data_ms(const char *data);
 
+// Estreia de um episodio: prefere o ISO original, independente do idioma da
+// interface. ISO presente mas invalido e desconhecido; nao cai no texto da
+// tela. So o pacote legado, sem ISO, usa a data portuguesa/ISO em `data`.
+long long prox_episodio_data_ms(const CatEp *ep);
+
 // shouldSurfaceNextUpForUntrackedSeries (nextUpWatchingPolicy.js:29), 1:1.
 // `lancamentoMs` == PROX_SEM_DATA e o `null` do parseReleaseEpochMs de la.
 int prox_mostrar_nao_acompanhada(long long semeadoEmMs, long long lancamentoMs,
@@ -146,4 +152,7 @@ int prox_seguinte(const CatItem *ci, const CatEp *eps, int n, int limiarPct,
 // O cartao (posplay.c) e a janela (player.c) usam esta mesma regra: antes cada
 // um tinha a sua e podiam discordar.
 int prox_indice_seguinte(const CatEp *eps, int n, int temporada, int episodio);
+// Predecessor estrito, pela mesma ordem e politica de especiais do seguinte.
+// Nao depende de a ancora estar na lista, de contiguidade ou de numeros sem buracos.
+int prox_indice_anterior(const CatEp *eps, int n, int temporada, int episodio);
 #endif

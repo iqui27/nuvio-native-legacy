@@ -7,6 +7,7 @@
 // 2. reacao-simples.bmp sem origem, foco em "Mais ou menos", contagem a meio
 // 3. reacao-detalhe.bmp a linha discreta da pagina do titulo (pendente)
 #include "reacao.h"
+#include "nvtmp.h"
 #include "ajustes.h"
 #include "dados.h"
 #include "gfx.h"
@@ -54,7 +55,7 @@ static SDL_Event tecla(SDL_Keycode k) {
 }
 
 int main(int argc, char **argv) {
-  const char *pasta = argc > 1 ? argv[1] : "/tmp/nuvio-reacao-shot";
+  const char *pasta = argc > 1 ? argv[1] : nvt("/nuvio-reacao-shot");
   const char *dir = getenv("NUVIO_DADOS");
   char nome[600];
   SDL_Window *w;

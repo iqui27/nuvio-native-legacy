@@ -4,6 +4,7 @@
 // do orcamento do StreamFit. Sem rede, sem GL: a lista em memoria e o
 // stream_automatico (a mesma pontuacao da verificacao e da folha).
 #include "streams.h"
+#include "nvtmp.h"
 #include "streamfit.h"
 #include "ajustes.h"
 #include "badges.h"
@@ -66,7 +67,7 @@ static const char *vence(const Stream *l, int n) {
 int main(void) {
   Stream l[8];
   int kb[8] = {5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000}, n;
-  snprintf(dirAj, sizeof dirAj, "%s/nv-fq-aj", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
+  snprintf(dirAj, sizeof dirAj, "%s/nv-fq-aj", nvt_dir());
   { char m[300]; snprintf(m, sizeof m, "mkdir -p %s", dirAj); (void)!system(m); }
   cfg(0, 0, 0);   // padroes: Equilibrio, Preferir, DV ligado; qualidade Automatica
   streamfit_limpar();

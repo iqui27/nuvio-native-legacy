@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas do seletor de idioma e de telas em idiomas de escrita nova (grego,
 # vietnamita, japones, chines). Nao entra na suite: precisa de janela GL e de olho
 # humano para julgar. Ver tests/idioma_shot.c.
@@ -11,8 +13,8 @@ sources=()
 for source in src/*.c src/dts/*.c; do
   if [ "$source" != src/main.c ]; then sources+=("$source"); fi
 done
-cc -DAJUSTES_TESTE "${sources[@]}" tests/idioma_shot.c -Isrc -o /tmp/nuvio-idioma-shot \
+cc -DAJUSTES_TESTE "${sources[@]}" tests/idioma_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-idioma-shot \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-idioma-shot "$@"
+${TMPDIR:-/tmp}/nuvio-idioma-shot "$@"

@@ -48,11 +48,38 @@ void fontevolta_guardar(const char *alvo, const char *conta, int perfil,
 int  fontevolta_pegar(const char *alvo, const char *conta, int perfil,
                       Uint32 agora, Stream *saida);
 
+// 1 when the saved URL may start before the source sheet. escolherManual is
+// "Escolher a fonte ao reproduzir": the sheet picks, so a live URL from the
+// last session must not start underneath it. The other three are the old
+// guards of tocarFonteGuardada (app.c).
+int  fontevolta_toca_guardada(int escolherManual, int falhaAtiva,
+                              int canal, int playerAberto);
+// "REUSAR O ULTIMO LINK" (Ajustes > Reproducao): ligado, uma entrada POR
+// titulo/episodio e perfil (ate FONTEVOLTA_MAX), gravada no disco e valida por
+// `validadeS` contados no relogio de parede desde que o link saiu do addon;
+// desligado (padrao), o de sempre descrito acima (uma entrada, so memoria,
+// FONTEVOLTA_VALIDADE_MS). Trocar de modo comeca do zero, e desligar apaga o
+// arquivo. app.c chama a cada quadro; so muda algo quando o modo muda.
+#define FONTEVOLTA_MAX 50
+void fontevolta_configurar(int persistir, unsigned validadeS);
+// O disco, injetado por app.c (dados_ler/dados_gravar/dados_apagar), para este
+// modulo continuar sem dependencia de dados.c nos testes. Sem isto, ligado
+// fica so em memoria.
+void fontevolta_definir_arquivo(char *(*ler)(const char *), int (*gravar)(const char *, const char *),
+                                int (*apagar)(const char *));
+// Apaga a entrada deste alvo/conta/perfil (ligado); desligado, a unica, como
+// fontevolta_esquecer.
+void fontevolta_esquecer_alvo(const char *alvo, const char *conta, int perfil, const char *porque);
+// Tudo, inclusive o arquivo: ao sair da conta.
+void fontevolta_esquecer_tudo(void);
+
 // Ha entrada (qualquer alvo) com esta URL? player.c usa para nao apagar a
 // entrada que esta tocando quando a lista de fontes foi trocada por baixo.
 int  fontevolta_tem_url(const char *url);
 
-// Apaga a entrada. `porque` vai para o log (sem URL).
+// Apaga a entrada (desligado). Ligado nao faz nada: as entradas ja sao por
+// conta e perfil, e e so a troca de perfil que chama isto. `porque` vai para o
+// log (sem URL).
 void fontevolta_esquecer(const char *porque);
 
 // CONFERENCIA EM PARALELO com a abertura: um GET de 64 bytes seguindo os

@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Carrossel da Dinamica (abrir, andar, pagina, voltar), em BMP e PNG, sem rede
 # (artes de deploy/app/art). Nao entra na suite (testa-tudo.sh pula *_shot.sh):
 # precisa de janela GL e de olho humano.
@@ -9,7 +11,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-saida="${1:-/tmp/nv-carrossel}"
+saida="${1:-${TMPDIR:-/tmp}/nv-carrossel}"
 mkdir -p "$saida"
 NUVIO_DADOS=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-carrossel-shot.XXXXXX")
 export NUVIO_DADOS

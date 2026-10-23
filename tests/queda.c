@@ -1,6 +1,7 @@
 // O registrador de queda (queda.h): um filho morre com SIGSEGV de proposito e
 // o pai confere que o relato foi gravado, lido e apagado.
 #include "../src/queda.h"
+#include "nvtmp.h"
 #include <assert.h>
 #include <signal.h>
 #include <stdio.h>
@@ -19,7 +20,7 @@ int main(void) {
   char arq[256];
   int st = 0;
   pid_t f;
-  snprintf(arq, sizeof arq, "/tmp/nuvio-queda-teste-%d.txt", (int)getpid());
+  snprintf(arq, sizeof arq, "%s/nuvio-queda-teste-%d.txt", nvt_dir(), (int)getpid());
   remove(arq);
   assert(!queda_relatar(arq));                 // sem relato nao ha o que dizer
   f = fork();

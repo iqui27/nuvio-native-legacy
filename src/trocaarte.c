@@ -10,6 +10,7 @@
 #include "idioma.h"
 #include "js.h"
 #include "layout.h"
+#include "plrui.h"
 #include "linguas.h"
 #include "detail.h"
 #include "ponteiro.h"
@@ -482,7 +483,7 @@ void trocaarte_atualizar(float dt) {
       foco[aba] = v[p];
       // A linha focada sempre a vista.
 #ifdef NV_TOUCH_UI
-      if (!toque[aba].livre) {
+      if (!toquerol_livre(&toque[aba])) {
 #endif
         if (p / TA_COLS < topo[aba]) topo[aba] = p / TA_COLS;
         if (p / TA_COLS >= topo[aba] + TA_LINHAS) topo[aba] = p / TA_COLS - TA_LINHAS + 1;
@@ -612,7 +613,7 @@ static void ponteiroFoco(int a, int b) {
 }
 #ifdef NV_TOUCH_UI
 static void toqueRetomar(void) {
-  if (toque[aba].livre) {
+  if (toquerol_livre(&toque[aba])) {
     int v[TA_MAX], n, p;
     pthread_mutex_lock(&trava);
     n = visiveis(aba, v);
@@ -681,10 +682,16 @@ void trocaarte_desenhar(const char *logoPagina) {
   // A rampa termina OPACA logo acima do cabecalho (medido na captura: a
   // legenda em cinza sumia sobre um fundo claro com a rampa comecando em 360)
   // e o chao continua dali sem emenda.
-  gfx_rect((GfxRect){ 0, 200.0f, NV_TELA_W, 340.0f }, 0, GFX_VEU_BAIXO,
-           0, 0, 0, 0.0f, 0.035f, 0.038f, 0.045f, a);
-  gfx_cor((GfxRect){ 0, 526.0f, NV_TELA_W, NV_TELA_H - 526.0f }, 0.0f,
-          0.035f, 0.038f, 0.045f, a);
+  // Glass UI: o chao e a folha de vidro do app (a pagina do titulo fosca por
+  // baixo), sem rampa; sai da tela por baixo, so o topo e arredondado.
+  if (ajustes_vidro())
+    plrui_material((GfxRect){ 0, 526.0f, NV_TELA_W, NV_TELA_H - 526.0f + 40.0f }, 28.0f, 0, a);
+  else {
+    gfx_rect((GfxRect){ 0, 200.0f, NV_TELA_W, 340.0f }, 0, GFX_VEU_BAIXO,
+             0, 0, 0, 0.0f, 0.035f, 0.038f, 0.045f, a);
+    gfx_cor((GfxRect){ 0, 526.0f, NV_TELA_W, NV_TELA_H - 526.0f }, 0.0f,
+            0.035f, 0.038f, 0.045f, a);
+  }
 
   // CABECALHO: titulo, as duas abas e a legenda do controle.
   { TxtLinha t = txt_linha(TXT_HEADLINE, "Trocar arte", 245, 248, 255, 255);
@@ -724,25 +731,29 @@ void trocaarte_desenhar(const char *logoPagina) {
       if (!telefoneui_ativo()) txt_desenhar_alpha(l, NV_TELA_W - 96.0f - l.w, y + (52.0f - l.h) * 0.5f, a * 0.9f); } }
 
   // GRADE.
+  int primeira = topo[aba] * TA_COLS, ultima = (topo[aba] + TA_LINHAS) * TA_COLS;
+  if (ultima > n) ultima = n;
 #ifdef NV_TOUCH_UI
-  if (!toque[aba].livre) toqueY[aba] = topo[aba] * TA_PASSO;
+  if (layout_modo_mobile()) {
+  if (!toquerol_livre(&toque[aba])) toqueY[aba] = topo[aba] * TA_PASSO;
   toquerol_vincular(&toque[aba], (GfxRect){ TA_X0, TA_Y0, NV_TELA_W - 2.0f * TA_X0, TA_LINHAS * TA_PASSO }, gfx_escala(), 0.0f,
                     fmaxf(0.0f, ((n + TA_COLS - 1) / TA_COLS - TA_LINHAS) * TA_PASSO), 1, &toqueY[aba]);
   ponteiro_rolagem(toqueRolar);
   gfx_recorte(TA_X0 - 12.0f, TA_Y0, NV_TELA_W - 2.0f * TA_X0 + 24.0f, TA_LINHAS * TA_PASSO);
-  for (i = 0; i < n; i++) {
-    float linhaY = TA_Y0 + (i / TA_COLS) * TA_PASSO - toqueY[aba];
-    if (linhaY + TA_PASSO <= TA_Y0 || linhaY >= TA_Y0 + TA_LINHAS * TA_PASSO) continue;
-#else
-  for (i = topo[aba] * TA_COLS; i < n && i < (topo[aba] + TA_LINHAS) * TA_COLS; i++) {
+  primeira = 0; ultima = n;
+  }
 #endif
+  for (i = primeira; i < ultima; i++) {
     const TaCand *c = &cand[aba][v[i]];
     int lin = i / TA_COLS - topo[aba], col = i % TA_COLS;
     int focado = !naAba && i == p;
     int vigente = c->url[0] ? !strcmp(c->url, escolhido[aba]) : !escolhido[aba][0];
     GfxRect r = { TA_X0 + col * (TA_W + TA_GAP), TA_Y0 + lin * TA_PASSO, TA_W, TA_H };
 #ifdef NV_TOUCH_UI
-    r.y = linhaY;
+    if (layout_modo_mobile()) {
+      r.y = TA_Y0 + (i / TA_COLS) * TA_PASSO - toqueY[aba];
+      if (r.y + TA_PASSO <= TA_Y0 || r.y >= TA_Y0 + TA_LINHAS * TA_PASSO) continue;
+    }
 #endif
     if (focado) {
       float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
@@ -751,12 +762,14 @@ void trocaarte_desenhar(const char *logoPagina) {
         botao_luz(r, 1.0f, a);
         gfx_cor((GfxRect){ r.x - 5, r.y - 5, r.w + 10, r.h + 10 }, 17.0f / (r.h + 10.0f), fr, fg, fb, a); }
     }
-    if (a > 0.3f)
+    if (a > 0.3f) {
 #ifdef NV_TOUCH_UI
+      if (layout_modo_mobile())
       ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, TA_Y0, TA_Y0 + TA_LINHAS * TA_PASSO, ponteiroFoco, NULL, aba, v[i]);
-#else
-      ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroFoco, NULL, aba, v[i]);
+      else
 #endif
+      ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroFoco, NULL, aba, v[i]);
+    }
     if (aba == 0) {
       GLuint t = tex_obter_larg(c->mostra, TA_W);
       if (t) {
@@ -780,15 +793,14 @@ void trocaarte_desenhar(const char *logoPagina) {
     }
     { TxtLinha l = txt_linha_corta(TXT_MINI, i18n(c->rotulo), focado ? 245 : 170,
                                    focado ? 248 : 174, focado ? 255 : 184, 255, TA_W);
-      txt_desenhar_alpha(l, TA_X0 + col * (TA_W + TA_GAP),
+      float legendaY = TA_Y0 + lin * TA_PASSO + TA_H + 12.0f;
 #ifdef NV_TOUCH_UI
-                         r.y + r.h + 12.0f, a); }
-#else
-                         TA_Y0 + lin * TA_PASSO + TA_H + 12.0f, a); }
+      if (layout_modo_mobile()) legendaY = r.y + r.h + 12.0f;
 #endif
+      txt_desenhar_alpha(l, TA_X0 + col * (TA_W + TA_GAP), legendaY, a); }
   }
 #ifdef NV_TOUCH_UI
-  gfx_sem_recorte();
+  if (layout_modo_mobile()) gfx_sem_recorte();
 #endif
   // Mais linhas abaixo: uma seta discreta, para a grade nao parecer acabar.
   if ((topo[aba] + TA_LINHAS) * TA_COLS < n) {

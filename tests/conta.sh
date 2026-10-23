@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Testes da conta. PRECISAM DE REDE: falam com o servidor de verdade.
 #
 #   bash tests/conta.sh
@@ -31,6 +33,6 @@ eval cc tests/conta_ajustes.c $FONTES -o "$TMP/ajustes" "$ENV_D" -Isrc \
 echo
 echo "==> QR legivel por leitor de verdade"
 cc tools/qr_despejo.c src/qr.c -o "$TMP/qr" -Isrc
-PY=${NUVIO_PY:-/tmp/qrvenv/bin/python}
+PY=${NUVIO_PY:-${TMPDIR:-/tmp}/qrvenv/bin/python}
 if [ -x "$PY" ]; then "$PY" tools/qr_conferir.py "$TMP/qr"
 else echo "   PULADO: sem venv com opencv (ver o cabecalho de tools/qr_conferir.py)"; fi

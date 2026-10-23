@@ -4,7 +4,6 @@
 #include "regexjs.h"
 #include <ctype.h>
 #include <pthread.h>
-#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,16 +19,19 @@ static int nNomes[2];
 static char ordem[FR_ORDEM_MAX][FR_NOME_MAX];
 static int nOrdem;
 static unsigned versao = 1;
-// A regex compilada do padrao em uso. `reEstado` e o de fonteregra_regex_estado.
-static regex_t re, reExcl;
-static int reOk, reExclOk, reEstado;
-// Padrao com lookahead positivo ou lookbehind: o POSIX nao representa, entao ele
-// roda no motor proprio (regexjs.c) e re/reExcl ficam sem uso. NULL = caminho POSIX.
-static RegexJs *reJs, *reJsX;   // reJsX: a exclusao "do oficial" (ver excluirJs)
+// A regex compilada do padrao em uso, no motor de JS proprio (regexjs.c).
+// `reEstado` e o de fonteregra_regex_estado.
+static RegexJs *reJs;
+// AS CONDICOES de um padrao "^(?=A)(?!B)...": cada lookaround do topo compilado
+// sozinho como "^(?=A)". Juntas equivalem ao padrao (todas na posicao 0), e
+// contar as que falham diz quao perto da regex a fonte ficou (Preferir).
+#define FR_COND_MAX 16
+static RegexJs *reCond[FR_COND_MAX];
+static int nCond;
+static int reEstado;
 
 #define ARQ "fonteregra.txt"
 
-// --- traducao Java -> POSIX ERE ---------------------------------------------
 typedef struct { char *p; size_t tam, n; int cheio; } Buf;
 static void bput(Buf *b, const char *s) {
   size_t k = strlen(s);
@@ -37,225 +39,53 @@ static void bput(Buf *b, const char *s) {
   memcpy(b->p + b->n, s, k); b->n += k; b->p[b->n] = 0;
 }
 static void bputc(Buf *b, char c) { char s[2] = { c, 0 }; bput(b, s); }
-static int palavra(char c) { return isalnum((unsigned char)c) || c == '_' || (unsigned char)c >= 0x80; }
 
-// Fim (o ')' que fecha) do grupo que abre em `p` ('('), respeitando escape e
-// colchete. NULL se nao fecha.
-static const char *fechaGrupo(const char *p) {
-  int prof = 0, colchete = 0;
-  for (; *p; p++) {
-    if (*p == '\\' && p[1]) { p++; continue; }
-    if (colchete) { if (*p == ']') colchete = 0; continue; }
-    if (*p == '[') { colchete = 1; continue; }
-    if (*p == '(') prof++;
-    else if (*p == ')' && --prof == 0) return p;
-  }
-  return NULL;
-}
-
-int fonteregra_posix(const char *java, char *posix, size_t tam, char *excl, size_t tamExcl) {
-  Buf o = { posix, tam, 0, 0 }, x = { excl, tamExcl, 0, 0 };
-  const char *p = java ? java : "";
-  if (!posix || !tam || !excl || !tamExcl) return 0;
-  posix[0] = 0; excl[0] = 0;
-  while (*p && !o.cheio) {
-    if (!strncmp(p, "(?i)", 4)) { p += 4; continue; }
-    if (!strncmp(p, "(?!", 3)) {
-      // O que o oficial faz com \(\?![^)]*?\(([^)]+)\): as palavras do
-      // primeiro grupo de dentro viram exclusao; o lookahead sai do padrao
-      // (POSIX nao tem lookahead).
-      const char *f = fechaGrupo(p), *q = p + 3;
-      while (*q && *q != ')' && *q != '(') q++;
-      if (*q == '(') {
-        const char *ini = q + 1, *fim;
-        if (!strncmp(ini, "?:", 2)) ini += 2;
-        fim = strchr(ini, ')');
-        if (fim && fim > ini) {
-          if (x.n) bputc(&x, '|');
-          while (ini < fim) bputc(&x, *ini++);
-        }
-      }
-      if (!f) return 0;
-      p = f + 1;
-      continue;
-    }
-    if (!strncmp(p, "(?:", 3)) { bputc(&o, '('); p += 3; continue; }
-    if (*p == '\\' && p[1]) {
-      char c = p[1];
-      p += 2;
-      switch (c) {
-        case 'd': bput(&o, "[0-9]"); break;
-        case 'D': bput(&o, "[^0-9]"); break;
-        case 's': bput(&o, "[[:space:]]"); break;
-        case 'S': bput(&o, "[^[:space:]]"); break;
-        case 'w': bput(&o, "[[:alnum:]_]"); break;
-        case 'W': bput(&o, "[^[:alnum:]_]"); break;
-        case 'B': break;
-        case 'b':
-          // \b sem largura vira uma borda que consome um caractere (ou o
-          // inicio/fim): para "contem" e o mesmo resultado.
-          if (palavra(*p) || *p == '(' || *p == '[' || *p == '\\') bput(&o, "(^|[^[:alnum:]_])");
-          else bput(&o, "([^[:alnum:]_]|$)");
-          break;
-        case 't': bputc(&o, '\t'); break;
-        case 'n': bputc(&o, '\n'); break;
-        default:
-          if (strchr(".[]{}()*+?^$|\\", c)) { bputc(&o, '\\'); bputc(&o, c); }
-          else bputc(&o, c);
-      }
-      continue;
-    }
-    if (*p == '[') {
-      bputc(&o, *p++);
-      if (*p == '^') bputc(&o, *p++);
-      if (*p == ']') bputc(&o, *p++);
-      while (*p && *p != ']') {
-        if (*p == '\\' && p[1]) {
-          char c = p[1];
-          p += 2;
-          if (c == 'd') bput(&o, "0-9");
-          else if (c == 'w') bput(&o, "[:alnum:]_");
-          else if (c == 's') bput(&o, "[:space:]");
-          else bputc(&o, c);
-          continue;
-        }
-        bputc(&o, *p++);
-      }
-      if (*p != ']') return 0;
-      bputc(&o, *p++);
-      continue;
-    }
-    bputc(&o, *p);
-    // Quantificador preguicoso/possessivo (*? +? ?? }? *+): POSIX nao tem; a
-    // busca "contem" nao muda de resultado sem eles.
-    if ((*p == '*' || *p == '+' || *p == '?' || *p == '}') && (p[1] == '?' || p[1] == '+')) p++;
-    p++;
-  }
-  if (o.cheio || x.cheio) return 0;
-  return 1;
-}
-
+// Filtro ativo so com letra, digito ou caractere nao ASCII ("日本語", "[ñÑ]",
+// "🇪🇸|🇲🇽"): so pontuacao/flags ("(?i)", "|") nao filtra nada.
 static int temLetraOuDigito(const char *s) {
   for (; *s; s++) if (isalnum((unsigned char)*s) || (unsigned char)*s >= 0x80) return 1;
   return 0;
 }
 
-// 1 se o padrao usa lookahead positivo "(?=" ou lookbehind "(?<=" / "(?<!", que a
-// traducao para POSIX nao consegue expressar (o "(?!" simples segue pelo POSIX,
-// como sempre foi). Ignora o que esta escapado ou dentro de [...].
-static int precisaMotorJs(const char *s) {
-  int colchete = 0;
-  for (; *s; s++) {
-    if (*s == '\\' && s[1]) { s++; continue; }
-    if (colchete) { if (*s == ']') colchete = 0; continue; }
-    if (*s == '[') { colchete = 1; continue; }
-    if (s[0] == '(' && s[1] == '?' &&
-        (s[2] == '=' || (s[2] == '<' && (s[3] == '=' || s[3] == '!')))) return 1;
-  }
-  return 0;
-}
+// SEM A "EXCLUSAO DO OFICIAL": o NuvioTVSmart (streamAutoPlaySelector.js,
+// buildExcludeRegex) tira as palavras de cada "(?!...(...))" e descarta qualquer
+// fonte que tenha uma delas, mesmo quando o lookahead de verdade deixaria passar
+// ("DV sem HDR" virava "nada com DV, HDR ou Multi"). Aqui a regex roda EXATAMENTE
+// como foi escrita: o que ela aceita toca, o que ela recusa nao.
 
-// A EXCLUSAO DO OFICIAL (NuvioTVSmart, streamAutoPlaySelector.js buildExcludeRegex):
-// alem de rodar o padrao inteiro, o oficial acha cada "(?!" com um "(" depois
-// (\(\?![^)]*?\(([^)]+)\)), junta o PRIMEIRO grupo de cada um, separa por "|" e
-// compila \b(palavras)\b. Casou essa regex = fonte descartada, mesmo que o
-// lookahead de verdade nao pegasse. Se ela nao compila (por exemplo, "(?:" vira a
-// palavra "?:\bDV\b"), o oficial fica sem exclusao nenhuma — e este codigo tambem.
-// Devolve NULL quando nao ha palavras ou ela nao compila.
-static RegexJs *excluirJs(const char *java) {
-  char pal[FR_REGEX_MAX + 8], re[FR_REGEX_MAX + 24];
-  size_t n = 0;
-  const char *p = java;
-  pal[0] = 0;
-  while ((p = strstr(p, "(?!")) != NULL) {
-    const char *q = p + 3, *fim, *a, *b;
-    while (*q && *q != ')' && *q != '(') q++;
-    if (*q != '(') { p++; continue; }
-    fim = strchr(q + 1, ')');
-    if (!fim || fim == q + 1) { p++; continue; }
-    // split("|") + trim + filter(Boolean), tudo no mesmo passo.
-    for (a = q + 1; a <= fim; ) {
-      b = a;
-      while (b < fim && *b != '|') b++;
-      { const char *i = a, *j = b;
-        while (i < j && (unsigned char)*i <= ' ') i++;
-        while (j > i && (unsigned char)j[-1] <= ' ') j--;
-        if (j > i) {
-          if (n + (size_t)(j - i) + 2 >= sizeof pal) return NULL;
-          if (n) pal[n++] = '|';
-          memcpy(pal + n, i, (size_t)(j - i)); n += (size_t)(j - i);
-          pal[n] = 0;
-        } }
-      a = b + 1;
-    }
-    p = fim + 1;
-  }
-  if (!n) return NULL;
-  snprintf(re, sizeof re, "\\b(%s)\\b", pal);
-  return regexjs_compilar(re, REGEXJS_I, NULL, 0);
-}
-
-// Compila padrao + exclusao. 1 = ok; 0 = nao configurado; -1 = invalido.
-// Com lookahead positivo/lookbehind, *js recebe o programa do motor proprio (e
-// *jsx a exclusao do oficial, se houver) e r/rx nao sao tocados.
-static int compilar(const char *java, regex_t *r, int *rok, regex_t *rx, int *rxok,
-                    RegexJs **js, RegexJs **jsx) {
-  char posix[FR_REGEX_MAX * 4 + 64], excl[FR_REGEX_MAX + 1];
-  *rok = *rxok = 0;
-  *js = *jsx = NULL;
+// Compila o padrao. 1 = ok; 0 = nao configurado; -1 = invalido.
+// TODO padrao roda no motor de JS, como new RegExp(p, "i"): o ponto NAO atravessa
+// quebra de linha (use [\s\S]* para ver o texto inteiro), entao "^(?=.*1080p)" so ve a primeira linha do texto, como la.
+//
+// Antes, padrao sem "(?=" / lookbehind ia para uma traducao POSIX que errava em
+// casos comuns: "(?!.*CAM)1080p" e "1080p(?!.*DTS)" perdiam o lookahead (sem
+// grupo dentro nao sobrava exclusao: CAM e DTS passavam), e o "\b" virava um
+// caractere consumido, entao "\b(Remux|BluRay)\b.*\b2160p\b" recusava
+// "Remux 2160p" (o espaco servia a uma borda so). O motor proprio agora e
+// conferido contra o V8 (tests/regexjs_v8.sh) e lembra estados, entao nao ha
+// mais motivo para dois caminhos.
+static int compilar(const char *java, RegexJs **js) {
+  char p[FR_REGEX_MAX + 8];
+  *js = NULL;
   if (!java || !java[0] || !temLetraOuDigito(java)) return 0;
-  if (precisaMotorJs(java)) {
-    // Sem caixa e com a semantica EXATA do oficial (Android e web: so a flag "i"):
-    // o ponto NAO atravessa quebra de linha, entao "^(?=.*1080p)" so ve a primeira
-    // linha do texto. Quem afinou o padrao la espera isso (o caminho POSIX, sem
-    // lookahead, ja casa o ponto com quebra de linha, e continua assim).
-    char p[FR_REGEX_MAX + 8];
-    snprintf(p, sizeof p, "(?i)%s", java);
-    *js = regexjs_compilar_web(p, NULL, 0);
-    if (!*js) return -1;
-    *jsx = excluirJs(java);
-    return 1;
-  }
-  if (!fonteregra_posix(java, posix, sizeof posix, excl, sizeof excl)) return -1;
-  // So o lookahead ("(?!.*CAM)"): casa tudo, e a exclusao faz o trabalho.
-  if (!posix[0]) snprintf(posix, sizeof posix, "^");
-  if (regcomp(r, posix, REG_EXTENDED | REG_ICASE | REG_NOSUB) != 0) return -1;
-  *rok = 1;
-  if (excl[0]) {
-    char e[FR_REGEX_MAX + 96];
-    snprintf(e, sizeof e, "(^|[^[:alnum:]_])(%s)([^[:alnum:]_]|$)", excl);
-    if (regcomp(rx, e, REG_EXTENDED | REG_ICASE | REG_NOSUB) != 0) {
-      regfree(r); *rok = 0;
-      return -1;
-    }
-    *rxok = 1;
-  }
-  return 1;
+  // "(?i)" na frente (Java/Python) e aceito; o resto e sem caixa de qualquer jeito.
+  snprintf(p, sizeof p, "(?i)%s", java);
+  *js = regexjs_compilar_web(p, NULL, 0);
+  return *js ? 1 : -1;
 }
 
-static int casa(const RegexJs *js, const RegexJs *jsx, const regex_t *r, int rok, const regex_t *rx,
-                int rxok, const char *texto) {
-  if (js) {
-    size_t n = texto ? strlen(texto) : 0;
-    if (!regexjs_testar(js, texto ? texto : "", n)) return 0;
-    return !(jsx && regexjs_testar(jsx, texto, n));
-  }
-  if (!rok) return 0;
-  if (regexec(r, texto ? texto : "", 0, NULL, 0) != 0) return 0;
-  if (rxok && regexec(rx, texto ? texto : "", 0, NULL, 0) == 0) return 0;
-  return 1;
+static int casa(const RegexJs *js, const char *texto) {
+  if (!js) return 0;
+  if (!texto) texto = "";
+  return regexjs_testar(js, texto, strlen(texto)) == 1;
 }
 
 int fonteregra_regex_testar(const char *java, const char *texto) {
-  regex_t r, rx;
-  RegexJs *js, *jsx;
-  int rok, rxok, e = compilar(java, &r, &rok, &rx, &rxok, &js, &jsx), m;
+  RegexJs *js;
+  int e = compilar(java, &js), m;
   if (e <= 0) return -1;
-  m = casa(js, jsx, &r, rok, &rx, rxok, texto);
-  if (rok) regfree(&r);
-  if (rxok) regfree(&rx);
-  if (js) regexjs_liberar(js);
-  if (jsx) regexjs_liberar(jsx);
+  m = casa(js, texto);
+  regexjs_liberar(js);
   return m;
 }
 
@@ -274,13 +104,104 @@ static const char *const MODELOS[] = {
 int fonteregra_modelos(void) { return (int)(sizeof MODELOS / sizeof *MODELOS); }
 const char *fonteregra_modelo(int i) { return i > 0 && i < fonteregra_modelos() ? MODELOS[i] : ""; }
 
+// --- resposta lembrada por texto ---------------------------------------------
+// A lista de fontes e TROCADA INTEIRA a cada addon que responde
+// (stream_definir_lista_idade), e o cache por indice de streams.c cai junto:
+// sem isto, cada atualizacao rodava a regex de novo em TODAS as fontes, e na TV
+// isso crescia com o tamanho da regex. Aqui a resposta fica pelo hash do texto
+// (FNV-1a de 64 bits) ate a regex mudar. So o resultado da regex (as faltas,
+// 0 = casa): permitidos e modo continuam sendo conferidos a cada chamada.
+#define LEMBRA_N 4096          // potencia de 2; 64 KB
+#define LEMBRA_SONDA 8
+typedef struct { unsigned long long h; signed char m; } Lembra;
+static Lembra lembra[LEMBRA_N];
+
+static unsigned long long hashTexto(const char *s) {
+  unsigned long long h = 1469598103934665603ULL;
+  for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211ULL; }
+  return h | 1;   // 0 = posicao vazia
+}
+// Quantas condicoes `texto` nao cumpre: 0 = casa o padrao inteiro; sem
+// condicoes separaveis, 1 = nao casa. Nunca 0 sem casar (o padrao inteiro
+// decide), no maximo FR_FALTAS_MAX.
+static int faltasSemTrava(const char *texto) {
+  size_t n;
+  int k, f = 0;
+  if (!texto) texto = "";
+  n = strlen(texto);
+  if (casa(reJs, texto)) return 0;
+  for (k = 0; k < nCond; k++) if (!regexjs_testar(reCond[k], texto, n)) f++;
+  return f < 1 ? 1 : f > FR_FALTAS_MAX ? FR_FALTAS_MAX : f;
+}
+static int faltasLembrandoSemTrava(const char *texto) {
+  unsigned long long h = hashTexto(texto ? texto : "");
+  unsigned ini = (unsigned)h & (LEMBRA_N - 1), k, pos = ini;
+  int m;
+  for (k = 0; k < LEMBRA_SONDA; k++) {
+    Lembra *e = &lembra[(ini + k) & (LEMBRA_N - 1)];
+    if (e->h == h) return e->m;
+    if (!e->h) { pos = (ini + k) & (LEMBRA_N - 1); break; }
+  }
+  m = faltasSemTrava(texto);
+  lembra[pos].h = h; lembra[pos].m = (signed char)m;
+  return m;
+}
+
+// "^(?=A)(?!B)(?=C)" -> as partes "(?=A)", "(?!B)", "(?=C)". Flags em linha
+// no inicio ("(?i)", "(?s)", "(?m)") sao puladas, e o tamanho delas vai em *pref. Colchete como no JS: o primeiro "]" fecha.
+// Devolve quantas (2 ou mais), ou 0 se o padrao nao e so isso (um lookaround
+// quantificado, texto solto, "|" no topo...): ai ele vale como uma condicao so.
+static int partes(const char *p, const char **ini, size_t *tam, int max, size_t *pre) {
+  const char *p0 = p;
+  int n = 0;
+  while (p[0] == '(' && p[1] == '?') {
+    const char *q = p + 2;
+    while (*q && strchr("imsxIMSX", *q)) q++;
+    if (q == p + 2 || *q != ')') break;
+    p = q + 1;
+  }
+  if (*p != '^') return 0;
+  *pre = (size_t)(p - p0);
+  p++;
+  while (*p) {
+    const char *a = p;
+    int prof = 0, cls = 0;
+    if (p[0] != '(' || p[1] != '?' || (p[2] != '=' && p[2] != '!')) return 0;
+    for (; *p; p++) {
+      if (*p == '\\') { if (!p[1]) return 0; p++; continue; }
+      if (cls) { if (*p == ']') cls = 0; continue; }
+      if (*p == '[') { cls = 1; continue; }
+      if (*p == '(') prof++;
+      else if (*p == ')' && --prof == 0) { p++; break; }
+    }
+    if (prof || n == max) return 0;
+    ini[n] = a; tam[n] = (size_t)(p - a); n++;
+  }
+  return n >= 2 ? n : 0;
+}
+static void condicoesSemTrava(void) {
+  const char *ini[FR_COND_MAX];
+  size_t tam[FR_COND_MAX], pre = 0;
+  int k, n;
+  for (k = 0; k < nCond; k++) regexjs_liberar(reCond[k]);
+  nCond = 0;
+  if (reEstado != 1) return;
+  n = partes(padrao, ini, tam, FR_COND_MAX, &pre);
+  for (k = 0; k < n; k++) {
+    char p[FR_REGEX_MAX + 16];
+    snprintf(p, sizeof p, "(?i)%.*s^%.*s", (int)pre, padrao, (int)tam[k], ini[k]);
+    if (!(reCond[k] = regexjs_compilar_web(p, NULL, 0))) break;
+  }
+  if (k < n) { while (k-- > 0) regexjs_liberar(reCond[k]); return; }
+  nCond = n;
+}
+
 // --- estado -----------------------------------------------------------------
 static void recompilarSemTrava(void) {
-  if (reOk) regfree(&re);
-  if (reExclOk) regfree(&reExcl);
-  if (reJs) { regexjs_liberar(reJs); reJs = NULL; }
-  if (reJsX) { regexjs_liberar(reJsX); reJsX = NULL; }
-  reEstado = compilar(padrao, &re, &reOk, &reExcl, &reExclOk, &reJs, &reJsX);
+  regexjs_liberar(reJs); reJs = NULL;
+  reEstado = compilar(padrao, &reJs);
+  condicoesSemTrava();
+  memset(lembra, 0, sizeof lembra);
 }
 
 static void limparNome(char *dst, size_t tam, const char *src) {
@@ -529,13 +450,13 @@ int fonteregra_grupo(const FonteRegraCfg *c, const char *nome, int plugin, const
   pthread_mutex_lock(&trava);
   perm = permitidoSemTrava(c, nome, plugin);
   if (c->regexModo != FR_REGEX_DESLIGADA && reEstado == 1) {
-    int m = casa(reJs, reJsX, &re, reOk, &reExcl, reExclOk, texto);
-    if (!m && c->regexModo == FR_REGEX_EXIGIR) { pthread_mutex_unlock(&trava); return -1; }
-    sub = !m;
+    int f = faltasLembrandoSemTrava(texto);
+    if (f && c->regexModo == FR_REGEX_EXIGIR) { pthread_mutex_unlock(&trava); return -1; }
+    sub = f;   // Preferir: quanto mais condicoes falham, mais para o fim
   }
   pthread_mutex_unlock(&trava);
   if (!perm && !c->usarOutros) return -1;
-  return (perm ? 0 : 2) + sub;
+  return (perm ? 0 : FR_GRUPO_OUTROS) + sub;
 }
 
 int fonteregra_grupo_pendente(const FonteRegraCfg *c, const char *nome, int plugin) {
@@ -545,7 +466,7 @@ int fonteregra_grupo_pendente(const FonteRegraCfg *c, const char *nome, int plug
   pthread_mutex_lock(&trava);
   perm = permitidoSemTrava(c, nome, plugin);
   pthread_mutex_unlock(&trava);
-  return perm ? 0 : c->usarOutros ? 2 : -1;
+  return perm ? 0 : c->usarOutros ? FR_GRUPO_OUTROS : -1;
 }
 
 int fonteregra_ativa(const FonteRegraCfg *c) {
@@ -570,15 +491,20 @@ void fonteregra_perfil_guardar(int perfil) {
 
 int fonteregra_perfil_restaurar(int perfil) {
   char nome[40], *t;
+  int tinhaCopia;
   if (perfil <= 0) return 0;
   nomePerfil(nome, sizeof nome, perfil);
-  if (!(t = dados_ler(nome))) return 0;
+  t = dados_ler(nome);
+  tinhaCopia = t != NULL;
   pthread_mutex_lock(&trava);
-  lerSemTrava(t);
+  // Primeira visita: as listas, a ordem e o texto do perfil que saiu nao
+  // sao os padroes deste. A leitura vazia tambem libera a regex compilada,
+  // avanca a versao e atualiza a copia de trabalho usada no proximo boot.
+  lerSemTrava(t ? t : "");
   gravarSemTrava(ARQ);
   pthread_mutex_unlock(&trava);
   free(t);
-  return 1;
+  return tinhaCopia;
 }
 
 void fonteregra_perfil_esquecer(void) {

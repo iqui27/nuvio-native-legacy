@@ -14,6 +14,7 @@
 // arranque) e confere o indice E o que chega em linguas.c, que e o que o
 // player consulta (ling_legenda/ling_audio).
 #include "../src/ajustes.c"
+#include "nvtmp.h"
 #include <assert.h>
 #include <unistd.h>
 
@@ -46,11 +47,20 @@ static int linhaDoArquivo(const char *caminho, const char *chave) {
 }
 
 int main(void) {
-  char dir[] = "/tmp/nuvio-aj-idioma-XXXXXX";
+  char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-aj-idioma-XXXXXX");
   char caminho[700];
   FILE *f;
-  int en = -1, es = -1, i;
+  int en = -1, es = -1, i, failures = 0;
   assert(mkdtemp(dir));
+  // Pasta de dados de verdade: as migracoes de marca (resolucao, aparencia,
+  // profundidade...) gravam a marca na primeira passagem e param de rodar —
+  // e o gravar() delas roda DEPOIS do idioma restaurado. Sem pasta, elas
+  // regravavam o arquivo em toda leitura e esconderiam a escrita errada de
+  // uma migracao anterior (a do som do trailer, #509).
+  { char dirDados[NVT_MAX]; nvt_set(dirDados, sizeof dirDados, "/nuvio-aj-dados-XXXXXX");
+    assert(mkdtemp(dirDados));
+    setenv("NUVIO_DADOS", dirDados, 1);
+    dados_iniciar(dirDados); }
   for (i = 0; i < ling_opcao_n(); i++) {
     if (!strcmp(ling_opcao_codigo(i), "en")) en = i;
     if (!strcmp(ling_opcao_codigo(i), "es")) es = i;
@@ -128,6 +138,26 @@ int main(void) {
   reiniciarIdioma();
   ajustes_dir(dir);
   assert(valor[AJ_IDIOMA] == 8 && ajustes_idioma() == IDIOMA_ES);   // marca 0 = manual
+
+  // #509: migrating trailer sound must preserve language on disk and reload.
+  for (i = 0; i < 3; i++) {
+    escrever(caminho, i == 0 ?
+      "idioma 0\nidiomaAutoLocal 0\ntrailerDetalheSomLocal 0\n" : i == 1 ?
+      "idioma 0\ntrailerDetalheSomLocal 0\n" :
+      "idioma 0\nidiomaAutoLocal 1\ntrailerDetalheSomLocal 0\n");
+    reiniciarIdioma();
+    ajustes_dir(dir);
+    assert(ajustes_idioma() == IDIOMA_PT);
+    assert(linhaDoArquivo(caminho, "idioma") == IDIOMA_PT);
+    assert(linhaDoArquivo(caminho, "idiomaAutoLocal") == (i == 2));
+    assert(linhaDoArquivo(caminho, "trailerDetalheSomLocal") == 1);
+    assert(ajustes_trailer_som());
+    reiniciarIdioma();
+    ajustes_dir(dir);
+    assert(ajustes_idioma() == IDIOMA_PT);
+    assert((valor[AJ_IDIOMA] == 0) == (i == 2));
+    assert(ajustes_trailer_som());
+  }
 
   // (3) AUTOMATICO: o gravado e o ultimo resolvido (a TV abre nele), e a
   // conta corrige quando chega. Ordem: tmdb_language, depois legenda.
@@ -222,7 +252,7 @@ int main(void) {
   reiniciarIdioma();
   ajustes_dir(dir);
   assert(ajustes_idioma() == IDIOMA_ZHTW);
-  escrever(caminho, "idioma 30\nidiomaAutoLocal 0\n");       // fora da faixa: nao inventa idioma
+  escrever(caminho, "idioma 31\nidiomaAutoLocal 0\n");       // outside the append-only language range
   reiniciarIdioma();
   ajustes_dir(dir);
   assert(ajustes_idioma() == IDIOMA_EN);
@@ -242,7 +272,7 @@ int main(void) {
       "pt-BR", "en-US", "ro-RO", "uk-UA", "ru-RU", "fr-FR", "de-DE", "es-ES", "it-IT",
       "nl-NL", "pl-PL", "tr-TR", "pt-PT", "sv-SE", "da-DK", "nb-NO", "cs-CZ", "sk-SK",
       "sl-SI", "hu-HU", "lt-LT", "bs-BA", "sr-RS", "bg-BG", "el-GR", "id-ID", "vi-VN",
-      "ja-JP", "zh-CN", "zh-TW" };
+      "ja-JP", "zh-CN", "zh-TW", "ar-SA" };
     int i;
     valor[AJ_TMDB_IDIOMA] = 0;
     for (i = 0; i < IDIOMA_N; i++) {
@@ -259,9 +289,160 @@ int main(void) {
   valor[AJ_TMDB_IDIOMA] = 31; assert(!strcmp(ajustes_tmdb_idioma(), "zh-TW"));
   valor[AJ_TMDB_IDIOMA] = 0;
 
+  // ---- MIGRACAO idiomas-206 (#429) --------------------------------------
+  // A build que pos hr/sr/bs NO MEIO da lista (16-18) podia gravar indices
+  // ate 33; so esses tres numeros a identificam sem ambiguidade. 33 volta a
+  // ser "~" (-3) e o arquivo e regravado. Indices 17-30 existiam antes com
+  // outro idioma: mexer neles trocaria a lingua de quem nunca viu a janela,
+  // entao ficam como estao.
+  { char marca[700];
+    snprintf(marca, sizeof marca, "%s/idiomas-206.txt", getenv("NUVIO_DADOS"));
+    unlink(marca);
+    escrever(caminho, "legendaIdioma 33\naudioIdioma 31\nlegendaSecundariaIdioma 16\n");
+    reiniciarIdioma();
+    ajustes_dir(dir);
+    assert(valor[AJ_LEG_LINGUA] == LING_OPC_ORIGINAL);            // 33 -> "~"
+    assert(valor[AJ_AUD_LINGUA] == LING_OPC_ORIGINAL - 2);        // 31 -> 28 ("vi")
+    assert(valor[AJ_LEG_LINGUA2] == 16);                          // ambiguo: fica
+    assert(linhaDoArquivo(caminho, "legendaIdioma") == LING_OPC_ORIGINAL);
+    assert(linhaDoArquivo(caminho, "audioIdioma") == LING_OPC_ORIGINAL - 2);
+    // A marca impede segunda passagem: reescrever 33 e ler de novo nao mexe.
+    escrever(caminho, "legendaIdioma 33\n");
+    reiniciarIdioma();
+    ajustes_dir(dir);
+    assert(valor[AJ_LEG_LINGUA] == 33);
+    // Arquivo antigo (ate o indice 30) passa intacto, mesmo sem a marca:
+    // remover a marca e ler um indice de idioma real nao desloca nada.
+    unlink(marca);
+    escrever(caminho, "legendaIdioma 16\naudioIdioma 30\n");
+    reiniciarIdioma();
+    ajustes_dir(dir);
+    assert(valor[AJ_LEG_LINGUA] == 16 && !strcmp(ling_legenda(), "id"));
+    assert(valor[AJ_AUD_LINGUA] == LING_OPC_ORIGINAL);       // "~" intacto
+  }
+
+  // es-419 na conta: ler + mesclar mantem "es-419" (nao encolhe para "es");
+  // Official NuvioTV 9f17e8bf4abc799dc8c832d2894a8b3b166e4353 maps
+  // es-419 to es-MX in TmdbMetadataService.normalizeTmdbLanguage (line 1215),
+  // then passes it to getMovieDetails/getTvDetails (lines 100-101).
+  // https://github.com/NuvioMedia/NuvioTV/blob/9f17e8bf4abc799dc8c832d2894a8b3b166e4353/app/src/main/java/com/nuvio/tv/core/tmdb/TmdbMetadataService.kt#L1202
+  {
+    const char *blob = "{\"features\":{\"tmdb_settings\":{\"tmdb_language\":\"es-419\"}}}";
+    char *m = NULL;
+    valor[AJ_TMDB_IDIOMA] = 0;
+    ajustes_aplicar_blob(blob);
+    assert(valor[AJ_TMDB_IDIOMA] == 33 && !strcmp(ajustes_tmdb_idioma(), "es-MX"));
+    ajustes_mesclar_blob(blob, &m);
+    assert(!m || strstr(m, "\"es-419\""));
+    free(m); m = NULL;
+    assert(definirValorDireto(AJ_TMDB_IDIOMA, 3)); // Explicit Spanish choice.
+    ajustes_mesclar_blob(blob, &m);
+    assert(m && strstr(m, "\"tmdb_language\":\"es\""));
+    free(m); m = NULL;
+    assert(definirValorDireto(AJ_TMDB_IDIOMA, 33));
+    ajustes_mesclar_blob("{\"features\":{\"tmdb_settings\":{\"tmdb_language\":\"pt\"}}}", &m);
+    assert(m && strstr(m, "\"es-419\""));
+    free(m); m = NULL;
+    // Guarda de preservacao isolada: "pt-BR" so cai em "pt" por fallback.
+    escrever(caminho, "");
+    ajustes_dir(dir);
+    valor[AJ_TMDB_IDIOMA] = 0;
+    ajustes_aplicar_blob("{\"features\":{\"tmdb_settings\":{\"tmdb_language\":\"pt-BR\"}}}");
+    assert(valor[AJ_TMDB_IDIOMA] == 1);
+    ajustes_mesclar_blob("{\"features\":{\"tmdb_settings\":{\"tmdb_language\":\"pt-BR\"}}}", &m);
+    assert(!m || strstr(m, "\"pt-BR\""));
+    free(m);
+  }
+
+  // P1: a prior explicit choice (including its persisted marker) must not
+  // authorize shortening a later regional language imported from the account.
+  {
+    const char *codes[] = { "pt-BR", "es-ES", "PT-br", "ES-es" };
+    for (int wrapped = 0; wrapped < 2; wrapped++) {
+      for (int i = 0; i < 4; i++) {
+        char blob[256], actual[128];
+        char *m = NULL;
+        escrever(caminho, "tmdb_language 2\ntmdbIdiomaEscolhaLocal 1\n");
+        ajustes_dir(dir);
+        assert(definirValorDireto(AJ_TMDB_IDIOMA, 3));
+        ajustes_dir(dir);
+        snprintf(blob, sizeof blob, wrapped
+          ? "{\"features\":{\"tmdb_settings\":{\"tmdb_language\":{\"type\":\"string\",\"value\":\"%s\"}}}}"
+          : "{\"features\":{\"tmdb_settings\":{\"tmdb_language\":\"%s\"}}}", codes[i]);
+        ajustes_aplicar_blob(blob);
+        assert(valor[AJ_TMDB_IDIOMA] == (i % 2 ? 3 : 1));
+        ajustes_dir(dir); // The imported value must also survive a restart.
+        ajustes_mesclar_blob(blob, &m);
+        if (m && (!textoCruDoBlob(m, m + strlen(m), "tmdb_language", actual, sizeof actual) ||
+                  strcmp(actual, codes[i]))) {
+          fprintf(stderr, "FAIL P1: prior explicit choice shortened %s (wrapped=%d)\n", codes[i], wrapped);
+          failures++;
+        }
+        free(m);
+      }
+    }
+  }
+
+  // P2: pre-update choices have no marker. A differing saved choice still
+  // pushes, including when protected local settings prevent account import.
+  {
+    const int indices[] = { 1, 2, 3, 33 };
+    const char *codes[] = { "pt", "en", "es", "es-419" };
+    for (int i = 0; i < 4; i++) {
+      char saved[80], expected[80];
+      char *m = NULL;
+      snprintf(saved, sizeof saved, "tmdb_language %d\n", indices[i]);
+      escrever(caminho, saved);
+      ajustes_dir(dir);
+      ajustes_mesclar_blob("{\"features\":{\"tmdb_settings\":{\"tmdb_language\":\"fr\"}}}", &m);
+      snprintf(expected, sizeof expected, "\"tmdb_language\":\"%s\"", codes[i]);
+      if (!m || !strstr(m, expected)) {
+        fprintf(stderr, "FAIL P2: pre-update choice %s did not push\n", codes[i]);
+        failures++;
+      }
+      free(m);
+    }
+  }
+
+  // A differing protected Legacy choice must push without reselecting it.
+  escrever(caminho, "tmdb_language 3\n");
+  ajustes_dir(dir);
+  valor[AJ_TMDB_IDIOMA] = 3;
+  assert(definirValorDireto(AJ_TMDB_ARTE, !valor[AJ_TMDB_ARTE]));
+  {
+    const char *blob = "{\"features\":{\"tmdb_settings\":{\"tmdb_language\":{\"type\":\"string\",\"value\":\"es-419\"}}}}";
+    char *m = NULL;
+    ajustes_mesclar_blob(blob, &m);
+    if (!m || !strstr(m, "\"value\":\"es\"")) {
+      fputs("FAIL P2: protected pre-update choice did not push\n", stderr);
+      failures++;
+    }
+    free(m);
+    assert(definirValorDireto(AJ_TMDB_IDIOMA, 2));
+    ajustes_mesclar_blob(blob, &m);
+    assert(m && strstr(m, "\"value\":\"en\""));
+    free(m);
+    ajustes_dir(dir); // Explicit choice must survive a restart.
+    ajustes_mesclar_blob(blob, &m);
+    assert(m && strstr(m, "\"value\":\"en\""));
+    free(m);
+  }
+  valor[AJ_IDIOMA] = 1 + IDIOMA_PT;
+  idiomaEscolhido();
+  if (strcmp(i18n(V_TMDB_LING[33]), "Espanhol (América Latina)")) {
+    fputs("FAIL P2: pt-BR metadata label is not Portuguese\n", stderr);
+    failures++;
+  }
+  valor[AJ_IDIOMA] = 1 + IDIOMA_EN;
+  idiomaEscolhido();
+  assert(!strcmp(i18n(V_TMDB_LING[33]), "Spanish (Latin America)"));
+  valor[AJ_IDIOMA] = 1 + IDIOMA_ES;
+  idiomaEscolhido();
+  assert(!strcmp(i18n(V_TMDB_LING[33]), "Español (Latinoamérica)"));
+
   unlink(caminho);
   { char tmp[700]; snprintf(tmp, sizeof tmp, "%s/ajustes.tmp", dir); unlink(tmp); }
   rmdir(dir);
-  puts("ajustes_idioma_disco: ok");
-  return 0;
+  puts(failures ? "ajustes_idioma_disco: FAILED" : "ajustes_idioma_disco: ok");
+  return failures ? 1 : 0;
 }

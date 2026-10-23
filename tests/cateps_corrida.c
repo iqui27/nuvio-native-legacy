@@ -27,8 +27,14 @@
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <time.h>
+
+uint64_t perfis_sessao_geracao(void) { return 0; }
+int perfis_sessao_atual(uint64_t g) { (void)g; return 1; }
+int perfis_sessao_travar(uint64_t g) { (void)g; return 1; }
+void perfis_sessao_destravar(void) {}
 
 // --- DUBLES ------------------------------------------------------------------
 int         ajustes_idioma(void) { return 0; }
@@ -52,7 +58,7 @@ int prog_ler(ProgRegistro *saida, int max) {
 }
 
 #define N_BASE 300
-#define CW_MAX 12
+#define CW_MAX 40
 #define EP_MAX 60
 #define VOLTAS 400
 

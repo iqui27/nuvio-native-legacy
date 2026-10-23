@@ -1,8 +1,10 @@
 #include "ctxmenu.h"
+#include "perfisessao.h"
 #include "catalogo.h"
 #include "logotitulo.h"
 #include "descoberta.h"
 #include "syncprog.h"
+#include "sync.h"
 #include "tirarremoto.h"
 #include "visto.h"
 #include "trakt.h"
@@ -49,6 +51,10 @@
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
 
+// Optional imports belong to consumers: public declarations keep producers strong.
+extern int tirarremoto_capturar(TirarRemotoPedido *, const char *) NV_PERFIL_OPCIONAL;
+extern void tirarremoto_executar_pedido(const TirarRemotoPedido *, const char *, int) NV_PERFIL_OPCIONAL;
+
 // Mantem o header publico de Trakt estavel: estas leituras sao o contrato
 // interno entre a modal e as escritas assincronas do proprio port.
 extern int trakt_operacao_estado(int tipo);
@@ -61,9 +67,6 @@ extern void cat_historico_definir_id(const char *imdb, const char *tipo, int vis
 enum { CTX_OP_NENHUMA, CTX_OP_LISTA = 1, CTX_OP_HISTORICO = 2 };
 enum { CTX_PENDENTE = 1, CTX_CONFIRMADA = 2, CTX_FALHA = 3 };
 
-// Ar e rodape do modal de ESTILO (a pagina 1), que tem desenho proprio.
-#define CTX_PAD     44.0f
-#define CTX_RODAPE  70.0f
 // O MENU DO CARTAZ E UMA ILHA AO LADO DO POSTER (dono, 02/10, mockup "ilha"
 // tela 7): 420 de largura, raio 32, 14 de ar; cabecalho com o nome (24/700) e
 // a linha "Serie · 2024 · ..." (16 a 50 %); linhas de 60 em pilula, 4 entre
@@ -96,10 +99,13 @@ enum { CTX_PENDENTE = 1, CTX_CONFIRMADA = 2, CTX_FALHA = 3 };
 // catalogo (watchlist do Trakt) e o Plan to Watch do Simkl.
 static int tituloSalvo(const CatItem *ci) {
   if (!ci) return 0;
-  if (ci->naLista) return 1;
+  int fonte = ajustes_fonte_biblioteca();
+  if (ci->naLista && (ci->listaFontes & (1u << fonte))) return 1;
   if (!ci->imdb[0]) return 0;
-  return salvos_tem(ci->imdb) || cat_imdb_na_lista(ci->imdb) ||
-         (simkl_ativo() && simkl_na_plantowatch(ci->imdb));
+  if (cat_imdb_na_lista_na_fonte(ci->imdb, fonte)) return 1;
+  if (fonte == AJ_SALVOS_LOCAL) return salvos_tem(ci->imdb);
+  if (fonte == AJ_SALVOS_SIMKL) return simkl_ativo() && simkl_na_plantowatch(ci->imdb);
+  return 0;
 }
 
 static int   aberto, idx = -1, foco;
@@ -114,6 +120,9 @@ static LstLista  lista;
 static int       doFil, filAlterou, filVistos;
 static char      filPastaId[96];
 static float anim, animV;
+// Abertura da pagina de estilos: exponencial de saida, sem repique (~200 ms).
+static float estPag;
+static int estSaindo;   // Voltar da pagina de estilos: o seletor some animado sobre o menu
 static int   operacao, intencao, estadoOperacao;
 static int   espelhoAplicado;
 // A ESCRITA EM ANDAMENTO E DO SIMKL, e nao do Trakt (issue #110): diz a
@@ -285,30 +294,38 @@ static int  pickN, pickTotal, pickIni, pickCarregando;
 // roda depois de um OK em "Tirar da fileira". O foco nasce nele (confFoco 0);
 // Voltar e "Cancelar" (1) devolvem ao menu, com o foco na mesma opcao.
 static int   confFoco;
-static float confAnim[2];// A PAGINA DE ESTILOS E UM MODAL PROPRIO (dono, 01/10/2026: "tem todos os
-// estilos? ... coloque ao lado o preview de como seria os cards"): a lista de
-// formas a esquerda, com a atual marcada, e a direita a fileira desenhada na
-// forma em foco com as artes dela (home_previa_fileira). As formas nao passam
-// por ops[]: o vetor e do tamanho do enum, entao toda forma que fil_estilos
-// devolve aparece.
+static float confAnim[2];// A PAGINA DE ESTILOS E UM MENU CONTEXTUAL pequeno ao lado da fileira (dono,
+// 14/10/2026: "tem que ser um menu contextual, minimalista, ao lado"): nome da
+// forma e um glifo, o foco numa pilula branca. As formas nao passam por ops[]:
+// o vetor e do tamanho do enum, entao toda forma que fil_estilos devolve
+// aparece.
 //
 // UMA LINHA POR FORMA (dono, 01/10): as que so diferem em tamanho — as tres
 // paisagens, os tres 4:3 — dividem a linha, e o tamanho e um segmentado P M G
 // DENTRO dela, que esquerda/direita trocam. Cima/baixo continuam sendo "outra
-// forma"; a previa mostra sempre o tamanho em foco. Sub-lista foi descartada:
-// um segundo nivel com Voltar proprio no D-pad esconde os tamanhos atras de um
-// OK, e o segmentado os mostra o tempo todo.
+// forma". Sub-lista foi descartada: um segundo nivel com Voltar proprio no
+// D-pad esconde os tamanhos atras de um OK; o segmentado aparece na linha em
+// foco.
 static FilEstiloLinha estLin[FIL_TIPO_N];
 static int   nEstilos, estFoco, estTam[FIL_TIPO_N];
+// A ultima FORMA tocada fica guardada fora do foco: indo ate a linha Ordem e
+// voltando, o OK aplica a ultima forma escolhida, nao a que teve foco por ultimo.
+static int   estSel;
 static float estAnim[FIL_TIPO_N];
-// A previa troca com a mola: a forma de antes sai enquanto a nova entra.
-// `prevRef*` e a forma que decide a reducao de cada uma (home_previa_fileira).
-static int   prevAtual = -1, prevAnt = -1, prevRefAtual = -1, prevRefAnt = -1;
-static float prevT = 1.0f;
-#ifdef NV_TOUCH_UI
-static ToqueRolagem toqueEst;
-static float estRolY;
-#endif
+// ORDEM DOS ITENS da fileira de COLECAO (2.0.5): a ultima linha do modal de
+// estilo, embaixo das formas. Cima/baixo chegam nela, esquerda/direita trocam
+// a ordem (Ordem da lista, Ano, Alfabética, Aleatória) e o OK grava tudo e
+// sai. `ordemLinha` so acende para chave de colecao — a fileira de catalogo e
+// a ordem do addon, e prometer outra seria botao que nao faz nada.
+static int   ordemLinha, ordemSel;
+static float ordemAnim;
+// O MENU NAO TEM PREVIA PROPRIA (dono, 14/10): a fileira na Home e a previa.
+// Cada passo grava a forma na hora (estAoVivo) e a Home remonta por baixo; o
+// que valia ao abrir fica em estOrig*/estVivo para o Voltar devolver.
+static int   estOrigTipo, estOrigOrdem, estVivo;
+// Onde a fileira esta, em pixels da tela virtual: o menu nasce ao lado dele.
+static GfxRect estAncora;
+static int     temAncora;
 
 // --- RECOMENDAR: O FLUXO NAO MORA MAIS AQUI ---------------------------------
 //
@@ -322,10 +339,12 @@ static float estRolY;
 // Os DELETE remotos de "Tirar de Continuar assistindo", fora do fio de
 // desenho. Nenhum dos dois e obrigatorio: sem Trakt nao ha id de playback, sem
 // conta nao ha RPC. Os dois dizem no log o que fizeram.
-typedef struct { char imdb[64]; char chave[192]; int ocultar; } TirarRemoto;
+typedef struct { char imdb[64]; char chave[192]; int ocultar; TirarRemotoPedido pedido; } TirarRemoto;
 static void *fioTirarRemoto(void *u) {
   TirarRemoto *tr = (TirarRemoto *)u;
-  tirarremoto_executar(tr->imdb, tr->chave, tr->ocultar);
+  if (tirarremoto_executar_pedido) tirarremoto_executar_pedido(&tr->pedido, tr->chave, tr->ocultar);
+  else tirarremoto_executar(tr->imdb, tr->chave, tr->ocultar);
+  memset(tr, 0, sizeof *tr);
   free(tr);
   return NULL;
 }
@@ -338,6 +357,7 @@ static void *fioTirarRemoto(void *u) {
 static void tirarRemotoEmFio(TirarRemoto *tr) {
   pthread_t t;
   if (!tr) return;
+  if (tirarremoto_capturar && !tirarremoto_capturar(&tr->pedido, tr->imdb)) { free(tr); return; }
   if (pthread_create(&t, NULL, fioTirarRemoto, tr) == 0) { pthread_detach(t); return; }
   printf("[ctx] sem fio para tirar %s do Trakt/conta: so o efeito local vale\n", tr->imdb);
   fflush(stdout);
@@ -372,7 +392,7 @@ static const CatItem *itemAtual(void) {
 // A extensao existe para TITULO: nao para a linha de um amigo (sem IMDb) nem
 // para o menu de lista ou de estilo.
 static int infoPossivel(const CatItem *ci) {
-  return ci && !doLista && !soFileira && ci->imdb[0] && ci->titulo[0] &&
+  return !ajustes_menu_cartaz_simples() && ci && !doLista && !soFileira && ci->imdb[0] && ci->titulo[0] &&
          strcmp(ci->tipo, "channel") && strcmp(ci->tipo, "tv");
 }
 
@@ -463,14 +483,13 @@ static void montar(void) {
     // O foco nasce na forma que vale agora, no TAMANHO que vale agora; as
     // outras linhas de tamanho nascem no menor (o de sempre).
     if (estFoco < 0 || estFoco >= nEstilos) {
-#ifdef NV_TOUCH_UI
-      estRolY = 0.0f;
-      toquerol_limpar(&toqueEst);
-#endif
-      for (estFoco = 0, k = 0; k < nEstilos; k++) {
+      estOrigTipo = atual;
+      estOrigOrdem = ordemSel;
+      estVivo = 0;
+      for (estFoco = estSel = 0, k = 0; k < nEstilos; k++) {
         estTam[k] = 0;
         for (j = 0; j < estLin[k].n; j++)
-          if (estLin[k].tipos[j] == atual) { estFoco = k; estTam[k] = j; }
+          if (estLin[k].tipos[j] == atual) { estFoco = estSel = k; estTam[k] = j; }
       }
     }
     return;
@@ -620,6 +639,19 @@ static float ctxXCartaz(GfxRect r) {
   return esquerda;
 }
 
+// Capture the opening card once. Live style previews resize/move the row;
+// following them moves the whole option list and can flip the menu's side.
+static void estAncorar(float dt) {
+  GfxRect r, alvo;
+  if (temAncora && dt > 0.0f) return;
+  int tem = 0;
+  if (home_ancora_foco(&r) && r.w > 8.0f && r.h > 8.0f) { alvo = ctxDaHome(r); tem = 1; }
+  else if (!temAncora && temCartaz) { alvo = cartazRect; tem = 1; }
+  if (!tem) return;
+  estAncora = alvo;
+  temAncora = 1;
+}
+
 void ctx_abrir(int indice) {
   if (holdCancelado) {
     holdCancelado = 0;
@@ -722,20 +754,24 @@ static void abrirComum(int indice) {
   detalhesOk = detalhesPend; detalhesPend = 0;
   temCartaz = 0; cartazFixo = 0;
   pagina = soFileira ? 1 : 0;
+  estPag = 0.0f; estSaindo = 0;
   estFoco = -1;               // montar() poe o foco na forma atual
-  prevAtual = prevAnt = prevRefAtual = prevRefAnt = -1; prevT = 1.0f;
+  ordemLinha = fil_origem_de(filChave) == FIL_ORIGEM_COLECAO;
+  ordemSel = fil_ordem(filChave);
   memset(estAnim, 0, sizeof estAnim);
+  temAncora = 0; estVivo = 0;
   fecharAoConfirmar = 0;
   operacao = CTX_OP_NENHUMA; intencao = 0; estadoOperacao = 0;
   espelhoAplicado = 0;
   operacaoImdb[0] = 0;
   memset(focoAnim, 0, sizeof focoAnim);
   montar();
+  if (pagina == 1) estAncorar(0.0f);
   infoT = 0.0f; infoH = 0.0f; infoDesenhada = 0;
   // Sem "Ver detalhes", um titulo sem id nenhum nao tem acao: um menu vazio
   // seria pior que nenhum (o toque continua abrindo o titulo).
   if (!doLista && pagina == 0 && nOps == 0) { aberto = 0; return; }
-  if (!doLista && !soFileira) ctxinfo_abrir(itemAtual());
+  if (infoPossivel(itemAtual())) ctxinfo_abrir(itemAtual());
 }
 
 void ctx_abrir_salvo(const CatItem *titulo) {
@@ -819,7 +855,6 @@ static void desfazerAssistido(const void *p) {
   int volta = !c->intencao;
   if (volta) { printf("[visto] marcado por desfazer-menu-manual pos=0 dur=0 assistido=0s id=%s\n", c->ci.imdb); fflush(stdout); }
   visto_titulo(c->ci.imdb, c->ci.tipo, c->ci.temporadas, c->ci.nTemporadas, volta, visto_destinos());
-  if (trakt_ativo()) trakt_assistido_tipo(c->ci.imdb, c->ci.tipo, volta);
   cat_historico_definir_id(c->ci.imdb, c->ci.tipo, volta);
   desc_remontar_fileiras();
 }
@@ -882,10 +917,7 @@ static void espelharAssistido(int atual, const CatItem *ci, int intencao) {
   }
 }
 
-// OK na pagina de estilos. Grava e sai: a home remonta pela revisao de
-// fileiras.c e a pessoa ve a forma nova no lugar, sem o veu do menu por cima.
-// A forma da linha `i` no tamanho escolhido nela, e a maior da linha (a que
-// decide a reducao da previa).
+// A forma da linha `i` no tamanho escolhido nela.
 static int estTipo(int i) {
   int j;
   if (i < 0 || i >= nEstilos) return -1;
@@ -893,12 +925,26 @@ static int estTipo(int i) {
   if (j < 0 || j >= estLin[i].n) j = 0;
   return estLin[i].tipos[j];
 }
-static int estRef(int i) {
-  return (i >= 0 && i < nEstilos) ? estLin[i].tipos[estLin[i].n - 1] : -1;
+// O passo do menu: grava a forma e a ordem em foco na hora (a home remonta pela
+// revisao de fileiras.c e a fileira mostra o resultado); o setter nao faz nada
+// quando o valor nao mudou.
+static void estAoVivo(void) {
+  sync_proteger_ajustes_locais();
+  if (estSel >= 0 && estSel < nEstilos) fil_definir_tipo(filChave, estTipo(estSel));
+  if (ordemLinha && ordemSel != fil_ordem(filChave)) fil_definir_ordem(filChave, ordemSel);
+  estVivo = 1;
 }
-
+// Voltar / clique fora / menu fechado por outro caminho: o que valia ao abrir.
+static void estRestaurar(void) {
+  if (!estVivo) return;
+  estVivo = 0;
+  fil_definir_tipo(filChave, estOrigTipo);
+  if (ordemLinha) fil_definir_ordem(filChave, estOrigOrdem);
+}
+// OK: o que esta na fileira fica.
 static void aplicarEstilo(void) {
-  if (estFoco >= 0 && estFoco < nEstilos) fil_definir_tipo(filChave, estTipo(estFoco));
+  estAoVivo();
+  estVivo = 0;
   aberto = 0;
 }
 
@@ -921,12 +967,7 @@ static void iniciarAssistido(int atual, const CatItem *ci, int soMarcar) {
       // elas apagaria a serie da biblioteca de la (ver simkl.c).
       visto_titulo(ci->imdb, ci->tipo, ci->temporadas, ci->nTemporadas, intencao,
                    visto_destinos());
-      if (trakt_ativo()) {
-        // O caminho do Trakt NAO MUDOU: mesmo pedido, mesma espera, espelho so
-        // depois do 2xx em ctx_atualizar.
-        if (!trakt_assistido_tipo(ci->imdb, ci->tipo, intencao))
-          estadoOperacao = CTX_FALHA;
-      } else {
+      { // Local intent is durable; failed destinations retry in sync.
         // SEM TRAKT NAO HA RESPOSTA A ESPERAR (o mesmo raciocinio do "+" na
         // Lista do Nuvio, acima): o local e a verdade desta TV, aplicado agora,
         // e a conta o devolve no proximo pull (sync.c aplica os vistos da
@@ -949,7 +990,7 @@ static void aplicar(void) {
     if (acao == OP_ESTILO) {
       // "Estilo da fileira": segue para a pagina de formas, no mesmo modal.
       doLista = 0; doFil = 0; soFileira = 1;
-      pagina = 1; estFoco = -1; prevAtual = prevAnt = prevRefAtual = prevRefAnt = -1; prevT = 1.0f;
+      pagina = 1; estFoco = -1;
       memset(estAnim, 0, sizeof estAnim);
       montar(); return;
     }
@@ -979,9 +1020,11 @@ static void aplicar(void) {
     return;
   }
   if (acao == OP_ESTILO) {
-    pagina = 1; estFoco = -1; prevAtual = prevAnt = prevRefAtual = prevRefAnt = -1; prevT = 1.0f;
+    pagina = 1; estFoco = -1; estPag = 0.0f; estSaindo = 0;
     memset(estAnim, 0, sizeof estAnim);
-    montar(); return;
+    montar();
+    estAncorar(0.0f);
+    return;
   }
   if (acao == OP_F_MENU) {
     char ch[sizeof filChave], ti[sizeof filTitulo];
@@ -1226,7 +1269,8 @@ void ctx_evento(const SDL_Event *e) {
       e->key.keysym.scancode == NV_SCANCODE_BACK) {
     // Da pagina de estilos, Voltar volta ao menu do titulo — com o foco na
     // entrada de onde a pessoa veio. Sem titulo por tras (colecao), fecha.
-    // Voltar CANCELA: nada foi gravado ao mover o foco, so a previa mudou.
+    // Voltar CANCELA: devolve a forma e a ordem de quando abriu.
+    if (pagina == 1) estRestaurar();
     if (pagina == 2) { pagina = 0; confExtra = -1; return; }   // Voltar = Cancelar
     // Da escolha de lista, Voltar volta ao menu, com o foco na entrada de onde veio.
     if (pagina == 3) {
@@ -1236,7 +1280,7 @@ void ctx_evento(const SDL_Event *e) {
       return;
     }
     if (pagina == 1 && !soFileira) {
-      pagina = 0; montar();
+      pagina = 0; montar(); estSaindo = 1;
       for (foco = 0; foco < nOps && ops[foco].acao != OP_ESTILO; foco++) {}
       if (foco >= nOps) foco = 0;
       return;
@@ -1254,16 +1298,18 @@ void ctx_evento(const SDL_Event *e) {
     return;
   }
   // Pagina de estilos: cima/baixo trocam a forma, esquerda/direita o tamanho
-  // (so nas linhas que tem tamanhos); nada disso grava. OK grava.
+  // (so nas linhas que tem tamanhos) e, na linha da ordem de uma colecao, a
+  // ordem dos itens. Cada passo ja vale na fileira; OK fica, Voltar desfaz.
   if (pagina == 1) {
-#ifdef NV_TOUCH_UI
-    if (toquerol_navegacao(e)) toquerol_limpar(&toqueEst);
-#endif
-    if (k == SDLK_UP)   { if (estFoco > 0) estFoco--; return; }
-    if (k == SDLK_DOWN) { if (estFoco + 1 < nEstilos) estFoco++; return; }
+    if (k == SDLK_UP)   { if (estFoco > 0) estFoco--; if (estFoco < nEstilos) estSel = estFoco; estAoVivo(); return; }
+    if (k == SDLK_DOWN) { if (estFoco + 1 < nEstilos + (ordemLinha ? 1 : 0)) estFoco++; if (estFoco < nEstilos) estSel = estFoco; estAoVivo(); return; }
+    if (ordemLinha && estFoco == nEstilos) {
+      if (k == SDLK_LEFT)  { if (ordemSel > 0) ordemSel--; estAoVivo(); return; }
+      if (k == SDLK_RIGHT) { if (ordemSel + 1 < FIL_ORD_N) ordemSel++; estAoVivo(); return; }
+    }
     if (estFoco >= 0 && estFoco < nEstilos && estLin[estFoco].n > 1) {
-      if (k == SDLK_LEFT)  { if (estTam[estFoco] > 0) estTam[estFoco]--; return; }
-      if (k == SDLK_RIGHT) { if (estTam[estFoco] + 1 < estLin[estFoco].n) estTam[estFoco]++; return; }
+      if (k == SDLK_LEFT)  { if (estTam[estFoco] > 0) estTam[estFoco]--; estAoVivo(); return; }
+      if (k == SDLK_RIGHT) { if (estTam[estFoco] + 1 < estLin[estFoco].n) estTam[estFoco]++; estAoVivo(); return; }
     }
     if (teclaOk(k)) aplicarEstilo();
     return;
@@ -1322,21 +1368,26 @@ void ctx_atualizar(float dt, Uint32 agora) {
     confAnim[i] = ajustes_animacoes_reduzidas()
       ? (pagina == 2 && confFoco == i ? 1.0f : 0.0f)
       : anim_mola(confAnim[i], pagina == 2 && confFoco == i ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
-  // Pagina de estilos: o foco da lista e a troca da previa. So aqui, e so com
-  // a pagina aberta — fechada, nada disto anda nem desenha.
+  // Pagina de estilos: so aqui, e so com a pagina aberta, o foco da lista anda.
+  // Menu fechado (ou saido da pagina) por qualquer porta: desfaz o que nao foi
+  // confirmado com OK.
+  if (estSaindo) {
+    estPag = (ajustes_animacoes_reduzidas() || !aberto || pagina == 1) ? 0.0f : anim_mola(estPag, 0.0f, dt, 14.0f);
+    if (estPag < 0.01f) { estPag = 0.0f; estSaindo = 0; }
+  } else
+  estPag = (ajustes_animacoes_reduzidas() || !aberto || pagina != 1) ? (pagina == 1 ? 1.0f : 0.0f)
+         : anim_mola(estPag, 1.0f, dt, 14.0f);
   if (aberto && pagina == 1) {
+    estAncorar(dt);
     for (i = 0; i < FIL_TIPO_N; i++)
       estAnim[i] = ajustes_animacoes_reduzidas()
         ? (estFoco == i ? 1.0f : 0.0f)
         : anim_mola(estAnim[i], estFoco == i ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
-    if (estFoco >= 0 && estFoco < nEstilos && estTipo(estFoco) != prevAtual) {
-      // A primeira forma entra com o proprio modal; as seguintes, com a mola.
-      prevAnt = prevAtual; prevRefAnt = prevRefAtual;
-      prevAtual = estTipo(estFoco); prevRefAtual = estRef(estFoco);
-      prevT = prevAnt < 0 ? 1.0f : 0.0f;
-    }
-    prevT = ajustes_animacoes_reduzidas() ? 1.0f : anim_mola(prevT, 1.0f, dt, NV_MOLA_FOCO);
-  }
+    ordemAnim = ajustes_animacoes_reduzidas()
+      ? (ordemLinha && estFoco == nEstilos ? 1.0f : 0.0f)
+      : anim_mola(ordemAnim, ordemLinha && estFoco == nEstilos ? 1.0f : 0.0f,
+                  dt, NV_MOLA_FOCO);
+  } else if (estVivo) estRestaurar();
 
   atual = indiceAtual();
   if (aberto && !soFileira && !doLista && !itemAtual()) { aberto = 0; return; }
@@ -1404,15 +1455,31 @@ static void ponteiroConfOk(int i, int b) {
 static void ponteiroCtxFora(int a, int b) { (void)a; (void)b; aberto = 0; }
 // `b` > 0 e o segmento de tamanho b-1 da linha (o alvo menor, por cima dela).
 static void ponteiroEstFoco(int i, int b) {
-  if (i < 0 || i >= nEstilos) return;
+  if (i < 0 || i >= nEstilos + (ordemLinha ? 1 : 0)) return;
   estFoco = i;
-  if (b > 0 && b - 1 < estLin[i].n) estTam[i] = b - 1;
+  if (i < nEstilos) estSel = i;
+  if (i < nEstilos && b > 0 && b - 1 < estLin[i].n) estTam[i] = b - 1;
+  estAoVivo();
 }
+static void ponteiroEstFora(int a, int b) { (void)a; (void)b; estRestaurar(); aberto = 0; }
 static void ponteiroEstOk(int i, int b) {
-  if (i < 0 || i >= nEstilos) return;
+  if (i < 0 || i >= nEstilos + (ordemLinha ? 1 : 0)) return;
   ponteiroEstFoco(i, b);
   aplicarEstilo();
 }
+// A linha da ordem nao tem clique de "aplicar": cada toque/ciclo anda UMA
+// ordem e a linha mostra a que ficou (o foco so nao grava nada). Aplicar e o
+// clique numa forma (ou Fechar).
+static void ponteiroOrdemToque(int i, int b) {
+  (void)i; (void)b;
+  if (!ordemLinha) return;
+  estFoco = nEstilos;
+  ordemSel = (ordemSel + 1) % FIL_ORD_N;
+  estAoVivo();
+}
+// O mesmo ciclar do toque serve o clique no MESA na linha Ordem: ali o mouse e
+// o Magic Remote nao tem esquerda/direita. Aplicar continua na forma/Fechar.
+#define ponteiroOrdemAtivar ponteiroOrdemToque
 
 // GLASS UI (dono, 02/10, mockup "ilha" tela 7): TODO MODAL E UMA ILHA — o
 // material da folha de Fontes e da ilha do relogio. Sombra curta, miolo de
@@ -1423,11 +1490,11 @@ static void ilhaCtx(GfxRect p, float raioPx, float a) {
   float raio = raioPx / p.h;
   gfx_sombra_sob((GfxRect){ p.x - 18.0f, p.y - 8.0f, p.w + 36.0f, p.h + 40.0f }, 1.0f, 0, 0.5f,
                  0, 0, 0, .42f * a, p, raioPx, vid ? 0.0f : .98f * a);
-  // O vidro le a textura assada e deixava o texto da fileira aparecer por
-  // tras; uma base quase solida por baixo (a cor do modo sem vidro) fecha.
-  if (vid) { gfx_cor(p, raio, .071f, .075f, .086f, .985f * a); gfx_vidro_folha(p, raio, a); }
+  // Frost on: the shared glass material alone. The old .985 opaque base under it
+  // hid the blur, so the quick menu read flat.
+  if (vid) gfx_vidro_folha(p, raio, a);
   else gfx_cor(p, raio, .071f, .075f, .086f, .98f * a);
-  gfx_luz_canto(p, raio, p.w * .25f, -p.h * .25f, p.w * .9f, 1, 1, 1, (vid ? .06f : .04f) * a);
+  if (!vid) gfx_luz_canto(p, raio, p.w * .25f, -p.h * .25f, p.w * .9f, 1, 1, 1, .04f * a);
 }
 
 // KICKER das ilhas: 15/700 em caixa alta (a do idioma), espacado .14em,
@@ -1459,7 +1526,7 @@ static void linhaCtxTinta(GfxRect r, const char *rot, const char *icone, float f
     lum = .80f + .20f * k;
     if (k > 0.01f) gfx_cor(r, 0.5f, tinta, tinta, tinta, .12f * k * a);
   } else if (k > 0.01f) {
-    if (ajustes_vidro()) gfx_cor(r, 0.5f, 1, 1, 1, .14f * k * a);
+    if (ajustes_vidro()) { if (!gfx_foco_placa(r, 0.5f, k, a)) gfx_cor(r, 0.5f, 1, 1, 1, .14f * k * a); }
     else gfx_cor(r, 0.5f, .19f, .195f, .215f, k * a);
   }
   if (icone && icone[0])
@@ -1543,297 +1610,154 @@ void ctx_menu_desenhar(GfxRect m, const char *nome, const char *meta, float meta
   }
 }
 
-// --- O MODAL DE ESTILO ------------------------------------------------------
+// --- O MENU DE ESTILO ------------------------------------------------------
 //
-// O mesmo cartao flutuante do menu (vidro ou folha com a luz do realce), mais
-// largo: a lista de formas a esquerda e, a direita, um PALCO na cor do fundo da
-// Home com o nome da fileira e a fileira desenhada na forma em foco. O palco e
-// a Home em miniatura de proposito — a pergunta da pessoa e "como fica la".
-#define EST_W       1680.0f
-#define EST_LISTA_W  500.0f
-#define EST_LINHA     60.0f
-#define EST_GAP       10.0f
-#define EST_COL_GAP   48.0f
-#define EST_PALCO_H  520.0f   // altura minima do palco da previa
-#define EST_PALCO_Y  140.0f   // do topo da coluna ao palco: nome + frase
+// Uma ilha pequena AO LADO da fileira em edicao (dono, 14/10/2026: "tem que ser
+// um menu contextual, nao precisa ser gigante, pode ser minimalista ao lado"):
+// o mesmo vidro e raio do menu do cartaz, uma linha por forma — glifo e nome —
+// e o foco numa pilula BRANCA. Branca de proposito: gfx_vidro_pilula_cheia
+// pinta no acento do tema, e nos temas dinamicos isso e verde-agua ou laranja.
+// Sem veu e sem previa propria: a fileira, la ao lado, muda a cada passo.
+#define EST_W        360.0f
+#define EST_LINHA 44.0f
+#define EST_GAP        4.0f
+#define EST_PAD       10.0f
+#define EST_AO_LADO   18.0f
+#define EST_GLIFO     22.0f
+#define EST_SEG_W     32.0f
+#define EST_SEG_H     34.0f
+#define EST_SEG_GAP    4.0f
 
-// O SEGMENTADO DE TAMANHO, na ponta direita da pilula da linha `i`: uma letra
-// por tamanho (a primeira da palavra traduzida — P M G, S M L), o escolhido
-// cheio na cor do texto da pilula e o gravado com um anel. Na tinta da pilula:
-// escura quando ela esta acesa (branca), clara em repouso.
-#define EST_SEG_W   46.0f
-#define EST_SEG_H   40.0f
-#define EST_SEG_GAP  6.0f
-static void desenhaTamanhos(GfxRect r, int i, int atual, float a) {
-  float fr, fg, fb, ti = botao_cor_foco(&fr, &fg, &fb);
-  // A linha agora acende por SUPERFICIE (linhaCtx), nunca no acento: a tinta
-  // e sempre a clara de repouso.
-  int aceso = 0, j, n = estLin[i].n;
-  (void)estAnim;
-  // A tinta e a do rotulo da pilula (botao_pilula): a de botao_cor_foco acesa,
-  // clara em repouso. A letra escolhida vai no fundo da pilula — o realce
-  // aceso, o escuro do cartao em repouso — sobre um disco na tinta.
-  float tinta = aceso ? ti : 0.93f;
-  float lr = aceso ? fr : 0.08f, lg = aceso ? fg : 0.085f, lb = aceso ? fb : 0.1f;
+// A silhueta da forma num quadrado de EST_GLIFO: em pe, deitada, 4:3 ou disco.
+static void estGlifo(GfxRect q, int tipo, float tinta, float a) {
+  float w = 20.0f, h = 14.0f, raio = 4.0f;
+  switch (tipo) {
+    case FIL_TIPO_CARTAZ: case FIL_TIPO_TOP10: case FIL_TIPO_RANKING:
+    case FIL_TIPO_LINHA_TEMPO: case FIL_TIPO_FICHA: case FIL_TIPO_PALCO:
+    case FIL_TIPO_POSTER_GRANDE: case FIL_TIPO_POSTER_GRANDE_P:
+    case FIL_TIPO_POSTER_GRANDE_G:
+      w = 14.0f; h = 20.0f; break;
+    case FIL_TIPO_DESTAQUE_QUADRADO: case FIL_TIPO_DESTAQUE_QUADRADO_M:
+    case FIL_TIPO_DESTAQUE_QUADRADO_G: case FIL_TIPO_AUTO:
+      w = 20.0f; h = 16.0f; break;
+    case FIL_TIPO_REDONDA:
+      w = h = 18.0f; raio = 9.0f; break;
+    default: break;   // deitadas: 20 x 14
+  }
+  gfx_cor((GfxRect){ q.x + (q.w - w) * 0.5f, q.y + (q.h - h) * 0.5f, w, h }, raio / h,
+          tinta, tinta, tinta, 0.9f * a);
+}
+
+// O SEGMENTADO P M G, so na linha em foco, na ponta direita da pilula: o
+// escolhido vira um disco escuro com a letra clara; os outros so a letra.
+static void desenhaTamanhos(GfxRect r, int i, float a) {
+  int j, n = estLin[i].n;
   float x0 = r.x + r.w - 10.0f - (float)n * EST_SEG_W - (float)(n - 1) * EST_SEG_GAP;
   float y0 = r.y + (r.h - EST_SEG_H) * 0.5f;
   for (j = 0; j < n; j++) {
     GfxRect c = { x0 + (float)j * (EST_SEG_W + EST_SEG_GAP), y0, EST_SEG_W, EST_SEG_H };
     const char *pal = i18n(fil_estilo_tam_palavra(j));
     char letra[8];
-    int k = 0, esc = j == estTam[i], t8 = (int)(tinta * 255.0f + 0.5f);
+    int k = 0, esc = j == estTam[i];
     TxtLinha l;
     // A primeira letra, inteira: um caractere UTF-8 e o lider mais as
     // continuacoes (10xxxxxx).
     if (pal[0]) { letra[k++] = pal[0];
       while (k < 6 && ((unsigned char)pal[k] & 0xC0) == 0x80) { letra[k] = pal[k]; k++; } }
     letra[k] = 0;
-    if (aberto && a > 0.5f)
+    if (aberto && pagina == 1 && a > 0.5f)
       ponteiro_alvo(c.x, c.y, c.w, c.h, ponteiroEstFoco, ponteiroEstOk, i, j + 1);
-    if (esc) gfx_cor(c, 0.5f, tinta, tinta, tinta, 0.95f * a);
-    else if (estLin[i].tipos[j] == atual)
-      gfx_anel(c, 0.5f, 1.5f, tinta, tinta, tinta, 0.6f * a);
-    l = esc ? txt_linha(TXT_DET_BOTAO, letra, (int)(lr * 255.0f + 0.5f),
-                        (int)(lg * 255.0f + 0.5f), (int)(lb * 255.0f + 0.5f), 255)
-            : txt_linha(TXT_DET_BOTAO, letra, t8, t8, t8, 255);
+    if (esc) gfx_cor(c, 0.5f, 0.08f, 0.085f, 0.1f, 0.92f * a);
+    l = esc ? txt_linha(TXT_DET_BOTAO, letra, 243, 242, 239, 255)
+            : txt_linha(TXT_DET_BOTAO, letra, 20, 22, 26, 255);
     txt_desenhar_alpha(l, c.x + (c.w - (float)l.w) * 0.5f, c.y + (c.h - (float)l.h) * 0.5f,
-                       (esc ? 1.0f : 0.72f) * a);
+                       (esc ? 1.0f : 0.6f) * a);
   }
 }
 
-#ifdef NV_TOUCH_UI
-#define EST_TOQUE_LINHA 72.0f
-#define EST_TOQUE_SEG   56.0f
-#define EST_TOQUE_GAP    8.0f
-typedef struct { GfxRect modal, lista, previa, cancelar; } EstTelefoneGeo;
-
-static float estListaAltura(void) {
-  return fmaxf(0.0f, (float)nEstilos * (EST_TOQUE_LINHA + EST_GAP) - EST_GAP);
+// UMA LINHA: glifo, nome e, em foco, a pilula branca com a tinta escura.
+static void linhaEstilo(GfxRect r, const char *rot, int tipo, float f, float a) {
+  float k = f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
+  float tinta = 0.95f + (0.1f - 0.95f) * k;      // claro em repouso, escuro na pilula
+  int t8 = (int)(tinta * 255.0f + 0.5f);
+  float lum = (0.72f + 0.28f * k) * a;
+  float tx = r.x + 16.0f + EST_GLIFO + 12.0f;
+  TxtLinha t;
+  if (k > 0.01f) gfx_cor(r, 0.5f, 0.96f, 0.96f, 0.95f, k * a);
+  if (tipo >= 0)
+    estGlifo((GfxRect){ r.x + 16.0f, r.y + (r.h - EST_GLIFO) * 0.5f, EST_GLIFO, EST_GLIFO },
+             tipo, tinta, lum);
+  else tx = r.x + 20.0f;
+  t = txt_linha_corta(TXT_PG_ROTULO, rot, t8, t8, t8, 255, r.x + r.w - 14.0f - tx);
+  txt_desenhar_alpha(t, tx, r.y + (r.h - t.h) * 0.5f, lum);
 }
 
-static EstTelefoneGeo estTelefoneGeo(float a) {
-  EstTelefoneGeo g;
-  int retrato = NV_LAYOUT_REAL_H > NV_LAYOUT_REAL_W;
-  const float pad = 28.0f, cab = 100.0f, rod = 64.0f;
-  float w = fminf(EST_W, NV_TELA_W - 64.0f);
-  float h = fminf(retrato ? pad * 2 + cab + rod + estListaAltura() + 24.0f + 440.0f
-                         : 934.0f, NV_TELA_H - 64.0f);
-  g.modal = (GfxRect){ (NV_TELA_W - w) * .5f,
-                       (NV_TELA_H - h) * .5f + (1.0f - a) * 40.0f, w, h };
-  g.lista = (GfxRect){ g.modal.x + pad, g.modal.y + pad + cab,
-                       w - pad * 2, h - pad * 2 - cab - rod };
-  if (retrato) {
-    float ph = fminf(440.0f, g.lista.h * .46f);
-    g.lista.h -= ph + 24.0f;
-    g.previa = (GfxRect){ g.lista.x, g.lista.y + g.lista.h + 24.0f, g.lista.w, ph };
-  } else {
-    g.lista.w = fminf(EST_LISTA_W, g.lista.w * .42f);
-    g.previa = (GfxRect){ g.lista.x + g.lista.w + 32.0f, g.lista.y,
-                         w - pad * 2 - g.lista.w - 32.0f, g.lista.h };
-  }
-  g.cancelar = (GfxRect){ g.modal.x + w - pad - 160.0f,
-                         g.modal.y + h - pad - EST_TOQUE_SEG, 160.0f, EST_TOQUE_SEG };
-  return g;
+// Onde a ilha cabe: ao lado da fileira (direita; sem lugar, esquerda; sem
+// lugar nenhum, a borda com mais folga) e centrada nela na vertical, presa
+// dentro da tela. Sem ancora (home nao desenhou), a borda direita.
+static GfxRect estIlha(float h) {
+  float x = NV_TELA_W - CTX_BORDA - EST_W, y;
+  float maxX = NV_TELA_W - CTX_BORDA - EST_W;
+  if (temAncora) {
+    float direita = estAncora.x + estAncora.w + EST_AO_LADO;
+    float esquerda = estAncora.x - EST_AO_LADO - EST_W;
+    if (direita <= maxX) x = direita;
+    else if (esquerda >= CTX_BORDA) x = esquerda;
+    y = estAncora.y + estAncora.h * 0.5f - h * 0.5f;
+  } else y = (NV_TELA_H - h) * 0.5f;
+  if (x < CTX_BORDA) x = CTX_BORDA;
+  if (y > NV_TELA_H - CTX_BORDA - h) y = NV_TELA_H - CTX_BORDA - h;
+  if (y < CTX_BORDA) y = CTX_BORDA;
+  return (GfxRect){ x, y, EST_W, h };
 }
 
-static int toqueEstRolar(const PonteiroRolagem *e) {
-  if (!aberto || pagina != 1 || !telefoneui_ativo()) return 0;
-  return toquerol_evento(&toqueEst, e);
+// Onde a ilha ficou no ultimo quadro (tests/estilo3_shot.c).
+static GfxRect estIlhaRect;
+int ctx_estilo_rect(GfxRect *out) {
+  if (!aberto || pagina != 1 || !out) return 0;
+  *out = estIlhaRect;
+  return 1;
 }
-
-static void estToqueAlvo(GfxRect r, GfxRect janela, int i, int b) {
-  if (!aberto) return;
-  ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, janela.y, janela.y + janela.h,
-                      ponteiroEstFoco, ponteiroEstOk, i, b);
-}
-
-static void estLinhaTelefone(GfxRect r, GfxRect janela, int i, int atual, float a) {
-  int n = estLin[i].n, marcado = 0;
-  float seg = n > 1 ? n * EST_TOQUE_SEG + (n - 1) * EST_TOQUE_GAP + 20.0f : 0;
-  float k = fmaxf(0.0f, fminf(1.0f, estAnim[i]));
-  for (int j = 0; j < n; j++) if (estLin[i].tipos[j] == atual) marcado = 1;
-  if (a > .5f) estToqueAlvo(r, janela, i, 0);
-  if (k > .01f) {
-    if (ajustes_vidro()) gfx_cor(r, .5f, 1, 1, 1, .14f * k * a);
-    else gfx_cor(r, .5f, .19f, .195f, .215f, k * a);
-  }
-  if (marcado) gfx_icone((GfxRect){r.x + 20, r.y + (r.h - CTX_ICONE) * .5f,
-                                  CTX_ICONE, CTX_ICONE}, "check", .95f, .95f, .94f, a);
-  TxtLinha t = txt_linha_corta(TXT_PG_ROTULO, estLin[i].rotulo, 243, 242, 239, 255,
-                              r.w - 62.0f - 20.0f - seg);
-  txt_desenhar_alpha(t, r.x + 62, r.y + (r.h - t.h) * .5f, (.72f + .28f * k) * a);
-  if (n < 2) return;
-  float sx = r.x + r.w - 10.0f - n * EST_TOQUE_SEG - (n - 1) * EST_TOQUE_GAP;
-  for (int j = 0; j < n; j++) {
-    GfxRect c = {sx + j * (EST_TOQUE_SEG + EST_TOQUE_GAP),
-                  r.y + (r.h - EST_TOQUE_SEG) * .5f, EST_TOQUE_SEG, EST_TOQUE_SEG};
-    const char *pal = i18n(fil_estilo_tam_palavra(j));
-    char letra[8]; int p = 0, esc = j == estTam[i];
-    if (pal[0]) { letra[p++] = pal[0];
-      while (p < 6 && ((unsigned char)pal[p] & 0xC0) == 0x80) { letra[p] = pal[p]; p++; } }
-    letra[p] = 0;
-    if (a > .5f) estToqueAlvo(c, janela, i, j + 1);
-    if (esc) gfx_cor(c, .5f, .93f, .93f, .93f, .95f * a);
-    else if (estLin[i].tipos[j] == atual) gfx_anel(c, .5f, 1.5f, .93f, .93f, .93f, .6f * a);
-    t = txt_linha(TXT_DET_BOTAO, letra, esc ? 20 : 237, esc ? 22 : 237, esc ? 26 : 237, 255);
-    txt_desenhar_alpha(t, c.x + (c.w - t.w) * .5f, c.y + (c.h - t.h) * .5f, a);
-  }
-}
-
-static void desenhaEstilosTelefone(float a) {
-  EstTelefoneGeo g = estTelefoneGeo(a);
-  int atual = fil_tipo(filChave);
-  float maximo = fmaxf(0, estListaAltura() - g.lista.h);
-  estRolY = toquerol_clamp(estRolY, 0, maximo);
-  if (!toqueEst.livre && estFoco >= 0 && estFoco < nEstilos) {
-    float y = estFoco * (EST_TOQUE_LINHA + EST_GAP);
-    if (y < estRolY) estRolY = y;
-    if (y + EST_TOQUE_LINHA > estRolY + g.lista.h) estRolY = y + EST_TOQUE_LINHA - g.lista.h;
-    estRolY = toquerol_clamp(estRolY, 0, maximo);
-  }
-  toquerol_vincular(&toqueEst, g.lista, gfx_escala(), 0, maximo, 1, &estRolY);
-  ponteiro_rolagem(toqueEstRolar);
-  gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0, 0, 0, 0, .55f * a);
-  if (aberto && a > .5f && ponteiro_ativo()) {
-    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroCtxFora, 0, 0);
-    ponteiro_alvo(g.modal.x, g.modal.y, g.modal.w, g.modal.h, NULL, NULL, 0, 0);
-  }
-  ilhaCtx(g.modal, 36, a);
-  kickerCtx("Estilo da fileira", g.modal.x + 28, g.modal.y + 28, a);
-  TxtLinha titulo = txt_linha_corta(TXT_ROW_TITULO, filTitulo, 243, 242, 239, 255, g.modal.w - 56);
-  txt_desenhar_alpha(titulo, g.modal.x + 28, g.modal.y + 54, a);
-  gfx_recorte(g.lista.x, g.lista.y, g.lista.w, g.lista.h);
-  for (int i = 0; i < nEstilos; i++) {
-    GfxRect r = {g.lista.x, g.lista.y + i * (EST_TOQUE_LINHA + EST_GAP) - estRolY,
-                 g.lista.w, EST_TOQUE_LINHA};
-    if (r.y + r.h <= g.lista.y || r.y >= g.lista.y + g.lista.h) continue;
-    estLinhaTelefone(r, g.lista, i, atual, a);
-  }
-  gfx_sem_recorte();
-  if (estFoco >= 0 && estFoco < nEstilos) {
-    int jt = estTam[estFoco] >= 0 && estTam[estFoco] < estLin[estFoco].n ? estTam[estFoco] : 0;
-    int salvo = estTipo(estFoco) == atual;
-    float bw = salvo ? badge_largura("Atual") + 18.0f : 0;
-    TxtLinha nome = txt_linha_corta(TXT_TITULO3, estLin[estFoco].nomes[jt], 245, 248, 255, 255, g.previa.w - bw);
-    txt_desenhar_alpha(nome, g.previa.x, g.previa.y, a);
-    if (salvo) badge_desenhar(g.previa.x + g.previa.w - bw + 18,
-                              g.previa.y + (nome.h - BADGE_H) * .5f, "Atual", BADGE_REALCE, a);
-    txt_bloco_corta(TXT_CAPTION2, i18n(fil_estilo_ajuda(filChave, estTipo(estFoco))),
-                    170, 174, 184, g.previa.x, g.previa.y + nome.h + 8, g.previa.w, 30, a * .92f, 2);
-  }
-  GfxRect palco = {g.previa.x, g.previa.y + EST_PALCO_Y, g.previa.w, g.previa.h - EST_PALCO_Y};
-  gfx_cor(palco, 26.0f / palco.h, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, .96f * a);
-  titulo = txt_linha_corta(TXT_ROW_TITULO, filTitulo, 245, 246, 249, 255, palco.w - 48);
-  txt_desenhar_alpha(titulo, palco.x + 24, palco.y + 20, a);
-  GfxRect area = {palco.x + 24, palco.y + 40 + titulo.h, palco.w - 48,
-                  palco.h - 60 - titulo.h};
-  if (prevAnt >= 0 && prevT < .995f) {
-    GfxRect s = area; s.x -= 24 * prevT;
-    home_previa_fileira(filChave, prevAnt, prevRefAnt, s, a * (1 - prevT));
-  }
-  if (prevAtual >= 0) {
-    GfxRect e = area; e.x += 24 * (1 - prevT);
-    e.w = fminf(e.w, palco.x + palco.w - 24 - e.x);
-    home_previa_fileira(filChave, prevAtual, prevRefAtual, e, a * prevT);
-  }
-  titulo = txt_linha_corta(TXT_ILHA_APOIO, "Toque para aplicar", 243, 242, 239, 255,
-                           g.modal.w - 56 - g.cancelar.w - 24);
-  txt_desenhar_alpha(titulo, g.modal.x + 28, g.cancelar.y + (g.cancelar.h - titulo.h) * .5f, a * .6f);
-  gfx_cor(g.cancelar, .5f, 1, 1, 1, .08f * a);
-  titulo = txt_linha_corta(TXT_PG_ROTULO, "Fechar", 243, 242, 239, 255, g.cancelar.w - 28);
-  txt_desenhar_alpha(titulo, g.cancelar.x + (g.cancelar.w - titulo.w) * .5f,
-                     g.cancelar.y + (g.cancelar.h - titulo.h) * .5f, a);
-  if (aberto && a > .5f) ponteiro_alvo(g.cancelar.x, g.cancelar.y, g.cancelar.w, g.cancelar.h,
-                                      NULL, ponteiroCtxFora, 0, 0);
-}
-#endif
 
 static void desenhaEstilos(float a) {
-#ifdef NV_TOUCH_UI
-  if (telefoneui_ativo()) { desenhaEstilosTelefone(a); return; }
-#endif
-  float lista = (float)nEstilos * (EST_LINHA + EST_GAP) - EST_GAP;
-  float corpo = lista > EST_PALCO_H + EST_PALCO_Y ? lista : EST_PALCO_H + EST_PALCO_Y;
-  float alt = CTX_PAD * 2.0f + 116.0f + corpo + CTX_RODAPE;
-  float x = (NV_TELA_W - EST_W) * 0.5f, y = (NV_TELA_H - alt) * 0.5f;
-  float topo, dx, dw;
-  int i, atual = fil_tipo(filChave);
-  float ar_, ag_, ab_;
-  { GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-    gfx_cor(tela, 0.0f, 0, 0, 0, 0.55f * a); }
-  if (aberto && a > 0.5f && ponteiro_ativo()) {
-    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroCtxFora, 0, 0);
-    ponteiro_alvo(x, y, EST_W, alt, NULL, NULL, 0, 0);
+  a *= estPag;
+  int i, n = nEstilos + (ordemLinha ? 1 : 0);
+  float disp = NV_TELA_H - 2.0f * CTX_BORDA - 2.0f * EST_PAD;
+  float lin = EST_LINHA;
+  GfxRect m;
+  if ((float)n * (lin + EST_GAP) - EST_GAP > disp) lin = disp / (float)n - EST_GAP;
+  m = estIlha(2.0f * EST_PAD + (float)n * (lin + EST_GAP) - EST_GAP);
+  estIlhaRect = m;
+  m.y += (1.0f - a) * 12.0f;
+  if (aberto && pagina == 1 && a > 0.5f && ponteiro_ativo()) {
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroEstFora, 0, 0);
+    ponteiro_alvo(m.x, m.y, m.w, m.h, NULL, NULL, 0, 0);
   }
-  y += (1.0f - a) * 40.0f;
-  ajustes_acento(&ar_, &ag_, &ab_);
-  ilhaCtx((GfxRect){ x, y, EST_W, alt }, 36.0f, a);
-  (void)ar_; (void)ag_; (void)ab_;
-  // CABECALHO DE MODAL DA ILHA (o da confirmacao do mockup "ilha" tela 7):
-  // kicker em caixa alta espacada a 45 % e o nome da fileira em negrito.
-  kickerCtx("Estilo da fileira", x + CTX_PAD, y + CTX_PAD, a);
-  { TxtLinha t = txt_linha_corta(TXT_ROW_TITULO, filTitulo, 243, 242, 239, 255,
-                                 EST_W - CTX_PAD * 2.0f);
-    txt_desenhar_alpha(t, x + CTX_PAD, y + CTX_PAD + 26.0f, a); }
-  topo = y + CTX_PAD + 116.0f;
-
-  // A LISTA. O visto marca a forma que vale agora; o foco e so a previa.
-  for (i = 0; i < nEstilos; i++) {
-    GfxRect r = { x + CTX_PAD, topo + (float)i * (EST_LINHA + EST_GAP), EST_LISTA_W, EST_LINHA };
-    int j, temAtual = 0;
-    for (j = 0; j < estLin[i].n; j++) if (estLin[i].tipos[j] == atual) temAtual = 1;
-    if (aberto && a > 0.5f)
-      ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstFoco, ponteiroEstOk, i, 0);
-    linhaCtx(r, estLin[i].rotulo, temAtual ? "check" : "", estAnim[i], a);
-    if (estLin[i].n > 1) desenhaTamanhos(r, i, atual, a);
-  }
-
-  // A DIREITA: o nome da forma em foco, a frase dela e o palco.
-  dx = x + CTX_PAD + EST_LISTA_W + EST_COL_GAP;
-  dw = x + EST_W - CTX_PAD - dx;
-  if (estFoco >= 0 && estFoco < nEstilos) {
-    float ty = topo;
-    int jt = estTam[estFoco] >= 0 && estTam[estFoco] < estLin[estFoco].n ? estTam[estFoco] : 0;
-    TxtLinha nome = txt_linha(TXT_TITULO3, estLin[estFoco].nomes[jt], 245, 248, 255, 255);
-    txt_desenhar_alpha(nome, dx, ty, a);
-    if (estTipo(estFoco) == atual)
-      badge_desenhar(dx + nome.w + 18.0f, ty + (nome.h - BADGE_H) * 0.5f, "Atual",
-                     BADGE_REALCE, a);
-    ty += nome.h + 8.0f;
-    txt_bloco_corta(TXT_CAPTION2, i18n(fil_estilo_ajuda(filChave, estTipo(estFoco))),
-                    170, 174, 184, dx, ty, dw, 30.0f, a * 0.92f, 2);
-  }
-  // O palco comeca abaixo das duas linhas da frase e vai ate a base da lista.
-  { GfxRect palco = { dx, topo + EST_PALCO_Y, dw, corpo - EST_PALCO_Y };
-    TxtLinha tl;
-    GfxRect area;
-    // O palco e uma superficie dentro da ilha, sem aro (regra 1 do Glass UI).
-    gfx_cor(palco, 26.0f / palco.h, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 0.96f * a);
-    tl = txt_linha_corta(TXT_ROW_TITULO, filTitulo, 245, 246, 249, 255, palco.w - 64.0f);
-    txt_desenhar_alpha(tl, palco.x + 32.0f, palco.y + 28.0f, a);
-    area = (GfxRect){ palco.x + 32.0f, palco.y + 28.0f + tl.h + 20.0f,
-                      palco.w - 32.0f, palco.h - (28.0f + tl.h + 20.0f) - 28.0f };
-    // A forma que sai desliza para a esquerda e apaga; a nova entra pela
-    // direita. 24 px: o bastante para ler "trocou", pouco para competir.
-    if (prevAnt >= 0 && prevT < 0.995f) {
-      GfxRect s = area; s.x -= 24.0f * prevT;
-      home_previa_fileira(filChave, prevAnt, prevRefAnt, s, a * (1.0f - prevT));
+  // O MESMO VIDRO DO CHROME (dono, 15/10): a folha compartilhada, sem a base
+  // quase solida de ilhaCtx, para seguir "Opacidade do vidro".
+  if (ajustes_vidro()) {
+    gfx_sombra_sob((GfxRect){ m.x - 18.0f, m.y - 8.0f, m.w + 36.0f, m.h + 40.0f }, 1.0f, 0, 0.5f,
+                   0, 0, 0, .42f * a, m, 30.0f, 0.0f);
+    gfx_vidro_folha(m, 30.0f / m.h, a);
+  } else ilhaCtx(m, 30.0f, a);
+  for (i = 0; i < n; i++) {
+    GfxRect r = { m.x + EST_PAD, m.y + EST_PAD + (float)i * (lin + EST_GAP),
+                  m.w - 2.0f * EST_PAD, lin };
+    if (i < nEstilos) {
+      if (aberto && pagina == 1 && a > 0.5f)
+        ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstFoco, ponteiroEstOk, i, 0);
+      linhaEstilo(r, estLin[i].rotulo, estTipo(i), estAnim[i], a);
+      if (estLin[i].n > 1 && estAnim[i] > 0.5f) desenhaTamanhos(r, i, a);
+    } else {
+      // A ORDEM dos itens da colecao: o valor que esquerda/direita escolhem; o
+      // clique cicla (mouse e Magic Remote nao tem esquerda/direita).
+      char rot[96];
+      snprintf(rot, sizeof rot, i18n("Ordem: %s"), i18n(fil_ordem_rotulo(ordemSel)));
+      if (aberto && pagina == 1 && a > 0.5f)
+        ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstFoco, ponteiroOrdemAtivar, nEstilos, 0);
+      linhaEstilo(r, rot, -1, ordemAnim, a);
     }
-    if (prevAtual >= 0) {
-      GfxRect e = area; e.x += 24.0f * (1.0f - prevT);
-      // O recorte acompanha a area deslocada; sem o corte de volta a direita
-      // a arte que entra passaria da borda do palco.
-      if (e.x + e.w > palco.x + palco.w) e.w = palco.x + palco.w - e.x;
-      home_previa_fileira(filChave, prevAtual, prevRefAtual, e, a * prevT);
-    } }
-
-  // O gesto de tamanho so aparece no rodape quando a linha em foco tem um.
-  { int comTam = estFoco >= 0 && estFoco < nEstilos && estLin[estFoco].n > 1;
-    TxtLinha t = txt_linha(TXT_ILHA_APOIO, comTam
-                   ? "↑ ↓ Escolher   ·   ← → Tamanho   ·   OK Aplicar   ·   Voltar Cancelar"
-                   : "↑ ↓ Escolher   ·   OK Aplicar   ·   Voltar Cancelar",
-                           243, 242, 239, 255);
-    txt_desenhar_alpha(t, x + CTX_PAD, y + alt - CTX_PAD - t.h, a * 0.42f); }
+  }
 }
 
 // --- A CONFIRMACAO (pagina 2) -----------------------------------------------
@@ -2012,7 +1936,7 @@ static void desenhaLista(float a) {
   TxtLinha n, m, q;
   float x, y, alt, hx, hy, hw, cy;
   int i, temQuem, carregando = lst_itens_carregando() > 0;
-  const float pad = CTX_ILHA_PAD, esc = gfx_escala_ui();
+  const float pad = CTX_ILHA_PAD;
   const float capaW = (CTXL_W - 2.0f * (pad + 20.0f) - (CTXL_CAPAS - 1) * CTXL_CAPA_GAP) / CTXL_CAPAS;
   const float capaH = capaW * 1.5f;
 
@@ -2057,7 +1981,7 @@ static void desenhaLista(float a) {
   cy = y + pad;
   if (arte) {
     GfxRect r = { x + pad, cy, CTXL_W - 2.0f * pad, CTXL_ARTE_H };
-    GLuint t = tex_obter_larg(arte, r.w * esc);
+    GLuint t = tex_obter_larg(arte, r.w);
     float raio = 22.0f / r.h;
     if (t) {
       gfx_tex_aspect_atual = tex_aspecto(arte);
@@ -2085,7 +2009,7 @@ static void desenhaLista(float a) {
     const char *u = NULL;
     GLuint t = 0;
     if (lst_item(i, &it)) u = it.poster[0] ? it.poster : it.backdrop[0] ? it.backdrop : NULL;
-    if (u) t = tex_obter_larg(u, capaW * esc);
+    if (u) t = tex_obter_larg(u, capaW);
     if (t) {
       gfx_tex_aspect_atual = tex_aspecto(u);
       gfx_rect(r, t, GFX_CARD, 0, 0, 0, raio, 0, 0, 0, a);
@@ -2117,6 +2041,7 @@ int ctx_inline_painel_ativo(void) { return aberto && modoInline() && pagina == 0
 #endif
 void ctx_inline_pedir(int on) { inlinePend = on; }
 static int modoInline(void) { return inlineOn && doPainel && !doSocial && !doLista && !soFileira; }
+float ctx_estilo_t(void) { return estPag; }
 float ctx_inline_t(void) { return modoInline() ? (anim < 0.0f ? 0.0f : anim > 1.0f ? 1.0f : anim) : 0.0f; }
 static CtxInfoEstado estInline(const CatItem *ci) {
   CtxInfoEstado e; e.salvo = tituloSalvo(ci); e.visto = historicoDe(ci); return e;
@@ -2237,6 +2162,8 @@ static void ctx_desenharCorpo_(Uint32 agora);
 void ctx_desenhar(Uint32 agora) {
   ESCALA_INI();
   ctx_desenharCorpo_(agora);
+  // Depois do corpo: o veu de 94% do menu apagaria o seletor que esta sumindo.
+  if (estSaindo && anim >= 0.01f && !(modoInline() && pagina == 0)) desenhaEstilos(anim);
   ESCALA_FIM();
 }
 // O cartao da home e em pixels reais; o menu desenha na tela virtual.
@@ -2310,10 +2237,11 @@ static void ctx_desenharCorpo_(Uint32 agora) {
       cartazRect = ctxDaHome(hi.rect);
   }
 
-  { GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-    gfx_cor(tela, 0.0f, 0, 0, 0, 0.94f * a); }
-
   infoOn = infoPossivel(ci);
+  // The Home stays drawn underneath: one dim veil, and the glass panels frost
+  // what the rows show through it. No full-screen art or extra blur here.
+  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.5f * a);
+
   est.salvo = tituloSalvo(ci);
   est.visto = historicoDe(ci);
   comLogo = !infoOn && logotitulo_url(ci, CTX_LOGO_W) != NULL;
@@ -2401,7 +2329,7 @@ static void ctx_desenharCorpo_(Uint32 agora) {
     artA = grande ? 1.0f : 1.0f - anim_clamp((e - 0.15f) / 0.55f, 0.0f, 1.0f);
     ilhaCtx(r, raioPx, sa);
     if (artA > 0.01f && cartazArte[0]) {
-      GLuint t = tex_obter_larg(cartazArte, P.w * gfx_escala_ui());
+      GLuint t = tex_obter_larg(cartazArte, P.w);
       if (t) {
         gfx_tex_aspect_atual = tex_aspecto(cartazArte);
         gfx_card_forcar_cover_atual = 1.0f;
@@ -2425,7 +2353,7 @@ static void ctx_desenharCorpo_(Uint32 agora) {
     /* feito */
   } else
   if (temCartaz && !doPainel && cartazArte[0]) {
-    GLuint t = tex_obter_larg(cartazArte, cartazRect.w * gfx_escala_ui());
+    GLuint t = tex_obter_larg(cartazArte, cartazRect.w);
     if (t) {
       float raio = ajustes_raio_poster_px() / gfx_escala_ui() / cartazRect.h, teto = 0.5f * cartazRect.w / cartazRect.h;
       if (raio > teto) raio = teto;
@@ -2515,4 +2443,54 @@ static void ctx_desenharCorpo_(Uint32 agora) {
     }
     linhaCtx(r, ops[i].rot, icone, f, a);
   }
+}
+
+void ctx_abrir_sessao(void) {
+  // Sem animacao de saida: uma linha inline pode perder o painel que a
+  // desenhava e continuar aberta como uma camada invisivel sobre a Home.
+  aberto = 0;
+  idx = -1; foco = 0;
+  anim = animV = 0.0f;
+  doPainel = doSocial = doLista = soFileira = cartazFixo = 0;
+  inlineOn = inlinePend = 0;
+  pagina = confFoco = 0;
+  holdAtivo = holdCancelado = holdPronto = esperandoSoltura = 0;
+  holdDesde = 0;
+  // O observador SDL continua instalado uma vez; so o gesto era do perfil.
+  operacao = CTX_OP_NENHUMA;
+  intencao = estadoOperacao = opSimkl = espelhoAplicado = 0;
+  operacaoImdb[0] = 0;
+  avisoOp = NULL;
+  opTinhaRetomada = fecharAoConfirmar = 0;
+  memset(&opItem, 0, sizeof opItem);
+  memset(&copiaPainel, 0, sizeof copiaPainel);
+  memset(&lista, 0, sizeof lista);
+  listaPedida = listaAlterou = 0;
+  memset(extras, 0, sizeof extras);
+  nExtras = 0;
+  extraPedido = confExtra = pendExtra = -1;
+  pedCategoriaImdb[0] = 0;
+  detalhesOk = detalhesPend = deOutraTela = 0;
+  dispensarPend = dispensarOp = 0;
+  filChave[0] = filTitulo[0] = 0;
+  nOps = 0;
+  memset(ops, 0, sizeof ops);
+  memset(focoAnim, 0, sizeof focoAnim);
+  memset(confAnim, 0, sizeof confAnim);
+  nEstilos = 0; estFoco = -1;
+  memset(estLin, 0, sizeof estLin);
+  memset(estTam, 0, sizeof estTam);
+  memset(estAnim, 0, sizeof estAnim);
+  temCartaz = 0;
+  cartazArte[0] = 0;
+  memset(&cartazRect, 0, sizeof cartazRect);
+  infoT = infoH = 0.0f;
+  infoDesenhada = infoLadoUlt = 0;
+  memset(&infoCaixa, 0, sizeof infoCaixa);
+  memset(&menuCaixa, 0, sizeof menuCaixa);
+  dicaCx = -1.0f;
+#ifdef NV_TOUCH_UI
+  memset(&inlineRecorte, 0, sizeof inlineRecorte);
+  inlineRecorteValido = 0;
+#endif
 }

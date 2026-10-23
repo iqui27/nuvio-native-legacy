@@ -8,5 +8,5 @@ if [ "$(uname -s)" = Darwin ]; then flags+=(-Wl,-dead_strip); else flags+=(-Wl,-
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc tests/guia_epg_estado.c -Isrc \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -O1 -g -Wall -Wno-unused-function -Wno-macro-redefined "${flags[@]}" -lpthread -o "$work/test"
+  -O1 -g -Wall -Wno-unused-function -Wno-macro-redefined "${flags[@]}" -lpthread -lm -o "$work/test"
 "$work/test"

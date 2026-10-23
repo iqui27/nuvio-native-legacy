@@ -1,7 +1,7 @@
 #!/bin/bash
 # DESMARCAR GANHA (Silo, tt14688458): um episodio que a pessoa desmarcou na TV
 # nao volta marcado porque o Trakt ou a conta Nuvio ainda dizem "visto", nem
-# depois de o jornal da conta ser podado, nem depois de fechar o app.
+# depois da poda do jornal da conta, nem depois de fechar o app.
 # Fontes falsas em tests/vistonao.c; vistoep/contapend/contalib/js de verdade.
 #
 #   bash tests/vistonao.sh
@@ -14,7 +14,7 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-vistonao-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 extra=()
 if [ -f src/vistonao.c ]; then extra=(-DTEM_VISTONAO src/vistonao.c); fi
-cc -O1 -g -Wall -Wextra -Isrc -Wno-deprecated-declarations -Wno-macro-redefined \
+cc -O1 -g -Wall -Wextra -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wno-deprecated-declarations -Wno-macro-redefined \
   ${extra[@]+"${extra[@]}"} src/vistoep.c src/contapend.c src/contalib.c \
   src/js.c src/jsw.c tests/vistonao.c -o "$tmp/vistonao" -lpthread
 # Diagnostico separado: falhas conhecidas de reconciliacao, sem fingir que
@@ -37,8 +37,9 @@ echo "log por fonte:"
 exige '^\[vistoep\] tt14688458: trakt \+28 \(bloqueados 0'
 exige '^\[vistoep\] tt14688458: trakt \+24 \(bloqueados 4: T2E7 T2E8 T2E9 T2E10; remoto mais novo 0\)'
 exige '^\[vistoep\] tt14688458: trakt \+25 \(bloqueados 3: T2E8 T2E9 T2E10; remoto mais novo 1\)'
-exige '^\[vistoep\] conta: \+1 episodios \(bloqueados 1; remoto mais novo 0\)'
-exige '^\[vistoep\] tt14688458: conta bloqueados 1: T2E6'
+# Confirmed V entries stay as evidence (#548), so the journal rejects this
+# stale row before vistoep_fonte; its blocks are logged separately.
+exige '^\[vistoep\] conta: \+1 episodios \(bloqueados 0; remoto mais novo 0\) \| 1 seguros pelo jornal \(intencao de visto preservada\)$'
 
 # NENHUMA FONTE ESCREVE "VISTO" NO MAPA SEM PASSAR PELO JUIZ. vistoep_definir e
 # do gesto local (player, tela); leitor de rede usa vistoep_fonte. O Simkl nao

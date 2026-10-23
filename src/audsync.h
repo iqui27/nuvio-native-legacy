@@ -28,6 +28,14 @@
 #include "audvad.h"
 #include <stdint.h>
 
+// Manual audio presentation offset: positive delays audio; zero is unchanged.
+#define AUDSYNC_OFFSET_MAX_MS 500
+#define AUDSYNC_OFFSET_STEP_MS 20
+static inline int audsync_offset_ms(int ms) {
+  return ms < -AUDSYNC_OFFSET_MAX_MS ? -AUDSYNC_OFFSET_MAX_MS :
+         ms > AUDSYNC_OFFSET_MAX_MS ? AUDSYNC_OFFSET_MAX_MS : ms;
+}
+
 // --- backend side (any thread) --------------------------------------------------------
 enum { AUDSYNC_FMT_NENHUM = 0, AUDSYNC_FMT_PCM = 1, AUDSYNC_FMT_BITSTREAM = 2 };
 // `ligar(1/0)` turns the platform tap on/off; called on the UI thread only.

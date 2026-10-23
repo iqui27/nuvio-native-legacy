@@ -9,6 +9,7 @@
 // NUVIO_SHOT_IDIOMA=N troca o idioma (2 = romeno). Fonte da interface: Montserrat (a TV
 // do dono).
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "player.h"
 #include "ajustes.h"
 #include "faixas.h"
@@ -100,7 +101,7 @@ static LegSyncVisao esperar(LegSyncFase f) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-legsync";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-legsync");
   const char *base = getenv("NV_LEGSYNC_BASE");   // http://127.0.0.1:PORTA/f
   char srt[300];
   LegSyncVisao v;

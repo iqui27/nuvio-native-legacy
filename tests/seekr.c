@@ -46,6 +46,8 @@ int main(void) {
   assert(!strcmp(u, "https://api.seekr.tv/sprites?duration_ms=8160000&imdb_id=tt0133093"));
   assert(seekr_url_lookup(u, sizeof u, "tt0903747:2:3", 2, 3, 2880000));
   assert(!strcmp(u, "https://api.seekr.tv/sprites?duration_ms=2880000&show_imdb_id=tt0903747&season=2&episode=3"));
+  assert(seekr_url_lookup(u, sizeof u, "tt12409194:0:1", 0, 1, 1200000));
+  assert(strstr(u, "show_imdb_id=tt12409194&season=0&episode=1"));
   assert(!seekr_url_lookup(u, sizeof u, "kitsu:1", 0, 0, 1000));
   assert(!seekr_url_lookup(u, sizeof u, "tt1", 0, 0, 0));
 

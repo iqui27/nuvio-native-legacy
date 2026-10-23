@@ -1,5 +1,6 @@
 // Drive deferred callbacks deterministically, without OAuth/account/network.
 #include <assert.h>
+#include "nvtmp.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,7 +29,7 @@ int dados_gravar(const char *n, const char *b) {
   (void)b; saves++; snprintf(savedName, sizeof savedName, "%s", n); return 1;
 }
 char *dados_caminho(char *dst, unsigned n, const char *nome) {
-  (void)nome; snprintf(dst,n,"/tmp/nuvio-discord-permissions-%ld",(long)getpid()); return dst;
+  (void)nome; snprintf(dst,n,"%s/nuvio-discord-permissions-%ld", nvt_dir(),(long)getpid()); return dst;
 }
 int dados_apagar(const char *n) { (void)n; deletes++; return 1; }
 char *rede_postar_seguro_st(const char *u, int sec, const char *const *cab, const char *b, int *st) {

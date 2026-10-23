@@ -1,5 +1,6 @@
 // Regras e capturas do cartao da 1.7.4 (ver tests/novidades174_shot.sh).
 #include "novidades174.h"
+#include "nvtmp.h"
 #include "dados.h"
 #include "ajustes.h"
 #include "gfx.h"
@@ -118,7 +119,7 @@ static void captura(const char *saida, const char *sufixo, int c, float t, int p
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-novidades174";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-novidades174");
   const char *so = getenv("N174_SO");
   const char *dir = getenv("NUVIO_DADOS");
   SDL_Window *w;

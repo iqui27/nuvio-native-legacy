@@ -8,6 +8,7 @@
 // No Mac nao ha /proc/meminfo: a RAM e "desconhecida", o que na tabela da LG
 // da automatico 96 MB, teto 160, 4 fios e heroi 1920 (perfiltv.c).
 #include "../src/diagnostico.c"
+#include "nvtmp.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,7 +40,7 @@ static PtvMedida med(int ms, int falhas) {
 }
 
 int main(void) {
-  char dir[] = "/tmp/nuvio-diag-fluxo-XXXXXX";
+  char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-diag-fluxo-XXXXXX");
   char *cfg;
   assert(mkdtemp(dir));
   setenv("NUVIO_DADOS", dir, 1);

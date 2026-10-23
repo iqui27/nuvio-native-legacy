@@ -110,7 +110,7 @@ int main(int argc, char **argv) {
   const char *shots = argc > 1 ? argv[1] : NULL;
   AddonRemoto a[4];
   char nomes[256];
-  int i, iA0, iA1, iL, falta, escolhida;
+  int i, iA0, iA1, iL, falta, escolhida, focado;
   Uint32 tPrimeira, tLento, tFim;
   assert(porta && dados);
   ajustes(dados, 0);
@@ -172,8 +172,12 @@ int main(int argc, char **argv) {
   assert(stream_auto_pode_decidir(1, 1, 0, 0));           // lembrada presente vai
   puts("ok  com so as 1080p: espera o prazo; a lembrada pendente segura; a presente vai");
 
-  // A pessoa desce ate a SEGUNDA do Rapido (linha 1) antes de o Lento chegar.
-  // A folha abre com o foco na lista, linha 0.
+  // A pessoa desce ate a SEGUNDA linha antes de o Lento chegar. A folha abre
+  // com o foco na linha 0, que e a "Melhor para esta TV": entre as duas 1080p
+  // do Rapido, a BluRay vence a WEB-DL pela evidencia de qualidade
+  // (fontenota.h), entao a linha 1 e a WEB-DL.
+  assert(stream_automatico() == iA1);
+  focado = iA0;
   tecla(SDLK_DOWN);
   ESPERA(0, 50);
   if (shots) captura(shots, "2-rapido-chegou");
@@ -192,7 +196,7 @@ int main(int argc, char **argv) {
   if (shots) captura(shots, "3-lento-chegou-foco-parado");
   // O foco nao pulou: OK escolhe a mesma fonte (a segunda do Rapido).
   tecla(SDLK_RETURN);
-  assert(stream_folha_escolheu(&escolhida) && escolhida == iA1);
+  assert(stream_folha_escolheu(&escolhida) && escolhida == focado);
   puts("ok  o Lento entrou acima, o cartao em foco continuou o mesmo");
 
   // ---- 3. "Primeira da lista": espera quem foi instalado antes -----------

@@ -179,9 +179,9 @@ static void testeSessao(void) {
   assert(v.audio && abs(v.offsetAutoMs - 2500) <= 100);
   assert(!(v.acoes & LEGSYNC_ACAO_OUTRA) && (v.acoes & LEGSYNC_ACAO_DESFAZER));
   assert(atomic_load(&tapLigado) == 0);     // window done: tap disarmed
-  assert(legsync_offset_ms(300) == 300 + v.offsetAutoMs);
+  assert(legsync_offset_ms(300) == -300 + v.offsetAutoMs);   // manual +300 = later
   assert(legsync_acao(LEGSYNC_ACAO_DESFAZER));
-  assert(legsync_offset_ms(300) == 300);
+  assert(legsync_offset_ms(300) == -300);
   assert(audsync_pcm((int16_t[4]){ 0 }, 4, 0) == 0);   // late PCM after the window: ignored
 
   CASO("accepted: -1.2 s, with a seek in the middle (window restarts)");

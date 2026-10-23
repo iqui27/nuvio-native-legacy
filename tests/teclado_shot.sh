@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # A modal de teclado: modelo de foco (ESQUERDA/DIREITA entre a grade e a coluna
 # do campo), camadas (maiusculas de um toque e travadas, sinais, nada fora do
 # alfabeto do chamador), o QR do celular hospedado na modal, e as capturas.
@@ -21,4 +23,4 @@ cc "${sources[@]}" tests/teclado_shot.c -Isrc -o "$tmp/shot" \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -L/opt/homebrew/lib \
   -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined
-NUVIO_DADOS="$dados" "$tmp/shot" "${1:-/tmp/nuvio-teclado}"
+NUVIO_DADOS="$dados" "$tmp/shot" "${1:-${TMPDIR:-/tmp}/nuvio-teclado}"

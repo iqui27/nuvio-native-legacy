@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # nuvio-engine (commit fixado) + libtorrent no Mac, para o PoC e para
 # tests/p2pmotor_real.sh. Precisa de `brew install cmake openssl@3`.
 #
@@ -7,7 +9,7 @@
 set -eu
 cd "$(dirname "$0")/../.."
 . tools/p2p-motor/pasta.sh
-W="${1:-/tmp/nv-p2p-motor-mac}"
+W="${1:-${TMPDIR:-/tmp}/nv-p2p-motor-mac}"
 mkdir -p "$W"
 [ -d "$W/nuvio-engine/.git" ] || git clone -q https://github.com/NuvioMedia/nuvio-engine "$W/nuvio-engine"
 nv_p2p_fonte "$W/nuvio-engine"

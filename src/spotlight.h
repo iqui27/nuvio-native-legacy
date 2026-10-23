@@ -88,6 +88,8 @@
 // `voz` = 1 quando quem abriu foi o botao de microfone: com ditado disponivel
 // ele comeca na hora.
 void spot_abrir(int voz);
+// Abre sem pedir o teclado do sistema (demonstracao das Dicas do controle).
+void spot_abrir_demo(void);
 // Busca somente preferencias locais, sem consultas de catalogo/pessoas nem historico.
 void spot_abrir_ajustes(int voz);
 // "Buscar no guia" (Guia de uso): os recursos do guia e os ajustes que casam.

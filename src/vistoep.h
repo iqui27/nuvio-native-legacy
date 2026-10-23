@@ -24,6 +24,7 @@
 // item de "Continuar assistindo".
 #ifndef NV_VISTOEP_H
 #define NV_VISTOEP_H
+#include <stdint.h>
 
 // -1 nao se sabe (nunca foi consultado, ou o titulo nao esta no mapa)
 //  0 sabe-se que NAO foi visto
@@ -73,6 +74,10 @@ typedef struct {
 // 0, e o que foi barrado sai em `c`); 0 so para episodio invalido ou teto.
 int  vistoep_fonte(const char *imdb, int temporada, int episodio, int visto,
                    long long remotoMs, VistoFonte *c);
+// A remote request must keep the session captured before its network work.
+int vistoep_fonte_se_sessao(const char *imdb, int temporada, int episodio,
+                          int visto, long long remotoMs, VistoFonte *c,
+                          uint64_t sessao);
 // DESMARCAR GANHA (vistonao.h). app.c liga aqui o juiz das desmarcacoes:
 //   barra(imdb, t, e, remotoMs): 1 = ha desmarcacao da pessoa e o visto da
 //     fonte nao e mais novo que ela (barrado); 0 = nao ha; -1 = havia e o

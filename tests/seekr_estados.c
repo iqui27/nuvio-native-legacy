@@ -1,5 +1,8 @@
 #include "../src/seekr.c"
 #include <assert.h>
+// Ajustes nao entram nesta bancada: o relogio de 12 h fica desligado, como em
+// tests/guia_logos.c. seekr_horario_local formata com hora_tela() (horafmt.h).
+int ajustes_relogio_12h(void) { return 0; }
 int main(void) {
   const int estados[] = {SEEKR_DESLIGADO, SEEKR_BUSCANDO, SEEKR_PRONTO, SEEKR_SEM_PREVIA,
     SEEKR_CHAVE_RECUSADA, SEEKR_LIMITE_LOCAL, SEEKR_LIMITE_PROVEDOR, SEEKR_REDE_INDISPONIVEL,

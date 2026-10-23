@@ -5,6 +5,7 @@
 //
 //   NUVIO_SHOT_FONTE=3 bash tests/autoplay_ajustes_shot.sh /tmp/nv-202/aj
 #include "ajustes.h"
+#include "nvtmp.h"
 #include "addons.h"
 #include "fonteregra.h"
 #include "gfx.h"
@@ -53,7 +54,7 @@ static void captura(const char *nome, SDL_Window *win) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-202/aj";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-202/aj");
   char nome[600];
   SDL_Window *w;
   SDL_GLContext gl;

@@ -98,14 +98,24 @@ Ordem extraída das funções acima e dos pontos de chamada do grafo; eventos as
 | `plugins_adicionar_repo` (`src/plugins.c:520`) | Limites: 24 repos, 160 scrapers; URL recusada >=590 bytes. Manifesto 256 KiB, código 2 MiB, cache 6 h; rodada 30 s, scraper 20 s. |
 | `plugins_esquecer` (`src/plugins.c:620`) | Persistência por conta/perfil: remoção de último repo precisa subir como lista vazia; logout apaga os arquivos locais associados. |
 
+O corte de 6 s após os add-ons responderem, de `1a3dafcd`, pertencia à busca
+que esperava todas as origens antes de publicar. A busca VOD atual publica cada
+resposta na folha e usa "Espera pelos add-ons" para a decisão automática;
+conserva-se o teto de 30 s da rodada e 20 s por scraper. Os 600000 ms de
+`src/pluginjs.c` limitam o atraso de timers JS, não a consulta: o prazo do
+executor continua valendo mesmo com um timer mais longo.
+
 ### Testes
 
-Cobertura identificada por leitura; testes de produto não foram executados nesta tarefa documental.
+Os harnesses de captura usam dados isolados e fixtures locais por padrão.
 
 | Teste | Cobertura |
 |---|---|
 | `tests/plugins_fontes.c` | Manifesto/código/QuickJS/Stream contra servidor local; ACK, array vazio, cancelamento e troca de contexto. (`tests/plugins_fontes.c:1`). |
 | `tests/plugins_fontes.sh` | Compila e executa suíte de fontes com servidor local. (`tests/plugins_fontes.sh:1`). |
+| `tests/plugin_rodar.sh` | Roda um arquivo JS; sem argumentos verifica sucesso e erro com fixtures locais. |
+| `tests/pluginsui_shot.sh` | Captura lista, remoção, teclado e estado desligado a partir do cache local. |
+| `tests/plugins_folha_shot.sh` | Captura a folha via manifesto local → QuickJS → add-ons; `PLUG_REPO` permite usar outro repositório. |
 
 ### O que NÃO está demonstrado por esses testes
 

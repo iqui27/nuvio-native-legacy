@@ -3,6 +3,7 @@
 // plex.tv + PMS). No real server, no real account, never prints a token.
 #include "plex.h"
 #include "srvidx.h"
+#include "stub_perfisessao.h"
 #include "idbase.h"
 #include <assert.h>
 #include <stdio.h>
@@ -507,7 +508,9 @@ static void integracao(void) {
     assert(plex_pagina("plex_list_5002", 0, 2, itens, 60, &total, &raw) == 1);
     assert(raw == 2 && total == 3 && itens[0].temporada == 1 && itens[0].episodio == 2);
     CatEp playlistEps[16];
-    assert(plex_ficha(&itens[0], playlistEps, 16) == 3);
+    int playlistN = plex_ficha(&itens[0], playlistEps, 16);
+
+    assert(playlistN == 4);
     assert(itens[0].temporada == 1 && itens[0].episodio == 2);
     assert(plex_pagina("plex_list_5002", raw, 2, itens, 60, &total, &raw) == 1);
     assert(raw == 1 && !strcmp(itens[0].imdb, "tt0000101"));
@@ -523,8 +526,8 @@ static void integracao(void) {
     memset(x, 0, sizeof *x);
     snprintf(x->imdb, sizeof x->imdb, "px:01234567.201");
     snprintf(x->tipo, sizeof x->tipo, "series");
-    assert(plex_ficha(x, eps, 32) == 3);
-    assert(x->nTemporadas == 2 && x->temporadas[0] == 1 && x->temporadas[1] == 2);
+    assert(plex_ficha(x, eps, 32) == 4);
+    assert(x->nTemporadas == 3 && x->temporadas[0] == 1 && x->temporadas[1] == 2 && x->temporadas[2] == 0);
     snprintf(x->imdb, sizeof x->imdb, "px:deadbeef.201");                      // another server: refused
     assert(plex_ficha(x, eps, 32) == -1);
     free(x); free(eps); }
@@ -572,6 +575,21 @@ static void integracao(void) {
   assert(plex_consultar_t("tt0000201:1:2", "series", nuncaCancela, NULL, &lista) == 4 && lista);   // episode 302 resolved
   free(lista); lista = NULL;
   assert(plex_consultar_t("tt0000201:2:1", "tv", nuncaCancela, NULL, &lista) == 4);
+  free(lista); lista = NULL;
+  int specialN = plex_consultar_t("tt0000201:0:5", "series", nuncaCancela, NULL, &lista);
+
+  assert(specialN == 4 && lista);
+  free(lista); lista = NULL;
+  { PlexPreparo *p = plex_preparo_capturar(); assert(p);
+    assert(plex_preparo_consultar(p, "tt0000201:0:5", "series", nuncaCancela, NULL, &lista) == 4 && lista);
+    for (int i = 0; i < 4; i++) plex_reproducao_fim(lista[i].url, 0, 0);
+    free(lista); lista = NULL;
+    plex_preparo_liberar(p);
+    p = plex_preparo_capturar(); assert(p);
+    int nextN = plex_preparo_consultar(p, "tt0000201:2:0", "series", nuncaCancela, NULL, &lista);
+    assert(nextN == 4 && lista);
+    free(lista); lista = NULL; plex_preparo_liberar(p); }
+  assert(plex_consultar_t("tt0000201:2:0", "series", nuncaCancela, NULL, &lista) == 4 && lista);
   free(lista); lista = NULL;
   assert(plex_consultar_t("tt0000201:3:1", "series", nuncaCancela, NULL, &lista) == 0 && !lista);  // no such episode
   assert(plex_consultar_t("tt0000201", "movie", nuncaCancela, NULL, &lista) == 0);                  // a show is not a movie

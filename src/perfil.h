@@ -44,6 +44,7 @@ void perfil_abrir(void);
 void perfil_fechar(void);
 int  perfil_aberto(void);
 int  perfil_quer_sair(void);       // consome o pedido de voltar
+int  perfil_pediu_relogio(void);
 
 // Enquanto carrega, a tela preserva a estrutura com esqueletos. Um snapshot
 // NULL/sem atividade produz o estado vazio, nunca numeros inventados.

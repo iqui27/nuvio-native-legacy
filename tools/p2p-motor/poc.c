@@ -13,6 +13,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include "../../tests/nvtmp.h"
 
 static volatile sig_atomic_t parar;
 static void sinal(int s) { (void)s; parar = 1; }
@@ -32,7 +33,9 @@ static int ehVideo(const char *n) {
 
 int main(int argc, char **argv) {
   const char *hash = argc > 1 ? argv[1] : "dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c";
-  const char *pasta = argc > 2 ? argv[2] : "/tmp/nvp2p";
+  char pastaTmp[1100];
+  const char *pasta = argv[argc > 2 ? 2 : 0];
+  if (argc <= 2) { const char *t = getenv("TMPDIR"); snprintf(pastaTmp, sizeof pastaTmp, "%s/nvp2p", nvt_dir()); pasta = pastaTmp; }
   int limite = argc > 3 ? atoi(argv[3]) : 0;
   int cacheMB = argc > 4 ? atoi(argv[4]) : 512;
   char dados[600], cache[600], magnet[2000], tid[65] = "";

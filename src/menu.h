@@ -103,6 +103,17 @@ int  menu_pediu_spotlight(void);
 // interface; tudo o que esta API devolve ja vem em px da tela REAL.
 #define NV_MENU_MODERNA_X 48.0f   // px da tela REAL
 float menu_barra_borda(void);
+// Barra no topo: a geometria da tira como desenhada agora, em px da tela REAL
+// (retangulos x, y, w, h). `sel`/`foc` sao as capsulas de selecao e de foco
+// (x, w, alfa); `foco[k]` e quanto a de foco cobre a pilula k (a tinta do
+// rotulo); `cortado` 1 se algum rotulo nao coube inteiro. So os testes leem.
+#define MENU_TOPO_MAX 16
+typedef struct {
+  int n, cortado, busca[MENU_TOPO_MAX];
+  float y, h, x[MENU_TOPO_MAX], w[MENU_TOPO_MAX], foco[MENU_TOPO_MAX];
+  float trilha[4], avatar[4], sel[3], foc[3];
+} MenuTopoGeo;
+void menu_topo_geo(MenuTopoGeo *g);
 
 // --- PILULA DO LAYOUT DINAMICA (barra estilo Apple TV) ----------------------
 // No layout Dinamica da home nao ha rail: fechada, a barra e uma pilula
@@ -130,6 +141,11 @@ int   menu_pilula_rect(float *x, float *y, float *w, float *h);
 int   menu_pilula_titulo(void);
 float menu_pilula_alfa(void);
 void  menu_pilula_mostrar(float alvo);
+// 0 enquanto a BARRA DA APPLE TV esta aberta: o cabecalho do painel ja mostra
+// o relogio e a ilha do canto desenharia a mesma hora duas vezes (captura da
+// TCL: 11:29 sobre 11:29). So o layout Dinamica; na rail classica a ilha
+// continua ao lado (menu_aberto nao a esconde la).
+int   menu_relogio_cabe(void);
 
 void menu_evento(const SDL_Event *e);
 void menu_atualizar(float dt, Uint32 agora);

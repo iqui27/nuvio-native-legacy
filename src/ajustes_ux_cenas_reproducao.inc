@@ -112,7 +112,13 @@ static void rPrioridade(void) {   // Equilibrio / Qualidade / Comecar rapido
   static const char *Q[3] = { "4K", "1080p", "720p" };
   static const char *IC[3] = { "aj_sliders-horizontal", "aj_star", "aj_zap" };
   static const float VEL[3] = { 0.22f, 0.55f, 0.95f };
-  int v = rInt(AJ_FONTE_PRIORIDADE, 2), pick = v == 1 ? 0 : v == 0 ? 1 : 2, i;
+  int v = rInt(AJ_FONTE_PRIORIDADE, 3), pick = v == 1 ? 0 : v == 0 ? 1 : 2, i;
+  if (v == 3) {
+    for (i = 0; i < 3; i++) rLinha(40, rYL(i) + 10, 470, 52, Q[i], NULL, i + 3, i == 0 ? 1 : 0.55f);
+    ajc_foco(40, rYL(0) + 10, 470, 52, 12, 1);
+    ajc_ladrilho("aj_list-video", 570, 140, 64, 1, 1);
+    return;
+  }
   float p = 0.55f + 0.45f * ajc_onda(2.2f);
   for (i = 0; i < 3; i++) {
     float y = rYL(i) + 10;
@@ -336,7 +342,7 @@ static void rOutros(int op) {   // permitidos vazios: usa os outros (ligado) ou 
 // --- como o automatico escolhe e prepara -----------------------------------------------
 static void rAuto(void) {   // Melhor fonte (confere e escolhe) x Primeira da lista (toca na hora)
   static const char *Q[4] = { "1080p", "4K", "720p", "4K" };
-  int primeira = valor[AJ_FONTE_AUTO] == 1, i, s = ajc_passo(0.5f, 8);
+  int primeira = ajustes_fonte_primeira(), i, s = ajc_passo(0.5f, 8);
   float f = ajc_fase(4.0f);
   for (i = 0; i < 4; i++) {
     float y = rYL(i) + 6, al = 1;
@@ -428,6 +434,30 @@ static void rPreparar(int op) {   // o arquivo ja escolhido e posto no debrid an
   ajc_icone("aj_zap", 565, 215, 22, vid * 0.9f);
   ajcChaveCanto(k);
 }
+// MEMORIA DA FONTE: tres episodios, tres fontes cada. Ligado, a mesma linha
+// (a lembrada / o mesmo grupo) e a escolhida em todos; desligado, cada episodio
+// cai numa diferente. As linhas filhas mostram o estado da mae.
+static void rMemoria(int op) {
+  static const int SOLTA[3] = { 0, 2, 1 };
+  int mae = op == AJ_FONTE_GRUPO_SESSOES ? AJ_FONTE_GRUPO : op == AJ_LINK_PRAZO ? AJ_LINK_REUSAR : op;
+  float k = ajcLig(mae);
+  int s = ajc_passo(1.2f, 3), e, i;
+  const char *ic = op == AJ_LINK_REUSAR ? "aj_link"
+                 : op == AJ_LINK_PRAZO ? "aj_clock"
+                 : op == AJ_FONTE_GRUPO ? "aj_layers" : "aj_rotate-ccw-clock";
+  char b[8];
+  for (e = 0; e < 3; e++) {
+    float x = 24 + e * 196, al = e <= s ? 1.0f : 0.35f;
+    int alvo = k > 0.5f ? 1 : SOLTA[e];
+    snprintf(b, sizeof b, "E%d", e + 1);
+    ajcSelo(b, x, 34, 12, e == s ? 1.0f : 0.0f, al);
+    for (i = 0; i < 3; i++) rLinha(x, 76 + i * 62, 180, 50, i == 1 ? "1080p" : "4K", NULL, i + 1, al);
+    if (e <= s) ajc_foco(x, 76 + alvo * 62, 180, 50, 12, al);
+  }
+  ajc_ladrilho(ic, 40, 300, 40, k > 0.5f, 1);
+  if (op == AJ_LINK_PRAZO) ajcTexto(textoValor(op), 16, 1, 72, 290, 0.9f);
+  else ajcChaveCanto(ajcLig(op));
+}
 static void rOrdemFontes(void) {
   int addon = rInt(AJ_FONTE_ORDEM_ADDON, 1);
   const char *res[] = { "720p", "4K", "1080p" };
@@ -518,10 +548,19 @@ static void rPacoteRem(void) {   // um pacote sai e os outros fecham o espaco
 }
 
 // --- som e video desta TV ---------------------------------------------------------------
-static void rDts(void) {   // DTS -> estereo (2 caixas) ou 5.1 (6 caixas)
+static void rDts(void) {   // DTS -> estereo (2 caixas) ou 5.1 (6 caixas); .tpk desligado: so a TV
   int s51 = valor[AJ_DTS_AC3] == 1, i;
   float o = ajc_onda(1.2f);
   ajcSelo("DTS", 90, 26, 16, 0, 1);
+#ifdef NV_TPK
+  if (valor[AJ_DTS_AC3] == 0) {   // Desligado: o DTS chega a TV como no master, sem som
+    ajc_tv(250, 110, 140, 78, 1);
+    ajc_ret(256, 116, 128, 66, 6, 0.06f, 0.06f, 0.08f, 1);
+    ajc_icone("aj_volume-2", 305, 262, 30, 0.35f);
+    ajc_icone("aj_x", 340, 262, 22, 0.6f);
+    return;
+  }
+#endif
   ajc_icone("aj_chevron-right", 190, 43, 24, 0.7f);
   ajcSelo(s51 ? "5.1" : "AAC", 232, 26, 16, 1, 1);
   ajc_tv(250, 110, 140, 78, 1);
@@ -607,13 +646,17 @@ static void rSaida(void) {   // sair no meio: o video vai para a ilha da Home ou
     ajc_video(vx, vy, vw, vh, 14 * k, 1 - (v ? 0.8f * k : 0));
     ajc_foco(vx, vy, vw, vh, 14, k * 0.8f); }
 }
-static void rManter(int op) {   // o video fica pronto na ilha por 2 minutos
+static void rManter(int op) {   // paused player for the chosen duration
   float k = ajcLig(op), f = ajc_fase(5.0f), cd = k > 0.5f ? 1 - f : 0;
   ajc_vidro(120, 100, 400, 130, 26, 0.35f + 0.65f * k);
   ajc_video(142, 120, 160, 90, 12, k);
   ajc_ret(142, 120, 160, 90, 12, 0.07f, 0.07f, 0.09f, 0.6f * (1 - k));
   ajc_icone("aj_pause", 222, 165, 34, 0.95f * k + 0.3f * (1 - k));
-  ajcTexto("2:00", 26, 1, 330, 126, k);
+  { char b[16]; unsigned ms = ajustes_manter_video_ms();
+    if (ms) snprintf(b, sizeof b, "%u:00", ms / 60000u);
+    else snprintf(b, sizeof b, "%s", i18n("Sem limite"));
+    ajcTexto(b, 26, 1, 330, 126, k);
+  }
   ajc_progresso(330, 168, 160, cd, k);
   ajc_acento_ret(330, 186, 90, 26, 13, k * (0.6f + 0.4f * ajc_onda(1.4f)));
   ajc_icone_tinta("aj_play", 375, 199, 13, k);
@@ -640,8 +683,8 @@ static void rSeekr(int op) {
       if (k > 0.5f) {
         ajc_cartaz(cx - 70, 196, 140, 80, 4 + (int)(cur * 5), 1);
         ajc_foco(cx - 70, 196, 140, 80, 10, 1);
-        ajcTexto(b, 15, 1, cx - 20, 284, 1);
-      } else { ajc_vidro(cx - 30, 284, 60, 24, 12, 1); ajcTexto(b, 14, 1, cx - 19, 287, 1); }
+        ajcTextoVivo(b, 15, 1, cx - 20, 284, 1);
+      } else { ajc_vidro(cx - 30, 284, 60, 24, 12, 1); ajcTextoVivo(b, 14, 1, cx - 19, 287, 1); }
       ajcChaveCanto(k);
       return;
     case AJ_SEEKR_FITA: {   // a fita de quadros (ligada) x um quadro por vez
@@ -736,6 +779,12 @@ static void rP2p(int op) {
       if (ajc_onda(0.8f) > 0.5f) ajc_acento_ret(210 + ajcLargura(b, 22, 1), 123, 3, 32, 1.5f, 1);
       ajc_ret(150, 200, 300, 8, 4, 1, 1, 1, 0.1f);
       return; }
+    case AJ_P2P_DESTINO: {   // #205: interno ou pendrive USB
+      float k = rInt(op, 1) ? 1.0f : 0.0f;
+      ajc_icone("aj_database", 180, 150, 36, 0.9f);
+      ajc_ret(250, 140, 220, 56, 12, 1, 1, 1, 0.12f + 0.18f * k);
+      ajcTexto(textoValor(op), 22, 1, 250, 158, 1);
+      return; }
     case AJ_P2P_LIMITE: {   // #334: a barra do disco e o teto que o P2P nao passa (0 = Automatico)
       static const float TETO[] = { 0.18f, 0.28f, 0.42f, 0.62f, 0.86f };
       float t = TETO[rInt(op, 4)], f = ajc_fase(4.0f), enc = t * (f < 0.8f ? f / 0.8f : 1.0f);
@@ -771,7 +820,7 @@ static void rPercentual(void) {
   ajc_acento_ret(m, 236, 600 - m, 12, 6, 0.45f);
   ajc_ret(m - 1.5f, 214, 3, 56, 1.5f, 1, 1, 1, 0.9f);
   snprintf(t, sizeof t, "%d%%", (int)(pc + 0.5f));
-  ajcSelo(t, m - ajcLargura(t, 16, 1) * 0.5f - 11, 176, 16, 1, 1);
+  ajcSeloVivo(t, m - ajcLarguraViva(t, 16, 1) * 0.5f - 11, 176, 16, 1, 1);
   ajc_bolinha(cx, 242, 22, 1, 1, 1, 1);
   ajc_ladrilho("aj_check", 560, 80, 64, visto > 0.5f, 0.3f + 0.7f * visto);
   ajc_cartaz(440, 48, 64, 64, 3, 0.9f);
@@ -801,6 +850,10 @@ static int ajcNovaReproducao(int sec, int op) {
     case AJ_FONTE_CONFERIR_VARIAS: rConferirVarias(op); return 1;
     case AJ_FONTE_AQUECER: rAquecer(op); return 1;
     case AJ_FONTE_PREPARAR: rPreparar(op); return 1;
+    case AJ_FONTE_PRECARREGAR: rPreparar(op); return 1;
+    case AJ_FONTE_GRUPO: case AJ_FONTE_GRUPO_SESSOES:
+    case AJ_LINK_REUSAR: case AJ_LINK_PRAZO:
+      rMemoria(op); return 1;
     case AJ_FONTE_ORDEM_ADDON: rOrdemFontes(); return 1;
     case AJ_FONTE_TEXTO: rTexto(); return 1;
     case AJ_SELOS_CORES: rSelosCores(op); return 1;
@@ -817,7 +870,7 @@ static int ajcNovaReproducao(int sec, int op) {
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_CHAVE: case AJ_SEEKR_TESTAR: case AJ_SEEKR_AJUSTE:
       rSeekr(op); return 1;
 #ifndef __EMSCRIPTEN__
-    case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR: case AJ_P2P_LIMITE: rP2p(op); return 1;
+    case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR: case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: rP2p(op); return 1;
 #endif
     default: return 0;
   }
