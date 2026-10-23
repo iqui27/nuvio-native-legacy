@@ -111,6 +111,7 @@ void addonguia_abrir(int t,int addon,const char *tit) {
 int addonguia_aberto(void) {return tela>=0;}
 void addonguia_fechar(void) {tela=-1;celb_fechar_dono(CELB_ADDON);}
 int addonguia_pedido(void) {int p=pedido;pedido=0;return p;}
+uint64_t addonguia_identidade(void) {return identidade;}
 void addonguia_progresso(const char *s,int p) {snprintf(servico,sizeof servico,"%s",s?s:"");pct=p;}
 static void entregar(int p) {pedido=p;addonguia_fechar();}
 static int escolher(int modo) {
@@ -354,7 +355,9 @@ void addonguia_desenhar(void) {
   int acesso=tela==AG_NOVO_DIRETO&&acessoConfig;
   int routes=tela==AG_P2P||tela==AG_DEBRID||tela==AG_NOVO_TORRENT||tela==AG_INICIANDO;
   float y=tela==AG_INICIANDO?130:novo?140:175;
-  float h=routes?610:560;
+  float h=routes?610:416;
+  if(tela==AG_DEBRID)h=694;
+  if(tela==AG_401||tela==AG_403||tela==AG_VAZIO||tela==AG_HDR)h=490;
   if(tela==AG_NOVO_TORRENT)h=834;
   if(tela==AG_NOVO_CATALOGO)h=650;
   if(tela==AG_NOVO_DIRETO)h=650;

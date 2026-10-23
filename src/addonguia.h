@@ -11,6 +11,7 @@ void addonguia_evento(const SDL_Event *e);
 void addonguia_atualizar(int permitirBoasVindas);
 void addonguia_desenhar(void);
 int addonguia_pedido(void);
+uint64_t addonguia_identidade(void);
 void addonguia_progresso(const char *servico, int pct);
 void addonguia_lista(int foco);
 void addonguia_falha(void);

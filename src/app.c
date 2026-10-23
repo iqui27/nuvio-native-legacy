@@ -1506,6 +1506,7 @@ static int fioTorrentVivo;
 static unsigned torrentSessao;
 static int torrentPendente = -1;
 static unsigned torrentPendenteGeracao;
+static uint64_t guiaTorrentRepetir; /* Explicit mode action may retry a previously withheld hash. */
 
 static void *resolverTorrentEscolhido(void *u) {
   TorrentJob *j = u;
@@ -4403,7 +4404,18 @@ void app_atualizar(float dt, Uint32 agora) {
   // duas ficariam presas no mesmo pipeline.
   // A busca disparada por Reproduzir terminou: agora VERIFICA as fontes, em
   // ordem, ate achar uma que leve ao arquivo — e so entao liga o video.
-  if (aguardandoFonte == 1 &&
+  if (guiaTorrentRepetir && player_aberto() && !player_quer_sair()) {
+    (void)addons_estado();
+    for (int i = 0; i < stream_n(); i++) {
+      const Stream *s = stream_item(i);
+      if (s && s->addonIdentidade == guiaTorrentRepetir && !s->url[0] && s->infoHash[0]) {
+        guiaTorrentRepetir = 0; aguardandoFonte = 0;
+        stream_definir_atual(i); pedirTorrentEscolhido(i); break;
+      }
+    }
+    if (addons_estado() != ADD_BUSCANDO) guiaTorrentRepetir = 0;
+  }
+  if (aguardandoFonte == 1 && !guiaTorrentRepetir &&
       (addons_estado() != ADD_BUSCANDO || autoParcialPronto())) {
     unsigned geracao = novaGeracaoFonte();
     // QUANTO O PLAY ESPEROU PELA DECISAO, e por que ela saiu (#202). Medido no
@@ -4852,6 +4864,7 @@ void app_atualizar(float dt, Uint32 agora) {
   {
     int p = addonguia_pedido();
     if (p == AGP_FONTES && player_aberto()) {
+      guiaTorrentRepetir = 0;
       torrentSessao++; torrentPendente = -1; p2pmotor_cancelar();
       player_voltar_a_esperar(); nomeParaFolha(); stream_folha_abrir();
     }
@@ -4865,7 +4878,11 @@ void app_atualizar(float dt, Uint32 agora) {
       player_voltar_a_esperar();
       if (s && (!s->url[0] || s->appResolvido) && s->infoHash[0] &&
           addonmodo_get(s->addonIdentidade) != AM_DIRETO) pedirTorrentEscolhido(atual);
-      else { buscarParaPlayerModo(1); aguardandoFonte = 1; }
+      else {
+        uint64_t id = addonguia_identidade();
+        guiaTorrentRepetir = addonmodo_get(id) == AM_P2P ? id : 0;
+        buscarParaPlayerModo(1); aguardandoFonte = 1;
+      }
     } else if (p == AGP_FILEIRAS) {
       ajustes_abrir_fileiras(); trocarTela(TELA_AJUSTES);
     }

@@ -56,15 +56,19 @@ int main(int argc,char **argv) {
     {"nao-tocou-hdr",AG_HDR},{"nao-tocou-sem-fontes",AG_VAZIO},
     {"p2p-iniciando",AG_INICIANDO},{"meus-addons",AG_LISTA}
   };
-  GLuint bg=0;
+  SDL_Surface *original=IMG_Load("/Volumes/ExternalSSD/tmp/addon-guia-mock/assets/detalhe.jpg");assert(original);
+  SDL_Surface *backdrop=SDL_ConvertSurfaceFormat(original,SDL_PIXELFORMAT_RGBA32,0);assert(backdrop);SDL_FreeSurface(original);
+  GLuint bg;glGenTextures(1,&bg);glBindTexture(GL_TEXTURE_2D,bg);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,backdrop->w,backdrop->h,0,GL_RGBA,GL_UNSIGNED_BYTE,backdrop->pixels);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+  SDL_FreeSurface(backdrop);
   for(int i=0;i<14;i++) {
     addonguia_shot(shots[i].tela);
     if(shots[i].tela==AG_NOVO_CATALOGO)addonguia_abrir(AG_NOVO_CATALOGO,1,NULL);
     for(int f=0;f<40;f++) {
       SDL_PumpEvents();txt_novo_quadro();tex_novo_quadro();tex_bombear(12);gfx_novo_quadro();
       glClearColor(0.05f,0.05f,0.05f,1);glClear(GL_COLOR_BUFFER_BIT);
-      bg=tex_obter_hero("/Volumes/ExternalSSD/tmp/addon-guia-mock/assets/detalhe.jpg");
-      if(bg)gfx_textura((GfxRect){0,0,1920,1080},bg);
+      gfx_textura((GfxRect){0,0,1920,1080},bg);
       gfx_veu_css((GfxRect){0,0,1920,1080},0,1,1,0.5f);
       addonguia_desenhar();SDL_Delay(6);
     }
