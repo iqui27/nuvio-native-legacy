@@ -74,6 +74,8 @@ static void check(int ok, const char *name) {
 #ifndef SYNCJANK_TEST
 int main(int argc, char **argv) {
   assert(argc == 3);
+  check(!strcmp(OPCOES[AJ_SYNC].rotulo, "Sincronização (LegaSync)"),
+        "account sync is discoverable as LegaSync");
   if (!strcmp(argv[2], "device")) return recovery(argv[0], argv[1]);
   if (!strncmp(argv[2], "device-", 7)) return recoveryStage(argv[1], argv[2]);
   setenv("NUVIO_DADOS", argv[1], 1);

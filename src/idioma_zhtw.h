@@ -5544,6 +5544,8 @@
   T("Sincronizando…", "同步中…"),
   T("Sincronizar addons", "同步外掛"),
   T("Sincronização", "同步"),
+
+  T("Sincronização (LegaSync)", "同步 (LegaSync)"),
   T("Sincronização automática", "自動同步"),
   T("Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.", "硬體層級的音訊與視訊同步。可能改善部分 Android TV 裝置的播放效果。從下一部影片開始生效。"),
   T("Singapura", "新加坡"),

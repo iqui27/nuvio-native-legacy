@@ -5544,6 +5544,8 @@
   T("Sincronizando…", "Eşitleniyor…"),
   T("Sincronizar addons", "Eklentileri senkronize et"),
   T("Sincronização", "Senkronize et"),
+
+  T("Sincronização (LegaSync)", "Senkronize et (LegaSync)"),
   T("Sincronização automática", "Otomatik senkronizasyon"),
   T("Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.", "Donanım düzeyinde ses/video senkronizasyonu. Bazı Android TV cihazlarında oynatmayı iyileştirebilir. Sonraki videodan itibaren uygulanır."),
   T("Singapura", "Singapur"),

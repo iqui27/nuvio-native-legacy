@@ -5544,6 +5544,8 @@
   T("Sincronizando…", "Синхронизиране…"),
   T("Sincronizar addons", "Синхронизиране на добавки"),
   T("Sincronização", "Синхронизирай"),
+
+  T("Sincronização (LegaSync)", "Синхронизирай (LegaSync)"),
   T("Sincronização automática", "Автоматична синхронизация"),
   T("Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.", "Хардуерна синхронизация на звук и картина. Може да подобри възпроизвеждането на някои устройства Android TV. Прилага се от следващото видео."),
   T("Singapura", "Сингапур"),

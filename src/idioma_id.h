@@ -5544,6 +5544,8 @@
   T("Sincronizando…", "Menyinkronkan…"),
   T("Sincronizar addons", "Sinkronkan add-on"),
   T("Sincronização", "Sinkronisasi"),
+
+  T("Sincronização (LegaSync)", "Sinkronisasi (LegaSync)"),
   T("Sincronização automática", "Sinkronisasi otomatis"),
   T("Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.", "Sinkronisasi audio/video tingkat perangkat keras. Dapat meningkatkan pemutaran pada beberapa perangkat Android TV. Berlaku mulai video berikutnya."),
   T("Singapura", "Singapura"),

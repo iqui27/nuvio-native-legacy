@@ -5544,6 +5544,8 @@
   T("Sincronizando…", "جارٍ المزامنة…"),
   T("Sincronizar addons", "مزامنة الإضافات"),
   T("Sincronização", "مزامنة"),
+
+  T("Sincronização (LegaSync)", "مزامنة (LegaSync)"),
   T("Sincronização automática", "المزامنة التلقائية"),
   T("Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.", "مزامنة الصوت والفيديو على مستوى العتاد. قد يحسن التشغيل على بعض أجهزة Android TV. يسري من الفيديو التالي."),
   T("Singapura", "سنغافورة"),

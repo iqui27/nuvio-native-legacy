@@ -1487,7 +1487,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Cor da logo",                V_LIGA, 2),   // local: corDaLogoLocal
 
   LER("Perfil"),
-  LER("Sincronização"),
+  LER("Sincronização (LegaSync)"),
   ACAO("Addons"),
   ACAO("Portal Stalker (MAC)"),
   ACAO("MAC do portal"),

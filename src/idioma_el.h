@@ -5544,6 +5544,8 @@
   T("Sincronizando…", "Συγχρονισμός…"),
   T("Sincronizar addons", "Συγχρονισμός πρόσθετων"),
   T("Sincronização", "Συγχρονισμός"),
+
+  T("Sincronização (LegaSync)", "Συγχρονισμός (LegaSync)"),
   T("Sincronização automática", "Αυτόματος συγχρονισμός"),
   T("Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.", "Συγχρονισμός ήχου και εικόνας μέσω υλικού. Μπορεί να βελτιώσει την αναπαραγωγή σε ορισμένες συσκευές Android TV. Ισχύει από το επόμενο βίντεο."),
   T("Singapura", "Σιγκαπούρη"),
