@@ -1325,11 +1325,11 @@ int  video_altura(void) { return altura; }
 int  video_pode_forcar_sdr(void) { return 0; }
 int  video_velocidade_suportada(void) { return mVelocidade != NULL && !velRecusada; }
 void video_velocidade(int c) { if (!velRecusada) velPedida = (c <= 0 || c > 400) ? 100 : c; }
-int  video_velocidade_atual(void) { return velRecusada || video_velocidade_bloqueada() ? 100 : velPedida; }
+int  video_velocidade_atual(void) { return velRecusada ? 100 : velPedida; }
 void video_velocidade_recusada(void) { velRecusada = 1; velPedida = 100; }   // o bombear manda o 100
 // The Android bridge decodes to PCM at non-normal speeds, restoring encoded
 // output eligibility at 1x. VelMedidor still verifies the actual media clock.
-int  video_velocidade_bloqueada(void) { return cacheboost_ganho_estado() == CB_GANHO_PASSTHROUGH; }
+int  video_velocidade_bloqueada(void) { return 0; }
 void video_forcar_sdr(void) {}
 void video_encerrar(void) { video_parar(); }
 #endif
