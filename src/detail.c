@@ -5554,8 +5554,9 @@ static float larguraSegTemporadas(void) {
 // O resumo da temporada escolhida fica acima das pilulas, como na 1.7.4.
 // A coluna fixa preserva a leitura mesmo quando as temporadas rolam.
 static void resumoTemporada(float x, float yPilulas, float a) {
-  char linha[192];
+  char linha[224];
   int total = 0, vistos = 0, futuros = 0, sabe = 0;
+  int alvo = temporadaEm(temporada);
   size_t k = 0;
   contarTemporada(&total, &vistos, &futuros, &sabe);
   if (total <= 0) return;
@@ -5563,8 +5564,24 @@ static void resumoTemporada(float x, float yPilulas, float a) {
   // da linha de progresso do heroi; sem historico sobra o total — zero vistos
   // seria afirmar o que ninguem nos contou (vistoep e tri-estado).
   if (sabe)
-    k += (size_t)snprintf(linha + k, sizeof linha - k,
-                          i18n("%d de %d assistidos"), vistos, total);
+    // A linha do mockup v2: "Temporada 1 · 2 de 10 vistos · faltam 8 · 6h50".
+    // A conta dos "faltam" desconta o que ainda vai ao ar, e o tempo e a soma
+    // das duracoes dos episodios por ver (minutosDe le o mesmo texto do card).
+    { int alvoNum = alvo, minRest = 0, i, nEp = cat_n_episodios(idx);
+      const CatItem *ciC = cat_item(idx);
+      for (i = 0; i < nEp; i++) {
+        const CatEp *e = cat_episodio(idx, i);
+        if (!e || e->temporada != alvoNum || epNaoExibido(e)) continue;
+        if (vistoep_estado(ciC->imdb, e->temporada, e->episodio) != 1)
+          minRest += minutosDe(e->duracao);
+      }
+      k += (size_t)snprintf(linha + k, sizeof linha - k,
+                            i18n("Temporada %d · %d de %d vistos"), alvoNum, vistos, total);
+      if (total - futuros - vistos > 0)
+        k += (size_t)snprintf(linha + k, sizeof linha - k,
+                              i18n(" · faltam %d"), total - futuros - vistos);
+      if (minRest > 0) { char dtxt[24]; desc_duracao_min_curta(minRest, dtxt, sizeof dtxt);
+        k += (size_t)snprintf(linha + k, sizeof linha - k, " \xc2\xb7 %s", dtxt); } }
   else
     k += (size_t)snprintf(linha + k, sizeof linha - k,
                           i18n(total == 1 ? "%d episódio" : "%d episódios"),
@@ -5637,8 +5654,13 @@ static void desenhaTemporada(GfxRect r, int c, float f, float a) {
   }
   GfxRect ring={r.x+18,r.y+16,24,24}; gfx_anel(ring,.5f,3,1,1,1,.18f*a);
   const TgDados *d=tgraf_dados(idx); int pc=real ? tgraf_coluna(d,temporadaEm(posTemp(c))) : -1;
-  if (pc>=0 && d->sabe && d->t[pc].exibidos>0 && d->t[pc].vistos>0)
-    gfx_cor((GfxRect){ring.x+8,ring.y+8,8,8},.5f,ar,ag,ab,a);
+  if (pc>=0 && d->sabe && d->t[pc].exibidos>0 && d->t[pc].vistos>0) {
+    // ANEL DE PROGRESSO da aba (mockup v2): o arco cresce com a fracao
+    // vistos/exibidos da temporada, no acento.
+    float fracao=(float)d->t[pc].vistos/(float)d->t[pc].exibidos;
+    if (fracao>1.0f) fracao=1.0f;
+    if (fracao>0.0f) gfx_arco(ring,3.0f,0.0f,fracao,ar,ag,ab,a);
+  }
   TxtLinha l=txt_linha(TXT_G22M,rot,ink,ink,ink,255);
   txt_desenhar_alpha(l,r.x+52,r.y+(56-l.h)*.5f,a);
 }
