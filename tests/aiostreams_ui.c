@@ -66,6 +66,8 @@ int main(void) {
   pagina=LEGENDAS; snap.addons=2; snap.addon[0].legenda=1; snap.addon[1].legenda=1;
   snap.legendas=2; assert(nLinhas()==8);
   foco=1; acao(); assert(pagina==SERVICOS);
+  pagina=TITULO; evidenciaSelecionada=0; foco=nLinhas()-1; acao(); assert(evidenciaSelecionada);
+  foco=nLinhas()-1; acao(); assert(!evidenciaSelecionada);
   activeProfile=2; aioui_atualizar(0,100); assert(!aioui_aberto() && !base[0]);
   puts("aiostreams UI: setup, masked import, P2P, navigation and profile isolation passed");
   return 0;
