@@ -14,6 +14,11 @@ assert 'Java_space_nuvio_nativelegacy_NvPlayer_nativeAfr' in bridge
 assert 'return ajustes_afr();' in bridge
 assert 'afrAplicar()' in source and 'afrRestaurar()' in source
 assert 'preferredDisplayModeId' in source
+# Guards added by the review: trailers keep the home cadence, exit/pause
+# restores the panel mode even with the player retained.
+assert 'afrTitulo.isEmpty()' in source
+assert 'afrSair()' in source and 'NvPlayer.afrSair()' in (root / 'android/app/src/main/java/space/nuvio/nativelegacy/NuvioActivity.kt').read_text()
+assert 'afrRestaurar()' in source[source.index('fun pausarPeloSistema'):source.index('fun encerrar')]
 doubles = r'''
 package android.view
 class Display(val mode: Mode, val supportedModes: List<Mode>) {
@@ -37,6 +42,10 @@ BODY
             val panel = d(p60, p60, m24, m50)
             check(t.afrModoPara(23.976f, panel) == m24)
             check(t.afrModoPara(25f, panel) == m50)
+            // Unsupported cadence stays put: 25 fps on a 24/60-only panel has
+            // no integer multiple -> no switch (review scenario, no blackout).
+            check(t.afrModoPara(25f, d(p60, p60, m24)) == null)
+            check(t.afrModoPara(30f, d(m50, m50, m24)) == null)
             // 120 Hz panel: no integer multiple for 24fps except 120 (5x) and
             // 24 (1x) — both qualify, the closest rate wins the tie-break.
             val m120 = Display.Mode(4, 3840, 2160, 120f)
@@ -49,7 +58,7 @@ BODY
             check(t.afrModoPara(30f, d(p60, p60, m24hd)) == p60)
             // Unknown fps -> no switch.
             check(t.afrModoPara(0f, panel) == null)
-            println("afr: integer-multiple pick, resolution filter, unknown fps noop")
+            println("afr: integer-multiple pick, resolution filter, unknown fps noop, unsupported cadence noop")
         }
     }
 }

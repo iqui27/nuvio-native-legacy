@@ -1051,6 +1051,9 @@ object NvPlayer {
         val pedido = pedidos.incrementAndGet()
         if (aindaAtual) pedidoAtivo = pedido
         try { player?.pause() } catch (e: Exception) { Log.w(TAG, "pausarPeloSistema: $e") }
+        // A tela volta ao modo dela enquanto o app esta fora: um player retido
+        // nao segura o painel em 24 Hz com a home em cima.
+        afrRestaurar()
     }
 
         // onDestroy: solta player e superficie.
@@ -1094,7 +1097,12 @@ object NvPlayer {
     }
     private var pausaPedida = false
     @JvmStatic fun pausar(p: Int) {
-        principal.post { pausaPedida = p != 0; player?.playWhenReady = !pausaPedida }
+        principal.post {
+            pausaPedida = p != 0; player?.playWhenReady = !pausaPedida
+            // Retomou (usuario ou sessao retida): re-aplica o modo se ele foi
+            // restaurado numa saida/pausa do sistema. No-op quando ja bate.
+            if (!pausaPedida) afrAplicar()
+        }
     }
     // Episode handoff arms this token before the old visible session closes.
     // Stop only that session; the exact selected preload keeps its queues.
@@ -1431,6 +1439,7 @@ object NvPlayer {
             quadrosPerdidos = 0L; statsTiques = 0
             val titulo = tituloPedido
             tituloAberto = ""
+            afrTitulo = titulo
             val r = preparada?.recursos ?: criarPlayer(act, url, cabecalhos, bufferPreset, cacheMbPedido, false, geracao, titulo = titulo)
             if (preparada != null) {
                 medidorToken = medidor.sessao(geracao)
@@ -1568,6 +1577,7 @@ object NvPlayer {
         tap.encerrar()
         try { nativeAudioEstado(AudioSyncTap.FMT_NENHUM) } catch (_: UnsatisfiedLinkError) {}
         superficie?.visibility = View.GONE
+        afrTitulo = ""
         afrRestaurar()
     }
 
@@ -1939,6 +1949,9 @@ object NvPlayer {
     // Surface.setFrameRate. O modo pedido guardado aqui e restaurado no
     // liberar()/encerrar() — a TV volta ao que o usuario tinha de fabrica.
     private var afrModoAnterior = -1
+    // Selo do titulo desta abertura ("" = trailer/canal): o AFR so vale para o
+    // titulo — um trailer de 24 fps na home de 60 Hz nao pode apagar a tela.
+    private var afrTitulo = ""
 
     // Escolhe o modo cuja taxa casa (ou e multiplo inteiro) do fps do video na
     // mesma resolucao atual; a tela so troca quando e de fato melhor para o
@@ -1952,21 +1965,22 @@ object NvPlayer {
         for (m in display.supportedModes) {
             if (m.physicalWidth != atual.physicalWidth || m.physicalHeight != atual.physicalHeight) continue
             // Multiplo inteiro cobre o caso 23,976/24/25/30/50/60 em painel de
-            // 60 Hz (2x30, 3x20) e o 120 Hz (5x24); a mesma tolerancia aceita o
-            // 23,976 que a TV anuncia como 24. A taxa "casada" vale mais que a
-            // mais proxima quando a diferenca cabe num quadro.
+            // 60 Hz (2x30) e o 120 Hz (5x24); a mesma tolerancia aceita o
+            // 23,976 que a TV anuncia como 24. Sem cadencia compativel nao se
+            // troca nada — um modo "mais perto" apagava a tela sem casar o
+            // quadro (25 fps num painel so de 24/60 Hz).
             val razao = m.refreshRate / fps
             val inteiro = kotlin.math.abs(razao - kotlin.math.round(razao)) < 0.02f ||
                 kotlin.math.abs(kotlin.math.round(m.refreshRate) - kotlin.math.round(fps)) < 0.6f
-            val erro = if (inteiro) kotlin.math.abs(m.refreshRate - fps)
-                else kotlin.math.abs(m.refreshRate - fps) + 1000f
+            if (!inteiro) continue
+            val erro = kotlin.math.abs(m.refreshRate - fps)
             if (erro < melhorErro) { melhor = m; melhorErro = erro }
         }
         return melhor
     }
 
     private fun afrAplicar() {
-        if (nativeAfr() != 1) return
+        if (nativeAfr() != 1 || afrTitulo.isEmpty()) return
         val act = activity ?: return
         val display = act.windowManager?.defaultDisplay ?: return
         val fps = player?.videoFormat?.frameRate ?: return
@@ -1991,6 +2005,9 @@ object NvPlayer {
         Log.i(TAG, "[afr] tela restaurada para o modo $afrModoAnterior")
         afrModoAnterior = -1
     }
+    // A casca avisa quando a tela do player sai (Voltar, saida com video
+    // retido): devolve o modo do painel mesmo com o player vivo em pausa.
+    @JvmStatic fun afrSair() { principal.post { afrRestaurar() } }
     private fun hdrNaSuperficie() {
         // Native DV handles the panel transition without destroying its output.
         if (semRecriar || decoderDv) return
