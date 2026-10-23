@@ -61,7 +61,8 @@
 // player-mockup de 03/10): 820 de largura, a 40 das bordas, raio 36 — a
 // mesma folha dos Episodios no player.
 #include "telefoneui.h"
-#define FOLHA_W        telefoneui_largura(820.0f, NV_TELA_W, FOLHA_MARGEM)
+static int temAio(void);
+#define FOLHA_W        telefoneui_largura(temAio()?1336.0f:820.0f, NV_TELA_W, FOLHA_MARGEM)
 #define FOLHA_MARGEM    40.0f
 #define FOLHA_RAIO_IL   36.0f
 #define FOLHA_PAD_E     48.0f  // da borda da folha ao cartao da linha
@@ -2222,7 +2223,7 @@ static int grupo, filtro, soMp4, soCache, soDub;
 // MP4, e nao grupos — resolucao x HDR/SDR ja da ate 8 grupos, e mais um eixo
 // picotaria a lista em grupos de 1 ou 2 fontes. Em cache = o debrid ja tem o
 // arquivo (Stream.foraCache e 0), toca agora; Dublado = audio em portugues.
-enum { BT_RECARREGAR, BT_SEM_HDR, BT_SO_MP4, BT_CACHE, BT_DUB, BT_FECHAR, BT_AIO };
+enum { BT_RECARREGAR, BT_SEM_HDR, BT_SO_MP4, BT_CACHE, BT_DUB, BT_FECHAR, BT_AIO, BT_AIO_GERENCIAR };
 static int temAio(void) {
   for (int i=0; i<addons_n(); i++) if(aioui_detectar(i)) return 1;
   return 0;
@@ -2235,22 +2236,24 @@ static int botaoDe(int i) {
   if (i == 3) return BT_DUB;
   if (i == 4) return BT_RECARREGAR;
   if (i == 5 && temAio()) return BT_AIO;
+  if(i==6 && temAio()) return BT_AIO_GERENCIAR;
   return BT_FECHAR;
 }
-static int nBotoes(void) { return (video_pode_forcar_sdr() ? 6 : 5) + temAio(); }
+static int nBotoes(void) { return (video_pode_forcar_sdr() ? 6 : 5) + temAio()*2; }
 static const char *rotuloBotao(int b) {
   if (b == BT_SEM_HDR) return "Sem HDR";
   if (b == BT_SO_MP4)  return "Só MP4";
   if (b == BT_CACHE)   return "Em cache";
   if (b == BT_DUB)     return "Dublado";
-  if (b == BT_AIO)     return "AIOStreams";
+  if (b == BT_AIO)     return "Inspecionar título";
+  if (b == BT_AIO_GERENCIAR) return "Abrir painel";
   return NULL;
 }
 static int botaoLigado(int b) {
   return (b == BT_SO_MP4 && soMp4) || (b == BT_CACHE && soCache) || (b == BT_DUB && soDub);
 }
 static const char *iconeBotao(int b) {
-  return b == BT_AIO ? "aj_layers" : b == BT_RECARREGAR ? "aj_rotate-cw" : b == BT_FECHAR ? "aj_x" : NULL;
+  return b == BT_AIO_GERENCIAR ? "aj_settings-2" : b == BT_AIO ? "aj_layers" : b == BT_RECARREGAR ? "aj_rotate-cw" : b == BT_FECHAR ? "aj_x" : NULL;
 }
 static char provedores[13][96];
 static int nProvedores;
@@ -3181,6 +3184,9 @@ void stream_folha_evento(const SDL_Event *e) {
       switch(botaoDe(foco)) {
         case BT_RECARREGAR: recarregar=1; break;
         case BT_AIO: aioui_inspecionar(alvoPedido, strchr(alvoPedido, ':') ? "series" : "movie"); break;
+        case BT_AIO_GERENCIAR:
+          for(int j=0;j<addons_n();j++) if(aioui_detectar(j)) { aioui_abrir(j); break; }
+          break;
         // Fecha a folha junto: a imagem volta (ou nao) na propria tela do
         // player, e deixar a folha aberta em cima esconderia o resultado.
         case BT_SEM_HDR:    video_forcar_sdr(); aberta=0; break;
@@ -3484,8 +3490,8 @@ static void chipFolha(GfxRect r, const char *rot, float rotW, const char *icone,
 //      kicker explica o que ele faz em qualquer caso.
 // No degrau 2 o filtro ligado continua no acento, entao "qual esta ativo" se
 // le sem foco. Se nem os discos couberem (titulo enorme), o titulo e cortado.
-static float bwCab[7], rotWCab[7], titMaxCab, gapCab;
-static const char *rotCab[7], *icoCab[7];
+static float bwCab[8], rotWCab[8], titMaxCab, gapCab;
+static const char *rotCab[8], *icoCab[8];
 static int nivelCab;
 static const char *iconeFiltro(int b) {
   return b == BT_SEM_HDR ? "aj_sun-dim" : b == BT_SO_MP4 ? "aj_film"
@@ -3531,6 +3537,43 @@ static void medirCabecalho(void) {
 }
 
 static void stream_folha_desenharCorpo_(Uint32 agora);
+static void corpoAio(float x,float w,float a) {
+  float left=x+45, width=w-90;
+  txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NUM,nomeFolha,170,179,185,255,width),left,174,a);
+  txt_desenhar_alpha(txt_linha(TXT_ILHA_TITULO,i18n("Fontes"),243,242,239,255),left,207,a);
+  medirCabecalho();
+  float bx=left+width;
+  for(int i=nBotoes()-1;i>=0;i--) {
+    bx-=bwCab[i]; GfxRect r={bx,207,bwCab[i],56};
+    chipFolha(r,rotCab[i],rotWCab[i],icoCab[i],grupo==-1 && foco==i,botaoLigado(botaoDe(i)),a);
+    ponteiro_alvo(r.x,r.y,r.w,r.h,ponteiroFolhaBotao,NULL,i,0); bx-=gapCab;
+  }
+  float sx=left;
+  for(int i=0;i<nProvedores;i++) {
+    GfxRect r={sx,283,i?240:170,56};
+    if(filtro==i) gfx_cor(r,.5f,.2f,.22f,.24f,a);
+    txt_desenhar_alpha(txt_linha_corta(TXT_G20M,i?provedores[i]:i18n("Todos"),220,223,225,255,r.w-32),sx+16,301,a);
+    ponteiro_alvo(r.x,r.y,r.w,r.h,NULL,ponteiroFolhaFiltro,i,0); sx+=r.w+6; if(sx>left+width-240) break;
+  }
+  montar(automaticaDaFolha());
+  int first=foco>3?foco-3:0, prev=-1; float y=369;
+  for(int row=first;row<nOrdem && y<950;row++) {
+    int i=filtrado(row); if(i<0) continue; const Stream *s=&lista[i]; int res=grupoRes(s)/2;
+    if(res!=prev) {
+      txt_desenhar_alpha(txt_linha(TXT_ILHA_NOME,GRUPO_NOME[res],240,241,242,255),left,y,a);
+      gfx_cor((GfxRect){left,y+39,width,1},0,1,1,1,.08f*a); y+=51; prev=res;
+    }
+    float h=row==0?119:94;
+    if(grupo==1 && foco==row) gfx_cor((GfxRect){left,y,width,h},22/h,.19f,.205f,.22f,a);
+    if(row==0) txt_desenhar_alpha(txt_linha(TXT_ILHA_NUM,i18n("Melhor para esta TV"),180,205,210,255),left+20,y+12,a);
+    float ty=y+(row==0?40:17);
+    txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,s->rotulo[0]?s->rotulo:s->provedor,240,241,242,255,width-210),left+20,ty,a);
+    txt_desenhar_alpha(txt_linha_corta(TXT_G20M,s->provedor,174,179,185,255,width-210),left+20,ty+35,a);
+    char size[48]; snprintf(size,sizeof size,s->tamanhoMB?"%.1f GB":"—",s->tamanhoMB/1024.0);
+    txt_desenhar_alpha(txt_linha(TXT_G20M,size,174,179,185,255),left+width-150,ty+20,a);
+    ponteiro_alvo(left,y,width,h,ponteiroFolhaLinha,NULL,row,0); y+=h+6;
+  }
+}
 static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha);
 // MODAL DE DETALHES: cartao de vidro no meio da folha, veu sobre a lista.
 // O corpo rola (CIMA/BAIXO) com esmaecido nas bordas; altura medida no proprio
@@ -3614,20 +3657,24 @@ static void stream_folha_desenharCorpo_(Uint32 agora) {
       plrilha_pedir(&p); }
     return;
   }
-  float x=NV_TELA_W-FOLHA_W-FOLHA_MARGEM+(1-anim)*(FOLHA_W+FOLHA_MARGEM);
+  if(temAio()) folhaOY=118;
+  float x=NV_TELA_W-FOLHA_W-(temAio()?24:FOLHA_MARGEM)+(1-anim)*(FOLHA_W+FOLHA_MARGEM);
   // A FOLHA E UMA ILHA (dono, 02/10, mockups "Glass UI — ilha"): flutua a
   // NV_FOLHA_MARGEM das tres bordas, raio NV_FOLHA_RAIO, sombra curta e uma
   // luz larga no canto de cima — o mesmo material da ilha do relogio. O ajuste
   // de vidro escolhe o miolo: translucido (gfx_vidro_folha) ou solido.
   { const int vid = ajustes_vidro();
-    GfxRect corpo={x,FOLHA_MARGEM,FOLHA_W,NV_TELA_H-2*FOLHA_MARGEM};
+    GfxRect corpo={x,temAio()?136:FOLHA_MARGEM,FOLHA_W,temAio()?920:NV_TELA_H-2*FOLHA_MARGEM};
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,(vid?.30f:.42f)*anim);
     if (vid) {
       gfx_rect((GfxRect){corpo.x-18.0f,corpo.y-8.0f,corpo.w+36.0f,corpo.h+40.0f},
                0,GFX_SOMBRA,1.0f,0,0,.5f,0,0,0,.38f*anim);
       gfx_vidro_folha(corpo,FOLHA_RAIO_IL/corpo.h,anim);
     } else plrui_material(corpo,FOLHA_RAIO_IL,0,anim); }
-  corpoFolha(x, FOLHA_W, anim, agora, 0);
+  if(temAio()) {
+    txt_bloco_corta(TXT_V2_A3TIT,nomeFolha,240,241,242,72,390,430,56,anim,4);
+    corpoAio(x,FOLHA_W,anim);
+  } else corpoFolha(x, FOLHA_W, anim, agora, 0);
 }
 // Pinta o cartao da escolha automatica (ver escolhaAtualizar). (x, y, w, h) e o
 // retangulo do cartao, sem o vao. Linhas cumpridas no acento com "check"; as que
