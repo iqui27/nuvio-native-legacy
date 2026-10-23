@@ -265,7 +265,9 @@ static void acao(void) {
   } else if(pagina==LEGENDAS) { if(foco==0) campo(2); else if(foco>snap.legendas) mudar(SERVICOS); }
   else if(pagina==TITULO) {
     if(foco==0) campo(2); else if(foco==1) { geracao++; atualizarRede(0); }
-    else snprintf(mensagem,sizeof mensagem,"%s",i18n("Ordem recebida; rejeições anteriores não são fornecidas pelo manifesto."));
+    else if(foco>=2 && foco-2<snap.resultados && snap.resultado[foco-2].destino[0]) {
+      if(celular_abrir_link(i18n("Abrir no celular"),snap.resultado[foco-2].destino)) linkSelecionado=foco-2;
+    }
   } else if(pagina==SAUDE && foco==0) { geracao++; atualizarRede(0); }
   else mudar(SERVICOS);
 }
@@ -284,6 +286,11 @@ void aioui_evento(const SDL_Event *e) {
   if(pagina==CATALOGOS && !lateral && foco<snap.catalogos && (k==SDLK_PAGEUP || k==SDLK_PAGEDOWN)) {
     int f=fileira(foco);
     if(f>=0) { fil_mover(f,k==SDLK_PAGEUP?-1:1); desc_remontar_fileiras(); }
+    return;
+  }
+  if(pagina==PAINEL && !lateral && foco<6 && (k==SDLK_UP || k==SDLK_DOWN)) {
+    if(k==SDLK_UP && foco>=2) foco-=2;
+    else if(k==SDLK_DOWN) foco=foco<4?foco+2:6;
     return;
   }
   if(pagina==PAINEL && !lateral && foco<6 && (k==SDLK_LEFT || k==SDLK_RIGHT)) {
@@ -356,7 +363,7 @@ static void bloco(const char *s,float x,float y,float w,int linhas) {
 static void painel(float x,float y,float w,float h) {
   GfxRect r={x,y,w,h};
   if(ajustes_vidro()) gfx_vidro_folha(r,32/h,1);
-  else gfx_cor(r,32/h,.055f,.063f,.071f,.98f);
+  else gfx_cor(r,32/h,.071f,.075f,.086f,.98f);
 }
 static void pointer(int i,int b) { lateral=b; foco=i; }
 static void click(int i,int b) { pointer(i,b); acao(); }
@@ -480,7 +487,7 @@ static const char *regraNome(const AioRegra *r) {
   const char *prefix[]={"required","included","excluded","preferred"};
   const char *labels[]={"Obrigatório","Incluído","Excluído","Preferido"};
   for(int i=0;i<4;i++) if(!strncmp(s,prefix[i],strlen(prefix[i]))) { mode=i18n(labels[i]); s+=strlen(prefix[i]); break; }
-  const char *label=strstr(s,"Resolutions")?i18n("Resolução e qualidade"):strstr(s,"Languages")||strstr(s,"Subtitles")?i18n("Idiomas"):strstr(s,"Qualities")||strstr(s,"Tags")?i18n("Qualidade"):strstr(s,"StreamTypes")?i18n("Cache e tipos de fonte"):strstr(s,"Seeder")||strstr(s,"seeder")?i18n("Semeadores"):strstr(s,"size")?i18n("Tamanho"):strstr(s,"bitrate")?i18n("Bitrate"):strstr(s,"sort.")?i18n("Ordenação"):strstr(s,"proxy.")?i18n("Proxy"):strstr(s,"template.")?i18n("Modelo"):strstr(s,"formatter.")?i18n("Formatador"):i18n("Cache e tipos de fonte");
+  const char *label=strstr(s,"Resolutions")?i18n("Resolução e qualidade"):strstr(s,"Languages")||strstr(s,"Subtitles")?i18n("Idiomas"):strstr(s,"Qualities")||strstr(s,"Tags")?i18n("Qualidade"):strstr(s,"StreamTypes")?i18n("Cache e tipos de fonte"):strstr(s,"Seeder")||strstr(s,"seeder")?i18n("Semeadores"):strstr(s,"size")?i18n("Tamanho"):strstr(s,"bitrate")?i18n("Bitrate"):strstr(s,"sort.")?i18n("Ordenação"):strstr(s,"proxy.")?i18n("Proxy"):strstr(s,"template.")?i18n("Modelo"):strstr(s,"formatter.")?i18n("Formatador"):r->grupo==4?i18n("Regex e palavras-chave"):i18n("Cache e tipos de fonte");
   const char *media=strstr(s,"movies")?i18n("Filmes"):strstr(s,"series")?i18n("Séries"):strstr(s,"anime")?"Anime":"";
   snprintf(name,sizeof name,"%s%s%s%s%s",label,mode[0]?" · ":"",mode,media[0]?" · ":"",media);
   return name;
@@ -521,6 +528,7 @@ static void tituloDesenhar(void) {
   char stats[192]; snprintf(stats,sizeof stats,i18n("%d estatísticas · %d erros · %d sem campos obrigatórios"),snap.estatisticas,snap.erros,snap.filtrados);
   bloco(snap.search?stats:i18n("Não informado"),1490,650,326,4);
   bloco(i18n("Ordem e regras dependem desta TV. A inspeção não abre links para verificar reprodução."),1490,780,326,5);
+  if(linkSelecionado>=0) qrDesenhar(celular_url(),1490,580,176);
   if(!snap.resultados) bloco(i18n("Escolha um ID de título para consultar as fontes. Nenhum link de reprodução será aberto."),124,420,1100,4);
 }
 static void workspace(void) {

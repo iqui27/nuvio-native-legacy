@@ -165,7 +165,7 @@ static void summarize(char *dst,size_t n,const char *p) {
       char text[80]="";
       if(*p=='"') js_cadeia(p,text,sizeof text);
       else if(*p=='{') js_texto_raiz_em(p,js_fim(p),"key",text,sizeof text);
-      else if(isdigit((unsigned char)*p)) snprintf(text,sizeof text,"%.0f",strtod(p,NULL));
+      else if(isdigit((unsigned char)*p)) snprintf(text,sizeof text,"%g",strtod(p,NULL));
       safe(text);
       if(text[0]) { size_t used=strlen(dst); snprintf(dst+used,n-used,"%s%s",used?", ":"",text); }
       const char *next=value_end(p); if(!next || next<=p) break; p=next;
@@ -183,6 +183,7 @@ static void detail(AioSnapshot *s,int group,const char *name,const char *v) {
   else if(isdigit((unsigned char)*v) || *v=='-') snprintf(r->valor,sizeof r->valor,"%g",strtod(v,NULL));
   if(r->valor[0]) s->detalhes++;
 }
+static int count_array(const char *a);
 static void config_details(AioSnapshot *s,const char *u) {
   const char *prefix[]={"required","included","excluded","preferred"};
   const char *suffix[]={"Resolutions","Qualities","VisualTags","AudioTags","Languages","Subtitles","StreamTypes"};
@@ -209,6 +210,13 @@ static void config_details(AioSnapshot *s,const char *u) {
   detail(s,7,"proxy.id",member(member(u,"proxy"),"id"));
   detail(s,7,"proxy.proxiedServices",member(member(u,"proxy"),"proxiedServices"));
   detail(s,7,"proxy.proxiedAddons",member(member(u,"proxy"),"proxiedAddons"));
+  const char *custom[]={"excludedRegexPatterns","requiredRegexPatterns","includedRegexPatterns","preferredRegexPatterns","excludedKeywords","requiredKeywords","includedKeywords","preferredKeywords","excludedStreamExpressions","requiredStreamExpressions","includedStreamExpressions","preferredStreamExpressions"};
+  for(int i=0;i<12;i++) {
+    const char *v=member(u,custom[i]);
+    if(v && s->detalhes<AIO_MAX) {
+      char count[32]; snprintf(count,sizeof count,"%d",count_array(v)); detail(s,4,custom[i],count);
+    }
+  }
   const char *seed[]={"excludeSeederRange","includeSeederRange","requiredSeederRange","seederRangeTypes"};
   for(int i=0;i<4;i++) detail(s,3,seed[i],member(u,seed[i]));
   const char *templates=member(u,"appliedTemplates"), *p=templates&&*templates=='['?templates+1:NULL;
@@ -323,6 +331,7 @@ void aio_resultados(AioSnapshot *s, const char *json) {
     if(r.cache<0) r.cache=boolean(member(p,"clientResolve"),"isCached",-1);
     const char *parsed=member(sd,"parsedFile"), *resolution=member(parsed,"resolution");
     if(resolution && isdigit((unsigned char)*resolution)) r.altura=(int)strtol(resolution,NULL,10);
+    if(r.destino[0]) r.decisao=1;
     s->resultado[s->resultados++] = r; p = end;
   }
 }

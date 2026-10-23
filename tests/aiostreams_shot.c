@@ -37,7 +37,11 @@ int main(int argc,char **argv) {
   aio_manifesto(&s,"{\"id\":\"aiostreams.test\",\"name\":\"AIOStreams\",\"version\":\"2.36.0\",\"resources\":[\"stream\",\"catalog\",\"subtitles\",\"meta\"],\"catalogs\":[{\"id\":\"trending\",\"name\":\"Filmes em alta\",\"type\":\"movie\"},{\"id\":\"popular\",\"name\":\"Séries populares\",\"type\":\"series\"},{\"id\":\"netflix\",\"name\":\"Filmes Netflix\",\"type\":\"movie\"},{\"id\":\"disney\",\"name\":\"Séries Disney+\",\"type\":\"series\"}]}");
   aio_configuracao(&s,"{\"data\":{\"userData\":{\"services\":[{\"id\":\"TorBox\",\"enabled\":true}],\"presets\":[{\"type\":\"Torrentio\",\"enabled\":true},{\"type\":\"Comet\",\"enabled\":true},{\"type\":\"MediaFusion\",\"enabled\":true},{\"type\":\"WebStreamr\",\"enabled\":true}],\"excludedResolutions\":[\"720p\"],\"preferredLanguages\":[\"Portuguese\",\"English\"],\"excludeUncached\":false,\"sortCriteria\":{\"global\":[{\"key\":\"cached\"},{\"key\":\"resolution\"}]},\"formatter\":{\"id\":\"aiostreams\"}}}}");
   aio_resultados(&s,"{\"streams\":[{\"name\":\"4K · Dolby Vision · MP4\",\"url\":\"https://example.invalid/video\",\"streamData\":{\"cached\":true}},{\"name\":\"4K · HDR10 · REMUX\",\"url\":\"https://example.invalid/video\"},{\"name\":\"1080p · Dolby Vision · MP4\",\"url\":\"https://example.invalid/video\"},{\"name\":\"1080p · Blu-ray · SDR\",\"url\":\"https://example.invalid/video\"},{\"name\":\"720p · WEB-DL · SDR\",\"url\":\"https://example.invalid/video\"},{\"name\":\"1080p · HTTP\",\"url\":\"https://example.invalid/video\"},{\"name\":\"Resolução desconhecida · MKV\",\"externalUrl\":\"https://example.invalid/external\"},{\"name\":\"4K · HDR10 · MKV\",\"infoHash\":\"abcdef\"}]}");
-  for(int i=0;i<4;i++) { s.http[i]=200; s.ms[i]=184+i*60; }
+  aio_status(&s,"{\"success\":true,\"data\":{\"version\":\"2.36.0\",\"channel\":\"stable\",\"settings\":{\"searchApiDisabled\":false}}}");
+  aio_legendas(&s,"{\"subtitles\":[{\"lang\":\"por\",\"name\":\"Português\",\"forced\":false,\"sdh\":false},{\"lang\":\"eng\",\"name\":\"English\",\"forced\":true,\"sdh\":true}]}");
+  for(int i=0;i<6;i++) { s.http[i]=200; s.ms[i]=184+i*60; }
+  s.addon[s.addons++]=(AioItem){.nome="OpenSubtitles v3 Plus",.ativo=1,.legenda=1};
+  s.addon[s.addons++]=(AioItem){.nome="SubDL",.ativo=1,.legenda=1};
   const char *names[]={"sem-config","setup-instancia","setup-importar","setup-servicos","setup-pronto","painel","catalogos","fontes","links","legendas","filtros","saude","titulo-debug"};
   for(int p=0;p<13;p++) {
     aioui_shot(p,&s);
@@ -58,6 +62,7 @@ int main(int argc,char **argv) {
   streams[1]=streams[0]; streams[1].altura=1080; strcpy(streams[1].rotulo,"1080p · Blu-ray · SDR");
   stream_definir_alvo("tt0468569"); stream_definir_lista(streams,2); stream_folha_nome("Batman: O Cavaleiro das Trevas"); stream_folha_abrir();
   for(int frame=0;frame<40;frame++) {
+    aioui_shot(5,&s); aioui_desenhar(100000);
     txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); stream_folha_atualizar(1.f/60,100000+frame*16); glBindFramebuffer(GL_FRAMEBUFFER,fbo); gfx_novo_quadro(); stream_folha_desenhar(100000+frame*16);
   }
   save(argv[1],"integracao-fontes");
