@@ -33,6 +33,7 @@ static const char *prefix[] = { "plex_", "jellyfin_", "emby_" };
 static const char *alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,:;!?\"'()[]{}+-_=/*@&#%\\|~`$^<>";
 static int opened, screen, provider, selected, profile, field, restartPin, enterManual;
 static unsigned libraryVersion;
+static int rowChoice, rowStyle;
 static int libraryProfile = -999;
 static unsigned libraryCatalogRevision;
 static int libraryProviderCounts[3];
@@ -299,10 +300,19 @@ static void activate(void) {
       if (!selected) { srvsetup_fechar(); biblioteca_servidor_filtrar(provider); }
       else { change(ROWS); librariesLoad(); } break;
     case ROWS:
-      if (selected < nLibraries) {
-        fil_registrar(libraries[selected].chave, libraries[selected].titulo, providers[provider], libraries[selected].tipo, libraries[selected].n);
+      if (selected < nLibraries) rowChoice = selected;
+      else if (selected == nLibraries) {
+        if (nLibraries && rowChoice < nLibraries) {
+          int types[FIL_TIPO_N]; const char *labels[FIL_TIPO_N];
+          fil_registrar(libraries[rowChoice].chave,libraries[rowChoice].titulo,providers[provider],libraries[rowChoice].tipo,libraries[rowChoice].n);
+          int count=fil_estilos(libraries[rowChoice].chave,types,labels,FIL_TIPO_N);
+          rowStyle=count?(rowStyle+1)%count:0;
+          if(count)fil_definir_tipo(libraries[rowChoice].chave,types[rowStyle]);
+        }
+      } else if (selected == nLibraries+1 && nLibraries && rowChoice < nLibraries) {
+        fil_registrar(libraries[rowChoice].chave, libraries[rowChoice].titulo, providers[provider], libraries[rowChoice].tipo, libraries[rowChoice].n);
         fil_gravar_registro();
-        for (int i = 0; i < fil_n(); i++) if (!strcmp(fil_chave(i), libraries[selected].chave)) { int state; fil_adicionar(i, &state); break; }
+        for (int i = 0; i < fil_n(); i++) if (!strcmp(fil_chave(i), libraries[rowChoice].chave)) { int state; fil_adicionar(i, &state); break; }
         desc_repetir_silencioso(); snprintf(message, sizeof message, "%s", i18n("Adicionada à Home"));
       } else change(READY); break;
     case REMOVE:
@@ -325,7 +335,7 @@ static int targets(void) {
     case PLEX_SERVERS: return (worker.n > 0 ? worker.n : 0) + 2;
     case CONNECT_SERVERS: return (worker.n > 0 ? worker.n : 0) + 1;
     case LIBRARIES: return nLibraries + 3;
-    case ROWS: return nLibraries + 1;
+    case ROWS: return nLibraries + 3;
     default: return 2;
   }
 }
@@ -533,7 +543,14 @@ void srvsetup_desenhar(Uint32 now) {
     int shown=nLibraries>4?4:nLibraries;
     int start=selected>3?selected-3:0; if(start+shown>nLibraries)start=nLibraries-shown; if(start<0)start=0;
     for(int j=0;j<shown;j++){int i=start+j; char label[192]; snprintf(label,sizeof label,"%s  %s",screen==ROWS?"":checked[i]?"[x]":"[ ]",libraries[i].titulo); row(i,label,libraries[i].tipo,410+j*88,provider);}
-    if(screen==ROWS) button(nLibraries,"Voltar",232,800,300);
+    if(screen==ROWS) {
+      button(nLibraries,"Estilo",232,800,210); button(nLibraries+1,"Adicionar à Home",455,800,270); button(nLibraries+2,"Voltar",1020,740,240);
+      if(nLibraries && rowChoice<nLibraries) {
+        text(TXT_G30B,libraries[rowChoice].titulo,1020,530,243,680);
+        int types[FIL_TIPO_N]; const char *labels[FIL_TIPO_N];int count=fil_estilos(libraries[rowChoice].chave,types,labels,FIL_TIPO_N);
+        if(count)text(TXT_ILHA_SUB,labels[rowStyle<count?rowStyle:0],1020,580,160,680);
+      }
+    }
     else { button(nLibraries,"Continuar",232,800,220); button(nLibraries+1,"Adicionar à Home",464,800,260); button(nLibraries+2,"Remover",1020,740,310); }
     text(TXT_G30B,"Biblioteca",1020,412,243,700);
     paragraph("Suas bibliotecas viram fileiras na Home, com detalhes e retomar de onde parou.",1020,470,680);
