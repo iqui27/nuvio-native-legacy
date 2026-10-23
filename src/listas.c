@@ -32,7 +32,8 @@ static unsigned  geracao;          // invalida o resultado de um pedido trocado
 
 // O QUE ESTE FIO FOI PEDIR. Copiado sob trava antes de sair, para o fio nunca
 // ler um pedido que a pessoa ja trocou.
-enum { PED_NADA = 0, PED_TRAKT_MINHAS, PED_TRAKT_BUSCA, PED_SIMKL_ITENS };
+enum { PED_NADA = 0, PED_TRAKT_MINHAS, PED_TRAKT_BUSCA, PED_SIMKL_ITENS, PED_SERVIDORES };
+static int servidorProvider, servidorCollections;
 static int  pedido;
 static char termoBusca[96];
 
@@ -207,6 +208,10 @@ int lst_alternar_fixada(const LstLista *l) {
 
 int lst_aceita_home(const LstLista *l, const char **porque) {
   if (porque) *porque = "";
+  if (l && l->fonte == LST_SERVIDOR && (strstr(l->colId, "_collections") || strstr(l->colId, "_playlists"))) {
+    if (porque) *porque = "Escolher";
+    return 0;
+  }
   if (!l) return 0;
   if (l->fonte == LST_SIMKL) {
     // Ver listas.h: a fileira de colecao sabe pedir catalogo de addon, TMDB e
@@ -652,14 +657,34 @@ static void escapar(const char *s, char *dst, size_t n) {
 
 static void *fioListas(void *u) {
   char url[300], termo[300], *corpo = NULL;
-  int qual;
+  int qual, provider, collections, profile;
   unsigned minha;
   (void)u;
   pthread_mutex_lock(&trava);
-  qual = pedido; minha = geracao;
+  qual = pedido; minha = geracao; provider = servidorProvider; collections = servidorCollections; profile = perfis_ativo();
   escapar(termoBusca, termo, sizeof termo);
   pthread_mutex_unlock(&trava);
 
+  if (qual == PED_SERVIDORES) {
+    const char *pre[] = {"plex_", "jellyfin_", "emby_"}; char key[96];
+    CatItem *items = calloc(LST_MAX, sizeof *items); LstLista lists[LST_MAX]; int n = 0;
+    for (int group = 0; group < 2 && items && n < LST_MAX; group++) {
+      snprintf(key, sizeof key, "%s%s", pre[provider], group ? "playlists" : "collections");
+      int total = 0, raw = 0;
+      int got = servidores_pagina(key, 0, LST_MAX - n, items, LST_MAX - n, &total, &raw);
+      for (int i = 0; i < got && n < LST_MAX; i++) {
+        LstLista *l = &lists[n]; memset(l, 0, sizeof *l);
+        if (!lst_servidor_chave(&items[i], l->colId, sizeof l->colId)) continue;
+        l->fonte = LST_SERVIDOR; l->itens = -1; l->curtidas = -1;
+        snprintf(l->titulo, sizeof l->titulo, "%s", items[i].titulo);
+        snprintf(l->autor, sizeof l->autor, "%s", provider == 0 ? "Plex" : provider == 1 ? "Jellyfin" : "Emby"); n++;
+      }
+    }
+    (void)collections;
+    free(items); pthread_mutex_lock(&trava);
+    if (minha == geracao && profile == perfis_ativo()) { memcpy(tabela, lists, n * sizeof *lists); nTabela = n; fioVivo = 0; }
+    pthread_mutex_unlock(&trava); return NULL;
+  }
   if (qual == PED_TRAKT_MINHAS) {
     const char *cab[4];
     char aut[200], chave[160];
@@ -740,17 +765,29 @@ void lst_buscar(const char *termo) {
   disparar(PED_TRAKT_BUSCA);
 }
 
+int lst_servidor_chave(const CatItem *it, char *out, size_t n) {
+  char tag[JFID_TAG + 1], item[JFID_ITEM + 1];
+  if (!it || (strcmp(it->tipo, "group") && strcmp(it->tipo, "list"))) return 0;
+  const char *p = !strncmp(it->imdb, "px:", 3) ? "px:" : !strncmp(it->imdb, "em:", 3) ? "em:" : "jf:";
+  if (!jfid_partes_p(p, it->imdb, tag, item)) return 0;
+  const char *pre = p[0] == 'p' ? "plex_" : p[0] == 'e' ? "emby_" : "jellyfin_";
+  return snprintf(out, n, "%s%s%s", pre, !strcmp(it->tipo, "list") ? "list_" : p[0] == 'p' ? "group_" : "", item) < (int)n;
+}
+
+int lst_servidor_entrar(const CatItem *item) {
+  char key[96]; if (!lst_servidor_chave(item, key, sizeof key)) return 0;
+  LstLista list; memset(&list, 0, sizeof list); list.fonte = LST_SERVIDOR;
+  snprintf(list.colId, sizeof list.colId, "%s", key);
+  snprintf(list.titulo, sizeof list.titulo, "%s", item->titulo);
+  lst_abrir(&list, ""); return 1;
+}
+
 void lst_pedir_servidores(int provider, int collections) {
   const char *pre[] = {"plex_", "jellyfin_", "emby_"};
   if (provider < 0 || provider > 2) return;
-  pthread_mutex_lock(&trava); geracao++; nTabela = 0; aviso[0] = 0;
-  const char *names[] = {"Coleções", "Listas"};
-  for (int i = collections ? 0 : 1; i < (collections ? 1 : 2); i++) {
-    LstLista *l = &tabela[nTabela++]; memset(l, 0, sizeof *l); l->fonte = LST_SERVIDOR;
-    snprintf(l->colId, sizeof l->colId, "%s%s", pre[provider], i ? "playlists" : "collections");
-    snprintf(l->titulo, sizeof l->titulo, "%s", i18n(names[i])); l->itens = -1;
-  }
-  pthread_mutex_unlock(&trava);
+  (void)pre;
+  pthread_mutex_lock(&trava); servidorProvider = provider; servidorCollections = collections; fioVivo = 0; pthread_mutex_unlock(&trava);
+  disparar(PED_SERVIDORES);
 }
 
 void lst_pedir_fixadas(void) {

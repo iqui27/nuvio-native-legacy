@@ -2,6 +2,7 @@
 #include "ajustes.h"
 #include "idioma.h"
 #include "jsraiz.h"
+#include "fileiras.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -191,6 +192,7 @@ int servidores_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, i
       for (r = 0; r < f; r++) {
         CatFileira fila = fils[nf + r];
         int ini = w;
+        if (fil_estado_chave(fila.chave) == FIL_FORA) continue;
         if (strstr(fila.chave, "_nextup"))
           snprintf(fila.titulo, sizeof fila.titulo, "%s · %s", i18n("Próximos episódios"), fils[nf + r].titulo);
         for (k = 0; k < fila.n; k++) {

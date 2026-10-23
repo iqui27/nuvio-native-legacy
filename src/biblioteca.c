@@ -1057,6 +1057,12 @@ static void abrirItemDaLista(int i) {
   CatItem it;
   int idx;
   if (!lst_item(i, &it) || !it.imdb[0]) return;
+  char serverKey[96];
+  if (aberta.fonte == LST_SERVIDOR && lst_servidor_chave(&it, serverKey, sizeof serverKey)) {
+    snprintf(aberta.colId, sizeof aberta.colId, "%s", serverKey);
+    snprintf(aberta.titulo, sizeof aberta.titulo, "%s", it.titulo);
+    lst_abrir(&aberta, abertaMidia); remapear(0); foco.fileira = 0; foco.coluna = 0; return;
+  }
   idx = cat_indice_por_imdb(it.imdb);
   if (idx < 0) idx = cat_acrescentar(&it);
   if (idx >= 0) pedido = idx;
@@ -1291,6 +1297,7 @@ static void okNaCelula(int i) {
     return;
   }
   if (estado() == EST_LISTAS) { abrirLista(i); return; }
+  if (estado() == EST_ITENS && aberta.fonte == LST_SERVIDOR) { abrirItemDaLista(i); return; }
   { static const GlanceFonte f = {glanceBibTotal, glanceBibItem, glanceBibFoco, glanceBibDetalhes};
     glance_abrir(&f, i); }
 }

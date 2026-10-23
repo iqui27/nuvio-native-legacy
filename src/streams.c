@@ -3949,6 +3949,12 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       }
       cy+=FOLHA_MARCA_H;
     }
+    if (ehServidor(s)) {
+      const char *mark = !strncmp(s->bingeGroup,"plex|",5) ? "deploy/app/art/marcas/plex.png" :
+                         !strncmp(s->bingeGroup,"emby|",5) ? "deploy/app/art/marcas/emby.png" : "deploy/app/art/marcas/jellyfin.png";
+      GLuint logo = tex_obter_larg(mark,30);
+      if (logo) gfx_rect((GfxRect){tx-40,cy+4,28,28},logo,GFX_MARCA,0,0,0,0,1,1,1,(sel?.78f:.52f)*anim);
+    }
     // TITULO: o nome do conteudo (tituloConteudo). Fora do foco o titulo apaga um
     // degrau: com todas as linhas no mesmo branco a lista lia como uma massa
     // so (dono, 02/10: "tudo muito parecido").

@@ -12,6 +12,7 @@
 #include "tex_cache.h"
 #include "qr.h"
 #include "js.h"
+#include "jsraiz.h"
 #include "jsw.h"
 #include "dados.h"
 #include "descoberta.h"
@@ -135,7 +136,7 @@ static void *work(void *unused) {
         delayPoll(); char path[256]; snprintf(path, sizeof path, "pin?deviceId=%s&pin=%s", device, pin);
         e = em_connect_pedir(path, NULL, NULL, worker.job, &r);
         if (e) break;
-        int confirmed = js_num(r.corpo, NULL, "IsConfirmed", 0) > 0 || strstr(r.corpo, "\"IsConfirmed\":true") || strstr(r.corpo, "\"IsConfirmed\": true");
+        int confirmed = boolRaiz(r.corpo, NULL, "IsConfirmed", 0);
         clearReply(&r); if (!confirmed) continue;
         jsw_iniciar(&w); jsw_obj_ini(&w); jsw_cs(&w, "deviceId", device); jsw_cs(&w, "pin", pin); jsw_obj_fim(&w);
         e = em_connect_pedir("pin/authenticate", jsw_texto_final(&w), NULL, worker.job, &r); jsw_livre(&w);
@@ -221,7 +222,9 @@ static void activate(void) {
         if (!provider) { change(ADDRESS); }
         else { int ok = provider == 1 ? jellyfin_definir_servidor(addressText) : emby_definir_servidor(addressText); if (ok) change(LOGIN); }
       } else if (selected == (worker.n > 0 ? worker.n : 0)) { change(ADDRESS); keyboard(1); }
-      else discover(); break;
+      else if (provider == 2 && selected == (worker.n > 0 ? worker.n : 0) + 2) {
+        change(CONNECT_CODE); codeSince = SDL_GetTicks(); makeQR("https://emby.media/pin"); startWorker(JOB_CONNECT_PIN);
+      } else discover(); break;
     case ADDRESS:
       if (!selected) keyboard(1);
       else if (selected == 1) {
@@ -306,7 +309,7 @@ static int targets(void) {
   switch (screen) {
     case CHOOSE: return 3;
     case MANAGE: return 7;
-    case DISCOVER: return (worker.n > 0 ? worker.n : 0) + 2;
+    case DISCOVER: return (worker.n > 0 ? worker.n : 0) + (provider == 2 ? 3 : 2);
     case USERS: return (worker.n > 0 ? worker.n : 0) + 2;
     case ADDRESS: case LOGIN: case CONNECT_CODE: case ERROR_SCREEN: return 3;
     case CODE: case PASSWORD: case CONNECT_PASSWORD: return 4;
@@ -504,6 +507,7 @@ void srvsetup_desenhar(Uint32 now) {
     text(TXT_G30B,"Biblioteca",1020,412,243,750);
     paragraph("Suas bibliotecas viram fileiras na Home, com detalhes e retomar de onde parou.",1020,470,680);
     paragraph("Este perfil nesta TV",1020,620,680);
+    if (screen == DISCOVER && provider == 2) button(total+2,"Emby Connect",1020,700,330);
   } else if (screen == ADDRESS || screen == PASSWORD || screen == CONNECT_PASSWORD) {
     panel(200,386,750,430,0); panel(1020,386,804,430,0);
     if(screen==ADDRESS) { button(0,addressText[0]?addressText:"Endereço",232,440,680); button(1,"Conectar",232,580,260); button(2,"Buscar",510,580,300); }

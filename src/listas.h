@@ -107,6 +107,8 @@ void lst_esquecer_conta(void);
 // refaz o pedido.
 void lst_pedir(int fonte);
 void lst_pedir_servidores(int provider, int collections);
+int lst_servidor_chave(const CatItem *item, char *out, size_t n);
+int lst_servidor_entrar(const CatItem *item);
 // Procura nas listas PUBLICAS do Trakt. `termo` vazio pede /lists/trending.
 void lst_buscar(const char *termo);
 // As FIXADAS do perfil, no lugar de uma fonte. Nao tem rede.

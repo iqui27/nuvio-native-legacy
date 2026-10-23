@@ -33,6 +33,15 @@
 #include <string.h>
 
 static SDL_Window *win;
+static int serverContainsShot(const CatItem *it, int p) {
+  int v = 0; for (const char *s = it->imdb; *s; s++) v += (unsigned char)*s;
+  return p < 0 || v % 3 == p || v % 5 == 0;
+}
+static int serverRowsShot(int i, const char **name, int *count) {
+  const char *names[] = {"Plex", "Jellyfin", "Emby", "Seus servidores"};
+  if (i < 0 || i > 3) return 0; *name = names[i]; *count = i < 3 ? 8 : 0; return 1;
+}
+static void serverSelectShot(int i) { if (i < 3) biblioteca_servidor_filtrar(i); }
 
 static void tecla(SDL_Keycode k) {
   SDL_Event e = { 0 };
@@ -335,6 +344,26 @@ int main(int argc, char **argv) {
   povoar();
   biblioteca_iniciar();
   rail_shot_aplicar();
+  if (argc > 2 && !strcmp(argv[2], "servers")) {
+    biblioteca_servidores_contem(serverContainsShot);
+    biblioteca_origens_servidores(serverRowsShot, serverSelectShot);
+    biblioteca_iniciar(); tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT);
+    snprintf(nome, sizeof nome, "%s-biblioteca-servidores.bmp", saida); captura(nome);
+    biblioteca_servidor_filtrar(0);
+    snprintf(nome, sizeof nome, "%s-biblioteca-filtro-plex.bmp", saida); captura(nome);
+    biblioteca_servidor_filtrar(2);
+    snprintf(nome, sizeof nome, "%s-biblioteca-filtro-emby.bmp", saida); captura(nome);
+    biblioteca_iniciar(); tecla(SDLK_DOWN); tecla(SDLK_RIGHT);
+    for (int i = 0; i < 4; i++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN); tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-biblioteca-lista-servidor.bmp", saida); captura(nome);
+    biblioteca_iniciar(); tecla(SDLK_RIGHT); tecla(SDLK_RETURN); tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT);
+    snprintf(nome, sizeof nome, "%s-biblioteca-continuar.bmp", saida); captura(nome);
+    biblioteca_iniciar(); for (int i = 0; i < 4; i++) tecla(SDLK_RIGHT); tecla(SDLK_RETURN); tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+    for (int i = 0; i < 5; i++) tecla(SDLK_DOWN); tecla(SDLK_RETURN); tecla(SDLK_RIGHT);
+    snprintf(nome, sizeof nome, "%s-listas-servidor.bmp", saida); captura(nome);
+    return 0;
+  }
   if (argc > 2 && !strcmp(argv[2], "mock")) {
     tecla(SDLK_DOWN); tecla(SDLK_DOWN); // source panel
     tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); // first row, second poster
