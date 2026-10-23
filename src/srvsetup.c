@@ -215,7 +215,8 @@ static void makeQR(const char *url) { snprintf(qrUrl, sizeof qrUrl, "%s", url); 
 static void keyboard(int f) {
   field = f;
   const char *label = f == 1 ? "Endereço" : f == 2 ? provider == 2 ? "Usuário do Emby" : "Usuário do Jellyfin" : "Senha";
-  teclado_contexto("Biblioteca"); teclado_abrir_com(label, "", f == 1 ? 400 : f == 2 ? 120 : 250, alphabet,
+  teclado_contexto("Biblioteca"); teclado_apresentacao(1);
+  teclado_abrir_com(label, "", f == 1 ? 400 : f == 2 ? 120 : 250, alphabet,
     f == 1 ? addressText : f == 2 ? username : NULL);
   if (f == 3) teclado_tipo(TECLADO_TIPO_SENHA);
 }
@@ -720,14 +721,19 @@ void srvsetup_desenhar(Uint32 now) {
     text(TXT_ILHA_APOIO,"Home › Fileiras › Adicionar fileira",820,64,145,1010);
     text(TXT_ILHA_TITULO,"Escolha o conteúdo da fileira",820,105,243,1010);
     paragraph("Use o mesmo editor de coleções, listas e servidores.",820,171,990);
-    text(TXT_ILHA_SUB,"Servidores pessoais",820,252,225,1010); logo(provider,820,300,32);
-    text(TXT_G21B,providers[provider],870,304,243,900);
+    // The approved editor groups catalogs, lists and servers before choosing
+    // the row content. Only the server section is actionable here.
+    { const char *tabs[] = { "Catálogos", "Listas", "Servidores" }; float tx = 820;
+      for (int t = 0; t < 3; t++) { TxtLinha tl = txt_linha(TXT_ILHA_SEG, i18n(tabs[t]), 243,242,239,255); float tw = tl.w + 40;
+        gfx_cor((GfxRect){tx,236,tw,44}, .5f, 1,1,1, t == 2 ? .13f : .06f); txt_desenhar(tl, tx+20, 246 + (t==2?0:0)); tx += tw + 10; } }
+    text(TXT_ILHA_SUB,"Servidores pessoais",820,292,225,1010); logo(provider,820,332,32);
+    text(TXT_G21B,providers[provider],870,336,243,900);
     int shown=nLibraries>4?4:nLibraries;
     int first=selected<nLibraries&&selected>3?selected-3:rowChoice>3?rowChoice-3:0;
     if(first+shown>nLibraries)first=nLibraries-shown;
     if(first<0)first=0;
     for(int j=0;j<shown;j++) {
-      int i=first+j;float y=366+j*100;
+      int i=first+j;float y=394+j*100;
       if(selected==i)panel(820,y,1036,92,1);
       logo(provider,844,y+25,34);text(TXT_ILHA_NOME,libraries[i].titulo,902,y+14,243,900);
       text(TXT_ILHA_SUB,!strcmp(libraries[i].tipo,"group")?"Coleções":!strcmp(libraries[i].tipo,"list")?"Listas":"Biblioteca",902,y+50,145,900);
@@ -735,15 +741,15 @@ void srvsetup_desenhar(Uint32 now) {
     if(nLibraries && rowChoice<nLibraries) {
       const char *key=libraries[rowChoice].chave;char label[180];
       snprintf(label,sizeof label,"%s · %s",i18n("Estilo"),i18n(fil_estilo_rotulo(key,fil_tipo(key))));
-      button(nLibraries,label,820,794,325);
+      button(nLibraries,label,820,824,325);
       snprintf(label,sizeof label,"%s · %s",i18n("Ordem"),i18n(fil_servidor_ordem(key)?"Título":"Padrão"));
-      button(nLibraries+1,label,1157,794,310);
+      button(nLibraries+1,label,1157,824,310);
       snprintf(label,sizeof label,"%s · %s",i18n("Ocultar vistos"),i18n(fil_servidor_ocultar_vistos(key)?"Ligado":"Desligado"));
-      button(nLibraries+2,label,1479,794,365);
+      button(nLibraries+2,label,1479,824,365);
     }
-    button(nLibraries+3,"Adicionar à Home",820,882,330);button(nLibraries+4,"Cancelar",1162,882,260);
-    text(TXT_ILHA_APOIO,"Só filmes e séries encontrados no catálogo aparecem na Home.",820,952,145,1010);
-    if(message[0])text(TXT_ILHA_SUB,message,820,990,215,1000);
+    button(nLibraries+3,"Adicionar à Home",820,912,330);button(nLibraries+4,"Cancelar",1162,912,260);
+    text(TXT_ILHA_APOIO,"Só filmes e séries encontrados no catálogo aparecem na Home.",820,982,145,1010);
+    if(message[0])text(TXT_ILHA_SUB,message,820,1000,215,1000);
   } else if(screen==LIBRARIES) {
     panel(200,386,750,500,0);
     text(TXT_G30B,"Bibliotecas",232,416,243,680);
@@ -803,10 +809,18 @@ void srvsetup_desenhar(Uint32 now) {
   if(teclado_aberto()) teclado_desenhar(now);
 }
 
-static int originRows(int index, const char **name, int *count) {
+static int originRows(int index, const char **name, const char **sub, int *count) {
+  static char label[3][96];
   if (index < 0 || index > 3) return 0;
   *name=index<3?providers[index]:i18n("Seus servidores");
   *count=index<3?libraryProviderCounts[index]:0;
+  if (index < 3) {
+    const char *server = serverName(index);
+    if (connected(index) && server[0]) snprintf(label[index], sizeof label[index], "%s · %s", server, i18n("Conectado"));
+    else if (connected(index)) snprintf(label[index], sizeof label[index], "%s", i18n("Conectado"));
+    else snprintf(label[index], sizeof label[index], "%s", i18n("Não configurado"));
+    *sub = label[index];
+  } else *sub = NULL;
   return 1;
 }
 static void originSelect(int i) {

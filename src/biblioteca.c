@@ -334,8 +334,8 @@ void biblioteca_origens_servidores(BibliotecaOrigens rows, void (*select)(int)) 
 static int nOrigens(void) {
   int n = BIB_N_ORIG + nAddonOrigens;
   if (serverRows) {
-    const char *name; int count;
-    for (int i = 0; i < 4 && serverRows(i, &name, &count); i++) n++;
+    const char *name, *sub; int count;
+    for (int i = 0; i < 4 && serverRows(i, &name, &sub, &count); i++) n++;
   }
   return n;
 }
@@ -2893,6 +2893,7 @@ static void desenhaOrigens(void) {
   else gfx_cor(painel, 26.0f / painel.h, .047f, .051f, .059f, 1);
   txt_desenhar(txt_linha(TXT_CAPTION2, "Origens", 115, 117, 122, 255), painel.x + 30, painel.y + 20);
   const char *sub[] = { "sem repetir títulos", "Para ver", "Para ver", "salvos neste perfil" };
+  float footerY = 0;
   const char *letra[] = { "", "T", "S", "N" };
   int start = focoOrigem && origemSel > 8 ? origemSel - 8 : 0;
   for (int i = start; i < nOrigens() && i < start + 9; i++) {
@@ -2902,8 +2903,9 @@ static void desenhaOrigens(void) {
     if (i >= BIB_N_ORIG && i < BIB_N_ORIG + nAddonOrigens) {
       name = addonOrigens[i - BIB_N_ORIG].nome; count = addonOrigens[i - BIB_N_ORIG].count;
     } else if (i >= BIB_N_ORIG + nAddonOrigens) {
-      if (!serverRows || !serverRows(i - BIB_N_ORIG - nAddonOrigens, &name, &count)) continue;
-      description = "Biblioteca";
+      const char *serverSub = NULL;
+      if (!serverRows || !serverRows(i - BIB_N_ORIG - nAddonOrigens, &name, &serverSub, &count)) continue;
+      description = serverSub ? serverSub : "Biblioteca";
     }
     GfxRect row = { painel.x + 12, painel.y + 56 + (i - start) * 58, 296, 56 };
     ponteiro_alvo(row.x, row.y, row.w, row.h, ponteiroOrigem, NULL, i, 0);
@@ -2929,6 +2931,13 @@ static void desenhaOrigens(void) {
     char num[16]; snprintf(num, sizeof num, "%d", count);
     TxtLinha ct = txt_linha(TXT_HERO_META, num, 140, 142, 148, 255);
     txt_desenhar(ct, row.x + row.w - 18 - ct.w, row.y + 16);
+    footerY = row.y + row.h;
+  }
+  if (serverRows && footerY && footerY + 52 < painel.y + painel.h - 8) {
+    // The approved Library mock keeps server actions under the origins list:
+    // one connect entry and one manage entry, both opening the same setup.
+    txt_desenhar(txt_linha_corta(TXT_MINI, "+ Conectar servidor", 150, 153, 162, 255, 280), painel.x + 18, footerY + 8);
+    txt_desenhar(txt_linha_corta(TXT_MINI, "Gerenciar conexões", 150, 153, 162, 255, 280), painel.x + 18, footerY + 30);
   }
   // Provider rows share this page's focus and title filters.
 }

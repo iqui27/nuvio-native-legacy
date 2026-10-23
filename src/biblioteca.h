@@ -18,7 +18,7 @@ void biblioteca_encerrar(void);
 
 // Optional personal-server ORIGENS rows. Provider owns data and selection.
 // Called on the UI thread; no server connection or network work belongs here.
-typedef int (*BibliotecaOrigens)(int index, const char **name, int *count);
+typedef int (*BibliotecaOrigens)(int index, const char **name, const char **sub, int *count);
 void biblioteca_origens_servidores(BibliotecaOrigens rows, void (*select)(int index));
 // Membership callback: provider -1 means any server, 0 Plex, 1 Jellyfin, 2 Emby.
 void biblioteca_servidores_contem(int (*contains)(const CatItem *, int));

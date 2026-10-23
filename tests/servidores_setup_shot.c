@@ -1,4 +1,20 @@
 // Offline fixtures, production setup renderer and keyboard navigation.
+#define SRVSETUP_SHOT 1
+// Fixture server names for manage/discovery shots; without them connected()
+// is false and every row reads "Não configurado".
+char shotServerNames[3][96];
+#define plex_conectado shotPlexConectado
+#define jellyfin_conectado shotJfConectado
+#define emby_conectado shotEmbyConectado
+#define plex_servidor_nome shotPlexNome
+#define jellyfin_servidor_curto shotJfCurto
+#define emby_servidor_curto shotEmbyCurto
+static int shotPlexConectado(void) { return shotServerNames[0][0] != 0; }
+static int shotJfConectado(void) { return shotServerNames[1][0] != 0; }
+static int shotEmbyConectado(void) { return shotServerNames[2][0] != 0; }
+static const char *shotPlexNome(void) { return shotServerNames[0]; }
+static const char *shotJfCurto(void) { return shotServerNames[1]; }
+static const char *shotEmbyCurto(void) { return shotServerNames[2]; }
 #include "../src/srvsetup.c"
 #include "rail_shot.h"
 #include "home.h"
@@ -12,7 +28,7 @@ static void capture(const char *dir, const char *name) {
     SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); gfx_novo_quadro();
     glBindFramebuffer(GL_FRAMEBUFFER,target);glViewport(0,0,1920,1080);glClear(GL_COLOR_BUFFER_BIT);
     if(homeShot) { home_atualizar(1.0f/60,codeSince+28000+i*16);home_desenhar(codeSince+28000+i*16); }
-    else srvsetup_desenhar(codeSince+28000);
+    else { srvsetup_atualizar(codeSince+28000+i*16); srvsetup_desenhar(codeSince+28000); }
     rail_shot_desenhar(homeShot?MENU_INICIO:MENU_BIBLIOTECA);glFinish();
   }
   unsigned char *pixels=malloc(1920*1080*4); assert(pixels);
@@ -49,6 +65,14 @@ int main(int argc,char **argv){
     opened=1;provider=scenes[i].p;change(scenes[i].state);worker.n=2;
     strcpy(code,provider==0?"H7KM":"482916");makeQR(provider==0?"https://plex.tv/link":provider==1?"http://jellyfin.example.test/web/#/quickconnect":"https://emby.media/pin");
     recoveryAuth=screen==ERROR_SCREEN&&provider==1;
+    // Setup shots must show real connected names, never "Não configurado".
+    for(int p=0;p<3;p++) lastSync[p]=time(NULL)-180*(p+1);
+    if(screen==MANAGE||screen==REMOVE) { libraryProviderCounts[0]=346; libraryProviderCounts[1]=114; libraryProviderCounts[2]=9; }
+    { const char *snames[]={"Casa","Sala","Estúdio"};
+      // Manage and offline shots need all three rows live; discovery shows the
+      // chosen provider only, as the approved fixture does.
+      int live = screen==MANAGE||screen==REMOVE||screen==ERROR_SCREEN;
+      for(int p=0;p<3;p++) if(live || p==scenes[i].p || screen==CHOOSE) snprintf(shotServerNames[p],96,"%s",snames[p]); }
     for(int j=0;j<2;j++){
       const char *name=j?"Cinema":"Home";
       snprintf(worker.servers[j].nome,96,"%s",name);snprintf(worker.plex[j].nome,96,"%s",name);
@@ -88,6 +112,7 @@ int main(int argc,char **argv){
   screen=LIBRARIES;key(SDLK_ESCAPE);assert(screen==MANAGE);
   screen=LOGIN;key(SDLK_ESCAPE);assert(screen==CHOOSE);
   screen=ROWS;key(SDLK_ESCAPE);assert(screen==READY);
+  { screen=ADDRESS; provider=1; keyboard(1); capture(argv[1],"setup-manual-teclado"); field=0; teclado_esquecer(); }
   puts("Setup D-pad: bounded focus, Back, safe removal default, library toggle: PASS");
   return 0;
 }

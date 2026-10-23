@@ -157,6 +157,8 @@ static int tePhoneEvento(const SDL_Event *e);
 static void tePhoneDesenhar(Uint32 agora);
 #endif
 
+static int folhaDireitaPend, folhaDireita;
+void teclado_apresentacao(int modo) { folhaDireitaPend = modo; }
 static float gradeW(void) {
   return (float)nCols * TE_TECLA + (float)(nCols - 1) * TE_GAP;   // 504 com 6
 }
@@ -231,7 +233,7 @@ static float teW(void) {
   if (teRetrato()) return 2 * TE_ILHA_PX + fmaxf(teEsqW(), gradeW());
   return 2 * TE_ILHA_PX + teEsqW() + TE_COL_GAP + gradeW();
 }
-static float teX(void) { return (NV_TELA_W - teW()) * 0.5f; }
+static float teX(void) { return folhaDireita ? NV_TELA_W - 24.0f - teW() : (NV_TELA_W - teW()) * 0.5f; }
 static float teGradeX(void) {
   if (teRetrato()) return teX() + (teW() - gradeW()) * 0.5f;
   return teX() + TE_ILHA_PX + teEsqW() + TE_COL_GAP;
@@ -523,6 +525,8 @@ void teclado_abrir_com(const char *titulo, const char *dica, int max,
   alfabetoAtual = (alfabeto && *alfabeto) ? alfabeto : NULL;
   celb_fechar_dono(CELB_TECLADO);   // reabrir por cima nao herda o QR da anterior
   mascarar = 0; tipoIme = ST_IME_TEXTO; ehSenha = 0; semCel = 0;
+  // Uma abertura consome o modo pedido: a proxima volta a modal central.
+  folhaDireita = folhaDireitaPend == 1; folhaDireitaPend = 0;
   teMontar(0);
   aberto = 1;
   fileira = 0; coluna = 0; colunaAntes = 0;
@@ -1295,7 +1299,7 @@ static void teDesenhar(Uint32 agora) {
     ponteiro_camada();
     ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, NULL, 0, 0);
   }
-  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.84f * anim);
+  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, (folhaDireita ? 0.18f : 0.84f) * anim);
   { GfxRect p = { teX(), teY() + dy, teW(), teH() };
     float raio = 36.0f / p.h;
     gfx_rect((GfxRect){ p.x - 20, p.y - 6, p.w + 40, p.h + 46 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.40f * a);
