@@ -290,8 +290,11 @@ void aio_legendas(AioSnapshot *s,const char *json) {
     const char *end=value_end(p); if(!end||end<=p) break;
     AioLegenda r={0};
     js_texto_raiz_em(p,end,"lang",r.idioma,sizeof r.idioma); safe(r.idioma);
-    js_texto_raiz_em(p,end,"name",r.nome,sizeof r.nome); safe(r.nome);
-    r.forcada=boolean(p,"forced",-1); r.sdh=boolean(p,"sdh",-1);
+    js_texto_raiz_em(p,end,"name",r.nome,sizeof r.nome);
+    if(!r.nome[0]) js_texto_raiz_em(p,end,"label",r.nome,sizeof r.nome);
+    safe(r.nome);
+    r.forcada=boolean(p,"forced",-1); r.sdh=boolean(p,"hearingImpaired",-1);
+    if(r.sdh<0) r.sdh=boolean(p,"sdh",-1);
     s->legenda[s->legendas++]=r; p=end;
   }
 }
@@ -327,8 +330,8 @@ void aio_resultados(AioSnapshot *s, const char *json) {
     if (!strcmp(kind,"Externo") || !strcmp(kind,"NZB") || !strcmp(kind,"YouTube")) s->links++;
     const char *sd = member(p,"streamData");
     js_texto_raiz_em(sd,sd?js_fim(sd):NULL,"addon",r.provedor,sizeof r.provedor); safe(r.provedor);
-    r.cache = boolean(member(sd,"service"),"cached",-1);
-    if(r.cache<0) r.cache=boolean(sd,"cached",-1);
+    r.cache = boolean(sd,"cached",-1);
+    if(r.cache<0) r.cache=boolean(member(sd,"service"),"cached",-1);
     if(r.cache<0) r.cache=boolean(member(p,"clientResolve"),"isCached",-1);
     const char *parsed=member(sd,"parsedFile"), *resolution=member(parsed,"resolution");
     if(resolution && *resolution=='\"') { char value[32]=""; js_cadeia(resolution,value,sizeof value); r.altura=atoi(value); }

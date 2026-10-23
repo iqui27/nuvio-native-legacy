@@ -54,6 +54,10 @@ int main(void) {
   assert(s.detalhes==7 && !strstr((char *)s.detalhe,"SECRET"));
   aio_configuracao(&s,"{\"data\":{\"userData\":null}}");
   assert(!s.configurada && !s.detalhes);
+  aio_resultados(&s,"{\"streams\":[{\"url\":\"https://media.test/v\",\"streamData\":{\"cached\":true,\"service\":{\"cached\":false}}}]}");
+  assert(s.resultado[0].cache==1);
+  aio_legendas(&s,"{\"subtitles\":[{\"lang\":\"por\",\"label\":\"Portuguese SDH\",\"hearingImpaired\":true}]}");
+  assert(s.legenda[0].sdh==1 && !strcmp(s.legenda[0].nome,"Portuguese SDH"));
   Stream *playable=NULL;
   assert(stream_extrair("{\"streams\":[{\"externalUrl\":\"https://external.test/page\"},{\"url\":\"https://media.test/video.mp4\"}]}","AIOStreams",&playable)==1);
   free(playable);
