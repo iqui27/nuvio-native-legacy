@@ -164,7 +164,13 @@ static void summarize(char *dst,size_t n,const char *p) {
       while(isspace((unsigned char)*p)||*p==',') p++;
       char text[80]="";
       if(*p=='"') js_cadeia(p,text,sizeof text);
-      else if(*p=='{') js_texto_raiz_em(p,js_fim(p),"key",text,sizeof text);
+      else if(*p=='{') {
+        js_texto_raiz_em(p,js_fim(p),"key",text,sizeof text);
+        char direction[16]=""; js_texto_raiz_em(p,js_fim(p),"direction",direction,sizeof direction);
+        if(!strcmp(direction,"asc") || !strcmp(direction,"desc")) {
+          size_t used=strlen(text); snprintf(text+used,sizeof text-used," (%s)",direction);
+        }
+      }
       else if(isdigit((unsigned char)*p)) snprintf(text,sizeof text,"%g",strtod(p,NULL));
       safe(text);
       if(text[0]) { size_t used=strlen(dst); snprintf(dst+used,n-used,"%s%s",used?", ":"",text); }
@@ -186,11 +192,11 @@ static void detail(AioSnapshot *s,int group,const char *name,const char *v) {
 static int count_array(const char *a);
 static void config_details(AioSnapshot *s,const char *u) {
   const char *prefix[]={"required","included","excluded","preferred"};
-  const char *suffix[]={"Resolutions","Qualities","VisualTags","AudioTags","Languages","Subtitles","StreamTypes"};
+  const char *suffix[]={"Resolutions","Qualities","VisualTags","AudioTags","Languages","Subtitles","StreamTypes","Encodes","AudioChannels","ReleaseGroups"};
   char key[96];
-  for(int a=0;a<7;a++) for(int b=0;b<4;b++) {
+  for(int a=0;a<10;a++) for(int b=0;b<4;b++) {
     snprintf(key,sizeof key,"%s%s",prefix[b],suffix[a]);
-    detail(s,a<4?0:a<6?2:3,key,member(u,key));
+    detail(s,a==4||a==5?2:a==6?3:a==9?4:0,key,member(u,key));
   }
   detail(s,3,"excludeCached",member(u,"excludeCached"));
   detail(s,3,"excludeUncached",member(u,"excludeUncached"));
@@ -206,6 +212,10 @@ static void config_details(AioSnapshot *s,const char *u) {
   for(int i=0;i<12;i++) { snprintf(key,sizeof key,"sort.%s",sort[i]); detail(s,5,key,member(member(u,"sortCriteria"),sort[i])); }
   detail(s,6,"formatter.id",member(member(u,"formatter"),"id"));
   detail(s,6,"formatter.selectedSaved",member(member(u,"formatter"),"selectedSaved"));
+  const char *customFormatter=member(member(member(u,"formatter"),"definitions"),"custom");
+  if(customFormatter) detail(s,6,"formatter.custom",member(customFormatter,"name")?"true":"false");
+  const char *limit[]={"global","service","addon","resolution","quality","streamType","indexer","releaseGroup","mode"};
+  for(int i=0;i<9;i++) { snprintf(key,sizeof key,"resultLimits.%s",limit[i]); detail(s,1,key,member(member(u,"resultLimits"),limit[i])); }
   detail(s,7,"proxy.enabled",member(member(u,"proxy"),"enabled"));
   detail(s,7,"proxy.id",member(member(u,"proxy"),"id"));
   detail(s,7,"proxy.proxiedServices",member(member(u,"proxy"),"proxiedServices"));
