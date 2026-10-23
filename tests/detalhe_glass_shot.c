@@ -81,6 +81,9 @@
 #define extras_ficha_duracao      fx_ficha_duracao
 #define extras_ficha_paises       fx_ficha_paises
 #define extras_ficha_classificacao fx_ficha_classificacao
+#define extras_titulo_original  fx_titulo_original
+#define extras_idioma_original  fx_idioma_original
+#define extras_estudio_rede     fx_estudio_rede
 
 #include "text.h"
 static int traktLayoutCalls;
@@ -187,6 +190,9 @@ const char *fx_ficha_digital(void)       { return ""; }
 int         fx_ficha_duracao(void)       { return 124; }
 const char *fx_ficha_paises(void)        { return "United States of America"; }
 const char *fx_ficha_classificacao(void) { return "12"; }
+const char *fx_titulo_original(void)  { return "The Devil Wears Prada 2"; }
+const char *fx_idioma_original(void)  { return "en"; }
+int fx_estudio_rede(int i) { (void)i; return ehSerieDeEnsaio() ? 1 : 0; }
 
 static const char *const REL_TIT[] = { "The Prestige", "Frequency", "Outcome", "The Invite",
                                        "Prisoners", "Spaceman", "The Martian" };
@@ -212,10 +218,12 @@ const char *fx_colecao_poster(int i) { return i ? A "poster/07.jpg" : A "poster/
 const char *fx_colecao_sinopse_parte(int i) { (void)i; return "Sinopse da parte."; }
 int fx_colecao_nota(int i) { return 70 + i * 5; }
 
-static const char *const EST_NOME[] = { "20th Century Studios", "Wendy Finerman Productions", "Fox 2000" };
+static const char *const EST_NOME_F[] = { "20th Century Studios", "Wendy Finerman Productions", "Fox 2000" };
+static const char *const EST_NOME_S[] = { "FX", "MGM Television", "26 Keys" };
+static const char *const EST_LOGO[] = { "deploy/app/art/logo/00.png", "deploy/app/art/logo/07.png", "" };
 int fx_n_estudios(void)       { return 3; }
-const char *fx_estudio_nome(int i) { return EST_NOME[i]; }
-const char *fx_estudio_logo(int i) { static const char *const L[] = { "deploy/app/art/logo/00.png", "deploy/app/art/logo/07.png", "" }; return L[i]; }
+const char *fx_estudio_nome(int i) { return (ehSerieDeEnsaio() ? EST_NOME_S : EST_NOME_F)[i]; }
+const char *fx_estudio_logo(int i) { return EST_LOGO[i]; }
 
 static const char *const TR_NOME_F[] = { "Trailer oficial", "Trailer 2", "Bastidores", "Cena · Rocky" };
 static const char *const TR_NOME_S[] = { "Recap · T1 em 3 min", "Trailer · T1", "Teaser · T5", "Bastidores" };

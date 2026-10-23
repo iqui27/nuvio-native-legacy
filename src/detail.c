@@ -2038,15 +2038,15 @@ int detail_cobre_tela(void) {
 // tem o dado.
 typedef struct { const char *chave; char valor[168]; } LinhaDet;
 
-// "111" -> "1h 51m"; "47" -> "47min". O TMDB manda minutos crus.
+// "111" -> "1h51"; "47" -> "47min". A ficha do mockup v2 traz a forma
+// COMPACTA de duracao, a mesma da linha de meta do hero.
 static void duracaoTexto(int min, char *dst, size_t tam) {
-  desc_duracao_min(min, dst, tam);   // as tres formas sao chaves da tabela
+  desc_duracao_min_curta(min, dst, tam);
 }
 
 static int montarDetalhes(LinhaDet *o, int max) {
   int n = 0;
   const CatItem *ci = cat_item(idx);
-  const char *v;
 
   #define DET_POE(K, S) do {                                   \
     if ((n) < (max) && (S) && (S)[0]) {                        \
@@ -2055,32 +2055,31 @@ static int montarDetalhes(LinhaDet *o, int max) {
       n++;                                                     \
     } } while (0)
 
-  DET_POE("Original",extras_titulo_original());
-  DET_POE("Título", ci ? ci->titulo : NULL);
-  if (extras_idioma_original()[0]) DET_POE("Idioma", i18n(ling_nome(extras_idioma_original())));
-  // Status cru do TMDB/Trakt ("Released", "returning series") -> rotulo no
-  // idioma da interface; valor que a tabela nao conhece sai como veio.
-  // Filme ja lancado: o mockup nao traz a linha (o "Lançado" nao diz nada a
-  // quem esta olhando o titulo no catalogo); os outros estados ficam.
-  { const char *st = extras_ficha_status();
-    const char *k = desc_status_chave(st, ehSerie());
-    if (ehSerie() || !st || strcasecmp(st, "Released") != 0)
-      DET_POE("Status", k ? i18n(k) : st); }
+  // A FICHA do mockup v2: Original, No Brasil, Estreia, Duração, Idioma (na
+  // serie, Canal e Episódios no lugar de No Brasil/Duração). A classificacao
+  // mora na linha do cabecalho das Notas; pais e status saem — o mockup e
+  // explicito sobre o que cada linha diz.
+  DET_POE("Original", extras_titulo_original());
+  { const char *orig = extras_titulo_original();
+    DET_POE("No Brasil", ci && ci->titulo[0] && strcmp(ci->titulo, orig) ? ci->titulo : NULL); }
+  if (ehSerie()) {
+    // CANAL: a primeira NETWORK da resposta do TMDB (rede e a marca de
+    // estudio rede=1); serie sem rede nao ganha linha.
+    int i, ne = extras_n_estudios();
+    for (i = 0; i < ne; i++)
+      if (extras_estudio_rede(i)) { DET_POE("Canal", extras_estudio_nome(i)); break; }
+  }
   { char dt[48]; desc_data_extenso(extras_ficha_lancamento(), dt, sizeof dt);
-    DET_POE("Lançamento", dt); }
-  { char d[32]; duracaoTexto(extras_ficha_duracao(), d, sizeof d);
+    DET_POE("Estreia", dt); }
+  if (!ehSerie()) { char d[32]; duracaoTexto(extras_ficha_duracao(), d, sizeof d);
     DET_POE("Duração", d); }
-  // Classificacao: a da ficha do TMDB e a boa. A do catalogo serve de reserva,
-  // e desde que o "14" cravado saiu de descoberta.c ela so tem valor quando
-  // veio do arquivo de catalogo, que e dado de verdade.
-  v = extras_ficha_classificacao();
-  if (!v || !v[0]) v = (ci && ci->classificacao[0]) ? ci->classificacao : NULL;
-  DET_POE("Classificação", v);
-  // Pais: a lista completa do TMDB quando ha; senao o unico que o Cinemeta da.
-  v = extras_ficha_paises();
-  if (!v || !v[0]) v = (ci && ci->pais[0]) ? ci->pais : NULL;
-  { char pais[168]; desc_pais_txt(v, pais, sizeof pais);   // nomes em ingles -> idioma da UI
-    DET_POE("País de Origem", pais); }
+  if (ehSerie()) {
+    int t, eps = 0, temps = extras_n_temporadas();
+    for (t = 0; t < temps; t++) eps += extras_n_eps(t);
+    if (temps > 0) { char ep[64];
+      snprintf(ep, sizeof ep, i18n(temps == 1 ? "%d · %d temporada" : "%d · %d temporadas"), eps, temps);
+      DET_POE("Episódios", ep); } }
+  if (extras_idioma_original()[0]) DET_POE("Idioma", i18n(ling_nome(extras_idioma_original())));
   // A direcao ja esta no hero ("Direção David Frankel"), como no mockup.
   // Os campos do Wikidata (orcamento, bilheteria...) entram na ficha quando a
   // consulta das frases ja voltou: no mockup e a mesma tabela.
@@ -4658,7 +4657,10 @@ static void heroWeb(float a, float desloc) {
   partirMeta(fichaDe(idx), ano, sizeof ano, dur, sizeof dur);
   { char cru[64]; snprintf(cru, sizeof cru, "%s", dur);
     durMin = minutosDe(cru);
-    desc_duracao_txt(cru, dur, sizeof dur); }   // "142 min" -> forma do idioma da UI
+    desc_duracao_txt(cru, dur, sizeof dur);   // "142 min" -> forma do idioma da UI
+    // A linha de meta do hero usa a forma COMPACTA do mockup v2 ("2h36");
+    // o texto que nao e numero+unidade sai como veio, sem traducao dupla.
+    if (durMin > 0) desc_duracao_min_curta(durMin, dur, sizeof dur); }
 
   const char *sin = sinopseDe(idx);
 
