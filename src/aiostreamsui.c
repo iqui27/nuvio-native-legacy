@@ -197,6 +197,10 @@ static int nLegendas(void) {
   int n=0; for(int i=0;i<snap.addons;i++) if(snap.addon[i].legenda) n++;
   return n;
 }
+static const char *serviceAtivo(void) {
+  for(int i=0;i<snap.servicos;i++) if(snap.servico[i].ativo) return snap.servico[i].nome;
+  return NULL;
+}
 static int nConteudo(void) {
   if(pagina==SEM) return 3;
   if(pagina==INSTANCIA) return 11;
@@ -492,7 +496,7 @@ static void setup(void) {
     int start=maisHosts?4:0;
     for(int i=start;i<7 && i<start+4;i++) {
       float y=345+(i-start)*94;
-      linha(i,i==3?"aj_server":"aj_globe",nomes[i],i==2?i18n("Pública: sem P2P, HTTP ou canais ao vivo"):i==3?i18n("Versão de desenvolvimento"):i18n("Estável · Servidor comunitário"),716,y,1078);
+      linha(i,i==3?"aj_server":"aj_globe",nomes[i],i==2?i18n("Pública · Sem P2P, HTTP ou ao vivo"):i==3?i18n("Nightly · Instância de desenvolvedor"):i18n("Estável · Hospedagem comunitária"),716,y,1078);
       const char *badge=i==hostIdx?i18n("Selecionada"):i==2?i18n("Restrita"):i==3?i18n("Nightly"):NULL;
       if(badge) {
         gfx_cor((GfxRect){1620,y+29,126,32},.2f,i==2?.36f:.25f,i==2?.29f:.32f,i==2?.18f:.34f,.65f);
@@ -503,7 +507,7 @@ static void setup(void) {
     texto(TXT_ILHA_SUB,i18n(maisHosts?"Voltar às instâncias principais":"Também na documentação: Kuu’s, ATBP Hosting, Omni’s"),738,745,986,174);
     gfx_icone((GfxRect){1750,745,22,22},"aj_chevron-right",.68f,.73f,.76f,1);
     ponteiro_alvo(716,727,1078,60,pointer,click,10,0);
-    bloco(i18n("Debrid é opcional. HTTP, P2P e canais dependem da instância e desta TV."),738,803,1040,2);
+    bloco(i18n("Cada instância define limites e trata os dados de acesso nela informados. A lista não indica testes realizados."),738,803,1040,2);
     botao(9,i18n("Continuar"),716,877,360);
   } else if(pagina==SERVICOS) {
     const char *check[]={i18n("Serviços"),i18n("Addons"),i18n("Filtros e ordenação"),i18n("Formatador")};
@@ -575,14 +579,20 @@ static const char *regraNome(const AioRegra *r) {
 static const char *decisao(const AioResultado *r) {
   return r->decisao==1?i18n("Destino externo: fora do player da TV."):r->decisao==2?i18n("Oculto pelos filtros locais"):r->decisao==3?i18n("Fora do cache: escolha manual."):r->decisao==4?i18n("Mantido na lista da TV"):i18n("Resultado recebido. Compatibilidade ainda não verificada.");
 }
-// Mock-style reason: one bounded sentence per observable state. When the
-// playback list is not loaded there is no rank to explain, and the text says so.
+// Mock-style why: playback clause, video facts, then the decision tail. Every
+// clause comes from data the snapshot really carries; no rank means no claim.
 static const char *motivo(const AioResultado *r) {
+  static char b[512];
   if(r->decisao==1) return i18n("Destino externo: o Nuvio entrega ao celular; nada é reproduzido na TV.");
   if(r->decisao==2) return i18n("Os filtros locais do Nuvio ocultam esta fonte da lista automática.");
-  if(r->decisao==3) return i18n("Sem cache no debrid: fora da escolha automática, disponível para escolha manual.");
-  if(r->decisao==4) return i18n("Em cache e reproduzível: mantida na lista com a posição calculada pelo Nuvio.");
-  return i18n("Resultado recebido. Sem lista de reprodução carregada nesta TV, a posição não é calculada.");
+  const char *modo=r->cache==1?i18n("Reprodução em cache no debrid."):r->cache==0?i18n("Reprodução sem cache no debrid."):i18n("HTTP direto, cache não se aplica.");
+  char video[128];
+  if(r->altura>0&&strstr(r->nome,"MP4")) snprintf(video,sizeof video,i18n("%dp conhecido; MP4 compatível com o player desta TV."),r->altura);
+  else if(r->altura>0) snprintf(video,sizeof video,i18n("%dp conhecido."),r->altura);
+  else snprintf(video,sizeof video,"%s",i18n("Resolução desconhecida"));
+  const char *fim=r->decisao==3?i18n("Fora da escolha automática; fica para escolha manual."):r->decisao==4?i18n("Mantida na lista com a posição calculada pelo Nuvio."):i18n("Sem lista de reprodução carregada, a posição não é calculada.");
+  snprintf(b,sizeof b,i18n("%s %s %s"),modo,video,fim);
+  return b;
 }
 static void tituloDesenhar(void) {
   painel(72,148,1362,824); painel(1458,148,390,824);
@@ -626,11 +636,17 @@ static void tituloDesenhar(void) {
   if(selected<snap.resultados) {
     AioResultado *r=&snap.resultado[selected];
     txt_bloco_corta(TXT_ILHA_NOME,r->nome,240,240,238,1490,217,326,34,1,3);
-    texto(TXT_G20M,i18n("Posição na TV"),1490,340,230,174);
-    char rank[32]; snprintf(rank,sizeof rank,r->rank?"%d":"—",r->rank); texto(TXT_G20M,rank,1765,340,50,236);
-    bloco(decisao(r),1490,454,326,3);
-    texto(TXT_ILHA_HORA,i18n("Motivo da decisão"),1490,556,326,174);
-    bloco(motivo(r),1490,580,326,4);
+    static const char *const regras[]={"Equilíbrio","Qualidade máxima","Começar rápido"};
+    int prio=ajustes_fonte_prioridade(); if(prio<0||prio>2) prio=0;
+    char posicao[24]; snprintf(posicao,sizeof posicao,r->rank?"%d":"—",r->rank);
+    const char *chaves[]={i18n("AIOStreams"),i18n("Posição Nuvio"),i18n("Regra automática")};
+    const char *valores[]={i18n("Recebido"),posicao,i18n(regras[prio])};
+    for(int i=0;i<3;i++) {
+      texto(TXT_G20M,chaves[i],1490,290+i*34,180,220);
+      texto(TXT_G20M,valores[i],1672,290+i*34,114,236);
+    }
+    texto(TXT_ILHA_HORA,i18n("Motivo da decisão"),1490,412,326,174);
+    bloco(motivo(r),1490,436,326,6);
   }
   char stats[192]; snprintf(stats,sizeof stats,i18n("%d estatísticas · %d erros · %d sem campos obrigatórios"),snap.estatisticas,snap.erros,snap.filtrados);
   bloco(snap.search?stats:i18n("Não informado"),1490,706,326,2);
@@ -672,7 +688,20 @@ static void workspace(void) {
       gfx_icone((GfxRect){1700,322,16,16},"aj_check",.7f,.84f,.86f,1);
       texto(TXT_ILHA_NUM,i18n("Pronto"),1722,322,76,214);
     }
-    const char *sub[]={i18n("Catálogos publicados pelo manifesto"),i18n("Addons, serviços, cache e P2P"),i18n("Destinos externos e instalação"),i18n("Separadas das faixas dentro do vídeo"),i18n("Resumo somente leitura · Edite pelo celular"),i18n("Instância, latência e erros observados")};
+    // Per-card counts as in the approved mock, straight from snapshot data.
+    int noInicio=0;
+    for(int i=0;i<snap.catalogos;i++) { int f=fileira(i); if(f>=0&&!fil_linha_oculta(f)) noInicio++; }
+    char card[6][256];
+    snprintf(card[0],sizeof card[0],i18n("%d disponíveis · %d no Início"),snap.catalogos,noInicio);
+    const char *serv=serviceAtivo();
+    if(snap.addons-nLegendas()>0&&serv) snprintf(card[1],sizeof card[1],i18n("%d complementos · %s conectado"),snap.addons-nLegendas(),serv);
+    else snprintf(card[1],sizeof card[1],"%s",i18n("Addons, serviços, cache e P2P"));
+    snprintf(card[2],sizeof card[2],"%s",i18n("Destinos externos e instalação"));
+    if(nLegendas()) snprintf(card[3],sizeof card[3],i18n("%d complementos · Sem faixas embutidas"),nLegendas());
+    else snprintf(card[3],sizeof card[3],"%s",i18n("Separadas das faixas dentro do vídeo"));
+    snprintf(card[4],sizeof card[4],"%s",i18n("Resumo só leitura · Edite no celular"));
+    snprintf(card[5],sizeof card[5],"%s",i18n("Instância, latência e erros de fontes"));
+    const char *sub[]={card[0],card[1],card[2],card[3],card[4],card[5]};
     for(int i=0;i<6;i++) {
       float x=453+(i%2)*727, w=i%2?626:702, y=389+(i/2)*112;
       linha(i,icons[i+1],nav[i+1],sub[i],x,y,w);
@@ -725,17 +754,19 @@ static void workspace(void) {
         for(int k=0;k<snap.resultados;k++) if(!strcmp(snap.resultado[k].provedor,item->nome)) {
           total++; cached+=snap.resultado[k].cache==1; uncached+=snap.resultado[k].cache==0;
         }
-        snprintf(sub,sizeof sub,"%s · %s: %d · %s: %d",item->ativo?i18n("Ativado"):i18n("Desativado"),i18n("Em cache"),cached,i18n("Fora do cache"),uncached);
-        linha(row,i<snap.addons?"aj_layers":"aj_cloud",item->nome,total?sub:item->ativo?i18n("Ativado"):i18n("Desativado"),453,y,980);
-        if(total) { char count[24]; snprintf(count,sizeof count,"%d",total); texto(TXT_G30B,count,1350,y+22,60,230); }
+        const char *serv=serviceAtivo();
+        if(total&&serv&&cached) snprintf(sub,sizeof sub,uncached?i18n("%s · %d em cache / %d sem cache"):i18n("%s · %d em cache"),serv,cached,uncached);
+        else if(total) snprintf(sub,sizeof sub,"%s",i18n("HTTP direto · Cache não se aplica"));
+        else snprintf(sub,sizeof sub,"%s",item->ativo?i18n("Ativado"):i18n("Desativado"));
+        linha(row,i<snap.addons?"aj_layers":"aj_cloud",item->nome,sub,453,y,980);
+        if(total) { char count[32]; snprintf(count,sizeof count,i18n("%d resultados"),total); texto(TXT_G20M,count,1230,y+30,110,222); }
       }
       row++;
     }
     if(!snap.addons) bloco(i18n("Conecte a configuração para ver addons e serviços. O manifesto não revela suas chaves."),473,326,880,3);
     gfx_cor((GfxRect){453,700,980,1},0,1,1,1,.08f);
     // Aggregated debrid strip: one enabled service plus per-title cache evidence.
-    const char *ativoServico=NULL;
-    for(int i=0;i<snap.servicos;i++) if(snap.servico[i].ativo) { ativoServico=snap.servico[i].nome; break; }
+    const char *ativoServico=serviceAtivo();
     gfx_icone((GfxRect){473,722,26,26},"aj_cloud",.8f,.85f,.87f,1);
     if(ativoServico) {
       char titulo[128]; snprintf(titulo,sizeof titulo,i18n("%s conectado"),ativoServico);
