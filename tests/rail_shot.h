@@ -58,6 +58,7 @@ static void rail_shot_aplicar(void) {
   // owner's real Android TV. Without them this file would silently reset the
   // language and font the shot itself had written.
   if (getenv("NUVIO_SHOT_EN")) fputs("idioma 1\n", f);
+  if (getenv("NUVIO_SHOT_PT")) fputs("idioma 0\nbordaFocoCartaz 1\n", f);
   if (getenv("NUVIO_SHOT_FONTE")) fprintf(f, "fonteInterface %d\n", atoi(getenv("NUVIO_SHOT_FONTE")));
   { const char *o = getenv("NUVIO_RAIL_OCULTOS");
     if (o && *o == '1') fputs("menuGuiaLocal 1\nmenuAgendaLocal 1\n", f); }

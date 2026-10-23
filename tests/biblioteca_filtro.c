@@ -11,6 +11,7 @@ static CatItem catalogoTeste[127];
 static int ocultar, watched = -1;
 float gfx_escala_ui(void) { return 1.0f; }
 const char *i18n(const char *s) { return s; }
+const char *addons_nome_por_id(const char *s) { return s; }
 int cat_n(void) { return 127; }
 const CatItem *cat_item(int i) { return i >= 0 && i < 127 ? &catalogoTeste[i] : NULL; }
 int cat_indice_por_imdb(const char *id) {
@@ -127,15 +128,21 @@ int main(void) {
   assert(bibNPicks() == 6);
   assert(contaOrigem[ORIG_TODAS] == 129);
   assert(contaOrigem[ORIG_TRAKT] == 15 && contaOrigem[ORIG_SIMKL] == 10);
-  modo = MODO_ASSISTIDOS; assert(bibNPicks() == 6);
+  modo = MODO_ASSISTIDOS; assert(bibNPicks() == 5);
   origem = ORIG_TODAS; modo = MODO_PARAVER; tipo = TIPO_TODOS;
   generoSel = 1;
   strcpy(catalogoTeste[0].genero, "Movie · Drama");
   reconstruir(); assert(nFiltro == 1);
+  strcpy(catalogoTeste[0].genero, "Movie · Comedy");
+  generoSel = 2; reconstruir(); assert(nFiltro == 1);
   generoSel = 0; watched = 0; esconderVistos = 1;
   reconstruir(); assert(nFiltro == 128);
   modo = MODO_ASSISTIDOS; reconstruir(); assert(nFiltro == 1);
-  esconderVistos = 0; watched = -1;
+  esconderVistos = 0; watched = -1; modo = MODO_PARAVER;
+  strcpy(catalogoTeste[0].origem, "org.example.list");
+  reconstruir(); assert(nAddonOrigens == 1 && addonOrigens[0].count == 1);
+  origem = BIB_N_ORIG; reconstruir(); assert(nFiltro == 1);
+  origem = ORIG_TODAS;
   puts("biblioteca filtro: PASS (regressao sintetica; sem prova da TV)");
   return 0;
 }

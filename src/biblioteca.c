@@ -92,6 +92,7 @@
 #include "telefoneui.h"
 #include "ponteiro.h"
 #include "sync.h"
+#include "addons.h"
 
 // Tinta do texto sobre o foco: em vidro o foco e so contorno sobre superficie
 // escura, entao o texto fica CLARO mesmo com realce branco (que pede escuro).
@@ -312,10 +313,28 @@ static int ordem = ORD_ADICIONADOS;
 static int origem = ORIG_TODAS;
 static int focoOrigem, origemSel;
 static int contaOrigem[BIB_N_ORIG];
+static struct { char id[96], nome[96]; int count; } addonOrigens[8];
+static int nAddonOrigens;
+static BibliotecaOrigens serverRows;
+static void (*serverSelect)(int);
+void biblioteca_origens_servidores(BibliotecaOrigens rows, void (*select)(int)) {
+  serverRows = rows; serverSelect = select;
+}
+static int nOrigens(void) {
+  int n = BIB_N_ORIG + nAddonOrigens;
+  if (serverRows) {
+    const char *name; int count;
+    for (int i = 0; i < 4 && serverRows(i, &name, &count); i++) n++;
+  }
+  return n;
+}
 static int exibicao = VIS_CARTAZ;
 static int esconderVistos, generoSel;
 static const char *generos[] = { "Todos", "Drama", "Comédia", "Ação", "Animação", "Documentário", "Terror" };
+static const char *generosEn[] = { "", "Drama", "Comedy", "Action", "Animation", "Documentary", "Horror" };
 static int fonte = FONTE_TRAKT;
+static int listaTab;
+static const char *ROT_LISTA_TAB[] = { "Minhas listas", "Seguindo", "Explorar", "Trilhas" };
 static int pickSel = 0;          // qual dos seletores esta em foco
 
 static LstLista aberta;          // lista aberta (EST_ITENS)
@@ -457,8 +476,8 @@ static int gradeIni(void) { return estado() == EST_ITENS ? 1 : BIB_FIL_GRADE; }
 // esquerda, e quem nao cabe e COLUNA, nao pixel.
 static float paginaX(void) {
   float x;
-  ajustes_area_conteudo(200.0f, NV_TELA_W - NV_BIB_DIR, &x, NULL);
-  return x;
+  ajustes_area_conteudo(NV_CONTENT_PAD, NV_TELA_W - NV_BIB_DIR, &x, NULL);
+  return fmaxf(200.0f, x - 18.0f);
 }
 static int temOrigens(void) { return estado() != EST_ITENS && modo != MODO_ASSISTIDOS; }
 static float bibX(void) {
@@ -539,7 +558,7 @@ static float larguraCartaoLista(void) {
 #define BIB_PAG_RANK_W   84.0f   // coluna do rank, antes da miniatura
 static int paginaLista(void) { return temAberta && aberta.fonte == LST_TRAKT; }
 static float paginaCabH(void) { return BIB_PAG_CAB_H - (aberta.descricao[0] ? 0.0f : BIB_PAG_DESC_H); }
-static int modoLinha(void) { return exibicao == VIS_LISTA || paginaLista() || modo == MODO_ASSISTIDOS; }
+static int modoLinha(void) { return exibicao == VIS_LISTA || paginaLista(); }
 static int colunas(void) {
   if (trilha && temAberta) return 8;
   if (modoLinha()) return 1;
@@ -554,14 +573,14 @@ static float passoColuna(void) {
 // Uma linha de titulo (168) e uma linha de lista (96) nao tem a mesma altura,
 // e e por isso que a exibicao de lista pergunta o estado.
 static float alturaLinha(void) {
-  if (modo == MODO_ASSISTIDOS) return 120;
+  if (modo == MODO_ASSISTIDOS && modoLinha()) return 120;
   if (modoLinha()) return estado() == EST_LISTAS ? BIB_LL_H : BIB_LIN_H;
   if (estado() == EST_LISTAS) return BIB_LC_H;
   // poster + 10 + o titulo em ate duas linhas (o focado abre a segunda)
   return BIB_POSTER_H + BIB_TIT_GAP + 14.0f + 52.0f;
 }
 static float passoLinha(void) {
-  if (modo == MODO_ASSISTIDOS) return 126;
+  if (modo == MODO_ASSISTIDOS && modoLinha()) return 126;
   if (modoLinha()) return estado() == EST_LISTAS ? BIB_LL_PASSO : BIB_LIN_PASSO;
   if (estado() == EST_LISTAS) return BIB_LC_LINHA;
   return BIB_LINHA_PASSO;
@@ -569,7 +588,7 @@ static float passoLinha(void) {
 static float gradeY(void) {
   float y = estado() == EST_ITENS ? BIB_GRADE_Y_ABERTA : BIB_GRADE_Y_TITULOS;
   y *= bibHS();
-  if (modo == MODO_ASSISTIDOS) y += 44;
+  if (modo == MODO_ASSISTIDOS && modoLinha()) y += 44;
   return paginaLista() && !trilha ? 124.0f : y;
 }
 static int nLinhas(void) { return (nCelulas + colunas() - 1) / colunas(); }
@@ -653,7 +672,7 @@ static void remapear(int preservar) {
   linhas = nLinhas();
   if (linhas > FOCUS_MAX_FILEIRAS - ini) linhas = FOCUS_MAX_FILEIRAS - ini;
   if (estado() == EST_ITENS) cols[0] = nAcoes();    // as acoes
-  else { cols[BIB_FIL_MODO] = BIB_N_MODOS; cols[BIB_FIL_PICK] = bibNPicks(); }
+  else { cols[BIB_FIL_MODO] = modo == MODO_LISTAS ? 4 : BIB_N_MODOS; cols[BIB_FIL_PICK] = bibNPicks(); }
   for (r = 0; r < linhas; r++) {
     int resto = nCelulas - r * nc;
     cols[ini + r] = resto > nc ? nc : resto;
@@ -734,12 +753,13 @@ static int emAndamento(const CatItem *c) {
 // Quantos seletores a faixa tem: "Para ver" ganha o quarto, "Origem".
 // "Listas" ganha o quarto na fonte Trakt: "Nova lista".
 static int bibNPicks(void) {
-  return modo == MODO_LISTAS ? (fonte == FONTE_TRAKT ? 4 : 3) : 6;
+  return modo == MODO_LISTAS ? (fonte == FONTE_TRAKT ? 4 : 3) : modo == MODO_ASSISTIDOS ? 5 : 6;
 }
+static int bibViewStart(void) { return modo == MODO_ASSISTIDOS ? 3 : 4; }
 // 1 quando o titulo passa no seletor Origem. `fontes` 0 com naLista e o salvo
 // desta TV: Conta Nuvio.
 static int daOrigem(int fontes) {
-  if (origem == ORIG_TODAS) return 1;
+  if (origem == ORIG_TODAS || origem >= BIB_N_ORIG) return 1;
   if (!fontes) fontes = CAT_FONTE_NUVIO;
   return (fontes & (origem == ORIG_TRAKT ? CAT_FONTE_TRAKT
                   : origem == ORIG_SIMKL ? CAT_FONTE_SIMKL : CAT_FONTE_NUVIO)) != 0;
@@ -813,6 +833,26 @@ static void reconstruir(void) {
   if (n > CAT_MAX) n = CAT_MAX;
   for (int m = 0; m < MODO_LISTAS; m++) contaModo[m] = contarModo(m);
   memset(contaOrigem, 0, sizeof contaOrigem);
+  memset(addonOrigens, 0, sizeof addonOrigens); nAddonOrigens = 0;
+  for (int i = 0; i < n; i++) {
+    const CatItem *ci = cat_item(i);
+    if (!ci || !noModo(modo, ci, i) || !ci->origem[0]) continue;
+    int k;
+    for (k = 0; k < nAddonOrigens; k++) if (!strcmp(addonOrigens[k].id, ci->origem)) break;
+    if (k == nAddonOrigens) {
+      if (nAddonOrigens == 8) continue;
+      snprintf(addonOrigens[k].id, sizeof addonOrigens[k].id, "%s", ci->origem);
+      const char *name = addons_nome_por_id(ci->origem);
+      snprintf(addonOrigens[k].nome, sizeof addonOrigens[k].nome, "%s", name && name[0] ? name : ci->origem);
+      nAddonOrigens++;
+    }
+    int duplicate = 0;
+    for (int j = 0; j < i; j++) {
+      const CatItem *before = cat_item(j);
+      if (before && noModo(modo, before, j) && !strcmp(before->origem, ci->origem) && salvos_mesmo_titulo(before->imdb, ci->imdb)) { duplicate = 1; break; }
+    }
+    if (!duplicate) addonOrigens[k].count++;
+  }
   nFiltro = 0;
   totalModo = 0;
   nContados = 0;
@@ -844,9 +884,10 @@ static void reconstruir(void) {
     if (bits & CAT_FONTE_SIMKL) contaOrigem[ORIG_SIMKL]++;
     if (bits & CAT_FONTE_NUVIO) contaOrigem[ORIG_NUVIO]++;
     if (!daOrigem(ci->fontes)) continue;
+    if (origem >= BIB_N_ORIG && (origem - BIB_N_ORIG >= nAddonOrigens || strcmp(ci->origem, addonOrigens[origem - BIB_N_ORIG].id))) continue;
     totalModo++;
     if (esconderVistos && modo != MODO_ASSISTIDOS && cat_visto(ci)) continue;
-    if (generoSel && !strstr(ci->genero, generos[generoSel]) && !strstr(ci->genero, i18n(generos[generoSel]))) continue;
+    if (generoSel && !strstr(ci->genero, generos[generoSel]) && !strstr(ci->genero, generosEn[generoSel]) && !strstr(ci->genero, i18n(generos[generoSel]))) continue;
     if (tipo == TIPO_FILME && ehSerie(ci)) { exclTipo++; continue; }
     if (tipo == TIPO_SERIE && !ehSerie(ci)) { exclTipo++; continue; }
     // Mesmo criterio da Home: so ano futuro conhecido; sem meta permanece.
@@ -866,7 +907,7 @@ static void reconstruir(void) {
       if (!s || !s->id[0] || cat_indice_por_imdb(s->id) >= 0) continue;
       contaOrigem[ORIG_TODAS]++;
       contaOrigem[ORIG_NUVIO]++;
-      if (!daOrigem(0)) continue;
+      if (!daOrigem(0) || origem >= BIB_N_ORIG) continue;
       totalModo++;
       locaisFora++;
       if (generoSel) continue;
@@ -938,7 +979,7 @@ int biblioteca_iniciar(void) {
   lst_iniciar();
   modo = MODO_PARAVER; tipo = TIPO_TODOS; ordem = ORD_ADICIONADOS; origem = ORIG_TODAS; trilha = 0;
   focoOrigem = 0; origemSel = 0; esconderVistos = 0; generoSel = 0;
-  pickSel = 0; temAberta = 0; acaoSel = 0; recado[0] = 0; recadoAte = 0.0f;
+  pickSel = 0; temAberta = 0; acaoSel = 0; listaTab = 0; recado[0] = 0; recadoAte = 0.0f;
   tecPara = TEC_NADA; abertaPropria = 0; edModo = ED_NADA; ordemPega = -1;
   ordemMudou = 0; compartilha = 0;
   memset(animModo, 0, sizeof animModo);
@@ -954,6 +995,7 @@ int biblioteca_iniciar(void) {
 void biblioteca_encerrar(void) { }
 
 // So para o teste de tela conferir foco e modo sem ler pixel.
+int biblioteca_teste_trilha(void) { return temAberta && trilha; }
 const char *biblioteca_teste_estado(int *ed, int *acao, int *pega, int *compart, int *fileira) {
   *ed = edModo; *acao = acaoSel; *pega = ordemPega; *compart = compartilha; *fileira = foco.fileira;
   return recadoAte > 0.0f ? recado : "";
@@ -1032,7 +1074,7 @@ static void abrirLista(int i) {
   aberta = *l;
   snprintf(abertaMidia, sizeof abertaMidia, "%s",
            l->midia[0] ? l->midia : "MOVIE");
-  temAberta = 1; trilha = 0;
+  temAberta = 1; trilha = listaTab == 3;
   // "Minhas listas" do Trakt e /users/me/lists: sao as unicas que a pessoa edita.
   abertaPropria = modo == MODO_LISTAS && fonte == FONTE_TRAKT &&
                   aberta.fonte == LST_TRAKT && aberta.traktId > 0;
@@ -1286,7 +1328,18 @@ static void eventoAberta(SDL_Keycode k) {
       return;
     }
   }
+  if (trilha && (k == SDLK_UP || k == SDLK_DOWN) && foco.fileira >= 1) {
+    if (k == SDLK_UP) { foco.fileira = 0; foco.coluna = acaoSel; }
+    else if (foco.fileira < foco.nFileiras - 1) focus_mover_grade(&foco, 0, 1);
+    return;
+  }
+  if (paginaLista() && !trilha && foco.fileira >= 1 && k == SDLK_LEFT) {
+    foco.fileira = 0; foco.coluna = acaoSel; return;
+  }
   if (foco.fileira == 0) {
+    if (paginaLista() && !trilha && k == SDLK_RIGHT && acaoSel == nAcoes() - 1 && nCelulas) {
+      foco.fileira = 1; foco.coluna = 0; return;
+    }
     if (k == SDLK_RIGHT && acaoSel < nAcoes() - 1) { acaoSel++; foco.coluna = acaoSel; return; }
     if (k == SDLK_LEFT  && acaoSel > 0) { acaoSel--; foco.coluna = acaoSel; return; }
     if (k == SDLK_LEFT) { sair = 1; return; }   // comeco da fileira: o app abre a barra
@@ -1347,7 +1400,8 @@ void biblioteca_evento(const SDL_Event *e) {
       k == SDLK_DELETE) {
     // Dentro de uma lista, o Back volta PARA A LISTA DE LISTAS antes de fechar
     // a tela — o movimento inverso do que levou ate la.
-    if (!temAberta) sair = 1;
+    if (!temAberta && modo == MODO_LISTAS) { modo = MODO_PARAVER; focoOrigem = 0; reconstruir(); }
+    else if (!temAberta) sair = 1;
     else if (ordemPega >= 0) ordemPega = -1;       // solta; a edicao continua
     else if (edModo != ED_NADA) sairEdicao();
     else fecharAberta();
@@ -1358,12 +1412,14 @@ void biblioteca_evento(const SDL_Event *e) {
   if (focoOrigem) {
     if (k == SDLK_UP && origemSel > 0) origemSel--;
     else if (k == SDLK_UP) { focoOrigem = 0; foco.fileira = BIB_FIL_PICK; }
-    else if (k == SDLK_DOWN && origemSel < (modo == MODO_LISTAS ? BIB_N_FONTES : BIB_N_ORIG) - 1) origemSel++;
+    else if (k == SDLK_DOWN && origemSel < (modo == MODO_LISTAS ? BIB_N_FONTES : nOrigens()) - 1) origemSel++;
     else if (k == SDLK_RIGHT) { focoOrigem = 0; foco.fileira = BIB_FIL_GRADE; foco.coluna = 0; }
     else if (k == SDLK_LEFT) sair = 1;
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
       if (modo == MODO_LISTAS) { fonte = origemSel; pedirFonte(); }
-      else { origem = origemSel; reconstruir(); }
+      else if (origemSel >= BIB_N_ORIG + nAddonOrigens) {
+        if (serverSelect) serverSelect(origemSel - BIB_N_ORIG - nAddonOrigens);
+      } else { origem = origemSel; reconstruir(); }
     }
     return;
   }
@@ -1380,20 +1436,34 @@ void biblioteca_evento(const SDL_Event *e) {
   // TROCAVA o modo, e isso era o que impedia o lado: para chegar nos seletores
   // a partir de "Salvos" era preciso atravessar "Coleção" e "Listas", trocando
   // de aba (e pedindo a rede, nas listas) a cada passo.
+  if (modo == MODO_LISTAS && foco.fileira == BIB_FIL_MODO) {
+    if (k == SDLK_LEFT && foco.coluna > 0) foco.coluna--;
+    else if (k == SDLK_LEFT) { modo = MODO_PARAVER; reconstruir(); }
+    else if (k == SDLK_RIGHT && foco.coluna < 3) foco.coluna++;
+    else if (k == SDLK_DOWN) { foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel; }
+    else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
+      listaTab = foco.coluna;
+      fonte = listaTab == 1 || listaTab == 3 ? FONTE_FIXADAS : listaTab == 2 ? FONTE_PUB : FONTE_TRAKT;
+      pedirFonte(); foco.fileira = BIB_FIL_MODO; foco.coluna = listaTab;
+    }
+    return;
+  }
   if (foco.fileira == BIB_FIL_MODO) {
     if (k == SDLK_LEFT  && foco.coluna > 0) { foco.coluna--; return; }
     if (k == SDLK_LEFT) { sair = 1; return; }   // 1a aba: o app abre a barra
     if (k == SDLK_RIGHT && foco.coluna < BIB_N_MODOS - 1) { foco.coluna++; return; }
-    if (k == SDLK_RIGHT) { pickSel = 0; foco.fileira = BIB_FIL_PICK; foco.coluna = 0; return; }
+    if (k == SDLK_RIGHT) return;
     if (k == SDLK_UP && ajustes_menu_topo()) { sair = 1; return; }
     if (k == SDLK_DOWN) { foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel; return; }
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
       int novo = foco.coluna;
       if (novo != modo) {
         modo = novo;
+        if (modo == MODO_ASSISTIDOS) exibicao = VIS_LISTA;
         recado[0] = 0;
-        if (modo == MODO_LISTAS) pedirFonte(); else reconstruir();
-        foco.fileira = BIB_FIL_MODO; foco.coluna = modo;
+        if (modo == MODO_LISTAS) { listaTab = 0; fonte = FONTE_TRAKT; pedirFonte(); }
+        else reconstruir();
+        foco.fileira = BIB_FIL_MODO; foco.coluna = modo == MODO_LISTAS ? listaTab : modo;
       }
     }
     return;
@@ -1406,8 +1476,8 @@ void biblioteca_evento(const SDL_Event *e) {
   if (foco.fileira == BIB_FIL_PICK) {
     if (k == SDLK_RIGHT && pickSel < bibNPicks() - 1) { pickSel++; foco.coluna = pickSel; return; }
     if (k == SDLK_LEFT  && pickSel > 0) { pickSel--; foco.coluna = pickSel; return; }
-    if (k == SDLK_LEFT)  { foco.fileira = BIB_FIL_MODO; foco.coluna = BIB_N_MODOS - 1; return; }
-    if (k == SDLK_UP) { foco.fileira = BIB_FIL_MODO; foco.coluna = modo; return; }
+    if (k == SDLK_LEFT)  { foco.fileira = BIB_FIL_MODO; foco.coluna = modo == MODO_LISTAS ? listaTab : BIB_N_MODOS - 1; return; }
+    if (k == SDLK_UP) { foco.fileira = BIB_FIL_MODO; foco.coluna = modo == MODO_LISTAS ? listaTab : modo; return; }
     if (k == SDLK_DOWN) {
       if (temOrigens() && pickSel == 0) { focoOrigem = 1; origemSel = origem; }
       else descerDaFaixa();
@@ -1438,7 +1508,12 @@ void biblioteca_evento(const SDL_Event *e) {
                         "Listas de qualquer pessoa no Trakt", TECLADO_MAX);
         }
       } else {
-        if (pickSel == 0)      { tipo = (tipo + 1) % BIB_N_TIPOS;   reconstruir(); }
+        if (modo == MODO_ASSISTIDOS) {
+          if (pickSel == 0) { origem = (origem + 1) % BIB_N_ORIG; reconstruir(); }
+          else if (pickSel == 1) { tipo = (tipo + 1) % BIB_N_TIPOS; reconstruir(); }
+          else if (pickSel == 2) { ordem = (ordem + 1) % BIB_N_ORD; reconstruir(); }
+          else { exibicao = pickSel == 4 ? VIS_LISTA : VIS_CARTAZ; gravarPref(); remapear(0); }
+        } else if (pickSel == 0) { tipo = (tipo + 1) % BIB_N_TIPOS; reconstruir(); }
         else if (pickSel == 1) { generoSel = (generoSel + 1) % (sizeof generos / sizeof generos[0]); reconstruir(); }
         else if (pickSel == 2) { ordem = (ordem + 1) % BIB_N_ORD; reconstruir(); }
         else if (pickSel == 3) { esconderVistos = !esconderVistos; reconstruir(); }
@@ -1461,7 +1536,7 @@ void biblioteca_evento(const SDL_Event *e) {
   }
   else if (k == SDLK_DOWN) focus_mover_grade(&foco, 0, 1);
   else if (k == SDLK_UP) {
-    if (foco.fileira == BIB_FIL_GRADE) subirParaFaixa();
+    if (foco.fileira == BIB_FIL_GRADE) { faixaNoPicker = 1; subirParaFaixa(); }
     else focus_mover_grade(&foco, 0, -1);
   }
 }
@@ -1583,7 +1658,8 @@ void biblioteca_atualizar(float dt, Uint32 agora) {
   // Rola o MINIMO para a linha focada caber inteira na area util. Com o foco no
   // cabecalho o alvo e 0 — voltar ao topo faz parte de voltar para a barra.
   float alvo = scrollY;
-  if (foco.fileira >= ini) {
+  if (trilha) alvo = 0;
+  else if (foco.fileira >= ini) {
     float topo = gradeY() + (foco.fileira - ini) * passoLinha();
     float base = topo + alturaLinha();
     if (base - alvo > BIB_GRADE_BASE)  alvo = base - BIB_GRADE_BASE;
@@ -1849,6 +1925,23 @@ static void ponteiroCelula(int i, int b) {
 }
 
 static void desenhaModos(void) {
+  if (modo == MODO_LISTAS) {
+    float widths[4], total = 10;
+    for (int i = 0; i < 4; i++) { widths[i] = txt_linha(TXT_HERO_SEC, ROT_LISTA_TAB[i], 200, 200, 200, 255).w + 50; total += widths[i] + 4; }
+    GfxRect bar = {hdrX(), BIB_FAIXA_Y, total, BIB_SEG_H};
+    gfx_cor(bar, .5f, 1, 1, 1, .06f);
+    float x = bar.x + 5;
+    for (int i = 0; i < 4; i++) {
+      GfxRect button = {x, bar.y + 5, widths[i], bar.h - 10};
+      if (listaTab == i || (!focoOrigem && foco.fileira == 0 && foco.coluna == i))
+        gfx_cor(button, .5f, 1, 1, 1, listaTab == i ? .14f : .08f);
+      TxtLinha t = txt_linha(TXT_HERO_SEC, ROT_LISTA_TAB[i], listaTab == i ? 243 : 145, listaTab == i ? 242 : 147, listaTab == i ? 239 : 153, 255);
+      txt_desenhar(t, x + 22, button.y + (button.h - t.h) / 2);
+      ponteiro_alvo(button.x, button.y, button.w, button.h, ponteiroModo, NULL, i, 0);
+      x += widths[i] + 4;
+    }
+    return;
+  }
   GfxRect c = { hdrX(), BIB_FAIXA_Y, larguraSeletor(), BIB_SEG_H };
   float x = c.x + BIB_SEG_PAD, ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
@@ -1898,6 +1991,9 @@ static void pickerTexto(int p, const char **rot, const char **val) {
   if (modo == MODO_LISTAS) {
     *rot = p == 0 ? "Fonte" : p == 1 ? "Exibição" : p == 2 ? "Listas públicas" : "Nova lista";
     *val = p == 0 ? ROT_FONTE[fonte] : p == 1 ? ROT_VIS[exibicao] : p == 2 ? "Procurar" : "Criar";
+  } else if (modo == MODO_ASSISTIDOS) {
+    *rot = p == 0 ? "Origem" : p == 1 ? "Tipo" : p == 2 ? "Ordem" : "";
+    *val = p == 0 ? ROT_ORIG[origem] : p == 1 ? ROT_TIPO[tipo] : p == 2 ? ROT_ORD[ordem] : "";
   } else {
     *rot = p == 0 ? "Tipo" : p == 1 ? "Gênero" : p == 2 ? "Ordem" : p == 3 ? "Esconder assistidos" : "";
     *val = p == 0 ? (tipo == TIPO_TODOS ? "Filmes e séries" : ROT_TIPO[tipo])
@@ -1909,7 +2005,7 @@ static void pickerTexto(int p, const char **rot, const char **val) {
 // cinza e o valor em branco 600, separados por um espaco — o "·" que existia
 // aqui saiu com o mockup. A largura sai do texto.
 static float pickerLarguraNat(int p) {
-  if (modo != MODO_LISTAS && p >= 4) return 58.0f;
+  if (modo != MODO_LISTAS && p >= bibViewStart()) return 58.0f;
   const char *rot, *val;
   pickerTexto(p, &rot, &val);
   return (float)txt_linha(TXT_CAPTION2, rot, 117, 117, 117, 255).w * BIB_ESC_ROT + 6.0f
@@ -1933,7 +2029,7 @@ static float pickerLargura(int p) {
 }
 
 static float pickerX(int p) {
-  if (modo != MODO_LISTAS && p >= 4) return hdrDir() - 132 + (p - 4) * 64;
+  if (modo != MODO_LISTAS && p >= bibViewStart()) return hdrDir() - 132 + (p - bibViewStart()) * 64;
   float x = hdrX() + (bibFaixaQuebra() ? 0.0f : larguraSeletor() + BIB_FAIXA_GAP * 2.0f + 1.0f);
   int i;
   for (i = 0; i < p; i++) x += pickerLargura(i) + BIB_FAIXA_GAP;
@@ -1956,11 +2052,12 @@ static void desenhaPicker(int p, float f) {
     if (ajustes_vidro()) gfx_vidro_pilula_cheia(r, 0.5f, v, 1.0f);
     else { brilhoFoco(r, 0.9f, v, 1.0f); gfx_cor(r, 0.5f, ar, ag, ab, v); }
   }
-  if (modo != MODO_LISTAS && p >= 4) {
-    int sel = (p == 4 && exibicao == VIS_CARTAZ) || (p == 5 && exibicao == VIS_LISTA);
+  if (modo != MODO_LISTAS && p >= bibViewStart()) {
+    int grid = p == bibViewStart();
+    int sel = (grid && !modoLinha()) || (!grid && modoLinha());
     if (sel && v < .5f) gfx_cor(r, .5f, 1, 1, 1, .12f);
     int cor = v > .5f ? ajustes_tinta_foco() : 230;
-    gfx_icone((GfxRect){ r.x + 18, r.y + 15, 22, 22 }, p == 4 ? "aj_layout-dashboard" : "aj_layout-list",
+    gfx_icone((GfxRect){ r.x + 18, r.y + 15, 22, 22 }, grid ? "aj_layout-dashboard" : "aj_layout-list",
               cor / 255.0f, cor / 255.0f, cor / 255.0f, 1);
     return;
   }
@@ -2150,6 +2247,10 @@ static void bibSourceBadges(const CatItem *ci, float x, float y, float a) {
     TxtLinha t = txt_linha(TXT_MINI, letters[b], 230, 230, 230, 255);
     txt_desenhar_alpha(t, x + (26 - t.w) / 2, y + (26 - t.h) / 2, a);
     x += 31;
+  }
+  if (ci->origem[0]) {
+    gfx_cor((GfxRect){x, y, 26, 26}, 8.0f / 26, .035f, .035f, .045f, .85f * a);
+    txt_desenhar_alpha(txt_linha(TXT_MINI, "A", 230, 230, 230, 255), x + 8, y + 5, a);
   }
 }
 static void linhaMeta(const CatItem *ci, char *dst, size_t n);
@@ -2453,7 +2554,11 @@ static void desenhaWatched(const CatItem *ci, float y, float f, float a) {
 static void desenhaLinhaTitulo(const CatItem *ci, int idx, float y, float f, float a) {
   if (modo == MODO_ASSISTIDOS) { desenhaWatched(ci, y, f, a); return; }
   GfxRect r = { bibX(), y, bibW(), BIB_LIN_H };
-  int cor = superficieLinha(r, raioPx(18.0f, r.w, r.h), f, a);
+  int cor;
+  if (paginaLista() && !trilha) {
+    if (f > .01f) gfx_cor(r, 18.0f / r.h, 1, 1, 1, .13f * f * a);
+    cor = 235;
+  } else cor = superficieLinha(r, raioPx(18.0f, r.w, r.h), f, a);
   int sr, sg, sb;
   float yc = y + BIB_LIN_H * 0.5f;
   // O titulo PEGO na Ordem: barra de acento na borda esquerda da linha.
@@ -2742,20 +2847,30 @@ static void desenhaOrigens(void) {
     }
     return;
   }
-  GfxRect painel = { paginaX(), 388.0f, 320.0f, 442.0f };
+  GfxRect painel = { paginaX(), 388.0f, 320.0f, fminf(640, 66 + nOrigens() * 78) };
   if (ajustes_vidro()) gfx_cor(painel, 26.0f / painel.h, .047f, .051f, .059f, .92f);
   else gfx_cor(painel, 26.0f / painel.h, .047f, .051f, .059f, 1);
   txt_desenhar(txt_linha(TXT_CAPTION2, "Origens", 115, 117, 122, 255), painel.x + 30, painel.y + 20);
   const char *sub[] = { "sem repetir títulos", "Para ver", "Para ver", "salvos neste perfil" };
   const char *letra[] = { "", "T", "S", "N" };
-  for (int i = 0; i < BIB_N_ORIG; i++) {
-    GfxRect row = { painel.x + 12, painel.y + 56 + i * 78, 296, 76 };
+  int start = focoOrigem && origemSel > 6 ? origemSel - 6 : 0;
+  for (int i = start; i < nOrigens() && i < start + 7; i++) {
+    const char *name = i < BIB_N_ORIG ? ROT_ORIG[i] : NULL;
+    const char *description = i < BIB_N_ORIG ? sub[i] : "lista do add-on";
+    int count = i < BIB_N_ORIG ? contaOrigem[i] : 0;
+    if (i >= BIB_N_ORIG && i < BIB_N_ORIG + nAddonOrigens) {
+      name = addonOrigens[i - BIB_N_ORIG].nome; count = addonOrigens[i - BIB_N_ORIG].count;
+    } else if (i >= BIB_N_ORIG + nAddonOrigens) {
+      if (!serverRows || !serverRows(i - BIB_N_ORIG - nAddonOrigens, &name, &count)) continue;
+      description = "Biblioteca";
+    }
+    GfxRect row = { painel.x + 12, painel.y + 56 + (i - start) * 78, 296, 76 };
     ponteiro_alvo(row.x, row.y, row.w, row.h, ponteiroOrigem, NULL, i, 0);
     if (focoOrigem && origemSel == i) gfx_cor(row, 18.0f / row.h, 1, 1, 1, .13f);
     float tx = row.x + 18;
     if (i) {
       gfx_cor((GfxRect){tx, row.y + 20, 34, 34}, 10.0f / 34, 1, 1, 1, .08f);
-      TxtLinha t = txt_linha(TXT_HERO_SEC, letra[i], 235, 235, 235, 255);
+      TxtLinha t = txt_linha(TXT_HERO_SEC, i < BIB_N_ORIG ? letra[i] : "A", 235, 235, 235, 255);
       txt_desenhar(t, tx + (34 - t.w) / 2, row.y + 20 + (34 - t.h) / 2);
       tx += 48;
     }
@@ -2764,9 +2879,9 @@ static void desenhaOrigens(void) {
       gfx_cor((GfxRect){tx, row.y + 19, 7, 7}, .5f, ar, ag, ab, 1);
       tx += 16;
     }
-    txt_desenhar(txt_linha(TXT_HERO_SEC, ROT_ORIG[i], 243, 242, 239, 255), tx, row.y + 12);
-    txt_desenhar(txt_linha(TXT_MINI, sub[i], 112, 114, 120, 255), tx, row.y + 40);
-    char num[16]; snprintf(num, sizeof num, "%d", contaOrigem[i]);
+    txt_desenhar(txt_linha_corta(TXT_HERO_SEC, name, 243, 242, 239, 255, row.x + row.w - tx - 48), tx, row.y + 12);
+    txt_desenhar(txt_linha(TXT_MINI, description, 112, 114, 120, 255), tx, row.y + 40);
+    char num[16]; snprintf(num, sizeof num, "%d", count);
     TxtLinha ct = txt_linha(TXT_HERO_META, num, 140, 142, 148, 255);
     txt_desenhar(ct, row.x + row.w - 18 - ct.w, row.y + 25);
   }
@@ -2778,7 +2893,7 @@ static void desenhaOrigens(void) {
 // onde esta, nao o nome do app.
 static void desenhaCabecalho(void) {
   char caminho[260];
-  const char *tit = modo == MODO_LISTAS ? "Listas" : "Biblioteca";
+  const char *tit = modo == MODO_LISTAS ? (listaTab == 2 ? "Explorar listas" : listaTab == 3 ? "Trilhas" : listaTab == 1 ? "Seguindo" : "Minhas listas") : "Biblioteca";
   if (temAberta) {
     snprintf(caminho, sizeof caminho, "%s  ›  %s", i18n("Listas"), aberta.titulo);
     tit = caminho;
@@ -3099,7 +3214,7 @@ void biblioteca_desenhar(Uint32 agora) {
     desenhaResumo();
     ESCALA_MIN_FIM(); }
   if (temOrigens()) desenhaOrigens();
-  if (modo == MODO_ASSISTIDOS) {
+  if (modo == MODO_ASSISTIDOS && modoLinha()) {
     float x = paginaX();
     const char *labels[] = { "Título", "Data", "Vezes", "Origens" };
     const float dx[] = {108, 700, 1030, 1160};
@@ -3108,6 +3223,8 @@ void biblioteca_desenhar(Uint32 agora) {
   }
   if (paginaLista() && trilha && nCelulas) {
     desenhaTrilha();
+    desenhaCompartilhar();
+    if (teclado_aberto()) teclado_desenhar(agora);
     gfx_borda_foco_atual = 1;
     return;
   }

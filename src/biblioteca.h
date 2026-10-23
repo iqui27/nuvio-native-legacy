@@ -15,6 +15,11 @@ void biblioteca_desenhar(Uint32 agora);
 int  biblioteca_quer_sair(void);   // 1 quando o Back deve fechar a tela
 void biblioteca_encerrar(void);
 
+// Optional personal-server ORIGENS rows. Provider owns data and selection.
+// Called on the UI thread; no server connection or network work belongs here.
+typedef int (*BibliotecaOrigens)(int index, const char **name, int *count);
+void biblioteca_origens_servidores(BibliotecaOrigens rows, void (*select)(int index));
+
 // OK pressionado sobre um poster: consome o pedido e devolve 1, escrevendo em
 // *indiceCatalogo o indice do item NO CATALOGO (nao a posicao na grade — a
 // grade e filtrada, e quem abre o detalhe precisa do item real).
@@ -31,6 +36,7 @@ int  biblioteca_comprado(int indiceCatalogo);
 // Estado da lista aberta para os testes de tela: modo de edicao (0 nada, 1 ordem,
 // 2 notas), chip em foco, posicao do titulo pego (-1 solto), QR na tela, fileira.
 // Devolve o recado vivo da ultima acao ("" se nao ha).
+int biblioteca_teste_trilha(void);
 const char *biblioteca_teste_estado(int *ed, int *acao, int *pega, int *compart, int *fileira);
 
 #endif

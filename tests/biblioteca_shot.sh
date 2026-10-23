@@ -17,7 +17,10 @@ for source in src/*.c src/dts/*.c; do
 done
 mkdir -p "$(dirname "$saida")"
 compiler=(cc)
-command -v ccache >/dev/null && compiler=(ccache cc)
+if command -v ccache >/dev/null; then
+  export CCACHE_DIR="${CCACHE_DIR:-${TMPDIR:-/tmp}/nuvio-biblioteca-ccache}"
+  compiler=(ccache cc)
+fi
 objects=()
 for source in "${sources[@]}" tests/biblioteca_shot.c; do
   object="$tmp/$(basename "$source" .c).o"
@@ -29,6 +32,9 @@ for source in "${sources[@]}" tests/biblioteca_shot.c; do
 done
 cc "${objects[@]}" -o "$tmp/shot" -L/opt/homebrew/lib \
   -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
+if [ "${NV_MODO:-}" = mock ]; then
+  export NUVIO_RAIL=moderna NUVIO_SHOT_RELOGIO=1 NUVIO_SHOT_PT=1
+fi
 NUVIO_DADOS="$tmp/dados" "$tmp/shot" "$saida" "${NV_MODO:-}"
 [ "${NV_MODO:-}" = mock ] && exit 0
 # SEGUNDA VOLTA so para a MEDIDA: comeca em lista, com o cache de textura frio.
