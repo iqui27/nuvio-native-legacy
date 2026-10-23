@@ -3056,6 +3056,10 @@ void stream_atualizar_lista(const Stream *l, int qtd) {
   }
 }
 int stream_folha_n(void) { return nFiltrados(); }
+void stream_inspecao_ordem(int *ranks,int capacidade) {
+  montarLinhas(automaticaDaFolha());
+  for(int i=0;i<capacidade;i++) { int r=linhaDe(i); ranks[i]=r<0?0:r+1; }
+}
 #ifdef NV_SHOT_HOOKS
 // Capturas: altura do cartao da escolha automatica (0 = sem cartao nesta aba),
 // linhas que a lista desenha e copias que dobraram em outra linha.

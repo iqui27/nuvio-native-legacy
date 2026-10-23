@@ -209,8 +209,8 @@ static void config_details(AioSnapshot *s,const char *u) {
   detail(s,7,"proxy.id",member(member(u,"proxy"),"id"));
   detail(s,7,"proxy.proxiedServices",member(member(u,"proxy"),"proxiedServices"));
   detail(s,7,"proxy.proxiedAddons",member(member(u,"proxy"),"proxiedAddons"));
-  const char *seed[]={"minSeeders","maxSeeders"};
-  for(int i=0;i<2;i++) detail(s,3,seed[i],member(u,seed[i]));
+  const char *seed[]={"excludeSeederRange","includeSeederRange","requiredSeederRange","seederRangeTypes"};
+  for(int i=0;i<4;i++) detail(s,3,seed[i],member(u,seed[i]));
   const char *templates=member(u,"appliedTemplates"), *p=templates&&*templates=='['?templates+1:NULL;
   while(p && s->detalhes<AIO_MAX) {
     while(isspace((unsigned char)*p)||*p==',') p++;
@@ -287,6 +287,11 @@ void aio_legendas(AioSnapshot *s,const char *json) {
     s->legenda[s->legendas++]=r; p=end;
   }
 }
+unsigned long long aio_identidade(const char *s) {
+  unsigned long long h=14695981039346656037ULL;
+  if(!s || !*s) return 0;
+  for(;*s;s++) { h^=(unsigned char)*s; h*=1099511628211ULL; } return h;
+}
 void aio_resultados(AioSnapshot *s, const char *json) {
   const char *a = member(json,"streams"), *p = a && *a == '[' ? a+1 : NULL;
   s->resultados = s->links = s->p2p = 0;
@@ -306,6 +311,9 @@ void aio_resultados(AioSnapshot *s, const char *json) {
         snprintf(target,sizeof target,"https://www.youtube.com/watch?v=%s",id);
     }
     if(aio_url(target,origin,sizeof origin)) snprintf(r.destino,sizeof r.destino,"%s",target);
+    char identity[4096]="";
+    js_texto_raiz_em(p,end,!strcmp(kind,"P2P")?"infoHash":"url",identity,sizeof identity);
+    r.identidade=aio_identidade(identity); memset(identity,0,sizeof identity);
     snprintf(r.tipo,sizeof r.tipo,"%s",kind);
     if (!strcmp(kind,"P2P")) s->p2p++;
     if (!strcmp(kind,"Externo") || !strcmp(kind,"NZB") || !strcmp(kind,"YouTube")) s->links++;

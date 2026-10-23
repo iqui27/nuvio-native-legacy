@@ -39,6 +39,11 @@ int main(void) {
   int p, i;
 
   assert(celular_disponivel());
+  assert(!celular_abrir_link("bad","javascript:alert(1)"));
+  assert(celular_abrir_link("External","https://example.invalid/?a=1&b=2"));
+  snprintf(a,sizeof a,"'%s'",celular_url());
+  assert(curl(a)==200 && strstr(saida,"href=\"https://example.invalid/?a=1&amp;b=2\"") && !strstr(saida,"<textarea"));
+  celular_fechar();
   assert(celular_abrir("Chave do Seekr"));
   u = celular_url();
   p = celular_porta();

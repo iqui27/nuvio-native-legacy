@@ -11,7 +11,7 @@
 #define AIO_ADDONS 16
 typedef struct { char nome[128], id[128], tipo[32]; } AioCatalogo;
 typedef struct { char nome[96]; int ativo, legenda; } AioItem;
-typedef struct { char nome[192], tipo[24], destino[2048], provedor[96]; int cache, altura, mp4, rank, decisao; } AioResultado;
+typedef struct { char nome[192], tipo[24], destino[2048], provedor[96]; int cache, altura, mp4, rank, decisao; unsigned long long identidade; } AioResultado;
 typedef struct { char idioma[48], nome[128]; int forcada, sdh; } AioLegenda;
 typedef struct { int grupo; char nome[96], valor[256]; } AioRegra;
 typedef struct {
@@ -36,6 +36,7 @@ void aio_resultados(AioSnapshot *s, const char *json);
 void aio_status(AioSnapshot *s, const char *json);
 void aio_legendas(AioSnapshot *s, const char *json);
 void aio_search(AioSnapshot *s, const char *json);
+unsigned long long aio_identidade(const char *s);
 #ifdef NV_SHOT_HOOKS
 void aio_shot(const AioSnapshot *s);
 #endif

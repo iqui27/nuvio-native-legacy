@@ -397,7 +397,7 @@ static void addonsRestaurar(void) {
   int perfil = perfis_ativo_addons();
   char *c;
   if (addonsRestauradosPerfil == perfil && !strcmp(addonsRestauradosUsuario, sessao_usuario())) return;
-  c = contacache_ler(CC_ADDONS_APLICADOS, perfil, sessao_usuario(), NULL);
+  c = contacache_ler(CC_ADDONS_APLICADOS, perfil, sessao_usuario()[0]?sessao_usuario():"@local", NULL);
   if (c) {
     static AddonRemoto local[SY_ADD_MAX];
     int n = addons_exportar(local, SY_ADD_MAX), k = lerAddons(c);
@@ -1268,7 +1268,7 @@ void sync_iniciar(void) {
   // #360: pendencias de addons da versao anterior somem na primeira execucao,
   // com ou sem login — elas nunca mais seriam lidas nem enviadas.
   addonsEsquecer();
-  if (!sessao_logada()) return;
+  if (!sessao_logada()) { addonsRestaurar(); return; }
   // PEDIDO COM O FIO VIVO NAO SE PERDE. Voltar calado deixava um buraco: o
   // fio que estava no ar pode ser justamente o interrompido pela pergunta de
   // perfil, e ai o ciclo completo do perfil escolhido so partia com

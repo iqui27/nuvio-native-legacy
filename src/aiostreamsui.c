@@ -38,7 +38,8 @@ static const char *const nomes[] = {"Yeb’s", "Midnight’s", "ElfHosted", "Vir
 static int aberto, pagina, foco, lateral, hostIdx, indice = -1, entrada, pendente, perfil;
 static Uint32 proximaConsulta;
 static unsigned versao, geracao;
-static int catalogoSelecionado;
+static int catalogoSelecionado, regraSelecionada=-1, linkSelecionado=-1;
+static void trace(void);
 static char arteFundo[700], arteLogo[700];
 void aioui_arte(const char *dir) {
   snprintf(arteFundo,sizeof arteFundo,"%s/aiostreams/backdrop.jpg",dir);
@@ -79,17 +80,30 @@ static void *worker(void *arg) {
     if(body) { aio_manifesto(s,body); free(body); body=NULL; }
     snprintf(url,sizeof url,"%s/api/v1/status",p->host); buscar(s,url,NULL,1,&body);
     // Status version is not evidence of authenticated configuration access.
-    if(body) { free(body); body=NULL; }
+    if(body) { aio_status(s,body); free(body); body=NULL; }
     if(s->valida && aio_autorizacao(p->base,auth,sizeof auth) && !strncmp(p->host,"https://",8)) {
       snprintf(url,sizeof url,"%s/api/v1/user",p->host); buscar(s,url,auth,2,&body);
       if(body) { aio_configuracao(s,body); memset(body,0,strlen(body)); free(body); body=NULL; }
+      if(p->id[0] && s->searchAtiva) {
+        char encoded[512];
+        if(nv_addon_id(encoded,sizeof encoded,p->id)) {
+          snprintf(url,sizeof url,"%s/api/v1/search?type=%s&id=%s&format=true",p->host,p->tipo,encoded);
+          buscar(s,url,auth,5,&body);
+          if(body) { aio_search(s,body); memset(body,0,strlen(body)); free(body); body=NULL; }
+        }
+      }
       memset(auth,0,sizeof auth);
     }
     if(s->valida && p->id[0]) {
       char b[2048], encoded[512]; nv_addon_base(p->base,b,sizeof b);
       if(nv_addon_id(encoded,sizeof encoded,p->id) && NV_COUBE(nv_addon_url(url,sizeof url,b,"/stream/%s/%s.json",p->tipo,encoded),url)) {
         buscar(s,url,NULL,3,&body);
-        if(body) { aio_resultados(s,body); memset(body,0,strlen(body)); free(body); }
+        if(body) { aio_resultados(s,body); memset(body,0,strlen(body)); free(body); body=NULL; }
+      }
+      if((s->recursos&AIO_LEGENDA) && nv_addon_id(encoded,sizeof encoded,p->id) &&
+          NV_COUBE(nv_addon_url(url,sizeof url,b,"/subtitles/%s/%s.json",p->tipo,encoded),url)) {
+        buscar(s,url,NULL,4,&body);
+        if(body) { aio_legendas(s,body); memset(body,0,strlen(body)); free(body); body=NULL; }
       }
     }
   }
@@ -99,6 +113,22 @@ static void *worker(void *arg) {
   snprintf(entregaBase,sizeof entregaBase,"%s",p->base); entregue=1; ocupado=0;
   pthread_mutex_unlock(&trava);
   free(s); memset(p,0,sizeof *p); free(p); return NULL;
+}
+static void trace(void) {
+  int ranks[AIO_MAX], count=stream_n();
+  if(count>AIO_MAX) count=AIO_MAX;
+  int current=alvo[0] && stream_lista_do_alvo(alvo);
+  if(current) stream_inspecao_ordem(ranks,count);
+  for(int i=0;i<snap.resultados;i++) {
+    AioResultado *r=&snap.resultado[i]; r->rank=0; r->decisao=r->destino[0]?1:0;
+    if(!current || !r->identidade || r->decisao) continue;
+    for(int j=0;j<count;j++) {
+      const Stream *v=stream_item(j);
+      if(v && r->identidade==aio_identidade(v->url[0]?v->url:v->infoHash)) {
+        r->rank=ranks[j]; r->decisao=!r->rank?2:(v->foraCache||v->naoVideo)?3:4; break;
+      }
+    }
+  }
 }
 static void atualizarRede(int install) { pendente=install+1; }
 static void iniciarRede(void) {
@@ -127,7 +157,7 @@ static void guardarInstalacao(void) {
   }
   jsw_arr_fim(&w);
   const char *body=jsw_texto_final(&w);
-  if(body && sessao_usuario()[0]) contacache_gravar(CC_ADDONS_APLICADOS,perfis_ativo_addons(),sessao_usuario(),body);
+  if(body) contacache_gravar(CC_ADDONS_APLICADOS,perfis_ativo_addons(),sessao_usuario()[0]?sessao_usuario():"@local",body);
   jsw_livre(&w); memset(lista,0,sizeof lista);
 }
 static void fechar(void) {
@@ -136,6 +166,7 @@ static void fechar(void) {
 }
 void aioui_abrir(int i) {
   aberto=1; geracao++; foco=0; lateral=0; entrada=pendente=0; indice=i; alvo[0]=0; proximaConsulta=0;
+  regraSelecionada=linkSelecionado=-1;
   memset(&snap,0,sizeof snap); mensagem[0]=0;
   perfil=perfis_ativo(); versao=addons_versao(); snprintf(usuario,sizeof usuario,"%s",sessao_usuario());
   snprintf(host,sizeof host,"%s",hosts[hostIdx]); base[0]=0;
@@ -154,7 +185,7 @@ void aioui_inspecionar(const char *id,const char *t) {
   }
 }
 int aioui_aberto(void) { return aberto; }
-static void mudar(int p) { pagina=p; foco=0; lateral=0; mensagem[0]=0; }
+static void mudar(int p) { pagina=p; foco=0; lateral=0; mensagem[0]=0; regraSelecionada=-1; linkSelecionado=-1; celular_fechar(); }
 static void campo(int qual) {
   entrada=qual;
   teclado_abrir_com(qual==1?i18n("URL da instância"):qual==2?i18n("ID do título"):i18n("Link de instalação"),
@@ -171,8 +202,12 @@ static int nLinhas(void) {
   if(pagina==PAINEL) return 9;
   if(pagina==CATALOGOS) return snap.catalogos+4;
   if(pagina==FONTES) return snap.addons+snap.servicos+3;
-  if(pagina==LEGENDAS || pagina==LINKS) return 1;
-  if(pagina==FILTROS) return 9;
+  if(pagina==LEGENDAS) return snap.legendas+2;
+  if(pagina==LINKS) return snap.links+3;
+  if(pagina==FILTROS) {
+    if(regraSelecionada>=0) { int n=1; for(int i=0;i<snap.detalhes;i++) if(snap.detalhe[i].grupo==regraSelecionada) n++; return n; }
+    return 9;
+  }
   if(pagina==TITULO) return snap.resultados+2;
   return 2;
 }
@@ -216,7 +251,19 @@ static void acao(void) {
     if(foco==snap.addons+snap.servicos) ajustes_definir_p2p_ligado(!ajustes_p2p_ligado());
     else if(foco==snap.addons+snap.servicos+1) campo(2);
     else mudar(SERVICOS);
-  } else if(pagina==TITULO) {
+  } else if(pagina==FILTROS) {
+    if(regraSelecionada<0 && foco<8) { regraSelecionada=foco; foco=0; }
+    else mudar(SERVICOS);
+  } else if(pagina==LINKS) {
+    if(foco<snap.links) {
+      int k=0;
+      for(int i=0;i<snap.resultados;i++) if(strcmp(snap.resultado[i].tipo,"HTTP") && strcmp(snap.resultado[i].tipo,"P2P") && strcmp(snap.resultado[i].tipo,"Desconhecido")) {
+        if(k++==foco) { if(celular_abrir_link(i18n("Abrir no celular"),snap.resultado[i].destino)) linkSelecionado=i; break; }
+      }
+    } else if(foco==snap.links) campo(2);
+    else mudar(foco==snap.links+1?IMPORTAR:FONTES);
+  } else if(pagina==LEGENDAS) { if(foco==0) campo(2); else if(foco>snap.legendas) mudar(SERVICOS); }
+  else if(pagina==TITULO) {
     if(foco==0) campo(2); else if(foco==1) { geracao++; atualizarRede(0); }
     else snprintf(mensagem,sizeof mensagem,"%s",i18n("Ordem recebida; rejeições anteriores não são fornecidas pelo manifesto."));
   } else if(pagina==SAUDE && foco==0) { geracao++; atualizarRede(0); }
@@ -228,7 +275,8 @@ void aioui_evento(const SDL_Event *e) {
   if(e->type!=SDL_KEYDOWN) return;
   SDL_Keycode k=e->key.keysym.sym;
   if(k==SDLK_ESCAPE || k==SDLK_AC_BACK || k==SDLK_BACKSPACE) {
-    if(entrada==3) { celular_fechar(); entrada=0; return; }
+    if(entrada==3 || linkSelecionado>=0) { celular_fechar(); entrada=0; linkSelecionado=-1; return; }
+    if(pagina==FILTROS && regraSelecionada>=0) { foco=regraSelecionada; regraSelecionada=-1; return; }
     if(pagina==SEM || pagina==PAINEL) fechar();
     else mudar(snap.valida?PAINEL:SEM);
     return;
@@ -274,8 +322,8 @@ void aioui_atualizar(float dt,Uint32 agora) {
   pthread_mutex_lock(&trava);
   if(entregue) {
     if(entregaGeracao==geracao) {
-      snap=entrega;
-      for(int k=0;k<4;k++) if(snap.retry[k]>0) {
+      snap=entrega; trace();
+      for(int k=0;k<6;k++) if(snap.retry[k]>0) {
         unsigned wait=(unsigned)(snap.retry[k]>3600?3600:snap.retry[k]);
         proximaConsulta=agora+wait*1000u;
       }

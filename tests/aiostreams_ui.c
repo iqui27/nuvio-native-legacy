@@ -3,6 +3,12 @@
 #include <assert.h>
 static int keyboardResult, keyboardMasked, p2p, activeProfile=1;
 static const char *keyboardText="";
+static Stream traceStream;
+int stream_n(void) { return 1; }
+int stream_lista_do_alvo(const char *id) { return !strcmp(id,"tt1"); }
+const Stream *stream_item(int i) { (void)i; return &traceStream; }
+void stream_inspecao_ordem(int *r,int n) { for(int i=0;i<n;i++) r[i]=i+1; }
+int celular_abrir_link(const char *t,const char *d) { (void)t;return d[0]!=0; }
 int addons_n(void) { return 0; }
 int addons_exportar(AddonRemoto *v,int n) { (void)v;(void)n;return 0; }
 int perfis_ativo_addons(void) { return activeProfile; }
@@ -48,6 +54,12 @@ int main(void) {
   aioui_atualizar(0,100); assert(!pendente && mensagem[0]);
   pagina=FONTES; foco=0; acao(); assert(p2p);
   lateral=1; foco=5; acao(); assert(pagina==FILTROS);
+  strcpy(alvo,"tt1"); strcpy(traceStream.url,"https://media.test/v");
+  aio_resultados(&snap,"{\"streams\":[{\"url\":\"https://media.test/v\"},{\"externalUrl\":\"https://outside.test/private\"}]}");
+  trace(); assert(snap.resultado[0].rank==1 && snap.resultado[0].decisao==4);
+  traceStream.foraCache=1; trace(); assert(snap.resultado[0].decisao==3);
+  pagina=LINKS; lateral=0; foco=0; acao(); assert(linkSelecionado==1);
+  pagina=FILTROS; regraSelecionada=-1; foco=2; acao(); assert(regraSelecionada==2);
   activeProfile=2; aioui_atualizar(0,100); assert(!aioui_aberto() && !base[0]);
   puts("aiostreams UI: setup, masked import, P2P, navigation and profile isolation passed");
   return 0;
