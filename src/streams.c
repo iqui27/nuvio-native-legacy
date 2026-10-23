@@ -126,6 +126,7 @@ static Stream *lista;
 static int n = 0;
 // Workers publish source mutations; UI caches consume this revision.
 static _Atomic unsigned folhaRevisao;
+static unsigned folhaDadosVersao;
 static void folhaDados(void);
 static float linhaTopo(int row);
 static int cacheConfirmado(const Stream *s) {
@@ -2741,6 +2742,12 @@ static int filaDoPlay(int tentativas, int pref, int *fila, int *livres) {
 }
 
 int stream_play_candidata(void) {
+  static unsigned versao, memoria;
+  static int valida, candidata;
+  // The sheet snapshot covers source/addon revisions, preferida and settings.
+  folhaDados();
+  unsigned rev = fontepref_revisao();
+  if (valida && versao == folhaDadosVersao && memoria == rev) return candidata;
   int fila[1], livres, nf, pref = preferida;
   // Resolver como Play mesmo sem preparo, sem alterar preferida no desenho.
   // Fora de verTrava: fontepref consulta a lista para casar a escolha salva.
@@ -2752,7 +2759,9 @@ int stream_play_candidata(void) {
   pthread_mutex_lock(&verTrava);
   nf = filaDoPlay(1, pref, fila, &livres);
   pthread_mutex_unlock(&verTrava);
-  return nf > 0 ? fila[0] : -1;
+  candidata = nf > 0 ? fila[0] : -1;
+  versao = folhaDadosVersao; memoria = fontepref_revisao(); valida = nf >= 0;
+  return candidata;
 }
 
 int stream_primeira_boa_sessao(int tentativas, uint64_t sessao) {
@@ -4566,12 +4575,11 @@ static void montarBase(int automatica) {
   alturaTotal = y + medirDicaTorrents();
 }
 // Fixed-size settings snapshot: checking it never walks the source list.
-static unsigned folhaDadosVersao;
 static void folhaDados(void) {
   static int busy, valid;
   static struct FolhaChave {
-    unsigned revisao, regras, mortas, abas;
-    int valores[29];
+    unsigned revisao, regras, mortas, memoria, abas;
+    int valores[30];
     char audio[96], qualidade[32];
     FonteFalhaConfig falhas;
     int decoder[8];
@@ -4581,6 +4589,7 @@ static void folhaDados(void) {
   key.revisao = atomic_load(&folhaRevisao);
   key.regras = fonteregra_versao();
   key.mortas = fontesmortas_versao();
+  key.memoria = fontepref_revisao();
   // Addon/plugin que terminou sem fontes ou falhou nao publica Chegada:
   // sem esta chave a aba dele ficava "…"/"Buscando…" para sempre.
   key.abas = addons_parcial_rev();
@@ -4593,7 +4602,7 @@ static void folhaDados(void) {
     ajustes_fonte_regex_modo(), ajustes_fonte_usar_outros(), ajustes_fonte_ordem_uso(),
     ajustes_dolby_vision(), ajustes_dv_mkv(), ajustes_dolby_atmos(),
     ajustes_tamanho_min_gb(), ajustes_tamanho_max_gb(), ajustes_idioma(),
-    ondever_n(alvoPedido), fitN};
+    ondever_n(alvoPedido), fitN, filtroServidor};
   memcpy(key.valores, v, sizeof v);
   snprintf(key.audio, sizeof key.audio, "%s", idiomaFiltroAudio());
   snprintf(key.qualidade, sizeof key.qualidade, "%s", ajustes_qualidade());
@@ -4747,7 +4756,15 @@ static void desenharAudioBars(float x, float y, float alt, float alfa, Uint32 ag
 
 void stream_folha_servidor(int provider) {
   filtroServidor = provider >= 0 && provider < 3 ? provider : -1;
-  grupo = 1; foco = 0; rolagem = 0;
+  if (filtroServidor < 0) return;
+  int aut = automaticaDaFolha();
+  grupo = 1;
+  montar(aut);
+  foco = linhaDe(aut);
+  if (foco < 0) foco = 0;
+  focoVisto = foco; linhaAnt = -1; abreFoco = 1; abreAnt = 0;
+  montar(aut);
+  rolagem = alvoRolagem(); velRol = 0;
 }
 void stream_folha_abrir(void) {
   filtroServidor = -1;
@@ -5730,7 +5747,8 @@ static void corpoAio(float x,float w,float a) {
     txt_desenhar_alpha(txt_linha_corta(TXT_G20M,label,220,223,225,255,r.w-32),sx+16,323,a);
     ponteiro_alvo(r.x,r.y,r.w,r.h,NULL,ponteiroFolhaFiltro,i,0); sx+=r.w+6; if(sx>left+width-520) break;
   }
-  montar(automaticaDaFolha());
+  int automatica = automaticaDaFolha();
+  montar(automatica);
   int first=foco>2?foco-2:0, prev=-1; float y=403;
   gfx_recorte(left,390,width,485);
   for(int row=first;row<nOrdem && y<875;row++) {
@@ -5742,10 +5760,10 @@ static void corpoAio(float x,float w,float a) {
       txt_desenhar_alpha(txt_linha(TXT_ILHA_NUM,label,174,179,185,255),left+width-40,y+6,a);
       gfx_cor((GfxRect){left,y+39,width,1},0,1,1,1,.08f*a); y+=51; prev=res;
     }
-    int best=i==automaticaDaFolha();
+    int best=i==automatica;
     float h=best?119:94;
     if(grupo==1 && foco==row) gfx_cor((GfxRect){left,y,width,h},22/h,.19f,.205f,.22f,a);
-    if(i==automaticaDaFolha()) txt_desenhar_alpha(txt_linha(TXT_ILHA_NUM,i18n("Melhor para esta TV"),180,205,210,255),left+20,y+12,a);
+    if(best) txt_desenhar_alpha(txt_linha(TXT_ILHA_NUM,i18n("Melhor para esta TV"),180,205,210,255),left+20,y+12,a);
     float ty=y+(best?40:17);
     txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,s->rotulo[0]?s->rotulo:s->provedor,240,241,242,255,width-210),left+20,ty,a);
     char meta[256]; snprintf(meta,sizeof meta,"%s · %s",s->provedor,s->foraCache?i18n("Fora do cache"):i18n("Em cache"));
