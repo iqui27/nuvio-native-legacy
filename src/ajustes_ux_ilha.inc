@@ -1386,7 +1386,7 @@ static const char *ajSyncAddonsApoio(void) {
   return "Busca agora os addons da sua conta, sem esperar a volta automática.";
 }
 static void ajDesenharAddons(int foco) {
-  static AjSubLinha L[129];
+  static AjSubLinha L[130];
   int n = addons_n(), i, lig = 0;
   char sub[96], val[64], k[160];
   montarTela();
@@ -1396,7 +1396,7 @@ static void ajDesenharAddons(int foco) {
   snprintf(val, sizeof val, i18n("%d de %d"), lig, n);
   snprintf(sub, sizeof sub, "%s", n ? i18n("Ligados nesta TV") : i18n("Nenhum addon nesta conta."));
   ajSubCabecalho("aj_puzzle", "Fontes e addons", "Addons", n ? val : "", sub);
-  if (foco > n) foco = n;
+  if (foco > n + 1) foco = n + 1;
   if (foco < 0) foco = 0;
   { static char apoio[128][96];
     for (i = 0; i < n; i++) {
@@ -1404,10 +1404,12 @@ static void ajDesenharAddons(int foco) {
       L[i] = (AjSubLinha){ addons_nome(i), apoio[i], NULL, addons_ativo(i), 0, 0 };
     } }
   L[n] = (AjSubLinha){ "Sincronizar addons", ajSyncAddonsApoio(), "aj_rotate-cw", -1, 0, 1 };
+  L[n+1] = (AjSubLinha){ "AIOStreams", "Conectar ou importar sua configuração", "aj_layers", -1, 1, 1 };
   { AjDica d[3] = { { "OK", foco == n ? "Sincronizar addons" : "Mudar" }, { "↑ ↓", "Navegar" }, { "Voltar", "Fontes e addons" } };
-    ajSubLista(L, n + 1, foco, d, 3, NULL, addonsui_ponteiro); }
+    ajSubLista(L, n + 2, foco, d, 3, NULL, addonsui_ponteiro); }
   snprintf(k, sizeof k, "%s · %s", i18n("Fontes e addons"), i18n("Addons"));
-  if (foco == n) ajSubInspetor(AJ_ADDONS, k, "Sincronizar addons", i18n(ajSyncAddonsApoio()));
+  if (foco > n) ajSubInspetor(AJ_ADDONS, k, "AIOStreams", i18n("Conectar ou importar sua configuração"));
+  else if (foco == n) ajSubInspetor(AJ_ADDONS, k, "Sincronizar addons", i18n(ajSyncAddonsApoio()));
   else if (n > 0) {
     const char *base0 = addons_base(foco);
     char host[160] = "", forn[200];

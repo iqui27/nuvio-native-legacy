@@ -1,4 +1,5 @@
 #include "streams.h"
+#include "aiostreamsui.h"
 #include "vaitocar.h"
 #include "plrui.h"
 #include "ondever.h"
@@ -2221,7 +2222,11 @@ static int grupo, filtro, soMp4, soCache, soDub;
 // MP4, e nao grupos — resolucao x HDR/SDR ja da ate 8 grupos, e mais um eixo
 // picotaria a lista em grupos de 1 ou 2 fontes. Em cache = o debrid ja tem o
 // arquivo (Stream.foraCache e 0), toca agora; Dublado = audio em portugues.
-enum { BT_RECARREGAR, BT_SEM_HDR, BT_SO_MP4, BT_CACHE, BT_DUB, BT_FECHAR };
+enum { BT_RECARREGAR, BT_SEM_HDR, BT_SO_MP4, BT_CACHE, BT_DUB, BT_FECHAR, BT_AIO };
+static int temAio(void) {
+  for (int i=0; i<addons_n(); i++) if(aioui_detectar(i)) return 1;
+  return 0;
+}
 static int botaoDe(int i) {
   if (!video_pode_forcar_sdr()) i++;
   if (i == 0) return BT_SEM_HDR;
@@ -2229,21 +2234,23 @@ static int botaoDe(int i) {
   if (i == 2) return BT_CACHE;
   if (i == 3) return BT_DUB;
   if (i == 4) return BT_RECARREGAR;
+  if (i == 5 && temAio()) return BT_AIO;
   return BT_FECHAR;
 }
-static int nBotoes(void) { return video_pode_forcar_sdr() ? 6 : 5; }
+static int nBotoes(void) { return (video_pode_forcar_sdr() ? 6 : 5) + temAio(); }
 static const char *rotuloBotao(int b) {
   if (b == BT_SEM_HDR) return "Sem HDR";
   if (b == BT_SO_MP4)  return "Só MP4";
   if (b == BT_CACHE)   return "Em cache";
   if (b == BT_DUB)     return "Dublado";
+  if (b == BT_AIO)     return "AIOStreams";
   return NULL;
 }
 static int botaoLigado(int b) {
   return (b == BT_SO_MP4 && soMp4) || (b == BT_CACHE && soCache) || (b == BT_DUB && soDub);
 }
 static const char *iconeBotao(int b) {
-  return b == BT_RECARREGAR ? "aj_rotate-cw" : b == BT_FECHAR ? "aj_x" : NULL;
+  return b == BT_AIO ? "aj_layers" : b == BT_RECARREGAR ? "aj_rotate-cw" : b == BT_FECHAR ? "aj_x" : NULL;
 }
 static char provedores[13][96];
 static int nProvedores;
@@ -3169,6 +3176,7 @@ void stream_folha_evento(const SDL_Event *e) {
     if(grupo==-1) {
       switch(botaoDe(foco)) {
         case BT_RECARREGAR: recarregar=1; break;
+        case BT_AIO: aioui_inspecionar(alvoPedido, strchr(alvoPedido, ':') ? "series" : "movie"); break;
         // Fecha a folha junto: a imagem volta (ou nao) na propria tela do
         // player, e deixar a folha aberta em cima esconderia o resultado.
         case BT_SEM_HDR:    video_forcar_sdr(); aberta=0; break;
@@ -3472,8 +3480,8 @@ static void chipFolha(GfxRect r, const char *rot, float rotW, const char *icone,
 //      kicker explica o que ele faz em qualquer caso.
 // No degrau 2 o filtro ligado continua no acento, entao "qual esta ativo" se
 // le sem foco. Se nem os discos couberem (titulo enorme), o titulo e cortado.
-static float bwCab[6], rotWCab[6], titMaxCab, gapCab;
-static const char *rotCab[6], *icoCab[6];
+static float bwCab[7], rotWCab[7], titMaxCab, gapCab;
+static const char *rotCab[7], *icoCab[7];
 static int nivelCab;
 static const char *iconeFiltro(int b) {
   return b == BT_SEM_HDR ? "aj_sun-dim" : b == BT_SO_MP4 ? "aj_film"

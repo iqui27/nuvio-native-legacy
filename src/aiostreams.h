@@ -10,11 +10,11 @@
 #define AIO_ADDONS 16
 typedef struct { char nome[128], id[128], tipo[32]; } AioCatalogo;
 typedef struct { char nome[96]; int ativo; } AioItem;
-typedef struct { char nome[192], tipo[24]; int cache; } AioResultado;
+typedef struct { char nome[192], tipo[24]; int cache, altura, mp4; } AioResultado;
 typedef struct {
   int valida, requerida, configurada, recursos, catalogos, servicos, addons;
   int resultados, links, p2p, regras[8], http[4], ms[4], retry[4];
-  char nome[96], versao[40], host[256];
+  char nome[96], versao[40], host[256], resumo[8][256];
   AioCatalogo catalogo[AIO_MAX];
   AioItem servico[32], addon[AIO_MAX];
   AioResultado resultado[AIO_MAX];

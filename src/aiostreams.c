@@ -146,6 +146,22 @@ static int inventory(const char *u, const char *key, AioItem *v, int max) {
   }
   return n;
 }
+static void summarize(char *dst,size_t n,const char *p) {
+  if(!p) return;
+  const char *end=value_end(p); if(!end) return;
+  if(*p=='[') {
+    for(p++;p<end && *p && *p!=']';) {
+      while(isspace((unsigned char)*p)||*p==',') p++;
+      char text[80]="";
+      if(*p=='"') js_cadeia(p,text,sizeof text);
+      else if(*p=='{') js_texto_raiz_em(p,js_fim(p),"key",text,sizeof text);
+      else if(isdigit((unsigned char)*p)) snprintf(text,sizeof text,"%.0f",strtod(p,NULL));
+      safe(text);
+      if(text[0]) { size_t used=strlen(dst); snprintf(dst+used,n-used,"%s%s",used?", ":"",text); }
+      const char *next=value_end(p); if(!next || next<=p) break; p=next;
+    }
+  } else if(*p=='"') { js_cadeia(p,dst,n); safe(dst); }
+}
 void aio_configuracao(AioSnapshot *s, const char *json) {
   const char *u = member(member(json,"data"),"userData");
   s->configurada = s->servicos = s->addons = 0; memset(s->regras,0,sizeof s->regras);
@@ -162,6 +178,11 @@ void aio_configuracao(AioSnapshot *s, const char *json) {
     {"excludedRegexPatterns","requiredRegexPatterns","includedRegexPatterns","preferredRegexPatterns",NULL},
     {"sortCriteria",NULL},{"formatter",NULL},{"proxy",NULL}};
   for (int i=0;i<8;i++) for (int j=0;keys[i][j];j++) if (member(u,keys[i][j])) s->regras[i]++;
+  memset(s->resumo,0,sizeof s->resumo);
+  summarize(s->resumo[0],256,member(u,"requiredResolutions"));
+  summarize(s->resumo[2],256,member(u,"preferredLanguages"));
+  summarize(s->resumo[5],256,member(member(u,"sortCriteria"),"global"));
+  summarize(s->resumo[6],256,member(member(u,"formatter"),"id"));
 }
 void aio_resultados(AioSnapshot *s, const char *json) {
   const char *a = member(json,"streams"), *p = a && *a == '[' ? a+1 : NULL;
@@ -179,6 +200,9 @@ void aio_resultados(AioSnapshot *s, const char *json) {
     if (!strcmp(kind,"Externo") || !strcmp(kind,"NZB") || !strcmp(kind,"YouTube")) s->links++;
     const char *sd = member(p,"streamData");
     r.cache = boolean(sd,"cached",-1);
+    if(r.cache<0) r.cache=boolean(member(p,"clientResolve"),"isCached",-1);
+    const char *parsed=member(sd,"parsedFile"), *resolution=member(parsed,"resolution");
+    if(resolution && isdigit((unsigned char)*resolution)) r.altura=(int)strtol(resolution,NULL,10);
     s->resultado[s->resultados++] = r; p = end;
   }
 }

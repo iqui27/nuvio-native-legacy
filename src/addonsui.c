@@ -1,4 +1,5 @@
 #include "addonsui.h"
+#include "aiostreamsui.h"
 #include "idioma.h"
 #include "descoberta.h"
 #include "addons.h"
@@ -33,6 +34,8 @@ void addonsui_abrir(void) {
   // Sonda aqui e nao no arranque: sao N viagens de rede, e elas so interessam
   // a quem abriu esta tela. Quem ja respondeu nao e consultado de novo.
   addons_sondar_manifestos();
+  // Approved AIOStreams entry replaces its former toggle-only destination.
+  if (addons_n() == 0) aioui_abrir(-1);
 }
 
 // LIGAR UM ADDON SO VALIA NA PROXIMA ABERTURA DO APP, e o relato foi esse:
@@ -72,11 +75,14 @@ void addonsui_evento(const SDL_Event *e) {
   int n = addons_n();
   if (e->type != SDL_KEYDOWN) return;
   switch (e->key.keysym.sym) {
+    case SDLK_a: aioui_abrir(-1); break;
     case SDLK_UP:     if (foco > 0) foco--; break;
-    case SDLK_DOWN:   if (foco < n) foco++; break;
+    case SDLK_DOWN:   if (foco < n + 1) foco++; break;
     case SDLK_RETURN: case SDLK_KP_ENTER:
-      if (foco >= n) { sincronizar(); break; }
+      if (foco > n) { aioui_abrir(-1); break; }
+      if (foco == n) { sincronizar(); break; }
       if (n > 0) {
+        if (aioui_detectar(foco)) { aioui_abrir(foco); break; }
         addons_alternar(foco);
         // #360 mao unica: liga/desliga so nesta TV; o proximo pull da conta
         // sobrescreve. O aviso da tela (inspetor) diz isso.
@@ -94,7 +100,7 @@ void addonsui_evento(const SDL_Event *e) {
 // setas). O desenho mora em ajustes_ux_ilha.inc (ajSubLista).
 void addonsui_ponteiro(int i, int b) {
   (void)b;
-  if (sair || i < 0 || i > addons_n() || i == foco) return;
+  if (sair || i < 0 || i > addons_n() + 1 || i == foco) return;
   foco = i;
 }
 int addonsui_foco(void) { return foco; }

@@ -34,6 +34,7 @@
 #include "logoapp.h"
 #include "registro.h"
 #include "addonsui.h"
+#include "aiostreamsui.h"
 #include "pluginsui.h"
 #include "login.h"
 #include "sessao.h"
@@ -2269,6 +2270,7 @@ static void salvoParaConta(const CatItem *ci, int salvo) {
 }
 
 int app_iniciar(const char *dirArte) {
+  aioui_arte(dirArte);
 #ifdef NV_LINUX_DESKTOP
   const char *preview = getenv("NUVIO_UI_PREVIEW");
   uiPreview = preview && !strcmp(preview, "1");
@@ -2648,6 +2650,7 @@ void app_evento(const SDL_Event *e) {
   // O CARTAO DO CELULAR (celbotao.h), aberto de qualquer campo de texto: come
   // o teclado todo ate fechar.
   if (celb_evento(e)) return;
+  if (aioui_aberto()) { aioui_evento(e); return; }
   // O AVISO DAS CONQUISTAS (depois dos creditos) nao toma o foco: so o Voltar e
   // dele, e so enquanto estiver na tela. Vem antes do Voltar do app.
   if (conquistas_aviso_evento(e)) return;
@@ -3286,6 +3289,7 @@ static void juntosAbrirEFonte(Uint32 agora) {
 }
 
 void app_atualizar(float dt, Uint32 agora) {
+  aioui_atualizar(dt, agora);
   if (player_aberto() || player_mini_ativo()) diagnostico_cancelar_vazao();
   // Login e escolha de perfil retornam cedo; a atividade da conta anterior
   // precisa sair antes deles, junto de qualquer modal/pedido ja enfileirado.
@@ -5843,6 +5847,7 @@ void app_desenhar(Uint32 agora) {
 #ifdef NV_TOUCH_UI
     CAMADA_SE(celb_aberto());
 #endif
+    if (aioui_aberto()) { ponteiro_camada(); aioui_desenhar(agora); }
     celb_desenhar();
   }
   CAMADA_SE(diagnostico_intro_aberto());
