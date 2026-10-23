@@ -671,6 +671,7 @@ int   ajustes_ps_continuar(void);        // #303: 0 = sem o cartao "continuar" n
 int   ajustes_hist_conta(void);          // 1 = this profile's history goes to the Nuvio account (per profile, default on)
 int   ajustes_amigos_estilo(void); // 0 Feed, 1 Live, 2 Stories, 3 Presence, 4 Poster, 5 Classic
 int   ajustes_social(void);              // 1 = friends/social features on (per profile, default on)
+int   ajustes_social_perfil(int perfil); // mesmo ajuste lido de OUTRO perfil (#643)
 int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)
 int   ajustes_dv7(void);
 int   ajustes_cw_retido_tambem(void);   // 1 = o titulo da ilha/Retomar tambem fica em Continuar assistindo

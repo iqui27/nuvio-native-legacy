@@ -757,6 +757,7 @@ static void vistoAdd(SimklVisto *dst, int *n, int max, const SimklVisto *v) {
 static void vistosTipo(const char *json, const char *lista, int filme,
                        SimklVisto *dst, int *n, int max) {
   const char *p;
+  int semData = 0;
   for (p = js_array(json, NULL, lista); p && *p == '{'; p = js_prox(js_fim(p))) {
     const char *f = js_fim(p), *obra, *obraFim, *ids, *idsFim;
     SimklVisto v = {0};
@@ -783,11 +784,12 @@ static void vistosTipo(const char *json, const char *lista, int filme,
           js_texto_raiz_em(e, ef, "watched_at", quando, sizeof quando);
           v.temporada = temporada; v.episodio = (int)js_num(e, ef, "number", 0);
           v.quando = vistoEpoch(quando);
-          if (v.quando) vistoAdd(dst, n, max, &v);
+          if (v.quando) vistoAdd(dst, n, max, &v); else semData++;
         }
       }
     }
   }
+  if (semData) printf("[simkl] %d episodio(s) sem watched_at descartados em %s\n", semData, lista);
 }
 
 int simkl_ler_vistos(const char *json, SimklVisto *dst, int max) {
@@ -799,15 +801,40 @@ int simkl_ler_vistos(const char *json, SimklVisto *dst, int max) {
   return n;
 }
 
+// /sync/all-items e PROIBIDO em timer pela doc do Simkl (suspende o client).
+// socialvis pede o perfil do amigo a cada ~1s; guarda o ultimo resultado por
+// perfil por VISTOS_TTL_S, sucesso ou falha — falha repetida seria o mesmo
+// polling. simkl_esquecer (troca de perfil/sessao) derruba o cache.
+#define VISTOS_TTL_S 120
+#define VISTOS_CACHE_MAX 24
+static int vistosCachePerfil, nVistosCache;
+static SimklVisto vistosCache[VISTOS_CACHE_MAX];
+static time_t vistosCacheQuando;
+static uint64_t vistosCacheGeracao;
+
 int simkl_vistos_perfil(int perfil, SimklVisto *dst, int max) {
   char tk[300];
   int st = 0, n = 0;
   char *corpo;
+  time_t agora = time(NULL);
+  if (perfil == vistosCachePerfil && vistosCacheGeracao == cacheGeracao &&
+      agora - vistosCacheQuando < VISTOS_TTL_S) {
+    n = nVistosCache < max ? nVistosCache : max;
+    memcpy(dst, vistosCache, sizeof *dst * (size_t)n);
+    return n;
+  }
   if (!simklauth_token_perfil(perfil, tk, sizeof tk)) return 0;
   corpo = pedirComToken('G', "/sync/all-items/all/completed", "extended=full&episode_watched_at=yes", NULL, &st, tk);
   memset(tk, 0, sizeof tk);
-  if (st >= 200 && st < 300) n = simkl_ler_vistos(corpo, dst, max);
+  if (st >= 200 && st < 300)
+    nVistosCache = n = simkl_ler_vistos(corpo, vistosCache, VISTOS_CACHE_MAX);
+  else { nVistosCache = 0; printf("[simkl] all-items do perfil %d: HTTP %d\n", perfil, st); }
+  vistosCachePerfil = perfil;
+  vistosCacheQuando = agora;
+  vistosCacheGeracao = cacheGeracao;
   free(corpo);
+  n = nVistosCache < max ? nVistosCache : max;
+  memcpy(dst, vistosCache, sizeof *dst * (size_t)n);
   return n;
 }
 
