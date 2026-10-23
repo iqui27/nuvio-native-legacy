@@ -15,6 +15,8 @@
 #include "player.h"
 #include "ilha.h"
 #include "menu.h"
+#include "nuvem.h"
+#include "sync.h"
 #include "tex_cache.h"
 #include "redesaude.h"
 #include "sessao.h"
@@ -139,7 +141,11 @@ static void ativar(void) {
     return;
   }
   if(tela==AG_CONECTAR) {
-    if(foco>=0 && foco<4){serv=foco;celb_abrir_embutido(CELB_ADDON,"Conectar pelo celular");}
+    if(foco>=0 && foco<4){
+      serv=foco;
+      if(celb_disponivel())celb_abrir_embutido(CELB_ADDON,"Conectar pelo celular");
+      else if(foco<3)sync_manual_addons();
+    }
     else {tela=anterior;foco=0;celb_fechar_dono(CELB_ADDON);}
     return;
   }
@@ -177,6 +183,7 @@ void addonguia_evento(const SDL_Event *e) {
 void addonguia_atualizar(int permitir) {
   addonmodo_preparar(perfis_dono()[0]?perfis_dono():sessao_usuario(),perfis_ativo_addons());
   if(tela==AG_CONECTAR) {
+    if(!celb_disponivel()&&debrid_ativo()) {tela=AG_MODO;foco=1;}
     char chave[256];
     if(celb_pegar(CELB_ADDON,chave,sizeof chave)) {
       /* Same local credential store as Settings; input comes only from phone. */
@@ -333,7 +340,7 @@ void addonguia_lista(int f) {
   if(f==addons_n()) {
     botao(i18n("Sincronizar addons"),"aj_rotate-cw",228,820,0);
   }
-  texto(TXT_G18R,i18n("Ligar ou desligar"),1400,1000,360,0.46f);
+  texto(TXT_G18R,i18n("Ligar ou desligar"),1400,985,360,0.46f);
   if(f<addons_n()) {
     indice=f;identidade=addonmodo_id(addons_base(f));snprintf(nome,sizeof nome,"%s",addons_nome(f));
     painel((GfxRect){200,800,1600,180},24);rotas(228,810,1544);
@@ -352,8 +359,15 @@ void addonguia_desenhar(void) {
     texto(TXT_ILHA_TITULO,i18n("Conecte seu serviço pelo celular"),432,396,1076,1);
     bloco(i18n("Use sua conta do serviço para preparar o vídeo fora da TV."),432,460,1076,0.64f,2);
     float x=432;
-    for(int i=0;i<4;i++)x+=botao(SERVICOS[i],NULL,x,542,i)+12;
+    for(int i=0;i<(celb_disponivel()?4:3);i++)x+=botao(SERVICOS[i],NULL,x,542,i)+12;
     if(celb_embutido(CELB_ADDON))celb_desenhar_em(CELB_ADDON,(GfxRect){432,612,1076,170},1);
+    else if(!celb_disponivel()&&nuvem_base_login()[0]) {
+      const char *base=nuvem_base_login(),*p=strstr(base,"://");
+      if(p){char u[512];size_t len=(size_t)(p+3+strcspn(p+3,"/?#")-base);
+        if(len<sizeof u){memcpy(u,base,len);u[len]=0;qrPequeno(u,432,620,126);}}
+      bloco(i18n("Conecte seu serviço pelo celular"),590,642,918,0.64f,2);
+      texto(TXT_ILHA_SUB,i18n("Sincronizar addons"),590,712,918,0.64f);
+    }
     else bloco(i18n("Escolha seu serviço. Você não precisa digitar chaves nesta TV."),432,632,1076,0.64f,2);
     botao(i18n("Voltar à escolha"),"aj_arrow-left",432,790,4);return;
   }
