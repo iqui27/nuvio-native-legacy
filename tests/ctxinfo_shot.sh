@@ -11,18 +11,25 @@ mkdir -p "$saida"
 NUVIO_DADOS=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-ctxinfo-shot.XXXXXX")
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
-sources=()
+# Worktree-local object cache: rerunning pixel checks only rebuilds changed code.
+obj="${TMPDIR:-/tmp}/nuvio-ctxinfo-obj-$(pwd | cksum | cut -d' ' -f1)"
+mkdir -p "$obj"
+flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
+       -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined)
+objects=()
 for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c) continue;; esac
-  sources+=("$source")
+  object="$obj/$(basename "$source" .c).o"
+  objects+=("$object")
+  if [ ! -f "$object" ] || [ "$source" -nt "$object" ] ||
+     [ -n "$(find src -type f \( -name '*.h' -o -name '*.inc' \) -newer "$object" -print -quit)" ]; then
+    cc "${flags[@]}" -c "$source" -o "$object" >>"$NUVIO_DADOS/build.log" 2>&1 || {
+      cat "$NUVIO_DADOS/build.log" >&2; exit 1;
+    }
+  fi
 done
-if ! cc "${sources[@]}" tests/ctxinfo_shot.c -Isrc -o "$NUVIO_DADOS/shot" \
-  -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+cc "${flags[@]}" "${objects[@]}" tests/ctxinfo_shot.c -o "$NUVIO_DADOS/shot" \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
-  -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined \
-  >"$NUVIO_DADOS/build.log" 2>&1; then
-  cat "$NUVIO_DADOS/build.log" >&2
-  exit 1
-fi
+  >>"$NUVIO_DADOS/build.log" 2>&1 || { cat "$NUVIO_DADOS/build.log" >&2; exit 1; }
 grep -E "ctxinfo|ctxmenu|error" "$NUVIO_DADOS/build.log" || true
 NUVIO_SHOT_FONTE="${NUVIO_SHOT_FONTE:-3}" "$NUVIO_DADOS/shot" "$saida"

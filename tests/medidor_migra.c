@@ -3,6 +3,7 @@
 // visivel como Grande; "... 1" continua desligado; a chave nova vence a antiga;
 // sem nada no arquivo, desligado.
 #include "../src/ajustes.c"
+#include "nvtmp.h"
 #include "../src/desempenho.h"
 #include <assert.h>
 #include <unistd.h>
@@ -22,7 +23,7 @@ static int ler(const char *dir, const char *texto) {
 
 int main(void) {
   char base[600], dir[700];
-  snprintf(base, sizeof base, "%s/nuvio-medidor-XXXXXX", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
+  snprintf(base, sizeof base, "%s/nuvio-medidor-XXXXXX", nvt_dir());
   snprintf(dir, sizeof dir, "%s", base);
   assert(mkdtemp(dir));
   assert(valorPadrao[AJ_MEDIDOR] == DS_DESLIGADO);

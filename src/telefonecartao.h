@@ -52,7 +52,7 @@ static inline void telefonecartao_comecar(TelefoneCartao *c, float total, int ch
     ponteiro_rolagem(rolar);
   }
   gfx_cor((GfxRect){0, 0, c->painel.w + 48, c->painel.h + 48}, 0, 0, 0, 0, .72f * a);
-  gfx_cor(c->painel, 36 / c->painel.h, .055f, .059f, .071f, .98f * a);
+  gfx_vidro_ou_solido(c->painel, 36 / c->painel.h, GFX_VIDRO_DENS_MODAL, a, .055f, .059f, .071f, .98f);
   gfx_recorte(c->corpo.x, c->corpo.y, c->corpo.w, c->corpo.h);
 }
 static inline void telefonecartao_alvo(TelefoneCartao *c, GfxRect r,

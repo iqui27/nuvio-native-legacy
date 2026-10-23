@@ -13,6 +13,12 @@ static void texto(int f, int cru, int vg, int longo, const char *esp) {
 }
 
 int main(void) {
+  // IMDb: 0..10 and 0..100 provider payloads both give 8.0; others unchanged.
+  assert(nf_cru(EX_IMDB, 8.0) == 80 && nf_cru(EX_IMDB, 80.0) == 80);
+  texto(EX_IMDB, nf_cru(EX_IMDB, 80.0), 0, 0, "8.0");
+  texto(EX_IMDB, nf_cru(EX_IMDB, 8.0), 0, 0, "8.0");
+  assert(nf_cru(EX_TRAKT, 80.0) == 800);
+
   int i;
   // --- normalizacao: cada escala nativa vira 0..100 -------------------------
   assert(nf_norm100(EX_IMDB, 78) == 78);          // 7.8 / 10

@@ -44,7 +44,9 @@ int mkvass_estado(void) { return 0; }
 int mkvass_varredura(void) { return 0; }
 void mkvass_parar(void) {}
 void mkvass_iniciar_ordinal(const char *u, int o) { (void)u; (void)o; }
+#ifndef LEG_PRE_REAL
 void legenda_desligar(void) {}
+#endif
 const char *i18n(const char *s) { return s; }
 
 Uint32 SDL_GetTicks(void) { return 0; }
@@ -61,7 +63,8 @@ static CatItem item;
 const CatItem *cat_item(int i) { (void)i; return &item; }
 int player_indice(void) { return 0; }
 int player_aberto(void) { return 1; }
-int player_com_video(void) { return 1; }
+static int videoPronto = 1;
+int player_com_video(void) { return videoPronto; }
 const char *player_id_canal(void) { return ""; }
 static int forcadaAuto;
 int ajustes_legenda_forcada_auto(void) { return forcadaAuto; }
@@ -78,9 +81,11 @@ int addons_legendas_copiar(Legenda *v, int max, unsigned *a, int *b) {
   return i;
 }
 static char urlExterna[256];
+#ifndef LEG_PRE_REAL
 void legsync_primaria_externa(const char *url, const char *idi, const char *prov) {
   (void)idi; (void)prov; snprintf(urlExterna, sizeof urlExterna, "%s", url);
 }
+#endif
 void legsync_primaria_outra(int x) { (void)x; if (!x) urlExterna[0] = 0; }
 
 // --- disco falso (dados.c) ---------------------------------------------------------

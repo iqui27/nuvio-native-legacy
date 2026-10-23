@@ -18,6 +18,7 @@
 // porta), Origin de fora e recusado, o token vale um envio, Voltar e clique
 // fora fecham o cartao, o clique do ponteiro no botao abre o cartao.
 #include "spotlight.h"
+#include "nvtmp.h"
 #include "busca.h"
 #include "teclado.h"
 #include "celbotao.h"
@@ -151,7 +152,7 @@ static void apontar(int x, int y) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-celbotao";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-celbotao");
   const char *dir = getenv("NUVIO_DADOS");
   SDL_GLContext gl;
   char cwd[400], url[128];

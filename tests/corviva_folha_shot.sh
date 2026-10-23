@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Folha de contato da cor viva: fundo + logo de cada titulo com o destaque, o
 # degrade, as luzes de regiao e a base que corviva_extrair tira deles, e o
 # botao "Reproduzir" como sairia. E como a extracao foi afinada (25/09/2026);
@@ -10,12 +12,12 @@
 # <saida>-artes/ para a proxima rodada nao baixar de novo.
 set -eu
 cd "$(dirname "$0")/.."
-SAIDA="${1:-/tmp/nuvio-folha}"
+SAIDA="${1:-${TMPDIR:-/tmp}/nuvio-folha}"
 D="$SAIDA-artes"
 mkdir -p "$D"
 cc -O2 tests/corviva_folha_shot.c src/corviva.c -Isrc \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -o /tmp/nuvio-corviva-folha
+  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -o ${TMPDIR:-/tmp}/nuvio-corviva-folha
 args=()
 while read -r tt nome; do
   [ -z "$tt" ] && continue
@@ -49,4 +51,4 @@ tt2560140 Attack_on_Titan
 tt11280740 Severance
 EOF
 for i in 00 07 28; do args+=("arte$i" "deploy/app/art/$i.jpg" "-"); done
-/tmp/nuvio-corviva-folha "$SAIDA.png" "${args[@]}"
+${TMPDIR:-/tmp}/nuvio-corviva-folha "$SAIDA.png" "${args[@]}"

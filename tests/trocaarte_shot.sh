@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas da tela "Trocar arte" (#142) sobre a pagina do titulo, em PNG, sem
 # rede. Nao entra na suite (testa-tudo.sh pula *_shot.sh): precisa de janela
 # GL e de olho humano — mas as asserts de fluxo (abrir pelo circular, previa,
@@ -14,7 +16,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-trocaarte-dados.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-trocaarte-dados.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 
@@ -24,8 +26,8 @@ for source in src/*.c src/dts/*.c; do
   sources+=("$source")
 done
 
-cc "${sources[@]}" tests/trocaarte_shot.c -Isrc -o /tmp/nuvio-trocaarte-shot \
+cc "${sources[@]}" tests/trocaarte_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-trocaarte-shot \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-trocaarte-shot "$@"
+${TMPDIR:-/tmp}/nuvio-trocaarte-shot "$@"

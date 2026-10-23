@@ -21,6 +21,8 @@
 // Inclui src/guia.c: desenharCard e a lista de canais sao estaticos, e semear
 // por dentro e o unico jeito de fotografar o cartao sem addon no ar.
 #include "badges.h"
+#include "nvtmp.h"
+#include "aovivo.h"
 #include "../src/guia.c"
 #include "guialembrete.h"
 #include "gfx.h"
@@ -88,7 +90,8 @@ static void capturaTela(const char *nome, SDL_Window *win, int comCanais) {
     tex_novo_quadro();
     tex_bombear(6);
     gfx_novo_quadro();
-    glClearColor(0.051f, 0.051f, 0.051f, 1.0f);
+    // A hostile underlying Home color must never survive preview-off rendering.
+    glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     guia_desenhar(SDL_GetTicks());
     glem_desenhar(SDL_GetTicks());
@@ -104,7 +107,11 @@ static void capturaTela(const char *nome, SDL_Window *win, int comCanais) {
       for (y = 0; y < 1080; y++)
         memcpy((char *)s->pixels + y * s->pitch,
                pix + (1079 - y) * 1920 * 4, 1920 * 4);
-      assert(SDL_SaveBMP(s, nome) == 0);
+      if (!previewLigado && !player_mini_no_guia_ativo()) {
+        unsigned char *p = (unsigned char *)s->pixels + 240 * s->pitch + 1800 * 4;
+        assert(p[3] == 255 && p[0] < 100 && p[2] < 100);
+      }
+      assert((strstr(nome, ".png") ? IMG_SavePNG(s, nome) : SDL_SaveBMP(s, nome)) == 0);
       SDL_FreeSurface(s);
       free(pix);
     }
@@ -121,7 +128,8 @@ static void capturaPainel(const char *nome, SDL_Window *win, int addonsPane) {
     SDL_PumpEvents();txt_novo_quadro();tex_novo_quadro();tex_bombear(6);gfx_novo_quadro();
     glClearColor(.03f,.03f,.035f,1);glClear(GL_COLOR_BUFFER_BIT);
     if (vidroFundoAtivo()) vidroFundoDesenhar(); else shot_arte_desenhar(0);
-    if(addonsPane) desenharPainelAddons(1); else desenharPainelCategorias(1);
+    if(addonsPane==3) { char fo[64]; CatItem it; const char *nm=NULL; fo[0]=0; if (guia_numero_canal(101,&it,fo,sizeof fo,0)) nm=it.titulo; aovivo_numero_desenhar("1 0 1",nm,fo,1); }
+    else if(addonsPane==2) { desenharGrupos(1); } else if(addonsPane) desenharPainelAddons(1); else desenharPainelCategorias(1);
     if(q==69) {
       unsigned char *pix=malloc(1920*1080*4);
       SDL_Surface *s=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);assert(pix&&s);
@@ -134,14 +142,29 @@ static void capturaPainel(const char *nome, SDL_Window *win, int addonsPane) {
   printf("capture: %s\n",nome);
 }
 
-static void poeCanal(int i, const char *nome, const char *logo) {
-  snprintf(canais[i].id, sizeof canais[i].id, "c%d", i);
-  snprintf(canais[i].nome, sizeof canais[i].nome, "%s", nome);
-  snprintf(canais[i].logo, sizeof canais[i].logo, "%s", logo);
-  canais[i].desc[0] = 0;
-  canais[i].cat = 0;
-  canais[i].epg = -2;      // sem grade real: o cartao mostra "AO VIVO"
-  canais[i].fav = i == 1;
+// SEMEIA A LISTA PELO CAMINHO DE VERDADE (M1): staging -> adotarStaging, como o
+// fio de carga. Cada canal: fonte, grupo, nome, logo, descricao e numero.
+typedef struct { const char *fonte, *grupo, *nome, *logo, *desc; int numero; } ShotCanal;
+static void semearCanais(const ShotCanal *v, int n) {
+  int i;
+  stagingZerar();
+  sTeto = 30000;
+  for (i = 0; i < n; i++) {
+    int fl = sFonte(LTV_ADDON, v[i].fonte, v[i].fonte, "");
+    char id[32];
+    GCru c;
+    snprintf(id, sizeof id, "c%d", i);
+    memset(&c, 0, sizeof c);
+    c.id = id; c.nome = v[i].nome; c.logo = v[i].logo; c.desc = v[i].desc ? v[i].desc : "";
+    c.grupo = v[i].grupo; c.numero = v[i].numero;
+    c.epgId = c.tvgNome = c.url = c.ua = c.ref = "";
+    sGrupoInfo(fl, v[i].grupo, 1);
+    sCanalAdd(fl, &c);
+    sLtvF[fl].total++;
+  }
+  favLido = 1;
+  adotarStaging();
+  estado = G_PRONTO;
 }
 
 // GRADE DE MENTIRA para a tela do guia (25/09/2026): o heroi e a grade so se
@@ -195,50 +218,49 @@ static void semearEpg(void) {
   free(xml);
 }
 
-// Monta a lista do guia: duas categorias, canais com e sem grade.
+// Monta a lista do guia: duas fontes, tres grupos, canais com e sem grade.
+// "Esportes" existe nas duas fontes e aparece DUAS vezes (decisao 2).
 static void semearGuia(void) {
-  // logo: 0 recortado (silhueta de um tom), 1 com fundo proprio, 2 AZULEJO
-  // (quadrado claro arredondado com margem transparente e marca escura — o
-  // formato que virava bloco creme na C9), 3 arquivo que NAO EXISTE (o logo
-  // que falha: tem de aparecer o azulejo escuro com as iniciais).
+  // logo: 0 recortado, 1 com fundo proprio, 2 AZULEJO, 3 arquivo que NAO EXISTE.
   static const char *LOGO[] = {
     "tests/fixtures/logos/recortado.png", "tests/fixtures/logos/comfundo.png",
     "tests/fixtures/logos/azulejo.png", "tests/fixtures/logos/nao-existe.png",
   };
-  static const struct { const char *nome; int cat; int logo; } C[] = {
-    { "Globo RJ", 0, 2 }, { "SporTV", 1, 2 }, { "GE TV", 1, 3 },
-    { "GNT", 0, 1 }, { "Cartoon Network", 0, 3 }, { "Canal Recortado HD", 0, 0 },
-    { "Discovery", 0, 2 }, { "Canal 24h Classicos", 0, 3 },
+  ShotCanal C[] = {
+    { "FrostView", "Abertos", "Globo RJ", NULL, "Categoria: Abertos Qualidades: 4K, FHD, HD, SD 8 fonte(s)", 4 },
+    { "FrostView", "Abertos", "GNT", NULL, "Categoria: Abertos 1 fonte(s)", 41 },
+    { "FrostView", "Abertos", "Cartoon Network", NULL, NULL, 33 },
+    { "FrostView", "Abertos", "Canal Recortado HD", NULL, NULL, 50 },
+    { "FrostView", "Abertos", "Discovery", NULL, NULL, 52 },
+    { "FrostView", "Abertos", "Canal 24h Classicos", NULL, NULL, 99 },
+    { "FrostView", "Esportes", "SporTV", NULL, NULL, 101 },
+    { "FrostView", "Esportes", "GE TV", NULL, "Canal de esportes com jogos ao vivo, resenha e bastidores.", 102 },
+    { "Xtream", "Esportes", "ESPN", NULL, NULL, 101 },
+    { "Xtream", "Esportes", "Premiere Clubes", NULL, NULL, 103 },
   };
-  int i, n = (int)(sizeof C / sizeof C[0]), w = 0, c;
-  // Ordem publicada = agrupada por categoria, como empacotar() deixa.
-  for (c = 0; c < 2; c++)
-    for (i = 0; i < n; i++) {
-      if (C[i].cat != c) continue;
-      poeCanal(w, C[i].nome, LOGO[C[i].logo]);
-      canais[w].cat = c; canais[w].epg = -1; canais[w].fav = 0;
-      w++;
-    }
-  // O molde do addon (medido na C9): vira selos + "8 fontes", sem a
-  // "Categoria:" repetida. GE TV leva texto livre, que tem de ir como veio.
-  snprintf(canais[0].desc, sizeof canais[0].desc, "%s",
-           "Categoria: Abertos Qualidades: 4K, FHD, HD, SD 8 fonte(s)");
-  snprintf(canais[3].desc, sizeof canais[3].desc, "%s",
-           "Categoria: Abertos 1 fonte(s)");
-  snprintf(canais[7].desc, sizeof canais[7].desc, "%s",
-           "Canal de esportes com jogos ao vivo, resenha e bastidores.");
+  static const int L[] = { 2, 1, 3, 0, 2, 3, 2, 3, 0, 1 };
+  int i, n = (int)(sizeof C / sizeof C[0]);
+  for (i = 0; i < n; i++) C[i].logo = LOGO[L[i]];
+  semearCanais(C, n);
   canais[1].fav = 1;
-  nCanais = w;
-  snprintf(cats[0], sizeof cats[0], "%s", "Abertos");
-  snprintf(cats[1], sizeof cats[1], "%s", "Esportes");
-  nCats = 2;
-  catIni[0] = 0; catN[0] = 6;
-  catIni[1] = 6; catN[1] = 2;
-  nFavOrd = 0;
+  // CANAL M3U (M9): o app toca a URL guardada com o UA e o Referer do canal.
+  { const char *idAntes = canais[2].id, *urlAntes = canais[2].url, *uaAntes = canais[2].ua, *refAntes = canais[2].ref;
+    char u[200], ua[64], rf[64];
+    assert(!guia_m3u_canal(canais[2].id, u, sizeof u, ua, sizeof ua, rf, sizeof rf));
+    canais[2].id = "m3u:canaisabertos:0";
+    assert(!guia_e_m3u(canais[2].id)); // Add-on IDs keep the add-on stream resolver.
+    int tipoAntes = ltvF[canais[2].fonte].tipo;
+    ltvF[canais[2].fonte].tipo = LTV_M3U;
+    canais[2].id = "m3u:m1234abcd:0000beef"; canais[2].url = "http://exemplo.invalid/c.m3u8";
+    canais[2].ua = "VLC/3.0"; canais[2].ref = "";
+    assert(guia_e_m3u(canais[2].id) && guia_m3u_canal(canais[2].id, u, sizeof u, ua, sizeof ua, rf, sizeof rf));
+    assert(!strcmp(u, "http://exemplo.invalid/c.m3u8") && !strcmp(ua, "VLC/3.0") && !rf[0]);
+    ltvF[canais[2].fonte].tipo = tipoAntes;
+    canais[2].id = idAntes; canais[2].url = urlAntes; canais[2].ua = uaAntes; canais[2].ref = refAntes; }
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-guia";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-guia");
   char nome[600];
   SDL_Window *w;
   SDL_GLContext gl;
@@ -281,6 +303,96 @@ int main(int argc, char **argv) {
   gfx_icones_dir("deploy/app/art");
   badges_carregar("deploy/app/art");   // marcas de resolucao no heroi; no app quem faz e home.c
 
+  if (argc > 2 && !strcmp(argv[2], "header")) {
+    const char *dir = getenv("NUVIO_DADOS");
+    char settings[600];
+    snprintf(settings, sizeof settings, "%s/ajustes.txt", dir);
+    semearGuia();
+    aberta = 1; entrada = heroA = 1; overlay = 0;
+    modoLista = 0; previewLigado = 0; previewLido = modoLido = 1;
+    focoLin = 0; focoCol = 2; focoTopo = focoFontes = 0;
+    SDL_Event e = {0}; e.type = SDL_KEYDOWN;
+    for (int lang = 0; lang < IDIOMA_N; lang++) {
+      FILE *f = fopen(settings, "w"); assert(f);
+      fprintf(f, "idioma %d\nidiomaAutoLocal 0\n", lang); fclose(f);
+      ajustes_dir(dir); txt_novo_quadro();
+      const char *labels[G_TOPO_N]; float widths[G_TOPO_N], xs[G_TOPO_N];
+      gTopoRotulos(labels); gTopoLarguras(labels, widths);
+      gTopoAjustar(widths, xs, G_INFO_X + G_INFO_W);
+      assert(xs[0] == G_AREA_X);
+      for (int i = 0; i < G_TOPO_PRIMARIOS; i++) {
+        float icon = i <= G_TOPO_CATEGORIAS ? 26 : 0;
+        assert(widths[i] > 2 * G_CHIP_PAD + icon);
+        assert(xs[i] + widths[i] <= G_INFO_X + G_INFO_W + .1f);
+        if (i) assert(xs[i] >= xs[i-1] + widths[i-1] + (i == G_TOPO_LISTA ? 0 : 11.9f));
+      }
+    }
+    // UP reaches chips directly even when the sources bar is visible.
+    for (int mode = 0; mode < 2; mode++) {
+      modoLista = mode; focoLin = focoCol = focoTopo = focoFontes = dirSeg = 0;
+      e.key.keysym.sym = SDLK_UP; guia_evento(&e);
+      assert(focoTopo && !focoFontes);
+      e.key.keysym.sym = SDLK_LEFT;
+      for (int i = 0; i < G_TOPO_PRIMARIOS; i++) guia_evento(&e);
+      assert(topoCol == G_TOPO_BUSCAR);
+      e.key.keysym.sym = SDLK_RIGHT;
+      for (int i = 0; i < G_TOPO_PRIMARIOS; i++) guia_evento(&e);
+      assert(topoCol == G_TOPO_OPCOES);
+      e.key.keysym.sym = SDLK_RETURN; guia_evento(&e);
+      assert(opcoesAberto && opcoesFoco == G_TOPO_ADDONS);
+      e.key.keysym.sym = SDLK_ESCAPE; guia_evento(&e);
+      assert(!opcoesAberto && aberta && focoTopo && topoCol == G_TOPO_OPCOES);
+    }
+    // Each entry dispatches its existing action; clear defaults to cancel.
+    for (int action = G_TOPO_ADDONS; action <= G_TOPO_PREVIEW; action++) {
+      e.key.keysym.sym = SDLK_RETURN; guia_evento(&e);
+      e.key.keysym.sym = SDLK_DOWN;
+      for (int i = G_TOPO_ADDONS; i < action; i++) guia_evento(&e);
+      assert(opcoesFoco == action);
+      e.key.keysym.sym = SDLK_RETURN; guia_evento(&e);
+      assert(!opcoesAberto);
+      if (action == G_TOPO_ADDONS) assert(painel && !paModo);
+      if (action == G_TOPO_FILTROS) assert(painel && paModo == 1);
+      if (action == G_TOPO_DIAG) assert(guia_pediu_livetv_diag());
+      if (action == G_TOPO_LIMPAR) assert(limparConfirm && limparFoco == 1);
+      if (action == G_TOPO_PREVIEW) assert(previewLigado);
+      if (painel || limparConfirm) {
+        e.key.keysym.sym = SDLK_ESCAPE; guia_evento(&e);
+      }
+      assert(aberta);
+    }
+    previewLigado = 0; previewParar();
+    modoLista = 0; focoLin = 0; focoCol = 2; focoTopo = focoFontes = 0;
+    for (int capture = 0; capture < 3; capture++) {
+      FILE *f = fopen(settings, "w"); assert(f);
+      fprintf(f, "idioma %d\nidiomaAutoLocal 0\n", capture == 2 ? 0 : IDIOMA_EN); fclose(f);
+      ajustes_dir(dir);
+      opcoesAberto = capture == 1; opcoesFoco = G_TOPO_PREVIEW;
+      focoTopo = opcoesAberto; topoCol = G_TOPO_OPCOES;
+      for (int i = 0; i < G_TOPO_N; i++) animTopo[i] = 0;
+      snprintf(nome, sizeof nome, "%s/depois-guia%s.png", saida,
+               capture == 1 ? "-opcoes" : capture == 2 ? "-ptbr" : "");
+      capturaTela(nome, w, 1);
+    }
+    puts("PASS: all UI languages fit four header groups; UP/arrows/Options/Back and five actions.");
+    tex_encerrar(); txt_encerrar(); gfx_encerrar();
+    SDL_GL_DeleteContext(gl); SDL_DestroyWindow(w); SDL_Quit();
+    return 0;
+  }
+
+  if (getenv("NUVIO_GUIALIMPA_SHOT")) {
+    semearGuia(); aberta = 1; entrada = 1; overlay = 0;
+    focoTopo = 1; topoCol = G_TOPO_OPCOES; opcoesAberto = 1; opcoesFoco = G_TOPO_LIMPAR;
+    snprintf(nome, sizeof nome, "%s-action.bmp", saida); capturaTela(nome, w, 1);
+    limparConfirm = 1; limparFoco = 1;
+    snprintf(nome, sizeof nome, "%s-confirm.bmp", saida); capturaTela(nome, w, 1);
+    stagingZerar(); adotarStaging(); estado = G_FALHOU;
+    snprintf(nome, sizeof nome, "%s-empty-confirm.bmp", saida); capturaTela(nome, w, 0);
+    tex_encerrar(); txt_encerrar(); gfx_encerrar();
+    SDL_GL_DeleteContext(gl); SDL_DestroyWindow(w); SDL_Quit();
+    return 0;
+  }
+
   if(getenv("NUVIO_GUIDE_PANELS")) {
     extern void ajustes_teste_vidro_env(void);
     const char *dir=getenv("NUVIO_DADOS");FILE *f;int i;
@@ -300,13 +412,15 @@ int main(int argc, char **argv) {
     return 0;
   }
 
-  poeCanal(0, "Canal Recortado HD", "tests/fixtures/logos/recortado.png");
-  poeCanal(1, "Canal Recortado HD", "tests/fixtures/logos/recortado.png");
-  poeCanal(2, "Canal Com Fundo HD", "tests/fixtures/logos/comfundo.png");
-  poeCanal(3, "Canal Com Fundo HD", "tests/fixtures/logos/comfundo.png");
-  nCanais = 4;
-  snprintf(cats[0], sizeof cats[0], "%s", "Aberta");
-  nCats = 1; catIni[0] = 0; catN[0] = 4;
+  { static const ShotCanal C4[] = {
+      { "Addon", "Aberta", "Canal Recortado HD", "tests/fixtures/logos/recortado.png", NULL, 1 },
+      { "Addon", "Aberta", "Canal Recortado HD", "tests/fixtures/logos/recortado.png", NULL, 2 },
+      { "Addon", "Aberta", "Canal Com Fundo HD", "tests/fixtures/logos/comfundo.png", NULL, 3 },
+      { "Addon", "Aberta", "Canal Com Fundo HD", "tests/fixtures/logos/comfundo.png", NULL, 4 } };
+    int k;
+    semearCanais(C4, 4);
+    for (k = 0; k < 4; k++) canais[k].epg = -2;   // sem grade real: "AO VIVO"
+    canais[1].fav = 1; }
 
   // O MOLDE DA DESCRICAO nas duas formas medidas na C9, e texto livre.
   { GDesc d;
@@ -370,17 +484,47 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-lista-sem-epg.bmp", saida);
   capturaTela(nome, w, 1);
 
+  // BARRA DE FONTES (M3): foco no chip do Xtream, com a linha da fonte.
+  focoLin = 0; focoCol = 0; rolL = 0.0f; focoAnelOk = 0;
+  ltvF[1].saude = LTV_SAUDE_DEGRADADA; ltvF[1].cortada = 1; ltvF[1].total = 16462;
+  focoFontes = 1; fontesCol = 3;
+  snprintf(nome, sizeof nome, "%s-fontes.bmp", saida);
+  capturaTela(nome, w, 1);
+  // ESCOLHER GRUPOS (M2): teto de 3000 e uma fonte com grupos grandes.
+  { static const struct { const char *n; int c; } G[] = {
+      {"Esportes",412},{"Filmes",980},{"Series",1450},{"Abertos",190},{"Noticias",120},
+      {"Infantil",260},{"Documentarios",310},{"Musica",150},{"Adulto",500},{"Radio",90},
+      {"Internacional",1700},{"Religiosos",75},{"PPV",64} };
+    GFonteLtv *F = &ltvF[1];
+    int k;
+    free(F->gi); F->gi = calloc(13, sizeof *F->gi); F->ngi = 13;
+    for (k = 0; k < 13; k++) { F->gi[k].nome = G[k].n; F->gi[k].n = G[k].c; F->gi[k].entra = k < 3; }
+    tetoCarga = 3000;
+    gpAbrir(1);
+    gpMarca[0] = 1; gpMarca[3] = 1; gpMarca[4] = 1; gpMarca[5] = 1; gpFoco = 5;
+    snprintf(nome, sizeof nome, "%s-grupos.png", saida);
+    capturaPainel(nome, w, 2);
+    gpAberto = 0; tetoCarga = 30000;
+    // DIGITAR O NUMERO (M7): 101 existe em duas fontes (FrostView e Xtream).
+    snprintf(nome, sizeof nome, "%s-numero.png", saida);
+    capturaPainel(nome, w, 3); }
+  // ESCOLHER GRADE DESTE CANAL (M5): opcoes do canal -> lista de grades.
+  focoFontes = 0;
+  fopCanalAbrir(&canais[0]); fopFoco = 1; fopCanalOk(); fopFoco = 2;
+  snprintf(nome, sizeof nome, "%s-grade-manual.bmp", saida);
+  capturaTela(nome, w, 1);
+  fopAberto = 0;
   focoLin = 0; focoCol = 1; rolL = 0.0f; focoAnelOk = 0;
-  focoTopo = 1; topoCol = G_TOPO_PREVIEW; animTopo[G_TOPO_PREVIEW] = 1.0f;
+  focoTopo = 1; topoCol = G_TOPO_OPCOES; animTopo[G_TOPO_OPCOES] = 1.0f;
   snprintf(nome, sizeof nome, "%s-lista-topo.bmp", saida);
   capturaTela(nome, w, 1);
-  focoTopo = 0; animTopo[G_TOPO_PREVIEW] = 0.0f;
+  focoTopo = 0; animTopo[G_TOPO_OPCOES] = 0.0f;
 
   // Barra de cima, cada botao em foco (W18): NUVIO_SHOT_TOPO=1; tema/material
   // pelo ambiente (NUVIO_SHOT_TEMA = selected_theme, NUVIO_SHOT_SOLIDO).
   if (getenv("NUVIO_SHOT_TOPO")) {
     int k;
-    for (k = 0; k < G_TOPO_N; k++) {
+    for (k = 0; k < G_TOPO_PRIMARIOS; k++) {
       int j;
       for (j = 0; j < G_TOPO_N; j++) animTopo[j] = 0.0f;
       focoTopo = 1; topoCol = k; animTopo[k] = 1.0f; focoAnelOk = 0;
@@ -446,13 +590,14 @@ int main(int argc, char **argv) {
       "Canais Reality Shows", "Canais Recordtv", "Canais Religiosos",
       "Canais Series 24h Maratonas Sem Fim", "Canais Sportv", "Canais Telecine",
       "Canais Variedades", "Disney+", "HBO", "Premiere" };
-    int k, nc = (int)(sizeof NC / sizeof NC[0]);
-    for (k = 0; k < nc; k++) {
-      snprintf(cats[k], sizeof cats[k], "%s", NC[k]);
-      catIni[k] = k * 2 > 6 ? 6 : k * 2; catN[k] = k % 3 == 0 ? 117 : 4 + k;
-    }
-    // So o painel le catN; a grade nao e desenhada com foco nela.
-    nCats = nc; }
+    static ShotCanal V[1200];
+    int k, j, n = 0, nc = (int)(sizeof NC / sizeof NC[0]);
+    for (k = 0; k < nc; k++)
+      for (j = 0; j < (k % 3 == 0 ? 117 : 4 + k) && n < 1200; j++) {
+        V[n].fonte = "FrostView"; V[n].grupo = NC[k]; V[n].nome = "Canal";
+        V[n].logo = "tests/fixtures/logos/recortado.png"; V[n].desc = NULL; V[n].numero = n + 1; n++;
+      }
+    semearCanais(V, n); }
   modoLista = 1; focoLin = 0; focoCol = 0; focoAnelOk = 0;
   catAberto = 2; catFoco = 14; catAnim = 1.0f;
   { float areaH = G_CAT_BASE - G_CAT_TOPO;
@@ -471,7 +616,7 @@ int main(int argc, char **argv) {
   capturaTela(nome, w, 1);
   catAberto = 0; catAnim = 0.0f; focoLin = 0;
 
-  nCanais = 0; nCats = 0; nFontes = 0; fontesOk = 1; estado = G_FALHOU;
+  stagingZerar(); adotarStaging(); nFontes = 0; fontesOk = 1; estado = G_FALHOU;
   falhas = 0;
   snprintf(nome, sizeof nome, "%s-tela-vazia.bmp", saida);
   capturaTela(nome, w, 0);

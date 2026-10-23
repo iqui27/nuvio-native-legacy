@@ -3,6 +3,7 @@
 // regras do cartao por tecla; depois a previa em varios momentos das tres
 // cenas, a pagina "Apoie o projeto", ingles e animacoes reduzidas.
 #include "novidades201.h"
+#include "nvtmp.h"
 #include "apoio.h"
 #include "dados.h"
 #include "ajustes.h"
@@ -219,7 +220,7 @@ static void cabeEmTodos(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-novidades201";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-novidades201");
   const char *dir = getenv("NUVIO_DADOS");
   SDL_Window *w;
   SDL_GLContext gl;

@@ -1,4 +1,5 @@
-"""Deterministic fake Jellyfin 10.10 for tests/jellyfin.sh.
+"""Deterministic fake Jellyfin for tests/jellyfin.sh: 10.10 by default,
+/control/version?v=12.0.0 (or 10.7.5) switches how the query token is read.
 
 Serves under a reverse-proxy prefix (/jf) so base paths are exercised. Never
 prints headers, tokens, passwords or payloads. Control routes (/control/*)
@@ -17,7 +18,12 @@ USER_ID = "aa11bb22cc33dd44ee55ff6677889900"
 LIB_MOVIES = "1111aaaa2222bbbb3333cccc4444dddd"
 LIB_SHOWS = "5555eeee6666ffff7777aaaa8888bbbb"
 LIB_MUSIC = "9999cccc0000dddd1111eeee2222ffff"
+# AIOMetadata-style server: one view per catalog, mixed collection types (#468).
+CATALOG_VIEWS = [{"Name": "Catalog %d" % i, "Id": "%032x" % (0xca7a1000 + i),
+                  "CollectionType": ["movies", "tvshows", "boxsets", ""][i % 4]} for i in range(9)] + [
+    {"Name": "Playlists", "Id": "%032x" % 0xca7a1fff, "CollectionType": "playlists"}]
 SERIES = "abcdef0123456789abcdef0123456789"
+SERIES2 = "5e1e5e1e5e1e5e1e5e1e5e1e5e1e5e1e"     # IMDb + TVDB: matched
 PASSWORD = "pässwörd \"quoted\""
 
 lock = threading.Lock()
@@ -27,7 +33,19 @@ state = {
     "polls": 0,
     "slow": 0.0,
     "secret": "QcSecret0123456789",
+    "version": "10.10.3",
+    "extra": [],            # movies added after the first index pass
+    "gone": set(),          # movie numbers deleted on the server
+    "index_calls": [],      # (StartIndex, Limit, MinDateLastSaved) of index requests
+    "episode_index": 0,
 }
+
+
+def ver_tuple():
+    try:
+        return tuple(int(x) for x in state["version"].split(".")[:2])
+    except ValueError:
+        return (0, 0)
 
 
 def movie_id(i):
@@ -38,9 +56,23 @@ def episode_id(s, e):
     return "%032x" % (0xE9000000 + s * 100 + e)
 
 
+def saved(i):
+    return "2026-09-01T%02d:%02d:00.0000000Z" % (i // 60, i % 60)
+
+
+def ids(i):
+    # 0..4 have no external id (home videos); 5..49 IMDb+TMDB; 50..59 TMDB only.
+    if i < 5:
+        return {}
+    if i < 50:
+        return {"Imdb": "tt%07d" % (1000 + i), "Tmdb": str(5000 + i)}
+    return {"Tmdb": str(5000 + i)}
+
+
 def movie(i):
     mid = movie_id(i)
     return {
+        "ProviderIds": ids(i), "DateLastSaved": saved(i), "Height": 2160 if i == 7 else 1080,
         "Name": "Movie %02d" % i,
         "Id": mid,
         "ServerId": SERVER_ID,
@@ -95,6 +127,18 @@ class Handler(BaseHTTPRequestHandler):
         with lock:
             return tok in state["tokens"]
 
+    def query_token(self, q):
+        """Token from the query, the way each server version reads it.
+
+        12.0 turned legacy auth off: "api_key" is ignored there. 10.8+ reads
+        "ApiKey"; older servers only "api_key"."""
+        v = ver_tuple()
+        if "ApiKey" in q and v >= (10, 8):
+            return q["ApiKey"][0]
+        if "api_key" in q and v < (12, 0):
+            return q["api_key"][0]
+        return None
+
     def body(self):
         n = int(self.headers.get("Content-Length", "0") or 0)
         return json.loads(self.rfile.read(n) or b"{}") if n else {}
@@ -111,7 +155,7 @@ class Handler(BaseHTTPRequestHandler):
         dev, tok = self.auth()
         if p == "/System/Info/Public" and method == "GET":
             return self.reply(200, {"LocalAddress": "http://10.0.0.2:8096", "ServerName": "Home Server",
-                                    "Version": "10.10.3", "ProductName": "Jellyfin Server",
+                                    "Version": state["version"], "ProductName": "Jellyfin Server",
                                     "Id": SERVER_ID, "StartupWizardCompleted": True})
         if p == "/QuickConnect/Enabled" and method == "GET":
             return self.reply(200, raw=b"true")
@@ -151,6 +195,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {"User": {"Name": "ana", "Id": USER_ID, "ServerId": SERVER_ID,
                                              "Policy": {"Id": "nested-should-not-win"}},
                                     "AccessToken": "pwtoken0000000000000000000000002", "ServerId": SERVER_ID})
+        m = re.match(r"^/(?:Videos|videos)/([0-9a-f]{32})/(stream|master\.m3u8)$", p)
+        if m and method == "GET":
+            qt = self.query_token(q)
+            with lock:
+                ok = tok in state["tokens"] or qt in state["tokens"]
+                state["events"].append({"op": "media", "ok": ok, "route": m.group(2)})
+            return self.reply(200 if ok else 401, {"media": m.group(2)})
         if not self.authed():
             return self.reply(401)
         if p == "/Sessions/Logout" and method == "POST":
@@ -164,19 +215,48 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {"Items": [
                 {"Name": "Movies", "Id": LIB_MOVIES, "CollectionType": "movies"},
                 {"Name": "Shows", "Id": LIB_SHOWS, "CollectionType": "tvshows"},
-                {"Name": "Music", "Id": LIB_MUSIC, "CollectionType": "music"}],
-                "TotalRecordCount": 3})
+                {"Name": "Music", "Id": LIB_MUSIC, "CollectionType": "music"}] + CATALOG_VIEWS,
+                "TotalRecordCount": 3 + len(CATALOG_VIEWS)})
+        if p == "/Playlists/00000000000000000000000000005002/Items":
+            items = [dict(Id=episode_id(1, 2), Type="Episode", SeriesId=SERIES,
+                          SeriesName="Show", Name="Second", ParentIndexNumber=1, IndexNumber=2),
+                     dict(Id="abcd", Type="Audio"), movie(7)]
+            start = int(q.get("StartIndex", ["0"])[0])
+            limit = int(q.get("Limit", ["60"])[0])
+            return self.reply(200, {"Items": items[start:start + limit], "TotalRecordCount": 3})
+        if p == "/Playlists/00000000000000000000000000005001/Items":
+            return self.reply(200, {"Items": [movie(7)], "TotalRecordCount": 1})
         if p == "/Items" and method == "GET":
+            kind = q.get("IncludeItemTypes", [""])[0]
+            if kind in ("BoxSet", "Playlist"):
+                items = [{"Id": "00000000000000000000000000004001" if kind == "BoxSet" else "00000000000000000000000000005001",
+                          "Type": kind, "Name": "Fixture collection"}]
+                return self.reply(200, {"Items": items[int(q.get("StartIndex", ["0"])[0]):], "TotalRecordCount": 1})
             parent = q.get("ParentId", [""])[0]
             start = int(q.get("StartIndex", ["0"])[0])
             limit = int(q.get("Limit", ["100"])[0])
-            if parent == LIB_MOVIES:
-                allitems = [movie(i) for i in range(60)]
+            shows = [{"Name": "Show", "Id": SERIES, "Type": "Series", "ProductionYear": 2019,
+                      "ImageTags": {"Primary": "sp"}, "BackdropImageTags": [],
+                      "UserData": {"PlayedPercentage": 0}, "DateLastSaved": saved(100)},
+                     {"Name": "The Matched Show", "Id": SERIES2, "Type": "Series", "ProductionYear": 2021,
+                      "ProviderIds": {"IMDB": "tt0900001", "Tvdb": "999"}, "DateLastSaved": saved(101),
+                      "ImageTags": {"Primary": "s2"}, "UserData": {"PlayedPercentage": 0}}]
+            with lock:
+                movies = [movie(i) for i in range(60) if i not in state["gone"]] + list(state["extra"])
+            if parent == "00000000000000000000000000004001":
+                allitems = [movie(7)]
+            elif parent == LIB_MOVIES:
+                allitems = movies
             elif parent == LIB_SHOWS:
-                allitems = [{"Name": "Show", "Id": SERIES, "Type": "Series", "ProductionYear": 2019,
-                             "ImageTags": {"Primary": "sp"}, "BackdropImageTags": [],
-                             "UserData": {"PlayedPercentage": 0}},
-                            {"Name": "Ignored episode", "Id": episode_id(1, 1), "Type": "Episode"}]
+                allitems = shows + [{"Name": "Ignored episode", "Id": episode_id(1, 1), "Type": "Episode"}]
+            elif not parent and q.get("Recursive", [""])[0] == "true":
+                # The matching index: every movie and series of the user.
+                since = q.get("MinDateLastSaved", [""])[0]
+                allitems = movies + shows
+                if since:
+                    allitems = [x for x in allitems if x.get("DateLastSaved", "")[:19] >= since[:19]]
+                with lock:
+                    state["index_calls"].append([start, limit, since])
             else:
                 allitems = []
             return self.reply(200, {"Items": allitems[start:start + limit], "TotalRecordCount": len(allitems),
@@ -200,10 +280,14 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/Shows/([0-9a-f]{32})/Episodes$", p)
         if m:
             eps = []
+            if "ProviderIds" in q.get("Fields", [""])[0]:
+                with lock:
+                    state["episode_index"] += 1
             for s in (1, 2):
                 for e in (1, 2, 3):
                     eps.append({"Name": "S%dE%d" % (s, e), "Id": episode_id(s, e), "Type": "Episode",
                                 "ParentIndexNumber": s, "IndexNumber": e, "RunTimeTicks": 26400000000,
+                                "SeriesId": m.group(1),
                                 "PremiereDate": "2019-0%d-1%dT00:00:00.0000000Z" % (s, e),
                                 "Overview": "ep", "ImageTags": {"Primary": "et"}})
             return self.reply(200, {"Items": eps, "TotalRecordCount": len(eps)})
@@ -229,7 +313,9 @@ class Handler(BaseHTTPRequestHandler):
                                   {"Codec": "eac3", "Type": "Audio", "Channels": 6}]},
                 {"Protocol": "File", "Id": "%032x" % 77, "Container": "avi", "Name": "Film - old",
                  "SupportsDirectPlay": False, "SupportsDirectStream": False, "SupportsTranscoding": True,
-                 "TranscodingUrl": "/videos/%s/master.m3u8?MediaSourceId=%032x&PlaySessionId=ps0001" % (iid, 77),
+                 # 10.x servers embed the legacy name; 12.x embeds no token here.
+                 "TranscodingUrl": "/videos/%s/master.m3u8?MediaSourceId=%032x&PlaySessionId=ps0001%s" % (
+                     iid, 77, "" if ver_tuple() >= (12, 0) else "&api_key=" + (tok or "")),
                  "TranscodingSubProtocol": "hls",
                  "MediaStreams": [{"Codec": "mpeg4", "Type": "Video", "Height": 480},
                                   {"Codec": "mp3", "Type": "Audio", "Channels": 2}]}]})
@@ -255,6 +341,23 @@ class Handler(BaseHTTPRequestHandler):
                 body = b"{}"
             elif p == "/control/revoke":
                 state["tokens"].clear()
+                body = b"{}"
+            elif p == "/control/index":
+                body = json.dumps({"calls": state["index_calls"], "episodes": state["episode_index"]}).encode()
+                state["index_calls"] = []
+                state["episode_index"] = 0
+            elif p == "/control/add":
+                i = int(q.get("n", ["70"])[0])
+                m = movie(i)
+                m["DateLastSaved"] = "2026-09-30T00:00:00.0000000Z"
+                m["ProviderIds"] = {"Imdb": "tt%07d" % (1000 + i)}
+                state["extra"].append(m)
+                body = b"{}"
+            elif p == "/control/delete":
+                state["gone"].add(int(q.get("n", ["5"])[0]))
+                body = b"{}"
+            elif p == "/control/version":
+                state["version"] = q.get("v", ["10.10.3"])[0]
                 body = b"{}"
             elif p == "/control/slow":
                 state["slow"] = float(q.get("s", ["4"])[0])

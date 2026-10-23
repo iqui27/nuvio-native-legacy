@@ -3,7 +3,9 @@
 #include "horafmt.h"
 #include "socialvis.h"
 #include "catalogo.h"
+#include "artemetahub.h"
 #include "recomenda.h"
+#include "perfis.h"
 #include "dados.h"
 #include "idioma.h"
 #include <SDL2/SDL.h>
@@ -49,7 +51,13 @@ static int temGeracao;
 // sem hora (ver socialvis.h). A assinatura e o titulo + acao + episodio do
 // evento mais novo da pessoa; mudou, e novidade. Fica em amigos-vistos.txt
 // (uma linha "id\tassinatura"), gravado so quando muda.
-#define SV_ARQ_VISTOS "amigos-vistos.txt"
+static const char *arquivoVistos(void) {
+  static char nome[48];
+  if (perfis_ativo() == 1) return "amigos-vistos.txt";
+  snprintf(nome, sizeof nome, "amigos-vistos-p%d.txt", perfis_ativo());
+  return nome;
+}
+#define SV_ARQ_VISTOS arquivoVistos()
 typedef struct { char id[96]; unsigned ass; } SvVisto;
 static SvVisto vistos[SV_AMIGOS_MAX * 2];
 static int nVistos, vistosLidos;
@@ -600,6 +608,42 @@ static void agrupar(void) {
   ordenar(amigos, nAmigos, sizeof *amigos, ordemAmigo);
 }
 
+// The unified feed can contain more titles than discovery's social batch.
+// Seed those titles together so Friends focus has a catalog item for the hero.
+// This performs no network I/O: the shared image resolver owns throttling,
+// fallback and negative caching, just as it does for other catalog rows.
+static void completarArteFeed(void) {
+  CatItem *novos = NULL;
+  int nNovos = 0;
+  for (int i = 0; i < nBrutos; i++) {
+    SvEvento *e = &brutos[i];
+    int k = cat_indice_por_imdb(e->imdb);
+    const CatItem *it = k >= 0 ? cat_item(k) : NULL;
+    if (!it) {
+      for (int j = 0; j < nNovos; j++)
+        if (!strcmp(novos[j].imdb, e->imdb)) { it = &novos[j]; break; }
+    }
+    if (!it && !strncmp(e->imdb, "tt", 2)) {
+      if (!novos) novos = calloc((size_t)nBrutos, sizeof *novos);
+      if (!novos) break;
+      CatItem *d = &novos[nNovos++];
+      snprintf(d->imdb, sizeof d->imdb, "%s", e->imdb);
+      snprintf(d->tipo, sizeof d->tipo, "%s", e->tipo);
+      snprintf(d->titulo, sizeof d->titulo, "%s", e->titulo);
+      snprintf(d->poster, sizeof d->poster, "%s", e->poster);
+      snprintf(d->backdrop, sizeof d->backdrop, "%s", e->arte);
+      arte_metahub_preencher(d);
+      it = d;
+    }
+    if (it) {
+      if (!e->poster[0]) snprintf(e->poster, sizeof e->poster, "%s", it->poster);
+      if (!e->arte[0]) snprintf(e->arte, sizeof e->arte, "%s", it->backdrop);
+    }
+  }
+  if (nNovos) cat_acrescentar_lote(novos, nNovos, NULL);
+  free(novos);
+}
+
 static void refazer(void) {
   unsigned h;
   if (temExterno) {
@@ -611,6 +655,7 @@ static void refazer(void) {
     if (n >= 0) { nBrutos = n; nCtts = recomenda_contatos(ctts, REC_CONTATOS_MAX); dasRecomendacoes(); }
     else svDoQueExiste();
   }
+  completarArteFeed();
   agrupar();
   h = fnv(2166136261u, amigos, sizeof *amigos * (size_t)nAmigos);
   h = fnv(h, feed, sizeof *feed * (size_t)nFeed);
@@ -622,11 +667,10 @@ static void refazer(void) {
 static void conferirIdentidade(void) {
   unsigned g = recomenda_geracao();
   if (temGeracao && g != geracaoVista) {
-    dados_apagar(SV_ARQ_VISTOS); // Also close any race with the final old-account UI frame.
     free(externo); externo = NULL; nExterno = temExterno = 0;
     free(extras); extras = NULL; nExtras = 0;
     nBrutos = nFeed = nAmigos = nCtts = nVistos = 0;
-    memset(vistos, 0, sizeof vistos); vistosLidos = 1;
+    memset(vistos, 0, sizeof vistos); vistosLidos = 0;
     perfilPedido[0] = 0;
     catRevUlt = ~0u; recNUlt = -1; hashUlt = 0; refeitoEm = 0;
     rev++;

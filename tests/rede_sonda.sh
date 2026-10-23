@@ -50,7 +50,7 @@ srv=$!
 for i in $(seq 50); do [ -s "$tmp/porta" ] && break; sleep 0.1; done
 flags=(-O1 -g -Wall -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
        -ffunction-sections -fdata-sections -Wl,-dead_strip -Wno-deprecated-declarations -pthread)
-if [ "${NV_SANITIZERS:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
+if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc "${flags[@]}" tests/rede_sonda.c src/rede.c src/redeurl.c src/streams.c src/naovideo.c -o "$tmp/teste"
 "$tmp/teste" "http://127.0.0.1:$(cat "$tmp/porta")"
 cc "${flags[@]}" -D__EMSCRIPTEN__ tests/streams_sonda_wgt.c src/streams.c src/naovideo.c -o "$tmp/wgt"

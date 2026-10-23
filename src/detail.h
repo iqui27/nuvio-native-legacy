@@ -10,6 +10,8 @@
 #include "home.h"
 
 void detail_abrir(const HomeItem *item);
+int  detail_arte_titulo(const CatItem *titulo, char *saida, size_t tam, int *poster);
+void partirMeta(const char *meta, char *ano, size_t na, char *resto, size_t nr);
 // Abre a FILMOGRAFIA de uma pessoa por cima da pagina ja aberta (o mesmo painel
 // do OK num rosto do elenco). Para o Spotlight: a pessoa achada no elenco de um
 // titulo abre a pagina dele e o painel dela na mesma tecla. Sem pagina aberta
@@ -24,6 +26,9 @@ void detail_fechar_seco(void);
 int  detail_relogio_oculto(void);  // 1 no carrossel de titulos (cartao com vizinhos), ainda sem esticar: a ilha do relogio some
 int  detail_pediu_social(void);   // sempre 0 desde #407 (CIMA no topo nao abre Salvos/Avisos; AZUL/CH+ abre)
 int  detail_pediu_menu(void);   // 1 uma vez: ESQUERDA na borda pediu o menu lateral (a pagina NAO fecha; Voltar e quem sai)
+int  detail_pediu_relogio(void);      // CIMA no hero pediu a ilha do relogio, uma vez
+const char *detail_transicao(void);   // "sobe", "desce" ou "-" ([quadro])
+int  detail_relogio_navegavel(void);  // 1 quando a ilha do relogio pode receber foco agora
 // app.c, a cada quadro: 1 enquanto a barra lateral esta aberta POR CIMA da
 // pagina. O trailer do fundo fica mudo (sem fechar) e recupera o som depois.
 void detail_sob_menu(int sim);
@@ -65,6 +70,7 @@ int  detail_pediu_assistido(void);
 int  detail_pediu_amigos(char *imdb, size_t tam); // OK na ilha de amigos: o imdb do titulo, uma vez
 int  detail_pediu_marcar(void);       // botao "+"
 int  detail_pediu_fontes(void);       // OK segurado, ou o botao "..."
+int  detail_pediu_fontes_ep(int *temporada, int *episodio);   // o episodio preso ao pedido, se havia um
 int  detail_pediu_explorar(void);     // circular "Explorar": abrir a toca (explorar.h) neste titulo, uma vez
 // Botao secundario "Reproduzir desde o inicio", que so existe quando ha
 // progresso. Hoje ele tambem marca `detail_pediu_reproduzir`, porque o roteador
@@ -84,6 +90,7 @@ int  detail_pediu_do_inicio(void);
 // logo centralizado no topo (isso era do app da Apple TV). As secoes ficam em
 // coordenadas ABSOLUTAS de documento, e rolar e so subtrair scrollY.
 #define NV_DETP_X             96.0f   // gutter das fileiras (--tv-safe-gutter-wide)
+#define NV_DETP_ESP  ((float)(ajustes_det_espaco() - 1))   // -1, 0, +1
 // Fim do documento rolavel. NAO e onde o elenco termina (2024): e o que o web
 // tem de altura rolavel, porque abaixo do elenco ele ainda monta as secoes de
 // comentarios e de produtoras, que este port nao tem.

@@ -146,7 +146,7 @@ const char *rede_url_log(const char *url, char *dst, unsigned tam) {
   dst[0] = 0;
   if (!url || !*url) return dst;
 #define RL_POE(s, k) do { unsigned _k = (unsigned)(k); \
-    if (_k > tam - 1 - n) _k = tam - 1 - n; memcpy(dst + n, (s), _k); n += _k; dst[n] = 0; } while (0)
+    if (_k > tam - 1 - n) { _k = tam - 1 - n; } memcpy(dst + n, (s), _k); n += _k; dst[n] = 0; } while (0)
   e = strstr(url, "://");
   if (!e) { snprintf(dst, tam, "%s", url); return dst; }
   h = e + 3;

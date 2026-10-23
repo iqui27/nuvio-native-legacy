@@ -1,8 +1,10 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Local HTTP/TLS fixtures; no SDL and no external network.
 set -eu
 cd "$(dirname "$0")/.."
-DTS_RANGE_DIR=$(mktemp -d /tmp/nuvio-dts-range.XXXXXX)
+DTS_RANGE_DIR=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-dts-range.XXXXXX)
 DTS_RANGE_SERVER_PID=''
 trap 'if [ -n "$DTS_RANGE_SERVER_PID" ]; then kill "$DTS_RANGE_SERVER_PID" 2>/dev/null || true; fi; rm -rf "$DTS_RANGE_DIR"' EXIT
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \

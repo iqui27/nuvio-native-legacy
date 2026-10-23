@@ -28,8 +28,13 @@
 // (intro_definir_buscador) por um que serve as respostas GRAVADAS de
 // tests/fixtures. Os dois simbolos abaixo so existem para linkar.
 #include "../src/rede.h"
-static char dadosTeste[]="/tmp/nuvio-intro-XXXXXX";
+#include "nvtmp.h"
+static char dadosTeste[NVT_MAX];
 const char *dados_dir(void){return dadosTeste;}
+char *dados_caminho(char *dst,unsigned cap,const char *nome) {
+  if(!dadosTeste[0] || !nome || !nome[0])return NULL;
+  snprintf(dst,cap,"%s/%s",dadosTeste,nome);return dst;
+}
 void dados_fs_travar(void){}
 void dados_fs_liberar(void){}
 void dados_marcar_sujo(int leve){(void)leve;}
@@ -83,20 +88,52 @@ static double credFinal(const IntroTrecho *v, int n) {
 
 // O BUSCADOR FALSO: cada URL vira uma fixture ou um status. Guarda a ultima URL.
 static pthread_mutex_t fakeTrava = PTHREAD_MUTEX_INITIALIZER;
-static char ultimaUrl[400], ultimaAni[400];
+static char ultimaUrl[400], ultimaAni[400], ultimaBackup[400];
 static int fakeStatus500;
-static int mapPedidos, aniPedidos, dbPedidos, mapFora;
+static int mapPedidos, aniPedidos, dbPedidos, mapFora, backupPedidos;
+static int backupErro,backupBloquear,backupEntrou,backupLiberar;
+static pthread_cond_t backupCond=PTHREAD_COND_INITIALIZER;
 static int fakeBuscar(const char *url, char **corpo, int *status) {
   const char *arq = NULL;
   pthread_mutex_lock(&fakeTrava);
-  snprintf(ultimaUrl, sizeof ultimaUrl, "%s", url);
+  if(strstr(url,"api.theintrodb.org"))snprintf(ultimaUrl, sizeof ultimaUrl, "%s", url);
   pthread_mutex_unlock(&fakeTrava);
   *corpo = NULL;
   pthread_mutex_lock(&fakeTrava);
   if (strstr(url, "Fribb/anime-lists")) mapPedidos++;
   if (strstr(url, "api.aniskip.com")) { aniPedidos++; snprintf(ultimaAni, sizeof ultimaAni, "%s", url); }
   if (strstr(url, "api.theintrodb.org")) dbPedidos++;
+  if (strstr(url, "api.introdb.app")) {backupPedidos++;snprintf(ultimaBackup,sizeof ultimaBackup,"%s",url);}
   pthread_mutex_unlock(&fakeTrava);
+  // Casos de integracao do backup, isolados das fixtures antigas.
+  if(strstr(url,"tt990000")||strstr(url,"tmdb_id=9900001")){
+    int backup=strstr(url,"api.introdb.app")!=NULL;
+    if(backup){
+      pthread_mutex_lock(&fakeTrava);
+      if(backupBloquear){backupEntrou=1;pthread_cond_broadcast(&backupCond);
+        while(!backupLiberar)pthread_cond_wait(&backupCond,&fakeTrava);}
+      int erro=backupErro;pthread_mutex_unlock(&fakeTrava);
+      if(erro==500){*status=500;return 500;}
+      char id[24]="";const char *p=strstr(url,"imdb_id=");assert(p);
+      sscanf(p+8,"%23[^&]",id);
+      char b[1024];snprintf(b,sizeof b,
+        "{\"imdb_id\":\"%s\",\"media_type\":\"tv\",\"is_movie\":false,\"season\":1,\"episode\":2,"
+        "\"intro\":{\"start_sec\":20,\"end_sec\":80},\"recap\":{\"start_ms\":0,\"end_ms\":8000},"
+        "\"outro\":{\"start_sec\":2900,\"end_sec\":2960}}",erro==200?"tt0000000":id);
+      *corpo=strdup(b);*status=200;return 200;
+    }
+    if(strstr(url,"tt9900002")){*status=404;return 404;}
+    if(strstr(url,"tt9900003")){
+      *corpo=strdup("{\"season\":1,\"episode\":2,\"intro\":[{\"start_ms\":10000,\"end_ms\":70000}],"
+        "\"recap\":[{\"start_ms\":0,\"end_ms\":8000}],\"credits\":[{\"start_ms\":2900000,\"end_ms\":2960000}]}");
+    }else{
+      *corpo=strdup(strstr(url,"tmdb_id=9900001")?
+        "{\"season\":4,\"episode\":92,\"intro\":[{\"start_ms\":10000,\"end_ms\":70000}]}":
+        "{\"season\":1,\"episode\":2,\"intro\":[{\"start_ms\":10000,\"end_ms\":70000}]}");
+    }
+    *status=200;return 200;
+  }
+  if(strstr(url,"api.introdb.app")){*status=404;return 404;}
   if (strstr(url, "Fribb/anime-lists")) {
     *status = mapFora ? 503 : 200;
     if (!mapFora) *corpo = strdup(
@@ -147,10 +184,79 @@ static int mesmoSeg(double a, double esperado) {
   return d < 0.001 && d > -0.001;
 }
 
+static void testarBackup(void){
+  IntroTrecho v[8];char url[256];int n,antes;
+  const char *j="{\"imdb_id\":\"tt0460681\",\"media_type\":\"tv\",\"is_movie\":false,\"season\":1,\"episode\":1,"
+    "\"intro\":{\"start_sec\":150,\"end_sec\":210},\"recap\":null,\"outro\":{\"start_ms\":2737000,\"end_ms\":2785000}}";
+  assert(intro_montar_url_backup(url,sizeof url,"tt0460681",1,1));
+  assert(!strcmp(url,"https://api.introdb.app/segments?imdb_id=tt0460681&season=1&episode=1"));
+  assert(intro_montar_url_backup(url,sizeof url,"tt0460681",0,1)&&strstr(url,"season=0&episode=1"));
+  assert(intro_montar_url_backup(url,sizeof url,"tt1375666",0,0)&&strstr(url,"is_movie=true"));
+  assert(!intro_montar_url_backup(url,sizeof url,"tt123&season=9",1,1)&&!url[0]);
+  assert(!intro_montar_url_backup(url,8,"tt0460681",1,1)&&!url[0]);
+  assert(!intro_montar_url_backup(url,sizeof url,"tmdb:123",1,1));
+  n=intro_extrair_backup(j,"tt0460681",1,1,v,8);
+  assert(n==2&&v[0].inicio==150&&v[0].fim==210&&v[1].inicio==2737&&v[1].fim==2785);
+  assert(intro_extrair_backup(j,"tt0460681",1,2,v,8)==-1);
+  assert(intro_extrair_backup(j,"tt0000000",1,1,v,8)==-1);
+  assert(intro_extrair_backup(j,"tt0460681",0,0,v,8)==-1);
+  assert(intro_extrair_backup("{\"imdb_id\":\"tt0460681\"","tt0460681",1,1,v,8)==-1);
+  const char *movie="{\"imdb_id\":\"tt1375666\",\"media_type\":\"movie\",\"is_movie\":true,"
+    "\"outro\":{\"start_sec\":8000,\"end_sec\":8500},\"post_credits\":{\"start_sec\":8300,\"end_sec\":8400}}";
+  assert(intro_extrair_backup(movie,"tt1375666",0,0,v,8)==1&&v[0].fim==8300);
+  const char *invalid="{\"imdb_id\":\"tt0460681\",\"media_type\":\"tv\",\"is_movie\":false,\"season\":1,\"episode\":1,"
+    "\"intro\":{\"start_sec\":-1,\"end_sec\":20},\"recap\":{\"start_sec\":20,\"end_sec\":20},\"outro\":{\"start_sec\":2700,\"end_sec\":null}}";
+  assert(intro_extrair_backup(invalid,"tt0460681",1,1,v,8)==0);
+  puts("ok  IntroDB /segments: identidade, segundos/ms, especiais, intervalos e cena pos-creditos");
+
+  intro_definir_buscador(fakeBuscar);
+  intro_pedir_ids_mapeados("tt9900001",9900001,4,92,1,2,0,0);
+  assert(esperar(3)==3);n=intro_trechos(v,8);
+  assert(achar(v,n,INTRO_ABERTURA)->inicio==10); // prioridade do principal
+  assert(achar(v,n,INTRO_RESUMO)->fim==8&&achar(v,n,INTRO_CREDITOS)->fim==2960);
+  pthread_mutex_lock(&fakeTrava);
+  assert(strstr(ultimaUrl,"tmdb_id=9900001&season=4&episode=92"));
+  assert(strstr(ultimaBackup,"imdb_id=tt9900001&season=1&episode=2"));antes=backupPedidos;
+  pthread_mutex_unlock(&fakeTrava);
+  intro_definir_duracao(3000,0);usleep(200000);
+  pthread_mutex_lock(&fakeTrava);assert(backupPedidos==antes);pthread_mutex_unlock(&fakeTrava);
+  assert(intro_creditos_limitados(v,8)==1&&v[0].fim==2960);
+  double fim;int tipo;
+  assert(intro_auto_ativo(2910,&fim,&tipo)&&tipo==INTRO_CREDITOS&&fim==2960);
+  assert(intro_auto_pular(tipo,fim,3000,0,0,1));
+  IntroTrecho cap={30,90,INTRO_ABERTURA,0};intro_definir_capitulos(&cap,1);
+  n=intro_trechos(v,8);assert(achar(v,n,INTRO_ABERTURA)->inicio==30);
+
+  intro_pedir_ids("tt9900002",0,1,2,0,0);assert(esperar(3)==3);
+  n=intro_trechos(v,8);assert(achar(v,n,INTRO_ABERTURA)->inicio==20);
+  intro_pedir_ids("tt9900003",0,1,2,0,0);assert(esperar(3)==3);usleep(100000);
+  pthread_mutex_lock(&fakeTrava);assert(backupPedidos==antes+1);backupErro=500;pthread_mutex_unlock(&fakeTrava);
+  intro_pedir_ids("tt9900004",0,1,2,0,0);assert(esperar(1)==1);usleep(100000);
+  pthread_mutex_lock(&fakeTrava);backupErro=0;pthread_mutex_unlock(&fakeTrava);
+  intro_pedir_ids("tt9900004",0,1,2,0,0);assert(esperar(3)==3);
+  pthread_mutex_lock(&fakeTrava);backupErro=200;pthread_mutex_unlock(&fakeTrava);
+  intro_pedir_ids("tt9900005",0,1,2,0,0);assert(esperar(1)==1);usleep(100000);
+  pthread_mutex_lock(&fakeTrava);backupErro=0;pthread_mutex_unlock(&fakeTrava);
+  intro_pedir_ids("tt9900005",0,1,2,0,0);assert(esperar(3)==3);
+  puts("ok  backup preenche tipos ausentes; principal/capitulos preservados; cache e falhas recuperaveis");
+
+  pthread_mutex_lock(&fakeTrava);backupBloquear=1;backupLiberar=backupEntrou=0;pthread_mutex_unlock(&fakeTrava);
+  intro_pedir_ids("tt9900006",0,1,2,0,0);
+  assert(esperar(1)==1); // principal ja disponivel durante GET do backup
+  pthread_mutex_lock(&fakeTrava);
+  while(!backupEntrou)pthread_cond_wait(&backupCond,&fakeTrava);
+  pthread_mutex_unlock(&fakeTrava);
+  intro_desligar();
+  pthread_mutex_lock(&fakeTrava);backupLiberar=1;pthread_cond_broadcast(&backupCond);pthread_mutex_unlock(&fakeTrava);
+  usleep(200000);assert(intro_trechos(v,8)==0);
+  pthread_mutex_lock(&fakeTrava);backupBloquear=0;pthread_mutex_unlock(&fakeTrava);
+  puts("ok  backup lento nao atrasa marcadores existentes nem publica depois de sair do video");
+}
+
 int main(int argc,char **argv) {
   IntroTrecho v[8];
   int n;
-  assert(mkdtemp(dadosTeste));
+  nvt_set(dadosTeste, sizeof dadosTeste, "/nuvio-intro-XXXXXX"); assert(mkdtemp(dadosTeste));
   if(argc==2){ // Medicao reproduzivel com captura real, sem buffer da lista.
     fribbFonte=argv[1];intro_definir_buscador(fakeBuscar);
     intro_registrar_tmdb("tt5607616",65942,"{\"genres\":[{\"id\":16}],\"original_language\":\"ja\"}");
@@ -187,6 +293,30 @@ int main(int argc,char **argv) {
     intro_desligar();
     puts("ok  lixo no buffer MKV nao muda a decisao dos creditos");
   }
+
+  // v4 OpenAPI: GET /media, movie-media example; no tmdb_id in the body.
+  n = intro_extrair("{\"tvdb_id\":169,\"type\":\"movie\","
+                    "\"intro\":[{\"start_ms\":null,\"end_ms\":23000}],"
+                    "\"recap\":[{\"start_ms\":25000,\"end_ms\":134000}],"
+                    "\"credits\":[{\"start_ms\":5801777,\"end_ms\":6371111},"
+                                   "{\"start_ms\":6408000,\"end_ms\":null}],"
+                    "\"preview\":[{\"start_ms\":1680000,\"end_ms\":1740000}]}", v, 8);
+  assert(n == 5);
+  assert(v[0].tipo == INTRO_ABERTURA && v[0].inicio == 0 && v[0].fim == 23);
+  assert(v[1].tipo == INTRO_RESUMO && v[1].inicio == 25 && v[1].fim == 134);
+  assert(v[2].tipo == INTRO_CREDITOS && mesmoSeg(v[2].inicio, 5801.777) && mesmoSeg(v[2].fim, 6371.111));
+  assert(v[3].tipo == INTRO_CREDITOS && v[3].inicio == 6408 && v[3].fim == 0);
+  assert(v[4].tipo == INTRO_PREVIA && v[4].inicio == 1680 && v[4].fim == 1740);
+  // v4 OpenAPI: episode-media example; coordinates stay in the caller's order.
+  { const char *j = "{\"tvdb_id\":71663,\"type\":\"tv\",\"season\":1,\"episode\":1,"
+                    "\"intro\":[{\"start_ms\":30000,\"end_ms\":90000},"
+                                "{\"start_ms\":120000,\"end_ms\":150000}]}";
+    assert(intro_resposta_confere(j, 1, 1));
+    assert(!intro_resposta_confere(j, 1, 2));
+    assert(intro_extrair(j, v, 8) == 2);
+    assert(v[0].tipo == INTRO_ABERTURA && v[0].inicio == 30 && v[0].fim == 90);
+    assert(v[1].tipo == INTRO_ABERTURA && v[1].inicio == 120 && v[1].fim == 150); }
+  puts("ok  v4 OpenAPI samples: TVDB identity, all segments, caller coordinates");
 
   // FILME: /v3/media?imdb_id=tt0111161 (Shawshank). So creditos, sem fim.
   memset(v, 0xa5, sizeof v);
@@ -419,9 +549,13 @@ int main(int argc,char **argv) {
   // --- 2.0.3: PEDIDOS (como o plugin oficial), FILME, PREVIA, ANISKIP --------
   { char url[400];
     intro_montar_url(url, sizeof url, "tt0388629", 37854, 4, 92, 1385.4);
-    assert(!strcmp(url, "https://api.theintrodb.org/v3/media?tmdb_id=37854&season=4&episode=92&duration_ms=1385400"));
+    assert(!strcmp(url, "https://api.theintrodb.org/v4/media?tmdb_id=37854&season=4&episode=92&duration_ms=1385400"));
     intro_montar_url(url, sizeof url, "tt1375666", 0, 0, 0, 0.0);
-    assert(!strcmp(url, "https://api.theintrodb.org/v3/media?imdb_id=tt1375666"));
+    assert(!strcmp(url, "https://api.theintrodb.org/v4/media?imdb_id=tt1375666"));
+    intro_montar_url(url, sizeof url, "tt12409194", 0, 0, 1, 1200.0);
+    assert(!strcmp(url, "https://api.theintrodb.org/v4/media?imdb_id=tt12409194&season=0&episode=1&duration_ms=1200000"));
+    assert(intro_resposta_confere("{\"season\":0,\"episode\":1}", 0, 1));
+    assert(!intro_resposta_confere("{\"season\":1,\"episode\":1}", 0, 1));
     intro_montar_url_aniskip(url, sizeof url, 21, 1, 1500.0);
     assert(strstr(url, "skip-times/21/1?types[]=op&types[]=ed&types[]=recap&episodeLength=1500"));
     puts("ok  URLs: tmdb_id + par do TMDB + duration_ms; imdb sozinho no filme; AniSkip");
@@ -483,6 +617,14 @@ int main(int argc,char **argv) {
     nt = esperar(2); nt = intro_trechos(t, 8);
     assert(nt == 2 && mesmoSeg(credFinal(t, nt), 1387.996));
     puts("ok  anime kitsu:12 -> MAL 21 -> AniSkip: abertura e ED");
+    // Especial sem um mapeamento MAL proprio nao herda os marcadores de E1 regular.
+    { int aniAntes;
+      pthread_mutex_lock(&fakeTrava); aniAntes = aniPedidos; pthread_mutex_unlock(&fakeTrava);
+      intro_pedir_ids("kitsu:12:1", 0, 0, 1, 0, 0);
+      assert(esperar(0) == 0);
+      pthread_mutex_lock(&fakeTrava); assert(aniPedidos == aniAntes); pthread_mutex_unlock(&fakeTrava);
+    }
+
     // #430: evidencia vem do TMDB ja baixado, antes ou depois do player.
     const char *anime = "{\"original_language\":\"ja\",\"genres\":[{\"id\":16}]}";
     intro_registrar_tmdb("tt5607616", 65942, anime);
@@ -707,5 +849,6 @@ int main(int argc,char **argv) {
     puts("ok  rebobinar nao pula de novo; nova reproducao zera");
   }
 
+  testarBackup();
   return 0;
 }

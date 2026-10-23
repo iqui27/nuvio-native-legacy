@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Compila e roda no Mac, com a mesma pasta de arte do pacote da TV.
 #
 # FICA LOGADO ENTRE EXECUCOES. A sessao mora em $NUVIO_DADOS, que aqui aponta
@@ -24,8 +26,12 @@ ENV_D=$(tools/env.sh)
 export NUVIO_DADOS="${NUVIO_DADOS:-$HOME/.nuvio}"
 # NUVIO_MAC_BIN: outro binario (a auditoria nao pisa no /tmp/nuvio-native-legacy-mac
 # de quem estiver rodando o app). NUVIO_MAC_SO_COMPILAR=1: compila e sai.
-BIN="${NUVIO_MAC_BIN:-/tmp/nuvio-native-legacy-mac}"
-eval cc src/*.c src/dts/*.c -o "$BIN" -O1 -g "$ENV_D" \
+BIN="${NUVIO_MAC_BIN:-${TMPDIR:-/tmp}/nuvio-native-legacy-mac}"
+# Nucleo EBML/NAL do mkv.c em Rust, ligado por padrao (docs/plans/rust-mapa.md);
+# NUVIO_RUST_MKVCORE=0 volta ao caminho C.
+RUST_D=()
+[ "${NUVIO_RUST_MKVCORE:-1}" = 1 ] && RUST_D=(-DNV_RUST_MKVCORE "$(tools/rust-mkvcore.sh)")
+eval cc src/*.c src/dts/*.c -o "$BIN" -O1 -g "$ENV_D" ${RUST_D[@]+'"${RUST_D[@]}"'} \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz \
   -framework OpenGL -Wno-deprecated-declarations

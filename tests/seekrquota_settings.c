@@ -3,6 +3,7 @@
 #define dados_gravar seekrTesteGravar
 #define dados_apagar seekrTesteApagar
 #include "../src/ajustes.c"
+#include "nvtmp.h"
 #undef dados_gravar
 #undef dados_apagar
 #include <assert.h>
@@ -36,7 +37,7 @@ int seekr_horario_local(long long t, char *saida, size_t n) {
   snprintf(saida, n, "%s", "19/05 21:00"); return 1;
 }
 int main(void) {
-  dados_iniciar("/tmp");
+  dados_iniciar(nvt(""));
   seekrCarregar();
   assert(!ajustes_seekr_habilitado() && !ajustes_seekr_ligado());
   assert(!efetiva[0]); // Mesmo um -D antigo nao pode restaurar a chave do pacote.

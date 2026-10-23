@@ -1,5 +1,6 @@
 // Colecoes da conta no shape do web -> ColFolder, e a chave de fileira por id.
 #include "../src/colecoes.h"
+#include "nvtmp.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -127,7 +128,7 @@ int main(void) {
   assert(!col_folder(2)->focusGif[0]);   // focusGifEnabled:false desliga
   puts("ok  focusGifUrl entra, campo ausente fica vazio, focusGifEnabled:false desliga");
   // pacote + conta com o mesmo id: fica a arte local, grupo/titulo da conta
-  { char dir[] = "/tmp/nuvio-col-XXXXXX"; char caminho[300]; FILE *f;
+  { char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-col-XXXXXX"); char caminho[300]; FILE *f;
     assert(mkdtemp(dir));
     snprintf(caminho, sizeof caminho, "%s/collections.json", dir); f = fopen(caminho, "w");
     fputs("{\"groups\":[{\"id\":\"c1\",\"title\":\"Streaming\",\"folders\":[{\"id\":\"f1\",\"title\":\"Netflix\",\"cover\":\"collections/f1/cover.jpg\",\"hero\":\"collections/f1/hero.jpg\",\"frames\":12,\"sources\":[{\"title\":\"Movies\",\"base\":\"https://addon/abc\",\"type\":\"movie\",\"catId\":\"nf_movies\"}]}]}]}", f); fclose(f);
@@ -141,7 +142,7 @@ int main(void) {
   // "ARTE DAS PASTAS DA CONTA": desligado e o pacote (acima); ligado, capa,
   // fundo e logo da conta vencem campo a campo, e desligar de novo devolve a
   // arte curada na hora (o casamento e refeito com a ultima resposta).
-  { char dir[] = "/tmp/nuvio-colarte-XXXXXX"; char caminho[300]; FILE *f;
+  { char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-colarte-XXXXXX"); char caminho[300]; FILE *f;
     const char *conta =
       "{\"collections\":[{\"id\":\"c1\",\"title\":\"S\",\"folders\":["
       "{\"id\":\"f1\",\"title\":\"Netflix\",\"coverImageUrl\":\"https://cdn/nf.webp\","
@@ -184,7 +185,7 @@ int main(void) {
   //   frames > 0  — ja anima pela sequencia curada; a URL da conta e ignorada.
   //   frames == 0 — nao ha animacao nenhuma; a URL entra, senao a pasta ficaria
   //                 parada tendo GIF disponivel.
-  { char dir[] = "/tmp/nuvio-colgif-XXXXXX"; char caminho[300]; FILE *f;
+  { char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-colgif-XXXXXX"); char caminho[300]; FILE *f;
     const char *conta =
       "{\"collections\":[{\"id\":\"c1\",\"title\":\"G\",\"folders\":["
       "{\"id\":\"comq\",\"title\":\"Com quadros\",\"focusGifUrl\":\"https://cdn/q.gif\","
@@ -251,7 +252,7 @@ int main(void) {
     puts("ok  tileShape da pasta vira a forma do cartao, na regra do web"); }
   // Empty account snapshots remove package rows too. A later nonempty profile
   // snapshot can still recover the curated artwork without reviving old rows.
-  { char dir[] = "/tmp/nuvio-col-perfil-XXXXXX", arq[700];
+  { char dir[NVT_MAX], arq[700]; nvt_set(dir, sizeof dir, "/nuvio-col-perfil-XXXXXX");
     FILE *f;
     int i, achou = 0;
     assert(mkdtemp(dir));

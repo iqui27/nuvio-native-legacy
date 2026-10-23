@@ -17,22 +17,34 @@
 // `raioPx` em pixels; `modal` = 1 deixa o miolo um degrau mais denso (.86),
 // como a ilha que vira modal.
 void plrui_material(GfxRect r, float raioPx, int modal, float a);
+// Same material; semSombra = 1 drops the drop shadow (Sources sheet).
+void plrui_material_s(GfxRect r, float raioPx, int modal, float a, int semSombra);
+// The title-page card material (shared glass, GFX_VIDRO_DENS): what the
+// "..." more menu draws, so it matches cast / trailers / comments cards.
+void plrui_cartao(GfxRect r, float raioPx, float a);
 // Superficie de FOCO de uma linha/celula: vidro branco 12%, solido #2B2D34
 // (com o filete claro de cima e a sombra do mockup).
 void plrui_linha_foco(GfxRect r, float raioPx, float a);
 // FOCO DE BOTAO: pilula cheia no acento com a luz colorida por baixo (o
 // box-shadow 0 8 28 acento 35% do mockup), nos dois materiais.
 void plrui_pilula_foco(GfxRect r, float a);
+// Video variant: live frame keeps shining through the focused accent pill.
+void plrui_pilula_foco_video(GfxRect r, float a);
+// Island over live video (post-play / error cards): the shared material where
+// glass exists; glass off keeps the opacity-adjustable tint, never #15161A.
+void plrui_material_video(GfxRect r, float raioPx, float a);
 // Botao em repouso dentro de uma ilha: branco 8% (solido #24262C).
 void plrui_botao_repouso(GfxRect r, float a);
-// Disco/pilula de botao do OSD em repouso: o material da ilha a 52%
-// (solido #15161A).
+// Video variant: glass off keeps the live frame visible through the fill.
+void plrui_botao_repouso_video(GfxRect r, float a);
+// OSD disc: shared glass at 52%; glass off uses an opacity-dependent tint.
 void plrui_disco_osd(GfxRect r, float a);
 
 // Botao de ilha (.btn do mockup: 60 de altura, 21/600, icone 22): devolve a
 // largura. `foco` 0..1 (mola). Desenha em (x, y).
 float plrui_botao_largura(const char *rotulo, const char *icone);
 float plrui_botao(float x, float y, const char *rotulo, const char *icone, float foco, float a);
+float plrui_botao_video(float x, float y, const char *rotulo, const char *icone, float foco, float a);
 
 // Kicker: 15/700 em caixa alta espacada, `cinza` 0..255 (115 = .45, 158 = .62).
 // Devolve a largura. x < 0 so mede.
@@ -41,13 +53,18 @@ float plrui_kicker(const char *s, float x, float y, int r, int g, int b, float a
 // DICAS DE TECLA (kbd + rotulo), lado a lado com vao de 22. `teclas` e
 // `rotulos` ja traduzidos pelo chamador? Nao: os dois passam por i18n aqui.
 // `alinhaDir` = 1 faz x ser a borda DIREITA. Devolve a largura total.
+// x < 0 measures only, using the same translated text and spacing.
 float plrui_dicas(const char *const *teclas, const char *const *rotulos, int n,
                   float x, float yc, int alinhaDir, float a);
+float plrui_dicas_video(const char *const *teclas, const char *const *rotulos, int n,
+                        float x, float yc, int alinhaDir, float a);
 
-// SEGMENTADO (.seg): trilho pilula branco 6% (solido #1D1E23), item
+// SEGMENTADO (.seg): shared frosted sheet track (solid #1D1E23), item
 // selecionado 14% (solido #34363E); `ed` = selecionado E em foco (cheio no
 // acento). `contagem[i]` < 0 = sem numero. Devolve a largura. x < 0 so mede.
-float plrui_seg(const char *const *rotulos, const int *contagem, int n, int sel, int ed,
+// `sel` e `ed` aceitam FRACOES: quem chama anima com mola e a pilula de foco
+// desliza entre os chips (sel) e esmaece ao entrar/sair do segmentado (ed).
+float plrui_seg(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
                 float x, float y, float a);
 
 // A BARRA DE PROGRESSO, a mesma em todo lugar (OSD, pausa, ao vivo, trailer):

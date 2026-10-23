@@ -10,7 +10,10 @@
 // Compilado com -DSMK_SCR_ESPACO_MS=0 -DSMK_SCR_ESPERA_MS=150 para a janela de
 // espera caber em milissegundos. STDOUT e capturado e o token nao pode aparecer.
 #include "../src/simkl.h"
+#include "nvtmp.h"
 #include "../src/traktscrobble.h"
+#include "../src/trakt.h"
+#include "stub_perfisessao.h"
 #include "../src/ajustes.h"
 #include "../src/rede.h"
 #include <assert.h>
@@ -21,6 +24,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <errno.h>
+#include <time.h>
 #include <sys/wait.h>
 
 static char disco[256];
@@ -83,6 +88,10 @@ void nuvem_url_escapar(const char *v, char *dst, unsigned tam) { snprintf(dst, t
 const char *i18n(const char *s) { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
 int trakt_enfeitar_lote(CatItem *saida, int n) { (void)saida; return n; }
+int trakt_enfeitar_lote_sessao(CatItem *saida, int n, uint64_t sessao) {
+  (void)saida; (void)n; (void)sessao;
+  abort(); // Scrobble/history scenarios never request catalog enrichment.
+}
 
 // ---------------------------------------------------------------- rede falsa
 
@@ -99,6 +108,13 @@ static int logoutNaEspera;
 
 // So simkl.c e compilado com usleep redirecionado: o logout ocorre exatamente
 // na espera entre POSTs, sem depender da velocidade do escalonador.
+static int esperarMicros(useconds_t us) {
+  struct timespec restante = { us / 1000000u, (long)(us % 1000000u) * 1000L };
+  while (nanosleep(&restante, &restante)) {
+    if (errno != EINTR) return -1;
+  }
+  return 0;
+}
 int simkl_teste_usleep(useconds_t us) {
   if (logoutNaEspera && us > 1000000) {
     if (logoutNaEspera != 2) { tokenAtual = ""; credGeracao++; }
@@ -106,7 +122,7 @@ int simkl_teste_usleep(useconds_t us) {
     logoutNaEspera = 0;
     return 0;
   }
-  return usleep(us);
+  return esperarMicros(us);
 }
 
 char *rede_postar_st(const char *url, int s, const char *const *cab,
@@ -219,6 +235,22 @@ static void episodio(void) {
   assert(!strcmp(ultimaRota, "/scrobble/pause"));
   assert(strstr(ultimoCorpo, "\"progress\":50.00"));
   OK("episodio: show+season/number, stop a 100% e pause ao sair no meio");
+}
+
+static void especial(void) {
+  simkl_esquecer(); tokenAtual = TOKEN; stScr = 200;
+  assert(mandar(SCR_EV_TOCANDO, "tt12409194:0:1", 60, 2400, 60, 0) == SCR_START);
+  assert(strstr(ultimoCorpo, "\"show\"") && strstr(ultimoCorpo, "\"season\":0"));
+  assert(!strstr(ultimoCorpo, "\"movie\""));
+  stScr = 500;
+  assert(mandar(SCR_EV_SAIU, "tt12409194:0:1", 2400, 2400, 2000, 1) == SCR_STOP);
+  assert(nHist == 1 && !strcmp(ultimaRota, "/sync/history"));
+  assert(strstr(ultimoCorpo, "\"shows\"") && strstr(ultimoCorpo, "\"number\":0"));
+  assert(!strstr(ultimoCorpo, "\"movies\""));
+  stScr = 200; simkl_esquecer();
+  assert(mandar(SCR_EV_TOCANDO, "tt12409194:0:0", 60, 2400, 60, 0) == SCR_NADA);
+  assert(mandar(SCR_EV_TOCANDO, "tt12409194:-1:1", 60, 2400, 60, 0) == SCR_NADA);
+  OK("#556: S00 e episodio no scrobble e no historico, nunca filme");
 }
 
 static void guardas(void) {
@@ -393,7 +425,22 @@ static void logoutDuranteEspera(void) {
   OK("P2: logout, geracao e credencial revalidados depois da espera");
 }
 
-static void redeLenta(void) { usleep(4000000); }
+static pthread_mutex_t redeLentaTrava = PTHREAD_MUTEX_INITIALIZER;
+static struct timespec saidaDesde;
+static void saidaDiagnostico(const char *etapa) {
+  struct timespec agora;
+  assert(!clock_gettime(CLOCK_MONOTONIC, &agora));
+  double ms = (agora.tv_sec - saidaDesde.tv_sec) * 1000.0 +
+              (agora.tv_nsec - saidaDesde.tv_nsec) / 1000000.0;
+  fprintf(stderr, "shutdown child: %s pid=%ld elapsed_ms=%.0f\n",
+          etapa, (long)getpid(), ms);
+  fflush(stderr);
+}
+static void redeLenta(void) {
+  saidaDiagnostico("callback pending");
+  pthread_mutex_lock(&redeLentaTrava);
+  pthread_mutex_unlock(&redeLentaTrava);
+}
 static void vistoSobreviveSaida(void) {
   pid_t filho = fork();
   int status, achou = 0;
@@ -401,14 +448,33 @@ static void vistoSobreviveSaida(void) {
   struct dirent *ent;
   assert(filho >= 0);
   if (!filho) {
+    // A resposta fica pendente ate _exit, sem disputar um prazo de sono.
+    // Se drenar deixar de ser limitado, o alarme faz a guarda do pai falhar.
+    assert(!clock_gettime(CLOCK_MONOTONIC, &saidaDesde));
+    saidaDiagnostico("started");
+    alarm(10);
+    pthread_mutex_lock(&redeLentaTrava);
+    saidaDiagnostico("gate held");
     tokenAtual = TOKEN;
     duranteScr = redeLenta;
     assert(simkl_scrobble(SCR_EV_SAIU, "tt7000003:2:4", 3000, 3000, 2800, 1) == SCR_STOP);
-    simkl_scrobble_drenar(3000);
+    saidaDiagnostico("stop enqueued; drain starting");
+    // A rede fica bloqueada ate _exit: uma drenagem curta prova a mesma saida
+    // pendente sem depender de 150 despertares dentro do prazo do alarme.
+    simkl_scrobble_drenar(100);
+    saidaDiagnostico("drain returned");
     assert(!simkl_scrobble_ocioso());
+    saidaDiagnostico("pending verified; exiting");
     _exit(0);   // o fio e morto ANTES da resposta e do fallback
   }
-  assert(waitpid(filho, &status, 0) == filho && WIFEXITED(status) && !WEXITSTATUS(status));
+  pid_t esperado;
+  do { esperado = waitpid(filho, &status, 0); } while (esperado < 0 && errno == EINTR);
+  int erro = esperado < 0 ? errno : 0;
+  fprintf(stderr, "shutdown wait: pid=%ld returned=%ld errno=%d status=0x%x exit=%d signal=%d\n",
+          (long)filho, (long)esperado, erro, esperado == filho ? status : 0,
+          esperado == filho && WIFEXITED(status) ? WEXITSTATUS(status) : -1,
+          esperado == filho && WIFSIGNALED(status) ? WTERMSIG(status) : 0);
+  assert(esperado == filho && WIFEXITED(status) && !WEXITSTATUS(status));
   d = opendir(disco); assert(d);
   while ((ent = readdir(d))) {
     char *buf;
@@ -502,7 +568,7 @@ static void fallbackNaoTrocaDePerfil(void) {
 }
 
 int main(int argc, char **argv) {
-  char caminho[] = "/tmp/nuvio-simkl-scr-XXXXXX";
+  char caminho[NVT_MAX]; nvt_set(caminho, sizeof caminho, "/nuvio-simkl-scr-XXXXXX");
   int fd = mkstemp(caminho), salvo = dup(1);
   FILE *f;
   char linha[512];
@@ -522,6 +588,7 @@ int main(int argc, char **argv) {
     semVinculo();
     filme();
     episodio();
+    especial();
     guardas();
     indevido();
     falhaNaoAutorizada();

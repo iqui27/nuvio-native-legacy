@@ -1,8 +1,11 @@
 // Sinais da ilha do relogio — ver ilhasinais.h.
 #include "ilhasinais.h"
+#include "dormiu.h"
+#include "diarionuvem.h"
 #include "ilha.h"
 #include "ilhasalvar.h"
 #include "listasescrita.h"
+#include "extplayer.h"
 #include "ilhacart.h"
 #include "avisodisp.h"
 #include "enquete.h"
@@ -30,10 +33,19 @@
 static int pediuTrakt;
 static int pedOpPend;
 static char pedPubPend[16];
+static uint64_t pedSessao;
 static int pediuAmigos;
+static RecContato amizadesBase[REC_CONTATOS_MAX];
+static int nAmizadesBase = -1;
+static Uint32 amizadesDesde, ultSonda;
+static int traktAvisado, debridDitos;
+static SyncEstado syncAntes = SYNC_PARADO;
+static Uint32 syncRodandoDesde;
+static int syncFalhaDita;
+static unsigned addonForaVisto;
 static void responderPedido(void);
 
-void ilhasinais_iniciar(void) { rede_avisar_saude(rede_saude_nota); rede_avisar_host(rede_hosts_nota); }
+void ilhasinais_iniciar(void) { rede_avisar_saude(rede_saude_nota_desde); rede_avisar_host(rede_hosts_nota); }
 
 int ilhasinais_pediu_trakt(void) { int p = pediuTrakt; pediuTrakt = 0; return p; }
 
@@ -45,13 +57,19 @@ static void acoes(void) {
   if (!strncmp(chave, "av:", 3)) { avisos_ilha_acao(chave, b); return; }
   if (!strcmp(chave, ILHA_ACAO_CHAVE)) { ilhaacao_botao(b); return; }
   if (!strncmp(chave, "salvar:", 7)) { ilhasalvar_acao(chave, b); return; }
+#ifdef NV_ANDROID
+  if (!strncmp(chave, "extplayer:", 10)) { extplayer_acao(chave, b); return; }
+#endif
   if (!strncmp(chave, "enquete:", 8)) { enquete_acao(chave, b); return; }
   if (!strncmp(chave, "juntos:", 7)) { juntos_acao(chave, b); return; }
+  if (!strncmp(chave, "dormiu:", 7)) { dormiu_acao(chave, b); return; }
+  if (!strcmp(chave, "diario-cofre")) { diarionuvem_acao(b); return; }
   if (!strncmp(chave, "pedido:", 7)) {
     // O fio social pode estar ocupado (uma releitura em voo): a resposta fica
     // guardada e sai na proxima volta, em vez de se perder em silencio.
     if (b == 1 || b == 2) {
       pedOpPend = b;
+      pedSessao = perfis_sessao_geracao();
       snprintf(pedPubPend, sizeof pedPubPend, "%s", chave + 7);
       responderPedido();
     }
@@ -78,7 +96,7 @@ int ilhasinais_pediu_amigos(void) { int p = pediuAmigos; pediuAmigos = 0; return
 
 static void responderPedido(void) {
   int ok;
-  if (!pedOpPend) return;
+  if (!pedOpPend || !perfis_sessao_atual(pedSessao)) return;
   ok = pedOpPend == 1 ? recomenda_aceitar(pedPubPend) : recomenda_recusar(pedPubPend);
   if (!ok) return;               // ocupado: tenta de novo na proxima volta
   printf("[amigos] pedido %s pela ilha\n", pedOpPend == 1 ? "aceito" : "recusado");
@@ -218,23 +236,20 @@ static void pedidosDeAmizade(void) {
 // mais de 3 de uma vez e a lista chegando inteira do servidor (primeira
 // abertura, troca de perfil) e tambem so vira base.
 static void amizadesNovas(Uint32 agora) {
-  static RecContato base[REC_CONTATOS_MAX];
-  static int nBase = -1;
-  static Uint32 desde;
   RecContato atual[REC_CONTATOS_MAX];
   int n, i, j, novos = 0;
-  if (!desde) desde = agora ? agora : 1;
-  if (agora - desde < 20000u) return;   // o cache e a primeira leitura assentam
+  if (!amizadesDesde) amizadesDesde = agora ? agora : 1;
+  if (agora - amizadesDesde < 20000u) return;   // o cache e a primeira leitura assentam
   n = recomenda_contatos(atual, REC_CONTATOS_MAX);
-  if (nBase >= 0) {
+  if (nAmizadesBase >= 0) {
     for (i = 0; i < n; i++) {
-      for (j = 0; j < nBase; j++) if (!strcmp(base[j].id, atual[i].id)) break;
-      if (j == nBase) novos++;
+      for (j = 0; j < nAmizadesBase; j++) if (!strcmp(amizadesBase[j].id, atual[i].id)) break;
+      if (j == nAmizadesBase) novos++;
     }
     if (novos > 0 && novos <= 3) {
       for (i = 0; i < n; i++) {
-        for (j = 0; j < nBase; j++) if (!strcmp(base[j].id, atual[i].id)) break;
-        if (j == nBase) {
+        for (j = 0; j < nAmizadesBase; j++) if (!strcmp(amizadesBase[j].id, atual[i].id)) break;
+        if (j == nAmizadesBase) {
           char chave[120], txt[200], f[120];
           IlhaAvisoEx e;
           memset(&e, 0, sizeof e);
@@ -248,18 +263,17 @@ static void amizadesNovas(Uint32 agora) {
       }
     }
   }
-  memcpy(base, atual, sizeof atual[0] * (size_t)n);
-  nBase = n;
+  memcpy(amizadesBase, atual, sizeof atual[0] * (size_t)n);
+  nAmizadesBase = n;
 }
 
 // --- contas e servicos -----------------------------------------------------------
 static void trakt(void) {
-  static int avisado;
   TraEstado st = traktauth_estado();
-  if (st == TRA_INVALIDO && !avisado) {
+  if (st == TRA_INVALIDO && !traktAvisado) {
     static IlhaModal m;
     IlhaAvisoEx e;
-    avisado = 1;
+    traktAvisado = 1;
     memset(&m, 0, sizeof m);
     memset(&e, 0, sizeof e);
     snprintf(m.kicker, sizeof m.kicker, "Trakt");
@@ -274,14 +288,13 @@ static void trakt(void) {
     e.chave = "trakt"; e.tipo = ILHA_ERRO; e.icone = "aj_link-2-off";
     e.texto = i18n("O Trakt desconectou"); e.ms = 9000u; e.modal = &m;
     ilha_avisar_ex(&e);
-  } else if (st == TRA_LIGADO) avisado = 0;   // reconectou: uma proxima queda avisa de novo
+  } else if (st == TRA_LIGADO) traktAvisado = 0;
 }
 
 static void debridSemPlano(void) {
-  static int ditos;
-  int mask = debrid_sem_plano(), novos = mask & ~ditos;
+  int mask = debrid_sem_plano(), novos = mask & ~debridDitos;
   if (!novos) return;
-  ditos |= mask;
+  debridDitos |= mask;
   { const char *nome = debrid_sem_plano_nome(novos), *frase = debrid_sem_plano_frase(novos);
     char txt[240], f[64];
     if (nome) snprintf(txt, sizeof txt, i18n("Seu %s está sem plano. As fontes dele ficam de fora."),
@@ -315,28 +328,34 @@ static void addonsAMao(void) {
 }
 
 static void sincronia(Uint32 agora) {
-  static SyncEstado antes = SYNC_PARADO;
-  static Uint32 rodandoDesde;
-  static int falhaDita;
   SyncEstado st = sync_estado();
   if (st == SYNC_RODANDO) {
-    if (antes != SYNC_RODANDO) rodandoDesde = agora ? agora : 1;
-    if (rodandoDesde && agora - rodandoDesde >= SYNC_ATIVIDADE_MS)
+    if (syncAntes != SYNC_RODANDO) syncRodandoDesde = agora ? agora : 1;
+    if (syncRodandoDesde && agora - syncRodandoDesde >= SYNC_ATIVIDADE_MS)
       ilha_atividade(i18n("Sincronizando a conta…"), -1.0f);
-  } else if (st == SYNC_FALHOU && antes != SYNC_FALHOU && !falhaDita) {
+  } else if (st == SYNC_FALHOU && syncAntes != SYNC_FALHOU && !syncFalhaDita) {
     // A CONTA FORA DO AR (#215) ja tem o aviso dela (app.c) e SEM INTERNET
     // tambem: a falha do sync nesses casos e consequencia, nao assunto novo.
     if (!sync_addons_fora() && !sync_servidor_fora() && !rede_saude_offline()) {
       ilha_avisar("sync", ILHA_ERRO, "aj_rotate-cw",
                   i18n("Não deu para sincronizar a conta. Tento de novo sozinho."), 6000u, 0);
-      falhaDita = 1;
+      syncFalhaDita = 1;
     }
-  } else if (st == SYNC_PRONTO) falhaDita = 0;
-  antes = st;
+  } else if (st == SYNC_PRONTO) syncFalhaDita = 0;
+  syncAntes = st;
   addonsAMao();
 }
 
 void ilhasinais_perfil_trocado(void) {
+  pediuTrakt = pediuAmigos = 0;
+  // Aceitar/recusar ja enfileirados levam identidade imutavel no worker de
+  // recomenda. Somente o pedido de UI ainda nao enfileirado sai daqui.
+  pedOpPend = 0; pedPubPend[0] = 0; pedSessao = 0;
+  memset(pendPub, 0, sizeof pendPub); memset(pendChave, 0, sizeof pendChave); nPend = 0;
+  memset(amizadesBase, 0, sizeof amizadesBase); nAmizadesBase = -1;
+  amizadesDesde = ultSonda = syncRodandoDesde = 0;
+  syncAntes = SYNC_PARADO; syncFalhaDita = traktAvisado = debridDitos = 0;
+  addonForaVisto = 0;
   const ContaPerfil *p = perfis_item_ativo();
   char txt[160], f[96];
   IlhaAvisoEx e;
@@ -364,11 +383,10 @@ static void rede(void) {
 }
 
 static void addonFora(void) {
-  static unsigned visto;
   char nome[64], chave[96], txt[200], f[96];
   unsigned s = addons_fora_do_ar(nome, sizeof nome);
-  if (s == visto) return;
-  visto = s;
+  if (s == addonForaVisto) return;
+  addonForaVisto = s;
   // Sem internet nenhum addon responde: o aviso e o da rede, nao o do addon.
   if (!nome[0] || rede_saude_offline()) return;
   snprintf(chave, sizeof chave, "addon:%s", nome);
@@ -377,11 +395,13 @@ static void addonFora(void) {
 }
 
 void ilhasinais_passo(Uint32 agora) {
-  static Uint32 ultSonda;
   acoes();
   responderPedido();
   ilhasalvar_passo(agora);
   lstesc_passo();
+#ifdef NV_ANDROID
+  extplayer_passo(agora);
+#endif
   enquete_passo(agora);
   juntos_passo(agora);
   juntosui_atualizar(agora);

@@ -45,9 +45,18 @@ void app_encerrar(void);
 // 1 = a home e o que esta na frente (sem detalhe, player, login ou escolha de
 // perfil por cima). E a amostra do nivel de GPU (gpunivel.h).
 int  app_na_home(void);
+// Home owns the D-pad without keyboard-capturing layers (FPS scene guard).
+int  app_home_recebe_teclas(void);
 // A tela atual e o login (a abertura dissolve o logo sobre o fundo dele).
 int  app_no_login(void);
 
 // Porta de teste: abre o titulo (imdb) como se viesse de uma recomendacao.
 void app_abrir_titulo(const char *imdb);
+// Porta de teste: a funcao que app_atualizar chama antes de entregar a URL
+// guardada ao player (tocarFonteGuardada). 1 = o player recebeu a URL.
+int app_teste_tocar_guardada(void);
+// Test hooks for the sheet latch (#513). cwTocar is Continue Watching only.
+void app_teste_cw_tocar(int temporada, int episodio);
+void app_teste_gravar_folha(int temporada, int episodio, int tem);
+int app_teste_consumir_folha(int *temporada, int *episodio);
 #endif

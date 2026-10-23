@@ -20,6 +20,7 @@ enum = re.search(r"typedef enum \{(.*?)\n\} OpcaoId;", fonte, re.S)
 if not enum:
     sys.exit("FALHA: enum OpcaoId nao encontrado em " + args.fonte)
 corpo = re.sub(r"//[^\n]*", "", enum.group(1))
+corpo = re.sub(r"^\s*#[^\n]*", "", corpo, flags=re.M)  # #ifdef NV_ANDROID slots
 opcoes = [n.strip() for n in corpo.split(",") if n.strip() and n.strip() != "AJ_N"]
 # Retired from the screen on purpose; the enum slot stays (positional valor[]/CHAVE[]).
 RETIRADAS = {
@@ -36,6 +37,15 @@ RETIRADAS = {
     # no enum para o valor[] salvo manter os indices (migracao profundidade-205).
     "AJ_PROF_BORDA", "AJ_PROF_COBERTURA", "AJ_PROF_POSTERS", "AJ_PROF_CW",
     "AJ_PROF_EPS", "AJ_PROF_ELENCO", "AJ_PROF_TRAILERS",
+    # 2.0.5 (#509): o som do trailer virou UM ajuste ("Som do trailer");
+    # o slot de "Som do trailer na pagina do titulo" fica no enum pelo valor[]
+    # salvo, e a migracao do carregar adota a escolha antiga.
+    "AJ_DET_TRAILER_SOM",
+    # 2.0.6 (#535): edited inside another row's editor, not as rows of their
+    # own (uxOpcaoNaTela in ajustes_ux_desenho.inc): the per-provider limits
+    # in "Ordem dos provedores", size/groups in "Filtros de fontes".
+    "AJ_FALHA_RD_LIMITE", "AJ_FALHA_TB_LIMITE", "AJ_FALHA_PM_LIMITE", "AJ_FALHA_AD_LIMITE",
+    "AJ_FILTRO_TAM_MAX", "AJ_FILTRO_GRUPOS",
 }
 opcoes = [op for op in opcoes if op not in RETIRADAS]
 

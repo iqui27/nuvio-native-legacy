@@ -9,6 +9,10 @@
 #include "ajustes.h"
 #include <stdlib.h>
 #include <assert.h>
+int video_quadro_visto(void) { return video_pronto(); }
+int extplayer_tentar(const char *url, const char *title, int anime, void (*internal)(const char *), void (*exit_player)(void)) {
+  (void)url; (void)title; (void)anime; (void)internal; (void)exit_player; return 0;
+}
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -139,6 +143,54 @@ int main(void) {
   abrir("fixture-serie", "series", 34, 2, 4); fonteAbrir();
   assert(fabs(inicio - 612.345) < .0001); pronto = 1; ack = 1; quadro(); player_encerrar();
   puts("ok episodio salvo nao vaza para o seguinte");
+
+  // Troca de fonte do MESMO titulo usa o instante atual, nao o antigo ponto
+  // salvo. Mesmo "Assistir do comeco" deve preservar o que ja foi assistido.
+  abrir("fixture-filme", "movie", 34, 0, 0); player_do_inicio(); fonteAbrir();
+  assert(inicio == 0 && inicioPct == 0);
+  pronto = 1; ack = 1; posicao = 471.625; quadro();
+  player_definir_retomada_fonte(posicao); // antes de video_parar zerar o backend
+  player_voltar_a_esperar(); posicao = 0;
+  player_definir_episodio(0, 0); // metadado tardio nao perde o instante da troca
+  n = buscas;
+  player_definir_fonte("https://example.invalid/next-source.mp4");
+  assert(fabs(inicio - 471.625) < .0001 && inicioPct == 0);
+  pronto = 1; quadro(); assert(buscas == n); // aguarda ack do prepare
+  ack = 1; quadro(); quadro(); assert(buscas == n);
+  // A abertura seguinte recusou o prepare: um seek absoluto, sem percentual
+  // arredondado e sem substituir o instante por zero da fonte que falhou.
+  player_voltar_a_esperar(); posicao = 0;
+  player_definir_retomada_fonte(NAN);
+  player_definir_retomada_fonte(INFINITY);
+  player_definir_retomada_fonte(-1);
+  player_definir_fonte("https://example.invalid/third-source.mp4");
+  assert(fabs(inicio - 471.625) < .0001 && inicioPct == 0);
+  pronto = 1; ack = -1; quadro(); quadro();
+  assert(buscas == n + 1 && fabs(posicao - 471.625) < .0001);
+  player_encerrar();
+  puts("ok failover preserva segundos atuais antes de parar e recua uma vez se prepare recusar");
+
+  abrir("fixture-filme", "movie", 34, 0, 0); fonteAbrir();
+  pronto = 1; ack = 1; quadro();
+  posicao = 0; // a pessoa voltou ao inicio, nao um zero de backend em erro
+  player_definir_retomada_fonte(posicao);
+  player_voltar_a_esperar(); player_definir_episodio(0, 0);
+  n = buscas;
+  player_definir_fonte("https://example.invalid/seek-back-zero.mp4");
+  assert(inicio == 0 && inicioPct == 0); // o antigo percentual nao reaparece
+  pronto = 1; ack = -1; quadro(); quadro();
+  assert(buscas == n + 1 && posicao == 0);
+  player_encerrar();
+  puts("ok failover preserva inicio valido sem reintroduzir percentual antigo");
+
+  abrir("fixture-filme", "channel", 34, 0, 0);
+  player_definir_retomada_fonte(471.625); fonteAbrir();
+  assert(inicio == 0 && inicioPct == 0); player_encerrar();
+  abrir("fixture-serie", "series", 34, 2, 4);
+  player_definir_retomada_fonte(471.625);
+  player_definir_episodio(2, 5); fonteAbrir();
+  assert(inicio == 0 && inicioPct == 0); player_encerrar();
+  puts("ok instante de troca nao vaza para canal nem episodio novo");
 
   perfis_definir_ativo(2);
   abrir("fixture-filme", "movie", 34, 0, 0); fonteAbrir(); assert(inicio == 0);

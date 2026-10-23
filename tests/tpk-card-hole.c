@@ -36,6 +36,10 @@ static void probeClear(GLbitfield mask) {
 #define GFX_TR_RECT(...) ((void)0)
 #define GFX_OUTRO_INI() ((void)0)
 #define GFX_OUTRO_FIM() ((void)0)
+static void vidroDesenho(GfxRect r, GLuint t, GfxModo m, float f, float px, float py, float raio, float cr, float cg, float cb, float a) {
+  (void)r;(void)t;(void)m;(void)f;(void)px;(void)py;(void)raio;(void)cr;(void)cg;(void)cb;(void)a;
+}
+static void vidroFuro(GfxRect r) { (void)r; }
 #include "tpk-card-hole-real.h"
 
 int main(void) {

@@ -1,7 +1,9 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 set -eu
 cd "$(dirname "$0")/.."
-dir=$(mktemp -d /tmp/nuvio-espaco-tpk.XXXXXX)
+dir=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-espaco-tpk.XXXXXX)
 trap 'rm -rf "$dir"' EXIT
 export DOTNET_CLI_HOME="$dir" DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 cat > "$dir/Test.csproj" <<PROJECT

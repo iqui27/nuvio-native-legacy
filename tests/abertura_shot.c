@@ -4,6 +4,7 @@
 //  - Grava, em NUVIO_ABERTURA_SAIDA (ou /tmp/nuvio-abertura), a abertura de
 //    verdade por logo: parada e meio da saida, sobre uma "home" de mentira.
 #include "abertura.h"
+#include "nvtmp.h"
 #include "ajustes.h"
 #include "anim.h"
 #include "gfx.h"
@@ -65,15 +66,15 @@ static Uint32 roda(Uint32 t0, Uint32 de, Uint32 ate, Uint32 soltaEm) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-abertura";
-  char dir[] = "/Volumes/ExternalSSD/tmp/nuvio-ab-XXXXXX";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-abertura");
+  char dir[NVT_MAX];
   char nome[700];
   SDL_Window *w;
   SDL_GLContext gl;
   int logo, estilo;
   Uint32 t0 = 100000;
 
-  if (access("/Volumes/ExternalSSD/tmp", W_OK) != 0) strcpy(dir, "/tmp/nuvio-ab-XXXXXX");
+  nvt_set(dir, sizeof dir, "/nuvio-ab-XXXXXX");
   assert(mkdtemp(dir));
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);

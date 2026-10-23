@@ -19,6 +19,7 @@
 #define sessao_logada shot_sessao_logada
 #define simklauth_token shot_simklauth_token
 #include "../src/recomenda.c"
+#include "nvtmp.h"
 #undef trakt_ativo
 #undef sessao_token_copiar
 #undef sessao_logada
@@ -189,7 +190,7 @@ static void irFileira(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-socialui/s";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-socialui/s");
   static CatItem itens[40];
   static CatFileira fils[3];
   SDL_GLContext gl;

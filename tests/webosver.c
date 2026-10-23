@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "nvtmp.h"
 static int fails;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
 static void grava(const char *caminho, const char *txt) {
@@ -24,7 +25,7 @@ static int com(const char *dir, const char *nyx, const char *star) {
   return nv_webos_major();
 }
 int main(int argc, char **argv) {
-  const char *d = argc > 1 ? argv[1] : "/tmp";
+  const char *d = argc > 1 ? argv[1] : nvt_dir();
   // O caso real: 65SJ800V / OLED55B7P, sem starfish-release.
   CHECK(com(d, "{\"webos_release\":\"3.9.3\",\"webos_name\":\"x\"}", NULL) == 3);
   CHECK(!strcmp(nv_webos_fonte(), "nyx"));

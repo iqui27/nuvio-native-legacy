@@ -1,6 +1,7 @@
 // Relato de queda pendente grande nao pode cortar o relato NOVO. Ver o .sh.
 #define NV_WEBOS 1
 #include <stdio.h>
+#include "nvtmp.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -80,7 +81,7 @@ static void rodar(size_t tamAntigo, const char *log, int esperaCorte) {
 }
 
 int main(int argc, char **argv) {
-  const char *log = argc > 1 ? argv[1] : "/tmp/nuvio-arranque-pendente-log.txt";
+  const char *log = argc > 1 ? argv[1] : nvt("/nuvio-arranque-pendente-log.txt");
   rodar(500, log, 0);        // pequeno: tudo cabe, nada muda
   rodar(7000, log, 1);       // cabia no antigo[8192], mas estourava nrq+2048
   rodar(40000, log, 1);      // maior que o buffer antigo

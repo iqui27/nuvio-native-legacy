@@ -1,10 +1,12 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # bash tests/logorapido_shot.sh <dados-isolados> [sem-logo]
 set -eu
 cd "$(dirname "$0")/.."
 : "${1:?pasta de dados isolada obrigatoria}"
 mkdir -p "$1"
-OBJ=${OBJ:-/tmp/nuvio-logorapido-obj}
+OBJ=${OBJ:-${TMPDIR:-/tmp}/nuvio-logorapido-obj}
 mkdir -p "$OBJ"
 flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wno-deprecated-declarations)
 objs=()

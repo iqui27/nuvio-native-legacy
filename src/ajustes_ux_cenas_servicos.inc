@@ -27,8 +27,8 @@ static void ajcSvDigita(const char *s, float x, float y, float px, float frac, f
   if (k > n) k = n;
   memcpy(b, s, (size_t)k);
   b[k] = 0;
-  ajcTexto(b, px, 1, x, y, a);
-  w = k ? ajcLargura(b, px, 1) : 0;
+  ajcTextoVivo(b, px, 1, x, y, a);
+  w = k ? ajcLarguraViva(b, px, 1) : 0;
   if (frac < 0.999f || ajc_reduzido() == 0) ajc_acento_ret(x + w + 2, y - 1, 2, px * 1.3f, 1, a * (ajc_fase(0.8f) < 0.6f ? 1.0f : 0.15f));
 }
 // Campo: caixa escura com contorno; foco = anel do acento.
@@ -126,7 +126,7 @@ static void ajcSvStb(float conn, const char *mac, float a) {   // o aparelho do 
   ajc_ret(378, 76, 224, 121, 8, 0.06f, 0.06f, 0.08f, a);
   ajc_icone("aj_monitor-cog", 412, 124, 36, 0.8f * a);
   ajc_neutro(444, 100, 150, 50, 8, a);
-  ajcTexto(mac, 11, 1, 454, 111, a);
+  ajcTextoVivo(mac, 11, 1, 454, 111, a);
   ajc_progresso(454, 134, 130, conn, a);
   if (conn > 0.99f) ajc_icone("aj_circle-check", 590, 90, 20, a);
 }
@@ -739,6 +739,9 @@ static int ajcNovaServicos(int sec, int op) {
     case AJ_DEBRID_TB: ajcSvDebrid("TorBox", "aj_package", 7, 0x6, 0); return 1;
     case AJ_DEBRID_PM: ajcSvDebrid("Premiumize", "aj_sparkle", 9, 0xB, 0); return 1;
     case AJ_DEBRID_AD: ajcSvDebrid("AllDebrid", "aj_hard-drive", 12, 0x3, 0); return 1;
+    case AJ_DEBRID_RD_TESTAR: ajcSvDebrid("Real-Debrid", "aj_download", 10, 0x5, 1); return 1;
+    case AJ_DEBRID_TB_TESTAR: ajcSvDebrid("TorBox", "aj_package", 7, 0x6, 1); return 1;
+    case AJ_DEBRID_PM_TESTAR: ajcSvDebrid("Premiumize", "aj_sparkle", 9, 0xB, 1); return 1;
     case AJ_DEBRID_AD_TESTAR: ajcSvDebrid("AllDebrid", "aj_hard-drive", 12, 0x3, 1); return 1;
     case AJ_JF_LIGADO: ajcSvServ(SV_LIGA, "Jellyfin", "aj_server", "", 2, 0, ""); return 1;
     case AJ_JF_SERVIDOR: ajcSvServ(SV_URL, "Jellyfin", "aj_server", "192.168.1.20:8096", 2, 0, ""); return 1;

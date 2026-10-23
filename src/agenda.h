@@ -150,6 +150,14 @@ int agenda_lembrete(const char *imdb);            // 1 = ligado
 // Liga/desliga e GRAVA. Devolve o estado novo. Ignora quem nao pode lembrar.
 int agenda_alternar_lembrete(const char *imdb);
 
+// Movie alerts share profile-scoped reminder storage. Unknown stream count = -1.
+int agenda_filme_elegivel(const char *lancamento, const char *digital, int fontes);
+int agenda_filme_alternar(const char *imdb, const char *titulo, const char *poster);
+int agenda_filme_devido(AgItem *saida);
+void agenda_filme_aberto(const char *imdb);
+// UI tick: captures add-ons, starts/reaps one bounded worker; never waits for network.
+void agenda_filmes_atualizar(void);
+
 // --- calendario -------------------------------------------------------------
 // Remonta a lista das series seguidas a partir do catalogo, do progresso e do
 // cache. Devolve quantas. FIO PRINCIPAL.

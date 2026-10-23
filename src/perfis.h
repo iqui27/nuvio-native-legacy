@@ -11,6 +11,7 @@
 // addons filtra por ESSE id, nao pelo `sub` do token.
 #ifndef NV_PERFIS_H
 #define NV_PERFIS_H
+#include <stdint.h>
 
 #define CONTA_PERFIL_MAX 8
 
@@ -40,6 +41,8 @@ typedef struct {
 // Devolve quantos achou. Zero NAO e erro: conta nova pode nao ter perfil
 // nenhum criado, e nesse caso o app opera com o perfil 1 implicito.
 int perfis_puxar(void);
+// Dispatch-time identity: responses from an older visit are discarded.
+int perfis_puxar_sessao(uint64_t sessao, const char *usuario, const char *jwt);
 
 int           perfis_n(void);
 const ContaPerfil *perfis_item(int i);
@@ -50,10 +53,25 @@ const char   *perfis_dono(void);        // uuid de get_sync_owner; "" se nao vei
 // ContaPerfil ativo. Persistido em disco: reescolher a cada arranque seria uma
 // pergunta que o app ja sabe responder.
 int  perfis_ativo(void);                // profile_index; 1 quando nada escolhido
+// O ADMINISTRADOR (2.1): o perfil principal da conta (is_primary), ou o 1 quando
+// a conta nao traz nenhum. Nao e escolhivel.
+int  perfis_principal(void);
 // O perfil de onde SAEM OS ADDONS: igual a perfis_ativo(), exceto quando o
 // perfil herda os do primario (uses_primary_plugins), e ai e 1.
 int  perfis_ativo_addons(void);
 void perfis_definir_ativo(int indice);
+// A confirmed opening starts a new live session, including reopening the same
+// profile. Saved data belongs to the profile; asynchronous results also belong
+// to this particular visit. Publication guards never cover network requests.
+uint64_t perfis_sessao_geracao(void);
+// Account boundaries invalidate workers without confirming or bypassing a PIN.
+void perfis_invalidar_sessao(void);
+int perfis_sessao_atual(uint64_t geracao);
+int perfis_sessao_travar(uint64_t geracao);
+void perfis_sessao_destravar(void);
+// Called on the UI thread before changing the active identity. Playback can
+// finish and save progress under the profile that is leaving.
+void perfis_ao_abrir_sessao(void (*antes)(void));
 // Le do disco o perfil ativo E A LISTA DE PERFIS DA ULTIMA SESSAO. Chamar uma
 // vez no arranque, antes de app_iniciar.
 //

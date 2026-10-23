@@ -103,7 +103,7 @@ static float aj2Ln = 58.0f, aj2Gap = 3.0f, aj2GtEx = 18.0f, aj2Fade = 70.0f;
 // Ambar, Violeta): o `fill` tinge o fundo e a `marca` (a versao clara do
 // matiz, feita para o escuro) pinta o icone. Nao dependem do acento escolhido.
 #define AJ2_CHIP_ICO 28.0f
-static const unsigned char AJ2_CHIP_TEMA[3] = { 2, 5, 3 };   // Oceano, Ambar, Violeta
+static const unsigned char AJ2_CHIP_TEMA[4] = { 2, 5, 3, 4 };   // Oceano, Ambar, Violeta, e o do perfil (2.1)
 static struct {
   float x[3], w[3];        // posicao (relativa ao miolo da ilha) e largura abertas
   int lin[3], linhas;      // a fileira de cada uma
@@ -243,10 +243,11 @@ static void aj2MenuValor(int sec, char *b, size_t n) {
       snprintf(a, sizeof a, i18n("Áudio: %s"), i18n(textoValor(AJ_AUD_LINGUA)));
       snprintf(b, n, "%s · %s", i18n(textoValor(AJ_IDIOMA)), a);
       return; }
-    case AJS_TVAOVIVO:
-      snprintf(b, n, "%s", xtream_configurado() ? textoLeitura(AJ_XTREAM_SERVIDOR)
-                         : stalker_configurado() ? textoLeitura(AJ_STALKER_PORTAL) : i18n("Não configurado"));
-      return;
+    case AJS_TVAOVIVO: {
+      int contas = iptv_contas(NULL, 0);
+      if (contas) snprintf(b, n, "%s: %d", i18n("Contas de TV ao vivo"), contas);
+      else snprintf(b, n, "%s", i18n("Não configurado"));
+      return; }
     case AJS_CONTAS: {   // "Henrique · Trakt"
       size_t u = (size_t)snprintf(b, n, "%s", textoLeitura(AJ_PERFIL_ATIVO));
       if (u < n && traktauth_estado() == TRA_LIGADO) u += (size_t)snprintf(b + u, n - u, " · Trakt");
@@ -303,7 +304,7 @@ static void aj2MenuAtualizar(float dt) {
     if (alvo > fim - janela + AJ2_MENU_FADE) alvo = fim - janela + AJ2_MENU_FADE;
     if (alvo < 0) alvo = 0;
 #ifdef NV_TOUCH_UI
-    if (ajToqueLivre[AJT_MENU]) aj2MRolV = 0.0f;
+    if (ajTelaCheia() && ajToqueLivre[AJT_MENU]) aj2MRolV = 0.0f;
     else
 #endif
     if (!aj2MIni || red) { aj2MRol = alvo; aj2MRolV = 0; }
@@ -351,7 +352,7 @@ static void aj2DesenharMenu(const Aj2Pose *p) {
   if (p->mA <= 0.003f) return;
   aj2MenuMedir();
 #ifdef NV_TOUCH_UI
-  if (!ajModalAberto() && !uxEditor && p->mA > 0.1f && p->mS > 0.0f) {
+  if (ajTelaCheia() && !ajModalAberto() && !uxEditor && p->mA > 0.1f && p->mS > 0.0f) {
     GfxRect r = aj2MenuToqueRect((GfxRect){m.x, topo, m.w, base - topo}, m, p);
     ajToqueRegistrar(AJT_MENU, r, &aj2MRol, aj2MenuY(n - 1) + aj2MH[n - 1] - (base - topo) + AJ2_MENU_FADE, aj2MRol, 0);
     if (ajToqueN) ajToqueRegioes[ajToqueN - 1].escala *= p->mS;
@@ -394,7 +395,7 @@ static void aj2DesenharMenu(const Aj2Pose *p) {
       int ativa = c == 2 ? lig_ : sel;
       GfxRect r = { cx, cy, w, AJ2_MENU_CHIP };
 #ifdef NV_TOUCH_UI
-      if (!ajModalAberto() && !uxEditor && p->mA > 0.1f && (c != 2 || rot > 0.003f) && cy + r.h > topo && cy < base) {
+      if (ajTelaCheia() && !ajModalAberto() && !uxEditor && p->mA > 0.1f && (c != 2 || rot > 0.003f) && cy + r.h > topo && cy < base) {
         GfxRect hit = r;
         if (hit.y < topo) { hit.h -= topo - hit.y; hit.y = topo; }
         if (hit.y + hit.h > base) hit.h = base - hit.y;
@@ -442,7 +443,7 @@ static void aj2DesenharMenu(const Aj2Pose *p) {
     if (j < 2) continue;
     if (y > base || y + h < topo) continue;
 #ifdef NV_TOUCH_UI
-    if (!ajModalAberto() && !uxEditor && p->mA > 0.1f) {
+    if (ajTelaCheia() && !ajModalAberto() && !uxEditor && p->mA > 0.1f) {
       GfxRect hit = {rx, fmaxf(y, topo), m.w - 2 * AJ2_MENU_PAD, fminf(y + h, base) - fmaxf(y, topo)};
       hit = aj2MenuToqueRect(hit, m, p);
       ponteiro_alvo(hit.x, hit.y, hit.w, hit.h, aj2MenuToqueFocar, NULL, j, 0);
@@ -505,8 +506,33 @@ static void aj2DesenharMenu(const Aj2Pose *p) {
 }
 
 // --- DICAS GRANDES ------------------------------------------------------------------
+// #205: as teclas do rodape sao clicaveis. O chip "OK" concentra o clique (o
+// foco ja e o da tela) e o ponteiro entrega o RETURN pelo caminho de sempre; o
+// "Voltar" sintetiza a tecla Voltar. Visual de TV intocado; no celular a area
+// de toque cresce um pouco. Em transicao (gfx_transformar) o desenho esta
+// escalado e os retangulos nao sao os da tela: nao registra.
+static void aj2DicaOk(int a, int b) { (void)a; (void)b; }
+static void aj2DicaVoltar(int a, int b) {
+  (void)a; (void)b;
+  { SDL_Event e; SDL_zero(e);
+    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_AC_BACK; e.key.state = SDL_PRESSED;
+    ajustes_evento(&e);
+    e.type = SDL_KEYUP; e.key.state = SDL_RELEASED;
+    ajustes_evento(&e); }
+}
+static void aj2DicasAlvo(const char *k, float x, float yc, float kw, float kh) {
+  int ok = !strcmp(k, "OK"), voltar = !strcmp(k, "Voltar");
+  float m;
+  if ((!ok && !voltar) || gfx_transformado()) return;
+  m = layout_modo_mobile() ? 12.0f : 4.0f;
+  ponteiro_alvo(x - m, yc - kh * 0.5f - m, kw + 2.0f * m, kh + 2.0f * m,
+                ok ? aj2DicaOk : NULL, ok ? NULL : aj2DicaVoltar, 0, 0);
+}
 // kbd com o corpo `ek` e altura `kh`, rotulo `el`; vao tecla-rotulo `g1`,
-// entre dicas `g2`. Devolve a largura.
+// entre dicas `g2`. Devolve a largura. `desenha`: 0 so mede (as chamadas de
+// medida usam coordenadas de mentira — nada pode registrar), 1 desenha e
+// registra os alvos, 2 so registra (o replay do rodape da TV: os chips ja
+// foram desenhados pelo rodape de verdade).
 static float aj2DicasLinha(const AjDica *d, int n, float x, float yc, TxtEstilo ek, float kh, float kmin,
                            float kpad, TxtEstilo el, float g1, float g2, int desenha, float a) {
   int i;
@@ -514,11 +540,13 @@ static float aj2DicasLinha(const AjDica *d, int n, float x, float yc, TxtEstilo 
   for (i = 0; i < n; i++) {
     TxtLinha k = ajTxt(ek, d[i].k), l = ajTxt(el, d[i].l);
     float kw = k.w + 2 * kpad < kmin ? kmin : k.w + 2 * kpad;
-    if (desenha) {
+    if (desenha == 1) {
       ajNeutro((GfxRect){ x, yc - kh * 0.5f, kw, kh }, kh * 0.5f, 0.09f, AJ_CHIP_SOL, a);
       txt_desenhar_alpha(k, x + (kw - k.w) * 0.5f, yc - k.h * 0.5f, 0.82f * a);
       txt_desenhar_alpha(l, x + kw + g1, yc - l.h * 0.5f, 0.55f * a);
+      aj2DicasAlvo(d[i].k, x, yc, kw, kh);
     }
+    if (desenha) aj2DicasAlvo(d[i].k, x, yc, kw, kh);
     x += kw + g1 + l.w + g2;
   }
   return x - x0 - g2;
@@ -671,7 +699,7 @@ static void aj2TopoTexto(int t, char *b, size_t n, char *det, size_t nd) {
   } else if (t == AJ2_T_DIF) {
     snprintf(b, n, "%s", i18n("Diferentes do padrão"));
     if (uxNDifs) snprintf(det, nd, " · %d", uxNDifs);
-  } else snprintf(b, n, i18n("Perfil: %s"), textoLeitura(AJ_PERFIL_ATIVO));
+  } else pfRotuloChip(b, n);
 }
 static const char *aj2TopoIcone(int t) {
   return t == AJ2_T_BUSCA ? "aj_search" : t == AJ2_T_AV ? (lig(AJ_AVANCADAS) ? "aj_eye" : "aj_eye-off")
@@ -706,8 +734,10 @@ static GfxRect aj2TopoR(int t) {
   float wb = cw + (cw + AJ2_G_VAO) / 3.0f, wa = aj2TopoLargura(AJ2_T_AV), wp = aj2TopoLargura(AJ2_T_PERFIL);
   float wl = ajLayoutSelecionavel() ? aj2TopoLargura(AJ2_T_LAYOUT) : 0.0f, wd = aj2TopoLargura(AJ2_T_DIF);
   float gap = ajLayoutSelecionavel() ? 80.0f : 60.0f;
-  // Search yields first when localized labels do not fit; layout may be hidden.
-  if (wb + gap + wa + wp + wd + wl > fim - x) { wb = fim - x - gap - wa - wp - wd - wl; if (wb < 300) wb = 300; }
+  // Drop the optional Advanced state before shortening Search or the profile name.
+  if (wb + gap + wa + wp + wd + wl > fim - x)
+    wa = 30 + 34 + 16 + (float)txt_largura(TXT_V3_CHIP, i18n("Avançadas")) + 32;
+  if (wb + gap + wa + wp + wd + wl > fim - x) { wb = fim - x - gap - wa - wp - wd - wl; if (wb < 240) wb = 240; }
   if (wb + gap + wa + wp + wd + wl > fim - x) { float k = (fim - x - gap - wb) / (wa + wp + wd + wl); wa *= k; wp *= k; wd *= k; wl *= k; }
   if (t == AJ2_T_BUSCA) return (GfxRect){ x, y, wb, AJ2_G_CHIP };
   if (t == AJ2_T_AV) return (GfxRect){ x + wb + 20, y, wa, AJ2_G_CHIP };
@@ -735,12 +765,13 @@ static void aj2GradeAtualizar(float dt) {
 static float aj2Suave(float t) { return t * t * (3.0f - 2.0f * t); }
 // A superficie de uma peca da grade: o cinza neutro e, em foco, o acento com o
 // halo dele por baixo. Devolve a peca ja crescida.
-static GfxRect aj2GradeSuperficie(GfxRect r, float raio, float k, float cresce, float halo) {
+static GfxRect aj2GradeSuperficie(GfxRect r, float raio, float k, float cresce, float halo, int segmentado) {
   float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
   r = (GfxRect){ r.x - cresce * k, r.y - cresce * k, r.w + 2 * cresce * k, r.h + 2 * cresce * k };
   if (k > 0.01f) gfx_rect((GfxRect){ r.x - 16, r.y - 4, r.w + 32, r.h + 40 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, ar, ag, ab, halo * k);
-  ajNeutro(r, raio, 0.075f, 0.125f, 0.129f, 0.141f, 1);
+  if (ajVid() && segmentado) gfx_vidro_folha(r, raio / r.h, 1);
+  else ajNeutro(r, raio, 0.075f, 0.125f, 0.129f, 0.141f, 1);
   if (k > 0.01f) gfx_cor(r, raio / r.h, ar, ag, ab, k);
   return r;
 }
@@ -765,7 +796,7 @@ static const char *aj2LayoutIco(int i) { return i ? "aj_layout-list" : "aj_layou
 static float aj2LayoutSegLado(TxtEstilo e, float ico, int i) { return 22.0f + ico + 10.0f + (float)txt_largura(e, aj2LayoutRot(i)) + 24.0f; }
 static float aj2LayoutSegW(TxtEstilo e, float ico) { return 12.0f + aj2LayoutSegLado(e, ico, 0) + aj2LayoutSegLado(e, ico, 1); }
 static void aj2LayoutSeg(GfxRect r0, TxtEstilo e, float ico, float k) {
-  GfxRect r = aj2GradeSuperficie(r0, r0.h * 0.5f, k, 3.0f, 0.35f);
+  GfxRect r = aj2GradeSuperficie(r0, r0.h * 0.5f, k, 3.0f, 0.35f, 1);
   int lista = valor[AJ_LAYOUT_AJUSTES] == 1, i;
   float x = r.x + 6.0f, w0 = aj2LayoutSegW(e, ico), esc = r.w / (w0 > 1 ? w0 : 1);
   for (i = 0; i < 2; i++) {
@@ -789,7 +820,7 @@ static void aj2GradePilula(int t) {
   char b[160], d[96];
   float x, yc, livre;
   if (t == AJ2_T_LAYOUT) { aj2LayoutSeg(aj2TopoR(t), TXT_V3_CHIP_R, 30.0f, k); return; }
-  r = aj2GradeSuperficie(aj2TopoR(t), AJ2_G_CHIP * 0.5f, k, 3.0f, 0.35f);
+  r = aj2GradeSuperficie(aj2TopoR(t), AJ2_G_CHIP * 0.5f, k, 3.0f, 0.35f, 0);
   x = r.x + 30; yc = r.y + r.h * 0.5f;
   aj2TopoTexto(t, b, sizeof b, d, sizeof d);
   aj2GradeIcone(aj2TopoIcone(t), x, yc - 17, 34, k);
@@ -805,7 +836,7 @@ static void aj2GradePilula(int t) {
 // vermelho de novidades no do guia) e a frase.
 static void aj2GradeDescoberta(int t) {
   float k = aj2Suave(aj2TF[t]);
-  GfxRect r = aj2GradeSuperficie(aj2TopoR(t), 22.0f, k, 6.0f, 0.42f);
+  GfxRect r = aj2GradeSuperficie(aj2TopoR(t), 22.0f, k, 6.0f, 0.42f, 0);
   const char *tit = t == AJ2_T_TOUR ? "O que o Nuvio faz?" : "Resolver um problema";
   const char *sub = t == AJ2_T_TOUR ? "Tour pelas funções, com atalho para ligar cada uma" : "TV lenta, sem som, legenda errada";
   float tile = 65.0f, x = r.x + 25, tw;
@@ -838,7 +869,7 @@ static void aj2GradeCartaoDesenhar(int s, float f) {
   char vb[200];
   const char *nome = aj2MenuTitulo(j);
   TxtEstilo en = TXT_V3_NOME;
-  GfxRect r = aj2GradeSuperficie(aj2GradeCartao(s), 20.0f, k, 7.0f, 0.45f);
+  GfxRect r = aj2GradeSuperficie(aj2GradeCartao(s), 20.0f, k, 7.0f, 0.45f, 0);
   // O ladrilho do icone (60 x 60 no mockup, raio 14).
   tile = r.h - 50.0f > 75.0f ? 75.0f : r.h - 50.0f;
   { GfxRect tr = { r.x + 25.0f, r.y + (r.h - tile) * 0.5f, tile, tile };
@@ -850,12 +881,13 @@ static void aj2GradeCartaoDesenhar(int s, float f) {
   aj2MenuValor(s, vb, sizeof vb);
   // O nome inteiro, sempre: numa linha; em duas (alemao, russo) no mesmo corpo.
   { int linhas = (float)txt_largura(en, nome) > tw ? 2 : 1, ti = ajTinta();
-    float nomeH = linhas == 1 ? 50.0f : 88.0f, valH = vb[0] && linhas == 1 ? 40.0f : 0.0f;
+    float lineH = fmaxf(44.0f, (float)ajTxt(en, nome).h + 2.0f);
+    float nomeH = linhas == 1 ? 50.0f : lineH * 2.0f, valH = vb[0] && linhas == 1 ? 40.0f : 0.0f;
     y = r.y + (r.h - nomeH - (valH > 0 ? 4.0f + valH : 0)) * 0.5f;
     if (linhas == 1) aj2GradeTexto(en, nome, tx, y + 25.0f, tw, 1.0f, k);
     else {
-      if (k < 0.99f) txt_bloco(en, nome, 243, 242, 239, tx, y, tw, 44.0f, 1.0f - k, 2);
-      if (k > 0.01f) txt_bloco(en, nome, ti, ti, ti, tx, y, tw, 44.0f, k, 2);
+      if (k < 0.99f) txt_bloco(en, nome, 243, 242, 239, tx, y, tw, lineH, 1.0f - k, 2);
+      if (k > 0.01f) txt_bloco(en, nome, ti, ti, ti, tx, y, tw, lineH, k, 2);
     }
     if (valH > 0) aj2GradeTexto(TXT_V3_VALOR, vb, tx, y + nomeH + 4.0f + valH * 0.5f, tw, 0.62f, k); }
 }
@@ -929,7 +961,7 @@ static void aj2LAtualizar(float dt) {
   } else if (total > jan && focoIndice && uxTopo >= 0) alvo = 0;
   else if (total > jan) alvo = aj2LRol;
 #ifdef NV_TOUCH_UI
-  if (ajToqueLivre[AJT_INDICE]) aj2LRol = anim_clamp(aj2LRol, 0.0f, fmaxf(0.0f, total - jan));
+  if (ajTelaCheia() && ajToqueLivre[AJT_INDICE]) aj2LRol = anim_clamp(aj2LRol, 0.0f, fmaxf(0.0f, total - jan));
   else
 #endif
   if (ajustes_animacoes_reduzidas()) aj2LRol = alvo;
@@ -1058,7 +1090,7 @@ static void aj2DesenharGrade(float a) {
   ajPaginaIlha(g, 40.0f, 1);
   if (a >= 0.999f && !ajModalAberto() && !uxEditor) {
 #ifdef NV_TOUCH_UI
-    if (aj2Lista() || ajRetrato()) {
+    if (ajTelaCheia() && (aj2Lista() || ajRetrato())) {
       float total; aj2LYRel(0, &total);
       ajToqueRegistrar(AJT_INDICE, (GfxRect){g.x, aj2LTopo(), g.w, aj2LBase() - aj2LTopo()},
                        &aj2LRol, total - (aj2LBase() - aj2LTopo()), aj2LRol, 0);
@@ -1115,7 +1147,9 @@ static void aj2DesenharGrade(float a) {
         int sec = uxIndice - 2;
         desc = sec < (int)(sizeof SECAO_AJUDA / sizeof *SECAO_AJUDA) ? SECAO_AJUDA[sec] : TELA[secIni[sec]].sub;
       }
-      if (desc) ajBloco(TXT_V3_SUB, desc, c.x, topo, c.w, 39.0f, 0.70f, (int)((fim - 64.0f - topo) / 39.0f));
+      float lineH = fmaxf(39.0f, (float)ajTxt(TXT_V3_SUB, desc ? desc : "").h + 2.0f);
+      int maxLines = (int)floorf((fim - 64.0f - topo) / lineH);
+      if (desc && maxLines > 0) ajBloco(TXT_V3_SUB, desc, c.x, topo, c.w, lineH, 0.70f, maxLines);
       // as duas teclas; so o OK quando a coluna nao comporta as duas (alemao a 100%)
       { int nd = aj2DicasLinha(d, 2, 0, 0, TXT_V2_KBD20, 40, 44, 9, TXT_V2_26, 10, 28, 0, 1) > c.w ? 1 : 2;
         float wd = aj2DicasLinha(d, nd, 0, 0, TXT_V2_KBD20, 40, 44, 9, TXT_V2_26, 10, 28, 0, 1);
@@ -1190,6 +1224,10 @@ static void aj2DesenharPagina(float t) {
     nome = aj2ChipRotulo(1); ic = "aj_rotate-ccw-clock"; kick = "Ajustes";
     snprintf(vb, sizeof vb, "%d", uxNDifs); q[0] = 0;
   }
+  if(iptvForm.tipo && sec==AJS_TVAOVIVO) {
+    nome=iptvForm.nova?ajIptvAdicionarNome(iptvForm.tipo):iptvAlvo.nome;
+    vb[0]=q[0]=0;
+  }
   x = h.x + 28.0f;
   float meio = h.y + (ajRetrato() ? 57.0f : h.h * 0.5f);
   { GfxRect tr = { x, meio - tile * 0.5f, tile, tile };
@@ -1213,7 +1251,7 @@ static void aj2DesenharPagina(float t) {
     GfxRect seg = { direita - sw, ajRetrato() ? h.y + h.h - sh - 10.0f : h.y + (h.h - sh) * 0.5f, sw, sh };
     aj2LayoutSeg(seg, TXT_V2_24, 26.0f, aj2Suave(aj2CabF));
 #ifdef NV_TOUCH_UI
-    if (t > 0.997f && !uxEditor)
+    if (ajTelaCheia() && t > 0.997f && !uxEditor)
       ponteiro_alvo(seg.x, seg.y, seg.w, seg.h, aj2PonteiroCabLayout, NULL, 0, 0);
 #endif
     if (!ajRetrato()) direita -= sw + 36.0f;

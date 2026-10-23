@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Cache em disco do catalogo: onde ele e gravado e de quem ele e.
 #
 #   bash tests/catcache.sh
@@ -16,6 +18,6 @@ cd "$(dirname "$0")/.."
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc ${flags[@]+"${flags[@]}"} ${NUVIO_CFLAGS:-} src/catalogo.c tests/catcache.c \
-  -Isrc -o /tmp/nuvio-catcache-tests -O1 -g \
+  -Isrc -o ${TMPDIR:-/tmp}/nuvio-catcache-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-catcache-tests
+${TMPDIR:-/tmp}/nuvio-catcache-tests

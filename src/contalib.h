@@ -121,9 +121,8 @@ int contalib_tem_conta(void);
 // Devolve quantos itens do catalogo ficaram marcados. FIO PRINCIPAL apenas —
 // mexe no vetor que o desenho le.
 //
-// NUNCA DESMARCA. Ela so liga `naLista`; a lista da conta vazia nao apaga o que
-// o Trakt marcou, e o inverso tambem vale. Desmarcar exigiria saber que a
-// resposta foi completa e correta, e uma resposta vazia nunca prova isso.
+// Complete nonempty replacements clear previous account membership during
+// parsing. Empty responses remain non-destructive; provider bits survive.
 int contalib_aplicar_catalogo(void);
 
 // Reaplica se o catalogo foi TROCADO desde a ultima aplicacao. Chamar por

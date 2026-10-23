@@ -13,6 +13,7 @@
 // mesma url. Os ajustes entram pelo ajustes.txt da pasta temporaria, o mesmo
 // caminho que a TV le.
 #include "app.h"
+#include "nvtmp.h"
 #include "ajustes.h"
 #include "artehero.h"
 #include "catalogo.h"
@@ -75,7 +76,7 @@ static void quadros(SDL_Window *w, int n, const char *bmp) {
 
 int main(int argc, char **argv) {
   const char *dir = argv[1];
-  const char *saida = argc > 2 ? argv[2] : "/tmp/nuvio-heroarte";
+  const char *saida = argc > 2 ? argv[2] : nvt("/nuvio-heroarte");
   static const int FONTES[] = { ARTEHERO_AUTO, ARTEHERO_TMDB, ARTEHERO_TRAKT };
   static const char *NOME[] = { "auto", "", "", "tmdb", "trakt" };
   static CatItem itens[NT];

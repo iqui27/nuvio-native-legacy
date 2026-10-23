@@ -1,6 +1,7 @@
 // Compila o ramo LS2 real no host. Precarrega os headers da plataforma antes
 // de selecionar Luna; chamadas do barramento e payloads sao dublados.
 #include "video.h"
+#include "nvtmp.h"
 #include "video_escala.h"
 #include "video_reconexao.h"
 #include "idioma.h"
@@ -29,12 +30,21 @@
 #include "../src/video.c"
 
 static int pedidos, aceita = 1, assinaturas, respostas;
-static char resposta[256];
+static char resposta[256], edgeColor[256];
+static int seekRequests;
+static double seekPosition;
+
 static Filtro screensaverCallback;
 static int fakeCall(LSHandle *h, const char *uri, const char *carga, Filtro cb,
                     void *ctx, unsigned long *tok, void *erro) {
   (void)h; (void)uri; (void)carga; (void)cb; (void)ctx; (void)tok; (void)erro;
+  if (strstr(uri, "setSubtitleCharacterEdgeColor"))
+    snprintf(edgeColor, sizeof edgeColor, "%s", carga);
   pedidos++;
+  if (strstr(uri, "/seek")) {
+    seekRequests++;
+    seekPosition = js_num(carga, NULL, "position", -1);
+  }
   if (strstr(uri, "registerScreenSaverRequest")) {
     assinaturas++; screensaverCallback = cb;
   } else if (strstr(uri, "responseScreenSaverRequest")) {
@@ -53,16 +63,24 @@ static int fakeWindow(long handle, long x, long y, long w, long h, int full, lon
   ++windowCalls; return 0;
 }
 
+static int cropCalls;
+static int fakeCrop(long handle, long sx, long sy, long sw, long sh,
+                    long dx, long dy, long dw, long dh, int full, long *task) {
+  assert(handle == 1 && sx == 480 && sy == 270 && sw == 960 && sh == 540);
+  assert(dx == 0 && dy == 0 && dw == 1920 && dh == 1080 && full && task);
+  ++cropCalls; return 1;
+}
+
 int main(void) {
   // webosMaior(): a TV de 2017 (webOS 3.9) so tem o nyx e NAO e webOS 4.
   {
-    FILE *f = fopen("/tmp/nv-webos-test.json", "w");
+    FILE *f = fopen(nvt("/nv-webos-test.json"), "w");
     assert(f); fputs("{\"webos_release\":\"3.9\"}", f); fclose(f);
-    nv_webos_testar("/tmp/nv-webos-test.json", "/nonexistent/starfish-release");
+    nv_webos_testar(nvt("/nv-webos-test.json"), "/nonexistent/starfish-release");
     assert(webosMaior() == 3);
     assert(!dvVersaoLiberada(webosMaior()));   // a porta do Dolby Vision em MKV
     assert(dvVersaoLiberada(4));
-    remove("/tmp/nv-webos-test.json");
+    remove(nvt("/nv-webos-test.json"));
     puts("webosMaior: nyx 3.9 sem starfish-release -> 3, Dolby Vision MKV fechado");
   }
   // Exercise the production LG path: settled geometry must not call ACB
@@ -106,6 +124,14 @@ int main(void) {
   assert(!video_pausa_confirmada()); // callback da sessao anterior
   evento("{\"paused\":true}", 7);
   assert(video_pausa_confirmada());
+  // #426: destination and source crop reach ACB while paused, without LS2 play.
+  acb = 1; acbJanelaCustom = fakeCrop;
+  int beforeWindow = windowCalls, beforeRequests = pedidos;
+  video_janela(240, 0, 1440, 1080);
+  video_janela_fonte(480, 270, 960, 540, 0, 0, 1920, 1080);
+  assert(windowCalls == beforeWindow + 1 && cropCalls == 1);
+  assert(pedidos == beforeRequests && !video_tocando() && video_pausa_confirmada());
+  acb = 0; acbJanelaCustom = NULL;
   video_pausar(0); assert(!video_pausa_confirmada());
   evento("{\"paused\":true}", 7); assert(!video_pausa_confirmada());
   evento("{\"playing\":true}", 7); assert(!video_pausa_confirmada());
@@ -117,6 +143,15 @@ int main(void) {
   evento("{\"paused\":true}", 7); assert(!video_pausa_confirmada());
   aceita = 0; video_pausar(1); assert(!video_pausa_confirmada());
   puts("video_pausa_lg: intencao, ack, geracao, play, erro e unload ok");
+  {
+    VideoLegendaEstilo style = {120, 0, 0, 3, 1};
+    aceita = 1; ligado = 1; style.corBorda = 2;
+    video_legenda_estilo(&style);
+    assert(strstr(edgeColor, "\"charEdgeColor\":\"yellow\""));
+    style.corBorda = -1; video_legenda_estilo(&style);
+    assert(strstr(edgeColor, "\"charEdgeColor\":\"black\""));
+    puts("PASS native LG outline color and default fallback");
+  }
 
   // Registro no caminho real de um load valido, nunca no caminho de erro LS2.
   aceita = 1; sessao = 17; bus = (LSHandle *)(uintptr_t)1;
@@ -186,4 +221,31 @@ int main(void) {
   antes = respostas;
   screensaverCallback(NULL, (LSMessage *)active, NULL); assert(respostas == antes);
   puts("video_screensaver_lg: load, assinatura, timestamp, pausas, fim, erro e ciclo ok");
+
+  // A reload seek refused by firmware must retry the reload position, even
+  // when the previous manual seek differs or the reload starts at zero.
+  // The screensaver cycle above closed LS2 (video_encerrar): reopen it.
+  __atomic_store_n(&encerrando, 0, __ATOMIC_RELEASE); bus = (LSHandle *)(uintptr_t)1;
+  const double reloadPositions[] = {1800.0, 0.0, 0.5};
+  for (unsigned i = 0; i < sizeof reloadPositions / sizeof reloadPositions[0]; ++i) {
+    video_parar();
+    ligado = 1; pronto = 0; acb = 0;
+    snprintf(midia, sizeof midia, "fixture-reload");
+    seekAlvo = 420.0;
+    posAoCarregar = reloadPositions[i];
+    recarregarPausa = 0;
+    int before = seekRequests;
+    evento("{\"loadCompleted\":true}", sessao);
+    assert(seekRequests == before + 1);
+    assert(seekPosition == reloadPositions[i] * 1000.0);
+    evento("{\"errorCode\":700,\"errorText\":\"seek Failure\"}", sessao);
+    assert(seekRetryEm && !falhou);
+    seekRetryEm = SDL_GetTicks() | 1;
+    SDL_Delay(2);
+    video_bombear();
+    assert(seekRequests == before + 2);
+    assert(seekPosition == reloadPositions[i] * 1000.0);
+    assert(!falhou);
+  }
+  puts("video_reload_lg: refused seeks retry the reload position, including zero");
 }

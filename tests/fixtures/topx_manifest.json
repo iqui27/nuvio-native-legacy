@@ -1,0 +1,15 @@
+{
+  "id": "com.topx.fixture",
+  "version": "10.0.1",
+  "name": "TOP X",
+  "description": "Synthetic compatibility fixture based on the public TOP X manifest; nested fields are regression probes, not a captured user configuration.",
+  "resources": ["catalog", "meta"],
+  "types": ["movie", "series"],
+  "idPrefixes": ["tt", "tmdb", "topx:", "tx:"],
+  "behaviorHints": {"configurable": true, "configurationRequired": false},
+  "catalogs": [
+    {"id": "tx.in.topx.movie", "type": "movie", "name": "#1 Top X India", "extra": [{"name": "skip", "isRequired": false}]},
+    {"id": "tx.in.topx.series", "type": "series", "name": "#2 Top X India", "extraSupported": ["skip"], "extraRequired": []},
+    {"extra": [{"name": "genre", "id": "", "type": "select", "isRequired": true, "options": ["All"]}, {"name": "skip", "isRequired": false}], "id": "tx.in.amazon-prime.movie", "type": "movie", "name": "#3 Amazon Prime Video India Top 10"}
+  ]
+}

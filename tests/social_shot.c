@@ -16,6 +16,7 @@
 // nao o que esta foto quer provar.
 #define NV_REC_URL "http://127.0.0.1:8799"
 #include "../src/recomenda.c"
+#include "nvtmp.h"
 #include "salvospainel.h"
 #include "salvos.h"
 #include "ctxmenu.h"
@@ -254,7 +255,7 @@ static void semear(const char *dir) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-social";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-social");
   const char *dir = getenv("NUVIO_DADOS");
   char nome[700];
   SDL_Window *w;

@@ -51,7 +51,7 @@ static void czDigita(const char *t, float px, float x, float y, float frac, floa
   if (k <= 0) return;
   memcpy(b, t, (size_t)k);
   b[k] = 0;
-  ajcTexto(b, px, 0, x, y, a);
+  ajcTextoVivo(b, px, 0, x, y, a);
 }
 static float czFracDigitar(float periodo) {
   float f;

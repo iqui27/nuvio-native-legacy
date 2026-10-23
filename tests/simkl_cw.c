@@ -11,9 +11,11 @@
 // STDOUT E CAPTURADO e conferido no fim: o token nao pode aparecer no que o
 // modulo imprime. O progresso do proprio teste sai por stderr.
 #include "../src/simkl.h"
+#include "nvtmp.h"
 #include "../src/ajustes.h"
 #include "../src/js.h"
 #include "../src/rede.h"
+#include <stdint.h>
 #include <assert.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -34,6 +36,11 @@ _Static_assert(AJ_SALVOS_LOCAL == 0 && AJ_SALVOS_TRAKT == 1 && AJ_SALVOS_SIMKL =
                "indices de salvosDestino mudaram de sentido");
 
 // ---------------------------------------------------------------- stubs
+
+#ifndef SIMKL_ANIME_FIXTURE
+const char *metaprov_idioma(void) { return "en"; }
+char *fichameta_ler(const char *key, long ttl) { (void)key; (void)ttl; return NULL; }
+#endif
 
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
 int dados_gravar(const char *nome, const char *buf) { (void)nome; (void)buf; return 1; }
@@ -57,6 +64,14 @@ const char *i18n(const char *s) { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
 // O enfeite real vai ao Cinemeta; aqui devolve o lote como veio.
 int trakt_enfeitar_lote(CatItem *saida, int n) { (void)saida; return n; }
+uint64_t perfis_sessao_geracao(void) { return 1; }
+int perfis_sessao_atual(uint64_t g) { return g == 1; }
+int perfis_sessao_travar(uint64_t g) { return g == 1; }
+void perfis_sessao_destravar(void) {}
+int trakt_enfeitar_lote_sessao(CatItem *saida, int n, uint64_t g) {
+  assert(perfis_sessao_atual(g));
+  return trakt_enfeitar_lote(saida, n);
+}
 
 // ---------------------------------------------------------------- rede falsa
 
@@ -94,15 +109,34 @@ static const char *WATCHING =
   "{\"last_watched_at\":\"2024-01-18T21:00:00Z\",\"status\":\"watching\","
   "\"next_to_watch\":\"S01E02\",\"show\":{\"title\":\"Sem imdb\",\"ids\":{\"simkl\":5}}}]}";
 
+// /sync/all-items/anime/watching: raiz "anime", objeto interno "anime".
+// Um anime com proximo episodio, um em dia (null) e um sem imdb.
+static const char *WATCHING_ANIME =
+  "{\"anime\":[{\"last_watched_at\":\"2024-01-22T21:00:00Z\",\"status\":\"watching\","
+  "\"next_to_watch\":\"S03E04\",\"anime\":{\"title\":\"Frieren\",\"year\":2023,"
+  "\"ids\":{\"simkl\":77,\"mal\":52991,\"imdb\":\"tt22248376\"}}},"
+  "{\"last_watched_at\":\"2024-01-21T21:00:00Z\",\"status\":\"watching\","
+  "\"next_to_watch\":null,\"anime\":{\"title\":\"Em dia\",\"ids\":{\"imdb\":\"tt1111111\"}}},"
+  "{\"status\":\"watching\",\"next_to_watch\":\"S01E01\","
+  "\"anime\":{\"title\":\"Sem imdb\",\"ids\":{\"simkl\":8}}}]}";
+
 static const char *PTW_FILMES =
   "{\"movies\":[{\"added_to_watchlist_at\":\"2024-01-01T00:00:00Z\",\"status\":\"plantowatch\","
   "\"movie\":{\"title\":\"Dune\",\"year\":2021,\"ids\":{\"simkl\":1,\"imdb\":\"tt1160419\"}}}]}";
 static const char *PTW_SERIES =
   "{\"shows\":[{\"status\":\"plantowatch\",\"next_to_watch\":\"S01E01\","
-  "\"show\":{\"title\":\"Shogun\",\"year\":2024,\"ids\":{\"imdb\":\"tt2788316\"}}}]}";
+  "\"show\":{\"title\":\"Shogun\",\"year\":2024,\"ids\":{\"imdb\":\"tt2788316\"}}},"
+  // O MESMO titulo listado tambem no endpoint de anime: tem de entrar uma vez.
+  "{\"status\":\"plantowatch\",\"show\":{\"title\":\"Repetido\","
+  "\"ids\":{\"imdb\":\"tt22248376\"}}}]}";
+static const char *PTW_ANIME =
+  "{\"anime\":[{\"status\":\"plantowatch\","
+  "\"anime\":{\"title\":\"Frieren\",\"year\":2023,"
+  "\"ids\":{\"mal\":52991,\"imdb\":\"tt22248376\"}}}]}";
 
 static char atividades[200] = "{\"all\":\"2024-01-20T21:00:00Z\"}";
-static int batidas[8];   // activities, playback, watching, ptw filmes, ptw series, post, delete, outro
+static int batidas[9];   // activities, playback, watching, ptw filmes, ptw series,
+                         // post, delete, outro, anime
 static char ultimaRota[64], ultimoCorpo[300], ultimaUrl[700];
 static int  semBearer, comApiKey;
 
@@ -130,7 +164,7 @@ static void rota(const char *url, char *dst, size_t tam) {
   memcpy(dst, p, n); dst[n] = 0;
 }
 
-static int perfilRede, trocarNaResposta, perfilHistorySt = 200;
+static int perfilRede, trocarNaResposta, perfilHistorySt = 200, libraryFailure;
 static const char *perfilHistoryBody = "{\"movies\":[],\"shows\":[],\"anime\":[]}";
 
 char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
@@ -140,6 +174,9 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   rota(url, r, sizeof r);
   snprintf(ultimaRota, sizeof ultimaRota, "%s", r);
   *st = 200;
+  if (libraryFailure && !strcmp(r, "/sync/all-items/shows/plantowatch")) {
+    *st = 400; return NULL;
+  }
   if (perfilRede && !strcmp(r, "/users/settings")) {
     if (trocarNaResposta == 1) { tokenAtual = "OUTRO-TOKEN-FALSO"; credGeracao++; }
     return strdup("{\"user\":{\"name\":\"Identidade Simkl\"}}");
@@ -155,10 +192,18 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   if (!strcmp(r, "/sync/all-items/shows/watching"))     { batidas[2]++; return strdup(WATCHING); }
   if (!strcmp(r, "/sync/all-items/movies/plantowatch")) { batidas[3]++; return strdup(PTW_FILMES); }
   if (!strcmp(r, "/sync/all-items/shows/plantowatch"))  { batidas[4]++; return strdup(PTW_SERIES); }
+  // Anime e um terceiro tipo: /anime/<estado>, raiz "anime".
+  if (!strncmp(r, "/sync/all-items/anime/", 22)) {
+    batidas[8]++;
+    if (!strcmp(r, "/sync/all-items/anime/watching"))    return strdup(WATCHING_ANIME);
+    if (!strcmp(r, "/sync/all-items/anime/plantowatch")) return strdup(PTW_ANIME);
+  }
   batidas[7]++;
   *st = 404;
   return strdup("{\"error\":\"id_err\",\"code\":404}");
 }
+
+#include "library639_http.inc"
 
 char *rede_postar_st(const char *url, int s, const char *const *cab,
                      const char *corpo, int *st) {
@@ -186,7 +231,7 @@ char *rede_apagar(const char *url, int s, const char *const *cab, int *st) {
 
 static int totalBatidas(void) {
   int i, t = 0;
-  for (i = 0; i < 8; i++) t += batidas[i];
+  for (i = 0; i < 9; i++) t += batidas[i];
   return t;
 }
 
@@ -234,22 +279,47 @@ static void leitores(void) {
   // Anime: numeracao TVDB (2x3), nao a do AniDB (1x40).
   assert(!strcmp(v[2].imdb, "tt2560140:2:3") && ids[2] == 125);
   OK("playback: serie, filme e anime (TVDB) viram itens; AniDB puro e sem imdb ficam fora");
+  {
+    const char *especiais =
+      "[{\"progress\":50,\"episode\":{\"tvdb_season\":0,\"tvdb_number\":1},\"show\":{\"ids\":{\"imdb\":\"tt12409194\"}}},"
+      "{\"progress\":50,\"episode\":{\"season\":0,\"number\":2},\"show\":{\"ids\":{\"imdb\":\"tt12409194\"}}},"
+      "{\"progress\":50,\"episode\":{\"season\":1,\"number\":77,\"tvdb_season\":0,\"tvdb_number\":3},\"anime\":{\"ids\":{\"imdb\":\"tt12409194\"}}},"
+      "{\"progress\":50,\"episode\":{\"season\":1,\"number\":77,\"tvdb_number\":3},\"anime\":{\"ids\":{\"imdb\":\"tt12409194\"}}},"
+      "{\"progress\":50,\"episode\":{\"number\":1},\"show\":{\"ids\":{\"imdb\":\"tt12409194\"}}}]";
+    n = simkl_ler_playback(especiais, v, ids, 12);
+    assert(n == 3);
+    for (int i = 0; i < n; i++) {
+      char id[64]; snprintf(id, sizeof id, "tt12409194:0:%d", i + 1);
+      assert(!strcmp(v[i].imdb, id) && !strcmp(v[i].tipo, "series"));
+      assert(v[i].temporada == 0 && v[i].episodio == i + 1);
+    }
+    assert(simkl_ler_assistindo("{\"shows\":[{\"next_to_watch\":\"S00E06\",\"show\":{\"ids\":{\"imdb\":\"tt12409194\"}}}]}", v, 12) == 1);
+    assert(v[0].temporada == 0 && v[0].episodio == 6 && !strcmp(v[0].imdb, "tt12409194:0:6"));
+  }
+  OK("#556: Simkl preserva S00 explicito, sem inventar mapeamento TVDB ausente");
+
 
   n = simkl_ler_assistindo(WATCHING, v, 12);
   assert(n == 2);   // "em dia" (null) e sem imdb ficam fora
   assert(!strcmp(v[0].imdb, "tt0903747:1:6") && v[0].progresso == 0);
   assert(!strcmp(v[1].imdb, "tt11280740:2:3") && v[1].temporada == 2 && v[1].episodio == 3);
   assert(!strcmp(v[1].titulo, "Severance") && v[1].retomadoMs > v[0].retomadoMs);
+  // E a resposta do endpoint de ANIME, pelo mesmo leitor (raiz "anime").
+  n = simkl_ler_assistindo(WATCHING_ANIME, v, 12);
+  assert(n == 2 && !strcmp(v[0].imdb, "tt22248376:3:4") && !strcmp(v[0].tipo, "series"));
+  assert(!strcmp(v[0].titulo, "Frieren"));
   assert(simkl_ler_assistindo("null", v, 12) == 0);
   assert(simkl_ler_assistindo("{}", v, 12) == 0);
-  OK("watching: next_to_watch \"S02E03\" vira o episodio seguinte com 0%");
+  OK("watching: next_to_watch \"S02E03\" vira o episodio seguinte com 0%; anime entra");
 
   n = simkl_ler_plantowatch(PTW_FILMES, 0, v, 12);
   assert(n == 1 && !strcmp(v[0].imdb, "tt1160419") && v[0].naLista && !strcmp(v[0].tipo, "movie"));
   assert(v[0].poster[0]);   // arte do metahub, sem GET
   n = simkl_ler_plantowatch(PTW_SERIES, 1, v, 12);
-  assert(n == 1 && !strcmp(v[0].imdb, "tt2788316") && !strcmp(v[0].tipo, "series"));
-  OK("plantowatch: filmes e series com naLista");
+  assert(n == 2 && !strcmp(v[0].imdb, "tt2788316") && !strcmp(v[0].tipo, "series"));
+  n = simkl_ler_plantowatch(PTW_ANIME, 1, v, 12);
+  assert(n == 1 && !strcmp(v[0].imdb, "tt22248376") && !strcmp(v[0].tipo, "series"));
+  OK("plantowatch: filmes, series e anime com naLista");
 }
 
 static void retomada(void) {
@@ -257,32 +327,38 @@ static void retomada(void) {
   int n, i;
   memset(batidas, 0, sizeof batidas);
   n = simkl_continuar(v, 12);
-  // 3 pausados + Severance (a seguir). Breaking Bad do watching NAO entra de
-  // novo: a serie ja esta pausada no S01E05.
-  assert(n == 4);
-  for (i = 0; i < n; i++) assert(strncmp(v[i].imdb, "tt0903747:1:6", 13));
-  // Pausados primeiro; sugestoes ficam nos lugares restantes.
-  assert(!strcmp(v[0].imdb, "tt1375666"));
-  assert(!strcmp(v[3].imdb, "tt11280740:2:3"));
+  // 3 pausados + Frieren (anime) + Severance (a seguir). Breaking Bad do
+  // watching NAO entra de novo: a serie ja esta pausada no S01E05.
+  assert(n == 6);
+  int frieren = 0, severance = 0, paused = 0;
+  for (i = 0; i < n; i++) {
+    assert(strncmp(v[i].imdb, "tt0903747:1:6", 13));
+    if (i) assert(v[i - 1].retomadoMs >= v[i].retomadoMs);
+    frieren += !strcmp(v[i].imdb, "tt22248376:3:4") && !strcmp(v[i].tipo, "series");
+    severance += !strcmp(v[i].imdb, "tt11280740:2:3");
+    paused += !strcmp(v[i].imdb, "tt1375666");
+  }
+  assert(frieren == 1 && severance == 1 && paused == 1);
+  assert(simkl_e_a_seguir("tt22248376:3:4"));
   assert(simkl_e_a_seguir("tt11280740:2:3"));
   assert(!simkl_e_a_seguir("tt1375666"));
-  assert(batidas[0] == 1 && batidas[1] == 1 && batidas[2] == 1);
+  assert(batidas[0] == 1 && batidas[1] == 1 && batidas[2] == 1 && batidas[8] == 1);
   assert(!semBearer && !comApiKey);
-  OK("retomada: pausados + a seguir, sem repetir serie, mais recente primeiro");
+  OK("retomada: pausados + a seguir de shows E anime, sem repetir serie");
 
   // Atividades iguais: nada de playback nem all-items de novo.
   n = simkl_continuar(v, 12);
-  assert(n == 4 && batidas[0] == 2 && batidas[1] == 1 && batidas[2] == 1);
+  assert(n == 6 && batidas[0] == 2 && batidas[1] == 1 && batidas[2] == 1 && batidas[8] == 1);
   // Atividade nova: rebaixa.
   snprintf(atividades, sizeof atividades, "{\"all\":\"2024-01-21T00:00:00Z\"}");
   n = simkl_continuar(v, 12);
-  assert(n == 4 && batidas[0] == 3 && batidas[1] == 2 && batidas[2] == 2);
+  assert(n == 6 && batidas[0] == 3 && batidas[1] == 2 && batidas[2] == 2 && batidas[8] == 2);
   OK("retomada: /sync/activities igual nao baixa all-items de novo");
 
   // Lista cheia: a sugestao nao expulsa nenhum pausado.
   n = simkl_continuar(v, 3);
   assert(n == 3 && !strcmp(v[0].imdb, "tt1375666"));
-  for (i = 0; i < n; i++) assert(strcmp(v[i].imdb, "tt11280740:2:3"));
+  for (i = 0; i < n; i++) assert(strcmp(v[i].imdb, "tt11280740:2:3") && strcmp(v[i].imdb, "tt22248376:3:4"));
   assert(!strcmp(v[2].imdb, "tt2560140:2:3"));
   OK("retomada: com a fileira cheia, todos os pausados ficam");
   proximoTeste = 0;
@@ -337,14 +413,24 @@ static void maisMenos(void) {
 
   // O Plan to Watch lido da rede alimenta a guarda do "-".
   memset(batidas, 0, sizeof batidas);
-  assert(simkl_plantowatch(v, 12) == 2);
-  assert(batidas[3] == 1 && batidas[4] == 1);
-  assert(v[0].naLista && v[1].naLista);
+  // Dune + Shogun + Repetido. Frieren (anime) tem o MESMO imdb de Repetido:
+  // baixado, mas entra uma vez so.
+  assert(simkl_plantowatch(v, 12) == 3);
+  assert(batidas[3] == 1 && batidas[4] == 1 && batidas[8] == 1);
+  assert(v[0].naLista && v[1].naLista && v[2].naLista);
+  assert(!strcmp(v[2].imdb, "tt22248376") && !strcmp(v[2].tipo, "series"));
   assert(simkl_na_plantowatch("tt2788316") && simkl_na_plantowatch("tt1160419"));
+  assert(simkl_na_plantowatch("tt22248376"));
   assert(simkl_lista_tipo("tt2788316", "series", 0) == 1);
   assert(esperarEscrita() == SMK_OP_CONFIRMADA);
   assert(!strcmp(ultimoCorpo, "{\"shows\":[{\"ids\":{\"imdb\":\"tt2788316\"}}]}"));
   OK("plantowatch da rede: naLista e a guarda do - conhece o que veio de la");
+  simkl_esquecer();
+  libraryFailure = 1;
+  assert(simkl_plantowatch(v, 12) == -1);
+  libraryFailure = 0;
+  simkl_esquecer();
+  OK("partial Simkl library is rejected instead of replacing complete membership");
 }
 
 static void perfilRedeCasos(void) {
@@ -426,8 +512,15 @@ static void perfilStats(void) {
   OK("perfil: identidade e estatisticas mensais saem do Simkl; outro mes fica fora");
 }
 
-int main(void) {
-  char caminho[] = "/tmp/nuvio-simkl-cw-XXXXXX";
+int main(int argc, char **argv) {
+  (void)argv;
+  if (argc > 1) {
+    CatItem *v = calloc(12, sizeof *v);
+    assert(v); tokenAtual = TOKEN; libraryFailure = 1;
+    assert(simkl_plantowatch(v, 12) == -1);
+    free(v); puts("#639 Simkl partial snapshot: PASS"); return 0;
+  }
+  char caminho[NVT_MAX]; nvt_set(caminho, sizeof caminho, "/nuvio-simkl-cw-XXXXXX");
   int fd = mkstemp(caminho), salvo = dup(1);
   FILE *f;
   char linha[512];

@@ -45,6 +45,7 @@ enum { SORG_SOCIAL_RECENTES = 0, SORG_SOCIAL_PESSOA, SORG_SOCIAL_N };
 // Le o arquivo do perfil ativo se ainda nao leu ou se o perfil mudou. Barata
 // quando nada mudou (uma comparacao de inteiro): pode ser chamada por quadro.
 void sorg_carregar(void);
+void sorg_recarregar(void);
 // Sobe a cada mudanca (leitura, preferencia, categoria, mover). O painel
 // reorganiza por ela, como faz com salvos_revisao.
 unsigned sorg_revisao(void);

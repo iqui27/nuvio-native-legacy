@@ -1,7 +1,9 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 set -eu
 cd "$(dirname "$0")/.."
-binary=$(mktemp /tmp/nuvio-platform-dispatch.XXXXXX)
+binary=$(mktemp ${TMPDIR:-/tmp}/nuvio-platform-dispatch.XXXXXX)
 trap 'rm -f "$binary"' EXIT
 check() {
   local expected=$1 name=$2

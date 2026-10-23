@@ -7,6 +7,10 @@
 #include "dados.h"
 #include "idioma.h"
 #include "posterprov.h"
+#include "arteurl.h"
+#include "teclado.h"
+#include "sistexto.h"
+#include "entrada_texto.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,9 +26,51 @@ static int falhas;
 #define OK(c, m) do { if (c) printf("ok   %s\n", m); else { printf("FALHA %s\n", m); falhas++; } } while (0)
 
 int main(void) {
-  char modelo[600], lido[1024], u[PP_URL_MAX];
+  char modelo[NV_ARTE_URL_MAX * 2], lido[NV_ARTE_URL_MAX * 2], u[NV_ARTE_URL_MAX];
   int aviso, k;
   dados_iniciar(NULL);   // NUVIO_DADOS: diretorio temporario do .sh
+
+  // Posters Plus style settings, fake keys, reserved query values already encoded.
+  snprintf(modelo, sizeof modelo,
+    "https://postersplus.example.invalid/poster?tmdb_id={tmdb_id}&imdb_id={imdb_id}"
+    "&stremio_id={imdb_id}&type={type}&primary_client=stremio_tv_nuvio"
+    "&tmdb_key=FAKE_ABCdef0123456789&mdblist_key=FAKE_XYZabc0123456789"
+    "&top_gradient=off&bottom_gradient=low&vignette_poster_color_bottom=true"
+    "&vignette_color_blur=0.50&vignette_color_local=false&vignette_color_style=muted"
+    "&sash_mode=notch&fallback_to_imdb=true&tmdb_rating_source=direct&score_color_mode=0"
+    "&movie_weights=imdb%%3A1.00&tv_weights=imdb%%3A1.00&use_original_art=true"
+    "&logo_language=ru&logo_priority=native%%2Cenglish%%2Coriginal%%2Cneutral%%2Ctext"
+    "&fallback_bg_style=photoreal&meta_order=rating%%2Cyear%%2Cgenre"
+    "&sash_badge_size_w=1.40&sash_badge_size_h=1.20&badge_display_mode=0");
+  assert(strlen(modelo) > 700);
+  OK(TECLADO_LONGO >= (int)strlen(modelo), "keyboard accepts the complete Posters Plus template");
+  aviso = ajustes_teste_poster_modelo(modelo, lido, sizeof lido);
+  OK(aviso == 0 && !strcmp(lido, modelo), "Posters Plus template saves intact");
+  ajustes_teste_poster_recarregar(lido, sizeof lido);
+  OK(!strcmp(lido, modelo), "Posters Plus template reloads intact");
+  OK(posterprov_montar_url(posterprov_cfg(), "tt0903747", 1396, "series", u, sizeof u) &&
+     strlen(u) > 700 && strstr(u, "tmdb_id=1396&imdb_id=tt0903747") &&
+     strstr(u, "type=series&") && strstr(u, "FAKE_ABCdef0123456789") &&
+     strstr(u, "movie_weights=imdb%3A1.00") && strstr(u, "logo_language=ru&") &&
+     strstr(u, "&badge_display_mode=0") && !strchr(u, '{'),
+     "Posters Plus URL expands IDs, preserves key case, encoding and final settings");
+  OK(strlen(u) > 700 && !strcmp(posterprov_card("tt0903747", 1396, "series", "fallback"), u) &&
+     posterprov_e_provedor(u), "complete Posters Plus URL reaches the card and provider download path");
+  { char evento[NV_ARTE_URL_MAX + 1];
+    st_teste_ligar(1);
+    st_ime_abrir(ST_TECLADO, "", TECLADO_LONGO);
+    snprintf(evento, sizeof evento, "D%s", modelo);
+    st_teste_evento(evento);
+    OK(st_ler(ST_TECLADO, lido, sizeof lido) == ST_FIM && !strcmp(lido, modelo),
+       "native keyboard event preserves the complete template");
+    st_fechar(ST_TECLADO);
+    st_teste_ligar(0);
+    texto_sistema_abrir("", 0);
+    texto_sistema_ponte_valor(modelo);
+    texto_sistema_quadro();
+    OK(!strcmp(texto_sistema_valor(), modelo), "TV keyboard bridge preserves the complete template");
+    texto_sistema_fechar();
+  }
   // ~380 caracteres: chave de mentira com maiusculas, config longa, {imdb} no fim.
   k = snprintf(modelo, sizeof modelo,
                "https://posters.exemplo.invalid/FAKEKEY_ABCdef0123456789XYZ/config=");
@@ -73,16 +119,16 @@ int main(void) {
         OK(!posterprov_montar_url(posterprov_cfg(), a == 0 ? "tmdb:278" : "tt0111161",
                                  0, "movie", u, sizeof u), "alias nao inventa identificador ausente");
       }
-      // 12 marcadores: a sintaxe cabe em 400, mas o montado toca o limite.
+      // Expansion reaches the common URL limit before the template limit.
       { int max = a == 1 ? 19 : 23, i;
         k = snprintf(modelo, sizeof modelo, "https://posters.exemplo.invalid/");
         for (i = 0; i < 12; i++) k += snprintf(modelo + k, sizeof modelo - (size_t)k, "%s", aliases[a]);
         while (k + 12 * (max - (int)strlen(aliases[a])) < PP_URL_MAX - 1) modelo[k++] = 'a';
         modelo[k] = 0;
-        OK(posterprov_modelo_cabe(modelo), "alias com pior caso de 511 bytes cabe");
+        OK(posterprov_modelo_cabe(modelo), "alias at the URL limit fits");
         modelo[k++] = 'a'; modelo[k] = 0;
         OK(posterprov_modelo_valido(modelo) && !posterprov_modelo_cabe(modelo),
-           "alias com pior caso de 512 bytes e recusado por tamanho");
+           "alias exceeding the URL limit is rejected");
       }
     }
   }
@@ -93,20 +139,19 @@ int main(void) {
      i18n("modelo inválido: use http(s):// e {imdb}, {imdb_id}, {tmdb}, {tmdb_id}, {id}, {type} ou {tipo_tmdb}")),
      "Done/OK mostra recusa de sintaxe no aviso de Ajustes");
 
-  // Codex P2: o modelo cabe em 400, mas o MONTADO tem de caber em PP_URL_MAX.
-  // 40 x {imdb} viram 40 x tt0111161 = 520 caracteres: salvo, nunca montaria.
+  // Expansion must fit even when the template itself fits the input limit.
   { char m[PP_MODELO_MAX], u2[PP_URL_MAX];
     int j = snprintf(m, sizeof m, "https://posters.exemplo.invalid/");
     int i;
-    for (i = 0; i < 40; i++) j += snprintf(m + j, sizeof m - (size_t)j, "{imdb}");
+    for (i = 0; i < PP_URL_MAX / 23 + 1; i++) j += snprintf(m + j, sizeof m - (size_t)j, "{imdb}");
     while (j < 400) m[j++] = 'a';
     m[j] = 0;
-    assert(strlen(m) == 400);
+    assert(strlen(m) < PP_MODELO_MAX);
     aviso = ajustes_teste_poster_modelo(m, lido, sizeof lido);
-    printf("aviso 40x{imdb}=%d\n", aviso);
-    OK(aviso != 0, "400 caracteres com 40 x {imdb} (montado > 512) e recusado ao salvar");
+    printf("notice oversized expansion=%d\n", aviso);
+    OK(aviso != 0, "template with oversized expansion is rejected when saving");
     OK(!strcmp(ajustes_teste_poster_aviso(),
-       i18n("modelo longo demais: o endereço pronto passa de 512 caracteres")),
+       i18n("modelo longo demais: o endereço pronto passa de 2048 caracteres")),
        "Done/OK mostra recusa de tamanho no aviso de Ajustes");
     // Copilot no #408: recusado por TAMANHO, nao pela sintaxe. O aviso de
     // sintaxe ("use http(s):// e {imdb}...") mandaria corrigir o que esta certo.
@@ -163,7 +208,7 @@ int main(void) {
     for (a = 0; a < 7; a++) ajustes_teste_poster_definir(a < 4 ? a : 4, ruins[a]);
     snprintf(modelo, sizeof modelo, "https://posters.exemplo.invalid/SEGREDO/");
     k = (int)strlen(modelo);
-    for (a = 0; a < 40; a++) k += snprintf(modelo + k, sizeof modelo - (size_t)k, "{imdb}");
+    for (a = 0; a < 100; a++) k += snprintf(modelo + k, sizeof modelo - (size_t)k, "{imdb}");
     ajustes_teste_poster_definir(4, modelo);
     ajustes_teste_poster_definir(4, "https://posters.exemplo.invalid/{id}");
     fflush(stdout); assert(dup2(salvo, STDOUT_FILENO) >= 0); close(salvo);

@@ -13,6 +13,8 @@ import { rotaXtream } from "./xtream.js";
 import { codigoRegistro } from "./codigo.js";
 import { rotaTrailerImdb, rotaTrailerYoutube } from "./trailer.js";
 import { rotaNoticia, rotaNoticiaImg } from "./noticia.js";
+import { rotaLiveTvCategorias } from "./livetvcat.js";
+import { rotaMusica, rotaPaginaMusica } from "./musica.js";
 import { rotaAmigos, limpezaAmigos, despublicar, garantirPerfil, avatarPublico, limitar, seloDe, mesmaConta } from "./amigos.js";
 import { rotaEuNome, rotaAlcance, rotaEvento, rotaFeed, rotaAmigo, limpezaSocial,
          limparNome, avatarPerfilOk, resolverNome, rotaRecResposta } from "./social.js";
@@ -974,6 +976,18 @@ export default {
     // permitido; o cliente manda text/plain, que nem pede preflight.
     if (rota === "/v1/xtream" && (req.method === "POST" || req.method === "GET"))
       return rotaXtream(req, url);
+
+    // SUGESTAO DE CATEGORIA DE CANAL AO VIVO (Jev): so nomes de canal, sem
+    // sessao, como /v1/xtream. Cache em KV e limite por IP; o Jev usa
+    // HTTP com o segredo TYPESAFE_KEY em livetvcat.js.
+    if (rota === "/livetv/categorias" && req.method === "POST")
+      return rotaLiveTvCategorias(req, env, limitar);
+
+    // MUSICAS DO TITULO: trilha oficial (MusicBrainz + iTunes), cache em KV, e a
+    // pagina do celular aberta pelo QR. Sem sessao. Regras em musica.js.
+    if (rota.startsWith("/musica/v1/") && req.method === "GET")
+      return rotaMusica(url, env, fetch, limitar, req.headers.get("cf-connecting-ip") || "0.0.0.0");
+    if (rota === "/m/" && req.method === "GET") return rotaPaginaMusica();
 
     // TRAILER NA SAMSUNG (#136): a pergunta ao IMDb (que exige Referer) e a
     // pagina que embute o YouTube com origem valida. Regras em trailer.js.

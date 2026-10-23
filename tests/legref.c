@@ -2,6 +2,7 @@
 // REAIS feitos por ffmpeg e mkvmerge (tests/legref_fixtures.sh).
 //   bash tests/legref.sh            SANITIZE=1 / SANITIZE=thread
 #include "legref.h"
+#include "nvtmp.h"
 #include "rede.h"
 #include <assert.h>
 #include <math.h>
@@ -95,7 +96,7 @@ static LegendaDocumento *colher(LegRef *r, const char *arq, const char *idioma, 
 
 int main(int argc, char **argv) {
   Leitor l; memset(&l, 0, sizeof l); pthread_mutex_init(&l.m, NULL);
-  DIR = argc > 1 ? argv[1] : "/tmp/nv-legref";
+  DIR = argc > 1 ? argv[1] : nvt("/nv-legref");
   unsigned gerAntes = legenda_geracao();
   LegRef *r = legref_criar(lerArquivo, &l); assert(r);
   LegendaDocumento *emb = srt("emb.srt", 7), *d; LegRefStatus s;

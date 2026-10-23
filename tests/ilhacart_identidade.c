@@ -14,6 +14,11 @@ static int logada = 1, perfil = 1, vistos;
 static const char *conta = "fixture-a";
 static CatItem titulo;
 int anim_politica_reduzida;
+// Control Center hold fill (central.c), sem segurar aqui.
+float central_segurar_progresso(Uint32 a) { (void)a; return 0.0f; }
+void  central_segurar_desenhar(GfxRect r, float ra, float a, Uint32 ag) {
+  (void)r; (void)ra; (void)a; (void)ag;
+}
 Uint32 SDL_GetTicks(void) { return agora; }
 int sessao_logada(void) { return logada; }
 const char *sessao_usuario(void) { return conta; }
@@ -78,6 +83,10 @@ static void abrirModal(int qual) {
   relogioQuer = 1; cartaoVez = qual;
   mostra = M_CARTAO; mostraQual = qual; mostraC = cartoes[qual]; conteudoA = 1;
   assert(ilha_modal_abrir()); modalT = 1;
+  if (qual == ILHA_VIVO) {
+    IlhaCartao foco; assert(ilha_retomar_focado(&foco) && !strcmp(foco.chave, modalC.chave));
+    modalFoco = 1; assert(!ilha_retomar_focado(NULL)); modalFoco = 0;
+  }
 }
 static void pedirRetomar(void) {
   SDL_Event ev = {0}; ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_RETURN;

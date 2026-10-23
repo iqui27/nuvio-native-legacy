@@ -1,0 +1,14 @@
+{
+  "id": "org.subtitlesync.reference",
+  "version": "2.1.0",
+  "resources": [
+    "subtitles"
+  ],
+  "types": [
+    "movie",
+    "series"
+  ],
+  "idPrefixes": [
+    "tt"
+  ]
+}

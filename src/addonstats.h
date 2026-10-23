@@ -5,7 +5,7 @@
 // e ha centenas de "segunda tentativa (30 s)" de add-on mudo. Quem espera por
 // eles paga na hora do Play. Aqui fica a memoria do que cada um fez NESTA TV
 // (a rede, o provedor e a regiao mudam de casa para casa): uma janela curta
-// por nome, num arquivo pequeno.
+// por identidade de configuracao e perfil, num arquivo pequeno.
 //
 // O QUE SE FAZ COM ISSO, e so isto:
 //   - um add-on MUDO (sem resposta nas ultimas ADDONSTATS_MUDO_IGNORA buscas
@@ -22,7 +22,7 @@
 #ifndef NV_ADDONSTATS_H
 #define NV_ADDONSTATS_H
 
-#define ADDONSTATS_JANELA 8          // amostras guardadas por nome
+#define ADDONSTATS_JANELA 8          // amostras guardadas por identidade
 #define ADDONSTATS_MAX 288           // nomes (128 addons + 160 scrapers de plugin)
 #define ADDONSTATS_MUDO_IGNORA 2     // seguidas sem resposta: sai da espera
 #define ADDONSTATS_MUDO_PULA 3       // seguidas: sem segunda tentativa
@@ -48,7 +48,7 @@ int  addonstats_segunda_s(const char *nome, int padraoS);
 // Mediana (ms) das amostras que responderam; 0 sem amostra.
 unsigned addonstats_mediana(const char *nome);
 
-// Arquivo de texto: uma linha por nome, "nome\tms:ok ms:ok ...".
+// Arquivo de texto: uma linha por chave opaca, "chave\tms:ok ms:ok ...".
 int  addonstats_serializar(char *dst, unsigned tam);
 void addonstats_carregar(const char *texto);
 void addonstats_zerar(void);

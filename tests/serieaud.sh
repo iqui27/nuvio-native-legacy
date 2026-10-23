@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Audiencia da serie: /stats, retencao (com a armadilha do E2 > E1), buracos na
 # temporada, teto de pedidos, abandono e o cache de disco sobrevivendo a um
 # arranque.
@@ -14,7 +16,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-serieaud-dados.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-serieaud-dados.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 echo "dados do teste em $NUVIO_DADOS"
@@ -25,8 +27,8 @@ for source in src/*.c src/dts/*.c; do
   sources+=("$source")
 done
 
-cc "${sources[@]}" tests/serieaud.c -Isrc -o /tmp/nuvio-serieaud \
+cc "${sources[@]}" tests/serieaud.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-serieaud \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-serieaud
+${TMPDIR:-/tmp}/nuvio-serieaud

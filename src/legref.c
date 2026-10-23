@@ -256,7 +256,7 @@ static unsigned char *ler(Job *j, long long ini, long n, long *tam) {
   b = r->ler(r->lerU, j->urlFinal, ini, n, tam, &st, parou, j);
   if (b) j->bytes += *tam;
   if (parou(j)) { free(b); j->erro = LEGREF_PARADO; return NULL; }
-  if (!b) { j->erro = st == 200 ? LEGREF_SEM_RANGE : LEGREF_REDE; return NULL; }
+  if (!b) { if (j->erro != LEGREF_PARADO) j->erro = st == 200 ? LEGREF_SEM_RANGE : LEGREF_REDE; return NULL; }
   if (st != 206) { free(b); j->erro = LEGREF_SEM_RANGE; return NULL; }
   return b;
 }
@@ -994,7 +994,6 @@ static void *trabalhar(void *u) {
 }
 
 // --- HTTP -------------------------------------------------------------------------
-typedef struct { int (*parar)(void *); void *u; } PararHttp;
 static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, long *tam,
                               int *status, int (*parar)(void *), void *pu) {
   char range[80], linhas[2048]; const char *cab[18]; RedePedido p; RedeResposta r; unsigned char *b = NULL;
@@ -1022,8 +1021,15 @@ static unsigned char *lerHttp(void *u, const char *url, long long ini, long n, l
     b = (unsigned char *)r.corpo; r.corpo = NULL; *tam = (long)r.n_corpo;
     // Endereco final para os proximos Ranges (o Job guarda; nunca vai a log).
     if (r.final[0] && pu) { Job *j = pu; snprintf(j->urlFinal, sizeof j->urlFinal, "%s", r.final); }
+  } else if (r.erro == REDE_CANCELADO) {
+    if (pu) ((Job *)pu)->erro = LEGREF_PARADO;
+    fprintf(stderr, "[legref] range cancelled reason=caller_cancelled http=%d rede_error=%d curl_error=%d request_headers=%d\n",
+            r.status, (int)r.erro, r.curl_erro, k - 1);
   } else if (r.status != 200)
-    fprintf(stderr, "[legref] range falhou http=%d erro=%d cabecalhos=%d\n", r.status, (int)r.erro, k - 1);
+    fprintf(stderr, "[legref] range failed reason=%s http=%d rede_error=%d curl_error=%d request_headers=%d\n",
+            r.erro == REDE_PRAZO ? "deadline" : r.erro == REDE_LIMITE_CORPO ? "body_limit" :
+            r.erro == REDE_LIMITE_CABECALHOS ? "header_limit" : r.erro == REDE_OK ? "invalid_range_response" : "request_failed",
+            r.status, (int)r.erro, r.curl_erro, k - 1);
   if (!b && r.status == 200 && r.final[0] && pu) {
     Job *j = pu; snprintf(j->urlFinal, sizeof j->urlFinal, "%s", r.final);
   }

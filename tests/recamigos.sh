@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Perfil publico, busca, pedidos, bloqueio, atividade e a fileira "Entre amigos"
 # (lado cliente), com a REDE FALSA. O servidor tem o proprio teste
 # (servidor/recomendacoes/teste-amigos.sh); aqui se prova o que so o cliente
@@ -13,7 +15,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-recamigos-dados.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-recamigos-dados.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 
@@ -30,7 +32,7 @@ compila() { # binario, defines extras
     -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
 }
 
-compila /tmp/nuvio-recamigos
-/tmp/nuvio-recamigos
-compila /tmp/nuvio-recamigos-sem-url -DREC_TESTE_SEM_URL
-/tmp/nuvio-recamigos-sem-url
+compila ${TMPDIR:-/tmp}/nuvio-recamigos
+${TMPDIR:-/tmp}/nuvio-recamigos
+compila ${TMPDIR:-/tmp}/nuvio-recamigos-sem-url -DREC_TESTE_SEM_URL
+${TMPDIR:-/tmp}/nuvio-recamigos-sem-url

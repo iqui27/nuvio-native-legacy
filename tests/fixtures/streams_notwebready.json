@@ -1,0 +1,14 @@
+{"streams":[
+  {"name":"Direct","url":"https://example.invalid/direct.mp4"},
+  {"name":"MediaFusion P2P","url":"https://example.invalid/p2p","behaviorHints":{"notWebReady":true}},
+  {"name":"Torrent P2P","infoHash":"abc","behaviorHints":{"notWebReady":true}},
+  {"name":"Explicit false","url":"https://example.invalid/false.mp4","behaviorHints":{"notWebReady":false}},
+  {"name":"String true","url":"https://example.invalid/string.mp4","behaviorHints":{"notWebReady":"true"}},
+  {"name":"Nested hint","url":"https://example.invalid/nested.mp4","behaviorHints":{"proxyHeaders":{"request":{"notWebReady":true}}}},
+  {"name":"Root hint","url":"https://example.invalid/root.mp4","notWebReady":true},
+  {"name":"Missing hint","url":"https://example.invalid/missing.mp4"},
+  {"name":"External only","externalUrl":"https://example.invalid/watch","webosUrl":"exampleapp://watch"},
+  {"name":"Media and external","externalUrl":"https://example.invalid/watch","url":"https://example.invalid/media.mp4"},
+  {"name":"Nested URL is not media","externalUrl":"https://example.invalid/watch","behaviorHints":{"url":"https://example.invalid/nested"}},
+  {"name":"Local engine","url":"http://127.0.0.1:11470/hash/0","behaviorHints":{"notWebReady":true}}
+]}

@@ -12,6 +12,13 @@
 #define main cedo_main
 #include "montagem_cedo.c"
 #include "jellyfin_stub.inc"
+#include "nvtmp.h"
+// descoberta.c now records the manifest and the watch-state destination; this
+// fixture links neither addons.c nor watchstate.c.
+__attribute__((weak)) void addons_manifesto_lido_base(int i, const char *b, const char *d, unsigned v, const char *c) {
+  (void)i; (void)b; (void)d; (void)v; (void)c; }
+__attribute__((weak)) void ws_destino(const char *b, const char *u, int p, char out[20]) {
+  (void)b; (void)u; (void)p; out[0] = 0; }
 #undef main
 
 
@@ -23,7 +30,7 @@ static void esperarFim(void) { esperarQuieto(); }
 
 int main(void) {
   const char *tmp = getenv("TMPDIR");
-  snprintf(dirDados, sizeof dirDados, "%snuvio-homecarga-%d", tmp && *tmp ? tmp : "/tmp/", (int)getpid());
+  snprintf(dirDados, sizeof dirDados, "%snuvio-homecarga-%d", nvt("/"), (int)getpid());
   assert(mkdir(dirDados, 0700) == 0);
   desc_tmdb(dirDados);
   homeestado_iniciar();

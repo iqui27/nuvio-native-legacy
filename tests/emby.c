@@ -6,6 +6,7 @@
 #include "servidores.h"
 #include "idbase.h"
 #include <assert.h>
+#include "stub_perfisessao.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +19,7 @@ static char dirDados[512];
 static int perfilAtivo = 1;
 int perfis_ativo(void) { return perfilAtivo; }
 int ajustes_jellyfin_ligado(void) { return 1; }
+const char *i18n(const char *s) { return s; }
 char *dados_caminho(char *dst, unsigned tam, const char *nome) {
   snprintf(dst, tam, "%s/%s", dirDados, nome);
   return dst;
@@ -38,6 +40,15 @@ char *dados_ler(const char *nome) {
   return b;
 }
 int dados_apagar(const char *nome) { char c[700]; dados_caminho(c, sizeof c, nome); return remove(c) == 0; }
+int dados_gravar_leve(const char *nome, const char *conteudo) {
+  char c[700];
+  FILE *f;
+  dados_caminho(c, sizeof c, nome);
+  f = fopen(c, "wb");
+  if (!f) return 0;
+  fputs(conteudo, f);
+  return fclose(f) == 0;
+}
 void dados_fs_travar(void) {}
 void dados_fs_liberar(void) {}
 
@@ -177,7 +188,8 @@ static void testarProtocolo(void) {
     assert(jf_ler_autenticacao(&a, corpo, strlen(corpo)) == JF_ERR_FORMATO); }
 
   // --- libraries, items (numeric ids), namespace em:
-  assert(jf_ler_bibliotecas(VIEWS, strlen(VIEWS), bib, 8) == 2);
+  assert(jf_ler_bibliotecas(VIEWS, strlen(VIEWS), bib, 8) == 3);
+  assert(!strcmp(bib[2].id, "44") && !strcmp(bib[2].tipo, "movie"));
   assert(!strcmp(bib[0].id, "11") && !strcmp(bib[0].tipo, "movie") && !strcmp(bib[1].tipo, "series"));
   n = jf_ler_itens(&c, ITENS, strlen(ITENS), it, 8, &total);
   assert(n == 2 && total == 120);                                // Audio and the path-traversal id are skipped
@@ -289,15 +301,63 @@ static void integracao(void) {
   assert(!strcmp(fils[1].titulo, "Shows · Emby") && fils[1].ini == 2 && !strcmp(fils[1].tipo, "series"));
   assert(emby_chave_fileira("emby_11") && !emby_chave_fileira("jellyfin_11") && !jellyfin_chave_fileira("emby_11"));
   assert(comeca(itens[0].imdb, "em:9f8e7d6c.") && itens[0].progresso == 25);
+  assert(!strcmp(itens[1].imdb, "tt0002002") && !strcmp(itens[2].imdb, "tmdb:4242"));
   { int nj = jellyfin_fileiras_copiar(itens, 10, fils, 2, &n); assert(nj == 0 && n == 0); }
 
   // ---- the fan-out in servidores.c: Emby rows come through it, ids route by namespace
   { CatItem *x = malloc(sizeof(CatItem) * SRV_ITENS_MAX);
     CatFileira f[SRV_FIL_MAX];
     int tot = 0, nr = servidores_fileiras_copiar(x, SRV_ITENS_MAX, f, SRV_FIL_MAX, &tot);
-    assert(nr == 2 && tot == 3 && f[1].ini == 2 && servidores_conectado());
+    assert(nr == 2 && tot == 2 && f[0].n == 1 && f[1].ini == 1 && servidores_conectado());
+    assert(!strcmp(x[0].imdb, "tt0002002") && !strcmp(x[1].imdb, "tmdb:4242"));
+    assert(!jfid_e(x[0].imdb) && !jfid_e(x[1].imdb));
     assert(servidores_chave_fileira("emby_11") && servidores_chave_fileira("plex_1") && !servidores_chave_fileira("cw"));
+    assert(servidores_pagina("emby_11", 0, 60, x, 60, &tot, NULL) == 2 && tot == 2);
+    assert(jfid_e(x[0].imdb) && !strcmp(x[1].imdb, "tt0002002"));
+    assert(servidores_pagina("emby_11", 1, 60, x, 60, &tot, NULL) == 1 && tot == 2);
+    assert(!strcmp(x[0].imdb, "tt0002002"));
+    assert(servidores_pagina("other", 0, 60, x, 60, &tot, NULL) == -1);
+    // Collection routes must obey the same paging contract as libraries.
+    assert(servidores_pagina("emby_collections", -1, 60, x, 60, &tot, NULL) < 0 && tot == 0);
+    assert(servidores_pagina("emby_collections", 0, 0, x, 60, &tot, NULL) < 0 && tot == 0);
+    assert(servidores_bibliotecas(f, SRV_FIL_MAX) == 4);
+    assert(servidores_pagina("emby_collections", 0, 60, x, 60, &tot, NULL) == 1 && !strcmp(x[0].tipo, "group"));
+    assert(servidores_pagina("emby_4001", 0, 60, x, 60, &tot, NULL) == 1 && !strcmp(x[0].imdb, "tt0002002"));
+    assert(servidores_pagina("emby_playlists", 0, 60, x, 60, &tot, NULL) == 1 && !strcmp(x[0].tipo, "list"));
+    assert(servidores_pagina("emby_list_5001", 0, 60, x, 60, &tot, NULL) == 1 && !strcmp(x[0].imdb, "tt0002002"));
     free(x); }
+  // ---- matched catalogue titles: the Emby index (per-user route) and sources
+  fim = ms() + 5000;
+  while (emby_indice_n() < 3 && ms() < fim) dormir(20);
+  assert(emby_indice_n() == 3 && emby_tem("tt0002002", "movie", NULL) && emby_tem("tmdb:4242", "series", NULL));
+  assert(!jellyfin_tem("tt0002002", "movie", NULL));                                // the other instance has nothing
+  { CatItem *cw = calloc(12, sizeof *cw);
+    assert(cw && servidores_continuar(cw, 12) == 2);
+    assert(!strcmp(cw[0].imdb, "tt0002002") && cw[0].progresso == 25 && cw[0].retomadoMs > 0);
+    assert(!strcmp(cw[1].imdb, "tmdb:4242") && cw[1].temporada == 1 && cw[1].episodio == 1);
+    assert(cw[1].progresso == 33 && cw[1].retomadoMs > cw[0].retomadoMs);
+    free(cw); }
+  { SrvAchado a;
+    assert(servidores_info("em:9f8e7d6c.1001", "movie", &a));
+    assert(!servidores_info("em:00000000.1001", "movie", &a));
+    assert(emby_tem("tt0002002", "movie", &a) && !strcmp(a.tipoSrv, "Emby") && !strcmp(a.servidor, "Emby Home")); }
+  r = emby_consultar("tt0002002", "movie", NULL, 0, NULL, NULL, &lista);
+  assert(r == 2 && lista && strstr(lista[0].url, "/media/emby/Videos/1002/stream") && strstr(lista[0].url, "api_key="));
+  free(lista); lista = NULL;
+  r = emby_consultar("tmdb:4242:2:1", "series", NULL, 0, NULL, NULL, &lista);     // episode 3021 on demand
+  assert(r == 2 && lista && strstr(lista[0].url, "/Videos/3021/stream"));
+  free(lista); lista = NULL;
+  snprintf(arq, sizeof arq, "%s/srvidx-p1-em.txt", dirDados);
+  assert(stat(arq, &st) == 0);
+  // The facade: one origin for every server, title hint for the last rule.
+  { SrvAchado a;
+    assert(servidores_info("tt0002002", "movie", &a) && !strcmp(a.tipoSrv, "Emby") && servidores_casamento_ativo());
+    assert(servidores_consultar("tt0002002", "movie", NULL, NULL, &lista) == 2 && servidores_eh_fonte(&lista[0]));
+    free(lista); lista = NULL;
+    assert(servidores_consultar("tt3333333", "movie", NULL, NULL, &lista) == 0);
+    servidores_dica("tt3333333", "Emby Movie 1", 2011);
+    assert(servidores_consultar("tt3333333", "movie", NULL, NULL, &lista) == 2);   // no ids: title + year
+    free(lista); lista = NULL; }
   assert(!jellyfin_fontes_pedir("em:9f8e7d6c.1001"));                              // not a jf: id
   assert(!plex_fontes_pedir("em:9f8e7d6c.1001"));
 
@@ -359,6 +419,8 @@ static void integracao(void) {
   assert(emby_estado(det, sizeof det) == JF_EST_SEM_SERVIDOR && !emby_conectado());
   snprintf(arq, sizeof arq, "%s/emby-p1.txt", dirDados);
   assert(stat(arq, &st) != 0);
+  snprintf(arq, sizeof arq, "%s/srvidx-p1-em.txt", dirDados);
+  assert(stat(arq, &st) != 0 && !emby_tem("tt0002002", "movie", NULL));
   fim = ms() + 4000;
   do { ev = controle("events"); if (strstr(ev, "logout")) break; free(ev); ev = NULL; dormir(30); } while (ms() < fim);
   assert(ev && strstr(ev, "\"route\": \"logout\""));

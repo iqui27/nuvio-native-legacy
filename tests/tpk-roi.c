@@ -9,11 +9,14 @@
 
 // This geometry fixture has no media bytes or network metadata provider.
 void mkvass_aceitar_texto(int sim) { (void)sim; }
+void mkvass_aceitar_imagem(int sim) { (void)sim; }
 
 const char *i18n(const char *s) { return s; }
 const char *ling_nome(const char *c) { return c; }
 int ling_casa(const char *c, const char *p) { return !strcmp(c, p); }
 const char *ling_audio(void) { return ""; }
+const char *ling_audio2(void) { return ""; }
+const char *ling_original(void) { return ""; }
 int ling_tipo_legenda(const char *s, int f, int d) { (void)s; (void)f; (void)d; return 0; }
 const char *ling_tipo_legenda_rotulo(int t) { (void)t; return ""; }
 const char *ling_do_nome(const char *s) { (void)s; return NULL; }

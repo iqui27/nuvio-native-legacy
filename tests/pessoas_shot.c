@@ -10,8 +10,11 @@
 // prefixo dos arquivos de PESSOAS_PREFIXO (padrao "after").
 #define NV_REC_URL "http://127.0.0.1:1"
 #include "../src/recomenda.c"
+#include "nvtmp.h"
 #include "../src/pessoas.c"
 #include "dados.h"
+#include "shot_arte.h"
+#include "vidro_ilhas.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 
@@ -96,7 +99,7 @@ int main(int argc, char **argv) {
   const char *idi = getenv("PESSOAS_IDIOMA");
   SDL_GLContext gl;
   int k;
-  saida = argc > 1 ? argv[1] : "/tmp/nv-amigos-shots";
+  saida = argc > 1 ? argv[1] : nvt("/nv-amigos-shots");
   prefixo = getenv("PESSOAS_PREFIXO") ? getenv("PESSOAS_PREFIXO") : "after";
   assert(dir && *dir);
   { char cam[600]; FILE *f;
@@ -145,6 +148,24 @@ int main(int argc, char **argv) {
   snprintf(perfil.bio, sizeof perfil.bio, "cinema, séries e muita tela grande");
   perfil.publicado = 1; perfil.foto = 0; perfil.recentes = 1; perfil.ativ = 1;
   perfil.generos = (1u << 10) | (1u << 6);
+
+  /* Frost proof: stripes + a glass bar behind the open modal. */
+  if (getenv("NUVIO_VIDRO_ILHA")) {
+    int q, ok;
+    setenv("NUVIO_SHOT_VIDRO_FOSCO", "1", 1); ajustes_teste_vidro_env();
+    vidroFundoPreparar();
+    pessoas_abrir();
+    for (q = 0; q < 60; q++) {
+      SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(6); gfx_novo_quadro();
+      glBindFramebuffer(GL_FRAMEBUFFER, fbo); glViewport(0, 0, 1920, 1080);
+      pessoas_atualizar(1.0f / 30.0f, SDL_GetTicks());
+      ilhaCena();
+      pessoas_desenhar(SDL_GetTicks());
+    }
+    ok = ilhaConfere("pessoas", (int)((1920 + PE_W) * 0.5f) - 35, 440, 30, 200);
+    ilhaPng(getenv("NUVIO_VIDRO_ILHA"), getenv("NUVIO_ILHA_NOME"));
+    return ok ? 0 : 1;
+  }
 
   /* 1. PRIMEIRA ABERTURA de quem ainda nao ligou nada: sem pedidos, sem perfil. */
   { RecPerfil vazio; memset(&vazio, 0, sizeof vazio); RecPerfil guard = perfil; perfil = vazio;

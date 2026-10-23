@@ -53,9 +53,9 @@ SRC = RAIZ / "src"
 # Na ordem de IDIOMA_* (idiomacod.h). O nome do arquivo e idioma_<cod>.h.
 IDIOMAS = ("ro", "uk", "ru", "fr", "de", "es", "it", "nl", "pl", "tr", "ptpt", "sv",
            "da", "no", "cs", "sk", "sl", "hu", "lt", "bs", "sr", "bg", "el", "id",
-           "vi", "ja", "zhcn", "zhtw")
+           "vi", "ja", "zhcn", "zhtw", "ar")
 CIRILICOS = ("uk", "ru", "bg")
-NAO_LATINOS = CIRILICOS + ("el", "ja", "zhcn", "zhtw")
+NAO_LATINOS = CIRILICOS + ("el", "ja", "zhcn", "zhtw", "ar")
 CJK = ("ja", "zhcn", "zhtw")
 # Escrita que cada lingua nao latina tem de mostrar em toda traducao "de verdade".
 ESCRITA = {
@@ -63,9 +63,12 @@ ESCRITA = {
     "el": "[\u0370-\u03ff\u1f00-\u1fff]",
     "ja": "[\u3040-\u30ff\u3400-\u9fff]",
     "zhcn": "[\u3400-\u9fff]", "zhtw": "[\u3400-\u9fff]",
+    "ar": "[\u0600-\u06ff]",
 }
 FONTES = RAIZ / "deploy" / "app" / "fonts"
 FONTE_CJK = "DroidSansFallback-Subset.ttf"
+# A fonte arabe embarcada (tools/fonte-arabe.py): a unica no WASM da Samsung.
+FONTE_ARABE = "NotoNaskhArabic-Subset.ttf"
 
 LIT = r'"((?:[^"\\]|\\.)*)"'
 LINHA_MESTRA = re.compile(r'^\s*\{\s*' + LIT + r'\s*,\s*' + LIT + r'\s*\},?\s*$')
@@ -103,7 +106,8 @@ def decodificar(s):
             raise ValueError("escape desconhecido \\" + c)
     return bytes(out)
 
-MARCADOR = re.compile(rb"%[-+ #0]*[0-9]*(?:\.[0-9]+)?(?:hh|h|ll|l|z|j|t)?[diouxXeEfgGcsp%]")
+# A percent sign after a number is literal UI text, not a format.
+MARCADOR = re.compile(rb"(?<![0-9])%[-+ #0]*[0-9]*(?:\.[0-9]+)?(?:hh|h|ll|l|z|j|t)?[diouxXeEfgGcsp%]")
 def marcadores(b):
     return [m for m in MARCADOR.findall(b) if m != b"%%"]
 
@@ -205,8 +209,10 @@ def conferir():
             except Exception as e:
                 erro("%s:%d: valor invalido (%s): %r" % (arq, m, e, val)); continue
             # 5. vazio
+            # An empty value is a known untranslated row; the runtime uses English.
             if not bv.strip():
-                erro("%s:%d: valor vazio para %r" % (arq, m, pt)); continue
+                if cod == "ar": erro("%s:%d: traducao arabe vazia" % (arq, m))
+                bv = decodificar(en); val = en
             # 4. marcadores, na ordem
             if marcadores(bk) != marcadores(bv):
                 erro("%s:%d: marcadores diferem: %r -> %r" % (arq, m, pt, val))
@@ -225,6 +231,8 @@ def conferir():
     fontes = {f.name: cmap_ttf(f) for f in sorted(FONTES.glob("*.ttf"))}
     inter = [fontes[n] for n in sorted(fontes) if n.startswith("InterDisplay-")]
     cjk = fontes.get(FONTE_CJK)
+    arabe = fontes.get(FONTE_ARABE)
+    if arabe is None: erro("fonts: falta %s (fonte arabe embarcada)" % FONTE_ARABE)
     if len(inter) != 3: erro("fonts: esperava os 3 pesos da InterDisplay, achei %d" % len(inter))
     if cjk is None: erro("fonts: falta %s (fonte CJK embarcada, unica no WASM da Samsung)" % FONTE_CJK)
     for cod in IDIOMAS:
@@ -241,6 +249,7 @@ def conferir():
                 erro("idioma_%s.h:%d: cirilico (%r) numa tabela que nao e cirilica" % (cod, n, ch))
             if all(ord(ch) in c for c in inter): continue
             if cod in CJK and cjk is not None and ord(ch) in cjk: continue
+            if cod == "ar" and arabe is not None and ord(ch) in arabe: continue
             erro("idioma_%s.h:%d: U+%04X (%s) nao existe na Inter%s" %
                  (cod, n, ord(ch), ch, " nem em " + FONTE_CJK if cod in CJK else ""))
     return mestra, erros

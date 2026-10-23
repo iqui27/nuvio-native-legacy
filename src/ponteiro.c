@@ -54,6 +54,7 @@ static int toqueQuadroPronto;
 #endif
 static int escreve = 0;          // a que o desenho deste quadro preenche
 static int pronto  = 1;          // a do quadro anterior, que o hit-test le
+static int quadroSessaoPendente; // descarta entrada ate a nova tela publicar alvos
 
 static float px = NV_TELA_BASE_W * 0.5f, py = NV_TELA_BASE_H * 0.5f;
 static int visivel = 0;
@@ -224,6 +225,7 @@ void ponteiro_diag(const SDL_Event *e) {
 
 void ponteiro_iniciar(void) {
   cancelarToque();
+  quadroSessaoPendente = 0;
   nLista[0] = nLista[1] = 0;
   listaRolagem[0] = listaRolagem[1] = NULL;
 #ifdef NV_TOUCH_UI
@@ -340,6 +342,7 @@ static void guardar(Ident *id, const PonteiroAlvo *al) {
 }
 
 static void tecla(void (*entregar)(const SDL_Event *), Uint32 tipo, SDL_Keycode k) {
+  if (!entregar) return; // um callback pode ter encerrado a abertura no KEYDOWN
   SDL_Event t; SDL_zero(t);
   t.type = tipo; t.key.keysym.sym = k;
   t.key.state = tipo == SDL_KEYDOWN ? SDL_PRESSED : SDL_RELEASED;
@@ -471,6 +474,34 @@ static void invalidarToque(void) {
 }
 
 void ponteiro_cancelar_toque(void) { cancelarToque(); }
+
+void ponteiro_abrir_sessao(void) {
+  // CANCELAR ainda vai para a tela que sai. Ela continua dona do gesto aqui;
+  // so depois o app limpa seus offsets e troca a identidade do perfil.
+  cancelarToque();
+  memset(dedos, 0, sizeof dedos);
+  toqueAlvo = hover = ativarPendente = (Ident){0};
+  toqueRolagem = NULL; toqueSemAlvos = 0;
+  toqueX = toqueY = toqueUltX = toqueUltY = 0.0f; toqueDesde = 0;
+  toqueParouInercia = okLongoToque = 0;
+  arrEixoY = 0; arrAcum = arrUltX = arrUltY = arrVel = 0.0f; arrUltMs = 0;
+  memset(&arrAlvo, 0, sizeof arrAlvo);
+  inVel = inAcum = inX = inY = 0.0f; inUltMs = 0; inEixoY = 0;
+  entregarToque = NULL;
+  okPendente = voltarPendente = engolirCliqueSolto = engolirOkSolto = 0;
+  cliqueEm = okTeclaEm = rodaEm = conteudoMexeuEm = 0;
+  escondidoSeta = setaAncora = 0; setaEm = setaMovEm = 0;
+  nLista[0] = nLista[1] = 0;
+  memset(lista, 0, sizeof lista);
+  listaRolagem[0] = listaRolagem[1] = NULL;
+  quadroSessaoPendente = 1;
+#ifdef NV_TOUCH_UI
+  listaBorda[0] = listaBorda[1] = toqueBorda = (Borda){0};
+  toqueQuadroPronto = 0;
+#endif
+  // Nao toca toqueDisponivel, janelaW/H, relogio nem a API do cursor do
+  // compositor: isto e uma fronteira de entrada, nao um novo dispositivo.
+}
 
 int ponteiro_cancelar_alvo(PonteiroFn focar) {
   if (!focar || nDedos != 1 || toqueCancelado || toqueLongo ||
@@ -682,6 +713,11 @@ static void inerciaQuadro(Uint32 agora) {
 
 int ponteiro_evento(const SDL_Event *e, void (*entregar)(const SDL_Event *)) {
   Uint32 agora = agoraMs();
+  if (quadroSessaoPendente &&
+      (e->type == SDL_MOUSEMOTION || e->type == SDL_MOUSEBUTTONDOWN ||
+       e->type == SDL_MOUSEBUTTONUP || e->type == SDL_MOUSEWHEEL ||
+       e->type == SDL_FINGERDOWN || e->type == SDL_FINGERMOTION || e->type == SDL_FINGERUP))
+    return 1;
   switch (e->type) {
     case SDL_FINGERDOWN: case SDL_FINGERMOTION: case SDL_FINGERUP:
 #ifdef NV_TOUCH_UI
@@ -874,6 +910,7 @@ static void fecharQuadro(void) {
   Uint32 agora = agoraMs();
   pronto = escreve;
   escreve ^= 1;
+  quadroSessaoPendente = 0;
   nLista[escreve] = 0;
   listaRolagem[escreve] = NULL;
 #ifdef NV_TOUCH_UI
@@ -958,9 +995,9 @@ void ponteiro_rolagem(PonteiroRolagemFn fn) {
 void ponteiro_borda_esquerda(float largura, PonteiroBordaFn ativar) {
   if (ponteiro_ativo() && layout_modo_mobile()) listaBorda[escreve] = (Borda){fmaxf(0.0f, largura) * gfx_escala(), ativar};
 }
-int ponteiro_borda_registrada(void) { return listaBorda[escreve].ativar != NULL; }
+int ponteiro_borda_registrada(void) { return layout_modo_mobile() && listaBorda[escreve].ativar != NULL; }
 void ponteiro_borda_ativar(void) {
-  if (!toqueQuadroPronto) return;
+  if (!layout_modo_mobile() || !toqueQuadroPronto) return;
   PonteiroBordaFn fn = listaBorda[pronto].ativar;
   if (fn) fn();
 }

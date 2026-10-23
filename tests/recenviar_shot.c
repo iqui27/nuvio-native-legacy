@@ -15,8 +15,10 @@
 #define RE_FONTE "../src/recenviar.c"
 #endif
 #include RE_FONTE
+#include "nvtmp.h"
 #include "vidro_fundo.h"
 #include "shot_arte.h"
+#include "vidro_ilhas.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 
@@ -105,8 +107,31 @@ static void abrir(void) {
   quadros(3);
 }
 
+// NUVIO_VIDRO_ILHA=<dir>: stripes behind the open sheet, PNG + frost check.
+static int ilhaTeste(SDL_Window *win) {
+  ReGeo g;
+  int q, ok;
+  setenv("NUVIO_SHOT_VIDRO_FOSCO", "1", 1); ajustes_teste_vidro_env();
+  tres(); abrir();
+  for (q = 0; q < 70; q++) {
+    relogio += 16;
+    SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro();
+    tex_bombear(6); gfx_novo_quadro();
+    recenviar_atualizar(1.0f / 60.0f, relogio);
+    ilhaCena();
+    recenviar_desenhar(relogio);
+    SDL_GL_SwapWindow(win);
+    if (q < 69) continue;
+  }
+  medir(&g);
+  printf("com_fonte=%d\n", gfx_vidro_com_fonte);
+  ok = ilhaConfere("recenviar", 960 + (int)(g.w / 2) - 30, 440, 20, 200);
+  ilhaPng(getenv("NUVIO_VIDRO_ILHA"), getenv("NUVIO_ILHA_NOME"));
+  return ok ? 0 : 1;
+}
+
 int main(int argc,char **argv) {
-  const char *dir=getenv("NUVIO_DADOS"), *out=argc>1?argv[1]:"/tmp/nuvio-send";
+  const char *dir=getenv("NUVIO_DADOS"), *out=argc>1?argv[1]:nvt("/nuvio-send");
   const char *idi=getenv("NUVIO_SHOT_IDIOMA");
   char path[700]; FILE *f; SDL_Window *win; SDL_GLContext gl;
   int i;
@@ -122,13 +147,14 @@ int main(int argc,char **argv) {
   glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);
   assert(gfx_iniciar() && txt_iniciar("deploy/app",1));tex_iniciar(64);gfx_icones_dir("deploy/app/art");
   vidroFundoPreparar();
-
   memset(&fxItem, 0, sizeof fxItem);
   snprintf(fxItem.imdb,sizeof fxItem.imdb,"tt12637874"); snprintf(fxItem.tipo,sizeof fxItem.tipo,"series");
   snprintf(fxItem.titulo,sizeof fxItem.titulo,"Fallout");snprintf(fxItem.meta,sizeof fxItem.meta,"2024 · 56 min");
   snprintf(fxItem.logo,sizeof fxItem.logo,"deploy/app/art/logo/00.png");
   snprintf(fxItem.backdrop,sizeof fxItem.backdrop,"deploy/app/art/00.jpg");
   snprintf(fxItem.poster,sizeof fxItem.poster,"deploy/app/art/poster/00.jpg");
+  if (getenv("NUVIO_VIDRO_ILHA")) return ilhaTeste(win);
+
 
   // 1-2. Open with friends; then a friend in focus.
   tres(); abrir();

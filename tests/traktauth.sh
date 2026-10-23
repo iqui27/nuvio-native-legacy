@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Renovacao proativa do token Trakt. Sem SDL e sem rede: o teste substitui
 # rede_postar_st, dados_* e trakt_* por dubles; js/jsw sao os de verdade.
 set -eu
@@ -10,15 +12,15 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 cc ${flags[@]+"${flags[@]}"} src/traktauth.c src/credfio.c src/js.c src/jsw.c \
   tests/traktauth_renov.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -o /tmp/nuvio-traktauth-tests -O1 -g \
+  -o ${TMPDIR:-/tmp}/nuvio-traktauth-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-traktauth-tests
+${TMPDIR:-/tmp}/nuvio-traktauth-tests
 
 # Vinculo por perfil: trakt-p<N>.txt, migracao do trakt.txt antigo so para o
 # perfil 1, troca de perfil com fio no ar. Disco e rede sao dubles em memoria.
 cc ${flags[@]+"${flags[@]}"} src/traktauth.c src/credfio.c src/js.c src/jsw.c \
   tests/traktauth_perfil.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -o /tmp/nuvio-traktauth-perfil-tests -O1 -g -lpthread \
+  -o ${TMPDIR:-/tmp}/nuvio-traktauth-perfil-tests -O1 -g -lpthread \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-traktauth-perfil-tests
+${TMPDIR:-/tmp}/nuvio-traktauth-perfil-tests

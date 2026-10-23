@@ -25,8 +25,8 @@ typedef struct {
 
   // --- O QUE O ARQUIVO ASS DIZ SOBRE ESTE BLOCO -----------------------------
   //
-  // Tudo aqui nasce ZERADO no caminho SRT/VTT, e o desenho trata zero como
-  // "o arquivo nao disse nada" — e ai quem manda e a preferencia da pessoa.
+  // SRT/VTT also supplies bold/italic emphasis; other style fields stay
+  // unset. Zero means the file did not specify a value: use user settings.
 
   // Ancora ASS 1..9 (1 = base-esquerda, 5 = meio-centro, 9 = topo-direita).
   // 0 = o arquivo nao declarou; usa a posicao escolhida na folha de faixas.
@@ -54,6 +54,10 @@ void legenda_carregar(const char *url);
  * exatamente uma vez, inclusive em falha, e nao pode tocar a UI. */
 typedef void (*LegendaBaixada)(const char *corpo, unsigned geracao, int vigente, void *u);
 unsigned legenda_carregar_com(const char *url, LegendaBaixada pronto, void *u);
+// Um candidato por play; carregar_com adota pelo link, no mesmo fio/callback.
+void legenda_pre_baixar(const char *url);
+void legenda_pre_descartar(const char *motivo);
+void legenda_pre_reiniciar(void);
 void legenda_desligar(void);
 // Liga com um corpo ja em memoria (parser sincrono). Ver a nota em legenda.c.
 void legenda_definir_corpo(const char *corpo);

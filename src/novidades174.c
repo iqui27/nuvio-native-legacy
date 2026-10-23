@@ -145,7 +145,7 @@ static void listras(float x, float y, float w, float a) {
 static void previewBase(float x,float y,float a) {
   GfxRect r={x,y,N174_PV_W,N174_PV_H};
   cobrir(arqListras,r,N174_PV_RAIO,.25f*a);
-  gfx_cor(r,rr(N174_PV_RAIO,r),.045f,.05f,.065f,.90f*a);
+  gfx_cor(r,rr(N174_PV_RAIO,r),.045f,.05f,.065f,.90f*a); // vidro-ok: preview art backing
   gfx_luz_canto(r,rr(N174_PV_RAIO,r),380,120,520,
                 LARANJA_R,LARANJA_G,LARANJA_B,.18f*a);
 }

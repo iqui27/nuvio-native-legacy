@@ -77,8 +77,21 @@ double cacheboost_volume_db(int pct);
 // cacheboost.c. `pct` 0..200; `mb` = cache limit for the NEXT open (0 = off).
 void cacheboost_backend_ganho(int pct);
 void cacheboost_backend_cache(int mb);
-// #338: buffer preset (0 Auto, 1 Low, 2 Medium, 3 High) for the NEXT open.
-void cacheboost_backend_buffer(int preset);
+// Warm resume (#492): the title of the NEXT open (arms with the cache; empty =
+// none), and the order to drop the cache kept from the last title (profile
+// switch). Android only: webOS/Tizen have no disk cache, so these are no-ops.
+void cacheboost_backend_titulo(const char *id);
+void cacheboost_backend_descartar(void);
+// #338: buffer size in MiB for the NEXT open (0 = Auto, the backend default).
+void cacheboost_backend_buffer(int mb);
+// Settings "Tamanho do buffer" index (0 Auto, 1 = 64, 2 = 128, 3 = 256 MiB)
+// -> MiB for the next open. Steps down the 256/128/64 ladder until free RAM
+// (`livreMb`, MemAvailable; < 0 = unknown) keeps CB_BUFFER_PISO_MB after the
+// buffer plus the DTS active range (4 MiB); nothing fits or unknown -> 0 (Auto). Logs any cut.
+#define CB_BUFFER_PISO_MB 100
+int cacheboost_buffer_mb(int opcao, long livreMb);
+// Off Android: the last cacheboost_backend_buffer value (webOS DTS/DV read-ahead).
+int cacheboost_backend_buffer_mb(void);
 
 // Host captures/tests: pretend the backend supports (1) or not (0) the
 // features; -1 = the build's real answer.

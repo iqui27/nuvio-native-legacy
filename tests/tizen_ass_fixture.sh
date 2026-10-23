@@ -1,9 +1,11 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Gera um MKV ASS pequeno e deterministico para o emulador/TV Tizen.
 # Nao baixa midia, nao usa credenciais e so serve a pasta indicada.
 set -eu
 cd "$(dirname "$0")/.."
-OUT=${1:-/tmp/nuvio-tizen-ass}
+OUT=${1:-${TMPDIR:-/tmp}/nuvio-tizen-ass}
 MODO=${2:-}
 FFMPEG=${FFMPEG:-/opt/homebrew/bin/ffmpeg}
 [ -x "$FFMPEG" ] || FFMPEG=$(command -v ffmpeg || true)

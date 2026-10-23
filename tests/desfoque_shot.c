@@ -7,6 +7,7 @@
 //    NUVIO_DESFOQUE_SAIDA (prefixo, padrao /tmp/nuvio-desfoque).
 // Precisa de janela GL. Uso: desfoque_shot [rotulo]
 #include "gfx.h"
+#include "nvtmp.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -98,7 +99,7 @@ static void mede(GLuint copia, const char *rotulo) {
 int main(int argc, char **argv) {
   const char *rotulo = argc > 1 ? argv[1] : "atual";
   const char *arte = getenv("NUVIO_DESFOQUE_ARTE") ? getenv("NUVIO_DESFOQUE_ARTE") : "deploy/app/art/00.jpg";
-  const char *saida = getenv("NUVIO_DESFOQUE_SAIDA") ? getenv("NUVIO_DESFOQUE_SAIDA") : "/tmp/nuvio-desfoque";
+  const char *saida = getenv("NUVIO_DESFOQUE_SAIDA") ? getenv("NUVIO_DESFOQUE_SAIDA") : nvt("/nuvio-desfoque");
   char nome[700];
   SDL_Window *w;
   SDL_GLContext gl;

@@ -1,10 +1,11 @@
 // A escolha visual, o renderer e o valor persistido precisam concordar.
 #include "../src/ajustes.c"
+#include "nvtmp.h"
 #include <assert.h>
 #include <unistd.h>
 
 int main(void) {
-  char dir[] = "/tmp/nuvio-aj-fonte-XXXXXX";
+  char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-aj-fonte-XXXXXX");
   char path[700];
   assert(mkdtemp(dir));
   snprintf(path, sizeof path, "%s/envio-151.txt", dir);
