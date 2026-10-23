@@ -1617,7 +1617,7 @@ static const char *ajSyncAddonsApoio(void) {
   return "Busca agora os addons da sua conta, sem esperar a volta automática.";
 }
 static void ajDesenharAddons(int foco) {
-  static AjSubLinha L[130];
+  static AjSubLinha L[131];
   int n = addons_n(), i, lig = 0, live = addonsui_ao_vivo();
   char sub[96], val[64], k[160];
   montarTela();
@@ -1627,7 +1627,7 @@ static void ajDesenharAddons(int foco) {
   snprintf(val, sizeof val, i18n("%d de %d"), lig, n);
   snprintf(sub, sizeof sub, "%s", n ? i18n(live ? "TV ao vivo" : "Ligados nesta TV") : i18n("Nenhum addon nesta conta."));
   ajSubCabecalho("aj_puzzle", "Fontes e addons", live ? "TV ao vivo" : "Addons", n ? val : "", sub);
-  if (foco > (live ? n - 1 : n + 1)) foco = live ? n - 1 : n + 1;
+  if (foco > (live ? n - 1 : n + 2)) foco = live ? n - 1 : n + 2;
   if (foco < 0) foco = 0;
   { static char apoio[128][96];
     for (i = 0; i < n; i++) {
@@ -1636,10 +1636,12 @@ static void ajDesenharAddons(int foco) {
     } }
   L[n] = (AjSubLinha){ "Sincronizar addons", ajSyncAddonsApoio(), "aj_rotate-cw", -1, 0, 1 };
   L[n + 1] = (AjSubLinha){ "TV ao vivo", "Os addons selecionados ignoram os filtros de fontes.", "aj_tv-minimal-play", -1, 0, 1 };
+  L[n + 2] = (AjSubLinha){ "AIOStreams", "Conectar ou importar sua configuração", "aj_layers", -1, 1, 1 };
   { AjDica d[3] = { { "OK", !live && foco == n ? "Sincronizar addons" : "Mudar" }, { "↑ ↓", "Navegar" }, { "Voltar", "Fontes e addons" } };
-    ajSubLista(L, live ? n : n + 2, foco, d, 3, NULL, addonsui_ponteiro); }
+    ajSubLista(L, live ? n : n + 3, foco, d, 3, NULL, addonsui_ponteiro); }
   snprintf(k, sizeof k, "%s · %s", i18n("Fontes e addons"), i18n("Addons"));
   if (live) ajSubInspetor(AJ_ADDONS, k, n ? addons_nome(foco) : "TV ao vivo", i18n("Os addons selecionados ignoram os filtros de fontes."));
+  else if (foco == n + 2) ajSubInspetor(AJ_ADDONS, k, "AIOStreams", i18n("Conectar ou importar sua configuração"));
   else if (foco == n + 1) ajSubInspetor(AJ_ADDONS, k, "TV ao vivo", i18n("Os addons selecionados ignoram os filtros de fontes."));
   else if (foco == n) ajSubInspetor(AJ_ADDONS, k, "Sincronizar addons", i18n(ajSyncAddonsApoio()));
   else if (n > 0) {

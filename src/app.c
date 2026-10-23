@@ -37,6 +37,7 @@
 #include "registro.h"
 #include "entrada_texto.h"
 #include "addonsui.h"
+#include "aiostreamsui.h"
 #include "pluginsui.h"
 #include "login.h"
 #include "sessao.h"
@@ -3692,6 +3693,7 @@ static void perfilAbrirSessao(int antes) {
 }
 
 int app_iniciar(const char *dirArte) {
+  aioui_arte(dirArte);
   // #415: MemAvailable abaixo do piso -> despeja texturas, mkvass, texto,
   // libass e heap; sem isto o aviso so rodava malloc_trim.
   memlog_quando_aviso(aliviarMemoria);
@@ -4319,6 +4321,7 @@ void app_evento(const SDL_Event *e) {
   // O CARTAO DO CELULAR (celbotao.h), aberto de qualquer campo de texto: come
   // o teclado todo ate fechar.
   if (celb_evento(e)) return;
+  if (aioui_aberto()) { aioui_evento(e); return; }
   // O AVISO DAS CONQUISTAS (depois dos creditos) nao toma o foco: so o Voltar e
   // dele, e so enquanto estiver na tela. Vem antes do Voltar do app.
   if (conquistas_aviso_evento(e)) return;
@@ -5013,6 +5016,7 @@ static void recuperarErroFonte(void) {
 }
 
 void app_atualizar(float dt, Uint32 agora) {
+  aioui_atualizar(dt, agora);
   relogioFocoValidar();
   ajustes_fontes_atualizar();
   { static int morno = -1; int ligado = ajustes_retomada_morna();
@@ -7451,6 +7455,11 @@ static int miniToquePermitido(void) {
 #endif
 
 void app_desenhar(Uint32 agora) {
+  if (aioui_aberto() && !registro_aberto() && !player_aberto()) {
+    // Opaque dashboard: avoid rendering Settings, title and sources underneath.
+    gfx_sem_recorte(); ponteiro_camada(); aioui_desenhar(agora); celb_desenhar();
+    return;
+  }
   // O COMECAR da 2.1 e tela inteira e opaco, como o guia da 2.0.
   if (comecar_aberto() && !registro_aberto() && !player_aberto()) {
     gfx_sem_recorte();
@@ -7745,6 +7754,7 @@ void app_desenhar(Uint32 agora) {
 #ifdef NV_TOUCH_UI
     if (layout_modo_mobile()) CAMADA_SE(celb_aberto());
 #endif
+    if (aioui_aberto()) { ponteiro_camada(); aioui_desenhar(agora); }
     celb_desenhar();
   }
   CAMADA_SE(diagnostico_intro_aberto());

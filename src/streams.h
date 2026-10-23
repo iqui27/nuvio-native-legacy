@@ -488,6 +488,8 @@ int  stream_detalhe_tecla_abre(const SDL_Event *e);
 // nada. tests/fontes_lista.sh prende isso; abrir a folha escreve a contagem no
 // log ("[fonte] folha: N de M na lista"), para o proximo relato dizer onde caiu.
 int  stream_folha_n(void);
+// Current sheet positions: 0 hidden, positive visible. No playback.
+void stream_inspecao_ordem(int *ranks,int capacidade);
 #ifdef NV_SHOT_HOOKS
 void stream_shot_folha(float *cartao, int *linhas, int *dobradas);   // capturas
 void stream_shot_foco(int *indice, int *dobrada);   // capturas
