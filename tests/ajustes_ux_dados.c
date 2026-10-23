@@ -709,7 +709,7 @@ int main(void) {
   { int vz = 0, k; for (k = 0; k < AJ_N_TELA; k++) if (TELA[k].tipo == IT_OPC && TELA[k].op == AJ_LEG_FORCADA) vz++; assert(vz == 1); }
   // Child profile stays appended after the integration settings.
   // Perfil infantil: marca por perfil (perfilinfantil.c), fora do ajustes.txt, uma vez na tela.
-  assert(AJ_PERFIL_INFANTIL == AJ_CONQ_DICAS + 1 && AJ_PERFIL_INFANTIL == AJ_N - 1 && !strcmp(CHAVE[AJ_PERFIL_INFANTIL], "-perfilInfantil") && valorPadrao[AJ_PERFIL_INFANTIL] == 1);
+  assert(AJ_PERFIL_INFANTIL == AJ_CONQ_DICAS + 1 && AJ_PERFIL_INFANTIL == AJ_DIARIO_NUVEM - 1 && !strcmp(CHAVE[AJ_PERFIL_INFANTIL], "-perfilInfantil") && valorPadrao[AJ_PERFIL_INFANTIL] == 1);
   { int vz = 0, k; for (k = 0; k < AJ_N_TELA; k++) if (TELA[k].tipo == IT_OPC && TELA[k].op == AJ_PERFIL_INFANTIL) vz++; assert(vz == 1); }
   assert(somenteDesteAparelho(AJ_TAM_MAX) && somenteDesteAparelho(AJ_TAM_MIN));
   assert(ajustes_tamanho_max_gb() == 0 && ajustes_tamanho_min_gb() == 0);

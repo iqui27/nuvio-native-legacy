@@ -149,6 +149,7 @@ typedef enum {
   FIL_ORIGEM_APP = 0,   // Continuar assistindo, Entre amigos, Retomar agora
   FIL_ORIGEM_COLECAO,   // grupo de colecoes (chave collection_<id>)
   FIL_ORIGEM_CATALOGO,  // catalogo declarado por um addon
+  FIL_ORIGEM_SERVIDOR,  // personal server, outside the addon quota
   FIL_ORIGEM_N
 } FilOrigem;
 

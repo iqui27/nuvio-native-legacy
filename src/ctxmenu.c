@@ -27,6 +27,8 @@
 #include "homefil.h"
 #include "atividade.h"
 #include "recenviar.h"
+#include "travaui.h"
+#include "perfis.h"
 #include "botoes.h"
 #include "badges.h"
 #include "idioma.h"
@@ -35,6 +37,8 @@
 #include "listas.h"
 #include "home.h"
 #include "ctxinfo.h"
+#include "rewatch.h"
+#include "rewatchui.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -237,7 +241,7 @@ static int observarHold(void *u, SDL_Event *e) {
 // juntava contava UMA linha para o contrato e escrevia sete — e o teto de sete
 // era exatamente o que deixava o Destaque 4:3 e a faixa com titulo de fora do
 // menu. Agora elas moram em estLin[FIL_TIPO_N], do tamanho do enum.
-#define CTX_MAX 9
+#define CTX_MAX 10
 static struct { const char *rot; int acao; } ops[CTX_MAX];
 static int nOps;
 static float focoAnim[CTX_MAX];
@@ -245,7 +249,7 @@ static int holdObservador;
 enum { OP_LISTA = 1, OP_ASSISTIDO, OP_TIRAR_CONTINUAR, OP_RECOMENDAR, OP_DISPENSAR,
        OP_ESTILO, OP_CATEGORIA, OP_DETALHES, OP_L_ABRIR, OP_L_FIXAR, OP_L_HOME,
        OP_F_MENU, OP_F_FIXAR, OP_F_SUBIR, OP_F_DESCER, OP_F_OCULTAR, OP_F_VISTOS,
-       OP_ADD_LISTA, OP_PICK_LISTA = 50,   // OP_PICK_LISTA + k = a k-esima lista da pessoa
+       OP_ADD_LISTA, OP_REWATCH, OP_TRAVA, OP_PICK_LISTA = 50,   // OP_PICK_LISTA + k = a k-esima lista da pessoa
        OP_EXTRA = 100 };   // OP_EXTRA + k = extras[k] (modo social)
 // "Mover para categoria" pedido no modo painel: o IMDb do titulo, consumido
 // uma vez pelo painel (ctx_pediu_categoria), que abre a escolha dele.
@@ -524,6 +528,8 @@ static void montar(void) {
     juntar(estadoOperacao == CTX_PENDENTE && operacao == CTX_OP_HISTORICO
              ? "Marcando como assistido..." : extras[k].rot, OP_EXTRA + k);
   }
+  if (!doPainel && !strcmp(ci->tipo,"series") && ci->imdb[0])
+    juntar(rewatch_ativa(ci->imdb) ? "Encerrar reassistida" : "Reassistir do início", OP_REWATCH);
   // TIRAR DE "CONTINUAR ASSISTINDO".
   //
   // So aparece em item que TEM progresso — e o unico caso em que a acao quer
@@ -539,7 +545,7 @@ static void montar(void) {
   // assistido): esta e a de baixo sao acoes do cartaz da home.
   // "A SEGUIR" TAMBEM (#203): o proximo episodio tem progresso 0 e a condicao
   // antiga nunca o oferecia; sem a opcao ele nao saia da fileira.
-  if (!doPainel && (ci->progresso > 0 || itemASeguir(ci)) && ci->imdb[0]) {
+  if (!doPainel && !ci->rewatch && (ci->progresso > 0 || itemASeguir(ci)) && ci->imdb[0]) {
     juntar("Tirar de Continuar assistindo", OP_TIRAR_CONTINUAR);
   }
   // SO EXISTE SE O PACOTE TEM O SERVICO. Sem NUVIO_REC_URL compilada,
@@ -549,6 +555,9 @@ static void montar(void) {
       (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series"))) {
     juntar("Recomendar a um amigo", OP_RECOMENDAR);
   }
+  // Trava de serie na mesma TV: so serie com IMDb e conta com 2+ perfis.
+  if (!doPainel && ci->imdb[0] && !strcmp(ci->tipo, "series") && perfis_n() >= 2)
+    juntar("Travar série", OP_TRAVA);
   // Por ULTIMO: e da fileira, nao do titulo. So quando a home disse qual e a
   // fileira e ela tem forma para escolher (Continuar assistindo, Top 10 e o
   // destaque ficam com o visual deles — a home nem passa a chave).
@@ -1093,6 +1102,10 @@ static void aplicar(void) {
       }
       montar();
       break;
+    case OP_REWATCH:
+      rewatchui_abrir(ci,RW_ORIGEM_CONTINUAR,0,0);
+      aberto=0;
+      break;
     case OP_ASSISTIDO:
       iniciarAssistido(atual, ci, 0);
       montar();
@@ -1112,6 +1125,9 @@ static void aplicar(void) {
       home_pedir_abrir();
       aberto = 0;
       pagina = 0;
+      break;
+    case OP_TRAVA:
+      if (travaui_abrir(ci, atual)) aberto = 0;
       break;
     case OP_DISPENSAR:
       home_retomar_dispensar();
@@ -1174,6 +1190,20 @@ static void aplicar(void) {
       break;
     }
   }
+}
+
+void ctx_acao_rapida(const CatItem *titulo, int visto) {
+  if (aberto || estadoOperacao == CTX_PENDENTE || !titulo) return;
+  ctx_abrir_salvo(titulo);
+  if (!aberto) return;
+  esperandoSoltura = 0;
+  for (foco = 0; foco < nOps; foco++)
+    if (ops[foco].acao == (visto ? OP_ASSISTIDO : OP_LISTA)) break;
+  if (foco >= nOps) { aberto = 0; return; }
+  aplicar();
+  // Pending writes/errors stay in the existing menu, so their outcome and
+  // retry remain visible. Immediate actions leave the preview in place.
+  if (estadoOperacao == CTX_CONFIRMADA && pagina == 0) aberto = 0;
 }
 
 void ctx_evento(const SDL_Event *e) {
@@ -2469,7 +2499,9 @@ static void ctx_desenharCorpo_(Uint32 agora) {
       case OP_TIRAR_CONTINUAR: icone = "aj_x"; break;
       case OP_DISPENSAR:  icone = "aj_x"; break;
       case OP_RECOMENDAR: icone = "aj_users"; break;
+      case OP_REWATCH: icone = "aj_rotate-ccw-clock"; break;
       case OP_DETALHES:   icone = "aj_info"; break;
+      case OP_TRAVA:      icone = "aj_link"; break;
       case OP_ESTILO:     icone = "aj_rows-3"; break;
       case OP_F_MENU:     icone = "aj_rows-3"; break;
       case OP_CATEGORIA:  icone = "aj_folders"; break;

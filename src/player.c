@@ -32,6 +32,12 @@
 #include "memlog.h"
 #include "dvtela.h"
 #include "abrecine.h"
+#include "travaui.h"
+#include "diario.h"
+#include "teclado.h"
+#include <pthread.h>
+#include <stdatomic.h>
+#include "diariofontes.h"
 #include "ilhacart.h"
 #include "idbase.h"
 #include "dados.h"
@@ -91,6 +97,7 @@ static void avisarCascaAberto(int v) { (void)v; }
 #include "seekr.h"
 #include "visto.h"     /* fim de episodio/filme para Simkl e conta */
 #include "vistoep.h"   /* o check de "assistido" na lista de episodios (issue #100) */
+#include "rewatch.h"   /* sessao de reassistir: cada conclusao e um play novo */
 #include "pausao.h"
 #include "relogiofim.h"
 #include "aovivo.h"
@@ -330,6 +337,7 @@ static int   esperandoFonte = 0;   // aberto sem URL, esperando o addon responde
 // que vai ao pipeline quando ela acabar. "" = nenhuma.
 static char   prebuscaUrl[4096];
 static Uint32 prebuscaDesde;
+static int sessaoRewatch;
 static float posSeg = 0.0f;
 // Relogio da LEGENDA (#92): posSeg e o ultimo currentTime do pipeline, que na
 // C9 chega a cada ~200 ms. A legenda desenhada com ele andava aos degraus e em
@@ -784,6 +792,11 @@ void player_do_inicio(void) {
   retomarSeg = 0.0;
 #endif
 }
+int player_reassistindo(void) { return sessaoRewatch; }
+void player_rewatch(int sim) {
+  sessaoRewatch = sim && item() && rewatch_ativa(item()->imdb);
+  player_definir_episodio(epT, epE);
+}
 void player_definir_episodio(int t, int e) {
   const CatItem *c = item();
   epT = t; epE = e; linhaEp[0] = 0;
@@ -792,9 +805,13 @@ void player_definir_episodio(int t, int e) {
   // "progresso" lido ali seria de outro titulo qualquer.
   if (c && !canalSessao && !semRetomada && c->progresso > 0 && c->progresso < ajustes_cw_concluido() &&
       (strcmp(c->tipo,"series") || (t==c->temporada && e==c->episodio))) retomarPct=c->progresso;
+  if (sessaoRewatch && c && !semRetomada) {
+    int rt=0,re=0,rp=0;
+    retomarPct = rewatch_parcial_de(c->imdb,&rt,&re,&rp) && rt==t && re==e ? rp : 0;
+  }
 #ifdef NV_ANDROID
   retomarSeg = 0.0;
-  if (c && retomarPct > 0) {
+  if (!sessaoRewatch && c && retomarPct > 0) {
     char chave[48]; ProgRegistro r;
     int serie = !strcmp(c->tipo, "series");
     prog_chave(chave, sizeof chave, c->imdb, serie ? t : 0, serie ? e : 0);
@@ -807,7 +824,8 @@ void player_definir_episodio(int t, int e) {
     ProgRegistro r;
     char chave[48];
     baseT = t; baseE = e; basePct = retomarPct; baseTocou = 0;
-    if (c && retomarPct > 0) {
+    if (sessaoRewatch) { basePos=baseDur=0; baseTocou=retomarPct>0; }
+    else if (c && retomarPct > 0) {
       int serie = !strcmp(c->tipo, "series");
       prog_chave(chave, sizeof chave, c->imdb, serie ? t : 0, serie ? e : 0);
       if (prog_por_chave(chave, &r)) { basePos = r.posSeg; baseDur = r.durSeg; baseTocou = r.tocou; }
@@ -1432,6 +1450,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
     // A COPIA e feita AQUI, no unico instante em que o indice e sabidamente o
     // do titulo pedido. Ver item().
     if (ci) { itemFixo = *ci; temFixo = 1; } else temFixo = 0;
+    sessaoRewatch = ci && rewatch_ativa(ci->imdb);
     artehero_logo_sessao_iniciar(temFixo ? &itemFixo : NULL);
     canalSessao = ci && (!strcmp(ci->tipo, "channel") || !strcmp(ci->tipo, "tv"));
     if (canalSessao) itemCanal = *ci;
@@ -1490,7 +1509,10 @@ void player_abrir(int indiceCatalogo, const char *url) {
   loadEm = SDL_GetTicks();
   { char px[96];
     if (url && *url) { memlog_evento("load"); memQuadroPendente = 1; }
-    comVideo = (url && *url && video_tocar(proxyts_resolver(url, px, sizeof px))); }
+    const CatItem *c = item();
+    int bloqueado = c && !strcmp(c->tipo, "series") && travaui_segura(c->imdb, idxAtual(),
+        c->temporada > 0 ? c->temporada : 1, c->episodio > 0 ? c->episodio : 1, NULL, NULL);
+    comVideo = (url && *url && !bloqueado && video_tocar(proxyts_resolver(url, px, sizeof px))); }
   zerarAssistido();
   mkvass_video_aberto(comVideo);
   legsync_auto_habilitar(ajustes_legenda_sync_auto());
@@ -1570,7 +1592,17 @@ static int prebuscaCabe(const char *url) {
 }
 #endif
 
+static int travaFonte(const char *url) {
+  const CatItem *c = item();
+  (void)url;
+  if (!c || strcmp(c->tipo, "series") ||
+      !travaui_segura(c->imdb, idxAtual(), epT, epE, NULL, NULL)) return 1;
+  player_erro_fonte_motivo(i18n("Travar série"), i18n("Separados"));
+  return 0;
+}
+
 static void tocarFonte(const char *url) {
+  if (!travaFonte(url)) return;
   marco("abrir: url ao pipeline");
   loadEm = SDL_GetTicks();   // #202: do pipeline ao primeiro quadro ("[player] load->1o quadro")
   video_definir_reconexao(!ehCanal());
@@ -1683,6 +1715,7 @@ static void dvTelaAtualizar(float dt, Uint32 agora) {
 // PRETO enquanto o fluxo abria — que era o "clica em reproduzir e fica preto".
 void player_definir_fonte(const char *url) {
   if ((!aberto && !mini) || !url || !*url) return;
+  if (!travaFonte(url)) return;
   intro_trocar_fonte();
   durFonteAvisada = pedProximaFonte = 0;
   // Fonte nova: a duracao esperada conhecida nao vale mais (mesmo titulo,
@@ -2014,7 +2047,8 @@ static void fecharSessao(int manter) {
     // foi alcancada: cat_visto e a proxima base leem `tocou`.
     if (assistiu && ci && epE == 0 && strcmp(ci->tipo, "series"))
       cqd_concluir_local(ci->imdb);
-    cat_salvar_progresso_ep(ia, pos, duracaoSeg, epT, epE, chegou);
+    // A reprise tem seu proprio parcial: nao pisa na retomada normal.
+    if (!sessaoRewatch) cat_salvar_progresso_ep(ia, pos, duracaoSeg, epT, epE, chegou);
     // E tambem para o Trakt, que e de onde o "continue assistindo" vem: gravar
     // so aqui deixaria este app discordando dos outros aparelhos do dono.
     // Personal-server items stay private: no Trakt, friends feed or social
@@ -2033,6 +2067,7 @@ static void fecharSessao(int manter) {
       recomenda_atividade_fim(ci, assistiu);
       // A PARADA para o Social: fim, abandono (< 20%) ou progresso.
       atividade_player_saiu(pos, duracaoSeg, assistiu);
+      diariofontes_player_saiu(pos, duracaoSeg, assistiu);
       // O CHECK NA LISTA, LOCALMENTE E AGORA — a outra metade do #100.
       //
       // O relato e preciso: "mostra a barra de progresso mas nao fica com o
@@ -2052,13 +2087,16 @@ static void fecharSessao(int manter) {
       // de fora da mascara porque o scrobble acima ja fecha o visto la. Um
       // pedido por conclusao, e so quando o check local ainda nao existia —
       // rever um episodio ja visto nao reescreve historico.
+      // EXCETO NA SESSAO DE REASSISTIR (rewatch.h): la cada conclusao e um play
+      // novo e o historico vai de novo, mesmo com o check ja marcado.
+      int reassistindo = sessaoRewatch && rewatch_ativa(ci->imdb);
       if (assistiu) {
         int dest = visto_destinos() & ~VISTO_TRAKT;
         // O stop do scrobble ja fecha o visto no Simkl (e cai no historico
         // sozinho se falhar): mandar o historico de novo seria pedido em dobro.
         if (simklScr == SCR_STOP) dest &= ~VISTO_SIMKL;
         if (epT > 0 && epE > 0) {
-          if (vistoep_estado(ci->imdb, epT, epE) != 1) {
+          if (reassistindo || vistoep_estado(ci->imdb, epT, epE) != 1) {
             VistoPar par = { (short)epT, (short)epE };
             visto_episodios(ci->imdb, "series", &par, 1, 1, dest);
           }
@@ -2067,6 +2105,13 @@ static void fecharSessao(int manter) {
         }
       }
       if (assistiu && epT > 0 && epE > 0) vistoep_definir(ci->imdb, epT, epE, 1);
+      // A sessao anota o que foi revisto (selo "Nx") ou onde parou a meio.
+      if (reassistindo && epT > 0 && epE > 0) {
+        if (assistiu) rewatch_registrar(ci->imdb, epT, epE);
+        else if (duracaoSeg > 0.0f)
+          rewatch_parcial(ci->imdb, epT, epE, (int)(posSeg * 100.0f / duracaoSeg));
+        sync_sujar_progresso();
+      }
       // E para a CONTA. Trakt e conta sao dois destinos diferentes: nem todo
       // usuario liga o Trakt, e o progresso do app oficial vem da conta.
       sync_sujar_progresso();
@@ -3642,6 +3687,8 @@ void player_atualizar(float dt, Uint32 agora) {
         double cr = credEfetivo();
         atividade_player_passo(ci, epT, epE, posSeg, duracaoSeg, tocando && !scrubbing,
                                concluiuAgora(cr), dt);
+        diariofontes_player_passo(ci, epT, epE, posSeg, duracaoSeg, tocando && !scrubbing,
+                                  concluiuAgora(cr), dt);
       }
     }
     // #202: confere que o pipeline anda na velocidade pedida antes de usa-la.

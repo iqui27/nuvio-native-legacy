@@ -140,6 +140,11 @@ int main(void) {
   { int achou = 0;
     for (int k = 0; k < fil_n(); k++) if (!strcmp(fil_chave(k), "colpin_a24")) achou = 1;
     assert(achou); }
+  assert(fil_origem_de("jellyfin_abc") == FIL_ORIGEM_SERVIDOR);
+  assert(fil_origem_de("emby_11") == FIL_ORIGEM_SERVIDOR);
+  assert(fil_origem_de("plex_1") == FIL_ORIGEM_SERVIDOR);
+  assert(fil_origem_de("srv:01234567:lib:11") == FIL_ORIGEM_SERVIDOR);
+  assert(!strcmp(fil_origem_icone(FIL_ORIGEM_SERVIDOR), "aj_server"));
   // Chave que so COMECA parecida nao e colecao: o prefixo tem de ser exato.
   assert(fil_origem_de("collections_movie_x") == FIL_ORIGEM_CATALOGO);
   assert(fil_origem_de("com.linvo.cinemeta_movie_top") == FIL_ORIGEM_CATALOGO);
