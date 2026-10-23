@@ -2,7 +2,9 @@
 #include "ilha.h"
 #include <assert.h>
 #include <stdio.h>
-static int total, logada, ocupado, pedidos, avisos, trocas;
+static int total, logada, ocupado, pedidos, avisos, trocas, aio;
+void aioui_abrir(int i) { (void)i; aio++; }
+int aioui_detectar(int i) { (void)i; return 0; }
 int addons_n(void) { return total; }
 void addons_sondar_manifestos(void) {}
 void addons_alternar(int i) { assert(i >= 0 && i < total); trocas++; }
@@ -19,7 +21,7 @@ static void tecla(SDL_Keycode k) {
 }
 int main(void) {
   // Empty list still offers sync; signed out explains, signed in requests once.
-  addonsui_abrir(); tecla(SDLK_RETURN); assert(avisos == 1 && !pedidos);
+  addonsui_abrir(); assert(aio == 1); tecla(SDLK_RETURN); assert(avisos == 1 && !pedidos);
   logada = 1; tecla(SDLK_RETURN); tecla(SDLK_RETURN); assert(pedidos == 1);
   for (int n = 2; n <= 128; n += 126) {
     total = n; ocupado = 0; addonsui_abrir();
@@ -28,8 +30,9 @@ int main(void) {
     tecla(SDLK_KP_ENTER); assert(pedidos == (n == 2 ? 2 : 3));
     addonsui_abrir();
     for (int i = 0; i < n + 3; i++) tecla(SDLK_DOWN);
-    assert(addonsui_foco() == n);
-    tecla(SDLK_UP); assert(addonsui_foco() == n - 1);
+    assert(addonsui_foco() == n + 1);
+    tecla(SDLK_RETURN); assert(aio > 1);
+    tecla(SDLK_UP); assert(addonsui_foco() == n);
   }
   puts("addons_sync_ui: ok (empty list, 128 addons, remote, pointer, busy)");
 }

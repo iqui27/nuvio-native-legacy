@@ -18,6 +18,7 @@ int main(void) {
   assert(aio_manifesto(&s, "{\"catalogs\":[{\"extra\":[{\"name\":\"search\"}],\"id\":\"popular\",\"type\":\"movie\",\"name\":\"Cinema\"}],\"id\":\"aiostreams.test\",\"name\":\"AIOStreams\",\"resources\":[\"catalog\",{\"name\":\"stream\"},\"subtitles\"],\"behaviorHints\":{\"configurationRequired\":false}}"));
   assert(s.catalogos == 1 && !strcmp(s.catalogo[0].nome, "Cinema"));
   assert(s.recursos == (AIO_CATALOGO | AIO_STREAM | AIO_LEGENDA));
+  assert(aio_manifesto(&s, "{\"id\":\"com.aiostreams.viren070.user\",\"name\":\"My custom name\",\"resources\":[]}"));
   assert(!aio_manifesto(&s, "{\"id\":\"not-aiostreams\",\"name\":\"Other\"}"));
   assert(!aio_manifesto(&s, "{\"id\":\"aiostreams\",\"behaviorHints\":{\"configurationRequired\":true}}"));
   assert(!aio_manifesto(&s, "not json"));

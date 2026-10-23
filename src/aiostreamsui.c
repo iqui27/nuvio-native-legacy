@@ -22,6 +22,7 @@
 #include "sync.h"
 #include "contacache.h"
 #include "jsw.h"
+#include "linguas.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,7 +56,9 @@ static char entregaBase[2048];
 typedef struct { unsigned geracao; int instalar; char base[2048], host[256], id[128], tipo[32]; } Pedido;
 
 int aioui_detectar(int i) {
-  return i >= 0 && (!strncasecmp(addons_nome(i),"AIOStreams",10) || !strncasecmp(addons_id_manifesto(i),"aiostreams",10));
+  return i >= 0 && (!strncasecmp(addons_nome(i),"AIOStreams",10) ||
+    !strncasecmp(addons_id_manifesto(i),"aiostreams",10) ||
+    !strncasecmp(addons_id_manifesto(i),AIO_ID_PREFIX,sizeof AIO_ID_PREFIX-1));
 }
 static int primeiro(void) { for(int i=0;i<addons_n();i++) if(aioui_detectar(i)) return i; return -1; }
 static void qrAtual(void) {
@@ -338,13 +341,13 @@ static void aside(void) {
 static void setup(void) {
   painel(72,148,1776,824);
   GLuint logo=tex_obter(arteLogo);
-  if(logo) gfx_rect((GfxRect){124,216,48,48},logo,GFX_MARCA,0,0,0,0,0,1,1,1);
+  if(logo) gfx_rect((GfxRect){124,216,48,48},logo,GFX_MARCA,0,0,0,0,1,1,1,1);
   texto(TXT_G30B,"AIOStreams",199,206,440,242);
   texto(TXT_ILHA_SUB,i18n("Um addon, todas as suas fontes"),199,248,440,174);
   gfx_cor((GfxRect){661,156,1,815},0,.8f,.84f,.88f,.08f);
   static const char *const story[]={"Um lugar.\nTodas as fontes.","Escolha onde\nele roda.","Sua configuração.\nNesta TV.","Configure uma vez.\nAssista do seu jeito.","Conectado.\nPronto para explorar."};
-  txt_bloco(TXT_AJ_NUM58,i18n(story[pagina]),240,241,242,124,345,490,65,1,3);
-  bloco(i18n("Reúna addons, catálogos e legendas. Configure os detalhes no celular e acompanhe tudo nesta TV."),124,500,485,5);
+  float storyHeight=txt_bloco(TXT_V2_A3TIT,i18n(story[pagina]),240,241,242,124,345,490,56,1,4);
+  bloco(i18n("Reúna addons, catálogos e legendas. Configure os detalhes no celular e acompanhe tudo nesta TV."),124,345+storyHeight+34,485,5);
   const char *steps[]={i18n("Escolha sua instância"),i18n("Conecte e configure"),i18n("Valide nesta TV")};
   for(int i=0;i<3;i++) {
     gfx_icone((GfxRect){125,800+i*49,24,24},i==2&&pagina==PRONTO?"aj_check":"aj_circle-dot",.7f,.76f,.79f,1);
@@ -416,9 +419,11 @@ static void workspace(void) {
     botao(snap.catalogos+2,i18n("Atualizar catálogos"),453,900,450); botao(snap.catalogos+3,i18n("Gerenciar no celular"),925,900,470);
   } else if(pagina==FONTES) {
     int n=snap.addons+snap.servicos;
-    for(int i=start;i<n && i<start+4;i++) {
+    int first=foco>2?foco-2:0;
+    if(first>=n && n>0) first=n>3?n-3:0;
+    for(int i=first;i<n && i<first+3;i++) {
       AioItem *item=i<snap.addons?&snap.addon[i]:&snap.servico[i-snap.addons];
-      linha(i,i<snap.addons?"aj_layers":"aj_cloud",item->nome,item->ativo?i18n("Ativado"):i18n("Desativado"),453,310+(i-start)*84,950);
+      linha(i,i<snap.addons?"aj_layers":"aj_cloud",item->nome,item->ativo?i18n("Ativado"):i18n("Desativado"),453,310+(i-first)*104,950);
     }
     if(!snap.addons) bloco(i18n("Conecte a configuração para ver addons e serviços. O manifesto não revela suas chaves."),473,326,880,3);
     char resumo[160]; snprintf(resumo,sizeof resumo,i18n("%d serviços · %d resultados · %d links · %d P2P"),snap.servicos,snap.resultados,snap.links,snap.p2p);
@@ -430,6 +435,8 @@ static void workspace(void) {
     for(int i=start;i<8 && i<start+5;i++) {
       char sub[128];
       if(!snap.configurada) snprintf(sub,sizeof sub,"%s",i18n("Conecte a configuração para ver esta regra"));
+      else if(i==0) snprintf(sub,sizeof sub,i18n("Exigidas: %s · Excluídas: %s"),snap.resolucaoObrigatoria[0]?snap.resolucaoObrigatoria:i18n("Não informado"),snap.resolucaoExcluida[0]?snap.resolucaoExcluida:i18n("Não informado"));
+      else if(i==3) snprintf(sub,sizeof sub,i18n("Excluir cache: %s · Excluir sem cache: %s"),snap.regraCache<0?i18n("Não informado"):snap.regraCache?i18n("Sim"):i18n("Não"),snap.regraUncached<0?i18n("Não informado"):snap.regraUncached?i18n("Sim"):i18n("Não"));
       else if(snap.resumo[i][0]) snprintf(sub,sizeof sub,"%s",snap.resumo[i]);
       else snprintf(sub,sizeof sub,i18n("%d campos informados · Somente leitura"),snap.regras[i]);
       linha(i,"aj_sliders-horizontal",names[i],sub,453,310+(i-start)*104,950);
@@ -438,7 +445,12 @@ static void workspace(void) {
   } else if(pagina==LEGENDAS) {
     texto(TXT_ILHA_NOME,snap.recursos&AIO_LEGENDA?i18n("Recurso de legendas publicado"):i18n("Recurso de legendas não publicado"),473,324,920,233);
     bloco(i18n("Addons de legenda e faixas embutidas são diferentes. Resultados variam por título, arquivo e hash do vídeo."),473,399,870,4);
-    bloco(i18n("Preferências de idioma e faixas embutidas ficam no player. Não há contagem global de legendas."),473,558,870,4);
+    int y=535;
+    for(int i=0;i<snap.addons && y<720;i++) if(snap.addon[i].legenda) {
+      texto(TXT_ILHA_NOME,snap.addon[i].nome,473,y,870,230); y+=42;
+    }
+    char languages[320]; snprintf(languages,sizeof languages,i18n("Principal: %s · Secundária: %s"),i18n(ling_nome(ling_legenda())),i18n(ling_nome(ling_legenda2())));
+    texto(TXT_ILHA_SUB,languages,473,760,870,180);
     botao(0,i18n("Gerenciar legendas no celular"),453,866,540);
   } else if(pagina==SAUDE) {
     const char *names[]={i18n("Manifesto"),i18n("Status da instância"),i18n("Configuração"),i18n("Consulta de fontes")};

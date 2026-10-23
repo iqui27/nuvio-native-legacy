@@ -5555,6 +5555,11 @@ static int miniToquePermitido(void) {
 #endif
 
 void app_desenhar(Uint32 agora) {
+  if (aioui_aberto() && !registro_aberto() && !player_aberto()) {
+    // Opaque dashboard: avoid rendering Settings, title and sources underneath.
+    gfx_sem_recorte(); ponteiro_camada(); aioui_desenhar(agora); celb_desenhar();
+    return;
+  }
   // O COMECAR da 2.1 e tela inteira e opaco, como o guia da 2.0.
   if (comecar_aberto() && !registro_aberto() && !player_aberto()) {
     gfx_sem_recorte();

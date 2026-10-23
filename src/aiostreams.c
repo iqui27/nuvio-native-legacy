@@ -99,7 +99,7 @@ int aio_manifesto(AioSnapshot *s, const char *json) {
   for(const char *tail=end;*tail;tail++) if(!isspace((unsigned char)*tail)) return 0;
   js_texto_raiz(json, "id", id, sizeof id);
   js_texto_raiz(json, "name", name, sizeof name);
-  if (strncasecmp(id, "aiostreams", 10) && strncasecmp(name, "AIOStreams", 10)) return 0;
+  if (strncasecmp(id, "aiostreams", 10) && strncasecmp(id,AIO_ID_PREFIX,sizeof AIO_ID_PREFIX-1) && strncasecmp(name, "AIOStreams", 10)) return 0;
   s->requerida = boolean(member(json, "behaviorHints"), "configurationRequired", 0);
   if (s->requerida) return 0;
   snprintf(s->nome, sizeof s->nome, "%s", name[0] ? name : "AIOStreams"); safe(s->nome);
@@ -143,6 +143,14 @@ static int inventory(const char *u, const char *key, AioItem *v, int max) {
     js_texto_raiz_em(p,end,"id",item.nome,sizeof item.nome);
     if (!item.nome[0]) js_texto_raiz_em(p,end,"type",item.nome,sizeof item.nome);
     safe(item.nome);
+    // Attribution only from explicit preset resource restrictions, never names.
+    const char *resources=member(member(p,"options"),"resources");
+    if(resources) { char declared[160]=""; const char *q=resources+1;
+      while(*q && *q!=']') { while(*q==',' || isspace((unsigned char)*q)) q++;
+        if(*q=='"' && js_cadeia(q,declared,sizeof declared) && !strcmp(declared,"subtitles")) item.legenda=1;
+        const char *next=value_end(q); if(!next || next<=q) break; q=next;
+      }
+    }
     if (item.nome[0]) v[n++] = item;
     p = end;
   }
@@ -181,6 +189,11 @@ void aio_configuracao(AioSnapshot *s, const char *json) {
     {"sortCriteria",NULL},{"formatter",NULL},{"proxy",NULL}};
   for (int i=0;i<8;i++) for (int j=0;keys[i][j];j++) if (member(u,keys[i][j])) s->regras[i]++;
   memset(s->resumo,0,sizeof s->resumo);
+  s->regraCache=boolean(u,"excludeCached",-1); s->regraUncached=boolean(u,"excludeUncached",-1);
+  s->resolucaoObrigatoria[0]=s->resolucaoExcluida[0]=s->idiomaPreferido[0]=0;
+  summarize(s->resolucaoObrigatoria,128,member(u,"requiredResolutions"));
+  summarize(s->resolucaoExcluida,128,member(u,"excludedResolutions"));
+  summarize(s->idiomaPreferido,128,member(u,"preferredLanguages"));
   summarize(s->resumo[0],256,member(u,"requiredResolutions"));
   if(!s->resumo[0][0]) summarize(s->resumo[0],256,member(u,"preferredResolutions"));
   if(!s->resumo[0][0]) summarize(s->resumo[0],256,member(u,"excludedResolutions"));
