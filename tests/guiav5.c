@@ -37,5 +37,8 @@ int main(void) {
   assert(g5_live_slots(4,1,2,0)==1);
   assert(g5_live_slots(4,4,2,1)==1);
   assert(g5_live_slots(4,4,0,0)==0);
+  assert(!strcmp(g5_item_category(items,0),"News"));
+  items[0].group[0]=0;
+  assert(!strcmp(g5_item_category(items,0),"Globo"));
   puts("PASS: bounded native catalogs, streamed playlist, scoped PIN leases, decoder/provider caps");
 }

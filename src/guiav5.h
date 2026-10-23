@@ -6,9 +6,11 @@
 enum { G5_LIVE, G5_MOVIE, G5_SERIES, G5_EPISODE };
 typedef struct {
   char id[80], source[48], name[140], group[64], poster[480];
-  char url[2048], epg[64], ext[12], plot[600], trusted_id[32];
+  char url[2048], epg[64], ext[12], plot[600], trusted_id[32], category[80];
   int kind, adult, age, season, episode;
 } G5Item;
+/* User-facing category; falls back to name when provider labels are absent. */
+const char *g5_item_category(const G5Item *item, int kind);
 /* A bounded catalog. Review scores never become parental age ratings. */
 int g5_parse_xtream(const char *json, int kind, G5Item *out, int cap, int *total);
 int g5_parse_episodes(const char *json,int season,G5Item *out,int cap);

@@ -6,6 +6,13 @@
 #include <strings.h>
 #include <ctype.h>
 #include <stdint.h>
+const char *g5_item_category(const G5Item *item,int kind){
+  (void)kind;
+  if(!item)return "";
+  if(item->category[0])return item->category;
+  if(item->group[0] && item->group[strspn(item->group,"0123456789")])return item->group;
+  return item->name;
+}
 
 int g5_http_url(const char *url) {
   if (!url || strpbrk(url,"\r\n\t ")) return 0;
