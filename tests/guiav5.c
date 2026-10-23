@@ -34,6 +34,10 @@ int main(void) {
   assert(g5_restricted(&rules,&lease,&item,2,101));
   strcpy(item.source,"m3u"); assert(g5_restricted(&rules,&lease,&item,1,101));
   strcpy(item.source,"xtream"); assert(g5_restricted(&rules,&lease,&item,1,3700));
+  strcpy(rules.blocked_channels[0],"17");rules.channel_count=1;rules.max_age=18;rules.ask_unrated=0;
+  memset(&lease,0,sizeof lease);assert(g5_restricted(&rules,&lease,&item,1,101));
+  strcpy(item.id,"18");assert(!g5_restricted(&rules,&lease,&item,1,101));
+  strcpy(rules.blocked_groups[0],"Cinema");rules.group_count=1;strcpy(item.group,"Cinema");assert(g5_restricted(&rules,&lease,&item,1,101));
   assert(g5_live_slots(4,1,2,0)==1);
   assert(g5_live_slots(4,4,2,1)==1);
   assert(g5_live_slots(4,4,0,0)==0);

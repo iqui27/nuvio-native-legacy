@@ -68,6 +68,9 @@ int g5_parse_episodes(const char *json,int season,G5Item *out,int cap){
     number_id(p,e,"id",it.id,sizeof it.id);js_texto(p,e,"title",it.name,sizeof it.name);
     js_texto(p,e,"container_extension",it.ext,sizeof it.ext);it.episode=(int)js_num(p,e,"episode_num",0);
     snprintf(it.source,sizeof it.source,"xtream");
+    js_texto(p,e,"movie_image",it.poster,sizeof it.poster);if(!g5_http_url(it.poster))it.poster[0]=0;
+    js_texto(p,e,"plot",it.plot,sizeof it.plot);
+    for(const char *c=it.ext;*c;c++)if(!isalnum((unsigned char)*c)){it.ext[0]=0;break;}
     if(it.id[0]&&it.name[0])out[n++]=it;p=js_prox(e);
   }return n;
 }
@@ -122,6 +125,8 @@ int g5_restricted(const G5Rules *r,const G5Lease *lease,const G5Item *it,int pro
   int locked=(r->hide_adult && it->adult) || (r->blocked_group[0]&&!strcmp(r->blocked_group,it->group)) ||
     (r->blocked_channel[0]&&!strcmp(r->blocked_channel,it->id)) ||
     (it->kind!=G5_LIVE && ((it->age<0 && r->ask_unrated) || it->age>r->max_age));
+  for(int i=0;i<r->group_count&&i<G5_RULES_MAX;i++)if(!strcmp(r->blocked_groups[i],it->group))locked=1;
+  for(int i=0;i<r->channel_count&&i<G5_RULES_MAX;i++)if(!strcmp(r->blocked_channels[i],it->id))locked=1;
   if(!locked)return 0;
   return !(lease && !r->kids && lease->profile==profile && lease->expires>now &&
     !strcmp(lease->source,it->source) && (!lease->id[0] || !strcmp(lease->id,it->id)));

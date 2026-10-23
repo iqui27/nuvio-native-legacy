@@ -43,7 +43,7 @@ static G5Item mv_items[4], locked_item, picker_items[48];
 static int picker_count;
 static G5Rules rules={.hide_adult=1,.max_age=18};
 static G5Lease lease;
-static int lease_seconds=7200, pin_settings, pin_result;
+static int lease_seconds=7200, pin_settings, pin_result, rules_mode;
 static int episodes_mode;
 static char groups[G5_GROUPS][64];
 static unsigned char group_on[G5_GROUPS];
@@ -82,6 +82,8 @@ static void context(void){
   memset(&rules,0,sizeof rules);rules.hide_adult=1;rules.max_age=18;group_count=0;
   char file[64];filename(file,sizeof file,"rules");char *b=dados_ler(file);
   if(b){js_texto(b,NULL,"group",rules.blocked_group,sizeof rules.blocked_group);js_texto(b,NULL,"channel",rules.blocked_channel,sizeof rules.blocked_channel);
+    const char *r=js_array(b,NULL,"groups");while(r&&rules.group_count<G5_RULES_MAX){js_cadeia(r,rules.blocked_groups[rules.group_count++],64);r=js_prox(js_fim(r));}
+    r=js_array(b,NULL,"channels");while(r&&rules.channel_count<G5_RULES_MAX){js_cadeia(r,rules.blocked_channels[rules.channel_count++],80);r=js_prox(js_fim(r));}
     rules.hide_adult=js_num(b,NULL,"adult",1)!=0;rules.max_age=(int)js_num(b,NULL,"age",18);
     rules.ask_unrated=js_num(b,NULL,"unrated",0)!=0;rules.hide_locked=js_num(b,NULL,"hide",0)!=0;rules.kids=js_num(b,NULL,"kids",0)!=0;free(b);}
   filename(file,sizeof file,"source");b=dados_ler(file);
@@ -225,7 +227,9 @@ static void save_rules(void){
   perfil_infantil_definir(profile,rules.kids);
   char file[64];Jsw w;jsw_iniciar(&w);jsw_obj_ini(&w);
   jsw_ci(&w,"adult",rules.hide_adult);jsw_ci(&w,"age",rules.max_age);jsw_ci(&w,"unrated",rules.ask_unrated);jsw_ci(&w,"hide",rules.hide_locked);jsw_ci(&w,"kids",rules.kids);
-  jsw_cs(&w,"group",rules.blocked_group);jsw_cs(&w,"channel",rules.blocked_channel);jsw_obj_fim(&w);
+  jsw_cs(&w,"group",rules.blocked_group);jsw_cs(&w,"channel",rules.blocked_channel);
+  jsw_chave(&w,"groups");jsw_arr_ini(&w);for(int i=0;i<rules.group_count;i++)jsw_str(&w,rules.blocked_groups[i]);jsw_arr_fim(&w);
+  jsw_chave(&w,"channels");jsw_arr_ini(&w);for(int i=0;i<rules.channel_count;i++)jsw_str(&w,rules.blocked_channels[i]);jsw_arr_fim(&w);jsw_obj_fim(&w);
   filename(file,sizeof file,"rules");if(jsw_texto_final(&w))dados_gravar(file,jsw_texto_final(&w));jsw_livre(&w);dirty=1;
 }
 void g5ui_save_source(const char *playlist,const char *xml,int type,int live,int movies,int series,int epg){
@@ -288,8 +292,9 @@ static void panel(float x,float y,float w,float h){
 static void button(int id,const char *text,const char *icon,float x,float y,float w,float h,int row){
   GfxRect r={x,y,w,h};int focused=nav<0&&focus==id;
   if(row){if(focused)plrui_linha_foco(r,20,1);}
+  else if(h<=54){gfx_cor(r,10.0f/h,.15,.16,.18,1);if(focused)plrui_linha_foco(r,10,1);}
   else if(focused)plrui_pilula_foco(r,1);else plrui_botao_repouso(r,1);
-  int c=focused&&!row?ajustes_tinta_foco():240;float tint=c/255.0f;
+  int c=focused&&!row&&h>54?ajustes_tinta_foco():240;float tint=c/255.0f;
   if(icon&&*icon)gfx_icone((GfxRect){x+24,y+(h-28)/2,28,28},icon,tint,tint,tint,1);
   TxtLinha l=txt_linha_corta(TXT_ILHA_CORPO,text,c,c,c,255,w-(icon?84:48));txt_desenhar(l,x+(icon?68:24),y+(h-l.h)/2);
   ponteiro_alvo(x,y,w,h,point_focus,point_activate,id,0);
@@ -357,7 +362,7 @@ static void wizard(void){
       if(draft.type!=0&&i==1)value=draft.playlist;
       label(TXT_ILHA_CORPO,i18n(draft.type!=0&&i==1?"URL da lista M3U":fields[i]),474,y,700,1);
       gfx_cor((GfxRect){474,y+26,702,60},.25,.135,.145,.165,1);
-      button(id,i==3?(draft.password[0]?"••••••••":i18n("Senha")):value[0]?value:i18n(i==0?"Sua fonte":i==1?"Endereço do servidor":"Usuário"),NULL,474,y+26,702,60,1);
+      button(id,i==3?(draft.password[0]?"••••••••":i18n("Senha")):value[0]?value:i18n(i==0?"Sua fonte":i==1?"Servidor":"Usuário"),NULL,474,y+26,702,60,1);
     }
     panel(1218,340,610,112);gfx_icone((GfxRect){1246,365,28,28},"aj_smartphone",.9,.9,.9,1);
     txt_bloco(TXT_ILHA_CORPO,i18n("Leia o QR e continue no celular."),180,182,190,1288,362,510,32,1,2);
@@ -421,8 +426,8 @@ static void catalog(void){
   panel(48,190,320,800);label(TXT_ILHA_NOME,i18n("Catálogo"),80,217,270,0);
   button(800,i18n("Filmes"),"aj_film",68,258,280,54,1);button(801,i18n("Séries"),"aj_tv-minimal-play",68,312,280,54,1);button(802,i18n("Buscar"),"aj_search",68,366,280,54,1);
   gfx_cor((GfxRect){68,439,280,1},0,1,1,1,.10);label(TXT_ILHA_NOME,i18n("Categorias"),80,462,270,0);
-  button(805,i18n("Todas"),"aj_folder",68,502,280,54,1);
-  for(int g=0;g<group_count&&g<4;g++)button(820+g,groups[g],"aj_folder",68,563+g*62,280,54,1);
+  button(805,i18n("Todas"),"aj_folders",68,502,280,54,1);
+  for(int g=0;g<group_count&&g<4;g++)button(820+g,groups[g],"aj_folders",68,563+g*62,280,54,1);
   label(TXT_ILHA_SUB,i18n("Conteúdo adulto oculto por padrão."),80,884,270,1);
   button(806,i18n("Adicionar fonte"),"aj_plus",68,915,280,54,1);
   if(search)button(804,query[0]?query:i18n("Buscar canais, filmes e séries"),"aj_search",400,204,1472,64,1);
@@ -430,7 +435,7 @@ static void catalog(void){
     G5Item *hero=&inventory[indices[focus>=0&&focus<nindices?focus:0]];
     GfxRect r={400,190,1472,330};panel(r.x,r.y,r.w,r.h);
     GLuint art=!restricted(hero)&&hero->backdrop[0]?tex_obter_larg(hero->backdrop,1472):0;
-    if(art)gfx_rect(r,art,GFX_CARD,0,0,0,.08,1,1,1,1);
+    if(art){gfx_tex_aspect_atual=tex_aspecto(hero->backdrop);gfx_rect(r,art,GFX_CARD,0,0,0,.08,1,1,1,1);gfx_tex_aspect_atual=0;}
     gfx_rect(r,0,GFX_VEU,0,0,0,.08,0,0,0,.75);
     label(TXT_ILHA_CORPO,i18n("Do seu IPTV"),432,224,1200,1);
     label(TXT_V2_TIT,restricted(hero)?i18n("Conteúdo bloqueado"):hero->name,432,266,1350,0);
@@ -449,11 +454,11 @@ static void catalog(void){
   for(int n=start;n<nindices&&n<start+page_size;n++){
     G5Item *it=&inventory[indices[n]];float x=400+((n-start)%6)*249,y=(search?304:596)+((n-start)/6)*324;
     GfxRect r={x,y,230,270};int locked=restricted(it);GLuint tex=!locked&&it->poster[0]?tex_obter_larg(it->poster,230):0;
-    if(tex)gfx_rect(r,tex,GFX_CARD,0,0,0,.07,1,1,1,1);else gfx_cor(r,.07,.12,.13,.15,1);
+    if(tex){gfx_tex_aspect_atual=tex_aspecto(it->poster);gfx_rect(r,tex,GFX_CARD,0,0,0,.07,1,1,1,1);gfx_tex_aspect_atual=0;}else gfx_cor(r,.07,.12,.13,.15,1);
     if(locked)gfx_icone((GfxRect){x+90,y+108,48,48},"aj_lock",.8,.8,.8,1);
     if(focus==n&&nav<0)plrui_linha_foco((GfxRect){x-4,y+274,238,76},18,1);
     label(TXT_W20_24B,locked?i18n("Conteúdo bloqueado"):it->name,x,y+282,230,0);
-    label(TXT_ILHA_CORPO,it->group,x,y+318,230,1);
+    label(TXT_ILHA_CORPO,g5_item_category(it,it->kind),x,y+318,230,1);
     ponteiro_alvo(x,y,230,350,point_focus,point_activate,n,0);
     if(num_focus<1024)next_focus[num_focus++]=n;
   }
@@ -461,7 +466,29 @@ static void catalog(void){
 }
 static void title_screen(void){
   if(selected<0||selected>=count){go("vod-vazio");return;}
-  G5Item *it=&inventory[selected];if(restricted(it)){locked_item=*it;go("parental-canal-bloqueado");return;}
+  G5Item *it=episodes_mode&&series_catalog?&series_catalog[parent_series]:&inventory[selected];if(restricted(it)){locked_item=*it;go("parental-canal-bloqueado");return;}
+  if(it->kind==G5_SERIES){
+    panel(48,190,320,800);label(TXT_ILHA_NOME,i18n("Catálogo"),80,217,270,0);
+    button(800,i18n("Filmes"),"aj_film",68,258,280,54,1);button(801,i18n("Séries"),"aj_tv-minimal-play",68,312,280,54,1);
+    button(2,i18n("Voltar"),"pl_chevron-left",68,915,280,54,1);
+    GfxRect hero={400,190,1472,290};panel(hero.x,hero.y,hero.w,hero.h);
+    GLuint art=it->backdrop[0]?tex_obter_larg(it->backdrop,1472):0;
+    if(art){gfx_tex_aspect_atual=tex_aspecto(it->backdrop);gfx_rect(hero,art,GFX_CARD,0,0,0,.09,1,1,1,1);gfx_tex_aspect_atual=0;}
+    gfx_rect(hero,0,GFX_VEU,0,0,0,.09,0,0,0,.8);
+    label(TXT_ILHA_CORPO,i18n("Séries"),432,224,1200,1);label(TXT_V2_TIT,it->name,432,270,1350,0);
+    label(TXT_ILHA_CORPO,i18n("Do seu IPTV"),432,343,1300,0);
+    button(1,i18n("Carregar episódios"),"aj_play",432,400,400,60,0);
+    panel(400,510,360,472);label(TXT_HEADLINE,i18n("Temporada"),432,548,290,0);
+    char season[64];snprintf(season,sizeof season,"%s %d",i18n("Temporada"),selected_season);
+    button(0,season,"aj_tv-minimal-play",432,600,296,72,1);
+    label(TXT_HEADLINE,i18n("Episódios"),790,514,1000,0);
+    if(episodes_mode){int row=0;for(int i=0;i<count&&row<4;i++)if(inventory[i].kind==G5_EPISODE){
+      G5Item *episode=&inventory[i];float y=562+row*109;GLuint t=episode->poster[0]?tex_obter_larg(episode->poster,146):0;
+      if(t){gfx_tex_aspect_atual=tex_aspecto(episode->poster);gfx_rect((GfxRect){808,y,146,78},t,GFX_CARD,0,0,0,.14,1,1,1,1);gfx_tex_aspect_atual=0;}
+      button(100+i,episode->name,"aj_play",972,y,880,78,1);gfx_cor((GfxRect){790,y+92,1082,1},0,1,1,1,.12);row++;
+    }}else label(TXT_ILHA_CORPO,i18n("Carregar episódios"),808,592,1000,1);
+    return;
+  }
   panel(48,128,1824,848);GLuint t=it->poster[0]?tex_obter_larg(it->poster,350):0;
   if(t)gfx_rect((GfxRect){100,205,350,525},t,GFX_CARD,0,0,0,.04,1,1,1,1);
   label(TXT_ILHA_SUB,i18n("Do seu IPTV"),510,220,1250,1);label(TXT_TITULO2,it->name,510,278,1250,0);
@@ -474,6 +501,15 @@ static void title_screen(void){
   button(2,i18n("Voltar"),"pl_chevron-left",510,860,260,60,0);
 }
 static void parental_screen(void){
+  if(!strcmp(screen,"parental-lista")){
+    panel(100,128,1720,848);label(TXT_TITULO2,i18n(rules_mode?"Canais ao vivo":"Categorias"),142,170,1450,0);
+    int begin=focus>=0&&focus<900?(focus/8)*8:0;
+    if(rules_mode){for(int i=begin;i<begin+8;i++){const char *id,*name,*logo,*group,*base;if(!guia_canal_campos(i,&id,&name,&logo,&group,&base))continue;
+      int on=!strcmp(rules.blocked_channel,id);for(int j=0;j<rules.channel_count;j++)on|=!strcmp(rules.blocked_channels[j],id);
+      toggle(i,name,on,142,270+(i-begin)*70,1620);
+    }}else for(int i=begin;i<group_count&&i<begin+8;i++){int on=!strcmp(rules.blocked_group,groups[i]);for(int j=0;j<rules.group_count;j++)on|=!strcmp(rules.blocked_groups[j],groups[i]);toggle(i,groups[i],on,142,270+(i-begin)*70,1620);}
+    button(900,i18n("Voltar"),"pl_chevron-left",142,884,280,60,0);return;
+  }
   if(!strcmp(screen,"parental-pin")){
     gfx_cor((GfxRect){0,0,1920,1080},0,0,0,0,.35);
     panel(545,119,830,842);label(TXT_ILHA_CORPO,i18n("PIN do perfil"),586,164,740,1);
@@ -496,13 +532,23 @@ static void parental_screen(void){
     button(0,i18n("Digitar PIN do perfil"),"aj_lock",900,550,780,72,0);button(1,i18n("Escolher outro canal"),"pl_chevron-left",900,650,780,72,0);
     button(2,i18n("Controle parental"),"aj_shield-check",900,750,780,72,0);return;
   }
-  label(TXT_ILHA_SUB,i18n("GUIA TV / REGRAS DO PERFIL"),48,148,1700,1);label(TXT_TITULO2,i18n("Assista com tranquilidade."),48,190,1700,0);
-  panel(48,300,470,676);panel(548,300,1324,676);
-  label(TXT_HEADLINE,i18n("Proteger este perfil"),90,345,390,0);label(TXT_ILHA_CORPO,i18n("Use o mesmo PIN do perfil."),90,420,390,1);
+  label(TXT_ILHA_CORPO,i18n("GUIA TV / REGRAS DO PERFIL"),100,150,1700,1);label(TXT_TITULO2,i18n("Assista com tranquilidade."),100,194,1700,0);
+  panel(100,276,390,740);panel(522,276,1298,740);
+  label(TXT_HEADLINE,i18n("Proteger este perfil"),132,310,330,0);
+  button(90,i18n("Controle parental"),"aj_shield-check",132,358,326,62,1);
+  button(91,i18n("Canais ao vivo"),"aj_tv-minimal-play",132,428,326,62,1);
+  button(92,i18n("Categorias"),"aj_film",132,498,326,62,1);
+  button(93,i18n("Perfil infantil"),"aj_shield-check",132,568,326,62,1);
+  gfx_cor((GfxRect){132,652,326,1},0,1,1,1,.13);
+  txt_bloco(TXT_ILHA_CORPO,i18n("Use o mesmo PIN do perfil."),180,182,190,132,678,326,34,1,3);
   const char *rows[]={"Ocultar conteúdo adulto","Bloquear canal em foco","Bloquear categoria em foco","Classificação indicativa","Pedir PIN sem classificação","Ocultar completamente","Perfil infantil","Desbloqueio temporário"};
   for(int i=0;i<8;i++){
-    int on=i==0?rules.hide_adult:i==1?rules.blocked_channel[0]!=0:i==2?rules.blocked_group[0]!=0:i==4?rules.ask_unrated:i==5?rules.hide_locked:i==6?rules.kids:0;
-    toggle(i,i18n(rows[i]),on,584,334+i*72,1248);
+    int on=i==0?rules.hide_adult:i==1?(rules.blocked_channel[0]!=0||rules.channel_count):i==2?(rules.blocked_group[0]!=0||rules.group_count):i==4?rules.ask_unrated:i==5?rules.hide_locked:i==6?rules.kids:0;
+    float y=308+i*82;button(i,i18n(rows[i]),i==0?"aj_eye-off":i==1?"aj_tv-minimal-play":i==2?"aj_folders":i==7?"aj_clock":"aj_shield-check",554,y,1234,78,1);
+    const char *state=i==1||i==2?"Editar":i==3?NULL:i==7?NULL:on?"Ativado":"Desativado";char value[80];
+    if(i==3){snprintf(value,sizeof value,"%d+",rules.max_age);state=value;}
+    if(i==7){snprintf(value,sizeof value,i18n("%d horas"),lease_seconds/3600);state=value;}
+    label(TXT_ILHA_CORPO,i18n(state),1530,y+26,225,1);gfx_cor((GfxRect){554,y+81,1234,1},0,1,1,1,.12);
   }
   if(!strcmp(screen,"parental-desbloqueio")){
     gfx_cor((GfxRect){0,0,1920,1080},0,0,0,0,.3);panel(530,260,860,580);
@@ -625,10 +671,26 @@ static void activate(int id){
   if(!strcmp(screen,"parental-desbloqueio")){
     if(id==10)lease_seconds=lease_seconds==3600?7200:lease_seconds==7200?14400:3600;else if(id==11)want_pin(0);return;
   }
+  if(!strcmp(screen,"parental-lista")){
+    if(id==900){go("parental-ajustes");return;}
+    if(rules_mode){const char *channel_id,*name,*logo,*group,*base;
+      if(!guia_canal_campos(id,&channel_id,&name,&logo,&group,&base))return;
+      int i;for(i=0;i<rules.channel_count;i++)if(!strcmp(rules.blocked_channels[i],channel_id))break;
+      if(i<rules.channel_count){memmove(rules.blocked_channels[i],rules.blocked_channels[i+1],(rules.channel_count-i-1)*sizeof rules.blocked_channels[0]);rules.channel_count--;}
+      else if(i<G5_RULES_MAX)snprintf(rules.blocked_channels[rules.channel_count++],80,"%s",channel_id);
+      if(!strcmp(rules.blocked_channel,channel_id))rules.blocked_channel[0]=0;
+    }else if(id>=0&&id<group_count){int i;for(i=0;i<rules.group_count;i++)if(!strcmp(rules.blocked_groups[i],groups[id]))break;
+      if(i<rules.group_count){memmove(rules.blocked_groups[i],rules.blocked_groups[i+1],(rules.group_count-i-1)*sizeof rules.blocked_groups[0]);rules.group_count--;}
+      else if(i<G5_RULES_MAX)snprintf(rules.blocked_groups[rules.group_count++],64,"%s",groups[id]);
+      if(!strcmp(rules.blocked_group,groups[id]))rules.blocked_group[0]=0;
+    }save_rules();return;
+  }
   if(!strcmp(screen,"parental-ajustes")){
+    if(id==90)return;
+    if(id==91||id==92){rules_mode=id==91;go("parental-lista");return;}
+    if(id==93)id=6;
     if(id==0)rules.hide_adult=!rules.hide_adult;
-    else if(id==1){if(rules.blocked_channel[0])rules.blocked_channel[0]=0;else snprintf(rules.blocked_channel,sizeof rules.blocked_channel,"%s",locked_item.id);}
-    else if(id==2){if(rules.blocked_group[0])rules.blocked_group[0]=0;else snprintf(rules.blocked_group,sizeof rules.blocked_group,"%s",locked_item.group);}
+    else if(id==1||id==2){rules_mode=id==1;go("parental-lista");return;}
     else if(id==3)rules.max_age=rules.max_age>=18?10:rules.max_age+2;
     else if(id==4)rules.ask_unrated=!rules.ask_unrated;else if(id==5)rules.hide_locked=!rules.hide_locked;
     else if(id==6){rules.kids=!rules.kids;if(rules.kids){rules.hide_adult=rules.hide_locked=rules.ask_unrated=1;rules.max_age=10;erase(&lease,sizeof lease);go("parental-perfil-infantil");}}
@@ -639,8 +701,11 @@ static void activate(int id){
     if(id==0&&selected<count&&!restricted(&inventory[selected]))playing=1;else if(id==2)go("vod-filmes");return;
   }
   if(!strcmp(screen,"vod-serie-temporadas")){
+    if(id>=100&&id<100+count&&episodes_mode){selected=id-100;if(!restricted(&inventory[selected]))playing=1;return;}
+    if(id==800||id==801||id==2){if(episodes_mode&&series_catalog){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;episodes_mode=0;}go(id==800?"vod-filmes":"vod-series");return;}
     if(id==0){selected_season=selected_season>=30?1:selected_season+1;return;}
     if(id==2){go("vod-series");return;}
+    if(episodes_mode&&series_catalog){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;selected=parent_series;episodes_mode=0;}
     snprintf(action,sizeof action,"get_series_info&series_id=%s",inventory[selected].id);start(4);return;
   }
   if(!strncmp(screen,"vod-",4)){
@@ -706,7 +771,7 @@ void g5ui_update(void){
           else{g5_grant(&lease,profile,locked_item.source,locked_item.id,time(NULL),lease_seconds,1);if(locked_item.kind==G5_LIVE)g5ui_close();else go(previous[0]?previous:"vod-filmes");}}
         else{go("parental-pin");snprintf(message,sizeof message,"%s",i18n(pin_result==0?"PIN incorreto":"Não foi possível verificar o PIN"));}
       }else if(staging&&worker_ok){if(operation==4){free(series_catalog);series_catalog=inventory;series_count=count;parent_series=selected;}else free(inventory);inventory=staging;staging=NULL;count=staging_count;total=staging_total;build_groups();source_loaded=1;
-        if(operation==4){episodes_mode=1;go("vod-filmes");}
+        if(operation==4){episodes_mode=1;selected=0;go("vod-serie-temporadas");}
         if(committed)dirty=1;
         if(operation==2&&strstr(screen,"vod-"))focus=0;
       }

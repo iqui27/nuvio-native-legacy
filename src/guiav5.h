@@ -24,9 +24,12 @@ void g5_playlist_init(G5Playlist *p, G5Item *items, int cap);
 int g5_playlist_feed(G5Playlist *p, const void *bytes, size_t n);
 int g5_playlist_finish(G5Playlist *p);
 
+#define G5_RULES_MAX 64
 typedef struct {
   int hide_adult, max_age, ask_unrated, hide_locked, kids;
-  char blocked_group[64], blocked_channel[80];
+  char blocked_group[64], blocked_channel[80]; /* Existing saved rules. */
+  char blocked_groups[G5_RULES_MAX][64], blocked_channels[G5_RULES_MAX][80];
+  int group_count, channel_count;
 } G5Rules;
 typedef struct {
   int profile;

@@ -8,10 +8,11 @@
 
 static void capture(SDL_Window *window,const char *dir,const char *name){
   char path[1024];snprintf(path,sizeof path,"%s/%s-app.png",dir,name);
-  for(int frame=0;frame<3;frame++){
+  for(int frame=0;frame<90;frame++){
     SDL_PumpEvents();txt_novo_quadro();tex_novo_quadro();tex_bombear(8);gfx_novo_quadro();
     glClearColor(.04,.04,.04,1);glClear(GL_COLOR_BUFFER_BIT);g5ui_draw();
-    if(frame==2){
+    SDL_Delay(8);
+    if(frame==89){
       unsigned char *pixels=malloc(1920*1080*4);assert(pixels);
       SDL_Surface *surface=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);assert(surface);
       glReadPixels(0,0,1920,1080,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
@@ -47,10 +48,13 @@ int main(int argc,char **argv){
   activate(31);assert(!strcmp(pin_value,"12"));activate(29);assert(!pin_value[0]);
   for(int i=0;i<6;i++)activate(20+i);assert(strlen(pin_value)==4);
   activate(1);assert(!pin_value[0]&&!g5ui_active());
-  go("setup-credenciais");credential_field=6;activate(100);assert(strchr(draft.name,'A'));
+  go("setup-credenciais");credential_field=6;activate(100);assert(strchr(draft.name,'A'));draft.name[strlen(draft.name)-1]=0;
   for(unsigned n=0;n<sizeof names/sizeof *names;n++){
     go(names[n]);draft.live=draft.movies=draft.series=draft.epg=1;focus=0;mode=strstr(names[n],"-4")?4:strstr(names[n],"-3")?3:2;
-    if(!strcmp(names[n],"vod-serie-temporadas"))selected=6;else selected=0;
+    if(!strcmp(names[n],"vod-serie-temporadas")){
+      series_catalog=inventory;series_count=count;parent_series=6;inventory=calloc(4,sizeof *inventory);count=4;episodes_mode=1;selected=0;
+      for(int i=0;i<4;i++){inventory[i].kind=G5_EPISODE;inventory[i].age=10;snprintf(inventory[i].name,sizeof inventory[i].name,"%d. %s",i+1,i==0?"O fim":i==1?"O alvo":i==2?"A cabeça":"Os necróticos");snprintf(inventory[i].poster,sizeof inventory[i].poster,"/Volumes/ExternalSSD/tmp/rev/guiatv-estado/v5/assets/fallout-backdrop.jpg");}
+    }else selected=0;
     if(!strcmp(names[n],"parental-perfil-infantil")){rules.kids=1;}else rules.kids=0;
     if(!strcmp(names[n],"setup-celular-tv")){
       phone();char *html=rede_baixar(celular_url(),5);
@@ -58,6 +62,7 @@ int main(int argc,char **argv){
     }
     if(!strcmp(names[n],"vod-vazio"))snprintf(query,sizeof query,"%s","no fixture matches");else query[0]=0;
     capture(window,dir,names[n]);
+    if(episodes_mode&&series_catalog){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;episodes_mode=0;}
   }
   puts("PASS: 28 native v5 states captured");return 0;
 }
