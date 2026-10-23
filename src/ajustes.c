@@ -69,6 +69,7 @@
 #include "simkl.h"
 #include "trakt.h"
 #include "qr.h"
+#include "addonguia.h"
 #include "atualizacao.h"
 #include "avisos.h"
 #include "uisizing.h"
@@ -2638,9 +2639,10 @@ static int focoItem = 0;
 static int focoOp = -1;
 // Pedido do cartao de novidades ("Experimentar a cor viva"): a proxima
 // abertura pousa na linha da cor, dentro de Aparencia (ver ajustes_iniciar).
-static int abrirNaCor, abrirNaFonte, abrirNoLayout, abrirNoVidro, abrirNoTrakt, abrirNaEspera;
+static int abrirNaCor, abrirNaFonte, abrirNoLayout, abrirNoVidro, abrirNoTrakt, abrirNaEspera, abrirFileiras;
 void ajustes_abrir_na_cor(void) { abrirNaCor = 1; }
 void ajustes_abrir_na_fonte(void) { abrirNaFonte = 1; }
+void ajustes_abrir_fileiras(void) { abrirFileiras = 1; }
 void ajustes_abrir_no_layout(void) { abrirNoLayout = 1; }
 void ajustes_abrir_no_vidro(void) { abrirNoVidro = 1; }
 void ajustes_abrir_no_trakt(void) { abrirNoTrakt = 1; }
@@ -4452,6 +4454,23 @@ static void debDefinir(int op, const char *txt) {
     debrid_aplicar_chaves_locais(&conta);
   } else uxNotificar("Não foi possível agora. Tente novamente.");
   memset(&conta, 0, sizeof conta); memset(nova, 0, sizeof nova);
+}
+int ajustes_debrid_celular(const char *servico, const char *chave) {
+  DebridConta conta;
+  char nome[128], nova[200];
+  int i, k;
+  if (!servico || !chave || !*chave || strlen(chave) >= sizeof nova) return 0;
+  for (i = 0; i < 5; i++) if (i != 1 && !strcmp(servico, DEB_SERV[i])) break;
+  if (i == 5 || !ajustes_provedores_arquivo(nome, sizeof nome, "debrid")) return 0;
+  debLimpar(nova, sizeof nova, chave);
+  if (!nova[0]) return 0;
+  debrid_conta_iniciar(&conta);
+  for (k = 0; k < 5; k++) if (k != 1) debrid_conta_definir(&conta, DEB_SERV[k], k == i ? nova : debLocal[k]);
+  if (!debGravarEm(nome, &conta)) { memset(&conta, 0, sizeof conta); memset(nova, 0, sizeof nova); return 0; }
+  snprintf(debLocal[i], sizeof debLocal[i], "%s", nova);
+  debrid_aplicar_chaves_locais(&conta);
+  memset(&conta, 0, sizeof conta); memset(nova, 0, sizeof nova);
+  return 1;
 }
 static const char *debValor(int op) {
   static char buf[64], m[24];
@@ -6868,6 +6887,10 @@ int ajustes_iniciar(void) {
   // trocar a cor, nao achar onde ela mora.
   if (abrirNaCor) { abrirNaCor = 0; focarOpcao(AJ_TEMA); }
   if (abrirNaFonte) { abrirNaFonte = 0; focarOpcao(AJ_FONTE_UI); }
+  if (abrirFileiras) {
+    abrirFileiras = 0; focarOpcao(AJ_FIL_ORDEM);
+    fil_normalizar(); filAberta = 1; filFoco = filCampo = filPegou = filTopo = 0;
+  }
   // Os dois atalhos do cartao da 1.6.0: o layout da home (dentro do grupo
   // "Layout da Home", que focarOpcao abre) e a Interface de vidro.
   if (abrirNoLayout) { abrirNoLayout = 0; focarOpcao(AJ_HOME_LAYOUT); }
@@ -10077,13 +10100,7 @@ static void eventoTela(const SDL_Event *e) {
     if (focoOp == AJ_P2P_TESTAR) { p2pTesteIniciar(); return; }
     if (focoOp >= AJ_POSTER_INST && focoOp <= AJ_POSTER_TESTAR) { pstAtivar(focoOp); return; }
     if (debIdx(focoOp) >= 0) {
-      // Como o fanart: a chave NUNCA volta para o campo; vazio apaga.
-      stCampo = focoOp;
-      teclado_abrir_com(focoOp == AJ_DEBRID_AD ? "Chave do AllDebrid"
-                        : focoOp == AJ_DEBRID_RD ? "Chave do Real-Debrid"
-                        : focoOp == AJ_DEBRID_TB ? "Chave do TorBox" : "Chave do Premiumize",
-                        "Chave de API da sua conta. Vazio apaga.",
-                        96, DEB_ALFA, NULL);
+      addonguia_abrir(AG_CONECTAR, 0, NULL);
       return;
     }
     if (debTesteServico(focoOp) >= 0) { adTesteIniciar(debTesteServico(focoOp)); return; }

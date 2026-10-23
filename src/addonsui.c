@@ -1,4 +1,5 @@
 #include "addonsui.h"
+#include "addonguia.h"
 #include "idioma.h"
 #include "descoberta.h"
 #include "addons.h"
@@ -101,8 +102,21 @@ void addonsui_evento(const SDL_Event *e) {
       if (aoVivo) { if (foco < n) alternarAoVivo(foco); break; }
       if (foco == n) { sincronizar(); break; }
       if (foco == n + 1) { aoVivo = 1; foco = 0; scrollY = 0; break; }
-      if (n > 0) { addons_alternar(foco); mexeu = 1; }
+      if (n > 0) {
+        int http, valida, diretos, torrents;
+        addonmodo_fatos(addonmodo_id(addons_base(foco)), &http, &valida, &diretos, &torrents);
+        if (http < 0 || http >= 400) { addons_tentar_de_novo(); break; }
+        if (diretos && !torrents) { addonguia_configurar(foco); break; }
+        addonguia_abrir(addons_sondado(foco) && !addons_fornece(foco, ADD_STREAM)
+                         ? AG_NOVO_CATALOGO : AG_MODO, foco, NULL);
+      }
       break;
+    case SDLK_SPACE: case SDLK_RIGHT:
+      if (!aoVivo && foco < n) { addons_alternar(foco); mexeu = 1; }
+      break;
+    // Voltar (qualquer tecla de voltar) e Esquerda: sai do modo ao-vivo antes
+    // de voltar a linha "Addons" em Ajustes > Fontes e addons
+    // (app.c chama ajustes_voltar_de_lista).
     case SDLK_AC_BACK: case SDLK_ESCAPE: case SDLK_BACKSPACE: case SDLK_LEFT:
       if (aoVivo) { aoVivo = 0; foco = n + 1; scrollY = 0; }
       else sair = 1;
@@ -159,7 +173,7 @@ static const char *capacidades(int i) {
 // arranjo de ilhas de Ajustes, desenhado por ajustes.c (que tem as pecas).
 void addonsui_desenhar(Uint32 agora) {
   (void)agora;
-  ajustes_desenhar_addons(foco);
+  addonguia_lista(foco);
 }
 
 #ifdef AJUSTES_TESTE

@@ -27,6 +27,7 @@
 #include "resolverregra.h"
 #include "horafmt.h"
 #include "player.h"
+#include "addonguia.h"
 #include "juntos.h"
 #include "conquistasdados.h"
 #include "legfontes.h"
@@ -6567,7 +6568,7 @@ void player_desenhar(Uint32 agora) {
     else snprintf(lin, sizeof lin, "%s", i18n("Sintonizando…"));
     pd.texto = lin; pd.respira = 1; pd.semFim = 1; pd.aberta = 1;
     plrilha_pedir(&pd);
-  } else if (player_carregando() && !stream_folha_aberta() && stream_folha_anim() < 0.05f &&
+  } else if (player_carregando() && !addonguia_aberto() && !stream_folha_aberta() && stream_folha_anim() < 0.05f &&
              // A TELA DO DOLBY VISION substitui o cartao: sem ela, o caminho do
              // DV mostrava "Abrindo fonte" DUAS vezes (a TV e depois o demux).
              (!dvtela_visivel() || dvtela_variante() == DVT_VAR_DETALHADA) &&
@@ -6606,7 +6607,7 @@ void player_desenhar(Uint32 agora) {
     avToquePreparar(1);
 #endif
     aovivo_erro_desenhar(itemCanal.titulo, itemCanal.poster, erroTitulo, erroDica, entrada);
-  } else if (erroFonte) {
+  } else if (erroFonte && !addonguia_aberto()) {
     // A FONTE NAO ABRIU: a ilha do canto vira o MODAL (o mesmo das
     // confirmacoes), com o motivo real e as duas saidas que o proprio texto
     // manda fazer — Abrir Fontes e Voltar. Era um veu .65 com duas linhas e

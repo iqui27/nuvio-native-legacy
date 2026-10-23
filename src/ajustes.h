@@ -64,6 +64,7 @@ int  ajustes_gpu_efeitos(void);
 void ajustes_abrir_na_cor(void);
 // Atalho do cartão de novidades para a tipografia da interface.
 void ajustes_abrir_na_fonte(void);
+void ajustes_abrir_fileiras(void);
 // Atalhos do cartao da 1.6.0: Ajustes › Layout na linha "Layout da home", e
 // Ajustes › Aparência na linha "Interface de vidro". Mesma regra da cor.
 void ajustes_abrir_no_layout(void);
@@ -275,6 +276,7 @@ void ajustes_definir_vidro(int ligado);
 int  ajustes_jellyfin_ligado(void);   // F11: personal servers on AND strict HTTP here
 int  ajustes_p2p_ligado(void);
 void ajustes_definir_p2p_ligado(int ligado);
+int ajustes_debrid_celular(const char *servico, const char *chave);
 // Endereco ja normalizado ("http://192.168.1.5:11470"); "" quando nao ha.
 const char *ajustes_p2p_url(void);
 // Normaliza e grava; texto vazio esquece. 0 se o texto nao e um endereco (nada
