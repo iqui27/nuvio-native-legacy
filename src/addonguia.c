@@ -30,7 +30,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int tela=-1, anterior=AG_MODO, indice, foco, pedido, detalhes, pct=-1, serv, acessoConfig;
+static int tela=-1, anterior=AG_MODO, indice, foco, pedido, detalhes, pct=-1, serv, acessoConfig, semCel;
 static int modoSelecionado;
 static uint64_t identidade;
 static char nome[96], titulo[160], servico[32];
@@ -148,7 +148,7 @@ static int configUrl(char *out,size_t n) {
   return snprintf(out,n,"%.*s/configure",(int)(end-base),base)<(int)n;
 }
 void addonguia_abrir(int t,int addon,const char *tit) {
-  tela=t; indice=addon; foco=0;detalhes=0;anterior=AG_MODO;acessoConfig=0;
+  tela=t; indice=addon; foco=0;detalhes=0;anterior=AG_MODO;acessoConfig=0;semCel=0;
   modoSelecionado=addonmodo_get(addonmodo_id(addons_base(addon)));
   if(modoSelecionado<AM_P2P)modoSelecionado=AM_P2P;
   identidade=addonmodo_id(addons_base(addon));
@@ -186,9 +186,14 @@ static void ativar(void) {
   }
   if(tela==AG_CONECTAR) {
     if(foco>=0 && foco<4){
-      serv=foco;
+      serv=foco;semCel=0;
       if(celb_disponivel())celb_abrir_embutido(CELB_ADDON,"Conectar pelo celular");
-      else if(foco<3)sync_manual_addons();
+      else if(nuvem_base_login()[0])sync_manual_addons();
+      else {
+        semCel=1;
+        ilha_avisar("cel-off",ILHA_INFO,"aj_smartphone",
+          i18n("Sem rede local. Conecte a TV ao Wi-Fi e aperte OK."),6000u,0);
+      }
     }
     else {tela=anterior;foco=0;celb_fechar_dono(CELB_ADDON);}
     return;
@@ -260,7 +265,13 @@ void addonguia_falha(void) {
     consultados++;
     if(!av||ad||at)vazio=0;
     if(at&&!p2p_ativo()&&!debrid_ativo()&&addonmodo_get(id)!=AM_DIRETO){p=1;i=a;}
-    if(ah==401||ah==403){h=ah;i=a;}
+    if(!s&& (ah==401||ah==403)){h=ah;i=a;}
+  }
+  // O 401/403 vale para o addon da FONTE escolhida, nao para o ultimo do laco:
+  // um addon anterior com acesso vencido nao pode puxar a tela para si.
+  if(s && s->addonIdentidade) {
+    int ah=0;addonmodo_fatos(s->addonIdentidade,&ah,NULL,NULL,NULL);
+    if(ah==401||ah==403)h=ah;
   }
   addonmodo_fatos(addonmodo_id(addons_base(i)),NULL,&v,&d,&t);
   int hdr=s && stream_incompativel(stream_atual());
@@ -463,7 +474,7 @@ void addonguia_desenhar(void) {
       bloco(i18n("Conecte seu serviço pelo celular"),590,642,918,0.64f,2);
       texto(TXT_ILHA_SUB,i18n("Sincronizar addons"),590,712,918,0.64f);
     }
-    else bloco(i18n("Escolha seu serviço. Você não precisa digitar chaves nesta TV."),432,632,1076,0.64f,2);
+    else bloco(i18n(semCel?"Sem rede local. Conecte a TV ao Wi-Fi e aperte OK.":"Escolha seu serviço. Você não precisa digitar chaves nesta TV."),432,632,1076,0.64f,2);
     botao(i18n("Voltar à escolha"),"aj_arrow-left",432,790,4);return;
   }
   if(tela==AG_INICIANDO) {

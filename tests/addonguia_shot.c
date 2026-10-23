@@ -101,7 +101,18 @@ int main(int argc,char **argv) {
   addonguia_shot(AG_HDR);tecla(SDLK_RETURN);assert(addonguia_pedido()==AGP_PROXIMA);
   addonguia_shot(AG_CONECTAR);tecla(SDLK_ESCAPE);assert(addonguia_aberto());
   addonguia_fechar();stream_definir_lista(NULL,0);
+  // Sem fonte escolhida, o 401 do laco vale como antes.
   addonmodo_nova_busca();addonmodo_resposta(id,401,0,0,0);addonguia_falha();assert(addonguia_shot_tela()==AG_401);
+  // Com fonte de OUTRO addon (indice 3), o 401 do addon 0 nao puxa a tela.
+  addonguia_fechar();uint64_t id3=addonmodo_id(addons_base(3));
+  addonmodo_resposta(id3,200,1,2,0);
+  Stream outras[1]={0};outras[0].addonIdentidade=id3;strcpy(outras[0].url,"https://video.invalid/outro.mp4");
+  stream_definir_lista(outras,1);stream_definir_atual(0);
+  addonguia_falha();assert(addonguia_shot_tela()!=AG_401);
+  // E o 401 do addon da propria fonte continua valendo.
+  addonguia_fechar();Stream mesma[1]={0};mesma[0].addonIdentidade=id;strcpy(mesma[0].url,"https://video.invalid/mesma.mp4");
+  stream_definir_lista(mesma,1);stream_definir_atual(0);addonguia_falha();assert(addonguia_shot_tela()==AG_401);
+  addonguia_fechar();stream_definir_lista(NULL,0);
   addonguia_fechar();addonmodo_resposta(id,403,0,0,0);addonguia_falha();assert(addonguia_shot_tela()==AG_403);
   addonguia_fechar();addonmodo_nova_busca();addonmodo_resposta(id,200,1,0,2);
   assert(addonmodo_set(id,AM_AUTO));ajustes_definir_p2p_ligado(0);addonguia_falha();assert(addonguia_shot_tela()==AG_P2P);
