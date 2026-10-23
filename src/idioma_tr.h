@@ -6319,7 +6319,7 @@
   T("Travar série com…", "Diziyi şununla kilitle…"),
   T("Travas de série", "Dizi kilitleri"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Tarayıcının, uygulamanın dışında yaşayan tanılama panelini geri getirir."),
-  T("Trilha", "Rota"),
+  T("Trilha de filmes", "Rota"),
   T("Trilha de maio, com o Festival de Cannes", "Mayıs rotası, Cannes Film Festivali ile"),
   T("Trilha de março, aberta o ano todo", "Mart rotası, yıl boyu açık"),
   T("Trilha original · Prévias de áudio", "Orijinal müzik · Ses önizlemeleri"),

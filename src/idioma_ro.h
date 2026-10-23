@@ -6318,7 +6318,7 @@
   T("Travar série com…", "Blochează serialul cu…"),
   T("Travas de série", "Blocări de seriale"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Readuce panoul de diagnosticare al browserului, care se află în afara aplicației."),
-  T("Trilha", "Traseu"),
+  T("Trilha de filmes", "Traseu"),
   T("Trilha de maio, com o Festival de Cannes", "Traseul din mai, cu Festivalul de la Cannes"),
   T("Trilha de março, aberta o ano todo", "Traseul din martie, deschis tot anul"),
   T("Trilha original · Prévias de áudio", "Muzică originală · Mostre audio"),

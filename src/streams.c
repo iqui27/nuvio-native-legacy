@@ -3635,6 +3635,7 @@ static void atualizarProvedores(void) {
   snprintf(chave, sizeof chave, "%s", filtro > 0 && filtro < nProvedores ? provChaves[filtro] : "");
   for (int k = 0; k < n; k++) {
     int i = ORD(k), j;
+    if (stream_ordem_addon(i) == -1) continue;
     for (j = 0; j < nAbas; j++)
       if (lista[i].addonChave[0] ? !strcmp(abas[j].chave, lista[i].addonChave) :
           (!abas[j].chave[0] && !strcmp(abas[j].nome, lista[i].provedor))) break;

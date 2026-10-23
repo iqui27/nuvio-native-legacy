@@ -6319,7 +6319,7 @@
   T("Travar série com…", "Kunci serial dengan…"),
   T("Travas de série", "Kunci serial"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Mengembalikan panel diagnostik browser, yang berada di luar aplikasi."),
-  T("Trilha", "Jalur"),
+  T("Trilha de filmes", "Jalur"),
   T("Trilha de maio, com o Festival de Cannes", "Jalur Mei, bersama Festival Film Cannes"),
   T("Trilha de março, aberta o ano todo", "Jalur Maret, terbuka sepanjang tahun"),
   T("Trilha original · Prévias de áudio", "Musik asli · Pratinjau audio"),

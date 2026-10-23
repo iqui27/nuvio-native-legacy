@@ -6318,7 +6318,7 @@
   T("Travar série com…", "Заблокувати серіал з…"),
   T("Travas de série", "Блокування серіалів"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Повертає панель діагностики браузера, яка розташована поза застосунком."),
-  T("Trilha", "Маршрут"),
+  T("Trilha de filmes", "Маршрут"),
   T("Trilha de maio, com o Festival de Cannes", "Травневий маршрут з Каннським фестивалем"),
   T("Trilha de março, aberta o ano todo", "Березневий маршрут, відкритий цілий рік"),
   T("Trilha original · Prévias de áudio", "Оригінальна музика · Аудіоуривки"),

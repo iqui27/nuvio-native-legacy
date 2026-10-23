@@ -6319,7 +6319,7 @@
   T("Travar série com…", "Užrakinti serialą su…"),
   T("Travas de série", "Serialų užraktai"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Grąžina naršyklės diagnostikos skydelį, kuris yra už programos ribų."),
-  T("Trilha", "Kelias"),
+  T("Trilha de filmes", "Kelias"),
   T("Trilha de maio, com o Festival de Cannes", "Gegužės kelias su Kanų kino festivaliu"),
   T("Trilha de março, aberta o ano todo", "Kovo kelias, atviras visus metus"),
   T("Trilha original · Prévias de áudio", "Originali muzika · Garso ištraukos"),

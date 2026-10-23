@@ -6319,7 +6319,7 @@
   T("Travar série com…", "Lås serien med…"),
   T("Travas de série", "Serielås"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Tar tillbaka webbläsarens diagnostikpanel, som ligger utanför appen."),
-  T("Trilha", "Spår"),
+  T("Trilha de filmes", "Spår"),
   T("Trilha de maio, com o Festival de Cannes", "Majspår, med filmfestivalen i Cannes"),
   T("Trilha de março, aberta o ano todo", "Marsspår, öppet hela året"),
   T("Trilha original · Prévias de áudio", "Originalmusik · Ljudsmakprov"),

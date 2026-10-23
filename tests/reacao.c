@@ -14,6 +14,7 @@
 #include "perfis.h"
 #include "trakt.h"
 #include "ilhaacao.h"
+#include "diario.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -151,21 +152,27 @@ static void nota(void) {
   CHECA(reacao_nota("tt0111161") == 5, "atalho Mais ou menos grava nota 5");
   CHECA(reacao_nota("tt0903747") == 8, "atalho Gostei grava nota 8");
   CHECA(reacao_nota("tt9999999") == 0, "sem nota = 0");
+  DiarioTitulo diario;
   reacao_nota_definir("tt0111161", 9);
+  CHECA(diario_titulo(0, "tt0111161", &diario) && diario.nota10 == 9, "diary preserves exact rating 9");
   CHECA(reacao_nota("tt0111161") == 9 && reacao_estado("tt0111161") == REACAO_GOSTEI,
         "4,5 estrelas vira Gostei");
   reacao_nota_definir("tt0111161", 1);
   CHECA(reacao_nota("tt0111161") == 1 && reacao_estado("tt0111161") == REACAO_NAO, "meia estrela vira Nao gostei");
   { CatItem f = item("tt0111161", "movie", "Rated movie");
     SDL_Event e;
+    reacao_nota_definir(f.imdb, 8);
     CHECA(reacao_detalhe_abrir(&f), "rated title can reopen rating editor");
     e = tecla(SDLK_RIGHT); reacao_evento(&e, 1);
     e = tecla(SDLK_RETURN); reacao_evento(&e, 1);
-    CHECA(reacao_nota("tt0111161") == 2, "title editor starts on stars and moves half a star");
+    CHECA(reacao_nota(f.imdb) == 9, "title editor moves from 8 to exact 9");
+    CHECA(diario_titulo(0, f.imdb, &diario) && diario.nota10 == 9, "edited diary rating is 9");
     CHECA(ilhaacao_tem_desfazer(), "rating confirms through island with undo");
     ilhaacao_botao(1);
-    CHECA(reacao_nota("tt0111161") == 1, "undo restores previous rating");
+    CHECA(reacao_nota(f.imdb) == 8, "undo restores previous rating");
+    CHECA(diario_titulo(0, f.imdb, &diario) && diario.nota10 == 8, "undo restores diary rating");
     e = tecla(SDLK_ESCAPE); reacao_evento(&e, 1);
+    reacao_nota_definir(f.imdb, 1);
   }
   { CatItem f = item("tt0777777", "movie", "Island rating");
     SDL_Event e;
@@ -175,10 +182,12 @@ static void nota(void) {
     e = tecla(SDLK_RIGHT); reacao_evento(&e, 0);
     e = tecla(SDLK_RETURN); reacao_evento(&e, 0);
     CHECA(reacao_nota(f.imdb) == 9, "island Up/Right saves 4.5 stars");
+    CHECA(diario_titulo(0, f.imdb, &diario) && diario.nota10 == 9, "island diary saves 9");
     e = tecla(SDLK_LEFT); reacao_evento(&e, 0);
     e = tecla(SDLK_RETURN); reacao_evento(&e, 0);
     CHECA(reacao_nota(f.imdb) == 0 && reacao_estado(f.imdb) == REACAO_NENHUMA,
           "saved island undo restores unrated title");
+    CHECA(diario_titulo(0, f.imdb, &diario) && diario.nota10 == 0, "undo clears diary rating");
     reacao_fechar();
     perfis_definir_ativo(2); perfis_definir_ativo(1);
     CHECA(reacao_nota(f.imdb) == 0, "undo removal survives profile reload");

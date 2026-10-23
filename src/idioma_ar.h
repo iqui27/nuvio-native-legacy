@@ -6319,7 +6319,7 @@
   T("Travar série com…", "Lock this series with…"),
   T("Travas de série", "Series locks"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "يعيد لوحة تشخيص المتصفح، التي تقع خارج التطبيق."),
-  T("Trilha", "مسار"),
+  T("Trilha de filmes", "مسار"),
   T("Trilha de maio, com o Festival de Cannes", "May path, with the Cannes Film Festival"),
   T("Trilha de março, aberta o ano todo", "March path, open all year"),
   T("Trilha original · Prévias de áudio", "موسيقى أصلية · مقاطع صوتية"),

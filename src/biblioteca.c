@@ -2235,7 +2235,7 @@ static void desenhaAcoes(void) {
     else if (a == 5) { ligada = edModo == ED_NOTAS; rot = ligada ? "Concluir notas" : "Notas"; }
     else             { ligada = 0; rot = "Compartilhar"; }
     if (aberta.fonte == LST_TRAKT && a == nAcoes() - 1) {
-      ligada = trilha; rot = trilha ? "Lista" : "Trilha";
+      ligada = trilha; rot = trilha ? "Lista" : "Trilha de filmes";
     }
     r.w = larguraAcao(rot);
     if (paginaLista() && !trilha) {

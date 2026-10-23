@@ -6319,7 +6319,7 @@
   T("Travar série com…", "Serie vergrendelen met…"),
   T("Travas de série", "Serievergrendelingen"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Brengt het diagnosepaneel van de browser terug, dat buiten de app leeft."),
-  T("Trilha", "Route"),
+  T("Trilha de filmes", "Route"),
   T("Trilha de maio, com o Festival de Cannes", "Route van mei, met het filmfestival van Cannes"),
   T("Trilha de março, aberta o ano todo", "Route van maart, het hele jaar open"),
   T("Trilha original · Prévias de áudio", "Originele muziek · Audiofragmenten"),
