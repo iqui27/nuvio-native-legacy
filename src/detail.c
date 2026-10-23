@@ -4557,11 +4557,10 @@ static void topoEstadoTexto(char *dst, size_t n, int durMin, int pessoal) {
     else if (ci->progresso > 0 && ci->progresso < ajustes_cw_concluido())
       snprintf(dst, n, "%s", i18n("Retomar"));
     else if (cat_visto(ci)) snprintf(dst, n, "%s", i18n("Assistido"));
-    else if (cat_historico_estado_id(ci->imdb, ci->tipo) == 0)
-      snprintf(dst, n, "%s", i18n("Nunca visto"));
+    else snprintf(dst, n, "%s", i18n("Nunca visto"));
     if (!ehSerie() && durMin > 0) {
       char curta[32];
-      desc_duracao_min(durMin, curta, sizeof curta);
+      desc_duracao_min_curta(durMin, curta, sizeof curta);
       size_t k = strlen(dst);
       snprintf(dst + k, n - k, "%s%s", k ? " · " : "", curta);
       durAbriu = 1;
@@ -5135,11 +5134,31 @@ static void heroWeb(float a, float desloc) {
     txt_desenhar_alpha(l, NV_DETW2_X + 40, yV + (48 - l.h) * .5f, a);
   }
   if (pessoal[0]) {
-    TxtLinha l = txt_linha_corta(TXT_DET_META2, pessoal, 225, 227, 232, 255, larguraTextoHero());
-    txt_desenhar_alpha(l, NV_DETW2_X, yRetom, a);
+    // A LINHA DA PESSOA do mockup v2: ponto do acento, primeiro pedaco em
+    // claro ("Nunca visto", "Parou em T1E3") e o resto cinza. O ponto e o
+    // mesmo do chip de versao em cima, 10px na margem esquerda.
+    const char *sep = strstr(pessoal, "\xc2\xb7");
+    char pedaco[96];
+    const char *resto = "";
+    if (sep && sep > pessoal) {
+      size_t n1 = (size_t)(sep - pessoal);
+      while (n1 > 0 && pessoal[n1-1] == ' ') n1--;
+      snprintf(pedaco, sizeof pedaco, "%.*s", (int)n1, pessoal);
+      while (*sep == ' ' || (unsigned char)*sep == 0xc2 || (unsigned char)*sep == 0xb7) sep++;
+      resto = sep;
+    } else snprintf(pedaco, sizeof pedaco, "%s", pessoal);
+    float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+    gfx_cor((GfxRect){NV_DETW2_X + 11, yRetom + 15, 10, 10}, .5f, ar, ag, ab, a);
+    TxtLinha l1 = txt_linha_corta(TXT_DET_META2, pedaco, 233, 231, 226, 255, larguraTextoHero() - 40);
+    txt_desenhar_alpha(l1, NV_DETW2_X + 40, yRetom, a);
+    if (resto && resto[0]) {
+      TxtLinha l2 = txt_linha_corta(TXT_DET_META2, resto, 225, 227, 232, 255,
+                                    larguraTextoHero() - 40 - l1.w - 18);
+      txt_desenhar_alpha(l2, NV_DETW2_X + 40 + l1.w + 18, yRetom, a);
+    }
     if (srvLinha[0]) {
       TxtLinha ls = txt_linha_corta(TXT_DET_META2, srvLinha, 190, 194, 202, 255, larguraTextoHero());
-      txt_desenhar_alpha(ls, NV_DETW2_X, yRetom + l.h + 8.0f, a * 0.95f);
+      txt_desenhar_alpha(ls, NV_DETW2_X, yRetom + 30.0f, a * 0.95f);
     }
   } else if (srvLinha[0]) {
     TxtLinha ls = txt_linha_corta(TXT_DET_META2, srvLinha, 190, 194, 202, 255, larguraTextoHero());
@@ -5244,10 +5263,9 @@ static void heroWeb(float a, float desloc) {
     { int temps = ehSerie() ? nTemporadasReais() : 0;
       char col[32] = "";
       if (temps > 0) snprintf(col,sizeof col,i18n(temps==1 ? "%d temporada" : "%d temporadas"),temps);
-      snprintf(meta,sizeof meta,"%s%s%s%s%s%s%s%s%s",ano,g && *g ? " · " : "",g ? g : "",
+      snprintf(meta,sizeof meta,"%s%s%s%s%s%s%s",ano,g && *g ? " · " : "",g ? g : "",
                (temps ? col : dur)[0] ? " · " : "",temps ? col : dur,
-               !topoPessoal() && !temps && fim[0] ? " · " : "",!topoPessoal() && !temps ? fim : "",
-               topoPessoal() && fim[0] ? " · " : "",topoPessoal() ? fim : ""); }
+               !topoPessoal() && !temps && fim[0] ? " · " : "",!topoPessoal() && !temps ? fim : ""); }
     TxtLinha lm=txt_linha(TXT_DET_META2,meta,189,189,189,255);
     txt_desenhar_alpha(lm,NV_DETW2_X,yMeta1,a);
     desenhaSeloImdb(NV_DETW2_X+lm.w+12,yMeta1+15,notaDe(idx),a);
