@@ -678,8 +678,8 @@ static const int ORDEM_FILME[] = {
 // SEC_AUD_ARCO (SEC_NUMEROS); RADAR, DIGITAL e NOTAS_EP ficaram sem colunas.
 static const int ORDEM_SERIE[] = {
   SEC_TEMPORADAS, SEC_EPISODIOS, SEC_PROGTEMP, SEC_NOTAS, SEC_AUD_ARCO, SEC_ABAS_INFO, SEC_ELENCO,
-  SEC_TRAILERS, SEC_RELACIONADOS, SEC_AUD_RADAR, SEC_AUD_DIGITAL, SEC_NOTAS_EP,
-  SEC_COLECAO, SEC_MUSICAS, SEC_COMENTARIOS, SEC_FRASES, SEC_DETALHES, SEC_ESTUDIOS };
+  SEC_COLECAO, SEC_TRAILERS, SEC_RELACIONADOS, SEC_AUD_RADAR, SEC_AUD_DIGITAL, SEC_NOTAS_EP,
+  SEC_MUSICAS, SEC_COMENTARIOS, SEC_FRASES, SEC_DETALHES, SEC_ESTUDIOS };
 #define N_ORDEM ((int)(sizeof ORDEM_FILME / sizeof ORDEM_FILME[0]))
 #define SEC_NUMEROS SEC_AUD_ARCO
 static int ehSerie(void);
@@ -841,6 +841,12 @@ static const char *cabecalhoDe(int r) {
   if (ehSerie()) {
     if (r == SEC_TRAILERS) return "Trailers e extras";
     if (r == SEC_ESTUDIOS) return "Redes e estúdios";
+    if (r == SEC_COLECAO) {
+      static char cab[160];
+      const char *nome = extras_colecao_nome();
+      if (nome && nome[0]) snprintf(cab, sizeof cab, i18n("Universo %s"), nome);
+      else snprintf(cab, sizeof cab, "%s", i18n("Universo"));
+      return cab; }
     return NULL;
   }
   switch (r) {
@@ -2183,7 +2189,7 @@ static float alturaSecao(int r) {
     case SEC_TRAILERS:     return NV_DETF_TR_ALT;
     case SEC_RELACIONADOS: return REL_CARD_H + 92.0f;   // cartaz + titulo/ano
     // Um mini card so, qualquer que seja o tamanho da saga.
-    case SEC_COLECAO:      return COL_CARD_H;
+    case SEC_COLECAO:      return ehSerie() ? 212 : COL_CARD_H;
     // + o cabecalho: sem ele a secao seguinte ("Detalhes do Filme") era
     // empilhada usando so a altura dos cartoes e saia POR CIMA deles.
     case SEC_COMENTARIOS:  return alturaCabComentarios() + COM_CARD_H;
@@ -2285,7 +2291,9 @@ static int secaoN(int r) {
     // lista da saga (desenhaListaColecao). "> 1" pela mesma razao da aba: a
     // colecao inclui o proprio filme, e uma parte so seria ele mesmo.
     case SEC_COLECAO:
-      return (!ehSerie() && extras_n_colecao() > 1) ? extras_n_colecao() : 0;
+      // Nas duas paginas: no filme e a linha do tempo "Do mesmo autor"; na
+      // serie e o UNIVERSO (mockup v2, entre elenco e trailers).
+      return extras_n_colecao() > 1 ? extras_n_colecao() : 0;
     // MUSICAS: uma coluna (o painel inteiro), so quando a trilha chegou.
     case SEC_MUSICAS:
       return musEstadoAtual(NULL) == MUS_PRONTO ? 1 : 0;
@@ -3349,7 +3357,7 @@ static float larguraItem(int r, int c) {
     case SEC_NOTAS_EP:
     case SEC_PROGTEMP:
     case SEC_FRASES:      return NV_TELA_W - NV_DETP_X * 2;
-    case SEC_COLECAO:     return COL_CARD_W;
+    case SEC_COLECAO:     return ehSerie() ? 262 : COL_CARD_W;
     default:              return NV_DETP_EL_W;
   }
 }
@@ -3362,7 +3370,7 @@ static float xItem(int r, int c) {
     if (r == SEC_EPISODIOS) { x += epCardPasso(); continue; }
     if (r == SEC_ELENCO)    { x += NV_DETP_EL_PASSO; continue; }
     if (r == SEC_NOTAS) { x+=196; continue; }
-    if (r == SEC_COLECAO) { x+=464; continue; }
+    if (r == SEC_COLECAO) { x+=ehSerie() ? 286 : 464; continue; }
     if (r == SEC_TRAILERS)  { x += NV_DETF_TR_PASSO;  continue; }
     if (r == SEC_RELACIONADOS) { x += REL_CARD_W + REL_CARD_GAP; continue; }
     if (r == SEC_ESTUDIOS)     { x += EST_CARD_W + EST_GAP; continue; }
@@ -4567,7 +4575,8 @@ static void topoEstadoTexto(char *dst, size_t n, int durMin, int pessoal) {
     else if (ci->progresso > 0 && ci->progresso < ajustes_cw_concluido())
       snprintf(dst, n, "%s", i18n("Retomar"));
     else if (cat_visto(ci)) snprintf(dst, n, "%s", i18n("Assistido"));
-    else snprintf(dst, n, "%s", i18n("Nunca visto"));
+    else if (cat_historico_estado_id(ci->imdb,ci->tipo)==0)
+      snprintf(dst, n, "%s", i18n("Nunca visto"));
     if (!ehSerie() && durMin > 0) {
       char curta[32];
       desc_duracao_min_curta(durMin, curta, sizeof curta);
@@ -4594,7 +4603,9 @@ static void topoEstadoTexto(char *dst, size_t n, int durMin, int pessoal) {
     if (!pessoal || !durAbriu || ci->restanteMin > 0) {
       size_t k = strlen(dst);
       snprintf(dst + k, n - k, "%s%s", k ? " · " : "", fim);
-    } else snprintf(dst, n, "%s · %s", dst, fim);
+    } else {
+      size_t k=strlen(dst); snprintf(dst+k,n-k," · %s",fim);
+    }
   }
 }
 
@@ -5164,7 +5175,9 @@ static void heroWeb(float a, float desloc) {
     if (resto && resto[0]) {
       TxtLinha l2 = txt_linha_corta(TXT_DET_META2, resto, 225, 227, 232, 255,
                                     larguraTextoHero() - 40 - l1.w - 18);
-      txt_desenhar_alpha(l2, NV_DETW2_X + 40 + l1.w + 18, yRetom, a);
+      TxtLinha dot=txt_linha(TXT_DET_META2," · ",225,227,232,255);
+      txt_desenhar_alpha(dot,NV_DETW2_X+40+l1.w,yRetom,a);
+      txt_desenhar_alpha(l2, NV_DETW2_X + 40 + l1.w + dot.w, yRetom, a);
     }
     if (srvLinha[0]) {
       TxtLinha ls = txt_linha_corta(TXT_DET_META2, srvLinha, 190, 194, 202, 255, larguraTextoHero());
@@ -6832,6 +6845,21 @@ static void cartaoComentario(GfxRect card, float raio, float a) {
 }
 
 static void desenhaTimeline(float x,float y,int c,float f,float a) {
+  if (ehSerie()) {
+    GfxRect card={x,y+12,262,160};
+    card.x-=card.w*.015f*f; card.y-=card.h*.015f*f;
+    card.w*=1+.03f*f; card.h*=1+.03f*f;
+    gfx_cor(card,20.0f/160,1,1,1,.06f*a);
+    if (f>.005f) gfx_anel(card,20.0f/160,3,1,1,1,f*a);
+    txt_desenhar_alpha(txt_linha_corta(TXT_LOG_N44,extras_colecao_titulo(c),243,242,239,255,214),x+24,y+28,a);
+    const char *ano=extras_colecao_ano(c);
+    if (ano && ano[0]) {
+      char line[64]; snprintf(line,sizeof line,i18n("lançado em %s"),ano);
+      txt_desenhar_alpha(txt_linha(TXT_G18R,line,243,242,239,140),x+24,y+88,a);
+    }
+    if (c+1<secaoN(SEC_COLECAO)) gfx_cor((GfxRect){x+131,y+202,286,2},0,1,1,1,.18f*a);
+    return;
+  }
   const char *img=extras_colecao_poster(c);
   const char *ano=extras_colecao_ano(c);
   GfxRect r={x,y,400,225};
@@ -7492,7 +7520,7 @@ static float alturaAlvo(int r) {
     case SEC_TRAILERS:   return NV_DETF_TR_VIDEO_H;
     case SEC_ESTUDIOS:   return EST_CARD_H;
     case SEC_RELACIONADOS: return REL_CARD_H + 72.0f;
-    case SEC_COLECAO:    return COL_CARD_H;
+    case SEC_COLECAO:    return ehSerie() ? 160 : COL_CARD_H;
     case SEC_ELENCO:     return NV_DETP_EL_AVATAR + 90.0f;
     default:             return 0.0f;
   }

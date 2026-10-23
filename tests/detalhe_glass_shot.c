@@ -204,12 +204,14 @@ const char *fx_relacionado_titulo(int i) { return REL_TIT[i]; }
 const char *fx_relacionado_ano(int i) { return REL_ANO[i]; }
 const char *fx_relacionado_poster(int i) { return REL_PO[i]; }
 
-int fx_n_colecao(void)        { return ehSerieDeEnsaio() ? 0 : 2; }
-const char *fx_colecao_nome(void) { return "O Diabo Veste Prada"; }
-static const char *const COL_TIT[] = { "The Devil Wears Prada", "The Devil Wears Prada 2" };
-static const char *const COL_ANO[] = { "2006", "2026" };
-const char *fx_colecao_titulo(int i) { return COL_TIT[i]; }
-const char *fx_colecao_ano(int i) { return COL_ANO[i]; }
+int fx_n_colecao(void)        { return ehSerieDeEnsaio() ? 6 : 2; }
+const char *fx_colecao_nome(void) { return ehSerieDeEnsaio() ? "Fargo" : "O Diabo Veste Prada"; }
+static const char *const COL_TIT_F[] = { "The Devil Wears Prada", "The Devil Wears Prada 2" };
+static const char *const COL_ANO_F[] = { "2006", "2026" };
+static const char *const COL_TIT_S[] = { "Filme", "T1", "T2", "T3", "T4", "T5" };
+static const char *const COL_ANO_S[] = { "1996", "2014", "2015", "2017", "2020", "2023" };
+const char *fx_colecao_titulo(int i) { return (ehSerieDeEnsaio() ? COL_TIT_S : COL_TIT_F)[i]; }
+const char *fx_colecao_ano(int i) { return (ehSerieDeEnsaio() ? COL_ANO_S : COL_ANO_F)[i]; }
 long fx_colecao_tmdb(int i) { return 350 + i; }
 const char *fx_colecao_capa(void) { return A "poster/07.jpg"; }
 const char *fx_colecao_fundo(void) { return A "07.jpg"; }
