@@ -853,6 +853,17 @@ static void reconstruir(void) {
     }
     if (!duplicate) addonOrigens[k].count++;
   }
+  nContados = 0;
+  for (int i = 0; i < n; i++) {
+    const CatItem *ci = cat_item(i);
+    if (!ci || !noModo(modo, ci, i) || jaNoFiltro(ci->imdb)) continue;
+    contados[nContados++] = i;
+    contaOrigem[ORIG_TODAS]++;
+    int bits = ci->fontes ? ci->fontes : CAT_FONTE_NUVIO;
+    if (bits & CAT_FONTE_TRAKT) contaOrigem[ORIG_TRAKT]++;
+    if (bits & CAT_FONTE_SIMKL) contaOrigem[ORIG_SIMKL]++;
+    if (bits & CAT_FONTE_NUVIO) contaOrigem[ORIG_NUVIO]++;
+  }
   nFiltro = 0;
   totalModo = 0;
   nContados = 0;
@@ -876,18 +887,13 @@ static void reconstruir(void) {
     // com a sua copia marcada, e a serie com progresso tem id "tt123:1:2" ao
     // lado do "tt123" da watchlist — a grade mostrava o titulo duas vezes. A
     // regra e a de salvos_mesmo_titulo, a mesma do painel de Salvos.
-    if (jaNoFiltro(ci->imdb)) continue;
-    if (nContados < CAT_MAX) contados[nContados++] = i;
-    contaOrigem[ORIG_TODAS]++;
-    int bits = ci->fontes ? ci->fontes : CAT_FONTE_NUVIO;
-    if (bits & CAT_FONTE_TRAKT) contaOrigem[ORIG_TRAKT]++;
-    if (bits & CAT_FONTE_SIMKL) contaOrigem[ORIG_SIMKL]++;
-    if (bits & CAT_FONTE_NUVIO) contaOrigem[ORIG_NUVIO]++;
     if (!daOrigem(ci->fontes)) continue;
     if (origem >= BIB_N_ORIG && (origem - BIB_N_ORIG >= nAddonOrigens || strcmp(ci->origem, addonOrigens[origem - BIB_N_ORIG].id))) continue;
+    if (jaNoFiltro(ci->imdb)) continue;
+    if (nContados < CAT_MAX) contados[nContados++] = i;
     totalModo++;
     if (esconderVistos && modo != MODO_ASSISTIDOS && cat_visto(ci)) continue;
-    if (generoSel && !strstr(ci->genero, generos[generoSel]) && !strstr(ci->genero, generosEn[generoSel]) && !strstr(ci->genero, i18n(generos[generoSel]))) continue;
+    if (modo != MODO_ASSISTIDOS && generoSel && !strstr(ci->genero, generos[generoSel]) && !strstr(ci->genero, generosEn[generoSel]) && !strstr(ci->genero, i18n(generos[generoSel]))) continue;
     if (tipo == TIPO_FILME && ehSerie(ci)) { exclTipo++; continue; }
     if (tipo == TIPO_SERIE && !ehSerie(ci)) { exclTipo++; continue; }
     // Mesmo criterio da Home: so ano futuro conhecido; sem meta permanece.
@@ -1330,7 +1336,10 @@ static void eventoAberta(SDL_Keycode k) {
   }
   if (trilha && (k == SDLK_UP || k == SDLK_DOWN) && foco.fileira >= 1) {
     if (k == SDLK_UP) { foco.fileira = 0; foco.coluna = acaoSel; }
-    else if (foco.fileira < foco.nFileiras - 1) focus_mover_grade(&foco, 0, 1);
+    else {
+      if (foco.fileira < foco.nFileiras - 1) focus_mover_grade(&foco, 0, 1);
+      if (foco.fileira >= foco.nFileiras - 2) lst_itens_mais();
+    }
     return;
   }
   if (paginaLista() && !trilha && foco.fileira >= 1 && k == SDLK_LEFT) {
@@ -1993,7 +2002,10 @@ static void pickerTexto(int p, const char **rot, const char **val) {
     *val = p == 0 ? ROT_FONTE[fonte] : p == 1 ? ROT_VIS[exibicao] : p == 2 ? "Procurar" : "Criar";
   } else if (modo == MODO_ASSISTIDOS) {
     *rot = p == 0 ? "Origem" : p == 1 ? "Tipo" : p == 2 ? "Ordem" : "";
-    *val = p == 0 ? ROT_ORIG[origem] : p == 1 ? ROT_TIPO[tipo] : p == 2 ? ROT_ORD[ordem] : "";
+    const char *nomeOrigem = origem >= 0 && origem < BIB_N_ORIG ? ROT_ORIG[origem]
+      : origem >= BIB_N_ORIG && origem - BIB_N_ORIG < nAddonOrigens
+        ? addonOrigens[origem - BIB_N_ORIG].nome : ROT_ORIG[ORIG_TODAS];
+    *val = p == 0 ? nomeOrigem : p == 1 ? ROT_TIPO[tipo] : p == 2 ? ROT_ORD[ordem] : "";
   } else {
     *rot = p == 0 ? "Tipo" : p == 1 ? "Gênero" : p == 2 ? "Ordem" : p == 3 ? "Esconder assistidos" : "";
     *val = p == 0 ? (tipo == TIPO_TODOS ? "Filmes e séries" : ROT_TIPO[tipo])

@@ -142,6 +142,26 @@ int main(void) {
   strcpy(catalogoTeste[0].origem, "org.example.list");
   reconstruir(); assert(nAddonOrigens == 1 && addonOrigens[0].count == 1);
   origem = BIB_N_ORIG; reconstruir(); assert(nFiltro == 1);
+  // Preserve an add-on selection when switching to Watched: label stays valid.
+  modo = MODO_ASSISTIDOS; watched = 0;
+  reconstruir();
+  const char *rot, *val;
+  pickerTexto(0, &rot, &val);
+  assert(!strcmp(rot, "Origem") && !strcmp(val, "org.example.list"));
+  // A vanished add-on must also have a safe label.
+  origem = BIB_N_ORIG + 7;
+  pickerTexto(0, &rot, &val);
+  assert(!strcmp(val, "Todas"));
+  origem = ORIG_TODAS; generoSel = 1;
+  reconstruir(); assert(nFiltro == 1); // hidden genre cannot filter Watched
+  generoSel = 0; watched = -1; modo = MODO_PARAVER;
+  strcpy(catalogoTeste[125].origem, "addon.a");
+  strcpy(catalogoTeste[126].origem, "addon.b");
+  reconstruir();
+  origem = BIB_N_ORIG + 2;
+  reconstruir();
+  assert(addonOrigens[2].count == 1 && nFiltro == 1 && filtro[0] == 126);
+  assert(contaOrigem[ORIG_TODAS] == 129);
   origem = ORIG_TODAS;
   puts("biblioteca filtro: PASS (regressao sintetica; sem prova da TV)");
   return 0;
