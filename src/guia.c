@@ -1873,9 +1873,9 @@ int guia_preview_no_ar(void) {
   return aberta && !overlay && player_mini_no_guia_ativo() && video_pronto()
          && !player_carregando();
 }
-int guia_pedir_preview_id(const char *id);
-void guia_fechar(void);
-int  guia_preview_no_ar(void);
+const char *guia_preview_id(void) { return previewId; }
+int guia_preview_ligado(void) { if (!previewLido) previewLer(); return previewLigado; }
+void guia_definir_preview(int ligado) { previewLigado = ligado; previewGravar(); }
 
 static void moverVertical(int dir) {
   int nl = nLinhas();
