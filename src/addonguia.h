@@ -17,5 +17,6 @@ void addonguia_lista(int foco);
 void addonguia_falha(void);
 #ifdef NV_SHOT_HOOKS
 void addonguia_shot(int tela);
+int addonguia_shot_tela(void);
 #endif
 #endif

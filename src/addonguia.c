@@ -145,7 +145,7 @@ static void ativar(void) {
   }
   if(tela==AG_401){anterior=tela;tela=AG_NOVO_DIRETO;acessoConfig=1;foco=0;return;}
   if(tela==AG_INICIANDO){entregar(AGP_FONTES);return;}
-  entregar(proxima()?AGP_PROXIMA:AGP_REPETIR);
+  entregar(tela!=AG_VAZIO&&proxima()?AGP_PROXIMA:AGP_REPETIR);
 }
 void addonguia_evento(const SDL_Event *e) {
   if(tela<0||e->type!=SDL_KEYDOWN)return;
@@ -435,7 +435,7 @@ void addonguia_desenhar(void) {
     if(progresso>=0){float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);gfx_cor((GfxRect){x,cy+36,1076*progresso/100.0f,7},0.5f,ar,ag,ab,1);}
     cy+=64;
   }
-  const char *acao=tela==AG_NOVO_CATALOGO?i18n("Escolher fileiras da Home"):tela==AG_NOVO_DIRETO?i18n("Continuar"):tela==AG_INICIANDO?i18n("Voltar às fontes"):tela==AG_401?i18n("Rever acesso no celular"):tela==AG_P2P||tela==AG_NOVO_TORRENT?(localDisponivel()||ajustes_p2p_url()[0]?i18n("Ligar P2P e tentar"):i18n("Conectar pelo celular")):proxima()?i18n("Tentar a próxima fonte"):i18n("Buscar fontes de novo");
+  const char *acao=tela==AG_NOVO_CATALOGO?i18n("Escolher fileiras da Home"):tela==AG_NOVO_DIRETO?i18n("Continuar"):tela==AG_INICIANDO?i18n("Voltar às fontes"):tela==AG_401?i18n("Rever acesso no celular"):tela==AG_P2P||tela==AG_NOVO_TORRENT?(localDisponivel()||ajustes_p2p_url()[0]?i18n("Ligar P2P e tentar"):i18n("Conectar pelo celular")):tela!=AG_VAZIO&&proxima()?i18n("Tentar a próxima fonte"):i18n("Buscar fontes de novo");
   if(tela==AG_NOVO_TORRENT&&!player_aberto())acao=i18n("Escolher como tocar");
   float w=botao(acao,tela==AG_P2P||tela==AG_NOVO_TORRENT?"aj_power":NULL,x,cy,0);
   if(tela!=AG_INICIANDO)botao(novo?i18n("Agora não"):i18n("Voltar às fontes"),NULL,x+w+12,cy,1);
@@ -454,6 +454,7 @@ void addonguia_desenhar(void) {
   detalhe(x,cy,1076);
 }
 #ifdef NV_SHOT_HOOKS
+int addonguia_shot_tela(void) {return tela;}
 void addonguia_shot(int t) {
   shot=1;addonguia_abrir(t,0,"Os Relojoeiros · T2:E5");
   snprintf(nome,sizeof nome,"Torrentio");snprintf(servico,sizeof servico,"TorBox");pct=42;

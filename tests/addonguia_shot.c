@@ -84,5 +84,13 @@ int main(int argc,char **argv) {
   assert(addonguia_pedido()==AGP_REPETIR);
   addonguia_shot(AG_HDR);tecla(SDLK_RETURN);assert(addonguia_pedido()==AGP_PROXIMA);
   addonguia_shot(AG_CONECTAR);tecla(SDLK_ESCAPE);assert(addonguia_aberto());
+  addonguia_fechar();stream_definir_lista(NULL,0);
+  addonmodo_nova_busca();addonmodo_resposta(id,401,0,0,0);addonguia_falha();assert(addonguia_shot_tela()==AG_401);
+  addonguia_fechar();addonmodo_resposta(id,403,0,0,0);addonguia_falha();assert(addonguia_shot_tela()==AG_403);
+  addonguia_fechar();addonmodo_nova_busca();addonmodo_resposta(id,200,1,0,2);
+  assert(addonmodo_set(id,AM_AUTO));ajustes_definir_p2p_ligado(0);addonguia_falha();assert(addonguia_shot_tela()==AG_P2P);
+  addonguia_fechar();addonmodo_nova_busca();
+  for(int a=0;a<4;a++)if(a!=1)addonmodo_resposta(addonmodo_id(addons_base(a)),200,1,0,0);
+  addonguia_falha();assert(addonguia_shot_tela()==AG_VAZIO);tecla(SDLK_RETURN);assert(addonguia_pedido()==AGP_REPETIR);
   puts("addonguia shot: native mode/filter/actions OK");
 }
