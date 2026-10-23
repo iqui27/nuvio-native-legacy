@@ -222,7 +222,7 @@ static int toqueSpotRolar(const PonteiroRolagem *e) {
     if (toqueNoTeclado) { okPress = okLongo = 0; return 1; }
   } else if (toqueNoTeclado) return toquerol_evento(&toqueTeclado, e);
   int r = toquerol_evento(&toqueSpot, e);
-  if (toqueSpot.livre) { scrollAlvo = scrollY; velY = 0.0f; okPress = okLongo = 0; }
+  if (toquerol_livre(&toqueSpot)) { scrollAlvo = scrollY; velY = 0.0f; okPress = okLongo = 0; }
   return r;
 }
 #endif
@@ -410,21 +410,21 @@ static int tituloDoUsuario(const CatItem *ci) {
   return ci->naLista || ci->naColecao || ci->progresso > 0 || ci->retomadoMs > 0;
 }
 static void montarTitulos(const char *alvo) {
-  int nAlvos = desc_busca_n_alvos(), capacidade = 64 + nAlvos * 12;
+  int nAlvos = desc_busca_n_alvos(), capacidade = 64 + nAlvos * DESC_BUSCA_POR_ALVO;
   Cand c[capacidade];
+  CatItem *novos = NULL;
   int nc = 0, r, i, ordem = 0;
   char nome[320];
   // REDE primeiro na ORDEM (o addon ja ranqueou), local depois; o placar
   // decide o resto. Remoto que nao contem o texto (o addon casou por outro
   // campo) ainda entra, abaixo de qualquer casamento de nome.
   { int a;
-    // #405: 12 por alvo, como a Busca. Todos participam do ranking antes
+    // #405: a mesma janela da Busca. Todos participam do ranking antes
     // do teto global de 64: um exato no ultimo alvo nao pode ser descartado.
     for (a = 0; a < nAlvos; a++) {
       int nRem = desc_busca_alvo_n(a, consulta);
-      CatItem novos[12];
-      int posNovo[12], idxNovos[12], nNovos = 0;
-      for (i = 0; i < nRem && i < 12; i++) {
+      int posNovo[DESC_BUSCA_POR_ALVO], idxNovos[DESC_BUSCA_POR_ALVO], nNovos = 0;
+      for (i = 0; i < nRem && i < DESC_BUSCA_POR_ALVO; i++) {
         CatItem it;
         int idx, k, dup = 0;
         // Sem ID, cada montagem reinseriria o resultado e mudaria a revisao.
@@ -438,7 +438,13 @@ static void montarTitulos(const char *alvo) {
         c[nc].pont += 6 - (a < 6 ? a : 6);   // primeiro addon desempata
         c[nc].ordem = ordem++;
         if (idx >= 0) c[nc++].idx = idx;
-        else if (nNovos < 12) { novos[nNovos] = it; posNovo[nNovos++] = nc; c[nc++].idx = -1; }
+        else if (nNovos < DESC_BUSCA_POR_ALVO) {
+          // Um lote reutilizado entre alvos, so quando ha titulo novo. Nao
+          // levar centenas de KiB para a pilha da interface a cada montagem.
+          if (!novos) novos = malloc(sizeof(CatItem) * DESC_BUSCA_POR_ALVO);
+          if (!novos) continue;
+          novos[nNovos] = it; posNovo[nNovos++] = nc; c[nc++].idx = -1;
+        }
       }
       // Os que nao estao no catalogo entram numa troca de bloco so (o porque
       // esta em refiltrar, busca.c: cat_acrescentar por item copia tudo).
@@ -447,6 +453,7 @@ static void montarTitulos(const char *alvo) {
         for (i = 0; i < nNovos; i++) c[posNovo[i]].idx = i < entraram ? idxNovos[i] : -1;
       }
     } }
+  free(novos);
   // Salvos podem estar fora das fileiras. O bonus pessoal (15) vence a
   // ordem dos addons (0..6), mas nao a classe de casamento do nome (20).
   // Nao usamos nota como popularidade: CatItem nao tem esse dado.
@@ -1006,9 +1013,9 @@ static void abrirTecladoSis(void) {
 }
 static void ditar(void) { if (ditadoDisponivel()) st_voz_iniciar(ST_SPOT); }
 
-// OK no campo: o teclado do sistema onde ha; senao o do app, com o foco nele.
+// OK no campo: respeita "Do app" no Android; senao usa o sistema onde ha.
 static void okCampo(void) {
-  if (imeDisponivel()) { abrirTecladoSis(); return; }
+  if (imeDisponivel() && !(st_abre_sozinho() && ajustes_teclado_android() == 1)) { abrirTecladoSis(); return; }
   kbAberto = 1;
   painel = P_TECLADO;
   if (kbF > kbFil) kbF = 0;
@@ -1083,7 +1090,18 @@ static void spotAbrirBase(int voz, int tecladoAuto) {
 #endif
   fflush(stdout);
   if (voz && ditadoDisponivel()) { painel = P_MIC; ditar(); }
-  else if (tecladoAuto && imeDisponivel() && (st_abre_sozinho() || spTelefone())) abrirTecladoSis();
+  else if (tecladoAuto && imeDisponivel() && !(st_abre_sozinho() && ajustes_teclado_android() == 1) &&
+           (st_abre_sozinho() || spTelefone() || st_teclado_modo() == 2)) abrirTecladoSis();
+}
+
+// Abre a caixa SEM pedir o teclado do sistema: e a abertura que a
+// demonstracao das Dicas do controle usa (dicascontrole.c), onde o IME do
+// Android tomaria o foco e cobriria a apresentacao.
+void spot_abrir_demo(void) {
+  modoAjustes = 0;
+  modoGuia = 0;
+  retornoAjustesValido = 0;
+  spotAbrirBase(0, 0);
 }
 
 void spot_abrir_guia(void) {
@@ -1299,7 +1317,7 @@ void spot_evento(const SDL_Event *e) {
   if (!aberto) return;
 #ifdef NV_TOUCH_UI
   if (toquerol_navegacao(e)) toquerol_limpar(&toqueTeclado);
-  if (toquerol_navegacao(e) && toqueSpot.livre) {
+  if (toquerol_navegacao(e) && toquerol_livre(&toqueSpot)) {
     for (int i = 0; i < nLin; i++)
       if (focavel(lin[i].tipo) && lin[i].y + lin[i].h > scrollY) { focoL = i; painel = P_LISTA; break; }
     toquerol_limpar(&toqueSpot);
@@ -1342,7 +1360,8 @@ void spot_evento(const SDL_Event *e) {
     spot_fechar();
     return;
   }
-  if (k == SPOT_TECLA_ABRIR || e->key.keysym.scancode == NV_SCANCODE_YELLOW) {
+  if (k == SPOT_TECLA_ABRIR || e->key.keysym.scancode == NV_SCANCODE_YELLOW ||
+      e->key.keysym.scancode == NV_SCANCODE_CH_DOWN) {
     registrar(); spot_fechar(); return;
   }
   // VOLTAR desfaz na ordem inversa (ver o topo).
@@ -1484,7 +1503,7 @@ void spot_atualizar(float dt, Uint32 agora) {
 #ifdef NV_TOUCH_UI
   if (spTelefone() && kbAberto) {
     float maximo = fmaxf(0.0f, spTeclasH() - spTecladoVisivel());
-    if (!toqueTeclado.livre && painel == P_TECLADO) {
+    if (!toquerol_livre(&toqueTeclado) && painel == P_TECLADO) {
       float top = kbF * SP_KB_PASSO, bottom = top + SP_TECLA;
       if (top < kbRol) kbRol = top;
       if (bottom > kbRol + spTecladoVisivel()) kbRol = bottom - spTecladoVisivel();
@@ -1513,7 +1532,7 @@ void spot_atualizar(float dt, Uint32 agora) {
   // Rolagem: so o necessario para a linha focada caber (com o cabecalho do
   // grupo dela visivel, quando ele e a linha de cima).
 #ifdef NV_TOUCH_UI
-  if (toqueSpot.livre) { scrollAlvo = scrollY; velY = 0.0f; }
+  if (toquerol_livre(&toqueSpot)) { scrollAlvo = scrollY; velY = 0.0f; }
   else
 #endif
   if (painel == P_LISTA && focoL >= 0) {
@@ -1524,7 +1543,7 @@ void spot_atualizar(float dt, Uint32 agora) {
   } else if (painel != P_LISTA) scrollAlvo = 0.0f;
   if (scrollAlvo < 0.0f) scrollAlvo = 0.0f;
 #ifdef NV_TOUCH_UI
-  if (!toqueSpot.livre)
+  if (!toquerol_livre(&toqueSpot))
 #endif
   {
     scrollY = anim_mola2(&velY, scrollY, scrollAlvo, dt, NV_MOLA2_SCROLL);
@@ -1950,11 +1969,12 @@ static void desenhaLinha(int i, float x, float y, float a) {
   }
   if (ponteiro_ativo()) {
 #ifdef NV_TOUCH_UI
+    if (layout_modo_mobile())
     ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, toqueSpot.regiao.y,
                        toqueSpot.regiao.y + toqueSpot.regiao.h, focarLinha, NULL, i, 0);
-#else
-    ponteiro_alvo(r.x, r.y, r.w, r.h, focarLinha, NULL, i, 0);
+    else
 #endif
+    ponteiro_alvo(r.x, r.y, r.w, r.h, focarLinha, NULL, i, 0);
   }
   // Foco: SUPERFICIE UM DEGRAU MAIS CLARA (Glass UI, a .row.foco do mockup):
   // branco a 12 % no vidro, cinza opaco no solido, raio 22. Sem contorno e sem
@@ -1962,7 +1982,7 @@ static void desenhaLinha(int i, float x, float y, float a) {
   // inverte: o nome vai de 88 % a cheio.
   if (f > 0.01f) {
     float rr = 22.0f / r.h;
-    if (vidro) gfx_cor(r, rr, 1, 1, 1, .12f * f * a);
+    if (vidro) { if (!gfx_foco_placa(r, rr, f, a)) gfx_cor(r, rr, 1, 1, 1, .12f * f * a); }
     else gfx_cor(r, rr, .17f, .176f, .204f, f * a);
   }
   a1 = anim_mistura(.88f, 1.0f, f);

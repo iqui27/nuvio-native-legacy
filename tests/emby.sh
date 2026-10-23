@@ -2,8 +2,8 @@
 # Emby: shared protocol layer on fixtures + emby_* integration against tests/emby_server.py.
 
 #   bash tests/emby.sh
-#   NV_SANITIZERS=1 bash tests/emby.sh     # ASan + UBSan
-#   NV_TSAN=1 bash tests/emby.sh           # ThreadSanitizer
+#   SANITIZE=1 bash tests/emby.sh             # ASan + UBSan
+#   SANITIZE=thread bash tests/emby.sh        # ThreadSanitizer
 set -euo pipefail
 cd "$(dirname "$0")/.."
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-emby.XXXXXX")
@@ -23,9 +23,9 @@ if command -v sdl2-config >/dev/null; then
   flags+=($(sdl2-config --cflags) -I"$(sdl2-config --prefix)/include")
 fi
 if [ "$(uname -s)" != Darwin ]; then flags+=(-ldl); fi
-if [ "${NV_SANITIZERS:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
-if [ "${NV_TSAN:-0}" = 1 ]; then flags+=(-fsanitize=thread -fno-omit-frame-pointer); fi
-cc "${flags[@]}" tests/emby.c src/jellyfin.c src/plex.c src/servidores.c src/srvidx.c src/rede.c src/redeurl.c src/js.c src/jsw.c \
+if [ "${SANITIZE:-${NV_SANITIZERS:-0}}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
+if [ "${SANITIZE:-0}" = thread -o "${NV_TSAN:-0}" = 1 ]; then flags+=(-fsanitize=thread -fno-omit-frame-pointer); fi
+cc "${flags[@]}" tests/emby.c src/jellyfin.c src/srvidx.c src/plex.c src/servidores.c src/rede.c src/redeurl.c src/js.c src/jsw.c \
   -o "$tmp/teste"
 "$tmp/teste" "$base" "$tmp/dados" > "$tmp/log" 2>&1 || { cat "$tmp/log"; exit 1; }
 # tests/servidores_log.sh collects every server test's log and scans it.

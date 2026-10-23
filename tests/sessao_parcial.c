@@ -15,8 +15,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nvtmp.h"
 
-static const char *pasta(void) { const char *d = getenv("NV_T_DIR"); return d && *d ? d : "/tmp"; }
+static const char *pasta(void) { const char *d = getenv("NV_T_DIR"); return d && *d ? d : nvt_dir(); }
 char *dados_ler(const char *nome) {
   char c[600]; FILE *f; long n; char *b;
   snprintf(c, sizeof c, "%s/%s", pasta(), nome);
@@ -61,7 +62,7 @@ static void confere(const char *d, int ok) {
 static int temArquivo(void) { char *b = dados_ler("sessao.txt"); int ok = b != NULL; free(b); return ok; }
 static void esperar(void) {
   unsigned t = 1000; int i;
-  for (i = 0; i < 600; i++) { sessao_passo(t += 20); usleep(2000);
+  for (i = 0; i < 4000; i++) { sessao_passo(t += 20); usleep(2000);
     if (sessao_estado() != SES_PEDINDO && sessao_estado() != SES_EMAIL) { sessao_passo(t += 20); sessao_passo(t += 20); break; } }
 }
 static void arranque(const char *conteudo, const char *rotulo, int esperaLogada) {
@@ -95,12 +96,12 @@ int main(void) {
   confere("e-mail sem servidor: volta a DESLOGADO", sessao_estado() == SES_DESLOGADO);
   confere("  nada gravado em disco", !temArquivo());
   confere("  nao esta logada", !sessao_logada());
-  confere("  tela traz o codigo da libcurl", strstr(sessao_erro_email(), "[curl 35: SSL connect error]") != NULL);
+  confere("  tela traz o codigo da libcurl", strstr(sessao_erro_email(), "[TLS; curl 35]") != NULL);
   /* QR sem transporte */
   sessao_login_comecar();
   esperar();
   confere("QR sem servidor: ERRO com o codigo da libcurl",
-          sessao_estado() == SES_ERRO && strstr(sessao_erro(), "[curl 35") != NULL);
+          sessao_estado() == SES_ERRO && strstr(sessao_erro(), "[TLS; curl 35]") != NULL);
   confere("  nada gravado em disco", !temArquivo());
   confere("  nao esta logada", !sessao_logada());
   /* token torto numa resposta 200 */

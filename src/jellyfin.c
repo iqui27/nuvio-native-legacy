@@ -509,10 +509,12 @@ int jf_ler_bibliotecas(const char *corpo, size_t nCorpo, JfBiblioteca *out, int 
         txtRaiz(p, f, "Id", id, sizeof id);
         txtRaiz(p, f, "Name", nome, sizeof nome);
         txtRaiz(p, f, "CollectionType", col, sizeof col);
-        if (jfid_hex_limpo(id, limpo, 32) && (!strcmp(col, "movies") || !strcmp(col, "tvshows"))) {
+        // Mixed libraries have no CollectionType; catalog servers use boxsets/mixed.
+        if (jfid_hex_limpo(id, limpo, 32) && (!strcmp(col, "movies") || !strcmp(col, "tvshows") ||
+                                              !strcmp(col, "boxsets") || !strcmp(col, "mixed") || !col[0])) {
           copiar(out[n].id, sizeof out[n].id, limpo);
           copiar(out[n].nome, sizeof out[n].nome, nome);
-          copiar(out[n].tipo, sizeof out[n].tipo, col[0] == 'm' ? "movie" : "series");
+          copiar(out[n].tipo, sizeof out[n].tipo, strcmp(col, "tvshows") ? "movie" : "series");
           n++;
         }
       }
@@ -520,6 +522,11 @@ int jf_ler_bibliotecas(const char *corpo, size_t nCorpo, JfBiblioteca *out, int 
     }
   }
   return n;
+}
+
+int jf_por_fileira(int nBibliotecas) {
+  int p = nBibliotecas > 0 ? JF_ITENS_MAX / nBibliotecas : JF_POR_FILEIRA;
+  return p > JF_POR_FILEIRA ? JF_POR_FILEIRA : p < 1 ? 1 : p;
 }
 
 int jf_bibliotecas(const JfConta *c, RedeJob *job, JfBiblioteca *out, int max) {
@@ -657,8 +664,10 @@ int jf_ler_episodios(const JfConta *c, const char *corpo, size_t nCorpo, CatEp *
           txtRaiz(p, f, "Overview", ep->sinopse, sizeof ep->sinopse);
           tk = numRaiz(p, f, "RunTimeTicks", 0);
           if (tk > 0) snprintf(ep->duracao, sizeof ep->duracao, "%d min", (int)(jf_seg((long long)tk) / 60.0 + 0.5));
-          if (txtRaiz(p, f, "PremiereDate", data, sizeof data) && strlen(data) >= 10)
+          if (txtRaiz(p, f, "PremiereDate", data, sizeof data) && strlen(data) >= 10) {
+            snprintf(ep->dataIso, sizeof ep->dataIso, "%s", data);
             snprintf(ep->data, sizeof ep->data, "%.2s/%.2s/%.4s", data + 8, data + 5, data);
+          }
           if (blocoRaiz(p, f, "ImageTags", &ti, &tf) && txtRaiz(ti, tf, "Primary", tag, sizeof tag))
             imagem(c, el, "Primary", tag, "maxWidth=640", ep->thumb, sizeof ep->thumb);
           n++;
@@ -1098,6 +1107,7 @@ typedef struct {
   unsigned geracao;
   double pos;
   JfSessaoPlay s;
+  JfConta conta; // immutable original server/account at enqueue
 } Relato;
 
 typedef struct {
@@ -1124,7 +1134,7 @@ typedef struct JfInst {
   int iniciou;
   pthread_t fioCtl, fioRel;
   int fiosVivos, parar;
-  RedeGrupo *grupo;
+  RedeGrupo *grupo, *grupoRel;
   unsigned geracao;
   RedeJob *jobCtl;                // control job in flight (cancel on demand)
   unsigned cancelEntrada;         // bumps on "cancel sign-in"
@@ -1202,6 +1212,7 @@ static void *trabalharRel(void *u);
 
 static void iniciar(JfInst *I) {
   I->grupo = rede_grupo_criar();
+  I->grupoRel = rede_grupo_criar();
   if (pthread_create(&I->fioCtl, NULL, trabalharCtl, I) == 0) {
     if (pthread_create(&I->fioRel, NULL, trabalharRel, I) == 0) I->fiosVivos = 2;
     else I->fiosVivos = 1;
@@ -1358,13 +1369,18 @@ static void soltarSnapshotLocked(JfInst *I) {
     apagarSegredo(I->sessoes[i].s.url, sizeof I->sessoes[i].s.url);
     I->sessoes[i].ativo = 0;
   }
-  // Queued check-ins carry the previous token: drop them with the identity.
-  for (i = 0; i < JF_FILA_REL; i++) apagarSegredo(&I->filaRel[i], sizeof I->filaRel[i]);
-  I->nRel = 0;
+  // Queued reports own their original account. Opening another profile
+  // resets reads while its final stop still reaches the outgoing server.
 }
 
 // Under I->trava: new generation, every in-flight request of the old one is
 // cancelled at its next progress callback and its result fenced out.
+static void relatoriosDescartarLocked(JfInst *I) {
+  for (int i = 0; i < JF_FILA_REL; i++) apagarSegredo(&I->filaRel[i], sizeof I->filaRel[i]);
+  I->nRel = 0; I->iniRel = 0;
+  if (I->grupoRel) rede_grupo_avancar(I->grupoRel);
+}
+
 static void avancarLocked(JfInst *I) {
   I->geracao++;
   if (I->grupo) rede_grupo_avancar(I->grupo);
@@ -1421,6 +1437,7 @@ static void jfi_esquecer(JfInst *I) {
   // the task (base/token in b/a never touch logs). Queued AFTER advancing so
   // the new generation does not cancel it.
   avancarLocked(I);
+  relatoriosDescartarLocked(I);
   if (I->conta.token[0] && I->conta.base[0]) {
     char a[600];
     snprintf(a, sizeof a, "%s\n%s\n%s", I->conta.base, I->conta.token, I->conta.dispositivoId);
@@ -1443,6 +1460,7 @@ static void jfi_esquecer_todos(JfInst *I) {
   garantir(I);
   pthread_mutex_lock(&I->trava);
   avancarLocked(I);
+  relatoriosDescartarLocked(I);
   for (i = 1; i <= 32; i++) { arquivo(I, nome, sizeof nome, i); dados_apagar(nome); }
   for (i = 0; i <= 32; i++) { srvidx_apagar(i, I->idxTipo); servidores_cache_apagar(i, I->tipo == JF_TIPO_EMBY ? 2 : 1); }
   apagarSegredo(&I->conta, sizeof I->conta);
@@ -1455,6 +1473,7 @@ static void jfi_encerrar(JfInst *I) {
   pthread_mutex_lock(&I->trava);
   I->parar = 1;
   avancarLocked(I);
+  relatoriosDescartarLocked(I);
   vivos = I->fiosVivos;
   pthread_cond_broadcast(&I->sinalCtl);
   pthread_cond_broadcast(&I->sinalRel);
@@ -1466,6 +1485,7 @@ static void jfi_encerrar(JfInst *I) {
   free(I->snapItens); I->snapItens = NULL;
   free(I->fontesLista); I->fontesLista = NULL;
   if (I->grupo) { rede_grupo_cancelar(I->grupo); rede_grupo_soltar(I->grupo); I->grupo = NULL; }
+  if (I->grupoRel) { rede_grupo_cancelar(I->grupoRel); rede_grupo_soltar(I->grupoRel); I->grupoRel = NULL; }
   apagarSegredo(&I->conta, sizeof I->conta);
   srvidx_limpar(&I->idx);
   I->idxTag[0] = 0;
@@ -2002,10 +2022,9 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   JfBiblioteca libs[JF_FIL_MAX];
   CatItem *itens;
   CatFileira fils[JF_FIL_MAX];
-  int nl, nf = 0, ni = 0, e = JF_OK, i;
+  int nl, nf = 0, ni = 0, e = JF_OK, i, por;
   if (!j) return;
-  // Limit checked before allocating: JF_FIL_MAX x JF_POR_FILEIRA items.
-  itens = calloc((size_t)JF_FIL_MAX * JF_POR_FILEIRA, sizeof *itens);
+  itens = calloc((size_t)JF_ITENS_MAX, sizeof *itens);
   if (!itens) { fecharTarefa(I, j); return; }
   if (c.tipo == JF_TIPO_EMBY && c.connectKey[0] && c.connectUser[0]) {
     EmConnectServidor server = {0};
@@ -2020,9 +2039,10 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   }
   nl = e == JF_OK ? jf_bibliotecas(&c, j, libs, JF_FIL_MAX) : e;
   if (nl < 0) e = nl;
+  por = jf_por_fileira(nl);
   for (i = 0; i < nl && e == JF_OK; i++) {
     if (!srv_biblioteca_selecionada(c.bibliotecas, libs[i].id)) continue;
-    int total, n = jf_itens(&c, j, libs[i].id, 0, JF_POR_FILEIRA, itens + ni, JF_POR_FILEIRA, &total);
+    int total, n = jf_itens(&c, j, libs[i].id, 0, por, itens + ni, por, &total);
     if (n < 0) { e = n; break; }
     if (!n) continue;
     memset(&fils[nf], 0, sizeof fils[nf]);
@@ -2184,10 +2204,10 @@ static void *trabalharRel(void *u) {
     apagarSegredo(&I->filaRel[I->iniRel], sizeof I->filaRel[I->iniRel]);
     I->iniRel = (I->iniRel + 1) % JF_FILA_REL;
     I->nRel--;
-    if (r.geracao == I->geracao && I->grupo && I->conta.token[0]) {
-      c = I->conta;
-      j = rede_job_criar(I->grupo);
-      I->relEmVoo = 1;
+    if (I->grupoRel && r.conta.token[0]) {
+      c = r.conta;
+      j = rede_job_criar(I->grupoRel);
+      I->relEmVoo = j != NULL;
     }
     pthread_mutex_unlock(&I->trava);
     if (j) {
@@ -2234,7 +2254,7 @@ static void relatarLocked(JfInst *I, int evento, const Sessao *s, double pos) {
   r->evento = evento;
   r->geracao = s->geracao;
   r->pos = pos;
-  r->s = s->s;
+  r->s = s->s; r->conta = I->conta;
   I->nRel++;
   pthread_cond_signal(&I->sinalRel);
 }
@@ -2551,6 +2571,7 @@ static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
   novo.episodio = item->episodio;
   copiar(novo.nomeEpisodio, sizeof novo.nomeEpisodio, item->nomeEpisodio);
   novo.naLista = item->naLista;
+  novo.listaFontes = item->listaFontes;
   novo.naColecao = item->naColecao;
   novo.retomadoMs = item->retomadoMs;
   *item = novo;

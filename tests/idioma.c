@@ -47,15 +47,20 @@ static void confere_mes(int mes, const char *pt, const char *esperado) {
 // Marcadores printf de `s`, na ordem, um por linha de saida ("%d%s%.1f..."), sem
 // os "%%". Comparados como texto: "%d" contra "%s" e diferente.
 static void marcadores(const char *s, char *out, size_t cap) {
+  const char *inicio = s;
   size_t o = 0;
   while (*s) {
     const char *p;
-    if (*s != '%') { s++; continue; }
+    // A percent sign after a number is literal UI text, not a format.
+    if (*s != '%' || (s > inicio && s[-1] >= '0' && s[-1] <= '9')) { s++; continue; }
     if (s[1] == '%') { s += 2; continue; }
     // flags, largura, precisao e tamanho; so conta se terminar numa conversao
     // (um "50%" solto no fim de "Escuro 50%" nao e marcador).
     p = s + 1;
-    while (*p && strchr("-+ #0123456789.hlzjt", *p)) p++;
+    while (*p && strchr("-+ #0", *p)) p++;
+    while (*p >= '0' && *p <= '9') p++;
+    if (*p == '.') { p++; while (*p >= '0' && *p <= '9') p++; }
+    while (*p && strchr("hlzjt", *p)) p++;
     if (*p && strchr("diouxXeEfgGcsp", *p) && o + (size_t)(p - s) + 3 < cap) {
       memcpy(out + o, s, (size_t)(p - s) + 1); o += (size_t)(p - s) + 1; out[o++] = ';';
       s = p + 1;
@@ -73,7 +78,8 @@ static void varredura(void) {
     for (i = 0; i < n; i++) {
       const char *r = i18n(CHAVES[i].pt);
       char mk[128], mr[128];
-      if (!r || !*r) { printf("FALHOU: idioma %d sem traducao de \"%s\"\n", lg, CHAVES[i].pt); falhas++; continue; }
+      if (!r) { printf("FALHOU: idioma %d sem traducao de \"%s\"\n", lg, CHAVES[i].pt); falhas++; continue; }
+      if (!*r) r = CHAVES[i].en;   // untranslated table rows use English
       if (lg == IDIOMA_EN && strcmp(r, CHAVES[i].en) != 0) {
         printf("FALHOU: en de \"%s\" -> \"%s\"\n", CHAVES[i].pt, r); falhas++; }
       marcadores(CHAVES[i].pt, mk, sizeof mk); marcadores(r, mr, sizeof mr);
@@ -85,6 +91,13 @@ static void varredura(void) {
 }
 
 int main(void) {
+  for (size_t i = 1; i < sizeof CHAVES / sizeof *CHAVES; i++) {
+    if (strcmp(CHAVES[i - 1].pt, CHAVES[i].pt) >= 0) {
+      printf("FAIL: keys out of order or duplicated: \"%s\" before \"%s\"\n",
+             CHAVES[i - 1].pt, CHAVES[i].pt);
+      return 1;
+    }
+  }
   // Uma de cada tela, incluindo as que tem acento no meio e aspas escapadas.
   confere("Continuar assistindo", "Continue Watching");
   confere("Ajustes", "Settings");
@@ -322,10 +335,11 @@ int main(void) {
     { char c[6]; size_t n = idioma_maiusc_em(IDIOMA_TR, c, sizeof c, "iiiii");
       if (n >= sizeof c || strlen(c) != n) { printf("FALHOU: maiusc turco estourou o destino\n"); falhas++; } } }
 
-  // Separador decimal: ponto so em ingles, japones e chines.
+  // Decimal points: English, Japanese, Chinese and Arabic.
   { int l, ponto = 0;
     for (l = 0; l < IDIOMA_N; l++) ponto += idioma_ponto_decimal(l);
-    if (ponto != 4 || !idioma_ponto_decimal(IDIOMA_EN) || !idioma_ponto_decimal(IDIOMA_JA) ||
+    if (ponto != 5 || !idioma_ponto_decimal(IDIOMA_AR) ||
+        !idioma_ponto_decimal(IDIOMA_EN) || !idioma_ponto_decimal(IDIOMA_JA) ||
         !idioma_ponto_decimal(IDIOMA_ZHCN) || !idioma_ponto_decimal(IDIOMA_ZHTW) ||
         idioma_ponto_decimal(IDIOMA_PT) || idioma_ponto_decimal(IDIOMA_TR) || idioma_ponto_decimal(IDIOMA_PTPT)) {
       printf("FALHOU: idioma_ponto_decimal\n"); falhas++; } }
@@ -364,7 +378,7 @@ int main(void) {
   // Codigo ISO do idioma da interface (compara com o `language` do Trakt).
   { static const char *ISO[] = { "pt", "en", "ro", "uk", "ru", "fr", "de", "es",
       "it", "nl", "pl", "tr", "pt", "sv", "da", "no", "cs", "sk", "sl", "hu", "lt",
-      "bs", "sr", "bg", "el", "id", "vi", "ja", "zh", "zh" };
+      "bs", "sr", "bg", "el", "id", "vi", "ja", "zh", "zh", "ar" };
     _Static_assert(sizeof ISO / sizeof *ISO == IDIOMA_N, "um ISO por IDIOMA_*");
     int i;
     for (i = 0; i < IDIOMA_N; i++)

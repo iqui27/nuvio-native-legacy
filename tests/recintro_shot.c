@@ -13,6 +13,7 @@
 // de tests/social_shot.c — src/recomenda.c sai da lista do .sh e entra aqui.
 #define NV_REC_URL "http://127.0.0.1:8799"
 #include "../src/recomenda.c"
+#include "nvtmp.h"
 #include "recintro.h"
 #include "dados.h"
 #include "ajustes.h"
@@ -67,7 +68,7 @@ static void captura(const char *nome, SDL_Window *win) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-recintro";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-recintro");
   const char *dir = getenv("NUVIO_DADOS");
   char nome[700];
   SDL_Window *w;

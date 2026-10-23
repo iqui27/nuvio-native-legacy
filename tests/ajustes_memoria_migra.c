@@ -1,5 +1,6 @@
 // 2.0.5: highcache migrates memory without an explicit choice once per device.
 #include "../src/ajustes.c"
+#include "nvtmp.h"
 #include <assert.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -13,7 +14,7 @@ static void escreve(const char *dir, const char *linha) {
   f = fopen(p, "w"); assert(f); fputs(linha, f); assert(!fclose(f));
 }
 static void dispositivo(char *dir, size_t tamanho) {
-  snprintf(dir, tamanho, "%s/nuvio-memoria-XXXXXX", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
+  snprintf(dir, tamanho, "%s/nuvio-memoria-XXXXXX", nvt_dir());
   assert(mkdtemp(dir));
   memoriaEscolhida = 0;
   setenv("NUVIO_DADOS", dir, 1); dados_iniciar(dir);

@@ -13,8 +13,11 @@
 //      download novo na hora da virada;
 //   c) depois de a virada assentar, os vizinhos do NOVO hero sao aquecidos;
 //   d) um pedido urgente de hero feito com aquecimentos na fila passa na frente
-//      do que ainda esperava.
+//      do que ainda esperava;
+//   e) o LOGO dos vizinhos (+-1) sai antes de fundos que ja esperavam na fila
+//      (o aquecimento a 128 px, nivel 0, ficava atras deles).
 #include "../src/sdlcompat.h"
+#include "nvtmp.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <pthread.h>
@@ -72,6 +75,7 @@ static CatItem fazItem(int i) {
   snprintf(c.tipo, sizeof c.tipo, "movie");
   snprintf(c.backdrop, sizeof c.backdrop, "https://fake.test/hv-bk-%d.jpg", i);
   snprintf(c.poster, sizeof c.poster, "https://fake.test/hv-po-%d.jpg", i);
+  snprintf(c.logo, sizeof c.logo, "https://fake.test/hv-lg-%d.png", i);
   return c;
 }
 static void quadros(int n, int ms) {
@@ -82,7 +86,7 @@ static const char *arteDe(int i) { return arte_por_identidade(heroIdxEm(i), 2); 
 
 int main(void) {
   CatItem v[NT];
-  char dir[] = "/tmp/nuvio-hervizinhos-XXXXXX";
+  char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-hervizinhos-XXXXXX");
   FILE *f;
   int i, falhas = 0, antes;
   f = fopen("tests/amostra.jpg", "rb"); assert(f);
@@ -104,15 +108,30 @@ int main(void) {
 
   // (d) primeiro, com a fila cheia: logo no primeiro quadro, um pedido urgente
   // de um hero longe dos vizinhos tem de sair antes do vizinho que ainda espera.
+  // Antes, fundos longe dos vizinhos ocupam o fio e a fila (e o primeiro ja esta
+  // em voo): o logo dos vizinhos chega ATRAS deles.
+  (void)tex_obter_hero_quente(arteDe(0));
+  (void)tex_obter_hero_quente(arteDe(1));
+  (void)tex_obter_hero_quente(arteDe(7));
   quadros(1, 0);
   (void)tex_obter_hero(arteDe(6));
-  quadros(40, 40);
+  quadros(80, 40);
   { int o6 = ordem(arteDe(6)), o2 = ordem(arteDe(2)), o4 = ordem(arteDe(4));
     printf("ordem de download: -1=%d +1=%d urgente=%d\n", o2, o4, o6);
-    if (o2 < 0 || o4 < 0 || o6 < 0 || (o2 > o6 && o4 > o6) || (o2 < o6 && o4 < o6)) {
+    if (o2 < 0 || o4 < 0 || o6 < 0 || (o2 < o6 && o4 < o6)) {
       printf("FALHA d: o urgente nao passou na frente do vizinho que esperava (ou vizinho nao aquecido)\n");
       falhas++;
     } else printf("ok d: o urgente furou a fila dos aquecimentos\n");
+  }
+
+  { char l2[NV_TEX_URL_MAX], l4[NV_TEX_URL_MAX];
+    snprintf(l2, sizeof l2, "https://fake.test/hv-lg-%d.png", 2);
+    snprintf(l4, sizeof l4, "https://fake.test/hv-lg-%d.png", 4);
+    int ol2 = ordem(l2), ol4 = ordem(l4), ob1 = ordem(arteDe(1)), ob7 = ordem(arteDe(7));
+    printf("ordem: logo-1=%d logo+1=%d fundo1=%d fundo7=%d\n", ol2, ol4, ob1, ob7);
+    if (ol2 < 0 || ol4 < 0 || ol2 > ob1 || ol2 > ob7 || ol4 > ob1 || ol4 > ob7) {
+      printf("FALHA e: logo do vizinho ficou atras de fundo que ja esperava\n"); falhas++;
+    } else printf("ok e: logo dos vizinhos furou a fila dos fundos\n");
   }
 
   // (a) em repouso os dois vizinhos ja estao no cache, sem ninguem ter virado.

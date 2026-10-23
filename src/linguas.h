@@ -70,22 +70,33 @@ int ling_afinidade(const char *cod, const char *pref);
 const char *ling_legenda(void);
 const char *ling_legenda2(void);
 const char *ling_audio(void);
+// Segundo idioma de audio (audioescolha.h): ling_legenda2, a mesma regra.
+const char *ling_audio2(void);
+
+// Optional source-sheet audio filter. Explicit audio language wins; otherwise
+// use the resolved interface/device language supplied by the caller. "All"
+// stays unfiltered and local "Original" still resolves only from this title.
+// This does not change playback's automatic track-selection preferences.
+const char *ling_audio_fonte(const char *padrao);
 
 // So a parte da CONTA, sem a escolha local por cima (para o log, #378).
 const char *ling_conta_legenda_valor(void);
 const char *ling_conta_legenda2_valor(void);
 const char *ling_conta_audio_valor(void);
+const char *ling_conta_audio2_valor(void);
 
 // Vindas da CONTA (blob de ajustes). Nao sobrescrevem escolha local.
 void ling_conta_legenda(const char *v);
 void ling_conta_legenda2(const char *v);
 void ling_conta_audio(const char *v);
+void ling_conta_audio2(const char *v);
 
 // Vindas dos AJUSTES desta TV. "" volta a seguir a conta.
 void ling_local_legenda(const char *v);
 // Second subtitle language chosen on THIS TV (F04). "" = follow the account.
 void ling_local_legenda2(const char *v);
 void ling_local_audio(const char *v);
+void ling_local_audio2(const char *v);   // "" = segue a conta
 
 // Lista fixa oferecida em Ajustes. O indice 0 e "seguir a conta" e o 1 e "sem
 // filtro"; do 2 em diante sao codigos ISO.
@@ -99,9 +110,10 @@ void ling_local_audio(const char *v);
 void        ling_definir_original(const char *cod);
 const char *ling_original(void);
 
-// Indice de "Original do titulo" dentro da lista de opcoes. E o ULTIMO item de
-// proposito: o ajustes.txt grava indice, nao codigo, entao inserir no meio
-// reinterpreta o arquivo de quem ja tem ajuste salvo (ver a nota em linguas.c).
+// Indice de "Original do titulo" dentro da lista de opcoes. E FIXO, nao o
+// ultimo: o ajustes.txt grava indice, nao codigo, entao mover o "~" troca a
+// lingua de quem ja tem ajuste salvo, e inserir no meio reinterpreta o
+// arquivo (ver a nota em linguas.c). Idiomas novos entram DEPOIS dele.
 #define LING_OPC_ORIGINAL 30
 int         ling_opcao_n(void);
 const char *ling_opcao_codigo(int i);   // "" para conta, "*" para sem filtro

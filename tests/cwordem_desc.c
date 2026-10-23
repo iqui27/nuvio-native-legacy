@@ -23,6 +23,7 @@ int ajustes_social(void) { return 1; }
 int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
 int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
+int ajustes_ocultar_filmes_vistos(void) { return 0; }    // #366: descoberta.c le o ajuste
 #include "../src/descoberta.c"
 Uint32 SDL_GetTicks(void) { return 0; }
 #include <assert.h>
@@ -31,6 +32,7 @@ Uint32 SDL_GetTicks(void) { return 0; }
 #define ajustes_jellyfin_ligado srv_ligado_stub
 #define servidores_conectado srv_conectado_stub
 #define servidores_continuar srv_continuar_stub
+#define NV_TEST_SERVIDORES_APENAS
 #include "jellyfin_stub.inc"
 #undef ajustes_jellyfin_ligado
 #undef servidores_conectado
@@ -52,6 +54,19 @@ const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nom
 const char *dados_dir(void)             { return ""; }
 const char *sessao_usuario(void)        { return ""; }
 int         perfis_ativo(void)          { return 1; }
+// A conta nao esta ligada nesta fixture: sessao fixa 0 (tests/stub_perfisessao.h).
+#include "stub_perfisessao.h"
+// Fronteiras opcionais de descoberta.c: sem retrato da lista a poda e adiada,
+// nunca fabricada; a uniao social e a poda de catalogos nao existem aqui.
+int addons_copiar_identidades(AddonIdentidade *saida, int max, unsigned versao, int perfil) {
+  (void)saida; (void)max; (void)versao; (void)perfil; return -1;
+}
+int addons_travar_lista(unsigned versao, int perfil) { (void)versao; (void)perfil; return 0; }
+void addons_destravar_lista(void) {}
+int fil_podar_catalogos_de(const char *const *ids, const char *const *bases, int n,
+                           int perfil, unsigned versao) {
+  (void)ids; (void)bases; (void)n; (void)perfil; (void)versao; return 0;
+}
 char *dados_ler(const char *nome)                 { (void)nome; return NULL; }
 int   dados_gravar(const char *nome, const char *c) { (void)nome; (void)c; return 1; }
 int   dados_apagar(const char *nome)              { (void)nome; return 1; }
@@ -127,6 +142,13 @@ int   trakt_lista(const char *q, CatItem *s, int m) { (void)q; (void)s; (void)m;
 int   trakt_lista_cresc(const char *q, CatItem **s, int m) { (void)q; (void)s; (void)m; return 0; }
 // O servico social proprio (recomenda.c) fica fora deste teste: a uniao e so o que o Trakt trouxe.
 int   recomenda_social_mesclar(CatItem *i, int nTrakt, int max) { (void)i; (void)max; return nTrakt; }
+// As variantes de sessao validam a identidade e delegam ao duble acima.
+int recomenda_social_mesclar_sessao(CatItem *i, int nTrakt, int max, uint64_t s) {
+  return perfis_sessao_atual(s) ? recomenda_social_mesclar(i, nTrakt, max) : 0;
+}
+int trakt_enfeitar_lote_sessao(CatItem *s, int n, uint64_t sessao) {
+  return perfis_sessao_atual(sessao) ? trakt_enfeitar_lote(s, n) : 0;
+}
 int   trakt_social(CatItem *s, int m)      { (void)s; (void)m; return 0; }
 const char *nuvem_trakt_cliente(void)      { return ""; }
 void addons_lista_travar(void) {}
@@ -163,7 +185,7 @@ int   ajustes_cw_proximo(void) { return 1; }
 //   tt2       pausado
 #define DIA (24LL * 60 * 60 * 1000)
 static long long agoraMs;
-typedef struct { const char *id; int seguir, prog; long long quando, estreiaDias; } Falso;
+typedef struct { char id[48]; int seguir, prog; long long quando, estreiaDias; } Falso;
 static const Falso FALSO[] = {
   { "ttA:1:3", 1,  0, 900500,  10 },
   { "tt1",     0, 40, 900400,   0 },
@@ -314,7 +336,7 @@ int main(void) {
   prog_definir_relogio(relogioProg);
   agoraMs = (long long)time(NULL) * 1000LL;
 
-  { static const char *const e[] = { "tt1", "tt2", "ttA:1:3", "ttB:2:1", "ttC:1:8" };
+  { static const char *const e[] = { "ttA:1:3", "tt1", "ttB:2:1", "ttC:1:8", "tt2" };
     modoTeste = CWO_PADRAO;
     conferir("padrao", e, 5);
     assert(!cwo_e_futuro("ttA:1:3") && !cwo_e_futuro("ttB:2:1"));
@@ -342,7 +364,8 @@ int main(void) {
     conferir("nao exibidos desligado", e, 3);
     assert(!cwo_e_futuro("ttA:1:3") && !cwo_e_futuro("ttB:2:1"));
     modoTeste = CWO_PADRAO;
-    conferir("nao exibidos desligado (padrao)", e, 3);
+    { static const char *const recent[] = { "tt1", "ttC:1:8", "tt2" };
+      conferir("nao exibidos desligado (padrao)", recent, 3); }
     puts("ok  nao exibidos desligado: futuros saem em qualquer modo"); }
 
   // --- BROTHERS: fileira cheia, o futuro e o mais recente ---------------------
@@ -357,7 +380,7 @@ int main(void) {
         r.temporada = 1; r.episodio = 4;
       } else snprintf(r.contentId, sizeof r.contentId, "tt70000%02d", k);
       r.posSeg = 1200; r.durSeg = 3000;       // 40%
-      r.lastWatchedMs = 800000 - k * 100;
+      r.lastWatchedMs = k == 0 ? 900850 : 800000 - k * 100;
       assert(prog_aplicar_remoto(&r));
     }
     naoExibidosTeste = 1;
@@ -367,24 +390,25 @@ int main(void) {
       int nc;
       modoTeste = CWO_PADRAO;
       nc = montarContinuar(lote, CONT_MAX);
-      assert(nc == 12 && !strcmp(lote[0].imdb, "tt6773088:1:4"));
-      for (k = 1; k < nc; k++) assert(strncmp(lote[k].imdb, "tt6773088", 9));
+
+      assert(nc == 21 && !strcmp(lote[0].imdb, "tt6773088:1:4"));
       assert(!cwo_e_futuro("tt6773088:1:6"));
-      puts("ok  brothers padrao: S1E4 pausado fica, S1E6 sem prova fica fora"); }
+      puts("ok  brothers padrao: S1E4 pausado fica; com teto 40 cabem os 9 remotos"); }
 
     // Separar futuros tambem preserva os 12 pausados.
     { CatItem lote[CONT_MAX];
       int nc;
       modoTeste = CWO_SEPARAR;
       nc = montarContinuar(lote, CONT_MAX);
-      assert(nc == 12);
+      assert(nc == 21);
       assert(!strcmp(lote[0].imdb, "tt6773088:1:4") && lote[0].progresso == 40);
       assert(!cwo_e_futuro("tt6773088:1:6"));
       assert(!cwo_e_futuro("tt32260680:1:2") && !cwo_e_futuro("tt31937954:1:3"));
-      puts("ok  brothers separar: S1E4 preservado, sem sugestao no lugar");
+      puts("ok  brothers separar: S1E4 preservado, S1E6 ainda fora (mesma obra)");
       modoTeste = CWO_STREAMING;
       nc = montarContinuar(lote, CONT_MAX);
-      assert(nc == 12 && !strcmp(lote[0].imdb, "tt6773088:1:4"));
+
+      assert(nc == 21 && !strcmp(lote[0].imdb, "tt6773088:1:4"));
       puts("ok  brothers streaming: S1E4 preservado"); }
 
     // showUnairedNextUp desligado: o pausado de Brothers continua.
@@ -393,10 +417,10 @@ int main(void) {
       naoExibidosTeste = 0;
       modoTeste = CWO_SEPARAR;
       nc = montarContinuar(lote, CONT_MAX);
-      assert(nc == 12);
+      assert(nc == 21);
       assert(!strcmp(lote[0].imdb, "tt6773088:1:4"));
       assert(!cwo_e_futuro("tt6773088:1:6"));
-      puts("ok  brothers nao exibidos desligado: S1E6 escondido, fileira cheia"); }
+      puts("ok  brothers nao exibidos desligado: S1E6 fora (mesma obra)"); }
 
     // Sugestao sem data tambem nao vence progresso sem prova.
     { CatItem lote[CONT_MAX];
@@ -406,7 +430,8 @@ int main(void) {
       semDataPrimeiro = 1;
       nc = montarContinuar(lote, CONT_MAX);
       semDataPrimeiro = 0;
-      assert(nc == 12 && !strcmp(lote[0].imdb, "tt6773088:1:4"));
+
+      assert(nc == 21 && !strcmp(lote[0].imdb, "tt6773088:1:4"));
       assert(!cwo_e_futuro("tt6773088:1:6"));
       puts("ok  brothers sem data: pausado preservado"); }
     naoExibidosTeste = 1; }
@@ -474,9 +499,10 @@ int main(void) {
     modoTeste = CWO_PADRAO;
     nc = montarContinuar(lote, CONT_MAX);
     assert(nc == 2);
-    assert(!strcmp(lote[1].imdb, "ttP:1:5") && lote[1].temporada == 1 &&
-           lote[1].episodio == 5 && lote[1].progresso == 100);
-    assert(!strcmp(lote[0].imdb, "ttQ:2:1") && lote[0].progresso == 30);
+
+    assert(!strcmp(lote[0].imdb, "ttP:1:5") && lote[0].temporada == 1 &&
+           lote[0].episodio == 5 && lote[0].progresso == 100);
+    assert(!strcmp(lote[1].imdb, "ttQ:2:1") && lote[1].progresso == 30);
     puts("ok  trakt velho: S1E3 nao volta por cima do S1E5 visto aqui; o adiante fica");
     fonteTeste = 0; nTabela = 0; }
 
@@ -512,8 +538,8 @@ int main(void) {
     naoExibidosTeste = 1;
     consultadas = 0;
     nc = montarContinuar(lote, CONT_MAX);
-    assert(nc == 12);
-    for (k = 0; k < nc; k++) assert(lote[k].progresso == 40);
+    assert(nc == 14);
+    { int pausados = 0; for (k = 0; k < nc; k++) pausados += lote[k].progresso == 40; assert(pausados == 12); }
     // A semente da serie ja pausada nem vai ao Cinemeta; a que acabou vai e sai.
     assert(consultadas == 3);
     for (k = 0; k < nc; k++)
@@ -525,15 +551,16 @@ int main(void) {
     // Ordenacao "Separar futuros": nenhuma reserva expulsa pausados.
     modoTeste = CWO_SEPARAR;
     nc = montarContinuar(lote, CONT_MAX);
-    assert(nc == 12 && !cwo_e_futuro("ttT:4:10"));
-    for (k = 0; k < nc; k++) assert(lote[k].progresso == 40);
-    puts("ok  #199 conta separar: 12 pausados preservados");
+    assert(nc == 14 && cwo_e_futuro("ttT:4:10"));
+    { int pausados = 0; for (k = 0; k < nc; k++) pausados += lote[k].progresso == 40; assert(pausados == 12); }
+    puts("ok  #199 conta separar: 12 pausados preservados, sementes no fim");
 
     // "Mostrar nao exibidos" desligado: o futuro sai, o que ja foi ao ar fica.
     naoExibidosTeste = 0;
     modoTeste = CWO_PADRAO;
     nc = montarContinuar(lote, CONT_MAX);
-    assert(nc == 12 && lote[0].progresso == 40);
+    assert(nc == 13);
+    { int pausados = 0; for (k = 0; k < nc; k++) pausados += lote[k].progresso == 40; assert(pausados == 12); }
     for (k = 0; k < nc; k++) assert(strncmp(lote[k].imdb, "ttT", 3));
     puts("ok  #199 conta nao exibidos desligado: so o nao lancado sai");
     naoExibidosTeste = 1;
@@ -585,9 +612,9 @@ int main(void) {
     // Com lugares livres, sementes da conta entram apos os pausados.
     prog_remover("tt7000010"); prog_remover("tt7000011");
     nc = montarContinuar(lote, CONT_MAX);
-    assert(nc == 12 && !strcmp(lote[10].imdb, "ttT:4:10") &&
-           !strcmp(lote[11].imdb, "ttM:1:4"));
-    for (k = 0; k < 10; k++) assert(lote[k].progresso == 40);
+    assert(nc == 12);
+    { int t = 0, m = 0; for (k = 0; k < nc; k++) { t += !strcmp(lote[k].imdb,"ttT:4:10"); m += !strcmp(lote[k].imdb,"ttM:1:4"); } assert(t == 1 && m == 1); }
+    { int pausados = 0; for (k = 0; k < nc; k++) pausados += lote[k].progresso == 40; assert(pausados == 10); }
     puts("ok conta: sugestoes preenchem somente os dois lugares livres");
     contaBaseMs = 0;
     contaSementesTeste = 0;
@@ -615,6 +642,23 @@ int main(void) {
     srvTeste = 0;
     puts("ok  server CW: every source mode, newest episode wins, completed excluded");
   }
+
+  // #205: teto nativo 40 — lista de 30 itens de progresso entrega 30 cards.
+  { static Falso CHEIA[30];
+    CatItem lote[CONT_MAX];
+    int k, nc;
+    for (k = 0; k < 30; k++) {
+      snprintf(CHEIA[k].id, sizeof CHEIA[k].id, "tt90%02d", k);
+      CHEIA[k].seguir = 0; CHEIA[k].prog = 40;
+      CHEIA[k].quando = 900000 - k * 100; CHEIA[k].estreiaDias = 0;
+    }
+    tabela = CHEIA; nTabela = 30;
+    fonteTeste = 2; modoTeste = CWO_PADRAO;
+    nc = montarContinuar(lote, CONT_MAX);
+    assert(nc == 30);
+    assert(!strcmp(lote[0].imdb, "tt9000") && !strcmp(lote[29].imdb, "tt9029"));
+    puts("ok  teto 40: 30 itens de progresso entregam 30 cards (#205)");
+    nTabela = 0; tabela = FALSO; fonteTeste = 0; }
   puts("cwordem_desc: tudo ok");
   return 0;
 }

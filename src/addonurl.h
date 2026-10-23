@@ -33,7 +33,8 @@
 #define NV_ADDONURL_H
 
 #define NV_ADDON_URL_MAX    2048
-#define NV_ADDON_PEDIDO_MAX (NV_ADDON_URL_MAX + 1024)
+// Base plus a fully percent-encoded 1024-byte channel ID and resource path.
+#define NV_ADDON_PEDIDO_MAX (NV_ADDON_URL_MAX + 3 * 1024 + 128)
 
 // O snprintf que escreveu em `buf` coube inteiro? `w` e o retorno dele.
 #define NV_COUBE(w, buf) ((w) >= 0 && (size_t)(w) < sizeof(buf))
@@ -292,6 +293,42 @@ static inline char *nv_longa_expandir(const char *u) {
   } else if (qr) { memcpy(out + k, qr, strlen(qr)); k += (int)strlen(qr); }
   out[k] = 0;
   return out;
+}
+
+// QUAL ADDON E ESTE, para descobrir duplicata (B4, #458). SEMPRE o mesmo hash
+// da URL NORMALIZADA (esquema e host sem caixa), venha ela LITERAL ou como
+// APELIDO de URL grande. A literal valia a URL inteira e a grande, o hash do
+// que o apelido guarda — e no limiar de NV_ADDON_URL_MAX o MESMO addon chegava
+// pelas duas formas (base de 2040 fica literal, a mesma + "/manifest.json"
+// passa do limite e vira apelido) e o dedupe via dois. Uma chave so, hash nas
+// duas vias: quem so compara (jaNaLista, sync.c) nem precisa da URL inteira.
+static inline void nv_addon_chave(const char *url, char *dst, size_t tam) {
+  const char *norm = NULL, *b = nv_longa_bruto(url);
+  char base[NV_ADDON_URL_MAX];
+  int i;
+  if (b) {
+    pthread_mutex_lock(&nv_longa.m);
+    for (i = 0; i < nv_longa.n; i++)
+      if (nv_longa.bruto[i] == b) { norm = nv_longa.norm[i]; break; }
+    pthread_mutex_unlock(&nv_longa.m);   // `norm` nunca e liberado
+  }
+  if (!norm) { nv_addon_base(url, base, sizeof base); norm = base; }
+  if (!norm[0]) { if (dst && tam) dst[0] = 0; return; }
+  {
+    const char *e = strstr(norm, "://");
+    size_t k, inicioHost = e ? (size_t)(e + 3 - norm) : 0;
+    size_t fimHost = inicioHost + (e ? strcspn(e + 3, "/?#") : 0);
+    uint64_t h = 1469598103934665603ULL;
+    // Userinfo tem caixa: so o esquema e o host podem virar minusculas.
+    for (k = inicioHost; k < fimHost; k++)
+      if (norm[k] == '@') inicioHost = k + 1;
+    for (k = 0; norm[k]; k++) {
+      int semCaixa = e && (k < (size_t)(e - norm) || (k >= inicioHost && k < fimHost));
+      h ^= (unsigned char)(semCaixa ? tolower((unsigned char)norm[k]) : norm[k]);
+      h *= 1099511628211ULL;
+    }
+    snprintf(dst, tam, "~nv%016llx", (unsigned long long)h);
+  }
 }
 
 #endif

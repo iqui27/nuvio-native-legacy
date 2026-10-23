@@ -1,10 +1,12 @@
 // Ver celular.h para o porque e as regras de seguranca.
 #include "celular.h"
+#include "posterprov.h"
 #include <string.h>
 
 #ifdef __EMSCRIPTEN__
 int  celular_disponivel(void) { return 0; }
 int  celular_abrir(const char *t) { (void)t; return 0; }
+int  celular_abrir_link(const char *t,const char *d) { (void)t;(void)d;return 0; }
 void celular_fechar(void) {}
 int  celular_estado(void) { return CEL_PARADO; }
 const char *celular_url(void) { return ""; }
@@ -227,7 +229,7 @@ static void montarPaginas(const char *titulo) {
     "if(navigator.clipboard&&navigator.clipboard.readText){c.hidden=false;"
     "c.onclick=function(){navigator.clipboard.readText().then(function(x){t.value=x;}).catch(function(){t.focus();});};}"
     "</script></body></html>",
-    idioma_iso(lang), cel, cv, t, h1, token, CEL_CORPO_MAX / 4, ph, colar, enviar);
+    idioma_iso(lang), cel, cv, t, h1, token, PP_MODELO_MAX - 1, ph, colar, enviar);
   snprintf(pagEnviado, sizeof pagEnviado,
     "<!doctype html><html lang='%s'><head><meta charset=utf-8><title>%s</title>" CEL_ESTILO "%s"
     "</head><body><main class=v><div class=c>&#10003;</div>" CEL_MARCA
@@ -482,7 +484,7 @@ void celular_fechar(void) {
   estado = CEL_PARADO;
 }
 
-int celular_abrir(const char *titulo) {
+static int abrir(const char *titulo,const char *destino) {
   struct sockaddr_in a;
   socklen_t tam = sizeof a;
   char ip[48];
@@ -509,6 +511,12 @@ int celular_abrir(const char *titulo) {
   snprintf(origem, sizeof origem, "http://%s", hostLan);
   snprintf(url, sizeof url, "http://%s/%s", hostLan, token);
   montarPaginas(titulo);
+  if(destino) {
+    char escaped[16384], title[512], label[512];
+    escapar(escaped,sizeof escaped,destino); escapar(title,sizeof title,titulo);
+    escapar(label,sizeof label,i18n("Abrir no celular"));
+    snprintf(pagina,sizeof pagina,"<!doctype html><html>" CEL_ESTILO "<main><h1>%s</h1><a rel=\"noreferrer noopener\" href=\"%s\">%s</a></main></html>",title,escaped,label);
+  }
   expira = time(NULL) + CEL_VALIDADE_S;
   estado = CEL_ESPERANDO;
   if (pthread_create(&fio, NULL, servir, NULL)) { celular_fechar(); return 0; }
@@ -516,5 +524,13 @@ int celular_abrir(const char *titulo) {
   // Sem IP nem token no log: so que subiu.
   printf("[celular] servidor no ar (porta %d)\n", porta);
   return 1;
+}
+int celular_abrir(const char *titulo) { return abrir(titulo,NULL); }
+int celular_abrir_link(const char *titulo,const char *destino) {
+  if(!destino || strlen(destino)>2047 || (strncmp(destino,"https://",8) && strncmp(destino,"http://",7))) return 0;
+  const char *p=strstr(destino,"://")+3, *end=p+strcspn(p,"/?#");
+  if(p==end || memchr(p,'@',end-p)) return 0;
+  for(const unsigned char *q=(const unsigned char *)destino;*q;q++) if(*q<=32 || *q==127 || *q=='\\') return 0;
+  return abrir(titulo,destino);
 }
 #endif

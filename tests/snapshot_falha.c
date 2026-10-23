@@ -26,6 +26,16 @@
 #include <unistd.h>
 int arte_reserva_episodios(const char *imdb, const char *corpo) { (void)imdb; (void)corpo; return 0; }
 
+void addons_manifesto_lido_base(int i, const char *base, const char *destino,
+                                unsigned versao, const char *corpo) {
+  (void)i; (void)base; (void)destino; (void)versao; (void)corpo;
+}
+void addons_lista_travar(void) {}
+void addons_lista_destravar(void) {}
+void ws_destino(const char *base, const char *usuario, int perfil, char out[20]) {
+  (void)base; (void)usuario; (void)perfil; out[0] = 0;
+}
+int ajustes_ocultar_filmes_vistos(void) { return 0; }
 int ajustes_social(void) { return 1; }
 int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
@@ -33,6 +43,7 @@ int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
 int ajustes_ocultar_nao_lancados(void) { return 0; }   // #369: descoberta.c le o ajuste
 #include "../src/descoberta.c"
 #include "jellyfin_stub.inc"
+#include "nvtmp.h"
 unsigned recomenda_geracao(void) { return 1; }
 Uint32 SDL_GetTicks(void) { return 0; }
 
@@ -305,7 +316,7 @@ static void volta(void) {
 int main(void) {
   const char *tmp = getenv("TMPDIR");
   snprintf(dirDados, sizeof dirDados, "%snuvio-snapshot-falha-%d",
-           tmp && *tmp ? tmp : "/tmp/", (int)getpid());
+           nvt("/"), (int)getpid());
   assert(mkdir(dirDados, 0700) == 0);
   desc_tmdb(dirDados);
   homeestado_iniciar();

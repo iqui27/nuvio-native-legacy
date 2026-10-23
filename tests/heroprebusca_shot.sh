@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Mac: pre-busca do destaque e sinopse dos candidatos (tests/heroprebusca_shot.c).
 #
 # As chaves do TMDB e do Trakt saem do local.properties do app web pelo
@@ -9,7 +11,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-heroprebusca-shot.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-heroprebusca-shot.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 
@@ -19,9 +21,9 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c) continue;; esac
   sources+=("$source")
 done
-eval cc '"${sources[@]}"' tests/heroprebusca_shot.c -Isrc -o /tmp/nuvio-heroprebusca-shot \
+eval cc '"${sources[@]}"' tests/heroprebusca_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-heroprebusca-shot \
   -O1 -g "$ENV_D" \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-heroprebusca-shot "$NUVIO_DADOS" "$@"
+${TMPDIR:-/tmp}/nuvio-heroprebusca-shot "$NUVIO_DADOS" "$@"

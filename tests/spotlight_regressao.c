@@ -1,5 +1,10 @@
 // Executa o Spotlight real; so a rede e a saida grafica sao controladas.
 // Acesso aos estaticos evita acrescentar API de teste ao produto.
+#include <stdlib.h>
+static void *teste_sp_malloc(size_t bytes);
+static void teste_sp_free(void *ptr);
+#define malloc teste_sp_malloc
+#define free teste_sp_free
 #define desc_buscar teste_buscar
 #define desc_busca_n_alvos teste_alvos
 #define desc_busca_alvo_n teste_n
@@ -27,10 +32,12 @@
 #define SPOTLIGHT_SOURCE "../src/spotlight.c"
 #endif
 #include SPOTLIGHT_SOURCE
+#undef malloc
+#undef free
 #include "dados.h"
 #include <assert.h>
 
-static CatItem rem[7][12];
+static CatItem rem[7][DESC_BUSCA_POR_ALVO + 1];
 static int quant[7], nAlvosTeste = 2, falhas, cortadas, artes, montagens;
 static float fimRecorte;
 static char termo[96];
@@ -39,10 +46,38 @@ static CatItem publicacao;
 static CatFileira fileiraPublicacao;
 static int publicarNaMontagem, focoDesenhado;
 static const char *nomeFoco;
+// Intercept only Spotlight's new temporary buffer, not catalogue allocations.
+static int bufferFalhar, bufferPedidos, bufferLiberacoes, bufferVivos;
+static void *bufferAtual;
+static int ultimoItemLido;
+static void *teste_sp_malloc(size_t bytes) {
+  assert(bytes == sizeof(CatItem) * DESC_BUSCA_POR_ALVO);
+  bufferPedidos++;
+  if (bufferFalhar) return NULL;
+  assert(!bufferAtual && !bufferVivos);
+  bufferAtual = malloc(bytes);
+  if (bufferAtual) bufferVivos++;
+  return bufferAtual;
+}
+static void teste_sp_free(void *ptr) {
+  if (!ptr) return;
+  assert(ptr == bufferAtual && bufferVivos == 1);
+  free(ptr); bufferAtual = NULL; bufferVivos--; bufferLiberacoes++;
+}
+static void bufferZerar(void) {
+  assert(!bufferAtual && !bufferVivos);
+  bufferFalhar = bufferPedidos = bufferLiberacoes = 0;
+  ultimoItemLido = -1;
+}
 void teste_buscar(const char *t) { montagens++; snprintf(termo, sizeof termo, "%s", t); }
 int teste_alvos(void) { return nAlvosTeste; }
 int teste_n(int a, const char *t) { return !strcmp(t, termo) ? quant[a] : 0; }
-int teste_item(int a, int i, CatItem *it) { if (i >= quant[a]) return 0; *it = rem[a][i]; return 1; }
+int teste_item(int a, int i, CatItem *it) {
+  assert(a >= 0 && a < 7 && i >= 0 && i <= DESC_BUSCA_POR_ALVO);
+  if (i >= quant[a]) return 0;
+  if (i > ultimoItemLido) ultimoItemLido = i;
+  *it = rem[a][i]; return 1;
+}
 int teste_total(const char *t) {
   int n = 0;
   for (int a = 0; a < nAlvosTeste; a++) n += teste_n(a, t);
@@ -137,6 +172,96 @@ static void focoImediato(int tipo, const char *msg) {
   check(focoL == ultimo && focoDesenhado && y + lin[ultimo].h <= fimRecorte + .1f, msg);
   nomeFoco = NULL; lin[ultimo] = antes;
 }
+
+static int visivelId(const char *id) {
+  int n = 0;
+  for (int i = 0; i < nLin; i++) {
+    if (lin[i].tipo != L_TOPO && lin[i].tipo != L_TITULO) continue;
+    const CatItem *c = cat_item(lin[i].ref);
+    if (c && !strcmp(c->imdb, id)) n++;
+  }
+  return n;
+}
+static void janelaCompartilhada(void) {
+  CatItem base = item("ttJanelaBase", "movie", "2000", 0);
+  strcpy(base.titulo, "Outro");
+  memset(quant, 0, sizeof quant); nAlvosTeste = 1;
+  // Both old overflow position14 and the new last admitted position24.
+  for (int pos = 13; pos <= 23; pos += 10) {
+    quant[0] = DESC_BUSCA_POR_ALVO + 1;
+    for (int i = 0; i <= DESC_BUSCA_POR_ALVO; i++) {
+      char id[32]; snprintf(id, sizeof id, "ttJanela%d", i);
+      rem[0][i] = item(id, "movie", "2015", 0);
+      snprintf(rem[0][i].titulo, sizeof rem[0][i].titulo, "Silo parcial %d", i);
+    }
+    rem[0][pos] = item("tmdb:11436", "series", "2006", 0);
+    rem[0][DESC_BUSCA_POR_ALVO] = item("ttFora25", "series", "2025", 0);
+    cat_definir_tudo(&base, 1, NULL, 0); bufferZerar(); montar();
+    check(!strcmp(topoId(), "tmdb:11436") && visivelId("tmdb:11436") == 1,
+          pos == 13 ? "#555: identidade nao IMDb na posicao14 entra no ranking"
+                    : "#555: identidade nao IMDb na posicao24 entra no ranking");
+    check(ultimoItemLido == 23 && cat_indice_por_imdb("ttFora25") < 0 && cat_n() == 25,
+          "#555: posicao25 fica fora; janela admite exatamente24 resultados");
+    check(bufferPedidos == 1 && bufferLiberacoes == 1 && !bufferVivos,
+          "#555: lote remoto temporario e liberado depois da montagem");
+  }
+  // All seven targets participate before the unchanged global ranking cap.
+  nAlvosTeste = 7;
+  for (int a = 0; a < 7; a++) {
+    quant[a] = DESC_BUSCA_POR_ALVO;
+    for (int i = 0; i < DESC_BUSCA_POR_ALVO; i++) {
+      char id[32]; snprintf(id, sizeof id, "ttLargo%d_%d", a, i);
+      rem[a][i] = item(id, "movie", "2015", 0);
+      snprintf(rem[a][i].titulo, sizeof rem[a][i].titulo, "Silo parcial %d-%d", a, i);
+    }
+  }
+  rem[6][23] = item("tmdb:11436", "series", "2006", 0);
+  cat_definir_tudo(&base, 1, NULL, 0); bufferZerar(); montar();
+  check(!strcmp(topoId(), "tmdb:11436") && cat_n() == 169,
+        "#555: exato no ultimo alvo/posicao24 vence depois de168 candidatos");
+  check(bufferPedidos == 1 && bufferLiberacoes == 1 && !bufferVivos,
+        "#555: um unico lote e reutilizado entre todos os alvos");
+  // Existing alias policy: retain a regional remake with a different year;
+  // collapse only the equal-name/type/year alternate ID into its IMDb item.
+  memset(quant, 0, sizeof quant); nAlvosTeste = 2;
+  quant[0] = 3; quant[1] = 1;
+  rem[0][0] = item("tmdb:11436", "series", "2006", 0);
+  rem[0][1] = item("ttRemake2015", "series", "2015", 0);
+  rem[0][2] = item("tvdb:remake", "series", "2015", 0);
+  rem[1][0] = rem[0][0];
+  cat_definir_tudo(&base, 1, NULL, 0); bufferZerar(); montar();
+  check(visivelId("tmdb:11436") == 1 && visivelId("ttRemake2015") == 1 &&
+        !visivelId("tvdb:remake"),
+        "#555: anos distintos preservam remake; alias equivalente e repeticao nao duplicam");
+  rem[0][0].meta[0] = 0; quant[0] = 2; quant[1] = 0;
+  cat_definir_tudo(&base, 1, NULL, 0); bufferZerar(); montar();
+  check(!visivelId("tmdb:11436") && visivelId("ttRemake2015") == 1,
+        "#555: alias sem ano conserva a politica existente de preferir IMDb");
+  // No new remote items: cached and local results need no temporary buffer.
+  CatItem conhecido = item("ttConhecido", "movie", "2015", 0);
+  conhecido.naLista = 1;
+  quant[0] = 0;
+  cat_definir_tudo(&conhecido, 1, NULL, 0); bufferZerar(); montar();
+  check(visivelId(conhecido.imdb) == 1 && !bufferPedidos && !bufferLiberacoes,
+        "#555: consulta apenas local nao aloca lote remoto");
+  quant[0] = 1; rem[0][0] = conhecido;
+  cat_definir_tudo(&conhecido, 1, NULL, 0); bufferZerar(); montar();
+  check(visivelId(conhecido.imdb) == 1 && !bufferPedidos && !bufferLiberacoes,
+        "#555: resultado remoto ja indexado nao aloca lote");
+  // A real failed buffer allocation omits only uncached remote candidates.
+  quant[0] = 2;
+  rem[0][0] = item("tmdb:novo", "series", "2023", 0);
+  rem[0][1] = conhecido;
+  cat_definir_tudo(&conhecido, 1, NULL, 0); bufferZerar(); bufferFalhar = 1; montar();
+  check(visivelId(conhecido.imdb) == 1 && cat_indice_por_imdb("tmdb:novo") < 0 &&
+        bufferPedidos == 1 && !bufferLiberacoes && !bufferVivos,
+        "#555: falta de memoria preserva resultado indexado e nao publica indice invalido");
+  bufferZerar(); montar();
+  check(visivelId("tmdb:novo") == 1 && visivelId(conhecido.imdb) == 1 &&
+        bufferPedidos == 1 && bufferLiberacoes == 1 && !bufferVivos,
+        "#555: montagem seguinte recupera o remoto e libera o lote");
+}
+
 int main(void) {
   assert(SDL_Init(SDL_INIT_TIMER | SDL_INIT_EVENTS) == 0);
   dados_iniciar(getenv("NUVIO_DADOS")); ajustes_iniciar();
@@ -316,6 +441,15 @@ int main(void) {
     printf("#405: presente=%d, indexado=%d\n", presente, cat_indice_por_imdb("tt14688458"));
     check(presente, "#405: exato do 7o alvo presente entre 84 titulos distintos");
     check(!strcmp(topoId(), "tt14688458"), "#405: exato do 7o alvo ranqueado em primeiro"); }
+
+  janelaCompartilhada();
+
+  // CH− da LG (481 cru) fecha o Spotlight, como a AMARELA.
+  { aberto = 1;
+    SDL_Event ch = {0}; ch.type = SDL_KEYDOWN;
+    ch.key.keysym.scancode = (SDL_Scancode)NV_SCANCODE_CH_DOWN;
+    spot_evento(&ch);
+    check(!spot_aberto(), "CH− (481) fecha o Spotlight"); }
 
   printf("RESULTADO: %d falhas\n", falhas);
   return falhas ? 1 : 0;

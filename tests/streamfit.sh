@@ -1,7 +1,9 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 set -euo pipefail
 cd "$(dirname "$0")/.."
-SF_DIR=$(mktemp -d /tmp/nuvio-streamfit.XXXXXX)
+SF_DIR=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-streamfit.XXXXXX)
 trap 'rm -rf "$SF_DIR"' EXIT
 flags=(-O1 -g -Wall -Wextra -Werror -Isrc -pthread)
 case "${SANITIZE:-0}" in

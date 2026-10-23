@@ -5,6 +5,7 @@
 //
 //   bash tests/iconeapp_shot.sh /tmp/nuvio-icone
 #include "ajustes.h"
+#include "nvtmp.h"
 #include "gfx.h"
 #include "iconeapp.h"
 #include "login.h"
@@ -47,7 +48,7 @@ static void quadros(SDL_Window *w, int tela, const char *nome) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-icone";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-icone");
   static const int esc[] = { 0, 1, 9 };
   char nome[600];
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);

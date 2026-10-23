@@ -20,6 +20,7 @@
 //
 //   bash tests/gifcolecao.sh
 #include "../src/gifcolecao.h"
+#include "nvtmp.h"
 #include "../src/gif.h"
 #include <assert.h>
 #include <stdio.h>
@@ -27,8 +28,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#define ARQ "/tmp/nuvio-gifcolecao.gif"
-#define LOG "/tmp/nuvio-gifcolecao.log"
+#define ARQ nvt("/nuvio-gifcolecao.gif")
+#define LOG nvt("/nuvio-gifcolecao.log")
 
 static const unsigned char GIF8[4] = {'G', 'I', 'F', '8'};
 static const unsigned char WEBP[4] = {'R', 'I', 'F', 'F'};

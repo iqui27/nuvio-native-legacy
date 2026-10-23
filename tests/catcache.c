@@ -25,11 +25,14 @@
 #include <unistd.h>
 #include "../src/catalogo.h"
 #include "../src/progresso.h"
+#include "nvtmp.h"
 
-// O cache grava o idioma no cabecalho (texto ja montado nao pode ser lido de
-// volta no idioma errado). 0 = portugues, que e o padrao.
-int ajustes_idioma_ingles(void) { return 0; }
-int ajustes_idioma(void) { return 0; }
+// Keep the interface English while metadata language changes independently.
+int ajustes_idioma_ingles(void) { return 1; }
+int ajustes_idioma(void) { return 1; }
+int ajustes_fonte_biblioteca(void) { return 0; }
+static const char *metadataLanguage = "pt-BR";
+const char *desc_tmdb_idioma(void) { return metadataLanguage; }
 // cat_carregar traduz o rotulo do tipo do catalogo do pacote por aqui. Devolver
 // a entrada e o que i18n faz em portugues, que e o idioma deste teste.
 const char *i18n(const char *s) { return s; }
@@ -97,9 +100,8 @@ static void semearCatalogo(const char *marca) {
 
 int main(void) {
   char raiz[512], dirPacote[600];
-  const char *tmp = getenv("TMPDIR");
   snprintf(raiz, sizeof raiz, "%snuvio-catcache-%d",
-           tmp && *tmp ? tmp : "/tmp/", (int)getpid());
+           nvt("/"), (int)getpid());
   snprintf(dirDados, sizeof dirDados, "%s/dados", raiz);
   snprintf(dirPacote, sizeof dirPacote, "%s/pacote", raiz);
   mkdir(raiz, 0755); mkdir(dirDados, 0755); mkdir(dirPacote, 0755);
@@ -139,6 +141,28 @@ int main(void) {
             cat_n() == 0 && cat_n_fileiras() == 0);
     estadoItens[0].poster[0] = 0;
     cat_definir_tudo(estadoItens, 4, &vazio, 1);   // restaura o que os proximos casos usam
+  }
+
+  // #634: metadata language changes independently of the interface language.
+  {
+    CatItem item = *cat_item(0);
+    snprintf(item.poster, sizeof item.poster, "https://image.tmdb.org/t/p/w342/pt.jpg");
+    cat_definir_tudo(&item, 1, NULL, 0);
+    confere("PT poster cache saved", cat_gravar_cache(dirPacote));
+    cat_definir_tudo(NULL, 0, NULL, 0);
+    confere("same metadata language reuses PT poster", cat_ler_cache(dirPacote) == 1 &&
+            !strcmp(cat_item(0)->poster, item.poster));
+    cat_definir_tudo(NULL, 0, NULL, 0);
+    metadataLanguage = "en-US";
+    confere("EN rejects cached PT poster", cat_ler_cache(dirPacote) == 0 && cat_n() == 0);
+    snprintf(item.poster, sizeof item.poster, "https://image.tmdb.org/t/p/w342/en.jpg");
+    cat_definir_tudo(&item, 1, NULL, 0);
+    confere("EN poster cache saved", cat_gravar_cache(dirPacote));
+    cat_definir_tudo(NULL, 0, NULL, 0);
+    confere("EN reload uses EN poster URL", cat_ler_cache(dirPacote) == 1 &&
+            !strcmp(cat_item(0)->poster, item.poster));
+    metadataLanguage = "pt-BR";
+    semearCatalogo("alice");
   }
 
   // (a2) SEM PASTA GRAVAVEL, VOLTA A SER COMO ERA.
@@ -233,12 +257,8 @@ int main(void) {
   confere("e releu",                        cat_ler_cache(dirPacote) == 1);
   confere("arquivo continua em disco",      cacheEmDisco(dirDados, dirPacote));
 
-  // (b5) CACHE DA VERSAO 5 SO VALE PARA O PERFIL 1. Ate ela o perfil 2 sem
-  // Trakt proprio usava o vinculo do 1, entao o arquivo gravado "do perfil 2"
-  // carrega a watchlist e o continuar do Trakt do 1 com a identidade certa no
-  // cabecalho. O do perfil 1 estava certo e continua aceito. O formato e o
-  // mesmo: rebaixar o numero da versao no arquivo e o bastante para simular.
-  printf("\n==> cache da versao 5: perfil 1 aceito, outro perfil recusado\n");
+  // Old caches lack metadata language and must be rejected for every profile.
+  printf("\n==> old caches without metadata language are rejected\n");
   { char c[700]; FILE *f; unsigned v5 = 5;
     snprintf(c, sizeof c, "%s/catalogo-rede.bin", dirDados);
     perfilAtual = 2;
@@ -253,8 +273,7 @@ int main(void) {
     confere("perfil 1 gravou",                cat_gravar_cache(dirPacote));
     f = fopen(c, "r+b"); assert(f);
     fseek(f, (long)sizeof(unsigned), SEEK_SET); fwrite(&v5, sizeof v5, 1, f); fclose(f);
-    confere("v5 do perfil 1 tambem e recusado (layout sem fontes)",
-            cat_ler_cache(dirPacote) == 0); }
+    confere("old cache for profile 1 is rejected", cat_ler_cache(dirPacote) == 0); }
 
   // #433: mudanca no CatItem invalida o cache, mesmo com versao igual.
   { char c[700]; FILE *f; unsigned antigo = (unsigned)sizeof(CatItem) - 1024u;

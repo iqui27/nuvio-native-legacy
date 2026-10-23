@@ -116,6 +116,22 @@ typedef enum {
   FIL_TIPO_LINHA_TEMPO,  // FILEIRA_LINHA_TEMPO — cartazes por ano sobre a linha animada
   FIL_TIPO_FICHA,        // FILEIRA_FICHA — cartaz com a ficha (ano, nota, sinopse) ao lado
   FIL_TIPO_PALCO,        // FILEIRA_PALCO — o foco grande no centro, vizinhos menores
+  FIL_TIPO_REDONDA,      // FILEIRA_REDONDA — avatar circular com o nome embaixo (fileiras de pessoas)
+  // "Herói" (#205): FILEIRA_HEROI — um cartão só do tamanho da fileira, com
+  // fundo, selo, título e duas linhas. No fim pelo mesmo motivo dos outros.
+  FIL_TIPO_HEROI,        // fonte: a própria fileira; curadoria do Nuvio Legacy; sorteio
+  // 14/10 (dono): "o pôster só que do tamanho do grande tipo o 3:4 grande",
+  // com mais informação na base e o véu na cor predominante. No fim, pelo
+  // mesmo motivo: o número gravado dos tipos acima não muda.
+  FIL_TIPO_POSTER_GRANDE, // FILEIRA_POSTER_GRANDE — pôster 3:4 grande com ficha na base
+  // 16/10 (dono): "Hero dividido" — o painel do foco a esquerda, a fila a
+  // direita. No fim pelo mesmo motivo.
+  FIL_TIPO_HEROI_DIVIDIDO, // FILEIRA_HEROI_DIVIDIDO — painel deitado com a ficha + cartazes
+  // dono: "esse estilo de fileira pode ter 3 tamanhos tb". O Pôster grande de
+  // sempre (FIL_TIPO_POSTER_GRANDE, 16) fica sendo o MEDIO; os outros dois entram
+  // no fim, como os 4:3 maiores, para o numero gravado nao mudar.
+  FIL_TIPO_POSTER_GRANDE_P, // FILEIRA_POSTER_GRANDE x0,8  — menor, uma linha de sinopse
+  FIL_TIPO_POSTER_GRANDE_G, // FILEIRA_POSTER_GRANDE x1,25 — maior, tres linhas de sinopse
   FIL_TIPO_N
 } FilTipo;
 
@@ -130,7 +146,7 @@ const char *fil_tipo_rotulo(int t);
 const char *fil_tam_rotulo(int t);
 float       fil_tam_escala(int t);
 // Fator de TAMANHO que a propria forma carrega: 1 em todas, menos nos dois
-// Destaques 4:3 maiores. Multiplica o fator de Tamanho da fileira (fil_escala).
+// Destaques 4:3 maiores (1,25 / 1,5) e no Pôster grande menor / maior (0,8 / 1,25). Multiplica o fator de Tamanho da fileira (fil_escala).
 float       fil_tipo_fator(int t);
 
 // DE ONDE A FILEIRA VEIO. Sem isto a tela de Ajustes lista quinze nomes soltos
@@ -275,11 +291,18 @@ void fil_registrar_se_couber_de(const FilPassada *p, const char *chave,
 // `bases` sao os ids de manifesto e as URLs base dos addons ATUAIS; so vale
 // depois de todos os manifestos da volta terem sido lidos. `perfilDaLista` e o
 // perfil cuja CONTA mandou essa lista (addons_perfil_da_lista): diferente do
-// perfil desta escolha, ou 0, nao poda nada. Linha com escolha da pessoa
-// (desligada, na fila, forma, tamanho, destaque) nunca e podada. Devolve
-// quantas sairam.
+// perfil desta escolha, ou 0, nao poda nada. Identidade incompleta adia a
+// limpeza. Desinstalacao confirmada apaga as linhas e suas escolhas locais;
+// addon apenas desligado conserva-as. Devolve quantas sairam.
 int  fil_podar_catalogos(const char *const *ids, const char *const *bases, int n,
                          int perfilDaLista);
+// Variante de producao: chamador protege a versao com addons_travar_lista.
+// Lista trocada depois invalida a autoridade inclusive durante manifestos pendentes.
+int  fil_podar_catalogos_de(const char *const *ids, const char *const *bases, int n,
+                            int perfilDaLista, unsigned versao);
+// So confirma ausencia depois da lista completa deste perfil. Para limpar
+// referencias de colecao com dono explicito; sem id/base, preserva a fonte.
+int  fil_addon_ausente(const char *id, const char *base);
 
 // #319: marca (so em memoria) as linhas de catalogo cujo addon saiu da conta ou
 // foi desligado, para elas nao ocuparem vaga do limite nem aparecerem na home.
@@ -336,7 +359,8 @@ void fil_registrar_se_couber(const char *chave, const char *titulo,
 // limite, ou posta na fila pela pessoa —, e -1 quando nao (desconhecida,
 // oculta, ou ligada so por ter entrado no fim). E a pergunta que a cota de
 // declaracoes de descoberta.c faz antes de decidir quais catalogos de um addon
-// grande ler.
+// grande ler. Explicit additions and queue placement retain this priority even
+// when quota-excluded; unavailable catalogs still consume no Home slots.
 int fil_escolhida(const char *chave);
 
 // Grava o que fil_registrar acumulou, se houver. Chamar UMA VEZ no fim da
@@ -409,6 +433,24 @@ const char *fil_estilo_tam_palavra(int k);
 // Rotulo do tipo `t` PARA ESTA CHAVE: numa colecao o numero quer dizer outra
 // palavra (FIL_TIPO_CARTAZ e "Pôster", nao "Cartaz em pé").
 const char *fil_estilo_rotulo(const char *chave, int t);
+// --- ORDEM DOS ITENS da fileira de colecao (2.0.5: "alem do estilo da
+// fileira, ordenar elas por ano, ordem alfabetica, ordem da lista ou
+// aleatorio") -------------------------------------------------------------
+// Vale para a fileira de um GRUPO de colecao: os itens dela sao as pastas. A
+// ordem escolhida e da FILEIRA (chave collection_<id>), gravada no mesmo
+// fileirasui-p<N>.txt das outras opcoes — e local como elas, nunca sobe para
+// a conta. Quem aplica e a montagem da home (col_ordenar_pastas, colecoes.c).
+typedef enum {
+  FIL_ORD_LISTA = 0,   // a ordem da propria colecao — a de sempre
+  FIL_ORD_ANO,         // pasta mais nova primeiro; sem ano no fim
+  FIL_ORD_AZ,          // ordem alfabetica do nome da pasta
+  FIL_ORD_ALEATORIA,   // embaralhada; a semente e da montagem, nao do quadro
+  FIL_ORD_N
+} FilOrdem;
+int         fil_ordem(const char *chave);                 // FIL_ORD_LISTA padrao
+int         fil_definir_ordem(const char *chave, int o);  // 0 fora de colecao
+const char *fil_ordem_rotulo(int o);                      // pt; i18n no desenho
+
 // Uma frase, em pt, que diz o que a forma `t` e NESTA chave (passa por i18n no
 // desenho). E a legenda da previa do modal de estilo (ctxmenu.c).
 const char *fil_estilo_ajuda(const char *chave, int t);
@@ -446,6 +488,12 @@ void fil_ordenar_por_addon(void);
 // --- consulta por chave (descoberta.c e home.c) ------------------------------
 int   fil_oculta(const char *chave);
 int   fil_tipo(const char *chave);    // FIL_TIPO_AUTO quando nao foi escolhido
+// FUNDO DO PALCO POR FILEIRA (#659). -1 = o global de Ajustes
+// (ajustes_palco_fundo); 0..PALCO_N-1 = o modo PALCO_* que so esta fileira
+// pede. Gravado como linha opcional "palco <chave> <modo>", o mesmo truque
+// de "ordemfileira": o formato posicional da linha `linha` nao muda.
+int   fil_palco(const char *chave);
+int   fil_definir_palco(const char *chave, int modo);   // 0 quando a fileira nao existe
 float fil_escala(const char *chave);  // 1.0 quando nao foi escolhido
 // O fator que a fileira teria COM a forma `t`: o Tamanho dela vezes o fator da
 // forma (fil_tipo_fator). E o que a previa do modal precisa — a forma em foco
@@ -471,6 +519,8 @@ int  fil_unir(const char *const *chaves, int n, int *saida, int max);
 // Esquece a escolha e o registro. Chamar no logout junto do resto: a home e da
 // conta de quem saiu.
 void fil_esquecer(void);
+// Reload the active profile after its cloud preferences were restored.
+void fil_recarregar(void);
 
 // LIMPEZA UNICA DO #197 (ver a definicao): desfaz, so no arquivo com o padrao
 // exato do defeito, a rajada do limite e os catalogos fora da cota que entraram

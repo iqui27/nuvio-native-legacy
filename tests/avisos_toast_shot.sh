@@ -1,8 +1,10 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Captura isolada do toast de avisos, com tema Ocean e sem servico de rede.
 set -eu
 cd "$(dirname "$0")/.."
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-avisos-toast-dados.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-avisos-toast-dados.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 sources=()
@@ -11,8 +13,8 @@ for source in src/*.c src/dts/*.c; do
     sources+=("$source")
   fi
 done
-cc "${sources[@]}" tests/avisos_toast_shot.c -Isrc -o /tmp/nuvio-avisos-toast-shot \
+cc "${sources[@]}" tests/avisos_toast_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-avisos-toast-shot \
   -O1 -g -DNV_LEVE -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-avisos-toast-shot "${1:-/tmp/nuvio-avisos-toast.bmp}"
+${TMPDIR:-/tmp}/nuvio-avisos-toast-shot "${1:-${TMPDIR:-/tmp}/nuvio-avisos-toast.bmp}"

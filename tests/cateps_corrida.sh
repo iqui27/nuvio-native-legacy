@@ -15,6 +15,6 @@ case "${SANITIZE:-1}" in
   thread) flags+=(-fsanitize=thread) ;;
 esac
 bin="${TMPDIR:-/tmp}/nuvio-cateps-corrida"
-cc ${flags[@]+"${flags[@]}"} "${CATALOGO_C:-src/catalogo.c}" src/js.c tests/cateps_corrida.c \
+cc ${flags[@]+"${flags[@]}"} "${CATALOGO_C:-src/catalogo.c}" src/js.c tests/cateps_corrida.c tests/catalogo_boundary_stub.c \
   -Isrc -o "$bin" -O1 -g -Wall -Wno-deprecated-declarations -pthread
 "$bin"

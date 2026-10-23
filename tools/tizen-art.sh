@@ -42,7 +42,7 @@ DESTINO="${NUVIO_ARTE_ESTAGIO:-build/art-pacote}"
 rm -rf "$DESTINO"
 mkdir -p "$DESTINO"
 
-for d in icones icones-app badges selos marcas prov editorial logo poster ep elenco; do
+for d in icones icones-app badges selos marcas prov editorial logo poster ep elenco texturas; do
   [ -d "$ORIGEM/$d" ] && cp -R "$ORIGEM/$d" "$DESTINO/"
 done
 # Public trust roots only; never copy arbitrary PEM or token files.

@@ -11,9 +11,10 @@
 // ALTURAS: mede a quebra real ao abrir/trocar de idioma, com o teto declarado
 // pelo conteudo. Guarda as medidas antes de paginar: o orcamento de texturas
 // dos primeiros quadros nao muda as alturas nem empurra a lista ao rodape.
-// CUSTO DE GPU: nenhuma passada de desfoque; artes do pacote, veus e
-// retangulos pequenos (a copia desfocada do gfx_desfocado e feita uma vez).
+// GPU: packaged artwork is blurred once per opening into an owned 96x54
+// texture. Shared frosted sheets read it even with glass disabled; no live blur.
 #include "novidades_cartao.h"
+#include "dicascontrole.h"
 #include "novidades201.h"
 #include "novidades202.h"
 #include "apoio.h"
@@ -39,8 +40,8 @@
 #include <string.h>
 #include <time.h>
 
-#define N_W         1720.0f
-#define N_H          960.0f
+#define N_W         (NV_TELA_W - 120.0f)
+#define N_H         (NV_TELA_H - 100.0f)
 #define N_X         ((NV_TELA_W - N_W) * 0.5f)
 #define N_Y         ((NV_TELA_H - N_H) * 0.5f)
 #define N_PAD         56.0f
@@ -48,10 +49,10 @@
 #define COMPACTO_W   1160.0f
 #define COMPACTO_H    912.0f   // teto; cada pagina encolhe ate a altura da lista
 #define COMPACTO_PAD   40.0f
-#define PV_W         760.0f
+#define PV_W         (N_W * 0.39f)
 #define PV_H         (N_H - 2.0f * N_PAD)
 #define PV_RAIO       28.0f
-#define COL_GAP       72.0f
+#define COL_GAP       44.0f
 #define TX           (N_X + N_PAD + PV_W + COL_GAP)
 #define TW           (N_X + N_W - N_PAD - TX)
 #define ICONE         44.0f
@@ -84,7 +85,7 @@ typedef struct {
 } NovCena;
 
 typedef struct {
-  const char *versao;     // "2.0.5" (o titulo e "Novidades da %s")
+  const char *versao;     // "2.0.8" (o titulo e "Novidades da %s")
   const char *arquivo;    // a marca de "ja visto" (dados_*)
   const char *subtitulo;  // uma frase embaixo do titulo
   const NovItem *itens;
@@ -96,12 +97,15 @@ typedef struct {
 } NovConteudo;
 
 #define NOV_ARTES_MAX 6
-#define NOV_ITENS_MAX 24
+#define NOV_ITENS_MAX 35
 #define NOV_CENAS_MAX 6
-#define NOV_PAGINAS_MAX 6
+#define NOV_PAGINAS_MAX 24
 
 static int   aberto, decidido, pagina, foco = 1;
 static float entrada, pag, relogio;
+static GLuint fundoFosco;
+static GfxMini fundoMini;
+static int fundoTentado;
 #ifdef NV_TOUCH_UI
 static TelefoneCartao novTelefone;
 static GfxMini novTelefoneMini;
@@ -139,7 +143,7 @@ __attribute__((unused)) static float lerp(float a, float b, float t) { return a 
 
 // O vidro escuro das ilhas: miolo quase opaco e um fio claro na borda.
 __attribute__((unused)) static void vidro(GfxRect r, float raioPx, float a) {
-  gfx_cor(r, raioPx / r.h, 0.070f, 0.073f, 0.082f, 0.90f * a);
+  gfx_vidro_ou_solido(r, raioPx / r.h, GFX_VIDRO_DENS, a, 0.070f, 0.073f, 0.082f, 0.90f);
   gfx_anel(r, raioPx / r.h, 1.0f, 1, 1, 1, 0.09f * a);
 }
 
@@ -176,7 +180,7 @@ __attribute__((unused)) static void novArteDesfocada(int numero, GfxRect r, floa
 
 // ======================================================= O CONTEUDO DA VERSAO
 // Para a proxima versao: um src/novidades/<versao>.inc novo, trocado aqui.
-#include "novidades/205.inc"
+#include "novidades/208.inc"
 #define CT NOV_ATUAL
 
 static const char *artePorNumero(int n) {
@@ -206,7 +210,7 @@ int novcartao_previa_pronta(void) {
 }
 
 // ------------------------------------------------------- itens e paginas
-// Medidas fixas (a 2.0.2): nome 34 + uma linha de frase 30.
+// Logical line heights; complete translations determine pagination.
 #define NOME_H     34.0f
 #define FRASE_LH   30.0f
 #define FRASE_GAP   6.0f
@@ -224,9 +228,11 @@ static int nVis, vis[NOV_ITENS_MAX], pgVis[NOV_ITENS_MAX], nPagNov = 1;
 static const char *kickerVis[NOV_ITENS_MAX];
 static int nCen, cen[NOV_CENAS_MAX];
 static float alturaPag[NOV_PAGINAS_MAX];
-static int linhasItem[NOV_ITENS_MAX], linhasItem2[NOV_ITENS_MAX];
+static int linhasItem[NOV_ITENS_MAX], linhasItem2[NOV_ITENS_MAX], linhasNome[NOV_ITENS_MAX];
+static int linhasTitulo = 1;
 static int idiomaMontado = -1;
 static unsigned plataformaMontada;
+static float escalaMontada;
 static float vaoMin = 999.0f, vaoMax;
 static int discordDesenhado;
 
@@ -238,7 +244,7 @@ static float textoW(void) { return compacto() ? COMPACTO_W - 2.0f * COMPACTO_PAD
 static int linhasDe(int l) { return l > 1 ? l : 1; }
 static float alturaItem(const NovItem *it) {
   int i = (int)(it - CT.itens);
-  float h = NOME_H + FRASE_LH * (float)linhasItem[i];
+  float h = NOME_H * (float)(linhasNome[i] > 0 ? linhasNome[i] : 1) + FRASE_LH * (float)linhasItem[i];
   if (it->frase2) h += FRASE_GAP + FRASE_LH * (float)linhasItem2[i];
   return h;
 }
@@ -248,46 +254,57 @@ static float alturaItem(const NovItem *it) {
 static int medirLinhas(const char *s, int teto) {
   int n;
   teto = linhasDe(teto);
-  if (teto == 1 || !txt_largura(TXT_CAPTION, "M")) return teto;
+  if (!txt_largura(TXT_CAPTION, "M")) return teto;
+  teto = 20;  // Measure the complete translation before pagination.
   n = (int)(txt_bloco_corta(TXT_CAPTION, i18n(s), 0, 0, 0, 0, 0,
                             textoW() - ICONE - 22.0f, FRASE_LH, 0, teto) / FRASE_LH);
   return n > 0 ? n : 1;
 }
 
 // Do topo do cartao ao primeiro kicker, e ate onde a lista pode ir.
-static float topoLista(void) { return padLista() - 6.0f + TITULO_H + (CT.subtitulo ? SUB_H : 0.0f) + 34.0f; }
+static float topoLista(void) { return padLista() - 6.0f + TITULO_H * linhasTitulo + (CT.subtitulo ? SUB_H : 0.0f) + 34.0f; }
 static float fimLista(void) { return (compacto() ? COMPACTO_H : N_H) - padLista() - BOTAO_H_PRIMARIO - FOLGA_MIN; }
 
 static void montar(void) {
-  int i, pg = 0, usado0 = 1;
+  ESCALA_INI();
+  int i, pg = 0;
   const char *kick = NULL;
   int kickUsado = 1;
-  float cap = fimLista() - topoLista(), usado = 0.0f;
-  if (idiomaMontado == ajustes_idioma() && plataformaMontada == plataforma()) return;
+  float cap, usado = 0.0f;
+  if (idiomaMontado == ajustes_idioma() && plataformaMontada == plataforma() && escalaMontada == gfx_escala()) { ESCALA_FIM(); return; }
+  escalaMontada = gfx_escala();
   idiomaMontado = ajustes_idioma();
   plataformaMontada = plataforma();
+  char titulo[256];
+  snprintf(titulo, sizeof titulo, i18n("Novidades da %s"), CT.versao);
+  linhasTitulo = (int)(txt_bloco(TXT_NOV_TITULO, titulo, 0, 0, 0, 0, 0, textoW(), TITULO_H, 0, 0) / TITULO_H);
+  if (linhasTitulo < 1) linhasTitulo = 1;
+  cap = fimLista() - topoLista();
   nVis = 0;
   for (i = 0; i < CT.nItens && nVis < NOV_ITENS_MAX; i++) {
     if (CT.itens[i].grupo) { kick = CT.itens[i].grupo; kickUsado = 0; }
     if (!vale(CT.itens[i].plataformas)) continue;
+    linhasNome[i] = (int)(txt_bloco(TXT_ILHA_NOME, i18n(CT.itens[i].nome), 0, 0, 0, 0, 0, textoW() - ICONE - 22, NOME_H, 0, 0) / NOME_H);
+    if (linhasNome[i] < 1) linhasNome[i] = 1;
     linhasItem[i] = medirLinhas(CT.itens[i].frase, CT.itens[i].linhas);
     linhasItem2[i] = CT.itens[i].frase2 ? medirLinhas(CT.itens[i].frase2, CT.itens[i].linhas2) : 0;
     kickerVis[nVis] = kickUsado ? NULL : kick;
     kickUsado = 1;
     vis[nVis++] = i;
   }
-  // Paginas: o grupo inteiro na mesma pagina, contando os vaos minimos (entre
-  // grupos o desenho poe vao + 0,8 vao).
-  i = 0;
-  while (i < nVis) {
-    int j = i + 1, k;
-    float hg = (kickerVis[i] ? GRUPO_H : 0.0f) + alturaItem(&CT.itens[vis[i]]);
-    while (j < nVis && !kickerVis[j]) { hg += VAO_MIN + alturaItem(&CT.itens[vis[j]]); j++; }
-    if (!usado0 && usado + 1.8f * VAO_MIN + hg > cap && pg < NOV_PAGINAS_MAX - 2) { pg++; usado0 = 1; usado = 0.0f; }
-    usado += (usado0 ? 0.0f : 1.8f * VAO_MIN) + hg;
-    usado0 = 0;
-    for (k = i; k < j; k++) pgVis[k] = pg;
-    i = j;
+  // Keep section starts distinct; split long sections at complete items.
+  kick = NULL;
+  for (i = 0; i < nVis; i++) {
+    float h = alturaItem(&CT.itens[vis[i]]);
+    if (kickerVis[i]) kick = kickerVis[i];
+    if (usado > 0 && (kickerVis[i] || usado + VAO_MIN + h > cap)) {
+      pg++;
+      usado = 0;
+      kickerVis[i] = kick;
+    }
+    if (usado > 0) usado += VAO_MIN;
+    usado += h + (kickerVis[i] ? GRUPO_H : 0);
+    pgVis[i] = pg;
   }
   nPagNov = nVis ? pgVis[nVis - 1] + 1 : 1;
   if (compacto()) {
@@ -306,6 +323,7 @@ static void montar(void) {
   nCen = 0;
   for (i = 0; i < CT.nCenas && nCen < NOV_CENAS_MAX; i++)
     if (CT.cenas[i].desenhar && vale(CT.cenas[i].plataformas)) cen[nCen++] = i;
+  ESCALA_FIM();
 }
 
 static int paginaApoio(void) { return nPagNov; }
@@ -349,6 +367,9 @@ static void comecar(float e) {
   foco = 1;
   entrada = e;
   relogio = 0.0f;
+  fundoFosco = 0;
+  fundoTentado = 0;
+  gfx_mini_liberar(&fundoMini);
   folgaLista = 999.0f;
 #ifdef NV_TOUCH_UI
   telefonecartao_limpar(&novTelefone);
@@ -394,6 +415,7 @@ void novcartao_decidir(int homePronta, int playerAberto, int detalheAberto) {
 static void fechar(void) {
   aberto = 0;
   dados_gravar(CT.arquivo, "1\n");
+  dicascontrole_depois_novidades();
 }
 
 static void irPagina(int p) {
@@ -419,6 +441,8 @@ void novcartao_evento(const SDL_Event *e) {
   if (!aberto || e->type != SDL_KEYDOWN) return;
   montar();
   k = e->key.keysym.sym;
+  if (k == SDLK_DOWN) { if (pagina < paginaApoio()) irPagina(pagina + 1); return; }
+  if (k == SDLK_UP) { if (pagina > 0) irPagina(pagina - 1); return; }
   if (k == SDLK_LEFT)  { if (foco > 0) foco--; return; }
   if (k == SDLK_RIGHT) { if (foco < 1) foco++; return; }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) { ok(); return; }
@@ -432,7 +456,11 @@ void novcartao_evento(const SDL_Event *e) {
 void novcartao_atualizar(float dt, Uint32 agora) {
   int red = ajustes_animacoes_reduzidas();
   (void)agora;
-  if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
+  if (!aberto && entrada < 0.002f) {
+    entrada = 0.0f;
+    if (fundoMini.tex) { gfx_mini_liberar(&fundoMini); fundoFosco = 0; }
+    return;
+  }
   if (aberto) {
     montar();
     pedirArtes();
@@ -453,7 +481,7 @@ static void desenhaPrevia(float x, float y, float a) {
   GfxRect p = { x, y, PV_W, PV_H };
   float total = 0.0f, ini = 0.0f, dentro, dur, e;
   int i, agora = 0, antes;
-  gfx_cor(p, PV_RAIO / p.h, 0.055f, 0.058f, 0.068f, a);
+  gfx_vidro_folha(p, PV_RAIO / p.h, a);
   if (nCen <= 0) { gfx_anel(p, PV_RAIO / p.h, 1.0f, 1, 1, 1, 0.07f * a); return; }
   for (i = 0; i < nCen; i++) total += duracaoCena(i);
   { float tc = fmodf(relogio, total);
@@ -528,14 +556,12 @@ static float item(const NovItem *it, float y, float a) {
   float tx = textoX() + ox + ICONE + 22.0f, tw = textoW() - (ICONE + 22.0f);
   GfxRect d = { textoX() + ox, y - 2.0f, ICONE, ICONE };
   const char *nome = i18n(it->nome);
-  TxtLinha n;
   gfx_cor(d, 0.5f, 1, 1, 1, 0.075f * a);
   gfx_icone((GfxRect){ d.x + 11.0f, d.y + 11.0f, 22.0f, 22.0f }, it->icone, 0.93f, 0.93f, 0.95f, a);
-  n = txt_linha_corta(TXT_ILHA_NOME, nome, 246, 247, 250, 255, tw);
-  txt_desenhar_alpha(n, tx, y, a);
-  if (txt_largura(TXT_ILHA_NOME, nome) > (int)tw) frasesCortadas++;
   int i = (int)(it - CT.itens);
-  float h = NOME_H + frase(it->frase, linhasItem[i], tx, y + NOME_H, tw, a);
+  float nomeH = NOME_H * linhasNome[i];
+  txt_bloco(TXT_ILHA_NOME, nome, 246, 247, 250, tx, y, tw, NOME_H, a, 0);
+  float h = nomeH + frase(it->frase, linhasItem[i], tx, y + nomeH, tw, a);
   if (it->frase2)
     h += FRASE_GAP + frase(it->frase2, linhasItem2[i], tx, y + h + FRASE_GAP, tw, a);
   return h;
@@ -549,11 +575,9 @@ static float grupo(const char *g, float y, float a) {
 
 static void cabecalho(float y0, float a, float dx) {
   float y = y0 + padLista() - 6.0f;
-  char t[64];
+  char t[256];
   snprintf(t, sizeof t, i18n("Novidades da %s"), CT.versao);
-  { TxtLinha l = txt_linha_corta(TXT_NOV_TITULO, t, 248, 249, 252, 255, textoW());
-    txt_desenhar_alpha(l, textoX() + dx, y, a);
-    if (txt_largura(TXT_NOV_TITULO, t) > (int)textoW()) frasesCortadas++; }
+  txt_bloco(TXT_NOV_TITULO, t, 248, 249, 252, textoX() + dx, y, textoW(), TITULO_H, a, 0);
   if (CT.subtitulo) {
     const char *s = i18n(CT.subtitulo);
     TxtLinha l = txt_linha_corta(TXT_V2_26, s, 200, 205, 215, 255, textoW());
@@ -707,12 +731,37 @@ static void visPagina(int i, float *alfa, float *dx) {
 }
 
 static void desenharCorpo(void) {
-  float a = anim_suave(entrada), y0, altura = N_H;
+  float a = sai3(entrada), y0, altura = N_H;
+  GLuint fonteAnterior;
+  int efeitosAnteriores;
   float largura = compacto() ? COMPACTO_W : N_W;
   float x0 = (NV_TELA_W - largura) * 0.5f;
   int i;
   if (entrada < 0.002f) return;
-  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.78f * entrada);
+  // One packaged hero blur per opening; the shared sheet samples this source
+  // directly, including with glass off. No framebuffer capture during motion.
+  if (!fundoTentado && novcartao_previa_pronta()) {
+    GLuint t = tex_obter_hero(artePorNumero(CT.artes[2]));
+    GLuint blur = gfx_desfocado(t, artePorNumero(CT.artes[2]));
+    if (blur && gfx_mini_alvo(&fundoMini, 96, 54)) {
+      // Own the cached texture and orient it like the shared sheet's FBO source.
+      ESCALA_REAL_INI();
+      gfx_mini_comecar(&fundoMini, 0, 0, .05f);
+      gfx_rect((GfxRect){0, 0, 1920, 1080}, blur, GFX_CARD, 0, 0, 0, 0, 1, 1, 1, 1);
+      gfx_mini_terminar();
+      ESCALA_REAL_FIM();
+      fundoFosco = fundoMini.tex;
+      fundoTentado = 1;
+    }
+  }
+  if (fundoFosco) {
+    gfx_mini_desenhar(&fundoMini, (GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0, entrada);
+    gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0, .025f, .03f, .045f, .20f * entrada);
+  } else gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0, .025f, .03f, .045f, entrada);
+  fonteAnterior = gfx_vidro_fonte_fixa(fundoFosco);
+  // Keep every nested sheet and button flat while packaged artwork is missing.
+  efeitosAnteriores = gfx_efeitos_minimos();
+  if (!fundoFosco) gfx_definir_efeitos_minimos(1);
   if (compacto()) {
     int p = (int)pag, q = p < paginaApoio() ? p + 1 : p;
     float hp = p < paginaApoio() ? alturaPag[p] : N_H;
@@ -730,7 +779,7 @@ static void desenharCorpo(void) {
     ajustes_acento(&ar, &ag, &ab);
     gfx_rect((GfxRect){ c.x - 40.0f, c.y - 20.0f, c.w + 80.0f, c.h + 70.0f }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.12f,
              0, 0, 0, 0.6f * a);
-    gfx_cor(c, N_RAIO / altura, 0.052f, 0.055f, 0.064f, 0.96f * a);
+    gfx_vidro_folha(c, N_RAIO / altura, a);
     gfx_luz_canto(c, N_RAIO / altura, c.w * 0.78f, -c.h * 0.25f, c.h * 0.95f, ar, ag, ab, 0.10f * a);
     gfx_anel(c, N_RAIO / altura, 1.2f, 1, 1, 1, 0.07f * a); }
 
@@ -755,6 +804,8 @@ static void desenharCorpo(void) {
     else paginaApoioDesenho(y0, a * al, dx);
   }
   rodape(y0, altura, a);
+  gfx_vidro_fonte_fixa(fonteAnterior);
+  gfx_definir_efeitos_minimos(efeitosAnteriores);
 }
 
 #ifdef NV_TOUCH_UI
@@ -847,13 +898,13 @@ static void novDesenharTelefone(void) {
 }
 #endif
 
-// Cartao de tela quase cheia: ampliado so se ainda couber (escala.h).
+// Reflow in the configured text/component scale, including at 130%.
 void novcartao_desenhar(Uint32 agora) {
   (void)agora;
 #ifdef NV_TOUCH_UI
   if (telefoneui_ativo()) { ESCALA_INI(); novDesenharTelefone(); ESCALA_FIM(); return; }
 #endif
-  ESCALA_SE_COUBER_INI(N_W, N_H);
+  ESCALA_INI();
   desenharCorpo();
-  ESCALA_SE_COUBER_FIM();
+  ESCALA_FIM();
 }

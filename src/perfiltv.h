@@ -57,6 +57,9 @@ int ptv_heroi_max(PtvPlataforma p, long memMB);
 
 // Os padroes do aparelho: o que vale no arranque com Ajustes em Automatico.
 void ptv_padrao(PtvPlataforma p, long memMB, PtvPerfil *out);
+// Indice da definicao do trailer IMDb a tocar; teto 0 = Automatico (720p em Samsung <= 2 GB).
+int ptv_trailer_indice(PtvPlataforma p, long memMB, int teto, const int *alt, int n);
+int ptv_trailer_indice_duro(PtvPlataforma p, long memMB, int teto, const int *alt, int n);
 
 // O CANDIDATO do diagnostico para o modo pedido, SEMPRE dentro dos tetos
 // acima. `texTravadoMb` > 0 = o orcamento foi escolhido pela pessoa (Ajustes)

@@ -7,6 +7,7 @@
 // Frames: simple view, More options, dual subtitles without and with the
 // controls, and a three-line primary to show the bands do not collide.
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "player.h"
 #include "ajustes.h"
 #include "faixas.h"
@@ -122,7 +123,7 @@ static void estado(int controles) {
   v.largura = 3840; v.altura = 2160; v.pronto = 1; v.pos = 12.0; v.duracao = 3360.0;
   v.nAudio = 1;
   faixa(&v.audio[0], 1, "Ingl\xc3\xaas  \xc2\xb7  E-AC3 \xc2\xb7 5.1", "en", "", 0);
-  v.nLeg = 5; v.legAtual = -1;
+  v.nLeg = 7; v.legAtual = -1;
   // #287: full + forced + signs of the same language, and an SDH one: the
   // simple list says which is which next to "Embutida".
   faixa(&v.leg[0], 3, "Portugu\xc3\xaas (Brasil)", "pt", "S_TEXT/UTF8", 0);
@@ -133,6 +134,9 @@ static void estado(int controles) {
   faixa(&v.leg[3], 6, "English  \xc2\xb7  English SDH", "en", "S_TEXT/UTF8", 0);
   v.leg[3].tipoLeg = LING_LEG_SDH;
   faixa(&v.leg[4], 7, "Espa\xc3\xb1ol", "es", "S_HDMV/PGS", 0);
+  // #511: anime-style tracks of one language told apart by their names.
+  faixa(&v.leg[5], 8, "English  \xc2\xb7  Full", "en", "S_TEXT/ASS", 0);
+  faixa(&v.leg[6], 9, "English  \xc2\xb7  Full w/ honorifics", "en", "S_TEXT/ASS", 0);
   video_simular(&v);
   player_shot_estado(relogio, 12.0f, 3360.0f, 1, 0, 0, 0);
   if (!controles) player_shot_esconder();
@@ -142,7 +146,7 @@ int main(int argc, char **argv) {
   Legenda add[6];
   char id[24];
   int semSec, comSec;
-  saida = argc > 1 ? argv[1] : "/tmp/nv-legendas-shot";
+  saida = argc > 1 ? argv[1] : nvt("/nv-legendas-shot");
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
@@ -274,6 +278,8 @@ int main(int argc, char **argv) {
   assert(legendasui_mais());
   salvar("legendas-mais-opcoes");
   salvar("painel-depois-todas");
+  { int i; for (i = 0; i < 9; i++) tecla(SDLK_DOWN); }   // #511: the English group, names told apart
+  quadros(30); salvar("legendas-nomes-ingles");
   tecla(SDLK_RIGHT);                                      // aim at the second slot? no: candidate row -> Estilo
   tecla(SDLK_LEFT);
   tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_UP);         // to the "Usar como" row

@@ -1,4 +1,9 @@
 #include "vistoep.h"
+#define NV_DUBLE_SESSAO
+#define NV_DUBLE_CONTAPEND
+#include "perfisessao.h"
+#include "contapend.h"
+
 #include "js.h"
 #include <limits.h>
 #include <math.h>
@@ -138,8 +143,9 @@ int vistoep_estado(const char *imdb, int temporada, int episodio) {
 int vistoep_fonte(const char *imdb, int temporada, int episodio, int visto,
                   long long remotoMs, VistoFonte *c) {
   int ok, juiz = 0;
-  // DESMARCAR GANHA (vistonao.h). So o "visto" e julgado: fonte dizendo "nao
-  // visto" concorda com a pessoa ou fala de episodio que ela nao tocou.
+  // Both remote states must respect persisted gestures, including restored marks.
+  if (contapend_estado)
+    visto = contapend_estado(imdb, "series", temporada, episodio, remotoMs, visto);
   if (visto && lapBarra) juiz = lapBarra(imdb, temporada, episodio, remotoMs);
   if (juiz > 0) visto = 0;
   pthread_mutex_lock(&trava);
@@ -156,6 +162,16 @@ int vistoep_fonte(const char *imdb, int temporada, int episodio, int visto,
     c->vistos++;
     if (juiz < 0) c->venceu++;
   }
+  return ok;
+}
+
+int vistoep_fonte_se_sessao(const char *imdb, int temporada, int episodio,
+                          int visto, long long remotoMs, VistoFonte *c,
+                          uint64_t sessao) {
+  int ok;
+  if (!nv_perfil_sessao_travar(sessao)) return 0;
+  ok = vistoep_fonte(imdb, temporada, episodio, visto, remotoMs, c);
+  nv_perfil_sessao_destravar();
   return ok;
 }
 

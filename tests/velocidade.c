@@ -9,6 +9,19 @@
 
 static int perto(double a, double b) { return fabs(a - b) < 1e-9; }
 
+// Compile the real Android menu gate with both audio output states.
+static int audioEstado;
+#define CB_GANHO_PASSTHROUGH 2
+#define cacheboost_ganho_estado() audioEstado
+#include "android_speed_gate.h"
+
+static void android_speed(void) {
+  audioEstado = 0;
+  assert(!video_velocidade_bloqueada());
+  audioEstado = CB_GANHO_PASSTHROUGH;
+  assert(!video_velocidade_bloqueada());
+}
+
 // Pipeline simulado: a posicao anda `taxa` por segundo e so e publicada a cada
 // 200 ms (o currentTime da LG; o Android e mais fino). Roda `seg` segundos a
 // 60 Hz e devolve o ultimo evento diferente de VELMED_NADA.
@@ -27,6 +40,7 @@ static int rodar(VelMedidor *m, double taxa, double seg, int valido) {
 int main(void) {
   char b[16];
   int i;
+  android_speed();
   // A lista: curta, crescente, com o 1x dentro.
   assert(VEL_N == 6);
   for (i = 1; i < VEL_N; i++) assert(VEL_LISTA[i] > VEL_LISTA[i - 1]);
@@ -95,6 +109,7 @@ int main(void) {
     velmed_pedir(&m, 75);  assert(rodar(&m, 0.75, 6.0, 1) == VELMED_CONFIRMOU && m.efetiva == 75);
     velmed_pedir(&m, 200); assert(rodar(&m, 2.0, 6.0, 1) == VELMED_CONFIRMOU && m.efetiva == 200);
     velmed_pedir(&m, 125); assert(rodar(&m, 1.25, 6.0, 1) == VELMED_CONFIRMOU && m.efetiva == 125);
+    velmed_pedir(&m, 175); assert(rodar(&m, 1.75, 6.0, 1) == VELMED_CONFIRMOU && m.efetiva == 175);
 
     // Confirmada e depois o pipeline volta sozinho a 1x (uma busca que zera a
     // taxa na TV, por exemplo): duas janelas a 1x e cai para 100.

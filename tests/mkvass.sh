@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Legenda ASS embutida colhida por Range (#92, fase 3). Ver tests/mkvass.c.
 #
 # Gera o MKV AQUI (ffmpeg do Homebrew: 2 min de testsrc2 + sine + um .ass com
@@ -8,8 +10,8 @@
 #   bash tests/mkvass.sh
 set -eu
 cd "$(dirname "$0")/.."
-cc -I/opt/homebrew/include tests/video_url.c src/video.c -o /tmp/nuvio-video-url-test
-/tmp/nuvio-video-url-test
+cc -I/opt/homebrew/include tests/video_url.c src/video.c -o ${TMPDIR:-/tmp}/nuvio-video-url-test
+${TMPDIR:-/tmp}/nuvio-video-url-test
 FFMPEG=${FFMPEG:-/opt/homebrew/bin/ffmpeg}
 [ -x "$FFMPEG" ] || { echo "mkvass.sh: ffmpeg nao encontrado em $FFMPEG"; exit 1; }
 
@@ -109,25 +111,26 @@ RPS=${MKVASS_TESTE_RPS:-12}
 # pausa e o retorno da leitura ainda acontecem, so que em milissegundos.
 # Janela da VARREDURA em 30 s (padrao 120) para a fixture de 120 s poder
 # provar que os bytes lidos sao proporcionais a janela, nao ao arquivo.
-cc -Isrc -DMKVASS_VARRE_JANELA_SEG=30.0 -DMKVASS_RANGES_POR_SEG=$RPS -DMKVASS_TESTE_ESCALA=${MKVASS_TESTE_ESCALA:-3}.0 \
+. tests/mkvcore_flag.sh
+cc ${MKVCORE_CC[@]+"${MKVCORE_CC[@]}"} -Isrc -DMKVASS_VARRE_JANELA_SEG=30.0 -DMKVASS_RANGES_POR_SEG=$RPS -DMKVASS_TESTE_ESCALA=${MKVASS_TESTE_ESCALA:-3}.0 \
   -DMKVASS_PAUSA_CDN_INI_MS=150L -DMKVASS_PAUSA_CDN_MAX_MS=600L \
-  -DMKVASS_RECUO_INI_MS=20L -DMKVASS_RECUO_MAX_MS=160L tests/mkvass.c src/mkvass.c src/assrender.c src/legenda.c src/rede.c src/redeurl.c src/dados.c src/mkv.c \
-  -o /tmp/nuvio-mkvass-tests -O1 -g -Wall -I/opt/homebrew/include \
+  -DMKVASS_RECUO_INI_MS=20L -DMKVASS_RECUO_MAX_MS=160L tests/mkvass.c src/mkvass.c src/imgsub.c src/pgs.c src/assrender.c src/legenda.c src/rede.c src/redeurl.c src/dados.c src/mkv.c \
+  -o ${TMPDIR:-/tmp}/nuvio-mkvass-tests -O1 -g -Wall -I/opt/homebrew/include \
   -Wno-deprecated-declarations
 mkdir -p "$DIR/dados"
 if [ "${NUVIO_MKVASS_LLDB:-0}" = "1" ]; then
   NUVIO_DADOS="$DIR/dados" MKV_DIR="$DIR" lldb --batch -k 'bt all' \
     -o "run http://127.0.0.1:$PORTA t.mkv $DIR/ref.ass srt.mkv ref.ass $SEMCUES $NOCUES $SEMREL relruim.mkv b.mkv" \
-    -- /tmp/nuvio-mkvass-tests
+    -- ${TMPDIR:-/tmp}/nuvio-mkvass-tests
 else
-  NUVIO_DADOS="$DIR/dados" MKV_DIR="$DIR" /tmp/nuvio-mkvass-tests \
+  NUVIO_DADOS="$DIR/dados" MKV_DIR="$DIR" ${TMPDIR:-/tmp}/nuvio-mkvass-tests \
     "http://127.0.0.1:$PORTA" t.mkv "$DIR/ref.ass" srt.mkv ref.ass "$SEMCUES" "$NOCUES" \
     "$SEMREL" relruim.mkv b.mkv
 fi
 
 # Os mesmos tempos, agora pelo LIBASS (o que a TV desenha). Ver tests/ass_tempos.c.
 if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libass; then
-  cc tests/ass_tempos.c -o /tmp/nuvio-ass-tempos-test $(pkg-config --cflags --libs libass)
+  cc tests/ass_tempos.c -o ${TMPDIR:-/tmp}/nuvio-ass-tempos-test $(pkg-config --cflags --libs libass)
   # Select the sidecar for t.mkv, rather than an arbitrary completed track.
   SC=$(python3 - "$DIR/dados" "http://127.0.0.1:$PORTA/t.mkv" <<'PYHASH'
 import os, sys
@@ -138,5 +141,8 @@ print(os.path.join(sys.argv[1], f"mkvass-{h:016x}-3.ass"))
 PYHASH
   )
   [ -n "$SC" ] || { echo "mkvass.sh: nenhum sidecar completo para conferir no libass"; exit 1; }
-  /tmp/nuvio-ass-tempos-test "$DIR/ref.ass" "$SC"
+  ${TMPDIR:-/tmp}/nuvio-ass-tempos-test "$DIR/ref.ass" "$SC"
 fi
+
+# #483: Tracks alem da janela da sonda (remux remontado).
+bash tests/mkv_tracks_relayout.sh

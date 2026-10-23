@@ -19,6 +19,7 @@ int main(void) {
   const long t0 = 1000000;
   const char *intro = "https://api.theintrodb.org/v3/media?imdb_id=tt1&season=1&episode=2";
   const char *intro2 = "https://api.theintrodb.org/v3/media?imdb_id=tt1&season=1&episode=3";
+  const char *intro4 = "https://api.theintrodb.org/v4/media?imdb_id=tt1&season=1&episode=2";
   const char *tmdb = "https://api.themoviedb.org/3/find/tt9?api_key=SEGREDO&language=pt";
   const char *tmdb2 = "https://api.themoviedb.org/3/find/tt9?api_key=OUTRA&language=pt";
   const char *addon = "https://addon.exemplo.org/meta/movie/tt1.json";
@@ -30,6 +31,7 @@ int main(void) {
   negcache_nota(intro, 0, 404, t0);
   confere("404 da theintrodb barra o mesmo endereco", negcache_barra(intro, t0 + 10));
   confere("outro episodio nao e barrado", !negcache_barra(intro2, t0 + 10));
+  confere("v3 miss does not block v4", !negcache_barra(intro4, t0 + 10));
   confere("ainda barrado perto de 24 h", negcache_barra(intro, t0 + 24 * 3600 - 5));
   confere("expira depois de 24 h", !negcache_barra(intro, t0 + 24 * 3600 + 5));
 
@@ -76,6 +78,9 @@ int main(void) {
     negcache_zerar();
     free(disco); disco = copia;
     confere("arranque novo carrega a recusa do disco", negcache_barra(tmdb, t0 + 100));
+    confere("persisted v3 miss does not block v4", !negcache_barra(intro4, t0 + 100));
+    negcache_nota(intro4, 0, 404, t0 + 100);
+    confere("v4 miss blocks the same v4 URL", negcache_barra(intro4, t0 + 101));
     confere("entrada do disco ainda expira em 24 h", negcache_barra(intro, t0 + 100) && !negcache_barra(intro, t0 + 24 * 3600 + 100));
   }
   negcache_zerar();

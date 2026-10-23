@@ -27,25 +27,38 @@ typedef int (*NvCreate)(pthread_t *, const pthread_attr_t *, void *(*)(void *), 
 
 int pthread_create(pthread_t *t, const pthread_attr_t *attr, void *(*fn)(void *), void *arg) {
   static NvCreate real;
-  static int logged;
+  static int announced;
+  static unsigned logged;
   int r;
   if (!real) real = (NvCreate)dlsym(RTLD_NEXT, "pthread_create");
+  if (!__atomic_exchange_n(&announced, 1, __ATOMIC_RELAXED)) {
+    printf("[rt-shim] active real=%s\n", real ? "resolved" : "missing");
+    fflush(stdout);
+  }
   if (!real) return EAGAIN;
   r = real(t, attr, fn, arg);
   if (r && attr) {
-    int first = r, policy = -1, detach = 0;
+    int first = r, policy = -1, detach = 0, inherit = -1;
+    int log = __atomic_fetch_add(&logged, 1, __ATOMIC_RELAXED) < 4;
+    struct sched_param priority = {0};
     size_t stack = 0;
     pthread_attr_t clean;
     pthread_attr_getschedpolicy(attr, &policy);
     pthread_attr_getstacksize(attr, &stack);
     pthread_attr_getdetachstate(attr, &detach);
+    pthread_attr_getinheritsched(attr, &inherit);
+    pthread_attr_getschedparam(attr, &priority);
+    if (log) {
+      printf("[rt-shim] create failed=%d policy=%d priority=%d inherit=%d stack=%lu detach=%d; retrying\n",
+             first, policy, priority.sched_priority, inherit, (unsigned long)stack, detach);
+      fflush(stdout);
+    }
     if (pthread_attr_init(&clean)) return first;
     pthread_attr_setdetachstate(&clean, detach);
     if (stack >= 128 * 1024) pthread_attr_setstacksize(&clean, stack);
     r = real(t, &clean, fn, arg);
     pthread_attr_destroy(&clean);
-    if (logged < 4) {
-      logged++;
+    if (log) {
       printf("[rt-shim] pthread_create failed %d (policy=%d stack=%lu): retried with default attributes -> %d\n",
              first, policy, (unsigned long)stack, r);
       fflush(stdout);

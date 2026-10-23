@@ -1,0 +1,5 @@
+[
+  {"comment":"Show fixture comment.","user":{"username":"show-reviewer"},"likes":9,"user_rating":8,"language":"pt"},
+  {"comment":"Another show comment.","user":{"username":"another-reviewer"},"likes":3,"user_rating":7,"language":"en"},
+  {"comment":"Last show comment.","user":{"username":"last-reviewer"},"likes":1,"user_rating":6,"language":"en"}
+]

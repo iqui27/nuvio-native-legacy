@@ -30,6 +30,22 @@ static float ajcLargura(const char *t, float px, int forte) {
   TxtEstilo e = ajEstiloPxS(ajc_px(px), forte);
   return (int)e >= 0 ? (float)txt_largura(e, t) / ajc_px(1.0f) : (float)strlen(t) * px * 0.6f;
 }
+// Os VIVOS: glifo a glifo (ajTextoVivo), para o texto que muda com o relogio da
+// cena. A largura tambem glifo a glifo, para medir do mesmo jeito que desenha.
+static void ajcTextoVivoRGB(const char *t, float px, int forte, float x, float y, int r, int g, int b, float a) {
+  ajTextoVivo(t, ajc_px(px), forte, ajc_x(x), ajc_y(y), r, g, b, a);
+}
+static void ajcTextoVivo(const char *t, float px, int forte, float x, float y, float a) {
+  ajcTextoVivoRGB(t, px, forte, x, y, 243, 242, 239, a);
+}
+static void ajcTextoVivoTinta(const char *t, float px, int forte, float x, float y, float a) {
+  int ti = ajTinta();
+  ajcTextoVivoRGB(t, px, forte, x, y, ti, ti, ti, a);
+}
+static float ajcLarguraViva(const char *t, float px, int forte) {
+  TxtEstilo e = ajEstiloPxS(ajc_px(px), forte);
+  return (int)e >= 0 ? txt_glifos_largura(e, t) / ajc_px(1.0f) : (float)strlen(t) * px * 0.6f;
+}
 // Selo (pilula com texto): no acento quando `ativo`.
 static float ajcSelo(const char *t, float x, float y, float px, float ativo, float a) {
   float w = ajcLargura(t, px, 1) + px * 1.4f, h = px * 1.9f;
@@ -37,6 +53,16 @@ static float ajcSelo(const char *t, float x, float y, float px, float ativo, flo
   if (ativo > 0.01f) ajc_acento_ret(x, y, w, h, h * 0.5f, ativo * a);
   if (ativo > 0.5f) ajcTextoTinta(t, px, 1, x + px * 0.7f, y + (h - px * 1.25f) * 0.5f, a);
   else ajcTexto(t, px, 1, x + px * 0.7f, y + (h - px * 1.25f) * 0.5f, 0.9f * a);
+  return w;
+}
+// O selo do texto VIVO (percentual que conta, lingua que circula): a pilula
+// acompanha a largura glifo a glifo do que o ajcTextoVivo desenha dentro.
+static float ajcSeloVivo(const char *t, float x, float y, float px, float ativo, float a) {
+  float w = ajcLarguraViva(t, px, 1) + px * 1.4f, h = px * 1.9f;
+  ajc_neutro(x, y, w, h, h * 0.5f, a);
+  if (ativo > 0.01f) ajc_acento_ret(x, y, w, h, h * 0.5f, ativo * a);
+  if (ativo > 0.5f) ajcTextoVivoTinta(t, px, 1, x + px * 0.7f, y + (h - px * 1.25f) * 0.5f, a);
+  else ajcTextoVivo(t, px, 1, x + px * 0.7f, y + (h - px * 1.25f) * 0.5f, 0.9f * a);
   return w;
 }
 // O que o interruptor faz, no canto de baixo: a chave sincronizada com o efeito.
@@ -177,6 +203,7 @@ static void ajcCenaHome(int op) {
     case AJ_HERO_CATALOGOS: case AJ_HERO_TRANSICAO: o.marca = AJC_M_HERO; break;
     case AJ_LANDSCAPE: o.paisagem = ajcLig(op); break;
     case AJ_FIL_ORDEM: case AJ_FIL_LIMITE: case AJ_ITENS_FILEIRA: case AJ_OCULTAR_NLANC:
+    case AJ_OCULTAR_FILMES_VISTOS: case AJ_BIB_HOME:
       o.hero = 0.0f; o.marca = AJC_M_FILEIRAS; break;
     case AJ_ROTULOS: case AJ_NOME_ADDON: case AJ_SUFIXO_TIPO: o.hero = 0; o.marca = AJC_M_TITULOS; break;
     case AJ_NOTAS_HOME: case AJ_SELO_VISTO: o.hero = 0; break;
@@ -382,7 +409,7 @@ static void ajcCenaTrailer(int op) {
   if (op == AJ_TRAILER_QUAL) {
     static const char *R[3] = { "480p", "720p", "1080p" };
     int i, a = ajc_passo(1.6f, 3);
-    for (i = 0; i < 3; i++) ajcSelo(R[i], 400 + i * 74, 300, 13, i == a ? 1.0f : 0.0f, 1);
+    for (i = 0; i < 3; i++) ajcSeloVivo(R[i], 400 + i * 74, 300, 13, i == a ? 1.0f : 0.0f, 1);
   }
   if (op == AJ_TRAILER_FONTE) ajc_ladrilho("aj_film", 586, 56, 52, 1, 1);
   if (op == AJ_HERO_TRAILER || op == AJ_DET_TRAILER_AUTO || op == AJ_DET_TRAILER || op == AJ_LOGO_TRAILER
@@ -458,6 +485,25 @@ static void ajcCenaVidro(int op) {
   ajc_barra(150, 140, 200, 0.85f); ajc_barras(150, 162, 300, 3, 1);
   ajc_acento_ret(150, 210, 100, 26, 13, 1);
   if (op != AJ_VIDRO_OPAC) ajcChaveCanto(op == AJ_VIDRO ? k : ajcLig(op));
+}
+// Foco na cor de destaque: tres linhas, a do meio em foco; o cinza de sempre
+// cede ao vidro tingido com o realce.
+static void ajcCenaFocoAcento(int op) {
+  float k = ajcLig(op), v = ajcLig(AJ_VIDRO);
+  int i;
+  ajc_ret(120, 70, 400, 220, 22, 0.08f, 0.085f, 0.10f, 0.9f);
+  for (i = 0; i < 3; i++) {
+    float y = 92 + i * 62;
+    if (i == 1) {
+      ajc_ret(136, y, 368, 50, 25, 1, 1, 1, 0.12f * (1 - k * v));
+      ajc_ret(136, y, 368, 50, 25, 1, 1, 1, 0.05f * k * v);
+      ajc_ret(136, y, 368, 50, 25, C.ar, C.ag, C.ab, gfx_foco_placa_alfa(C.ar, C.ag, C.ab) * k * v);
+      gfx_anel(ajc_r(136, y, 368, 50), 25.0f / 50.0f, ajc_px(1.5f), C.ar, C.ag, C.ab, 0.62f * k * v * C.a);
+    }
+    ajc_ret(158, y + 13, 24, 24, 12, 1, 1, 1, 0.55f);
+    ajc_barra(196, y + 16, i == 1 ? 190 : 140, i == 1 ? 0.9f : 0.5f);
+  }
+  ajcChaveCanto(k);
 }
 // Logo, abertura e icone do app.
 static void ajcCenaMarca(int op) {
@@ -568,6 +614,184 @@ static void ajcCenaMovimento(int op) {
       ajcTexto("20:30", 30, 1, 200 + 40 * k, 210, k); }
   }
 }
+// Formato no player (Ajustes > Formato no player): a fileira num estilo por vez
+// (Texto, Pilula, Marcas, Selos; Desligado nao poe nada), na posicao escolhida
+// (Ajustes > Posicao do formato no player): embaixo do titulo (a padrao), ao lado
+// dele (na altura da barra do titulo, que fica mais estreita para caber), ou no canto
+// de cima, do lado oposto ao da ilha do relogio. Cada troca anda pela mola: no meio
+// dela os estilos e as posicoes aparecem com o peso de cada um, e sempre ha fileira
+// na tela. Com a posicao em foco, a fileira ganha o anel. O 4K (a resolucao) e sempre
+// o que acende, no acento.
+// Com o codec em foco, o anel vai na peca do audio (o idioma; sem ele, o Atmos).
+static float ajcPeso(float v, int k) { float d = fabsf(v - (float)k); return d >= 1.0f ? 0.0f : 1.0f - d; }
+static void ajcTextoAcento(const char *t, float px, int forte, float x, float y, float a) {
+  float r, g, b;
+  ajc_acento(&r, &g, &b);
+  ajTextoMini(t, ajc_px(px), forte, ajc_x(x), ajc_y(y), (int)(r * 255), (int)(g * 255), (int)(b * 255), a);
+}
+// Texto pelo meio da linha (cy): a caixa do ajTextoMini comeca em y.
+static void ajcFmtTexto(const char *t, float px, float x, float cy, int acento, float a) {
+  if (acento) ajcTextoAcento(t, px, 1, x, cy - px * 0.62f, a);
+  else ajcTexto(t, px, 1, x, cy - px * 0.62f, a);
+}
+// A pilula do player: o mesmo material escuro e de vidro do relogio.
+static void ajcPilula(float x, float cy, float w, float h, float a) {
+  ajc_ret(x, cy - h * 0.5f, w, h, h * 0.5f, 0.04f, 0.045f, 0.06f, 0.6f * a);
+  ajc_vidro(x, cy - h * 0.5f, w, h, h * 0.5f, a);
+}
+// Selo do pacote (folha de Fontes): caixa cheia na cor do matiz; o 4K no acento.
+static float ajcSeloW(const char *t, float s) { return ajcLargura(t, 15.0f * s, 1) + 22.0f * s; }
+static void ajcSeloCheio(const char *t, float x, float cy, int m, int acento, float s, float a) {
+  const float px = 15.0f * s, h = 28.0f * s;
+  float r, g, b;
+  if (acento) ajc_acento(&r, &g, &b);
+  else { ajc_matiz(m, &r, &g, &b); r *= 0.85f; g *= 0.85f; b *= 0.85f; }
+  ajc_ret(x, cy - h * 0.5f, ajcSeloW(t, s), h, 9.0f * s, r, g, b, a);
+  if (acento) ajcTextoTinta(t, px, 1, x + 11.0f * s, cy - px * 0.62f, a);
+  else ajcTexto(t, px, 1, x + 11.0f * s, cy - px * 0.62f, a);
+}
+// Cada estilo desenha a fileira a partir de x (canto esquerdo), centrada em cy, na
+// escala s (1 = o tamanho da ilha). Com d = 0 so mede. Devolve a largura. kc (0..1) e o
+// codec ligado: a peca do audio (o idioma; nas outras, o Atmos) ganha uma barra curta
+// depois dela e fica mais longa. aud (se nao for NULL) recebe o x e a largura dessa peca.
+static float ajcFmtCodecW(float s, float kc) { return kc * (8.0f + 26.0f) * s; }
+static void ajcFmtCodec(float x, float cy, float s, float a, float kc) {
+  if (kc > 0.01f) ajc_barra(x, cy - 3.5f, 26.0f * s * kc, 0.45f * a * kc);
+}
+static float ajcFmtTextoEst(float x, float cy, float s, float a, float kc, int d, float *aud) {
+  const float px = 17.0f * s, gap = 16.0f * s;
+  float w4 = ajcLargura("4K", px, 1), wH = ajcLargura("HDR10", px, 1), wA = ajcLargura("ATMOS", px, 1);
+  float xA = x + w4 + gap + wH + gap;
+  if (aud) { aud[0] = xA; aud[1] = wA + ajcFmtCodecW(s, kc); }
+  if (d) {
+    ajcFmtTexto("4K", px, x, cy, 1, a);
+    ajcFmtTexto("HDR10", px, x + w4 + gap, cy, 0, 0.95f * a);
+    ajcFmtTexto("ATMOS", px, xA, cy, 0, 0.95f * a);
+    ajcFmtCodec(xA + wA + 8.0f * s, cy, s, a, kc);
+  }
+  return xA + wA - x + ajcFmtCodecW(s, kc);
+}
+// Pilulas separadas, como na ilha: [4K] [icone Dolby Vision | icone Atmos] | [onda + idioma].
+// O idioma e a barra no texto secundario da ilha (0.6 do branco). Com o codec ligado, a
+// pilula do idioma ganha a barra do codec no fim, e fica mais longa.
+static float ajcFmtPilulaEst(float x, float cy, float s, float a, float kc, int d, float *aud) {
+  const float px = 15.0f * s, h = 28.0f * s, pad = 12.0f * s, gap = 8.0f * s, ic = 22.0f * s, sep = 1.5f * s;
+  const float ico = 18.0f * s;
+  float w1 = ajcLargura("4K", px, 1) + 2.0f * pad;
+  float wDv = ajcLargura("Dolby Vision", px, 1), wAt = ajcLargura("Atmos", px, 1);
+  float w2 = 2.0f * pad + 2.0f * ic + wDv + wAt + 4.0f * gap + sep;
+  float w3 = 2.0f * pad + ico + gap + 58.0f * s + ajcFmtCodecW(s, kc);
+  float x2 = x + w1 + gap, x3 = x2 + w2 + 12.0f * s;
+  if (aud) { aud[0] = x3; aud[1] = w3; }
+  if (d) {
+    float sepX = x2 + pad + ic + gap + wDv + gap;
+    ajc_acento_ret(x, cy - h * 0.5f, w1, h, h * 0.5f, a);
+    ajcTextoTinta("4K", px, 1, x + pad, cy - px * 0.62f, a);
+    ajcPilula(x2, cy, w2, h, a);
+    ajc_icone("marca_dolby", x2 + pad + ic * 0.5f, cy, ic, a);
+    ajcFmtTexto("Dolby Vision", px, x2 + pad + ic + gap, cy, 0, a);
+    ajc_ret(sepX, cy - h * 0.3f, sep, h * 0.6f, sep * 0.5f, 1, 1, 1, 0.3f * a);
+    ajc_icone("marca_dolby", sepX + sep + gap + ic * 0.5f, cy, ic, a);
+    ajcFmtTexto("Atmos", px, sepX + sep + gap + ic + gap, cy, 0, a);
+    ajc_ret(x3 - 6.0f * s, cy - h * 0.45f, 2.0f * s, h * 0.9f, s, 1, 1, 1, 0.3f * a);
+    ajcPilula(x3, cy, w3, h, a);
+    ajc_icone("aj_audio-lines", x3 + pad + ico * 0.5f, cy, ico, 0.6f * a);
+    ajc_barra(x3 + pad + ico + gap, cy - 3.5f, 58.0f * s, 0.6f * a);
+    ajcFmtCodec(x3 + pad + ico + gap + 58.0f * s + gap, cy, s, a, kc);
+  }
+  return x3 + w3 - x;
+}
+// Marcas: as quatro marcas na arte branca de badges.h (4K, HDR10, Dolby Vision, Atmos),
+// soltas e sem fundo, como o OSD sempre mostrou; 22 px entre elas (s = escala da fileira).
+static float ajcFmtMarcasEst(float x, float cy, float s, float a, float kc, int d, float *aud) {
+  static const FormatoMarca M[4] = { FMT_4K, FMT_HDR10, FMT_DV, FMT_ATMOS };
+  const float mh = 34.0f * s, gap = 22.0f * s;
+  float cx = x, xA = x, wA = 0.0f;
+  int i;
+  for (i = 0; i < 4; i++) {
+    float wm = marca_formato_largura(M[i], ajc_px(mh)) / ajc_px(1.0f);
+    if (i == 3) { xA = cx; wA = wm; }
+    if (d) marca_formato(M[i], ajc_x(cx), ajc_y(cy - mh * 0.5f), ajc_px(mh), 1.0f, 1.0f, 1.0f, a * C.a);
+    cx += wm + gap;
+  }
+  if (aud) { aud[0] = xA; aud[1] = wA + ajcFmtCodecW(s, kc); }
+  if (d) ajcFmtCodec(xA + wA + 8.0f * s, cy, s, a, kc);
+  return xA + wA - x + ajcFmtCodecW(s, kc);
+}
+// Selos: caixas cheias na cor de cada selo, o 4K no acento.
+static float ajcFmtSelosEst(float x, float cy, float s, float a, float kc, int d, float *aud) {
+  const float gap = 8.0f * s;
+  float w1 = ajcSeloW("4K", s), wH = ajcSeloW("HDR10", s), wA = ajcSeloW("ATMOS", s);
+  float xA = x + w1 + gap + wH + gap;
+  if (aud) { aud[0] = xA; aud[1] = wA + ajcFmtCodecW(s, kc); }
+  if (d) {
+    ajcSeloCheio("4K", x, cy, 0, 1, s, a);
+    ajcSeloCheio("HDR10", x + w1 + gap, cy, 1, 0, s, a);
+    ajcSeloCheio("ATMOS", xA, cy, 3, 0, s, a);
+    ajcFmtCodec(xA + wA + gap, cy, s, a, kc);
+  }
+  return w1 + gap + wH + gap + wA + ajcFmtCodecW(s, kc);
+}
+static float ajcFmtEstilo(int est, float x, float cy, float s, float a, float kc, int d, float *aud) {
+  switch (est) {
+    case PLR_FMT_TEXTO: return ajcFmtTextoEst(x, cy, s, a, kc, d, aud);
+    case PLR_FMT_PILULA: return ajcFmtPilulaEst(x, cy, s, a, kc, d, aud);
+    case PLR_FMT_MARCAS: return ajcFmtMarcasEst(x, cy, s, a, kc, d, aud);
+    default: return ajcFmtSelosEst(x, cy, s, a, kc, d, aud);
+  }
+}
+static void ajcCenaFormato(int op) {
+  const float v = ajcValor(AJ_PLR_FORMATO), vp = ajcValor(AJ_PLR_FORMATO_POS);
+  const float pb = ajcPeso(vp, PLR_POS_ABAIXO), pc = ajcPeso(vp, PLR_POS_CANTO);
+  const float kc = ajcLig(AJ_PLR_CODEC);   // o codec ligado (0..1, animado)
+  float sw[PLR_FMT_OFF], on = 0.0f, ty, k = ajc_onda(4.0f);
+  int est;
+  for (est = 0; est < PLR_FMT_OFF; est++) { sw[est] = ajcPeso(v, est); on += sw[est]; }
+  ty = 250.0f - 30.0f * pb * on;   // embaixo da fileira o titulo sobe ao lugar dela
+  if (pc * on > 0.01f) ajc_veu(0, 0, 640, 110, 1, 0.5f * pc * on);   // sombra de cima, como o OSD
+  ajc_vidro(500, 16, 120, 40, 20, 1);   // a ilha do relogio: sempre a direita
+  ajcTexto("20:30", 18, 1, 531, 25, 0.95f);
+  ajc_ret(40, ty, 220, 14, 7, 0.95f, 0.95f, 0.94f, 0.92f);   // o titulo: a barra grossa e a de baixo
+  ajc_barra(40, ty + 21.0f, 140, 0.5f);
+  for (est = 0; est < PLR_FMT_OFF; est++) {
+    float w = sw[est], s, a, c, xe, ce, wd, hb;
+    if (w < 0.01f) continue;
+    xe = pb * 40.0f + pc * 20.0f;
+    ce = pb * 272.0f + pc * 36.0f;   // embaixo e no canto (na altura da ilha)
+    s = pb + pc;
+    c = ce + (1.0f - w) * 8.0f;
+    a = w;
+    if (est == PLR_FMT_TEXTO || est == PLR_FMT_MARCAS) a = w * (0.9f + 0.1f * k);
+    if (est == PLR_FMT_SELOS) a = w * (0.85f + 0.15f * ajc_onda(2.4f));
+    ajcFmtEstilo(est, xe, c, s, a, kc, 1, NULL);
+    if (op == AJ_PLR_FORMATO_POS) {   // a peca da posicao em foco: o anel em volta da fileira
+      wd = ajcFmtEstilo(est, xe, c, s, a, kc, 0, NULL);
+      hb = est == PLR_FMT_MARCAS ? 34.0f * s : 28.0f * s;
+      ajc_foco(xe - 8.0f * s, c - hb * 0.5f - 6.0f * s, wd + 16.0f * s, hb + 12.0f * s, 14.0f * s, w);
+    }
+    if (op == AJ_PLR_CODEC) {   // a peca do audio em foco: o anel em volta dela (o idioma, ou o Atmos)
+      float aud[2];
+      ajcFmtEstilo(est, xe, c, s, a, kc, 0, aud);
+      hb = est == PLR_FMT_MARCAS ? 34.0f * s : 28.0f * s;
+      ajc_foco(aud[0] - 8.0f * s, c - hb * 0.5f - 6.0f * s, aud[1] + 16.0f * s, hb + 12.0f * s, 14.0f * s, w);
+    }
+  }
+}
+// Texto escuro (sobre a pilula amarela e o quadrado verde).
+static void ajcTextoEscuro(const char *t, float px, float x, float y, float a) {
+  ajTextoMini(t, ajc_px(px), 1, ajc_x(x), ajc_y(y), 26, 26, 26, a);
+}
+// O painel da pausa, igual nos dois casos: o veu, o vidro, o titulo e a peca
+// de pause (desligado) ou de play (ligado). O que o painel mostra fica no caso.
+static void ajcPausaPainel(int op) {
+  ajc_ret(0, 0, 640, 360, 0, 0, 0, 0, 0.45f);
+  ajc_vidro(40, 76, 330, 150, 18, 1);
+  ajc_ret(60, 96, 170, 20, 6, 1, 1, 1, 0.9f);
+  ajc_barra(60, 124, 270, 0.5f);
+  if (ajcLig(op) < 0.5f) ajc_ladrilho("aj_pause", 380, 150, 60, 0, 0.9f);   // desligado: so o pause
+  else ajc_play(380, 150, 56, 0.75f + 0.25f * ajc_onda(4.0f));
+  ajcChaveCanto(ajcLig(op));
+}
 // Player: o video com a barra de tempo; cada opcao acende a sua peca.
 static void ajcCenaPlayer(int op) {
   float f = ajc_fase(6.0f);
@@ -588,6 +812,52 @@ static void ajcCenaPlayer(int op) {
       if (ajcLig(op) < 0.5f) ajc_ladrilho("aj_pause", 320, 150, 60, 0, 0.9f);   // desligado: so o pause, sem painel
       else ajc_play(320, 150, 50, 1 - k * 0.4f);
       ajcChaveCanto(ajcLig(op)); break; }
+    case AJ_PAUSA_COMENTARIOS: {   // pausado com o painel: um comentario do Trakt; as bolinhas giram
+      float k = ajcLig(op), s = ajc_onda(4.0f), a = k * (0.85f + 0.15f * s), y = 128 + (1 - s) * 3.0f;
+      int at = ajc_passo(2.0f, 3), j;
+      ajcPausaPainel(op);
+      if (k > 0.01f) {   // o cartao de vidro: sempre no lugar, a onda so o sobe uns pixels
+        ajc_ret(60, y, 290, 76, 12, 0.08f, 0.085f, 0.10f, 0.9f * a);
+        ajc_vidro(60, y, 290, 76, 12, a);
+        ajc_icone("aj_quote", 82, y + 24, 22, 0.9f * a);
+        ajc_barra(104, y + 15, 180, 0.85f * a);
+        ajc_barra(104, y + 29, 140, 0.5f * a);
+        ajc_barra(104, y + 54, 52, 0.35f * a);
+        ajc_barra(164, y + 54, 26, 0.35f * a);
+        for (j = 0; j < 3; j++) ajc_bolinha(306 + j * 14, y + 57, 7, 1, 1, 1, (j == at ? 0.95f : 0.3f) * a);
+      }
+      break; }
+    case AJ_PAUSA_NOTAS: {   // pausado com o painel: as notas do titulo, na linha de baixo do ano
+      float k = ajcLig(op), s = ajc_onda(4.0f), a = k * (0.85f + 0.15f * s), cy = 152 + (1 - s) * 3.0f, x = 56, w;
+      const float p = 14;
+      ajcPausaPainel(op);
+      if (k > 0.01f) {   // a linha nunca some: a onda so a sobe uns pixels e acende
+        ajc_ret(x, cy - 14, 50, 28, 14, 0.96f, 0.77f, 0.18f, a);             // IMDb: pilula amarela com a nota
+        ajcTextoEscuro("8.4", p, x + (50 - ajcLargura("8.4", p, 1)) * 0.5f, cy - p * 0.625f, a);
+        x += 50 + 8; ajc_barra(x, cy - 3.5f, 16, 0.5f * a); x += 16 + 10;
+        ajc_bolinha(x + 11, cy, 22, 0.93f, 0.27f, 0.22f, a);                  // Rotten Tomatoes: bolinha vermelha
+        x += 22 + 6; w = ajcLargura("91%", p, 1);
+        ajcTexto("91%", p, 1, x, cy - p * 0.625f, 0.95f * a); x += w + 8;
+        ajc_barra(x, cy - 3.5f, 16, 0.5f * a); x += 16 + 10;
+        ajc_ret(x, cy - 12, 24, 24, 6, 0.30f, 0.80f, 0.45f, a);              // Metacritic: quadrado verde
+        ajcTextoEscuro("78", p, x + (24 - ajcLargura("78", p, 1)) * 0.5f, cy - p * 0.625f, a);
+        x += 24 + 8; ajc_barra(x, cy - 3.5f, 16, 0.5f * a); x += 16 + 10;
+        ajc_bolinha(x + 10, cy, 20, 0.93f, 0.11f, 0.14f, a);                  // Trakt: bolinha vermelha da marca
+        x += 20 + 6; ajc_barra(x, cy - 3.5f, 16, 0.5f * a);
+      }
+      ajc_barra(60, 186, 270, 0.3f * k);
+      break; }
+    case AJ_PAUSA_ELENCO: {   // pausado com o painel: a fileira do elenco, fotos redondas com nome e papel
+      float k = ajcLig(op), s = ajc_onda(4.0f), a = k * (0.85f + 0.15f * s);
+      ajcPausaPainel(op);
+      if (k > 0.01f)
+        for (i = 0; i < 6; i++) {
+          float cx = 62 + i * 56, cy = 250 + (1 - s) * 3.0f;
+          ajc_bolinha(cx, cy, 36, 0.62f, 0.64f, 0.68f, a * (i % 2 ? 0.55f : 0.75f));   // foto
+          ajc_barra(cx - 18, cy + 24, 36, 0.55f * a);                                   // nome
+          ajc_barra(cx - 12, cy + 33, 24, 0.3f * a);                                    // papel
+        }
+      break; }
     case AJ_REACAO_CREDITOS: {   // nos creditos: a pergunta aparece
       float k = ajcLig(op) * ajc_onda(4.0f);
       for (i = 0; i < 6; i++) ajc_barra(250, 60 + i * 24 - 30 * f, 140, 0.25f);
@@ -613,6 +883,7 @@ static void ajcCenaPlayer(int op) {
       if (k > 0.3f) ajc_foco(640 - (640 - 440) * k, 360 - (360 - 250) * k, 640 - 460 * k, 360 - 260 * k, 14, k);
       if (op == AJ_MANTER_VIDEO) ajcChaveCanto(ajcLig(op));
       break; }
+    case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC: ajcCenaFormato(op); break;
     case AJ_CW_CONCLUIDO: {
       ajc_ladrilho("aj_check", 600, 40, 44, 1, ajc_onda(4.0f) > 0.85f ? 1 : 0.25f);
       break; }
@@ -740,12 +1011,12 @@ static void ajcCenaLegenda(int op) {
       ajc_foco(320 - lw * 0.5f, yb - 32 * tam * 0.9f, lw, 32 * tam * 0.9f, 6, 0.4f + 0.6f * ajc_onda(2.0f));
     }
   }
-  if (op == AJ_LEG_LINGUA || op == AJ_AUD_LINGUA || op == AJ_LEG_SYNC_AUTO || op == AJ_LEG_SYNC_AUDIO) {
+  if (op == AJ_LEG_LINGUA || op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2 || op == AJ_LEG_SYNC_AUTO || op == AJ_LEG_SYNC_AUDIO) {
     static const char *L[3] = { "PT", "EN", "ES" };
     int i, a = ajc_passo(1.6f, 3);
     ajc_vidro(430, 30, 180, 60, 16, 1);
-    ajc_icone(op == AJ_AUD_LINGUA ? "aj_audio-lines" : "aj_captions", 458, 60, 22, 0.9f);
-    for (i = 0; i < 3; i++) ajcSelo(L[i], 482 + i * 42, 46, 12, i == a ? 1.0f : 0, 1);
+    ajc_icone(op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2 ? "aj_audio-lines" : "aj_captions", 458, 60, 22, 0.9f);
+    for (i = 0; i < 3; i++) ajcSeloVivo(L[i], 482 + i * 42, 46, 12, i == a ? 1.0f : 0, 1);
   }
 }
 // Idioma do app / metadados: o mesmo menu trocando de lingua (barras que
@@ -762,7 +1033,7 @@ static void ajcCenaIdioma(int op) {
     ajc_barra(100, 84 + i * 40, w1 + (w0 - w1) * t, i == 1 ? 0.9f : 0.45f);
     if (i == 1) ajc_foco(88, 72 + i * 40, 134, 30, 10, 1);
   }
-  for (i = 0; i < 4; i++) ajcSelo(L[i], 270 + i * 70, 70, 16, i == a ? t : 0, 1);
+  for (i = 0; i < 4; i++) ajcSeloVivo(L[i], 270 + i * 70, 70, 16, i == a ? t : 0, 1);
   ajc_cartaz(270, 130, 140, 170, 2, 1);
   ajc_barras(424, 140, 130, 5, 1);
   (void)op;
@@ -873,7 +1144,8 @@ static void ajcCenaOpcao(int sec, int op) {
     case AJ_PS_FUNDO: case AJ_PS_CONTINUAR: ajcCenaPerfis(op); return;
     case AJ_TEMA: case AJ_COR_LOGO: ajcCenaCor(op); return;
     case AJ_FUNDO: ajcCenaFundo(); return;
-    case AJ_VIDRO: case AJ_VIDRO_CONTORNO: case AJ_VIDRO_OPAC: case AJ_VIDRO_FOSCO: ajcCenaVidro(op); return;
+    case AJ_VIDRO: case AJ_VIDRO_CONTORNO: case AJ_VIDRO_OPAC: case AJ_VIDRO_FOSCO: case AJ_VIDRO_QUALIDADE: ajcCenaVidro(op); return;
+    case AJ_FOCO_ACENTO: ajcCenaFocoAcento(op); return;
     case AJ_LOGO_APP: case AJ_ABERTURA: case AJ_ICONE_APP: ajcCenaMarca(op); return;
     case AJ_FONTE_UI: case AJ_TAMANHO_UI: case AJ_TAMANHO_AJUSTES: ajcCenaTexto(op); return;
     case AJ_LAYOUT_AJUSTES: ajcCenaLayoutAjustes(op); return;
@@ -883,9 +1155,10 @@ static void ajcCenaOpcao(int sec, int op) {
     case AJ_ADDONS: case AJ_PLUGINS: case AJ_ADDONS_PRINCIPAL: case AJ_BUSCA_CINEMETA: case AJ_BUSCA_NUVIO: case AJ_BUSCA_ORIGEM: ajcCenaAddons(op); return;
     case AJ_IDIOMA: case AJ_TMDB_IDIOMA: ajcCenaIdioma(op); return;
     case AJ_DEBRID_RD: case AJ_DEBRID_TB: case AJ_DEBRID_PM: case AJ_DEBRID_AD: case AJ_DEBRID_AD_TESTAR:
+    case AJ_DEBRID_RD_TESTAR: case AJ_DEBRID_TB_TESTAR: case AJ_DEBRID_PM_TESTAR:
       ajcCenaServico(op, "aj_zap"); return;
 #ifndef __EMSCRIPTEN__
-    case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR: case AJ_P2P_LIMITE: ajcCenaServico(op, "aj_link"); return;
+    case AJ_P2P_LIGADO: case AJ_P2P_URL: case AJ_P2P_TESTAR: case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: ajcCenaServico(op, "aj_link"); return;
 #endif
     case AJ_JF_LIGADO: case AJ_JF_SERVIDOR: case AJ_JF_ENTRAR: case AJ_JF_SAIR: case AJ_EM_SERVIDOR: case AJ_EM_ENTRAR:
     case AJ_EM_SAIR: case AJ_PX_ENTRAR: case AJ_PX_SERVIDOR: case AJ_PX_SAIR:
@@ -899,7 +1172,7 @@ static void ajcCenaOpcao(int sec, int op) {
   if (sec == AJS_CARTAZES) switch (op) {
     case AJ_HERO_TRAILER: case AJ_FOCO_TRAILER: case AJ_DET_TRAILER_AUTO: case AJ_DET_TRAILER:
     case AJ_HERO_TRAILER_SOM: case AJ_DET_TRAILER_SOM: case AJ_TRAILER_FONTE: case AJ_HERO_TRAILER_ESPERA:
-    case AJ_TRAILER_QUAL: case AJ_TRAILER_ASPECTO: case AJ_TRAILER_ZOOM_TPK: case AJ_LOGO_TRAILER:
+    case AJ_TRAILER_QUAL: case AJ_TRAILER_ASPECTO: case AJ_TRAILER_ZOOM_TPK: case AJ_LOGO_TRAILER:  case AJ_TRAILER_AUDIO:
       sec = AJS_TRAILERS; break;
     default: break;
   }

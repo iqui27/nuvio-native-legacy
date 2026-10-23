@@ -590,8 +590,10 @@ int px_ler_episodios(const PxConta *c, const char *corpo, size_t n, CatEp *out, 
         txtRaiz(p, f, "summary", ep->sinopse, sizeof ep->sinopse);
         dur = numRaiz(p, f, "duration", 0);
         if (dur > 0) snprintf(ep->duracao, sizeof ep->duracao, "%d min", (int)(dur / 60000.0 + 0.5));
-        if (txtRaiz(p, f, "originallyAvailableAt", data, sizeof data) && strlen(data) >= 10)
+        if (txtRaiz(p, f, "originallyAvailableAt", data, sizeof data) && strlen(data) >= 10) {
+          snprintf(ep->dataIso, sizeof ep->dataIso, "%s", data);
           snprintf(ep->data, sizeof ep->data, "%.2s/%.2s/%.4s", data + 8, data + 5, data);
+        }
         if (txtRaiz(p, f, "thumb", thumb, sizeof thumb)) imagem(c, thumb, 640, 360, ep->thumb, sizeof ep->thumb);
         k++;
       }
@@ -891,6 +893,19 @@ int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n,
 }
 
 // ------------------------------------------------------------ requests
+// Preparation binds only its own RedeJob. Foreground/PIN/report requests
+// retain their existing transport behavior; compiler TLS is avoided for Tizen.
+typedef struct {
+  const PlexPreparo *preparo;
+  int (*cancelado)(void *);
+  void *ctx;
+} PxPreparoCancelamento;
+static pthread_key_t preparoChave;
+static pthread_once_t preparoUma = PTHREAD_ONCE_INIT;
+static int preparoChaveCriada;
+static void preparoIniciar(void) { preparoChaveCriada = pthread_key_create(&preparoChave, NULL) == 0; }
+static int preparoInterrompido(void *u);
+
 // One request. Logs operation/status/latency only: never the URL (the host can
 // be a private address, the query can carry a token).
 static int pedirEx(const PxConta *c, const char *url, const char *token, const char *metodo,
@@ -937,6 +952,12 @@ static int pedirEx(const PxConta *c, const char *url, const char *token, const c
   p.seguir = 1;
   p.mesmo_host = 1;   // a redirect never takes this request to another machine
   p.job = job;
+  pthread_once(&preparoUma, preparoIniciar);
+  PxPreparoCancelamento *preparoCancel = preparoChaveCriada ? pthread_getspecific(preparoChave) : NULL;
+  if (preparoCancel && preparoCancel->preparo) {
+    p.parar = preparoInterrompido;
+    p.parar_usuario = preparoCancel;
+  }
   // #290: only the configured personal server (c->base) may skip certificate
   // verification, and only on its own origin (rede.h). plex.tv keeps it.
   if (c && c->base[0] && !strncmp(url, c->base, strlen(c->base))) {
@@ -1241,6 +1262,7 @@ typedef struct {
   unsigned geracao;
   double pos;
   PxSessaoPlay s;
+  PxConta conta; // immutable original server/account at enqueue
 } Relato;
 
 typedef struct {
@@ -1256,7 +1278,7 @@ static pthread_cond_t sinalCtl = PTHREAD_COND_INITIALIZER, sinalRel = PTHREAD_CO
 static pthread_once_t uma = PTHREAD_ONCE_INIT;
 static pthread_t fioCtl, fioRel;
 static int fiosVivos, parar;
-static RedeGrupo *grupo;
+static RedeGrupo *grupo, *grupoRel;
 static unsigned geracao = 1;
 static RedeJob *jobCtl;
 static unsigned cancelEntrada;
@@ -1283,6 +1305,7 @@ static char idxTag[JFID_TAG + 1];
 #define PX_EPS_VALIDADE_MS (30u * 60u * 1000u)
 static struct { char serie[SRVIDX_ITEM]; unsigned long long ms; } epsBuscados[PX_EPS_BUSCADOS];
 static int nEpsBuscados;
+static unsigned indiceVersao = 1;
 
 static char fontesAlvo[JFID_MAX];
 static int fontesEstado = PX_FONTES_NADA;
@@ -1299,6 +1322,7 @@ static void *trabalharRel(void *u);
 
 static void iniciar(void) {
   grupo = rede_grupo_criar();
+  grupoRel = rede_grupo_criar();
   if (pthread_create(&fioCtl, NULL, trabalharCtl, NULL) == 0) {
     if (pthread_create(&fioRel, NULL, trabalharRel, NULL) == 0) fiosVivos = 2;
     else fiosVivos = 1;
@@ -1389,7 +1413,7 @@ static void idxConferirLocked(void) {
   snprintf(tag, sizeof tag, "%.8s", conta.servidorId);
   for (i = 0; tag[i]; i++) if (tag[i] >= 'A' && tag[i] <= 'F') tag[i] = (char)(tag[i] + 32);
   if (!strcmp(tag, idxTag)) return;
-  srvidx_limpar(&idx);
+  indiceVersao++; srvidx_limpar(&idx);
   nEpsBuscados = 0;
   copiar(idxTag, sizeof idxTag, tag);
   if (tag[0] && perfilLido >= 0) {
@@ -1425,7 +1449,7 @@ static void carregarLocked(void) {
   if (conta.tokenConta[0] && conta.token[0] && conta.base[0] && conta.servidorId[0]) estado = PX_EST_CONECTADO;
   else estado = PX_EST_SEM_CONTA;
   detalhe[0] = 0;
-  srvidx_limpar(&idx);
+  indiceVersao++; srvidx_limpar(&idx);
   idxTag[0] = 0;
   nEpsBuscados = 0;
   idxConferirLocked();
@@ -1435,14 +1459,20 @@ static void soltarSnapshotLocked(void) {
   int i;
   nSnapFils = nSnapItens = 0;
   snapVersao++;
+  indiceVersao++;
   free(fontesLista); fontesLista = NULL; nFontes = 0;
   fontesAlvo[0] = 0; fontesEstado = PX_FONTES_NADA;
   for (i = 0; i < PX_SESSOES; i++) {
     apagarSegredo(sessoes[i].s.url, sizeof sessoes[i].s.url);
     sessoes[i].ativo = 0;
   }
-  for (i = 0; i < PX_FILA_REL; i++) apagarSegredo(&filaRel[i], sizeof filaRel[i]);
-  nRel = 0;
+  // Keep already queued reports with their immutable outgoing account.
+}
+
+static void relatoriosDescartarLocked(void) {
+  for (int i = 0; i < PX_FILA_REL; i++) apagarSegredo(&filaRel[i], sizeof filaRel[i]);
+  nRel = 0; iniRel = 0;
+  if (grupoRel) rede_grupo_avancar(grupoRel);
 }
 
 static void avancarLocked(void) {
@@ -1505,6 +1535,7 @@ void plex_esquecer(void) {
   pthread_mutex_lock(&trava);
   conferirPerfilLocked();
   avancarLocked();
+  relatoriosDescartarLocked();
   cancelEntrada++;
   arquivo(nome, sizeof nome, perfis_ativo());
   dados_apagar(nome);
@@ -1523,6 +1554,7 @@ void plex_esquecer_todos(void) {
   garantir();
   pthread_mutex_lock(&trava);
   avancarLocked();
+  relatoriosDescartarLocked();
   cancelEntrada++;
   for (i = 1; i <= 32; i++) { arquivo(nome, sizeof nome, i); dados_apagar(nome); }
   for (i = 0; i <= 32; i++) { srvidx_apagar(i, "px"); servidores_cache_apagar(i, 0); }
@@ -1536,6 +1568,7 @@ void plex_encerrar(void) {
   pthread_mutex_lock(&trava);
   parar = 1;
   avancarLocked();
+  relatoriosDescartarLocked();
   vivos = fiosVivos;
   pthread_cond_broadcast(&sinalCtl);
   pthread_cond_broadcast(&sinalRel);
@@ -1547,8 +1580,9 @@ void plex_encerrar(void) {
   free(snapItens); snapItens = NULL;
   free(fontesLista); fontesLista = NULL;
   if (grupo) { rede_grupo_cancelar(grupo); rede_grupo_soltar(grupo); grupo = NULL; }
+  if (grupoRel) { rede_grupo_cancelar(grupoRel); rede_grupo_soltar(grupoRel); grupoRel = NULL; }
   apagarSegredo(&conta, sizeof conta);
-  srvidx_limpar(&idx);
+  indiceVersao++; srvidx_limpar(&idx);
   idxTag[0] = 0;
   pthread_mutex_unlock(&trava);
 }
@@ -2057,11 +2091,11 @@ static void indexar(const Tarefa *t, RedeJob *j, const PxConta *c, const PxBibli
     if (e != PX_OK) break;
     pthread_mutex_lock(&trava);
     if (!aindaVale(t, j) || strcmp(tag, idxTag)) e = PX_ERR_CANCELADO;
-    else if (incremental) srvidx_juntar(&idx, &novo);
+    else if (incremental) { srvidx_juntar(&idx, &novo); indiceVersao++; }
     else {
       int k;
       for (k = 0; k < idx.n; k++) if (idx.v[k].tipo == 'e') srvidx_por(&novo, &idx.v[k]);
-      srvidx_limpar(&idx);
+      indiceVersao++; srvidx_limpar(&idx);
       idx = novo;
       srvidx_iniciar(&novo);
     }
@@ -2143,8 +2177,7 @@ static void tarefaBibliotecas(const Tarefa *t) {
   }
   pthread_mutex_unlock(&trava);
   free(itens);
-  apagarSegredo(&c, sizeof c);
-  fecharTarefa(j);
+
 }
 
 // Registers check-in sessions for freshly listed sources (under trava).
@@ -2243,10 +2276,10 @@ static void *trabalharRel(void *u) {
     apagarSegredo(&filaRel[iniRel], sizeof filaRel[iniRel]);
     iniRel = (iniRel + 1) % PX_FILA_REL;
     nRel--;
-    if (r.geracao == geracao && grupo && conta.token[0]) {
-      c = conta;
-      j = rede_job_criar(grupo);
-      relEmVoo = 1;
+    if (grupoRel && r.conta.token[0]) {
+      c = r.conta;
+      j = rede_job_criar(grupoRel);
+      relEmVoo = j != NULL;
     }
     pthread_mutex_unlock(&trava);
     if (j) {
@@ -2289,7 +2322,7 @@ static void relatarLocked(int evento, const Sessao *s, double pos) {
   r->evento = evento;
   r->geracao = s->geracao;
   r->pos = pos;
-  r->s = s->s;
+  r->s = s->s; r->conta = conta;
   nRel++;
   pthread_cond_signal(&sinalRel);
 }
@@ -2443,6 +2476,188 @@ static void epsMarcarLocked(const char *serie) {
   epsBuscados[alvo].ms = agoraMs();
 }
 
+// Optional profile-epoch linkage keeps isolated Plex fixtures usable while
+// complete apps reject every old opening, including A -> B -> A.
+#if defined(__APPLE__) && (defined(__GNUC__) || defined(__clang__))
+#define PX_PERFIL_OPCIONAL __attribute__((weak_import))
+#elif defined(__GNUC__) || defined(__clang__)
+#define PX_PERFIL_OPCIONAL __attribute__((weak))
+#else
+#define PX_PERFIL_OPCIONAL
+#endif
+extern uint64_t perfis_sessao_geracao(void) PX_PERFIL_OPCIONAL;
+extern int perfis_sessao_atual(uint64_t) PX_PERFIL_OPCIONAL;
+extern int perfis_sessao_travar(uint64_t) PX_PERFIL_OPCIONAL;
+extern void perfis_sessao_destravar(void) PX_PERFIL_OPCIONAL;
+static uint64_t preparoPerfilLer(void) {
+#if defined(__GNUC__) || defined(__clang__)
+  return perfis_sessao_geracao ? perfis_sessao_geracao() : 0;
+#else
+  return perfis_sessao_geracao();
+#endif
+}
+static int preparoPerfilAtual(uint64_t g) {
+#if defined(__GNUC__) || defined(__clang__)
+  return perfis_sessao_atual ? perfis_sessao_atual(g) : g == 0;
+#else
+  return perfis_sessao_atual(g);
+#endif
+}
+static int preparoPerfilTravar(uint64_t g) {
+#if defined(__GNUC__) || defined(__clang__)
+  return perfis_sessao_travar ? perfis_sessao_travar(g) : g == 0;
+#else
+  return perfis_sessao_travar(g);
+#endif
+}
+static void preparoPerfilDestravar(void) {
+#if defined(__GNUC__) || defined(__clang__)
+  if (perfis_sessao_destravar) perfis_sessao_destravar();
+#else
+  perfis_sessao_destravar();
+#endif
+}
+
+struct PlexPreparo {
+  PxConta conta;
+  SrvIdx indice;
+  int nIndice, perfil, conectado;
+  unsigned geracao, indiceVersao;
+  uint64_t sessaoPerfil;
+  RedeJob *job;
+};
+// Read only: unlike foreground helpers, never changes the current profile,
+// account, queues, index or list while checking a captured query.
+static int preparoValeLocked(const PlexPreparo *p) {
+  return p && !parar && p->perfil == perfilLido && p->perfil == perfis_ativo() &&
+         preparoPerfilAtual(p->sessaoPerfil) && p->geracao == geracao &&
+         p->indiceVersao == indiceVersao && p->nIndice == idx.n &&
+         p->conectado == (estado == PX_EST_CONECTADO) &&
+         !memcmp(&p->conta, &conta, sizeof conta) &&
+         (!p->job || rede_job_estado(p->job) == REDE_OK);
+}
+int plex_preparo_atual(const PlexPreparo *p) {
+  int ok;
+  pthread_mutex_lock(&trava); ok = preparoValeLocked(p); pthread_mutex_unlock(&trava);
+  return ok;
+}
+PlexPreparo *plex_preparo_capturar(void) {
+  PlexPreparo *p = calloc(1, sizeof *p);
+  if (!p) return NULL;
+  garantir();
+  p->sessaoPerfil = preparoPerfilLer();
+  if (!preparoPerfilTravar(p->sessaoPerfil)) { free(p); return NULL; }
+  pthread_mutex_lock(&trava);
+  conferirPerfilLocked();
+  p->conta = conta; p->perfil = perfilLido; p->geracao = geracao;
+  p->indiceVersao = indiceVersao; p->conectado = estado == PX_EST_CONECTADO;
+  p->nIndice = idx.n;
+  if (p->nIndice > 0) {
+    p->indice.v = malloc(sizeof *p->indice.v * (size_t)p->nIndice);
+    if (p->indice.v) { memcpy(p->indice.v, idx.v, sizeof *p->indice.v * (size_t)p->nIndice); p->indice.n = p->indice.cap = p->nIndice; }
+  }
+  if (grupo) p->job = rede_job_criar(grupo);
+  int ok = preparoValeLocked(p) && (!p->nIndice || p->indice.v) && (!p->conectado || p->job);
+  pthread_mutex_unlock(&trava);
+  preparoPerfilDestravar();
+  if (!ok) { plex_preparo_liberar(p); return NULL; }
+  return p;
+}
+void plex_preparo_liberar(PlexPreparo *p) {
+  if (!p) return;
+  if (p->job) { rede_job_cancelar(p->job); rede_job_soltar(p->job); }
+  srvidx_limpar(&p->indice);
+  apagarSegredo(p, sizeof *p); free(p);
+}
+static int preparoInterrompido(void *u) {
+  PxPreparoCancelamento *c = u;
+  return !c || (c->cancelado && c->cancelado(c->ctx)) || !plex_preparo_atual(c->preparo);
+}
+// Prepared sources may reserve only unused provisional slots. Existing
+// playing or waiting entries are never refreshed, evicted or reported here.
+static int registrarPreparoLocked(const PxPlayback *pb) {
+  int livres = 0, precisos = 0;
+  for (int k = 0; k < PX_SESSOES; k++) if (!sessoes[k].ativo) livres++;
+  for (int i = 0; i < pb->n; i++) {
+    int existe = 0;
+    for (int k = 0; k < PX_SESSOES; k++)
+      if (sessoes[k].ativo && sessoes[k].geracao == geracao &&
+          !strcmp(sessoes[k].s.url, pb->sessao[i].url)) { existe = 1; break; }
+    for (int k = 0; k < i && !existe; k++)
+      if (!strcmp(pb->sessao[k].url, pb->sessao[i].url)) existe = 1;
+    if (!existe) precisos++;
+  }
+  // Speculation never steals a foreground/other waiting session. Refuse the
+  // whole preparation before inserting anything if any URL would be untracked.
+  if (precisos > livres) return 0;
+  for (int i = 0; i < pb->n; i++) {
+    int livre = -1, existe = 0;
+    for (int k = 0; k < PX_SESSOES; k++) {
+      if (!sessoes[k].ativo && livre < 0) livre = k;
+      if (sessoes[k].ativo && sessoes[k].geracao == geracao &&
+          !strcmp(sessoes[k].s.url, pb->sessao[i].url)) { existe = 1; break; }
+    }
+    if (existe || livre < 0) continue;
+    Sessao *s = &sessoes[livre]; memset(s, 0, sizeof *s);
+    s->ativo = 1; s->geracao = geracao; s->criadoMs = agoraMs(); s->s = pb->sessao[i];
+  }
+  return 1;
+}
+int plex_preparo_consultar(const PlexPreparo *p, const char *id, const char *tipo,
+                           int (*cancelado)(void *), void *ctx, Stream **saida) {
+  char imdb[16], rk[24], epRk[24]; long tmdb;
+  int temp, ep, serie, i, e, n = -1;
+  PxPlayback *pb = NULL; Stream *lista = NULL;
+  PxPreparoCancelamento c = { p, cancelado, ctx };
+  if (!saida) return -1;
+  *saida = NULL;
+  if (preparoInterrompido(&c)) return -1;
+  // Personal-server ids remain on the foreground private route; never pass
+  // them to an addon or reinterpret them as a public catalogue title.
+  if (!px_id_titulo(id, imdb, &tmdb, &temp, &ep) || !p->conectado || !p->nIndice) return 0;
+  serie = tipo && (!strcmp(tipo, "series") || !strcmp(tipo, "tv"));
+  i = srvidx_achar(&p->indice, imdb, tmdb, 0, serie ? 's' : 'm');
+  if (i < 0) return 0;
+  copiar(rk, sizeof rk, p->indice.v[i].item);
+  if (!p->job) return -1;
+  pthread_once(&preparoUma, preparoIniciar);
+  if (!preparoChaveCriada) return -1;
+  PxPreparoCancelamento *anterior = pthread_getspecific(preparoChave);
+  if (pthread_setspecific(preparoChave, &c) != 0) return -1;
+  pb = malloc(sizeof *pb);
+  e = pb ? PX_OK : PX_ERR_REDE;
+  if (e == PX_OK && serie) {
+    if (temp < 0 || ep <= 0) { temp = temp > 0 ? temp : 1; ep = ep > 0 ? ep : 1; }
+    e = px_achar_episodio(&p->conta, p->job, rk, temp, ep, epRk, sizeof epRk);
+    if (e == 1) { copiar(rk, sizeof rk, epRk); e = PX_OK; }
+    else if (e == 0) { n = 0; goto fim; }
+  }
+  if (e == PX_OK && preparoInterrompido(&c)) e = PX_ERR_CANCELADO;
+  if (e == PX_OK) e = px_fontes(&p->conta, p->job, rk, pb);
+  if (e != PX_OK || preparoInterrompido(&c)) goto fim;
+  if (pb->n < 0 || pb->n > PX_FONTES_MAX) goto fim;
+  if (!pb->n) { n = 0; goto fim; }
+  lista = malloc(sizeof *lista * (size_t)pb->n);
+  if (!lista) goto fim;
+  memcpy(lista, pb->fonte, sizeof *lista * (size_t)pb->n);
+  // Holding the original profile opening across publication closes the
+  // final generation check/register race with a UI profile switch.
+  int cancelou = cancelado && cancelado(ctx);
+  if (cancelou || !preparoPerfilTravar(p->sessaoPerfil)) goto fim;
+  pthread_mutex_lock(&trava);
+  if (preparoValeLocked(p) && registrarPreparoLocked(pb)) {
+    n = pb->n; *saida = lista; lista = NULL;
+  }
+  pthread_mutex_unlock(&trava);
+  preparoPerfilDestravar();
+fim:
+  if (preparoInterrompido(&c)) { free(*saida); *saida = NULL; n = -1; }
+  pthread_setspecific(preparoChave, anterior);
+  free(lista);
+  if (pb) { apagarSegredo(pb, sizeof *pb); free(pb); }
+  return n;
+}
+
 // A regular catalogue title ("tt...", "tmdb:...") the server has. Runs on the
 // extra-source thread of addons.c, so it may block; every wait is a RedeJob of
 // the current generation. No index hit: no request at all.
@@ -2465,7 +2680,7 @@ int plex_consultar(const char *id, const char *tipo, const char *titulo, int ano
     if (serie) {
       int ke;
       // A series without an episode in the id means "the first one", as in addons.c.
-      if (temp <= 0 || ep <= 0) { temp = temp > 0 ? temp : 1; ep = ep > 0 ? ep : 1; }
+      if (temp < 0 || ep <= 0) { temp = temp > 0 ? temp : 1; ep = ep > 0 ? ep : 1; }
       copiar(serieRk, sizeof serieRk, rk);
       ke = srvidx_achar_ep(&idx, serieRk, temp, ep);
       if (ke >= 0) copiar(rk, sizeof rk, idx.v[ke].item);
@@ -2487,7 +2702,7 @@ int plex_consultar(const char *id, const char *tipo, const char *titulo, int ano
     pthread_mutex_lock(&trava);
     if (g == geracao && rede_job_estado(j) == REDE_OK && !strcmp(tag, idxTag) && e >= 0) {
       int ke;
-      srvidx_juntar(&idx, &eps);
+      srvidx_juntar(&idx, &eps); indiceVersao++;
       epsMarcarLocked(serieRk);
       ke = srvidx_achar_ep(&idx, serieRk, temp, ep);
       if (ke >= 0) copiar(rk, sizeof rk, idx.v[ke].item);
@@ -2572,6 +2787,7 @@ int plex_ficha(CatItem *item, CatEp *eps, int maxEps) {
   novo->episodio = item->episodio;
   copiar(novo->nomeEpisodio, sizeof novo->nomeEpisodio, item->nomeEpisodio);
   novo->naLista = item->naLista;
+  novo->listaFontes = item->listaFontes;
   novo->naColecao = item->naColecao;
   novo->retomadoMs = item->retomadoMs;
   *item = *novo;

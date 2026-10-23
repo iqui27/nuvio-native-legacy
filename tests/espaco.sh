@@ -19,4 +19,10 @@ cc "${sources[@]}" tests/espaco.c -Isrc -o "$bin" \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined
-"$bin"
+if [ "$#" -gt 0 ]; then
+  "$bin" "$1"
+else
+  "$bin"
+  "$bin" spacing
+  "$bin" flow-i18n
+fi

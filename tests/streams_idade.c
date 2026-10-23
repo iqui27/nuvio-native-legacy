@@ -2,6 +2,7 @@
 #include "streams.h"
 #include "selospacote.h"
 #include <assert.h>
+int fontefalha_addon_ao_vivo(const char *key) { (void)key; return 0; }
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>

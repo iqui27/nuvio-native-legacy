@@ -34,6 +34,9 @@ char *rede_baixar(const char *url, int segundos) {
   return strdup(resposta);
 }
 const char *dados_dir(void) { return ""; }
+char *dados_caminho(char *dst, unsigned size, const char *name) {
+  (void)dst; (void)size; (void)name; return NULL;
+}
 void dados_fs_travar(void) {}
 void dados_fs_liberar(void) {}
 void dados_marcar_sujo(int leve) { (void)leve; }

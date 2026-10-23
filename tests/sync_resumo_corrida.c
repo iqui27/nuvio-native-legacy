@@ -9,6 +9,7 @@
 // pode passar por sync_resumo. tests/sync_resumo_corrida.sh confere o relatorio.
 #define main syncordem_main
 #include "syncordem.c"
+#include "nvtmp.h"
 #undef main
 
 static volatile int pararLeitor;

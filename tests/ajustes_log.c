@@ -1,6 +1,7 @@
 // LOG DE MUDANCA DE AJUSTE (ajlog.h + gancho em gravar()): formato, redacao de
 // segredo e juncao de rajadas. Roda sem SDL na tela.
 #include "../src/ajustes.c"
+#include "nvtmp.h"
 #include <assert.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -10,7 +11,7 @@ static int nl;
 static void guarda(const char *l) { if (nl < 32) snprintf(linhas[nl++], sizeof linhas[0], "%s", l); }
 
 int main(void) {
-  char dir[] = "/tmp/nuvio-ajlog-XXXXXX";
+  char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-ajlog-XXXXXX");
   int i, op = AJ_RELOGIO;
   ajlog_saida(guarda);
 

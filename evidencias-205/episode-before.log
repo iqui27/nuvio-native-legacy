@@ -1,0 +1,4 @@
+[detfps] episode-rest   n=8 media=0.90 p95=1.31 pior=1.31(q0) ms txt=0 upl=0 vidro=0 fill=3.78 rects=343 cheias=1.0
+[episode-cast] episodes=343/3.779 cast=337/3.030
+[episode-navigation] frames=5120 over-cast=4630 churn=0
+Assertion failed: (overBudget == 0), function main, file detail_eps_shot.c, line 713.

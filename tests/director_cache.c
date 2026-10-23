@@ -8,6 +8,8 @@
 #include "../src/diretor.c"
 
 const char *desc_chave_tmdb(void) { return "test-key"; }
+const char *desc_tmdb_idioma(void) { return "pt-BR"; }
+const char *i18n(const char *s) { return s; }
 void desc_data_extenso(const char *iso, char *dst, size_t tam) {
   snprintf(dst, tam, "%s", iso);
 }
@@ -39,8 +41,8 @@ int main(void) {
   diretor_pedir("alex silva");
   assert(esperar_ficha("Alex Silva"));
   assert(strstr(diretor_foto("Alex Silva"), "/right.jpg"));
-  assert(strcmp(diretor_foto("Alex Silva"), "https://image.tmdb.org/t/p/original/right.jpg") == 0);
-  assert(strcmp(diretor_hero("Alex Silva"), "https://image.tmdb.org/t/p/original/hero.jpg") == 0);
+  assert(strcmp(diretor_foto("Alex Silva"), "https://image.tmdb.org/t/p/w500/right.jpg") == 0);
+  assert(strcmp(diretor_hero("Alex Silva"), "https://image.tmdb.org/t/p/w1280/hero.jpg") == 0);
   assert(strstr(diretor_bio("Alex Silva"), "ficha real"));
   puts("director cache: PASS (identity, department, published ficha)");
   return 0;

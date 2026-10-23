@@ -9,6 +9,7 @@
 // daqui com a duracao do arquivo, e o avanco e feito pelas teclas, como na TV.
 // NUVIO_SHOT_FITA=1 liga a fita (anterior/atual/seguinte).
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "player.h"
 #include "ajustes.h"
 #include "faixas.h"
@@ -105,7 +106,7 @@ static void rodada(const char *saida, const char *rot, const char *tipo, const c
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-seekr/shot";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-seekr/shot");
   const char *e4 = getenv("NUVIO_SHOT_4K");
   const char *k = getenv("SEEKR_API_KEY");
   if (!k || !*k) { puts("seekr_shot: sem SEEKR_API_KEY, nada a fazer"); return 0; }

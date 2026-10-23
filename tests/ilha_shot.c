@@ -5,6 +5,7 @@
 // NAO ENTRA NA SUITE (*_shot.sh): precisa de janela GL e de olho humano. Inclui
 // avisos.c como avisos_toast_shot, para acionar o toast de verdade.
 #include "avisos.h"
+#include "nvtmp.h"
 #include "ilha.h"
 #include "ajustes.h"
 #include "gfx.h"
@@ -69,7 +70,7 @@ int main(int argc, char **argv) {
   char ajustes[700];
   SDL_GLContext gl;
   FILE *f;
-  base = argc > 1 ? argv[1] : "/tmp/nuvio-ilha";
+  base = argc > 1 ? argv[1] : nvt("/nuvio-ilha");
   assert(dir && *dir);
   snprintf(ajustes, sizeof ajustes, "%s/ajustes.txt", dir);
   f = fopen(ajustes, "w"); assert(f);

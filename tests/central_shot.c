@@ -4,6 +4,7 @@
 // anda em passos fixos de 16 ms para os quadros do meio serem sempre os
 // mesmos. NUVIO_DADOS e temporario (ver o .sh). Saida: <prefixo>-N-*.bmp.
 #include "central.h"
+#include "nvtmp.h"
 #include "ajustes.h"
 #include "ajustes_ux.h"
 #include "gfx.h"
@@ -67,7 +68,7 @@ static void quadros(int n, float segura) {
 static void captura(const char *nome, int n) { quadros(n, 0.0f); salvar(nome); }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-central";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-central");
   const char *dir = getenv("NUVIO_DADOS");
   char nome[600], arq[700];
   SDL_Window *w;

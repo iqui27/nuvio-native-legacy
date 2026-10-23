@@ -29,6 +29,17 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- #501: players de video instalados (lista do ajuste Player) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="video/*" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="video/*" />
+            <data android:scheme="http" />
+        </intent>
     </queries>
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -60,7 +71,25 @@
             android:screenOrientation="landscape"
             android:launchMode="singleTask"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout|uiMode|navigation|density|locale|layoutDirection|fontScale|colorMode|touchscreen|mcc|mnc|fontWeightAdjustment|grammaticalGender"
-            android:resizeableActivity="false" />
+            android:resizeableActivity="false">
+            <!-- Links externos, docs/deeplink.md. O filtro fica na atividade
+                 (nao nos aliases de icone, que so existem para o launcher). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nuvio-legacy" />
+                <data android:scheme="stremio" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="www.imdb.com" android:pathPrefix="/title/" />
+                <data android:host="m.imdb.com" />
+                <data android:host="imdb.com" />
+            </intent-filter>
+        </activity>
 
         <!-- ICONE DO APP (apoiadores, src/iconeapp.h). A entrada do launcher NAO
              e mais a NuvioActivity e sim um activity-alias por icone; so um fica

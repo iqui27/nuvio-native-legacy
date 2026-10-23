@@ -6,6 +6,7 @@
 //
 // NUVIO_SHOT_VIDRO=1 liga a interface de vidro.
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "player.h"
 #include "pausao.h"
 #include "ajustes.h"
@@ -69,7 +70,7 @@ static void tecla(SDL_Keycode k) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-faixas-estilo";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-faixas-estilo");
   char nome[600];
   int i;
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");

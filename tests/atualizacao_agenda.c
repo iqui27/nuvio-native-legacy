@@ -8,6 +8,7 @@
 //   bash tests/atualizacao_agenda.sh
 #define NV_VERSAO "1.6.6"
 #include "../src/atualizacao.c"
+#include "nvtmp.h"
 #include <unistd.h>
 
 static int falhas = 0;
@@ -70,7 +71,7 @@ int main(void) {
 
   // O CARTAO AUTOMATICO VOLTA A CADA TAG NOVA. Antes `mostrado` valia o
   // processo inteiro: achou a 1.6.7, mostrou, e a 1.6.8 dias depois nunca mais.
-  { char d[] = "/tmp/nv-agenda-XXXXXX";
+  { char d[NVT_MAX]; nvt_set(d, sizeof d, "/nv-agenda-XXXXXX");
     if (mkdtemp(d)) setenv("NUVIO_DADOS", d, 1);
     dados_iniciar("deploy/app"); }
   mtx = SDL_CreateMutex();

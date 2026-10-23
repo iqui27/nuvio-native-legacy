@@ -14,6 +14,7 @@
 //      nada de novo (arte aquecida: so tempo de cache).
 // Antes do conserto a 1 e a 2 falham (a 3 passa: ±2 ja era pedido).
 #include "../src/sdlcompat.h"
+#include "nvtmp.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <pthread.h>
@@ -85,7 +86,7 @@ int main(void) {
   CatItem v[NT];
   HomeItem hi;
   char u[NT][NV_TEX_URL_MAX];
-  char dir[] = "/tmp/nuvio-carheroi-XXXXXX";
+  char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-carheroi-XXXXXX");
   FILE *f;
   int i, falhas = 0;
   f = fopen("tests/amostra.jpg", "rb"); assert(f);

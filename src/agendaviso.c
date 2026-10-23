@@ -42,6 +42,23 @@ static int   aberto;
 static float entrada;
 static AgItem itens[AV_MAX];
 static int    n;
+static Uint32 ultimaMontagem;
+static int filme, abrirFilme;
+
+int agendaviso_tomar_filme(AgItem *saida) {
+  if (!abrirFilme) return 0;
+  *saida = itens[0]; abrirFilme = 0; return 1;
+}
+
+void agendaviso_abrir_sessao(void) {
+  /* Abrir outro perfil nao confirma os lembretes copiados do anterior. */
+  aberto = 0;
+  filme = abrirFilme = 0;
+  entrada = 0.0f;
+  n = 0;
+  ultimaMontagem = 0;
+  memset(itens, 0, sizeof itens);
+}
 
 static float alturaItem(int i) {
   return AV_LINHA + (itens[i].sinopse[0] ? AV_SIN_H : 0.0f);
@@ -57,10 +74,14 @@ static float alturaCartao(void) {
 void agendaviso_mostrar_se_houver(void) {
   const AgItem *devidos[AV_MAX];
   int q, i;
-  static Uint32 ultimaMontagem;
   Uint32 agora;
   if (aberto) return;
   agenda_iniciar();
+  if (agenda_filme_devido(&itens[0])) {
+    filme = 1; n = 1; aberto = 1;
+    return;
+  }
+  filme = 0;
   // CHAMADA A CADA QUADRO DA HOME (app.c). agenda_montar percorre o catalogo
   // inteiro, o progresso e os lembretes, com busca linear por imdb e dezenas
   // de snprintf por serie: MEDIDO no Mac (06/10/2026), 94% do `upd` da home.
@@ -94,8 +115,10 @@ void agendaviso_evento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!aberto || e->type != SDL_KEYDOWN) return;
   k = e->key.keysym.sym;
-  if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
-      k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) fechar();
+  if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
+    if (filme) abrirFilme = 1;
+    fechar();
+  } else if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) fechar();
 }
 
 void agendaviso_atualizar(float dt, Uint32 agora) {
@@ -130,8 +153,8 @@ static void agendaviso_desenharCorpo_(Uint32 agora) {
     // aos cantos do cartao (GFX_LUZ; com a tesoura o canto saia quadrado).
     float ar, ag, ab, menor = h < AV_W ? h : AV_W;
     ajustes_acento(&ar, &ag, &ab);
-    gfx_cor(c, 28.0f / menor, 0.055f, 0.058f, 0.068f, 0.94f * a);
-    gfx_luz_canto(c, 28.0f / menor, AV_W * 0.05f, -AV_W * 0.15f, AV_W * 0.5f, ar, ag, ab, 0.22f * a);
+    gfx_vidro_ou_solido(c, 28.0f / menor, GFX_VIDRO_DENS_MODAL, a, 0.055f, 0.058f, 0.068f, 0.94f);
+    if (!ajustes_vidro()) gfx_luz_canto(c, 28.0f / menor, AV_W * 0.05f, -AV_W * 0.15f, AV_W * 0.5f, ar, ag, ab, 0.22f * a);
     gfx_recorte(x, y, AV_W, h); }
 
   { float tx = x + AV_PAD, ty = y + 44.0f;
@@ -148,14 +171,14 @@ static void agendaviso_desenharCorpo_(Uint32 agora) {
     { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("LEMBRETE"), 150, 154, 165, 255);
       txt_desenhar_alpha(t, tx + 74.0f, ty + 12.0f, a * 0.92f); }
     ty += 74.0f;
-    { const char *tit = n == 1 ? i18n("Estreou hoje") : i18n("Estrearam hoje");
+    { const char *tit = filme ? i18n("Já disponível") : n == 1 ? i18n("Estreou hoje") : i18n("Estrearam hoje");
       TxtLinha t = txt_linha(TXT_TITULO1, tit, 246, 247, 252, 255);
       txt_desenhar_alpha(t, tx, ty, a); ty += (float)t.h + 8.0f; }
     // A FRASE QUE DIZ A VERDADE SOBRE O MECANISMO. Sem ela o cartao poderia ser
     // lido como "a TV me avisou", e a TV nao avisou nada: ele apareceu porque o
     // app foi aberto. Dizer isso uma vez, no lugar onde a duvida nasce.
     { TxtLinha t = txt_linha(TXT_CAPTION,
-        i18n("Você pediu para ser lembrado destes episódios."),
+        i18n(filme ? "Você pediu um aviso quando houvesse uma fonte." : "Você pediu para ser lembrado destes episódios."),
         176, 180, 190, 255);
       txt_desenhar_alpha(t, tx, ty, a * 0.9f); }
 
@@ -171,8 +194,11 @@ static void agendaviso_desenharCorpo_(Uint32 agora) {
         gfx_tex_aspect_atual = 1.0f / 1.5f;
         gfx_rect(cz, tex, GFX_CARD, 0, 0, 0, 0.14f, 0, 0, 0, a);
       } else gfx_cor(cz, 0.14f, 0.18f, 0.19f, 0.21f, a);
+      char titulo[220];
+      if (filme) snprintf(titulo, sizeof titulo, i18n("Já disponível: %s"), it->titulo);
+      else snprintf(titulo, sizeof titulo, "%s", it->titulo[0] ? it->titulo : i18n("Série"));
       { TxtLinha t = txt_linha_corta(TXT_HEADLINE,
-          it->titulo[0] ? it->titulo : i18n("Série"), 246, 247, 252, 255,
+          titulo, 246, 247, 252, 255,
           AV_W - (px - x) - AV_PAD);
         txt_desenhar_alpha(t, px, ty + 26.0f, a); }
       linha[0] = 0;
@@ -207,10 +233,10 @@ static void agendaviso_desenharCorpo_(Uint32 agora) {
     // com texto escuro, o vocabulario de modal deste app.
     // A PILULA DA TABELA (botoes.h), primaria e em foco: 72 px, realce,
     // tinta da regra e brilho difuso.
-    { const char *rot = i18n("Entendi");
+    { const char *rot = i18n(filme ? "Abrir" : "Entendi");
       GfxRect b = { tx, y + h - 32.0f - BOTAO_H_PRIMARIO, botao_largura(rot, NULL, 1), BOTAO_H_PRIMARIO };
       botao_pilula(b, rot, NULL, 1.0f, 1, 0, a); }
-    { TxtLinha t = txt_linha(TXT_CAPTION2, i18n("Ver tudo em Agenda"),
+    { TxtLinha t = txt_linha(TXT_CAPTION2, i18n(filme ? "Voltar para dispensar" : "Ver tudo em Agenda"),
                              150, 154, 165, 255);
       txt_desenhar_alpha(t, x + AV_W - AV_PAD - (float)t.w, y + h - 72.0f,
                          a * 0.85f); } }

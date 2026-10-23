@@ -16,6 +16,7 @@
 // que cada OK desceu de fato, que Voltar subiu e que Voltar no primeiro degrau
 // da entrada pelo Detalhe pede a pagina do titulo de volta.
 #include "explorar.h"
+#include "nvtmp.h"
 #include "mapa.h"
 #include "catalogo.h"
 #include "gfx.h"
@@ -24,6 +25,7 @@
 #include "ajustes.h"
 #include "rail_shot.h"
 #include "dados.h"
+#include "vidro_telas.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -32,7 +34,7 @@
 #include <string.h>
 
 static GLuint fbo, fboTex;
-static const char *saida = "/tmp/nuvio-explorar";
+static const char *saida;
 
 static void tecla(SDL_Keycode k) {
   SDL_Event e;
@@ -51,6 +53,7 @@ static void quadros(int n, const char *nome) {
     tex_novo_quadro();
     tex_bombear(10);
     gfx_novo_quadro();
+    vt_antes();
     explorar_atualizar(1.0f / 60.0f, SDL_GetTicks());
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glViewport(0, 0, 1920, 1080);
@@ -58,6 +61,8 @@ static void quadros(int n, const char *nome) {
     glClear(GL_COLOR_BUFFER_BIT);
     explorar_desenhar(SDL_GetTicks());
     rail_shot_desenhar(MENU_EXPLORAR);
+    vt_depois();
+    if (vt_ligado()) continue;
     glFinish();
     if (nome && i == n - 1) {
       unsigned char *pix = malloc(1920 * 1080 * 4);
@@ -147,7 +152,7 @@ int main(int argc, char **argv) {
   SDL_GLContext gl;
   char raiz[128], passo1[128], passo2[128], volta[128];
   int grupos;
-  if (argc > 1) saida = argv[1];
+  saida = argc > 1 ? argv[1] : nvt("/nuvio-explorar");
   // Idioma, acento e animacoes pelo caminho de verdade (ajustes.txt na pasta
   // de dados temporaria): NUVIO_SHOT_EN=1 para ingles, NUVIO_SHOT_THEME=<n>
   // para o acento, NUVIO_SHOT_REDUZ=1 para animacoes reduzidas.
@@ -196,6 +201,16 @@ int main(int argc, char **argv) {
     assert(cl.n == MAPA_CLIMA_N && cl.c[0].n > 0 && cl.c[0].afinidade >= cl.c[1].afinidade); }
 
   explorar_iniciar();
+  // NUVIO_VIDRO_TELAS=<dir> (tests/vidro_telas.sh): glass budget, climates.
+  if (vt_ligado()) {
+    int i;
+    vt_vidro();
+    for (i = 0; i < 150; i++) { quadros(1, NULL); SDL_Delay(2); }
+    vt_zerar(); quadros(30, NULL); vt_png("explorar"); vt_relatar("explore", 2);
+    for (i = 0; i < 6; i++) { tecla(i & 1 ? SDLK_LEFT : SDLK_RIGHT); quadros(4, NULL); }
+    vt_relatar("explore", 0);
+    return vtFalhas ? 1 : 0;
+  }
   quadros(90, "1-climas");
   tecla(SDLK_RETURN);
   quadros(70, "2-clima");

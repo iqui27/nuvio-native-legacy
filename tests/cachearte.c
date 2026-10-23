@@ -1,4 +1,5 @@
 #include "cachearte.h"
+#include "nvtmp.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +17,7 @@ static void cache_name(const char *url, char *dst, size_t cap) {
 }
 
 int main(void) {
-  char dir[] = "/tmp/nuvio-cachearte-XXXXXX", path[512], profilePath[512], name[64], ignored[512];
+  char dir[NVT_MAX], path[512], profilePath[512], name[64], ignored[512]; nvt_set(dir, sizeof dir, "/nuvio-cachearte-XXXXXX");
   const char *home = "https://images.example/home.jpg?sig=private";
   const char *profile = "https://images.example/profile.jpg?sig=private";
   NvCacheArteStats stats;

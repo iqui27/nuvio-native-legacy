@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # A TABELA RESPONDE, ESTA ORDENADA, E NAO FALTA NINGUEM.
 #
 # Sao tres perguntas diferentes e o issue #12 tropecou nas tres em rodadas
@@ -17,9 +19,9 @@
 set -eu
 cd "$(dirname "$0")/.."
 cc tests/idioma.c src/idioma.c -Isrc -I/opt/homebrew/include \
-   -I/opt/homebrew/include/SDL2 -o /tmp/nuvio-idioma-tests \
+   -I/opt/homebrew/include/SDL2 -o ${TMPDIR:-/tmp}/nuvio-idioma-tests \
    -Wno-macro-redefined -Wno-deprecated-declarations
-/tmp/nuvio-idioma-tests
+${TMPDIR:-/tmp}/nuvio-idioma-tests
 python3 tools/idiomas.py
 python3 tools/varredura-i18n.py
 echo "i18n: tudo ok"

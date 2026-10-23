@@ -5,6 +5,7 @@
 //
 //   bash tests/sidebaratv_shot.sh /tmp/nv-sidebaratv
 #include "menu.h"
+#include "nvtmp.h"
 #include "home.h"
 #include "colecoes.h"
 #include "catalogo.h"
@@ -79,7 +80,7 @@ static void quadros(int n, const char *nome) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-sidebaratv";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-sidebaratv");
   char nome[600];
   SDL_GLContext gl;
   int i;

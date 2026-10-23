@@ -26,6 +26,7 @@
 #include "autosync.h"
 #include <math.h>
 #include <stdio.h>
+const char *i18n(const char *text) { return text; }
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -109,7 +110,7 @@ static LegendaDocumento *documento(const Evs *e, const char *id, unsigned flags,
 // --- casos --------------------------------------------------------------------
 enum { APLICAR, MANTER, RECUSAR };
 enum { T_OFFSET, T_FPS, T_INSERCAO, T_REMOCAO, T_CD1, T_CD2, T_ESPARSO, T_FORCED_FLAG, T_FORCED_SO,
-       T_ALHEIA, T_SINCRONIZADA, T_JITTER, T_SEGMENTACAO, T_LIMPA, T_EXTRA_REF, T_EXTRA_DOC };
+       T_ALHEIA, T_SINCRONIZADA, T_JITTER, T_JITTER_FORTE, T_SEGMENTACAO, T_LIMPA, T_EXTRA_REF, T_EXTRA_DOC };
 typedef struct { const char *nome; int tipo; double offset, escala, corte; int espera; } Caso;
 static const Caso casos[] = {
   { "offset +2.5s same-src", T_LIMPA, 2.5, 1, 0, APLICAR },
@@ -138,6 +139,7 @@ static const Caso casos[] = {
   { "CD2 (second half)",     T_CD2, 0, 1, 0, APLICAR },
   { "sparse 35 cues +6s",    T_ESPARSO, 6, 1, 0, APLICAR },
   { "jitter ref 150ms +5s",  T_JITTER, 5, 1, 0, APLICAR },
+  { "jitter ref 700ms +5s",  T_JITTER_FORTE, 5, 1, 0, APLICAR },
   { "split lines +3s",       T_SEGMENTACAO, 3, 1, 0, APLICAR },
   { "ref +15% extra lines",  T_EXTRA_REF, -4, 1, 0, APLICAR },
   { "ext +10% extra lines",  T_EXTRA_DOC, 8, 1, 0, APLICAR },
@@ -186,14 +188,16 @@ static void montar(const Caso *c, Par *p) {
   for (int i = 1; i < video.n; i++) { Ev x = video.v[i]; int j = i - 1;
     while (j >= 0 && video.v[j].ini > x.ini) { video.v[j + 1] = video.v[j]; j--; } video.v[j + 1] = x; }
   // REFERENCIA: o video com ruido de autor (40 ms; 150 ms uniforme no caso
-  // jitter), 3% das falas faltando e 3% juntadas com a seguinte.
+  // jitter; 700 ms no caso jitter forte), 3% das falas faltando e 3%
+  // juntadas com a seguinte.
   for (int i = 0; i < video.n; i++) {
     Ev e = video.v[i];
     if (c->tipo == T_LIMPA) { por(&p->ref, e.ini, e.fim); continue; }   // mesma fonte: sem ruido
     if (unif() < .03) continue;
     if (i + 1 < video.n && video.v[i + 1].ini - e.fim < .5 && unif() < .03) { e.fim = video.v[i + 1].fim; i++; }
-    double j = c->tipo == T_JITTER ? (unif() * 2 - 1) * .15 : normal() * .04;
-    double k = c->tipo == T_JITTER ? (unif() * 2 - 1) * .15 : normal() * .04;
+    double amp = c->tipo == T_JITTER ? .15 : c->tipo == T_JITTER_FORTE ? .70 : 0;
+    double j = amp ? (unif() * 2 - 1) * amp : normal() * .04;
+    double k = amp ? (unif() * 2 - 1) * amp : normal() * .04;
     e.ini += j; e.fim += k;
     if (e.fim < e.ini + .3) e.fim = e.ini + .3;
     if (c->tipo == T_FORCED_SO && unif() > .03) continue;   // so as placas/forcadas
@@ -340,7 +344,7 @@ int main(int argc, char **argv) {
       free(p.ref.v); free(p.doc.v); free(p.verdade);
     }
   }
-  int errados = 0;
+  int errados = 0, recusados = 0;
   printf("%-24s %4s %6s %7s %6s %7s %7s %8s %8s %6s\n", "case", "runs", "right", "refused", "WRONG", "p50ms", "p95ms", "avg ms", "max ms", "hidden");
   for (int c = 0; c < NCASOS; c++) {
     Placar *s = &tot[c];
@@ -349,8 +353,8 @@ int main(int argc, char **argv) {
     double p50 = s->nErros ? s->erros[s->nErros / 2] * 1000 : -1, p95 = s->nErros ? s->erros[(int)(s->nErros * .95)] * 1000 : -1;
     printf("%-24s %4d %6d %7d %6d %7.0f %7.0f %8.1f %8.1f %6d\n", casos[c].nome, s->n, s->certo, s->recusou, s->errado,
            p50, p95, s->tempo / s->n, s->tempoMax, s->faltou);
-    errados += s->errado; free(s->erros);
+    errados += s->errado; recusados += s->recusou; free(s->erros);
   }
-  printf("TOTAL wrong=%d\n", errados);
+  printf("TOTAL wrong=%d refused=%d\n", errados, recusados);
   return 0;
 }

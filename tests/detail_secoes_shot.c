@@ -41,6 +41,7 @@
 // rodar se dados_dir() nao for ela: ele ESCREVE cache, e sem a trava escreveria
 // dentro do ~/.nuvio de quem executa.
 #include <SDL2/SDL.h>
+#include "nvtmp.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <stdio.h>
@@ -94,6 +95,11 @@
 #define extras_ficha_paises       fx_ficha_paises
 #define extras_ficha_classificacao fx_ficha_classificacao
 
+// Musicas: soundtrack fixture, no network (NV_MUSICA_ONLY).
+#define mus_estado fx_mus_estado
+#define mus_pedir  fx_mus_pedir
+#define mus_url_celular fx_mus_url_celular
+
 #include "../src/detail.c"
 
 #include "dados.h"
@@ -125,6 +131,27 @@ static const Fix SERIE_T2[] = {
 #define IMDB_SERIE "tt0903747"
 #define IMDB_FILME "tt0133093"
 #define IMDB_VAZIO "tt0000009"
+
+MusEstado fx_mus_estado(const char *imdb, int temp, MusAlbum *out) {
+  (void)imdb; (void)temp;
+  if (out) {
+    memset(out, 0, sizeof *out);
+    snprintf(out->titulo, sizeof out->titulo, "Dune: Part Two (Original Motion Picture Soundtrack)");
+    snprintf(out->artista, sizeof out->artista, "Hans Zimmer");
+    snprintf(out->capa, sizeof out->capa, "deploy/app/art/poster/07.jpg");
+    out->n = 3;
+    out->faixa[0].n = 1; snprintf(out->faixa[0].titulo, sizeof out->faixa[0].titulo, "Dream of Arrakis"); out->faixa[0].dur = 65;
+    out->faixa[1].n = 2; snprintf(out->faixa[1].titulo, sizeof out->faixa[1].titulo, "Ripples in the Sand"); out->faixa[1].dur = 190;
+    out->faixa[2].n = 3; snprintf(out->faixa[2].titulo, sizeof out->faixa[2].titulo, "A Time of Quiet"); out->faixa[2].dur = 312;
+    for (int i = 0; i < 3; i++) snprintf(out->faixa[i].artista, sizeof out->faixa[i].artista, "Hans Zimmer");
+  }
+  return MUS_PRONTO;
+}
+void fx_mus_url_celular(char *dst, unsigned tam, const char *imdb, const char *titulo, int ano, int temp) {
+  (void)imdb; (void)titulo; (void)ano; (void)temp;
+  snprintf(dst, tam, "https://rec.test/m/#id=tt0000001");
+}
+void fx_mus_pedir(const char *imdb, const char *t, int ano, int temp) { (void)imdb; (void)t; (void)ano; (void)temp; }
 
 // --- DUBLE DE extras ---------------------------------------------------------
 void fx_pedir(const char *imdb, int serie, long tmdbId) {
@@ -463,12 +490,13 @@ static void abrir(int i, int secao, int col) {
   // A T2 E A QUE TEM CACHE, e escolher a temporada aqui NAO e cravar
   // `temporada`: detail_atualizar reescreve essa variavel a partir da COLUNA da
   // fileira de temporadas a cada quadro (o seletor troca no movimento do foco).
-  // Cravar e deixar o foco em SEC_TEMPORADAS coluna 0 punha a pagina de volta
+  // Cravar e deixar o foco em SEC_TEMPORADAS coluna 1 (o botao de episodio
+  // aleatorio agora abre a fileira, #205) punha a pagina de volta
   // na T1 no primeiro quadro — e a captura saia com a temporada errada, que e
   // justamente o defeito que este arquivo existe para pegar.
   if (!strcmp(itens[i].imdb, IMDB_SERIE)) {
     foco.fileira = SEC_TEMPORADAS;
-    foco.coluna = 1;
+    foco.coluna = 2;
     quadros(3);
   } else {
     quadros(1);
@@ -485,7 +513,7 @@ static void abrir(int i, int secao, int col) {
 static void escolherAba(int visivel) { abaInfo = visivel; quadros(60); }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-detsec";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-detsec");
   char nome[600];
   SDL_GLContext gl;
   const char *dd;
@@ -528,7 +556,8 @@ int main(int argc, char **argv) {
     const int vidro = getenv("NUVIO_SHOT_VIDRO") != NULL;
     const int semAnel = getenv("NUVIO_SHOT_SEM_ANEL") != NULL;
     const char *fonte = getenv("NUVIO_SHOT_FONTE");   // 3 = Montserrat, a fonte da TV do dono
-    if ((lg && *lg) || vidro || semAnel || fonte) {
+    const char *esc = getenv("NUVIO_SHOT_ESCALA_TEXTO");   // escalaTextoLocal index (0 = 85%)
+    if ((lg && *lg) || vidro || semAnel || fonte || esc) {
       char caminho[600]; FILE *f;
       snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dd);
       f = fopen(caminho, "w"); assert(f);
@@ -536,8 +565,10 @@ int main(int argc, char **argv) {
       if (vidro) fprintf(f, "vidroLocal 0\n");
       if (fonte) fprintf(f, "fonteInterface %d\n", atoi(fonte));
       if (semAnel) fprintf(f, "bordaFocoCartaz 1\n");   // R3: foco sem anel (V_LIGA: 1 = Desligado)
+      if (esc) fprintf(f, "escalaTextoLocal %d\nescalaTextoVersaoLocal 1\n", atoi(esc));
       fclose(f);
       ajustes_dir(dd); } }
+  ajustes_teste_vidro_env();   // NUVIO_SHOT_VIDRO_OPAC / _FOSCO
 
   montarCatalogo();
 
@@ -595,6 +626,30 @@ int main(int argc, char **argv) {
       (void)k;
     }
     puts("PASS: Notas order (movie first, series after episodes)");
+    SDL_GL_DeleteContext(gl); SDL_DestroyWindow(janela); SDL_Quit(); return 0;
+  }
+
+  if (getenv("NV_MUSICA_ONLY")) {
+    SDL_Event ev = {0}; ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_DOWN;
+    abrir(1, SEC_MUSICAS, 0);
+    assert(secaoN(SEC_MUSICAS) == 1);
+    for (int q = 0; q < 90; q++) { SDL_Delay(16); quadros(1); }
+    snprintf(nome, sizeof nome, "%s-musicas-movie.png", saida);
+    gravar(nome);
+    ev.key.keysym.sym = SDLK_RIGHT; detail_evento(&ev);
+    assert(musPagina == 1);
+    quadros(1);
+    snprintf(nome, sizeof nome, "%s-musicas-last-page.png", saida);
+    gravar(nome);
+    ev.key.keysym.sym = SDLK_LEFT; detail_evento(&ev);
+    assert(musPagina == 0);
+    ev.key.keysym.sym = SDLK_RETURN; detail_evento(&ev);
+    ev.type = SDL_KEYUP; detail_evento(&ev);
+    for (int q = 0; q < 45; q++) { SDL_Delay(16); quadros(1); }
+    assert(mus_guardado(itens[1].imdb, 0));
+    snprintf(nome, sizeof nome, "%s-musicas-guardada.png", saida);
+    gravar(nome);
+    puts("PASS: Musicas section shows soundtrack and Guardar toggles");
     SDL_GL_DeleteContext(gl); SDL_DestroyWindow(janela); SDL_Quit(); return 0;
   }
 
@@ -664,10 +719,10 @@ int main(int argc, char **argv) {
   //        temporada que ja tem em memoria — repetir a MESMA nao refaz nada, e
   //        e assim que ele deve se comportar.
   cacheAudiencia(IMDB_SERIE, 2, 3);
-  abrir(0, SEC_TEMPORADAS, 0);          // T1: sem cache, fica vazia
+  abrir(0, SEC_TEMPORADAS, 1);          // T1: sem cache, fica vazia
   foco.fileira = SEC_AUD_ARCO; foco.coluna = 0;
   quadros(30);
-  foco.fileira = SEC_TEMPORADAS; foco.coluna = 1;   // volta para a T2
+  foco.fileira = SEC_TEMPORADAS; foco.coluna = 2;   // volta para a T2
   quadros(30);
   foco.fileira = SEC_AUD_ARCO; foco.coluna = 0;
   quadros(120);
@@ -680,7 +735,7 @@ int main(int argc, char **argv) {
   //         tambem o que prova o PISO DE ALTURA: o cabecalho do radar tem de
   //         ficar abaixo do arco mesmo com o arco vazio. Sem o piso, a captura
   //         anterior mostrava "Drop-off radar" escrito por cima da curva.
-  foco.fileira = SEC_TEMPORADAS; foco.coluna = 0;   // T1: sem cache
+  foco.fileira = SEC_TEMPORADAS; foco.coluna = 1;   // T1: sem cache
   quadros(3);
   foco.fileira = SEC_AUD_ARCO; foco.coluna = 0;
   quadros(120);

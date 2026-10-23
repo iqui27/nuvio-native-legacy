@@ -5,6 +5,7 @@
 // Sem dados_iniciar: dados_dir() e "", dados_ler devolve NULL e o cartao abre
 // como na primeira vez — e nao grava marca nenhuma em disco de verdade.
 #include "novidades.h"
+#include "nvtmp.h"
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -46,7 +47,7 @@ static void captura(const char *nome, SDL_Window *win) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-novidades";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-novidades");
   char nome[600];
   SDL_Window *w;
   SDL_GLContext gl;

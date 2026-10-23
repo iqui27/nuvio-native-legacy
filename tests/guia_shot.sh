@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Cartao de canal do Guia nos dois estados, em BMP. Nao entra na suite
 # (tools/testa-tudo.sh pula *_shot.sh): precisa de janela GL e de olho humano.
 #
@@ -6,7 +8,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-guia-shot.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-guia-shot.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 
@@ -17,9 +19,9 @@ for source in src/*.c src/dts/*.c; do
 done
 # src/guia.c e INCLUIDO pelo teste: desenharCard e a lista de canais sao
 # estaticos, e semear por dentro e o unico jeito de fotografar sem addon no ar.
-cc "${sources[@]}" tests/guia_shot.c -Isrc -o /tmp/nuvio-guia-shot \
+cc "${sources[@]}" tests/guia_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-guia-shot \
   -O1 -g \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-guia-shot "$@"
+${TMPDIR:-/tmp}/nuvio-guia-shot "$@"

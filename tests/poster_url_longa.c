@@ -118,6 +118,7 @@ char *redeTeste(const char *u, int timeout, long *n);
 #include "contalib.h"
 #include "dados.h"
 #include <unistd.h>
+#include "nvtmp.h"
 
 char *redeTeste(const char *u, int timeout, long *n) {
   unsigned char *b = calloc(1, 1024);
@@ -144,7 +145,7 @@ static int testar(size_t alvo) {
   montaUrl(enorme, sizeof enorme, "poster", 1600);
   assert(strlen(url) == alvo && strlen(enorme) == 1600);
   { const char *t = getenv("TMPDIR");
-    snprintf(dir, sizeof dir, "%s/nuvio-poster-longa-XXXXXX", t && *t ? t : "/tmp");
+    snprintf(dir, sizeof dir, "%s/nuvio-poster-longa-XXXXXX", t && *t ? t : nvt_dir());
     assert(mkdtemp(dir)); }
 
   // 1. Catalogo: so o poster (o addon de cartaz nao manda `background`).

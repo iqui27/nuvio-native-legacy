@@ -15,14 +15,14 @@
 # inteira; o libnuvio.so do tpk (gcc 8.3) so liga nela pela API C, sem C++
 # atravessando a fronteira. A .so vai no pacote ao lado do libnuvio.so.
 set -eu
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../.." && source tools/ctr.sh
 . tools/p2p-motor/pasta.sh; nv_p2p_raiz
 W="${1:-${NV_P2P_RAIZ:-/Volumes/ExternalSSD/nuvio-p2p-motor}/tpk}"
 mkdir -p "$W"
 [ -d "$W/nuvio-engine/.git" ] || git clone -q https://github.com/NuvioMedia/nuvio-engine "$W/nuvio-engine"
 nv_p2p_fonte "$W/nuvio-engine"
-# -j baixo: com -j$(nproc) o cc1plus do libtorrent estoura a RAM do docker (Killed).
-docker run --rm --platform linux/arm64 -e NV_JOBS="${NV_JOBS:-2}" -v "$W":/w nuvio-webos-sdk sh -c '
+# -j baixo: com -j$(nproc) o cc1plus do libtorrent estoura a RAM do container (Killed).
+ctr_run --rm --platform linux/arm64 -e NV_JOBS="${NV_JOBS:-2}" -v "$W":/w nuvio-webos-sdk sh -c '
   set -e
   command -v cmake >/dev/null 2>&1 && cmake --version >/dev/null 2>&1 || {
     apt-get update -qq >/dev/null && apt-get install -y -qq cmake git >/dev/null; }

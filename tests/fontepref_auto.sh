@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # A fonte do AUTOMATICO tambem e lembrada pelo bingeGroup (2.0.4, #310).
 #   bash tests/fontepref_auto.sh
 # 1. contrato de app.c (o que o host nao executa);
@@ -21,7 +23,7 @@ confere "$(grep -c 'ajustes_fonte_manual() ? fontepref_escolher_manual' src/app.
 confere "$(grep -c 'stream_preferir(base\[0\] ? fontepref_escolher(base) : -1)' src/app.c)" 0 "folha nao usa a leitura com automatica"
 [ "$falha" = 0 ] || exit 1
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-fontepref-auto.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-fontepref-auto.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 
@@ -31,8 +33,8 @@ for source in src/*.c src/dts/*.c; do
   sources+=("$source")
 done
 
-cc "${sources[@]}" tests/fontepref_auto.c -Isrc -o /tmp/nuvio-fontepref-auto \
+cc "${sources[@]}" tests/fontepref_auto.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-fontepref-auto \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-fontepref-auto "$@"
+${TMPDIR:-/tmp}/nuvio-fontepref-auto "$@"

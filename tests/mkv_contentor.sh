@@ -18,6 +18,7 @@ morta=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); p
 python3 -m http.server "$porta" --bind 127.0.0.1 --directory "$DIR/www" >/dev/null 2>&1 &
 pid=$!
 for _ in $(seq 50); do curl -sf -o /dev/null "http://127.0.0.1:$porta/a.ts" && break; sleep 0.1; done
+. tests/mkvcore_flag.sh
 cc -Isrc tests/mkv_contentor.c src/mkv.c src/rede.c src/redeurl.c \
-  -o "$DIR/t" -O1 -g -Wall -I/opt/homebrew/include -Wno-deprecated-declarations
+  -o "$DIR/t" -O1 -g -Wall -I/opt/homebrew/include -Wno-deprecated-declarations ${MKVCORE_CC[@]+"${MKVCORE_CC[@]}"}
 "$DIR/t" "http://127.0.0.1:$porta" "http://127.0.0.1:$morta"

@@ -49,8 +49,7 @@ static inline void idbase_copiar(const char *id, char *dst, size_t tam) {
 
 // O episodio que o id carrega, se carrega. `*t`/`*e` ficam 0 sem episodio.
 //   "tt1:2:5"       -> t=2 e=5
-//   "kitsu:41370:5" -> t=0 e=5   (o id de stream do Kitsu e "id:episodio", sem
-//                                 temporada; t=0 desliga o filtro por T/E)
+//   "kitsu:41370:5" -> t=-1 e=5  (absent season; explicit season 0 is Specials)
 //   "kitsu:1:2:5"   -> t=2 e=5
 static inline void idbase_episodio(const char *id, int *t, int *e) {
   const char *p;
@@ -64,7 +63,7 @@ static inline void idbase_episodio(const char *id, int *t, int *e) {
   if (n == 2) { if (t) *t = a; if (e) *e = b; }
   else if (n == 1) {
     if (idbase_e_imdb(id)) { if (t) *t = a; }     // como sempre foi para o IMDb
-    else if (e) *e = a;
+    else { if (t) *t = -1; if (e) *e = a; }
   }
 }
 

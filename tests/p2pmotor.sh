@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Motor P2P embutido (src/p2pmotor.c) contra um motor FALSO: pedido, cancelar,
 # eventos velhos, statvfs falho, ENOSPC, tetos de disco/RAM, vigia, ordem da
 # limpeza e corrida pedir/cancelar/parar. Nao precisa de rede nem do motor.
@@ -9,7 +11,7 @@
 #   SANITIZE=thread bash tests/p2pmotor.sh   # TSan
 set -eu
 cd "$(dirname "$0")/.."
-OUT="${NV_TEST_OUT:-/tmp}/nuvio-p2pmotor-tests"
+OUT="${NV_TEST_OUT:-${TMPDIR:-/tmp}}/nuvio-p2pmotor-tests"
 flags=(-O1 -g -Wall -Wextra -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
        -Wno-deprecated-declarations -Wno-macro-redefined -DP2PM_DURO_MAX_MB=1
        -DP2PM_JANELA_MIN_MB=0)   # teto de 1 MB com arquivos de 2 GB: sem isto a janela recusaria tudo

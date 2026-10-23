@@ -17,6 +17,7 @@
 //
 //   bash tests/trocaarte_shot.sh /tmp/nuvio-trocaarte
 #include <SDL2/SDL.h>
+#include "nvtmp.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <limits.h>
@@ -159,7 +160,7 @@ static void injetar(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-trocaarte";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-trocaarte");
   char nome[600], abs[PATH_MAX];
   SDL_GLContext gl;
   const char *dd;
@@ -182,6 +183,8 @@ int main(int argc, char **argv) {
   gfx_icones_dir(abs);
   tex_iniciar(64);
   ajustes_iniciar();
+  // NUVIO_SHOT_VIDRO=1 captures the Glass UI material (default: solid).
+  if (getenv("NUVIO_SHOT_VIDRO")) { ajustes_teste_vidro_env(); ajustes_definir_vidro(atoi(getenv("NUVIO_SHOT_VIDRO"))); }
   dados_iniciar("deploy/app/art");
   dd = dados_dir();
   if (!dd || !strstr(dd, "nuvio-trocaarte-dados")) {

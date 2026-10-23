@@ -2,6 +2,7 @@
 // Inclui rede.c com NV_ANDROID, doubles de libcurl/android_http, captura stdout.
 #define NV_ANDROID 1
 #include <assert.h>
+#include "nvtmp.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,7 +10,8 @@
 #include "../src/rede.c"
 static int androidErro;
 char *android_http(const char *v, const char *u, const char *c, const char *b, int p,
-                   int *st, long *n, char *erro, size_t ne) {
+                   int *st, int *retryAfter, long *n, char *erro, size_t ne) {
+  if (retryAfter) *retryAfter = 0;
   (void)v; (void)u; (void)c; (void)b; (void)p; (void)n;
   if (androidErro) { snprintf(erro, ne, "falha de transporte"); *st = 0; return NULL; }
   *st = 200; return strdup("{}");
@@ -33,7 +35,7 @@ static int le(const char *arq) {
   n = fread(saida, 1, sizeof saida - 1, f); saida[n] = 0; fclose(f); return 1;
 }
 int main(int argc, char **argv) {
-  const char *arq = argc > 1 ? argv[1] : "/tmp/rede_userinfo.out";
+  const char *arq = argc > 1 ? argv[1] : nvt("/rede_userinfo.out");
   char h[96], *r; int st = 0;
   pronto = 1; curl_init = init; curl_setopt_f = option; curl_perform = perform;
   curl_cleanup = cleanup; curl_getinfo = info;

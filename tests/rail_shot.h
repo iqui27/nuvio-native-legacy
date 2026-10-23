@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nvtmp.h"
 
 static int rail_shot_ligado(void) {
   const char *m = getenv("NUVIO_RAIL");
@@ -39,7 +40,7 @@ static void rail_shot_aplicar(void) {
   if (!m || !*m) return;
   if (!dir[0]) {
     const char *t = getenv("TMPDIR");
-    snprintf(dir, sizeof dir, "%s/nuvio-rail-shot-XXXXXX", t && *t ? t : "/tmp");
+    snprintf(dir, sizeof dir, "%s/nuvio-rail-shot-XXXXXX", t && *t ? t : nvt_dir());
     if (!mkdtemp(dir)) { dir[0] = 0; return; }
   }
   snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dir);

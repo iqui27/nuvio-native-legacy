@@ -23,6 +23,20 @@ int main(int argc, char **argv) {
   strcpy(s->provedor, "Addon"); strcpy(s->url, "https://example.invalid/recusado.mp4");
   stream_definir_lista(s, 1); stream_definir_atual(0);
   player_abrir(0, NULL);
+  if (argc > 1 && !strcmp(argv[1], "pick")) {
+    aceita = 1;
+    fonteEscolhida = 0; aguardandoFonte = 2;
+    fonteVODAutomatica = 1; voltaAtiva = 1;
+    unsigned before = atomic_load(&stalkerGeracao);
+    abrirFonteManualDireta(s);
+    assert(chamadas == 1 && !aguardandoFonte && !fonteVODAutomatica && !voltaAtiva);
+    assert(atomic_load(&stalkerGeracao) != before && fonteManualDesde);
+    backendFalhou = 1;
+    vigiarAberturaManual();
+    assert(chamadas == 1 && player_fonte_falhou());
+    puts("manual pick: PASS (exact URL, stale worker invalidated, no automatic replacement)");
+    return 0;
+  }
   if (argc > 1) {
     int tardia = !strcmp(argv[1], "tardia");
     VideoSimulacao sim = {0};

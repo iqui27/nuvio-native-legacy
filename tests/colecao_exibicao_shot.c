@@ -8,13 +8,14 @@
 #define desc_vertudo_n shot_vt_n
 #define desc_vertudo_item shot_vt_item
 #include "../src/vertudo.c"
+#include "nvtmp.h"
 #undef desc_vertudo_n
 #undef desc_vertudo_item
 #include "corviva.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 
-static CatItem semente[40];
+static CatItem semente[122];
 static int nSemente;
 int shot_vt_n(void) { return nSemente; }
 int shot_vt_item(int i, CatItem *dst) {
@@ -77,7 +78,7 @@ static ColFolder pasta;
 static ColSource fontes[3];
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-colecao-exibicao";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-colecao-exibicao");
   char nome[700], cam[700];
   SDL_GLContext gl;
   FILE *a;
@@ -125,6 +126,15 @@ int main(int argc, char **argv) {
     snprintf(c->poster, sizeof c->poster, "deploy/app/art/poster/%02d.jpg", k);
     if (k < 10) snprintf(c->logo, sizeof c->logo, "deploy/app/art/logo/%02d.png", k);
     c->nota = 70 + i % 20;
+    // Ficha do painel: classificacao, direcao e elenco em parte dos titulos.
+    snprintf(c->classificacao, sizeof c->classificacao, "%s", i % 3 ? "14" : "L");
+    if (i % 2 == 1) {
+      snprintf(c->direcao, sizeof c->direcao, "Marta Albuquerque");
+      snprintf(c->elenco[0].nome, sizeof c->elenco[0].nome, "Ana Ribeiro");
+      snprintf(c->elenco[1].nome, sizeof c->elenco[1].nome, "Caio Monteiro");
+      snprintf(c->elenco[2].nome, sizeof c->elenco[2].nome, "Lia Fontes");
+      c->nElenco = 3;
+    }
     // Saga: os tres primeiros lancamentos vistos, o quarto pela metade.
     if (FILMES[i].ano < 1984) c->progresso = 100;
     if (FILMES[i].ano == 1999) c->progresso = 46;
@@ -142,6 +152,33 @@ int main(int argc, char **argv) {
   collection = &pasta;
   snprintf(titulo, sizeof titulo, "%s", pasta.title);
   aberta = 1; anim = 1.0f; source = 0; tabFocus = 0;
+
+  // Focused layout proof: identical 122-title fixture at both TV scales.
+  if (getenv("NUVIO_SHOT_LAYOUT")) {
+    const float scales[] = {0.85f, 1.0f};
+    const int modes[] = {VT_LAY_MURAL, VT_LAY_FLUXO, VT_LAY_LINHA};
+    const char *names[] = {"mural", "fluxo", "timeline"};
+    for (i = NF; i < 122; i++) semente[i] = semente[i % NF];
+    nSemente = 122;
+    snprintf(pasta.title, sizeof pasta.title, "MARVEL");
+    snprintf(titulo, sizeof titulo, "%s", pasta.title);
+    snprintf(semente[1].titulo, sizeof semente[1].titulo,
+             "Captain America: The Winter Soldier and the Return of the Avengers");
+    for (int s = 0; s < 2; s++) {
+      gfx_escala_txt_definir(scales[s]);
+      for (int m = 0; m < 3; m++) {
+        lay = layEscolha = modes[m];
+        resolverLayout(); celLay = -1; orderN = -1;
+        foco = 0; tabFocus = 0; scrollY = velY = 0;
+        captura(NULL, 20);
+        if (lay == VT_LAY_FLUXO)
+          for (int k = 0; k < 6; k++) tecla(SDLK_RIGHT);
+        snprintf(nome, sizeof nome, "%s-%s-%.2f.bmp", saida, names[m], scales[s]);
+        captura(nome, 140);
+      }
+    }
+    goto done;
+  }
 
   captura(NULL, 60);   // artes chegando ao cache
   // PADRAO (#362): pasta com abas, exibicao Automatico -> Grade com a barra de
@@ -208,6 +245,84 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-7-vitrine-botao.bmp", saida);
   captura(nome, 90);
 
+  // STREAMING (13/10): wordmark no lugar do titulo, sem o rotulo, degrade na
+  // cor da marca. O wordmark vem de um logo local (o do TMDB precisa de rede).
+  snprintf(pasta.group, sizeof pasta.group, "Streaming");
+  snprintf(pasta.title, sizeof pasta.title, "Netflix");
+  snprintf(pasta.logo, sizeof pasta.logo, "deploy/app/art/logo/00.png");
+  snprintf(titulo, sizeof titulo, "%s", pasta.title);
+  captura(NULL, 60);
+  snprintf(nome, sizeof nome, "%s-8-streaming-netflix.bmp", saida);
+  captura(nome, 90);
+  snprintf(pasta.title, sizeof pasta.title, "Canal Desconhecido");
+  pasta.logo[0] = 0;
+  snprintf(titulo, sizeof titulo, "%s", pasta.title);
+  captura(NULL, 30);
+  snprintf(nome, sizeof nome, "%s-8-streaming-desconhecido.bmp", saida);
+  captura(nome, 60);
+  snprintf(pasta.title, sizeof pasta.title, "Netflix");
+  snprintf(pasta.logo, sizeof pasta.logo, "deploy/app/art/logo/00.png");
+  snprintf(titulo, sizeof titulo, "%s", pasta.title);
+  pasta.nSources = 1; lay = VT_LAY_GRADE; layEscolha = VT_LAY_GRADE; celLay = -1; orderN = -1; foco = 1;
+  snprintf(nome, sizeof nome, "%s-8-streaming-grade.bmp", saida);
+  captura(nome, 90);
+
+  // STREAMING com seis abas (13/10): as abas esmaecem antes do botao, sem a
+  // legenda de depuracao, e cada exibicao com a ficha nova no painel.
+  { static ColSource seis[6];
+    static const char *ABAS[6] = { "Filmes", "Séries", "Top 10 · Filmes", "Top 10 · Séries",
+                                   "Kids Top 10 · Filmes", "Kids Top 10 · Séries" };
+    for (i = 0; i < 6; i++) {
+      snprintf(seis[i].title, sizeof seis[i].title, "%s", ABAS[i]);
+      snprintf(seis[i].type, sizeof seis[i].type, "%s", i & 1 ? "series" : "movie");
+      snprintf(seis[i].base, sizeof seis[i].base, "http://shot.local");
+    }
+    pasta.sources = seis; pasta.nSources = 6; tabFocus = 0; tabRol = 0;
+    for (L = VT_LAY_GRADE; L < VT_LAY_VITRINE; L++) {
+      lay = L; layEscolha = L; celLay = -1; orderN = -1; foco = 1; scrollY = velY = 0;
+      resolverLayout(); armarOnda();
+      snprintf(nome, sizeof nome, "%s-9-streaming-%s.bmp", saida,
+               (const char *[]){ "", "grade", "linha", "ranking", "saga", "decadas", "mural" }[L]);
+      captura(nome, 110);
+    }
+    // Linha do tempo com o foco no quarto ano: a linha preenchida ate ele.
+    lay = VT_LAY_LINHA; layEscolha = VT_LAY_LINHA; resolverLayout(); celLay = -1; orderN = -1;
+    foco = 0; captura(NULL, 20);
+    for (i = 0; i < 3; i++) { tecla(SDLK_DOWN); captura(NULL, 8); }
+    snprintf(nome, sizeof nome, "%s-9-streaming-linha-foco4.bmp", saida);
+    captura(nome, 90);
+    // A horizontal (Cover Flow), com o foco no meio da cronologia.
+    lay = VT_LAY_FLUXO; layEscolha = VT_LAY_FLUXO; resolverLayout(); celLay = -1; orderN = -1;
+    foco = 0; captura(NULL, 20);
+    for (i = 0; i < 6; i++) { tecla(SDLK_RIGHT); captura(NULL, 6); }
+    snprintf(nome, sizeof nome, "%s-9-streaming-fluxo.bmp", saida);
+    captura(nome, 90);
+    lay = VT_LAY_GRADE; layEscolha = VT_LAY_GRADE; resolverLayout(); celLay = -1;
+    tabFocus = 1; tabCursor = nAbas();
+    snprintf(nome, sizeof nome, "%s-9-streaming-botao.bmp", saida);
+    captura(nome, 60);
+    tabFocus = 0;
+    // A Vitrine segue o layout da Home: uma foto em cada um.
+    lay = VT_LAY_VITRINE; layEscolha = VT_LAY_VITRINE; celLay = -1;
+    vitIniciar();
+    for (i = 0; i < vitN; i++) {
+      int k;
+      vitLin[i].estado = VIT_PRONTA; vitLin[i].n = 12;
+      for (k = 0; k < 12; k++) vitBuf[i * vitCap + k] = semente[(i * 5 + k) % NF];
+    }
+    vitCarga = vitN; vitMexeu = 1; vitFR = 0; vitFC = 2;
+    for (L = HOME_LAYOUT_MODERNA; L < HOME_LAYOUT_N; L++) {
+      a = fopen(cam, "w"); assert(a);
+      fprintf(a, "idioma 0\nhomeLayoutLocal %d\n", L);
+      if (getenv("NUVIO_SHOT_FONTE")) fprintf(a, "fonteInterface %d\n", atoi(getenv("NUVIO_SHOT_FONTE")));
+      fclose(a);
+      ajustes_dir(dados_dir());
+      snprintf(nome, sizeof nome, "%s-9-streaming-vitrine-%s.bmp", saida,
+               (const char *[]){ "moderna", "padrao", "dinamica" }[L]);
+      captura(nome, 120);
+    } }
+
+done:
   tex_encerrar();
   txt_encerrar();
   SDL_GL_DeleteContext(gl);

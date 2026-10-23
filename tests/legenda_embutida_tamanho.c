@@ -2,6 +2,7 @@
  * renderer (the same size as the style preview), not uMS's five presets. */
 #include "../src/faixas.c"
 #include <assert.h>
+int xtream_url_limitada(const char *url) { (void)url; return 0; }
 
 static VideoFaixa faixa;
 static int nativa, ordinal, sonda = 1, paradas;

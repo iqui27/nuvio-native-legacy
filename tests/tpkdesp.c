@@ -5,6 +5,7 @@
 // deixar "oculto" no despedida.txt; uma sessao que esconde e VOLTA tem de
 // apagar; e a saida limpa ("fim") nunca e sobrescrita.
 #include "../src/tpkdesp.h"
+#include "nvtmp.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,7 +25,7 @@ static const char *ler(void) {
 static void zerar(void) { remove(arq); tpkdesp_iniciar(dir); }
 
 int main(void) {
-  snprintf(dir, sizeof dir, "/tmp/nuvio-tpkdesp-%d", (int)getpid());
+  snprintf(dir, sizeof dir, "%s/nuvio-tpkdesp-%d", nvt_dir(), (int)getpid());
   snprintf(arq, sizeof arq, "%s/despedida.txt", dir);
   { char cmd[300]; snprintf(cmd, sizeof cmd, "mkdir -p %s", dir); assert(system(cmd) == 0); }
 

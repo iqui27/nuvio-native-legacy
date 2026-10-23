@@ -31,9 +31,9 @@ int prox_ancora(const CatEp *eps, int n, int temporada, int episodio,
                 int absolutaSimkl) {
   int i;
   if (!eps || n <= 0) return -1;
-  if (temporada > 0 && episodio > 0)
+  if (temporada >= 0 && episodio > 0)
     for (i = 0; i < n; i++)
-      if (valido(&eps[i]) && eps[i].temporada == temporada &&
+      if (eps[i].temporada >= 0 && eps[i].episodio > 0 && eps[i].temporada == temporada &&
           eps[i].episodio == episodio) return i;
   // So depois de o par falhar, e so quando quem chama AFIRMA que a numeracao e
   // absoluta. Reinterpretar por conta propria transformaria S2E3 de uma serie
@@ -78,6 +78,31 @@ long long prox_data_ms(const char *data) {
   return diasCivis(a, m, d) * 86400000LL;
 }
 
+long long prox_episodio_data_ms(const CatEp *ep) {
+  static const int DIAS[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+  const char *iso;
+  int a, m, d, limite, i;
+  if (!ep) return PROX_SEM_DATA;
+  if (!ep->dataIso[0]) return prox_data_ms(ep->data);  // pacote legado
+  iso = ep->dataIso;
+  // So o calendario do metadata decide a estreia. Nao inventa mes/dia para
+  // um ano isolado nem normaliza uma data impossivel como 31 de fevereiro.
+  if (strlen(iso) < 10 || iso[4] != '-' || iso[7] != '-' ||
+      (iso[10] && iso[10] != 'T')) return PROX_SEM_DATA;
+  for (i = 0; i < 10; i++)
+    if (i != 4 && i != 7 && (iso[i] < '0' || iso[i] > '9')) return PROX_SEM_DATA;
+  a = (iso[0] - '0') * 1000 + (iso[1] - '0') * 100 +
+      (iso[2] - '0') * 10 + iso[3] - '0';
+  m = (iso[5] - '0') * 10 + iso[6] - '0';
+  d = (iso[8] - '0') * 10 + iso[9] - '0';
+  if (a < 1 || m < 1 || m > 12) return PROX_SEM_DATA;
+  limite = DIAS[m - 1] + (m == 2 && a % 4 == 0 && (a % 100 != 0 || a % 400 == 0));
+  if (d < 1 || d > limite) return PROX_SEM_DATA;
+  // Como a regra legada, a data de estreia e o dia civil UTC; o horario
+  // opcional do ISO nao muda a politica existente de episodios por dia.
+  return diasCivis(a, m, d) * 86400000LL;
+}
+
 int prox_mostrar_nao_acompanhada(long long semeadoEmMs, long long lancamentoMs,
                                  long long agoraMs) {
   long long dist;
@@ -93,7 +118,7 @@ int prox_para_item(const CatItem *ci, const CatEp *eps, int n,
   int ancora, i;
   if (!ci || !saida) return 0;
   if (strcmp(ci->tipo, "series")) return 0;
-  if (ci->temporada <= 0 || ci->episodio <= 0) return 0;
+  if (ci->temporada < 0 || ci->episodio <= 0) return 0;
   // Episodio semeado ainda em andamento: o proprio card ja oferece a coisa
   // certa. "Proximo" so existe depois que o anterior acabou.
   if (ci->progresso < PROX_CONCLUIDO) return 0;
@@ -110,10 +135,10 @@ int prox_para_item(const CatItem *ci, const CatEp *eps, int n,
   if (ancora < 0) return 0;
 
   for (i = ancora + 1; i < n; i++) {
-    if (!valido(&eps[i])) continue;
+    if (!valido(&eps[i]) && !(ci->temporada == 0 && eps[i].temporada == 0 && eps[i].episodio > 0)) continue;
     // Serie nao acompanhada e o unico caso que o nativo conhece (ver o
     // cabecalho): sem data legivel, ou fora da janela de noticia, nao mostra.
-    if (!prox_mostrar_nao_acompanhada(0, prox_data_ms(eps[i].data), agoraMs))
+    if (!prox_mostrar_nao_acompanhada(0, prox_episodio_data_ms(&eps[i]), agoraMs))
       return 0;
     saida->temporada = eps[i].temporada;
     saida->episodio  = eps[i].episodio;
@@ -130,15 +155,15 @@ int prox_seguinte(const CatItem *ci, const CatEp *eps, int n, int limiarPct,
   int ancora, i;
   if (!ci || !saida) return 0;
   if (strcmp(ci->tipo, "series")) return 0;
-  if (ci->temporada <= 0 || ci->episodio <= 0) return 0;
+  if (ci->temporada < 0 || ci->episodio <= 0) return 0;
   if (ci->progresso < limiarPct) return 0;
   if (!eps || n <= 0) return 0;
   ancora = prox_ancora(eps, n, ci->temporada, ci->episodio, 0);
   if (ancora < 0) return 0;
   for (i = ancora + 1; i < n; i++) {
     long long quando;
-    if (!valido(&eps[i])) continue;
-    quando = prox_data_ms(eps[i].data);
+    if (!valido(&eps[i]) && !(ci->temporada == 0 && eps[i].temporada == 0 && eps[i].episodio > 0)) continue;
+    quando = prox_episodio_data_ms(&eps[i]);
     if (quando != PROX_SEM_DATA && quando > agoraMs) return 0;   // nao foi ao ar
     saida->temporada = eps[i].temporada;
     saida->episodio  = eps[i].episodio;
@@ -159,6 +184,21 @@ int prox_indice_seguinte(const CatEp *eps, int n, int t, int e) {
     if (p->temporada < t || (p->temporada == t && p->episodio <= e)) continue;
     if (melhor < 0 || p->temporada < eps[melhor].temporada ||
         (p->temporada == eps[melhor].temporada && p->episodio < eps[melhor].episodio))
+      melhor = i;
+  }
+  return melhor;
+}
+
+int prox_indice_anterior(const CatEp *eps, int n, int t, int e) {
+  int i, melhor = -1;
+  if (!eps || n < 1) return -1;
+  for (i = 0; i < n; i++) {
+    const CatEp *p = &eps[i];
+    if (p->episodio < 1 || p->temporada < 0) continue;
+    if (p->temporada == 0 && t > 0) continue;
+    if (p->temporada > t || (p->temporada == t && p->episodio >= e)) continue;
+    if (melhor < 0 || p->temporada > eps[melhor].temporada ||
+        (p->temporada == eps[melhor].temporada && p->episodio > eps[melhor].episodio))
       melhor = i;
   }
   return melhor;

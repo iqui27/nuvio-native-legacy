@@ -21,6 +21,7 @@
 #include "../src/tex_cache.c"
 #include <assert.h>
 #include <stdio.h>
+#include "nvtmp.h"
 
 #define LOGO   "https://image.tmdb.org/t/p/w780/4AmlH0mEn8gL6HEmSX0QYbdItmA.png"
 #define POSTER "https://images.metahub.space/poster/medium/tt35672862/img"
@@ -91,7 +92,7 @@ int main(void) {
   long nLogo;
   int a, b;
 
-  snprintf(DIR_, sizeof DIR_, "%s/nuvio-texbruto-cache-%d", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp", (int)getpid());
+  snprintf(DIR_, sizeof DIR_, "%s/nuvio-texbruto-cache-%d", nvt_dir(), (int)getpid());
   mkdir(DIR, 0755);
   memset(itens, 0, sizeof itens);
   nMax = 8;
@@ -151,6 +152,15 @@ int main(void) {
     printf("     pixel do cartaz: r=%d b=%d\n", p[0], p[2]);
     assert(p[2] > 150 && p[0] < 60);
     SDL_FreeSurface(s); itens[b].sup = NULL; }
+  // Retrato opaco a 640, em cache frio: publica a cor sem decode extra.
+  { CorvivaPaleta pal;
+    assert(!corviva_paleta(POSTER, &pal));
+    tex_publicar_paleta(POSTER);
+    assert(corviva_paleta(POSTER, &pal) && pal.ok);
+    assert(pal.acento[2] > pal.acento[0]);
+    assert(itens[b].estado == DECODIFICADO && !itens[b].naFilaDec);
+    tex_publicar_paleta(POSTER);
+    assert(corviva_paleta(POSTER, &pal)); }
   puts("ok  cartaz que entra no slot vago mostra o cartaz, nao a arte do anterior");
   assert(!sobrou);
   puts("ok  pedido abandonado no decode nao deixa bytes no slot"); }

@@ -9,6 +9,7 @@
 // teste nunca dispara.
 char *rede_baixar(const char *url, int segundos) { (void)url; (void)segundos; return NULL; }
 char *rede_baixar_bin(const char *url, int segundos, long *n) { (void)url; (void)segundos; (void)n; return NULL; }
+const char *i18n(const char *s) { return s; }
 
 static int falhas;
 #define OK(cond, ...) do { if (cond) printf("ok   " __VA_ARGS__); else { printf("FALHA " __VA_ARGS__); falhas++; } printf("\n"); } while (0)
@@ -68,6 +69,41 @@ int main(void) {
   n = legenda_extrair("1\n00:00:01,000 --> 00:00:02,000\noi\n\n", &v);
   OK(n == 1 && !strcmp(v[0].texto, "oi") && v[0].an == 0 && v[0].cor == -1, "SRT por legenda_extrair: 1 bloco, sem ancora nem cor");
   free(v);
+
+  // #604: SRT/VTT can carry HTML emphasis and SSA overrides. The shared
+  // parser must pass clean text and cue emphasis to both subtitle renderers.
+  { static const struct { const char *raw, *text; int italic, bold; } cases[] = {
+      { "<i>Thought</i>", "Thought", 1, 0 },
+      { "<B><i>Strong thought</i></B>", "Strong thought", 1, 1 },
+      { "<font color=\"red\"><u>Plain</u></font><br>Next &amp; last", "Plain\nNext & last", 0, 0 },
+      { "{\\i1}Thought{\\i0}", "Thought", 1, 0 },
+      { "{\\b1\\i1}Strong{\\b0\\i0} plain", "Strong plain", 1, 1 },
+      { "{\\an8\\pos(10,20)\\c&HFF&}Plain", "Plain", 0, 0 },
+      { "Literal {braces} &lt;3 &gt; 2", "Literal {braces} <3 > 2", 0, 0 },
+      { "<i></i>Plain <b> </b>", "Plain  ", 0, 0 },
+      { "Broken {\\i1", "Broken {\\i1", 0, 0 }
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+      char body[1024];
+      snprintf(body, sizeof body, "1\n00:00:01,000 --> 00:00:03,000\n%s\n\n", cases[i].raw);
+      n = legenda_extrair(body, &v);
+      OK(n == 1 && !strcmp(v[0].texto, cases[i].text) &&
+         v[0].italico == cases[i].italic && v[0].negrito == cases[i].bold &&
+         v[0].an == 0 && v[0].cor == -1 && v[0].posX == -1 && v[0].posY == -1,
+         "#604 SRT markup case %zu: %s", i, n == 1 ? v[0].texto : "missing cue");
+      free(v);
+    }
+    n = legenda_extrair("WEBVTT\n\n00:01.000 --> 00:03.000\n<i>{\\i1}Thought{\\i0}</i>\n", &v);
+    OK(n == 1 && !strcmp(v[0].texto, "Thought") && v[0].italico,
+       "#604 VTT: clean emphasized text");
+    free(v);
+    n = legenda_extrair("[Script Info]\nScriptType: v4.00\n[V4 Styles]\n[Events]\n"
+                        "Format: Marked, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+                        "Dialogue: Marked=0,0:00:01.00,0:00:03.00,Default,,0,0,0,,{\\i1}SSA thought\n", &v);
+    OK(n == 1 && !strcmp(v[0].texto, "SSA thought") && v[0].italico,
+       "#604 SSA: clean emphasized text");
+    free(v);
+  }
 
   // VTT compartilha o caminho SRT: cabecalho WEBVTT, identificador opcional e
   // settings depois do fim nao podem virar parte do timestamp.

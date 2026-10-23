@@ -44,6 +44,8 @@ void ilhasalvar_executar(const CatItem *ci, int entrar);
 
 // 1 enquanto a pergunta esta na tela (testes).
 int  ilhasalvar_pergunta_aberta(void);
+// Troca de perfil: abandona a escolha de destino ainda nao confirmada.
+void ilhasalvar_abrir_sessao(void);
 // Rotulo do destino em vigor, ja traduzido ("Lista do Nuvio" ...).
 const char *ilhasalvar_destino(void);
 

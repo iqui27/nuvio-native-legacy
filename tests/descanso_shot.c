@@ -5,6 +5,7 @@
 //
 //   bash tests/descanso_shot.sh
 #include "descanso.h"
+#include "nvtmp.h"
 #include "esmaecer.h"
 #include "dados.h"
 #include "gfx.h"
@@ -82,7 +83,7 @@ static void rodar(int estilo, float segundos, const char *nome) {
 }
 
 int main(int argc, char **argv) {
-  const char *pre = argc > 1 ? argv[1] : "/tmp/nuvio-descanso";
+  const char *pre = argc > 1 ? argv[1] : nvt("/nuvio-descanso");
   char nome[700];
   SDL_GLContext gl;
   // Funcoes puras.

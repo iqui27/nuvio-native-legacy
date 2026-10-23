@@ -3,6 +3,7 @@
 // CUSTO, a mesma regra da ilha.c: uma sombra do tamanho da ilha, o miolo, a
 // luz de canto, o texto do cabecalho e o corpo de quem pediu. Nada de tela
 // cheia (o veu de cima do aviso sozinho e o unico, e so sem o OSD).
+#include "central.h"
 #include "horafmt.h"
 #include "plrilha.h"
 #include "plrui.h"
@@ -57,6 +58,11 @@ static float dsA;
 #ifdef NV_SHOT_HOOKS
 static time_t horaFixa;
 void plrilha_shot_hora(time_t t) { horaFixa = t; }
+static GfxRect shotCentro;
+int plrilha_shot_centro(GfxRect *r) { *r = shotCentro; return r->w > 0; }
+static float shotTxtX, shotFimX;
+static int shotTemFim;
+void plrilha_shot_linha(float *t, float *f, int *tf) { *t = shotTxtX; *f = shotFimX; *tf = shotTemFim; }
 #endif
 
 static float mola(float *v, float x, float alvo, float dt) {
@@ -122,7 +128,11 @@ void plrilha_velocidade(int cent) { velCent = cent > 0 ? cent : VEL_NORMAL; }
 static char titulo[256];
 void plrilha_titulo(const char *t) { snprintf(titulo, sizeof titulo, "%s", t ? t : ""); }
 
-void plrilha_esconder(void) { escondida = 1; }
+// Sem pedido com corpo NO QUADRO o ultimo nao vale mais (ver plrilha_desenhar):
+// quem esconde a ilha antes dos pedidos (estatisticas) impediria ate a troca
+// de um corpo pelo outro — a ilha nova nasceria com o cabecalho dela sobre o
+// corpo antigo um quadro inteiro.
+void plrilha_esconder(void) { escondida = 1; temUlt = 0; corpoA = 0.0f; }
 
 int plrilha_direita(void) {
   return 1;   // sempre a direita (dono, 03/10)
@@ -163,7 +173,8 @@ static float montar(const PlrIlhaPedido *p, Linha *L) {
   if (L->temIcone) w += 24.0f + 12.0f;
   if (p && p->respira) w += 10.0f + 14.0f;
   if (L->temTxt) {
-    L->txt = txt_linha_corta(TXT_ILHA_NOME, p->texto, 243, 242, 239, 255, PLR_TEXTO_MAX);
+    if (p->tituloLeve) L->txt = txt_linha_corta(PLR_TIT_ESTILO, p->texto, PLR_TIT_R, PLR_TIT_G, PLR_TIT_B, 255, PLR_TEXTO_MAX);
+    else L->txt = txt_linha_corta(TXT_ILHA_NOME, p->texto, 243, 242, 239, 255, PLR_TEXTO_MAX);
     w += (float)L->txt.w + 12.0f;
   }
   if (p && p->pontos > 0) w += 4.0f + p->pontos * 8.0f + (p->pontos - 1) * 7.0f + 12.0f;
@@ -190,7 +201,10 @@ static float montar(const PlrIlhaPedido *p, Linha *L) {
   return w;
 }
 
-static void desenharLinha(const PlrIlhaPedido *p, const Linha *L, float x, float yc, float a) {
+// tOff/tK: o texto sai da linha (#205, `insetEsq`): ele desenha em x+tOff e
+// abre mao do seu espaco na razao tK (1 = fora da linha; o resto encolhe para
+// a direita, onde o relogio continua encostado).
+static void desenharLinha(const PlrIlhaPedido *p, const Linha *L, float x, float yc, float a, float tOff, float tK) {
   float cr = 1, cg = 1, cb = 1;
   if (a < 0.01f) return;
   if (L->temIcone) {
@@ -204,8 +218,11 @@ static void desenharLinha(const PlrIlhaPedido *p, const Linha *L, float x, float
     x += 10.0f + 14.0f;
   }
   if (L->temTxt) {
-    txt_desenhar_alpha(L->txt, x, yc - (float)L->txt.h * 0.5f, a);
-    x += (float)L->txt.w + 12.0f;
+    txt_desenhar_alpha(L->txt, x + tOff, yc - (float)L->txt.h * 0.5f, a);
+#ifdef NV_SHOT_HOOKS
+    shotTxtX = x + tOff;
+#endif
+    x += ((float)L->txt.w + 12.0f) * (1.0f - tK);
   }
   if (p && p->pontos > 0) {
     float ar, ag, ab;
@@ -238,6 +255,9 @@ static void desenharLinha(const PlrIlhaPedido *p, const Linha *L, float x, float
     x += (float)L->vel.w;
   }
   if (L->ds > 0.0f) desempenho_linha(dsP, x, yc, a);
+#ifdef NV_SHOT_HOOKS
+  shotFimX = x; shotTemFim = L->temFim;
+#endif
 }
 
 static void plrilha_desenharCorpo_(Uint32 agora);
@@ -262,18 +282,25 @@ static void cartaoCentro(Uint32 agora) {
     cenCorpoA = anim_mola(cenCorpoA, quer ? 1.0f : 0.0f, dt, quer ? 10.0f : 26.0f);
   }
   temCen = 0;
+#ifdef NV_SHOT_HOOKS
+  shotCentro = (GfxRect){0};
+#endif
   if (cenA < 0.01f) { cenA = cenCorpoA = 0.0f; cenW = cenH = 0.0f; cenVW = cenVH = 0.0f; return; }
   { const PlrIlhaPedido *c = &cenUlt;
     float w = cenW < 8.0f ? 8.0f : cenW, h = cenH < 8.0f ? 8.0f : cenH;
     GfxRect R = { (NV_TELA_W - w) * 0.5f, (NV_TELA_H - h) * 0.5f, w, h };
     GfxRect F = { (NV_TELA_W - c->w) * 0.5f, (NV_TELA_H - c->h) * 0.5f, c->w, c->h };
+#ifdef NV_SHOT_HOOKS
+    shotCentro = R;
+#endif
     if (c->ancoraTopo) F.y = R.y;   // o conteudo desce/sobe com a forma (nao salta para o centro novo)
     // O raio acompanha a forma como na ilha: da pilula (meia altura) ao do corpo.
     float cresce = anim_clamp((h - PIL_H) / 120.0f, 0.0f, 1.0f);
     float raio = RAIO_CORPO * cresce + h * 0.5f * (1.0f - cresce);
     if (raio > h * 0.5f) raio = h * 0.5f;
     if (raio > w * 0.5f) raio = w * 0.5f;
-    plrui_material(R, raio, c->modal, cenA);
+    if (c->video) plrui_material_video(R, raio, cenA);
+    else plrui_material_s(R, raio, c->modal, cenA, c->semSombra);
     gfx_recorte(R.x, R.y, R.w, R.h);
     // O corpo fica no tamanho final e o recorte da forma o corta (centrado, ou
     // preso ao topo da forma com `ancoraTopo`).
@@ -300,6 +327,7 @@ static void plrilha_desenharCorpo_(Uint32 agora) {
   dir = plrilha_direita();
 
   if (temPed && ped.w > 0.0f) { copiar(&ult, &ped, ultTexto, ultDir, ultIcone); temUlt = 1; }
+  else if (!corpoA) temUlt = 0;   // escondida neste quadro zerou o ultimo
   p = temPed ? &ped : &vazio;
   corpo = temPed && ped.w > 0.0f;
   // VOLTA AO RELOGIO: o corpo que pediu `voltaRelogio` acabou. Com o relogio
@@ -309,7 +337,8 @@ static void plrilha_desenharCorpo_(Uint32 agora) {
   if (prevVolta && !temPed && ajustes_relogio_ligado()) horaAte = agora + HORA_SEGURA_MS;
   prevVolta = temPed && ped.w > 0.0f && ped.voltaRelogio;
   if (temPed || !ajustes_relogio_ligado()) horaAte = 0;
-  quer = !escondida && (temPed || relA > 0.01f || (horaAte && (int)(horaAte - agora) > 0));
+  quer = !escondida && (temPed || relA > 0.01f || central_segurar_progresso(agora) > 0.0f ||
+                       (horaAte && (int)(horaAte - agora) > 0));
 
   // O que a linha da pilula mostra: o pedido, ou (encolhendo depois de um
   // corpo) a linha dele ate o corpo apagar — a hora volta com a forma.
@@ -359,27 +388,35 @@ static void plrilha_desenharCorpo_(Uint32 agora) {
     // ele mesmo, na camada da folha, quando a ilha o chama abaixo.
     if (p->ponteiroOk && !corpo && A > 0.99f && fabsf(W - alvoW) < 1.0f && fabsf(H - alvoH) < 1.0f)
       ponteiro_alvo(R.x, R.y, R.w, R.h, p->ponteiroOk, NULL, 0, 0);
-    plrui_material(R, raioPx, (temUlt ? ult.modal : 0), A);
+    if (temUlt && ult.video) plrui_material_video(R, raioPx, A);
+    else plrui_material_s(R, raioPx, (temUlt ? ult.modal : 0), A, temUlt ? ult.semSombra : 0);
+    central_segurar_desenhar(R, raioPx / (R.h > 1.0f ? R.h : 1.0f), A, agora);
     gfx_recorte(R.x, R.y, R.w, R.h);
     { float cabH = h < CAB_H ? h : CAB_H;
       float yc = R.y + cabH * 0.5f;
       // A linha: centrada na pilula; com corpo, encostada a DIREITA do
-      // cabecalho (o recuo de 28) — dono, 11/10: o relogio do lado direito
-      // nos paineis que nascem da ilha. O texto `direita` troca de lado.
-      float lx = R.x + (R.w - L.w) * 0.5f;
-      float ex = R.x + R.w - 28.0f - L.w;
-      float k = anim_clamp((R.w - (L.w + pad * 2.0f)) / 40.0f, 0.0f, 1.0f);
-      lx = lx + (ex - lx) * k;
-      desenharLinha(p, &L, lx, yc, A * textoA);
+      // cabecalho — dono, 11/10: o relogio do lado direito nos paineis que
+      // nascem da ilha. `insetEsq` (#205) tira so o TEXTO da conta: ele fica
+      // no recuo pedido, a esquerda, e o relogio (com o "termina as") continua
+      // encostado a direita — a linha inteira caberia de menos no painel.
+      float ie, k;
+      { float lx = R.x + (R.w - L.w) * 0.5f;
+        int ins = p->insetEsq > 0.0f && L.temTxt;
+        float wAnc = L.w - (ins ? (float)L.txt.w + 12.0f : 0.0f);
+        float ex = R.x + R.w - 28.0f - wAnc;
+        ie = p->insetEsq > 0.0f ? p->insetEsq : 28.0f;
+        k = anim_clamp((R.w - (wAnc + pad * 2.0f)) / 40.0f, 0.0f, 1.0f);
+        lx = lx + (ex - lx) * k;
+        desenharLinha(p, &L, lx, yc, A * textoA, ins ? (R.x + ie - lx) * k : 0.0f, ins ? k : 0.0f); }
       if (p->direita && k > 0.0f)
-        txt_desenhar_alpha(L.dir, R.x + 28.0f, yc - (float)L.dir.h * 0.5f + 1.0f, A * k);
+        txt_desenhar_alpha(L.dir, R.x + ie, yc - (float)L.dir.h * 0.5f + 1.0f, A * k);
       // Sem `direita`, o lado esquerdo leva o titulo, cortado na largura
       // final do painel (a da mola mudaria a textura a cada quadro).
-      else if (titulo[0] && k > 0.0f) {
-        float max = alvoW - L.w - 28.0f * 2.0f - 24.0f;
+      else if (titulo[0] && k > 0.0f && !(p->insetEsq > 0.0f)) {
+        float max = alvoW - L.w - 28.0f - ie - 24.0f;
         if (max > 40.0f) {
           TxtLinha t = txt_linha_corta(TXT_G19M, titulo, 243, 242, 239, 200, max);
-          txt_desenhar_alpha(t, R.x + 28.0f, yc - (float)t.h * 0.5f + 1.0f, A * k);
+          txt_desenhar_alpha(t, R.x + ie, yc - (float)t.h * 0.5f + 1.0f, A * k);
         }
       }
       // Fio de 1 px sob o cabecalho, so com o corpo de pe.
