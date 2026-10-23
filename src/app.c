@@ -4933,6 +4933,7 @@ static void juntosAbrirEFonte(Uint32 agora) {
   int t, e;
   if (juntosui_pediu_fechar_player()) player_sair();
   if (juntosui_pediu_reproduzir()) detail_pedir_reproduzir();
+  if (juntosui_pediu_escolher_filme()) trocarTela(TELA_BUSCA);
   if (juntos_pediu_abrir(imdb, sizeof imdb, &t, &e, titulo, sizeof titulo, poster, sizeof poster)) {
     int idx = cat_indice_por_imdb(imdb);
     if (idx < 0) {
@@ -6685,7 +6686,7 @@ void app_atualizar(float dt, Uint32 agora) {
   int fonte;
   if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) tocarFonteEscolhida(fonte, 1);
   juntosAbrirEFonte(agora);
-  if (aguardandoFonte != 2 && player_pediu_fontes()) {
+  if (aguardandoFonte != 2 && (player_pediu_fontes() || juntosui_pediu_fontes())) {
     char base[24];
     stream_folha_contexto(player_linha_episodio());
     idBaseDoTitulo(base, sizeof base);
