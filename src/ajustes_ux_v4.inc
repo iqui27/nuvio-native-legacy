@@ -39,23 +39,32 @@ static int aj4Simples(int op) {
     default: return 0;
   }
 }
+static int aj4RTL(void) { return ajustes_idioma() == IDIOMA_AR; }
+static float aj4X(float x, float w) { return aj4RTL() ? NV_VTELA_W - x - w : x; }
 static int aj4Secao(int op) {
+  if (op < 0 || op >= AJ_N) return -1;
   int s = aj4MapaSecao(op);
   if (s >= 0) return s;
   montarTela();
   // Newly added options inherit their compiled section until explicitly grouped.
   static const int antigas[] = {0, 1, 2, 3, 4, 5, 4, 5, 6, 7, 7};
-  for (int i = 0; i < AJ_N_TELA; i++) if (TELA[i].tipo == IT_OPC && TELA[i].op == op)
-    return antigas[secDoItem[i]];
+  for (int i = 0; i < AJ_N_TELA; i++) if (TELA[i].tipo == IT_OPC && TELA[i].op == op) {
+    int sec = secDoItem[i];
+    return sec >= 0 && sec < (int)(sizeof antigas / sizeof *antigas) ? antigas[sec] : -1;
+  }
   return -1;
 }
 static int aj4GrupoDe(int op) {
   int g = aj4MapaGrupo(op);
-  return g >= 0 ? g : AJ4_GRUPO_BASE[aj4Secao(op)];
+  if (g >= 0) return g;
+  int sec = aj4Secao(op);
+  if (sec < 0 || sec >= (int)(sizeof AJ4_GRUPO_BASE / sizeof *AJ4_GRUPO_BASE)) return -1;
+  return AJ4_GRUPO_BASE[sec];
 }
 static int aj4ListaBruta(int sec, int grupo, int *ops) {
   unsigned char visto[AJ_N] = {0};
   int n = 0;
+  if (sec < 0 || sec >= (int)(sizeof AJ4_SECOES / sizeof *AJ4_SECOES)) return 0;
   for (int i = 0; i < AJ_N_TELA; i++) if (TELA[i].tipo == IT_OPC) {
     int op = TELA[i].op;
     if (!visto[op] && aj4Secao(op) == sec && (grupo < 0 || aj4GrupoDe(op) == grupo)) {
@@ -148,6 +157,7 @@ static const char *aj4Ajuda(int op) {
   }
 }
 static void aj4Focar(int op) {
+  if (aj4Secao(op) < 0 || aj4GrupoDe(op) < 0) return;
   aj4Excecao = op;
   aj4Atual = aj4Secao(op); aj4Grupo = aj4GrupoDe(op); aj4Grupos = 0;
   aj4Topo = -1;
@@ -155,6 +165,7 @@ static void aj4Focar(int op) {
   for (int i = 0; i < n; i++) if (aj4Opcoes[i] == op) aj4Linha = i;
 }
 static void aj4Entrar(int sec) {
+  if (sec < 0 || sec >= (int)(sizeof AJ4_GRUPO_BASE / sizeof *AJ4_GRUPO_BASE)) return;
   int gs[AJ4_N_GRUPOS];
   aj4Atual = sec; aj4Excecao = -1; aj4Grupos = lig(AJ_AVANCADAS);
   aj4GrupoFoco = 0; aj4Mais = 0; aj4Linha = 0; aj4Topo = -1; aj4Util = 0;
@@ -414,6 +425,7 @@ static int aj4Evento(SDL_Keycode k) {
   if (k == SDLK_RIGHT && aj4Acao) { aj4Escopo = !aj4Escopo; return 1; }
   if (k == SDLK_UP) { if (aj4Acao) aj4Acao = 0; else if (aj4Linha) aj4Linha--; else aj4Topo = 0; }
   if (k == SDLK_DOWN) { if (aj4Linha + 1 < n && !aj4Acao) aj4Linha++; else aj4Acao = 1; }
+  if (aj4Topo >= 0) return 1;
   if (uxOk(k) && aj4Acao) { aj4PrepararReset(lig(AJ_AVANCADAS) || aj4Excecao>=0 ? sec : -sec-2, aj4Escopo); return 1; }
   if (n) {
     int row = aj4Linha, ex = aj4Excecao, op = aj4Opcoes[row];

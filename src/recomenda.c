@@ -3486,6 +3486,31 @@ int recomenda_cabecalhos(const char **cab, char *aut, size_t na, char *via, size
   return 1;
 }
 
+// Capture locally under the same gate as account/profile changes. No refresh
+// or HTTP while holding the gate; queued callers retain these exact headers.
+int recomenda_cabecalhos_local(const char **cab, char *aut, size_t na, char *via, size_t nv,
+                               char *perfil, size_t np) {
+  uint64_t sessao = perfis_sessao_geracao();
+  const char *tcab[4];
+  char chave[160];
+  int ok = 0;
+  if (!recomenda_ativo() || !perfis_sessao_travar(sessao)) return 0;
+  perfil[0] = 0;
+  if (!perfis_precisa_escolher()) {
+    if (trakt_ativo() && trakt_cabecalhos(tcab, aut, na, chave, sizeof chave)) {
+      snprintf(via, nv, "X-Nuvio-Auth: trakt"); ok = 1;
+    } else if (bearerSessaoLocal(aut, na)) {
+      snprintf(via, nv, "X-Nuvio-Auth: nuvio"); ok = 1;
+    }
+    if (ok) {
+      cab[0] = aut; cab[1] = via; cab[2] = NULL; cab[3] = NULL;
+      if (perfilCab(perfil, np, !strcmp(via, "X-Nuvio-Auth: nuvio"))) cab[2] = perfil;
+    }
+  }
+  perfis_sessao_destravar();
+  return ok;
+}
+
 const char *recomenda_meu_nome(void) { return meuNome; }
 const char *recomenda_meu_id(void) { return meuId; }
 const char *recomenda_minha_exibicao(void) { return minhaExib; }

@@ -13,6 +13,8 @@
 // shapes follow Plex's public API documentation and community-documented
 // behaviour, and are pinned by fixture tests (tests/plex.c).
 #include "plex.h"
+#include "srvprefs.h"
+#include "servidores.h"
 #include "dados.h"
 #include "js.h"
 #include "jsraiz.h"
@@ -21,6 +23,10 @@
 #include "perfis.h"
 #include "srvidx.h"
 #include <ctype.h>
+
+// catalogue.c's watched history (issue #617); tests stub it.
+extern void cat_historico_definir_tempo(const char *imdb, const char *tipo,
+                                        int visto, long long ms);
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -374,7 +380,14 @@ static int linhaIndice(const char *p, const char *f, const char *serieRk, SrvIdx
   txtRaiz(p, f, "title", titulo, sizeof titulo);
   e->ano = (short)numRaiz(p, f, "year", 0);
   e->atualizado = (long long)numRaiz(p, f, "updatedAt", 0);
-  e->visto = numRaiz(p, f, "viewCount", 0) > 0;
+  e->visto = e->tipo == 's'
+    ? numRaiz(p, f, "leafCount", 0) > 0 &&
+      numRaiz(p, f, "viewedLeafCount", 0) >= numRaiz(p, f, "leafCount", 0)
+    : numRaiz(p, f, "viewCount", 0) > 0;
+  e->vistoMs = (long long)numRaiz(p, f, "lastViewedAt", 0) * 1000LL;
+  // Same clock unit as Jellyfin ticks: both are position * 10,000,000.
+  e->retomadoTicks = (long long)(numRaiz(p, f, "viewOffset", 0) * 10000.0 + 0.5);
+  e->duracaoTicks = (long long)(numRaiz(p, f, "duration", 0) * 10000.0 + 0.5);
   if (blocoRaiz(p, f, "Media", &mi, &mf) && (q = elemento(mi + 1, mf)) != NULL && *q == '{') {
     const char *qf = depoisElemento(q);
     if (qf) {
@@ -1355,6 +1368,9 @@ static int gravarConta(const PxConta *c, int perfil) {
   linha(txt, sizeof txt, &k, "dev", c->dispositivoId);
   linha(txt, sizeof txt, &k, "tokc", c->tokenConta);
   linha(txt, sizeof txt, &k, "toks", c->token);
+  char selection[256]; copiar(selection, sizeof selection, c->bibliotecas);
+  for (char *p = selection; *p; p++) if (*p == '\n') *p = ',';
+  linha(txt, sizeof txt, &k, "libs", selection);
   if (k >= sizeof txt) { apagarSegredo(txt, sizeof txt); return 0; }
   snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
   dados_fs_travar();
@@ -1434,6 +1450,8 @@ static void carregarLocked(void) {
     lerCampo(txt, "dev", conta.dispositivoId, sizeof conta.dispositivoId);
     lerCampo(txt, "tokc", conta.tokenConta, sizeof conta.tokenConta);
     lerCampo(txt, "toks", conta.token, sizeof conta.token);
+    lerCampo(txt, "libs", conta.bibliotecas, sizeof conta.bibliotecas);
+    for (char *p = conta.bibliotecas; *p; p++) if (*p == ',') *p = '\n';
     apagarSegredo(txt, strlen(txt));
     free(txt);
   }
@@ -1532,7 +1550,7 @@ void plex_esquecer(void) {
   cancelEntrada++;
   arquivo(nome, sizeof nome, perfis_ativo());
   dados_apagar(nome);
-  srvidx_apagar(perfis_ativo(), "px");
+  srvidx_apagar(perfis_ativo(), "px"); servidores_cache_apagar(perfis_ativo(), 0);
   apagarSegredo(&conta, sizeof conta);
   carregarLocked();
   pthread_mutex_unlock(&trava);
@@ -1550,7 +1568,7 @@ void plex_esquecer_todos(void) {
   relatoriosDescartarLocked();
   cancelEntrada++;
   for (i = 1; i <= 32; i++) { arquivo(nome, sizeof nome, i); dados_apagar(nome); }
-  for (i = 0; i <= 32; i++) srvidx_apagar(i, "px");
+  for (i = 0; i <= 32; i++) { srvidx_apagar(i, "px"); servidores_cache_apagar(i, 0); }
   apagarSegredo(&conta, sizeof conta);
   carregarLocked();
   pthread_mutex_unlock(&trava);
@@ -1673,6 +1691,23 @@ void plex_cancelar_entrada(void) {
   if (estado == PX_EST_CODIGO || estado == PX_EST_ENTRANDO)
     definirEstadoLocked(PX_EST_SEM_CONTA, "");
   pthread_mutex_unlock(&trava);
+}
+
+unsigned px_setup_conta(PxConta *out, int *perfil) {
+  garantir(); pthread_mutex_lock(&trava); conferirPerfilLocked();
+  *out = conta; *perfil = perfilLido; unsigned g = geracao;
+  pthread_mutex_unlock(&trava); return g;
+}
+int px_setup_aceitar(const PxConta *c, int perfil, unsigned generation) {
+  int ok = 0; pthread_mutex_lock(&trava);
+  if (perfil == perfis_ativo() && perfil == perfilLido && generation == geracao && c->token[0] && c->servidorId[0]) {
+    int selectionChanged = strcmp(conta.bibliotecas, c->bibliotecas) != 0;
+    avancarLocked(); conta = *c; gravarConta(c, perfil);
+    if (selectionChanged) { srvidx_limpar(&idx); idxTag[0] = 0; srvidx_apagar(perfil, "px"); }
+    idxConferirLocked();
+    definirEstadoLocked(PX_EST_CONECTADO, c->servidorNome); enfileirarLocked(T_BIBLIOTECAS, ""); ok = 1;
+  }
+  pthread_mutex_unlock(&trava); return ok;
 }
 
 int plex_proximo_servidor(void) {
@@ -1890,6 +1925,18 @@ static void publicarConta(const Tarefa *t, RedeJob *j, PxConta *c, int nServidor
 
 // Finds the server on the account and a reachable connection. `ciclar`: take
 // the server after the current one instead of the current/default one.
+int px_setup_manual(PxConta *c, const char *url, RedeJob *job) {
+  char base[512];
+  if (!url || strchr(url, '@') || jf_url_normalizar(url, base, sizeof base) != JF_OK || strlen(base) >= sizeof c->base) return PX_ERR_ENTRADA;
+  PxServidor s[PX_SERVIDORES_MAX]; int n = px_recursos(c, job, s, PX_SERVIDORES_MAX), e = PX_ERR_SEM_SERVIDOR;
+  for (int i = 0; i < n; i++) {
+    s[i].nCon = 1; memset(s[i].con, 0, sizeof s[i].con);
+    copiar(s[i].con[0].uri, sizeof s[i].con[0].uri, base);
+    e = px_escolher(c, job, &s[i]); if (e == PX_OK) break;
+  }
+  apagarSegredo(s, sizeof s); return n < 0 ? n : e;
+}
+
 static int resolverServidor(PxConta *c, RedeJob *j, int ciclar, int *nServidores) {
   PxServidor *srv = malloc(sizeof *srv * PX_SERVIDORES_MAX);
   int n, i, atual = -1, ini, e = PX_ERR_SEM_SERVIDOR, tentativas;
@@ -2033,6 +2080,7 @@ static void indexar(const Tarefa *t, RedeJob *j, const PxConta *c, const PxBibli
     srvidx_iniciar(&novo);
     totalTodos = 0;
     for (i = 0; i < nl && e == PX_OK; i++) {
+      if (!srv_biblioteca_selecionada(c->bibliotecas, libs[i].id)) continue;
       int inicio = 0, total = 0, vistos;
       if (incremental) {
         e = px_indice(c, j, libs[i].id, 0, 0, 0, &novo, &total);   // the count, nothing else
@@ -2063,6 +2111,14 @@ static void indexar(const Tarefa *t, RedeJob *j, const PxConta *c, const PxBibli
       srvidx_iniciar(&novo);
     }
     nAtual = srvidx_n_tipo(&idx, 'm') + srvidx_n_tipo(&idx, 's');
+    // WATCHED STATE BACK (#617), as in jellyfin.c's indexar.
+    { int i;
+      for (i = 0; i < idx.n; i++)
+        if (idx.v[i].visto && (idx.v[i].tipo == 'm' || idx.v[i].tipo == 's') &&
+            idx.v[i].imdb[0])
+          cat_historico_definir_tempo(idx.v[i].imdb, idx.v[i].tipo == 's' ? "series" : "movie",
+                                    // Watched without a date: keep any newer known mark (ms 0 = "now").
+                                    1, idx.v[i].vistoMs > 0 ? idx.v[i].vistoMs : 1); }
     pthread_mutex_unlock(&trava);
     srvidx_limpar(&novo);
     if (e != PX_OK) break;
@@ -2092,6 +2148,7 @@ static void tarefaBibliotecas(const Tarefa *t) {
   nl = px_bibliotecas(&c, j, libs, PX_FIL_MAX);
   if (nl < 0) e = nl;
   for (i = 0; i < nl && e == PX_OK; i++) {
+    if (!srv_biblioteca_selecionada(c.bibliotecas, libs[i].id)) continue;
     int total, n = px_itens(&c, j, libs[i].id, 0, PX_POR_FILEIRA, itens + ni, PX_POR_FILEIRA, &total);
     if (n < 0) { e = n; break; }
     if (!n) continue;
@@ -2436,6 +2493,66 @@ static void epsMarcarLocked(const char *serie) {
   }
   copiar(epsBuscados[alvo].serie, sizeof epsBuscados[alvo].serie, serie);
   epsBuscados[alvo].ms = agoraMs();
+}
+
+// Per-episode user data (issue #617). Offline when the index already has the
+// episodes; otherwise one /library/metadata/<rk>/allLeaves request feeds the
+// index and the answer. Returns episodes filled, 0 none, -1 failed.
+int plex_episodios(const char *id, SrvEp *out, int max) {
+  char rk[SRVIDX_ITEM], tag[JFID_TAG + 1];
+  PxConta c;
+  RedeJob *j = NULL;
+  SrvIdx eps;
+  unsigned g = 0;
+  int k, n = 0, buscar = 0, temSerie = 0;
+  if (!id || !out || max <= 0) return 0;
+  garantir();
+  pthread_mutex_lock(&trava);
+  conferirPerfilLocked();
+  k = grupo ? idxAcharLocked(id, "series", NULL, 0, NULL, NULL) : -1;
+  if (k >= 0) {
+    copiar(rk, sizeof rk, idx.v[k].item);
+    temSerie = 1;
+    buscar = !epsRecentesLocked(rk);        // #617: expiry refreshes, not only an empty cache
+    c = conta; g = geracao;
+    copiar(tag, sizeof tag, idxTag);
+    if (buscar) j = rede_job_criar(grupo);
+  }
+  pthread_mutex_unlock(&trava);
+  if (!temSerie) return 0;
+  if (buscar) {
+    char *txt = NULL;
+    int perfil = -1, e;
+    if (!j) return 0;
+    srvidx_iniciar(&eps);
+    e = px_indice_episodios(&c, j, rk, &eps);
+    pthread_mutex_lock(&trava);
+    if (g == geracao && rede_job_estado(j) == REDE_OK && !strcmp(tag, idxTag) && e >= 0) {
+      srvidx_juntar(&idx, &eps); indiceVersao++;
+      epsMarcarLocked(rk);
+      txt = srvidx_serializar(&idx, tag); perfil = perfilLido;
+    }
+    pthread_mutex_unlock(&trava);
+    srvidx_limpar(&eps);
+    if (txt && perfil >= 0) srvidx_gravar_texto(perfil, "px", txt);
+    free(txt);
+    rede_job_soltar(j);
+    if (e < 0) return -1;
+  }
+  pthread_mutex_lock(&trava);
+  for (k = 0; k < idx.n && n < max; k++) {
+    const SrvIdxItem *e = &idx.v[k];
+    if (e->tipo != 'e' || strcmp(e->serie, rk)) continue;
+    out[n].temporada = e->temporada;
+    out[n].episodio = e->episodio;
+    out[n].visto = e->visto;
+    out[n].vistoMs = e->vistoMs;
+    out[n].retomadoTicks = e->retomadoTicks;
+    out[n].duracaoTicks = e->duracaoTicks;
+    n++;
+  }
+  pthread_mutex_unlock(&trava);
+  return n;
 }
 
 // Optional profile-epoch linkage keeps isolated Plex fixtures usable while

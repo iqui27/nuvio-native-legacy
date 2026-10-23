@@ -68,6 +68,7 @@ static void fluxo_anel(GfxRect r, float raio, float esp, float cr, float cg, flo
 #undef desc_vertudo_n_bruto
 #undef desc_vertudo_item_bruto
 #include <assert.h>
+#include "ponteiro.h"
 #include "perfis.h"
 
 void shot_background(int mode, GfxRect area, float radius, const char *url, float a) {
@@ -362,6 +363,39 @@ static void vitrineVerTudo(void) {
   puts("See all: Back, collection replacement/removal and profile switch pass");
 }
 
+static void vitrineTvPonteiro(void) {
+  const PonteiroAlvo *alvos = NULL;
+  int nAlvos, k, ok = 0;
+  float w, h, passo, rot, x0 = 100.0f, topo = vitTopo();
+  pasta.nSources = 2;
+  lay = VT_LAY_VITRINE; layEscolha = VT_LAY_VITRINE; tabFocus = 0;
+  vitIniciar();
+  vitLin[0].n = 5; vitLin[0].brutoN = 5; vitLin[0].estado = VIT_PRONTA;
+  for (int i = 0; i < 5; i++) { vitBuf[i] = semente[i]; vitVis[0][i] = (short)i; }
+  home_vitrine_medida(&w, &h, &passo, &rot, vitRedonda());
+  ponteiro_teste_toque(1);
+  ponteiro_quadro(2000);
+  for (int c = 0; c < vitColunas(0); c++) {
+    float cx = x0 + c * passo - vitSx[0];
+    GfxRect base = { cx, topo + VIT_TITULO_H, w, h };
+    float left = fmaxf(base.x, x0), right = fminf(base.x + base.w, NV_TELA_W);
+    vitRegistraAlvoTv(0, c, left, right, base.y, base.y + base.h, topo - 8.0f);
+  }
+  ponteiro_desenhar();
+  nAlvos = ponteiro_teste_lista(&alvos);
+  assert(alvos && nAlvos > 0);
+  for (k = 0; k < nAlvos; k++)
+    if (alvos[k].a / VIT_ITENS == 0 && alvos[k].a % VIT_ITENS == 2 && alvos[k].focar) {
+      vitFR = 1; vitFC = 0; tabFocus = 1;
+      alvos[k].focar(alvos[k].a, alvos[k].b);
+      assert(vitFR == 0 && vitFC == 2 && !tabFocus);
+      ok = 1;
+    }
+  assert(ok);
+  ponteiro_teste_toque(0);
+  puts("vitrine_tv_ponteiro: ok");
+}
+
 static void vitrineAllCatalogs(void);
 int main(int argc, char **argv) {
   int L, i, j;
@@ -380,6 +414,7 @@ int main(int argc, char **argv) {
   aberta = 1;
 
   if (argc > 1 && !strcmp(argv[1], "catalogs")) { vitrineAllCatalogs(); return 0; }
+  if (argc > 1 && !strcmp(argv[1], "tvptr")) { vitrineTvPonteiro(); return 0; }
 
   // 1. AUTOMATICO = exatamente o que a 2.0.3 mostra: Grade para tudo, so o
   // Diretor na Linha do tempo (a 2.0.3 ja fazia). Ranking, Saga, Decadas, Mural

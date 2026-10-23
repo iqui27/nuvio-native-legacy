@@ -50,14 +50,16 @@ A Inter não tem kana nem hanzi. `text.c` manda a linha para uma fonte de reserv
 
 ## Fonte árabe embarcada
 
-A Samsung não traz fonte árabe e o texto saía em quadrados (#253, #258). O pacote leva `NotoNaskhArabic-Subset.ttf`, última da lista `ESC_ARABE` em `text.c`, depois das fontes de sistema (LG, Android, Mac).
+Arabic UI prefers bundled **Noto Sans Arabic 2.009**, before TV system Naskh fonts. Both Regular and real Bold faces are subsetted; shaping/bidi still uses `src/bidi.c` presentation forms (#335, #205).
 
-- Origem: Noto Naskh Arabic Regular 2.021, The Noto Project Authors, SIL OFL 1.1 (`NotoNaskhArabic-OFL.txt`), de github.com/notofonts/arabic.
-- Modificada: subconjunto com ASCII, U+0600–06FF, U+0750–077F e as formas de apresentação U+FB50–FDFF e U+FE70–FEFF, sem hinting e sem tabelas de layout. As formas de apresentação são obrigatórias: `src/bidi.c` faz a junção trocando cada letra por elas, não há HarfBuzz.
-- Negrito arabe (#335): `NotoNaskhArabic-Bold.ttf` inteiro (OFL, mesma licenca), usado pelo SDL_ttf e pelo libass quando presente; sem ele, arabe fica sem negrito sintetico.
-- Regerar: `python3 tools/fonte-arabe.py /caminho/NotoNaskhArabic-Regular.ttf` (precisa de fontTools).
-- Conferir no Mac: `bash tests/text_familias.sh` (reabre o renderer com `NUVIO_SEM_RESERVA_DE_SISTEMA=1`).
+- Source: https://github.com/notofonts/noto-fonts/tree/main/hinted/ttf/NotoSansArabic (The Noto Project Authors, SIL OFL 1.1; `NotoSansArabic-OFL.txt`).
+- Subsets keep Arabic U+0600–06FF, U+0750–077F, U+08A0–08FF, presentation forms U+FB50–FDFF/U+FE70–FEFF, spaces and available punctuation/digits. No hinting or layout tables; no HarfBuzz dependency.
+- Regenerate: `python3 tools/fonte-arabe.py /path/NotoSansArabic-Regular.ttf /path/NotoSansArabic-Bold.ttf` (fontTools required).
+- Naskh Regular/Bold remain for libass subtitles. The old Naskh subset remains a UI fallback and libass recovery asset for older installations; it is still used.
+- Android copies `deploy/app/fonts/*`; webOS copies `deploy/app`; Tizen `.wgt` preloads `deploy/app/fonts@/app/fonts` (also split font data); `.tpk` copies `deploy/app/fonts` into `res/fonts`. All include both Sans faces and OFL without filename lists.
+- Selection/real Bold regression: `bash tests/text_arabe_negrito.sh`. Arabic Home/Settings: `bash tests/arabe_ui_shot.sh /Volumes/ExternalSSD/tmp/rev/arabe-fonte-png/after`.
+- Sans assets plus OFL add 165,033 bytes uncompressed. Android stores `.ttf` without compression (`androidResources.noCompress`); ZIP font entries plus compressed OFL add about 163,075 bytes before APK alignment/signing (estimate, not a rebuilt APK).
 
 | Arquivo | Bytes | SHA-256 |
 |---|---:|---|
-| `NotoNaskhArabic-Subset.ttf` | 90372 | `a43af24c9307d838d89593fc86342ab024973ffa0d7f71bac76849afe2ce5675` |
+| `NotoNaskhArabic-Subset.ttf` (fallback) | 90372 | `a43af24c9307d838d89593fc86342ab024973ffa0d7f71bac76849afe2ce5675` |

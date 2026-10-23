@@ -141,6 +141,10 @@ int home_pediu_pessoa_social(CatItem *saida);
 // recebe o id para o guia ja abrir focado nele). `id` pode ser NULL.
 int  home_pediu_guia(char *id, int tam);
 
+// OK no "Ver tudo" da fileira da Biblioteca (#672): o roteador troca para
+// TELA_BIBLIOTECA.
+int  home_pediu_biblioteca(void);
+
 // VITRINE DAS COLECOES (vertudo.c): destaque e cartaz da Home para um CatItem
 // que nao esta no catalogo global. Ver home.c.
 void home_vitrine_medida(float *w, float *h, float *passo, float *rotH, int redonda);

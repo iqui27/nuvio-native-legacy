@@ -96,6 +96,16 @@ int main(void) {
   valor[AJ_HERO_SINOPSE_TAM] = 1;
   assert(ajustes_hero_sinopse_grande());
   valor[AJ_HERO_SINOPSE_TAM] = 0;
+  assert(!strcmp(CHAVE[AJ_HERO_TAMANHO], "heroSizeLocal") && somenteDesteAparelho(AJ_HERO_TAMANHO));
+  assert(OPCOES[AJ_HERO_TAMANHO].n == 3 && ajustes_hero_tamanho() == 0);
+  assert(ajustes_hero_escala_logo() == 1.0f && ajustes_hero_escala_info() == 1.0f);
+  valor[AJ_HERO_TAMANHO] = 1;
+  assert(ajustes_hero_escala_logo() == 1.25f && ajustes_hero_escala_info() == 1.15f && ajustes_hero_sinopse_grande());
+  valor[AJ_HERO_TAMANHO] = 2;
+  assert(ajustes_hero_escala_logo() == 1.5f && ajustes_hero_escala_info() == 1.3f);
+  valor[AJ_HERO_TAMANHO] = 9;
+  assert(ajustes_hero_tamanho() == 0 && !ajustes_hero_sinopse_grande());
+  valor[AJ_HERO_TAMANHO] = 0;
   // Home: layout e arte do destaque.
   assert(valor[AJ_HERO_FUNDO] == 0);          // Automatico
   assert(valor[AJ_HERO_ARTE_DIF] == 1);       // Desligado: mesma foto do card

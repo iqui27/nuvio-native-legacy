@@ -286,6 +286,16 @@ int main(void) {
   assert(focoOp == AJ_HERO_CHEIO && !focoIndice && uxRetornarOp == -1);
   valor[AJ_HOME_LAYOUT] = 0;
 
+  // Category focus memory and advanced visibility survive the presentation change.
+  focarOpcao(AJ_TEX_MB);
+  { int sec=secAtual, ti=focoItem;
+    focarSecao(0); focarSecao(sec); assert(focoOp==AJ_TEX_MB);
+    memset(maisAberto,0,sizeof maisAberto); valor[AJ_AVANCADAS]=1;
+    assert(!visivel(ti) && maisItem[sec]>=0 && focavel(maisItem[sec]));
+    for(i=0;i<AJ_N_TELA;i++)if(TELA[i].tipo==IT_OPC && uxAvancada(TELA[i].op))assert(!visivel(i));
+    valor[AJ_AVANCADAS]=0;
+    for(i=0;i<AJ_N_TELA;i++)if(TELA[i].tipo==IT_OPC && uxAvancada(TELA[i].op))assert(visivel(i) || TELA[i].op==AJ_ICONE_APP);
+  }
   // V4 replaces the three-column v3 tree with four task rows and two sets.
   valor[AJ_AVANCADAS]=0; focoIndice=1; aj4Topo=-1; aj4Linha=0; aj4Set=0;
   key(SDLK_RIGHT); assert(aj4Set==1 && aj4Linha==0);
@@ -293,7 +303,10 @@ int main(void) {
   key(SDLK_RETURN); assert(!focoIndice && aj4Atual==0 && aj4Grupos);
   key(SDLK_RIGHT); assert(!aj4Grupos);
   key(SDLK_ESCAPE); assert(aj4Grupos); key(SDLK_ESCAPE); assert(focoIndice);
-  aj4Topo=2; key(SDLK_RETURN); assert(pfTela==PF_MENU); pfTela=PF_FECHADA;
+  aj4Topo=2; key(SDLK_RETURN); assert(aj4Util==4 && !pfTela);
+  aj4Acao=1; key(SDLK_RETURN); assert(pfTela==PF_MENU);
+  key(SDLK_ESCAPE); assert(!pfTela && aj4Util==4);
+  key(SDLK_ESCAPE); assert(!aj4Util && focoIndice);
   aj4Topo=-1; aj4Linha=5; key(SDLK_RETURN); assert(aj4Util==1 && !focoIndice);
   key(SDLK_ESCAPE); assert(focoIndice && !aj4Util);
   aj4Topo=1; key(SDLK_RETURN); assert(!lig(AJ_AVANCADAS));

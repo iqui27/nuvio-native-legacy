@@ -10,6 +10,7 @@
 // tendencia.c define a de verdade e vence esta.
 __attribute__((weak)) void tend_registrar(const CatFileira *f, const CatItem *itens) { (void)f; (void)itens; }
 __attribute__((weak)) int arte_reserva_registrar(const char *url, const char *imdb, int poster) { (void)url; (void)imdb; (void)poster; return 1; }
+__attribute__((weak)) int servidores_visto(const char *id, const char *tipo) { (void)id; (void)tipo; return 0; }
 #include "idioma.h"
 #include "descoberta.h"
 #include "progresso.h"
@@ -473,7 +474,10 @@ int cat_visto(const CatItem *c) {
   // SERIE sem historico: nao visto. O progresso de um item de serie e de UM
   // episodio, nao da serie; quem decide a serie inteira e o historico, que
   // extras.c escreve com os contadores de /shows/<id>/progress/watched.
-  if (!strcmp(tipo_base(c->tipo), "series")) return 0;
+  if (!strcmp(tipo_base(c->tipo), "series")) {
+    if (c->imdb[0] && !strchr(c->imdb, ':') && servidores_visto(c->imdb, c->tipo)) return 1;
+    return 0;
+  }
   // Posicao alcancada por seek (#205) nao e visto: o registro local diz.
   return c->progresso >= 90 && prog_tocou(c->imdb) != 0;
 }

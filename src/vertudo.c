@@ -58,6 +58,7 @@
 // ~42 px por baixo do painel da direita. Quantas colunas cabem sai de
 // vtColunas (x0 de ajustes_conteudo_x ate o painel); recolhida e Padrao
 // continuam com 5, como antes.
+static int genTem(void);
 static int vtColunas(void);
 static float vtCardLargura(void);
 static float vtCardAltura(void);
@@ -71,7 +72,7 @@ static float vtCardAltura(void);
 #define VT_GAP_Y    (20.0f + 40.0f)       // gap + a linha de titulo sob o cartaz
 // GRADE na TV: sem o nome sob o cartaz (o painel ja diz tudo), so o vao.
 #define VT_GRADE_GAP_Y (vtTelefone() ? VT_GAP_Y : 44.0f)
-#define VT_TOPO    (servidorAtivo ? 402.0f : collection ? 332.0f : 244.0f)
+#define VT_TOPO    (servidorAtivo || genTem() ? 402.0f : collection ? 332.0f : 244.0f)
 // LARGURA UTIL DA GRADE: as 5 colunas de sempre (5 x 248 + 4 x 16). Toda
 // exibicao cabe nela, e o painel de detalhe a direita nunca e invadido.
 #define VT_CW      vtLarguraUtil()
@@ -234,6 +235,12 @@ static int exibAberta, exibCursor;
 // (+1 entrando da direita, -1 da esquerda, 0 em repouso).
 static int   ddAberto, ddCursor;
 static float ddAnim, barraX, barraW = -1.0f, barraAlvoX, barraAlvoW, pgSlide;
+// GENERO DO CATALOGO (issue #656): opcoes do manifesto, escolha manual nesta
+// sessao. genSel=-1 e "Todos"; senao indice em genOps.
+#define GEN_MAX 32
+static char genOps[GEN_MAX][128];
+static int genN, genSel = -1, genAtivo, genObrigatorio;
+static float genAnim;
 // CAPSULA DO FOCO QUE DESLIZA entre as abas de sempre (chips/topo): o mesmo
 // modelo da barra central. capA e o alfa (foco na fileira de abas ou nao),
 // capX/capW a posicao animada, capAlvoX/capAlvoW a aba com o cursor.
@@ -628,6 +635,8 @@ static const char *mensagemSemFonte(const ColSource *s) {
 static void vitIniciar(void);
 static float vitPasso(void);
 static void carregarFonte(void);
+static void genCarregar(const ColSource *s);
+static const char *genPedido(void);
 static int vitPaginaFonte(void);
 static void vitPedirMais(void);
 static void vitFocarLinha(int linha);
@@ -635,6 +644,7 @@ static void openSource(void) {
   const ColSource *s=&collection->sources[source];
   snprintf(catalogId,sizeof catalogId,"%s",s->catId);
   ranked=strstr(s->catId,"top100")||strstr(s->catId,"top250")||strstr(s->catId,"top10");
+  genCarregar(s);
   foco=0;scrollY=velY=0;orderN=-1;celLay=-1;armarOnda();
   limparFocoCatalogo();
   resolverLayout();
@@ -686,7 +696,7 @@ static void carregarFonte(void) {
     fflush(stdout);
     return;
   }
-  desc_vertudo_filtro_desde(base,s->type,s->catId,s->genre,vitPaginaFonte());
+  desc_vertudo_filtro_desde(base, s->type, s->catId, genTem() ? genPedido() : s->genre, vitPaginaFonte());
 }
 
 static int cursorInicial(void);
@@ -748,6 +758,8 @@ void vertudo_abrir(const char *base, const char *tipo, const char *catId,
   // Sem pasta (o "Ver tudo" de uma fileira de catalogo) a tela e a grade de
   // sempre: a escolha de exibicao e coisa de colecao.
   resolverLayout();
+  genAtivo = genN = 0;
+  if (collection) genCarregar(&collection->sources[source]);
   desc_vertudo_abrir(base, tipo, catId);
 }
 
@@ -1170,6 +1182,42 @@ static int cabN(void) {
   if (estiloAbas() == VT_AB_MENU) return doisTipos() ? 3 : 1;
   return nAbas();
 }
+static int genTem(void) { return collection && !servidorAtivo && lay != VT_LAY_VITRINE && genAtivo && genN > 0; }
+static const char *genRotulo(void) {
+  if (genSel == -2 && collection) return desc_genero_pt(collection->sources[source].genre);
+  if (genSel < 0 || genSel >= genN) return i18n("Todos");
+  { const char *pt = desc_genero_pt(genOps[genSel]); return pt && pt[0] ? pt : genOps[genSel]; }
+}
+static void genCarregar(const ColSource *s) {
+  genN = genAtivo = 0; genSel = -1;
+  if (!s || s->prov[0]) return;
+  const char *base = vitTudo ? vitTudoBase : baseDaFonte(s);
+  if (!base[0]) return;
+  genN = desc_genero_opcoes(base, s->type, s->catId, genOps, GEN_MAX);
+  if (!genN) return;
+  genAtivo = 1;
+  genObrigatorio = desc_genero_obrigatorio(base, s->type, s->catId);
+  if (genObrigatorio) genSel = 0;
+  if (s->genre[0]) genSel = -2;
+  if (s->genre[0]) for (int i = 0; i < genN; i++)
+    if (!strcmp(genOps[i], s->genre)) { genSel = i; return; }
+}
+static const char *genPedido(void) {
+  if (genSel == -2 && collection) return collection->sources[source].genre;
+  return genSel >= 0 && genSel < genN ? genOps[genSel] : "";
+}
+static void genAplicar(int sel) {
+  if (!genAtivo) return;
+  if (sel >= genN || sel < -1) return;
+  genSel = sel < 0 && genObrigatorio ? 0 : sel;
+  foco = 0; scrollY = velY = 0; orderN = -1; celLay = -1; armarOnda();
+  limparFocoCatalogo();
+  carregarFonte();
+}
+static void ponteiroGenero(int a, int b) {
+  (void)a; (void)b;
+  if (genTem()) tabFocus = 3;
+}
 static int cursorInicial(void) {
   if (estiloAbas() == VT_AB_MENU) return cabN() - 1;   // o botao do catalogo
   return nAbas() ? source : 0;
@@ -1183,7 +1231,7 @@ static void abasReiniciar(void) {
 // (o "tudo meio duro" da Netflix na TCL). Nos outros estilos ela fica fora.
 static void abasCapsulaAtualizar(float dt) {
   int est = estiloAbas();
-  float alvoA = collection && tabFocus && tabCursor < cabN() &&
+  float alvoA = collection && tabFocus == 1 && tabCursor < cabN() &&
                 (est == VT_AB_CHIPS || est == VT_AB_TOPO) ? 1.0f : 0.0f;
   capA = anim_mola(capA, alvoA, dt, alvoA > capA ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
   if (capW < 0.0f) { capX = capAlvoX; capW = capAlvoW; }
@@ -2260,6 +2308,34 @@ static void ponteiroVitrineTudo(int r, int geracao) { (void)vitPonteiroTudoFocar
 static void abrirVitrineTudo(int r, int geracao) {
   if (vitPonteiroTudoFocar(r, geracao)) vitAbrirTudo(r);
 }
+#endif
+// CURSOR NA TV (#658): sem a camada de toque a Vitrine nao registrava alvo
+// nenhum — o Magic Remote nao tinha onde focar e o cursor "sumia" ao rolar.
+// O clique vira o OK de sempre no item focado, como na Grade (ponteiroCartaz).
+static void vitFocoTv(int i, int b) {
+  (void)b;
+  vitProjetar();
+  int r = i / VIT_ITENS, c = i % VIT_ITENS;
+  if (r < 0 || r >= vitN || c < 0 || c >= vitLin[r].n) return;
+  tabFocus = 0; vitFR = r; vitFC = vitColLemb[r] = c; vitMexeu = 1;
+}
+static void vitTudoFocoTv(int r, int b) {
+  (void)b;
+  vitProjetar();
+  if (!vitTemVerTudo(r)) return;
+  tabFocus = 0; vitFR = r; vitFC = vitColLemb[r] = vitLin[r].n; vitMexeu = 1;
+}
+static void vitRegistraAlvoTv(int r, int c, float left, float right,
+                              float top, float bottom, float clipTopo) {
+  if (right <= left || bottom <= top || top + (bottom - top) <= clipTopo || top >= NV_TELA_H) return;
+  if (c == vitLin[r].n)
+    ponteiro_alvo_faixa(left, top, right - left, bottom - top,
+                        clipTopo, NV_TELA_H, vitTudoFocoTv, NULL, r, 0);
+  else
+    ponteiro_alvo_faixa(left, top, right - left, bottom - top,
+                        clipTopo, NV_TELA_H, vitFocoTv, NULL, r * VIT_ITENS + c, 0);
+}
+#ifdef NV_TOUCH_UI
 static int toqueVitrineRolar(const PonteiroRolagem *e) {
   if (!vitToqueDono() || !vitPonteiroPronto) return 0;
   if (e->fase == PONT_ROL_INICIO) {
@@ -2308,6 +2384,8 @@ static void toqueVitrineRetomarFoco(void) {
   toquerol_limpar(&vitToqueY); vitToqueLinha = -1;
 
 }
+#endif
+#ifdef NV_TOUCH_UI
 static float toqueVertudoMax(void) {
   return fmaxf(0.0f, VT_TOPO + celFim + VT_GAP_Y - NV_TELA_H + 120.0f);
 }
@@ -2400,6 +2478,13 @@ void vertudo_evento(const SDL_Event *e) {
     }
     return;
   }
+  if (genTem() && tabFocus == 3) {
+    if (k == SDLK_UP) tabFocus = 1, tabCursor = cursorInicial();
+    if (k == SDLK_DOWN) tabFocus = 0;
+    if (k == SDLK_RETURN || k == SDLK_KP_ENTER)
+      genAplicar(genSel + 2 > genN ? -1 : genSel + 1);
+    return;
+  }
   if (n > VT_MAX) n = VT_MAX;
   exibAberta = exibAberta && tabFocus && tabCursor == cabN();   // o ponteiro tirou o foco
   if (exibAberta) {   // o trilho aberto fica com as setas ate escolher ou sair
@@ -2415,7 +2500,7 @@ void vertudo_evento(const SDL_Event *e) {
       (!collection || !tabFocus || (estiloAbas() != VT_AB_MENU && tabCursor < cabN() && tabCursor == cursorInicial()))) {
     desc_vertudo_mais(); return;
   }
-  if(collection&&tabFocus) {
+  if(collection&&tabFocus==1) {
     int na = cabN(), est = estiloAbas();
     if(ddAberto) { ddEvento(k); return; }
     if(k==SDLK_LEFT||(k==SDLK_UP&&ajustes_menu_topo())){ if(k==SDLK_LEFT&&tabCursor>0)tabCursor--; else pedMenu=1; }
@@ -2436,11 +2521,13 @@ void vertudo_evento(const SDL_Event *e) {
         snprintf(servidorRaiz, sizeof servidorRaiz, "%s", servidorChaves[source]); servidorFiltro = 0;
       } openSource();tabFocus=0;}
     }
-    if(k==SDLK_DOWN&&(n>0||temMaisVistos()||servidorAtivo))tabFocus=servidorAtivo?2:0;
+    if(k==SDLK_DOWN&&(n>0||temMaisVistos()||servidorAtivo||genTem()))
+      tabFocus=servidorAtivo?2:genTem()?3:0;
     return;
   }
   if (precisaMontar(n)) montar(n);
-  if(k==SDLK_UP&&collection&&(n<1||celLin[foco]==0)){tabFocus=servidorAtivo?2:1;tabCursor=cursorInicial();return;}
+  if(k==SDLK_UP&&collection&&(n<1||celLin[foco]==0)){
+    tabFocus=servidorAtivo?2:genTem()?3:1;tabCursor=cursorInicial();return;}
   if((k==SDLK_RETURN||k==SDLK_KP_ENTER)&&desc_vertudo_erro()){desc_vertudo_mais();return;}
   if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && !e->key.repeat && temMaisVistos()) {
     carregarMaisVistos(0, 0); return;
@@ -2454,7 +2541,9 @@ void vertudo_evento(const SDL_Event *e) {
   else if (k == SDLK_DOWN) { int v = vizinhoNaLinha(n, celLin[foco] + 1);
                              foco = v >= 0 ? v : n - 1; }
   else if (k == SDLK_UP) { int v = vizinhoNaLinha(n, celLin[foco] - 1);
-                           if (v >= 0) foco = v; else if (ajustes_menu_topo()) pedMenu = 1; else pedRelogio = 1; }
+                           if (v >= 0) foco = v;
+                           else if (genTem()) { tabFocus = 3; }
+                           else if (ajustes_menu_topo()) pedMenu = 1; else pedRelogio = 1; }
   else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) previaFocado();
   lembrarFoco();
   // Chegando perto do fim, pede a proxima pagina. Antes de o dono ver o vazio,
@@ -2502,17 +2591,21 @@ void vertudo_atualizar(float dt, Uint32 agora) {
     aberta = 0;
     return;
   }
+  if (!genAtivo && collection && !servidorAtivo && lay != VT_LAY_VITRINE)
+    genCarregar(&collection->sources[source]);
   if (semFonte && collection && lay != VT_LAY_VITRINE) {
     const ColSource *s = &collection->sources[source];
     if (baseDaFonte(s)[0]) openSource();
   }
   for (int i = 0; i < COL_SOURCE_MAX; i++) {
-    float alvoTab = collection && tabFocus && i == tabCursor && i < cabN() ? 1.0f : 0.0f;
+    float alvoTab = collection && tabFocus == 1 && i == tabCursor && i < cabN() ? 1.0f : 0.0f;
     tabAnim[i] = anim_mola(tabAnim[i], alvoTab, dt,
                            alvoTab > tabAnim[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
   }
-  { float alvoP = collection && tabFocus && tabCursor == cabN() ? 1.0f : 0.0f;
+  { float alvoP = collection && tabFocus == 1 && tabCursor == cabN() ? 1.0f : 0.0f;
     pillAnim = anim_mola(pillAnim, alvoP, dt, alvoP > pillAnim ? NV_MOLA_FOCO : NV_MOLA_DESFOCO); }
+  { float alvoG = genTem() && tabFocus == 3 ? 1.0f : 0.0f;
+    genAnim = anim_mola(genAnim, alvoG, dt, alvoG > genAnim ? NV_MOLA_FOCO : NV_MOLA_DESFOCO); }
   abasCapsulaAtualizar(dt);
   if (!tabFocus) ddAberto = 0;
   ddAnim = anim_mola(ddAnim, ddAberto ? 1.0f : 0.0f, dt, NV_MOLA_FOCO);
@@ -3203,6 +3296,25 @@ static void themeHeader(float a,float x0) {
     }
   }
 }
+static void generoDesenhar(float a, float x0) {
+  if (genTem()) {
+    const float y = 328.0f;
+    TxtLinha rot = txt_linha(TXT_CAPTION2, i18n("Gênero"), 255, 255, 255, 255);
+    TxtLinha val = txt_linha_corta(TXT_HERO_SEC, genRotulo(), 255, 255, 255, 255, 420.0f);
+    float w = rot.w + 8.0f + val.w + 78.0f, h = 52.0f;
+    GfxRect chip = { x0, y, w, h };
+    int f = tabFocus == 3;
+    if (ajustes_vidro()) gfx_vidro_folha(chip, NV_RAIO_PILL, a * (1.0f - 0.35f * genAnim));
+    else gfx_cor(chip, NV_RAIO_PILL, 1, 1, 1, .06f * a * (1.0f - 0.35f * genAnim));
+    if (f) focoAbaFonte(chip, genAnim, a);
+    int tinta = f ? ajustes_tinta_foco() : 245;
+    float c = tinta / 255.0f;
+    gfx_icone((GfxRect){chip.x + 18, chip.y + 15, 22, 22}, "aj_funnel", c, c, c, a);
+    txt_desenhar_tom(rot, chip.x + 52.0f, chip.y + (h - rot.h) * .5f, c, c, c, a);
+    txt_desenhar_tom(val, chip.x + 52.0f + rot.w + 8.0f, chip.y + (h - val.h) * .5f, c, c, c, a);
+    ponteiro_alvo(chip.x, chip.y, chip.w, chip.h, ponteiroGenero, NULL, 0, 0);
+  }
+}
 
 // ESTADO DO TITULO NO CARTAO (U4): o check unico do app (badges.c) quando visto,
 // senao a barra fina de "parou em". Serve a todas as exibicoes.
@@ -3737,6 +3849,7 @@ static void vitDesenhar(float a, float x0) {
         int sel = r == vitFR && c == vitFC && !tabFocus;
         if (cx + w < 0.0f) continue;
         if (cx > NV_TELA_W) break;
+        float left = fmaxf(base.x, x0), right = fminf(base.x + base.w, NV_TELA_W);
         if (sel) {
           if (ajustes_borda_foco()) {
             if (!redonda || c == l->n)
@@ -3754,9 +3867,7 @@ static void vitDesenhar(float a, float x0) {
           txt_desenhar_alpha(rotulo, card.x + (card.w - rotulo.w) * .5f, by + seta.h + 14.0f, ac);
         } else home_vitrine_cartao(vitItem(r, c), base, card, ac, redonda, sel ? 1.0f : 0.0f);
 #ifdef NV_TOUCH_UI
-        if (vtTelefone()) {
-          float left = fmaxf(base.x, x0), right = fminf(base.x + base.w, NV_TELA_W);
-          if (right > left && base.y + base.h > NV_SHELF_TOP - 8.0f && base.y < NV_TELA_H) {
+        if (vtTelefone() && right > left && base.y + base.h > NV_SHELF_TOP - 8.0f && base.y < NV_TELA_H) {
             if (c == l->n) {
               vitPonteiroTudoVisivel[r] = 1;
               ponteiro_alvo_faixa(left, base.y, right - left, base.h,
@@ -3769,9 +3880,10 @@ static void vitDesenhar(float a, float x0) {
             ponteiro_alvo_faixa(left, base.y, right - left, base.h,
               NV_SHELF_TOP - 8.0f, NV_TELA_H, ponteiroVitrine, abrirVitrine,
               r * VIT_ITENS + c, vitPonteiroGeracao);
-          }
         }
 #endif
+        if (!vtTelefone() && right > left && base.y + base.h > topo - 8.0f && base.y < NV_TELA_H)
+          vitRegistraAlvoTv(r, c, left, right, base.y, base.y + base.h, topo - 8.0f);
       }
     } else if (l->estado == VIT_VAZIA || l->estado == VIT_PRONTA ||
                (vitLin[r].mais && !vitLin[r].n)) {
@@ -3934,6 +4046,7 @@ void vertudo_desenhar(Uint32 agora) {
   // CABECALHO por cima do recorte, entao ele nunca compete com a arte.
   themeHeader(a,x0);
   if (collection) botaoExibicao(a, cabCy);
+  generoDesenhar(a, x0);
 
   if (n > 0 && !vtTelefone()) { if (lay == VT_LAY_FLUXO) fluxoInfo(a, x0); else painel(a); }
   gfx_escala_sair(escalaAnterior);

@@ -77,6 +77,8 @@ def main():
         encoding="utf-8")
 
 
+if __name__ == "__main__":
+    main()
 def exportar_local():
     """Embarca IDs ja versionados; --local nao consulta a rede."""
     texto = SAIDA.read_text(encoding="utf-8")

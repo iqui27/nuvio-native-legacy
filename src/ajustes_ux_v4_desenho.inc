@@ -1,4 +1,33 @@
 // One island, four visible rows, shared geometry across the v4 screens.
+// Mirror placement only; glyphs and artwork retain their original orientation.
+static GfxRect aj4Rect(GfxRect r) { r.x = aj4X(r.x, r.w); return r; }
+static void aj4Draw(TxtLinha t,float x,float y) { txt_desenhar(t,aj4X(x,t.w),y); }
+static void aj4DrawAlpha(TxtLinha t,float x,float y,float a) { txt_desenhar_alpha(t,aj4X(x,t.w),y,a); }
+static void aj4Cor(GfxRect r,float raio,float cr,float cg,float cb,float ca) { gfx_cor(aj4Rect(r),raio,cr,cg,cb,ca); }
+static void aj4Vidro(GfxRect r,float raio,float cr,float cg,float cb,float ca,float a) { gfx_vidro_miolo(aj4Rect(r),raio,cr,cg,cb,ca,a); }
+static void aj4Neutro(GfxRect r,float raio,float va,float cr,float cg,float cb,float a) { ajNeutro(aj4Rect(r),raio,va,cr,cg,cb,a); }
+static void aj4Pilula(GfxRect r,float raio,float a) { ajPilulaAcento(aj4Rect(r),raio,a); }
+static const char *aj4IconeNome(const char *s) {
+  if (aj4RTL()) {
+    if (!strcmp(s,"aj_chevron-right")) return "aj_arrow-left";
+    if (!strcmp(s,"pl_chevron-left")) return "aj_arrow-right";
+  }
+  return s;
+}
+static void aj4Icone(const char *s,float x,float y,float lado,float a) { ajIcone(aj4IconeNome(s),aj4X(x,lado),y,lado,a); }
+static void aj4IconeT(const char *s,float x,float y,float lado,float a) { ajIconeT(aj4IconeNome(s),aj4X(x,lado),y,lado,a); }
+static float aj4Bloco(TxtEstilo e,const char *s,float x,float y,float w,float lh,float a,int maxL) {
+  return aj4RTL() ? txt_bloco_dir(e,s,243,242,239,NV_VTELA_W-x,y,w,lh,a,maxL) : ajBloco(e,s,x,y,w,lh,a,maxL);
+}
+#define txt_desenhar aj4Draw
+#define txt_desenhar_alpha aj4DrawAlpha
+#define gfx_cor aj4Cor
+#define gfx_vidro_miolo aj4Vidro
+#define ajNeutro aj4Neutro
+#define ajPilulaAcento aj4Pilula
+#define ajIcone aj4Icone
+#define ajIconeT aj4IconeT
+#define ajBloco aj4Bloco
 static void aj4PontAtivar(int zona,int row) {
   if(zona==5) { uxEvento(SDLK_ESCAPE); return; }
   aj4PontFoco(zona,row);
@@ -7,6 +36,7 @@ static void aj4PontAtivar(int zona,int row) {
   else aj4Evento(SDLK_RETURN);
 }
 static void aj4Alvo(GfxRect r,int zona,int row) {
+  r = aj4Rect(r);
   if(!pfTela && !teclado_aberto())ponteiro_alvo(r.x,r.y,r.w,r.h,aj4PontFoco,aj4PontAtivar,zona,row);
 }
 static void aj4Texto(const char *s, TxtEstilo e, float x, float y, float w, float a) {
@@ -391,3 +421,12 @@ static void aj4Desenhar(void) {
   else if(focoIndice)aj4Home();
   else aj4SecaoDesenhar();
 }
+#undef txt_desenhar
+#undef txt_desenhar_alpha
+#undef gfx_cor
+#undef gfx_vidro_miolo
+#undef ajNeutro
+#undef ajPilulaAcento
+#undef ajIcone
+#undef ajIconeT
+#undef ajBloco

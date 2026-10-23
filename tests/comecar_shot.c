@@ -6,7 +6,7 @@
 //   passo 1: OK abre o teclado da TV e o D-pad digita/cancela/confirma; nao ha
 //            linha de perfil infantil; nada vai ao disco antes do fim;
 //   passo 2: Voltar volta ao 1 sem perder o nome; Conta Nuvio e Começar do
-//            zero avançam; Stremio e AIOManager ficam "Em breve" (não avançam);
+//            zero avançam; Stremio e AIOManager começam o import (não avançam);
 //   passo 3: Trakt pede o código (traktauth), "Só nesta TV" avança;
 //   passo 4: OK devolve COMECAR_PEDIU_TOUR ou NADA e grava estado=feito, nome e cor;
 //   saidas:  Voltar no passo 1 pula (feito, nada mais); Voltar nos passos 2-4
@@ -16,6 +16,8 @@
 //   D-pad: todo foco alcança e escapa — varredura por foco inicial (baixo,
 //            cima, direita, esquerda) sem cair em item que não sai do lugar.
 #include "comecar.h"
+#include "importarfluxo.h"
+#include "celbotao.h"
 #include "comecarregra.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -267,7 +269,7 @@ int main(int argc, char **argv) {
   quadro(0.016f);
   assert(comecar_passo() == 0 && !teclado_aberto() && comecar_aberto());
 
-  // Passo 2 (Trazer): Stremio e AIOManager sao "Em breve" e nao avancam.
+  // Passo 2 (Trazer): Stremio e AIOManager comecam o import e ficam no passo.
   previa("estado=nenhum\nnome=so\n");
   tecla(SDLK_RETURN);            // nome ja ha: Continuar
   assert(comecar_passo() == 1);
@@ -276,6 +278,7 @@ int main(int argc, char **argv) {
   assert(comecar_passo() == 1);
   tecla(SDLK_DOWN); tecla(SDLK_RETURN);                 // AIOManager: fica
   assert(comecar_passo() == 1);
+  importarfluxo_cancelar();
   // Voltar (botao) volta ao 1 sem perder o nome.
   ir_para(100); tecla(SDLK_RETURN);
   assert(comecar_passo() == 0);
@@ -452,6 +455,22 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-2-trazer.png", saida);
   captura(nome, 2);
 
+  // Stremio e AIOManager: estados forcados (sem rede) so para a captura.
+  tecla(SDLK_UP); tecla(SDLK_UP);
+  importarfluxo_teste(IMPF_STREMIO, IMPF_ESPERA, "K7QX2M", "https://link.stremio.com/", 0, 0);
+  snprintf(nome, sizeof nome, "%s-2b-stremio-codigo.png", saida);
+  captura(nome, 2);
+  importarfluxo_teste(IMPF_STREMIO, IMPF_OK, "", "", 7, 42);
+  snprintf(nome, sizeof nome, "%s-2c-stremio-ok.png", saida);
+  captura(nome, 2);
+  tecla(SDLK_DOWN);
+  importarfluxo_teste(IMPF_AIOM, IMPF_ESPERA, "", "", 0, 0);
+  celb_abrir_embutido(CELB_IMPORTAR, "Link do AIOManager");
+  for (int i = 0; i < 90; i++) celb_atualizar(0.016f);   // a mola do cartao
+  snprintf(nome, sizeof nome, "%s-2d-aiom-link.png", saida);
+  captura(nome, 40);
+  importarfluxo_cancelar();
+  tecla(SDLK_DOWN);
   tecla(SDLK_RETURN);   // Conta Nuvio
   snprintf(nome, sizeof nome, "%s-3-acompanhar.png", saida);
   captura(nome, 2);

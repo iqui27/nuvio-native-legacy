@@ -343,6 +343,7 @@
   0, /* clear cache action */
   0, /* tunneled playback: Off */
   1, /* experimental P7 conversion: Off until explicitly enabled */
+  1, /* #605: strip HDR10+ dynamic metadata: Desligado (V_LIGA 1) */
   1, /* log page on the local network (logrede.h): Desligado */
   2, /* player format style: Marks (V_PLR_FORMATO 2), the look the OSD always had */
   1, /* kids profile: Desligado (V_LIGA: 1); the state lives in perfilinfantil.c */
@@ -353,3 +354,5 @@
   1, /* player format position: Original, the top corner (V_PLR_FORMATO_POS 1) */
   0, /* show the audio codec in the format row: On (V_LIGA 0) */
   0, /* gradient smoothing: Automatic */
+  0, /* #641 display refresh-rate match (AFR): Off */
+  0, /* hero logo and information size: Normal */

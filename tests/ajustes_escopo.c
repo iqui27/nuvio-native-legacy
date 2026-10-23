@@ -439,6 +439,8 @@ static void gate(void) {
   admin_pin_esquecer();
   pfEntrada();
   focoIndice = 1; aj4Topo = 2;
+  assert(uxEvento(SDLK_RETURN) && aj4Util == 4 && !pfTela);
+  aj4Acao = 1;
   assert(uxEvento(SDLK_RETURN) && pfTela == PF_MENU && ajModalAberto());
   pfExigirAdmin(PA_EDITAR, 2);
   assert(pfFase == 3 && !edPerfil);

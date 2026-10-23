@@ -71,6 +71,9 @@ int simklauth_invalidar_se(unsigned long long cred);
 // 1). carregar_perfil escolhe o perfil e le; trocar_perfil faz o mesmo so
 // quando o perfil mudou e devolve 1 quando o Simkl estava ou ficou ligado —
 // quem chama esquece as caches de simkl.c e remonta a home.
+// Token GUARDADO de OUTRO perfil, lido do arquivo dele, sem tocar o estado do
+// perfil ativo. 1 = ha vinculo; dst vazio caso contrario.
+int  simklauth_token_perfil(int perfil, char *dst, size_t tam);
 int  simklauth_carregar_perfil(int perfil);
 int  simklauth_trocar_perfil(int perfil);
 

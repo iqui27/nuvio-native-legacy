@@ -42,6 +42,21 @@ int main(void) {
     for (int j = 0; j < n; j++) seen += ops[j] == op;
     assert(seen == 1);
   }
+  // APS-9: invalid IDs, absent routes and corrupt compiled sections are bounded.
+  assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO && AJ_HERO_TAMANHO + 1 == AJ_N);
+  assert(!aj4RTL() && aj4X(100, 470) == 100);
+  assert(aj4Secao(-1) == -1 && aj4Secao(AJ_N) == -1);
+  assert(aj4GrupoDe(-1) == -1 && aj4GrupoDe(AJ_N) == -1);
+  int section = aj4Atual, group = aj4Grupo;
+  aj4Focar(-1); aj4Focar(AJ_N); aj4Entrar(-1); aj4Entrar(8);
+  assert(aj4Atual == section && aj4Grupo == group);
+  assert(aj4ListaBruta(-1, -1, ops) == 0 && aj4ListaBruta(8, -1, ops) == 0);
+  for (int i = 0; i < AJ_N_TELA; i++) if (TELA[i].tipo == IT_OPC && aj4MapaSecao(TELA[i].op) < 0) {
+    int saved = secDoItem[i], op = TELA[i].op;
+    secDoItem[i] = -1; assert(aj4Secao(op) == -1 && aj4GrupoDe(op) == -1);
+    secDoItem[i] = nSecoes; assert(aj4Secao(op) == -1 && aj4GrupoDe(op) == -1);
+    secDoItem[i] = saved;
+  }
   // Search crosses mode boundary without changing saved mode or values.
   valor[AJ_AVANCADAS] = 1;
   AjusteBuscaResultado hits[AJ_N];
@@ -142,7 +157,78 @@ int main(void) {
   valor[AJ_AVANCADAS]=0;aj4Review=aj4Util=0;aj4Entrar(0);
   n=aj4Lista(0,aj4GrupoDe(AJ_FONTE_MANUAL),ops);
   assert(n>=4 && ops[0]==AJ_FONTE_MANUAL && ops[1]==AJ_FONTE_PRIORIDADE && ops[2]==AJ_FONTE_PRAZO && ops[3]==AJ_FONTE_REPOR);
-  puts("Settings v4: navigation, suggestions, profile routes, preset counts/scopes, persistence OK");
+  // APS-10: port navigation contracts to the approved v4 tree in both directions.
+  for (int rtl = 0; rtl < 2; rtl++) {
+    int lang = valor[AJ_IDIOMA];
+    valor[AJ_IDIOMA] = (rtl ? IDIOMA_AR : IDIOMA_PT) + 1;
+    SDL_Keycode left = rtl ? SDLK_RIGHT : SDLK_LEFT, right = rtl ? SDLK_LEFT : SDLK_RIGHT;
+    assert(aj4RTL() == rtl && aj4X(100,470) == (rtl ? NV_VTELA_W-570 : 100));
+    // Pointer targets follow the same mirror as drawing, without a GL context.
+    ponteiro_iniciar(); ponteiro_teste_janela(1920,1080); ponteiro_teste_toque(1);
+    ponteiro_quadro(SDL_GetTicks()); pfTela=0;
+    aj4Alvo((GfxRect){100,510,470,68},2,0); ponteiro_desenhar();
+    { const PonteiroAlvo *targets; int count=ponteiro_teste_lista(&targets);
+      assert(count==1 && targets[0].x==aj4X(100,470) && targets[0].w==470); }
+    ponteiro_teste_toque(0);
+    aj4Iniciar(); valor[AJ_AVANCADAS]=0; focoIndice=1; aj4Topo=0;
+    key(left); assert(aj4Topo==0);
+    key(right); assert(aj4Topo==1);
+    key(right); assert(aj4Topo==2);
+    key(right); assert(aj4Topo==2);
+    key(left); key(left); assert(aj4Topo==0);
+    key(SDLK_DOWN); assert(aj4Topo==-1 && focoIndice);
+    // Every advanced section opens, enters its first group and returns to Home.
+    for (int sec=0;sec<8;sec++) {
+      aj4Set=sec/4; aj4Linha=sec%4; key(SDLK_RETURN);
+      assert(!focoIndice && aj4Atual==sec && aj4Grupos);
+      key(right); assert(!aj4Grupos);
+      key(left); assert(aj4Grupos);
+      key(left); assert(focoIndice);
+    }
+    // Group-set boundaries, vertical boundaries, help and differences remain reachable.
+    aj4Linha=2; key(right); assert(aj4Set==1 && aj4Linha==0);
+    key(right); assert(aj4Set==1); key(left); assert(aj4Set==0);
+    key(SDLK_UP); assert(aj4Topo==0); key(SDLK_DOWN);
+    aj4UndoN=0;
+    for(int i=0;i<10;i++)key(SDLK_DOWN);
+    assert(aj4Linha==6); key(SDLK_RETURN); assert(!focoIndice && aj4Atual==7);
+    key(SDLK_ESCAPE); assert(focoIndice);
+    aj4Linha=5; key(SDLK_RETURN); assert(aj4Util==1 && !focoIndice);
+    key(SDLK_ESCAPE); assert(!aj4Util && focoIndice);
+    // Simple mode exposes each task, stops at both ends and returns to Home.
+    valor[AJ_AVANCADAS]=1;
+    for (int sec=0;sec<4;sec++) {
+      aj4Linha=sec; key(SDLK_RETURN);
+      assert(!focoIndice && aj4Atual==sec && !aj4Grupos);
+      n=aj4Lista(sec,-1,ops); assert(n>0 && n<=4);
+      for(int i=0;i<n+1;i++)key(SDLK_DOWN);
+      assert(aj4Linha==n-1 && aj4Acao);
+      key(SDLK_UP); assert(!aj4Acao);
+      for(int i=0;i<n;i++)key(SDLK_UP);
+      assert(aj4Topo==0); key(SDLK_DOWN); key(left); assert(focoIndice);
+    }
+    // Editor directions follow the mirror; cancellation preserves saved values.
+    focarOpcao(AJ_QUALIDADE); int quality=valor[AJ_QUALIDADE];
+    key(SDLK_RETURN); assert(uxEditor);
+    key(right); key(SDLK_ESCAPE); assert(!uxEditor && valor[AJ_QUALIDADE]==quality);
+    aj4Iniciar(); valor[AJ_AVANCADAS]=0; focoIndice=1;
+    // Mode switching preserves unrelated values and restores the remembered row.
+    aj4Linha=3; aj4Topo=1; memcpy(before,valor,sizeof before); key(SDLK_RETURN);
+    assert(!lig(AJ_AVANCADAS) && focoIndice);
+    { char path[1200], line[1024]; int savedMode=0;
+      snprintf(path,sizeof path,"%s/ajustes.txt",dirAjustes);
+      FILE *file=fopen(path,"r"); assert(file);
+      while(fgets(line,sizeof line,file))savedMode|=!strcmp(line,"avancadasLocal 1\n");
+      fclose(file); assert(savedMode);
+    }
+    for(int i=0;i<AJ_N;i++)if(i!=AJ_AVANCADAS)assert(valor[i]==before[i]);
+    key(SDLK_RETURN); assert(lig(AJ_AVANCADAS) && aj4Linha==3);
+    aj4Topo=-1; key(SDLK_RETURN); assert(!focoIndice);
+    key(SDLK_ESCAPE); assert(focoIndice);
+    sair=0; key(SDLK_ESCAPE); assert(sair); sair=0;
+    valor[AJ_IDIOMA]=lang;
+  }
+  puts("Settings v4: bounds, RTL/LTR navigation, suggestions, profile routes, preset counts/scopes, persistence OK");
 #endif
   SDL_Quit(); return 0;
 }

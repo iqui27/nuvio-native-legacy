@@ -39,6 +39,13 @@ JUNTOS_URL = "https://nuvio-juntos.henriquef29.workers.dev"
 [triggers]
 crons = ["17 4 * * *"]
 
+# Optional Apple Music catalog secrets (names only; no values in this file):
+#   APPLE_MUSIC_TEAM_ID
+#   APPLE_MUSIC_KEY_ID
+#   APPLE_MUSIC_P8
+# All three enable catalog search first; otherwise MusicBrainz/iTunes is used.
+# ES256 developer tokens stay in worker memory for up to 12 hours, never in KV.
+# Request country=br selects the storefront (default us); cache is storefront-specific.
 # Segredos (nao vao aqui; use `wrangler secret put`):
 #   TYPESAFE_KEY        Jev HTTP API key for Live TV category suggestions
 #   TRAKT_CLIENT_ID     client id do aplicativo no Trakt

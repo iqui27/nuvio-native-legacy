@@ -1,4 +1,6 @@
 #include "addonsui.h"
+#include "addonguia.h"
+#include "aiostreamsui.h"
 #include "idioma.h"
 #include "descoberta.h"
 #include "addons.h"
@@ -35,6 +37,8 @@ void addonsui_abrir(void) {
   // Sonda aqui e nao no arranque: sao N viagens de rede, e elas so interessam
   // a quem abriu esta tela. Quem ja respondeu nao e consultado de novo.
   addons_sondar_manifestos();
+  // Approved AIOStreams entry replaces its former toggle-only destination.
+  if (addons_n() == 0) aioui_abrir(-1);
 }
 
 // LIGAR UM ADDON SO VALIA NA PROXIMA ABERTURA DO APP, e o relato foi esse:
@@ -90,19 +94,35 @@ static void alternarAoVivo(int i) {
 }
 void addonsui_evento(const SDL_Event *e) {
   int n = addons_n();
-  int ultimo = aoVivo ? (n > 0 ? n - 1 : 0) : n + 1;
+  int ultimo = aoVivo ? (n > 0 ? n - 1 : 0) : n + 2;
   if (foco > ultimo) foco = ultimo;
   pediuRelogio = 0;
   if (e->type != SDL_KEYDOWN) return;
   switch (e->key.keysym.sym) {
+    case SDLK_a: aioui_abrir(-1); break;
     case SDLK_UP:     if (foco > 0) foco--; else pediuRelogio = 1; break;
     case SDLK_DOWN:   if (foco < ultimo) foco++; break;
     case SDLK_RETURN: case SDLK_KP_ENTER:
       if (aoVivo) { if (foco < n) alternarAoVivo(foco); break; }
       if (foco == n) { sincronizar(); break; }
       if (foco == n + 1) { aoVivo = 1; foco = 0; scrollY = 0; break; }
-      if (n > 0) { addons_alternar(foco); mexeu = 1; }
+      if (foco == n + 2) { aioui_abrir(-1); break; }
+      if (n > 0) {
+        if (aioui_detectar(foco)) { aioui_abrir(foco); break; }
+        int http, valida, diretos, torrents;
+        addonmodo_fatos(addonmodo_id(addons_base(foco)), &http, &valida, &diretos, &torrents);
+        if (http < 0 || http >= 400) { addons_tentar_de_novo(); break; }
+        if (diretos && !torrents) { addonguia_configurar(foco); break; }
+        addonguia_abrir(addons_sondado(foco) && !addons_fornece(foco, ADD_STREAM)
+                         ? AG_NOVO_CATALOGO : AG_MODO, foco, NULL);
+      }
       break;
+    case SDLK_SPACE: case SDLK_RIGHT:
+      if (!aoVivo && foco < n) { addons_alternar(foco); mexeu = 1; }
+      break;
+    // Voltar (qualquer tecla de voltar) e Esquerda: sai do modo ao-vivo antes
+    // de voltar a linha "Addons" em Ajustes > Fontes e addons
+    // (app.c chama ajustes_voltar_de_lista).
     case SDLK_AC_BACK: case SDLK_ESCAPE: case SDLK_BACKSPACE: case SDLK_LEFT:
       if (aoVivo) { aoVivo = 0; foco = n + 1; scrollY = 0; }
       else sair = 1;
@@ -115,7 +135,7 @@ void addonsui_evento(const SDL_Event *e) {
 // setas). O desenho mora em ajustes_ux_ilha.inc (ajSubLista).
 void addonsui_ponteiro(int i, int b) {
   (void)b;
-  int n = addons_n(), ultimo = aoVivo ? n - 1 : n + 1;
+  int n = addons_n(), ultimo = aoVivo ? n - 1 : n + 2;
   if (sair || i < 0 || i > ultimo || i == foco) return;
   foco = i;
 }
@@ -159,7 +179,13 @@ static const char *capacidades(int i) {
 // arranjo de ilhas de Ajustes, desenhado por ajustes.c (que tem as pecas).
 void addonsui_desenhar(Uint32 agora) {
   (void)agora;
-  ajustes_desenhar_addons(foco);
+  if (aoVivo) ajustes_desenhar_addons(foco);
+  else {
+    int aio = !addons_n();
+    for (int i = 0; i < addons_n(); i++) if (aioui_detectar(i)) aio = 1;
+    if (aio) aioui_addons_desenhar(foco);
+    else addonguia_lista(foco);
+  }
 }
 
 #ifdef AJUSTES_TESTE

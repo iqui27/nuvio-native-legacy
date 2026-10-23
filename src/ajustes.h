@@ -64,6 +64,7 @@ int  ajustes_gpu_efeitos(void);
 void ajustes_abrir_na_cor(void);
 // Atalho do cartão de novidades para a tipografia da interface.
 void ajustes_abrir_na_fonte(void);
+void ajustes_abrir_fileiras(void);
 // Atalhos do cartao da 1.6.0: Ajustes › Layout na linha "Layout da home", e
 // Ajustes › Aparência na linha "Interface de vidro". Mesma regra da cor.
 void ajustes_abrir_no_layout(void);
@@ -116,11 +117,13 @@ void ajustes_encerrar(void);
 // e um ajuste de acessibilidade, nao um gosto, e uma tela que o ignora nao
 // serve para quem o ligou.
 int ajustes_animacoes_reduzidas(void);
+int ajustes_animacoes_reduzidas_usuario(void);
 // Protecao de OLED (esmaecer.h): indice de V_ESMAECER (padrao 2 = 5 min) e de
 // V_BRILHO_PLAYER (padrao 1 = 80%).
 int ajustes_esmaecer(void);
 int ajustes_brilho_player(void);
 int ajustes_tunneling(void); // Android-only tunneled playback; default off.
+int ajustes_afr(void);       // #641 Android-only display refresh-rate match; default off.
 int ajustes_hdr_interface(void); // Experimental Android HDR output; default off.
 int ajustes_hdr_ui(void);   // #205: 1 = Automatico (padrao), 0 = Desligado
 // #202: -1 = ultimo modo usado (padrao); 0..7 = PlrAspecto aplicado ao abrir o video.
@@ -273,9 +276,11 @@ int  ajustes_addons_do_principal(void);
 void ajustes_definir_vidro(int ligado);
 // P2P EXPERIMENTAL (p2p.h). Desligado de fabrica. O endereco (o servidor de
 // streaming do Stremio na rede local) e por aparelho, em p2p.txt.
+void ajustes_definir_servidores(int ligado);
 int  ajustes_jellyfin_ligado(void);   // F11: personal servers on AND strict HTTP here
 int  ajustes_p2p_ligado(void);
 void ajustes_definir_p2p_ligado(int ligado);
+int ajustes_debrid_celular(const char *servico, const char *chave);
 // Endereco ja normalizado ("http://192.168.1.5:11470"); "" quando nao ha.
 const char *ajustes_p2p_url(void);
 // Normaliza e grava; texto vazio esquece. 0 se o texto nao e um endereco (nada
@@ -350,6 +355,9 @@ int   ajustes_hero_notas(void);        // heroNotasLocal: nota do IMDb no destaq
 int   ajustes_hero_ano(void);          // heroAnoLocal: ano no destaque
 int   ajustes_hero_duracao(void);      // heroDuracaoLocal: duracao no destaque
 int   ajustes_hero_sinopse_grande(void); // Normal (22/30) ou Grande (24/32)
+int   ajustes_hero_tamanho(void);       // heroSizeLocal: 0 Normal, 1 Grande, 2 Muito grande (logo + informacoes)
+float ajustes_hero_escala_logo(void);   // hero logo scale for ajustes_hero_tamanho: 1, 1.25, 1.5
+float ajustes_hero_escala_info(void);   // hero info line scale: 1, 1.15, 1.3
 int   ajustes_hero_cheio(void);         // modernHeroFullScreenBackdropEnabled
 // LAYOUT DA HOME (local): a estrutura da tela inicial. Moderna e o desenho de
 // sempre; Padrao contem o destaque num banner; Dinamica e o estilo Apple TV.
@@ -570,8 +578,12 @@ int   ajustes_abertura_addon(void);
 int   ajustes_abertura_fundo(void);
 // Modern/Dynamic Stage background. Stored 0 was Black: it now means Cortina, so old
 // defaults move to the new default with no migration.
-enum { PALCO_CORTINA, PALCO_ATUAL, PALCO_ARTE, PALCO_PRETO, PALCO_AURA, PALCO_TRIPTICO, PALCO_MONUMENTO };
+enum { PALCO_CORTINA, PALCO_ATUAL, PALCO_ARTE, PALCO_PRETO, PALCO_AURA, PALCO_TRIPTICO, PALCO_MONUMENTO, PALCO_N };
+// #659: per-row Stage background (fileiras.c). -1 = inherit the global setting.
+#define PALCO_PADRAO (-1)
 int   ajustes_palco_fundo(void);
+// pt label of a PALCO_* mode (the V_PALCO_FUNDO table); i18n at draw time.
+const char *ajustes_palco_fundo_rotulo(int modo);
 int   ajustes_titulo_fil(void);        // 0 Classico, 1 Ilha, 2 Editorial, 3 Acento
 int   ajustes_abertura_estilo(void);   // 0 Centro (A3), 1 Canto (B3)
 int   ajustes_fundo_din(void);         // #205: fundo da Dinamica, 0 Cinza (padrao), 1 Cor, 2 Imersivo, 3 Cinza escuro
@@ -670,8 +682,10 @@ int   ajustes_ps_continuar(void);        // #303: 0 = sem o cartao "continuar" n
 int   ajustes_hist_conta(void);          // 1 = this profile's history goes to the Nuvio account (per profile, default on)
 int   ajustes_amigos_estilo(void); // 0 Feed, 1 Live, 2 Stories, 3 Presence, 4 Poster, 5 Classic
 int   ajustes_social(void);              // 1 = friends/social features on (per profile, default on)
+int   ajustes_social_perfil(int perfil); // mesmo ajuste lido de OUTRO perfil (#643)
 int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)
 int   ajustes_dv7(void);
+int   ajustes_hdr10p_strip(void);
 int   ajustes_cw_retido_tambem(void);   // 1 = o titulo da ilha/Retomar tambem fica em Continuar assistindo
 // Percentual (70-98, padrao 90) a partir do qual o episodio conta como
 // assistido: sai do Continuar assistindo e o card passa ao proximo. Local.

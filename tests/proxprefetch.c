@@ -125,8 +125,8 @@ static int extraSilenciosa(const char *id, const char *tipo, int (*c)(void *), v
   *l = NULL;
   if (extraSilenciosaModo == 1) return 0; // falha HTTP/TMDB, sem callbacks
   *l = calloc(1, sizeof **l); assert(*l);
-  aviso(u, 2, "Recuperada", 1, NULL, 0);
-  aviso(u, 2, "Recuperada", 2, *l, 1);
+  aviso(u, 2, "Recuperada", NULL, 1, NULL, 0);
+  aviso(u, 2, "Recuperada", NULL, 2, *l, 1);
   return 1;
 }
 static int extraAtiva(void) { return extraModo != 0; }
@@ -135,11 +135,11 @@ static int extraFixture(const char *id, const char *tipo, int (*c)(void *), void
   Stream **l = saida;
   (void)id; (void)tipo; (void)c; (void)ctx;
   *l = calloc(1, sizeof **l); assert(*l);
-  aviso(u, 0, "Rapido", 1, NULL, 0);
-  aviso(u, 1, "Lento", 1, NULL, 0);
-  aviso(u, 0, "Rapido", 2, *l, 1);
+  aviso(u, 0, "Rapido", NULL, 1, NULL, 0);
+  aviso(u, 1, "Lento", NULL, 1, NULL, 0);
+  aviso(u, 0, "Rapido", NULL, 2, *l, 1);
   // Corte deixa Lento pendente (1), falha explicita (3), ou sucesso vazio (2).
-  if (extraModo != 1) aviso(u, 1, "Lento", extraModo == 2 ? 3 : 2, NULL, 0);
+  if (extraModo != 1) aviso(u, 1, "Lento", NULL, extraModo == 2 ? 3 : 2, NULL, 0);
   return 1;
 }
 

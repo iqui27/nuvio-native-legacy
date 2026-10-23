@@ -188,9 +188,13 @@ static void pVel(void *u, int c) { (void)u; video_taxa_sync(c * 10); }
 static int enviarWs(void *u, const char *j) { (void)u; return ws ? dws_enviar(ws, j) : -1; }
 
 static char nivelDaTv(void) {
-  // Nivel A so onde a plataforma diz que muda a velocidade E nao esta travada
-  // (passthrough no Android). A prova de verdade vem do motor (VelMedidor).
+#ifdef NV_ANDROID
+  // Room rate corrections would restart ExoPlayer when switching PCM policy.
+  return 'B';
+#else
+  // Level A requires speed support; VelMedidor verifies the actual clock.
   return video_velocidade_suportada() && !video_velocidade_bloqueada() ? 'A' : 'B';
+#endif
 }
 
 static void iniciarMotor(void) {

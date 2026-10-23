@@ -44,7 +44,14 @@ static void uxListarDiferencas(void) {
   if (uxDifFoco >= uxNDifs) uxDifFoco = uxNDifs ? uxNDifs - 1 : 0;
 }
 static int uxRequisito(int op) {
+  if (ajustes_fonte_prioridade() == 3 &&
+      (op == AJ_FONTE_AUTO || op == AJ_FONTE_GRUPO || op == AJ_FONTE_GRUPO_SESSOES || op == AJ_LINK_REUSAR || op == AJ_LINK_PRAZO))
+    return AJ_FONTE_PRIORIDADE;
   switch (op) {
+    case AJ_MANTER_PRAZO: return AJ_MANTER_VIDEO;
+    case AJ_DESCANSO_ESTILO: return AJ_ESMAECER;
+    case AJ_DESCANSO_FONTE: return valor[AJ_ESMAECER] == 0 ? AJ_ESMAECER : AJ_DESCANSO_ESTILO;
+    case AJ_EP_TAMANHO: return AJ_HOME_LAYOUT;
     case AJ_PROXIMO_CONTAGEM: return AJ_PROXIMO_AUTO;
     case AJ_FONTE_GRUPO_SESSOES: return AJ_FONTE_GRUPO;
     case AJ_LINK_PRAZO: return AJ_LINK_REUSAR;
@@ -307,6 +314,10 @@ static void uxCategoriaAlternar(int i) {
   if(i>=0 && i<uxNCategorias)uxCategorias[i].oculta=!uxCategorias[i].oculta;
 }
 static int uxEvento(SDL_Keycode k) {
+  if (aj4RTL()) {
+    if (k == SDLK_LEFT) k = SDLK_RIGHT;
+    else if (k == SDLK_RIGHT) k = SDLK_LEFT;
+  }
   if (!uxEditor) return aj4Evento(k);
   int layoutOculto = !ajLayoutSelecionavel() && (uxCabLayout || uxTopo == AJ2_T_LAYOUT ||
                        (uxEditor && uxOp == AJ_LAYOUT_AJUSTES));
