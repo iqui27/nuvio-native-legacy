@@ -29,6 +29,7 @@ int ajustes_idioma(void);   // ajustes.h puxa SDL; so o idioma interessa aqui
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 #include <strings.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -56,8 +57,9 @@ static char pagina[24576], pagEnviado[8192], pagUsado[8192];
 static const char *proximaPagina, *proximaEnviado;
 /* Session mode (guided setup): server survives POSTs; statusTxt is the short
  * public status the page polls (counts and state only, never credentials). */
-static int sessao;
-static char statusTxt[4096];
+static atomic_int sessao;
+static int proximaSessao;
+static char statusTxt[16384];
 
 int celular_disponivel(void) { return 1; }
 int celular_estado(void) { return estado; }
@@ -400,7 +402,7 @@ static int atender(int c, int *erros) {
     char cam[CEL_TOKEN_N + 4];
     snprintf(cam, sizeof cam, "/%s/s", token);
     if (!strcmp(caminho, cam)) {
-      char s[4096];
+      char s[sizeof statusTxt];
       if (strcmp(metodo, "GET") && strcmp(metodo, "HEAD")) { responder(c, 405, NULL); return 0; }
       pthread_mutex_lock(&trava);
       snprintf(s, sizeof s, "%s", statusTxt);
@@ -442,6 +444,10 @@ static int atender(int c, int *erros) {
   }
   corpo[temCorpo] = 0;
   pthread_mutex_lock(&trava);
+  if(temRecebido){
+    pthread_mutex_unlock(&trava);memset(corpo,0,temCorpo);
+    responder(c,409,NULL);return 0;
+  }
   campoT(corpo, recebido, sizeof recebido);
   aparar(recebido);
   r = recebido[0] != 0;
@@ -514,14 +520,15 @@ int celular_abrir_pagina(const char *titulo,const char *html,const char *enviado
 }
 
 int celular_abrir_sessao(const char *titulo,const char *html) {
-  int ok = celular_abrir_pagina(titulo, html, "ok");
-  sessao = ok;
+  proximaSessao=1;
+  int ok=celular_abrir_pagina(titulo,html,"ok");
+  proximaSessao=0;
   return ok;
 }
 
 void celular_status(const char *s) {
   pthread_mutex_lock(&trava);
-  snprintf(statusTxt, sizeof statusTxt, "%s", s ? s : "");
+  snprintf(statusTxt,sizeof statusTxt,"%s",s&&strlen(s)<sizeof statusTxt?s:"{\"s\":\"err\"}");
   pthread_mutex_unlock(&trava);
 }
 
@@ -557,6 +564,7 @@ int celular_abrir(const char *titulo) {
   proximaPagina=proximaEnviado=NULL;
   expira = time(NULL) + CEL_VALIDADE_S;
   estado = CEL_ESPERANDO;
+  sessao=proximaSessao;
   if (pthread_create(&fio, NULL, servir, NULL)) { celular_fechar(); return 0; }
   fioVivo = 1;
   // Sem IP nem token no log: so que subiu.

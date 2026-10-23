@@ -22,7 +22,15 @@ int main(void){
   celular_status("{\"s\":\"ok\",\"live\":640}");
   snprintf(args,sizeof args,"'%s/s'",local);assert(curl(args)==200&&strstr(saida,"640"));
   snprintf(args,sizeof args,"--data-urlencode 't={\"step\":2}' '%s'",local);assert(curl(args)==200);
+  /* One in-flight submission: a second POST before the app consumes gets 409. */
+  snprintf(args,sizeof args,"--data-urlencode 't={\"step\":2}' '%s'",local);assert(curl(args)==409);
   assert(celular_pegar(value,sizeof value));
+  assert(!celular_pegar(value,sizeof value));
+  /* Status never repeats or overflows: oversize states are rejected. */
+  { static char grande[20000];memset(grande,'a',sizeof grande-1);celular_status(grande);
+    snprintf(args,sizeof args,"'%s/s'",local);assert(curl(args)==200&&strstr(saida,"err")); }
+  celular_status("{\"s\":\"done\"}");
+  snprintf(args,sizeof args,"'%s/s'",local);assert(curl(args)==200&&strstr(saida,"done"));
   celular_fechar();assert(celular_estado()==CEL_PARADO);
   assert(celular_abrir("Busca"));
   token=strrchr(celular_url(),'/')+1;snprintf(local,sizeof local,"http://127.0.0.1:%d/%s",celular_porta(),token);
