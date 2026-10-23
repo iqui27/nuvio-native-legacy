@@ -79,6 +79,7 @@
 
 #include "text.h"
 #include "plrui.h"
+#include "sinopse.h"
 // Render the same frozen page with an intact backdrop as the glass reference.
 static int fxIntactBackdrop;
 static void fx_backdrop(GfxRect r, GLuint tex, GfxModo mode, float focus,
@@ -103,7 +104,13 @@ static float fx_kicker(const char *s, float x, float y, int r, int g, int b, flo
 static float fx_titulo_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
                             float x, float y, float larg, float leading,
                             float alpha, int maxLinhas);
+// A sinopse do hero saiu do txt_bloco para o modulo sinopse.c (8f97bbfaf):
+// o gancho tem de cobrir as duas, senao o "synopsis visible" nunca conta.
+static float fx_sinopse_corta(TxtEstilo original, const char *texto, int r, int g, int b,
+                              float x, float y, float larg, float leading,
+                              float alpha, int maxLinhas);
 #define txt_bloco fx_titulo_bloco
+#define sinopse_bloco_corta fx_sinopse_corta
 #define gfx_icone fx_icone
 #define plrui_kicker fx_kicker
 #include "trailer.h"
@@ -135,6 +142,7 @@ static void rwRemoto(const char *id,const char *chave,int ocultar) { (void)id; (
 #include "intro.h"
 #include "ilha.h"
 #undef txt_bloco
+#undef sinopse_bloco_corta
 #undef gfx_icone
 #undef plrui_kicker
 #undef recomenda_ativo
@@ -147,6 +155,13 @@ static void fx_icone(GfxRect r, const char *nome, float cr, float cg, float cb, 
 static float fx_kicker(const char *s, float x, float y, int r, int g, int b, float a) {
   if (a > .1f) fxInfoY=y;
   return plrui_kicker(s,x,y,r,g,b,a);
+}
+static float fx_sinopse_corta(TxtEstilo original, const char *texto, int r, int g, int b,
+                              float x, float y, float larg, float leading,
+                              float alpha, int maxLinhas) {
+  if (fxSinopseEsperada && texto && !strcmp(texto,fxSinopseEsperada) && alpha > 0.3f)
+    fxSinopseDesenhada++;
+  return sinopse_bloco_corta(original,texto,r,g,b,x,y,larg,leading,alpha,maxLinhas);
 }
 static float fx_titulo_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
                             float x, float y, float larg, float leading,
@@ -896,8 +911,14 @@ int main(int argc, char **argv) {
     carro=1; carCheia=0; nivel=0; botao=0; maisAcoes=0;
     carN=2; carIdx[0]=0; carIdx[1]=1; carPos=carAplicado=0; carOff=0;
     carEsperaRect=0; cartao=carTxt=1; cartaoVel=carTxtVel=0;
-    assert(epTempY() == 1160 && epRowY() == 1286);
-    assert(epCardW()==420 && epCardH()==500 && epThumbH()==236);
+    // DINAMICA usa as metricas dos cards da Moderna (e53b13c06) e a fileira
+    // desce 24 px sob as abas (8ba27a3be): o teste le as constantes do layout,
+    // nao numeros de uma versao antiga. Espacamento Normal, tamanho Medio.
+    assert(ajustes_det_espaco() == 1 && ajustes_ep_tamanho() == 1);
+    assert(epTempY() == NV_DETP_TEMP_Y && epRowY() == NV_DETP_EP_Y + 24.0f - 40.0f);
+    assert(epCardW() == NV_DETP_EP_W && epThumbH() == NV_DETP_EPM_THUMB_H);
+    assert(epCardH() == NV_DETP_EPM_THUMB_H + NV_DETP_EPM_SIN_DY +
+                        (float)NV_DETP_EPM_SIN_LINHAS * NV_DETP_EP_LD_SIN + 15.0f);
     for (int step=0;step<25;step++) {SDL_Delay(16);quadros(1);}
     snprintf(nome,sizeof nome,"%s-actions-closed.png",saida); gravar(nome);
     botao=1+(temInicio()?1:0);
