@@ -6292,6 +6292,7 @@
   T("Viu até %s", "Đã xem đến %s"),
   T("Vizinha do que você gosta.", "Người bạn láng giềng của thứ bạn yêu thích."),
   T("Você", "Bạn"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Bạn chưa tạo danh sách nào trên Trakt"),
   T("Você ainda não mandou nada para essa pessoa.", "Bạn chưa gửi gì cho người này."),
   T("Você alcançou %s. O %s espera por vocês.", "Bạn đã đuổi kịp %s. %s đang chờ các bạn."),

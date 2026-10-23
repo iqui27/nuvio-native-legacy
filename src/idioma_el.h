@@ -6292,6 +6292,7 @@
   T("Viu até %s", "Είδε μέχρι το %s"),
   T("Vizinha do que você gosta.", "Γείτονας αυτού που αγαπάς."),
   T("Você", "Εσείς"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Δεν έχεις δημιουργήσει ακόμα λίστες στο Trakt"),
   T("Você ainda não mandou nada para essa pessoa.", "Δεν έχετε στείλει ακόμα τίποτα σε αυτό το άτομο."),
   T("Você alcançou %s. O %s espera por vocês.", "Πρόλαβες %s. Το %s σας περιμένει."),

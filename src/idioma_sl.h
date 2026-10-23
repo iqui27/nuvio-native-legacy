@@ -6292,6 +6292,7 @@
   T("Viu até %s", "Videl(a) do %s"),
   T("Vizinha do que você gosta.", "Sosed tistega, kar imate radi."),
   T("Você", "Vi"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Na Traktu še niste ustvarili nobenega seznama"),
   T("Você ainda não mandou nada para essa pessoa.", "Tej osebi še niste nič poslali."),
   T("Você alcançou %s. O %s espera por vocês.", "Dohitel(a) si %s. %s vas čaka."),

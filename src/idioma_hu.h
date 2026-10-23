@@ -6292,6 +6292,7 @@
   T("Viu até %s", "Eddig látta: %s"),
   T("Vizinha do que você gosta.", "Szomszédja annak, amit szeretsz."),
   T("Você", "Te"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "A Trakton még nem hoztál létre listát"),
   T("Você ainda não mandou nada para essa pessoa.", "Még nem küldtél semmit ennek a személynek."),
   T("Você alcançou %s. O %s espera por vocês.", "Utolérted: %s. A(z) %s rátok vár."),

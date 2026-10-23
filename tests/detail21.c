@@ -176,6 +176,13 @@ int main(void) {
   char duration[32]; desc_duracao_min_curta(156,duration,sizeof duration);
   assert(!strcmp(duration,"2h36"));
   assert(ORDEM_SERIE[7]==SEC_COLECAO && ORDEM_SERIE[8]==SEC_TRAILERS);
+  diario_iniciar(); notaAbrir(); assert(notaAberta && notaEscolhida==5);
+  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RIGHT; detail_evento(&e);
+  assert(notaEscolhida==6);
+  e.type=SDL_KEYUP; e.key.keysym.sym=SDLK_RETURN; detail_evento(&e);
+  assert(!notaAberta && notaMinha()==6);
+  notaAbrir(); e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_ESCAPE; detail_evento(&e);
+  assert(!notaAberta && notaMinha()==6);
   puts("detail21: content, navigation, profile isolation and personal status OK");
   SDL_Quit();
   return 0;

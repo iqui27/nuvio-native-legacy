@@ -6291,6 +6291,7 @@
   { "Viu até %s", "Watched up to %s" },
   { "Vizinha do que você gosta.", "A neighbor of what you love." },
   { "Você", "You" },
+  { "Você %d", "You %d" },
   { "Você ainda não criou listas no Trakt", "You have not created any lists on Trakt yet" },
   { "Você ainda não mandou nada para essa pessoa.", "You haven't sent anything to this person yet." },
   { "Você alcançou %s. O %s espera por vocês.", "You caught up with %s. %s waits for you all." },

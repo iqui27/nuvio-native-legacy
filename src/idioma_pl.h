@@ -6292,6 +6292,7 @@
   T("Viu até %s", "Obejrzane do %s"),
   T("Vizinha do que você gosta.", "Sąsiad tego, co kochasz."),
   T("Você", "Ty"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Nie utworzyłeś(-aś) jeszcze żadnych list na Trakt"),
   T("Você ainda não mandou nada para essa pessoa.", "Nic jeszcze nie wysłałeś tej osobie."),
   T("Você alcançou %s. O %s espera por vocês.", "Dogoniłeś(-aś) %s. %s czeka na was."),

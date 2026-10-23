@@ -6292,6 +6292,7 @@
   T("Viu até %s", "Sett till %s"),
   T("Vizinha do que você gosta.", "Granne till det du älskar."),
   T("Você", "Du"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Du har inte skapat några listor på Trakt än"),
   T("Você ainda não mandou nada para essa pessoa.", "Du har inte skickat något till personen än."),
   T("Você alcançou %s. O %s espera por vocês.", "Du har kommit ikapp %s. %s väntar på er."),

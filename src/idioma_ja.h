@@ -6292,6 +6292,7 @@
   T("Viu até %s", "%sまで視聴"),
   T("Vizinha do que você gosta.", "あなたの好きな作品の隣にある作品。"),
   T("Você", "あなた"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Trakt にまだリストを作成していません"),
   T("Você ainda não mandou nada para essa pessoa.", "この人にはまだ何も送っていません。"),
   T("Você alcançou %s. O %s espera por vocês.", "%sに追いつきました。%sは全員そろってから。"),

@@ -6292,6 +6292,7 @@
   T("Viu até %s", "%s bölümüne kadar izledi"),
   T("Vizinha do que você gosta.", "Sevdiğin şeyin komşusu."),
   T("Você", "Siz"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Trakt'ta henüz liste oluşturmadın"),
   T("Você ainda não mandou nada para essa pessoa.", "Bu kişiye henüz bir şey göndermedin."),
   T("Você alcançou %s. O %s espera por vocês.", "%s kişisine yetiştin. %s sizi bekliyor."),

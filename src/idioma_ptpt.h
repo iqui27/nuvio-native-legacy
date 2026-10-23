@@ -6292,6 +6292,7 @@
   T("Viu até %s", "Viu até %s"),
   T("Vizinha do que você gosta.", "Vizinha do que gostas."),
   T("Você", "Tu"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Ainda não criaste listas no Trakt"),
   T("Você ainda não mandou nada para essa pessoa.", "Ainda não enviou nada a esta pessoa."),
   T("Você alcançou %s. O %s espera por vocês.", "Alcançou %s. O %s espera por vocês."),

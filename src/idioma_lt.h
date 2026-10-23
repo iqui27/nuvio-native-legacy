@@ -6292,6 +6292,7 @@
   T("Viu até %s", "Matė iki %s"),
   T("Vizinha do que você gosta.", "Tai, kas šalia to, ką mylite."),
   T("Você", "Jūs"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Trakt dar nesukūrėte jokių sąrašų"),
   T("Você ainda não mandou nada para essa pessoa.", "Šiam žmogui dar nieko nesiuntėte."),
   T("Você alcançou %s. O %s espera por vocês.", "Pasivijai %s. %s jūsų laukia."),

@@ -6292,6 +6292,7 @@
   T("Viu até %s", "看到%s"),
   T("Vizinha do que você gosta.", "與你喜愛的作品相鄰的作品。"),
   T("Você", "你"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "你還沒有在 Trakt 上建立清單"),
   T("Você ainda não mandou nada para essa pessoa.", "你還沒有給這個人推薦過內容。"),
   T("Você alcançou %s. O %s espera por vocês.", "你追上了%s。%s等你們一起看。"),

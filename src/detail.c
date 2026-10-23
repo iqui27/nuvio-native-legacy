@@ -53,6 +53,8 @@ static TituloTempo detalheTempo;
 #include "streams.h"
 #include "descoberta.h"
 #include "diretor.h"
+#include "diario.h"
+#include "trakt.h"
 #include "gfx.h"
 #include "botoes.h"
 #include "vertudo.h"
@@ -329,6 +331,16 @@ static float animFoco[N_SECOES][N_ITENS];
 static float scrollSec[N_SECOES];    // rolagem HORIZONTAL de cada fileira
 static float scrollY = 0.0f;         // rolagem VERTICAL do documento
 static float scrollInicio, scrollAlvo, scrollTempo;
+static int notaAberta, notaEscolhida=5;
+static float notaX=460;
+static float notaAnim;
+static int notaMinha(void) {
+  const CatItem *ci=cat_item(idx); DiarioTitulo d;
+  return ci && diario_titulo(0,ci->imdb,&d) ? d.nota10 : 0;
+}
+static void notaAbrir(void) {
+  int n=notaMinha(); notaEscolhida=n ? n : 5; notaAberta=1;
+}
 static float focoTempo[N_SECOES][N_ITENS], focoInicio[N_SECOES][N_ITENS];
 static unsigned char focoAlvo[N_SECOES][N_ITENS];
 
@@ -1238,8 +1250,10 @@ static void desenhaNotasTiles(float x,float y,float a) {
       bar.w*=nf_norm100(fonte,notasDados()->cru[fonte])*.01f;
       gfx_cor(bar,.5f,1,1,1,.7f*a);
     } else if (own) {
-      txt_desenhar_alpha(txt_linha(TXT_G30B,"★",(int)(ar*255),(int)(ag*255),(int)(ab*255),255),b.x+22,b.y+48,a);
-      txt_desenhar_alpha(txt_linha(TXT_G18R,i18n("OK para avaliar"),243,242,239,140),b.x+22,b.y+112,a);
+      int minha=notaMinha(); char score[16];
+      if (minha) snprintf(score,sizeof score,"%d",minha); else snprintf(score,sizeof score,"★");
+      txt_desenhar_alpha(txt_linha(TXT_LOG_N44,score,(int)(ar*255),(int)(ag*255),(int)(ab*255),255),b.x+22,b.y+46,a);
+      txt_desenhar_alpha(txt_linha(TXT_G18R,i18n(minha ? "Você" : "OK para avaliar"),243,242,239,140),b.x+22,b.y+112,a);
     } else {
       AmigosTitulo am;
       if (amigosDoTitulo(&am)) {
@@ -1691,6 +1705,7 @@ static void abrirInterno(const HomeItem *it) {
   memset(focoAlvo,0,sizeof focoAlvo); memset(focoTempo,0,sizeof focoTempo);
   memset(focoInicio,0,sizeof focoInicio);
   scrollInicio=scrollAlvo=scrollY; scrollTempo=.7f;
+  notaAberta=0; notaAnim=0;
   memset(scrollSec, 0, sizeof scrollSec); memset(velSec, 0, sizeof velSec);
   memset(revEp, 0, sizeof revEp); memset(revRel, 0, sizeof revRel);
   if (restaurarVolta) {
@@ -2711,6 +2726,21 @@ void detail_evento(const SDL_Event *e) {
 #endif
   if (saindo) return;
   // O CARTAO "O QUE ACHOU?" aberto pela pagina e modal: a tecla e dele.
+  if (notaAberta) {
+    if (e->type==SDL_KEYDOWN) {
+      SDL_Keycode key=e->key.keysym.sym;
+      if (key==SDLK_LEFT && notaEscolhida>1) notaEscolhida--;
+      else if (key==SDLK_RIGHT && notaEscolhida<10) notaEscolhida++;
+      else if (key==SDLK_ESCAPE || key==SDLK_BACKSPACE) notaAberta=0;
+    } else if (e->type==SDL_KEYUP && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) {
+      const CatItem *ci=cat_item(idx);
+      if (ci && diario_avaliar(0,ci->imdb,ehSerie() ? DIARIO_SERIE : DIARIO_FILME,notaEscolhida)) {
+        if (trakt_ativo()) trakt_avaliar(ci->imdb,ci->tipo,notaEscolhida);
+        notaAberta=0;
+      }
+    }
+    return;
+  }
   if (reacao_aberta() && reacao_evento(e, 1)) return;
   if (comInteiro>=0) {
     if (e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_ESCAPE ||
@@ -2951,7 +2981,7 @@ void detail_evento(const SDL_Event *e) {
       } else if (acao == ACAO_LISTA) {
         pedMarcar = 1;
       } else if (acao == ACAO_NOTA) {
-        reacao_detalhe_abrir(cat_item(idx));
+        notaAbrir();
       } else if (acao == ACAO_ASSISTIDO) {
         pedAssistido = 1;
       } else if (acao == ACAO_TRAVAR) {
@@ -2973,7 +3003,7 @@ void detail_evento(const SDL_Event *e) {
     } else if (foco.fileira == SEC_NOTAS) {
       int c=foco.coluna, nf=0;
       while (notaFonte(nf)>=0) nf++;
-      if (c==nf) reacao_detalhe_abrir(cat_item(idx));
+      if (c==nf) notaAbrir();
       else if (c>nf) pedAmigos=1;
     } else if (foco.fileira == SEC_RELACIONADOS) {
       // Recomendacoes de filme e serie: abre do catalogo quando ja temos
@@ -3911,6 +3941,7 @@ void detail_atualizar(float dt, Uint32 agora) {
   // contagem do quadro anterior deixaria o layout um quadro atrasado — visivel
   // como um tranco quando o elenco ou os trailers chegam.
   recalcularLayout();
+  notaAnim=anim_rampa(notaAnim,notaAberta ? 1 : 0,dt,450);
   t  = anim_mola(t,  saindo ? 0.0f : 1.0f, dt, NV_MOLA_TELA);
   // Rigidez propria: o web leva 0.8s para apagar o backdrop (cubic-bezier
   // .4,0,.2,1), e a mola de NV_MOLA_TELA assenta em ~330ms.
@@ -4283,7 +4314,9 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
       // menu do cartaz, que zera o progresso) ficava com o olho riscado.
       gfx_icone(ig, "check", ic, ic, ic, a);
     } else if (icone == ACAO_NOTA) {
-      TxtLinha star=txt_linha(TXT_G30B,"★",(int)(ic*255),(int)(ic*255),(int)(ic*255),255);
+      int minha=notaMinha(); char score[16];
+      if (minha) snprintf(score,sizeof score,"%d",minha); else snprintf(score,sizeof score,"★");
+      TxtLinha star=txt_linha(TXT_G30B,score,(int)(ic*255),(int)(ic*255),(int)(ic*255),255);
       txt_desenhar_alpha(star,cx-star.w*.5f,cy-star.h*.5f,a);
     } else if (icone == ACAO_TRAVAR) {
       // CADEADO do Lucide: aberto = "Travar", fechado = a serie ja esta travada.
@@ -4985,6 +5018,7 @@ static void heroWeb(float a, float desloc) {
       snprintf(rot,sizeof rot,i18n("%s T%dE%d"),i18n(retomando ? "Continuar" : "Assistir"),st,ep);
     } else snprintf(rot,sizeof rot,"%s",i18n(retomando && ci && ci->progresso>0 ? "Continuar" : "Assistir"));
   }
+  notaX=96+larguraPrimario(rot)+24+120*(topoVersao() ? 2 : 1);
   // REASSISTIDA (rewatch.h): serie concluida com reassistida ativa muda o
   // primario para o episodio da rodada; toda vista, vira "Reassistir do início".
   if (ci && ehSerie() && rewatch_ativa(ci->imdb)) {
@@ -5314,6 +5348,15 @@ static void heroWeb(float a, float desloc) {
     TxtLinha lm=txt_linha(TXT_DET_META2,meta,189,189,189,255);
     txt_desenhar_alpha(lm,NV_DETW2_X,yMeta1,a);
     desenhaSeloImdb(NV_DETW2_X+lm.w+12,yMeta1+15,notaDe(idx),a);
+    int minha=notaMinha();
+    if (topoPessoal() && minha) {
+      char score[32]; snprintf(score,sizeof score,i18n("Você %d"),minha);
+      float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
+      TxtLinha l=txt_linha(TXT_G20M,score,(int)(ar*255),(int)(ag*255),(int)(ab*255),255);
+      GfxRect chip={NV_DETW2_X+lm.w+150,yMeta1,l.w+16,30};
+      gfx_anel(chip,6.0f/30,1.5f,ar,ag,ab,a);
+      txt_desenhar_alpha(l,chip.x+8,chip.y+2,a);
+    }
     return;
   }
   float fMeta = 1.0f;
@@ -7723,6 +7766,22 @@ static void desenhaGradeProgresso(float x, float y, float a) {
   }
 }
 
+static void desenhaNota(float a) {
+  if (notaAnim<=0) return;
+  float k=detalheExpo(notaAnim),x=96,y=599-scrollY;
+  if (nivel>=1) { x=NV_TELA_W*.5f-310; y=NV_TELA_H*.5f-48; }
+  else x=notaX;
+  GfxRect pill={x,y,96+524*k,96};
+  gfx_cor(pill,.5f,.96f,.96f,.96f,a);
+  if (k<.8f) return;
+  txt_desenhar_alpha(txt_linha(TXT_G20M,"Sua nota",90,90,90,255),x+40,y+34,a);
+  float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
+  for (int i=0;i<10;i++) gfx_cor((GfxRect){x+160+i*34,y+44,26,8},.5f,
+    i<notaEscolhida ? ar : .82f,i<notaEscolhida ? ag : .82f,i<notaEscolhida ? ab : .82f,a);
+  char score[8]; snprintf(score,sizeof score,"%d",notaEscolhida);
+  txt_desenhar_alpha(txt_linha(TXT_LOG_N44,score,17,17,17,255),x+530,y+22,a);
+}
+
 static float secaoAlpha(int r) { return nivel>=1 && foco.fileira!=r ? .42f : 1.f; }
 
 static void desenhaRodape(int r,float a) {
@@ -8432,6 +8491,7 @@ void detail_desenhar(Uint32 agora) {
     txt_desenhar_alpha(txt_linha(TXT_HEADLINE,nome,240,242,246,255),folha.x+48,folha.y+40,s);
     txt_bloco(TXT_DET_META2,texto,220,224,232,folha.x+48,folha.y+110,folha.w-96,36,s,12);
   }
+  desenhaNota(a2);
   reacaoPendente(s);
   menuDeVisto(agora);
   maisDesenhar();

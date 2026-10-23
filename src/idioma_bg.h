@@ -6292,6 +6292,7 @@
   T("Viu até %s", "Гледано до %s"),
   T("Vizinha do que você gosta.", "Съсед на онова, което обичате."),
   T("Você", "Вие"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Още не сте създали никакви списъци в Trakt"),
   T("Você ainda não mandou nada para essa pessoa.", "Все още не сте изпратили нищо на този човек."),
   T("Você alcançou %s. O %s espera por vocês.", "Настигна %s. %s ви чака."),

@@ -6292,6 +6292,7 @@
   T("Viu até %s", "Gezien tot %s"),
   T("Vizinha do que você gosta.", "Een buur van wat je liefhebt."),
   T("Você", "Jij"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Je hebt nog geen lijsten gemaakt op Trakt"),
   T("Você ainda não mandou nada para essa pessoa.", "Je hebt deze persoon nog niets gestuurd."),
   T("Você alcançou %s. O %s espera por vocês.", "Je hebt %s ingehaald. %s wacht op jullie."),

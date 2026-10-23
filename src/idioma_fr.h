@@ -6291,6 +6291,7 @@
   T("Viu até %s", "A vu jusqu'à %s"),
   T("Vizinha do que você gosta.", "Proche de ce que vous aimez."),
   T("Você", "Vous"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Vous n'avez pas encore créé de listes sur Trakt"),
   T("Você ainda não mandou nada para essa pessoa.", "Vous n'avez encore rien envoyé à cette personne."),
   T("Você alcançou %s. O %s espera por vocês.", "Vous avez rattrapé %s. %s vous attend."),

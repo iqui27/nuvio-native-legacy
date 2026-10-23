@@ -6291,6 +6291,7 @@
   T("Viu até %s", "Văzut până la %s"),
   T("Vizinha do que você gosta.", "Vecină cu ce îți place."),
   T("Você", "Tu"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Încă nu ai creat liste pe Trakt"),
   T("Você ainda não mandou nada para essa pessoa.", "Încă nu i-ai trimis nimic acestei persoane."),
   T("Você alcançou %s. O %s espera por vocês.", "I-ai ajuns pe %s. %s vă așteaptă."),

@@ -6292,6 +6292,7 @@
   T("Viu até %s", "Set til %s"),
   T("Vizinha do que você gosta.", "Nabo til det, du elsker."),
   T("Você", "Dig"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Du har ikke oprettet nogen lister på Trakt endnu"),
   T("Você ainda não mandou nada para essa pessoa.", "Du har ikke sendt noget til personen endnu."),
   T("Você alcançou %s. O %s espera por vocês.", "Du har indhentet %s. %s venter på jer."),

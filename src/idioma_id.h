@@ -6292,6 +6292,7 @@
   T("Viu até %s", "Ditonton sampai %s"),
   T("Vizinha do que você gosta.", "Tetangga dari yang kamu suka."),
   T("Você", "Anda"),
+  T("Você %d", "You %d"),
   T("Você ainda não criou listas no Trakt", "Kamu belum membuat daftar di Trakt"),
   T("Você ainda não mandou nada para essa pessoa.", "Kamu belum mengirim apa pun ke orang ini."),
   T("Você alcançou %s. O %s espera por vocês.", "Kamu menyusul %s. %s menunggu kalian."),
