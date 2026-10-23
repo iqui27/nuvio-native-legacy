@@ -395,6 +395,29 @@ static void painel(float x,float y,float w,float h) {
   gfx_luz_canto(r,32/h,w*.18f,-h*.55f,h,.9f,.94f,.98f,.04f);
 }
 static void pointer(int i,int b) { lateral=b; foco=i; }
+// Upstream wrapper attribution: a catalog id carries the wrapper addon when it
+// embeds its name. Match is on normalized tokens; without a derivable match the
+// row shows the wrapping addon itself, as the approved mock does.
+static const char *origemCatalogo(int c) {
+  static char out[192];
+  char id[128]; size_t j=0;
+  for(size_t i=0;j<sizeof id-1 && snap.catalogo[c].id[i];i++) {
+    char ch=(char)tolower((unsigned char)snap.catalogo[c].id[i]);
+    id[j++]=(ch=='-'||ch=='_'||ch=='.')?' ':ch;
+  }
+  id[j]=0;
+  for(int a=0;a<snap.addons;a++) {
+    char nome[96]; size_t k=0;
+    for(size_t i=0;k<sizeof nome-1 && snap.addon[a].nome[i];i++) {
+      char ch=(char)tolower((unsigned char)snap.addon[a].nome[i]);
+      nome[k++]=(ch=='-'||ch=='_'||ch=='.')?' ':ch;
+    }
+    nome[k]=0;
+    if(k>2 && strstr(id,nome)) { snprintf(out,sizeof out,"%s",snap.addon[a].nome); return out; }
+  }
+  snprintf(out,sizeof out,"AIOStreams");
+  return out;
+}
 static void click(int i,int b) { pointer(i,b); acao(); }
 static void voltarClick(int a,int b) {
   (void)a; (void)b; SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_ESCAPE;
@@ -671,8 +694,8 @@ static void workspace(void) {
     texto(TXT_ILHA_HORA,i18n("Ativado"),1188,343,90,160);
     gfx_cor((GfxRect){453,321,980,1},0,1,1,1,.08f);
     for(int i=start;i<snap.catalogos && i<start+5;i++) {
-      int f=fileira(i); char sub[128];
-      snprintf(sub,sizeof sub,"%s · %s",!strcmp(snap.catalogo[i].tipo,"movie")?i18n("Filmes"):!strcmp(snap.catalogo[i].tipo,"series")?i18n("Séries"):snap.catalogo[i].tipo,f>=0&&!fil_linha_oculta(f)?i18n("Na Home"):i18n("Fora da Home"));
+      int f=fileira(i); char sub[192];
+      snprintf(sub,sizeof sub,"%s · %s",origemCatalogo(i),!strcmp(snap.catalogo[i].tipo,"movie")?i18n("Filmes"):!strcmp(snap.catalogo[i].tipo,"series")?i18n("Séries"):snap.catalogo[i].tipo);
       float y=370+(i-start)*88;
       if(!lateral && foco==i) gfx_cor((GfxRect){453,y,980,86},.24f,.19f,.205f,.22f,.9f);
       char rank[16]; snprintf(rank,sizeof rank,"%d",i+1); texto(TXT_G22M,rank,470,y+30,40,150);
