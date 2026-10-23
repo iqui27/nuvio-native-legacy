@@ -833,7 +833,7 @@ static const char *cabecalhoDe(int r) {
   // DENTRO da secao, e ao lado do "Trailers" e do "Estúdios" do filme parecia
   // de outra pagina. Agora e o mesmo TXT_HEADLINE, com o mesmo vao.
   if (r == SEC_NOTAS) return "Notas";
-  if (r == SEC_PROGTEMP) return "Seu progresso";
+  if (r == SEC_PROGTEMP) return "Seu progresso · nota de cada episódio";
   if (r == SEC_NOTAS_EP) return "Notas por episódio";
   if (r == SEC_RELACIONADOS) return "Mais como este";
   if (r == SEC_MUSICAS) return "Músicas";
@@ -7584,6 +7584,19 @@ static void desenhaGradeProgresso(float x, float y, float a) {
     char nome[32]; snprintf(nome,sizeof nome,"T%d",temp[row]);
     txt_desenhar_alpha(txt_linha(TXT_G22M,nome,243,242,239,220),x+44,y+8+row*56,a);
     gfx_anel((GfxRect){x,y+10+row*56,28,28},.5f,3,1,1,1,.18f*a);
+    // ARCO DA FILEIRA (mockup v2): a fracao vista da temporada no circulo,
+    // no acento — o mesmo anel da aba de temporada.
+    { int tv=0,tev=0;
+      for (int j=0;j<cat_n_episodios(idx);j++) {
+        const CatEp *q0=cat_episodio(idx,j);
+        if (!q0 || q0->temporada!=temp[row] || epNaoExibido(q0)) continue;
+        tev++;
+        if (vistoep_estado(ci->imdb,q0->temporada,q0->episodio)==1) tv++;
+      }
+      if (tev>0 && tv>0) {
+        float fracao=tv/(float)tev; if (fracao>1.0f) fracao=1.0f;
+        gfx_arco((GfxRect){x,y+10+row*56,28,28},3.0f,0.0f,fracao,cr,cg,cb,a);
+      } }
     for (int i=0; i<cat_n_episodios(idx); i++) {
       const CatEp *p=cat_episodio(idx,i);
       if (!p || p->temporada!=temp[row] || p->episodio<primeiro || p->episodio>=primeiro+10) continue;
@@ -7607,10 +7620,39 @@ static void desenhaGradeProgresso(float x, float y, float a) {
   idioma_decimal_texto(detail,ajustes_idioma());
   txt_desenhar_alpha(txt_linha(TXT_G22M,detail,189,189,189,255),x+944,y+48,a);
   int bt=0,be=0,nota=progMelhorNaoVisto(&bt,&be);
-  if (nota>0) {
-    char melhor[160]; snprintf(melhor,sizeof melhor,i18n("Melhor: T%dE%d  ·  %.1f"),bt,be,nota/10.0);
-    idioma_decimal_texto(melhor,ajustes_idioma());
-    txt_desenhar_alpha(txt_linha_corta(TXT_G22M,melhor,189,189,189,255,760),x+944,y+112,a);
+  { // PAINEL do mockup v2: melhor temporada, melhor episodio (nao visto) e o
+    // total da serie. A linha "ritmo atual" do mock pede dado que o app nao
+    // tem (velocidade de consumo); o resto sai das notas dos episodios.
+    float yl=y+112;
+    int melhorT=0; float melhorNota=0;
+    for (int t0=1;t0<64;t0++) {
+      int soma=0,q=0;
+      for (int j=0;j<cat_n_episodios(idx);j++) {
+        const CatEp *q0=cat_episodio(idx,j);
+        if (q0 && q0->temporada==t0 && q0->nota>0) { soma+=q0->nota; q++; }
+      }
+      if (q>=3) {
+        float m=soma/(float)q/10.0f;
+        if (m>melhorNota) { melhorNota=m; melhorT=t0; }
+      } else if (q==0 && t0>1) break;   // acabaram as temporadas com nota
+    }
+    if (melhorT>0) {
+      char l[96]; snprintf(l,sizeof l,i18n("Melhor temporada T%d · %.1f"),melhorT,melhorNota);
+      idioma_decimal_texto(l,ajustes_idioma());
+      txt_desenhar_alpha(txt_linha_corta(TXT_G22M,l,189,189,189,255,760),x+944,yl,a);
+      yl+=40;
+    }
+    if (nota>0) {
+      char melhor[160]; snprintf(melhor,sizeof melhor,i18n("Melhor episódio T%dE%d · %.1f · não visto"),bt,be,nota/10.0);
+      idioma_decimal_texto(melhor,ajustes_idioma());
+      txt_desenhar_alpha(txt_linha_corta(TXT_G22M,melhor,189,189,189,255,760),x+944,yl,a);
+      yl+=40;
+    }
+    { int vis=0,exib=0;
+      if (extras_progresso_serie(&vis,&exib) && exib>0) {
+        char linha[96]; snprintf(linha,sizeof linha,i18n("Você viu %d de %d"),vis,exib);
+        txt_desenhar_alpha(txt_linha_corta(TXT_G22M,linha,189,189,189,255,760),x+944,yl,a);
+      } }
   }
 }
 
