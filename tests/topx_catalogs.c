@@ -67,8 +67,19 @@ int main(void) {
   const char *optional = "{\"extra\":[{\"name\":\"genre\",\"options\":[\"Drama\"]}]}";
   registrarNomeCatalogo(base, "series", "ai", "AI for you");
   registrarExtrasCatalogo(base, "series", "ai", optional, js_fim(optional));
+  registrarGenerosCatalogo(base, "series", "ai", optional, js_fim(optional));
   assert(catalogoUrl(url, sizeof url, base, "series", "ai", "") > 0);
   assert(strstr(url, "/ai.json?key=fixture"));
+  { char ops[4][128]; int n = desc_genero_opcoes(base, "series", "ai", ops, 4);
+    assert(n == 1 && !strcmp(ops[0], "Drama"));
+    assert(!desc_genero_obrigatorio(base, "series", "ai"));
+    registrarGenerosCatalogo(base, "movie", "ai", personal, js_fim(personal));
+    assert(desc_genero_obrigatorio(base, "movie", "ai"));
+    n = desc_genero_opcoes(base, "movie", "ai", ops, 4);
+    assert(n == 2 && !strcmp(ops[0], "For you & me") && !strcmp(ops[1], "Other"));
+    assert(!desc_genero_opcoes("https://other.example", "movie", "ai", ops, 4));
+    registrarGenerosCatalogo(base, "movie", "ai", "{}", NULL);
+    assert(!desc_genero_opcoes(base, "movie", "ai", ops, 4)); }
   const char *search = "{\"extraRequired\":[\"search\"]}";
   assert(exigeBusca(search, js_fim(search)));
   puts("PASS: catalog identity, quota, required defaults, overrides and config paths");
