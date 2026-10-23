@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Catalogo que falhou ou veio vazio na volta que grava o snapshot da home
 # volta a ser pedido na seguinte (#195).
 #
@@ -13,6 +15,6 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 cc ${flags[@]+"${flags[@]}"} src/cwordem.c tests/snapshot_falha.c src/cotacat.c src/homeestado.c src/catalogo.c \
   src/progresso.c src/js.c src/metaprov.c src/colecoes.c src/redeurl.c src/catordem.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -o /tmp/nuvio-snapshot-falha-tests -O1 -g -pthread \
+  -o ${TMPDIR:-/tmp}/nuvio-snapshot-falha-tests -O1 -g -pthread \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined -Wno-unused-function
-/tmp/nuvio-snapshot-falha-tests
+${TMPDIR:-/tmp}/nuvio-snapshot-falha-tests

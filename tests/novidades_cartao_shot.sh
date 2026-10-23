@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas do cartao de novidades da versao atual (novidades_cartao.h) em PNG
 # 1920x1080: cada pagina do card compacto nas cinco plataformas,
 # ingles, alemao, japones, russo e animacoes
@@ -15,7 +17,7 @@ cd "$(dirname "$0")/.."
 NUVIO_DADOS=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-novcartao-shot.XXXXXX")
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
-saida="${1:-/tmp/nuvio-novcartao}"
+saida="${1:-${TMPDIR:-/tmp}/nuvio-novcartao}"
 mkdir -p "$saida"
 sources=()
 for source in src/*.c src/dts/*.c; do

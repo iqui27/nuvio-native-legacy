@@ -30,7 +30,7 @@ int main(void) {
       assert(!strcmp(ajudaOpcao(AJ_IDIOMA), ajudaOpcaoBase(AJ_IDIOMA)));
     }
   }
-  for (int p = 1; p <= 2; p++) {
+  for (int p = 1; p <= 3; p++) {
     gpun_preferencia(p);
     for (unsigned i = 0; i < sizeof ops / sizeof *ops; i++)
       assert(!strcmp(ajudaOpcao(ops[i]), ajudaOpcaoBase(ops[i])));

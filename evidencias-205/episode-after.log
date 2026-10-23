@@ -1,0 +1,5 @@
+[detfps] episode-rest   n=8 media=0.55 p95=0.78 pior=0.78(q0) ms txt=0 upl=0 vidro=0 fill=1.43 rects=118 cheias=0.0
+[episode-cast] episodes=118/1.429 cast=169/1.610
+[episode-navigation] frames=5120 over-cast=0 churn=0
+[detail-weight] approved pixels preserved across styles, weights and fades
+[glass-backdrop] channels-differing-over-2=0

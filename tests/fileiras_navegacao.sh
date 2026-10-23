@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Navegacao por controle na folha "Fileiras da Home", sem janela nem rede:
 # os chips da barra ficam no topo, como as abas (barraPos/ajFilBarra), e nao
 # no fim da lista. Leve: so estado + eventos, sem desenho.
@@ -10,7 +12,7 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/ajustes.c) continue;; esac
   sources+=("$source")
 done
-NUVIO_DADOS="$(mktemp -d /tmp/nuvio-fileiras-navegacao.XXXXXX)"
+NUVIO_DADOS="$(mktemp -d ${TMPDIR:-/tmp}/nuvio-fileiras-navegacao.XXXXXX)"
 export NUVIO_DADOS
 binary="$NUVIO_DADOS/teste"
 trap 'rm -rf "$NUVIO_DADOS"' EXIT

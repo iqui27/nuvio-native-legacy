@@ -1,5 +1,6 @@
 #include "arteurl.h"
 #include "social.h"
+#include "horafmt.h"
 #include "idioma.h"
 #include "trakt.h"
 #include "recomenda.h"
@@ -57,9 +58,12 @@ static time_t isoParaTime(const char *iso) {
   t.tm_hour=h; t.tm_min=mi; t.tm_sec=s; return timegm(&t);
 }
 static void horarioLocal(const char *iso, char *dst, size_t tam) {
-  time_t stamp=isoParaTime(iso); struct tm local;
+  time_t stamp=isoParaTime(iso); struct tm local; char h[16];
   if (stamp==(time_t)-1 || !localtime_r(&stamp,&local)) { dst[0]=0; return; }
-  strftime(dst,tam,"%d/%m/%Y · %H:%M",&local);
+  // HORA DE TELA (horafmt.h): a linha "02/10/2026 · 21:10" da atividade do
+  // amigo seguia em 24 h fixo; agora obedece Ajustes > Formato do relogio.
+  hora_tela(h, sizeof h, &local);
+  snprintf(dst,tam,"%02d/%02d/%04d · %s",local.tm_mday,local.tm_mon+1,local.tm_year+1900,h);
 }
 // O VERBO DA ATIVIDADE PASSA POR i18n AQUI, e nao em quem desenha.
 //
@@ -115,13 +119,14 @@ static void *carregar(void *arg) {
   if(!strncmp(d->pessoa.socialSlug,"nuvio:",6)) {
     RecAtivAmigo *rec=calloc(20,sizeof *rec); int q,nr=rec?recomenda_amigo_atividades(d->pessoa.socialSlug,rec,20):0;
     for(q=0;q<nr&&d->n<20;q++){
-      Atividade *a=&d->atividades[d->n]; time_t t=(time_t)rec[q].criado; struct tm local;
+      Atividade *a=&d->atividades[d->n]; time_t t=(time_t)rec[q].criado; struct tm local; char h[16];
       memset(a,0,sizeof *a);
       snprintf(a->pessoa,sizeof a->pessoa,"%s",d->pessoa.socialNome);
       snprintf(a->acao,sizeof a->acao,"%s",i18n(rec[q].agora?"assistindo agora":"assistiu"));
       snprintf(a->titulo,sizeof a->titulo,"%s",rec[q].titulo);
       snprintf(a->detalhe,sizeof a->detalhe,"%s",!strcmp(rec[q].tipo,"series")?"Série":"Filme");
-      if(t>0&&localtime_r(&t,&local))strftime(a->horario,sizeof a->horario,"%d/%m/%Y · %H:%M",&local);
+      if(t>0&&localtime_r(&t,&local)){ hora_tela(h,sizeof h,&local);
+        snprintf(a->horario,sizeof a->horario,"%02d/%02d/%04d · %s",local.tm_mday,local.tm_mon+1,local.tm_year+1900,h); }
       snprintf(a->imdb,sizeof a->imdb,"%s",rec[q].imdb);
       snprintf(a->poster,sizeof a->poster,"https://images.metahub.space/poster/medium/%s/img",rec[q].imdb);
       d->n++;

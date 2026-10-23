@@ -15,7 +15,7 @@
 #undef contalib_ler_biblioteca
 
 static int perfilTeste = 1, trocaResposta, paginaStatus, paginaN;
-static int vistosTeste;
+static int vistosTeste, repeatPage;
 static char *paginaTeste;
 static int leiturasBibTeste, bibAtivaTeste = 900;
 
@@ -37,21 +37,76 @@ char *sessao_tabela(const char *t, const char *q, int *st) {
 }
 char *sessao_rpc(const char *funcao, const char *corpo, int *st) {
   if (paginaTeste && !strcmp(funcao, vistosTeste ? "sync_pull_watched_items" : "sync_pull_library")) {
-    if (paginaN++) { *st = paginaStatus; return strdup("falha de pagina"); }
+    if (paginaN++ && !repeatPage) { *st = paginaStatus; return strdup("falha de pagina"); }
     *st = 200;
     return strdup(paginaTeste);
   }
   return roteiro_sessao_rpc(funcao, corpo, st);
 }
 
+#define NV_PERFIL_SESSAO_FORTE
+#include "../src/debrid.h"
+
+// Cycle RPCs now carry the captured token. This fixture never logs in;
+// the empty token still has to reach the existing sessao_* fakes.
+uint64_t perfis_sessao_geracao(void) { return 1; }
+int perfis_sessao_atual(uint64_t geracao) { return geracao == perfis_sessao_geracao(); }
+int perfis_sessao_travar(uint64_t geracao) { return perfis_sessao_atual(geracao); }
+void perfis_sessao_destravar(void) {}
+int sessao_identidade_local_copiar(char *usuarioOut, size_t nUsuario, char *jwt, size_t nJwt) {
+  (void)nUsuario; (void)nJwt;
+  usuarioOut[0] = jwt[0] = 0;
+  return 0;
+}
+void sessao_token_recusado(const char *tok) { (void)tok; }
+char *nuvem_tabela(const char *t, const char *q, const char *bearer, int *st) {
+  (void)bearer;
+  return sessao_tabela(t, q, st);
+}
+char *nuvem_rpc_com(const char *funcao, const char *corpo, const char *bearer, int *st) {
+  (void)bearer;
+  return sessao_rpc(funcao, corpo, st);
+}
+int perfis_puxar_sessao(uint64_t sessao, const char *usuarioIn, const char *jwt) {
+  (void)sessao; (void)usuarioIn; (void)jwt; return 0;
+}
+int syncprog_puxar_sessao(int perfil, uint64_t sessao) { (void)perfil; (void)sessao; return 0; }
+int syncprog_empurrar_sessao(int perfil, uint64_t sessao) { (void)perfil; (void)sessao; return 0; }
+void debrid_conta_iniciar(DebridConta *conta) { if (conta) memset(conta, 0, sizeof *conta); }
+void debrid_conta_definir(DebridConta *conta, const char *servico, const char *chave) {
+  (void)conta; (void)servico; (void)chave;
+}
+int debrid_aplicar_chaves_conta(const DebridConta *conta, uint64_t sessao) {
+  (void)conta; (void)sessao; return 0;
+}
+void desc_sessao_preparada(void) {}
+void desc_sessao_passo(void) {}
+void desc_abrir_sessao(void) {}
+void extras_abrir_sessao(void) {}
+void perfis_invalidar_sessao(void) {}
+void recomenda_esquecer_conta(void) {}
+int sessao_token_copiar(char *dst, size_t n) { if (dst && n) dst[0] = 0; return 0; }
+#include "../src/contalib.h"
+void ajustes_perfil_padrao(void) {}
+int ajustes_fonte_biblioteca(void) { return 0; }
+int contalib_n(void) { return 0; }
+const ContaLibItem *contalib_item(int i) { (void)i; return NULL; }
+void iptv_contas_esquecer_todas(void) {}
+void m3u_fontes_invalidar(void) {}
+void stalker_fontes_invalidar(void) {}
+void xtream_fontes_invalidar(void) {}
+
 // Os pontos de cache sao estaticos; incluir a implementacao permite controlar
 // a resposta no instante preciso, sem sleeps nem corrida entre fios do teste.
 #include "../src/sync.c"
+#include "nvtmp.h"
 
 static void cicloTeste(void) {
   perfilTeste = perfilDoCiclo = 1;
   usuario = "conta-a";
   snprintf(usuarioDoCiclo, sizeof usuarioDoCiclo, "%s", usuario);
+  tokenDoCiclo[0] = 0;
+  sessaoDoCiclo = perfis_sessao_geracao();
   copiaGeracaoDoCiclo = contacache_geracao();
   foraCiclo = copiaCiclo = 0;
   temAddonsRem = 0;
@@ -99,7 +154,10 @@ static void paginaIncompleta(int vistos, int st, int temCopia) {
       confere("500 linhas seguidas de HTTP 503 preservam a biblioteca ativa sem cache",
               !leiturasBibTeste && bibAtivaTeste == 900 && !bibBlob);
     }
-  } else confere("recusa 400 nao se passa por indisponibilidade do servidor", foraCiclo == 0);
+  } else {
+    confere("recusa 400 nao se passa por indisponibilidade do servidor", foraCiclo == 0);
+    confere("hard page failure never publishes a partial library", n == -1 && b == NULL);
+  }
   free(c); free(b); free(paginaTeste); paginaTeste = NULL;
 }
 
@@ -131,6 +189,8 @@ int main(void) {
   paginaIncompleta(1, 429, 1);
   paginaIncompleta(0, 503, 0);
   paginaIncompleta(0, 400, 1);
+  repeatPage = 1;
+  paginaIncompleta(0, 200, 1);
   printf("%s\n", falhas ? "FALHOU" : "PASSOU");
   return falhas ? 1 : 0;
 }

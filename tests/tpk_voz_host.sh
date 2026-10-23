@@ -15,6 +15,33 @@ sdk = sorted((home/'.dotnet/sdk').glob('*/Roslyn/bincore/csc.dll'))[-1]
 framework = sorted((home/'.dotnet/packs/Microsoft.NETCore.App.Ref').glob('*/ref/net8.0'))[-1]
 (w/'csc-path').write_text(str(sdk))
 (w/'framework.rsp').write_text('\n'.join('-r:"'+str(p)+'"' for p in sorted(framework.glob('*.dll'))))
+native = (root/'src/tpk.c').read_text()
+a = native.index('  if (!appEsperando) {'); b = native.index('\n  eglMakeCurrent', a)
+(w/'startup-clear.c').write_text('''#include <assert.h>
+#include <pthread.h>
+static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
+static int appEsperando, esperaMs, clears;
+#define GL_COLOR_BUFFER_BIT 1
+static void glClearColor(float r, float g, float b, float a) {}
+static void glClear(int mask) { clears++; }
+static int startup(void) {
+pthread_mutex_lock(&trava);
+'''+native[a:b]+'''
+return -99;
+}
+int main(void) {
+esperaMs = -1;
+#ifdef NV_TPK40
+assert(startup() == 1 && "TVGLApplication must keep receiving startup callbacks");
+#else
+assert(startup() == 0 && "API8 black clear is not an app frame");
+#endif
+assert(clears == 1);
+esperaMs = 50;
+assert(startup() == 0);
+return 0;
+}
+''')
 s = (root/'tizen-tpk/Program.cs').read_text()
 def method(marker):
     a = s.index(marker); b = s.index('{', a); depth = 1; end = b + 1
@@ -24,6 +51,7 @@ def method(marker):
         end += 1
     return s[a:end]
 (w/'Lifecycle.cs').write_text('''using System;
+using System.Threading;
 using Tizen.NUI;
 using NuiWindow = Tizen.NUI.Window;
 namespace NuvioTpk {
@@ -31,11 +59,23 @@ class TestVideo { public void PausarPeloSistema() {} public void Encerrar() { Nu
 class Program : NUIApplication {
 Voz voz; TestVideo video = new TestVideo(); GLView glView; GLWindow gl;
 bool pausado, jaPausou, principalVisivel = true, glVisivel = true, soltou;
+bool erroNaTela, saindo, fim; int chamadas, trocados, subidas;
+long ultimaChamadaMs, paradoDesdeMs = -1, inicioDesenhoMs;
+object telaParado; TestClock relogio = new TestClock();
+public string Error; public int FrameResult;
+class TestClock { public long ElapsedMilliseconds; }
+long ParadoMs() => relogio.ElapsedMilliseconds - ultimaChamadaMs;
+void SobeGl(string s) {} void TiraTelaParado() {} void MostraTelaParado(long ms) {}
+void Erro(string title, string detail) { Error = title; erroNaTela = true; }
+int nv_tpk_quadro() { Fault.Hit("native-frame"); return FrameResult; }
+public void DrawAt(long ms) { relogio.ElapsedMilliseconds = ms; Quadro(); }
+public void WatchAt(long ms) { relogio.ElapsedMilliseconds = ms; gl = new GLWindow(); Vigia(); }
 const bool JanelaUnica = true;
 public Program(Voz v) { voz = v; }
 void Janela(string s) {} void Etapa(string s) {} string Contagem() => "";
+void nv_tpk_ciclo(int memoria) {}
 public void Pause() { OnPause(); } public void Resume() { OnResume(); } public void Close() { SoltaTudo("test"); }
-'''+ '\n'.join(method(x) for x in ['protected override void OnPause()', 'protected override void OnResume()', 'void SoltaTudo(string porque)'])+'\n}}')
+'''+ '\n'.join(method(x) for x in ['protected override void OnPause()', 'protected override void OnResume()', 'void SoltaTudo(string porque)', 'bool DesenhoPronto()', 'void Vigia()', 'int Quadro()'])+'\n}}')
 (w/'host.rsp').write_text('\n'.join('"'+str(p)+'"' for p in [root/'tests/tpk_voz_host.cs', root/'tizen-tpk/Voz.cs', w/'Lifecycle.cs']))
 (w/'host.runtimeconfig.json').write_text('{"runtimeOptions":{"tfm":"net8.0","framework":{"name":"Microsoft.NETCore.App","version":"8.0.0"}}}')
 for api in [8, 9, 11]:
@@ -62,6 +102,11 @@ int host_result(void) { return result; }
 const char *host_value(void) { return value; }
 C
 cc -shared -fPIC "$work/native.c" -o "$work/libnuvio.so"
+cc "$work/startup-clear.c" -pthread -o "$work/startup-clear"
+"$work/startup-clear"
+cc -DNV_TPK40 "$work/startup-clear.c" -pthread -o "$work/startup-clear40"
+"$work/startup-clear40"
+echo "PASS: API8 black clear is not an app frame; API4 keeps startup callbacks"
 csc=$(cat "$work/csc-path")
 "$dotnet_bin" "$csc" -nologo -langversion:8 -target:exe -define:NV_API11 -nowarn:0649 -out:"$work/host.dll" @"$work/framework.rsp" @"$work/host.rsp"
 "$dotnet_bin" "$work/host.dll" "$work/libnuvio.so"

@@ -1,3 +1,4 @@
+#include "stub_perfisessao.h"
 // Stalker (src/stalker.c): normalizacao do portal e varredura de rotas (#237),
 // sem rede e sem disco. O prefixo de caminho colado ("/meuportal/c/") tem de
 // ficar; "/c/" e barras finais, nao.
@@ -13,6 +14,10 @@ int dados_gravar(const char *nome, const char *c) { (void)nome; snprintf(disco, 
 void dados_apagar(const char *nome) { (void)nome; temDisco = 0; }
 static int perfil = 1;
 int perfis_ativo(void) { return perfil; }
+uint64_t perfis_sessao_geracao(void) { return 0; }
+int perfis_sessao_atual(uint64_t g) { return g == 0; }
+int perfis_sessao_travar(uint64_t g) { return g == 0; }
+void perfis_sessao_destravar(void) {}
 
 static const char *okPrefixo;   // url que "responde" ao handshake
 static char urls[32][300]; static int nUrls; static char ultimoRef[300], primeiroRef[300];

@@ -164,6 +164,7 @@ static const struct { const char *cod, *serie, *filme, *hl, *gl, *ceid; } PAR[ID
   { "ja", "ドラマ", "映画", "ja", "JP", "JP:ja" },
   { "zhcn", "剧集", "电影", "zh-CN", "CN", "CN:zh-Hans" },
   { "zhtw", "影集", "電影", "zh-TW", "TW", "TW:zh-Hant" },
+  { "ar", "مسلسل", "فيلم", "ar", "SA", "SA:ar" },
 };
 _Static_assert(sizeof PAR / sizeof *PAR == IDIOMA_N, "noticias.c: uma linha de PAR por IDIOMA_* (idiomacod.h)");
 

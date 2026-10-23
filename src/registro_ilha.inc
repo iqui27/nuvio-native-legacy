@@ -191,7 +191,8 @@ static float rgSeg(int comNumeros, float x, float yc) {
     x -= toqueAreasOffset;
   }
 #endif
-  rgNeutro((GfxRect){ x, yc - h * 0.5f, w, h }, h * 0.5f, 0.06f, 0.114f, 0.118f, 0.137f, 1);
+  if (rgVid()) gfx_vidro_folha((GfxRect){ x, yc - h * 0.5f, w, h }, 0.5f, 1);
+  else rgNeutro((GfxRect){ x, yc - h * 0.5f, w, h }, h * 0.5f, 0.06f, 0.114f, 0.118f, 0.137f, 1);
   x += 5.0f;
   for (i = 0; i < RG_N; i++) {
     int ac = i == area && segEd;
@@ -1365,7 +1366,7 @@ static void desenhaPainel(void) {
         xd = RP_X + RP_W - 30; if (xd > NV_TELA_W - 200.0f) xd = NV_TELA_W - 200.0f;
         yc = 64.0f;
         // over the wallpaper, not the panel: a dark backing keeps it legible
-        gfx_cor((GfxRect){ xd - pw, yc - 20, pw, 40 }, 0.5f, 0.05f, 0.055f, 0.067f, 0.82f);
+        gfx_cor((GfxRect){ xd - pw, yc - 20, pw, 40 }, 0.5f, 0.05f, 0.055f, 0.067f, 0.82f); // vidro-ok: legibility backing over wallpaper
       }
       gfx_cor((GfxRect){ xd - pw, yc - 20, pw, 40 }, 0.5f, ar, ag, ab, 0.20f);
       rgIconeCor("aj_pause", xd - pw + 16, yc - 9, 18, ar, ag, ab, 1);
@@ -1438,6 +1439,9 @@ static void desenhaPainel(void) {
 // falava da Samsung aqui ate 03/10).
 // Texto "rico" (palavras de dois pesos) quebrado em linhas de `w`.
 typedef struct { const char *s; TxtEstilo e; float a; } RgRun;
+#ifdef NV_TOUCH_UI
+static int rgRicoMedindo;
+#endif
 static float rgRico(const RgRun *r, int n, float x, float y, float w, float lh) {
   float cx = 0, cy = 0, esp = (float)txt_largura(TXT_AJ_ESTADO, "a a") - (float)txt_largura(TXT_AJ_ESTADO, "aa");
   int i;
@@ -1455,6 +1459,9 @@ static float rgRico(const RgRun *r, int n, float x, float y, float w, float lh) 
       ww = (float)txt_largura(r[i].e, wd);
       if (cx > 0 && !cola && cx + esp + ww > w) { cx = 0; cy += lh; }
       else if (cx > 0 && !cola) cx += esp;
+#ifdef NV_TOUCH_UI
+      if (!rgRicoMedindo)
+#endif
       { TxtLinha t = txt_linha(r[i].e, wd, RG_TX, 255); txt_desenhar_alpha(t, x + cx, y + cy, r[i].a); }
       cx += ww;
       s += tk;
@@ -1487,9 +1494,26 @@ static void desenhaAviso(void) {
 #else
     1;
 #endif
+#ifdef NV_TOUCH_UI
+  float apoioMobileH = 0;
+  if (telefoneui_ativo()) {
+    RgRun r[3] = { { "Sem a fileira de cores? Ajustes › Sobre e ajuda ›", TXT_AJ_ESTADO, 0.6f },
+                   { "Ver o registro na tela", TXT_LOG_18B, 0.9f }, { ".", TXT_AJ_ESTADO, 0.6f } };
+    w = telefoneui_largura(w, NV_TELA_W, 24);
+    x = (NV_TELA_W - w) * 0.5f; cx = x + 36; cw = w - 72;
+    // Measure the same translated, mixed-weight runs before drawing the card.
+    // On a phone the optional colour row sits above the help, never beside it.
+    rgRicoMedindo = 1;
+    apoioMobileH = 40 + rgRico(r, 3, 0, 0, cw - 48, 24.65f) + (teclas ? 70 : 0);
+    rgRicoMedindo = 0;
+  }
+#endif
   float fh = rgBlocoAltura(TXT_AJ_TEXTO, frase, cw, 30, 5);
   { time_t tt = time(NULL); struct tm tmv; localtime_r(&tt, &tmv); snprintf(hora, sizeof hora, "%02d:%02d", tmv.tm_hour, tmv.tm_min); }
   h = 64 + 28 + 41 + 14 + fh + 26 + (teclas ? 107 : 64) + 24 + 30 + 32;
+#ifdef NV_TOUCH_UI
+  if (telefoneui_ativo()) h += apoioMobileH - (teclas ? 107 : 64);
+#endif
   rgIlha((GfxRect){ x, y, w, h }, 36, 0.80f, 0.055f, 0.059f, 0.071f);
   // ig-h: icone, "Dica", fio, hora.
   { float hx = x + 28;
@@ -1506,6 +1530,9 @@ static void desenhaAviso(void) {
   { float ch = teclas ? 107 : 64, kx = cx + 24, ky = y + 20;
     RgRun r[3] = { { "Sem a fileira de cores? Ajustes › Sobre e ajuda ›", TXT_AJ_ESTADO, 0.6f },
                    { "Ver o registro na tela", TXT_LOG_18B, 0.9f }, { ".", TXT_AJ_ESTADO, 0.6f } };
+#ifdef NV_TOUCH_UI
+    if (telefoneui_ativo()) ch = apoioMobileH;
+#endif
     rgNeutro((GfxRect){ cx, y, cw, ch }, 24, 0.05f, RG_CART_SOL, 1);
     if (teclas) {
       static const float C[4][3] = { { 0.847f, 0.267f, 0.235f }, { 0.247f, 0.682f, 0.353f },
@@ -1515,11 +1542,15 @@ static void desenhaAviso(void) {
         GfxRect k = { kx + i * 100, ky, 86, 40 };
         if (!i) {
           gfx_cor((GfxRect){ k.x - 7, k.y - 7, k.w + 14, k.h + 14 }, 0.5f, 1, 1, 1, 0.85f);
-          gfx_cor((GfxRect){ k.x - 4, k.y - 4, k.w + 8, k.h + 8 }, 0.5f, 0.055f, 0.059f, 0.071f, 0.9f);
+          gfx_cor((GfxRect){ k.x - 4, k.y - 4, k.w + 8, k.h + 8 }, 0.5f, 0.055f, 0.059f, 0.071f, 0.9f); // vidro-ok: knob ring
           gfx_cor(k, 0.5f, C[i][0], C[i][1], C[i][2], 1);
           { TxtLinha l = rgT(TXT_G14B, "Registro"); txt_desenhar(l, k.x + (86 - l.w) * 0.5f, k.y + 40 + 10); }
         } else gfx_cor(k, 0.5f, C[i][0], C[i][1], C[i][2], 0.38f);
       }
+#ifdef NV_TOUCH_UI
+      if (telefoneui_ativo()) rgRico(r, 3, kx, y + 90, cw - 48, 24.65f);
+      else
+#endif
       rgRico(r, 3, kx + 400 + 22, y + (ch - 2 * 24.65f) * 0.5f, cw - 24 - 400 - 22 - 24, 24.65f);
     } else rgRico(r, 3, kx, y + 20, cw - 48, 24.65f);
     y += ch + 24; }

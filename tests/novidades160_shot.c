@@ -6,6 +6,7 @@
 // lista mais comprida), com o foco na previa, no meio de uma passagem e com
 // animacoes reduzidas.
 #include "novidades160.h"
+#include "nvtmp.h"
 #include "dados.h"
 #include "ajustes.h"
 #include "badges.h"
@@ -165,7 +166,7 @@ static void captura(const char *saida, const char *sufixo, int c, float t, int p
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-novidades160";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-novidades160");
   const char *so = getenv("N160_SO");   // "pt", "en"...: so um grupo de capturas
   const char *dir = getenv("NUVIO_DADOS");
   SDL_Window *w;

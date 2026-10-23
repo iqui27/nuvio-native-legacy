@@ -437,7 +437,7 @@ static void guiaPilulaIlha(float y, const char *ic, float cr, float cg, float cb
   if (forte) { txt_desenhar(f, x, y + (56 - f.h) * 0.5f); x += f.w + ep; }
   if (pos) { txt_desenhar(p, x, y + (56 - p.h) * 0.5f); x += p.w; }
   if (azul) {
-    TxtLinha k = ajTxt(TXT_AJ_KBD, "AZUL"), l = ajTxt(TXT_AJ_CHIP, "abre");
+    TxtLinha k = ajTxt(TXT_AJ_KBD, "CH+"), l = ajTxt(TXT_AJ_CHIP, "abre");
     float kw = k.w + 18;
     x += 6;
     ajNeutro((GfxRect){ x, y + 13, kw, 30 }, 15, 0.09f, AJ_CHIP_SOL, 1);
@@ -626,7 +626,7 @@ static void guiaDesenharIndice(const GuiaVista *v, float a) {
   ajustes_acento(&ar, &ag, &ab);
   ajIlha(il, 32, a, 0);
 #ifdef NV_TOUCH_UI
-  if (!guiaDesenhandoMini) {
+  if (ajTelaCheia() && !guiaDesenhandoMini) {
     float total = (GI_CAP0 + GUIA_NCAPS) * 56.0f + 43.0f;
     float alvo = fmaxf(0, v->idx * 56.0f - (il.h - 82.0f) * 0.5f);
     y -= ajToqueRegistrar(AJT_INDICE, il, &guiaIdxRol, total - il.h, alvo, 310);
@@ -642,7 +642,7 @@ static void guiaDesenharIndice(const GuiaVista *v, float a) {
     if (j == GI_CAP0) { gfx_cor((GfxRect){ il.x + 30, y + 6, il.w - 60, 1 }, 0, 1, 1, 1, 0.08f * a); y += 15; }
     r = (GfxRect){ il.x + 14, y, il.w - 28, 54 };
 #ifdef NV_TOUCH_UI
-    if (!guiaDesenhandoMini)
+    if (ajTelaCheia() && !guiaDesenhandoMini)
       ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, il.y, il.y + il.h,
                           guiaPontIndice, guiaPontIndiceAbrir, j, 0);
 #endif
@@ -672,7 +672,7 @@ static void guiaDesenharIndice(const GuiaVista *v, float a) {
     y += 56;
   }
 #ifdef NV_TOUCH_UI
-  if (!guiaDesenhandoMini) gfx_sem_recorte();
+  if (ajTelaCheia() && !guiaDesenhandoMini) gfx_sem_recorte();
 #endif
 }
 
@@ -736,7 +736,7 @@ static void guiaDesenharLista(const GuiaVista *v, float a) {
     float cw = 22 + 20 + 10 + t.w + 22;
     ajChip("Voltar às novidades", "aj_corner-up-left", fr.x + fr.w - 30 - cw, fr.y + 34, v->col == GC_CHIP, a);
 #ifdef NV_TOUCH_UI
-    if (!guiaDesenhandoMini) ponteiro_alvo(fr.x + fr.w - 30 - cw, fr.y + 34, cw, 56, NULL, guiaPontVoltar, 0, 0);
+    if (ajTelaCheia() && !guiaDesenhandoMini) ponteiro_alvo(fr.x + fr.w - 30 - cw, fr.y + 34, cw, 56, NULL, guiaPontVoltar, 0, 0);
 #endif
     reserva = cw + 20;
   }
@@ -753,7 +753,7 @@ static void guiaDesenharLista(const GuiaVista *v, float a) {
     topo = fr.y + 155.6f;
   }
 #ifdef NV_TOUCH_UI
-  if (!guiaDesenhandoMini)
+  if (ajTelaCheia() && !guiaDesenhandoMini)
     ajToqueRegistrar(AJT_LISTA, (GfxRect){fr.x, topo, fr.w, base - topo}, &guiaRol,
                       guiaListaAltura(l, n) - (base - topo) + 20, guiaRol, v->idx + 320);
 #endif
@@ -781,7 +781,7 @@ static void guiaDesenharLista(const GuiaVista *v, float a) {
     yc = y + GU_GE_H * 0.5f;
     if (y + GU_GE_H >= topo && y <= base) {
 #ifdef NV_TOUCH_UI
-      if (!guiaDesenhandoMini)
+      if (ajTelaCheia() && !guiaDesenhandoMini)
         ponteiro_alvo_faixa(x, y, w, GU_GE_H, topo, base, guiaPontEnt, guiaPontEntAbrir, l[i], 0);
 #endif
       float al = yc > base - 90 ? (base - yc) / 90 : 1;
@@ -908,7 +908,7 @@ static void guiaDesenharInspetor(const GuiaVista *v, float a) {
         else if (b[i] == GB_AJUSTES) bw = guiaBotao("Abrir em Ajustes", "aj_settings-2", bx, y, f, a);
         else bw = guiaBotao(guiaRotTela(g->tela), guiaIcTela(g->tela), bx, y, f, a);
 #ifdef NV_TOUCH_UI
-        if (!guiaDesenhandoMini) ponteiro_alvo_faixa(bx, y, bw, 56, ir.y, ir.y + ir.h, NULL, guiaPontBotao, i, e);
+        if (ajTelaCheia() && !guiaDesenhandoMini) ponteiro_alvo_faixa(bx, y, bw, 56, ir.y, ir.y + ir.h, NULL, guiaPontBotao, i, e);
 #endif
         bx += bw + 12;
       }
@@ -1043,7 +1043,7 @@ static void guiaDesenhar(void) {
 static void guiaAtualizar(float dt) {
   if (!guiaAberto) return;
 #ifdef NV_TOUCH_UI
-  if (!ajToqueLivre[AJT_LISTA]) {
+  if (!ajTelaCheia() || !ajToqueLivre[AJT_LISTA]) {
 #endif
   guiaRolar();
   guiaRol = ajustes_animacoes_reduzidas() ? guiaRolAlvo : anim_mola2(&guiaRolV, guiaRol, guiaRolAlvo, dt, 14.0f);

@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # A fonte lembrada: assinatura de idioma, casamento entre episodios, disco e
 # separacao por perfil. Issues #56 e #57.
 #
@@ -15,7 +17,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-fontepref.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-fontepref.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 echo "dados do teste em $NUVIO_DADOS"
@@ -29,8 +31,8 @@ done
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 
-cc ${flags[@]+"${flags[@]}"} "${sources[@]}" tests/fontepref.c -Isrc -o /tmp/nuvio-fontepref \
+cc ${flags[@]+"${flags[@]}"} "${sources[@]}" tests/fontepref.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-fontepref \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-fontepref "$@"
+${TMPDIR:-/tmp}/nuvio-fontepref "$@"

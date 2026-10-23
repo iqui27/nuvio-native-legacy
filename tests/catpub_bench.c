@@ -54,12 +54,13 @@ int prog_gravar_local(const char *imdb, int t, int e, double p, double d, int to
 
 
 #include <time.h>
+#include "nvtmp.h"
 static double agora(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return t.tv_sec*1e3+t.tv_nsec/1e6;}
 int main(int argc,char**argv){
   int nit = argc>1?atoi(argv[1]):1600, nf=16, i;
   CatItem *l=calloc(nit,sizeof *l); CatFileira *f=calloc(nf,sizeof *f);
   double t0,t1,t2;
-  snprintf(dirDados,sizeof dirDados,"%s","/Volumes/ExternalSSD/tmp/catbench-dir"); mkdir(dirDados,0755);
+  snprintf(dirDados,sizeof dirDados,"%s",nvt("/catbench-dir")); mkdir(dirDados,0755);
   snprintf(usuarioAtual,sizeof usuarioAtual,"u1");
   for(i=0;i<nit;i++){snprintf(l[i].imdb,sizeof l[i].imdb,"tt%07d",i);snprintf(l[i].titulo,sizeof l[i].titulo,"Titulo %d",i);
     snprintf(l[i].poster,sizeof l[i].poster,"https://images.metahub.space/poster/medium/tt%07d/img",i);

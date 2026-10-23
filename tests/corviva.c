@@ -46,6 +46,11 @@ static float matiz(const float rgb[3]) {
   corviva_srgb_para_oklab(rgb, lab);
   return atan2f(lab[2], lab[1]) * 57.29578f;
 }
+static float croma(const float rgb[3]) {
+  float lab[3];
+  corviva_srgb_para_oklab(rgb, lab);
+  return sqrtf(lab[1] * lab[1] + lab[2] * lab[2]);
+}
 static float difMatiz(float a, float b) {
   float d = fabsf(a - b);
   while (d > 360.0f) d -= 360.0f;
@@ -299,8 +304,13 @@ int main(void) {
     ok(nv_grad_ativo && igual3(nv_grad_viva[0], logoAzul.grad[0], 0.002f), "gradiente: degrade ligado, paradas do logo");
     ok(nv_ambiente_forca < 0.001f, "gradiente: sem luz ambiente");
     { int i; for (i = 0; i < 40; i++) corviva_quadro(1 / 60.0f, CORVIVA_IMERSIVA, 1, 0); }
-    ok(nv_ambiente_forca > 0.999f && igual3(nv_ambiente_viva[0], laranja.regiao[0], 0.002f),
-       "imersiva: luz inteira, com as regioes da ARTE (nao do logo)");
+    // (14/10) A luz e do LOGO quando "Cor da logo" vale (a mudanca de 05/10,
+    // pedido do dono: "o imersivo da logo nao ta pegando a cor da logo"):
+    // o teste antigo cobrava as regioes da ARTE e vivia falhando desde entao.
+    { float luz[3] = { nv_ambiente_viva[0][0], nv_ambiente_viva[0][1], nv_ambiente_viva[0][2] };
+      snprintf(m, sizeof m, "imersiva: luz do LOGO (%.0f graus do logo azul)",
+               difMatiz(matiz(luz), matiz(logoAzul.acento)));
+      ok(nv_ambiente_forca > 0.999f && difMatiz(matiz(luz), matiz(logoAzul.acento)) <= 12.0f, m); }
     { int i; for (i = 0; i < 40; i++) corviva_quadro(1 / 60.0f, CORVIVA_SIMPLES, 1, 0); }
     ok(!nv_grad_ativo && nv_ambiente_forca < 0.001f, "simples: degrade e luz desligados");
   }
@@ -319,11 +329,12 @@ int main(void) {
     corviva_da_arte(cinza, f);
     ok(igual3(f, BRANCO, 0.002f), "da arte: arte cinza = Branco");
     // as cores reais medidas no mockup (acentos-mockup.html, ARTES): o hex
-    // que o mockup mostra, a 2/255.
+    // que o mockup mostra, a 2/255. (14/10: o Fallout mudou com a amplitude
+    // nova — C 0,13 -> 0,16; os outros dois nao encostam no teto.)
     { static const struct { float raw[3]; float hex[3]; const char *n; } R[] = {
         { { 0xad/255.f, 0x65/255.f, 0x3b/255.f }, { 0xb1/255.f, 0x5e/255.f, 0x2b/255.f }, "Perdido em Marte" },
         { { 0x3a/255.f, 0x72/255.f, 0x77/255.f }, { 0x2a/255.f, 0x80/255.f, 0x87/255.f }, "O Nevoeiro" },
-        { { 0xfc/255.f, 0xd0/255.f, 0x40/255.f }, { 0xf1/255.f, 0xce/255.f, 0x65/255.f }, "logo do Fallout" } };
+        { { 0xfc/255.f, 0xd0/255.f, 0x40/255.f }, { 0xf8/255.f, 0xcc/255.f, 0x3a/255.f }, "logo do Fallout" } };
       int k;
       for (k = 0; k < 3; k++) {
         corviva_da_arte(R[k].raw, f);
@@ -343,6 +354,76 @@ int main(void) {
     corviva_textura_tinta(0.006f, 0.50f, base, 0.35f, &b, &v, &c);
     snprintf(m, sizeof m, "textura sutil (35%%): %.1f:1 com veu %.0f%%", c, v * 100);
     ok(c >= 4.5f, m); }
+
+  // [16] LOGOS: o BOTAO (o destaque) casa com a cor da logo (dono, 14/10:
+  // "o tom dos botoes nao esta casando muito bem com as cores da logo").
+  // Cinco logos — vermelho (Stranger Things), amarelo, azul, branco e
+  // multicolor. O croma e o DA LOGO (acima do teto antigo de 0,17) e o matiz
+  // o dela; a regra de contraste segue valendo em todos.
+  { static const struct { int rgb[3]; const char *n; } LOGOS[] = {
+      { { 230, 20, 20 },  "vermelho" },
+      { { 255, 230, 40 }, "amarelo" },
+      { { 40, 90, 255 }, "azul" } };
+    int k;
+    for (k = 0; k < 3; k++) {
+      CorvivaPaleta pl; float fonte[3];
+      pinta(W, H, 0, 0, W, H, 0, 0, 0, 0, 0);
+      pinta(W, H, 20, 40, W - 20, H - 40, LOGOS[k].rgb[0], LOGOS[k].rgb[1], LOGOS[k].rgb[2], 255, 6);
+      fonte[0] = LOGOS[k].rgb[0] / 255.0f; fonte[1] = LOGOS[k].rgb[1] / 255.0f; fonte[2] = LOGOS[k].rgb[2] / 255.0f;
+      snprintf(m, sizeof m, "logo %s: tem cor", LOGOS[k].n);
+      ok(corviva_extrair(img, W, H, W * 4, &pl) == 1, m);
+      snprintf(m, sizeof m, "logo %s: matiz do botao a %.1f graus do da logo (<= 12)",
+               LOGOS[k].n, difMatiz(matiz(pl.acento), matiz(fonte)));
+      ok(difMatiz(matiz(pl.acento), matiz(fonte)) <= 12.0f, m);
+      snprintf(m, sizeof m, "logo %s: croma do botao %.3f (o da logo, acima do teto antigo %s)",
+               LOGOS[k].n, croma(pl.acento), k == 1 ? "0,13" : "0,17");
+      ok(croma(pl.acento) > (k == 1 ? 0.145f : 0.175f), m);
+      regraDeContraste(&pl, LOGOS[k].n);
+    }
+    // BRANCO: sem cor, o botao fica no Branco padrao.
+    { CorvivaPaleta pl;
+      pinta(W, H, 0, 0, W, H, 0, 0, 0, 0, 0);
+      pinta(W, H, 20, 40, W - 20, H - 40, 250, 250, 250, 255, 4);
+      ok(corviva_extrair(img, W, H, W * 4, &pl) == 0, "logo branco: sem cor (botao Branco padrao)"); }
+    // MULTICOLOR: tres faixas (vermelho, verde, azul); o destaque e a faixa
+    // dominante, no matiz e no croma dela — nao uma media acinzentada.
+    { CorvivaPaleta pl;
+      pinta(W, H, 0, 0, W, H, 0, 0, 0, 0, 0);
+      pinta(W, H, 0, 40, W / 3, H - 40, 230, 20, 20, 255, 6);
+      pinta(W, H, W / 3, 40, 2 * W / 3, H - 40, 20, 220, 40, 255, 6);
+      pinta(W, H, 2 * W / 3, 40, W, H - 40, 40, 90, 255, 255, 6);
+      ok(corviva_extrair(img, W, H, W * 4, &pl) == 1, "logo multicolor: tem cor");
+      { static const float F[3][3] = { { 230 / 255.0f, 20 / 255.0f, 20 / 255.0f },
+                                     { 20 / 255.0f, 220 / 255.0f, 40 / 255.0f },
+                                     { 40 / 255.0f, 90 / 255.0f, 255 / 255.0f } };
+        float d[3]; int i, melhor = 0;
+        for (i = 0; i < 3; i++) { d[i] = difMatiz(matiz(pl.acento), matiz(F[i])); if (d[i] < d[melhor]) melhor = i; }
+        snprintf(m, sizeof m, "logo multicolor: uma das tres cores (%.0f graus), nao media", d[melhor]);
+        ok(d[melhor] <= 12.0f, m);
+        snprintf(m, sizeof m, "logo multicolor: croma %.3f acima do teto antigo 0,17", croma(pl.acento));
+        ok(croma(pl.acento) > 0.175f, m);
+        regraDeContraste(&pl, "multicolor"); } } }
+
+  // [17] TEXTURA FRACA: recorte CHAPADO e fraco (ajustes o troca pelo
+  // material CC0 embutido); com grao, fica o recorte da arte. A conta e a
+  // mesma do tema: p90 - p10 de luminancia do recorte abaixo de 0,12.
+  { CorvivaPaleta pf, pg;
+    int y;
+    pinta(W, H, 0, 0, W, H, 220, 30, 30, 255, 0);                       // chapado
+    ok(corviva_extrair(img, W, H, W * 4, &pf) == 1, "fraca: chapada tem cor");
+    for (y = 0; y < H; y += 18) pinta(W, H, 0, y, W, y + 18 < H ? y + 18 : H,
+                                      (y / 18) & 1 ? 255 : 120, (y / 18) & 1 ? 80 : 10,
+                                      (y / 18) & 1 ? 80 : 10, 255, 4);
+    ok(corviva_extrair(img, W, H, W * 4, &pg) == 1, "fraca: grao tem cor");
+    corviva_zerar();
+    corviva_anotar("arte/chapada", &pf);
+    corviva_anotar("arte/graada", &pg);
+    quadros(40, 1 / 60.0f, CORVIVA_TEXTURA, 0, "arte/chapada", CORVIVA_HOME);
+    ok(nv_textura_viva.ok && nv_textura_viva.fraca,
+       "recorte chapado: fraca (troca pelo material CC0)");
+    quadros(40, 1 / 60.0f, CORVIVA_TEXTURA, 0, "arte/graada", CORVIVA_HOME);
+    ok(nv_textura_viva.ok && !nv_textura_viva.fraca,
+       "recorte com grao: fica o material da arte"); }
 
   // [9] corviva.txt: o arranque seguinte ja nasce com a cor da ultima cena.
   corviva_zerar();

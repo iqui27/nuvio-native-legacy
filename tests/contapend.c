@@ -7,6 +7,7 @@
 // no pull; pagina que falha nao vira push; lista remota vazia com copia nao
 // vira push; tirar o ultimo nao vira push vazio; perfis isolados; poda.
 #include "contapend.h"
+#include "visto.h"
 #include "vistoep.h"
 #include "js.h"
 #include <assert.h>
@@ -20,8 +21,31 @@
 static int perfil = 1, logada = 1;
 static long long agora = 1759000000000LL;
 static long long relogio(void) { return agora; }
-int perfis_ativo(void) { return perfil; }
+static int switchAfterRead, gateHeld, trackerProfile;
+static uint64_t generation;
+int perfis_ativo(void) {
+  int p = perfil;
+  if (switchAfterRead && !--switchAfterRead && !gateHeld) {
+    perfil = 2;
+    generation++;
+  }
+  return p;
+}
+uint64_t perfis_sessao_geracao(void) { return generation; }
 int sessao_logada(void) { return logada; }
+int perfis_sessao_travar(uint64_t g) {
+  if (g != generation) return 0;
+  gateHeld++;
+  return 1;
+}
+void perfis_sessao_destravar(void) { assert(gateHeld > 0); gateHeld--; }
+
+static int retry(const char *id, const char *type, const VistoPar *pairs,
+                 int n, int watched, int destinations, const int *seasons, int nt) {
+  (void)id; (void)type; (void)pairs; (void)n; (void)watched; (void)seasons; (void)nt;
+  trackerProfile = perfil;
+  return destinations;
+}
 const char *sessao_usuario(void) { return logada ? "u-123" : ""; }
 const char *dados_cliente_id(void) { return "cliente-teste"; }
 
@@ -156,7 +180,46 @@ static void zerar(void) {
 }
 
 // ---------------------------------------------------------------- casos
-int main(void) {
+int main(int argc, char **argv) {
+  if (argc > 1) {
+    VistoPar pair = {1, 1};
+    contapend_relogio(relogio);
+    zerar();
+    if (!strcmp(argv[1], "retry")) {
+      contapend_reenviar_com(retry);
+      assert(contapend_gesto("tt0903747", "series", &pair, 1, 1,
+                             VISTO_TRAKT | VISTO_SIMKL, NULL, 0));
+      // Switch immediately after the final active-profile check returns A.
+      switchAfterRead = 2;
+      contapend_reenviar();
+      assert(trackerProfile != 2);
+      assert(!gateHeld);
+      perfil = 1;
+      generation++;
+      assert(contapend_reenviar() >= 0);
+      assert(trackerProfile == 1 && contapend_pendentes() == 0);
+      OK("retry never sends profile A's gesture with profile B's credentials");
+    } else {
+      assert(!strcmp(argv[1], "progress"));
+      assert(contapend_gesto("tt0903747", "series", &pair, 1, 1,
+                             VISTO_TRAKT, NULL, 0));
+      contapend_confirmar_gesto("tt0903747", &pair, 1, agora, VISTO_TRAKT);
+      reabrir();
+      assert(contapend_aplicar_local() == 1);
+      assert(vistoep_estado("tt0903747", 1, 1) == 1);
+      assert(vistoep_ler_progresso("tt0903747",
+        "{\"seasons\":[{\"number\":1,\"episodes\":["
+        "{\"number\":1,\"completed\":false},{\"number\":2,\"completed\":false}]}]}") == 2);
+      assert(vistoep_estado("tt0903747", 1, 1) == 1);
+      assert(vistoep_estado("tt0903747", 1, 2) == 0);
+      assert(vistoep_fonte("tt0903747", 1, 1, 0, agora + 1, NULL));
+      assert(vistoep_estado("tt0903747", 1, 1) == 0);
+      assert(vistoep_fonte("tt0903747", 1, 1, 1, agora - 1, NULL));
+      assert(vistoep_estado("tt0903747", 1, 1) == 0);
+      OK("restored watched gesture survives stale progress; newer remote wins");
+    }
+    return 0;
+  }
   VistoPar eps[3] = { {1, 1}, {1, 2}, {1, 3} };
   contapend_relogio(relogio);
   contapend_sem_fio(1);
@@ -213,16 +276,16 @@ int main(void) {
     assert(contapend_enviar() == 1 && nPushVis == 0 && nDelVis == 1); }
   OK("marcar+desmarcar offline coalesce: so o delete sobe");
 
-  // 3. ULTIMA MUDANCA VENCE no pull.
+  // 3. ULTIMA MUDANCA VENCE no pull (local evidence survives cycle pruning).
   zerar();
   agora = 1759000100000LL;
   fora = 1;
   assert(contapend_titulo("tt0111161", "movie", 0) == 1);
   // linha remota MAIS VELHA que o "desmarcar": oculta
   assert(contapend_visto_oculto("tt0111161", 0, 0, agora - 5000) == 1);
-  // outra TV re-marcou DEPOIS: a conta ganha e a pendente cai
-  assert(contapend_visto_oculto("tt0111161", 0, 0, agora + 5000) == 0);
-  assert(contapend_pendentes() == 0);
+  assert(contapend_estado("tt0111161", "movie", 0, 0, agora - 5000, 1) == 0);
+  // outra TV re-marcou DEPOIS: remote newer evidence wins for the screen
+  assert(contapend_estado("tt0111161", "movie", 0, 0, agora + 5000, 1) == 1);
   // um item sem gesto local nunca e oculto
   assert(contapend_visto_oculto("tt7777777", 1, 1, 1) == 0);
   // idem lista
@@ -230,7 +293,13 @@ int main(void) {
   assert(contapend_lista_oculta("tt0068646", agora - 1) == 1);
   assert(contapend_lista_oculta("tt0068646:1:2", agora - 1) == 1);  // sufixo de episodio
   assert(contapend_lista_oculta("tt0068646", agora + 1) == 0);
+
   OK("pull: linha remota velha nao re-marca o desmarcado; remota mais nova vence");
+
+  // 3b. Serie desmarcada inteira + pull de episodio: tipo=NULL nao pode cair no strcmp.
+  assert(contapend_titulo("tt0944947", "series", 0) == 1);
+  assert(contapend_visto_oculto("tt0944947", 1, 2, agora - 1) == 1);
+  OK("pull de episodio contra desmarca-serie: tipo NULL nao segfaulta");
 
   // 4. LISTA: pagina que falha nao vira push (e nao apaga nada).
   zerar();
@@ -329,8 +398,23 @@ int main(void) {
   assert(contapend_visto_oculto("ttH", 0, 0, 0) == 0);
   assert(disco && strstr(disco, "ttH"));
   contapend_podar(agora + 1);
-  assert(!disco || !strstr(disco, "ttH"));
-  OK("poda: so confirmadas anteriores ao ciclo saem do jornal");
+  assert(disco && strstr(disco, "ttH"));
+  OK("poda: watched stays as evidence, stale remote loses until newer timestamp");
+
+  // #639: confirmed removals survive later cycles, disk reload and stale pulls.
+  zerar();
+  addLib(1, "tt5555555", 1); addLib(1, "tt6666666", 2);
+  agora += 1000;
+  assert(contapend_lista("tt5555555", "movie", "", "", 0) == 1);
+  assert(contapend_enviar() == 1);
+  contapend_podar(agora + 1);
+  contapend_esquecer();
+  assert(contapend_lista_oculta("tt5555555", 1) == 1);
+  perfil = 2;
+  assert(contapend_lista_oculta("tt5555555", 1) == 0);
+  perfil = 1;
+  assert(contapend_lista_oculta("tt5555555", agora + 1) == 0);
+  OK("confirmed library tombstone survives stale sync and reload; newer save wins");
 
   // 9. Sem conta, nada entra.
   zerar();

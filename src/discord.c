@@ -554,7 +554,8 @@ static int posterPublico(const char *u) {
 // 1 se ha algo para mostrar; preenche `p`.
 static int montar(Presenca *p) {
   const CatItem *ci;
-  const char *ep;
+  const char *ep, *poster;
+  char publica[128];
   float pos, dur;
   memset(p, 0, sizeof *p);
   if (!player_com_video()) return 0;
@@ -579,11 +580,23 @@ static int montar(Presenca *p) {
     p->ini = agora - (long long)(pos * 1000.0f);
     if (dur > 60.0f && dur > pos) p->fim = p->ini + (long long)(dur * 1000.0f);
   }
-  // Arte: cartaz do titulo pelo proxy do Discord. So https publico serve.
+  // Never forward rejected add-on URLs; derive artwork from a numeric IMDb ID.
+  poster = ci->poster;
+  if (!posterPublico(poster)) {
+    size_t n = 2;
+    publica[0] = 0;
+    if (!strncmp(ci->imdb, "tt", 2)) {
+      while (ci->imdb[n] >= '0' && ci->imdb[n] <= '9') n++;
+      if (n > 2 && (!ci->imdb[n] || ci->imdb[n] == ':'))
+        snprintf(publica, sizeof publica,
+                 "https://images.metahub.space/poster/medium/%.*s/img", (int)n, ci->imdb);
+    }
+    poster = publica;
+  }
   pthread_mutex_lock(&trava);
-  if (posterPublico(ci->poster)) {
-    if (strcmp(arteUrl, ci->poster) != 0) {
-      snprintf(arteUrl, sizeof arteUrl, "%s", ci->poster);
+  if (poster[0]) {
+    if (strcmp(arteUrl, poster) != 0) {
+      snprintf(arteUrl, sizeof arteUrl, "%s", poster);
       arteMp[0] = 0;
       proxArte = 0;
       if (!arteVivo) soltar(fioArte, arteUrl, &arteVivo);
@@ -609,6 +622,10 @@ static int mudou(const Presenca *a, const Presenca *b) {
 }
 
 // ------------------------------------------------------------------ passo
+void discord_recarregar(void) {
+  gatewayFechar("settings restored");
+  pthread_mutex_lock(&trava); geracao++; perfil = -1; pthread_mutex_unlock(&trava);
+}
 void discord_passo(unsigned agora) {
   int tem;
   if (!discord_disponivel()) return;

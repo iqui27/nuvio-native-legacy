@@ -1,9 +1,11 @@
 #include "simklauth.h"
+#include "perfisessao.h"
 #include "idioma.h"
 #include "nuvem.h"
 #include "dados.h"
 #include "rede.h"
 #include "sync.h"
+#include "sessao.h"
 #include "js.h"
 #include "jsw.h"
 #include <stdio.h>
@@ -50,6 +52,25 @@ static unsigned geracao, gerFio;
 static int perfilFio;
 static char userCodeFio[48];
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
+
+// O perfil pode mudar enquanto o PIN responde; a conta Nuvio nao pode herdar
+// a autorizacao de quem saiu. Captura local, sem renovacao/rede na UI.
+extern int sessao_identidade_local_copiar(char *, size_t, char *, size_t) NV_PERFIL_OPCIONAL;
+extern const char *sessao_usuario(void) NV_PERFIL_OPCIONAL;
+static char usuarioFio[80], usuarioEstado[80];
+static void usuarioCopiar(char dst[80]) {
+  char jwt[3000];
+  dst[0] = 0;
+  if (sessao_identidade_local_copiar) {
+    sessao_identidade_local_copiar(dst, 80, jwt, sizeof jwt);
+    memset(jwt, 0, sizeof jwt);
+  } else if (sessao_usuario) snprintf(dst, 80, "%s", sessao_usuario());
+}
+static int mesmaConta(const char *usuario) {
+  char atual[80];
+  usuarioCopiar(atual);
+  return !strcmp(usuario, atual);
+}
 
 // Todo pedido leva client_id, app-name e app-version na QUERY — nao em
 // cabecalho. Sem eles o Simkl responde erro sem dizer o que faltou.
@@ -99,13 +120,14 @@ static void migrarLegado(void) {
 
 int simklauth_carregar(void) {
   char *b;
+  usuarioCopiar(usuarioEstado);
   migrarLegado();
   b = dados_ler(arq(perfil).s);
   if (!b) return 0;
   { char *fim = b + strlen(b);
     while (fim > b && (fim[-1] == '\n' || fim[-1] == '\r')) *--fim = 0; }
   pthread_mutex_lock(&trava);
-  if (b[0]) {
+  if (b[0] && strcmp(b, "!")) {
     if (strcmp(token, b)) credGeracao++;
     snprintf(token, sizeof token, "%s", b); estado = SMK_LIGADO;
   }
@@ -156,6 +178,14 @@ int simklauth_trocar_perfil(int p) {
   return antes || token[0];
 }
 
+void simklauth_desconectar(void) {
+  pthread_mutex_lock(&trava);
+  geracao++;
+  zerarEstado();
+  dados_gravar(arq(perfil).s, "!");
+  pthread_mutex_unlock(&trava);
+}
+
 void simklauth_esquecer(void) {
   int p;
   pthread_mutex_lock(&trava);
@@ -197,7 +227,7 @@ static void *fioPedir(void *u) {
 
   if (!nuvem_simkl_cliente()[0]) {
     pthread_mutex_lock(&trava);
-    if (gerFio == geracao) {
+    if (gerFio == geracao && mesmaConta(usuarioFio)) {
       snprintf(erro, sizeof erro, "pacote sem a chave do Simkl");
       estado = SMK_ERRO;
     }
@@ -222,7 +252,7 @@ static void *fioPedir(void *u) {
   }
   pthread_mutex_lock(&trava);
   // PIN pedido por um perfil que ja saiu da tela: ninguem vai digita-lo.
-  if (gerFio != geracao) {
+  if (gerFio != geracao || !mesmaConta(usuarioFio)) {
     pthread_mutex_unlock(&trava);
     free(r);
     fioPronto = 1;
@@ -291,6 +321,18 @@ static void *fioPoll(void *u) {
   snprintf(caminho, sizeof caminho, "/oauth/pin/%s", userCodeFio);
   r = pegar(caminho, &st);
   pthread_mutex_lock(&trava);
+  if (!mesmaConta(usuarioFio)) {
+    pthread_mutex_unlock(&trava);
+    free(r);
+    fioPronto = 1;
+    return NULL;
+  }
+  char *salvo = dados_ler(arq(perfilFio).s);
+  int saiu = salvo && !strcmp(salvo, "!");
+  free(salvo);
+  if (saiu && gerFio != geracao) {
+    pthread_mutex_unlock(&trava); free(r); fioPronto = 1; return NULL;
+  }
   if (gerFio != geracao) {
     // Autorizado depois da troca de perfil: e do perfil que pediu o PIN.
     char t[300];
@@ -349,6 +391,8 @@ static void *fioPoll(void *u) {
 
 static void soltar(void *(*rotina)(void *)) {
   if (fioVivo) return;
+  usuarioCopiar(usuarioFio);
+  if (strcmp(usuarioFio, usuarioEstado)) return;
   fioPronto = 0;
   gerFio = geracao;
   perfilFio = perfil;
@@ -359,6 +403,7 @@ static void soltar(void *(*rotina)(void *)) {
 
 void simklauth_comecar(void) {
   if (estado == SMK_PEDINDO || estado == SMK_AGUARDANDO) return;
+  usuarioCopiar(usuarioEstado);
   erro[0] = 0;
   comecouMs = 0;
   estado = SMK_PEDINDO;
@@ -366,6 +411,11 @@ void simklauth_comecar(void) {
 }
 
 void simklauth_passo(unsigned agoraMs) {
+  // tokenNovo pode ter ficado pendente enquanto outro push ocupava o fio.
+  if (!mesmaConta(usuarioEstado)) {
+    if (fioVivo && fioPronto) { fioVivo = 0; fioPronto = 0; }
+    return;
+  }
   { int res; credfio_resultado("simkl", &res); }   // so libera o lugar (#203)
   if (fioVivo && fioPronto) { fioVivo = 0; fioPronto = 0; }
   if (fioVivo) return;

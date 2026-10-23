@@ -13,6 +13,17 @@
 #define NV_ADDONS_H
 #include "watchstate.h"
 #include "addonurl.h"
+#include <stdint.h>
+
+// Um teto so para a lista e para os consumidores que precisam de TODOS os donos.
+#define ADDONS_MAX 128
+typedef struct { char id[96], base[NV_ADDON_URL_MAX]; int ativo; } AddonIdentidade;
+// Copia sob a trava; -1 se a lista mudou, e de outro perfil ou nao cabe inteira.
+int addons_copiar_identidades(AddonIdentidade *saida, int max, unsigned versao, int perfil);
+// Publicar a limpeza so enquanto a MESMA lista da conta continua protegida.
+// Ordem das travas: sessao de perfil, lista de addons, fileiras/colecoes.
+int addons_travar_lista(unsigned versao, int perfil);
+void addons_destravar_lista(void);
 
 typedef enum { ADD_PARADO = 0, ADD_BUSCANDO, ADD_PRONTO, ADD_VAZIO } AddEstado;
 
@@ -63,15 +74,49 @@ void addons_diferenca(const AddonRemoto *antes, int na, const AddonRemoto *depoi
 // primeiro sync terminar. Ficar sem fonte por alguns segundos e o
 // comportamento correto de "ninguem logado".
 void addons_esquecer(void);
+// Abre uma sessao de perfil limpa; nao espera nem refaz pedidos anteriores.
+void addons_abrir_sessao(void);
 int  addons_n(void);
 // Numero que sobe a cada mudanca na lista de addons (conta, liga/desliga,
 // adicao). app.c refaz a busca de fontes do titulo aberto quando ele muda —
 // era o titulo aberto antes de a lista da conta chegar ficando sem fonte.
 unsigned addons_versao(void);
+// Capturar na UI para a consulta independente do proximo episodio. Bases
+// privadas e proveniencia pertencem ao snapshot; nenhum worker le a lista
+// de addons do perfil que entrou depois. NULL = captura indisponivel/incompleta.
+typedef struct AddonsConsulta AddonsConsulta;
+AddonsConsulta *addons_consulta_capturar(void);
+int addons_consulta_atual(const AddonsConsulta *consulta);
+// BLOQUEIA no worker; devolve lista propria completa, sem publicar/cachear.
+// Uma consulta cancelada/incompleta devolve -1 e deixa *saida NULL.
+int addons_consulta_consultar(const AddonsConsulta *consulta, const char *id, const char *tipo,
+                              int fios, int (*cancelado)(void *), void *ctx, void *saida /* Stream ** */);
+// Serial installed add-on availability probe; no plugins, retries, cache, or list publication.
+int addons_consulta_filme(const AddonsConsulta *consulta, const char *id,
+                          int (*cancelado)(void *), void *ctx);
+void addons_consulta_liberar(AddonsConsulta *consulta);
 const char *addons_base(int i);   // URL base, sem /manifest.json
+void addons_catalogo_chave(const char *id, const char *base, const char *tipo,
+                           const char *catalogo, char *dst, unsigned tam);
 const char *addons_id_manifesto(int i);   // "id" do manifesto; "" ate a sonda ler
 const char *addons_nome_por_id(const char *id);   // nome de exibicao; "" se nao ha
 const char *addons_base_por_id(const char *idManifesto);   // "" ate a sonda conhecer o id
+int addons_base_por_id_copiar(const char *idManifesto, char *base, unsigned tam);
+typedef enum {
+  ADD_IDENTIDADE_AUSENTE = 0, ADD_IDENTIDADE_PENDENTE,
+  ADD_IDENTIDADE_FALHOU, ADD_IDENTIDADE_PRONTA
+} AddonIdentidadeEstado;
+// Ausencia so e confirmada depois de identificar toda a lista instalada.
+// Uma tentativa sem resposta/id e falha de identificacao, nao addon removido.
+AddonIdentidadeEstado addons_identidade_estado(const char *idManifesto);
+// Publica SOMENTE o id, sem esperar a montagem da Home/CW. O pedido pertence
+// a esta base, versao de lista e sessao; resposta velha nao altera a lista.
+// NULL/manifesto sem id encerra a tentativa com falha, preservando id conhecido.
+int addons_identidade_recebida(const char *base, unsigned versao, uint64_t sessao,
+                               const char *corpo);
+// Final capability publication keeps the same request ownership as identity.
+int addons_manifesto_recebido(const char *base, unsigned versao, uint64_t sessao,
+                              const char *corpo);
 int  addons_tem_catalogo(int i);  // 1 quando o addon fornece catalogo
 
 // Dispara a busca das fontes de `imdb` ("tt1234567", ou "tt1234567:1:2" para
@@ -99,6 +144,18 @@ void addons_definir_origem_extra(OrigemExtra f, int (*ativa)(void));
 // k of the personal-server origin's notice (servidoresaddons.c): its sources
 // are published BEFORE every addon (D2: the server copy is always first).
 #define ORIGEM_SERVIDOR (-1)
+// Capturar na UI; consultar somente o estado proprio no worker. 0 e uma
+// resposta vazia valida; -1 e falha, cancelamento ou resposta incompleta.
+typedef struct Stream Stream;
+typedef struct {
+  void *(*capturar)(void);
+  int (*atual)(const void *);
+  int (*consultar)(const void *, const char *id, const char *tipo,
+                   int (*cancelado)(void *), void *ctx,
+                   OrigemAviso aviso, void *avisoU, Stream **saida);
+  void (*liberar)(void *);
+} OrigemPreparoOps;
+void addons_definir_origem_extra_preparo(OrigemExtra f, const OrigemPreparoOps *ops);
 int  addons_origem_extra_ativa(void);
 void addons_buscar(const char *imdb, const char *tipo);
 // Recarregar explicito: descarta a resposta anterior e vai a rede, inclusive
@@ -113,6 +170,7 @@ void addons_buscar_renovar(const char *imdb, const char *tipo);
 void addons_drenar(void);
 // 1 enquanto a busca real de VOD esta no ar publicando por addon.
 int  addons_busca_parcial(void);
+int  addons_busca_incompleta(void); // Finished search still missing responses.
 // Milissegundos desde o disparo dessa busca; 0 fora dela.
 unsigned addons_busca_ms(void);
 // Quantos addons ainda nao responderam (contando quem espera a segunda chance)
@@ -203,11 +261,11 @@ int  addons_n_legendas(void);
 // memoria pode ser de outro titulo. Quem liga legenda sozinho (faixas.c, #129)
 // precisa dessa distincao; a folha nao, ela so mostra o que ha.
 int  addons_legendas_prontas(void);
+// Thread-local copy, valid until this thread calls addons_legenda() again.
 const Legenda *addons_legenda(int i);
 // ATOMIC SNAPSHOT of the subtitle list: copies up to `max` entries while the
-// list mutex is held, so a reader never sees a list being replaced (the
-// pointer from addons_legenda() is read after the unlock and can race the
-// worker). `geracao` (optional) receives the list generation; `prontas`
+// list mutex is held, so a reader never sees a list being replaced.
+// `geracao` (optional) receives the list generation; `prontas`
 // (optional) the same answer as addons_legendas_prontas(), from the same lock.
 // Returns how many entries were copied.
 int  addons_legendas_copiar(Legenda *dst, int max, unsigned *geracao, int *prontas);

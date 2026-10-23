@@ -6,6 +6,7 @@
 // idiomas e, com a fonte da TV (NUVIO_SHOT_FONTE=3), nenhuma frase precisa de
 // reticencias.
 #include "novidades_cartao.h"
+#include "nvtmp.h"
 #include "apoio.h"
 #include "dados.h"
 #include "ajustes.h"
@@ -34,8 +35,10 @@ static void ajustesDeTeste(int idioma, int reduzidas, int tema) {
   // NUVIO_SHOT_FONTE=3 (TXT_FAMILIA_*): a fonte da interface da TV
   // (Montserrat na TCL do dono), mais larga que a Inter do Mac.
   if (getenv("NUVIO_SHOT_FONTE")) fprintf(f, "fonteInterface %d\n", atoi(getenv("NUVIO_SHOT_FONTE")));
+  fprintf(f, "escalaTextoLocal %s\nvidroLocal %s\nvidroFoscoLocal 1\n", getenv("NUVIO_SHOT_ESCALA") ? getenv("NUVIO_SHOT_ESCALA") : "2", getenv("NUVIO_SHOT_VIDRO") ? getenv("NUVIO_SHOT_VIDRO") : "1");
   fclose(f);
   ajustes_dir(dados_dir());
+  gfx_escala_txt_definir(ajustes_escala_texto());
 }
 
 static void tecla(SDL_Keycode k) {
@@ -50,6 +53,7 @@ static void quadro(float dt) {
   SDL_PumpEvents();
   txt_novo_quadro();
   tex_novo_quadro();
+  tex_upl_n = 0; tex_upl_bytes = 0;
   tex_bombear(8);
   gfx_novo_quadro();
   novcartao_atualizar(dt, SDL_GetTicks());
@@ -153,7 +157,7 @@ static void cabeEmTodos(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-novcartao";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-novcartao");
   const char *dir = getenv("NUVIO_DADOS");
   const char *so = getenv("NUVIO_SHOT_SO");   // "medir": so a medida, sem capturas
   SDL_Window *w;
@@ -188,6 +192,87 @@ int main(int argc, char **argv) {
   gfx_tex_esquecer(0);
   gfx_icones_dir("deploy/app/art");
 
+  // Missing artwork keeps the opening cold for the entire entrance animation.
+  setenv("NUVIO_SHOT_VIDRO", "0", 1);
+  ajustesDeTeste(1, 0, 2);
+  ajustes_definir_vidro(1); // Override the first-run appearance migration.
+  assert(ajustes_vidro() && ajustes_vidro_fosco());
+  novcartao_dir(nvt("/missing-novcartao-art"));
+  novcartao_abrir();
+  for (int i = 0; i < 40; i++) {
+    quadro(1.0f / 60.0f);
+    assert(!novcartao_previa_pronta());
+    assert(gfx_vidro_capturas == 0 && gfx_vidro_passadas == 0);
+    assert(gfx_vidro_com_fonte == 0);
+  }
+  tecla(SDLK_ESCAPE);
+  for (int i = 0; i < 20; i++) {
+    quadro(1.0f / 60.0f);
+    assert(gfx_vidro_capturas == 0 && gfx_vidro_passadas == 0);
+  }
+  novcartao_dir("deploy/app/art");
+  unsetenv("NUVIO_SHOT_VIDRO");
+  puts("PASS: cold entrance and exit with glass enabled, missing artwork, zero live blur");
+  if (so && !strcmp(so, "cold")) goto fim;
+
+  if (so && (!strcmp(so, "baseline") || !strcmp(so, "showoff"))) {
+    const float escalas[] = { .85f, 1.0f, 1.3f };
+    for (int esc = 0; esc < 3; esc++) for (int vidro = 0; vidro < 2; vidro++) {
+      char valor[8], nome[100];
+      snprintf(valor, sizeof valor, "%d", esc == 0 ? 0 : esc == 1 ? 2 : 5);
+      setenv("NUVIO_SHOT_ESCALA", valor, 1);
+      setenv("NUVIO_SHOT_VIDRO", vidro ? "0" : "1", 1);
+      ajustesDeTeste(1, 0, 2);
+      gfx_escala_txt_definir(escalas[esc]);
+      snprintf(nome, sizeof nome, "%s-%d-glass-%s", so, (int)roundf(escalas[esc] * 100), vidro ? "on" : "off");
+      captura(saida, nome, 1.2f, 0);
+      if (!strcmp(so, "showoff") && esc == 1 && !vidro) {
+        for (int c = 1; c < 4; c++) {
+          snprintf(nome, sizeof nome, "showoff-100-highlight-%d", c + 1);
+          captura(saida, nome, novcartao_teste_inicio_cena(c) + 1.2f, 0);
+        }
+        for (int idi = 0; idi < 2; idi++) {
+          ajustesDeTeste(idi, 0, 2);
+          for (int p = 0; p < novcartao_paginas(); p++) {
+            snprintf(nome, sizeof nome, "showoff-100-%s-page-%d", idioma_iso(idi), p + 1);
+            captura(saida, nome, 1.2f, p);
+          }
+        }
+      }
+    }
+    if (!strcmp(so, "baseline")) goto fim;
+    assert(novcartao_cenas() == 4);  // Four feature visuals, absent in the old text-only card.
+    novcartao_teste_medir(1);
+    for (int esc = 0; esc < 3; esc++) for (int idi = 0; idi < IDIOMA_N; idi++) {
+      char valor[8];
+      snprintf(valor, sizeof valor, "%d", esc == 0 ? 0 : esc == 1 ? 2 : 5);
+      setenv("NUVIO_SHOT_ESCALA", valor, 1);
+      ajustesDeTeste(idi, 1, 2);
+      novcartao_abrir();
+      int n = novcartao_paginas(), total = 0;
+      for (int pg = 0; pg < n - 1; pg++) {
+        for (int i = 0; i < 24; i++) { quadro(0); SDL_Delay(2); }
+        total += novcartao_teste_desenhados();
+        if (novcartao_teste_cortadas()) fprintf(stderr, "clipped: scale=%g language=%s page=%d count=%d\n", escalas[esc], idioma_iso(idi), pg, novcartao_teste_cortadas());
+        assert(novcartao_teste_cortadas() == 0);
+        assert(novcartao_teste_folga() >= 27.99f);
+        assert(gfx_vidro_capturas == 0 && gfx_vidro_passadas == 0);
+        assert(gfx_vidro_com_fonte >= 2);
+        if (tex_upl_bytes) fprintf(stderr, "upload: scale=%g language=%s page=%d bytes=%ld\n", escalas[esc], idioma_iso(idi), pg, tex_upl_bytes);
+        assert(tex_upl_bytes == 0);
+        tecla(SDLK_DOWN);
+        assert(novcartao_pagina() == pg + 1);
+      }
+      assert(total == novcartao_itens_visiveis());
+      for (int i = 0; i < 8; i++) quadro(0);
+      assert(novcartao_teste_discord());
+      tecla(SDLK_UP);
+      assert(novcartao_pagina() == n - 2);
+      novcartao_teste_esquecer();
+    }
+    puts("PASS: four visuals, all languages at 85/100/130%, complete items, D-pad, zero steady blur passes");
+    goto fim;
+  }
   if (!so || strcmp(so, "medir")) {
     static const int idiomas[] = { 0, 1, IDIOMA_DE, IDIOMA_JA, IDIOMA_RU };
     static const unsigned plataformas[] = { NOV_LG, NOV_TPK, NOV_WGT, NOV_ANDROID, NOV_OUTRAS };
@@ -231,6 +316,7 @@ int main(int argc, char **argv) {
 
   cabeEmTodos();
 
+fim:
   tex_encerrar();
   txt_encerrar();
   gfx_encerrar();

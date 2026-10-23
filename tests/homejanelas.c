@@ -39,7 +39,13 @@ int ajustes_cw_do_episodio_mais_alto(void) { return 1; }
 int trakt_ativo(void) { return 1; }
 int vistoep_estado(const char *i, int s, int e) { (void)i; (void)s; (void)e; return -1; }
 int ajustes_ocultar_nao_lancados(void) { return 0; }   // #369: descoberta.c le o ajuste
+int ajustes_ocultar_filmes_vistos(void) { return 0; }    // #366: descoberta.c le o ajuste
 #include "../src/descoberta.c"
+unsigned cat_revisao_itens(void) { return 0; }
+int cat_visto(const CatItem *item) { (void)item; return 0; }
+int cat_copiar_por_id(const char *id, const char *tipo, CatItem *item) {
+  (void)id; (void)tipo; (void)item; return 0;
+}
 #include "jellyfin_stub.inc"
 int contalib_sementes_a_seguir(ContaSemente *s, int m, int a) { (void)s; (void)m; (void)a; return 0; }
 unsigned recomenda_geracao(void) { return 1; }

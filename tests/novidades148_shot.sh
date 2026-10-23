@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas do cartao da 1.4.8 em BMP: a previa da cor viva em tres momentos do
 # ciclo (primeiro titulo, meio da passagem, terceiro titulo) em pt, o segundo
 # titulo e o foco em "Testar a velocidade" em en, e animacoes reduzidas. Antes,
@@ -10,7 +12,7 @@
 #   bash tests/novidades148_shot.sh /tmp/nuvio-novidades148
 set -eu
 cd "$(dirname "$0")/.."
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-n148-shot.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-n148-shot.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 sources=()
@@ -19,8 +21,8 @@ for source in src/*.c src/dts/*.c; do
   sources+=("$source")
 done
 cc "${sources[@]}" tests/novidades148_shot.c -Isrc \
-  -o /tmp/nuvio-n148-shot -O1 -g \
+  -o ${TMPDIR:-/tmp}/nuvio-n148-shot -O1 -g \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-n148-shot "${1:-/tmp/nuvio-novidades148}"
+${TMPDIR:-/tmp}/nuvio-n148-shot "${1:-${TMPDIR:-/tmp}/nuvio-novidades148}"

@@ -53,6 +53,10 @@ int main(void) {
   tecla(SDLK_RETURN, 0); assert(!stream_detalhe_aberto() && stream_folha_aberta());
   tecla(SDLK_F5, 0); assert(stream_detalhe_aberto());
   tecla(SDLK_ESCAPE, 0); assert(!stream_detalhe_aberto() && stream_folha_aberta());
+  // CH− da LG abre/fecha a mesma modal que AMARELA, sem fechar a folha.
+  tecla(SDLK_PAGEDOWN, NV_SCANCODE_CH_DOWN); assert(stream_detalhe_aberto());
+  tecla(SDLK_PAGEDOWN, NV_SCANCODE_CH_DOWN);
+  assert(!stream_detalhe_aberto() && stream_folha_aberta());
   // Voltar de novo, agora sem modal, fecha a folha.
   tecla(SDLK_AC_BACK, 0); assert(!stream_folha_aberta());
   printf("fonte_detalhe: ok\n");

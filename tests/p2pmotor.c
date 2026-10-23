@@ -5,6 +5,7 @@
 // ISTO NAO PROVA O MOTOR REAL. O nuvio-engine/libtorrent de verdade e
 // tests/p2pmotor_real.sh; aqui so a nossa logica em volta dele.
 #include "p2pmotor.h"
+#include "nvtmp.h"
 #include "p2p.h"
 #include "rede.h"
 #include <assert.h>
@@ -281,8 +282,8 @@ static double piorTela(double durante) {
 int main(void) {
   char url[600];
   int r;
-  snprintf(RAIZ, sizeof RAIZ, "/tmp/nv-p2pmotor-%d/p2p", (int)getpid());
-  { char mae[600]; snprintf(mae, sizeof mae, "/tmp/nv-p2pmotor-%d", (int)getpid()); mkdir(mae, 0700); }
+  snprintf(RAIZ, sizeof RAIZ, "%s/nv-p2pmotor-%d/p2p", nvt_dir(), (int)getpid());
+  { char mae[600]; snprintf(mae, sizeof mae, "%s/nv-p2pmotor-%d", nvt_dir(), (int)getpid()); mkdir(mae, 0700); }
   p2pmotor_teste_injetar(&FALSO, livreFalso, sondaFalsa, RAIZ, 50);
   assert(p2pmotor_disponivel());
 
@@ -519,7 +520,7 @@ int main(void) {
   pararTudo();
   puts("p2pmotor: #334 tamanho do arquivo e sobra apagada no inicio ok");
 
-  { char mae[600]; snprintf(mae, sizeof mae, "/tmp/nv-p2pmotor-%d", (int)getpid()); rmdir(mae); }
+  { char mae[600]; snprintf(mae, sizeof mae, "%s/nv-p2pmotor-%d", nvt_dir(), (int)getpid()); rmdir(mae); }
   puts("p2pmotor: ok (motor FALSO: nao prova o nuvio-engine)");
   return 0;
 }

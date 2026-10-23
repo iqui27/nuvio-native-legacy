@@ -10,6 +10,7 @@
 #include "badges.h"
 #include "tex_cache.h"
 #include "text.h"
+#include "sinopse.h"
 #include "idioma.h"
 #include "idiomacod.h"
 #include "ajustes.h"
@@ -217,7 +218,7 @@ static void montar(const CatItem *ci, const CtxInfoEstado *st, Modelo *m) {
 
 // A SINOPSE QUEBRADA UMA VEZ. A chave e o texto, a largura e o idioma; o
 // quadro seguinte so desenha as linhas (txt_linha ja guarda a textura).
-static struct { char chave[96]; float w; int idioma, n, max; char l[CTXI_SIN_LINHAS][300]; } sinCache;
+static struct { char chave[96]; float w; int idioma, tamanho, n, max; char l[CTXI_SIN_LINHAS][300]; } sinCache;
 static int sinMax = CTXI_SIN_LINHAS;
 
 static void quebrarSinopse(const char *s, float w) {
@@ -225,11 +226,11 @@ static void quebrarSinopse(const char *s, float w) {
   const char *p = s;
   int n = 0;
   snprintf(chave, sizeof chave, "%.80s|%zu", s, strlen(s));
-  if (sinCache.w == w && sinCache.max == sinMax && sinCache.idioma == ajustes_idioma() && !strcmp(sinCache.chave, chave)) return;
+  if (sinCache.w == w && sinCache.max == sinMax && sinCache.tamanho == ajustes_sinopse_tamanho() && sinCache.idioma == ajustes_idioma() && !strcmp(sinCache.chave, chave)) return;
   memset(&sinCache, 0, sizeof sinCache);
   snprintf(sinCache.chave, sizeof sinCache.chave, "%s", chave);
-  sinCache.w = w; sinCache.idioma = ajustes_idioma(); sinCache.max = sinMax;
-  while (*p && n < sinMax) {
+  sinCache.w = w; sinCache.idioma = ajustes_idioma(); sinCache.max = sinMax; sinCache.tamanho = ajustes_sinopse_tamanho();
+  while (*p && n < sinopse_linhas(TXT_ILHA_TEXTO, 28, sinMax)) {
     char linha[300] = "";
     const char *corte = NULL;
     while (*p == ' ') p++;
@@ -238,18 +239,18 @@ static void quebrarSinopse(const char *s, float w) {
       size_t k = txt_token_tam(p), nl = strlen(linha);
       if (nl + k + 2 >= sizeof tent) break;
       snprintf(tent, sizeof tent, "%s%s%.*s", linha, nl ? " " : "", (int)k, p);
-      if (nl && (float)txt_largura(TXT_ILHA_TEXTO, tent) > w) { corte = p; break; }
+      if (nl && (float)txt_largura(sinopse_estilo(TXT_ILHA_TEXTO), tent) > w) { corte = p; break; }
       snprintf(linha, sizeof linha, "%s", tent);
       p += k;
       while (*p == ' ') p++;
     }
     // A ULTIMA linha leva a reticencia quando ainda sobra texto.
-    if (n == sinMax - 1 && (corte || *p)) {
+    if (n == sinopse_linhas(TXT_ILHA_TEXTO, 28, sinMax) - 1 && (corte || *p)) {
       size_t nl = strlen(linha);
       for (;;) {
         char tent[310];
         snprintf(tent, sizeof tent, "%s\xe2\x80\xa6", linha);
-        if ((float)txt_largura(TXT_ILHA_TEXTO, tent) <= w || nl == 0) {
+        if ((float)txt_largura(sinopse_estilo(TXT_ILHA_TEXTO), tent) <= w || nl == 0) {
           snprintf(sinCache.l[n], sizeof sinCache.l[n], "%s", tent); break; }
         // tira a ultima palavra
         while (nl && linha[nl - 1] != ' ') nl--;
@@ -270,7 +271,7 @@ static void quebrarSinopse(const char *s, float w) {
 #define LOGO_W   300.0f
 #define LOGO_H    64.0f
 #define NOTAS_H   30.0f
-#define SIN_LEAD  28.0f
+#define SIN_LEAD  sinopse_entrelinha(TXT_ILHA_TEXTO, 28.0f)
 #define LINHA_H   34.0f
 #define ICONE     20.0f
 
@@ -310,7 +311,7 @@ static float fazer(const CatItem *ci, const CtxInfoEstado *st, float x, float y,
   if (arte) {
     GfxRect r = { x + PAD, y, w - 2.0f * PAD, ARTE_H };
     if (desenhar) {
-      GLuint t = tex_obter_larg(arte, r.w * gfx_escala_ui());
+      GLuint t = tex_obter_larg(arte, r.w);
       float raio = 22.0f / r.h;
       if (t) {
         gfx_tex_aspect_atual = tex_aspecto(arte);
@@ -373,11 +374,12 @@ static float fazer(const CatItem *ci, const CtxInfoEstado *st, float x, float y,
     y += 16.0f;
     for (i = 0; i < sinCache.n; i++) {
       if (desenhar) {
-        TxtLinha t = txt_linha(TXT_ILHA_TEXTO, sinCache.l[i], 243, 242, 239, 255);
+        TxtLinha t = txt_linha_corta(sinopse_estilo(TXT_ILHA_TEXTO), sinCache.l[i], 243, 242, 239, 255, cw);
         txt_desenhar_alpha(t, cx, y + (float)i * SIN_LEAD, .66f * ca);
       }
     }
-    y += (float)sinCache.n * SIN_LEAD - (SIN_LEAD - 24.0f);
+    if (sinCache.n) y += (float)sinCache.n * SIN_LEAD -
+                         (SIN_LEAD - sinopse_entrelinha(TXT_ILHA_TEXTO, 24.0f));
   }
 
   // ONDE PAROU, AMIGOS, AGENDA.
@@ -472,8 +474,8 @@ static float compactoN(const CatItem *ci, const CtxInfoEstado *st, float x, floa
     sinMax = sinN; quebrarSinopse(m.sinopse, w); sinMax = CTXI_SIN_LINHAS;
     for (i = 0; i < sinCache.n; i++) {
       if (desenhar) {
-        TxtLinha t = txt_linha(TXT_ILHA_TEXTO, sinCache.l[i], 243, 242, 239, 255);
-        if (sombra) { TxtLinha d = txt_linha(TXT_ILHA_TEXTO, sinCache.l[i], 0, 0, 0, 255);
+        TxtLinha t = txt_linha_corta(sinopse_estilo(TXT_ILHA_TEXTO), sinCache.l[i], 243, 242, 239, 255, w);
+        if (sombra) { TxtLinha d = txt_linha_corta(sinopse_estilo(TXT_ILHA_TEXTO), sinCache.l[i], 0, 0, 0, 255, w);
                       txt_desenhar_alpha(d, x + 1.5f, y + (float)i * SIN_LEAD + 1.5f, .7f * ca); }
         txt_desenhar_alpha(t, x, y + (float)i * SIN_LEAD, (sombra ? .9f : .66f) * ca);
       }

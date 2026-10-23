@@ -1,7 +1,9 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 set -euo pipefail
 cd "$(dirname "$0")/.."
-binary=$(mktemp /tmp/nuvio-diag-persistencia.XXXXXX)
+binary=$(mktemp ${TMPDIR:-/tmp}/nuvio-diag-persistencia.XXXXXX)
 trap 'rm -f "$binary"' EXIT
 # Dead-strip uncalled UI/network paths; no SDL runtime or whole-core build.
 case "$(uname -s)" in

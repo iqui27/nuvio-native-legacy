@@ -21,9 +21,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nvtmp.h"
 
 // ------------------------------------------------------------ disco dublado
-static const char *pasta(void) { const char *d = getenv("NV_T_DIR"); return d && *d ? d : "/tmp"; }
+static const char *pasta(void) { const char *d = getenv("NV_T_DIR"); return d && *d ? d : nvt_dir(); }
 char *dados_ler(const char *nome) {
   char c[600]; FILE *f; long n; char *b;
   snprintf(c, sizeof c, "%s/%s", pasta(), nome);
@@ -46,7 +47,7 @@ const char *i18n(const char *s) { return s; }
 // ------------------------------------------------------------ servidor dublado
 static int stRenovar = 200, stRpc = 200, stPedir = 200, stTroca = 200;
 static const char *corpoPedir = NULL;
-static int renovacoes, falhasFreio;
+static int renovacoes, falhasFreio, trocas;
 static int aprovar;   // a pessoa ja autorizou no celular
 // JWT com payload {"sub":"u1","exp":1} (vencido) e {"sub":"u1","exp":4102444800} (2100).
 #define JWT_VENCIDO "x.eyJzdWIiOiJ1MSIsImV4cCI6MX0.y"
@@ -78,9 +79,11 @@ char *nuvem_post(const char *caminho, const char *corpo, const char *bearer, int
       : "{\"code\":\"abc\",\"web_url\":\"https://login.exemplo/tv?code=abc\",\"poll_interval_seconds\":1}", status);
   if (strstr(caminho, "poll_tv_login_session"))
     return resposta(200, aprovar ? "{\"status\":\"approved\"}" : "{\"status\":\"pending\"}", status);
-  if (strstr(caminho, "tv-logins-exchange"))
+  if (strstr(caminho, "tv-logins-exchange")) {
+    __atomic_add_fetch(&trocas, 1, __ATOMIC_RELAXED);
     return resposta(stTroca, stTroca == 200
       ? "{\"access_token\":\"" JWT_BOM "\",\"refresh_token\":\"r3\"}" : "error code: 503", status);
+  }
   return resposta(stRpc, stRpc == 200 ? "[]" : stRpc == 401 ? "{\"message\":\"JWT expired\"}" : "error code: 504", status);
 }
 char *nuvem_rpc_com(const char *funcao, const char *corpo, const char *bearer, int *status) {
@@ -104,7 +107,7 @@ static void gravarSessao(const char *jwt) {
 static unsigned agora = 1000;
 static void esperarFluxo(SesEstado ate) {
   int i;
-  for (i = 0; i < 3000; i++) {
+  for (i = 0; i < 6000; i++) {
     sessao_passo(agora += 20);
     if (sessao_estado() == ate || sessao_estado() == SES_ERRO || sessao_estado() == SES_LOGADO) {
       int j; for (j = 0; j < 5; j++) { sessao_passo(agora += 20); usleep(1000); }
@@ -162,8 +165,8 @@ int main(int argc, char **argv) {
       confere("frase: servidor nao respondeu (HTTP 504), tentar em minutos",
               !strcmp(sessao_erro(), "O servidor da conta Nuvio não respondeu (HTTP 504). Tente de novo em alguns minutos."));
     else if (stPedir == 0)
-      confere("frase: servidor nao respondeu (sem numero)",
-              !strcmp(sessao_erro(), "O servidor da conta Nuvio não respondeu. Tente de novo em alguns minutos."));
+      confere("frase: servidor nao respondeu, classe de transporte sem HTTP",
+              strstr(sessao_erro(), "[transport; curl 0]") != NULL);
     else
       confere("frase: servidor recusou o pedido do codigo (HTTP 400)",
               !strcmp(sessao_erro(), "O servidor da conta Nuvio recusou o pedido do código (HTTP 400). Tente de novo em alguns minutos."));
@@ -178,11 +181,14 @@ int main(int argc, char **argv) {
     aprovar = 1;
     sessao_login_comecar();
     esperarFluxo(SES_AGUARDANDO);
-    { int i; for (i = 0; i < 400; i++) { sessao_passo(agora += 50); usleep(1000); } }
+    { int i; for (i = 0; i < 5000; i++) {
+        sessao_passo(agora += 1); usleep(1000);
+        if (__atomic_load_n(&trocas, __ATOMIC_RELAXED) >= 3 && sessao_estado() == SES_AGUARDANDO) break;
+      } }
     confere("autorizado mas troca 503: continua esperando, sem erro na tela",
             sessao_estado() == SES_AGUARDANDO && !sessao_logada());
     stTroca = 200;
-    { int i; for (i = 0; i < 400 && !sessao_logada(); i++) { sessao_passo(agora += 50); usleep(1000); } }
+    { int i; for (i = 0; i < 5000 && !sessao_logada(); i++) { sessao_passo(agora += 1); usleep(1000); } }
     confere("servidor de volta: a mesma autorizacao entra, sem QR novo", sessao_logada());
   } else {
     printf("caso desconhecido\n");

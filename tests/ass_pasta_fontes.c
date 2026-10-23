@@ -14,6 +14,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "nvtmp.h"
 
 static int vistas;
 static char ultimo[128];
@@ -40,7 +41,7 @@ int main(void) {
   char dir[512], c[640];
   int ign = -1, n;
   static const unsigned char arib[] = { 0x41, 0x52, 0x49, 0x42, 0x00, 0x05, 0x10, 0xff };
-  snprintf(dir, sizeof dir, "%snuvio-ass-pasta-%d", tmp && *tmp ? tmp : "/tmp/", (int)getpid());
+  snprintf(dir, sizeof dir, "%snuvio-ass-pasta-%d", nvt("/"), (int)getpid());
   assert(mkdir(dir, 0700) == 0);
   snprintf(c, sizeof c, "%s/InterDisplay-Regular.ttf", dir);
   copiar("deploy/app/fonts/InterDisplay-Regular.ttf", c);

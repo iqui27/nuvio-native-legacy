@@ -25,6 +25,7 @@
 //
 // NAO CHAMA dados_iniciar DE PROPOSITO: sem ela nada e lido nem gravado.
 #include "seriefrases.h"
+#include "nvtmp.h"
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -135,7 +136,7 @@ static void tela(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-seriefrases";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-seriefrases");
   char nome[600];
   SDL_Window *w;
   SDL_GLContext gl;

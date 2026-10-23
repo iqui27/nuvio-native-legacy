@@ -3,11 +3,13 @@
 // capada em PAG_SERVIDOR, como o servidor pode fazer) e responde a colecao inteira de
 // uma vez. Compilado com e sem -DNV_ANDROID (os tetos sao os mesmos nas duas).
 #include <assert.h>
+#include "nvtmp.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include "stub_perfisessao.h"
 #include "../src/trakt.c"
 #ifndef TRAKT_LISTA_MAX   /* codigo antigo (prova de que o teste falha antes) */
 #define TRAKT_LISTA_MAX 400
@@ -17,6 +19,7 @@
 static int falhas, nPedidos, nPaginasWl;
 #define PAG_SERVIDOR 150
 static int filmesWl = 1100, seriesWl = 500, filmesCol = 600;
+static int paginaServidor = PAG_SERVIDOR, paginaSemImdb, failedPage;
 static void verifica(int ok, const char *caso) {
   if (!ok) { fprintf(stderr, "FAIL: %s\n", caso); falhas++; }
 }
@@ -47,12 +50,15 @@ char *rede_baixar_com(const char *url, int segundos, const char *const *cab) {
   nPedidos++;
   if (strstr(url, "/sync/collection/")) return itens(0, serie ? 0 : filmesCol, serie);
   assert(strstr(url, "/sync/watchlist/"));
+  assert(strstr(url, "/added/desc"));   // #610: newest first
   total = serie ? seriesWl : filmesWl;
   // SEM page/limit o servidor falso entrega so 250 (um Trakt que trunca a
   // resposta sem paginar e exatamente o sintoma do Shield: 213 de 1600+).
   if (!pg) return itens(0, total < 250 ? total : 250, serie);
   assert(sscanf(pg, "?page=%d&limit=%d", &p, &lim) == 2 && p > 0 && lim > 0);
-  if (lim > PAG_SERVIDOR) lim = PAG_SERVIDOR;
+  if (p == failedPage) return NULL;
+  if (lim > paginaServidor) lim = paginaServidor;
+  if (!serie && p == paginaSemImdb) return strdup("[{\"movie\":{\"title\":\"No IMDb\",\"ids\":{\"trakt\":123}}}]");
   nPaginasWl++;
   ini = (p - 1) * lim;
   q = ini < total ? total - ini : 0;
@@ -60,6 +66,14 @@ char *rede_baixar_com(const char *url, int segundos, const char *const *cab) {
   return itens(ini, q, serie);
 }
 
+char *rede_baixar_st_retry(const char *url, int seconds, const char *const *headers, int *status, int *retry) {
+  char *body = rede_baixar_com(url, seconds, headers);
+  *status = body ? 200 : 0; *retry = 0; return body;
+}
+int rede_pedir(const RedePedido *request, RedeResposta *response) {
+  (void)request; response->erro = REDE_INDISPONIVEL; return 0;
+}
+void rede_resposta_limpar(RedeResposta *response) { free(response->corpo); free(response->cabecalhos); }
 const char *i18n(const char *s) { return s; }
 
 // Captura o que trakt_lista imprime em stdout.
@@ -70,7 +84,7 @@ static void captura(int liga) {
   fflush(stdout);
   if (liga) {
     int fd;
-    snprintf(caminho, sizeof caminho, "%s/biblimites-log.%d", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp", (int)getpid());
+    snprintf(caminho, sizeof caminho, "%s/biblimites-log.%d", nvt_dir(), (int)getpid());
     fd = open(caminho, O_WRONLY | O_CREAT | O_TRUNC, 0600);
     salvo = dup(1);
     dup2(fd, 1); close(fd);

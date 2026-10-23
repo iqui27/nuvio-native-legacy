@@ -141,7 +141,7 @@ static void telemetria_desenharCorpo_(Uint32 agora) {
   { GfxRect r = { x, y, w, h };
     gfx_rect((GfxRect){ r.x - 20, r.y - 6, r.w + 40, r.h + 46 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, (ajustes_vidro() ? 0.36f : 0.45f) * a);
     if (ajustes_vidro()) {
-      gfx_cor(r, 36.0f / h, 0.055f, 0.059f, 0.071f, 0.86f * a);
+      gfx_vidro_material(r, 36.0f / h, GFX_VIDRO_DENS_MODAL, a);
       gfx_luz_canto(r, 36.0f / h, r.w * 0.22f, -r.h * 0.40f, r.h * 0.62f, 1, 1, 1, 0.10f * a);
     } else gfx_cor(r, 36.0f / h, 0.082f, 0.086f, 0.102f, a); }
   x += 58; y += 52;

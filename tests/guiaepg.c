@@ -13,6 +13,7 @@
 //     vence "record", e a mesma chave em dois canais nao e ambiguidade;
 //   - canal "24h" sem grade nenhuma (nao casa, nunca).
 #include <assert.h>
+#include "nvtmp.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,23 +37,63 @@ char *rede_baixar_bin(const char *u, int s, long *n) {
   return 0;
 }
 
-// A GRADE DO PROVEDOR (#158) vem por aqui. `extraCorpo`/`extraN` e o que o
-// "servidor" responde; `extraLimitado` simula o teto de bytes atingido.
+uint64_t perfis_sessao_geracao(void) { return 0; }
+int perfis_sessao_atual(uint64_t s) { return s == 0; }
+char *rede_baixar_bin_medido_controle(const char *url, int s, const char *const *cab,
+    const RedeControle *ctl, long *n, RedeMedida *m) {
+  (void)cab; (void)ctl; (void)m; return rede_baixar_bin(url, s, n);
+}
+
+// A GRADE DO PROVEDOR (#158) vem por aqui, EM FLUXO (M4): `extraCorpo`/`extraN`
+// e o que o "servidor" responde, entregue em pedacos de 777 bytes (corte no meio
+// das tags de proposito); `extraLimitado` simula a rede caindo; `geradorN` > 0
+// troca o corpo por um XMLTV gerado de `geradorN` canais (o arquivo grande que
+// nunca existe inteiro na memoria do teste).
 static char *extraCorpo; static long extraN; static int extraLimitado, extraPedidos;
 static char extraUltimaUrl[1100];
-char *rede_baixar_bin_medido_controle(const char *url, int segundos,
-                                      const char *const *cab, const RedeControle *c,
-                                      long *tam, RedeMedida *m) {
-  char *b;
-  (void)segundos; (void)cab; (void)c;
+static int geradorN; static long long geradorBytes;
+static void xtvtime(char *dst, time_t t);
+int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
+                      int (*cb)(const char *dados, size_t n, void *u), void *u,
+                      long long maxBytes, int *status, long long *bytes) {
+  long i;
+  (void)segundos; (void)cab; (void)maxBytes;
   extraPedidos++;
   snprintf(extraUltimaUrl, sizeof extraUltimaUrl, "%s", url);
-  if (m) { memset(m, 0, sizeof *m); m->status = 200; m->limitado = extraLimitado; }
-  if (!extraCorpo) { if (m) m->status = 0; return NULL; }
-  b = malloc((size_t)extraN);
-  memcpy(b, extraCorpo, (size_t)extraN);
-  *tam = extraN;
-  return b;
+  if (status) *status = 200;
+  if (bytes) *bytes = 0;
+  if (geradorN > 0) {
+    char bloco[2048], a[24], b[24];
+    time_t t = time(NULL);
+    int c, k;
+    geradorBytes = 0;
+    xtvtime(a, t - 600); xtvtime(b, t + 3000);
+    cb("<?xml version=\"1.0\"?><tv>", 26, u); geradorBytes += 26;
+    for (c = 0; c < geradorN; c++) {
+      int w = snprintf(bloco, sizeof bloco, "<channel id=\"g%d.x\"><display-name>Gerado %d</display-name></channel>", c, c);
+      cb(bloco, (size_t)w, u); geradorBytes += w;
+    }
+    for (c = 0; c < geradorN; c++)
+      for (k = 0; k < 6; k++) {
+        int w;
+        xtvtime(a, t - 600 + k * 3600); xtvtime(b, t + 3000 + k * 3600);
+        w = snprintf(bloco, sizeof bloco,
+          "<programme channel=\"g%d.x\" start=\"%s\" stop=\"%s\"><title>Programa %d de %d</title>"
+          "<desc>Uma descricao comprida o bastante para o arquivo pesar como o de um provedor de verdade, "
+          "com elenco, sinopse e classificacao indicativa.</desc></programme>", c, a, b, k, c);
+        cb(bloco, (size_t)w, u); geradorBytes += w;
+      }
+    cb("</tv>", 5, u);
+    if (bytes) *bytes = geradorBytes;
+    return 1;
+  }
+  if (!extraCorpo) { if (status) *status = 0; return 0; }
+  for (i = 0; i < extraN; i += 777) {
+    if (extraLimitado && i > extraN / 2) { if (status) *status = 0; return 0; }
+    if (!cb(extraCorpo + i, (size_t)(extraN - i < 777 ? extraN - i : 777), u)) break;
+  }
+  if (bytes) *bytes = extraN;
+  return 1;
 }
 
 static long gz(const char *in, char **out) {
@@ -70,7 +111,7 @@ static long gz(const char *in, char **out) {
 // Roda o fio da carga ate publicar (epg_passo e quem publica).
 static int carregar(void) {
   int k;
-  for (k = 0; k < 2000; k++) {
+  for (k = 0; k < 30000; k++) {      // ate 60 s: o arquivo de 100 MB sob ASan
     struct timespec ts = { 0, 2000000 };
     epg_passo();
     if (epg_estado() == EPG_PRONTO || epg_estado() == EPG_FALHOU) return epg_estado();
@@ -78,14 +119,30 @@ static int carregar(void) {
   }
   return -1;
 }
-char *dados_ler(const char *n)        { (void)n; return 0; }
-int   dados_gravar_leve(const char *n, const char *c) { (void)n;(void)c; return 1; }
+// Disco num diretorio temporario de verdade: o cache binario por fonte (M4)
+// precisa ir e voltar. Sem NUVIO_TESTE_DIR, nada e gravado (como antes).
+static char dirTeste[512];
+char *dados_caminho(char *d, unsigned t, const char *n) {
+  if (!dirTeste[0]) return 0;
+  snprintf(d, t, "%s/%s", dirTeste, n); return d;
+}
+char *dados_ler(const char *n) {
+  char c[700]; FILE *f; long t; char *b;
+  if (!dados_caminho(c, sizeof c, n) || !(f = fopen(c, "rb"))) return 0;
+  fseek(f, 0, SEEK_END); t = ftell(f); fseek(f, 0, SEEK_SET);
+  b = malloc((size_t)t + 1); if (b) { b[fread(b, 1, (size_t)t, f)] = 0; }
+  fclose(f); return b;
+}
+int   dados_gravar_leve(const char *n, const char *c) {
+  char cam[700]; FILE *f;
+  if (!dados_caminho(cam, sizeof cam, n) || !(f = fopen(cam, "wb"))) return 1;
+  fputs(c, f); fclose(f); return 1;
+}
 void  dados_marcar_sujo(int l)        { (void)l; }
 void  dados_fs_travar(void)           {}
 void  dados_fs_liberar(void)          {}
-char *dados_caminho(char *d, unsigned t, const char *n) { (void)d;(void)t;(void)n; return 0; }
-int   dados_apagar(const char *n)     { (void)n; return 0; }
-const char *dados_dir(void)           { return "/tmp"; }
+int   dados_apagar(const char *n)     { char c[700]; if (dados_caminho(c, sizeof c, n)) remove(c); return 0; }
+const char *dados_dir(void)           { return dirTeste[0] ? dirTeste : "/tmp"; }
 
 static int falhas;
 static void confere(const char *o_que, int ok) {
@@ -212,11 +269,11 @@ int main(void) {
       epg_fonte_extra_ids(NULL, 0);
       extraCorpo = z; extraN = nz; }
 
-    // acima do teto: ignorada, e o resto da grade segue
+    // a rede cai no meio do arquivo: nada quebra (o que veio fica, parcial)
     extraLimitado = 1;
     epg_fonte_extra("http://grande.exemplo/xmltv.php?username=u&password=p");
     e = carregar();
-    confere("acima do teto: ignorada sem derrubar a carga", epg_match_id("ProTV.ro") < 0);
+    confere("rede caindo no meio: a carga termina", e == EPG_PRONTO || e == EPG_FALHOU);
     extraLimitado = 0;
 
     // "" tira a fonte
@@ -306,6 +363,92 @@ int main(void) {
       e = carregar(); }
     confere("trocar o pais recarrega a grade", strstr(urlsPedidas, "epg_ripper_BR1.xml.gz") != NULL);
     roCorpo = NULL; free(z); epg_paises_definir(""); }
+
+
+  // --- M4: XMLTV EM FLUXO, filtrado pela lista -------------------------------
+  // 60 mil canais e 360 mil programas (~110 MB de XML) passam em pedacos; da
+  // grade so ficam os 300 canais que a lista tem (por id) e o nome de um.
+  { static const char *ids[300];
+    static char buf[300][16];
+    const char *nomes[1] = { "Gerado 59999" };
+    EpgExtra x;
+    EpgFonteInfo inf[4];
+    int k, e;
+    for (k = 0; k < 300; k++) { snprintf(buf[k], sizeof buf[k], "G%d.X", k * 7); ids[k] = buf[k]; }
+    memset(&x, 0, sizeof x);
+    x.chave = "m0000beef"; x.url = "http://grade.exemplo/enorme.xml?user=u&pass=SEGREDO";
+    x.ids = ids; x.nIds = 300; x.nomes = nomes; x.nNomes = 1;
+    epg_fonte_extra("");
+    epg_paises_definir("");
+    epg_teste_limpar();
+    geradorN = 60000;
+    epg_extras_definir(&x, 1);
+    epg_iniciar();
+    e = carregar();
+    geradorN = 0;
+    printf("  (gerado: %lld MB de XMLTV)\n", geradorBytes >> 20);
+    confere("XMLTV de 100 MB+ entra em fluxo", e == EPG_PRONTO && geradorBytes > (100LL << 20));
+    confere("filtro: so os 301 canais da lista ficam", epg_n_canais() == 301);
+    { int g = epg_match_id("g693.x");      // 99 * 7, sem caixa
+      confere("id sem caixa casa (G693.X na lista, g693.x na grade)",
+              g >= 0 && epg_agora(g, agora, &p) && !strncmp(p.titulo, "Programa 0", 10)); }
+    confere("nome da lista tambem entra pelo filtro", epg_match("Gerado 59999") >= 0);
+    k = epg_fontes_info(inf, 4);
+    confere("info da fonte: ok, 1806 programas, nao veio do cache",
+            k == 1 && inf[0].ok && !inf[0].deCache && inf[0].programas == 301 * 6 &&
+            !strcmp(inf[0].chave, "m0000beef"));
+    confere("a URL com senha nao esta na chave", !strstr(inf[0].chave, "SEGREDO"));
+
+    // --- M5: cascata --------------------------------------------------------
+    { int m = -1, g;
+      g = epg_casar("m0000beef", "G7.X", NULL, "Nome que nao bate", &m);
+      confere("cascata 1: epg id", g >= 0 && m == EPG_M_ID);
+      g = epg_casar("m0000beef", "", "Gerado 14", "outro", &m);
+      confere("cascata 2: tvg-name normalizado", g >= 0 && m == EPG_M_NOME &&
+              !strcmp(epg_canal_id(g), "g14.x"));
+      g = epg_casar("m0000beef", NULL, NULL, "GERADO 21 HD", &m);
+      confere("cascata 3: nome sem qualidade e sem caixa", g >= 0 && m == EPG_M_NOME);
+      g = epg_casar(NULL, NULL, NULL, "Canal que nao existe", &m);
+      confere("sem casamento: -1 e metodo nenhum", g < 0 && m == EPG_M_NENHUM);
+      confere("epg_canal_fonte = a chave da grade", g < 0 && !strcmp(epg_canal_fonte(epg_match_id("g7.x")), "m0000beef"));
+      confere("epg_achar por fonte + id (escolha manual)",
+              epg_achar("m0000beef", "g14.x") >= 0 && epg_achar("outra", "g14.x") < 0); }
+    { int sug[5], n = epg_sugerir("Gerado 2093 FHD", sug, 5);
+      confere("sugestao (fuzzy) traz o canal certo primeiro",
+              n > 0 && !strcmp(epg_canal_nome(sug[0]), "Gerado 2093")); }
+
+    // --- M4: cache binario por fonte ------------------------------------------
+    { char dir[] = "/tmp/nuvio-guiaepg-XXXXXX";
+      int antes;
+      if (mkdtemp(dir)) {
+        snprintf(dirTeste, sizeof dirTeste, "%s", dir);
+        geradorN = 3000;
+        epg_teste_limpar(); epg_iniciar(); e = carregar();
+        antes = extraPedidos;
+        epg_teste_limpar(); epg_iniciar(); e = carregar();
+        k = epg_fontes_info(inf, 4);
+        confere("segunda abertura le o cache binario, sem rede",
+                e == EPG_PRONTO && extraPedidos == antes && k == 1 && inf[0].deCache &&
+                epg_match_id("g693.x") >= 0);
+        { char cmd[700]; snprintf(cmd, sizeof cmd, "grep -c SEGREDO %s/* >/dev/null 2>&1", dir);
+          confere("o cache nao guarda a URL nem a senha", system(cmd) != 0); }
+        // a rede cai e o cache e velho: fica o velho (fonte degradada)
+        { char cam[700]; FILE *f;
+          snprintf(cam, sizeof cam, "%s/epg-x-m0000beef-p1.bin", dir);
+          f = fopen(cam, "r+b");
+          if (f) { long long velho = (long long)time(NULL) - 3 * 86400;
+                   fseek(f, 16 + 16 + (long)sizeof(unsigned long), SEEK_SET);
+                   fwrite(&velho, sizeof velho, 1, f); fclose(f); } }
+        geradorN = 0; extraCorpo = NULL;
+        epg_teste_limpar(); epg_iniciar(); e = carregar();
+        k = epg_fontes_info(inf, 4);
+        confere("rede fora + cache velho: fica o velho, marcado do cache",
+                e == EPG_PRONTO && k == 1 && inf[0].ok && inf[0].deCache && inf[0].idadeS > 86400);
+        { char cmd[700]; snprintf(cmd, sizeof cmd, "rm -rf %s", dir); if (system(cmd)) {} }
+        dirTeste[0] = 0;
+      } }
+    epg_extras_definir(NULL, 0);
+    geradorN = 0; }
 
   if (falhas) { printf("FALHOU: %d checagem(ns)\n", falhas); return 1; }
   puts("PASS: EPG casa nomes do addon com a grade e responde agora/proximos.");

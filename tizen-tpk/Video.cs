@@ -87,12 +87,15 @@ namespace NuvioTpk
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnAspecto(int x, int y, int w, int h, int lx, int ly, int lw, int lh);
         [DllImport("libcapi-media-player.so.0")] static extern int player_set_display_mode(IntPtr p, PlayerDisplayMode mode);
         [DllImport("libcapi-media-player.so.0")] static extern int player_set_display_roi_area(IntPtr p, int x, int y, int w, int h);
+        // DTS conversion (X-Nuvio-Prebuffer from src/video_tpk.c): only in IDLE, before Prepare.
+        [DllImport("libcapi-media-player.so.0")] static extern int player_set_streaming_buffering_time(IntPtr p, int preMs, int reMs);
+        [DllImport("libcapi-media-player.so.0")] static extern int player_get_streaming_buffering_time(IntPtr p, out int preMs, out int reMs);
         FnAspecto fAspecto;
         bool aspectoRecusado;
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int FnPos();
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnEscolher(int tipo, int idx);
 
-        const int EV_PRONTO = 1, EV_TOCANDO = 2, EV_PAUSADO = 3, EV_FIM = 4, EV_ERRO = 5, EV_TAMANHO = 6, EV_BUFFER = 7, EV_VELOCIDADE = 8, EV_PRESO = 9, EV_CONSULTA_LENTA = 10, EV_BUSCOU = 11;
+        const int EV_PRONTO = 1, EV_TOCANDO = 2, EV_PAUSADO = 3, EV_FIM = 4, EV_ERRO = 5, EV_TAMANHO = 6, EV_BUFFER = 7, EV_VELOCIDADE = 8, EV_PRESO = 9, EV_CONSULTA_LENTA = 10, EV_BUSCOU = 11, EV_BUSCA_FALHOU = 12;
 
         readonly Func<Display> fazDisplay;
         readonly Action<Action> principal;
@@ -105,6 +108,8 @@ namespace NuvioTpk
         Player player;
         int sessao, playerSessao;
         volatile int posMs;
+        int posGer;
+        bool acabou;
 
         // Um contexto por sessao mantem comandos e continuacoes async no mesmo
         // fio. Fechar descarta a fila antiga; nunca espera uma API presa.
@@ -149,7 +154,7 @@ namespace NuvioTpk
             fParar = Parar;
             fPausar = p => ComSessao(() => Pausar(p != 0));
             fBuscar = ms => ComSessao(() => Buscar(ms));
-            fVolume = v => ComSessao(() => PedirVolume(v));
+            fVolume = v => ComSessao(() => PedirVolume(v), false);
             fJanela = (x, y, w, h) => ComSessao(() => Janela(x, y, w, h));
             fAspecto = (x,y,w,h,lx,ly,lw,lh) => ComSessao(() => Janela(x,y,w,h,lx,ly,lw,lh));
             // Older staged libnuvio versions only have the original window callback.
@@ -307,13 +312,15 @@ namespace NuvioTpk
             var f = Volatile.Read(ref fio);
             if (f == null || Interlocked.Exchange(ref f.consulta, 1) != 0) return;
             int minha = Volatile.Read(ref sessao);
-            f.Post(_ => {
+            // Polling must not occupy the command queue: firmware reads can take seconds.
+            int ger = Volatile.Read(ref posGer);
+            _ = Task.Run(() => {
                 var p = Volatile.Read(ref player);
                 long inicio = Stopwatch.GetTimestamp();
                 try {
                     if (p != null && playerSessao == minha && minha == Volatile.Read(ref sessao) && p.State == PlayerState.Playing) {
                         int ms = p.GetPlayPosition();
-                        lock (trocaTrava) { if (minha == sessao && player == p) posMs = ms; }
+                        lock (trocaTrava) { if (minha == sessao && player == p && ger == posGer) posMs = ms; }
                     }
                 } catch (InvalidOperationException e) {
                     Log("posicao: " + e.Message);
@@ -325,7 +332,7 @@ namespace NuvioTpk
                     if (ms >= 5000 && minha == Volatile.Read(ref sessao)) NvVid.Evento(EV_CONSULTA_LENTA, 0, 0);
                     Volatile.Write(ref f.consulta, 0);
                 }
-            }, null);
+            });
         }
 
         public void Log(string s)
@@ -347,11 +354,11 @@ namespace NuvioTpk
         }
 
         // Invalida tambem comandos que ficaram na fila durante uma troca.
-        void ComSessao(Action a)
+        void ComSessao(Action a, bool exigePlayer = true)
         {
             int minha = Volatile.Read(ref sessao);
             var f = Volatile.Read(ref fio);
-            f?.Post(_ => { if (minha == Volatile.Read(ref sessao) && playerSessao == minha) a(); }, null);
+            f?.Post(_ => { if (minha == Volatile.Read(ref sessao) && (!exigePlayer || playerSessao == minha)) a(); }, null);
         }
 
         // Descarte independente da fila: ate GetPlayPosition/Prepare presos
@@ -392,6 +399,9 @@ namespace NuvioTpk
                 }
             });
             novo.Post(async _ => {
+                // #603: reset before yielding to decoder release. Trailer volume
+                // can arrive before this session has a Player; keep that request.
+                volAlvo = 1f; volPedido = false;
                 if (await Task.WhenAny(soltar, Task.Delay(PrazoPararMs)) != soltar || !await soltar) {
                     Log("[video] tpk parar nao confirmou; player indisponivel, processo preservado");
                     lock (trocaTrava) { if (minha == sessao) NvVid.Evento(EV_ERRO, -3, 0); }
@@ -405,10 +415,8 @@ namespace NuvioTpk
 
         async void Abrir(string url, string cabecalhos, int minha)
         {
-            posMs = 0; buscando = false; buscaPend = pausaPend = -1;
-            // Player novo nasce no volume cheio; so um pedido DESTA sessao
-            // (trailer.c, logo depois do video_tocar) o muda.
-            volAlvo = 1f; volPedido = false;
+            posMs = 0; acabou = false; Interlocked.Increment(ref posGer);
+            buscando = false; buscaPend = pausaPend = -1;
             aspectoRecusado = false;
             try
             {
@@ -418,7 +426,25 @@ namespace NuvioTpk
                 bool viva;
                 lock (trocaTrava) { viva = minha == Volatile.Read(ref sessao); if (viva) { player = p; playerSessao = minha; } }
                 if (!viva) { Liberar(p); return; }
-                p.PlaybackCompleted += (s, e) => { if (minha == Volatile.Read(ref sessao)) NvVid.Evento(EV_FIM, 0, 0); };
+                p.PlaybackCompleted += (s, e) => ComSessao(() => {
+                    // #302: completion alone is not proof that the pipeline ended.
+                    // A live segment must not reopen a player that is still playing.
+                    // Serialize the state read with player commands, never on the callback thread.
+                    if (minha != Volatile.Read(ref sessao) || player != p) return;
+                    try {
+                        if (p.State != PlayerState.Ready) return;
+                        lock (trocaTrava) {
+                            if (minha == sessao && player == p && !acabou) {
+                                acabou = true;
+                                Interlocked.Increment(ref posGer);
+                                // Ready no longer exposes a playing position. Publish EOS
+                                // at duration so the existing next-episode flow can run.
+                                try { posMs = p.StreamInfo.GetDuration(); } catch { }
+                                NvVid.Evento(EV_FIM, 0, 0);
+                            }
+                        }
+                    } catch (Exception ex) { Log("completion state: " + ex.Message); }
+                });
                 p.ErrorOccurred += (s, e) => { if (minha == Volatile.Read(ref sessao)) { Log("erro " + e.Error); NvVid.Evento(EV_ERRO, (int)e.Error, 0); } };
                 p.BufferingProgressChanged += (s, e) => { if (minha == Volatile.Read(ref sessao)) NvVid.Evento(EV_BUFFER, e.Percent, 0); };
                 p.PlaybackInterrupted += (s, e) => { if (minha == Volatile.Read(ref sessao)) { Log("interrompido: " + e.Reason); NvVid.Evento(EV_PAUSADO, 0, 0); } };
@@ -428,6 +454,17 @@ namespace NuvioTpk
                     int i = linha.IndexOf(':');
                     if (i <= 0) continue;
                     string nome = linha.Substring(0, i).Trim(), valor = linha.Substring(i + 1).Trim();
+                    if (nome == "X-Nuvio-Prebuffer")
+                    {
+                        try
+                        {
+                            int ms = int.Parse(valor), rc = player_set_streaming_buffering_time(p.Handle, ms, 0), pre = -1, re = -1;
+                            player_get_streaming_buffering_time(p.Handle, out pre, out re);
+                            Log("[dts-tpk] prebuffer " + ms + " ms: rc=" + rc + ", player says pre=" + pre + " re=" + re);
+                        }
+                        catch (Exception e) { Log("[dts-tpk] prebuffer: " + e.GetType().Name + " " + e.Message); }
+                        continue;
+                    }
                     if (nome.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)) p.UserAgent = valor;
                     else if (nome.Equals("Cookie", StringComparison.OrdinalIgnoreCase)) p.Cookie = valor;
                     else Log("cabecalho ignorado pelo player: " + nome);
@@ -560,16 +597,9 @@ namespace NuvioTpk
 
         bool Liberar(Player p)
         {
-            try { p.Muted = true; } catch (Exception e) { Log("parar muted: " + e.Message); }
-            try { p.Display = null; } catch (Exception e) { Log("parar display: " + e.Message); }
-            // Um GetState so: no player preso cada leitura custa ~5 s (#412) e,
-            // recusada, Stop/Unprepare tambem seriam; segue direto ao Dispose.
-            PlayerState st = PlayerState.Idle;
-            try { st = p.State; } catch (Exception e) { Log("parar estado: " + e.Message); }
-            try { if (st == PlayerState.Playing || st == PlayerState.Paused) { p.Stop(); st = PlayerState.Ready; } }
-            catch (Exception e) { Log("parar stop: " + e.Message); }
-            try { if (st == PlayerState.Ready || st == PlayerState.Playing || st == PlayerState.Paused) p.Unprepare(); }
-            catch (Exception e) { Log("parar unprepare: " + e.Message); }
+            // Dispose owns native teardown. Preliminary property reads/writes,
+            // Stop and Unprepare can each block beyond the release deadline.
+            // Trocar still requires confirmed disposal before creating a player.
             try { p.Dispose(); return true; }
             catch (Exception e) { Log("parar dispose: " + e.Message); Volatile.Write(ref naoSolto, p); return false; }
         }
@@ -588,7 +618,7 @@ namespace NuvioTpk
             try
             {
                 if (pausa && p.State == PlayerState.Playing) { p.Pause(); NvVid.Evento(EV_PAUSADO, 0, 0); }
-                else if (!pausa && p.State == PlayerState.Paused) { p.Start(); windowMetrics.Invalidate(); NvVid.Evento(EV_TOCANDO, 0, 0); }
+                else if (!pausa && (p.State == PlayerState.Paused || p.State == PlayerState.Ready)) { acabou = false; p.Start(); windowMetrics.Invalidate(); NvVid.Evento(EV_TOCANDO, 0, 0); }
             }
             catch (InvalidOperationException e)
             {
@@ -606,6 +636,8 @@ namespace NuvioTpk
             var p = player;
             int minha = Volatile.Read(ref sessao);
             buscando = true;
+            acabou = false;
+            Interlocked.Increment(ref posGer);
             bool expirou = false;
             try {
                 var busca = p.SetPlayPositionAsync(ms, false);
@@ -631,10 +663,13 @@ namespace NuvioTpk
             }
             catch (InvalidOperationException e) {
                 Log("buscar: " + e.Message);
+                // The core decides (mkvfix.h): an MKV with a hidden index reopens
+                // through the local fix; with no index at all, it tells the user.
+                NvVid.Evento(EV_BUSCA_FALHOU, ms, 0);
                 Preso(minha, buscaPend >= 0 ? buscaPend : ms);
                 return;
             }
-            catch (Exception e) { Log("buscar: " + e.Message); return; }
+            catch (Exception e) { Log("buscar: " + e.Message); NvVid.Evento(EV_BUSCA_FALHOU, ms, 0); return; }
             finally { if (!expirou && minha == Volatile.Read(ref sessao)) buscando = false; }
             if (minha != Volatile.Read(ref sessao)) return;
             // SetPlayPositionAsync terminou: nao disputar Pause/outro seek com

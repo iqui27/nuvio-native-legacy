@@ -244,6 +244,16 @@ int main(void) {
   CHECK(!assrender_carregar_texto(a,strlen(a),99));
   CHECK(assrender_carregar(a,strlen(a),100));CHECK(!assrender_texto_simples());
   CHECK(frame()>0);CHECK(yMin>oldY-2 && yMin<oldY+2);
+  oldW=xMax-xMin; oldY=yMin;
+  style.overrides=PLAIN_ASS_FONT | PLAIN_ASS_BORDER | PLAIN_ASS_OUTLINE;
+  snprintf(style.font,sizeof style.font,"JetBrains Sans");
+  style.border=1;style.outlineRgb=0xffff00;
+  assrender_definir_texto_estilo(&style);
+  CHECK(frame()>0);CHECK(xMax-xMin>oldW+2 || xMax-xMin<oldW-2);
+  style.overrides=0;assrender_definir_texto_estilo(&style);
+  CHECK(frame()>0);CHECK(xMax-xMin>oldW-2 && xMax-xMin<oldW+2);
+  CHECK(yMin>oldY-2 && yMin<oldY+2);
+  puts("PASS authored ASS font/border overrides and reset on paused cue");
   free(a);legenda_desligar();CHECK(!assrender_ativo());
   puts("PASS LTR fallback, authored ASS isolation, stale generation and off");
   return 0;

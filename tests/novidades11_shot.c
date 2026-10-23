@@ -25,6 +25,7 @@
 // for exatamente ela: fechar o cartao GRAVA novidades-11.txt, e um teste deste
 // repositorio ja escreveu por cima dos dados reais do dono.
 #include "novidades11.h"
+#include "nvtmp.h"
 #include "dados.h"
 #include "ajustes.h"
 #include "gfx.h"
@@ -85,7 +86,7 @@ static void captura(const char *nome, SDL_Window *win) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-novidades11";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-novidades11");
   char nome[600];
   SDL_Window *w;
   SDL_GLContext gl;

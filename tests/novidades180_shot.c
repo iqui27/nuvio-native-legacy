@@ -5,6 +5,7 @@
 // Saida: <saida>-<id>.png, com o id do quadro do mockup. Atras do cartao, a
 // home do mockup (arte 13, veu, logo e a fileira "Em alta").
 #include "novidades180.h"
+#include "nvtmp.h"
 #include "novidadesfila.h"
 #include "ajustes.h"
 #include "badges.h"
@@ -179,7 +180,7 @@ static void captura(const char *saida, const char *id, int bv, const char *tecla
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-novidades180";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-novidades180");
   const char *dir = getenv("NUVIO_DADOS");
   const char *so = getenv("N180_SO");
   SDL_Window *w;

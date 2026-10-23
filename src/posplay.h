@@ -57,6 +57,12 @@ void posplay_fechar(void);
 // Recuo manual: cancela contagem e pedido automatico, mantendo o OK manual.
 // A contagem volta a valer ao sair da janela final ou abrir outro titulo.
 void posplay_recuar(void);
+// Inicio de busca explicita: revoga Next pendente e suspende novo preparo
+// ate a confirmacao pelo player. Nao marca recuo nem altera o OK manual.
+void posplay_busca_usuario(void);
+// Troca explicita pela barra: descarta contagem/pedido antigo, conservando o
+// worker independente. O roteador adota Next do mesmo alvo ou cancela outro.
+void posplay_troca_manual(void);
 // Seek automatico em voo: suspende so a contagem/pedido automatico. OK segue
 // disponivel; o player libera quando o video progride ou termina de verdade.
 void posplay_aguardar_busca(int aguardar);

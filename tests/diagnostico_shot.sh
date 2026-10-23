@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas da tela de diagnostico em BMP (inicio, rodando, dois resultados e o
 # cabecalho de Ajustes), sem rede e sem interacao.
 #
@@ -10,7 +12,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-diag-shot.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-diag-shot.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 
@@ -19,8 +21,8 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/diagnostico.c) continue;; esac
   sources+=("$source")
 done
-cc "${sources[@]}" tests/diagnostico_shot.c -Isrc -o /tmp/nuvio-diagnostico-shot \
+cc "${sources[@]}" tests/diagnostico_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-diagnostico-shot \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-diagnostico-shot "$@"
+${TMPDIR:-/tmp}/nuvio-diagnostico-shot "$@"

@@ -7,6 +7,8 @@
 #include "idiomacod.h"
 #include "tex_cache.h"
 #include "cacheboost.h"
+#include "memlog.h"
+#include "video.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -15,7 +17,8 @@
 static float piorSerie[DS_N];
 static int   nSerie;
 static float uFps, uPior, uTelaMb, uRss;
-static int   uJanks, uTela, uFila, uDesp, uDespTela, temAmostra;
+static long uLivre = -1;
+static int   uJanks, uTela, uFila, uDesp, uDespTela, temAmostra, trailerTocando;
 #ifdef DESEMPENHO_TESTE
 static int formaFixa = -1;
 void desempenho_teste_forma(int forma) { formaFixa = forma; }
@@ -27,15 +30,18 @@ void desempenho_amostra(float fps, float piorMs, int janks, int texTela, float t
   piorSerie[nSerie++] = piorMs;
   uFps = fps; uPior = piorMs; uJanks = janks; uTela = texTela; uTelaMb = texTelaMb;
   uFila = filaTex; uDesp = despejos; uDespTela = despejosTela; uRss = rssMb;
+  uLivre = video_ativo() ? memlog_livre_mb() : -1;
   temAmostra = 1;
 }
+
+void desempenho_trailer(int tocando) { trailerTocando = tocando; }
 
 int desempenho_forma(void) {
   int f = ajustes_medidor_desempenho();
 #ifdef DESEMPENHO_TESTE
   if (formaFixa >= 0) f = formaFixa;
 #endif
-  if (!temAmostra || f < DS_MINIMO || f > DS_GRANDE) return DS_DESLIGADO;
+  if (!temAmostra || trailerTocando || f < DS_MINIMO || f > DS_GRANDE) return DS_DESLIGADO;
   return f;
 }
 
@@ -54,19 +60,24 @@ static TxtLinha dsT(TxtEstilo e, const char *s) { return txt_linha(e, s, DS_TX, 
 
 // --- a linha da hora ---------------------------------------------------------------
 // Numeros em mono (tabulares): o trecho nao danca de largura a cada amostra.
+static void memoria(char *s, size_t n) {
+  if (uLivre >= 0 && video_ativo())
+    snprintf(s, n, i18n("%.0f MB · %ld livre"), uRss, uLivre);
+  else snprintf(s, n, "%.0f MB", uRss);
+}
 typedef struct { TxtLinha fps, pior, ram; } Linha;
 static float montar(int forma, Linha *L) {
-  char a[24], b[24], c[24];
+  char a[24], b[24], c[96];
   float w;
   num(a, sizeof a, uFps, 0);
-  snprintf(b, sizeof b, "%s fps", a);
+  snprintf(b, sizeof b, "%s UI fps", a);
   L->fps = lento() ? txt_linha(TXT_MONO18B, b, 232, 184, 74, 255) : dsT(TXT_MONO18B, b);
   w = DS_VAO + 1.5f + DS_VAO + DS_PONTO + 10.0f + (float)L->fps.w;
   L->pior.w = L->ram.w = 0;
   if (forma == DS_MINIMO) {
     num(a, sizeof a, uPior, 0);
     snprintf(b, sizeof b, "%s ms", a);
-    snprintf(c, sizeof c, "%.0f MB", uRss);
+    memoria(c, sizeof c);
     L->pior = dsT(TXT_MONO16, b);
     L->ram = dsT(TXT_MONO16, c);
     w += 16.0f + (float)L->pior.w + 14.0f + (float)L->ram.w;
@@ -105,11 +116,12 @@ void desempenho_linha(int forma, float x, float yc, float a) {
 #define MN_PAD 24.0f
 #define MN_H   38.0f
 static TxtLinha linhaMenor(void) {
-  char p[16], s[160], q[48], t[48];
+  char p[16], s[256], q[48], t[48], m[96];
   num(p, sizeof p, uPior, 0);
   snprintf(q, sizeof q, i18n("pior %s ms"), p);
   snprintf(t, sizeof t, i18n("%d texturas"), uTela);
-  snprintf(s, sizeof s, "%s · %d %s · %.0f MB · %s", q, uJanks, i18n("janks"), uRss, t);
+  memoria(m, sizeof m);
+  snprintf(s, sizeof s, "%s · %d %s · %s · %s", q, uJanks, i18n("janks"), m, t);
   return dsT(TXT_MONO16, s);
 }
 
@@ -175,7 +187,7 @@ static void painel(GfxRect r, float a) {
     la = dsT(TXT_AJ_MINI14, ha); lb = dsT(TXT_AJ_MINI14, i18n("agora"));
     txt_desenhar_alpha(la, x, y, 0.4f * a); txt_desenhar_alpha(lb, x + cw - lb.w, y, 0.4f * a);
     y += 16 + 14; }
-  snprintf(v, sizeof v, "%.0f MB", uRss);
+  memoria(v, sizeof v);
   y += stat(i18n("Memória do app"), v, x, y, cw, a);
   snprintf(v, sizeof v, "%d · %.0f MB", uTela, uTelaMb);
   y += stat(i18n("Texturas na tela"), v, x, y, cw, a);

@@ -12,6 +12,7 @@
 // rodar de outro jeito.
 
 #include <SDL2/SDL.h>
+#include "nvtmp.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <stdio.h>
@@ -270,6 +271,8 @@ static void montarCatalogo(void) {
   // 8 episodios na T1 e 13 na T2 — a mesma contagem que o duble de extras diz.
   for (i = 0; i < 8; i++) {
     episodios[n].temporada = 1; episodios[n].episodio = i + 1;
+    episodios[n].notaImdb = 92;
+    episodios[n].nota = 76;
     snprintf(episodios[n].nome, sizeof episodios[n].nome,
              "Episódio de ensaio %d", i + 1);
     snprintf(episodios[n].duracao, sizeof episodios[n].duracao, "47 min");
@@ -277,6 +280,8 @@ static void montarCatalogo(void) {
   }
   for (i = 0; i < N_T2; i++) {
     episodios[n].temporada = 2; episodios[n].episodio = i + 1;
+    episodios[n].notaImdb = 92;
+    episodios[n].nota = 76;
     snprintf(episodios[n].nome, sizeof episodios[n].nome,
              "Episódio de ensaio %d", i + 1);
     snprintf(episodios[n].duracao, sizeof episodios[n].duracao, "47 min");
@@ -379,7 +384,7 @@ static void hero(int i) {
 static void secaoFoco(int i, int sec) {
   abrirItem(i);
   nivel = 1;
-  if (!strcmp(itens[i].imdb, IMDB_SERIE)) { foco.fileira = SEC_TEMPORADAS; foco.coluna = 1; quadros(3); }
+  if (!strcmp(itens[i].imdb, IMDB_SERIE)) { foco.fileira = SEC_TEMPORADAS; foco.coluna = 2; quadros(3); }
   else quadros(1);
   foco.fileira = sec; foco.coluna = 0;
   quadros(220);
@@ -404,7 +409,7 @@ static void cacheAudiencia(int temp, int ate) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-notas-shots/n";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-notas-shots/n");
   char nome[600];
   SDL_GLContext gl;
 
@@ -439,6 +444,71 @@ int main(int argc, char **argv) {
       extras_carregar(art); } }
   escolher("");
   montarCatalogo();
+
+  if (getenv("NUVIO_NOTAORDEM_TEST")) {
+    extern int ajustes_teste_focar_opcao(int);
+    extern int ajustes_teste_ordem_notas(void);
+    SDL_Event e = {0};
+    NotasPlano p;
+    int valores[EX_NFONTES] = {0};
+    unsigned char querer[EX_NFONTES] = {0};
+    e.type = SDL_KEYDOWN;
+    escolher("notaTituloOrdem 1\n");
+    assert(ajustes_nota_fonte(0) == EX_LETTERBOXD);
+    escolher("notaTituloLetter 0\n");
+    assert(ajustes_nota_fonte(0) == EX_IMDB);
+    valores[EX_LETTERBOXD] = 40; querer[EX_LETTERBOXD] = 1;
+    notasui_planejar(&p, valores, 250, 0, querer);
+    assert(p.n == 1 && p.fonte[0] == EX_LETTERBOXD);
+    valores[EX_IMDB] = 87; valores[EX_TOMATOES] = 830;
+    querer[EX_IMDB] = querer[EX_TOMATOES] = 1;
+    notasui_planejar(&p, valores, 250, 0, querer);
+    { int found = 0; for (int i = 0; i < p.n; i++) found |= p.fonte[i] == EX_LETTERBOXD; assert(found); }
+    notas(87, 840, 790, 830, 850, 730, 40, 82, 86, 35, 800);
+    escolher(TODAS); hero(1);
+    snprintf(nome, sizeof nome, "%s-title.png", saida); gravar(nome);
+    assert(ajustes_teste_focar_opcao(ajustes_teste_ordem_notas()));
+    e.key.keysym.sym = SDLK_RETURN; ajustes_evento(&e);
+    e.key.keysym.sym = SDLK_DOWN;
+    for (int i = 0; i < 7; i++) ajustes_evento(&e);
+    e.key.keysym.sym = SDLK_RETURN;
+    for (int i = 0; i < 6; i++) ajustes_evento(&e);
+    assert(ajustes_nota_fonte(0) == EX_TMDB);
+    { int seen[EX_NFONTES] = {0};
+      for (int i = 0; i < EX_NFONTES; i++) seen[ajustes_nota_fonte(i)]++;
+      for (int i = 0; i < EX_NFONTES; i++) assert(seen[i] == 1); }
+    ajustes_dir(dd);
+    assert(ajustes_nota_fonte(0) == EX_TMDB);
+    valores[EX_TMDB] = 790; querer[EX_TMDB] = 1;
+    notasui_planejar(&p, valores, 2000, 0, querer);
+    assert(p.n == 4 && p.fonte[0] == EX_TMDB && p.fonte[1] == EX_IMDB);
+    for (int i = 0; i < 60; i++) {
+      txt_novo_quadro(); tex_novo_quadro(); gfx_novo_quadro();
+      glClearColor(0.02f, 0.02f, 0.03f, 1); glClear(GL_COLOR_BUFFER_BIT);
+      ajustes_atualizar(0.016f, SDL_GetTicks()); ajustes_desenhar(SDL_GetTicks());
+      if (i < 59) SDL_GL_SwapWindow(janela);
+    }
+    snprintf(nome, sizeof nome, "%s-order.png", saida); gravar(nome);
+    e.key.keysym.sym = SDLK_ESCAPE; ajustes_evento(&e);
+    escolher("notaTituloImdb 0\nnotaTituloTrakt 1\nnotaTituloTmdb 1\n");
+    assert(ajustes_nota_titulo(EX_IMDB) && !ajustes_nota_titulo(EX_TRAKT));
+    secaoFoco(0, SEC_EPISODIOS);
+    snprintf(nome, sizeof nome, "%s-episode.png", saida); gravar(nome);
+    escolher("notaTituloFontes 0 0 0 0 0 0 0 0 0 0 0\n");
+    assert(ajustes_nota_fonte(0) == EX_IMDB);
+    // Episode card source: 0 follows the title line, 1-4 = IMDb / TMDB / both / off.
+    escolher("notaTituloImdb 1\nnotaTituloTrakt 0\nnotaTituloTmdb 1\n");
+    assert(!ajustes_nota_episodio(EX_IMDB) && ajustes_nota_episodio(EX_TRAKT) && !ajustes_nota_episodio(EX_TMDB));
+    { static const int quer[5][3] = { {0,1,0}, {1,0,0}, {0,0,1}, {1,0,1}, {0,0,0} };  // IMDb, Trakt, TMDB
+      for (int m = 1; m < 5; m++) {
+        char l[40]; snprintf(l, sizeof l, "notaEpisodio %d\n", m); escolher(l);
+        assert(ajustes_nota_episodio(EX_IMDB) == quer[m][0] && ajustes_nota_episodio(EX_TRAKT) == quer[m][1]
+               && ajustes_nota_episodio(EX_TMDB) == quer[m][2]);
+      } }
+    puts("notaordem: PASS (settings events, persistence, planner, late loads)");
+    SDL_GL_DeleteContext(gl); SDL_DestroyWindow(janela); SDL_Quit();
+    return 0;
+  }
 
   // --- 1. LINHA DO TITULO DE FABRICA: IMDb, Rotten Tomatoes, Trakt.
   notas(87, 840, 790, 830, 850, 730, 40, 82, 86, 35, 800);

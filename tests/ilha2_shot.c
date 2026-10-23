@@ -5,6 +5,7 @@
 //
 // NAO ENTRA NA SUITE (*_shot.sh): precisa de janela GL e de olho humano.
 #include "ilha.h"
+#include "nvtmp.h"
 #include "salvospainel.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -100,7 +101,7 @@ int main(int argc, char **argv) {
   SDL_GLContext gl;
   FILE *f;
   IlhaCartao vivo, est;
-  base = argc > 1 ? argv[1] : "/tmp/nuvio-ilha2";
+  base = argc > 1 ? argv[1] : nvt("/nuvio-ilha2");
   assert(dir && *dir);
   snprintf(ajustes, sizeof ajustes, "%s/ajustes.txt", dir);
   f = fopen(ajustes, "w"); assert(f);

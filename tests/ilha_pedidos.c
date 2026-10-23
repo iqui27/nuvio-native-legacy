@@ -25,8 +25,13 @@ float gfx_tex_aspect_atual;
 float gfx_card_forcar_cover_atual;
 int txt_pendentes;
 int anim_politica_reduzida;
+// Control Center hold fill (central.c), sem segurar aqui.
+float central_segurar_progresso(Uint32 a) { (void)a; return 0.0f; }
+void  central_segurar_desenhar(GfxRect r, float ra, float a, Uint32 ag) {
+  (void)r; (void)ra; (void)a; (void)ag;
+}
 // Citados como ponteiro em ilhasinais_iniciar (que nao roda aqui).
-void rede_saude_nota(int c, const char *u) { (void)c; (void)u; }
+void rede_saude_nota_desde(int c, const char *u, unsigned ms) { (void)c; (void)u; (void)ms; }
 void rede_hosts_nota(const char *u, int c, int h, unsigned ms) { (void)u; (void)c; (void)h; (void)ms; }
 
 static RecPessoa caixa[REC_PEDIDOS_MAX];

@@ -30,6 +30,9 @@ int fonteauto_fila_o(int modo, int total, int preferida, const long *pontos,
   // A PREFERIDA ENTRA PRIMEIRO nos dois modos: e a fonte que a pessoa escolheu
   // a mao neste titulo (issues #56 e #57). Continua sendo UMA candidata — no
   // modo PRIMEIRA ela e a unica conferida, e nenhuma outra e tocada.
+  // Ela vale MAIS que a regex (o dono: "reuse last link" e a prioridade): a
+  // regex so ordena as outras. Fora do escopo ela ja chega como -1 de
+  // streams.c (posPref), nunca daqui.
   if (preferida >= 0 && preferida < total && !(excluida && excluida[preferida]))
     fila[n++] = preferida;
 
@@ -109,6 +112,7 @@ int fonteauto_pode_decidir(const FonteautoParcial *p) {
     if (!(p->excluida && p->excluida[q]) && !(p->grupo && p->grupo[q] < 0)) { temCand = 1; break; }
   if (!temCand) return 0;
   if (!p->algumPendente) return 1;
+  if (p->esperaTodos) return 0;      // "Todos os add-ons": falta um, espera
   if (p->preferida >= 0 && p->preferida < p->total &&
       !(p->excluida && p->excluida[p->preferida])) return 1;
   if (p->prefPendente) return 0;

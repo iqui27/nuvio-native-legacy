@@ -6,6 +6,7 @@
 //
 // Inclui o .c para chegar no estado static (mesma tecnica de diagnostico_fluxo).
 #include "../src/diagnostico.c"
+#include "nvtmp.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,7 +22,7 @@ static void esperar(Uint32 maxMs) {
 }
 
 int main(int argc, char **argv) {
-  char dir[] = "/tmp/nuvio-vazao-fluxo-XXXXXX", url[200];
+  char dir[NVT_MAX], url[200]; nvt_set(dir, sizeof dir, "/nuvio-vazao-fluxo-XXXXXX");
   int porta;
   Uint32 t0;
   assert(argc > 1);

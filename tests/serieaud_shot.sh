@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas dos tres paineis de audiencia, em BMP, sem rede e sem interacao.
 # Nao entra na suite (o testa-tudo.sh pula *_shot.sh): precisa de janela GL e de
 # olho humano para julgar.
@@ -14,8 +16,8 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/serieaud.c) continue;; esac
   sources+=("$source")
 done
-cc "${sources[@]}" tests/serieaud_shot.c -Isrc -o /tmp/nuvio-serieaud-shot \
+cc "${sources[@]}" tests/serieaud_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-serieaud-shot \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-serieaud-shot "$@"
+${TMPDIR:-/tmp}/nuvio-serieaud-shot "$@"

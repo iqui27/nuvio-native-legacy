@@ -1,20 +1,11 @@
 // Gera os casos de tests/fonteregra_oficial.sh: roda a logica do Nuvio OFICIAL
-// (NuvioTVSmart, js/core/streams/streamAutoPlaySelector.js: new RegExp(p, "i") mais
-// a exclusao de buildExcludeRegex) sobre padroes com lookahead/lookbehind e imprime
+// (new RegExp(p, "i"), a regex
+// exatamente como escrita, sem a exclusao extra do NuvioTVSmart) sobre padroes com lookahead/lookbehind e imprime
 // "esperado<TAB>padrao<TAB>texto" (quebra de linha do texto escrita como \n).
 // O C (fonteregra.c) tem de dar a mesma resposta em todos.
-function buildExcludeRegex(pattern) {
-  const matches = String(pattern || "").match(/\(\?![^)]*?\(([^)]+)\)/g) || [];
-  const words = matches
-    .map((m) => { const i = /\(\?![^)]*?\(([^)]+)\)/.exec(m); return i ? i[1] : ""; })
-    .join("|").split("|").map((w) => w.trim()).filter(Boolean);
-  if (!words.length) return null;
-  try { return new RegExp(`\\b(${words.join("|")})\\b`, "i"); } catch (_) { return null; }
-}
 function oficial(pattern, text) {
   const inc = new RegExp(pattern, "i");
-  const exc = buildExcludeRegex(pattern);
-  return inc.test(text) && !(exc && exc.test(text)) ? 1 : 0;
+  return inc.test(text) ? 1 : 0;
 }
 
 const R = String.raw;

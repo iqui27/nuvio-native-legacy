@@ -1,11 +1,13 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas da barra estilo Apple TV (layout Dinamica), em PNG, sem interacao.
 # Nao entra na suite: precisa de janela GL e de olho humano.
 #
 #   bash tests/sidebaratv_shot.sh /tmp/nv-sidebaratv
 set -euo pipefail
 cd "$(dirname "$0")/.."
-saida="${1:-/tmp/nv-sidebaratv}"
+saida="${1:-${TMPDIR:-/tmp}/nv-sidebaratv}"
 mkdir -p "$(dirname "$saida")"
 NUVIO_DADOS=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-sidebaratv.XXXXXX")
 export NUVIO_DADOS

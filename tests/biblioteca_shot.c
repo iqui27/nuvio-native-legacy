@@ -13,6 +13,7 @@
 // fixar uma lista GRAVA, e um teste deste repositorio ja sobrescreveu os dados
 // reais do dono.
 #include "biblioteca.h"
+#include "nvtmp.h"
 #include "ctxmenu.h"
 #include "colecoes.h"
 #include "listas.h"
@@ -258,7 +259,7 @@ static void injetarListas(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-biblioteca";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-biblioteca");
   // "lista" no segundo argumento COMECA em exibicao de lista, sem ter desenhado
   // um quadro antes. E a unica forma de medir a arte das duas exibicoes com o
   // cache FRIO nas duas: o tex_cache e indexado pelo CAMINHO, nao pela largura
@@ -320,9 +321,21 @@ int main(int argc, char **argv) {
       fa = fopen(cam, "a");
       if (fa) { fprintf(fa, "bordaFocoCartaz 1\n"); fclose(fa); }
     } }
+  // NUVIO_SHOT_SELO=2: selo de assistido "Escrito" (pilula com a palavra).
+  { const char *sv = getenv("NUVIO_SHOT_SELO");
+    if (sv && *sv) {
+      char cam[700];
+      FILE *fa;
+      snprintf(cam, sizeof cam, "%s/ajustes.txt", dados_dir());
+      fa = fopen(cam, "a");
+      if (fa) { fprintf(fa, "seloVistoLocal %s\n", sv); fclose(fa); }
+    } }
   ajustes_iniciar();
-  { const char *bv = getenv("NUVIO_SHOT_BORDA");
-    if (bv && *bv == '0') ajustes_dir(dados_dir()); }
+  { const char *bv = getenv("NUVIO_SHOT_BORDA"), *sv = getenv("NUVIO_SHOT_SELO");
+    if ((bv && *bv == '0') || (sv && *sv)) ajustes_dir(dados_dir()); }
+  // NUVIO_SHOT_ESCALA_TEXTO=0.85..1.3: text scale of the capture (default: settings).
+  { const char *et = getenv("NUVIO_SHOT_ESCALA_TEXTO");
+    if (et && *et) gfx_escala_txt_definir((float)atof(et)); }
   // NUVIO_SHOT_VIDRO=0: o material solido (Interface de vidro desligada).
   { const char *v = getenv("NUVIO_SHOT_VIDRO");
     ajustes_definir_vidro(!(v && *v == '0')); }
@@ -349,7 +362,7 @@ int main(int argc, char **argv) {
   // Escolhe a aba `n` da barra (0 = Salvos, 1 = Coleção, 2 = Listas): a seta so
   // move o foco, o OK escolhe.
   #define MODO(n) do { int _k; AO_TOPO(); \
-    for (_k = 0; _k < 3; _k++) tecla(SDLK_LEFT); \
+    for (_k = 0; _k < 8; _k++) tecla(SDLK_LEFT); \
     for (_k = 0; _k < (n); _k++) tecla(SDLK_RIGHT); \
     tecla(SDLK_RETURN); solta(SDLK_RETURN); } while (0)
 
@@ -500,6 +513,34 @@ int main(int argc, char **argv) {
   captura(nome);
   tecla(SDLK_RETURN);      // acao 1: adicionar a Home
   snprintf(nome, sizeof nome, "%s-lista-home.bmp", saida);
+  captura(nome);
+  // Type switching must retain both the visible and logical chip focus.
+  tecla(SDLK_RIGHT);
+  { int row, column, action;
+    biblioteca_teste_foco(&row, &column, &action);
+    assert(row == 0 && column == 2 && action == 2);
+  }
+  for (int toggle = 0; toggle < 2; toggle++) {
+    int row, column, action;
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    quadros(4);
+    biblioteca_teste_foco(&row, &column, &action);
+    printf("type toggle: row=%d column=%d action=%d\n", row, column, action);
+    assert(row == 0 && column == 2 && action == 2);
+    tecla(SDLK_RIGHT); // End of row stays on the type chip.
+    biblioteca_teste_foco(&row, &column, &action);
+    assert(row == 0 && column == 2 && action == 2);
+    tecla(SDLK_LEFT);
+    biblioteca_teste_foco(&row, &column, &action);
+    assert(row == 0 && column == 1 && action == 1);
+    tecla(SDLK_LEFT);
+    biblioteca_teste_foco(&row, &column, &action);
+    assert(row == 0 && column == 0 && action == 0);
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);
+    biblioteca_teste_foco(&row, &column, &action);
+    assert(row == 0 && column == 2 && action == 2);
+  }
+  snprintf(nome, sizeof nome, "%s-lista-tipo-foco.bmp", saida);
   captura(nome);
   tecla(SDLK_ESCAPE);      // volta para a lista de listas
 

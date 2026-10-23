@@ -1,13 +1,21 @@
 // Ver recresp.h.
 #include "recresp.h"
 #include "dados.h"
+#include "perfis.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-#define RR_ARQ "recomendacoes-respostas.txt"
+static int perfilLido = -1;
+static const char *arquivo(void) {
+  static char nome[64]; // todas as chamadas estao sob trava
+  if (perfilLido == 1) return "recomendacoes-respostas.txt";
+  snprintf(nome, sizeof nome, "recomendacoes-respostas-p%d.txt", perfilLido);
+  return nome;
+}
+#define RR_ARQ arquivo()
 
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static RecResp lista[RECRESP_MAX];
@@ -119,7 +127,9 @@ size_t recresp_json(const RecResp *r, char *dst, size_t tam) {
 
 static void carregar(void) {
   char *b, *p;
-  if (lido) return;
+  int perfil = perfis_ativo();
+  if (lido && perfilLido == perfil) return;
+  perfilLido = perfil;
   lido = 1;
   nLista = 0;
   b = dados_ler(RR_ARQ);
@@ -263,9 +273,16 @@ void recresp_confirmar(long long rec, unsigned versao) {
 
 void recresp_esquecer(void) {
   pthread_mutex_lock(&trava);
+  perfilLido = perfis_ativo();
   nLista = 0;
   lido = 1;
   dados_gravar(RR_ARQ, "# nuvio respostas v1\n");
   revisao++;
+  pthread_mutex_unlock(&trava);
+}
+
+void recresp_abrir_sessao(void) {
+  pthread_mutex_lock(&trava);
+  nLista = 0; lido = 0; perfilLido = -1; revisao++;
   pthread_mutex_unlock(&trava);
 }

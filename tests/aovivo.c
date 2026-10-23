@@ -3,7 +3,9 @@
 //   - debounce de 600 ms: soma toques, espera o ultimo, cancela +1/-1;
 //   - agora / a seguir: cobertura, buraco, grade sobreposta, sem grade;
 //   - o mesmo, de ponta a ponta, sobre uma grade XMLTV de molde (epg.c).
+#include "stub_perfisessao.h"
 #include <assert.h>
+#include "nvtmp.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +15,8 @@
 
 // dubles do que epg.c e aovivo.c referenciam e o teste nao exercita
 char *rede_baixar_bin(const char *u, int s, long *n) { (void)u; (void)s; (void)n; return 0; }
+int rede_baixar_fluxo(const char *u, int s, const char *const *c, int (*cb)(const char *, size_t, void *), void *x,
+                      long long m, int *st, long long *b) { (void)u; (void)s; (void)c; (void)cb; (void)x; (void)m; (void)st; (void)b; return 0; }
 char *rede_baixar_bin_medido_controle(const char *url, int segundos, const char *const *cab,
                                       const RedeControle *c, long *tam, RedeMedida *m) {
   (void)url; (void)segundos; (void)cab; (void)c; (void)tam;
@@ -26,7 +30,7 @@ void  dados_fs_travar(void)           {}
 void  dados_fs_liberar(void)          {}
 char *dados_caminho(char *d, unsigned t, const char *n) { (void)d;(void)t;(void)n; return 0; }
 int   dados_apagar(const char *n)     { (void)n; return 0; }
-const char *dados_dir(void)           { return "/tmp"; }
+const char *dados_dir(void)           { return nvt(""); }
 int xtream_e_id(const char *id) { (void)id; return 0; }
 int xtepg_faixa(const char *id, time_t de, time_t ate, EpgProg *out, int cap) {
   (void)id; (void)de; (void)ate; (void)out; (void)cap; return 0;

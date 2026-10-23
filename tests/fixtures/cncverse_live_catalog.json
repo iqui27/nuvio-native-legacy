@@ -1,0 +1,25 @@
+{
+ "metas": [
+  {
+   "id": "cnc:cGxheWZ5OjpodHRwczovL2V4YW1wbGUuaW52YWxpZC9jaC9jb2xvcnMtcmlzaHRleQ==",
+   "type": "tv",
+   "name": "Colors Rishtey",
+   "poster": "https://example.invalid/logo/0.png",
+   "posterShape": "landscape"
+  },
+  {
+   "id": "cnc:cGxheWZ5OjpodHRwczovL2V4YW1wbGUuaW52YWxpZC9saXZlL2NoYW5uZWxzL3N1bi10di1oZC9pbmRleD9sYW5nPXRhJnJlZ2lvbj1pbg==",
+   "type": "tv",
+   "name": "Sun TV HD",
+   "poster": "https://example.invalid/logo/1.png",
+   "posterShape": "landscape"
+  },
+  {
+   "id": "cnc:c2t0OjpodHRwczovL2V4YW1wbGUuaW52YWxpZC9hcGkvdjIvY2hhbm5lbC9zdGFyLXBsdXMtaGQvc3RyZWFtLWluZm8_dG9rZW49UkVEQUNURUQmY2RuPTMmcXVhbGl0eT1hdXRv",
+   "type": "tv",
+   "name": "Star Plus HD",
+   "poster": "https://example.invalid/logo/2.png",
+   "posterShape": "landscape"
+  }
+ ]
+}

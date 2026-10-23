@@ -1,6 +1,7 @@
 // Regressao: sinopse pronta nao pode impedir logo/ano/nota da ficha.
 #define main detalheanime_main
 #include "detalheanime.c"
+#include "nvtmp.h"
 #undef main
 
 #ifndef LOGORAPIDO_BASELINE
@@ -45,7 +46,7 @@ int main(void) {
   assert(c.logo[0] && c.nota == 81 && c.meta[0]);
   puts("ok: pre-busca do hero conserva logo/ano/nota e corpo no cache compartilhado");
   // Simula reinicio: esvazia somente LRU; a ficha tem de voltar do disco.
-  char dir[] = "/tmp/nuvio-logorapido-meta-XXXXXX";
+  char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-logorapido-meta-XXXXXX");
   assert(mkdtemp(dir)); fakeDados = dir;
   metaCacheGuardar(chave, META_COMPLETO);
   for (int i = 0; i < META_CACHE_N; i++) {

@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas do overlay ASS. Nao entra na suite (*_shot.sh): janela GL.
 #   bash tests/legenda_ass_shot.sh /tmp/nuvio-legass
 set -eu
@@ -17,10 +19,10 @@ if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libass; then
 else
   ass_libs=()
 fi
-cc "${sources[@]}" tests/legenda_ass_shot.c -Isrc "${ass_flags[@]}" -o /tmp/nuvio-legass-shot \
+cc "${sources[@]}" tests/legenda_ass_shot.c -Isrc "${ass_flags[@]}" -o ${TMPDIR:-/tmp}/nuvio-legass-shot \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   "${ass_libs[@]}" \
   -Wno-deprecated-declarations -Wno-macro-redefined
 D=$(mktemp -d); trap 'rm -rf "$D"' EXIT
-NUVIO_DADOS="$D" NUVIO_TESTE_DIR="$D" /tmp/nuvio-legass-shot "$@"
+NUVIO_DADOS="$D" NUVIO_TESTE_DIR="$D" ${TMPDIR:-/tmp}/nuvio-legass-shot "$@"

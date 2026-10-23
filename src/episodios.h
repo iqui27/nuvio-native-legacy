@@ -34,6 +34,10 @@ void episodios_menu_desenhar(void);
 // 1 uma vez, quando a pessoa escolheu "Fontes deste episodio" no menu. Quem
 // chamou decide o que abrir — o menu nao conhece a folha de fontes.
 int  episodios_menu_pediu_fontes(void);
+// T/E do episodio que o menu tinha por alvo quando a folha foi pedida
+// (0/0 no menu de temporada). A escolha na folha vale para ele, nao para o
+// foco que a pagina de detalhe ja perdeu (#513).
+int  episodios_menu_fontes(int *temporada, int *episodio);
 // O MENU DA TEMPORADA (issue #108), sozinho sobre a tela de quem chamar — a
 // pagina de detalhe abre com a pressao longa na aba. Duas linhas: "Marcar
 // temporada como assistida" e "Desmarcar temporada". `temporada` e o NUMERO.
@@ -60,6 +64,8 @@ int  episodios_menu_painel(void);
 int   episodios_menu_caixa(GfxRect *r);
 float episodios_menu_anim(void);
 int   episodios_menu_foco(void);
+int episodios_menu_trocou(int *temporada,int *episodio);
+float episodios_menu_transicao(int *direcao);
 // 1 com o menu aberto no modo temporada (para teste).
 int  episodios_menu_modo_temporada(void);
 // O lote que "temporada inteira" aplica: catalogo + mapa, sem o que nao foi ao

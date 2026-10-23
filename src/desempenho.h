@@ -13,9 +13,10 @@
 //   Menor   a linha da hora com o fps, e uma segunda linha compacta embaixo;
 //   Grande  a ilha cresce abaixo da hora com o painel inteiro (grafico do pior
 //           quadro, memoria, texturas, cache).
-// Quem desenha a ilha decide quando ha lugar: com aviso, atividade, modal ou
-// voo na ilha o medidor some (Minimo ao lado de um cartao, se couber) e volta
-// quando ela fica livre. Abaixo de 45 fps (o corte de [gpu-modos] lento) o
+// Quem desenha a ilha decide quando ha lugar: com aviso, atividade, modal,
+// voo na ilha ou o trailer tocando (destaque da home, pagina do titulo) o
+// medidor some (Minimo ao lado de um cartao, se couber) e volta quando ela
+// fica livre. Abaixo de 45 fps (o corte de [gpu-modos] lento) o
 // ponto e o numero ficam ambar — e a unica cor.
 #ifndef NV_DESEMPENHO_H
 #define NV_DESEMPENHO_H
@@ -29,6 +30,9 @@ void desempenho_amostra(float fps, float piorMs, int janks, int texTela, float t
                         int filaTex, int despejos, int despejosTela, float rssMb);
 // A forma escolhida em Ajustes; DS_DESLIGADO enquanto nao ha amostra.
 int   desempenho_forma(void);
+// Com um trailer tocando (destaque da Home ou pagina do titulo; main.c manda a
+// cada quadro) o medidor some: a forma vira DS_DESLIGADO ate o trailer parar.
+void  desempenho_trailer(int tocando);
 // O TRECHO NA LINHA DA HORA, logo depois dela: largura (com o vao e o fio da
 // frente; 0 = nada) e desenho, com `x` na ponta direita da hora e `yc` o meio
 // da linha. Em Menor/Grande e so o ponto e o fps.

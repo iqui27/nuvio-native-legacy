@@ -18,6 +18,7 @@
 //
 //   bash tests/perfil_shot.sh [prefixo]
 #include "perfil.h"
+#include "nvtmp.h"
 #include "ajustes.h"
 #include "rail_shot.h"
 #include "dados.h"
@@ -118,7 +119,7 @@ static void montar(PerfilDados *d) {
 }
 
 int main(int argc, char **argv) {
-  const char *prefixo = argc > 1 ? argv[1] : "/tmp/nuvio-perfil";
+  const char *prefixo = argc > 1 ? argv[1] : nvt("/nuvio-perfil");
   char nome[600];
   PerfilDados d;
   SDL_GLContext gl;

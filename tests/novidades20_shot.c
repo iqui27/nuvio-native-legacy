@@ -4,6 +4,7 @@
 //   NUVIO_SHOT_VIDRO=1 (padrao) vidro, =0 solido.
 // Saida: <saida>-<id>.png.
 #include "novidades20.h"
+#include "nvtmp.h"
 #include "novidadesfila.h"
 #include "ajustes.h"
 #include "dados.h"
@@ -179,7 +180,7 @@ static void captura(const char *saida, const char *id, int dev, int novo, const 
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-novidades20";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-novidades20");
   const char *dir = getenv("NUVIO_DADOS");
   const char *so = getenv("N20_SO");
   SDL_Window *w;

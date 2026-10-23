@@ -905,7 +905,7 @@ void pessoas_atualizar(float dt, Uint32 agora) {
   // da (quem desce ve que ha mais embaixo). A secao logo acima da linha focada
   // entra junto: um cabecalho sozinho no pe da janela nao diz nada.
 #ifdef NV_TOUCH_UI
-  if (toque.livre) {
+  if (toquerol_livre(&toque)) {
     float jh = telefoneui_ativo() ? janelaFoco() : toque.regiao.h;
     rolagem = rolagemAlvo = toquerol_clamp(rolagem, 0.0f, fmaxf(0.0f, conteudoH - jh));
     return;
@@ -1350,7 +1350,7 @@ static float alturaIlha(void) {
 }
 #ifdef NV_TOUCH_UI
 static void toqueRetomar(void) {
-  if (toque.livre && nL > 0) {
+  if (toquerol_livre(&toque) && nL > 0) {
     float ponto = rolagem + toque.regiao.h * 0.35f;
     int i = 0;
     while (i + 1 < nL && linhaY[i + 1] <= ponto) i++;
@@ -1380,6 +1380,7 @@ static void pessoas_desenharCorpo_(Uint32 agora) {
   y = (NV_TELA_H - alt) * 0.5f + (1.0f - a) * 40.0f;
 
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, (ajustes_vidro() ? 0.55f : 0.66f) * anim);
+  gfx_vidro_cobrir();
   // A ILHA no material das outras do Glass UI (plrui_material): o mesmo miolo
   // da folha de Fontes e do player, vidro ou solido pelo ajuste.
   plrui_material((GfxRect){ x, y, PE_W, alt }, PE_RAIO, 1, a);

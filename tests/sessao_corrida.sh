@@ -15,7 +15,7 @@ case "${SANITIZE:-0}" in
 esac
 [ -n "${CFLAGS_X:-}" ] && flags+=(${CFLAGS_X})
 bin="${TMPDIR:-/tmp}/nuvio-sessao-corrida"
-cc "${flags[@]}" "${SESSAO_C:-src/sessao.c}" src/js.c src/jsw.c tests/sessao_corrida.c -o "$bin"
+cc "${flags[@]}" "${SESSAO_C:-src/sessao.c}" src/js.c src/jsw.c tests/sessao_corrida.c tests/sessao_boundary_stub.c -o "$bin"
 falhou=0
 for caso in rpc401 vencido r504 leitores copia copia504 copia-sem-refresh recusado; do
   dir="$(mktemp -d)"

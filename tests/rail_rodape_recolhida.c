@@ -8,6 +8,7 @@
 // Captura headless: abre e fecha o menu como o controle faz e compara o
 // rodape da rail com o de um menu recem-iniciado. Grava os BMP para olhar.
 #include "menu.h"
+#include "nvtmp.h"
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -59,8 +60,8 @@ static int difRodape(const unsigned char *a, const unsigned char *b) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-rail-rodape";
-  char dir[] = "/tmp/nuvio-rail-rodape-XXXXXX", caminho[700], nome[600];
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-rail-rodape");
+  char dir[NVT_MAX], caminho[700], nome[600]; nvt_set(dir, sizeof dir, "/nuvio-rail-rodape-XXXXXX");
   SDL_Window *w; SDL_GLContext gl; FILE *f;
   unsigned char *antes, *depois;
   int d, volta;

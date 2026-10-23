@@ -50,6 +50,7 @@ const char *detmais_rotulo(int acao) {
     case DMAIS_RECOMENDAR: return "Recomendar a um amigo";
     case DMAIS_REWATCH: return "Reassistir do início";
     case DMAIS_REWATCH_FIM: return "Encerrar reassistida";
+    case DMAIS_SINOPSE:    return "Ler sinopse";
   }
   return "";
 }
@@ -63,6 +64,7 @@ const char *detmais_icone(int acao) {
     case DMAIS_RECOMENDAR: return "recomendar";
     case DMAIS_REWATCH: return "aj_rotate-ccw-clock";
     case DMAIS_REWATCH_FIM: return "aj_x";
+    case DMAIS_SINOPSE:    return "aj_file-text";
   }
   return "";
 }
@@ -130,7 +132,7 @@ void detmais_desenhar(GfxRect anc, float a) {
   raio = anc.h * 0.5f + (DM_RAIO - anc.h * 0.5f) * p;
   ponteiro_camada();
   if (aberto) ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ptrFora, 0, 0);
-  plrui_material(r, raio, 1, a * anim_clamp(p * 2.0f, 0.0f, 1.0f));
+  plrui_cartao(r, raio, a * anim_clamp(p * 2.0f, 0.0f, 1.0f));
   pc = anim_clamp((p - 0.45f) / 0.55f, 0.0f, 1.0f) * a;
   if (pc <= 0.002f) return;
   gfx_recorte(r.x, r.y, r.w, r.h);

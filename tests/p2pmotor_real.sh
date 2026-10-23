@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Motor P2P embutido DE VERDADE no Mac (tests/p2pmotor_real.c). Precisa do
 # nuvio-engine compilado: bash tools/p2p-motor/build-mac.sh <pasta>.
 #
@@ -20,8 +22,8 @@ B="${NV_ENGINE_BUILD:-$E/build/mac}"
 if [ -z "$E" ] || [ ! -f "$B/libnuvio_engine.a" ]; then
   echo "p2pmotor_real: SKIP (sem NV_ENGINE): o motor real NAO foi testado"; exit 0; fi
 O=$(brew --prefix openssl@3)
-export NUVIO_DADOS="${NUVIO_DADOS:-/tmp/nv-p2pmotor-dados-$$}"; mkdir -p "$NUVIO_DADOS"
-T=$(mktemp -d /tmp/nv-p2pmotor-real.XXXXXX); trap 'rm -rf "$T"' EXIT
+export NUVIO_DADOS="${NUVIO_DADOS:-${TMPDIR:-/tmp}/nv-p2pmotor-dados-$$}"; mkdir -p "$NUVIO_DADOS"
+T=$(mktemp -d ${TMPDIR:-/tmp}/nv-p2pmotor-real.XXXXXX); trap 'rm -rf "$T"' EXIT
 san=()
 if [ "${SANITIZE:-0}" = 1 ]; then san=(-fsanitize=address,undefined -fno-omit-frame-pointer)
 elif [ "${SANITIZE:-0}" = thread ]; then san=(-fsanitize=thread -fno-omit-frame-pointer); fi

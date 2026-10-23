@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "nvtmp.h"
 
 // ---- dublês ----------------------------------------------------------------
 static char *arquivo;
@@ -19,6 +20,10 @@ int   dados_gravar(const char *n, const char *c) { (void)n; free(arquivo); arqui
 int   dados_apagar(const char *n) { (void)n; free(arquivo); arquivo = NULL; return 1; }
 const char *dados_cliente_id(void) { return "cliente-teste-0001"; }
 int   perfis_ativo(void) { return perfil; }
+uint64_t perfis_sessao_geracao(void) { return 0; }
+int perfis_sessao_atual(uint64_t g) { return !g; }
+int perfis_sessao_travar(uint64_t g) { return !g; }
+void perfis_sessao_destravar(void) {}
 static long long relogio(void) { return agora; }
 
 static char ultimaFuncao[64], ultimoCorpo[4096];
@@ -33,6 +38,18 @@ char *sessao_rpc(const char *funcao, const char *corpo, int *status) {
   if (status) *status = proximoStatus;
   return strdup(proximaResposta);
 }
+char *nuvem_rpc_com(const char *fn, const char *corpo, const char *jwt, int *st) {
+  (void)jwt;
+  return sessao_rpc(fn, corpo, st);
+}
+int sessao_identidade_local_copiar(char *u, size_t nu, char *j, size_t nj) {
+  snprintf(u, nu, "usuario-teste");
+  snprintf(j, nj, "token-teste");
+  return 1;
+}
+int sessao_token_copiar(char *j, size_t nj) { snprintf(j, nj, "token-teste"); return 1; }
+void sessao_token_recusado(const char *t) { (void)t; }
+const char *sessao_usuario(void) { return "usuario-teste"; }
 
 // Catalogo: so tt1234567 e tt7654321 existem.
 static int aplicadosNoCatalogo;

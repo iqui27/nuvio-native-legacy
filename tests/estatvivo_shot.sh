@@ -1,6 +1,6 @@
 #!/bin/bash
-# Capturas das estatisticas ao vivo do player em BMP (Android, LG, Samsung e a
-# pilula fixada). Nao entra na suite (*_shot.sh): janela GL e olho humano.
+# Capturas das estatisticas ao vivo do player em BMP (Android, LG, Samsung no
+# tamanho completo, o compacto e o minimo). Nao entra na suite (*_shot.sh): janela GL e olho humano.
 #   bash tests/estatvivo_shot.sh /tmp/nuvio-estatvivo
 set -eu
 cd "$(dirname "$0")/.."

@@ -10,6 +10,7 @@
 // esta sob teste e a LEITURA das respostas e o efeito delas, nao o curl.
 #include "listas.h"
 #include "listasescrita.h"
+#include "musica.h"
 #include "colecoes.h"
 #include "dados.h"
 #include "perfis.h"
@@ -107,14 +108,28 @@ static void testeSimkl(void) {
   CatItem v[16];
   int n = lst_ler_simkl_itens(j, 0, v, 16);
   printf("\n[3] /sync/all-items/movies/plantowatch\n");
-  // Sem imdb nao ha como pedir arte ao Cinemeta nem abrir o detalhe: o item
-  // seria um cartaz cinza que nao responde. Fica de fora.
-  CONFERE(n == 2, "dois itens; o sem imdb fora (veio %d)", n);
+  // Missing external metadata must not hide an account title.
+  CONFERE(n == 3, "all three movies, including missing IMDb (got %d)", n);
   CONFERE(!strcmp(v[0].titulo, "Aftersun"), "titulo do primeiro");
   CONFERE(!strcmp(v[0].imdb, "tt19770238"), "imdb de dentro de ids (veio %s)", v[0].imdb);
   CONFERE(!strcmp(v[0].tipo, "movie"), "tipo movie");
   CONFERE(!strcmp(v[0].meta, "2022"), "ano em meta (veio %s)", v[0].meta);
   CONFERE(!strcmp(v[1].imdb, "tt6710474"), "imdb do segundo");
+  free(j);
+
+  // Simkl anime movies belong to Movies, including the usual show envelope.
+  j = ler("tests/fixtures/simkl_plantowatch_series_anime.json");
+  n = lst_ler_simkl_itens(j, 1, v, 16);
+  CONFERE(n == 3, "show + anime, including missing IMDb (got %d)", n);
+  CONFERE(!strcmp(v[0].titulo, "Shogun") && !strcmp(v[0].tipo, "series"),
+          "a serie primeiro (veio %s)", v[0].titulo);
+  CONFERE(!strcmp(v[1].imdb, "tt22248376") && !strcmp(v[1].tipo, "series"),
+          "o anime vira series (veio %s)", v[1].imdb);
+  CONFERE(!strcmp(v[1].meta, "2023"), "ano do anime em meta (veio %s)", v[1].meta);
+  n = lst_ler_simkl_itens(j, 0, v, 16);
+  CONFERE(n == 1, "only the anime movie belongs to Movies (got %d)", n);
+  CONFERE(!strcmp(v[0].imdb, "tt4788602") && !strcmp(v[0].tipo, "movie"),
+          "anime movie keeps movie metadata lookup type (got %s / %s)", v[0].imdb, v[0].tipo);
   free(j);
 }
 
@@ -397,6 +412,16 @@ int main(void) {
   testeExtraItem();
   testeTraktBusca();
   testeSimkl();
+  perfis_definir_ativo(1);
+  CONFERE(mus_alternar_guardado("tt1160419", 0, "Dune OST", "Hans Zimmer"), "save soundtrack");
+  lst_pedir(LST_NUVIO);
+  LstLista music = {0};
+  for (int i = 0; i < lst_n(); i++)
+    if (!strcmp(lst_lista(i)->colId, "musicas")) music = *lst_lista(i);
+  CONFERE(music.itens == 1, "saved music list visible in Library");
+  lst_abrir(&music, "MOVIE");
+  CatItem saved;
+  CONFERE(lst_itens_n() == 1 && lst_item(0, &saved) && !strcmp(saved.imdb, "tt1160419"), "saved music retrievable");
   testeFixarSobrevive();
   testeIsolamentoPerfil();
   testeAdicionarNaHome();

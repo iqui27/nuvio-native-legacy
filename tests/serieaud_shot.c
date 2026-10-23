@@ -17,6 +17,7 @@
 // NAO CHAMA dados_iniciar DE PROPOSITO: sem ela dados_dir() e "" e o modulo nao
 // le nem escreve arquivo nenhum — a captura nao encosta no cache de quem roda.
 #include "serieaud.h"
+#include "nvtmp.h"
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -299,7 +300,7 @@ static void telaBloco(void) {
 static void telaDigital(void) { selCaptura = serieaud_n() / 2; telaBloco(); selCaptura = 0; }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-serieaud";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-serieaud");
   char nome[600];
   SDL_Window *w;
   SDL_GLContext gl;
