@@ -327,10 +327,12 @@ void aio_resultados(AioSnapshot *s, const char *json) {
     if (!strcmp(kind,"Externo") || !strcmp(kind,"NZB") || !strcmp(kind,"YouTube")) s->links++;
     const char *sd = member(p,"streamData");
     js_texto_raiz_em(sd,sd?js_fim(sd):NULL,"addon",r.provedor,sizeof r.provedor); safe(r.provedor);
-    r.cache = boolean(sd,"cached",-1);
+    r.cache = boolean(member(sd,"service"),"cached",-1);
+    if(r.cache<0) r.cache=boolean(sd,"cached",-1);
     if(r.cache<0) r.cache=boolean(member(p,"clientResolve"),"isCached",-1);
     const char *parsed=member(sd,"parsedFile"), *resolution=member(parsed,"resolution");
-    if(resolution && isdigit((unsigned char)*resolution)) r.altura=(int)strtol(resolution,NULL,10);
+    if(resolution && *resolution=='\"') { char value[32]=""; js_cadeia(resolution,value,sizeof value); r.altura=atoi(value); }
+    else if(resolution && isdigit((unsigned char)*resolution)) r.altura=(int)strtol(resolution,NULL,10);
     if(r.destino[0]) r.decisao=1;
     s->resultado[s->resultados++] = r; p = end;
   }

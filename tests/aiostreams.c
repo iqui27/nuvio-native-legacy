@@ -42,6 +42,8 @@ int main(void) {
   aio_resultados(&s,"{\"streams\":[{\"name\":\"Mixed\",\"url\":\"https://media.test/v\",\"externalUrl\":\"https://outside.test/private\"}]}");
   assert(s.links==1 && !strcmp(s.resultado[0].tipo,"Externo"));
   assert(!strcmp(s.resultado[0].destino,"https://outside.test/private"));
+  aio_resultados(&s,"{\"streams\":[{\"url\":\"https://media.test/v\",\"streamData\":{\"service\":{\"cached\":false},\"parsedFile\":{\"resolution\":\"2160p\"}}}]}");
+  assert(s.resultado[0].cache==0 && s.resultado[0].altura==2160);
   aio_status(&s,"{\"data\":{\"version\":\"2.36.0\",\"channel\":\"stable\",\"settings\":{\"searchApiDisabled\":false}}}");
   assert(s.searchAtiva && !strcmp(s.versaoInstancia,"2.36.0"));
   aio_search(&s,"{\"success\":true,\"data\":{\"statistics\":[{},{}],\"errors\":[{}],\"filtered\":3}}");

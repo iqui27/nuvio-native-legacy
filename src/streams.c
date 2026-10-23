@@ -3563,10 +3563,11 @@ static void corpoAio(float x,float w,float a) {
       txt_desenhar_alpha(txt_linha(TXT_ILHA_NOME,GRUPO_NOME[res],240,241,242,255),left,y,a);
       gfx_cor((GfxRect){left,y+39,width,1},0,1,1,1,.08f*a); y+=51; prev=res;
     }
-    float h=row==0?119:94;
+    int best=i==automaticaDaFolha();
+    float h=best?119:94;
     if(grupo==1 && foco==row) gfx_cor((GfxRect){left,y,width,h},22/h,.19f,.205f,.22f,a);
-    if(row==0) txt_desenhar_alpha(txt_linha(TXT_ILHA_NUM,i18n("Melhor para esta TV"),180,205,210,255),left+20,y+12,a);
-    float ty=y+(row==0?40:17);
+    if(i==automaticaDaFolha()) txt_desenhar_alpha(txt_linha(TXT_ILHA_NUM,i18n("Melhor para esta TV"),180,205,210,255),left+20,y+12,a);
+    float ty=y+(best?40:17);
     txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,s->rotulo[0]?s->rotulo:s->provedor,240,241,242,255,width-210),left+20,ty,a);
     txt_desenhar_alpha(txt_linha_corta(TXT_G20M,s->provedor,174,179,185,255,width-210),left+20,ty+35,a);
     char size[48]; snprintf(size,sizeof size,s->tamanhoMB?"%.1f GB":"—",s->tamanhoMB/1024.0);
