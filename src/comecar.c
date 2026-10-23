@@ -12,6 +12,8 @@
 #include "dados.h"
 #include "gfx.h"
 #include "idioma.h"
+#include "importarfluxo.h"
+#include "celbotao.h"
 #include "layout.h"
 #include "ponteiro.h"
 #include "simkl.h"
@@ -109,6 +111,7 @@ static int foco_padrao(void) {
 }
 
 static void ir_passo(int p) {
+  if (p != passo) importarfluxo_cancelar();
   passo = p < 0 ? 0 : p >= PASSOS ? PASSOS - 1 : p;
   foco = foco_padrao();
 }
@@ -259,7 +262,9 @@ static void ok(void) {
     if (foco == I_NOME) abrir_teclado();
     else if (foco >= I_COR0 && foco < I_COR0 + COMECAR_CORES) dados.cor = foco - I_COR0;
   } else if (passo == 1) {
-    if (foco == I_NUVIO || foco == I_ZERO) ir_passo(2);   // Stremio e AIOManager: Em breve
+    if (foco == I_NUVIO || foco == I_ZERO) ir_passo(2);
+    else if (foco == I_STREMIO) importarfluxo_comecar(IMPF_STREMIO);
+    else if (foco == I_AIO) importarfluxo_comecar(IMPF_AIOM);
   } else if (passo == 2) {
     if (foco == I_TRAKT && !trakt_ativo()) traktauth_comecar();
     else if (foco == I_SIMKL && !simkl_ativo()) simklauth_comecar();
@@ -304,6 +309,7 @@ void comecar_evento(const SDL_Event *e) {
 
 void comecar_atualizar(float dt, Uint32 agora) {
   int red = ajustes_animacoes_reduzidas();
+  if (aberto) importarfluxo_passo();
   if (esperaTeclado) {
     int r;
     if (teclado_aberto()) teclado_atualizar(dt, agora);
@@ -454,8 +460,8 @@ static void desenha_passo0(float a) {
 
 static void desenha_passo1(float a) {
   static const struct { const char *nome, *desc, *letra, *icone; int breve; } OP[4] = {
-    { "Conta Stremio", "Add-ons na mesma ordem, biblioteca e Continuar assistindo", "S", NULL, 1 },
-    { "AIOManager", "Sua configuração de AIOStreams e AIOMetadata, já pronta", NULL, "aj_layers", 1 },
+    { "Conta Stremio", "Add-ons na mesma ordem, biblioteca e Continuar assistindo", "S", NULL, 0 },
+    { "AIOManager", "Sua configuração de AIOStreams e AIOMetadata, já pronta", NULL, "aj_layers", 0 },
     { "Conta Nuvio", "Perfis, Ajustes e salvos de outra TV", "N", NULL, 0 },
     { "Começar do zero", "Um conjunto pequeno de add-ons públicos para experimentar", NULL, "aj_sparkles", 0 },
   };
@@ -476,7 +482,7 @@ static void desenha_passo1(float a) {
     if (OP[id].breve) {
       TxtLinha l = txt_linha(TXT_CAPTION, i18n("Em breve"), s.r, s.g, s.b, 255);
       txt_desenhar_alpha(l, r.x + r.w - 28.0f - (float)l.w, r.y + 20.0f, a);
-    } else if (id == I_NUVIO || id == I_ZERO) {
+    } else if (id <= I_ZERO) {
       gfx_icone((GfxRect){ r.x + r.w - 28.0f - 26.0f, r.y + (r.h - 26.0f) * 0.5f, 26.0f, 26.0f }, "aj_chevron-right",
                 (float)s.r / 255.0f, (float)s.g / 255.0f, (float)s.b / 255.0f, a);
     }
@@ -485,9 +491,26 @@ static void desenha_passo1(float a) {
   // O painel da direita explica a opcao em foco; as apagadas dizem a verdade.
   { float x = ox + 1100.0f, y = oy + 330.0f;
     const char *t, *d;
+    int extra = 0;
+    float ph = 340.0f;
+    int ativo = (foco == I_STREMIO && importarfluxo_fonte() == IMPF_STREMIO) ||
+                (foco == I_AIO && importarfluxo_fonte() == IMPF_AIOM);
+    ImpfEstado e = ativo ? importarfluxo_estado() : IMPF_PARADO;
+    char msg[200];
     if (foco == I_STREMIO || foco == I_AIO) {
       t = i18n(foco == I_STREMIO ? "Conta Stremio" : "AIOManager");
-      d = i18n("Ainda não dá para trazer por aqui. Por enquanto, instale os add-ons em Ajustes › Fontes e addons.");
+      if (e == IMPF_OK) {
+        snprintf(msg, sizeof msg, i18n("Entraram %d add-ons e %d salvos."), importarfluxo_addons(), importarfluxo_titulos());
+        d = msg;
+      } else if (e == IMPF_ERRO) d = i18n("Não deu certo. OK para tentar de novo.");
+      else if (e == IMPF_TRABALHA) d = i18n("Importando…");
+      else if (e == IMPF_ESPERA)
+        d = i18n(foco == I_STREMIO ? "Abra este endereço no celular e digite o código:"
+                                   : "Cole no celular o link de exportação do AIOManager.");
+      else d = i18n(foco == I_STREMIO ? "Entre com a sua conta Stremio pelo celular. Os add-ons e a biblioteca vêm para cá."
+                                      : "Cole no celular o link de exportação do AIOManager. Só os add-ons entram.");
+      extra = e == IMPF_ESPERA;
+      if (extra && foco == I_AIO) ph = 480.0f;   // o cartao do celular (QR + endereco) pede altura
     } else if (foco == I_NUVIO) {
       t = i18n("Conta Nuvio");
       d = i18n("Você já entrou na sua conta Nuvio. Perfis, Ajustes e salvos de outras TVs chegam por ela.");
@@ -495,10 +518,18 @@ static void desenha_passo1(float a) {
       t = i18n("Começar do zero");
       d = i18n("Você segue com o que já está nesta TV e junta o resto quando quiser.");
     }
-    gfx_cor((GfxRect){ x, y, 700.0f, 340.0f }, 32.0f / 340.0f, 0.12f, 0.125f, 0.145f, 0.9f * a);
-    gfx_anel((GfxRect){ x, y, 700.0f, 340.0f }, 32.0f / 340.0f, 1.0f, 1, 1, 1, 0.08f * a);
+    gfx_cor((GfxRect){ x, y, 700.0f, ph }, 32.0f / ph, 0.12f, 0.125f, 0.145f, 0.9f * a);
+    gfx_anel((GfxRect){ x, y, 700.0f, ph }, 32.0f / ph, 1.0f, 1, 1, 1, 0.08f * a);
     txt_em(TXT_ILHA_TITULO, t, x + 44.0f, y + 44.0f, 612.0f, 248, 249, 252, a);
-    txt_bloco(TXT_V2_26, d, 200, 205, 215, x + 44.0f, y + 120.0f, 612.0f, 36.0f, 0.9f * a, 5); }
+    txt_bloco(TXT_V2_26, d, 200, 205, 215, x + 44.0f, y + 120.0f, 612.0f, 36.0f, 0.9f * a, extra ? 2 : 5);
+    if (extra && foco == I_STREMIO && importarfluxo_codigo()[0]) {
+      float lado = 120.0f, k = lado / celb_qr_lado();
+      txt_tracking(TXT_NOV_TITULO, importarfluxo_codigo(), 248, 249, 252, x + 44.0f, y + 250.0f, a, 8.0f);
+      gfx_transformar(x + 700.0f - 44.0f - lado, y + 200.0f, k, 0, 0);
+      celb_qr_desenhar(importarfluxo_link(), x + 700.0f - 44.0f - lado, y + 200.0f, a);
+      gfx_sem_transformar();
+    } else if (extra && foco == I_AIO && celb_embutido(CELB_IMPORTAR))
+      celb_desenhar_em(CELB_IMPORTAR, (GfxRect){ x + 44.0f, y + 164.0f, 612.0f, 290.0f }, a); }
 }
 
 static void desenha_passo2(float a) {
