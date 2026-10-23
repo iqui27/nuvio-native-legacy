@@ -306,6 +306,10 @@ static void painel(float x,float y,float w,float h) {
 }
 static void pointer(int i,int b) { lateral=b; foco=i; }
 static void click(int i,int b) { pointer(i,b); acao(); }
+static void voltarClick(int a,int b) {
+  (void)a; (void)b; SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_ESCAPE;
+  aioui_evento(&e);
+}
 static void linha(int i,const char *icon,const char *nome,const char *sub,float x,float y,float w) {
   if(y<295 || y>855) return;
   float h=pagina==SEM?145:94, ty=pagina==SEM?38:17;
@@ -412,7 +416,7 @@ static void workspace(void) {
     texto(TXT_ILHA_HORA,i18n("CH+ / CH-: mover na Home"),473,285,890,148);
     for(int i=start;i<snap.catalogos && i<start+5;i++) {
       int f=fileira(i); char sub[128];
-      snprintf(sub,sizeof sub,"%s · %s",snap.catalogo[i].tipo,f>=0&&!fil_linha_oculta(f)?i18n("Na Home"):i18n("Fora da Home"));
+      snprintf(sub,sizeof sub,"%s · %s",!strcmp(snap.catalogo[i].tipo,"movie")?i18n("Filmes"):!strcmp(snap.catalogo[i].tipo,"series")?i18n("Séries"):snap.catalogo[i].tipo,f>=0&&!fil_linha_oculta(f)?i18n("Na Home"):i18n("Fora da Home"));
       linha(i,"aj_library",snap.catalogo[i].nome,sub,453,310+(i-start)*104,950);
     }
     botao(snap.catalogos,i18n("Mover para cima"),453,832,450); botao(snap.catalogos+1,i18n("Mover para baixo"),925,832,470);
@@ -530,6 +534,7 @@ void aioui_desenhar(Uint32 agora) {
   if(pendente || busy) texto(TXT_ILHA_SUB,i18n("Conferindo…"),1590,65,250,180);
   painel(72,46,56,56);
   gfx_icone((GfxRect){87,62,24,24},"pl_chevron-left",.85f,.88f,.9f,1);
+  ponteiro_alvo(72,46,56,56,NULL,voltarClick,0,0);
   if(pagina<PAINEL) setup(); else workspace();
   texto(TXT_ILHA_SUB,i18n("Setas: navegar    OK: abrir    Voltar: retornar"),92,1020,1450,160);
   if(mensagem[0]) texto(TXT_ILHA_SUB,mensagem,453,934,1340,215);
