@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "Nazaj nastavi nadaljevanje tja. To vidite samo vi."),
   T("Voltar retorna ao menu", "Nazaj se vrne v meni"),
   T("Voltar sai", "Nazaj zapre"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Nazaj na novosti"),
   T("Voltar: lista de listas", "Nazaj: seznam seznamov"),
   T("Volte mais tarde.", "Vrnite se pozneje."),

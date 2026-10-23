@@ -5665,6 +5665,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "Zurück setzt die Fortsetzung dorthin. Nur du siehst das."),
   T("Voltar retorna ao menu", "Zurück führt zum Menü"),
   T("Voltar sai", "Zurück beendet"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Zurück zu den Neuheiten"),
   T("Voltar: lista de listas", "Zurück: Listenübersicht"),
   T("Volte mais tarde.", "Schau später wieder vorbei."),

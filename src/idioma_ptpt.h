@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "Voltar põe a retoma aí. Só você vê isto."),
   T("Voltar retorna ao menu", "Voltar regressa ao menu"),
   T("Voltar sai", "Voltar sai"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Voltar às novidades"),
   T("Voltar: lista de listas", "Voltar: lista de listas"),
   T("Volte mais tarde.", "Volte mais tarde."),

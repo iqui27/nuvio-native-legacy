@@ -5665,6 +5665,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "Înapoi pune reluarea acolo. Doar tu vezi asta."),
   T("Voltar retorna ao menu", "Înapoi revine la meniu"),
   T("Voltar sai", "Înapoi iese"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Înapoi la noutăți"),
   T("Voltar: lista de listas", "Înapoi: lista de liste"),
   T("Volte mais tarde.", "Revino mai târziu."),

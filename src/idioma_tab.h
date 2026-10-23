@@ -5665,6 +5665,7 @@
   { "Voltar põe a retomada ali. Só você vê isto.", "Go back sets the resume point there. Only you see this." },
   { "Voltar retorna ao menu", "Back returns to the menu" },
   { "Voltar sai", "Back exits" },
+  { "Voltar às instâncias principais", "Back to the main instances" },
   { "Voltar às novidades", "Back to what's new" },
   { "Voltar: lista de listas", "Back: list of lists" },
   { "Volte mais tarde.", "Check back later." },

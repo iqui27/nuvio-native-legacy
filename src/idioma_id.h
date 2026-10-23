@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "Kembali menaruh titik lanjut di sana. Hanya kamu yang melihat ini."),
   T("Voltar retorna ao menu", "Kembali kembali ke menu"),
   T("Voltar sai", "Kembali keluar"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Kembali ke yang baru"),
   T("Voltar: lista de listas", "Kembali: daftar dari daftar"),
   T("Volte mais tarde.", "Kembali lagi nanti."),

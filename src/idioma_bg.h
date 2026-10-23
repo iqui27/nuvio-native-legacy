@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "„Назад“ поставя продължаването там. Само вие виждате това."),
   T("Voltar retorna ao menu", "Назад връща към менюто"),
   T("Voltar sai", "Назад излиза"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Обратно към новото"),
   T("Voltar: lista de listas", "Назад: списък със списъци"),
   T("Volte mais tarde.", "Проверете по-късно."),

@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "Gå tillbaka sätter återupptagningen där. Bara du ser detta."),
   T("Voltar retorna ao menu", "Tillbaka går tillbaka till menyn"),
   T("Voltar sai", "Tillbaka avslutar"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Tillbaka till nyheterna"),
   T("Voltar: lista de listas", "Tillbaka: lista över listor"),
   T("Volte mais tarde.", "Titta in senare."),

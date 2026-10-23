@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "Quay lại sẽ đặt điểm tiếp tục ở đó. Chỉ bạn thấy điều này."),
   T("Voltar retorna ao menu", "Quay lại để về menu"),
   T("Voltar sai", "Quay lại để thoát"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Quay lại phần mới"),
   T("Voltar: lista de listas", "Quay lại: danh sách các danh sách"),
   T("Volte mais tarde.", "Hãy quay lại sau."),

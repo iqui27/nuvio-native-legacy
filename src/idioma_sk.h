@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "Späť nastaví pokračovanie tam. Vidíte to len vy."),
   T("Voltar retorna ao menu", "Späť sa vráti do ponuky"),
   T("Voltar sai", "Späť ukončí"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Späť na novinky"),
   T("Voltar: lista de listas", "Späť: zoznam zoznamov"),
   T("Volte mais tarde.", "Vráťte sa neskôr."),

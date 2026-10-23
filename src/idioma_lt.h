@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "Grįžti nustato tęsimą ten. Tai matote tik jūs."),
   T("Voltar retorna ao menu", "Atgal grįžta į meniu"),
   T("Voltar sai", "Atgal išeina"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Grįžti į naujienas"),
   T("Voltar: lista de listas", "Atgal: sąrašų sąrašas"),
   T("Volte mais tarde.", "Užsukite vėliau."),

@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "「戻る」で再開位置をそこにします。これはあなただけに表示されます。"),
   T("Voltar retorna ao menu", "戻るでメニューに戻る"),
   T("Voltar sai", "戻るで終了"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "新機能に戻る"),
   T("Voltar: lista de listas", "戻る: リスト一覧"),
   T("Volte mais tarde.", "また後で見てみてください。"),

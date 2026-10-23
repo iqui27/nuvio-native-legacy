@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "A Vissza oda teszi a folytatást. Ezt csak te látod."),
   T("Voltar retorna ao menu", "A Vissza a menübe tér vissza"),
   T("Voltar sai", "A Vissza kilép"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Vissza az újdonságokhoz"),
   T("Voltar: lista de listas", "Vissza: listák listája"),
   T("Volte mais tarde.", "Nézz vissza később."),

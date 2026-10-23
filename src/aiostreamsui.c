@@ -38,7 +38,7 @@ static const char *const nomes[] = {"Yeb’s", "Midnight’s", "ElfHosted", "Vir
 static int aberto, pagina, foco, lateral, hostIdx, indice = -1, entrada, pendente, perfil;
 static Uint32 proximaConsulta;
 static unsigned versao, geracao;
-static int catalogoSelecionado, regraSelecionada=-1, linkSelecionado=-1, evidenciaSelecionada;
+static int catalogoSelecionado, regraSelecionada=-1, linkSelecionado=-1, evidenciaSelecionada, maisHosts;
 static void trace(void);
 static char arteFundo[700], arteLogo[700];
 void aioui_arte(const char *dir) {
@@ -199,7 +199,7 @@ static int nLegendas(void) {
 }
 static int nConteudo(void) {
   if(pagina==SEM) return 3;
-  if(pagina==INSTANCIA) return 10;
+  if(pagina==INSTANCIA) return 11;
   if(pagina==SERVICOS) return 2;
   if(pagina==IMPORTAR) return 2;
   if(pagina==PRONTO) return 2;
@@ -235,7 +235,9 @@ static void acao(void) {
   if(pagina==SEM) { int f=foco; mudar(f==2?IMPORTAR:INSTANCIA); if(f==1) campo(1); }
   else if(pagina==INSTANCIA) {
     if(foco<7) { hostIdx=foco; snprintf(host,sizeof host,"%s",hosts[hostIdx]); qrAtual(); }
-    else if(foco==7) campo(1); else if(foco==8) mudar(IMPORTAR); else mudar(SERVICOS);
+    else if(foco==7) campo(1); else if(foco==8) mudar(IMPORTAR);
+    else if(foco==10) { maisHosts=!maisHosts; foco=maisHosts?4:0; }
+    else mudar(SERVICOS);
   } else if(pagina==SERVICOS) { if(foco==0) mudar(IMPORTAR); else mudar(INSTANCIA); }
   else if(pagina==IMPORTAR) {
     if(foco==0) {
@@ -317,6 +319,13 @@ void aioui_evento(const SDL_Event *e) {
     else if(k==SDLK_LEFT && foco%2) foco--;
     else if(k==SDLK_LEFT) { lateral=1; foco=0; }
     return;
+  }
+  if(pagina==INSTANCIA && (k==SDLK_UP || k==SDLK_DOWN)) {
+    const int ordem[]={0,1,2,3,10,7,8,9}, outras[]={4,5,6,10,7,8,9};
+    const int *v=maisHosts?outras:ordem; int n=maisHosts?7:8;
+    for(int i=0;i<n;i++) if(v[i]==foco) {
+      int j=i+(k==SDLK_UP?-1:1); if(j>=0 && j<n) foco=v[j]; return;
+    }
   }
   if(k==SDLK_LEFT && pagina>=PAINEL) { lateral=1; foco=pagina<=SAUDE?pagina-PAINEL:0; }
   else if(k==SDLK_RIGHT && lateral) { lateral=0; foco=0; }
@@ -457,13 +466,21 @@ static void setup(void) {
   } else if(pagina==INSTANCIA) {
     botao(7,i18n("Meu servidor"),716,263,320); botao(8,i18n("Já tenho o link"),1056,263,350);
     for(int i=0;i<3;i++) gfx_cor((GfxRect){1678+i*42,214,34,4},.5f,.65f,.84f,.86f,i==0?1:.18f);
-    int start=foco<7 && foco>3?foco-3:0;
+    int start=maisHosts?4:0;
     for(int i=start;i<7 && i<start+4;i++) {
       float y=345+(i-start)*94;
-      linha(i,"aj_globe",nomes[i],i==2?i18n("Pública: sem P2P, HTTP ou canais ao vivo"):i==3?i18n("Versão de desenvolvimento"):i18n("Estável · Servidor comunitário"),716,y,1078);
-      if(i==hostIdx) { gfx_cor((GfxRect){1650,y+29,90,32},.2f,.33f,.43f,.45f,.7f); texto(TXT_ILHA_NUM,i18n("Ativado"),1660,y+38,70,216); }
+      linha(i,i==3?"aj_server":"aj_globe",nomes[i],i==2?i18n("Pública: sem P2P, HTTP ou canais ao vivo"):i==3?i18n("Versão de desenvolvimento"):i18n("Estável · Servidor comunitário"),716,y,1078);
+      const char *badge=i==hostIdx?i18n("Selecionada"):i==2?i18n("Restrita"):i==3?i18n("Nightly"):NULL;
+      if(badge) {
+        gfx_cor((GfxRect){1620,y+29,126,32},.2f,i==2?.36f:.25f,i==2?.29f:.32f,i==2?.18f:.34f,.65f);
+        texto(TXT_ILHA_NUM,badge,1630,y+38,106,216);
+      }
     }
-    bloco(i18n("Debrid é opcional. HTTP, P2P e canais dependem da instância e desta TV."),738,772,1040,2);
+    if(!lateral && foco==10) gfx_cor((GfxRect){716,727,1078,60},.3f,.19f,.205f,.22f,.9f);
+    texto(TXT_ILHA_SUB,i18n(maisHosts?"Voltar às instâncias principais":"Também na documentação: Kuu’s, ATBP Hosting, Omni’s"),738,745,986,174);
+    gfx_icone((GfxRect){1750,745,22,22},"aj_chevron-right",.68f,.73f,.76f,1);
+    ponteiro_alvo(716,727,1078,60,pointer,click,10,0);
+    bloco(i18n("Debrid é opcional. HTTP, P2P e canais dependem da instância e desta TV."),738,803,1040,2);
     botao(9,i18n("Continuar"),716,877,360);
   } else if(pagina==SERVICOS) {
     const char *check[]={i18n("Serviços"),i18n("Addons"),i18n("Filtros e ordenação"),i18n("Formatador")};

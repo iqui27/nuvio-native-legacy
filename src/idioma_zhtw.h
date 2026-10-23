@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "「返回」會把繼續播放點設在那裡。只有你看得到。"),
   T("Voltar retorna ao menu", "按返回鍵回到選單"),
   T("Voltar sai", "按返回鍵結束"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "返回新功能"),
   T("Voltar: lista de listas", "返回：清單的清單"),
   T("Volte mais tarde.", "稍後再來看看。"),

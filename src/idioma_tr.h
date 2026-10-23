@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "Geri dön, devam noktasını oraya koyar. Bunu sadece sen görürsün."),
   T("Voltar retorna ao menu", "Geri menüye döner"),
   T("Voltar sai", "Geri çıkar"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Yeniliklere dön"),
   T("Voltar: lista de listas", "Geri: listelerin listesi"),
   T("Volte mais tarde.", "Daha sonra tekrar bak."),

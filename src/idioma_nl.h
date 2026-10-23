@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "Terug zet het hervatpunt daar. Alleen jij ziet dit."),
   T("Voltar retorna ao menu", "Terug keert terug naar het menu"),
   T("Voltar sai", "Terug sluit af"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Terug naar wat nieuw is"),
   T("Voltar: lista de listas", "Terug: lijst met lijsten"),
   T("Volte mais tarde.", "Kom later terug."),

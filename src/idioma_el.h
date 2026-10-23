@@ -5666,6 +5666,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "Το «Επιστροφή» βάζει τη συνέχιση εκεί. Μόνο εσείς το βλέπετε."),
   T("Voltar retorna ao menu", "Το Πίσω επιστρέφει στο μενού"),
   T("Voltar sai", "Το Πίσω βγαίνει"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Πίσω στα νέα"),
   T("Voltar: lista de listas", "Πίσω: λίστα λιστών"),
   T("Volte mais tarde.", "Έλα ξανά αργότερα."),

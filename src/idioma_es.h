@@ -5665,6 +5665,7 @@
   T("Voltar põe a retomada ali. Só você vê isto.", "Volver pone la reanudación ahí. Solo tú ves esto."),
   T("Voltar retorna ao menu", "Atrás vuelve al menú"),
   T("Voltar sai", "Atrás sale"),
+  T("Voltar às instâncias principais", "Back to the main instances"),
   T("Voltar às novidades", "Volver a las novedades"),
   T("Voltar: lista de listas", "Atrás: lista de listas"),
   T("Volte mais tarde.", "Vuelve más tarde."),
