@@ -2721,6 +2721,7 @@
   { "Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Background of the profile selection screen: the catalog cover mural, the focused profile's own art blurred (the mural if it has none), or the login stripes." },
   { "Fundo de perfil", "Profile backdrop" },
   { "Fundo do Palco", "Stage background" },
+  { "Fundo do Palco: %s", "Stage background: %s" },
   { "Fundo do destaque do addon", "Addon hero background" },
   { "Fundo em tela cheia", "Full-screen backdrop" },
   { "Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "New background: <b>Movies</b>, a wall with posters of what each profile watched." },

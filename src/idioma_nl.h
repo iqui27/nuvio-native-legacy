@@ -2722,6 +2722,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Achtergrond van het profielkeuzescherm: het covermozaïek uit de catalogus, het vervaagde beeld van het geselecteerde profiel (zonder beeld het mozaïek) of de strepen van het inloggen."),
   T("Fundo de perfil", "Profielachtergrond"),
   T("Fundo do Palco", "Podiumachtergrond"),
+  T("Fundo do Palco: %s", "Podiumachtergrond: %s"),
   T("Fundo do destaque do addon", "Hero-achtergrond van de add-on"),
   T("Fundo em tela cheia", "Achtergrond op volledig scherm"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Nieuwe achtergrond: <b>Films</b>, een muur met posters van wat elk profiel heeft gekeken."),

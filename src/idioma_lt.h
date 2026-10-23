@@ -2722,6 +2722,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Profilio pasirinkimo ekrano fonas: katalogo viršelių mozaika, pasirinkto profilio sulieta iliustracija (be jos mozaika) arba prisijungimo juostos."),
   T("Fundo de perfil", "Profilio fonas"),
   T("Fundo do Palco", "Scenos fonas"),
+  T("Fundo do Palco: %s", "Scenos fonas: %s"),
   T("Fundo do destaque do addon", "Pagrindinio bloko fonas iš papildinio"),
   T("Fundo em tela cheia", "Viso ekrano fonas"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Naujas fonas: <b>Filmai</b>, siena su kiekvieno profilio žiūrėtų kūrinių plakatais."),

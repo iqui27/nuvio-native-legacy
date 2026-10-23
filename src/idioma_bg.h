@@ -2722,6 +2722,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Фон на екрана за избор на профил: мозайка от корици от каталога, размит арт на профила във фокус (без арт — мозайката) или райетата от входа."),
   T("Fundo de perfil", "Фон на профила"),
   T("Fundo do Palco", "Фон на Сцената"),
+  T("Fundo do Palco: %s", "Фон на Сцената: %s"),
   T("Fundo do destaque do addon", "Фон на главния банер от добавката"),
   T("Fundo em tela cheia", "Фон на цял екран"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Нов фон: <b>Филми</b>, стена с плакатите на гледаното от всеки профил."),

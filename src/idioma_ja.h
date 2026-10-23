@@ -2722,6 +2722,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "プロフィール選択画面の背景: カタログのカバーのモザイク、フォーカス中のプロフィールのぼかしたアート(なければモザイク)、またはログイン画面のストライプ。"),
   T("Fundo de perfil", "プロフィールの背景"),
   T("Fundo do Palco", "ステージの背景"),
+  T("Fundo do Palco: %s", "ステージの背景: %s"),
   T("Fundo do destaque do addon", "アドオンのヒーロー背景"),
   T("Fundo em tela cheia", "全画面の背景"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "新しい背景：<b>映画</b>、各プロフィールが見た作品のポスターの壁。"),

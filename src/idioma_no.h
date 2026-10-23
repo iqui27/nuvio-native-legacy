@@ -2722,6 +2722,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Bakgrunn på profilvalget: omslagsmosaikken fra katalogen, det uskarpe bildet av den valgte profilen (uten bilde mosaikken) eller innloggingsstripene."),
   T("Fundo de perfil", "Profilbakgrunn"),
   T("Fundo do Palco", "Scenens bakgrunn"),
+  T("Fundo do Palco: %s", "Scenens bakgrunn: %s"),
   T("Fundo do destaque do addon", "Bakgrunn i hovedbanneret fra add-on"),
   T("Fundo em tela cheia", "Fullskjermbakgrunn"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Ny bakgrunn: <b>Filmer</b>, en vegg med plakater for det hver profil har sett."),

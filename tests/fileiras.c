@@ -9,6 +9,7 @@
 // no primeiro fil_mover a ordem local vira autoridade e a home inteira salta
 // para a ordem de registro, derrubando as fixas para o fim.
 #include "fileiras.h"
+#include "ajustes.h"   // PALCO_* (#659)
 #include "nvtmp.h"
 #include <assert.h>
 #include <stdio.h>
@@ -1534,6 +1535,23 @@ int main(void) {
       usaArquivo = 0;
     } }
   puts("ok  #204: catalogo que nenhum addon declara sai antes de recusar o novo; escolha explicita fica");
+
+  // #659: fundo do Palco por fileira — herda o global, grava e relê do arquivo.
+  fil_registrar("palco_cat", "Popular", "Cinemeta", "movie", 6);
+  assert(fil_palco("palco_cat") == PALCO_PADRAO);
+  assert(fil_definir_palco("palco_cat", PALCO_AURA) && fil_palco("palco_cat") == PALCO_AURA);
+  assert(!fil_definir_palco("continue_watching", PALCO_PRETO));
+  assert(fil_definir_palco("palco_cat", PALCO_PADRAO) && fil_palco("palco_cat") == PALCO_PADRAO);
+  usaArquivo = 1;
+  fil_definir_perfil(1);
+  assert(fil_definir_palco("palco_cat", PALCO_TRIPTICO));
+  fil_teste_recarregar();
+  fil_definir_perfil(1);
+  assert(fil_palco("palco_cat") == PALCO_TRIPTICO);
+  remove(nvt("/fileirasui-p1.txt"));
+  fil_definir_perfil(0);
+  usaArquivo = 0;
+  puts("ok  #659: fundo do Palco por fileira persiste e respeita fileira fixa do app");
 
   puts("fileiras: tudo ok");
   return 0;

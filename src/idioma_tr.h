@@ -2722,6 +2722,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Profil seçim ekranının arka planı: katalogdaki kapak mozaiği, odaktaki profilin bulanık görseli (görseli yoksa mozaik) veya girişteki çizgiler."),
   T("Fundo de perfil", "Profil arka planı"),
   T("Fundo do Palco", "Sahne arka planı"),
+  T("Fundo do Palco: %s", "Sahne arka planı: %s"),
   T("Fundo do destaque do addon", "Eklentinin banner arka planı"),
   T("Fundo em tela cheia", "Tam ekran arka plan"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Yeni arka plan: <b>Filmler</b>, her profilin izlediklerinin afişleriyle bir duvar."),

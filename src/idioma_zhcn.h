@@ -2722,6 +2722,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "资料选择界面的背景:目录封面拼贴墙、当前聚焦资料的模糊图片(没有图片时用拼贴墙),或登录页的条纹。"),
   T("Fundo de perfil", "个人资料背景"),
   T("Fundo do Palco", "舞台背景"),
+  T("Fundo do Palco: %s", "舞台背景: %s"),
   T("Fundo do destaque do addon", "附加组件的主视觉背景"),
   T("Fundo em tela cheia", "全屏背景"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "新背景：<b>电影</b>，一面贴满每个资料看过的海报的墙。"),

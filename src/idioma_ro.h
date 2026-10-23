@@ -2721,6 +2721,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Fundalul ecranului de alegere a profilului: mozaicul de coperți din catalog, arta profilului în focus, estompată (fără artă, mozaicul), sau dungile de la autentificare."),
   T("Fundo de perfil", "Fundal de profil"),
   T("Fundo do Palco", "Fundalul Scenei"),
+  T("Fundo do Palco: %s", "Fundalul Scenei: %s"),
   T("Fundo do destaque do addon", "Fundal banner principal din addon"),
   T("Fundo em tela cheia", "Fundal pe tot ecranul"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Fundal nou: <b>Filme</b>, un perete cu afișele a ce a văzut fiecare profil."),

@@ -319,6 +319,12 @@ static float estAnim[FIL_TIPO_N];
 // a ordem do addon, e prometer outra seria botao que nao faz nada.
 static int   ordemLinha, ordemSel;
 static float ordemAnim;
+// FUNDO DO PALCO da fileira (#659): linha extra do modal, depois da ordem.
+// Esquerda/direita ciclam "Padrão" + os PALCO_*; cada passo vale na hora
+// (a home ve o modo novo por fil_palco). So fileira que aceita forma tem a
+// linha — catalogo, colecao, servidor; as fixas do app nao viram Palco.
+static int   palcoLinha, palcoSel, palcoOrig;
+static float palcoAnim;
 // O MENU NAO TEM PREVIA PROPRIA (dono, 14/10): a fileira na Home e a previa.
 // Cada passo grava a forma na hora (estAoVivo) e a Home remonta por baixo; o
 // que valia ao abrir fica em estOrig*/estVivo para o Voltar devolver.
@@ -758,6 +764,8 @@ static void abrirComum(int indice) {
   estFoco = -1;               // montar() poe o foco na forma atual
   ordemLinha = fil_origem_de(filChave) == FIL_ORIGEM_COLECAO;
   ordemSel = fil_ordem(filChave);
+  palcoLinha = fil_origem_de(filChave) != FIL_ORIGEM_APP;
+  palcoSel = palcoOrig = fil_palco(filChave);
   memset(estAnim, 0, sizeof estAnim);
   temAncora = 0; estVivo = 0;
   fecharAoConfirmar = 0;
@@ -932,6 +940,7 @@ static void estAoVivo(void) {
   sync_proteger_ajustes_locais();
   if (estSel >= 0 && estSel < nEstilos) fil_definir_tipo(filChave, estTipo(estSel));
   if (ordemLinha && ordemSel != fil_ordem(filChave)) fil_definir_ordem(filChave, ordemSel);
+  if (palcoLinha && palcoSel != fil_palco(filChave)) fil_definir_palco(filChave, palcoSel);
   estVivo = 1;
 }
 // Voltar / clique fora / menu fechado por outro caminho: o que valia ao abrir.
@@ -940,6 +949,7 @@ static void estRestaurar(void) {
   estVivo = 0;
   fil_definir_tipo(filChave, estOrigTipo);
   if (ordemLinha) fil_definir_ordem(filChave, estOrigOrdem);
+  if (palcoLinha) fil_definir_palco(filChave, palcoOrig);
 }
 // OK: o que esta na fileira fica.
 static void aplicarEstilo(void) {
@@ -1298,14 +1308,20 @@ void ctx_evento(const SDL_Event *e) {
     return;
   }
   // Pagina de estilos: cima/baixo trocam a forma, esquerda/direita o tamanho
-  // (so nas linhas que tem tamanhos) e, na linha da ordem de uma colecao, a
-  // ordem dos itens. Cada passo ja vale na fileira; OK fica, Voltar desfaz.
+  // (so nas linhas que tem tamanhos) e, nas linhas extras (ordem da colecao,
+  // fundo do Palco), o valor delas. Cada passo ja vale na fileira; OK fica,
+  // Voltar desfaz.
   if (pagina == 1) {
+    int extras = (ordemLinha ? 1 : 0) + (palcoLinha ? 1 : 0);
     if (k == SDLK_UP)   { if (estFoco > 0) estFoco--; if (estFoco < nEstilos) estSel = estFoco; estAoVivo(); return; }
-    if (k == SDLK_DOWN) { if (estFoco + 1 < nEstilos + (ordemLinha ? 1 : 0)) estFoco++; if (estFoco < nEstilos) estSel = estFoco; estAoVivo(); return; }
+    if (k == SDLK_DOWN) { if (estFoco + 1 < nEstilos + extras) estFoco++; if (estFoco < nEstilos) estSel = estFoco; estAoVivo(); return; }
     if (ordemLinha && estFoco == nEstilos) {
       if (k == SDLK_LEFT)  { if (ordemSel > 0) ordemSel--; estAoVivo(); return; }
       if (k == SDLK_RIGHT) { if (ordemSel + 1 < FIL_ORD_N) ordemSel++; estAoVivo(); return; }
+    }
+    if (palcoLinha && estFoco == nEstilos + (ordemLinha ? 1 : 0)) {
+      if (k == SDLK_LEFT)  { if (palcoSel > PALCO_PADRAO) palcoSel--; estAoVivo(); return; }
+      if (k == SDLK_RIGHT) { if (palcoSel + 1 < PALCO_N) palcoSel++; estAoVivo(); return; }
     }
     if (estFoco >= 0 && estFoco < nEstilos && estLin[estFoco].n > 1) {
       if (k == SDLK_LEFT)  { if (estTam[estFoco] > 0) estTam[estFoco]--; estAoVivo(); return; }
@@ -1387,6 +1403,10 @@ void ctx_atualizar(float dt, Uint32 agora) {
       ? (ordemLinha && estFoco == nEstilos ? 1.0f : 0.0f)
       : anim_mola(ordemAnim, ordemLinha && estFoco == nEstilos ? 1.0f : 0.0f,
                   dt, NV_MOLA_FOCO);
+    palcoAnim = ajustes_animacoes_reduzidas()
+      ? (palcoLinha && estFoco == nEstilos + (ordemLinha ? 1 : 0) ? 1.0f : 0.0f)
+      : anim_mola(palcoAnim, palcoLinha && estFoco == nEstilos + (ordemLinha ? 1 : 0) ? 1.0f : 0.0f,
+                  dt, NV_MOLA_FOCO);
   } else if (estVivo) estRestaurar();
 
   atual = indiceAtual();
@@ -1455,7 +1475,7 @@ static void ponteiroConfOk(int i, int b) {
 static void ponteiroCtxFora(int a, int b) { (void)a; (void)b; aberto = 0; }
 // `b` > 0 e o segmento de tamanho b-1 da linha (o alvo menor, por cima dela).
 static void ponteiroEstFoco(int i, int b) {
-  if (i < 0 || i >= nEstilos + (ordemLinha ? 1 : 0)) return;
+  if (i < 0 || i >= nEstilos + (ordemLinha ? 1 : 0) + (palcoLinha ? 1 : 0)) return;
   estFoco = i;
   if (i < nEstilos) estSel = i;
   if (i < nEstilos && b > 0 && b - 1 < estLin[i].n) estTam[i] = b - 1;
@@ -1463,7 +1483,7 @@ static void ponteiroEstFoco(int i, int b) {
 }
 static void ponteiroEstFora(int a, int b) { (void)a; (void)b; estRestaurar(); aberto = 0; }
 static void ponteiroEstOk(int i, int b) {
-  if (i < 0 || i >= nEstilos + (ordemLinha ? 1 : 0)) return;
+  if (i < 0 || i >= nEstilos + (ordemLinha ? 1 : 0) + (palcoLinha ? 1 : 0)) return;
   ponteiroEstFoco(i, b);
   aplicarEstilo();
 }
@@ -1480,6 +1500,15 @@ static void ponteiroOrdemToque(int i, int b) {
 // O mesmo ciclar do toque serve o clique no MESA na linha Ordem: ali o mouse e
 // o Magic Remote nao tem esquerda/direita. Aplicar continua na forma/Fechar.
 #define ponteiroOrdemAtivar ponteiroOrdemToque
+// O ciclar da linha do Palco (#659): cada toque anda UM modo (Padrão ->
+// Cortina -> ... -> Padrão); a linha mostra o que ficou.
+static void ponteiroPalcoAtivar(int i, int b) {
+  (void)i; (void)b;
+  if (!palcoLinha) return;
+  estFoco = nEstilos + (ordemLinha ? 1 : 0);
+  palcoSel = palcoSel + 1 >= PALCO_N ? PALCO_PADRAO : palcoSel + 1;
+  estAoVivo();
+}
 
 // GLASS UI (dono, 02/10, mockup "ilha" tela 7): TODO MODAL E UMA ILHA — o
 // material da folha de Fontes e da ilha do relogio. Sombra curta, miolo de
@@ -1721,7 +1750,7 @@ int ctx_estilo_rect(GfxRect *out) {
 
 static void desenhaEstilos(float a) {
   a *= estPag;
-  int i, n = nEstilos + (ordemLinha ? 1 : 0);
+  int i, n = nEstilos + (ordemLinha ? 1 : 0) + (palcoLinha ? 1 : 0);
   float disp = NV_TELA_H - 2.0f * CTX_BORDA - 2.0f * EST_PAD;
   float lin = EST_LINHA;
   GfxRect m;
@@ -1748,7 +1777,7 @@ static void desenhaEstilos(float a) {
         ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstFoco, ponteiroEstOk, i, 0);
       linhaEstilo(r, estLin[i].rotulo, estTipo(i), estAnim[i], a);
       if (estLin[i].n > 1 && estAnim[i] > 0.5f) desenhaTamanhos(r, i, a);
-    } else {
+    } else if (ordemLinha && i == nEstilos) {
       // A ORDEM dos itens da colecao: o valor que esquerda/direita escolhem; o
       // clique cicla (mouse e Magic Remote nao tem esquerda/direita).
       char rot[96];
@@ -1756,6 +1785,16 @@ static void desenhaEstilos(float a) {
       if (aberto && pagina == 1 && a > 0.5f)
         ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstFoco, ponteiroOrdemAtivar, nEstilos, 0);
       linhaEstilo(r, rot, -1, ordemAnim, a);
+    } else {
+      // O FUNDO DO PALCO desta fileira (#659): "Padrão" herda o ajuste
+      // global; os outros são os PALCO_*, aplicados na hora pela home.
+      char rot[96];
+      snprintf(rot, sizeof rot, i18n("Fundo do Palco: %s"),
+               palcoSel < 0 ? i18n("Padrão") : i18n(ajustes_palco_fundo_rotulo(palcoSel)));
+      if (aberto && pagina == 1 && a > 0.5f)
+        ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstFoco, ponteiroPalcoAtivar,
+                      nEstilos + (ordemLinha ? 1 : 0), 0);
+      linhaEstilo(r, rot, -1, palcoAnim, a);
     }
   }
 }

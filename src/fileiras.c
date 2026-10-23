@@ -1,4 +1,5 @@
 #include "fileiras.h"
+#include "ajustes.h"   // PALCO_* (#659)
 #include "dados.h"
 #include "addons.h"
 #include "addonurl.h"
@@ -73,6 +74,9 @@ typedef struct {
   // formato posicional da linha `linha` nao muda e o arquivo de quem ja usa
   // o app continua valendo byte a byte.
   int  ordem;
+  // FUNDO DO PALCO desta fileira (#659): modo+1 (0 = herda o global de
+  // Ajustes), gravado como linha opcional "palco <chave> <modo>".
+  int  palco;
 } Linha;
 
 static Linha linhas[FIL_MAX];
@@ -359,6 +363,14 @@ static void gravar(void) {
     if (linhas[i].ordem > 0 && linhas[i].ordem < FIL_ORD_N)
       k += (size_t)snprintf(txt + k, cap - k, "ordemfileira %s %d\n",
                             linhas[i].chave, linhas[i].ordem);
+  // FUNDO DO PALCO por fileira (#659): linha opcional como "ordemfileira";
+  // arquivo sem ela volta a PALCO_PADRAO (o ajuste global manda em todas).
+  // Sem PALCO_* aqui: fileiras.h nao inclui ajustes.h; a faixa valida (0..6)
+  // e conferida por assert no quem grava/le.
+  for (i = 0; i < nLinhas && k < cap; i++)
+    if (linhas[i].palco > 0)
+      k += (size_t)snprintf(txt + k, cap - k, "palco %s %d\n",
+                            linhas[i].chave, linhas[i].palco - 1);
   if (k < cap) dados_gravar(arquivoDoPerfil(), txt);
   free(txt);
   revisao++;
@@ -421,6 +433,17 @@ static void carregar(void) {
         if (o > 0 && o < FIL_ORD_N)
           for (int i = 0; i < nLinhas; i++)
             if (!strcmp(linhas[i].chave, buf + 13)) linhas[i].ordem = o;
+      }
+    } else if (!strncmp(buf, "palco ", 6)) {
+      // "palco <chave> <modo>": a chave termina no primeiro espaco, como em
+      // "ordemfileira"; modo fora da faixa volta a PALCO_PADRAO na leitura.
+      char *esp = strchr(buf + 6, ' ');
+      if (esp) {
+        *esp = 0;
+        int m = atoi(esp + 1);
+        if (m >= 0 && m < PALCO_N)
+          for (int i = 0; i < nLinhas; i++)
+            if (!strcmp(linhas[i].chave, buf + 6)) linhas[i].palco = m + 1;
       }
     } else if (!strncmp(buf, "visibilidade ", 13)) {
       for (int i = 0; i < nLinhas; i++)
@@ -1757,6 +1780,37 @@ int fil_definir_ordem(const char *chave, int o) {
     ok = 1;
     // Mesma ordem: nao reescreve o arquivo nem remonta a home por nada.
     if (linhas[i].ordem != o) { linhas[i].ordem = o; gravar(); }
+  }
+  pthread_mutex_unlock(&trava);
+  return ok;
+}
+
+// O FUNDO DO PALCO desta fileira (#659): PALCO_PADRAO quando a fileira nunca
+// ganhou um proprio — a leitura devolve o ajuste global. So fileira com forma
+// escolhivel (catalogo, colecao, servidor) pode ter fundo proprio; as fixas
+// do app nao viram PALCO de forma nenhuma.
+int fil_palco(const char *chave) {
+  int i, v = PALCO_PADRAO;
+  if (!chave || !chave[0]) return v;
+  pthread_mutex_lock(&trava);
+  garantir();
+  i = achar(chave);
+  if (i >= 0 && linhas[i].palco > 0 && linhas[i].palco <= PALCO_N)
+    v = linhas[i].palco - 1;
+  pthread_mutex_unlock(&trava);
+  return v;
+}
+
+int fil_definir_palco(const char *chave, int modo) {
+  int i, ok = 0;
+  if (!chave || !chave[0] || modo < PALCO_PADRAO || modo >= PALCO_N ||
+      formaFixa(chave)) return 0;
+  pthread_mutex_lock(&trava);
+  garantir();
+  i = achar(chave);
+  if (i >= 0) {
+    ok = 1;
+    if (linhas[i].palco != modo + 1) { linhas[i].palco = modo + 1; gravar(); }
   }
   pthread_mutex_unlock(&trava);
   return ok;

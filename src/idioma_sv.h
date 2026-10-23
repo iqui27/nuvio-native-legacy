@@ -2722,6 +2722,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Bakgrund för profilvalet: omslagsmosaiken från katalogen, den suddiga bilden för den markerade profilen (utan bild mosaiken) eller inloggningens ränder."),
   T("Fundo de perfil", "Profilbakgrund"),
   T("Fundo do Palco", "Scenens bakgrund"),
+  T("Fundo do Palco: %s", "Scenens bakgrund: %s"),
   T("Fundo do destaque do addon", "Huvudbannerns bakgrund från add-on"),
   T("Fundo em tela cheia", "Helskärmsbakgrund"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Ny bakgrund: <b>Filmer</b>, en vägg med affischer för det varje profil har sett."),

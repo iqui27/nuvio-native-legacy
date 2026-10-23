@@ -2722,6 +2722,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "خلفية شاشة اختيار الملف الشخصي: جدارية أغلفة الكتالوج، أو صورة الملف المحدد نفسه مموّهة (الجدارية إن لم تكن لديه صورة)، أو خطوط شاشة تسجيل الدخول."),
   T("Fundo de perfil", "خلفية الملف الشخصي"),
   T("Fundo do Palco", "خلفية المسرح"),
+  T("Fundo do Palco: %s", "خلفية المسرح: %s"),
   T("Fundo do destaque do addon", "خلفية واجهة الإضافة"),
   T("Fundo em tela cheia", "خلفية بملء الشاشة"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "خلفية جديدة: <b>أفلام</b>، جدار بملصقات ما شاهده كل ملف شخصي."),
