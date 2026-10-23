@@ -143,7 +143,7 @@ static const char *capacidades(int i) {
 // arranjo de ilhas de Ajustes, desenhado por ajustes.c (que tem as pecas).
 void addonsui_desenhar(Uint32 agora) {
   (void)agora;
-  ajustes_desenhar_addons(foco);
+  aioui_addons_desenhar(foco);
 }
 
 #ifdef AJUSTES_TESTE

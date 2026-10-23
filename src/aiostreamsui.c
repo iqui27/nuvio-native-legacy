@@ -18,11 +18,16 @@
 #include "text.h"
 #include "tex_cache.h"
 #include "streams.h"
+#include "addonsui.h"
+#include "sync.h"
+#include "contacache.h"
+#include "jsw.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 
 enum { SEM, INSTANCIA, IMPORTAR, SERVICOS, PRONTO, PAINEL, CATALOGOS, FONTES, LINKS, LEGENDAS, FILTROS, SAUDE, TITULO };
 static const char *const titulos[] = {"Conectar", "Escolha uma instância", "Importar configuração", "Serviços e preferências", "Pronto", "Tudo que o AIOStreams traz", "Catálogos", "Fontes e serviços", "Links", "Legendas", "Filtros e ordenação", "Saúde", "Inspeção do título"};
@@ -32,6 +37,7 @@ static const char *const nomes[] = {"Yeb’s", "Midnight’s", "ElfHosted", "Vir
 static int aberto, pagina, foco, lateral, hostIdx, indice = -1, entrada, pendente, perfil;
 static Uint32 proximaConsulta;
 static unsigned versao, geracao;
+static int catalogoSelecionado;
 static char arteFundo[700], arteLogo[700];
 void aioui_arte(const char *dir) {
   snprintf(arteFundo,sizeof arteFundo,"%s/aiostreams/backdrop.jpg",dir);
@@ -94,7 +100,7 @@ static void *worker(void *arg) {
 static void atualizarRede(int install) { pendente=install+1; }
 static void iniciarRede(void) {
   int install=pendente-1;
-  if(!pendente || (proximaConsulta && SDL_TICKS_PASSED(proximaConsulta,SDL_GetTicks()))) return;
+  if(!pendente || (proximaConsulta && !SDL_TICKS_PASSED(SDL_GetTicks(),proximaConsulta))) return;
   pthread_mutex_lock(&trava);
   if(ocupado) { pthread_mutex_unlock(&trava); return; }
   Pedido *p=calloc(1,sizeof *p);
@@ -106,6 +112,20 @@ static void iniciarRede(void) {
   if(pthread_create(&t,NULL,worker,p)) { ocupado=0; free(p); }
   else pthread_detach(t);
   pthread_mutex_unlock(&trava);
+}
+static void guardarInstalacao(void) {
+  // Reuse the same account/profile snapshot restored by sync at startup.
+  // Never upload the complete list to the account.
+  static AddonRemoto lista[128];
+  int n=addons_exportar(lista,128); Jsw w; jsw_iniciar(&w); jsw_arr_ini(&w);
+  for(int i=0;i<n;i++) {
+    jsw_obj_ini(&w); jsw_cs(&w,"url",lista[i].url); jsw_cs(&w,"name",lista[i].nome);
+    jsw_cb(&w,"enabled",lista[i].ativo); jsw_obj_fim(&w);
+  }
+  jsw_arr_fim(&w);
+  const char *body=jsw_texto_final(&w);
+  if(body && sessao_usuario()[0]) contacache_gravar(CC_ADDONS_APLICADOS,perfis_ativo_addons(),sessao_usuario(),body);
+  jsw_livre(&w); memset(lista,0,sizeof lista);
 }
 static void fechar(void) {
   aberto=0; geracao++; pendente=0; celular_fechar();
@@ -146,7 +166,7 @@ static int nLinhas(void) {
   if(pagina==IMPORTAR) return 2;
   if(pagina==PRONTO) return 2;
   if(pagina==PAINEL) return 9;
-  if(pagina==CATALOGOS) return snap.catalogos+2;
+  if(pagina==CATALOGOS) return snap.catalogos+4;
   if(pagina==FONTES) return snap.addons+snap.servicos+3;
   if(pagina==LEGENDAS || pagina==LINKS) return 1;
   if(pagina==FILTROS) return 9;
@@ -180,10 +200,14 @@ static void acao(void) {
     else mudar(IMPORTAR);
   } else if(pagina==CATALOGOS) {
     if(foco<snap.catalogos) {
+      catalogoSelecionado=foco;
       int f=fileira(foco);
       if(f>=0) { fil_alternar(f); desc_remontar_fileiras(); }
       else snprintf(mensagem,sizeof mensagem,"%s",i18n("Atualize os catálogos para escolher na Home."));
-    } else if(foco==snap.catalogos) { desc_repetir(); geracao++; atualizarRede(0); }
+    } else if(foco==snap.catalogos || foco==snap.catalogos+1) {
+      int f=fileira(catalogoSelecionado);
+      if(f>=0) { fil_mover(f,foco==snap.catalogos?-1:1); desc_remontar_fileiras(); }
+    } else if(foco==snap.catalogos+2) { desc_repetir(); geracao++; atualizarRede(0); }
     else mudar(SERVICOS);
   } else if(pagina==FONTES) {
     if(foco==snap.addons+snap.servicos) ajustes_definir_p2p_ligado(!ajustes_p2p_ligado());
@@ -255,7 +279,7 @@ void aioui_atualizar(float dt,Uint32 agora) {
       if(!snap.valida) snprintf(mensagem,sizeof mensagem,"%s",i18n("Manifesto indisponível, inválido ou ainda exige configuração."));
       else if(entregaInstalar) {
         if(addons_adicionar("AIOStreams",entregaBase)) {
-          indice=addons_n()-1; versao=addons_versao(); desc_repetir(); mudar(PRONTO);
+          indice=addons_n()-1; versao=addons_versao(); guardarInstalacao(); desc_repetir(); mudar(PRONTO);
         } else snprintf(mensagem,sizeof mensagem,"%s",i18n("AIOStreams já instalado ou lista cheia."));
       }
     }
@@ -281,11 +305,14 @@ static void pointer(int i,int b) { lateral=b; foco=i; }
 static void click(int i,int b) { pointer(i,b); acao(); }
 static void linha(int i,const char *icon,const char *nome,const char *sub,float x,float y,float w) {
   if(y<295 || y>855) return;
-  if(!lateral && foco==i) gfx_cor((GfxRect){x,y,w,94},22/94.f,.19f,.205f,.22f,.9f);
-  gfx_icone((GfxRect){x+20,y+28,28,28},icon,.85f,.88f,.89f,1);
-  texto(TXT_ILHA_NOME,nome,x+76,y+17,w-104,241);
-  texto(TXT_ILHA_SUB,sub,x+76,y+53,w-104,174);
-  ponteiro_alvo(x,y,w,94,pointer,click,i,0);
+  float h=pagina==SEM?145:94, ty=pagina==SEM?38:17;
+  if(!lateral && foco==i) gfx_cor((GfxRect){x,y,w,h},22/h,.19f,.205f,.22f,.9f);
+  gfx_cor((GfxRect){x+20,y+(h-52)/2,52,52},.3f,.21f,.225f,.24f,.45f);
+  gfx_icone((GfxRect){x+32,y+(h-28)/2,28,28},icon,.85f,.88f,.89f,1);
+  texto(TXT_G28B,nome,x+94,y+ty,w-152,241);
+  texto(TXT_G22M,sub,x+94,y+ty+38,w-152,174);
+  gfx_icone((GfxRect){x+w-44,y+(h-22)/2,22,22},"aj_chevron-right",.68f,.73f,.76f,1);
+  ponteiro_alvo(x,y,w,h,pointer,click,i,0);
 }
 static void botao(int i,const char *nome,float x,float y,float w) {
   float r,g,b; ajustes_acento(&r,&g,&b); int f=!lateral && foco==i;
@@ -311,7 +338,7 @@ static void aside(void) {
 static void setup(void) {
   painel(72,148,1776,824);
   GLuint logo=tex_obter(arteLogo);
-  if(logo) gfx_textura((GfxRect){124,216,48,48},logo);
+  if(logo) gfx_rect((GfxRect){124,216,48,48},logo,GFX_MARCA,0,0,0,0,0,1,1,1);
   texto(TXT_G30B,"AIOStreams",199,206,440,242);
   texto(TXT_ILHA_SUB,i18n("Um addon, todas as suas fontes"),199,248,440,174);
   gfx_cor((GfxRect){661,156,1,815},0,.8f,.84f,.88f,.08f);
@@ -323,7 +350,7 @@ static void setup(void) {
     gfx_icone((GfxRect){125,800+i*49,24,24},i==2&&pagina==PRONTO?"aj_check":"aj_circle-dot",.7f,.76f,.79f,1);
     texto(TXT_ILHA_SUB,steps[i],169,800+i*49,450,195);
   }
-  texto(TXT_G30B,i18n(titulos[pagina]),716,204,1080,240);
+  texto(TXT_ILHA_PERGUNTA,pagina==SEM?i18n("Como deseja conectar?"):i18n(titulos[pagina]),716,204,1080,240);
   if(pagina==SEM) {
     linha(0,"aj_globe",i18n("Usar uma instância pública"),i18n("Escolha um servidor listado na documentação."),716,310,1078);
     linha(1,"aj_server",i18n("Conectar meu servidor"),i18n("Informe a origem do seu AIOStreams."),716,468,1078);
@@ -385,7 +412,8 @@ static void workspace(void) {
       snprintf(sub,sizeof sub,"%s · %s",snap.catalogo[i].tipo,f>=0&&!fil_linha_oculta(f)?i18n("Na Home"):i18n("Fora da Home"));
       linha(i,"aj_library",snap.catalogo[i].nome,sub,453,310+(i-start)*104,950);
     }
-    botao(snap.catalogos,i18n("Atualizar catálogos"),453,866,430); botao(snap.catalogos+1,i18n("Gerenciar no celular"),905,866,490);
+    botao(snap.catalogos,i18n("Mover para cima"),453,832,450); botao(snap.catalogos+1,i18n("Mover para baixo"),925,832,470);
+    botao(snap.catalogos+2,i18n("Atualizar catálogos"),453,900,450); botao(snap.catalogos+3,i18n("Gerenciar no celular"),925,900,470);
   } else if(pagina==FONTES) {
     int n=snap.addons+snap.servicos;
     for(int i=start;i<n && i<start+4;i++) {
@@ -446,6 +474,37 @@ static void workspace(void) {
     botao(0,i18n("Gerenciar no celular"),453,866,480);
   }
 }
+static void addonPointer(int i,int b) { (void)b; addonsui_ponteiro(i,0); }
+static void addonClick(int i,int b) {
+  addonPointer(i,b); SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RETURN; addonsui_evento(&e);
+}
+void aioui_addons_desenhar(int f) {
+  gfx_cor((GfxRect){0,0,1920,1080},0,.035f,.065f,.077f,1);
+  GLuint fundo=tex_obter_hero(arteFundo); if(fundo) gfx_textura((GfxRect){0,0,1920,1080},fundo);
+  painel(72,148,315,824); painel(411,148,1437,824);
+  texto(TXT_ILHA_SUB,i18n("Ajustes / Addons / AIOStreams"),150,65,1400,196);
+  texto(TXT_ILHA_SECAO,i18n("Ajustes"),111,190,240,180);
+  texto(TXT_ILHA_NOME,i18n("Addons"),111,395,240,240);
+  texto(TXT_ILHA_TITULO,i18n("Addons"),453,230,1200,240);
+  texto(TXT_ILHA_SUB,i18n("Ligados nesta TV"),453,290,1200,170);
+  int n=addons_n(), start=f>4?f-4:0;
+  for(int i=start;i<n && i<start+5;i++) {
+    float y=360+(i-start)*105;
+    if(i==f) gfx_cor((GfxRect){453,y,1340,94},.23f,.18f,.20f,.21f,1);
+    gfx_icone((GfxRect){477,y+28,28,28},aioui_detectar(i)?"aj_layers":"aj_puzzle",.85f,.88f,.9f,1);
+    texto(TXT_ILHA_NOME,addons_nome(i),535,y+17,1190,242);
+    texto(TXT_ILHA_SUB,aioui_detectar(i)?i18n("Abrir painel"):addons_ativo(i)?i18n("Ativado"):i18n("Desativado"),535,y+53,1190,174);
+    ponteiro_alvo(453,y,1340,94,addonPointer,addonClick,i,0);
+  }
+  GfxRect r={453,866,550,56};
+  gfx_cor(r,.5f,f==n?.26f:.14f,.17f,.19f,1);
+  texto(TXT_ILHA_SUB,sync_manual_addons_rodando()?i18n("Sincronizando…"):i18n("Sincronizar addons"),477,882,500,234);
+  ponteiro_alvo(r.x,r.y,r.w,r.h,addonPointer,addonClick,n,0);
+  r.x=1030; r.w=750; gfx_cor(r,.5f,f==n+1?.26f:.14f,.17f,.19f,1);
+  texto(TXT_ILHA_SUB,i18n("Conectar ou importar sua configuração"),1054,882,700,234);
+  ponteiro_alvo(r.x,r.y,r.w,r.h,addonPointer,addonClick,n+1,0);
+  texto(TXT_ILHA_SUB,i18n("Setas: navegar    OK: abrir    Voltar: retornar"),92,1020,1450,160);
+}
 void aioui_desenhar(Uint32 agora) {
   if(!aberto) return;
   (void)agora;
@@ -453,9 +512,12 @@ void aioui_desenhar(Uint32 agora) {
   GLuint fundo=tex_obter_hero(arteFundo);
   if(fundo) gfx_textura((GfxRect){0,0,1920,1080},fundo);
   texto(TXT_ILHA_SUB,i18n("Ajustes / Addons / AIOStreams"),150,65,1400,196);
+  time_t now=time(NULL); struct tm clock; localtime_r(&now,&clock); char hhmm[16]; strftime(hhmm,sizeof hhmm,"%H:%M",&clock);
+  painel(1710,46,138,56); texto(TXT_ILHA_NOME,hhmm,1734,61,100,235);
   pthread_mutex_lock(&trava); int busy=ocupado; pthread_mutex_unlock(&trava);
   if(pendente || busy) texto(TXT_ILHA_SUB,i18n("Conferindo…"),1590,65,250,180);
-  gfx_icone((GfxRect){87,62,24,24},"aj_chevron-right",.85f,.88f,.9f,1);
+  painel(72,46,56,56);
+  gfx_icone((GfxRect){87,62,24,24},"pl_chevron-left",.85f,.88f,.9f,1);
   if(pagina<PAINEL) setup(); else workspace();
   texto(TXT_ILHA_SUB,i18n("Setas: navegar    OK: abrir    Voltar: retornar"),92,1020,1450,160);
   if(mensagem[0]) texto(TXT_ILHA_SUB,mensagem,453,934,1340,215);

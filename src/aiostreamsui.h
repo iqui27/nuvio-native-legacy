@@ -9,6 +9,7 @@ int aioui_aberto(void);
 void aioui_evento(const SDL_Event *e);
 void aioui_atualizar(float dt, Uint32 agora);
 void aioui_desenhar(Uint32 agora);
+void aioui_addons_desenhar(int foco);
 int aioui_detectar(int addon);
 #ifdef NV_SHOT_HOOKS
 void aioui_shot(int pagina, const AioSnapshot *s);

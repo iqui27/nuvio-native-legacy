@@ -1,5 +1,7 @@
 // Offline contract: private paths never become display text; root fields only.
 #include "aiostreams.h"
+#include "streams.h"
+#include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -19,11 +21,15 @@ int main(void) {
   assert(!aio_manifesto(&s, "{\"id\":\"not-aiostreams\",\"name\":\"Other\"}"));
   assert(!aio_manifesto(&s, "{\"id\":\"aiostreams\",\"behaviorHints\":{\"configurationRequired\":true}}"));
   assert(!aio_manifesto(&s, "not json"));
+  assert(!aio_manifesto(&s, "{\"id\":\"aiostreams\""));
+  assert(!aio_manifesto(&s, "{\"id\":\"aiostreams\"} trailing"));
   aio_configuracao(&s, "{\"data\":{\"userData\":{\"services\":[{\"id\":\"torbox\",\"enabled\":true,\"apiKey\":\"SECRET\"}],\"presets\":[{\"type\":\"torrentio\",\"options\":{\"name\":\"SECRET\"},\"name\":\"Torrentio\",\"enabled\":true}],\"excludedResolutions\":[\"2160p\"],\"sortCriteria\":{\"global\":[{\"key\":\"cached\"}]},\"unknownFuture\":{\"apiKey\":\"SECRET\"}}}}" );
   assert(s.configurada && s.servicos == 1 && s.addons == 1);
   assert(!strcmp(s.servico[0].nome, "torbox"));
   assert(!strcmp(s.addon[0].nome, "torrentio"));
   assert(s.regras[0] == 1);
+  assert(!strcmp(s.resumo[0], "2160p"));
+  assert(!strcmp(s.resumo[5], "cached"));
   assert(!strstr((char *)&s, "SECRET"));
   aio_resultados(&s, "{\"streams\":[{\"name\":\"Video\",\"url\":\"https://media.test/secret\"},{\"name\":\"External\",\"externalUrl\":\"https://external.test/private\"},{\"infoHash\":\"abcdef\"},{\"nzbUrl\":\"https://nzb.test/file\"}]}" );
   assert(s.resultados == 4 && s.links == 2 && s.p2p == 1);
@@ -32,6 +38,9 @@ int main(void) {
   assert(!strcmp(s.resultado[2].tipo, "P2P"));
   assert(s.resultado[0].cache == -1);
   assert(!strstr(s.resultado[0].nome, "secret"));
+  Stream *playable=NULL;
+  assert(stream_extrair("{\"streams\":[{\"externalUrl\":\"https://external.test/page\"},{\"url\":\"https://media.test/video.mp4\"}]}","AIOStreams",&playable)==1);
+  free(playable);
   puts("aiostreams: URL, authentication, manifest, config and returned inventory passed");
   return 0;
 }

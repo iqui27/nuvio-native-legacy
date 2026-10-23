@@ -94,7 +94,9 @@ int aio_autorizacao(const char *url, char *dst, size_t n) {
 int aio_manifesto(AioSnapshot *s, const char *json) {
   char id[128] = "", name[96] = "";
   s->valida = s->requerida = s->catalogos = s->recursos = 0;
-  if (!json || *json != '{' || !js_fim(json)) return 0;
+  const char *end=json?js_fim(json):NULL;
+  if (!json || *json != '{' || !end || end<=json || end[-1]!='}') return 0;
+  for(const char *tail=end;*tail;tail++) if(!isspace((unsigned char)*tail)) return 0;
   js_texto_raiz(json, "id", id, sizeof id);
   js_texto_raiz(json, "name", name, sizeof name);
   if (strncasecmp(id, "aiostreams", 10) && strncasecmp(name, "AIOStreams", 10)) return 0;
@@ -165,7 +167,7 @@ static void summarize(char *dst,size_t n,const char *p) {
 void aio_configuracao(AioSnapshot *s, const char *json) {
   const char *u = member(member(json,"data"),"userData");
   s->configurada = s->servicos = s->addons = 0; memset(s->regras,0,sizeof s->regras);
-  if (!u || *u != '{') return;
+  if (!u || *u != '{' || value_end(u)[-1]!='}') return;
   s->configurada = 1;
   s->servicos = inventory(u,"services",s->servico,32);
   s->addons = inventory(u,"presets",s->addon,AIO_MAX);
@@ -180,9 +182,14 @@ void aio_configuracao(AioSnapshot *s, const char *json) {
   for (int i=0;i<8;i++) for (int j=0;keys[i][j];j++) if (member(u,keys[i][j])) s->regras[i]++;
   memset(s->resumo,0,sizeof s->resumo);
   summarize(s->resumo[0],256,member(u,"requiredResolutions"));
+  if(!s->resumo[0][0]) summarize(s->resumo[0],256,member(u,"preferredResolutions"));
+  if(!s->resumo[0][0]) summarize(s->resumo[0],256,member(u,"excludedResolutions"));
   summarize(s->resumo[2],256,member(u,"preferredLanguages"));
   summarize(s->resumo[5],256,member(member(u,"sortCriteria"),"global"));
   summarize(s->resumo[6],256,member(member(u,"formatter"),"id"));
+  // Numeric ranges only; never render custom expressions or proxy addresses.
+  const char *limits=member(member(u,"size"),"global");
+  summarize(s->resumo[1],256,member(limits,"movies"));
 }
 void aio_resultados(AioSnapshot *s, const char *json) {
   const char *a = member(json,"streams"), *p = a && *a == '[' ? a+1 : NULL;
