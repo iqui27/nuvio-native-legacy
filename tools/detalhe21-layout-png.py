@@ -37,6 +37,11 @@ for mode, name in enumerate(('pronta', 'pessoal')):
             tiles.append(tile)
         run('magick', *tiles, '-append', OUT / f'{kind}-{name}.png')
 
+# Keep a close crop of the native ratings row alongside both full pages.
+positions = {int(r): int(y) for r, y, _ in
+             (line.split() for line in (OUT / 'pronta' / 'movie-sections.txt').read_text().splitlines())}
+crop(OUT / 'movie-pronta.png', f'1728x220+96+{positions[8]}', OUT / 'notas-media.png')
+
 # Runtime section positions come from the native layout, never inferred from pixels.
 # Each comparison keeps the mock's width and scale: mock left, app right.
 comparisons = [

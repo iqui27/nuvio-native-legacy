@@ -1221,18 +1221,76 @@ static int notaFonte(int c) {
   for (int i=0;i<5;i++) if (s->cru[fontes[i]]>0 && c--==0) return fontes[i];
   return -1;
 }
+// Use every enabled source, including those without an individual 2.1 tile.
+static const NfResumo *notaMedia(void) {
+  static NfResumo r;
+  nf_resumo_cru(notasDados()->cru,&r);
+  return &r;
+}
 static int nNotasTiles(void) {
   int n=0; AmigosTitulo am;
   while (notaFonte(n)>=0) n++;
-  return n+1+(amigosDoTitulo(&am) ? 1 : 0);
+  return (notaMedia()->n>0 ? 1 : 0)+n+1+(amigosDoTitulo(&am) ? 1 : 0);
+}
+// First in the row: legacy summary in the mock's 436x150 Friends tile geometry.
+static void desenhaMediaTile(float x,float y,float a) {
+  const NfResumo *r=notaMedia();
+  GfxRect b={x,y,436,150};
+  char buf[160];
+  float f=nivel>=1 && foco.fileira==SEC_NOTAS && foco.coluna==0 ? 1 : 0;
+  b=detalheEscala(b,animFoco[SEC_NOTAS][0],.03f);
+  gfx_cor(b,20.0f/150,1,1,1,a*.06f);
+  if (f>.005f) gfx_anel(b,20.0f/150,3,1,1,1,a);
+  if (r->n>1) snprintf(buf,sizeof buf,i18n("Média de %d fontes"),r->n);
+  else snprintf(buf,sizeof buf,"%s",i18n("Só uma fonte tem nota"));
+  txt_desenhar_alpha(txt_linha(TXT_G18R,buf,243,242,239,153),b.x+22,b.y+18,a);
+  { TxtLinha big,d;
+    snprintf(buf,sizeof buf,"%d",r->media);
+    big=txt_linha(TXT_LOG_N44,buf,243,242,239,255);
+    d=txt_linha(TXT_G18R,i18n("de 100"),243,242,239,153);
+    txt_desenhar_alpha(big,b.x+22,b.y+46,a);
+    txt_desenhar_alpha(d,b.x+22+big.w+10,b.y+46+big.h*.8f-d.h,a); }
+  { float rx=b.x+180,rw=b.w-202;
+    // Show the comparison only when both groups have ratings.
+    if (r->temDiff) {
+      static const float CC[2][3]={{.486f,.769f,1},{.788f,.655f,1}};
+      for (int lado=0;lado<2;lado++) {
+        int v=lado ? r->publico : r->criticos;
+        TxtLinha l=txt_linha(TXT_G18R,i18n(lado ? "Público" : "Crítica"),243,242,239,153);
+        char vb[8];
+        TxtLinha ln;
+        float ty=b.y+(lado ? 68 : 42);
+        snprintf(vb,sizeof vb,"%d",v);
+        ln=txt_linha(TXT_G18R,vb,243,242,239,220);
+        txt_desenhar_alpha(l,rx,ty,a);
+        txt_desenhar_alpha(ln,rx+rw-ln.w,ty,a);
+        gfx_cor((GfxRect){rx,ty+20,rw,3},.5f,1,1,1,a*.14f);
+        gfx_cor((GfxRect){rx,ty+20,rw*v*.01f,3},.5f,CC[lado][0],CC[lado][1],CC[lado][2],a);
+      }
+      { int d=r->diff<0 ? -r->diff : r->diff;
+        if (d<=3) snprintf(buf,sizeof buf,"%s",i18n("Crítica e público estão de acordo"));
+        else if (r->diff>0) snprintf(buf,sizeof buf,i18n("O público dá %d pontos a mais que a crítica"),d);
+        else snprintf(buf,sizeof buf,i18n("A crítica dá %d pontos a mais que o público"),d); }
+      txt_desenhar_alpha(txt_linha_corta(TXT_G18R,buf,243,242,239,180,b.w-44),b.x+22,b.y+96,a);
+    }
+    if (r->n>1) {
+      snprintf(buf,sizeof buf,i18n("Menor: %s %d  ·  Maior: %s %d"),
+               r->fonteMin==EX_METAUSER ? "Metacritic" : nf_nome(r->fonteMin),r->min,
+               r->fonteMax==EX_METAUSER ? "Metacritic" : nf_nome(r->fonteMax),r->max);
+      txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_APOIO,buf,243,242,239,140,b.w-44),b.x+22,b.y+122,a);
+    } }
 }
 static void desenhaNotasTiles(float x,float y,float a) {
-  int n=nNotasTiles(), nf=0; float ar,ag,ab;
+  int n=nNotasTiles(), nf=0, off=notaMedia()->n>0 ? 1 : 0; float ar,ag,ab;
   ajustes_acento(&ar,&ag,&ab);
   while (notaFonte(nf)>=0) nf++;
   for (int i=0;i<n;i++) {
-    int fonte=notaFonte(i), own=i==nf, friend=i>nf;
-    GfxRect b={x+i*196,y,friend ? 436 : 180,150};
+    // Summary width 436 + gap 16; individual tiles keep their 196px step.
+    float xi=x+(float)i*196.0f+(off&&i ? 256.0f : 0.0f);
+    int i2=i-off;
+    if (off && i==0) { desenhaMediaTile(xi,y,a); continue; }
+    int fonte=notaFonte(i2), own=i2==nf, friend=i2>nf;
+    GfxRect b={xi,y,friend ? 436 : 180,150};
     float f=nivel>=1 && foco.fileira==SEC_NOTAS && foco.coluna==i ? 1 : 0;
     b=detalheEscala(b,animFoco[SEC_NOTAS][i],.03f);
     gfx_cor(b,20.0f/150,1,1,1,a*.06f);
@@ -3001,7 +3059,8 @@ void detail_evento(const SDL_Event *e) {
         pedFontes = 1;
       }
     } else if (foco.fileira == SEC_NOTAS) {
-      int c=foco.coluna, nf=0;
+      // The summary has no OK action; retain the personal/friends actions.
+      int c=foco.coluna-(notaMedia()->n>0 ? 1 : 0), nf=0;
       while (notaFonte(nf)>=0) nf++;
       if (c==nf) notaAbrir();
       else if (c>nf) pedAmigos=1;
@@ -3381,7 +3440,9 @@ static float larguraItem(int r, int c) {
     case SEC_ABAS_INFO:   return larguraAbaInfo(c);
     case SEC_TRAILERS:     return NV_DETF_TR_W;
     case SEC_RELACIONADOS: return REL_CARD_W;
-    case SEC_NOTAS: return c==nNotasTiles()-1 && notaFonte(c-1)<0 ? 436 : 180;
+    case SEC_NOTAS: { int c2=c-(notaMedia()->n>0 ? 1 : 0);
+      if (c2<0) return 436;
+      return c==nNotasTiles()-1 && notaFonte(c2-1)<0 ? 436 : 180; }
     case SEC_COMENTARIOS:
       return (c < nPilulasCom()) ? larguraPilulaCom(rotuloPilulaCom(c)) : COM_CARD_W;
     // A tabela e um bloco so, da largura da divisoria. Cair no `default` daria
@@ -3410,7 +3471,7 @@ static float xItem(int r, int c) {
   for (int k = 0; k < c; k++) {
     if (r == SEC_EPISODIOS) { x += epCardPasso(); continue; }
     if (r == SEC_ELENCO)    { x += NV_DETP_EL_PASSO; continue; }
-    if (r == SEC_NOTAS) { x+=196; continue; }
+    if (r == SEC_NOTAS) { x+=(notaMedia()->n>0 && k==0 ? 452 : 196); continue; }
     if (r == SEC_COLECAO) { x+=ehSerie() ? 286 : 464; continue; }
     if (r == SEC_TRAILERS)  { x += NV_DETF_TR_PASSO;  continue; }
     if (r == SEC_RELACIONADOS) { x += REL_CARD_W + REL_CARD_GAP; continue; }
