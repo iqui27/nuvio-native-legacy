@@ -125,3 +125,9 @@ void dados_descarregar_e_sair(void);
 // diretorio que passou por sonda real de escrita. Os resultados de flush do
 // IDBFS sao telemetria separada (dados_sync_sucessos/falhas).
 int dados_persistente(void);
+
+// Restore-only durability barriers, called on the main runtime thread while
+// the restore modal owns input. On IDBFS these yield until pending writes and
+// the explicit flush finish, with a bounded deadline; native targets return 1.
+int dados_backup_aguardar(void);
+int dados_backup_sincronizar(void);

@@ -66,6 +66,9 @@ int   st_teclado_modo(void);
 int   st_teclado_do_app(void);
 // Abre o teclado do sistema com `inicial` no campo (max em bytes). 1 = abriu.
 int   st_ime_abrir(int dono, const char *inicial, int max);
+// Optional localized instructions for Android's visible editor. Other owners
+// use the plain entry point and cannot inherit an earlier prompt.
+int   st_ime_abrir_com_contexto(int dono,const char *inicial,int max,const char *titulo,const char *dica);
 // Tipo do PROXIMO st_ime_abrir (consumido nele): o Android abre o teclado de
 // e-mail ou o de senha (sem sugestao, sem aprender o que foi digitado).
 enum { ST_IME_TEXTO = 0, ST_IME_EMAIL = 1, ST_IME_SENHA = 2 };

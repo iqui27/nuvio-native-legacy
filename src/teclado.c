@@ -625,7 +625,10 @@ static void fechar(int r) {
   st_fechar(ST_TECLADO);
 }
 
-static void abrirImeAgora(void) { pendIme = 0; st_ime_tipo(tipoIme); st_ime_abrir(ST_TECLADO, texto, maxN); }
+static void abrirImeAgora(void) {
+  pendIme=0;st_ime_tipo(tipoIme);
+  st_ime_abrir_com_contexto(ST_TECLADO,texto,maxN,i18n(tituloAtual),i18n(dicaAtual));
+}
 static void okBarra(void) {
   if (coluna == TE_B_CEL) {
     // O QR abre AQUI DENTRO, embaixo do segmentado (celb_desenhar_em). OK com

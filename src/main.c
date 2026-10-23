@@ -70,6 +70,8 @@
 #include "detail.h"
 #include "dados.h"
 #include "androidcache.h"
+#include "backupdisco.h"
+#include "backupfonts.h"
 #include "negcache.h"
 #include "p2pmotor.h"
 #include <pthread.h>
@@ -1122,6 +1124,18 @@ int main(int argc, char **argv) {
   // ja esta resolvido desde o topo do main.
   NV_ETAPA("dados_iniciar");
   dados_iniciar(dirArte);
+  // Recover the previous local restore BEFORE any preferences/migration can
+  // write over its journal. Nuvio/Google login sessions and caches are not targets.
+  { int recuperou=backupdisco_recuperar_arranque(dados_dir()[0]?dados_dir():dirArte);
+    if(recuperou<0) {
+      fprintf(stderr,"[backup] local settings recovery incomplete; journal retained\n");
+      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,i18n("Falha ao recuperar os ajustes"),
+        i18n("Não foi possível recuperar os ajustes locais. Feche e abra o aplicativo para tentar novamente."),NULL);
+      SDL_Quit();return 1;
+    }
+    if(recuperou>0)printf("[backup] local settings recovery complete%s\n",recuperou==BACKUP_RESTORE_LIMPEZA?"; journal cleanup pending":"");
+  }
+  backupfonts_limpar_pendentes(dados_dir()[0]?dados_dir():dirArte);
 #ifdef NV_ANDROID
   nv_android_cache_migrate(dados_dir());
   nv_android_cache_trim(NV_ANDROID_CACHE_BYTES);

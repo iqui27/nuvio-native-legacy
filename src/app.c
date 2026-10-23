@@ -19,6 +19,9 @@
 #include "ponteiro.h"
 #include "app.h"
 #include "teclavoltar.h"
+#include "backupapp.h"
+#include "backupdisco.h"
+#include "drivebackup.h"
 #include "deeplink.h"
 #include "telefoneui.h"
 #include "descanso.h"
@@ -858,6 +861,7 @@ static Tela tela = TELA_HOME;
 static int uiPreview;
 #endif
 static int sair = 0;
+static int backupRecuperacaoPendente;
 
 // Nome curto da tela em cena, para o log de campo ("[gpu-modos] lento: ...
 // tela=episodios"). O que fica POR CIMA vence: painel de Fontes, Episodios e
@@ -3557,6 +3561,7 @@ static void salvoParaConta(const CatItem *ci, int salvo) {
 // Finish under the outgoing identity. Selection advances the session epoch
 // immediately afterwards; old jobs may finish but cannot update the new UI.
 static void perfilEncerrarSessao(void) {
+  drivebackup_fechar();
   // End input capture before resetting the Home it belongs to. Hit targets
   // from the outgoing frame cannot activate under the destination profile.
   ponteiro_abrir_sessao();
@@ -3634,6 +3639,40 @@ static void perfilAbrirSessao(int antes) {
   ilhasinais_perfil_trocado();
   enquete_perfil_trocado();
   perfilSessaoAplicada = sessao;
+}
+
+// Restore through the same cancellation/reopen path as a fresh profile visit.
+// Validate before changing UI, then capture a new epoch after quiescing. The
+// transaction reloads actual native owners, never account credentials/blobs.
+static int restaurarBackupConfirmado(void) {
+  BackupContexto antes,agora;BackupLocal *backup=NULL;
+  if(!drivebackup_restauro(&antes,&backup))return 0;
+  if(!backupapp_validar(&antes,backup)){backuplocal_liberar(backup);return 1;}
+  ajustes_perfil_guardar(antes.perfil);
+  ajustes_encerrar();
+  perfis_definir_ativo(antes.perfil);
+  int r=BACKUP_RESTORE_CONTEXTO;
+  if(backupapp_contexto(&agora) && agora.perfil==antes.perfil && !strcmp(agora.usuario,antes.usuario))
+    r=backupapp_restaurar(&agora,backup);
+  backuplocal_liberar(backup);
+  if(r==BACKUP_RESTORE_RECUPERAR) {
+    // Retain the durable journal and stop all selected-store writers. Normal
+    // shutdown must not save stale memory over the recovery files.
+    backupRecuperacaoPendente=1;sair=1;
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,i18n("Backup no Google Drive"),
+      i18n("A restauração precisa ser recuperada. Reabra o aplicativo para concluir."),NULL);
+    return 1;
+  }
+  perfilAbrirSessao(0);
+  // Reopening clears the live addon list. Restore its account/profile cache
+  // and resume sync before Home/discovery can treat that empty list as final.
+  sync_iniciar();
+  trocarTela(TELA_HOME);menu_definir_destino(MENU_INICIO);
+  if(r==BACKUP_RESTORE_OK || r==BACKUP_RESTORE_LIMPEZA)
+    ilhaacao_feita(&(IlhaAcao){.icone="check",.frase=i18n("Configurações restauradas."),.titulo="",.onde=i18n("Backup no Google Drive")});
+  else SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,i18n("Backup no Google Drive"),
+    i18n("Não foi possível restaurar as configurações. As configurações anteriores foram mantidas."),NULL);
+  return 1;
 }
 
 int app_iniciar(const char *dirArte) {
@@ -4165,6 +4204,7 @@ void app_evento(const SDL_Event *e) {
       if (retido) return;
     }
   }
+  if(backupRecuperacaoPendente)return;
   // Measurement anchors: only with perf enabled and an authenticated profile.
   // D-pad scrolling still follows the real screen handlers.
   if (perftv_enabled && e->type == SDL_KEYDOWN && !e->key.repeat &&
@@ -4776,6 +4816,7 @@ static void recuperarErroFonte(void) {
 }
 
 void app_atualizar(float dt, Uint32 agora) {
+  if(backupRecuperacaoPendente)return;
   relogioFocoValidar();
   ajustes_fontes_atualizar();
   { static int morno = -1; int ligado = ajustes_retomada_morna();
@@ -5433,6 +5474,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // e o cartao de novo, com o foco no guia.
   // Ajustes › Sobre e ajuda › Novidades 2.0: o guia por cima de Ajustes, do
   // comeco; ao fechar, Ajustes continua onde estava.
+  if (tela == TELA_AJUSTES && restaurarBackupConfirmado())return;
   if (tela == TELA_AJUSTES && ajustes_pediu_novidades20()) novidades20_abrir(0);
   if (tela == TELA_AJUSTES && ajustes_pediu_dicascontrole()) dicascontrole_abrir();
   if (tela == TELA_AJUSTES && ajustes_pediu_novidades()) {
@@ -7451,6 +7493,8 @@ int app_central_pode(void) {
 }
 
 void app_encerrar(void) {
+  if(backupRecuperacaoPendente)return;
+  drivebackup_fechar();
   avisos_encerrar();   // saida limpa: apaga a marca de sessao viva
   preparoInvalidar();
   proximopreparo_encerrar();

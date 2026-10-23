@@ -53,3 +53,12 @@ The P2P feature is off by default. When on and no server address is set, the
 device downloads the torrent you choose and shares pieces with other people
 while it plays; everything is deleted when the player closes. Downloading or
 sharing content without permission may be illegal in your country.
+
+ENCRYPTED LOCAL BACKUP
+
+Mbed TLS 3.6.7, Copyright The Mbed TLS Contributors.
+https://github.com/Mbed-TLS/mbedtls/releases/tag/mbedtls-3.6.7
+AES-256-GCM and PBKDF2-HMAC-SHA256 primitives are bundled for encrypted local
+backups. Used under the Apache License 2.0 option of its dual licence.
+Full text: mbedtls-LICENSE.txt. No modifications to the upstream C sources;
+only the required modules are enabled by tools/backup-mbedtls-config.h.

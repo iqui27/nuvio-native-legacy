@@ -86,4 +86,5 @@ int  sorg_nome_limpo(const char *in, char *out, int tam);
 // junto de salvos_esquecer: as categorias sao tao pessoais quanto a lista.
 void sorg_esquecer(void);
 
+void sorg_backup_recarregar(void);
 #endif

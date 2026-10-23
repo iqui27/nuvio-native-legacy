@@ -202,6 +202,14 @@ static void efetiva(int q) {
   pthread_mutex_unlock(&contaMutex);
 }
 
+void debrid_backup_local(DebridConta *saida) {
+  if(!saida)return;
+  memset(saida,0,sizeof *saida);pthread_mutex_lock(&chaveTrava);
+  for(int i=0;i<SN;i++)if(chaveLocal[i][0] && strcmp(chaveLocal[i],chaveConta[i]))
+    memcpy(saida->chave[i],chaveLocal[i],sizeof saida->chave[i]);
+  pthread_mutex_unlock(&chaveTrava);
+}
+
 void debrid_conta_iniciar(DebridConta *c) { if (c) memset(c, 0, sizeof *c); }
 void debrid_conta_definir(DebridConta *c, const char *servico, const char *k) {
   int q = servico ? idServico(servico) : -1;

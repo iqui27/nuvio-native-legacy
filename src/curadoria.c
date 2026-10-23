@@ -246,4 +246,9 @@ int curadoria_definir_url(const char *u) {
   else dados_apagar("curadoria.txt");
   return 1;
 }
+void curadoria_backup_recarregar(void) {
+  pthread_mutex_lock(&trava);geracaoUrl++;lidaEm=0;
+  estadoImdb[!ativo][0]=0;estadoTexto[!ativo][0]=0;ativo=!ativo;revisao++;
+  carregar();urlLida=1;pthread_mutex_unlock(&trava);
+}
 #endif

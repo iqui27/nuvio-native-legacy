@@ -35,6 +35,8 @@ int debrid_servico_disponivel(int servico);
 // provedores ausentes. O worker preenche a copia; so a sessao que a pediu a
 // publica. Nunca transportar a chave em log, URL de diagnostico ou i18n.
 typedef struct { char chave[4][200]; } DebridConta;
+// Local overrides that differ from credentials already synchronized by Nuvio.
+void debrid_backup_local(DebridConta *saida);
 void debrid_conta_iniciar(DebridConta *conta);
 void debrid_conta_definir(DebridConta *conta, const char *servico, const char *chave);
 int  debrid_aplicar_chaves_conta(const DebridConta *conta, uint64_t sessao);

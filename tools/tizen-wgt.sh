@@ -94,6 +94,8 @@ cp "$ENTRADA"/index.html "$ENTRADA"/index.js "$ENTRADA"/index.wasm "$ENTRADA"/de
 CONFIG="${NUVIO_TIZEN_CONFIG:-tools/tizen-config.xml}"
 [ -s "$CONFIG" ] || { echo "tizen-wgt.sh: config ausente: $CONFIG" >&2; exit 2; }
 cp "$CONFIG" "$ESTAGIO"/config.xml
+# Statically linked backup primitives carry their upstream licence in WGT too.
+cp -R deploy/app/licencas "$ESTAGIO/licencas"
 # ICONE OFICIAL DO SAMSUNG, e nao o deploy/app/icon.png do LG.
 #
 # O do LG e 80x80, que e o tamanho que o webOS pede e que na grade de apps da

@@ -35,6 +35,8 @@ static volatile int urgente;
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include <emscripten/threading.h>
+#include "fio1.h"
 
 // PERSISTENCIA NO ALVO TIZEN: IDBFS, e nao o sistema de arquivos padrao.
 //
@@ -765,3 +767,40 @@ int dados_persistente(void) {
 }
 
 #include "espaco.inc"
+
+int dados_backup_aguardar(void) {
+#ifdef __EMSCRIPTEN__
+  if (!idbfsMontado || !emscripten_is_main_runtime_thread()) return 0;
+  double prazo = emscripten_get_now() + 20000;
+  while (nv_idbfs_em_voo()) {
+    if (emscripten_get_now() >= prazo) return 0;
+#ifdef NV_UM_FIO
+    fio1_rodar(2);
+#endif
+    emscripten_sleep(10);
+  }
+#endif
+  return 1;
+}
+int dados_backup_sincronizar(void) {
+#ifdef __EMSCRIPTEN__
+  if (!dados_backup_aguardar()) return 0;
+  double prazo = emscripten_get_now() + 20000;
+  while (pthread_mutex_trylock(&dadosTrava) != 0) {
+    if (emscripten_get_now() >= prazo) return 0;
+#ifdef NV_UM_FIO
+    fio1_rodar(2);
+#endif
+    emscripten_sleep(10);
+  }
+  __atomic_add_fetch(&fsOcupado, 1, __ATOMIC_SEQ_CST);
+  // Only the synchronous tree scan holds the FS mutex, matching the regular
+  // flush path. Never suspend Asyncify while holding that mutex.
+  nv_idbfs_gravar(3);
+  NV_FS_LIBERAR();
+  if (!dados_backup_aguardar()) return 0;
+  return EM_ASM_INT({ return Module.nvSyncResultado > 0 ? 1 : 0; });
+#else
+  return 1;
+#endif
+}

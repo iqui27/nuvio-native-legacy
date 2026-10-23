@@ -7846,6 +7846,7 @@ void guia_abrir_sessao(void) {
   rolY = velY = rolL = velL = entrada = 0.0f;
   free(rolXv); rolXv = NULL; capRolX = 0;
   memset(animTopo, 0, sizeof animTopo);
+  mapaPerfil = -999; // Restore/reopen must reload manual EPG choices too.
   nLtvF = nVis = nZapL = 0; filtro = G_FILTRO_TODAS; filtroChave[0] = 0;
   focoFontes = fontesCol = fopAberto = gpAberto = limparConfirm = 0; perfilPrefs = -999;
   opcoesAberto = opcoesFoco = 0;

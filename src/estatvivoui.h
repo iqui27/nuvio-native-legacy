@@ -69,4 +69,5 @@ typedef struct {
 void estatvivo_teste_geometria(EvGeometriaTeste *g);
 #endif
 
+void estatvivo_backup_recarregar(void);
 #endif

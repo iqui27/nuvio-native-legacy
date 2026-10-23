@@ -75,4 +75,5 @@ int spainel_foco_indice(void);
 // do titulo `imdb` (a lista rola ate ele). Sem evento desse titulo, so a aba.
 void spainel_abrir_titulo(const char *imdb);
 
+void spainel_backup_recarregar(void);
 #endif

@@ -39,6 +39,84 @@ int android_interface_mobile_auto(void) {
   return modo && !strcmp(modo, "1");
 }
 
+int android_drive_autorizar(long long pedido,int escolher,const char *rejeitado) {
+  JNIEnv *env=(JNIEnv *)SDL_AndroidGetJNIEnv();
+  if(!env || pedido<=0)return 0;
+  jobject act=(jobject)SDL_AndroidGetActivity();if(!act)return 0;
+  jclass cls=(*env)->GetObjectClass(env,act);
+  jmethodID m=cls?(*env)->GetMethodID(env,cls,"driveAutorizar","(JZLjava/lang/String;)Z"):NULL;
+  jstring token=(*env)->NewStringUTF(env,rejeitado?rejeitado:"");int ok=0;
+  if(m && token && !(*env)->ExceptionCheck(env))
+    ok=(*env)->CallBooleanMethod(env,act,m,(jlong)pedido,escolher?JNI_TRUE:JNI_FALSE,token)==JNI_TRUE;
+  if((*env)->ExceptionCheck(env)){(*env)->ExceptionClear(env);ok=0;}
+  if(token)(*env)->DeleteLocalRef(env,token);
+  if(cls)(*env)->DeleteLocalRef(env,cls);
+  (*env)->DeleteLocalRef(env,act);return ok;
+}
+
+void android_drive_cancelar(void) {
+  JNIEnv *env=(JNIEnv *)SDL_AndroidGetJNIEnv();if(!env)return;
+  jobject act=(jobject)SDL_AndroidGetActivity();if(!act)return;
+  jclass cls=(*env)->GetObjectClass(env,act);
+  jmethodID m=cls?(*env)->GetMethodID(env,cls,"driveAutorizacaoCancelar","()V"):NULL;
+  if(m)(*env)->CallVoidMethod(env,act,m);
+  if((*env)->ExceptionCheck(env))(*env)->ExceptionClear(env);
+  if(cls)(*env)->DeleteLocalRef(env,cls);
+  (*env)->DeleteLocalRef(env,act);
+}
+
+static char *driveTexto(const char *nome) {
+  JNIEnv *env=(JNIEnv *)SDL_AndroidGetJNIEnv();if(!env)return NULL;
+  jobject act=(jobject)SDL_AndroidGetActivity();if(!act)return NULL;
+  jclass cls=(*env)->GetObjectClass(env,act);
+  jmethodID m=cls?(*env)->GetMethodID(env,cls,nome,"()Ljava/lang/String;"):NULL;
+  jstring js=m?(jstring)(*env)->CallObjectMethod(env,act,m):NULL;char *out=NULL;
+  if(js && !(*env)->ExceptionCheck(env)) {
+    const char *s=(*env)->GetStringUTFChars(env,js,NULL);
+    if(s){size_t n=strlen(s);if(n<=16384){out=malloc(n+1);if(out)memcpy(out,s,n+1);}
+      (*env)->ReleaseStringUTFChars(env,js,s);}
+  }
+  if((*env)->ExceptionCheck(env)){(*env)->ExceptionClear(env);free(out);out=NULL;}
+  if(js)(*env)->DeleteLocalRef(env,js);
+  if(cls)(*env)->DeleteLocalRef(env,cls);
+  (*env)->DeleteLocalRef(env,act);return out;
+}
+char *android_drive_evento(void){return driveTexto("driveAutorizacaoEvento");}
+char *android_drive_configuracao_tv(void){return driveTexto("driveConfiguracaoTv");}
+
+char *android_drive_vinculo_ler(const char *dono,int perfil) {
+  JNIEnv *env=(JNIEnv *)SDL_AndroidGetJNIEnv();if(!env || !dono)return NULL;
+  jobject act=(jobject)SDL_AndroidGetActivity();if(!act)return NULL;
+  jclass cls=(*env)->GetObjectClass(env,act);
+  jmethodID m=cls?(*env)->GetMethodID(env,cls,"driveVinculoLer","(Ljava/lang/String;I)Ljava/lang/String;"):NULL;
+  jstring user=(*env)->NewStringUTF(env,dono),js=NULL;char *out=NULL;
+  if(m && user && !(*env)->ExceptionCheck(env))js=(jstring)(*env)->CallObjectMethod(env,act,m,user,(jint)perfil);
+  if(js && !(*env)->ExceptionCheck(env)) {
+    const char *s=(*env)->GetStringUTFChars(env,js,NULL);
+    if(s){size_t n=strlen(s);if(n<=4096){out=malloc(n+1);if(out)memcpy(out,s,n+1);}
+      (*env)->ReleaseStringUTFChars(env,js,s);}
+  }
+  if((*env)->ExceptionCheck(env)){(*env)->ExceptionClear(env);free(out);out=NULL;}
+  if(user)(*env)->DeleteLocalRef(env,user);
+  if(js)(*env)->DeleteLocalRef(env,js);
+  if(cls)(*env)->DeleteLocalRef(env,cls);
+  (*env)->DeleteLocalRef(env,act);return out;
+}
+int android_drive_vinculo_gravar(const char *dono,int perfil,const char *token) {
+  JNIEnv *env=(JNIEnv *)SDL_AndroidGetJNIEnv();if(!env || !dono || !token)return 0;
+  jobject act=(jobject)SDL_AndroidGetActivity();if(!act)return 0;
+  jclass cls=(*env)->GetObjectClass(env,act);
+  jmethodID m=cls?(*env)->GetMethodID(env,cls,"driveVinculoGravar","(Ljava/lang/String;ILjava/lang/String;)Z"):NULL;
+  jstring user=(*env)->NewStringUTF(env,dono),jt=NULL;int ok=0;
+  if(user && !(*env)->ExceptionCheck(env))jt=(*env)->NewStringUTF(env,token);
+  if(m && jt && !(*env)->ExceptionCheck(env))ok=(*env)->CallBooleanMethod(env,act,m,user,(jint)perfil,jt)==JNI_TRUE;
+  if((*env)->ExceptionCheck(env)){(*env)->ExceptionClear(env);ok=0;}
+  if(user)(*env)->DeleteLocalRef(env,user);
+  if(jt)(*env)->DeleteLocalRef(env,jt);
+  if(cls)(*env)->DeleteLocalRef(env,cls);
+  (*env)->DeleteLocalRef(env,act);return ok;
+}
+
 void android_baixar_registro(const char *arquivo, const char *sucesso, const char *falha) {
   JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
   jobject act;
@@ -348,8 +426,20 @@ static int chamaBool(const char *nome, const char *assin, const char *s, int i, 
   return ok;
 }
 
-int android_st_teclado(const char *inicial, int max) {
-  return chamaBool("abrirTeclado", "(Ljava/lang/String;I)Z", inicial ? inicial : "", max, 1);
+int android_st_teclado(const char *inicial,int max,const char *titulo,const char *dica) {
+  JNIEnv *env=(JNIEnv *)SDL_AndroidGetJNIEnv();if(!env)return 0;
+  jobject act=(jobject)SDL_AndroidGetActivity();if(!act)return 0;
+  jclass cls=(*env)->GetObjectClass(env,act);
+  jmethodID m=cls?(*env)->GetMethodID(env,cls,"abrirTeclado","(Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;)Z"):NULL;
+  jstring valor=(*env)->NewStringUTF(env,inicial?inicial:""),rotulo=(*env)->NewStringUTF(env,titulo?titulo:""),ajuda=(*env)->NewStringUTF(env,dica?dica:"");int ok=0;
+  if(m && valor && rotulo && ajuda && !(*env)->ExceptionCheck(env))
+    ok=(*env)->CallBooleanMethod(env,act,m,valor,(jint)max,rotulo,ajuda)==JNI_TRUE;
+  if((*env)->ExceptionCheck(env)){(*env)->ExceptionClear(env);ok=0;}
+  if(valor)(*env)->DeleteLocalRef(env,valor);
+  if(rotulo)(*env)->DeleteLocalRef(env,rotulo);
+  if(ajuda)(*env)->DeleteLocalRef(env,ajuda);
+  if(cls)(*env)->DeleteLocalRef(env,cls);
+  (*env)->DeleteLocalRef(env,act);return ok;
 }
 int android_st_ditar(const char *idioma) {
   return chamaBool("ditar", "(Ljava/lang/String;)Z", idioma ? idioma : "", 0, 0);

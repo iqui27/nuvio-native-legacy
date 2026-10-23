@@ -52,4 +52,5 @@ int  curadoria_definir_url(const char *url);
 // Um passo por quadro da home: inicia a leitura se há endereço, refaz a
 // cada NV_CURADORIA_MIN minutos. Sem endereço, nada acontece.
 void curadoria_passo(void);
+void curadoria_backup_recarregar(void);
 #endif

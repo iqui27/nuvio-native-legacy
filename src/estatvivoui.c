@@ -1200,3 +1200,5 @@ void estatvivo_teste(const EvEstado *e, const EvTelaTeste *t) {
   zerarAnim();
 }
 #endif
+
+void estatvivo_backup_recarregar(void){perfilTiles=-1;}

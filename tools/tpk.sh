@@ -94,6 +94,9 @@ if [ ! -f "$CACHE/prefix/lib/libSDL2.a" ] || [ ! -f "$CACHE/prefix/lib/libSDL2_t
   ctr_run --rm --platform "$TPK_PLATFORM" -v "$CACHE:/w" "$TPK_IMAGE" sh /w/deps.sh
 fi
 
+# AES/PBKDF2/GCM primitives are bundled statically; never rely on TV firmware.
+sh tools/backup-crypto-source.sh "$PWD/build/backup-crypto-source"
+
 # DTS/TrueHD -> Dolby Digital 5.1 (docs/features/dts/README.md): FFmpeg 7.1.5
 # estatico, LGPL, com os componentes do tools/build-dts-ffmpeg.sh (alvo tpk). Entra SO na
 # libnuvio.so dos hosts 6+; o NuvioTpk40 continua sem (la a .so nao pode ter TLS e o alvo da
@@ -164,7 +167,7 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
   # nova ao env.sh, acrescente-a aqui TAMBEM.
   for k in NV_SUPABASE_URL NV_SUPABASE_ANON_KEY NV_TV_LOGIN_BASE NV_TRAKT_CLIENT_ID \
            NV_TRAKT_CLIENT_SECRET NV_SIMKL_CLIENT_ID NV_SIMKL_APP NV_TMDB_API_KEY NV_SEEKR_API_KEY \
-           NV_REC_URL NV_DISCORD_CLIENT_ID NV_VERSAO; do
+           NV_REC_URL NV_DISCORD_CLIENT_ID NV_GOOGLE_TV_CLIENT_ID NV_GOOGLE_TV_CLIENT_SECRET NV_VERSAO; do
     eval "v=\${$k:-}"
     # No arquivo de resposta o gcc tira aspas e barras como o shell: a aspa
     # da string C tem de ir escapada (-DX=\"valor\").
@@ -176,7 +179,9 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
   # o -D tem de ir na linha de comando, SO para esse arquivo.
   P2P_CFLAGS=""
   [ "${NUVIO_P2P_MOTOR:-}" = "1" ] && P2P_CFLAGS="-DNV_P2P_MOTOR -DNV_P2P_MOTOR_DLOPEN -I/p2p/include"
-  FLAGS="$CFLAGS -DNV_TPK $ASS_CFLAGS -include src/tpk.h -fvisibility=hidden -Wno-unused-result $NUVIO_EXTRA_CFLAGS"
+  BACKUP=/work/build/backup-crypto-tpk
+  CC=gcc AR=ar CFLAGS="$CFLAGS -fPIC" sh tools/build-backup-crypto.sh /work/build/backup-crypto-source/mbedtls-3.6.7 "$BACKUP"
+  FLAGS="$CFLAGS -DNV_BACKUP_MBEDTLS -I$BACKUP/include -DNV_TPK $ASS_CFLAGS -include src/tpk.h -fvisibility=hidden -Wno-unused-result $NUVIO_EXTRA_CFLAGS"
   # DTS/TrueHD -> AC3: o FFmpeg montado em /dts (bloco [deps] acima; ausente com
   # NV_TPK_SEM_DTS=1). -DNV_DTS_FFMPEG vale SO para a .so dos hosts 6+; o 1b/3 recompila
   # sem ele todo .c que o cita. Por isso NV_DTS_FFMPEG so pode aparecer em .c, nunca em .h.
@@ -204,7 +209,7 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
   gcc -shared -o /work/build/tpk/libnuvio.so $OBJECTS -Wl,--no-undefined \
     -Wl,-soname,libnuvio.so -Wl,--exclude-libs,ALL \
     -L/deps/lib -lSDL2_ttf -lSDL2_image -lwebpdemux -lwebp -lsharpyuv -lSDL2 $ASS_LIBS $DTS_LIBS /usr/lib/arm-linux-gnueabi/libz.a \
-    -lGLESv2 -ldl -lpthread -lm -lrt
+    "$BACKUP/lib/libnuvio-backup-crypto.a" -lGLESv2 -ldl -lpthread -lm -lrt
   echo "  $(ls -la /work/build/tpk/libnuvio.so | awk "{print \$5}") bytes"
   if [ -n "$DTS_LIBS" ]; then echo "  DTS/TrueHD -> AC3: FFmpeg ligado (avcodec $(sed -n "s/^#define LIBAVCODEC_VERSION_MAJOR *//p" /dts/include/libavcodec/version_major.h))"
   else echo "  DTS/TrueHD -> AC3: SEM FFmpeg (NV_TPK_SEM_DTS=1): DTS/TrueHD seguem mudos"; fi
@@ -235,7 +240,7 @@ ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
   gcc -shared -o /work/build/tpk/libnuvio-tpk40.so $OBJ40 -Wl,--no-undefined \
     -Wl,-soname,libnuvio.so -Wl,--exclude-libs,ALL -Wl,--hash-style=both \
     -L/deps/lib -lSDL2_ttf -lSDL2_image -lwebpdemux -lwebp -lsharpyuv -lSDL2 $ASS_LIBS /usr/lib/arm-linux-gnueabi/libz.a \
-    -lGLESv2 -ldl -lpthread -lm -lrt
+    "$BACKUP/lib/libnuvio-backup-crypto.a" -lGLESv2 -ldl -lpthread -lm -lrt
   echo "  $(ls -la /work/build/tpk/libnuvio-tpk40.so | awk "{print \$5}") bytes"
   # CONFERENCIA que o carregador de ELF do host exige (ele recusa o contrario):
   L40=/work/build/tpk/libnuvio-tpk40.so

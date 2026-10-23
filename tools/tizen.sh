@@ -377,11 +377,20 @@ if [ -f "$WEBP_ROOT_REAL/lib/libwebp.a" ] && [ -f "$WEBP_ROOT_REAL/include/webp/
 else
   echo "tizen.sh: AVISO libwebp WASM ausente em $WEBP_ROOT_REAL: WebP animado desligado (rode tools/build-webp-wasm.sh)" >&2
 fi
+# The shared encrypted envelope also works in WGT; compile the same primitives
+# for WASM rather than depending on browser-specific WebCrypto availability.
+BACKUP_ROOT="$PWD/build/backup-crypto-wasm"
+[ "$UM_FIO" = 0 ] || BACKUP_ROOT="$PWD/build/backup-crypto-wasm-single"
+sh tools/backup-crypto-source.sh "$PWD/build/backup-crypto-source"
+BACKUP_THREAD=""
+[ "$UM_FIO" = 1 ] || BACKUP_THREAD=-pthread
+CC=emcc AR=emar CFLAGS="-O2 $BACKUP_THREAD" sh tools/build-backup-crypto.sh "$PWD/build/backup-crypto-source/mbedtls-3.6.7" "$BACKUP_ROOT"
+BACKUP_D=(-DNV_BACKUP_MBEDTLS "-I$BACKUP_ROOT/include" "$BACKUP_ROOT/lib/libnuvio-backup-crypto.a")
 # FONTES NO PACOTE: dentro do index.data em todo alvo menos a VIDAA (ver o bloco
 # logo depois do emcc).
 FONTES_PRELOAD="--preload-file deploy/app/fonts@/app/fonts"
 [ "$PLAT_VIDAA" = "1" ] && FONTES_PRELOAD=""
-eval emcc $SOURCES ${EXTRA_SOURCES} -o "$SAIDA/index.html" $OPT_LEVEL "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} $ASS_CFLAGS $ASS_LIBS $WEBP_CFLAGS $WEBP_LIBS \
+eval emcc $SOURCES ${EXTRA_SOURCES} ${BACKUP_D[@]+'"${BACKUP_D[@]}"'} -o "$SAIDA/index.html" $OPT_LEVEL "$ENV_D" ${NUVIO_EXTRA_CFLAGS:-} $ASS_CFLAGS $ASS_LIBS $WEBP_CFLAGS $WEBP_LIBS \
   -sWASM_BIGINT=0 \
   $WASM_FLAGS \
   -sUSE_SDL=2 -sUSE_SDL_IMAGE=2 -sUSE_SDL_TTF=2 -sUSE_LIBJPEG=1 \

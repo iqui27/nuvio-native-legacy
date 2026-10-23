@@ -858,3 +858,5 @@ void central_teste_foco(int f, int editar) {
 // Captura do seletor de cores, com o foco no disco `foco`.
 void central_teste_cor(int f) { central_abrir(); editando = 0; escolhendoCor = 1; focoCor = f; }
 #endif
+
+void central_backup_recarregar(void){perfilLido=-1;}

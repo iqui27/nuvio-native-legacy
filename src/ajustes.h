@@ -823,6 +823,27 @@ void ajustes_padroes_infantis(int perfil);
 int ajustes_mesclar_blob(const char *base, char **saida);
 // Main-thread local edit detector; avoids building the account JSON snapshot.
 unsigned long long ajustes_sync_hash(void);
+// Scalar local-settings backup foundation. Scope 0 is this device's settings;
+// scope 1 is profile-local settings. Input is the native key/value file, not
+// a Nuvio account blob. Export excludes account-synced values; merge logs and
+// skips incompatible settings, preserving their current values. Structural
+// errors (headers, size limits, duplicate keys) still reject the backup.
+// Both functions are pure: no disk writes, runtime changes or network access.
+// Call after Settings has initialized dynamic choices. Caller frees *saida.
+enum { AJ_BACKUP_APARELHO = 0, AJ_BACKUP_PERFIL = 1, AJ_BACKUP_HARDWARE = 2 };
+int ajustes_backup_exportar(int perfil, const char *origem, char **saida);
+int ajustes_backup_mesclar(int perfil, const char *atual, const char *backup, char **saida);
+// Explicit hardware opt-in: mirror only hardware keys also owned by this profile.
+int ajustes_backup_hardware_perfil(const char *atual, const char *backup, char **saida);
+// Normalize legacy scalar sections before preview; hardware still needs opt-in.
+// Arrays use AJ_BACKUP_* indices. Caller frees all three output strings.
+int ajustes_backup_selecionar(const char *const entrada[3], int hardware, char *saida[3]);
+// Main thread: captures current values, including defaults not yet written.
+// Hardware/input choices have a separate opt-in restore scope. Account
+// sharing policy and telemetry consent remain owned by the destination.
+int ajustes_backup_capturar(int perfil, char **saida);
+// After a validated restore: same native loader/effects, no startup migrations.
+void ajustes_backup_recarregar(const char *dir);
 // #187: uma linha "[tmdb] idioma dos metadados: ..." com o que a TV pede ao
 // TMDB, de onde vem (ajuste desta TV) e o tmdb_language cru da conta.
 void ajustes_tmdb_idioma_relatar(const char *blob);

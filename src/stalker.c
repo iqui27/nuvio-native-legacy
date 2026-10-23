@@ -11,6 +11,12 @@
 #include <pthread.h>
 #include <time.h>
 
+#if defined(__has_include)
+#if __has_include("iptvfontes.h")
+#define ST_BACKUP_MULTIFONTES 1
+#endif
+#endif
+
 #define ST_ARQ_FMT     "stalker-p%d.txt"
 #define ST_MAX_CANAL   1200
 #define ST_PRAZO_S     15
@@ -725,4 +731,8 @@ void stalker_fontes_invalidar(void) {
     pthread_mutex_lock(&c->travaTabela_);memset(c->tabela_,0,sizeof c->tabela_);c->nTabela_=0;pthread_mutex_unlock(&c->travaTabela_);
     pthread_mutex_unlock(&c->travaSessao_); }
   pthread_mutex_unlock(&fontesTrava);
+}
+
+void stalker_backup_recarregar(void) {
+  stalker_fontes_invalidar();
 }

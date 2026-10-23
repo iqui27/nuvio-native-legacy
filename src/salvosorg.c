@@ -283,3 +283,5 @@ void sorg_esquecer(void) {
   perfilLido = -1;
   revisao++;
 }
+
+void sorg_backup_recarregar(void){perfilLido=-1;sorg_carregar();}

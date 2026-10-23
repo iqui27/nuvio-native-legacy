@@ -159,4 +159,6 @@ int xtream_formatos_canal(const char *id, const char *ext[2]);
 int xtream_conta_canal(const char *id, XtreamConta *out);
 void xtream_formato_canal_funcionou(const char *id, const char *url);
 void xtream_fontes_invalidar(void);
+// Reload committed connection settings without deleting credentials.
+void xtream_backup_recarregar(void);
 #endif

@@ -14,6 +14,12 @@ int ajustes_livetv_formato(void);  // ajustes.h puxa SDL; o teste do xtream nao
 #include <time.h>
 #include <limits.h>
 
+#if defined(__has_include)
+#if __has_include("iptvfontes.h")
+#define XT_BACKUP_MULTIFONTES 1
+#endif
+#endif
+
 #define XT_ARQ_FMT   "xtream-p%d.txt"
 #define XT_PRAZO_S   20
 #define XT_PRAZO_LISTA_S 60
@@ -968,4 +974,8 @@ void xtream_fontes_invalidar(void) {
     c->conexoesModo_=c->autoLimitada_=0;
     pthread_mutex_unlock(&c->trava_); }
   pthread_mutex_unlock(&fontesTrava);
+}
+
+void xtream_backup_recarregar(void) {
+  xtream_fontes_invalidar();
 }

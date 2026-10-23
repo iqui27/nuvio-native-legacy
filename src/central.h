@@ -69,4 +69,5 @@ void central_teste_cor(int foco);           // o seletor da cor de destaque aber
 void central_teste_estatisticas(int sim);   // o botao das estatisticas, sem player
 #endif
 
+void central_backup_recarregar(void);
 #endif

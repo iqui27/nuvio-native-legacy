@@ -98,7 +98,10 @@ static void descartar(void) { char ev[ST_EVENTO_MAX]; int k = 0; while (k++ < 64
 static int proximoTipo;
 void st_ime_tipo(int tipo) { proximoTipo = tipo; }
 
-int st_ime_abrir(int d, const char *inicial, int max) {
+int st_ime_abrir(int d,const char *inicial,int max) {
+  return st_ime_abrir_com_contexto(d,inicial,max,"","");
+}
+int st_ime_abrir_com_contexto(int d,const char *inicial,int max,const char *titulo,const char *dica) {
   int ok = 0, tipo = proximoTipo;
   proximoTipo = ST_IME_TEXTO;
   if (!st_ime_disponivel()) return 0;
@@ -108,10 +111,10 @@ int st_ime_abrir(int d, const char *inicial, int max) {
   if (!quedaTeclado) aviso = "";      // caiu da voz: o aviso de por que fica
   quedaTeclado = 0;
 #ifdef NV_ANDROID
-  // O tipo vai nos bits altos do max: a assinatura JNI fica a mesma.
-  ok = android_st_teclado(inicial ? inicial : "", (max & 0xFFFF) | (tipo << 16));
+  // O tipo acompanha o limite; o contexto traduzido rotula o editor mobile.
+  ok = android_st_teclado(inicial ? inicial : "", (max & 0xFFFF) | (tipo << 16),titulo,dica);
 #else
-  (void)max; (void)tipo;
+  (void)max; (void)tipo; (void)titulo; (void)dica;
   if (pelaPlataforma()) { texto_sistema_abrir(inicial ? inicial : "", 0); ok = texto_sistema_aberto(); }
   else ok = 1;
 #endif

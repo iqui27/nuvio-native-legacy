@@ -109,6 +109,13 @@ int main(void) {
   assert(strstr(urls[2], "http://solo.tv/stalker_portal/server/load.php?") == urls[2]);
   assert(strstr(urls[3], "http://solo.tv/server/load.php?") == urls[3]);   // 2a tentativa (renovacao)
   puts("ok  fallback para a raiz; host so inalterado");
+  // Restore replaces credentials without changing the current profile.
+  snprintf(disco, sizeof disco, "portal\thttp://restored.invalid\nmac\t00:1a:79:00:00:02\n");
+  stalker_backup_recarregar();
+  assert(stalker_configurado() && !strcmp(stalker_portal_curto(), "restored.invalid"));
+  stalker_backup_recarregar();
+  assert(temDisco && !strcmp(stalker_portal_curto(), "restored.invalid"));
+  puts("ok  backup reload uses restored portal without deleting the saved account");
   puts("stalker_portal: tudo ok");
   return 0;
 }

@@ -249,6 +249,9 @@ static int ajCenaSecao(int op) {
     case AJ_LIVETV_SUGERIR:
       return AJC_TV_PROVEDOR;
     case AJ_PERFIL_ATIVO: case AJ_SYNC:
+#ifdef NV_DRIVE_UI
+    case AJ_DRIVE_BACKUP:
+#endif
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
       return AJC_CON_PERFIS;
     case AJ_ADDONS: case AJ_PLUGINS: case AJ_ADDONS_PRINCIPAL: return AJC_FON_ADDONS;

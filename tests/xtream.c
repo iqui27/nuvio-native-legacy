@@ -373,6 +373,15 @@ int main(void) {
   xtream_definir_servidor("srv.tv:8000/xyz");
   assert(strstr(disco, "servidor\thttp://srv.tv:8000\n"));
   puts("ok  servidor com caminho colado normaliza para a raiz");
+  // Restore replaces the file while this profile's configuration is cached.
+  snprintf(disco, sizeof disco, "servidor\thttps://restored.invalid\nusuario\trestored-user\nsenha\trestored-password\n");
+  xtream_backup_recarregar();
+  assert(xtream_configurado() && !strcmp(xtream_usuario(), "restored-user"));
+  assert(xtream_url("xtream:9", url, sizeof url) &&
+         !strcmp(url, "https://restored.invalid/live/restored-user/restored-password/9.m3u8"));
+  xtream_backup_recarregar();
+  assert(temDisco && !strcmp(xtream_servidor_curto(), "restored.invalid"));
+  puts("ok  backup reload uses restored credentials without deleting the saved account");
   puts("xtream: tudo ok");
   return 0;
 }

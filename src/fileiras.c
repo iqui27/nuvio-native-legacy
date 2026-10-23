@@ -1139,6 +1139,16 @@ int fil_lista_e_deste_perfil(int perfilDaLista) {
   return r;
 }
 
+void fil_backup_recarregar(void) {
+  pthread_mutex_lock(&trava);
+  // Disk is already committed. Discard a stale deferred registry write rather
+  // than flushing it over the settings we have just restored.
+  registroSujo=0;perfilGeracao++;passadaGeracao++;esquecerAddonsConta();
+  nLinhas=0;ordemLocal=0;limite=FIL_LIMITE_PADRAO;limiteOrigem=0;
+  memset(linhas,0,sizeof linhas);carregado=0;migrado197=0;revisao++;
+  pthread_mutex_unlock(&trava);
+}
+
 void fil_definir_perfil(int p) {
   pthread_mutex_lock(&trava);
   if (p < 0) p = 0;

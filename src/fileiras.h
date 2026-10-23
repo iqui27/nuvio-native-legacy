@@ -261,6 +261,7 @@ void fil_normalizar(void);
 // A escolha e POR PERFIL (fileirasui-p<N>.txt; 0 = o arquivo antigo, que serve
 // de semente ao primeiro arquivo do perfil 1, e so dele). Chamar na troca de
 // perfil.
+void fil_backup_recarregar(void);
 void fil_definir_perfil(int perfil);
 // Bumps on every real profile switch (#294): snapshots taken for the previous
 // profile are stale once this changes.

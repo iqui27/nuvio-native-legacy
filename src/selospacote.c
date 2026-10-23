@@ -951,3 +951,5 @@ const SeloFiltro *selospacote_filtro(unsigned short id) {
   if (id >= pac[ativo].nc) return NULL;
   return &pac[ativo].c[id].pub;
 }
+
+void selospacote_backup_recarregar(void){travar();perfilLido=-1;selospacote_iniciar_i();soltar();}

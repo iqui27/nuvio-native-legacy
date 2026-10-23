@@ -88,4 +88,5 @@ int  selospacote_remover(int i);
 int  selospacote_casar(const char *const *campos, int nc, unsigned short *ids, int max);
 // O filtro `id` do pacote ativo; NULL se o id nao vale mais.
 const SeloFiltro *selospacote_filtro(unsigned short id);
+void selospacote_backup_recarregar(void);
 #endif

@@ -9,8 +9,12 @@ const char *desc_tmdb_idioma(void) { return "en-US"; }
 int ajustes_teclado_android(void) { return 0; }
 #ifdef NV_ANDROID
 static int accepted, keyboards;
+static char prompt[256],help[256];
 int android_st_ditar(const char *language) { assert(!strcmp(language, "en-US")); return accepted; }
-int android_st_teclado(const char *text, int max) { keyboards++; return 1; }
+int android_st_teclado(const char *text,int max,const char *title,const char *hint) {
+  (void)text;(void)max;keyboards++;
+  snprintf(prompt,sizeof prompt,"%s",title?title:"");snprintf(help,sizeof help,"%s",hint?hint:"");return 1;
+}
 void android_st_fechar(void) {}
 int android_st_evento(char *dst, size_t n) { return 0; }
 #endif
@@ -35,7 +39,13 @@ int main(void) {
   assert(st_ler(ST_BUSCA, text, sizeof text) == ST_PEDE_TECLADO && st_aviso()[0]);
   assert(st_ime_abrir(ST_BUSCA, "", 255) && keyboards == 1 && st_aviso()[0]);
   st_fechar(ST_BUSCA);
-  puts("PASS: Android recognition, rejection, errors and keyboard fallback");
+  st_ime_tipo(ST_IME_SENHA);
+  assert(st_ime_abrir_com_contexto(ST_TECLADO,"",1024,"Confirm backup password","Enter the same password again"));
+  assert(!strcmp(prompt,"Confirm backup password") && !strcmp(help,"Enter the same password again"));
+  st_fechar(ST_TECLADO);
+  assert(st_ime_abrir(ST_BUSCA,"",255) && !*prompt && !*help);
+  st_fechar(ST_BUSCA);
+  puts("PASS: Android recognition, keyboard fallback and per-field password instructions without stale prompt inheritance");
 #else
   // webOS advertises only its system keyboard, whose own mic handles dictation.
   assert(texto_sistema_disponivel() == TS_TECLADO && !st_voz_disponivel());

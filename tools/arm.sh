@@ -70,6 +70,9 @@ if [ "$VARIANTE" = "highcache" ]; then
   echo "==> variante ALTO CACHE (300 MB de texturas)"
 fi
 
+# AES/PBKDF2/GCM primitives are bundled statically; never rely on TV firmware.
+sh tools/backup-crypto-source.sh "$PWD/build/backup-crypto-source"
+
 echo "==> compilando para ARM"
 # A configuracao do servidor entra por VARIAVEL DE AMBIENTE e os -D sao montados
 # dentro do container. Passa-los na linha de `sh -c` exigiria aspas dentro de
@@ -176,14 +179,17 @@ ctr_run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
   # arquivo: o header dele so expoe tipos de largura fixa (uint64_t), entao o
   # resto do binario segue sem a flag. O _Static_assert do .c barra o esquecimento.
   CC="arm-webos-linux-gnueabi-gcc"
+  BACKUP=/work/build/backup-crypto-arm
+  CC="$CC" AR=arm-webos-linux-gnueabi-ar sh tools/build-backup-crypto.sh /work/build/backup-crypto-source/mbedtls-3.6.7 "$BACKUP"
+  BACKUP_CFLAGS="-DNV_BACKUP_MBEDTLS -I$BACKUP/include"
   if command -v ccache >/dev/null 2>&1; then CC="ccache $CC"; fi
   $CC -c src/p2pmotor.c -o /tmp/p2pmotor.o -O2 -DNV_WEBOS -D_FILE_OFFSET_BITS=64 $NUVIO_EXTRA_CFLAGS $P2P_CFLAGS \
     -I$SR/usr/include -I$SR/usr/include/SDL2
-  printf "%s\n" -O2 -DNV_WEBOS $NUVIO_EXTRA_CFLAGS $ASS_CFLAGS $P2P_CFLAGS $DTS_CFLAGS \
+  printf "%s\n" -O2 -DNV_WEBOS $BACKUP_CFLAGS $NUVIO_EXTRA_CFLAGS $ASS_CFLAGS $P2P_CFLAGS $DTS_CFLAGS \
     -I$SR/usr/include -I$SR/usr/include/SDL2 > /tmp/arm-flags
   for k in NV_SUPABASE_URL NV_SUPABASE_ANON_KEY NV_TV_LOGIN_BASE NV_TRAKT_CLIENT_ID \
            NV_TRAKT_CLIENT_SECRET NV_SIMKL_CLIENT_ID NV_SIMKL_APP NV_TMDB_API_KEY NV_SEEKR_API_KEY \
-           NV_REC_URL NV_DISCORD_CLIENT_ID NV_VERSAO; do
+           NV_REC_URL NV_DISCORD_CLIENT_ID NV_GOOGLE_TV_CLIENT_ID NV_GOOGLE_TV_CLIENT_SECRET NV_VERSAO; do
     v=${!k}
     v=$(printf "%s" "$v" | sed "s/[\\\\\"]/\\\\&/g")
     printf "%s\n" "\"-D$k=\\\"$v\\\"\""
@@ -212,7 +218,7 @@ ctr_run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
     -DNV_DISCORD_CLIENT_ID="\"${NV_DISCORD_CLIENT_ID:-}\"" \
     -DNV_VERSAO="\"$NV_VERSAO\"" \
     -I$SR/usr/include -I$SR/usr/include/SDL2 \
-    $RUST_LIBS -lSDL2 -lSDL2_image -lSDL2_ttf -lGLESv2 -lEGL $P2P_LIBS -ldl -lpthread -lz -lm $ASS_LIBS $DTS_LIBS $DV7_LIBS \
+    $RUST_LIBS "$BACKUP/lib/libnuvio-backup-crypto.a" -lSDL2 -lSDL2_image -lSDL2_ttf -lGLESv2 -lEGL $P2P_LIBS -ldl -lpthread -lz -lm $ASS_LIBS $DTS_LIBS $DV7_LIBS \
     -Wl,--export-dynamic-symbol=pthread_create -Wl,--exclude-libs,ALL
   # #317: --exclude-libs,ALL tira da tabela dinamica tudo o que vem de arquivo
   # .a (FreeType/harfbuzz do libass, libstdc++ do P2P, FFmpeg). Sem ele o ld

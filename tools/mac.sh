@@ -31,7 +31,11 @@ BIN="${NUVIO_MAC_BIN:-${TMPDIR:-/tmp}/nuvio-native-legacy-mac}"
 # NUVIO_RUST_MKVCORE=0 volta ao caminho C.
 RUST_D=()
 [ "${NUVIO_RUST_MKVCORE:-1}" = 1 ] && RUST_D=(-DNV_RUST_MKVCORE "$(tools/rust-mkvcore.sh)")
-eval cc src/*.c src/dts/*.c -o "$BIN" -O1 -g "$ENV_D" ${RUST_D[@]+'"${RUST_D[@]}"'} \
+sh tools/backup-crypto-source.sh "$PWD/build/backup-crypto-source"
+BACKUP_ROOT="$PWD/build/backup-crypto-mac"
+CC=cc AR=ar sh tools/build-backup-crypto.sh "$PWD/build/backup-crypto-source/mbedtls-3.6.7" "$BACKUP_ROOT"
+BACKUP_D=(-DNV_BACKUP_MBEDTLS "-I$BACKUP_ROOT/include" "$BACKUP_ROOT/lib/libnuvio-backup-crypto.a")
+eval cc src/*.c src/dts/*.c -o "$BIN" -O1 -g "$ENV_D" ${BACKUP_D[@]+'"${BACKUP_D[@]}"'} ${RUST_D[@]+'"${RUST_D[@]}"'} \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz \
   -framework OpenGL -Wno-deprecated-declarations
