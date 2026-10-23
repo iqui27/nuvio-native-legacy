@@ -238,6 +238,8 @@ static const char *uxSinonimos(int op) {
       return "lento lenta lentidao travando trava falha erro desempenho diagnostico rede internet";
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE:
       return "seekr miniatura barra tempo previa avanco retrocesso";
+    case AJ_GUIA_PREVIA_GRANDE:
+      return "guia tv previa preview grande pequena tamanho hero destaque video canto";
     default: return "";
   }
 }

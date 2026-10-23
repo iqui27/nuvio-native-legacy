@@ -565,6 +565,12 @@ typedef enum {
   // DIARIO NA CONTA (diarionuvem.h): espelho do modulo do diario, nada guardado
   // aqui (chave com "-"). No fim: valor[]/CHAVE[] posicionais.
   AJ_DIARIO_NUVEM,
+  // PREVIA GRANDE NO GUIA TV (pedido do dono sobre o mock v5: "deixar o
+  // preview que nem da hoje"). Desligado = o layout do mock (cartao 560x315 a
+  // direita do heroi); ligado = o preview grande 800x450 do guia atual. So o
+  // tamanho/posicao do preview muda; a ficha reflui a esquerda. Por perfil,
+  // como as outras opcoes do guia. No fim: valor[]/CHAVE[] posicionais.
+  AJ_GUIA_PREVIA_GRANDE,
   AJ_N
 } OpcaoId;
 
@@ -1435,6 +1441,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Dicas das conquistas secretas", V_LIGA, 2),       // local: conquistasDicasLocal
   ESC("Perfil infantil",                 V_LIGA, 2),             // local: perfilinfantil.c (por perfil)
   ESC("Guardar diário na conta",         V_LIGA, 2),          // espelho de diarionuvem.c
+  ESC("Prévia grande no Guia TV",       V_LIGA, 2),          // local: guiaPreviaGrandeLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -1680,6 +1687,7 @@ static const char *CHAVE[] = {
   "conquistasLocal", "conquistasAvisoLocal", "conquistasDicasLocal",
   "-perfilInfantil",   // estado em perfilinfantil.c, nunca no ajustes.txt
   "-diarioNuvem",
+  "guiaPreviaGrandeLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2529,6 +2537,8 @@ int   ajustes_livetv_resolucao(void)  { return valor[AJ_LIVETV_RES]; }
 int   ajustes_livetv_formato(void)    { return valor[AJ_LIVETV_FORMATO]; }
 int   ajustes_livetv_modo(void)       { return valor[AJ_LIVETV_MODO]; }
 int   ajustes_livetv_proxy(void)      { return lig(AJ_LIVETV_PROXY); }
+int   ajustes_guia_previa_grande(void) { return valor[AJ_GUIA_PREVIA_GRANDE] == 0; }
+void  ajustes_definir_guia_previa_grande(int l) { valor[AJ_GUIA_PREVIA_GRANDE] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 void  ajustes_livetv_aplicar_proxy(int l) { valor[AJ_LIVETV_PROXY] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 void  ajustes_livetv_aplicar_modo(int m) { if (m >= 0 && m < 3) { valor[AJ_LIVETV_MODO] = m; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); } }
 unsigned ajustes_livetv_espera_ms(void) {
@@ -4372,6 +4382,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_SELOS_PACOTE: case AJ_SELOS_PACOTE_ADD: case AJ_SELOS_PACOTE_REM: /* a escolha e por perfil, em selospacote.c */
     case AJ_LIVETV_RES: case AJ_LIVETV_FORMATO: case AJ_LIVETV_ESPERA:
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY: /* rede e provedor desta casa: o web nao tem */
+    case AJ_GUIA_PREVIA_GRANDE: /* tamanho do preview do guia: so este port tem */
     case AJ_HOME_LAYOUT:    /* a Dinamica nao tem par na conta (selected_layout) */
     case AJ_PERFIL_PESQ:    /* estado em recomenda.c, por conta: nunca no blob */
     case AJ_PERFIL_EDITAR:

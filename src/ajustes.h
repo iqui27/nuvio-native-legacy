@@ -280,6 +280,10 @@ int   ajustes_pediu_livetv_diag(void);
 // Modo do load do player nos canais: 0 A, 1 B, 2 C (video_definir_modo_live).
 int   ajustes_livetv_modo(void);
 int   ajustes_livetv_proxy(void);
+// Guia TV v5: previa grande no heroi (800x450, como hoje) ou o cartao pequeno
+// do mock (560x315). Por perfil; padrao desligado.
+int   ajustes_guia_previa_grande(void);
+void  ajustes_definir_guia_previa_grande(int ligado);
 void  ajustes_livetv_aplicar_proxy(int ligado);   // proxy de TS da Live TV (proxyts.c)
 void  ajustes_livetv_aplicar_modo(int modo);
 

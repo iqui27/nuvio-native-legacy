@@ -270,3 +270,4 @@
   0, 0, 0, /* achievements (2.1): master, notice after credits, secret hints: all On */
   1, /* kids profile: Desligado (V_LIGA: 1); the state lives in perfilinfantil.c */
   1, /* save diary to account: mirror of diarionuvem.c, Desligado until the person says yes */
+  1, /* Guia TV v5: previa grande Desligada — vale o cartao pequeno do mock; ligar volta ao 800x450 de hoje */

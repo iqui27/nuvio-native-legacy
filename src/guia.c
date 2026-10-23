@@ -130,7 +130,10 @@ static float gTopoFim = 80.0f;
 static void gTopoMedir(void);
 static float gPreviewLargura(void);
 #define G_HERO_Y   (gRetrato() ? gTopoFim + 28.0f : 108.0f)
-// PREVIEW: 800x450 e 41,7% da largura, 16:9 exato. Os MESMOS numeros furam a
+// PREVIEW: duas medidas 16:9 exatas, escolhidas pela opcao "Previa grande no
+// Guia TV" (Ajustes > TV ao vivo, por perfil, e o chip do topo do guia):
+// desligada (PADRAO, o mock Guia TV v5) o cartao de 560x315; ligada, 800x450
+// (41,7% da largura, o preview de hoje). Os MESMOS numeros furam a
 // superficie GL (desenharHero) e posicionam o plano de video (a sessao "mini
 // no guia" do player recebe estes numeros por guia_preview_rect) — um lugar
 // so, senao o furo e o video desencontram.
@@ -138,7 +141,10 @@ static float gPreviewLargura(void);
 #define G_PREVIEW_H (G_PREVIEW_W * (9.0f / 16.0f))
 #define G_PREVIEW_X (gRetrato() ? G_AREA_X + (G_AREA_W - G_PREVIEW_W) * 0.5f : G_AREA_DIR - G_PREVIEW_W)
 #define G_INFO_H    450.0f
-#define G_PREVIEW_Y (gRetrato() ? G_HERO_Y + G_INFO_H + 24.0f : G_HERO_Y)
+// Preview centrado na altura do heroi: com o cartao pequeno (315) nao sobra
+// um buraco vazio embaixo dele; com o grande (450 = G_INFO_H) e o topo de
+// sempre, pixel a pixel.
+#define G_PREVIEW_Y (gRetrato() ? G_HERO_Y + G_INFO_H + 24.0f : G_HERO_Y + (G_INFO_H - G_PREVIEW_H) * 0.5f)
 #define G_PREVIEW_RAIO 16.0f          // px; vira fracao do menor lado no uso
 // Ficha do canal a esquerda do preview, com 48 de respiro ate ele.
 #define G_INFO_X   G_AREA_X
@@ -202,7 +208,10 @@ static float gPreviewLargura(void);
 #define G_CHIP_PAD   20.0f
 #define G_CHIP_TEXTO (gRetrato() ? TXT_V2_SEG : TXT_PG_ROTULO)
 static float gPreviewLargura(void) {
-  if (!gRetrato()) return 800.0f;
+  // GUIA TV v5 (pedido do dono): padrao = cartao 560x315 do mock; com a
+  // opcao "Previa grande no Guia TV" ligada, o 800x450 de hoje (classe da
+  // integracao/2.0.5). So muda largura/posicao; a ficha reflui em G_INFO_W.
+  if (!gRetrato()) return ajustes_guia_previa_grande() ? 800.0f : 560.0f;
   // A regua, uma categoria e tres canais continuam visiveis mesmo quando
   // os controles traduzidos ocupam mais linhas. O video conserva 16:9.
   float h = G_L_BASE - (G_HERO_Y + G_INFO_H + 24.0f + 22.0f + 42.0f) - G_L_HEAD - 3.0f * G_L_ROW;
@@ -211,7 +220,7 @@ static float gPreviewLargura(void) {
 // CATEGORIAS e o primeiro chip: a porta VISIVEL do painel de categorias,
 // que antes so abria segurando a seta (ninguem descobre gesto que nao se ve).
 enum { G_TOPO_BUSCAR = 0, G_TOPO_CATEGORIAS, G_TOPO_CARTOES, G_TOPO_LISTA, G_TOPO_ADDONS, G_TOPO_DIAG,
-       G_TOPO_PREVIEW, G_TOPO_V5, G_TOPO_N };
+       G_TOPO_PREVIEW, G_TOPO_PGRANDE, G_TOPO_V5, G_TOPO_N };
 
 #ifdef NV_TOUCH_UI
 static GfxRect gTopoRects[G_TOPO_N];
@@ -2217,6 +2226,8 @@ void guia_evento(const SDL_Event *e) {
         if (previewLigado) { previewUltLin = previewUltCol = -1; previewFocoMudou = 0; }
         else previewParar();
       }
+      else if (topoCol == G_TOPO_PGRANDE)
+        ajustes_definir_guia_previa_grande(!ajustes_guia_previa_grande());
       else if ((topoCol == G_TOPO_LISTA) != modoLista) alternarModo();
       return;
     }
@@ -3574,13 +3585,14 @@ static void gTopoRotulos(const char **rot) {
   // VERDE). O verde continua como atalho onde existe.
   rot[G_TOPO_DIAG]    = i18n("Diagnóstico");
   rot[G_TOPO_PREVIEW] = previewLigado ? i18n("Preview: sim") : i18n("Preview: não");
+  rot[G_TOPO_PGRANDE] = ajustes_guia_previa_grande() ? i18n("Prévia grande: sim") : i18n("Prévia grande: não");
 }
 
 static void gTopoLarguras(const char **rot, float *w) {
   for (int i = 0; i < G_TOPO_N; i++)
     w[i] = (float)txt_linha(G_CHIP_TEXTO, rot[i], 255, 255, 255, 255).w
            + 2.0f * G_CHIP_PAD
-           + (i == G_TOPO_PREVIEW ? 20.0f : (i == G_TOPO_CATEGORIAS || i == G_TOPO_BUSCAR) ? 26.0f : 0.0f);
+           + (i == G_TOPO_PREVIEW || i == G_TOPO_PGRANDE ? 20.0f : (i == G_TOPO_CATEGORIAS || i == G_TOPO_BUSCAR) ? 26.0f : 0.0f);
 }
 
 static void gTopoMedir(void) {
@@ -3638,6 +3650,7 @@ static float desenharTopo(float a) {
     float f = animTopo[i];
     int seg = i == G_TOPO_CARTOES || i == G_TOPO_LISTA;
     int sel = i == G_TOPO_PREVIEW ? previewLigado
+            : i == G_TOPO_PGRANDE ? ajustes_guia_previa_grande()
             : i == G_TOPO_CATEGORIAS ? catAberto != 0
             : seg ? ((i == G_TOPO_LISTA) == modoLista) : 0;
     GfxRect r = { xs[i], G_TOPO_Y, w[i], G_TOPO_H };
@@ -3664,7 +3677,7 @@ static float desenharTopo(float a) {
     }
     ct = f > 0.5f ? ajustes_tinta_foco() : sel ? 245 : 168;
     { // ct+1 estourava 255 -> 0 no canal verde (tinta branca = magenta no foco).
-      float iconeW = i == G_TOPO_PREVIEW ? 20.0f
+      float iconeW = i == G_TOPO_PREVIEW || i == G_TOPO_PGRANDE ? 20.0f
                    : (i == G_TOPO_CATEGORIAS || i == G_TOPO_BUSCAR) ? 26.0f : 0.0f;
       TxtLinha t = gRetrato()
         ? txt_linha_corta(G_CHIP_TEXTO, rot[i], ct, ct < 255 ? ct + 1 : 255,
@@ -3672,12 +3685,13 @@ static float desenharTopo(float a) {
         : txt_linha(TXT_PG_ROTULO, rot[i], ct, ct < 255 ? ct + 1 : 255,
                     ct + 5 > 255 ? 255 : ct + 5, 255);
       float tx = r.x + (r.w - (float)t.w) * 0.5f;
-      if (i == G_TOPO_PREVIEW) {
+      if (i == G_TOPO_PREVIEW || i == G_TOPO_PGRANDE) {
         // Ponto de estado: verde ligado, cinza desligado. O texto ja diz,
         // o ponto e o que se le de relance.
+        int ligado = i == G_TOPO_PREVIEW ? previewLigado : ajustes_guia_previa_grande();
         GfxRect d = { r.x + G_CHIP_PAD, r.y + (r.h - 10.0f) * 0.5f, 10.0f, 10.0f };
         if (f > 0.5f) { float k = (float)ct / 255.0f; gfx_cor(d, 0.5f, k, k, k, a); }
-        else if (previewLigado) gfx_cor(d, 0.5f, 0.30f, 0.84f, 0.46f, a);
+        else if (ligado) gfx_cor(d, 0.5f, 0.30f, 0.84f, 0.46f, a);
         else               gfx_cor(d, 0.5f, 0.42f, 0.43f, 0.47f, a);
         tx = d.x + 20.0f;
       } else if (i == G_TOPO_BUSCAR) {

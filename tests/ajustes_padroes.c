@@ -149,7 +149,18 @@ int main(void) {
   assert(AJ_INTERFACE_MODO == AJ_PROXIMO_CONTAGEM + 1);
   assert(AJ_MIC_BUSCA == AJ_INTERFACE_MODO + 1);
   assert(AJ_MENU_TOPO == AJ_MIC_BUSCA + 1);
-  assert(AJ_N == AJ_CONQ_DICAS + 1 && AJ_CONQ_LIGADO == AJ_MENU_TOPO + 1);
+  assert(AJ_PERFIL_INFANTIL == AJ_CONQ_DICAS + 1);
+  assert(AJ_DIARIO_NUVEM == AJ_PERFIL_INFANTIL + 1);
+  assert(AJ_GUIA_PREVIA_GRANDE == AJ_DIARIO_NUVEM + 1 && AJ_N == AJ_GUIA_PREVIA_GRANDE + 1);
+  // Guia TV v5: previa grande desligada de fabrica (vale o cartao do mock),
+  // por perfil, chave propria, escopo local.
+  assert(valor[AJ_GUIA_PREVIA_GRANDE] == 1 && !ajustes_guia_previa_grande());
+  assert(!strcmp(CHAVE[AJ_GUIA_PREVIA_GRANDE], "guiaPreviaGrandeLocal"));
+  assert(somenteDesteAparelho(AJ_GUIA_PREVIA_GRANDE) && !dePerfil(AJ_GUIA_PREVIA_GRANDE));
+  ajustes_definir_guia_previa_grande(1);
+  assert(ajustes_guia_previa_grande());
+  ajustes_definir_guia_previa_grande(0);
+  assert(!ajustes_guia_previa_grande());
   assert(ajustes_conquistas() && ajustes_conquistas_aviso() && ajustes_conquistas_dicas());
   for (int i = 0; i < AJ_N; i++) assert(strcmp(CHAVE[i], "autoCreditosLocal"));
   puts("ajustes_padroes: ok");
