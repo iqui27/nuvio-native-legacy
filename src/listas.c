@@ -18,17 +18,28 @@
 #include <string.h>
 #include <strings.h>
 #include <pthread.h>
+#include <time.h>
 
 #ifndef LST_SO_ITENS
 // A TABELA E COMPARTILHADA COM UM FIO DE REDE, entao tudo que a tela le passa
 // por esta trava. E a mesma disciplina de vtTrava em descoberta.c: o fio
 // escreve o lote inteiro de uma vez e a tela nunca ve meia lista.
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
-static LstLista  tabela[LST_MAX];
-static int       nTabela;
-static char      aviso[160];
-static int       fioVivo;
-static unsigned  geracao;          // invalida o resultado de um pedido trocado
+
+// UMA TABELA POR ORIGEM (#202): a resposta do Trakt nao apaga o Simkl, e uma
+// busca publica nao apaga "Minhas listas". A aba escolhida decide qual `tab`
+// a tela le; as outras ficam prontas para a volta.
+enum { LST_TAB_TRAKT = 0, LST_TAB_SIMKL, LST_TAB_NUVIO, LST_TAB_FIXADAS,
+       LST_TAB_PUBLICAS, LST_TAB_N };
+typedef struct {
+  LstLista v[LST_MAX];
+  int n;
+  char aviso[160];
+  int fioVivo;
+  unsigned geracao;
+} LstFonteTab;
+static LstFonteTab tabs[LST_TAB_N];
+static int fonteAtual = LST_TAB_TRAKT;
 
 // O QUE ESTE FIO FOI PEDIR. Copiado sob trava antes de sair, para o fio nunca
 // ler um pedido que a pessoa ja trocou.
@@ -302,7 +313,9 @@ void lst_iniciar(void) {
 
 void lst_esquecer(void) {
   pthread_mutex_lock(&trava);
-  nTabela = 0; aviso[0] = 0; geracao++;
+  memset(tabs, 0, sizeof tabs);
+  fonteAtual = LST_TAB_TRAKT;
+  for (int i = 0; i < LST_TAB_N; i++) tabs[i].geracao++;
   pthread_mutex_unlock(&trava);
   nFixas = 0; fixasLidas = 0; perfilLido = -1;
   lst_previa_limpar();
@@ -432,8 +445,9 @@ static int lerVetor(const char *json, int envelope, LstLista *dst, int max) {
 }
 
 int lst_ler_trakt(const char *json, int envelope) {
-  nTabela = lerVetor(json, envelope, tabela, LST_MAX);
-  return nTabela;
+  LstFonteTab *tab = &tabs[fonteAtual];
+  tab->n = lerVetor(json, envelope, tab->v, LST_MAX);
+  return tab->n;
 }
 
 // --- AS LISTAS DO DONO, FORA DA TABELA DA TELA --------------------------------
@@ -491,9 +505,10 @@ int lst_minha(int i, LstLista *dst) {
 void lst_descricao_atualizar(long id, const char *descricao) {
   if (id <= 0 || !descricao) return;
   pthread_mutex_lock(&trava);
-  for (int i = 0; i < nTabela; i++)
-    if (tabela[i].fonte == LST_TRAKT && tabela[i].traktId == id)
-      snprintf(tabela[i].descricao, sizeof tabela[i].descricao, "%s", descricao);
+  for (int p = 0; p < LST_TAB_N; p++)
+    for (int i = 0; i < tabs[p].n; i++)
+      if (tabs[p].v[i].fonte == LST_TRAKT && tabs[p].v[i].traktId == id)
+        snprintf(tabs[p].v[i].descricao, sizeof tabs[p].v[i].descricao, "%s", descricao);
   for (int i = 0; i < nMinhas; i++)
     if (minhas[i].traktId == id)
       snprintf(minhas[i].descricao, sizeof minhas[i].descricao, "%s", descricao);
@@ -565,6 +580,7 @@ int lst_ler_simkl_itens(const char *json, int serie, CatItem *dst, int max) {
 // (sync_pull_collections -> col_definir_json). Uma pasta por lista, com o GRUPO
 // como autor: e assim que a pessoa reconhece de onde ela veio na conta.
 static int montarNuvio(void) {
+  LstFonteTab *tab = &tabs[LST_TAB_NUVIO];
   int i, n = 0;
   for (i = 0; i < col_n() && n < LST_MAX; i++) {
     const ColFolder *f = col_folder(i);
@@ -573,7 +589,7 @@ static int montarNuvio(void) {
     // A pasta que ESTA TELA criou para a Home nao volta como "lista do Nuvio":
     // ela e uma lista do Trakt fixada aqui, e apareceria duas vezes.
     if (!strcmp(f->group, LST_GRUPO_HOME)) continue;
-    d = &tabela[n];
+    d = &tab->v[n];
     memset(d, 0, sizeof *d);
     d->fonte = LST_NUVIO;
     d->itens = -1;
@@ -584,7 +600,7 @@ static int montarNuvio(void) {
     n++;
   }
   if (n < LST_MAX) {
-    LstLista *d = &tabela[n++];
+    LstLista *d = &tab->v[n++];
     memset(d, 0, sizeof *d);
     d->fonte = LST_NUVIO;
     snprintf(d->titulo, sizeof d->titulo, "Músicas");
@@ -593,8 +609,9 @@ static int montarNuvio(void) {
     MusSalva saved[MUS_GUARDADAS_MAX];
     d->itens = mus_listar(saved, MUS_GUARDADAS_MAX);
   }
-  nTabela = n;
-  if (!n) snprintf(aviso, sizeof aviso,
+  tab->n = n;
+  tab->aviso[0] = 0;
+  if (!n) snprintf(tab->aviso, sizeof tab->aviso,
                    "Nenhuma coleção na sua conta Nuvio ainda");
   return n;
 }
@@ -609,15 +626,17 @@ static const struct { const char *estado; const char *rotulo; } SMK[] = {
   { "dropped",     "Abandonados" },
 };
 static int montarSimkl(void) {
+  LstFonteTab *tab = &tabs[LST_TAB_SIMKL];
   int i, n = 0;
   if (!simklauth_token()[0]) {
-    nTabela = 0;
-    snprintf(aviso, sizeof aviso,
+    tab->n = 0;
+    snprintf(tab->aviso, sizeof tab->aviso,
              "Conecte sua conta do Simkl em Ajustes para ver estas listas");
     return 0;
   }
+  tab->aviso[0] = 0;
   for (i = 0; i < (int)(sizeof SMK / sizeof SMK[0]); i++) {
-    LstLista *d = &tabela[n++];
+    LstLista *d = &tab->v[n++];
     memset(d, 0, sizeof *d);
     d->fonte = LST_SIMKL;
     d->itens = -1;
@@ -626,15 +645,16 @@ static int montarSimkl(void) {
     snprintf(d->estado, sizeof d->estado, "%s", SMK[i].estado);
     snprintf(d->midia, sizeof d->midia, "MOVIE");
   }
-  nTabela = n;
+  tab->n = n;
   return n;
 }
 
 static int montarFixadas(void) {
+  LstFonteTab *tab = &tabs[LST_TAB_FIXADAS];
   int i, n = 0;
   lerFixas();
   for (i = 0; i < nFixas && n < LST_MAX; i++) {
-    LstLista *d = &tabela[n++];
+    LstLista *d = &tab->v[n++];
     memset(d, 0, sizeof *d);
     d->fonte = fixas[i].fonte;
     d->itens = -1;
@@ -649,8 +669,9 @@ static int montarFixadas(void) {
     else if (fixas[i].fonte == LST_NUVIO) snprintf(d->colId, sizeof d->colId, "%s", fixas[i].id);
     else                                  snprintf(d->estado, sizeof d->estado, "%s", fixas[i].id);
   }
-  nTabela = n;
-  if (!n) snprintf(aviso, sizeof aviso,
+  tab->n = n;
+  tab->aviso[0] = 0;
+  if (!n) snprintf(tab->aviso, sizeof tab->aviso,
                    "Nada fixado ainda. Abra uma lista e escolha Fixar na Biblioteca.");
   return n;
 }
@@ -671,42 +692,66 @@ static void escapar(const char *s, char *dst, size_t n) {
 typedef struct {
   unsigned geracao;
   uint64_t sessao;
-  int qual;
+  int qual, tab;
   char termo[96], aut[200], chave[200];
 } ListaTarefa;
 
 static void *fioListas(void *u) {
   ListaTarefa *t = u;
+  LstFonteTab *tab = &tabs[t->tab];
   char url[300], termo[300], *corpo = NULL;
-  int qual = t->qual;
+  int qual = t->qual, st = 0, tentativa;
   escapar(t->termo, termo, sizeof termo);
   if (perfis_sessao_atual(t->sessao)) {
-    if (qual == PED_TRAKT_MINHAS && t->aut[0]) {
-      const char *cab[] = { t->aut, "trakt-api-version: 2", t->chave, NULL };
-      corpo = rede_baixar_com("https://api.trakt.tv/users/me/lists", 15, cab);
-    } else if (qual != PED_TRAKT_MINHAS && t->chave[0]) {
-      const char *cab[] = { "trakt-api-version: 2", t->chave, NULL };
-      if (termo[0])
-        snprintf(url, sizeof url, "https://api.trakt.tv/search/list?query=%s&limit=%d", termo, LST_MAX);
-      else snprintf(url, sizeof url, "https://api.trakt.tv/lists/trending?limit=%d", LST_MAX);
-      corpo = rede_baixar_com(url, 15, cab);
+    const char *cab[4];
+    for (tentativa = 0; tentativa < 2; tentativa++) {
+      int ra = 0;
+      if (qual == PED_TRAKT_MINHAS && t->aut[0]) {
+        cab[0] = t->aut; cab[1] = "trakt-api-version: 2"; cab[2] = t->chave; cab[3] = NULL;
+        corpo = rede_baixar_st_retry("https://api.trakt.tv/users/me/lists", 15, cab, &st, &ra);
+      } else if (qual != PED_TRAKT_MINHAS && t->chave[0]) {
+        cab[0] = "trakt-api-version: 2"; cab[1] = t->chave; cab[2] = NULL;
+        if (termo[0])
+          snprintf(url, sizeof url, "https://api.trakt.tv/search/list?query=%s&limit=%d", termo, LST_MAX);
+        else snprintf(url, sizeof url, "https://api.trakt.tv/lists/trending?limit=%d", LST_MAX);
+        corpo = rede_baixar_st_retry(url, 15, cab, &st, &ra);
+      }
+      if (st != 429 || tentativa) break;
+      free(corpo); corpo = NULL;
+      { struct timespec z;
+        if (ra <= 0) ra = 5;
+        if (ra > 60) ra = 60;
+        printf("[listas] trakt pediu pausa: %d s\n", ra);
+        fflush(stdout);
+        z.tv_sec = ra; z.tv_nsec = 0;
+        nanosleep(&z, NULL);
+      }
     }
   }
+  // So 2xx vale: um corpo de erro (403 com JSON) nao e "zero listas".
+  if (corpo && (st < 200 || st > 299)) { free(corpo); corpo = NULL; }
   // Publicacao e troca de sessao se excluem; a rede nunca segura essa trava.
-  if (perfis_sessao_travar(t->sessao)) {
+  if (!perfis_sessao_travar(t->sessao)) {
     pthread_mutex_lock(&trava);
-    if (t->geracao == geracao) {
-      nTabela = 0;
-      if (corpo) lst_ler_trakt(corpo, qual != PED_TRAKT_MINHAS);
-      if (!nTabela) {
-        if (qual == PED_TRAKT_MINHAS)
-          snprintf(aviso, sizeof aviso, "%s", t->aut[0]
-            ? "Você ainda não criou listas no Trakt"
-            : "Conecte sua conta do Trakt em Ajustes para ver suas listas");
-        else snprintf(aviso, sizeof aviso, "%s", t->chave[0]
-            ? "Nenhuma lista pública para este termo" : "Este pacote não tem a chave do Trakt");
+    if (t->geracao == tab->geracao && tab->fioVivo > 0) tab->fioVivo--;
+    pthread_mutex_unlock(&trava);
+  } else {
+    pthread_mutex_lock(&trava);
+    if (t->geracao == tab->geracao) {
+      // Sem resposta util (rede, ou nao-2xx descartado acima): a tabela que ja
+      // estava na origem fica; so um corpo 2xx decide se ha listas ou aviso.
+      if (corpo) {
+        tab->n = lerVetor(corpo, qual != PED_TRAKT_MINHAS, tab->v, LST_MAX);
+        if (!tab->n) {
+          if (qual == PED_TRAKT_MINHAS)
+            snprintf(tab->aviso, sizeof tab->aviso, "%s", t->aut[0]
+              ? "Você ainda não criou listas no Trakt"
+              : "Conecte sua conta do Trakt em Ajustes para ver suas listas");
+          else snprintf(tab->aviso, sizeof tab->aviso, "%s", t->chave[0]
+              ? "Nenhuma lista pública para este termo" : "Este pacote não tem a chave do Trakt");
+        }
       }
-      fioVivo = 0;
+      if (tab->fioVivo > 0) tab->fioVivo--;
     }
     pthread_mutex_unlock(&trava);
     perfis_sessao_destravar();
@@ -715,12 +760,51 @@ static void *fioListas(void *u) {
   return NULL;
 }
 
-static void disparar(int qual) {
+// UMA fila para os pedidos do Trakt (#202): as abas de Listas guardam
+// tabelas separadas, mas a rede delas anda junto, um pedido por vez. 429
+// espera Retry-After dentro do proprio pedido; o resto pega a folga fixa do
+// trabalhador em vez de uma rajada por troca de aba.
+#define LST_FILA_MAX 12
+static ListaTarefa *fila[LST_FILA_MAX];
+static int nFila, trabVivo;
+static void dormirListaMs(unsigned ms) {
+  struct timespec z = { (time_t)(ms / 1000), (long)(ms % 1000) * 1000000L };
+  nanosleep(&z, NULL);
+}
+static void *trabalhadorListas(void *u) {
+  (void)u;
+  for (;;) {
+    ListaTarefa *t;
+    pthread_mutex_lock(&trava);
+    if (!nFila) { trabVivo = 0; pthread_mutex_unlock(&trava); break; }
+    t = fila[0];
+    memmove(&fila[0], &fila[1], sizeof fila[0] * (size_t)(nFila - 1));
+    nFila--;
+    pthread_mutex_unlock(&trava);
+    fioListas(t);
+    dormirListaMs(150);
+  }
+  return NULL;
+}
+static void enfileirar(ListaTarefa *t) {
   pthread_t fio;
+  if (nFila >= LST_FILA_MAX) {
+    tabs[t->tab].fioVivo--;
+    memset(t, 0, sizeof *t); free(t); return;
+  }
+  fila[nFila++] = t;
+  if (trabVivo) return;
+  trabVivo = 1;
+  if (pthread_create(&fio, NULL, trabalhadorListas, NULL) != 0) trabVivo = 0;
+  else pthread_detach(fio);
+}
+
+static void disparar(int qual) {
   ListaTarefa *t = calloc(1, sizeof *t);
   uint64_t sessao = perfis_sessao_geracao();
   if (!t || !perfis_sessao_travar(sessao)) { free(t); return; }
   t->qual = qual; t->sessao = sessao;
+  t->tab = qual == PED_TRAKT_MINHAS ? LST_TAB_TRAKT : LST_TAB_PUBLICAS;
   // Capturar identidade e pedido ANTES de criar o fio. Um fio atrasado nao
   // pode ler as credenciais nem a geracao do pedido seguinte.
   if (qual == PED_TRAKT_MINHAS) {
@@ -730,27 +814,35 @@ static void disparar(int qual) {
     snprintf(t->chave, sizeof t->chave, "trakt-api-key: %s", nuvem_trakt_cliente());
   }
   pthread_mutex_lock(&trava);
-  t->geracao = ++geracao;
-  snprintf(t->termo, sizeof t->termo, "%s", termoBusca);
-  nTabela = 0; aviso[0] = 0; fioVivo = 1;
-  if (pthread_create(&fio, NULL, fioListas, t) != 0) {
-    fioVivo = 0; memset(t, 0, sizeof *t); free(t);
-  } else pthread_detach(fio);
+  { LstFonteTab *tab = &tabs[t->tab];
+    t->geracao = ++tab->geracao;
+    snprintf(t->termo, sizeof t->termo, "%s", termoBusca);
+    tab->aviso[0] = 0; tab->fioVivo++;
+    enfileirar(t);
+  }
   pthread_mutex_unlock(&trava);
   perfis_sessao_destravar();
 }
 
 void lst_pedir(int fonte) {
+  int tab = fonte == LST_NUVIO ? LST_TAB_NUVIO
+          : fonte == LST_SIMKL ? LST_TAB_SIMKL : LST_TAB_TRAKT;
   pthread_mutex_lock(&trava);
-  aviso[0] = 0; nTabela = 0; geracao++;
+  fonteAtual = tab;
   pthread_mutex_unlock(&trava);
-  if (fonte == LST_NUVIO)      { montarNuvio(); return; }
-  if (fonte == LST_SIMKL)      { montarSimkl(); return; }
+  if (tab == LST_TAB_NUVIO)      { montarNuvio(); return; }
+  if (tab == LST_TAB_SIMKL)      { montarSimkl(); return; }
+  pthread_mutex_lock(&trava);
+  { int pronta = tabs[tab].n > 0;
+    pthread_mutex_unlock(&trava);
+    if (pronta) return;
+  }
   disparar(PED_TRAKT_MINHAS);
 }
 
 void lst_buscar(const char *termo) {
   pthread_mutex_lock(&trava);
+  fonteAtual = LST_TAB_PUBLICAS;
   snprintf(termoBusca, sizeof termoBusca, "%s", termo ? termo : "");
   pthread_mutex_unlock(&trava);
   disparar(PED_TRAKT_BUSCA);
@@ -758,19 +850,19 @@ void lst_buscar(const char *termo) {
 
 void lst_pedir_fixadas(void) {
   pthread_mutex_lock(&trava);
-  aviso[0] = 0; geracao++;
+  fonteAtual = LST_TAB_FIXADAS;
   pthread_mutex_unlock(&trava);
   montarFixadas();
 }
 
 int lst_carregando(void) {
   int v;
-  pthread_mutex_lock(&trava); v = fioVivo; pthread_mutex_unlock(&trava);
+  pthread_mutex_lock(&trava); v = tabs[fonteAtual].fioVivo; pthread_mutex_unlock(&trava);
   return v;
 }
 int lst_n(void) {
   int v;
-  pthread_mutex_lock(&trava); v = nTabela; pthread_mutex_unlock(&trava);
+  pthread_mutex_lock(&trava); v = tabs[fonteAtual].n; pthread_mutex_unlock(&trava);
   return v;
 }
 // COPIA, e nao ponteiro para a tabela: o fio de rede troca `tabela` inteira sob
@@ -784,8 +876,8 @@ const LstLista *lst_lista(int i) {
   static int vez;
   const LstLista *r = NULL;
   pthread_mutex_lock(&trava);
-  if (i >= 0 && i < nTabela) {
-    anel[vez] = tabela[i];
+  if (i >= 0 && i < tabs[fonteAtual].n) {
+    anel[vez] = tabs[fonteAtual].v[i];
     r = &anel[vez];
     vez = (vez + 1) & 3;
   }
@@ -795,7 +887,7 @@ const LstLista *lst_lista(int i) {
 const char *lst_aviso(void) {
   static char copia[160];
   pthread_mutex_lock(&trava);
-  snprintf(copia, sizeof copia, "%s", aviso);
+  snprintf(copia, sizeof copia, "%s", tabs[fonteAtual].aviso);
   pthread_mutex_unlock(&trava);
   return copia;
 }
@@ -1109,7 +1201,7 @@ void lst_itens_mais(void) {
 void lst_abrir_sessao(void) {
   lst_esquecer();
   pthread_mutex_lock(&trava);
-  termoBusca[0] = 0; fioVivo = 0;
+  termoBusca[0] = 0; for (int i = 0; i < LST_TAB_N; i++) tabs[i].fioVivo = 0;
   pthread_mutex_unlock(&trava);
   pthread_mutex_lock(&itTrava);
   free(itens); itens = NULL;
