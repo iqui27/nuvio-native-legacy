@@ -2888,7 +2888,7 @@ static void desenhaOrigens(void) {
     }
     return;
   }
-  GfxRect painel = { paginaX(), 388.0f, 320.0f, fminf(640, 66 + nOrigens() * 58) };
+  GfxRect painel = { paginaX(), 388.0f, 320.0f, fminf(700, 66 + nOrigens() * 58 + (serverRows ? 54 : 0)) };
   if (ajustes_vidro()) gfx_cor(painel, 26.0f / painel.h, .047f, .051f, .059f, .92f);
   else gfx_cor(painel, 26.0f / painel.h, .047f, .051f, .059f, 1);
   txt_desenhar(txt_linha(TXT_CAPTION2, "Origens", 115, 117, 122, 255), painel.x + 30, painel.y + 20);

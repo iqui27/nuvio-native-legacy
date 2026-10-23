@@ -37,9 +37,10 @@ static int serverContainsShot(const CatItem *it, int p) {
   int v = 0; for (const char *s = it->imdb; *s; s++) v += (unsigned char)*s;
   return p < 0 || v % 3 == p || v % 5 == 0;
 }
-static int serverRowsShot(int i, const char **name, int *count) {
+static int serverRowsShot(int i, const char **name, const char **sub, int *count) {
   const char *names[] = {"Plex", "Jellyfin", "Emby", "Seus servidores"};
-  if (i < 0 || i > 3) return 0; *name = names[i]; *count = i < 3 ? 8 : 0; return 1;
+  static const char *subs[] = {"Casa · Conectado", "Sala · Conectado", "Estúdio · Desconectado", NULL};
+  if (i < 0 || i > 3) return 0; *name = names[i]; *sub = subs[i]; *count = i < 3 ? 8 : 0; return 1;
 }
 static void serverSelectShot(int i) { if (i < 3) biblioteca_servidor_filtrar(i); }
 
