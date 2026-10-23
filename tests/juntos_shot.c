@@ -7,6 +7,8 @@
 #define NV_REC_URL "http://fake.test"
 #include "../src/juntos.c"
 #include "ajustes.h"
+#include "badges.h"
+#include "idioma.h"
 #include "catalogo.h"
 #include "dados.h"
 #include "gfx.h"
@@ -22,9 +24,12 @@ void juntosui_shot_player(int sim);
 void juntosui_shot_folha(int idx, const char *const *nomes, int n);
 void juntosui_shot_bolhas(void);
 void juntosui_shot_camada(int c, int f);
+void juntosui_shot_arte(const char *caminho);
+void juntosui_shot_contagem(int n);
 
 static SDL_Window *win;
 static const char *base;
+static int sourcesOnly;
 static GLuint fundoTex;
 
 static void carregarFundo(void) {
@@ -51,7 +56,7 @@ static void captura(const char *nome, int h) {
   glReadPixels(0, 1080 - h, 1920, h, GL_RGBA, GL_UNSIGNED_BYTE, pix);
   s = SDL_CreateRGBSurfaceWithFormat(0, 1920, h, 32, SDL_PIXELFORMAT_RGBA32);
   for (y = 0; y < h; y++) memcpy((char *)s->pixels + y * s->pitch, pix + (size_t)(h - 1 - y) * 1920 * 4, 1920 * 4);
-  snprintf(cam, sizeof cam, "%s-%s.png", base, nome);
+  snprintf(cam, sizeof cam, base[strlen(base) - 1] == '/' ? "%s%s.png" : "%s-%s.png", base, nome);
   assert(IMG_SavePNG(s, cam) == 0);
   SDL_FreeSurface(s);
   free(pix);
@@ -90,7 +95,8 @@ int main(int argc, char **argv) {
   FILE *f;
   base = argc > 1 ? argv[1] : "/tmp/nuvio-juntos";
   snprintf(aj, sizeof aj, "%s/ajustes.txt", dir);
-  f = fopen(aj, "w"); fprintf(f, "idioma 0\nselected_theme 2\n"); fclose(f);
+  sourcesOnly = argc > 2 && !strcmp(argv[2], "--sources");
+  f = fopen(aj, "w"); fprintf(f, "idioma %d\nselected_theme 2\n", sourcesOnly ? 0 : 1); fclose(f);
   ajustes_dir(dir);
   dados_iniciar("deploy/app");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
@@ -104,13 +110,15 @@ int main(int argc, char **argv) {
   assert(gfx_iniciar());
   gfx_snap_iniciar(1920, 1080);
   assert(txt_iniciar("deploy/app", 1));
-  txt_definir_fonte_interface(TXT_FAMILIA_MONTSERRAT);
+  txt_definir_fonte_interface(sourcesOnly ? TXT_FAMILIA_INTER : TXT_FAMILIA_MONTSERRAT);
+  badges_carregar("deploy/app/art");
   tex_iniciar(64);
   gfx_icones_dir("deploy/app/art");
   ajustes_definir_vidro(1);
   carregarFundo();
   quadros(30);
 
+  if (!sourcesOnly) {
   // 1. Convite na ilha.
   { JuntosConvite c; memset(&c, 0, sizeof c);
     snprintf(c.id, sizeof c.id, "%s", "0123456789abcdef0123456789abcdef");
@@ -131,31 +139,103 @@ int main(int argc, char **argv) {
   quadros(20);
   captura("02-folha", 1080);
 
-  // 3. Cartao da sala (lobby) e com o QR do celular.
-  { static JsSala s; JsMsg m; JsPlayer jp = { 0 };
+  }
+  // 3. Lobby do cinema (Velvet Cinema v2), vidro desligado como de fabrica.
+  ajustes_definir_vidro(0);
+  juntosui_shot_arte("deploy/app/art/00.jpg");
+  { static JsSala s; JsMsg m; JsPlayer jp = { 0 }; int k;
     jsm_iniciar(&motor, "nuvio:h", "mac", "", 'A', &jp, NULL, NULL);
-    jsp_ler(SALA, &m, &s); motor.sala = s; motor.temSala = 1; temMotor = 1; fase = JF_DENTRO;
+    jsp_ler(SALA, &m, &s);
+    for (k = 3; k < 5; k++) {   // Gustavo e Duda, para encher os cinco lugares
+      s.m[k] = s.m[1]; snprintf(s.m[k].id, sizeof s.m[k].id, "nuvio:%c", 'a' + k);
+      snprintf(s.m[k].nome, sizeof s.m[k].nome, "%s", k == 3 ? "Gustavo" : "Duda");
+    }
+    s.n = 4;
+    motor.sala = s; motor.temSala = 1; temMotor = 1; fase = JF_DENTRO;
     snprintf(codigo, sizeof codigo, "K7M2QX"); }
-  juntosui_shot_camada(3, 0);
+  if (sourcesOnly) {
+    Stream s = { 0 };
+    const char *assetDir = getenv("NUVIO_JUNTOS_ART");
+    char arte[700];
+    assert(assetDir);
+    snprintf(arte, sizeof arte, "%s/duna-backdrop.jpg", assetDir);
+    juntosui_shot_arte(arte);
+    snprintf(motor.sala.poster, sizeof motor.sala.poster, "%s/duna-poster.jpg", assetDir);
+    s.altura = 2160; s.dolbyVision = 1; s.dolbyAtmos = 1; s.tamanhoMB = 23552;
+    snprintf(s.provedor, sizeof s.provedor, "AIOStreams");
+    snprintf(s.rotulo, sizeof s.rotulo, "Duna: Parte 2");
+    snprintf(s.url, sizeof s.url, "https://fixture.invalid/local-stream");
+    stream_definir_alvo(motor.sala.ep);
+    stream_definir_lista(&s, 1); stream_definir_atual(0);
+    motor.sala.n = 5;
+    ajustes_definir_vidro(1);
+    goto fontes;
+  }
+  juntosui_shot_camada(3, -1);
   quadros(20);
-  captura("03-sala", 1080);
+  captura("03-lobby", 1080);   // 4 de 5 lugares, um vazio
+  motor.sala.n = 5;
+  juntosui_shot_camada(3, 0);
+  quadros(5);
+  captura("03-lobby-full", 1080);
+  ajustes_shot_valor("animacoes", 1);
+  quadros(5);
+  captura("19-solid-reduced-motion", 1080);
+  ajustes_shot_valor("animacoes", 0);
+fontes:
+  juntosui_shot_camada(7, sourcesOnly ? 1 : 0);
+  quadros(30);
+  captura("20-sources", 1080);
+  if (sourcesOnly) {
+    SDL_Event e = { 0 };
+    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_DOWN;
+    assert(!strcmp(i18n("Voltar à sala"), "Voltar à sala"));
+    assert(juntosui_evento_sdl(&e));
+    quadros(20); captura("20-sources-remote", 1080);
+    e.key.keysym.sym = SDLK_RETURN;
+    assert(juntosui_evento_sdl(&e));
+    assert(juntosui_aberta() && !juntosui_pediu_fontes());
+    e.key.keysym.sym = SDLK_UP; assert(juntosui_evento_sdl(&e));
+    quadros(20);
+    e.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&e));
+    assert(!juntosui_aberta() && juntosui_pediu_fontes() && !juntosui_pediu_fontes());
+    juntosui_shot_camada(7, 0);
+    ajustes_definir_vidro(0); ajustes_shot_valor("animacoes", 1);
+    quadros(5); captura("20-sources-solid", 1080);
+    e.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&e));
+    assert(juntosui_aberta() && !juntosui_pediu_fontes());
+    juntosui_shot_camada(7, 1);
+    stream_invalidar("source screen fixture");
+    assert(juntosui_evento_sdl(&e));
+    assert(juntosui_aberta() && !juntosui_pediu_fontes());
+    quadros(5); captura("20-sources-missing", 1080);
+    printf("juntos sources: local picker, remote isolation, back, missing metadata, solid/reduced motion: ok\n");
+    return 0;
+  }
+  juntosui_shot_camada(3, 0);
+  quadros(5);
   { SDL_Event e; memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RIGHT; juntosui_evento_sdl(&e);
     e.key.keysym.sym = SDLK_RETURN; juntosui_evento_sdl(&e); }
   // A URL que a sala devolveria (o QR curto: ~87 bytes, cabe no qr.c).
   snprintf(urlCelular, sizeof urlCelular, "https://nuvio-juntos.henriquef29.workers.dev/j/0123456789abcdef0123456789abcdefK7M2QXA9");
   quadros(20);
-  captura("04-sala-qr", 1080);
+  captura("04-invite", 1080);
 
-  // 4. Codigo, sair e pedido de entrada.
-  juntosui_shot_camada(2, 0); quadros(15); captura("05-codigo", 1080);
-  juntosui_shot_camada(4, 1); quadros(15); captura("06-sair", 1080);
+  // 4. Contagem, codigo, sair e pedido de entrada.
+  juntosui_shot_camada(0, 0);
+  juntosui_shot_contagem(3); quadros(10); captura("06-countdown", 1080); juntosui_shot_contagem(0);
+  juntosui_shot_camada(2, 0); quadros(15); captura("17-code", 1080);
+  juntosui_shot_camada(4, 1); quadros(15); captura("14-leave", 1080);
 
   // 5. No player: rostos, bolhas e a regua de reacoes.
   juntosui_shot_player(1);
+  juntosui_shot_camada(0, 0);
   juntosui_shot_bolhas();
+  quadros(20);
+  captura("07-playback", 1080);
   juntosui_shot_camada(6, 2);
   quadros(20);
-  captura("07-player-reacoes", 1080);
+  captura("08-reactions", 1080);
   printf("juntos_shot: ok\n");
   return 0;
 }

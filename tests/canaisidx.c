@@ -16,6 +16,7 @@
 // So src/catalogo.c e linkado, com dubles para o resto — mesma razao de
 // tests/catcache.c e tests/catordem.c: cache e progresso nao interessam aqui.
 #include <assert.h>
+#include "nvtmp.h"
 #include <stdio.h>
 #include <string.h>
 #include "../src/catalogo.h"
@@ -25,7 +26,7 @@ int ajustes_idioma_ingles(void) { return 0; }
 int ajustes_idioma(void) { return 0; }
 const char *i18n(const char *s) { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
-const char *dados_dir(void)     { return "/tmp"; }
+const char *dados_dir(void)     { return nvt(""); }
 // tendencia.c (puxado por catalogo.c) grava o historico de ordem: aqui nao ha
 // disco nem historico — os dubles dizem "sem pasta" e "nada gravado".
 char *dados_caminho(char *dst, unsigned tam, const char *nome) { (void)dst; (void)tam; (void)nome; return 0; }

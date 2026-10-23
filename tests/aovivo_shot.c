@@ -4,6 +4,7 @@
 //
 //   bash tests/aovivo_shot.sh /tmp/nv-player-live-shots/aovivo
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "player.h"
 #include "aovivo.h"
 #include "ajustes.h"
@@ -88,7 +89,7 @@ static void dErroSo(void *u) { Erro *e = u; aovivo_erro_desenhar(e->n, e->l, e->
 static void dPlayer(void *u) { (void)u; player_atualizar(1.f / 60, SDL_GetTicks()); player_desenhar(SDL_GetTicks()); }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-player-live-shots/aovivo";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-player-live-shots/aovivo");
   char nome[600];
   const char *e4 = getenv("NUVIO_SHOT_4K");
   if (e4 && *e4 == '1') { LW = 3840; LH = 2160; }
@@ -121,6 +122,28 @@ int main(int argc, char **argv) {
 
   { AoVivoOsd o = base();
     snprintf(nome, sizeof nome, "%s-osd.bmp", saida); foto(nome, dOsd, &o);
+    // #205: A SEQUENCIA da troca de foco — a pilula do Aspecto (disco de 68 px
+    // em repouso) expande com o nome em ~120 ms na mola. NUVIO_SHOT_SEQ=1
+    // grava os quadros 2, 8 e 20 DEPOIS da tecla; o relogio e o interno do
+    // desenho (~2 ms por quadro do harness).
+    if (getenv("NUVIO_SHOT_SEQ")) {
+      int i;
+      o.foco = 3;   // Aspecto: sem nome em repouso, so o disco
+      for (i = 1; i <= 20; i++) {
+        SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(6);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo); glViewport(0, 0, LW, LH);
+        glClearColor(.16f, .19f, .24f, 1); glClear(GL_COLOR_BUFFER_BIT);
+        { GLuint bg = tex_obter_larg_qualquer("deploy/app/art/19.jpg", 1920);
+          if (bg) gfx_rect((GfxRect){0, 0, 1920, 1080}, bg, GFX_TEXTO, 0, 0, 0, 0, 1, 1, 1, 1); }
+        dOsd(&o);
+        SDL_Delay(2);
+        if (i == 2 || i == 8 || i == 20) {
+          snprintf(nome, sizeof nome, "%s-osd-seq-%02d.bmp", saida, i);
+          salvar(nome);
+        }
+      }
+      o.foco = 0;
+    }
     // A CENA CLARA da foto do dono (01/10): o veu de baixo tem de sustentar
     // titulo, horario, A SEGUIR e botoes sobre fundo quase branco.
     cenaClara = 1;

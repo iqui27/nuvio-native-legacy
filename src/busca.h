@@ -20,6 +20,8 @@ void busca_desenhar(Uint32 agora);
 // o teclado); fechar direto do meio dos resultados perde o texto digitado sem
 // que o usuario tenha pedido isso.
 int  busca_quer_sair(void);
+int  busca_pediu_relogio(void);
+int  busca_relogio_navegavel(void);
 void busca_encerrar(void);
 
 // OK pressionado sobre um poster: devolve 1 UMA vez e escreve em
@@ -37,6 +39,9 @@ int  busca_pediu_pessoa(SpotPedido *p);
 // dali em vez de aparecer do nada. 0 se ainda nao houve um quadro desenhado com
 // foco nos resultados.
 int  busca_item_focado(HomeItem *out);
+
+// Preenche o campo e busca (deeplink nuvio-legacy://search?q=).
+void busca_definir_consulta(const char *t);
 
 // O texto do campo (UTF-8), como a pessoa o digitou. Para testes.
 const char *busca_consulta(void);

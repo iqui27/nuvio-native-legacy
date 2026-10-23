@@ -241,7 +241,7 @@ int prog_continuar_de_perfil_min(int perfil, int pctMinimo, int pctConcluido, Pr
     double p;
     if (r->perfil != perfil || r->durSeg < 60.0) continue;
     p = r->posSeg / r->durSeg;
-    if (p * 100.0 < (double)pctMinimo || p * 100.0 >= pctConcluido) continue;
+    if (!prog_inicio_continuar(r, pctMinimo) || p * 100.0 >= pctConcluido) continue;
     if (removidoVenceDe(perfil, r->contentId, r->lastWatchedMs)) continue;
     if (melhor < 0 || maisNovoPrimeiro(r, &regs[melhor]) < 0) melhor = i;
   }

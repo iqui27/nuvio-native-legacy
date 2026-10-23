@@ -9,6 +9,7 @@
 // NUVIO_DADOS e uma pasta temporaria (ver o .sh): ajustes.txt e o perfil
 // aprovado sao escritos la, nunca nos dados de quem roda.
 #include "../src/diagnostico.c"
+#include "nvtmp.h"
 #include "rail_shot.h"
 #include "ilha.h"
 #include "ajustes_ux.h"
@@ -90,7 +91,7 @@ static void resultadoC9(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-diag";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-diag");
   const char *dir = getenv("NUVIO_DADOS");
   char nome[600];
   SDL_Window *w;

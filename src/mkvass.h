@@ -42,6 +42,7 @@
 #ifndef NV_MKVASS_H
 #define NV_MKVASS_H
 #include "legenda.h"
+#include <stddef.h>
 // Snapshot local ASS com indice >= 8000 pontos: nunca abre rede nem toca o overlay.
 // So devolve um intervalo cujos pontos indexados foram TODOS colhidos.
 LegendaDocumento *mkvass_referencia(const char *url, uint64_t sessao,
@@ -114,15 +115,10 @@ long mkvass_recuo_ms(int estado, int falhas, int recusasRange);
 // Quantas pausas de "CDN pediu calma" (429/5xx/timeout) o modulo ja fez. Testes.
 long mkvass_pausas_cdn(void);
 
-// PRE-BUSCA ANTES DO VIDEO (#92, v1.4.7, webOS 25 + Real-Debrid). No registro
-// do relato, todo Range do mkvass feito COM O VIDEO TOCANDO era cortado (77465
-// e 11929 bytes, sempre os mesmos) e o pedido do resto voltava com zero bytes;
-// o video, do mesmo arquivo, tocava. Uma das hipoteses (nao provada) e o CDN
-// limitar conexoes ao mesmo arquivo enquanto o pipeline segura uma. Entao o
-// que a legenda precisa para comecar — cabecalho, Tracks, fontes anexadas,
-// Cues e os blocos dos primeiros minutos — e lido ANTES de a URL ir ao
-// pipeline, com teto de MKVASS_PREBUSCA_MS; vencido o teto o video comeca com
-// o que chegou e o fio segue em segundo plano, como sempre.
+// PRE-BUSCA LATERAL: cabecalho, Tracks, fontes e Cues em fio proprio enquanto
+// o video toca. Janela de 12 s pelo playhead, preservada depois da adocao;
+// o fio estaciona por 250 ms quando nao ha blocos na janela. O video nunca
+// espera por esta fase. Recusas do CDN seguem o recuo/fallback existente.
 //
 // `escolher` recebe os idiomas das legendas do arquivo NA ORDEM DAS TrackEntry
 // (a mesma do ordinal) e devolve o ordinal a colher, ou -1. Se a escolhida nao
@@ -140,8 +136,25 @@ long mkvass_pausas_cdn(void);
 #endif
 typedef int (*MkvassEscolher)(const char *const *idiomas, int n);
 int  mkvass_prebuscar(const char *url, MkvassEscolher escolher, double fracInicio);
+// Pre-busca independente do proximo episodio. Colhe pelo mesmo parser, com
+// os mesmos limites/teto de Ranges, sem trocar a faixa/fontes atuais. O
+// contexto da escolha e copiado (ate 4096 bytes); use bytes autocontidos,
+// sem ponteiros emprestados. Criar/fase/adotar/cancelar pertencem ao fio da UI.
+typedef struct MkvassPreparo MkvassPreparo;
+typedef int (*MkvassEscolherCom)(const char *const *idiomas, int n, const void *contexto);
+MkvassPreparo *mkvass_preparo_criar(const char *url, MkvassEscolherCom escolher,
+                                  const void *contexto, size_t tamanhoContexto,
+                                  double fracInicio);
+int mkvass_preparo_fase(MkvassPreparo *preparo);
+// Somente depois de fechar o video anterior. URL e fracao devem ser as que
+// foram capturadas. Sucesso consome o handle (NULL) e conserva o worker,
+// cabecalho, fontes e blocos colhidos; a escolha por ordinal adota como sempre.
+// Falha conserva o handle para cancelamento/fallback. Nunca espera HTTP.
+int mkvass_preparo_adotar(MkvassPreparo **preparo, const char *url, double fracInicio);
+void mkvass_preparo_cancelar(MkvassPreparo **preparo);
+
 // 0 = nenhuma pre-busca; 1 = correndo; 2 = acabou (pronta, desistiu ou nao
-// havia faixa ASS a colher). O player segura o video ate != 1 ou o teto.
+// havia faixa ASS a colher). Apenas diagnostico; nao segura o video.
 int  mkvass_prebusca_fase(void);
 // Copia do INICIO do arquivo que a pre-busca leu (o mesmo trecho em que a
 // sonda do cabecalho procura Tracks), para a sonda de video.c nao pedir de
@@ -168,6 +181,8 @@ int  mkvass_estado(void);
 // Android conserva padrao 0: Media3 ja entrega o texto ao overlay.
 // Desligavel para testes/consumidores que precisem somente de ASS.
 void mkvass_aceitar_texto(int sim);
+// Faixas de imagem (S_HDMV/PGS): colhe os blocos e decodifica para o imgsub.
+void mkvass_aceitar_imagem(int sim);
 // 1 quando o estado e um dos no-go.
 int  mkvass_nogo(void);
 // 1 quando a colheita e por VARREDURA dos Clusters (o indice nao apontava os

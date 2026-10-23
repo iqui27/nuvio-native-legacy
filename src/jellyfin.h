@@ -138,6 +138,8 @@ int jf_qc_autenticar(JfConta *c, RedeJob *job, const char *segredo);
 // Wipes `senha` (and the request body copy) before returning, success or not.
 int jf_autenticar_senha(JfConta *c, RedeJob *job, const char *usuario, char *senha);
 int jf_bibliotecas(const JfConta *c, RedeJob *job, JfBiblioteca *out, int max);
+// Items fetched per library row so all rows together stay within JF_ITENS_MAX.
+int jf_por_fileira(int nBibliotecas);
 // Items of one library, newest first. *total = TotalRecordCount (paging).
 int jf_itens(const JfConta *c, RedeJob *job, const char *bibliotecaId,
              int inicio, int limite, CatItem *out, int max, int *total);
@@ -217,8 +219,11 @@ void jellyfin_recarregar_bibliotecas(void);
 
 // Home rows. Copies the current snapshot without network; rows have empty
 // `base` (fixed rows: they do not consume the addon row limit).
-#define JF_FIL_MAX 6
+// Libraries per server (AIOMetadata exposes one per catalog, #468). The item
+// budget stays 6 full rows: more libraries just get fewer items each.
+#define JF_FIL_MAX 16
 #define JF_POR_FILEIRA 24
+#define JF_ITENS_MAX (6 * JF_POR_FILEIRA)
 unsigned jellyfin_fileiras_versao(void);
 int  jellyfin_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils,
                               int maxFils, int *nItens);

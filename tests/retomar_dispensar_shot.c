@@ -27,6 +27,7 @@
 // o numero de retangulos do quadro — o que da para medir no Mac do custo de
 // desenho; o custo em ms de GPU so existe na TV.
 #include "ajustes.h"
+#include "nvtmp.h"
 #include "artehero.h"
 #include "catalogo.h"
 #include "colecoes.h"
@@ -146,7 +147,7 @@ static void ajustaSemRelogio(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-retomar-shots/r";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-retomar-shots/r");
   static CatItem itens[200];
   static CatFileira fils[8];
   SDL_GLContext gl;

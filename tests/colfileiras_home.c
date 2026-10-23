@@ -12,7 +12,11 @@ int addons_n(void) { return 0; }
 int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 const char *addons_base(int i) { (void)i; return ""; }
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
+int addons_travar_lista(unsigned v, int p) { (void)v; (void)p; return 0; }
+void addons_destravar_lista(void) {}
 const char *sessao_usuario(void) { return "account-home"; }
+// Stub do mesmo porteiro de tests/home_layout.c: a regra mora em descoberta.c,
+// que nao entra nesta montagem sem rede.
 
 #define GRUPO(id,pasta) "{\"id\":\"" id "\",\"title\":\"Same title\",\"folders\":[{\"id\":\"" pasta "\",\"title\":\"Folder\",\"sources\":[{\"addonBaseUrl\":\"https://collection.invalid\",\"type\":\"movie\",\"catalogId\":\"" pasta "\"}]}]}"
 static const char *duas = "{\"collections\":[" GRUPO("c1","f1") "," GRUPO("c2","f2") "]}";

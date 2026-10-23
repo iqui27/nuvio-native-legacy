@@ -44,6 +44,7 @@ EPISODES = [
      "thumb": "/library/metadata/301/thumb/17", "originallyAvailableAt": "2020-01-02"},
     {"ratingKey": "302", "type": "episode", "parentIndex": 1, "index": 2, "title": "Second", "duration": 2700000},
     {"ratingKey": "311", "type": "episode", "parentIndex": 2, "index": 1, "title": "Return", "duration": 2700000},
+    {"ratingKey": "391", "type": "episode", "parentIndex": 0, "index": 5, "title": "Special", "duration": 2700000},
 ]
 
 

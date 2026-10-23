@@ -67,7 +67,7 @@ int main(void) {
   { char longo[400]; int i; texto_sistema_fechar(); quadro(); nFim = 0;
     for (i = 0; i < 399; i++) longo[i] = 'a'; longo[399] = 0;
     texto_sistema_abrir(longo, 0);
-    OK(strlen(texto_sistema_valor()) == 255, "texto atual cortado em 255 bytes"); }
+    OK(!strcmp(texto_sistema_valor(), longo), "current text retains input beyond 255 bytes"); }
   texto_sistema_fechar();
   quadro();
   OK(nFim == 1 && !texto_sistema_aberto(), "fechar avisa o fim uma vez");

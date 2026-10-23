@@ -23,7 +23,18 @@ typedef enum {
   // Escolhiveis em qualquer layout (06/10):
   FILEIRA_LINHA_TEMPO, // cartazes por ano sobre a linha animada dos anos
   FILEIRA_FICHA,       // cartaz com a ficha do titulo ao lado
-  FILEIRA_PALCO        // o foco grande no centro, vizinhos diminuindo
+  FILEIRA_PALCO,       // o foco grande no centro, vizinhos diminuindo
+  FILEIRA_REDONDA,     // avatar circular com o nome embaixo (pessoas)
+  // "Herói" (#205): UM cartão do tamanho da fileira, com fundo, selo,
+  // título e duas linhas — o banner entre fileiras do Apple TV.
+  FILEIRA_HEROI,
+  // 14/10: o pôster 3:4 grande da Apple TV, com logo, gênero, classificação
+  // e sinopse na base, sobre o véu da COR PREDOMINANTE do cartaz.
+  FILEIRA_POSTER_GRANDE,
+  // 16/10: o painel deitado do foco a esquerda (arte, logo e ficha) e a fila
+  // de cartazes a direita; o painel segue o foco da fileira.
+  FILEIRA_HEROI_DIVIDIDO,
+  FILEIRA_POSTER       // Explicit portrait row style, independent of global landscape.
 } TipoFileira;
 
 // O item sob o foco, com o retangulo que ele ocupa na tela NESTE quadro. A
@@ -44,6 +55,9 @@ typedef struct {
 int  home_iniciar(const char *dirArte);
 int  home_cartao_foco_por_cima(int indice); // repinta o cartao focado (menu do cartaz)
 int  home_item_focado(HomeItem *out);      // 0 se o foco ainda nao foi desenhado
+// Retangulo (tela real) do cartao focado de qualquer fileira, pilha e pasta
+// inclusas. 0 sem cartao focado neste quadro (destaque, fileira vazia).
+int  home_ancora_foco(GfxRect *out);
 int  home_n_artes(void);                   // acervo de backdrops, usado pelo detalhe
 // Ha fileira montada? Serve para o app saber que o catalogo CHEGOU depois do
 // arranque, e nao so que existia na hora de abrir.
@@ -56,9 +70,17 @@ const char *home_arte(int i);
 const char *home_backdrop(int i);   // arte do titulo i do catalogo
 void home_evento(const SDL_Event *e);
 void home_atualizar(float dt, Uint32 agora);
+// Palco: o veu da tela inteira com a luz no titulo em foco; por cima de tudo
+// da home (barra inclusive), antes dos menus e da pagina do titulo.
+void home_holofote_desenhar(Uint32 agora);
 // Poe a home no topo (destaque, fileira 0, sem rolagem) e esquece a posicao
 // lembrada da sessao. Usado ao entrar num perfil novo.
 void home_ir_topo(void);
+const char *home_perf_tag(void);
+void home_perf_style_menu(void);
+// Nova sessao do perfil confirmado: esquece somente estado transitorio da UI.
+// Catalogo, contas e preferencias sao carregados pelos seus proprios donos.
+void home_abrir_sessao(void);
 // Trailer no destaque: `topo` = 1 quando a home e o que esta na frente (sem
 // detalhe, player, painel, menu ou cartao por cima). app.c chama por quadro.
 void home_trailer_passo(int topo, float dt, Uint32 agora);
@@ -71,11 +93,17 @@ void home_shot_trailer(int sim);
 // "[home-trailer] autoplay gate=top-overlay (...)" line; call before the step.
 void home_trailer_topo_motivo(const char *motivo);
 void home_desenhar(Uint32 agora);
+// Fileiras ainda visiveis atras da copia parada do painel (salvospainel.c).
+void home_fileiras_vistas(Uint32 agora);
 
 // Onde a ARTE do hero foi desenhada no ultimo quadro. A tela de detalhe usa
 // isto para nascer com o backdrop no mesmo lugar — o fundo do detalhe E a arte
 // do titulo em foco, e ela nao deve reaparecer, deve continuar.
 void home_hero_rect(float *x, float *y, float *w, float *h);
+// A LINHA DE META do destaque do topo: episodio em andamento, genero, ano e
+// duracao — cada um no seu ajuste, sem buraco (o que some fecha o espaco).
+// Separada do desenho para o teste da combinacao dos ajustes (tests/herometa.c).
+void hero_meta_linha(const CatItem *ci, char *dst, size_t n);
 // 1 com a pagina no topo (layout Dinamica), caindo a 0 ao rolar; 1 nos outros.
 float home_topo_fracao(void);
 // Layout Dinamica: as pastas (indices de col_folder) da fileira de colecao
@@ -85,6 +113,7 @@ int home_streaming_barra(const int **pastas);
 // A home continua se montando mas NAO esta na tela (escolha de perfil): o
 // destaque nao gira nem pre-busca enquanto estiver escondida.
 void home_oculta(int oculta);
+void home_painel_aberto(int aberto);   // painel de Salvos/Social na frente: o carrossel nao gira
 void home_encerrar(void);
 // Registra o titulo interrompido para a faixa contextual "Retomar agora".
 // A faixa so existe enquanto o progresso fizer sentido (nem inicio nem fim).
@@ -104,27 +133,23 @@ void home_pedir_abrir(void);   // pede a pagina do titulo focado (menu do cartao
 int  home_foco_retomada(void); // card focado e de retomada (OK nele toca)
 int  home_pediu_tocar(void);   // OK num card de retomada com "OK no card" = Retomar
 int  home_pediu_menu(void);    // ESQUERDA na primeira coluna: chama o menu
+int  home_pediu_relogio(void); // CIMA alem do topo; consumido pelo roteador
+int  home_pediu_ilha(void);   // CIMA no alto da home: foco na ilha (#495)
 int home_pediu_social(void);
 int home_pediu_pessoa_social(CatItem *saida);
 // OK numa fileira de canal ("Ver tudo" dela, ou num cartao de canal — que ai
 // recebe o id para o guia ja abrir focado nele). `id` pode ser NULL.
 int  home_pediu_guia(char *id, int tam);
 
-// PREVIA DO ESTILO DA FILEIRA, para o modal do cartaz (ctxmenu.c): a fileira
-// `chave` na forma `filTipo` (FilTipo, fileiras.h), com as artes dela e o
-// desenho real dos cartoes, dentro de `area`. 0 quando a fileira nao esta na
-// Home montada. So desenha; nao muda nada da fileira.
-// `refTipo` decide a REDUCAO (a forma que enche o palco); a previa desenha
-// `filTipo` nessa mesma reducao. Igual a `filTipo` = a forma enche sozinha.
-int home_previa_fileira(const char *chave, int filTipo, int refTipo, GfxRect area,
-                        float alfa);
 // VITRINE DAS COLECOES (vertudo.c): destaque e cartaz da Home para um CatItem
 // que nao esta no catalogo global. Ver home.c.
-void home_vitrine_medida(float *w, float *h, float *passo, float *rotH);
+void home_vitrine_medida(float *w, float *h, float *passo, float *rotH, int redonda);
 int  home_vitrine_arte_pronta(const CatItem *ci);
 int  home_vitrine_arte(const CatItem *ci, float alfa);
-void home_vitrine_texto(const CatItem *ci, float alfa);
-void home_vitrine_cartao(const CatItem *ci, GfxRect base, GfxRect card, float alfa);
+int  home_vitrine_layout(void);
+float home_vitrine_topo(float filH);
+float home_vitrine_texto(const CatItem *ci, float topo, float teto, float alfa);
+void home_vitrine_cartao(const CatItem *ci, GfxRect base, GfxRect card, float alfa, int redonda, float foco);
 #endif
 const char *home_rastro_foco(void);
 // CARROSSEL DA DINAMICA: titulos (indices do catalogo) da fileira em foco e a

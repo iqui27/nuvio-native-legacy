@@ -1,5 +1,6 @@
 // Captura isolada do toast da Central de avisos, sem rede ou estado real.
 #include "avisos.h"
+#include "nvtmp.h"
 #include "ajustes.h"
 #include "gfx.h"
 #include "text.h"
@@ -34,7 +35,7 @@ static void captura(const char *nome, SDL_Window *win) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-avisos-toast.bmp";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-avisos-toast.bmp");
   const char *dir = getenv("NUVIO_DADOS");
   char ajustes[700];
   SDL_Window *w;

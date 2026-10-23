@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Fixture captures of the "Recommend to a friend" sheet (tests/recenviar_shot.c).
 # Usage: tests/recenviar_shot.sh <output-prefix>
 #   NUVIO_SHOT_IDIOMA=6   German (any IDIOMA_* index)
@@ -6,7 +8,7 @@
 #   RE_FONTE=/abs/recenviar.c  photograph another version of the module
 set -eu
 cd "$(dirname "$0")/.."
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-send-shot.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-send-shot.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 sources=()

@@ -14,6 +14,7 @@
 #include "../src/tex_cache.c"
 #include <assert.h>
 #include <stdio.h>
+#include "nvtmp.h"
 
 static void preparar(void) {
   memset(itens, 0, sizeof itens);
@@ -114,7 +115,7 @@ int main(void) {
     puts("ok  logo/heroi decodificado sobe antes do cartaz"); }
 
   // 3. Disco direto.
-  { char dir[] = "/Volumes/ExternalSSD/tmp/texb3-XXXXXX", arq[700];
+  { char dir[NVT_MAX], arq[700]; nvt_set(dir, sizeof dir, "/texb3-XXXXXX");
     FILE *f;
     int i;
     assert(mkdtemp(dir));

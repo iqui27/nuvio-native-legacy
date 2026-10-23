@@ -9,6 +9,7 @@
 // Medidas SINTETICAS injetadas pela API real (streamfit_passiva /
 // streamfit_diagnostico): nao e rede nem TV. NAO ENTRA NA SUITE (*_shot.sh).
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "streams.h"
 #include "streamfit.h"
 #include "badges.h"
@@ -73,7 +74,7 @@ static void tecla(SDL_Keycode k) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-streamfit-folha";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-streamfit-folha");
   char nome[600];
   SDL_Window *w; SDL_GLContext gl;
   Stream v[5];

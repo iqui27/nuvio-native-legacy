@@ -1,5 +1,8 @@
 #include "mkv.h"
 #include "rede.h"
+#ifdef NV_RUST_MKVCORE
+#include "mkvcore.h"
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -19,6 +22,7 @@
 // o video em todos.
 #define MKV_TRECHO  (320L * 1024)
 
+#ifndef NV_RUST_MKVCORE
 // --- EBML: inteiros de tamanho variavel --------------------------------------
 //
 // O primeiro byte diz, pela posicao do bit 1 mais alto, quantos bytes o numero
@@ -293,6 +297,8 @@ static int lerCapitulos(const unsigned char *p, long n, MkvCap *saida, int max) 
   return achou;
 }
 
+#endif  // !NV_RUST_MKVCORE (EBML core: rust/mkvcore)
+
 // Anda pela arvore ate achar Tracks. Entra em Segment (que e um contentor
 // gigante) e PULA o resto — sem o pulo a busca varreria byte a byte e casaria
 // com qualquer coincidencia dentro dos dados de video.
@@ -303,10 +309,43 @@ static int tracksCortado;
 // Para o mkv_diag: Tracks visto na ultima acharTracks, e o tamanho declarado.
 static int tkAchado;
 static long tkTam;
+// 1 quando a ultima acharTracks deixou o Tracks fora da janela e o SeekHead
+// diz onde ele mora — o caso do #483, resolvido por mkv_tracks_alem.
+static int tracksNaoVisto;
 // Onde o Chapters mora, pelo SeekHead (203-capitulos): posicao ABSOLUTA no
 // arquivo (-1 = o SeekHead nao disse). 64 bits: Chapters no fim de um remux de
-// mais de 2 GB nao cabe num long de 32 bits.
-static long long segIni, posChapters;
+// mais de 2 GB nao cabe num long de 32 bits. `posTracks` idem para o Tracks.
+static long long segIni, posChapters, posTracks;
+#ifdef NV_RUST_MKVCORE
+// Mesma busca, feita pelo nucleo Rust (rust/mkvcore): o estado que a versao C
+// deixa em statics volta por NvMkvScan e e copiado para os daqui.
+static int acharTracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
+                       MkvCap *caps, int maxCaps, int *nCaps) {
+  NvMkvScan sc;
+  int nFaixas = nv_mkvcore_achar_tracks(p, n, saida, max, caps, maxCaps, &sc);
+  if (nCaps) *nCaps = sc.n_caps;
+  tracksCortado = sc.tracks_cortado;
+  tkAchado = sc.tk_achado;
+  tkTam = (long)sc.tk_tam;
+  segIni = sc.seg_ini;
+  posChapters = sc.pos_chapters;
+  posTracks = sc.pos_tracks;
+  tracksNaoVisto = sc.tracks_nao_visto;
+  if (sc.tracks_cortado) {
+    printf("[mkv] Tracks tem %lld bytes e o trecho baixado acaba em %lld: %d faixa(s) lidas, lista pode estar incompleta\n",
+           sc.tk_tam, sc.tk_disp, nFaixas);
+    fflush(stdout);
+  }
+  return nFaixas;
+}
+
+// Os testes que incluem este .c chamam lerCapitulos pelo nome; o corpo mora no
+// nucleo Rust.
+__attribute__((unused))
+static int lerCapitulos(const unsigned char *p, long n, MkvCap *saida, int max) {
+  return nv_mkvcore_capitulos(p, n, saida, max);
+}
+#else
 #define ID_SEEKHEAD 0x114D9B74UL
 #define ID_SEEK     0x4DBBUL
 #define ID_SEEKID   0x53ABUL
@@ -340,7 +379,9 @@ static void lerSeekHead(const unsigned char *p, long n) {
         else if (fid == ID_SEEKPOS) pos = (long long)lerUint(p + o + q, ftam);
         q += ftam;
       }
-      if (alvo == ID_CHAPTERS && pos >= 0) posChapters = segIni + pos;
+      if (pos < 0) continue;
+      if (alvo == ID_CHAPTERS) posChapters = segIni + pos;
+      else if (alvo == ID_TRACKS) posTracks = segIni + pos;
     }
     o += tam;
   }
@@ -351,22 +392,22 @@ static int acharTracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
   long o = 0;
   int nFaixas = 0;
   if (nCaps) *nCaps = 0;
-  tracksCortado = 0;
+  tracksCortado = 0; tracksNaoVisto = 0;
   tkAchado = 0; tkTam = 0;
-  segIni = 0; posChapters = -1;
+  segIni = 0; posChapters = -1; posTracks = -1;
   while (o < n) {
     int ui = 0, ut = 0;
     unsigned long id = lerId(p + o, n - o, &ui);
     long tam;
-    if (!id) return 0;
+    if (!id) break;
     tam = lerTam(p + o + ui, n - o - ui, &ut);
-    if (tam == -1) return 0;
+    if (tam == -1) break;
     o += ui + ut;
     if (id == ID_SEGMENT || tam == -2) {
       // Segment: descer para dentro. Tamanho desconhecido idem — nao ha por
       // onde pular.
       if (id == ID_SEGMENT) { segIni = o; continue; }
-      return 0;
+      break;
     }
     if (id == ID_SEEKHEAD && o + tam <= n) lerSeekHead(p + o, tam);
     if (id == ID_TRACKS) {
@@ -385,7 +426,7 @@ static int acharTracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
       }
       // NAO devolve aqui: Chapters vem DEPOIS de Tracks no arquivo, e sair no
       // primeiro achado era o que deixava os capitulos para tras.
-      if (!caps || tam > disp) return nFaixas;
+      if (!caps || tam > disp) break;
       o += tam;
       continue;
     }
@@ -393,16 +434,23 @@ static int acharTracks(const unsigned char *p, long n, MkvFaixa *saida, int max,
       long disp = n - o;
       // Chapters CORTADO pelo trecho: lista pela metade erra o "ultimo
       // capitulo". Fica para a leitura por SeekHead (mkv_capitulos_alem).
-      if (tam > disp) { posChapters = o - ui - ut; return nFaixas; }
+      if (tam > disp) { posChapters = o - ui - ut; break; }
       if (nCaps) *nCaps = lerCapitulos(p + o, tam, caps, maxCaps);
       posChapters = -1;
-      return nFaixas;
+      break;
     }
-    if (o + tam > n) return nFaixas;  // elemento passa do que baixamos
+    if (o + tam > n) break;  // elemento passa do que baixamos
     o += tam;
   }
+  // #483: Tracks alem da janela (remux remontado por mkvpropedit, com um
+  // Attachments grande ou o primeiro Cluster antes dele). A busca parou nesse
+  // elemento com 0 faixas — ou leu um Tracks cortado — e toda legenda ficava
+  // "codec=?", devolvendo a faixa ao renderizador da TV (texto simples, falas
+  // caindo). O SeekHead diz onde o Tracks mora; mkv_tracks_alem busca num Range.
+  if (posTracks >= 0 && (nFaixas == 0 || tracksCortado)) tracksNaoVisto = 1;
   return nFaixas;
 }
+#endif  // NV_RUST_MKVCORE
 
 // O capitulo dos creditos: primeiro pelo NOME, depois pela posicao.
 //
@@ -487,16 +535,78 @@ double mkv_creditos_ultimo(const MkvCap *caps, int n) {
 #define MKV_CAP_PRIMEIRO (64L * 1024)
 #define MKV_CAP_TETO     (2L * 1024 * 1024)
 
+// #483: o mesmo para o TRACKS que o SeekHead aponta fora da janela (remux
+// remontado, Attachments grande na frente). Teto de 4 MB: o CodecPrivate de
+// um fansub leva o Tracks a ~100 KB; acima disso e arquivo esquisito.
+#define MKV_TRK_PRIMEIRO (64L * 1024)
+#define MKV_TRK_TETO     (4L * 1024 * 1024)
+
+static int tracksPorPosicao(const char *url, long long pos, MkvFaixa *saida, int max, int *status) {
+  long n = 0, need;
+  int ui = 0, ut = 0, achou = 0, st = 0;
+#ifndef NV_RUST_MKVCORE
+  unsigned long id;
+#endif
+  long tam;
+  char *b = rede_baixar_trecho_st(url, 15, pos, pos + MKV_TRK_PRIMEIRO - 1, &n, &st, NULL, NULL, 0);
+  if (status) *status = st;
+  if (!b) return 0;
+#ifdef NV_RUST_MKVCORE
+  { long long t = nv_mkvcore_elem_cabecalho((const unsigned char *)b, n, 0x1654AE6BUL, &ui);
+    tam = (t < 0 || t > MKV_TRK_TETO) ? -1 : (long)t; ut = 0; }
+#else
+  id = lerId((const unsigned char *)b, n, &ui);
+  tam = id == ID_TRACKS ? lerTam((const unsigned char *)b + ui, n - ui, &ut) : -1;
+#endif
+  if (tam < 0 || tam > MKV_TRK_TETO) { free(b); return 0; }
+  need = ui + ut + tam;
+  if (need > n) {
+    free(b);
+    b = rede_baixar_trecho_st(url, 15, pos, pos + need - 1, &n, &st, NULL, NULL, 0);
+    if (status) *status = st;
+    if (!b || n < need) { free(b); return 0; }
+  }
+#ifdef NV_RUST_MKVCORE
+  achou = nv_mkvcore_ler_tracks((const unsigned char *)b + ui + ut, tam, saida, max);
+#else
+  achou = lerTracks((const unsigned char *)b + ui + ut, tam, saida, max);
+#endif
+  free(b);
+  return achou;
+}
+
+// Tracks fora da janela do cabecalho (#483): se a ultima sonda nao o alcancou
+// e o SeekHead diz onde ele mora, UM Range (dois se o elemento for maior que
+// 64 KB) le o elemento inteiro. Devolve quantas faixas; `status` (opcional)
+// recebe o HTTP do pedido (0 = sem resposta), -1 quando nao houve pedido.
+// BLOQUEIA: chamar de fio proprio.
+int mkv_tracks_alem(const char *url, MkvFaixa *saida, int max, int *status) {
+  int n;
+  if (status) *status = -1;
+  if (!url || !url[0] || !saida || max < 1 || posTracks < 0 || !tracksNaoVisto) return 0;
+  n = tracksPorPosicao(url, posTracks, saida, max, status);
+  printf("[mkv] faixas pelo SeekHead (pos %lld): %d\n", posTracks, n);
+  fflush(stdout);
+  return n;
+}
+
 static int capsPorPosicao(const char *url, long long pos, MkvCap *caps, int max, int *status) {
   long n = 0, need;
   int ui = 0, ut = 0, achou = 0, st = 0;
+#ifndef NV_RUST_MKVCORE
   unsigned long id;
+#endif
   long tam;
   char *b = rede_baixar_trecho_st(url, 15, pos, pos + MKV_CAP_PRIMEIRO - 1, &n, &st, NULL, NULL, 0);
   if (status) *status = st;
   if (!b) return 0;
+#ifdef NV_RUST_MKVCORE
+  { long long t = nv_mkvcore_cap_cabecalho((const unsigned char *)b, n, &ui);
+    tam = (t < 0 || t > MKV_CAP_TETO) ? -1 : (long)t; }
+#else
   id = lerId((const unsigned char *)b, n, &ui);
   tam = id == ID_CHAPTERS ? lerTam((const unsigned char *)b + ui, n - ui, &ut) : -1;
+#endif
   if (tam < 0 || tam > MKV_CAP_TETO) { free(b); return 0; }
   need = ui + ut + tam;
   if (need > n) {
@@ -505,7 +615,11 @@ static int capsPorPosicao(const char *url, long long pos, MkvCap *caps, int max,
     if (status) *status = st;
     if (!b || n < need) { free(b); return 0; }
   }
+#ifdef NV_RUST_MKVCORE
+  achou = nv_mkvcore_capitulos((const unsigned char *)b + ui + ut, tam, caps, max);
+#else
   achou = lerCapitulos((const unsigned char *)b + ui + ut, tam, caps, max);
+#endif
   free(b);
   return achou;
 }
@@ -562,6 +676,25 @@ double mkv_previa_nomeada(const MkvCap *caps, int n) {
 static MkvDiag diag = { 0, 0, 0, 0, -1, 0, -1, -1, -1, -1 };
 const MkvDiag *mkv_diag(void) { return &diag; }
 
+#ifdef NV_RUST_MKVCORE
+int mkv_quadro_tem_rpu(const unsigned char *p, long n, int nalTam, int *rpuTipo, int *rpuPerfil) {
+  return nv_mkvcore_quadro_tem_rpu(p, n, nalTam, rpuTipo, rpuPerfil);
+}
+
+// A varredura do primeiro Cluster mora no nucleo Rust; aqui fica so o estado.
+static void diagTrecho(const unsigned char *p, long n, const MkvFaixa *fx, int nf) {
+  int faixa = 0, nalTam = 0, j;
+  NvDiagOut o;
+  for (j = 0; j < nf; j++) if (fx[j].tipo == 1) { faixa = fx[j].numero; nalTam = fx[j].nalTam; break; }
+  nv_mkvcore_diag_trecho(p, n, faixa, nalTam, &o);
+  memset(&diag, 0, sizeof diag);
+  diag.lidos = n; diag.tracksAchado = tkAchado; diag.tracksTam = tkTam;
+  diag.tracksInteiro = tkAchado && !tracksCortado;
+  diag.rpu = o.rpu; diag.quadros = o.quadros;
+  diag.rpuTipo = o.rpu_tipo; diag.rpuPerfil = o.rpu_perfil;
+  diag.blocoIni = o.bloco_ini; diag.blocoFim = o.bloco_fim;
+}
+#else
 int mkv_quadro_tem_rpu(const unsigned char *p, long n, int nalTam, int *rpuTipo, int *rpuPerfil) {
   long o = 0;
   if (!p || nalTam < 1 || nalTam > 4) return -1;
@@ -671,6 +804,7 @@ static void diagTrecho(const unsigned char *p, long n, const MkvFaixa *fx, int n
     o += tam;
   }
 }
+#endif  // NV_RUST_MKVCORE
 
 int mkv_rpu_alem(const char *url, int nalTam, long teto) {
   long n = 0, quer;
@@ -691,6 +825,7 @@ int mkv_rpu_alem(const char *url, int nalTam, long teto) {
 // Ver a nota em mkv.h (MKV_CONT_*). Estado estatico como `diag`: le-se no
 // mesmo fio, logo depois da sonda.
 static int ultimoContentor;
+#ifndef NV_RUST_MKVCORE
 static int caixaIso(const unsigned char *t) {
   static const char *tipos[] = { "ftyp", "styp", "moov", "mdat", "free", "skip", "wide", "pdin" };
   size_t i;
@@ -709,6 +844,10 @@ int mkv_contentor(const unsigned char *p, long n) {
   if (i < n && (p[i] == '<' || p[i] == '{' || p[i] == '[')) return MKV_CONT_TEXTO;
   return MKV_CONT_OUTRO;
 }
+#endif
+#ifdef NV_RUST_MKVCORE
+int mkv_contentor(const unsigned char *p, long n) { return nv_mkvcore_contentor(p, n); }
+#endif
 int mkv_ultimo_contentor(void) { return ultimoContentor; }
 int mkv_contentor_definitivo(int c) {
   return c == MKV_CONT_MP4 || c == MKV_CONT_TS || c == MKV_CONT_OUTRO;
@@ -744,6 +883,22 @@ int mkv_faixas_e_caps(const char *url, MkvFaixa *saida, int max,
   achou = acharTracks((const unsigned char *)buf, n, saida, max,
                       caps, maxCaps, nCaps);
   diagTrecho((const unsigned char *)buf, n, saida, achou);
+  // Tracks cortado pela janela: uma lista PELA METADE faria o casamento das
+  // legendas dar "nenhum" e deixaria TODA faixa ASS com a TV (#483 so cobria o
+  // caso de 0 faixas). O SeekHead diz onde o elemento inteiro mora. Sem ele (ou
+  // se o Range falha) ficam so as faixas COMPLETAS que nao sao legenda: video e
+  // audio continuam servindo ao DV/DTS/rotulos, e sem TrackEntry de legenda o
+  // casamento da TV cai em "nenhum" em vez de errar com uma lista incompleta.
+  if (tracksCortado) {
+    int alem = mkv_tracks_alem(url, saida, max, NULL);
+    if (alem > 0) achou = alem;
+    else {
+      int i, m = 0;
+      for (i = 0; i < achou; i++) if (saida[i].tipo != 17) saida[m++] = saida[i];
+      achou = m;
+    }
+    tracksNaoVisto = 0;   // uma tentativa por sonda: o lerMkv nao repete o mesmo Range
+  }
   if (caps && nCaps && !*nCaps && posChapters >= 0)
     *nCaps = capsPorPosicao(url, posChapters, caps, maxCaps, NULL);
   free(buf);
@@ -767,6 +922,12 @@ int mkv_faixas_do_trecho(const unsigned char *buf, long n, MkvFaixa *saida, int 
 
 int mkv_faixas(const char *url, MkvFaixa *saida, int max) {
   return mkv_faixas_e_caps(url, saida, max, NULL, 0, NULL);
+}
+
+// Legenda de imagem (BD: PGS; DVD: VobSub; DVB). O mesmo criterio de faixasmkv.c.
+static int legendaImagemMkv(const MkvFaixa *f) {
+  return !strncmp(f->codec, "S_HDMV", 6) || !strncmp(f->codec, "S_VOBSUB", 8) ||
+         !strncmp(f->codec, "S_DVBSUB", 8);
 }
 
 // Ver a nota em mkv.h. Puro: sem rede, sem estado — e o que o teste
@@ -795,6 +956,36 @@ int mkv_casar_legendas(const MkvFaixa *fx, int n, const int *tvNum, int nTv,
     for (i = 0; i < nTv; i++) idxFx[i] = leg[tvNum[i]];
     return MKV_CASA_ORDINAL;
   }
+  // A TV pode esconder as legendas de IMAGEM (PGS/VobSub) — e todo BD/remux de
+  // anime as traz ao lado das ASS. Com elas fora do arquivo as contagens
+  // batem. Primeiro o ordinal no arquivo inteiro (a TV so omitiu a lista, e o
+  // trackNum seguiu a numeracao do arquivo); depois renumerado 0..k-1 entre as
+  // de texto. Os dois so valem quando TODAS caem em faixa de texto, para o
+  // ordinal nunca apontar uma imagem.
+  { int txt[MKV_MAX_FAIXAS], nTxt = 0;
+    for (j = 0; j < nLeg; j++) if (!legendaImagemMkv(&fx[leg[j]])) txt[nTxt++] = leg[j];
+    if (nTxt != nLeg && nTxt == nTv) {
+      unsigned char visto[MKV_MAX_FAIXAS] = {0};
+      ok = 1;
+      for (i = 0; ok && i < nTv; i++) {
+        if (tvNum[i] < 0 || tvNum[i] >= nLeg || visto[tvNum[i]] || legendaImagemMkv(&fx[leg[tvNum[i]]])) ok = 0;
+        else visto[tvNum[i]] = 1;
+      }
+      if (ok) {
+        for (i = 0; i < nTv; i++) idxFx[i] = leg[tvNum[i]];
+        return MKV_CASA_SEM_IMAGEM;
+      }
+      memset(visto, 0, sizeof visto);
+      ok = 1;
+      for (i = 0; ok && i < nTv; i++) {
+        if (tvNum[i] < 0 || tvNum[i] >= nTxt || visto[tvNum[i]]) ok = 0;
+        else visto[tvNum[i]] = 1;
+      }
+      if (ok) {
+        for (i = 0; i < nTv; i++) idxFx[i] = txt[tvNum[i]];
+        return MKV_CASA_SEM_IMAGEM;
+      }
+    } }
 
   ok = 1;
   for (i = 0; ok && i < nTv; i++) {

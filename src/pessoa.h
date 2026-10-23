@@ -7,6 +7,8 @@ void pessoa_pedir(long tmdbId, const char *nomeConhecido, const char *foto);
 int pessoa_pronta(void);
 long pessoa_id(void);
 unsigned pessoa_revisao(void);
+void pessoa_contexto_titulo(const char *imdb, const char *tipo);
+int pessoa_falhou(void);
 const char *pessoa_nome(void);
 const char *pessoa_foto(void);
 // Caller owns the biography snapshot; free after rendering. NULL on allocation failure.

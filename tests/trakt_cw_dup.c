@@ -2,6 +2,7 @@
 // remocao apaga os cinco registros, o "14" inventado nao existe, e o selo IMDb
 // chega pelo Cinemeta mesmo com arte+sinopse vindas do Trakt.
 #include "trakt.h"
+#include "stub_perfisessao.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,20 +13,22 @@ void marco(const char *m) { (void)m; }
 
 extern int trakt_operacao_estado(int tipo);
 
-static int apagados, cinemetaGets;
+static int apagados, cinemetaGets, temporada556 = 1;
 static char urlsApagadas[16][96];
 
 static const char *registro(int id, const char *paused, int pct) {
   static char b[8][1400];
   static int k;
   char *o = b[k++ & 7];
+  char temporada[40] = "";
+  if (temporada556 >= 0) snprintf(temporada, sizeof temporada, "\"season\":%d,", temporada556);
   snprintf(o, 1400,
     "{\"id\":%d,\"progress\":%d,\"paused_at\":\"%s\",\"type\":\"episode\","
-    "\"episode\":{\"season\":1,\"number\":8,\"title\":\"Ep\",\"ids\":{\"trakt\":1}},"
+    "\"episode\":{%s\"number\":8,\"title\":\"Ep\",\"ids\":{\"trakt\":1}},"
     "\"show\":{\"title\":\"The World of the Married\",\"year\":2020,\"runtime\":82,"
     "\"overview\":\"Sinopse.\",%s\"ids\":{\"trakt\":9,\"imdb\":\"tt12042964\"},"
     "\"images\":{\"poster\":[\"x.test/p.jpg\"],\"fanart\":[\"x.test/f.jpg\"]}}}",
-    id, pct, paused, getenv("COM_CERT") ? "\"certification\":\"TV-MA\"," : "");
+    id, pct, paused, temporada, getenv("COM_CERT") ? "\"certification\":\"TV-MA\"," : "");
   return o;
 }
 
@@ -114,6 +117,22 @@ int main(void) {
     n = trakt_enfeitar_lote(w, n);
     assert(cinemetaGets == antes);
   }
+  // #556: a retomada e a remocao usam o MESMO tt:0:E, nunca tt:1:E.
+  temporada556 = 0; apagados = 0;
+  trakt_esquecer(); trakt_definir("token-s00", "client");
+  n = trakt_continuar(v, 12); assert(n == 2);
+  { int s = v[0].episodio > 0 ? 0 : 1;
+    assert(v[s].temporada == 0 && v[s].episodio == 8);
+    assert(!strcmp(v[s].imdb, "tt12042964:0:8"));
+    assert(!strcmp(v[1 - s].imdb, "tt7777777") && !strcmp(v[1 - s].tipo, "movie")); }
+  assert(trakt_playback_remover("tt12042964:0:8") == 1 && apagados == 5);
+  assert(trakt_playback_remover("tt12042964:0:8") == 0 && apagados == 5);
+  temporada556 = -1; // campo ausente conserva o fallback regular, nao vira S00
+  trakt_esquecer(); trakt_definir("token-sem-temporada", "client");
+  n = trakt_continuar(v, 12); assert(n == 2);
+  { int s = v[0].episodio > 0 ? 0 : 1;
+    assert(v[s].temporada == 1 && v[s].episodio == 8);
+    assert(!strcmp(v[s].imdb, "tt12042964:1:8")); }
   puts("trakt_cw_dup: PASS");
   return 0;
 }

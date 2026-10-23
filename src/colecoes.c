@@ -1,4 +1,7 @@
 #include "colecoes.h"
+#include "marcastream.h"
+#include "anos.h"
+#include "fileiras.h"
 #include "rede.h"
 #include "js.h"
 #include "addons.h"
@@ -141,30 +144,53 @@ static int fontesValidas(const ColFolder *v) {
   return v->nSources < 0 ? 0 : (v->nSources > COL_SOURCE_MAX ? COL_SOURCE_MAX : v->nSources);
 }
 
-int col_extra_definir(const ColFolder *v, int n) {
-  int i, total = 0;
+// Substitui so as extras do GRUPO `groupId` (as dos outros donos ficam): as
+// listas fixadas (listas.c, "listas_fixadas") e as cacadas (caca.c) dividem a
+// mesma tabela sem um apagar o outro.
+int col_extra_definir_grupo(const char *groupId, const ColFolder *v, int n) {
+  static ColFolder novas[COL_EXTRA_MAX];
+  int i, total = 0, k = 0;
   ColSource *bloco, *velho;
+  const char *g = groupId ? groupId : "";
   if (n < 0) n = 0;
   if (n > COL_EXTRA_MAX) n = COL_EXTRA_MAX;
+  pthread_mutex_lock(&colTrava);
+  for (i = 0; i < nExtras; i++) if (strcmp(extras[i].groupId, g)) total += fontesValidas(&extras[i]);
   for (i = 0; i < n && v; i++) total += fontesValidas(&v[i]);
   // As fontes da pasta extra sao COPIADAS: quem chama monta a pasta na pilha.
   bloco = calloc((size_t)(total + COL_SOURCE_MAX), sizeof(ColSource));
-  if (!bloco) { printf("[colecoes] pastas extras: sem memoria, ficam as de antes\n"); return nExtras; }
-  pthread_mutex_lock(&colTrava);
-  velho = extrasFontes;
-  extrasFontes = bloco;
-  nExtras = 0;
-  for (i = 0, total = 0; i < n && v; i++) {
+  if (!bloco) {
+    pthread_mutex_unlock(&colTrava);
+    printf("[colecoes] pastas extras: sem memoria, ficam as de antes\n");
+    return nExtras;
+  }
+  total = 0;
+  for (i = 0; i < nExtras && k < COL_EXTRA_MAX; i++) {
+    int ns;
+    if (!strcmp(extras[i].groupId, g)) continue;
+    ns = fontesValidas(&extras[i]);
+    novas[k] = extras[i];
+    novas[k].sources = bloco + total;
+    if (ns && extras[i].sources) memcpy(bloco + total, extras[i].sources, sizeof(ColSource) * (size_t)ns);
+    total += ns;
+    k++;
+  }
+  for (i = 0; i < n && v && k < COL_EXTRA_MAX; i++) {
     int ns = fontesValidas(&v[i]);
-    extras[nExtras] = v[i];
-    extras[nExtras].sources = bloco + total;
-    extras[nExtras].nSources = ns;
+    novas[k] = v[i];
+    snprintf(novas[k].groupId, sizeof novas[k].groupId, "%s", g);
+    novas[k].sources = bloco + total;
+    novas[k].nSources = ns;
     if (ns && v[i].sources) memcpy(bloco + total, v[i].sources, sizeof(ColSource) * (size_t)ns);
     total += ns;
-    extras[nExtras].extra = 1;
-    extras[nExtras].local = 0;   // nao e do pacote: nao disputa a arte curada
-    nExtras++;
+    novas[k].extra = 1;
+    novas[k].local = 0;   // nao e do pacote: nao disputa a arte curada
+    k++;
   }
+  velho = extrasFontes;
+  extrasFontes = bloco;
+  memcpy(extras, novas, sizeof extras[0] * (size_t)k);
+  nExtras = k;
   aplicarExtras();
   free(velho);
   // A home so remonta quando ESTE numero muda. Sem o bump, fixar uma lista na
@@ -172,6 +198,10 @@ int col_extra_definir(const ColFolder *v, int n) {
   revisao++;
   pthread_mutex_unlock(&colTrava);
   return nExtras;
+}
+
+int col_extra_definir(const ColFolder *v, int n) {
+  return col_extra_definir_grupo("listas_fixadas", v, n);
 }
 
 // Fonte da conta vem com addonId e sem URL; a URL so existe depois que a sonda
@@ -568,10 +598,8 @@ const char *col_capa(const ColFolder *f) {
 }
 void col_cor(const ColFolder *f,float *r,float *g,float *b) {
   *r=.16f;*g=.23f;*b=.30f;if(!f)return;
-  if(strstr(f->title,"Netflix")){*r=.52f;*g=.035f;*b=.065f;}
-  else if(strstr(f->title,"Prime")){*r=.025f;*g=.32f;*b=.58f;}
-  else if(strstr(f->title,"Disney")){*r=.10f;*g=.13f;*b=.46f;}
-  else if(strstr(f->title,"Max")||strstr(f->title,"HBO")){*r=.27f;*g=.12f;*b=.44f;}
+  const MarcaStream *m=marca_stream(f->title);
+  if(m){*r=m->r;*g=m->g;*b=m->b;}
   else if(strstr(f->title,"Letterboxd")){*r=.07f;*g=.32f;*b=.21f;}
   else if(!strcmp(f->group,"Awards")){*r=.40f;*g=.31f;*b=.095f;}
   else if(!strcmp(f->group,"Directors")){*r=.29f;*g=.24f;*b=.19f;}
@@ -1162,6 +1190,31 @@ int col_definir_json(const char *json) {
   return n;
 }
 
+int col_podar_fontes_addon(int (*ausente)(const char *id, const char *base)) {
+  int removidas = 0, w = 0;
+  if (!ausente) return 0;
+  pthread_mutex_lock(&colTrava);
+  for (int i = 0; i < count; i++) {
+    ColFolder *f = &PASTA(i);
+    if (f->extra) { if (w != i) PASTA(w) = *f; w++; continue; }
+    int n = 0, antes = f->nSources;
+    for (int j = 0; j < antes; j++) {
+      ColSource *s = &f->sources[j];
+      if (!s->prov[0] && ausente(s->addonId, s->base)) { removidas++; continue; }
+      if (n != j) f->sources[n] = *s;
+      n++;
+    }
+    if (n < antes) memset(f->sources + n, 0, sizeof *f->sources * (size_t)(antes - n));
+    f->nSources = n;
+    if (antes > 0 && !n) continue;
+    if (w != i) PASTA(w) = *f;
+    w++;
+  }
+  if (removidas) { count = w; fecharSobras(); revisao++; }
+  pthread_mutex_unlock(&colTrava);
+  return removidas;
+}
+
 void col_arte_conta(int sim) {
   char *j;
   sim = sim ? 1 : 0;
@@ -1245,4 +1298,70 @@ void col_nome_fonte(const ColSource *s, const char *manifesto, char *dst, unsign
   if (s && !caraDeId(s->title, s->catId)) nome = s->title;
   else if (s && !caraDeId(manifesto, s->catId)) nome = manifesto;
   snprintf(dst, n, "%s", nome);
+}
+
+// A ORDEM DAS PASTAS DA FILEIRA DE COLECAO (2.0.5: "alem do estilo da fileira,
+// ordenar elas por ano, ordem alfabetica, ordem da lista ou aleatorio").
+//
+// Recebe os indices como col_grupo_chave os devolve e os ordena NO LUGAR. E
+// pura de proposito: a montagem da home (home.c) e o unico chamador de verdade
+// e o teste chama direto — a semente entra como parametro para o embaralhado
+// ser ESTAVEL na tela (uma vez por montagem, nunca por quadro) e deterministico
+// no teste. Nao toma a trava das colecoes pelo mesmo motivo de col_grupo_chave:
+// roda no fio de desenho, no passo da montagem que ja leu o conjunto.
+//
+// O ANO da pasta e o que o TITULO dela carrega (nv_ano_meta): a pasta nao tem
+// campo de data — colecoes de anos e premios nomeiam as pastas com ele ("Anos
+// 2000", "Oscar 1998"). Sem ano no fim, na ordem em que ja estavam.
+static int colAnoPasta(int idx) {
+  int a;
+  if (idx < 0 || idx >= count) return 0;
+  a = nv_ano_meta(PASTA(idx).title);
+  // 0 = sem ano: o mais baixo de todos, o que o ordena DESCENDENTE deixa no
+  // fim (a cronologica da pagina de colecao usa 9999 porque sobe).
+  return a ? a : 0;
+}
+
+void col_ordenar_pastas(int *indices, int n, int ordem, unsigned semente) {
+  if (!indices || n < 2) return;
+  if (ordem == FIL_ORD_ANO) {
+    // Insercao estavel DESCENDENTE (mais novo primeiro; 9999, sem ano, no
+    // fim) — o mesmo criterio da Linha do tempo (home.c) e da ordenacao
+    // cronologica da pagina de colecao (vertudo.c): dois do mesmo ano ficam
+    // na ordem que a colecao deu.
+    for (int i = 1; i < n; i++) {
+      int v = indices[i], j = i;
+      while (j > 0 && colAnoPasta(indices[j - 1]) < colAnoPasta(v)) {
+        indices[j] = indices[j - 1];
+        j--;
+      }
+      indices[j] = v;
+    }
+    return;
+  }
+  if (ordem == FIL_ORD_AZ) {
+    // strcasecmp e como os titulos sao comparados em todo o app (a lista
+    // alfabetica de Ajustes, filCmpFora); insercao estavel nele.
+    for (int i = 1; i < n; i++) {
+      int v = indices[i], j = i;
+      while (j > 0 && strcasecmp(PASTA(indices[j - 1]).title, PASTA(v).title) > 0) {
+        indices[j] = indices[j - 1];
+        j--;
+      }
+      indices[j] = v;
+    }
+    return;
+  }
+  if (ordem == FIL_ORD_ALEATORIA) {
+    // Fisher-Yates com um LCG de semente fixa: o embaralhado da montagem nao
+    // muda de um quadro para o outro e o teste reproduz o mesmo baralho.
+    // ponytail: LCG de 32 bits basta para <2048 pastas; trocar por algo melhor
+    // so se um dia a conta reclamar de embaralhado "viciado".
+    unsigned r = semente ? semente : 1;
+    for (int i = n - 1; i > 0; i--) {
+      r = r * 1664525u + 1013904223u;
+      int j = (int)((r >> 16) % (unsigned)(i + 1));
+      int t = indices[i]; indices[i] = indices[j]; indices[j] = t;
+    }
+  }
 }

@@ -8,6 +8,7 @@
 // Com NUVIO_SEM_RESERVA_DE_SISTEMA=1 so as fontes embarcadas existem, como na
 // Samsung (o arabe sai da NotoNaskhArabic-Subset.ttf, que nao tem latim).
 #include "gfx.h"
+#include "nvtmp.h"
 #include "text.h"
 #include "ajustes.h"
 #include <SDL2/SDL.h>
@@ -42,7 +43,7 @@ static void desenhar(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-arabe-texto.bmp";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-arabe-texto.bmp");
   SDL_Window *w;
   SDL_GLContext gl;
   int i;

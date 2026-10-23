@@ -188,6 +188,21 @@ int main(void) {
           serieaud_watchers(1));
   CONFERE(serieaud_retencao(6) == 949, "buraco mexeu na retencao do E7");
 
+  // --- 3b. PORCENTAGEM DENTRO DO QUADRADO DA IMPRESSAO DIGITAL ---------------
+  // Nota: v/10 em % (8,0 -> 80%). Demais eixos: posicao na temporada, 0 no
+  // menor e 100 no maior; sem dado -1 (o quadrado fica sem texto).
+  { int mini[SA_NEIXOS], maxi[SA_NEIXOS], e;
+    extremos(mini, maxi);
+    CONFERE(celPct(0, SA_NOTA, mini, maxi) == 80, "pct nota E1 %d", celPct(0, SA_NOTA, mini, maxi));
+    CONFERE(celPct(6, SA_NOTA, mini, maxi) == 86, "pct nota E7 %d", celPct(6, SA_NOTA, mini, maxi));
+    CONFERE(celPct(1, SA_NOTA, mini, maxi) == 81, "pct nota E2 %d", celPct(1, SA_NOTA, mini, maxi));
+    for (e = 0; e < SA_NEIXOS; e++) {
+      int a0 = celPct(0, e, mini, maxi), a6 = celPct(6, e, mini, maxi);
+      if (e == SA_NOTA) continue;
+      CONFERE((a0 == 0 && a6 == 100) || (a0 == 100 && a6 == 0), "eixo %d: pcts %d e %d", e, a0, a6);
+      CONFERE(celPct(1, e, mini, maxi) == -1, "eixo %d: E2 sem dado deu %d", e, celPct(1, e, mini, maxi));
+    } }
+
   // --- 4. A ARMADILHA: E2 COM MAIS GENTE QUE O E1 ---------------------------
   // MEDIDO no Trakt (star-trek-deep-space-nine T1, 16/09/2026). Grampear em
   // 100% aqui esconderia o unico caso em que a curva tem algo a dizer sobre o

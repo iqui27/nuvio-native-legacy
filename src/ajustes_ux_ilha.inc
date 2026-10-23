@@ -23,7 +23,7 @@ static int ajDicasDe(int op, AjDica *d) {
     d[2] = (AjDica){ "Voltar", "Sair" };
     return 3;
   }
-  if (op == AJ_TEMA && ajEditandoLinha(op)) {
+  if (ajPaleta(op) && ajEditandoLinha(op)) {
     d[0] = (AjDica){ "← →", "Escolher" }; d[1] = (AjDica){ "↑ ↓", "Fileira" };
     d[2] = (AjDica){ "OK", "Confirmar" };
     return 3;
@@ -356,23 +356,35 @@ static void aj2CabecalhoA3(GfxRect fr, const char *titulo, float reservaDir, flo
 // RODAPE DA LISTA (A3): as dicas a esquerda e o aviso ("Ajuste salvo nesta
 // TV.") a direita, na mesma faixa abaixo da lista. Antes o aviso era desenhado
 // em cima da ultima linha (foto do dono, 04/10). Sem lugar para os dois, o
-// aviso fica e as dicas somem enquanto ele dura.
-static void aj2RodapeA3(GfxRect fr, const AjDica *d, int nd, float a) {
+// aviso fica e as dicas somem enquanto ele dura. `desenha`: 1 desenha e
+// registra, 2 so registra (replay de TV/desktop: a funcao escolhe de novo o
+// que aparece — mesmas dicas e a mesma supressao pelo aviso, nenhum alvo
+// invisivel).
+static void aj2RodapeA3(GfxRect fr, const AjDica *d, int nd, float a, int desenha) {
   float x = fr.x + 34.0f, w = fr.w - 68.0f, yc = fr.y + fr.h - AJ_A3_RODAPE * 0.5f - 6.0f;
   float wd = aj2DicasLinha(d, nd, x, yc, TXT_V2_KBD18, 34, 38, 10, TXT_V2_24, 8, 22, 0, a), wa = 0;
   int dicas = 1;
-  gfx_cor((GfxRect){ fr.x + 28.0f, fr.y + fr.h - AJ_A3_RODAPE, fr.w - 56.0f, 1 }, 0, 1, 1, 1, 0.07f * a);
+  if (desenha == 1) gfx_cor((GfxRect){ fr.x + 28.0f, fr.y + fr.h - AJ_A3_RODAPE, fr.w - 56.0f, 1 }, 0, 1, 1, 1, 0.07f * a);
 #ifdef NV_TOUCH_UI
-  if (ajPontInline) { ajToqueBotoes(x + w, yc, a); return; }
+  if (ajTelaCheia() && ajPontInline) {
+    if (uxAviso[0]) {
+      TxtLinha t = ajTxtC(TXT_V2_24, uxAviso, w - 40.0f);
+      GfxRect r = { x, fr.y + fr.h - AJ_A3_RODAPE - 8.0f - t.h - 24.0f, w, t.h + 24.0f };
+      gfx_cor(r, 12.0f / r.h, AJ_CHIP_SOL, 0.96f * a);
+      txt_desenhar_alpha(t, r.x + 20.0f, r.y + 12.0f, a);
+    }
+    ajToqueBotoes(x + w, yc, a);
+    return;
+  }
 #endif
   if (uxAviso[0] && !(uxEditor && (uxRestaurar || uxAvisoRisco || uxEditor == 2))) {
     TxtLinha t = ajTxtC(TXT_V2_24, uxAviso, w - 34.0f);
     wa = t.w + 34.0f;
     if (wd + 24.0f + wa > w) dicas = 0;
-    ajIcone("aj_check", x + w - wa, yc - 11.0f, 22.0f, 0.7f * a);
-    txt_desenhar_alpha(t, x + w - t.w, yc - t.h * 0.5f, 0.75f * a);
+    if (desenha == 1) { ajIcone("aj_check", x + w - wa, yc - 11.0f, 22.0f, 0.7f * a);
+      txt_desenhar_alpha(t, x + w - t.w, yc - t.h * 0.5f, 0.75f * a); }
   }
-  if (dicas) aj2DicasLinha(d, nd, x, yc, TXT_V2_KBD18, 34, 38, 10, TXT_V2_24, 8, 22, 1, a);
+  if (dicas) aj2DicasLinha(d, nd, x, yc, TXT_V2_KBD18, 34, 38, 10, TXT_V2_24, 8, 22, desenha, a);
 }
 // PONTEIRO (#99) NA LISTA DA CATEGORIA. A linha sob o cursor ganha o foco
 // pelo mesmo focar() das setas (com o foco saindo do indice); o OK do clique
@@ -398,7 +410,7 @@ static void ajDesenharFolha(void) {
   topo = AJ_TOPO;
   base = AJ_BASE;
 #ifdef NV_TOUCH_UI
-  if (ajPontLista) {
+  if (ajTelaCheia() && ajPontLista) {
     float total = 0.0f;
     for (int k = secIni[sec]; k < secFim(sec); k++) total += alturaItem(k);
     ajToqueRegistrar(AJT_LISTA, (GfxRect){fr.x, topo, fr.w, base - topo}, &scrollY, total - (base - topo), scrollY, sec);
@@ -436,7 +448,7 @@ static void ajDesenharFolha(void) {
   }
   gfx_sem_recorte();
   nd = ajDicasDe(focoIndice ? -1 : focoOp, d);
-  aj2RodapeA3(fr, d, nd, aPag);
+  aj2RodapeA3(fr, d, nd, aPag, 1);
 }
 
 // --- MODAIS ----------------------------------------------------------------------
@@ -534,6 +546,141 @@ static void ajConfirmacao(const char *kick, int alerta, const char *pergunta, co
 // Alvo cujo foco ja e o unico possivel: o clique e so o OK.
 static void ajPontNada(int a, int b) { (void)a; (void)b; }
 static void ajPontFecharEditor(int a, int b) { (void)a; (void)b; if (uxEditor == 2) uxCancelar(); }
+// --- Pendrive: o painel de informacoes do cache P2P (#205) -----------------------
+// Uma so rotina mede (draw=0) e desenha (draw=1); devolve a altura.
+#ifdef NV_WEBOS
+static int ajUsbWebos = 1;   // so o webOS tem a jaula do modo desenvolvedor
+#else
+static int ajUsbWebos = 0;
+#endif
+static void ajBytes(uint64_t b, char *o, size_t n) {
+  if (b >= (1ull << 30)) snprintf(o, n, "%.1f GB", (double)b / 1073741824.0);
+  else snprintf(o, n, "%u MB", (unsigned)(b >> 20));
+}
+static const char *ajUsbFs(const char *fs) {
+  if (!strcmp(fs, "vfat") || !strcmp(fs, "msdos")) return "FAT32";
+  if (!strcmp(fs, "exfat")) return "exFAT";
+  if (!strncmp(fs, "ntfs", 4) || !strcmp(fs, "fuseblk")) return "NTFS";
+  if (!strncmp(fs, "ext", 3)) return fs;
+  return fs[0] && strcmp(fs, "?") ? fs : i18n("sistema de arquivos desconhecido");
+}
+static const char *ajUsbRecusa(P2pmUsbMotivo m) {
+  switch (m) {
+    case P2PM_USB_READONLY: return i18n("O pendrive é somente leitura: o app não consegue gravar nele.");
+    case P2PM_USB_NOT_MOUNT: case P2PM_USB_ALREADY_SEEN: case P2PM_USB_DATA_DIR:
+      return i18n("O pendrive não está visível para o app.");
+    case P2PM_USB_TIMEOUT: return i18n("O pendrive demorou demais para responder.");
+    default: return i18n("Não foi possível ler o pendrive: sistema de arquivos sem suporte ou erro de leitura.");
+  }
+}
+static float ajUsbPainel(float x, float y, float w, int draw) {
+  P2pmUsbInfo u;
+  char a[96], b[96], c[96], t[300];
+  float y0 = y, ar, ag, ab;
+  int semEspaco, aviso;
+  p2pmotor_usb_info(&u);
+  semEspaco = u.estado == 1 && u.livre < ((uint64_t)P2PM_LIVRE_MIN_MB << 20);
+  aviso = u.estado == 2 || semEspaco;
+  ajustes_acento(&ar, &ag, &ab);
+  // Estado: uma linha com o icone.
+  snprintf(t, sizeof t, "%s",
+           u.estado == 0 ? i18n("Nenhum pendrive encontrado") :
+           u.estado == 2 ? i18n("Pendrive recusado") :
+           semEspaco ? i18n("Pendrive sem espaço livre") :
+           u.emUso ? i18n("Pendrive em uso") : i18n("Pendrive encontrado, cache no interno"));
+  if (draw) {
+    TxtLinha l = ajTxtC(TXT_AJ_SEG, t, w - 44);
+    if (aviso) gfx_icone((GfxRect){ x, y + 2, 28, 28 }, "aj_triangle-alert", 0.961f, 0.784f, 0.298f, 1);
+    else ajIcone(u.estado ? "aj_check" : "aj_database", x, y + 2, 28, u.estado ? 1.0f : 0.6f);
+    txt_desenhar(l, x + 44, y + (32 - l.h) * 0.5f);
+  }
+  y += 32;
+  if (u.estado == 2 || semEspaco) {
+    const char *r = semEspaco ? i18n("Libere espaço no pendrive para usar o cache nele.") : ajUsbRecusa(u.motivo);
+    if (draw) ajBloco(TXT_V3_INSP, r, x + 44, y + 4, w - 44, 28, 0.7f, 3);
+    y += 4 + txt_bloco(TXT_V3_INSP, r, 0, 0, 0, 0, -4000, w - 44, 28, 0, 3);
+  }
+  y += 16;
+  if (u.estado && u.total) {   // grafico: cache | outros | livre, e o marcador do limite
+    uint64_t usado = u.total > u.livre ? u.total - u.livre : 0;
+    float fu = (float)usado / (float)u.total, fc = (float)u.cache / (float)u.total, fl = (float)u.limite / (float)u.total;
+    if (fu > 1) fu = 1;
+    if (fc > fu) fc = fu;
+    if (fl > 1) fl = 1;
+    if (draw) {
+      gfx_cor((GfxRect){ x, y, w, 22 }, 0.5f, 1, 1, 1, 0.10f);
+      if (fu > 0) gfx_cor((GfxRect){ x, y, fmaxf(w * fu, 8), 22 }, 0.5f, 1, 1, 1, 0.38f);
+      if (u.cache) gfx_cor((GfxRect){ x, y, fmaxf(w * fc, 8), 22 }, 0.5f, ar, ag, ab, 1);
+      if (u.estado == 1 && u.limite) gfx_cor((GfxRect){ x + w * fl - 2, y - 7, 4, 36 }, 0.1f, 1, 1, 1, 0.9f);
+    }
+    y += 22 + 16;
+    { // legenda: quebra de linha se nao couber
+      float lx = x, ly = y;
+      for (int i = 0; i < (u.estado == 1 ? 4 : 3); i++) {
+        static const char *const ROT[] = { "Cache", "Outros", "Livre", "Limite" };
+        uint64_t v = i == 0 ? u.cache : i == 1 ? usado - (usado > u.cache ? u.cache : usado) : i == 2 ? u.livre : u.limite;
+        TxtLinha l;
+        float iw;
+        ajBytes(v, a, sizeof a);
+        snprintf(t, sizeof t, "%s %s", i18n(ROT[i]), a);
+        l = ajTxt(TXT_V3_INSP, t);
+        iw = 22 + l.w + 26;
+        if (lx + iw - 26 > x + w) { lx = x; ly += 32; }
+        if (draw) {
+          if (i == 3) gfx_cor((GfxRect){ lx + 4, ly + 2, 4, 22 }, 0.1f, 1, 1, 1, 0.9f);
+          else gfx_cor((GfxRect){ lx, ly + 5, 16, 16 }, 0.3f, i == 0 ? ar : 1, i == 0 ? ag : 1, i == 0 ? ab : 1,
+                       i == 0 ? 1.0f : i == 1 ? 0.38f : 0.10f);
+          txt_desenhar_alpha(l, lx + 24, ly + (26 - l.h) * 0.5f, 0.75f);
+        }
+        lx += iw;
+      }
+      y = ly + 26 + 10;
+    }
+  }
+  // Linhas de detalhe.
+  { int n = 0;
+    const char *k[6], *v[6];
+    char vs[6][160];
+    if (u.estado) {
+      snprintf(vs[n], 160, "%s · %s", u.nome[0] ? u.nome : u.caminho, ajUsbFs(u.fs));
+      k[n] = i18n("Pendrive"); v[n] = vs[n]; n++;
+      if (u.total) {
+        ajBytes(u.livre, a, sizeof a); ajBytes(u.total, b, sizeof b);
+        snprintf(vs[n], 160, i18n("%s livres de %s"), a, b);
+        k[n] = i18n("Capacidade"); v[n] = vs[n]; n++;
+      }
+    }
+    if (u.estado == 1) {
+      ajBytes(u.cache, a, sizeof a); ajBytes(u.limite, b, sizeof b);
+      snprintf(vs[n], 160, i18n("%s · limite %s"), a, b);
+      k[n] = i18n("Cache"); v[n] = vs[n]; n++;
+    }
+    if (u.estado) {
+      snprintf(vs[n], 160, "%s", u.estado == 1 && u.gravavel ? i18n("OK, grava normalmente") :
+               u.motivo == P2PM_USB_READONLY || (u.estado == 1 && !u.gravavel) ? i18n("Somente leitura") : i18n("Falhou"));
+      k[n] = i18n("Teste de escrita"); v[n] = vs[n]; n++;
+    }
+    snprintf(vs[n], 160, "%s", i18n("Armazenamento interno"));
+    k[n] = u.estado == 1 ? i18n("Se falhar") : i18n("Cache em"); v[n] = vs[n]; n++;
+    (void)c;
+    for (int i = 0; i < n; i++) {
+      if (draw) aj2Meta(k[i], v[i], x, y, w, 1);
+      y += 14 + 29 + 14;
+    }
+  }
+  if (ajUsbWebos) {   // fato curto: a jaula do modo desenvolvedor so enxerga o que estava na TV ao ligar
+    const char *nota = i18n("No webOS, conecte o pendrive ANTES de ligar a TV. Um pendrive conectado com a TV ligada só aparece para o app depois de reiniciar a TV.");
+    y += 12;
+    if (draw) y += aj2Ef("aj_info", nota, x, y, w, 1);
+    else y += txt_bloco(TXT_V2_26, nota, 0, 0, 0, x, -4000, w - 22 - 26 - 14 - 22, 34.8f, 0, 6) + 40;
+  }
+  return y - y0;
+}
+#ifdef NV_TOUCH_UI
+static void ajToqueFecharDependencia(int a, int b) {
+  if (layout_modo_mobile()) ajPontFecharEditor(a, b);
+}
+#endif
 // Dependencia: a opcao esta apagada por causa de outra.
 static void ajDependencia(void) {
   int req = uxRequisito(uxOp);
@@ -541,7 +688,8 @@ static void ajDependencia(void) {
   float x = m.x + 44, y, hTxt;
   char k[200];
   const char *b = uxBloco(uxOp);
-  hTxt = txt_bloco(TXT_AJ_TEXTO, ajudaOpcao(uxOp), 0, 0, 0, 0, -4000, m.w - 88, 30, 0, 6);
+  int usb = uxOp == AJ_P2P_DESTINO;   // o modal do pendrive mostra o painel no lugar do texto de ajuda
+  hTxt = usb ? ajUsbPainel(0, 0, m.w - 88, 0) : txt_bloco(TXT_AJ_TEXTO, ajudaOpcao(uxOp), 0, 0, 0, 0, -4000, m.w - 88, 30, 0, 6);
   m.h = 44 + 30 + 44 + 14 + hTxt + 34 + 60 + 44;
   m.y = (NV_VTELA_H - m.h) * 0.5f;
   ajCentraModal(&m);
@@ -553,7 +701,8 @@ static void ajDependencia(void) {
   ajKicker(k, x, y, 1);
   y += 30;
   { TxtLinha t = ajTxtC(TXT_ILHA_PERGUNTA, rotuloOpcao(uxOp), m.w - 88); txt_desenhar(t, x, y); y += 44 + 14; }
-  y += ajBloco(TXT_AJ_TEXTO, ajudaOpcao(uxOp), x, y, m.w - 88, 30, 0.62f, 6) + 34;
+  if (usb) y += ajUsbPainel(x, y, m.w - 88, 1) + 34;
+  else y += ajBloco(TXT_AJ_TEXTO, ajudaOpcao(uxOp), x, y, m.w - 88, 30, 0.62f, 6) + 34;
   { float bx = x, w;
     // Ponteiro: o botao em foco e o OK; "Fechar" fora do foco fecha como o Voltar.
     if (req >= 0) {
@@ -562,7 +711,13 @@ static void ajDependencia(void) {
       bx += w + 12;
     }
     w = ajBotao("Fechar", NULL, bx, y, req < 0, 1);
-    if (req < 0) ponteiro_alvo(bx, y, w, 60, ajPontNada, NULL, 0, 0);
+    if (req < 0) {
+#ifdef NV_TOUCH_UI
+      if (ajTelaCheia()) ponteiro_alvo(bx, y, w, 60, NULL, ajToqueFecharDependencia, 0, 0);
+      else
+#endif
+        ponteiro_alvo(bx, y, w, 60, ajPontNada, NULL, 0, 0);
+    }
     else ponteiro_alvo(bx, y, w, 60, NULL, ajPontFecharEditor, 0, 0); }
 }
 
@@ -591,7 +746,9 @@ static void ajDesenharModais(void) {
                     de, para, "Continuar", "Cancelar", uxConfirmar, ajPontConfirmar);
     } else {
       snprintf(texto, sizeof texto, i18n("O valor voltará para “%s”. %s"), padrao,
-        !strcmp(uxEscopoValor(uxOp, uxValorPadrao(uxOp)), "Conta/perfil") ? i18n("Esta preferência participa dos ajustes do perfil. Nenhum serviço será desconectado.") : i18n("A mudança vale só nesta TV. Nenhum serviço será desconectado."));
+        !strcmp(uxEscopoValor(uxOp, uxValorPadrao(uxOp)), "Conta/perfil") ? i18n("Esta preferência participa dos ajustes do perfil. Nenhum serviço será desconectado.")
+          : !strcmp(uxEscopoValor(uxOp, uxValorPadrao(uxOp)), "Só este perfil, nesta TV") ? i18n("A mudança vale só para este perfil, nesta TV. Nenhum serviço será desconectado.")
+          : i18n("A mudança vale para todos os perfis desta TV. Nenhum serviço será desconectado."));
       uxValorTexto(uxOp, uxValorAtual(uxOp), de, sizeof de);
       ajConfirmacao(rotuloOpcao(uxOp), 0, "Restaurar este ajuste?", texto, de, padrao, "Restaurar", "Cancelar", uxConfirmar, ajPontConfirmar);
     }
@@ -718,6 +875,8 @@ static float aj2CabecalhoEditor(GfxRect m) {
   if (ajPadraoVisual(uxOp) >= 0) uxValorTexto(uxOp, ajPadraoVisual(uxOp), padrao, sizeof padrao);
   if (ajPadraoVisual(uxOp) >= 0) snprintf(linha, sizeof linha, i18n("%s · Padrão: %s"), i18n(uxEscopoValor(uxOp, uxPendente)), padrao);
   else snprintf(linha, sizeof linha, "%s", i18n(uxEscopoValor(uxOp, uxPendente)));
+  if(uxOp==AJ_IPTV_EXCLUIR)snprintf(linha,sizeof linha,"%s",iptvAlvo.nome);
+  if(uxOp==AJ_GUIA_CATEGORIAS)snprintf(linha,sizeof linha,"%s: %d · %s",i18n("Categorias"),uxNCategorias,i18n(uxEscopoValor(uxOp,uxPendente)));
   { TxtLinha t = ajTxtC(TXT_V2_26, linha, m.w - 104);
     txt_desenhar_alpha(t, x, y + (29.0f - t.h) * 0.5f, 0.55f); }
   return y + 29.0f + 30.0f;
@@ -734,7 +893,14 @@ static void ajPontEdValor(int i, int b) {
   (void)b;
   if (!ajPontEdVale() || i < 0 || i >= nValores(uxOp) || (!uxRodape && uxPendente == i)) return;
   if (uxOp == AJ_TEX_MB && texAcima(i)) return;
+  if (uxOp == AJ_SALVOS_DEST && !ajustes_fonte_oferecida(i, trakt_ativo(), simkl_ativo())) return;
   uxRodape = 0; uxPendente = i;
+}
+static void ajIptvToqueEscolher(int i,int b) {
+  if(!ajPontEdVale() || (uxOp!=AJ_GUIA_CATEGORIAS && uxOp!=AJ_IPTV_CONTA && !ajIptvMenu(uxOp)) || i<0 || i>=nValores(uxOp))return;
+  ajPontEdValor(i,b);
+  if(uxOp==AJ_GUIA_CATEGORIAS)uxCategoriaAlternar(i);else uxAplicar();
+
 }
 static void ajPontEdNumero(int a, int b) { (void)a; (void)b; if (ajPontEdVale()) uxRodape = 0; }
 static void ajPontEdPasso(int d, int b) {
@@ -744,9 +910,14 @@ static void ajPontEdPasso(int d, int b) {
 }
 static void aj2RodapeEditor(GfxRect m, float colW, const AjDica *d, int n) {
   float y = m.y + m.h - 40 - 64;
+  if(uxOp==AJ_GUIA_CATEGORIAS && ajPontEditor)
+    ajToqueBotoes(m.x+m.w-52.0f,y+32.0f,1.0f);
 #ifdef NV_TOUCH_UI
-  if (ajPontEditor) ajToqueBotoes(m.x + m.w - 52.0f, y + 32.0f, 1.0f);
+  // A phone saved in TV still needs explicit controls to select Mobile or Auto.
+  else if (ajPontEditor && (ajTelaCheia() || uxOp == AJ_INTERFACE_MODO))
+    ajToqueBotoes(m.x + m.w - 52.0f, y + 32.0f, 1.0f);
 #endif
+  if(uxOp==AJ_GUIA_CATEGORIAS)return;
   if (ajRetrato()) y -= 76.0f;
   if (uxTemPadrao(uxOp)) {
     TxtLinha t = uxRodape ? ajTxtT(TXT_V2_SEG, "Restaurar padrão") : ajTxt(TXT_V2_SEG, "Restaurar padrão");
@@ -759,7 +930,7 @@ static void aj2RodapeEditor(GfxRect m, float colW, const AjDica *d, int n) {
     txt_desenhar_alpha(t, m.x + 52 + 58, y + (64 - t.h) * 0.5f, uxRodape ? 1.0f : 0.85f);
   }
 #ifdef NV_TOUCH_UI
-  if (ajPontEditor) return;
+  if (ajPontEditor && (ajTelaCheia() || uxOp == AJ_INTERFACE_MODO)) return;
 #endif
   { float w = aj2DicasLinha(d, n, 0, 0, TXT_V2_KBD18, 36, 40, 11, TXT_V2_24, 10, 24, 0, 1);
     aj2DicasLinha(d, n, m.x + 52 + colW - w, y + 32, TXT_V2_KBD18, 36, 40, 11, TXT_V2_24, 10, 24, 1, 1); }
@@ -902,27 +1073,32 @@ static void aj2EditorNumero(GfxRect m) {
     if (ef && ef[0] && y + 12 + 80 <= aj2EditorBase(m) + 4.0f) {
       y += 12; y += aj2Ef("aj_info", i18n(ef), lx, y, lw, 1); } }
   if (pw > 0) aj2PreviaPendente(m.x + m.w - 52 - pw, aj2CabecalhoEditor(m), pw);
-  { AjDica d[3] = { { "← →", "Ajustar" }, { "OK", "Confirmar" }, { "Voltar", "Cancelar" } };
+  { AjDica d[3] = { { "← →", "Ajustar" }, { "OK", uxOp==AJ_GUIA_CATEGORIAS?"Selecionar":"Confirmar" }, { "Voltar", "Cancelar" } };
     aj2RodapeEditor(m, lw, d, 3); }
 }
 static void aj2EditorEscolha(GfxRect m) {
   const Opcao *o = &OPCOES[uxOp];
   int n = nValores(uxOp), i, primeiro, vis;
   float y, lx, lw, pw = 520.0f, y0;
+  float passo=100.0f;
+  if(uxOp==AJ_GUIA_CATEGORIAS) {
+    passo=fmaxf(passo,(float)ajTxt(TXT_V2_ROT,"Mg").h+ajTxt(TXT_V2_24,"Mg").h+36.0f);
+    pw=0;
+  }
   y = aj2CabecalhoEditor(m);
   y0 = y;
   if (m.w - 104 - pw - 56 < 560) pw = 0;
   lx = m.x + 52; lw = pw > 0 ? m.w - 104 - pw - 56 : m.w - 104;
-  vis = (int)((aj2EditorBase(m) - y) / 100.0f);
-  if (vis < 3) vis = 3;
+  vis = (int)((aj2EditorBase(m) - y) / passo);
+  if (vis < (uxOp==AJ_GUIA_CATEGORIAS?1:3)) vis = uxOp==AJ_GUIA_CATEGORIAS?1:3;
   primeiro = uxPendente - vis / 2;
   if (primeiro + vis > n) primeiro = n - vis;
   if (primeiro < 0) primeiro = 0;
 #ifdef NV_TOUCH_UI
-  { float base = aj2EditorBase(m);
+  if (ajTelaCheia()) { float base = aj2EditorBase(m);
     if (ajPontEditor) {
       float off = ajToqueRegistrar(AJT_EDITOR, (GfxRect){lx, y0, lw, base - y0}, &ajToqueOffset[AJT_EDITOR],
-                                  n * 100.0f - (base - y0), primeiro * 100.0f, uxOp);
+                                  n * passo - (base - y0), primeiro * passo, uxOp);
       primeiro = 0; vis = n; y = y0 - off;
     }
     gfx_recorte(lx, y0, lw, base - y0);
@@ -930,25 +1106,47 @@ static void aj2EditorEscolha(GfxRect m) {
 #endif
   for (i = primeiro; i < n && i < primeiro + vis; i++) {
 #ifdef NV_TOUCH_UI
-    if (y + 96 < y0 || y >= aj2EditorBase(m)) { y += 100; continue; }
+    if (ajTelaCheia() && (y + passo - 4 < y0 || y >= aj2EditorBase(m))) { y += passo; continue; }
 #endif
+    // Servico desligado nao e oferta, e so linha de ponteiro: como o valor nao
+    // aparece na lista do editor, clicar nele nao pode dar passo algum.
+    if (uxOp == AJ_SALVOS_DEST && !ajustes_fonte_oferecida(i, trakt_ativo(), simkl_ativo())) { y += 100; continue; }
     char t[160];
     int foco = !uxRodape && i == uxPendente;
-    GfxRect r = { lx, y, lw, 96 };
+    GfxRect r = { lx, y, lw, passo-4.0f };
     int fv;
     uxValorTexto(uxOp, i, t, sizeof t);
     // Acima do que a RAM desta TV suporta: o rotulo fica puro e apagado, com o motivo a direita.
     if (uxOp == AJ_TEX_MB && texAcima(i)) snprintf(t, sizeof t, "%s", i18n(o->valores[i]));
     if (ajPontEditor) {
       PonteiroFn ac = uxOp == AJ_TEX_MB && texAcima(i) ? NULL : ajPontEdValor;
+      PonteiroFn ativar = uxOp==AJ_GUIA_CATEGORIAS || uxOp==AJ_IPTV_CONTA || ajIptvMenu(uxOp) ? ajIptvToqueEscolher : NULL;
 #ifdef NV_TOUCH_UI
-      ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, y0, aj2EditorBase(m), ac, NULL, i, 0);
-#else
-      ponteiro_alvo(r.x, r.y, r.w, r.h, ac, NULL, i, 0);
+      if (ajTelaCheia())
+        ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, y0, aj2EditorBase(m), ac, ativar, i, 0);
+      else
 #endif
+        ponteiro_alvo(r.x, r.y, r.w, r.h, ac, ativar, i, 0);
     }
     if (foco) ajFocoLinha(r, 28, 1, 1);
-    fv = marcaDoValor(uxOp, o->valores ? o->valores[i] : NULL);
+    if(uxOp==AJ_GUIA_CATEGORIAS && i<uxNCategorias) {
+      // A dedicated trailing checkbox cannot overlap the two text lines.
+      float textoX=r.x+30,limite=fmaxf(1,r.w-104);
+      TxtLinha nome=ajTxtC(TXT_V2_ROT,t,limite);
+      TxtLinha conta=ajTxtC(TXT_V2_24,uxCategorias[i].conta,limite);
+      float yy=r.y+(r.h-nome.h-conta.h-4)*0.5f;
+      txt_desenhar_alpha(nome,textoX,yy,foco?1.0f:0.88f);
+      txt_desenhar_alpha(conta,textoX,yy+nome.h+4,0.55f);
+      GfxRect box={r.x+r.w-56,r.y+(r.h-26)*0.5f,26,26};
+      gfx_anel_fora(box,0.18f,0,2,0.65f,0.67f,0.72f,0.75f);
+      if(uxCategorias[i].oculta) {
+        float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
+        gfx_cor(box,0.18f,ar,ag,ab,1);
+        ajIconeT("aj_check",box.x,box.y,26,1);
+      }
+      y+=passo;continue;
+    }
+    fv = marcaDoValor(uxOp, o->valores && i < o->n ? o->valores[i] : NULL);
     if (fv >= 0) marca_formato((FormatoMarca)fv, r.x + 30, r.y + 26, 44, 1, 1, 1, foco ? 0.9f : 0.6f);
     else {
       float textoX = r.x + 30;
@@ -973,19 +1171,20 @@ static void aj2EditorEscolha(GfxRect m) {
         txt_desenhar_alpha(m, mx - m.w, r.y + (96 - m.h) * 0.5f, 0.5f);
       }
     }
-    if (i == uxOriginal) {
+    if (uxOp!=AJ_GUIA_CATEGORIAS && i == uxOriginal && uxOp!=AJ_IPTV_ACOES && uxOp!=AJ_IPTV_EXCLUIR && (!ajIptvGerenciador(uxOp) || ajIptvDoTipo(ajIptvTipo(uxOp),i)==iptv_conta_indice())) {
       TxtLinha s = ajTxt(TXT_V2_28, "Salvo");
       float sx = r.x + r.w - 30 - s.w;
       txt_desenhar_alpha(s, sx, r.y + (96 - s.h) * 0.5f, 0.55f);
       ajIcone("aj_check", sx - 12 - 26, r.y + 35, 26, 0.55f);
     }
-    y += 100;
+    y += passo;
   }
 #ifdef NV_TOUCH_UI
-  gfx_sem_recorte();
+  if (ajTelaCheia()) gfx_sem_recorte();
 #endif
-  if (pw > 0) aj2PreviaPendente(m.x + m.w - 52 - pw, y0, pw);
-  { AjDica d[3] = { { "↑ ↓", "Escolher" }, { "OK", "Confirmar" }, { "Voltar", "Cancelar" } };
+  if (pw > 0 && uxOp == AJ_P2P_DESTINO) ajUsbPainel(m.x + m.w - 52 - pw, y0, pw, 1);
+  else if (pw > 0) aj2PreviaPendente(m.x + m.w - 52 - pw, y0, pw);
+  { AjDica d[3] = { { "↑ ↓", "Escolher" }, { "OK", uxOp==AJ_GUIA_CATEGORIAS?"Selecionar":"Confirmar" }, { "Voltar", "Cancelar" } };
     aj2RodapeEditor(m, lw, d, 3); }
 }
 static int aj2EditorPainel(void) {
@@ -1011,7 +1210,7 @@ static void aj2DesenharDiferencas(void) {
   float topo = AJ_TOPO, base = AJ_BASE + AJ_A3_RODAPE, y = topo + 8.0f;
   int primeiro = uxDifFoco > 9 ? uxDifFoco - 9 : 0, i;
 #ifdef NV_TOUCH_UI
-  if (ajPontLista) {
+  if (ajTelaCheia() && ajPontLista) {
     float off = ajToqueRegistrar(AJT_DIFS, (GfxRect){fr.x, topo, fr.w, base - topo}, &ajToqueOffset[AJT_DIFS],
                                 uxNDifs * 78.0f - (base - topo), primeiro * 78.0f, 0);
     primeiro = 0; y = topo + 8.0f - off;
@@ -1031,7 +1230,7 @@ static void aj2DesenharDiferencas(void) {
     int op = uxDifs[i], foco = !focoIndice && i == uxDifFoco;
     GfxRect r = { x, y, w, 76 };
 #ifdef NV_TOUCH_UI
-    if (y + 76 < topo) { y += 78; continue; }
+    if (ajTelaCheia() && y + 76 < topo) { y += 78; continue; }
 #endif
     float xd = x + w - 22, a = ajMascara(y + 38, topo, base), yc = y + 38;
     TxtLinha la, lp, lr, ls;
@@ -1140,8 +1339,8 @@ static void aj2InspetorDiferencas(void) {
 
 // --- A TELA ---------------------------------------------------------------------
 static int ajModalAberto(void) {
-  return (uxEditor && (uxRestaurar || uxAvisoRisco || uxEditor == 2)) || riscoFolha || frAberta || ajVinculoAtivo() ||
-         teclado_aberto() || registro_envio_aberto() || apoioAberto;
+  return (uxEditor && (uxRestaurar || uxAvisoRisco || uxEditor == 2)) || riscoFolha || frAberta || hcAberta || ajVinculoAtivo() ||
+         pfTela || teclado_aberto() || registro_envio_aberto() || apoioAberto;
 }
 #ifdef NV_TOUCH_UI
 // Inline pointer editing (Confirm/Cancel footer, Mobile hit targets) is Mobile only.
@@ -1189,6 +1388,20 @@ static void ajDesenharTela(void) {
 #ifdef NV_TOUCH_UI
   if (ajPontInline) ajPontLista = 1;
 #endif
+  // #205: a edicao na linha (Mobile e TV) tem o rodape com os chips clicaveis.
+  // A camada dos alvos comeca aqui: as linhas registraram alvos no quadro
+  // assentado e um clique fora nao pode cair no OK de camada vazia.
+#ifdef NV_TOUCH_UI
+  if (ajPontInline) { ponteiro_camada(); ajToqueCamada(); }
+  else if (uxEditor && !modal)
+#else
+  if (uxEditor && !modal)
+#endif
+    { ponteiro_camada();
+#ifdef NV_TOUCH_UI
+      ajToqueCamada();
+#endif
+    }
   if (p.lA > 0.003f && uxIndice >= 1) {
     GfxRect fr = aj2ListaR();
     float oy = p.lOy > 0 ? p.lOy : aj2GradeOrigemY(uxIndice);
@@ -1202,7 +1415,7 @@ static void ajDesenharTela(void) {
   // sem alvo proprio, o clique e o OK (ponteiro.h, CAMADAS).
   if (modal || (uxEditor
 #ifdef NV_TOUCH_UI
-                && !ajPontInline
+                && !ajPontInline && !ajEditandoLinha(uxOp)
 #endif
                )) { ponteiro_camada();
 #ifdef NV_TOUCH_UI
@@ -1230,6 +1443,22 @@ static void ajDesenharTela(void) {
     TxtLinha t = ajTxtC(TXT_V2_24, uxAviso, fr.w - 100);
     txt_desenhar_alpha(t, fr.x + 50, fr.y + fr.h - 30, 0.7f);
   }
+  // #205: os modais de digitacao/aviso limparam os alvos do rodape. Na edicao
+  // na linha o rodape da lista continua na tela: repete o MESMO rodape sem
+  // desenhar (a funcao escolhe de novo quais chips cabem com o aviso, senao
+  // um alvo de OK/Voltar ficaria debaixo do "Ajuste salvo") para registrar os
+  // chips sobre um anteparo. No Mobile (ajPontInline) a camada do quadro ja e
+  // a da folha e o rodape tem os botoes de toque proprios — nao pode zerar
+  // aqui. TV e desktop sem toque tambem: o clique do ponteiro cancela.
+#ifdef NV_TOUCH_UI
+  if (ajEditandoLinha(uxOp) && !ajPontInline && !modal) { ponteiro_camada(); ajToqueCamada();
+#else
+  if (ajEditandoLinha(uxOp) && !modal) { ponteiro_camada();
+#endif
+    ponteiro_alvo(0, 0, (float)NV_TELA_W, (float)NV_TELA_H, NULL, NULL, 0, 0);
+    AJ_ESCALA_INI();
+    { AjDica d[4]; aj2RodapeA3(aj2ListaR(), d, ajDicasDe(focoIndice ? -1 : focoOp, d), 1.0f, 2); }
+    AJ_ESCALA_FIM(); }
   ajDesenharModais();
   if (registro_envio_aberto()) registro_envio_desenhar();
 }
@@ -1307,13 +1536,15 @@ static void ajSubLista(const AjSubLinha *L, int n, int foco, const AjDica *d, in
   if (alvo > n * AJ_SUB_PASSO - (base - topo)) alvo = n * AJ_SUB_PASSO - (base - topo);
   if (alvo < 0) alvo = 0;
 #ifdef NV_TOUCH_UI
-  { static int anterior = -1, tipoAnterior = -1;
-    int tipo = focar == addonsui_ponteiro ? 1 : 2;
-    if (tipo != tipoAnterior || foco != anterior) ajToqueLivre[AJT_SUB] = 0;
-    anterior = foco; tipoAnterior = tipo;
+  if (ajTelaCheia()) {
+    { static int anterior = -1, tipoAnterior = -1;
+      int tipo = focar == addonsui_ponteiro ? (addonsui_ao_vivo() ? 3 : 1) : 2;
+      if (tipo != tipoAnterior || foco != anterior) ajToqueLivre[AJT_SUB] = 0;
+      anterior = foco; tipoAnterior = tipo;
+    }
+    alvo = ajToqueRegistrar(AJT_SUB, (GfxRect){fr.x, topo, fr.w, base - topo}, &ajToqueOffset[AJT_SUB],
+                            n * AJ_SUB_PASSO - (base - topo), alvo, ajSubToqueChave);
   }
-  alvo = ajToqueRegistrar(AJT_SUB, (GfxRect){fr.x, topo, fr.w, base - topo}, &ajToqueOffset[AJT_SUB],
-                          n * AJ_SUB_PASSO - (base - topo), alvo, ajSubToqueChave);
 #endif
   gfx_recorte(fr.x, topo, fr.w, base - topo);
   y = topo - alvo;
@@ -1334,7 +1565,7 @@ static void ajSubLista(const AjSubLinha *L, int n, int foco, const AjDica *d, in
       float dir = r.x + r.w - 22.0f - cw;
       aj2Chevron(dir, yc, (f ? 0.7f : 0.32f) * a);
 #ifdef NV_TOUCH_UI
-      if (focar == pluginsui_ponteiro)
+      if (ajTelaCheia() && focar == pluginsui_ponteiro)
         ponteiro_alvo_faixa(dir - 38.0f, r.y, 54.0f, r.h, topo, base,
                             pluginsui_ponteiro, pluginsui_detalhes, i, 0);
 #endif
@@ -1354,7 +1585,7 @@ static void ajSubLista(const AjSubLinha *L, int n, int foco, const AjDica *d, in
     snprintf(uxAviso, sizeof uxAviso, "%s", aviso);
     uxAvisoAte = SDL_GetTicks() + 1000;
   }
-  aj2RodapeA3(fr, d, nd, 1);
+  aj2RodapeA3(fr, d, nd, 1, 1);
 }
 // A coluna da esquerda: a cena gerada da linha (a mesma da categoria) e o
 // kicker, o titulo e o texto da linha em foco.
@@ -1386,29 +1617,32 @@ static const char *ajSyncAddonsApoio(void) {
   return "Busca agora os addons da sua conta, sem esperar a volta automática.";
 }
 static void ajDesenharAddons(int foco) {
-  static AjSubLinha L[130];
-  int n = addons_n(), i, lig = 0;
+  static AjSubLinha L[131];
+  int n = addons_n(), i, lig = 0, live = addonsui_ao_vivo();
   char sub[96], val[64], k[160];
   montarTela();
   if (n > 128) n = 128;
-  for (i = 0; i < n; i++) if (addons_ativo(i)) lig++;
+  for (i = 0; i < n; i++) if (live ? addonsui_addon_ao_vivo(i) : addons_ativo(i)) lig++;
   ajFundoPagina();
   snprintf(val, sizeof val, i18n("%d de %d"), lig, n);
-  snprintf(sub, sizeof sub, "%s", n ? i18n("Ligados nesta TV") : i18n("Nenhum addon nesta conta."));
-  ajSubCabecalho("aj_puzzle", "Fontes e addons", "Addons", n ? val : "", sub);
-  if (foco > n + 1) foco = n + 1;
+  snprintf(sub, sizeof sub, "%s", n ? i18n(live ? "TV ao vivo" : "Ligados nesta TV") : i18n("Nenhum addon nesta conta."));
+  ajSubCabecalho("aj_puzzle", "Fontes e addons", live ? "TV ao vivo" : "Addons", n ? val : "", sub);
+  if (foco > (live ? n - 1 : n + 2)) foco = live ? n - 1 : n + 2;
   if (foco < 0) foco = 0;
   { static char apoio[128][96];
     for (i = 0; i < n; i++) {
       snprintf(apoio[i], sizeof apoio[i], "%s", ajAddonFornece(i));   // ajAddonFornece devolve um buffer so
-      L[i] = (AjSubLinha){ addons_nome(i), apoio[i], NULL, addons_ativo(i), 0, 0 };
+      L[i] = (AjSubLinha){ addons_nome(i), apoio[i], NULL, live ? addonsui_addon_ao_vivo(i) : addons_ativo(i), 0, 0 };
     } }
   L[n] = (AjSubLinha){ "Sincronizar addons", ajSyncAddonsApoio(), "aj_rotate-cw", -1, 0, 1 };
-  L[n+1] = (AjSubLinha){ "AIOStreams", "Conectar ou importar sua configuração", "aj_layers", -1, 1, 1 };
-  { AjDica d[3] = { { "OK", foco == n ? "Sincronizar addons" : "Mudar" }, { "↑ ↓", "Navegar" }, { "Voltar", "Fontes e addons" } };
-    ajSubLista(L, n + 2, foco, d, 3, NULL, addonsui_ponteiro); }
+  L[n + 1] = (AjSubLinha){ "TV ao vivo", "Os addons selecionados ignoram os filtros de fontes.", "aj_tv-minimal-play", -1, 0, 1 };
+  L[n + 2] = (AjSubLinha){ "AIOStreams", "Conectar ou importar sua configuração", "aj_layers", -1, 1, 1 };
+  { AjDica d[3] = { { "OK", !live && foco == n ? "Sincronizar addons" : "Mudar" }, { "↑ ↓", "Navegar" }, { "Voltar", "Fontes e addons" } };
+    ajSubLista(L, live ? n : n + 3, foco, d, 3, NULL, addonsui_ponteiro); }
   snprintf(k, sizeof k, "%s · %s", i18n("Fontes e addons"), i18n("Addons"));
-  if (foco > n) ajSubInspetor(AJ_ADDONS, k, "AIOStreams", i18n("Conectar ou importar sua configuração"));
+  if (live) ajSubInspetor(AJ_ADDONS, k, n ? addons_nome(foco) : "TV ao vivo", i18n("Os addons selecionados ignoram os filtros de fontes."));
+  else if (foco == n + 2) ajSubInspetor(AJ_ADDONS, k, "AIOStreams", i18n("Conectar ou importar sua configuração"));
+  else if (foco == n + 1) ajSubInspetor(AJ_ADDONS, k, "TV ao vivo", i18n("Os addons selecionados ignoram os filtros de fontes."));
   else if (foco == n) ajSubInspetor(AJ_ADDONS, k, "Sincronizar addons", i18n(ajSyncAddonsApoio()));
   else if (n > 0) {
     const char *base0 = addons_base(foco);
@@ -1435,7 +1669,7 @@ static void ajDesenharAddons(int foco) {
 // das setas; o OK do clique liga/desliga ou move, como o do controle.
 static void ajPontFolha(int i, int col) {
   if (!frAberta || teclado_aberto() || i < 0 || i > frN) return;
-  if (frAberta == 3 && i > 0) { if (col < 0 || col > 1) return; frCol = col; }
+  if ((frAberta == 3 || frAberta == 7) && i > 0) { if (col < 0 || col > 1) return; frCol = col; }
   frFoco = i;
 }
 // "Add-ons permitidos" / "Plugins permitidos" (#202): o modal com "Todos" no
@@ -1462,9 +1696,11 @@ static void desenhaFolhaPermitidos(void) {
   if (alvo > n * 84.0f - (base - topo)) alvo = n * 84.0f - (base - topo);
   if (alvo < 0) alvo = 0;
 #ifdef NV_TOUCH_UI
-  ajToqueCamada();
-  alvo = ajToqueRegistrar(AJT_FONTES, (GfxRect){m.x, topo, m.w, base - topo}, &ajToqueOffset[AJT_FONTES],
-                          n * 84.0f - (base - topo), alvo, frAberta);
+  if (ajTelaCheia()) {
+    ajToqueCamada();
+    alvo = ajToqueRegistrar(AJT_FONTES, (GfxRect){m.x, topo, m.w, base - topo}, &ajToqueOffset[AJT_FONTES],
+                            n * 84.0f - (base - topo), alvo, frAberta);
+  }
 #endif
   gfx_recorte(m.x, topo, m.w, base - topo);
   y = topo - alvo;
@@ -1506,6 +1742,95 @@ static void desenhaFolhaPermitidos(void) {
   }
 }
 
+// "Catálogos do destaque": busca no topo, fontes fixas, Sugeridos e os
+// catálogos por addon. Mesmo molde da folha de permitidos; o dedo foca a linha.
+static void ajPontHeroCat(int i, int col) {
+  (void)col;
+  if (hcAberta && !teclado_aberto() && hcFocavel(i)) hcFoco = i;
+}
+static void desenhaFolhaHeroCat(void) {
+  GfxRect m = { 460, 90, 1000, 900 };
+  float topo, base, y, alvo, total = 0, yFoco = 0;
+  const char *atual = fil_hero_fonte();
+  int i;
+  char sub[200];
+  hcMontar();
+  ponteiro_camada();
+  ajVeuModal();
+  ajCentraModal(&m);
+  ajIlha(m, 36, 1, 1);
+  snprintf(sub, sizeof sub, "%s", i18n("Escolha de onde vêm os títulos do destaque. Busque pelo nome do catálogo ou do addon."));
+  { char k[160];
+    snprintf(k, sizeof k, "%s · %s", i18n("Ajustes"), i18n("Destaque"));
+    topo = ajCabecalhoFolha(m, k, "Catálogos do destaque", sub, 0, 1); }
+  base = m.y + m.h - 96.0f;
+  for (i = 0; i < hcN; i++) {
+    float h = hcL[i].tipo == HC_CAB ? 48.0f : 84.0f;
+    if (i == hcFoco) yFoco = total + h * 0.5f;
+    total += h;
+  }
+  alvo = yFoco - (base - topo) * 0.5f;
+  if (alvo > total - (base - topo)) alvo = total - (base - topo);
+  if (alvo < 0) alvo = 0;
+#ifdef NV_TOUCH_UI
+  ajToqueCamada();
+  alvo = ajToqueRegistrar(AJT_FONTES, (GfxRect){m.x, topo, m.w, base - topo}, &ajToqueOffset[AJT_FONTES],
+                          total - (base - topo), alvo, 100 + (hcBusca[0] != 0));
+#endif
+  gfx_recorte(m.x, topo, m.w, base - topo);
+  y = topo - alvo;
+  for (i = 0; i < hcN; i++) {
+    int t = hcL[i].tipo, f = i == hcFoco;
+    float h = t == HC_CAB ? 48.0f : 84.0f;
+    GfxRect r = { m.x + 18, y, m.w - 36, h - 4 };
+    const char *nome = hcL[i].txt, *apoio = "";
+    char ap[200] = "";
+    int marcado = 0;
+    float tw = r.w - 22 - 64 - 90;
+    if (y + h >= topo && y <= base) {
+      if (t == HC_CAB) {
+        TxtLinha c = ajTxtC(TXT_ILHA_GENERO, hcL[i].idx ? nome : i18n(nome), r.w - 44);
+        txt_desenhar_alpha(c, r.x + 22, y + 22, 0.55f);
+      } else if (t == HC_VAZIO) {
+        TxtLinha c = ajTxtC(TXT_AJ_ROTULO, i18n(nome), r.w - 44);
+        txt_desenhar_alpha(c, r.x + 22, y + 24, 0.6f);
+      } else {
+        ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, ajPontHeroCat, NULL, i, -1);
+        if (f) ajFocoLinha(r, 22, 1, 1);
+        if (t == HC_BUSCA) {
+          nome = hcBusca[0] ? hcBusca : i18n("Buscar catálogo");
+          apoio = hcBusca[0] ? i18n("OK para mudar a busca") : i18n("OK para digitar");
+          ajNeutro((GfxRect){ r.x + 22, y + 16, 48, 48 }, 14, 0.09f, 0.141f, 0.149f, 0.173f, 1);
+          ajIcone("aj_search", r.x + 22 + 14, y + 16 + 14, 20, 0.85f);
+        } else if (t == HC_FIXA) {
+          nome = i18n(nome);
+          marcado = hcL[i].idx ? (atual[0] == '*' && !atual[1]) : !atual[0];
+          ajNeutro((GfxRect){ r.x + 22, y + 16, 48, 48 }, 14, 0.09f, 0.141f, 0.149f, 0.173f, 1);
+          ajIcone("aj_film", r.x + 22 + 14, y + 16 + 14, 20, 0.85f);
+        } else {
+          int ix = hcL[i].idx;
+          nome = fil_titulo(ix);
+          snprintf(ap, sizeof ap, "%s%s%s", fil_linha_addon(ix), fil_linha_addon(ix)[0] && fil_linha_conteudo(ix)[0] ? " · " : "",
+                   fil_linha_conteudo(ix));
+          apoio = ap;
+          marcado = !strcmp(fil_chave(ix), atual);
+          ajRosto(nome, r.x + 22, y + 16, 48, 14, 0.09f, 0.85f, TXT_ILHA_INICIAL);
+        }
+        { TxtLinha tl = t == HC_CAT ? txt_linha_corta(TXT_AJ_ROTULO, nome, AJ_TX, tw) : ajTxtC(TXT_AJ_ROTULO, nome, tw);
+          TxtLinha c = ajTxtC(TXT_ILHA_GENERO, apoio, tw);
+          float ty = y + 40 - (tl.h + (apoio[0] ? 4 + c.h : 0)) * 0.5f;
+          txt_desenhar_alpha(tl, r.x + 22 + 48 + 16, ty, f ? 1.0f : 0.86f);
+          if (apoio[0]) txt_desenhar_alpha(c, r.x + 22 + 48 + 16, ty + tl.h + 4, 0.42f); }
+        if (marcado) ajChipLiga(r.x + r.w - 22, y + 40, 1, 1);
+      }
+    }
+    y += h;
+  }
+  gfx_sem_recorte();
+  { AjDica d[2] = { { "OK", "Escolher" }, { "Voltar", "Fechar" } };
+    ajDicas(d, 2, m.x + 44, m.y + m.h - 36, m.w - 88, 1); }
+}
+
 // "Ordem dos add-ons" (2.0.2): a lista na ordem do automatico, com as setas de
 // subir e descer em cada linha (o arranjo da folha de editar abas do social).
 // "Sem ordem" no topo apaga a ordem.
@@ -1520,17 +1845,21 @@ static void desenhaFolhaOrdem(void) {
   ajVeuModal();
   ajCentraModal(&m);
   ajIlha(m, 36, 1, 1);
-  snprintf(sub, sizeof sub, "%s", i18n("Esquerda e direita escolhem subir ou descer; OK move. Quem está fora da ordem toca depois de todos."));
+  snprintf(sub, sizeof sub, "%s", frAberta == 7
+    ? i18n("Esquerda e direita escolhem subir ou descer; OK move.")
+    : i18n("Esquerda e direita escolhem subir ou descer; OK move. Quem está fora da ordem toca depois de todos."));
   snprintf(k, sizeof k, "%s · %s", i18n("Fontes e addons"), i18n("Escolha da fonte"));
-  topo = ajCabecalhoFolha(m, k, "Ordem dos add-ons", sub, 0, 1);
+  topo = ajCabecalhoFolha(m, k, frAberta == 7 ? "Ordem das notas na linha do título" : "Ordem dos add-ons", sub, 0, 1);
   base = m.y + m.h - 96.0f;
   alvo = frFoco * 84.0f - (base - topo - 80.0f) * 0.5f;
   if (alvo > n * 84.0f - (base - topo)) alvo = n * 84.0f - (base - topo);
   if (alvo < 0) alvo = 0;
 #ifdef NV_TOUCH_UI
-  ajToqueCamada();
-  alvo = ajToqueRegistrar(AJT_FONTES, (GfxRect){m.x, topo, m.w, base - topo}, &ajToqueOffset[AJT_FONTES],
-                          n * 84.0f - (base - topo), alvo, frAberta);
+  if (ajTelaCheia()) {
+    ajToqueCamada();
+    alvo = ajToqueRegistrar(AJT_FONTES, (GfxRect){m.x, topo, m.w, base - topo}, &ajToqueOffset[AJT_FONTES],
+                            n * 84.0f - (base - topo), alvo, frAberta);
+  }
 #endif
   gfx_recorte(m.x, topo, m.w, base - topo);
   y = topo - alvo;
@@ -1541,7 +1870,7 @@ static void desenhaFolhaOrdem(void) {
     ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, ajPontFolha, NULL, i, frCol);
     if (f) ajFocoLinha(r, 22, 1, 1);
     if (i == 0) {
-      TxtLinha t = ajTxtC(TXT_AJ_ROTULO, i18n("Sem ordem"), r.w - 120);
+      TxtLinha t = ajTxtC(TXT_AJ_ROTULO, i18n(frAberta == 7 ? "Padrão" : "Sem ordem"), r.w - 120);
       ajNeutro((GfxRect){ r.x + 22, y + 16, 48, 48 }, 14, 0.09f, 0.141f, 0.149f, 0.173f, 1);
       ajIcone("aj_arrow-up-down", r.x + 22 + 14, y + 16 + 14, 20, 0.85f);
       txt_desenhar_alpha(t, r.x + 22 + 48 + 16, y + 40 - t.h * 0.5f, f ? 1.0f : 0.86f);
@@ -1574,6 +1903,153 @@ static void desenhaFolhaOrdem(void) {
   if (uxAviso[0]) {
     TxtLinha t = ajTxtC(TXT_AJ_SUB, uxAviso, 1100);
     txt_desenhar_alpha(t, (NV_VTELA_W - t.w) * 0.5f, NV_VTELA_H - 50, 0.8f);
+  }
+}
+
+// Same reorder/number-editor interaction as the add-on order sheet, with
+// explicit targets in TV and Mobile. Labels never identify persisted rows.
+static void faPont(int i, int col) {
+  if (frAberta < 4 || teclado_aberto() || i < 0 || i >= faN || col < 0 || col > (frAberta==8?1:2)) return;
+  faFoco = i; faCol = col;
+}
+static void faContaFocar(int i,int b) { (void)b;faFoco=i; }
+static void faFechar(int a, int b) { (void)a; (void)b; if (frAberta >= 4) frAberta = 0; }
+static void desenhaFolhaFalha(void) {
+  GfxRect m = {460, 90, 1000, 900}; float topo, base, y, alvo;
+  if(frAberta==8 && !nv_perfil_sessao_atual(faIptvSessao)) { frAberta=0;return; }
+  int contas=frAberta==8;
+  faMontar(); ponteiro_camada(); ajVeuModal(); ajCentraModal(&m); ajIlha(m, 36, 1, 1);
+  topo = ajCabecalhoFolha(m, contas?"TV ao vivo":"Fontes e addons", contas?"Contas de TV ao vivo":frAberta == 4 ? "Ordem e limites dos provedores" : "Ordem e limites dos add-ons",
+                         contas?"":i18n("Limites contam links distintos, incluindo o primeiro. Use as setas para ordenar e o número para ajustar."), 0, 1);
+  base = m.y + m.h - 96.0f;
+  alvo = faFoco * 84.0f - (base - topo - 80.0f) * 0.5f;
+  if (alvo > faN * 84.0f - (base - topo)) alvo = faN * 84.0f - (base - topo);
+  if (alvo < 0) alvo = 0;
+#ifdef NV_TOUCH_UI
+  if (ajTelaCheia()) {
+    ajToqueCamada();
+    alvo = ajToqueRegistrar(AJT_FONTES, (GfxRect){m.x, topo, m.w, base - topo}, &ajToqueOffset[AJT_FONTES],
+                            faN * 84.0f - (base - topo), alvo, frAberta);
+  }
+#endif
+  gfx_recorte(m.x, topo, m.w, base - topo); y = topo - alvo;
+  for (int i = 0; i < faN; i++, y += 84.0f) {
+    if (y + 80.0f < topo || y > base) continue;
+    GfxRect r = {m.x + 18.0f, y, m.w - 36.0f, 80.0f};
+    int f = i == faFoco; float bw = 56.0f, bx = r.x + r.w - 22.0f - (contas?2.0f:3.0f) * bw - 16.0f;
+    float tw = fmaxf(1.0f, bx - (r.x + 36.0f) - 24.0f);
+    // Tapping the row edits its limit; reorder always has an explicit arrow.
+    ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, faPont, contas?faContaFocar:NULL, i, contas?0:2);
+    if (f) ajFocoLinha(r, 22.0f, 1.0f, 1.0f);
+    TxtLinha t = txt_linha_corta(TXT_AJ_ROTULO, faItem[i].nome, AJ_TX, tw);
+    TxtLinha ap = ajTxtC(TXT_ILHA_GENERO, faItem[i].apoio, tw);
+    float ty = y + 40.0f - (t.h + (faItem[i].apoio[0] ? 4.0f + ap.h : 0.0f)) * 0.5f;
+    txt_desenhar_alpha(t, r.x + 36.0f, ty, f ? 1.0f : 0.86f);
+    if (faItem[i].apoio[0]) txt_desenhar_alpha(ap, r.x + 36.0f, ty + t.h + 4.0f, 0.42f);
+    for (int col = 0; col < (contas?2:3); col++) {
+      GfxRect b = {bx + col * (bw + 8.0f), y + 12.0f, bw, bw};
+      int bf = f && faCol == col, sem = (col == 0 && i == 0) || (col == 1 && i + 1 == faN);
+      ponteiro_alvo_faixa(b.x, b.y, b.w, b.h, topo, base, faPont, NULL, i, col);
+      if (bf) ajPilulaAcento(b, 28.0f, 1.0f); else ajNeutro(b, 28.0f, 0.08f, AJ_CHIP_SOL, 1.0f);
+      if (col < 2) {
+        if (bf) ajIconeT(col ? "aj_arrow-down" : "aj_arrow-up", b.x + 14.0f, b.y + 14.0f, 28.0f, sem ? 0.3f : 1.0f);
+        else ajIcone(col ? "aj_arrow-down" : "aj_arrow-up", b.x + 14.0f, b.y + 14.0f, 28.0f, sem ? 0.3f : 0.85f);
+      } else {
+        char n[8]; snprintf(n, sizeof n, "%d", faLimite(i));
+        TxtLinha num = bf ? ajTxtT(TXT_V2_SEG, n) : ajTxt(TXT_V2_SEG, n);
+        txt_desenhar_alpha(num, b.x + (b.w - num.w) * 0.5f, b.y + (b.h - num.h) * 0.5f, 1.0f);
+      }
+    }
+  }
+  if (!faN) {
+    TxtLinha empty = ajTxtC(TXT_AJ_ROTULO, contas?"Nenhuma":"Nenhum add-on instalado.", m.w - 88.0f);
+    txt_desenhar_alpha(empty, m.x + 44.0f, topo + 24.0f, 0.7f);
+  }
+  gfx_sem_recorte();
+  TxtLinha close = ajTxt(TXT_V2_SEG, "Fechar");
+  GfxRect fechar = {m.x + m.w - close.w - 84.0f, m.y + m.h - 76.0f, close.w + 40.0f, 48.0f};
+  ajNeutro(fechar, 24.0f, 0.10f, AJ_CHIP_SOL, 1.0f);
+  txt_desenhar_alpha(close, fechar.x + 20.0f, fechar.y + (fechar.h - close.h) * 0.5f, 0.9f);
+  ponteiro_alvo(fechar.x, fechar.y, fechar.w, fechar.h, NULL, faFechar, 0, 0);
+  if (!ajTelaCheia()) {
+    AjDica d[2] = {{"OK", contas?"Mover":"Editar"}, {"Voltar", "Fechar"}};
+    ajDicasLinha(d, 2, m.x + 44.0f, m.y + m.h - 66.0f, 1.0f);
+  }  if (uxAviso[0]) {
+    TxtLinha aviso = ajTxtC(TXT_AJ_SUB, uxAviso, NV_VTELA_W - 80.0f);
+    txt_desenhar_alpha(aviso, (NV_VTELA_W - aviso.w) * 0.5f, NV_VTELA_H - 50.0f, 0.8f);
+  }
+}
+
+// Shared source exclusions. Checkmarks mean excluded, in both TV and Mobile;
+// this uses the same clipped rows and pointer dispatch as the source sheets.
+static void ffPont(int i, int categoria) {
+  if (frAberta != 6 || teclado_aberto() || categoria != ffCategoria) return;
+  int n = ffCategoria >= 0 ? fontefiltro_opcoes_n(ffCategoria) : 9;
+  if (i < 0 || i >= n) return;
+  if (ffCategoria >= 0) ffValorFoco = i; else ffFoco = i;
+}
+static void ffPontVoltar(int a, int b) { (void)a; (void)b; ffVoltar(); }
+static void desenhaFolhaFiltros(void) {
+  GfxRect m = {460.0f, 90.0f, 1000.0f, 900.0f};
+  float topo, base, alvo, y;
+  int n = ffCategoria >= 0 ? fontefiltro_opcoes_n(ffCategoria) : 9;
+  int foco = ffCategoria >= 0 ? ffValorFoco : ffFoco;
+  FonteFiltroConfig cfg; fontefalha_filtro(&cfg);
+  ponteiro_camada(); ajVeuModal(); ajCentraModal(&m); ajIlha(m, 36.0f, 1.0f, 1.0f);
+  topo = ajCabecalhoFolha(m, ffCategoria >= 0 ? "Filtros das fontes" : "Fontes e addons",
+                         ffCategoria >= 0 ? fontefiltro_rotulo(ffCategoria) : "Filtros das fontes",
+                         i18n(ffCategoria >= 0
+                           ? "Marcado = filtrado. OK ou toque marca/desmarca e salva na hora."
+                           : "Selecione os valores que deseja filtrar. As alterações são salvas na hora e valem antes dos limites de links."),
+                         0, 1);
+  base = m.y + m.h - 96.0f;
+  alvo = foco * 84.0f - (base - topo - 80.0f) * 0.5f;
+  if (alvo > n * 84.0f - (base - topo)) alvo = n * 84.0f - (base - topo);
+  if (alvo < 0.0f) alvo = 0.0f;
+#ifdef NV_TOUCH_UI
+  ajToqueCamada();
+  alvo = ajToqueRegistrar(AJT_FONTES, (GfxRect){m.x, topo, m.w, base - topo}, &ajToqueOffset[AJT_FONTES],
+                          n * 84.0f - (base - topo), alvo, 600 + ffCategoria);
+#endif
+  gfx_recorte(m.x, topo, m.w, base - topo); y = topo - alvo;
+  for (int i = 0; i < n; i++, y += 84.0f) {
+    GfxRect r = {m.x + 18.0f, y, m.w - 36.0f, 80.0f};
+    if (y + r.h < topo || y > base) continue;
+    int f = i == foco;
+    ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, ffPont, NULL, i, ffCategoria);
+    if (f) ajFocoLinha(r, 22.0f, 1.0f, 1.0f);
+    if (ffCategoria >= 0) {
+      int excluido = (cfg.excluir[ffCategoria] & fontefiltro_bit(ffCategoria, i)) != 0;
+      GfxRect caixa = {r.x + r.w - 66.0f, y + 20.0f, 40.0f, 40.0f};
+      TxtLinha nome = ajTxtC(TXT_AJ_ROTULO, fontefiltro_opcao(ffCategoria, i), r.w - 122.0f);
+      txt_desenhar_alpha(nome, r.x + 36.0f, y + (r.h - nome.h) * 0.5f, f ? 1.0f : 0.86f);
+      if (excluido) {
+        ajPilulaAcento(caixa, 12.0f, 1.0f);
+        ajIconeT("aj_check", caixa.x + 8.0f, caixa.y + 8.0f, 24.0f, 1.0f);
+      } else ajNeutro(caixa, 12.0f, 0.10f, AJ_CHIP_SOL, 1.0f);
+    } else {
+      TxtLinha nome = ajTxtC(TXT_AJ_ROTULO, ffNome(i), r.w - 100.0f);
+      // Values are already translated, and user-entered release groups remain literal.
+      TxtLinha valorFiltro = txt_linha_corta(TXT_ILHA_GENERO, ffValor(i), AJ_TX, r.w - 100.0f);
+      float ty = y + (r.h - nome.h - 4.0f - valorFiltro.h) * 0.5f;
+      txt_desenhar_alpha(nome, r.x + 36.0f, ty, f ? 1.0f : 0.86f);
+      txt_desenhar_alpha(valorFiltro, r.x + 36.0f, ty + nome.h + 4.0f, 0.52f);
+      ajIcone("aj_chevron-right", r.x + r.w - 54.0f, y + 28.0f, 24.0f, f ? 1.0f : 0.65f);
+    }
+  }
+  gfx_sem_recorte();
+  TxtLinha fechar = ajTxt(TXT_V2_SEG, ffCategoria >= 0 ? "Voltar" : "Fechar");
+  GfxRect botao = {m.x + m.w - fechar.w - 84.0f, m.y + m.h - 76.0f, fechar.w + 40.0f, 48.0f};
+  ajNeutro(botao, 24.0f, 0.10f, AJ_CHIP_SOL, 1.0f);
+  txt_desenhar_alpha(fechar, botao.x + 20.0f, botao.y + (botao.h - fechar.h) * 0.5f, 0.9f);
+  ponteiro_alvo(botao.x, botao.y, botao.w, botao.h, NULL, ffPontVoltar, 0, 0);
+  if (!ajTelaCheia()) {
+    AjDica d[2] = {{"OK", ffCategoria >= 0 ? "Filtrar" : "Editar"}, {"Voltar", ffCategoria >= 0 ? "Voltar" : "Fechar"}};
+    ajDicasLinha(d, 2, m.x + 44.0f, m.y + m.h - 66.0f, 1.0f);
+  }
+  if (uxAviso[0]) {
+    TxtLinha aviso = ajTxtC(TXT_AJ_SUB, uxAviso, NV_VTELA_W - 80.0f);
+    txt_desenhar_alpha(aviso, (NV_VTELA_W - aviso.w) * 0.5f, NV_VTELA_H - 50.0f, 0.8f);
   }
 }
 
@@ -1707,6 +2183,7 @@ static void ajDesenharPlugins(const AjPluginsVista *v) {
 void ajustes_ui_fundo(void) { ajFundo(); }
 void ajustes_ui_arte(int n) { ajArteFundoN = n; }
 void ajustes_ui_ilha(GfxRect r, float raioPx, int modal) { ajIlha(r, raioPx, 1, modal); }
+void ajustes_ui_ilha_a(GfxRect r, float raioPx, int modal, float a) { ajIlha(r, raioPx, a, modal); }
 void ajustes_ui_veu(void) { ajVeuModal(); }
 float ajustes_ui_kicker(const char *s, float x, float y, float a) { return ajKicker(s, x, y, a); }
 float ajustes_ui_meta(const char *k, const char *v, float x, float y, float w) { return ajMeta(k, v, x, y, w, 1); }

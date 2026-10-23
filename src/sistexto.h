@@ -59,6 +59,11 @@ int   st_voz_disponivel(void);
 // O campo ja abre o teclado do sistema sozinho ao aparecer? So no Android (o
 // pedido do dono); na LG/Samsung so com OK no campo.
 int   st_abre_sozinho(void);
+// Ajuste "Teclado" valido AQUI: 0 automatico, 1 so a grade do app, 2 o teclado do
+// sistema direto. Onde o ajuste nao existe (Mac, testes) e sempre 0.
+int   st_teclado_modo(void);
+// 1 = "Do app" fora do Android: o teclado da TV (LG/Samsung) nunca abre.
+int   st_teclado_do_app(void);
 // Abre o teclado do sistema com `inicial` no campo (max em bytes). 1 = abriu.
 int   st_ime_abrir(int dono, const char *inicial, int max);
 // Tipo do PROXIMO st_ime_abrir (consumido nele): o Android abre o teclado de

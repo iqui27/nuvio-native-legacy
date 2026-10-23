@@ -30,7 +30,10 @@ int main(void) {
   }
   // Zoom: production source crop is integer/even; preserve its exact scale.
   nv_tpk_video_evento(6,1912,800);
+  video_pausar(1); nv_tpk_video_evento(3,0,0);
+  int beforePausedCrop = nj;
   video_janela_fonte(244,0,1422,800,0,0,1920,1080);
+  assert(nj == beforePausedCrop + 1 && !video_tocando());
 #ifdef NV_TPK40
   check(-328,0,2582,1080,-328,0,2582,1080);
 #else
@@ -57,6 +60,10 @@ int main(void) {
   nv_tpk_video_evento(6,1920,1080);
   video_janela_fonte(480,270,960,540,0,0,1920,1080);
   nj=0; video_parar(); video_recorte_reaplicar(); assert(nj==0);
+  assert(video_largura()==0 && video_altura()==0);
+  // A pending live open cannot use the previous stream's source crop.
+  video_janela_fonte(0,0,1280,720,0,0,1920,1080);
+  confere("stopped stream stays full-frame",0,0,1920,1080);
   // The trailer's legacy gate remains separate from the player.
   video_tocar("http://test/trailer"); video_tpk_trailer_marcar(1);
   nv_tpk_video_evento(6,1920,1080);

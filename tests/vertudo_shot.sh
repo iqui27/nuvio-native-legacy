@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Abas da pagina de colecao nos dois estados, em BMP. Nao entra na suite
 # (tools/testa-tudo.sh pula *_shot.sh): precisa de janela GL e de olho humano.
 #
@@ -6,7 +8,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-vertudo-shot.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-vertudo-shot.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 
@@ -17,9 +19,9 @@ for source in src/*.c src/dts/*.c; do
 done
 # src/vertudo.c e INCLUIDO pelo teste: desenharCard e a lista de canais sao
 # estaticos, e semear por dentro e o unico jeito de fotografar sem addon no ar.
-cc "${sources[@]}" tests/vertudo_shot.c -Isrc -o "${NUVIO_SHOT_BIN:-/tmp/nuvio-vertudo-shot}" \
+cc "${sources[@]}" tests/vertudo_shot.c -Isrc -o "${NUVIO_SHOT_BIN:-${TMPDIR:-/tmp}/nuvio-vertudo-shot}" \
   -O1 -g \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-"${NUVIO_SHOT_BIN:-/tmp/nuvio-vertudo-shot}" "$@"
+"${NUVIO_SHOT_BIN:-${TMPDIR:-/tmp}/nuvio-vertudo-shot}" "$@"

@@ -6,6 +6,8 @@
 // com o Big Buck Bunny; o que nao tem resposta ("hash sem peers") e modelado
 // como o servidor real se comporta: nao responde nunca, e o prazo e nosso.
 #include "p2p.h"
+#include "idbase.h"
+#include "nvtmp.h"
 #include "streams.h"
 #include "p2pmotor.h"
 #include "rede.h"
@@ -19,12 +21,13 @@ static int ligado;
 static char base[200];
 int ajustes_p2p_ligado(void) { return ligado; }
 const char *ajustes_p2p_url(void) { return base; }
-void debrid_episodio(int *t, int *e) { *t = 1; *e = 2; }
+static const char *episodioId = "tt1:1:2";
+void debrid_episodio(int *t, int *e) { idbase_episodio(episodioId, t, e); }
 uint64_t badges_detectar(const char *m) { (void)m; return 0; }
 uint64_t badges_bit(const char *id) { (void)id; return 0; }
 // p2pmotor.c (motor embutido) entra no link; sem -DNV_P2P_MOTOR ele so diz
 // "sem motor" e nunca chama estes.
-const char *dados_dir(void) { return "/tmp"; }
+const char *dados_dir(void) { return nvt(""); }
 int rede_pedir(const RedePedido *p, RedeResposta *r) { (void)p; r->erro = REDE_INDISPONIVEL; return 0; }
 void rede_resposta_limpar(RedeResposta *r) { (void)r; }
 
@@ -245,6 +248,13 @@ int main(void) {
   assert(p2p_resolver(HASH, 0, NULL, url, sizeof url) == P2P_OK && strstr(url, "/0"));
   assert(p2p_resolver(HASH, -1, NULL, url, sizeof url) == P2P_OK);            // debrid_episodio = T1E2
   assert(strlen(url) > 2 && url[strlen(url) - 1] == '1');
+  episodioId = "kitsu:41370:5";
+  cenario(1, "http://h:11470", SETTINGS, 200,
+          "{\"files\":[{\"path\":\"[SubsPlease] Mushoku Tensei - 05 (1080p).mkv\",\"length\":1900000000}]}", 200, 1, 0);
+  assert(p2p_resolver(HASH, -1, NULL, url, sizeof url) == P2P_OK);
+  assert(url[strlen(url) - 1] == '0');
+  episodioId = "tt1:1:2";
+  puts("p2p: Kitsu absent season selects ordinary anime filename");
   puts("p2p: resolvedor e mapeamento de erros ok");
 
   // ---------------------------------------------------------- testar
@@ -292,6 +302,13 @@ int main(void) {
     assert(p2p_escolher_lista(nomes, tam, 5, 4, 1, 1) == 4);     // fileIdx do addon vence
     assert(p2p_escolher_lista(nomes, tam, 5, 0, 1, 2) == 2);     // fileIdx de legenda: cai no SxxEyy
     assert(p2p_escolher_lista(nomes, tam, 0, -1, 0, 0) == -1);
+  }
+  {
+    const char *nomes[] = {"Show.S01E01.mkv", "Show.S00E01.mkv", "Show.S00E02.mkv"};
+    double tam[] = {3e9, 900e6, 800e6};
+    assert(p2p_escolher_lista(nomes, tam, 3, -1, 0, 2) == 2);
+    assert(p2p_escolher_lista(nomes, tam, 3, 1, 0, 2) == 1); // indice explicito vence
+    assert(p2p_escolher_lista(nomes, tam, 1, -1, 0, 2) == -1); // nao tocar S01 por engano
   }
   puts("p2p: motor (cotos, magnet, escolha) ok");
 

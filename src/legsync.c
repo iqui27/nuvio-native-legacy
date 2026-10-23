@@ -39,6 +39,7 @@ static struct {
   int primFase;                   // 0 baixando, 1 pronta e completa, 2 falhou/incompleta
   LegendaDocumento *primDoc;
   char primIdioma[24];
+  uint64_t primUrlHash;
   // referencia
   uint64_t refPedido;
   LegendaDocumento *refDoc;
@@ -70,6 +71,7 @@ static struct {
   unsigned autoDesde;             // ultimo PROGRESSO do plano (teto LS_AUTO_TETO_MS sem progresso)
   long long autoMarca;            // assinatura do progresso visto em autoDesde
   int autoLog;                    // ultima fase que foi ao log
+  AutoSyncMotivo autoFalha;       // ultimo motivo da engine (log/UI)
   // Slot 1 (segunda legenda, legenda2.c): a mesma engine contra a mesma
   // referencia embutida, sozinha. segOrig = o documento publicado por
   // legenda2 (identidade); segDoc = a copia na geracao desta sessao.
@@ -126,7 +128,7 @@ void legsync_auto_habilitar(int ligado) {
       zerarAnalise(); pararAudio();
     }
     autosync_cancelar(L.sync, 1); soltarSegunda();
-    L.autoFase = 0; L.autoEtapa = 9; L.autoPend = 0;
+    L.autoFase = 0; L.autoEtapa = 9; L.autoPend = 0; L.autoFalha = AUTOSYNC_OK;
     L.autoTroca = L.autoVolta = 0; L.autoTrocou = 0; L.autoNome[0] = 0;
   }
   autoLigado = ligado != 0;
@@ -233,6 +235,11 @@ void legsync_primaria_externa(const char *url, const char *idioma, const char *o
   pthread_mutex_lock(&M);
   if (m && L.criado) {
     uint64_t h = fnv(url);
+    if (!L.autoTroca && L.primTipo == 1 && L.primUrlHash == h &&
+        (L.primFase == 0 || (L.primFase == 1 && legenda_geracao() == L.primGer))) {
+      pthread_mutex_unlock(&M); free(m); return;
+    }
+    L.primUrlHash = h;
     m->token = ++L.primToken; m->sessao = L.sessao;
     m->info.sessao = L.sessao; m->info.flags = LEGENDA_DOC_COMPLETO;
     snprintf(m->info.idioma, sizeof m->info.idioma, "%s", idioma ? idioma : "");
@@ -249,6 +256,7 @@ void legsync_primaria_externa(const char *url, const char *idioma, const char *o
     // R4: a pessoa (ou a automatica de idioma) escolheu: plano novo. Vinda do
     // trocador, o plano continua e so anota a legenda tentada.
     L.autoEtapa = 0; L.autoRefTent = 0; L.autoPend = 0; L.manualFase = L.manualLog = 0;
+    L.autoFalha = AUTOSYNC_OK;
     if (L.autoTroca && L.autoVolta) { L.autoFase = 3; L.autoEtapa = 9; L.autoTrocou = 0; L.autoNome[0] = 0; }
     else if (L.autoTroca) {
       L.autoFase = 1; L.autoTrocou = 1; L.autoNome[0] = 0; L.autoTrocasEp++;
@@ -310,14 +318,16 @@ static int dona(void) {
 }
 
 int legsync_offset_ms(int manual) {
-  int total = manual;
+  // `manual` is the user's delay (positive = subtitle shown LATER). The lookup
+  // convention (legenda_cues, assrender, autosync) is the opposite: positive
+  // shifts the cue search earlier. Translate once, here: lookup = autoCorr -
+  // manual.
+  int total = -manual;
   unsigned g = legenda_geracao();      // fora de M: legenda.c tem lock proprio
   pthread_mutex_lock(&M);
   if (L.criado && L.primTipo == 1 && L.primFase == 1 && L.primDoc && g == L.primGer &&
-      legenda_documento_info(L.primDoc)->sessao == L.sessao) {
-    autosync_manual(L.sync, 0, manual);
-    total = autosync_offset_ms(L.sync, 0);
-  }
+      legenda_documento_info(L.primDoc)->sessao == L.sessao)
+    total += autosync_offset_ms(L.sync, 0);
   pthread_mutex_unlock(&M);
   return total;
 }
@@ -442,6 +452,7 @@ static int audioPossivel(void) {
 // da metade das falas da original devolve a original (autoPasso).
 static void autoEncerrar(const char *motivo) {
   L.autoFase = 3; L.autoEtapa = 9;
+  if (L.autoFalha == AUTOSYNC_OK) L.autoFalha = AUTOSYNC_LOW_CONFIDENCE;
   printf("[legsync] automatico: encerra sem trocar (%s)\n", motivo); fflush(stdout);
 }
 
@@ -476,13 +487,13 @@ static void autoPasso(void) {
         if (!L.refPedido) { L.querModo = -1; if (audioPossivel()) { L.autoEtapa = 2; iniciarAudio(); } else autoFalhou(1); }
       }
     } else if (audioPossivel()) { L.autoEtapa = 2; iniciarAudio(); }
-    else { L.autoFase = 3; L.autoEtapa = 9; }
+    else autoEncerrar("sem referencia nesta plataforma");
     return;
   }
   e = autosync_estado(L.sync, 0);
   if (L.autoEtapa == 1) {
-    if (L.solicitou && e.estado == AUTOSYNC_ACCEPTED) { L.autoFase = 2; L.autoEtapa = 9; return; }
-    if (L.solicitou && e.estado == AUTOSYNC_REJECTED) { autoFalhou(e.referenciaInvalida); return; }
+    if (L.solicitou && e.estado == AUTOSYNC_ACCEPTED) { L.autoFase = 2; L.autoEtapa = 9; L.autoFalha = AUTOSYNC_OK; return; }
+    if (L.solicitou && e.estado == AUTOSYNC_REJECTED) { L.autoFalha = e.motivo; autoFalhou(e.referenciaInvalida); return; }
     if (!L.refDoc && !L.refPedido && L.refMotivo != LEGREF_OK && L.refMotivo != LEGREF_PARADO) {
       // Faixa de referencia ruim (sem duracao/incompleta): outra faixa do arquivo pode servir.
       if ((L.refMotivo == LEGREF_SEM_DURACAO || L.refMotivo == LEGREF_INCOMPLETO) &&
@@ -500,8 +511,10 @@ static void autoPasso(void) {
     }
   } else if (L.autoEtapa == 2) {
     if (L.audPedido) return;
-    if (L.solicitou && e.estado == AUTOSYNC_ACCEPTED) { L.autoFase = 2; L.autoEtapa = 9; return; }
+    if (L.solicitou && e.estado == AUTOSYNC_ACCEPTED) { L.autoFase = 2; L.autoEtapa = 9; L.autoFalha = AUTOSYNC_OK; return; }
     if ((L.solicitou && e.estado == AUTOSYNC_REJECTED) || L.audFalha != AUDSYNC_M_OK) {
+      if (L.solicitou && e.estado == AUTOSYNC_REJECTED) L.autoFalha = e.motivo;
+      else if (L.audFalha != AUDSYNC_M_OK) L.autoFalha = AUTOSYNC_LOW_CONFIDENCE;
       L.autoFase = 3; L.autoEtapa = 9;
     }
   }
@@ -672,7 +685,8 @@ void legsync_passo(const char *url, double pos, double folga, int sensivel, unsi
       printf("[legsync] automatico: %u s sem progresso (etapa %d, fase %d, ref=%d, pedido=%d); a legenda fica como esta\n",
              LS_AUTO_TETO_MS / 1000u, L.autoEtapa, L.primFase, L.refDoc != NULL, (int)L.refPedido);
       fflush(stdout);
-      L.autoFase = 3; L.autoEtapa = 9; L.autoPend = 0; L.autoDesde = 0;
+      autoEncerrar("sem progresso");
+      L.autoPend = 0; L.autoDesde = 0;
       if (L.refPedido) { legref_cancelar(L.ref); L.refPedido = 0; }
       if (L.audPedido) pararAudio();
       autosync_cancelar(L.sync, 0);
@@ -683,10 +697,12 @@ void legsync_passo(const char *url, double pos, double folga, int sensivel, unsi
   if (autoLigado) segundaPasso(sensivel);
   if (L.autoFase * 3 + L.primFase != L.autoLog) {
     L.autoLog = L.autoFase * 3 + L.primFase;
-    printf("[legsync] automatico: %s (etapa %d, legenda %s, referencia %s)\n",
+    printf("[legsync] automatico: %s (etapa %d, legenda %s, referencia %s%s%s)\n",
            L.autoFase == 1 ? "sincronizando" : L.autoFase == 2 ? "sincronizada" : L.autoFase == 3 ? "nao deu" : "sem plano",
            L.autoEtapa, L.primFase == 0 ? "baixando" : L.primFase == 2 ? "incompleta" : "baixada",
-           L.refDoc ? "lida" : L.refPedido ? "lendo" : L.ref ? "nenhuma" : "indisponivel nesta plataforma");
+           L.refDoc ? "lida" : L.refPedido ? "lendo" : L.ref ? "nenhuma" : "indisponivel nesta plataforma",
+           L.autoFase == 3 ? ", motivo " : "",
+           L.autoFase == 3 ? (L.refMotivo != LEGREF_OK ? legref_motivo(L.refMotivo) : autosync_motivo(L.autoFalha)) : "");
     fflush(stdout);
   }
   legref_pausar(L.ref, sensivel || (folga >= 0.0 && folga < LS_FOLGA_MIN));
@@ -738,6 +754,14 @@ static LegSyncMotivo motivoRef(LegRefMotivo m) {
   }
 }
 
+static LegSyncMotivo motivoFalhaAuto(AutoSyncMotivo m) {
+  switch (m) {
+    case AUTOSYNC_REGION_DISAGREEMENT: return LEGSYNC_M_REGION_DISAGREEMENT;
+    case AUTOSYNC_LOW_CONFIDENCE: case AUTOSYNC_AMBIGUOUS: return LEGSYNC_M_CONFIANCA;
+    default: return LEGSYNC_M_CONFIANCA;
+  }
+}
+
 static LegSyncMotivo motivoFalhaAudio(AudSyncMotivo m) {
   switch (m) {
     case AUDSYNC_M_PLATAFORMA: return LEGSYNC_M_AUD_PLATAFORMA;
@@ -758,7 +782,7 @@ LegSyncVisao legsync_visao(int slot) {
       if (L.segPedido == 1 && e.estado == AUTOSYNC_ACCEPTED) {
         v.fase = LEGSYNC_ACEITA; v.autoFase = 2; v.offsetAutoMs = e.offsetMs;
       } else if (L.segPedido == 1 && e.estado == AUTOSYNC_REJECTED) {
-        v.fase = LEGSYNC_RECUSADA; v.motivo = LEGSYNC_M_CONFIANCA; v.autoFase = 3;
+        v.fase = LEGSYNC_RECUSADA; v.motivo = motivoFalhaAuto(L.autoFalha); v.autoFase = 3;
       } else if (L.segPedido == 2 || (!L.refDoc && !L.refPedido && (!L.ref || L.refMotivo != LEGREF_OK))) {
         v.fase = LEGSYNC_INDISPONIVEL; v.motivo = L.ref ? motivoRef(L.refMotivo) : LEGSYNC_M_PLATAFORMA;
       } else { v.fase = L.refPedido ? LEGSYNC_LENDO : LEGSYNC_ANALISANDO; v.autoFase = 1; }
@@ -822,7 +846,7 @@ LegSyncVisao legsync_visao(int slot) {
   }
   if (L.semOutra) { v.fase = LEGSYNC_INDISPONIVEL; v.motivo = LEGSYNC_M_SEM_OUTRA; v.acoes = audOk ? LEGSYNC_ACAO_AUDIO : 0; goto fim; }
   if (L.solicitou && e.estado == AUTOSYNC_REJECTED) {
-    v.fase = LEGSYNC_RECUSADA; v.motivo = LEGSYNC_M_CONFIANCA;
+    v.fase = LEGSYNC_RECUSADA; v.motivo = motivoFalhaAuto(e.motivo);
     if (!L.audUltimo && L.ref) v.acoes |= LEGSYNC_ACAO_OUTRA;
     goto fim;
   }
@@ -837,6 +861,8 @@ LegSyncVisao legsync_visao(int slot) {
   }
   v.fase = LEGSYNC_PRONTA;
 fim:
+  if (v.autoFase == 3 && v.motivo == LEGSYNC_M_NENHUM && L.autoFalha != AUTOSYNC_OK)
+    v.motivo = motivoFalhaAuto(L.autoFalha);
   if (L.manualFase == 1) {
     if (v.fase == LEGSYNC_ACEITA) L.manualFase = 2;
     else if (v.fase == LEGSYNC_RECUSADA || v.fase == LEGSYNC_INDISPONIVEL || v.fase == LEGSYNC_DESFEITA) L.manualFase = 3;

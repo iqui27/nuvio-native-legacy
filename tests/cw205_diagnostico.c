@@ -18,7 +18,8 @@ int main(void) {
   for (i = 0; i < 12; i++) {
     ProgRegistro r = {0};
     snprintf(ids[i], sizeof ids[i], "tt%07d:1:2", 8000000 + i);
-    recentes[i] = (Falso){ ids[i], 1, 0, 1791813960000LL - i * 60000LL, -1 };
+    recentes[i] = (Falso){ {0}, 1, 0, 1791813960000LL - i * 60000LL, -1 };
+    snprintf(recentes[i].id, sizeof recentes[i].id, "%s", ids[i]);
     snprintf(r.contentId, sizeof r.contentId, i ? "tt%07d" :
              getenv("CW205_MESMA_OBRA") ? "tt8000000" : "tt10986410", 7000000 + i);
     r.temporada = i ? 1 : 4; r.episodio = i ? 1 : 3;

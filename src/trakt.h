@@ -15,6 +15,7 @@
 #include "catalogo.h"
 #include "perfil.h"
 #include <stddef.h>
+#include <stdint.h>
 
 int  trakt_carregar(const char *dirArte);   // 1 quando ha credencial
 
@@ -47,6 +48,7 @@ int  trakt_cabecalhos(const char **cab, char *aut, size_t nAut,
 // pacote trazem chave — e ai quem chama esconde a secao em vez de tentar.
 int  trakt_cabecalhos_publicos(const char **cab, char *chave, size_t nChave);
 int  trakt_ativo(void);
+int  trakt_aguardando(void);
 // Outros workers (extras) capturam ambas as geracoes antes da rede. Troca do
 // Trakt no mesmo perfil invalida resposta sem limpar provas da conta/local.
 unsigned long long trakt_credencial_geracao(void);
@@ -74,6 +76,8 @@ int  trakt_credencial_igual(const char *token, const char *clientId);
 // logout continua ESCREVENDO (trakt_marcar) na conta de quem saiu, com o que a
 // proxima pessoa assistir.
 void trakt_esquecer(void);
+// Reset transient tracker state for every profile opening; saved auth stays.
+void trakt_abrir_sessao(void);
 
 // Completa itens que ja tem imdb, tipo e progresso com arte (metahub, sem
 // rede), sinopse/meta/nota (Cinemeta so se ainda faltarem) e minutos
@@ -81,12 +85,25 @@ void trakt_esquecer(void);
 // invalido — falha do Cinemeta sozinha NAO remove o item. Nao depende de
 // credencial Trakt. BLOQUEIA — chamar do fio de descoberta.
 int  trakt_enfeitar_lote(CatItem *saida, int n);
+int trakt_enfeitar_lote_sessao(CatItem *saida, int n, uint64_t sessao);
 
 // Preenche ate `max` itens do "continue assistindo", ja com arte resolvida.
 // BLOQUEIA — chamar do fio de descoberta. Devolve quantos preencheu.
 // Remove um item da barra de retomada do Trakt (DELETE /sync/playback/<id>).
 // `imdb` e a chave COMPOSTA que trakt_continuar montou. Devolve 0 quando nao ha
 // id conhecido — o item veio do progresso da conta, nao do Trakt.
+typedef struct { uint64_t sessao; unsigned long long mapa, credencial; char aut[200], chave[140]; } TraktDestino;
+int trakt_destino_capturar(TraktDestino *);
+int trakt_titulo_marcar_destino(const TraktDestino *, const char *, const char *, int);
+int trakt_episodios_marcar_destino(const TraktDestino *, const char *, const VistoPar *, int, int);
+#define TRAKT_REMOVER_MAX 64
+typedef struct {
+  TraktDestino destino;
+  char imdb[64]; long long ids[TRAKT_REMOVER_MAX]; int n;
+} TraktRemocao;
+int trakt_remocao_capturar(TraktRemocao *, const char *imdb);
+int trakt_remocao_executar(const TraktRemocao *);
+int trakt_progresso_ocultar_destino(const TraktDestino *, const char *imdb, int ocultar);
 int trakt_playback_remover(const char *imdb);
 // Marca (visto=1) ou desmarca (0) um lote de episodios, numa requisicao so.
 // SINCRONO: quem chamar do fio de desenho tem de mandar para um fio proprio.

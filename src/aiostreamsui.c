@@ -908,13 +908,16 @@ void aioui_addons_desenhar(int f) {
     texto(TXT_ILHA_SUB,aioui_detectar(i)?i18n("Abrir painel"):addons_ativo(i)?i18n("Ativado"):i18n("Desativado"),535,y+53,1190,174);
     ponteiro_alvo(453,y,1340,94,addonPointer,addonClick,i,0);
   }
-  GfxRect r={453,866,550,56};
+  GfxRect r={453,866,350,56};
   gfx_cor(r,.5f,f==n?.26f:.14f,.17f,.19f,1);
-  texto(TXT_ILHA_SUB,sync_manual_addons_rodando()?i18n("Sincronizando…"):i18n("Sincronizar addons"),477,882,500,234);
+  texto(TXT_ILHA_SUB,sync_manual_addons_rodando()?i18n("Sincronizando…"):i18n("Sincronizar addons"),477,882,300,234);
   ponteiro_alvo(r.x,r.y,r.w,r.h,addonPointer,addonClick,n,0);
-  r.x=1030; r.w=750; gfx_cor(r,.5f,f==n+1?.26f:.14f,.17f,.19f,1);
-  texto(TXT_ILHA_SUB,i18n("Conectar ou importar sua configuração"),1054,882,700,234);
+  r.x=820; r.w=350; gfx_cor(r,.5f,f==n+1?.26f:.14f,.17f,.19f,1);
+  texto(TXT_ILHA_SUB,i18n("TV ao vivo"),844,882,300,234);
   ponteiro_alvo(r.x,r.y,r.w,r.h,addonPointer,addonClick,n+1,0);
+  r.x=1187; r.w=606; gfx_cor(r,.5f,f==n+2?.26f:.14f,.17f,.19f,1);
+  texto(TXT_ILHA_SUB,i18n("Conectar ou importar sua configuração"),1211,882,558,234);
+  ponteiro_alvo(r.x,r.y,r.w,r.h,addonPointer,addonClick,n+2,0);
   texto(TXT_ILHA_SUB,i18n("Setas: navegar    OK: abrir    Voltar: retornar"),92,1020,1450,160);
 }
 void aioui_desenhar(Uint32 agora) {

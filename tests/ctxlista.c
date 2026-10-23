@@ -32,6 +32,7 @@
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <unistd.h>
+#include "nvtmp.h"
 
 static int t_falhas;
 static void confere(const char *o_que, int ok) {
@@ -237,7 +238,7 @@ int main(int argc, char **argv) {
   SDL_GLContext gl;
   GLuint fbo, fboTex;
   int i, idx;
-  t_saida = argc > 1 ? argv[1] : "/tmp";
+  t_saida = argc > 1 ? argv[1] : nvt_dir();
   if (!dir || !dir[0]) { printf("NUVIO_DADOS ausente; recusando\n"); return 2; }
   dados_iniciar(dir);
   if (strcmp(dados_dir(), dir)) { printf("dados_dir() != NUVIO_DADOS; recusando\n"); return 2; }

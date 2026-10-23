@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Recomendacoes entre amigos: parse, 304, cursor, cache em disco e selo.
 #
 #   bash tests/recomenda.sh
@@ -13,7 +15,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-rec-dados.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-rec-dados.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 echo "dados do teste em $NUVIO_DADOS"
@@ -31,11 +33,11 @@ compila() { # binario, defines extras
     -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
 }
 
-compila /tmp/nuvio-recomenda
-/tmp/nuvio-recomenda
+compila ${TMPDIR:-/tmp}/nuvio-recomenda
+${TMPDIR:-/tmp}/nuvio-recomenda
 
 # O MESMO TESTE COM O PACOTE SEM SERVICO. E a build que o dono publica hoje, e
 # o que ela tem de provar e a AUSENCIA: nenhuma requisicao, nenhuma lista,
 # nenhum selo. Um recurso "invisivel" que ainda abre conexao nao esta desligado.
-compila /tmp/nuvio-recomenda-sem-url -DREC_TESTE_SEM_URL
-/tmp/nuvio-recomenda-sem-url
+compila ${TMPDIR:-/tmp}/nuvio-recomenda-sem-url -DREC_TESTE_SEM_URL
+${TMPDIR:-/tmp}/nuvio-recomenda-sem-url

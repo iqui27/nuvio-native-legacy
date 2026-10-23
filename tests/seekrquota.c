@@ -1,6 +1,7 @@
 // Durable budget: concurrent reservations, new processes, UTC rollover,
 // rollback, storage failure and corrupt data. No provider requests.
 #include "dados.h"
+#include "nvtmp.h"
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -29,7 +30,7 @@ static void uso(int usadas, long long instante, int atrasado) {
   assert(u.relogioAtrasado == atrasado);
 }
 int main(int argc, char **argv) {
-  dados_iniciar("/tmp");
+  dados_iniciar(nvt(""));
   if (argc > 1) {
     uso(3, UTC + 86400, 0);
     uso(3, UTC, 1);

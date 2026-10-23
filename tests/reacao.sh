@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # "O que achou?" nos creditos e a fila de atividade do Social.
 #
 #   bash tests/reacao.sh
@@ -26,16 +28,16 @@ compila() { # binario, defines extras
 }
 
 roda() { # binario
-  NUVIO_DADOS=$(mktemp -d /tmp/nuvio-reacao-dados.XXXXXX)
+  NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-reacao-dados.XXXXXX)
   export NUVIO_DADOS
   "$1"; local r=$?
   rm -rf "$NUVIO_DADOS"
   return $r
 }
 
-compila /tmp/nuvio-reacao-tests '-DNV_REC_URL="http://127.0.0.1:9"'
-roda /tmp/nuvio-reacao-tests
-compila /tmp/nuvio-reacao-tests-sem-url
-roda /tmp/nuvio-reacao-tests-sem-url
-rm -f /tmp/nuvio-reacao-tests /tmp/nuvio-reacao-tests-sem-url
-rm -rf /tmp/nuvio-reacao-tests.dSYM /tmp/nuvio-reacao-tests-sem-url.dSYM
+compila ${TMPDIR:-/tmp}/nuvio-reacao-tests '-DNV_REC_URL="http://127.0.0.1:9"'
+roda ${TMPDIR:-/tmp}/nuvio-reacao-tests
+compila ${TMPDIR:-/tmp}/nuvio-reacao-tests-sem-url
+roda ${TMPDIR:-/tmp}/nuvio-reacao-tests-sem-url
+rm -f ${TMPDIR:-/tmp}/nuvio-reacao-tests ${TMPDIR:-/tmp}/nuvio-reacao-tests-sem-url
+rm -rf ${TMPDIR:-/tmp}/nuvio-reacao-tests.dSYM ${TMPDIR:-/tmp}/nuvio-reacao-tests-sem-url.dSYM

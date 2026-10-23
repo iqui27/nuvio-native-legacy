@@ -158,7 +158,7 @@ static void novidades_desenharCorpo_(Uint32 agora) {
   // (GFX_LUZ). Com o veu de tela cheia ja pago, e a ultima camada grande daqui.
   { GfxRect p = { ND_X, ND_Y + dy, ND_W, ND_H };
     float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-    gfx_cor(p, 28.0f / ND_H, 0.055f, 0.058f, 0.068f, 0.94f * a);
+    gfx_vidro_ou_solido(p, 28.0f / ND_H, GFX_VIDRO_DENS_MODAL, a, 0.055f, 0.058f, 0.068f, 0.94f);
     gfx_luz_canto(p, 28.0f / ND_H, ND_H * 0.1f, -ND_H * 0.1f, ND_H * 0.65f, ar, ag, ab, 0.22f * a);
     gfx_recorte(ND_X, ND_Y + dy, ND_W, ND_H); }
 

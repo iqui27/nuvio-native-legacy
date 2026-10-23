@@ -11,6 +11,7 @@
 // e de olho humano. Nao chama dados_iniciar: sem pasta de dados, fontepref nao
 // le nem escreve arquivo nenhum e a captura nao toca no ~/.nuvio de quem roda.
 #include "streams.h"
+#include "nvtmp.h"
 #include "fontepref.h"
 #include "badges.h"
 #include "gfx.h"
@@ -82,7 +83,7 @@ static void tecla(SDL_Keycode k) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-fontepref";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-fontepref");
   char nome[600];
   SDL_Window *w;
   SDL_GLContext gl;

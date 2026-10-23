@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Vinculo do Simkl por perfil (simkl-p<N>.txt). Sem SDL e sem rede: disco e
 # rede sao dubles em memoria; js/jsw sao os de verdade.
 set -eu
@@ -8,12 +10,12 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 cc ${flags[@]+"${flags[@]}"} src/simklauth.c src/credfio.c src/js.c src/jsw.c \
   tests/simklauth_perfil.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -o /tmp/nuvio-simklauth-tests -O1 -g -lpthread \
+  -o ${TMPDIR:-/tmp}/nuvio-simklauth-tests -O1 -g -lpthread \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-simklauth-tests
+${TMPDIR:-/tmp}/nuvio-simklauth-tests
 cc ${flags[@]+"${flags[@]}"} src/simklauth.c src/credfio.c src/js.c src/jsw.c \
   tests/simklauth_poll.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -o /tmp/nuvio-simklauth-poll -O1 -g -lpthread \
+  -o ${TMPDIR:-/tmp}/nuvio-simklauth-poll -O1 -g -lpthread \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-simklauth-poll
+${TMPDIR:-/tmp}/nuvio-simklauth-poll

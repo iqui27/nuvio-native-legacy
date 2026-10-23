@@ -1,4 +1,5 @@
 #include "trailerfonte.h"
+#include "perfiltv.h"
 #include "ajustes.h"
 #include <stddef.h>
 
@@ -18,8 +19,18 @@ int  trailerfonte_imdb_tizen(void) { return imdbTizen >= 0 ? imdbTizen : NV_REC_
 static int existe(int fonte, int tizen) {
   switch (fonte) {
     case TRF_APPLE:   return 1;
-    case TRF_IMDB:    return !tizen || trailerfonte_imdb_tizen();
-    case TRF_YOUTUBE: return tizen;
+    case TRF_IMDB:
+#ifdef NV_VIDAA
+      return !tizen;  // VIDAA: IMDb nao toca (ver ajuda do AJ_TRAILER_FONTE)
+#else
+      return !tizen || trailerfonte_imdb_tizen();
+#endif
+    case TRF_YOUTUBE:
+#if defined(NV_VIDAA) && !defined(NV_UM_FIO)
+      return 0;  // mt build: YouTube iframe falha com COEP isolado
+#else
+      return tizen;  // Tizen e VIDAA st: YouTube habilitado
+#endif
     default:          return 0;
   }
 }
@@ -93,6 +104,17 @@ static TrailerDecisao escolherNaOrdem(const int *ordem, int n, const TrailerCand
   if (url) *url = NULL;
   if (qual) *qual = 0;
   if (!c) return TRF_NENHUMA;
+  // Trailer audio (Ajustes): where YouTube plays, the TMDB trailer in the
+  // chosen language beats the English Apple/IMDb, and a pending TMDB answer
+  // holds the queue. Automatic order only; a fixed source is respected.
+  if (n > 1 && c->youtubeIdiomaPreferido)
+    for (i = 0; i < n; i++) if (ordem[i] == TRF_YOUTUBE) {
+      if (c->youtubeIdiomaPreferido < 0) return TRF_ESPERA;
+      if (!c->youtube || !c->youtube[0]) break;
+      if (url) *url = c->youtube;
+      if (qual) *qual = TRF_YOUTUBE;
+      return TRF_ABRE;
+    }
   for (i = 0; i < n; i++) {
     const char *u = NULL;
     int respondeu = 1;
@@ -139,6 +161,22 @@ int trailerfonte_depois(int ajuste, int tizen, int qual) {
   return 0;
 }
 
+// The dubbed YouTube trailer opened first (Trailer audio): the fallback walks
+// YouTube -> Apple -> IMDb, so a failed embed (153/timeout) still gets the
+// English trailer. Order without YouTube: same as trailerfonte_depois.
+int trailerfonte_depois_dublado(int ajuste, int tizen, int qual) {
+  int ordem[3], n = trailerfonte_ordem(ajuste, tizen, ordem), i, j;
+  for (i = 1; i < n; i++)
+    if (ordem[i] == TRF_YOUTUBE) {
+      for (j = i; j > 0; j--) ordem[j] = ordem[j - 1];
+      ordem[0] = TRF_YOUTUBE;
+      break;
+    }
+  for (i = 0; i + 1 < n; i++)
+    if (ordem[i] == qual) return ordem[i + 1];
+  return 0;
+}
+
 const char *trailerfonte_nome(int qual) {
   switch (qual) {
     case TRF_APPLE:   return "apple";
@@ -148,7 +186,13 @@ const char *trailerfonte_nome(int qual) {
   }
 }
 
-int trailerfonte_com_som(int tizen) { return !tizen; }
+int trailerfonte_com_som(int tizen) {
+#ifdef NV_VIDAA
+  return 1;  // VIDAA: plain <video> sem problema de autoplay policy
+#else
+  return !tizen;  // Tizen: mudo; LG: som
+#endif
+}
 
 int trailerfonte_ajuste(void) { return ajustes_trailer_fonte(); }
 int trailerfonte_tizen(void) {

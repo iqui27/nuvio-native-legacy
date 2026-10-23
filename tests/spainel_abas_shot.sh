@@ -1,10 +1,12 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas do cabecalho do painel Social (abas na linha do titulo, Editar, Agenda), em PNG, sem rede. Nao entra na suite (*_shot).
 #
 #   bash tests/spainel_abas_shot.sh /tmp/nv-abas
 set -eu
 cd "$(dirname "$0")/.."
-saida="${1:-/tmp/nv-abas}"
+saida="${1:-${TMPDIR:-/tmp}/nv-abas}"
 mkdir -p "$saida"
 NUVIO_DADOS=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-abas-shot.XXXXXX")
 export NUVIO_DADOS

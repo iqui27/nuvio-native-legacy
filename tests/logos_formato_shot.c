@@ -7,6 +7,7 @@
 //
 //   bash tests/logos_formato_shot.sh /tmp/nv-logos-shots/depois/player
 #include "player.h"
+#include "nvtmp.h"
 #include "catalogo.h"
 #include "badges.h"
 #include "gfx.h"
@@ -70,7 +71,7 @@ static void quadros(SDL_Window *win, const char *nome, int amostras) {
   }
 }
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-logos-player";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-logos-player");
   char nome[600];
   SDL_Window *w; SDL_GLContext gl;
   CatItem c = {0};

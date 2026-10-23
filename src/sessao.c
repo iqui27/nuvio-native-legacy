@@ -5,11 +5,30 @@
 #include "dados.h"
 #include "js.h"
 #include "jsw.h"
+#include "perfisessao.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <pthread.h>
+#include <errno.h>
+
+// Isolated session fixtures may omit the profile producer; complete apps
+// always link it. Token boundaries invalidate ownership without UI callbacks.
+#if defined(__APPLE__) && (defined(__GNUC__) || defined(__clang__))
+extern void perfis_invalidar_sessao(void) __attribute__((weak_import));
+#elif defined(__GNUC__) || defined(__clang__)
+extern void perfis_invalidar_sessao(void) __attribute__((weak));
+#else
+#include "perfis.h"
+#endif
+static void invalidarPerfil(void) {
+  if (perfis_invalidar_sessao) perfis_invalidar_sessao();
+}
+static void identidadePerfilTravar(void) {
+  uint64_t geracao;
+  do { geracao = nv_perfil_sessao_ler(); } while (!nv_perfil_sessao_travar(geracao));
+}
 
 #define ARQ_SESSAO "sessao.txt"
 // MEDIDO: a propria resposta do start traz `poll_interval_seconds` (3 no
@@ -31,7 +50,8 @@
 //  - tokTrava NUNCA fica presa durante rede (nuvem_post/nuvem_tabela). Quem vai
 //    falar com o servidor copia o token para um buffer local e solta.
 //  - Ordem de travas: tokTrava -> dadosTrava (gravarSessao/dados_apagar sob
-//    tokTrava). Nenhum outro modulo e chamado com ela presa; e dados.c nunca
+//    tokTrava). A mudanca de identidade tambem toma a trava de publicacao
+//    do perfil; seus consumidores nao chamam sessao_* com ela presa. dados.c nunca
 //    chama de volta aqui. Quem segura trava de outro modulo pode chamar
 //    sessao_* (tokTrava e folha), mas nao o contrario.
 //  - Renovacao e de UM fio so por vez (renovando + tokCond): ver renovarToken.
@@ -112,7 +132,12 @@ static void lerJwt(const char *token) {
     js_texto(payload, fim, "sub", s, sizeof s);
     exp = (long)js_num(payload, fim, "exp", 0);
   }
-  if (strcmp(sub, s)) snprintf(sub, sizeof sub, "%s", s);
+  if (strcmp(sub, s)) {
+    identidadePerfilTravar();
+    invalidarPerfil();
+    snprintf(sub, sizeof sub, "%s", s);
+    nv_perfil_sessao_destravar();
+  }
   expiraEm = exp;
 }
 
@@ -147,13 +172,69 @@ static int falhaServidor(int st) { return st == 0 || st == 429 || st >= 500; }
 // A frase da tela para "o servidor da conta nao respondeu". i18n no FORMATO,
 // como o resto deste arquivo: a frase final, com o numero, nunca casaria com
 // a chave.
-// Sem HTTP (st == 0) a causa e de transporte; o texto da libcurl ("curl 35:
-// ...") vai junto, na tela e no log, porque o APK de release nao mostra o stderr
-// dela (#223). Sem segredo: so o codigo e a frase da biblioteca.
-static void anexarTransporte(char *dst, unsigned tam, int st) {
+// #418: consume only the numeric curl prefix. Backend error text can contain
+// a URL or credentials; neither it nor a server response belongs in this log.
+static int loginCurl(int st) {
+  int r = 0;
   const char *t = nuvem_ultimo_erro();
-  size_t n = strlen(dst);
-  if (st == 0 && t && t[0] && n + 4 < tam) snprintf(dst + n, tam - n, " [%s]", t);
+  if (!st && t) sscanf(t, "curl %d", &r);
+  return r;
+}
+static const char *loginClasse(int st) {
+  int r = loginCurl(st);
+  if (st) return st >= 200 && st < 300 ? "response" : "HTTP";
+  switch (r) {
+    case 28: return "timeout";
+    case 5: case 6: return "DNS";
+    case 35: case 51: case 53: case 54: case 58: case 59:
+    case 60: case 64: case 66: case 77: case 80: case 82:
+    case 83: case 90: case 91: return "TLS";
+    case 7: case 18: case 52: case 55: case 56: return "connection";
+    default: return "transport";
+  }
+}
+static void anexarTransporte(char *dst, unsigned tam, int st) {
+  const char *classe = loginClasse(st), *frase = NULL;
+  if (st) return;
+  if (!strcmp(classe, "timeout")) frase = i18n("O servidor não respondeu dentro do prazo.");
+  else if (!strcmp(classe, "TLS")) frase = i18n("A conexão segura (TLS) não fechou.");
+  else if (!strcmp(classe, "DNS")) frase = i18n("O nome do servidor não foi encontrado (DNS). Costuma ser rede da casa ou servidor fora do ar.");
+  if (frase) snprintf(dst, tam, "%s [%s; curl %d]", frase, classe, loginCurl(st));
+  else {
+    size_t n = strlen(dst);
+    if (n < tam) snprintf(dst + n, tam - n, " [%s; curl %d]", classe, loginCurl(st));
+  }
+}
+
+// Three attempts on the login worker, with 1s/2s backoff. No refresh-token
+// retries here: rotating refresh tokens are handled separately in renovarToken.
+static char *loginPost(const char *etapa, const char *path, const char *body,
+                       const char *bearer, int *st) {
+  int tentativa;
+  for (tentativa = 1; ; tentativa++) {
+    int r, transitorio, espera;
+    char *resp = nuvem_post(path, body, bearer, st);
+    if (resp && *st >= 200 && *st < 300) return resp;
+    r = loginCurl(*st);
+    transitorio = *st == 429 || *st >= 500 || (!*st &&
+      (r == 0 || r == 5 || r == 6 || r == 7 || r == 18 || r == 28 ||
+       r == 35 || r == 52 || r == 55 || r == 56));
+    espera = transitorio && tentativa < 3 ? 1 << (tentativa - 1) : 0;
+    // Manual login takes priority over further QR retries on the shared worker.
+    if (emailPedido && strcmp(etapa, "email")) espera = 0;
+    printf("[login] stage=%s class=%s http=%d curl=%d attempt=%d utc=%lld backoff_ms=%d\n",
+           etapa, loginClasse(*st), *st, r, tentativa, (long long)time(NULL), espera * 1000);
+    fflush(stdout);
+    if (!espera) return resp;
+    free(resp);
+    { struct timespec restante = { espera, 0 };
+      while (nanosleep(&restante, &restante) < 0 && errno == EINTR) {} }
+  }
+}
+static char *loginRpc(const char *funcao, const char *body, const char *bearer, int *st) {
+  char path[300];
+  snprintf(path, sizeof path, "/rest/v1/rpc/%s", funcao);
+  return loginPost(funcao, path, body, bearer, st);
 }
 
 static void erroServidor(int st) {
@@ -171,13 +252,20 @@ static void gravarSessao(void) {
   char buf[6400];
   snprintf(buf, sizeof buf, "%s\n%s\n%d\n", acesso, renovar, anonima ? 1 : 0);
   dados_gravar(ARQ_SESSAO, buf);
+  // Login novo ou token renovado: sem isto no IndexedDB a proxima abertura
+  // nao acha a sessao (ou acha a anterior). Nao espera a vez da descarga —
+  // ver dados_sincronizar_logo.
+  dados_sincronizar_logo();
 }
 
 // tokTrava presa.
 static void limpar(void) {
+  int mudou = acesso[0] || renovar[0] || sub[0];
+  if (mudou) { identidadePerfilTravar(); invalidarPerfil(); }
   acesso[0] = renovar[0] = sub[0] = 0;
   anonima = 0;
   expiraEm = 0;
+  if (mudou) nv_perfil_sessao_destravar();
 }
 
 // ---------------------------------------------------------------- respostas
@@ -240,15 +328,24 @@ static int sessaoAnonima(void) {
   int st = 0;
   // Mesmo corpo do web: o `data` marca de onde veio a sessao, e o servidor usa
   // isso nos relatorios dele.
-  resp = nuvem_post("/auth/v1/signup",
+  resp = loginPost("anonymous-signup", "/auth/v1/signup",
                     "{\"data\":{\"tv_client\":\"webos\"}}", NULL, &st);
   if (resp && st >= 200 && st < 300 && guardarTokens(resp, 1)) { free(resp); return 1; }
   free(resp);
-  // O signup anonimo pode estar desligado no projeto; ai o caminho e o grant
-  // dedicado. O web tenta os dois na mesma ordem.
-  resp = nuvem_post("/auth/v1/token?grant_type=anonymous", "{}", NULL, &st);
+  // A transport/server failure cannot be fixed by changing the grant. Only
+  // an HTTP rejection of signup justifies the legacy anonymous-grant fallback.
+  if (falhaServidor(st) || (st >= 200 && st < 300)) {
+    erroServidor(st);
+    if (st >= 200 && st < 300) {
+      snprintf(erro, sizeof erro, "HTTP %d [response]", st);
+      printf("[login] stage=anonymous-response class=response http=%d curl=0 utc=%lld\n",
+             st, (long long)time(NULL));
+    }
+    return 0;
+  }
+  resp = loginPost("anonymous-grant", "/auth/v1/token?grant_type=anonymous", "{}", NULL, &st);
   if (resp && st >= 200 && st < 300 && guardarTokens(resp, 1)) { free(resp); return 1; }
-  printf("[sessao] sessao anonima: HTTP %d %s\n", st, nuvem_ultimo_erro());
+  printf("[sessao] sessao anonima: HTTP %d class=%s\n", st, loginClasse(st));
   if (falhaServidor(st)) erroServidor(st);
   else snprintf(erro, sizeof erro, "sessao anonima recusada (HTTP %d)", st);
   free(resp);
@@ -441,7 +538,11 @@ static void *fioPedir(void *u) {
   precisaAnon = !acesso[0] || (anonima && vencido());
   pthread_mutex_unlock(&tokTrava);
   if (precisaAnon) {
-    if (!sessaoAnonima()) { estado = SES_ERRO; passoPronto = 1; return NULL; }
+    if (!sessaoAnonima()) {
+      if (!emailPedido && estado != SES_EMAIL) estado = SES_ERRO;
+      passoPronto = 1;
+      return NULL;
+    }
   }
   copiarAcesso(tok, sizeof tok);
 
@@ -465,7 +566,7 @@ static void *fioPedir(void *u) {
   jsw_cs(&w, "p_redirect_base_url", nuvem_base_login());
   jsw_cs(&w, "p_device_name", "LG webOS (Nuvio nativo)");
   jsw_obj_fim(&w);
-  resp = nuvem_rpc_com("start_tv_login_session", jsw_texto_final(&w), tok, &st);
+  resp = loginRpc("start_tv_login_session", jsw_texto_final(&w), tok, &st);
 
   // Servidor antigo recusa o p_device_name; o web repete sem ele. Sem esta
   // segunda tentativa o login simplesmente nao existe nesses projetos.
@@ -477,7 +578,7 @@ static void *fioPedir(void *u) {
     jsw_cs(&w, "p_device_nonce", nonce);
     jsw_cs(&w, "p_redirect_base_url", nuvem_base_login());
     jsw_obj_fim(&w);
-    resp = nuvem_rpc_com("start_tv_login_session", jsw_texto_final(&w), tok, &st);
+    resp = loginRpc("start_tv_login_session", jsw_texto_final(&w), tok, &st);
   }
   jsw_livre(&w);
 
@@ -493,20 +594,11 @@ static void *fioPedir(void *u) {
     if (intervalo >= 1.0 && intervalo <= 60.0) pollMs = (unsigned)(intervalo * 1000.0);
   }
   if (!codigo[0]) {
-    // O corpo do erro do PostgREST tem a mensagem util ("Invalid device nonce",
-    // "Invalid TV login redirect base URL"); jogar fora e ficar so com o numero
-    // do HTTP transformaria um defeito de configuracao em mistério.
-    char msg[160];
-    msg[0] = 0;
-    if (resp) js_texto(resp, resp + strlen(resp), "message", msg, sizeof msg);
-    // NO LOG, com o corpo: ate aqui a falha do pedido de codigo so ia para a
-    // tela, e o #214 ("QR da erro HTTP 400") nao deixou rastro nenhum no
-    // registro para dizer QUEM respondeu 400 — o PostgREST (JSON com
-    // "message") ou algo na frente dele (Cloudflare responde texto puro,
-    // "error code: 502", medido em 02/10). O corpo de erro nao traz segredo.
-    printf("[sessao] pedido de codigo: HTTP %d %s: %.160s\n", st, nuvem_ultimo_erro(), resp ? resp : "(sem corpo)");
+    // Status/class only: a server may echo request data in its error body.
+    printf("[login] stage=code-response class=%s http=%d curl=%d utc=%lld\n",
+           loginClasse(st), st, loginCurl(st), (long long)time(NULL));
     if (falhaServidor(st)) erroServidor(st);
-    else if (msg[0]) snprintf(erro, sizeof erro, "o servidor recusou: %s", msg);
+    else if (st >= 200 && st < 300) snprintf(erro, sizeof erro, "HTTP %d [response]", st);
     else snprintf(erro, sizeof erro,
                   i18n("O servidor da conta Nuvio recusou o pedido do código (HTTP %d). Tente de novo em alguns minutos."), st);
     if (!emailPedido && estado != SES_EMAIL) estado = SES_ERRO;
@@ -536,7 +628,7 @@ static void *fioPoll(void *u) {
   jsw_cs(&w, "p_code", codigo);
   jsw_cs(&w, "p_device_nonce", nonce);
   jsw_obj_fim(&w);
-  resp = nuvem_rpc_com("poll_tv_login_session", jsw_texto_final(&w), tok, &st);
+  resp = loginRpc("poll_tv_login_session", jsw_texto_final(&w), tok, &st);
   jsw_livre(&w);
 
   status[0] = 0;
@@ -556,7 +648,7 @@ static void *fioPoll(void *u) {
     jsw_cs(&w, "code", codigo);
     jsw_cs(&w, "device_nonce", nonce);
     jsw_obj_fim(&w);
-    resp = nuvem_post("/functions/v1/tv-logins-exchange", jsw_texto_final(&w),
+    resp = loginPost("exchange", "/functions/v1/tv-logins-exchange", jsw_texto_final(&w),
                       tok, &st);
     jsw_livre(&w);
     if (resp && st >= 200 && st < 300 && guardarTokens(resp, 0)) {
@@ -630,7 +722,7 @@ static void *fioEmail(void *u) {
   jsw_cs(&w, "password", senhaPend);
   jsw_obj_fim(&w);
   apagar(senhaPend, sizeof senhaPend);
-  resp = nuvem_post("/auth/v1/token?grant_type=password", jsw_texto_final(&w), NULL, &st);
+  resp = loginPost("email", "/auth/v1/token?grant_type=password", jsw_texto_final(&w), NULL, &st);
   { char *t = (char *)jsw_texto_final(&w); if (t) apagar(t, strlen(t)); }
   jsw_livre(&w);
   apagar(emailPend, sizeof emailPend);
@@ -642,11 +734,12 @@ static void *fioEmail(void *u) {
   } else {
     // So o status vai para o log: o corpo de erro do GoTrue repete o e-mail
     // em algumas versoes ("User with email x not found").
-    printf("[sessao] login por e-mail: HTTP %d %s\n", st, nuvem_ultimo_erro());
+    printf("[login] stage=email-response class=%s http=%d curl=%d utc=%lld\n",
+           loginClasse(st), st, loginCurl(st), (long long)time(NULL));
     sessao_email_erro_de(st == 200 ? 0 : st, resp, erroEmail, sizeof erroEmail);
     anexarTransporte(erroEmail, sizeof erroEmail, st);
     if (st >= 200 && st < 300)
-      snprintf(erroEmail, sizeof erroEmail, "%s", i18n("O servidor da conta Nuvio não respondeu. Tente de novo em alguns minutos."));
+      snprintf(erroEmail, sizeof erroEmail, "%s [response]", i18n("O servidor da conta Nuvio não respondeu. Tente de novo em alguns minutos."));
     estado = SES_DESLOGADO;
   }
   if (resp) { apagar(resp, strlen(resp)); free(resp); }
@@ -758,9 +851,25 @@ int sessao_token_copiar(char *dst, size_t n) {
   return tem && dst[0];
 }
 
+int sessao_identidade_local_copiar(char *usuario, size_t nUsuario, char *jwt, size_t nJwt) {
+  if (!usuario || !nUsuario || !jwt || !nJwt) return 0;
+  usuario[0] = jwt[0] = 0;
+  pthread_mutex_lock(&tokTrava);
+  int tem = !anonima && acesso[0] && sub[0] && strlen(sub) < nUsuario && strlen(acesso) < nJwt;
+  if (tem) {
+    snprintf(usuario, nUsuario, "%s", sub);
+    snprintf(jwt, nJwt, "%s", acesso);
+  }
+  pthread_mutex_unlock(&tokTrava);
+  return tem;
+}
+
 void sessao_token_recusado(const char *tok) {
   int st = 0;
   if (!tok || !*tok) return;
+  pthread_mutex_lock(&tokTrava);
+  if (!strcmp(tok, acesso)) invalidarPerfil();
+  pthread_mutex_unlock(&tokTrava);
   renovarToken(tok, 30, &st);
 }
 

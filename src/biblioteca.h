@@ -9,11 +9,20 @@
 #include <SDL2/SDL.h>
 
 int  biblioteca_iniciar(void);
+void biblioteca_abrir_sessao(void); // foco/fonte transitorios; conserva preferencias
 void biblioteca_evento(const SDL_Event *e);
 void biblioteca_atualizar(float dt, Uint32 agora);
 void biblioteca_desenhar(Uint32 agora);
 int  biblioteca_quer_sair(void);   // 1 quando o Back deve fechar a tela
+int  biblioteca_pediu_relogio(void);
 void biblioteca_encerrar(void);
+// Headless navigation checks: actual row/column and selected action.
+void biblioteca_teste_foco(int *fileira, int *coluna, int *acao);
+
+// Optional personal-server ORIGENS rows. Provider owns data and selection.
+// Called on the UI thread; no server connection or network work belongs here.
+typedef int (*BibliotecaOrigens)(int index, const char **name, int *count);
+void biblioteca_origens_servidores(BibliotecaOrigens rows, void (*select)(int index));
 
 // OK pressionado sobre um poster: consome o pedido e devolve 1, escrevendo em
 // *indiceCatalogo o indice do item NO CATALOGO (nao a posicao na grade — a
@@ -31,6 +40,7 @@ int  biblioteca_comprado(int indiceCatalogo);
 // Estado da lista aberta para os testes de tela: modo de edicao (0 nada, 1 ordem,
 // 2 notas), chip em foco, posicao do titulo pego (-1 solto), QR na tela, fileira.
 // Devolve o recado vivo da ultima acao ("" se nao ha).
+int biblioteca_teste_trilha(void);
 const char *biblioteca_teste_estado(int *ed, int *acao, int *pega, int *compart, int *fileira);
 
 #endif

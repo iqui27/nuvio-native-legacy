@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas das fileiras de TEMPORADA e de EPISODIO da pagina de titulo, em PNG,
 # sem rede e sem interacao. Nao entra na suite (testa-tudo.sh pula *_shot.sh):
 # precisa de janela GL e de olho humano para julgar.
@@ -28,5 +30,5 @@ done
 cc -DNV_SHOT_HOOKS "${sources[@]}" tests/detail_eps_shot.c -Isrc -o "${TMPDIR:-/tmp}/nuvio-deteps-shot" \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
-  -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
+  -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined ${NV_CC_EXTRA:-}
 "${TMPDIR:-/tmp}/nuvio-deteps-shot" "$@"

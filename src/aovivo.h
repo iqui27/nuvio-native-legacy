@@ -48,6 +48,7 @@ typedef struct {
 void aovivo_selecionar(time_t t, const EpgProg *l, int n, int *iAg, int *iPx);
 // Monta a partir da grade: `epgIdx` >= 0 usa a XMLTV (epg.c); senao, `xtId`
 // (canal Xtream) usa a grade curta do painel (xtepg.c). 1 se achou algo.
+int  aovivo_epg_de_faixa(const EpgProg *l, int n, time_t t, AoVivoEpg *o);
 int  aovivo_epg_montar(int epgIdx, const char *xtId, time_t t, AoVivoEpg *o);
 
 // --- OSD ----------------------------------------------------------------------
@@ -57,6 +58,7 @@ enum { AV_B_PAUSA, AV_B_GUIA, AV_B_ANT, AV_B_PROX, AV_B_FAV, AV_B_AUDIO,
        AV_B_LEGENDA, AV_B_INFO, AV_B_RECARREGAR, AV_B_FONTE,
        AV_B_AOVIVO,   // "Voltar ao vivo": so atras da transmissao (depois do Pausar)
        AV_B_ASPECTO,  // proporcao/zoom, os modos do player de filme
+       AV_B_ULTIMO,   // ultimo canal (recall): o mesmo do "0" na Live TV
        AV_B_N };
 
 #define AV_INFO_LINHAS 7
@@ -94,6 +96,9 @@ typedef struct {
   int numero, salto;                 // salto: quantos canais desde o atual (+/-)
 } AoVivoBanner;
 void aovivo_banner_desenhar(const AoVivoBanner *b, float a);
+// Selo do numero digitado ("1 0 2" e o canal que ele leva), no canto de cima.
+// `nome` NULL = nenhum canal com esse numero. `fonte` "" = numero sem ambiguidade.
+void aovivo_numero_desenhar(const char *digitos, const char *nome, const char *fonte, float a);
 
 // Cartao de erro no estilo do modo ao vivo (causas do provedor / da conta).
 // Os botoes do modal do erro do canal (Recarregar, Fonte, Guia): `foco` em

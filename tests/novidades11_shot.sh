@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas do cartao de novidades da 1.1 em BMP, sem interacao e sem rede.
 #
 #   bash tests/novidades11_shot.sh /tmp/nuvio-n11
@@ -23,14 +25,14 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-n11-shot.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-n11-shot.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 echo "dados da captura em $NUVIO_DADOS"
 
 dirSrc=src
 if [ -n "${NUVIO_TAB:-}" ]; then
-  dirSrc=$(mktemp -d /tmp/nuvio-n11-src.XXXXXX)
+  dirSrc=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-n11-src.XXXXXX)
   trap 'rm -rf "$NUVIO_DADOS" "$dirSrc"' EXIT
   cp src/*.c src/*.h "$dirSrc"/
   cp -R src/dts "$dirSrc/dts"
@@ -44,9 +46,9 @@ for source in "$dirSrc"/*.c "$dirSrc"/dts/*.c; do
   sources+=("$source")
 done
 cc "${sources[@]}" tests/novidades11_shot.c -I"$dirSrc" \
-  -o /tmp/nuvio-n11-shot \
+  -o ${TMPDIR:-/tmp}/nuvio-n11-shot \
   -O1 -g \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-n11-shot "$@"
+${TMPDIR:-/tmp}/nuvio-n11-shot "$@"

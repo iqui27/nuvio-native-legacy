@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Binge group na abertura MANUAL de outro episodio (issue #310). Dois niveis:
 #   1. contrato de app.c: os tres caminhos manuais terminam em
 #      `aguardandoFonte = 1`, e o bloco unico que nasce dai chama
@@ -26,7 +28,7 @@ confere "$(sed -n "${n},$((n + 3))p" src/app.c | grep -c 'stream_preferir(lembra
 confere "$(grep -c 'fontepref_guardar(base, s)' src/app.c)" 1 "fontepref_guardar so no escolheu da folha"
 [ "$falha" = 0 ] || exit 1
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-fontepref-manual.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-fontepref-manual.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 
@@ -36,8 +38,8 @@ for source in src/*.c src/dts/*.c; do
   sources+=("$source")
 done
 
-cc "${sources[@]}" tests/fontepref_manual.c -Isrc -o /tmp/nuvio-fontepref-manual \
+cc "${sources[@]}" tests/fontepref_manual.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-fontepref-manual \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-fontepref-manual "$@"
+${TMPDIR:-/tmp}/nuvio-fontepref-manual "$@"

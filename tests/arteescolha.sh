@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # A arte escolhida a mao (#142): tabela, disco por perfil, logout e a
 # precedencia sobre a politica automatica de artehero.c. Sem SDL e sem rede.
 #
@@ -14,9 +16,9 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-arteesc.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-arteesc.XXXXXX)
 export NUVIO_DADOS
-obj=$(mktemp -d /tmp/nuvio-arteesc-obj.XXXXXX)
+obj=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-arteesc-obj.XXXXXX)
 trap 'rm -rf "$NUVIO_DADOS" "$obj"' EXIT
 
 flags=()

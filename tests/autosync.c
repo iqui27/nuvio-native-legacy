@@ -10,6 +10,7 @@
 char *rede_baixar_bin(const char *url,int segundos,long *n) {
   (void)url;(void)segundos;(void)n;return NULL;
 }
+const char *i18n(const char *s) { return s; }
 static LegendaCue corpus[120];
 static int casos;
 static void criarCorpus(void) {
@@ -36,6 +37,7 @@ static LegendaDocumento *documento(const char *id,const char *idioma,double atra
     if(variante==7&&i==60){v[i].inicio+=1;v[i].fim+=1;}
     if(variante==8){v[i].inicio+=i*.007;v[i].fim+=i*.007;}
     if(variante==9){double ruido=((i*7)%21-10)*.01;v[i].inicio+=ruido;v[i].fim+=ruido;}
+    if(variante==10){double ruido=((i*11)%41-20)*.02;v[i].inicio+=ruido;v[i].fim+=ruido;}
     if(!strcmp(idioma,"pt"))snprintf(v[i].texto,sizeof v[i].texto,"Uma tradução diferente para o diálogo número %d",i);
   }
   LegendaDocumentoInfo info={.sessao=sessao,.flags=flags};
@@ -235,6 +237,21 @@ int main(void) {
   criarCorpus();
   janela();
   LegendaDocumento *ref=documento("embedded","en",0,1,LEGENDA_DOC_COMPLETO,11,0);assert(ref);
+  {
+    LegendaCue ruim[120]; memcpy(ruim, corpus, sizeof ruim);
+    LegendaDocumentoInfo info={.sessao=11,.flags=LEGENDA_DOC_COMPLETO};
+    for (int i = 0; i < 120; i++) {
+      if (i % 17 == 0) { ruim[i].inicio += 1.2; ruim[i].fim += 1.2; }
+      snprintf(ruim[i].texto, sizeof ruim[i].texto, "Traducao diferente numero %d", i);
+    }
+    snprintf(info.idioma, sizeof info.idioma, "ro");
+    snprintf(info.origem, sizeof info.origem, "Addon");
+    snprintf(info.identidade, sizeof info.identidade, "external-ro");
+    LegendaDocumento *doc=legenda_documento_de_cues(ruim,120,&info);
+    AutoSyncResultado r=autosync_comparar(doc,ref,NULL,NULL,NULL);
+    assert(r.estado==AUTOSYNC_ACCEPTED&&r.tipo==AUTOSYNC_T_OFFSET&&abs(r.offsetMs)<=25);
+    legenda_documento_liberar(doc); casos++;
+  }
   const int offsets[]={250,-250,1000,-1000,5000,-5000,30000,-30000};
   for(int m=0;m<2;m++)for(int i=0;i<8;i++) {
     LegendaDocumento *doc=documento("external","pt",offsets[i]/1000.0,1,LEGENDA_DOC_COMPLETO,11,0);
@@ -306,9 +323,17 @@ int main(void) {
   assert(r.estado==AUTOSYNC_ACCEPTED&&abs(r.offsetMs-1000)<=100);
   /* erroMs = worst segment median |residual| (the +-100 ms noise). */
   assert(r.erroMs>=30&&r.erroMs<=100);casos++;
+  /* The gate of a third is AS_SEG_ERRO (3) x the tolerance: +-100 ms of
+   * author noise stays inside 50 ms x 3, same answer and same radius. */
   int erro=r.erroMs;
   cfg.toleranciaMs=50;r=autosync_comparar(noise,ref,&cfg,NULL,NULL);
-  assert(erro<=50||(r.estado!=AUTOSYNC_ACCEPTED&&r.motivo==AUTOSYNC_REGION_DISAGREEMENT));casos++;
+  assert(erro<=150&&r.estado==AUTOSYNC_ACCEPTED&&abs(r.offsetMs-1000)<=100);casos++;
+  /* The knob still refuses: +-400 ms is inside 250 ms x 3, outside 50 ms x 3. */
+  LegendaDocumento *ruido=documento("ruido","pt",1,1,LEGENDA_DOC_COMPLETO,11,10);
+  cfg=autosync_config(AUTOSYNC_QUICK);r=autosync_comparar(ruido,ref,&cfg,NULL,NULL);
+  assert(r.estado==AUTOSYNC_ACCEPTED&&abs(r.offsetMs-1000)<=400&&r.erroMs<=750);casos++;
+  cfg.toleranciaMs=50;r=autosync_comparar(ruido,ref,&cfg,NULL,NULL);
+  assert(r.estado!=AUTOSYNC_ACCEPTED&&r.motivo==AUTOSYNC_REGION_DISAGREEMENT);casos++;
   AutoSync *s=autosync_criar();assert(s);autosync_iniciar(s,11);
   LegendaDocumento *p=documento("primary","pt",5,1,LEGENDA_DOC_COMPLETO,11,0);
   LegendaDocumento *q=documento("secondary","en",-1,1,LEGENDA_DOC_COMPLETO,11,0);

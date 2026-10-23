@@ -2,8 +2,14 @@
 #define NV_BADGES_H
 #include <stdint.h>
 #include "text.h"
+#include "gfx.h"
 // Selo "Assistido" do cartaz (Home e Biblioteca). Devolve a borda esquerda dele.
 float badges_selo_visto(float px, float py, float w, float a);
+// Check unico de todos os estilos (U4): disco no acento; `redondo` = a 45 graus
+// embaixo a direita, senao topo direito. Devolve a borda esquerda.
+void badges_check_disco(float cx, float cy, float d, float a);
+float badges_check_cartao(GfxRect card, int redondo, float a);
+void badges_progresso(GfxRect card, float frac, float a);
 void badges_carregar(const char *dir);
 uint64_t badges_detectar(const char *metadata);
 uint64_t badges_provedor(const char *name);

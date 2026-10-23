@@ -144,7 +144,7 @@ int p2p_escolher_lista(const char *const *nomes, const double *tams, int n,
   int idx, melhor = -1, porPadrao = -1, doAddon = -1;
   double melhorTam = -1;
   if (!nomes || !tams || n <= 0) return -1;
-  if (temporada > 0 && episodio > 0) {
+  if (temporada >= 0 && episodio > 0) {
     snprintf(pad1, sizeof pad1, "s%02de%02d", temporada, episodio);
     snprintf(pad2, sizeof pad2, "%dx%02d", temporada, episodio);
   }
@@ -161,7 +161,10 @@ int p2p_escolher_lista(const char *const *nomes, const double *tams, int n,
   // O indice do addon vem primeiro: e o arquivo que ELE mediu (Torrentio manda
   // o fileIdx exato do episodio dentro do pacote de temporada). O padrao
   // SxxEyy so entra quando o addon nao disse, ou disse um que nao e video.
-  return doAddon >= 0 ? doAddon : porPadrao >= 0 ? porPadrao : melhor;
+  if (doAddon >= 0) return doAddon;
+  if (porPadrao >= 0) return porPadrao;
+  if (temporada == 0 && episodio > 0) return -1; // especial nao e o maior episodio regular
+  return melhor;
 }
 
 #define P2P_MAX_ARQ 4096

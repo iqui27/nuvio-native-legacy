@@ -13,6 +13,7 @@
 // Nao entra na suite (precisa de janela GL, de rede e de olho humano):
 //   bash tests/gpunivel_shot.sh /tmp/nuvio-gpunivel
 #include "app.h"
+#include "nvtmp.h"
 #include "ajustes.h"
 #include "artehero.h"
 #include "catalogo.h"
@@ -103,7 +104,7 @@ static void capturar(const char *bmp) {
 
 int main(int argc, char **argv) {
   const char *dir = argv[1];
-  const char *saida = argc > 2 ? argv[2] : "/tmp/nuvio-gpunivel";
+  const char *saida = argc > 2 ? argv[2] : nvt("/nuvio-gpunivel");
   static CatItem itens[NT];
   CatFileira fil[2];
   SDL_Window *w;
@@ -193,7 +194,8 @@ int main(int argc, char **argv) {
   for (k = 0; k < 4; k++) {
     double soma = 0;
     int m;
-    gpun_definir_nivel(k);
+    if (k == 3) gpun_forcar_720(); // resolution is independent of effects
+    gpun_definir_nivel(k == 3 ? 2 : k);
     for (n = 0; n < 30; n++) quadro(w, 0);   // assenta (alvo interno criado)
     for (n = 0; n < 120; n++) soma += quadro(w, 1);
     printf("[shot] nivel=%d fill=%.2f telas, %d rects, %d cheias", k, gfx_fill, gfx_n_rect, gfx_n_cheio);

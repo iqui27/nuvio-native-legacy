@@ -1,4 +1,12 @@
-NUVIO - P2P ENGINE: THIRD-PARTY NOTICES
+NUVIO - THIRD-PARTY NOTICES
+
+UI renderer (all platforms): Snapdragon Game Super Resolution 1 (SGSR).
+Copyright (c) 2025, Qualcomm Innovation Center, Inc. All rights reserved.
+BSD-3-Clause. GLES2 port; original alpha preserved.
+https://github.com/SnapdragonStudios/snapdragon-gsr
+Full text: sgsr-LICENSE.txt.
+
+P2P ENGINE
 
 Packages that carry the built-in P2P engine (Android, LG webOS, Samsung
 Tizen 6+ .tpk) include the software below. The licence text of each item is in

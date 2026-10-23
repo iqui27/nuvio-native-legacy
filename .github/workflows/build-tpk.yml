@@ -1,0 +1,135 @@
+name: Build TPK
+
+# Builds the Tizen 6+ packages (NuvioTpk60 for 6.0, NuvioTpk65 for 6.5/7,
+# NuvioTpk for 8/9, e.g. Samsung S95C) the same way
+# `NV_TPK_PACOTES="NuvioTpk60 NuvioTpk65 NuvioTpk" bash tools/tpk.sh` does on a
+# computer, and uploads the .tpk files as one downloadable artifact.
+#
+# Runs on pushes to master that touch app code, and by hand: Actions tab ->
+# Build TPK -> Run workflow. The integration branch is pushed together with
+# master, so building both would only duplicate the same commit.
+# A new push to the same branch cancels the build still running for it.
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - ".github/ISSUE_TEMPLATE/**"
+  workflow_dispatch:
+    inputs:
+      pacotes:
+        description: "Packages to build (space separated)"
+        default: "NuvioTpk60 NuvioTpk65 NuvioTpk"
+
+concurrency:
+  group: build-tpk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      NV_TPK_PACOTES: ${{ github.event.inputs.pacotes || 'NuvioTpk60 NuvioTpk65 NuvioTpk' }}
+      # No P2P engine on CI (it lives on the owner's disk, not in the repo).
+      NUVIO_P2P_MOTOR: none
+      DOTNET_ROOT: ${{ github.workspace }}/.dotnet
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      NUVIO_TPK_CACHE: ${{ github.workspace }}/.cache/nuvio-tpk
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # tools/tpk.sh compiles libnuvio.so inside a linux/arm/v5 container.
+      - name: Enable ARM emulation for Docker
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+
+      # Static SDL2/libass/etc. take a long time to build; reuse them.
+      # restore + save are split so the cache is saved even when a later step
+      # fails (plain actions/cache skips the save on failure).
+      - name: Restore static dependencies cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.NUVIO_TPK_CACHE }}
+          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh') }}
+
+      # The static FFmpeg for DTS/TrueHD -> AC3 (tools/build-dts-ffmpeg.sh, built
+      # by tools/tpk.sh into $NUVIO_TPK_CACHE/prefix-dts) takes long under ARM
+      # emulation. Its own cache, keyed on its script, so the deps cache above
+      # (whose key already exists) does not have to be thrown away for it.
+      - name: Restore FFmpeg (DTS) cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.NUVIO_TPK_CACHE }}/prefix-dts
+          key: tpk-dts-ffmpeg-${{ hashFiles('tools/build-dts-ffmpeg.sh') }}
+
+      # NuvioTpk targets net6.0-tizen8.0, which needs the .NET 8 SDK plus the
+      # Samsung Tizen workload (see tizen-tpk-spike/README.md).
+      - name: Install .NET 8 and the Samsung Tizen workload
+        run: |
+          curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0 --install-dir "$DOTNET_ROOT"
+          export PATH="$DOTNET_ROOT:$PATH"
+          curl -fsSL https://raw.githubusercontent.com/Samsung/Tizen.NET/main/workload/scripts/workload-install.sh -o workload-install.sh
+          bash workload-install.sh
+          dotnet workload list
+
+      # tools/tizen-art.sh converts the art from webp to png and needs ffmpeg.
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      # Same workaround used on the owner's computer: the arm/v5 platform name
+      # is not accepted by the emulation, plain linux/arm is.
+      - name: Use linux/arm instead of linux/arm/v5
+        run: sed -i 's#linux/arm/v5#linux/arm#g' tools/tpk.sh
+
+      - name: Build the TPK
+        run: |
+          export PATH="$DOTNET_ROOT:$PATH"
+          set -o pipefail
+          bash tools/tpk.sh 2>&1 | tee build.log
+
+      - name: Save static dependencies cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.NUVIO_TPK_CACHE }}
+          key: tpk-deps-${{ hashFiles('tools/tpk/Dockerfile', 'tools/tpk/deps.sh') }}
+
+      # Only a finished FFmpeg build (tpk.sh writes .carimbo last) is cached.
+      - name: Check FFmpeg (DTS) build
+        id: dts
+        if: always()
+        run: |
+          if [ -f "$NUVIO_TPK_CACHE/prefix-dts/.carimbo" ]; then echo "pronto=1" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Save FFmpeg (DTS) cache
+        if: always() && steps.dts.outputs.pronto == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.NUVIO_TPK_CACHE }}/prefix-dts
+          key: tpk-dts-ffmpeg-${{ hashFiles('tools/build-dts-ffmpeg.sh') }}
+
+      # On failure, show the last lines of the build at the top of the run page.
+      - name: Show build error summary
+        if: failure()
+        run: |
+          {
+            echo '### Build failed - last 60 lines'
+            echo '```'
+            tail -n 60 build.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload TPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NuvioTpk
+          path: build/tpk/*.tpk
+          if-no-files-found: error

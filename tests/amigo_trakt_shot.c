@@ -14,6 +14,7 @@
 //   bash tests/socialui_shot.sh /tmp/nv-socialui
 #define NV_REC_URL "http://127.0.0.1:8799"
 #include "../src/recomenda.c"
+#include "nvtmp.h"
 #include "ajustes.h"
 #include "amigoperfil.h"
 #include "amigosfil.h"
@@ -184,7 +185,7 @@ static void quadrosPerfil(int n, const char *bmp, int estado) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-amigo/a";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-amigo/a");
   static CatItem itens[40];
   static CatFileira fils[3];
   SDL_GLContext gl;

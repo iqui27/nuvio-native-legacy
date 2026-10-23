@@ -9,11 +9,15 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/spotlight.c) continue;; esac
   sources+=("$source")
 done
-flags=()
+flags=(-pthread)
+if [ "${SANITIZE:-0}" = 1 ]; then
+  flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
+fi
 if [ -n "${SPOTLIGHT_SOURCE:-}" ]; then
   flags+=("-DSPOTLIGHT_SOURCE=\"$SPOTLIGHT_SOURCE\"")
 fi
-cc "${sources[@]}" tests/spotlight_regressao.c -Isrc -o "$tmp/t" -O1 -g \
+"${CC:-cc}" "${sources[@]}" tests/spotlight_regressao.c -Isrc -o "$tmp/t" -O1 -g \
   "${flags[@]}" \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -L/opt/homebrew/lib \
   -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \

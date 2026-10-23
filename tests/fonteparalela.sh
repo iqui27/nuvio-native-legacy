@@ -15,7 +15,7 @@ cc ${flags[@]+"${flags[@]}"} -O1 -g -Wall -Wextra -Isrc src/fonteparalela.c src/
 # primeiras 3 E so para fontes ja em cache no debrid (fonteparalela_prefixo +
 # prontaNoDebrid: nao foraCache, nao torrent), e so em "Melhor fonte". Fonte fora
 # do cache segue uma por vez (issue #130): conferi-la baixaria de verdade.
-corpo=$(awk '/^int stream_primeira_boa\(/,/^}/' src/streams.c)
+corpo=$(awk '/^int stream_primeira_boa_sessao\(/,/^}/' src/streams.c)
 if ! printf '%s' "$corpo" | grep -q 'ajustes_fonte_conferir_varias()' ||
    ! printf '%s' "$corpo" | grep -q 'fonteparalela_soltando('; then
   echo "fonteparalela: stream_primeira_boa nao usa fonteparalela atras do ajuste"; exit 1

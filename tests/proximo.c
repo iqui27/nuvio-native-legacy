@@ -69,6 +69,20 @@ int main(void) {
     assert(s.temporada == 1 && s.episodio == 2);
   }
 
+  // #556: uma escolha explicita de especial continua na temporada 0.
+  {
+    CatEp v[4] = { ep(0,1,"especial 1",""), ep(0,2,"especial 2",""),
+                   ep(1,1,"normal",""), ep(5,1,"outra temporada","") };
+    CatItem c = serie(0, 1, 100);
+    assert(prox_ancora(v, 4, 0, 1, 0) == 0);
+    assert(prox_indice_seguinte(v, 4, 0, 1) == 1);
+    assert(prox_indice_anterior(v, 4, 0, 2) == 0);
+    assert(prox_seguinte(&c, v, 4, 90, AGORA, &s));
+    assert(s.temporada == 0 && s.episodio == 2);
+    assert(prox_ancora_absoluta(v, 4, 1, 1) == 2);
+    assert(prox_indice_anterior(v, 4, 1, 1) == -1);
+  }
+
   // --- meio de uma temporada -------------------------------------------
   {
     CatEp v[3] = { ep(1,1,"a",""), ep(1,2,"b","5 de fevereiro de 2026"),

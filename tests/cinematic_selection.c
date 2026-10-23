@@ -1,4 +1,5 @@
 #include <assert.h>
+#include "nvtmp.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,7 +12,7 @@ static void put(const char *root,const char *name,const char *data) {
   FILE *f=fopen(path,"w");assert(f);fputs(data,f);fclose(f);
 }
 int main(void) {
-  char root[]="/tmp/nuvio-cinematic-test-XXXXXX";assert(mkdtemp(root));
+  char root[NVT_MAX]; nvt_set(root, sizeof root, "/nuvio-cinematic-test-XXXXXX");assert(mkdtemp(root));
   char path[700];snprintf(path,sizeof path,"%s/cinematic",root);assert(!mkdir(path,0700));
   snprintf(path,sizeof path,"%s/editorial",root);assert(!mkdir(path,0700));
   put(root,"collections.json","{\"groups\":[{\"title\":\"Directors\",\"folders\":[{\"id\":\"example\",\"title\":\"Example\",\"hero\":\"original.png\",\"sources\":[{\"base\":\"https://example.invalid\",\"type\":\"movie\",\"catId\":\"example\"}]}]}]}");

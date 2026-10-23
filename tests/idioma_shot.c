@@ -11,6 +11,7 @@
 // NUVIO_SEM_RESERVA_DE_SISTEMA=1 mostra o que o WASM da Samsung desenha (so a
 // CJK embarcada). Fora da suite: precisa de janela GL e de olho humano.
 #include "ajustes.h"
+#include "nvtmp.h"
 #include "rail_shot.h"
 #include "gfx.h"
 #include "text.h"
@@ -61,7 +62,7 @@ static void captura(const char *nome, SDL_Window *win) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-idioma";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-idioma");
   const char *lista = argc > 2 ? argv[2] : "27";
   char dir[256], arq[300], nome[600], *copia, *tok, *sp = NULL;
   SDL_Window *w;
@@ -84,7 +85,7 @@ int main(int argc, char **argv) {
   tex_iniciar(64);
   gfx_icones_dir("deploy/app/art");
 
-  snprintf(dir, sizeof dir, "/tmp/nuvio-idioma-shot-%d", (int)getpid());
+  snprintf(dir, sizeof dir, "%s/nuvio-idioma-shot-%d", nvt_dir(), (int)getpid());
   mkdir(dir, 0755);
   copia = strdup(lista);
   for (tok = strtok_r(copia, ",", &sp); tok; tok = strtok_r(NULL, ",", &sp)) {

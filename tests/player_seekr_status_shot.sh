@@ -1,9 +1,11 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 set -euo pipefail
 cd "$(dirname "$0")/.."
-saida="${1:-/tmp/nuvio-player-seekr-status}"
+saida="${1:-${TMPDIR:-/tmp}/nuvio-player-seekr-status}"
 mkdir -p "$saida"
-taskDados=$(mktemp -d /tmp/nuvio-player-seekr-status-shot.XXXXXX)
+taskDados=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-player-seekr-status-shot.XXXXXX)
 trap 'rm -rf "$taskDados"' EXIT
 sources=()
 for source in src/*.c src/dts/*.c; do

@@ -1,13 +1,16 @@
+#include "stub_perfisessao.h"
 // Xtream (src/xtream.c): cadastro, lista de canais e URL, sem rede e sem disco.
 //
 // rede_baixar e dados_* sao DUBLES: a lista vem de um corpo canned no formato
 // que os paineis Xtream Codes emitem (category_id ora "5" ora 5, stream_id
 // numero), e o cadastro vive num buffer em memoria.
+#include "stub_perfisessao.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
 #include "xtream.h"
+#include "perfisessao.h"
 
 // --- dubles ----------------------------------------------------------------
 static char disco[2048]; static int temDisco;
@@ -98,6 +101,49 @@ static char *responder(const char *url) {
   return NULL;
 }
 
+static void lateCategoryRegression(void) {
+  char *categories = malloc(160000); assert(categories);
+  size_t used = (size_t)snprintf(categories, 160000, "[");
+  for (int i = 0; i < 2049; i++)
+    used += (size_t)snprintf(categories + used, 160000 - used,
+      "%s{\"category_id\":%d,\"category_name\":\"%s\"}", i ? "," : "", i, i == 2048 ? "Hidden" : "Sports");
+  snprintf(categories + used, 160000 - used, "]");
+  const char *savedCats = respCats, *savedStreams = respStreams;
+  respCats = categories;
+  respStreams = "[{\"stream_id\":1,\"name\":\"Station 4K\",\"category_id\":2048}]";
+  XtreamCanal channel;
+  assert(xtream_canais(&channel, 1) == 1);
+  assert(!strcmp(channel.categoria, "Hidden"));
+  respCats = savedCats; respStreams = savedStreams; free(categories);
+  puts("PASS: Xtream category beyond 2048 retains filter identity");
+}
+typedef struct {
+  int categories, channels, expectedCategories, expectedChannels, stopAfter;
+  unsigned source;
+  unsigned char *seen;
+} StreamCheck;
+static void checkCategory(const char *name,int order,int count,void *u) {
+  StreamCheck *s=u;
+  assert(!s->channels && order==s->categories && order<s->expectedCategories);
+  assert(!s->seen[order] && count>0);
+  char expected[64];snprintf(expected,sizeof expected,"Category %03d",order);
+  assert(!strcmp(name,expected));
+  s->seen[order]=1;s->categories++;
+}
+static int checkChannel(const XtreamItem *c,void *u) {
+  StreamCheck *s=u;
+  assert(s->categories==s->expectedCategories);
+  int i=s->channels++,cat=i%s->expectedCategories;
+  char expected[80];
+  if(s->source)snprintf(expected,sizeof expected,"xtream:@%08x:%d",s->source,i+1);
+  else snprintf(expected,sizeof expected,"xtream:%d",i+1);
+  assert(!strcmp(c->id,expected));
+  snprintf(expected,sizeof expected,"Category %03d",cat);
+  assert(!strcmp(c->categoria,expected) && c->catOrdem==cat);
+  assert(c->num==i+1 && c->arquivo && c->arquivoDias==7);
+  return !s->stopAfter || s->channels<s->stopAfter;
+}
+
 int main(void) {
   XtreamCanal c[16];
   char url[600];
@@ -118,6 +164,7 @@ int main(void) {
   assert(strstr(disco, "# CREDENCIAL"));
   puts("ok  cadastro: normaliza, mascara, grava com aviso");
 
+  if (getenv("XTREAM_LATE_CATEGORY")) { lateCategoryRegression(); return 0; }
   n = xtream_canais(c, 16);
   assert(n == 3);                              // o de nome vazio fica de fora
   assert(xtream_ultima_falha() == XT_OK);
@@ -140,6 +187,65 @@ int main(void) {
   assert(!ultimoPost && !strncmp(ultimaPedida, "http://meu.servidor.tv:8080/player_api.php?", 43));
   puts("ok  lg: lista direto no painel");
 #endif
+
+  // #424: categories beyond 256 retain their names, including the last
+  // channels of a large provider list. Preserve provider channel order.
+  {
+    const int nc = 2600, ns = 12000;
+    char *cc = calloc((size_t)nc * 100 + 4, 1);
+    char *ss = calloc((size_t)ns * 200 + 4, 1);
+    XtreamCanal *large = calloc((size_t)ns, sizeof *large);
+    assert(cc && ss && large);
+    size_t a = 0, b = 0;
+    a += sprintf(cc+a, "["); b += sprintf(ss+b, "[");
+    for (int i = 0; i < nc; i++) a += sprintf(cc+a,
+      "%s{\"category_id\":%d,\"category_name\":\"Category %03d\"}", i?",":"", i+1, i);
+    for (int i = 0; i < ns; i++) b += sprintf(ss+b,
+      "%s{\"stream_id\":%d,\"name\":\"Channel %d\",\"category_id\":%d,\"num\":%d,\"tv_archive\":1,\"tv_archive_duration\":7}", i?",":"", i+1, i, i%nc+1,i+1);
+    strcpy(cc+a, "]"); strcpy(ss+b, "]");
+    const char *oldCats = respCats, *oldStreams = respStreams;
+    respCats = cc; respStreams = ss;
+    assert(xtream_canais(large, ns) == ns && xtream_ultimo_total() == ns);
+    for (int i = 0; i < ns; i++) {
+      char expected[64]; snprintf(expected,sizeof expected,"Category %03d",i%nc);
+      assert(!strcmp(large[i].categoria,expected));
+      snprintf(expected,sizeof expected,"xtream:%d",i+1); assert(!strcmp(large[i].id,expected));
+    }
+    assert(xtream_canais(large, 17) == 17 && xtream_ultimo_total() == ns);
+    // The latest guide consumes callbacks, including categories beyond its
+    // former 2048-entry scratch limit, and must retain panel ordering even
+    // though the backend indexes category IDs lexicographically.
+    StreamCheck stream={.expectedCategories=nc,.expectedChannels=ns};
+    stream.seen=calloc((size_t)nc,1);assert(stream.seen);
+    int total=0;
+    assert(xtream_canais_cb_sessao(checkCategory,checkChannel,&stream,&total,nv_perfil_sessao_ler())==ns);
+    assert(total==ns && stream.channels==ns && stream.categories==nc);
+    memset(stream.seen,0,(size_t)nc);stream.categories=stream.channels=0;
+    // Different account selection does not alter a source-explicit guide
+    // request. Qualified channel IDs still route playback to the right key.
+#ifndef XTREAM_LEGACY_FIXTURE
+    char savedDisk[sizeof disco];memcpy(savedDisk,disco,sizeof savedDisk);
+    xtream_fonte_selecionar(37);
+    assert(xtream_conta_definir("https://account37.test","other","fixture-password"));
+    stream.source=37;stream.stopAfter=19;
+    assert(xtream_fonte_canais_cb(37,checkCategory,checkChannel,&stream,&total,nv_perfil_sessao_ler())==ns);
+    assert(total==ns && stream.channels==19 && xtream_fonte_total(37)==ns);
+    assert(xtream_url("xtream:@00000025:101",url,sizeof url));
+    assert(!strcmp(url,"https://account37.test/live/other/fixture-password/101.m3u8"));
+    // Explicit legacy account request must not accidentally use the UI's
+    // currently edited account, and must preserve account-zero IDs.
+    memset(stream.seen,0,(size_t)nc);stream.categories=stream.channels=0;
+    stream.source=0;stream.stopAfter=1;
+    assert(xtream_fonte_canais_cb(0,checkCategory,checkChannel,&stream,&total,nv_perfil_sessao_ler())==ns);
+    assert(stream.channels==1 && total==ns);
+    assert(!strcmp(xtream_usuario(),"other"));
+    xtream_fonte_selecionar(0);memcpy(disco,savedDisk,sizeof disco);
+#endif
+    free(stream.seen);
+    respCats = oldCats; respStreams = oldStreams;
+    free(large); free(ss); free(cc);
+    puts("ok  #424: 12000 channels / 2600 categories preserve names, panel order, streaming account identity and early-stop total");
+  }
 
   assert(xtream_e_id("xtream:101") && !xtream_e_id("stalker:1") && !xtream_e_id(NULL));
   assert(xtream_url("xtream:101", url, sizeof url));
