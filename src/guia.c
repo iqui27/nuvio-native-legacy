@@ -1698,6 +1698,9 @@ static time_t instanteFoco(time_t agoraT);
 static int epgDo(GCanal *c);
 static int gAgora(GCanal *c, time_t t, EpgProg *p);   // ver a definicao (#158)
 static void pedirCanal(GCanal *c);
+static void previewPedir(GCanal *c);
+static void sair(void);
+static int  gProximo(GCanal *c, time_t t, int k, EpgProg *p);
 static void buscaAbrir(void);
 static int buscaEvento(const SDL_Event *e);
 static void buscaAtualizar(float dt, Uint32 agora);
@@ -1835,6 +1838,42 @@ int guia_programa_agora(const char *id, time_t t, EpgProg *p) {
   GCanal *c = canalPorId(id);
   return c && p && gAgora(c, t, p);
 }
+// Faixa para as telas v5: o que esta no ar agora e os proximos `max`-1.
+int guia_programas(const char *id, time_t t, EpgProg *out, int max) {
+  GCanal *c = canalPorId(id);
+  EpgProg p;
+  int n = 0;
+  if (!c || !out || max < 1) return 0;
+  if (gAgora(c, t, &p)) out[n++] = p;
+  for (int k = 0; n < max && gProximo(c, t, k, &p); k++) out[n++] = p;
+  return n;
+}
+// As telas v5 do guia principal pedem por id, nao por ponteiro interno.
+int guia_pedir_canal_id(const char *id) {
+  GCanal *c = canalPorId(id);
+  if (!c) return 0;
+  pedirCanal(c);
+  return pediuCanal;
+}
+int guia_pedir_preview_id(const char *id) {
+  GCanal *c = canalPorId(id);
+  if (!c) return 0;
+  previewPedir(c);
+  return 1;
+}
+void guia_fechar(void) {
+  aberta = 1;   // sair() usa o ramo de tela cheia
+  overlay = 0;
+  sair();
+}
+int guia_preview_no_ar(void) {
+  return aberta && !overlay && player_mini_no_guia_ativo() && video_pronto()
+         && !player_carregando();
+}
+int guia_pedir_preview_id(const char *id);
+void guia_fechar(void);
+int  guia_preview_no_ar(void);
+const char *guia_preview_id(void);
 
 static void moverVertical(int dir) {
   int nl = nLinhas();
