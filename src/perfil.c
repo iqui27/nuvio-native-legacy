@@ -563,7 +563,6 @@ void perfil_evento(const SDL_Event *e) {
   // A TERCEIRA PARADA: o cartao Amigos. Esquerda/direita andam pelos rostos
   // (o anel), OK abre o duelo com o rosto escolhido.
   if (secao == 2) {
-    if (k==SDLK_UP) { if (ajustes_menu_topo()) sair = 1; else pediuRelogio = 1; return; }
     if (k==SDLK_LEFT) {
       if (amigo>0) amigo--;
       else if (nCards()) secao=1;

@@ -4321,6 +4321,7 @@
   T("Os vizinhos ficam prontos", "Die Nachbarn werden bereit"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "Die letzten 200 KB dieser Sitzung, ohne Passwörter oder Schlüssel, für die Macher der App. Adressen werden am Host gekürzt."),
   T("Os últimos 200 KB do registro desta sessão", "Die letzten 200 KB des Protokolls dieser Sitzung"),
+  T("Oscar de Melhor Filme Internacional", "Oscar für den besten internationalen Film"),
   T("Otimização", "Optimierung"),
   T("Ou direto do cartaz", "Oder direkt vom Poster"),
   T("Ouro rosé", "Roségold"),

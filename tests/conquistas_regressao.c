@@ -1,6 +1,7 @@
 // P2 da rodada 2: carga silenciosa, conclusao duravel e ordem dos instantes.
 #include "catalogo.h"
 #include "conquistasdados.h"
+#include "trilhasdados.h"
 #include "progresso.h"
 #include <assert.h>
 #include <stdio.h>
@@ -21,6 +22,8 @@ const char *sessao_usuario(void) { return conta; }
 int ajustes_conquistas(void) { return 1; }
 int ajustes_idioma_ingles(void) { return 0; }
 int ajustes_idioma(void) { return 0; }
+int ajustes_fonte_biblioteca(void) { return 0; }
+const char *desc_tmdb_idioma(void) { return "pt-BR"; }
 const char *i18n(const char *s) { return s; }
 const char *idioma_mes_data(int m, const char *s) { (void)m; return s; }
 const char *desc_genero_pt(const char *s) { return s; }
@@ -46,7 +49,12 @@ static CqEstado estado(void) {
 static int vistos(void) {
   CqEstado s = estado();
   const CqEntrada *e = cqregra_buscar(&s, "trilha:oscar-melhor-filme");
-  return e ? e->vistos : 0;
+  unsigned char passos[CQ_TRILHA_MAX];
+  const CqTrilha *tr = cqd_trilha_buscar("trilha:oscar-melhor-filme");
+  int n = cqd_trilha_vistos(tr, passos, CQ_TRILHA_MAX), total = 0;
+  for (int i = 0; i < n; i++) total += passos[i];
+  assert(total == (e ? e->vistos : 0));
+  return total;
 }
 
 static void carga_silenciosa(void) {
@@ -120,4 +128,5 @@ int main(int argc, char **argv) {
     default: return 2;
   }
   printf("PASS: conquistas_regressao P2-%s\n", argv[1]);
+  return 0;
 }

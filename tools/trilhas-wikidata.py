@@ -92,9 +92,7 @@ def exportar_local():
     (RAIZ / 'src' / 'conquistas_oscar.inc').write_text('\n'.join(linhas) + '\n', encoding='utf-8')
 
     linhas = ['// Gerado por tools/trilhas-wikidata.py --local, do catalogo Wikidata CC0 versionado.',
-              '#include "trilhasdados.h"',
-              'typedef struct { const char *titulo, *imdb; long tmdb; int ano; } CqPassoG;',
-              'typedef struct { const char *id, *nome, *lema; int n; const CqPasso *p; } CqTrilhaG;']
+              'typedef CqPasso CqPassoG;']
     for tid, trilha in trilhas.items():
         nome = trilha['nome'].get('pt-BR') or trilha['nome'].get('en') or tid
         tabela = re.sub(r'[^A-Za-z0-9]', '_', tid.upper())
@@ -104,7 +102,7 @@ def exportar_local():
             linhas.append('  { %s, %s, %d, %d },' % (
                 json.dumps(f['titulo'], ensure_ascii=False), json.dumps(f['imdb']), f['tmdb'], ano))
         linhas.append('};')
-    linhas.append('static const CqTrilhaG TRILHAS_G[] = {')
+    linhas.append('static const CqTrilha TRILHAS_G[] = {')
     for tid, trilha in trilhas.items():
         nome = trilha['nome'].get('pt-BR') or trilha['nome'].get('en') or tid
         tabela = re.sub(r'[^A-Za-z0-9]', '_', tid.upper())

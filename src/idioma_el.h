@@ -4322,6 +4322,7 @@
   T("Os vizinhos ficam prontos", "Οι γείτονες ετοιμάζονται"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "Τα τελευταία 200 KB αυτής της συνεδρίας, χωρίς κωδικούς ή κλειδιά, για όσους φτιάχνουν την εφαρμογή. Οι διευθύνσεις κόβονται στον διακομιστή."),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "Όσκαρ Καλύτερης Διεθνούς Ταινίας"),
   T("Otimização", "Βελτιστοποίηση"),
   T("Ou direto do cartaz", "Ή κατευθείαν από την αφίσα"),
   T("Ouro rosé", "Ροζ χρυσό"),

@@ -7,6 +7,7 @@
 #define NV_TRILHAS_H
 #include <SDL2/SDL.h>
 #include "gfx.h"
+#include "trilhasdados.h"
 
 // `chave` e a do emblema ("trilha:<id>") ou o id. 0 = trilha desconhecida.
 int  trilhas_abrir(const char *chave);
@@ -21,8 +22,12 @@ int  trilhas_passo(void);           // foco no passo; -1 = nao iniciada
 int  trilhas_passos(void);
 int  trilhas_vistos(void);
 int  trilhas_total(void);
-// Tela a abrir depois que a trilha fechar (conquistas ou nada). Consome.
-int  trilhas_pediu_conquistas(void);
+int  trilhas_primeiro_visivel(void);
+// Selected title is opened by the app router; Back restores this trail.
+int  trilhas_pediu_titulo(CqPasso *dst);
+void trilhas_voltar_do_titulo(void);
+// Badge request includes its actual key, consumed once.
+int  trilhas_pediu_conquistas(char *chave, size_t tam);
 void trilhas_teste_esquecer(void);
 
 #endif

@@ -24,6 +24,8 @@
 
 // ---- A tela.
 void conquistas_abrir(void);
+void conquistas_abrir_emblema(const char *chave);
+void conquistas_ocultar(void);
 int  conquistas_aberto(void);
 void conquistas_evento(const SDL_Event *e);
 // Tambem anda o relogio do aviso, aberta a tela ou nao.

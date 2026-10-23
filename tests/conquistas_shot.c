@@ -526,6 +526,27 @@ int main(int argc, char **argv) {
     assert(trilhas_abrir_titulo("tt0018578", "movie"));
     assert(trilhas_aberta() && trilhas_passo() == 0);
     captura(prefixo, "trilha-contexto", 30);
+    // Every step remains visible while navigating the entire catalog.
+    SDL_Event te = {0}; te.type = SDL_KEYDOWN; te.key.keysym.sym = SDLK_RIGHT;
+    for (int j = 0; j < 97; j++) trilhas_evento(&te);
+    assert(trilhas_passo() == 97 && trilhas_primeiro_visivel() == 90);
+    captura(prefixo, "trilha-final", 30);
+    te.key.keysym.sym = SDLK_RETURN; trilhas_evento(&te);
+    CqPasso pedido;
+    assert(trilhas_pediu_titulo(&pedido) && !strcmp(pedido.imdb, "tt30144839"));
+    assert(!trilhas_pediu_titulo(&pedido) && !trilhas_aberta());
+    trilhas_voltar_do_titulo();
+    assert(trilhas_aberta() && trilhas_passo() == 97 && trilhas_vistos() == 2);
+    te.key.keysym.sym = SDLK_UP; trilhas_evento(&te);
+    te.key.keysym.sym = SDLK_RETURN; trilhas_evento(&te);
+    assert(trilhas_pediu_titulo(&pedido) && !strcmp(pedido.imdb, "tt0020629"));
+    trilhas_voltar_do_titulo();
+    // Marking uses the explicit watched action, never OK on a poster.
+    te.key.keysym.sym = SDLK_DOWN; trilhas_evento(&te);
+    trilhas_evento(&te);
+    te.key.keysym.sym = SDLK_RIGHT; trilhas_evento(&te);
+    te.key.keysym.sym = SDLK_RETURN; trilhas_evento(&te);
+    assert(trilhas_vistos() == 3 && cat_historico_estado_id("tt0020629", "movie") == 1);
     trilha_voltar();
     assert(!trilhas_aberta());
     trilhas_teste_esquecer();

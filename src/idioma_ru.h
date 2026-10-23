@@ -4321,6 +4321,7 @@
   T("Os vizinhos ficam prontos", "Соседние готовы"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "Последние 200 КБ этой сессии, без паролей и ключей, для разработчиков приложения. Адреса обрезаны до хоста."),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "Оскар за лучший международный фильм"),
   T("Otimização", "Оптимизация"),
   T("Ou direto do cartaz", "Или прямо с постера"),
   T("Ouro rosé", "Розовое золото"),

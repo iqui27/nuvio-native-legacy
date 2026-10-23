@@ -4322,6 +4322,7 @@
   T("Os vizinhos ficam prontos", "Sąsiedzi się szykują"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "Ostatnie 200 KB tej sesji, bez haseł i kluczy, dla twórców aplikacji. Adresy są ucięte do hosta."),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "Oscar dla najlepszego filmu międzynarodowego"),
   T("Otimização", "Optymalizacja"),
   T("Ou direto do cartaz", "Albo prosto z plakatu"),
   T("Ouro rosé", "Różowe złoto"),

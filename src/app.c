@@ -4828,6 +4828,7 @@ static const char *homeTrailerBloqueio(void) {
   if (!login_concluido()) return "login";
   if (!perfilsel_concluido()) return "profile-choice";
   if (player_aberto() || player_retido() || player_mini_ativo()) return "player";
+  if (trilhas_aberta()) return "trails";
   if (detail_aberto()) return "detail";
   if (spainel_aberto()) return "saved-panel";
   if (glance_aberto()) return "glance";
@@ -5493,7 +5494,16 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   if (tela == TELA_PERFIL && perfil_pediu_atualizar()) pedirPerfil();
   if (tela == TELA_PERFIL && perfil_pediu_conquistas()) conquistas_abrir();
-  if (trilhas_pediu_conquistas()) conquistas_abrir();
+  { char chave[96];
+    if (trilhas_pediu_conquistas(chave, sizeof chave)) conquistas_abrir_emblema(chave); }
+  { CqPasso passo;
+    if (trilhas_pediu_titulo(&passo)) {
+      // Suspend achievements while the selected film owns navigation.
+      conquistas_ocultar();
+      int indice = cat_indice_por_imdb_tipo(passo.imdb, "movie");
+      if (indice >= 0) abrirPorIndice(indice);
+      else desc_pedir_titulo(passo.imdb);
+    } }
   // Titulo escolhido no painel de Salvos. Ele entrega o IMDb e nao um indice:
   // a lista dele inclui titulos que NAO estao no catalogo (vieram do arquivo
   // local, ver salvospainel.c), e um indice para esses nao existe. Sem item no
@@ -6932,6 +6942,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // app_evento, no mesmo evento da ESQUERDA, e abre por cima dela.
   detail_sob_menu(detail_aberto() && menu_aberto());
   detail_atualizar(dt, agora);
+  if (!detail_aberto() && !desc_titulo_buscando()) trilhas_voltar_do_titulo();
   menu_atualizar(dt, agora);
   // PÓS-REPRODUÇÃO. O proximo episodio reabre a busca de fonte com o id novo;
   // o titulo relacionado sai do player e abre o detalhe, que e onde o dono
@@ -7640,9 +7651,13 @@ void app_desenhar(Uint32 agora) {
   }
   // As Conquistas: tela inteira (ou o esmaecer de saida) e, por baixo de tudo
   // que e aviso, o aviso depois dos creditos, que nao e camada do ponteiro.
-  CAMADA_SE(conquistas_aberto());
-  CAMADA_SE(trilhas_aberta());
-  if (!registro_aberto()) { trilhas_desenhar(agora); conquistas_desenhar(agora); conquistas_aviso_desenhar(); }
+  if (!registro_aberto()) {
+    CAMADA_SE(conquistas_aberto());
+    conquistas_desenhar(agora);
+    CAMADA_SE(trilhas_aberta());
+    trilhas_desenhar(agora);
+    conquistas_aviso_desenhar();
+  }
   // O cartao do lembrete fica acima do player e da tela: e um aviso com hora.
   CAMADA_SE(glem_cartao_aberto());
   if (!registro_aberto() && sessao_logada() && tela != TELA_LOGIN &&

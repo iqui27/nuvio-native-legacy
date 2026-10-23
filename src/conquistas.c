@@ -388,6 +388,20 @@ void conquistas_abrir(void) {
   if (ajustes_animacoes_reduzidas()) entrada = 1.0f;
 }
 
+void conquistas_ocultar(void) { aberto = 0; entrada = 0; }
+
+void conquistas_abrir_emblema(const char *chave) {
+  conquistas_abrir();
+  const CqEntrada *e = cqregra_buscar(&st, chave);
+  if (!e) {
+    const CqTrilha *tr = cqd_trilha_buscar(chave);
+    if (!tr) return;
+    cqregra_registrar(&st, chave, CQ_FAM_PREMIO, tr->nome, 0, 0, tr->n, 0);
+    e = cqregra_buscar(&st, chave);
+  }
+  if (e) abrir_detalhe((int)(e - st.e));
+}
+
 static int eh_voltar(const SDL_Event *e) {
   SDL_Keycode k = e->key.keysym.sym;
   return k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE || k == SDLK_DELETE ||
@@ -624,7 +638,7 @@ static void desenha_retomar(float a) {
   bloco(TXT_ILHA_NOME, st.e[c].nome, PRI, p.x + 136.0f, p.y + 62.0f, COL_W - 160.0f, 28.0f, a, 2);
   snprintf(b, sizeof b, i18n("%d de %d filmes"), st.e[c].vistos, st.e[c].total);
   texto(TXT_V2_18, b, p.x + 136.0f, p.y + 128.0f, COL_W - 160.0f, SEC, a);
-  botao_breve(r_retomar_btn(), "Continuar a trilha", "aj_play", foco == B_RETOMAR && retomar_ligado(), a);
+  pilula(r_retomar_btn(), i18n("CONTINUAR"), "aj_play", foco == B_RETOMAR, 0, 0, a);
 }
 
 static void desenha_mapa(float a) {
@@ -750,7 +764,7 @@ static void desenha_detalhe(float a) {
   }
   if (raridade_txt(e->chave, b, sizeof b)) texto(TXT_V2_24, b, ox + MG, y, 420.0f, SEC, a);
   if (cqd_trilha_buscar(e->chave)) {
-    botao_breve(em(MG, 700.0f, 420.0f, PILULA_H), "Ir à trilha", "aj_play", foco == B_DET_TRILHA, a);
+    pilula(em(MG, 700.0f, 420.0f, PILULA_H), i18n("Ir à trilha"), "aj_play", foco == B_DET_TRILHA, 0, 0, a);
     alvo(em(MG, 700.0f, 420.0f, PILULA_H), B_DET_TRILHA);
   } else botao_breve(em(MG, 700.0f, 420.0f, PILULA_H), "Ir à trilha", "aj_play", 0, a);
   botao_breve(em(MG, 764.0f, 420.0f, PILULA_H), "Fixar no perfil", "aj_bookmark", 0, a);

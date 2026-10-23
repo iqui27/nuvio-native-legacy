@@ -4322,6 +4322,7 @@
   T("Os vizinhos ficam prontos", "Tetangganya bersiap"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "200 KB terakhir sesi ini, tanpa kata sandi atau kunci, untuk pembuat aplikasi. Alamat dipotong sampai host."),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "Oscar Film Internasional Terbaik"),
   T("Otimização", "Optimasi"),
   T("Ou direto do cartaz", "Atau langsung dari poster"),
   T("Ouro rosé", "Emas mawar"),

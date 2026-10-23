@@ -4322,6 +4322,7 @@
   T("Os vizinhos ficam prontos", "Komşular hazırlanıyor"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "Bu oturumun son 200 KB’ı, parola ve anahtar olmadan, uygulamayı yapanlara. Adresler sunucuda kesilir."),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "En İyi Uluslararası Film Oscar’ı"),
   T("Otimização", "Optimizasyon"),
   T("Ou direto do cartaz", "Ya da doğrudan afişten"),
   T("Ouro rosé", "Roze altın"),

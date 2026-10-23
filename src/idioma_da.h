@@ -4322,6 +4322,7 @@
   T("Os vizinhos ficam prontos", "Naboerne gøres klar"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "De seneste 200 KB af sessionen, uden adgangskoder eller nøgler, til dem, der laver appen. Adresser afkortes ved værten."),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "Oscar for bedste internationale film"),
   T("Otimização", "Optimering"),
   T("Ou direto do cartaz", "Eller direkte fra plakaten"),
   T("Ouro rosé", "Rosaguld"),

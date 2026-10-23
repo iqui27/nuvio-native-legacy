@@ -4322,6 +4322,7 @@
   T("Os vizinhos ficam prontos", "A szomszédok készülődnek"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "A munkamenet utolsó 200 KB-ja, jelszavak és kulcsok nélkül, az alkalmazás készítőinek. A címek a kiszolgálónál le vannak vágva."),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "Oscar a legjobb nemzetközi filmnek"),
   T("Otimização", "Optimalizálás"),
   T("Ou direto do cartaz", "Vagy közvetlenül a posztertől"),
   T("Ouro rosé", "Rózsaarany"),

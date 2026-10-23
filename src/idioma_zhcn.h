@@ -4322,6 +4322,7 @@
   T("Os vizinhos ficam prontos", "相邻项目会提前准备好"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "本次会话最后 200 KB，不含密码和密钥，发给应用开发者。地址只保留到主机。"),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "奥斯卡最佳国际影片"),
   T("Otimização", "优化"),
   T("Ou direto do cartaz", "或直接从海报进入"),
   T("Ouro rosé", "玫瑰金"),

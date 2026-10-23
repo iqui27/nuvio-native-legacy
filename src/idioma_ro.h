@@ -4321,6 +4321,7 @@
   T("Os vizinhos ficam prontos", "Vecinii sunt pregătiți"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "Ultimii 200 KB din această sesiune, fără parole sau chei, către cei care fac aplicația. Adresele sunt tăiate la gazdă."),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "Premiul Oscar pentru cel mai bun film internațional"),
   T("Otimização", "Optimizare"),
   T("Ou direto do cartaz", "Sau direct de pe afiș"),
   T("Ouro rosé", "Aur roz"),

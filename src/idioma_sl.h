@@ -4322,6 +4322,7 @@
   T("Os vizinhos ficam prontos", "Sosedje se pripravljajo"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "Zadnjih 200 KB te seje, brez gesel in ključev, za ustvarjalce aplikacije. Naslovi so odrezani pri gostitelju."),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "Oskar za najboljši mednarodni film"),
   T("Otimização", "Optimizacija"),
   T("Ou direto do cartaz", "Ali kar s plakata"),
   T("Ouro rosé", "Rožnato zlato"),

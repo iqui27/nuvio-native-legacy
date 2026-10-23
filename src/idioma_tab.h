@@ -4321,6 +4321,7 @@
   { "Os vizinhos ficam prontos", "The neighbours get ready" },
   { "Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "The last 200 KB of this session, without passwords or keys, to the app’s makers. Addresses are cut at the host." },
   { "Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log" },
+  { "Oscar de Melhor Filme Internacional", "Academy Award for Best International Feature" },
   { "Otimização", "Optimization" },
   { "Ou direto do cartaz", "Or straight from the poster" },
   { "Ouro rosé", "Rose gold" },

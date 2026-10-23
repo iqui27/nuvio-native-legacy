@@ -4322,6 +4322,7 @@
   T("Os vizinhos ficam prontos", "Các mục lân cận đang được chuẩn bị"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "200 KB cuối của phiên này, không có mật khẩu hay khóa, gửi cho người làm ứng dụng. Địa chỉ bị cắt tới máy chủ."),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "Oscar cho Phim quốc tế hay nhất"),
   T("Otimização", "Tối ưu hóa"),
   T("Ou direto do cartaz", "Hoặc trực tiếp từ poster"),
   T("Ouro rosé", "Vàng hồng"),

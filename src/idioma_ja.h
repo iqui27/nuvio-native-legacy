@@ -4322,6 +4322,7 @@
   T("Os vizinhos ficam prontos", "隣の項目を先に準備します"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "このセッションの最後の 200 KB を、パスワードや鍵を含めずにアプリの作者へ送ります。アドレスはホストまでに切り詰めます。"),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "アカデミー国際長編映画賞"),
   T("Otimização", "最適化"),
   T("Ou direto do cartaz", "またはポスターから直接"),
   T("Ouro rosé", "ローズゴールド"),

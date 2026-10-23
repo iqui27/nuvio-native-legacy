@@ -4322,6 +4322,7 @@
   T("Os vizinhos ficam prontos", "De buren maken zich klaar"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "De laatste 200 KB van deze sessie, zonder wachtwoorden of sleutels, voor de makers van de app. Adressen worden bij de host ingekort."),
   T("Os últimos 200 KB do registro desta sessão", "De laatste 200 KB van het logboek van deze sessie"),
+  T("Oscar de Melhor Filme Internacional", "Oscar voor beste internationale film"),
   T("Otimização", "Optimalisatie"),
   T("Ou direto do cartaz", "Of direct vanaf de poster"),
   T("Ouro rosé", "Roségoud"),

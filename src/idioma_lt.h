@@ -4322,6 +4322,7 @@
   T("Os vizinhos ficam prontos", "Kaimynai ruošiasi"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "Paskutiniai 200 KB šios sesijos, be slaptažodžių ir raktų, programos kūrėjams. Adresai nukirpti ties serveriu."),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "Oskaras už geriausią tarptautinį filmą"),
   T("Otimização", "Optimizavimas"),
   T("Ou direto do cartaz", "Arba tiesiai iš plakato"),
   T("Ouro rosé", "Rožinis auksas"),

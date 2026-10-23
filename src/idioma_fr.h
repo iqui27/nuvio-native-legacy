@@ -4321,6 +4321,7 @@
   T("Os vizinhos ficam prontos", "Les voisins se préparent"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "Les 200 derniers Ko de cette session, sans mots de passe ni clés, pour qui fait l’app. Les adresses sont coupées à l’hôte."),
   T("Os últimos 200 KB do registro desta sessão", "Les 200 derniers Ko du journal de cette session"),
+  T("Oscar de Melhor Filme Internacional", "Oscar du meilleur film international"),
   T("Otimização", "Optimisation"),
   T("Ou direto do cartaz", "Ou directement depuis l'affiche"),
   T("Ouro rosé", "Or rose"),

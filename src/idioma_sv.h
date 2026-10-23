@@ -4322,6 +4322,7 @@
   T("Os vizinhos ficam prontos", "Grannarna görs redo"),
   T("Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", "De senaste 200 KB i sessionen, utan lösenord eller nycklar, till dem som gör appen. Adresser kapas vid värden."),
   T("Os últimos 200 KB do registro desta sessão", "The last 200 KB of this session's log"),
+  T("Oscar de Melhor Filme Internacional", "Oscar för bästa internationella film"),
   T("Otimização", "Optimering"),
   T("Ou direto do cartaz", "Eller direkt från affischen"),
   T("Ouro rosé", "Roséguld"),
