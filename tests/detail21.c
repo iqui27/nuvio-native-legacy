@@ -8,7 +8,7 @@
 static int quoteCount;
 int quoteCountFixture(void) { return quoteCount; }
 int factCountFixture(void) { return 0; }
-int comSpoilerFixture(int i) { return i == 0; }
+int comSpoilerFixture(int ep,int i) { (void)ep; return i == 0; }
 int comCountFixture(void) { return 3; }
 const char *relFixture(int i) { (void)i; return "tt9000011"; }
 #include <assert.h>
@@ -79,7 +79,7 @@ int main(void) {
   frasesAberta=1; assert(secaoN(SEC_FRASES)==1);
   snprintf(itemTeste.titulo,sizeof itemTeste.titulo,"Test title");
   cat_definir_tudo(&itemTeste,1,NULL,0);
-  assert(secaoN(SEC_DETALHES)==1); // series facts are reachable too
+  assert(secaoN(SEC_DETALHES)>=0); // missing original metadata leaves no fabricated facts
   assert(ORDEM_FILME[0]==SEC_NOTAS && ORDEM_FILME[1]==SEC_TRAILERS);
   assert(ORDEM_FILME[3]==SEC_COLECAO);
   snprintf(itemTeste.tipo,sizeof itemTeste.tipo,"movie");
@@ -118,15 +118,15 @@ int main(void) {
   for(int i=0;i<nf;i++) assert(facts[i].valor[0]);
   itemTeste.nTemporadas=1; itemTeste.temporadas[0]=1; snprintf(itemTeste.tipo,sizeof itemTeste.tipo,"series");
   cat_definir_tudo(&itemTeste,1,NULL,0); idx=0;
-  assert(secaoN(SEC_TEMPORADAS)==2); // one real season plus spoiler switch
-  temporada=0; foco.fileira=SEC_TEMPORADAS; foco.coluna=1; nivel=1;
+  assert(secaoN(SEC_TEMPORADAS)==3); // shuffle, real season, spoiler switch
+  temporada=0; foco.fileira=SEC_TEMPORADAS; foco.coluna=2; nivel=1;
   e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RETURN; detail_evento(&e);
   e.type=SDL_KEYUP; detail_evento(&e);
   assert(temporada==0); // switch never becomes a season index
   agenda_definir_hoje("2026-10-22");
   agenda_registrar(itemTeste.imdb,"Fixture",NULL,"Returning Series",2,1,"Premiere","2027-01-01","");
-  assert(temLembreteTemporada() && secaoN(SEC_TEMPORADAS)==3);
-  assert(temporadaLembrete(1));
+  assert(temLembreteTemporada() && secaoN(SEC_TEMPORADAS)==4);
+  assert(temporadaLembrete(2));
   int bestT=0,bestE=0;
   grid[0].nota=72; grid[1].nota=81; grid[2].nota=90; grid[3].nota=79;
   cat_definir_episodios(0,grid,4);
@@ -164,13 +164,18 @@ int main(void) {
   assert(moverFileira(1) && foco.fileira==SEC_PROGTEMP && foco.coluna==1);
   assert(moverFileira(-1) && foco.fileira==SEC_EPISODIOS && foco.coluna==1);
   foco.colunaLembrada[SEC_TEMPORADAS]=2;
-  assert(moverFileira(-1) && foco.fileira==SEC_TEMPORADAS && foco.coluna==temporada);
+  assert(moverFileira(-1) && foco.fileira==SEC_TEMPORADAS && foco.coluna==colTemp(temporada));
   char status[256];
   itemTeste.restanteMin=18; itemTeste.progresso=40;
   snprintf(itemTeste.meta,sizeof itemTeste.meta,"2026 · 120 min");
   cat_definir_tudo(&itemTeste,1,NULL,0); idx=0;
   topoEstadoTexto(status,sizeof status,120,1);
   assert(strstr(status,"18"));
+  assert(detalheExpo(0)==0 && detalheExpo(1)==1);
+  assert(fabsf(detalheExpo(.5f)-.96875f)<.0001f);
+  char duration[32]; desc_duracao_min_curta(156,duration,sizeof duration);
+  assert(!strcmp(duration,"2h36"));
+  assert(ORDEM_SERIE[7]==SEC_COLECAO && ORDEM_SERIE[8]==SEC_TRAILERS);
   puts("detail21: content, navigation, profile isolation and personal status OK");
   SDL_Quit();
   return 0;

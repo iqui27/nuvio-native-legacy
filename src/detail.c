@@ -109,7 +109,8 @@ static int detalheRetrato(void) {
 #endif
 }
 static float larguraTextoHero(void) {
-  return detalheRetrato() ? fminf(NV_DETW2_TEXTO_W, NV_TELA_W - 192.0f) : NV_DETW2_TEXTO_W;
+  return detalheRetrato() ? fminf(NV_DETW2_TEXTO_W, NV_TELA_W - 192.0f) :
+    ajustes_detalhe_topo()==1 ? 900 : 1040;
 }
 static float larguraLogoHero(void) {
   return detalheRetrato() ? fminf(NV_DETW_LOGO_MAXW, larguraTextoHero()) : 640.0f;
@@ -327,6 +328,17 @@ static Foco foco;
 static float animFoco[N_SECOES][N_ITENS];
 static float scrollSec[N_SECOES];    // rolagem HORIZONTAL de cada fileira
 static float scrollY = 0.0f;         // rolagem VERTICAL do documento
+static float scrollInicio, scrollAlvo, scrollTempo;
+static float focoTempo[N_SECOES][N_ITENS], focoInicio[N_SECOES][N_ITENS];
+static unsigned char focoAlvo[N_SECOES][N_ITENS];
+
+static float detalheExpo(float p) {
+  return p<=0 ? 0 : p>=1 ? 1 : 1-exp2f(-10*p);
+}
+static GfxRect detalheEscala(GfxRect r,float f,float escala) {
+  float dw=r.w*escala*f,dh=r.h*escala*f;
+  return (GfxRect){r.x-dw*.5f,r.y-dh*.5f,r.w+dw,r.h+dh};
+}
 static float corpoAlpha(float entrada) { return entrada; }
 // No telefone o documento ja aparece no topo; a grade de arte precisa ser
 // a unica camada de conteudo durante a entrada e a saida tambem.
@@ -854,16 +866,9 @@ static const char *cabecalhoDe(int r) {
     case SEC_TRAILERS:     return "Trailers e extras";
     case SEC_RELACIONADOS: return "Recomendações";
     case SEC_COLECAO: {
-      // O cabecalho do mockup v2 nomeia o AUTOR ("Do mesmo autor · Andy
-      // Weir"); o nome que o app tem e o da colecao do TMDB. O modo mini-card
-      // (colecao de uma parte so) segue "Colecao", que e o que ele e.
-      static char cab[160];
-      if (secaoN(SEC_COLECAO) > 1) {
-        const char *nome = extras_colecao_nome();
-        if (nome && nome[0]) snprintf(cab, sizeof cab, i18n("Do mesmo autor · %s"), nome);
-        else snprintf(cab, sizeof cab, "%s", i18n("Do mesmo autor"));
-      } else snprintf(cab, sizeof cab, "%s", i18n("Coleção"));
-      return cab; }
+      // Collection names are not author names; show the approved heading
+      // without inventing an author attribution from the franchise title.
+      return "Do mesmo autor"; }
     // Sem cabecalho de secao: a propria secao ja abre com "trakt Comentários" e
     // o subtitulo "Avaliações do Trakt". Com os dois saiam DOIS titulos
     // empilhados dizendo a mesma coisa.
@@ -1116,8 +1121,9 @@ static void recalcularLayout(void) {
       continue;
     }
     if (cabecalhoDe(r)) conteudoSec[r]+=48;
-    float gap=r==SEC_NOTAS ? (ehSerie() ? 122 : 132) : r==SEC_ELENCO ? 50 :
-      r==SEC_COLECAO ? 40 : r==SEC_COMENTARIOS ? 60 : 80;
+    float gap=r==SEC_NOTAS ? (ehSerie() ? 122 : 132) : r==SEC_PROGTEMP ? 40 :
+      r==SEC_ELENCO ? (ehSerie() ? 80 : 50) :
+      r==SEC_COLECAO ? (ehSerie() ? 90 : 40) : r==SEC_COMENTARIOS ? 60 : 80;
     y=conteudoSec[r]+alturaSecao(r)+gap;
   }
   int col=0;
@@ -1216,7 +1222,9 @@ static void desenhaNotasTiles(float x,float y,float a) {
     int fonte=notaFonte(i), own=i==nf, friend=i>nf;
     GfxRect b={x+i*196,y,friend ? 436 : 180,150};
     float f=nivel>=1 && foco.fileira==SEC_NOTAS && foco.coluna==i ? 1 : 0;
-    gfx_cor(b,20.0f/150,1,1,1,a*(.06f+.06f*f));
+    b=detalheEscala(b,animFoco[SEC_NOTAS][i],.03f);
+    gfx_cor(b,20.0f/150,1,1,1,a*.06f);
+    if (f>.005f) gfx_anel(b,20.0f/150,3,1,1,1,a);
     if (own) gfx_anel(b,20.0f/150,1.5f,ar,ag,ab,a);
     const char *label=own ? "Sua nota" : friend ? "Amigos" : nf_nome(fonte);
     txt_desenhar_alpha(txt_linha(TXT_G18R,label,
@@ -1680,6 +1688,9 @@ static void abrirInterno(const HomeItem *it) {
   foco.colunaLembrada[SEC_TEMPORADAS] = colTemp(temporada);
   foco.colunaLembrada[SEC_EPISODIOS]  = epAncora;
   memset(animFoco, 0, sizeof animFoco);
+  memset(focoAlvo,0,sizeof focoAlvo); memset(focoTempo,0,sizeof focoTempo);
+  memset(focoInicio,0,sizeof focoInicio);
+  scrollInicio=scrollAlvo=scrollY; scrollTempo=.7f;
   memset(scrollSec, 0, sizeof scrollSec); memset(velSec, 0, sizeof velSec);
   memset(revEp, 0, sizeof revEp); memset(revRel, 0, sizeof revRel);
   if (restaurarVolta) {
@@ -3996,8 +4007,12 @@ void detail_atualizar(float dt, Uint32 agora) {
   for (int r = 0; r < N_SECOES; r++)
     for (int c = 0; c < secaoN(r) && c < N_ITENS; c++) {
       float alvo = (nivel >= 1 && focus_indice(&foco, r, c)) ? 1.0f : 0.0f;
-      animFoco[r][c] = anim_mola(animFoco[r][c], alvo, dt,
-                                 alvo > animFoco[r][c] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+      if (focoAlvo[r][c]!=(int)alvo) {
+        focoAlvo[r][c]=(int)alvo; focoInicio[r][c]=animFoco[r][c]; focoTempo[r][c]=0;
+      }
+      focoTempo[r][c]=fminf(.24f,focoTempo[r][c]+dt);
+      animFoco[r][c]=anim_politica_reduzida ? alvo :
+        anim_mistura(focoInicio[r][c],alvo,detalheExpo(focoTempo[r][c]/.24f));
     }
 
   // --- rolagem HORIZONTAL da fileira focada ---------------------------------
@@ -4116,7 +4131,14 @@ void detail_atualizar(float dt, Uint32 agora) {
   if (toqueDetalhe.livre) { scrollY = toquerol_clamp(scrollY, 0, fmaxf(0, docFim - NV_TELA_H)); velY = 0; }
   else
 #endif
-  scrollY = anim_mola2(&velY, scrollY, alvoY, dt, NV_MOLA2_SCROLL);
+  {
+    if (alvoY!=scrollAlvo) { scrollInicio=scrollY; scrollAlvo=alvoY; scrollTempo=0; }
+    scrollTempo=fminf(.7f,scrollTempo+dt);
+    float anterior=scrollY;
+    scrollY=anim_politica_reduzida ? alvoY :
+      anim_mistura(scrollInicio,scrollAlvo,detalheExpo(scrollTempo/.7f));
+    velY=dt>0 ? (scrollY-anterior)/dt : 0;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -4205,19 +4227,22 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
   // No circular a escala vem acompanhada da inversao de cor, que ja existia.
   int circular = (rot == NULL);
   if (focado) {
-    float sx = circular ? NV_DETW2_FOCO_SY : NV_DETW2_FOCO_SX;
-    float sy = NV_DETW2_FOCO_SY;
+    float sx = detalheRetrato() ? (circular ? NV_DETW2_FOCO_SY : NV_DETW2_FOCO_SX) : 1.04f;
+    float sy = detalheRetrato() ? NV_DETW2_FOCO_SY : 1.04f;
     float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
     r.w *= sx; r.h *= sy;
     r.x = cx - r.w * 0.5f; r.y = cy - r.h * 0.5f;
-    foco_anel(r, NV_RAIO_PILL, 1.0f, a);   // so com "Foco no cartaz" ligado
+    if (detalheRetrato()) foco_anel(r, NV_RAIO_PILL, 1.0f, a);
   }
   if (circular) {
     float ic;
     // A PELE E A DA TABELA (botoes.h, 21/09/2026): repouso 0.14/0.15/0.17 e
     // nao #222, foco realce + tinta + luz. O tamanho (escala no foco) e o
     // glifo continuam daqui.
-    if (ajustes_vidro()) {
+    if (!detalheRetrato()) {
+      gfx_cor(r,.5f,1,1,1,(focado ? .96f : .12f)*a);
+      ic=focado ? .067f : .953f;
+    } else if (ajustes_vidro()) {
       // Vidro: o mesmo disco de botao_disco (branco cheio em foco, glifo escuro).
       gfx_vidro_painel(r, NV_RAIO_PILL, 0.55f, a);
       gfx_vidro_pilula_cheia(r, NV_RAIO_PILL, focado ? 1.0f : 0.0f, a);
@@ -4296,7 +4321,10 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
   // referencia web — branco em repouso e branco em foco (tema padrao) eram
   // o mesmo botao em dois tamanhos, e o Play brigava com o botao em foco.
   { float tinta = 235.0f / 255.0f, fr = 0.14f, fg = 0.15f, fb = 0.17f;
-    if (ajustes_vidro()) {
+    if (!detalheRetrato()) {
+      gfx_cor(r,.5f,1,1,1,(focado ? .96f : .12f)*a);
+      tinta=focado ? .067f : .953f;
+    } else if (ajustes_vidro()) {
       // Play: vidro com lavagem e aro do realce em repouso; em foco, a pilula
       // cheia na cor do realce (branca no tema padrao).
       gfx_vidro_painel_acento(r, NV_RAIO_PILL, 0.55f, a);
@@ -4562,7 +4590,6 @@ static void topoEstadoTexto(char *dst, size_t n, int durMin, int pessoal) {
   // ou "Parou em T1E3 · faltam 18 min · termina às 20:29". A duracao abre a
   // linha quando nao ha estado melhor para contar; "termina às" fecha sempre.
   const CatItem *ci = cat_item(idx);
-  int durAbriu = 0;
   if (!n) return;
   dst[0] = 0;
   if (!ci) return;
@@ -4582,7 +4609,6 @@ static void topoEstadoTexto(char *dst, size_t n, int durMin, int pessoal) {
       desc_duracao_min_curta(durMin, curta, sizeof curta);
       size_t k = strlen(dst);
       snprintf(dst + k, n - k, "%s%s", k ? " · " : "", curta);
-      durAbriu = 1;
     }
     if (ci->restanteMin > 0) {
       char falta[64];
@@ -4600,12 +4626,8 @@ static void topoEstadoTexto(char *dst, size_t n, int durMin, int pessoal) {
     localtime_r(&t2, &lf);
     hora_tela(h, sizeof h, &lf);
     snprintf(fim, sizeof fim, i18n("termina \xc3\xa0s %s"), h);
-    if (!pessoal || !durAbriu || ci->restanteMin > 0) {
-      size_t k = strlen(dst);
-      snprintf(dst + k, n - k, "%s%s", k ? " · " : "", fim);
-    } else {
-      size_t k=strlen(dst); snprintf(dst+k,n-k," · %s",fim);
-    }
+    size_t k = strlen(dst);
+    snprintf(dst + k, n - k, "%s%s", k ? " · " : "", fim);
   }
 }
 
@@ -5261,7 +5283,7 @@ static void heroWeb(float a, float desloc) {
                                NV_DETW2_SIN_LINHAS);
       else esqueletoSinopse(NV_DETW2_X, ySin, a * (1.0f - f));
     }
-    if (sin) txt_bloco_corta(TXT_DET_SIN, sin, 243, 242, 239, NV_DETW2_X, ySin,
+    if (sin) txt_bloco_corta(detalheRetrato() ? TXT_DET_SIN : TXT_SINOPSE_26, sin, 243, 242, 239, NV_DETW2_X, ySin,
                        larguraTextoHero(), NV_DETW2_LD_SIN, a * f * .84f,
                        NV_DETW2_SIN_LINHAS);
     else if (esqSin) esqueletoSinopse(NV_DETW2_X, ySin, a * f); }
@@ -5655,7 +5677,7 @@ static void desenhaShuffle(GfxRect r, float f, float a) {
 // tinta de contraste). A contagem de episodios vai ao lado, em 16 a 35%.
 static void desenhaTemporada(GfxRect r, int c, float f, float a) {
   char rot[32]; rotuloTemporada(c,rot,sizeof rot);
-  int real=c<nTemporadasReais() && !ehShuffle(c), sel=real && posTemp(c)==temporada;
+  int real=c<colTemp(nTemporadasReais()) && !ehShuffle(c), sel=real && posTemp(c)==temporada;
   float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
   gfx_cor(r,.5f,1,1,1,(f>.5f ? .96f : sel ? .12f : 0)*a);
   int ink=f>.5f ? 17 : sel ? 243 : 160;
@@ -5766,7 +5788,10 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
   // desligado, a miniatura cresce com a animacao do foco. O brilho e o
   // realce de profundidade seguem os mesmos Ajustes (Episodios).
   GfxRect thLayout = th;
-  if (!detalheRetrato() && f>.005f) gfx_anel(th,raioTh,3,1,1,1,f*a);
+  if (!detalheRetrato()) {
+    th=detalheEscala(th,f,.05f);
+    if (f>.005f) gfx_anel(th,raioTh,3,1,1,1,f*a);
+  }
   if (!epApple()) { foco_anel(th, raioTh, f, a); th = foco_zoom(th, f); }
 
   const CatItem *serie = cat_item(idx);
@@ -6149,10 +6174,8 @@ static void desenhaTrailer(float x, float y, int c, float f, float a) {
   float raio = NV_DETF_TR_RAIO / NV_DETF_TR_VIDEO_H;   // fracao do MENOR lado
   GLuint tex = (mini && mini[0]) ? tex_obter_larg(mini, NV_DETF_TR_W) : 0;
 
-  // Foco da Home (focoprof.h): anel so com o ajuste ligado, senao a miniatura
-  // cresce; brilho/profundidade seguem os Ajustes (Trailers).
-  foco_anel(v, raio, f, a);
-  v = foco_zoom(v, f);
+  v=detalheEscala(v,f,.05f);
+  if (f>.005f) gfx_anel(v,raio,3,1,1,1,f*a);
 
   if (tex) {
     gfx_tex_aspect_atual = tex_aspecto(mini);
@@ -6169,6 +6192,7 @@ static void desenhaTrailer(float x, float y, int c, float f, float a) {
     GfxRect tri   = { disco.x + d * 0.34f, disco.y + d * 0.28f,
                       d * 0.36f, d * 0.44f };
     gfx_cor(disco, 0.5f, 0.0f, 0.0f, 0.0f, a * 0.48f);
+    gfx_anel(disco,.5f,1.5f,1,1,1,.6f*a);
     gfx_rect(tri, 0, GFX_PLAY, 0, 0, 0, 0.0f, 1, 1, 1, a); }
 
   { TxtLinha ln = txt_linha_corta(TXT_G22M, extras_trailer_nome(c),
@@ -6573,20 +6597,9 @@ static void desenhaRelacionados(float x, float y, float a, int primeiro, int lim
     GLuint t = po[0] ? tex_obter_larg(po, REL_CARD_W) : 0;
     float raio = raioCartaz(REL_CARD_W, REL_CARD_H);
     if (aceso) { relFocoRect = r; snprintf(relFocoArte, sizeof relFocoArte, "%s", po); }
-    // O realce de foco e o da Home (focoprof.h): so apple (Dinamica) tem o
-    // painel da legenda. O cartao de vidro/accent que envolvia arte e legenda
-    // era um contorno de 8 px que ignorava "Foco no cartaz".
-    if (aceso && epApple()) {
-      float alturaLegenda = 12.0f + 22.0f + (ano[0] ? 6.0f + 18.0f : 0.0f) + 8.0f;
-      GfxRect legend = {cx-10,y+REL_CARD_H+4,REL_CARD_W+20,alturaLegenda+8};
-      gfx_cor(legend,16.0f/legend.h,.19f,.21f,.23f,.64f*a);
-      if (ajustes_borda_foco()) gfx_anel(r,raio,1.5f,1,1,1,.18f*a);
-    }
-    // Foco da Home no cartaz (focoprof.h): anel so com o ajuste ligado, senao
-    // ele cresce; brilho e profundidade seguem os Ajustes.
-    float fRel = (aceso && i < N_ITENS) ? animFoco[SEC_RELACIONADOS][i] : 0.0f;
-    if (!epApple()) foco_anel(r, raio, fRel, a);
-    r = foco_zoom(r, fRel);
+    float fRel = i<N_ITENS ? animFoco[SEC_RELACIONADOS][i] : 0;
+    r=detalheEscala(r,fRel,.05f);
+    if (fRel>.005f) gfx_anel(r,raio,3,1,1,1,fRel*a);
     { float aArte = revela_arte(&revRel[i], t != 0, SDL_GetTicks());
       if (t) {
         if (aArte < 0.999f) gfx_cor(r, raio, 0.133f, 0.133f, 0.133f, a);
@@ -6607,11 +6620,11 @@ static void desenhaRelacionados(float x, float y, float a, int primeiro, int lim
     { int c = 243;
       TxtLinha lt = txt_linha_corta(TXT_G22M, extras_relacionado_titulo(i),
                                     c, c, c, 255, REL_CARD_W);
-      txt_desenhar_alpha(lt,NV_DETP_X,y+REL_CARD_H+18,a);
+      txt_desenhar_alpha(lt,cx,y+REL_CARD_H+18,a);
       if (ano[0]) {
         int cy = aceso ? 174 : 156;
         TxtLinha la = txt_linha(TXT_MINI, ano, cy, cy + 2, cy + 9, 255);
-        txt_desenhar_alpha(la,NV_DETP_X,y+REL_CARD_H+50,
+        txt_desenhar_alpha(la,cx,y+REL_CARD_H+50,
                            a * 0.95f);
       } }
   }
@@ -7355,7 +7368,10 @@ static void desenhaComentarios(float x, float y, float a) {
     // A troca e em DEGRAU e nao interpolada: `txt_linha` guarda a linha ja
     // rasterizada na cor pedida, entao uma cor que varia por quadro seria uma
     // entrada nova de cache por quadro.
-    gfx_cor(card,20.0f/COM_CARD_H,1,1,1,(foc ? .12f : .06f)*a);
+    float fc=i+nPilulasCom()<N_ITENS ? animFoco[SEC_COMENTARIOS][i+nPilulasCom()] : 0;
+    card=detalheEscala(card,fc,.03f);
+    gfx_cor(card,20.0f/COM_CARD_H,1,1,1,.06f*a);
+    if (fc>.005f) gfx_anel(card,20.0f/COM_CARD_H,3,1,1,1,fc*a);
     int tintaEsc = 1;   // tinta escura sobre o foco (realce claro); 0 = clara
     // Vidro: o cartao em foco segue translucido (contorno no realce), entao o
     // texto NAO inverte; `focCor` e o "foco cheio" das cores abaixo.
@@ -7562,7 +7578,7 @@ static int moverFileira(int dy) {
     if (footer && (r==SEC_FRASES || r==SEC_DETALHES || r==SEC_ESTUDIOS)) continue;
     if (foco.nColunas[r] > 0) {
       int alvo = foco.colunaLembrada[r];
-      if (foco.fileira==SEC_EPISODIOS && r==SEC_TEMPORADAS) alvo=temporada;
+      if (foco.fileira==SEC_EPISODIOS && r==SEC_TEMPORADAS) alvo=colTemp(temporada);
       if (foco.fileira==SEC_EPISODIOS && r==SEC_PROGTEMP && progTemNotas()) alvo=epAbsoluto(foco.coluna);
       if (foco.fileira==SEC_PROGTEMP && r==SEC_EPISODIOS && progTemNotas()) {
         for (int c=0;c<epVisiveis();c++) if (epAbsoluto(c)==foco.coluna) { alvo=c; break; }
@@ -7653,7 +7669,9 @@ static void desenhaGradeProgresso(float x, float y, float a) {
       int sel=focoGrade && i==alvo;
       float tone=.03f+anim_clamp((p->nota-72)/26.0f,0,1)*.32f;
       gfx_cor(cell,10.0f/46,1,1,1,tone*a);
-      if (sel) gfx_anel(cell,10.0f/46,3,1,1,1,a);
+      float fc=sel && i<N_ITENS ? animFoco[SEC_PROGTEMP][i] : 0;
+      cell=detalheEscala(cell,fc,.12f);
+      if (fc>.005f) gfx_anel(cell,10.0f/46,3,1,1,1,fc*a);
       char nota[24]; if (p->nota>0) snprintf(nota,sizeof nota,"%d.%d",p->nota/10,p->nota%10); else snprintf(nota,sizeof nota,"—");
       idioma_decimal_texto(nota,ajustes_idioma());
       TxtLinha l=txt_linha(TXT_G18M,nota,243,242,239,255);
@@ -7711,7 +7729,9 @@ static void desenhaRodape(int r,float a) {
   float x=96+dxSec[r],y=conteudoSec[r]-scrollY;
   if (y>1080 || y+300<0) return;
   GfxRect card={x,y,556,300};
-  gfx_cor(card,20.0f/300,1,1,1,.06f*a);
+  GfxRect focusCard=detalheEscala(card,animFoco[r][0],.03f);
+  gfx_cor(focusCard,20.0f/300,1,1,1,.06f*a);
+  if (animFoco[r][0]>.005f) gfx_anel(focusCard,20.0f/300,3,1,1,1,animFoco[r][0]*a);
   const char *title=r==SEC_FRASES ? "Frases" : r==SEC_DETALHES ? "Ficha técnica" : "Produção";
   char caps[80]; idioma_maiusc_em(ajustes_idioma(),caps,sizeof caps,i18n(title));
   txt_tracking(TXT_G20M,caps,243,242,239,x+28,y+24,a*.6f,3.6f);
@@ -8238,7 +8258,7 @@ static void detalheFundo(float s) {
   if (carDesenhaFundo()) { carFundo(); return; }
   if (!detalheRetrato()) {
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.043f,.047f,s);
-    float fade=anim_clamp(1-scrollY/900.0f,0,1);
+    float fade=anim_clamp(1-scrollY/1800.0f,0,1);
     GLuint tex=arte && fade>.005f ? tex_obter_hero(arte) : 0;
     alvo.y-=scrollY*.32f;
     if (tex && fade>.005f) desenhaArteDetalhe(alvo,tex,arte,arteDetalheEhPoster(idx),aEntrada*fade,0);

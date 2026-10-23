@@ -187,12 +187,15 @@ const char *fx_com_lingua(int i)   { (void)i; return ""; }
 const char *fx_ficha_status(void)        { return "Released"; }
 const char *fx_ficha_lancamento(void)    { return getenv("NUVIO_SHOT_AVISOFONTE") ? "2027-07-17" : "2026-05-01"; }
 const char *fx_ficha_digital(void)       { return ""; }
-int         fx_ficha_duracao(void)       { return 124; }
+int         fx_ficha_duracao(void)       { return getenv("NUVIO_SHOT_REFERENCE") ? 156 : 124; }
 const char *fx_ficha_paises(void)        { return "United States of America"; }
 const char *fx_ficha_classificacao(void) { return "12"; }
-const char *fx_titulo_original(void)  { return "The Devil Wears Prada 2"; }
+const char *fx_titulo_original(void)  {
+  return getenv("NUVIO_SHOT_REFERENCE") ? (ehSerieDeEnsaio() ? "Fargo" : "Project Hail Mary") :
+    ehSerieDeEnsaio() ? "Fallout" : "The Devil Wears Prada 2";
+}
 const char *fx_idioma_original(void)  { return "en"; }
-int fx_estudio_rede(int i) { (void)i; return ehSerieDeEnsaio() ? 1 : 0; }
+int fx_estudio_rede(int i) { return ehSerieDeEnsaio() && i==0; }
 
 static const char *const REL_TIT[] = { "The Prestige", "Frequency", "Outcome", "The Invite",
                                        "Prisoners", "Spaceman", "The Martian" };
@@ -495,6 +498,7 @@ static void abrir(int i, int nv, int sec, int col) {
   hi.titulo = itens[i].titulo; hi.genero = itens[i].genero; hi.meta = itens[i].meta;
   detail_abrir(&hi);
   if (getenv("NUVIO_SHOT_REFERENCE")) {
+    cat_historico_definir_id(itens[i].imdb,itens[i].tipo,i ? 0 : 1);
     char path[1024]; snprintf(path,sizeof path,"%s/ajustes.txt",dados_dir());
     FILE *f=fopen(path,"a"); assert(f);
     fprintf(f,"selected_theme %d\n",i ? 5 : 1); fclose(f);
@@ -659,6 +663,23 @@ int main(int argc, char **argv) {
     { SvPerfil p; memset(&p, 0, sizeof p);
       p.gostoPct = 82; p.gostoTotal = 11; p.estado = SV_PERFIL_OK;
       socialvis_definir_perfil_extra("nuvio:mari", &p); }
+  }
+
+  if (quer(argc,argv,"video")) {
+    static const struct { const char *name; int movie,row,col; } shots[]={
+      {"hero",1,-1,0},{"notas",1,SEC_NOTAS,0},{"trailers",1,SEC_TRAILERS,1},
+      {"elenco",1,SEC_ELENCO,1},{"autor",1,SEC_COLECAO,1},
+      {"similares",1,SEC_RELACIONADOS,0},{"comentarios",1,SEC_COMENTARIOS,0},
+      {"ficha",1,SEC_DETALHES,0},{"serie-hero",0,-1,0},
+      {"episodios",0,SEC_EPISODIOS,3},{"progresso",0,SEC_PROGTEMP,18},
+      {"universo",0,SEC_COLECAO,1}
+    };
+    for (int j=0;j<(int)(sizeof shots/sizeof *shots);j++) {
+      tex_encerrar(); assert(tex_iniciar(30));
+      abrir(shots[j].movie,shots[j].row>=0,shots[j].row<0 ? 0 : shots[j].row,shots[j].col);
+      frasesAberta=1; seriefrases_abrir(itens[shots[j].movie].imdb);
+      quadros(50); gravar(shots[j].name);
+    }
   }
 
   if (quer(argc,argv,"full")) {

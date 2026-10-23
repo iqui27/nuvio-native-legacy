@@ -390,27 +390,6 @@ void desc_duracao_min_curta(int min, char *dst, size_t tam) {
   else               snprintf(dst, tam, i18n("%dh"), min / 60);
 }
 
-// TEXTO de duracao -> MINUTOS ("142 min" -> 142). 0 quando o texto nao e
-// numero+unidade (o mesmo parser do desc_duracao_txt, devolvendo o total).
-int desc_minutos_txt(const char *cru) {
-  int total = 0, achou = 0;
-  const char *p = cru;
-  if (!cru || !*cru) return 0;
-  while (*p) {
-    int v = 0;
-    if (*p == ' ') { p++; continue; }
-    if (*p < '0' || *p > '9') return 0;
-    while (*p >= '0' && *p <= '9') { v = v * 10 + (*p - '0'); p++; }
-    while (*p == ' ') p++;
-    if (*p == 'h' || *p == 'H') { total += v * 60; while (*p && *p != ' ' && !(*p >= '0' && *p <= '9')) p++; }
-    else if (*p == 'm' || *p == 'M') { total += v; while (*p && *p != ' ' && !(*p >= '0' && *p <= '9')) p++; }
-    else if (*p == 0) total += v;
-    else return 0;
-    achou = 1;
-  }
-  return achou ? total : 0;
-}
-
 // Duracao em TEXTO ("142 min", "2h 22min", "1 h 54 min", "142") -> a mesma
 // forma acima. O Cinemeta escreve "min" em ingles, e em russo/ucraniano a
 // abreviacao e outra. Texto que nao e so numero+unidade sai como veio.

@@ -161,7 +161,6 @@ const char *desc_status_chave(const char *raw, int serie);
 void desc_pais_txt(const char *lista, char *dst, size_t tam);
 void desc_duracao_min(int min, char *dst, size_t tam);
 void desc_duracao_min_curta(int min, char *dst, size_t tam);
-int  desc_minutos_txt(const char *cru);
 void desc_duracao_txt(const char *cru, char *dst, size_t tam);
 
 // --- busca por titulo --------------------------------------------------------
