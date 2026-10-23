@@ -63,6 +63,7 @@
 //      ao topo empurra o cabecalho para fora da tela na primeira descida.
 #include "menu.h"
 #include "biblioteca.h"
+#include "jfid.h"
 #include "glance.h"
 #include "posterprov.h"
 #include "contalib.h"
@@ -783,7 +784,8 @@ static int daOrigem(int fontes) {
 //   Coleções     : naColecao ou comprado (independe do estado).
 static int noModo(int m, const CatItem *ci, int i) {
   switch (m) {
-    case MODO_PARAVER:    return (ci->naLista || (i >= 0 && i < CAT_MAX && serverMembership[i])) && !emAndamento(ci);
+    case MODO_PARAVER:    return (ci->naLista || (i >= 0 && i < CAT_MAX && serverMembership[i] &&
+             (!jfid_e(ci->imdb) || serverFilter >= 0))) && !emAndamento(ci);
     case MODO_ANDAMENTO:  return emAndamento(ci);
     case MODO_ASSISTIDOS: return cat_visto(ci);
     case MODO_COLECOES:   return ci->naColecao || (i >= 0 && i < CAT_MAX && comprado[i]);

@@ -207,6 +207,12 @@ static void discover(void) { cancelLogin(); change(DISCOVER); worker.n = 0; star
 static void userLogin(void) { cancelLogin(); change(USERS); worker.n = 0; startWorker(JOB_USERS); }
 static void activate(void) {
   if (worker.alive && screen != CODE && screen != CONNECT_CODE) return;
+  if (worker.alive && screen == CONNECT_CODE && selected == 0) {
+    snprintf(message, sizeof message, "%s", i18n("Carregando…")); return;
+  }
+  if (screen == CODE && selected == 0) {
+    snprintf(message, sizeof message, "%s", i18n("Carregando…")); return;
+  }
   if (screen == LOGIN && (provider == 1 ? jellyfin_estado(NULL, 0) : emby_estado(NULL, 0)) == JF_EST_VERIFICANDO) return;
   switch (screen) {
     case CHOOSE:
