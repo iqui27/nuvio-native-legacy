@@ -40,6 +40,14 @@ int main(int argc,char **argv){
     snprintf(it->poster,sizeof it->poster,"/Volumes/ExternalSSD/tmp/rev/guiatv-estado/v5/assets/%s",i<12?art[i]:"futebol.jpg");
   }build_groups();mv_count=4;for(int i=0;i<4;i++){mv_items[i]=inventory[12+i];snprintf(mv_items[i].name,sizeof mv_items[i].name,"%s",i==0?"SporTV":i==1?"ESPN":i==2?"Premiere":"SporTV 2");}
   selected=0;test_ok=1;tested.conexoes=1;tested.maxConexoes=2;
+  snprintf(draft.name,sizeof draft.name,"IPTV da sala");
+  for(int i=0;i<12;i++)snprintf(inventory[i].backdrop,sizeof inventory[i].backdrop,"/Volumes/ExternalSSD/tmp/rev/guiatv-estado/v5/assets/%s",i<6?"duna-backdrop.jpg":"fallout-backdrop.jpg");
+  /* Real inline PIN controls: digits, clear, delete, cancellation. */
+  want_pin(0);activate(20);activate(21);activate(30);assert(!strcmp(pin_value,"120"));
+  activate(31);assert(!strcmp(pin_value,"12"));activate(29);assert(!pin_value[0]);
+  for(int i=0;i<6;i++)activate(20+i);assert(strlen(pin_value)==4);
+  activate(1);assert(!pin_value[0]&&!g5ui_active());
+  go("setup-credenciais");credential_field=6;activate(100);assert(strchr(draft.name,'A'));
   for(unsigned n=0;n<sizeof names/sizeof *names;n++){
     go(names[n]);draft.live=draft.movies=draft.series=draft.epg=1;focus=0;mode=strstr(names[n],"-4")?4:strstr(names[n],"-3")?3:2;
     if(!strcmp(names[n],"vod-serie-temporadas"))selected=6;else selected=0;

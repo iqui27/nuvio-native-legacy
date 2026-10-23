@@ -6,7 +6,7 @@
 enum { G5_LIVE, G5_MOVIE, G5_SERIES, G5_EPISODE };
 typedef struct {
   char id[80], source[48], name[140], group[64], poster[480];
-  char url[2048], epg[64], ext[12], plot[600], trusted_id[32], category[80];
+  char url[2048], epg[64], ext[12], plot[600], trusted_id[32], backdrop[480];
   int kind, adult, age, season, episode;
 } G5Item;
 /* User-facing category; falls back to name when provider labels are absent. */

@@ -8,7 +8,11 @@ const {chromium}=require('/Users/hrocha/.cache/codex-runtimes/codex-primary-runt
  await page.route(/^https?:/,r=>r.abort());
  await page.setContent(fs.readFileSync(path.join(out,'phone.html'),'utf8'));
  await page.screenshot({path:path.join(out,'celular-1-dados-app.png'),fullPage:true});
+ if(await page.locator('#playlist').isVisible())throw Error('M3U input exposed for Xtream');
+ if(await page.evaluate(()=>document.documentElement.scrollHeight)>844)throw Error('Phone setup exceeds approved canvas');
+ await page.fill('#server','https://provider.test');await page.fill('#user','fixture');await page.fill('#password','fixture');
  await page.click('#next');
+ if(!await page.locator('#live').isVisible())throw Error('Import step did not open');
  await page.screenshot({path:path.join(out,'celular-2-importar-app.png'),fullPage:true});
  await page.setContent('<html lang=pt-BR><meta charset=utf-8><style>body{background:#0d0d0d;color:#f3f2ef;font:20px system-ui;padding:36px}h1{font-size:38px}p{color:#b2b4b8}</style><h1>Dados enviados. Olhe para a TV.</h1><p>Confira as opções e continue na TV.</p><p>A fonte ainda precisa ser testada e confirmada.</p></html>');
  await page.screenshot({path:path.join(out,'celular-3-pronto-app.png')});

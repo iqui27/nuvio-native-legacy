@@ -31,13 +31,13 @@
 #define G5_CAP 768
 #define G5_GROUPS 96
 static struct {
-  char server[256], user[96], password[96], playlist[2048], xmltv[1100], file[3100];
+  char server[256], user[96], password[96], playlist[2048], xmltv[1100], file[3100], name[96];
   int type, live, movies, series, epg;
 } draft, work_draft;
 static G5Item *inventory, *staging;
 static int count, staging_count, staging_total, total, profile=-1, dirty;
-static char account[96], screen[48], previous[48], query[140], message[160];
-static int focus, nav=-1, selected, edit=-1, playing, selected_season=1;
+static char account[96], screen[48], previous[48], query[140], message[160], catalog_group[64];
+static int focus, nav=-1, selected, edit=-1, playing, selected_season=1, credential_field;
 static int mode=2, mv_count, mv_main, mv_focus;
 static G5Item mv_items[4], locked_item, picker_items[48];
 static int picker_count;
@@ -74,6 +74,7 @@ static void clear_catalog(void){free(inventory);free(series_catalog);inventory=s
 static void context(void){
   int p=perfis_ativo();const char *owner=sessao_usuario();if(!owner)owner="";
   if(profile==p&&!strcmp(account,owner))return;
+  catalog_group[0]=0;
   if(atomic_load(&busy))worker_cancel=1;
   if(screen[0])celular_fechar();screen[0]=0;
   profile=p;snprintf(account,sizeof account,"%s",owner);
@@ -85,6 +86,7 @@ static void context(void){
     rules.ask_unrated=js_num(b,NULL,"unrated",0)!=0;rules.hide_locked=js_num(b,NULL,"hide",0)!=0;rules.kids=js_num(b,NULL,"kids",0)!=0;free(b);}
   filename(file,sizeof file,"source");b=dados_ler(file);
   if(b){committed=1;js_texto_linhas(b,NULL,"file",draft.file,sizeof draft.file);js_texto(b,NULL,"playlist",draft.playlist,sizeof draft.playlist);js_texto(b,NULL,"xmltv",draft.xmltv,sizeof draft.xmltv);
+    js_texto(b,NULL,"name",draft.name,sizeof draft.name);
     draft.type=js_num(b,NULL,"type",0);draft.live=js_num(b,NULL,"live",1);draft.movies=js_num(b,NULL,"movies",1);draft.series=js_num(b,NULL,"series",1);draft.epg=js_num(b,NULL,"epg",1);free(b);}
   if(perfil_infantil_ativo()){rules.kids=rules.hide_adult=rules.hide_locked=rules.ask_unrated=1;rules.max_age=10;}
   mv_count=0;playing=0;dirty=1;episodes_mode=0;
@@ -228,7 +230,7 @@ static void save_rules(void){
 }
 void g5ui_save_source(const char *playlist,const char *xml,int type,int live,int movies,int series,int epg){
   char file[64];Jsw w;jsw_iniciar(&w);jsw_obj_ini(&w);
-  jsw_cs(&w,"playlist",playlist);jsw_cs(&w,"xmltv",xml);jsw_cs(&w,"file",draft.file);
+  jsw_cs(&w,"playlist",playlist);jsw_cs(&w,"xmltv",xml);jsw_cs(&w,"file",draft.file);jsw_cs(&w,"name",draft.name);
   jsw_chave(&w,"type");jsw_int(&w,type);jsw_chave(&w,"live");jsw_int(&w,live);jsw_chave(&w,"movies");jsw_int(&w,movies);jsw_chave(&w,"series");jsw_int(&w,series);jsw_chave(&w,"epg");jsw_int(&w,epg);
   jsw_chave(&w,"groups");jsw_arr_ini(&w);for(int i=0;i<group_count;i++){jsw_obj_ini(&w);jsw_cs(&w,"name",groups[i]);jsw_ci(&w,"on",group_on[i]);jsw_obj_fim(&w);}jsw_arr_fim(&w);
   jsw_obj_fim(&w);filename(file,sizeof file,"source");save_failed=!jsw_texto_final(&w)||!dados_gravar(file,jsw_texto_final(&w));jsw_livre(&w);
@@ -242,17 +244,18 @@ static void phone(void){
   /* Same expiring, single-use local pairing. Browser only builds one JSON form
    * value; the native worker validates it and performs provider requests. */
   snprintf(html,sizeof html,"<!doctype html><html lang='pt-BR'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>%s</title>"
-    "<style>*{box-sizing:border-box}body{margin:0;background:#0d0d0d;color:#f3f2ef;font:17px system-ui}main{max-width:480px;margin:auto;padding:28px 24px}h1{font-size:36px;line-height:1.08}p{color:#b2b4b8;line-height:1.5}input,select,button{font:inherit;border:0;border-radius:16px;padding:16px;background:#24262c;color:inherit;width:100%%;margin:7px 0 16px}button{border-radius:32px;background:#e5e9e6;color:#15171b;font-weight:600}label{display:block}input[type=checkbox]{width:auto}section[hidden]{display:none}.rail{height:4px;background:#56665c;margin:24px 0}.k{font-size:13px;letter-spacing:.12em;color:#b2b4b8}</style>"
+    "<style>*{box-sizing:border-box}body{margin:0;background:#0d0d0d;color:#f3f2ef;font:17px system-ui}main{max-width:480px;min-height:100vh;margin:auto;padding:48px 22px 24px}h1{font-size:34px;line-height:1.08;margin:24px 0 16px}p{color:#b2b4b8;line-height:1.5}input,select,button{font:inherit;border:0;border-radius:16px;padding:16px;background:#24262c;color:inherit;width:100%%;margin:7px 0 16px}button{border-radius:32px;background:#e5e9e6;color:#15171b;font-weight:600}label{display:block}input[type=checkbox]{width:auto}[hidden]{display:none!important}.rail{height:4px;background:linear-gradient(to right,#bbcfc3 32%%,#343941 32%%,#343941 65%%,#0d0d0d 65%%,#0d0d0d 67%%,#343941 67%%);margin:24px 0}.k{font-size:13px;letter-spacing:.12em;color:#b2b4b8}input,select{padding:12px;margin:3px 0 14px;border:1px solid #42464e;border-radius:14px;background:#22252b}label{font-size:14px}button{margin-top:22px}input[type=checkbox]{width:24px;height:24px;margin:10px 14px 10px 0;vertical-align:middle}#s2 label{border-bottom:1px solid #30343b;padding:4px 0;font-size:17px}#s2 h1{margin-bottom:24px}</style>"
     "<main><div class=k>NUVIO LEGACY · %s</div><div class=rail></div><form method=post action='' id=f><section id=s1><h1>%s</h1><p>%s</p>"
     "<label>%s<select id=kind><option value=0>Xtream Codes</option><option value=1>M3U URL</option></select></label>"
-    "<label>%s<input id=server type=url autocomplete=off></label><label>%s<input id=user autocomplete=off></label><label>%s<input id=password type=password autocomplete=off></label>"
-    "<label>%s<input id=playlist type=url autocomplete=off></label><label>%s<input id=file type=file accept='.m3u,.m3u8,text/plain'></label><button type=button id=next>%s</button></section>"
+    "<label>%s<input id=name autocomplete=off maxlength=95></label><div id=xtream><label>%s<input id=server type=url autocomplete=off></label><label>%s<input id=user autocomplete=off></label><label>%s<input id=password type=password autocomplete=off></label></div>"
+    "<div id=m3u hidden><label>%s<input id=playlist type=url autocomplete=off></label><label>%s<input id=file type=file accept='.m3u,.m3u8,text/plain'></label></div><button type=button id=next>%s</button></section>"
     "<section id=s2 hidden><h1>%s</h1><p>%s</p><label><input type=checkbox id=live checked>%s</label><label><input type=checkbox id=movies checked>%s</label><label><input type=checkbox id=series checked>%s</label>"
     "<label><input type=checkbox id=epg checked>%s</label><label>%s<input id=xmltv type=url></label><p>%s</p><input type=hidden name=t id=t><button>%s</button><button type=button id=back>%s</button></section></form></main>"
     "<script>const $=id=>document.getElementById(id);let fileText='';$('file').onchange=async()=>{const f=$('file').files[0];if(f&&f.size<=3000)fileText=await f.text();else alert('%s');};"
-    "$('next').onclick=()=>{$('s1').hidden=true;$('s2').hidden=false;};$('back').onclick=()=>{$('s1').hidden=false;$('s2').hidden=true;};$('f').onsubmit=()=>{let o={type:Number($('kind').value),server:$('server').value,user:$('user').value,password:$('password').value,playlist:$('playlist').value,file:fileText,xmltv:$('xmltv').value,live:+$('live').checked,movies:+$('movies').checked,series:+$('series').checked,epg:+$('epg').checked};$('t').value=JSON.stringify(o);if($('t').value.length>4000){alert('%s');return false;}};</script></html>",
+    "$('kind').onchange=()=>{$('xtream').hidden=$('kind').value!=='0';$('m3u').hidden=$('kind').value==='0';};"
+    "$('next').onclick=()=>{if($('kind').value==='0'&&(!$('server').value||!$('user').value||!$('password').value)){$('server').focus();return;}if($('kind').value!=='0'&&!$('playlist').value&&!fileText){$('playlist').focus();return;}$('s1').hidden=true;$('s2').hidden=false;};$('back').onclick=()=>{$('s1').hidden=false;$('s2').hidden=true;};$('f').onsubmit=()=>{let o={name:$('name').value,type:Number($('kind').value),server:$('server').value,user:$('user').value,password:$('password').value,playlist:$('playlist').value,file:fileText,xmltv:$('xmltv').value,live:+$('live').checked,movies:+$('movies').checked,series:+$('series').checked,epg:+$('epg').checked};$('t').value=JSON.stringify(o);if($('t').value.length>4000){alert('%s');return false;}};</script></html>",
     i18n("Guia TV"),i18n("Configurar pelo celular"),i18n("Dados do provedor"),i18n("Use os dados enviados pelo seu provedor."),
-    i18n("Tipo de fonte"),i18n("Servidor"),i18n("Usuário"),i18n("Senha"),i18n("URL da lista M3U"),i18n("Arquivo"),i18n("Continuar"),
+    i18n("Tipo de fonte"),i18n("Nome"),i18n("Servidor"),i18n("Usuário"),i18n("Senha"),i18n("URL da lista M3U"),i18n("Arquivo"),i18n("Continuar"),
     i18n("Escolha o que importar"),i18n("Confira as opções e continue na TV."),i18n("Canais ao vivo"),i18n("Filmes"),i18n("Séries"),i18n("Guia de programação"),i18n("URL XMLTV"),
     i18n("Conteúdo adulto oculto por padrão."),i18n("Enviar para a TV"),i18n("Voltar"),i18n("Arquivo muito grande. Use uma URL."),i18n("Arquivo muito grande. Use uma URL."));
   char sent[4096];snprintf(sent,sizeof sent,"<!doctype html><html lang=pt-BR><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><style>body{background:#0d0d0d;color:#f3f2ef;font:20px system-ui;padding:36px;max-width:480px;margin:auto}h1{font-size:38px}p{color:#b2b4b8}</style><h1>%s</h1><p>%s</p><p>%s</p></html>",i18n("Dados enviados. Olhe para a TV."),i18n("Confira as opções e continue na TV."),i18n("A fonte ainda precisa ser testada e confirmada."));
@@ -260,7 +263,7 @@ static void phone(void){
 }
 static int match_query(const char *name){char hay[256],needle[256];busca_normalizar(name,hay,sizeof hay);busca_normalizar(query,needle,sizeof needle);return !needle[0]||strstr(hay,needle);}
 static int visible_item(int i,int kind){
-  G5Item *it=&inventory[i];return (kind<0||it->kind==kind)&&group_allowed(it->group)&&match_query(it->name)&&(!(rules.hide_locked||rules.kids)||!restricted(it));
+  G5Item *it=&inventory[i];return (kind<0||it->kind==kind)&&(!catalog_group[0]||!strcmp(catalog_group,it->group))&&group_allowed(it->group)&&match_query(it->name)&&(!(rules.hide_locked||rules.kids)||!restricted(it));
 }
 static int indices[G5_CAP], nindices;
 static void filter(int kind){nindices=0;for(int i=0;i<count;i++)if(visible_item(i,kind))indices[nindices++]=i;}
@@ -268,7 +271,7 @@ static void select_item(int i){if(i<0||i>=count)return;selected=i;locked_item=in
   if(restricted(&inventory[i])){snprintf(previous,sizeof previous,"%s",screen);go("parental-canal-bloqueado");return;}
   go(inventory[i].kind==G5_SERIES?"vod-serie-temporadas":"vod-titulo");
 }
-static void want_pin(int settings){pin_settings=settings;if(strcmp(screen,"parental-canal-bloqueado")&&strcmp(screen,"parental-pin"))snprintf(previous,sizeof previous,"%s",screen);go("parental-pin");input(7,"PIN do perfil","",1);}
+static void want_pin(int settings){pin_settings=settings;erase(pin_value,sizeof pin_value);if(strcmp(screen,"parental-canal-bloqueado")&&strcmp(screen,"parental-pin"))snprintf(previous,sizeof previous,"%s",screen);go("parental-pin");focus=20;}
 static int control_count;
 static void activate(int id);
 static void point_focus(int id,int unused){(void)unused;focus=id;nav=-1;}
@@ -295,17 +298,23 @@ static void button(int id,const char *text,const char *icon,float x,float y,floa
 }
 static void toggle(int id,const char *name,int on,float x,float y,float w){button(id,name,on?"aj_check":"aj_plus",x,y,w,64,1);}
 static void top(void){
-  label(TXT_ILHA_TITULO,i18n("Guia TV"),48,34,210,0);
+  label(TXT_ILHA_TITULO,i18n("Guia TV"),48,32,210,0);
+  gfx_cor((GfxRect){251,27,700,58},.5,.12,.125,.14,1);
   const char *names[]={"Guia","Cartões","Filmes","Séries","Fontes","Controle parental","Multiview"};
-  float x=264;for(int i=0;i<7;i++){
-    float w=i==5?218:i==6?174:145;GfxRect r={x,28,w,58};
-    gfx_cor(r,.5,1,1,1,nav==i?.16:.05);
-    label(TXT_ILHA_SEG,i18n(names[i]),x+18,46,w-30,nav!=i);
-    ponteiro_alvo(x,28,w,58,point_focus,point_activate,1000+i,0);x+=w+8;
+  const char *icons[]={"aj_tv-minimal-play","aj_layout-dashboard","aj_film","aj_tv-minimal-play","aj_settings-2","aj_shield-check","aj_layout-dashboard"};
+  const float xs[]={263,411,564,746,1100,1305,1582},ws[]={140,145,174,190,197,269,210};
+  for(int i=0;i<7;i++){
+    int active=i==2&&!strncmp(screen,"vod-",4);GfxRect r={xs[i],29,ws[i],54};
+    if(i>=4||nav==i||active)gfx_cor(r,.5,1,1,1,nav==i||active?.12:.07);
+    gfx_icone((GfxRect){xs[i]+14,43,26,26},icons[i],.68,.69,.71,1);
+    label(TXT_ILHA_CORPO,i18n(names[i]),xs[i]+50,42,ws[i]-62,nav!=i&&!active);
+    ponteiro_alvo(xs[i],29,ws[i],54,point_focus,point_activate,1000+i,0);
   }
-  time_t now=time(NULL);struct tm tm;localtime_r(&now,&tm);char clock[16];strftime(clock,sizeof clock,"%H:%M",&tm);label(TXT_ILHA_NOME,clock,1790,42,100,0);
-  label(TXT_ILHA_SUB,i18n("OK seleciona  ·  Voltar fecha"),48,1020,1000,1);
-  if(message[0])label(TXT_ILHA_SUB,message,500,974,1300,0);
+  time_t now=time(NULL);struct tm tm;localtime_r(&now,&tm);char clock[16];strftime(clock,sizeof clock,"%H:%M",&tm);label(TXT_ILHA_NOME,clock,1814,43,90,0);
+  gfx_cor((GfxRect){48,1018,56,38},.28,.14,.15,.17,1);label(TXT_W20_24B,"OK",60,1023,44,0);label(TXT_ILHA_CORPO,i18n("Selecionar"),112,1022,200,1);
+  label(TXT_ILHA_CORPO,i18n("Voltar ao guia"),330,1022,440,1);
+  const ContaPerfil *p=perfis_item_ativo();if(p){gfx_icone((GfxRect){1634,1026,26,26},"aj_shield-check",.65,.66,.68,1);label(TXT_ILHA_CORPO,p->nome,1675,1022,200,1);}
+  if(message[0])label(TXT_ILHA_SUB,message,500,982,1300,0);
 }
 static int setup_index(void){for(int i=0;i<7;i++){const char *keys[]={"setup-tipo","setup-credenciais","setup-teste","setup-importar","setup-categorias","setup-epg","setup-pronto"};if(!strcmp(screen,keys[i]))return i;}return 1;}
 static void wizard(void){
@@ -313,7 +322,10 @@ static void wizard(void){
   label(TXT_ILHA_NOME,i18n("Adicionar fonte IPTV"),84,166,290,0);
   for(int i=0;i<7;i++){
     float y=222+i*76;if(step==i)gfx_cor((GfxRect){70,y,306,72},.28,1,1,1,.09);
-    char n[8];snprintf(n,sizeof n,"%d",i+1);gfx_cor((GfxRect){84,y+18,36,36},.5,1,1,1,step==i?.9:.08);label(TXT_ILHA_NOME,n,94,y+23,32,step!=i);label(TXT_ILHA_CORPO,i18n(steps[i]),136,y+23,228,step!=i);
+    char n[8];snprintf(n,sizeof n,"%d",i+1);gfx_cor((GfxRect){84,y+18,36,36},.5,1,1,1,step==i?.9:.08);
+    if(i<step)gfx_icone((GfxRect){91,y+25,22,22},"aj_check",.72,.79,.76,1);
+    else{TxtLinha number=txt_linha(TXT_ILHA_CORPO,n,step==i?18:170,step==i?19:173,step==i?22:181,255);txt_desenhar(number,94,y+21);}
+    label(TXT_ILHA_CORPO,i18n(steps[i]),136,y+21,228,step!=i);
   }
   label(TXT_ILHA_SUB,i18n("Sua fonte. Suas escolhas."),84,888,270,1);
   label(TXT_ILHA_SUB,i18n("Uma etapa de cada vez."),84,920,270,1);
@@ -327,8 +339,9 @@ static void wizard(void){
     const char *icons[]={"aj_tv-minimal-play","aj_link","aj_file-text","aj_smartphone"};
     for(int i=0;i<4;i++){float x=474+(i%2)*687,y=340+(i/2)*265;GfxRect r={x,y,667,i<2?245:195};
       gfx_cor(r,.1,focus==i&&nav<0?.17:.135,focus==i&&nav<0?.18:.145,focus==i&&nav<0?.20:.165,1);gfx_icone((GfxRect){x+28,y+30,38,38},icons[i],.95,.95,.95,1);
-      label(TXT_HEADLINE,i18n(names[i]),x+28,y+86,610,0);label(TXT_ILHA_CORPO,i18n(subs[i]),x+28,y+140,610,1);
-      ponteiro_alvo(x,y,667,245,point_focus,point_activate,i,0);control_count=4;if(num_focus<1024)next_focus[num_focus++]=i;
+      label(TXT_HEADLINE,i18n(names[i]),x+28,y+80,610,0);label(TXT_ILHA_CORPO,i18n(subs[i]),x+28,y+132,610,1);
+      if(i<2){gfx_cor((GfxRect){x+28,y+177,440,40},.25,1,1,1,.035);label(TXT_ILHA_CORPO,i18n(i==0?"Canais ao vivo":"Seu provedor define o conteúdo disponível."),x+40,y+184,418,0);}
+      ponteiro_alvo(x,y,667,r.h,point_focus,point_activate,i,0);control_count=4;if(num_focus<1024)next_focus[num_focus++]=i;
     }
     button(4,i18n("Voltar ao guia"),"pl_chevron-left",474,880,280,60,0);
   }else if(!strcmp(screen,"setup-arquivo")){
@@ -336,11 +349,23 @@ static void wizard(void){
     label(TXT_ILHA_CORPO,i18n("Arquivo muito grande. Use uma URL."),474,500,1240,1);
     button(1,i18n("M3U por URL"),"aj_link",474,590,900,80,1);
   }else if(step==1){
-    const char *fields[]={"Servidor","Usuário","Senha"};
-    if(draft.type==0){for(int i=0;i<3;i++){float y=350+i*104;label(TXT_ILHA_SUB,i18n(fields[i]),480,y,1200,1);
-      button(i,i==0?(draft.server[0]?draft.server:i18n("Não configurado")):i==1?(draft.user[0]?draft.user:i18n("Não configurado")):(draft.password[0]?"••••••••":xtream_senha_mascarada()),NULL,474,y+30,1280,62,1);}}
-    else{label(TXT_ILHA_SUB,i18n("URL da lista M3U"),480,350,1200,1);button(0,draft.playlist[0]?i18n("Lista configurada"):i18n("Não configurado"),"aj_link",474,390,1280,80,1);}
-    button(3,i18n("Testar conexão"),"aj_check",474,880,310,60,0);button(4,i18n("Configurar pelo celular"),"aj_smartphone",810,880,420,60,0);
+    label(TXT_ILHA_CORPO,draft.type==0?"Xtream Codes":"M3U",486,348,680,0);
+    const char *fields[]={"Nome","Servidor","Usuário","Senha"};
+    for(int i=0;i<(draft.type==0?4:2);i++){
+      float y=394+i*108;int id=i==0?6:i-1;
+      const char *value=i==0?draft.name:i==1?draft.server:i==2?draft.user:draft.password;
+      if(draft.type!=0&&i==1)value=draft.playlist;
+      label(TXT_ILHA_CORPO,i18n(draft.type!=0&&i==1?"URL da lista M3U":fields[i]),474,y,700,1);
+      gfx_cor((GfxRect){474,y+26,702,60},.25,.135,.145,.165,1);
+      button(id,i==3?(draft.password[0]?"••••••••":i18n("Senha")):value[0]?value:i18n(i==0?"Sua fonte":i==1?"Endereço do servidor":"Usuário"),NULL,474,y+26,702,60,1);
+    }
+    panel(1218,340,610,112);gfx_icone((GfxRect){1246,365,28,28},"aj_smartphone",.9,.9,.9,1);
+    txt_bloco(TXT_ILHA_CORPO,i18n("Leia o QR e continue no celular."),180,182,190,1288,362,510,32,1,2);
+    button(4,i18n("Configurar pelo celular"),"aj_smartphone",1218,471,610,60,0);
+    const char *keys="ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890.:/-@";
+    for(int i=0;i<42;i++){char key[2]={i<41?keys[i]:'<',0};button(100+i,key,NULL,1218+(i%7)*88,549+(i/7)*56,80,48,0);}
+    button(5,i18n("Voltar"),"pl_chevron-left",474,880,150,60,0);
+    button(3,i18n("Testar conexão"),"aj_chevron-right",646,880,330,60,0);
   }else if(step==2){
     label(TXT_HEADLINE,i18n(atomic_load(&busy)?"Testando conexão…":test_ok?"Conexão estabelecida":"Falha na conexão"),474,360,1200,0);
     if(test_ok&&draft.type==0){char v[160];
@@ -384,17 +409,35 @@ static void phone_screen(void){
 static void sources_screen(void){
   label(TXT_ILHA_SUB,i18n("GUIA TV / FONTES"),48,150,1600,1);label(TXT_TITULO2,i18n("Seus provedores, num só lugar."),48,194,1450,0);
   button(0,i18n("Adicionar fonte"),"aj_plus",1450,176,420,64,0);
-  panel(48,320,1824,180);label(TXT_HEADLINE,xtream_configurado()?"Xtream Codes":draft.playlist[0]?"M3U":i18n("Nenhuma fonte"),140,350,1100,0);
+  panel(48,320,1824,180);label(TXT_HEADLINE,draft.name[0]?draft.name:xtream_configurado()?"Xtream Codes":draft.playlist[0]?"M3U":i18n("Nenhuma fonte"),140,350,900,0);
   label(TXT_ILHA_CORPO,i18n(atomic_load(&busy)?"Atualizando…":source_loaded?"Configurado":"Não configurado"),140,410,1000,1);
   button(1,i18n("Atualizar"),"aj_rotate-cw",1090,375,240,64,0);button(2,i18n("Editar"),"aj_settings-2",1344,375,225,64,0);button(3,i18n(remove_confirm?"Confirmar remoção":"Remover"),"aj_trash-2",1580,375,250,64,0);
   button(4,i18n("Controle parental"),"aj_shield-check",48,650,450,64,0);button(5,i18n("Guia de programação"),"aj_clock",530,650,450,64,0);
 }
 static void catalog(void){
   int series=!strcmp(screen,"vod-series"), search=!strcmp(screen,"vod-busca");filter(episodes_mode?G5_EPISODE:search?-1:series?G5_SERIES:G5_MOVIE);
-  panel(48,128,350,848);label(TXT_ILHA_NOME,i18n("Do seu IPTV"),84,170,280,0);
-  button(800,i18n("Filmes"),"aj_film",70,240,306,64,1);button(801,i18n("Séries"),"aj_tv-minimal-play",70,320,306,64,1);button(802,i18n("Buscar"),"aj_search",70,400,306,64,1);button(803,i18n("Gerenciar fontes"),"aj_settings-2",70,860,306,64,1);
-  label(TXT_TITULO2,i18n(search?"Buscar":series?"Séries do seu provedor":"Filmes do seu provedor"),442,160,1380,0);
-  if(search)button(804,query[0]?query:i18n("Buscar canais, filmes e séries"),"aj_search",442,240,1370,64,1);
+  button(803,draft.name[0]?draft.name:i18n("Do seu IPTV"),"aj_tv-minimal-play",48,112,310,52,0);
+  char numbers[120];snprintf(numbers,sizeof numbers,i18n("Mostrando %d de %d itens"),count,total?total:count);label(TXT_ILHA_CORPO,numbers,390,125,690,1);
+  panel(48,190,320,800);label(TXT_ILHA_NOME,i18n("Catálogo"),80,217,270,0);
+  button(800,i18n("Filmes"),"aj_film",68,258,280,54,1);button(801,i18n("Séries"),"aj_tv-minimal-play",68,312,280,54,1);button(802,i18n("Buscar"),"aj_search",68,366,280,54,1);
+  gfx_cor((GfxRect){68,439,280,1},0,1,1,1,.10);label(TXT_ILHA_NOME,i18n("Categorias"),80,462,270,0);
+  button(805,i18n("Todas"),"aj_folder",68,502,280,54,1);
+  for(int g=0;g<group_count&&g<4;g++)button(820+g,groups[g],"aj_folder",68,563+g*62,280,54,1);
+  label(TXT_ILHA_SUB,i18n("Conteúdo adulto oculto por padrão."),80,884,270,1);
+  button(806,i18n("Adicionar fonte"),"aj_plus",68,915,280,54,1);
+  if(search)button(804,query[0]?query:i18n("Buscar canais, filmes e séries"),"aj_search",400,204,1472,64,1);
+  else if(nindices&&!atomic_load(&busy)){
+    G5Item *hero=&inventory[indices[focus>=0&&focus<nindices?focus:0]];
+    GfxRect r={400,190,1472,330};panel(r.x,r.y,r.w,r.h);
+    GLuint art=!restricted(hero)&&hero->backdrop[0]?tex_obter_larg(hero->backdrop,1472):0;
+    if(art)gfx_rect(r,art,GFX_CARD,0,0,0,.08,1,1,1,1);
+    gfx_rect(r,0,GFX_VEU,0,0,0,.08,0,0,0,.75);
+    label(TXT_ILHA_CORPO,i18n("Do seu IPTV"),432,224,1200,1);
+    label(TXT_V2_TIT,restricted(hero)?i18n("Conteúdo bloqueado"):hero->name,432,266,1350,0);
+    label(TXT_ILHA_CORPO,i18n("Seu provedor define o conteúdo disponível."),432,394,1350,0);
+    button(807,i18n("Detalhes"),"aj_play",432,446,260,60,0);button(series?800:801,i18n(series?"Filmes":"Séries"),"aj_chevron-right",710,446,260,60,0);
+    label(TXT_HEADLINE,i18n(series?"Séries do seu provedor":"Filmes do seu provedor"),400,548,1300,0);
+  }
   if(total>count){char limit[120];snprintf(limit,sizeof limit,i18n("Mostrando %d de %d itens"),count,total);label(TXT_ILHA_SUB,limit,442,936,1300,1);}
   int loading=atomic_load(&busy), empty=!nindices;
   if(loading||empty||!strcmp(screen,"vod-sem-catalogo")||!strcmp(screen,"vod-vazio")||!strcmp(screen,"vod-carregando")){
@@ -402,15 +445,16 @@ static void catalog(void){
     label(TXT_HEADLINE,i18n(s),650,420,1100,0);label(TXT_ILHA_CORPO,i18n("Seu provedor define o conteúdo disponível."),650,490,1100,1);
     button(0,i18n(query[0]?"Limpar busca":"Adicionar fonte"),"aj_plus",650,620,500,64,0);return;
   }
-  int start=focus>=0&&focus<768?(focus/12)*12:0;
-  for(int n=start;n<nindices&&n<start+12;n++){
-    G5Item *it=&inventory[indices[n]];float x=442+((n-start)%6)*235,y=(search?342:300)+((n-start)/6)*324;
-    GfxRect r={x,y,210,280};int locked=restricted(it);GLuint tex=!locked&&it->poster[0]?tex_obter_larg(it->poster,210):0;
+  int page_size=search?12:6;int start=focus>=0&&focus<768?(focus/page_size)*page_size:0;
+  for(int n=start;n<nindices&&n<start+page_size;n++){
+    G5Item *it=&inventory[indices[n]];float x=400+((n-start)%6)*249,y=(search?304:596)+((n-start)/6)*324;
+    GfxRect r={x,y,230,270};int locked=restricted(it);GLuint tex=!locked&&it->poster[0]?tex_obter_larg(it->poster,230):0;
     if(tex)gfx_rect(r,tex,GFX_CARD,0,0,0,.07,1,1,1,1);else gfx_cor(r,.07,.12,.13,.15,1);
-    if(locked)gfx_icone((GfxRect){x+80,y+108,48,48},"aj_lock",.8,.8,.8,1);
-    if(focus==n&&nav<0)plrui_linha_foco((GfxRect){x-6,y+280,222,44},18,1);
-    label(TXT_ILHA_SUB,locked?i18n("Conteúdo bloqueado"):it->name,x,y+286,210,0);
-    ponteiro_alvo(x,y,210,324,point_focus,point_activate,n,0);
+    if(locked)gfx_icone((GfxRect){x+90,y+108,48,48},"aj_lock",.8,.8,.8,1);
+    if(focus==n&&nav<0)plrui_linha_foco((GfxRect){x-4,y+274,238,76},18,1);
+    label(TXT_W20_24B,locked?i18n("Conteúdo bloqueado"):it->name,x,y+282,230,0);
+    label(TXT_ILHA_CORPO,it->group,x,y+318,230,1);
+    ponteiro_alvo(x,y,230,350,point_focus,point_activate,n,0);
     if(num_focus<1024)next_focus[num_focus++]=n;
   }
   control_count=nindices;
@@ -431,13 +475,18 @@ static void title_screen(void){
 }
 static void parental_screen(void){
   if(!strcmp(screen,"parental-pin")){
-    panel(490,160,940,790);label(TXT_ILHA_SUB,i18n("PIN do perfil"),546,210,820,1);
-    label(TXT_V2_A3TIT,i18n("Digitar PIN do perfil"),546,274,820,0);
-    label(TXT_ILHA_CORPO,i18n("Use o mesmo PIN do perfil."),546,350,820,1);
-    for(int i=0;i<4;i++){gfx_cor((GfxRect){720+i*120,435,90,90},.2,1,1,1,.07);label(TXT_HEADLINE,"•",754+i*120,465,60,0);}
-    button(0,i18n("Digitar PIN do perfil"),"aj_lock",546,600,820,72,0);
-    char duration[80];snprintf(duration,sizeof duration,i18n("%d horas"),lease_seconds/3600);button(3,duration,"aj_clock",546,704,820,64,0);
-    button(1,i18n("Cancelar"),"pl_chevron-left",546,820,820,64,0);return;
+    gfx_cor((GfxRect){0,0,1920,1080},0,0,0,0,.35);
+    panel(545,119,830,842);label(TXT_ILHA_CORPO,i18n("PIN do perfil"),586,164,740,1);
+    gfx_icone((GfxRect){1306,171,26,26},"aj_lock",.94,.94,.94,1);
+    label(TXT_V2_A3TIT,i18n("Digitar PIN do perfil"),586,218,740,0);
+    label(TXT_ILHA_CORPO,i18n("Use o mesmo PIN do perfil."),586,290,740,1);
+    for(int i=0;i<4;i++){gfx_cor((GfxRect){586+i*92,349,76,76},.2,.19,.20,.23,1);label(TXT_HEADLINE,i<(int)strlen(pin_value)?"•":"_",615+i*92,372,50,0);}
+    label(TXT_ILHA_NOME,i18n("Desbloqueio temporário"),586,473,580,0);
+    char duration[80];snprintf(duration,sizeof duration,i18n("%d horas"),lease_seconds/3600);button(3,duration,NULL,1170,453,163,60,0);
+    const char *keys[]={"1","2","3","4","5","6","7","8","9","Limpar","0","Excluir"};
+    for(int i=0;i<12;i++)button(20+i,i18n(keys[i]),NULL,586+(i%3)*253,537+(i/3)*64,243,54,0);
+    button(0,i18n("Confirmar"),"aj_shield-check",586,807,230,60,0);
+    button(1,i18n("Cancelar"),"pl_chevron-left",832,807,230,60,0);return;
   }
   if(!strcmp(screen,"parental-canal-bloqueado")){
     panel(48,128,1824,848);panel(100,270,720,440);gfx_icone((GfxRect){410,390,90,90},"aj_lock",.7,.7,.7,1);
@@ -526,10 +575,19 @@ static void activate(int id){
   if(!strcmp(screen,"setup-arquivo")){if(id==0)phone();else{draft.type=1;go("setup-credenciais");}return;}
   if(!strcmp(screen,"setup-celular-tv")){if(id==4){celular_fechar();go("setup-credenciais");}else if(id==5)phone();return;}
   if(!strcmp(screen,"setup-credenciais")){
+    if(id>=100&&id<142){
+      char *value=credential_field==6?draft.name:credential_field==1?draft.user:credential_field==2?draft.password:draft.type?draft.playlist:draft.server;
+      size_t cap=credential_field==6?sizeof draft.name:credential_field==1?sizeof draft.user:credential_field==2?sizeof draft.password:draft.type?sizeof draft.playlist:sizeof draft.server;
+      size_t n=strlen(value);const char *keys="ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890.:/-@";
+      if(id==141){if(n)value[n-1]=0;}else if(n+1<cap){value[n]=keys[id-100];value[n+1]=0;}use_saved=0;return;
+    }
+    if(id==5){go("setup-tipo");return;}
+    if(id==6){credential_field=6;input(6,"Nome",draft.name,0);return;}
     if(id==4){phone();return;}if(id==3){
       if(draft.type==0&&!g5_http_url(draft.server)){snprintf(message,sizeof message,"%s",i18n("Endereço inválido"));return;}
       if(draft.type==0&&(!draft.user[0]||!draft.password[0])){snprintf(message,sizeof message,"%s",i18n("Preencha usuário e senha"));return;}
       go("setup-teste");test_ok=0;start(1);return;}
+    credential_field=id;
     if(draft.type==0)input(id,id==0?"Servidor":id==1?"Usuário":"Senha",id==0?draft.server:id==1?draft.user:draft.password,id==2);
     else input(3,"URL da lista M3U",draft.playlist,1);return;
   }
@@ -554,7 +612,14 @@ static void activate(int id){
     else if(id==3){if(!remove_confirm){remove_confirm=1;return;}xtream_esquecer();draft.playlist[0]=draft.xmltv[0]=0;char file[64];filename(file,sizeof file,"source");dados_apagar(file);clear_catalog();dirty=1;committed=0;remove_confirm=0;}
     else if(id==4)want_pin(1);else if(id==5)go("setup-epg");return;
   }
-  if(!strcmp(screen,"parental-canal-bloqueado")||!strcmp(screen,"parental-pin")){
+  if(!strcmp(screen,"parental-pin")){
+    size_t n=strlen(pin_value);
+    if(id>=20&&id<=31){if(id==29)erase(pin_value,sizeof pin_value);else if(id==31){if(n)pin_value[n-1]=0;}else if(n<4){pin_value[n]=(char)('0'+(id==30?0:id-19));pin_value[n+1]=0;}return;}
+    if(id==0){if(n==4)start(3);return;}
+    if(id==1){erase(pin_value,sizeof pin_value);g5ui_close();return;}
+    if(id==3)lease_seconds=lease_seconds==3600?7200:lease_seconds==7200?14400:3600;return;
+  }
+  if(!strcmp(screen,"parental-canal-bloqueado")){
     if(id==0)want_pin(0);else if(id==1)g5ui_close();else if(id==3)lease_seconds=lease_seconds==3600?7200:lease_seconds==7200?14400:3600;else want_pin(1);return;
   }
   if(!strcmp(screen,"parental-desbloqueio")){
@@ -579,8 +644,8 @@ static void activate(int id){
     snprintf(action,sizeof action,"get_series_info&series_id=%s",inventory[selected].id);start(4);return;
   }
   if(!strncmp(screen,"vod-",4)){
-    if(id==800){episodes_mode=0;go("vod-filmes");}else if(id==801){episodes_mode=0;go("vod-series");}else if(id==802||id==804){go("vod-busca");input(5,"Buscar",query,0);}
-    else if(id==803)go("fontes-gerenciar");else if(nindices&&id<nindices)select_item(indices[id]);else if(query[0])query[0]=0;else go("setup-tipo");return;
+    if(id==800){episodes_mode=0;catalog_group[0]=0;go("vod-filmes");}else if(id==801){episodes_mode=0;catalog_group[0]=0;go("vod-series");}else if(id==802||id==804){go("vod-busca");input(5,"Buscar",query,0);}
+    else if(id==803)go("fontes-gerenciar");else if(id==805){catalog_group[0]=0;focus=0;}else if(id==806)go("setup-tipo");else if(id==807&&nindices)select_item(indices[0]);else if(id>=820&&id<820+group_count){snprintf(catalog_group,sizeof catalog_group,"%s",groups[id-820]);focus=0;}else if(nindices&&id<nindices)select_item(indices[id]);else if(query[0])query[0]=0;else go("setup-tipo");return;
   }
   if(!strncmp(screen,"multiview-",10)){
     if(id>=900&&id<900+picker_count){
@@ -607,10 +672,15 @@ int g5ui_event(const SDL_Event *e){
     else if(episodes_mode&&series_catalog){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;selected=parent_series;episodes_mode=0;go("vod-serie-temporadas");}
     else g5ui_close();return 1;
   }
+  if(!strcmp(screen,"parental-pin")&&k>=SDLK_0&&k<=SDLK_9){activate(k==SDLK_0?30:19+(int)(k-SDLK_0));return 1;}
   if(k==SDLK_TAB){nav=nav<0?0:-1;return 1;}
   if(nav>=0){if(k==SDLK_LEFT&&nav>0)nav--;if(k==SDLK_RIGHT&&nav<6)nav++;
     if(k==SDLK_DOWN)nav=-1;if((k==SDLK_RETURN||k==SDLK_KP_ENTER)&&!e->key.repeat)activate(1000+nav);return 1;}
   if(k==SDLK_UP||k==SDLK_DOWN||k==SDLK_LEFT||k==SDLK_RIGHT){
+    if(!strcmp(screen,"parental-pin")&&focus>=20&&focus<=31){
+      int next=focus+(k==SDLK_UP?-3:k==SDLK_DOWN?3:k==SDLK_LEFT?-1:1);
+      if(next>=20&&next<=31)focus=next;else focus=k==SDLK_DOWN?0:3;return 1;
+    }
     if(!strncmp(screen,"vod-",4)&&strcmp(screen,"vod-titulo")&&strcmp(screen,"vod-serie-temporadas")&&focus>=0&&focus<768&&nindices){
       int step=k==SDLK_UP?-6:k==SDLK_DOWN?6:k==SDLK_LEFT?-1:1;
       if(focus+step<0)nav=0;else if(focus+step<nindices)focus+=step;else if(k==SDLK_RIGHT)focus=800;
@@ -651,13 +721,14 @@ void g5ui_update(void){
       else if(field==2){use_saved=0;snprintf(draft.password,sizeof draft.password,"%s",t);}else if(field==3)snprintf(draft.playlist,sizeof draft.playlist,"%s",t);
       else if(field==4){if(!*t||g5_http_url(t))snprintf(draft.xmltv,sizeof draft.xmltv,"%s",t);}
       else if(field==5)snprintf(query,sizeof query,"%s",t);
+      else if(field==6)snprintf(draft.name,sizeof draft.name,"%s",t);
       else if(field==7){snprintf(pin_value,sizeof pin_value,"%s",t);start(3);}
     }teclado_esquecer();
   }
   if(!strcmp(screen,"setup-celular-tv")){
     char data[CEL_CORPO_MAX+1];
     if(celular_pegar(data,sizeof data)){
-      draft.type=(int)js_num(data,NULL,"type",0);js_texto(data,NULL,"server",draft.server,sizeof draft.server);js_texto(data,NULL,"user",draft.user,sizeof draft.user);js_texto(data,NULL,"password",draft.password,sizeof draft.password);
+      draft.type=(int)js_num(data,NULL,"type",0);js_texto(data,NULL,"name",draft.name,sizeof draft.name);js_texto(data,NULL,"server",draft.server,sizeof draft.server);js_texto(data,NULL,"user",draft.user,sizeof draft.user);js_texto(data,NULL,"password",draft.password,sizeof draft.password);
       js_texto(data,NULL,"playlist",draft.playlist,sizeof draft.playlist);js_texto(data,NULL,"xmltv",draft.xmltv,sizeof draft.xmltv);
       draft.live=js_num(data,NULL,"live",1)!=0;draft.movies=js_num(data,NULL,"movies",1)!=0;draft.series=js_num(data,NULL,"series",1)!=0;draft.epg=js_num(data,NULL,"epg",1)!=0;
       char file[3100]="";js_texto_linhas(data,NULL,"file",file,sizeof file);

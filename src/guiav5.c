@@ -9,7 +9,6 @@
 const char *g5_item_category(const G5Item *item,int kind){
   (void)kind;
   if(!item)return "";
-  if(item->category[0])return item->category;
   if(item->group[0] && item->group[strspn(item->group,"0123456789")])return item->group;
   return item->name;
 }
@@ -46,6 +45,10 @@ int g5_parse_xtream(const char *json,int kind,G5Item *out,int cap,int *total) {
     js_texto(p,end,"container_extension",it.ext,sizeof it.ext);
     for(const char *s=it.ext;*s;s++)if(!isalnum((unsigned char)*s)){it.ext[0]=0;break;}
     js_texto(p,end,"plot",it.plot,sizeof it.plot);
+    const char *background=js_array(p,end,"backdrop_path");
+    if(background)js_cadeia(background,it.backdrop,sizeof it.backdrop);
+    else js_texto(p,end,"backdrop_path",it.backdrop,sizeof it.backdrop);
+    if(!g5_http_url(it.backdrop))it.backdrop[0]=0;
     it.adult=js_num(p,end,"is_adult",0)>0;
     char adult[8]="";js_texto(p,end,"is_adult",adult,sizeof adult);it.adult|=!strcmp(adult,"1");
     if(it.id[0] && it.name[0]){t++;if(n<cap)out[n++]=it;}
