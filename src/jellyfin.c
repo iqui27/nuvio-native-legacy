@@ -750,6 +750,13 @@ int jf_indice(const JfConta *c, RedeJob *job, int inicio, int limite, long long 
            "%sRecursive=true&IncludeItemTypes=Movie,Series&Fields=ProviderIds,DateLastSaved"
            "&EnableImages=false&EnableUserData=true&SortBy=DateCreated,SortName&SortOrder=Ascending"
            "&StartIndex=%d&Limit=%d%s%s", raiz, inicio, limite, iso[0] ? "&MinDateLastSaved=" : "", iso);
+  if (c->bibliotecas[0]) {
+    char ids[256]; copiar(ids, sizeof ids, c->bibliotecas);
+    for (char *p = ids; *p; p++) if (*p == '\n') *p = ',';
+    if (strspn(ids, "0123456789abcdefABCDEF-,") != strlen(ids)) return JF_ERR_ENTRADA;
+    size_t used = strlen(caminho);
+    if (snprintf(caminho + used, sizeof caminho - used, "&ParentIds=%s", ids) >= (int)(sizeof caminho - used)) return JF_ERR_ENTRADA;
+  }
   e = pedir(c, c->base, job, "GET", caminho, NULL, "library index", JF_PRAZO_LISTA_MS, &r);
   if (e) return e;
   n = jf_ler_indice(r.corpo, r.n_corpo, NULL, x, total);
@@ -2543,7 +2550,10 @@ int jf_setup_aceitar(int emby, const JfConta *c, int perfil, unsigned generation
   pthread_mutex_lock(&I->trava);
   if (perfil == perfis_ativo() && perfil == I->perfilLido && generation == I->geracao &&
       c->tipo == I->tipo && c->token[0] && c->usuarioId[0] && c->servidorId[0]) {
-    avancarLocked(I); I->conta = *c; gravarConta(I, c, perfil); idxConferirLocked(I);
+    int selectionChanged = strcmp(I->conta.bibliotecas, c->bibliotecas) != 0;
+    avancarLocked(I); I->conta = *c; gravarConta(I, c, perfil);
+    if (selectionChanged) { srvidx_limpar(&I->idx); I->idxTag[0] = 0; srvidx_apagar(perfil, I->idxTipo); }
+    idxConferirLocked(I);
     definirEstadoLocked(I, JF_EST_CONECTADO, c->servidorNome);
     enfileirarLocked(I, T_BIBLIOTECAS, "", ""); ok = 1;
   }

@@ -1655,7 +1655,10 @@ unsigned px_setup_conta(PxConta *out, int *perfil) {
 int px_setup_aceitar(const PxConta *c, int perfil, unsigned generation) {
   int ok = 0; pthread_mutex_lock(&trava);
   if (perfil == perfis_ativo() && perfil == perfilLido && generation == geracao && c->token[0] && c->servidorId[0]) {
-    avancarLocked(); conta = *c; gravarConta(c, perfil); idxConferirLocked();
+    int selectionChanged = strcmp(conta.bibliotecas, c->bibliotecas) != 0;
+    avancarLocked(); conta = *c; gravarConta(c, perfil);
+    if (selectionChanged) { srvidx_limpar(&idx); idxTag[0] = 0; srvidx_apagar(perfil, "px"); }
+    idxConferirLocked();
     definirEstadoLocked(PX_EST_CONECTADO, c->servidorNome); enfileirarLocked(T_BIBLIOTECAS, ""); ok = 1;
   }
   pthread_mutex_unlock(&trava); return ok;
@@ -2031,6 +2034,7 @@ static void indexar(const Tarefa *t, RedeJob *j, const PxConta *c, const PxBibli
     srvidx_iniciar(&novo);
     totalTodos = 0;
     for (i = 0; i < nl && e == PX_OK; i++) {
+      if (!srv_biblioteca_selecionada(c->bibliotecas, libs[i].id)) continue;
       int inicio = 0, total = 0, vistos;
       if (incremental) {
         e = px_indice(c, j, libs[i].id, 0, 0, 0, &novo, &total);   // the count, nothing else
