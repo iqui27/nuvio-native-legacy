@@ -307,6 +307,7 @@ static void uxCategoriaAlternar(int i) {
   if(i>=0 && i<uxNCategorias)uxCategorias[i].oculta=!uxCategorias[i].oculta;
 }
 static int uxEvento(SDL_Keycode k) {
+  if (!uxEditor) return aj4Evento(k);
   int layoutOculto = !ajLayoutSelecionavel() && (uxCabLayout || uxTopo == AJ2_T_LAYOUT ||
                        (uxEditor && uxOp == AJ_LAYOUT_AJUSTES));
   uxLayoutDisponibilidade();
