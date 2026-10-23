@@ -14,11 +14,14 @@ typedef struct { char nome[96]; int ativo, legenda; } AioItem;
 typedef struct { char nome[192], tipo[24], destino[2048], provedor[96]; int cache, altura, mp4, rank, decisao; unsigned long long identidade; } AioResultado;
 typedef struct { char idioma[48], nome[128]; int forcada, sdh; } AioLegenda;
 typedef struct { int grupo; char nome[96], valor[256]; } AioRegra;
+typedef struct { char titulo[128], descricao[384]; int erro; } AioEvidencia;
 typedef struct {
   int valida, requerida, configurada, recursos, catalogos, servicos, addons;
   int resultados, links, p2p, regras[8], http[6], ms[6], retry[6];
   int legendas, detalhes, search, estatisticas, erros, filtrados, searchAtiva, p2pInstancia;
   char versaoInstancia[40], canal[24];
+  int evidencias;
+  AioEvidencia evidencia[32];
   AioLegenda legenda[AIO_MAX];
   AioRegra detalhe[AIO_MAX];
   char nome[96], versao[40], host[256], resumo[8][256];

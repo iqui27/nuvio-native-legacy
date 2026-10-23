@@ -287,7 +287,20 @@ static int count_array(const char *a) {
 void aio_search(AioSnapshot *s,const char *json) {
   const char *u=member(json,"data");
   s->search=boolean(json,"success",0) && u;
+  s->evidencias=0;
   if(!s->search) return;
+  for(int kind=0;kind<2;kind++) {
+    const char *list=member(u,kind?"errors":"statistics"), *p=list&&*list=='['?list+1:NULL;
+    while(p && s->evidencias<32) {
+      while(isspace((unsigned char)*p)||*p==',') p++;
+      if(*p!='{') break;
+      const char *end=value_end(p); if(!end||end<=p) break;
+      AioEvidencia *e=&s->evidencia[s->evidencias++]; memset(e,0,sizeof *e); e->erro=kind;
+      js_texto_raiz_em(p,end,"title",e->titulo,sizeof e->titulo); safe(e->titulo);
+      js_texto_raiz_em(p,end,"description",e->descricao,sizeof e->descricao); safe(e->descricao);
+      p=end;
+    }
+  }
   s->estatisticas=count_array(member(u,"statistics")); s->erros=count_array(member(u,"errors"));
   const char *f=member(u,"filtered"); s->filtrados=f&&isdigit((unsigned char)*f)?atoi(f):0;
 }

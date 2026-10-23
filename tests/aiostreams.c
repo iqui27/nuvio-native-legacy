@@ -48,6 +48,8 @@ int main(void) {
   assert(s.searchAtiva && !strcmp(s.versaoInstancia,"2.36.0"));
   aio_search(&s,"{\"success\":true,\"data\":{\"statistics\":[{},{}],\"errors\":[{}],\"filtered\":3}}");
   assert(s.search && s.estatisticas==2 && s.erros==1 && s.filtrados==3);
+  aio_search(&s,"{\"success\":true,\"data\":{\"statistics\":[{\"title\":\"Addon timing\",\"description\":\"https://private.test/token\"}],\"errors\":[{\"title\":\"Timeout\",\"description\":\"12 s\"}]}}");
+  assert(s.evidencias==2 && !strcmp(s.evidencia[0].titulo,"Addon timing") && !s.evidencia[0].descricao[0] && s.evidencia[1].erro);
   aio_legendas(&s,"{\"subtitles\":[{\"lang\":\"por\",\"forced\":true,\"sdh\":false},{\"lang\":\"eng\"}]}");
   assert(s.legendas==2 && s.legenda[0].forcada==1 && s.legenda[0].sdh==0 && s.legenda[1].forcada==-1);
   aio_configuracao(&s,"{\"data\":{\"userData\":{\"requiredResolutions\":[\"1080p\"],\"includedResolutions\":[\"2160p\"],\"excludedResolutions\":[\"720p\"],\"bitrate\":{\"global\":{\"series\":[0,20]}},\"proxy\":{\"enabled\":true,\"credentials\":\"SECRET\",\"url\":\"https://private.test/SECRET\"},\"appliedTemplates\":[{\"id\":\"cinema\",\"version\":\"1\"}]}}}");
