@@ -2636,6 +2636,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Pozadí obrazovky výběru profilu: mozaika obálek z katalogu, rozostřený obrázek vybraného profilu (bez obrázku mozaika) nebo pruhy z přihlášení."),
   T("Fundo de perfil", "Pozadí profilu"),
   T("Fundo do Palco", "Pozadí Pódia"),
+  T("Fundo do Palco: %s", "Pozadí Pódia: %s"),
   T("Fundo do destaque do addon", "Pozadí hlavního banera z doplňku"),
   T("Fundo em tela cheia", "Pozadí na celou obrazovku"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Nové pozadí: <b>Filmy</b>, stěna s plakáty toho, co každý profil sledoval."),

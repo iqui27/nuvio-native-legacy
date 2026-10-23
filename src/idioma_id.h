@@ -2636,6 +2636,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Latar layar pemilihan profil: mozaik sampul katalog, gambar profil yang difokuskan dalam keadaan buram (tanpa gambar, mozaik) atau garis-garis layar masuk."),
   T("Fundo de perfil", "Backdrop profil"),
   T("Fundo do Palco", "Latar Panggung"),
+  T("Fundo do Palco: %s", "Latar Panggung: %s"),
   T("Fundo do destaque do addon", "Latar belakang hero dari addon"),
   T("Fundo em tela cheia", "Backdrop layar penuh"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Latar baru: <b>Film</b>, dinding berisi poster yang ditonton setiap profil."),

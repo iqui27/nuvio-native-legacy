@@ -2636,6 +2636,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Ozadje zaslona za izbiro profila: mozaik naslovnic iz kataloga, zamegljena slika izbranega profila (brez slike mozaik) ali proge prijave."),
   T("Fundo de perfil", "Ozadje profila"),
   T("Fundo do Palco", "Ozadje Odra"),
+  T("Fundo do Palco: %s", "Ozadje Odra: %s"),
   T("Fundo do destaque do addon", "Ozadje glavnega pasu iz dodatka"),
   T("Fundo em tela cheia", "Ozadje čez cel zaslon"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Novo ozadje: <b>Filmi</b>, stena s plakati tistega, kar je gledal vsak profil."),

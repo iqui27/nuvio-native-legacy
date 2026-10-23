@@ -2636,6 +2636,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "A profilválasztó képernyő háttere: a katalógus borítóiból álló mozaik, a kijelölt profil elmosott képe (kép nélkül a mozaik) vagy a bejelentkezés csíkjai."),
   T("Fundo de perfil", "Profilháttér"),
   T("Fundo do Palco", "Színpad háttere"),
+  T("Fundo do Palco: %s", "Színpad háttere: %s"),
   T("Fundo do destaque do addon", "Főkép háttere a bővítményből"),
   T("Fundo em tela cheia", "Teljes képernyős háttér"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Új háttér: <b>Filmek</b>, egy fal az egyes profilok által nézettek plakátjaival."),

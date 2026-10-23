@@ -2636,6 +2636,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Fundo do ecrã de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listas do início de sessão."),
   T("Fundo de perfil", "Fundo do perfil"),
   T("Fundo do Palco", "Fundo do Palco"),
+  T("Fundo do Palco: %s", "Fundo do Palco: %s"),
   T("Fundo do destaque do addon", "Fundo do destaque do add-on"),
   T("Fundo em tela cheia", "Fundo em ecrã inteiro"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil viu."),

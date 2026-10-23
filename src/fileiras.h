@@ -484,6 +484,12 @@ void fil_ordenar_por_addon(void);
 // --- consulta por chave (descoberta.c e home.c) ------------------------------
 int   fil_oculta(const char *chave);
 int   fil_tipo(const char *chave);    // FIL_TIPO_AUTO quando nao foi escolhido
+// FUNDO DO PALCO POR FILEIRA (#659). -1 = o global de Ajustes
+// (ajustes_palco_fundo); 0..PALCO_N-1 = o modo PALCO_* que so esta fileira
+// pede. Gravado como linha opcional "palco <chave> <modo>", o mesmo truque
+// de "ordemfileira": o formato posicional da linha `linha` nao muda.
+int   fil_palco(const char *chave);
+int   fil_definir_palco(const char *chave, int modo);   // 0 quando a fileira nao existe
 float fil_escala(const char *chave);  // 1.0 quando nao foi escolhido
 // O fator que a fileira teria COM a forma `t`: o Tamanho dela vezes o fator da
 // forma (fil_tipo_fator). E o que a previa do modal precisa — a forma em foco

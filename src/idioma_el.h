@@ -2636,6 +2636,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Φόντο της οθόνης επιλογής προφίλ: το μωσαϊκό εξωφύλλων του καταλόγου, η θολή εικόνα του επιλεγμένου προφίλ (χωρίς εικόνα, το μωσαϊκό) ή οι ρίγες της σύνδεσης."),
   T("Fundo de perfil", "Φόντο προφίλ"),
   T("Fundo do Palco", "Φόντο Σκηνής"),
+  T("Fundo do Palco: %s", "Φόντο Σκηνής: %s"),
   T("Fundo do destaque do addon", "Φόντο του banner από το πρόσθετο"),
   T("Fundo em tela cheia", "Φόντο πλήρους οθόνης"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Νέο φόντο: <b>Ταινίες</b>, ένας τοίχος με αφίσες όσων είδε κάθε προφίλ."),

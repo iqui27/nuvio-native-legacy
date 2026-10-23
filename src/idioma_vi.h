@@ -2636,6 +2636,7 @@
   T("Fundo da tela de escolha de perfil: o mural de capas do catálogo, a arte do perfil em foco desfocada (sem arte, o mural) ou as listras do login.", "Nền màn hình chọn hồ sơ: bức tranh ghép bìa từ danh mục, ảnh làm mờ của hồ sơ đang chọn (không có ảnh thì dùng bức tranh ghép) hoặc các sọc của màn hình đăng nhập."),
   T("Fundo de perfil", "Ảnh nền hồ sơ"),
   T("Fundo do Palco", "Nền Sân khấu"),
+  T("Fundo do Palco: %s", "Nền Sân khấu: %s"),
   T("Fundo do destaque do addon", "Nền của banner chính từ tiện ích"),
   T("Fundo em tela cheia", "Ảnh nền toàn màn hình"),
   T("Fundo novo: <b>Filmes</b>, uma parede com os cartazes do que cada perfil assistiu.", "Nền mới: <b>Phim</b>, một bức tường áp phích những gì mỗi hồ sơ đã xem."),
