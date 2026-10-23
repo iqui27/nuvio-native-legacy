@@ -7,3 +7,7 @@ cc tests/biblioteca_servidores.c src/salvos.c src/focus.c -Isrc \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -O1 -g \
   -ffunction-sections -fdata-sections -Wl,-dead_strip -o "$work/test"
 "$work/test"
+cc tests/servidores_setup.c src/srvsetup_net.c src/jellyfin.c src/js.c src/redeurl.c \
+  -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -O1 \
+  -ffunction-sections -fdata-sections -Wl,-dead_strip -o "$work/setup"
+"$work/setup"

@@ -179,6 +179,9 @@ long long jf_ticks(double seg);
 double jf_seg(long long ticks);
 
 // ------------------------------------------------------- app integration
+// Onboarding worker snapshots; acceptance checks both profile and generation.
+unsigned jf_setup_conta(int emby, JfConta *out, int *perfil);
+int jf_setup_aceitar(int emby, const JfConta *c, int perfil, unsigned generation);
 int  jellyfin_disponivel(void);     // strict HTTP present on this backend
 void jellyfin_carregar(void);       // reads the active profile's connection
 void jellyfin_perfil_trocou(void);  // cancels in-flight work, reloads

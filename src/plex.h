@@ -237,6 +237,9 @@ int  plex_conectado(void);
 int  plex_ultimo_erro(void);
 int  plex_n_servidores(void);
 
+unsigned px_setup_conta(PxConta *out, int *perfil);
+int px_setup_aceitar(const PxConta *c, int perfil, unsigned generation);
+int px_setup_manual(PxConta *c, const char *url, RedeJob *job);
 int  plex_entrar(void);               // starts the PIN flow (queued)
 void plex_cancelar_entrada(void);
 int  plex_proximo_servidor(void);     // cycle to the next server of the account

@@ -126,6 +126,26 @@ void servidores_atualizar_periodico(void) {
 }
 int servidores_conectado(void) { return jellyfin_conectado() || emby_conectado() || plex_conectado(); }
 
+int servidores_contem_item(const CatItem *it, int provider) {
+  if (!it || !ajustes_jellyfin_ligado()) return 0;
+  if (provider == 0) return plex_tem(it->imdb, it->tipo, NULL);
+  if (provider == 1) return jellyfin_tem(it->imdb, it->tipo, NULL);
+  if (provider == 2) return emby_tem(it->imdb, it->tipo, NULL);
+  return servidores_tem(it->imdb, it->tipo);
+}
+int servidores_catalogo_copiar(CatItem *out, int max) {
+  CatFileira fils[SRV_FIL_MAX]; int n = 0;
+  if (!out || max <= 0 || !ajustes_jellyfin_ligado()) return 0;
+  for (int p = 0; p < 3 && n < max; p++) {
+    int ni = 0;
+    if (p == 0) plex_fileiras_copiar(out + n, max - n, fils, SRV_FIL_MAX, &ni);
+    else if (p == 1) jellyfin_fileiras_copiar(out + n, max - n, fils, SRV_FIL_MAX, &ni);
+    else emby_fileiras_copiar(out + n, max - n, fils, SRV_FIL_MAX, &ni);
+    n += ni;
+  }
+  return n;
+}
+
 unsigned servidores_fileiras_versao(void) {
   return jellyfin_fileiras_versao() * 3u + emby_fileiras_versao() * 7u + plex_fileiras_versao() * 13u;
 }

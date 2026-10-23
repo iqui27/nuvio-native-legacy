@@ -1641,6 +1641,20 @@ void plex_cancelar_entrada(void) {
   pthread_mutex_unlock(&trava);
 }
 
+unsigned px_setup_conta(PxConta *out, int *perfil) {
+  garantir(); pthread_mutex_lock(&trava); conferirPerfilLocked();
+  *out = conta; *perfil = perfilLido; unsigned g = geracao;
+  pthread_mutex_unlock(&trava); return g;
+}
+int px_setup_aceitar(const PxConta *c, int perfil, unsigned generation) {
+  int ok = 0; pthread_mutex_lock(&trava);
+  if (perfil == perfis_ativo() && perfil == perfilLido && generation == geracao && c->token[0] && c->servidorId[0]) {
+    avancarLocked(); conta = *c; gravarConta(c, perfil); idxConferirLocked();
+    definirEstadoLocked(PX_EST_CONECTADO, c->servidorNome); enfileirarLocked(T_BIBLIOTECAS, ""); ok = 1;
+  }
+  pthread_mutex_unlock(&trava); return ok;
+}
+
 int plex_proximo_servidor(void) {
   int ok = 0;
   garantir();
@@ -1856,6 +1870,18 @@ static void publicarConta(const Tarefa *t, RedeJob *j, PxConta *c, int nServidor
 
 // Finds the server on the account and a reachable connection. `ciclar`: take
 // the server after the current one instead of the current/default one.
+int px_setup_manual(PxConta *c, const char *url, RedeJob *job) {
+  char base[512];
+  if (!url || strchr(url, '@') || jf_url_normalizar(url, base, sizeof base) != JF_OK || strlen(base) >= sizeof c->base) return PX_ERR_ENTRADA;
+  PxServidor s[PX_SERVIDORES_MAX]; int n = px_recursos(c, job, s, PX_SERVIDORES_MAX), e = PX_ERR_SEM_SERVIDOR;
+  for (int i = 0; i < n; i++) {
+    s[i].nCon = 1; memset(s[i].con, 0, sizeof s[i].con);
+    copiar(s[i].con[0].uri, sizeof s[i].con[0].uri, base);
+    e = px_escolher(c, job, &s[i]); if (e == PX_OK) break;
+  }
+  apagarSegredo(s, sizeof s); return n < 0 ? n : e;
+}
+
 static int resolverServidor(PxConta *c, RedeJob *j, int ciclar, int *nServidores) {
   PxServidor *srv = malloc(sizeof *srv * PX_SERVIDORES_MAX);
   int n, i, atual = -1, ini, e = PX_ERR_SEM_SERVIDOR, tentativas;

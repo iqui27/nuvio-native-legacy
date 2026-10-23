@@ -2525,6 +2525,24 @@ static int jfi_ficha(JfInst *I, CatItem *item, CatEp *eps, int maxEps) {
   return ne;
 }
 
+unsigned jf_setup_conta(int emby, JfConta *out, int *perfil) {
+  JfInst *I = emby ? &instEm : &instJf;
+  garantir(I); pthread_mutex_lock(&I->trava); conferirPerfilLocked(I);
+  *out = I->conta; *perfil = I->perfilLido; unsigned g = I->geracao;
+  pthread_mutex_unlock(&I->trava); return g;
+}
+int jf_setup_aceitar(int emby, const JfConta *c, int perfil, unsigned generation) {
+  JfInst *I = emby ? &instEm : &instJf; int ok = 0;
+  pthread_mutex_lock(&I->trava);
+  if (perfil == perfis_ativo() && perfil == I->perfilLido && generation == I->geracao &&
+      c->tipo == I->tipo && c->token[0] && c->usuarioId[0] && c->servidorId[0]) {
+    avancarLocked(I); I->conta = *c; gravarConta(I, c, perfil); idxConferirLocked(I);
+    definirEstadoLocked(I, JF_EST_CONECTADO, c->servidorNome);
+    enfileirarLocked(I, T_BIBLIOTECAS, "", ""); ok = 1;
+  }
+  pthread_mutex_unlock(&I->trava); return ok;
+}
+
 // ====================================================== public API (2 kinds)
 // jellyfin_* drives instance 0, emby_* instance 1: thin forwards, no logic.
 #define JF_API(P, I)                                                                         \
