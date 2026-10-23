@@ -119,6 +119,7 @@
 #include "novidades142.h"
 #include "comecar.h"
 #include "conquistas.h"
+#include "trilhas.h"
 #include "novidades148.h"
 #include "novidades170.h"
 #include "novidades180.h"
@@ -4309,6 +4310,9 @@ void app_evento(const SDL_Event *e) {
   // O AVISO DAS CONQUISTAS (depois dos creditos) nao toma o foco: so o Voltar e
   // dele, e so enquanto estiver na tela. Vem antes do Voltar do app.
   if (conquistas_aviso_evento(e)) return;
+  // A TRILHA (2.1), aberta pelas Conquistas ou pelo Detalhe: tela inteira,
+  // antes das Conquistas, que a chamam. Voltar fecha e devolve a tela de baixo.
+  if (trilhas_aberta()) { trilhas_evento(e); return; }
   // A TELA DE CONQUISTAS (2.1), aberta pelo Perfil: tela inteira, come o teclado.
   if (conquistas_aberto()) { conquistas_evento(e); return; }
   // O GUIA DA 2.0 (novidades20.h) e tela inteira e come o teclado todo,
@@ -5489,6 +5493,7 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   if (tela == TELA_PERFIL && perfil_pediu_atualizar()) pedirPerfil();
   if (tela == TELA_PERFIL && perfil_pediu_conquistas()) conquistas_abrir();
+  if (trilhas_pediu_conquistas()) conquistas_abrir();
   // Titulo escolhido no painel de Salvos. Ele entrega o IMDb e nao um indice:
   // a lista dele inclui titulos que NAO estao no catalogo (vieram do arquivo
   // local, ver salvospainel.c), e um indice para esses nao existe. Sem item no
@@ -7636,7 +7641,8 @@ void app_desenhar(Uint32 agora) {
   // As Conquistas: tela inteira (ou o esmaecer de saida) e, por baixo de tudo
   // que e aviso, o aviso depois dos creditos, que nao e camada do ponteiro.
   CAMADA_SE(conquistas_aberto());
-  if (!registro_aberto()) { conquistas_desenhar(agora); conquistas_aviso_desenhar(); }
+  CAMADA_SE(trilhas_aberta());
+  if (!registro_aberto()) { trilhas_desenhar(agora); conquistas_desenhar(agora); conquistas_aviso_desenhar(); }
   // O cartao do lembrete fica acima do player e da tela: e um aviso com hora.
   CAMADA_SE(glem_cartao_aberto());
   if (!registro_aberto() && sessao_logada() && tela != TELA_LOGIN &&
@@ -7703,7 +7709,7 @@ int app_central_pode(void) {
          perfilsel_concluido() && !registro_aberto() && !spot_aberto() &&
          !teclado_aberto() && !diagnostico_intro_aberto() && !novidades20_aberto() &&
          !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() &&
-         !resolver_aberto() && !comecar_aberto() && !conquistas_aberto() && !dicascontrole_ocupado();
+         !resolver_aberto() && !comecar_aberto() && !conquistas_aberto() && !trilhas_aberta() && !dicascontrole_ocupado();
 }
 
 void app_encerrar(void) {

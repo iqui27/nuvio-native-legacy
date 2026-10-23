@@ -314,7 +314,7 @@ void perfil_abrir(void) {
   // aberta antes de o snapshot chegar da worker, entao nDias ainda e 0 e o foco
   // nascia na coluna da direita. Quem corrige o estado impossivel e
   // perfil_definir_dados, que e quem sabe o que chegou.
-  aberto = 1; sair = 0; escolhido = -1; item = 0; secao = 0;
+  aberto = 1; sair = 0; escolhido = -1; item = 0; secao = 0; pagina2 = 0;
   pedirAtualizar = pedirConquistas = secaoAntes = 0;
   pediuRelogio = 0;
   amigo = 0; modo = PF_RESUMO; pedirAmigo = dTemPedido = 0;
@@ -513,7 +513,7 @@ void perfil_evento(const SDL_Event *e) {
     if (!travaui_perfil_evento(e)) pagina2 = 0;
     return;
   }
-  if (k == SDLK_DOWN && modo != PF_DUELO && !temDados) { irPagina2(); return; }
+  if (k == SDLK_DOWN && modo != PF_DUELO && !temDados && secao != PF_SEC_CONQ) { irPagina2(); return; }
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE) {
     // Voltar no duelo volta ao resumo, com o anel no mesmo amigo.
     if (modo == PF_DUELO) { sairDuelo(); return; }

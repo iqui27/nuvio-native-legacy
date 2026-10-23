@@ -36,6 +36,8 @@
 #include "idioma.h"
 #include "ctxmenu.h"
 #include "ctxlista.h"
+#include "trilhas.h"
+#include "trilhasdados.h"
 #include "ilha.h"
 #include "idiomacod.h"
 #include "badges.h"
@@ -2645,6 +2647,8 @@ static void maisDisponiveis(int d[DMAIS_N]) {
   d[DMAIS_REWATCH_FIM] = rw && rewatch_ativa(ci->imdb);
   { const char *sin = sinopseDe(idx);
     d[DMAIS_SINOPSE] = sin && sin[0]; }
+  { const CqTrilha *ts[1];
+    d[DMAIS_TRILHA] = ci && cqd_trilhas_de(ci->imdb, ci->tipo, ts, 1) > 0; }
 }
 static int temMais(void) {
   int d[DMAIS_N], i;
@@ -2892,6 +2896,9 @@ static void previaLista(void) {
 static void executarMais(int dm) {
   if (dm == DMAIS_REWATCH || dm == DMAIS_REWATCH_FIM) {
     rewatchui_abrir(cat_item(idx), RW_ORIGEM_TITULO, 0, 0);
+  } else if (dm == DMAIS_TRILHA) {
+    const CatItem *ci = cat_item(idx);
+    if (ci) trilhas_abrir_titulo(ci->imdb, ci->tipo);
   } else if (dm == DMAIS_SINOPSE) {
     const CatItem *ci = cat_item(idx);
     sinopse_abrir(ci ? ci->titulo : "", sinopseDe(idx));

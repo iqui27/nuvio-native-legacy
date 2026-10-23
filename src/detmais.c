@@ -51,6 +51,7 @@ const char *detmais_rotulo(int acao) {
     case DMAIS_REWATCH: return "Reassistir do início";
     case DMAIS_REWATCH_FIM: return "Encerrar reassistida";
     case DMAIS_SINOPSE:    return "Ler sinopse";
+    case DMAIS_TRILHA:     return "Siga esta trilha";
   }
   return "";
 }
@@ -65,6 +66,7 @@ const char *detmais_icone(int acao) {
     case DMAIS_REWATCH: return "aj_rotate-ccw-clock";
     case DMAIS_REWATCH_FIM: return "aj_x";
     case DMAIS_SINOPSE:    return "aj_file-text";
+    case DMAIS_TRILHA:     return "aj_list-ordered";
   }
   return "";
 }

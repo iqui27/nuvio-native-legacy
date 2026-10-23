@@ -8,9 +8,8 @@
 // O QUE E ESTADO VAZIO HONESTO (ambar, precisa do nosso servidor): raridade,
 // mapa de descobertas, amigos na trilha, comunidade, temporadas, secretos. A
 // tela ja pergunta por eles em conquistasdados.h; hoje nenhum entrega nada.
-// "Continuar a trilha", "Ir a trilha" e "Fixar no perfil" aparecem apagados com
-// "Em breve": a trilha mora na Biblioteca (outra branch), e a unica ligacao e
-// conquistas_abrir_trilha(), que nao faz nada hoje.
+// "Continuar a trilha" e "Ir a trilha" abrem a pagina da jornada
+// (trilhas.h); "Fixar no perfil" segue apagado — o perfil nao recebe ainda.
 //
 // O emblema e um quadrado de cantos arredondados, nao o hexagono do mockup: o
 // gfx nao tem primitiva de poligono.
@@ -32,8 +31,8 @@ void conquistas_atualizar(float dt, Uint32 agora);
 // Tela inteira, ou o fim do esmaecer de saida por cima do app.
 void conquistas_desenhar(Uint32 agora);
 
-// Ligacao com a Biblioteca (trilhas). Devolve 1 se levou a pessoa a trilha.
-// Hoje nao faz nada e devolve 0; os botoes que dependem dela ficam apagados.
+// Ligacao com a pagina da trilha (trilhas.h). Devolve 1 se a trilha existe
+// no catalogo local e a pagina abriu; 0 deixa o botao apagado com "Em breve".
 int  conquistas_abrir_trilha(const char *chave);
 
 // ---- O aviso depois dos creditos. Nao toma o foco: so o Voltar e dele, e
