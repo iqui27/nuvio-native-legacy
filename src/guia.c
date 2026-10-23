@@ -1601,6 +1601,9 @@ void guia_abrir(void) {
   focoValido();
   dicaAlfa = 0.0f;
   dicaTalvez();
+  /* GUIA TV v5: a tela principal e o layout do mock aprovado (guiav5ui.c).
+   * O guia de antes continua aqui: dados, zap, overlay e preview. */
+  g5ui_open("grade");
 }
 
 // O CANAL NO AR VEM PARA O GUIA. O app ja mandou o player encolher para o
@@ -1873,7 +1876,6 @@ int guia_preview_no_ar(void) {
 int guia_pedir_preview_id(const char *id);
 void guia_fechar(void);
 int  guia_preview_no_ar(void);
-const char *guia_preview_id(void);
 
 static void moverVertical(int dir) {
   int nl = nLinhas();

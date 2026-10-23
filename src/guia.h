@@ -61,6 +61,8 @@ int  guia_pedir_preview_id(const char *id);
 void guia_fechar(void);
 // TRUE while the live preview session is running with a frame.
 int  guia_preview_no_ar(void);
+int  guia_preview_ligado(void);
+void guia_definir_preview(int ligado);
 // The id of the channel playing in the guide preview, or "".
 const char *guia_preview_id(void);
 
