@@ -129,6 +129,11 @@ static int gRetrato(void) {
 static float gTopoFim = 80.0f;
 static void gTopoMedir(void);
 static float gPreviewLargura(void);
+// Landscape large preview uses the requested 800x450 hero rectangle and
+// 2.0.8's edge gradients. Portrait keeps its existing card.
+static int gPreviaGrande(void) {
+  return !gRetrato() && ajustes_guia_previa_grande();
+}
 #define G_HERO_Y   (gRetrato() ? gTopoFim + 28.0f : 108.0f)
 // PREVIEW: duas medidas 16:9 exatas, escolhidas pela opcao "Previa grande no
 // Guia TV" (Ajustes > TV ao vivo, por perfil, e o chip do topo do guia):
@@ -141,11 +146,10 @@ static float gPreviewLargura(void);
 #define G_PREVIEW_H (G_PREVIEW_W * (9.0f / 16.0f))
 #define G_PREVIEW_X (gRetrato() ? G_AREA_X + (G_AREA_W - G_PREVIEW_W) * 0.5f : G_AREA_DIR - G_PREVIEW_W)
 #define G_INFO_H    450.0f
-// Preview centrado na altura do heroi: com o cartao pequeno (315) nao sobra
-// um buraco vazio embaixo dele; com o grande (450 = G_INFO_H) e o topo de
-// sempre, pixel a pixel.
+// Center the small card; the 450px preview fills the hero from y 108..558.
+// G_TOPO follows its bottom, moving the grid down when the option is on.
 #define G_PREVIEW_Y (gRetrato() ? G_HERO_Y + G_INFO_H + 24.0f : G_HERO_Y + (G_INFO_H - G_PREVIEW_H) * 0.5f)
-#define G_PREVIEW_RAIO 16.0f          // px; vira fracao do menor lado no uso
+#define G_PREVIEW_RAIO (gPreviaGrande() ? 0.0f : 16.0f)  // px; vira fracao do menor lado no uso
 // Ficha do canal a esquerda do preview, com 48 de respiro ate ele.
 #define G_INFO_X   G_AREA_X
 #define G_INFO_W   (gRetrato() ? G_AREA_W : G_PREVIEW_X - 48.0f - G_INFO_X)
@@ -3058,13 +3062,16 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
     if (!pc) pc = c;
   if (sessao && !anda && video_pronto() && !player_carregando()) {
     gfx_furo_raio(pv, raio);
-    // Fio de 1,5 px: o video le como parte da interface, e nao como buraco.
-    gfx_rect(pv, 0, GFX_ANEL, 0, 1.5f / pv.h, 0, raio, 1, 1, 1, 0.16f * a);
+    // Large previews blend into the hero instead of showing a card border.
+    if (!gPreviaGrande())
+      gfx_rect(pv, 0, GFX_ANEL, 0, 1.5f / pv.h, 0, raio, 1, 1, 1, 0.16f * a);
     // Selo sobre o video: GL opaco por cima do furo aparece por cima do plano.
-    { float sw = guia_selo_ao_vivo(pv.x + 20.0f, pv.y + pv.h - 52.0f, a);
+    { float bx = pv.x + 20.0f;
+      float by = pv.y + pv.h - 52.0f;
+      float sw = guia_selo_ao_vivo(bx, by, a);
       if (pc != c) {
         TxtLinha t = txt_linha_corta(TXT_PG_ROTULO, pc->nome, 245, 246, 250, 255, pv.w - sw - 80.0f);
-        GfxRect r = { pv.x + 20.0f + sw + 8.0f, pv.y + pv.h - 52.0f, (float)t.w + 24.0f, 32.0f };
+        GfxRect r = { bx + sw + 8.0f, by, (float)t.w + 24.0f, 32.0f };
         gfx_cor(r, 0.5f, 0.02f, 0.02f, 0.03f, 0.72f * a);
         txt_desenhar_alpha(t, r.x + 12.0f, r.y + (r.h - (float)t.h) * 0.5f, a);
       } }
@@ -3088,6 +3095,15 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
       txt_desenhar_alpha(t, pv.x + (pv.w - (float)t.w) * 0.5f, pv.y + pv.h - 60.0f, a);
     }
   } }
+  // Same left/bottom/top gradients as 2.0.8, over both playback and fallback.
+  if (gPreviaGrande()) {
+    gfx_rect((GfxRect){ pv.x, pv.y, 240.0f, pv.h }, 0, GFX_VEU_CSS, 0, 2, 1, 0,
+             NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, a);
+    gfx_rect((GfxRect){ pv.x, pv.y + pv.h - 200.0f, pv.w, 200.0f }, 0, GFX_VEU_CSS, 0, 0, 1, 0,
+             NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, a);
+    gfx_rect((GfxRect){ pv.x, pv.y, pv.w, 130.0f }, 0, GFX_VEU_CSS, 0, 1, 1, 0,
+             NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 0.85f * a);
+  }
 
   // LINHA DO CANAL: logo, numero, nome e a categoria como etiqueta. O numero
   // e a posicao na ordem do guia — a mesma que o CH+/- percorre (guia_zap).
