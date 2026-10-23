@@ -67,8 +67,8 @@ static void esperarManifestos(void) {
 }
 
 typedef struct { int avisos2, avisosTarde, ger; unsigned gerInicio; } Ouvinte;
-static void ouvir(void *u, int k, const char *nome, int estado, const void *f, int n) {
-  Ouvinte *o = u; (void)k; (void)nome; (void)f; (void)n;
+static void ouvir(void *u, int k, const char *nome, const char *id, int estado, const void *f, int n) {
+  Ouvinte *o = u; (void)k; (void)nome; (void)f; (void)n; (void)id;
   if (estado >= 2) { __atomic_add_fetch(&o->avisos2, 1, __ATOMIC_RELAXED);
     if (plugins_geracao() != o->gerInicio) __atomic_add_fetch(&o->avisosTarde, 1, __ATOMIC_RELAXED); }
 }

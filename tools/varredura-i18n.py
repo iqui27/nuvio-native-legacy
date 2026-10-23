@@ -285,6 +285,7 @@ IGNORAR = {
     "ltv-fontes.txt", "ltv-fontes-p%d.txt",  # ltv.c: preference filenames, never UI labels
     "daqui em diante",  # episodios.c nomeModo: so no log [visto] menu, nunca rotulo
     "fechar",  # main.c: nome do evento de janela so no log "[ciclo] janela="
+    "ime-sem-osk",  # entrada_texto.c #642: motivo de terminar(), so no log [texto]
     # PR #567: motivos so de log ([fonte] lembrada / auto / link guardado).
     "lancamento sem grupo", "todos os add-ons permitidos responderam", "relogio para tras",
     # video_tpk.c: motivos de cartaoModo()/cartaoEncaixar(), so no log "[video] tpk cartao".

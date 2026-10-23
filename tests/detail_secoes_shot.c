@@ -151,7 +151,12 @@ void fx_mus_url_celular(char *dst, unsigned tam, const char *imdb, const char *t
   (void)imdb; (void)titulo; (void)ano; (void)temp;
   snprintf(dst, tam, "https://rec.test/m/#id=tt0000001");
 }
-void fx_mus_pedir(const char *imdb, const char *t, int ano, int temp) { (void)imdb; (void)t; (void)ano; (void)temp; }
+static int musPedidos;
+void fx_mus_pedir(const char *imdb, const char *t, int ano, int temp) {
+  // O pedido sai so com id e titulo; registra para a prova de "a pagina pede".
+  if (imdb && imdb[0] && t && t[0]) musPedidos++;
+  (void)ano; (void)temp;
+}
 
 // --- DUBLE DE extras ---------------------------------------------------------
 void fx_pedir(const char *imdb, int serie, long tmdbId) {
@@ -630,26 +635,18 @@ int main(int argc, char **argv) {
   }
 
   if (getenv("NV_MUSICA_ONLY")) {
-    SDL_Event ev = {0}; ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_DOWN;
+    SDL_Event ev = {0}; ev.type = SDL_KEYDOWN;
     abrir(1, SEC_MUSICAS, 0);
+    assert(musPedidos > 0);   // a pagina emite o pedido da trilha (imdb+temp)
     assert(secaoN(SEC_MUSICAS) == 1);
-    for (int q = 0; q < 90; q++) { SDL_Delay(16); quadros(1); }
-    snprintf(nome, sizeof nome, "%s-musicas-movie.png", saida);
-    gravar(nome);
-    ev.key.keysym.sym = SDLK_RIGHT; detail_evento(&ev);
-    assert(musPagina == 1);
-    quadros(1);
-    snprintf(nome, sizeof nome, "%s-musicas-last-page.png", saida);
-    gravar(nome);
-    ev.key.keysym.sym = SDLK_LEFT; detail_evento(&ev);
-    assert(musPagina == 0);
     ev.key.keysym.sym = SDLK_RETURN; detail_evento(&ev);
     ev.type = SDL_KEYUP; detail_evento(&ev);
-    for (int q = 0; q < 45; q++) { SDL_Delay(16); quadros(1); }
-    assert(mus_guardado(itens[1].imdb, 0));
-    snprintf(nome, sizeof nome, "%s-musicas-guardada.png", saida);
-    gravar(nome);
-    puts("PASS: Musicas section shows soundtrack and Guardar toggles");
+    assert(musicaui_aberta());
+    quadros(90);
+    snprintf(nome, sizeof nome, "%s-musicas-movie.png", saida); gravar(nome);
+    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_ESCAPE; detail_evento(&ev);
+    assert(!musicaui_aberta());
+    puts("PASS: Music section opens album; Back returns to detail");
     SDL_GL_DeleteContext(gl); SDL_DestroyWindow(janela); SDL_Quit(); return 0;
   }
 

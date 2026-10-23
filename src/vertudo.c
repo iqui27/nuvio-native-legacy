@@ -2308,6 +2308,34 @@ static void ponteiroVitrineTudo(int r, int geracao) { (void)vitPonteiroTudoFocar
 static void abrirVitrineTudo(int r, int geracao) {
   if (vitPonteiroTudoFocar(r, geracao)) vitAbrirTudo(r);
 }
+#endif
+// CURSOR NA TV (#658): sem a camada de toque a Vitrine nao registrava alvo
+// nenhum — o Magic Remote nao tinha onde focar e o cursor "sumia" ao rolar.
+// O clique vira o OK de sempre no item focado, como na Grade (ponteiroCartaz).
+static void vitFocoTv(int i, int b) {
+  (void)b;
+  vitProjetar();
+  int r = i / VIT_ITENS, c = i % VIT_ITENS;
+  if (r < 0 || r >= vitN || c < 0 || c >= vitLin[r].n) return;
+  tabFocus = 0; vitFR = r; vitFC = vitColLemb[r] = c; vitMexeu = 1;
+}
+static void vitTudoFocoTv(int r, int b) {
+  (void)b;
+  vitProjetar();
+  if (!vitTemVerTudo(r)) return;
+  tabFocus = 0; vitFR = r; vitFC = vitColLemb[r] = vitLin[r].n; vitMexeu = 1;
+}
+static void vitRegistraAlvoTv(int r, int c, float left, float right,
+                              float top, float bottom, float clipTopo) {
+  if (right <= left || bottom <= top || top + (bottom - top) <= clipTopo || top >= NV_TELA_H) return;
+  if (c == vitLin[r].n)
+    ponteiro_alvo_faixa(left, top, right - left, bottom - top,
+                        clipTopo, NV_TELA_H, vitTudoFocoTv, NULL, r, 0);
+  else
+    ponteiro_alvo_faixa(left, top, right - left, bottom - top,
+                        clipTopo, NV_TELA_H, vitFocoTv, NULL, r * VIT_ITENS + c, 0);
+}
+#ifdef NV_TOUCH_UI
 static int toqueVitrineRolar(const PonteiroRolagem *e) {
   if (!vitToqueDono() || !vitPonteiroPronto) return 0;
   if (e->fase == PONT_ROL_INICIO) {
@@ -2356,6 +2384,8 @@ static void toqueVitrineRetomarFoco(void) {
   toquerol_limpar(&vitToqueY); vitToqueLinha = -1;
 
 }
+#endif
+#ifdef NV_TOUCH_UI
 static float toqueVertudoMax(void) {
   return fmaxf(0.0f, VT_TOPO + celFim + VT_GAP_Y - NV_TELA_H + 120.0f);
 }
@@ -3819,6 +3849,7 @@ static void vitDesenhar(float a, float x0) {
         int sel = r == vitFR && c == vitFC && !tabFocus;
         if (cx + w < 0.0f) continue;
         if (cx > NV_TELA_W) break;
+        float left = fmaxf(base.x, x0), right = fminf(base.x + base.w, NV_TELA_W);
         if (sel) {
           if (ajustes_borda_foco()) {
             if (!redonda || c == l->n)
@@ -3836,9 +3867,7 @@ static void vitDesenhar(float a, float x0) {
           txt_desenhar_alpha(rotulo, card.x + (card.w - rotulo.w) * .5f, by + seta.h + 14.0f, ac);
         } else home_vitrine_cartao(vitItem(r, c), base, card, ac, redonda, sel ? 1.0f : 0.0f);
 #ifdef NV_TOUCH_UI
-        if (vtTelefone()) {
-          float left = fmaxf(base.x, x0), right = fminf(base.x + base.w, NV_TELA_W);
-          if (right > left && base.y + base.h > NV_SHELF_TOP - 8.0f && base.y < NV_TELA_H) {
+        if (vtTelefone() && right > left && base.y + base.h > NV_SHELF_TOP - 8.0f && base.y < NV_TELA_H) {
             if (c == l->n) {
               vitPonteiroTudoVisivel[r] = 1;
               ponteiro_alvo_faixa(left, base.y, right - left, base.h,
@@ -3851,9 +3880,10 @@ static void vitDesenhar(float a, float x0) {
             ponteiro_alvo_faixa(left, base.y, right - left, base.h,
               NV_SHELF_TOP - 8.0f, NV_TELA_H, ponteiroVitrine, abrirVitrine,
               r * VIT_ITENS + c, vitPonteiroGeracao);
-          }
         }
 #endif
+        if (!vtTelefone() && right > left && base.y + base.h > topo - 8.0f && base.y < NV_TELA_H)
+          vitRegistraAlvoTv(r, c, left, right, base.y, base.y + base.h, topo - 8.0f);
       }
     } else if (l->estado == VIT_VAZIA || l->estado == VIT_PRONTA ||
                (vitLin[r].mais && !vitLin[r].n)) {

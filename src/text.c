@@ -76,7 +76,8 @@ static float escalaTxt = 1.0f;
 // na C9. Cinco fatores vivos.
 #define TXT_NCAM 6
 static int camada;
-static char arabeBoldCaminho[600];   // face Bold real do Noto Naskh (#335), vazio ate txt_iniciar
+static char arabeBoldCaminho[600];   // Real Sans Arabic Bold (#335), set by txt_iniciar
+static char naskhBoldCaminho[600];   // Matching Bold for the Naskh fallback
 static int arabeCorpo;
 static void arabeBoldFechar(void);
 static int pisoCam[TXT_NCAM];
@@ -452,6 +453,10 @@ static const struct { int corpo, peso; } ESTILOS[TXT_NFONTES] = {
   { 28, PESO_REGULAR }, { 29, PESO_REGULAR }, { 30, PESO_REGULAR }, { 31, PESO_REGULAR },
   { 33, PESO_REGULAR }, { 34, PESO_REGULAR }, { 35, PESO_REGULAR }, { 39, PESO_REGULAR },
   { 20, PESO_REGULAR }, // TXT_SINOPSE_20
+  { 58, PESO_BOLD }, { 27, PESO_REGULAR }, { 25, PESO_MEDIUM },
+  { 16, PESO_BOLD }, { 17, PESO_REGULAR }, { 16, PESO_REGULAR },
+  { 24, PESO_MEDIUM },  // TXT_HERO_META_G
+  { 27, PESO_MEDIUM },  // TXT_HERO_META_GG
 };
 
 // CORPO E PESO de um estilo, para teste e diagnostico (o desenho nao usa:
@@ -1355,11 +1360,8 @@ int txt_iniciar(const char *dirRecursos, float escala) {
     snprintf(caminhoPeso[TXT_FAMILIA_DROID][p], 512, "%s", "/usr/share/fonts/DroidSans.ttf");
 #endif
 
-  // Fontes de RESERVA (ver Escrita), em ordem de preferencia por escrita. Na TV
-  // sao as de sistema (LG e Droid, medidas no cmap de uma C9); no Mac, as do
-  // sistema que cobrem cada escrita — ali isto e so para a previa nao mentir; e
-  // por ultimo, para o CJK e o arabe, o subconjunto embarcado (o WASM da Samsung
-  // nao tem fonte de sistema nenhuma).
+  // Fallback fonts, in preference order per script. Arabic and Thai prefer
+  // bundled UI sans faces; CJK prefers TV system fonts before its subset.
   // Largura RES_CAND: as listas abaixo tem no maximo 7 caminhos, e o laco para
   // no NULL. Com um vetor menor que a lista o terminador era descartado em
   // silencio e a busca seguia lendo a linha de baixo.
@@ -1367,14 +1369,16 @@ int txt_iniciar(const char *dirRecursos, float escala) {
   snprintf(cjkEmbarcada, sizeof cjkEmbarcada, "%sfonts/DroidSansFallback-Subset.ttf", base);
   // Arabe: a Samsung nao traz fonte arabe (#253, #258). O recorte tem as formas
   // de apresentacao que o bidi.c produz (tools/fonte-arabe.py).
-  char arabeEmbarcada[600];
-  snprintf(arabeEmbarcada, sizeof arabeEmbarcada, "%sfonts/NotoNaskhArabic-Subset.ttf", base);
+  char arabeEmbarcada[600], naskhEmbarcada[600];
+  snprintf(arabeEmbarcada, sizeof arabeEmbarcada, "%sfonts/NotoSansArabic-Regular-Subset.ttf", base);
+  snprintf(naskhEmbarcada, sizeof naskhEmbarcada, "%sfonts/NotoNaskhArabic-Subset.ttf", base);
   // Tailandes (#369): nenhuma outra fonte embarcada tem os glifos U+0E01-0E5B, e
   // o DroidSansFallback-Subset e a Roboto/Inter tambem nao. Noto Sans Thai v2.002
   // Regular (OFL), inteira, 21 KB.
   char tailandesEmbarcada[600];
   snprintf(tailandesEmbarcada, sizeof tailandesEmbarcada, "%sfonts/NotoSansThai-Regular.ttf", base);
-  snprintf(arabeBoldCaminho, sizeof arabeBoldCaminho, "%sfonts/NotoNaskhArabic-Bold.ttf", base);
+  snprintf(arabeBoldCaminho, sizeof arabeBoldCaminho, "%sfonts/NotoSansArabic-Bold-Subset.ttf", base);
+  snprintf(naskhBoldCaminho, sizeof naskhBoldCaminho, "%sfonts/NotoNaskhArabic-Bold.ttf", base);
   { const char *cand[ESC_N][RES_CAND + 1] = {
       /* ESC_CJK (japones)  */ { "/usr/share/fonts/LG_Display_JP.ttf",
                                  "/usr/share/fonts/DroidSansFallback.ttf",
@@ -1400,13 +1404,14 @@ int txt_iniciar(const char *dirRecursos, float escala) {
                                  "/system/fonts/NotoSansCJK-Regular.ttc",
                                  "/system/fonts/NotoSansTC-Regular.otf",
                                  cjkEmbarcada, NULL },
-      /* ESC_ARABE          */ { "/usr/share/fonts/DroidNaskh-Regular.ttf",
+      /* ESC_ARABE          */ { arabeEmbarcada,
+                                 "/usr/share/fonts/DroidNaskh-Regular.ttf",
                                  "/usr/share/fonts/LG_Display_Urdu.ttf",
                                  "/System/Library/Fonts/Supplemental/GeezaPro.ttc",
                                  "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
                                  "/system/fonts/NotoNaskhArabic-Regular.ttf",
                                  "/system/fonts/NotoSansArabic-Regular.ttf",
-                                 arabeEmbarcada, NULL },
+                                 naskhEmbarcada, NULL },
       /* ESC_TAILANDES      */ { tailandesEmbarcada,
                                  "/system/fonts/NotoSansThai-Regular.ttf",
                                  "/system/fonts/NotoSansThaiUI-Regular.ttf",
@@ -1427,7 +1432,7 @@ int txt_iniciar(const char *dirRecursos, float escala) {
       for (int i = 0; cand[e][i] && n < RES_CAND; i++) {
         FILE *fr;
         if (soEmbarcada && cand[e][i] != cjkEmbarcada && cand[e][i] != arabeEmbarcada &&
-            cand[e][i] != tailandesEmbarcada) continue;
+            cand[e][i] != naskhEmbarcada && cand[e][i] != tailandesEmbarcada) continue;
         fr = fopen(cand[e][i], "rb");
         if (fr) { fclose(fr);
                   snprintf(caminhoReserva[e][n], sizeof caminhoReserva[e][n], "%s", cand[e][i]);
@@ -1482,7 +1487,7 @@ void txt_encerrar(void) {
 }
 
 // UMA LINHA, MAIS DE UMA FONTE. A linha com arabe vai inteira para a fonte de
-// reserva (fonteDe), e na Samsung a unica e a NotoNaskhArabic-Subset.ttf
+// reserva (fonteDe), preferindo a NotoSansArabic-Regular-Subset.ttf
 // embarcada, que NAO TEM LATIM: so espaco, digitos e ", . : !". Um "·" da linha
 // de meta, os parenteses, aspas «», o hifen, o "…" do corte e qualquer nome em
 // latim ("Breaking Bad") no meio da sinopse saiam como .notdef — os quadrados
@@ -1532,16 +1537,14 @@ static int corridasDe(TTF_Font *f, TTF_Font *a, TTF_Font *b, const char *s,
   return n;
 }
 
-// #335: negrito SINTETICO sobre arabe estraga a escrita. O Noto Naskh embarcado
-// so tem a face Regular, e o SDL_ttf engorda o bitmap ja rasterizado: as letras
-// ligadas (formas de apresentacao de bidi.c) se fundem e os pontos viram borrao.
-// Texto arabe fica no peso Regular; so o latim da mesma linha recebe o negrito.
+// #335: synthetic Arabic bold merges joined glyphs and blurs dots. Use the
+// real Arabic Bold face; Latin in mixed lines keeps its own emphasis.
 static int txtTemLatim(const char *s) {
   for (; s && *s; s++) if ((*s >= 'A' && *s <= 'Z') || (*s >= 'a' && *s <= 'z')) return 1;
   return 0;
 }
 
-// Face Bold REAL do Noto Naskh, aberta sob demanda e ajustada a altura da
+// Real Arabic Bold face, opened on demand and matched to the height of the
 // regular da linha (#440). Sem o arquivo: arabe sem negrito sintetico.
 // Cache por camada, corpo da linha e face regular.
 #define ARABE_BOLD_N 32
@@ -1549,18 +1552,20 @@ static struct { int corpo; TTF_Font *regular, *f; } arabeBoldCache[TXT_NCAM][ARA
 static TTF_Font *arabeBoldFace(TTF_Font *regular) {
   int i;
   if (!regular || !arabeBoldCaminho[0] || arabeCorpo < 4) return NULL;
+  const char *family = TTF_FontFaceFamilyName(regular);
+  const char *path = family && !strcmp(family, "Noto Sans Arabic") ? arabeBoldCaminho : naskhBoldCaminho;
   for (i = 0; i < ARABE_BOLD_N; i++) {
     if (arabeBoldCache[camada][i].corpo == arabeCorpo &&
         arabeBoldCache[camada][i].regular == regular) return arabeBoldCache[camada][i].f;
     if (!arabeBoldCache[camada][i].corpo) {
       arabeBoldCache[camada][i].corpo = arabeCorpo;   // tentou: f NULL = arquivo ausente
       arabeBoldCache[camada][i].regular = regular;
-      arabeBoldCache[camada][i].f = TTF_OpenFont(arabeBoldCaminho, arabeCorpo);
+      arabeBoldCache[camada][i].f = TTF_OpenFont(path, arabeCorpo);
       int corpo = arabeBoldCache[camada][i].f ?
           corpoNegrito(regular, arabeBoldCache[camada][i].f, arabeCorpo, 0xFEE1) : arabeCorpo;
       if (arabeBoldCache[camada][i].f && corpo != arabeCorpo && corpo >= 4) {
         TTF_CloseFont(arabeBoldCache[camada][i].f);
-        arabeBoldCache[camada][i].f = TTF_OpenFont(arabeBoldCaminho, corpo);
+        arabeBoldCache[camada][i].f = TTF_OpenFont(path, corpo);
       }
       if (arabeBoldCache[camada][i].f)
         printf("[leg] negrito arabe: face Bold real, %d px\n", corpo);

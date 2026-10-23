@@ -276,6 +276,7 @@ static const char *uxSinonimos(int op) {
     case AJ_TMDB_IDIOMA: return "idioma metadados titulo sinopse traducao tmdb";
     case AJ_HERO_GENERO: return "genero destaque hero logo titulo categoria esconder mostrar card genre";
     case AJ_HERO_SINOPSE: return "sinopse destaque hero texto descricao resumo esconder mostrar synopsis description";
+    case AJ_HERO_TAMANHO: return "tamanho destaque hero logo informacoes texto grande muito grande normal hero size logo info";
     case AJ_HERO_SINOPSE_TAM: return "sinopse tamanho destaque hero texto grande normal synopsis size";
     case AJ_HERO_NOTAS: return "nota notas imdb destaque hero avaliacao rating ratings esconder mostrar";
     case AJ_HERO_ANO: return "ano destaque hero lancamento year data esconder mostrar";

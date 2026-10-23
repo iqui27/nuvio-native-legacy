@@ -42,6 +42,7 @@ typedef struct {
   int (*nEps)(int t);
   int (*epNum)(int t, int i);
   int (*epNota)(int t, int i);
+  int notaPessoal;              // Half-star value, 0 when unrated.
 } NotasSecao;
 
 // A secao (Glass UI 1.8): cartao de nota a esquerda (media, critica x publico,
