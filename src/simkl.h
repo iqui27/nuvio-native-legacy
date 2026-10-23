@@ -133,9 +133,11 @@ int simkl_ler_vistos(const char *json, SimklVisto *dst, int max);
 
 // O visto de OUTRO perfil desta conta, LENDO O ARQUIVO DO PERFIL PEDIDO
 // (simkl-p<N>.txt) sem copiar o token para o perfil ativo nem mexer no estado
-// de simklauth. BLOQUEIA: so de um fio (socialvis pede o perfil do amigo).
-// 0 = perfil sem vinculo Simkl nesta TV, rede fora, ou resposta invalida.
+// de simklauth. Returns the mutex-protected cache immediately; a worker checks
+// completed activities and merges date_from updates into 24 persisted items.
+// 0 = no cached history yet. HTTP failures retain the last successful cache.
 int simkl_vistos_perfil(int perfil, SimklVisto *dst, int max);
+unsigned simkl_vistos_revisao(void);
 
 // --- escritas: NAO bloqueiam --------------------------------------------------
 
