@@ -610,18 +610,11 @@ static void figAtualizar(float x, float y, float a) {
 
 // --- FIGURA 6: a fileira colorida do controle ---------------------------------
 //
-// O controle visto de frente, so a parte que importa: o anel do D-pad com o OK
-// no meio e, embaixo, as quatro teclas de cor. A que a LG usa (AZUL) fica
-// CHEIA; as que nao fazem nada no aparelho ficam em ANEL, com o miolo vazado —
-// e a unica forma de dizer "existe mas nao responde" sem escrever nada dentro
-// de um circulo de 40 px. A legenda embaixo diz qual e qual.
+// Controle com D-pad, vermelho/verde e os atalhos CH−/CH+.
+// As cores continuam funcionando; as dicas usam as teclas de canal.
 static void figControle(float x, float y, float a) {
-  static const float COR[4][3] = { { 0.86f, 0.24f, 0.24f },
-                                   { 0.30f, 0.74f, 0.38f },
-                                   { 0.92f, 0.76f, 0.20f },
-                                   { 0.30f, 0.56f, 0.94f } };
-  // 1 = faz alguma coisa em pelo menos uma das duas TVs e CHEIA; 0 = so anel.
-  static const int VIVA[4] = { 1, 1, 0, 1 };
+  static const float COR[2][3] = { { 0.86f, 0.24f, 0.24f },
+                                   { 0.30f, 0.74f, 0.38f } };
   const float ctlW = 176.0f, ctlH = 350.0f;
   float cx = x + (N11_FIG_W - ctlW) * 0.5f, meio = cx + ctlW * 0.5f;
   GfxRect corpo = { cx, y, ctlW, ctlH };
@@ -648,19 +641,16 @@ static void figControle(float x, float y, float a) {
     disco(meio, y + 108.0f, 108.0f, 0.125f, 0.128f, 0.142f, a);
     disco(meio, y + 108.0f, 54.0f, 0.20f, 0.21f, 0.24f, a); }
 
-  // A FILEIRA DE CORES, que e o assunto da pagina.
-  //
-  // O BOTAO INERTE E DOIS DISCOS, e nao um GFX_ANEL: a primeira captura saiu
-  // com um quadrado arredondado no lugar do circulo. O anel com raio 0,5 SO da
-  // circulo quando a espessura e pequena em relacao ao diametro (o anel do
-  // D-pad, 8 px em 124, sai redondo); a 3,6 px em 26 ele erode os cantos e
-  // vira um squircle. Disco de cor com um disco da COR DO CORPO por dentro da
-  // o anel exato, em qualquer tamanho.
+  // Vermelho/verde mantidos; os dois atalhos agora sao CH−/CH+.
   for (i = 0; i < 4; i++) {
     float bx = meio - 54.0f + (float)i * 36.0f, by = y + 232.0f;
-    disco(bx, by, 30.0f, COR[i][0], COR[i][1], COR[i][2],
-          a * (VIVA[i] ? 1.0f : 0.85f));
-    if (!VIVA[i]) disco(bx, by, 19.0f, 0.125f, 0.128f, 0.142f, a);
+    if (i >= 2) {
+      TxtLinha t = txt_linha(TXT_MINI, i == 2 ? "CH−" : "CH+", 236, 236, 236, 255);
+      gfx_cor((GfxRect){ bx - 17, by - 15, 34, 30 }, 0.25f, .20f, .21f, .24f, a);
+      txt_desenhar_alpha(t, bx - t.w * .5f, by - t.h * .5f, a);
+    } else {
+      disco(bx, by, 30.0f, COR[i][0], COR[i][1], COR[i][2], a);
+    }
   }
   // Duas teclas anonimas embaixo, so para a fileira de cores nao ficar sendo o
   // fim do controle — num controle de verdade ela nunca e.
@@ -821,7 +811,7 @@ static void novidades11_desenharCorpo_(Uint32 agora) {
   // (GFX_LUZ). Com o veu de tela cheia ja pago, e a ultima camada grande daqui.
   { GfxRect p = { N11_X, N11_Y + dy, N11_W, N11_H };
     float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-    gfx_cor(p, 28.0f / N11_H, 0.055f, 0.058f, 0.068f, 0.94f * a);
+    gfx_vidro_ou_solido(p, 28.0f / N11_H, GFX_VIDRO_DENS_MODAL, a, 0.055f, 0.058f, 0.068f, 0.94f);
     gfx_luz_canto(p, 28.0f / N11_H, N11_H * 0.1f, -N11_H * 0.1f, N11_H * 0.65f, ar, ag, ab, 0.22f * a);
     gfx_recorte(N11_X, N11_Y + dy, N11_W, N11_H); }
 
@@ -953,31 +943,23 @@ static void novidades11_desenharCorpo_(Uint32 agora) {
         // amador. Grau de evidencia e problema meu, nao de quem esta no sofa.
         y += feature(fx, y, fw, "menu_settings",
 #ifdef NV_ANDROID
-              "CH- · o registro",
+              "Info · o registro",
 #else
               "VERMELHO · o registro",
 #endif
               "Abre o painel de log por cima de qualquer tela. É dali que sai "
               "o print quando alguma coisa dá errado.", ap);
-#ifdef NV_ANDROID
         y += feature(fx, y, fw, "menu_library",
-              "CH+ · Salvos e o guia",
-              "Abre Salvos, abre o guia com um canal no ar e volta do vídeo "
-              "pequeno.", ap);
-#else
-        y += feature(fx, y, fw, "menu_library",
-              "AZUL · Salvos e o guia",
-              "Na LG abre Salvos, abre o guia com um canal no ar e volta do "
-              "vídeo pequeno. No Samsung isso é o CANAL +.", ap);
-#endif
+              "CH+ na Home",
+              "CH+ abre o painel com o que você guardou. As abas são Salvos, Atividade, Amigos e Avisos.", ap);
         y += feature(fx, y, fw, "addon",
               "VERDE · só no Samsung",
               "Traz de volta o painel de diagnóstico do navegador, que fica "
               "fora do app.", ap);
         y += feature(fx, y, fw, "oculto",
-              "AMARELO · livre",
-              "Não faz nada nas duas. E se o seu controle não tem a fileira de "
-              "cores, nada aqui depende dela.", ap);
+              "CH− · a busca",
+              "A tecla CH− abre a busca em qualquer tela. A lista muda a cada "
+              "letra.", ap);
         break;
       default:
         y += feature(fx, y, fw, "check",

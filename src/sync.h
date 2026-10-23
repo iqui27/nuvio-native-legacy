@@ -9,9 +9,14 @@
 // ONDE ELE ESCREVE E ONDE NAO ESCREVE — a distincao mais importante do arquivo:
 //
 //   PUXA E EMPURRA (o app tem a informacao de verdade):
-//     addons, credenciais (Trakt, TMDB, mdblist), progresso de reproducao e —
+//     credenciais (Trakt, TMDB, mdblist), progresso de reproducao e —
 //     desde o #85 — os AJUSTES DO PERFIL, costurados no blob que a conta ja
 //     tinha (ver sync_proteger_ajustes_locais e ajustes_mesclar_blob).
+//   ADDONS SAO MAO UNICA (#360, 11/10/2026): a TV so PUXA a lista da conta.
+//     Nada daqui sobe — sync_push_addons e a pendencia de edicao local de
+//     addons deixaram de existir: o push substituia a lista inteira do perfil
+//     e era a origem das duplicatas e remocoes cruzadas do relato. A mudanca
+//     local vale nesta TV ate o proximo pull.
 //
 // MEDIDO na conta do dono: sync_pull_provider_credentials devolve animeskip,
 // debrid:premiumize, debrid:realdebrid, debrid:torbox, introdb, mdblist e tmdb
@@ -38,6 +43,7 @@
 // Todas as chamadas de rede acontecem num fio proprio. A UI so consulta estado.
 #ifndef NV_SYNC_H
 #define NV_SYNC_H
+#include <stdint.h>
 
 typedef enum {
   SYNC_PARADO = 0,
@@ -49,6 +55,29 @@ typedef enum {
 // Dispara um ciclo completo (puxa e, onde faz sentido, empurra). Volta na hora.
 // Idempotente enquanto um ciclo estiver em andamento.
 void sync_iniciar(void);
+// Confirmed profile opening: clear live private data, keep durable settings.
+void sync_abrir_sessao(int perfilAnterior);
+
+typedef struct {
+  uint64_t sessao;
+  int perfil;
+  char usuario[80];
+} SyncCredencialPedido;
+int sync_credencial_pedido(SyncCredencialPedido *pedido);
+int sync_empurrar_credencial_pedido(const SyncCredencialPedido *pedido,
+                                  const char *provider, const char *credJson);
+
+// SINCRONIZAR ADD-ONS A MAO (#360). Pede uma volta da conta ja (nao espera os 5
+// minutos) e guarda o resultado para a tela de Add-ons dizer o que mudou. A volta
+// e a mesma de sempre, so que marcada: quando acaba, compara a lista de add-ons de
+// antes com a de depois. Sem conta logada nao faz nada (devolve 0).
+int  sync_manual_addons(void);
+// 0 = nada pedido; 1 = rodando; 2 = acabou bem (add/rem/mud preenchidos: quantos
+// entraram, sairam e mudaram de estado ou ordem); 3 = falhou ou o servidor esta
+// fora. Os estados 2 e 3 sao lidos UMA vez (ilhasinais.c, que avisa) e voltam a 0.
+int  sync_manual_addons_estado(int *add, int *rem, int *mud);
+// So consulta, nao consome: a tela de Add-ons desenha o botao ocupado.
+int  sync_manual_addons_rodando(void);
 
 SyncEstado  sync_estado(void);
 const char *sync_resumo(void);   // uma linha para a tela de ajustes
@@ -56,7 +85,9 @@ const char *sync_resumo(void);   // uma linha para a tela de ajustes
 // Marca uma superficie como suja: o proximo ciclo empurra. Chamar quando o
 // usuario mexe em algo local.
 void sync_sujar_progresso(void);
-void sync_sujar_addons(void);
+// The user toggled the addon at `url`: queue that flag for a row-level write
+// and keep it across restart. Membership and order remain the account's.
+void sync_sujar_addons(const char *url);
 
 // Ultimo instante em que um ciclo terminou bem (SDL_GetTicks); 0 se nunca.
 unsigned sync_ultimo_ok(void);
@@ -129,6 +160,9 @@ void sync_trocar_perfil(int antes);
 // 1 quando o ultimo ciclo terminado e aplicado e do perfil ativo e nao ha
 // ciclo no ar. E a metade "conta" de "a home do perfil novo esta pronta".
 int  sync_perfil_pronto(void);
+// Addons, colecoes e ordem deste perfil ja podem alimentar a descoberta;
+// progresso e pushes podem continuar sem prender a Home.
+int  sync_home_fontes_prontas(void);
 
 // A pessoa mudou um ajuste NESTA TV. Faz duas coisas, e as duas de proposito:
 //
@@ -149,6 +183,9 @@ int  sync_perfil_pronto(void);
 // Limpa-se em sync_reaplicar_ajustes (login / troca de perfil / "Atualizar"),
 // que tambem descarta a pendencia de subida — ela e do perfil anterior.
 void sync_proteger_ajustes_locais(void);
+// 2.1: marca ajustes pendentes de OUTRO perfil (copia/edicao do administrador).
+// So escreve a marca local; o push acontece quando aquele perfil for o ativo.
+void sync_marcar_ajustes_pendentes_perfil(int perfil);
 
 // Manda uma credencial de servico para a CONTA, para os outros aparelhos da
 // pessoa herdarem o vinculo. `credJson` e o objeto pronto (o servidor guarda o

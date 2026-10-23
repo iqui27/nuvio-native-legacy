@@ -1,0 +1,1 @@
+env.sh: configuracao de servidor incompleta; use --require-core na release

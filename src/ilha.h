@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // ILHA — o relogio no topo da tela, numa pilula, que se ABRE para os avisos.
 //
 // Pedido do dono (01/10/2026): "ilha dinamica estilo iOS". Em repouso a
@@ -36,10 +37,20 @@ enum { ILHA_INFO = 0, ILHA_OK, ILHA_ERRO, ILHA_ACENTO };
 // "abre" na ponta direita.
 void ilha_avisar(const char *chave, int tipo, const char *icone,
                  const char *texto, unsigned ms, int tecla);
+// Fecha a abertura anterior: tira avisos, cartoes, atividade e pedidos
+// privados. Mantem avisos identificados do aparelho (atualizacao/queda/rede)
+// e a configuracao de posicao do relogio. Nao cancela a atualizacao em curso.
+void ilha_abrir_sessao(void);
 // Tira o aviso desta chave da tela e da fila (ex.: a central foi aberta).
 void ilha_retirar(const char *chave);
 // 1 enquanto o aviso desta chave esta na tela ou na fila.
 int  ilha_tem(const char *chave);
+// 1 quando um aviso com esta chave APARECEU na pilula (primeiro quadro na
+// tela, sem nada cobrindo) desde a ultima pergunta; a resposta e consumida.
+// E o "ja dito" de verdade: quem marca um evento como visto no disco
+// (avisodisp) pergunta aqui, e nao no instante em que mandou o aviso — um
+// aviso que a fila descartou, ou que venceu debaixo do painel, nao foi lido.
+int  ilha_mostrou(const char *chave);
 
 // --- PRIORIDADE, CONTADOR E A CENTRAL (mockup aprovado em 02/10) ------------------
 //
@@ -72,7 +83,7 @@ typedef struct {
   char chips[3][32];        // generos, em pilulas
   char estado[80];          // na base da coluna ("há 12 min")
   char rodape[120];         // a direita dos botoes ("Recusar não avisa a pessoa.")
-  char arte[1024];          // 480x270; com `rosto`, ele vai no canto da arte
+  char arte[NV_ARTE_URL_MAX];          // 480x270; com `rosto`, ele vai no canto da arte
   char rosto[256];          // url do avatar (vazio = so a inicial de rostoNome)
   char rostoNome[64];
   char icone[32];           // sem arte nem rosto: ladrilho 150 com este icone
@@ -185,6 +196,10 @@ int  ilha_ponto_pediu(void);
 // Onde o relogio pode ficar, decidido por quadro por app.c (a home tem o topo
 // esquerdo livre; Ajustes e Explorar tem titulo ali).
 void ilha_relogio_visivel(int visivel);
+// O roteador concede foco ao sair pelo topo de uma pagina; nao altera os
+// cartoes nem o caminho existente de toque/AZUL/CH+.
+void ilha_relogio_focar(int foco);
+int  ilha_relogio_focado(void);
 
 // PONTO UNICO DA POSICAO. Sem chamada, a ilha fica no topo esquerdo, na coluna
 // do conteudo — ou no topo direito no layout Dinamica, onde a pilula fechada
@@ -221,13 +236,14 @@ typedef struct {
   char imdb[64];
   int  serie, t, e;      // t/e = 0 em filme
   char titulo[160], epNome[120], sinopse[420];
-  char poster[1024], logo[512], arte[512];   // arte: still do episodio ou fundo
+  char poster[NV_ARTE_URL_MAX], logo[512], arte[512];   // arte: still do episodio ou fundo
   float progresso;       // 0..1 na ILHA_VIVO; < 0 sem barra
   int  restanteMin;      // ILHA_VIVO
   char quando[24];       // ILHA_ESTREIA: "hoje" (ja traduzido) ou ""
   char avisoId[72];      // ILHA_ESTREIA: id do aviso em avisos.c
   char pessoa[64], rosto[256];   // ILHA_AMIGO: nome e avatar de quem esta vendo
 } IlhaCartao;
+int ilha_retomar_focado(IlhaCartao *c);
 // NULL tira o cartao. A copia e da ilha; quem chama pode descartar o seu.
 void ilha_cartao(int qual, const IlhaCartao *c);
 // Troca de identidade: apaga este cartao e suas copias no modal, no pedido e
@@ -277,6 +293,8 @@ int  ilha_minimizando(void);
 // quadro: e de onde o painel de Salvos nasce e para onde ele recolhe. 0 quando
 // a ilha nao esta na tela.
 int  ilha_rect(float *x, float *y, float *w, float *h);
+// Largura do relogio em pixels reais, incluindo recuos e ponto de enquete.
+float ilha_relogio_largura(void);
 // 1 = outra superficie nasceu da pilula e esta no lugar dela (o painel de
 // Salvos): a ilha continua medindo, mas nao se desenha. Vale um quadro.
 void ilha_coberta(int coberta);
@@ -293,5 +311,7 @@ typedef void (*IlhaCorpo)(GfxRect r, float a, void *u);
 void  ilha_corpo(float w, float h, IlhaCorpo corpo, void *u);
 // 0 = pilula, 1 = painel assentado (passa um pouco de 1 no repique).
 float ilha_corpo_t(void);
+// Chamar logo depois de ilha_corpo: este corpo (e a saida dele) sem sombra caida.
+void  ilha_corpo_sem_sombra(void);
 
 #endif

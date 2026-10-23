@@ -17,6 +17,7 @@
 //
 //   bash tests/trocaarte_shot.sh /tmp/nuvio-trocaarte
 #include <SDL2/SDL.h>
+#include "nvtmp.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <limits.h>
@@ -124,15 +125,21 @@ static void abrirPagina(void) {
   quadros(120);
 }
 
-// O OK no ULTIMO circular da linha, pelo caminho de verdade (detail_evento).
+// O "Trocar arte" mora na ilha "Mais opcoes" (detmais.h): OK no "..." (o
+// ULTIMO circular da linha), desce ate a linha dele e OK — o caminho de
+// verdade, por detail_evento.
 static void abrirTroca(void) {
+  int i, l = -1;
   nivel = 0;
-  // O "Trocar arte" ja nao e o ultimo (trailer e explorar vem depois), e nos
-  // layouts agrupados as acoes moram atras do "Mais": abre o grupo.
-  maisAcoes = 1;
-  for (botao = nBotoes() - 1; botao > 0 && acaoEm(botao) != ACAO_ARTE; botao--) {}
-  assert(acaoEm(botao) == ACAO_ARTE);
+  maisAcoes = 1;   // layouts agrupados: o grupo aberto
+  botao = nBotoes() - 1;
+  assert(acaoEm(botao) == ACAO_MAIS);
   quadros(10);
+  tecla(SDLK_RETURN);
+  assert(detmais_aberto());
+  for (i = 0; i < detmais_n(); i++) if (detmais_acao(i) == DMAIS_ARTE) l = i;
+  assert(l >= 0);
+  for (i = 0; i < l; i++) tecla(SDLK_DOWN);
   tecla(SDLK_RETURN);
   assert(trocaarte_aberto());
 }
@@ -153,7 +160,7 @@ static void injetar(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-trocaarte";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-trocaarte");
   char nome[600], abs[PATH_MAX];
   SDL_GLContext gl;
   const char *dd;
@@ -176,6 +183,8 @@ int main(int argc, char **argv) {
   gfx_icones_dir(abs);
   tex_iniciar(64);
   ajustes_iniciar();
+  // NUVIO_SHOT_VIDRO=1 captures the Glass UI material (default: solid).
+  if (getenv("NUVIO_SHOT_VIDRO")) { ajustes_teste_vidro_env(); ajustes_definir_vidro(atoi(getenv("NUVIO_SHOT_VIDRO"))); }
   dados_iniciar("deploy/app/art");
   dd = dados_dir();
   if (!dd || !strstr(dd, "nuvio-trocaarte-dados")) {

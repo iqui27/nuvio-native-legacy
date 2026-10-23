@@ -38,7 +38,7 @@ static inline const char *idiomaauto_codigo(int idioma) {
   static const char *C[IDIOMA_N] = {
     "pt", "en", "ro", "uk", "ru", "fr", "de", "es", "it", "nl", "pl", "tr", "pt-PT",
     "sv", "da", "no", "cs", "sk", "sl", "hu", "lt", "bs", "sr", "bg", "el", "id",
-    "vi", "ja", "zh-CN", "zh-TW"
+    "vi", "ja", "zh-CN", "zh-TW", "ar"
   };
   return idioma >= 0 && idioma < IDIOMA_N ? C[idioma] : "en";
 }
@@ -122,6 +122,7 @@ static inline int idiomaauto_mapear(const char *cod) {
     if (ida_igual(p, "vi")) return IDIOMA_VI;
     if (ida_igual(p, "ja")) return IDIOMA_JA;
     if (ida_igual(p, "zh")) return hant && !hans ? IDIOMA_ZHTW : IDIOMA_ZHCN;
+    if (ida_igual(p, "ar")) return IDIOMA_AR;
     return -1;
   }
   if (n == 3) {
@@ -154,6 +155,7 @@ static inline int idiomaauto_mapear(const char *cod) {
     if (ida_igual(p, "jpn")) return IDIOMA_JA;
     if (ida_igual(p, "zho") || ida_igual(p, "chi")) return hant && !hans ? IDIOMA_ZHTW : IDIOMA_ZHCN;
     if (ida_igual(p, "yue")) return IDIOMA_ZHTW;    // cantones: escrita tradicional
+    if (ida_igual(p, "ara")) return IDIOMA_AR;
   }
   return -1;
 }

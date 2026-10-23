@@ -16,9 +16,8 @@
 // daquilo — e o resultado fica aqui, chaveado por id, ate alguem pedir.
 //
 // REGRAS, todas visiveis daqui:
-//   - O prefetch continua so para canal ao vivo (tipo "tv"/"channel").
-//     Filme/episodio reaproveita apenas respostas que o usuario ja pediu,
-//     pelas funcoes _vod abaixo: nao preabre video nem resolve debrid.
+//   - O guia antecipa canais; posplay antecipa a lista do proximo episodio.
+//     Ambos so consultam metadados: nao preabrem video nem resolvem debrid.
 //   - Validade CURTA (FONTECACHE_VALIDADE_MS): o link de canal e assinado e
 //     expira; ver stream_idade_ms em streams.h.
 //   - ACERTO CONSOME a entrada. A lista guardada e um "proximo passo pronto",
@@ -26,11 +25,13 @@
 //     falhar vai a rede, como antes.
 //   - Lista VAZIA nao entra. Zero fontes e indistinguivel de rede fora, e o
 //     pedido real tem de ir ver por si.
-//   - O prefetch so ARRANCA com a busca principal ociosa e o player parado, e
-//     CEDE (fontecache_ceder) assim que um pedido real vai a rede.
+//   - O prefetch so ARRANCA com a busca principal ociosa; o guia evita o
+//     player carregando, posplay antecipa enquanto toca. Ambos CEDEM
+//     (fontecache_ceder) assim que um pedido real vai a rede.
 #ifndef NV_FONTECACHE_H
 #define NV_FONTECACHE_H
 #include "streams.h"
+#include <stdint.h>
 
 // --- a chamada do guia --------------------------------------------------------
 //
@@ -66,6 +67,8 @@ void fontecache_engatilhar(const char *idAntes, const char *baseAntes,
 // addon respondeu com fonte) nos demais casos.
 int  addons_consultar(const char *id, const char *tipo, const char *base, int fios,
                       int (*cancelado)(void *), void *ctx, Stream **saida);
+int addons_consultar_sessao(const char *id, const char *tipo, const char *base, int fios,
+                      int (*cancelado)(void *), void *ctx, Stream **saida, uint64_t sessao);
 
 enum { FC_NADA = 0, FC_ACERTO, FC_EM_CURSO };
 
@@ -88,7 +91,7 @@ void fontecache_guardar(const char *id, const char *tipo, const Stream *lista, i
 // pedir aos addons que faltam e descarta o que juntou: uma lista pela metade
 // nao pode ficar guardada como se fosse inteira. O download que ja esta no ar
 // termina sozinho (libcurl nao interrompe), por isso o custo do cancelamento e
-// no maximo UMA resposta a mais chegando.
+// no maximo FONTECACHE_FIOS respostas de addons a mais chegando.
 void fontecache_ceder(void);
 
 // A busca principal esta OCIOSA neste quadro: se ha prefetch pendente e as
@@ -101,6 +104,9 @@ void fontecache_avancar(void);
 
 // Cancela e espera o fio de prefetch, e esvazia o cache. addons_encerrar chama.
 void fontecache_encerrar(void);
+// Invalida listas e pedidos antigos sem esperar a rede em curso.
+void fontecache_abrir_sessao(void);
+void fontecache_guardar_sessao(const char *id, const char *tipo, const Stream *lista, int n, uint64_t sessao);
 
 // Quantas entradas VALIDAS ha agora. Diagnostico e teste.
 int  fontecache_n(void);
@@ -112,7 +118,12 @@ typedef struct {
   char conta[80];
   int perfil;
   unsigned addons, geracao;
+  uint64_t sessao;
 } FontecacheEscopo;
+// UI: mesmo escopo que addons_buscar; proximo usa origem vazia (todos).
+void addons_capturar_escopo(FontecacheEscopo *escopo);
+int fontecache_precarregar_proximo(const char *id, const FontecacheEscopo *escopo);
+void fontecache_cancelar_proximo(void);
 unsigned fontecache_vod_geracao(void);
 void fontecache_vod_limpar(void);
 // Copia a resposta completa, sem truncar. `quando` e o fim da consulta original,

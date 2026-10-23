@@ -82,6 +82,15 @@ static float guiaExT, guiaRol, guiaRolAlvo, guiaRolV;
 static GuiaVista gv = { GI_CAP0, GC_INDICE, -1, 0, 0, 0 };
 static GfxMini guiaMiniVis, guiaMiniEx;
 static int guiaDesenhandoMini;   // dentro da miniatura do proprio guia: sem FBO aninhado
+#ifdef NV_TOUCH_UI
+static float guiaIdxRol, guiaInspRol;
+static void guiaPontIndice(int i, int b);
+static void guiaPontIndiceAbrir(int i, int b);
+static void guiaPontEnt(int e, int b);
+static void guiaPontEntAbrir(int e, int b);
+static void guiaPontBotao(int b, int e);
+static void guiaPontVoltar(int passo, int b);
+#endif
 static int pediuTela;
 int ajustes_pediu_tela(void) { int v = pediuTela; pediuTela = 0; return v; }
 int ajustes_guia_aberto(void) { return guiaAberto; }
@@ -151,9 +160,14 @@ static void guiaAbrir(int daNov) {
   if (daNov) { gv.col = GC_LISTA; gv.ent = guiaPrimeira(GI_CAP0); }
   else { gv.col = GC_INDICE; gv.ent = -1; }
   guiaRol = guiaRolAlvo = guiaRolV = 0;
+#ifdef NV_TOUCH_UI
+  guiaIdxRol = guiaInspRol = 0;
+  ajToqueLivre[AJT_INDICE] = ajToqueLivre[AJT_LISTA] = ajToqueLivre[AJT_EDITOR] = 0;
+#endif
 }
 static void guiaFechar(void) {
   guiaAberto = 0;
+  guiaDoIndice = 0;
   guiaExemplo = 0;
   gfx_mini_liberar(&guiaMiniVis);
   gfx_mini_liberar(&guiaMiniEx);
@@ -161,18 +175,29 @@ static void guiaFechar(void) {
 // Sai pelo Voltar: para o cartao, se veio dele; senao, a linha do guia em
 // Sobre e ajuda.
 static void guiaSair(void) {
-  int nov = gv.daNov;
+  int nov = gv.daNov, doIndice = guiaDoIndice;
   guiaFechar();
   if (nov) pediuNovidades = 1;
+  else if (doIndice) focoIndice = 1;   // volta ao cartao da grade (uxTopo ficou nele)
   else focarOpcao(AJ_GUIA);
 }
-
 // --- GEOMETRIA --------------------------------------------------------------------
 #define GU_IDX_W   380.0f
 #define GU_INSP_X 1176.0f
 #define GU_GE_H     96.0f
 #define GU_GE_GAP    2.0f
-static GfxRect guiaIdxR(void) { return (GfxRect){ ajX0(), AJI_TOPO, GU_IDX_W, NV_VTELA_H - AJI_TOPO - AJI_MARGEM }; }
+static int guiaTelefone(void) {
+#ifdef NV_TOUCH_UI
+  return !guiaDesenhandoMini && ajTelaCheia();
+#else
+  return 0;
+#endif
+}
+static GfxRect guiaTelefoneR(void) { return (GfxRect){24, 112, NV_VTELA_W - 48, NV_VTELA_H - 136}; }
+static GfxRect guiaIdxR(void) {
+  if (guiaTelefone()) return guiaTelefoneR();
+  return (GfxRect){ ajX0(), AJI_TOPO, GU_IDX_W, NV_VTELA_H - AJI_TOPO - AJI_MARGEM };
+}
 // Tela virtual menor (escala.h): a lista fica com pelo menos 560 e a proporcao
 // de 1080p (700:704); o inspetor fica com o resto e sai abaixo de 440 (130% e 150%).
 // Em 100% e o 1176 de sempre.
@@ -187,11 +212,15 @@ static float guiaInspX(void) {
 }
 static int guiaTemInsp(void) { return guiaInspX() < NV_VTELA_W; }
 static GfxRect guiaListaR(void) {
+  if (guiaTelefone()) return guiaTelefoneR();
   float x = ajX0() + GU_IDX_W + 24.0f;
   float fim = guiaTemInsp() ? guiaInspX() - 24.0f : NV_VTELA_W - AJI_MARGEM;
   return (GfxRect){ x, AJI_MARGEM, fim - x, NV_VTELA_H - 2 * AJI_MARGEM };
 }
-static GfxRect guiaInspR(void) { return (GfxRect){ guiaInspX(), AJI_MARGEM, NV_VTELA_W - AJI_MARGEM - guiaInspX(), NV_VTELA_H - 2 * AJI_MARGEM }; }
+static GfxRect guiaInspR(void) {
+  if (guiaTelefone()) return guiaTelefoneR();
+  return (GfxRect){ guiaInspX(), AJI_MARGEM, NV_VTELA_W - AJI_MARGEM - guiaInspX(), NV_VTELA_H - 2 * AJI_MARGEM };
+}
 
 // --- PECAS ---------------------------------------------------------------------------
 // "• NOVO": a marca de estado (acento), 12/800 em caixa alta.
@@ -223,7 +252,10 @@ static float guiaTrilha(const char *onde, float x, float y, float w, float a) {
       char *q = strstr(p, " › ");
       size_t l = q ? (size_t)(q - p) : strlen(p);
       while (l && p[l - 1] == ' ') l--;
-      snprintf(seg[n++], sizeof seg[0], "%.*s", (int)l, p);
+      { char cru[120];
+        snprintf(cru, sizeof cru, "%.*s", (int)l, p);
+        // 2.0.3: o rotulo novo da linha, se o guia ainda diz o antigo.
+        snprintf(seg[n++], sizeof seg[0], "%s", rotuloAtualDoAntigo(cru)); }
       if (!q) break;
       p = q + strlen(" › ");
     }
@@ -405,7 +437,7 @@ static void guiaPilulaIlha(float y, const char *ic, float cr, float cg, float cb
   if (forte) { txt_desenhar(f, x, y + (56 - f.h) * 0.5f); x += f.w + ep; }
   if (pos) { txt_desenhar(p, x, y + (56 - p.h) * 0.5f); x += p.w; }
   if (azul) {
-    TxtLinha k = ajTxt(TXT_AJ_KBD, "AZUL"), l = ajTxt(TXT_AJ_CHIP, "abre");
+    TxtLinha k = ajTxt(TXT_AJ_KBD, "CH+"), l = ajTxt(TXT_AJ_CHIP, "abre");
     float kw = k.w + 18;
     x += 6;
     ajNeutro((GfxRect){ x, y + 13, kw, 30 }, 15, 0.09f, AJ_CHIP_SOL, 1);
@@ -593,14 +625,27 @@ static void guiaDesenharIndice(const GuiaVista *v, float a) {
   int j;
   ajustes_acento(&ar, &ag, &ab);
   ajIlha(il, 32, a, 0);
+#ifdef NV_TOUCH_UI
+  if (ajTelaCheia() && !guiaDesenhandoMini) {
+    float total = (GI_CAP0 + GUIA_NCAPS) * 56.0f + 43.0f;
+    float alvo = fmaxf(0, v->idx * 56.0f - (il.h - 82.0f) * 0.5f);
+    y -= ajToqueRegistrar(AJT_INDICE, il, &guiaIdxRol, total - il.h, alvo, 310);
+    gfx_recorte(il.x, il.y, il.w, il.h);
+  }
+#endif
   for (j = 0; j < GI_CAP0 + GUIA_NCAPS; j++) {
     int sel = j == v->idx, foco = sel && v->col == GC_INDICE, at = sel && !foco;
-    const char *t = j == GI_BUSCA ? "Buscar no guia" : j == GI_NOVO ? "Novo na 1.8.0" : GUIA_CAPS[j - GI_CAP0].titulo;
+    const char *t = j == GI_BUSCA ? "Buscar no guia" : j == GI_NOVO ? "Novo na 2.0" : GUIA_CAPS[j - GI_CAP0].titulo;
     const char *ic = j == GI_BUSCA ? "aj_search" : j == GI_NOVO ? "aj_sparkles" : GUIA_CAPS[j - GI_CAP0].icone;
     GfxRect r;
     float al = foco || at ? 1.0f : 0.66f;
     if (j == GI_CAP0) { gfx_cor((GfxRect){ il.x + 30, y + 6, il.w - 60, 1 }, 0, 1, 1, 1, 0.08f * a); y += 15; }
     r = (GfxRect){ il.x + 14, y, il.w - 28, 54 };
+#ifdef NV_TOUCH_UI
+    if (ajTelaCheia() && !guiaDesenhandoMini)
+      ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, il.y, il.y + il.h,
+                          guiaPontIndice, guiaPontIndiceAbrir, j, 0);
+#endif
     if (foco) ajNeutro(r, 27, 0.14f, 0.169f, 0.176f, 0.204f, a);
     else if (at) gfx_cor((GfxRect){ r.x + 7, r.y + 24.5f, 5, 5 }, 0.5f, ar, ag, ab, a);
     ajIcone(ic, r.x + 18, r.y + 15, 24, (foco || at ? 1.0f : 0.55f) * a);
@@ -626,6 +671,9 @@ static void guiaDesenharIndice(const GuiaVista *v, float a) {
       } }
     y += 56;
   }
+#ifdef NV_TOUCH_UI
+  if (ajTelaCheia() && !guiaDesenhandoMini) gfx_sem_recorte();
+#endif
 }
 
 // --- LISTA --------------------------------------------------------------------------
@@ -660,6 +708,11 @@ static void guiaDesenharEnt(int e, float x, float y, float w, int foco, int sel,
   ajChevron(x + w - 22, y + 48, (foco ? 0.7f : 0.32f) * a);
 }
 static float guiaAltItem(int it) { return it < 0 ? 37 + 4 + 18 : GU_GE_H + GU_GE_GAP; }
+static float guiaListaAltura(const int *l, int n) {
+  float total = 0;
+  for (int i = 0; i < n; i++) total += l[i] < 0 ? (i ? 18 : 8) + 41 : GU_GE_H + GU_GE_GAP;
+  return total;
+}
 static void guiaDesenharLista(const GuiaVista *v, float a) {
   GfxRect fr = guiaListaR();
   int l[GUIA_NENT + GUIA_NCAPS], n = guiaLista(v->idx, l), i;
@@ -669,7 +722,7 @@ static void guiaDesenharLista(const GuiaVista *v, float a) {
   ajIlha(fr, 36, a, 0);
   if (v->idx == GI_NOVO) {
     snprintf(kick, sizeof kick, "%s", "Guia de uso");
-    snprintf(tit, sizeof tit, "%s", "Novo na 1.8.0");
+    snprintf(tit, sizeof tit, "%s", "Novo na 2.0");
     snprintf(sub, sizeof sub, i18n("%d recursos novos ou que mudaram nesta versão"), guiaNovos());
   } else {
     int c = v->idx >= GI_CAP0 ? v->idx - GI_CAP0 : 0;
@@ -678,14 +731,32 @@ static void guiaDesenharLista(const GuiaVista *v, float a) {
     snprintf(tit, sizeof tit, "%s", GUIA_CAPS[c].titulo);
     snprintf(sub, sizeof sub, "%s", GUIA_CAPS[c].sub);
   }
-  if (v->daNov) {
+  if (v->daNov && !guiaTelefone()) {
     TxtLinha t = ajTxt(TXT_AJ_SEG, "Voltar às novidades");
     float cw = 22 + 20 + 10 + t.w + 22;
     ajChip("Voltar às novidades", "aj_corner-up-left", fr.x + fr.w - 30 - cw, fr.y + 34, v->col == GC_CHIP, a);
+#ifdef NV_TOUCH_UI
+    if (ajTelaCheia() && !guiaDesenhandoMini) ponteiro_alvo(fr.x + fr.w - 30 - cw, fr.y + 34, cw, 56, NULL, guiaPontVoltar, 0, 0);
+#endif
     reserva = cw + 20;
   }
-  topo = ajCabecalhoFolha(fr, kick, tit, sub, reserva, a) - 0.0f;
-  topo = fr.y + 155.6f;
+  if (guiaTelefone()) {
+    TxtLinha k = ajTxtC(TXT_AJ_KBD, kick, fr.w - 48), t = ajTxtC(TXT_AJ_INSP, tit, fr.w - 48);
+    TxtLinha s = ajTxtC(TXT_AJ_SUB, sub, fr.w - 48);
+    txt_desenhar_alpha(k, fr.x + 24, fr.y + 20, .45f * a);
+    txt_desenhar_alpha(t, fr.x + 24, fr.y + 48, a);
+    txt_desenhar_alpha(s, fr.x + 24, fr.y + 94, .62f * a);
+    topo = fr.y + 144;
+    base -= 16;
+  } else {
+    topo = ajCabecalhoFolha(fr, kick, tit, sub, reserva, a) - 0.0f;
+    topo = fr.y + 155.6f;
+  }
+#ifdef NV_TOUCH_UI
+  if (ajTelaCheia() && !guiaDesenhandoMini)
+    ajToqueRegistrar(AJT_LISTA, (GfxRect){fr.x, topo, fr.w, base - topo}, &guiaRol,
+                      guiaListaAltura(l, n) - (base - topo) + 20, guiaRol, v->idx + 320);
+#endif
   gfx_recorte(fr.x, topo, fr.w, base - topo);
   y = topo - (guiaDesenhandoMini ? 0 : guiaRol);
   for (i = 0; i < n; i++) {
@@ -709,6 +780,10 @@ static void guiaDesenharLista(const GuiaVista *v, float a) {
     }
     yc = y + GU_GE_H * 0.5f;
     if (y + GU_GE_H >= topo && y <= base) {
+#ifdef NV_TOUCH_UI
+      if (ajTelaCheia() && !guiaDesenhandoMini)
+        ponteiro_alvo_faixa(x, y, w, GU_GE_H, topo, base, guiaPontEnt, guiaPontEntAbrir, l[i], 0);
+#endif
       float al = yc > base - 90 ? (base - yc) / 90 : 1;
       if (al < 0) al = 0;
       guiaDesenharEnt(l[i], x, y, w, l[i] == v->ent && v->col == GC_LISTA, l[i] == v->ent && v->col == GC_BOTOES,
@@ -723,7 +798,7 @@ static void guiaDesenharLista(const GuiaVista *v, float a) {
 static void guiaRolar(void) {
   GfxRect fr = guiaListaR();
   int l[GUIA_NENT + GUIA_NCAPS], n = guiaLista(gv.idx, l), i;
-  float y = 0, H = fr.y + fr.h - (fr.y + 155.6f), total = 0, alvo = 0;
+  float y = 0, H = guiaTelefone() ? fr.h - 160.0f : fr.y + fr.h - (fr.y + 155.6f), total = 0, alvo = 0;
   for (i = 0; i < n; i++) {
     if (l[i] < 0) { y += (i ? 18 : 8) + 41; continue; }
     if (l[i] == gv.ent) alvo = y;
@@ -735,6 +810,64 @@ static void guiaRolar(void) {
   if (guiaRolAlvo > total - H + 20) guiaRolAlvo = total - H + 20;
   if (guiaRolAlvo < 0) guiaRolAlvo = 0;
 }
+
+#ifdef NV_TOUCH_UI
+// No telefone o inspetor e uma pagina: nada desaparece quando as tres colunas
+// nao cabem. Texto e botoes compartilham o recorte e a rolagem do corpo.
+static float guiaTelefoneConteudo(const GuiaVista *v, float x, float y, float w, float a) {
+  int e = v->ent, b[3], nb = guiaBotoes(e, b);
+  float inicio = y, pw = fminf(w, 560), ph = pw * 9.0f / 16.0f;
+  GfxRect fr = guiaInspR();
+  if (e < 0 || e >= GUIA_NENT) return 0;
+  const GuiaEnt *g = &GUIA_ENT[e];
+  if (a > 0) ajustes_guia_imagem(e, x + (w - pw) * .5f, y, pw, ph);
+  y += ph + 24;
+  { TxtLinha c = ajTxtC(TXT_AJ_KBD, GUIA_CAPS[g->cap].titulo, w);
+    txt_desenhar_alpha(c, x, y, .45f * a); y += 28; }
+  y += txt_bloco_corta(TXT_AJ_INSP, g->titulo, 243, 242, 239, x, y, w, 38.4f, a, 0) + 12;
+  y += txt_bloco_corta(TXT_AJ_SUB, guiaTxt(g), 243, 242, 239, x, y, w, 28.5f, .66f * a, 0) + 24;
+  { TxtLinha c = ajTxtC(TXT_AJ_CAPS13, "Onde fica", w);
+    txt_desenhar_alpha(c, x, y, .45f * a); y += 28; }
+  y += txt_bloco_corta(TXT_AJ_18, g->onde, 243, 242, 239, x, y, w, 29, .8f * a, 0) + 24;
+  for (int i = 0; i < nb; i++) {
+    const char *rot = b[i] == GB_EXEMPLO ? "Ver exemplo" : b[i] == GB_AJUSTES ? "Abrir em Ajustes" : guiaRotTela(g->tela);
+    const char *ic = b[i] == GB_EXEMPLO ? "aj_play" : b[i] == GB_AJUSTES ? "aj_settings-2" : guiaIcTela(g->tela);
+    GfxRect r = {x, y, w, 56};
+    if (a > 0) {
+      int f = v->botao == i, tinta = f ? ajTinta() : 243;
+      TxtLinha t = txt_linha_corta(TXT_AJ_SEG, i18n(rot), tinta, f ? tinta : 242, f ? tinta : 239, 255, w - 82);
+      if (f) ajPilulaAcento(r, 28, a);
+      else ajNeutro(r, 28, .08f, AJ_CHIP_SOL, a);
+      if (f) ajIconeT(ic, x + 24, y + 17, 22, a);
+      else ajIcone(ic, x + 24, y + 17, 22, a);
+      txt_desenhar_alpha(t, x + 58, y + (56 - t.h) * .5f, a);
+      ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, fr.y, fr.y + fr.h, NULL, guiaPontBotao, i, e);
+    }
+    y += 68;
+  }
+  return y - inicio;
+}
+static void guiaDesenharTelefoneInspetor(const GuiaVista *v, float a) {
+  GfxRect r = guiaInspR();
+  float total = guiaTelefoneConteudo(v, r.x + 24, 0, r.w - 48, 0) + 48;
+  ajIlha(r, 36, a, 0);
+  float off = ajToqueRegistrar(AJT_EDITOR, r, &guiaInspRol, total - r.h, 0, v->ent + 400);
+  gfx_recorte(r.x, r.y, r.w, r.h);
+  guiaTelefoneConteudo(v, r.x + 24, r.y + 24 - off, r.w - 48, a);
+  gfx_sem_recorte();
+}
+static void guiaTelefoneCabecalho(void) {
+  GfxRect voltar = {24, 24, 64, 64}, fechar = {NV_VTELA_W - 88, 24, 64, 64};
+  TxtLinha t = ajTxtC(TXT_AJ_INSP, "Guia de uso", NV_VTELA_W - 224);
+  ajNeutro(voltar, 32, .08f, AJ_CHIP_SOL, 1);
+  ajNeutro(fechar, 32, .08f, AJ_CHIP_SOL, 1);
+  ajIcone("aj_arrow-left", voltar.x + 20, voltar.y + 20, 24, 1);
+  ajIcone("aj_x", fechar.x + 20, fechar.y + 20, 24, 1);
+  txt_desenhar(t, 112, 24 + (64 - t.h) * .5f);
+  ponteiro_alvo(voltar.x, voltar.y, voltar.w, voltar.h, NULL, guiaPontVoltar, 1, 0);
+  ponteiro_alvo(fechar.x, fechar.y, fechar.w, fechar.h, NULL, guiaPontVoltar, 0, 0);
+}
+#endif
 
 // --- INSPETOR -----------------------------------------------------------------------
 static void guiaDesenharInspetor(const GuiaVista *v, float a) {
@@ -750,7 +883,7 @@ static void guiaDesenharInspetor(const GuiaVista *v, float a) {
     ph = guiaVisual(g->visual, e, x, y, w);
     if (ph > 0) y += ph + 24; else y += 4;
     { float kw = ajCaps(TXT_AJ_KBD, GUIA_CAPS[g->cap].titulo, 1.96f, x, y, 0.45f * a);
-      if (g->novo) guiaNovoMarca("Novo na 1.8.0", x + kw + 12, y + 8.5f, a); }
+      if (g->novo) guiaNovoMarca("Novo na 2.0", x + kw + 12, y + 8.5f, a); }
     y += 17 + 8;
     y += ajBloco(TXT_AJ_INSP, g->titulo, x, y, w, 38.4f, a, 2);
     y += 10;
@@ -770,9 +903,14 @@ static void guiaDesenharInspetor(const GuiaVista *v, float a) {
       y += 20;
       for (i = 0; i < nb; i++) {
         int f = v->col == GC_BOTOES && v->botao == i;
-        if (b[i] == GB_EXEMPLO) bx += guiaBotao("Ver exemplo", "aj_play", bx, y, f, a) + 12;
-        else if (b[i] == GB_AJUSTES) bx += guiaBotao("Abrir em Ajustes", "aj_settings-2", bx, y, f, a) + 12;
-        else bx += guiaBotao(guiaRotTela(g->tela), guiaIcTela(g->tela), bx, y, f, a) + 12;
+        float bw;
+        if (b[i] == GB_EXEMPLO) bw = guiaBotao("Ver exemplo", "aj_play", bx, y, f, a);
+        else if (b[i] == GB_AJUSTES) bw = guiaBotao("Abrir em Ajustes", "aj_settings-2", bx, y, f, a);
+        else bw = guiaBotao(guiaRotTela(g->tela), guiaIcTela(g->tela), bx, y, f, a);
+#ifdef NV_TOUCH_UI
+        if (ajTelaCheia() && !guiaDesenhandoMini) ponteiro_alvo_faixa(bx, y, bw, 56, ir.y, ir.y + ir.h, NULL, guiaPontBotao, i, e);
+#endif
+        bx += bw + 12;
       }
     }
     if (v->col == GC_BOTOES && nb) {
@@ -808,19 +946,19 @@ static void guiaDesenharInspetor(const GuiaVista *v, float a) {
     snprintf(q, sizeof q, "%d", guiaNoCap(c));
     snprintf(q2, sizeof q2, "%d", guiaNovosNoCap(c));
     y += ajMeta(i18n("Recursos"), q, x, y, w, a);
-    y += ajMeta(i18n("Novo na 1.8.0"), q2, x, y, w, a);
+    y += ajMeta(i18n("Novo na 2.0"), q2, x, y, w, a);
     d[nd++] = (AjDica){ "→", "Recursos" };
     d[nd++] = (AjDica){ "↑ ↓", "Capítulos" };
     d[nd++] = (AjDica){ "Voltar", v->daNov ? "Novidades da 1.8.0" : "Ajustes" };
   } else {
-    // "Buscar no guia" e "Novo na 1.8.0" com o foco no indice.
+    // "Buscar no guia" e "Novo na 2.0" com o foco no indice.
     int novo = v->idx == GI_NOVO;
     char t[160];
     ph = guiaVisual(novo ? GV_VIDRO : GV_GUIA, -1, x, y, w);
     if (ph > 0) y += ph + 24; else y += 4;
     ajCaps(TXT_AJ_KBD, "Guia de uso", 1.96f, x, y, 0.45f * a);
     y += 17 + 8;
-    y += ajBloco(TXT_AJ_INSP, novo ? "Novo na 1.8.0" : "Buscar no guia", x, y, w, 38.4f, a, 2);
+    y += ajBloco(TXT_AJ_INSP, novo ? "Novo na 2.0" : "Buscar no guia", x, y, w, 38.4f, a, 2);
     y += 10;
     if (novo) snprintf(t, sizeof t, i18n("%d recursos novos ou que mudaram nesta versão"), guiaNovos());
     else snprintf(t, sizeof t, "%s", i18n("Procure um recurso pelo nome ou pelo que ele faz. Os ajustes que casam com a busca vêm junto."));
@@ -840,13 +978,30 @@ static void guiaDesenharExemplo(void) {
   const char *tit = gv.ent >= 0 ? GUIA_ENT[gv.ent].titulo : "";
   if (c == GX_N180_FONTES || c == GX_N180_ILHA) { esc = 0.72f; cw = N180_CENA_W * esc; ch = N180_CENA_H * esc; }
   else { esc = 1.0f; cw = N170_PREVIA_W; ch = N170_PREVIA_H; }
+#ifdef NV_TOUCH_UI
+  if (guiaTelefone()) {
+    float k = fminf(1.0f, fminf((NV_VTELA_W - 128) / cw, (NV_VTELA_H - 198) / ch));
+    esc *= k; cw *= k; ch *= k;
+    ponteiro_camada(); ajToqueCamada();
+    ponteiro_alvo(0, 0, NV_VTELA_W, NV_VTELA_H, NULL, guiaPontVoltar, 2, 0);
+  }
+#endif
   ajVeuModal();
   m = (GfxRect){ (NV_VTELA_W - (cw + 80)) * 0.5f, (NV_VTELA_H - (ch + 150)) * 0.5f, cw + 80, ch + 150 };
   if (m.y < 24) { float k = (NV_VTELA_H - 48 - 150) / ch; esc *= k; cw *= k; ch *= k;
                   m = (GfxRect){ (NV_VTELA_W - (cw + 80)) * 0.5f, 24, cw + 80, ch + 150 }; }
   ajIlha(m, 36, 1, 1);
+#ifdef NV_TOUCH_UI
+  if (guiaTelefone()) {
+    GfxRect fechar = {m.x + m.w - 80, m.y + 24, 56, 56};
+    ponteiro_alvo(m.x, m.y, m.w, m.h, NULL, NULL, 0, 0);
+    ajNeutro(fechar, 28, .08f, AJ_CHIP_SOL, 1);
+    ajIcone("aj_x", fechar.x + 17, fechar.y + 17, 22, 1);
+    ponteiro_alvo(fechar.x, fechar.y, fechar.w, fechar.h, NULL, guiaPontVoltar, 2, 0);
+  }
+#endif
   ajKicker("Ver exemplo", m.x + 40, m.y + 32, 1);
-  { TxtLinha t = ajTxtC(TXT_AJ_NOME, tit, m.w - 80); txt_desenhar(t, m.x + 40, m.y + 56); }
+  { TxtLinha t = ajTxtC(TXT_AJ_NOME, tit, m.w - (guiaTelefone() ? 144 : 80)); txt_desenhar(t, m.x + 40, m.y + 56); }
   pv = (GfxRect){ m.x + 40, m.y + 100, cw, ch };
   if (gfx_mini_alvo(&guiaMiniEx, (int)cw, (int)ch)) {
     gfx_mini_comecar(&guiaMiniEx, 0, 0, esc);
@@ -857,12 +1012,21 @@ static void guiaDesenharExemplo(void) {
     gfx_mini_terminar();
     gfx_mini_desenhar(&guiaMiniEx, pv, 28, 1);
   }
-  { AjDica d[1] = { { "Voltar", "Fechar" } };
+  if (!guiaTelefone()) { AjDica d[1] = { { "Voltar", "Fechar" } };
     float w = ajDicasLargura(d, 1);
     ajDicasLinha(d, 1, m.x + m.w - 40 - w, m.y + 38, 1); }
 }
 
 static void guiaDesenharTela(const GuiaVista *v, float a) {
+#ifdef NV_TOUCH_UI
+  if (guiaTelefone()) {
+    if (v->col == GC_INDICE) guiaDesenharIndice(v, a);
+    else if (v->col == GC_BOTOES) guiaDesenharTelefoneInspetor(v, a);
+    else guiaDesenharLista(v, a);
+    guiaTelefoneCabecalho();
+    return;
+  }
+#endif
   guiaDesenharIndice(v, a);
   guiaDesenharLista(v, a);
   guiaDesenharInspetor(v, a);
@@ -878,8 +1042,14 @@ static void guiaDesenhar(void) {
 }
 static void guiaAtualizar(float dt) {
   if (!guiaAberto) return;
+#ifdef NV_TOUCH_UI
+  if (!ajTelaCheia() || !ajToqueLivre[AJT_LISTA]) {
+#endif
   guiaRolar();
   guiaRol = ajustes_animacoes_reduzidas() ? guiaRolAlvo : anim_mola2(&guiaRolV, guiaRol, guiaRolAlvo, dt, 14.0f);
+#ifdef NV_TOUCH_UI
+  }
+#endif
   if (guiaExemplo) {
     float dur = guiaExemplo == GX_N170_SPOT ? 9.0f : guiaExemplo == GX_N170_ILHA ? 13.2f : 4.6f;
     guiaExT += dt;
@@ -907,7 +1077,7 @@ static void guiaInspetorAjustes(GfxRect ir) {
   snprintf(q, sizeof q, i18n("%d em %d capítulos"), GUIA_NENT, GUIA_NCAPS);
   snprintf(q2, sizeof q2, i18n("%d recursos"), guiaNovos());
   y += ajMeta(i18n("Recursos"), q, x, y, w, 1);
-  y += ajMeta(i18n("Novo na 1.8.0"), q2, x, y, w, 1);
+  y += ajMeta(i18n("Novo na 2.0"), q2, x, y, w, 1);
   y += 22.0f;
   ajKicker("Capítulos", x, y + 1, 1);
   y += 29.0f;
@@ -938,6 +1108,45 @@ static void guiaMoverEnt(int d) {
   for (i = at + d; i >= 0 && i < n; i += d) if (l[i] >= 0) { gv.ent = l[i]; return; }
   if (d < 0 && gv.daNov) gv.col = GC_CHIP;   // acima da primeira: o chip "Voltar às novidades"
 }
+#ifdef NV_TOUCH_UI
+static void guiaPontIndice(int i, int b) {
+  (void)b;
+  if (!guiaAberto || guiaExemplo || i < 0 || i >= GI_CAP0 + GUIA_NCAPS) return;
+  if (gv.idx != i) { gv.ent = -1; guiaRol = guiaRolAlvo = guiaRolV = 0; ajToqueLivre[AJT_LISTA] = 0; }
+  gv.idx = i; gv.col = GC_INDICE;
+}
+static void guiaPontIndiceAbrir(int i, int b) {
+  guiaPontIndice(i, b);
+  if (!guiaAberto || guiaExemplo || gv.idx != i) return;
+  if (i == GI_BUSCA) { spot_abrir_guia(); return; }
+  gv.col = GC_LISTA; gv.ent = guiaPrimeira(i);
+}
+static void guiaPontEnt(int e, int b) {
+  (void)b;
+  if (!guiaAberto || guiaExemplo || e < 0 || e >= GUIA_NENT) return;
+  if (gv.idx == GI_NOVO ? !GUIA_ENT[e].novo : GUIA_ENT[e].cap != gv.idx - GI_CAP0) return;
+  gv.ent = e; gv.col = GC_LISTA;
+}
+static void guiaPontEntAbrir(int e, int b) {
+  guiaPontEnt(e, b);
+  if (!guiaAberto || guiaExemplo || gv.ent != e) return;
+  gv.col = GC_BOTOES; gv.botao = 0;
+}
+static void guiaPontBotao(int b, int e) {
+  if (!guiaAberto || guiaExemplo || gv.ent != e) return;
+  gv.col = GC_BOTOES; gv.botao = b; guiaAgir(b);
+}
+static void guiaPontVoltar(int passo, int b) {
+  (void)b;
+  if (!guiaAberto) return;
+  if (guiaExemplo) { guiaExemplo = 0; return; }
+  if (passo && guiaTelefone()) {
+    if (gv.col == GC_BOTOES) { gv.col = GC_LISTA; return; }
+    if (gv.col != GC_INDICE) { gv.col = GC_INDICE; return; }
+  }
+  guiaSair();
+}
+#endif
 static void guiaEvento(const SDL_Event *e) {
   SDL_Keycode k;
   int ok;
@@ -945,6 +1154,13 @@ static void guiaEvento(const SDL_Event *e) {
   k = e->key.keysym.sym;
   ok = k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE;
   if (guiaExemplo) { if (guiaVoltar(k, e) || ok) guiaExemplo = 0; return; }
+#ifdef NV_TOUCH_UI
+  if (guiaVoltar(k, e) && guiaTelefone()) { guiaPontVoltar(1, 0); return; }
+  if (k == SDLK_UP || k == SDLK_DOWN) {
+    if (gv.col == GC_INDICE) ajToqueLivre[AJT_INDICE] = 0;
+    else ajToqueLivre[AJT_LISTA] = 0;
+  }
+#endif
   if (guiaVoltar(k, e)) { guiaSair(); return; }
   switch (gv.col) {
     case GC_INDICE:
@@ -965,7 +1181,7 @@ static void guiaEvento(const SDL_Event *e) {
       if (k == SDLK_UP) guiaMoverEnt(-1);
       else if (k == SDLK_DOWN) guiaMoverEnt(+1);
       else if (k == SDLK_LEFT) gv.col = GC_INDICE;
-      else if ((k == SDLK_RIGHT || ok) && nb) { gv.col = GC_BOTOES; gv.botao = 0; }
+      else if ((k == SDLK_RIGHT || ok) && (nb || guiaTelefone())) { gv.col = GC_BOTOES; gv.botao = 0; }
     } break;
     case GC_BOTOES: {
       int bs[3], nb = guiaBotoes(gv.ent, bs);
@@ -1023,3 +1239,4 @@ void ajustes_guia_ir(int e) {
   gv.ent = e;
   guiaRol = guiaRolV = 0;
 }
+

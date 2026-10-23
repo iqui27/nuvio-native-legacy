@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nuvio 2.1 · Resolver um problema</title>
+<link rel="stylesheet" href="tv.css">
+<style>
+.pg{position:absolute;left:200px;right:96px;top:0;bottom:0}
+.topo{position:absolute;left:0;right:0;top:124px}
+.bola{width:64px;height:64px;border-radius:20px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;flex:none}
+.visto1{position:absolute;left:0;right:0;top:318px;border-radius:24px;padding:22px 26px;display:flex;align-items:center;gap:22px}
+.visto1 .tit{font-size:23px;font-weight:600}
+.visto1 .ds{font-size:18px;color:var(--mut);margin-top:4px}
+.probs{position:absolute;left:0;right:0;top:470px;display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.prob{border-radius:26px;padding:26px 28px;height:196px;display:flex;flex-direction:column}
+.prob .tit{font-size:26px;font-weight:700;margin-top:auto}
+.prob .ds{font-size:18px;color:var(--mut);margin-top:6px}
+.pe{position:absolute;left:0;right:0;bottom:64px;display:flex;gap:14px;align-items:center}
+.pe .dica{margin-left:auto;font-size:17px;color:var(--mut2)}
+/* testes guiados */
+.col1{position:absolute;left:0;top:300px;width:760px}
+.col2{position:absolute;right:0;top:300px;width:800px}
+.tst{display:flex;gap:18px;align-items:flex-start;padding:15px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.tst .c{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.10);color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.tst .c .ic{width:20px;height:20px}
+.tst.achou .c{background:var(--ac);color:var(--tinta)}
+.tst.nao .c{background:none;border:2px dashed rgba(255,255,255,.22);color:var(--mut2)}
+.tst .t{font-size:22px;font-weight:600}
+.tst .d{font-size:17px;color:var(--mut);margin-top:3px}
+.tst.nao .t{color:var(--mut)}
+.tst .v{margin-left:auto;font-size:17px;color:var(--mut2);padding-top:5px;white-space:nowrap}
+.painel{border-radius:32px;padding:40px}
+.lig{display:inline-flex;width:64px;height:36px;border-radius:18px;background:rgba(255,255,255,.14);position:relative;flex:none}
+.lig::after{content:"";position:absolute;left:4px;top:4px;width:28px;height:28px;border-radius:50%;background:#bbb}
+.lig.on{background:var(--ac)}
+.lig.on::after{left:32px;background:var(--tinta)}
+.aj{display:flex;align-items:center;gap:18px;border-radius:20px;padding:18px 20px;margin:26px -20px 0}
+.aj .tit{font-size:21px;font-weight:600}
+.aj .ds{font-size:16px;color:var(--mut);margin-top:3px}
+/* registro */
+.cod{font-size:84px;font-weight:800;letter-spacing:.08em;line-height:1;margin-top:26px}
+.duas{display:grid;grid-template-columns:1fr 1fr;gap:0 36px;margin-top:22px}
+.duas div{display:flex;gap:10px;font-size:18px;line-height:1.35;padding:8px 0;color:rgba(243,242,239,.84)}
+.duas .ic{width:20px;height:20px;margin-top:2px;color:var(--ac)}
+.duas .n{color:var(--mut)}
+.duas .n .ic{color:var(--mut2)}
+.env{display:grid;grid-template-columns:230px 1fr auto;gap:20px;align-items:center;font-size:19px}
+.env b{font-size:20px;font-weight:700;letter-spacing:.06em}
+.env .s{color:var(--mut)}
+.env .r{font-size:17px;color:var(--mut2)}
+</style>
+</head>
+<body>
+
+<section class="quadro">
+<p class="leg"><b>5A · Resolver um problema</b> — a pessoa escolhe o sintoma em palavras dela; se o app já viu um erro, ele vem primeiro.</p>
+<div class="caixa"><div class="tv">
+  <div class="fundo" style="background:radial-gradient(80% 70% at 90% 0,#191c26,#0D0D0D 60%)"></div>
+  <div class="ilha relogio">20:52<span class="s"></span><span class="av" style="background:#7c5cff">M</span></div>
+  <nav class="ilha rail" aria-label="Menu">
+    <a data-f><span data-i="home"></span></a><a data-f><span data-i="explorar"></span></a><a data-f><span data-i="guia"></span></a><a data-f><span data-i="busca"></span></a><a data-f><span data-i="biblio"></span></a><a data-f><span data-i="agenda"></span></a><a data-f><span data-i="perfil"></span></a><a class="ativo" data-f><span data-i="ajustes"></span></a>
+  </nav>
+  <div class="pg">
+    <div class="topo">
+      <div class="kick">Ajustes › Ajuda</div>
+      <h1 class="h1" style="margin-top:10px">Resolver um problema</h1>
+      <div class="sub" style="margin-top:8px">Escolha o que mais parece. O Nuvio testa sozinho e diz o que achou.</div>
+    </div>
+    <div class="vid visto1" data-f>
+      <span class="bola"><span data-i="alerta"></span></span>
+      <div><div class="tit">Há 4 minutos um vídeo não começou</div><div class="ds">Os Relojoeiros T2:E5 · a TV recusou o arquivo. Dá para começar por ele.</div></div>
+      <span style="margin-left:auto;color:var(--mut2)"><span data-i="dir"></span></span>
+    </div>
+    <div class="probs">
+      <div class="vid prob foco" data-f><span class="bola"><span data-i="play"></span></span><div class="tit">O vídeo não começa</div><div class="ds">Tela preta, erro ou volta para a lista</div></div>
+      <div class="vid prob" data-f><span class="bola"><span data-i="recarrega"></span></span><div class="tit">Trava ou fica carregando</div><div class="ds">Para no meio, engasga, demora a abrir</div></div>
+      <div class="vid prob" data-f><span class="bola"><span data-i="som"></span></span><div class="tit">Sem som ou som errado</div><div class="ds">Mudo, idioma trocado, fora de sincronia</div></div>
+      <div class="vid prob" data-f><span class="bola"><span data-i="legenda"></span></span><div class="tit">Legenda</div><div class="ds">Não aparece, atrasada ou com letras quebradas</div></div>
+      <div class="vid prob" data-f><span class="bola"><span data-i="relogio"></span></span><div class="tit">Continuar assistindo errado</div><div class="ds">Episódio trocado, progresso que volta</div></div>
+      <div class="vid prob" data-f><span class="bola"><span data-i="pessoas"></span></span><div class="tit">Contas e sincronização</div><div class="ds">Trakt, Simkl ou Conta Nuvio não entram</div></div>
+    </div>
+    <div class="pe"><span class="chip" data-f><span data-i="envia" class="p"></span>Enviar um registro</span><span class="chip" data-f>Registros enviados <span class="v">2</span></span><span class="dica">Nenhum teste muda seus Ajustes sem perguntar</span></div>
+  </div>
+</div></div>
+</section>
+
+<section class="quadro">
+<p class="leg"><b>5B · Testes guiados</b> — o app testa na ordem em que o vídeo passa, para no primeiro que falha e oferece o conserto.</p>
+<div class="caixa"><div class="tv">
+  <div class="fundo" style="background:radial-gradient(80% 70% at 90% 0,#191c26,#0D0D0D 60%)"></div>
+  <div class="ilha relogio">20:53<span class="s"></span><span class="av" style="background:#7c5cff">M</span></div>
+  <nav class="ilha rail" aria-label="Menu">
+    <a data-f><span data-i="home"></span></a><a data-f><span data-i="explorar"></span></a><a data-f><span data-i="guia"></span></a><a data-f><span data-i="busca"></span></a><a data-f><span data-i="biblio"></span></a><a data-f><span data-i="agenda"></span></a><a data-f><span data-i="perfil"></span></a><a class="ativo" data-f><span data-i="ajustes"></span></a>
+  </nav>
+  <div class="pg">
+    <div class="topo">
+      <div class="kick">Resolver um problema › O vídeo não começa</div>
+      <h1 class="h1" style="margin-top:10px">Testamos Os Relojoeiros T2:E5</h1>
+      <div class="sub" style="margin-top:8px">5 testes em 6 segundos, com a mesma fonte que falhou.</div>
+    </div>
+    <div class="col1">
+      <div class="tst"><span class="c"><span data-i="ok"></span></span><div><div class="t">Internet</div><div class="d">84 Mbps, estável. Sobra para 4K.</div></div><span class="v">0,8 s</span></div>
+      <div class="tst"><span class="c"><span data-i="ok"></span></span><div><div class="t">Add-ons</div><div class="d">11 de 12 responderam. 1 passou de 8 s e foi ignorado.</div></div><span class="v">2,1 s</span></div>
+      <div class="tst"><span class="c"><span data-i="ok"></span></span><div><div class="t">Debrid</div><div class="d">Conta ativa, arquivo em cache.</div></div><span class="v">0,6 s</span></div>
+      <div class="tst"><span class="c"><span data-i="ok"></span></span><div><div class="t">Fonte</div><div class="d">O link abre e entrega o arquivo de 22,4 GB.</div></div><span class="v">1,3 s</span></div>
+      <div class="tst achou"><span class="c"><span data-i="alerta"></span></span><div><div class="t">Esta TV</div><div class="d">Recusou o vídeo: Dolby Vision perfil 5.</div></div><span class="v">1,2 s</span></div>
+      <div class="tst nao" style="border:0"><span class="c"><span data-i="som"></span></span><div><div class="t">Áudio</div><div class="d">Não testado: o vídeo parou antes.</div></div></div>
+    </div>
+    <div class="col2">
+      <div class="vid painel">
+        <span class="mk"><i></i>Achamos o motivo</span>
+        <div class="h2" style="font-size:36px;line-height:1.15;margin-top:14px">Esta fonte é Dolby Vision perfil 5, e esta TV só toca o perfil 8.</div>
+        <p class="sub" style="margin:16px 0 28px">A escolha automática já evita o perfil 5. Esta fonte foi escolhida à mão na folha de Fontes.</p>
+        <div style="display:flex;gap:14px"><span class="btn foco" data-f><span data-i="play"></span>Tocar a versão HDR10</span><span class="btn" data-f><span data-i="recarrega"></span>Tentar de novo</span></div>
+        <div class="row aj" data-f><div><div class="tit">Esconder fontes que esta TV não toca</div><div class="ds">Somem da folha de Fontes; 3 neste episódio</div></div><span class="lig" style="margin-left:auto"></span></div>
+      </div>
+      <div style="display:flex;gap:14px;align-items:center;margin-top:24px"><span style="font-size:18px;color:var(--mut2)">Não resolveu?</span><span class="chip" data-f><span data-i="envia" class="p"></span>Enviar um registro</span><span class="chip" data-f>Testar outro problema</span></div>
+    </div>
+  </div>
+</div></div>
+</section>
+
+<section class="quadro">
+<p class="leg"><b>5C · Enviar um registro</b> — um código curto para citar no Discord ou na issue; a tela diz o que vai, o que não vai e o que já foi enviado.</p>
+<div class="caixa"><div class="tv">
+  <div class="fundo" style="background:radial-gradient(80% 70% at 90% 0,#191c26,#0D0D0D 60%)"></div>
+  <div class="ilha relogio">20:55<span class="s"></span><span class="av" style="background:#7c5cff">M</span></div>
+  <nav class="ilha rail" aria-label="Menu">
+    <a data-f><span data-i="home"></span></a><a data-f><span data-i="explorar"></span></a><a data-f><span data-i="guia"></span></a><a data-f><span data-i="busca"></span></a><a data-f><span data-i="biblio"></span></a><a data-f><span data-i="agenda"></span></a><a data-f><span data-i="perfil"></span></a><a class="ativo" data-f><span data-i="ajustes"></span></a>
+  </nav>
+  <div class="pg">
+    <div class="topo">
+      <div class="kick">Resolver um problema › Registro</div>
+      <h1 class="h1" style="margin-top:10px">Registro enviado</h1>
+      <div class="sub" style="margin-top:8px">Diga este código no Discord ou na issue do GitHub. Quem ajuda abre o registro por ele.</div>
+    </div>
+    <div class="col1" style="top:290px;width:700px">
+      <div class="cod">NV-4F7K-92</div>
+      <div style="font-size:19px;color:var(--mut);margin-top:18px">O vídeo não começa · enviado agora · some sozinho em 30 dias</div>
+      <div style="display:flex;gap:14px;margin-top:34px"><span class="btn foco" data-f>Pronto</span><span class="btn" data-f><span data-i="celular"></span>Mandar o código pro celular</span></div>
+    </div>
+    <div class="col2" style="top:290px;width:860px">
+      <div class="vid painel" style="padding:32px 36px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 36px"><span class="kick">Vai junto</span><span class="kick">Não vai</span></div>
+        <div class="duas">
+          <div><span data-i="ok"></span><span>Modelo da TV e versão do sistema</span></div>
+          <div class="n"><span data-i="x"></span><span>Links e endereços das fontes</span></div>
+          <div><span data-i="ok"></span><span>Versão do Nuvio e Ajustes de reprodução</span></div>
+          <div class="n"><span data-i="x"></span><span>Senhas e chaves de conta</span></div>
+          <div><span data-i="ok"></span><span>Últimos 5 min do player: codec, erros, tempos</span></div>
+          <div class="n"><span data-i="x"></span><span>Nome do que você assiste</span></div>
+          <div><span data-i="ok"></span><span>Nomes dos add-ons ativos</span></div>
+          <div class="n"><span data-i="x"></span><span>Nome do perfil e contas ligadas</span></div>
+          <div><span data-i="ok"></span><span>Resultado dos 5 testes desta tela</span></div>
+          <div class="n"><span data-i="x"></span><span>Biblioteca e histórico</span></div>
+        </div>
+      </div>
+    </div>
+    <div style="position:absolute;left:0;right:0;top:718px">
+      <div class="kick" style="padding:0 22px 12px;border-bottom:1px solid rgba(255,255,255,.08)">Registros enviados</div>
+      <div class="row env" data-f style="margin-top:6px"><b>NV-4F7K-92</b><span class="s">O vídeo não começa · Dolby Vision perfil 5 recusado</span><span class="r">agora · apagar</span></div>
+      <div class="row env" data-f><b>NV-9C2T-18</b><span class="s">Legenda atrasada · respondido: corrigido na 2.0.4</span><span class="r">03 out · apagar</span></div>
+    </div>
+    <div class="pe"><span class="dica" style="margin-left:0">Sem conta e sem e-mail. O código é a única ligação entre você e o registro.</span></div>
+  </div>
+</div></div>
+</section>
+
+<script src="tv.js"></script>
+</body>
+</html>

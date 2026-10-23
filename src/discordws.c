@@ -109,7 +109,8 @@ void dws_fechar(DiscordWs *w) {
 struct DiscordWs {
   pthread_mutex_t trava;
   RedeTls *tls;
-  char host[128], caminho[512];
+  char host[128], caminho[2048];   // o bilhete do Watch Together vai na query
+  int claro;                       // ws:// (sem TLS): so teste local
   atomic_int estado;
   int abandonado;          // dws_fechar chegou com o fio ainda conectando
   int codigo;
@@ -201,7 +202,7 @@ static void liberar(DiscordWs *w) {
 // Aperto de mao HTTP/1.1 -> 101. Roda no fio de conexao.
 static int apertarMao(DiscordWs *w) {
   unsigned char chave[16];
-  char k64[32], pedido[1024];
+  char k64[32], pedido[2600];
   int i, n;
   for (i = 0; i < 16; i++) chave[i] = (unsigned char)aleatorio();
   base64(chave, 16, k64);
@@ -243,7 +244,10 @@ static void *fioConectar(void *u) {
   char url[200];
   RedeTls *t;
   int ok;
-  snprintf(url, sizeof url, "https://%s:443/", w->host);
+  // wss:// e TLS na 443 (ou na porta da URL); ws:// so existe para o teste
+  // local do Watch Together contra o `wrangler dev` (TCP puro, mesma libcurl).
+  if (strchr(w->host, ':')) snprintf(url, sizeof url, "%s://%s/", w->claro ? "http" : "https", w->host);
+  else snprintf(url, sizeof url, "%s://%s:%d/", w->claro ? "http" : "https", w->host, w->claro ? 80 : 443);
   t = rede_tls_abrir(url, 15);
   pthread_mutex_lock(&w->trava);
   w->tls = t;
@@ -265,8 +269,9 @@ DiscordWs *dws_abrir(const char *url) {
   if (!w) return NULL;
   pthread_mutex_init(&w->trava, NULL);
   atomic_init(&w->estado, DWS_CONECTANDO);
-  if (!url || strncmp(url, "wss://", 6) != 0) { w->estado = DWS_CAIU; return w; }
-  h = url + 6;
+  if (url && !strncmp(url, "ws://", 5)) { w->claro = 1; h = url + 5; }
+  else if (url && !strncmp(url, "wss://", 6)) h = url + 6;
+  else { w->estado = DWS_CAIU; return w; }
   barra = h + strcspn(h, "/?");
   nh = (size_t)(barra - h);
   if (nh == 0 || nh >= sizeof w->host) { w->estado = DWS_CAIU; return w; }

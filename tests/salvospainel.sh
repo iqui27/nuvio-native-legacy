@@ -6,7 +6,7 @@
 #   bash tests/salvospainel.sh
 #
 # A medida de tempo por quadro e outra: tests/salvospainel_perf.sh.
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-spainel-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT

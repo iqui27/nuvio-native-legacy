@@ -32,11 +32,15 @@
 //     dele nao levante o teclado do webOS (pesquisa em spotlight.h, "LG E O
 //     TECLADO DO SISTEMA"; a linha "[spotlight] lg sdl ... osk=N" do log vai
 //     dizer). O caminho certo seria embarcar o SDL-webOS do webosbrew.
-//   - Samsung .tpk: quem tem acesso a STT/IME e o host .NET (tizen-tpk/), nao
-//     o nucleo C; ligar aqui exige uma ponte nova no host, que fica para um
-//     canario separado.
-//   - Samsung .wgt: webapis.voiceinteraction so a partir de Tizen 6.0 (nota em
-//     spotlight.h). Para captura e teste no Mac, NUVIO_SISTEXTO_TESTE=1
+//   - Samsung .tpk (host .NET, Voz.cs) e .wgt (<input> do tizen-shell.html):
+//     st_voz_disponivel() e o botao de microfone das buscas. st_voz_iniciar
+//     abre o teclado da Samsung, o estado fica ST_DIGITANDO e st_aviso() diz
+//     para apertar o microfone do controle (o teclado ainda nao ouve). O
+//     teclado cobre a tela: o texto so chega ao campo quando ele fecha (ST_FIM).
+//     No .wgt, st_ime_disponivel() tambem permite digitar no teclado da TV;
+//     no .tpk de release, digitar continua no teclado do app.
+//
+// Para captura e teste no Mac, NUVIO_SISTEXTO_TESTE=1
 // finge que existe (abrir so loga) e st_teste_evento injeta o que o Android
 // mandaria.
 #ifndef NV_SISTEXTO_H
@@ -55,6 +59,11 @@ int   st_voz_disponivel(void);
 // O campo ja abre o teclado do sistema sozinho ao aparecer? So no Android (o
 // pedido do dono); na LG/Samsung so com OK no campo.
 int   st_abre_sozinho(void);
+// Ajuste "Teclado" valido AQUI: 0 automatico, 1 so a grade do app, 2 o teclado do
+// sistema direto. Onde o ajuste nao existe (Mac, testes) e sempre 0.
+int   st_teclado_modo(void);
+// 1 = "Do app" fora do Android: o teclado da TV (LG/Samsung) nunca abre.
+int   st_teclado_do_app(void);
 // Abre o teclado do sistema com `inicial` no campo (max em bytes). 1 = abriu.
 int   st_ime_abrir(int dono, const char *inicial, int max);
 // Tipo do PROXIMO st_ime_abrir (consumido nele): o Android abre o teclado de
@@ -78,6 +87,10 @@ const char *st_aviso(void);
 // ST_PEDE_TECLADO: a voz nao existe aqui; o dono abre st_ime_abrir com o texto
 // dele (o aviso ja diz que o microfone do teclado do sistema dita).
 int   st_ler(int dono, char *dst, size_t n);
+// Mesmo retorno e ordem de st_ler. O sinal opcional distingue um valor vazio
+// recebido de uma ausencia de texto, inclusive quando Voltar chega no mesmo
+// lote. O dono decide se conserva esse valor; fechar nao conclui a entrada.
+int   st_ler_valor(int dono, char *dst, size_t n, int *valorRecebido);
 
 // Primeira coisa no laco de eventos de quem tem o campo: 1 = o evento era do
 // texto do sistema (o aviso de valor/fim de entrada_texto.h, ou TEXTINPUT,

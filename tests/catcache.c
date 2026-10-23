@@ -25,11 +25,14 @@
 #include <unistd.h>
 #include "../src/catalogo.h"
 #include "../src/progresso.h"
+#include "nvtmp.h"
 
-// O cache grava o idioma no cabecalho (texto ja montado nao pode ser lido de
-// volta no idioma errado). 0 = portugues, que e o padrao.
-int ajustes_idioma_ingles(void) { return 0; }
-int ajustes_idioma(void) { return 0; }
+// Keep the interface English while metadata language changes independently.
+int ajustes_idioma_ingles(void) { return 1; }
+int ajustes_idioma(void) { return 1; }
+int ajustes_fonte_biblioteca(void) { return 0; }
+static const char *metadataLanguage = "pt-BR";
+const char *desc_tmdb_idioma(void) { return metadataLanguage; }
 // cat_carregar traduz o rotulo do tipo do catalogo do pacote por aqui. Devolver
 // a entrada e o que i18n faz em portugues, que e o idioma deste teste.
 const char *i18n(const char *s) { return s; }
@@ -48,8 +51,8 @@ int         perfis_ativo(void)  { return perfilAtual; }
 
 const char *desc_genero_pt(const char *g) { return g; }
 int prog_ler(ProgRegistro *saida, int max) { (void)saida; (void)max; return 0; }
-int prog_gravar_local(const char *imdb, int t, int e, double p, double d) {
-  (void)imdb; (void)t; (void)e; (void)p; (void)d; return 0;
+int prog_gravar_local(const char *imdb, int t, int e, double p, double d, int tocou) {
+  (void)imdb; (void)t; (void)e; (void)p; (void)d; (void)tocou; return 0;
 }
 
 // --- APOIO -------------------------------------------------------------------
@@ -97,9 +100,8 @@ static void semearCatalogo(const char *marca) {
 
 int main(void) {
   char raiz[512], dirPacote[600];
-  const char *tmp = getenv("TMPDIR");
   snprintf(raiz, sizeof raiz, "%snuvio-catcache-%d",
-           tmp && *tmp ? tmp : "/tmp/", (int)getpid());
+           nvt("/"), (int)getpid());
   snprintf(dirDados, sizeof dirDados, "%s/dados", raiz);
   snprintf(dirPacote, sizeof dirPacote, "%s/pacote", raiz);
   mkdir(raiz, 0755); mkdir(dirDados, 0755); mkdir(dirPacote, 0755);
@@ -133,6 +135,34 @@ int main(void) {
     estadoItens[0].poster[0] = 'p'; estadoItens[0].poster[1] = 0;
     depois = cat_assinatura_de(estadoItens, 4, &vazio, 1);
     confere("arte alterada no mesmo ID invalida assinatura", antes != depois);
+    // #294: troca de perfil publica catalogo vazio (desc_esquecer_catalogo_perfil).
+    cat_definir_tudo(NULL, 0, NULL, 0);
+    confere("troca de perfil: catalogo e fileiras do perfil anterior saem",
+            cat_n() == 0 && cat_n_fileiras() == 0);
+    estadoItens[0].poster[0] = 0;
+    cat_definir_tudo(estadoItens, 4, &vazio, 1);   // restaura o que os proximos casos usam
+  }
+
+  // #634: metadata language changes independently of the interface language.
+  {
+    CatItem item = *cat_item(0);
+    snprintf(item.poster, sizeof item.poster, "https://image.tmdb.org/t/p/w342/pt.jpg");
+    cat_definir_tudo(&item, 1, NULL, 0);
+    confere("PT poster cache saved", cat_gravar_cache(dirPacote));
+    cat_definir_tudo(NULL, 0, NULL, 0);
+    confere("same metadata language reuses PT poster", cat_ler_cache(dirPacote) == 1 &&
+            !strcmp(cat_item(0)->poster, item.poster));
+    cat_definir_tudo(NULL, 0, NULL, 0);
+    metadataLanguage = "en-US";
+    confere("EN rejects cached PT poster", cat_ler_cache(dirPacote) == 0 && cat_n() == 0);
+    snprintf(item.poster, sizeof item.poster, "https://image.tmdb.org/t/p/w342/en.jpg");
+    cat_definir_tudo(&item, 1, NULL, 0);
+    confere("EN poster cache saved", cat_gravar_cache(dirPacote));
+    cat_definir_tudo(NULL, 0, NULL, 0);
+    confere("EN reload uses EN poster URL", cat_ler_cache(dirPacote) == 1 &&
+            !strcmp(cat_item(0)->poster, item.poster));
+    metadataLanguage = "pt-BR";
+    semearCatalogo("alice");
   }
 
   // (a2) SEM PASTA GRAVAVEL, VOLTA A SER COMO ERA.
@@ -153,6 +183,39 @@ int main(void) {
   // grava logo antes de ler, e a presenca do arquivo e conferida nas duas
   // pastas (cacheEmDisco). Assim estas assercoes falham por causa da regra que
   // testam, e nao de tabela por causa do defeito do bloco anterior.
+
+  // (a3) CACHE DO LAYOUT ANTERIOR E RECUSADO. `fontes` ocupou padding: o
+  // sizeof(CatItem) nao mudou, mas `imdb` deslocou 4 bytes. So a versao protege.
+  printf("\n==> cache de versao antiga (layout sem `fontes`) e recusado\n");
+  snprintf(usuarioAtual, sizeof usuarioAtual, "uuid-da-alice");
+  perfilAtual = 1;
+  {
+    static const unsigned antigas[] = { 7, 5 };   // 5 era aceito so no perfil 1
+    for (int v = 0; v < 2; v++) {
+      char c[700]; FILE *f; unsigned ver = antigas[v];
+      semearCatalogo("alice");
+      confere("gravou", cat_gravar_cache(dirPacote));
+      snprintf(c, sizeof c, "%s/catalogo-rede.bin", dirDados);
+      f = fopen(c, "r+b");
+      confere("abriu o arquivo para forjar a versao antiga", f != NULL);
+      if (f) { fseek(f, 4, SEEK_SET); fwrite(&ver, 4, 1, f); fclose(f); }
+      printf("  versao forjada: %u\n", ver);
+      confere("leitor recusa a versao antiga", cat_ler_cache(dirPacote) == 0);
+      confere("e apaga o arquivo", !cacheEmDisco(dirDados, dirPacote));
+    }
+  }
+
+  // (a4) SALVAR NO SERVICO ACENDE O BIT DE ORIGEM NA HORA, EM TODAS AS COPIAS.
+  printf("\n==> marcar fonte por imdb acende o bit do servico\n");
+  semearCatalogo("fonte");
+  confere("item nasce sem fonte", cat_item(0)->fontes == 0 && !cat_item(0)->naLista);
+  confere("marcou 1 copia", cat_marcar_fonte_imdb("tt1000fonte", CAT_FONTE_TRAKT) == 1);
+  confere("bit Trakt + naLista", cat_item(0)->naLista && cat_item(0)->fontes == CAT_FONTE_TRAKT);
+  confere("repetir nao muda nada", cat_marcar_fonte_imdb("tt1000fonte", CAT_FONTE_TRAKT) == 0);
+  confere("Simkl soma ao Trakt", cat_marcar_fonte_imdb("tt1000fonte", CAT_FONTE_SIMKL) == 1 &&
+          cat_item(0)->fontes == (CAT_FONTE_TRAKT | CAT_FONTE_SIMKL));
+  confere("outro titulo intacto", cat_item(1)->fontes == 0 && !cat_item(1)->naLista);
+  confere("imdb desconhecido", cat_marcar_fonte_imdb("ttzzz", CAT_FONTE_TRAKT) == 0);
 
   // (b) CACHE DE OUTRO USUARIO E RECUSADO E APAGADO.
   printf("\n==> cache de outro usuario e recusado e apagado\n");
@@ -194,12 +257,8 @@ int main(void) {
   confere("e releu",                        cat_ler_cache(dirPacote) == 1);
   confere("arquivo continua em disco",      cacheEmDisco(dirDados, dirPacote));
 
-  // (b5) CACHE DA VERSAO 5 SO VALE PARA O PERFIL 1. Ate ela o perfil 2 sem
-  // Trakt proprio usava o vinculo do 1, entao o arquivo gravado "do perfil 2"
-  // carrega a watchlist e o continuar do Trakt do 1 com a identidade certa no
-  // cabecalho. O do perfil 1 estava certo e continua aceito. O formato e o
-  // mesmo: rebaixar o numero da versao no arquivo e o bastante para simular.
-  printf("\n==> cache da versao 5: perfil 1 aceito, outro perfil recusado\n");
+  // Old caches lack metadata language and must be rejected for every profile.
+  printf("\n==> old caches without metadata language are rejected\n");
   { char c[700]; FILE *f; unsigned v5 = 5;
     snprintf(c, sizeof c, "%s/catalogo-rede.bin", dirDados);
     perfilAtual = 2;
@@ -214,7 +273,18 @@ int main(void) {
     confere("perfil 1 gravou",                cat_gravar_cache(dirPacote));
     f = fopen(c, "r+b"); assert(f);
     fseek(f, (long)sizeof(unsigned), SEEK_SET); fwrite(&v5, sizeof v5, 1, f); fclose(f);
-    confere("v5 do perfil 1 continua aceito", cat_ler_cache(dirPacote) == 1); }
+    confere("old cache for profile 1 is rejected", cat_ler_cache(dirPacote) == 0); }
+
+  // #433: mudanca no CatItem invalida o cache, mesmo com versao igual.
+  { char c[700]; FILE *f; unsigned antigo = (unsigned)sizeof(CatItem) - 1024u;
+    snprintf(c, sizeof c, "%s/catalogo-rede.bin", dirDados);
+    confere("gravou antes da mudanca de tamanho", cat_gravar_cache(dirPacote));
+    f = fopen(c, "r+b"); assert(f);
+    fseek(f, 2L * (long)sizeof(unsigned), SEEK_SET);
+    fwrite(&antigo, sizeof antigo, 1, f); fclose(f);
+    confere("CatItem antigo e recusado", cat_ler_cache(dirPacote) == 0);
+    confere("cache antigo foi apagado", !cacheEmDisco(dirDados, dirPacote));
+    confere("novo formato gravado de novo", cat_gravar_cache(dirPacote)); }
 
 #ifndef NV_CACHE_SEM_APAGAR
   // cat_apagar_cache: a metade do logout que mora aqui. Compile com

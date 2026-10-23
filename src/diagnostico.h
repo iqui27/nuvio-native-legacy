@@ -21,6 +21,9 @@ void diagnostico_atualizar(float dt, Uint32 agora);
 void diagnostico_desenhar(Uint32 agora);
 void diagnostico_intro_primeira_vez(void);
 int  diagnostico_intro_aberto(void);
+#ifdef NV_TOUCH_UI
+int  diagnostico_apresentacao_aberta(void);
+#endif
 // Tira a apresentacao global desta sessao (quem ja falou do diagnostico, o
 // cartao da 1.4.2). marcarVista=1 tambem a grava como vista: a tela abre
 // direto na escolha do objetivo, sem o "Antes de comecar".
@@ -30,5 +33,8 @@ void diagnostico_intro_atualizar(float dt, Uint32 agora);
 void diagnostico_intro_desenhar(Uint32 agora);
 int  diagnostico_quer_sair(void);
 void diagnostico_encerrar(void);
+// Testes do ponteiro (#99): o foco das setas (modo/linha do objetivo, botao
+// do resultado, botao do teste de velocidade); devolve o estado (0/1/2).
+int  diagnostico_teste_foco(int *modo, int *linha, int *botao, int *vzBotao);
 
 #endif

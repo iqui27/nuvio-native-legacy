@@ -4,12 +4,16 @@
 #include <stdio.h>
 #include <ctype.h>
 
-// Ver regexjs.h. Compila para um programa de VM com retrocesso (alternativas por
-// recursao), como o regexp.c do mujs mas escrito aqui: pequeno e sem licenca de
-// terceiros.
+// Ver regexjs.h. Compila para um programa de VM com retrocesso (alternativas numa
+// pilha na heap, ver roda), como o regexp.c do mujs mas escrito aqui: pequeno e sem
+// licenca de terceiros.
 
 typedef struct { unsigned lo, hi; } Faixa;
-typedef struct { Faixa *f; int n, cap; int neg; } Classe;
+// `ascii`: a resposta pronta para os 128 primeiros codigos (com neg e sem-caixa
+// ja aplicados), montada ao compilar. O "[\s\S]*" de cada lookahead passa por
+// todo o texto, e conferir as ~20 faixas de \s/\S a cada caractere era quase
+// metade do tempo de uma regex longa.
+typedef struct { Faixa *f; int n, cap; int neg; unsigned char ascii[16]; int pronta; } Classe;
 
 enum { N_VAZIO, N_BYTE, N_ANY, N_CLASSE, N_SEQ, N_ALT, N_REP, N_ASSERT, N_LOOK };
 enum { A_BOL, A_EOL, A_WB, A_NWB };
@@ -23,14 +27,31 @@ typedef struct No {
 } No;
 
 enum { O_BYTE, O_ANY, O_CLASSE, O_SPLIT, O_JMP, O_MARK, O_CHK, O_BOL, O_EOL, O_WB, O_NWB,
-       O_LOOK, O_LOOKB, O_ENDAT, O_MATCH };
-typedef struct { unsigned char op; unsigned char neg; int x, y; } Ins;
+       O_LOOK, O_STAR, O_MATCH };
+// `neg`: em O_LOOK, lookaround negativo; em O_BYTE/O_ANY/O_CLASSE, 1 = consome
+// PARA TRAS (corpo de lookbehind, ver emiteNo). `lazy`: em O_STAR.
+typedef struct { unsigned char op, neg, lazy; int x, y; } Ins;
 
 struct RegexJs {
   Ins *prog; int nprog, capprog;
   Classe *cls; int ncls, capcls;
   int nreg;
   int flags;
+  // MEMORIA DE ESTADOS (ver roda): slot[pc] = indice na tabela de memoria de
+  // quem pode comecar uma chamada de roda em `pc`, ou -1 (nao memorizavel).
+  int *slot; int nslot;
+  // PRIMEIRO BYTE: quando todo casamento consome pelo menos um byte, o conjunto
+  // dos bytes que podem abrir um casamento. Posicao de inicio com outro byte nao
+  // e tentada (uma lista "\\bESP\\b|\\bLAT\\b|..." de 45 nomes so roda nas letras
+  // iniciais deles, nao em cada byte do texto).
+  unsigned char primeiro[32]; int temPrimeiro;
+  // CONTINUACAO DE CADA O_STAR: o conjunto de bytes que a continuacao pode
+  // consumir primeiro (seg[in->y - 1]; y = 0 = sem filtro). Recuando o
+  // "[\s\S]*" de "(?![\s\S]*\bDTS)", so as posicoes com "D"/"d" chamam a
+  // continuacao, e nao cada byte do texto.
+  unsigned char (*seg)[32]; int nseg;
+  // "^" logo no inicio (sem a flag m): so a posicao 0 pode casar.
+  int ancorado;
 };
 
 typedef struct {
@@ -149,6 +170,7 @@ static int escapeLiteral(Pr *pr, unsigned *cp) {
 }
 
 static int parseAlt(Pr *pr, int prof);
+static int lerChaves(Pr *pr, int *mn, int *mx);
 
 static int parseClasse(Pr *pr) {   // depois do '['
   int ci = novaClasse(pr), neg = 0;
@@ -277,6 +299,13 @@ static int parseAtomo(Pr *pr, int prof) {
     }
   }
   if (c == '*' || c == '+' || c == '?') return falha(pr, "nothing to repeat");
+  // "{3}" / "{2,5}" no lugar de um atomo (depois de outro quantificador, no
+  // inicio, depois de "|"): o V8 recusa. "{" que nao forma quantificador ("x{",
+  // "{a}") continua literal.
+  if (c == '{') {
+    int mn, mx; const char *p0 = pr->p;
+    if (lerChaves(pr, &mn, &mx)) { pr->p = p0; return falha(pr, "nothing to repeat"); }
+  }
   // literal (um codepoint UTF-8 inteiro, para o quantificador valer para ele todo)
   { int nb;
     decodifica((const unsigned char *)pr->p, (const unsigned char *)pr->fim, &l);
@@ -314,6 +343,7 @@ static int lerChaves(Pr *pr, int *mn, int *mx) {
 }
 
 static int parseTermo(Pr *pr, int prof) {
+  const char *ini = pr->p;
   int at = parseAtomo(pr, prof), mn, mx, r;
   if (at < 0) return -1;
   if (pr->p >= pr->fim) return at;
@@ -328,7 +358,10 @@ static int parseTermo(Pr *pr, int prof) {
       break;
     default: return at;
   }
-  if (pr->no[at].tipo == N_ASSERT) return falha(pr, "nothing to repeat");
+  // Como o V8 (sem a flag u): "\b*" e "^+" sao erro, mas "(?:\b)*" e um grupo e
+  // vale; lookahead pode ter quantificador (Anexo B), lookbehind nao.
+  if (pr->no[at].tipo == N_ASSERT && *ini != '(') return falha(pr, "nothing to repeat");
+  if (pr->no[at].tipo == N_LOOK && pr->no[at].a && !strncmp(ini, "(?<", 3)) return falha(pr, "nothing to repeat");
   { int n = novoNo(pr, N_REP);
     if (n < 0) return -1;
     pr->no[n].a = mn; pr->no[n].b = mx; pr->no[n].f1 = at;
@@ -336,16 +369,36 @@ static int parseTermo(Pr *pr, int prof) {
     return n; }
 }
 
+// A sequencia vira uma arvore EQUILIBRADA de N_SEQ (a ordem das folhas e a do
+// padrao). Em cadeia, uma regex de 500 caracteres tinha 500 niveis de N_SEQ, e
+// emiteNo / minlen / primeiros recursavam 500 vezes (~45 KB de pilha, quase tudo
+// de um fio de 64 KB); equilibrada sao 9 niveis.
+static int seqEquilibrada(Pr *pr, const int *t, int a, int b) {
+  int m, l, r, s;
+  if (b - a == 1) return t[a];
+  m = a + (b - a) / 2;
+  if ((l = seqEquilibrada(pr, t, a, m)) < 0) return -1;
+  if ((r = seqEquilibrada(pr, t, m, b)) < 0) return -1;
+  if ((s = novoNo(pr, N_SEQ)) < 0) return -1;
+  pr->no[s].f1 = l; pr->no[s].f2 = r;
+  return s;
+}
+
 static int parseSeq(Pr *pr, int prof) {
-  int ult = -1;
+  int *t = NULL, n = 0, cap = 0, r;
   while (pr->p < pr->fim && *pr->p != '|' && *pr->p != ')') {
-    int t = parseTermo(pr, prof);
-    if (t < 0) return -1;
-    if (ult < 0) ult = t;
-    else { int s = novoNo(pr, N_SEQ); if (s < 0) return -1; pr->no[s].f1 = ult; pr->no[s].f2 = t; ult = s; }
+    int termo = parseTermo(pr, prof);
+    if (termo < 0) { free(t); return -1; }
+    if (n == cap) {
+      int *nt = realloc(t, (size_t)(cap ? cap * 2 : 16) * sizeof *t);
+      if (!nt) { free(t); return falha(pr, "out of memory"); }
+      t = nt; cap = cap ? cap * 2 : 16;
+    }
+    t[n++] = termo;
   }
-  if (ult < 0) return novoNo(pr, N_VAZIO);
-  return ult;
+  r = n ? seqEquilibrada(pr, t, 0, n) : novoNo(pr, N_VAZIO);
+  free(t);
+  return r;
 }
 
 static int parseAlt(Pr *pr, int prof) {
@@ -369,7 +422,22 @@ static int parseAlt(Pr *pr, int prof) {
 // ---- emissao ---------------------------------------------------------------
 #define PROG_MAX 30000
 
-typedef struct { RegexJs *re; Pr *pr; int erro; } Em;
+// Trechos do programa cujo resultado depende de um registrador e nao so de
+// (pc, posicao): o corpo de uma repeticao que pode casar vazio (entre O_MARK e
+// O_CHK). Nada ali e memorizado. `atras` = emitindo o corpo de um lookbehind.
+typedef struct { int ini, fim; } Trecho;
+typedef struct { RegexJs *re; Pr *pr; int erro; int atras; Trecho *tr; int ntr, captr; } Em;
+
+static void marcaTrecho(Em *em, int ini, int fim) {
+  if (em->erro || fim < ini) return;
+  if (em->ntr == em->captr) {
+    int c = em->captr ? em->captr * 2 : 8;
+    Trecho *t = realloc(em->tr, (size_t)c * sizeof *t);
+    if (!t) { em->erro = 1; return; }
+    em->tr = t; em->captr = c;
+  }
+  em->tr[em->ntr].ini = ini; em->tr[em->ntr].fim = fim; em->ntr++;
+}
 
 static int emite(Em *em, int op, int neg, int x, int y) {
   RegexJs *re = em->re;
@@ -382,6 +450,7 @@ static int emite(Em *em, int op, int neg, int x, int y) {
   }
   re->prog[re->nprog].op = (unsigned char)op;
   re->prog[re->nprog].neg = (unsigned char)neg;
+  re->prog[re->nprog].lazy = 0;
   re->prog[re->nprog].x = x; re->prog[re->nprog].y = y;
   return re->nprog++;
 }
@@ -402,15 +471,30 @@ static void emiteNo(Em *em, int n);
 static void emiteRep(Em *em, const No *o) {
   RegexJs *re = em->re;
   int i, mn = o->a, mx = o->b, vazio = minlen(em->pr, o->f1) == 0;
-  int fins[512], nf = 0;
+  int *fins, nf = 0;
   if (mn > 1000 || mx > 1000) { em->erro = 1; return; }
   for (i = 0; i < mn && !em->erro; i++) emiteNo(em, o->f1);
+  // REPETICAO DE UM CARACTERE SO (".*", "\\s*", "[^x]+", "a*"): O_STAR seguido
+  // da instrucao do caractere. A VM come o maximo de uma vez e recua um a um,
+  // sem uma chamada recursiva por caractere: o ".*" do "(?=.*...)" deixa de
+  // custar a pilha do tamanho da linha (a TV roda isso num fio comum).
+  if (mx < 0) {
+    const No *c = &em->pr->no[o->f1];
+    if (c->tipo == N_ANY || c->tipo == N_CLASSE || c->tipo == N_BYTE) {
+      int st = emite(em, O_STAR, 0, 0, 0);
+      if (em->erro) return;
+      re->prog[st].lazy = (unsigned char)o->lazy;
+      emiteNo(em, o->f1);
+      re->prog[st].x = re->nprog;   // a continuacao
+      return;
+    }
+  }
   if (mx < 0) {
     int l1 = emite(em, O_SPLIT, 0, 0, 0), reg = -1, corpo = re->nprog;
     if (em->erro) return;
     if (vazio) { reg = re->nreg++; emite(em, O_MARK, 0, reg, 0); }
     emiteNo(em, o->f1);
-    if (vazio) emite(em, O_CHK, 0, reg, 0);
+    if (vazio) { int chk = emite(em, O_CHK, 0, reg, 0); marcaTrecho(em, corpo + 1, chk); }
     emite(em, O_JMP, 0, l1, 0);
     if (em->erro) return;
     // x = proximo da preferencia, y = o outro
@@ -418,17 +502,22 @@ static void emiteRep(Em *em, const No *o) {
     else { re->prog[l1].x = re->nprog; re->prog[l1].y = corpo; }
     return;
   }
+  // {n,m}: ate m-n copias opcionais (".{0,600}" e valido no V8; antes um vetor
+  // fixo de 512 recusava o padrao).
+  if (mx <= mn) return;
+  if (!(fins = malloc((size_t)(mx - mn) * sizeof *fins))) { em->erro = 1; return; }
   for (i = mn; i < mx && !em->erro; i++) {
     int sp = emite(em, O_SPLIT, 0, 0, 0);
-    if (em->erro) return;
-    if (nf >= 512) { em->erro = 1; return; }
+    if (em->erro) break;
     fins[nf++] = sp;
     if (!o->lazy) re->prog[sp].x = re->nprog; else re->prog[sp].y = re->nprog;
     emiteNo(em, o->f1);
   }
-  for (i = 0; i < nf; i++) {
-    if (!o->lazy) re->prog[fins[i]].y = re->nprog; else re->prog[fins[i]].x = re->nprog;
-  }
+  if (!em->erro)
+    for (i = 0; i < nf; i++) {
+      if (!o->lazy) re->prog[fins[i]].y = re->nprog; else re->prog[fins[i]].x = re->nprog;
+    }
+  free(fins);
 }
 
 static void emiteNo(Em *em, int n) {
@@ -438,10 +527,14 @@ static void emiteNo(Em *em, int n) {
   if (em->erro) return;
   switch (o->tipo) {
     case N_VAZIO: break;
-    case N_BYTE: emite(em, O_BYTE, 0, o->a, 0); break;
-    case N_ANY: emite(em, O_ANY, 0, 0, 0); break;
-    case N_CLASSE: emite(em, O_CLASSE, 0, o->classe, 0); break;
-    case N_SEQ: emiteNo(em, o->f1); emiteNo(em, o->f2); break;
+    case N_BYTE: emite(em, O_BYTE, em->atras, o->a, 0); break;
+    case N_ANY: emite(em, O_ANY, em->atras, 0, 0); break;
+    case N_CLASSE: emite(em, O_CLASSE, em->atras, o->classe, 0); break;
+    // Para tras, a sequencia casa da direita para a esquerda (como o V8).
+    case N_SEQ:
+      if (em->atras) { emiteNo(em, o->f2); emiteNo(em, o->f1); }
+      else { emiteNo(em, o->f1); emiteNo(em, o->f2); }
+      break;
     case N_ALT:
       a = emite(em, O_SPLIT, 0, 0, 0);
       if (em->erro) return;
@@ -457,23 +550,55 @@ static void emiteNo(Em *em, int n) {
     case N_ASSERT:
       emite(em, o->a == A_BOL ? O_BOL : o->a == A_EOL ? O_EOL : o->a == A_WB ? O_WB : O_NWB, 0, 0, 0);
       break;
-    case N_LOOK:
-      if (!o->a) {
-        a = emite(em, O_LOOK, o->b, 0, 0);
-        if (em->erro) return;
-        emiteNo(em, o->f1);
-        emite(em, O_MATCH, 0, 0, 0);
-        re->prog[a].x = re->nprog;
-      } else {
-        int reg = re->nreg++;
-        a = emite(em, O_LOOKB, o->b, 0, reg);
-        if (em->erro) return;
-        emiteNo(em, o->f1);
-        emite(em, O_ENDAT, 0, reg, 0);
-        emite(em, O_MATCH, 0, 0, 0);
-        if (!em->erro) re->prog[a].x = re->nprog;
-      }
-      break;
+    // LOOKAROUND: o corpo roda a partir da posicao atual e basta chegar ao
+    // O_MATCH dele. O lookbehind e o MESMO, com o corpo compilado para tras
+    // (como o V8 faz): nada de tentar cada inicio possivel e conferir se o fim
+    // bate, o que custava o quadrado do texto e nao podia ser lembrado.
+    // Lookahead dentro de lookbehind volta a andar para frente.
+    case N_LOOK: {
+      int antes = em->atras;
+      a = emite(em, O_LOOK, o->b, 0, 0);
+      if (em->erro) return;
+      em->atras = o->a;
+      emiteNo(em, o->f1);
+      em->atras = antes;
+      emite(em, O_MATCH, 0, 0, 0);
+      if (!em->erro) re->prog[a].x = re->nprog;
+      break; }
+  }
+}
+
+// Bytes que podem abrir o casamento do no `n` (em `c`); devolve 1 se o no pode
+// casar sem consumir nada. Asserções e lookarounds sao transparentes (nao
+// consomem); conservador onde ha UTF-8 (todo byte >= 0x80 entra).
+static int noClasse(const Classe *c, unsigned cp, int icase);
+#define POE(c, b) ((c)[(b) >> 3] |= (unsigned char)(1u << ((b) & 7)))
+static int primeiros(const Pr *pr, const Classe *cls, int flags, int n, unsigned char *c) {
+  const No *o = &pr->no[n];
+  int b;
+  switch (o->tipo) {
+    case N_BYTE:
+      POE(c, o->a);
+      if ((flags & REGEXJS_I) && isalpha(o->a)) { POE(c, tolower(o->a)); POE(c, toupper(o->a)); }
+      return 0;
+    case N_ANY:
+      // Com a flag s o ponto casa tambem \n e \r (como o O_ANY de primeirosProg).
+      for (b = 0; b < 256; b++) if ((flags & REGEXJS_S) || (b != '\n' && b != '\r')) POE(c, b);
+      return 0;
+    case N_CLASSE:
+      for (b = 0; b < 128; b++) if (noClasse(&cls[o->classe], (unsigned)b, flags & REGEXJS_I)) POE(c, b);
+      for (b = 128; b < 256; b++) POE(c, b);
+      return 0;
+    case N_SEQ:
+      if (!primeiros(pr, cls, flags, o->f1, c)) return 0;
+      return primeiros(pr, cls, flags, o->f2, c);
+    case N_ALT: {
+      int a = primeiros(pr, cls, flags, o->f1, c);
+      return primeiros(pr, cls, flags, o->f2, c) | a; }
+    case N_REP: {
+      int v = primeiros(pr, cls, flags, o->f1, c);
+      return v || o->a == 0; }
+    default: return 1;   // vazio, asserção, lookaround
   }
 }
 
@@ -481,7 +606,98 @@ void regexjs_liberar(RegexJs *re) {
   int i;
   if (!re) return;
   for (i = 0; i < re->ncls; i++) free(re->cls[i].f);
-  free(re->cls); free(re->prog); free(re);
+  free(re->cls); free(re->prog); free(re->slot); free(re->seg); free(re);
+}
+
+// Quem pode ser o `pc` de entrada de roda: o inicio do programa, o ramo x de
+// cada O_SPLIT e o corpo de cada O_LOOK. Fora dos trechos dependentes de
+// registrador, o resultado dessa chamada so depende de (pc, posicao) — o motor
+// nao tem retrorreferencia —, entao pode ser lembrado (ver roda).
+static int montaSlots(RegexJs *re, const Em *em) {
+  unsigned char *fora = calloc((size_t)re->nprog + 1, 1);
+  int i, j;
+  if (!fora) return 0;
+  re->slot = malloc(((size_t)re->nprog + 1) * sizeof *re->slot);
+  if (!re->slot) { free(fora); return 0; }
+  for (i = 0; i < em->ntr; i++)
+    for (j = em->tr[i].ini; j <= em->tr[i].fim && j < re->nprog; j++) fora[j] = 1;
+  for (i = 0; i < re->nprog; i++) re->slot[i] = -1;
+  re->nslot = 0;
+#define SLOT(pc) do { int p_ = (pc); \
+    if (p_ >= 0 && p_ < re->nprog && !fora[p_] && re->slot[p_] < 0) re->slot[p_] = re->nslot++; } while (0)
+  SLOT(0);
+  for (i = 0; i < re->nprog; i++) {
+    if (fora[i]) continue;
+    if (re->prog[i].op == O_STAR) SLOT(i);
+    if (re->prog[i].op == O_SPLIT || re->prog[i].op == O_STAR) SLOT(re->prog[i].x);
+    else if (re->prog[i].op == O_LOOK) SLOT(i + 1);
+  }
+#undef SLOT
+  free(fora);
+  return 1;
+}
+
+// Bytes que o programa, a partir de `pc`, pode consumir PRIMEIRO (para frente),
+// em `c`. Devolve 1 quando pode chegar ao O_MATCH sem consumir nada ou consome
+// para tras (corpo de lookbehind): ai nao ha filtro. Asserções, marcas e
+// lookarounds nao consomem e sao atravessados (o que vem depois deles e que
+// consome na mesma posicao). `visto` corta os lacos: um pc ja visitado ja somou
+// os seus bytes, e um "1" de qualquer caminho anula o conjunto inteiro.
+static int primeirosProg(const RegexJs *re, int pc, unsigned char *c, unsigned char *visto) {
+  int b;
+  for (;;) {
+    const Ins *in;
+    if (pc < 0 || pc >= re->nprog) return 1;
+    if (visto[pc]) return 0;
+    visto[pc] = 1;
+    in = &re->prog[pc];
+    switch (in->op) {
+      case O_BYTE:
+        if (in->neg) return 1;
+        POE(c, in->x);
+        if ((re->flags & REGEXJS_I) && isalpha(in->x)) { POE(c, tolower(in->x)); POE(c, toupper(in->x)); }
+        return 0;
+      case O_ANY:
+        if (in->neg) return 1;
+        for (b = 0; b < 256; b++) if ((re->flags & REGEXJS_S) || (b != '\n' && b != '\r')) POE(c, b);
+        return 0;
+      case O_CLASSE:
+        if (in->neg) return 1;
+        for (b = 0; b < 128; b++) if (noClasse(&re->cls[in->x], (unsigned)b, re->flags & REGEXJS_I)) POE(c, b);
+        for (b = 128; b < 256; b++) POE(c, b);
+        return 0;
+      case O_STAR:   // o corpo (pc + 1) ou, com zero repeticoes, a continuacao
+        if (primeirosProg(re, pc + 1, c, visto)) return 1;
+        pc = in->x; break;
+      case O_SPLIT:
+        if (primeirosProg(re, in->x, c, visto)) return 1;
+        pc = in->y; break;
+      case O_JMP: case O_LOOK: pc = in->x; break;
+      case O_MARK: case O_CHK: case O_BOL: case O_EOL: case O_WB: case O_NWB: pc++; break;
+      default: return 1;   // O_MATCH
+    }
+  }
+}
+
+static int montaSeg(RegexJs *re) {
+  int i, k = 0;
+  unsigned char *visto, c[32];
+  for (i = 0; i < re->nprog; i++) if (re->prog[i].op == O_STAR) k++;
+  if (!k) return 1;
+  if (!(re->seg = malloc((size_t)k * sizeof *re->seg))) return 0;
+  if (!(visto = malloc((size_t)re->nprog + 1))) return 0;
+  for (i = 0; i < re->nprog; i++) {
+    Ins *in = &re->prog[i];
+    if (in->op != O_STAR) continue;
+    in->y = 0;
+    memset(visto, 0, (size_t)re->nprog + 1);
+    memset(c, 0, sizeof c);
+    if (primeirosProg(re, in->x, c, visto)) continue;
+    memcpy(re->seg[re->nseg], c, sizeof c);
+    in->y = ++re->nseg;
+  }
+  free(visto);
+  return 1;
 }
 
 RegexJs *regexjs_compilar(const char *padrao, int flags, char *erro, size_t errotam) {
@@ -502,11 +718,29 @@ RegexJs *regexjs_compilar(const char *padrao, int flags, char *erro, size_t erro
   re = calloc(1, sizeof *re);
   if (!re) { free(pr.no); free(pr.cls); return NULL; }
   re->flags = flags;
-  em.re = re; em.pr = &pr; em.erro = 0;
+  memset(&em, 0, sizeof em);
+  em.re = re; em.pr = &pr;
   emiteNo(&em, raiz);
   emite(&em, O_MATCH, 0, 0, 0);
   re->cls = pr.cls; re->ncls = pr.ncls; re->capcls = pr.capcls;
+  { int i; unsigned cp;
+    for (i = 0; i < re->ncls; i++) {
+      Classe *c = &re->cls[i];
+      memset(c->ascii, 0, sizeof c->ascii);
+      c->pronta = 0;
+      for (cp = 0; cp < 128; cp++)
+        if (noClasse(c, cp, flags & REGEXJS_I)) c->ascii[cp >> 3] |= (unsigned char)(1u << (cp & 7));
+      c->pronta = 1;
+    } }
+  if (!em.erro) {
+    memset(re->primeiro, 0, sizeof re->primeiro);
+    re->temPrimeiro = !primeiros(&pr, pr.cls, flags, raiz, re->primeiro);
+  }
   free(pr.no);
+  if (!em.erro && !montaSlots(re, &em)) em.erro = 1;
+  if (!em.erro && !montaSeg(re)) em.erro = 1;
+  if (!em.erro) re->ancorado = re->nprog > 0 && re->prog[0].op == O_BOL && !(flags & REGEXJS_M);
+  free(em.tr);
   if (em.erro) {
     if (erro && errotam) snprintf(erro, errotam, "pattern too large");
     regexjs_liberar(re);
@@ -533,24 +767,46 @@ RegexJs *regexjs_compilar_web(const char *padrao, char *erro, size_t errotam) {
 }
 
 // ---- casamento -------------------------------------------------------------
+// MEMORIA: 2 bits por (slot, posicao): 0 = ainda nao, 1 = falhou, 2 = casou.
+// Sem ela, um padrao de varios "(?=.*...)" seguidos (o do dono, com "(?!.*(..|.*DTS))"
+// dentro) refaz o mesmo trabalho a cada posicao de inicio e a cada volta do
+// ".*" de fora: numa descricao do AIOStreams (600 bytes) passava de 4 milhoes de
+// passos, estourava o teto e a fonte boa era descartada. Com ela cada estado e
+// resolvido uma vez so: o custo fica em slots x tamanho do texto. Acima do teto
+// de memoria o motor roda como antes (sem lembrar).
+#define MEMO_MAX_ESTADOS (16u * 1024u * 1024u)   // 4 MB de tabela
+
+// Um quadro da pilha de retrocesso (ver roda): so inteiros, 28 bytes.
+enum { Q_ALT, Q_REG, Q_MARCA, Q_STAR };
+typedef struct { int t, a, b, c, d, e, f; } Quadro;
+
 typedef struct {
   const RegexJs *re;
   const unsigned char *s;
   int n;
   long passos;
-  int prof;
+  int prof;          // aninhamento de lookarounds (a unica recursao que sobrou)
   int estourou;
-  int reg[64];
+  int *reg;
+  unsigned char *memo;
+  Quadro *pil;       // a pilha de retrocesso, na heap
+  size_t np, cap;
 } Ctx;
 
-#define PASSOS_MAX 400000
-#define PROF_MAX 6000
+#define PASSOS_MAX 2000000
+// Lookaround dentro de lookaround: o padrao aninha no maximo 100 grupos (parseAlt).
+#define PROF_MAX 128
+// Quadros de retrocesso: ~7 MB no pior caso. Um texto de fonte tem no maximo 8192
+// bytes, e cada volta de laco consome pelo menos um, entao isso sobra; estourar
+// conta como "nao casou", como o teto de passos.
+#define PILHA_MAX 262144
 
 static int ehPalavra(int c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; }
 static int ehQuebra(unsigned c) { return c == '\n' || c == '\r' || c == 0x2028 || c == 0x2029; }
 
 static int noClasse(const Classe *c, unsigned cp, int icase) {
   int i, ach = 0;
+  if (cp < 128 && c->pronta) return (c->ascii[cp >> 3] >> (cp & 7)) & 1;
   for (i = 0; i < c->n && !ach; i++) if (cp >= c->f[i].lo && cp <= c->f[i].hi) ach = 1;
   if (!ach && icase && cp < 128 && isalpha((int)cp)) {
     unsigned o = (unsigned)(islower((int)cp) ? toupper((int)cp) : tolower((int)cp));
@@ -559,96 +815,299 @@ static int noClasse(const Classe *c, unsigned cp, int icase) {
   return c->neg ? !ach : ach;
 }
 
+// Onde comeca o caractere UTF-8 que termina em `fim` (exclusivo), para casar
+// para tras. Byte solto (UTF-8 quebrado) conta sozinho, como para frente.
+static int inicioChar(const Ctx *cx, int fim) {
+  int k = fim - 1, l;
+  while (k > 0 && fim - k < 4 && (cx->s[k] & 0xC0) == 0x80) k--;
+  decodifica(cx->s + k, cx->s + cx->n, &l);
+  return k + l == fim ? k : fim - 1;
+}
+
+static int memoLe(const Ctx *cx, int slot, int sp) {
+  size_t mi = (size_t)slot * (size_t)(cx->n + 1) + (size_t)sp;
+  return (cx->memo[mi >> 2] >> ((mi & 3) * 2)) & 3;
+}
+static void memoGrava(Ctx *cx, int slot, int sp, int v) {
+  size_t mi = (size_t)slot * (size_t)(cx->n + 1) + (size_t)sp;
+  unsigned sh = (unsigned)(mi & 3) * 2;
+  cx->memo[mi >> 2] = (unsigned char)((cx->memo[mi >> 2] & ~(3u << sh)) | ((unsigned)v << sh));
+}
+
+// Um caractere (O_BYTE, O_ANY, O_CLASSE), para frente ou para tras: a nova
+// posicao, ou -1 se nao casa.
+static int consome(const Ctx *cx, const Ins *in, int sp) {
+  const RegexJs *re = cx->re;
+  int l, ini; unsigned c;
+  if (in->op == O_BYTE) {
+    int b;
+    if (in->neg ? sp <= 0 : sp >= cx->n) return -1;
+    b = cx->s[in->neg ? sp - 1 : sp];
+    if (b != in->x && (!(re->flags & REGEXJS_I) || !isalpha(in->x) || tolower(b) != tolower(in->x))) return -1;
+    return sp + (in->neg ? -1 : 1);
+  }
+  // ASCII para frente (quase todo o texto de uma fonte): sem decodificar UTF-8.
+  if (!in->neg && sp < cx->n && cx->s[sp] < 0x80) {
+    unsigned b = cx->s[sp];
+    if (in->op == O_ANY) return (!(re->flags & REGEXJS_S) && (b == '\n' || b == '\r')) ? -1 : sp + 1;
+    if (re->cls[in->x].pronta) return (re->cls[in->x].ascii[b >> 3] >> (b & 7)) & 1 ? sp + 1 : -1;
+  }
+  if (in->neg) {
+    if (sp <= 0) return -1;
+    ini = inicioChar(cx, sp);
+    c = decodifica(cx->s + ini, cx->s + cx->n, &l);
+    l = sp - ini;
+  } else {
+    if (sp >= cx->n) return -1;
+    c = decodifica(cx->s + sp, cx->s + cx->n, &l);
+  }
+  if (in->op == O_ANY) { if (!(re->flags & REGEXJS_S) && ehQuebra(c)) return -1; }
+  else if (!noClasse(&re->cls[in->x], c, re->flags & REGEXJS_I)) return -1;
+  return in->neg ? sp - l : sp + l;
+}
+
+// Desfaz UM caractere que `consome` comeu terminando em `e` (O_STAR recuando).
+static int volta(const Ctx *cx, const Ins *in, int e) {
+  int l;
+  if (in->op == O_BYTE) return e + (in->neg ? 1 : -1);
+  if (!in->neg) return cx->s[e - 1] < 0x80 ? e - 1 : inicioChar(cx, e);
+  decodifica(cx->s + e, cx->s + cx->n, &l);
+  return e + l;
+}
+
+// RETROCESSO SEM RECURSAO. Antes, cada alternativa (O_SPLIT, O_MARK, a continuacao
+// de um O_STAR) era uma chamada recursiva de roda(): "(?:ab |c)*" sobre o texto de
+// uma fonte (ate 8 KB) abria milhares de niveis de 144 bytes e estourava a pilha de
+// um fio de 64 KB (SIGBUS/SIGSEGV; o teto de profundidade de entao, 6000 niveis ~
+// 860 KB, nao ajudava). Agora roda() e um laco e as alternativas pendentes sao
+// quadros num vetor na heap. So o lookaround (O_LOOK) chama roda() de dentro de
+// roda(), e isso so aninha o quanto o padrao aninha (PROF_MAX).
+//
+// Quadros, do mais velho para o mais novo; falhar desempilha o de cima:
+//   Q_ALT    outra alternativa: continuar em (a = pc, b = posicao)
+//   Q_REG    desfazer o registrador a (valor antigo b), como o O_MARK recursivo fazia
+//   Q_MARCA  um estado memorizavel (a = slot, b = posicao) em exploracao: chegar
+//            nele falhando e ter esgotado tudo (grava "falhou"); casar com ele na
+//            pilha grava "casou". Os quadros acima dele sao o que ele ainda tenta.
+//   Q_STAR   as continuacoes de um O_STAR ainda por tentar (ver estrelaProx):
+//            a = pc do O_STAR, b = posicao inicial, c = k (quantos caracteres o
+//            corpo come), d = candidato tentado por ultimo (0..k; guloso comeca
+//            em k + 1, preguicoso em -1), e = a posicao dele, f = o que a memoria
+//            sabia do estado no fim (0 ou 1)
+static int empilha(Ctx *cx, int t, int a, int b, int c, int d, int e, int f) {
+  Quadro *q;
+  if (cx->np == cx->cap) {
+    size_t nc = cx->cap ? cx->cap * 2 : 256;
+    Quadro *n = NULL;
+    if (nc > PILHA_MAX) nc = PILHA_MAX;
+    if (cx->np >= nc || !(n = realloc(cx->pil, nc * sizeof *n))) { cx->estourou = 1; return 0; }
+    cx->pil = n; cx->cap = nc;
+  }
+  q = &cx->pil[cx->np++];
+  q->t = t; q->a = a; q->b = b; q->c = c; q->d = d; q->e = e; q->f = f;
+  return 1;
+}
+
+// Entrar em (pc, sp) como o antigo "roda(pc, sp)" entrava: 2 = a memoria ja sabe
+// que casa, 1 = ja sabe que falha, 0 = explorar (com um Q_MARCA se for um estado
+// memorizavel).
+static int entra(Ctx *cx, int pc, int sp) {
+  int sl = cx->memo ? cx->re->slot[pc] : -1, v;
+  if (sl < 0) return 0;
+  if ((v = memoLe(cx, sl, sp)) != 0) return v;
+  if (!empilha(cx, Q_MARCA, sl, sp, 0, 0, 0, 0)) return 1;
+  return 0;
+}
+
+// Proxima continuacao a tentar do Q_STAR em pil[qi]: guloso do mais longo para o
+// mais curto, preguicoso do mais curto para o mais longo, pulando as posicoes onde
+// a continuacao nao pode comecar (montaSeg) e o fim ja sabido como falho. 1 se
+// achou (d e e atualizados), 0 se esgotou.
+static int estrelaProx(Ctx *cx, size_t qi) {
+  const RegexJs *re = cx->re;
+  Quadro *q = &cx->pil[qi];
+  const Ins *in = &re->prog[q->a], *b = in + 1;
+  const unsigned char *f = in->y ? re->seg[in->y - 1] : NULL;
+  for (;;) {
+    if (!in->lazy) {
+      if (q->d > q->c) q->d = q->c;            // o primeiro: o fim, em q->e
+      else if (q->d == 0) return 0;
+      else { q->d--; q->e = volta(cx, b, q->e); }
+    } else {
+      if (q->d < 0) { q->d = 0; q->e = q->b; }
+      else if (q->d >= q->c) return 0;
+      else { q->d++; q->e = consome(cx, b, q->e); }
+    }
+    if (q->d == q->c && q->f) continue;        // o fim ja se sabe falho
+    if (f && !(q->e < cx->n && (f[cx->s[q->e] >> 3] & (1u << (cx->s[q->e] & 7))))) continue;
+    return 1;
+  }
+}
+
+// Grava `v` na memoria do estado do O_STAR nas posicoes 0..ate do quadro (as que
+// o corpo alcanca a partir da inicial, uma a uma).
+static void estrelaMemo(Ctx *cx, const Quadro *q, int ate, int v) {
+  const RegexJs *re = cx->re;
+  const Ins *b = &re->prog[q->a + 1];
+  int sl = re->slot[q->a], i, e = q->b;
+  if (!cx->memo || sl < 0) return;
+  for (i = 0; i <= ate; i++) {
+    memoGrava(cx, sl, e, v);
+    if (i < ate) e = consome(cx, b, e);
+  }
+}
+
 static int roda(Ctx *cx, int pc, int sp) {
   const RegexJs *re = cx->re;
-  int resultado = 0;
+  const size_t base = cx->np;
+  size_t i;
+  int r;
   if (++cx->prof > PROF_MAX) { cx->estourou = 1; cx->prof--; return 0; }
+  if ((r = entra(cx, pc, sp)) != 0) { cx->prof--; return r == 2; }
+segue:
   for (;;) {
     const Ins *in = &re->prog[pc];
-    if (++cx->passos > PASSOS_MAX) { cx->estourou = 1; break; }
-    if (cx->estourou) break;
+    if (++cx->passos > PASSOS_MAX) { cx->estourou = 1; goto acabou; }
+    if (cx->estourou) goto acabou;
     switch (in->op) {
-      case O_MATCH: resultado = 1; goto fim;
-      case O_BYTE:
-        if (sp >= cx->n) goto fim;
-        if (cx->s[sp] != in->x) {
-          if (!(re->flags & REGEXJS_I) || !isalpha(in->x) || tolower(cx->s[sp]) != tolower(in->x)) goto fim;
+      case O_MATCH: goto casou;
+      case O_BYTE: case O_ANY: case O_CLASSE:
+        if ((sp = consome(cx, in, sp)) < 0) goto falha;
+        pc++; break;
+      case O_STAR: {
+        // Corpo = a instrucao seguinte (um caractere); continuacao = in->x.
+        // Para "testar" so a resposta interessa: o estado (O_STAR, p) casa se a
+        // continuacao casa em ALGUM fim entre p e o ultimo caractere que o corpo
+        // aceita. A ordem (guloso: do mais longo; preguicoso: do mais curto) so
+        // decide quem e achado primeiro. Cada posicao por onde o O_STAR passa
+        // fica lembrada, entao o ".*" que a posicao de inicio seguinte reabre
+        // para na hora em vez de reler a linha inteira.
+        const Ins *b = &re->prog[pc + 1];
+        int slS = cx->memo ? re->slot[pc] : -1;
+        int k = 0, v = 0, e = sp, e2;
+        for (;;) {   // anda ate o fim do que o corpo aceita, ou ate um estado ja resolvido
+          if (slS >= 0 && (v = memoLe(cx, slS, e)) != 0) break;
+          if ((e2 = consome(cx, b, e)) < 0) break;
+          e = e2; k++;
+          if (++cx->passos > PASSOS_MAX) { cx->estourou = 1; goto acabou; }
         }
-        sp++; pc++; break;
-      case O_ANY: {
-        int l; unsigned c;
-        if (sp >= cx->n) goto fim;
-        c = decodifica(cx->s + sp, cx->s + cx->n, &l);
-        if (!(re->flags & REGEXJS_S) && ehQuebra(c)) goto fim;
-        sp += l; pc++; break; }
-      case O_CLASSE: {
-        int l; unsigned c;
-        if (sp >= cx->n) goto fim;
-        c = decodifica(cx->s + sp, cx->s + cx->n, &l);
-        if (!noClasse(&re->cls[in->x], c, re->flags & REGEXJS_I)) goto fim;
-        sp += l; pc++; break; }
+        if (v == 2) {   // o estado no fim ja casa, entao todos os de tras tambem
+          int ee = sp, j;
+          if (slS >= 0) for (j = 0; j < k; j++) { memoGrava(cx, slS, ee, 2); ee = consome(cx, b, ee); }
+          goto casou;
+        }
+        if (v && !k) goto falha;
+        // As continuacoes ficam num quadro: falhar a de cima volta aqui.
+        if (!empilha(cx, Q_STAR, pc, sp, k, in->lazy ? -1 : k + 1, in->lazy ? sp : e, v)) goto acabou;
+        goto falha;
+      }
       case O_JMP: pc = in->x; break;
       case O_SPLIT:
-        if (roda(cx, in->x, sp)) { resultado = 1; goto fim; }
-        pc = in->y; break;
-      case O_MARK: {
-        int antigo = cx->reg[in->x];
+        // x primeiro; se falhar, y (o quadro Q_ALT, que fica por baixo).
+        if (!empilha(cx, Q_ALT, in->y, sp, 0, 0, 0, 0)) goto acabou;
+        r = entra(cx, in->x, sp);
+        if (r == 2) goto casou;
+        if (r == 1) goto falha;
+        pc = in->x; break;
+      case O_MARK:
+        if (!empilha(cx, Q_REG, in->x, cx->reg[in->x], 0, 0, 0, 0)) goto acabou;
         cx->reg[in->x] = sp;
-        if (roda(cx, pc + 1, sp)) { resultado = 1; goto fim; }
-        cx->reg[in->x] = antigo;
-        goto fim; }
+        r = entra(cx, pc + 1, sp);
+        if (r == 2) goto casou;
+        if (r == 1) goto falha;
+        pc++; break;
       case O_CHK:
-        if (cx->reg[in->x] == sp) goto fim;
+        if (cx->reg[in->x] == sp) goto falha;
         pc++; break;
       case O_BOL:
         if (sp == 0 || ((re->flags & REGEXJS_M) && (cx->s[sp - 1] == '\n' || cx->s[sp - 1] == '\r'))) { pc++; break; }
-        goto fim;
+        goto falha;
       case O_EOL:
         if (sp == cx->n || ((re->flags & REGEXJS_M) && (cx->s[sp] == '\n' || cx->s[sp] == '\r'))) { pc++; break; }
-        goto fim;
+        goto falha;
       case O_WB: case O_NWB: {
         int a = sp > 0 && ehPalavra(cx->s[sp - 1]), b = sp < cx->n && ehPalavra(cx->s[sp]);
         if ((a != b) == (in->op == O_WB)) { pc++; break; }
-        goto fim; }
+        goto falha; }
       case O_LOOK: {
-        int r = roda(cx, pc + 1, sp);
-        if (cx->estourou) goto fim;
-        if ((r != 0) == (in->neg == 0)) { pc = in->x; break; }
-        goto fim; }
-      case O_LOOKB: {
-        int j, r = 0, antigo = cx->reg[in->y];
-        cx->reg[in->y] = sp;
-        for (j = sp; j >= 0 && !r && !cx->estourou; j--) {
-          if (j > 0 && j < cx->n && (cx->s[j] & 0xC0) == 0x80) continue;
-          r = roda(cx, pc + 1, j);
-        }
-        cx->reg[in->y] = antigo;
-        if (cx->estourou) goto fim;
-        if ((r != 0) == (in->neg == 0)) { pc = in->x; break; }
-        goto fim; }
-      case O_ENDAT:
-        if (sp != cx->reg[in->x]) goto fim;
-        pc++; break;
-      default: goto fim;
+        int dentro = roda(cx, pc + 1, sp);   // o corpo, numa execucao propria
+        if (cx->estourou) goto acabou;
+        if ((dentro != 0) == (in->neg == 0)) { pc = in->x; break; }
+        goto falha; }
+      default: goto falha;
     }
   }
-fim:
-  cx->prof--;
-  return resultado;
+
+falha:
+  // O caminho atual falhou: desempilha ate achar o que ainda se pode tentar.
+  while (cx->np > base) {
+    size_t qi = cx->np - 1;
+    Quadro *q = &cx->pil[qi];
+    if (q->t == Q_ALT) { pc = q->a; sp = q->b; cx->np--; goto segue; }
+    if (q->t == Q_REG) { cx->reg[q->a] = q->b; cx->np--; continue; }
+    if (q->t == Q_MARCA) {
+      // Resultado de estouro nao vale como resposta: a busca inteira para.
+      if (!cx->estourou) memoGrava(cx, q->a, q->b, 1);
+      cx->np--;
+      continue;
+    }
+    for (;;) {   // Q_STAR: a proxima continuacao
+      int x, e;
+      if (cx->estourou) goto acabou;
+      if (!estrelaProx(cx, qi)) {
+        // Esgotou: de nenhuma das posicoes que o corpo alcanca a continuacao casa.
+        estrelaMemo(cx, &cx->pil[qi], cx->pil[qi].c - (cx->pil[qi].f ? 1 : 0), 1);
+        cx->np--;
+        break;
+      }
+      x = re->prog[cx->pil[qi].a].x; e = cx->pil[qi].e;
+      r = entra(cx, x, e);   // pode crescer a pilha: `q` nao vale mais
+      if (r == 2) goto casou;
+      if (r == 0) { pc = x; sp = e; goto segue; }
+    }
+  }
+  goto acabou;   // nada pendente: nao casa
+
+casou:
+  // Todo estado em exploracao na pilha esta no caminho que casou: lembra "casou".
+  // Os registradores ficam como estao (o O_MARK recursivo tambem nao os desfazia).
+  for (i = base; i < cx->np; i++) {
+    const Quadro *q = &cx->pil[i];
+    if (q->t == Q_MARCA) memoGrava(cx, q->a, q->b, 2);
+    else if (q->t == Q_STAR) estrelaMemo(cx, q, q->d, 2);
+  }
+  cx->np = base; cx->prof--;
+  return 1;
+
+acabou:
+  cx->np = base; cx->prof--;
+  return 0;
 }
 
 int regexjs_testar(const RegexJs *re, const char *texto, size_t n) {
   Ctx cx;
-  int i;
+  int i, r = 0;
+  int regFixo[16];
+  size_t estados;
   if (!re || !texto) return 0;
-  if (re->nreg > 64) return 0;
   if (n > 8192) n = 8192;
   memset(&cx, 0, sizeof cx);
   cx.re = re; cx.s = (const unsigned char *)texto; cx.n = (int)n;
+  // Registradores: um por lookbehind / repeticao que pode casar vazio. Antes
+  // eram 64 fixos, e um padrao com mais lookbehinds nunca casava, em silencio.
+  if (re->nreg <= (int)(sizeof regFixo / sizeof *regFixo)) { memset(regFixo, 0, sizeof regFixo); cx.reg = regFixo; }
+  else if (!(cx.reg = calloc((size_t)re->nreg, sizeof *cx.reg))) return 0;
+  estados = (size_t)re->nslot * (n + 1);
+  if (re->slot && re->nslot && estados <= MEMO_MAX_ESTADOS) cx.memo = calloc((estados + 3) / 4, 1);
   for (i = 0; i <= cx.n; i++) {
+    if (i > 0 && re->ancorado) break;
     if (i > 0 && i < cx.n && (cx.s[i] & 0xC0) == 0x80) continue;
-    if (roda(&cx, 0, i)) return 1;
-    if (cx.estourou) return 0;
+    if (re->temPrimeiro && (i == cx.n || !(re->primeiro[cx.s[i] >> 3] & (1u << (cx.s[i] & 7))))) continue;
+    if (roda(&cx, 0, i)) { r = 1; break; }
+    if (cx.estourou) break;
   }
-  return 0;
+  free(cx.memo);
+  free(cx.pil);
+  if (cx.reg != regFixo) free(cx.reg);
+  return r;
 }

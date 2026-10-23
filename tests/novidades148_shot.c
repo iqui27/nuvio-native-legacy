@@ -5,6 +5,7 @@
 // cor (primeiro titulo parado, no meio da passagem, terceiro titulo), em
 // portugues e em ingles.
 #include "novidades148.h"
+#include "nvtmp.h"
 #include "dados.h"
 #include "ajustes.h"
 #include "gfx.h"
@@ -141,7 +142,7 @@ static void captura(const char *nome, float segundos, int foco) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-novidades148";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-novidades148");
   const char *dir = getenv("NUVIO_DADOS");
   char nome[700];
   SDL_Window *w;

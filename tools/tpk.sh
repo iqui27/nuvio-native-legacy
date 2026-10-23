@@ -30,7 +30,12 @@
 # stb, SDL2_ttf com freetype embutido) em ~/.cache/nuvio-tpk/prefix, feitas por
 # tools/tpk/deps.sh na imagem tools/tpk/Dockerfile.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+# Emulator-only build; keep every command in the default ARM path unchanged.
+if [ "${NUVIO_TPK_ARCH:-}" = x86_64 ]; then
+  exec bash "$(dirname "$0")/tpk/x64.sh"
+fi
+cd "$(dirname "$0")/.." && source tools/ctr.sh
+source tools/tpk/sdk.sh
 RAIZ="$PWD"
 CACHE="${NUVIO_TPK_CACHE:-$HOME/.cache/nuvio-tpk}"
 SAIDA="build/tpk"
@@ -63,12 +68,11 @@ if [ -n "$CANARIO" ]; then
   echo "[canario] nivel de GPU forcado em $NV_TPK_NIVEL ($CANARIO)"
 fi
 
-docker info >/dev/null 2>&1 || { echo "Docker parado: abra o Docker/OrbStack" >&2; exit 1; }
-docker image inspect nuvio-tpk-sdk >/dev/null 2>&1 ||
-  docker build --platform linux/arm/v5 -t nuvio-tpk-sdk tools/tpk/
+tpk_sdk
 
 if [ ! -f "$CACHE/prefix/lib/libSDL2.a" ] || [ ! -f "$CACHE/prefix/lib/libSDL2_ttf.a" ] ||
-   [ ! -f "$CACHE/prefix/lib/libwebp.a" ] || [ ! -f "$CACHE/prefix/lib/.sdlimage-webp" ]; then
+   [ ! -f "$CACHE/prefix/lib/libwebp.a" ] || [ ! -f "$CACHE/prefix/lib/.sdlimage-webp" ] ||
+   [ ! -f "$CACHE/prefix/lib/libass.a" ] || [ ! -f "$CACHE/prefix/lib/.ttf-freetype-externo" ]; then
   echo "[deps] SDL2/SDL2_image/SDL2_ttf estaticos (demora na primeira vez)"
   mkdir -p "$CACHE/src"
   for u in https://github.com/libsdl-org/SDL/releases/download/release-2.30.9/SDL2-2.30.9.tar.gz \
@@ -78,8 +82,55 @@ if [ ! -f "$CACHE/prefix/lib/libSDL2.a" ] || [ ! -f "$CACHE/prefix/lib/libSDL2_t
     d="$CACHE/src/$(basename "$u" .tar.gz)"
     [ -d "$d" ] || curl -fsSL "$u" | tar xz -C "$CACHE/src"
   done
+  # libass e as suas dependencias (mesmas versoes do webOS, tools/build-ass-arm.sh): .tar.xz
+  for u in https://download-mirror.savannah.gnu.org/releases/freetype/freetype-2.13.3.tar.xz \
+           https://github.com/fribidi/fribidi/releases/download/v1.0.16/fribidi-1.0.16.tar.xz \
+           https://github.com/harfbuzz/harfbuzz/releases/download/10.4.0/harfbuzz-10.4.0.tar.xz \
+           https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz; do
+    d="$CACHE/src/$(basename "$u" .tar.xz)"
+    [ -d "$d" ] || curl -fsSL "$u" | tar xJ -C "$CACHE/src"
+  done
   cp tools/tpk/deps.sh "$CACHE/deps.sh"
-  docker run --rm --platform linux/arm/v5 -v "$CACHE:/w" nuvio-tpk-sdk sh /w/deps.sh
+  ctr_run --rm --platform "$TPK_PLATFORM" -v "$CACHE:/w" "$TPK_IMAGE" sh /w/deps.sh
+fi
+
+# DTS/TrueHD -> Dolby Digital 5.1 (docs/features/dts/README.md): FFmpeg 7.1.5
+# estatico, LGPL, com os componentes do tools/build-dts-ffmpeg.sh (alvo tpk). Entra SO na
+# libnuvio.so dos hosts 6+; o NuvioTpk40 continua sem (la a .so nao pode ter TLS e o alvo da
+# conversao e o NuvioTpk). O tarball e baixado e conferido AQUI (o container nao tem curl) e
+# compilado uma vez no nuvio-tpk-sdk; o carimbo e o hash do script: mudou o script, recompila.
+# NV_TPK_SEM_DTS=1 gera sem a conversao (o app fica como o master: DTS/TrueHD mudos).
+sha256_de() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+DTS_PREFIX="$CACHE/prefix-dts"
+DTS_VOL=""
+if [ "${NV_TPK_SEM_DTS:-}" != 1 ]; then
+  DTS_VER=$(sed -n 's/^VERSION=//p' tools/build-dts-ffmpeg.sh)
+  DTS_SHA=$(sed -n 's/^SHA256=//p' tools/build-dts-ffmpeg.sh)
+  DTS_CARIMBO=$(sha256_de tools/build-dts-ffmpeg.sh)
+  if [ ! -f "$DTS_PREFIX/lib/libavcodec.a" ] || [ "$(cat "$DTS_PREFIX/.carimbo" 2>/dev/null)" != "$DTS_CARIMBO" ]; then
+    echo "[deps] FFmpeg $DTS_VER estatico para DTS/TrueHD -> AC3 (demora na primeira vez)"
+    mkdir -p "$CACHE/src"
+    ARQ="$CACHE/src/ffmpeg-$DTS_VER.tar.xz"
+    if [ ! -f "$ARQ" ]; then
+      curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$DTS_VER.tar.xz" -o "$ARQ.tmp"
+      mv "$ARQ.tmp" "$ARQ"
+    fi
+    if [ "$(sha256_de "$ARQ")" != "$DTS_SHA" ]; then
+      rm -f "$ARQ"; echo "ffmpeg-$DTS_VER.tar.xz com sha256 errado (apagado; rode de novo)" >&2; exit 1
+    fi
+    rm -rf "$CACHE/src/ffmpeg-$DTS_VER"
+    tar xJf "$ARQ" -C "$CACHE/src"
+    cp tools/build-dts-ffmpeg.sh "$CACHE/build-dts-ffmpeg.sh"
+    # O container roda como root e o prefixo e dele: num host Linux (o CI do
+    # GitHub) o usuario do host nao apaga nem escreve la. Apagar o velho e gravar
+    # o carimbo (por ultimo: so build completo vale) ficam dentro do container.
+    ctr_run --rm --platform "$TPK_PLATFORM" -v "$CACHE:/w" \
+      -e NUVIO_DTS_TARGET=tpk -e NUVIO_DTS_SRC="/w/src/ffmpeg-$DTS_VER" -e NUVIO_DTS_ROOT=/w/prefix-dts \
+      -e NUVIO_DTS_BUILD=/tmp/nuvio-dts-build -e NUVIO_DTS_JOBS="${NUVIO_BUILD_JOBS:-6}" \
+      -e NUVIO_DTS_CARIMBO="$DTS_CARIMBO" \
+      "$TPK_IMAGE" sh -c 'rm -rf /w/prefix-dts && sh /w/build-dts-ffmpeg.sh && printf "%s" "$NUVIO_DTS_CARIMBO" > /w/prefix-dts/.carimbo'
+  fi
+  DTS_VOL="-v $DTS_PREFIX:/dts"
 fi
 
 echo "[1/3] libnuvio.so (ARMv7 softfp, glibc <= 2.28)"
@@ -94,12 +145,17 @@ tools/env.sh --env-file "$ENVF"
 nv_p2p_resolver tpk
 P2P_VOL=""
 [ -n "$NV_P2P_DIR" ] && P2P_VOL="-v $NV_P2P_DIR:/p2p"
-docker run --rm --platform linux/arm/v5 --env-file "$ENVF" $P2P_VOL \
+ctr_run --rm --platform "$TPK_PLATFORM" --env-file "$ENVF" $P2P_VOL $DTS_VOL \
+  -e NUVIO_BUILD_JOBS="${NUVIO_BUILD_JOBS:-6}" \
+  -e NUVIO_SDK_ID="$(ctr_image_inspect "$TPK_IMAGE"):$CACHE:$NV_P2P_DIR" \
   -e NUVIO_P2P_MOTOR="${NV_P2P_DIR:+1}" \
-  -e NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-}" \
-  -v "$RAIZ":/work -v "$CACHE/prefix":/deps -w /work nuvio-tpk-sdk sh -c '
+  -e NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-}" -e NV_TPK_SEM_ASS="${NV_TPK_SEM_ASS:-}" \
+  -v "$RAIZ":/work -v "$CACHE/prefix":/deps -w /work "$TPK_IMAGE" sh -c '
   set -e
-  mkdir -p /tmp/o
+  # ASS pelo libass (#ass-tpk): o mesmo backend do webOS (src/assrender.c). NV_TPK_SEM_ASS=1
+  # volta ao texto simples (diagnostico). O libass e estatico, com FreeType/HarfBuzz/FriBidi.
+  ASS_CFLAGS="-DNV_ASS_LIBASS"; ASS_LIBS="-lass -lharfbuzz -lfribidi -lfreetype"
+  if [ "${NV_TPK_SEM_ASS:-}" = 1 ]; then ASS_CFLAGS=""; ASS_LIBS="-lfreetype"; fi
   # As -D vao num arquivo de resposta do gcc (@/tmp/flags): assim o xargs -P
   # abaixo compila em paralelo sem reabrir o problema de aspas das chaves.
   # A LISTA DE CHAVES E FECHADA, e nao "tudo o que o env.sh imprimir": o que
@@ -120,18 +176,38 @@ docker run --rm --platform linux/arm/v5 --env-file "$ENVF" $P2P_VOL \
   # o -D tem de ir na linha de comando, SO para esse arquivo.
   P2P_CFLAGS=""
   [ "${NUVIO_P2P_MOTOR:-}" = "1" ] && P2P_CFLAGS="-DNV_P2P_MOTOR -DNV_P2P_MOTOR_DLOPEN -I/p2p/include"
-  ls src/*.c src/dts/*.c | grep -v "src/video_tizen.c" | xargs -P 6 -I{} sh -c \
-    "gcc $CFLAGS -c {} -o /tmp/o/\$(basename {} .c).o -DNV_TPK -include src/tpk.h -fvisibility=hidden -Wno-unused-result $NUVIO_EXTRA_CFLAGS $P2P_CFLAGS \$(case {} in src/p2pmotor_motor.c) echo -D_GNU_SOURCE;; esac) @/tmp/flags -I/deps/include -I/deps/include/SDL2" 
+  FLAGS="$CFLAGS -DNV_TPK $ASS_CFLAGS -include src/tpk.h -fvisibility=hidden -Wno-unused-result $NUVIO_EXTRA_CFLAGS"
+  # DTS/TrueHD -> AC3: o FFmpeg montado em /dts (bloco [deps] acima; ausente com
+  # NV_TPK_SEM_DTS=1). -DNV_DTS_FFMPEG vale SO para a .so dos hosts 6+; o 1b/3 recompila
+  # sem ele todo .c que o cita. Por isso NV_DTS_FFMPEG so pode aparecer em .c, nunca em .h.
+  DTS_CFLAGS=""; DTS_LIBS=""
+  if [ -f /dts/include/libavcodec/avcodec.h ]; then
+    DTS_CFLAGS="-DNV_DTS_FFMPEG -I/dts/include"
+    DTS_LIBS="-L/dts/lib -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group"
+  fi
+  if grep -l NV_DTS_FFMPEG src/*.h src/dts/*.h >/dev/null 2>&1; then
+    echo "NV_DTS_FFMPEG num .h: o NuvioTpk40 herdaria o FFmpeg (use so em .c)" >&2; exit 1; fi
+  KEY=$( { cat /tmp/flags; sha256sum tools/tpk.sh tools/native-objects.mk; printf "%s" "$NUVIO_SDK_ID|$FLAGS|$P2P_CFLAGS|$DTS_CFLAGS"; } | sha256sum | cut -d" " -f1)
+  O="build/tpk/objects/$KEY/common"; O40="build/tpk/objects/$KEY/tpk40"
+  SOURCES=$(ls src/*.c src/dts/*.c | grep -v "src/video_tizen.c")
+  make -s -f tools/native-objects.mk -j "$NUVIO_BUILD_JOBS" CC=gcc OBJDIR="$O" SOURCES="$SOURCES" \
+    NATIVE_FLAGS="$FLAGS $P2P_CFLAGS $DTS_CFLAGS @/tmp/flags -I/deps/include -I/deps/include/SDL2" MOTOR_FLAGS=-D_GNU_SOURCE
+  # Preserva a ordem original de link (basename alfabetico), inclusive dts/.
+  ORDER=$(for f in $SOURCES; do echo "$(basename "$f") $f"; done | sort | cut -d" " -f2)
+  OBJECTS=""
+  for f in $ORDER; do OBJECTS="$OBJECTS $O/${f%.c}.o"; done
   # SDL e zlib ESTATICOS: a TV nao tem libSDL2 garantida, e a libz entra junto
   # para nao depender da versao do aparelho. GLES/EGL/dl/pthread/m sao do
   # sistema (API nativa publica do Tizen). libwebp tambem estatica (o Tizen nao
   # a expoe a apps; o SDL_image decodifica WebP com ela). curl e libjpeg continuam
   # por dlopen em execucao, como na LG (rede.c, jpegrapido.c, webp.c).
-  gcc -shared -o /work/build/tpk/libnuvio.so /tmp/o/*.o -Wl,--no-undefined \
+  gcc -shared -o /work/build/tpk/libnuvio.so $OBJECTS -Wl,--no-undefined \
     -Wl,-soname,libnuvio.so -Wl,--exclude-libs,ALL \
-    -L/deps/lib -lSDL2_ttf -lSDL2_image -lwebpdemux -lwebp -lsharpyuv -lSDL2 /usr/lib/arm-linux-gnueabi/libz.a \
+    -L/deps/lib -lSDL2_ttf -lSDL2_image -lwebpdemux -lwebp -lsharpyuv -lSDL2 $ASS_LIBS $DTS_LIBS /usr/lib/arm-linux-gnueabi/libz.a \
     -lGLESv2 -ldl -lpthread -lm -lrt
   echo "  $(ls -la /work/build/tpk/libnuvio.so | awk "{print \$5}") bytes"
+  if [ -n "$DTS_LIBS" ]; then echo "  DTS/TrueHD -> AC3: FFmpeg ligado (avcodec $(sed -n "s/^#define LIBAVCODEC_VERSION_MAJOR *//p" /dts/include/libavcodec/version_major.h))"
+  else echo "  DTS/TrueHD -> AC3: SEM FFmpeg (NV_TPK_SEM_DTS=1): DTS/TrueHD seguem mudos"; fi
   objdump -T /work/build/tpk/libnuvio.so | grep -oE "GLIBC_[0-9.]+" | sort -uV | tail -1 | sed "s/^/  glibc minima: /"
   objdump -p /work/build/tpk/libnuvio.so | grep NEEDED
   objdump -T /work/build/tpk/libnuvio.so | grep -E " nv_tpk_" | awk "{print \"  exporta \" \$NF}"
@@ -146,19 +222,19 @@ docker run --rm --platform linux/arm/v5 --env-file "$ENVF" $P2P_VOL \
   # So as unidades que citam NV_TPK40 sao recompiladas; as demais sao os MESMOS
   # objetos da .so de cima. O link ganha --hash-style=both para o carregador
   # de ELF do Program40.cs achar o DT_HASH (o padrao do gcc daqui e so GNU_HASH).
-  mkdir -p /tmp/o40
   # p2pmotor_motor.c entra sempre aqui: o 4/5 NUNCA leva o motor (a UEP barra
   # .so de arquivo), entao ele e recompilado SEM -DNV_P2P_MOTOR (sem P2P_CFLAGS).
-  { grep -l NV_TPK40 src/*.c src/dts/*.c; echo src/p2pmotor_motor.c; } | sort -u | grep -v "src/video_tizen.c" | xargs -P 6 -I{} sh -c \
-    "gcc $CFLAGS -c {} -o /tmp/o40/\$(basename {} .c).o -DNV_TPK -DNV_TPK40 -include src/tpk.h -fvisibility=hidden -Wno-unused-result $NUVIO_EXTRA_CFLAGS @/tmp/flags -I/deps/include -I/deps/include/SDL2"
+  # Quem cita NV_DTS_FFMPEG tambem: aqui sai sem ele (stub), e a .so do 4/5 nao leva FFmpeg.
+  SOURCES40=$({ grep -lE "NV_TPK40|NV_DTS_FFMPEG" src/*.c src/dts/*.c; echo src/p2pmotor_motor.c; } | sort -u | grep -v "src/video_tizen.c")
+  make -s -f tools/native-objects.mk -j "$NUVIO_BUILD_JOBS" CC=gcc OBJDIR="$O40" SOURCES="$SOURCES40" \
+    NATIVE_FLAGS="$FLAGS -DNV_TPK40 @/tmp/flags -I/deps/include -I/deps/include/SDL2"
   OBJ40=""
-  for o in /tmp/o/*.o; do
-    b=$(basename "$o")
-    if [ -f "/tmp/o40/$b" ]; then OBJ40="$OBJ40 /tmp/o40/$b"; else OBJ40="$OBJ40 $o"; fi
+  for f in $ORDER; do
+    if printf "%s\n" "$SOURCES40" | grep -qxF "$f"; then OBJ40="$OBJ40 $O40/${f%.c}.o"; else OBJ40="$OBJ40 $O/${f%.c}.o"; fi
   done
   gcc -shared -o /work/build/tpk/libnuvio-tpk40.so $OBJ40 -Wl,--no-undefined \
     -Wl,-soname,libnuvio.so -Wl,--exclude-libs,ALL -Wl,--hash-style=both \
-    -L/deps/lib -lSDL2_ttf -lSDL2_image -lwebpdemux -lwebp -lsharpyuv -lSDL2 /usr/lib/arm-linux-gnueabi/libz.a \
+    -L/deps/lib -lSDL2_ttf -lSDL2_image -lwebpdemux -lwebp -lsharpyuv -lSDL2 $ASS_LIBS /usr/lib/arm-linux-gnueabi/libz.a \
     -lGLESv2 -ldl -lpthread -lm -lrt
   echo "  $(ls -la /work/build/tpk/libnuvio-tpk40.so | awk "{print \$5}") bytes"
   # CONFERENCIA que o carregador de ELF do host exige (ele recusa o contrario):
@@ -191,7 +267,7 @@ ARTE=$(bash tools/tizen-art.sh)
 rm -f "$SAIDA"/*.tpk
 for p in $PACOTES; do
   H=tizen-tpk/$p
-  rm -rf "$H/lib" "$H/res" "$H/bin" "$H/obj"
+  rm -rf "$H/lib" "$H/res"
   mkdir -p "$H/lib" "$H/res" "$H/shared/res"
   # O NuvioTpk40 leva a .so propria (1b/3); o nome dentro do pacote e o mesmo.
   if [ "$p" = NuvioTpk40 ]; then cp "$SAIDA/libnuvio-tpk40.so" "$H/lib/libnuvio.so"
@@ -207,36 +283,26 @@ for p in $PACOTES; do
   cp -R deploy/app/fonts "$H/res/fonts"
   # Avisos de licenca de terceiros (libtorrent, Boost, OpenSSL, nuvio-engine).
   cp -R deploy/app/licencas "$H/res/licencas"
+  # FFmpeg do DTS -> AC3 (LGPL): texto da licenca e a procedencia exata, so nos 6+.
+  if [ -n "$DTS_VOL" ] && [ "$p" != NuvioTpk40 ]; then
+    mkdir -p "$H/res/licencas/dts"
+    cp "$DTS_PREFIX/COPYING.LGPLv2.1" "$DTS_PREFIX/SOURCE.txt" "$H/res/licencas/dts/"
+  fi
   # Clipe mudo do canario de audio (#137, Video.PrimeAudio); so o host 6+ usa.
   [ "$p" = NuvioTpk40 ] || cp tizen-tpk/silencio.mp4 "$H/res/"
   cp deploy/app/tizen/icon.png "$H/shared/res/$p.png"
-  # The version AND the keyboard-canary privilege are rewritten here, per
-  # package — but the SOURCE manifest is a tracked file, so it is saved and put
-  # back. Without this every build left the tree dirty (and a later
-  # `git commit -a` would commit the build's identity into the source).
-  # `sed -i ''` is BSD syntax: on GNU sed the '' becomes the script itself and the
-  # command dies with "cannot read ...: No such file". `-i.bak` works on both.
-  MAN="$H/tizen-manifest.xml"
-  cp "$MAN" "$MAN.orig"
-  sed -i.bak "s/ version=\"[^\"]*\">/ version=\"$VER\">/" "$MAN"
-  # CANARIO do teclado/ditado do sistema (tizen-tpk/Texto.cs, #imetv):
-  # NUVIO_TPK_TEXTO=1 compila o Texto.cs e poe o privilegio do microfone
-  # (recorder, para o Tizen.Uix.Stt) SO neste build — o manifesto do git nao muda,
-  # porque e restaurado logo abaixo. Nao vai em release sem teste numa TV.
+  # Manifesto gerado fora da arvore versionada, tambem em falhas/interrupcoes.
+  mkdir -p "$SAIDA/manifests/$p"
+  MAN="$RAIZ/$SAIDA/manifests/$p/tizen-manifest.xml"
+  sed "s/ version=\"[^\"]*\">/ version=\"$VER\">/" "$H/tizen-manifest.xml" > "$MAN"
   FLAG_TEXTO=""
   if [ "${NUVIO_TPK_TEXTO:-}" = 1 ] && [ "$p" != NuvioTpk40 ]; then
-    sed -i.bak 's|<privilege>http://tizen.org/privilege/internet</privilege>|&<privilege>http://tizen.org/privilege/recorder</privilege>|' "$MAN"
+    sed -i.bak "s|<privilege>http://tizen.org/privilege/internet</privilege>|&<privilege>http://tizen.org/privilege/recorder</privilege>|" "$MAN"
+    rm -f "$MAN.bak"
     FLAG_TEXTO="-p:NvTextoCanario=1"
   fi
-  rm -f "$MAN.bak"
-  # Restore on BOTH paths: a failed build must not leave the tracked manifest
-  # wearing this build's identity.
-  if ! dotnet build "$H/$p.csproj" -c Release -nologo -v q $FLAG_TEXTO; then
-    mv "$MAN.orig" "$MAN"
-    echo "$p: dotnet build falhou" >&2
-    exit 1
-  fi
-  mv "$MAN.orig" "$MAN"
+  [ ! -d "$H/bin/Release" ] || find "$H/bin/Release" -type f -name '*.tpk' -delete
+  dotnet build "$H/$p.csproj" -c Release -nologo -v q -p:TizenManifestFile="$MAN" $FLAG_TEXTO
   TPK=$(find "$H/bin/Release" -name '*.tpk' | head -1)
   [ -n "$TPK" ] || { echo "$p: dotnet nao gerou .tpk" >&2; exit 1; }
   cp "$TPK" "$SAIDA/Nuvio-$VER-$p${NUVIO_TPK_TEXTO:+-texto}.tpk"
@@ -247,7 +313,7 @@ for T in "$SAIDA"/*.tpk; do
   L=$(unzip -l "$T")
   # Consumir a lista inteira: grep -q fecha cedo e SIGPIPE mascara o match
   # sob pipefail quando o pacote tem muitas entradas.
-  if unzip -Z1 "$T" | grep -E '(^|/)(conta-[^/]*|discord-p[^/]*|jellyfin-p[^/]*|emby-p[^/]*|plex-p[^/]*)\.txt(\.tmp)?$' >/dev/null; then
+  if unzip -Z1 "$T" | grep -E '(^|/)(conta-[^/]*|discord-p[^/]*|jellyfin-p[^/]*|emby-p[^/]*|plex-p[^/]*|srvidx-p[^/]*)\.txt(\.tmp)?$' >/dev/null; then
     echo "tpk.sh: $T leva arquivo privado da conta — abortado" >&2; exit 1
   fi
   grep -qE " lib/libnuvio.so$" <<<"$L" || { echo "$T sem lib/libnuvio.so" >&2; exit 1; }
@@ -256,6 +322,13 @@ for T in "$SAIDA"/*.tpk; do
     grep -qE " res/art/marcas/$f$" <<<"$L" || { echo "$T sem res/art/marcas/$f" >&2; exit 1; }
   done
   grep -qE " res/licencas/p2p-avisos.txt$" <<<"$L" || { echo "$T sem res/licencas/p2p-avisos.txt" >&2; exit 1; }
+  # Com FFmpeg ligado, todo 6+ leva o aviso LGPL dele; o 4/5, nunca.
+  case "$T" in
+    *-NuvioTpk40.tpk) ! grep -qE " res/licencas/dts/" <<<"$L" || { echo "$T leva o aviso do FFmpeg (o 4/5 nao tem FFmpeg)" >&2; exit 1; } ;;
+    *) if [ -n "$DTS_VOL" ]; then
+         grep -qE " res/licencas/dts/COPYING.LGPLv2.1$" <<<"$L" || { echo "$T sem res/licencas/dts/COPYING.LGPLv2.1 (FFmpeg ligado)" >&2; exit 1; }
+       fi ;;
+  esac
   # Motor pedido (pasta achada) => TODO .tpk 6+ tem de levar a .so dele; o 4/5, nunca.
   case "$T" in
     *-NuvioTpk40.tpk) ! grep -qE " lib/libnuvio_engine.so$" <<<"$L" || { echo "$T leva o motor P2P (o 4/5 nao pode)" >&2; exit 1; } ;;

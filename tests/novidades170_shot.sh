@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas do cartao da 1.7 em BMP: as tres cenas da previa (ilha do relogio
 # com o modal e o painel de Salvos, Spotlight, layout Apple TV) em pt e en, nos
 # momentos de cada uma, o modal e o Spotlight em ru e as animacoes reduzidas.
@@ -12,7 +14,7 @@
 #   N170_SO=ja bash tests/novidades170_shot.sh      # so um grupo de capturas
 set -eu
 cd "$(dirname "$0")/.."
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-n170-shot.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-n170-shot.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 sources=()
@@ -21,8 +23,8 @@ for source in src/*.c src/dts/*.c; do
   sources+=("$source")
 done
 cc "${sources[@]}" tests/novidades170_shot.c -Isrc \
-  -o /tmp/nuvio-n170-shot -O1 -g \
+  -o ${TMPDIR:-/tmp}/nuvio-n170-shot -O1 -g \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-n170-shot "${1:-/tmp/nuvio-novidades170}"
+${TMPDIR:-/tmp}/nuvio-n170-shot "${1:-${TMPDIR:-/tmp}/nuvio-novidades170}"

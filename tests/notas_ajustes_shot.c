@@ -5,6 +5,7 @@
 //
 //   bash tests/notas_ajustes_shot.sh /tmp/nv-notas-shots/aj
 #include "ajustes.h"
+#include "nvtmp.h"
 #include "extras.h"
 #include "gfx.h"
 #include "text.h"
@@ -50,7 +51,7 @@ static void captura(const char *nome, SDL_Window *win) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-notas-shots/aj";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-notas-shots/aj");
   char nome[600];
   SDL_Window *w;
   SDL_GLContext gl;

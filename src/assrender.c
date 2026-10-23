@@ -1,4 +1,5 @@
 #include "assrender.h"
+#include "legfontes.h"
 
 #include <pthread.h>
 #include <limits.h>
@@ -68,10 +69,54 @@ int assrender_ler_pasta_fontes(const char *dir,
   return lidas;
 }
 
+/* Pasta das fontes do app que o libass le (Noto Naskh incluso). `wasm` e o
+ * __EMSCRIPTEN__: la SDL_GetBasePath devolve "/" e as fontes vivem em /app/fonts. */
+void assrender_pasta_fontes_app(const char *base, int wasm, char *out, size_t n) {
+  if (n == 0) return;
+  out[0] = 0;
+  if (wasm) { snprintf(out, n, "%s", "/app/fonts"); return; }
+  if (base) snprintf(out, n, "%sfonts", base);
+  if (access(out, R_OK)) snprintf(out, n, "%s", "deploy/app/fonts");
+}
+
+/* #369: o libass nao cai para "qualquer fonte com o glifo" quando as fontes sao as
+ * da memoria (sem fontconfig: Android, .tpk, wasm): o tailandes de uma trilha
+ * ASS com estilo "Arial"/Inter saia em .notdef mesmo com o NotoSansThai ja
+ * entregue. Cada corrida de tailandes (U+0E00-0E7F, E0 B8/B9 xx) fora de chaves
+ * de override ganha {\fnNoto Sans Thai} ... {\fn}, o mesmo expediente do texto
+ * simples arabe (plainass.c). So corre se a fonte chegou ao libass. */
+static int ass_byte_tailandes(const unsigned char *p) {
+  return p[0] == 0xE0 && (p[1] == 0xB8 || p[1] == 0xB9) && (p[2] & 0xC0) == 0x80;
+}
+char *assrender_marcar_tailandes(const char *txt) {
+  static const char ini[] = "{\\fnNoto Sans Thai}", fim[] = "{\\fn}";
+  size_t n = strlen(txt), cap = n + 1, i, o = 0;
+  int achou = 0, chaves = 0, em = 0;
+  char *out;
+  for (i = 0; i + 2 < n; i++)
+    if (ass_byte_tailandes((const unsigned char *)txt + i)) { achou = 1; cap += sizeof ini + sizeof fim; i += 2; }
+  if (!achou) return NULL;
+  if (!(out = (char *)malloc(cap))) return NULL;
+  for (i = 0; i < n;) {
+    if (txt[i] == '{') chaves = 1;
+    if (txt[i] == '}') chaves = 0;
+    if (!chaves && i + 2 < n && ass_byte_tailandes((const unsigned char *)txt + i)) {
+      if (!em) { memcpy(out + o, ini, sizeof ini - 1); o += sizeof ini - 1; em = 1; }
+      memcpy(out + o, txt + i, 3); o += 3; i += 3; continue;
+    }
+    if (em) { memcpy(out + o, fim, sizeof fim - 1); o += sizeof fim - 1; em = 0; }
+    out[o++] = txt[i++];
+  }
+  if (em) { memcpy(out + o, fim, sizeof fim - 1); o += sizeof fim - 1; }
+  out[o] = 0;
+  return out;
+}
+
 #ifdef NV_ASS_LIBASS
 #include <SDL2/SDL.h>
 #include <ass/ass.h>
 #include "gfx.h"
+#include "bidi.h"
 
 #define ASS_TEX_INICIAL 64
 
@@ -94,6 +139,7 @@ typedef struct {
   long long ms;          // instante (relogio do video) que este quadro mostra
   long long inicioMax;   // maior Start dos eventos vivos em ms; -1 sem evento
   float ox, oy;          // canto da area do video na tela quando foi renderizado
+  int k;                 // pixels do alvo por unidade de layout: o quadro foi renderizado k vezes maior (#335)
 } AssCpuFrame;
 
 static pthread_mutex_t assTrava = PTHREAD_MUTEX_INITIALIZER;
@@ -101,6 +147,21 @@ static pthread_mutex_t assFilaTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t assFilaCond = PTHREAD_COND_INITIALIZER;
 static pthread_t assWorker;
 static int assWorkerCriado, assTrackAtivo, assWorkerParar, assPedidoPendente;
+static int assTextoSimples;
+static PlainAssStyle plainPed, plainApl;
+static int plainPedValido, plainAplValido;
+static ASS_Style *authoredStyles;
+static int authoredStyleCount;
+
+static void ass_authored_styles_free(void) {
+  for (int i = 0; i < authoredStyleCount; i++) free(authoredStyles[i].FontName);
+  free(authoredStyles); authoredStyles = NULL; authoredStyleCount = 0;
+}
+/* Protected by assTrava. Re-evaluate active cues only at a timing boundary
+ * or after seeking, not on every video frame. */
+static int plainTimingValid;
+static long long plainLastTime, plainNextBoundary;
+static uint64_t plainActiveSet;
 static int assProntoValido, assAtualValido;
 static double assPedidoMs;
 static unsigned assPedidoGeracao, assPedidoSerial, assSerial;
@@ -131,6 +192,7 @@ static int assFrameW, assFrameH;
 static float layPedX, layPedY;
 static int layPedW = 1920, layPedH = 1080, layPedVW = 1920, layPedVH = 1080;
 static double layPedEscala = 1.0;
+static int layPedK = 1;
 static int layAplW, layAplH, layAplVW, layAplVH;
 static double layAplEscala;
 static unsigned assGeracao;
@@ -202,7 +264,48 @@ typedef struct { char nome[96]; size_t tam; unsigned long long amostra; } AssFon
 static AssFonteVista assFontesVistas[ASS_FONTES_MAX];
 static int assNFontesVistas;
 static size_t assBytesFontesVistas;
-static char assFallbackFont[768];
+static char assFallbackFont[768], assFonteLocal[768];
+static int assFonteRegistrada;
+#define ASS_ATUAIS_MAX 32
+#define ASS_ATUAIS_BYTES (32u * 1024u * 1024u)
+typedef struct { char nome[256]; unsigned char *dados; size_t tam; } AssFonteAtual;
+static AssFonteAtual assFontesAtuais[ASS_ATUAIS_MAX];
+static int assNFontesAtuais, assAtuaisCompletas = 1;
+static size_t assBytesAtuais;
+static void ass_atuais_limpar_locked(void) {
+  for (int i = 0; i < assNFontesAtuais; i++) free(assFontesAtuais[i].dados);
+  memset(assFontesAtuais, 0, sizeof assFontesAtuais);
+  assNFontesAtuais = 0; assBytesAtuais = 0; assAtuaisCompletas = 1;
+}
+static void ass_atual_guardar_locked(const char *nome, const void *dados, size_t n) {
+  if (!assAtuaisCompletas) return;
+  for (int i = 0; i < assNFontesAtuais; i++) {
+    const AssFonteAtual *f = &assFontesAtuais[i];
+    if (f->tam == n && !strcmp(f->nome, nome) && !memcmp(f->dados, dados, n)) return;
+  }
+  unsigned char *copia = NULL;
+  if (strlen(nome) < sizeof assFontesAtuais[0].nome && assNFontesAtuais < ASS_ATUAIS_MAX &&
+      n <= ASS_ATUAIS_BYTES - assBytesAtuais) copia = malloc(n);
+  if (!copia) {
+    ass_atuais_limpar_locked(); assAtuaisCompletas = 0;
+    return; /* Keep the original renderer path; never replay a partial batch. */
+  }
+  AssFonteAtual *f = &assFontesAtuais[assNFontesAtuais++];
+  memcpy(copia, dados, n); f->dados = copia; f->tam = n;
+  snprintf(f->nome, sizeof f->nome, "%s", nome); assBytesAtuais += n;
+}
+static unsigned char *ass_fonte_local_ler(const char *path, size_t *n) {
+  struct stat st; *n = 0;
+  if (lstat(path, &st) || !S_ISREG(st.st_mode) || st.st_size < 12 ||
+      (unsigned long long)st.st_size > LEGFONTE_MAX_BYTES) return NULL;
+  FILE *f = fopen(path, "rb"); if (!f) return NULL;
+  unsigned char *b = malloc((size_t)st.st_size);
+  if (b && fread(b, 1, (size_t)st.st_size, f) == (size_t)st.st_size &&
+      fgetc(f) == EOF && !ferror(f) && assrender_bytes_sao_fonte(b, (size_t)st.st_size)) *n = (size_t)st.st_size;
+  fclose(f);
+  if (!*n) { free(b); b = NULL; }
+  return b;
+}
 
 static unsigned long long ass_amostra_fonte(const unsigned char *p, size_t n) {
   unsigned long long h = 1469598103934665603ULL;
@@ -215,15 +318,60 @@ static unsigned long long ass_amostra_fonte(const unsigned char *p, size_t n) {
 /* Pasta das fontes do sistema, lida por assrender_ler_pasta_fontes em vez de
  * ass_set_fonts_dir. Guardada porque ass_clear_fonts (teto de fontes anexadas)
  * tira estas junto, e elas precisam voltar antes do ass_set_fonts seguinte. */
-static char assPastaFontes[640];
+static char assPastaFontes[640], assPastaFontesApp[640];
+static int assUsaSistema;
+static int assVistoNaskh;          /* NotoNaskhArabic-Regular chegou ao libass nesta carga */
+static int assNaskhBold;           /* NotoNaskhArabic-Bold chegou ao libass nesta carga (#335) */
+static int assVistoThai;           /* NotoSansThai-Regular chegou ao libass nesta carga (#369) */
+static char assPastaExtra[640];    /* NV_TPK: pasta de fontes baixadas (dados/fontes) */
 static void ass_fonte_da_pasta(const char *nome, const void *dados, size_t tam, void *u) {
   (void)u;
+  if (!strcmp(nome, "NotoNaskhArabic-Regular.ttf")) assVistoNaskh = 1;
+  if (!strcmp(nome, "NotoNaskhArabic-Bold.ttf")) assNaskhBold = 1;
+  if (!strcmp(nome, "NotoSansThai-Regular.ttf")) assVistoThai = 1;
+  /* The UI subset shares the family name but lacks mixed-script glyphs.
+   * Plain subtitles use the verified complete face; leave UI selection intact. */
+  if (!strcmp(nome, "NotoNaskhArabic-Subset.ttf")) return;
   ass_add_font(assLib, nome, (const char *)dados, (int)tam);
 }
+#ifdef NV_TPK
+static int assNaskhFalhou;         /* a completa nao veio: vale o recorte da interface */
+static void ass_subset_naskh_locked(void) {
+  /* Sem a completa (sem rede, tag ausente) o recorte da interface ainda tem as
+   * letras: sem juncao, mas legiveis, em vez de quadrados. */
+  char r[700]; FILE *f; long n = 0; char *b;
+  if (!assLib || !assPastaFontesApp[0]) return;
+  snprintf(r, sizeof r, "%s/NotoNaskhArabic-Subset.ttf", assPastaFontesApp);
+  if (!(f = fopen(r, "rb"))) return;
+  fseek(f, 0, SEEK_END); n = ftell(f); fseek(f, 0, SEEK_SET);
+  if (n > 4 && n < (1L << 22) && (b = malloc((size_t)n))) {
+    if (fread(b, 1, (size_t)n, f) == (size_t)n) {
+      ass_add_font(assLib, "NotoNaskhArabic-Subset.ttf", b, (int)n);
+      fprintf(stderr, "[libass] sem NotoNaskhArabic-Regular: usando o recorte da interface\n");
+    }
+    free(b);
+  }
+  fclose(f);
+}
+#endif
 static void ass_carregar_pasta_locked(void) {
   int ignorados = 0, lidas;
   if (!assLib || !assPastaFontes[0]) return;
-  lidas = assrender_ler_pasta_fontes(assPastaFontes, ass_fonte_da_pasta, NULL, &ignorados);
+  assNaskhBold = 0;
+  assVistoThai = 0;
+  lidas = assUsaSistema ? assrender_ler_pasta_fontes(assPastaFontes, ass_fonte_da_pasta, NULL, &ignorados) : 0;
+  assVistoNaskh = 0;
+  if (assPastaFontesApp[0] && (!assUsaSistema || strcmp(assPastaFontesApp, assPastaFontes)))
+    assrender_ler_pasta_fontes(assPastaFontesApp, ass_fonte_da_pasta, NULL, NULL);
+#ifdef NV_TPK
+  /* O res/ do .tpk e o da INSTALACAO (a auto-atualizacao troca so a .so), entao
+   * o NotoNaskhArabic-Regular.ttf, novo na 2.0.2, falta em quem atualizou por
+   * dentro do app: o libass nao achava "Noto Naskh Arabic" e caia na Inter, que
+   * nao tem arabe (quadradinhos). A copia baixada da tag fica em dados/fontes. */
+  if (assPastaExtra[0]) assrender_ler_pasta_fontes(assPastaExtra, ass_fonte_da_pasta, NULL, NULL);
+  if (!assVistoNaskh && assNaskhFalhou) ass_subset_naskh_locked();
+#endif
+  plainass_arabic_bold = assNaskhBold;
   fprintf(stderr, "[libass] pasta %s: %d fonte(s); %d arquivo(s) que nao sao fonte ignorado(s)\n",
           assPastaFontes, lidas, ignorados);
 }
@@ -234,11 +382,36 @@ static void ass_aplicar_fontes_locked(void) {
                 ASS_FONTPROVIDER_AUTODETECT, NULL, 1);
 }
 
-static void ass_iniciar_locked(void) {
+// Explicit selection changes only. Routine packet delivery keeps the original
+// font cache path; a full current batch lets us restore attachment precedence.
+static void ass_fontes_reconstruir_locked(const unsigned char *selecionada, size_t n) {
+  ass_clear_fonts(assLib);
+  if (selecionada) ass_add_font(assLib, assFonteLocal, (const char *)selecionada, (int)n);
+  assFonteRegistrada = selecionada != NULL;
+  ass_carregar_pasta_locked();
+  assNFontesVistas = 0; assBytesFontesVistas = 0;
+  for (int i = 0; i < assNFontesAtuais; i++) {
+    const AssFonteAtual *f = &assFontesAtuais[i];
+    ass_add_font(assLib, f->nome, (const char *)f->dados, (int)f->tam);
+    AssFonteVista *v = &assFontesVistas[assNFontesVistas++];
+    snprintf(v->nome, sizeof v->nome, "%.95s", f->nome);
+    v->tam = f->tam; v->amostra = ass_amostra_fonte(f->dados, f->tam);
+    assBytesFontesVistas += f->tam;
+  }
+  ass_aplicar_fontes_locked();
+}
+
+static void ass_iniciar_locked(int sistema) {
   char fontDir[640] = "";
   char fallbackFont[768] = "";
   struct timespec t0, t1;
-  if (assLib) return;
+  if (assLib) {
+    if (sistema && !assUsaSistema) {
+      assUsaSistema = 1; ass_carregar_pasta_locked(); ass_aplicar_fontes_locked();
+    }
+    return;
+  }
+  assUsaSistema = sistema;
   clock_gettime(CLOCK_MONOTONIC, &t0);
   assLib = ass_library_init();
   if (!assLib) { ass_diag("libass: falha ao iniciar biblioteca"); return; }
@@ -286,6 +459,22 @@ static void ass_iniciar_locked(void) {
     }
     if (access(fallbackFont, R_OK) != 0 && access("/system/fonts/Roboto-Regular.ttf", R_OK) == 0)
       snprintf(fallbackFont, sizeof fallbackFont, "%s", "/system/fonts/Roboto-Regular.ttf");
+#elif defined(NV_TPK)
+    /* .tpk (Samsung): SDL_GetBasePath e o diretorio do host .NET, nao o do
+     * pacote. O host passa a arte em NUVIO_TPK_ARTE (src/tpk.c) e fonts/ fica
+     * ao lado de art/ (a mesma conta do txt_iniciar). Sem fontconfig e sem
+     * pasta de sistema: as fontes sao as do app, entregues ao libass em memoria. */
+    {
+      const char *env = getenv("NUVIO_TPK_ARTE");
+      if (env && env[0]) {
+        char r[640];
+        snprintf(r, sizeof r, "%s/../fonts", env);
+        if (access(r, R_OK) == 0) {
+          snprintf(fontDir, sizeof fontDir, "%s", r);
+          snprintf(fallbackFont, sizeof fallbackFont, "%s/InterDisplay-Regular.ttf", r);
+        }
+      }
+    }
 #else
     if (access("/usr/share/fonts", R_OK) == 0)
       snprintf(fontDir, sizeof fontDir, "%s", "/usr/share/fonts");
@@ -296,7 +485,24 @@ static void ass_iniciar_locked(void) {
 #endif
   }
 #endif
+  { char *base = SDL_GetBasePath();
+#ifdef __EMSCRIPTEN__
+    assrender_pasta_fontes_app(base, 1, assPastaFontesApp, sizeof assPastaFontesApp);
+#else
+    assrender_pasta_fontes_app(base, 0, assPastaFontesApp, sizeof assPastaFontesApp);
+#endif
+    if (base) SDL_free(base);
+#ifdef NV_TPK
+    if (fontDir[0] && strstr(fontDir, "/../fonts")) snprintf(assPastaFontesApp, sizeof assPastaFontesApp, "%s", fontDir);
+#endif
+  }
   snprintf(assPastaFontes, sizeof assPastaFontes, "%s", fontDir);
+  if (assFonteLocal[0]) {
+    size_t n; unsigned char *b = ass_fonte_local_ler(assFonteLocal, &n);
+    if (b) { ass_add_font(assLib, assFonteLocal, (const char *)b, (int)n); assFonteRegistrada = 1; }
+    else assFonteRegistrada = 0;
+    free(b);
+  }
   ass_carregar_pasta_locked();
   snprintf(assFallbackFont, sizeof assFallbackFont, "%s", fallbackFont);
   ass_aplicar_fontes_locked();
@@ -306,6 +512,7 @@ static void ass_iniciar_locked(void) {
   ass_set_frame_size(assRenderer, assFrameW, assFrameH);
   ass_set_storage_size(assRenderer, assFrameW, assFrameH);
   ass_set_font_scale(assRenderer, 1.0);
+  ass_set_hinting(assRenderer, ASS_HINTING_LIGHT);   /* explicito: nao depender do padrao da versao */
   layAplW = layAplVW = assFrameW; layAplH = layAplVH = assFrameH; layAplEscala = 1.0;
   clock_gettime(CLOCK_MONOTONIC, &t1);
   /* Uma vez por sessao; na C9 a pasta tem 106 MB de fontes. */
@@ -362,6 +569,117 @@ static int ass_frame_copiar(ASS_Image *im, AssCpuFrame *out) {
   return 1;
 }
 
+static void ass_trilha_tailandes(ASS_Track *t) {
+  int i;
+  if (!assVistoThai) return;
+  for (i = 0; i < t->n_events; i++) {
+    char *novo;
+    if (!t->events[i].Text || !(novo = assrender_marcar_tailandes(t->events[i].Text))) continue;
+    free(t->events[i].Text); t->events[i].Text = novo;
+  }
+}
+
+static void ass_plain_style_locked(const PlainAssStyle *p) {
+  ASS_Style *s;
+  if (!assTrack || !assTrack->n_styles) return;
+  if (plainAplValido && !memcmp(p, &plainApl, sizeof *p)) return;
+  if (!assTextoSimples) {
+    if (!authoredStyles) {
+      authoredStyles = calloc(assTrack->n_styles, sizeof *authoredStyles);
+      if (!authoredStyles) return;
+      for (int i = 0; i < assTrack->n_styles; i++) {
+        authoredStyles[i] = assTrack->styles[i];
+        authoredStyles[i].FontName = strdup(assTrack->styles[i].FontName);
+        if (!authoredStyles[i].FontName) { ass_authored_styles_free(); return; }
+        authoredStyleCount++;
+      }
+    }
+    for (int i = 0; i < authoredStyleCount; i++) {
+      ASS_Style *original = &authoredStyles[i];
+      char *font = strdup(p->overrides & PLAIN_ASS_FONT ? p->font : original->FontName);
+      if (!font) return;
+      s = &assTrack->styles[i];
+      free(s->FontName); *s = *original; s->FontName = font;
+      if (p->overrides & PLAIN_ASS_COLOR) s->PrimaryColour = (uint32_t)p->rgb << 8;
+      if (p->overrides & PLAIN_ASS_OUTLINE) s->OutlineColour = (uint32_t)p->outlineRgb << 8;
+      if (p->overrides & PLAIN_ASS_BORDER) {
+        s->BorderStyle = 1;
+        s->Outline = p->border == 1 ? 2 : 0;
+        s->Shadow = p->border == 2 ? 4 : 0;
+      }
+      if (p->overrides & PLAIN_ASS_BG) {
+        s->BorderStyle = p->background ? 4 : 1;
+        s->BackColour = p->background ? (unsigned)(255 - p->background * 255 * 16 / 100) : 46u;
+      }
+      // BackColour carries shadow RGB unless it is a background box.
+      if ((p->overrides & PLAIN_ASS_OUTLINE) && s->BorderStyle == 1)
+        s->BackColour = ((uint32_t)p->outlineRgb << 8) | (s->BackColour & 255u);
+      if (p->overrides & PLAIN_ASS_POS) s->MarginV = p->marginV * assTrack->PlayResY / 1080;
+      if (p->overrides & PLAIN_ASS_BOLD) s->Bold = p->bold;
+    }
+    /* Flush cached event layout after an explicit style change or reset. */
+    ass_set_selective_style_override_enabled(assRenderer, ASS_OVERRIDE_BIT_MARGINS);
+    ass_set_selective_style_override_enabled(assRenderer, 0);
+    plainApl = *p; plainAplValido = 1;
+    return;
+  }
+  s = &assTrack->styles[assTrack->default_style];
+  if (!s->FontName || strcmp(s->FontName, p->font)) {
+    char *name = strdup(p->font);
+    if (!name) return;
+    free(s->FontName); s->FontName = name;
+  }
+  s->FontSize = p->size;
+  s->PrimaryColour = s->SecondaryColour = ((uint32_t)p->rgb << 8);
+  s->OutlineColour = (uint32_t)p->outlineRgb << 8;
+  // BorderStyle=4 uses BackColour for the existing black background box.
+  // Without that box, BackColour is the shadow, at its original opacity.
+  s->BackColour = p->background ? (unsigned)(255 - (p->background * 255 * 16 / 100))
+                   : (p->border == 2 ? (uint32_t)p->outlineRgb << 8 : 0u) | 46u;
+  s->Bold = p->bold ? 1 : 0;
+  s->BorderStyle = p->background ? 4 : 1;
+  s->Outline = p->border == 1 ? 2 : 0;
+  s->Shadow = p->border == 2 ? 4 : 0;
+  s->MarginV = p->marginV;
+  s->MarginL = s->MarginR = 130;
+  /* Direct style edits leave libass's per-event collision position cached.
+   * A cue first rendered above player controls can stay raised after they
+   * close. Apply margins through the public renderer setter and invalidate
+   * layout even on older libass (0.17.1 doesn't invalidate in the setter).
+   * This runs only when the user's/plain player style changes, not per frame. */
+  ass_set_selective_style_override_enabled(assRenderer, 0);
+  ass_set_selective_style_override(assRenderer, s);
+  ass_set_selective_style_override_enabled(assRenderer, ASS_OVERRIDE_BIT_MARGINS);
+  plainApl = *p; plainAplValido = 1;
+}
+
+static void ass_plain_reflow_locked(long long t) {
+  long long next = LLONG_MAX;
+  uint64_t active = UINT64_C(1469598103934665603);
+  if (!assTextoSimples || !assTrack || !plainAplValido) return;
+  if (plainTimingValid && t >= plainLastTime && t < plainNextBoundary) {
+    plainLastTime = t;
+    return;
+  }
+  for (int i = 0; i < assTrack->n_events; i++) {
+    ASS_Event *e = &assTrack->events[i];
+    long long end = e->Start + e->Duration;
+    if (e->Start > t && e->Start < next) next = e->Start;
+    if (end > t && end < next) next = end;
+    if (e->Start <= t && end > t)
+      active = (active ^ (uint64_t)(i + 1)) * UINT64_C(1099511628211);
+  }
+  if (plainTimingValid && active != plainActiveSet) {
+    /* libass keeps a collided cue's old vertical shift even after the
+     * other cues end. Plain captions must reflow from the current bottom,
+     * like the existing text overlay; authored ASS keeps its semantics. */
+    ass_set_selective_style_override_enabled(assRenderer, 0);
+    ass_set_selective_style_override_enabled(assRenderer, ASS_OVERRIDE_BIT_MARGINS);
+  }
+  plainTimingValid = 1; plainLastTime = t;
+  plainNextBoundary = next; plainActiveSet = active;
+}
+
 static void *ass_worker_loop(void *unused) {
   (void)unused;
   for (;;) {
@@ -369,7 +687,8 @@ static void *ass_worker_loop(void *unused) {
     unsigned generation, serial, epoch;
     double ms, esc;
     float ox, oy;
-    int lw, lh, vw, vh;
+    int lw, lh, vw, vh, plainValid, k;
+    PlainAssStyle plain;
     struct timespec a, b;
     ASS_Image *images = NULL;
     int changed = 0, pronto = 0, igual = 0;
@@ -379,8 +698,10 @@ static void *ass_worker_loop(void *unused) {
       pthread_cond_wait(&assFilaCond, &assFilaTrava);
     if (assWorkerParar) { pthread_mutex_unlock(&assFilaTrava); break; }
     generation = assPedidoGeracao; serial = assPedidoSerial; epoch = assEpoch; ms = assPedidoMs;
-    ox = layPedX; oy = layPedY; lw = layPedW; lh = layPedH;
+    ox = layPedX; oy = layPedY; lw = layPedW; lh = layPedH; k = layPedK;
+    lw *= k; lh *= k;   /* libass renderiza em pixels do alvo, nao em unidades de layout */
     vw = layPedVW; vh = layPedVH; esc = layPedEscala;
+    plain = plainPed; plainValid = plainPedValido;
     assPedidoPendente = 0;
     pthread_mutex_unlock(&assFilaTrava);
 
@@ -402,6 +723,8 @@ static void *ass_worker_loop(void *unused) {
         ass_set_font_scale(assRenderer, esc);
         layAplEscala = esc;
       }
+      if (plainValid) ass_plain_style_locked(&plain);
+      ass_plain_reflow_locked(t);
       images = ass_render_frame(assRenderer, assTrack, t, &changed);
       /* Igual ao publicado: nada a fazer, o quadro em tela continua certo. */
       pthread_mutex_lock(&assFilaTrava);
@@ -411,7 +734,7 @@ static void *ass_worker_loop(void *unused) {
       if (!igual) {
         pronto = ass_frame_copiar(images, &frame);
         frame.ms = t; frame.inicioMax = -1;
-        frame.ox = ox; frame.oy = oy;
+        frame.ox = ox; frame.oy = oy; frame.k = k;
         { int i;
           for (i = 0; i < assTrack->n_events; i++) {
             long long ini = assTrack->events[i].Start;
@@ -537,7 +860,7 @@ static GLuint ass_textura_locked(int slot, const AssCpuImage *im) {
   return assTex[slot].tex;
 }
 
-static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int manter) {
+static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int manter, int simples) {
   ASS_Track *track;
   char *copia;
   if (!corpo || !tamanho) return 0;
@@ -545,7 +868,7 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
   if (geracao != __atomic_load_n(&assGeracao, __ATOMIC_ACQUIRE)) {
     pthread_mutex_unlock(&assTrava); return 0;
   }
-  ass_iniciar_locked();
+  ass_iniciar_locked(!simples);
   if (!assLib || !assRenderer) { pthread_mutex_unlock(&assTrava); return 0; }
   copia = (char *)malloc(tamanho + 1u);
   if (!copia) { ass_diag("libass: memoria insuficiente para documento"); pthread_mutex_unlock(&assTrava); return 0; }
@@ -557,12 +880,25 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
     ass_diag("libass: documento ASS invalido ou incompleto");
     pthread_mutex_unlock(&assTrava); return 0;
   }
+  if (simples) {
+    /* Converted plain text follows Unicode layout, not VSFilter's legacy
+     * per-style-run layout. Keep authored ASS compatibility unchanged. */
+    ass_track_set_feature(track, ASS_FEATURE_WHOLE_TEXT_LAYOUT, 1);
+    ass_track_set_feature(track, ASS_FEATURE_BIDI_BRACKETS, 1);
+  }
   if (geracao != __atomic_load_n(&assGeracao, __ATOMIC_ACQUIRE)) {
     ass_free_track(track);
     pthread_mutex_unlock(&assTrava); return 0;
   }
+  ass_authored_styles_free();
   if (assTrack) ass_free_track(assTrack);
   assTrack = track;
+  ass_trilha_tailandes(track);
+  plainTimingValid = 0;
+  /* Authored ASS retains its own margins after a converted plain track. */
+  ass_set_selective_style_override_enabled(assRenderer, 0);
+  __atomic_store_n(&assTextoSimples, simples, __ATOMIC_RELEASE);
+  plainAplValido = 0;
   assEventos = track->n_events;
   assResolucaoFonte = 0;
   assCoberturaIni = LLONG_MAX; assCoberturaFim = LLONG_MIN;
@@ -575,11 +911,11 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
     } }
   __atomic_store_n(&assTrackGeracao, geracao, __ATOMIC_RELEASE);
   __atomic_store_n(&assTrackAtivo, 1, __ATOMIC_RELEASE);
-  ass_diag("libass: ASS completo ativo");
+  ass_diag(simples ? "libass: texto RTL simples ativo" : "libass: ASS completo ativo");
   pthread_mutex_unlock(&assTrava);
   if (!ass_worker_iniciar()) {
     pthread_mutex_lock(&assTrava);
-    if (assTrack == track) { ass_free_track(assTrack); assTrack = NULL; }
+    if (assTrack == track) { ass_authored_styles_free(); ass_free_track(assTrack); assTrack = NULL; }
     assEventos = 0;
     __atomic_store_n(&assTrackAtivo, 0, __ATOMIC_RELEASE);
     ass_diag("libass: worker de render indisponivel");
@@ -604,7 +940,134 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
 }
 
 int assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao) {
-  return ass_carregar(corpo, tamanho, geracao, 0);
+  return ass_carregar(corpo, tamanho, geracao, 0, 0);
+}
+
+#ifdef NV_TPK
+#include <sys/stat.h>
+#include "dados.h"
+#include "rede.h"
+#ifndef NV_VERSAO
+#define NV_VERSAO "dev"
+#endif
+/* Garante a fonte arabe completa para o texto simples RTL (ver ass_carregar_pasta_locked).
+ * Chamada fora de assTrava, no fio que baixou a legenda: ~175 KB, uma vez por instalacao. */
+static void ass_garantir_naskh(void) {
+  static int pronto, tentativas;
+  const char *arte = getenv("NUVIO_TPK_ARTE"), *v;
+  char caminho[700], pasta[640], url[320], tmp[720];
+  char *buf; long n = 0; FILE *f;
+  if (pronto || tentativas >= 1) return;
+  if (arte && arte[0]) {
+    snprintf(caminho, sizeof caminho, "%s/../fonts/NotoNaskhArabic-Regular.ttf", arte);
+    if (access(caminho, R_OK) == 0) { pronto = 1; return; }
+  }
+  if (!dados_dir() || !dados_dir()[0]) return;
+  if (!dados_caminho(pasta, sizeof pasta, "fontes")) goto falhou;
+  snprintf(caminho, sizeof caminho, "%s/NotoNaskhArabic-Regular.ttf", pasta);
+  if (access(caminho, R_OK) != 0) {
+    if (NV_VERSAO[0] < '0' || NV_VERSAO[0] > '9') { pronto = 1; return; }
+    for (v = NV_VERSAO; *v; v++) if (!((*v >= '0' && *v <= '9') || *v == '.')) { pronto = 1; return; }
+    tentativas++;
+    mkdir(pasta, 0755);
+    snprintf(url, sizeof url, "https://raw.githubusercontent.com/iqui27/nuvio-native-legacy/v%s/deploy/app/fonts/NotoNaskhArabic-Regular.ttf", NV_VERSAO);
+    buf = rede_baixar_bin(url, 20, &n);
+    if (!buf || n < 100000 || n > 400000 || !assrender_bytes_sao_fonte((const unsigned char *)buf, 4)) {
+      fprintf(stderr, "[libass] NotoNaskhArabic-Regular nao veio da tag v%s (%ld bytes)\n", NV_VERSAO, buf ? n : -1L);
+      free(buf); goto falhou;
+    }
+    snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
+    f = fopen(tmp, "wb");
+    if (!f || fwrite(buf, 1, (size_t)n, f) != (size_t)n) { if (f) fclose(f); free(buf); remove(tmp); goto falhou; }
+    fclose(f); free(buf);
+    if (rename(tmp, caminho) != 0) { remove(tmp); goto falhou; }
+    fprintf(stderr, "[libass] NotoNaskhArabic-Regular baixada da tag v%s (%ld bytes)\n", NV_VERSAO, n);
+    /* Negrito real (#335), de cortesia: sem ele o libass cai no "sem negrito"
+     * para trilhas com arabe, que e o comportamento antigo seguro. */
+    snprintf(url, sizeof url, "https://raw.githubusercontent.com/iqui27/nuvio-native-legacy/v%s/deploy/app/fonts/NotoNaskhArabic-Bold.ttf", NV_VERSAO);
+    snprintf(caminho, sizeof caminho, "%s/NotoNaskhArabic-Bold.ttf", pasta);
+    buf = rede_baixar_bin(url, 20, &n);
+    if (buf && n > 100000 && n < 400000 && assrender_bytes_sao_fonte((const unsigned char *)buf, 4)) {
+      snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
+      f = fopen(tmp, "wb");
+      if (f && fwrite(buf, 1, (size_t)n, f) == (size_t)n) { fclose(f); if (rename(tmp, caminho)) remove(tmp); }
+      else { if (f) fclose(f); remove(tmp); }
+    }
+    free(buf);
+  }
+  pronto = 1;
+  pthread_mutex_lock(&assTrava);
+  snprintf(assPastaExtra, sizeof assPastaExtra, "%s", pasta);
+  if (assLib) {
+    /* A biblioteca ja subiu sem ela: so esta pasta entra (nao duplica as outras
+     * fontes) e o seletor e refeito com a lista completa. */
+    assrender_ler_pasta_fontes(assPastaExtra, ass_fonte_da_pasta, NULL, NULL);
+    ass_aplicar_fontes_locked();
+  }
+  pthread_mutex_unlock(&assTrava);
+  return;
+falhou:
+  pthread_mutex_lock(&assTrava);
+  assNaskhFalhou = 1;
+  if (assLib) { ass_subset_naskh_locked(); ass_aplicar_fontes_locked(); }
+  pthread_mutex_unlock(&assTrava);
+}
+#endif
+
+int assrender_fonte_local_transacao(const char *caminho, int (*confirmar)(void *), void *u) {
+  if (!caminho) caminho = "";
+  if (strlen(caminho) >= sizeof assFonteLocal) return 0;
+  pthread_mutex_lock(&assTrava);
+  int mudou = strcmp(assFonteLocal, caminho) != 0 || (assLib && caminho[0] && !assFonteRegistrada);
+  if (mudou && assLib && !assAtuaisCompletas) { pthread_mutex_unlock(&assTrava); return 0; }
+  size_t n = 0; unsigned char *b = NULL;
+  if (mudou && caminho[0]) {
+    b = ass_fonte_local_ler(caminho, &n);
+    if (!b) { pthread_mutex_unlock(&assTrava); return 0; }
+  }
+  if (confirmar && !confirmar(u)) { free(b); pthread_mutex_unlock(&assTrava); return 0; }
+  if (mudou) {
+    snprintf(assFonteLocal, sizeof assFonteLocal, "%s", caminho);
+    if (assLib) ass_fontes_reconstruir_locked(b, n);
+    else assFonteRegistrada = 0;
+  }
+  free(b);
+  pthread_mutex_unlock(&assTrava);
+  if (mudou) {
+    pthread_mutex_lock(&assFilaTrava);
+    assPedidoPendente = 0; ++assEpoch; assTemUltimoPedido = 0;
+    ass_frame_liberar(&assPronto); assProntoValido = 0;
+    ass_frame_liberar(&assAtual); assAtualValido = 0; assTexResetar = 1;
+    pthread_mutex_unlock(&assFilaTrava);
+  }
+  return 1;
+}
+int assrender_fonte_local_ativa(const char *caminho) {
+  pthread_mutex_lock(&assTrava);
+  int ativa = caminho && caminho[0] && assFonteRegistrada && !strcmp(assFonteLocal, caminho);
+  pthread_mutex_unlock(&assTrava);
+  return ativa;
+}
+
+int assrender_carregar_texto(const char *corpo, size_t tamanho, unsigned geracao) {
+#ifdef NV_TPK
+  ass_garantir_naskh();
+#endif
+  return ass_carregar(corpo, tamanho, geracao, 0, 1);
+}
+
+int assrender_texto_simples(void) {
+  return assrender_ativo() && __atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE);
+}
+
+void assrender_definir_texto_estilo(const PlainAssStyle *style) {
+  if (!style) return;
+  pthread_mutex_lock(&assFilaTrava);
+  if (!plainPedValido || memcmp(style, &plainPed, sizeof *style)) {
+    plainPed = *style; plainPedValido = 1;
+    ++assEpoch; assTemUltimoPedido = 0;
+  }
+  pthread_mutex_unlock(&assFilaTrava);
 }
 
 int assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao) {
@@ -612,11 +1075,12 @@ int assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao) {
   pthread_mutex_lock(&assTrava);
   mesma = assTrack && assTrackGeracao == geracao;
   pthread_mutex_unlock(&assTrava);
-  return ass_carregar(corpo, tamanho, geracao, mesma);
+  return ass_carregar(corpo, tamanho, geracao, mesma, 0);
 }
 
 void assrender_limpar(void) {
   pthread_mutex_lock(&assTrava);
+  ass_authored_styles_free();
   if (assTrack) { ass_free_track(assTrack); assTrack = NULL; }
   assEventos = 0;
   assCoberturaIni = assCoberturaFim = 0;
@@ -635,11 +1099,17 @@ void assrender_limpar(void) {
 
 void assrender_limpar_fontes(void) {
   pthread_mutex_lock(&assTrava);
+  ass_atuais_limpar_locked();
+  ass_authored_styles_free();
   if (assTrack) { ass_free_track(assTrack); assTrack = NULL; }
   assEventos = 0; assFontes = 0; assResolucaoFonte = 0;
   assCoberturaIni = assCoberturaFim = 0;
   __atomic_store_n(&assTrackGeracao, 0, __ATOMIC_RELEASE);
   __atomic_store_n(&assTrackAtivo, 0, __ATOMIC_RELEASE);
+  if (assLib && assFonteLocal[0]) {
+    size_t n; unsigned char *b = ass_fonte_local_ler(assFonteLocal, &n);
+    ass_fontes_reconstruir_locked(b, n); free(b);
+  }
   /* SEM ass_clear_fonts: ver a nota de assFontesVistas. As fontes da faixa
    * anterior ficam na biblioteca; so sao usadas se a proxima pedir o mesmo
    * nome. assFontes (diagnostico) volta a contar as desta faixa. */
@@ -653,11 +1123,26 @@ void assrender_limpar_fontes(void) {
   pthread_mutex_unlock(&assFilaTrava);
 }
 
+// #415: no aviso de memoria, esvazia os caches do libass — o loop
+// "Glyph not found -> selecting one more font" encheu ~190 MB na G4 sem
+// que gpu-cache ou texturas mostrassem. ass_set_cache_limits NAO serve:
+// 0 vira o default e o corte so acontece preguiçosamente no proximo
+// ass_render_frame. O que despeja na hora e o ass_reconfigure dentro de
+// ass_set_fonts (bitmap/composite/outline/font/metrics + fontselect
+// refeito, o que tambem encerra o loop de fallback). Custa uma releitura
+// da pasta de fontes; aceitavel porque so roda no aviso.
+void assrender_aliviar(void) {
+  pthread_mutex_lock(&assTrava);
+  if (assRenderer) ass_aplicar_fontes_locked();
+  pthread_mutex_unlock(&assTrava);
+}
+
 int assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanho) {
   if (!nome || !*nome || !dados || !tamanho || tamanho > (size_t)INT_MAX) return 0;
   pthread_mutex_lock(&assTrava);
-  ass_iniciar_locked();
+  ass_iniciar_locked(1);
   if (assLib) {
+    ass_atual_guardar_locked(nome, dados, tamanho);
     unsigned long long am = ass_amostra_fonte((const unsigned char *)dados, tamanho);
     int i, visto = 0;
     for (i = 0; i < assNFontesVistas; i++)
@@ -672,6 +1157,16 @@ int assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanh
       if (assNFontesVistas >= ASS_FONTES_MAX ||
           assBytesFontesVistas + tamanho > ASS_FONTES_TETO_BYTES) {
         ass_clear_fonts(assLib);
+        // ass_clear_fonts removes every memory face, including the imported
+        // device-local selection. Restore it before attachments and system
+        // fonts so the selection keeps the same precedence after rollover.
+        if (assFonteLocal[0]) {
+          size_t localN = 0;
+          unsigned char *local = ass_fonte_local_ler(assFonteLocal, &localN);
+          if (local) ass_add_font(assLib, assFonteLocal, (const char *)local, (int)localN);
+          assFonteRegistrada = local != NULL;
+          free(local);
+        } else assFonteRegistrada = 0;
         ass_carregar_pasta_locked();
         ass_aplicar_fontes_locked();
         assNFontesVistas = 0; assBytesFontesVistas = 0;
@@ -687,17 +1182,26 @@ int assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanh
   { int ok = assLib != NULL; pthread_mutex_unlock(&assTrava); return ok; }
 }
 
+/* #335: o layout do app e sempre 1920x1080. Com a interface em 4K o alvo tem
+ * 3840x2160, e um quadro do libass feito em 1920x1080 era esticado 2x com filtro
+ * linear: a legenda ASS saia mole. Agora o libass renderiza no tamanho REAL do
+ * alvo (k = pixels por unidade, 1 ou 2) e o quadro volta a ser desenhado 1:1.
+ * Quem desenha informa (player.c); sem informar, k = 1. */
+static int layPxUnid = 1;
+void assrender_pixels_por_unidade(float f) { layPxUnid = f >= 1.5f ? 2 : 1; }
+
 void assrender_definir_layout(float x, float y, float w, float h,
                               int videoW, int videoH, double escalaFonte) {
-  int lw = (int)lroundf(w), lh = (int)lroundf(h);
+  int lw = (int)lroundf(w), lh = (int)lroundf(h), k;
   if (lw < 16 || lh < 16) return;
   if (videoW < 2 || videoH < 2) { videoW = lw; videoH = lh; }
   if (!(escalaFonte > 0.1 && escalaFonte < 4.0)) escalaFonte = 1.0;
+  k = layPxUnid;
   pthread_mutex_lock(&assFilaTrava);
   if (lw != layPedW || lh != layPedH || videoW != layPedVW || videoH != layPedVH ||
-      escalaFonte != layPedEscala || fabsf(x - layPedX) > 0.5f || fabsf(y - layPedY) > 0.5f) {
+      k != layPedK || escalaFonte != layPedEscala || fabsf(x - layPedX) > 0.5f || fabsf(y - layPedY) > 0.5f) {
     layPedX = x; layPedY = y; layPedW = lw; layPedH = lh;
-    layPedVW = videoW; layPedVH = videoH; layPedEscala = escalaFonte;
+    layPedVW = videoW; layPedVH = videoH; layPedEscala = escalaFonte; layPedK = k;
     /* O quadro em tela fica ate o novo chegar (sem piscar), mas nada
      * renderizado com o layout velho pode ser publicado depois disto, e o
      * proximo desenhar pede um render mesmo com o video pausado. */
@@ -837,9 +1341,12 @@ int assrender_desenhar(double posSeg, int atrasoMs, float alpha,
      * (0,0) e o canto superior esquerdo. A textura contem somente a caixa do
      * glyph e pode ser composta diretamente pelo shader de texto. */
     gfx_tex_aspect_atual = 0.0f;
-    gfx_rect((GfxRect){ x + assAtual.ox + (float)im->x, y + assAtual.oy + (float)im->y,
-                        (float)im->w, (float)im->h }, tex, GFX_TEXTO,
-             0, 0, 0, 0, 1, 1, 1, alpha);
+    { float kk = assAtual.k > 1 ? (float)assAtual.k : 1.0f;
+      /* Origem arredondada ao pixel do alvo: 1:1, sem meio pixel de filtro. */
+      float dx = roundf((x + assAtual.ox) * kk) / kk + (float)im->x / kk;
+      float dy = roundf((y + assAtual.oy) * kk) / kk + (float)im->y / kk;
+      gfx_rect((GfxRect){ dx, dy, (float)im->w / kk, (float)im->h / kk }, tex, GFX_TEXTO,
+               0, 0, 0, 0, 1, 1, 1, alpha); }
   }
   if (reenviar) { assTexSerial = assAtual.serial; assTexCorChave = corChave; }
   gfx_tex_aspect_atual = 0.0f;
@@ -899,7 +1406,7 @@ const char *assrender_diagnostico(void) {
 static void *ass_preaquecer_fio(void *u) {
   (void)u;
   pthread_mutex_lock(&assTrava);
-  ass_iniciar_locked();
+  ass_iniciar_locked(1);
   pthread_mutex_unlock(&assTrava);
   return NULL;
 }
@@ -928,10 +1435,18 @@ void assrender_geracao(unsigned geracao) {
 static char assDiag[96] = "libass: backend nao compilado";
 static unsigned assGeracao;
 
+int assrender_carregar_texto(const char *corpo, size_t tamanho, unsigned geracao) { (void)corpo; (void)tamanho; (void)geracao; return 0; }
+int assrender_texto_simples(void) { return 0; }
+int assrender_fonte_local_transacao(const char *caminho, int (*confirmar)(void *), void *u) {
+  (void)caminho; return confirmar ? confirmar(u) : 1;
+}
+int assrender_fonte_local_ativa(const char *caminho) { (void)caminho; return 0; }
+void assrender_definir_texto_estilo(const PlainAssStyle *style) { (void)style; }
 int assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao) { (void)corpo; (void)tamanho; (void)geracao; return 0; }
 int assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao) { (void)corpo; (void)tamanho; (void)geracao; return 0; }
 void assrender_limpar(void) { assGeracao++; }
 void assrender_limpar_fontes(void) {}
+void assrender_aliviar(void) {}
 int assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanho) {
   (void)nome; (void)dados; (void)tamanho; return 0;
 }
@@ -947,6 +1462,7 @@ void assrender_definir_layout(float x, float y, float w, float h,
                               int videoW, int videoH, double escalaFonte) {
   (void)x; (void)y; (void)w; (void)h; (void)videoW; (void)videoH; (void)escalaFonte;
 }
+void assrender_pixels_por_unidade(float f) { (void)f; }
 int assrender_ativo(void) { return 0; }
 int assrender_quadro_cpu(double posSeg) { (void)posSeg; return -1; }
 const char *assrender_diagnostico(void) { return assDiag; }

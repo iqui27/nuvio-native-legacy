@@ -41,8 +41,10 @@ int main(void) {
   stream_definir_lista(lista, 3);
   assert(stream_automatico() == 1);
   assert(stream_automatico_excluir(1) == 1);
-  assert(stream_automatico() == 0);     // sobrou so fora de cache: a de maior resolucao
-  puts("stream_retry: automatico prefere a cacheada; fora de cache fica por ultimo");
+  // #402: fora de cache nunca e escolha automatica (abrir so manda baixar no
+  // debrid e nao toca). Continua na folha para a escolha manual.
+  assert(stream_automatico() < 0);
+  puts("stream_retry: automatico prefere a cacheada; fora de cache nunca e automatica");
 
   // ESCOLHA MANUAL (stream_resolver_escolhida) sem rede: linha com url volta a
   // url na hora; lista trocada no meio devolve -1 e nao grava nada.

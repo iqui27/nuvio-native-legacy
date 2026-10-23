@@ -15,6 +15,9 @@ int main(void) {
   // A CAUSA (foto da TV, 04/10): o AIOStreams manda "PORTUGUESE"; copiado em 8
   // bytes virava "PORTUGU", que nao casa com "pt" nem "por".
   assert(!ling_casa("PORTUGU", "pt"));
+  // #429: codigo conjunto servo-croata
+  assert(ling_casa("hbs", "hr") && ling_casa("hbs", "sr") && ling_casa("sh", "bs"));
+  assert(ling_casa("hr", "hbs") && ling_casa("bos", "bs") && !ling_casa("hbs", "sl") && !ling_casa("hr", "sr"));
   ling_normalizar("PORTUGUESE", c, sizeof c); assert(ling_casa(c, "pt"));
   ling_normalizar("Portuguese (Brazil)", c, sizeof c); assert(ling_casa(c, "pt") && !strcmp(ling_selo(c), "PT-BR"));
   ling_normalizar("por", c, sizeof c); assert(!strcmp(c, "por"));
@@ -35,6 +38,26 @@ int main(void) {
   v[2] = L("pob", "http://x/c.srt", "Other.Group.x264");
   v[4] = L("pob", "http://x/e.srt", "Movie.2020.1080p.BluRay.YIFY");
   assert(legauto_escolher(v, 5, "pt", "http://h/Movie.2020.1080p.BluRay.YIFY.mkv", NULL, 0, 0) == 4);
+  // O CASO DA TCL (11/10): tres portuguesas com o titulo do filme em comum; a
+  // sincronizada divide a fonte e o grupo (WEB-DL, NTb) com o arquivo que toca,
+  // a outra so palavras do titulo e do episodio. O URL do debrid e opaco.
+  {
+    const char *tocando = "The.Grand.Tour.S01E01.Eurocrash.Part.One.1080p.WEB-DL.DDP5.1.H.264-NTb.mkv";
+    Legenda w[4];
+    w[0] = L("por", "http://x/w0.srt", "The.Grand.Tour.S01E01.Eurocrash.Part.One.720p.HDTV.x264-LOL");
+    w[1] = L("por", "http://x/w1.srt", "The.Grand.Tour.S01E01.Eurocrash.Part.One.BluRay.x265-RARBG");
+    w[2] = L("por", "http://x/w2.srt", "The.Grand.Tour.S01E01.WEB-DL.NTb");
+    w[3] = L("eng", "http://x/w3.srt", "The.Grand.Tour.S01E01.Eurocrash.Part.One.1080p.WEB-DL.NTb");
+    // palavras do titulo que todas dividem nao decidem; fonte+grupo decidem
+    assert(legauto_escolher(w, 4, "pt", tocando, NULL, 0, 0) == 2);
+    // sem nome da fonte, o URL opaco nao diz nada: ordem de chegada
+    assert(legauto_escolher(w, 4, "pt", "https://rd.example/d/AbC123xYz", NULL, 0, 0) == 0);
+    // com o nome da fonte informado, legauto_midia o prefere ao URL
+    legauto_fonte(tocando);
+    assert(legauto_escolher(w, 4, "pt", legauto_midia("https://rd.example/d/AbC123xYz"), NULL, 0, 0) == 2);
+    legauto_fonte(NULL);
+    assert(!strcmp(legauto_midia("u"), "u"));
+  }
   // Ja recusada pelo AutoSync fica fora.
   uint64_t ex[1] = { legsync_hash_url(v[4].url) };
   assert(legauto_escolher(v, 5, "pt", "http://h/Movie.2020.1080p.BluRay.YIFY.mkv", ex, 1, 0) == 2);

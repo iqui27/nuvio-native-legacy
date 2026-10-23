@@ -13,6 +13,7 @@
 // fixar uma lista GRAVA, e um teste deste repositorio ja sobrescreveu os dados
 // reais do dono.
 #include "biblioteca.h"
+#include "nvtmp.h"
 #include "ctxmenu.h"
 #include "colecoes.h"
 #include "listas.h"
@@ -23,6 +24,7 @@
 #include "dados.h"
 #include "gfx.h"
 #include "text.h"
+#include "teclado.h"
 #include "tex_cache.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
@@ -158,24 +160,36 @@ static const struct {
   { "O Agente Secreto", "", "Programa de TV", "", 1, 0, 0, 0 },
 };
 
+// Conferencia do que a tela decidiu (foco, modo); a falha sai no rc do programa.
+static int falhasTela;
+#define ASSERTA(cond, ...) do { \
+  if (!(cond)) { falhasTela++; printf("  FALHOU: "); printf(__VA_ARGS__); printf("\n"); } \
+  else { printf("  ok: "); printf(__VA_ARGS__); printf("\n"); } \
+} while (0)
+
 static void povoar(void) {
   CatItem v[sizeof AMOSTRA / sizeof AMOSTRA[0]];
   size_t i;
   for (i = 0; i < sizeof AMOSTRA / sizeof AMOSTRA[0]; i++) {
     CatItem it;
     memset(&it, 0, sizeof it);
-    snprintf(it.titulo, sizeof it.titulo, "%s", AMOSTRA[i].titulo);
+    static const char *posterTitles[] = { "Fallout", "Widow’s Bay", "O Grande Truque", "Uma Batalha Após a Outra", "Origem", "Alta Frequência", "Outcome", "O Diabo Veste Prada 2", "The Invite", "Os Suspeitos", "O Astronauta", "We Bury the Dead", "Perdido em Marte", "Devoradores de Estrelas" };
+    snprintf(it.titulo, sizeof it.titulo, "%s", posterTitles[i]);
     snprintf(it.imdb, sizeof it.imdb, "tt900%02d", (int)i);
     snprintf(it.tipo, sizeof it.tipo, "%s", AMOSTRA[i].serie ? "series" : "movie");
     snprintf(it.meta, sizeof it.meta, "%s", AMOSTRA[i].meta);
-    snprintf(it.genero, sizeof it.genero, "%s", AMOSTRA[i].genero);
+    snprintf(it.genero, sizeof it.genero, "%s", AMOSTRA[i].serie ? "Série · Drama" : "Filme · Drama");
     snprintf(it.sinopse, sizeof it.sinopse, "%s", AMOSTRA[i].sinopse);
-    snprintf(it.poster, sizeof it.poster, "deploy/app/art/%02d.jpg", (int)i);
+    snprintf(it.poster, sizeof it.poster, "deploy/app/art/poster/%02d.jpg", (int)i);
+    it.fontes = i % 3 == 0 ? CAT_FONTE_TRAKT | CAT_FONTE_SIMKL
+              : i % 3 == 1 ? CAT_FONTE_TRAKT : CAT_FONTE_NUVIO;
+    if (i % 4 == 0) strcpy(it.origem, "AIOMetadata");
     it.nota = AMOSTRA[i].nota;
     it.progresso = AMOSTRA[i].progresso;
     it.restanteMin = AMOSTRA[i].restante;
     if (AMOSTRA[i].serie) it.nTemporadas = 1;
     it.naLista = 1;
+    it.listaFontes = 1u << AJ_SALVOS_LOCAL;
     it.naColecao = (i % 2) == 0;
     v[i] = it;
   }
@@ -250,7 +264,7 @@ static void injetarListas(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-biblioteca";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-biblioteca");
   // "lista" no segundo argumento COMECA em exibicao de lista, sem ter desenhado
   // um quadro antes. E a unica forma de medir a arte das duas exibicoes com o
   // cache FRIO nas duas: o tex_cache e indexado pelo CAMINHO, nao pela largura
@@ -312,14 +326,88 @@ int main(int argc, char **argv) {
       fa = fopen(cam, "a");
       if (fa) { fprintf(fa, "bordaFocoCartaz 1\n"); fclose(fa); }
     } }
+  // NUVIO_SHOT_SELO=2: selo de assistido "Escrito" (pilula com a palavra).
+  { const char *sv = getenv("NUVIO_SHOT_SELO");
+    if (sv && *sv) {
+      char cam[700];
+      FILE *fa;
+      snprintf(cam, sizeof cam, "%s/ajustes.txt", dados_dir());
+      fa = fopen(cam, "a");
+      if (fa) { fprintf(fa, "seloVistoLocal %s\n", sv); fclose(fa); }
+    } }
   ajustes_iniciar();
-  { const char *bv = getenv("NUVIO_SHOT_BORDA");
-    if (bv && *bv == '0') ajustes_dir(dados_dir()); }
+  dados_gravar("ajustes.txt", "idioma 0\nbordaFocoCartaz 1\nrealce 0\nmodernSidebar 0\ncollapseSidebar 1\n");
+  ajustes_dir(dados_dir());
+  { const char *bv = getenv("NUVIO_SHOT_BORDA"), *sv = getenv("NUVIO_SHOT_SELO");
+    if ((bv && *bv == '0') || (sv && *sv)) ajustes_dir(dados_dir()); }
+  // NUVIO_SHOT_ESCALA_TEXTO=0.85..1.3: text scale of the capture (default: settings).
+  { const char *et = getenv("NUVIO_SHOT_ESCALA_TEXTO");
+    if (et && *et) gfx_escala_txt_definir((float)atof(et)); }
   // NUVIO_SHOT_VIDRO=0: o material solido (Interface de vidro desligada).
   { const char *v = getenv("NUVIO_SHOT_VIDRO");
     ajustes_definir_vidro(!(v && *v == '0')); }
   povoar();
   biblioteca_iniciar();
+  rail_shot_aplicar();
+  if (argc > 2 && !strcmp(argv[2], "mock")) {
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN); // source panel
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); // first row, second poster
+    snprintf(nome, sizeof nome, "%s-grid.bmp", saida); captura(nome);
+    // Landscape input must produce a readable title card, never grey letterboxing.
+    CatItem original = *cat_item(2), landscape = original;
+    strcpy(landscape.poster, "deploy/app/art/02.jpg");
+    cat_atualizar_item(2, &landscape);
+    snprintf(nome, sizeof nome, "%s-landscape.bmp", saida); captura(nome);
+    cat_atualizar_item(2, &original);
+    // Watched history: real local timestamp API, synthetic account-free data.
+    for (int i = 0; i < 5; i++) {
+      char id[16]; snprintf(id, sizeof id, "tt900%02d", i);
+      cat_historico_definir_tempo(id, AMOSTRA[i].serie ? "series" : "movie", 1, 1791932400000LL - i * 86400000LL);
+    }
+    biblioteca_iniciar();
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-watched.bmp", saida); captura(nome);
+    biblioteca_iniciar();
+    for (int i = 0; i < 4; i++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN); injetarListas();
+    for (int i = 0; i < lst_n(); i++) {
+      CatItem posters[4];
+      for (int j = 0; j < 4; j++) posters[j] = *cat_item((i * 3 + j) % cat_n());
+      LstLista l = *lst_lista(i); lst_previa_registrar(&l, posters, 4);
+    }
+    tecla(SDLK_DOWN); tecla(SDLK_RIGHT); tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-lists.bmp", saida); captura(nome);
+    CatItem trail[8]; DescItemLista notes[8] = {0};
+    for (int i = 0; i < 8; i++) {
+      trail[i] = *cat_item(i);
+      notes[i].rank = i + 1;
+      notes[i].entrouMs = 1791932400000LL - i * 86400000LL;
+      snprintf(notes[i].nota, sizeof notes[i].nota, "Passo %d: observe como a imagem e o som constroem esta história.", i + 1);
+    }
+    lst_teste_itens(trail, 8); lst_teste_extras(notes, 8);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN); quadros(5);
+    { int ed, action, grabbed, sharing, row;
+      biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
+      ASSERTA(row == 0, "list opens on actions");
+      tecla(SDLK_DOWN);
+      biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
+      ASSERTA(row == 1, "D-pad reaches list items");
+      tecla(SDLK_LEFT);
+      biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
+      ASSERTA(row == 0, "Left returns from items to actions");
+    }
+    snprintf(nome, sizeof nome, "%s-list-page.bmp", saida); captura(nome);
+    for (int i = 0; i < 7; i++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN); tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_LEFT);
+    tecla(SDLK_DOWN);
+    { int ed, action, grabbed, sharing, row;
+      biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
+      ASSERTA(row == 1 && biblioteca_teste_trilha(), "D-pad reaches trail steps in trail mode");
+    }
+    snprintf(nome, sizeof nome, "%s-trail.bmp", saida); captura(nome);
+    return falhasTela ? 1 : 0;
+  }
   if (comecaLista) {
     int k;
     for (k = 0; k < 8; k++) tecla(SDLK_LEFT);
@@ -341,7 +429,7 @@ int main(int argc, char **argv) {
   // Escolhe a aba `n` da barra (0 = Salvos, 1 = Coleção, 2 = Listas): a seta so
   // move o foco, o OK escolhe.
   #define MODO(n) do { int _k; AO_TOPO(); \
-    for (_k = 0; _k < 3; _k++) tecla(SDLK_LEFT); \
+    for (_k = 0; _k < 8; _k++) tecla(SDLK_LEFT); \
     for (_k = 0; _k < (n); _k++) tecla(SDLK_RIGHT); \
     tecla(SDLK_RETURN); solta(SDLK_RETURN); } while (0)
 
@@ -390,6 +478,35 @@ int main(int argc, char **argv) {
     { Uint32 t0 = SDL_GetTicks(); while (!ctx_aberto() && SDL_GetTicks() - t0 < 2000u) quadros(1); }
     snprintf(nome, sizeof nome, "%s-ctx-lista-nuvio.bmp", saida); captura(nome);
     tecla(SDLK_ESCAPE); solta(SDLK_RETURN);
+    printf("pronto\n");
+    return 0;
+  }
+
+  // MODO "visto" (#352): selo de assistido na grade e na lista, e as duas
+  // ordenacoes novas. Marca tt90000, 02, 03 e 07 como vistos.
+  if (argc > 2 && !strcmp(argv[2], "visto")) {
+    static const int V[] = { 1, 2, 3, 8, 10 };
+    unsigned k;
+    for (k = 0; k < sizeof V / sizeof V[0]; k++) {
+      char id[16]; snprintf(id, sizeof id, "tt900%02d", V[k]);
+      cat_historico_definir_id(id, "movie", 1);
+    }
+    quadros(10);
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT);
+    snprintf(nome, sizeof nome, "%s-visto-grade-foco.bmp", saida); captura(nome);
+    tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-visto-grade-foco-visto.bmp", saida); captura(nome);
+    AO_TOPO(); SELETOR(1); tecla(SDLK_RETURN); tecla(SDLK_RETURN); tecla(SDLK_RETURN);   // ordem 3 = assistidos primeiro
+    snprintf(nome, sizeof nome, "%s-visto-ordem-assistidos-seletor.bmp", saida); captura(nome);
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_UP);
+    snprintf(nome, sizeof nome, "%s-visto-ordem-assistidos.bmp", saida); captura(nome);
+    AO_TOPO(); SELETOR(1); tecla(SDLK_RETURN);                                 // ordem 4 = nao assistidos
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_UP);
+    snprintf(nome, sizeof nome, "%s-visto-ordem-nao-assistidos.bmp", saida); captura(nome);
+    AO_TOPO(); SELETOR(2); tecla(SDLK_RETURN);                                 // exibicao: lista
+    AO_TOPO(); SELETOR(1); tecla(SDLK_RETURN); tecla(SDLK_RETURN);             // ordem 0
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-visto-lista.bmp", saida); captura(nome);
     printf("pronto\n");
     return 0;
   }
@@ -466,6 +583,127 @@ int main(int argc, char **argv) {
   captura(nome);
   tecla(SDLK_ESCAPE);      // volta para a lista de listas
 
+  // 8b. A PAGINA DA LISTA do Trakt (6B): cabecalho, rank e nota do curador. Sem
+  // rede o Trakt nao entrega itens nem extras, entao entram por gancho.
+  { CatItem pit[6];
+    DescItemLista ex[6];
+    int k, pn = cat_n() < 6 ? cat_n() : 6;
+    memset(ex, 0, sizeof ex);
+    for (k = 0; k < pn; k++) {
+      const CatItem *c = cat_item(k);
+      if (c) pit[k] = *c;
+      ex[k].rank = k + 1;
+      if (k % 2 == 0) snprintf(ex[k].nota, sizeof ex[k].nota,
+                               "Repare na fotografia da cena do corredor.");
+    }
+    lst_teste_itens(pit, pn);
+    lst_teste_extras(ex, pn);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    quadros(40);
+    snprintf(nome, sizeof nome, "%s-lista-pagina.bmp", saida);
+    captura(nome);
+    tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-lista-pagina-foco.bmp", saida);
+    captura(nome);
+    tecla(SDLK_ESCAPE);
+  }
+
+  // 8c. A LISTA PROPRIA: uma lista do Trakt do dono, com os 6 itens inteiros
+  // (item_count 6 e ids de entrada), ganha os sete chips. Sem conta o Trakt nao
+  // grava, entao o salvamento falha e a tela tem que voltar ao que o servidor tem.
+  { static const char *UMA =
+      "[{\"name\":\"Noites de chuva\",\"description\":\"Para ver sem pressa\","
+      "\"privacy\":\"public\",\"item_count\":6,\"likes\":2,"
+      "\"ids\":{\"trakt\":3100500,\"slug\":\"noites-de-chuva\"},"
+      "\"user\":{\"username\":\"iqui27\",\"name\":\"Henrique\",\"ids\":{\"slug\":\"iqui27\"}}}]";
+    CatItem pit[6];
+    DescItemLista ex[6];
+    int k, pn = cat_n() < 6 ? cat_n() : 6;
+    int ed, acao, pega, comp, fil;
+    memset(ex, 0, sizeof ex);
+    for (k = 0; k < pn; k++) {
+      const CatItem *c = cat_item(k);
+      if (c) pit[k] = *c;
+      ex[k].rank = k + 1;
+      ex[k].itemId = 7000 + k;
+    }
+    quadros(40);
+    lst_ler_trakt(UMA, 0);
+    quadros(4);
+    lst_teste_itens(pit, pn);
+    lst_teste_extras(ex, pn);
+    AO_TOPO();
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    quadros(40);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(fil == 0 && acao == 0, "a lista abre com o foco no primeiro chip (fil %d acao %d)", fil, acao);
+    snprintf(nome, sizeof nome, "%s-propria-chips.bmp", saida);
+    captura(nome);
+    // Ate Ordem (chip 4) e liga.
+    for (k = 0; k < 4; k++) tecla(SDLK_RIGHT);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(acao == 4, "o foco alcanca Ordem pelo D-pad (veio %d)", acao);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(ed == 1 && fil >= 1, "Ordem liga e leva o foco para a grade (ed %d fil %d)", ed, fil);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);       // pega o primeiro titulo
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(pega == 0, "OK pega o titulo 0 (veio %d)", pega);
+    tecla(SDLK_DOWN);                              // move para a posicao 1 (exibicao em lista: uma coluna)
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(pega == 1, "seta move o titulo pego (veio %d)", pega);
+    { CatItem c0;
+      lst_item(1, &c0);
+      ASSERTA(!strcmp(c0.titulo, pit[0].titulo), "o titulo pego foi para a posicao 1 (%s)", c0.titulo); }
+    snprintf(nome, sizeof nome, "%s-propria-ordem.bmp", saida);
+    captura(nome);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);       // solta
+    tecla(SDLK_ESCAPE);                            // conclui: sem conta, falha e recarrega
+    { const char *rec = biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+      ASSERTA(ed == 0 && pega == -1, "Back conclui a ordem (ed %d pega %d)", ed, pega);
+      ASSERTA(!strcmp(rec, "Não foi possível salvar a lista"), "sem conta o salvamento falha com recado (%s)", rec); }
+    snprintf(nome, sizeof nome, "%s-propria-ordem-falha.bmp", saida);
+    captura(nome);
+    // Compartilhar (chip 6): QR por cima, qualquer tecla fecha.
+    AO_TOPO();
+    for (k = 0; k < 2; k++) tecla(SDLK_RIGHT);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(acao == 6, "o foco alcanca Compartilhar (veio %d)", acao);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(comp == 1, "lista publica abre o QR");
+    snprintf(nome, sizeof nome, "%s-propria-compartilhar.bmp", saida);
+    captura(nome);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(comp == 0, "uma tecla fecha o QR");
+    // Notas (chip 5): liga, OK no titulo abre o teclado, Back fecha o teclado e depois o modo.
+    tecla(SDLK_LEFT);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(ed == 2, "Notas liga (ed %d)", ed);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    ASSERTA(teclado_aberto(), "OK no titulo abre o teclado da nota");
+    snprintf(nome, sizeof nome, "%s-propria-nota-teclado.bmp", saida);
+    captura(nome);
+    tecla(SDLK_ESCAPE);
+    ASSERTA(!teclado_aberto(), "Back fecha o teclado");
+    tecla(SDLK_ESCAPE);
+    biblioteca_teste_estado(&ed, &acao, &pega, &comp, &fil);
+    ASSERTA(ed == 0, "Back conclui Notas (ed %d)", ed);
+    // Descricao (chip 3): teclado com a descricao atual.
+    AO_TOPO();
+    for (k = 0; k < 8; k++) tecla(SDLK_LEFT);
+    for (k = 0; k < 3; k++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    ASSERTA(teclado_aberto(), "Descricao abre o teclado");
+    snprintf(nome, sizeof nome, "%s-propria-descricao.bmp", saida);
+    captura(nome);
+    tecla(SDLK_ESCAPE);
+    tecla(SDLK_ESCAPE);                            // volta para a lista de listas
+  }
+
   // 9. A fonte SIMKL sem vinculo: a tela diz o que falta, e nao mostra aba
   // vazia. O seletor de fonte cicla Trakt -> Simkl.
   AO_TOPO();
@@ -489,6 +727,6 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-busca-teclado.bmp", saida);
   captura(nome);
 
-  printf("pronto\n");
-  return 0;
+  printf("pronto (%d falha%s)\n", falhasTela, falhasTela == 1 ? "" : "s");
+  return falhasTela ? 1 : 0;
 }

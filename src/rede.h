@@ -18,7 +18,9 @@
  * Redirects so HTTP(S), sem downgrade HTTPS. Cabecalhos do dono e corpo nao
  * atravessam origem; 307/308 autenticados entre origens sao recusados.
  * O XHR sincrono WGT nao oferece este contrato: retorna INDISPONIVEL sem
- * iniciar I/O. Os wrappers antigos continuam disponiveis com seus limites.
+ * iniciar I/O, exceto GET publico HTTPS com receber_corpo, sem redirects,
+ * cabecalhos, job ou intervalo (fetch em fluxo). Os wrappers antigos continuam
+ * disponiveis com seus limites.
  */
 typedef struct RedeGrupo RedeGrupo;
 typedef struct RedeJob RedeJob;
@@ -51,7 +53,17 @@ typedef struct {
   unsigned prazo_ms;    /* total, inclusive redirects; 0 = 15 s, max 300 s */
   size_t max_bytes, max_cabecalhos;
   int seguir;          /* 0 = devolver 3xx; 1 = ate 5 redirects */
+  /* 1 = redirect only to the same host name as the request (port and
+   * http->https may change). Personal servers: a token-bearing request is
+   * never followed to another machine, even without its headers. */
+  int mesmo_host;
   const char *ca_arquivo;
+  /* #290: 1 = servidor PESSOAL configurado pela pessoa (Jellyfin/Emby/Plex),
+   * que costuma ter certificado autoassinado ou de rede local. O certificado
+   * deixa de ser verificado SO enquanto o pedido estiver na MESMA origem
+   * (esquema+host+porta) de `url`; um redirect para outra origem volta a
+   * verificar. Todo o resto do app continua verificando. */
+  int tls_pessoal;
   RedeJob *job;
   void (*intervalo)(const RedeIntervalo *, void *);
   void *intervalo_usuario;
@@ -62,6 +74,13 @@ typedef struct {
   uint64_t max_descartado;    /* required with window; max 2 GiB */
   int (*parar)(void *);       /* additional caller cancellation, no UI work */
   void *parar_usuario;
+  /* Decoded body chunks, without allocating corpo; 0 aborts the request.
+   * Only final HTTP 2xx chunks reach this callback; max_bytes still applies. */
+  int (*receber_corpo)(const void *, size_t, void *);
+  void *corpo_usuario;
+  /* 1 = media Range read: follow an https->http redirect like the player does
+   * (debrid links). Cross-origin hops already drop every caller header. */
+  int rebaixar_midia;
 } RedePedido;
 typedef struct {
   int status, curl_erro;
@@ -103,6 +122,29 @@ RedeErro rede_job_estado(RedeJob *job);
  * are accepted; total is -1 when unknown. Caller frees the returned buffer.
  * Raw headers use one Name: value per line. Credentials are stripped when a
  * redirect changes origin. Cancelling also interrupts an idle transfer. */
+/* cross: 0 = same origin, 1 = public headers only, 2 = no caller headers
+ * after an HTTPS downgrade (including subsequent HTTPS hops). */
+char *rede_range_headers(const char *raw, int public_only); /* caller frees */
+char *rede_baixar_trecho64_final(const char *url, const char *headers,
+                              int64_t start, int64_t end, long *size,
+                              int64_t *total, int *status,
+                              volatile int *cancelled, char *final, int *cross);
+/* Optional guard for an actively awaited range. Atomic urgent flag is owned
+ * by the caller for this synchronous call. Last retry can omit this guard. */
+char *rede_baixar_trecho64_vigiado(const char *url,const char *headers,
+    int64_t start,int64_t end,long *size,int64_t *total,int *status,
+    volatile int *cancelled,char *final,int *cross,volatile int *urgent,
+    unsigned idle_ms,int *stalled);
+/* One streaming read "bytes=start-" for the Samsung converter: the body goes to
+ * sink(opaque, data, n) as it arrives (return 0 to stop; it may block). Same
+ * redirect and header rules as rede_baixar_trecho64_final. No limit on the
+ * whole transfer; it aborts after stall_ms without a byte (time inside the sink
+ * does not count). Returns 0 when the body ended, 1 when the sink stopped it,
+ * -1 on error (*status = HTTP code or 0, *bytes = body bytes delivered). */
+int rede_fluxo64(const char *url, const char *headers, int64_t start,
+                 int (*sink)(void *opaque, const char *data, size_t n), void *opaque,
+                 int64_t *total, int *status, volatile int *cancelled,
+                 char *final, int *cross, long stall_ms, int64_t *bytes);
 char *rede_baixar_trecho64_cab(const char *url, const char *headers,
                               int64_t start, int64_t end, long *size,
                               int64_t *total, int *status,
@@ -129,6 +171,14 @@ char *rede_baixar(const char *url, int segundos);
 // Igual, mas para conteudo BINARIO: devolve o tamanho em *n. A versao acima
 // termina em NUL e serve para JSON; imagem tem zeros no meio e strlen mentiria.
 char *rede_baixar_bin(const char *url, int segundos, long *n);
+// GET EM FLUXO: o corpo vai em pedacos para `cb` (que devolve 0 para cortar a
+// transferencia de proposito, o que conta como sucesso) e nada fica na memoria.
+// `maxBytes` 0 = sem teto. 1 = terminou (2xx); 0 = falha (*status = HTTP, 0 sem
+// resposta). BLOQUEIA. Usado pelo XMLTV e pela M3U do guia de TV.
+int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
+                      int (*cb)(const char *dados, size_t n, void *u), void *u,
+                      long long maxBytes, int *status, long long *bytes);
+
 
 #ifdef __EMSCRIPTEN__
 // POST de corpo text/plain com resposta BINARIA (tamanho em *n; 4xx/5xx viram
@@ -174,7 +224,8 @@ char *rede_baixar_trecho(const char *url, int segundos, long ini, long fim,
 // um teto de pedido lembrado a sessao inteira (rede_corte_host), e os trechos
 // seguintes ja saem em pedacos desse tamanho. `segundos` e o prazo do trecho
 // INTEIRO, nao de cada pedaco. rede_baixar_trecho passa pelo mesmo laco.
-char *rede_baixar_trecho_st(const char *url, int segundos, long ini, long fim,
+// `ini`/`fim` em 64 bits: Range alem de 2 GiB num ARM de 32 bits (#269).
+char *rede_baixar_trecho_st(const char *url, int segundos, long long ini, long long fim,
                             long *tam, int *status, int *erro,
                             char *final, unsigned tamFinal);
 
@@ -189,6 +240,17 @@ long rede_corte_host(const char *url);
 // o Real-Debrid, com o video tocando). Ler logo depois da chamada, no mesmo fio.
 int rede_resto_recusado(void);
 
+// LEITURA LATERAL AO VIDEO (#385). O fio que chama rede_lateral(1) e uma
+// leitura AO LADO do player no mesmo arquivo (pre-busca e colheita do mkvass,
+// sonda do MKV, capitulos): nunca o proprio video nem o proxy dele. Nesses
+// fios um Range cuja CONEXAO falha (curl 6, 7 ou 35: o no do CDN recusou,
+// sumiu ou derrubou o aperto de mao) nao repete "em conexao nova", e o host
+// entra em PAUSA (10 s, dobrando ate 60 s, como o #308): ate ela vencer,
+// todo Range lateral a ele volta na hora com o mesmo codigo, sem abrir
+// conexao. O primeiro Range lateral que da certo solta a pausa. Vale para o
+// fio inteiro: chamar no comeco de um fio proprio.
+void rede_lateral(int sim);
+
 // Teto de bytes da transferencia corrente (0 = sem teto). E interno ao modulo;
 // esta exposto so porque rede_baixar_trecho o usa. Nao mexer de fora.
 //
@@ -197,7 +259,7 @@ int rede_resto_recusado(void);
 // (Program40.cs), que nao monta TLS de compilador — o primeiro acesso a uma
 // variavel _Thread_local seria o fim do processo. O estado por fio vive numa
 // struct por pthread_key (rede.c); o nome continua um lvalue por macro.
-#if defined(NV_TPK40)
+#if defined(NV_TPK40) || defined(NV_UM_FIO)
 long *rede_teto_ptr(void);
 #define rede_teto (*rede_teto_ptr())
 #elif defined(__GNUC__)
@@ -208,8 +270,8 @@ extern long rede_teto;
 
 // Segue os redirecionamentos com GET Range de 64 bytes e devolve o endereco
 // FINAL somente em HTTP2xx, sem truncar o destino. Nativo descarta o corpo e
-// aborta ao passar de 64 bytes; XHR sincrono do WGT recebe a resposta inteira,
-// mas nao a copia para o heap WASM (nao pode abortar durante o recebimento).
+// aborta ao passar de 64 bytes; WGT fetch aborts after response headers,
+// without reading or copying the media body.
 // Serve para saber se um link de debrid leva ao arquivo ou a um video de aviso
 // ("downloading.mp4", "slate.mp4") — que TOCA NORMALMENTE e por isso nao da
 // erro nenhum. 1 se conseguiu resolver.
@@ -220,6 +282,29 @@ int rede_url_final(const char *url, int segundos, char *dst, unsigned tam);
 // controlado pelo navegador de fonte morta: AVPlay pode enviar esse cabecalho.
 int rede_url_final_cab(const char *url, int segundos, const char *const *cabecalhos,
                        char *dst, unsigned tam, int *status);
+// O MESMO PEDIDO, devolvendo tambem o que a resposta final diz ser: `mime`
+// (Content-Type sem parametros, minusculo; vazio quando a resposta nao disse)
+// e `corpo` (bytes do corpo quando a resposta foi um 200 completo de ate 64 B,
+// ou -1 quando nao da para saber: 206, corpo cortado). Qualquer ponteiro de
+// saida pode ser NULL. Nenhum pedido a mais: sao dados da mesma sonda. Serve a
+// naovideo.h (link de aviso que responde HTML/JSON em vez de video).
+int rede_url_final_tipo(const char *url, int segundos, const char *const *cabecalhos,
+                        char *dst, unsigned tam, int *status,
+                        char *mime, unsigned mimeTam, long *corpo);
+
+#ifdef NV_VIDAA
+// VARIANTE PARA A VIDAA. rede_url_final so devolve 0/1, e na VIDAA um 0 pode
+// significar duas coisas bem diferentes: "resolvi, e o destino respondeu
+// erro" (fonte morta de verdade) ou "a requisicao nem saiu" (bloqueio de
+// conteudo misto ou de CORS na pagina https — ver o comentario de
+// vidaaNuncaProxiar/vidaaPareceVideo em rede.c: URL de video nunca passa
+// pelo /v1/proxy, entao esse bloqueio e ROTINEIRO ali, nao uma prova de nada).
+// Devolve 1 = resolveu, 0 = resolveu e o destino falhou, -1 = desconhecido —
+// quem chama decide o que fazer com "desconhecido" (streams.c trata como
+// "presuma viva", a mesma politica que playlistVazia ja usa para "nao
+// baixei").
+int rede_url_final_vidaa(const char *url, int segundos, char *dst, unsigned tam);
+#endif
 
 // POST de JSON. Existe para o Trakt, que so aceita escrita por POST.
 char *rede_postar(const char *url, int segundos, const char *const *cabecalhos,
@@ -241,6 +326,26 @@ char *rede_apagar(const char *url, int segundos, const char *const *cabecalhos,
                   int *status);
 char *rede_postar_st(const char *url, int segundos, const char *const *cabecalhos,
                      const char *corpo, int *status);
+#ifdef __EMSCRIPTEN__
+// PUT pelo mesmo XHR das escritas POST do Trakt.
+char *rede_putar_st(const char *url, int segundos, const char *const *cabecalhos,
+                    const char *corpo, int *status);
+#endif
+// POST with the response Retry-After (same parsing as rede_baixar_st_retry).
+char *rede_postar_st_retry(const char *url, int segundos, const char *const *cabecalhos,
+                           const char *corpo, int *status, int *retryAfter);
+// PUT de JSON, mesmo contrato de rede_postar_st (NULL so em falha de transporte;
+// 4xx volta com corpo). Existe para o TorBox, que edita um item so por PUT.
+char *rede_colocar_st(const char *url, int segundos, const char *const *cabecalhos,
+                      const char *corpo, int *status);
+#ifdef __EMSCRIPTEN__
+// Authenticated JSON PATCH through the legacy WGT HTTP bridge.
+char *rede_patch_st(const char *url, int segundos, const char *const *cabecalhos,
+                    const char *corpo, int *status);
+#endif
+// POST que repete (espera 1 s, 2 s, ...) so quando nao houve resposta (status 0).
+char *rede_postar_repetindo(const char *url, int segundos, const char *const *cabecalhos,
+                            const char *corpo, int *status, int tentativas);
 
 // GET com cabecalhos E codigo HTTP. Pelo mesmo motivo do POST acima: a leitura
 // de tabela do Supabase precisa distinguir "tabela nao existe" (404 com
@@ -301,10 +406,10 @@ char *rede_baixar_etag(const char *url, int segundos,
 // (opcional) recebe o endereco depois dos redirecionamentos. `cancelado` e
 // lido durante o recebimento.
 //
-// NO TIZEN nao ha como contar bytes enquanto chegam (XHR sincrono entrega o
-// corpo inteiro de uma vez): la sao pedidos de Range em pedacos crescentes,
-// cada um descartado no proprio JavaScript e cronometrado, e cada pedaco
-// vira tantas amostras quantos segundos ele levou. Um CDN sem CORS para a
+// Tizen uses growing Range chunks, discarded in JavaScript and timed.
+// Each chunk contributes samples for its elapsed seconds. Fetch stops at
+// the chunk limit/deadline even if Range is ignored; bytes/kbps count only
+// consumed bytes, not the complete file. A CDN without CORS for the
 // origem do app (debrid) aparece como status 0 e erro -1: quem chama diz
 // "nao deu para medir pelo navegador", sem inventar numero.
 typedef struct {
@@ -334,9 +439,10 @@ void rede_avisar_401(void (*f)(const char *url));
 // Registra quem OUVE o fim de cada pedido, para a saude da rede (redesaude.h:
 // "sem internet" / "internet de volta" na ilha, 02/10). O callback recebe o
 // CURLcode (0 = ok; no Tizen-wasm 0 = respondeu, 6 = sem resposta) e a URL, e
-// roda no fio do pedido. Ponteiro e nao chamada direta para os testes que
+// roda no fio do pedido. primeiraMs guarda a primeira falha antes do retry
+// (0 = so o resultado final). Ponteiro e nao chamada direta para os testes que
 // compilam rede.c sozinho nao precisarem do modulo.
-void rede_avisar_saude(void (*f)(int codigo, const char *url));
+void rede_avisar_saude(void (*f)(int codigo, const char *url, unsigned primeiraMs));
 // Cada pedido que terminou, com o host, o CURLcode (0 = transporte ok), o
 // HTTP e quantos ms levou (0 = nao medido, no wasm). E de onde a aba Rede do
 // painel de registro tira pedidos, falhas e tempo tipico por host
@@ -365,9 +471,17 @@ void rede_preparar(void);
 //
 // Escreve em `dst` e devolve `dst`, para poder ir direto num printf. Texto sem
 // "://" e copiado como esta (nao e URL, nao ha caminho a esconder).
-// Texto da falha de transporte do ULTIMO pedido deste fio ("curl 35: ..."), ou
+// Codigo da falha de transporte do ULTIMO pedido deste fio ("curl 35"), ou
 // "" quando ele passou. Sem URL, corpo ou segredo; serve a tela e ao log (#223).
 const char *rede_ultimo_erro(void);
+
+// AQUECER CONEXOES (2.0.2). Abre DNS + TCP + TLS de cada origem ("https://host")
+// com um HEAD em "/" (sem seguir redirecionamento, sem corpo, nunca um caminho
+// de stream) e deixa o handle guardado para o proximo fio que pedir um destes
+// hosts. ms[i] recebe o tempo de cada origem (0 = falhou). Devolve quantas
+// abriram. Chamar de um fio descartavel; no .wgt nao faz nada (devolve 0).
+int rede_aquecer_lote(const char *const *origens, int n, unsigned *ms);
+int rede_aquecer_job(const char *const *origens, int n, unsigned *ms, RedeJob *job);
 const char *rede_url_publica(const char *url, char *dst, unsigned tam);
 
 // URL DE IMAGEM/META PARA LOG, mais util que rede_url_publica mas igualmente

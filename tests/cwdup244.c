@@ -12,7 +12,11 @@ int homeestado_identidade_geracao(unsigned g, char *dono, unsigned tamDono, int 
   (void)g; if (dono && tamDono) dono[0] = 0; if (perfil) *perfil = 0; return 0; }
 int arte_reserva_episodios(const char *imdb, const char *corpo) { (void)imdb; (void)corpo; return 0; }
 
+int ajustes_social(void) { return 1; }
+int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
+int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
+int ajustes_ocultar_filmes_vistos(void) { return 0; }    // #366: descoberta.c le o ajuste
 #include "../src/descoberta.c"
 Uint32 SDL_GetTicks(void) { return 0; }
 #include <assert.h>
@@ -25,7 +29,9 @@ int         ajustes_idioma_ingles(void) { return 0; }
 int ajustes_idioma(void) { return 0; }
 int   ajustes_cw_ordem(void)               { return 0; }   // Padrao (issue #127)
 int   ajustes_cw_concluido(void)           { return 90; }  // Percentual assistido de fabrica
+int   ajustes_cw_minimo(void)             { return 1; }
 int   ajustes_cw_mostrar_nao_exibidos(void) { return 1; }
+int   ajustes_cw_proximo(void) { return 1; }
 const char *i18n(const char *s)         { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
 const char *dados_dir(void)             { return ""; }
@@ -51,14 +57,28 @@ int   ajustes_tmdb_cw(void)                { return 0; }
 const char *ajustes_tmdb_idioma(void)      { return "pt-BR"; }
 const char *ajustes_tmdb_chave(void)       { return ""; }
 void  fil_gravar_registro(void)            { }
+int   fil_lista_e_deste_perfil(int p)       { (void)p; return 1; }
+unsigned fil_perfil_geracao(void)          { return 0; }
+FilPassada fil_passada_ler(void)          { FilPassada p = {0, 0}; return p; }
+int   fil_passada_valida(const FilPassada *p) { (void)p; return 1; }
+void  fil_registrar_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k, int n) { (void)p; (void)c; (void)t; (void)a; (void)k; (void)n; }
+void  fil_registrar_se_couber_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k) { (void)p; (void)c; (void)t; (void)a; (void)k; }
 int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int n,
                           int perfilDaLista) {
   (void)ids; (void)bases; (void)n; (void)perfilDaLista; return 0; }
+int fil_marcar_declaradas(const char *const *chaves, int n, int perfilDaLista) { (void)chaves; (void)n; (void)perfilDaLista; return 0; }
+int fil_marcar_sem_addon(const char *const *ids, const char *const *bases, const int *ativos, int n, int perfilDaLista) {
+  (void)ids; (void)bases; (void)ativos; (void)n; (void)perfilDaLista; return 0;
+}
 int   fil_addon_novo(const char *id, const char *base) { (void)id; (void)base; return 0; }
 int   addons_perfil_da_lista(void)         { return 0; }
+int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 int   addons_ativo(int i)                  { (void)i; return 1; }
 int   fil_limite(void)                     { return 16; }
 int   fil_oculta(const char *c)            { (void)c; return 0; }
+int   fil_adicionada_na_tv(const char *c) { (void)c; return 0; }
+int   fil_estado_chave(const char *c) { (void)c; return -1; }
+const char *fil_hero_fonte(void) { return ""; }
 // Dubles da escolha da cota (#126): nada escolhido na TV, e o registro dos
 // catalogos fora da cota nao interessa a este teste.
 int fil_escolhida(const char *c) { (void)c; return -1; }
@@ -100,16 +120,20 @@ int   simkl_plantowatch(CatItem *s, int m) { (void)s; (void)m; return 0; }
 int   ajustes_salvos_no_simkl(void)        { return 0; }
 int   trakt_enfeitar_lote(CatItem *s, int n) { (void)s; return n; }
 int   trakt_lista(const char *q, CatItem *s, int m) { (void)q; (void)s; (void)m; return 0; }
+int   trakt_lista_cresc(const char *q, CatItem **s, int m) { (void)q; (void)s; (void)m; return 0; }
 // O servico social proprio (recomenda.c) fica fora deste teste: a uniao e so o que o Trakt trouxe.
 int   recomenda_social_mesclar(CatItem *i, int nTrakt, int max) { (void)i; (void)max; return nTrakt; }
 int   trakt_social(CatItem *s, int m)      { (void)s; (void)m; return 0; }
 int   trakt_e_a_seguir(const char *id)     { (void)id; return 0; }
+int   trakt_progresso_ocultar(const char *i, int o) { (void)i; (void)o; return 0; }
 // "A seguir" da conta (#199): sem vistos aqui, e com o Trakt "no ar" o caminho
 // nem roda. So para linkar.
 int   trakt_ativo(void)                    { return traktLigado; }
 int   ajustes_cw_do_episodio_mais_alto(void) { return 1; }
 int   contalib_sementes_a_seguir(ContaSemente *s, int m, int a) { (void)s; (void)m; (void)a; return 0; }
 const char *nuvem_trakt_cliente(void)      { return ""; }
+void addons_lista_travar(void) {}
+void addons_lista_destravar(void) {}
 int   addons_n(void)                       { return 0; }
 const char *addons_base(int i)             { (void)i; return ""; }
 const char *addons_id_manifesto(int i)     { (void)i; return ""; }
@@ -134,6 +158,7 @@ int trakt_continuar(CatItem *s, int m) {
   um(&s[4], "tt700", "movie", 0, 0, 40, 600000);
   return 5;
 }
+int trakt_cw_concluiu(const char *id, long long ms) { (void)id; (void)ms; return 0; }
 int   trakt_continuar_falhou(void)        { return 0; }
 
 static long long agora = 1000000;

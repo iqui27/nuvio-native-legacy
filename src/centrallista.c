@@ -8,8 +8,9 @@
 // vice-versa). Cabe em 15 px Montserrat no botao em todos os idiomas:
 // tests/central_rotulos.sh. Dolby Vision/Atmos sao nome proprio, sem chave.
 // Ordem = ordem da lista "Editar atalhos": reproducao, trailers, tela,
-// interface. So escolhas curtas, que o OK percorre sem lista: idioma, cor de
-// destaque e limite de fileiras pedem a tela de Ajustes.
+// interface. So escolhas curtas, que o OK percorre sem lista: idioma e limite
+// de fileiras pedem a tela de Ajustes. A cor de destaque tem seletor proprio
+// na central ("corDestaque", ajustes_rapido_cor_*).
 static const CentralItem CATALOGO[] = {
   { "qualidade", "aj_monitor-play", "Qualidade máx." },
   { "dolbyVision", "aj_sparkles", "Dolby Vision" },
@@ -17,6 +18,10 @@ static const CentralItem CATALOGO[] = {
   { "escolherFonteManual", "aj_list-video", "Escolher fonte" },
   { "fontePrioridadeLocal", "aj_gauge", "Prioridade" },
   { "fonteHdrLocal", "aj_sparkle", "HDR e DV" },
+  { "fonteAutoLocal", "aj_list-ordered", "Fonte auto" },
+  { "fonteReporLocal", "aj_rotate-cw", "Se falhar" },
+  { "legendaForcadaLocal", "aj_quote", "Leg. forçada" },
+  { "legendaSyncAudioLocal", "aj_move-horizontal", "Sync áudio" },
   { "pauseOverlayEnabled", "aj_pause", "Pausa" },
   { "legenda2PosLocal", "aj_captions", "2ª legenda" },
   { "reacaoCreditosLocal", "aj_thumbs-up", "Avaliar no fim" },
@@ -24,6 +29,7 @@ static const CentralItem CATALOGO[] = {
   { "trailerHero", "aj_film", "Trailer no topo" },
   { "esmaecerLocal", "aj_moon", "Descanso" },
   { "brilhoPlayerLocal", "aj_sun-dim", "Brilho" },
+  { "corDestaque", "aj_palette", "Cor" },
   { "vidroLocal", "aj_layers", "Efeito vidro" },
   { "fundoLocal", "aj_image", "Plano de fundo" },
   { "animacoes", "aj_wand", "Movimento" },
@@ -35,6 +41,7 @@ static const CentralItem CATALOGO[] = {
   { "selosColoridosLocal", "aj_badge-check", "Selos em cor" },
 };
 #define N_CAT ((int)(sizeof CATALOGO / sizeof *CATALOGO))
+_Static_assert(CENTRAL_MAX == N_CAT, "CENTRAL_MAX must cover every catalog tile");
 
 // DE FABRICA: o que se troca no sofa entre um titulo e outro, sem entrar em
 // Ajustes. Qualidade e Dolby Vision/Atmos mudam a proxima fonte; escolher a
@@ -42,7 +49,7 @@ static const CentralItem CATALOGO[] = {
 // quando nao se quer; esmaecer e a protecao de tela da TV OLED.
 static const char *const PADRAO[] = {
   "qualidade", "dolbyVision", "dolbyAtmos",
-  "escolherFonteManual", "trailerAuto", "esmaecerLocal",
+  "escolherFonteManual", "trailerAuto", "corDestaque", "esmaecerLocal",
 };
 
 int central_catalogo_n(void) { return N_CAT; }

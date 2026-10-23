@@ -78,24 +78,33 @@
 // app; e, contra um duble de `webapis.avplay` que registra chamadas, a
 // sequencia de abertura sai open -> setListener -> setDisplayMethod ->
 // prepareAsync -> setDisplayRect -> play com os argumentos certos.
-#ifdef __EMSCRIPTEN__
+// NV_VIDAA: a Hisense nao tem webapis.avplay; o video de la e src/video_html5.c.
+#if defined(__EMSCRIPTEN__) && !defined(NV_VIDAA)
 
 #include "video.h"
+#include "avroi.h"
 #include "video_reconexao.h"
 #include "linguas.h"
+#include "audioescolha.h"
 #include "idioma.h"
 #include "marco.h"
 #include "mkv.h"
+#include "capmkv.h"
+#include "vazao.h"
 #include <SDL2/SDL.h>
 #include <emscripten.h>
 #include <emscripten/threading.h>
+#ifndef NV_UM_FIO
 #include <emscripten/proxying.h>
+#endif
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <math.h>
+#include <limits.h>
 
 // ============================================================================
 // A PORTA UNICA PARA O JS
@@ -111,7 +120,7 @@
 //   * o buffer vem de malloc/pilha do C e a escrita e feita DEPOIS, entao a
 //     view (HEAPF64/HEAPU8) tem de ser indexada na hora do uso — nunca guardada
 //     entre chamadas. Aqui isso e automatico porque cada operacao reindexa.
-//   * "estado" devolve SO DOUBLES, oito deles, e nao uma struct mista. Um
+//   * "estado" devolve SO DOUBLES, dez deles, e nao uma struct mista. Um
 //     campo int no meio obrigaria a acertar deslocamento e alinhamento em duas
 //     linguagens; um vetor de um tipo so nao tem como sair de fase.
 EM_JS(double, nv_av, (const char *cmd, const char *txt,
@@ -209,6 +218,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
           if (S.geracao !== geracao) return;
           S.posMs = +ms || 0;
           S.tEvento = S.tPos = Date.now();
+          S.tPosMono = performance.now();
         },
         onerror:             function (e) {
           if (S.geracao !== geracao) return;
@@ -259,11 +269,11 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   if (op === "abrir") {
     var p = pl();
     if (!p) return 0;
-    var geracao = ++S.geracao;
     // Fechar antes de abrir. Sem isto o segundo titulo da sessao encontra o
     // player em estado PLAYING e o open() e recusado — o mesmo formato do bug
     // "abrir -> sair -> abrir" que o caminho da LG ja tinha.
-    try { if (S.aberto) { p.stop(); p.close(); } } catch (e) {}
+    if (S.aberto && !encerrar()) return 0;
+    var geracao = ++S.geracao;
     S.aberto = 0; S.tocando = 0; S.pronto = 0; S.posMs = 0;
     S.durMs = 0; S.tDur = 0; S.tEvento = 0; S.tSeek = 0; S.tPos = 0;
     S.erro = ""; S.fim = 0; S.bufPct = 0; S.larg = 0; S.alt = 0;
@@ -400,12 +410,29 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     // aqui mesmo) ou outra coisa no mesmo quadro. So depois disso vale
     // tentar pause/seek/play ou outra estrategia.
     S.legTxt = ""; S.legAte = 0;   // a fala de antes do salto nao vale no destino
+    S.fim = 0;                    // um fim anterior nao vale depois da busca
     S.tSeek = Date.now();          // o "estado" volta a ler getCurrentTime por 1,5 s
     var t0 = performance.now();
     try { p4.seekTo(a | 0, function () {}, function () {}); } catch (e) { return 0; }
     var dt = performance.now() - t0;
     if (dt > 50 && window.__nvDiag) window.__nvDiag("[video] seekTo bloqueou " + (dt | 0) + " ms", 0);
     return 1;
+  }
+
+  // #426 (Q80R, Tizen 5): o plano pausado nao recebe outro quadro para
+  // apresentar a geometria. Reenvia o destino apos ROI (o C deduplica o
+  // mesmo rect) e reaplica o modo, sem play/seek. O redesenho exige prova na TV.
+  function apresentarPausa(p, repetirRect) {
+    try {
+      if (p.getState() !== "PAUSED") return;
+      if (repetirRect) {
+        var r = paraTela(S.rect[0], S.rect[1], S.rect[2], S.rect[3]);
+        p.setDisplayRect(r[0], r[1], r[2], r[3]);
+      }
+      p.setDisplayMethod("PLAYER_DISPLAY_MODE_FULL_SCREEN");
+    } catch (e) {
+      try { console.log("[video] apresentar pausa recusou: " + e); } catch (e2) {}
+    }
   }
 
   // RECORTE DE FONTE DE VERDADE: setVideoRoi.
@@ -423,11 +450,13 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   if (op === "roi") {
     var p8 = pl();
     if (!p8 || !S.aberto) return 0;
+    if (typeof p8.setVideoRoi !== "function") return -1;
     try { p8.setVideoRoi(a, b, c, d); } catch (e) {
       if (!S.avisouRoi) { S.avisouRoi = 1;
         try { console.log("[video] setVideoRoi recusou: " + e); } catch (e2) {} }
       return 0;
     }
+    apresentarPausa(p8, true);
     return 1;
   }
 
@@ -437,14 +466,14 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     if (!p5 || !S.aberto) return 0;
     var r5 = paraTela(a, b, c, d);
     try { p5.setDisplayRect(r5[0], r5[1], r5[2], r5[3]); } catch (e) { return 0; }
+    apresentarPausa(p5, false);
     return 1;
   }
 
   if (op === "estado") {
-    // OITO DOUBLES, nesta ordem, e a mesma no C (ver EST_*). Um tipo so: sem
-    // deslocamento a acertar, sem alinhamento a supor.
+    // Twelve doubles, same order as EST_* in C. One type, no padding.
     // dstTam vem em BYTES, como em "faixas": um so contrato para o buffer.
-    if (!dst || dstTam < 64) return 0;
+    if (!dst || dstTam < 96) return 0;
     var p6 = pl();
     var dur = 0;
     if (p6 && S.aberto && S.pronto) {
@@ -470,7 +499,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
       // maximo a cada 250 ms; logo depois de um seek, todo quadro.
       if (agora - S.tSeek < 1500 ||
           (agora - S.tEvento > 1000 && agora - S.tPos >= 250)) {
-        try { var t = +p6.getCurrentTime(); if (t >= 0) { S.posMs = t; S.tPos = agora; } } catch (e) {}
+        try { var t = +p6.getCurrentTime(); if (t >= 0) { S.posMs = t; S.tPos = agora; S.tPosMono = performance.now(); } } catch (e) {}
       }
       gasto = Date.now() - t0;
       if (gasto > 20 && agora - S.tLento > 10000) {
@@ -495,6 +524,10 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     HEAPF64[o + 5] = S.larg;
     HEAPF64[o + 6] = S.alt;
     HEAPF64[o + 7] = S.erro ? 1 : 0;
+    HEAPF64[o + 8] = S.bufPct;
+    HEAPF64[o + 9] = S.fim ? 1 : 0;
+    HEAPF64[o + 10] = S.posMs / 1000.0;
+    HEAPF64[o + 11] = S.tPos && S.tPosMono ? Math.max(0, performance.now() - S.tPosMono) : 0;
     return 1;
   }
 
@@ -705,21 +738,32 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     return 1;
   }
 
-  if (op === "encerrar") {
-    var pb = pl();
-    ++S.geracao;
-    try { if (pb && S.aberto) { pb.stop(); pb.close(); } } catch (e) {}
-    S.aberto = 0; S.tocando = 0; S.pronto = 0; S.trilhas = null;
-    return 1;
-  }
+  if (op === "encerrar") return encerrar();
 
   return 0;
+
+  function encerrar() {
+    var pb = pl();
+    ++S.geracao;
+    var ok = 1;
+    S.erro = "";
+    if (S.aberto) {
+      if (!pb) { S.erro = "close: AVPlay unavailable"; ok = 0; }
+      else {
+        try { pb.stop(); } catch (e) { S.erro = "stop: " + e; ok = 0; }
+        try { pb.close(); S.aberto = 0; }
+        catch (e) { S.erro += " close: " + e; ok = 0; }
+      }
+    }
+    S.tocando = 0; S.pronto = 0; S.trilhas = null;
+    return ok;
+  }
 });
 
 // Indices do vetor devolvido por "estado". Precisam casar com a ordem escrita
 // no JS acima, e sao a UNICA coisa combinada entre os dois lados.
 enum { EST_POS, EST_DUR, EST_TOCANDO, EST_PRONTO, EST_ABERTO,
-       EST_LARG, EST_ALT, EST_ERRO, EST_N };
+       EST_LARG, EST_ALT, EST_ERRO, EST_BUFPCT, EST_FIM, EST_POS_CRUA, EST_POS_IDADE, EST_N };
 
 // O pedido que atravessa para o fio principal. Fica na PILHA do chamador: com
 // -pthread a memoria e compartilhada e avChamar() e sincrona, entao o quadro
@@ -741,6 +785,7 @@ static int executarNoPrincipal(int p) {
 
 // Fila de proxy criada UMA VEZ: por chamada vazaria uma fila por operacao de
 // video, e duas threads chegando juntas na primeira criariam duas.
+#ifndef NV_UM_FIO
 static em_proxying_queue *filaPrincipal;
 static pthread_once_t filaUmaVez = PTHREAD_ONCE_INIT;
 static void criarFila(void) { filaPrincipal = em_proxying_queue_create(); }
@@ -749,6 +794,7 @@ static void criarFila(void) { filaPrincipal = em_proxying_queue_create(); }
 // nasceu para a assinatura EM_FUNC_SIG_II da API antiga. O resultado nao se
 // perde: sai em p.res, dentro do proprio Pedido.
 static void executarNoPrincipalV(void *arg) { (void)executarNoPrincipal((int)(uintptr_t)arg); }
+#endif
 
 
 static void logarErro(const char *onde);
@@ -763,6 +809,12 @@ static double avChamar(const char *cmd, const char *txt,
   if (emscripten_is_main_browser_thread()) {
     executarNoPrincipal((int)(uintptr_t)&p);
   } else {
+#ifdef NV_UM_FIO
+    // Single-thread asm.js/VIDAA-st: there is no proxying queue. Run the
+    // request inline on this fiber; the AVPlay calls are JS EM_JS stubs that
+    // complete synchronously and write p.res.
+    executarNoPrincipal((int)(uintptr_t)&p);
+#else
     // emscripten_sync_run_in_main_runtime_thread FOI REMOVIDA do runtime. Ela
     // ainda e DECLARADA em emscripten/threading_legacy.h, entao o compilador
     // aceita e so o wasm-ld reclama, com "undefined symbol:
@@ -774,6 +826,7 @@ static double avChamar(const char *cmd, const char *txt,
     emscripten_proxy_sync(filaPrincipal,
                           emscripten_main_runtime_thread_id(),
                           executarNoPrincipalV, &p);
+#endif
   }
   return p.res;
 }
@@ -794,9 +847,13 @@ static double avChamar(const char *cmd, const char *txt,
 // callback do navegador e um dos jeitos conhecidos de travar tudo sem mensagem.
 static int    ligado;        // video_iniciar deu certo
 static int    temAvplay;     // o firmware oferece webapis.avplay
+static Uint32 aberturaEm;   // avplay open (log do inicio, #202)
 static int    ativo;         // ha sessao aberta — e o que abre o furo
-static int    tocando, pronto;
+static int    tocando, pronto, terminou;
 static double posSeg, durSeg;
+static int    bufPct;
+static double posAmostra;
+static Uint64 posAmostraEm;
 static int    vidW, vidH;
 static int    houveErro;
 static char   erroTexto[96];   // ver logarErro e video_erro_texto
@@ -811,6 +868,7 @@ static NvReconexao recon;
 static int    reconProxima, reconPermitida, reconIniciou;
 static int    reconAudio = -1, reconLeg = -1, reconFaixasPend;
 static double reconBuscar = -1.0;
+static int recarregarPausa = -1, pausaPedida;
 // As listas como estavam na queda. O AVPlay nao da idioma: o rotulo veio da
 // sonda do MKV (aplicarIdiomasDoMkv), e o recarregar releria "Audio 1".
 static VideoFaixa reconFxA[NV_FAIXA_MAX], reconFxL[NV_FAIXA_MAX];
@@ -835,6 +893,12 @@ static int faixasLidas;
 // Retangulo pedido pela interface, em 1920x1080. Guardado para nao repetir a
 // mesma chamada a cada quadro — o mesmo cuidado do caminho da LG.
 static int janX, janY, janW = 1920, janH = 1080;
+// setVideoRoi fica valendo no AVPlay ate ser trocado. 1 = pode haver recorte
+// de fonte antigo (zoom, ou titulo novo cujo estado nao se conhece).
+static int roiAtivo;
+static int roiResetTentativas;
+static Uint32 roiResetEm;
+static int roiAplicar(int sx, int sy, int sw, int sh);
 
 // AVANCO COM REPOUSO, identico ao do webOS e pela mesma razao medida la:
 // segurar a seta produzia quatro seeks em 0,8 s, e os tres primeiros sao
@@ -886,12 +950,17 @@ int video_tocar(const char *url) {
   // Titulo novo: o marcador do anterior nao vale. Sem isto um filme sem
   // capitulos herdaria os creditos do filme de antes.
   creditosNomeado = creditosUltimo = 0.0;
+  roiResetTentativas = 0;
+  roiAtivo = 1;   // o recorte do titulo anterior pode ter ficado no player
   snprintf(urlAtual, sizeof urlAtual, "%s", url);
   nv_recon_zerar(&recon);
   reconPermitida = reconProxima; reconProxima = 0; reconIniciou = 0;
   reconAudio = reconLeg = -1; reconFaixasPend = 0; reconBuscar = -1.0;
+  recarregarPausa = -1; pausaPedida = 0;
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; faixasLidas = 0;
-  posSeg = durSeg = 0; vidW = vidH = 0; houveErro = 0; erroTexto[0] = 0;
+  posSeg = durSeg = posAmostra = 0; posAmostraEm = SDL_GetTicks64();
+  vidW = vidH = 0; houveErro = 0; erroTexto[0] = 0;
+  terminou = 0;
   seekEm = 0;
   // Sonda de MKV so faz sentido em MKV. Num MP4 e descida garantidamente
   // perdida pela MESMA conexao que esta transmitindo — o log da LG dizia
@@ -911,6 +980,7 @@ int video_tocar(const char *url) {
   // caso o evento nao venha. Mesma decisao do caminho da LG (video_ativo la usa
   // o mediaId, nao o loadCompleted).
   ativo = 1;
+  aberturaEm = SDL_GetTicks();
   marco("avplay open");
   // O retangulo corrente vai junto: quem pediu a janela antes de haver sessao
   // (main.c faz exatamente isso) seria ignorado de outra forma.
@@ -931,27 +1001,32 @@ void video_escolher_audio(int i);
 // aplicarIdiomasDoMkv (o caso real nesta TV, em que o idioma so existe depois
 // da sonda). Chamar so no primeiro nunca acertaria aqui.
 //
-// SEM PREFERENCIA, OU SEM FAIXA QUE CASE, NAO SE MEXE: a escolha do pipeline e
-// melhor que uma trocada por chute, e quem quer outra abre a folha de faixas.
-// Mesma regra do video.c, palavra por palavra.
+// A ORDEM DO AUDIO (audioescolha.h), a mesma de todos os alvos. Sem regra que
+// decida, NAO SE MEXE: a escolha do pipeline e melhor que uma trocada por
+// chute, e quem quer outra abre a folha de faixas.
 static void escolherAudioPreferido(void) {
-  const char *pref = ling_audio();
-  int i;
-  if (!pref[0] || nAudio < 2) return;
-  if (audioAtual >= 0 && audioAtual < nAudio &&
-      faixaAudio[audioAtual].idioma[0] &&
-      ling_casa(faixaAudio[audioAtual].idioma, pref)) return;   // ja esta boa
+  AudioCand c[NV_FAIXA_MAX];
+  int i, o, k;
+  if (nAudio < 2) return;
   for (i = 0; i < nAudio; i++) {
-    if (!faixaAudio[i].idioma[0] || !ling_casa(faixaAudio[i].idioma, pref)) continue;
-    printf("[video] audio preferido: %s (faixa %d de %d)\n",
-           ling_nome(faixaAudio[i].idioma), i + 1, nAudio);
+    c[i].idioma = faixaAudio[i].idioma; c[i].codec = faixaAudio[i].codec; c[i].rotulo = faixaAudio[i].rotulo;
+    c[i].canais = faixaAudio[i].canais;
+    c[i].dts = audioesc_dts_truehd(faixaAudio[i].codec, faixaAudio[i].rotulo);
+    // A Samsung nao toca DTS/TrueHD e o .wgt nao converte: escolher uma deixaria
+    // o filme mudo. So a mao (a folha de faixas continua listando).
+    c[i].pode = !c[i].dts;
+    c[i].numero = faixaAudio[i].numero;
+  }
+  k = audioesc_escolher(c, nAudio, &o);
+  if (k < 0) {
+    printf("[video] audio: nenhuma regra da ordem escolhe entre as %d: fica a do arquivo\n", nAudio);
     fflush(stdout);
-    video_escolher_audio(i);
     return;
   }
-  printf("[video] nenhuma faixa de audio em '%s' entre as %d: fica a do arquivo\n",
-         pref, nAudio);
+  if (k == audioAtual) return;
+  printf("[video] audio pela ordem (%s): %s (faixa %d de %d)\n", audioesc_origem_nome(o), faixaAudio[k].rotulo, k + 1, nAudio);
   fflush(stdout);
+  video_escolher_audio(k);
 }
 
 // O IDIOMA DAS FAIXAS VEM DO CONTAINER, porque o AVPlay nao o entrega.
@@ -1003,6 +1078,8 @@ static void aplicarIdiomasDoMkv(const MkvFaixa *fx, int n) {
     else if (fx[j].tipo == TIPO_LEG && nL == nLeg && kL < nLeg)
       f = &faixaLeg[kL++];
     if (!f) continue;
+    if (fx[j].tipo == TIPO_LEG && fx[j].nome[0])
+      snprintf(f->nome, sizeof f->nome, "%s", fx[j].nome);
     if (f->idioma[0]) continue;                 // o player ja sabia: nao mexer
     if (!fx[j].idioma[0] || !strcmp(fx[j].idioma, "und")) continue;
     snprintf(f->idioma, sizeof f->idioma, "%s", fx[j].idioma);
@@ -1068,7 +1145,7 @@ static void lerFaixas(void) {
   for (linha = buf; *linha; linha = fim) {
     char tipo;
     int idx = 0, ordinalMkv = -1;
-    char idioma[8] = "", rot[48] = "";
+    char idioma[8] = "", rot[48] = "", nome[128] = "";
     VideoFaixa *f;
     fim = strchr(linha, '\n');
     if (fim) *fim++ = 0; else fim = linha + strlen(linha);
@@ -1084,6 +1161,14 @@ static void lerFaixas(void) {
       idx = atoi(p1 + 1);
       snprintf(idioma, sizeof idioma, "%s", p2 + 1);
       snprintf(rot, sizeof rot, "%s", p3 + 1);
+      if (tipo == 'T') {
+        size_t k = strlen(p3 + 1);
+        if (k >= sizeof nome) {
+          k = sizeof nome - 1;
+          while (k && ((unsigned char)p3[1 + k] & 0xc0) == 0x80) k--;
+        }
+        memcpy(nome, p3 + 1, k); nome[k] = 0;
+      }
       ordinalMkv = atoi(p4 + 1);
     }
     if (tipo == 'A') {
@@ -1097,6 +1182,7 @@ static void lerFaixas(void) {
     f->numero = idx;
     f->ordinalMkv = tipo == 'T' ? ordinalMkv : -1;
     snprintf(f->idioma, sizeof f->idioma, "%s", idioma);
+    snprintf(f->nome, sizeof f->nome, "%s", nome);
     // O rotulo e escrito por ULTIMO, depois do idioma, e de uma vez so: e o
     // campo que a tela desenha, e este arquivo — como o da LG — nao tem mutex
     // nenhum. O dano possivel e um rotulo lido pela metade em UM quadro.
@@ -1124,8 +1210,8 @@ static void lerFaixas(void) {
     reconFaixasPend = 0;
     if (nAudio == reconNA) memcpy(faixaAudio, reconFxA, sizeof faixaAudio);
     if (nLeg == reconNL)   memcpy(faixaLeg, reconFxL, sizeof faixaLeg);
-    if (reconAudio > 0 && reconAudio < nAudio) video_escolher_audio(reconAudio);
-    if (reconLeg >= 0 && reconLeg < nLeg) video_escolher_legenda(reconLeg);
+    if (reconAudio >= 0 && reconAudio < nAudio) video_escolher_audio(reconAudio);
+    if (reconLeg >= -1 && reconLeg < nLeg) video_escolher_legenda(reconLeg);
     printf("[video] reconexao: faixas devolvidas (audio %d, legenda %d)\n", reconAudio, reconLeg);
     fflush(stdout);
     return;
@@ -1146,10 +1232,11 @@ static void *lerMkv(void *arg) {
   n = mkv_faixas_e_caps(url, fx, MKV_MAX_FAIXAS, caps, MKV_MAX_CAPS, &nCaps);
   if (nCaps > 0) {
     creditosNomeado = mkv_creditos_nomeados(caps, nCaps);
-    creditosUltimo  = nCaps > 1 ? caps[nCaps - 1].inicio : 0.0;
+    creditosUltimo  = mkv_creditos_ultimo(caps, nCaps);
     printf("[mkv] %d capitulos; creditos nomeados em %.0fs, ultimo em %.0fs\n",
            nCaps, creditosNomeado, creditosUltimo);
     fflush(stdout);
+    capmkv_aplicar(caps, nCaps);   // abertura/creditos/previa do arquivo -> modulo de intro
   }
   if (n < 1) marco("mkv: nenhuma faixa lida (nao e MKV, ou Range falhou)");
   else aplicarIdiomasDoMkv(fx, n);
@@ -1157,7 +1244,42 @@ static void *lerMkv(void *arg) {
   return NULL;
 }
 
+// O mesmo open da reconexao, sem consumir configuracao de fonte nova nem
+// apagar as faixas guardadas antes da recarga.
+static int reabrirMesmaFonte(double alvo) {
+  pronto = tocando = 0; faixasLidas = 0;
+  nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; posSeg = 0; seekEm = 0;
+  reconFaixasPend = 1; reconBuscar = alvo;
+  if (AVS("abrir", urlAtual) < 1) {
+    logarErro("reabrir"); return 0;
+  }
+  ativo = 1;
+  houveErro = terminou = 0; erroTexto[0] = 0;
+  aberturaEm = SDL_GetTicks();
+  avChamar("rect", NULL, janX, janY, janW, janH, NULL, 0);
+  return 1;
+}
+
+int video_recarregar(void) {
+  double est[EST_N];
+  int pausado = pausaPedida;
+  if (!temAvplay || !ativo || !pronto || !urlAtual[0] || houveErro || terminou ||
+      video_reconectando() || recarregarPausa >= 0) return 0;
+  memset(est, 0, sizeof est);
+  if (avChamar("estado", NULL, 0, 0, 0, 0, (char *)est, sizeof est) < 1 ||
+      !est[EST_PRONTO] || !est[EST_ABERTO] || est[EST_ERRO] || est[EST_FIM] ||
+      !isfinite(est[EST_POS]) || est[EST_POS] < 0 ||
+      est[EST_POS] > INT_MAX / 1000.0) return 0;
+  reconAudio = audioAtual; reconLeg = legAtual;
+  memcpy(reconFxA, faixaAudio, sizeof reconFxA); reconNA = nAudio;
+  memcpy(reconFxL, faixaLeg, sizeof reconFxL); reconNL = nLeg;
+  if (!reabrirMesmaFonte(est[EST_POS])) { houveErro = 1; return 0; }
+  recarregarPausa = pausado;
+  return 1;
+}
+
 void video_bombear(void) {
+  video_recorte_reaplicar();
   double est[EST_N];
   int estavaPronto = pronto;
 
@@ -1177,13 +1299,9 @@ void video_bombear(void) {
     char m[64];
     snprintf(m, sizeof m, "reconectando: alvo %.0fs, tentativa %d", recon.alvo, recon.tentativa);
     marco(m);
-    pronto = tocando = 0; estavaPronto = 0; faixasLidas = 0;
-    nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; posSeg = 0; seekEm = 0;
-    reconFaixasPend = 1;
-    reconBuscar = recon.alvo;
-    AVS("abrir", urlAtual);
-    ativo = 1;
-    avChamar("rect", NULL, janX, janY, janW, janH, NULL, 0);
+    estavaPronto = 0;
+    if (!reabrirMesmaFonte(recon.alvo) &&
+        !nv_recon_erro(&recon, 1, SDL_GetTicks(), recon.alvo)) houveErro = 1;
   }
 
   if (!temAvplay || !ativo) return;
@@ -1191,22 +1309,35 @@ void video_bombear(void) {
   memset(est, 0, sizeof est);
   if (avChamar("estado", NULL, 0, 0, 0, 0, (char *)est, (int)sizeof est) < 1) return;
   posSeg   = est[EST_POS];
+  posAmostra = est[EST_POS_CRUA];
+  {
+    Uint64 now = SDL_GetTicks64(), age = (Uint64)est[EST_POS_IDADE];
+    posAmostraEm = age <= now ? now - age : 0;
+  }
+  bufPct   = (int)est[EST_BUFPCT];
   durSeg   = est[EST_DUR];
   tocando  = est[EST_TOCANDO] != 0;
   pronto   = est[EST_PRONTO]  != 0;
+  terminou = est[EST_FIM]     != 0;
   if (est[EST_LARG] > 0) vidW = (int)est[EST_LARG];
   if (est[EST_ALT]  > 0) vidH = (int)est[EST_ALT];
   if (pronto && posSeg > 0.5) reconIniciou = 1;
   if (pronto && reconBuscar < 0) nv_recon_progresso(&recon, posSeg);
+  if (!houveErro && (!pronto || reconBuscar >= 0 || (!pausaPedida && bufPct < 100)) &&
+      nv_recon_expirou(&recon, SDL_GetTicks())) {
+    snprintf(erroTexto, sizeof erroTexto, "network recovery timeout");
+    if (!nv_recon_erro(&recon, 1, SDL_GetTicks(), recon.alvo)) houveErro = 1;
+  }
   // Esperando a reconexao, o erro da sessao morta segue no estado ate o
   // proximo open: nao e erro novo.
   if (est[EST_ERRO] != 0 && !houveErro && !recon.pendente) {
     int antes = recon.tentativa;
     logarErro("onerror");
     if (reconPermitida && urlAtual[0] && (reconIniciou || recon.tentativa) &&
-        nv_recon_erro(&recon, nv_recon_rede_avplay(erroTexto), SDL_GetTicks(), posSeg)) {
+        nv_recon_erro(&recon, nv_recon_rede_avplay(erroTexto), SDL_GetTicks(),
+                      recarregarPausa >= 0 ? reconBuscar : posSeg)) {
       char m[96];
-      if (!antes) {
+      if (!antes && recarregarPausa < 0) {
         reconAudio = audioAtual; reconLeg = legAtual;
         memcpy(reconFxA, faixaAudio, sizeof reconFxA); reconNA = nAudio;
         memcpy(reconFxL, faixaLeg, sizeof reconFxL);   reconNL = nLeg;
@@ -1225,14 +1356,28 @@ void video_bombear(void) {
 
   if (pronto && !estavaPronto) {
     marco("avplay prepared");
+    // #202: o trecho que o .wgt nao separava no log (open -> prepared).
+    if (aberturaEm) printf("[player] load->1o quadro %u ms (avplay prepared)\n",
+                           (unsigned)(SDL_GetTicks() - aberturaEm));
     lerFaixas();
     lerInfoFluxo();
   }
   if (pronto && !faixasLidas) lerFaixas();
   // A posicao da queda, depois das faixas (trocar faixa pode reiniciar o decode).
   if (reconBuscar >= 0.0 && pronto) {
-    if (reconBuscar > 1.0) video_buscar(reconBuscar);
+    if (recarregarPausa >= 0) {
+      if (AVN("buscar", reconBuscar * 1000.0) < 1) houveErro = 1;
+      else posSeg = reconBuscar;
+    } else if (reconBuscar > 1.0) video_buscar(reconBuscar);
     reconBuscar = -1.0;
+  }
+  if (recarregarPausa >= 0 && (pronto || houveErro || terminou)) {
+    int pausado = recarregarPausa;
+    recarregarPausa = -1;
+    if (pronto && !houveErro && pausado) {
+      if (AVN("pausar", 1) < 1) houveErro = 1;
+      else tocando = 0;
+    }
   }
 
   // SONDA DE MKV. Gatilho diferente do da LG e explicado no bloco de
@@ -1259,10 +1404,12 @@ void video_sondar_mkv_agora(void) {
 void video_parar(void) {
   nv_recon_zerar(&recon);
   reconFaixasPend = 0; reconBuscar = -1.0;
+  recarregarPausa = -1; pausaPedida = 0;
   seekEm = 0; mkvPendente = 0;
+  roiResetTentativas = 0;
   if (temAvplay) AV0("parar");
-  ativo = tocando = pronto = 0;
-  posSeg = durSeg = 0;
+  ativo = tocando = pronto = terminou = 0;
+  posSeg = durSeg = posAmostra = 0; posAmostraEm = SDL_GetTicks64();
   nAudio = nLeg = 0; audioAtual = 0; legAtual = -1; faixasLidas = 0;
   urlAtual[0] = 0;
 }
@@ -1270,14 +1417,23 @@ void video_parar(void) {
 // Trailer mudo no fundo nao passa pelo AVPlay neste alvo (trailer.c usa o
 // embed do YouTube); o volume fica por conta da TV.
 void video_volume(int pct) { (void)pct; }
-void video_recorte_reaplicar(void) {}
+void video_recorte_reaplicar(void) {
+  if (!roiResetTentativas || !temAvplay || !ativo ||
+      (int)(SDL_GetTicks() - roiResetEm) < 0) return;
+  --roiResetTentativas;
+  roiResetEm = SDL_GetTicks() + 250;
+  roiAplicar(0, 0, 0, 0);
+}
 // Tizen: o AVPlay recebe o retangulo em unidades de tela 1920x1080 do proprio
 // firmware, sem relacao com o drawable do GL; nada a escalar (#176 e so LG).
 void video_escala_definir(int sw, int sh) { (void)sw; (void)sh; }
 
 void video_pausar(int pausado) {
   if (!temAvplay || !ativo) return;
-  if (AVN("pausar", pausado ? 1 : 0) >= 1) tocando = !pausado;
+  if (AVN("pausar", pausado ? 1 : 0) >= 1) {
+    tocando = !pausado; pausaPedida = !!pausado;
+    if (recarregarPausa >= 0) recarregarPausa = pausaPedida;
+  }
 }
 
 int video_pausa_confirmada(void) {
@@ -1291,6 +1447,7 @@ void video_buscar(double segundos) {
   if (!temAvplay || !ativo) return;
   if (segundos < 0) segundos = 0;
   posSeg   = segundos;         // a barra responde na hora
+  terminou = 0;
   seekAlvo = segundos;
   seekEm   = SDL_GetTicks() + SEEK_REPOUSO_MS;
 }
@@ -1324,7 +1481,23 @@ static int aplicarRect(int x, int y, int w, int h) {
   return 1;
 }
 
-void video_janela(int x, int y, int w, int h) {
+// Manda ao AVPlay o recorte que avroi_pedido decidir. Devolve 1 se mandou.
+static int roiAplicar(int sx, int sy, int sw, int sh) {
+  int o[4], k = avroi_pedido(roiAtivo, sx, sy, sw, sh,
+                             (int)video_largura(), (int)video_altura(), o);
+  if (!k) return 0;
+  double r = avChamar("roi", NULL, o[0], o[1], o[2], o[3], NULL, 0);
+  if (r < 1) {
+    // Only a missing API rules out a stale crop; rejection must retry.
+    if (r < 0) { roiAtivo = 0; roiResetTentativas = 0; }
+    return 0;
+  }
+  roiAtivo = k == 1;
+  roiResetTentativas = 0;
+  return 1;
+}
+
+static void janelaGrampeada(int x, int y, int w, int h) {
   // GRAMPEIA A TELA, e so este caminho grampeia. Ver video_janela_fonte: o
   // recorte emulado PRECISA de um retangulo que saia da tela, e passar por aqui
   // era o que anulava o zoom inteiro.
@@ -1334,6 +1507,17 @@ void video_janela(int x, int y, int w, int h) {
   if (x + w > 1920) w = 1920 - x;
   if (y + h > 1080) h = 1080 - y;
   aplicarRect(x, y, w, h);
+}
+
+// Destino simples = quadro inteiro. Um recorte antigo (zoom que saiu, miniatura,
+// titulo novo) esticaria a imagem dentro deste retangulo, entao limpa antes.
+void video_janela(int x, int y, int w, int h) {
+  roiResetTentativas = 0;
+  if (roiAtivo && !roiAplicar(0, 0, 0, 0) && roiAtivo) {
+    roiResetTentativas = 3;
+    roiResetEm = SDL_GetTicks() + 250;
+  }
+  janelaGrampeada(x, y, w, h);
 }
 
 // RECORTE DE FONTE: setVideoRoi (ver a op "roi" no JS).
@@ -1385,13 +1569,15 @@ void video_janela(int x, int y, int w, int h) {
 // dele — e o log abaixo mostra exatamente o retangulo pedido.
 void video_janela_fonte(int sx, int sy, int sw, int sh,
                         int dx, int dy, int dw, int dh) {
+  roiResetTentativas = 0;
   double qw = video_largura(), qh = video_altura();
   double ex, ey;
   int X, Y, W, H;
 
   // Sem as dimensoes do quadro, ou sem recorte de verdade, o destino cru serve.
   if (qw < 2.0 || qh < 2.0 || sw <= 0 || sh <= 0) { video_janela(dx, dy, dw, dh); return; }
-  // Recorte que cobre o quadro inteiro E o caso sem zoom: mesma coisa.
+  // Recorte que cobre o quadro inteiro E o caso sem zoom: mesma coisa (e
+  // video_janela devolve o quadro inteiro ao ROI se um zoom o deixou recortado).
   if (sx <= 0 && sy <= 0 && sw >= (int)qw && sh >= (int)qh) { video_janela(dx, dy, dw, dh); return; }
 
   ex = (double)dw / (double)sw;
@@ -1412,11 +1598,11 @@ void video_janela_fonte(int sx, int sy, int sw, int sh,
   //
   // A Samsung documenta o ROI junto do PLAYER_DISPLAY_MODE_FULL_SCREEN, que e
   // o modo que este arquivo ja seleciona no open (ver a nota la em cima).
-  if (avChamar("roi", NULL, sx, sy, sw, sh, NULL, 0) >= 1) {
+  if (roiAplicar(sx, sy, sw, sh)) {
     printf("[video] roi %d,%d %dx%d de %.0fx%.0f (recorte na fonte)\n",
            sx, sy, sw, sh, qw, qh);
     fflush(stdout);
-    video_janela(dx, dy, dw, dh);
+    janelaGrampeada(dx, dy, dw, dh);
     return;
   }
 
@@ -1445,10 +1631,22 @@ void video_janela_fonte(int sx, int sy, int sw, int sh,
 
 const char *video_url_atual(void) { return urlAtual; }
 double video_pos(void)        { return posSeg; }
+double video_pos_amostra(Uint64 *t) {
+  if (t) *t = posAmostraEm;
+  return posAmostra;
+}
 double video_duracao(void)    { return durSeg; }
 // O AVPlay so informa PORCENTAGEM de buffering (onbufferingprogress), nunca um
 // instante. 0 e o que video.h define como "desconhecido"; quem chama ja trata.
 double video_buffer_fim(void) { return 0; }
+// SAMSUNG (.wgt): o AVPlay so da a PORCENTAGEM do buffering
+// (onbufferingprogress, 100 no onbufferingcomplete); nada de bytes, segundos,
+// conexoes ou quadros. O host e o do link pedido.
+void video_estatisticas(VideoStats *s) {
+  video_stats_vazio(s);
+  if (urlAtual[0]) s->bufferPct = bufPct < 0 ? 0 : bufPct > 100 ? 100 : bufPct;
+  vazao_host_publico(urlAtual, s->host, sizeof s->host);
+}
 // O AVPlay nao expoe o par bufferingStart/End; sem sinal, nunca afirma travo.
 unsigned video_bufferando_ms(void) { return 0; }
 void video_definir_reconexao(int sim) { reconProxima = sim ? 1 : 0; }
@@ -1466,9 +1664,9 @@ const char *video_erro_texto(void) { return houveErro ? erroTexto : ""; }
 int    video_decoder_anunciou(void) { return 1; }
 // O AVPlay nao separa "audio nao suportado" de erro geral; sem sinal proprio.
 int    video_audio_nao_suportado(void) { return 0; }
-// O trailer deste alvo nao passa pelo AVPlay (ver trailer.c); nao ha fim a
-// contar aqui.
-int    video_terminou(void)   { return 0; }
+int  video_seek_desistiu(void) { return 0; }
+// Fim real do AVPlay (onstreamcompleted), nao o destino mostrado de um seek.
+int    video_terminou(void)   { return terminou; }
 int    video_conflito_recurso(void) { return 0; }
 
 double video_creditos(void) {
@@ -1536,6 +1734,7 @@ int  video_velocidade_bloqueada(void) { return 0; }
 // CABECALHOS DO ADDON NO ALVO TIZEN: AINDA NAO IMPLEMENTADO, DE PROPOSITO.
 // Ver a nota longa no fim deste arquivo.
 void video_definir_cabecalhos(const char *cabs) { (void)cabs; }
+const char *video_cabecalhos(void) { return ""; }
 
 void video_definir_dv(int dv) { dvPedido = dv ? 1 : 0; (void)dvPedido; }
 void video_definir_mp4(int ehMp4) { fonteMp4 = ehMp4; }
@@ -1628,4 +1827,4 @@ void video_encerrar(void) {
   ligado = 0;
 }
 
-#endif  /* __EMSCRIPTEN__ */
+#endif  /* __EMSCRIPTEN__ && !NV_VIDAA */

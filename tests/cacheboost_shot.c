@@ -11,6 +11,7 @@
 // Frames: simple view, More options, dual subtitles without and with the
 // controls, and a three-line primary to show the bands do not collide.
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "player.h"
 #include "ajustes.h"
 #include "faixas.h"
@@ -127,7 +128,7 @@ static int vermelhos(int x0, int y0, int x1, int y1) {
 
 int main(int argc, char **argv) {
   int i, r100, r150;
-  saida = argc > 1 ? argv[1] : "/tmp/nv-cacheboost-shot";
+  saida = argc > 1 ? argv[1] : nvt("/nv-cacheboost-shot");
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);

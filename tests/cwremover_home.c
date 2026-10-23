@@ -18,6 +18,14 @@ void cachearte_estatisticas_pedir(void) {}
 void tex_cache_marcar_larg(int grupo, const char *url, float larg, int essencial, int emUso) {
   (void)grupo; (void)url; (void)larg; (void)essencial; (void)emUso; }
 #include "../src/home.c"
+// heroAquecerVizinhos (home_atualizar) pede a arte dos vizinhos: sem textura aqui.
+unsigned long tex_hash_public(const char *c) { (void)c; return 0; }
+GLuint tex_obter_hero_quente(const char *c) { (void)c; return 0; }
+GLuint tex_obter_larg(const char *c, float w) { (void)c; (void)w; return 0; }
+GLuint tex_obter_logo_larg_qualquer(const char *c, float w) { (void)c; (void)w; return 0; }
+void marco(const char *m) { (void)m; }
+void desc_sinopse_hero(const int *idx, int n) { (void)idx; (void)n; }
+void desc_ocultar_vistos_atualizar(void) {}
 
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
 int   dados_gravar(const char *nome, const char *c) { (void)nome; (void)c; return 1; }
@@ -30,12 +38,23 @@ void  dados_marcar_sujo(int leve) { (void)leve; }
 // ajustes_aplicar_blob (abaixo) fala com linguas.c; nada disso entra na regra.
 const char *ling_legenda(void) { return ""; }
 const char *ling_audio(void) { return ""; }
+const char *ling_conta_legenda_valor(void) { return ""; }
+const char *ling_conta_legenda2_valor(void) { return ""; }
+const char *ling_conta_audio_valor(void) { return ""; }
+// O segundo idioma (legenda2/audio2) e o offset manual: ajustes.c passou a
+// falar com eles em idiomasDoBlob/gravar; nesta fixture nada disso entra na
+// regra. Mesmos dublês de tests/ajustes_creditos.c.
+const char *ling_audio2(void) { return ""; }
+const char *ling_conta_audio2_valor(void) { return ""; }
+void ling_conta_audio2(const char *v) { (void)v; }
+void legenda2_atualizar_offset_manual(int ms) { (void)ms; }
 void ling_conta_legenda(const char *v) { (void)v; }
 void ling_conta_legenda2(const char *v) { (void)v; }
 void ling_conta_audio(const char *v) { (void)v; }
 void selospacote_conta_do_blob(const char *blob) { (void)blob; }
 int selospacote_n(void) { return 0; }
 int   perfis_ativo(void) { return 1; }
+unsigned addons_versao(void) { return 1; }
 const char *addons_base_por_id(const char *id) { (void)id; return ""; }
 const char *addons_nome_por_id(const char *id) { (void)id; return ""; }
 int  tex_falhou(const char *u) { (void)u; return 0; }
@@ -78,7 +97,7 @@ int main(void) {
   fil_definir_limite(FIL_LIMITE_MAX);
   // A fileira de retomada vem LIGADA do perfil; sem arquivo de ajustes o
   // padrao deste binario a desliga, e a home nem a montaria.
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":true}");
+  assert(ajustes_shot_valor("continueWatchingEnabled", 0));
   for (i = 0; i < 5; i++) {
     snprintf(it[i].imdb, sizeof it[i].imdb, "tt%d", i);
     snprintf(it[i].titulo, sizeof it[i].titulo, "T%d", i);

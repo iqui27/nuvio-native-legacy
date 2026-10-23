@@ -20,6 +20,8 @@
 #define NV_CONTACACHE_H
 
 // Superficies guardadas. O nome entra no nome do arquivo.
+#define CC_ADDONS_APLICADOS "addons-aplicados"
+#define CC_ADDONS_TOGGLES "addons-toggles"
 #define CC_ADDONS     "addons"
 #define CC_COLECOES   "colecoes"
 #define CC_BIBLIOTECA "biblioteca"

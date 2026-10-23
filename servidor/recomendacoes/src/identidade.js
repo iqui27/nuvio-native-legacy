@@ -152,12 +152,25 @@ export function fundir(env, de, para, t) {
 // — sem SIMKL_CLIENT_ID no worker a rota responde 501 e a TV mostra que o vinculo
 // Simkl nao esta disponivel.
 export async function idSimkl(token, env) {
-  const r = await fetch("https://api.simkl.com/users/settings", {
-    headers: { authorization: `Bearer ${token}`, "simkl-api-key": env.SIMKL_CLIENT_ID,
-               "user-agent": UA, "content-type": "application/json" },
-  });
-  if (!r.ok) { console.log(`simkl /users/settings -> ${r.status}`); return null; }
-  const d = await r.json();
+  // A doc da Simkl exige client_id, app-name e app-version NA QUERY de todo
+  // pedido (api.simkl.org, "Headers and required parameters"); o app da TV ja os
+  // manda assim (simklauth.c). So o cabecalho simkl-api-key deixava a prova a
+  // depender de a Simkl aceitar o id por ali. O cabecalho segue, por seguranca.
+  const q = new URLSearchParams({ client_id: env.SIMKL_CLIENT_ID, "app-name": "nuvio", "app-version": "1.0" });
+  let r;
+  try {
+    r = await fetch(`https://api.simkl.com/users/settings?${q}`, {
+      headers: { authorization: `Bearer ${token}`, "simkl-api-key": env.SIMKL_CLIENT_ID,
+                 "user-agent": UA, "content-type": "application/json" },
+    });
+  } catch { return { falha: 0 }; }
+  if (!r.ok) {
+    console.log(`simkl /users/settings -> ${r.status}`);
+    // So 401/403 e o token recusado. 412 (client_id do SERVIDOR errado), 429 e
+    // 5xx nao sao culpa do token: a TV nao deve mandar a pessoa entrar de novo.
+    return r.status === 401 || r.status === 403 ? null : { falha: r.status };
+  }
+  const d = await r.json().catch(() => null);
   const id = d?.account?.id;
   if (id === undefined || id === null || !/^\d{1,12}$/.test(String(id))) return null;
   return { sujeito: String(id), nome: String(d?.user?.name || "").slice(0, 64) };
@@ -266,6 +279,7 @@ export async function rotaIdentidades(rota, metodo, env, quem, corpo, h, deps) {
       if (!token) return h.erro("sem token", 400);
       const s = await deps.idSimkl(token, env);
       if (!s) return h.erro("token simkl invalido", 401);
+      if (s.falha !== undefined) return h.erro("simkl nao respondeu (" + s.falha + ")", 502);
       return ligar(env, h, quem.id, "simkl", s.sujeito, s.nome, null);
     }
 

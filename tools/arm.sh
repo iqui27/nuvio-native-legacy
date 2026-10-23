@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Compila para ARM e instala na TV por COPIA DIRETA. Ciclo completo (~30s).
 #
 #   bash tools/arm.sh            # compila, copia, confere e lanca
@@ -31,23 +33,23 @@
 # SDK, e a TV so tem /usr/lib/libcurl.so.5 — o binario nem inicia, com
 # "libcurl.so.4 => not found" e nenhuma mensagem visivel na tela.
 set -e
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." && source tools/ctr.sh
 
 TV_IP="${NUVIO_TV_IP:-192.168.1.32}"
 TV_PASS="${NUVIO_TV_PASS:-alpine}"
 APP_ID="space.nuvio.native.legacy"
 ARES="${NUVIO_ARES_PACKAGE:-../NuvioWeb-0.3.38-beta/node_modules/.bin/ares-package}"
-CONTAINER_RUNTIME="${NUVIO_CONTAINER_RUNTIME:-docker}"
+# Use ctr_run / ctr_build helpers instead (see tools/ctr.sh)
 BUILD_PLATFORM="${NUVIO_BUILD_PLATFORM:-linux/arm64}"
 SDK_IMAGE="${NUVIO_SDK_IMAGE:-nuvio-webos-sdk}"
-# DTS (PR #259): o FFmpeg mora na IMAGEM, e so imagem reconstruida depois do
-# PR o tem. Sem NUVIO_DTS_FFMPEG a build olha a imagem: com o FFmpeg leva a
-# conversao, sem ele sai sem (e diz), em vez de parar o deploy de todo dia
-# ate alguem reconstruir a imagem. 1 exige, 0 recusa.
-DTS_ENABLED="${NUVIO_DTS_FFMPEG:-auto}"
+# DTS (PR #259): o FFmpeg mora na IMAGEM. Por padrao a build exige a
+# conversao e falha se o FFmpeg estiver ausente; reconstrua a imagem nesse caso.
+# NUVIO_DTS_FFMPEG=0 compila sem conversao; auto consulta a imagem e permite
+# compilar sem ela quando o FFmpeg nao estiver disponivel.
+DTS_ENABLED="${NUVIO_DTS_FFMPEG:-1}"
 case "$DTS_ENABLED" in 0|1|auto) ;; *) echo 'NUVIO_DTS_FFMPEG deve ser 0, 1 ou auto' >&2; exit 2;; esac
 if [ "$DTS_ENABLED" = auto ]; then
-  if "$CONTAINER_RUNTIME" run --rm --platform "$BUILD_PLATFORM" "$SDK_IMAGE" \
+  if ctr_run --rm --platform "$BUILD_PLATFORM" "$SDK_IMAGE" \
        sh -c 'test -f "${NUVIO_DTS_ROOT:-/opt/nuvio-dts}/include/libavcodec/avcodec.h"' 2>/dev/null; then
     DTS_ENABLED=1
   else
@@ -80,6 +82,22 @@ echo "==> compilando para ARM"
 LIXO=""
 limpar() { [ -n "$LIXO" ] && rm -rf $LIXO; }
 trap limpar EXIT
+# All ARM modes share the soft-float Rust core; =0 retains the C parser.
+RUST_MKVCORE="${NUVIO_RUST_MKVCORE:-1}"
+RUST_VOL=()
+if [ "$RUST_MKVCORE" = 1 ]; then
+  RUST_PERSONALITY=0
+  if [ "${NUVIO_DV7:-1}" = 1 ] && [ "$DTS_ENABLED" = 1 ]; then RUST_PERSONALITY=1; fi
+  RUST_LIB=$(NUVIO_RUST_EXTERNAL_PERSONALITY="$RUST_PERSONALITY" CARGO_NET_OFFLINE=true bash tools/rust-mkvcore.sh armv7-unknown-linux-gnueabi)
+  RUST_VOL=(-v "$RUST_LIB:/tmp/libmkvcore.a:ro")
+  # The container has no cargo: build the DV7 converter here with the same toolchain.
+  if [ "$RUST_PERSONALITY" = 1 ]; then
+    (export RUSTUP_HOME="${RUSTUP_HOME:-/Volumes/ExternalSSD/rust/rustup}" CARGO_HOME="${CARGO_HOME:-/Volumes/ExternalSSD/rust/cargo}"
+     export PATH="$CARGO_HOME/bin:$PATH" NUVIO_DV7_TARGET=armv7-unknown-linux-gnueabi
+     bash tools/build-dv7.sh >&2)
+  fi
+  export NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-} -DNV_RUST_MKVCORE"
+fi
 ENVF=$(mktemp "${TMPDIR:-/tmp}/nuvio-arm-env.XXXXXXXX"); LIXO="$LIXO $ENVF"
 tools/env.sh --env-file "$ENVF"
 # NUVIO_EXTRA_CFLAGS: bandeiras a mais para uma build de teste, sem tocar no
@@ -101,15 +119,22 @@ P2P_VOL=""
 [ -n "$NV_P2P_DIR" ] && P2P_VOL="-v $NV_P2P_DIR:/p2p"
 DTS_ENV=()
 if [ -n "${NUVIO_DTS_ROOT:-}" ]; then DTS_ENV=(-e "NUVIO_DTS_ROOT=$NUVIO_DTS_ROOT"); fi
-"$CONTAINER_RUNTIME" run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
+ctr_run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
   -e NUVIO_P2P_MOTOR="${NV_P2P_DIR:+1}" $P2P_VOL \
+  -e NUVIO_BUILD_JOBS="${NUVIO_BUILD_JOBS:-3}" \
+  -e NUVIO_RUST_MKVCORE="$RUST_MKVCORE" "${RUST_VOL[@]}" \
+  -e NUVIO_SDK_ID="$(ctr_image_inspect "$SDK_IMAGE"):$NV_P2P_DIR" \
+  -e CCACHE_DIR=/work/build/ccache-arm \
   -e NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-}" \
   -e NUVIO_ASS_LIBASS="${NUVIO_ASS_LIBASS:-1}" \
   -e NUVIO_DTS_FFMPEG="$DTS_ENABLED" \
+  -e NUVIO_DV7="${NUVIO_DV7:-1}" \
   "${DTS_ENV[@]}" \
-  -v "$PWD":/work:z "$SDK_IMAGE" sh -c '
+  -v "$PWD":/work:z "$SDK_IMAGE" bash -c '
   set -e
   SR=$NUVIO_SYSROOT
+  RUST_LIBS=""
+  if [ "$NUVIO_RUST_MKVCORE" = 1 ]; then RUST_LIBS=/tmp/libmkvcore.a; fi
   ASS=$NUVIO_ASS_ROOT
   ASS_CFLAGS=""
   ASS_LIBS=""
@@ -123,8 +148,15 @@ if [ -n "${NUVIO_DTS_ROOT:-}" ]; then DTS_ENV=(-e "NUVIO_DTS_ROOT=$NUVIO_DTS_ROO
   if [ "${NUVIO_DTS_FFMPEG:-1}" = "1" ]; then
     DTS=${NUVIO_DTS_ROOT:-/opt/nuvio-dts}
     [ -f "$DTS/include/libavcodec/avcodec.h" ] || { echo "FFmpeg DTS ausente; reconstrua tools/Dockerfile ou use NUVIO_DTS_FFMPEG=0" >&2; exit 2; }
-    DTS_CFLAGS="-DNV_DTS_FFMPEG -I$DTS/include"
+    DTS_CFLAGS="-DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -I$DTS/include"
     DTS_LIBS="-L$DTS/lib -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lpthread -lm"
+  fi
+  DV7_LIBS=""
+  if [ "${NUVIO_DV7:-1}" = 1 ] && [ "${NUVIO_DTS_FFMPEG:-1}" = 1 ]; then
+    export NUVIO_DV7_TARGET=armv7-unknown-linux-gnueabi
+    [ -f build/dv7/libnuvio_dv7.a ] || bash tools/build-dv7.sh
+    DTS_CFLAGS="$DTS_CFLAGS -DNV_DV7_CONVERSION"
+    DV7_LIBS="build/dv7/libnuvio_dv7.a -ldl -lpthread -lm -lrt -Wl,-Bstatic -latomic -Wl,-Bdynamic -static-libgcc"
   fi
   # -DNV_WEBOS: a identidade do alvo tem que vir daqui, porque o compilador
   # webos define __linux__ igual a qualquer Linux e a toolchain nao tem macro
@@ -138,7 +170,35 @@ if [ -n "${NUVIO_DTS_ROOT:-}" ]; then DTS_ENV=(-e "NUVIO_DTS_ROOT=$NUVIO_DTS_ROO
     # versao (ou nenhuma), e libatomic.so.1 nao e garantida.
     P2P_LIBS="/p2p/build-arm/libnuvio_engine.a /p2p/build-arm/_deps/nuvio_libtorrent-build/libtorrent-rasterbar.a $SR/usr/lib/libssl.a $SR/usr/lib/libcrypto.a -static-libgcc -Wl,-Bstatic -lstdc++ -latomic -Wl,-Bdynamic -lrt -Wl,--gc-sections"
   fi
-  arm-webos-linux-gnueabi-gcc src/*.c src/dts/*.c -o nuvio-proto.arm -O2 -DNV_WEBOS $NUVIO_EXTRA_CFLAGS $ASS_CFLAGS $P2P_CFLAGS $DTS_CFLAGS \
+  # #297: p2pmotor.c vai num objeto proprio com -D_FILE_OFFSET_BITS=64. O webOS
+  # e ARM de 32 bits: sem a flag o lstat/readdir falham (EOVERFLOW) num arquivo
+  # de torrent acima de 2 GB e o cache nunca era contado nem apagado. So este
+  # arquivo: o header dele so expoe tipos de largura fixa (uint64_t), entao o
+  # resto do binario segue sem a flag. O _Static_assert do .c barra o esquecimento.
+  CC="arm-webos-linux-gnueabi-gcc"
+  if command -v ccache >/dev/null 2>&1; then CC="ccache $CC"; fi
+  $CC -c src/p2pmotor.c -o /tmp/p2pmotor.o -O2 -DNV_WEBOS -D_FILE_OFFSET_BITS=64 $NUVIO_EXTRA_CFLAGS $P2P_CFLAGS \
+    -I$SR/usr/include -I$SR/usr/include/SDL2
+  printf "%s\n" -O2 -DNV_WEBOS $NUVIO_EXTRA_CFLAGS $ASS_CFLAGS $P2P_CFLAGS $DTS_CFLAGS \
+    -I$SR/usr/include -I$SR/usr/include/SDL2 > /tmp/arm-flags
+  for k in NV_SUPABASE_URL NV_SUPABASE_ANON_KEY NV_TV_LOGIN_BASE NV_TRAKT_CLIENT_ID \
+           NV_TRAKT_CLIENT_SECRET NV_SIMKL_CLIENT_ID NV_SIMKL_APP NV_TMDB_API_KEY NV_SEEKR_API_KEY \
+           NV_REC_URL NV_DISCORD_CLIENT_ID NV_VERSAO; do
+    v=${!k}
+    v=$(printf "%s" "$v" | sed "s/[\\\\\"]/\\\\&/g")
+    printf "%s\n" "\"-D$k=\\\"$v\\\"\""
+  done >> /tmp/arm-flags
+  KEY=$( { cat /tmp/arm-flags; sha256sum tools/arm.sh tools/native-objects.mk; printf "%s" "$NUVIO_SDK_ID"; } | sha256sum | cut -d" " -f1)
+  OBJDIR="build/arm-objects/$KEY"
+  SOURCES=$(ls src/*.c src/dts/*.c | grep -v "^src/p2pmotor\.c$")
+  make -s -f tools/native-objects.mk -j "$NUVIO_BUILD_JOBS" CC="$CC" \
+    OBJDIR="$OBJDIR" SOURCES="$SOURCES" NATIVE_FLAGS=@/tmp/arm-flags
+  if command -v ccache >/dev/null 2>&1; then ccache -s; fi
+  OBJECTS=()
+  for f in $(ls src/*.c | grep -v "^src/p2pmotor\.c$") src/dts/*.c; do
+    OBJECTS+=("$OBJDIR/${f%.c}.o")
+  done
+  arm-webos-linux-gnueabi-gcc "${OBJECTS[@]}" /tmp/p2pmotor.o -o nuvio-proto.arm -O2 -DNV_WEBOS $NUVIO_EXTRA_CFLAGS $ASS_CFLAGS $P2P_CFLAGS $DTS_CFLAGS \
     -DNV_SUPABASE_URL="\"$NV_SUPABASE_URL\"" \
     -DNV_SUPABASE_ANON_KEY="\"$NV_SUPABASE_ANON_KEY\"" \
     -DNV_TV_LOGIN_BASE="\"$NV_TV_LOGIN_BASE\"" \
@@ -152,7 +212,25 @@ if [ -n "${NUVIO_DTS_ROOT:-}" ]; then DTS_ENV=(-e "NUVIO_DTS_ROOT=$NUVIO_DTS_ROO
     -DNV_DISCORD_CLIENT_ID="\"${NV_DISCORD_CLIENT_ID:-}\"" \
     -DNV_VERSAO="\"$NV_VERSAO\"" \
     -I$SR/usr/include -I$SR/usr/include/SDL2 \
-    -lSDL2 -lSDL2_image -lSDL2_ttf -lGLESv2 -lEGL $P2P_LIBS -ldl -lpthread -lz -lm $ASS_LIBS $DTS_LIBS
+    $RUST_LIBS -lSDL2 -lSDL2_image -lSDL2_ttf -lGLESv2 -lEGL $P2P_LIBS -ldl -lpthread -lz -lm $ASS_LIBS $DTS_LIBS $DV7_LIBS \
+    -Wl,--export-dynamic-symbol=pthread_create -Wl,--exclude-libs,ALL
+  # #317: --exclude-libs,ALL tira da tabela dinamica tudo o que vem de arquivo
+  # .a (FreeType/harfbuzz do libass, libstdc++ do P2P, FFmpeg). Sem ele o ld
+  # exportava 178 FT_* (+ TT_RunIns/TT_New_Context) do nosso FreeType 2.13,
+  # porque a libfreetype.so do sistema define os mesmos nomes. No webOS 4.0 o
+  # SDL_ttf da LG carrega a FreeType 2.6.5 do sistema por dlsym, e as chamadas
+  # internas dela (FT_Add_Default_Modules, FT_New_Library...) caiam nas NOSSAS:
+  # face com FT_Face_Internal de 2.6.5 (refcount=1 em +0x34) lida pelo nosso
+  # tt_glyph_load como incremental_interface -> SIGSEGV addr=0x1 na partida.
+  # O pthread_create acima vem de objeto nosso, nao de .a, e segue exportado.
+  # src/dts/rt_shim.c: the LG audio sink (KADP_OSA_CreateThread) must bind to
+  # our pthread_create, which retries its real-time thread with default
+  # attributes instead of letting the firmware crash on EINVAL (LG C9 core).
+  rm -rf deploy/app/licenses/dv7
+  if [ -n "$DV7_LIBS" ]; then
+    mkdir -p deploy/app/licenses/dv7
+    cp build/dv7/licenses/* build/dv7/SOURCE.txt build/dv7/Cargo.lock deploy/app/licenses/dv7/
+  fi
   mkdir -p deploy/app/lib
   find deploy/app/lib -maxdepth 1 -type f -name "dts-starfish-webos*.so" -delete
   if [ -d deploy/app/licenses/dts ]; then
@@ -189,7 +267,6 @@ while IFS='=' read -r NOME VALOR; do
 done < "$ENVF"
 
 cp nuvio-proto.arm deploy/app/nuvio-proto
-rm -f ./*.ipk
 
 # O .ipk so interessa para DISTRIBUIR (instalar em outra TV, publicar). O ciclo
 # de desenvolvimento nao passa por ele — ver a nota abaixo.
@@ -212,7 +289,7 @@ rm -f ./*.ipk
 # estavam na lista.
 ARQ_DE_PESSOA="trakt.txt addons.txt tmdb.txt mdblist.txt ajustes.txt
                progresso.txt nuvem.txt sessao.txt perfil.txt cliente.txt
-               listas.txt guia-fav.txt debrid.txt fanart.txt p2p.txt"
+               listas.txt guia-fav.txt debrid.txt fanart.txt p2p.txt seekr.txt seekr.txt.tmp"
 
 # UM POR PERFIL, entao o nome nao e fixo: stalker-p1.txt, stalker-p2.txt...
 # Estes guardam o MAC do portal IPTV, que autentica a assinatura de quem
@@ -223,7 +300,7 @@ ARQ_DE_PESSOA="trakt.txt addons.txt tmdb.txt mdblist.txt ajustes.txt
 # trakt-p*/trakt-fluxo*/simkl*: o vinculo do Trakt e do Simkl passou a ser um
 # arquivo POR PERFIL (traktauth.c, simklauth.c) — o trakt.txt da lista de nomes
 # acima deixou de alcancar o token quando a pasta de dados cai na da arte.
-GLOB_DE_PESSOA="stalker-p*.txt xtream-p*.txt listas-p*.txt trakt-p*.txt trakt-fluxo*.txt simkl*.txt conta-*.txt conta-*.txt.tmp discord-p*.txt discord-p*.txt.tmp jellyfin-p*.txt jellyfin-p*.txt.tmp emby-p*.txt emby-p*.txt.tmp plex-p*.txt plex-p*.txt.tmp"
+GLOB_DE_PESSOA="srvidx-p*.txt srvidx-p*.txt.tmp livetv-contas-p*.txt epg-conta-*.* m3u-p*.txt m3u-cache-p*.txt stalker-p*.txt xtream-p*.txt listas-p*.txt trakt-p*.txt trakt-fluxo*.txt simkl*.txt conta-*.txt conta-*.txt.tmp discord-p*.txt discord-p*.txt.tmp jellyfin-p*.txt jellyfin-p*.txt.tmp emby-p*.txt emby-p*.txt.tmp plex-p*.txt plex-p*.txt.tmp debrid-*.txt provider-scope-*.txt fontefalha*.txt* fontesmortas-*.txt catalogo-*.bin catalogo-*.bin.tmp* guia-*-p*.txt* guia-cache*.bin* epg-extra.* epg-extra-p*.* epg-extra-m3u-p*.* recomendacoes*.txt recomendacoes*.json amigos-vistos*.txt"
 
 # O ACERVO DE QUEM EMPACOTOU, que nao e credencial de login e vaza igual.
 #
@@ -284,14 +361,19 @@ if [ "$1" = "--ipk" ]; then
   # trocado com chmod 755 a mao.
   chmod 755 "$PALCO/app/nuvio-proto"
 
-  "$ARES" "$PALCO/app" -o .
-  IPK=$(ls -t ./*.ipk | head -1)
+  IPK_OUT="${NUVIO_RELEASE_OUT:-$PWD}"
+  mkdir -p "$IPK_OUT"
+  # ares sempre gera o nome normal: palco isolado evita sobrescrever outra variante.
+  "$ARES" "$PALCO/app" -o "$PALCO"
+  IPK=$(ls "$PALCO"/*.ipk)
   # A variante ganha o nome no ARQUIVO: dois .ipk com o mesmo nome e md5
   # diferente e exatamente o que ja publicou build errada uma vez.
   if [ -n "$VARIANTE" ]; then
     NOVO="${IPK%.ipk}-$VARIANTE.ipk"
     mv -f "$IPK" "$NOVO"; IPK="$NOVO"
   fi
+
+  IPK_DEST="$IPK_OUT/$(basename "$IPK")"
 
   # CONFERE o pacote PRONTO, e nao a pasta de onde ele saiu. A lista de
   # exclusao acima e uma intencao; o teste abaixo e o fato.
@@ -301,7 +383,7 @@ if [ "$1" = "--ipk" ]; then
   # sem erro nenhum, apenas esses tres nomes — nunca os arquivos do app. Uma
   # conferencia escrita assim passa sempre, inclusive quando o segredo esta
   # dentro. Tem de desempacotar o `ar` e listar o data.tar.gz.
-  LISTA=$(cd "$PALCO" && ar x "$OLDPWD/$IPK" 2>/dev/null && tar tzf data.tar.gz 2>/dev/null)
+  LISTA=$(cd "$PALCO" && ar x "$IPK" 2>/dev/null && tar tzf data.tar.gz 2>/dev/null)
   if [ -z "$LISTA" ]; then
     echo "    ABORTADO: nao consegui LER o pacote para conferir; nao vou dizer que esta limpo"
     rm -f "$IPK"
@@ -314,13 +396,14 @@ if [ "$1" = "--ipk" ]; then
   # POR PREFIXO, e nao por nome: os arquivos por perfil sao stalker-p1.txt,
   # stalker-p2.txt e assim por diante, e a lista acima so casa nome exato. Um
   # prefixo cobre qualquer numero de perfil, inclusive os que ainda nao existem.
-  for pre in stalker-p xtream-p listas-p trakt-p trakt-fluxo-p simkl-p; do
+  for pre in m3u-p stalker-p xtream-p listas-p trakt-p trakt-fluxo-p simkl-p; do
     printf '%s\n' "$LISTA" | grep -qE "art/$pre[0-9]+\.txt$" && VAZOU="$VAZOU $pre*.txt"
   done
   printf '%s\n' "$LISTA" | grep -qE "art/(trakt-fluxo|simkl)\.txt$" && VAZOU="$VAZOU trakt-fluxo.txt/simkl.txt"
+  printf '%s\n' "$LISTA" | grep -qE '(^|/)(livetv-contas-|epg-conta-|m3u-|debrid|provider-scope|fontefalha|fontesmortas|catalogo-|guia-(fav|modo|preview|cache|addons|lembretes|categorias)|epg-extra|recomendacoes|amigos-vistos)[^/]*\.(txt|json|bin|ts|id)(\.tmp[^/]*)?$' && VAZOU="$VAZOU private profile files"
   printf '%s\n' "$LISTA" | grep -qE '(^|/)conta-[^/]*\.txt(\.tmp)?$' && VAZOU="$VAZOU conta-*.txt/conta-*.txt.tmp"
   printf '%s\n' "$LISTA" | grep -qE '(^|/)discord-p[^/]*\.txt(\.tmp)?$' && VAZOU="$VAZOU discord profile tokens"
-  printf '%s\n' "$LISTA" | grep -qE '(^|/)(jellyfin|emby|plex)-p[^/]*\.txt(\.tmp)?$' && VAZOU="$VAZOU media-server profile tokens"
+  printf '%s\n' "$LISTA" | grep -qE '(^|/)(jellyfin|emby|plex|srvidx)-p[^/]*\.txt(\.tmp)?$' && VAZOU="$VAZOU media-server profile tokens"
   # Diretorio: qualquer caminho DENTRO dele conta como vazamento, nao so a
   # entrada da pasta — o tar pode listar os arquivos sem listar o diretorio.
   for d in $DIR_DE_PESSOA; do
@@ -363,6 +446,7 @@ if [ "$1" = "--ipk" ]; then
   else
     echo "    ATENCAO: pacote SEM motor P2P (NUVIO_P2P_MOTOR=none ou sem pasta)"
   fi
+  mv -f "$IPK" "$IPK_DEST"; IPK="$IPK_DEST"
   echo "    $IPK ($(du -h "$IPK" | cut -f1)) — sem art/{$(echo $ARQ_DE_PESSOA $GLOB_DE_PESSOA $ACERVO_DE_PESSOA $DIR_DE_PESSOA | tr ' ' ',')}"
 fi
 
@@ -434,10 +518,10 @@ STAMP=${STAMP:0:8}
 #
 # A conferencia de verdade continua sendo /proc/<pid>/exe: o app manager cacheia
 # o appinfo ate reinstalar, e ja aconteceu de o titulo mostrar a build anterior.
-sed "s/\(\"title\": \"[^\"]*\)\"/\1 ($STAMP)\"/" deploy/app/appinfo.json > /tmp/appinfo.stamped.json
-cp /tmp/appinfo.stamped.json deploy/app/appinfo.json.stamped
+sed "s/\(\"title\": \"[^\"]*\)\"/\1 ($STAMP)\"/" deploy/app/appinfo.json > ${TMPDIR:-/tmp}/appinfo.stamped.json
+cp ${TMPDIR:-/tmp}/appinfo.stamped.json deploy/app/appinfo.json.stamped
 
-$SCP /tmp/appinfo.stamped.json "root@$TV_IP:$APPDIR/appinfo.json"
+$SCP ${TMPDIR:-/tmp}/appinfo.stamped.json "root@$TV_IP:$APPDIR/appinfo.json"
 
 echo "==> sincronizando arte"
 # --exclude art/cache: e CACHE DE EXECUCAO, nao arte do pacote. Com ele o tar

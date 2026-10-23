@@ -125,6 +125,7 @@ def eh_frase(s):
     # nem "luna://com.webos.media/%s", e depois que a regra de formato passou a
     # deixar frases com "%" entrarem, os quatro viraram ruido fixo.
     if "://" in s: return False
+    if s == "perfil:%d": return False  # Internal avatar identity, never displayed.
     if re.search(r"/[A-Za-z0-9._-]+\.[A-Za-z]{2,4}$", s): return False
     # FORMATO PURO x FRASE QUE CONTEM FORMATO, e a diferenca custou tres
     # frases em portugues na v1.0.35. A regra antiga descartava todo literal
@@ -213,6 +214,11 @@ NAO_E_TELA = ("printf", "fprintf", "puts", "fputs", "perror", "marco",
               "curl_", "SDL_Log",
               # motivo de log da fonte guardada (fontevolta.h): nunca tela
               "fontevolta_", "addons_buscar", "cat_indice_por",
+              # video_tpk.c: motivo so vai para o log [mkvfix] (#638)
+              "mfLigar",
+              # logrede.c: log filter terms and LAN browser page, never TV UI.
+              '"[fonte", "[voltafonte"', '"[abrir-diag]"', '"[tocar-diag]"',
+              "static const char PAGINA[]",
               "idioma_registrar", "assert", "_Static_assert",
               "EM_ASM", "MAIN_THREAD",
               # NOME DE ICONE NAO E TEXTO. gfx_icone recebe o basename do SVG
@@ -258,6 +264,57 @@ def contexto(txt, i):
 # "nao sei o que e": sem esta lista a ferramenta nao pode virar teste, e sem
 # virar teste ela nao impede a proxima regressao.
 IGNORAR = {
+    # Verified non-UI literals on the 2.1 feature branch:
+    # fundo.c diagnostics; faixas/player/video_android speed and subtitle logs.
+    # Verified diagnostics, protocol/file identifiers, and genre/token match data.
+    # Verified non-UI literals: diagnostic messages, parser vocabulary, JSON
+    # enum values, persistent filenames and app_tela_nome telemetry ids.
+    " (sem quadro pequeno)", "desenho direto (sem quadro pequeno)",
+    "sem a copia desfocada da arte ainda (arte nao decodificada?): fundo liso",
+    "codec nao e de texto (ASS/SRT/WebVTT): a TV desenha",
+    "confirmada pelo relogio do pipeline", "enviado ao ExoPlayer",
+    # mapa.c canonical genre aliases and legauto.c filename stopwords.
+    "acción", "ação", "ciencia ficción", "com", "comédia", "fantasía",
+    # Remote schema enum, persistence names and trailer diagnostic gate.
+    '"POSTER"', "conta-pend-%s.txt", "perfil-infantil.txt", "escolha-perfil",
+    # Room protocol values and notice IDs; UI resolves these to translated text.
+    "juntos:erro", "juntos:fonte", "nenhuma", "todos", ',"fonte":{"tipo":"%s"}',
+    # filmography provider hostname and spoiler-matching stem, never UI labels.
+    "simkl.com", "traiç",
+    "catalogo-*.bin",                # androidcache.c: cache filename pattern, never UI text
+    "ltv-fontes.txt", "ltv-fontes-p%d.txt",  # ltv.c: preference filenames, never UI labels
+    "daqui em diante",  # episodios.c nomeModo: so no log [visto] menu, nunca rotulo
+    "fechar",  # main.c: nome do evento de janela so no log "[ciclo] janela="
+    # PR #567: motivos so de log ([fonte] lembrada / auto / link guardado).
+    "lancamento sem grupo", "todos os add-ons permitidos responderam", "relogio para tras",
+    # video_tpk.c: motivos de cartaoModo()/cartaoEncaixar(), so no log "[video] tpk cartao".
+    "cover maior que o painel", "cover sem prova nesta familia", "recorte de fonte",
+    # video_tpk.c: motivos de convIniciar/convSondar/convDesistir/convReabrir e o
+    # `como` do progressivo — todos impressos pelo proprio printf deles
+    # ("[dts-tpk] motivo: %s"), nenhum chega a tela.
+    "volta ao original", "volta ao audio da TV", "troca para o convertido",
+    "a TV nao listou audio", "a TV nao listou audio e o arquivo so tem DTS/TrueHD",
+    "o idioma de audio preferido so existe numa faixa DTS/TrueHD",
+    "o player nao preparou em 45 s",
+    "cabecalho lido antes de abrir: so DTS/TrueHD",
+    "cabecalho lido antes de abrir: o idioma preferido so existe em DTS/TrueHD",
+    "sem indice de quadros-chave para o HLS",
+    "absoluta (tempo da fonte)", "absoluta com os +10 s do fluxo",
+    "relativa ao comeco do fluxo", ", legenda escolhida mantida",
+    "a fonte nao abriu no conversor (%s)",
+    "o player recusou o fluxo convertido (erro 0x%08x)",
+    # gpunivel.c: motivos passados a aplicar()/decidir(), que so fazem printf do
+    # log "[gpu-nivel]"; nunca chegam a tela.
+    "GPU fraca: referencia nao termina",
+    "compara nivel salvo com efeitos completos",
+    "nao desce de novo nesta TV",
+    "sem ganho significativo",
+    '"POSTER"', "conta-pend-%s.txt", "escolha-perfil", "com",
+    "acción", "ação", "comédia", "fantasía", "ciencia ficción",
+    "%s/v1/diario?desde=%lld&limite=500",
+    "%d addons · %d progressos · %d vistos · %d na lista · %d coleções%s%s",
+    "ação", "acción", "comédia", "fantasía", "ciencia ficción", "com", "das",
+    '"POSTER"', "conta-pend-%s.txt", "escolha-perfil",
     # RC 1.8 triage, each checked in the source:
     # - sync.c NOME[] are the labels of the "[sync] etapas" LOG line; "ver" is a
     #   field name in the jellyfin conta file; "forcé" is a pattern legref.c
@@ -309,6 +366,10 @@ IGNORAR = {
     # Motivos do vigia da fonte guardada (fontevolta.c, fontevolta_decidir):
     # vao so para o log "[voltafonte] recuo para a busca: <motivo>".
     "erro do player", "clipe curto", "conferencia falhou",
+    # Vereditos de fontesonda_linha (#364): so printf no fio de sonda,
+    # nunca rotulos de interface nem mensagens do player.
+    "o player recusou um link que responde (apontar para player/TLS/formato)",
+    "o link tambem nao serve pelo nosso cliente", "sem resposta pelo nosso cliente",
     # Hosts de provedor de poster/meta que levam a config no caminho
     # (redeurl.c, rede_url_log): dado de comparacao, nunca tela. "com" casou
     # com a lista de palavras de portugues.
@@ -328,12 +389,26 @@ IGNORAR = {
     # dado de comparacao de home.c (sinalRanking, layout Dinamica), nunca texto
     # desenhado. "top", "popular" e "trending" ja nao acusam por serem ASCII.
     "em alta", "mais vist", "tendência",
+    "linha do tempo",              # comparacao do nome do catalogo em home.c
+    "colecao-exibicao-p%d.txt",     # arquivo local de layouts em vertudo.c
     "-perfil",                      # sufixo de nome de arquivo (ajustes.c)
     "recomendacoes-perfil.txt",     # nome de arquivo do perfil publico (recomenda.c)
     "amigos-vistos.txt",            # nome de arquivo das novidades vistas (socialvis.c)
+    # Caches privados por conta/perfil e seus temporarios (catalogo.c), e o
+    # arquivo das novidades vistas por perfil (recomenda.c/socialvis.c).
+    # Usados apenas para ler, gravar e apagar arquivos; nunca texto de tela.
+    "%s/catalogo-%016llx-p%d.bin", "%s/catalogo-%016llx-p%d.bin.tmp",
+    "catalogo-%016llx-p%d.bin.tmp-", "catalogo-rede.bin.tmp-",
+    "catalogo-", "fontes/", "legendas/",  # Android cache paths, not UI.
+    "amigos-vistos-p%d.txt",
+    "epg-conta-%d-%08x-p%d.%s", "epg-conta-%d-%08x-p%d.bin",
+    "epg-conta-%d-%08x-p%d.ts", "epg-conta-%d-%08x-p%d.id",
+    "epg-conta-2-%08x-p%d.%s",  # private native-account guide cache names
+
     "%s/poster/%02d.jpg",           # caminho da arte dos dados de exemplo (socialvis.c, so teste)
     "biblioteca.h", "catalogo.h", "fileiras.h", "perfil.h", "legenda.h",
     "perfil.txt",                   # #include e nome de arquivo
+    "perfil-infantil.txt", "perfil-ajustes-travados.txt",  # profile state filenames, never UI
     "com.webos.media.client.nuvio", # id do cliente LS2
     "abrir", "buscar", "erro",      # nomes de operacao do bridge JS (video_tizen.c)
     "fontes", "legenda", "mais", "nao", "poster",  # chaves internas, nao rotulo
@@ -348,6 +423,19 @@ IGNORAR = {
     "definido por gpun_definir_nivel", "nenhum", "padrao", "sem alvo interno",
     "teto de tempo de medida",
     "lento pela CPU ou pelo resto, nao pela GPU: menos pixel nao ajuda",
+    # Samsung conversion diagnostics: convIniciar/convSondar/convReabrir/
+    # convDesistir only print their reasons; position and subtitle suffixes
+    # below also appear only in printf. None reaches the player UI.
+    "cabecalho lido antes de abrir: so DTS/TrueHD",
+    "cabecalho lido antes de abrir: a ordem do audio escolhe uma faixa DTS/TrueHD",
+    ", legenda escolhida mantida", "troca para o convertido",
+    "volta ao original", "volta ao audio da TV",
+    "a TV nao listou audio e o arquivo so tem DTS/TrueHD", "a TV nao listou audio",
+    "sem indice de quadros-chave para o HLS", "o player nao preparou em 45 s",
+    "a fonte nao abriu no conversor (%s)",
+    "o player recusou o fluxo convertido (erro 0x%08x)",
+    "absoluta (tempo da fonte)", "absoluta com os +10 s do fluxo",
+    "relativa ao comeco do fluxo",
     # .tpk: so vao ao nuvio.log / erro de compilacao / nome de arquivo.
     "NV_TPK40 e so da libnuvio.so do Tizen 4/5; nunca junto com Emscripten",
     "libEGL nao encontrada na TV", "libnuvio.staged.ver",
@@ -376,6 +464,11 @@ IGNORAR = {
     # ISO 639-2 do portugues (linguas.c). Virou candidato quando "por" entrou
     # na lista de palavras de portugues; e codigo de idioma, nao rotulo.
     "por",
+    # Keys of the Search "?!#" page (busca.c SIMBOLOS): accented letters and
+    # punctuation typed into the query, never a screen label.
+    "áàâãéêíóôõúçñü.,:;'\"!?-_&()/@#+=*·",
+    # Release-language matching terms in fontenota.c; input data, never UI labels.
+    "français", "inglês", "japonês", "română", "türkçe",
     # O MESMO CODIGO EM MAIUSCULA (fontepref.c). E o valor da tabela TERMOS,
     # que traduz "portugues"/"brazilian"/"nacional" num codigo de idioma para
     # COMPARAR duas fontes entre si. Nunca chega na tela: a assinatura inteira
@@ -392,6 +485,11 @@ IGNORAR = {
     "servidor da conta fora do ar (HTTP %d) · usando a cópia de %s",
     "servidor da conta fora do ar (HTTP %d) · sem cópia salva",
     "conta-%s-p%d.json", "conta-fora",
+    # Chaves da ilha e do avisodisp da pilula "Episódio" dos comentarios (detail.c).
+    "det-com-ep", "dica:comentarios-episodio",
+    # Chave do aviso "pessoa sem pagina" do OK no elenco (detail.c): chave
+    # interna da ilha, como "det-com-ep" — nunca texto de tela.
+    "det-elenco-sem-pagina",
     "conta-addons-pend-",  # prefixo de arquivo da fila offline, nunca texto de tela
     "hdr do pipeline: %s (fonte DV=%d)",
     # Tres marcos de video.c/video_tizen.c. O buffer e montado numa instrucao
@@ -405,11 +503,16 @@ IGNORAR = {
     "%s; eventos=%d fontes=%d fontselect=%d cobertura=%lld-%lldms render=%lluus quadro=%zuB",
     "mkv: %d faixas lidas, %d legendas com idioma",
     "seek para %ds",
+    "seek recusado: nova tentativa %d/%d em %u ms",  # marco(m2) em video.c, log
     # Os quatro motivos do diagnostico [col] (descoberta.c). Sao DADOS DE UM
     # VETOR, e nao argumento de printf: a varredura olha o que vem antes do
     # literal e ali so ha uma chave de inicializacao, entao NAO_E_TELA nao tem
     # como reconhece-los. Ficam em portugues de proposito — quem le e quem
     # abre uma issue, e a linha inteira em volta deles ja e portugues.
+    # Nomes das regras de pontuacao do VIDAA (streams.c, REGRAS_VIDAA). Mesmo
+    # caso: dado de vetor que so vai para o printf "[fonte] vidaa: regras em ...".
+    "dv-em-mp4 trava o navegador", "dv-em-mkv ok nesta tv", "av1 nao decodifica",
+    "acima de 4k da tela preta", "mp4 sem dv e mais confiavel",
     "nenhuma colecao usa este addon",
     "colecao tem o addon, mas com outro tipo",
     "colecao tem addon e tipo, mas outro id de catalogo",
@@ -461,6 +564,59 @@ IGNORAR = {
     # tem entrada em idioma_tab.h. "poster/%s.jpg" e um caminho de arquivo.
     "Volume até 200%", "Tamanho padrão 80%", "Continuar assistindo · 58%",
     "Cache de busca e volume até 200%", "poster/%s.jpg",
+    # 2.0.3 (agente 203-i18n): os 57 achados de e0349fbb, conferidos um a um no
+    # codigo. Nenhum e texto traduzivel; cada grupo diz por que.
+    # Marca/nome proprio, igual em toda lingua (mesma regra de "IMDb", "Trakt"):
+    # o selo do formato na tela do Dolby Vision (dvtelaui.c) e o letreiro do Simkl.
+    "HDR10", "DOLBY VISION", "SIMKL",
+    # menu.c (layout Dinamica): cabecalho de secao em CAIXA ALTA, como no tvOS.
+    # A chave traduzivel e "Streaming"; aqui o desenho fixa o rotulo em ASCII.
+    "STREAMING",
+    # Log "[cor] fundo frost" e aviso da copia borrada (fundo.c): so printf.
+    " (sem quadro pequeno)", "desenho direto (sem quadro pequeno)",
+    "sem a copia desfocada da arte ainda (arte nao decodificada?): fundo liso",
+    # Valor padrao de JSON da fila offline da conta (contapend.c) e nome de
+    # arquivo montado com snprintf (a secao 2 da varredura).
+    '"POSTER"', "conta-pend-%s.txt",
+    # Cabecalho do relato de arranque (arranque.c): vai ao arquivo/registro.
+    "--- relato anterior sem envio ---\n",
+    # Nomes das configs EGL/GL de reserva (main.c), so em printf "[arranque]".
+    "RGB565 sem alfa", "RGB888 sem alfa", "RGBA8888 sem depth/stencil/MSAA",
+    "RGBA8888 sem profundidade",
+    # Ids de etapa do arranque (NV_ETAPA, main.c) e nome de tela do log (app.c).
+    "addons/catalogo", "conta", "escolha-perfil",
+    # Id do item focado do painel Social, lido por teste e log (salvospainel.c).
+    "adicionar",
+    # Motivos so de printf ("[hero]", "[fonte]", "[canal]", "[marcador]",
+    # "[legenda]", vel_log, gpun, "[rede]", "[dv]", "[visto]"): log em portugues
+    # de proposito, como os motivos ja listados acima.
+    "a ficha nao tem descricao", "sem resposta da rede",
+    "abertura/resumo fora da parte inicial", "creditos fora da parte final do episodio",
+    "creditos fora da parte final do filme", "fim alem da duracao (outro corte)",
+    "inicio alem da duracao",
+    "inicio antes de 50% do filme",  # intro.c:399, secao 2: so o log [marcador]
+    "codec nao e de texto (ASS/SRT/WebVTT): a TV desenha",
+    "legenda nativa desligada", # faixas.c: argumento ternario do printf, so log
+    "confirmada pelo relogio do pipeline", "enviado ao ExoPlayer",
+    "dado sem decoder", "sem dado no prazo",
+    "escolha manual: a folha abre com o que chegou", "fonte boa o bastante",
+    "fonte lembrada deste titulo", "prazo de espera pelos add-ons",
+    "outra fonte foi a escolhida",
+    # Log-only (autoMotivo, the converter probe reason, mkvfix state).
+    "todos os add-ons responderam", "cabecalho do MKV nao lido; a TV acusou NotSupportedAudioCodec",
+    "not a Matroska file: nothing to do",
+    "interface em 1080p: mede de novo", "sem-acesso", "sem-dv", "nao-mkv", "temporada",
+    # Nomes de arquivo e de pasta (addonstats.c, assrender.c): nunca tela.
+    "fonte-latencia.txt", "%s/fontes",
+    # Listas de COMPARACAO, nao de desenho: apelidos de genero em pt/es (mapa.c,
+    # GEN_CANON), palavras que denunciam resposta de addon que nao e video
+    # (naovideo.c) e palavras genericas de nome de legenda (legauto.c).
+    "acción", "ação", "ciencia ficción", "comédia", "fantasía",
+    "com", "configuração necessária", "doação", "donación", "faca uma doacao",
+    "faça uma doação", "nao disponivel", "não disponível",
+    "sem fontes disponiveis", "unterstutze das projekt", "unterstütze das projekt",
+    # legsync.c: motivos de autoEncerrar(), so no log "[legsync] automatico: encerra".
+    "sem progresso", "sem referencia nesta plataforma",
 }
 
 def sem_corpo_em_js(txt):

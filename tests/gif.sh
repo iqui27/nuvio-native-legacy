@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # O detector de GIF animado (#29) e o decodificador nativo com o fio de
 # decode (#84), offline.
 #
@@ -18,6 +20,6 @@ cd "$(dirname "$0")/.."
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc ${flags[@]+"${flags[@]}"} src/gif.c tests/gif.c \
-  -Isrc -o /tmp/nuvio-gif-tests -O1 -g -pthread \
+  -Isrc -o ${TMPDIR:-/tmp}/nuvio-gif-tests -O1 -g -pthread \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-gif-tests
+${TMPDIR:-/tmp}/nuvio-gif-tests

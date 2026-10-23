@@ -38,7 +38,10 @@ enum { B_FILEIRA = 0, B_COLECAO, B_DOC, B_CURTA, B_AMIGOS, B_PARAR };
 static int zona, sel, lista0, pCol, pLin, pLin0, bot, sug;
 static int sair, temPedido, pediuBusca;
 static char pedido[24];
-static float entrada, fLista[CACA_MAX], fPost[64], fBot[CU_BOT_MAX], fSug[CU_SUG_MAX + 2];
+static float entrada, fLista[CACA_MAX], fBot[CU_BOT_MAX], fSug[CU_SUG_MAX + 2];
+// O anel do poster e UM so (o selecionado), nao 64 celulas: grade maior que 64
+// (Top 250) nao perde o foco.
+static float focoPoster;
 // O seletor de trilhas (modal).
 static int trilhasAberto, tSel, tIni;
 static float fTrilhas;
@@ -85,7 +88,7 @@ void cacaui_abrir(int foco) {
   sair = temPedido = pediuBusca = 0;
   trilhasAberto = 0;
   entrada = 0.0f;
-  memset(fLista, 0, sizeof fLista); memset(fPost, 0, sizeof fPost);
+  memset(fLista, 0, sizeof fLista); focoPoster = 0;
   memset(fBot, 0, sizeof fBot); memset(fSug, 0, sizeof fSug);
   caca_n_trilhas();   // ja pede o catalogo, para o seletor abrir cheio
 }
@@ -198,7 +201,7 @@ void cacaui_atualizar(float dt, Uint32 agora) {
   entrada = red ? 1.0f : anim_mola(entrada, 1.0f, dt, NV_MOLA_TELA);
 #define MOLA(v, alvo) v = red ? (alvo) : anim_mola(v, (alvo), dt, NV_MOLA_FOCO)
   for (i = 0; i < CACA_MAX; i++) MOLA(fLista[i], (zona == Z_LISTA && i == sel && !trilhasAberto) ? 1.0f : 0.0f);
-  for (i = 0; i < 64; i++) MOLA(fPost[i], (zona == Z_POST && i == pLin * cols + pCol && !trilhasAberto) ? 1.0f : 0.0f);
+  MOLA(focoPoster, (zona == Z_POST && !trilhasAberto) ? 1.0f : 0.0f);
   for (i = 0; i < CU_BOT_MAX; i++) MOLA(fBot[i], (zona == Z_BOT && i == bot && !trilhasAberto) ? 1.0f : 0.0f);
   for (i = 0; i < CU_SUG_MAX + 2; i++) MOLA(fSug[i], (zona == Z_SUG && i == sug && !trilhasAberto) ? 1.0f : 0.0f);
   MOLA(fTrilhas, trilhasAberto ? 1.0f : 0.0f);
@@ -313,7 +316,7 @@ static void desenharLegenda(const CacaInfo *c, float x, float y, float a) {
     GfxRect ic = { x, y, 30.0f, 30.0f };
     if (ganho) gfx_icone(ic, ICONE_DEGRAU[b], ar, ag, ab, a);
     else gfx_icone(ic, ICONE_DEGRAU[b], 0.6f, 0.6f, 0.65f, a * 0.6f);
-    { TxtLinha l = txt_linha(TXT_CAPTION2, conq_rotulo(1 << b), (int)(235 * k), (int)(235 * k), (int)(240 * k), 255);
+    { TxtLinha l = txt_linha(TXT_CAPTION2, i18n(conq_rotulo(1 << b)), (int)(235 * k), (int)(235 * k), (int)(240 * k), 255);
       txt_desenhar_alpha(l, x + 38.0f, y + (30.0f - (float)l.h) * 0.5f, a);
       x += 38.0f + (float)l.w + 30.0f; }
   }
@@ -375,7 +378,7 @@ static void desenharDetalhe(Uint32 agora, float a) {
       int lin = i / (int)cols - pLin0, col = i % (int)cols;
       GfxRect r = { x + CU_PAD + (float)col * (CU_PW + CU_PGAP),
                     py + (float)lin * (CU_PH + CU_PGAP), CU_PW, CU_PH };
-      float ff = i < 64 ? fPost[i] : 0.0f;
+      float ff = focoPoster * (i == foco ? 1.0f : 0.0f);
       if (!caca_filme(sel, i, &f)) continue;
       if (ff > 0.01f) {
         float ar, ag, ab;

@@ -3,3 +3,6 @@ contact_links:
   - name: How to install
     url: https://github.com/iqui27/nuvio-native-legacy/blob/master/INSTALL.md
     about: Installation steps for LG, Samsung and VIDAA.
+  - name: Playback / source problems — check first
+    url: https://github.com/iqui27/nuvio-native-legacy#reporting-a-problem
+    about: Add-on, debrid or connection side? Read the four quick checks before opening a bug.

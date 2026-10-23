@@ -19,6 +19,7 @@
 // FOCO SEM CONTORNO (regra do Glass UI): o botao em foco e a pilula cheia no
 // acento; o resto e neutro. Material (vidro/solido) e acento seguem Ajustes.
 #include "novidades20.h"
+#include "dicascontrole.h"
 #include "novidadesfila.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -30,11 +31,14 @@
 #include "idiomacod.h"
 #include "ilha.h"
 #include "layout.h"
+#include "teclavoltar.h"
 #include "logoapp.h"
 #include "perfiltv.h"
 #include "ponteiro.h"
 #include "tex_cache.h"
 #include "text.h"
+#include "telefonecartao.h"
+#include "escala.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -116,7 +120,7 @@ static const Cap CAP[N20_NCAP] = {
       { "Recomende, responda <b>Já assisti</b>, e receba enquete no relógio (dá pra desligar).", 0, 0, 0 } },
     { { "Pedido de amizade avisa no relógio", 0, 0, 0 }, { "Recusar não avisa a pessoa", 0, 0, 0 },
       { "Assistidas sincronizam sozinhas", 0, 0, 0 }, { "Lista com capa maior", 0, 0, 0 },
-      { "Painel Social abre com o Azul", 0, 0, 0 }, { "Enquetes", "Depende do servidor", TG_CINZA, 0 } },
+      { "Painel Social abre com o CH+", 0, 0, 0 }, { "Enquetes", "Depende do servidor", TG_CINZA, 0 } },
     { "Painel Social", "Amigos no pôster · enquete", NULL },
     "Pessoa única, amigos nos pôsteres, enquetes." },
   { 3, "aj_user-round", "Perfis 2.0", 1, 0, "00.jpg",
@@ -162,6 +166,9 @@ static int est[N20_NCAP];
 static int focoHero, focoFim, saindo, focoSair;
 static float entrada, troca = 1.0f, sairA;
 static char dirArte[512] = "deploy/app/art";
+#ifdef NV_TOUCH_UI
+static TelefoneCartao n20Telefone;
+#endif
 
 // ------------------------------------------------------------------ aparelho
 static int devBuild(void) {
@@ -566,7 +573,7 @@ static void cenaHome(int s) {
     { TxtLinha t = txt(TXT_G18R, "Um pedaço da fileira de cima aparece aqui");
       GfxRect r = { 520, 300, t.w + 44, 44 };
       sIlha(r, 22); txtMeio(t, r.x + 22, r.y, 44, 1); }
-    gfx_cor((GfxRect){ 0, 0, 96, 720 }, 0, 0.039f, 0.043f, 0.055f, 0.86f);
+    gfx_vidro_ou_solido((GfxRect){ 0, 0, 96, 720 }, 0, GFX_VIDRO_DENS, 1.0f, 0.039f, 0.043f, 0.055f, 0.86f);
     gfx_cor((GfxRect){ 95, 0, 1, 720 }, 0, 1, 1, 1, 0.10f);
     for (i = 0; i < 5; i++) {
       GfxRect r = { 33, 360 - 2.5f * 56 + i * 56 - 15, 30, 30 };
@@ -1082,6 +1089,9 @@ void novidades20_abrir(int n) {
   focoHero = 0; focoFim = 0; saindo = 0; focoSair = 0; sairA = 0;
   troca = 1.0f;
   entrada = ajustes_animacoes_reduzidas() ? 1.0f : 0.0f;
+#ifdef NV_TOUCH_UI
+  telefonecartao_limpar(&n20Telefone);
+#endif
 }
 
 void novidades20_primeira_vez(void) {
@@ -1099,11 +1109,26 @@ void novidades20_primeira_vez(void) {
   novidades20_abrir(f == NF_NOVA);
 }
 
+void novidades20_suprimir(void) {
+  char *s;
+  if (decidido) return;
+  decidido = 1;
+  s = dados_ler(N20_ARQ);
+  if (s) { free(s); return; }
+  // O COMECAR da 2.1 (comecar.h) tomou o primeiro uso: a fila antiga fica
+  // vista do mesmo jeito, mas o guia NAO abre sozinho — quem oferece o tour
+  // e o Comecar, e o guia inteiro continua em Ajustes > Sobre e ajuda.
+  novidadesfila_preparar();
+  dados_gravar(NF_ARQ_180, "1\n");
+  dados_gravar(N20_ARQ, "1\n");
+}
+
 static void fechar(const char *aviso, int oQue) {
   aberto = 0;
   saindo = 0;
   pedido = oQue;
   dados_gravar(N20_ARQ, "1\n");
+  dicascontrole_depois_novidades();
   if (aviso) ilha_avisar("novidades20", ILHA_OK, "aj_book-open", i18n(aviso), 4500, 0);
 }
 #define AV_GUARDADO "Guardado em Ajustes › Sobre e ajuda › Novidades 2.0"
@@ -1133,11 +1158,6 @@ static int ehAzul(const SDL_Event *e) {
   int sc = e->key.keysym.scancode;
   return k == SDLK_s || sc == NV_SCANCODE_BLUE || sc == NV_SCANCODE_CH_UP || k == SDLK_PAGEUP;
 }
-static int ehVoltar(const SDL_Event *e) {
-  SDL_Keycode k = e->key.keysym.sym;
-  return k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE || k == SDLK_DELETE ||
-         e->key.keysym.scancode == NV_SCANCODE_BACK;
-}
 void novidades20_evento(const SDL_Event *e) {
   SDL_Keycode k;
   int t, ok;
@@ -1149,10 +1169,10 @@ void novidades20_evento(const SDL_Event *e) {
     if (k == SDLK_LEFT && focoSair > 0) focoSair--;
     else if (k == SDLK_RIGHT && focoSair < 2) focoSair++;
     else if (ok) okSair(focoSair);
-    else if (ehVoltar(e)) saindo = 0;
+    else if (nv_tecla_voltar(e)) saindo = 0;
     return;
   }
-  if (ehVoltar(e)) { saindo = 1; focoSair = 0; sairA = ajustes_animacoes_reduzidas() ? 1.0f : 0.0f; return; }
+  if (nv_tecla_voltar(e)) { saindo = 1; focoSair = 0; sairA = ajustes_animacoes_reduzidas() ? 1.0f : 0.0f; return; }
   if (ehAzul(e)) {
     if (e->key.repeat) return;
     if (idx >= nLista - 2) irPara(0); else irPara(nLista - 2);
@@ -1358,8 +1378,8 @@ static void dicas(float a) {
       if (aberto && !saindo) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroNada, ptLater, 0, 0);
       xd -= wl + 22;
     }
-    wb = tecla("Azul", rot, -10000, y, 1, 0) - 26;
-    tecla("Azul", rot, xd - wb, y, 1, a);
+    wb = tecla("CH+", rot, -10000, y, 1, 0) - 26;
+    tecla("CH+", rot, xd - wb, y, 1, a);
     if (aberto && !saindo) ponteiro_alvo(xd - wb, y, wb, 38, ponteiroNada, ptAcao, 4, 0); }
 }
 
@@ -1746,11 +1766,164 @@ static void dialogo(void) {
       } } }
 }
 
+#ifdef NV_TOUCH_UI
+static int n20TelefoneRolar(const PonteiroRolagem *e) { return aberto && toquerol_evento(&n20Telefone.rolagem, e); }
+static void n20TelefoneAcao(int i, int acao) {
+  (void)i;
+  if (aberto && !saindo && acao >= 0 && acao <= 4) ptAcao(acao, 0);
+}
+static void n20TelefoneEstado(int s, int c) {
+  if (!aberto || saindo || tipo() != c || c < 0 || c >= N20_NCAP || s < 0 || s >= nEst(c)) return;
+  est[c] = s;
+}
+static float n20TelefoneRico(const char *s, float x, float y, float w, float a) {
+  char texto[2048]; size_t n = 0;
+  const char *p = i18n(s);
+  // Keep the existing words. Bold markers belong to the TV rich-text parser;
+  // phone text wraps and bounds even a single overlong translated word.
+  while (*p && n + 1 < sizeof texto) {
+    if (!strncmp(p, "<b>", 3)) p += 3;
+    else if (!strncmp(p, "</b>", 4)) p += 4;
+    else texto[n++] = *p++;
+  }
+  texto[n] = 0;
+  return telefonecartao_texto(TXT_V2_24, texto, x, y, w, 33, a);
+}
+static float n20TelefoneControle(const char *rot, float x, float y, float w, int f,
+                                 PonteiroFn ativar, int i, int b, float a) {
+  if (a > 0) telefonecartao_botao_em(&n20Telefone, (GfxRect){x, y, w, 76}, rot, f,
+                                      NULL, ativar, i, b, a, 1);
+  return 88;
+}
+static void n20TelefonePrevia(int c, GfxRect r, float a) {
+  int k = chaveCena(c);
+  if (miniKey[miniCur] != k) {
+    miniKey[miniCur] = k; miniPronto[miniCur] = 0; miniVoltas[miniCur] = 0;
+  }
+  if (!miniPronto[miniCur]) renderCena(miniCur, c);
+  if (mini[miniCur].tex) gfx_mini_desenhar(&mini[miniCur], r, 20, a);
+}
+static float n20TelefoneCapitulos(float x, float y, float w, float a) {
+  float inicio = y;
+  y += telefonecartao_texto(TXT_AJ_SEG, "Capítulos", x, y, w, 30, .6f * a) + 16;
+  for (int i = 0; i < nLista; i++) {
+    int c = lista[i];
+    const char *rot = c == N20_HERO ? "Rever do começo" : c == N20_RESUMO ? "O que muda pra você" :
+                      c == N20_FIM ? "Fim do guia" : CAP[c].nome;
+    y += n20TelefoneControle(rot, x, y, w, i == idx, ptIr, i, 0, a);
+  }
+  return y - inicio;
+}
+static float n20TelefoneConteudo(float x, float y, float w, float a) {
+  float inicio = y; int t = tipo();
+  if (saindo) {
+    y += telefonecartao_titulo("Sair do guia?", x, y, w, a);
+    y += n20TelefoneRico("Você pode terminar depois. O guia fica guardado em <b>Ajustes › Sobre e ajuda › Novidades 2.0</b> e não abre sozinho de novo.", x, y, w, .7f * a);
+    return y - inicio + 24;
+  }
+  if (t == N20_HERO) {
+    y += telefonecartao_titulo("Nuvio 2.0", x, y, w, a);
+    y += telefonecartao_texto(TXT_G28R,
+       novo ? "Boas-vindas ao Nuvio. Este tour mostra o que a 2.0 trouxe; o resto do app está no Guia de uso. Dá uns quatro minutos."
+            : "Visual novo, servidores da sua casa e um monte de coisa que a gente tirou do caminho. Dá uns quatro minutos.",
+       x, y, w, 42, .82f * a) + 24;
+    y += telefonecartao_texto(TXT_G18R, "Seu aparelho", x, y, w, 28, .6f * a) + 8;
+    y += telefonecartao_texto(TXT_AJ_16B, devNome(), x, y, w, 28, a) + 24;
+  } else if (t >= 0) {
+    const Cap *C = &CAP[t]; char capitulo[96];
+    snprintf(capitulo, sizeof capitulo, i18n("Capítulo %d de %d"), posCap(t), nCapsVis());
+    y += telefonecartao_texto(TXT_AJ_16B, capitulo, x, y, w, 28, .6f * a) + 8;
+    y += telefonecartao_texto(TXT_AJ_SEG, GRUPO[C->g], x, y, w, 30, .6f * a) + 12;
+    y += telefonecartao_titulo(C->nome, x, y, w, a);
+    if (C->exp) y += telefonecartao_texto(TXT_AJ_SEG, "Experimental", x, y, w, 30, .7f * a) + 12;
+    float ph = fminf(320, n20Telefone.corpo.h * .5f), pw = ph * PEEK_W / PEEK_H;
+    if (pw > w) { ph *= w / pw; pw = w; }
+    if (a > 0) n20TelefonePrevia(t, (GfxRect){x + (w - pw) * .5f, y, pw, ph}, a);
+    y += ph + 16;
+    for (int s = 0; s < nEst(t); s++) y += n20TelefoneControle(C->st[s], x, y, w, est[t] == s, n20TelefoneEstado, s, t, a);
+    y += 12;
+    for (int i = 0; i < 3; i++) {
+      const Linha *l = &C->l[i]; int tem = temAqui(l->so);
+      y += n20TelefoneRico(l->t, x, y, w, (tem ? .9f : .42f) * a) + 12;
+      const char *tag = tem ? l->tag : "Não neste aparelho";
+      if (tag) y += telefonecartao_texto(TXT_AJ_SEG, tag, x, y, w, 30, .6f * a) + 12;
+      y += 12;
+    }
+    y += telefonecartao_texto(TXT_AJ_SEG, "Também", x, y, w, 30, .6f * a) + 16;
+    for (int i = 0; i < 6 && C->e[i].t; i++) {
+      const Linha *l = &C->e[i]; int tem = temAqui(l->so);
+      y += n20TelefoneRico(l->t, x, y, w, (tem ? .85f : .4f) * a) + 8;
+      const char *tag = tem ? l->tag : "Não neste aparelho";
+      if (tag) y += telefonecartao_texto(TXT_AJ_SEG, tag, x, y, w, 30, .6f * a) + 8;
+      y += 16;
+    }
+    y += n20TelefoneControle("pular para o resumo", x, y, w, 0, ptAcao, 4, 0, a);
+    y += n20TelefoneControle("Ver depois", x, y, w, 0, ptLater, 0, 0, a);
+  } else if (t == N20_RESUMO) {
+    static const char *const B[4] = { "Plugins", "Servidor P2P", "Opacidade do vidro / Vidro fosco", "Receber enquetes" };
+    static const char *const S[4] = { "Desligado, experimental", "Desligado, experimental", "Opções de teste", "Ligado, dá pra desligar" };
+    static const char *const AP[6] = { "Plugins", "P2P", "Opacidade do vidro e Vidro fosco", "Zoom do trailer (Tizen .tpk)", "AutoSync pelo áudio", "Cache de busca e volume até 200%" };
+    static const int SO[6] = { ALS, ALS, 0, DS, DA, DA };
+    y += telefonecartao_titulo("O que muda pra você", x, y, w, a);
+    if (essencial) y += telefonecartao_texto(TXT_V2_26, "Só o essencial.", x, y, w, 36, .6f * a) + 8;
+    y += telefonecartao_texto(TXT_V2_26, "Tudo isso já vem na 2.0. O que for experimental fica desligado até você ligar.", x, y, w, 36, .6f * a) + 24;
+    y += telefonecartao_texto(TXT_AJ_SEG, "Você vai notar logo", x, y, w, 30, .7f * a) + 16;
+    for (int c = 0; c < N20_NCAP; c++) if (!CAP[c].exp) y += telefonecartao_item("aj_check", CAP[c].nome, CAP[c].sum, x, y, w, a);
+    y += telefonecartao_texto(TXT_AJ_SEG, "Vem desligado ou em teste", x, y, w, 30, .7f * a) + 16;
+    for (int i = 0; i < 4; i++) y += telefonecartao_item(NULL, B[i], S[i], x, y, w, a);
+    char aparelho[96]; snprintf(aparelho, sizeof aparelho, i18n("No seu aparelho · %s"), devNome());
+    y += telefonecartao_texto(TXT_AJ_SEG, aparelho, x, y, w, 30, .7f * a) + 16;
+    for (int i = 0; i < 6; i++) {
+      int tem = temAqui(SO[i]);
+      y += telefonecartao_item(NULL, AP[i], tem ? "Disponível" : "Não neste aparelho", x, y, w, (tem ? 1 : .5f) * a);
+    }
+    y += n20TelefoneControle("rever do início", x, y, w, 0, ptAcao, 4, 0, a);
+  } else {
+    y += telefonecartao_texto(TXT_AJ_SEG, "Fim do guia", x, y, w, 30, .7f * a) + 16;
+    y += telefonecartao_titulo("Dúvida depois? O Guia de uso fica à mão.", x, y, w, a);
+    char trilha[256];
+    snprintf(trilha, sizeof trilha, "%s › %s › %s", i18n("Ajustes"), i18n("Sobre e ajuda"), i18n("Guia de uso"));
+    y += telefonecartao_texto(TXT_V2_24, trilha, x, y, w, 33, .85f * a) + 24;
+    y += n20TelefoneRico("O Guia de uso explica o que cada coisa faz, com busca. Dá pra abrir direto no recurso.", x, y, w, .9f * a) + 24;
+    y += n20TelefoneRico("Quer rever este tour? Está em <b>Sobre e ajuda › Novidades 2.0</b>.", x, y, w, .9f * a) + 24;
+    y += n20TelefoneControle("anterior", x, y, w, 0, ptAcao, 0, 0, a);
+  }
+  y += 24 + n20TelefoneCapitulos(x, y + 24, w, a);
+  return y - inicio + 24;
+}
+static void n20DesenharTelefone(void) {
+  int t = tipo(), n = saindo || t == N20_HERO ? 3 : t == N20_FIM ? nBotoesFim() : 3;
+  float a = anim_suave(entrada);
+  telefonecartao_medir(&n20Telefone, NV_TELA_W / gfx_escala(), NV_TELA_H / gfx_escala(), n);
+  float total = n20TelefoneConteudo(0, 0, n20Telefone.corpo.w, 0);
+  telefonecartao_comecar(&n20Telefone, total, idx + (saindo ? 100 : 0), aberto, n20TelefoneRolar, a);
+  n20TelefoneConteudo(n20Telefone.corpo.x, n20Telefone.corpo.y - n20Telefone.offset, n20Telefone.corpo.w, a);
+  gfx_sem_recorte();
+  if (saindo) {
+    static const char *const R[3] = { "Continuar", "Ver depois", "Sair mesmo assim" };
+    for (int i = 0; i < 3; i++) telefonecartao_botao(&n20Telefone, i, R[i], focoSair == i, ptSairFoco, ptSairOk, 0, a);
+  } else if (t == N20_HERO) {
+    static const char *const R[3] = { "Começar o guia", "Só o que muda pra mim", "Ver depois" };
+    for (int i = 0; i < 3; i++) telefonecartao_botao(&n20Telefone, i, R[i], focoHero == i, ptHeroFoco, ptHeroOk, 0, a);
+  } else if (t == N20_FIM) {
+    static const char *const R[3] = { "Abrir o Guia de uso", "Concluir", "Rever do começo" };
+    for (int i = 0; i < n; i++) telefonecartao_botao(&n20Telefone, i, R[botaoFim(i)], focoFim == i, ptFimFoco, ptFimOk, 0, a);
+  } else {
+    telefonecartao_botao(&n20Telefone, 0, "anterior", 0, NULL, n20TelefoneAcao, 0, a);
+    telefonecartao_botao(&n20Telefone, 1, t == N20_RESUMO ? "continuar" : "próximo", 1, NULL, n20TelefoneAcao, 1, a);
+    telefonecartao_botao(&n20Telefone, 2, "sair", 0, NULL, n20TelefoneAcao, 3, a);
+  }
+}
+#endif
+
 void novidades20_desenhar(Uint32 agora) {
   float a = anim_suave(entrada), dy = (1.0f - anim_suave(troca)) * 18.0f;
   int t;
   (void)agora;
   if (entrada < 0.002f) return;
+#ifdef NV_TOUCH_UI
+  if (telefoneui_ativo()) { ESCALA_INI(); n20DesenharTelefone(); ESCALA_FIM(); return; }
+#endif
   if (aberto) ponteiro_camada();
   t = tipo();
   if (t == N20_HERO) telaHero(a, 0);

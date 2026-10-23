@@ -21,6 +21,7 @@
 static Uint32 relogio = 100000;
 static Uint32 relogioTeste(void) { return relogio; }
 #define FC_AGORA() relogioTeste()
+#include "stub_perfisessao.h"
 #include "../src/fontecache.c"
 
 // --- dubles ------------------------------------------------------------------------
@@ -30,6 +31,7 @@ static int playerCarregando;
 int addons_ocupado(void)       { return buscaOcupada; }
 int player_carregando(void)    { return playerCarregando; }
 int addons_n(void)             { return 3; }
+int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 
 // A "rede": tres addons, cada um esperando o teste soltar (`solto[k]`) ou o
 // cancelamento. Registra o que viu para o teste conferir.
@@ -90,6 +92,12 @@ int addons_consultar(const char *id, const char *tipo, const char *base, int fio
   if (n <= 0) { free(l); return 0; }
   *saida = l;
   return n;
+}
+
+int addons_consultar_sessao(const char *id, const char *tipo, const char *base, int fios,
+                            int (*cancelado)(void *), void *ctx, Stream **saida, uint64_t sessao) {
+  assert(perfis_sessao_atual(sessao));
+  return addons_consultar(id, tipo, base, fios, cancelado, ctx, saida);
 }
 
 // --- apoio -----------------------------------------------------------------------

@@ -46,8 +46,8 @@ int prog_ler(ProgRegistro *saida, int max) {
   }
   return k;
 }
-int prog_gravar_local(const char *imdb, int t, int e, double p, double d) {
-  (void)imdb; (void)t; (void)e; (void)p; (void)d; return 1;
+int prog_gravar_local(const char *imdb, int t, int e, double p, double d, int tocou) {
+  (void)imdb; (void)t; (void)e; (void)p; (void)d; (void)tocou; return 1;
 }
 
 static CatItem lote[6];
@@ -93,7 +93,7 @@ int main(void) {
   printf("ok  titulos sem registro continuam zerados\n");
 
   // Assistir pelo tile (indice 3) e voltar: a copia do CW tambem anda.
-  cat_salvar_progresso_ep(3, 6480, 8640, 0, 0);
+  cat_salvar_progresso_ep(3, 6480, 8640, 0, 0, -1);
   assert(cat_item(3)->progresso == 75);
   assert(cat_item(0)->progresso == 75);
   printf("ok  gravar numa copia atualiza as outras copias da mesma obra\n");

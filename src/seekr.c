@@ -3,6 +3,7 @@
 #include "rede.h"
 #include "gfx.h"
 #include "jpegrapido.h"
+#include "horafmt.h"
 #include <SDL2/SDL.h>
 #ifndef __EMSCRIPTEN__
 #include <SDL2/SDL_image.h>
@@ -16,6 +17,7 @@
 
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static char     chave[96];
+static int      chavePropria;
 static unsigned geracao;
 static int      estado = SEEKR_DESLIGADO;
 static SeekrVtt vtt;
@@ -65,6 +67,9 @@ void seekr_definir_chave(const char *c) {
   expiraUtc = retryUtc = 0; ultimoHttp = 0; ultimaLatencia = 0;
   pthread_mutex_unlock(&trava);
 }
+void seekr_chave_propria(int propria) {
+  pthread_mutex_lock(&trava); chavePropria = propria != 0; pthread_mutex_unlock(&trava);
+}
 int seekr_tem_chave(void) {
   int r; pthread_mutex_lock(&trava); r = chave[0] != 0; pthread_mutex_unlock(&trava);
   return r;
@@ -97,10 +102,16 @@ const char *seekr_estado_rotulo(int est) {
 int seekr_horario_local(long long utc, char *saida, size_t tamanho) {
   struct tm local;
   time_t instante = (time_t)utc;
+  char h[16];
   if (!saida || !tamanho) return 0;
   saida[0] = 0;
   if (utc <= 0 || (long long)instante != utc || !localtime_r(&instante, &local)) return 0;
-  return strftime(saida, tamanho, "%d/%m %H:%M", &local) != 0;
+  // HORA DE TELA (horafmt.h): segue Ajustes > Formato do relogio, como o
+  // relogio de cima. O strftime "%d/%m %H:%M" ignorava o relogio de 12 h e a
+  // linha do OSD ("Renova em ...", "Tente apos ...") saia em 24 h.
+  hora_tela(h, sizeof h, &local);
+  snprintf(saida, tamanho, "%02d/%02d %s", local.tm_mday, local.tm_mon + 1, h);
+  return saida[0] != 0;
 }
 void seekr_uso(SeekrUso *uso) {
   if (!uso) return;
@@ -108,7 +119,8 @@ void seekr_uso(SeekrUso *uso) {
   seekrquota_uso((long long)time(NULL), &q);
   pthread_mutex_lock(&trava);
   *uso = (SeekrUso){q.usadas, q.restantes, q.limite, q.relogioAtrasado,
-                   q.persistente, q.reinicioUtc, retryUtc, ultimoHttp, ultimaLatencia};
+                   q.persistente, q.reinicioUtc, retryUtc, ultimoHttp, ultimaLatencia,
+                   chavePropria};
   pthread_mutex_unlock(&trava);
 }
 void seekr_tentar_novamente(void) {
@@ -194,7 +206,8 @@ static void *consultar(void *u) {
     pthread_mutex_unlock(&trava);
     long long agora = (long long)time(NULL);
     if (freio > agora) { novo = SEEKR_LIMITE_PROVEDOR; repetir = freio; break; }
-    int reserva = seekrquota_reservar(agora);
+    pthread_mutex_lock(&trava); int propria = chavePropria; pthread_mutex_unlock(&trava);
+    int reserva = propria ? SEEKR_QUOTA_OK : seekrquota_reservar(agora);
     if (reserva != SEEKR_QUOTA_OK) {
       novo = reserva == SEEKR_QUOTA_LIMITE ? SEEKR_LIMITE_LOCAL :
              reserva == SEEKR_QUOTA_RELOGIO ? SEEKR_RELOGIO_INDISPONIVEL :
@@ -257,9 +270,9 @@ static void *consultar(void *u) {
                      novo == SEEKR_ARMAZENAMENTO_INDISPONIVEL ? "storage" :
                      novo == SEEKR_RELOGIO_INDISPONIVEL ? "clock_unset" :
                      novo == SEEKR_SEM_PREVIA ? "no_preview" : "ready";
-  printf("[seekr] lookup result=%s used=%d limit=50\n", razao, uso.usadas);
-  printf("[seekr] lookup http=%d state=%d attempts=%d cues=%d sheets=%d used=%d limit=50 latency_ms=%u\n",
-         st, novo, tentativas, n, v.nFolhas, uso.usadas, latencia);
+  printf("[seekr] lookup result=%s used=%d limit=%d\n", razao, uso.usadas, chavePropria ? 0 : SEEKR_QUOTA_DIA);
+  printf("[seekr] lookup http=%d state=%d attempts=%d cues=%d sheets=%d used=%d limit=%d latency_ms=%u\n",
+         st, novo, tentativas, n, v.nFolhas, uso.usadas, chavePropria ? 0 : SEEKR_QUOTA_DIA, latencia);
   fflush(stdout);
   pthread_mutex_lock(&trava);
   for (int i = 0; i < SK_LOOKUPS; i++) if (consultas[i] == p) consultas[i] = NULL;

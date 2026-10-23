@@ -13,6 +13,7 @@
  * A rede e substituida: cada tamanho do TMDB devolve um JPEG da largura
  * real daquele tamanho (argv[1..3]: 780, 1280 e 1600 de largura). */
 #include <stdio.h>
+#include "nvtmp.h"
 #include <assert.h>
 #include <unistd.h>
 #define rede_baixar_bin redeTeste
@@ -87,7 +88,7 @@ static int promoveu(int idx, int limite) {
 }
 
 int main(int argc, char **argv) {
-  char dir[] = "/tmp/nuvio-texvariante-XXXXXX", dst[600], arq[600], cmd[700];
+  char dir[NVT_MAX], dst[600], arq[600], cmd[700]; nvt_set(dir, sizeof dir, "/nuvio-texvariante-XXXXXX");
   assert(argc == 4);
   arqW780 = argv[1]; arqW1280 = argv[2]; arqOrig = argv[3];
   assert(mkdtemp(dir));
@@ -99,6 +100,35 @@ int main(int argc, char **argv) {
   { char m[600]; FILE *fm; snprintf(m, sizeof m, "%s/.limpo-143", dir);
     fm = fopen(m, "w"); if (fm) { fputs("1\n", fm); fclose(fm); } }
   tex_cache_dir(dir);
+
+  /* Requests use the same layer and drawable scales as rendering. A 288px
+   * card in a 1.5x layer draws at 432px on 1080p, or 288px on 720p. */
+  {
+    const char *poster = "https://image.tmdb.org/t/p/w500/surface-card.jpg";
+    char variant[600];
+    float previous = gfx_escala();
+    for (int quality = 0; quality <= 2; quality++) {
+      tex_qualidade(quality);
+      gfx_escala_sair(1.5f);
+      tex_escala(1920.0f / NV_TELA_BASE_W);
+      (void)tex_obter_larg(poster, 288.0f);
+      int k = acharIndice(poster, hashCaminho(poster));
+      assert(k >= 0 && itens[k].limite >= 432);
+      assert(!arte_tamanho_url(poster, limiteDaVariante(&itens[k]), variant, sizeof variant));
+      memset(itens, 0, sizeof itens); filaIni = filaFim = 0;
+
+      tex_escala(1280.0f / NV_TELA_BASE_W);
+      int cap = capDeLargura(288.0f);
+      assert(cap == (quality == 0 ? 288 : quality == 1 ? 384 : 480));
+      int changed = arte_tamanho_url(poster, cap, variant, sizeof variant);
+      assert(quality == 0 ? changed && strstr(variant, "/w300/") : !changed);
+
+      gfx_escala_sair(1.0f); tex_escala(1.0f);
+      assert(capDeLargura(220.0f) == (quality == 0 ? 224 : quality == 1 ? 288 : 352));
+    }
+    gfx_escala_sair(previous); tex_qualidade(1); tex_escala(1.0f);
+    puts("ok  output-pixel request caps preserve w500 on 1080p and 720p sizing");
+  }
 
   /* 1. Card a 704: baixa w780, chave continua a original. */
   { int foi = 0;
@@ -164,6 +194,50 @@ int main(int argc, char **argv) {
     assert(!strcmp(ultimaUrl, png) && itens[3].limiteTamanho == 0);
     soltarBruto(&itens[3]);
     puts("ok  host desconhecido baixa a URL como veio"); }
+
+  /* 6. AQUECIMENTO DO DESTAQUE (07/10, TCL): tex_arquivo pede 128 px, e o
+   *    fio de rede pega o item ANTES de o pedido do destaque (1920) chegar.
+   *    Antes: baixava a variante de 128 (w300), o destaque promovia e ia a
+   *    rede de novo pela grande — dois downloads, prazo de 600 ms estourado.
+   *    Agora: um download so, ja da variante do destaque. */
+  { int foi = 0, k, antes;
+    const char *URL = "https://image.tmdb.org/t/p/original/aquecido.jpg";
+    filaIni = filaFim = 0;
+    memset(itens, 0, sizeof itens);
+    antes = downloads;
+    assert(tex_arquivo(URL) == NULL);
+    for (k = 0; k < nMax && strcmp(itens[k].caminho, URL); k++) {}
+    assert(k < nMax && itens[k].limite == 128 && itens[k].limiteArquivo == tetoDoHeroi());
+    assert(baixarParaItem(k, URL, dst, sizeof dst, &foi, NULL) == 1);
+    printf("    aquecimento baixou: %s\n", ultimaUrl);
+    assert(foi == 1 && downloads == antes + 1 && !strstr(ultimaUrl, "/w300/"));
+    (void)tex_obter_limite(URL, 1920, 1, 0);   /* o destaque, no mesmo quadro */
+    decodificar(k);
+    printf("    destaque: %dx%d tetoUsado=%d\n", itens[k].w, itens[k].h, itens[k].tetoUsado);
+    assert(itens[k].w == 1600 && !promoveu(k, 1920) && downloads == antes + 1);
+    puts("ok  aquecimento + destaque no mesmo quadro: um download, ja grande"); }
+
+  /* 7. Aquecimento decodificado a 128 antes (foco andando na fileira): a
+   *    promocao a heroi le o arquivo aquecido, sem rede. */
+  { int foi = 1, k, antes;
+    const char *URL = "https://image.tmdb.org/t/p/original/aquecido2.jpg";
+    filaIni = filaFim = 0;
+    memset(itens, 0, sizeof itens);
+    antes = downloads;
+    assert(tex_arquivo(URL) == NULL);
+    for (k = 0; k < nMax && strcmp(itens[k].caminho, URL); k++) {}
+    assert(k < nMax);
+    assert(baixarParaItem(k, URL, dst, sizeof dst, &foi, NULL) == 1);
+    decodificar(k);
+    assert(itens[k].w == 128 && downloads == antes + 1);
+    tex_cache_esperar_gravacoes();
+    assert(promoveu(k, 1920));
+    foi = 1;
+    assert(baixarParaItem(k, URL, dst, sizeof dst, &foi, NULL) == 1);
+    assert(foi == 0 && downloads == antes + 1);
+    decodificar(k);
+    assert(itens[k].w == 1600);
+    puts("ok  aquecido a 128, promovido a heroi: le o arquivo, sem segundo download"); }
 
   tex_cache_esperar_gravacoes();
   snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir); assert(system(cmd) == 0);

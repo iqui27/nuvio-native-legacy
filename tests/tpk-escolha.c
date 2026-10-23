@@ -17,23 +17,30 @@
 #include <SDL2/SDL.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include "nvtmp.h"
 
+// These fixtures never resolve a TorBox file link. Fail closed if requested.
+int debrid_tb_link(int usenet, int item, int file, char *dst, unsigned n) {
+  (void)usenet; (void)item; (void)file;
+  if (n) dst[0] = 0;
+  return 0;
+}
 const char *i18n(const char *s) { return s; }
 const char *ling_nome(const char *c) { return c; }
 int ling_casa(const char *c, const char *p) { (void)c; (void)p; return 0; }
 const char *ling_audio(void) { return ""; }
+const char *ling_audio2(void) { return ""; }
+const char *ling_original(void) { return ""; }
+int ling_tipo_legenda(const char *s, int f, int d) { (void)s; (void)f; (void)d; return 0; }
+const char *ling_tipo_legenda_rotulo(int t) { (void)t; return ""; }
+
 
 // Stubs for the dependencies #206 added to video_tpk.c (MKV header probe);
 // not the subject of this test.
 const char *ling_do_nome(const char *nome) { (void)nome; return NULL; }
 int ling_letreiro(const char *nome, int forcado) { (void)nome; (void)forcado; return 0; }
 void mkvass_aceitar_texto(int sim) { (void)sim; }
-int mkvass_cabecalho(const char *url, unsigned char **buf, long *n) {
-  (void)url; if (buf) *buf = NULL; if (n) *n = 0; return 0;
-}
-char *rede_baixar_trecho(const char *url, int segundos, long ini, long fim, long *tam) {
-  (void)url; (void)segundos; (void)ini; (void)fim; if (tam) *tam = 0; return NULL;
-}
+void mkvass_aceitar_imagem(int sim) { (void)sim; }
 
 void nv_tpk_video_registrar(void (*)(const char *, const char *), void (*)(void), void (*)(int),
                             void (*)(int), void (*)(int), void (*)(int, int, int, int), int (*)(void));
@@ -69,7 +76,7 @@ static int saidaFd = -1;
 static char saidaCam[512];
 static void capturar(void) {
   const char *d = getenv("TMPDIR");
-  snprintf(saidaCam, sizeof saidaCam, "%s/nuvio-tpk-escolha-log.txt", d && *d ? d : "/tmp");
+  snprintf(saidaCam, sizeof saidaCam, "%s/nuvio-tpk-escolha-log.txt", d && *d ? d : nvt_dir());
   fflush(stdout); saidaFd = dup(1);
   if (!freopen(saidaCam, "w", stdout)) saidaFd = -1;
 }
@@ -96,6 +103,15 @@ int main(void) {
   video_tocar("http://x/filme.mkv");
   nv_tpk_video_evento(6, 1920, 1080);
   nv_tpk_video_evento(1, 100000, 0);
+  Uint64 stamp, before = SDL_GetTicks64();
+  fakePosMs = 12500;
+  ok("native sample reads host position", video_pos_amostra(&stamp) == 12.5 && stamp >= before);
+  fakePosMs = 0;
+  video_velocidade(150); video_taxa_sync(950); video_bombear();
+  ok("sync multiplies without replacing personal speed", ultVel == 143 && video_velocidade_atual() == 150);
+  video_taxa_sync(1000); video_bombear();
+  ok("clearing sync restores personal speed", ultVel == 150);
+  video_velocidade(100); video_bombear(); nVels = 0;
   // 1 audio (ko) and 2 subtitles (ru, en); the file opens on its own default.
   nv_tpk_video_faixa(0, 0, "ko");
   nv_tpk_video_faixa(1, 0, "ru");
@@ -190,6 +206,7 @@ int main(void) {
   // #269 MKV PROBE STATE: the subtitle sheet waits for 1 before routing a text
   // track to the app overlay. It used to be a constant 2 ("not MKV") here.
   video_definir_mp4(0);
+  video_definir_reconexao(1);
   video_tocar("http://x/sonda.mkv");
   ok("probe pending on a fresh MKV source", video_mkv_sondado() == 0);
   video_definir_mp4(1);

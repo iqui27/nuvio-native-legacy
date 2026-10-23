@@ -74,6 +74,12 @@ void desc_repetir(void)         { nRepetir++; }
 const char *i18n(const char *s) { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
 
+char *rede_postar_st_retry(const char *url, int segundos, const char *const *cab,
+                           const char *corpo, int *status, int *retry) {
+  if (retry) *retry = 0;
+  return rede_postar_st(url, segundos, cab, corpo, status);
+}
+
 // ---- cenario ----------------------------------------------------------------
 
 static void zera(void) {

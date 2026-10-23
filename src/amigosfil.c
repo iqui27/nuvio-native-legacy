@@ -3,6 +3,7 @@
 #include "socialvis.h"
 #include "svdesenho.h"
 #include "catalogo.h"
+#include "artehero.h"
 #include "recomenda.h"
 #include "recenviar.h"
 #include "celbotao.h"
@@ -10,8 +11,11 @@
 #include "anim.h"
 #include "gfx.h"
 #include "text.h"
+#define NV_TXT_TELA   // called inside home's text-scale layer: NV_TELA_W/H = virtual screen (escala.h)
+#include "escala.h"
 #include "layout.h"
 #include "idioma.h"
+#include "rolagemtoque.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -48,12 +52,28 @@ static int temTitulo, temPerfil, temAjustes;
 // por quadro e cat_indice_por_imdb varre o catalogo).
 static unsigned cacheRev = ~0u, cacheCat = ~0u;
 static int cacheCol = -2, cacheDentro = -2, cacheIdx = -1;
+#ifdef NV_TOUCH_UI
+static ToqueRolagem toque;
+static PonteiroFn toqueFocar;
+void amigosfil_ponteiro(PonteiroFn focar) { toqueFocar = focar; }
+int amigosfil_rolagem(const PonteiroRolagem *e) {
+  int r = toquerol_evento(&toque, e);
+  if (r && e->fase == PONT_ROL_INICIO) vScroll = 0.0f;
+  return r;
+}
+void amigosfil_focar(int coluna, int cartao) {
+  toquerol_limpar(&toque);
+  colAnt = coluna; dentro = cartao;
+}
+#endif
 
+static int afNum(void);
 int amigosfil_dentro(void) { return dentro; }
 int amigosfil_convite(void) { return socialvis_n_amigos() == 0; }
 int amigosfil_n_colunas(void) {
   int n = socialvis_n_amigos();
-  return n > 0 ? n + 1 : 1;
+  if (ajustes_amigos_estilo() != 5) return n > 0 ? afNum() : 1;
+  return n > 0 ? n : 1;
 }
 
 static float molaIlha(float *v, float x, float alvo, float dt) {
@@ -89,8 +109,50 @@ static float rostoX(int i, float x0, float alt) {
   for (j = 0; j < i && j < SV_AMIGOS_MAX; j++) x += empurra(j, alt);
   return x;
 }
+static float amigosfilDireita(void) {
+#ifdef NV_TOUCH_UI
+  if (NV_TELA_H > NV_TELA_W) {
+    float margem = ajustes_rail_largura_fixa() > 0.0f ? fmaxf(48.0f, ajustes_conteudo_x()) : 48.0f;
+    return NV_TELA_W - margem;
+  }
+#endif
+  return NV_TELA_W - NV_HOME_SAFE_RIGHT;
+}
+#ifdef NV_TOUCH_UI
+static void amigosfilToqueVincular(float x0, float y, float alt, float corte, int n) {
+  float direita = amigosfilDireita();
+  float maxX = fmaxf(0.0f, rostoX(n > 0 ? n - 1 : 0, x0, alt) + scroll + AF_D + (n > 0 ? empurra(n - 1, alt) : 0.0f) + 30.0f - direita);
+  float topo = fmaxf(y, corte), base = fminf(y + alt, NV_TELA_H);
+  toquerol_vincular(&toque, (GfxRect){x0, topo, fmaxf(0.0f, direita - x0), fmaxf(0.0f, base - topo)},
+                   gfx_escala(), 0.0f, n > 0 ? maxX : 0.0f, 0, &scroll);
+}
+void amigosfil_retomar_foco(int *coluna) {
+  if (toquerol_livre(&toque) && coluna) {
+    float ponto = toque.regiao.x + toque.regiao.w * 0.35f, melhor = 1e9f;
+    int n = amigosfil_n_colunas();
+    for (int i = 0; i < n; i++) {
+      float d = fabsf(rostoX(i, ultX0, ultAlt) + AF_D * 0.5f - ponto);
+      if (d < melhor) { melhor = d; *coluna = i; }
+    }
+    dentro = -1;
+  }
+  toquerol_limpar(&toque);
+}
+static void alvoToque(GfxRect r, float corte, int coluna, int cartao) {
+  float x = fmaxf(r.x, ultX0), dir = fminf(r.x + r.w, toque.regiao.x + toque.regiao.w);
+  if (toqueFocar && dir > x)
+    ponteiro_alvo_faixa(x, r.y, dir - x, r.h, corte, NV_TELA_H, toqueFocar, NULL, coluna, cartao);
+}
+#endif
+
+#include "amigosfil_estilos.inc"
 
 int amigosfil_indice_cat(int coluna) {
+  if (ajustes_amigos_estilo() != 5) {
+    afMontar();
+    const SvEvento *ev = afEvento(coluna);
+    return ev ? cat_indice_por_imdb(ev->imdb) : -1;
+  }
   const SvAmigo *a = socialvis_amigo(coluna);
   const SvEvento *e;
   int d;
@@ -108,14 +170,19 @@ int amigosfil_indice_cat(int coluna) {
 int amigosfil_tecla(SDL_Keycode k, int *coluna) {
   int n = socialvis_n_amigos();
   const SvAmigo *a;
+  if (ajustes_amigos_estilo() != 5) return 0;
   if (!coluna || n < 1) return 0;          // convite: a home cuida (borda/menu)
+#ifdef NV_TOUCH_UI
+  if (k == SDLK_UP || k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_RIGHT)
+    amigosfil_retomar_foco(coluna);
+#endif
   a = socialvis_amigo(*coluna);
   if (k == SDLK_RIGHT) {
-    if (!a) return 0;                      // "+ Adicionar": a home bate na borda
+    if (!a) return 0;
     if (dentro + 1 < a->nTit) { dentro++; return 1; }
     // Do ultimo cartao (ou de um rosto sem titulos) para o proximo rosto.
     if (*coluna + 1 < amigosfil_n_colunas()) { (*coluna)++; dentro = -1; return 1; }
-    return 0;
+    return 0;                              // ultimo rosto: a home bate na borda
   }
   if (k == SDLK_LEFT) {
     if (dentro >= 0) { dentro = -1; return 1; }
@@ -127,7 +194,18 @@ int amigosfil_tecla(SDL_Keycode k, int *coluna) {
 
 void amigosfil_ok(int coluna) {
   const SvAmigo *a;
+  if (ajustes_amigos_estilo() != 5 && !amigosfil_convite()) {
+    afMontar();
+    const SvEvento *ev = afEvento(coluna);
+    const SvAmigo *am = afAmigo(coluna);
+    if (ev && ev->imdb[0]) { snprintf(pedTitulo, sizeof pedTitulo, "%s", ev->imdb); temTitulo = 1; }
+    else if (am) { snprintf(pedPerfil, sizeof pedPerfil, "%s", am->id); temPerfil = 1; }
+    return;
+  }
   if (amigosfil_convite()) {
+    if (ajustes_amigos_estilo() == 0 && recomenda_ativo() && celb_disponivel()) {
+      celb_abrir_embutido(CELB_AMIGO, i18n("Código do amigo")); return;
+    }
     // O QR DO CELULAR quando o pacote tem o servidor dele; senao a tela de
     // amigos com o codigo; sem o servico de recomendacoes, Ajustes.
     if (recomenda_ativo() && celb_disponivel()) { celb_abrir(CELB_AMIGO, "Código do amigo"); return; }
@@ -136,10 +214,7 @@ void amigosfil_ok(int coluna) {
     return;
   }
   a = socialvis_amigo(coluna);
-  if (!a) {
-    if (!recomenda_ativo() || !recenviar_abrir_amigos()) temAjustes = 1;
-    return;
-  }
+  if (!a) return;
   if (dentro >= 0 && dentro < a->nTit) {
     snprintf(pedTitulo, sizeof pedTitulo, "%s", a->tit[dentro].imdb);
     temTitulo = 1;
@@ -165,7 +240,7 @@ int amigosfil_pediu_perfil(char *id, size_t tam) {
 int amigosfil_pediu_ajustes(void) { int v = temAjustes; temAjustes = 0; return v; }
 
 static float alvoScroll(int coluna, float x0, float alt) {
-  float alvo, util = NV_TELA_W - NV_HOME_SAFE_RIGHT;
+  float alvo, util = amigosfilDireita();
   const SvAmigo *a = socialvis_amigo(coluna);
   int j;
   // Um rosto inteiro antes do focado fica a vista, e o painel aberto inteiro
@@ -182,6 +257,12 @@ void amigosfil_atualizar(float dt, int focada, int *colunaP) {
   int n, i, red = ajustes_animacoes_reduzidas(), coluna;
   const SvAmigo *a;
   socialvis_atualizar();
+  if (ajustes_amigos_estilo() != 5) {
+    char t[64];
+    if (celb_pegar(CELB_AMIGO, t, sizeof t)) recomenda_vincular(t);
+    afAtualizar(dt, focada, colunaP); return;
+  }
+  if (afEstilo != 5) afMontar();
   n = socialvis_n_amigos();
   coluna = colunaP ? *colunaP : 0;
   // O MODELO MUDOU (chegou atividade): o foco segue a PESSOA, e nao o indice —
@@ -203,7 +284,7 @@ void amigosfil_atualizar(float dt, int focada, int *colunaP) {
   a = socialvis_amigo(coluna);
   if (a && strcmp(a->id, focoId)) { snprintf(focoId, sizeof focoId, "%s", a->id); abertoDesde = 0; }
   if (a && dentro >= a->nTit) dentro = a->nTit - 1;
-  for (i = 0; i <= n && i <= SV_AMIGOS_MAX; i++) {
+  for (i = 0; i < n && i <= SV_AMIGOS_MAX; i++) {
     float alvo = (focada && i == coluna) ? 1.0f : 0.0f;
     const SvAmigo *ai = socialvis_amigo(i);
     float alvoAbre = (alvo > 0.0f && ai && ai->nTit > 0) ? 1.0f : 0.0f;
@@ -217,7 +298,10 @@ void amigosfil_atualizar(float dt, int focada, int *colunaP) {
   }
   if (ultX0 >= 0.0f) {
     float alvo = n > 0 && focada ? alvoScroll(coluna, ultX0, ultAlt) : (n > 0 ? scroll : 0.0f);
-    scroll = anim_mola2_reduzida(&vScroll, scroll, alvo, dt, NV_MOLA2_SCROLL, red);
+#ifdef NV_TOUCH_UI
+    if (!toquerol_livre(&toque))
+#endif
+      scroll = anim_mola2_reduzida(&vScroll, scroll, alvo, dt, NV_MOLA2_SCROLL, red);
   }
   // A NOVIDADE FOI VISTA quando o painel ficou aberto um instante — e nao no
   // primeiro quadro: passar pela fileira com o dedo na seta nao e olhar.
@@ -228,7 +312,7 @@ void amigosfil_atualizar(float dt, int focada, int *colunaP) {
 }
 
 static void desenhaConvite(float x0, float y, float alt, int focada, Uint32 agora) {
-  float w = NV_TELA_W - NV_HOME_SAFE_RIGHT - x0, h = alt - 24.0f;
+  float w = amigosfilDireita() - x0, h = alt - 24.0f;
   float f = focada ? 1.0f : 0.0f, raio = 26.0f / h;
   GfxRect r;
   const char *cod = recomenda_meu_codigo();
@@ -285,14 +369,26 @@ static void desenhaConvite(float x0, float y, float alt, int focada, Uint32 agor
 void amigosfil_desenhar(float x0, float y, float alt, float corte, int focada,
                         int coluna, Uint32 agora) {
   int n = socialvis_n_amigos(), i;
+  if (ajustes_amigos_estilo() != 5) {
+    ultX0 = x0; ultAlt = alt;
+    afDesenhar(x0, y, corte, focada, coluna, agora); return;
+  }
   float fy = y + 24.0f;
   // A rolagem anda em _atualizar, com a margem e a altura do ultimo desenho
   // (a rail fixa muda x0).
   if (ultX0 < 0.0f && focada) scroll = alvoScroll(coluna, x0, alt);
   ultX0 = x0; ultAlt = alt;
-  if (n < 1) { desenhaConvite(x0, y, alt, focada, agora); return; }
+#ifdef NV_TOUCH_UI
+  amigosfilToqueVincular(x0, y, alt, corte, n);
+#endif
+  if (n < 1) {
+#ifdef NV_TOUCH_UI
+    alvoToque((GfxRect){ x0, y, toque.regiao.w, alt }, corte, 0, -1);
+#endif
+    desenhaConvite(x0, y, alt, focada, agora); return;
+  }
 
-  for (i = 0; i <= n && i <= SV_AMIGOS_MAX; i++) {
+  for (i = 0; i < n && i <= SV_AMIGOS_MAX; i++) {
     float rx = rostoX(i, x0, alt);
     const SvAmigo *a = socialvis_amigo(i);
     float fr = fRosto[i];
@@ -317,15 +413,22 @@ void amigosfil_desenhar(float x0, float y, float alt, float corte, int focada,
           GfxRect c = { px + AF_PAD + (float)k * (larguraCartao(alt) + AF_GAP_CART),
                         py + AF_PAD, larguraCartao(alt), alturaCartao(alt) };
           float fc = (focada && i == coluna) ? fCartao[k] : 0.0f;
+#ifdef NV_TOUCH_UI
+          { GfxRect alvo = c;
+            if (alvo.x + alvo.w > pr.x + pr.w) alvo.w = pr.x + pr.w - alvo.x;
+            if (ca > 0.5f) alvoToque(alvo, corte, i, k); }
+#endif
           svd_cartao(c, &a->tit[k], fc, ca, agora);
         }
         gfx_recorte(0.0f, corte, NV_TELA_W, NV_TELA_H - corte);
       }
     }
     if (rx + AF_D < -40.0f) continue;
-    if (a) svd_rosto(face, a, fr, 1.0f, agora);
-    else svd_rosto_acao(face, "mais", fr, 1.0f);
-    { const char *nome = a ? a->nome : "Adicionar";
+    svd_rosto(face, a, fr, 1.0f, agora);
+#ifdef NV_TOUCH_UI
+    alvoToque((GfxRect){ face.x, face.y, face.w, face.h + 64.0f }, corte, i, -1);
+#endif
+    { const char *nome = a->nome;
       TxtLinha rep = txt_linha_corta(TXT_CAPTION, nome, 214, 212, 222, 255, AF_P - 16.0f);
       TxtLinha foc = txt_linha_corta(TXT_CAPTION, nome, 255, 255, 255, 255, AF_P - 16.0f);
       float nx = rx + (AF_D - (float)rep.w) * 0.5f;
@@ -333,3 +436,4 @@ void amigosfil_desenhar(float x0, float y, float alt, float corte, int focada,
       svd_txt_foco(rep, foc, nx, fy + AF_D + 30.0f, svd_foco_visual(fr), 1.0f); }
   }
 }
+

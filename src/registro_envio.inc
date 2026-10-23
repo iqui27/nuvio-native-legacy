@@ -10,6 +10,10 @@
 static int envAberto, envFoco;
 static long envTam;          // bytes que vao (o fim do arquivo, ate 200 KB)
 static int envLinhasArq;
+#ifdef NV_TOUCH_UI
+static TelefoneCartao envTelefone;
+static int envTelefoneGeracao;
+#endif
 #ifdef REGISTRO_TESTE
 static int envTesteFixo;     // o harness fixa o estado (avisos_teste_envio)
 #endif
@@ -43,6 +47,9 @@ static void envMedir(void) {
 }
 
 void registro_envio_abrir(void) {
+#ifdef NV_TOUCH_UI
+  telefonecartao_limpar(&envTelefone); envTelefoneGeracao++;
+#endif
   envAberto = 1; envFoco = 0;
   fflush(stdout);
   envMedir();
@@ -66,7 +73,7 @@ int registro_envio_evento(const SDL_Event *e) {
   if (e->type != SDL_KEYDOWN) return e->type == SDL_KEYUP || e->type == SDL_TEXTINPUT;
   k = e->key.keysym.sym;
   avisos_envio_info(&env);
-  if (ehVoltar(e)) { envAberto = 0; engolirSoltura(e); return 1; }   // o envio continua
+  if (nv_tecla_voltar(e)) { envAberto = 0; engolirSoltura(e); return 1; }   // o envio continua
   if (env.estado == 3) {
     int podeTentar = env.motivo != AVISOS_ENVIO_OFFLINE && env.motivo != AVISOS_ENVIO_INDISPONIVEL;
     // Erro: [Tentar de novo] [Fechar]. Sem internet: [Fechar] [Tentar apagado].
@@ -140,6 +147,20 @@ static float rgBotao(const char *rot, const char *icone, float x, float y, int f
   txt_desenhar_alpha(t, x + 28 + (icone ? 30 : 0), y + (56 - t.h) * 0.5f, (foco ? 1.0f : 0.88f) * a);
   return w;
 }
+// PONTEIRO (#99): no erro com "Tentar de novo" possivel, foco pela mesma
+// variavel das setas (0 = Tentar de novo, 1 = Fechar); o OK do clique segue
+// por registro_envio_evento. Os outros estados tem um botao so (camada sem
+// alvos: o clique e o OK).
+static void ponteiroEnvio(int i, int b) {
+  AvisosEnvio env;
+  (void)b;
+  if (!envAberto || (i != 0 && i != 1) || envFoco == i) return;
+  if (avisos_envio_info(&env) != 3 || env.motivo == AVISOS_ENVIO_OFFLINE ||
+      env.motivo == AVISOS_ENVIO_INDISPONIVEL) return;
+  envFoco = i;
+}
+int registro_envio_teste_foco(void) { return envFoco; }
+
 static void rgTamTexto(char *d, size_t tam, long bytes) {
   long kb = (bytes + 512) / 1024;
   snprintf(d, tam, "%ld KB", kb);
@@ -157,6 +178,149 @@ static void rgMilhar(char *d, size_t tam, long n) {
   d[j] = 0;
 }
 
+#ifdef NV_TOUCH_UI
+static int envTelefoneChave(const AvisosEnvio *e) { return envTelefoneGeracao * 1000 + e->estado * 100 + e->motivo; }
+static int envTelefoneRolar(const PonteiroRolagem *e) {
+  if (!envAberto || !telefoneui_ativo()) return 0;
+  return toquerol_evento(&envTelefone.rolagem, e);
+}
+static void envTelefoneEscolher(int i, int chave) {
+  AvisosEnvio env; SDL_Event e;
+  if (!envAberto || !telefoneui_ativo()) return;
+  avisos_envio_info(&env);
+  if (chave != envTelefoneChave(&env)) return;
+  int retry = env.estado == 3 && env.motivo != AVISOS_ENVIO_OFFLINE && env.motivo != AVISOS_ENVIO_INDISPONIVEL;
+  if (i < 0 || i > retry) return;
+  envFoco = retry ? i : 1;
+  memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RETURN;
+  registro_envio_evento(&e);
+}
+static float envTelefoneStat(const char *nome, const char *valor, float x, float y, float w, float a) {
+  float h = telefonecartao_texto(TXT_AJ_ESTADO, nome, x, y, w, 28, .45f * a);
+  return h + 4 + telefonecartao_texto(TXT_AJ_ESTADO, valor, x, y + h + 4, w, 28, .8f * a) + 18;
+}
+static float envTelefoneConteudo(const AvisosEnvio *env, float x, float y, float w, float al) {
+  float inicio = y;
+  char kb[32], v[200], a[96], s[160];
+  const char *tit, *txt;
+  rgTamTexto(kb, sizeof kb, env->bytes ? env->bytes : envTam);
+  rgAparelho(a, sizeof a, s, sizeof s, NULL, 0);
+  if (env->estado == 2) {
+    y += telefonecartao_texto(TXT_AJ_ESTADO, "Registro enviado", x, y, w, 28, .68f * al) + 12;
+    tit = env->codigo[0] ? "Informe este código a quem faz o app" : "Registro enviado";
+    txt = env->codigo[0] ? "No grupo ou na issue do GitHub. Com ele, dá para achar este registro entre os outros."
+                         : "O servidor guardou o registro, mas não devolveu um código para ele.";
+    y += telefonecartao_titulo(tit, x, y, w, al);
+    y += telefonecartao_texto(TXT_AJ_TEXTO, txt, x, y, w, 30, .62f * al) + 24;
+    if (env->codigo[0]) {
+      float bw = 90;
+      for (int i = 0; i < 6 && env->codigo[i]; i++) {
+        char c[2] = {env->codigo[i], 0};
+        bw = fmaxf(bw, txt_largura(TXT_LOG_COD, c) + 24);
+      }
+      int cols = w >= 6 * bw + 5 * 14 ? 6 : 3, n = 0;
+      for (int i = 0; i < 6 && env->codigo[i]; i++, n++) {
+        char c[2] = {env->codigo[i], 0};
+        GfxRect r = {x + (i % cols) * (bw + 14), y + (i / cols) * 144, bw, 130};
+        if (al > 0) {
+          TxtLinha l = rgT(TXT_LOG_COD, c);
+          rgNeutro(r, 20, .07f, RG_CHIP_SOL, al);
+          txt_desenhar_alpha(l, r.x + (r.w - l.w) * .5f, r.y + (r.h - l.h) * .5f, al);
+        }
+      }
+      y += ((n + cols - 1) / cols) * 144 + 12;
+    }
+    { struct tm tmv; time_t q = env->quando ? env->quando : time(NULL); localtime_r(&q, &tmv);
+      snprintf(v, sizeof v, "%02d:%02d · %s · HTTP %d", tmv.tm_hour, tmv.tm_min, kb, env->http); }
+    y += telefonecartao_texto(TXT_AJ_ESTADO, v, x, y, w, 28, .55f * al) + 24;
+  } else if (env->estado == 3) {
+    int off = env->motivo == AVISOS_ENVIO_OFFLINE;
+    y += telefonecartao_texto(TXT_AJ_ESTADO, off ? "Sem internet" : "Não foi enviado", x, y, w, 28, .68f * al) + 12;
+    if (off) {
+      tit = "A TV está sem conexão";
+      txt = "Nenhum dos últimos endereços respondeu. O registro fica guardado e sai assim que a rede voltar.";
+    } else switch (env->motivo) {
+      case AVISOS_ENVIO_PRAZO:
+        tit = "O servidor de registros demorou demais";
+        txt = "Passaram 30 s sem resposta. A rede da TV funciona; o servidor estava lento. Tente de novo daqui a pouco."; break;
+      case AVISOS_ENVIO_CONEXAO:
+        tit = "A conexão caiu no meio do envio";
+        txt = "O registro continua aqui. Tente de novo; se repetir, confira a rede da TV."; break;
+      case AVISOS_ENVIO_CONTA:
+        tit = "Entre na sua conta para enviar";
+        txt = "O servidor de registros só aceita envio de quem entrou com a conta Nuvio ou o Trakt."; break;
+      case AVISOS_ENVIO_INDISPONIVEL:
+        tit = "Esta versão não tem servidor de registros";
+        txt = "O registro só pode ser lido nesta tela (botão vermelho ou Ajustes › Sobre e ajuda › Ver o registro na tela)."; break;
+      default:
+        tit = "O servidor de registros não aceitou agora";
+        txt = ajustes_envio_auto() ? "O problema é do lado de lá, não da sua TV. O registro continua aqui; com “Enviar registros sozinho” ligado, ele vai no próximo envio automático."
+                                  : "O problema é do lado de lá, não da sua TV. O registro continua aqui; tente de novo daqui a pouco."; break;
+    }
+    y += telefonecartao_titulo(tit, x, y, w, al);
+    y += telefonecartao_texto(TXT_AJ_TEXTO, txt, x, y, w, 30, .62f * al) + 24;
+    if (off) {
+      int fal = 0, hs = 0; char host[64] = "", ha[48]; unsigned ms = 0;
+      if (rede_saude_resumo(&fal, &hs, host, sizeof host, &ms)) { rgHa(ha, sizeof ha, (long)(ms / 1000)); snprintf(v, sizeof v, "%s · %s", ha, host); }
+      else snprintf(v, sizeof v, "%s", i18n("nenhuma nesta sessão"));
+      y += envTelefoneStat("Última resposta", v, x, y, w, al);
+      snprintf(v, sizeof v, i18n("%d em %d hosts"), fal, hs);
+      y += envTelefoneStat("Falhas seguidas", v, x, y, w, al);
+      y += envTelefoneStat("Ao voltar", i18n("envia sozinho"), x, y, w, al);
+      y += telefonecartao_texto(TXT_AJ_ESTADO, "esperando a rede", x, y, w, 28, .55f * al) + 24;
+    } else {
+      if (env->motivo == AVISOS_ENVIO_SERVIDOR) { snprintf(v, sizeof v, "HTTP %d", env->http); y += envTelefoneStat("Resposta", v, x, y, w, al); }
+      { struct tm tmv; time_t q = env->quando ? env->quando : time(NULL); localtime_r(&q, &tmv);
+        snprintf(v, sizeof v, "%02d:%02d · %s", tmv.tm_hour, tmv.tm_min, kb); }
+      y += envTelefoneStat("Tentativa", v, x, y, w, al);
+      if (ajustes_envio_auto() && env->autoProximoMs > SDL_GetTicks()) {
+        long seg = (long)(env->autoProximoMs - SDL_GetTicks()) / 1000;
+        if (seg < 60) snprintf(v, sizeof v, i18n("ligado · próximo em %ld s"), seg);
+        else snprintf(v, sizeof v, i18n("ligado · próximo em %ld min"), (seg + 59) / 60);
+      } else snprintf(v, sizeof v, "%s", ajustes_envio_auto() ? i18n("ligado") : i18n("desligado"));
+      y += envTelefoneStat("Envio automático", v, x, y, w, al);
+    }
+  } else {
+    y += telefonecartao_texto(TXT_AJ_ESTADO, "Sobre e ajuda", x, y, w, 28, .68f * al) + 12;
+    y += telefonecartao_titulo("Enviando o registro", x, y, w, al);
+    y += telefonecartao_texto(TXT_AJ_TEXTO, "Os últimos 200 KB desta sessão, sem senhas nem chaves, para quem faz o app. Endereços vão cortados no host.", x, y, w, 30, .62f * al) + 24;
+    { char ln[32]; rgMilhar(ln, sizeof ln, env->linhas ? env->linhas : envLinhasArq); snprintf(v, sizeof v, i18n("%s · %s linhas"), kb, ln); }
+    y += envTelefoneStat("Tamanho", v, x, y, w, al);
+    { long sg = (long)(SDL_GetTicks() / 1000); char t[48];
+      if (sg < 60) snprintf(t, sizeof t, i18n("%ld s"), sg); else snprintf(t, sizeof t, i18n("%ld min"), sg / 60);
+      snprintf(v, sizeof v, i18n("aberta há %s"), t); }
+    y += envTelefoneStat("Desta sessão", v, x, y, w, al);
+    { char *p = strstr(s, " · "); if (p) *p = 0; }
+    snprintf(v, sizeof v, "%s · %s", a, s);
+    y += envTelefoneStat("Aparelho", v, x, y, w, al);
+    y += telefonecartao_texto(TXT_AJ_SUB, "Enviando…", x, y, w, 30, .7f * al) + 24;
+  }
+  /* The same stored tail, drawn inside the body's current clip. No second
+   * clipping surface can expose it below the fixed decision footer. */
+  if (al > 0) {
+    gfx_cor((GfxRect){x, y, w, 304}, 24.0f / 304, RG_CART_SOL, .7f * al);
+    TxtLinha t = txt_linha(TXT_MONO15, "nuvio.log", RG_TX, 255);
+    txt_desenhar_alpha(t, x + 22, y + 22, .6f * al);
+    TxtLinha k = rgTC(TXT_AJ_MINI14, kb, w - 180);
+    txt_desenhar_alpha(k, x + w - 22 - k.w, y + 22, .42f * al);
+    int ini = nLin > 9 ? nLin - 9 : 0;
+    for (int i = ini; i < nLin; i++) rgLinhaPacote(&lin[i], x, y + 64 + (i - ini) * 25, w, al);
+  }
+  return y - inicio + 304 + 16;
+}
+static void envTelefoneDesenhar(const AvisosEnvio *env) {
+  int retry = env->estado == 3 && env->motivo != AVISOS_ENVIO_OFFLINE && env->motivo != AVISOS_ENVIO_INDISPONIVEL;
+  telefonecartao_medir(&envTelefone, NV_TELA_W, NV_TELA_H, retry ? 2 : 1);
+  float total = envTelefoneConteudo(env, 0, 0, envTelefone.corpo.w, 0);
+  int chave = envTelefoneChave(env);
+  telefonecartao_comecar(&envTelefone, total, chave, 1, envTelefoneRolar, 1);
+  envTelefoneConteudo(env, envTelefone.corpo.x, envTelefone.corpo.y - envTelefone.offset, envTelefone.corpo.w, 1);
+  gfx_sem_recorte();
+  if (retry) telefonecartao_botao(&envTelefone, 0, "Tentar de novo", envFoco == 0, NULL, envTelefoneEscolher, chave, 1);
+  telefonecartao_botao(&envTelefone, retry, env->estado == 1 ? "Fechar e continuar enviando" : "Fechar", !retry || envFoco == 1, NULL, envTelefoneEscolher, chave, 1);
+}
+#endif
+
 static void registro_envio_desenharCorpo_(void);
 // Camada ampliada (escala.h): o corpo desenha na tela virtual.
 void registro_envio_desenhar(void) {
@@ -170,7 +334,12 @@ static void registro_envio_desenharCorpo_(void) {
   char kb[32], v[200], a[96], s[160];
   int st;
   if (!envAberto) return;
+  // Modal sobre os Ajustes (ajustes_ux_ilha.inc): os alvos de tras deixam de valer.
+  ponteiro_camada();
   st = avisos_envio_info(&env);
+#ifdef NV_TOUCH_UI
+  if (telefoneui_ativo()) { envTelefoneDesenhar(&env); return; }
+#endif
   ajustes_ui_ilha((GfxRect){ RE_X, RE_Y, RE_W, RE_H }, 36, 1);
   rgTamTexto(kb, sizeof kb, env.bytes ? env.bytes : envTam);
   registro_pacote(RE_X + 60, RE_Y + 56, 400, 452, 15, kb, st == 1 ? 1.0f : st == 2 ? 0.55f : 0.4f);
@@ -291,7 +460,13 @@ static void registro_envio_desenharCorpo_(void) {
     rgStat(i18n("Envio automático"), v, x, y, w);
     { float bx = x;
       int pode = env.motivo != AVISOS_ENVIO_INDISPONIVEL;
-      if (pode) bx += rgBotao("Tentar de novo", "aj_rotate-cw", bx, base - 56, envFoco == 0, 1) + 12;
+      if (pode) {
+        float w0 = rgBotao("Tentar de novo", "aj_rotate-cw", bx, base - 56, envFoco == 0, 1);
+        TxtLinha lf = rgT(TXT_ILHA_ITEM, "Fechar");
+        ponteiro_alvo(bx, base - 56, w0, 56, ponteiroEnvio, NULL, 0, 0);
+        ponteiro_alvo(bx + w0 + 12, base - 56, 28 + lf.w + 28, 56, ponteiroEnvio, NULL, 1, 0);
+        bx += w0 + 12;
+      }
       rgBotao("Fechar", NULL, bx, base - 56, !pode || envFoco == 1, 1); }
     return;
   }

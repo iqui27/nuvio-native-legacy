@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // RECOMENDAR UM TITULO A UM AMIGO — o lado cliente.
 //
 // POR QUE EXISTE E POR QUE CONTRA UM SERVIDOR PROPRIO: o Supabase do Nuvio nao
@@ -28,6 +29,7 @@
 #include "badges.h"
 #include <SDL2/SDL.h>
 #include <stddef.h>
+#include <stdint.h>
 
 // Teto da lista guardada. 60 x ~900 bytes = ~54 KB estaticos, pela mesma razao
 // de SALVOS_MAX: esta lista e percorrida por quadro com o painel aberto, e o
@@ -62,7 +64,7 @@ typedef struct {
   char imdb[24];
   char tipo[8];        // "movie" | "series"
   char titulo[160];
-  char poster[512];
+  char poster[NV_ARTE_URL_MAX];
   char ano[16];
   int  modelo;         // indice do template; -1 = texto livre
   char texto[72];      // so quando modelo == -1
@@ -123,6 +125,8 @@ int  recomenda_ativo(void);
 // Le cursor e cache do disco. Chamar UMA vez no arranque, depois de
 // dados_iniciar. Nao abre conexao.
 void recomenda_iniciar(void);
+void recomenda_abrir_sessao(void); // carrega somente dados locais deste perfil e invalida fios antigos
+void recomenda_esquecer_conta(void); // logout: apaga caches privados de TODOS os perfis
 
 // Liga a sondagem. A PRIMEIRA chamada cria o fio e faz um ciclo imediato; as
 // seguintes NAO FAZEM NADA.
@@ -412,8 +416,9 @@ enum { REC_SOC_NADA = 0, REC_SOC_INDO, REC_SOC_OK,
        REC_SOC_CURTA,          // busca com menos de 3 letras (nem sai do aparelho)
        REC_SOC_NEGADO };       // explicit 403; different from unavailable source/404
 
-// UMA OPERACAO SOCIAL POR VEZ (a mesma disciplina de vincular/remover): todas
-// devolvem 1 quando entraram na fila e o resultado sai em recomenda_soc_estado().
+// UMA OPERACAO SOCIAL DE TELA POR VEZ (como vincular/remover). Aceitar/recusar
+// ja confirmados tem fila propria; todas devolvem 1 quando entraram na fila
+// e o resultado da abertura atual sai em recomenda_soc_estado().
 int  recomenda_buscar(const char *texto);        // apelido (3+) ou codigo de 6
 int  recomenda_sugeridos_gosto(void);            // ver nota em recomenda.c
 // COMUNIDADE NUVIO NATIVE: todo mundo que publicou o perfil (servidor:
@@ -427,6 +432,10 @@ int  recomenda_ver_perfil(const char *pub);
 int  recomenda_pedir_amizade(const char *pub);
 int  recomenda_aceitar(const char *pub);
 int  recomenda_recusar(const char *pub);
+// Captura a identidade no OK. A resposta confirmada termina com esses
+// cabecalhos mesmo depois de trocar de perfil; o resultado so aparece na
+// abertura que a originou. 1 = enfileirada, 0 = nao entrou na fila.
+int  recomenda_responder_pedido(const char *pub, int aceitar);
 int  recomenda_cancelar_pedido(const char *pub);
 int  recomenda_bloquear(const char *pubOuId);
 int  recomenda_desbloquear(const char *pub);
@@ -467,12 +476,13 @@ void recomenda_atividade_fim(const CatItem *ci, int concluiu);
 typedef struct { char imdb[24]; char titulo[160]; char tipo[8]; int agora; long long criado; } RecAtivAmigo;
 int  recomenda_amigo_atividades(const char *id, RecAtivAmigo *saida, int max);
 int  recomenda_social_mesclar(CatItem *itens, int nTrakt, int max);
+int  recomenda_social_mesclar_sessao(CatItem *itens, int nTrakt, int max, uint64_t sessao);
 // Funde `novos` (n) em `itens`(nTrakt) SEM rede: a regra de uniao, separada
 // para o teste. Devolve o novo total.
 int  rec_social_unir(CatItem *itens, int nTrakt, const CatItem *nuvio, int nNuvio, int max);
 
-// Apaga cache, cursor e marca do cartao do aparelho. Chamar de
-// sync_esquecer_usuario: recomendacao e tao pessoal quanto a lista de salvos.
+// Esquece somente a identidade social do perfil atual (por exemplo, Trakt
+// ligado/desligado). Logout da conta inteira usa recomenda_esquecer_conta.
 void recomenda_esquecer(void);
 // Changes when the account/profile is forgotten. UI caches consume it on their thread.
 unsigned recomenda_geracao(void);
@@ -483,6 +493,8 @@ unsigned recomenda_geracao(void);
 // recomendacao, so com a home de pe, e NUNCA por cima de quem esta assistindo.
 void recomenda_mostrar_se_houver(void);
 int  recomenda_aberta(void);
+void recomenda_abrir_cartao(void);   // abre agora, de proposito (sem a marca de "uma vez")
+int  recomenda_tecla(const SDL_Event *e);   // 1 = o cartao pegou a tecla
 void recomenda_evento(const SDL_Event *e);
 void recomenda_atualizar(float dt, Uint32 agora);
 void recomenda_desenhar(Uint32 agora);
@@ -514,6 +526,9 @@ void rec_nome_exibicao(char *dst, size_t tam, const char *nome, const char *id);
 
 // O meu nome como os amigos o veem (resposta do servidor; "" antes do 1o ciclo).
 const char *recomenda_meu_nome(void);
+// O id social deste perfil ("nuvio:<sub>" ou "nuvio:<sub>:<n>"), "" antes do
+// primeiro /v1/eu. O Watch Together reconhece a propria cadeira na sala por ele.
+const char *recomenda_meu_id(void);
 // O que eu digitei como nome de exibicao ("" = uso o nome do perfil).
 const char *recomenda_minha_exibicao(void);
 // Enfileira POST /v1/eu/nome. "" volta ao nome do perfil. 1 = enfileirou.
@@ -562,7 +577,7 @@ typedef struct {
   char imdb[24];      // "tt..." (obrigatorio)
   char midia[8];      // "movie" | "series"
   char titulo[160];
-  char poster[512];   // so sai no feed se for de host conhecido (servidor)
+  char poster[NV_ARTE_URL_MAX];   // so sai no feed se for de host conhecido (servidor)
   int  temporada, episodio;
   int  pct;           // 0-100
   int  seg;           // segundos assistidos NESTE trecho (desde o evento anterior)
@@ -578,7 +593,8 @@ enum { REC_ACAO_INICIO = 1,     // comecou (nosso) / "assistindo agora" (Trakt)
        REC_ACAO_ABANDONO,
        REC_ACAO_REACAO,         // `reacao` 1/0/-1
        REC_ACAO_SALVO,
-       REC_ACAO_NOTA };         // nota de tracker (`nota` 0-100)
+       REC_ACAO_NOTA,           // nota de tracker (`nota` 0-100)
+       REC_ACAO_JUNTO };        // assistiram juntos (Watch Together); `com` = os outros
 typedef struct {
   int  fonte, acao;
   int  agora;           // explicit watching response; a check-in alone is not live
@@ -590,12 +606,13 @@ typedef struct {
   char imdb[24];
   char midia[8];        // "movie" | "series"
   char titulo[160];
-  char poster[512];
+  char poster[NV_ARTE_URL_MAX];
   int  temporada, episodio, pct;
   long long quando;     // epoch s; 0 = desconhecido (vai para o fim)
   int  reacao;          // so REC_ACAO_REACAO
   int  nota;            // so REC_ACAO_NOTA
   long long id;         // id do evento no nosso servidor (0 nas outras fontes)
+  char com[96];         // so REC_ACAO_JUNTO: "Rafa, Fabi" (quem tambem aparece)
   int  eps;             // REC_ACAO_FIM de serie agrupado no servidor: episodios distintos
   int  temReacFim, reacFim;   // REC_ACAO_FIM: a reacao que veio junto (1/0/-1), se veio
 } RecEvento;
@@ -644,7 +661,7 @@ typedef struct {
   int  nGostou; RecEvento gostou[REC_AMIGO_GOSTOU];
   // recs que EU mandei para ela, mais nova primeiro (so grau 1)
   int  nRecs;
-  struct { long long id, criado; char imdb[24], tipo[8], titulo[160], poster[512];
+  struct { long long id, criado; char imdb[24], tipo[8], titulo[160], poster[NV_ARTE_URL_MAX];
            int estado, temReacao, reacao, terminou;
            // resposta DIRETA de quem recebeu (POST /v1/rec/resposta): a mensagem
            // curta ("" = nenhuma) e o epoch em que respondeu (0 = nao respondeu).

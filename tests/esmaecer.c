@@ -104,6 +104,24 @@ int main(void) {
   assert(esmaecer_brilho_osd(1, 60000u, 0) == 0.80f);   // pausado: sem degrau automatico
   assert(esmaecer_brilho_osd(0, 60000u, 1) > 0.849f && esmaecer_brilho_osd(0, 60000u, 1) < 0.851f);
   assert(esmaecer_brilho_osd(3, 60000u, 1) >= 0.40f);   // piso de legibilidade
+
+  // UI EM HDR (#205): so com o video em HDR/DV o fator sai de 1.
+  assert(esmaecer_brilho_hdr("none", 0) == 1.0f && esmaecer_brilho_hdr("", 0) == 1.0f);
+  assert(esmaecer_brilho_hdr(NULL, 0) == 1.0f && esmaecer_brilho_hdr("desconhecido", 0) == 1.0f);
+  assert(esmaecer_brilho_hdr("HDR10", 0) == HDR_UI_BRILHO && esmaecer_brilho_hdr("HLG", 0) == HDR_UI_BRILHO);
+  assert(esmaecer_brilho_hdr("none", 1) == HDR_UI_BRILHO && esmaecer_brilho_hdr("DolbyVision", 1) == HDR_UI_BRILHO);
+  assert(HDR_UI_BRILHO < 1.0f);
+  { float r = 1, g = 1, b = 1, a = 0.5f;          // SDR: nada muda
+    esmaecer_cor_hdr(1.0f, &r, &g, &b, &a);
+    assert(r == 1 && g == 1 && b == 1 && a == 0.5f); }
+  { float r = 1, g = 1, b = 1, a = 0.12f;         // branco (texto, vidro de foco): mais baixo, forma igual
+    esmaecer_cor_hdr(HDR_UI_BRILHO, &r, &g, &b, &a);
+    assert(r == HDR_UI_BRILHO && b == HDR_UI_BRILHO && a == 0.12f); }
+  { float r = 0.055f, g = 0.059f, b = 0.071f, a = 0.80f;   // material da ilha: mais denso
+    esmaecer_cor_hdr(HDR_UI_BRILHO, &r, &g, &b, &a);
+    assert(r < 0.055f && a > 0.87f && a < 0.89f); }
+  { float r = 0, g = 0, b = 0, a = 0;             // o furo do video continua furo
+    esmaecer_cor_hdr(HDR_UI_BRILHO, &r, &g, &b, &a); assert(a == 0); }
   puts("esmaecer: estagios, tecla consumida, nunca tocando e brilho do OSD ok");
   return 0;
 }

@@ -46,6 +46,21 @@ static const char *depoisDoHost(const char *url, const char *host) {
   return strncmp(p, host, strlen(host)) ? NULL : p + strlen(host);
 }
 
+// Qualidade Alta (tex_qualidade): o que o catalogo guarda no tamanho do card
+// (cartaz w342, fundo de agenda/extras w780) sobe quando o desenho pede mais.
+static int qualidadeAlta;
+void arte_tamanho_qualidade(int nivel) { qualidadeAlta = nivel == 2; }
+int arte_tamanho_poster_w(void) { return qualidadeAlta ? 780 : 342; }
+
+// w342 -> w500/w780 (cartaz, nunca w1280: heap do Tizen) e w780 -> w1280
+// (fundo, o mesmo teto do heroi do Tizen) quando o teto do pedido excede o
+// tamanho guardado. 0 = fica como esta.
+static int subir(int atual, int limite) {
+  if (atual == 342) return limite > 500 ? 780 : limite > 342 ? 500 : 0;
+  if (atual == 780) return limite > 780 ? 1280 : 0;
+  return 0;
+}
+
 static int tmdb(const char *url, int limite, char *saida, size_t tam) {
   static const int ESCADA[] = { 300, 780, 1280 };
   const char *tok = depoisDoHost(url, "image.tmdb.org/t/p/"), *fim;
@@ -54,7 +69,8 @@ static int tmdb(const char *url, int limite, char *saida, size_t tam) {
   if (!tok || !(fim = strchr(tok, '/'))) return 0;
   atual = larguraDoToken(tok, (size_t)(fim - tok));
   if (!atual) return 0;
-  nova = escolher(ESCADA, 3, atual, limite);
+  nova = qualidadeAlta ? subir(atual, limite) : 0;
+  if (!nova) nova = escolher(ESCADA, 3, atual, limite);
   if (!nova) return 0;
   snprintf(novo, sizeof novo, "w%d", nova);
   return trocar(url, tok, (size_t)(fim - tok), novo, saida, tam);
@@ -94,6 +110,10 @@ static int fundoMetahub(const char *url, int limite, char *saida, size_t tam) {
     if ((size_t)(fim - tok) == strlen(GRANDES[i]) && !strncmp(tok, GRANDES[i], strlen(GRANDES[i])))
       return trocar(url, tok, (size_t)(fim - tok), "small", saida, tam);
   return 0;
+}
+
+int arte_tamanho_fundo_pequeno(int limite, int qualidadeAlta) {
+  return limite > 0 && limite <= (qualidadeAlta ? 480 : 640);
 }
 
 int arte_tamanho_url(const char *url, int limite, char *saida, size_t tam) {

@@ -6,6 +6,7 @@
 
 void novidades142_primeira_vez(void);
 int  novidades142_aberto(void);
+int  novidades142_teste_foco(void);   // testes do ponteiro (#99): o botao em foco
 // 1 enquanto o cartao ainda vai aparecer nesta sessao (nao visto e nao
 // decidido) ou esta aberto. app.c usa para NAO abrir a apresentacao global
 // do diagnostico antes dele: o cartao ja convida para o diagnostico, e dois

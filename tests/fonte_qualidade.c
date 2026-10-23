@@ -4,6 +4,7 @@
 // do orcamento do StreamFit. Sem rede, sem GL: a lista em memoria e o
 // stream_automatico (a mesma pontuacao da verificacao e da folha).
 #include "streams.h"
+#include "nvtmp.h"
 #include "streamfit.h"
 #include "ajustes.h"
 #include "badges.h"
@@ -66,10 +67,19 @@ static const char *vence(const Stream *l, int n) {
 int main(void) {
   Stream l[8];
   int kb[8] = {5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000}, n;
-  snprintf(dirAj, sizeof dirAj, "%s/nv-fq-aj", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
+  snprintf(dirAj, sizeof dirAj, "%s/nv-fq-aj", nvt_dir());
   { char m[300]; snprintf(m, sizeof m, "mkdir -p %s", dirAj); (void)!system(m); }
   cfg(0, 0, 0);   // padroes: Equilibrio, Preferir, DV ligado; qualidade Automatica
   streamfit_limpar();
+
+  // #402: sem cache conhecido nunca entra no automatico, nem sozinha.
+  { Stream m[2];
+    fonte(&m[0], "NMR | ALL", "uncached 2160p", 2160, 0, 1, 0, "tb.invalid");
+    fonte(&m[1], "NMR", "720p", 720, 0, 0, 0, "td.invalid");
+    assert(!strcmp(vence(m, 2), "720p"));
+    stream_definir_lista(m, 1);
+    assert(stream_automatico() == -1);
+  }
 
   // 1) A LISTA DO DONO, sem medida nenhuma (hosts=0 na C9).
   n = 0;
@@ -169,10 +179,17 @@ int main(void) {
     { Stream e[2] = { m[1], m[0] }; assert(!strcmp(vence(e, 2), "Torrentio 4k HDR10")); }  // empate: ordem da lista
     stream_definir_tela(-1, -1);
   }
-  // Perfil 5 (sem base HDR10) fica atras do HDR10; DV mkv na LG toca como HDR10.
+  // Perfil 5 (sem base HDR10) em MP4 NA LG toca como DV de verdade (a TV aciona o
+  // DV nativo no MP4), entao nao e mais rebaixado abaixo do HDR10; em MKV, com o
+  // DV desligado em Ajustes ou fora da LG continua atras do HDR10 (cor lavada).
+  // Este arquivo compila streams.c como o host (LG). Ver tests/fonte_lg_mp4.c.
   { Stream m[2];
     deb(&m[0], "Torrentio 4k DV Profile 5", 2160, 1, 1);
     deb(&m[1], "Torrentio 4k HDR10", 2160, 0, 0);
+    cfg(0, 0, 0); assert(!strcmp(vence(m, 2), "Torrentio 4k DV Profile 5"));
+    cfg(1, 0, 0); assert(!strcmp(vence(m, 2), "Torrentio 4k DV Profile 5"));
+    cfg(0, 0, 1); assert(!strcmp(vence(m, 2), "Torrentio 4k HDR10"));
+    deb(&m[0], "Torrentio 4k DV Profile 5", 2160, 0, 1);   // MKV
     cfg(0, 0, 0); assert(!strcmp(vence(m, 2), "Torrentio 4k HDR10"));
     cfg(1, 0, 0); assert(!strcmp(vence(m, 2), "Torrentio 4k HDR10"));
   }
@@ -250,6 +267,30 @@ int main(void) {
   }
 
   streamfit_limpar();
+  // #284: placeholder do addon nunca e escolhido; 0p real vem depois de 720p.
+  { Stream m[4];
+    deb(&m[0], "Meteor - Not configured", 0, 1, 0);
+    deb(&m[1], "Embed69 - {}", 0, 1, 0);
+    deb(&m[2], "Torrentio AD error", 0, 1, 0);
+    deb(&m[3], "Torrentio 720p", 720, 0, 0);
+    for (int prio = 0; prio < 3; prio++) { cfg(prio, 0, 0); assert(!strcmp(vence(m, 4), "Torrentio 720p")); }
+    { Stream e[2]; deb(&e[0], "Torrentio WEB", 0, 1, 0); deb(&e[1], "Torrentio 480p", 480, 0, 0);
+      for (int prio = 0; prio < 3; prio++) { cfg(prio, 0, 0); assert(!strcmp(vence(e, 2), "Torrentio 480p")); } }
+    { Stream e[1]; deb(&e[0], "Torrentio WEB", 0, 1, 0);   // 0p real e a unica: ainda toca
+      cfg(0, 0, 0); assert(!strcmp(vence(e, 1), "Torrentio WEB")); }
+  }
+  // #203: tela sem Dolby Vision (Samsung): DV de perfil desconhecido fica abaixo do HDR10; perfil 8 nao.
+  { Stream m[3];
+    deb(&m[0], "Torrentio 4k DV", 2160, 1, 1);
+    deb(&m[1], "Torrentio 4k HDR10", 2160, 1, 0);
+    deb(&m[2], "Torrentio 4k DV Profile 8 HDR10", 2160, 1, 1);
+    stream_definir_tela(-1, 0); cfg(1, 0, 0);
+    assert(stream_pontos(&m[0]) < stream_pontos(&m[1]));
+    assert(!strcmp(vence(m, 2), "Torrentio 4k HDR10"));
+    assert(stream_pontos(&m[2]) >= stream_pontos(&m[1]) - 300);   // base HDR10 declarada toca
+    stream_definir_tela(-1, -1);   // desconhecido: DV volta a valer
+    assert(stream_pontos(&m[0]) > stream_pontos(&m[1]));
+  }
   puts("fonte_qualidade: ok");
   return 0;
 }

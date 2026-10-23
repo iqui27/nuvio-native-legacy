@@ -37,6 +37,8 @@ int tpkteclas_evento(const char *nome, int apertou, SDL_Event *e) {
     // F6 = abrir pela voz; amarela = F5 = so abrir. XF86Search (controles de
     // botao "Search") e suposto pelo nome, nao visto no log.
     { "XF86BTVoice", SDLK_F6 }, { "XF86Search", SDLK_F6 }, { "XF86Yellow", SDLK_F5 },
+    // INFO do controle: detalhes da fonte na folha de fontes (#355). Nome suposto, nao visto em log.
+    { "XF86Info", SDLK_i },
   };
   SDL_Keycode k = SDLK_UNKNOWN;
   size_t i;

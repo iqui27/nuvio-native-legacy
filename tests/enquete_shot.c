@@ -10,6 +10,7 @@
 // mockup, 1920x1080, sem a ilha) — assim o vidro fica sobre a MESMA arte. Sem
 // a pasta, a arte embarcada 00.jpg. NUVIO_SHOT_VIDRO=0 = solido.
 #include <assert.h>
+#include "nvtmp.h"
 #include <time.h>
 #include <unistd.h>
 #define NV_REC_URL "http://fake.test"
@@ -145,7 +146,7 @@ int main(int argc, char **argv) {
   char ajustes[700];
   SDL_GLContext gl;
   FILE *f;
-  base = argc > 1 ? argv[1] : "/tmp/nuvio-enquete";
+  base = argc > 1 ? argv[1] : nvt("/nuvio-enquete");
   assert(dir && *dir);
   snprintf(ajustes, sizeof ajustes, "%s/ajustes.txt", dir);
   f = fopen(ajustes, "w"); assert(f);

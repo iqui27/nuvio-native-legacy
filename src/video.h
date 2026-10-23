@@ -16,6 +16,7 @@
 // TV tocando o mesmo arquivo: e o que comprovadamente funciona.
 #ifndef NV_VIDEO_H
 #define NV_VIDEO_H
+#include <SDL2/SDL_stdinc.h>
 
 // Registra no barramento e sobe o laco de eventos. 1 se deu certo.
 // Falhar aqui nao e fatal: o app segue sem video.
@@ -39,7 +40,21 @@ int  video_tocar(const char *url);
 // MediaItem antes de prepare; o ack e da geracao desta abertura. Estado:
 // 0 aguardando, 1 aceito, -1 abertura normal (seek tardio como fallback).
 int  video_tocar_posicao(const char *url, double segundos);
+// Como a de cima, mais o percentual (0..100) para quando nao ha segundos
+// exatos (retomada da conta: Trakt/Simkl so dao percentual). O Kotlin aplica
+// sobre a duracao do container ANTES do primeiro quadro; mesmo ack/estado.
+int  video_tocar_retomada(const char *url, double segundos, double pct);
 int  video_retomada_inicial_estado(void);
+// Fonte preparada na pagina do titulo: player pausado, sem imagem, audio ou
+// eventos da sessao de reproducao. Token identifica o dono; zero cancela todos.
+int  video_precarregar(const char *url, const char *cabecalhos, double segundos,
+                      double pct, int buffer, int cacheMb, unsigned token, const char *idiomaAudio, int kbps);
+int  video_precarregar_proximo(const char *url, const char *cabecalhos, double segundos,
+                              double pct, int buffer, int cacheMb, unsigned token, const char *idiomaAudio, int kbps);
+// 0 ausente, 1 preparando, 2 pronto, -1 falhou. Nao muda video_pronto().
+int  video_precarregar_estado(unsigned token);
+void video_precarregar_cancelar(unsigned token);
+void video_precarregar_adotar(unsigned token);
 #endif
 
 // Chamar UMA VEZ POR QUADRO. Hoje serve ao prazo do recuo de Dolby Vision
@@ -95,6 +110,9 @@ void video_escala_definir(int sw, int sh);
 // esta tocando — e a unica coisa que identifica o arquivo, nos dois alvos.
 const char *video_url_atual(void);
 double video_pos(void);      // segundos decorridos
+// Raw backend sample; timestamp uses SDL_GetTicks64(), never wall time.
+// Repeated reads keep the timestamp until a new native sample arrives.
+double video_pos_amostra(Uint64 *ticksDaAmostra);
 double video_duracao(void);  // 0 enquanto desconhecida
 
 // Segundo em que comecam os CREDITOS, ou 0 quando o arquivo nao diz. Sai do
@@ -111,10 +129,21 @@ double video_buffer_fim(void); // ate onde o buffer cobre (s); 0 se desconhecido
 // congelada e video_falhou() em 0 para sempre. Quem vigia fonte de canal
 // (app.c) precisa deste numero para saber que a fonte morreu sem dizer.
 unsigned video_bufferando_ms(void);
+#ifdef NV_ANDROID
+// Atomic live-window sample for the watchdog; signed position, same-origin buffer edge.
+// Returns zero without modifying outputs when this open has no live sample.
+int video_live_progresso(double *pos, double *fim);
+// Same-player live-window repair, scoped to this open and bounded to 60 seconds.
+int video_recuperando_live(void);
+// HLS target duration for this live session; zero for VOD/unknown.
+unsigned video_live_segmento_ms(void);
+#endif
 // Afirmacao de Dolby Vision da FONTE escolhida (o addon descreve o arquivo).
 // Chamar ANTES de video_tocar/definir_fonte: e o que decide o hdrType que o
 // ACB descreve ao tv.display.
 void video_definir_dv(int dv);
+// Explicit Settings off-to-on retry of the shared Dolby Vision/DTS crash guard.
+void video_dv_guard_reiniciar(void);
 
 // CABECALHOS QUE O ADDON EXIGE (behaviorHints.proxyHeaders), uma linha
 // "Nome: valor" por cabecalho. Chamar ANTES de video_tocar, junto com
@@ -127,6 +156,8 @@ void video_definir_dv(int dv);
 //   gst-launch-1.0 souphttpsrc location=<url> ! fakesink            -> Forbidden
 //   ... extra-headers="headers,Referer=(string)\"<ref>\"" ! fakesink -> baixa
 void video_definir_cabecalhos(const char *cabs);
+// Os cabecalhos em uso (mesmas linhas). "" quando nenhum ou sem suporte.
+const char *video_cabecalhos(void);
 
 // A fonte e MP4? Chamar ANTES de video_tocar, junto com video_definir_dv.
 //
@@ -140,9 +171,13 @@ void video_definir_mp4(int ehMp4);
 // (video_tocar consome). Quem nao pede — trailer, canal ao vivo, que tem o
 // watchdog proprio em app.c — segue caindo em video_falhou na hora.
 void video_definir_reconexao(int sim);
+// Reabre somente a fonte VOD corrente, sem resolver outra URL nem reiniciar
+// o limite de reconexao. Preserva o ponto informado pelo backend, faixas,
+// velocidade e pausa. 1 = pedido aceito; 0 = indisponivel neste estado/alvo.
+int  video_recarregar(void);
 // MODO DO LOAD para o PROXIMO video_tocar (#158, LG C4: dado chega, VDEC
-// concedido, decoder nunca anuncia). 0 = o de sempre; 1 = sem o selectTrack
-// de video logo depois do load; 2 = o 1 e mais o payload enxuto de live
+// concedido, decoder nunca anuncia). 0/1 = default-track startup (the legacy
+// mode 1 is retained for saved settings); 2 = the lean live payload
 // (mediaTransportType HLS/URI, sem useSeekableRanges/bufferControl). Vale UMA
 // vez (video_modo_live_consumir zera); so a webOS le. Ver video_modo.c.
 void video_definir_modo_live(int modo);
@@ -150,11 +185,24 @@ int  video_modo_live_consumir(void);
 // Numero da tentativa (1..3) enquanto uma queda esta em curso, esperando ou
 // recarregando; 0 fora disso. Enquanto nao e 0, video_falhou fica em 0.
 int    video_reconectando(void);
+#ifdef NV_TPK
+// Seek sent and not yet confirmed by the TV (video_tpk.c), and a counter of
+// seeks the TV refused (EV_BUSCA_FALHOU). Used by player.c to hold the bar on
+// the target instead of the stale position.
+int      video_busca_em_voo(void);
+unsigned video_busca_falhas(void);
+#endif
 int    video_tocando(void);
 // Pausa comprovada pelo backend da sessao atual, nao a intencao local de
 // video_pausar. Alvos sem confirmacao confiavel devolvem 0.
 int    video_pausa_confirmada(void);
 int    video_pronto(void);   // 1 depois do loadCompleted
+#ifdef NV_ANDROID
+int    video_janela_pronta(void);   // latest native window request completed layout
+int    video_superficie_estavel(void);   // 1 depois da ultima recriacao da Surface (HDR/DV)
+int    video_quadro_visto(void);   // 1 depois do primeiro quadro desenhado (antes do "pronto")
+int    video_rede_lenta(void);   // !=0: download below the declared bitrate or repeated rebuffers (redefit.h)
+#endif
 int    video_ativo(void);    // 1 assim que ha mediaId — e o que abre o furo
 int    video_falhou(void);   // 1 depois de um errorText real na fonte atual
 // O ULTIMO ERRO REAL do pipeline na fonte atual, como o pipeline o disse
@@ -162,39 +210,142 @@ int    video_falhou(void);   // 1 depois de um errorText real na fonte atual
 // o cartao de erro do canal dizer o que o servidor respondeu em vez do
 // generico (#158). Vale ate o proximo video_tocar/video_parar.
 const char *video_erro_texto(void);
+#ifdef NV_ANDROID
+// Codigo do erro atual apenas se o renderer e de VIDEO; 0 para audio/desconhecido.
+int video_erro_decoder_codigo(void);
+#endif
 // 1 depois que o decoder se anunciou (videoInfo do uMS) na fonte atual. Existe
 // para o watchdog de canal separar "abre devagar" de "chega dado e o decoder
 // nunca comeca" — o sintoma do #158, com bufferRange subindo e nenhum
 // videoInfo. Onde a plataforma nao da o sinal (Tizen), 1: nao afirma nada.
 int video_decoder_anunciou(void);
 int video_dts_legenda_desenhar(double seconds, int delay_ms, float x, float y, float w, float h, float alpha);
+// Dolby Vision in MKV (webOS, Settings > Playback): 1 while our demux feeds
+// the TV with the file's Dolby Vision; video_dv_recuo_consumir says once why
+// it handed playback back to the TV player (1 slow source, 2 did not start).
+int video_dv_ativo(void);
+int video_dv_recuo_consumir(void);
+
+// --- A TELA DO DOLBY VISION EM MKV (dvtela.h) --------------------------------
+// O que o caminho do DV esta fazendo AGORA, para a tela que cobre a troca do
+// player da TV (HDR10) pelo nosso demux. Tudo e estado real do backend; nada
+// aqui e relogio. Fora da webOS (e no Mac sem simulacao) volta zerado.
+enum {
+  VIDEO_DV_NAO_NADA = 0,
+  VIDEO_DV_NAO_SEM_DV,    // o cabecalho do arquivo nao tem Dolby Vision
+  VIDEO_DV_NAO_PERFIL,    // unsupported profile/layout or missing converter
+  VIDEO_DV_NAO_AUDIO,     // nenhuma faixa de audio que o caminho alimenta
+  VIDEO_DV_NAO_SONDA,     // o cabecalho nao veio (a sonda desistiu)
+  VIDEO_DV_NAO_LENTO,     // o caminho abriu e a fonte nao acompanhou
+  VIDEO_DV_NAO_FALHOU,    // o caminho nao abriu
+  VIDEO_DV_NAO_PESSOA,    // a pessoa escolheu HDR10
+  VIDEO_DV_NAO_CONTENTOR, // o arquivo nao e Matroska (MP4/TS sem extensao na URL)
+  VIDEO_DV_NAO_NATIVE     // selected profile stays on the native player
+};
+typedef struct {
+  int sessao;          // muda a cada video_tocar (fonte nova)
+  int sondado;         // o cabecalho do MKV ja foi lido
+  int perfil, el;      // do dvcC do arquivo (0 = sem Dolby Vision)
+  int audioTrocado;    // a faixa da TV nao passa no caminho e outra entrou
+  char audioDe[16], audioPara[16];   // CodecID do Matroska ("A_TRUEHD", "A_EAC3")
+  int caminho;         // nosso demux foi pedido (iniciarDts em modo DV)
+  int fonteAberta;     // o demux abriu o arquivo (stage source-opened)
+  int carregado;       // a TV aceitou o fluxo (loadCompleted no caminho)
+  int dvConfirmado;    // o pipeline disse hdrType DolbyVision
+  int tocando;         // `playing` no caminho
+  int recusa;          // VIDEO_DV_NAO_*: o DV desta fonte nao vai acontecer
+  int falhou;          // a fonte falhou de vez (video_falhou)
+} VideoDvFase;
+void video_dv_fase(VideoDvFase *f);
+// 1 quando a PROXIMA abertura de `url` vai tentar Dolby Vision em MKV: a fonte
+// afirmou DV (video_definir_dv), nao e MP4 (video_definir_mp4 e a extensao) e
+// a opcao esta ligada e liberada nesta TV. Chamar DEPOIS de video_definir_dv e
+// video_definir_mp4, como video_tocar.
+int  video_dv_candidato(const char *url);
+// A tela esta cobrindo a abertura: o player da TV que toca o HDR10 enquanto o
+// cabecalho e lido fica MUDO (uMS setVolume 0). 0 devolve o volume se a fonte
+// ficar no player da TV.
+void video_dv_tela(int cobrindo);
+// A pessoa preferiu HDR10 agora: esta fonte nao tenta mais Dolby Vision. Se o
+// caminho ja abriu, volta ao player da TV na mesma posicao.
+void video_dv_recusar(void);
+// O PLAYER AINDA NAO TERMINOU DE RETOMAR: segura a troca para o caminho do DV
+// ate o seek do ponto salvo ter sido pedido ao player da TV (o caminho nasce na
+// posicao dele). Chamado por quadro pelo player.
+void video_dv_segurar(int segurar);
+// O caminho proprio (DV/DTS) carregou e ainda nao tocou o primeiro quadro, sem
+// pausa nossa: e o preroll do nosso demux, NAO uma pausa. O painel de pausa e a
+// retomada "de quem abre pausado" perguntam isto.
+int  video_iniciando(void);
+// 1 once the current source has played on webOS (kept across reloads of it).
+int video_fonte_tocou(void);
 const char *video_dts_saida(void);  // actual local conversion output, empty for native playback
 int    video_audio_nao_suportado(void);  // uMS errorCode 200: video segue sem som
+int    video_seek_desistiu(void);  // webOS: seek recusado 3x; segue tocando de onde esta
 int    video_terminou(void); // 1 depois do fim de fluxo (endOfStream) da fonte atual
 // 1 depois que OUTRO app tomou o video da TV nesta sessao (so o .tpk sabe:
 // "interrompido: ResourceConflict" do host). Pegajoso ate o fim da sessao.
 int    video_conflito_recurso(void);
 #ifdef NV_TPK
 void   video_tpk_log_host(const char *linha);   // tpk.c repassa cada linha do host
+int    video_tpk_codec_recusado(const char *codecId);  // #313: DTS/TrueHD/MLP, que a Samsung nao toca
 // Zoom/recorte do plano de video (ROI), experimental (#241): liga/desliga em
 // execucao; o padrao e NV_TPK_ZOOM_ROI (0). Loga "[trailer] tpk zoom ROI: ...".
 void   video_tpk_zoom_roi_definir(int ligado);
 int    video_tpk_zoom_roi(void);
 // trailer.c marca que o que toca agora e um trailer (so ele pode ter ROI fora da tela).
 void   video_tpk_trailer_marcar(int sim);
+void   video_tpk_cartao_marcar(int sim);   // o destino e o furo do cartao da home
+int    video_tpk_cartao_cover(void);       // 1 = o cartao recebe cover (recorte de fonte), 0 = encaixe
+void   video_tpk_cartao_destino(float x, float y, float w, float h, float *ox, float *oy, float *ow, float *oh);
+void   video_tpk_cartao_furo(float x, float y, float w, float h, float *ox, float *oy, float *ow, float *oh);
+void   video_tpk_tizen_definir(const char *versao);   // gpunivel.c: platform.version
 int    video_recorte_fonte_trailer(void);   // so o trailer: o ajuste em execucao
 #else
 static inline int video_recorte_fonte_trailer(void) { return video_recorte_fonte(); }
+#endif
+
+// --- ESTATISTICAS AO VIVO (estatvivo.h) ---------------------------------------
+// O que a PLATAFORMA mede da reproducao atual, sem estimativa nenhuma: cada
+// alvo preenche so o que o pipeline dele de fato informa e deixa o resto em -1
+// (ou host vazio). A estimativa, quando ha, e de estatvivo.c, nunca daqui.
+//   webOS    bufferSeg (bufferRange do uMS menos a posicao); nada de bytes,
+//            conexoes nem quadros: o uMS nao conta.
+//   Android  bytes (lidos do socket em ParaleloDataSource.kt), bufferSeg
+//            (bufferedPosition do ExoPlayer), conexoes abertas e o host final,
+//            tempo do 1o byte e quadros perdidos (AnalyticsListener).
+//   Samsung  bufferPct (onbufferingprogress do AVPlay / evento 7 do host .tpk):
+//            so porcentagem, nunca segundos; nada de bytes nem quadros.
+typedef struct {
+  long long bytes;          // corpo lido desde a abertura; -1 = nao conta
+  double bufferSeg;         // segundos de video baixados a frente; < 0 = nao sabe
+  double bufferAlvoSeg;     // o que o player tenta manter; 0 = nao diz
+  int bufferPct;            // 0..100; -1 = nao informa
+  int conexoes;             // abertas agora para o video; -1 = nao sabe
+  int primeiroByteMs;       // do pedido ao 1o byte do ultimo trecho; -1
+  long long quadrosPerdidos, quadros;   // -1 = o decodificador nao conta
+  char host[96];            // host publico (sem caminho) do link FINAL; "" = nao sabe
+} VideoStats;
+static inline void video_stats_vazio(VideoStats *s) {
+  s->bytes = -1; s->bufferSeg = -1.0; s->bufferAlvoSeg = 0.0; s->bufferPct = -1;
+  s->conexoes = -1; s->primeiroByteMs = -1; s->quadrosPerdidos = s->quadros = -1;
+  s->host[0] = 0;
+}
+void video_estatisticas(VideoStats *s);
+#if defined(__APPLE__) || defined(NV_LINUX_DESKTOP)
+void video_simular_estatisticas(const VideoStats *s);   // capturas; NULL zera
 #endif
 
 // --- faixas -----------------------------------------------------------------
 // Tudo isto sai do evento sourceInfo da assinatura do uMS: o addon nao informa
 // nada disso, e so o pipeline sabe o que ha DENTRO do arquivo.
 
-// 32 e nao 12 (#92): um "Multi-Subs" de anime passa de doze legendas, e a
-// lista da TV cortada em 12 nunca casa pelo ordinal com o arquivo inteiro —
-// nenhuma faixa ASS ia ao overlay do app, todas ficavam com a TV.
-#define NV_FAIXA_MAX 32
+// 64 (era 12, depois 32; #92): um "Multi-Subs" de anime passa de doze legendas,
+// e um BD/remux multi-idioma passa de trinta. A lista da TV cortada abaixo do
+// total do arquivo nunca casa pelo ordinal (mkv_casar_legendas exige contagem
+// igual) — nenhuma faixa ASS ia ao overlay do app, todas ficavam com a TV. O
+// lado do arquivo (MKV_MAX_FAIXAS) ja era 64.
+#define NV_FAIXA_MAX 64
 
 typedef struct {
   char rotulo[48];   // "Ingles · Atmos 5.1" ou "Legenda 3"
@@ -208,10 +359,25 @@ typedef struct {
   // Faixa so de LETREIROS ("Signs", "Songs", "Signs & Songs", FlagForced): nao
   // traduz o dialogo. A folha rotula como tal e lista por ultimo.
   int  letreiro;
+  // LING_LEG_* (#287): forcada, letreiros, SDH, completa ou comum. A lista
+  // mostra ao lado de "Embutida"; a escolha automatica pesa. 0 = comum/nao se sabe.
+  int  tipoLeg;
   int canais;        // original audio channels, 0 unknown
   int stream_index;  // source demux index for DTS sessions, -1 in native webOS
   int stream_id;     // original container track ID, -1 when unknown
+  // Nome ORIGINAL da legenda, quando o container/player informa. Separado do
+  // rotulo para a folha mostra-lo abaixo do idioma sem mudar a memoria da faixa.
+  char nome[128];
 } VideoFaixa;
+
+// Identity used by candidates and manual audio memory, separate from selectTrack.
+static inline int video_audio_numero_memoria(const VideoFaixa *f) {
+#ifdef NV_TPK
+  // MKV TrackNumber occupies a separate namespace from native player indices.
+  if (f->numero < 0 && f->stream_id > 0) return 0x40000000 | f->stream_id;
+#endif
+  return f->numero;
+}
 
 int  video_n_audio(void);
 int  video_n_legenda(void);
@@ -283,9 +449,17 @@ typedef struct {
   int opacidade;  // 0..3 = texto 100/75/50/25%
   int familia;    // TxtFamilia; aplicada ao overlay externo (OpenSubtitles)
   int negrito;    // 1 = peso negrito no overlay (so o que o app desenha)
+  int corBorda;   // -1 unset (legacy outline); 0 Black, 1 White, 2 Yellow, 3 Green, 4 Blue, 5 Red
 } VideoLegendaEstilo;
 
 #define VIDEO_LEG_NCORES 6
+// A borda tem preto puro como padrao; as demais amostras usam a paleta do texto.
+static inline unsigned video_legenda_borda_rgb(int indice) {
+  static const unsigned cores[VIDEO_LEG_NCORES] = {
+    0x000000u, 0xffffffu, 0xffde30u, 0x40e070u, 0x4e9cffu, 0xff5050u
+  };
+  return cores[indice >= 0 && indice < VIDEO_LEG_NCORES ? indice : 0];
+}
 // Nomes que o uMS aceita em charColor. Expostos porque a folha desenha os
 // rotulos e precisa da mesma ordem.
 extern const char *const VIDEO_LEG_CORES[VIDEO_LEG_NCORES];
@@ -348,6 +522,10 @@ void video_forcar_sdr(void);
 int  video_velocidade_suportada(void);
 void video_velocidade(int centesimos);
 int  video_velocidade_atual(void);
+// Room correction in thousandths (950..1050); 1000 clears it. Personal speed
+// remains separate. Effective rate is in hundredths for existing native APIs.
+void video_taxa_sync(int milesimos);
+int  video_taxa_efetiva(void);
 // O PLAYER mediu que o pipeline nao acelerou (velocidade.h, VelMedidor) apesar
 // do "ok" da plataforma: o backend passa a se comportar como depois de uma
 // recusa (suportada = 0, atual = 100) e devolve o pipeline a 1x.
@@ -373,7 +551,15 @@ typedef struct {
   unsigned bufferandoMs;
   double pos, duracao, bufferFim;
   int dts;           // VIDEO_DTS_* que video_dts_estado devolve
+  int aceita;               // video_tocar devolve isto (1 = o player tem video)
+  int tocando, iniciando;   // video_tocando / video_iniciando
+  int dvCandidato;          // video_dv_candidato
+  VideoDvFase dvFase;       // video_dv_fase
 } VideoSimulacao;
+// Capturas/testes: o que video_dv_tela e video_dv_recusar receberam (contagem
+// de chamadas e ultimo valor), para provar o mudo e a escolha do HDR10.
+int video_simulado_dv_tela(void);
+int video_simulado_dv_recusas(void);
 void video_simular(const VideoSimulacao *s);
 #endif
 

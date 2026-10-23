@@ -40,6 +40,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "nvtmp.h"
 
 // --- DUBLES ------------------------------------------------------------------
 static char dirDados[512];
@@ -53,8 +54,8 @@ int         perfis_ativo(void) { return 1; }
 const char *desc_genero_pt(const char *g) { return g; }
 const char *addons_base_por_id(const char *id) { (void)id; return "https://addon.exemplo/abc"; }
 int prog_ler(ProgRegistro *saida, int max) { (void)saida; (void)max; return 0; }
-int prog_gravar_local(const char *imdb, int t, int e, double p, double d) {
-  (void)imdb; (void)t; (void)e; (void)p; (void)d; return 0;
+int prog_gravar_local(const char *imdb, int t, int e, double p, double d, int tocou) {
+  (void)imdb; (void)t; (void)e; (void)p; (void)d; (void)tocou; return 0;
 }
 
 // --- DADOS REALISTAS ---------------------------------------------------------
@@ -220,7 +221,7 @@ int main(int argc, char **argv) {
   const char *base = getenv("NV_TESTE_DIR");
   if (argc > 1) voltasDesc = atoi(argv[1]);
   snprintf(dirDados, sizeof dirDados, "%s/catcachecorrida-%d",
-           base && *base ? base : "/tmp", (int)getpid());
+           base && *base ? base : nvt_dir(), (int)getpid());
   mkdir(dirDados, 0700);
   montarLote();
   montarJsonConta();

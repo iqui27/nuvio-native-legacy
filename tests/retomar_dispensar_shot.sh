@@ -1,10 +1,12 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Menu do cartao "Retomar agora" com Dispensar (retomar_dispensar_shot.c), em PNG. Janela GL do Mac; nao
 # entra na suite.
 set -eu
 cd "$(dirname "$0")/.."
 
-saida="${1:-/tmp/nv-retomar-shots}"
+saida="${1:-${TMPDIR:-/tmp}/nv-retomar-shots}"
 mkdir -p "$saida"
 NUVIO_DADOS=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-retomar-shot.XXXXXX")
 export NUVIO_DADOS

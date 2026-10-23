@@ -60,7 +60,24 @@
 // a tela de Ajustes mostra o aviso de memoria e o modo seguro (seguro.h) passa
 // a vigiar a mudanca.
 #define FIL_LIMITE_MIN     3
-#define FIL_LIMITE_MAX    40
+// O teto das TVs (webOS, Tizen, .wgt, .tpk). Tambem e o numero historico que a
+// tela de novidades da 1.6 mostra.
+#define FIL_LIMITE_MAX_TV 40
+// ANDROID: "Ilimitado" (dono, 2.0.4). Nao e infinito: e o maior valor que a
+// estrutura aguenta (CAT_FIL_MAX 224 menos as fixas), e Ajustes o mostra como
+// "Ilimitado". Na pratica nenhuma conta liga 200 catalogos, entao a fila
+// (FIL_NA_FILA) deixa de aparecer; ela so volta acima de 200 ligadas.
+// CONTA DE MEMORIA, por 100 fileiras com 24 itens: 2400 CatItem x 15,6 KB =
+// ~37 MB de catalogo publicado. Na troca do catalogo ha por um quadro o bloco
+// novo e o antigo (aposentar, catalogo.c): ~75 MB de pico. A rodada de pedidos
+// e fatiada em CAT_RODADA_MAX (24) fileiras, entao os baldes dos fios somam no
+// maximo 24 x 375 KB = ~9 MB, qualquer que seja o limite.
+#ifdef NV_ANDROID
+#define FIL_LIMITE_MAX    200
+#define FIL_LIMITE_ILIMITADO FIL_LIMITE_MAX
+#else
+#define FIL_LIMITE_MAX    FIL_LIMITE_MAX_TV
+#endif
 #define FIL_LIMITE_PADRAO  7
 // Ate aqui e o que sempre foi permitido sem aviso.
 #define FIL_LIMITE_SEGURO 16
@@ -94,6 +111,27 @@ typedef enum {
   // motivo dos outros — o 6 gravado continua sendo o 4:3 de sempre.
   FIL_TIPO_DESTAQUE_QUADRADO_M, // 4:3 x1,25 — dois cards e meio por tela
   FIL_TIPO_DESTAQUE_QUADRADO_G, // 4:3 x1,5  — dois cards e um pedaco
+  // As tres fileiras de 06/10 (dono: "3 fileiras novas bonitonas"). No fim
+  // pelo mesmo motivo: o numero gravado dos tipos acima nao muda.
+  FIL_TIPO_LINHA_TEMPO,  // FILEIRA_LINHA_TEMPO — cartazes por ano sobre a linha animada
+  FIL_TIPO_FICHA,        // FILEIRA_FICHA — cartaz com a ficha (ano, nota, sinopse) ao lado
+  FIL_TIPO_PALCO,        // FILEIRA_PALCO — o foco grande no centro, vizinhos menores
+  FIL_TIPO_REDONDA,      // FILEIRA_REDONDA — avatar circular com o nome embaixo (fileiras de pessoas)
+  // "Herói" (#205): FILEIRA_HEROI — um cartão só do tamanho da fileira, com
+  // fundo, selo, título e duas linhas. No fim pelo mesmo motivo dos outros.
+  FIL_TIPO_HEROI,        // fonte: a própria fileira; curadoria do Nuvio Legacy; sorteio
+  // 14/10 (dono): "o pôster só que do tamanho do grande tipo o 3:4 grande",
+  // com mais informação na base e o véu na cor predominante. No fim, pelo
+  // mesmo motivo: o número gravado dos tipos acima não muda.
+  FIL_TIPO_POSTER_GRANDE, // FILEIRA_POSTER_GRANDE — pôster 3:4 grande com ficha na base
+  // 16/10 (dono): "Hero dividido" — o painel do foco a esquerda, a fila a
+  // direita. No fim pelo mesmo motivo.
+  FIL_TIPO_HEROI_DIVIDIDO, // FILEIRA_HEROI_DIVIDIDO — painel deitado com a ficha + cartazes
+  // dono: "esse estilo de fileira pode ter 3 tamanhos tb". O Pôster grande de
+  // sempre (FIL_TIPO_POSTER_GRANDE, 16) fica sendo o MEDIO; os outros dois entram
+  // no fim, como os 4:3 maiores, para o numero gravado nao mudar.
+  FIL_TIPO_POSTER_GRANDE_P, // FILEIRA_POSTER_GRANDE x0,8  — menor, uma linha de sinopse
+  FIL_TIPO_POSTER_GRANDE_G, // FILEIRA_POSTER_GRANDE x1,25 — maior, tres linhas de sinopse
   FIL_TIPO_N
 } FilTipo;
 
@@ -108,7 +146,7 @@ const char *fil_tipo_rotulo(int t);
 const char *fil_tam_rotulo(int t);
 float       fil_tam_escala(int t);
 // Fator de TAMANHO que a propria forma carrega: 1 em todas, menos nos dois
-// Destaques 4:3 maiores. Multiplica o fator de Tamanho da fileira (fil_escala).
+// Destaques 4:3 maiores (1,25 / 1,5) e no Pôster grande menor / maior (0,8 / 1,25). Multiplica o fator de Tamanho da fileira (fil_escala).
 float       fil_tipo_fator(int t);
 
 // DE ONDE A FILEIRA VEIO. Sem isto a tela de Ajustes lista quinze nomes soltos
@@ -127,6 +165,7 @@ typedef enum {
   FIL_ORIGEM_APP = 0,   // Continuar assistindo, Entre amigos, Retomar agora
   FIL_ORIGEM_COLECAO,   // grupo de colecoes (chave collection_<id>)
   FIL_ORIGEM_CATALOGO,  // catalogo declarado por um addon
+  FIL_ORIGEM_SERVIDOR,  // personal server, outside the addon quota
   FIL_ORIGEM_N
 } FilOrigem;
 
@@ -162,6 +201,16 @@ int  fil_limite_gravado(void);
 // Teto SO desta sessao (0 = sem teto). O perfil seguro (seguro.h) usa para a
 // home montar menos fileiras sem tocar em fileirasui-p<N>.txt.
 void fil_definir_teto_sessao(int teto);
+// O PASSO DO SELETOR DE AJUSTES. Nas TVs, de 1 em 1 entre 3 e 40. No Android
+// (2.0.4) o passo depois de 40 e "Ilimitado" (FIL_LIMITE_MAX) — ninguem
+// aperta a seta 160 vezes — e voltar de Ilimitado cai em 40.
+int  fil_limite_passo(int v, int dir);
+// 1 quando ir de `de` para `para` pede a folha de memoria (acima de
+// FIL_LIMITE_SEGURO, subindo). No Android nunca: la a folha virou uma dica no
+// texto da linha, e o diario do modo seguro continua vigiando igual.
+int  fil_limite_pede_aviso(int de, int para);
+// 1 quando `v` deve aparecer como "Ilimitado" (so no Android).
+int  fil_limite_ilimitado(int v);
 // Ao BAIXAR o limite, as ligadas que ficaram alem dele viram "fora da home"
 // (ocultas), nao fila. Decisao do dono; ver o comentario na definicao.
 void fil_definir_limite(int n);
@@ -194,6 +243,8 @@ void fil_colecao_catalogo_removido(const char *chave);
 void fil_colecao_catalogo_restaurado(const char *chave);
 // Scope only account-derived automatic flags; does not clear personal settings.
 int fil_conta_dono(const char *usuario);
+int  fil_linha_sem_addon(int i); // #327: nenhum addon ligado declara mais este catalogo
+int  fil_adicionada_na_tv(const char *chave); // #327: adicionada a mao, vence a colecao
 int  fil_estado_chave(const char *chave);   // -1 = desconhecida
 int  fil_n_na_home(void);
 int  fil_n_fila(void);
@@ -212,15 +263,58 @@ void fil_normalizar(void);
 // de semente ao primeiro arquivo do perfil 1, e so dele). Chamar na troca de
 // perfil.
 void fil_definir_perfil(int perfil);
+// Bumps on every real profile switch (#294): snapshots taken for the previous
+// profile are stale once this changes.
+unsigned fil_perfil_geracao(void);
+
+// #392: a lista de addons que a descoberta tem na mao e deste perfil? 0 (pacote,
+// sem conta) vale; o perfil cuja conta mandou a lista (addons_perfil_da_lista)
+// diferente do perfil das fileiras, nao: na janela depois de uma troca a lista
+// ainda e a do perfil que saiu, e registrar os catalogos dela no arquivo do
+// perfil novo despeja as fileiras dele e acrescenta as do outro.
+int fil_lista_e_deste_perfil(int perfilDaLista);
+
+// #392: FOTO DE UMA PASSADA. A descoberta tira a foto (perfil em uso da lista +
+// geracao do perfil das fileiras) quando le a lista e registra com ela: a
+// comparacao com o estado de agora e feita DENTRO do mutex do registro, entao
+// uma passada velha (a troca de perfil aconteceu enquanto ela rodava) e recusada
+// de forma atomica.
+typedef struct { int perfilLista; unsigned geracao; } FilPassada;
+FilPassada fil_passada_ler(void);
+int  fil_passada_valida(const FilPassada *p);
+void fil_registrar_de(const FilPassada *p, const char *chave, const char *titulo,
+                      const char *addon, const char *conteudo, int itens);
+void fil_registrar_se_couber_de(const FilPassada *p, const char *chave,
+                                const char *titulo, const char *addon,
+                                const char *conteudo);
 // Tira da lista os catalogos de addons que ja nao estao na conta. `ids` e
 // `bases` sao os ids de manifesto e as URLs base dos addons ATUAIS; so vale
 // depois de todos os manifestos da volta terem sido lidos. `perfilDaLista` e o
 // perfil cuja CONTA mandou essa lista (addons_perfil_da_lista): diferente do
-// perfil desta escolha, ou 0, nao poda nada. Linha com escolha da pessoa
-// (desligada, na fila, forma, tamanho, destaque) nunca e podada. Devolve
-// quantas sairam.
+// perfil desta escolha, ou 0, nao poda nada. Identidade incompleta adia a
+// limpeza. Desinstalacao confirmada apaga as linhas e suas escolhas locais;
+// addon apenas desligado conserva-as. Devolve quantas sairam.
 int  fil_podar_catalogos(const char *const *ids, const char *const *bases, int n,
                          int perfilDaLista);
+// Variante de producao: chamador protege a versao com addons_travar_lista.
+// Lista trocada depois invalida a autoridade inclusive durante manifestos pendentes.
+int  fil_podar_catalogos_de(const char *const *ids, const char *const *bases, int n,
+                            int perfilDaLista, unsigned versao);
+// So confirma ausencia depois da lista completa deste perfil. Para limpar
+// referencias de colecao com dono explicito; sem id/base, preserva a fonte.
+int  fil_addon_ausente(const char *id, const char *base);
+
+// #319: marca (so em memoria) as linhas de catalogo cujo addon saiu da conta ou
+// foi desligado, para elas nao ocuparem vaga do limite nem aparecerem na home.
+// `ativos[k]` = addon k ligado. Devolve quantas linhas mudaram de estado.
+// #204: `chaves[0..n)` = catalogos que os manifestos lidos declaram AGORA (chamar
+// ANTES do registro do ciclo). Linha de catalogo fora da lista, sem escolha
+// explicita da pessoa, vira despejavel quando a tabela enche; se forem mais de
+// 25% de FIL_MAX, saem ja. Devolve quantas saíram.
+int  fil_marcar_declaradas(const char *const *chaves, int n, int perfilDaLista);
+
+int  fil_marcar_sem_addon(const char *const *ids, const char *const *bases,
+                          const int *ativos, int n, int perfilDaLista);
 
 // O addon (id do manifesto, ou base sem id) e NOVO para este perfil nesta TV:
 // nenhuma fileira dele veio do arquivo do perfil e nenhuma carrega escolha. E o
@@ -265,7 +359,8 @@ void fil_registrar_se_couber(const char *chave, const char *titulo,
 // limite, ou posta na fila pela pessoa —, e -1 quando nao (desconhecida,
 // oculta, ou ligada so por ter entrado no fim). E a pergunta que a cota de
 // declaracoes de descoberta.c faz antes de decidir quais catalogos de um addon
-// grande ler.
+// grande ler. Explicit additions and queue placement retain this priority even
+// when quota-excluded; unavailable catalogs still consume no Home slots.
 int fil_escolhida(const char *chave);
 
 // Grava o que fil_registrar acumulou, se houver. Chamar UMA VEZ no fim da
@@ -338,6 +433,24 @@ const char *fil_estilo_tam_palavra(int k);
 // Rotulo do tipo `t` PARA ESTA CHAVE: numa colecao o numero quer dizer outra
 // palavra (FIL_TIPO_CARTAZ e "Pôster", nao "Cartaz em pé").
 const char *fil_estilo_rotulo(const char *chave, int t);
+// --- ORDEM DOS ITENS da fileira de colecao (2.0.5: "alem do estilo da
+// fileira, ordenar elas por ano, ordem alfabetica, ordem da lista ou
+// aleatorio") -------------------------------------------------------------
+// Vale para a fileira de um GRUPO de colecao: os itens dela sao as pastas. A
+// ordem escolhida e da FILEIRA (chave collection_<id>), gravada no mesmo
+// fileirasui-p<N>.txt das outras opcoes — e local como elas, nunca sobe para
+// a conta. Quem aplica e a montagem da home (col_ordenar_pastas, colecoes.c).
+typedef enum {
+  FIL_ORD_LISTA = 0,   // a ordem da propria colecao — a de sempre
+  FIL_ORD_ANO,         // pasta mais nova primeiro; sem ano no fim
+  FIL_ORD_AZ,          // ordem alfabetica do nome da pasta
+  FIL_ORD_ALEATORIA,   // embaralhada; a semente e da montagem, nao do quadro
+  FIL_ORD_N
+} FilOrdem;
+int         fil_ordem(const char *chave);                 // FIL_ORD_LISTA padrao
+int         fil_definir_ordem(const char *chave, int o);  // 0 fora de colecao
+const char *fil_ordem_rotulo(int o);                      // pt; i18n no desenho
+
 // Uma frase, em pt, que diz o que a forma `t` e NESTA chave (passa por i18n no
 // desenho). E a legenda da previa do modal de estilo (ctxmenu.c).
 const char *fil_estilo_ajuda(const char *chave, int t);
@@ -396,6 +509,8 @@ int  fil_unir(const char *const *chaves, int n, int *saida, int max);
 // Esquece a escolha e o registro. Chamar no logout junto do resto: a home e da
 // conta de quem saiu.
 void fil_esquecer(void);
+// Reload the active profile after its cloud preferences were restored.
+void fil_recarregar(void);
 
 // LIMPEZA UNICA DO #197 (ver a definicao): desfaz, so no arquivo com o padrao
 // exato do defeito, a rajada do limite e os catalogos fora da cota que entraram

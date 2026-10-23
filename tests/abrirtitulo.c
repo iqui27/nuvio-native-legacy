@@ -14,13 +14,31 @@
 //      (id do TMDB -> IMDb), e a ficha vem num unico /meta depois.
 //
 //   bash tests/abrirtitulo.sh
-int ajustes_busca_cinemeta(void) { return 1; }
+static int cinemetaLig = 1;
+int ajustes_social(void) { return 1; }
+int ajustes_hist_conta(void) { return 1; }
+int ajustes_fonte_biblioteca(void) { return 0; }
+int ajustes_busca_cinemeta(void) { return cinemetaLig; }
+int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
+int ajustes_ocultar_nao_lancados(void) { return 0; }   // #369: descoberta.c le o ajuste
+int ajustes_ocultar_filmes_vistos(void) { return 0; }
+void addons_lista_travar(void) {}
+void addons_lista_destravar(void) {}
+#include "perfis.h"
+#define NV_PERFIL_SESSAO_FORTE
+static uint64_t testeSessao = 1;
+uint64_t perfis_sessao_geracao(void) { return testeSessao; }
+int perfis_sessao_atual(uint64_t g) { return g == testeSessao; }
+int perfis_sessao_travar(uint64_t g) { return perfis_sessao_atual(g); }
+void perfis_sessao_destravar(void) {}
 #include "../src/descoberta.c"
 Uint32 SDL_GetTicks(void) { return 0; }
 #include "../src/progresso.h"
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
+#define NV_TEST_SESSAO_PROPRIA
+#define NV_TEST_SOCIAL_PROPRIO
 #include "jellyfin_stub.inc"
 
 // --- DUBLES: nenhum participa da regra, so fazem descoberta.c linkar ---------
@@ -30,10 +48,15 @@ int         ajustes_idioma_ingles(void) { return 0; }
 int ajustes_idioma(void) { return 0; }
 int   ajustes_cw_ordem(void)               { return 0; }   // Padrao (issue #127)
 int   ajustes_cw_mostrar_nao_exibidos(void) { return 1; }
+int   ajustes_cw_proximo(void) { return 1; }
 const char *i18n(const char *s)         { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
 static const char *fakeDados = "";
 const char *dados_dir(void)             { return fakeDados; }
+char *dados_caminho(char *dst, unsigned size, const char *name) {
+  snprintf(dst, size, "%s/%s", fakeDados, name); return dst;
+}
+int ajustes_nota_episodio(int source) { (void)source; return 1; }
 const char *sessao_usuario(void)        { return ""; }
 static int fakePerfil = 1;
 int         perfis_ativo(void)          { return fakePerfil; }
@@ -57,8 +80,8 @@ void homeestado_contexto(HomeContexto *c) { *c = (HomeContexto){0}; c->perfil = 
 int homeestado_mudancas(const HomeContexto *a, const HomeContexto *b) { (void)a; (void)b; return 0; }
 const char *homeestado_mudancas_texto(int m, char *b, unsigned t) { (void)m; if (b && t) b[0] = 0; return b; }
 int prog_ler(ProgRegistro *saida, int max) { (void)saida; (void)max; return 0; }
-int prog_gravar_local(const char *imdb, int t, int e, double p, double d) {
-  (void)imdb; (void)t; (void)e; (void)p; (void)d; return 0;
+int prog_gravar_local(const char *imdb, int t, int e, double p, double d, int tocou) {
+  (void)imdb; (void)t; (void)e; (void)p; (void)d; (void)tocou; return 0;
 }
 
 void  SDL_Delay(Uint32 ms)                 { usleep(ms * 1000); }
@@ -79,14 +102,28 @@ static const char *fakeIdioma = "pt-BR";
 const char *ajustes_tmdb_idioma(void)      { return fakeIdioma; }
 const char *ajustes_tmdb_chave(void)       { return ""; }
 void  fil_gravar_registro(void)            { }
+int   fil_lista_e_deste_perfil(int p)       { (void)p; return 1; }
+unsigned fil_perfil_geracao(void)          { return 0; }
+FilPassada fil_passada_ler(void)          { FilPassada p = {0, 0}; return p; }
+int   fil_passada_valida(const FilPassada *p) { (void)p; return 1; }
+void  fil_registrar_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k, int n) { (void)p; (void)c; (void)t; (void)a; (void)k; (void)n; }
+void  fil_registrar_se_couber_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k) { (void)p; (void)c; (void)t; (void)a; (void)k; }
 int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int n,
                           int perfilDaLista) {
   (void)ids; (void)bases; (void)n; (void)perfilDaLista; return 0; }
+int fil_marcar_declaradas(const char *const *chaves, int n, int perfilDaLista) { (void)chaves; (void)n; (void)perfilDaLista; return 0; }
+int fil_marcar_sem_addon(const char *const *ids, const char *const *bases, const int *ativos, int n, int perfilDaLista) {
+  (void)ids; (void)bases; (void)ativos; (void)n; (void)perfilDaLista; return 0;
+}
 int   fil_addon_novo(const char *id, const char *base) { (void)id; (void)base; return 0; }
 int   addons_perfil_da_lista(void)         { return 0; }
+int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 int   addons_ativo(int i)                  { (void)i; return 1; }
 int   fil_limite(void)                     { return 16; }
 int   fil_oculta(const char *c)            { (void)c; return 0; }
+int   fil_adicionada_na_tv(const char *c) { (void)c; return 0; }
+int   fil_estado_chave(const char *c) { (void)c; return -1; }
+const char *fil_hero_fonte(void) { return ""; }
 // Dubles da escolha da cota (#126): nada escolhido na TV, e o registro dos
 // catalogos fora da cota nao interessa a este teste.
 int fil_escolhida(const char *c) { (void)c; return -1; }
@@ -127,9 +164,12 @@ int   simkl_e_a_seguir(const char *id)     { (void)id; return 0; }
 int   simkl_plantowatch(CatItem *s, int m) { (void)s; (void)m; return 0; }
 int   ajustes_salvos_no_simkl(void)        { return 0; }
 int   trakt_enfeitar_lote(CatItem *s, int n) { (void)s; (void)n; return 0; }
+int   trakt_enfeitar_lote_sessao(CatItem *s, int n, uint64_t g) { (void)g; return trakt_enfeitar_lote(s, n); }
 int   trakt_lista(const char *q, CatItem *s, int m) { (void)q; (void)s; (void)m; return 0; }
+int   trakt_lista_cresc(const char *q, CatItem **s, int m) { (void)q; (void)s; (void)m; return 0; }
 // O servico social proprio (recomenda.c) fica fora deste teste: a uniao e so o que o Trakt trouxe.
 int   recomenda_social_mesclar(CatItem *i, int nTrakt, int max) { (void)i; (void)max; return nTrakt; }
+int   recomenda_social_mesclar_sessao(CatItem *i, int nTrakt, int max, uint64_t g) { (void)g; return recomenda_social_mesclar(i, nTrakt, max); }
 int   trakt_social(CatItem *s, int m)      { (void)s; (void)m; return 0; }
 const char *nuvem_trakt_cliente(void)      { return ""; }
 // Um addon de metadados, ligado so no caso 7 (o resto do teste roda sem addon).
@@ -201,6 +241,7 @@ static const char *META_SEM_ELENCO =
 static const char *addonResp, *addonTipo = "/series/";
 static const char *tmdbFind, *tmdbTemp1, *tmdbFilme, *cineSerie;
 int ajustes_cw_concluido(void) { return 90; }
+int   ajustes_cw_minimo(void)             { return 1; }
 unsigned recomenda_geracao(void) { return 1; }
 static int atrasoTempMs;
 static char pedidos[64][600];
@@ -244,6 +285,11 @@ char *rede_baixar(const char *u, int t) {
 }
 char *rede_baixar_com(const char *u, int t, const char *const *c) {
   (void)c; return rede_baixar(u, t); }
+char *rede_baixar_st(const char *u, int t, const char *const *c, int *status) {
+  char *r = rede_baixar_com(u, t, c);
+  if (status) *status = r ? 200 : 404;
+  return r;
+}
 int arte_reserva_registrar(const char *url, const char *imdb, int poster) {
   (void)url; (void)imdb; (void)poster; return 1; }
 
@@ -304,6 +350,15 @@ static int nMeta(void) {
 }
 
 int main(void) {
+  // "Buscar no Cinemeta" desligado: nada do addon Cinemeta na busca (alvos e fileiras locais).
+  cinemetaLig = 1;
+  assert(!desc_busca_base_oculta("https://v3-cinemeta.strem.io"));
+  cinemetaLig = 0;
+  assert(desc_busca_base_oculta("https://v3-cinemeta.strem.io"));
+  assert(desc_busca_base_oculta("https://Cinemeta-Live.example.com/x"));
+  assert(!desc_busca_base_oculta("https://addon.example.com") && !desc_busca_base_oculta("") && !desc_busca_base_oculta(NULL));
+  cinemetaLig = 1;
+
   pthread_t th;
   double t0, tB;
   nFake = 0; nRotas = 0; addonMeta = 0; fakeSoCinemeta = 0; fakeTmdbBasico = 1;
@@ -375,8 +430,40 @@ int main(void) {
     k = desc_titulo_pronto();
     assert(k >= 0 && nMeta() == 0 && pediu("/tv/777/external_ids"));
     assert(!strcmp(cat_item(k)->imdb, "tt0000998") && cat_item(k)->tmdb == 777);
-    assert(!strcmp(cat_item(k)->tipo, "series") && !strcmp(cat_item(k)->titulo, "Titulo Z")); }
+    assert(!strcmp(cat_item(k)->tipo, "series") && !strcmp(cat_item(k)->titulo, "Titulo Z"));
+    // #502/#503: o cartaz da lista NAO entra em `backdrop` — com ele la o
+    // detalhe nao marcava arteFixaPoster e ficava com a miniatura w342
+    // esticada para sempre, mesmo depois do /meta trazer o fundo w1280.
+    assert(cat_item(k)->backdrop[0] == 0);
+    assert(!strcmp(cat_item(k)->poster, "https://p.test/z.jpg")); }
   puts("ok  semente tmdb: um pedido (external_ids), titulo pronto sem esperar o /meta");
+
+  // 3b) A semente abre SEM fundo e o /meta completa: o detalhe congela no
+  //     cartaz (arteFixaPoster) e solta quando o w1280 chega — a arte final e
+  //     o fundo grande, nao a miniatura da lista.
+  limparCacheMeta(); nRotas = 0;
+  rota("/movie/778/external_ids", "{\"imdb_id\":\"tt0000996\"}");
+  rota("/meta/movie/tt0000996.json",
+       "{\"meta\":{\"id\":\"tt0000996\",\"type\":\"movie\",\"name\":\"Filme Rec\","
+       "\"poster\":\"https://p.test/rec.jpg\","
+       "\"background\":\"https://image.tmdb.org/t/p/w1280/fundo.jpg\","
+       "\"cast\":[\"Ator R\"],\"videos\":[]}}");
+  nPedidos = 0;
+  desc_pedir_titulo_semente("", 778, "movie", "Filme Rec", "2020",
+                            "https://image.tmdb.org/t/p/w342/rec.jpg");
+  { int k, w = 0;
+    while (desc_titulo_buscando() && w++ < 500) usleep(10 * 1000);
+    k = desc_titulo_pronto();
+    assert(k >= 0);
+    assert(!strcmp(cat_item(k)->poster, "https://image.tmdb.org/t/p/w342/rec.jpg"));
+    assert(cat_item(k)->backdrop[0] == 0);   // sem fundo: cartaz como arte contida
+    // O que a abertura faz (app.c): a ficha chega e publica o fundo w1280.
+    nPedidos = 0; epItem = k; fioEpVivo = 1; pendItem = -1;
+    buscarEps(NULL);
+    assert(!strcmp(cat_item(k)->backdrop,
+                  "https://image.tmdb.org/t/p/w1280/fundo.jpg"));
+    assert(!strcmp(cat_item(k)->backdrop, cat_item(k)->backdropCatalogo)); }
+  puts("ok  semente sem fundo: o /meta traz o w1280 e o detalhe solta o cartaz");
 
   // 4) Sem cartaz ou sem nome nao ha semente: caminho de sempre.
   limparCacheMeta(); nRotas = 0; nPedidos = 0;
@@ -389,6 +476,24 @@ int main(void) {
     k = desc_titulo_pronto();
     assert(k >= 0 && nMeta() >= 1); }
   puts("ok  sem cartaz: cai no caminho antigo (espera o /meta)");
+
+  // A new visit must stamp both existing and newly inserted IMDb seeds.
+  // buscarEps ran inline above; restore the UI thread's unbound context.
+  free(pthread_getspecific(descSessaoChave));
+  pthread_setspecific(descSessaoChave, NULL);
+  testeSessao++;
+  nPedidos = 0;
+  desc_pedir_titulo_semente("tt0000999:1:1", 0, "series", "Titulo Y", "2020", "https://p.test/y.jpg");
+  assert(desc_titulo_pronto() == cat_indice_por_imdb("tt0000999"));
+  assert(desc_titulo_pronto() == -1);       // consumed exactly once
+  desc_pedir_titulo_semente("tt0000995", 0, "movie", "New seed", "2022", "https://p.test/new.jpg");
+  { int k = desc_titulo_pronto();
+    assert(k >= 0 && !strcmp(cat_item(k)->imdb, "tt0000995")); }
+  desc_pedir_titulo_semente("tt0000995", 0, "movie", "New seed", "2022", "https://p.test/new.jpg");
+  testeSessao++;                          // profile changes before consumption
+  assert(desc_titulo_pronto() == -1);
+  assert(nPedidos == 0);
+  puts("ok  IMDb seeds: current visit opens, stale publication is rejected");
 #endif
   puts("abrirtitulo: ok");
   return 0;

@@ -1,12 +1,14 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Diagnostico da Live TV contra um servidor Xtream falso + capturas. Precisa de
 # python3 e ffmpeg (gera os videos de teste). Ver tests/livetvdiag_shot.c.
 #   bash tests/livetvdiag_shot.sh /tmp/nuvio-ltd
 set -eu
 cd "$(dirname "$0")/.."
 command -v ffmpeg >/dev/null || { echo "sem ffmpeg: pulado"; exit 0; }
-M=$(mktemp -d /tmp/nuvio-ltd-midia.XXXXXX)
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-ltd-shot.XXXXXX)
+M=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-ltd-midia.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-ltd-shot.XXXXXX)
 export NUVIO_DADOS
 mkdir -p "$M/hls"
 ffmpeg -loglevel error -y -f lavfi -i testsrc2=size=1920x1080:rate=25 -f lavfi -i sine -t 12 \
@@ -24,8 +26,8 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/livetvdiag.c) continue;; esac
   sources+=("$source")
 done
-cc "${sources[@]}" tests/livetvdiag_shot.c -Isrc -o /tmp/nuvio-livetvdiag-shot \
+cc "${sources[@]}" tests/livetvdiag_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-livetvdiag-shot \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-livetvdiag-shot "$@"
+${TMPDIR:-/tmp}/nuvio-livetvdiag-shot "$@"

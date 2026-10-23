@@ -225,3 +225,53 @@ size_t nv_limpar_texto(const char *in, char *out, size_t tam, int flags) {
     out[w] = 0; k = w; }
   return k;
 }
+
+// ---- nv_aparar_separadores -------------------------------------------------
+static size_t sepLen(const char *p) {   // length of a separator char at p, else 0
+  if (*p == '|' || *p == '-' || *p == '/' || *p == ',') return 1;
+  if (!strncmp(p, "\xE2\x80\xA2", 3)) return 3;   // •
+  if (!strncmp(p, "\xC2\xB7", 2)) return 2;       // ·
+  return 0;
+}
+static int soSeparador(const char *a, const char *b) {
+  size_t l;
+  if (a == b) return 0;
+  while (a < b && (l = sepLen(a))) a += l;
+  return a == b;
+}
+size_t nv_aparar_separadores(char *s) {
+  char *w = s;
+  const char *p = s;
+  int ultimaSep = 1;   // "start of line": a separator here is dangling
+  const char *pendSep = NULL; size_t pendLen = 0;
+  while (*p) {
+    const char *ini, *fim;
+    size_t l;
+    while (*p == ' ' || *p == '\t') p++;
+    if (!*p) break;
+    ini = p;
+    while (*p && *p != ' ' && *p != '\t') p++;
+    fim = p;
+    if (soSeparador(ini, fim)) {
+      if (!ultimaSep) { pendSep = ini; pendLen = (size_t)(fim - ini); ultimaSep = 1; }
+      else if (pendSep) { pendSep = ini; pendLen = (size_t)(fim - ini); }   // doubled: keep the last
+      continue;
+    }
+    // Separators glued to the edges of the word at the line's start/end go away.
+    if (w == s) while (ini < fim && (l = sepLen(ini))) ini += l;
+    { const char *q = fim;
+      while (*q == ' ' || *q == '\t') q++;
+      if (!*q) for (;;) {
+        const char *b = ini; size_t last = 0;
+        for (const char *t = ini; t < fim; ) { size_t k = sepLen(t); last = k ? (size_t)(fim - t) : 0; if (k && t + k == fim) { fim = t; last = 1; break; } t += k ? k : 1; last = 0; }
+        if (!last || fim == b) break;
+      } }
+    if (ini >= fim) continue;
+    if (pendSep && w != s) { *w++ = ' '; memmove(w, pendSep, pendLen); w += pendLen; }
+    if (w != s) *w++ = ' ';
+    memmove(w, ini, (size_t)(fim - ini)); w += fim - ini;
+    pendSep = NULL; ultimaSep = 0;
+  }
+  *w = 0;
+  return (size_t)(w - s);
+}

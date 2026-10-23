@@ -10,6 +10,7 @@
 //      abriu em 14,2 s) e um HLS hipotetico tocando — a tela "na TV";
 //   4. captura com o teste no meio.
 #include "../src/livetvdiag.c"
+#include "nvtmp.h"
 #include "rail_shot.h"
 #include "ilha.h"
 #include "ajustes_ux.h"
@@ -61,7 +62,7 @@ static void canal(int i, const char *id, const char *nome) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-livetvdiag";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-livetvdiag");
   const char *dir = getenv("NUVIO_DADOS");
   char nome[600];
   SDL_Window *w;

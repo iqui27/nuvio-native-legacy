@@ -1,5 +1,12 @@
 # Roadmap geral do Nuvio Native Legacy
 
+## 2.0.3 → 2.2 (decisão do dono de 06/10/2026 e 07/10/2026)
+
+- **2.0.3**: congelada, só o que já está em `integracao/2.0.3`. **2.0.4**: pequenos recursos e triagem de bugs que já têm branch.
+- **2.1**: Watch Together, Diário + sono, Trava, Caça/Conquistas, redesign da Biblioteca, Coleções + fileiras; mais perfis com tour, "Começar", "Resolver um problema" e busca com i18n nos Ajustes (decisão de 07/10).
+- **2.2**: servidores locais (Jellyfin / Plex / Emby), guia de TV (guia pro) e música (álbum da trilha, link do Spotify).
+- Itens que o agente pôs no mapa sem aprovação estão marcados "suspeita" em [issues/MAPA.md](issues/MAPA.md), que é a fonte viva (gerada de `issues/mapa.json`). O conteúdo abaixo é histórico, até a 1.8.
+
 ## Planejamento vigente — 03/10/2026
 
 A1.7.4 já está publicada. O plano atual para integrar, otimizar e entregar a1.8 está em [releases/1.8.0/PLANO.md](releases/1.8.0/PLANO.md), com [inventário Git](releases/1.8.0/INVENTARIO.md). As etapas/versões abaixo são o registro histórico de02/10 e não definem o estado atual.

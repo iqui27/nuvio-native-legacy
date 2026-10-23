@@ -1,0 +1,2 @@
+Assertion failed: (!intro_creditos_limitados(v, 8)), function main, file creditos_limitados.c, line 114.
+tests/creditos_limitados.sh: line 11: 77827 Abort trap: 6           "$bin"

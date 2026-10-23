@@ -1,11 +1,13 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Botao "Digitar pelo celular" no Spotlight, Busca e teclado: capturas e curl
 # de ponta a ponta. Ver tests/celbotao_shot.c. Nao entra na suite: janela GL.
 #
 #   bash tests/celbotao_shot.sh /tmp/nuvio-celbotao
 set -eu
 cd "$(dirname "$0")/.."
-saida="${1:-/tmp/nuvio-celbotao}"
+saida="${1:-${TMPDIR:-/tmp}/nuvio-celbotao}"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-celbotao-XXXXXX")"
 dados="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-celbotao-dados-XXXXXX")"
 trap 'rm -rf "$tmp" "$dados"' EXIT

@@ -7,7 +7,7 @@
 # ambiente em que cwordem/cwremover abortam sob ASan). Com MALLOC_STRICT_SIZE
 # cada bloco termina colado numa pagina protegida: ler ou escrever um byte
 # alem da superficie (ou de qualquer buffer do tex_reduzir) e SIGBUS na hora.
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
 sources=()
 for source in src/*.c src/dts/*.c; do

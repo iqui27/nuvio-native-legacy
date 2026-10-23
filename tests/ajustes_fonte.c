@@ -1,10 +1,11 @@
 // A escolha visual, o renderer e o valor persistido precisam concordar.
 #include "../src/ajustes.c"
+#include "nvtmp.h"
 #include <assert.h>
 #include <unistd.h>
 
 int main(void) {
-  char dir[] = "/tmp/nuvio-aj-fonte-XXXXXX";
+  char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-aj-fonte-XXXXXX");
   char path[700];
   assert(mkdtemp(dir));
   snprintf(path, sizeof path, "%s/envio-151.txt", dir);
@@ -27,6 +28,21 @@ int main(void) {
     assert(valor[AJ_FONTE_UI] == escolhido);
     assert(txt_fonte_interface() == familia);
   }
+  // #400: escolha do aparelho; persistencia sem importar/exportar pela conta.
+  assert(!ajustes_fonte_ordem_addon());
+  assert(somenteDesteAparelho(AJ_FONTE_ORDEM_ADDON));
+  assert(!dePerfil(AJ_FONTE_ORDEM_ADDON));
+  assert(!strcmp(CHAVE[AJ_FONTE_ORDEM_ADDON], "fonteOrdemLocal"));
+  mudarValor(AJ_FONTE_ORDEM_ADDON, 1);
+  assert(ajustes_fonte_ordem_addon());
+  valor[AJ_FONTE_ORDEM_ADDON] = 0;
+  ajustes_dir(dir);
+  assert(ajustes_fonte_ordem_addon());
+  ajustes_aplicar_blob("{\"fonteOrdemLocal\":0,\"fonte_ordem_local\":0}");
+  assert(ajustes_fonte_ordem_addon());
+  for (int i = 0; i + 1 < (int)(sizeof TELA / sizeof *TELA); i++)
+    if (TELA[i].op == AJ_FONTE_TEXTO)
+      assert(TELA[i + 1].op == AJ_FONTE_ORDEM_ADDON);
   ajustes_abrir_na_fonte();
   ajustes_iniciar();
   assert(!ajustes_foco_no_indice());

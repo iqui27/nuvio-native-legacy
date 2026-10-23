@@ -59,7 +59,8 @@ with tempfile.TemporaryDirectory(prefix="nuvio-streamfit-passive-", dir=os.envir
     deps.append(aar_jar("androidx.annotation", "annotation-experimental", "1.4.0", tmp))
     deps.append(jar("com.google.guava", "guava", "33.3.1-android"))
     sources = [kt / "NvPlayer.kt", kt / "ParaleloDataSource.kt", kt / "PassivoMedidor.kt", kt / "NuvioActivity.kt",
-               kt / "AudioSyncTap.kt", kt / "AudioSyncSink.kt",
+               kt / "AudioSyncTap.kt", kt / "AudioSyncSink.kt", kt / "RecriaHdr.kt",
+               kt / "ArranqueVigia.kt", kt / "TouchViewport.kt", kt / "Tombstone.kt",
                # F07: NvPlayer layers the seek cache and the gain processor
                kt / "CacheSessao.kt", kt / "CacheMidia.kt", kt / "GanhoMath.kt", kt / "GanhoAudioProcessor.kt"]
     java_roots = []
@@ -69,7 +70,7 @@ with tempfile.TemporaryDirectory(prefix="nuvio-streamfit-passive-", dir=os.envir
     else:
         sources.remove(kt / "NuvioActivity.kt")
         print("note: SDL Java sources missing; NuvioActivity.kt only checked by redemarca_android.py")
-    kotlinc(sources, tmp / "app", os.pathsep.join(map(str, deps)))
+    kotlinc(sources, tmp / "app", os.pathsep.join(map(str, deps)), java_roots)
     print("compile-check: NvPlayer/ParaleloDataSource/PassivoMedidor" +
           ("/NuvioActivity" if java_roots else "") + " against android-35 + Media3 1.8.0: OK")
 

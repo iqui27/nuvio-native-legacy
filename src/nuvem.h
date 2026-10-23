@@ -47,7 +47,7 @@ const char *nuvem_simkl_app(void);
 char *nuvem_post(const char *caminho, const char *corpoJson,
                  const char *bearer, int *status);
 
-// Falha de transporte do ultimo nuvem_post/nuvem_tabela deste fio ("curl 35: ..."), "" se nao houve.
+// Falha de transporte do ultimo nuvem_post/nuvem_tabela deste fio ("curl 35"), "" se nao houve.
 const char *nuvem_ultimo_erro(void);
 
 // Atalho para /rest/v1/rpc/<funcao>.
@@ -59,6 +59,9 @@ char *nuvem_rpc_com(const char *funcao, const char *corpoJson,
 // so sai lendo a tabela `addons` direto, como o app web faz no caminho feliz.
 char *nuvem_tabela(const char *tabela, const char *consulta,
                    const char *bearer, int *status);
+
+// Update only enabled on an existing addon row; never insert or replace a list.
+char *nuvem_addon_alternar(const char *consulta, int ativo, const char *bearer, unsigned prazo_ms, int *status);
 
 // Escapa um valor para entrar numa consulta de URL. Sem isto um id com "+" ou
 // "&" quebraria o filtro em silencio e a leitura voltaria a tabela inteira ou

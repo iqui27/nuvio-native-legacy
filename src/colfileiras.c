@@ -4,9 +4,15 @@
 #include "fileiras.h"
 #include "addons.h"
 #include "sessao.h"
+#include "perfisessao.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+// Complete apps link both producers. Legacy isolated fixtures may omit them;
+// an absent cleanup boundary defers deletion, never invents addon absence.
+extern int fil_addon_ausente(const char *, const char *) NV_PERFIL_OPCIONAL;
+extern int col_podar_fontes_addon(int (*)(const char *, const char *)) NV_PERFIL_OPCIONAL;
 
 static int chaveFonte(const ColSource *s, char *dst) {
   if (!s || s->prov[0] || !s->type[0] || !s->catId[0]) return 0;
@@ -17,8 +23,22 @@ static int chaveFonte(const ColSource *s, char *dst) {
     if (!id || !id[0]) id = s->base;
   }
   if (!id || !id[0]) return 0;
-  int n = snprintf(dst, FIL_CHAVE, "%s_%s_%s", id, s->type, s->catId);
-  return n > 0 && n < FIL_CHAVE;
+  addons_catalogo_chave(id, s->base[0] ? s->base : addons_base_por_id(id),
+                        s->type, s->catId, dst, FIL_CHAVE);
+  return dst[0] != 0;
+}
+
+// #294: WHICH PROFILE THE ACCOUNT COLLECTIONS IN MEMORY BELONG TO. On a switch
+// fileiras.c loads the new profile's rows at once, but the previous profile's
+// collections stay in colecoes.c until app.c calls col_esquecer_perfil a few
+// frames later. A Home pass in that window ran the authoritative reconcile with
+// profile B's collections against profile A's rows: every A collection B lacks
+// was deleted from A's file and B's were appended, so when A's own collections
+// arrived they were re-registered at the END ("collections pushed to the
+// bottom"). A snapshot from another profile is now ignored until it is replaced.
+static unsigned geracaoCol;
+static int colDoPerfil(void) {
+  return !col_tem_conta() || geracaoCol == fil_perfil_geracao();
 }
 
 void colfileiras_contexto(void) {
@@ -33,7 +53,10 @@ int colfileiras_receber(const char *json) {
   // mexer em qualquer coisa; validar aqui tambem dobrava o custo do ciclo de
   // sync (tests/sync_aplicar_perf.sh: a validacao era metade do tempo). Resposta
   // invalida nao muda col_revisao(), e entao `antes` simplesmente nao e usado.
-  if (col_tem_conta())
+  // The removal diff compares the previous snapshot with this one; a previous
+  // snapshot from another profile says nothing about this profile's rows.
+  int mesmoPerfil = col_tem_conta() && geracaoCol == fil_perfil_geracao();
+  if (mesmoPerfil)
     for (int i = 0; i < col_n(); i++) {
       const ColFolder *f = col_folder(i);
       if (f && !f->extra) cap += f->nSources;
@@ -53,6 +76,10 @@ int colfileiras_receber(const char *json) {
       if (chaveFonte(&f->sources[j], antes[n])) n++;
   }
   int r = col_definir_json(json);
+  if (col_tem_conta()) geracaoCol = fil_perfil_geracao();
+  // Todo reimport (inclusive o mesmo JSON em cache) respeita a desinstalacao.
+  if (colDoPerfil() && fil_addon_ausente && col_podar_fontes_addon)
+    col_podar_fontes_addon(fil_addon_ausente);
   if (antes && rev != col_revisao()) for (int i = 0; i < n; i++) {
     int existe = 0;
     for (int j = 0; j < col_n() && !existe; j++) {
@@ -72,6 +99,14 @@ int colfileiras_receber(const char *json) {
 
 void colfileiras_sincronizar(void) {
   colfileiras_contexto();
+  if (!colDoPerfil()) {
+    printf("[collections] row sync skipped: collections in memory belong to the previous profile\n");
+    return;
+  }
+  // Mesmo uma colecao reaplicada do cache nao pode recriar referencias de um
+  // addon desinstalado. A autoridade vem da lista completa deste perfil.
+  if (fil_addon_ausente && col_podar_fontes_addon)
+    col_podar_fontes_addon(fil_addon_ausente);
   // NA PILHA ERAM COL_MAX x 192 bytes (48 KB com 256 pastas; 384 KB com o teto
   // de 2048 do #255). Grupos sao poucos, mas o pior caso e um grupo por pasta.
   int max = col_n() > 0 ? col_n() : 1, n = 0;
@@ -127,7 +162,7 @@ void colfileiras_sincronizar(void) {
     if (fil_oculta(grupo) || catordem_oculta(grupo, grupo)) continue;
     for (int j = 0; j < f->nSources; j++) {
       char chave[FIL_CHAVE];
-      if (chaveFonte(&f->sources[j], chave))
+      if (chaveFonte(&f->sources[j], chave) && !fil_adicionada_na_tv(chave))   // #327
         for (int k = 0; k < q; k++)
           if (!strcmp(ordenadas[k], chave)) dentro[k] = 1;
     }

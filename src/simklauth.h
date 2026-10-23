@@ -27,6 +27,7 @@
 // continua raro. Se virar problema, e o mesmo remendo do traktauth.c.
 #ifndef NV_SIMKLAUTH_H
 #define NV_SIMKLAUTH_H
+#include <stddef.h>
 
 typedef enum {
   SMK_PARADO = 0,
@@ -35,6 +36,11 @@ typedef enum {
   SMK_LIGADO,
   SMK_ERRO
 } SmkEstado;
+
+// Veredito de uma resposta do poll (ver simklauth_classificar em simklauth.c).
+typedef enum { SMK_POLL_ESPERA = 0, SMK_POLL_OK, SMK_POLL_LENTO, SMK_POLL_NEGADO, SMK_POLL_FALHA } SmkPoll;
+SmkPoll simklauth_classificar(int st, const char *corpo, char *tk, unsigned tam);
+int simklauth_restante_s(void);   // segundos ate expirar; -1 sem codigo
 
 void simklauth_comecar(void);
 void simklauth_passo(unsigned agoraMs);
@@ -50,8 +56,17 @@ int  simklauth_carregar(void);    // le o token guardado; 1 quando havia
 // passou a ler as listas do Simkl (src/listas.c) — ate entao nada neste app
 // consumia Simkl e o token so servia para chegar a conta.
 const char *simklauth_token(void);
+// Copia sob trava + geracao: consultas com varios pedidos nao misturam contas.
+// dst NULL so le a geracao; zero nao e usado. Nunca guardar/logar a copia.
+unsigned long long simklauth_credencial_copiar(char *dst, size_t tam);
 // Esquece o vinculo de TODOS os perfis (logout).
 void simklauth_esquecer(void);
+// Disconnect only the active profile.
+void simklauth_desconectar(void);
+// O Simkl recusou (401) um pedido que saiu com a credencial de geracao `cred`
+// (simklauth_credencial_copiar): desfaz o vinculo do perfil ATUAL so se ele
+// ainda e essa credencial. Devolve 1 quando desfez; 0 = o 401 era de outra.
+int simklauth_invalidar_se(unsigned long long cred);
 // POR PERFIL, como o Trakt (simkl-p<N>.txt; simkl.txt antigo vira o do perfil
 // 1). carregar_perfil escolhe o perfil e le; trocar_perfil faz o mesmo so
 // quando o perfil mudou e devolve 1 quando o Simkl estava ou ficou ligado —

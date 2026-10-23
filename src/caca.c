@@ -14,6 +14,7 @@
 #include "perfis.h"
 #include "recomenda.h"
 #include "rede.h"
+#include "sessao.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -71,6 +72,8 @@ typedef struct {
   char lista[64];
   char chave[96];
   char corpo[256];
+  int  vis;             // JOB_POSTAR: decisao de privacidade na hora do gesto
+  char dono[80];        // JOB_POSTAR: conta+perfil de quem desbloqueou
 } Job;
 typedef struct {
   char chave[96];
@@ -567,10 +570,16 @@ static void fazerTrilhas(void) {
 
 static void fazerPostar(const Job *j) {
   const char *cab[5] = { 0 };
-  char aut[600], via[64], pf[64], url[300];
+  char aut[600], via[64], pf[64], url[300], atual[80];
   int st = 0;
   if (!NV_REC_URL[0]) return;
+  // STALE: a conquista era da conta/perfil de quando foi enfileirada. Trocou
+  // antes de a fila escoar -> nao posta (decisao de visibilidade tambem era
+  // daquela conta).
+  snprintf(atual, sizeof atual, "%s:%d", sessao_usuario(), perfis_ativo());
+  if (strcmp(atual, j->dono)) return;
   if (!recomenda_cabecalhos(cab, aut, sizeof aut, via, sizeof via, pf, sizeof pf)) return;
+  if (strstr(j->corpo, "\"visivel\":1") && recomenda_alcance() < 1) return;
   snprintf(url, sizeof url, "%s/v1/conquista", NV_REC_URL);
   free(rede_postar_st(url, PRAZO_S, cab, j->corpo, &st));
   printf("[caca] conquista enviada: HTTP %d\n", st);
@@ -727,6 +736,8 @@ static void postarConquista(const Slot *s, int degrau) {
            "{\"chave\":\"%s\",\"nivel\":%d,\"visivel\":%d,\"nome\":\"%s\",\"vistos\":%d,\"total\":%d}",
            s->chave, conq_indice(degrau) + 1, vis, nome, s->i.vistos, s->i.total);
   snprintf(j.chave, sizeof j.chave, "%s", s->chave);
+  j.vis = vis;
+  snprintf(j.dono, sizeof j.dono, "%s:%d", sessao_usuario(), perfis_ativo());
   enfileirar(&j);
 }
 

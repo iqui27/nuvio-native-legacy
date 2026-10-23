@@ -10,26 +10,19 @@ int cwo_futuro(const CwoItem *it, long long agoraMs) {
 }
 
 int cwo_ordenar(const CwoItem *v, int n, int modo, long long agoraMs, int *perm) {
-  int i, k, w = 0, principal;
+  int i, w = 0, principal;
   if (!v || !perm || n <= 0) return 0;
-  for (i = 0; i < n; i++) perm[i] = i;
-  if (modo != CWO_STREAMING && modo != CWO_SEPARAR) return n;
-  // Particao estavel: exibidos na ordem que chegaram (a do instante), futuros
-  // depois. n <= 36 (tres fontes de 12): um vetor na pilha basta.
-  { int fut[64], nf = 0;
-    if (n > 64) n = 64;
-    for (i = 0; i < n; i++) {
-      if (cwo_futuro(&v[i], agoraMs)) fut[nf++] = i;
-      else perm[w++] = i;
-    }
-    principal = w;
-    // Insercao estavel pela estreia, a mais proxima primeiro.
-    for (i = 1; i < nf; i++) {
-      int t = fut[i];
-      for (k = i - 1; k >= 0 && v[fut[k]].estreiaMs > v[t].estreiaMs; k--) fut[k + 1] = fut[k];
-      fut[k + 1] = t;
-    }
-    for (i = 0; i < nf; i++) perm[w++] = fut[i]; }
+  // Default preserves last-watched order across paused and next-up items.
+  if (modo == CWO_PADRAO) {
+    for (i = 0; i < n; i++) perm[i] = i;
+    return n;
+  }
+  for (i = 0; i < n; i++) if (!v[i].aSeguir) perm[w++] = i;
+  for (i = 0; i < n; i++)
+    if (v[i].aSeguir && (modo == CWO_PADRAO || !cwo_futuro(&v[i], agoraMs))) perm[w++] = i;
+  principal = w;
+  if (modo != CWO_PADRAO)
+    for (i = 0; i < n; i++) if (cwo_futuro(&v[i], agoraMs)) perm[w++] = i;
   return principal;
 }
 
@@ -48,10 +41,9 @@ void cwo_corte(int principal, int nFut, int max, int *nPrincipal, int *nFuturos)
 }
 
 // --- Datas de estreia --------------------------------------------------------
-// 96: a fileira tem ate 12 itens por fonte e o Trakt guarda ate 64 "a seguir"
-// (TK_ULT_MAX). Cheia, a mais velha e sobrescrita em roda — o que importa e a
-// rodada atual.
-#define CWO_EST_MAX 96
+// 200: a fileira tem ate 40 itens por fonte (3 fontes = 120) e o Trakt guarda
+// ate 64 "a seguir" (TK_ULT_MAX). Cheia, a mais velha e sobrescrita em roda.
+#define CWO_EST_MAX 200
 static struct { char id[40]; long long ms; } est[CWO_EST_MAX];
 static int nEst, proxEst;
 static pthread_mutex_t estTrava = PTHREAD_MUTEX_INITIALIZER;
@@ -81,7 +73,12 @@ long long cwo_estreia(const char *id) {
 }
 
 // --- Fileira de futuros ------------------------------------------------------
-#define CWO_FUT_MAX 36
+// Teto da fileira (CONT_MAX / CW_TETO). cwo_corte com 0 pausados devolve ate
+// max futuros; a tabela tem de caber todos, senão os ultimos ficam em
+// "Continuar assistindo" e nunca viram "Proximos episodios".
+#define CWO_FUT_MAX CWO_FILEIRA_MAX
+_Static_assert(CWO_FUT_MAX >= 40 && CWO_FUT_MAX == CWO_FILEIRA_MAX,
+               "futuros publicados cabem na fileira");
 static char fut[CWO_FUT_MAX][64];
 static int nFut;
 static pthread_mutex_t futTrava = PTHREAD_MUTEX_INITIALIZER;
@@ -161,11 +158,27 @@ void cwo_conta_definir(const char *const *ids, int n) {
   pthread_mutex_unlock(&contaTrava);
 }
 
+// Os "a seguir" que a DESMARCACAO moveu (descoberta.c, ajustarASeguir): o id
+// novo ("tt:2:7") nao esta na lista do Trakt/Simkl/conta, que falam do episodio
+// do remoto. Entram aqui e contam como "a seguir" para todo mundo que pergunta.
+static char ajust[CWO_CONTA_MAX][40];
+static int nAjust;
+
+void cwo_ajustados_definir(const char *const *ids, int n) {
+  int i;
+  pthread_mutex_lock(&contaTrava);
+  nAjust = 0;
+  for (i = 0; ids && i < n && nAjust < CWO_CONTA_MAX; i++)
+    if (ids[i] && ids[i][0]) snprintf(ajust[nAjust++], sizeof ajust[0], "%s", ids[i]);
+  pthread_mutex_unlock(&contaTrava);
+}
+
 int cwo_conta_a_seguir(const char *id) {
   int i, sim = 0;
   if (!id || !id[0]) return 0;
   pthread_mutex_lock(&contaTrava);
   for (i = 0; i < nConta && !sim; i++) sim = !strcmp(conta[i], id);
+  for (i = 0; i < nAjust && !sim; i++) sim = !strcmp(ajust[i], id);
   pthread_mutex_unlock(&contaTrava);
   return sim;
 }

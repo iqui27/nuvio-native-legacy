@@ -18,6 +18,7 @@
 // (uma passada do tamanho da previa), veus de cor e retangulos pequenos; na
 // troca de cena sao duas artes por ~0,5 s. O resto e texto em cache.
 #include "novidades201.h"
+#include "novidades202.h"
 #include "apoio.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -137,6 +138,9 @@ void novidades201_primeira_vez(void) {
   decidido = 1;
   s = dados_ler(N201_ARQ);
   if (s) { free(s); return; }
+  // A 2.0.2 SUBSTITUI este cartao: quem vai ve-la (ou ja viu) nao recebe a
+  // 2.0.1 depois. Fica visto.
+  if (novidades202_aberto() || (s = dados_ler(N202_ARQ))) { free(s); dados_gravar(N201_ARQ, "1\n"); return; }
   // Sem a marca do guia da 2.0 o guia abre agora (novidades20_primeira_vez,
   // logo depois desta): ele ja conta o app inteiro, e um segundo cartao em
   // seguida seria demais. Fica visto.
@@ -213,7 +217,7 @@ static float lerp(float a, float b, float t) { return a + (b - a) * t; }
 
 // O vidro escuro das ilhas: miolo quase opaco e um fio claro na borda.
 static void vidro(GfxRect r, float raioPx, float a) {
-  gfx_cor(r, raioPx / r.h, 0.070f, 0.073f, 0.082f, 0.90f * a);
+  gfx_vidro_ou_solido(r, raioPx / r.h, GFX_VIDRO_DENS, a, 0.070f, 0.073f, 0.082f, 0.90f);
   gfx_anel(r, raioPx / r.h, 1.0f, 1, 1, 1, 0.09f * a);
 }
 
@@ -472,7 +476,7 @@ static void desenhaPrevia(float x, float y, float a) {
   int volta = (int)floorf(relogio / CICLO_S), agora = volta % CENAS, antes = (volta + CENAS - 1) % CENAS;
   float dentro = relogio - (float)volta * CICLO_S;
   float e = (volta == 0 || ajustes_animacoes_reduzidas()) ? 1.0f : sai3(dentro / TROCA_S);
-  gfx_cor(p, PV_RAIO / p.h, 0.055f, 0.058f, 0.068f, a);
+  gfx_vidro_ou_solido(p, PV_RAIO / p.h, GFX_VIDRO_DENS_MODAL, a, 0.055f, 0.058f, 0.068f, 1.0f);
   // A cena que sai fica parada no fim dela; a que entra comeca do zero.
   if (e < 1.0f) cena(antes, p, CICLO_S, a * (1.0f - e));
   cena(agora, p, dentro, a * e);
@@ -695,7 +699,7 @@ static void desenharCorpo(void) {
     ajustes_acento(&ar, &ag, &ab);
     gfx_rect((GfxRect){ c.x - 40.0f, c.y - 20.0f, c.w + 80.0f, c.h + 70.0f }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.12f,
              0, 0, 0, 0.6f * a);
-    gfx_cor(c, N_RAIO / N_H, 0.052f, 0.055f, 0.064f, 0.96f * a);
+    gfx_vidro_ou_solido(c, N_RAIO / N_H, GFX_VIDRO_DENS_MODAL, a, 0.052f, 0.055f, 0.064f, 0.96f);
     gfx_luz_canto(c, N_RAIO / N_H, c.w * 0.78f, -c.h * 0.25f, c.h * 0.95f, ar, ag, ab, 0.10f * a);
     gfx_anel(c, N_RAIO / N_H, 1.2f, 1, 1, 1, 0.07f * a); }
 
@@ -703,7 +707,7 @@ static void desenharCorpo(void) {
   // translucida mostraria uma camada atraves da outra): os codigos sao o assunto.
   desenhaPrevia(N_X + N_PAD, y0 + N_PAD, a);
   if (pag > 0.004f)
-    gfx_cor((GfxRect){ N_X + N_PAD, y0 + N_PAD, PV_W, PV_H }, PV_RAIO / PV_H, 0.052f, 0.055f, 0.064f, 0.55f * sai3(pag) * a);
+    gfx_cor((GfxRect){ N_X + N_PAD, y0 + N_PAD, PV_W, PV_H }, PV_RAIO / PV_H, 0.052f, 0.055f, 0.064f, 0.55f * sai3(pag) * a); // vidro-ok: fade veil over the preview
 
   { float p = sai3(pag);
     paginaNovidades(y0, a * (1.0f - anim_clamp(pag * 1.6f, 0.0f, 1.0f)), -28.0f * p);

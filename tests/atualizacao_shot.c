@@ -15,6 +15,7 @@
 //   bash tests/atualizacao_shot.sh /tmp/nuvio-upd        # vidro
 //   NUVIO_SHOT_VIDRO=0 bash tests/atualizacao_shot.sh /tmp/nuvio-upd-solido
 #include "../src/atualizacao.c"
+#include "nvtmp.h"
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -140,7 +141,7 @@ static void avisoUpdate(void) {
 int main(int argc, char **argv) {
   SDL_GLContext gl;
   const char *vid = getenv("NUVIO_SHOT_VIDRO");
-  saida = argc > 1 ? argv[1] : "/tmp/nuvio-upd";
+  saida = argc > 1 ? argv[1] : nvt("/nuvio-upd");
 
   // PORTUGUES e o acento Oceano (#42a5f5), os do mockup; o material vem de
   // NUVIO_SHOT_VIDRO (0 = solido). tests/atualizacao_shot.sh poe NUVIO_DADOS.

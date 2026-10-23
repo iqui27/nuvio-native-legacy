@@ -1,3 +1,4 @@
+#include "arteurl.h"
 #include "agenda.h"
 #include "dados.h"
 #include "perfis.h"
@@ -10,6 +11,10 @@
 #include "js.h"
 #include "trakt.h"
 #include "vistoep.h"
+#include "addons.h"
+#include "streams.h"
+#include "perfisessao.h"
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,7 +38,7 @@
 typedef struct {
   char imdb[24];
   char titulo[160];
-  char poster[512];
+  char poster[NV_ARTE_URL_MAX];
   int  situacao;
   int  temporada, episodio;
   char nomeEp[120];
@@ -71,10 +76,16 @@ static int   cacheSujo;
 // Nao e `data`: essa acompanha os adiamentos e ja nao diz quando o pedido foi
 // feito. Arquivo antigo, sem o campo: o historico usa `data` no lugar, que e o
 // primeiro episodio que o lembrete podia ter anunciado.
-typedef struct { char imdb[24]; char data[12]; int avisado; char desde[12]; } AgLembrete;
+typedef struct {
+  char imdb[24], data[12]; int avisado; char desde[12];
+  int filme, disponivel;
+  long long ultima;
+  char titulo[160], poster[NV_ARTE_URL_MAX];
+} AgLembrete;
 #define AG_LEMB_MAX 120
 static AgLembrete lembretes[AG_LEMB_MAX];
 static int nLembretes;
+static unsigned filmesRevisao;
 
 static AgItem lista[AG_MAX];
 static int    nLista;
@@ -357,7 +368,7 @@ static const char *campo(const char *p, char *dst, size_t tam) {
 // perde a sinopse e ganha de volta na proxima passada do fio. Inserir no MEIO
 // deslocaria todos os campos seguintes em silencio, e o sintoma seria uma data
 // no lugar do nome do episodio.
-#define AG_LINHA_BYTES 2200
+#define AG_LINHA_BYTES (2200 + NV_ARTE_URL_MAX - 512)
 
 static void gravarCache(void) {
   char *txt;
@@ -368,7 +379,7 @@ static void gravarCache(void) {
   if (!txt) return;
   txt[0] = 0;
   for (i = 0; i < nCache; i++) {
-    char t[160], po[512], ne[120], si[400], re[64], ge[48], fu[512];
+    char t[160], po[NV_ARTE_URL_MAX], ne[120], si[400], re[64], ge[48], fu[512];
     limpo(t, sizeof t, cache[i].titulo);
     limpo(po, sizeof po, cache[i].poster);
     limpo(ne, sizeof ne, cache[i].nomeEp);
@@ -429,15 +440,19 @@ static void lerCache(void) {
 }
 
 static void gravarLembretes(void) {
-  char txt[AG_LEMB_MAX * 64 + 8];
-  size_t usado = 0;
+  size_t cap = AG_LEMB_MAX * (NV_ARTE_URL_MAX + 256u), usado = 0;
+  char *txt = malloc(cap);
+  if (!txt) return;
   int i;
   txt[0] = 0;
   for (i = 0; i < nLembretes; i++)
-    usado += (size_t)snprintf(txt + usado, sizeof txt - usado, "%s\t%s\t%d\t%s\n",
+    usado += (size_t)snprintf(txt + usado, cap - usado, "%s\t%s\t%d\t%s\t%d\t%d\t%lld\t%s\t%s\n",
                               lembretes[i].imdb, lembretes[i].data,
-                              lembretes[i].avisado, lembretes[i].desde);
+                              lembretes[i].avisado, lembretes[i].desde,
+                              lembretes[i].filme, lembretes[i].disponivel, lembretes[i].ultima,
+                              lembretes[i].titulo, lembretes[i].poster);
   dados_gravar(arquivo("lembretes"), txt);
+  free(txt);
 }
 
 static void lerLembretes(void) {
@@ -454,7 +469,12 @@ static void lerLembretes(void) {
     q = campo(q, l.imdb, sizeof l.imdb);
     q = campo(q, l.data, sizeof l.data);
     if (q) { q = campo(q, n, sizeof n); l.avisado = atoi(n); }
-    if (q) campo(q, l.desde, sizeof l.desde);
+    if (q) q = campo(q, l.desde, sizeof l.desde);
+    if (q) { q = campo(q, n, sizeof n); l.filme = atoi(n) == 1; }
+    if (q) { q = campo(q, n, sizeof n); l.disponivel = atoi(n) == 1; }
+    if (q) { q = campo(q, n, sizeof n); l.ultima = atoll(n); }
+    if (q) q = campo(q, l.titulo, sizeof l.titulo);
+    if (q) campo(q, l.poster, sizeof l.poster);
     if (!ehIso(l.desde)) l.desde[0] = 0;
     if (l.imdb[0]) lembretes[nLembretes++] = l;
     while (*p && *p != '\n') p++;
@@ -561,7 +581,7 @@ void agenda_registrar(const char *imdb, const char *titulo, const char *poster,
     // mais e volta a estar por dar.
     int i;
     for (i = 0; i < nLembretes; i++)
-      if (!strcmp(lembretes[i].imdb, id) &&
+      if (!lembretes[i].filme && !strcmp(lembretes[i].imdb, id) &&
           strcmp(lembretes[i].data, r->dataProx)) {
         snprintf(lembretes[i].data, sizeof lembretes[i].data, "%s", r->dataProx);
         lembretes[i].avisado = 0;
@@ -703,9 +723,131 @@ int agenda_lembrete(const char *imdb) {
   if (!id[0]) return 0;
   pthread_mutex_lock(&trava);
   for (i = 0; i < nLembretes; i++)
-    if (!strcmp(lembretes[i].imdb, id)) { tem = 1; break; }
+    if (!strcmp(lembretes[i].imdb, lembretes[i].filme ? imdb : id)) { tem = 1; break; }
   pthread_mutex_unlock(&trava);
   return tem;
+}
+
+int agenda_filme_elegivel(const char *lancamento, const char *digital, int fontes) {
+  return fontes == 0 || (!ehIso(lancamento) && !ehIso(digital)) ||
+    (ehIso(lancamento) && strncmp(lancamento, agenda_hoje(), 10) > 0) ||
+    (ehIso(digital) && strncmp(digital, agenda_hoje(), 10) > 0);
+}
+
+int agenda_filme_alternar(const char *imdb, const char *titulo, const char *poster) {
+  int novo = 0;
+  if (!imdb || !*imdb || strlen(imdb) >= sizeof lembretes[0].imdb) return 0;
+  agenda_iniciar();
+  pthread_mutex_lock(&trava);
+  for (int i = 0; i < nLembretes; i++) if (!strcmp(lembretes[i].imdb, imdb)) {
+    lembretes[i] = lembretes[--nLembretes]; filmesRevisao++;
+    gravarLembretes(); pthread_mutex_unlock(&trava); return 0;
+  }
+  filmesRevisao++;
+  if (nLembretes < AG_LEMB_MAX) {
+    AgLembrete *l = &lembretes[nLembretes++];
+    memset(l, 0, sizeof *l); l->filme = 1;
+    snprintf(l->imdb, sizeof l->imdb, "%s", imdb);
+    limpo(l->titulo, sizeof l->titulo, titulo);
+    limpo(l->poster, sizeof l->poster, poster);
+    novo = 1; gravarLembretes();
+  }
+  pthread_mutex_unlock(&trava);
+  return novo;
+}
+
+int agenda_filme_devido(AgItem *saida) {
+  int achou = 0;
+  pthread_mutex_lock(&trava);
+  for (int i = 0; i < nLembretes; i++) {
+    AgLembrete *l = &lembretes[i];
+    if (!l->filme || !l->disponivel) continue;
+    memset(saida, 0, sizeof *saida);
+    snprintf(saida->imdb, sizeof saida->imdb, "%s", l->imdb);
+    snprintf(saida->titulo, sizeof saida->titulo, "%s", l->titulo);
+    snprintf(saida->poster, sizeof saida->poster, "%s", l->poster);
+    achou = 1; break;
+  }
+  pthread_mutex_unlock(&trava);
+  return achou;
+}
+
+void agenda_filme_aberto(const char *imdb) {
+  pthread_mutex_lock(&trava);
+  for (int i = 0; i < nLembretes; i++)
+    if (lembretes[i].filme && lembretes[i].disponivel && !strcmp(lembretes[i].imdb, imdb)) {
+      lembretes[i] = lembretes[--nLembretes]; gravarLembretes(); break;
+    }
+  pthread_mutex_unlock(&trava);
+}
+
+static int filmeVenceu(const AgLembrete *l, long long agora) {
+  return l->filme && !l->disponivel && (!l->ultima || agora - l->ultima >= 6 * 60 * 60);
+}
+static int filmeResultado(AgLembrete *l, int fontes) {
+  if (!l->filme || l->disponivel || fontes <= 0) return 0;
+  l->disponivel = 1; return 1;
+}
+
+typedef struct {
+  AddonsConsulta *consulta;
+  uint64_t sessao;
+  unsigned revisao;
+  long long agora;
+  Uint32 inicio;
+  char ids[AG_LEMB_MAX][24];
+  int n, resultado[AG_LEMB_MAX];
+  atomic_int pronto;
+} AgFilmesBusca;
+static AgFilmesBusca filmesBusca;
+static pthread_t filmesFio;
+static int filmesVivo;
+
+static int filmesCancelados(void *u) {
+  AgFilmesBusca *b = u;
+  return !nv_perfil_sessao_atual(b->sessao) || SDL_GetTicks() - b->inicio >= 60000u;
+}
+static void *filmesBuscar(void *u) {
+  AgFilmesBusca *b = u;
+  // Every request has its own deadline; remaining alerts continue serially.
+  for (int i = 0; i < b->n && !filmesCancelados(b); i++)
+    b->resultado[i] = stream_filme_consultar(b->consulta, b->ids[i], filmesCancelados, b);
+  atomic_store(&b->pronto, 1);
+  return NULL;
+}
+void agenda_filmes_atualizar(void) {
+  AgFilmesBusca *b = &filmesBusca;
+  if (filmesVivo) {
+    if (!atomic_load(&b->pronto)) return;
+    pthread_join(filmesFio, NULL); filmesVivo = 0;
+    if (nv_perfil_sessao_atual(b->sessao) && b->revisao == filmesRevisao && addons_consulta_atual(b->consulta)) {
+      pthread_mutex_lock(&trava);
+      for (int i = 0; i < b->n; i++) for (int k = 0; k < nLembretes; k++)
+        if (b->resultado[i] != -2 && !strcmp(b->ids[i], lembretes[k].imdb)) {
+          lembretes[k].ultima = b->agora;
+          filmeResultado(&lembretes[k], b->resultado[i]);
+        }
+      gravarLembretes(); pthread_mutex_unlock(&trava);
+    }
+    addons_consulta_liberar(b->consulta); b->consulta = NULL;
+  }
+  agenda_iniciar();
+  if (!addons_n() || addons_ocupado()) return;
+  long long agora = (long long)time(NULL);
+  b->n = 0;
+  pthread_mutex_lock(&trava);
+  for (int i = 0; i < nLembretes; i++) if (filmeVenceu(&lembretes[i], agora))
+    snprintf(b->ids[b->n++], sizeof b->ids[0], "%s", lembretes[i].imdb);
+  pthread_mutex_unlock(&trava);
+  if (!b->n || !(b->consulta = addons_consulta_capturar())) return;
+  b->sessao = nv_perfil_sessao_ler(); b->inicio = SDL_GetTicks();
+  b->revisao = filmesRevisao; b->agora = agora;
+  for (int i = 0; i < b->n; i++) b->resultado[i] = -2;
+  atomic_store(&b->pronto, 0);
+  if (pthread_create(&filmesFio, NULL, filmesBuscar, b)) {
+    addons_consulta_liberar(b->consulta); b->consulta = NULL; return;
+  }
+  filmesVivo = 1;
 }
 
 int agenda_pode_lembrar(const char *imdb) {
@@ -751,7 +893,11 @@ void agenda_marcar_avisado(const char *imdb) {
   serieDe(id, sizeof id, imdb);
   pthread_mutex_lock(&trava);
   for (i = 0; i < nLembretes; i++)
-    if (!strcmp(lembretes[i].imdb, id)) { lembretes[i].avisado = 1; break; }
+    if (!strcmp(lembretes[i].imdb, lembretes[i].filme ? imdb : id)) {
+      if (lembretes[i].filme) lembretes[i] = lembretes[--nLembretes];
+      else lembretes[i].avisado = 1;
+      break;
+    }
   gravarLembretes();
   pthread_mutex_unlock(&trava);
 }
@@ -759,7 +905,7 @@ void agenda_marcar_avisado(const char *imdb) {
 int agenda_lembretes_pendentes(void) {
   int i, q = 0;
   pthread_mutex_lock(&trava);
-  for (i = 0; i < nLembretes; i++) if (!lembretes[i].avisado) q++;
+  for (i = 0; i < nLembretes; i++) if (!lembretes[i].filme && !lembretes[i].avisado) q++;
   pthread_mutex_unlock(&trava);
   return q;
 }
@@ -890,8 +1036,9 @@ int agenda_montar(void) {
   { char ids[AG_LEMB_MAX][24];
     int k, q;
     pthread_mutex_lock(&trava);
-    q = nLembretes;
-    for (k = 0; k < q; k++) snprintf(ids[k], sizeof ids[k], "%s", lembretes[k].imdb);
+    q = 0;
+    for (k = 0; k < nLembretes; k++)
+      if (!lembretes[k].filme) snprintf(ids[q++], sizeof ids[0], "%s", lembretes[k].imdb);
     pthread_mutex_unlock(&trava);
     for (k = 0; k < q && nLista < AG_MAX; k++) poe(ids[k], NULL, NULL); }
 
@@ -997,7 +1144,7 @@ static char *metaGetAg(const char *url, int seg, int *st, void *ctx) {
 // de AgReg; `prox`/`ult` = alguma fonte ja AFIRMOU o proximo/ultimo episodio
 // (inclusive "nao ha"), e a seguinte nao mexe mais nele.
 typedef struct {
-  char titulo[160], poster[512], status[32];
+  char titulo[160], poster[NV_ARTE_URL_MAX], status[32];
   int  temp, ep;
   char nomeEp[120], dataProx[16], dataUlt[16];
   char sinopse[400], tipoEp[24], rede[64], genero[48];
@@ -1275,7 +1422,7 @@ static int cinemetaLer(AgBusca *b, const char *corpo, const char *hoje) {
     // cartaz sai do cache de textura em vez de ser uma segunda copia.
     char *k = strstr(b->poster, "/poster/small/");
     if (k) {
-      char resto[512];
+      char resto[NV_ARTE_URL_MAX];
       snprintf(resto, sizeof resto, "%s", k + strlen("/poster/small/"));
       snprintf(k, sizeof b->poster - (size_t)(k - b->poster), "/poster/medium/%s", resto);
     }
@@ -1293,6 +1440,7 @@ static int cinemetaLer(AgBusca *b, const char *corpo, const char *hoje) {
   if (b->duracao <= 0) {
     if (js_texto_raiz_em(m, fim, "runtime", s, sizeof s)) b->duracao = atoi(s);
   }
+  if (js_videos_temporadas_falsas(m)) return achouAlgo || b->status[0];
   for (v = js_array(m, fim, "videos"); v && v < fim; ) {
     const char *vf = js_fim(v);
     char rel[40] = "", dia[12];
@@ -1402,7 +1550,7 @@ static void buscarSerie(const char *imdb, const char *titulo, const char *poster
 // garante uma fila so por vez, entao os vetores podem ser estaticos.
 static char filaImdb[AG_MAX][24];
 static char filaTit[AG_MAX][160];
-static char filaPoster[AG_MAX][512];
+static char filaPoster[AG_MAX][NV_ARTE_URL_MAX];
 static long filaTmdb[AG_MAX];
 static int  nFila;
 static char filaHoje[12];
@@ -1514,7 +1662,7 @@ static int lerVideos(const char *corpo, AgEp *saida, int max) {
   const char *m = corpo ? strstr(corpo, "\"meta\"") : NULL;
   const char *fim, *v;
   int n = 0, i, j;
-  if (!m || !(m = strchr(m, '{'))) return 0;
+  if (!m || !(m = strchr(m, '{')) || js_videos_temporadas_falsas(m)) return 0;
   fim = js_fim(m);
   for (v = js_array(m, fim, "videos"); v && v < fim && n < max; ) {
     const char *vf = js_fim(v);

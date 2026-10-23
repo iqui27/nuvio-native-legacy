@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nuvio 2.1 · Listas</title>
+<link rel="stylesheet" href="tv.css">
+<style>
+.pg{position:absolute;left:200px;right:96px;top:0;bottom:0}
+.topo{position:absolute;left:0;right:0;top:124px;display:flex;align-items:flex-end;justify-content:space-between}
+.linha{position:absolute;left:0;right:0;display:flex;gap:14px;align-items:center}
+.lado{position:absolute;left:0;top:388px;width:320px;border-radius:26px;padding:12px}
+.lado .row{display:flex;align-items:center;gap:14px;padding:13px 18px}
+.lado .nm{font-size:20px;font-weight:600}
+.lado .ds{font-size:15px;color:var(--mut2);margin-top:3px}
+.lado .ct{margin-left:auto;font-size:18px;color:var(--mut)}
+.lado .row.sel .nm::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ac);margin:0 9px 3px 0}
+.aviso{padding:12px 18px 6px;font-size:15px;color:var(--mut2);line-height:1.45;border-top:1px solid rgba(255,255,255,.07);margin-top:6px}
+.letra{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex:none}
+/* cartão de lista: mosaico de cartazes, curador, números, quanto você viu */
+.cards{position:absolute;left:364px;right:0;top:388px;display:grid;grid-template-columns:repeat(3,1fr);gap:28px 32px}
+.lc{display:block;border-radius:22px}
+.mos{height:150px;display:flex;position:relative}
+.mos i{flex:1}
+.fn{position:absolute;left:12px;top:12px;display:flex;gap:6px}
+.fn span{height:28px;padding:0 9px;border-radius:8px;background:rgba(10,10,12,.78);font-size:13px;font-weight:800;letter-spacing:.06em;display:flex;align-items:center}
+.lc .tx{padding:16px 20px 18px}
+.lc .t{font-size:21px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cu{display:flex;align-items:center;gap:10px;font-size:16px;color:var(--mut);margin-top:8px;white-space:nowrap}
+.cu .av{width:26px;height:26px;font-size:13px}
+.pr{display:flex;align-items:center;gap:12px;margin-top:14px;font-size:15px;color:var(--mut2);white-space:nowrap}
+.pr .trilho{flex:1}
+/* página da lista */
+.col1{position:absolute;left:0;top:120px;width:520px}
+.col2{position:absolute;left:560px;top:120px;width:600px}
+.col3{position:absolute;left:1200px;right:0;top:120px;border-radius:26px;padding:24px 26px}
+.quem{display:flex;align-items:center;gap:12px;font-size:18px;color:var(--mut);margin-top:18px}
+.quem b{color:#fff;font-weight:600}
+.desc{font-size:19px;line-height:1.5;color:rgba(243,242,239,.8);margin:18px 0 0}
+.num{display:flex;gap:18px;font-size:17px;color:var(--mut);margin-top:16px}
+.prog{margin-top:22px}
+.prog .l{display:flex;justify-content:space-between;font-size:17px;color:var(--mut);margin-bottom:10px}
+.prog .l b{color:#fff;font-weight:600}
+.acoes{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px}
+.it{display:grid;grid-template-columns:44px 64px 1fr 34px;gap:16px;align-items:start;padding:14px 18px}
+.it .n{font-size:24px;font-weight:800;color:var(--mut2);text-align:right;padding-top:4px}
+.it .cz{width:64px;height:96px;border-radius:9px}
+.it .cz::after{display:none}
+.it .t{font-size:20px;font-weight:600}
+.it .s{font-size:15px;color:var(--mut2);margin-top:3px}
+.it q{display:block;font-size:17px;line-height:1.45;color:rgba(243,242,239,.78);margin-top:8px;font-style:italic;quotes:none}
+.it .sem{font-size:16px;color:var(--mut2);margin-top:8px}
+.it .ic{color:var(--ac);margin-top:4px}
+.hist{margin-top:16px;border-left:2px solid rgba(255,255,255,.14);padding-left:20px}
+.ev{position:relative;padding-bottom:18px}
+.ev::before{content:"";position:absolute;left:-27px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--ilha);border:2px solid rgba(255,255,255,.4)}
+.ev.ult::before{background:var(--ac);border-color:var(--ac)}
+.ev .d{font-size:14px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--mut2)}
+.ev .x{font-size:18px;line-height:1.4;margin-top:4px}
+.ev .y{font-size:15px;color:var(--mut);margin-top:3px;line-height:1.4}
+/* comentários */
+.folha{right:40px;top:40px;bottom:40px;width:1000px;border-radius:28px;padding:36px 40px}
+.cm{display:grid;grid-template-columns:44px 1fr;gap:16px;padding:18px 20px;margin-top:6px}
+.cm .av{width:44px;height:44px}
+.cm .h{display:flex;gap:12px;align-items:baseline;font-size:16px;color:var(--mut2)}
+.cm .h b{font-size:18px;color:#fff;font-weight:600}
+.cm .h .cur{font-size:12px;font-weight:800;letter-spacing:.1em;padding:3px 8px;border-radius:6px;background:var(--ac);color:var(--tinta)}
+.cm p{font-size:19px;line-height:1.5;margin:6px 0 0;color:rgba(243,242,239,.85)}
+.cm .r{display:flex;gap:20px;font-size:15px;color:var(--mut2);margin-top:10px}
+.cm.resp{margin-left:60px;background:rgba(255,255,255,.04)}
+.spo{border:1.5px dashed rgba(255,255,255,.22);border-radius:12px;padding:10px 14px;font-size:17px;color:var(--mut);margin-top:8px}
+/* minhas listas */
+.mlist{position:absolute;left:364px;width:600px;top:388px}
+.ml{display:grid;grid-template-columns:34px 1fr auto;gap:16px;align-items:center;padding:16px 20px;margin-top:4px}
+.ml .t{font-size:20px;font-weight:600}
+.ml .s{font-size:15px;color:var(--mut2);margin-top:3px}
+.ml .c{font-size:17px;color:var(--mut)}
+.det{position:absolute;left:1000px;right:0;top:232px;bottom:56px;border-radius:28px;padding:30px 32px}
+.qrc{display:flex;gap:24px;align-items:center;margin-top:20px;padding:20px;border-radius:22px;background:rgba(255,255,255,.05)}
+.qrc .qr{width:200px;height:200px;background:#fff;border-radius:16px;padding:12px;flex:none}
+.qrc .qr svg{width:176px;height:176px}
+.cod{font-size:34px;font-weight:800;letter-spacing:.14em;margin-top:8px}
+</style>
+</head>
+<body>
+
+<section class="quadro" id="a">
+<p class="leg"><b>6A · Listas › Explorar</b> — listas públicas por recorte; cada cartão diz quem fez, quantos filmes, curtidas e quanto você já viu. Tecla <b>D</b> mostra de onde vem cada dado.</p>
+<div class="caixa"><div class="tv">
+  <div class="arte a7" style="opacity:.3"></div><div class="fundo"></div>
+  <div class="ilha relogio">20:52<span class="s"></span><span class="av" style="background:#7c5cff">M</span></div>
+  <nav class="ilha rail" aria-label="Menu">
+    <a data-f><span data-i="home"></span></a><a data-f><span data-i="explorar"></span></a><a data-f><span data-i="guia"></span></a><a data-f><span data-i="busca"></span></a><a class="ativo" data-f href="biblioteca.html"><span data-i="biblio"></span></a><a data-f><span data-i="agenda"></span></a><a data-f href="conquistas.html#a"><span data-i="perfil"></span></a><a data-f><span data-i="ajustes"></span></a>
+  </nav>
+  <div class="pg">
+    <div class="topo">
+      <div><div class="kick">Biblioteca › Listas</div><h1 class="h1" style="margin-top:8px">Explorar listas</h1></div>
+      <div class="sub" style="font-size:18px">listas públicas, trilhas e curadoria · perfil Marina</div>
+    </div>
+    <div class="linha" style="top:232px">
+      <div class="seg"><a class="sg" href="#d" data-f>Minhas listas <span class="n">14</span></a><span class="sg" data-f>Seguindo <span class="n">6</span></span><span class="sg sel" data-f>Explorar</span><a class="sg" href="trilhas.html" data-f>Trilhas <span class="n">9</span></a></div>
+      <span class="chip" data-f data-d="hoje" style="margin-left:auto"><span data-i="celular" class="p"></span>Buscar listas · digite no celular</span>
+    </div>
+    <div class="linha" style="top:312px">
+      <span class="org" style="margin-right:4px">Fonte</span>
+      <span class="chip on" data-f>Todas</span>
+      <span class="chip" data-f data-d="hoje">Trakt <span class="v">públicas</span></span>
+      <span class="chip" data-f data-d="nosso">Curadoria Nuvio <span class="v">listas e trilhas</span></span>
+      <span class="chip" data-f data-d="hoje">Simkl <span class="v">só os seus 5 estados</span></span>
+      <span class="chip" data-f data-d="nosso">Letterboxd <span class="v">só as suas, do export</span></span>
+    </div>
+
+    <div class="vid lado">
+      <div class="kick" style="padding:8px 18px 4px">Navegar</div>
+      <div class="row sel" data-f data-d="hoje"><div><div class="nm">Em alta</div><div class="ds">Trakt, últimos 7 dias</div></div></div>
+      <div class="row" data-f data-d="hoje"><div><div class="nm">Populares</div><div class="ds">Trakt, desde sempre</div></div></div>
+      <div class="row" data-f data-d="nosso"><div><div class="nm">Temas</div><div class="ds">esperar, mar, irmãs…</div></div><span class="ct">64</span></div>
+      <div class="row" data-f data-d="nosso"><div><div class="nm">Diretores</div><div class="ds">filmografia como trilha</div></div><span class="ct">120</span></div>
+      <div class="row" data-f data-d="nosso"><div><div class="nm">Décadas e países</div><div class="ds">anos 60 · Japão · Brasil…</div></div></div>
+      <div class="row" data-f data-d="nosso"><div><div class="nm">Movimentos</div><div class="ds">nova onda, cinema novo…</div></div><span class="ct">18</span></div>
+      <div class="aviso" data-d="bloq">Listas públicas do Letterboxd e do Simkl não abrem aqui: nenhum dos dois oferece isso a apps.</div>
+    </div>
+
+    <div class="cards">
+      <a class="lc vid foco" href="#b" data-f data-d="hoje">
+        <div class="mos"><i class="a2"></i><i class="a14"></i><i class="a13"></i><i class="a8"></i><div class="fn"><span>T</span></div></div>
+        <div class="tx"><div class="t">Chuva no vidro: filmes sobre esperar</div>
+          <div class="cu"><span class="av" style="background:#3d8bff">L</span>@lumiere_tardia · 40 filmes · 2,4 mil ♥</div>
+          <div class="pr"><div class="trilho"><i style="width:35%"></i></div>você viu 14</div></div>
+      </a>
+      <a class="lc vid" href="trilhas.html" data-f data-d="nosso">
+        <div class="mos"><i class="a7"></i><i class="a6"></i><i class="a11"></i><i class="a13"></i><div class="fn"><span>C</span><span>TRILHA</span></div></div>
+        <div class="tx"><div class="t">Nova onda japonesa em 8 filmes</div>
+          <div class="cu"><span class="av" style="background:var(--ac)">N</span>Curadoria Nuvio · 8 filmes · 3,1 mil seguem</div>
+          <div class="pr"><div class="trilho"><i style="width:37%"></i></div>passo 4 de 8</div></div>
+      </a>
+      <div class="lc vid" data-f data-d="hoje">
+        <div class="mos"><i class="a12"></i><i class="a3"></i><i class="a4"></i><i class="a9"></i><div class="fn"><span>T</span></div></div>
+        <div class="tx"><div class="t">Cinema de fronteira, 1990–2010</div>
+          <div class="cu"><span class="av" style="background:#00a88f">S</span>@sessaodameianoite · 62 filmes · 870 ♥</div>
+          <div class="pr"><div class="trilho"><i style="width:14%"></i></div>você viu 9</div></div>
+      </div>
+      <div class="lc vid" data-f data-d="hoje">
+        <div class="mos"><i class="a4"></i><i class="a8"></i><i class="a14"></i><i class="a12"></i><div class="fn"><span>T</span></div></div>
+        <div class="tx"><div class="t">Diretoras do litoral</div>
+          <div class="cu"><span class="av" style="background:#f59e3b">C</span>@cinefila.rp · 27 filmes · 412 ♥</div>
+          <div class="pr"><div class="trilho"></div>nada visto ainda</div></div>
+      </div>
+      <div class="lc vid" data-f data-d="hoje">
+        <div class="mos"><i class="a5"></i><i class="a10"></i><i class="a1"></i><i class="a3"></i><div class="fn"><span>T</span></div></div>
+        <div class="tx"><div class="t">Tudo numa noite só</div>
+          <div class="cu"><span class="av" style="background:#7c5cff">F</span>@fotograma_23 · 33 filmes · 1,8 mil ♥</div>
+          <div class="pr"><div class="trilho"><i style="width:21%"></i></div>você viu 7</div></div>
+      </div>
+      <a class="lc vid" href="trilhas.html#b" data-f data-d="nosso">
+        <div class="mos"><i class="a4"></i><i class="a12"></i><i class="a8"></i><i class="a9"></i><div class="fn"><span>C</span><span>DIRETORA</span></div></div>
+        <div class="tx"><div class="t">Comece por Ilse Marchetti</div>
+          <div class="cu"><span class="av" style="background:var(--ac)">N</span>Curadoria Nuvio · 6 de 11 filmes</div>
+          <div class="pr"><div class="trilho"><i style="width:66%"></i></div>você viu 4</div></div>
+      </a>
+    </div>
+  </div>
+</div></div>
+</section>
+
+<section class="quadro" id="b">
+<p class="leg"><b>6B · Página da lista</b> — por que a lista existe, como ela cresceu, a nota do curador em cada filme e de onde você parou.</p>
+<div class="caixa"><div class="tv">
+  <div class="arte a2" style="opacity:.35"></div><div class="fundo"></div>
+  <div class="ilha relogio">20:54<span class="s"></span><span class="av" style="background:#7c5cff">M</span></div>
+  <nav class="ilha rail" aria-label="Menu">
+    <a data-f><span data-i="home"></span></a><a data-f><span data-i="explorar"></span></a><a data-f><span data-i="guia"></span></a><a data-f><span data-i="busca"></span></a><a class="ativo" data-f href="biblioteca.html"><span data-i="biblio"></span></a><a data-f><span data-i="agenda"></span></a><a data-f href="conquistas.html#a"><span data-i="perfil"></span></a><a data-f><span data-i="ajustes"></span></a>
+  </nav>
+  <div class="pg">
+    <div class="col1">
+      <div class="kick">Lista · Trakt · pública</div>
+      <h1 class="h1" style="font-size:52px;margin-top:12px">Chuva no vidro</h1>
+      <div class="sub" style="margin-top:6px">40 filmes sobre esperar</div>
+      <div class="quem" data-d="hoje"><span class="av" style="background:#3d8bff">L</span><span><b>@lumiere_tardia</b> · 37 listas públicas</span></div>
+      <p class="desc" data-d="hoje">Comecei num inverno em que esperei três semanas pelo resultado de um exame. Filmes em que a ação é aguardar: estações, salas, janelas. A ordem não é de qualidade, é a de uma noite inteira de espera.</p>
+      <div class="num" data-d="hoje"><span>≈ 71 h</span><span>2,4 mil ♥</span><span>48 comentários</span></div>
+      <div class="prog" data-d="hoje"><div class="l"><span>Você viu <b>14 de 40</b></span><span>próximo: 15</span></div><div class="trilho"><i style="width:35%"></i></div></div>
+      <div class="acoes">
+        <span class="btn" data-f><span data-i="play"></span>Continuar · 15</span>
+        <span class="btn" data-f data-d="hoje"><span data-i="salvo"></span>Seguir</span>
+        <span class="chip" data-f data-d="hoje">Fileira na Home</span>
+        <span class="chip" data-f data-d="hoje">Copiar para minha lista</span>
+        <a class="chip" href="#c" data-f data-d="hoje">Comentários <span class="v">48</span></a>
+      </div>
+      <div style="font-size:15px;color:var(--mut2);margin-top:14px;line-height:1.45">Seguir curte no Trakt e fixa em Biblioteca › Listas › Seguindo.</div>
+    </div>
+
+    <div class="col2">
+      <div class="kick" style="padding:0 18px 6px">Filmes, com a nota do curador</div>
+      <div class="row it" data-f data-d="hoje"><span class="n">13</span><div class="cz a14"></div><div><div class="t">Céu de Chumbo</div><div class="s">2011 · Tomás Arriaga · 1h48</div><q>“A sala de embarque mais bonita do cinema. Repare em quem nunca levanta.”</q></div><span data-i="ok"></span></div>
+      <div class="row it" data-f data-d="hoje"><span class="n">14</span><div class="cz a6"></div><div><div class="t">Asfalto</div><div class="s">1963 · Kenji Ōmura · 1h31</div><q>“Ninguém chega. Esse é o filme.”</q></div><span data-i="ok"></span></div>
+      <div class="row it dentro foco" data-f data-d="hoje"><span class="n">15</span><div class="cz a13"></div><div><div class="t">Corrente Fria</div><div class="s">2025 · Ana Velloso · 2h04 · entrou em 02 out</div><q>“Entrou por último e já é a que mais indico. A espera aqui é de um filho que talvez volte.”</q></div><span></span></div>
+      <div class="row it" data-f data-d="hoje"><span class="n">16</span><div class="cz a11"></div><div><div class="t">Os Silenciosos</div><div class="s">1978 · Hedda Lund · 1h39</div><div class="sem">sem nota do curador</div></div><span></span></div>
+      <div class="row it" data-f data-d="hoje"><span class="n">17</span><div class="cz a5"></div><div><div class="t">Noite Âmbar</div><div class="s">2019 · Rui Câmara · 1h56</div><q>“Para ver depois da meia-noite, como eu vi.”</q></div><span></span></div>
+    </div>
+
+    <div class="ilha col3">
+      <div class="kick">História da lista</div>
+      <div class="hist">
+        <div class="ev" data-d="hoje"><div class="d">mar 2019</div><div class="x">Criada com 12 filmes</div><div class="y">Céu de Chumbo, Asfalto, Os Silenciosos e mais 9</div></div>
+        <div class="ev" data-d="hoje"><div class="d">2020 a 2022</div><div class="x">+11 filmes</div><div class="y">quase todos com nota nova</div></div>
+        <div class="ev" data-d="hoje"><div class="d">jan 2024</div><div class="x">+16 filmes</div><div class="y">a maior leva, 6 de diretoras</div></div>
+        <div class="ev ult" data-d="hoje"><div class="d">02 out 2026</div><div class="x">+1 · Corrente Fria</div><div class="y">a lista chegou a 40</div></div>
+      </div>
+      <div style="font-size:15px;color:var(--mut2);line-height:1.45;border-top:1px solid rgba(255,255,255,.08);padding-top:14px">
+        <div data-d="bloq">O Trakt não diz o que saiu da lista.</div>
+        <div data-d="nosso" style="margin-top:8px">Nas listas da Curadoria Nuvio cada edição traz o porquê.</div>
+      </div>
+    </div>
+  </div>
+</div></div>
+</section>
+
+<section class="quadro" id="c">
+<p class="leg"><b>6C · Comentários da lista</b> — a conversa em volta da lista; o curador aparece marcado, spoiler fica fechado e o texto se escreve no celular.</p>
+<div class="caixa"><div class="tv">
+  <div class="arte a2" style="opacity:.35"></div><div class="fundo"></div><div style="position:absolute;inset:0;background:rgba(0,0,0,.45)"></div>
+  <div style="position:absolute;left:120px;top:150px;font-size:72px;font-weight:800;letter-spacing:-.02em;opacity:.5">Chuva no vidro</div>
+  <div style="position:absolute;left:120px;top:250px;font-size:22px;opacity:.45">@lumiere_tardia · 40 filmes</div>
+  <div class="ilha folha">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between">
+      <div><div class="kick">Comentários · Trakt</div><div class="h2" style="font-size:34px;margin-top:6px">48 sobre esta lista</div></div>
+      <div class="seg" data-d="hoje"><span class="sg sel" data-f>Mais curtidos</span><span class="sg" data-f>Recentes</span><span class="sg" data-f>Com respostas</span></div>
+    </div>
+    <div class="row cm foco" data-f data-d="hoje"><span class="av" style="background:#00a88f">R</span><div><div class="h"><b>@ritaprojeta</b>3 dias</div><p>Vi o 15 por causa desta lista e passei a semana pensando no último plano. Faltou alguma espera de hospital, não?</p><div class="r"><span>♥ 23</span><span>2 respostas</span></div></div></div>
+    <div class="row cm resp" data-f data-d="hoje"><span class="av" style="background:#3d8bff">L</span><div><div class="h"><b>@lumiere_tardia</b><span class="cur">CURADOR</span>2 dias</div><p>Tem uma: o 22. Deixei longe do 15 de propósito, os dois juntos pesam demais numa noite só.</p><div class="r"><span>♥ 41</span></div></div></div>
+    <div class="row cm" data-f data-d="hoje"><span class="av" style="background:#f59e3b">B</span><div><div class="h"><b>@bilheteriazero</b>1 semana</div><div class="spo">Contém spoiler de Asfalto · OK para ler</div><div class="r"><span>♥ 9</span></div></div></div>
+    <div class="row cm" data-f data-d="hoje"><span class="av" style="background:#7c5cff">T</span><div><div class="h"><b>@tela_de_inverno</b>2 semanas</div><p>Ordem perfeita para um domingo de chuva. Fiz do 1 ao 8 seguido.</p><div class="r"><span>♥ 17</span></div></div></div>
+    <div style="display:flex;align-items:center;gap:16px;margin-top:22px">
+      <span class="btn" data-f data-d="hoje"><span data-i="celular"></span>Comentar pelo celular</span>
+      <span style="font-size:16px;color:var(--mut2);line-height:1.4">Você escreve no telefone e confirma aqui.<br>O Trakt pede pelo menos 5 palavras.</span>
+    </div>
+  </div>
+</div></div>
+</section>
+
+<section class="quadro" id="d">
+<p class="leg"><b>6D · Minhas listas</b> — as listas da pessoa juntas, com descrição e nota por filme; compartilhar é um QR.</p>
+<div class="caixa"><div class="tv">
+  <div class="arte a5" style="opacity:.3"></div><div class="fundo"></div>
+  <div class="ilha relogio">20:58<span class="s"></span><span class="av" style="background:#7c5cff">M</span></div>
+  <nav class="ilha rail" aria-label="Menu">
+    <a data-f><span data-i="home"></span></a><a data-f><span data-i="explorar"></span></a><a data-f><span data-i="guia"></span></a><a data-f><span data-i="busca"></span></a><a class="ativo" data-f href="biblioteca.html"><span data-i="biblio"></span></a><a data-f><span data-i="agenda"></span></a><a data-f href="conquistas.html#a"><span data-i="perfil"></span></a><a data-f><span data-i="ajustes"></span></a>
+  </nav>
+  <div class="pg">
+    <div class="topo" style="right:640px">
+      <div><div class="kick">Biblioteca › Listas</div><h1 class="h1" style="margin-top:8px">Minhas listas</h1></div>
+    </div>
+    <div class="linha" style="top:232px;right:640px">
+      <div class="seg"><span class="sg sel" data-f>Minhas listas <span class="n">14</span></span><span class="sg" data-f>Seguindo <span class="n">6</span></span><a class="sg" href="#a" data-f>Explorar</a></div>
+    </div>
+    <div class="linha" style="top:312px;right:640px">
+      <span class="chip" data-f data-d="hoje"><span data-i="mais" class="p"></span>Nova lista · nome no celular</span>
+      <span class="chip" data-f data-d="nosso"><span data-i="importa" class="p"></span>Trazer do Letterboxd</span>
+    </div>
+    <div class="vid lado">
+      <div class="kick" style="padding:8px 18px 4px">Origens</div>
+      <div class="row sel" data-f><div><div class="nm">Todas</div></div><span class="ct">14</span></div>
+      <div class="row" data-f data-d="hoje"><span class="letra">T</span><div><div class="nm">Trakt</div><div class="ds">suas listas</div></div><span class="ct">6</span></div>
+      <div class="row" data-f data-d="hoje"><span class="letra">N</span><div><div class="nm">Conta Nuvio</div><div class="ds">pastas de coleção</div></div><span class="ct">3</span></div>
+      <div class="row" data-f data-d="hoje"><span class="letra">S</span><div><div class="nm">Simkl</div><div class="ds">5 estados, sem nome</div></div><span class="ct">5</span></div>
+      <div class="row" data-f data-d="nosso"><span class="letra">L</span><div><div class="nm">Letterboxd</div><div class="ds">do export · 28 set</div></div><span class="ct">3</span></div>
+    </div>
+    <div class="mlist">
+      <div class="row ml dentro" data-f data-d="hoje"><span class="letra">T</span><div><div class="t">Filmes para domingo cedo</div><div class="s">18 filmes · pública · editada há 4 dias</div></div><span class="c">viu 11</span></div>
+      <div class="row ml" data-f data-d="hoje"><span class="letra">T</span><div><div class="t">Para ver com o pai</div><div class="s">9 filmes · privada</div></div><span class="c">viu 3</span></div>
+      <div class="row ml" data-f data-d="nosso"><span class="letra">L</span><div><div class="t">Melhores de 2025</div><div class="s">25 filmes · do Letterboxd · com notas</div></div><span class="c">viu 25</span></div>
+      <div class="row ml" data-f data-d="hoje"><span class="letra">N</span><div><div class="t">Maratona de irmãs</div><div class="s">pasta de coleção · 12 títulos</div></div><span class="c">viu 5</span></div>
+      <div class="row ml" data-f data-d="hoje"><span class="letra">S</span><div><div class="t">Simkl · Plano para ver</div><div class="s">37 títulos · estado do Simkl</div></div><span class="c">—</span></div>
+    </div>
+    <div class="ilha det">
+      <div class="kick">Lista · Trakt · pública</div>
+      <div class="h2" style="font-size:34px;margin-top:8px">Filmes para domingo cedo</div>
+      <p class="desc" style="font-size:18px;margin-top:12px" data-d="hoje">Curtos, claros, sem violência. O que eu boto quando a casa ainda está dormindo.</p>
+      <div style="display:flex;gap:12px;margin-top:16px">
+        <span class="chip" data-f data-d="hoje"><span data-i="celular" class="p"></span>Descrição</span>
+        <span class="chip" data-f data-d="hoje"><span data-i="celular" class="p"></span>Nota no filme</span>
+        <span class="chip" data-f data-d="hoje">Ordem</span>
+      </div>
+      <div class="row it" style="padding:14px 0 0;grid-template-columns:52px 1fr" data-d="hoje"><div class="cz a4" style="width:52px;height:78px"></div><div><div class="t" style="font-size:18px">1 · Terra Baixa</div><q style="font-size:16px;margin-top:4px">“Começa com café na mesa. Funciona toda vez.”</q></div></div>
+      <div class="qrc">
+        <div class="qr"><svg class="qrm" viewBox="0 0 29 29" shape-rendering="crispEdges"></svg></div>
+        <div>
+          <div class="btn foco" data-f data-d="hoje" style="height:54px;font-size:19px"><span data-i="envia" class="p"></span>Compartilhar</div>
+          <div class="cod" data-d="nosso">LST·7KQ2</div>
+          <div style="font-size:16px;color:var(--mut);line-height:1.45;margin-top:6px">Aponte a câmera: abre a lista no celular de quem estiver na sala. O código serve para ditar.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+</section>
+
+<script src="tv.js"></script>
+</body>
+</html>

@@ -3,7 +3,9 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
+#include <stdatomic.h>
 #ifndef ESMAECER_SEM_GFX
 #include "gfx.h"
 #include "layout.h"
@@ -11,8 +13,17 @@
 #include "descanso.h"
 #endif
 
-static int   escolhaAtual = ESM_PADRAO;
-static int   estiloAtual = ESM_ESTILO_VITRINE;
+static _Atomic int escolhaAtual = ESM_PADRAO;
+static _Atomic int estiloAtual = ESM_ESTILO_VITRINE;
+static _Atomic(void (*)(void)) publicarProtetor;
+static void protetorPublicar(void) {
+  void (*publicar)(void) = publicarProtetor;
+  if (publicar) publicar();
+}
+void esmaecer_protetor_publicador(void (*publicar)(void)) {
+  publicarProtetor = publicar;
+  protetorPublicar();
+}
 static unsigned ultimaEntrada;
 static int   temEntrada;
 static unsigned acordouEm;
@@ -50,8 +61,12 @@ void esmaecer_reiniciar(void) {
 
 void esmaecer_escolha(int escolha) {
   escolhaAtual = escolha >= 0 && escolha < ESM_ESCOLHAS ? escolha : ESM_PADRAO;
+  protetorPublicar();
 }
-void esmaecer_estilo(int estilo) { estiloAtual = estiloValido(estilo); }
+void esmaecer_estilo(int estilo) {
+  estiloAtual = estiloValido(estilo);
+  protetorPublicar();
+}
 int  esmaecer_estilo_atual(void) { return estiloAtual; }
 
 static void definirEstagio(int e) {
@@ -119,6 +134,12 @@ float esmaecer_brilho_osd(int escolha, unsigned parado_ms, int tocando) {
     f *= 1.0f - (1.0f - BRILHO_AUTO_PASSO) * t;
   }
   return f < 0.40f ? 0.40f : f;
+}
+
+float esmaecer_brilho_hdr(const char *hdr, int dv) {
+  if (dv) return HDR_UI_BRILHO;
+  if (!hdr || !*hdr || !strcasecmp(hdr, "none") || !strcasecmp(hdr, "desconhecido")) return 1.0f;
+  return HDR_UI_BRILHO;
 }
 
 #ifndef ESMAECER_SEM_GFX

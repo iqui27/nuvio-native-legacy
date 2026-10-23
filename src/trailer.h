@@ -36,6 +36,11 @@ int  trailer_suportado(void);
 // cheia com teclado proprio.
 void trailer_abrir(const char *fonte, GfxRect r, int som, int cheia);
 void trailer_rect(GfxRect r);
+// O proximo trailer_abrir (e os trailer_rect dele) toca DENTRO DE UM CARTAZ da
+// home (modo "No card"). So muda algo no .tpk: la o recorte de fonte vira um
+// ROI maior que o destino, e no cartaz o ROI tem de ser o proprio retangulo
+// (quem chama encaixa o quadro, LetterBox). trailer_fechar zera.
+void trailer_no_cartao(int sim);
 // O recorte da FONTE (sx,sy,sw,sh) que o plano de video recebe para um
 // quadro vw x vh com o zoom `z` do ajuste, num destino dw x dh: o zoom e a
 // tarja de sempre e depois o "cover" na proporcao do destino, pelo centro.
@@ -45,10 +50,19 @@ void trailer_recorte(int vw, int vh, float z, float dw, float dh,
                      int *sx, int *sy, int *sw, int *sh);
 void trailer_fechar(void);
 int  trailer_aberto(void);
+// Tests (desktop): fake native trailer. -1 off, 0 open but no image (stall), 1 playing.
+void trailer_teste_falso(int tocando);
+// Muda a cada fonte de trailer aberta: uma sessao principal anterior perdeu
+// o pipeline, mesmo se o trailer ja terminou ou usou a mesma URL.
+unsigned trailer_geracao(void);
 int  trailer_cheia(void);
 // 1 quando ha video de fato tocando: so ai a pagina abre o furo — antes
 // disso mostrar um buraco preto seria pior que a arte.
 int  trailer_tocando(void);
+// #338: 1 enquanto um trailer toca DE VERDADE — e 0 na pausa da tela cheia
+// nativa, onde trailer_tocando continua preso em 1 (o medidor de desempenho
+// volta; ver trailer.c). O main alimenta desempenho_trailer com isto.
+int  trailer_medidor_esconde(void);
 // 1 quando o PLANO pode aparecer: quem desenha o furo (fundo, destaque, tela
 // cheia) pergunta isto alem de trailer_tocando. No .tpk (#178) o recorte do
 // zoom so e pedido ~800 ms depois de tocar; ate ele assentar o quadro inteiro

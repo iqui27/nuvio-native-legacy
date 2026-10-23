@@ -6,6 +6,9 @@ class H(http.server.BaseHTTPRequestHandler):
         if self.path.startswith('/redir/'):
             # outra ORIGEM (127.0.0.1 x localhost): o Range do dono cai no redirect
             self.send_response(302); self.send_header('Location', 'http://localhost:%d/f/%s' % (PORT, self.path[7:])); self.end_headers(); return
+        if self.path.startswith('/ref/') and self.headers.get('Referer') != 'https://addon.test/':
+            # CDN de addon (proxyHeaders): 403 sem o Referer, em CADA Range
+            self.send_response(403); self.send_header('Content-Length', '0'); self.end_headers(); return
         p = os.path.join(D, os.path.basename(self.path)); n = os.path.getsize(p)
         m = re.match(r'bytes=(\d+)-(\d+)', self.headers.get('Range', ''))
         with open(p, 'rb') as f:

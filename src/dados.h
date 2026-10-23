@@ -18,6 +18,9 @@
 // hoje, e e melhor que nao gravar nada). Chamar uma vez, no arranque.
 void dados_iniciar(const char *dirArte);
 
+// Diagnostico 1x/sessao apos 5 s e poda de caches em fio nativo, fora do desenho.
+void dados_espaco_iniciar(const char *dirArte);
+
 // Pasta escolhida, sem barra no fim. Nunca NULL depois de dados_iniciar; pode
 // ser "" se nenhum candidato aceitou escrita — nesse caso gravar e no-op e o
 // log ja disse por que.
@@ -62,6 +65,13 @@ int dados_sync_em_recuo(void);
 // um download, perder a sessao custa um login por QR.
 void dados_marcar_sujo(int leve);
 
+// DESCARGA JA, sem a espera minima de 700 ms entre duas descargas. Para o que
+// nao pode ficar so no MEMFS nem um quadro a mais do que o necessario: a
+// sessao recem-gravada (sessao.c). Se ja houver uma descarga em voo, a
+// proxima sai no primeiro quadro depois de ela confirmar. Quem descarrega
+// continua sendo dados_sincronizar, no laco principal.
+void dados_sincronizar_logo(void);
+
 // TRAVA DO SISTEMA DE ARQUIVOS, para quem grava por fora deste modulo.
 //
 // So faz algo no alvo Tizen, e la nao e opcional: o "sistema de arquivos" do
@@ -87,6 +97,9 @@ void dados_desc_zerar(void);
 // devolver ao aparelho a escrita que ele mesmo acabou de fazer — sem um id
 // estavel, cada arranque parece um aparelho novo e o eco volta.
 const char *dados_cliente_id(void);
+// Hardware identity for account device settings; survives app-data removal.
+// Empty when unavailable: never fall back to model or an installation UUID.
+const char *dados_aparelho_id(void);
 
 // UUID v4 novo a cada chamada. MEDIDO contra o servidor: a RPC
 // start_tv_login_session recusa com "Invalid device nonce" qualquer nonce que

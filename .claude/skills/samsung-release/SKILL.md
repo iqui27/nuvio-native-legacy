@@ -22,43 +22,33 @@ Detalhe de cada alvo: skills `samsung-wgt`, `samsung-tpk`, `samsung-tpk-legacy`.
 ## A ferramenta
 
 ```bash
-git worktree add --detach ../nuvio-build-<v> <commit-da-release>
-cd ../nuvio-build-<v>
-NUVIO_PROPERTIES="/Users/hrocha/Projetos/Pessoal/LG WEB/NuvioWeb-0.3.38-beta/local.properties" \
-  bash tools/release-samsung.sh
+NUVIO_PROPERTIES="/caminho/local.properties" bash tools/release.sh X.Y.Z
 ```
 
-`tools/release-samsung.sh` compila o `.wgt` e os quatro `.tpk`, e RECUSA:
-arvore suja; versao diferente entre `appinfo.json` e `tizen-config.xml`;
-arquivo de pessoa em qualquer pacote; `drminfo` no 4/5; lib do 4/5 com TLS;
-manifesto com outra versao; anexo `.so` diferente da `.so` do pacote. Sai em
-`build/release-<v>/` com `SHA256SUMS-samsung`. NAO publica.
-
-Numa worktree nova o `.wgt` para em "libass WASM ausente": faca
-`ln -s "<checkout principal>/build/ass-wasm" build/ass-wasm` (dependencia ja
-compilada, gitignorada; symlink e nao copia, porque o `tizen.sh` confere que o
-atalho temporario `$TMPDIR/nuvio-ass-wasm-root-<uid>` aponta para o mesmo
-lugar) ou rode `tools/build-ass-wasm.sh` com o emsdk ativo.
-
-`NUVIO_PROPERTIES` so e preciso fora do checkout principal (o `tools/env.sh`
-procura `../NuvioWeb-0.3.38-beta` dois niveis acima, e da worktree o caminho
-nao existe: o pacote sairia sem servidor e sem login).
+Na worktree limpa, compila LG (2 variantes), Android e Samsung em paralelo.
+Não publica nem instala. Entrega os 10 artefatos (8 pacotes + 2 SO),
+`SHA256SUMS` unificado e os dois JSON Homebrew em `build/release-<v>/`.
+Chaves vazias, versões divergentes e árvore alterada abortam. Logs e tempos
+ficam em `logs/`; `--jobs 2` limita plataformas simultâneas.
+`ass-wasm` ausente é localizado automaticamente em outra worktree.
+Pré-requisitos, cache e modo de medição sem commit: `docs/android/RELEASE.md`.
+`release-samsung.sh` continua disponível para conferir só Samsung.
 
 ## Ordem
 
+0. **Auditoria**: `bash tools/auditoria-release.sh` na arvore que vai sair
+   (docs/auditoria-release.md). FAIL para a release; NAO VERIFICADO se explica.
 1. **Versao**: `deploy/app/appinfo.json` e `tools/tizen-config.xml`. Commit
    `vX.Y.Z`. O `.tpk` pega sozinho (`tools/tpk.sh` reescreve os manifestos no
    build e a ferramenta devolve o original depois).
-2. **LG**: receita da LG (`arm.sh --ipk`, as duas variantes `_arm.ipk` e
-   `_arm-highcache.ipk`, `hb-repo.sh` -> `repo.json` + `webosbrew.manifest.json`).
-3. **Samsung**: `tools/release-samsung.sh` (acima).
-4. **Android**: `tools/release-android.sh` na mesma worktree (skill
-   `android-release`). Sai `Nuvio-<v>-android.apk` + `SHA256SUMS-android` em
-   `build/release-<v>/`. Precisa da chave de release em `~/.nuvio-android/`.
+2. **Compilar/conferir tudo**: `bash tools/release.sh X.Y.Z`.
+   Não é necessário mover IPKs nem juntar checksums à mão.
+3. **Prova**: `cd build/release-X.Y.Z && shasum -a 256 -c SHA256SUMS`.
+4. **TV**, somente se pedido: `--instalar` instala LG normal; os demais alvos
+   mantêm seus procedimentos próprios de instalação.
 5. **Publicar TUDO no mesmo `gh release create vX.Y.Z`**: `.ipk` x2, `repo.json`,
    `webosbrew.manifest.json`, `.wgt`, os 4 `.tpk`, os 2 `libnuvio-*.so`, o
-   `Nuvio-<v>-android.apk`, e o `SHA256SUMS` unindo LG + `SHA256SUMS-samsung` +
-   `SHA256SUMS-android`. Release normal vira
+   `Nuvio-<v>-android.apk`, e o `SHA256SUMS` já gerado pelo comando unificado. Release normal vira
    latest (o app e o Homebrew Channel leem `releases/latest`). Sem os `.so`
    anexados, os `.tpk` instalados nao se atualizam sozinhos.
 6. **Notas** em ingles, `## Added` / `## Fixed` / `## Notes`, balas curtas (o
@@ -91,6 +81,36 @@ nao existe: o pacote sairia sem servidor e sem login).
 7. **Avisar**: issues curtas em ingles, so dizer "fixed" com a release no ar.
    `avisos.json` no master (`plataforma` `tizen` alcanca `.wgt` e `.tpk`;
    `tizen-tpk` so o `.tpk`; ids com `tpk-preview` sao ignorados pelo `.tpk`).
+
+## Cartao de novidades da versao (um .inc por release)
+
+O cartao "Novidades da X.Y.Z" NAO se copia mais por versao. O motor
+(`src/novidades_cartao.c/.h`: desenho, paginas, botoes, foco, ponteiro, os QRs
+de `apoio.h`, a marca de "ja visto") e unico; o que muda e o CONTEUDO em
+`src/novidades/<versao>.inc`. O `app.c` tem um gancho so (`novcartao_*`) e nao
+se mexe. Para o cartao da versao X:
+
+1. `cp src/novidades/<anterior>.inc src/novidades/X.inc` e troque `.versao`,
+   `.arquivo` (`novidades-X.txt`: a marca de "ja visto" desta versao),
+   `.subtitulo`, a lista `ITENS_*` (grupo, icone `aj_*` que existe em
+   `deploy/app/art/icones`, nome, frase, `.linhas`, `.plataformas` com
+   `NOV_LG|NOV_TPK|NOV_WGT|NOV_ANDROID`) e as cenas da previa (`CENAS_*`).
+   Se a previa e uma tela do app, chame o desenho DELA (como `cenaDv` chama
+   `dvtela_previa_desenhar`), nunca um desenho a parte.
+2. Em `src/novidades_cartao.c` troque a linha `#include "novidades/<anterior>.inc"`.
+3. Toda frase nova entra na tabela: `src/idioma_tab.h` (ordem por bytes) e as 28
+   irmas (`python3 tools/idiomas.py --sincronizar` cria as linhas vazias; preencha
+   e rode `python3 tools/idiomas.py` ate passar). Frase de UMA linha tem de caber
+   em ~45 letras latinas (menos em cirilico, grego e japones): a captura reprova
+   reticencias.
+4. `tests/novidades_cartao.c`: a versao esperada em `main` e as contas por
+   plataforma em `plataformas()`.
+5. `bash tests/novidades_cartao.sh` e a captura, com a fonte da TV:
+   `NUVIO_SHOT_FONTE=3 bash tests/novidades_cartao_shot.sh /tmp/nuvio-novcartao`
+   (mede os 30 idiomas em 3 plataformas; manda o PNG ao dono para aprovar; o da
+   2.0.3 esta em `docs/releases/2.0.3/`).
+6. `docs/releases/X/NOTAS.md`: a PRIMEIRA linha de conteudo e a frase-resumo da
+   versao, a mesma do `.subtitulo`.
 
 ## Pre-releases (canarios)
 

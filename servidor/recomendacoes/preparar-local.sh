@@ -74,7 +74,7 @@ INSERT INTO sessao (hash, id, nome, expira) VALUES
 # faria a segunda falhar por um limite que esta CERTO, e um teste que so passa
 # na primeira execucao e um teste que ninguem roda.
 echo "== zerando dados de teste"
-exec_sql "DELETE FROM rec; DELETE FROM contato; DELETE FROM pessoa; DELETE FROM perfil; DELETE FROM pedido; DELETE FROM bloqueio; DELETE FROM atividade; DELETE FROM limite; DELETE FROM evento; DELETE FROM agora; DELETE FROM agregado; DELETE FROM agregado_titulo; DELETE FROM identidade; DELETE FROM fusao; DELETE FROM sqlite_sequence WHERE name IN ('rec','evento');" \
+exec_sql "DELETE FROM rec; DELETE FROM contato; DELETE FROM pessoa; DELETE FROM perfil; DELETE FROM pedido; DELETE FROM bloqueio; DELETE FROM atividade; DELETE FROM limite; DELETE FROM evento; DELETE FROM agora; DELETE FROM agregado; DELETE FROM agregado_titulo; DELETE FROM identidade; DELETE FROM fusao; DELETE FROM diario; DELETE FROM diario_cofre; DELETE FROM diario_lb_pendente; DELETE FROM sqlite_sequence WHERE name IN ('rec','evento');" \
   || { tail -20 /tmp/nv-d1.log; exit 1; }
 
 echo "pronto."

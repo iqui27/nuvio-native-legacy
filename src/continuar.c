@@ -8,6 +8,7 @@
 #include "anim.h"
 #include "revela.h"
 #include "proximo.h"
+#include "rewatch.h"
 #include "trakt.h"
 #include "simkl.h"
 #include "cwordem.h"
@@ -61,7 +62,7 @@ void continuar_desenhar(const CatItem *ci, GfxRect r, float raio) {
   // A copia COM episodios, quando ha (cat_indice_titulo): a do card costuma
   // nao ter lista, e a do detalhe aberto antes tem.
   idx = cat_indice_titulo(ci->imdb, cat_indice_por_imdb(ci->imdb));
-  if (idx >= 0 && !strcmp(ci->tipo, "series") && ci->temporada > 0 &&
+  if (!ci->rewatch && idx >= 0 && !strcmp(ci->tipo, "series") && ci->temporada > 0 &&
       ci->episodio > 0 && ci->progresso >= ajustes_cw_concluido()) {
     if (cat_n_episodios(idx) <= 0) pedirEpisodios(idx, ci->imdb);
     else if (prox_seguinte(ci, cat_episodio(idx, 0), cat_n_episodios(idx),
@@ -92,7 +93,10 @@ void continuar_desenhar(const CatItem *ci, GfxRect r, float raio) {
   gfx_veu_base(r, raio, NV_CW_VEU_F, NV_CW_VEU_A);
 
   // Um retangulo compacto, nao uma pilula. Nunca inventar status de estreia.
-  if (ci->restanteMin > 0 || (ci->progresso == 0 && (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb) || cwo_conta_a_seguir(ci->imdb)))) {
+  if (ci->rewatch && rewatch_ativa(ci->imdb)) {
+    badge_desenhar(r.x+pad,r.y+pad,"Reassistindo",BADGE_REALCE,1);
+  }
+  if (!ci->rewatch && (ci->restanteMin > 0 || (ci->progresso == 0 && (trakt_e_a_seguir(ci->imdb) || simkl_e_a_seguir(ci->imdb) || cwo_conta_a_seguir(ci->imdb))))) {
     char selo[48];
     int h = ci->restanteMin / 60, m = ci->restanteMin % 60;
     // "A SEGUIR" e nao "53min Restantes": o item de progresso 0 e o proximo
@@ -153,7 +157,8 @@ void continuar_desenhar(const CatItem *ci, GfxRect r, float raio) {
     char tmpT[24], tmpE[24], te[64];
     snprintf(tmpT, sizeof tmpT, i18n("Temporada %d"), ci->temporada);
     snprintf(tmpE, sizeof tmpE, i18n("Episódio %d"), ci->episodio);
-    snprintf(te, sizeof te, "%s · %s", tmpT, tmpE);
+    if (ci->rewatch) snprintf(te,sizeof te,i18n("Reassistindo T%dE%d"),ci->temporada,ci->episodio);
+    else snprintf(te, sizeof te, "%s · %s", tmpT, tmpE);
     TxtLinha ep = txt_linha(TXT_CW_META, te, 230, 232, 238, 255);
     txt_desenhar_alpha(ep, r.x + pad, base - ep.h - 4*esc, 1);
   }

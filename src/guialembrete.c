@@ -13,6 +13,7 @@
 #include "idioma.h"
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
+#include "ponteiro.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -25,6 +26,13 @@ static int    foco;                 // 0 = Assistir, 1 = Dispensar
 static int    engolirOkUp;
 static char   aCanal[80], aNome[120], aTitulo[120], aBase[600], aTexto[300];
 static int    pedAssistir;
+
+void glem_abrir_sessao(void) {
+  modo = ultimoModo = foco = engolirOkUp = pedAssistir = 0;
+  desde = ultConferido = 0; anim = 0.0f;
+  aCanal[0] = aNome[0] = aTitulo[0] = aBase[0] = aTexto[0] = 0;
+  lembrete_carregar(perfis_ativo());
+}
 
 static int vendoCanal(const char *id) {
   return id[0] && !strcmp(player_id_canal(), id) &&
@@ -114,6 +122,15 @@ int glem_pediu_assistir(char *id, size_t tam, char *nome, size_t tamNome,
   return 1;
 }
 
+// PONTEIRO (#99): foco pela mesma variavel das setas (que tambem reiniciam o
+// relogio do cartao); o OK do clique segue por glem_evento.
+static void ponteiroFoco(int i, int b) {
+  (void)b;
+  if (modo != 1 || (i != 0 && i != 1) || foco == i) return;
+  foco = i; desde = SDL_GetTicks();
+}
+int glem_teste_foco(void) { return foco; }
+
 static void glem_desenharCorpo_(Uint32 agora);
 // Camada ampliada (escala.h): o corpo desenha na tela virtual.
 void glem_desenhar(Uint32 agora) {
@@ -138,7 +155,7 @@ static void glem_desenharCorpo_(Uint32 agora) {
     TxtLinha t = txt_linha_corta(TXT_BODY, aTexto, 240, 241, 246, 255, 900.0f);
     float w = (float)t.w + 96.0f, h = 60.0f;
     GfxRect r = { NV_TELA_W - NV_MARGEM_X - w, 44.0f - 16.0f * (1.0f - a), w, h };
-    gfx_cor(r, 0.5f, 0.055f, 0.058f, 0.068f, 0.96f * a);
+    gfx_vidro_ou_solido(r, 0.5f, GFX_VIDRO_DENS, a, 0.055f, 0.058f, 0.068f, 0.96f);
     gfx_icone((GfxRect){ r.x + 24.0f, r.y + (h - 28.0f) * 0.5f, 28.0f, 28.0f }, "sino",
               ar, ag, ab, a);
     txt_desenhar_alpha(t, r.x + 68.0f, r.y + (h - (float)t.h) * 0.5f, a);
@@ -161,6 +178,12 @@ static void glem_desenharCorpo_(Uint32 agora) {
     txt_bloco_corta(TXT_G28B, aTexto, 243, 242, 239, x, y, W - 60.0f, lead, a, 2);
     y += hT + 22.0f;
     { float bx = x;
+      if (modo == 1 && a > 0.99f) {   // so assentado (sem o deslize da entrada)
+        float w0 = plrui_botao_largura("Assistir", "pl_play-f");
+        ponteiro_alvo(bx, y, w0, 60.0f, ponteiroFoco, NULL, 0, 0);
+        ponteiro_alvo(bx + w0 + 12.0f, y, plrui_botao_largura("Dispensar", NULL), 60.0f,
+                      ponteiroFoco, NULL, 1, 0);
+      }
       bx += plrui_botao(bx, y, "Assistir", "pl_play-f", foco == 0 ? 1.0f : 0.0f, a) + 12.0f;
       plrui_botao(bx, y, "Dispensar", NULL, foco == 1 ? 1.0f : 0.0f, a); }
     y += 60.0f + 22.0f;

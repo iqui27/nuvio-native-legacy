@@ -23,6 +23,9 @@ int js_tem(const char *ini, const char *fim, const char *chave);
 // Campo ausente, de outro tipo ou truncado preserva o valor previo de dst.
 int js_texto(const char *ini, const char *fim, const char *chave,
              char *dst, size_t tam);
+// Igual a js_texto, mas mantem as quebras de linha (\n) do valor.
+int js_texto_linhas(const char *ini, const char *fim, const char *chave,
+                    char *dst, size_t tam);
 
 // O mesmo decodificador para uma string JSON ja na mao: `p` aponta para a aspa
 // de abertura (elemento de array, sem chave para js_texto achar).
@@ -39,6 +42,9 @@ const char *js_array(const char *ini, const char *fim, const char *chave);
 
 // Proximo elemento do array a partir do fim do anterior; NULL no fim.
 const char *js_prox(const char *fimAnterior);
+
+// Reject season-per-video numbering only with repeated episode 1 and year-only dates.
+int js_videos_temporadas_falsas(const char *corpo);
 
 // Primeiro elemento de um array que e a RAIZ do documento. Toda RPC do
 // Supabase responde `[{...},{...}]` sem chave em volta, e js_array — que

@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "nvtmp.h"
 
 // ---- dublês ----------------------------------------------------------------
 static char *arquivo;
@@ -19,6 +20,10 @@ int   dados_gravar(const char *n, const char *c) { (void)n; free(arquivo); arqui
 int   dados_apagar(const char *n) { (void)n; free(arquivo); arquivo = NULL; return 1; }
 const char *dados_cliente_id(void) { return "cliente-teste-0001"; }
 int   perfis_ativo(void) { return perfil; }
+uint64_t perfis_sessao_geracao(void) { return 0; }
+int perfis_sessao_atual(uint64_t g) { return !g; }
+int perfis_sessao_travar(uint64_t g) { return !g; }
+void perfis_sessao_destravar(void) {}
 static long long relogio(void) { return agora; }
 
 static char ultimaFuncao[64], ultimoCorpo[4096];
@@ -33,6 +38,18 @@ char *sessao_rpc(const char *funcao, const char *corpo, int *status) {
   if (status) *status = proximoStatus;
   return strdup(proximaResposta);
 }
+char *nuvem_rpc_com(const char *fn, const char *corpo, const char *jwt, int *st) {
+  (void)jwt;
+  return sessao_rpc(fn, corpo, st);
+}
+int sessao_identidade_local_copiar(char *u, size_t nu, char *j, size_t nj) {
+  snprintf(u, nu, "usuario-teste");
+  snprintf(j, nj, "token-teste");
+  return 1;
+}
+int sessao_token_copiar(char *j, size_t nj) { snprintf(j, nj, "token-teste"); return 1; }
+void sessao_token_recusado(const char *t) { (void)t; }
+const char *sessao_usuario(void) { return "usuario-teste"; }
 
 // Catalogo: so tt1234567 e tt7654321 existem.
 static int aplicadosNoCatalogo;
@@ -72,9 +89,9 @@ static void pushNoFormatoDoWeb(void) {
   ProgRegistro r[8];
   zerar();
   agora = 1757000100000LL;
-  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640));      // serie de catalogo
-  assert(prog_gravar_local("tt7654321", 0, 0, 5400, 7200));      // filme
-  assert(prog_gravar_local("tt5550000", 0, 0, 10, 30));          // dur < 60s: nao vai
+  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640, -1));      // serie de catalogo
+  assert(prog_gravar_local("tt7654321", 0, 0, 5400, 7200, -1));      // filme
+  assert(prog_gravar_local("tt5550000", 0, 0, 10, 30, -1));          // dur < 60s: nao vai
   assert(prog_pendentes(r, 8) == 3);
 
   assert(syncprog_empurrar() == 2);
@@ -108,7 +125,7 @@ static void pushNoFormatoDoWeb(void) {
 static void pushFalhoMantemPendente(void) {
   ProgRegistro r[8];
   zerar();
-  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640, -1));
   proximoStatus = 500;
   assert(syncprog_empurrar() == -1);
   assert(prog_pendentes(r, 8) == 1 && r[0].pendente);
@@ -152,7 +169,7 @@ static void rollbackNaoAcontece(void) {
   zerar();
   agora = 1757000300000LL;
   // 1. Assistiu aqui ate 1500s. Pendente.
-  assert(prog_gravar_local("tt1234567", 4, 9, 1500, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 1500, 2640, -1));
   // 2. Ciclo: pull traz o servidor ANTIGO (900s, 5 min atras) ...
   proximaResposta =
     "[{\"content_id\":\"tt1234567\",\"season\":4,\"episode\":9,"
@@ -200,7 +217,7 @@ static void migradoSobeComChaveCerta(void) {
 
 static void avancarDurantePush(void) {
   // Mesmo milissegundo: comparar somente a hora ainda perderia este avanco.
-  assert(prog_gravar_local("tt1234567", 4, 9, 1500, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 1500, 2640, -1));
 }
 
 static void trocarPerfilDurantePush(void) { perfil = 2; }
@@ -208,7 +225,7 @@ static void trocarPerfilDurantePush(void) { perfil = 2; }
 static void confirmacaoPreservaEscritaNovaEPerfil(void) {
   ProgRegistro r;
   zerar(); perfil = 1; agora = 1757000600000LL;
-  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 1432, 2640, -1));
   duranteRpc = avancarDurantePush;
   assert(syncprog_empurrar() == 1 && tem("\"position\":1432000"));
   r = porChave("tt1234567_s4e9");
@@ -218,9 +235,9 @@ static void confirmacaoPreservaEscritaNovaEPerfil(void) {
   assert(!porChave("tt1234567_s4e9").pendente);
 
   zerar(); perfil = 1;
-  assert(prog_gravar_local("tt1234567", 4, 9, 100, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 100, 2640, -1));
   perfil = 2;
-  assert(prog_gravar_local("tt1234567", 4, 9, 200, 2640));
+  assert(prog_gravar_local("tt1234567", 4, 9, 200, 2640, -1));
   perfil = 1; duranteRpc = trocarPerfilDurantePush;
   assert(syncprog_empurrar() == 1 && tem("\"p_profile_id\":1"));
   assert(perfil == 2 && porChave("tt1234567_s4e9").pendente);

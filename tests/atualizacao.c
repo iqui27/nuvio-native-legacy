@@ -52,20 +52,14 @@ int main(int argc, char **argv) {
       // ocorrencia da chave (o que textoJson faz) baixaria o pacote do Samsung
       // para instalar numa LG. Quem decide e o sufixo.
       // A fixture e uma release REAL (v1.0.52), de quando so havia UM .ipk.
-      // Por isso o resultado depende da variante: a build normal acha o anexo
-      // dela; a de cache grande NAO acha, e nao achar e o comportamento certo
-      // — release sem o anexo da variante nao deve instalar nada.
+      // Desde 2.0.5 a build de cache grande tambem pega o .ipk normal (a
+      // highcache e aposentada): as duas variantes acham o mesmo anexo.
       { char url[512], hash[80];
         int achou = acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO);
-#ifdef NV_TEX_MB_FIXO
-        CONFERE(!achou, "build highcache nao aceita release so com o .ipk normal");
-        CONFERE(url[0] == 0, "e a url fica vazia");
-#else
         CONFERE(achou, "achou um .ipk nos assets");
         CONFERE(strstr(url, ".ipk") != NULL && strstr(url, ".wgt") == NULL,
                 "e o .ipk, nao o .wgt: [%s]", url);
         CONFERE(!strncmp(url, "https://", 8), "url absoluta: [%s]", url);
-#endif
       }
       free(j);
     } }
@@ -88,13 +82,9 @@ int main(int argc, char **argv) {
       "{\"digest\":\"sha256:aaaa\",\"browser_download_url\":\"https://x/a.wgt\"},"
       "{\"digest\":\"sha256:bbbb\",\"browser_download_url\":\"https://x/b_arm.ipk\"}]}";
     { int achou = acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO);
-#ifdef NV_TEX_MB_FIXO
-      CONFERE(!achou, "sem anexo highcache, nao instala"); }
-#else
       CONFERE(achou, "achou o ipk");
       CONFERE(!strcmp(url, "https://x/b_arm.ipk"), "url do ipk: [%s]", url);
       CONFERE(!strcmp(hash, "bbbb"), "digest do MESMO anexo, sem o prefixo: [%s]", hash); }
-#endif
   }
 
   // A VARIANTE CERTA ENTRE OS TRES ANEXOS, NA ORDEM REAL DO GITHUB.
@@ -112,12 +102,8 @@ int main(int argc, char **argv) {
       "{\"digest\":\"sha256:3333\",\"browser_download_url\":\"https://x/space.nuvio_1.1.3_arm.ipk\"}]}";
     CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "achou o anexo da variante");
     CONFERE(strstr(url, AT_SUFIXO) != NULL, "e o sufixo desta build (%s): [%s]", AT_SUFIXO, url);
-#ifdef NV_TEX_MB_FIXO
-    CONFERE(!strcmp(hash, "2222"), "digest do anexo highcache: [%s]", hash);
-#else
-    CONFERE(strstr(url, "highcache") == NULL, "build normal NAO leva a highcache: [%s]", url);
+    CONFERE(strstr(url, "highcache") == NULL, "build NAO leva a highcache, nem a de cache grande: [%s]", url);
     CONFERE(!strcmp(hash, "3333"), "digest do anexo normal: [%s]", hash);
-#endif
   }
 
   // OS NOMES DAS RELEASES 1.3.1/1.3.2 ("NuvioTV-1.3.2-webos.ipk"): a LG normal
@@ -130,24 +116,17 @@ int main(int argc, char **argv) {
       "{\"digest\":\"sha256:bbbb\",\"browser_download_url\":\"https://x/NuvioTV-1.3.2-webos-highcache.ipk\"},"
       "{\"digest\":\"sha256:cccc\",\"browser_download_url\":\"https://x/NuvioTV-1.3.2-webos.ipk\"}]}";
     CONFERE(acharIpk(j, url, sizeof url, hash, sizeof hash, AT_SUFIXO), "nome NuvioTV-*-webos: achou a variante");
-#ifdef NV_TEX_MB_FIXO
-    CONFERE(!strcmp(hash, "bbbb"), "highcache pelo nome novo: [%s]", url);
-#else
     CONFERE(!strcmp(hash, "cccc") && !strstr(url, "highcache"), "normal pelo nome novo, sem highcache: [%s]", url);
-#endif
   }
 
-  // RELEASE SEM O ANEXO DESTA VARIANTE: nao instala, e isso e o certo. Trocar
-  // de variante calada e o defeito; mandar para a pagina e a saida honesta.
+  // RELEASE SO COM A HIGHCACHE (so acontece em release antiga ou de teste): a
+  // build nao instala nada, porque o .ipk normal nao existe nela. Trocar de
+  // variante calada e o defeito; mandar para a pagina e a saida honesta.
   { char url[160], hash[80];
-    const char *so_outra =
-#ifdef NV_TEX_MB_FIXO
-      "{\"assets\":[{\"browser_download_url\":\"https://x/space.nuvio_1.1.3_arm.ipk\"}]}";
-#else
+    const char *so_highcache =
       "{\"assets\":[{\"browser_download_url\":\"https://x/space.nuvio_1.1.3_arm-highcache.ipk\"}]}";
-#endif
-    CONFERE(!acharIpk(so_outra, url, sizeof url, hash, sizeof hash, AT_SUFIXO),
-            "so a outra variante devolve 0");
+    CONFERE(!acharIpk(so_highcache, url, sizeof url, hash, sizeof hash, AT_SUFIXO),
+            "so a highcache devolve 0");
     CONFERE(url[0] == 0, "e a url fica vazia"); }
 
   // JSON com escapes variados

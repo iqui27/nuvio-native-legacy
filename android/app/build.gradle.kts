@@ -5,10 +5,16 @@ plugins {
 
 // Tudo que vem de fora do projeto entra por propriedade (-P) que o
 // tools/android.sh passa; os padroes servem para abrir no Android Studio.
+val lite = (findProperty("nuvio.apkLite") as String?) == "1"
+if (lite) layout.buildDirectory.set(file("build-lite"))
 val raiz = rootProject.projectDir.parentFile                         // raiz do repo
 val cache = file(System.getProperty("user.home") + "/.cache/nuvio-android")
 val sdlSrc = (findProperty("nuvio.sdlSrc") as String?) ?: "$cache/src"
 val estagio = (findProperty("nuvio.estagio") as String?) ?: "${raiz}/build/android"
+val ffmpegAar = (findProperty("nuvio.ffmpegAar") as String?)?.let { file(it) }
+require(ffmpegAar == null || ffmpegAar.isFile) {
+    "nuvio.ffmpegAar must point to an existing AAR"
+}
 
 // Versao: fonte unica e deploy/app/appinfo.json (mesma do env.sh).
 val versao = Regex("\"version\"\\s*:\\s*\"([^\"]+)\"")
@@ -26,17 +32,29 @@ android {
         targetSdk = 35
         versionCode = vx * 10000 + vy * 100 + vz
         versionName = versao
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        ndk { if (!lite) abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         externalNativeBuild {
             cmake {
                 arguments += listOf(
+                    "-DNV_APK_LITE=${if (lite) "ON" else "OFF"}",
                     "-DANDROID_STL=c++_static",  // hidapi do SDL (hid.cpp) e C++
                     "-DNUVIO_RAIZ=$raiz",
                     "-DNUVIO_SDL_SRC=$sdlSrc",
                     "-DNUVIO_ENV_CMAKE=$estagio/nuvio-env.cmake",
                     "-DNUVIO_P2P_MOTOR=${(findProperty("nuvio.p2pMotor") as String?) ?: ""}",
+                    "-DNUVIO_RUST_MKVCORE=${(findProperty("nuvio.rustMkvcore") as String?) ?: ""}",
                 )
+                arguments += "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
             }
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = lite
+            reset()
+            include("armeabi-v7a", "arm64-v8a")
+            isUniversalApk = false
         }
     }
 
@@ -44,6 +62,7 @@ android {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
+            if (lite) buildStagingDirectory = file(".cxx-lite")
         }
     }
 
@@ -59,6 +78,11 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // Nunca substituir a instalacao de producao durante diagnosticos.
+            applicationIdSuffix = ".strictdebug"
+            versionNameSuffix = "-strictdebug"
+        }
         release {
             isMinifyEnabled = false
             if (ks != null) signingConfig = signingConfigs.getByName("release")
@@ -81,6 +105,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    testOptions { unitTests.isReturnDefaultValues = true }
 }
 
 // Copia as classes Java do SDL no build (nada de copia grande no git).
@@ -91,9 +116,14 @@ val copiaSdlJava = tasks.register<Copy>("copiaSdlJava") {
     // pilha padrao da JVM (~1 MB); o nucleo foi escrito para os 8 MB do fio
     // principal da LG e do .tpk (tpk.c), e o guia estourou a pilha com 900
     // canais numa copia local (SIGSEGV em guia.c, TCL, 30/09/2026).
+    // JOIN COM PRAZO (#266). O onDestroy do SDL espera o main() do C sem
+    // limite, no fio da interface; com o C preso o app nem saia ("so
+    // reiniciando a TV"). 3 s e depois segue: o NuvioActivity mata o processo
+    // ao sair.
     filter { linha: String ->
         linha.replace("new Thread(new SDLMain(), \"SDLThread\")",
                       "new Thread(null, new SDLMain(), \"SDLThread\", 16L * 1024 * 1024)")
+             .replace("SDLActivity.mSDLThread.join();", "SDLActivity.mSDLThread.join(3000);")
     }
 }
 tasks.named("preBuild") { dependsOn(copiaSdlJava) }
@@ -108,6 +138,14 @@ dependencies {
     // ele a fonte toca muda (evento 9). Compilado e publicado pela Jellyfin no
     // Maven Central, na mesma versao do Media3. So entra quando a plataforma
     // nao serve (EXTENSION_RENDERER_MODE_ON no NvPlayer).
-    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.8.0+1")
+    if (ffmpegAar != null) {
+        // Published 1.8.0+1 classes/32-bit JNI; selected 64-bit JNI rebuilt for 16KB pages.
+        implementation(files(ffmpegAar))
+        implementation("androidx.media3:media3-decoder:1.8.0")
+    } else {
+        implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.8.0+1")
+    }
     implementation("androidx.core:core-ktx:1.13.1")
+    testImplementation("junit:junit:4.13.2")
 }
+

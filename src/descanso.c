@@ -10,6 +10,7 @@
 #include "gfx.h"
 #include "layout.h"
 #include "text.h"
+#include "sinopse.h"
 #include "tex_cache.h"
 #include "catalogo.h"
 #include "agenda.h"
@@ -139,8 +140,22 @@ void descanso_quadro(unsigned agora, float dt, int ativo, int estilo, int fonte)
   if (dt < 0.0f) dt = 0.0f;
   if (dt > 0.1f) dt = 0.1f;
   estiloAt = estilo; fonteAt = fonte;
-  if (!ativo) { ativoAnt = 0; atual = -1; texArte = texLogo = texProx = 0; return; }
-  if (!ativoAnt) entrar(agora);
+  if (!ativo) {
+    if (ativoAnt) {
+      printf("[descanso] sair t=%u dur=%.1fs estilo=%d item=%d tex=%u/%u/%u pedido=%d\n",
+             agora, tempoAtivo, estilo, atual, texArte, texLogo, texProx, pedidoAbrir);
+      fflush(stdout);
+    }
+    ativoAnt = 0; atual = -1; texArte = texLogo = texProx = 0; return;
+  }
+  if (!ativoAnt) {
+    printf("[descanso] entrar t=%u estilo=%d fonte=%d catalogo=%d rev=%u\n",
+           agora, estilo, fonte, cat_n(), cat_revisao());
+    fflush(stdout);
+    entrar(agora);
+    printf("[descanso] pronto t=%u fila=%d item=%d\n", agora, filaN, atual);
+    fflush(stdout);
+  }
   ativoAnt = 1;
   tempoAtivo += dt;
   if (estilo != ESM_ESTILO_VITRINE) return;
@@ -322,7 +337,7 @@ static void desenharVitrine(unsigned agora, float a) {
                                      : c->progresso > 0 ? i18n("Continuar assistindo")
                                      : i18n("No seu catálogo"), 190, 194, 204, 255);
     lMeta = txt_linha_corta(TXT_HERO_META, meta, 226, 228, 234, 255, DESC_TEXTO_W);
-    lSin = sin[0] ? txt_linha_corta(TXT_HERO_SIN, sin, 200, 204, 212, 255, DESC_TEXTO_W)
+    lSin = sin[0] ? txt_linha_corta(sinopse_estilo(TXT_HERO_SIN), sin, 200, 204, 212, 255, DESC_TEXTO_W)
                   : (TxtLinha){ 0 };
     if (okHome) lOk = txt_linha(TXT_CAPTION2, i18n("OK para abrir"), 240, 242, 246, 255);
     // De baixo para cima: dica, sinopse, meta, titulo, origem.

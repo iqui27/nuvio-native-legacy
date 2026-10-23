@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Regras do guia da 2.0 por tecla e capturas (PNG) do hero, de capitulos, do
 # resumo, da tela final e do dialogo. Janela GL escondida, desenho num FBO.
 # Fica fora da suite (*_shot.sh): precisa de GL e de olho humano.
@@ -22,4 +24,4 @@ cc "${sources[@]}" tests/novidades20_shot.c -Isrc \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-"$BIN" "${1:-/tmp/nuvio-novidades20}"
+"$BIN" "${1:-${TMPDIR:-/tmp}/nuvio-novidades20}"

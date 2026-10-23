@@ -33,6 +33,7 @@
 // quando o texto para (um pedido para "keanu" inteiro, nenhum por letra), a
 // URL leva o idioma, e OK nela pede SPOT_PESSOA com o titulo conhecido.
 #include "spotlight.h"
+#include "nvtmp.h"
 #include "buscasrec.h"
 #include "dados.h"
 #include "ajustes.h"
@@ -167,7 +168,7 @@ static int achar(int tipo, const char *texto) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-spotlight";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-spotlight");
   const char *dir = getenv("NUVIO_DADOS");
   SDL_GLContext gl;
   SpotPedido p;

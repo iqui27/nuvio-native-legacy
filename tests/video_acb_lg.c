@@ -2,11 +2,26 @@
 #include <time.h>
 #include <assert.h>
 #include <unistd.h>
+// Antes do #undef __APPLE__: gl_compat.h (via ajustes.h) escolhe o GL do Mac.
+#include "ajustes.h"
+#undef __APPLE__
 static int fake_sleep(const struct timespec *, struct timespec *);
 #define nanosleep fake_sleep
 #include "../src/video.c"
 #undef nanosleep
 
+/* The official native HTTP payload reads device buffering preferences. */
+int ajustes_buffer_preset(void) { return 0; }
+long memlog_livre_mb(void) { return 4096; }
+/* No HTTP or decoder is started by native dispatcher fixtures. */
+static DtsBufferInfo movie_snapshot;
+static int movie_active, movie_stops;
+static unsigned movie_stop_session;
+int moviebuffer_url(const char *s,const char *h,int m,char *o,size_t n) {
+  (void)s;(void)h;(void)m;(void)o;(void)n;return 0;
+}
+int moviebuffer_info(DtsBufferInfo *out) { *out=movie_snapshot;return movie_active; }
+void moviebuffer_stop(void) { movie_stops++;movie_stop_session=sessao;movie_active=0; }
 static DtsPlaybackStatus pump_status;
 static const char *pump_events[8];
 static int pump_read, pump_count;
@@ -14,6 +29,8 @@ void dts_playback_status(DtsPlayback *p, DtsPlaybackStatus *out) { (void)p;*out=
 int dts_playback_event(DtsPlayback *p,char *out,size_t n) { (void)p;if (pump_read==pump_count)return 0;snprintf(out,n,"%s",pump_events[pump_read++]);return 1; }
 /* Unused source-changing paths remain linked by the real event dispatcher. */
 void dts_playback_close(DtsPlayback *p) { (void)p;assert(0); }
+void dts_playback_pause(DtsPlayback *p,int paused) { (void)p;(void)paused;assert(0); }
+void mkvass_aceitar_imagem(int sim) { (void)sim; }
 void dts_playback_seek(DtsPlayback *p,double t) { (void)p;(void)t;assert(0); }
 void dts_playback_audio(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
 void dts_playback_subtitle(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
@@ -22,6 +39,7 @@ int dts_overlay_draw(DtsPlayback *p,double t,float x,float y,float w,float h,int
 }
 void legenda_carregar(const char *url) { (void)url;assert(0); }
 int esmaecer_segura_protetor_tv(void) { return 0; }
+void esmaecer_protetor_publicador(void (*publicar)(void)) { publicar(); }
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
 int dados_gravar(const char *nome, const char *conteudo) { (void)nome; (void)conteudo; return 1; }
 void marco(const char *name) { (void)name; }
@@ -69,7 +87,63 @@ static int fake_native_audio(LSHandle *h,const char *uri,const char *payload,
   assert(!strcmp(uri,"luna://com.webos.media/selectTrack"));
   assert(strstr(payload,"\"type\":\"audio\""));native_audio_calls++;return 1;
 }
+static int startup_selects, startup_plays, startup_subscribes;
+static const char *fake_load_payload(LSMessage *m) { (void)m;return "{\"returnValue\":true,\"mediaId\":\"live-test\"}"; }
+static int fake_startup_call(LSHandle *h,const char *uri,const char *payload,
+                             Filtro cb,void *ctx,unsigned long *token,void *error) {
+  (void)h;(void)payload;(void)cb;(void)ctx;(void)token;(void)error;
+  if (strstr(uri,"/selectTrack")) startup_selects++;
+  if (strstr(uri,"/subscribe")) startup_subscribes++;
+  if (strstr(uri,"/play")) {
+    assert(startup_subscribes == 1);
+    startup_plays++;
+  }
+  return 1;
+}
 int main(void) {
+  /* #625: successful load must start playback before track discovery.
+   * TS and HLS both use this callback; native default tracks need no selection. */
+  lsPayload=fake_load_payload;lsCall=fake_startup_call;
+  bus=(LSHandle *)(uintptr_t)1;protetorLigado=1;
+  for (int mode=0;mode<=2;mode++) {
+    modoLoad=mode;midia[0]=0;
+    startup_selects=startup_plays=startup_subscribes=0;
+    aoCarregar(NULL,NULL,(void *)(uintptr_t)sessao);
+    assert(startup_selects == 0);
+    assert(startup_plays == 1 && startup_subscribes == 1);
+  }
+  midia[0]=0;
+  /* OLED A1: LG rejects DTS and returns an empty string, followed by a video
+   * array. That video must never become a fake H264 audio track. */
+  eventoPayload("{\"sourceInfo\":{\"programInfo\":[{\"numAudioTracks\":0,\"audioTrackInfo\":\"\",\"videoTrackInfo\":[{\"codec\":\"H264\"}],\"subtitleTrackInfo\":\"\"}]}}",sessao);
+  assert(nAudio == 0 && nLeg == 0);
+  MkvFaixa tracks[3] = {
+    {.numero=1,.tipo=1,.codec="V_MPEG4/ISO/AVC"},
+    {.numero=2,.tipo=2,.codec="A_DTS",.nome="DTS-HD Master Audio",.canais=6},
+    {.numero=3,.tipo=17,.codec="S_HDMV/PGS"}
+  };
+  eventoPayload("{\"error\":{\"errorCode\":200,\"errorText\":\"Audio Codec Not Supported\"}}",sessao);
+  assert(audioNaoSup && !video_faixa_dts(video_audio(audioAtual)));
+  completarAudioMkv(tracks,3);
+  assert(nAudio == 1 && audioAtual == 0 && video_faixa_dts(video_audio(0)) > 0);
+  assert(audioNaoSup && video_faixa_dts(video_audio(audioAtual))); /* fallback trigger */
+  assert(!strcmp(faixaAudio[0].codec,"dts") && faixaAudio[0].canais == 6);
+  assert(faixaAudio[0].stream_index == -1 && faixaAudio[0].stream_id == -1);
+  /* Empty arrays also stay empty; multiple hidden tracks are ambiguous. */
+  eventoPayload("{\"sourceInfo\":{\"audioTrackInfo\":[],\"videoTrackInfo\":[{\"codec\":\"H264\"}],\"subtitleTrackInfo\":[]}}",sessao);
+  assert(nAudio == 0 && nLeg == 0);
+  tracks[2] = (MkvFaixa){.tipo=2,.codec="A_DTS"};
+  completarAudioMkv(tracks,3);assert(nAudio == 0);
+  /* Error 200 also covers TrueHD; it must not trigger a DTS conversion. */
+  snprintf(tracks[1].codec,sizeof tracks[1].codec,"A_TRUEHD");
+  snprintf(tracks[1].nome,sizeof tracks[1].nome,"TrueHD");
+  completarAudioMkv(tracks,2);assert(nAudio == 1 && !video_faixa_dts(video_audio(0)));
+  /* Real native audio remains authoritative; iteration stops at the array. */
+  eventoPayload("{\"sourceInfo\":{\"audioTrackInfo\":[{\"codec\":\"aac\",\"channels\":2}],\"videoTrackInfo\":[{\"codec\":\"H264\"}],\"subtitleTrackInfo\":[]}}",sessao);
+  assert(nAudio == 1 && !strcmp(faixaAudio[0].codec,"aac"));
+  completarAudioMkv(tracks,2);assert(!strcmp(faixaAudio[0].codec,"aac"));
+  nAudio = nLeg = 0; audioNaoSup = 0;
+
   /* Native DTS is preferred even with fallback enabled. An unsupported error
    * from another track must not follow the user onto a compatible DTS track. */
   ligado=1;snprintf(midia,sizeof midia,"native-media");nAudio=2;audioAtual=0;

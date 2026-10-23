@@ -106,10 +106,16 @@ int main(int argc, char **argv) {
     body = rede_baixar_trecho64_cab(long_url, HEADERS, 0, 1023, &size, &total, &status, NULL);
     assert(!body && size == 0 && status == 0);
   }
-  // Trusted local TLS verifies the HTTPS path, then rejects a downgrade.
+  // Trusted local TLS verifies the HTTPS path; a downgrade to HTTP is
+  // followed, but NO caller header reaches the plain-HTTP hop (only libcurl's
+  // own Host/Accept/Range).
   snprintf(url, sizeof url, "https://127.0.0.1:%d/downgrade", tls_port);
   body = rede_baixar_trecho64_cab(url, HEADERS, 0, 1023, &size, &total, &status, NULL);
-  assert(!body && size == 0 && total == -1 && status == 302);
+  assert(body && size > 0 && status == 206);
+  assert(!strstr(body, "authorization") && !strstr(body, "cookie") && !strstr(body, "x-provider-token"));
+  assert(!strstr(body, "referer") && !strstr(body, "origin") && !strstr(body, "DTS-range-test"));
+  assert(strstr(body, "range: bytes=0-1023"));
+  free(body);
   begun = now_ms();
   assert(!pthread_create(&thread, NULL, cancel_later, (void *)&cancel));
   body = get("/idle", 0, 31, NULL, &cancel);

@@ -1,5 +1,8 @@
 #ifndef NV_LEGENDA_H
 #define NV_LEGENDA_H
+
+// Manual delay accepted by the player controls and stored preferences (#425).
+#define LEG_ATRASO_MANUAL_MAX 60000
 #include <stddef.h>
 #include <stdint.h>
 
@@ -22,8 +25,8 @@ typedef struct {
 
   // --- O QUE O ARQUIVO ASS DIZ SOBRE ESTE BLOCO -----------------------------
   //
-  // Tudo aqui nasce ZERADO no caminho SRT/VTT, e o desenho trata zero como
-  // "o arquivo nao disse nada" — e ai quem manda e a preferencia da pessoa.
+  // SRT/VTT also supplies bold/italic emphasis; other style fields stay
+  // unset. Zero means the file did not specify a value: use user settings.
 
   // Ancora ASS 1..9 (1 = base-esquerda, 5 = meio-centro, 9 = topo-direita).
   // 0 = o arquivo nao declarou; usa a posicao escolhida na folha de faixas.
@@ -51,6 +54,10 @@ void legenda_carregar(const char *url);
  * exatamente uma vez, inclusive em falha, e nao pode tocar a UI. */
 typedef void (*LegendaBaixada)(const char *corpo, unsigned geracao, int vigente, void *u);
 unsigned legenda_carregar_com(const char *url, LegendaBaixada pronto, void *u);
+// Um candidato por play; carregar_com adota pelo link, no mesmo fio/callback.
+void legenda_pre_baixar(const char *url);
+void legenda_pre_descartar(const char *motivo);
+void legenda_pre_reiniciar(void);
 void legenda_desligar(void);
 // Liga com um corpo ja em memoria (parser sincrono). Ver a nota em legenda.c.
 void legenda_definir_corpo(const char *corpo);
@@ -94,18 +101,21 @@ int legenda_eh_ass(const char *corpo);
 /* Immutable subtitle documents, independent of the currently drawn overlay.
  * Build once on a worker, retain while analysing/drawing, release when done.
  * `identidade` must identify the subtitle track/file, never contain a signed
- * URL or credentials. A partial mkvass batch MUST NOT set COMPLETO. */
+ * URL or credentials. A partial mkvass batch MUST NOT set COMPLETO for the
+ * whole track. JANELA + COMPLETO proves only its explicit indexed interval. */
 typedef struct LegendaDocumento LegendaDocumento;
 enum {
   LEGENDA_DOC_COMPLETO = 1u << 0,
   LEGENDA_DOC_FORCED = 1u << 1,
-  LEGENDA_DOC_SINAIS = 1u << 2
+  LEGENDA_DOC_SINAIS = 1u << 2,
+  LEGENDA_DOC_JANELA = 1u << 3 /* COMPLETO somente entre janelaInicio/Fim */
 };
 typedef struct {
   char idioma[24], origem[96], identidade[128];
   uint64_t sessao;
   unsigned flags;
   double duracaoSeg; /* media duration when known; zero = unknown */
+  double janelaInicio, janelaFim; /* intervalo indexado integralmente colhido */
 } LegendaDocumentoInfo;
 LegendaDocumento *legenda_documento_criar(const char *corpo,
                                         const LegendaDocumentoInfo *info);

@@ -19,8 +19,31 @@
 #include <stdlib.h>
 #include <string.h>
 #include "contalib.h"
+#include "vistoep.h"
 #include "catalogo.h"
+uint64_t perfis_sessao_geracao(void) { return 0; }
+int perfis_sessao_travar(uint64_t g) { return !g; }
+void perfis_sessao_destravar(void) {}
+int contapend_estado(const char *i, const char *tipo, int t, int e, long long ms, int v) {
+  static int unmark;
+  if (ms < 0) { int r = unmark; unmark = 0; return r; }
+  if (i && !strcmp(i, "tt14688458") && t == 2 && e == 6) return 0;
+  (void)v;(void)tipo; return 1;
+}
+int contapend_reenviar(void) { return 0; }
+void contapend_reenviar_com(int (*f)(const char *, const char *, const VistoPar *, int, int, int, const int *, int)) { (void)f; }
 
+int ajustes_fonte_biblioteca(void) { return 0; }   // AJ_SALVOS_LOCAL: a conta e a fonte
+
+// '+' de lista pendente nesta TV (dublado; o de verdade vive em contapend.c).
+static int pendLista;
+int contapend_lista_pendente(const char *id) {
+  return pendLista && id && !strcmp(id, "tt0903747");
+}
+// O app chama salvos_remover_remoto ao tirar um titulo do snapshot; aqui a
+// chamada e contada para provar quando o espelho local e poupado.
+static int removidosSalvos;
+void salvos_remover_remoto(const char *id) { (void)id; removidosSalvos++; }
 static int falhas;
 
 static void confere(const char *o_que, int obtido, int esperado) {
@@ -78,6 +101,9 @@ int cat_indice_por_imdb(const char *imdb) {
 
 void cat_definir_na_lista(int i, int naLista) {
   if (i >= 0 && i < catN) cat[i].naLista = naLista ? 1 : 0;
+}
+void cat_marcar_fonte(int i, int fonte) {
+  if (i >= 0 && i < catN) { cat[i].naLista = 1; cat[i].fontes |= fonte; }
 }
 
 int cat_acrescentar_lote(const CatItem *v, int qtd, int *saidaIdx) {
@@ -170,6 +196,25 @@ static const char *BIB =
     "\"release_info\":\"2010\",\"imdb_rating\":8.8,\"genres\":[],"
     "\"added_at\":\"2026-09-01T10:00:00+00:00\"}]";
 
+// O mesmo BIB sem Breaking Bad: o snapshot mais curto que pediria a remocao
+// do espelho local de tt0903747.
+static const char *BIB_SEM_BB =
+  "[{\"content_id\":\"tt0111161\",\"content_type\":\"movie\","
+    "\"name\":\"The Shawshank Redemption\",\"poster\":\"https://art/sr.jpg\","
+    "\"release_info\":\"1994\",\"imdb_rating\":9.3,\"genres\":[\"Drama\"],"
+    "\"added_at\":1756000000000},"
+   "{\"content_id\":\"tt1375666\",\"content_type\":\"movie\","
+    "\"name\":\"Inception\",\"poster\":\"https://art/in.jpg\","
+    "\"release_info\":\"2010\",\"imdb_rating\":8.8,\"genres\":[],"
+    "\"added_at\":\"2026-09-01T10:00:00+00:00\"}]";
+
+// So Inception: retira tt0111161 (sem pendencia) da lista da conta.
+static const char *BIB_SOLO =
+  "[{\"content_id\":\"tt1375666\",\"content_type\":\"movie\","
+    "\"name\":\"Inception\",\"poster\":\"https://art/in.jpg\","
+    "\"release_info\":\"2010\",\"imdb_rating\":8.8,\"genres\":[],"
+    "\"added_at\":\"2026-09-01T10:00:00+00:00\"}]";
+
 // Vistos: um filme, uma serie inteira e DOIS episodios. Os episodios nao podem
 // virar "serie assistida" — trakt.c pula a linha com "episode" pelo mesmo
 // motivo, e sem isso um episodio de oito temporadas marcaria a obra toda.
@@ -238,6 +283,14 @@ int main(void) {
   printf("\nreconciliacao depois de a descoberta trocar o catalogo:\n");
   confere("nada a refazer com o catalogo intacto", (contalib_reconciliar(), cat_n()), 5);
   confere("a marca continua onde estava", naListaDe("tt1375666"), 1);
+  // Mesmos IDs/indices e naLista: a republicacao trouxe so Trakt.
+  for (int i = 0; i < catN; i++)
+    if (cat[i].naLista) cat[i].fontes = CAT_FONTE_TRAKT;
+  contalib_reconciliar();
+  confere("republicar Trakt repoe Nuvio no titulo da conta",
+          catDe("tt1375666")->fontes, CAT_FONTE_TRAKT | CAT_FONTE_NUVIO);
+  confere("republicar Trakt repoe Nuvio nos demais titulos",
+          catDe("tt0111161")->fontes, CAT_FONTE_TRAKT | CAT_FONTE_NUVIO);
   // cat_definir_tudo: a descoberta publica um catalogo NOVO e tudo que a conta
   // acrescentou desaparece. Sem reconciliar, a Biblioteca esvaziava sozinha uns
   // 20 s depois do arranque.
@@ -265,6 +318,28 @@ int main(void) {
   confere("e o selo volta a nao dizer CONTA", contalib_tem_conta(), 0);
   contalib_reconciliar();   // nao pode explodir nem reescrever nada
   confere("reconciliar sem conta nao mexe no catalogo", cat_n(), 5);
+
+  printf("\nsnapshot menor nao apaga '+' local pendente:\n");
+  // A conta tinha os tres; o snapshot novo traz so dois. tt0903747 tem um '+'
+  // de lista PENDENTE nesta TV (salvo aqui, ainda nao subiu): o espelho local
+  // nao pode sair antes do push.
+  semear(SEMENTE, 3);
+  removidosSalvos = 0;
+  confere("a conta volta com tres", contalib_ler_biblioteca(BIB), 3);
+  confere("aplicar marca os tres", contalib_aplicar_catalogo(), 3);
+  pendLista = 1;
+  confere("snapshot sem tt0903747", contalib_ler_biblioteca(BIB_SEM_BB), 2);
+  confere("o pendente continua marcado", naListaDe("tt0903747"), 1);
+  confere("e o espelho local NAO foi removido", removidosSalvos, 0);
+  pendLista = 0;
+  // Sem pendencia a remocao acontece — para um titulo QUE CONTINUA na lista
+  // antiga (tt0903747 ja saiu de `itens` na substituicao anterior: o '+'
+  // pendente preservou a marca do catalogo, nao a linha do snapshot).
+  confere("de novo, agora sem pendencia", contalib_ler_biblioteca(BIB_SOLO), 1);
+  confere("a marca do nao-pendente sai", naListaDe("tt0111161"), 0);
+  confere("a do pendente continua", naListaDe("tt0903747"), 1);
+  confere("e so um espelho foi removido", removidosSalvos, 1);
+  contalib_esquecer();
 
   printf("\nconta com mais que o teto guarda os MAIS RECENTES (Owlphibia29):\n");
   // 205 no contador e o titulo recem-salvo sumindo: o corte de CONTALIB_MAX era
@@ -363,7 +438,8 @@ int main(void) {
   }
   contalib_esquecer();
   { ContaSemente s[1];
-    confere("sem conta, sem sementes", contalib_sementes_a_seguir(s, 1, 1), 0); }
+    // -1, nao 0: vistos nao puxados != conta sem semente (o a seguir nao confia)
+    confere("sem conta: vistos nao puxados", contalib_sementes_a_seguir(s, 1, 1), -1); }
 
   printf("\n%s\n", falhas ? "FALHOU" : "PASSOU");
   return falhas ? 1 : 0;

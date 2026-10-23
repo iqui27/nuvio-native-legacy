@@ -16,6 +16,7 @@
 // nao o que esta foto quer provar.
 #define NV_REC_URL "http://127.0.0.1:8799"
 #include "../src/recomenda.c"
+#include "nvtmp.h"
 #include "salvospainel.h"
 #include "salvos.h"
 #include "ctxmenu.h"
@@ -254,7 +255,7 @@ static void semear(const char *dir) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-social";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-social");
   const char *dir = getenv("NUVIO_DADOS");
   char nome[700];
   SDL_Window *w;
@@ -598,10 +599,10 @@ int main(int argc, char **argv) {
     e.type = SDL_KEYUP;
     e.key.keysym.sym = SDLK_RETURN;
     ctx_evento(&e); }
-  // Desce ate "Recomendar a um amigo". Sao QUATRO opcoes neste item (detalhes,
-  // salvar, assistido, recomendar) — o titulo nao tem progresso, entao "Tirar
-  // de Continuar assistindo" nao aparece.
-  teclaCtx(SDLK_DOWN); teclaCtx(SDLK_DOWN); teclaCtx(SDLK_DOWN);
+  // Desce ate "Recomendar a um amigo". Sao TRES opcoes neste item (salvar,
+  // assistido, recomendar; "Ver detalhes" saiu em 06/10/2026) — o titulo nao
+  // tem progresso, entao "Tirar de Continuar assistindo" nao aparece.
+  teclaCtx(SDLK_DOWN); teclaCtx(SDLK_DOWN);
   snprintf(nome, sizeof nome, "%s-ctx-opcoes.bmp", saida);
   captura(nome, w);
 

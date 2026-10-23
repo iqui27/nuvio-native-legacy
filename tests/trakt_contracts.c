@@ -1,4 +1,8 @@
 #include "trakt.h"
+#include "traktscrobble.h"
+#include "metaprov.h"
+#include "stub_perfisessao.h"
+#include <math.h>
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -50,6 +54,14 @@ int cat_historico_definir_se_geracao(const char *id, const char *tipo, int visto
 }
 void rede_avisar_401(void (*callback)(const char *url)) { (void)callback; }
 
+// These contracts use movies only; episode metadata must never be requested.
+const char *metaprov_idioma(void) { return "en-US"; }
+char *metaprov_meta(const char *tipo, const char *id, int seg, int *prov) {
+  (void)tipo; (void)id; (void)seg; (void)prov;
+  assert(!"unexpected episode metadata request");
+  return NULL;
+}
+
 static void espera(int esperado) {
   pthread_mutex_lock(&lock);
   while (chamadas < esperado) pthread_cond_wait(&cond, &lock);
@@ -58,6 +70,16 @@ static void espera(int esperado) {
 
 int main(void) {
   trakt_definir("token", "client");
+
+  // Nenhum desses pedidos pode ocupar a vaga pendente ou tocar a rede.
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 129, 129, 0, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 129, 129, 0.5, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 30, 30, 30, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", NAN, 2580, 2580, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 2580, 2580, NAN, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_TOCANDO, "tt1234567", 10, 2580, 0, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 2768, 2843, 0, 0) == SCR_NADA);
+  assert(chamadas == 0);
 
   proximoStatus = 400;
   assert(trakt_watchlist_tipo("tt1234567:2:4", "series", 1));
@@ -95,6 +117,44 @@ int main(void) {
   pthread_mutex_lock(&lock); liberar = 1; pthread_cond_broadcast(&cond); pthread_mutex_unlock(&lock);
   while (trakt_operacao_estado(2) == 1) sched_yield();
   assert(trakt_operacao_estado(2) == 3 && marcas == 1);
-  puts("trakt contracts: PASS (intenção, escopo, falha e retry confirmados)");
+  bloquear = 1; liberar = 0;
+  trakt_definir("token", "client");
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 2580, 2580, 2322, 1) == SCR_STOP);
+  espera(6);
+  assert(strstr(ultimaUrl, "/scrobble/stop"));
+  assert(strstr(ultimoCorpo, "100.00"));
+  // Invalid playback remains rejected; a played seek may queue a stop.
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt9999999", 180, 180, 0, 0) == SCR_NADA);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt9999999", 2580, 2580, 120, 0) == SCR_STOP);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 200, 2580, 200, 0) == SCR_PAUSE);
+  pthread_mutex_lock(&lock); liberar = 1; pthread_cond_broadcast(&cond); pthread_mutex_unlock(&lock);
+  espera(7);
+  assert(strstr(ultimaUrl, "/scrobble/pause"));
+  assert(!strstr(ultimoCorpo, "tt9999999"));
+  // A seek completion ends the active start; reopening must send a new start.
+  assert(trakt_scrobble(SCR_EV_TOCANDO, "tt7777777", 99, 2843, 99, 0) == SCR_START);
+  espera(8);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt7777777", 2824, 2843, 133, 0) == SCR_STOP);
+  espera(9);
+  assert(strstr(ultimaUrl, "/scrobble/stop"));
+  assert(trakt_scrobble(SCR_EV_TOCANDO, "tt7777777", 10, 2843, 10, 0) == SCR_START);
+  espera(10);
+  assert(strstr(ultimaUrl, "/scrobble/start"));
+  // Com a decisao do player (player_regra_visto), o stop sai.
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt7777777", 2700, 2700, 2400, 1) == SCR_STOP);
+  espera(11);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt8888888", 6000, 6000, 2300, 1) == SCR_STOP);
+  espera(12);
+  assert(strstr(ultimaUrl, "/scrobble/stop") && strstr(ultimoCorpo, "tt8888888"));
+  // Exit accepts one second of playback; completion begins at 80%, even after seeking.
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 129, 129, 69, 0) == SCR_STOP);
+  espera(13);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 2768, 2843, 133, 0) == SCR_STOP);
+  espera(14);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 85, 1000, 1, 0) == SCR_PAUSE);
+  espera(15);
+  assert(trakt_scrobble(SCR_EV_SAIU, "tt1234567", 850, 1000, 1, 0) == SCR_STOP);
+  espera(16);
+  puts("trakt contracts: PASS (intent, scope, failure, retry, seek completion and playback guards)");
   return 0;
 }

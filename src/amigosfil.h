@@ -23,6 +23,14 @@
 #define NV_AMIGOSFIL_H
 #include <SDL2/SDL.h>
 #include <stddef.h>
+#include "gfx.h"
+#ifdef NV_TOUCH_UI
+#include "ponteiro.h"
+int amigosfil_rolagem(const PonteiroRolagem *e);
+void amigosfil_retomar_foco(int *coluna);
+void amigosfil_ponteiro(PonteiroFn focar);
+void amigosfil_focar(int coluna, int cartao);
+#endif
 
 // Colunas que a home navega: rostos + "Adicionar"; 1 (o convite) sem amigos.
 int  amigosfil_n_colunas(void);
@@ -53,4 +61,10 @@ int  amigosfil_pediu_ajustes(void);
 
 // Para os testes: em que cartao esta o foco (-1 = no rosto).
 int  amigosfil_dentro(void);
+#ifdef NV_AMIGOSFIL_TESTE
+void amigosfil_teste_conferir(int w, int h);
+// Rect of card `i` in the last frame; 1 = title card, 0 = people card, -1 = none.
+int  amigosfil_teste_cartao(int i, GfxRect *r);
 #endif
+#endif
+

@@ -1,0 +1,71 @@
+ok  filme: creditos em milissegundos, fim nulo vira 'ate o fim'
+ok  filme: start nulo vira zero, e ausencia de creditos nao inventa um
+ok  serie: abertura e creditos na mesma resposta
+ok  duas aberturas no mesmo episodio entram as duas
+ok  recap vira INTRO_RESUMO e nao abertura
+ok  trecho vazio ou invertido e descartado
+ok  404, vazio, lixo e max=0 devolvem zero sem estourar
+ok  guarda de janela
+[marcador] janela aceita tipo=3 ini=7700s fim=0s dur=8400s (ok)
+[marcador] janela recusada tipo=3 ini=3000s fim=0s dur=8400s (janela longa)
+ok  botao some em 10 s, volta com controles, janela recusada nao aparece
+ok  bb_s01e01.json         creditos 3431s de 3481s (sobram 50s, janela 300s)
+ok  bb_s01e02.json         creditos 2839s de 2886s (sobram 47s, janela 300s)
+ok  silo_s01e01.json       creditos 3503s de 3540s (sobram 37s, janela 300s)
+ok  aot_s02e01.json        creditos 1330s de 1440s (sobram 110s, janela 216s)
+ok  onepiece_s01e01.json   creditos 1389s de 1500s (sobram 111s, janela 225s)
+ok  marcador de outro episodio, de outro corte e abertura no meio sao recusados
+ok  resposta de outro episodio (remapeada) nao vale
+ok  Silo T3E4/T3E5/T2E7 sem creditos; T2E6 (2519 s de 3077 s) recusado
+ok  janela dos creditos (15%, 2-5 min) e estimativa fixa (40 s / 15 s)
+[marcador] janela recusada tipo=3 ini=2881s fim=0s dur=3481s (creditos fora da parte final do episodio)
+[marcador] janela aceita tipo=3 ini=3431s fim=0s dur=3481s (ok)
+ok  creditos recusados nao chegam ao cartao
+ok  URLs: tmdb_id + par do TMDB + duration_ms; imdb sozinho no filme; AniSkip
+[intro] tt0388629 S04E92: fonte=TheIntroDB, 2 marcadores, dur 0s
+[intro] tt0388629 S04E01: a API devolveu outro episodio, marcador descartado
+[intro] tt0388629 S04E01: fonte=nenhuma, 0 marcadores, dur 0s
+ok  One Piece por tmdb_id tem marcadores; pelo imdb remapeado, nenhum
+[intro] tt0903747 S01E01: resposta 500, tenta de novo depois
+[intro] tt0903747 S01E01: fonte=TheIntroDB, 2 marcadores, dur 0s
+ok  resposta 500 nao e guardada como vazia
+[intro] tt0903747 S01E01: fonte=TheIntroDB, 2 marcadores, dur 3481s
+ok  duracao real vai como duration_ms num segundo pedido
+[intro] tt1375666 S00E00: fonte=TheIntroDB, 1 marcadores, dur 0s
+[intro] tt1375666 S00E00: fonte=TheIntroDB, 1 marcadores, dur 8880s
+[marcador] janela aceita tipo=1 ini=0s fim=38s dur=8880s (ok)
+ok  filme: abertura do TheIntroDB vira o botao de pular
+[intro] kitsu:12 S01E01: fonte=AniSkip, 2 marcadores, dur 0s
+ok  anime kitsu:12 -> MAL 21 -> AniSkip: abertura e ED
+[intro] tt5607616 S02E01: fonte=AniSkip, 2 marcadores, dur 0s
+[intro] tt5607616 S01E39: fonte=AniSkip, 2 marcadores, dur 0s
+[intro] tt5607617 S02E14: fonte=AniSkip, 2 marcadores, dur 0s
+[intro] tt5607616 S01E39: fonte=AniSkip, 2 marcadores, dur 0s
+[intro] tt5607616 S01E39: fonte=capitulos, 2 marcadores
+[intro] tt5607616 S02E01: fonte=nenhuma, 0 marcadores, dur 0s
+[intro] tt5607616 S02E01: fonte=AniSkip, 2 marcadores, dur 0s
+[intro] tt0903747 S01E01: fonte=TheIntroDB, 2 marcadores, dur 0s
+[intro] tt5607617 S02E14: fonte=AniSkip, 2 marcadores, dur 0s
+[intro] tt5607616 S01E39: fonte=AniSkip, 2 marcadores, dur 0s
+[intro] tt5607617 S02E14: fonte=AniSkip, 2 marcadores, dur 0s
+[intro] tt5607616 S01E39: fonte=AniSkip, 2 marcadores, dur 0s
+[intro] tt5607617 S02E14: fonte=AniSkip, 2 marcadores, dur 0s
+[intro] tt4300000 S01E01: fonte=TheIntroDB, 2 marcadores, dur 0s
+[intro] tt5607616 S01E39: fonte=nenhuma, 0 marcadores, dur 0s
+[intro] tt5607616 S01E39: fonte=nenhuma, 0 marcadores, dur 0s
+[intro] tt5607617 S02E14: fonte=nenhuma, 0 marcadores, dur 0s
+ok  #430: indice em fluxo criado uma vez/reutilizado entre titulos; semana; stale/503; corrompido/ausente refaz; sem indice -> TheIntroDB
+ok  filme: janela de creditos 12% (5-15 min), abertura so no comeco, 3 min/90 s fixos
+[marcador] janela aceita tipo=3 ini=1389s fim=1459s dur=1500s (ok)
+[marcador] janela aceita tipo=4 ini=1459s fim=1500s dur=1500s (ok)
+[marcador] janela aceita tipo=4 ini=1432s fim=0s dur=1440s (ok)
+ok  previa: emendada pula junto com os creditos; sozinha marca o fim
+[marcador] janela aceita tipo=3 ini=1380s fim=0s dur=1500s (ok)
+ok  capitulos do arquivo substituem o marcador da rede por tipo
+ok  AniSkip: op/ed/recap, ED ate o fim, 10% de duracao, mapeamento kitsu -> MAL
+intro: tudo ok
+ok  pulo automatico: abertura/resumo, ligado e com fim
+ok  creditos: so com fim explicito e a 5 s do fim; sem ajuste/sem fim/estimativa nao
+[marcador] janela aceita tipo=3 ini=2900s fim=0s dur=3000s (ok)
+ok  creditos sem end_ms nao pulam
+ok  rebobinar nao pula de novo; nova reproducao zera

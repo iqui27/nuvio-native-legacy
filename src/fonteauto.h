@@ -37,6 +37,29 @@ enum { FONTEAUTO_MELHOR = 0, FONTEAUTO_PRIMEIRA = 1 };
 int fonteauto_fila(int modo, int total, int preferida, const long *pontos,
                    const unsigned char *acimaTeto, const unsigned char *excluida,
                    int max, int *fila);
+// A MESMA FILA EM GRUPOS (#202, fonteregra.h): `grupo` de cada fonte,
+// 0..FONTEAUTO_GRUPOS-1 na ordem em que os grupos entram (0 = add-on permitido
+// que casa a regex; depois os que falham 1, 2... condicoes; depois "os outros"
+// do mesmo jeito), -1 = nunca entra. Dentro de cada grupo vale a regra
+// do modo, igual a de sempre. NULL = todas no grupo 0 (fonteauto_fila). A
+// preferida continua na frente de tudo: e a escolha da pessoa neste titulo.
+#define FONTEAUTO_GRUPOS 16   // 2 x (FR_FALTAS_MAX + 1)
+int fonteauto_fila_g(int modo, int total, int preferida, const long *pontos,
+                     const unsigned char *acimaTeto, const unsigned char *excluida,
+                     const signed char *grupo, int max, int *fila);
+
+// A MESMA FILA COM A ORDEM DOS ADD-ONS (fonteregra.h). `rank` = posicao do
+// add-on de cada fonte na ordem (FR_ORDEM_SEM = fora dela); NULL = sem ordem.
+// ordemUso: FR_ORDEM_NAO = a fila de sempre; FR_ORDEM_DESEMPATE = na mesma
+// faixa de qualidade (pontos / FONTEAUTO_FAIXA) e no mesmo grupo vence o add-on
+// mais cedo na ordem; FR_ORDEM_ESTRITA = dentro do grupo, as fontes dentro do
+// teto do add-on mais cedo na ordem vem todas antes das do seguinte (e as
+// acima do teto depois de todas as de dentro).
+#define FONTEAUTO_FAIXA 10000
+int fonteauto_fila_o(int modo, int total, int preferida, const long *pontos,
+                     const unsigned char *acimaTeto, const unsigned char *excluida,
+                     const signed char *grupo, const int *rank, int ordemUso,
+                     int max, int *fila);
 
 // Quantas candidatas o modo pode conferir numa escolha. PRIMEIRA = 1 sempre:
 // a garantia do #130 e que so a fonte que vai tocar e tocada.
@@ -65,9 +88,17 @@ int fonteauto_primeira(const int *fila, int n, FonteVerificar verificar,
 //   - MELHOR: a melhor candidata presente e `boa` (dentro do teto, em cache,
 //     na resolucao do teto — 4K com teto automatico);
 //   - o prazo passou (prazoPassou).
+// COM GRUPOS (#202): a candidata da frente nao sai enquanto falta um addon que
+// ainda pode trazer um grupo MELHOR que o dela (pendenteGrupoMin < grupo dela)
+// — e o "espera os add-ons permitidos; so sem fonte neles usa os outros". Com
+// `instantaneo` ("Espera pelos add-ons" = Instantaneo) a primeira candidata
+// do melhor grupo possivel sai na hora, sem pedir que ela seja "boa".
 // E 0 quando nao ha candidata nao excluida, ou quando a lembrada pode estar
 // num addon que ainda nao respondeu (prefPendente): ai nem o prazo vale — a
 // escolha que a pessoa fez nao e trocada por pressa.
+// `esperaTodos` ("Espera pelos add-ons" = Todos, PR #567): nada de "boa o
+// bastante" nem de ordem; so decide quando nenhum add-on falta (ou a lembrada
+// ja chegou), e ai a fila escolhe a melhor da lista inteira.
 typedef struct {
   int modo, total, preferida, prefPendente, prazoPassou, algumPendente;
   const long *pontos;
@@ -75,6 +106,13 @@ typedef struct {
   const int *addon;                       // ordem do addon de cada fonte
   int (*pendenteAntes)(int addon, void *u);   // falta algum addon antes deste?
   void *u;
+  const signed char *grupo;               // NULL = sem regras (todas no grupo 0)
+  int pendenteGrupoMin;                   // melhor grupo que um pendente pode trazer
+  int instantaneo;
+  const int *rank;                        // NULL = sem ordem dos add-ons
+  int ordemUso;                           // FR_ORDEM_*
+  int pendenteRankMin;                    // menor posicao entre os add-ons pendentes (99 = nenhum)
+  int esperaTodos;                        // "Todos os add-ons": so decide sem add-on pendente
 } FonteautoParcial;
 int fonteauto_pode_decidir(const FonteautoParcial *p);
 

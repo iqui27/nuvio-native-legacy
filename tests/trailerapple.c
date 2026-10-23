@@ -1,20 +1,21 @@
 // Resolve o trailer pela API da Apple de verdade (rede). Sem disco.
 #include "../src/trailerapple.h"
+#include "nvtmp.h"
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 // Pasta temporaria de verdade: o reduzido de uma variante e um arquivo, e
 // sem ele trailerapple_url devolve NULL de proposito.
 #include <stdlib.h>
-char *dados_caminho(char *dst, unsigned tam, const char *nome) { snprintf(dst, tam, "/tmp/nuvio-trailerapple-teste/%s", nome); return dst; }
+char *dados_caminho(char *dst, unsigned tam, const char *nome) { snprintf(dst, tam, "%s/nuvio-trailerapple-teste/%s", nvt_dir(), nome); return dst; }
 void dados_marcar_sujo(int leve) { (void)leve; }
-const char *dados_dir(void) { return "/tmp/nuvio-trailerapple-teste"; }
+const char *dados_dir(void) { return nvt("/nuvio-trailerapple-teste"); }
 int qualidade = 0;
 int ajustes_trailer_qualidade(void) { return qualidade; }
 static int esperar(const char *id) { int i; for (i = 0; i < 300 && !trailerapple_respondeu(id); i++) usleep(100000); return trailerapple_respondeu(id); }
 int main(void) {
   const char *u;
-  system("rm -rf /tmp/nuvio-trailerapple-teste; mkdir -p /tmp/nuvio-trailerapple-teste");
+  { char cmd[2200]; snprintf(cmd, sizeof cmd, "rm -rf '%s'; mkdir -p '%s'", nvt("/nuvio-trailerapple-teste"), nvt("/nuvio-trailerapple-teste")); system(cmd); }
   trailerapple_pedir("tt26581740", "Weapons", "2025 · Terror", 0);
   esperar("tt26581740");
   u = trailerapple_url("tt26581740");

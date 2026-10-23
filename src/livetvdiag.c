@@ -33,6 +33,9 @@
 #include "idioma.h"
 #include "layout.h"
 #include "player.h"
+#include "ponteiro.h"
+#include "rolagemtoque.h"
+#include "telefonecartao.h"
 #include "proxyts.h"
 #include "rede.h"
 #include "streams.h"
@@ -58,11 +61,18 @@
 #define LTD_PAUSA_MS     1000u   // o provedor solta a conexao entre um pedido e outro
 #define LTD_TRECHO_B     786431L
 #define LTD_LINHA        70.0f   // altura de cada canal na lista
+#ifdef NV_TOUCH_UI
+static ToqueRolagem toqueLtd;
+static float toqueLtdOffset;
+static int toqueLtdRolar(const PonteiroRolagem *e) { return toquerol_evento(&toqueLtd, e); }
+static void ltdPhoneReiniciar(void);
+#endif
 
 enum { F_HLS = 0, F_TS = 1 };
 enum { E_PARADO, E_REDE, E_PLAYER, E_PRONTO };
 
 typedef struct {
+  int  solicitado;
   int  tentado, servido;  // pedido feito; respondeu 2xx com video
   int  http, curl;
   int  ms;                // pedido -> corpo
@@ -100,7 +110,7 @@ static struct {
   char grupo[64];
   int xtConfig, contaLida;
   XtreamConta conta;
-  int kbps, kbpsPior, latenciaMs, redeMedida, kbpsDoSegmento;
+  int kbps, kbpsPior, latenciaMs, redeMedida, kbpsDoSegmento, vazaoIncerta;
   // player em curso
   int pfFormato, pfModo, pfVivo;
   Uint32 pfDesde, pfTocouEm, pausaAte;
@@ -163,9 +173,10 @@ static int sondarTrecho(LtdFormato *f, const char *url, const char *const *cabs)
   Uint32 t0 = SDL_GetTicks();
   char *b;
   (void)cabs;  // rede_baixar_trecho_st nao leva cabecalho; os canais com cabecalho sao HLS de addon
+  f->solicitado = 1;
   b = rede_baixar_trecho_st(url, 8, 0, LTD_TRECHO_B, &n, &st, &er, NULL, 0);
   f->ms = (int)(SDL_GetTicks() - t0);
-  if (!f->http) f->http = st;
+  if (!f->http || st >= 400) f->http = st;
   f->curl = er;
   f->bytes = n;
   if (b && n > 0 && n < 4096) {
@@ -205,19 +216,19 @@ static void sondarHls(LtdFormato *f, const char *url, const char *const *cabs) {
     const char *l, *escolhida = NULL;
     int alvo = nv_res_opcao_altura(ajustes_livetv_resolucao()), melhorDif = 1 << 30;
     fin[0] = 0;
+    f->solicitado = 1;
     b = rede_baixar_trecho_st(atual, 6, 0, 262143, &n, &st, &er, fin, sizeof fin);
-    if (!volta) { f->http = st; f->curl = er; }
+    if (!volta || st >= 400) { f->http = st; f->curl = er; }
     if (!b || n < 7 || strncmp(b, "#EXTM3U", 7)) { free(b); return; }
     if (fin[0]) snprintf(atual, sizeof atual, "%s", fin);
     if (strstr(b, "#EXT-X-STREAM-INF")) {
-      // MASTER: a variante mais perto da resolucao principal (sem ela, a
-      // primeira, que e a ordem do provedor).
+      // Match proxy playback: nearest explicit height, highest in Automatic.
       for (l = b; l && *l; l = strchr(l, '\n') ? strchr(l, '\n') + 1 : NULL) {
         if (strncmp(l, "#EXT-X-STREAM-INF", 17)) continue;
         { const char *r = strstr(l, "RESOLUTION="), *fimLinha = strchr(l, '\n');
           int h = 0, dif;
           if (r && (!fimLinha || r < fimLinha)) { const char *x = strchr(r, 'x'); if (x) h = atoi(x + 1); }
-          dif = alvo ? abs(h - alvo) : (escolhida ? 1 << 30 : 0);
+          dif = alvo ? abs(h - alvo) : -h;
           if (!escolhida || dif < melhorDif) { melhorDif = dif; escolhida = fimLinha ? fimLinha + 1 : NULL; } }
       }
     } else {
@@ -263,7 +274,7 @@ static void sondarHls(LtdFormato *f, const char *url, const char *const *cabs) {
       if (mestre) { snprintf(atual, sizeof atual, "%s", prox); continue; } }
     { int http = f->http;
       sondarTrecho(f, prox, cabs);
-      f->http = http; }
+      if (f->http < 400) f->http = http; }
     return;
   }
 }
@@ -337,7 +348,7 @@ static void *fioRede(void *u) {
     if (f == F_TS && x->corpoM3u && !L.cancelado) {
       int http = x->http;
       sondarHls(x, x->url, cabs);
-      x->http = http;
+      if (x->http < 400) x->http = http;
     }
     // O MESMO .ts COM USER-AGENT DE PLAYER: o provedor pode entregar outra
     // coisa ao "Nuvio/1.0" do curl e ao player (hipotese 3 do #158).
@@ -348,7 +359,9 @@ static void *fioRede(void *u) {
       long n = 0;
       char *b2;
       memset(&md, 0, sizeof md);
+      x->solicitado = 1;
       b2 = rede_baixar_bin_medido_controle(x->url, 8, ua, &ctl, &n, &md);
+      if (md.status >= 400) x->http = md.status;
       { TsSonda t; char r[300] = "-";
         if (b2 && n > 0) { ts_sondar((const unsigned char *)b2, n, &t); ts_resumo(&t, r, sizeof r); }
         printf("[livetv-diag] rede %s TS com UA de player: HTTP %d %ld B em %lu ms | %s\n", it->nome,
@@ -375,7 +388,8 @@ static void *fioRede(void *u) {
     if (it->f[F_HLS].servido && it->f[F_HLS].kbps > L.kbps) {
       L.kbps = it->f[F_HLS].kbps; L.redeMedida = 1; L.kbpsDoSegmento = 1;
       printf("[livetv-diag] rede ate o provedor: %d kbps (segmento HLS de %s)\n", L.kbps, it->nome);
-    } else if (!L.redeMedida && it->f[F_TS].servido) {
+    } else if (!L.redeMedida && it->f[F_TS].servido &&
+               !(it->xt && xtream_conexoes_limitadas())) {
       medirVelocidade(it->f[F_TS].url, cabs);
       L.kbpsDoSegmento = 0;
     }
@@ -403,7 +417,7 @@ static void iniciarRede(int i) {
 // na ordem do Xtream (xtream_formatos: o que a conta declara e o que ja tocou).
 static int proximoFormato(const LtdItem *it) {
   const char *ext[2];
-  int k = it->xt ? xtream_formatos(ext) : 0, i;
+  int k = it->xt ? xtream_formatos_canal(it->id, ext) : 0, i;
   for (i = 0; i < k; i++) {
     int f = !strcmp(ext[i], "ts") ? F_TS : F_HLS;
     if (it->f[f].servido && !it->f[f].testou) return f;
@@ -461,6 +475,7 @@ static void iniciarPlayer(int f) {
   L.estado = E_PLAYER;
   video_definir_reconexao(0);
   video_definir_cabecalhos(it->cabs);
+  proxyts_definir_cabecalhos(it->cabs);
   { char px[96], marcada[4200];
     snprintf(marcada, sizeof marcada, "%s%s", PROXYTS_PREFIXO, x->url);
     L.pfVivo = video_tocar(L.pfModo == M_D ? x->segUrl
@@ -477,6 +492,7 @@ static void iniciarPlayer(int f) {
 
 static void fecharPlayer(void) {
   if (L.pfVivo) video_parar();
+  proxyts_parar();
   L.pfVivo = 0;
   L.pausaAte = SDL_GetTicks() + LTD_PAUSA_MS;
 }
@@ -582,6 +598,15 @@ static void recomendar(void) {
     L.rec.kbpsMediana = L.kbps;
     L.rec.resolucao = ltd_resolucao_pela_vazao(L.kbps);
   } else if (!L.kbpsDoSegmento) L.rec.resolucao = 0;   // .ts continuo: taxa do canal, nao da rede
+  // Busy accounts and explicit throttling cannot measure network capacity.
+  L.vazaoIncerta = L.conta.valido && L.conta.maxConexoes > 0 &&
+                   L.conta.conexoes >= L.conta.maxConexoes;
+  for (i = 0; i < L.n; i++)
+    for (f = 0; f < 2; f++) {
+      int http = L.it[i].f[f].http;
+      if (http == 429 || http == 458 || http == 509) L.vazaoIncerta = 1;
+    }
+  if (L.vazaoIncerta) L.rec.resolucao = ajustes_livetv_resolucao();
   L.rec.latenciaMs = L.latenciaMs;
   printf("[livetv-diag] recomenda: formato=%d resolucao=%d espera=%d | tocaram HLS %d/%d TS %d/%d | "
          "sem decoder %d | 10 bits %d | %d kbps | tocaram por modo A %d B %d C %d D %d proxy %d -> modo %d\n",
@@ -596,11 +621,20 @@ static void comecar(void) {
   GuiaVariante v[LTD_MAX];
   static char bases[LTD_MAX][600];
   int i;
+#ifdef NV_TOUCH_UI
+  ltdPhoneReiniciar();
+#endif
   L.cancelado = 0;
   juntarFio();
+  // Release preview, retained playback and proxy before the first request,
+  // including when the user repeats the diagnostic.
+  if (player_mini_ativo()) player_fechar_mini();
+  player_encerrar();
+  video_parar();
+  proxyts_parar();
   memset(L.it, 0, sizeof L.it);
   L.kbps = L.kbpsPior = 0; L.latenciaMs = -1; L.redeMedida = 0; L.kbpsDoSegmento = 0;
-  L.aplicado = 0; L.enviou = 0; L.contaLida = 0;
+  L.aplicado = 0; L.enviou = 0; L.contaLida = 0; L.vazaoIncerta = 0;
   memset(&L.conta, 0, sizeof L.conta);
   memset(&L.rec, 0, sizeof L.rec);
   L.xtConfig = xtream_configurado();
@@ -622,10 +656,10 @@ static void comecar(void) {
 }
 
 void livetvdiag_iniciar(void) {
+#ifdef NV_TOUCH_UI
+  toqueLtdOffset = 0.0f; toquerol_limpar(&toqueLtd);
+#endif
   L.sair = 0;
-  // O PREVIEW DO GUIA solta o pipeline: o teste precisa dele, e a conta de
-  // 1 tela nao aguenta o preview e o teste juntos.
-  if (player_mini_ativo()) player_fechar_mini();
   comecar();
 }
 
@@ -698,9 +732,10 @@ void livetvdiag_evento(const SDL_Event *e) {
   else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
     int b = lista[L.botao];
     if (b == B_APLICAR) {
-      ajustes_livetv_aplicar(L.rec.resolucao, L.rec.formato, L.rec.espera);
+      ajustes_livetv_aplicar(L.vazaoIncerta ? -1 : L.rec.resolucao, L.rec.formato, L.rec.espera);
       if (L.recModo >= 0) ajustes_livetv_aplicar_modo(L.recModo);
       if (L.tocouModo[M_P]) ajustes_livetv_aplicar_proxy(1);
+      if (L.n > 0) guia_fonte_gravar_diag(L.it[0].id, L.rec.formato, L.recModo, L.tocouModo[M_P] ? 1 : -1);
       L.aplicado = 1;
       printf("[livetv-diag] aplicado: resolucao=%d formato=%d espera=%d\n", L.rec.resolucao,
              L.rec.formato, L.rec.espera);
@@ -711,6 +746,17 @@ void livetvdiag_evento(const SDL_Event *e) {
     } else comecar();
   }
 }
+
+// PONTEIRO (#99). Os botoes do rodape (so existem com o teste pronto) poem o
+// foco em L.botao, a mesma variavel das setas; o OK do clique aplica, envia
+// ou testa de novo pelo caminho de sempre.
+static void ponteiroBotao(int i, int b) {
+  int lista[B_N];
+  (void)b;
+  if (L.sair || i < 0 || i >= botoes(lista)) return;
+  L.botao = i;
+}
+int livetvdiag_teste_foco(void) { return L.botao; }
 
 // --- desenho -------------------------------------------------------------------
 static float areaX(void) { float x; ajustes_area_conteudo(NV_MARGEM_X, NV_MARGEM_X, &x, NULL); return x; }
@@ -870,7 +916,12 @@ static void textoResultado(const LtdItem *it, char *res, size_t nr, char *det, s
     if (!p && ((it->f[F_TS].servido && it->f[F_TS].falha == LTD_SEM_TESTE) ||
                (it->f[F_HLS].servido && it->f[F_HLS].falha == LTD_SEM_TESTE)))
       p = it->f[F_TS].servido ? &it->f[F_TS] : &it->f[F_HLS];
+    int linhaOcupada = 0;
+    if (it->xt && xtream_conexoes_limitadas())
+      for (f = 0; f < 2; f++)
+        if (it->f[f].http == 403 || it->f[f].http == 458 || it->f[f].http == 509) linhaOcupada = 1;
     if (it->semFonte) snprintf(res, nr, "%s", i18n("O addon não mandou fonte"));
+    else if (linhaOcupada) snprintf(res, nr, "%s", i18n("Esta linha está em uso em outra tela"));
     else if (p && p->falha == LTD_SEM_TESTE) { snprintf(res, nr, "%s", i18n("Responde; o player só é testado na TV")); *cor = 3; }
     else if (p && p->falha == LTD_SEM_DECODER) snprintf(res, nr, "%s", i18n("Os dados chegam, mas a TV não decodifica"));
     else if (p && p->falha == LTD_SEM_RESPOSTA) snprintf(res, nr, "%s", i18n("O player não recebeu nada"));
@@ -878,6 +929,8 @@ static void textoResultado(const LtdItem *it, char *res, size_t nr, char *det, s
     else {
       int h = it->f[F_TS].http ? it->f[F_TS].http : it->f[F_HLS].http;
       if (h >= 400) snprintf(res, nr, i18n("O provedor recusou (HTTP %d)"), h);
+      else if (!it->f[F_HLS].solicitado && !it->f[F_TS].solicitado)
+        snprintf(res, nr, "%s", i18n("Cancelado"));
       else if (!h) snprintf(res, nr, "%s", i18n("O provedor não respondeu"));
       else snprintf(res, nr, "%s", i18n("A resposta não é vídeo"));
     }
@@ -899,12 +952,29 @@ static void desenharCanais(GfxRect r, float ar, float ag, float ab) {
   if (L.n) snprintf(sub, sizeof sub, i18n("%d canais de “%s”, um de cada vez"), L.n, L.grupo);
   else snprintf(sub, sizeof sub, "%s", i18n("Abra o guia numa fileira com canais e volte aqui."));
   titulo(r, "Canais testados", sub);
+#ifdef NV_TOUCH_UI
+  if (layout_modo_mobile()) {
+  toquerol_vincular(&toqueLtd, (GfxRect){r.x + 32.0f, r.y + 90.0f, r.w - 64.0f, r.h - 106.0f}, gfx_escala(),
+                   0.0f, L.n * (LTD_LINHA + 4.0f) - (r.h - 106.0f), 1, &toqueLtdOffset);
+  ponteiro_rolagem(toqueLtdRolar);
+  gfx_recorte(r.x, r.y + 90.0f, r.w, r.h - 106.0f);
+  }
+#endif
   for (i = 0; i < L.n; i++) {
     const LtdItem *it = &L.it[i];
     GfxRect ln = { r.x + 32.0f, r.y + 90.0f + (float)i * (LTD_LINHA + 4.0f), r.w - 64.0f, LTD_LINHA };
+#ifdef NV_TOUCH_UI
+    if (layout_modo_mobile()) ln.y -= toqueLtdOffset;
+#endif
     int cor, atual = i == L.atual && L.estado != E_PRONTO;
     float x = ln.x + 20, yc = ln.y + ln.h * 0.5f;
     TxtLinha tn, tr;
+#ifdef NV_TOUCH_UI
+    if (layout_modo_mobile()) {
+    if (ln.y > r.y + r.h - 16) break;
+    if (ln.y + ln.h < r.y + 90.0f) continue;
+    } else
+#endif
     if (ln.y + ln.h > r.y + r.h - 16) break;
     textoResultado(it, res, sizeof res, det, sizeof det, &cor);
     if (atual) ajustes_ui_foco_linha(ln, 22);
@@ -927,6 +997,9 @@ static void desenharCanais(GfxRect r, float ar, float ag, float ab) {
       gfx_cor((GfxRect){ px, yc - 4.5f, 9, 9 }, 0.5f, ar, ag, ab, 1);
     }
   }
+#ifdef NV_TOUCH_UI
+  if (layout_modo_mobile()) gfx_sem_recorte();
+#endif
 }
 
 static void desenharTeste(GfxRect r, float ar, float ag, float ab, Uint32 agora) {
@@ -1013,6 +1086,8 @@ static void desenharRecomendacoes(GfxRect r, float ar, float ag, float ab) {
                                                                              : "Enviando o registro…"),
              st == 3 ? 244 : 150, st == 3 ? 170 : 222, st == 3 ? 140 : 170);
   }
+  if (L.vazaoIncerta)
+    linhaRec(r, &y, i18n("Velocidade inconclusiva: limite do provedor. Resolução mantida."), 244, 196, 150);
   if (L.rec.semDecoder) {
     snprintf(a, sizeof a, i18n("%d canal(is): o vídeo chega, mas a TV não começa a decodificar. Esperar mais não resolve; tente o outro formato ou outra resolução do canal."), L.rec.semDecoder);
     linhaRec(r, &y, a, 244, 196, 150);
@@ -1034,7 +1109,7 @@ static void desenharRecomendacoes(GfxRect r, float ar, float ag, float ab) {
     linhaRec(r, &y, i18n("O TS abriu mais canais que o HLS nesta TV: o formato do Xtream passa a pedir TS primeiro."), 214, 220, 230);
   if (L.xtConfig && L.conta.valido && L.conta.formatosDeclarados && !L.conta.temM3u8 && hlsServido)
     linhaRec(r, &y, i18n("O provedor entrega HLS mesmo com a conta declarando só TS."), 214, 220, 230);
-  if (L.redeMedida && L.rec.resolucao) {
+  if (L.redeMedida && L.rec.resolucao && !L.vazaoIncerta) {
     char m[32];
     mbps(m, sizeof m, L.rec.kbpsMediana);
     snprintf(a, sizeof a, i18n("Com %s até o provedor, %s é a resolução que toca sem travar."), m,
@@ -1055,10 +1130,227 @@ static void desenharRecomendacoes(GfxRect r, float ar, float ag, float ab) {
   { static const char *const ROT[B_N] = { "Aplicar recomendadas", "Enviar no registro", "Testar de novo" };
     float x = r.x + 32.0f, by = r.y + r.h - 28.0f - 60.0f;
     if (L.botao >= n) L.botao = n ? n - 1 : 0;
-    for (i = 0; i < n; i++) x += ajustes_ui_botao(i18n(ROT[lista[i]]), NULL, x, by, i == L.botao) + 12.0f; }
+    for (i = 0; i < n; i++) {
+      float bw = ajustes_ui_botao(i18n(ROT[lista[i]]), NULL, x, by, i == L.botao);
+      ponteiro_alvo(x, by, bw, 60.0f, ponteiroBotao, NULL, i, 0);
+      x += bw + 12.0f;
+    } }
 }
 
+#ifdef NV_TOUCH_UI
+static TelefoneCartao ltdPhone;
+static void ltdPhoneReiniciar(void) { telefonecartao_limpar(&ltdPhone); }
+static int ltdPhoneRolar(const PonteiroRolagem *e) {
+  return L.sair ? 0 : toquerol_evento(&ltdPhone.rolagem, e);
+}
+static void ltdPhoneAcao(int i, int escolha) {
+  SDL_Event e = {0};
+  int lista[B_N], n = botoes(lista), k;
+  (void)i;
+  if (L.sair) return;
+  e.type = SDL_KEYDOWN;
+  if (!escolha) e.key.keysym.sym = SDLK_AC_BACK;
+  else {
+    for (k = 0; k < n && lista[k] != escolha - 1; k++) {}
+    if (k == n) return;
+    L.botao = k;
+    e.key.keysym.sym = SDLK_RETURN;
+  }
+  livetvdiag_evento(&e);
+}
+static float ltdPhoneTexto(TxtEstilo estilo, const char *s, float x, float y, float w, float a) {
+  return txt_bloco_corta(estilo, s, 243, 242, 239, x, y, w, 30, a, 0);
+}
+static float ltdPhoneSecao(const char *s, float x, float y, float w, float a) {
+  if (a > 0) gfx_cor((GfxRect){x, y, w, 1}, 0, 1, 1, 1, .12f * a);
+  return 20 + ltdPhoneTexto(TXT_ILHA_ITEM, i18n(s), x, y + 20, w, a) + 18;
+}
+static float ltdPhoneCampo(const char *s, const char *val, float x, float y, float w, float a) {
+  float h = ltdPhoneTexto(TXT_CAPTION, i18n(s), x, y, w, .55f * a);
+  h += 6 + ltdPhoneTexto(TXT_ILHA_GENERO, val, x, y + h + 6, w, a);
+  return h + 18;
+}
+static float ltdPhoneRec(float x, float y, float w, float a) {
+  float inicio = y;
+  int semVideo = 0, hlsServido = 0;
+  char b[300];
+#define LTD_PHONE_REC(s) do { y += ltdPhoneTexto(TXT_ILHA_GENERO, (s), x, y, w, a) + 18; } while (0)
+  for (int i = 0; i < L.n; i++) {
+    if (!algumTocou(&L.it[i])) semVideo++;
+    if (L.it[i].xt && L.it[i].f[F_HLS].servido) hlsServido++;
+  }
+  if (L.aplicado) LTD_PHONE_REC(i18n("Aplicado. Os próximos canais já usam estes ajustes."));
+  if (L.enviou) {
+    int st = avisos_envio_estado();
+    LTD_PHONE_REC(i18n(st == 2 ? "Resultado enviado no registro." : st == 3 ? "O envio do registro falhou." : "Enviando o registro…"));
+  }
+  if (L.vazaoIncerta)
+    LTD_PHONE_REC(i18n("Velocidade inconclusiva: limite do provedor. Resolução mantida."));
+  if (L.rec.semDecoder) {
+    snprintf(b, sizeof b, i18n("%d canal(is): o vídeo chega, mas a TV não começa a decodificar. Esperar mais não resolve; tente o outro formato ou outra resolução do canal."), L.rec.semDecoder);
+    LTD_PHONE_REC(b);
+  }
+  if (L.rec.dezBits) LTD_PHONE_REC(i18n("Há canal em 10 bits: muitas TVs não decodificam esse vídeo. Prefira a versão HD ou SD dele."));
+  if (L.xtConfig && L.conta.valido && L.conta.maxConexoes > 0 && L.conta.conexoes >= L.conta.maxConexoes)
+    LTD_PHONE_REC(i18n("Todas as telas da conta estão em uso: feche o Xtream em outro aparelho."));
+  if (L.tocouModo[M_P] && !L.tocouModo[M_A])
+    LTD_PHONE_REC(i18n("Os canais HLS só abriram pelo proxy de TS: ele fica ligado para a Live TV."));
+  if (L.recModo > 0) {
+    snprintf(b, sizeof b, i18n("Os canais abriram no modo %s do player e não no padrão: Aplicar passa a usá-lo nos canais."), letraModo(L.recModo));
+    LTD_PHONE_REC(b);
+  }
+  if (L.rec.formato == 1) LTD_PHONE_REC(i18n("O HLS abriu mais canais que o TS nesta TV: o formato do Xtream passa a pedir HLS primeiro."));
+  else if (L.rec.formato == 2) LTD_PHONE_REC(i18n("O TS abriu mais canais que o HLS nesta TV: o formato do Xtream passa a pedir TS primeiro."));
+  if (L.xtConfig && L.conta.valido && L.conta.formatosDeclarados && !L.conta.temM3u8 && hlsServido)
+    LTD_PHONE_REC(i18n("O provedor entrega HLS mesmo com a conta declarando só TS."));
+  if (L.redeMedida && L.rec.resolucao && !L.vazaoIncerta) {
+    char m[32]; mbps(m, sizeof m, L.rec.kbpsMediana);
+    snprintf(b, sizeof b, i18n("Com %s até o provedor, %s é a resolução que toca sem travar."), m, i18n(nomeResOpcao(L.rec.resolucao)));
+    LTD_PHONE_REC(b);
+  }
+  if (L.rec.espera) LTD_PHONE_REC(i18n("Um canal levou mais de 11 s para abrir: a espera sobe para não cortar quem ia abrir."));
+  if (L.latenciaMs > 800) LTD_PHONE_REC(i18n("O provedor demora para responder: a troca de canal vai ser lenta mesmo com rede boa."));
+  if (semVideo && semVideo < L.n) {
+    snprintf(b, sizeof b, i18n("%d de %d canais não abriram: são esses canais, não a TV. Use a versão em outra resolução deles."), semVideo, L.n);
+    LTD_PHONE_REC(b);
+  } else if (L.n && semVideo == L.n)
+    LTD_PHONE_REC(i18n("Nenhum canal abriu: confira a conta, a rede e envie o resultado no registro."));
+#undef LTD_PHONE_REC
+  return y - inicio;
+}
+static float ltdPhoneCorpo(float x, float y, float w, float a) {
+  float inicio = y;
+  char b[300], val[128];
+  y += ltdPhoneSecao("Rede até o provedor", x, y, w, a);
+  if (L.redeMedida) {
+    mbps(val, sizeof val, L.kbps); y += ltdPhoneCampo("Velocidade", val, x, y, w, a);
+    if (L.kbpsPior > 0) { mbps(val, sizeof val, L.kbpsPior); y += ltdPhoneCampo("Pior segundo", val, x, y, w, a); }
+    if (L.latenciaMs >= 0) { snprintf(val, sizeof val, i18n("%d ms"), L.latenciaMs); y += ltdPhoneCampo("Latência (primeiro byte)", val, x, y, w, a); }
+  } else y += ltdPhoneTexto(TXT_CAPTION, i18n(L.estado == E_PRONTO ? "Nenhum canal respondeu para medir." : "Medindo…"), x, y, w, a) + 18;
+  y += ltdPhoneSecao("Conta Xtream", x, y, w, a);
+  if (!L.xtConfig)
+    y += ltdPhoneTexto(TXT_CAPTION, i18n("Sem conta Xtream neste perfil: os canais testados são dos addons."), x, y, w, a) + 18;
+  else if (!L.contaLida && L.estado != E_PRONTO && L.atual == 0)
+    y += ltdPhoneTexto(TXT_CAPTION, i18n("Lendo a conta…"), x, y, w, a) + 18;
+  else if (!L.conta.valido) {
+    snprintf(b, sizeof b, i18n("O servidor não respondeu a conta (HTTP %d)."), L.conta.http);
+    y += ltdPhoneTexto(TXT_CAPTION, b, x, y, w, a) + 18;
+  } else {
+    y += ltdPhoneCampo("Situação", L.conta.status, x, y, w, a);
+    if (L.conta.formatosDeclarados) snprintf(val, sizeof val, "%s%s%s", L.conta.temM3u8 ? "HLS" : "", L.conta.temM3u8 && L.conta.temTs ? " · " : "", L.conta.temTs ? "TS" : "");
+    else snprintf(val, sizeof val, "%s", i18n("não declarados"));
+    y += ltdPhoneCampo("Formatos permitidos", val, x, y, w, a);
+    snprintf(val, sizeof val, i18n("%d de %d"), L.conta.conexoes, L.conta.maxConexoes);
+    y += ltdPhoneCampo("Telas em uso", val, x, y, w, a);
+    if (L.conta.expira > 0) {
+      time_t t = (time_t)L.conta.expira; struct tm tm; localtime_r(&t, &tm); strftime(val, sizeof val, "%d/%m/%Y", &tm);
+    } else snprintf(val, sizeof val, "%s", i18n("sem vencimento"));
+    y += ltdPhoneCampo("Validade", val, x, y, w, a);
+  }
+  y += ltdPhoneSecao("Canais testados", x, y, w, a);
+  if (L.n) snprintf(b, sizeof b, i18n("%d canais de “%s”, um de cada vez"), L.n, L.grupo);
+  else snprintf(b, sizeof b, "%s", i18n("Abra o guia numa fileira com canais e volte aqui."));
+  y += ltdPhoneTexto(TXT_CAPTION, b, x, y, w, a) + 18;
+  for (int i = 0; i < L.n; i++) {
+    char res[160], det[160]; int cor;
+    textoResultado(&L.it[i], res, sizeof res, det, sizeof det, &cor);
+    y += ltdPhoneTexto(TXT_ILHA_ITEM, L.it[i].nome, x, y, w, a) + 8;
+    y += ltdPhoneTexto(TXT_ILHA_GENERO, res, x, y, w, a) + 8;
+    if (det[0]) y += ltdPhoneTexto(TXT_CAPTION, det, x, y, w, .55f * a) + 8;
+    y += 20;
+  }
+  if (L.estado != E_PRONTO) {
+    y += ltdPhoneSecao("Recomendações", x, y, w, a);
+    snprintf(b, sizeof b, i18n("Testando %d de %d…"), L.n ? L.atual + 1 : 0, L.n);
+    y += ltdPhoneTexto(TXT_ILHA_ITEM, b, x, y, w, a) + 14;
+    float pct = L.n ? (float)L.atual / L.n : 0;
+    if (a > 0) {
+      gfx_cor((GfxRect){x, y, w, 8}, .5f, 1, 1, 1, .07f * a);
+      if (pct > 0) gfx_cor((GfxRect){x, y, w * fminf(1, pct), 8}, .5f, 1, 1, 1, a);
+    }
+    y += 26 + ltdPhoneTexto(TXT_CAPTION, i18n("Cada canal abre aqui por até 18 s em cada modo do player, depois de a rede responder."), x, y + 26, w, a) + 18;
+  } else {
+    if (L.rec.confianca || L.redeMedida) {
+      int ec = (int)ajustes_livetv_espera_ms(); ec = ec == 25000 ? 1 : ec == 45000 ? 2 : 0;
+      y += ltdPhoneSecao("Ajustes sugeridos", x, y, w, a);
+      snprintf(val, sizeof val, "%s → %s", i18n(nomeResOpcao(ajustes_livetv_resolucao())), i18n(nomeResOpcao(L.rec.resolucao)));
+      y += ltdPhoneCampo("Resolução principal", val, x, y, w, a);
+      snprintf(val, sizeof val, "%s → %s", i18n(nomeFormatoOpcao(ajustes_livetv_formato())), i18n(nomeFormatoOpcao(L.rec.formato)));
+      y += ltdPhoneCampo("Formato do Xtream", val, x, y, w, a);
+      snprintf(val, sizeof val, "%s → %s", i18n(nomeEsperaOpcao(ec)), i18n(nomeEsperaOpcao(L.rec.espera)));
+      y += ltdPhoneCampo("Espera para abrir o canal", val, x, y, w, a);
+      if (L.recModo >= 0) {
+        snprintf(val, sizeof val, "%s → %s", letraModo(ajustes_livetv_modo()), letraModo(L.recModo));
+        y += ltdPhoneCampo("Modo do player da Live TV", val, x, y, w, a);
+      }
+      y += ltdPhoneTexto(TXT_CAPTION, i18n("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois."), x, y, w, a) + 18;
+    }
+    y += ltdPhoneSecao("Recomendações", x, y, w, a);
+    y += ltdPhoneRec(x, y, w, a);
+  }
+  return y - inicio;
+}
+static void ltdPhoneDesenhar(Uint32 agora) {
+  static const char *const rot[B_N] = { "Aplicar recomendadas", "Enviar no registro", "Testar de novo" };
+  int lista[B_N], n = botoes(lista);
+  float anterior = gfx_escala(), escala = gfx_escala_ui();
+  gfx_escala_sair(escala);
+  float paginaW = nv_layout_w / escala, paginaH = nv_layout_h / escala;
+  telefonecartao_medir(&ltdPhone, paginaW, paginaH, n ? n : 1);
+  float x = ltdPhone.corpo.x, w = ltdPhone.corpo.w, y = ltdPhone.corpo.y;
+  float cab = telefonecartao_titulo(i18n("Diagnóstico da Live TV"), x, y, w, 0);
+  cab += ltdPhoneTexto(TXT_CAPTION, i18n("Mede a rede até o provedor e testa canais de verdade nesta TV."), x, y + cab, w, 0) + 18;
+  float videoTopo = y + cab, videoH = fminf(w * 9 / 16, fminf(paginaH * .24f, fmaxf(60, ltdPhone.corpo.h - cab - 144)));
+  GfxRect v = {x + (w - videoH * 16 / 9) * .5f, videoTopo, videoH * 16 / 9, videoH};
+  if (L.estado == E_PLAYER) {
+    char sub[240], t[32];
+    segundos(t, sizeof t, (int)(agora - L.pfDesde));
+    snprintf(sub, sizeof sub, i18n("%s em %s · %s"), L.it[L.atual].nome, L.pfFormato == F_HLS ? "HLS" : "TS", t);
+    cab += ltdPhoneTexto(TXT_ILHA_ITEM, i18n("No player agora"), x, y + cab, w, 0) + 8;
+    cab += ltdPhoneTexto(TXT_CAPTION, sub, x, y + cab, w, 0) + 18;
+    videoH = fminf(videoH, fmaxf(60, ltdPhone.corpo.h - cab - 144));
+    v = (GfxRect){x + (w - videoH * 16 / 9) * .5f, y + cab, videoH * 16 / 9, videoH};
+    cab += videoH + 20;
+  }
+  // The native plane uses base canvas units. It stays fixed outside the
+  // scrolling body, and the hole always matches its full destination.
+  float vw = video_largura(), vh = video_altura();
+  if (L.estado == E_PLAYER && L.pfVivo && vw > 1 && vh > 1) {
+    float q = vw / vh, caixa = v.w / v.h;
+    if (q > caixa) { float h = v.w / q; v.y += (v.h - h) * .5f; v.h = h; }
+    else { float width = v.h * q; v.x += (v.w - width) * .5f; v.w = width; }
+  }
+  quadroPlayer = (GfxRect){v.x * escala, v.y * escala, v.w * escala, v.h * escala};
+  ltdPhone.corpo.y += cab; ltdPhone.corpo.h -= cab;
+  float total = ltdPhoneCorpo(x, 0, w, 0);
+  telefonecartao_comecar(&ltdPhone, total, L.estado, !L.sair, ltdPhoneRolar, 1);
+  ltdPhoneCorpo(x, ltdPhone.corpo.y - ltdPhone.offset, w, 1);
+  gfx_sem_recorte();
+  float cy = y + telefonecartao_titulo(i18n("Diagnóstico da Live TV"), x, y, w, 1);
+  cy += ltdPhoneTexto(TXT_CAPTION, i18n("Mede a rede até o provedor e testa canais de verdade nesta TV."), x, cy, w, .65f) + 18;
+  if (L.estado == E_PLAYER) {
+    char sub[240], t[32]; segundos(t, sizeof t, (int)(agora - L.pfDesde));
+    snprintf(sub, sizeof sub, i18n("%s em %s · %s"), L.it[L.atual].nome, L.pfFormato == F_HLS ? "HLS" : "TS", t);
+    cy += ltdPhoneTexto(TXT_ILHA_ITEM, i18n("No player agora"), x, cy, w, 1) + 8;
+    ltdPhoneTexto(TXT_CAPTION, sub, x, cy, w, .65f);
+    gfx_cor(v, 0, 0, 0, 0, 1);
+    if (L.pfVivo) {
+      video_janela((int)(quadroPlayer.x + .5f), (int)(quadroPlayer.y + .5f),
+                   (int)(quadroPlayer.w + .5f), (int)(quadroPlayer.h + .5f));
+      gfx_furo_raio(v, 18 / v.h);
+    }
+  }
+  if (L.botao >= n) L.botao = n ? n - 1 : 0;
+  if (n) for (int i = 0; i < n; i++)
+    telefonecartao_botao(&ltdPhone, i, i18n(rot[lista[i]]), i == L.botao, NULL, ltdPhoneAcao, lista[i] + 1, 1);
+  else telefonecartao_botao(&ltdPhone, 0, i18n("Cancelar"), 1, NULL, ltdPhoneAcao, 0, 1);
+  gfx_escala_sair(anterior);
+}
+#endif
 void livetvdiag_desenhar(Uint32 agora) {
+#ifdef NV_TOUCH_UI
+  if (telefoneui_ativo()) { ltdPhoneDesenhar(agora); return; }
+#endif
   float ar, ag, ab, x0 = 48.0f + ajustes_rail_largura_fixa(), colE = 620.0f, vao = 24.0f;
   ajustes_acento(&ar, &ag, &ab);
   ajustes_ui_fundo();

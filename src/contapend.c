@@ -1,5 +1,9 @@
+#include "arteurl.h"
 #include "contapend.h"
 #include "contacache.h"
+#define NV_DUBLE_SESSAO
+#include "perfisessao.h"
+#include "visto.h"
 #include "sessao.h"
 #include "perfis.h"
 #include "dados.h"
@@ -10,10 +14,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+typedef int (*CpEnvio)(const char *, const char *, const VistoPar *, int, int,
+                       int, const int *, int);
+static CpEnvio cpEnvio;
+static int contapend_reenviar_existe(void) { return cpEnvio != NULL; }
+void contapend_reenviar_com(int (*f)(const char *, const char *, const VistoPar *,
+                                     int, int, int, const int *, int)) {
+  cpEnvio = f;
+}
 #include <time.h>
 
 // Mesmo prototipo que contalib.c e app.c usam; mora em catalogo.c.
-extern void cat_historico_definir_id(const char *imdb, const char *tipo, int visto);
+extern void cat_historico_definir_tempo(const char *imdb, const char *tipo, int visto, long long ms);
 
 // Lote por RPC de vistos. O web manda ate 5000 num corpo so; 200 deixa o corpo
 // abaixo de ~30 KB e uma falha custa pouco para repetir.
@@ -35,7 +48,8 @@ typedef struct {
   long long ms;        // quando a pessoa fez o gesto
   long long confMs;
   char nome[160];
-  char poster[400];
+  int destinos;       // Pending watched destinations; zero keeps local evidence.
+  char poster[NV_ARTE_URL_MAX];   // o de CatItem.poster (#433); o arquivo e texto com TAB
 } Ent;
 
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
@@ -115,7 +129,7 @@ static void gravar(void) {
   char arq[128], *buf, *p;
   size_t tam = 64;
   int i;
-  for (i = 0; i < nEnt; i++) tam += 700;
+  for (i = 0; i < nEnt; i++) tam += sizeof(Ent) + 64;   // linha <= campos + TABs
   buf = (char *)malloc(tam);
   if (!buf) return;
   p = buf;
@@ -123,9 +137,9 @@ static void gravar(void) {
   for (i = 0; i < nEnt; i++) {
     const Ent *e = &ents[i];
     int k = snprintf(p, tam - (size_t)(p - buf),
-                     "%c\t%c\t%d\t%d\t%s\t%s\t%d\t%d\t%lld\t%lld\t%s\t%s\n",
+                     "%c\t%c\t%d\t%d\t%s\t%s\t%d\t%d\t%lld\t%lld\t%s\t%s\t%d\n",
                      e->sup, e->op, e->conf, e->perfil, e->id, e->tipo,
-                     e->temp, e->ep, e->ms, e->confMs, e->nome, e->poster);
+                     e->temp, e->ep, e->ms, e->confMs, e->nome, e->poster, e->destinos);
     if (k < 0 || (size_t)k >= tam - (size_t)(p - buf)) break;
     p += k;
   }
@@ -156,12 +170,12 @@ static void lerArquivo(void) {
   b = dados_ler(arq);
   if (!b) return;
   for (linha = b; linha && *linha;) {
-    char *fim = strchr(linha, '\n'), *c[12];
+    char *fim = strchr(linha, '\n'), *c[13];
     int k = 0;
     if (fim) *fim = 0;
     c[k++] = linha;
     { char *q;
-      for (q = linha; *q && k < 12; q++) if (*q == '\t') { *q = 0; c[k++] = q + 1; } }
+      for (q = linha; *q && k < 13; q++) if (*q == '\t') { *q = 0; c[k++] = q + 1; } }
     if (k >= 10 && (c[0][0] == 'V' || c[0][0] == 'L') &&
         (c[1][0] == '+' || c[1][0] == '-') && c[4][0] && caber(nEnt + 1)) {
       Ent *e = &ents[nEnt];
@@ -178,6 +192,7 @@ static void lerArquivo(void) {
       e->confMs = atoll(c[9]);
       if (k > 10) snprintf(e->nome, sizeof e->nome, "%s", c[10]);
       if (k > 11) snprintf(e->poster, sizeof e->poster, "%s", c[11]);
+      e->destinos = k > 12 ? atoi(c[12]) : (e->conf ? 0 : VISTO_CONTA);
       if (e->perfil > 0) nEnt++;
     }
     linha = fim ? fim + 1 : NULL;
@@ -188,9 +203,8 @@ static void lerArquivo(void) {
 // So com a trava. 1 quando ha usuario logado e o jornal dele esta em memoria.
 static int garantir(void) {
   const char *u;
-  if (!sessao_logada()) return 0;
-  u = sessao_usuario();
-  if (!u || !u[0]) return 0;
+  u = sessao_logada() ? sessao_usuario() : "";
+  if (!u) u = "";
   if (carregado && !strcmp(usuario, u)) return 1;
   nEnt = 0;
   snprintf(usuario, sizeof usuario, "%s", u);
@@ -227,7 +241,7 @@ static int registrar(char sup, int perfil, const char *id, const char *tipo,
   if (i >= 0) {
     // A MESMA INTENCAO AINDA PENDENTE nao muda nada. Confirmada, o gesto novo
     // sobe de novo: e idempotente na conta e e o que a pessoa pediu agora.
-    if (ents[i].op == op && !ents[i].conf) return 0;
+    if (ents[i].op == op && !ents[i].conf && sup != 'V') return 0;
     x = &ents[i];
   } else {
     if (nEnt >= CONTAPEND_MAX || !caber(nEnt + 1)) {
@@ -254,6 +268,7 @@ static int registrar(char sup, int perfil, const char *id, const char *tipo,
   }
   x->op = op;
   x->conf = 0;
+  x->destinos = VISTO_CONTA;
   x->confMs = 0;
   x->ms = ms;
   limpo(x->tipo, sizeof x->tipo, tipo && tipo[0] ? tipo : (sup == 'V' && e > 0 ? "series" : "movie"));
@@ -269,11 +284,16 @@ static int registrar(char sup, int perfil, const char *id, const char *tipo,
 
 int contapend_episodios(const char *imdb, const char *tipo,
                         const VistoPar *pares, int n, int visto) {
+  return contapend_episodios_perfil(perfis_ativo(), imdb, tipo, pares, n, visto);
+}
+
+int contapend_episodios_perfil(int perfil, const char *imdb, const char *tipo,
+                               const VistoPar *pares, int n, int visto) {
   char id[24];
-  int i, k = 0, perfil = perfis_ativo();
+  int i, k = 0;
   long long ms = contapend_agora_ms();
   idVisto(imdb, id, sizeof id);
-  if (!id[0] || !pares || n < 1 || perfil < 1) return 0;
+  if (!id[0] || !pares || n < 1 || perfil < 1 || !sessao_logada()) return 0;
   pthread_mutex_lock(&trava);
   if (garantir()) {
     for (i = 0; i < n; i++)
@@ -291,7 +311,7 @@ int contapend_titulo(const char *imdb, const char *tipo, int visto) {
   char id[24];
   int k = 0, perfil = perfis_ativo();
   idVisto(imdb, id, sizeof id);
-  if (!id[0] || perfil < 1) return 0;
+  if (!id[0] || perfil < 1 || !sessao_logada()) return 0;
   pthread_mutex_lock(&trava);
   if (garantir()) {
     k = registrar('V', perfil, id, tipo && !strcmp(tipo, "series") ? "series" : "movie",
@@ -307,7 +327,7 @@ int contapend_lista(const char *imdb, const char *tipo, const char *nome,
   char id[24];
   int k = 0, perfil = perfis_ativo();
   idLista(imdb, id, sizeof id);
-  if (!id[0] || perfil < 1) return 0;
+  if (!id[0] || perfil < 1 || !sessao_logada()) return 0;
   pthread_mutex_lock(&trava);
   if (garantir()) {
     k = registrar('L', perfil, id, tipo, 0, 0, salvo ? '+' : '-',
@@ -318,11 +338,92 @@ int contapend_lista(const char *imdb, const char *tipo, const char *nome,
   return k;
 }
 
-// ---------------------------------------------------------------- confirmacao
+long long contapend_gesto(const char *imdb, const char *tipo, const VistoPar *pares, int n,
+                    int visto, int destinos, const int *temporadas, int nt) {
+  char id[24], temps[160] = "";
+  int i, k = 0, perfil = perfis_ativo();
+  long long ms = contapend_agora_ms();
+  idVisto(imdb, id, sizeof id);
+  if (!id[0] || perfil < 1 || n < 0 || (n && !pares)) return 0;
+  if (!sessao_logada() && !(destinos & (VISTO_TRAKT | VISTO_SIMKL))) return 0;
+  for (i = 0; temporadas && i < nt; i++) {
+    size_t u = strlen(temps);
+    if (u + 12 >= sizeof temps) return 0;
+    snprintf(temps + u, sizeof temps - u, "%s%d", i ? "," : "", temporadas[i]);
+  }
+  pthread_mutex_lock(&trava);
+  garantir();
+  for (i = 0; i < nEnt; i++)
+    if (ents[i].perfil == perfil && ents[i].ms >= ms) ms = ents[i].ms + 1;
+  // A title gesture replaces older episode overrides, including unsent ones.
+  if (!n)
+    for (i = nEnt - 1; i >= 0; i--)
+      if (ents[i].sup == 'V' && ents[i].perfil == perfil && !strcmp(ents[i].id, id)) tirar(i);
+  for (i = 0; i < (n ? n : 1); i++) {
+    int t = n ? pares[i].temporada : 0, e = n ? pares[i].episodio : 0;
+    if (t < 0 || (n && e < 1)) continue;
+    k += registrar('V', perfil, id, tipo, t, e, visto ? '+' : '-', temps, "", ms);
+    int p = achar('V', perfil, id, t, e);
+    if (p >= 0) {
+      ents[p].destinos = destinos & (VISTO_TRAKT | VISTO_SIMKL | VISTO_CONTA);
+      ents[p].conf = !ents[p].destinos;
+    }
+  }
+  if (k) gravar();
+  pthread_mutex_unlock(&trava);
+  return k ? ms : 0;
+}
+
+int contapend_estado(const char *imdb, const char *tipo, int t, int e, long long remotoMs, int remoto) {
+  char id[24];
+  int i, melhor = -1, perfil = perfis_ativo();
+  idVisto(imdb, id, sizeof id);
+  pthread_mutex_lock(&trava);
+  garantir();
+  for (i = 0; i < nEnt; i++) {
+    Ent *p = &ents[i];
+    if (p->sup != 'V' || p->perfil != perfil || strcmp(p->id, id) ||
+        !((p->temp == t && p->ep == e) || (p->ep == 0 && e == 0) ||
+          (!p->ep && e > 0 && !strcmp(p->tipo, "series") && (!tipo || !strcmp(tipo, p->tipo))))) continue;
+    if (melhor < 0 || p->ms >= ents[melhor].ms) melhor = i;
+  }
+  if (melhor >= 0) {
+    if (remoto < 0 || remotoMs <= ents[melhor].ms) remoto = ents[melhor].op == '+'; else if (remotoMs > ents[melhor].ms) {
+      // Keep newer remote evidence too: another stale service must not undo it.
+      if (e > 0 && ents[melhor].ep == 0) {
+        registrar('V', perfil, id, "series", t, e, remoto ? '+' : '-', "", "", remotoMs);
+        melhor = achar('V', perfil, id, t, e);
+      }
+      if (melhor < 0) { pthread_mutex_unlock(&trava); return remoto; }
+      ents[melhor].ms = remotoMs;
+      ents[melhor].op = remoto ? '+' : '-';
+      ents[melhor].destinos = 0;
+      ents[melhor].conf = 1;
+      gravar();
+    }
+  }
+  pthread_mutex_unlock(&trava);
+  return remoto;
+}
+
+// A broad tracker write also overwrites newer, already-confirmed episodes.
+// Keep those overrides durable until they have been replayed after the title.
+static void repetirOverrides(const Ent *titulo, int destinos) {
+  if (titulo->sup != 'V' || titulo->ep || strcmp(titulo->tipo, "series")) return;
+  destinos &= VISTO_TRAKT | VISTO_SIMKL;
+  for (int i = 0; i < nEnt; i++) {
+    Ent *p = &ents[i];
+    if (p->sup == 'V' && p->perfil == titulo->perfil && p->ep > 0 &&
+        p->ms > titulo->ms && !strcmp(p->id, titulo->id)) {
+      p->destinos |= destinos;
+      p->conf = !p->destinos;
+    }
+  }
+}
 
 // A copia enviada so quita a entrada se ela nao mudou durante a viagem (mesma
 // intencao, mesmo instante). Um gesto novo no meio fica pendente.
-static void confirmar(const char *usu, const Ent *env, int n) {
+static void confirmar(const char *usu, const Ent *env, int n, int destino) {
   int i, k;
   long long agora = contapend_agora_ms();
   pthread_mutex_lock(&trava);
@@ -330,12 +431,46 @@ static void confirmar(const char *usu, const Ent *env, int n) {
     for (i = 0; i < n; i++) {
       k = achar(env[i].sup, env[i].perfil, env[i].id, env[i].temp, env[i].ep);
       if (k >= 0 && ents[k].op == env[i].op && ents[k].ms == env[i].ms && !ents[k].conf) {
-        ents[k].conf = 1;
+        repetirOverrides(&ents[k], destino);
+        ents[k].destinos &= ~destino;
+        ents[k].conf = !ents[k].destinos;
         ents[k].confMs = agora;
       }
     }
     gravar();
   }
+  pthread_mutex_unlock(&trava);
+}
+
+int contapend_gesto_atual(const char *imdb, int t, int e, long long ms) {
+  char id[24];
+  int atual = 0, perfil = perfis_ativo();
+  idVisto(imdb, id, sizeof id);
+  pthread_mutex_lock(&trava);
+  if (garantir()) {
+    int k = achar('V', perfil, id, t, e);
+    atual = k >= 0 && ents[k].ms == ms;
+  }
+  pthread_mutex_unlock(&trava);
+  return atual;
+}
+
+void contapend_confirmar_gesto(const char *imdb, const VistoPar *pares, int n,
+                              long long ms, int destinos) {
+  char id[24];
+  int i, perfil = perfis_ativo();
+  idVisto(imdb, id, sizeof id);
+  pthread_mutex_lock(&trava);
+  garantir();
+  for (i = 0; i < (n ? n : 1); i++) {
+    int k = achar('V', perfil, id, n ? pares[i].temporada : 0, n ? pares[i].episodio : 0);
+    if (k >= 0 && ents[k].ms == ms) {
+      repetirOverrides(&ents[k], destinos);
+      ents[k].destinos &= ~destinos;
+      ents[k].conf = !ents[k].destinos;
+    }
+  }
+  gravar();
   pthread_mutex_unlock(&trava);
 }
 
@@ -384,6 +519,10 @@ static int enviarVistos(const char *usu, int perfil, const Ent *env, int n, char
   }
   jsw_arr_fim(&w);
   jsw_obj_fim(&w);
+  if (op == '+') {
+    printf("[visto] marcado por conta-jornal-reenvio pos=0 dur=0 assistido=0s perfil=%d n=%d (gestos ja registrados)\n", perfil, n);
+    fflush(stdout);
+  }
   r = sessao_rpc(op == '+' ? "sync_push_watched_items" : "sync_delete_watched_items",
                  jsw_texto_final(&w), &st);
   jsw_livre(&w);
@@ -393,7 +532,7 @@ static int enviarVistos(const char *usu, int perfil, const Ent *env, int n, char
          op == '+' ? "marcar" : "desmarcar", n, ok ? "ok" : "falhou", st);
   fflush(stdout);
   if (!ok) return -1;
-  confirmar(usu, env, n);
+  confirmar(usu, env, n, VISTO_CONTA);
   return n;
 }
 
@@ -612,7 +751,7 @@ static int enviarLista(const char *usu, int perfil, Ent *ops, int n) {
   if (!tirados && !novos) {
     // A conta ja esta como a pessoa quer (ou um '-' de item que nem esta la).
     jsw_livre(&w);
-    for (i = 0; i < n; i++) if (usado[i] != 2) confirmar(usu, &ops[i], 1);
+    for (i = 0; i < n; i++) if (usado[i] != 2) confirmar(usu, &ops[i], 1, VISTO_CONTA);
     printf("[sync] lista perfil %d: conta %d, nada a mudar\n", perfil, remoto);
     fflush(stdout);
     free(usado); paginasLivrar(&pg);
@@ -662,7 +801,7 @@ static int enviarLista(const char *usu, int perfil, Ent *ops, int n) {
       fflush(stdout);
       paginasLivrar(&v);
     } }
-  for (i = 0; i < n; i++) if (usado[i] != 2) confirmar(usu, &ops[i], 1);
+  for (i = 0; i < n; i++) if (usado[i] != 2) confirmar(usu, &ops[i], 1, VISTO_CONTA);
   free(usado);
   return n;
 }
@@ -715,7 +854,8 @@ static int enviarJa(void) {
       for (o = 0; o < 2; o++) {
         g = 0;
         for (i = 0; i < n; i++)
-          if (snap[i].sup == 'V' && snap[i].perfil == perfis[p] && snap[i].op == ops[o]) {
+          if (snap[i].sup == 'V' && (snap[i].destinos & VISTO_CONTA) &&
+              snap[i].perfil == perfis[p] && snap[i].op == ops[o] && sessao_logada()) {
             grupo[g++] = snap[i];
             if (g == CP_LOTE) {
               int r = enviarVistos(usu, perfis[p], grupo, g, ops[o]);
@@ -730,7 +870,7 @@ static int enviarJa(void) {
       }
       g = 0;
       for (i = 0; i < n; i++)
-        if (snap[i].sup == 'L' && snap[i].perfil == perfis[p]) grupo[g++] = snap[i];
+        if (snap[i].sup == 'L' && snap[i].perfil == perfis[p] && sessao_logada()) grupo[g++] = snap[i];
       if (g) {
         int r = enviarLista(usu, perfis[p], grupo, g);
         if (r < 0) falhou = 1; else total += r;
@@ -738,12 +878,63 @@ static int enviarJa(void) {
     }
     free(grupo); }
   free(snap);
-  if (total > 0) {
-    printf("[sync] jornal da conta: %d confirmadas, %d pendentes\n", total,
-           contapend_pendentes());
-    fflush(stdout);
-  }
   return falhou ? -1 : total;
+}
+
+static int reenviar(const char *id, long long ms) {
+  if (!contapend_reenviar_existe()) return 0;
+  NvPerfilSessao sessao = nv_perfil_sessao_ler();
+  Ent *snap;
+  char usu[80];
+  int i, n = 0, falhou = 0;
+  pthread_mutex_lock(&trava);
+  garantir();
+  snap = malloc(sizeof *snap * (size_t)(nEnt + 1));
+  if (snap) for (i = 0; i < nEnt; i++)
+    if (ents[i].sup == 'V' && ents[i].perfil == perfis_ativo() &&
+        (!id || (ents[i].ep > 0 && ents[i].ms > ms && !strcmp(ents[i].id, id))) &&
+        contapend_reenviar_existe()) snap[n++] = ents[i];
+  snprintf(usu, sizeof usu, "%s", usuario);
+  pthread_mutex_unlock(&trava);
+  if (!snap) return -1;
+  for (i = 0; i < n; i++) {
+    int bits = snap[i].destinos & (VISTO_TRAKT | VISTO_SIMKL);
+    if (!nv_perfil_sessao_travar(sessao)) { falhou = 1; break; }
+    // Revalidate after the write gate: a newer gesture may already be confirmed.
+    pthread_mutex_lock(&trava);
+    int k = carregado && !strcmp(usuario, usu)
+          ? achar('V', snap[i].perfil, snap[i].id, snap[i].temp, snap[i].ep) : -1;
+    if (k < 0 || ents[k].ms != snap[i].ms || ents[k].op != snap[i].op) bits = 0;
+    else bits = ents[k].destinos & (VISTO_TRAKT | VISTO_SIMKL);
+    pthread_mutex_unlock(&trava);
+    // Keep credential capture and confirmation in the journal's profile session.
+    if (snap[i].sup == 'V' && bits && snap[i].perfil == perfis_ativo()) {
+      VistoPar par = { (short)snap[i].temp, (short)snap[i].ep };
+      int temps[64], nt = 0;
+      const char *p = snap[i].nome;
+      while (*p && nt < 64) {
+        char *fim;
+        long t = strtol(p, &fim, 10);
+        if (fim == p || t < 0 || t > 32767) break;
+        temps[nt++] = (int)t;
+        p = *fim == ',' ? fim + 1 : fim;
+      }
+      int ok = cpEnvio(snap[i].id, snap[i].tipo, &par, snap[i].ep > 0,
+                       snap[i].op == '+', bits, temps, nt);
+      if (ok) confirmar(usu, &snap[i], 1, ok);
+      if (ok != bits) falhou = 1;
+    }
+    nv_perfil_sessao_destravar();
+  }
+  free(snap);
+  return falhou ? -1 : n;
+}
+
+int contapend_reenviar(void) { return reenviar(NULL, 0); }
+int contapend_reenviar_overrides(const char *imdb, long long ms) {
+  char id[24];
+  idVisto(imdb, id, sizeof id);
+  return reenviar(id, ms);
 }
 
 static pthread_mutex_t fioTrava = PTHREAD_MUTEX_INITIALIZER;
@@ -780,20 +971,21 @@ void contapend_chutar(void) {
 // ---------------------------------------------------------------- pull
 
 static int oculto(char sup, const char *id, int t, int e, long long remotoMs) {
-  int k, perfil = perfis_ativo(), res = 0;
-  pthread_mutex_lock(&trava);
-  if (garantir()) {
-    k = achar(sup, perfil, id, t, e);
-    if (k >= 0 && ents[k].op == '-') {
-      if (remotoMs > ents[k].ms) {
-        // A conta tem uma marca MAIS NOVA que o "tirar" daqui: ela ganha. A
-        // pendente sai (nao vai apagar o que outro aparelho fez depois).
-        if (!ents[k].conf) { tirar(k); gravar(); }
-      } else res = 1;
+  if (sup == 'L') {
+    int k, perfil = perfis_ativo(), res = 0;
+    pthread_mutex_lock(&trava);
+    if (garantir()) {
+      k = achar(sup, perfil, id, t, e);
+      if (k >= 0 && ents[k].op == '-') {
+        if (remotoMs > ents[k].ms) {
+          if (!ents[k].conf) { tirar(k); gravar(); }
+        } else res = 1;
+      }
     }
+    pthread_mutex_unlock(&trava);
+    return res;
   }
-  pthread_mutex_unlock(&trava);
-  return res;
+  return contapend_estado(id, NULL, t, e, remotoMs, 1) == 0;
 }
 
 int contapend_visto_oculto(const char *imdb, int temporada, int episodio,
@@ -802,7 +994,21 @@ int contapend_visto_oculto(const char *imdb, int temporada, int episodio,
   idVisto(imdb, id, sizeof id);
   if (!id[0]) return 0;
   if (episodio <= 0) temporada = episodio = 0;
-  return oculto('V', id, temporada, episodio, remotoMs);
+  return contapend_estado(id, NULL, temporada, episodio, remotoMs, 1) == 0;
+}
+
+int contapend_lista_pendente(const char *imdb) {
+  char id[24];
+  int res = 0, perfil = perfis_ativo();
+  idLista(imdb, id, sizeof id);
+  if (!id[0]) return 0;
+  pthread_mutex_lock(&trava);
+  if (garantir()) {
+    int k = achar('L', perfil, id, 0, 0);
+    res = k >= 0 && ents[k].op == '+' && !ents[k].conf;
+  }
+  pthread_mutex_unlock(&trava);
+  return res;
 }
 
 int contapend_lista_oculta(const char *imdb, long long remotoMs) {
@@ -815,7 +1021,9 @@ int contapend_lista_oculta(const char *imdb, long long remotoMs) {
 int contapend_aplicar_local(void) {
   int i, k = 0, perfil = perfis_ativo();
   Ent *copia = NULL;
+  VistoFonte fonte;
   int n = 0;
+  memset(&fonte, 0, sizeof fonte);
   pthread_mutex_lock(&trava);
   if (garantir() && nEnt) {
     copia = (Ent *)malloc(sizeof *copia * (size_t)nEnt);
@@ -826,13 +1034,40 @@ int contapend_aplicar_local(void) {
   pthread_mutex_unlock(&trava);
   // Fora da trava: o historico tem a trava dele.
   for (i = 0; i < n; i++) {
-    if (copia[i].ep > 0)
-      vistoep_definir(copia[i].id, copia[i].temp, copia[i].ep, copia[i].op == '+');
-    else
-      cat_historico_definir_id(copia[i].id, copia[i].tipo, copia[i].op == '+');
+    // O JORNAL TAMBEM E FONTE (vistoep_fonte): um '+' daqui e um gesto ANTIGO
+    // sendo reaplicado a cada ciclo, com o instante dele — nao pode passar por
+    // cima de uma desmarcacao mais nova do mesmo episodio.
+    if (copia[i].ep > 0) {
+      int antes = vistoep_estado(copia[i].id, copia[i].temp, copia[i].ep);
+      int depois = vistoep_fonte(copia[i].id, copia[i].temp, copia[i].ep,
+                                 copia[i].op == '+', copia[i].ms, &fonte)
+                     ? vistoep_estado(copia[i].id, copia[i].temp, copia[i].ep)
+                     : antes;
+      if (antes != depois) {
+        if (depois == 1)
+          printf("[visto] marcado por conta-jornal-importacao pos=0 dur=0 assistido=0s id=%s T%dE%d\n",
+                 copia[i].id, copia[i].temp, copia[i].ep);
+        printf("[vistoep] %s T%dE%d: jornal perfil=%d op=%c gesto_ms=%lld confirmado=%d "
+               "conf_ms=%lld mapa=%d->%d\n", copia[i].id, copia[i].temp, copia[i].ep,
+               copia[i].perfil, copia[i].op, copia[i].ms, copia[i].conf,
+               copia[i].confMs, antes, depois);
+        fflush(stdout);
+      }
+    } else {
+      if (copia[i].op == '+') {
+        printf("[visto] marcado por conta-jornal-importacao pos=0 dur=0 assistido=0s id=%s\n", copia[i].id);
+        fflush(stdout);
+      }
+      cat_historico_definir_tempo(copia[i].id, copia[i].tipo,
+        contapend_estado(copia[i].id, copia[i].tipo, 0, 0, copia[i].ms, copia[i].op == '+'), copia[i].ms);
+    }
     k++;
   }
   free(copia);
+  // Mudo no caso normal (roda a cada ciclo); fala quando algo foi barrado.
+  if (fonte.bloqueados || fonte.venceu)
+    printf("[vistoep] jornal da conta: +%d (bloqueados %d; remoto mais novo %d)\n",
+           fonte.vistos, fonte.bloqueados, fonte.venceu);
   return k;
 }
 
@@ -841,7 +1076,7 @@ void contapend_podar(long long desdeMs) {
   pthread_mutex_lock(&trava);
   if (garantir()) {
     for (i = nEnt - 1; i >= 0; i--)
-      if (ents[i].conf && ents[i].confMs < desdeMs) { tirar(i); mudou = 1; }
+      if (ents[i].sup == 'L' && ents[i].op == '+' && ents[i].conf && ents[i].confMs < desdeMs) { tirar(i); mudou = 1; }
     if (mudou) gravar();
   }
   pthread_mutex_unlock(&trava);

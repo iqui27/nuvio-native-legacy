@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # REUSO DE CONEXAO em rede.c (23/09/2026): o handle por fio existia desde
 # 5eb8bd2, mas o dlsym de curl_easy_reset nao, e toda chamada abria conexao
 # nova. Aqui um servidor HTTP/1.1 local conta as conexoes TCP que recebe; o
@@ -8,7 +10,7 @@
 #   bash tests/rede_reuso.sh
 set -eu
 cd "$(dirname "$0")/.."
-DIR=$(mktemp -d /tmp/nuvio-rede-reuso.XXXXXX)
+DIR=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-rede-reuso.XXXXXX)
 trap 'kill $SRV 2>/dev/null || true; rm -rf "$DIR"' EXIT
 python3 - "$DIR/porta" <<'PY' &
 import http.server, socketserver, sys, threading

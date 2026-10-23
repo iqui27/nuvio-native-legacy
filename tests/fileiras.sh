@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Ordem das fileiras da home. Sem SDL, sem rede e sem disco: fileiras.c so fala
 # com dados_gravar/dados_ler, e o teste os substitui por dubles.
 set -eu
@@ -9,6 +11,6 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 # vetor esta vazio e set -u esta ligado.
 cc ${flags[@]+"${flags[@]}"} -DFIL_TESTE src/fileiras.c tests/fileiras.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -o /tmp/nuvio-fileiras-tests -O1 -g \
+  -o ${TMPDIR:-/tmp}/nuvio-fileiras-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-fileiras-tests
+${TMPDIR:-/tmp}/nuvio-fileiras-tests

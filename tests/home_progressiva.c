@@ -3,6 +3,7 @@
 #define main montagem_cedo_main
 #include "montagem_cedo.c"
 #include "jellyfin_stub.inc"
+#include "nvtmp.h"
 #undef main
 
 static unsigned long long inicio, primeiraPronta, primeiraPublicada, lentaAcabou;
@@ -66,7 +67,7 @@ int main(int argc, char **argv) {
   const char *tmp = getenv("TMPDIR");
   assert(argc == 2); modo = atoi(argv[1]);
   snprintf(dirDados, sizeof dirDados, "%snuvio-home-progressiva-%d",
-           tmp && *tmp ? tmp : "/tmp/", (int)getpid());
+           nvt("/"), (int)getpid());
   assert(!mkdir(dirDados, 0700)); desc_tmdb(dirDados); homeestado_iniciar();
   fixtureCW = fixtureSocial = 1;
   item(&seed[0], "ttCW", 0); seed[0].progresso = 20;

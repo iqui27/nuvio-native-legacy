@@ -11,6 +11,7 @@
 // chaves pode aparecer no que o app imprime. As mensagens de progresso do
 // proprio teste saem por stderr, que nao e capturado.
 #include "../src/debrid.h"
+#include "../src/idbase.h"
 #include "../src/streams.h"
 #include "../src/rede.h"
 #include <assert.h>
@@ -19,6 +20,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <time.h>
+
+static time_t contaAgora = 1800000000;
+time_t debrid_test_time(time_t *dst) {
+  if (dst) *dst = contaAgora;
+  return contaAgora;
+}
 
 #define K_RD "CHAVE-RD-SEGREDO-1"
 #define K_TB "CHAVE-TB-SEGREDO-2"
@@ -38,6 +46,34 @@ static char  corpoCacheCheckPM[600], corpoDirectdlPM[600];
 static int   bateuTB[4];        // checkcached, createtorrent, mylist, requestdl
 static int   bateuPM[2];        // cache/check, directdl
 static int   bateuRDUnrestrict;
+static int   pedidosServico[DEBRID_N];
+static int contaModo, contaPedidos[3]; // 0 active, 1 expired, 2 bad key, 3 malformed, 4 offline, 5 free
+static int contaTrocarChave;
+static char *contaResposta(int q, const char *const *cab, const char *corpo, int *st) {
+  static const char *ids[] = { "rd", "tb", "pm" };
+  static const char *modos[] = { "active", "expired", "badkey", "", "", "free" };
+  char caminho[160], b[1024]; size_t n; FILE *f;
+  contaPedidos[q]++;
+  if (contaTrocarChave) {
+    contaTrocarChave = 0;
+    debrid_definir_chave(debrid_servico_id(q), q == DEBRID_RD ? K_RD "2" : q == DEBRID_TB ? K_TB "2" : K_PM "2");
+  }
+  if (q == DEBRID_PM) assert(corpo && strstr(corpo, "apikey=" K_PM));
+  else assert(cab && cab[0] && strstr(cab[0], q == DEBRID_RD ? K_RD : K_TB));
+  if (contaModo == 4) { *st = 0; return NULL; }
+  if (contaModo == 3) return strdup("{}");
+  snprintf(caminho, sizeof caminho, "tests/fixtures/debrid-account/%s-%s.json", ids[q], modos[contaModo]);
+  f = fopen(caminho, "r"); assert(f);
+  n = fread(b, 1, sizeof b - 1, f); b[n] = 0; fclose(f);
+  *st = contaModo == 2 && q != DEBRID_PM ? 401 : 200;
+  return strdup(b);
+}
+static void registrarServico(const char *url) {
+  if (strstr(url, "real-debrid.com")) pedidosServico[DEBRID_RD]++;
+  else if (strstr(url, "api.torbox.app")) pedidosServico[DEBRID_TB]++;
+  else if (strstr(url, "premiumize.me")) pedidosServico[DEBRID_PM]++;
+  else if (strstr(url, "api.alldebrid.com")) pedidosServico[DEBRID_AD]++;
+}
 // createtorrent do TorBox: 0 = 201 normal, 1 = 403 de CONTA (plano), 2 = 403
 // que diz "nao esta em cache" (do torrent, nao da conta)
 static int   tbCriar403;
@@ -49,7 +85,15 @@ static int   pmSemPlano;
 // (1 = "true") e se o mylist diz que o torrent ainda esta baixando.
 static int   tbSoCache = -1, tbBaixando;
 
-static char *dup2s(const char *s) { return strdup(s); }
+static int arquivosEspeciais, arquivoAnime;
+static char *dup2s(const char *s) {
+  char *c = strdup(s);
+  if (arquivosEspeciais) {
+    char *p = c;
+    while ((p = strstr(p, "S02"))) { p[2] = '0'; p += 3; }
+  }
+  return c;
+}
 
 // --- AllDebrid. Modos: o que o upload responde, a sequencia de statusCode que o
 // status devolve, e o que cada rota recebeu (para provar a ORDEM e a auth).
@@ -133,6 +177,8 @@ char *rede_postar_st(const char *url, int s, const char *const *cab,
   int k;
   char ct[120] = "";
   (void)s;
+  if (strstr(url, "/account/info")) { *st = 200; return contaResposta(DEBRID_PM, cab, corpo, st); }
+  registrarServico(url);
   for (k = 0; cab && cab[k]; k++)
     if (!strncmp(cab[k], "Content-Type:", 13)) snprintf(ct, sizeof ct, "%s", cab[k]);
 
@@ -208,10 +254,14 @@ char *rede_postar_st(const char *url, int s, const char *const *cab,
 
 char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   (void)s; *st = 200;
+  if (strstr(url, "/rest/1.0/user")) return contaResposta(DEBRID_RD, cab, NULL, st);
+  if (strstr(url, "/user/me?settings=false")) return contaResposta(DEBRID_TB, cab, NULL, st);
+  registrarServico(url);
 
   if (strstr(url, "api.alldebrid.com")) return adResp(url, cab, NULL, st);
   if (strstr(url, "real-debrid.com")) {
     assert(strstr(url, "torrents/info/ABC123"));
+    if (arquivoAnime) return strdup("{\"files\":[{\"id\":1,\"path\":\"[SubsPlease] Mushoku Tensei - 05 (1080p).mkv\",\"bytes\":1900000000}],\"status\":\"downloaded\",\"links\":[\"https://real-debrid.com/d/LINK1\"]}");
     return dup2s("{\"id\":\"ABC123\",\"status\":\"downloaded\",\"files\":["
       "{\"id\":1,\"path\":\"/Show.S02E04.1080p.mkv\",\"bytes\":2000000000,\"selected\":0},"
       "{\"id\":2,\"path\":\"/Show.S02E05.1080p.mkv\",\"bytes\":1900000000,\"selected\":0},"
@@ -257,15 +307,35 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   *st = 404; return dup2s("{}");
 }
 
+// PUT de edicao (Airlock): grava url, Authorization e corpo para o teste conferir
+static int   colocarChamadas, colocarSt = 200;
+static const char *colocarResp = "{\"success\":true,\"error\":null,\"detail\":\"ok\",\"data\":{}}";
+static char  colocarUrl[300], colocarAuth[260], colocarCorpo[200];
+char *rede_colocar_st(const char *url, int s, const char *const *cab,
+                      const char *corpo, int *st) {
+  int k;
+  (void)s;
+  colocarChamadas++;
+  snprintf(colocarUrl, sizeof colocarUrl, "%s", url);
+  snprintf(colocarCorpo, sizeof colocarCorpo, "%s", corpo);
+  colocarAuth[0] = 0;
+  for (k = 0; cab && cab[k]; k++)
+    if (!strncmp(cab[k], "Authorization:", 14)) snprintf(colocarAuth, sizeof colocarAuth, "%s", cab[k]);
+  *st = colocarSt;
+  return dup2s(colocarResp);
+}
+
 // o parser puxa badges; duble
 unsigned long long badges_detectar(const char *t) { (void)t; return 0; }
+unsigned long long badges_bit(const char *id) { (void)id; return 0; }
 
 // ---------------------------------------------------------------- testes
 
 static void semChaves(void) {
   char url[4096] = "";
+  int fora = 1;
   assert(!debrid_ativo());
-  assert(!debrid_resolver("deadbeef", -1, url, sizeof url));
+  assert(!debrid_resolver_cache("deadbeef", -1, url, sizeof url, &fora) && !fora);
   debrid_definir_chave("offcloud", "k");     // servico que ninguem resolve aqui
   assert(!debrid_ativo());
   OK("sem chave nao resolve, e servico desconhecido continua ignorado");
@@ -289,6 +359,17 @@ static void realDebrid(void) {
   assert(!strcmp(corpoSelectRD, "files=1"));   // filme: maior video, sample.txt fora
   OK("Real-Debrid: filme escolhe o maior video");
 
+  {
+    int t, e;
+    idbase_episodio("kitsu:41370:5", &t, &e);
+    debrid_definir_episodio(t, e);
+    arquivoAnime = 1;
+    assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
+    assert(!strcmp(corpoSelectRD, "files=1"));
+    arquivoAnime = 0;
+    OK("Kitsu absent season selects ordinary anime filename in debrid");
+  }
+
   // A URL RESOLVIDA E CREDENCIAL: quem tem o "/d/QQ/" baixa na conta de quem
   // pediu. Este teste linka o rede_url_publica DE VERDADE (src/redeurl.c) em
   // vez de um stub — com stub, uma regressao que passasse a imprimir o link
@@ -300,6 +381,29 @@ static void realDebrid(void) {
     assert(strstr(pub, "x.download.real-debrid.com"));  // o host fica: e o que diagnostica
     assert(strstr(pub, "/...")); }
   OK("o link do Real-Debrid nao vai inteiro para o log");
+}
+
+static void especiais(void) {
+  static const char *const servicos[] = {"realdebrid", "torbox", "premiumize"};
+  static const char *const chaves[] = {K_RD, K_TB, K_PM};
+  arquivosEspeciais = 1;
+  for (int i = 0; i < 3; i++) {
+    char url[4096] = "";
+    debrid_esquecer(); debrid_definir_chave(servicos[i], chaves[i]);
+    debrid_definir_episodio(0, 5); debrid_nova_busca();
+    assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
+    if (i == 0) assert(strstr(corpoSelectRD, "files=2"));
+    if (i == 1) assert(strstr(urlRequestdl, "file_id=1"));
+    if (i == 2) assert(strstr(url, "/dl/BBB"));
+    arquivosEspeciais = 0; debrid_esquecer();
+    debrid_definir_chave(servicos[i], chaves[i]); debrid_definir_episodio(0, 5);
+    assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url));
+    debrid_nova_busca();
+    assert(debrid_resolver("DEADBEEF", 1, url, sizeof url)); // indice publicado continua valido
+    arquivosEspeciais = 1;
+  }
+  arquivosEspeciais = 0; debrid_esquecer();
+  OK("#556: debrid escolhe S00E05 em vez do maior arquivo do pacote");
 }
 
 static void torbox(void) {
@@ -325,7 +429,9 @@ static void torbox(void) {
   // da casa e nunca pedir ao servico que comece a baixar
   memset(bateuTB, 0, sizeof bateuTB);
   tbEmCache = 0; url[0] = 0;
-  assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  int fora = 0;
+  assert(!debrid_resolver_cache("DEADBEEF", -1, url, sizeof url, &fora));
+  assert(fora); // a negativa desta consulta chega a linha, sem nova viagem
   assert(!url[0]);
   assert(bateuTB[0] == 1 && bateuTB[1] == 0 && bateuTB[2] == 0 && bateuTB[3] == 0);
   OK("TorBox fora de cache devolve 0 sem criar torrent");
@@ -369,6 +475,7 @@ static void torboxP2P(void) {
   assert(debrid_resolver_escolhido("DEADBEEF", -1, url, sizeof url, serv, sizeof serv, &pct) == 1);
   assert(!strcmp(url, "https://store-1.torbox.app/dl/ZZZ/Show.S02E05.1080p.mkv"));
   assert(strstr(urlRequestdl, "file_id=1"));
+  assert(!strcmp(serv, "TorBox") && debrid_servico_por_nome(serv) == DEBRID_TB);
   OK("P2P TorBox: terminado o download, a mesma escolha toca");
 
   // Em cache: a escolha manual e igual ao automatico (add_only_if_cached=true)
@@ -376,6 +483,7 @@ static void torboxP2P(void) {
   tbEmCache = 1; tbSoCache = -1;
   assert(debrid_resolver_escolhido("DEADBEEF", -1, url, sizeof url, serv, sizeof serv, &pct) == 1);
   assert(tbSoCache == 1 && bateuTB[1] == 1);
+  assert(!strcmp(serv, "TorBox"));
   OK("escolha manual de torrent em cache nao pede download");
 
   // Cacheado no Premiumize e fora no TorBox: toca pelo Premiumize e o TorBox
@@ -385,6 +493,7 @@ static void torboxP2P(void) {
   tbEmCache = 0; pmEmCache = 1; pmSemPlano = 0; url[0] = 0;
   assert(debrid_resolver_escolhido("DEADBEEF", -1, url, sizeof url, serv, sizeof serv, &pct) == 1);
   assert(strstr(url, "a.pm.me") && bateuTB[1] == 0);
+  assert(!strcmp(serv, "Premiumize") && debrid_servico_por_nome(serv) == DEBRID_PM);
   OK("escolha manual: em cache noutro servico ganha de mandar o TorBox baixar");
 
   // Conta sem plano continua fora tambem na escolha manual
@@ -613,6 +722,7 @@ static void alldebrid(void) {
   adZera(1, 1, 4, -1); url[0] = 0; serv[0] = 0; debrid_definir_episodio(2, 5);
   r = debrid_resolver_escolhido("deadbeef", -1, url, sizeof url, serv, sizeof serv, &pct);
   assert(r == 1 && strstr(url, "UNL5"));
+  assert(!strcmp(serv, "AllDebrid") && debrid_servico_por_nome(serv) == DEBRID_AD);
   OK("AllDebrid: escolha manual que termina durante a espera toca");
 
   // statusCode de erro do servico (7 = 20 min sem baixar)
@@ -746,6 +856,136 @@ static void ordem(void) {
   assert(!debrid_ativo());
 }
 
+static void negativaParcial(void) {
+  char url[4096] = "";
+  int fora = 1;
+  debrid_esquecer();
+  debrid_definir_chave("torbox", K_TB);
+  debrid_definir_chave("premiumize", K_PM);
+  tbEmCache = 0; tbCriar403 = 0; pmEmCache = 1; pmSemPlano = 1;
+  assert(!debrid_resolver_cache("deadbeef", -1, url, sizeof url, &fora) && !fora);
+  debrid_esquecer();
+  debrid_definir_chave("torbox", K_TB);
+  debrid_definir_chave("premiumize", K_PM);
+  pmEmCache = 0; pmSemPlano = 0;
+  assert(!debrid_resolver_cache("deadbeef", -1, url, sizeof url, &fora) && fora);
+  tbEmCache = pmEmCache = 1;
+  debrid_esquecer();
+  OK("cache parcial + erro e desconhecido; negativas de todos sao fora de cache");
+}
+
+static void soPedidosDo(int servico, int quantidade) {
+  int i;
+  for (i = 0; i < DEBRID_N; i++) assert(pedidosServico[i] == (i == servico ? quantidade : 0));
+}
+static void servicoEspecifico(void) {
+  static const char *const ids[] = { "realdebrid", "torbox", "premiumize", "alldebrid" };
+  static const char *const nomes[] = { "Real-Debrid", "TorBox", "Premiumize", "AllDebrid" };
+  static const char *const chaves[] = { K_RD, K_TB, K_PM, K_AD };
+  static const char *const urls[] = {
+    "https://x.download.real-debrid.com/d/QQ/Show.S02E05.mkv",
+    "https://store-1.torbox.app/dl/ZZZ/Show.S02E05.1080p.mkv",
+    "https://a.pm.me/dl/BBB/E05.mkv",
+    "https://s1.debrid.it/dl/UNL5/Show.S02E05.mkv"
+  };
+  static const int pedidos[] = { 5, 4, 2, 4 };
+  char url[4096] = "link-de-outro-servico";
+  int i, fora = 1;
+  assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3 && DEBRID_N == 4);
+  debrid_esquecer();
+  memset(pedidosServico, 0, sizeof pedidosServico);
+  for (i = 0; i < DEBRID_N; i++) {
+    assert(!strcmp(debrid_servico_id(i), ids[i]) && !strcmp(debrid_servico_nome(i), nomes[i]));
+    assert(debrid_servico_por_nome(ids[i]) == i && debrid_servico_por_nome(nomes[i]) == i);
+    assert(!debrid_servico_disponivel(i));
+    assert(!debrid_resolver_servico_cache(i, "DEADBEEF", -1, url, sizeof url, &fora));
+    assert(!fora && !url[0]);
+  }
+  assert(!debrid_servico_id(-1)[0] && !debrid_servico_nome(DEBRID_N)[0]);
+  assert(!debrid_servico_disponivel(-1) && !debrid_servico_disponivel(DEBRID_N));
+  assert(debrid_servico_por_nome(NULL) == -1 && debrid_servico_por_nome("") == -1);
+  assert(debrid_servico_por_nome("AIOStreams TorBox") == -1);
+  assert(debrid_servico_por_nome("https://store-1.torbox.app/file") == -1);
+  assert(!debrid_resolver_servico_cache(-1, "deadbeef", -1, url, sizeof url, &fora));
+  assert(!fora && !url[0]);
+  assert(!debrid_resolver_servico_cache(DEBRID_N, "deadbeef", -1, url, sizeof url, &fora));
+  soPedidosDo(-1, 0);
+  OK("servico especifico: IDs estaveis, desconhecido e sem chave nao fazem pedidos");
+
+  for (i = 0; i < DEBRID_N; i++) debrid_definir_chave(ids[i], chaves[i]);
+  tbEmCache = pmEmCache = 1; tbCriar403 = pmSemPlano = tbBaixando = 0;
+  debrid_definir_episodio(2, 5);
+  // O MESMO hash, com todas as chaves configuradas, produz o link de cada
+  // servico pedido. Nenhum cache por hash nem fallback pode devolver outro.
+  for (i = 0; i < DEBRID_N; i++) {
+    adZera(0, 4, -1, -1);
+    memset(pedidosServico, 0, sizeof pedidosServico);
+    fora = 1;
+    assert(debrid_servico_disponivel(i));
+    assert(debrid_resolver_servico_cache(i, "DEADBEEF", -1, url, sizeof url, &fora));
+    assert(!fora && !strcmp(url, urls[i]));
+    soPedidosDo(i, pedidos[i]);
+  }
+  // Legacy manual order still picks Real-Debrid first, while exposing the
+  // actual winner needed to count this first native link in failover.
+  { char serv[32]; int pct;
+    assert(debrid_resolver_escolhido("deadbeef", -1, url, sizeof url, serv, sizeof serv, &pct) == 1);
+    assert(!strcmp(serv, "Real-Debrid") && debrid_servico_por_nome(serv) == DEBRID_RD); }
+  OK("servico especifico: mesmo hash resolve apenas o provedor pedido, sem gerar links nos outros");
+
+  // Negativa de cache do escolhido nao consulta quem tem o mesmo hash em cache.
+  pmEmCache = 0; fora = 0;
+  memset(pedidosServico, 0, sizeof pedidosServico);
+  assert(!debrid_resolver_servico_cache(DEBRID_PM, "deadbeef", -1, url, sizeof url, &fora));
+  assert(fora && !url[0] && debrid_servico_disponivel(DEBRID_PM));
+  soPedidosDo(DEBRID_PM, 1);
+  pmEmCache = 1;
+  tbEmCache = 0; fora = 0;
+  memset(pedidosServico, 0, sizeof pedidosServico);
+  assert(!debrid_resolver_servico_cache(DEBRID_TB, "deadbeef", -1, url, sizeof url, &fora));
+  assert(fora && !url[0]);
+  soPedidosDo(DEBRID_TB, 1);  // nao chega a createtorrent
+  tbEmCache = 1;
+  OK("servico especifico: fora de cache nao cai no seguinte nem pede download");
+
+  // Falta de argumento tambem limpa um link antigo sem tocar a rede.
+  memset(pedidosServico, 0, sizeof pedidosServico);
+  snprintf(url, sizeof url, "%s", urls[DEBRID_RD]);
+  assert(!debrid_resolver_servico_cache(DEBRID_TB, NULL, -1, url, sizeof url, &fora));
+  assert(!url[0] && !fora);
+  assert(!debrid_resolver_servico_cache(DEBRID_TB, "", -1, url, sizeof url, &fora));
+  assert(!debrid_resolver_servico_cache(DEBRID_TB, "deadbeef", -1, NULL, sizeof url, &fora));
+  assert(!debrid_resolver_servico_cache(DEBRID_TB, "deadbeef", -1, url, 0, &fora));
+  soPedidosDo(-1, 0);
+
+  // Uma recusa temporaria desativa so o servico pedido e so nesta busca.
+  tbCriar403 = 3;
+  memset(pedidosServico, 0, sizeof pedidosServico);
+  assert(!debrid_resolver_servico_cache(DEBRID_TB, "deadbeef", -1, url, sizeof url, &fora));
+  assert(!url[0] && !fora && !debrid_servico_disponivel(DEBRID_TB));
+  assert(debrid_servico_disponivel(DEBRID_PM));
+  soPedidosDo(DEBRID_TB, 2);
+  memset(pedidosServico, 0, sizeof pedidosServico);
+  assert(!debrid_resolver_servico_cache(DEBRID_TB, "deadbeef", -1, url, sizeof url, &fora));
+  soPedidosDo(-1, 0);
+  debrid_nova_busca();
+  assert(debrid_servico_disponivel(DEBRID_TB));
+  OK("servico especifico: recusa de conta evita novos pedidos ate a busca seguinte");
+
+  // Conta sem plano continua desativada depois de uma busca nova.
+  tbCriar403 = 1;
+  assert(!debrid_resolver_servico_cache(DEBRID_TB, "deadbeef", -1, url, sizeof url, &fora));
+  assert(!fora && !debrid_servico_disponivel(DEBRID_TB));
+  debrid_nova_busca();
+  memset(pedidosServico, 0, sizeof pedidosServico);
+  assert(!debrid_resolver_servico_cache(DEBRID_TB, "deadbeef", -1, url, sizeof url, &fora));
+  assert(!fora && !url[0] && debrid_servico_disponivel(DEBRID_PM));
+  soPedidosDo(-1, 0);
+  tbCriar403 = 0;
+  debrid_esquecer();
+  OK("servico especifico: conta sem plano fica de fora sem afetar os outros");
+}
+
 static void parser(void) {
   Stream *v = NULL;
   int n = stream_extrair(
@@ -754,12 +994,11 @@ static void parser(void) {
     "{\"name\":\"Y\",\"url\":\"magnet:?xt=urn:btih:ff\"},"
     "{\"name\":\"Z\",\"title\":\"cached\",\"clientResolve\":{\"type\":\"debrid\",\"service\":\"realdebrid\",\"infoHash\":\"0011\",\"isCached\":true}}]}",
     "Torrentio", &v);
-  assert(n == 3);
+  assert(n == 2);
   assert(!v[0].url[0] && !strcmp(v[0].infoHash, "abcdef0123") && v[0].fileIdx == 1);
-  assert(!strcmp(v[1].url, "https://cdn/x.mp4") && !v[1].infoHash[0]);
-  assert(!v[2].url[0] && !strcmp(v[2].infoHash, "0011"));
+  assert(!v[1].url[0] && !strcmp(v[1].infoHash, "0011"));
   free(v);
-  OK("parser: infoHash no topo e em clientResolve, externalUrl, magnet fora");
+  OK("parser: infoHash no topo e em clientResolve, externalUrl sozinho fora, magnet fora");
 
   // Marcas de "fora de cache" que os addons mandam de verdade (registros
   // 1136/2191/2501: "⏳ UHD" do AIOStreams; "[TB download]" do Torrentio).
@@ -776,14 +1015,136 @@ static void parser(void) {
   OK("parser: marca fora de cache (⏳, [TB download], uncached) e nao a cacheada (⚡, [TB+])");
 }
 
+static void contas(void) {
+  static const char *ids[] = { "realdebrid", "torbox", "premiumize" };
+  static const char *keys[] = { K_RD, K_TB, K_PM };
+  char msg[64], data[16], url[4096], serv[32]; int pct, fora;
+  for (int q = 0; q < 3; q++) {
+    for (contaModo = 0; contaModo < 6; contaModo++) {
+      debrid_esquecer();
+      debrid_definir_chave(ids[q], keys[q]);
+      memset(contaPedidos, 0, sizeof contaPedidos);
+      memset(pedidosServico, 0, sizeof pedidosServico);
+      assert(debrid_testar_conta(q, msg, sizeof msg, data, sizeof data) == (contaModo == 0));
+      assert(!strcmp(msg, contaModo == 0 ? "premium" : contaModo == 1 ? "vencida" : contaModo == 5 ? "conta sem premium"
+                             : contaModo == 2 ? "chave recusada" : "sem resposta válida"));
+      assert((strlen(data) == 10) == (contaModo == 0));
+      debrid_testar_conta(q, msg, sizeof msg, data, sizeof data);
+      debrid_nova_busca();
+      assert(contaPedidos[q] == 1); // cache inclusive erro e nova busca
+      if (contaModo == 1 || contaModo == 2 || contaModo == 5) {
+        assert(debrid_sem_plano() == (1 << q));
+        assert(debrid_sem_plano_frase(1 << q));
+        if (contaModo == 1) assert(strstr(debrid_sem_plano_frase(1 << q), "expirou"));
+        assert(!debrid_resolver_servico_cache(q, "deadbeef", -1, url, sizeof url, &fora));
+        assert(!fora && !url[0]);
+        snprintf(url, sizeof url, "stale-link");
+        assert(!debrid_resolver_escolhido("deadbeef", -1, url, sizeof url, serv, sizeof serv, &pct));
+        assert(!url[0]);
+        assert(pedidosServico[q] == 0 && contaPedidos[q] == 1);
+        assert(debrid_sem_plano_novo() == (1 << q));
+        assert(!debrid_sem_plano_novo());
+      } else assert(!debrid_sem_plano());
+    }
+    // Play faz a consulta antes de criar torrent, sem depender de Ajustes.
+    debrid_esquecer(); debrid_definir_chave(ids[q], keys[q]);
+    contaModo = 1; memset(pedidosServico, 0, sizeof pedidosServico);
+    assert(!debrid_resolver("deadbeef", -1, url, sizeof url));
+    assert(!pedidosServico[q] && debrid_sem_plano() == (1 << q));
+    // O TTL reabre o caminho de play mesmo sem trocar a chave.
+    assert(!debrid_ativo() && !debrid_servico_disponivel(q));
+    contaAgora += 301;
+    assert(debrid_ativo() && debrid_servico_disponivel(q));
+    contaModo = 0;
+    assert(debrid_testar_conta(q, msg, sizeof msg, data, sizeof data));
+    assert(!debrid_sem_plano());
+    // Vencimento conhecido bloqueia mesmo antes do TTL acabar.
+    contaAgora = 4070908799; // um segundo antes de 01/01/2099 UTC
+    assert(debrid_testar_conta(q, msg, sizeof msg, data, sizeof data));
+    contaAgora += 2;
+    assert(!debrid_testar_conta(q, msg, sizeof msg, data, sizeof data));
+    assert(debrid_sem_plano() == (1 << q));
+    contaAgora = 1800000000;
+    // Nova credencial invalida o cache, inclusive a negativa anterior.
+    contaModo = 0;
+    debrid_definir_chave(ids[q], q == DEBRID_RD ? K_RD "2" : q == DEBRID_TB ? K_TB "2" : K_PM "2");
+    assert(debrid_testar_conta(q, msg, sizeof msg, data, sizeof data));
+    assert(!debrid_sem_plano());
+    // Uma resposta antiga nao contamina a chave trocada durante a rede.
+    debrid_esquecer(); debrid_definir_chave(ids[q], keys[q]);
+    contaModo = 1; contaTrocarChave = 1;
+    assert(!debrid_testar_conta(q, msg, sizeof msg, data, sizeof data));
+    assert(!debrid_sem_plano());
+    contaModo = 0;
+    assert(debrid_testar_conta(q, msg, sizeof msg, data, sizeof data));
+  }
+  contaModo = 0; debrid_esquecer();
+  OK("contas RD/TB/PM: fixtures active/expired/badkey, cache, offline, play e troca de chave");
+}
+
+static void airlock(void) {
+  char det[160] = "";
+  // sem chave nao ha PUT nenhum
+  debrid_esquecer();
+  colocarChamadas = 0;
+  assert(!debrid_tb_airlock(0, 42, 1, det, sizeof det) && !det[0]);
+  assert(colocarChamadas == 0);
+  debrid_definir_chave("torbox", K_TB);
+  // torrent: liga; a edicao leva so o id e `airlocked`, com o Bearer da chave
+  colocarChamadas = 0;
+  assert(debrid_tb_airlock(0, 42, 1, det, sizeof det) == 1 && !det[0]);
+  assert(colocarChamadas == 1);
+  assert(!strcmp(colocarUrl, "https://api.torbox.app/v1/api/torrents/edittorrent"));
+  assert(!strcmp(colocarCorpo, "{\"torrent_id\":42,\"airlocked\":true}"));
+  assert(!strcmp(colocarAuth, "Authorization: Bearer " K_TB));
+  // usenet: desliga, com o id proprio do usenet
+  assert(debrid_tb_airlock(1, 7, 0, det, sizeof det) == 1 && !det[0]);
+  assert(colocarChamadas == 2);
+  assert(!strcmp(colocarUrl, "https://api.torbox.app/v1/api/usenet/editusenetdownload"));
+  assert(!strcmp(colocarCorpo, "{\"usenet_download_id\":7,\"airlocked\":false}"));
+  assert(!strcmp(colocarAuth, "Authorization: Bearer " K_TB));
+  // recusa do plano (HTTP 403): 0 e a frase do TorBox em detalhe
+  colocarSt = 403;
+  colocarResp = "{\"success\":false,\"error\":\"PLAN_RESTRICTED_FEATURE\",\"detail\":\"Upgrade your plan\"}";
+  assert(debrid_tb_airlock(0, 42, 1, det, sizeof det) == 0);
+  assert(!strcmp(det, "Upgrade your plan"));
+  // 2xx com success:false tambem e recusa
+  colocarSt = 200;
+  colocarResp = "{\"success\":false,\"error\":\"DOWNLOAD_NOT_CACHED\",\"detail\":\"Torrent is not cached.\"}";
+  assert(debrid_tb_airlock(0, 42, 1, det, sizeof det) == 0);
+  assert(!strcmp(det, "Torrent is not cached."));
+  colocarResp = "{\"success\":true,\"error\":null,\"detail\":\"ok\",\"data\":{}}";
+  debrid_esquecer();
+  OK("Airlock do TorBox: torrent/usenet, sem chave, recusa de plano e success:false");
+}
+
 int main(void) {
+  unsigned scope = debrid_tb_geracao();
+  debrid_abrir_sessao(100);
+  assert(debrid_tb_geracao() != scope);
+  scope = debrid_tb_geracao();
+  debrid_nova_busca();
+  assert(debrid_tb_geracao() == scope);
+  debrid_definir_chave("torbox", K_TB);
+  assert(debrid_tb_geracao() != scope);
+  scope = debrid_tb_geracao();
+  debrid_definir_chave("torbox", K_TB);
+  assert(debrid_tb_geracao() == scope);
+  debrid_definir_chave_local("torbox", "replacement");
+  assert(debrid_tb_geracao() != scope);
+  debrid_definir_chave_local("torbox", "");
+  scope = debrid_tb_geracao();
+  debrid_esquecer();
+  assert(debrid_tb_geracao() != scope);
+  puts("PASS TorBox generation follows session/key changes, not searches");
   static char capt[200000];
-  const char *arq = "/tmp/nuvio-debrid-saida.txt";
+  const char *arq = getenv("NUVIO_DEBRID_TEST_LOG");
   int velho, f; FILE *lido; size_t lidos;
 
   // Captura o stdout do APP. Tudo o que debrid.c imprime vai para o arquivo, e
   // no fim conferimos que nenhuma chave saiu por ali. As chamadas OK() escrevem
   // em stderr de proposito, para continuarem visiveis.
+  assert(arq);
   fflush(stdout);
   velho = dup(1);
   f = open(arq, O_RDWR | O_CREAT | O_TRUNC, 0600);
@@ -791,6 +1152,7 @@ int main(void) {
   assert(dup2(f, 1) >= 0);
 
   semChaves();
+  especiais();
   realDebrid();
   torbox();
   torbox403();
@@ -800,8 +1162,12 @@ int main(void) {
   alldebrid();
   alldebridLocal();
   alldebridTeste();
+  contas();
   ordem();
+  negativaParcial();
+  servicoEspecifico();
   parser();
+  airlock();
 
   fflush(stdout);
   assert(dup2(velho, 1) >= 0);
@@ -853,6 +1219,7 @@ int main(void) {
   assert(strstr(capt, "[debrid] Premiumize: conta sem plano para a API; fora pelo resto da sessao"));
   // a linha que se procura no D1 quando alguem diz "o P2P nao toca"
   assert(strstr(capt, "[debrid] TorBox: deadbeef baixando no TorBox (37%, estado=downloading)"));
+  assert(strstr(capt, "[partes] TorBox airlock on (torrent): HTTP 403, error=PLAN_RESTRICTED_FEATURE"));
   OK("corpo do 403 no log, sem a chave");
 
   puts("debrid: tudo ok");

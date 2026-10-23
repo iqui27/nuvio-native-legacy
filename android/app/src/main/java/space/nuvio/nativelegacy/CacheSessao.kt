@@ -82,6 +82,61 @@ object CacheSessao {
         return try { f.canonicalFile != File(pai.canonicalFile, f.name) } catch (e: IOException) { true }
     }
 
+    // WARM RESUME (#492): the cache of the LAST title survives the player. One
+    // slot only; it goes away when another title opens, the setting turns off,
+    // the profile changes, LIMITE_MS passes, or free space drops under the
+    // reserve. Pure (no Android/Media3), so the JVM test drives it with a fake
+    // cache and a fake clock; the caller owns what `T` is and how it dies.
+    const val LIMITE_MS = 3L * 60L * 60L * 1000L   // same as the saved link (fontevolta)
+
+    // Keeping needs the reserve still free: the kept bytes are already on disk,
+    // so it is the free space that is left that matters.
+    fun podeGuardar(livreBytes: Long): Boolean = livreBytes >= RESERVA_BYTES
+
+    class Vaga<T : Any>(private val liberar: (T) -> Unit) {
+        private class Item<T>(val c: T, val titulo: String, val chave: String, val pedidoMb: Int, val ate: Long)
+        private var item: Item<T>? = null
+
+        // Player closed: keep `c` for `titulo` (a non-empty id of the title/episode),
+        // replacing any older one. Not kept (and released) without a title, or
+        // without free space. Returns whether it was kept.
+        @Synchronized fun guardar(c: T, titulo: String, chave: String, pedidoMb: Int, agora: Long, livreBytes: Long): Boolean {
+            largar()
+            if (titulo.isEmpty() || !podeGuardar(livreBytes)) { liberar(c); return false }
+            item = Item(c, titulo, chave, pedidoMb, agora + LIMITE_MS)
+            return true
+        }
+
+        // A VOD opens: the kept cache if it is the same title, source and limit
+        // and still inside the time limit; otherwise it is released. An empty
+        // title (the Home trailer) touches nothing.
+        @Synchronized fun pegar(titulo: String, chave: String, pedidoMb: Int, agora: Long): T? {
+            val i = item ?: return null
+            if (titulo.isEmpty() && agora < i.ate) return null
+            item = null
+            if (agora < i.ate && i.titulo == titulo && i.chave == chave && i.pedidoMb == pedidoMb) return i.c
+            liberar(i.c)
+            return null
+        }
+
+        // Other title / setting off / profile switch.
+        @Synchronized fun largar(): Boolean {
+            val i = item ?: return false
+            item = null
+            liberar(i.c)
+            return true
+        }
+
+        // Timer: drops it when the time limit passed or the disk got tight.
+        @Synchronized fun vencer(agora: Long, livreBytes: Long): Boolean {
+            val i = item ?: return false
+            if (agora < i.ate && podeGuardar(livreBytes)) return false
+            return largar()
+        }
+
+        @Synchronized fun titulo(): String? = item?.titulo
+    }
+
     // ENOSPC as Android reports it: ErrnoException("write failed: ENOSPC (No
     // space left on device)") wrapped in IOException, sometimes twice.
     fun semEspaco(t: Throwable?): Boolean {
@@ -98,7 +153,7 @@ object CacheSessao {
     // Shared by every sink of ONE session: the first write failure turns the
     // cache off for the rest of the session (reads of spans already written
     // continue; playback is never interrupted by the cache).
-    class Estado(private val aoFalhar: (semEspaco: Boolean) -> Unit) {
+    class Estado(@Volatile var aoFalhar: (semEspaco: Boolean) -> Unit) {
         @Volatile var desligado = false
             private set
         fun falhou(e: Throwable) {

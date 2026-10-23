@@ -69,6 +69,20 @@ int main(void) {
     assert(s.temporada == 1 && s.episodio == 2);
   }
 
+  // #556: uma escolha explicita de especial continua na temporada 0.
+  {
+    CatEp v[4] = { ep(0,1,"especial 1",""), ep(0,2,"especial 2",""),
+                   ep(1,1,"normal",""), ep(5,1,"outra temporada","") };
+    CatItem c = serie(0, 1, 100);
+    assert(prox_ancora(v, 4, 0, 1, 0) == 0);
+    assert(prox_indice_seguinte(v, 4, 0, 1) == 1);
+    assert(prox_indice_anterior(v, 4, 0, 2) == 0);
+    assert(prox_seguinte(&c, v, 4, 90, AGORA, &s));
+    assert(s.temporada == 0 && s.episodio == 2);
+    assert(prox_ancora_absoluta(v, 4, 1, 1) == 2);
+    assert(prox_indice_anterior(v, 4, 1, 1) == -1);
+  }
+
   // --- meio de uma temporada -------------------------------------------
   {
     CatEp v[3] = { ep(1,1,"a",""), ep(1,2,"b","5 de fevereiro de 2026"),
@@ -156,6 +170,22 @@ int main(void) {
     assert(!prox_seguinte(&c, NULL, 0, 90, AGORA, &s));
   }
 
+
+  // 2.0.3: O EPISODIO SEGUINTE, a regra unica do cartao e da janela.
+  { CatEp l[8];
+    l[0] = ep(1, 1, "a", ""); l[1] = ep(1, 2, "b", ""); l[2] = ep(1, 2, "b2", "");   // repetido
+    l[3] = ep(1, 4, "d", "");                                                    // E3 falta
+    l[4] = ep(2, 1, "e", ""); l[5] = ep(0, 1, "especial", ""); l[6] = ep(2, 2, "f", "");
+    assert(prox_indice_seguinte(l, 7, 1, 1) == 1);           // E1 -> E2
+    assert(prox_indice_seguinte(l, 7, 1, 2) == 3);           // E2 repetido nao e o proximo; E3 falta -> E4
+    assert(prox_indice_seguinte(l, 7, 1, 4) == 4);           // fim da temporada -> T2E1
+    assert(prox_indice_seguinte(l, 7, 2, 1) == 6);           // especial (T0) nunca e o proximo
+    assert(prox_indice_seguinte(l, 7, 2, 2) == -1);          // fim da serie
+    assert(prox_indice_seguinte(l, 7, 1, 3) == 3);           // tocando um que a lista nao tem
+    assert(prox_indice_seguinte(l, 7, 0, 1) == 0);           // tocando especial: segue a T1
+    assert(prox_indice_seguinte(NULL, 0, 1, 1) == -1);
+    puts("ok  proximo episodio: repetido, faltando, virada, especial, fim");
+  }
   puts("proximo: PASS (ancora absoluta, janela de novidade, virada de temporada,"
        " fim da serie, sem progresso)");
   return 0;

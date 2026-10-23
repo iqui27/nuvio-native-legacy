@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # #215: o app sobrevive ao servidor da conta fora do ar (504/429/sem resposta).
 # Ver o cabecalho de tests/contaoffline.c. Sem rede.
 #
@@ -8,7 +10,7 @@ cd "$(dirname "$0")/.."
 flags=(-O1 -g -Isrc -pthread -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
        -Wall -Wno-deprecated-declarations -Wno-macro-redefined)
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
-bin=/tmp/nuvio-contaoffline-tests
+bin=${TMPDIR:-/tmp}/nuvio-contaoffline-tests
 cc "${flags[@]}" src/sync.c tests/stub_contapend.c src/catordem.c src/catordemcache.c src/contacache.c \
   src/js.c src/jsw.c tests/contaoffline.c -o "$bin"
 dir="$(mktemp -d)"
@@ -46,10 +48,12 @@ sessao 504 conta-b
 sessao 200 - sair
 sessao 504
 precisa 'nenhuma copia de addons'
-# 7. #201: URL de addon longa chega inteira; a que passa do limite e recusada
-#    com o nome e o tamanho no log, e a URL em si nunca aparece nele.
+# 7. #201: URL de addon longa chega inteira; a que passa do teto de leitura
+#    (16 KB desde o #203; de 2 a 16 KB vira apelido, ver addonurl.h) e recusada
+#    e contada no log, e a URL em si nunca aparece nele.
 sessao longa
-precisa '[addons] Grande: URL de 2600 caracteres nao cabe (maximo 2047): addon ignorado'
-precisa '[sync] edicao de addons nao enviada: 1 addon(s) da conta nao cabem nesta TV'
+precisa '[sync] addons: 1 da conta ficaram de fora (maximo 128, ou URL grande demais)'
+# A edicao local nao sobe mais (#360 mao unica): o que se confere e que NENHUMA
+# pendencia e gravada (assert "#201" no .c) — nao ha mais linha de envio.
 if echo "$SAIDA" | grep -q 'SEGREDO'; then echo "FALHOU: URL de addon no log"; exit 1; fi
 echo "contaoffline.sh: ok"

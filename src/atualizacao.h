@@ -44,5 +44,7 @@ int  atualizacao_cobre_ilha(void);
 void atualizacao_evento(const SDL_Event *e);
 void atualizacao_atualizar(float dt, Uint32 agora);
 void atualizacao_desenhar(Uint32 agora);
+// Teste do ponteiro (#99): 0 = "Atualizar agora", 1 = "Depois".
+int  atualizacao_teste_foco(void);
 
 #endif

@@ -40,12 +40,14 @@ typedef enum {
   TXT_PAINEL_TITULO, TXT_PAINEL_ITEM,
   TXT_CW_TITULO, TXT_CW_META, TXT_CW_BADGE,
   TXT_RANK,
-  // Legenda externa: 50%..200%, em passos de 10. O firmware da C9 oferece
+  // Legenda externa: 50%..300% (#439), em passos de 10. O firmware da C9 oferece
   // apenas cinco degraus; estas fontes pertencem ao overlay do proprio app.
   TXT_LEG_50, TXT_LEG_60, TXT_LEG_70, TXT_LEG_80,
   TXT_LEG_90, TXT_LEG_100, TXT_LEG_110, TXT_LEG_120,
   TXT_LEG_130, TXT_LEG_140, TXT_LEG_150, TXT_LEG_160,
   TXT_LEG_170, TXT_LEG_180, TXT_LEG_190, TXT_LEG_200,
+  TXT_LEG_210, TXT_LEG_220, TXT_LEG_230, TXT_LEG_240, TXT_LEG_250,
+  TXT_LEG_260, TXT_LEG_270, TXT_LEG_280, TXT_LEG_290, TXT_LEG_300,
   // Numeral do Top 10 da home Dinamica (NV_TOP10_NUM_CORPO). No FIM, depois das
   // legendas: TXT_LEG_* e contado por aritmetica a partir de TXT_LEG_50.
   TXT_RANK_GRANDE,
@@ -163,8 +165,49 @@ typedef enum {
   // negrito das frases dos capitulos (24/600, par do TXT_V2_24).
   TXT_W20_HERO, TXT_W20_24B,
   TXT_DESC_HORA,   // relogio da tela de descanso (230, Montserrat ExtraLight; so digitos e ':')
+  // AJUSTES 2.0.3 (mockup v3, aprovado em 07/10): os corpos do mockup a 1920 com
+  // os Ajustes no padrao de 80% (corpo = px do mockup / 0,8). No FIM do enum.
+  TXT_V3_NOME,     // nome do cartao de categoria (33 / 700 no mockup)
+  TXT_V3_VALOR,    // valor do cartao (26 / 400)
+  TXT_V3_CHIP,     // pilulas do alto (23 / 600)
+  TXT_V3_CHIP_R,   // a parte de estado da pilula (23 / 400)
+  TXT_V3_DESC,     // titulo do cartao de descoberta (29 / 700)
+  TXT_V3_SUB,      // frase do cartao de descoberta, grupo do indice (23 / 400)
+  TXT_V3_LN,       // rotulo da linha (26 / 500)
+  TXT_V3_LN_B,     // rotulo da linha em foco (26 / 700)
+  TXT_V3_GRP,      // cabecalho de bloco da lista (26 / 700)
+  TXT_V3_VAL,      // valor da linha (26 / 400)
+  TXT_V3_BEN,      // frase de beneficio da linha em foco (20 / 400)
+  TXT_V3_PILL,     // "Ligado"/"Desligado" escritos (21 / 600)
+  TXT_V3_SELO,     // ESTA TV, ESTE PERFIL, AVANCADO, SO LG (14 / 700, caixa alta)
+  TXT_V3_INSP,     // texto do inspetor (22 / 400)
+  TXT_V3_INSP_B,   // "O que muda:" (22 / 700)
+  // Linha de meta do detalhe no peso do Nuvio Desktop (dono, 12/10/2026): ano e
+  // duracao em Bold branco, generos no peso do meio (SemiBold na JetBrains Sans,
+  // Medium nas outras). Mesmo corpo da sinopse (NV_FT_DET_SIN).
+  TXT_DET_META_FORTE,   // ano, duracao       26 / 700
+  TXT_DET_META_GEN,     // generos            26 / 600
+  // BARRA DA APPLE TV (menu.c; dono, 14/10: "a font da sidebar tem que ser
+  // mais pesada e o titulo streaming pode ser mais marcante"). Rotulo de
+  // item um peso acima do TXT_DET_META (Regular); cabecalho de secao maior
+  // e em Bold, desenhado em caixa alta com tracking.
+  TXT_TV_ROTULO,        // item da barra       25 / 500
+  TXT_TV_SECAO,         // "STREAMING"         24 / 700
+  TXT_HERO_SIN_GRANDE, // optional hero synopsis, 24/400
+  // #477: corpos exclusivos das sinopses; 100% usa o original.
+  TXT_SINOPSE_19, TXT_SINOPSE_21, TXT_SINOPSE_22, TXT_SINOPSE_23,
+  TXT_SINOPSE_24, TXT_SINOPSE_25, TXT_SINOPSE_26, TXT_SINOPSE_27,
+  TXT_SINOPSE_28, TXT_SINOPSE_29, TXT_SINOPSE_30, TXT_SINOPSE_31,
+  TXT_SINOPSE_33, TXT_SINOPSE_34, TXT_SINOPSE_35, TXT_SINOPSE_39,
+  TXT_SINOPSE_20, // 125% de 16px; append-only, preserva os estilos anteriores
   TXT_NFONTES
 } TxtEstilo;
+
+// Faixa do tamanho de legenda em % (a mesma que TXT_LEG_50..TXT_LEG_300
+// codifica de 10 em 10). Unica fonte dos limites: quem grava, quem cicla,
+// quem desenha e a segunda legenda clampeiam por aqui.
+#define TXT_LEG_PCT_MIN 50
+#define TXT_LEG_PCT_MAX 300
 
 // w/h em unidades de layout. pw/ph = tamanho da textura em pixels, preenchido
 // so para linhas da camada ampliada (gfx_escala); 0 no caminho normal.
@@ -179,7 +222,10 @@ typedef enum {
   TXT_FAMILIA_MONTSERRAT,
   TXT_FAMILIA_ROBOTO,
   TXT_FAMILIA_ATKINSON,
-  TXT_FAMILIA_N
+  TXT_FAMILIA_JETBRAINS,
+  TXT_FAMILIA_N,
+  // Imported identities; never persisted as bundled family IDs.
+  TXT_FAMILIA_IMPORTADA1 = 100, TXT_FAMILIA_IMPORTADA2, TXT_FAMILIA_IMPORTADA_UI
 } TxtFamilia;
 
 extern const char *const TXT_FAMILIAS_PT[TXT_FAMILIA_N];
@@ -190,6 +236,11 @@ extern const char *const TXT_FAMILIAS_PT[TXT_FAMILIA_N];
 // que o chamador escolheu para a legenda.
 void txt_definir_fonte_interface(TxtFamilia familia);
 TxtFamilia txt_fonte_interface(void);
+// Aviso de memoria: esvazia a grade de linhas rasterizadas (texturas de texto),
+// que voltam a existir sob demanda. So o fio de desenho chama.
+void txt_aliviar(void);
+// CORPO E PESO de um estilo, para teste e diagnostico (o desenho nao usa).
+void txt_estilo_medidas(TxtEstilo estilo, int *corpo, int *peso);
 // Que fonte desenharia a linha `s` no estilo dado, em texto ("principal",
 // "inter", "reserva:CJK:/caminho"). Para teste e diagnostico; NULL = nenhuma.
 // Linha de legenda ja quebrada -> ordem visual, arabe moldado so se a fonte tem
@@ -220,6 +271,7 @@ extern int    txt_pendentes;
 // Largura em unidades de layout que txt_linha() daria, SEM rasterizar nem
 // gastar orcamento. Para medir/quebrar texto; nao desenha nada.
 int  txt_largura(TxtEstilo estilo, const char *s);
+int  txt_largura_familia(TxtEstilo estilo, const char *s, TxtFamilia familia);
 
 // `dirRecursos` e a pasta que contem fonts/. No aparelho e a pasta do app; no
 // Mac, a pasta do pacote — sem esse parametro a fonte so era procurada ao lado
@@ -265,6 +317,12 @@ TxtLinha txt_linha_corta_enfase(TxtEstilo estilo, const char *s, int r, int g,
 // Desenha no canto superior esquerdo (x,y).
 void txt_desenhar(TxtLinha l, float x, float y);
 void txt_desenhar_alpha(TxtLinha l, float x, float y, float alpha);
+void txt_desenhar_peso(TxtLinha l, float x, float y, float alpha, float peso);
+// Borda da legenda (b = textura na cor da borda): 1 = contorno opaco nas 8
+// direcoes, 2 = sombra deslocada. Desenhar ANTES do texto.
+void txt_desenhar_borda(TxtLinha b, float x, float y, int borda, float alpha);
+// Multiplica so o RGB da textura (0..1); preserva o alpha e o encaixe no pixel.
+void txt_desenhar_tom(TxtLinha l, float x, float y, float cr, float cg, float cb, float alpha);
 
 // Desenha com ESPACAMENTO entre letras (tracking) e devolve a largura total.
 // SDL_ttf nao tem tracking, e o titulo da pagina do tvOS depende dele: sem o
@@ -272,6 +330,19 @@ void txt_desenhar_alpha(TxtLinha l, float x, float y, float alpha);
 // cabecalho. Passe x = -1 para so medir, sem desenhar.
 float txt_tracking(TxtEstilo estilo, const char *s, int r, int g, int b,
                    float x, float y, float alpha, float tracking);
+
+// TEXTO VIVO: desenha `s` glifo a glifo, cada caractere uma linha de UMA letra
+// rasterizada em BRANCO e tintada na hora (o GFX_TEXTO pega a cor no uniforme,
+// nao no RGB da textura). Para o texto que muda com o relogio da cena — tempo
+// do seek, percentuais, o IP sendo digitado: um valor novo reusa glifos que ja
+// estao no cache em vez de rasterizar + subir uma textura nova (~2,4 ms na C9,
+// medido) no meio da rolagem. Perde o kerning ENTRE caracteres, o que nao
+// aparece em digitos e selos curtos; frase com palavra vai em txt_linha.
+void txt_glifos(TxtEstilo estilo, const char *s, int r, int g, int b,
+                float x, float y, float alpha);
+// A largura do que txt_glifos desenharia, SEM desenhar: quem centra o texto
+// vivo tem de medir do mesmo jeito que desenha.
+float txt_glifos_largura(TxtEstilo estilo, const char *s);
 
 // Desenha texto QUEBRADO em linhas que cabem em `larg`, devolvendo a altura
 // usada. Sem isso, qualquer texto de tamanho variavel (sinopse de episodio,
@@ -285,6 +356,7 @@ float txt_tracking(TxtEstilo estilo, const char *s, int r, int g, int b,
 // espaco entre dois que vinham separados por espaco no texto.
 size_t txt_token_tam(const char *s);
 
+// Com alpha = 0, os blocos so medem: mesma quebra, sem rasterizacao nem GL.
 float txt_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
                 float x, float y, float larg, float leading, float alpha, int maxLinhas);
 

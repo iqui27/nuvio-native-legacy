@@ -318,7 +318,8 @@ static void destaque(float x, float y, float w, int i, float a) {
             tx, yy + 38.0f, tw, 24.0f, alpha * 0.96f, 2);
 }
 
-static void ponteiroFoco(int b, int nada) { (void)nada; foco = b; }
+static void ponteiroFoco(int b, int nada) { (void)nada; if (aberto) foco = b; }
+int novidades142_teste_foco(void) { return foco; }
 
 static void novidades142_desenharCorpo_(Uint32 agora);
 // Cartao de tela quase cheia: ampliado so se ainda couber (escala.h).
@@ -378,7 +379,7 @@ static void novidades142_desenharCorpo_(Uint32 agora) {
               214, 219, 230, N142_TXT_X, yFilete + 26.0f, N142_TXT_W, 34.0f, a * 0.98f, 3);
     botao_pilula(bS, rotS, NULL, foco == B_DEPOIS ? 1.0f : 0.0f, 0, 0, a);
     botao_pilula(bP, rotP, NULL, foco == B_DIAGNOSTICO ? 1.0f : 0.0f, 1, 0, a);
-    if (aberto) {
+    if (aberto && entrada > 0.99f) {   // so assentado (sem o deslize da entrada)
       ponteiro_alvo(bS.x, bS.y, bS.w, bS.h, ponteiroFoco, NULL, B_DEPOIS, 0);
       ponteiro_alvo(bP.x, bP.y, bP.w, bP.h, ponteiroFoco, NULL, B_DIAGNOSTICO, 0);
     } }

@@ -50,4 +50,8 @@ int  iconeapp_marca(GfxRect r, float alpha);
 // Leva o icone em vigor para fora do nucleo: alias do launcher no Android,
 // localStorage da abertura no Tizen. Idempotente; chamar no arranque e a cada troca.
 void iconeapp_aplicar_plataforma(void);
+// 1 se a arte empacotada do icone `i` difere de `gravado` (conteudo de
+// iconeapp-arte.txt, NULL = nunca aplicado): hora de aplicar de novo.
+const char *iconeapp_arte_atual(int i);   // "id:hash" do pacote
+int  iconeapp_arte_mudou(int i, const char *gravado);
 #endif

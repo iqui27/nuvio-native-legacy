@@ -3,7 +3,7 @@
 #include "logoapp.h"
 #include "sessao.h"
 #include "nuvem.h"
-#include "qr.h"
+#include "qrtex.h"
 #include "gfx.h"
 #include "text.h"
 #include "anim.h"
@@ -22,17 +22,19 @@
 // transcreve isso da TV para o celular sem errar — sem QR, esta tela nao
 // funciona.
 #define LG_QR_LADO       440.0f
-#define LG_BLOCO_W      1100.0f
+#define LG_BLOCO_W      lgBlocoW()
 #define LG_PILL_W        360.0f
 #define LG_PILL_H         76.0f
 #define LG_EMAIL_PILL_W  560.0f
 #define LG_CAMPO_W       760.0f
 #define LG_CAMPO_H        88.0f
 #define LG_MOSTRAR_W     150.0f
-// Zona de silencio: 4 modulos claros em volta, exigidos pela norma. Vao DENTRO
-// da textura para que nenhum ajuste de layout possa comer a margem por
-// acidente — sem ela, leitor nenhum acha o simbolo.
-#define LG_QR_MARGEM       4
+static float lgBlocoW(void) {
+#ifdef NV_TOUCH_UI
+  if (NV_TELA_H > NV_TELA_W) return NV_TELA_W - 2.0f * NV_MARGEM_X;
+#endif
+  return 1100.0f;
+}
 
 static float animBotao;
 static float pulso;
@@ -174,37 +176,10 @@ void login_soltar(void) {
 // versao 4 tem 33x33 = 1089 modulos, e mil chamadas de desenho por quadro
 // custam mais que a tela inteira.
 static void gerarTexQr(const char *texto) {
-  Qr q;
-  int n, lado, x, y;
-  unsigned char *px;
   if (!texto || !texto[0]) return;
   if (!strcmp(qrDe, texto) && texQr) return;
-  if (!qr_gerar(&q, texto)) { printf("[login] URL nao cabe num QR: %s\n", texto); return; }
-
-  lado = q.lado + 2 * LG_QR_MARGEM;
-  px = (unsigned char *)malloc((size_t)lado * lado * 3);
-  if (!px) return;
-  memset(px, 255, (size_t)lado * lado * 3);   // fundo claro, inclusive a margem
-  for (y = 0; y < q.lado; y++)
-    for (x = 0; x < q.lado; x++)
-      if (qr_modulo(&q, x, y)) {
-        size_t i = ((size_t)(y + LG_QR_MARGEM) * lado + (x + LG_QR_MARGEM)) * 3;
-        px[i] = px[i + 1] = px[i + 2] = 0;
-      }
-
-  if (!texQr) glGenTextures(1, &texQr);
-  glBindTexture(GL_TEXTURE_2D, texQr);
-  // NEAREST, nao LINEAR: um modulo borrado com o vizinho e o jeito mais rapido
-  // de tornar o simbolo ilegivel numa camera de celular.
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, lado, lado, 0, GL_RGB, GL_UNSIGNED_BYTE, px);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  free(px);
-  n = snprintf(qrDe, sizeof qrDe, "%s", texto);
-  (void)n;
+  if (!qr_textura(&texQr, texto)) { printf("[login] stage=qr class=capacity\n"); return; }
+  snprintf(qrDe, sizeof qrDe, "%s", texto);
 }
 
 void login_iniciar(void) {
@@ -311,6 +286,17 @@ static void linhaCentrada(TxtEstilo est, const char *s, int r, int g, int b,
   TxtLinha l = txt_linha_corta(est, s, r, g, b, 255, LG_BLOCO_W);
   txt_desenhar_alpha(l, (NV_TELA_W - l.w) * 0.5f, y, alpha);
 }
+static float tituloLogin(float y) {
+#ifdef NV_TOUCH_UI
+  const char *s = i18n("Entrar na sua conta");
+  if (NV_TELA_H > NV_TELA_W && txt_largura(TXT_TITULO1, s) > LG_BLOCO_W)
+    return txt_bloco_corta(TXT_TITULO1, s, 255, 255, 255,
+                          (NV_TELA_W - LG_BLOCO_W) * 0.5f, y, LG_BLOCO_W,
+                          86.0f, 1.0f, 2) + 42.0f;
+#endif
+  linhaCentrada(TXT_TITULO1, "Entrar na sua conta", 255, 255, 255, y, 1.0f);
+  return 118.0f;
+}
 
 // Campo da tela de e-mail: rotulo em cima, caixa com o valor (ou pontos).
 static void campo(float y, int i, const char *rotulo, const char *valor, int oculto) {
@@ -391,8 +377,7 @@ void login_desenhar(Uint32 agora) {
   logoapp_marca((GfxRect){ NV_MARGEM_X, NV_MARGEM_Y, 72.0f, 72.0f }, 1.0f);
 
   y = 118.0f;
-  linhaCentrada(TXT_TITULO1, "Entrar na sua conta", 255, 255, 255, y, 1.0f);
-  y += 118.0f;
+  y += tituloLogin(y);
 
   if (modo == LG_EMAIL && nuvem_pronta()) {
     desenharEmail(y, agora);

@@ -38,7 +38,11 @@ typedef struct {
   long long reinicioUtc, retryUtc;
   int http;
   unsigned latenciaMs;
+  int chavePropria; // chave pessoal: sem teto local, vale o plano do Seekr
 } SeekrUso;
+// Chave pessoal nao paga o orcamento local de 50 consultas (que e da chave
+// padrao compartilhada do aplicativo). Chamar junto de seekr_definir_chave.
+void seekr_chave_propria(int propria);
 void seekr_uso(SeekrUso *uso);
 // Stable UI labels (Portuguese i18n keys); no key, URL or response body.
 const char *seekr_estado_rotulo(int estado);

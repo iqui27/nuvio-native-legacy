@@ -9,6 +9,7 @@
 // no primeiro fil_mover a ordem local vira autoridade e a home inteira salta
 // para a ordem de registro, derrubando as fixas para o fim.
 #include "fileiras.h"
+#include "nvtmp.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -16,6 +17,12 @@
 // Dubles: o teste nao sobe dados.c nem toca disco. O caminho devolve NULL de
 // proposito — assim carregar() sai cedo e a lista comeca vazia, que e o estado
 // de quem nunca abriu o app.
+// A conta nao faz parte deste teste do registro. Sem retrato de addons,
+// a fronteira adia limpeza vinculada; os casos abaixo fornecem listas explicitas.
+unsigned addons_versao(void) { return 0; }
+int addons_travar_lista(unsigned versao, int perfil) { (void)versao; (void)perfil; return 0; }
+void addons_destravar_lista(void) {}
+
 static int usaArquivo;
 int dados_gravar(const char *nome, const char *conteudo) {
   // COM ARQUIVO LIGADO, GRAVA DE VERDADE. Sem isto nao da para testar o par
@@ -24,7 +31,7 @@ int dados_gravar(const char *nome, const char *conteudo) {
   if (usaArquivo) {
     char caminho[600];
     FILE *f;
-    snprintf(caminho, sizeof caminho, "/tmp/%s", nome);
+    snprintf(caminho, sizeof caminho, "%s/%s", nvt_dir(), nome);
     f = fopen(caminho, "w");
     if (!f) return 0;
     fputs(conteudo, f);
@@ -39,11 +46,12 @@ int dados_gravar(const char *nome, const char *conteudo) {
 // mediria outra coisa.
 char *dados_caminho(char *dst, unsigned tam, const char *nome) {
   if (!usaArquivo) { (void)dst; (void)tam; (void)nome; return NULL; }
-  snprintf(dst, tam, "/tmp/%s", nome);
+  snprintf(dst, tam, "%s/%s", nvt_dir(), nome);
   return dst;
 }
 void fil_teste_recarregar(void);
 void fil_teste_esquecer_vista(int i);
+int  fil_teste_achar(const char *chave);
 
 // A ordem que a HOME desenha: fixas primeiro, catalogo depois.
 static const char *DA_HOME[] = { "continuar", "amigos", "catA", "catB", "catC" };
@@ -132,6 +140,18 @@ int main(void) {
   assert(fil_origem_de("social_activity")   == FIL_ORIGEM_APP);
   assert(fil_origem_de("last_session")      == FIL_ORIGEM_APP);
   assert(fil_origem_de("collection_a24")    == FIL_ORIGEM_COLECAO);
+  assert(fil_origem_de("colpin_a24")        == FIL_ORIGEM_COLECAO);
+  // A sincronizacao dos grupos da conta nao apaga a ordem da pasta fixada.
+  fil_registrar("colpin_a24", "Pinned", "", "", 3);
+  fil_colecoes_reconciliar(NULL, NULL, NULL, 0, 1);
+  { int achou = 0;
+    for (int k = 0; k < fil_n(); k++) if (!strcmp(fil_chave(k), "colpin_a24")) achou = 1;
+    assert(achou); }
+  assert(fil_origem_de("jellyfin_abc") == FIL_ORIGEM_SERVIDOR);
+  assert(fil_origem_de("emby_11") == FIL_ORIGEM_SERVIDOR);
+  assert(fil_origem_de("plex_1") == FIL_ORIGEM_SERVIDOR);
+  assert(fil_origem_de("srv:01234567:lib:11") == FIL_ORIGEM_SERVIDOR);
+  assert(!strcmp(fil_origem_icone(FIL_ORIGEM_SERVIDOR), "aj_server"));
   // Chave que so COMECA parecida nao e colecao: o prefixo tem de ser exato.
   assert(fil_origem_de("collections_movie_x") == FIL_ORIGEM_CATALOGO);
   assert(fil_origem_de("com.linvo.cinemeta_movie_top") == FIL_ORIGEM_CATALOGO);
@@ -149,8 +169,8 @@ int main(void) {
   puts("ok  catalogo e colecao escolhem a forma do card; fileira do app nao");
 
   // 6b. ESTILO PELO MENU DO CARTAZ. O menu grava o MESMO `tipo` da tela de
-  //     Ajustes; colecao so aceita as formas dela, e o ciclo dos Ajustes pula
-  //     o resto.
+  //     Ajustes; a colecao aceita o MESMO conjunto do catalogo (#205), com a
+  //     pasta no lugar do cartaz.
   { int tipos[FIL_TIPO_N], n, k, col = -1, cat = -1; const char *rot[FIL_TIPO_N];
     fil_registrar("collection_formas", "Formas", "", "", 3);
     fil_registrar("addon_movie_formas", "Formas cat", "Addon", "movie", 3);
@@ -170,18 +190,62 @@ int main(void) {
     // Issue #201: os dois rankings no menu, o numerado (Dinamica) primeiro.
     assert(tipos[9] == FIL_TIPO_RANKING && tipos[10] == FIL_TIPO_TOP10 &&
            !strcmp(rot[9], "Ranking numerado"));
+    // PÔSTER GRANDE em 3 tamanhos (dono: "esse estilo de fileira pode ter 3
+    // tamanhos tb"): UMA linha do modal, P / M / G. Os dois novos entram no FIM
+    // do enum (o 16 gravado continua sendo o M), o M tem o fator 1, e cada
+    // tamanho vale para catalogo e colecao, com ajuda propria em ambos.
+    { FilEstiloLinha pg[FIL_TIPO_N];
+      int npg = fil_estilo_linhas("addon_movie_formas", pg, FIL_TIPO_N), kpg;
+      assert(FIL_TIPO_POSTER_GRANDE == 16 && FIL_TIPO_HEROI_DIVIDIDO == 17 &&
+             FIL_TIPO_POSTER_GRANDE_P == 18 && FIL_TIPO_POSTER_GRANDE_G == 19 &&
+             FIL_TIPO_N == 20);
+      for (kpg = 0; kpg < npg && pg[kpg].tipos[0] != FIL_TIPO_POSTER_GRANDE_P; kpg++);
+      assert(kpg < npg && pg[kpg].n == 3 && pg[kpg].tipos[1] == FIL_TIPO_POSTER_GRANDE &&
+             pg[kpg].tipos[2] == FIL_TIPO_POSTER_GRANDE_G);
+      assert(fil_tipo_fator(FIL_TIPO_POSTER_GRANDE) == 1.0f &&
+             fil_tipo_fator(FIL_TIPO_POSTER_GRANDE_P) < 1.0f &&
+             fil_tipo_fator(FIL_TIPO_POSTER_GRANDE_G) > 1.0f);
+      for (kpg = 0; kpg < 3; kpg++) {
+        int tpg = kpg == 0 ? FIL_TIPO_POSTER_GRANDE_P : kpg == 1 ? FIL_TIPO_POSTER_GRANDE : FIL_TIPO_POSTER_GRANDE_G;
+        assert(fil_estilo_ajuda("addon_movie_formas", tpg)[0]);
+        assert(fil_estilo_ajuda("collection_formas", tpg)[0]);   // colecao: a frase da pasta
+        assert(strcmp(fil_estilo_ajuda("collection_formas", tpg),
+                      fil_estilo_ajuda("addon_movie_formas", tpg)));
+        assert(fil_definir_tipo("addon_movie_formas", tpg) && fil_tipo("addon_movie_formas") == tpg);
+        assert(fil_definir_tipo("collection_formas", tpg) && fil_tipo("collection_formas") == tpg);
+      }
+      assert(fil_estilo_ajuda("addon_movie_formas", FIL_TIPO_POSTER_GRANDE_P) !=
+             fil_estilo_ajuda("addon_movie_formas", FIL_TIPO_POSTER_GRANDE_G) &&
+             strcmp(fil_estilo_ajuda("addon_movie_formas", FIL_TIPO_POSTER_GRANDE_P),
+                    fil_estilo_ajuda("addon_movie_formas", FIL_TIPO_POSTER_GRANDE_G)));
+      assert(fil_escala_tipo("addon_movie_formas", FIL_TIPO_POSTER_GRANDE_P) <
+             fil_escala_tipo("addon_movie_formas", FIL_TIPO_POSTER_GRANDE) &&
+             fil_escala_tipo("addon_movie_formas", FIL_TIPO_POSTER_GRANDE) <
+             fil_escala_tipo("addon_movie_formas", FIL_TIPO_POSTER_GRANDE_G));
+      assert(fil_definir_tipo("addon_movie_formas", FIL_TIPO_AUTO)); }
     // AS LINHAS: o que so muda de tamanho divide uma linha so.
     { FilEstiloLinha l[FIL_TIPO_N];
       int nl = fil_estilo_linhas("addon_movie_formas", l, FIL_TIPO_N);
-      assert(nl == 7);
+      // 7 de antes + Linha do tempo, Cartaz com ficha, Palco, Redonda, a
+      // fileira Herói (#205), o Pôster grande (14/10) e o Herói dividido (16/10).
+      assert(nl == 14);
+      assert(l[7].tipos[0] == FIL_TIPO_LINHA_TEMPO && l[8].tipos[0] == FIL_TIPO_FICHA &&
+             l[9].tipos[0] == FIL_TIPO_PALCO && l[10].tipos[0] == FIL_TIPO_REDONDA);
+      // #205: a fileira Herói — um cartão só do tamanho da fileira.
+      assert(l[11].tipos[0] == FIL_TIPO_HEROI && !strcmp(l[11].rotulo, "Herói"));
+      assert(l[12].n == 3 && l[12].tipos[1] == FIL_TIPO_POSTER_GRANDE &&
+             !strcmp(l[12].rotulo, "Pôster grande"));
+      assert(l[13].tipos[0] == FIL_TIPO_HEROI_DIVIDIDO &&
+             !strcmp(l[13].rotulo, "Herói dividido"));
       assert(!strcmp(l[2].rotulo, "Paisagem") && l[2].n == 3 &&
              l[2].tipos[0] == FIL_TIPO_SERVICO && l[2].tipos[2] == FIL_TIPO_DESTAQUE &&
              !strcmp(l[2].nomes[2], "Paisagem grande"));
       assert(!strcmp(l[4].rotulo, "Destaque 4:3") && l[4].n == 3 &&
              l[4].tipos[0] == FIL_TIPO_DESTAQUE_QUADRADO &&
              l[4].tipos[2] == FIL_TIPO_DESTAQUE_QUADRADO_G);
-      for (k = 0; k < nl; k++) if (k != 2 && k != 4) assert(l[k].n == 1);
-      assert(fil_estilo_linhas("collection_formas", l, FIL_TIPO_N) == 4 && l[1].n == 1);
+      for (k = 0; k < nl; k++) if (k != 2 && k != 4 && k != 12) assert(l[k].n == 1);
+      // A colecao oferece AS MESMAS LINHAS do catalogo.
+      assert(fil_estilo_linhas("collection_formas", l, FIL_TIPO_N) == nl);
       assert(fil_estilo_linhas("continue_watching", l, FIL_TIPO_N) == 0); }
     // OS 4:3 MAIORES: a mesma forma, com fator. O 6 gravado de antes continua
     // sendo o 4:3 de sempre (fator 1), e o Tamanho Grande nao passa do teto.
@@ -192,7 +256,7 @@ int main(void) {
     assert(fil_escala("addon_movie_formas") == 1.5f);
     assert(fil_escala_tipo("addon_movie_formas", FIL_TIPO_DESTAQUE_QUADRADO_M) == 1.25f);
     assert(fil_escala_tipo("addon_movie_formas", FIL_TIPO_CARTAZ) == 1.0f);
-    assert(!fil_definir_tipo("collection_formas", FIL_TIPO_DESTAQUE_QUADRADO_M));
+    assert(fil_definir_tipo("collection_formas", FIL_TIPO_DESTAQUE_QUADRADO_M));  // #205: colecao aceita
     assert(fil_estilo_ajuda("addon_movie_formas", FIL_TIPO_DESTAQUE_QUADRADO_G)[0]);
     assert(!strcmp(fil_tipo_rotulo(FIL_TIPO_DESTAQUE_QUADRADO_G), "Destaque 4:3 grande"));
     for (k = 0; k < fil_n(); k++)
@@ -205,22 +269,43 @@ int main(void) {
       }
     assert(fil_definir_tipo("addon_movie_formas", FIL_TIPO_LARGA));
     assert(fil_tipo("addon_movie_formas") == FIL_TIPO_LARGA);
-    assert(!fil_definir_tipo("collection_formas", FIL_TIPO_LARGA));   // colecao nao
+    assert(fil_definir_tipo("collection_formas", FIL_TIPO_LARGA));    // #205: colecao tambem
     assert(fil_estilo_ajuda("addon_movie_formas", FIL_TIPO_LARGA)[0]);
-    assert(strcmp(fil_estilo_ajuda("collection_formas", FIL_TIPO_CARTAZ),
-                  fil_estilo_ajuda("addon_movie_formas", FIL_TIPO_CARTAZ)));
+    // #205: a ajuda da colecao descreve a PASTA no card do estilo (a capa
+    // da colecao no formato escolhido) e nao promete os enfeites do catalogo
+    // (pilha, numeros, linha do tempo, ficha, palco, recorte redondo); so o
+    // Automatico fala da forma que a colecao tem na conta.
+    { int tA[8], kA, nA = fil_estilos("collection_formas", tA, NULL, 8);
+      for (kA = 0; kA < nA; kA++) {
+        assert(fil_estilo_ajuda("collection_formas", tA[kA])[0]);
+        assert(strcmp(fil_estilo_ajuda("collection_formas", tA[kA]),
+                      fil_estilo_ajuda("addon_movie_formas", tA[kA]))); } }
+    assert(strcmp(fil_estilo_ajuda("collection_formas", FIL_TIPO_AUTO),
+                  fil_estilo_ajuda("addon_movie_formas", FIL_TIPO_AUTO)));
     assert(fil_definir_tipo("addon_movie_formas", FIL_TIPO_RANKING));
     assert(fil_tipo("addon_movie_formas") == FIL_TIPO_RANKING);
-    assert(!fil_definir_tipo("collection_formas", FIL_TIPO_RANKING));   // colecao nao
-    n = fil_estilos("collection_formas", tipos, rot, 8);
-    assert(n == 4 && tipos[1] == FIL_TIPO_COLECAO &&
-           tipos[2] == FIL_TIPO_DESTAQUE_QUADRADO && tipos[3] == FIL_TIPO_CARTAZ);
+    assert(fil_definir_tipo("collection_formas", FIL_TIPO_RANKING));   // #205: colecao tambem
+    assert(fil_definir_tipo("addon_movie_formas", FIL_TIPO_LINHA_TEMPO));
+    assert(fil_tipo("addon_movie_formas") == FIL_TIPO_LINHA_TEMPO);
+    assert(fil_definir_tipo("collection_formas", FIL_TIPO_PALCO));     // #205: colecao tambem
+    assert(fil_definir_tipo("collection_formas", FIL_TIPO_REDONDA));
+    assert(fil_definir_tipo("collection_formas", FIL_TIPO_TOP10));    // #205: colecao tambem
+    // 2.0.5: o catalogo ganhou o Poster grande; a colecao aceita todo FilTipo
+    // tambem (tipoValido), com a pasta no lugar do cartaz.
+    assert(fil_definir_tipo("addon_movie_formas", FIL_TIPO_POSTER_GRANDE));
+    assert(fil_tipo("addon_movie_formas") == FIL_TIPO_POSTER_GRANDE);
+    assert(fil_estilo_ajuda("addon_movie_formas", FIL_TIPO_POSTER_GRANDE)[0]);
+    assert(fil_estilo_ajuda("addon_movie_formas", FIL_TIPO_REDONDA)[0]);
+    assert(fil_estilo_ajuda("addon_movie_formas", FIL_TIPO_FICHA)[0]);
+    { int t2[8]; const char *r2[8];
+      n = fil_estilos("collection_formas", tipos, rot, 8);
+      assert(n == 8 && fil_estilos("addon_movie_formas", t2, r2, 8) == n);
+      for (k = 0; k < n; k++) assert(tipos[k] == t2[k] && !strcmp(rot[k], r2[k])); }
     assert(fil_estilos("continue_watching", tipos, rot, 8) == 0);
     assert(!fil_definir_tipo("continue_watching", FIL_TIPO_CARTAZ));
-    assert(!fil_definir_tipo("collection_formas", FIL_TIPO_TOP10));   // nao e forma de colecao
     assert(fil_definir_tipo("collection_formas", FIL_TIPO_CARTAZ));
     assert(fil_tipo("collection_formas") == FIL_TIPO_CARTAZ);
-    assert(!strcmp(fil_estilo_rotulo("collection_formas", FIL_TIPO_CARTAZ), "Pôster"));
+    assert(!strcmp(fil_estilo_rotulo("collection_formas", FIL_TIPO_CARTAZ), "Cartaz em pé"));
     assert(fil_definir_tipo("addon_movie_formas", FIL_TIPO_SERVICO));
     assert(fil_tipo("addon_movie_formas") == FIL_TIPO_SERVICO);
     for (k = 0; k < fil_n(); k++) {
@@ -228,13 +313,15 @@ int main(void) {
       if (!strcmp(fil_chave(k), "addon_movie_formas")) cat = k;
     }
     assert(col >= 0 && cat >= 0);
-    assert(!strcmp(fil_linha_tipo_rotulo(col), "Pôster"));
+    assert(!strcmp(fil_linha_tipo_rotulo(col), fil_tipo_rotulo(FIL_TIPO_CARTAZ)));
     assert(!strcmp(fil_linha_tipo_rotulo(cat), fil_tipo_rotulo(FIL_TIPO_SERVICO)));
-    // Ciclo dos Ajustes numa colecao: Poster -> Automatico -> Paisagem -> Quadrado.
-    fil_ciclar_tipo(col); assert(fil_linha_tipo(col) == FIL_TIPO_AUTO);
-    fil_ciclar_tipo(col); assert(fil_linha_tipo(col) == FIL_TIPO_COLECAO);
-    fil_ciclar_tipo(col); assert(fil_linha_tipo(col) == FIL_TIPO_DESTAQUE_QUADRADO);
+    // #205: o ciclo dos Ajustes numa colecao e o MESMO do catalogo.
+    fil_definir_tipo("collection_formas", FIL_TIPO_AUTO);
     fil_ciclar_tipo(col); assert(fil_linha_tipo(col) == FIL_TIPO_CARTAZ);
+    fil_ciclar_tipo(col); assert(fil_linha_tipo(col) == FIL_TIPO_DESTAQUE);
+    fil_ciclar_tipo(col); assert(fil_linha_tipo(col) == FIL_TIPO_COLECAO);
+    fil_definir_tipo("addon_movie_formas", FIL_TIPO_AUTO);
+    fil_ciclar_tipo(cat); assert(fil_linha_tipo(cat) == FIL_TIPO_CARTAZ);
     fil_definir_tipo("collection_formas", FIL_TIPO_AUTO);
     fil_definir_tipo("addon_movie_formas", FIL_TIPO_AUTO); }
   puts("ok  estilo da fileira: menu e Ajustes gravam o mesmo tipo");
@@ -397,7 +484,7 @@ int main(void) {
     // As mortas vem DO ARQUIVO: e assim que elas existem de verdade — carregadas
     // no arranque, nunca declaradas nesta sessao (vista=0). Pelo registrador elas
     // seriam vistas e o resgate, certamente, nao as tocaria.
-    FILE *arq = fopen("/tmp/fileirasui.txt", "w");
+    FILE *arq = fopen(nvt("/fileirasui.txt"), "w");
     assert(arq);
     // campos: chave \t oculta \t tipo \t tamanho \t titulo — 0/0/1 sao os
     // PADROES de quem nunca foi escolhida (tipo AUTO=0, tamanho PADRAO=1).
@@ -440,7 +527,7 @@ int main(void) {
   // home MESMO com forma escolhida.
   fil_esquecer();
   { int j;
-    FILE *arq = fopen("/tmp/fileirasui.txt", "w");
+    FILE *arq = fopen(nvt("/fileirasui.txt"), "w");
     assert(arq);
     fprintf(arq, "limite 7\nordem 1\n");
     fprintf(arq, "linha continue_watching\t0\t0\t1\tContinuar assistindo\n");
@@ -469,6 +556,28 @@ int main(void) {
         assert(!strcmp(fil_chave(j), k));
       } } }
   puts("ok  tabela cheia so de escolhidas: fileira do app e topo da home nunca saem");
+
+  // #294: com a tabela cheia, colecao lida do disco (vista=0, fora da home)
+  // NAO e dispensavel: o catalogo novo toma a vaga de um catalogo.
+  fil_esquecer();
+  { int j, c = 0, n = 0;
+    FILE *arq = fopen(nvt("/fileirasui.txt"), "w");
+    assert(arq);
+    fprintf(arq, "limite 7\nordem 1\n");
+    for (j = 0; j < FIL_MAX; j++)
+      fprintf(arq, "linha %s_%d\t0\t0\t1\tFileira %d\n",
+              j >= FIL_MAX - 3 ? "collection_g" : "cat", j, j);
+    fclose(arq);
+    usaArquivo = 1;
+    fil_teste_recarregar();
+    assert(fil_n() == FIL_MAX);
+    fil_registrar("addon_novo", "Novo", "addon", "movie", 5);
+    for (j = 0; j < fil_n(); j++) {
+      if (!strncmp(fil_chave(j), "collection_g_", 13)) c++;
+      if (!strcmp(fil_chave(j), "addon_novo")) n = 1;
+    }
+    assert(n && c == 3); }
+  puts("ok  tabela cheia: colecao nao e despejada na janela da troca de perfil");
 
   // MOVER PULA LINHA FORA DA HOME. A fantasma no meio nao come o movimento:
   // a fileira troca com a proxima VIVA, e a home muda junto.
@@ -553,11 +662,70 @@ int main(void) {
     fil_normalizar();
     for (j = 0; j < fil_n(); j++) {
       const char *k = fil_chave(j);
-      if (!strcmp(k, "d")) assert(fil_linha_oculta(j));           // sobrou: fora
+      // #358: d e catalogo NOVO (registrado nesta sessao, intocado): nao coube,
+      // espera na fila em vez de ir para Fora.
+      if (!strcmp(k, "d")) assert(!fil_linha_oculta(j) && fil_estado(j) == FIL_NA_FILA);
       if (!strcmp(k, "e")) assert(!fil_linha_oculta(j));          // na home: fica
       if (!strcmp(k, "f")) assert(!fil_linha_oculta(j) && fil_estado(j) == FIL_NA_FILA);
     } }
-  puts("ok  normalizar: so a fila pedida fica alem do limite");
+  puts("ok  normalizar: catalogo novo que nao coube vai para a fila (#358)");
+
+  // #358: add-on novo com N catalogos. Com espaco livre todos entram na Home;
+  // com a Home cheia o excedente vira FILA (nunca OC_PESSOA / Fora).
+  fil_esquecer();
+  fil_definir_limite(5);
+  { int j, na_home = 0, na_fila = 0, fora = 0;
+    char ch[32];
+    for (j = 0; j < 3; j++) { snprintf(ch, sizeof ch, "n%d", j); fil_registrar(ch, ch, "Novo", "movie", 1); }
+    fil_normalizar();
+    for (j = 0; j < fil_n(); j++) assert(fil_estado(j) == FIL_NA_HOME);   // cabem: Home
+    for (j = 3; j < 9; j++) { snprintf(ch, sizeof ch, "n%d", j); fil_registrar(ch, ch, "Novo", "movie", 1); }
+    fil_normalizar();
+    for (j = 0; j < fil_n(); j++) {
+      if (fil_linha_oculta(j)) fora++;
+      else if (fil_estado(j) == FIL_NA_FILA) na_fila++;
+      else na_home++;
+    }
+    assert(na_home == 5 && na_fila == 4 && fora == 0);
+    // O que o dono tirou de proposito continua Fora.
+    { int pj = -1; for (j = 0; j < fil_n(); j++) if (!strcmp(fil_chave(j), "n1")) pj = j;
+      fil_remover(pj); }
+    fil_normalizar();
+    for (j = 0; j < fil_n(); j++) if (!strcmp(fil_chave(j), "n1")) assert(fil_linha_oculta(j));
+  }
+  puts("ok  #358: addon novo cabe na Home; excedente na fila; Fora explicito fica");
+
+  // #358: linha que JA ESTAVA no arquivo (sem a marca "nova") alem do limite
+  // segue a regra antiga: vai para Fora. A nova do mesmo arquivo vai para a
+  // fila, e a marca sobrevive ao recarregar antes da folha normalizar.
+  fil_esquecer();
+  { int j, achouVelha = 0, achouNova = 0;
+    usaArquivo = 1;
+    { FILE *f = fopen(nvt("/fileirasui-p1.txt"), "w");
+      fprintf(f, "limite 3\nordem 0\n");
+      fprintf(f, "linha v1\t0\t0\t1\t0\tV1\n");
+      fprintf(f, "linha v2\t0\t0\t1\t0\tV2\n");
+      fprintf(f, "linha v3\t0\t0\t1\t0\tV3\n");
+      fprintf(f, "linha v4\t0\t0\t1\t0\tV4\n");
+      fprintf(f, "linha nv\t0\t0\t1\t0\tNV\n");
+      fprintf(f, "nova nv\n");
+      fclose(f); }
+    fil_definir_perfil(1);
+    fil_teste_recarregar();      // persistencia: a marca volta do disco
+    fil_normalizar();
+    for (j = 0; j < fil_n(); j++) {
+      if (!strcmp(fil_chave(j), "v4")) { achouVelha = 1; assert(fil_linha_oculta(j)); }
+      if (!strcmp(fil_chave(j), "nv")) { achouNova = 1; assert(!fil_linha_oculta(j) && fil_estado(j) == FIL_NA_FILA); }
+    }
+    assert(achouVelha && achouNova);
+    // a fila persiste e a marca "nova" ja foi consumida
+    fil_teste_recarregar();
+    for (j = 0; j < fil_n(); j++)
+      if (!strcmp(fil_chave(j), "nv")) assert(!fil_linha_oculta(j) && fil_estado(j) == FIL_NA_FILA);
+    remove(nvt("/fileirasui-p1.txt"));
+    fil_definir_perfil(0);
+    usaArquivo = 0; }
+  puts("ok  #358: linha antiga alem do limite segue Fora; marca e fila persistem");
 
   // PODA: catalogo de addon que sumiu da conta sai; o resto fica. A lista vem
   // da conta do PERFIL desta escolha (perfilDaLista == 1 == perfil ativo).
@@ -567,7 +735,7 @@ int main(void) {
     // Nada visto == tudo candidato; mas so catalogo de addon ausente cai.
     // Antes: simula linha lida do disco (vista=0) para o fantasma.
     usaArquivo = 1;
-    { FILE *f = fopen("/tmp/fileirasui-p1.txt", "w");
+    { FILE *f = fopen(nvt("/fileirasui-p1.txt"), "w");
       fprintf(f, "limite 7\nordem 0\n");
       fprintf(f, "linha addonvivo_movie_top\t0\t0\t1\tTop\n");
       fprintf(f, "linha addonmorto_movie_top\t0\t0\t1\tFantasma\n");
@@ -584,7 +752,7 @@ int main(void) {
     for (j = 0; j < fil_n(); j++) assert(strcmp(fil_chave(j), "addonmorto_movie_top") != 0);
     // Chamar de novo nao tira mais nada.
     assert(fil_podar_catalogos(ids, bases, 1, 1) == 0);
-    remove("/tmp/fileirasui-p1.txt");
+    remove(nvt("/fileirasui-p1.txt"));
     fil_definir_perfil(0);
     usaArquivo = 0; }
   puts("ok  poda: catalogo de addon removido sai, app e colecao ficam");
@@ -598,7 +766,7 @@ int main(void) {
     const char *bases[] = { "https://os.example", "https://xp.example", "https://ak.example" };
     int j, achouPluto = 0, achouBinge = 0, achouFut = 0;
     usaArquivo = 1;
-    { FILE *f = fopen("/tmp/fileirasui-p1.txt", "w");
+    { FILE *f = fopen(nvt("/fileirasui-p1.txt"), "w");
       fprintf(f, "limite 16\nordem 1\n");
       fprintf(f, "linha app.xperience_movie_top\t0\t0\t1\t0\tTop\n");
       // Desligada na TV: "Pluto TV - Channels" fora da home.
@@ -615,30 +783,28 @@ int main(void) {
     // Lista da conta de OUTRO perfil (o 2, da sessao anterior): nada sai.
     assert(fil_podar_catalogos(ids, bases, 3, 2) == 0);
     assert(fil_n() == 4);
-    // Lista da conta DESTE perfil sem esses addons (removidos de verdade): so
-    // a linha intocada e fantasma. A desligada e a com forma sao escolha.
-    assert(fil_podar_catalogos(ids, bases, 3, 1) == 1);
-    assert(fil_n() == 3);
+    // Removidos de verdade: escolhas personalizadas tambem saem do arquivo.
+    assert(fil_podar_catalogos(ids, bases, 3, 1) == 3);
+    assert(fil_n() == 1);
     for (j = 0; j < fil_n(); j++) {
-      if (!strcmp(fil_chave(j), "org.plutotv_tv_pluto")) { achouPluto = 1; assert(fil_linha_oculta(j)); }
-      if (!strcmp(fil_chave(j), "com.aicat.x.nuvio_movie_list")) { achouBinge = 1; assert(fil_linha_tipo(j) == 2); }
+      if (!strcmp(fil_chave(j), "org.plutotv_tv_pluto")) achouPluto = 1;
+      if (!strcmp(fil_chave(j), "com.aicat.x.nuvio_movie_list")) achouBinge = 1;
       if (!strcmp(fil_chave(j), "org.meufutebol_tv_canais")) achouFut = 1;
     }
-    assert(achouPluto && achouBinge && !achouFut);
-    // E continua oculta depois de reler o arquivo gravado.
+    assert(!achouPluto && !achouBinge && !achouFut);
     fil_teste_recarregar();
     fil_definir_perfil(0); fil_definir_perfil(1);
-    assert(fil_oculta("org.plutotv_tv_pluto"));
-    remove("/tmp/fileirasui-p1.txt");
+    assert(fil_n() == 1);
+    remove(nvt("/fileirasui-p1.txt"));
     fil_definir_perfil(0);
     usaArquivo = 0; }
-  puts("ok  poda: lista do pacote ou de outro perfil nao poda; escolha nunca e podada");
+  puts("ok  poda: pacote e outro perfil preservam; remocao confirmada apaga escolhas");
 
   // ADDON NOVO (vaga garantida, cotacat.h): so o que este perfil nunca viu e
   // sobre o qual nao decidiu nada.
   fil_esquecer();
   { usaArquivo = 1;
-    { FILE *f = fopen("/tmp/fileirasui-p1.txt", "w");
+    { FILE *f = fopen(nvt("/fileirasui-p1.txt"), "w");
       fprintf(f, "limite 7\nordem 0\n");
       fprintf(f, "linha org.visto_movie_a\t0\t0\t1\t0\tJa visto\n");
       fclose(f); }
@@ -659,7 +825,7 @@ int main(void) {
     assert(!fil_addon_novo("org.novo", "https://novo.example"));
     // Prefixo parecido nao e o mesmo addon.
     assert(fil_addon_novo("org.nov", "https://nov.example"));
-    remove("/tmp/fileirasui-p1.txt");
+    remove(nvt("/fileirasui-p1.txt"));
     fil_definir_perfil(0);
     usaArquivo = 0; }
   puts("ok  addon novo: so o nunca visto e sem escolha");
@@ -738,14 +904,15 @@ int main(void) {
     assert(fil_escolhida("cand_3") == -1);              // ligada so por ter entrado
     assert(fil_escolhida("ultra_150") == -1);           // listada, nao escolhida
     assert(fil_escolhida("nao_existe") == -1);
-    // A folha abre (normaliza: o que sobrou alem do limite vira "fora"), a
-    // pessoa tira uma da home e poe a de fora da cota: agora ela e escolhida.
+    // A folha abre (normaliza; #358: os candidatos NOVOS que nao couberam vao
+    // para a fila, nao para "fora"), a pessoa tira uma da home — cand_3 sobe — e
+    // poe a de fora da cota: agora ela e escolhida (fica na fila, home cheia).
     fil_normalizar();
     assert(fil_escolhida("ultra_150") == -1);
     fil_remover(0);
     assert(fil_escolhida("cand_0") == -1);              // oculta nao e escolha
     i = fil_adicionar(5, &estado);
-    assert(i >= 0 && estado == FIL_NA_HOME);
+    assert(i >= 0 && estado == FIL_NA_FILA);
     assert(fil_escolhida("ultra_150") >= 0);
     // Tabela cheia: o registro de fora da cota fica de fora, calado, e nao
     // despeja nem uma linha dispensavel.
@@ -766,7 +933,7 @@ int main(void) {
   // versao que nao a conhece continua valendo.
   fil_esquecer();
   usaArquivo = 1;
-  remove("/tmp/fileirasui.txt");
+  remove(nvt("/fileirasui.txt"));
   fil_teste_recarregar();
   assert(!strcmp(fil_hero_fonte(), ""));          // padrao: automatico
   fil_registrar("continuar", "Continuar assistindo", "", "", 5);
@@ -779,7 +946,7 @@ int main(void) {
   assert(!strcmp(fil_hero_fonte(), "continuar"));
   // Arquivo de uma versao ANTERIOR (sem a linha `hero`): le sem reclamar e o
   // destaque volta ao automatico, em vez de herdar lixo.
-  { FILE *f = fopen("/tmp/fileirasui.txt", "w");
+  { FILE *f = fopen(nvt("/fileirasui.txt"), "w");
     assert(f);
     fputs("limite 7\nordem 1\nlinha continuar\t0\t0\t1\t0\tContinuar assistindo\n", f);
     fclose(f); }
@@ -793,9 +960,9 @@ int main(void) {
   // Perfil sem arquivo proprio que nao e o 1 comeca do padrao.
   fil_esquecer();
   usaArquivo = 1;
-  remove("/tmp/fileirasui-p1.txt");
-  remove("/tmp/fileirasui-p2.txt");
-  { FILE *f = fopen("/tmp/fileirasui.txt", "w");
+  remove(nvt("/fileirasui-p1.txt"));
+  remove(nvt("/fileirasui-p2.txt"));
+  { FILE *f = fopen(nvt("/fileirasui.txt"), "w");
     assert(f);
     fputs("limite 11\nordem 1\nhero *\nlinha catDoUm\t0\t0\t1\t0\tDo perfil 1\n", f);
     fclose(f); }
@@ -811,9 +978,9 @@ int main(void) {
   // Voltar ao 2 continua sem nada do 1 (e o destaque zera, como antes).
   fil_definir_perfil(2);
   assert(fil_n() == 0 && !strcmp(fil_hero_fonte(), "") && fil_limite() == FIL_LIMITE_PADRAO);
-  remove("/tmp/fileirasui.txt");
-  remove("/tmp/fileirasui-p1.txt");
-  remove("/tmp/fileirasui-p2.txt");
+  remove(nvt("/fileirasui.txt"));
+  remove(nvt("/fileirasui-p1.txt"));
+  remove(nvt("/fileirasui-p2.txt"));
   fil_definir_perfil(0);
   usaArquivo = 0;
   puts("ok  fileirasui.txt antigo semeia so o perfil 1");
@@ -910,7 +1077,7 @@ int main(void) {
     for (j = 0; j < 9; j++) contaP[j] = conta[j];
     fil_esquecer();
     usaArquivo = 1;
-    f = fopen("/tmp/fileirasui.txt", "w");
+    f = fopen(nvt("/fileirasui.txt"), "w");
     assert(f);
     fputs("# Fileiras da Home\nlimite 12\nordem 1\n", f);
     fputs("linha continue_watching\t0\t0\t1\t0\tContinuar assistindo\n", f); total++;
@@ -941,7 +1108,7 @@ int main(void) {
     assert(fil_n_na_home() == 13 && fil_n_capacidade() == 10);
     assert(fil_n_fila() == 0); // CW/social/collection do not consume catalogue slots
     // UMA VEZ SO: a marca foi gravada no arquivo, e na memoria ja nao roda.
-    { static char buf[300000]; size_t n; FILE *g = fopen("/tmp/fileirasui.txt", "r");
+    { static char buf[300000]; size_t n; FILE *g = fopen(nvt("/fileirasui.txt"), "r");
       assert(g); n = fread(buf, 1, sizeof buf - 1, g); buf[n] = 0; fclose(g);
       assert(strstr(buf, "\nmigracao 197\n")); }
     assert(fil_migrar_197(contaP, 9) == 0); }
@@ -953,23 +1120,23 @@ int main(void) {
     const char *conta[] = { "xp_movie_a" };
     int j;
     fil_esquecer();
-    f = fopen("/tmp/fileirasui.txt", "w");
+    f = fopen(nvt("/fileirasui.txt"), "w");
     fputs("limite 7\nordem 1\nmigracao 197\nlinha xp_movie_a\t1\t0\t1\t0\tA\n", f);
     for (j = 0; j < 300; j++) fprintf(f, "linha xp_movie_i%d\t%d\t0\t1\t0\tI%d\n", j, j < 150, j);
     fclose(f);
     fil_teste_recarregar();
     assert(fil_migrar_197(conta, 1) == 0 && fil_oculta("xp_movie_a"));
     fil_esquecer();
-    f = fopen("/tmp/fileirasui.txt", "w");
+    f = fopen(nvt("/fileirasui.txt"), "w");
     fputs("limite 7\nordem 1\nlinha xp_movie_a\t1\t0\t1\t0\tA\nlinha xp_movie_b\t0\t0\t1\t0\tB\n", f);
     fclose(f);
     fil_teste_recarregar();
     assert(fil_migrar_197(conta, 1) == 0 && fil_oculta("xp_movie_a"));   // pequeno: fora do padrao
-    { char buf[256]; size_t n; f = fopen("/tmp/fileirasui.txt", "r"); n = fread(buf, 1, sizeof buf - 1, f); buf[n] = 0; fclose(f);
+    { char buf[256]; size_t n; f = fopen(nvt("/fileirasui.txt"), "r"); n = fread(buf, 1, sizeof buf - 1, f); buf[n] = 0; fclose(f);
       assert(strstr(buf, "migracao 197")); }
     assert(fil_migrar_197(conta, 1) == 0);
     fil_esquecer();
-    remove("/tmp/fileirasui.txt");
+    remove(nvt("/fileirasui.txt"));
     usaArquivo = 0; }
   puts("ok  #197 limpeza: marca no arquivo; fora do padrao nao mexe");
 
@@ -989,6 +1156,384 @@ int main(void) {
     fil_remover(0);                              // abre vaga: d entra sozinha
     assert(fil_estado_chave("d") == FIL_NA_HOME); }
   puts("ok  estado por chave: fila e fora nao entram na home");
+
+  // #319: REMOVER (OU DESLIGAR) UM ADDON TIRA AS FILEIRAS DELE DA HOME. Log
+  // S3R7Q0: Pluto TV desligado na conta e a poda "adiada: 1 addon(s) sem
+  // manifesto lido" para sempre. O desligado nao tem id (nao entra na volta);
+  // so o LIGADO sem id e volta incompleta, e quem decide isso e a descoberta.
+  // Aqui: (1) a poda casa o removido mesmo com um desligado sem id na lista;
+  // (2) a fileira COM escolha de um addon removido/desligado nao ocupa vaga do
+  // limite — as reais depois dela continuam na home.
+  fil_esquecer();
+  { int j;
+    const char *ids[]   = { "addonvivo", "" };               // 2o: desligado, sem id
+    const char *bases[] = { "https://vivo.example", "https://off.example" };
+    const int ativos[]  = { 1, 0 };
+    usaArquivo = 1;
+    { FILE *f = fopen(nvt("/fileirasui-p1.txt"), "w");
+      fprintf(f, "limite 3\nordem 1\n");
+      // fantasma com escolha (forma = 2) ANTES das reais: sem o fix ele gasta
+      // uma das 2 vagas e "real2" cai para a fila.
+      fprintf(f, "linha addonmorto_movie_top\t0\t2\t1\tFantasma\n");
+      fprintf(f, "linha addonvivo_movie_real1\t0\t0\t1\tReal1\n");
+      fprintf(f, "linha addonvivo_movie_real2\t0\t0\t1\tReal2\n");
+      fprintf(f, "linha addonvivo_movie_real3\t0\t0\t1\tReal3\n");
+      fprintf(f, "linha addonmorto_movie_solto\t0\t0\t1\tSolto\n");  // sem escolha
+      fclose(f); }
+    fil_definir_perfil(1);
+    fil_teste_recarregar();
+    assert(fil_n() == 5);
+    assert(fil_estado_chave("addonvivo_movie_real3") == FIL_NA_FILA);   // o defeito
+    // a descoberta registra os dois catalogos do addon vivo nesta volta
+    fil_registrar("addonvivo_movie_real1", "Real1", "Vivo", "movie", 5);
+    fil_registrar("addonvivo_movie_real2", "Real2", "Vivo", "movie", 5);
+    fil_registrar("addonvivo_movie_real3", "Real3", "Vivo", "movie", 5);
+    // Identidade desconhecida do desligado: ainda nao sabemos quem foi removido.
+    assert(fil_podar_catalogos(ids, bases, 2, 1) == 0);
+    assert(fil_n() == 5);
+    assert(fil_marcar_sem_addon(ids, bases, ativos, 2, 1) == 2);
+    assert(fil_estado_chave("addonmorto_movie_top") == FIL_FORA);
+    assert(fil_estado_chave("addonvivo_movie_real1") == FIL_NA_HOME);
+    assert(fil_estado_chave("addonvivo_movie_real3") == FIL_NA_HOME);
+    assert(fil_marcar_sem_addon(ids, bases, ativos, 2, 2) == 0);
+    assert(fil_marcar_sem_addon(ids, bases, ativos, 2, 0) == 0);
+    { const char *ids2[] = { "addonvivo", "desligado" };
+      assert(fil_podar_catalogos(ids2, bases, 2, 1) == 2);
+      assert(fil_n() == 3);
+      for (j = 0; j < fil_n(); j++) assert(strncmp(fil_chave(j), "addonmorto_", 11)); }
+    // Reinstalacao e nova descoberta: padrao novo, nao a forma que foi apagada.
+    { const int todos[] = { 1, 1 };
+      const char *ids2[] = { "addonvivo", "addonmorto" };
+      const char *bases2[] = { "https://vivo.example", "https://off.example" };
+      assert(fil_podar_catalogos(ids2, bases2, 2, 1) == 0);
+      fil_registrar("addonmorto_movie_top", "Novo", "Novo", "movie", 5);
+      fil_marcar_sem_addon(ids2, bases2, todos, 2, 1);
+      for (j = 0; j < fil_n(); j++) if (!strcmp(fil_chave(j), "addonmorto_movie_top"))
+        assert(fil_linha_tipo(j) == FIL_TIPO_AUTO); }
+    remove(nvt("/fileirasui-p1.txt"));
+    fil_definir_perfil(0);
+    usaArquivo = 0; }
+  puts("ok  #319: addon removido/desligado nao ocupa vaga da home e a poda nao fica adiada");
+
+  // #545: A CATALOG NO MANIFEST DECLARES THIS SESSION (Bingecat's rotating
+  // "because_watched_*" keys, Xperience catalogs pushed out by the per-addon
+  // quota) kept a Home slot while its add-on stayed enabled. Discovery only
+  // fetches declared catalogs, so it fetched rows past them; the Home then
+  // dropped those as "queue" ("5 fileiras na tela ... 13 no catalogo").
+  fil_esquecer();
+  { const char *decl[] = { "vivo_movie_real1", "vivo_movie_real2", "vivo_movie_real3" };
+    usaArquivo = 1;
+    { FILE *f = fopen(nvt("/fileirasui-p1.txt"), "w");
+      fprintf(f, "limite 3\nordem 1\n");
+      fprintf(f, "linha vivo_movie_velha1\t0\t0\t1\tVelha1\n");
+      fprintf(f, "linha vivo_movie_real1\t0\t0\t1\tReal1\n");
+      fprintf(f, "linha vivo_movie_velha2\t0\t0\t1\tVelha2\n");
+      fprintf(f, "linha vivo_movie_real2\t0\t0\t1\tReal2\n");
+      fprintf(f, "linha vivo_movie_real3\t0\t0\t1\tReal3\n");
+      fclose(f); }
+    fil_definir_perfil(1);
+    fil_teste_recarregar();
+    fil_marcar_declaradas(decl, 3, 1);
+    // Discovery registers candidates, then lists quota-excluded catalogs.
+    { FilPassada passada = fil_passada_ler();
+      int k;
+      for (k = 0; k < 3; k++)
+        fil_registrar_de(&passada, decl[k], "", "Vivo", "movie", -1);
+      fil_registrar_se_couber_de(&passada, "vivo_movie_velha1", "Velha1", "Vivo", "movie");
+      fil_registrar_se_couber("vivo_movie_velha2", "Velha2", "Vivo", "movie"); }
+    assert(fil_estado_chave("vivo_movie_real2") == FIL_NA_HOME);
+    assert(fil_estado_chave("vivo_movie_real3") == FIL_NA_HOME);
+    assert(fil_estado_chave("vivo_movie_velha1") == FIL_FORA);
+    assert(fil_estado_chave("vivo_movie_velha2") == FIL_FORA);
+    assert(fil_n() == 5); /* Excluded rows remain available in Settings. */
+    assert(fil_n_na_home() == 3 && fil_n_fila() == 0);
+    // declared again: the row is back exactly where it was
+    fil_registrar("vivo_movie_velha1", "Velha1", "Vivo", "movie", 5);
+    assert(fil_estado_chave("vivo_movie_velha1") == FIL_NA_HOME);
+    assert(fil_estado_chave("vivo_movie_real3") == FIL_NA_FILA);
+    remove(nvt("/fileirasui-p1.txt"));
+    fil_definir_perfil(0);
+    usaArquivo = 0; }
+  puts("ok  #545: catalogo que nenhum manifesto declara nao ocupa vaga da home");
+
+  // #545: Explicit additions must regain quota priority while unavailable
+  // catalogs still consume no Home or queue slots.
+  for (int full = 0; full <= 1; full++) {
+    const char *decl[] = { "vivo_movie_a", "vivo_movie_b", "vivo_movie_c" };
+    const char *selected[] = { "vivo_movie_a", "vivo_movie_b", "vivo_movie_c", "vivo_movie_quota" };
+    int count = full ? 3 : 2, state;
+    fil_esquecer();
+    fil_definir_perfil(1);
+    fil_definir_limite(3);
+    for (int k = 0; k < count; k++)
+      fil_registrar(decl[k], "", "Vivo", "movie", 5);
+    fil_registrar("vivo_movie_quota", "", "Vivo", "movie", 5);
+    fil_marcar_declaradas(decl, count, 1);
+    fil_registrar_se_couber("vivo_movie_quota", "", "Vivo", "movie");
+    assert(fil_escolhida("vivo_movie_quota") == -1);
+    fil_adicionar(fil_teste_achar("vivo_movie_quota"), &state);
+    assert(state == (full ? FIL_NA_FILA : FIL_NA_HOME));
+    assert(fil_escolhida("vivo_movie_quota") == count);
+    // Refresh eligibility (ajustes.c fileirasReagir): the explicit add stays
+    // chosen and seen even though fil_linha_oculta() excludes it by semDecl.
+    { int qi = fil_teste_achar("vivo_movie_quota");
+      assert(qi >= 0 && fil_linha_oculta(qi) && fil_linha_vista(qi));
+      assert(fil_escolhida("vivo_movie_quota") < fil_limite() == !full); }
+    fil_normalizar();
+    assert(fil_escolhida("vivo_movie_quota") == count);
+    assert(fil_estado_chave("vivo_movie_quota") == FIL_FORA);
+    assert(fil_n_na_home() == count && fil_n_capacidade() == count && fil_n_fila() == 0);
+    // The next discovery admits the explicitly selected catalog.
+    if (!full) selected[2] = "vivo_movie_quota";
+    fil_marcar_declaradas(selected, count + 1, 1);
+    fil_registrar("vivo_movie_quota", "", "Vivo", "movie", 5);
+    fil_normalizar();
+    assert(fil_estado_chave("vivo_movie_quota") == state);
+    assert(fil_n_na_home() == 3 && fil_n_fila() == full);
+    fil_definir_perfil(0);
+  }
+  puts("ok  #545: explicit additions regain quota priority without consuming unavailable slots");
+
+  // #365: FANTASMAS EM "FORA DA HOME". Removido o addon, as suas linhas
+  // "Fora da Home" — a sugestao automatica (oculta=2) e a oculta impunida
+  // que sobrou de arquivo antigo (oculta=1, sem mais escolha nenhuma) —
+  // ficavam na aba "Fora da Home" para sempre: #204 so despeja o intruso
+  // via orfaDespejavel (que exige !vista da volta ATUAL) e so acima de 25%
+  // da tabela; a limpeza "na remocao do addon" entra no marcar_sem_addon,
+  // que e o que sabe que o addon acabou — mas so da FILA INTACTA: sugestao,
+  // ou oculta da pessoa sem visibilidade guardada (arquivo antigo), com
+  // tamanho/forma padrao, sem fila e nao e a fonte do destaque.
+  fil_esquecer();
+  { const char *vivos[] = { "addonvivo", "addonmorto" };
+    const char *bases[] = { "https://vivo.example", "https://off.example" };
+    int ativos[] = { 1, 0 };   // addonmorto removido da conta
+    char nomeLixo[FIL_CHAVE], tituloLixo[FIL_TITULO];
+    int k, lixo = 0;
+    usaArquivo = 1;
+    { FILE *f = fopen(nvt("/fileirasui-p1.txt"), "w");
+      fprintf(f, "limite 16\n");
+      fprintf(f, "linha addonvivo_movie_a\t0\t0\t1\tVivo A\n");
+      // Oculta pela pessoa um dia, sem mais nada de escolha guardada.
+      fprintf(f, "linha addonmorto_movie_pessoa\t1\t0\t1\tMorto Pessoa\n");
+      // Sugestao automatica de fora-da-cota (oculta=2).
+      fprintf(f, "linha addonmorto_movie_auto\t2\t0\t1\tMorto Auto\n");
+      // Fora da home com escolha REAL (visPessoal): fica.
+      fprintf(f, "linha addonmorto_movie_escolha\t1\t0\t1\tMorto Escolha\n");
+      fprintf(f, "visibilidade addonmorto_movie_escolha\n");
+      // Ligadas e indesejadas (#204 ja cuida pelo orfaDespejavel quando o
+      // volume passa de 25%; aqui, ficam so marcadas fora — mas tem de
+      // ganhar estado FIL_FORA na tela).
+      for (k = 0; k < 100; k++) {
+        snprintf(nomeLixo, sizeof nomeLixo, "addonmorto_movie_lixo%d", k);
+        snprintf(tituloLixo, sizeof tituloLixo, "Lixo %d", k);
+        fprintf(f, "linha %s\t0\t0\t1\t%s\n", nomeLixo, tituloLixo);
+      }
+      fclose(f); }
+    fil_definir_perfil(1);
+    assert(fil_n() == 4 + 100);
+    assert(fil_teste_achar("addonmorto_movie_pessoa") >= 0);
+    assert(fil_teste_achar("addonmorto_movie_auto") >= 0);
+    assert(fil_teste_achar("addonmorto_movie_escolha") >= 0);
+    // A volta da descoberta: so o vivo declara coisas; o marcar registra o
+    // estado do addon que saiu — e limpa o que nao tem mais razao de ficar.
+    fil_registrar("addonvivo_movie_a", "Vivo A", "Vivo", "movie", 5);
+    { int mudado = fil_marcar_sem_addon(vivos, bases, ativos, 2, 1);
+      assert(mudado >= 102); }
+    assert(fil_teste_achar("addonmorto_movie_pessoa") < 0);
+    assert(fil_teste_achar("addonmorto_movie_auto") < 0);
+    // A escolha real (visPessoal) fica, como sempre ficou.
+    assert(fil_teste_achar("addonmorto_movie_escolha") >= 0);
+    // O vivo e o lixo ligado (sem oculta) ficam; 100 + 1 escolha + 1 vivo.
+    assert(fil_n() == 102);
+    for (k = 0; k < fil_n(); k++)
+      if (!strncmp(fil_chave(k), "addonmorto_movie_lixo", 21)) lixo++;
+    assert(lixo == 100);
+    assert(fil_teste_achar("addonvivo_movie_a") >= 0);
+    remove(nvt("/fileirasui-p1.txt"));
+    fil_definir_perfil(0);
+    usaArquivo = 0; }
+  puts("ok  #365: catalogo intocado de addon removido sai da aba Fora da Home");
+
+  // #504 (Tizen 6.0, 2.0.5): a mesma linha, mas VISTA nesta sessao — a
+  // descoberta a registrou na volta em que o addon saiu — escapa das duas
+  // limpezas: fil_podar_catalogos e o bloco #365 exigem !vista. semAddon
+  // marcado, oculta=0, escolha nenhuma: vira FIL_FORA e fica na aba "Not on
+  // home" para sempre. A folha (fil_normalizar, que roda a cada abertura)
+  // tem de larga-la, junto com qualquer outra intocada de addon removido.
+  fil_esquecer();
+  { const char *vivos[] = { "addonvivo" };
+    const char *bases[] = { "https://vivo.example" };
+    int ativos[] = { 1 };
+    fil_definir_perfil(1);
+    fil_definir_limite(16);
+    // O vivo ocupa a home; os dois do morto: um ligado e visto (o buraco),
+    // um com escolha real (visPessoal), que NAO pode sair.
+    fil_registrar("addonvivo_movie_a", "Vivo A", "Vivo", "movie", 5);
+    fil_registrar("bingecat_movie_top", "Top - Filme", "BingCat", "movie", 5);
+    { int i;
+      fil_registrar("bingecat_movie_keep", "Keep", "BingCat", "movie", 5);
+      i = fil_teste_achar("bingecat_movie_keep");
+      fil_alternar(i);   // a pessoa desligou: escolha (visPessoal)
+    }
+    // o addon saiu da conta: semAddon marca, mas a vista e a escolhida ficam
+    fil_marcar_sem_addon(vivos, bases, ativos, 1, 1);
+    assert(fil_teste_achar("bingecat_movie_top") >= 0);   // ainda la: vista
+    assert(fil_estado_chave("bingecat_movie_top") == FIL_FORA);
+    // abrir a folha: some o fantasma, fica a escolha
+    fil_normalizar();
+    assert(fil_teste_achar("bingecat_movie_top") < 0);
+    assert(fil_teste_achar("bingecat_movie_keep") >= 0);
+    assert(fil_teste_achar("addonvivo_movie_a") >= 0);
+    assert(fil_estado_chave("addonvivo_movie_a") == FIL_NA_HOME);
+    fil_definir_perfil(0); }
+  puts("ok  #504: fileira vista de addon removido sai da lista ao abrir a folha");
+
+  // #327: "Adicionada a Home" de um catalogo engolido por pasta de colecao nao
+  // mudava nada (emColecao seguia ligado). A escolha local vence a colecao.
+  { int est = -1, i, dentro[2] = { 1, 1 }, fora[2] = { 0, 0 };
+    const char *chs[2] = { "x_movie_a", "x_movie_b" };
+    fil_esquecer();
+    fil_definir_limite(7);
+    fil_registrar("x_movie_a", "A", "X", "movie", 5);
+    fil_registrar("x_movie_b", "B", "X", "movie", 5);
+    fil_conta_reconciliar(chs, fora, dentro, 2);
+    assert(fil_estado_chave("x_movie_a") == FIL_FORA);
+    assert(!fil_adicionada_na_tv("x_movie_a"));
+    i = -1;
+    { int k; for (k = 0; k < fil_n(); k++) if (!strcmp(fil_chave(k), "x_movie_a")) i = k; }
+    assert(i >= 0);
+    i = fil_adicionar(i, &est);
+    assert(est == FIL_NA_HOME);
+    assert(fil_estado_chave("x_movie_a") == FIL_NA_HOME);
+    assert(fil_adicionada_na_tv("x_movie_a"));
+    // a proxima reconciliacao (o sync) devolve o catalogo a pasta, a menos que
+    // quem reconcilia respeite a escolha local — o contrato e fil_adicionada_na_tv
+    assert(fil_adicionada_na_tv("x_movie_a") && !fil_adicionada_na_tv("x_movie_b"));
+    fil_remover(i);
+    assert(!fil_adicionada_na_tv("x_movie_a")); }
+  puts("ok  #327: adicionar um catalogo de pasta de colecao o traz para a Home");
+  // 2.0.4 (Discord + dono): catalogo DESLIGADO pela ordem da conta. OK no
+  // editor dizia "Added to Home" e a linha ficava em "Not on Home"; o sync
+  // seguinte tambem reaplicava o desligado.
+  { int est = -1, i = -1, k, contaOff[1] = { 1 }, nada[1] = { 0 };
+    const char *chs[1] = { "cine_movie_top" };
+    fil_esquecer();
+    fil_definir_limite(7);
+    fil_registrar("cine_movie_top", "Featured", "Cinemeta", "movie", 5);
+    fil_conta_reconciliar(chs, contaOff, nada, 1);
+    assert(fil_estado_chave("cine_movie_top") == FIL_FORA);
+    for (k = 0; k < fil_n(); k++) if (!strcmp(fil_chave(k), "cine_movie_top")) i = k;
+    i = fil_adicionar(i, &est);
+    assert(est == FIL_NA_HOME);
+    assert(fil_estado_chave("cine_movie_top") == FIL_NA_HOME);
+    fil_conta_reconciliar(chs, contaOff, nada, 1);   // o sync seguinte
+    assert(fil_estado_chave("cine_movie_top") == FIL_NA_HOME);
+    fil_remover(i);
+    fil_conta_reconciliar(chs, contaOff, nada, 1);
+    assert(fil_estado_chave("cine_movie_top") == FIL_FORA); }
+  puts("ok  adicionar vence o desligado da conta, e o sync nao desfaz");
+
+  // #360: o add com a conta LIGADA nao congela a fileira nesta TV. A conta e o
+  // dono do estado (sync de mao unica): se ela desligar depois, esconde aqui
+  // tambem. So o add FEITO contra o desligado ja conhecido vale para sempre.
+  { int est = -1, i = -1, k, contaOn[1] = { 0 }, contaOff[1] = { 1 }, nada[1] = { 0 };
+    const char *chs[1] = { "cine_movie_top" };
+    fil_esquecer();
+    fil_definir_limite(7);
+    fil_registrar("cine_movie_top", "Featured", "Cinemeta", "movie", 5);
+    fil_conta_reconciliar(chs, contaOn, nada, 1);        // a conta diz LIGADA
+    assert(fil_estado_chave("cine_movie_top") == FIL_NA_HOME);
+    for (k = 0; k < fil_n(); k++) if (!strcmp(fil_chave(k), "cine_movie_top")) i = k;
+    i = fil_adicionar(i, &est);                          // snapshot: conta ligada
+    assert(est == FIL_NA_HOME);
+    fil_conta_reconciliar(chs, contaOff, nada, 1);       // a conta desligou DEPOIS
+    assert(fil_estado_chave("cine_movie_top") == FIL_FORA); }
+  puts("ok  #360: add com conta ligada nao trava o sync; a conta desligando depois vence");
+
+  // E o "para sempre" do add contra o desligado sobrevive ao restart: o
+  // snapshot viaja no arquivo (linha "addvence").
+  { int est = -1, i = -1, k, contaOff[1] = { 1 }, nada[1] = { 0 };
+    const char *chs[1] = { "cine_movie_top" };
+    fil_esquecer();
+    fil_definir_limite(7);
+    fil_registrar("cine_movie_top", "Featured", "Cinemeta", "movie", 5);
+    fil_conta_reconciliar(chs, contaOff, nada, 1);
+    for (k = 0; k < fil_n(); k++) if (!strcmp(fil_chave(k), "cine_movie_top")) i = k;
+    usaArquivo = 1;
+    i = fil_adicionar(i, &est);                          // contra o desligado
+    assert(est == FIL_NA_HOME);
+    // reinicio: troca de perfil e volta rele o arquivo do disco
+    fil_definir_perfil(1);
+    fil_definir_perfil(0);
+    fil_registrar("cine_movie_top", "Featured", "Cinemeta", "movie", 5);
+    fil_conta_reconciliar(chs, contaOff, nada, 1);
+    assert(fil_estado_chave("cine_movie_top") == FIL_NA_HOME);
+    remove(nvt("/fileirasui.txt"));
+    usaArquivo = 0; }
+  puts("ok  #360: add contra o desligado sobrevive ao restart (addvence no arquivo)");
+  // #204: TABELA CHEIA DE CATALOGOS QUE NINGUEM DECLARA. Log MD8G2R: 768 linhas
+  // velhas (auto-"Fora", oculta=1 sem visibilidade) e 60 catalogos novos do
+  // BingeCat recusados. Cenario A: lixo > 25% (poda ja). Cenario B: lixo
+  // pequeno, a tabela enche e o registro despeja o mais antigo.
+  { int cen;
+    for (cen = 0; cen < 2; cen++) {
+      int j, nLixo = cen == 0 ? 700 : 100, nDecl = FIL_MAX - nLixo, nNovos = 60;
+      const char *decl[FIL_MAX + 64];
+      static char buf[FIL_MAX + 64][48];
+      int nd = 0, achouEsc = 0, achouTipo = 0, achouDecl = 0, nNovosOk = 0;
+      FILE *arq;
+      fil_esquecer();
+      usaArquivo = 1;
+      fil_definir_perfil(0); fil_definir_perfil(1);
+      arq = fopen(nvt("/fileirasui-p1.txt"), "w");
+      assert(arq);
+      for (j = 0; j < nLixo; j++)   // oculta=1: "Fora" automatico, sem escolha
+        fprintf(arq, "linha binge_seed_%d\t1\t0\t1\tSeed %d\n", j, j);
+      for (j = 0; j < nDecl; j++)
+        fprintf(arq, "linha vivo_%d\t0\t0\t1\tVivo %d\n", j, j);
+      fprintf(arq, "visibilidade binge_seed_3\n");        // pessoa mexeu: fica
+      fprintf(arq, "visibilidade vivo_0\n");
+      fclose(arq);
+      fil_teste_recarregar();
+      assert(fil_n() == FIL_MAX);
+      for (j = 0; j < nDecl; j++) { snprintf(buf[nd], 48, "vivo_%d", j); decl[nd] = buf[nd]; nd++; }
+      for (j = 0; j < nNovos; j++) { snprintf(buf[nd], 48, "binge_novo_%d", j); decl[nd] = buf[nd]; nd++; }
+      // forma escolhida numa orfa tambem protege
+      { int q; for (q = 0; q < fil_n(); q++)
+          if (!strcmp(fil_chave(q), "binge_seed_7")) fil_ciclar_tipo(q); }
+      fil_marcar_declaradas(decl, nd, 1);
+      for (j = 0; j < nNovos; j++) fil_registrar(decl[nDecl + j], decl[nDecl + j], "BingeCat", "series", 1);
+      fil_gravar_registro();
+      for (j = 0; j < fil_n(); j++) {
+        const char *c = fil_chave(j);
+        if (!strncmp(c, "binge_novo_", 11)) nNovosOk++;
+        if (!strcmp(c, "binge_seed_3")) achouEsc = 1;
+        if (!strcmp(c, "binge_seed_7")) achouTipo = 1;
+        if (!strcmp(c, "vivo_0")) achouDecl++;
+      }
+      assert(nNovosOk == nNovos);          // as 60 novas entraram
+      assert(achouEsc && achouTipo);       // escolha da pessoa sobreviveu
+      assert(achouDecl == 1);              // declaradas intocadas
+      { int vivos = 0; for (j = 0; j < fil_n(); j++) if (!strncmp(fil_chave(j), "vivo_", 5)) vivos++;
+        assert(vivos == nDecl); }
+      assert(fil_n() <= FIL_MAX);
+      if (cen == 0) assert(fil_n() < 400);   // o arquivo encolheu
+      // persistencia: relê e nada volta
+      fil_teste_recarregar();
+      fil_definir_perfil(0); fil_definir_perfil(1);
+      { int vivos = 0, novos = 0, esc = 0;
+        for (j = 0; j < fil_n(); j++) {
+          const char *c = fil_chave(j);
+          if (!strncmp(c, "vivo_", 5)) vivos++;
+          if (!strncmp(c, "binge_novo_", 11)) novos++;
+          if (!strcmp(c, "binge_seed_3") || !strcmp(c, "binge_seed_7")) esc++;
+        }
+        assert(vivos == nDecl && novos == nNovos && esc == 2); }
+      remove(nvt("/fileirasui-p1.txt"));
+      fil_definir_perfil(0);
+      usaArquivo = 0;
+    } }
+  puts("ok  #204: catalogo que nenhum addon declara sai antes de recusar o novo; escolha explicita fica");
 
   puts("fileiras: tudo ok");
   return 0;

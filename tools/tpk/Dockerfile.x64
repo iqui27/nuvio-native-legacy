@@ -1,0 +1,10 @@
+# Emulator SDK: the same Debian/glibc baseline as the ARM SDK, without ARM flags.
+FROM --platform=linux/amd64 debian:buster-slim
+# Keep buster's archived security updates: the final base image already has
+# newer libc/zlib than the main archive's development packages.
+RUN printf '%s\n' 'deb http://archive.debian.org/debian buster main' \
+      'deb http://archive.debian.org/debian-security buster/updates main' > /etc/apt/sources.list && \
+    apt-get -qq update && apt-get -q install -y --no-install-recommends \
+      gcc g++ make pkg-config file libgles2-mesa-dev libegl1-mesa-dev zlib1g-dev \
+      ca-certificates && rm -rf /var/lib/apt/lists/*
+ENV CFLAGS="-O2 -fPIC" CXXFLAGS="-O2 -fPIC"

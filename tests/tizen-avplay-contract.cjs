@@ -34,12 +34,37 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
   }
   assert.equal(call('abrir', 'https://example.invalid/video.mkv'), 1);
   await new Promise(resolve => setTimeout(resolve, 30));
-  call('estado', '', 0, 0, 0, 0, 8, 64);
+  call('estado', '', 0, 0, 0, 0, 8, 96);
   check('duration uses getDuration in milliseconds', () =>
     assert.equal(context.HEAPF64[2], 7200));
   check('video metadata is read in a valid state after async preparation', () => {
     assert.equal(context.HEAPF64[6], 3840);
     assert.equal(context.HEAPF64[7], 2160);
+  });
+  check('estado rejects an eleven-double buffer before writing sample age', () => {
+    context.HEAPF64[12] = -12345;
+    assert.equal(call('estado', '', 0, 0, 0, 0, 8, 88), 0);
+    assert.equal(context.HEAPF64[12], -12345, 'the twelfth slot is outside the supplied buffer');
+    assert.equal(call('estado', '', 0, 0, 0, 0, 8, 96), 1);
+    assert.equal(context.HEAPF64[10], 0);
+  });
+  check('buffer percentage keeps its integration slot', () => {
+    context.__nvav.bufPct = 37;
+    call('estado', '', 0, 0, 0, 0, 8, 96);
+    assert.equal(context.HEAPF64[9], 37);
+    assert.match(source, /EST_ERRO, EST_BUFPCT, EST_FIM, EST_POS_CRUA, EST_POS_IDADE, EST_N/);
+  });
+  check('native completion reaches the existing C state vector', () => {
+    assert.equal(context.HEAPF64[10], 0);
+    context.__avOuvinte().onstreamcompleted();
+    call('estado', '', 0, 0, 0, 0, 8, 96);
+    assert.equal(context.HEAPF64[10], 1);
+    assert.equal(context.HEAPF64[3], 0);
+    assert.match(source, /terminou\s*=\s*est\[EST_FIM\]/);
+    assert.match(source, /video_terminou\(void\)\s*\{\s*return terminou;/);
+    call('buscar', '', 60000);
+    call('estado', '', 0, 0, 0, 0, 8, 96);
+    assert.equal(context.HEAPF64[10], 0, 'a seek clears completion from the old position');
   });
   call('faixas', '', 0, 0, 0, 0, 100, 4096);
   check('bridge returns all audio and text rows', () => {
@@ -91,6 +116,55 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
     play.getState = getState;
     assert.equal(call('pausar', '', 0), 1);
     assert.equal(call('pausa_confirmada'), 0);
+  });
+  check('ROI distinguishes a missing API from transient rejection', () => {
+    const av = context.webapis.avplay;
+    const originalRoi = av.setVideoRoi;
+    try {
+      av.setVideoRoi = undefined;
+      assert.equal(call('roi', '', 0, 0, 3840, 2160), -1);
+      av.setVideoRoi = () => { throw new Error('temporarily unavailable'); };
+      assert.equal(call('roi', '', 0, 0, 3840, 2160), 0);
+      av.setVideoRoi = () => {};
+      assert.equal(call('roi', '', 0, 0, 3840, 2160), 1);
+    } finally {
+      av.setVideoRoi = originalRoi;
+    }
+  });
+  // #426: the hardware plane needs a presentation update after a paused
+  // crop, even when C deduplicates the unchanged destination rectangle.
+  // This proves the bridge contract; only a TV can prove the frozen frame redraw.
+  check('paused aspect presents the current rectangle without resuming (#426)', () => {
+    const av = context.webapis.avplay;
+    const originalRoi = av.setVideoRoi;
+    av.setVideoRoi = () => {};
+    try {
+      call('rect', '', 0, 138, 1920, 804);
+      for (const paused of [false, true]) {
+        call('pausar', '', paused ? 1 : 0);
+        for (const op of ['roi', 'rect']) {
+          const before = context.__avReg().length;
+          const position = context.__nvav.posMs;
+          const args = op === 'roi' ? [244, 0, 1422, 800] : [240, 0, 1440, 1080];
+          assert.equal(call(op, '', ...args), 1);
+          const calls = context.__avReg().slice(before);
+          const rect = op === 'roi' ? 'setDisplayRect(0, 138, 1920, 804)' : 'setDisplayRect(240, 0, 1440, 1080)';
+          assert.ok(calls.includes(rect) || (!paused && op === 'roi'),
+            'paused ROI must reapply its unchanged destination');
+          assert.equal(calls.includes('setDisplayMethod("PLAYER_DISPLAY_MODE_FULL_SCREEN")'), paused,
+            'only PAUSED requests need the presentation update');
+          assert.equal(av.getState(), paused ? 'PAUSED' : 'PLAYING');
+          assert.equal(context.__nvav.tocando, paused ? 0 : 1);
+          assert.equal(context.__nvav.posMs, position);
+          assert.ok(calls.every(entry => /^setDisplay(Rect|Method)\(/.test(entry)),
+            'aspect must not play, pause, seek or reopen');
+        }
+        call('rect', '', 0, 138, 1920, 804);
+      }
+    } finally {
+      av.setVideoRoi = originalRoi;
+      call('pausar', '', 0);
+    }
   });
   check('app pumps video before any screen can return', () => {
     const app = fs.readFileSync('src/app.c', 'utf8');
@@ -145,34 +219,39 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
     const av = context.webapis.avplay;
     const gct = av.getCurrentTime, gd = av.getDuration;
     let nTempo = 0, nDur = 0;
-    call('estado', '', 0, 0, 0, 0, 8, 64);          // primeira leitura: guarda a duracao
+    call('estado', '', 0, 0, 0, 0, 8, 96);          // primeira leitura: guarda a duracao
     av.getCurrentTime = function () { nTempo++; return gct.call(this); };
     av.getDuration = function () { nDur++; return gd.call(this); };
     context.__nvav.tEvento = Date.now();            // oncurrentplaytime acabou de chegar
     context.__nvav.tSeek = 0;
-    for (let i = 0; i < 20; i++) call('estado', '', 0, 0, 0, 0, 8, 64);
+    for (let i = 0; i < 20; i++) call('estado', '', 0, 0, 0, 0, 8, 96);
     check('estado does not call AVPlay getters every frame (#147)', () => {
       assert.equal(nTempo, 0);
       assert.equal(nDur, 0);
       assert.equal(context.HEAPF64[2], 7200);       // a duracao guardada continua valendo
     });
     call('buscar', '', 60000);
-    call('estado', '', 0, 0, 0, 0, 8, 64);
+    call('estado', '', 0, 0, 0, 0, 8, 96);
     check('estado reads getCurrentTime right after a seek (#147)', () => assert.equal(nTempo, 1));
     // Entre dois eventos a posicao anda sozinha (tocando) e para (pausado):
     // sem isso a legenda externa andaria aos saltos.
     const S = context.__nvav;
     S.tSeek = 0; S.tEvento = Date.now(); S.posMs = 10000; S.tPos = Date.now() - 300; S.tocando = 1;
-    call('estado', '', 0, 0, 0, 0, 8, 64);
+    S.tPosMono = clock - 200;
+    call('estado', '', 0, 0, 0, 0, 8, 96);
+    check('sync receives raw position and monotonic sample age', () => {
+      assert.equal(context.HEAPF64[11], 10);
+      assert.ok(context.HEAPF64[12] >= 200);
+    });
     check('position advances between time events while playing (#147)', () => {
       assert.ok(context.HEAPF64[1] >= 10.25 && context.HEAPF64[1] <= 10.6, String(context.HEAPF64[1]));
     });
     S.tocando = 0; S.tEvento = Date.now();
-    call('estado', '', 0, 0, 0, 0, 8, 64);
+    call('estado', '', 0, 0, 0, 0, 8, 96);
     check('position holds between events while paused (#147)', () => assert.equal(context.HEAPF64[1], 10));
     // Pausado, o evento para: a leitura de reserva nao pode virar uma por quadro.
     nTempo = 0; S.tEvento = Date.now() - 5000; S.tPos = Date.now();
-    for (let i = 0; i < 20; i++) call('estado', '', 0, 0, 0, 0, 8, 64);
+    for (let i = 0; i < 20; i++) call('estado', '', 0, 0, 0, 0, 8, 96);
     check('paused fallback read is throttled (#147)', () => assert.ok(nTempo <= 1, String(nTempo)));
     av.getCurrentTime = gct; av.getDuration = gd;
   }
@@ -227,9 +306,11 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
   });
   listeners[0].oncurrentplaytime(7777);
   listeners[0].onerror('stale callback');
+  listeners[0].onstreamcompleted();
   check('stale listener events do not contaminate the current session', () => {
     assert.equal(context.__nvav.posMs, 0);
     assert.equal(context.__nvav.erro, '');
+    assert.equal(context.__nvav.fim, 0);
   });
   const beforeStaleCallback = context.__avReg().length;
   pending[0]();
@@ -261,7 +342,7 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
   call('parar');
   call('abrir', 'https://example.invalid/play-throws.mkv');
   await new Promise(resolve => setTimeout(resolve, 30));
-  call('estado', '', 0, 0, 0, 0, 8, 64);
+  call('estado', '', 0, 0, 0, 0, 8, 96);
   check('play failure never publishes a ready or open session', () => {
     assert.equal(context.HEAPF64[4], 0);
     assert.equal(context.HEAPF64[5], 0);

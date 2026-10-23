@@ -50,6 +50,12 @@
 #define AS_MAX_CUSTO_D 1.10
 #define AS_SEG_COBERTURA .72
 #define AS_SEG_CUSTO 1.35
+/* O residuo mediano do terco e o ruido dos DOIS autores (a externa e a faixa
+ * embutida foram escritas por gente diferente, fala a fala), nao um
+ * desalinhamento: o mesmo instante discorda de ~0,3 s sem que nada esteja
+ * torto. O terco so e "regiao em disagreement" quando a discordia e de
+ * SEGUNDOS (corte, outra fonte). Da 3x a tolerancia. */
+#define AS_SEG_ERRO 3
 #define AS_MAX_TRECHOS 4
 #define AS_TROCA 10.0        /* Viterbi: mudar de trecho custa ~5 falas sem par */
 #define AS_MIN_TRECHO_SEG 60.0
@@ -104,9 +110,10 @@ static int sinal(const LegendaCue *c) {
   size_t n=strlen(s);
   return n>1&&((s[0]=='['&&s[n-1]==']')||(s[0]=='('&&s[n-1]==')'));
 }
-static AutoSyncMotivo preparar(const LegendaDocumento *doc,Falas *f,Controle *c) {
+static AutoSyncMotivo preparar(const LegendaDocumento *doc,Falas *f,Controle *c,
+                              double inicio,double fim) {
   const LegendaDocumentoInfo *info=legenda_documento_info(doc);
-  int n=0,i,usados=0,sinais=0;const LegendaCue *v=legenda_documento_dados(doc,&n);
+  int n=0,i,usados=0,sinais=0,naJanela=0;const LegendaCue *v=legenda_documento_dados(doc,&n);
   uint64_t *hashes=NULL;
   if(!info||!v)return AUTOSYNC_NO_REFERENCE;
   if(!(info->flags&LEGENDA_DOC_COMPLETO)||n>=AS_MAX_CUES)return AUTOSYNC_INCOMPLETE;
@@ -116,12 +123,14 @@ static AutoSyncMotivo preparar(const LegendaDocumento *doc,Falas *f,Controle *c)
   for(i=0;i<n;i++) {
     if(!(i%256)&&parou(c)){free(hashes);return (AutoSyncMotivo)c->terminou;}
     int letras=0;double dur=v[i].fim-v[i].inicio;
+    if(inicio>=0&&(v[i].inicio<inicio||v[i].fim>fim))continue;
+    naJanela++;
     if(sinal(&v[i])){sinais++;continue;}
     uint64_t h=textoHash(v[i].texto,&letras);
     if(letras<3||dur<.20||dur>15||v[i].inicio<0||v[i].fim>AS_MAX_SEG)continue;
     hashes[usados++]=h;f->v[f->n++]=(Fala){v[i].inicio,v[i].fim};
   }
-  if(sinais*5>n){free(hashes);return AUTOSYNC_FORCED_SIGNS;}
+  if(sinais*5>naJanela){free(hashes);return AUTOSYNC_FORCED_SIGNS;}
   if(usados<AS_MIN_CASADAS){free(hashes);return AUTOSYNC_SPARSE;}
   qsort(hashes,(size_t)usados,sizeof *hashes,cmpHash);
   int maior=1,iguais=1,distintos=1;
@@ -431,7 +440,7 @@ static AutoSyncMotivo medir(const Falas *a,const Falas *b,const Peca *pc,int np,
     if(med*1000>md->erro)md->erro=med*1000;
     int largura=y-x;
     if((double)c/(largura>0?largura:1)>=AS_SEG_COBERTURA&&nr>=(largura<4?largura:4)&&cs/(nr?nr:1)<=AS_SEG_CUSTO&&
-       med*1000<=tolMs)md->tercos++;
+       med*1000<=AS_SEG_ERRO*tolMs)md->tercos++;
   }
   if(r==AUTOSYNC_OK&&md->tercos<nseg)r=AUTOSYNC_REGION_DISAGREEMENT;
   free(res);free(ok);return r;
@@ -668,21 +677,36 @@ AutoSyncResultado autosync_alinhar(const LegendaDocumento *doc,const LegendaDocu
      cfg.raioBuscaMs>180000||cfg.orcamentoMs<1||cfg.orcamentoMs>20000||
      cfg.manterMs<0||cfg.manterMs>500||doc==ref)goto fim;
   if(parou(&c)){r.motivo=(AutoSyncMotivo)c.terminou;goto fim;}
-  r.motivo=preparar(doc,&a,&c);if(r.motivo!=AUTOSYNC_OK)goto fim;
-  r.motivo=preparar(ref,&b,&c);if(r.motivo!=AUTOSYNC_OK)goto fim;
+  int janela=(ri->flags&LEGENDA_DOC_JANELA)!=0;
+  double ini=janela?ri->janelaInicio:-1,fimJan=janela?ri->janelaFim:-1;
+  if(janela) {
+    if(!isfinite(ini)||!isfinite(fimJan)||ini<0||fimJan>AS_MAX_SEG||fimJan-ini<80) {
+      r.referenciaInvalida=1;r.motivo=AUTOSYNC_SPARSE;goto fim;
+    }
+    if(cfg.raioBuscaMs>10000)cfg.raioBuscaMs=10000;
+  }
+  // Falha global da externa continua distinta de falta de evidencia local.
+  r.motivo=preparar(doc,&a,&c,-1,-1);if(r.motivo!=AUTOSYNC_OK)goto fim;
+  if(janela) {
+    free(a.v);a=(Falas){0};
+    r.motivo=preparar(doc,&a,&c,ini+10,fimJan-10);
+    if(r.motivo!=AUTOSYNC_OK){r.referenciaInvalida=1;goto fim;}
+  }
+  r.motivo=preparar(ref,&b,&c,ini,fimJan);
+  if(r.motivo!=AUTOSYNC_OK){r.referenciaInvalida=1;goto fim;}
   if(di->duracaoSeg>0&&ri->duracaoSeg>0&&fabs(di->duracaoSeg-ri->duracaoSeg)>cfg.toleranciaMs/1000.0) {
     r.motivo=AUTOSYNC_REGION_DISAGREEMENT;goto fim;
   }
   if(!bitsMontar(&rg,b.v,b.n,1,0,AS_GROSSO)||!bitsMontar(&rf,b.v,b.n,1,0,AS_FINO)){r.motivo=AUTOSYNC_MEMORY;goto fim;}
   /* 1. A transformacao global. */
-  double escalas[12]={1,25/23.976,23.976/25,25/24.0,24/25.0,24/23.976,23.976/24};int ne=7;
+  double escalas[12]={1,25/23.976,23.976/25,25/24.0,24/25.0,24/23.976,23.976/24};int ne=janela?1:7;
   {
     double ra=b.fim-b.ini,rd=a.fim-a.ini,e=rd>0?ra/rd:1;
-    int novo=e>=.94&&e<=1.06;
+    int novo=!janela&&e>=.94&&e<=1.06;
     for(int k=0;k<ne;k++)if(fabs(escalas[k]-e)<.00035)novo=0;
     if(novo)escalas[ne++]=e;
   }
-  int parcial=(a.fim-a.ini)<AS_PARCIAL*(b.fim-b.ini);
+  int parcial=!janela&&(a.fim-a.ini)<AS_PARCIAL*(b.fim-b.ini);
   Pico pk=buscar(a.v,a.n,&rg,&rf,escalas,ne,0,cfg.raioBuscaMs/1000.0,parcial,&c);
   if(c.terminou){r.motivo=(AutoSyncMotivo)c.terminou;goto fim;}
   r.confianca=pk.score;r.alternativa=pk.alternativo;
@@ -747,7 +771,17 @@ AutoSyncResultado autosync_alinhar(const LegendaDocumento *doc,const LegendaDocu
     }
   }
   r.casadas=md.casadas;r.cobertura=md.cobertura;r.regioes=md.tercos;r.erroMs=(int)lround(md.erro);
+  if(m==AUTOSYNC_REGION_DISAGREEMENT&&!janela&&np==1&&pc[0].t.p==1&&!ambiguo&&
+     pk.score>=AS_MIN_SCORE&&pk.score-pk.alternativo>=AS_MIN_MARGEM&&
+     md.cobertura>=AS_MIN_COBERTURA&&md.casadas>=AS_MIN_CASADAS&&
+     md.erro<=AS_SEG_ERRO*cfg.toleranciaMs&&
+     fabs(pc[0].t.q-pk.q)<=1.0&&fabs(pc[0].t.q)*1000<=cfg.raioBuscaMs) {
+    /* Traducao com outro corte: o portao por segmento recusa, mas o pico
+     * global e a cobertura ja provam um offset unico. */
+    m=AUTOSYNC_OK;md.tercos=nseg;
+  }
   if(m!=AUTOSYNC_OK){r.motivo=m;goto fim;}
+  r.regioes=md.tercos;
   /* 4. Mapa, ancoras e o score final sobre a legenda JA corrigida. */
   mapa=calloc(1,sizeof *mapa);
   if(!mapa){r.motivo=AUTOSYNC_MEMORY;goto fim;}
@@ -772,8 +806,15 @@ AutoSyncResultado autosync_alinhar(const LegendaDocumento *doc,const LegendaDocu
 #endif
     } else mapa->t[k].t0=mapa->t[k].s0=-1e30;
   }
-  r.ancoras=ancorar(&a,&b,pc,np,g,ng,cfg.toleranciaMs,mapa);
-  if(!mapa->nos){r.motivo=AUTOSYNC_MEMORY;goto fim;}
+  // Uma janela nao prova mudanca de fps/corte no resto do arquivo.
+  if(janela) {
+    if(np!=1||pc[0].t.p!=1||fabs(pc[0].t.q)*1000>cfg.raioBuscaMs) {
+      r.motivo=AUTOSYNC_REGION_DISAGREEMENT;goto fim;
+    }
+  } else {
+    r.ancoras=ancorar(&a,&b,pc,np,g,ng,cfg.toleranciaMs,mapa);
+    if(!mapa->nos){r.motivo=AUTOSYNC_MEMORY;goto fim;}
+  }
   transformar(&a,pc,np,ts,te);   /* a tentativa de trechos pode ter sobrescrito */
   {
     Fala *v=malloc((size_t)a.n*sizeof *v);Bits x;
@@ -864,10 +905,11 @@ static void *trabalhar(void *u) {
     if(publicado) {
       static const char *const tipos[]={"offset","scale","pieces"};
       fprintf(stderr,"[autosync] subtitle_sync %s reason=%s slot=%d kind=%s offset_ms=%d scale=%.5f pieces=%d anchors=%d"
-        " matched=%d coverage=%.3f confidence=%.3f alternative=%.3f kept=%d elapsed_ms=%d\n",
+        " matched=%d coverage=%.3f confidence=%.3f alternative=%.3f kept=%d regions=%d err=%dms elapsed_ms=%d\n",
         resultado.estado==AUTOSYNC_ACCEPTED?"accepted":"rejected",autosync_motivo(resultado.motivo),k,
         tipos[resultado.tipo],resultado.offsetMs,resultado.escala,resultado.trechos,resultado.ancoras,
-        resultado.casadas,resultado.cobertura,resultado.confianca,resultado.alternativa,resultado.mantida,resultado.tempoMs);
+        resultado.casadas,resultado.cobertura,resultado.confianca,resultado.alternativa,resultado.mantida,
+        resultado.regioes,resultado.erroMs,resultado.tempoMs);
     }
     legenda_documento_liberar(doc);legenda_documento_liberar(ref);
   }

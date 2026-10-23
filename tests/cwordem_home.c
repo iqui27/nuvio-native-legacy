@@ -15,6 +15,14 @@ void cachearte_estatisticas_pedir(void) {}
 void tex_cache_marcar_larg(int grupo, const char *url, float larg, int essencial, int emUso) {
   (void)grupo; (void)url; (void)larg; (void)essencial; (void)emUso; }
 #include "../src/home.c"
+// heroAquecerVizinhos (home_atualizar) pede a arte dos vizinhos: sem textura aqui.
+unsigned long tex_hash_public(const char *c) { (void)c; return 0; }
+GLuint tex_obter_hero_quente(const char *c) { (void)c; return 0; }
+GLuint tex_obter_larg(const char *c, float w) { (void)c; (void)w; return 0; }
+GLuint tex_obter_logo_larg_qualquer(const char *c, float w) { (void)c; (void)w; return 0; }
+void marco(const char *m) { (void)m; }
+void desc_sinopse_hero(const int *idx, int n) { (void)idx; (void)n; }
+void desc_ocultar_vistos_atualizar(void) {}
 #include "../src/cwordem.h"
 
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
@@ -27,6 +35,20 @@ int   dados_apagar(const char *nome) { (void)nome; return 1; }
 void  dados_marcar_sujo(int leve) { (void)leve; }
 const char *ling_legenda(void) { return ""; }
 const char *ling_audio(void) { return ""; }
+const char *ling_audio2(void) { return ""; }
+const char *ling_conta_audio2_valor(void) { return ""; }
+void ling_conta_audio2(const char *v) { (void)v; }
+void legenda2_atualizar_offset_manual(int ms) { (void)ms; }
+unsigned addons_versao(void) { return 1; }
+int curadoria_ativa(void) { return 0; }
+const char *curadoria_imdb(void) { return ""; }
+unsigned curadoria_revisao(void) { return 0; }
+void curadoria_passo(void) {}
+int curadoria_escolher(const int *itens, int n, int catN, int curadoria, unsigned *semente) {
+  (void)itens; (void)n; (void)catN; (void)curadoria; (void)semente; return -1; }
+const char *ling_conta_legenda_valor(void) { return ""; }
+const char *ling_conta_legenda2_valor(void) { return ""; }
+const char *ling_conta_audio_valor(void) { return ""; }
 void ling_conta_legenda(const char *v) { (void)v; }
 void ling_conta_legenda2(const char *v) { (void)v; }
 void ling_conta_audio(const char *v) { (void)v; }
@@ -88,7 +110,7 @@ int main(void) {
   const char *futTodos[3] = { "tt0", "tt1:1:2", "tt2:1:5" };
   int i;
   fil_definir_limite(FIL_LIMITE_MAX);
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":true}");
+  assert(ajustes_shot_valor("continueWatchingEnabled", 0));
   for (i = 0; i < 5; i++) {
     snprintf(it[i].titulo, sizeof it[i].titulo, "T%d", i);
     snprintf(it[i].tipo, sizeof it[i].tipo, "%s", (i == 0 || i > 2) ? "movie" : "series");
@@ -116,7 +138,7 @@ int main(void) {
   assert(cw && cw->n == 3 && !naHome("upcoming_section"));
   puts("ok  padrao: futuro continua em Continuar assistindo");
 
-  ajustes_aplicar_blob("{\"continueWatchingSortMode\":\"streaming_style\"}");
+  assert(ajustes_shot_valor("continueWatchingSortMode", 1));
   assert(ajustes_cw_ordem() == CWO_STREAMING);
   quadro();
   cw = naHome("continue_watching");
@@ -124,7 +146,7 @@ int main(void) {
   puts("ok  streaming: ainda uma fileira so");
 
   // SEPARAR: o futuro sai e ganha fileira logo abaixo.
-  ajustes_aplicar_blob("{\"continueWatchingSortMode\":\"split_upcoming\"}");
+  assert(ajustes_shot_valor("continueWatchingSortMode", 2));
   assert(ajustes_cw_ordem() == CWO_SEPARAR);
   quadro();
   cw = naHome("continue_watching");
@@ -153,9 +175,9 @@ int main(void) {
         case 1: cat_trocar_continuar(it, 3); quadro(); break;
         case 2: cat_republicar_fileiras(fs, 2); quadro(); break;
         case 3: cwo_publicar_futuros(fut1, 1); cat_trocar_continuar(it, 3); quadro(); break;
-        case 4: ajustes_aplicar_blob("{\"continueWatchingSortMode\":\"default\"}"); quadro();
+        case 4: assert(ajustes_shot_valor("continueWatchingSortMode", 0)); quadro();
                 assert(contar("upcoming_section") == 0);
-                ajustes_aplicar_blob("{\"continueWatchingSortMode\":\"split_upcoming\"}"); quadro(); break;
+                assert(ajustes_shot_valor("continueWatchingSortMode", 2)); quadro(); break;
         case 5: cat_definir_tudo(it, 5, fs, 2); quadro(); break;
       }
       assert(contar("upcoming_section") == 1);
@@ -190,7 +212,7 @@ int main(void) {
   puts("ok  separar: so futuros -> so a fileira de futuros");
 
   // Continuar assistindo DESLIGADO leva a de futuros junto.
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":false}");
+  assert(ajustes_shot_valor("continueWatchingEnabled", 1));
   quadro();
   assert(!naHome("continue_watching") && !naHome("upcoming_section"));
   puts("ok  retomada desligada: nenhuma das duas");

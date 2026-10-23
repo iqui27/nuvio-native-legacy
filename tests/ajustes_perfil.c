@@ -9,28 +9,53 @@
 //      do principal);
 //   4. o logout apaga as copias.
 #include "../src/ajustes.c"
+#include "nvtmp.h"
 #include <assert.h>
+#include <string.h>
 #include <unistd.h>
 
 int main(void) {
-  char dir[] = "/tmp/nuvio-aj-perfil-XXXXXX";
+  char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-aj-perfil-XXXXXX");
   assert(mkdtemp(dir));
   setenv("NUVIO_DADOS", dir, 1);
   dados_iniciar(dir);
   ajustes_dir(dir);
-  // Sem ajustes.txt, o ajuste novo nasce LIGADO (V_LIGA: 0 = Ligado).
-  assert(ajustes_addons_do_principal() == 1);
+  // Sem ajustes.txt, "Usar os addons do perfil principal" nasce DESLIGADO
+  // (dono, 09/10: cada perfil com os seus addons por padrao).
+  assert(ajustes_addons_do_principal() == 0);
 
-  // Perfil 1: destaque desligado, 4K pedido.
+  // Sincronia automática: persiste nesta TV, sem importar/exportar pela conta.
+  assert(ajustes_legenda_sync_auto());
+  mudarValor(AJ_LEG_SYNC_AUTO, 1); assert(!ajustes_legenda_sync_auto());
+  valor[AJ_LEG_SYNC_AUTO] = 0;
+  ajustes_dir(dir); assert(!ajustes_legenda_sync_auto());
+  ajustes_aplicar_blob("{\"legendaSyncAutoLocal\":0}");
+  assert(!ajustes_legenda_sync_auto() && !dePerfil(AJ_LEG_SYNC_AUTO));
+  { char *blob = NULL;
+    ajustes_mesclar_blob("{}", &blob);
+    assert(!blob || !strstr(blob, "\"legendaSyncAutoLocal\"")); free(blob); }
+
+  // Perfil 1: destaque desligado, 4K pedido. 2.0.2: ele manda o historico so
+  // para o Simkl e nao quer o social; o perfil 2 e o contrario.
+  valor[AJ_CW_FONTE] = AJ_CWF_SIMKL;
+  valor[AJ_SALVOS_DEST] = AJ_SALVOS_SIMKL;
+  valor[AJ_HIST_CONTA] = 1;     // Desligado
+  valor[AJ_SOCIAL] = 1;         // Desligado
   valor[AJ_HERO] = 1;
-  valor[AJ_RESOLUCAO] = 1;
+  valor[AJ_RESOLUCAO] = RES_4K;
   valor[AJ_ADDONS_PRINCIPAL] = 0;
+  ajustes_definir_ocultar_filmes_vistos(1);
   ajustes_perfil_guardar(1);
 
   // O perfil 2 mexe nas duas coisas.
+  valor[AJ_CW_FONTE] = AJ_CWF_CONTA;
+  valor[AJ_SALVOS_DEST] = AJ_SALVOS_LOCAL;
+  valor[AJ_HIST_CONTA] = 0;
+  valor[AJ_SOCIAL] = 0;
   valor[AJ_HERO] = 0;
   valor[AJ_RESOLUCAO] = 0;
   valor[AJ_ADDONS_PRINCIPAL] = 1;
+  ajustes_definir_ocultar_filmes_vistos(0);
   ajustes_perfil_guardar(2);
 
   // Volta ao 1: o destaque dele volta, a TV continua como esta.
@@ -38,23 +63,64 @@ int main(void) {
   assert(valor[AJ_HERO] == 1);
   assert(valor[AJ_RESOLUCAO] == 0);
   assert(valor[AJ_ADDONS_PRINCIPAL] == 1);   // ajuste desta TV, nao do perfil
+  assert(valor[AJ_CW_FONTE] == AJ_CWF_SIMKL && valor[AJ_SALVOS_DEST] == AJ_SALVOS_SIMKL);
+  assert(!ajustes_hist_conta() && !ajustes_social());
+  assert(ajustes_ocultar_filmes_vistos());
 
   // E o 2 de novo.
   assert(ajustes_perfil_restaurar(2) == 1);
   assert(valor[AJ_HERO] == 0);
+  assert(valor[AJ_CW_FONTE] == AJ_CWF_CONTA && valor[AJ_SALVOS_DEST] == AJ_SALVOS_LOCAL);
+  assert(ajustes_hist_conta() && ajustes_social());
+  assert(!ajustes_ocultar_filmes_vistos());
+
+  // Session reset clears the outgoing preference; reload restores its owner.
+  ajustes_definir_ocultar_filmes_vistos(1);
+  ajustes_perfil_padrao();
+  assert(!ajustes_ocultar_filmes_vistos());
+  assert(ajustes_perfil_restaurar(3) == 0);
+  assert(!ajustes_ocultar_filmes_vistos());
+  assert(ajustes_perfil_restaurar(1) == 1);
+  assert(ajustes_ocultar_filmes_vistos());
+  ajustes_aplicar_blob("{\"hideWatchedMoviesLocal\":1}");
+  assert(ajustes_ocultar_filmes_vistos());
+  { char *localBlob = NULL;
+    ajustes_mesclar_blob("{}", &localBlob);
+    assert(localBlob && strstr(localBlob, "c_hideWatchedMoviesLocal"));
+    free(localBlob); }
 
   // Perfil nunca usado aqui: nada muda.
   valor[AJ_HERO] = 1;
   assert(ajustes_perfil_restaurar(3) == 0);
   assert(valor[AJ_HERO] == 1);
 
+  // #461: copia gravada ANTES da chave menuTopoLocal. O perfil 1 ligou o topo;
+  // trocar para o 2 (arquivo antigo) tem de voltar ao padrao 0, e nao herdar o 1.
+  valor[AJ_MENU_TOPO] = 1;
+  { char *t = dados_ler("ajustes-p2.txt"), *l; FILE *f;
+    char nome[600], buf[AJ_N * 56]; size_t u = 0;
+    assert(t);
+    for (l = t; *l; ) {
+      char *fim = strchr(l, '\n'); size_t n = fim ? (size_t)(fim - l + 1) : strlen(l);
+      if (strncmp(l, "menuTopoLocal ", 14)) { memcpy(buf + u, l, n); u += n; }
+      if (!fim) break; l = fim + 1;
+    }
+    buf[u] = 0; free(t);
+    snprintf(nome, sizeof nome, "%s/ajustes-p2.txt", dir);
+    f = fopen(nome, "w"); assert(f); fputs(buf, f); fclose(f); }
+  assert(ajustes_perfil_restaurar(2) == 1);
+  assert(valor[AJ_MENU_TOPO] == 0);
+  assert(ajustes_menu_topo() == 0);
+
   // A copia nao carrega linha de aparelho nem chave local com "-".
   { char *t = dados_ler("ajustes-p1.txt");
     assert(t);
     assert(!strstr(t, CHAVE[AJ_RESOLUCAO]));
+    assert(!strstr(t, CHAVE[AJ_LEG_SYNC_AUTO]));
     assert(!strstr(t, CHAVE[AJ_ADDONS_PRINCIPAL]));
     assert(!strstr(t, "\n-") && t[0] != '-');
     assert(strstr(t, CHAVE[AJ_HERO]));
+    assert(strstr(t, "hideWatchedMoviesLocal 0\n"));
     free(t); }
 
   // An older or foreign client may upload device-only keys. Pull must
@@ -74,8 +140,29 @@ int main(void) {
   assert(valor[AJ_GPU_EFEITOS] == 1);
   assert(valor[AJ_HERO] == 0);  // Person preference still follows the account.
 
+  // Arquivos privados dos provedores (conta + perfil) saem no logout; os
+  // compartilhados e o que nao termina em -pN.txt ficam.
+  static const char *const privados[] = {
+    "debrid-conta_x-p1.txt", "debrid-conta_x-p12.txt", "provider-scope-conta_x-p2.txt",
+    "fontefalha-conta_x-p3.txt", "fontesmortas-00ff00ff00ff00ff-p1.txt",
+    "debrid-conta_x-p1.txt.tmp" };
+  static const char *const ficam[] = { "debrid.txt", "fontefalha.txt", "fontesmortas.txt",
+                                       "debrid-conta_x.txt", "outra-conta_x-p1.txt" };
+  for (size_t i = 0; i < sizeof privados / sizeof *privados; i++)
+    assert(dados_gravar(privados[i], "x\n"));
+  for (size_t i = 0; i < sizeof ficam / sizeof *ficam; i++)
+    assert(dados_gravar(ficam[i], "x\n"));
+
   // Logout: nenhuma copia sobra.
   ajustes_perfil_esquecer();
+  for (size_t i = 0; i < sizeof privados / sizeof *privados; i++) {
+    char *t = dados_ler(privados[i]);
+    assert(!t);
+  }
+  for (size_t i = 0; i < sizeof ficam / sizeof *ficam; i++) {
+    char *t = dados_ler(ficam[i]);
+    assert(t); free(t);
+  }
   assert(ajustes_perfil_restaurar(1) == 0);
   assert(ajustes_perfil_restaurar(2) == 0);
 

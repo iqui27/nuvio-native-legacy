@@ -1,0 +1,73 @@
+name: WebOS DV7 and DTS feature checks
+on:
+  push:
+    branches: [dv7-dts-webos]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dv7-dts-webos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  host:
+    name: Host ${{ matrix.group }}
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [core, engine, dv, settings]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      ASAN_OPTIONS: detect_leaks=0
+      NUVIO_DTS_ROOT: /tmp/nuvio-dts-host
+      BASE_SHA: eb520363755ece93aba8aff52396e0b624be064e
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config ffmpeg curl python3 libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libgles2-mesa-dev libegl1-mesa-dev zlib1g-dev libssl-dev libavformat-dev libavcodec-dev libavutil-dev libswresample-dev
+      - name: Official behavior and webOS controller
+        if: ${{ !cancelled() && matrix.group == 'core' }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git diff --check "$BASE_SHA" HEAD
+          bash tests/versao_207.sh
+          bash tests/buffer_tamanho.sh
+          bash tests/video_http_buffer.sh
+          bash tests/video_http_buffer_build.sh
+          bash tests/video_acb_lg.sh
+          bash tests/rede_dns.sh
+          bash tests/dts_playback.sh
+          SANITIZE=1 bash tests/dts_playback.sh
+      - name: Independent device-local DV7 option
+        if: ${{ !cancelled() && matrix.group == 'settings' }}
+        run: bash tests/dv7_settings.sh
+      - name: Build minimal host FFmpeg
+        if: ${{ !cancelled() && (matrix.group == 'engine' || matrix.group == 'dv') }}
+        env:
+          NUVIO_DTS_HOST: '1'
+          CC: gcc
+        run: bash tools/build-dts-ffmpeg.sh
+      - name: DTS and HTTP recovery with platform boundaries
+        if: ${{ !cancelled() && matrix.group == 'engine' }}
+        run: |
+          bash tests/dts_recovery_scope.sh
+          bash tests/dts_p2p_tail.sh
+          bash tests/dts_range_retry.sh
+          SANITIZE=1 bash tests/dts_range_retry.sh
+          bash tests/dts_timestamp_engine.sh
+          SANITIZE=1 bash tests/dts_timestamp_engine.sh
+          bash tests/dts_buffer64.sh
+          bash tests/dts_engine.sh
+      - name: DV7 conversion and Rust link modes
+        if: ${{ !cancelled() && matrix.group == 'dv' }}
+        run: |
+          bash tests/dv7.sh
+          bash tests/dv7_engine.sh
+          export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+          export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+          cargo test --manifest-path rust/mkvcore/Cargo.toml --locked
+          bash tests/dv7_mkvcore_link.sh

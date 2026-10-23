@@ -1,11 +1,16 @@
 package space.nuvio.nativelegacy
 
 import android.Manifest
+import android.app.UiModeManager
 import android.content.Context
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.Network
@@ -14,6 +19,7 @@ import android.net.LinkProperties
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
+import android.os.SystemClock
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -25,14 +31,23 @@ import android.text.TextWatcher
 import android.util.Log
 import android.system.Os
 import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.Gravity
 import android.view.SurfaceHolder
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.RelativeLayout
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import org.libsdl.app.SDLActivity
 import java.io.File
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -53,8 +68,104 @@ class NuvioActivity : SDLActivity() {
     override fun getLibraries(): Array<String> = arrayOf("SDL2", "main")
 
     private var camadaVideo: FrameLayout? = null
+    private var touchInsetLeft = 0
+    private var touchInsetTop = 0
+    private var touchInsetRight = 0
+    @Volatile private var interfaceMobile = false
+    @Volatile private var playerTelaCheiaTouch = false
+    private var superficieTvW = 0
+    private var superficieTvH = 0
+    private var cutoutModoTv = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+    private var entradaModoTv = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_UNSPECIFIED
+
+    // Called by the SDL thread after loading the device setting and on changes.
+    // Keep the same Activity/SDL thread: native global state cannot be recreated.
+    fun interfaceModo(mobile: Boolean) {
+        interfaceMobile = mobile
+        runOnUiThread {
+            if (mBrokenLibraries || interfaceMobile != mobile) return@runOnUiThread
+            fecharCampo("X")
+            if (mobile) mSurface.holder.setSizeFromLayout()
+            else if (superficieTvW > 0 && superficieTvH > 0)
+                mSurface.holder.setFixedSize(superficieTvW, superficieTvH)
+            else mSurface.holder.setSizeFromLayout()
+            aplicarOrientacaoTouch()
+            aplicarViewportModo()
+            aplicarCampoModo()
+            NvPlayer.interfaceModo(mobile)
+            mLayout.requestLayout()
+            mSurface.requestFocus()
+            Log.i("nuvio", "[interface] modo=${if (mobile) "mobile" else "tv"}")
+        }
+    }
+
+    private fun aplicarOrientacaoTouch() {
+        val orientacao = when (InterfaceMode.orientation(interfaceMobile, playerTelaCheiaTouch)) {
+            InterfaceMode.Orientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            InterfaceMode.Orientation.SENSOR_LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            InterfaceMode.Orientation.FULL_USER -> ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+        }
+        if (requestedOrientation != orientacao) requestedOrientation = orientacao
+    }
+
+    // Called by the SDL thread only for the full-screen player. Trailer,
+    // retained-video and guide/PiP surfaces keep the browsing orientation.
+    fun orientarPlayer(telaCheia: Boolean) {
+        playerTelaCheiaTouch = telaCheia
+        runOnUiThread { aplicarOrientacaoTouch() }
+    }
+
+    // A fixed SDL window chooses orientation from its initial width/height.
+    // Keep its later callbacks from overriding the selected interface policy.
+    override fun setOrientationBis(w: Int, h: Int, resizable: Boolean, hint: String) {
+        runOnUiThread { aplicarOrientacaoTouch() }
+    }
+
+    private fun telaCheiaTouch() {
+        if (!interfaceMobile) return
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        if (Build.VERSION.SDK_INT >= 28) {
+            val modo = if (Build.VERSION.SDK_INT >= 30)
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            else WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            if (window.attributes.layoutInDisplayCutoutMode != modo) {
+                window.attributes = window.attributes.apply { layoutInDisplayCutoutMode = modo }
+            }
+        }
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    private val registroDownload by lazy { RegistroDownload(this) }
+    private val fontImport by lazy { FontImport(this) }
+    fun importarFonte(): Boolean = fontImport.abrir()
+    fun proximaFonteImportada(): String? = fontImport.proximo()
+
+    // Chamado pelo fio SDL, sem ler arquivos nem abrir a tela naquele fio.
+    fun baixarRegistro(arquivo: String, sucesso: String, falha: String) {
+        runOnUiThread { registroDownload.abrir(arquivo, sucesso, falha) }
+    }
+
+    // Vigia do arranque (#266, ArranqueVigia.kt) e o que ele le do C (android.c).
+    private var vigia: ArranqueVigia? = null
+    external fun nativeEtapa(): String
+    external fun nativeQuadros(): Long
+    external fun nativeRecUrl(): String
+    fun estadoSdl() = "thread=${if (mSDLThread != null) "sim" else "nao"} foco=$mHasFocus " +
+        "retomada=$mIsResumedCalled superficie=${mSurface?.mIsSurfaceReady == true}"
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        registroDownload.salvar(outState)
+        fontImport.salvar(outState)
+        super.onSaveInstanceState(outState)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        registroDownload.restaurar(savedInstanceState)
+        fontImport.restaurar(savedInstanceState)
         // SEGUNDO onCreate NO MESMO PROCESSO = SEGUNDO main() DO C (o
         // SDLActivity.initialize() zera mSDLThread e o SDL sobe outro fio de
         // main). O nucleo C guarda estado global (mutex, fios, caches) que nao
@@ -71,8 +182,17 @@ class NuvioActivity : SDLActivity() {
         }
         jaCriada = true
         prepararAmbiente()
+        aplicarOrientacaoTouch()
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 28) cutoutModoTv = window.attributes.layoutInDisplayCutoutMode
+        entradaModoTv = window.attributes.softInputMode
+        aplicarOrientacaoTouch()
+        if (!mBrokenLibraries) prepararViewportTouch()
+        // Antes de tudo que pode falhar daqui para baixo: o vigia so precisa
+        // do fio da interface livre.
+        if (!mBrokenLibraries) vigia = ArranqueVigia(this).also { it.iniciar() }
         observarRede()
+        entregarDeepLink(intent)
 
         // SDLActivity.mLayout e um RelativeLayout com a SDLSurface dentro.
         // O video fica no indice 0 (atras); a SDLSurface fica por cima, em
@@ -83,9 +203,94 @@ class NuvioActivity : SDLActivity() {
             camada, 0,
             ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         )
+        // SDL adds the SurfaceView WRAP_CONTENT; SurfaceView.onMeasure then
+        // resolves to min(setFixedSize, parent), so a buffer smaller than the
+        // screen (720p) shrank the view to the top-left. MATCH_PARENT lets the
+        // compositor scale the small buffer to the full view.
+        mSurface.layoutParams = RelativeLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         mSurface.setZOrderMediaOverlay(true)
         mSurface.holder.setFormat(PixelFormat.TRANSLUCENT)
         NvPlayer.iniciar(this, camada)
+        NvPlayer.interfaceModo(interfaceMobile)
+    }
+
+    // SDL and video fill the window, including the camera cutout edges. Keeping
+    // mLayout intact also keeps SDL's touch coordinates relative to the video.
+    private fun prepararViewportTouch() {
+        val raiz = object : FrameLayout(this) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val r = InterfaceMode.viewport(interfaceMobile, View.MeasureSpec.getSize(widthMeasureSpec),
+                    View.MeasureSpec.getSize(heightMeasureSpec))
+                val atual = mLayout.layoutParams as FrameLayout.LayoutParams
+                if (r != null) {
+                    if (atual.width != r.width || atual.height != r.height ||
+                        atual.leftMargin != r.left || atual.topMargin != r.top) {
+                        atual.width = r.width; atual.height = r.height
+                        atual.gravity = Gravity.TOP or Gravity.LEFT
+                        atual.leftMargin = r.left; atual.topMargin = r.top
+                        Log.i("Nuvio", "touch viewport=${r.left},${r.top},${r.width},${r.height}")
+                    }
+                } else {
+                    atual.width = ViewGroup.LayoutParams.MATCH_PARENT
+                    atual.height = ViewGroup.LayoutParams.MATCH_PARENT
+                    atual.leftMargin = 0; atual.topMargin = 0
+                }
+                super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+            }
+        }.apply { setBackgroundColor(Color.BLACK) }
+        (mLayout.parent as? ViewGroup)?.removeView(mLayout)
+        raiz.addView(mLayout, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        ViewCompat.setOnApplyWindowInsetsListener(raiz) { _, ins ->
+            if (interfaceMobile) {
+                val barras = ins.getInsets(WindowInsetsCompat.Type.systemBars())
+                val recorte = ins.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.displayCutout())
+                touchInsetLeft = maxOf(barras.left, recorte.left)
+                touchInsetTop = maxOf(barras.top, recorte.top)
+                touchInsetRight = maxOf(barras.right, recorte.right)
+                posicionarCampoTouch()
+            }
+            ins
+        }
+        setContentView(raiz)
+        ViewCompat.requestApplyInsets(raiz)
+        aplicarViewportModo()
+    }
+
+    private fun aplicarViewportModo() {
+        WindowCompat.setDecorFitsSystemWindows(window, !interfaceMobile)
+        window.setSoftInputMode(if (interfaceMobile)
+            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING else entradaModoTv)
+        if (!interfaceMobile && Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.apply { layoutInDisplayCutoutMode = cutoutModoTv }
+        }
+        telaCheiaTouch()
+    }
+
+    private external fun nativeToqueCancelou()
+
+    // LINK EXTERNO (docs/deeplink.md): o C valida; aqui so se limita o tamanho.
+    private external fun nativeDeepLink(url: String)
+
+    private fun entregarDeepLink(i: Intent?) {
+        if (mBrokenLibraries || i?.action != Intent.ACTION_VIEW) return
+        val url = i.dataString ?: return
+        if (url.length <= 512) nativeDeepLink(url)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        entregarDeepLink(intent)
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        // SDL turns CANCEL into finger UP. Queue the cancellation first so
+        // taking over a system gesture cannot confirm the pending tap/hold.
+        if (interfaceMobile && !mBrokenLibraries &&
+            ev.actionMasked == MotionEvent.ACTION_CANCEL) nativeToqueCancelou()
+        return super.dispatchTouchEvent(ev)
     }
 
     private fun reabrirEmProcessoNovo() {
@@ -110,9 +315,14 @@ class NuvioActivity : SDLActivity() {
     // a levar 16 s com o low-memory killer ativo. SDLActivity so repassa
     // onLowMemory (o aviso mais forte), nao estes degraus.
     private external fun nativeTrimMemoria(nivel: Int)
+    private var trimResumida = false
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
+        // Background trim levels describe lifecycle, not foreground pressure.
+        // Guard both paths: SDL also forwards a strongest-level memory event.
+        if (trimResumida && level >= 20) return
+        if (level >= 5) SDLActivity.nativeLowMemory()
         // Antes de a libmain.so carregar nao ha para quem avisar.
         try { nativeTrimMemoria(level) } catch (_: UnsatisfiedLinkError) { }
     }
@@ -194,7 +404,62 @@ class NuvioActivity : SDLActivity() {
     // Chamado pelo C (android_pedir_superficie), do fio do SDL, antes de criar a
     // janela: fixa o buffer da SDLSurface em w x h e espera a superficie nova
     // chegar (ate 2 s). Devolve true se ela veio nesse tamanho.
+    // SDL calls this before EGL surface creation; request a ten-bit UI layer.
+    // ExoPlayer retains its separate SurfaceView and video color handling.
+    private var hdrCapabilitiesLogged = false
+    private var hdrSurfaceRequested = false
+
+    fun pedirHdrInterface(ativa: Boolean): Boolean {
+        if (Build.VERSION.SDK_INT < 26) return false
+        val done = CountDownLatch(1)
+        var ok = false
+        runOnUiThread {
+            try {
+                if (!ativa || (Build.VERSION.SDK_INT >= 34 && display?.isHdr == true)) {
+                    window.colorMode = if (ativa) ActivityInfo.COLOR_MODE_HDR else ActivityInfo.COLOR_MODE_DEFAULT
+                    if (ativa) {
+                        hdrSurfaceRequested = true
+                        mSurface.holder.setFormat(PixelFormat.RGBA_1010102)
+                        if (Build.VERSION.SDK_INT >= 35) {
+                            mSurface.setDesiredHdrHeadroom(1000.0f / 203.0f)
+                            window.setDesiredHdrHeadroom(1000.0f / 203.0f)
+                        }
+                    } else if (hdrSurfaceRequested) {
+                        mSurface.holder.setFormat(PixelFormat.TRANSLUCENT)
+                        if (Build.VERSION.SDK_INT >= 35) {
+                            mSurface.setDesiredHdrHeadroom(0.0f)
+                            window.setDesiredHdrHeadroom(0.0f)
+                        }
+                        hdrSurfaceRequested = false
+                    }
+                    ok = !ativa || window.colorMode == ActivityInfo.COLOR_MODE_HDR
+                }
+            } catch (_: Exception) {
+                ok = false
+            } finally {
+                if (ativa && !hdrCapabilitiesLogged) {
+                    hdrCapabilitiesLogged = true
+                    try {
+                        @Suppress("DEPRECATION")
+                        val screen = windowManager.defaultDisplay
+                        val caps = screen.hdrCapabilities
+                        Log.i("Nuvio", "[hdr-ui] cap=display types=${caps.supportedHdrTypes.joinToString(",")} maxLuminance=${caps.desiredMaxLuminance} mode=${screen.mode} isHdr=${if (Build.VERSION.SDK_INT >= 34) screen.isHdr else "unavailable"} colorMode=${window.colorMode} wideColorGamut=${screen.isWideColorGamut}")
+                    } catch (error: Exception) {
+                        Log.w("Nuvio", "[hdr-ui] cap=error ${error.javaClass.simpleName}: ${error.message}")
+                    }
+                }
+                done.countDown()
+            }
+        }
+        done.await()
+        return ok
+    }
+
     fun pedirSuperficie(w: Int, h: Int): Boolean {
+        // SDL normalizes touches against the holder buffer dimensions. On a
+        // phone that buffer must follow the viewport's physical view size.
+        if (interfaceMobile) return false
+        superficieTvW = w; superficieTvH = h
         val chegou = CountDownLatch(1)
         var ok = false
         runOnUiThread {
@@ -219,7 +484,29 @@ class NuvioActivity : SDLActivity() {
     // nao foi queda, e o modo seguro nao desfaz ajustes por causa dela.
     private fun despedida() = File(filesDir, "dados/despedida.txt")
 
-    private var instalando = false
+    @Volatile private var instalando = false
+
+    @Suppress("DEPRECATION")
+    private fun apkVersion(file: File): Long? = try {
+        packageManager.getPackageArchiveInfo(file.path, 0)?.let {
+            if (Build.VERSION.SDK_INT >= 28) it.longVersionCode else it.versionCode.toLong()
+        }
+    } catch (_: Exception) { null }
+
+    @Suppress("DEPRECATION")
+    private fun installedVersion(): Long {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        return if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+    }
+
+    fun prepararApk(caminho: String): Boolean {
+        if (instalando) return false
+        val dir = File(cacheDir, "regenerable/atualizacao")
+        val file = File(caminho)
+        if (file.parentFile != dir) return false
+        ApkCache.prune(dir, installedVersion(), file.name, ::apkVersion)
+        return true
+    }
 
     // Chamado pelo C (android_instalar_apk, atualizacao.c), do fio do SDL.
     // 1 = instalador aberto, 2 = falta a permissao "instalar apps desta fonte"
@@ -235,7 +522,7 @@ class NuvioActivity : SDLActivity() {
                 )
                 return 2
             }
-            val uri = FileProvider.getUriForFile(this, "space.nuvio.nativelegacy.atualizacao", arq)
+            val uri = FileProvider.getUriForFile(this, "$packageName.atualizacao", arq)
             instalando = true
             startActivity(
                 Intent(Intent.ACTION_VIEW)
@@ -246,6 +533,58 @@ class NuvioActivity : SDLActivity() {
         } catch (e: Exception) {
             instalando = false
             0
+        }
+    }
+
+    // HTTP PELA PILHA DO ANDROID (#266/#332, src/android.c android_http).
+    // Reserva da libcurl do APK para pedidos simples (conta, login, Supabase):
+    // em Shield/BRAVIA a init da libcurl nao voltava e o login esperava 20 s
+    // para falhar. Chamado de fios de rede do C (nunca do fio de UI). Volta
+    // [status 4 bytes big-endian][Retry-After seconds 4 bytes][body].
+    fun httpPedir(metodo: String, url: String, cabs: String, corpo: ByteArray?, prazoMs: Int): ByteArray {
+        var con: java.net.HttpURLConnection? = null
+        return try {
+            con = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            val prazo = if (prazoMs > 0) prazoMs else 20000
+            con.connectTimeout = minOf(prazo, 10000)
+            con.readTimeout = prazo
+            con.instanceFollowRedirects = true
+            con.useCaches = false
+            con.requestMethod = metodo
+            con.setRequestProperty("User-Agent", "Nuvio/1.0 (webOS)")
+            for (l in cabs.split('\n')) {
+                val i = l.indexOf(':')
+                if (i > 0) con.setRequestProperty(l.substring(0, i).trim(), l.substring(i + 1).trim())
+            }
+            if (corpo != null) {
+                con.doOutput = true
+                con.setFixedLengthStreamingMode(corpo.size)
+                con.outputStream.use { it.write(corpo) }
+            }
+            val st = con.responseCode
+            val ent = if (st >= 400) con.errorStream else con.inputStream
+            val dados = ent?.use { it.readBytes() } ?: ByteArray(0)
+            val raw = con.getHeaderField("Retry-After")?.trim().orEmpty()
+            val retry = if (raw.isNotEmpty() && raw.all { it in '0'..'9' }) {
+                (raw.toLongOrNull() ?: Long.MAX_VALUE).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            } else {
+                val until = con.getHeaderFieldDate("Retry-After", 0)
+                ((until - System.currentTimeMillis() + 999) / 1000).coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
+            }
+            val r = ByteArray(8 + dados.size)
+            r[0] = (st ushr 24).toByte(); r[1] = (st ushr 16).toByte()
+            r[2] = (st ushr 8).toByte(); r[3] = st.toByte()
+            r[4] = (retry ushr 24).toByte(); r[5] = (retry ushr 16).toByte()
+            r[6] = (retry ushr 8).toByte(); r[7] = retry.toByte()
+            System.arraycopy(dados, 0, r, 8, dados.size)
+            r
+        } catch (e: Throwable) {
+            val m = (e.javaClass.simpleName + ": " + (e.message ?: "")).take(180).toByteArray()
+            val r = ByteArray(8 + m.size)
+            System.arraycopy(m, 0, r, 8, m.size)
+            r
+        } finally {
+            try { con?.disconnect() } catch (_: Throwable) {}
         }
     }
 
@@ -279,6 +618,28 @@ class NuvioActivity : SDLActivity() {
             true
         } catch (e: Exception) { false }
     }
+
+    // Players de video instalados que abrem um stream http(s): "pacote\tnome" por linha.
+    fun listarPlayers(): String? = try {
+        val pm = packageManager
+        val q = Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("https://example.com/v.mp4"), "video/*")
+        pm.queryIntentActivities(q, 0).mapNotNull { r ->
+            val pkg = r.activityInfo?.packageName
+            if (pkg == null || pkg == packageName) null
+            else pkg to r.loadLabel(pm).toString().replace('\t', ' ').replace('\n', ' ')
+        }.distinctBy { it.first }.sortedBy { it.second.lowercase() }
+            .joinToString("\n") { it.first + "\t" + it.second }
+    } catch (e: Exception) { null }
+
+    // #501: entrega o stream a outro player; `pacote` vazio = o sistema escolhe.
+    // Sem app que aceite, devolve false (o nativo toca no interno). A URL nao vai para o log.
+    fun abrirExterno(url: String, titulo: String, pacote: String): Boolean = try {
+        val i = Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(url), "video/*")
+            .putExtra("title", titulo).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (pacote.isNotEmpty()) i.setPackage(pacote)
+        startActivity(i)
+        true
+    } catch (e: Exception) { false }
 
     // A loja (Google Play) na pagina do app; sem pacote, a busca pelo nome.
     fun abrirLoja(pacote: String, nome: String): Boolean {
@@ -317,23 +678,58 @@ class NuvioActivity : SDLActivity() {
         jaComecou = true
     }
 
+    private external fun nativeCheckpoint()
+
+    private fun checkpoint() {
+        if (!mBrokenLibraries) try { nativeCheckpoint() } catch (_: UnsatisfiedLinkError) {}
+    }
+
     override fun onStop() {
+        checkpoint()
+        val ini = SystemClock.elapsedRealtime()
         try {
             val f = despedida()
             if (!(f.exists() && f.readText().startsWith("fim"))) f.writeText("oculto\n")
         } catch (_: Exception) {}
         // Instalador ou tela de voz por cima NAO e sair do app: trocar o icone
         // ali fecharia a tarefa embaixo deles (ver aplicarIconePendente).
-        if (!instalando && !esperandoTela && !isChangingConfigurations) aplicarIconePendente()
+        if (!instalando && !esperandoTela && !isChangingConfigurations &&
+            !registroDownload.escolhendoArquivo && !fontImport.escolhendoArquivo) aplicarIconePendente()
         super.onStop()
+        Log.i("nuvio", "[android] parada: ${SystemClock.elapsedRealtime() - ini} ms no fio da interface")
     }
 
+    override fun onResume() {
+        trimResumida = true
+        super.onResume()
+        aplicarOrientacaoTouch()
+        telaCheiaTouch()
+        vigia?.frente(true)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) telaCheiaTouch()
+    }
+
+    // [android] pausa / parada: quanto o fio da interface ficou em cada passo
+    // do ciclo de vida (ANR ao apertar a tecla de ajustes da TV tocando, TCL,
+    // 2.0.3). Direto no logcat: o printf do C passa por um pipe e pode esperar.
     override fun onPause() {
+        trimResumida = false
+        checkpoint()
+        val ini = SystemClock.elapsedRealtime()
+        vigia?.frente(false)
         NvPlayer.pausarPeloSistema()
+        val msPlayer = SystemClock.elapsedRealtime() - ini
         super.onPause()
+        Log.i("nuvio", "[android] pausa: ${SystemClock.elapsedRealtime() - ini} ms no fio da interface (player $msPlayer ms)")
     }
 
     override fun onDestroy() {
+        registroDownload.fechar()
+        fontImport.fechar()
+        vigia?.parar()
         fecharRede()
         NvPlayer.encerrar()
         val saindo = isFinishing
@@ -345,23 +741,97 @@ class NuvioActivity : SDLActivity() {
 
     // Variaveis que o C le (contrato do porte Android). Tem de rodar antes do
     // super.onCreate: o SDL abre o main numa thread logo depois.
+    fun limparCache() {
+        runOnUiThread {
+            NvPlayer.parar()
+            CacheMidia.descartar("clear cache")
+            // Session release runs on the cache executor before deleting its files.
+            CacheMidia.limparTudo(cacheDir)
+        }
+        File(cacheDir, "logs/nuvio-anterior.log").delete()
+        File(cacheDir, "engine/p2p").deleteRecursively()
+    }
+
     private fun prepararAmbiente() {
         val dados = File(filesDir, "dados").apply { mkdirs() }
+        val uiMode = (getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)?.currentModeType
+        val automaticMobile = InterfaceMode.automaticMobile(
+            uiMode == Configuration.UI_MODE_TYPE_TELEVISION,
+            packageManager.hasSystemFeature(PackageManager.FEATURE_TELEVISION),
+            packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK))
+        val preferencia = InterfaceMode.readPreference(File(dados, "ajustes.txt"))
+        interfaceMobile = InterfaceMode.resolve(preferencia, automaticMobile)
         val res = File(filesDir, "res")
         extrairAssets(res)
         val versao = try {
             packageManager.getPackageInfo(packageName, 0).versionName ?: ""
         } catch (e: Exception) { "" }
         fun env(k: String, v: String) = Os.setenv(k, v, true)
+        env("NUVIO_INTERFACE_AUTO", if (automaticMobile) "1" else "0")
         env("NUVIO_DADOS", dados.path)
-        env("NUVIO_LOG", File(dados, "nuvio.log").path)
-        env("NUVIO_LOG_ANTERIOR", File(dados, "nuvio-anterior.log").path)
+        val regenerable = File(cacheDir, "regenerable").apply { mkdirs() }
+        ApkCache.prune(File(regenerable, "atualizacao"), installedVersion(), null, ::apkVersion)
+        val p2pCache = File(cacheDir, "engine").apply { mkdirs() }
+        env("NUVIO_CACHE", regenerable.path)
+        env("NUVIO_CACHE_ROOT", cacheDir.path)
+        env("TMPDIR", regenerable.path)
+        env("NUVIO_P2P_CACHE", p2pCache.path)
+        val logs = File(cacheDir, "logs").apply { mkdirs() }
+        File(dados, "atualizacao").deleteRecursively()
+        File(dados, "p2p").deleteRecursively()
+        File(dados, "nuvio.log").delete()
+        File(dados, "nuvio-anterior.log").delete()
+        // Scoped to signing key/user/device; stable across app reinstall.
+        val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+        if (!deviceId.isNullOrBlank()) env("NUVIO_DEVICE_ID", "android:$deviceId")
+        env("NUVIO_LOG", File(logs, "nuvio.log").path)
+        env("NUVIO_LOG_ANTERIOR", File(logs, "nuvio-anterior.log").path)
         env("HOME", dados.path)
         env("NUVIO_ARTE", File(res, "art").path)
         env("NUVIO_LOCALE", java.util.Locale.getDefault().toLanguageTag())
         env("NUVIO_TV_INFO", "${Build.MANUFACTURER} ${Build.MODEL}|${Build.VERSION.SDK_INT}|${Build.VERSION.RELEASE}|$versao")
+        // SDL may expose only the 1080p graphics plane on a 4K television.
+        // Mode dimensions describe the physical output, including supported UHD modes.
+        try {
+            if (Build.VERSION.SDK_INT >= 23) {
+                @Suppress("DEPRECATION")
+                val panel = windowManager.defaultDisplay.supportedModes.maxByOrNull {
+                    it.physicalWidth.toLong() * it.physicalHeight
+                }
+                if (panel != null) {
+                    env("NUVIO_PANEL_SIZE", "${panel.physicalWidth}x${panel.physicalHeight}")
+                    env("NUVIO_PANEL_SOURCE", "Android Display.Mode supportedModes")
+                }
+            }
+        } catch (_: Exception) { /* Keep the SDL fallback when display info is unavailable. */ }
+        // Real metrics include physical DPI; use the same pixel space as that DPI.
+        // Display.Mode.physicalWidth/Height are pixel counts, not inches.
+        val panelInches = try {
+            val metrics = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.getRealMetrics(metrics)
+            if (metrics.xdpi > 0 && metrics.ydpi > 0)
+                kotlin.math.hypot((metrics.widthPixels / metrics.xdpi).toDouble(),
+                    (metrics.heightPixels / metrics.ydpi).toDouble())
+            else 0.0
+        } catch (_: Exception) { 0.0 }
+        env("NUVIO_PANEL_INCHES", if (panelInches.isFinite() && panelInches in 20.0..120.0)
+            panelInches.toString() else "0")
         env("NUVIO_SAIDA_ANTERIOR", saidaAnterior())
+        // Decoders de video do aparelho, para o log do D1 (#318): a deteccao de
+        // MStar (NvPlayer.mstar) so aparecia no logcat e nunca soubemos se casou.
+        env("NUVIO_DECODERS", decodersDeVideo())
+        // Onde o crash nativo anterior aconteceu (Tombstone.kt); android.c imprime.
+        env("NUVIO_QUEDA_ANDROID", quedaAnterior.joinToString("\n"))
     }
+
+    private var quedaAnterior: List<String> = emptyList()
+
+    private fun decodersDeVideo(): String = try {
+        android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
+            .filter { !it.isEncoder && it.supportedTypes.any { t -> t.startsWith("video/") } }
+            .joinToString(",") { it.name }.take(400)
+    } catch (e: Throwable) { "" }
 
     // POR QUE O PROCESSO ANTERIOR MORREU, segundo o proprio Android (11+). O log
     // do app nao ve ANR, crash nativo nem o low memory killer: a sessao
@@ -388,6 +858,7 @@ class NuvioActivity : SDLActivity() {
                 android.app.ApplicationExitInfo.REASON_OTHER -> "outro"
                 else -> "desconhecido"
             }
+            if (r.reason == android.app.ApplicationExitInfo.REASON_CRASH_NATIVE) quedaAnterior = Tombstone.doExitInfo(r)
             val ha = (System.currentTimeMillis() - r.timestamp) / 1000
             val desc = (r.description ?: "").replace('\n', ' ').take(120)
             "motivo=$nome(${r.reason}) status=${r.status} importancia=${r.importance} " +
@@ -437,10 +908,16 @@ class NuvioActivity : SDLActivity() {
     private val eventos = ConcurrentLinkedQueue<String>()
     fun proximoEvento(): String? = eventos.poll()
 
+    // #205: app-specific dir of every volume (index 0 = primary), one per line,
+    // empty line for an unavailable one. Writable with no storage permission.
+    fun volumesExternos(): String =
+        getExternalFilesDirs(null).joinToString("\n") { it?.absolutePath ?: "" }
+
     private fun log(m: String) = Log.i("nuvio", "[texto] $m")
 
     // --- Teclado do sistema -------------------------------------------------
-    // Um EditText de 1 px, invisivel, recebe o foco e chama o IME. O texto
+    // Na TV, um EditText de 1 px invisivel recebe o foco e chama o IME. No
+    // modo Mobile, o mesmo campo fica visivel acima do teclado. O texto
     // INTEIRO (com a composicao em andamento) vai ao C a cada mudanca: o campo
     // desenhado pelo app e um espelho deste.
     private var campo: CampoIme? = null
@@ -464,7 +941,7 @@ class NuvioActivity : SDLActivity() {
     private fun criarCampo(): CampoIme {
         campo?.let { return it }
         val c = CampoIme(this)
-        c.alpha = 0f
+        c.alpha = if (interfaceMobile) 1f else 0f
         c.isFocusable = true
         c.isFocusableInTouchMode = true
         c.setSingleLine(true)
@@ -507,9 +984,50 @@ class NuvioActivity : SDLActivity() {
             }
             v.onApplyWindowInsets(ins)
         }
-        mLayout.addView(c, ViewGroup.LayoutParams(1, 1))
+        // Style once; switching mode changes bounds and visibility below.
+        run {
+            fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
+            c.textSize = 18f
+            c.setTextColor(Color.WHITE)
+            c.setPadding(dp(16), dp(8), dp(16), dp(8))
+            c.minHeight = dp(56)
+            c.background = GradientDrawable().apply {
+                setColor(Color.rgb(28, 31, 38))
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1).coerceAtLeast(1), Color.rgb(125, 170, 255))
+            }
+            c.elevation = dp(8).toFloat()
+            c.visibility = View.GONE
+        }
+        mLayout.addView(c, RelativeLayout.LayoutParams(1, 1))
         campo = c
+        aplicarCampoModo()
+        posicionarCampoTouch()
         return c
+    }
+
+    private fun aplicarCampoModo() {
+        val c = campo ?: return
+        c.alpha = if (interfaceMobile) 1f else 0f
+        c.visibility = if (interfaceMobile && !campoAberto) View.GONE else View.VISIBLE
+        c.layoutParams = if (interfaceMobile) RelativeLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            addRule(RelativeLayout.ALIGN_PARENT_TOP)
+        } else RelativeLayout.LayoutParams(1, 1)
+        posicionarCampoTouch()
+    }
+
+    private fun posicionarCampoTouch() {
+        if (!interfaceMobile) return
+        val c = campo ?: return
+        val p = c.layoutParams as? RelativeLayout.LayoutParams ?: return
+        fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
+        val left = dp(16) + touchInsetLeft
+        val right = dp(16) + touchInsetRight
+        val top = dp(12) + touchInsetTop
+        if (p.leftMargin == left && p.rightMargin == right && p.topMargin == top) return
+        p.leftMargin = left; p.rightMargin = right; p.topMargin = top
+        c.layoutParams = p
     }
 
     private fun fecharCampo(ev: String?) {
@@ -519,8 +1037,10 @@ class NuvioActivity : SDLActivity() {
         campoImeVisto = false
         (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
             .hideSoftInputFromWindow(c.windowToken, 0)
+        if (interfaceMobile) c.visibility = View.GONE
         c.clearFocus()
         mSurface?.requestFocus()
+        telaCheiaTouch()
         if (ev != null) { log("teclado fechou (${ev[0]})"); eventos.add(ev) }
     }
 
@@ -550,6 +1070,10 @@ class NuvioActivity : SDLActivity() {
             campoAberto = true
             campoImeVisto = false
             teclaDesceuNoCampo = 0
+            if (interfaceMobile) {
+                c.visibility = View.VISIBLE
+                c.bringToFront()
+            }
             c.requestFocus()
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             val ok = imm.showSoftInput(c, InputMethodManager.SHOW_IMPLICIT)
@@ -594,7 +1118,8 @@ class NuvioActivity : SDLActivity() {
     @Volatile private var iconePendente: String? = null
     @Volatile private var esperandoTela = false   // voz do sistema por cima
 
-    private fun compIcone(i: String) = ComponentName(this, "$packageName.Icone_$i")
+    // O pacote instalado muda no debug; a classe do alias continua no namespace.
+    private fun compIcone(i: String) = ComponentName(this, "space.nuvio.nativelegacy.Icone_$i")
     private fun iconeLigado(i: String): Boolean {
         val st = packageManager.getComponentEnabledSetting(compIcone(i))
         // DEFAULT = o que o manifest diz: so o original nasce ligado.
@@ -688,7 +1213,7 @@ class NuvioActivity : SDLActivity() {
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onError(error: Int) {
-                log("voz: erro $error")
+                log("voice recognition failed: SpeechRecognizer error=$error")
                 reconhecedor = null
                 try { r.destroy() } catch (_: Exception) {}
                 when (error) {
@@ -717,26 +1242,34 @@ class NuvioActivity : SDLActivity() {
             r.startListening(intentVoz().putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                 .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName))
         } catch (e: Exception) {
-            log("voz: startListening falhou: $e")
+            log("voice recognition failed: startListening: $e")
             reconhecedor = null
             vozDoSistema("semvoz")
         }
     }
 
     private fun vozDoSistema(motivo: String) {
+        log("voice fallback: " + when (motivo) {
+            "negada" -> "microphone permission denied"
+            "idioma" -> "recognition language unavailable"
+            else -> "in-app recognizer unavailable"
+        })
         val i = intentVoz()
         if (i.resolveActivity(packageManager) != null) {
             eventos.add("Ssistema:$motivo")
             @Suppress("DEPRECATION")
             try { esperandoTela = true; startActivityForResult(i, PEDIDO_DITADO); return }
-            catch (_: Exception) { esperandoTela = false }
+            catch (e: Exception) { esperandoTela = false; log("system voice activity failed: $e") }
         }
         // Nem a tela de voz: o C abre o teclado do sistema (o microfone dele dita).
+        log("voice fallback: system voice activity unavailable; opening keyboard")
         eventos.add("Steclado:$motivo")
     }
 
     @Deprecated("startActivityForResult e o que o SDLActivity (Activity) oferece")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (registroDownload.resultado(requestCode, resultCode, data)) return
+        if (fontImport.resultado(requestCode, resultCode, data)) return
         if (requestCode == PEDIDO_DITADO) esperandoTela = false
         if (requestCode == PEDIDO_DITADO) {
             val t = if (resultCode == RESULT_OK)
@@ -748,8 +1281,24 @@ class NuvioActivity : SDLActivity() {
         super.onActivityResult(requestCode, resultCode, data)
     }
 
+    // As teclas chegam ao C pelo foco da SDLSurface. Se outra View (ou nenhuma)
+    // ficou com ele, o processo segue vivo e o controle nao responde (#318).
+    fun devolverFoco() {
+        if (campoAberto) return
+        val s = mSurface ?: return
+        if (!s.isFocused) s.requestFocus()
+    }
+
     // Controle remoto: troca a tecla ANTES do SDL, para cair no SDLK que o app espera.
     override fun dispatchKeyEvent(ev: KeyEvent): Boolean {
+        if (ev.action == KeyEvent.ACTION_DOWN && !campoAberto && mSurface?.isFocused == false) {
+            Log.w("Nuvio", "foco fora da SDLSurface: devolvendo antes da tecla ${ev.keyCode}")
+            devolverFoco()
+        }
+        // Voltar com o C sem desenhar: o SDL entregaria a tecla a um main()
+        // preso e nada aconteceria. O vigia abre a tela com "Sair".
+        if (ev.keyCode == KeyEvent.KEYCODE_BACK && ev.action == KeyEvent.ACTION_DOWN &&
+            ev.repeatCount == 0 && vigia?.voltar() == true) return true
         val novo = when (ev.keyCode) {
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> KeyEvent.KEYCODE_ENTER
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY,
@@ -757,8 +1306,9 @@ class NuvioActivity : SDLActivity() {
             KeyEvent.KEYCODE_MEDIA_STOP -> KeyEvent.KEYCODE_BACK
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, KeyEvent.KEYCODE_MEDIA_NEXT -> KeyEvent.KEYCODE_DPAD_RIGHT
             KeyEvent.KEYCODE_MEDIA_REWIND, KeyEvent.KEYCODE_MEDIA_PREVIOUS -> KeyEvent.KEYCODE_DPAD_LEFT
-            // MENU e BOOKMARK (controles sem tecla colorida) abrem o mesmo painel de Salvos/Avisos.
-            KeyEvent.KEYCODE_PROG_BLUE, KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_BOOKMARK -> KeyEvent.KEYCODE_S
+            // Guide/Menu open the full TV guide, including during live playback.
+            KeyEvent.KEYCODE_GUIDE, KeyEvent.KEYCODE_MENU -> KeyEvent.KEYCODE_F10
+            KeyEvent.KEYCODE_PROG_BLUE, KeyEvent.KEYCODE_BOOKMARK -> KeyEvent.KEYCODE_S
             // Info (i) = registro (enviar o log), como a vermelha/verde.
             KeyEvent.KEYCODE_PROG_RED, KeyEvent.KEYCODE_PROG_GREEN,
             KeyEvent.KEYCODE_INFO -> KeyEvent.KEYCODE_F9
@@ -785,3 +1335,4 @@ class NuvioActivity : SDLActivity() {
         )
     }
 }
+

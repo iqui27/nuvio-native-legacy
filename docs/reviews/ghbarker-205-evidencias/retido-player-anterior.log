@@ -1,0 +1,239 @@
+player_retido: inicio
+[plugins] desligados, 0 repositorio(s), 0 scraper(s)
+[perfis] perfil ativo: 1
+[ajustes] aparencia -> Da arte + Cor da logo + Frost, sem vidro (migracao unica da 2.0)
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[player] pronto em 0 ms desde a abertura (retomada 0%)
+[player] load->1o quadro 0 ms
+[player] tocando em 0 ms desde a abertura (retomada 0%)
+[relogio] pipeline=600.000 legenda=600.000 (+0 ms; amostra de 0 ms atras)
+[player] saida: video retido 0 ms, resto 0 ms
+[player] sessao pausada pronta para retomar (teto 120000 ms)
+[player] retomada pronta: 0 ms, sem load nem seek
+ok retorno: 1 load total, 0 stop, 0 seek, pausa confirmada
+[player] saida: video retido 0 ms, resto 0 ms
+[player] sessao pausada pronta para retomar (teto 120000 ms)
+[player] sessao retida solta: prazo (0 ms)
+[player] saida: video parar 0 ms, resto 0 ms
+ok teto de 120 s libera pipeline
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[player] pronto em 0 ms desde a abertura (retomada 16%)
+[player] load->1o quadro 0 ms
+[t] 6018187 abrir: seek para o ponto salvo
+[player] tocando em 0 ms desde a abertura (retomada 16%)
+[player] saida: video retido 0 ms, resto 0 ms
+[player] sessao pausada pronta para retomar (teto 120000 ms)
+[plugins] desligados, 0 repositorio(s), 0 scraper(s)
+[jellyfin] profile changed: in-flight requests dropped
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[emby] profile changed: in-flight requests dropped
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 0 da conta, 0 repetido(s); 0 na fileira
+[cat] continuar assistindo refeita: 0 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[plex] profile changed: in-flight requests dropped
+[perfis] perfil ativo: 2
+[player] sessao retida solta: perfil (1 ms)
+[player] saida: video parar 0 ms, resto 0 ms
+[plugins] desligados, 0 repositorio(s), 0 scraper(s)
+[jellyfin] profile changed: in-flight requests dropped
+[emby] profile changed: in-flight requests dropped
+[plex] profile changed: in-flight requests dropped
+[perfis] perfil ativo: 1
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[player] pronto em 0 ms desde a abertura (retomada 16%)
+[player] load->1o quadro 0 ms
+[t] 6018187 abrir: seek para o ponto salvo
+[player] tocando em 0 ms desde a abertura (retomada 16%)
+[player] saida: video retido 0 ms, resto 0 ms
+[player] sessao pausada pronta para retomar (teto 120000 ms)
+[player] sessao retida solta: perfil (0 ms)
+[player] saida: video parar 0 ms, resto 0 ms
+ok troca de conta e perfil descarta
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[player] pronto em 0 ms desde a abertura (retomada 16%)
+[player] load->1o quadro 0 ms
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[t] 6018187 abrir: seek para o ponto salvo
+[player] tocando em 0 ms desde a abertura (retomada 16%)
+[player] saida: video retido 0 ms, resto 0 ms
+[player] sessao pausada pronta para retomar (teto 120000 ms)
+[player] saida: video parar 0 ms, resto 0 ms
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[player] pronto em 0 ms desde a abertura (retomada 16%)
+[player] load->1o quadro 0 ms
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[t] 6018188 abrir: seek para o ponto salvo
+[player] tocando em 0 ms desde a abertura (retomada 16%)
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[player] saida: video retido 0 ms, resto 0 ms
+[player] sessao pausada pronta para retomar (teto 120000 ms)
+[player] saida: video parar 0 ms, resto 0 ms
+ok identidade e episodio diferentes usam fluxo normal
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[player] pronto em 0 ms desde a abertura (retomada 16%)
+[player] load->1o quadro 0 ms
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[t] 6018188 abrir: seek para o ponto salvo
+[player] tocando em 0 ms desde a abertura (retomada 16%)
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[player] saida: video retido 0 ms, resto 0 ms
+[player] sessao pausada pronta para retomar (teto 120000 ms)
+[player] sessao retida solta: backend (0 ms)
+[player] saida: video parar 0 ms, resto 0 ms
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[player] pronto em 0 ms desde a abertura (retomada 16%)
+[player] load->1o quadro 0 ms
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[t] 6018188 abrir: seek para o ponto salvo
+[player] tocando em 1 ms desde a abertura (retomada 16%)
+[player] saida: video retido 0 ms, resto 0 ms
+[player] sessao pausada pronta para retomar (teto 120000 ms)
+[player] sessao retida solta: backend (0 ms)
+[player] saida: video parar 0 ms, resto 0 ms
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[player] pronto em 0 ms desde a abertura (retomada 16%)
+[player] load->1o quadro 0 ms
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[t] 6018188 abrir: seek para o ponto salvo
+[player] tocando em 0 ms desde a abertura (retomada 16%)
+[player] saida: video retido 0 ms, resto 0 ms
+[player] sessao pausada pronta para retomar (teto 120000 ms)
+[player] sessao retida solta: outro video (0 ms)
+[player] saida: video parar 0 ms, resto 0 ms
+ok erro/recurso perdido e backend substituido nao retomam
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[player] pronto em 0 ms desde a abertura (retomada 16%)
+[player] load->1o quadro 0 ms
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[t] 6018188 abrir: seek para o ponto salvo
+[player] tocando em 0 ms desde a abertura (retomada 16%)
+[player] saida: video retido 0 ms, resto 0 ms
+[player] sessao pausada pronta para retomar (teto 120000 ms)
+[player] saida: video parar 0 ms, resto 0 ms
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[player] saida: video parar 0 ms, resto 0 ms
+[cat] 16 blocos trocados sem virada de quadro; liberando o mais velho
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 0 da conta, 0 repetido(s); 0 na fileira
+[cat] continuar assistindo refeita: 0 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[epg] paises da grade: BR,PT,MX,AR (5 arquivo(s))
+[player] saida: video parar 0 ms, resto 0 ms
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[player] pronto em 0 ms desde a abertura (retomada 0%)
+[player] load->1o quadro 0 ms
+[player] tocando em 0 ms desde a abertura (retomada 0%)
+[player] fluxo de 30 s: curto demais para ser o titulo, progresso NAO gravado (clipe de erro do provedor?)
+[player] saida: video parar 0 ms, resto 0 ms
+ok novo player, canal e clipe curto seguem fechamento normal
+[perfis] perfil ativo: 1
+[selos] perfil 1: 0 pacote(s), ativo: Do Nuvio
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[player] pronto em 0 ms desde a abertura (retomada 0%)
+[player] load->1o quadro 0 ms
+[player] tocando em 0 ms desde a abertura (retomada 0%)
+[voltafonte] guardada para fixture-titulo (link com 0 s)
+[player] saida: video retido 0 ms, resto 0 ms
+[player] sessao pausada pronta para retomar (teto 120000 ms)
+[voltafonte] usando a fonte guardada de fixture-titulo (link com 0 s)
+[player] saida: video parar 0 ms, resto 0 ms
+[voltafonte] usando a fonte guardada de fixture-titulo (link com 0 s)
+ok suspensao guarda a fonte com cabecalhos; soltar a retida mantem
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[player] pronto em 0 ms desde a abertura (retomada 16%)
+[player] load->1o quadro 0 ms
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[t] 6018189 abrir: seek para o ponto salvo
+[player] tocando em 0 ms desde a abertura (retomada 16%)
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[voltafonte] esquecida: sessao falhou
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[player] saida: video parar 0 ms, resto 0 ms
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[player] pronto em 0 ms desde a abertura (retomada 16%)
+[player] load->1o quadro 0 ms
+[t] 6018189 abrir: seek para o ponto salvo
+[player] tocando em 0 ms desde a abertura (retomada 16%)
+[voltafonte] guardada para fixture-titulo (link com 0 s)
+[player] saida: video parar 0 ms, resto 0 ms
+[voltafonte] usando a fonte guardada de fixture-titulo (link com 0 s)
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[player] pronto em 0 ms desde a abertura (retomada 16%)
+[player] load->1o quadro 0 ms
+[t] 6018189 abrir: seek para o ponto salvo
+[player] tocando em 1 ms desde a abertura (retomada 16%)
+[voltafonte] esquecida: titulo concluido
+[player] saida: video parar 0 ms, resto 0 ms
+ok sessao que falhou ou terminou apaga; fechamento normal guarda
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[player] pronto em 0 ms desde a abertura (retomada 0%)
+[player] load->1o quadro 0 ms
+[player] tocando em 0 ms desde a abertura (retomada 0%)
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[voltafonte] guardada para fixture-titulo (link com 0 s)
+[player] saida: video parar 0 ms, resto 0 ms
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[player] pronto em 0 ms desde a abertura (retomada 16%)
+[player] load->1o quadro 0 ms
+[t] 6018189 abrir: seek para o ponto salvo
+[player] tocando em 0 ms desde a abertura (retomada 16%)
+[player] saida: video parar 0 ms, resto 0 ms
+[voltafonte] usando a fonte guardada de fixture-titulo (link com 0 s)
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[player] saida: video parar 0 ms, resto 0 ms
+[voltafonte] usando a fonte guardada de fixture-titulo (link com 0 s)
+ok lista trocada e canal nao mexem na entrada
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)
+[ajustes] aparencia -> Da arte + Cor da logo + Frost, sem vidro (migracao unica da 2.0)
+[perf] cat_definir_tudo: 1 itens, fora da trava 0.0 ms, DENTRO da trava 0.0 ms, progresso do disco 0.0 ms (fora da trava), total 0.0 ms
+[player] pronto em 0 ms desde a abertura (retomada 16%)
+[player] load->1o quadro 0 ms
+[t] 6018190 abrir: seek para o ponto salvo
+[player] tocando em 1 ms desde a abertura (retomada 16%)
+[voltafonte] guardada para fixture-titulo (link com 0 s)
+[player] saida: video parar 0 ms, resto 0 ms
+[voltafonte] usando a fonte guardada de fixture-titulo (link com 0 s)
+[voltafonte] esquecida: teste
+ok padrao: sair libera o pipeline e guarda a fonte para o Retomar
+player_retido: tudo ok
+[desc] continuar assistindo local: 1
+[desc] continuar assistindo: a seguir da conta: vistos da conta nao puxados ou velhos; nenhuma semente
+[desc] continuar assistindo: 0 do Trakt, 0 do Simkl (0 fora de 1-90%), 1 da conta, 0 repetido(s); 1 na fileira
+[cat] continuar assistindo refeita: 1 item(ns), trava 0.0 ms (progresso 0.0 ms)

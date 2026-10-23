@@ -32,11 +32,26 @@
 #include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#if !defined(MONTAGEM_PERFIS_REAIS) && !defined(NV_TEST_SESSAO_PROPRIA)
+// These six discovery cases have one fixed account/profile per process.
+// The CW owner fixture instead links real perfis.c, including invalidation.
+#include "stub_perfisessao.h"
+#endif
 int arte_reserva_episodios(const char *imdb, const char *corpo) { (void)imdb; (void)corpo; return 0; }
 
+int ajustes_social(void) { return 1; }
+int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
+int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
+int ajustes_ocultar_nao_lancados(void) { return 0; }   // #369: descoberta.c le o ajuste
+int ajustes_ocultar_filmes_vistos(void) { return 0; }    // #366: descoberta.c le o ajuste
+int ajustes_fonte_biblioteca(void) { return 0; }
 #include "../src/descoberta.c"
+// Session, addon and social functions belong to this fixture or real modules.
+#define NV_TEST_SERVIDORES_APENAS
 #include "jellyfin_stub.inc"
+#undef NV_TEST_SERVIDORES_APENAS
+#include "nvtmp.h"
 Uint32 SDL_GetTicks(void) { return 0; }
 
 #define BASE "https://addon.example/abc"
@@ -55,8 +70,18 @@ static const char *MANIFESTO =
 static char dirDados[PATH_MAX];
 static const char *fixtureDono = "dono";
 const char *sessao_usuario(void)  { return __atomic_load_n(&fixtureDono, __ATOMIC_ACQUIRE); }
+#ifndef MONTAGEM_PERFIS_REAIS
 int         perfis_ativo(void)    { return 1; }
+#endif
 const char *dados_dir(void)       { return dirDados; }
+char *dados_caminho(char *dst, unsigned size, const char *name) {
+  snprintf(dst, size, "%s/%s", dirDados, name); return dst;
+}
+int ajustes_nota_episodio(int source) { (void)source; return 1; }
+void addons_catalogo_chave(const char *id, const char *base, const char *type,
+                           const char *catalog, char *dst, unsigned size) {
+  (void)base; snprintf(dst, size, "%s_%s_%s", id, type, catalog);
+}
 static void caminhoDado(char *dst, size_t tam, const char *nome) {
   snprintf(dst, tam, "%s/%s", dirDados, nome);
 }
@@ -83,19 +108,58 @@ int dados_apagar(const char *nome) {
 // ------------------------------------------------------------------ o addon
 // A lista "nova" do caso 1 troca a URL do addon (outro token no caminho, como
 // a conta faz): e isso que torna inutil o manifesto largado com a velha.
-static volatile unsigned versaoAddons = 1;
+static unsigned versaoAddons = 1;
+// Current addons.h snapshots borrow the same lock as fixture list writers.
+// This is a real ownership boundary, not an unlocked success stub.
+static pthread_mutex_t fixtureAddonListLock = PTHREAD_MUTEX_INITIALIZER;
+static _Thread_local unsigned fixtureAddonListDepth;
+static unsigned fixtureAddonListSnapshots;
+void addons_lista_travar(void) {
+  assert(!fixtureAddonListDepth);
+  assert(!pthread_mutex_lock(&fixtureAddonListLock));
+  fixtureAddonListDepth = 1;
+  __atomic_add_fetch(&fixtureAddonListSnapshots, 1, __ATOMIC_RELAXED);
+}
+void addons_lista_destravar(void) {
+  assert(fixtureAddonListDepth == 1);
+  fixtureAddonListDepth = 0;
+  assert(!pthread_mutex_unlock(&fixtureAddonListLock));
+}
 #define BASE_NOVA BASE "-v2"
-static const char *baseAtual(void)     { return versaoAddons > 1 ? BASE_NOVA : BASE; }
+static unsigned versaoAtual(void) { return __atomic_load_n(&versaoAddons, __ATOMIC_ACQUIRE); }
+static const char *baseAtual(void)     { return versaoAtual() > 1 ? BASE_NOVA : BASE; }
 int   addons_n(void)                   { return 1; }
 const char *addons_base(int i)         { (void)i; return baseAtual(); }
 int   addons_ativo(int i)              { (void)i; return 1; }
-int   addons_fornece(int i, int oque)     { (void)i; (void)oque; return 0; }
-int   addons_sondado(int i)              { (void)i; return 0; }
+static int fixtureMeta;
+int   addons_fornece(int i, int oque)     { (void)i; return fixtureMeta && oque == ADD_META; }
+int   addons_sondado(int i)              { (void)i; return fixtureMeta; }
 const char *addons_id_manifesto(int i) { (void)i; return AID; }
 const char *addons_nome(int i)         { (void)i; return "Addon"; }
-unsigned addons_versao(void)           { return versaoAddons; }
+unsigned addons_versao(void)           { return versaoAtual(); }
+// Fixture fakes the account/rows; a missing full snapshot defers exclusion.
+int addons_copiar_identidades(AddonIdentidade *saida, int max, unsigned versao, int perfil) {
+  (void)saida; (void)max; (void)versao; (void)perfil; return -1;
+}
+int addons_travar_lista(unsigned versao, int perfil) { (void)versao; (void)perfil; return 0; }
+void addons_destravar_lista(void) {}
 const char *addons_base_por_id(const char *id) { return id && !strcmp(id, AID) ? baseAtual() : ""; }
 void  addons_manifesto_lido(int i, const char *c) { (void)i; (void)c; }
+void ws_destino(const char *b, const char *u, int p, char out[20]) {
+  (void)b; (void)u; (void)p; strcpy(out, "fixture");
+}
+void addons_manifesto_lido_base(int i, const char *b, const char *d, unsigned v, const char *c) {
+  (void)b; (void)d; (void)v; addons_manifesto_lido(i, c);
+}
+int addons_identidade_recebida(const char *base, unsigned versao, NvPerfilSessao sessao,
+                              const char *corpo) {
+  (void)corpo;
+  return nv_perfil_sessao_atual(sessao) && versao == versaoAtual() && !strcmp(base, baseAtual());
+}
+int addons_manifesto_recebido(const char *base, unsigned versao, NvPerfilSessao sessao,
+                             const char *corpo) {
+  return addons_identidade_recebida(base, versao, sessao, corpo);
+}
 
 // ------------------------------------------------------------------ o relogio
 static unsigned long long agoraMs(void) {
@@ -111,14 +175,17 @@ static char imdbEsperado[32];
 static volatile int pedidosCatalogo, pendurados;
 // Manifesto baixado NO FIO DA MONTAGEM = o rede_baixar serial de lerManifesto,
 // e nao os fios de maniLargar.
-static pthread_t fioDaMontagem;
-static volatile int temFioDaMontagem, manifestosEmSerie;
+// The native assembly entry emits its marker before creating any workers.
+// A fresh pthread lifetime starts with role0, even if pthread_t is reused.
+static _Thread_local int fixtureFioMontagem;
+static volatile int manifestosEmSerie;
 static pthread_mutex_t pedTrava = PTHREAD_MUTEX_INITIALIZER;
 /* Hooks only for the focused cold/warm publication fixture. Defaults keep
  * the original six scenarios unchanged. */
 static void (*fixtureCatalogo)(const char *id);
 static void (*fixtureMarco)(const char *name);
-static int fixtureCW, fixtureSocial;
+static void (*fixtureTrakt)(int social);
+static int fixtureCW, fixtureSocial, fixtureCWEmpty;
 
 static int imdbNaTela(const char *imdb, int (*campo)(const CatItem *)) {
   int i, k = 0;
@@ -130,14 +197,17 @@ static int imdbNaTela(const char *imdb, int (*campo)(const CatItem *)) {
 }
 static int ehNaLista(const CatItem *c) { return c->naLista; }
 
+static char *(*fixtureRede)(const char *url);
 char *rede_baixar(const char *url, int t) {
+  if (fixtureRede) return fixtureRede(url);
+  assert(!fixtureAddonListDepth); // snapshots must release before transport
   char buf[600];
   const char *p;
   char id[16] = "";
   int armado;
   (void)t;
   if (strstr(url, "/manifest.json")) {
-    if (temFioDaMontagem && pthread_equal(pthread_self(), fioDaMontagem))
+    if (fixtureFioMontagem)
       __atomic_add_fetch(&manifestosEmSerie, 1, __ATOMIC_SEQ_CST);
     return strdup(MANIFESTO);
   }
@@ -174,6 +244,11 @@ char *rede_baixar(const char *url, int t) {
   return strdup(buf);
 }
 char *rede_baixar_com(const char *u, int t, const char *const *c) { (void)c; return rede_baixar(u, t); }
+char *rede_baixar_st(const char *u, int t, const char *const *c, int *status) {
+  char *body = rede_baixar_com(u, t, c);
+  if (status) *status = body ? 200 : 0;
+  return body;
+}
 
 // ------------------------------------------------------------------ o Trakt
 static char listaWl[4][32];
@@ -193,20 +268,27 @@ int trakt_lista(const char *q, CatItem *s, int m) {
   }
   return i;
 }
-// O "sync" que chega entre o Trakt e a leitura da lista de addons.
+// Mesmo dublê, na forma que cresce: descoberta.c pede a lista por aqui agora.
+int trakt_lista_cresc(const char *q, CatItem **s, int m) {
+  int n;
+  *s = m > 0 ? calloc((size_t)m, sizeof(CatItem)) : NULL;
+  if (!*s) return 0;
+  n = trakt_lista(q, *s, m);
+  if (n <= 0) { free(*s); *s = NULL; return 0; }
+  return n;
+}
+// Synthetic account changes land at the assembly marker, before list read.
 enum { S_NADA, S_ADDONS, S_CREDENCIAL };
-static volatile int armadoSocial = S_NADA;
+static volatile int armadoInicio = S_NADA;
 // O servico social proprio (recomenda.c) fica fora deste teste: a uniao e so o que o Trakt trouxe.
 int   recomenda_social_mesclar(CatItem *i, int nTrakt, int max) { (void)i; (void)max; return nTrakt; }
+int recomenda_social_mesclar_sessao(CatItem *i, int nTrakt, int max, uint64_t sessao) {
+  return nv_perfil_sessao_atual(sessao) ? recomenda_social_mesclar(i, nTrakt, max) : 0;
+}
 unsigned recomenda_geracao(void) { return 1; }
 int trakt_social(CatItem *s, int m) {
-  int a = armadoSocial;
+  if (fixtureTrakt) fixtureTrakt(1);
   (void)s; (void)m;
-  armadoSocial = S_NADA;
-  // (fioDaMontagem e marcado em trakt_continuar: o social corre em fio proprio.)
-  // Lista nova = versao nova: o manifesto largado no comeco nao serve mais.
-  if (a == S_ADDONS) { versaoAddons++; desc_repetir_addons(); }
-  else if (a == S_CREDENCIAL) desc_repetir();
   if (fixtureSocial && m > 0) {
     memset(s, 0, sizeof *s);
     snprintf(s->imdb, sizeof s->imdb, "ttSocial");
@@ -233,11 +315,28 @@ int   fil_linha_oculta(int i)              { (void)i; return 0; }
 int   fil_linha_tipo(int i)                { (void)i; return FIL_TIPO_AUTO; }
 int   fil_linha_tam(int i)                 { (void)i; return FIL_TAM_PADRAO; }
 void  fil_gravar_registro(void)            { }
+int   fil_lista_e_deste_perfil(int p)       { (void)p; return 1; }
+unsigned fil_perfil_geracao(void)          { return 0; }
+FilPassada fil_passada_ler(void)          { FilPassada p = {0, 0}; return p; }
+int   fil_passada_valida(const FilPassada *p) { (void)p; return 1; }
+void  fil_registrar_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k, int n) { (void)p; (void)c; (void)t; (void)a; (void)k; (void)n; }
+#ifndef NV_TEST_FIL_REGISTRAR_PROPRIO
+void  fil_registrar_se_couber_de(const FilPassada *p, const char *c, const char *t, const char *a, const char *k) { (void)p; (void)c; (void)t; (void)a; (void)k; }
+#endif
 int   fil_podar_catalogos(const char *const *ids, const char *const *bases, int n,
                           int perfilDaLista) {
   (void)ids; (void)bases; (void)n; (void)perfilDaLista; return 0; }
+int fil_podar_catalogos_de(const char *const *ids, const char *const *bases, int n,
+                           int perfil, unsigned versao) {
+  (void)ids; (void)bases; (void)n; (void)perfil; (void)versao; return 0;
+}
+int fil_marcar_declaradas(const char *const *chaves, int n, int perfilDaLista) { (void)chaves; (void)n; (void)perfilDaLista; return 0; }
+int fil_marcar_sem_addon(const char *const *ids, const char *const *bases, const int *ativos, int n, int perfilDaLista) {
+  (void)ids; (void)bases; (void)ativos; (void)n; (void)perfilDaLista; return 0;
+}
 int   fil_addon_novo(const char *id, const char *base) { (void)id; (void)base; return 0; }
 int   addons_perfil_da_lista(void)         { return 0; }
+int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 int   fil_limite(void)                     { return 3; }
 // Dubles da escolha da cota (#126), como em homejanelas.c.
 int fil_escolhida(const char *c) { (void)c; return -1; }
@@ -246,6 +345,8 @@ void fil_registrar_se_couber(const char *c, const char *t, const char *a,
                              const char *tp) { (void)c; (void)t; (void)a; (void)tp; }
 const char *fil_hero_fonte(void)           { return "auto"; }
 int   fil_oculta(const char *c)            { (void)c; return 0; }
+int   fil_adicionada_na_tv(const char *c) { (void)c; return 0; }
+int   fil_estado_chave(const char *c) { (void)c; return -1; }
 int   fil_tem_ordem(void)                  { return 0; }
 int   fil_unir(const char *const *c, int n, int *s, int m) {
   int i; (void)c; for (i = 0; i < n && i < m; i++) s[i] = i; return i; }
@@ -253,7 +354,18 @@ int   fil_unir(const char *const *c, int n, int *s, int m) {
 // ------------------------------------------------------------------ o resto
 static volatile int montagens;
 void  marco(const char *n) {
-  if (!strcmp(n, "montar: inicio")) montagens++;
+  if (!strcmp(n, "montar: inicio")) {
+    fixtureFioMontagem = 1; montagens++;
+    // This point is after the round captured generation/session and before
+    // manifest/list snapshots. Consume once so a retry cannot repeat it.
+    int a = __atomic_exchange_n(&armadoInicio, S_NADA, __ATOMIC_ACQ_REL);
+    if (a == S_ADDONS) {
+      addons_lista_travar();
+      __atomic_add_fetch(&versaoAddons, 1, __ATOMIC_RELEASE);
+      addons_lista_destravar();
+      desc_repetir_addons();
+    } else if (a == S_CREDENCIAL) desc_repetir();
+  }
   if (fixtureMarco) fixtureMarco(n);
 }
 void  SDL_Delay(Uint32 ms)                 { usleep(ms * 1000); }
@@ -261,11 +373,15 @@ int   ajustes_idioma_ingles(void)          { return 0; }
 int ajustes_idioma(void) { return 0; }
 int   ajustes_cw_ordem(void)               { return 0; }   // Padrao (issue #127)
 int   ajustes_cw_concluido(void)           { return 90; }  // Percentual assistido de fabrica
+int   ajustes_cw_minimo(void)             { return 1; }
 int   ajustes_itens_fileira(void)          { return 12; }   // padrao (#163)
 int   ajustes_cw_mostrar_nao_exibidos(void) { return 1; }
+int   ajustes_cw_proximo(void) { return 1; }
 int   ajustes_cw_ligado(void)              { return 1; }
 int   ajustes_cw_estilo(void)              { return 0; }
 int   ajustes_posteres_deitados(void)      { return 0; }
+float ajustes_espaco_fileiras(void) { return 1.0f; }
+float ajustes_espaco_titulos(void)  { return 1.0f; }
 int   ajustes_rotulos_poster(void)         { return 1; }
 int   ajustes_hero_fonte(void)             { return 0; }
 int   ajustes_cw_fonte(void)               { return fixtureCW ? AJ_CWF_TRAKT : AJ_CWF_CONTA; }
@@ -294,9 +410,12 @@ int   simkl_e_a_seguir(const char *id)     { (void)id; return 0; }
 int   simkl_plantowatch(CatItem *s, int m) { (void)s; (void)m; return 0; }
 int   ajustes_salvos_no_simkl(void)        { return 0; }
 int   trakt_enfeitar_lote(CatItem *s, int n) { (void)s; return n; }
+int trakt_enfeitar_lote_sessao(CatItem *s, int n, uint64_t sessao) {
+  return nv_perfil_sessao_atual(sessao) ? trakt_enfeitar_lote(s, n) : 0;
+}
 int trakt_continuar(CatItem *s, int m) {
-  fioDaMontagem = pthread_self(); temFioDaMontagem = 1;
-  if (!fixtureCW || m < 1) return 0;
+  if (fixtureTrakt) fixtureTrakt(0);
+  if (!fixtureCW || fixtureCWEmpty || m < 1) return 0;
   memset(s, 0, sizeof *s);
   snprintf(s->imdb, sizeof s->imdb, "ttCW");
   snprintf(s->tipo, sizeof s->tipo, "movie");
@@ -306,6 +425,8 @@ int trakt_continuar(CatItem *s, int m) {
   return 1;
 }
 int   trakt_e_a_seguir(const char *id)     { (void)id; return 0; }
+int trakt_cw_concluiu(const char *id, long long ms) { (void)id; (void)ms; return 0; }
+int   trakt_progresso_ocultar(const char *i, int o) { (void)i; (void)o; return 0; }
 int   trakt_continuar_falhou(void)         { return 0; }
 const char *nuvem_trakt_cliente(void)      { return ""; }
 int   arte_reserva_registrar(const char *url, const char *imdb, int poster) {
@@ -313,13 +434,21 @@ int   arte_reserva_registrar(const char *url, const char *imdb, int poster) {
 
 // ------------------------------------------------------------------ o teste
 static void esperarQuieto(void) {
-  int i, quieto = 0;
-  for (i = 0; i < 500 && !buscando; i++) usleep(2000);
-  for (i = 0; i < 10000 && quieto < 150; i++) {
+  unsigned long long inicio = agoraMs(), quietoDesde = 0;
+  // Darwin can coalesce sleeps. Measure 300 ms, not 150 assumed 2 ms wakes.
+  // The real accessor also covers the current CW publication/queued retry,
+  // under its existing locks; abandoned catalogue workers are not included.
+  while (!desc_montando() && agoraMs() - inicio < 1000) usleep(2000);
+  inicio = agoraMs();
+  for (;;) {
+    unsigned long long agora;
     usleep(2000);
-    quieto = buscando ? 0 : quieto + 1;
+    agora = agoraMs();
+    if (desc_montando()) quietoDesde = 0;
+    else if (!quietoDesde) quietoDesde = agora;
+    if (quietoDesde && agora - quietoDesde >= 300) return;
+    assert(agora - inicio < 20000);
   }
-  assert(quieto >= 150);
 }
 static int temFileira(const char *catId) {
   int r;
@@ -338,10 +467,48 @@ static void zerar(void) {
   pthread_mutex_lock(&pedTrava); pedidosCatalogo = 0; pthread_mutex_unlock(&pedTrava);
 }
 
+// The collector must count a truly serial request, and must not turn a CW
+// worker into an assembly worker. Run/reset this before the six real cases.
+static void *fixtureManifestoEmWorker(void *u) {
+  (void)u;
+  trakt_continuar(NULL, 0);
+  char *body = rede_baixar(BASE "/manifest.json", 20);
+  assert(body); free(body);
+  return NULL;
+}
+static void conferirMedidorManifestos(void) {
+  assert(!fixtureFioMontagem);
+  __atomic_store_n(&manifestosEmSerie, 0, __ATOMIC_SEQ_CST);
+  marco("montar: inicio");
+  char *body = rede_baixar(BASE "/manifest.json", 20);
+  assert(body); free(body);
+  assert(__atomic_load_n(&manifestosEmSerie, __ATOMIC_SEQ_CST) == 1);
+  pthread_t worker;
+  assert(!pthread_create(&worker, NULL, fixtureManifestoEmWorker, NULL));
+  assert(!pthread_join(worker, NULL));
+  assert(__atomic_load_n(&manifestosEmSerie, __ATOMIC_SEQ_CST) == 1);
+  fixtureFioMontagem = 0;
+  __atomic_store_n(&manifestosEmSerie, 0, __ATOMIC_SEQ_CST);
+  montagens = 0;
+}
+
 int main(void) {
+  conferirMedidorManifestos();
+#ifndef MONTAGEM_PERFIS_REAIS
+  NvPerfilSessao fixa = nv_perfil_sessao_ler();
+  CatItem controle = {0};
+  assert(perfis_ativo() == 1 && !strcmp(sessao_usuario(), "dono"));
+  assert(nv_perfil_sessao_atual(fixa) && !nv_perfil_sessao_atual(fixa + 1));
+  assert(nv_perfil_sessao_travar(fixa)); nv_perfil_sessao_destravar();
+  assert(!nv_perfil_sessao_travar(fixa + 1));
+  assert(trakt_enfeitar_lote_sessao(&controle, 1, fixa) == 1);
+  assert(!trakt_enfeitar_lote_sessao(&controle, 1, fixa + 1));
+  assert(recomenda_social_mesclar_sessao(&controle, 1, 1, fixa) == 1);
+  assert(!recomenda_social_mesclar_sessao(&controle, 1, 1, fixa + 1));
+#endif
   const char *tmp = getenv("TMPDIR");
   snprintf(dirDados, sizeof dirDados, "%snuvio-montagem-cedo-%d",
-           tmp && *tmp ? tmp : "/tmp/", (int)getpid());
+           nvt("/"), (int)getpid());
   assert(mkdir(dirDados, 0700) == 0);
   desc_tmdb(dirDados);
   homeestado_iniciar();
@@ -386,7 +553,7 @@ int main(void) {
 
   // ---------------------------------------------------------------- caso 1
   printf("\n==> addons novos antes de a volta ler a lista\n");
-  armadoSocial = S_ADDONS;
+  armadoInicio = S_ADDONS;
   manifestosEmSerie = 0;
   zerar();
   desc_repetir();
@@ -399,7 +566,7 @@ int main(void) {
 
   // ---------------------------------------------------------------- caso 2
   printf("\n==> credencial nova no meio: para e recomeca, sem pedir catalogo\n");
-  armadoSocial = S_CREDENCIAL;
+  armadoInicio = S_CREDENCIAL;
   zerar();
   desc_repetir();
   esperarQuieto();
@@ -444,6 +611,8 @@ int main(void) {
     armadoCatalogo = NADA; }
   puts("ok  catalogo lento largado: a home segue, o fio termina sozinho");
 
+  assert(__atomic_load_n(&fixtureAddonListSnapshots, __ATOMIC_RELAXED) > 0);
+  assert(!fixtureAddonListDepth);
   puts("montagem_cedo: tudo ok");
   return 0;
 }

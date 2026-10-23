@@ -1,380 +1,1609 @@
 {
-"caps": [
- {"id":"comecar","t":"Começar","ic":"sparkle","sub":"Controle, busca, conta e atualização"},
- {"id":"home","t":"Home e fileiras","ic":"layout-dashboard","sub":"Layout, fileiras, destaque e Continuar assistindo"},
- {"id":"titulo","t":"Página do título","ic":"file-text","sub":"Trailers, notas e o que a página mostra"},
- {"id":"fontes","t":"Fontes e reprodução","ic":"circle-play","sub":"Folha de Fontes, escolha automática e player"},
- {"id":"legendas","t":"Idiomas e legendas","ic":"languages","sub":"Legendas ASS, idioma do app e do conteúdo"},
- {"id":"ilha","t":"Ilha do relógio e avisos","ic":"bell","sub":"A pílula do canto e tudo que sai dela"},
- {"id":"salvos","t":"Salvos, listas e agenda","ic":"bookmark","sub":"O que você guarda e acompanha"},
- {"id":"social","t":"Social e contas","ic":"users","sub":"Amigos, privacidade, Trakt e perfis"},
- {"id":"aovivo","t":"TV ao vivo","ic":"tv-minimal-play","sub":"Guia de TV, zapping e provedores"},
- {"id":"aparencia","t":"Aparência","ic":"palette","sub":"Vidro, cor, fonte e cartazes"},
- {"id":"desempenho","t":"Desempenho e diagnóstico","ic":"monitor-cog","sub":"Medir e ajustar o app a esta TV"},
- {"id":"problemas","t":"Problemas comuns","ic":"life-buoy","sub":"O que fazer quando algo não funciona"}
-],
-"entradas": [
- {"id":"c-guia","cap":"comecar","t":"Como usar este guia","ic":"compass","novo":1,
-  "txt":"Capítulos à esquerda, recursos no meio e o exemplo à direita. OK num botão leva direto ao lugar do recurso.",
-  "onde":"Ajustes › Sobre e ajuda › Guia de uso","acao":[],
-  "fonte":"Novo (cartão da 1.8.0, em desenho)","prova":"Ainda não existe: proposta desta tela; entra como OPC nova em ajustes_ux_tela.inc:113","visual":"Esta tela"},
- {"id":"c-botoes","cap":"comecar","t":"Os botões coloridos","ic":"circle-dot",
-  "txt":"AMARELO abre a busca de qualquer tela. AZUL ou CH+ abre Salvos, ou o cartão que estiver na ilha. No Guia de TV, AMARELO troca grade e cartões e VERDE testa os canais.",
-  "onde":"No controle da TV","acao":["Ver exemplo"],
-  "fonte":"novidades11.c:945-971 (página Os botões coloridos); novidades170.c:1182-1184",
-  "prova":"app.c:1380 (AMARELO abre o Spotlight fora do guia); app.c:1559-1562 (AZUL/CH+); guia.c:1937-1944 (VERDE e AMARELO no guia); registro.c:21 (VERMELHO)",
-  "visual":"Controle desenhado de novidades11.c:614-680, com as cores atualizadas"},
- {"id":"c-spotlight","cap":"comecar","t":"Buscar de qualquer tela","ic":"search",
-  "txt":"A tecla AMARELA abre o Spotlight por cima do que estiver na tela. A lista muda a cada letra e traz filmes, séries, pessoas e canais ao vivo.",
-  "onde":"AMARELO no controle, ou Busca no menu","acao":["Ver exemplo"],
-  "fonte":"novidades170.c:1183-1184","prova":"app.c:1380; spotlight.c (seções Melhor resultado, Canais ao vivo, Pesquisas recentes em novidades170.c:616-647)",
-  "visual":"cenaSpot de novidades170.c (caixa e lista nas medidas do Spotlight)"},
- {"id":"c-ponteiro","cap":"comecar","t":"Apontar com o Magic Remote","ic":"mouse-pointer",
-  "txt":"Na LG, o Magic Remote funciona como um mouse: passar por cima foca e o clique vale como OK.",
-  "onde":"Em qualquer tela, nas TVs LG","acao":[],
-  "fonte":"novidades142.c:253-254","prova":"ponteiro.h; ilha.c:484; menu.c:162","visual":"Ponteiro sobre um cartaz da Home"},
- {"id":"c-celular","cap":"comecar","t":"Digitar pelo celular","ic":"smartphone",
-  "txt":"Em campos de texto, o botão do celular mostra um QR. Você digita no telefone e o texto chega na TV.",
-  "onde":"No teclado, na Busca e no Spotlight","acao":[],
-  "fonte":"Sem cartão (chegou na 1.7.2, commit 766b0112)","prova":"teclado.c:110, teclado.c:595; spotlight.c:1546; celular.h","visual":"Teclado de Ajustes com o cartão do QR (ajustes-mock quadro teclado)"},
- {"id":"c-login","cap":"comecar","t":"Entrar com e-mail e senha","ic":"log-in",
-  "txt":"Além do QR, a tela de entrada aceita o e-mail e a senha da conta Nuvio.",
-  "onde":"Tela de entrada","acao":[],
-  "fonte":"Sem cartão (chegou na 1.7.1, commit 941ac3f0)","prova":"login.c:414, login.c:454","visual":"Tela de entrada com as listras"},
- {"id":"c-atualizar","cap":"comecar","t":"Atualizar pelo app","ic":"download",
-  "txt":"O app avisa quando sai versão nova. Na LG com o Homebrew Channel, Atualizar agora instala sozinho. Sem ele, e na Samsung, o aviso mostra onde baixar.",
-  "onde":"Ajustes › Sobre e ajuda › Atualizar o aplicativo","acao":["Abrir em Ajustes"],
-  "fonte":"novidades11.c:921-936","prova":"atualizacao.c:3; ajustes.c:750 (AJ_ATUALIZAR); ajustes_ux_tela.inc:113","visual":"Cartão de versão nova de novidades11.c:571-603"},
-
- {"id":"h-layout","cap":"home","t":"Três layouts da Home","ic":"layout-dashboard",
-  "txt":"Moderna põe o destaque atrás das fileiras. Padrão usa um banner no topo e fundo liso. Dinâmica é o estilo Apple TV, com carrossel e Top 10 numerado.",
-  "onde":"Ajustes › Tela inicial › Layout da home","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:817-818; novidades170.c:1187-1188","prova":"ajustes.c:320 (V_HOME_LAYOUT), ajustes.c:823","visual":"Três miniHome (moderna, padrão, dinâmica) com arte real"},
- {"id":"h-fileiras","cap":"home","t":"Escolher e ordenar as fileiras","ic":"rows-3",
-  "txt":"Ligue, desligue e mude a ordem de cada fileira. Cada uma pode ter o seu card: cartaz em pé, destaque largo, 4:3 e outros. O que não cabe espera na fila.",
-  "onde":"Ajustes › Tela inicial › Ordenar e ativar fileiras","acao":["Abrir em Ajustes"],
-  "fonte":"novidades1312.c:244-245 (Cards grandes 4:3); novidades160.c:817-818","prova":"ajustes.c:646 (AJ_FIL_ORDEM), ajustes.c:4055 (abas Na Home / Fora da Home); home.c:621 (4:3)","visual":"Folha Fileiras da Home com as formas na proporção de home.c"},
- {"id":"h-limite","cap":"home","t":"Quantas fileiras e quantos títulos","ic":"list-ordered",
-  "txt":"A Home monta de 3 a 40 fileiras, com 12, 18 ou 24 títulos em cada. Mais fileiras usam mais memória, e acima de 12 a TV pede confirmação.",
-  "onde":"Ajustes › Tela inicial › Limite de fileiras e Itens por fileira","acao":["Abrir em Ajustes"],
-  "fonte":"novidades151.c:54-55; novidades160.c:817-818 (até 40 fileiras)","prova":"fileiras.h:63 (FIL_LIMITE_MAX 40); ajustes.c:410 (V_ITENS_FIL); ajustes.c:645","visual":"Editor numérico com a ordem real da Home"},
- {"id":"h-destaque","cap":"home","t":"O destaque do topo","ic":"panel-top",
-  "txt":"Escolha de onde vêm os títulos do destaque, se ele ocupa a tela toda e se usa outra arte que não a do card, como Apple TV, TMDB ou fanart.tv.",
-  "onde":"Ajustes › Tela inicial › Estilo; Cartazes e arte › De onde vem a arte","acao":["Abrir em Ajustes"],
-  "fonte":"novidades142.c:259-260","prova":"ajustes.c:659 (Catálogos do destaque), ajustes.c:629 (Fundo em tela cheia), ajustes.c:3725 (AJ_HERO_ARTE_DIF)","visual":"miniHome Moderna com o destaque e o card lado a lado"},
- {"id":"h-continuar","cap":"home","t":"Continuar assistindo","ic":"rotate-ccw-clock",
-  "txt":"O que ficou pela metade e o próximo episódio das séries. Escolha o card, se o OK retoma ou abre a página, e a ordem da fileira.",
-  "onde":"Ajustes › Tela inicial › Continuar assistindo","acao":["Abrir em Ajustes"],
-  "fonte":"novidades170.c:1191-1192 (retomar pelo card)","prova":"ajustes.c:669-677; ajustes.c:3762 (AJ_CW_OK)","visual":"Fileira de retomada com os três estilos (Card, Largo, Pôster)"},
- {"id":"h-card","cap":"home","t":"O cartaz que se abre","ic":"maximize-2",
-  "txt":"Parado num título, o cartaz cresce e mostra nota do IMDb, ano, classificação e uma seta: subiu, caiu ou é novo na fileira.",
-  "onde":"Ajustes › Cartazes e arte › Expandir pôster ao focar","acao":["Abrir em Ajustes"],
-  "fonte":"novidades134.c:128-130","prova":"tendencia.c; home.c:45; ajustes.c:701 (AJ_EXPANDIR), ajustes.c:3813","visual":"Cartaz expandido com a arte deitada e a seta de tendência"},
- {"id":"h-barra","cap":"home","t":"Barra lateral","ic":"panel-left",
-  "txt":"Explorar, Guia TV, Agenda e Perfil e Stats podem sair do menu. Recolhida, a barra vira uma pílula de ícones embaixo da ilha do relógio.",
-  "onde":"Ajustes › Tela inicial › Barra lateral","acao":["Abrir em Ajustes"],
-  "fonte":"novidades151.c:54-55","prova":"ajustes.c:800-803 (AJ_MENU_*); menu.c:111; commit 2bbaf705 (menu como ilha)","visual":"Menu aberto e o rail recolhido (glass-ilha telas 1 e 2)"},
- {"id":"h-amigos","cap":"home","t":"Fileira Entre amigos","ic":"users","novo":1,
-  "txt":"Os rostos dos seus amigos com o que cada um está vendo e recomendou, numa fileira da Home.",
-  "onde":"Home, fileira Entre amigos (Ordenar e ativar fileiras)","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:831-832 (Entre amigos)","prova":"home.c:1964; commit 5e89926a (fileira de amigos, depois da 1.7.2); amigosfil","visual":"Fileira de rostos com cartões deitados (amigosfil + svdesenho)"},
- {"id":"h-perfis","cap":"home","t":"Fundo da escolha de perfil","ic":"image","novo":1,
-  "txt":"A tela Quem está assistindo? mostra a arte do catálogo atrás dos perfis. Desligado, fica o fundo de listras do login.",
-  "onde":"Ajustes › Tela inicial › Escolha de perfil","acao":["Abrir em Ajustes"],
-  "fonte":"novidades1312.c:238-239 (Fundo de perfil)","prova":"ajustes.c:660, ajustes.c:1446; perfilsel.c:921; commit 3aa5322c (o ajuste passa a valer)","visual":"Escolha de perfil com o mural e com as listras"},
-
- {"id":"t-trailer","cap":"titulo","t":"Trailer dentro do app","ic":"clapperboard",
-  "txt":"Uns segundos depois de abrir um título, o trailer toca sem som atrás do texto. OK abre em tela cheia com som. Voltar fecha.",
-  "onde":"Ajustes › Trailers › Onde toca","acao":["Abrir em Ajustes"],
-  "fonte":"novidades139.c:160-162; novidades1312.c:234-235","prova":"ajustes.c:689 (AJ_DET_TRAILER_AUTO); ajustes.c:3728 (AJ_DET_TRAILER_SOM); trailer.h","visual":"Página do título com o trailer no lugar da arte"},
- {"id":"t-trailer-destaque","cap":"titulo","t":"Trailer no destaque e no cartaz","ic":"circle-play",
-  "txt":"Com o foco parado no destaque, o trailer toca no lugar da arte. Se quiser, ligue também para o cartaz em foco nas fileiras.",
-  "onde":"Ajustes › Trailers › Onde toca","acao":["Abrir em Ajustes"],
-  "fonte":"novidades139.c:164-166; novidades151.c:56-57","prova":"ajustes.c:639 (AJ_HERO_TRAILER), ajustes.c:804 (AJ_FOCO_TRAILER), ajustes.c:852 (espera)","visual":"miniHome com o trailer no destaque"},
- {"id":"t-trailer-ajuste","cap":"titulo","t":"Qualidade e zoom do trailer","ic":"settings-2",
-  "txt":"Defina de onde vem o trailer, o teto de qualidade e o zoom. Zoom cinema tira a tarja preta; Original mostra o quadro inteiro.",
-  "onde":"Ajustes › Trailers › Som e imagem","acao":["Abrir em Ajustes"],
-  "fonte":"novidades139.c:168-174","prova":"ajustes.c:692 (Qualidade do trailer), ajustes.c:695 (Proporção), ajustes.c:699 (Fonte do trailer)","visual":"Quadro do trailer com e sem tarja"},
- {"id":"t-notas","cap":"titulo","t":"Notas de várias fontes","ic":"star",
-  "txt":"Escolha quais notas aparecem: IMDb, Rotten Tomatoes, Metacritic, Letterboxd, Trakt e outras. Nas séries, um mapa mostra a nota de cada episódio.",
-  "onde":"Ajustes › Página do título › Notas","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:829-830","prova":"ajustes.c:831-841 (AJ_NT_*); notasui.c:64, notasui.c:251 (mapa por episódio)","visual":"Fileira de notas com os logos reais (img/mk)"},
- {"id":"t-serie","cap":"titulo","t":"Arco de qualidade e desistência","ic":"activity",
-  "txt":"Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.",
-  "onde":"Página da série","acao":[],
-  "fonte":"novidades11.c:887-893","prova":"serieaud.c:1116 (Arco de qualidade), serieaud.c:1384 (Radar de desistência)","visual":"Curva da temporada de novidades11.c:420-480"},
- {"id":"t-frases","cap":"titulo","t":"Frases e ficha de produção","ic":"quote",
-  "txt":"Falas marcantes do Wikiquote e orçamento, bilheteria, prêmios e locações do Wikidata. Título sem página não mostra a seção.",
-  "onde":"Página do título","acao":[],
-  "fonte":"novidades11.c:895-901","prova":"seriefrases.c:1, seriefrases.c:1190","visual":"Seção Frases da página do título"},
- {"id":"t-comentarios","cap":"titulo","t":"Comentários do Trakt","ic":"message-square",
-  "txt":"A aba Comentários mostra o que se diz no Trakt e acompanha o episódio em foco.",
-  "onde":"Página da série › Comentários","acao":[],
-  "fonte":"novidades134.c:136-138","prova":"detail.c:827","visual":"Aba Comentários com o episódio em foco"},
- {"id":"t-dados","cap":"titulo","t":"De onde vêm os dados","ic":"database",
-  "txt":"A ficha vem primeiro do addon de onde o título veio, e o Cinemeta completa. O TMDB acrescenta elenco com foto, ficha técnica e trailers.",
-  "onde":"Ajustes › Página do título › Dados do título","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:827-828","prova":"ajustes.c:829 (AJ_DET_SO_CINEMETA), ajustes.c:767-780 (TMDB)","visual":"Página do título com elenco e ficha"},
- {"id":"t-colecao","cap":"titulo","t":"Arte das coleções","ic":"folders",
-  "txt":"As coleções usam a capa, o fundo e o logo que você escolheu na conta ou no Xperience, no destaque e na página da coleção.",
-  "onde":"Ajustes › Cartazes e arte › De onde vem a arte › Arte das pastas da conta","acao":["Abrir em Ajustes"],
-  "fonte":"novidades133.c:125-131","prova":"ajustes.c:861 (AJ_COL_ARTE_CONTA), ajustes.c:3740; descoberta.h (Xperience)","visual":"Página de coleção com o fundo escolhido"},
-
- {"id":"f-folha","cap":"fontes","t":"A nova folha de Fontes","ic":"list-video","novo":1,
-  "txt":"As fontes vêm agrupadas por resolução, do maior arquivo para o menor, com HDR e SDR separados. Cada addon tem a sua aba, e ← → troca a aba.",
-  "onde":"Página do título › Segurar OK em Reproduzir; Ajustes › Fontes e addons › Escolher a fonte ao reproduzir","acao":["Ver exemplo","Abrir em Ajustes"],
-  "fonte":"Glass UI 1.8.0 (commits e1a31298, 09fea71c, f56d468e)","prova":"streams.c:1406 (grupos e ordem); ajustes.c:623 (AJ_FONTE_MANUAL)","visual":"Folha de Fontes (glass-ilha tela 4)"},
- {"id":"f-melhor","cap":"fontes","t":"Melhor para esta TV","ic":"badge-check","novo":1,
-  "txt":"A fonte que o automático tocaria vem primeiro, com o selo Melhor para esta TV. A que está tocando e a sua escolha anterior também ficam marcadas.",
-  "onde":"Folha de Fontes, primeira linha","acao":["Ver exemplo"],
-  "fonte":"Glass UI 1.8.0 (commit f56d468e)","prova":"streams.c:1374, streams.c:1406, streams.c:1922","visual":"Linha Melhor para esta TV em foco"},
- {"id":"f-filtros","cap":"fontes","t":"Só MP4, Em cache e Dublado","ic":"filter","novo":1,
-  "txt":"Só MP4 deixa as fontes que tocam Dolby Vision na LG. Em cache mostra o que o debrid já tem pronto. Dublado separa as fontes com áudio dublado.",
-  "onde":"Folha de Fontes, botões do topo","acao":["Ver exemplo"],
-  "fonte":"novidades1312.c:230-231 (Filtro MP4); Glass UI 1.8.0 (commit 7cd12a51)","prova":"streams.c:1105-1120 (Só MP4, Em cache, Dublado, Sem HDR); streams.c:1988 (Fora do cache)","visual":"Topo da folha com os filtros"},
- {"id":"f-texto","cap":"fontes","t":"Texto das fontes","ic":"type","novo":1,
-  "txt":"Do Nuvio mostra o nome do título e os logos de qualidade. Do addon mostra o texto exatamente como o addon manda.",
-  "onde":"Ajustes › Fontes e addons › Escolha da fonte › Texto das fontes","acao":["Abrir em Ajustes"],
-  "fonte":"Glass UI 1.8.0 (commit e1a31298)","prova":"ajustes.c:626, ajustes.c:333 (V_FONTE_TEXTO)","visual":"A mesma linha da folha nos dois modos"},
- {"id":"f-auto","cap":"fontes","t":"Escolha automática","ic":"wand",
-  "txt":"Melhor fonte prefere 4K, Dolby Vision e MP4. Se a escolhida não abrir, tenta outras. Não espera o addon mais lento.",
-  "onde":"Ajustes › Fontes e addons › Escolha da fonte","acao":["Abrir em Ajustes"],
-  "fonte":"novidades132.c:143-145 (MP4 na frente, na LG)","prova":"ajustes.c:624-625, ajustes.c:880; ajustes.c:3716-3719","visual":"Linha Escolher a fonte ao reproduzir + folha enchendo por addon"},
- {"id":"f-imagem","cap":"fontes","t":"Qualidade, Dolby Vision e Atmos","ic":"monitor-play",
-  "txt":"Defina o teto de resolução e se prefere Dolby Vision e Atmos. O que toca depende também do arquivo e da TV.",
-  "onde":"Ajustes › Reprodução › Imagem e som","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:823-824 (marcas de formato)","prova":"ajustes.c:613-615; ajustes.c:287 (V_QUALIDADE)","visual":"Barras de resolução com as marcas 4K, 1080, 720"},
- {"id":"f-pausa","cap":"fontes","t":"Pausa com ficha","ic":"pause",
-  "txt":"Ao pausar, sobe uma ficha com a sinopse e os dados do que você está vendo, com as marcas de formato.",
-  "onde":"Ajustes › Reprodução › Durante e depois › Painel ao pausar","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:823-824","prova":"ajustes.c:622 (AJ_PAUSA_OVERLAY); pausao.h","visual":"cenaPausa de novidades160.c"},
- {"id":"f-seekr","cap":"fontes","t":"Miniaturas na barra de tempo","ic":"film",
-  "txt":"Ao avançar ou voltar, uma miniatura mostra a cena. Precisa da sua chave gratuita do Seekr.",
-  "onde":"Ajustes › Reprodução › Miniaturas na barra de tempo","acao":["Abrir em Ajustes"],
-  "fonte":"Sem cartão (chegou na 1.7.1)","prova":"ajustes.c:873-877; ajustes.c:3898","visual":"Barra de tempo com a fita de miniaturas"},
- {"id":"f-reacao","cap":"fontes","t":"O que achou?","ic":"thumbs-up","novo":1,
-  "txt":"Nos créditos de um filme ou no fim da temporada, um cartão pergunta o que você achou. Some em 8 s. Com o Trakt ligado, vira nota lá.",
-  "onde":"Ajustes › Reprodução › Durante e depois","acao":["Abrir em Ajustes"],
-  "fonte":"Sem cartão (commit f6c085f3, depois da 1.7.2)","prova":"reacao.c:313; ajustes.c:879; ajustes.c:3695","visual":"Cartão de reação sobre os créditos"},
- {"id":"f-assistido","cap":"fontes","t":"Quando conta como assistido","ic":"circle-check",
-  "txt":"Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.",
-  "onde":"Ajustes › Reprodução › Durante e depois › Percentual assistido","acao":["Abrir em Ajustes"],
-  "fonte":"novidades132.c:145 (marcar visto com um OK)","prova":"ajustes.c:855 (AJ_CW_CONCLUIDO)","visual":"Barra do episódio com a marca do percentual"},
- {"id":"f-debrid","cap":"fontes","t":"Contas de debrid","ic":"key-round",
-  "txt":"Real-Debrid, TorBox, Premiumize e AllDebrid resolvem os torrents das fontes. A chave fica só nesta TV, mascarada.",
-  "onde":"Ajustes › Fontes e addons › Debrid","acao":["Abrir em Ajustes"],
-  "fonte":"novidades1312.c:242-243; novidades160.c:825-826","prova":"ajustes.c:824-828 (AJ_DEBRID_*)","visual":"Linhas de chave com o estado"},
- {"id":"f-p2p","cap":"fontes","t":"P2P, experimental","ic":"server",
-  "txt":"Toca torrents sem link por um servidor do Stremio na sua rede. A TV não baixa nada e o automático nunca escolhe P2P.",
-  "onde":"Ajustes › Fontes e addons › P2P","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:825-826","prova":"ajustes.c:811-813; ajustes.c:3834","visual":"Linha P2P com Testar servidor"},
-
- {"id":"l-ass","cap":"legendas","t":"Legendas ASS","ic":"subtitles",
-  "txt":"O app desenha as legendas ASS de anime com cores, posições e duas falas ao mesmo tempo. Elas carregam antes do vídeo começar.",
-  "onde":"No player, em vídeos com legenda ASS","acao":["Ver exemplo"],
-  "fonte":"novidades1312.c:228-229; novidades142.c:257-258; novidades148.c:471-472","prova":"assrender.c; mkvass.c; legenda.c","visual":"Quadro do vídeo com letreiro no topo e duas falas"},
- {"id":"l-idiomas","cap":"legendas","t":"Idioma da legenda e do áudio","ic":"languages",
-  "txt":"A legenda no idioma escolhido liga sozinha quando o vídeo começa. O áudio pega a faixa desse idioma quando o arquivo tem mais de uma.",
-  "onde":"Ajustes › Idiomas e legendas","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:819-820","prova":"ajustes.c:618-619; ajustes.c:3692-3693","visual":"Legenda ligada no player"},
- {"id":"l-app","cap":"legendas","t":"Idioma do app","ic":"globe",
-  "txt":"O Nuvio fala 28 idiomas. Automático segue a sua conta ou o idioma da TV. Não muda legenda nem áudio.",
-  "onde":"Ajustes › Idiomas e legendas › Idioma do app","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:819-820 (28 idiomas)","prova":"ajustes.c:720 (AJ_IDIOMA); src/idioma_*.h","visual":"cenaIdiomas de novidades160.c"},
- {"id":"l-meta","cap":"legendas","t":"Sinopse e títulos no seu idioma","ic":"book-open",
-  "txt":"O TMDB traz sinopse, títulos e arte traduzidos. Da interface segue o idioma do app.",
-  "onde":"Ajustes › Idiomas e legendas › Idioma dos metadados","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:819-820; novidades170.c:1192 (séries no seu idioma)","prova":"ajustes.c:768 (AJ_TMDB_IDIOMA), ajustes.c:769 (Arte localizada)","visual":"Busca em outra língua (novidades160.c:447)"},
-
- {"id":"i-ilha","cap":"ilha","t":"A ilha do relógio","ic":"clock",
-  "txt":"A pílula no canto mostra a hora e o seu perfil. O episódio pela metade e a estreia nova ficam nela. AZUL ou CH+ abre, → leva aos Salvos.",
-  "onde":"Canto de cima da tela; Ajustes › Aparência › Relógio na tela","acao":["Ver exemplo"],
-  "fonte":"novidades170.c:1181-1182","prova":"ilha.c; app.c:1554-1562","visual":"cenaIlha de novidades170.c"},
- {"id":"i-avisos","cap":"ilha","t":"Avisos que saem da ilha","ic":"bell","novo":1,
-  "txt":"Sem internet, addon que não respondeu, Trakt desconectado, pedido de amizade e troca de perfil aparecem na própria pílula. Quando há o que fazer, ela cresce num cartão com botões.",
-  "onde":"Ilha do relógio","acao":["Ver exemplo"],
-  "fonte":"Glass UI 1.8.0 (commits 0c3d2e4e, ad447739, addeac4d)","prova":"ilhasinais.c:68-233; redesaude.h:3","visual":"Estados da ilha: repouso, atividade, aviso e cartão"},
- {"id":"i-central","cap":"ilha","t":"Central de avisos","ic":"inbox",
-  "txt":"Recomendação de amigo, estreia, versão nova e recados de quem faz o app. Chegam pela ilha e ficam na aba Avisos, em Salvos.",
-  "onde":"AZUL › Avisos","acao":["Ver exemplo"],
-  "fonte":"novidades132.c:126-132; Glass UI 1.8.0 (commit ed08575e)","prova":"salvospainel.h:60-61; ilhacart.h:14; avisos.h","visual":"Aba Avisos do painel de Salvos"},
- {"id":"i-saida","cap":"ilha","t":"Sair no meio e voltar pela ilha","ic":"picture-in-picture-2",
-  "txt":"Ao sair de um filme no meio, o vídeo encolhe até a ilha, que guarda o título. CH+ ou AZUL retoma de onde parou.",
-  "onde":"Ajustes › Reprodução › Durante e depois › Ao sair do player","acao":["Abrir em Ajustes"],
-  "fonte":"Sem cartão (chegou na 1.7.1, commit d214796c)","prova":"ajustes.c:298 (V_SAIDA_PLAYER), ajustes.c:878, ajustes.c:3857","visual":"Ilha com o cartão de retomada"},
- {"id":"i-posicao","cap":"ilha","t":"Posição e repouso do relógio","ic":"move-horizontal",
-  "txt":"Escolha o canto da pílula. Com o relógio desligado, ela some em repouso e só aparece para os avisos.",
-  "onde":"Ajustes › Aparência › Relógio na tela e Posição do relógio","acao":["Abrir em Ajustes"],
-  "fonte":"novidades170.c:1181-1182","prova":"ajustes.c:870-871; ajustes.c:295 (V_RELOGIO_POS)","visual":"miniHome com a pílula em cada canto"},
-
- {"id":"s-salvos","cap":"salvos","t":"Salvos","ic":"bookmark",
-  "txt":"AZUL abre o painel com o que você guardou. As abas são Salvos, Atividade, Amigos e Avisos.",
-  "onde":"AZUL ou CH+ na Home","acao":["Ver exemplo"],
-  "fonte":"novidades11.c:954-962; novidades1312.c:236-237","prova":"app.c:1534-1560; salvospainel.h:60-61","visual":"Painel de Salvos como ilha (glass-ilha tela 3)"},
- {"id":"s-organizar","cap":"salvos","t":"Organizar Salvos","ic":"folders",
-  "txt":"Crie categorias suas, mude a ordem e o estilo da lista, no próprio painel.",
-  "onde":"Painel de Salvos › Organizar","acao":["Ver exemplo"],
-  "fonte":"novidades170.c:1185-1186","prova":"salvosorg.c; salvospainel.c:2426","visual":"Painel com as categorias"},
- {"id":"s-menu","cap":"salvos","t":"Segurar OK num cartaz","ic":"menu","novo":1,
-  "txt":"Abre o menu do título: Mais informações, Salvar, Marcar como assistido, Recomendar a um amigo e Estilo da fileira. Tirar de Continuar assistindo pede confirmação.",
-  "onde":"Qualquer cartaz, segurando OK","acao":["Ver exemplo"],
-  "fonte":"novidades148.c:474-475; Glass UI 1.8.0 (commit 83cd1e42)","prova":"ctxmenu.c:220-240 (confirmação), ctxmenu.c:324-383 (opções)","visual":"Menu do cartaz como ilha ao lado do pôster (glass-ilha tela 7)"},
- {"id":"s-biblioteca","cap":"salvos","t":"Listas na Biblioteca","ic":"library",
-  "txt":"As listas do Trakt, as pastas da conta Nuvio e o que você acompanha no Simkl. Procure listas públicas, fixe as boas ou mande para a Home.",
-  "onde":"Menu › Biblioteca","acao":["Abrir a Biblioteca"],
-  "fonte":"novidades11.c:868-883","prova":"biblioteca.c:50, biblioteca.c:1232, biblioteca.c:1306","visual":"Biblioteca com seletor e filtros (commit 3452568a)"},
- {"id":"s-mais","cap":"salvos","t":"Onde o + salva","ic":"plus",
-  "txt":"O botão + guarda na lista do Nuvio, na watchlist do Trakt ou no Simkl.",
-  "onde":"Ajustes › Conta e perfis › Trakt e Simkl › Onde o + salva","acao":["Abrir em Ajustes"],
-  "fonte":"Sem cartão","prova":"ajustes.c:742, ajustes.c:449 (V_SALVOS)","visual":"Linha com o valor e o botão + da página do título"},
- {"id":"s-agenda","cap":"salvos","t":"Agenda e lembretes","ic":"calendar",
-  "txt":"As séries que você acompanha em ordem de estreia. Lembrar-me marca o próximo episódio, e o aviso aparece quando você abrir o app.",
-  "onde":"Menu › Agenda; Lembrar-me na página da série","acao":["Abrir a Agenda"],
-  "fonte":"novidades11.c:851-861; novidades160.c:833-834","prova":"agendaui.c:1062, agendaui.c:1399","visual":"Agenda com o fio de hoje (commit 3c6442db)"},
- {"id":"s-explorar","cap":"salvos","t":"Explorar","ic":"telescope",
-  "txt":"Um céu com as suas histórias: o que você viu ligado ao que vem a seguir. Setas navegam, OK abre.",
-  "onde":"Menu › Explorar","acao":["Abrir o Explorar"],
-  "fonte":"novidades142.c:255-256","prova":"explorar.c:769, explorar.c:830","visual":"Céu do Explorar"},
- {"id":"s-stats","cap":"salvos","t":"Perfil e Stats","ic":"chart-column",
-  "txt":"Quanto você assistiu, o seu ritmo, os mais vistos e os amigos, em cartões.",
-  "onde":"Menu › Perfil e Stats","acao":["Abrir Perfil e Stats"],
-  "fonte":"Sem cartão","prova":"menu.c:111; commit 5a60f592","visual":"Perfil e Stats (glass-ilha tela 11)"},
-
- {"id":"o-amigos","cap":"social","t":"Amigos no Nuvio","ic":"users","novo":1,
-  "txt":"Amigos do Nuvio além dos do Trakt: a atividade de cada um, as recomendações e o perfil.",
-  "onde":"AZUL › Amigos","acao":["Ver exemplo"],
-  "fonte":"novidades160.c:831-832","prova":"recomenda.c:180; amigoperfil.c; commit 5e89926a (depois da 1.7.2)","visual":"Aba Amigos do painel"},
- {"id":"o-privacidade","cap":"social","t":"Quem pode te encontrar","ic":"shield",
-  "txt":"Na primeira vez que você abre o Social o app pergunta, e Não é a primeira opção. O perfil público só existe se você ligar.",
-  "onde":"Ajustes › Conta e perfis › Perfil pesquisável","acao":["Abrir em Ajustes"],
-  "fonte":"novidades11.c:905-918","prova":"salvospainel.c:3301, salvospainel.c:3317; ajustes.c:847, ajustes.c:3841","visual":"A pergunta com Sim / Não"},
- {"id":"o-recomendar","cap":"social","t":"Recomendar a um amigo","ic":"send",
-  "txt":"Segure OK num título e escolha Recomendar a um amigo. A recomendação chega na aba Amigos, em Salvos.",
-  "onde":"Menu do cartaz (segurar OK)","acao":["Ver exemplo"],
-  "fonte":"novidades1312.c:236-237","prova":"ctxmenu.c:377","visual":"Menu do cartaz com a opção em foco"},
- {"id":"o-trakt","cap":"social","t":"Trakt e Simkl","ic":"link",
-  "txt":"Conecte com um código na TV, e o celular confirma. O que você assiste marca lá, e o Continuar assistindo junta as contas.",
-  "onde":"Ajustes › Conta e perfis › Trakt e Simkl","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:825-826 (scrobble do Trakt)","prova":"ajustes.c:743-744, ajustes.c:671 (Fonte do Continuar)","visual":"Vínculo com QR real (ajustes-mock quadro trakt)"},
- {"id":"o-perfis","cap":"social","t":"Perfis e addons","ic":"user-round",
-  "txt":"Cada perfil tem os seus addons e o seu progresso, ou usa os do perfil principal. Ligue e desligue os addons da conta nesta TV.",
-  "onde":"Ajustes › Fontes e addons › Addons","acao":["Abrir em Ajustes"],
-  "fonte":"novidades12.c:404-407","prova":"ajustes.c:732 (Addons), ajustes.c:856 (perfil principal)","visual":"Lista de addons com o que cada um fornece"},
-
- {"id":"v-guia","cap":"aovivo","t":"Guia de TV","ic":"tv-minimal-play",
-  "txt":"Os canais por categoria, com o que está no ar e o que vem a seguir. Todo addon de canais instalado entra sozinho.",
-  "onde":"Menu › Guia TV","acao":["Abrir o Guia de TV"],
-  "fonte":"novidades.c:181-188; novidades148.c:465-467","prova":"guia.c; menu.c:111","visual":"cenaAoVivo de novidades160.c"},
- {"id":"v-modos","cap":"aovivo","t":"Grade ou cartões","ic":"layout-list",
-  "txt":"AMARELO troca entre a grade, um canal por linha, e os cartões. O app lembra a escolha. Na grade, ← → andam meia hora.",
-  "onde":"Guia de TV","acao":["Abrir o Guia de TV"],
-  "fonte":"novidades12.c:381-391","prova":"guia.c:291-302 (modo gravado), guia.c:1942","visual":"Guia em grade e em cartões"},
- {"id":"v-zap","cap":"aovivo","t":"Tocar e zapear","ic":"play",
-  "txt":"OK toca na hora. Com o canal no ar, CH+ e CH− zapeiam, e BAIXO ou AZUL abrem o mini guia por cima do vídeo.",
-  "onde":"Guia de TV e canal no ar","acao":["Abrir o Guia de TV"],
-  "fonte":"novidades.c:189-197; novidades148.c:467; novidades12.c:395-401","prova":"app.c:3145, app.c:3165; guia.c:1437","visual":"Mini guia por cima do vídeo"},
- {"id":"v-rapido","cap":"aovivo","t":"Pular categorias e favoritos","ic":"chevrons-down",
-  "txt":"Segure ↑ ou ↓ para pular de categoria. OK segurado marca o canal como favorito.",
-  "onde":"Guia de TV","acao":[],
-  "fonte":"novidades.c:198-201","prova":"guia.c:236 (favoritos); aovivoui.c:97","visual":"Categoria trocando no guia"},
- {"id":"v-lembrete","cap":"aovivo","t":"Lembrete de programa","ic":"alarm-clock",
-  "txt":"Num programa que ainda vai passar, OK marca um lembrete. O aviso chega pela ilha.",
-  "onde":"Guia de TV","acao":[],
-  "fonte":"novidades148.c:467","prova":"guia.c:67-68, guia.c:1531; guialembrete.c:3 (aviso pela ilha)","visual":"Programa futuro com o lembrete"},
- {"id":"v-addons","cap":"aovivo","t":"Addons de canal","ic":"puzzle",
-  "txt":"O botão Addons no topo do guia lista os da conta, diz quais têm canais e traz recomendados com Instalar.",
-  "onde":"Guia de TV › Addons","acao":["Abrir o Guia de TV"],
-  "fonte":"novidades12.c:404-414","prova":"guia.c:3144, guia.c:3502, guia.c:3577; deploy/app/art/addons-recomendados.txt","visual":"Folha de addons do guia"},
- {"id":"v-xtream","cap":"aovivo","t":"Xtream e portal Stalker","ic":"key",
-  "txt":"Servidor, usuário e senha do provedor, ou portal e MAC. Os canais entram no guia junto com os dos addons.",
-  "onde":"Ajustes › TV ao vivo › Provedor","acao":["Abrir em Ajustes"],
-  "fonte":"novidades13.c:176-187","prova":"ajustes.c:733-740","visual":"Linhas Xtream de novidades13.c:107-109"},
- {"id":"v-pais","cap":"aovivo","t":"Programação por país","ic":"map",
-  "txt":"De que país vem a grade dos canais. Automático decide pelo idioma e pelo nome dos canais.",
-  "onde":"Ajustes › TV ao vivo › Grade de programação","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:821-822","prova":"ajustes.c:741, ajustes.c:455 (V_EPG_PAIS)","visual":"Lista de países"},
- {"id":"v-diag","cap":"aovivo","t":"Diagnóstico da Live TV","ic":"stethoscope",
-  "txt":"Testa a rede até o provedor e vários canais, e sugere resolução, formato e espera. VERDE no guia também abre.",
-  "onde":"Ajustes › TV ao vivo › Se o canal não abre","acao":["Abrir em Ajustes"],
-  "fonte":"novidades170.c:1189-1190","prova":"ajustes.c:867; guia.c:1937-1940; livetvdiag.c","visual":"Diagnóstico da Live TV (ajustes-mock livetv-diag)"},
-
- {"id":"a-vidro","cap":"aparencia","t":"Vidro ou sólido","ic":"panel-top","novo":1,
-  "txt":"Todo painel agora é uma ilha do mesmo material da ilha do relógio. Ligado, é vidro translúcido; desligado, é sólido. A forma não muda.",
-  "onde":"Ajustes › Aparência › Interface de vidro","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:815-816; Glass UI 1.8.0 (DESIGN.md §2)","prova":"ajustes.c:808 (AJ_VIDRO); DESIGN.md §2","visual":"A mesma tela nos dois materiais"},
- {"id":"a-cor","cap":"aparencia","t":"Cor de destaque","ic":"palette",
-  "txt":"Doze cores da conta e quatro dinâmicas, que tiram a cor do título em cena. A cor marca o botão em foco e os estados.",
-  "onde":"Ajustes › Aparência › Cor de destaque","acao":["Abrir em Ajustes"],
-  "fonte":"novidades148.c:461-464 (Cor viva)","prova":"ajustes.c:532-535 (V_TEMA), ajustes.c:723","visual":"Régua de cores e onde o acento aparece (ajustes-mock quadro cor)"},
- {"id":"a-logo","cap":"aparencia","t":"Cor da logo","ic":"droplet",
-  "txt":"Com uma cor dinâmica, a cor sai do logo do título em vez da arte de fundo.",
-  "onde":"Ajustes › Aparência › Cor da logo","acao":["Abrir em Ajustes"],
-  "fonte":"novidades148.c:464","prova":"ajustes.c:728 (AJ_COR_LOGO)","visual":"Destaque tingido pela logo"},
- {"id":"a-fonte","cap":"aparencia","t":"Fonte e animações","ic":"type",
-  "txt":"Seis fontes para os menus, de Inter a Atkinson Hyperlegible Next. A legenda tem fonte própria, escolhida no player. Animações reduzidas deixam os movimentos discretos.",
-  "onde":"Ajustes › Aparência › Fonte da interface e Animações","acao":["Abrir em Ajustes"],
-  "fonte":"novidades151.c:48-49","prova":"ajustes.c:377 (V_FONTE_UI), ajustes.c:376 (V_ANIM)","visual":"Aa Nuvio 0123 em cada fonte (novidades151.c:189)"},
- {"id":"a-cartaz","cap":"aparencia","t":"Tamanho e forma dos cartazes","ic":"images",
-  "txt":"Largura, cantos e relevo dos cartazes nas fileiras.",
-  "onde":"Ajustes › Cartazes e arte › Forma","acao":["Abrir em Ajustes"],
-  "fonte":"Sem cartão","prova":"ajustes.c:706-717","visual":"Três cartazes no tamanho escolhido (ajustes-mock quadro cartazes)"},
- {"id":"a-posters","cap":"aparencia","t":"Pôsteres personalizados","ic":"image-plus",
-  "txt":"Cartazes prontos com notas e selos, do SpatialPosters, do RPDB ou de um endereço seu. O destaque e os fundos não mudam.",
-  "onde":"Ajustes › Cartazes e arte › De onde vem a arte","acao":["Abrir em Ajustes"],
-  "fonte":"novidades160.c:817-818","prova":"ajustes.c:816-822; ajustes.c:3844","visual":"Cartaz normal e personalizado lado a lado"},
- {"id":"a-selo","cap":"aparencia","t":"Selo de assistido","ic":"check",
-  "txt":"Um check no canto do pôster do que você já viu, pelo Trakt, pela conta ou marcado nesta TV.",
-  "onde":"Ajustes › Tela inicial › Fileiras › Selo de assistido nos pôsteres","acao":["Abrir em Ajustes"],
-  "fonte":"Sem cartão (chegou na 1.7.2)","prova":"ajustes.c:872; ajustes.c:3752","visual":"Fileira com o selo em dois pôsteres"},
-
- {"id":"d-diag","cap":"desempenho","t":"Diagnóstico e otimização","ic":"gauge",
-  "txt":"Mede addons, fontes e artes nesta TV e aplica um perfil de Qualidade ou Desempenho. Se a TV piorar, volta sozinho ao anterior.",
-  "onde":"Ajustes › Desempenho desta TV","acao":["Abrir em Ajustes"],
-  "fonte":"novidades142.c:261-262","prova":"ajustes.c:798; ajustes.c:3876; diagnostico.c","visual":"Diagnóstico (ajustes-mock quadros diagnostico)"},
- {"id":"d-vel","cap":"desempenho","t":"Teste de velocidade","ic":"zap",
-  "txt":"Diz o maior arquivo que toca sem parar, por filme de 2 h e por episódio. Não muda nenhum ajuste.",
-  "onde":"Ajustes › Desempenho desta TV › Teste de velocidade","acao":["Abrir em Ajustes"],
-  "fonte":"novidades148.c:468-470","prova":"ajustes.c:799; ajustes.c:3879","visual":"Resultado do teste (ajustes-mock quadro velocidade)"},
- {"id":"d-mem","cap":"desempenho","t":"Memória para imagens","ic":"memory-stick",
-  "txt":"Quanta memória o cache de artes pode usar. Automático escolhe pela RAM da TV.",
-  "onde":"Ajustes › Desempenho desta TV › Memória para imagens","acao":["Abrir em Ajustes"],
-  "fonte":"novidades132.c:75-77","prova":"ajustes.c:760, ajustes.c:350 (V_TEX_MB)","visual":"Painel de pressão da memória (ajustes-mock quadro memoria)"},
- {"id":"d-img","cap":"desempenho","t":"Qualidade da imagem","ic":"image",
-  "txt":"Alta pede a arte grande e gasta mais memória. Baixa carrega antes e cabe em TV com pouca RAM.",
-  "onde":"Ajustes › Desempenho desta TV › Qualidade da imagem","acao":["Abrir em Ajustes"],
-  "fonte":"novidades131.c:169-172","prova":"ajustes.c:718 (AJ_QUALIDADE_IMG)","visual":"A mesma arte em Baixa e Alta"},
- {"id":"d-leve","cap":"desempenho","t":"Deixar a TV mais leve","ic":"feather",
-  "txt":"Resolução da interface em 720p e Efeitos visuais em Leves tiram peso de TV fraca. O vídeo não muda.",
-  "onde":"Ajustes › Desempenho desta TV","acao":["Abrir em Ajustes"],
-  "fonte":"Sem cartão","prova":"ajustes.c:722 (AJ_RESOLUCAO); ajustes.c:807 (AJ_GPU_EFEITOS, só Samsung nativa e Android: ajustes_ux_tela.inc:104-106)","visual":"Linhas com os valores"},
-
- {"id":"p-registro","cap":"problemas","t":"Enviar registro","ic":"send",
-  "txt":"Quando algo dá errado, mande o registro desta sessão para quem faz o app. Vai sem senhas nem chaves. Na LG, a tecla VERMELHA abre o painel do registro.",
-  "onde":"Ajustes › Sobre e ajuda › Enviar registro","acao":["Abrir em Ajustes"],
-  "fonte":"novidades11.c:945-952; novidades134.c:133-134","prova":"ajustes.c:753; ajustes.c:3874; registro.c:21","visual":"Painel do registro"},
- {"id":"p-fechou","cap":"problemas","t":"O app fechou sozinho","ic":"triangle-alert",
-  "txt":"Na abertura seguinte, a central de avisos oferece enviar o registro daquela vez.",
-  "onde":"Ilha do relógio, ao abrir","acao":[],
-  "fonte":"novidades132.c:75-77","prova":"avisos.h:19, avisos.h:26","visual":"Aviso com Enviar registro"},
- {"id":"p-rede","cap":"problemas","t":"Sem internet","ic":"wifi-off","novo":1,
-  "txt":"A ilha avisa e o app mostra o que já estava salvo. Quando a rede volta, a ilha diz.",
-  "onde":"Ilha do relógio","acao":["Ver exemplo"],
-  "fonte":"Glass UI 1.8.0 (commit ad447739)","prova":"ilhasinais.c:219-221; redesaude.h:3","visual":"Ilha com Sem internet e Internet de volta"},
- {"id":"p-addon","cap":"problemas","t":"Um addon não respondeu","ic":"puzzle","novo":1,
-  "txt":"A ilha diz qual addon ficou de fora. As fontes e catálogos dos outros continuam.",
-  "onde":"Ilha do relógio","acao":["Ver exemplo"],
-  "fonte":"Glass UI 1.8.0 (commit ad447739)","prova":"ilhasinais.c:230-233","visual":"Ilha com o aviso do addon"},
- {"id":"p-trakt","cap":"problemas","t":"O Trakt desconectou","ic":"unlink","novo":1,
-  "txt":"A ilha avisa e oferece Reconectar: um código na TV, e o celular confirma. Até lá, o que você assiste não vai para o Trakt.",
-  "onde":"Ilha do relógio","acao":["Ver exemplo"],
-  "fonte":"Glass UI 1.8.0 (commit 0c3d2e4e)","prova":"ilhasinais.c:140-149","visual":"Cartão da ilha com Reconectar / Depois"},
- {"id":"p-canal","cap":"problemas","t":"O canal não abre","ic":"tv-minimal-play",
-  "txt":"Rode o Diagnóstico da Live TV, ou aperte VERDE no guia. Ele testa os formatos e diz o que mudar.",
-  "onde":"Ajustes › TV ao vivo › Se o canal não abre","acao":["Abrir em Ajustes"],
-  "fonte":"novidades170.c:1189-1190","prova":"ajustes.c:867; guia.c:1937","visual":"Resultado do diagnóstico"},
- {"id":"p-trava","cap":"problemas","t":"O vídeo trava","ic":"loader",
-  "txt":"Faça o teste de velocidade. Se o arquivo for maior que a conexão aguenta, baixe a Qualidade máxima ou escolha outra fonte.",
-  "onde":"Ajustes › Desempenho desta TV › Teste de velocidade","acao":["Abrir em Ajustes"],
-  "fonte":"novidades148.c:468-470","prova":"ajustes.c:799; ajustes.c:613","visual":"Teste de velocidade com até X GB"}
-]
+ "caps": [
+  {
+   "id": "comecar",
+   "t": "Começar",
+   "ic": "sparkle",
+   "sub": "Controle, busca, conta e atualização"
+  },
+  {
+   "id": "home",
+   "t": "Home e fileiras",
+   "ic": "layout-dashboard",
+   "sub": "Layout, fileiras, destaque e Continuar assistindo"
+  },
+  {
+   "id": "titulo",
+   "t": "Página do título",
+   "ic": "file-text",
+   "sub": "Trailers, notas e o que a página mostra"
+  },
+  {
+   "id": "fontes",
+   "t": "Fontes e reprodução",
+   "ic": "circle-play",
+   "sub": "Folha de Fontes, escolha automática e player"
+  },
+  {
+   "id": "legendas",
+   "t": "Idiomas e legendas",
+   "ic": "languages",
+   "sub": "Legendas ASS, idioma do app e do conteúdo"
+  },
+  {
+   "id": "ilha",
+   "t": "Ilha do relógio e avisos",
+   "ic": "bell",
+   "sub": "A pílula do canto e tudo que sai dela"
+  },
+  {
+   "id": "salvos",
+   "t": "Salvos, listas e agenda",
+   "ic": "bookmark",
+   "sub": "O que você guarda e acompanha"
+  },
+  {
+   "id": "social",
+   "t": "Social e contas",
+   "ic": "users",
+   "sub": "Amigos, privacidade, Trakt e perfis"
+  },
+  {
+   "id": "aovivo",
+   "t": "TV ao vivo",
+   "ic": "tv-minimal-play",
+   "sub": "Guia de TV, zapping e provedores"
+  },
+  {
+   "id": "aparencia",
+   "t": "Aparência",
+   "ic": "palette",
+   "sub": "Vidro, cor, fonte e cartazes"
+  },
+  {
+   "id": "desempenho",
+   "t": "Desempenho e diagnóstico",
+   "ic": "monitor-cog",
+   "sub": "Medir e ajustar o app a esta TV"
+  },
+  {
+   "id": "problemas",
+   "t": "Problemas comuns",
+   "ic": "life-buoy",
+   "sub": "O que fazer quando algo não funciona"
+  }
+ ],
+ "entradas": [
+  {
+   "id": "c-guia",
+   "cap": "comecar",
+   "t": "Como usar este guia",
+   "ic": "compass",
+   "novo": 0,
+   "txt": "Capítulos à esquerda, recursos no meio e o exemplo à direita. OK num botão leva direto ao lugar do recurso.",
+   "onde": "Ajustes › O que o Nuvio faz?",
+   "acao": [],
+   "fonte": "Novo (cartão da 1.8.0, em desenho)",
+   "prova": "Ainda não existe: proposta desta tela; entra como OPC nova em ajustes_ux_tela.inc:113",
+   "visual": "Esta tela"
+  },
+  {
+   "id": "c-ajustes",
+   "cap": "comecar",
+   "t": "Os Ajustes novos",
+   "ic": "settings-2",
+   "novo": 1,
+   "txt": "Categorias por tarefa: Assistir, Telas e Conta e sistema. O técnico fica em Mais opções, cada interruptor diz Ligado ou Desligado, e a linha que depende de outra avisa e liga as duas com OK.",
+   "onde": "Ajustes",
+   "acao": [],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "ajustes_ux_tela.inc (TELA, MAIS); ajustes_ux_desenho.inc (aj2PilulaEstado, ajLinhaAviso)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "c-botoes",
+   "cap": "comecar",
+   "t": "Os botões coloridos",
+   "ic": "circle-dot",
+   "txt": "AMARELO abre a busca de qualquer tela. AZUL ou CH+ abre Salvos, ou o cartão que estiver na ilha. No Guia de TV, AMARELO troca grade e cartões e VERDE testa os canais. Segurar CH+ abre a Central de controle.",
+   "onde": "No controle da TV",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "novidades11.c:945-971 (página Os botões coloridos); novidades170.c:1182-1184",
+   "prova": "app.c:1380 (AMARELO abre o Spotlight fora do guia); app.c:1559-1562 (AZUL/CH+); guia.c:1937-1944 (VERDE e AMARELO no guia); registro.c:21 (VERMELHO)",
+   "visual": "Controle desenhado de novidades11.c:614-680, com as cores atualizadas",
+   "novo": 0
+  },
+  {
+   "id": "c-spotlight",
+   "cap": "comecar",
+   "t": "Buscar de qualquer tela",
+   "ic": "search",
+   "txt": "A tecla AMARELA abre o Spotlight por cima do que estiver na tela. A lista muda a cada letra e traz filmes, séries, pessoas e canais ao vivo.",
+   "onde": "AMARELO no controle, ou Busca no menu",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "novidades170.c:1183-1184",
+   "prova": "app.c:1380; spotlight.c (seções Melhor resultado, Canais ao vivo, Pesquisas recentes em novidades170.c:616-647)",
+   "visual": "cenaSpot de novidades170.c (caixa e lista nas medidas do Spotlight)",
+   "novo": 0
+  },
+  {
+   "id": "c-ponteiro",
+   "cap": "comecar",
+   "t": "Apontar com o Magic Remote",
+   "ic": "mouse-pointer",
+   "txt": "Na LG, o Magic Remote funciona como um mouse: passar por cima foca e o clique vale como OK.",
+   "onde": "Em qualquer tela, nas TVs LG",
+   "acao": [],
+   "fonte": "novidades142.c:253-254",
+   "prova": "ponteiro.h; ilha.c:484; menu.c:162",
+   "visual": "Ponteiro sobre um cartaz da Home",
+   "novo": 0
+  },
+  {
+   "id": "c-celular",
+   "cap": "comecar",
+   "t": "Digitar pelo celular",
+   "ic": "smartphone",
+   "txt": "Em campos de texto, o botão do celular mostra um QR. Você digita no telefone e o texto chega na TV.",
+   "onde": "No teclado, na Busca e no Spotlight",
+   "acao": [],
+   "fonte": "Sem cartão (chegou na 1.7.2, commit 766b0112)",
+   "prova": "teclado.c:110, teclado.c:595; spotlight.c:1546; celular.h",
+   "visual": "Teclado de Ajustes com o cartão do QR (ajustes-mock quadro teclado)",
+   "novo": 0
+  },
+  {
+   "id": "c-login",
+   "cap": "comecar",
+   "t": "Entrar com e-mail e senha",
+   "ic": "log-in",
+   "txt": "Além do QR, a tela de entrada aceita o e-mail e a senha da conta Nuvio.",
+   "onde": "Tela de entrada",
+   "acao": [],
+   "fonte": "Sem cartão (chegou na 1.7.1, commit 941ac3f0)",
+   "prova": "login.c:414, login.c:454",
+   "visual": "Tela de entrada com as listras",
+   "novo": 0
+  },
+  {
+   "id": "c-atualizar",
+   "cap": "comecar",
+   "t": "Atualizar pelo app",
+   "ic": "download",
+   "txt": "O app avisa quando sai versão nova. Na LG com o Homebrew Channel, Atualizar agora instala sozinho. Sem ele, e na Samsung, o aviso mostra onde baixar.",
+   "onde": "Ajustes › Sobre e ajuda › Atualizar o aplicativo",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades11.c:921-936",
+   "prova": "atualizacao.c:3; ajustes.c:750 (AJ_ATUALIZAR); ajustes_ux_tela.inc:113",
+   "visual": "Cartão de versão nova de novidades11.c:571-603",
+   "novo": 0
+  },
+  {
+   "id": "h-layout",
+   "cap": "home",
+   "t": "Três layouts da Home",
+   "ic": "layout-dashboard",
+   "txt": "Moderna põe o destaque atrás das fileiras. Padrão usa um banner no topo e fundo liso. Dinâmica é o estilo Apple TV, com carrossel e Top 10 numerado. O botão do destaque segue a sua cor.",
+   "onde": "Ajustes › Tela inicial › Layout da home",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:817-818; novidades170.c:1187-1188",
+   "prova": "ajustes.c:320 (V_HOME_LAYOUT), ajustes.c:823",
+   "visual": "Três miniHome (moderna, padrão, dinâmica) com arte real",
+   "novo": 1
+  },
+  {
+   "id": "h-fileiras",
+   "cap": "home",
+   "t": "Escolher e ordenar as fileiras",
+   "ic": "rows-3",
+   "txt": "Ligue, desligue e mude a ordem de cada fileira. Cada uma pode ter o seu card: cartaz em pé, destaque largo, 4:3 e outros. O que não cabe espera na fila.",
+   "onde": "Ajustes › Tela inicial › Ordenar e ativar fileiras",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades1312.c:244-245 (Cards grandes 4:3); novidades160.c:817-818",
+   "prova": "ajustes.c:646 (AJ_FIL_ORDEM), ajustes.c:4055 (abas Na Home / Fora da Home); home.c:621 (4:3)",
+   "visual": "Folha Fileiras da Home com as formas na proporção de home.c",
+   "novo": 0
+  },
+  {
+   "id": "h-limite",
+   "cap": "home",
+   "t": "Quantas fileiras e quantos títulos",
+   "ic": "list-ordered",
+   "txt": "A Home monta de 3 a 40 fileiras, com 12, 18 ou 24 títulos em cada. Mais fileiras usam mais memória, e acima de 12 a TV pede confirmação.",
+   "onde": "Ajustes › Tela inicial › Limite de fileiras e Itens por fileira",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades151.c:54-55; novidades160.c:817-818 (até 40 fileiras)",
+   "prova": "fileiras.h:63 (FIL_LIMITE_MAX 40); ajustes.c:410 (V_ITENS_FIL); ajustes.c:645",
+   "visual": "Editor numérico com a ordem real da Home",
+   "novo": 0
+  },
+  {
+   "id": "h-destaque",
+   "cap": "home",
+   "t": "O destaque do topo",
+   "ic": "panel-top",
+   "txt": "Escolha de onde vêm os títulos do destaque, se ele ocupa a tela toda e se usa outra arte que não a do card, como Apple TV, TMDB ou fanart.tv.",
+   "onde": "Ajustes › Tela inicial › Estilo; Cartazes e trailers › De onde vem a arte",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades142.c:259-260",
+   "prova": "ajustes.c:659 (Catálogos do destaque), ajustes.c:629 (Fundo em tela cheia), ajustes.c:3725 (AJ_HERO_ARTE_DIF)",
+   "visual": "miniHome Moderna com o destaque e o card lado a lado",
+   "novo": 0
+  },
+  {
+   "id": "h-continuar",
+   "cap": "home",
+   "t": "Continuar assistindo",
+   "ic": "rotate-ccw-clock",
+   "txt": "O que ficou pela metade e o próximo episódio das séries. Segure OK num card para tirá-lo da fileira, inclusive um próximo episódio. Dá para desligar o próximo episódio e escolher o card e a ordem.",
+   "onde": "Ajustes › Tela inicial › Continuar assistindo",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades170.c:1191-1192 (retomar pelo card)",
+   "prova": "ajustes.c:669-677; ajustes.c:3762 (AJ_CW_OK)",
+   "visual": "Fileira de retomada com os três estilos (Card, Largo, Pôster)",
+   "novo": 1
+  },
+  {
+   "id": "h-card",
+   "cap": "home",
+   "t": "O cartaz que se abre",
+   "ic": "maximize-2",
+   "txt": "Parado num título, o cartaz cresce e mostra nota do IMDb, ano, classificação e uma seta: subiu, caiu ou é novo na fileira.",
+   "onde": "Ajustes › Cartazes e trailers › Expandir pôster ao focar",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades134.c:128-130",
+   "prova": "tendencia.c; home.c:45; ajustes.c:701 (AJ_EXPANDIR), ajustes.c:3813",
+   "visual": "Cartaz expandido com a arte deitada e a seta de tendência",
+   "novo": 0
+  },
+  {
+   "id": "h-barra",
+   "cap": "home",
+   "t": "Barra lateral",
+   "ic": "panel-left",
+   "txt": "Na Moderna a barra flutua; no Padrão ela vai de cima a baixo. Explorar, Guia TV, Agenda e Perfil e Stats podem sair do menu.",
+   "onde": "Ajustes › Tela inicial › Barra lateral",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades151.c:54-55",
+   "prova": "ajustes.c:800-803 (AJ_MENU_*); menu.c:111; commit 2bbaf705 (menu como ilha)",
+   "visual": "Menu aberto e o rail recolhido (glass-ilha telas 1 e 2)",
+   "novo": 1
+  },
+  {
+   "id": "h-amigos",
+   "cap": "home",
+   "t": "Fileira Entre amigos",
+   "ic": "users",
+   "novo": 0,
+   "txt": "Os rostos dos seus amigos com o que cada um está vendo e recomendou, numa fileira da Home.",
+   "onde": "Home, fileira Entre amigos (Ordenar e ativar fileiras)",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:831-832 (Entre amigos)",
+   "prova": "home.c:1964; commit 5e89926a (fileira de amigos, depois da 1.7.2); amigosfil",
+   "visual": "Fileira de rostos com cartões deitados (amigosfil + svdesenho)"
+  },
+  {
+   "id": "h-perfis",
+   "cap": "home",
+   "t": "Escolha de perfil",
+   "ic": "image",
+   "novo": 1,
+   "txt": "Atrás dos perfis, os cartazes do que cada um assistiu, ou Luz, Projetor e outros fundos. O perfil em foco mostra o que estava assistindo, e isso pode ser desligado.",
+   "onde": "Ajustes › Tela inicial › Escolha de perfil",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades1312.c:238-239 (Fundo de perfil)",
+   "prova": "ajustes.c:660, ajustes.c:1446; perfilsel.c:921; commit 3aa5322c (o ajuste passa a valer)",
+   "visual": "Escolha de perfil com o mural e com as listras"
+  },
+  {
+   "id": "t-trailer",
+   "cap": "titulo",
+   "t": "Trailer dentro do app",
+   "ic": "clapperboard",
+   "txt": "Uns segundos depois de abrir um título, o trailer toca sem som atrás do texto. OK abre em tela cheia com som. Voltar fecha.",
+   "onde": "Ajustes › Cartazes e trailers › Trailers",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades139.c:160-162; novidades1312.c:234-235",
+   "prova": "ajustes.c:689 (AJ_DET_TRAILER_AUTO); ajustes.c:3728 (AJ_DET_TRAILER_SOM); trailer.h",
+   "visual": "Página do título com o trailer no lugar da arte",
+   "novo": 0
+  },
+  {
+   "id": "t-trailer-destaque",
+   "cap": "titulo",
+   "t": "Trailer no destaque e no cartaz",
+   "ic": "circle-play",
+   "txt": "Com o foco parado no destaque, o trailer toca no lugar da arte. Se quiser, ligue também para o cartaz em foco nas fileiras.",
+   "onde": "Ajustes › Cartazes e trailers › Trailers",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades139.c:164-166; novidades151.c:56-57",
+   "prova": "ajustes.c:639 (AJ_HERO_TRAILER), ajustes.c:804 (AJ_FOCO_TRAILER), ajustes.c:852 (espera)",
+   "visual": "miniHome com o trailer no destaque",
+   "novo": 0
+  },
+  {
+   "id": "t-trailer-ajuste",
+   "cap": "titulo",
+   "t": "Qualidade e zoom do trailer",
+   "ic": "settings-2",
+   "txt": "Defina de onde vem o trailer, o teto de qualidade e o zoom. Zoom cinema tira a tarja preta; Original mostra o quadro inteiro.",
+   "onde": "Ajustes › Cartazes e trailers › Som e imagem",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades139.c:168-174",
+   "prova": "ajustes.c:692 (Qualidade do trailer), ajustes.c:695 (Proporção), ajustes.c:699 (Fonte do trailer)",
+   "visual": "Quadro do trailer com e sem tarja",
+   "novo": 0
+  },
+  {
+   "id": "t-notas",
+   "cap": "titulo",
+   "t": "Notas de várias fontes",
+   "ic": "star",
+   "txt": "Escolha quais notas aparecem: IMDb, Rotten Tomatoes, Metacritic, Letterboxd, Trakt e outras. Nas séries, um mapa mostra a nota de cada episódio.",
+   "onde": "Ajustes › Página do título › Notas",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:829-830",
+   "prova": "ajustes.c:831-841 (AJ_NT_*); notasui.c:64, notasui.c:251 (mapa por episódio)",
+   "visual": "Fileira de notas com os logos reais (img/mk)",
+   "novo": 0
+  },
+  {
+   "id": "t-serie",
+   "cap": "titulo",
+   "t": "Temporadas e desistência",
+   "ic": "activity",
+   "txt": "Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.",
+   "onde": "Página da série",
+   "acao": [],
+   "fonte": "novidades11.c:887-893",
+   "prova": "serieaud.c:1116 (Arco de qualidade), serieaud.c:1384 (Radar de desistência)",
+   "visual": "Curva da temporada de novidades11.c:420-480",
+   "novo": 1
+  },
+  {
+   "id": "t-mais",
+   "cap": "titulo",
+   "t": "O botão … da página",
+   "ic": "menu",
+   "novo": 1,
+   "txt": "Trailer, Explorar e Trocar arte ficam no botão … ao lado de Reproduzir.",
+   "onde": "Página do título",
+   "acao": [],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.2/NOTAS.md (Title page \"...\" button)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "t-frases",
+   "cap": "titulo",
+   "t": "Frases e ficha de produção",
+   "ic": "quote",
+   "txt": "Falas marcantes do Wikiquote e orçamento, bilheteria, prêmios e locações do Wikidata. Título sem página não mostra a seção.",
+   "onde": "Página do título",
+   "acao": [],
+   "fonte": "novidades11.c:895-901",
+   "prova": "seriefrases.c:1, seriefrases.c:1190",
+   "visual": "Seção Frases da página do título",
+   "novo": 0
+  },
+  {
+   "id": "t-comentarios",
+   "cap": "titulo",
+   "t": "Comentários do Trakt",
+   "ic": "message-square",
+   "txt": "A aba Comentários mostra o que se diz no Trakt e acompanha o episódio em foco.",
+   "onde": "Página da série › Comentários",
+   "acao": [],
+   "fonte": "novidades134.c:136-138",
+   "prova": "detail.c:827",
+   "visual": "Aba Comentários com o episódio em foco",
+   "novo": 0
+  },
+  {
+   "id": "t-dados",
+   "cap": "titulo",
+   "t": "De onde vêm os dados",
+   "ic": "database",
+   "txt": "A ficha vem primeiro do addon de onde o título veio, e o Cinemeta completa. O TMDB acrescenta elenco com foto, ficha técnica e trailers.",
+   "onde": "Ajustes › Página do título › Dados do título",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:827-828",
+   "prova": "ajustes.c:829 (AJ_DET_SO_CINEMETA), ajustes.c:767-780 (TMDB)",
+   "visual": "Página do título com elenco e ficha",
+   "novo": 0
+  },
+  {
+   "id": "t-colecao",
+   "cap": "titulo",
+   "t": "Arte das coleções",
+   "ic": "folders",
+   "txt": "As coleções usam a capa, o fundo e o logo que você escolheu na conta ou no Xperience, no destaque e na página da coleção.",
+   "onde": "Ajustes › Cartazes e trailers › De onde vem a arte › Arte das pastas da conta",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades133.c:125-131",
+   "prova": "ajustes.c:861 (AJ_COL_ARTE_CONTA), ajustes.c:3740; descoberta.h (Xperience)",
+   "visual": "Página de coleção com o fundo escolhido",
+   "novo": 0
+  },
+  {
+   "id": "f-folha",
+   "cap": "fontes",
+   "t": "A nova folha de Fontes",
+   "ic": "list-video",
+   "novo": 0,
+   "txt": "As fontes vêm agrupadas por resolução, do maior arquivo para o menor, com HDR e SDR separados. Cada addon tem a sua aba, e ← → troca a aba.",
+   "onde": "Página do título › Segurar OK em Reproduzir; Ajustes › Fontes e addons › Escolher a fonte ao reproduzir",
+   "acao": [
+    "Ver exemplo",
+    "Abrir em Ajustes"
+   ],
+   "fonte": "Glass UI 1.8.0 (commits e1a31298, 09fea71c, f56d468e)",
+   "prova": "streams.c:1406 (grupos e ordem); ajustes.c:623 (AJ_FONTE_MANUAL)",
+   "visual": "Folha de Fontes (glass-ilha tela 4)"
+  },
+  {
+   "id": "f-melhor",
+   "cap": "fontes",
+   "t": "Melhor para esta TV",
+   "ic": "badge-check",
+   "novo": 0,
+   "txt": "A fonte que o automático tocaria vem primeiro, com o selo Melhor para esta TV. A que está tocando e a sua escolha anterior também ficam marcadas.",
+   "onde": "Folha de Fontes, primeira linha",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "Glass UI 1.8.0 (commit f56d468e)",
+   "prova": "streams.c:1374, streams.c:1406, streams.c:1922",
+   "visual": "Linha Melhor para esta TV em foco"
+  },
+  {
+   "id": "f-filtros",
+   "cap": "fontes",
+   "t": "Só MP4, Em cache e Dublado",
+   "ic": "filter",
+   "novo": 0,
+   "txt": "Só MP4 deixa as fontes que tocam Dolby Vision na LG. Em cache mostra o que o debrid já tem pronto. Dublado separa as fontes com áudio dublado.",
+   "onde": "Folha de Fontes, botões do topo",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "novidades1312.c:230-231 (Filtro MP4); Glass UI 1.8.0 (commit 7cd12a51)",
+   "prova": "streams.c:1105-1120 (Só MP4, Em cache, Dublado, Sem HDR); streams.c:1988 (Fora do cache)",
+   "visual": "Topo da folha com os filtros"
+  },
+  {
+   "id": "f-texto",
+   "cap": "fontes",
+   "t": "Texto das fontes",
+   "ic": "type",
+   "novo": 1,
+   "txt": "Do Nuvio mostra o nome do título e os logos de qualidade. Do addon mostra as linhas do próprio addon, até 5, com ícones no lugar dos emojis.",
+   "onde": "Ajustes › Reprodução › Mais opções › Escolha da fonte › Texto das fontes",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "Glass UI 1.8.0 (commit e1a31298)",
+   "prova": "ajustes.c:626, ajustes.c:333 (V_FONTE_TEXTO)",
+   "visual": "A mesma linha da folha nos dois modos"
+  },
+  {
+   "id": "f-auto",
+   "cap": "fontes",
+   "t": "Escolha automática",
+   "ic": "wand",
+   "txt": "O Nuvio escolhe a fonte pela qualidade e pelo que esta TV toca. Se a escolhida não abrir, tenta outra, e um addon lento não segura o play.",
+   "onde": "Ajustes › Reprodução › Escolha da fonte",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades132.c:143-145 (MP4 na frente, na LG)",
+   "prova": "ajustes.c:624-625, ajustes.c:880; ajustes.c:3716-3719",
+   "visual": "Linha Escolher a fonte ao reproduzir + folha enchendo por addon",
+   "novo": 1
+  },
+  {
+   "id": "f-regras",
+   "cap": "fontes",
+   "t": "Regras do automático",
+   "ic": "funnel",
+   "novo": 1,
+   "txt": "Como no Nuvio oficial: só os add-ons e plugins que você permitir, na ordem que quiser, e um filtro pelo nome da fonte (regex) que prefere ou exige.",
+   "onde": "Ajustes › Reprodução › Mais opções › Escolha da fonte",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "fonteregra.c; ajustes_ux_tela.inc (MAIS de Reproducao)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "f-rapido",
+   "cap": "fontes",
+   "t": "Começar mais rápido",
+   "ic": "zap",
+   "novo": 1,
+   "txt": "Tocar enquanto confere a fonte, aquecer as conexões ao abrir o título e conferir até 3 fontes prontas no debrid ao mesmo tempo. Nada disso baixa a qualidade.",
+   "onde": "Ajustes › Reprodução › Mais opções › Escolha da fonte",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.2/NOTAS.md (Faster start options)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "f-imagem",
+   "cap": "fontes",
+   "t": "Qualidade, Dolby Vision e HDR",
+   "ic": "monitor-play",
+   "txt": "Defina o teto de resolução, se Dolby Vision e HDR passam na frente e se prefere Atmos. O que toca depende também do arquivo e da TV.",
+   "onde": "Ajustes › Reprodução › Imagem e som",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:823-824 (marcas de formato)",
+   "prova": "ajustes.c:613-615; ajustes.c:287 (V_QUALIDADE)",
+   "visual": "Barras de resolução com as marcas 4K, 1080, 720",
+   "novo": 0
+  },
+  {
+   "id": "f-som",
+   "cap": "fontes",
+   "t": "DTS e Dolby Vision em MKV",
+   "ic": "audio-lines",
+   "novo": 1,
+   "txt": "Na LG, o DTS que a TV recusa é convertido em estéreo ou 5.1, e Dolby Vision em MKV pode ser ligado (experimental, só LG). Na Samsung, o app avisa quando a TV não toca DTS ou TrueHD.",
+   "onde": "Ajustes › Reprodução › Mais opções › Som e vídeo desta TV",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.1 e 2.0.2/NOTAS.md (DTS on LG, Dolby Vision in MKV)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "f-pausa",
+   "cap": "fontes",
+   "t": "Pausa com ficha",
+   "ic": "pause",
+   "txt": "Ao pausar, sobe uma ficha com a sinopse e os dados do que você está vendo, com as marcas de formato.",
+   "onde": "Ajustes › Reprodução › Durante e depois › Painel ao pausar",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:823-824",
+   "prova": "ajustes.c:622 (AJ_PAUSA_OVERLAY); pausao.h",
+   "visual": "cenaPausa de novidades160.c",
+   "novo": 0
+  },
+  {
+   "id": "f-velocidade",
+   "cap": "fontes",
+   "t": "Velocidade de reprodução",
+   "ic": "gauge",
+   "novo": 1,
+   "txt": "De 0,75x a 2x, na folha de Áudio do player. Não aparece com o áudio indo para um receiver.",
+   "onde": "No player › Áudio",
+   "acao": [],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.1/NOTAS.md (Playback speed)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "f-proporcao",
+   "cap": "fontes",
+   "t": "Proporção padrão",
+   "ic": "maximize-2",
+   "novo": 1,
+   "txt": "Como a imagem ocupa a tela quando o vídeo começa: original, recortada, com zoom e outras.",
+   "onde": "Ajustes › Reprodução › Durante e depois",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.2/NOTAS.md (#300)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "f-seekr",
+   "cap": "fontes",
+   "t": "Miniaturas na barra de tempo",
+   "ic": "film",
+   "txt": "Ao avançar ou voltar, uma miniatura mostra a cena. Precisa da sua chave gratuita do Seekr.",
+   "onde": "Ajustes › Reprodução › Miniaturas na barra de tempo",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "Sem cartão (chegou na 1.7.1)",
+   "prova": "ajustes.c:873-877; ajustes.c:3898",
+   "visual": "Barra de tempo com a fita de miniaturas",
+   "novo": 0
+  },
+  {
+   "id": "f-reacao",
+   "cap": "fontes",
+   "t": "O que achou?",
+   "ic": "thumbs-up",
+   "novo": 0,
+   "txt": "Nos créditos de um filme ou no fim da temporada, um cartão pergunta o que você achou. Some em 8 s. Com o Trakt ligado, vira nota lá.",
+   "onde": "Ajustes › Reprodução › Durante e depois",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "Sem cartão (commit f6c085f3, depois da 1.7.2)",
+   "prova": "reacao.c:313; ajustes.c:879; ajustes.c:3695",
+   "visual": "Cartão de reação sobre os créditos"
+  },
+  {
+   "id": "f-assistido",
+   "cap": "fontes",
+   "t": "Quando conta como assistido",
+   "ic": "circle-check",
+   "txt": "Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.",
+   "onde": "Ajustes › Reprodução › Durante e depois › Percentual assistido",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades132.c:145 (marcar visto com um OK)",
+   "prova": "ajustes.c:855 (AJ_CW_CONCLUIDO)",
+   "visual": "Barra do episódio com a marca do percentual",
+   "novo": 0
+  },
+  {
+   "id": "f-debrid",
+   "cap": "fontes",
+   "t": "Contas de debrid",
+   "ic": "key-round",
+   "txt": "Real-Debrid, TorBox, Premiumize e AllDebrid resolvem os torrents das fontes. A chave fica só nesta TV, mascarada.",
+   "onde": "Ajustes › Fontes e addons › Debrid",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades1312.c:242-243; novidades160.c:825-826",
+   "prova": "ajustes.c:824-828 (AJ_DEBRID_*)",
+   "visual": "Linhas de chave com o estado",
+   "novo": 0
+  },
+  {
+   "id": "f-servidores",
+   "cap": "fontes",
+   "t": "Seus servidores",
+   "ic": "server",
+   "novo": 1,
+   "txt": "Jellyfin, Emby e Plex viram fileiras na Home, com a retomada e os vistos enviados de volta.",
+   "onde": "Ajustes › Fontes e addons › Servidores pessoais",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.0/NOTAS.md (Personal servers)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "f-plugins",
+   "cap": "fontes",
+   "t": "Plugins",
+   "ic": "plug",
+   "novo": 1,
+   "txt": "Repositórios de scrapers do Nuvio como mais uma fonte, ao lado dos add-ons. Experimental e desligado de fábrica.",
+   "onde": "Ajustes › Fontes e addons › Addons",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.0/NOTAS.md (Plugins and P2P)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "f-p2p",
+   "cap": "fontes",
+   "t": "P2P, experimental",
+   "ic": "server",
+   "txt": "Toca torrents sem link por um servidor do Stremio na sua rede. A TV não baixa nada e o automático nunca escolhe P2P.",
+   "onde": "Ajustes › Reprodução › Mais opções › P2P",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:825-826",
+   "prova": "ajustes.c:811-813; ajustes.c:3834",
+   "visual": "Linha P2P com Testar servidor",
+   "novo": 0
+  },
+  {
+   "id": "l-ass",
+   "cap": "legendas",
+   "t": "Legendas ASS",
+   "ic": "subtitles",
+   "txt": "O app desenha legendas ASS com estilos, cores e posições em todas as TVs: LG, Samsung e Android. Elas carregam antes do vídeo começar.",
+   "onde": "No player, em vídeos com legenda ASS",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "novidades1312.c:228-229; novidades142.c:257-258; novidades148.c:471-472",
+   "prova": "assrender.c; mkvass.c; legenda.c",
+   "visual": "Quadro do vídeo com letreiro no topo e duas falas",
+   "novo": 1
+  },
+  {
+   "id": "l-idiomas",
+   "cap": "legendas",
+   "t": "Idioma da legenda e do áudio",
+   "ic": "languages",
+   "txt": "A legenda no idioma escolhido liga sozinha quando o vídeo começa. O áudio pega a faixa desse idioma quando o arquivo tem mais de uma.",
+   "onde": "Ajustes › Idiomas e legendas",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:819-820",
+   "prova": "ajustes.c:618-619; ajustes.c:3692-3693",
+   "visual": "Legenda ligada no player",
+   "novo": 0
+  },
+  {
+   "id": "l-forcada",
+   "cap": "legendas",
+   "t": "Só os letreiros",
+   "ic": "captions",
+   "novo": 1,
+   "txt": "Com o áudio já no seu idioma, liga só a legenda forçada: placas e falas em outra língua.",
+   "onde": "Ajustes › Idiomas e legendas › Idiomas",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.2/NOTAS.md (#287)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "l-segunda",
+   "cap": "legendas",
+   "t": "Segunda legenda",
+   "ic": "captions",
+   "novo": 1,
+   "txt": "Duas legendas ao mesmo tempo, com tamanho, cor e posição próprios. Boa para aprender outro idioma.",
+   "onde": "Ajustes › Idiomas e legendas › Segunda legenda",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.0/NOTAS.md (Second subtitle track)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "l-sync",
+   "cap": "legendas",
+   "t": "Acertar o atraso",
+   "ic": "audio-lines",
+   "novo": 1,
+   "txt": "No player, a legenda tem um controle de atraso, e o AutoSync acerta sozinho pelo áudio.",
+   "onde": "No player › Legendas",
+   "acao": [],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.0/NOTAS.md (subtitle AutoSync, delay slider)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "l-app",
+   "cap": "legendas",
+   "t": "Idioma do app",
+   "ic": "globe",
+   "txt": "O Nuvio fala 28 idiomas. Automático segue a sua conta ou o idioma da TV. Não muda legenda nem áudio.",
+   "onde": "Ajustes › Idiomas e legendas › Idioma do app",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:819-820 (28 idiomas)",
+   "prova": "ajustes.c:720 (AJ_IDIOMA); src/idioma_*.h",
+   "visual": "cenaIdiomas de novidades160.c",
+   "novo": 0
+  },
+  {
+   "id": "l-meta",
+   "cap": "legendas",
+   "t": "Sinopse e títulos no seu idioma",
+   "ic": "book-open",
+   "txt": "O TMDB traz sinopse, títulos e arte traduzidos. Da interface segue o idioma do app.",
+   "onde": "Ajustes › Idiomas e legendas › Idioma dos metadados",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:819-820; novidades170.c:1192 (séries no seu idioma)",
+   "prova": "ajustes.c:768 (AJ_TMDB_IDIOMA), ajustes.c:769 (Arte localizada)",
+   "visual": "Busca em outra língua (novidades160.c:447)",
+   "novo": 0
+  },
+  {
+   "id": "i-ilha",
+   "cap": "ilha",
+   "t": "A ilha do relógio",
+   "ic": "clock",
+   "txt": "A pílula no canto mostra a hora e o seu perfil. O episódio pela metade e a estreia nova ficam nela. AZUL ou CH+ abre, → leva aos Salvos.",
+   "onde": "Canto de cima da tela; Ajustes › Aparência › Relógio na tela",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "novidades170.c:1181-1182",
+   "prova": "ilha.c; app.c:1554-1562",
+   "visual": "cenaIlha de novidades170.c",
+   "novo": 0
+  },
+  {
+   "id": "i-avisos",
+   "cap": "ilha",
+   "t": "Avisos que saem da ilha",
+   "ic": "bell",
+   "novo": 0,
+   "txt": "Sem internet, addon que não respondeu, Trakt desconectado, pedido de amizade e troca de perfil aparecem na própria pílula. Quando há o que fazer, ela cresce num cartão com botões.",
+   "onde": "Ilha do relógio",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "Glass UI 1.8.0 (commits 0c3d2e4e, ad447739, addeac4d)",
+   "prova": "ilhasinais.c:68-233; redesaude.h:3",
+   "visual": "Estados da ilha: repouso, atividade, aviso e cartão"
+  },
+  {
+   "id": "i-central",
+   "cap": "ilha",
+   "t": "Central de avisos",
+   "ic": "inbox",
+   "txt": "Recomendação de amigo, estreia, versão nova e recados de quem faz o app. Chegam pela ilha e ficam na aba Avisos, em Salvos.",
+   "onde": "AZUL › Avisos",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "novidades132.c:126-132; Glass UI 1.8.0 (commit ed08575e)",
+   "prova": "salvospainel.h:60-61; ilhacart.h:14; avisos.h",
+   "visual": "Aba Avisos do painel de Salvos",
+   "novo": 0
+  },
+  {
+   "id": "i-controle",
+   "cap": "ilha",
+   "t": "Central de controle",
+   "ic": "sliders-horizontal",
+   "novo": 1,
+   "txt": "Segure CH+ e a ilha vira um painel de ajustes rápidos, com atalhos que você escolhe.",
+   "onde": "Segurar CH+",
+   "acao": [],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "central.c; docs/releases/2.0.1/NOTAS.md (Control Center); 2.0.3 (estatisticas ao vivo)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "i-saida",
+   "cap": "ilha",
+   "t": "Sair no meio e voltar pela ilha",
+   "ic": "picture-in-picture-2",
+   "txt": "Ao sair de um filme no meio, o vídeo encolhe até a ilha, que guarda o título. CH+ ou AZUL retoma de onde parou.",
+   "onde": "Ajustes › Reprodução › Durante e depois › Ao sair do player",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "Sem cartão (chegou na 1.7.1, commit d214796c)",
+   "prova": "ajustes.c:298 (V_SAIDA_PLAYER), ajustes.c:878, ajustes.c:3857",
+   "visual": "Ilha com o cartão de retomada",
+   "novo": 0
+  },
+  {
+   "id": "i-posicao",
+   "cap": "ilha",
+   "t": "Relógio em repouso",
+   "ic": "move-horizontal",
+   "txt": "Com o relógio desligado, a pílula some em repouso e só aparece para os avisos. A hora pode ser de 24 horas ou AM/PM.",
+   "onde": "Ajustes › Aparência › Movimento e relógio",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades170.c:1181-1182",
+   "prova": "ajustes.c:870-871; ajustes.c:295 (V_RELOGIO_POS)",
+   "visual": "miniHome com a pílula em cada canto",
+   "novo": 0
+  },
+  {
+   "id": "s-salvos",
+   "cap": "salvos",
+   "t": "Salvos",
+   "ic": "bookmark",
+   "txt": "AZUL abre o painel com o que você guardou. As abas são Salvos, Atividade, Amigos e Avisos.",
+   "onde": "AZUL ou CH+ na Home",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "novidades11.c:954-962; novidades1312.c:236-237",
+   "prova": "app.c:1534-1560; salvospainel.h:60-61",
+   "visual": "Painel de Salvos como ilha (glass-ilha tela 3)",
+   "novo": 0
+  },
+  {
+   "id": "s-organizar",
+   "cap": "salvos",
+   "t": "Organizar Salvos",
+   "ic": "folders",
+   "txt": "Crie categorias suas, mude a ordem e o estilo da lista, no próprio painel.",
+   "onde": "Painel de Salvos › Organizar",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "novidades170.c:1185-1186",
+   "prova": "salvosorg.c; salvospainel.c:2426",
+   "visual": "Painel com as categorias",
+   "novo": 0
+  },
+  {
+   "id": "s-menu",
+   "cap": "salvos",
+   "t": "Segurar OK num cartaz",
+   "ic": "menu",
+   "novo": 1,
+   "txt": "O cartaz vira um cartão com as informações e o menu ao lado: Salvar, Marcar como assistido, Recomendar a um amigo, Estilo da fileira e Tirar de Continuar assistindo.",
+   "onde": "Qualquer cartaz, segurando OK",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "novidades148.c:474-475; Glass UI 1.8.0 (commit 83cd1e42)",
+   "prova": "ctxmenu.c:220-240 (confirmação), ctxmenu.c:324-383 (opções)",
+   "visual": "Menu do cartaz como ilha ao lado do pôster (glass-ilha tela 7)"
+  },
+  {
+   "id": "s-biblioteca",
+   "cap": "salvos",
+   "t": "Listas na Biblioteca",
+   "ic": "library",
+   "txt": "As listas do Trakt, as pastas da conta Nuvio e o que você acompanha no Simkl. Procure listas públicas, fixe as boas ou mande para a Home.",
+   "onde": "Menu › Biblioteca",
+   "acao": [
+    "Abrir a Biblioteca"
+   ],
+   "fonte": "novidades11.c:868-883",
+   "prova": "biblioteca.c:50, biblioteca.c:1232, biblioteca.c:1306",
+   "visual": "Biblioteca com seletor e filtros (commit 3452568a)",
+   "novo": 0
+  },
+  {
+   "id": "s-mais",
+   "cap": "salvos",
+   "t": "Onde o + salva",
+   "ic": "plus",
+   "txt": "O botão + guarda na lista do Nuvio, na watchlist do Trakt ou no Simkl.",
+   "onde": "Ajustes › Conta e serviços › Trakt e Simkl › Onde o + salva",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "Sem cartão",
+   "prova": "ajustes.c:742, ajustes.c:449 (V_SALVOS)",
+   "visual": "Linha com o valor e o botão + da página do título",
+   "novo": 0
+  },
+  {
+   "id": "s-agenda",
+   "cap": "salvos",
+   "t": "Agenda e lembretes",
+   "ic": "calendar",
+   "txt": "O mês com as estreias das séries que você acompanha. Lembrar-me marca o próximo episódio, e a aba Agenda do painel Social lista os próximos por data.",
+   "onde": "Menu › Agenda; Lembrar-me na página da série",
+   "acao": [
+    "Abrir a Agenda"
+   ],
+   "fonte": "novidades11.c:851-861; novidades160.c:833-834",
+   "prova": "agendaui.c:1062, agendaui.c:1399",
+   "visual": "Agenda com o fio de hoje (commit 3c6442db)",
+   "novo": 1
+  },
+  {
+   "id": "s-explorar",
+   "cap": "salvos",
+   "t": "Explorar",
+   "ic": "telescope",
+   "txt": "Um céu com as suas histórias: o que você viu ligado ao que vem a seguir. Setas navegam, OK abre.",
+   "onde": "Menu › Explorar",
+   "acao": [
+    "Abrir o Explorar"
+   ],
+   "fonte": "novidades142.c:255-256",
+   "prova": "explorar.c:769, explorar.c:830",
+   "visual": "Céu do Explorar",
+   "novo": 0
+  },
+  {
+   "id": "s-stats",
+   "cap": "salvos",
+   "t": "Perfil e Stats",
+   "ic": "chart-column",
+   "txt": "Quanto você assistiu, o seu ritmo, os mais vistos e os amigos, em cartões.",
+   "onde": "Menu › Perfil e Stats",
+   "acao": [
+    "Abrir Perfil e Stats"
+   ],
+   "fonte": "Sem cartão",
+   "prova": "menu.c:111; commit 5a60f592",
+   "visual": "Perfil e Stats (glass-ilha tela 11)",
+   "novo": 0
+  },
+  {
+   "id": "o-amigos",
+   "cap": "social",
+   "t": "Amigos no Nuvio",
+   "ic": "users",
+   "novo": 1,
+   "txt": "Trakt, Simkl e Letterboxd viram uma pessoa só, sem amigo repetido. No painel Social, as abas ficam ao lado do título: Amigos, Atividade e Agenda.",
+   "onde": "AZUL › Amigos",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "novidades160.c:831-832",
+   "prova": "recomenda.c:180; amigoperfil.c; commit 5e89926a (depois da 1.7.2)",
+   "visual": "Aba Amigos do painel"
+  },
+  {
+   "id": "o-social",
+   "cap": "social",
+   "t": "Desligar o Social",
+   "ic": "users",
+   "novo": 1,
+   "txt": "Recursos sociais desliga amigos e recomendações neste perfil, e o histórico pode ficar fora da conta Nuvio.",
+   "onde": "Ajustes › Conta e serviços › Trakt e Simkl",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.2/NOTAS.md (Social features switch)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "o-privacidade",
+   "cap": "social",
+   "t": "Quem pode te encontrar",
+   "ic": "shield",
+   "txt": "Na primeira vez que você abre o Social o app pergunta, e Não é a primeira opção. O perfil público só existe se você ligar.",
+   "onde": "Ajustes › Conta e serviços › Perfil pesquisável",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades11.c:905-918",
+   "prova": "salvospainel.c:3301, salvospainel.c:3317; ajustes.c:847, ajustes.c:3841",
+   "visual": "A pergunta com Sim / Não",
+   "novo": 0
+  },
+  {
+   "id": "o-recomendar",
+   "cap": "social",
+   "t": "Recomendar a um amigo",
+   "ic": "send",
+   "txt": "Segure OK num título e escolha Recomendar a um amigo. A recomendação chega na aba Amigos, em Salvos.",
+   "onde": "Menu do cartaz (segurar OK)",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "novidades1312.c:236-237",
+   "prova": "ctxmenu.c:377",
+   "visual": "Menu do cartaz com a opção em foco",
+   "novo": 0
+  },
+  {
+   "id": "o-trakt",
+   "cap": "social",
+   "t": "Trakt e Simkl",
+   "ic": "link",
+   "txt": "Conecte com um código na TV, e o celular confirma. O que você assiste marca lá, e o Continuar assistindo junta as contas.",
+   "onde": "Ajustes › Conta e serviços › Trakt e Simkl",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:825-826 (scrobble do Trakt)",
+   "prova": "ajustes.c:743-744, ajustes.c:671 (Fonte do Continuar)",
+   "visual": "Vínculo com QR real (ajustes-mock quadro trakt)",
+   "novo": 0
+  },
+  {
+   "id": "o-perfis",
+   "cap": "social",
+   "t": "Perfis e addons",
+   "ic": "user-round",
+   "txt": "Cada perfil tem os seus addons e o seu progresso, ou usa os do perfil principal. Ligue e desligue os addons da conta nesta TV.",
+   "onde": "Ajustes › Fontes e addons › Addons",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades12.c:404-407",
+   "prova": "ajustes.c:732 (Addons), ajustes.c:856 (perfil principal)",
+   "visual": "Lista de addons com o que cada um fornece",
+   "novo": 0
+  },
+  {
+   "id": "v-guia",
+   "cap": "aovivo",
+   "t": "Guia de TV",
+   "ic": "tv-minimal-play",
+   "txt": "Os canais por categoria, com o que está no ar e o que vem a seguir. Todo addon de canais instalado entra sozinho.",
+   "onde": "Menu › Guia TV",
+   "acao": [
+    "Abrir o Guia de TV"
+   ],
+   "fonte": "novidades.c:181-188; novidades148.c:465-467",
+   "prova": "guia.c; menu.c:111",
+   "visual": "cenaAoVivo de novidades160.c",
+   "novo": 0
+  },
+  {
+   "id": "v-modos",
+   "cap": "aovivo",
+   "t": "Grade ou cartões",
+   "ic": "layout-list",
+   "txt": "AMARELO troca entre a grade, um canal por linha, e os cartões. O app lembra a escolha. Na grade, ← → andam meia hora.",
+   "onde": "Guia de TV",
+   "acao": [
+    "Abrir o Guia de TV"
+   ],
+   "fonte": "novidades12.c:381-391",
+   "prova": "guia.c:291-302 (modo gravado), guia.c:1942",
+   "visual": "Guia em grade e em cartões",
+   "novo": 0
+  },
+  {
+   "id": "v-zap",
+   "cap": "aovivo",
+   "t": "Tocar e zapear",
+   "ic": "play",
+   "txt": "OK toca na hora. Com o canal no ar, CH+ e CH− zapeiam, e BAIXO ou AZUL abrem o mini guia por cima do vídeo.",
+   "onde": "Guia de TV e canal no ar",
+   "acao": [
+    "Abrir o Guia de TV"
+   ],
+   "fonte": "novidades.c:189-197; novidades148.c:467; novidades12.c:395-401",
+   "prova": "app.c:3145, app.c:3165; guia.c:1437",
+   "visual": "Mini guia por cima do vídeo",
+   "novo": 0
+  },
+  {
+   "id": "v-rapido",
+   "cap": "aovivo",
+   "t": "Pular categorias e favoritos",
+   "ic": "chevrons-down",
+   "txt": "Segure ↑ ou ↓ para pular de categoria. OK segurado marca o canal como favorito.",
+   "onde": "Guia de TV",
+   "acao": [],
+   "fonte": "novidades.c:198-201",
+   "prova": "guia.c:236 (favoritos); aovivoui.c:97",
+   "visual": "Categoria trocando no guia",
+   "novo": 0
+  },
+  {
+   "id": "v-lembrete",
+   "cap": "aovivo",
+   "t": "Lembrete de programa",
+   "ic": "alarm-clock",
+   "txt": "Num programa que ainda vai passar, OK marca um lembrete. O aviso chega pela ilha.",
+   "onde": "Guia de TV",
+   "acao": [],
+   "fonte": "novidades148.c:467",
+   "prova": "guia.c:67-68, guia.c:1531; guialembrete.c:3 (aviso pela ilha)",
+   "visual": "Programa futuro com o lembrete",
+   "novo": 0
+  },
+  {
+   "id": "v-addons",
+   "cap": "aovivo",
+   "t": "Addons de canal",
+   "ic": "puzzle",
+   "txt": "O botão Addons no topo do guia lista os da conta, diz quais têm canais e traz recomendados com Instalar.",
+   "onde": "Guia de TV › Addons",
+   "acao": [
+    "Abrir o Guia de TV"
+   ],
+   "fonte": "novidades12.c:404-414",
+   "prova": "guia.c:3144, guia.c:3502, guia.c:3577; deploy/app/art/addons-recomendados.txt",
+   "visual": "Folha de addons do guia",
+   "novo": 0
+  },
+  {
+   "id": "v-xtream",
+   "cap": "aovivo",
+   "t": "Xtream e portal Stalker",
+   "ic": "key",
+   "txt": "Servidor, usuário e senha do provedor, ou portal e MAC. Os canais entram no guia junto com os dos addons.",
+   "onde": "Ajustes › TV ao vivo › Provedor",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades13.c:176-187",
+   "prova": "ajustes.c:733-740",
+   "visual": "Linhas Xtream de novidades13.c:107-109",
+   "novo": 0
+  },
+  {
+   "id": "v-pais",
+   "cap": "aovivo",
+   "t": "Programação por país",
+   "ic": "map",
+   "txt": "De que país vem a grade dos canais. Automático decide pelo idioma e pelo nome dos canais.",
+   "onde": "Ajustes › TV ao vivo › Grade de programação",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:821-822",
+   "prova": "ajustes.c:741, ajustes.c:455 (V_EPG_PAIS)",
+   "visual": "Lista de países",
+   "novo": 0
+  },
+  {
+   "id": "v-diag",
+   "cap": "aovivo",
+   "t": "Diagnóstico da Live TV",
+   "ic": "stethoscope",
+   "txt": "Testa a rede até o provedor e vários canais, e sugere resolução, formato e espera. VERDE no guia também abre.",
+   "onde": "Ajustes › TV ao vivo › Se o canal não abre",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades170.c:1189-1190",
+   "prova": "ajustes.c:867; guia.c:1937-1940; livetvdiag.c",
+   "visual": "Diagnóstico da Live TV (ajustes-mock livetv-diag)",
+   "novo": 0
+  },
+  {
+   "id": "a-vidro",
+   "cap": "aparencia",
+   "t": "Vidro ou sólido",
+   "ic": "panel-top",
+   "novo": 1,
+   "txt": "Todo painel é uma ilha, como a do relógio: vidro translúcido ou sólido, com a arte, a arte borrada ou o Frost atrás.",
+   "onde": "Ajustes › Aparência › Interface de vidro",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:815-816; Glass UI 1.8.0 (DESIGN.md §2)",
+   "prova": "ajustes.c:808 (AJ_VIDRO); DESIGN.md §2",
+   "visual": "A mesma tela nos dois materiais"
+  },
+  {
+   "id": "a-cor",
+   "cap": "aparencia",
+   "t": "Cor de destaque",
+   "ic": "palette",
+   "txt": "Dezoito cores e as dinâmicas, que tiram a cor do título em cena. A cor marca o botão em foco e os estados.",
+   "onde": "Ajustes › Aparência › Cor de destaque",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades148.c:461-464 (Cor viva)",
+   "prova": "ajustes.c:532-535 (V_TEMA), ajustes.c:723",
+   "visual": "Régua de cores e onde o acento aparece (ajustes-mock quadro cor)",
+   "novo": 1
+  },
+  {
+   "id": "a-logo",
+   "cap": "aparencia",
+   "t": "Cor da logo",
+   "ic": "droplet",
+   "txt": "Com uma cor dinâmica, a cor sai do logo do título em vez da arte de fundo.",
+   "onde": "Ajustes › Aparência › Cor da logo",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades148.c:464",
+   "prova": "ajustes.c:728 (AJ_COR_LOGO)",
+   "visual": "Destaque tingido pela logo",
+   "novo": 0
+  },
+  {
+   "id": "a-descanso",
+   "cap": "aparencia",
+   "t": "Tela de descanso",
+   "ic": "moon",
+   "novo": 1,
+   "txt": "Vitrine do seu catálogo, Relógio com a próxima estreia, ou só escurecer. Nunca entra com algo tocando.",
+   "onde": "Ajustes › Aparência › Tela de descanso",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.0/NOTAS.md (Screensaver)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "a-abertura",
+   "cap": "aparencia",
+   "t": "Logo e abertura",
+   "ic": "sparkle",
+   "novo": 1,
+   "txt": "O logo novo ou o Clássico, e a abertura Padrão, Só esmaece ou Direto.",
+   "onde": "Ajustes › Aparência › Logo e abertura",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.0/NOTAS.md (New logo and startup)",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  },
+  {
+   "id": "a-fonte",
+   "cap": "aparencia",
+   "t": "Fonte e animações",
+   "ic": "type",
+   "txt": "Seis fontes para os menus, de Inter a Atkinson Hyperlegible Next. A legenda tem fonte própria, escolhida no player. Animações reduzidas deixam os movimentos discretos.",
+   "onde": "Ajustes › Aparência › Fonte da interface e Animações",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades151.c:48-49",
+   "prova": "ajustes.c:377 (V_FONTE_UI), ajustes.c:376 (V_ANIM)",
+   "visual": "Aa Nuvio 0123 em cada fonte (novidades151.c:189)",
+   "novo": 0
+  },
+  {
+   "id": "a-cartaz",
+   "cap": "aparencia",
+   "t": "Tamanho e forma dos cartazes",
+   "ic": "images",
+   "txt": "Largura, cantos e relevo dos cartazes nas fileiras.",
+   "onde": "Ajustes › Cartazes e trailers › Forma",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "Sem cartão",
+   "prova": "ajustes.c:706-717",
+   "visual": "Três cartazes no tamanho escolhido (ajustes-mock quadro cartazes)",
+   "novo": 0
+  },
+  {
+   "id": "a-posters",
+   "cap": "aparencia",
+   "t": "Pôsteres personalizados",
+   "ic": "image-plus",
+   "txt": "Cartazes prontos com notas e selos, do SpatialPosters, do RPDB ou de um endereço seu. O destaque e os fundos não mudam.",
+   "onde": "Ajustes › Cartazes e trailers › De onde vem a arte",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades160.c:817-818",
+   "prova": "ajustes.c:816-822; ajustes.c:3844",
+   "visual": "Cartaz normal e personalizado lado a lado",
+   "novo": 0
+  },
+  {
+   "id": "a-selo",
+   "cap": "aparencia",
+   "t": "Selo de assistido",
+   "ic": "check",
+   "txt": "Um check no canto do pôster do que você já viu, pelo Trakt, pela conta ou marcado nesta TV.",
+   "onde": "Ajustes › Tela inicial › Fileiras › Selo de assistido nos pôsteres",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "Sem cartão (chegou na 1.7.2)",
+   "prova": "ajustes.c:872; ajustes.c:3752",
+   "visual": "Fileira com o selo em dois pôsteres",
+   "novo": 0
+  },
+  {
+   "id": "d-diag",
+   "cap": "desempenho",
+   "t": "Diagnóstico e otimização",
+   "ic": "gauge",
+   "txt": "Mede addons, fontes e artes nesta TV e aplica um perfil de Qualidade ou Desempenho. Se a TV piorar, volta sozinho ao anterior.",
+   "onde": "Ajustes › Esta TV",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades142.c:261-262",
+   "prova": "ajustes.c:798; ajustes.c:3876; diagnostico.c",
+   "visual": "Diagnóstico (ajustes-mock quadros diagnostico)",
+   "novo": 0
+  },
+  {
+   "id": "d-vel",
+   "cap": "desempenho",
+   "t": "Teste de velocidade",
+   "ic": "zap",
+   "txt": "Diz o maior arquivo que toca sem parar, por filme de 2 h e por episódio. Não muda nenhum ajuste.",
+   "onde": "Ajustes › Esta TV › Teste de velocidade",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades148.c:468-470",
+   "prova": "ajustes.c:799; ajustes.c:3879",
+   "visual": "Resultado do teste (ajustes-mock quadro velocidade)",
+   "novo": 0
+  },
+  {
+   "id": "d-mem",
+   "cap": "desempenho",
+   "t": "Memória para imagens",
+   "ic": "memory-stick",
+   "txt": "Quanta memória o cache de artes pode usar. Automático escolhe pela RAM da TV.",
+   "onde": "Ajustes › Esta TV › Memória para imagens",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades132.c:75-77",
+   "prova": "ajustes.c:760, ajustes.c:350 (V_TEX_MB)",
+   "visual": "Painel de pressão da memória (ajustes-mock quadro memoria)",
+   "novo": 0
+  },
+  {
+   "id": "d-img",
+   "cap": "desempenho",
+   "t": "Qualidade da imagem",
+   "ic": "image",
+   "txt": "Alta pede a arte grande e gasta mais memória. Baixa carrega antes e cabe em TV com pouca RAM.",
+   "onde": "Ajustes › Esta TV › Qualidade da imagem",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades131.c:169-172",
+   "prova": "ajustes.c:718 (AJ_QUALIDADE_IMG)",
+   "visual": "A mesma arte em Baixa e Alta",
+   "novo": 0
+  },
+  {
+   "id": "d-leve",
+   "cap": "desempenho",
+   "t": "Deixar a TV mais leve",
+   "ic": "feather",
+   "txt": "Resolução da interface em Automática só usa 4K quando a TV aguenta. Em TV fraca, 720p e Efeitos visuais em Leves tiram peso. O vídeo não muda.",
+   "onde": "Ajustes › Esta TV",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "Sem cartão",
+   "prova": "ajustes.c:722 (AJ_RESOLUCAO); ajustes.c:807 (AJ_GPU_EFEITOS, só Samsung nativa e Android: ajustes_ux_tela.inc:104-106)",
+   "visual": "Linhas com os valores",
+   "novo": 1
+  },
+  {
+   "id": "p-registro",
+   "cap": "problemas",
+   "t": "Enviar registro",
+   "ic": "send",
+   "txt": "Quando algo dá errado, mande o registro desta sessão para quem faz o app. Vai sem senhas nem chaves. Na LG, a tecla VERMELHA abre o painel do registro.",
+   "onde": "Ajustes › Sobre e ajuda › Enviar registro",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades11.c:945-952; novidades134.c:133-134",
+   "prova": "ajustes.c:753; ajustes.c:3874; registro.c:21",
+   "visual": "Painel do registro",
+   "novo": 0
+  },
+  {
+   "id": "p-fechou",
+   "cap": "problemas",
+   "t": "O app fechou sozinho",
+   "ic": "triangle-alert",
+   "txt": "Na abertura seguinte, a central de avisos oferece enviar o registro daquela vez.",
+   "onde": "Ilha do relógio, ao abrir",
+   "acao": [],
+   "fonte": "novidades132.c:75-77",
+   "prova": "avisos.h:19, avisos.h:26",
+   "visual": "Aviso com Enviar registro",
+   "novo": 0
+  },
+  {
+   "id": "p-rede",
+   "cap": "problemas",
+   "t": "Sem internet",
+   "ic": "wifi-off",
+   "novo": 0,
+   "txt": "A ilha avisa e o app mostra o que já estava salvo. Quando a rede volta, a ilha diz.",
+   "onde": "Ilha do relógio",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "Glass UI 1.8.0 (commit ad447739)",
+   "prova": "ilhasinais.c:219-221; redesaude.h:3",
+   "visual": "Ilha com Sem internet e Internet de volta"
+  },
+  {
+   "id": "p-addon",
+   "cap": "problemas",
+   "t": "Um addon não respondeu",
+   "ic": "puzzle",
+   "novo": 0,
+   "txt": "A ilha diz qual addon ficou de fora. As fontes e catálogos dos outros continuam.",
+   "onde": "Ilha do relógio",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "Glass UI 1.8.0 (commit ad447739)",
+   "prova": "ilhasinais.c:230-233",
+   "visual": "Ilha com o aviso do addon"
+  },
+  {
+   "id": "p-trakt",
+   "cap": "problemas",
+   "t": "O Trakt desconectou",
+   "ic": "unlink",
+   "novo": 0,
+   "txt": "A ilha avisa e oferece Reconectar: um código na TV, e o celular confirma. Até lá, o que você assiste não vai para o Trakt.",
+   "onde": "Ilha do relógio",
+   "acao": [
+    "Ver exemplo"
+   ],
+   "fonte": "Glass UI 1.8.0 (commit 0c3d2e4e)",
+   "prova": "ilhasinais.c:140-149",
+   "visual": "Cartão da ilha com Reconectar / Depois"
+  },
+  {
+   "id": "p-canal",
+   "cap": "problemas",
+   "t": "O canal não abre",
+   "ic": "tv-minimal-play",
+   "txt": "Rode o Diagnóstico da Live TV, ou aperte VERDE no guia. Ele testa os formatos e diz o que mudar.",
+   "onde": "Ajustes › TV ao vivo › Se o canal não abre",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades170.c:1189-1190",
+   "prova": "ajustes.c:867; guia.c:1937",
+   "visual": "Resultado do diagnóstico",
+   "novo": 0
+  },
+  {
+   "id": "p-trava",
+   "cap": "problemas",
+   "t": "O vídeo trava",
+   "ic": "loader",
+   "txt": "Faça o teste de velocidade. Se o arquivo for maior que a conexão aguenta, limite o Tamanho máximo do arquivo ou escolha outra fonte.",
+   "onde": "Ajustes › Esta TV › Teste de velocidade",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "novidades148.c:468-470",
+   "prova": "ajustes.c:799; ajustes.c:613",
+   "visual": "Teste de velocidade com até X GB",
+   "novo": 0
+  },
+  {
+   "id": "p-som",
+   "cap": "problemas",
+   "t": "Sem som",
+   "ic": "audio-lines",
+   "novo": 1,
+   "txt": "Pode ser DTS ou TrueHD que a TV não toca. Na LG, ligue a conversão de DTS; na Samsung, prefira uma fonte Dolby.",
+   "onde": "Ajustes › Reprodução › Mais opções › Som e vídeo desta TV",
+   "acao": [
+    "Abrir em Ajustes"
+   ],
+   "fonte": "docs/releases/2.0.x/NOTAS.md",
+   "prova": "docs/releases/2.0.1 e 2.0.2/NOTAS.md",
+   "visual": "previa gerada da opcao-alvo em Ajustes"
+  }
+ ]
 }

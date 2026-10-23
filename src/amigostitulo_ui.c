@@ -8,6 +8,8 @@
 #include "anim.h"
 #include "ajustes.h"
 #include "idioma.h"
+#include "ponteiro.h"
+#include "rolagemtoque.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -27,6 +29,14 @@ static int aberta, foco, ultT, ultE;
 static char titulo[160];
 static float rolagem, rolagemVel, entrada;
 static Uint32 ultimoQuadro;
+#ifdef NV_TOUCH_UI
+static ToqueRolagem toque;
+static int toqueRolar(const PonteiroRolagem *e) {
+  int r = toquerol_evento(&toque, e);
+  if (r && e->fase == PONT_ROL_INICIO) rolagemVel = 0.0f;
+  return r;
+}
+#endif
 
 void amtui_abrir(const AmigosTitulo *t, int t2, int e2, const char *tit) {
   if (!t || t->n <= 0) return;
@@ -35,15 +45,40 @@ void amtui_abrir(const AmigosTitulo *t, int t2, int e2, const char *tit) {
   snprintf(titulo, sizeof titulo, "%s", tit ? tit : "");
   aberta = 1; foco = 0;
   rolagem = rolagemVel = 0.0f;
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toque);
+#endif
   entrada = 0.0f; ultimoQuadro = 0;
 }
 
 int  amtui_aberta(void) { return aberta; }
 void amtui_fechar(void) { aberta = 0; }
 
+// PONTEIRO (#99). A linha sob o cursor vira o foco (a MESMA variavel das
+// setas). O clique e o OK, que aqui fecha a folha — como no controle. A
+// camada e de detail.c, que chama ponteiro_camada antes de amtui_desenhar.
+static void ponteiroLinha(int i, int b) {
+  (void)b;
+  if (!aberta || i < 0 || i >= lista.n) return;
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toque);
+#endif
+  foco = i;
+}
+int amtui_teste_foco(void) { return aberta ? foco : -1; }
+
 void amtui_evento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!aberta || e->type != SDL_KEYDOWN) return;
+#ifdef NV_TOUCH_UI
+  if (toquerol_navegacao(e)) {
+    if (toquerol_livre(&toque)) {
+      foco = (int)((rolagem + toque.regiao.h * 0.35f) / AMTUI_LIN_H);
+      if (foco >= lista.n) foco = lista.n - 1;
+    }
+    toquerol_limpar(&toque);
+  }
+#endif
   k = e->key.keysym.sym;
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK ||
@@ -84,7 +119,12 @@ void amtui_desenhar(Uint32 agora) {
   if (alvo < 0.0f) alvo = 0.0f;
   if (maxY < 0.0f) maxY = 0.0f;
   if (alvo > maxY) alvo = maxY;
-  rolagem = ajustes_animacoes_reduzidas() ? alvo : anim_mola2(&rolagemVel, rolagem, alvo, dt, NV_MOLA2_SCROLL);
+#ifdef NV_TOUCH_UI
+  toquerol_vincular(&toque, (GfxRect){ x, y0 + AMTUI_TOPO, AMTUI_W, areaH }, gfx_escala(), 0.0f, maxY, 1, &rolagem);
+  ponteiro_rolagem(toqueRolar);
+  if (!toquerol_livre(&toque))
+#endif
+    rolagem = ajustes_animacoes_reduzidas() ? alvo : anim_mola2(&rolagemVel, rolagem, alvo, dt, NV_MOLA2_SCROLL);
 
   gfx_recorte(x, y0 + AMTUI_TOPO, AMTUI_W, areaH + 12.0f);
   for (i = 0; i < lista.n; i++) {
@@ -95,6 +135,9 @@ void amtui_desenhar(Uint32 agora) {
     TxtLinha ln, ls, le;
     float bloco, ty;
     if (ly + AMTUI_LIN_H < y0 + AMTUI_TOPO - 4.0f || ly > y0 + h) continue;
+    if (a >= 1.0f)
+      ponteiro_alvo_faixa(x + 16.0f, ly + 4.0f, AMTUI_W - 32.0f, AMTUI_LIN_H - 8.0f,
+                          y0 + AMTUI_TOPO, y0 + AMTUI_TOPO + areaH + 12.0f, ponteiroLinha, NULL, i, 0);
     if (i == foco) plrui_linha_foco((GfxRect){ x + 16.0f, ly + 4.0f, AMTUI_W - 32.0f, AMTUI_LIN_H - 8.0f }, 24.0f, a);
     svd_avatar((GfxRect){ x + AMTUI_PAD, ly + (AMTUI_LIN_H - AMTUI_AV) * 0.5f, AMTUI_AV, AMTUI_AV },
                am->avatar, am->nome, am->id, a);
@@ -124,3 +167,4 @@ void amtui_desenhar(Uint32 agora) {
     txt_desenhar_alpha(l, x + AMTUI_W - AMTUI_PAD - l.w, y0 + 40.0f, a * 0.5f);
   }
 }
+

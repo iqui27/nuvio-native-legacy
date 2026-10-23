@@ -1,0 +1,9 @@
+ajustes_padroes rc=0
+ajustes_ux_dados rc=0
+ajustes_ux_interacao rc=0
+ajustes_perfil rc=0
+player_retido rc=134
+abrecine rc=0
+posplay_recuo rc=0
+player_android_retomada rc=0
+player_visto_trailer rc=0

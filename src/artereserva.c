@@ -5,6 +5,7 @@
 #include "js.h"
 #include "trakt.h"
 #include "artefontes.h"
+#include "artetamanho.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -13,7 +14,7 @@
 
 // Tamanho da chave da memoria do resolvedor (arfMem, mais abaixo): o still de
 // episodio tambem guarda nela.
-#define ARF_CHAVE 32u
+#define ARF_CHAVE 64u
 
 // images.metahub.space/<tipo>/<tamanho>/<ttNNN>/img  ->  tipo e id.
 // So poster e background: logo nao tem par no /find.
@@ -128,7 +129,7 @@ int arte_reserva_episodios(const char *imdb, const char *corpo) {
   int n = 0, i, alvo = 0;
   unsigned long menor = (unsigned long)-1;
   char id[16];
-  if (!imdb || strncmp(imdb, "tt", 2) || !corpo) return 0;
+  if (!imdb || strncmp(imdb, "tt", 2) || !corpo || js_videos_temporadas_falsas(corpo)) return 0;
   snprintf(id, sizeof id, "%.*s", (int)strcspn(imdb, ":"), imdb);
   tmp = malloc(sizeof(AepItem) * AEP_MAX);
   if (!tmp) return 0;
@@ -535,9 +536,11 @@ int arte_reserva_url(const char *url, char *saida, size_t tam) {
                   caminho, sizeof caminho);
   free(resp);
   if (caminho[0] != '/') return 0;
-  // w342 e o que a fileira desenha (o card de 288 promove ate 2x sem perder);
-  // w1280 cobre o heroi e o detalhe pelo mesmo decode escalado do card.
-  snprintf(saida, tam, "https://image.tmdb.org/t/p/%s%s", poster ? "w342" : "w1280", caminho);
+  // w342 e o que a fileira desenha (o card de 288 promove ate 2x sem perder),
+  // w780 na qualidade Alta; w1280 cobre o heroi e o detalhe pelo mesmo decode
+  // escalado do card.
+  snprintf(saida, tam, "https://image.tmdb.org/t/p/w%d%s",
+           poster ? arte_tamanho_poster_w() : 1280, caminho);
   printf("[tex] reserva do TMDB para %s de %s\n", tipo, id);
   fflush(stdout);
   return 1;
@@ -702,6 +705,9 @@ static int fanartChave(char *dst, size_t n) {
 
 static int idValido(const char *fonte, const char *id) {
   if (!strncmp(id, "tt", 2) && id[2] >= '0' && id[2] <= '9') return 1;
+  if ((!strcmp(fonte, "tmdb") || !strcmp(fonte, "tmdblogo")) &&
+      !strncmp(id, "tmdb:", 5) && id[5] >= '1' && id[5] <= '9')
+    return strspn(id + 5, "0123456789") == strlen(id + 5);
   if (strcmp(fonte, "anime")) return 0;
   return !strncmp(id, "kitsu:", 6) || !strncmp(id, "mal:", 4) || !strncmp(id, "anilist:", 8);
 }
@@ -719,12 +725,13 @@ static int lerPedido(const char *url, ArfPedido *p) {
   memcpy(p->fonte, s, n); s = b + 1;
   b = strchr(s, '/'); if (!b || (n = (size_t)(b - s)) == 0 || n >= sizeof p->tamanho) return -1;
   memcpy(p->tamanho, s, n); s = b + 1;
+  if (!strcmp(p->fonte, "apple") && !strncmp(s, "v2/", 3)) s += 3;
   b = strchr(s, '/'); n = b ? (size_t)(b - s) : strlen(s);
   if (!n || n >= sizeof p->id) return -1;
   memcpy(p->id, s, n);
   s = b ? b + 1 : s + n;
   if (!idValido(p->fonte, p->id)) return -1;
-  if (!strcmp(p->fonte, "tmdb") || !strcmp(p->fonte, "tmdbalt") || !strcmp(p->fonte, "fanart")) {
+  if (!strcmp(p->fonte, "tmdb") || !strcmp(p->fonte, "tmdblogo") || !strcmp(p->fonte, "tmdbalt") || !strcmp(p->fonte, "fanart")) {
     // fanart leva m|s/<id do tmdb>; tmdb leva m<id>|t<id>.
     if (!strcmp(p->fonte, "fanart")) {
       if (*s == 'm' || *s == 's') { p->serie = *s == 's'; s++; if (*s == '/') s++; }
@@ -748,7 +755,9 @@ static int lerPedido(const char *url, ArfPedido *p) {
   if (!strcmp(p->tamanho, "full") && !strcmp(p->fonte, "trakt"))
     snprintf(p->tamanho, sizeof p->tamanho, "medium");
 #endif
-  if (!strcmp(p->fonte, "tmdb") || !strcmp(p->fonte, "tmdbalt")) {
+  if (!strcmp(p->fonte, "tmdblogo")) {
+    if (strcmp(p->tamanho, "w500") && strcmp(p->tamanho, "w1280") && strcmp(p->tamanho, "original")) return -1;
+  } else if (!strcmp(p->fonte, "tmdb") || !strcmp(p->fonte, "tmdbalt")) {
     if (strcmp(p->tamanho, "w780") && strcmp(p->tamanho, "w1280") && strcmp(p->tamanho, "original")) return -1;
   } else if (!strcmp(p->fonte, "trakt")) {
     if (strcmp(p->tamanho, "medium") && strcmp(p->tamanho, "full")) return -1;
@@ -827,6 +836,11 @@ static int consultarTmdb(ArfPedido *p, int alt, char *valor, size_t n) {
   }
   resp = rede_baixar(api, 8);
   if (!resp) return -2;
+  if (alt == 2) {
+    int ok = af_tmdb_logo(resp, base, valor, n, NULL, 0);
+    free(resp);
+    return ok ? 1 : -1;
+  }
   // O outro exclui o padrao que o /find deu, mesmo quando so veio o /images
   // (sem backdrop_path na raiz).
   { char padraoResp[160], valido[160];
@@ -986,6 +1000,7 @@ static int consultarApple(ArfPedido *p, char *valor, size_t n) {
 static int arfConsultar(ArfPedido *p, char *valor, size_t n) {
   if (!strcmp(p->fonte, "tmdb"))    return consultarTmdb(p, 0, valor, n);
   if (!strcmp(p->fonte, "tmdbalt")) return consultarTmdb(p, 1, valor, n);
+  if (!strcmp(p->fonte, "tmdblogo")) return consultarTmdb(p, 2, valor, n);
   if (!strcmp(p->fonte, "trakt"))   return consultarTrakt(p, valor, n);
   if (!strcmp(p->fonte, "apple"))   return consultarApple(p, valor, n);
   if (!strcmp(p->fonte, "fanart"))  return consultarFanart(p, valor, n);
@@ -995,7 +1010,7 @@ static int arfConsultar(ArfPedido *p, char *valor, size_t n) {
 
 // Da resposta guardada a url que se baixa, no tamanho pedido.
 static int montarFinal(const ArfPedido *p, const char *valor, char *saida, size_t tam) {
-  if (!strcmp(p->fonte, "tmdb") || !strcmp(p->fonte, "tmdbalt")) {
+  if (!strcmp(p->fonte, "tmdb") || !strcmp(p->fonte, "tmdblogo") || !strcmp(p->fonte, "tmdbalt")) {
     snprintf(saida, tam, "https://image.tmdb.org/t/p/%s%s", p->tamanho, valor);
     return 1;
   }
@@ -1012,13 +1027,20 @@ static int montarFinal(const ArfPedido *p, const char *valor, char *saida, size_
   return 1;
 }
 
+// Apple casa por nome/ano/tipo: o cache nao pode pular essa verificacao.
+static void chavePedido(const ArfPedido *p, char *chave, size_t n) {
+  if (!strcmp(p->fonte, "apple"))
+    snprintf(chave, n, "%s/%s/%c/%d", p->fonte, p->id, p->serie ? 's' : 'm', p->ano);
+  else snprintf(chave, n, "%s/%s", p->fonte, p->id);
+}
+
 int arte_fonte_resolver(const char *url, char *saida, size_t tam) {
   ArfPedido p;
   char chave[ARF_CHAVE], valor[400];
   int r = lerPedido(url, &p);
   if (r == 0) return 0;
   if (r < 0 || !saida || tam < 80) return -1;
-  snprintf(chave, sizeof chave, "%s/%s", p.fonte, p.id);
+  chavePedido(&p, chave, sizeof chave);
   r = arfLer(chave, valor, sizeof valor);
   if (r < 0) return -1;
   if (r == 0) {
@@ -1037,7 +1059,7 @@ int arte_fonte_resolvida(const char *url, char *saida, size_t tam) {
   ArfPedido p;
   char chave[ARF_CHAVE], valor[400];
   if (lerPedido(url, &p) != 1 || !saida || tam < 80) return 0;
-  snprintf(chave, sizeof chave, "%s/%s", p.fonte, p.id);
+  chavePedido(&p, chave, sizeof chave);
   if (arfLer(chave, valor, sizeof valor) <= 0) return 0;
   return montarFinal(&p, valor, saida, tam);
 }

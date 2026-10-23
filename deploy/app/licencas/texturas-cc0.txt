@@ -1,0 +1,14 @@
+NUVIO - BUTTON TEXTURES (THEME "TEXTURA"): THIRD-PARTY NOTICES
+
+The bundled button materials in app/art/texturas/ (material-neutro.jpg and
+material-000.jpg..material-330.jpg) are derived works of:
+
+1. ambientCG "Paper002" (displacement channel)
+   https://ambientcg.com/view/Paper002
+   Licence: Creative Commons CC0 1.0 Universal
+   https://creativecommons.org/publicdomain/zero/1.0/
+
+Derivation (tools/build-texturas.py): luminance of the displacement map,
+grain clamped at 1.6x, tinted per 30-degree hue bucket in OKLCh (C 0.09,
+relative luminance 0.42). No runtime network access; the JPGs ship in the
+package.

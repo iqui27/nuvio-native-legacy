@@ -24,13 +24,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-void servidores_perfil_trocou(void) {}   // servidores.c is not linked here
+#include "nvtmp.h"
+static int servidoresTrocas, sessoesEncerradas;
+static void encerrarSessao(void) { sessoesEncerradas++; }
+void servidores_perfil_trocou(void) { servidoresTrocas++; } // not linked here
 void plugins_perfil_mudou(void) {}     // plugins.c is not linked here
 
 // --- pasta de dados de mentira ----------------------------------------------
 static const char *pasta(void) {
   const char *p = getenv("NUVIO_TESTE_DIR");
-  return p ? p : "/tmp";
+  return p ? p : nvt_dir();
 }
 static void caminho(char *dst, size_t tam, const char *nome) {
   snprintf(dst, tam, "%s/%s", pasta(), nome);
@@ -55,8 +58,12 @@ int dados_gravar(const char *nome, const char *conteudo) {
 }
 // fileiras.c nao entra neste teste; o perfil so avisa a troca.
 void fil_definir_perfil(int p) { (void)p; }
+void cf_definir_perfil(int p) { (void)p; }
+void ov_definir_perfil(int p) { (void)p; }
 // fontepref.c idem: a fonte lembrada tambem e por perfil, e perfis.c so avisa.
 void fontepref_definir_perfil(int p) { (void)p; }
+void legmem_definir_perfil(int p) { (void)p; }
+void audiomem_definir_perfil(int p) { (void)p; }
 // arteescolha.c idem (#142): a arte escolhida a mao e por perfil.
 void arteesc_definir_perfil(int p) { (void)p; }
 // O ajuste "Usar os addons do perfil principal" (ajustes.c): o teste escolhe.
@@ -107,6 +114,13 @@ static int pinsPedidos;
 static int redeCaida;
 
 const char *sessao_usuario(void) { return "usuario-de-teste"; }
+int sessao_identidade_local_copiar(char *usuario, size_t nUsuario, char *jwt, size_t nJwt) {
+  snprintf(usuario, nUsuario, "%s", sessao_usuario());
+  snprintf(jwt, nJwt, "test-token");
+  return 1;
+}
+void sessao_token_recusado(const char *tok) { (void)tok; assert(0); }
+char *sessao_rpc(const char *funcao, const char *corpoJson, int *status);
 
 // O catalogo de avatares oficiais e uma RPC ANONIMA (get_avatar_catalog). Aqui
 // ele devolve vazio de proposito: a regra que este teste guarda e QUANDO a tela
@@ -116,7 +130,10 @@ const char *sessao_usuario(void) { return "usuario-de-teste"; }
 const char *nuvem_url(void) { return "https://exemplo.invalido"; }
 char *nuvem_rpc_com(const char *funcao, const char *corpoJson,
                     const char *bearer, int *status) {
-  (void)funcao; (void)corpoJson; (void)bearer;
+  if (bearer) {
+    assert(!strcmp(bearer, "test-token"));
+    return sessao_rpc(funcao, corpoJson, status);
+  }
   if (status) *status = 0;
   return NULL;
 }
@@ -215,12 +232,21 @@ static void etapaUm(void) {
   assert(perfis_ativo() == 1);
 
   // G) Escolher encerra a pergunta DESTA sessao, e so dela.
+  perfis_ao_abrir_sessao(encerrarSessao);
   perfis_definir_ativo(2);
   assert(perfis_ativo() == 2);
   assert(perfis_precisa_escolher() == 0);
   assert(perfis_sem_escolha() == 0);      // a lista nao mudou
   assert(perfis_pode_dispensar() == 1);
   assert(perfis_indice_sugerido() == 1);
+  // Reopening the same profile intentionally starts a fresh session, including
+  // player teardown and personal-server reload; old publications are rejected.
+  { uint64_t anterior = perfis_sessao_geracao();
+    int encerradas = sessoesEncerradas, trocas = servidoresTrocas;
+    perfis_definir_ativo(2);
+    assert(perfis_ativo() == 2 && !perfis_sessao_atual(anterior));
+    assert(!perfis_sessao_travar(anterior));
+    assert(sessoesEncerradas == encerradas + 1 && servidoresTrocas == trocas + 1); }
 
   // G2) ADDONS DO PRINCIPAL. O perfil 2 tem a marca da conta: le os do 1 com o
   //     ajuste local ligado ou desligado. O perfil 3 NAO tem a marca: so o

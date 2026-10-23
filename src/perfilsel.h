@@ -54,6 +54,7 @@ typedef struct {
   int burst_desenhado;
   float amb_t;        /* cross-fade do ambiente do perfil, 0..1 */
   int amb_atual, amb_ant;
+  int amb_fonte;      /* focused profile's layer: 0 none (light), 1 art, 2 avatar (#295) */
   int cont_tem[8];    /* cartao "continuar" montado por perfil */
 } PerfilSelTesteEstado;
 void perfilsel_teste_estado(PerfilSelTesteEstado *estado);

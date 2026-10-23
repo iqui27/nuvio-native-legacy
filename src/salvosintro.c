@@ -29,6 +29,7 @@
 #include "anim.h"
 #include "layout.h"
 #include "idioma.h"
+#include "ponteiro.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -66,7 +67,7 @@ static float entrada, animFoco[2];
 // republicacao e o bloco antigo e liberado. Guardar o ponteiro aqui derrubou o
 // app na TV poucos segundos depois do arranque — e so na TV, porque no Mac sem
 // conta o catalogo nunca era republicado.
-static char minis[SI_N_MINI][512];
+static char minis[SI_N_MINI][NV_TEX_URL_MAX];   // o poster inteiro (#361)
 static int nMinis;
 
 int sintro_aberto(void) { return aberto; }
@@ -159,19 +160,14 @@ void sintro_atualizar(float dt, Uint32 agora) {
 // Mali-G71 para ~40 fps, e este cartao ja paga um veu de tela cheia.
 // O BOTAO, DESENHADO, ao lado da frase que o nomeia.
 //
-// So o nome nao basta numa TV: "o botao AZUL" e uma cor que a pessoa procura
-// entre quatro, e "CANAL +" e um rocker que nem todo mundo associa a palavra.
-// O desenho responde antes da leitura — e e o que o dono pediu ao perguntar
-// pela imagem do aviso.
+// So o nome nao basta numa TV: "CH+" e um rocker que nem todo mundo associa a
+// palavra. O desenho responde antes da leitura — e e o que o dono pediu ao
+// perguntar pela imagem do aviso.
 //
-// Duas formas, porque os dois botoes NAO se parecem: na LG e uma tecla REDONDA
-// e colorida na fileira de cores; na Samsung e a metade de cima de um rocker
-// retangular. Desenhar um circulo azul para quem tem um One Remote seria
-// mandar a pessoa procurar o que nao existe no controle dela.
+// Uma forma so em todas as plataformas (dono: "padronizar ... o ch+"): a
+// pastilha neutra com o rotulo "CH+". Antes eram tres desenhos — o botao azul
+// da LG, o rocker da Samsung e esta pastilha no Android.
 void sintro_tecla_atalho(float x, float y, float lado, float a) {
-#if defined(NV_ANDROID)
-  // Android TV: sem teclas coloridas; o atalho e o CH+ do controle. Mesma
-  // pastilha da LG, mas neutra, com o rotulo "CH+" no lugar da cor.
   float h = lado * 0.56f;
   GfxRect corpo = { x, y + (lado - h) * 0.5f, lado, h };
   GfxRect tecla = { corpo.x + 3.0f, corpo.y + 3.0f, corpo.w - 6.0f, corpo.h - 6.0f };
@@ -180,31 +176,6 @@ void sintro_tecla_atalho(float x, float y, float lado, float a) {
   { TxtLinha t = txt_linha(TXT_MINI, "CH+", 240, 242, 248, 255);
     txt_desenhar_alpha(t, tecla.x + (tecla.w - (float)t.w) * 0.5f,
                        tecla.y + (tecla.h - (float)t.h) * 0.5f, a); }
-#elif defined(__EMSCRIPTEN__)
-  // Rocker de canal: retangulo alto, com o "+" em cima e "CH" embaixo — que e
-  // a leitura de cima para baixo do proprio botao.
-  GfxRect k = { x, y, lado * 0.78f, lado };
-  gfx_cor(k, 0.30f, 0.22f, 0.23f, 0.26f, a);
-  gfx_cor((GfxRect){ k.x + 3.0f, k.y + 3.0f, k.w - 6.0f, k.h * 0.5f - 3.0f },
-          0.26f, 0.32f, 0.33f, 0.37f, a);
-  { TxtLinha t = txt_linha(TXT_CAPTION2, "+", 240, 242, 248, 255);
-    txt_desenhar_alpha(t, k.x + (k.w - (float)t.w) * 0.5f,
-                       k.y + k.h * 0.25f - (float)t.h * 0.5f, a); }
-  { TxtLinha t = txt_linha(TXT_CAPTION2, "CH", 186, 190, 200, 255);
-    txt_desenhar_alpha(t, k.x + (k.w - (float)t.w) * 0.5f,
-                       k.y + k.h * 0.72f - (float)t.h * 0.5f, a); }
-#else
-  // Tecla colorida da LG no FORMATO DO BOTAO (dono, 23/09/2026: "troca o
-  // circulo azul para o formato do botao mesmo, igual e o da Samsung"): no
-  // controle as quatro teclas de cor sao pastilhas retangulares arredondadas,
-  // nao discos. Mesma largura `lado` do disco antigo, para o texto ao lado nao
-  // mudar de lugar; altura de pastilha, centrada na linha.
-  float h = lado * 0.56f;
-  GfxRect corpo = { x, y + (lado - h) * 0.5f, lado, h };
-  GfxRect tecla = { corpo.x + 3.0f, corpo.y + 3.0f, corpo.w - 6.0f, corpo.h - 6.0f };
-  gfx_cor(corpo, 0.42f, 0.16f, 0.17f, 0.20f, a);
-  gfx_cor(tecla, 0.40f, 0.16f, 0.44f, 0.87f, a);
-#endif
 }
 
 static void desenhaFigura(float cx, float y, float a) {
@@ -230,9 +201,16 @@ static void desenhaFigura(float cx, float y, float a) {
 // FOCO: sao dois estados diferentes e os dois precisam existir, senao mover o
 // foco apaga a indicacao de qual esta valendo — o mesmo erro que as abas de
 // temporada do detalhe ja cometeram.
-static void desenhaOpcao(float x, float y, float f, int vigor,
+// PONTEIRO (#99): foco pela mesma variavel das setas; o OK do clique grava a
+// escolha por sintro_evento.
+static void ponteiroOpcao(int i, int b) { (void)b; if (aberto && (i == 0 || i == 1)) foco = i; }
+int sintro_teste_foco(void) { return foco; }
+
+static void desenhaOpcao(int id, float x, float y, float f, int vigor,
                          const char *tit, const char *desc, float a) {
   GfxRect r = { x, y, SI_INT, SI_OPCAO_H };
+  if (aberto && entrada > 0.99f)   // so assentado (sem o deslize da entrada)
+    ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroOpcao, NULL, id, 0);
   float lum = vigor ? 0.155f : 0.115f;
   int emFoco = f > 0.5f;
   gfx_cor(r, 0.16f, lum, lum + 0.004f, lum + 0.016f, a);
@@ -263,7 +241,7 @@ void sintro_desenhar(Uint32 agora) {
   dx = (1.0f - a) * (NV_TELA_W - SI_X);
   x = SI_X + dx + SI_PAD;
   { GfxRect p = { SI_X + dx, SI_Y, SI_W, SI_H };
-    gfx_cor(p, 0.035f, 0.075f, 0.078f, 0.088f, 0.98f * a); }
+    gfx_vidro_ou_solido(p, 0.035f, GFX_VIDRO_DENS_MODAL, a, 0.075f, 0.078f, 0.088f, 0.98f); }
   gfx_recorte(SI_X + dx, SI_Y, SI_W, SI_H);
 
   // Na maquete o lugar deste rotulo e o nome do titulo aberto atras do cartao.
@@ -289,13 +267,10 @@ void sintro_desenhar(Uint32 agora) {
   // Sem esta linha o explicador ensinava a guardar e nao a encontrar: a pessoa
   // salvava e ficava sem saber como ver o que salvou. Foi o dono quem notou.
   //
-  // Na LG e a AZUL, que e um botao de verdade no controle. No Tizen nao pode
-  // ser: os One Remote novos nao tem fileira de cores e chegar na azul exige
-  // abrir a barra de cores pelo botao de numeros. La e CANAL +, que e fisico em
-  // todo controle Samsung (ver tools/tizen-shell.html).
+  // CH+ em toda plataforma (dono: "padronizar ... o ch+"): e fisico em todo
+  // controle — a LG tem a azul, mas o One Remote novo da Samsung nao tem
+  // fileira de cores. Ver tools/tizen-shell.html.
   //
-  // Escolha em tempo de COMPILACAO porque cada build serve um alvo so — decidir
-  // em execucao exigiria perguntar ao aparelho algo que ele nao sabe responder.
   // O botao a ESQUERDA e o texto recuado ao lado dele: os dois formam uma
   // linha so, e o olho pega o desenho antes de ler a frase.
   //
@@ -308,13 +283,7 @@ void sintro_desenhar(Uint32 agora) {
     float alturaTexto;
     sintro_tecla_atalho(x, y - 2.0f, lado, a);
     alturaTexto = txt_bloco(TXT_CAPTION,
-#if defined(NV_ANDROID)
           "Depois, o CH+ abre sua lista quando quiser.",
-#elif defined(__EMSCRIPTEN__)
-          "Depois, o botão CANAL + abre sua lista quando quiser.",
-#else
-          "Depois, o botão AZUL abre sua lista quando quiser.",
-#endif
           196, 200, 210, x + rec, y, SI_INT - rec, 30.0f, a * 0.95f, 2);
     // QUEM MANDA E O MAIOR DOS DOIS. `y` e coordenada absoluta, entao a conta e
     // sobre a ALTURA que esta linha ocupa — o botao tem `lado`, o texto tem o
@@ -353,7 +322,7 @@ void sintro_desenhar(Uint32 agora) {
     txt_desenhar_alpha(t, x, y, a * 0.9f); }
   y += 36.0f;
 
-  desenhaOpcao(x, y, animFoco[0], !ajustes_salvos_no_trakt(),
+  desenhaOpcao(0, x, y, animFoco[0], !ajustes_salvos_no_trakt(),
                "Lista do Nuvio",
                // Com conta, o "+" tambem vai para o perfil (contapend.c).
                sessao_logada()
@@ -361,7 +330,7 @@ void sintro_desenhar(Uint32 agora) {
                  : "Fica guardada nesta TV. O que você salvar no celular continua "
                    "chegando aqui pela sua conta.", a);
   y += SI_OPCAO_H + 12.0f;
-  desenhaOpcao(x, y, animFoco[1], ajustes_salvos_no_trakt(),
+  desenhaOpcao(1, x, y, animFoco[1], ajustes_salvos_no_trakt(),
                "Watchlist do Trakt",
                "Aparece também nos apps e no site que leem essa conta.", a);
 

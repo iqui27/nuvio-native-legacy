@@ -1,13 +1,15 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Antes/depois do dispensar (tests/avisos_dispensar_shot.c), em PNG, sem rede.
 # "antes" compila o mesmo roteiro contra o codigo do commit BASE (git archive,
 # so leitura), "depois" contra a arvore atual com -DDEPOIS.
 #
 #   bash tests/avisos_dispensar_shot.sh /pasta/de/saida [commit-base]
 # Nao entra na suite (*_shot).
-set -eu
+set -euo pipefail
 cd "$(dirname "$0")/.."
-saida="${1:-/tmp/nv-dispensar}"
+saida="${1:-${TMPDIR:-/tmp}/nv-dispensar}"
 basec="${2:-}"
 mkdir -p "$saida"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-dispensar-shot.XXXXXX")"

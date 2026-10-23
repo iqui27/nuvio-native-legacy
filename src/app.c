@@ -11,22 +11,50 @@
 //   2. detalhe — camada sobre a tela corrente
 //   3. menu    — camada sobre a tela corrente
 //   4. a tela corrente (home, busca, biblioteca ou ajustes)
+#include "arranque.h"
 #include "celbotao.h"
 #include "central.h"
+#include "estatvivoui.h"
 #include "teclado.h"
 #include "ponteiro.h"
 #include "app.h"
+#include "glance.h"
+#include "travarede.h"
+#include "travaui.h"
+#include "teclavoltar.h"
+#include "deeplink.h"
+#include "telefoneui.h"
+#include "diario.h"
+#include "travajuntos.h"
+#include "diariofontes.h"
+#include "diarioperfil.h"
+#include "diarionuvem.h"
+#include "diariotrakt.h"
+#include "dormiu.h"
 #include "descanso.h"
 #include "iconeapp.h"
 #include "logoapp.h"
 #include "registro.h"
+#include "entrada_texto.h"
 #include "addonsui.h"
 #include "pluginsui.h"
 #include "login.h"
 #include "sessao.h"
 #include "perfis.h"
 #include "fontevolta.h"
+#include "cacheboost.h"
+#include "retomamorna.h"
+#include "dados.h"
+#include "fonteescolha.h"
+#include "fontesonda.h"
+#include "fonteantecipa.h"
+#include "fonteregra.h"
+#include "proximopreparo.h"
+#include "aquecer.h"
+#include "addonstats.h"
+#include "inicio.h"
 #include "perfilsel.h"
+#include "perfisessao.h"
 #include "sync.h"
 #include "traktauth.h"
 #include "discord.h"
@@ -35,6 +63,9 @@
 #include "listas.h"
 #include "text.h"
 #include "tex_cache.h"
+#include "memlog.h"
+#include "mkvass.h"
+#include "assrender.h"
 #include "artehero.h"
 #include "arteescolha.h"
 #include "vertudo.h"
@@ -42,10 +73,15 @@
 #include "livetvdiag.h"
 #include "proxyts.h"
 #include "livetv_regras.h"
+#include "livestall.h"
+#include "bufavanco.h"
 #include "guialembrete.h"   /* aviso do lembrete de programa do guia */
 #include "epg.h"
 #include "posplay.h"
 #include "ctxmenu.h"
+#include "rewatch.h"
+#include "rewatchui.h"
+#include "ctxlista.h"
 #include "marco.h"
 #include <string.h>
 #include "home.h"
@@ -64,6 +100,7 @@
 #include "cacaui.h"
 #include "salvos.h"
 #include "contapend.h"
+#include "vistonao.h"
 #include "contalib.h"
 #include "recomenda.h"
 #include "atividade.h"
@@ -82,21 +119,31 @@
 #include "novidades139.h"
 #include "novidades1312.h"
 #include "novidades142.h"
+#include "comecar.h"
+#include "conquistas.h"
 #include "novidades148.h"
 #include "novidades170.h"
 #include "novidades180.h"
 #include "novidades20.h"
 #include "novidades201.h"
+#include "novidades202.h"
+#include "novidades_cartao.h"
+#include "resolver.h"
+#include "dicascontrole.h"
 #include "apoio.h"
 #include "telemetria.h"
 #include "avisos.h"
 #include "ilha.h"
 #include "ilhasalvar.h"
+#include "ilhaacao.h"
 #include "plrilha.h"
+#include "sinopse.h"
 #include "ilhacart.h"
 #include "cwretido.h"
 #include "ilhasinais.h"
 #include "enquete.h"
+#include "juntos.h"
+#include "juntosui.h"
 #include "recintro.h"
 #include "atualizacao.h"
 #include "pipintro.h"
@@ -108,23 +155,33 @@
 #include "anim.h"
 #include "diagnostico.h"
 #include "debrid.h"
+#include "fontefalha.h"
 #include "p2p.h"
 #include "p2pmotor.h"
 #include "player.h"
+#include "dvtela.h"
 #include "legsync.h"
+#include "badges.h"
 #include "streams.h"
 #include "streamfitdur.h"
 #include "streamfitpassiva.h"
 #include "vazao.h"
 #include "stalker.h"
 #include "xtream.h"
+#include "m3u.h"
 #include "rede.h"
 #include "ts_sonda.h"
 #include <unistd.h>
 #include "ondever.h"
 #include "fontepref.h"
+#include "audiomemoria.h"
+#include "fontesmortas.h"
 #include "video.h"
+#ifdef NV_TPK
+void video_tpk_cdn_arquivo(const char *url, int usenet, int item, int file);
+#endif
 #include "addons.h"
+#include "legauto.h"
 #include "idioma.h"
 #include "descoberta.h"
 #include "ilha_voo.h"
@@ -134,6 +191,7 @@
 #include "trakt.h"
 #include "visto.h"
 #include "faixas.h"
+#include "legenda2.h"
 #include "episodios.h"
 #include <pthread.h>
 #include <stdatomic.h>
@@ -147,7 +205,7 @@
 // abre o conteudo real. Filme nao passa pelo watchdog de canal, entao sem este
 // prazo a tela fica em "carregando" para sempre e a pessoa precisa abrir a
 // folha para escolher outra fonte na mao.
-#define VOD_FONTE_PRAZO_MS 30000
+// (o prazo da abertura mora em inicio.h: 8 s sem sinal, 30 s com dado chegando)
 #define VOD_FONTE_BUFFER_MS 30000
 // QUANTAS FONTES O AUTOMATICO ENTREGA AO PLAYER NUMA REPRODUCAO: a primeira
 // mais as de "Outra fonte se falhar" em Ajustes. Ate a 1.4.3 eram 8 fixas, e
@@ -177,6 +235,11 @@ static int aguardandoFonte;
 static int autoEsperaN;
 static void idBaseDoTitulo(char *dst, size_t tam);
 static int prefFolhaN = -1;
+// Por que a escolha automatica saiu com a lista ainda enchendo, para o log
+// "[fonte] decisao em N ms (motivo)" (#202). Escrito por autoParcialPronto
+// quando ela devolve 1.
+static const char *autoMotivo = "";
+static int escolhaDoNext(const char *base, char *prov, unsigned tam);
 static int autoParcialPronto(void) {
   char base[24];
   const FontePref *fp;
@@ -187,7 +250,38 @@ static int autoParcialPronto(void) {
   if (stream_n() < 1 || stream_n() <= autoEsperaN) return 0;
   if (stream_n_candidatas() < 1) return 0;
   idBaseDoTitulo(base, sizeof base);
-  fp = base[0] ? fontepref_do_titulo(base) : NULL;
+  // 0 = Instantaneo, -1 = todos os addons (#202).
+  prazo = ajustes_fonte_prazo_ms();
+  // NEXT (dono, 16/10, como o Nuvio): a fonte com o bingeGroup EXATO da que
+  // tocava vem primeiro e sai assim que chega. Enquanto o add-on dela ainda
+  // pode responder (dentro do prazo; sempre com "todos os add-ons"), as outras
+  // regras esperam; depois, a memoria do titulo como sempre.
+  { char provNext[96];
+    if (escolhaDoNext(base, provNext, sizeof provNext)) {
+      static unsigned ultGerNext; static int ultNNext = -1, ultNext = -1;
+      if (stream_n() != ultNNext || stream_lista_geracao() != ultGerNext) {
+        ultNNext = stream_n(); ultGerNext = stream_lista_geracao();
+        ultNext = fontepref_binge_tocando(base);
+      }
+      if (ultNext >= 0) {
+        addons_definir_espera_decisao(prazo > 0 ? prazo : 0);
+        if (stream_auto_pode_decidir(ultNext, 0, 0, prazo == 0)) {
+          autoMotivo = "next: mesmo bingeGroup da fonte que tocava";
+          return 1;
+        }
+        return 0;
+      }
+      if (prazo != 0 && !(prazo > 0 && addons_busca_ms() >= (unsigned)prazo) &&
+          addons_pendente_nome(provNext) && stream_addon_no_escopo(provNext)) {
+        addons_definir_espera_decisao(prazo > 0 ? prazo : 0);
+        return 0;
+      }
+    }
+  }
+  // A MEMORIA EM VIGOR, a mao ou a do automatico (dono, 16/10): o add-on dela e
+  // esperado antes de decidir, para um add-on lento nao fazer a escolha sair
+  // sem ela. Com "escolher a fonte ao reproduzir" so a escolha a mao conta.
+  fp = !base[0] ? NULL : ajustes_fonte_manual() ? fontepref_do_titulo(base) : fontepref_memoria(base);
   if (fp) {
     // fontepref_escolher escreve no log: uma vez por tamanho de lista.
     if (stream_n() != ultN || stream_lista_geracao() != ultGeracao) {
@@ -195,13 +289,33 @@ static int autoParcialPronto(void) {
       ultLembrada = fontepref_escolher(base);
     }
     lembrada = ultLembrada;
-    prefPendente = lembrada < 0 && addons_pendente_nome(fp->provedor);
+    // So vale esperar se o add-on dela pode dar fonte ao automatico. O prazo
+    // da pessoa manda (dono, 16/10): Instantaneo nao espera, 3-30 s esperam
+    // so ate o prazo, "todos os add-ons" espera ate o add-on responder.
+    prefPendente = prazo != 0 && !(prazo > 0 && addons_busca_ms() >= (unsigned)prazo) &&
+                   lembrada < 0 && addons_pendente_nome(fp->provedor) && stream_addon_no_escopo(fp->provedor);
   }
   // Escolher a mao: a folha abre com o que ja chegou e continua enchendo.
-  if (ajustes_fonte_manual() && lembrada < 0) return !prefPendente;
-  prazo = ajustes_fonte_prazo_ms();
-  return stream_auto_pode_decidir(lembrada, prefPendente,
-                                  prazo > 0 && addons_busca_ms() >= (unsigned)prazo);
+  if (ajustes_fonte_manual()) {
+    if (!prefPendente) autoMotivo = "escolha manual: a folha abre com o que chegou";
+    return !prefPendente;
+  }
+  // O prazo da pessoa e o limite do "lento": quem passa dele quase sempre nesta
+  // TV, ou ficou mudo nas ultimas buscas, deixa de segurar a decisao. -1 ("todos
+  // os add-ons") e a pessoa pedindo para esperar: ninguem sai, e a escolha so sai
+  // quando todo add-on permitido respondeu (streams.c, esperaTodos).
+  addons_definir_espera_decisao(prazo > 0 ? prazo : 0);
+  { int passou = prazo > 0 && addons_busca_ms() >= (unsigned)prazo;
+    int r = stream_auto_pode_decidir(lembrada, prefPendente, passou, prazo == 0);
+    if (r)
+      autoMotivo = lembrada >= 0 && !prefPendente ? "fonte lembrada deste titulo"
+                 : passou ? "prazo de espera pelos add-ons"
+                 : prazo == 0 ? "instantaneo"
+                 : prazo < 0 ? "todos os add-ons permitidos responderam"
+                 : addons_faltam(NULL, 0) > addons_faltam_decisivos()
+                     ? "so faltam add-ons mudos ou lentos nesta TV"
+                     : "fonte boa o bastante";
+    return r; }
 }
 // Episodio que o card de "Continuar assistindo" ANUNCIAVA quando o OK pediu
 // para tocar (issue #93). Armado no ramo home_pediu_tocar e consumido pelo
@@ -209,6 +323,23 @@ static int autoParcialPronto(void) {
 // instante ainda nao tem a lista de episodios nem o "proximo" que
 // continuar_desenhar calculou para desenhar o card.
 static int cwTocarT, cwTocarE;
+static int cwRewatch = -1;
+// Episode the source sheet was opened FOR (#513). Not cwTocar: that slot is
+// rewritten every frame by Continue Watching, the island and the agenda, and
+// the sheet stays up across frames (stream_folha_aberta eats the keys). A
+// later writer used to replace the latched T/E before the pick, or stamp one
+// onto a title-level sheet that had none.
+static int folhaTocarT, folhaTocarE;
+static void gravarFolhaTocar(int t, int e, int tem) {
+  if (tem && t >= 0 && e > 0) { folhaTocarT = t; folhaTocarE = e; }
+  else folhaTocarT = folhaTocarE = 0;
+}
+static int consumirFolhaTocar(int *t, int *e) {
+  if (folhaTocarT < 0 || folhaTocarE <= 0) return 0;
+  if (t) *t = folhaTocarT; if (e) *e = folhaTocarE;
+  folhaTocarT = folhaTocarE = 0;
+  return 1;
+}
 // O MESMO OK num card cujo episodio TERMINOU e cuja lista de episodios ainda
 // nao chegou: a pagina abre e o toque fica esperando a lista para achar o
 // proximo, em vez de recomecar o terminado. `cwEsperaItem` e uma copia: a
@@ -224,7 +355,45 @@ static _Atomic int fonteEscolhida = -2;   // release/acquire entre verificacao e
 // nenhum fio de rede le player_id_canal(), que pode mudar durante um zap.
 static _Atomic unsigned stalkerGeracao;
 enum { FJOB_IDLE, FJOB_RUNNING, FJOB_DONE };
-enum { FJOB_NONE, FJOB_ADDON, FJOB_CANAL, FJOB_STALKER };
+enum { FJOB_NONE, FJOB_ADDON, FJOB_CANAL, FJOB_STALKER, FJOB_PREPARO, FJOB_PROXIMA_VOD, FJOB_FALHA, FJOB_PREPARO_FALHA, FJOB_RENOVAR_VOD };
+typedef struct {
+  FonteFalhaConfig politica;
+  DebridContexto debrid;
+  uint64_t sessaoPerfil;
+  unsigned disponiveis, regras;
+  int perfil, ajustes[19];
+  char conta[256], qualidade[32];
+} FontePreparoContexto;
+static void preparoContexto(FontePreparoContexto *c) {
+  memset(c, 0, sizeof *c);
+  c->sessaoPerfil = nv_perfil_sessao_ler();
+  if (!nv_perfil_sessao_travar(c->sessaoPerfil)) return;
+  fontefalha_config(&c->politica);
+  debrid_contexto_capturar(&c->debrid);
+  c->perfil = perfis_ativo();
+  snprintf(c->conta, sizeof c->conta, "%s", sessao_usuario());
+  c->regras = fonteregra_versao();
+  for (int s = 0; s < DEBRID_N; s++)
+    if (debrid_servico_disponivel(s)) c->disponiveis |= 1u << s;
+  int a[] = { ajustes_fonte_preparar(), ajustes_fonte_precarregar(), ajustes_fonte_manual(), ajustes_fonte_primeira(),
+    ajustes_fonte_escopo(), ajustes_fonte_regex_modo(), ajustes_fonte_usar_outros(),
+    ajustes_fonte_ordem_uso(), ajustes_fonte_prioridade(), ajustes_fonte_hdr(),
+    ajustes_dolby_vision(), ajustes_dv_mkv(), ajustes_dolby_atmos(),
+    ajustes_tamanho_min_gb(), ajustes_tamanho_max_gb(), ajustes_buffer_preset(),
+    ajustes_cache_seek_mb(), ajustes_fonte_conferir_varias(), ajustes_fonte_tocar_conferindo() };
+  memcpy(c->ajustes, a, sizeof a);
+  snprintf(c->qualidade, sizeof c->qualidade, "%s", ajustes_qualidade());
+  nv_perfil_sessao_destravar();
+}
+static int preparoContextoAtual(const FontePreparoContexto *c) {
+  FontePreparoContexto agora, salvo = *c;
+  preparoContexto(&agora);
+  // Um resolvedor pode recusar o plano durante a propria escolha; essa
+  // resposta faz parte da sessao, nao e uma mudanca de preferencia.
+  agora.disponiveis = salvo.disponiveis = 0;
+  // Uma busca nova invalida o transporte TLS antigo, mesmo com a mesma conta.
+  return !memcmp(&salvo, &agora, sizeof agora);
+}
 typedef struct {
   _Atomic int estado;
   int tipo;
@@ -232,10 +401,41 @@ typedef struct {
   int resultado;
   Uint32 prazo;
   unsigned geracao;
+  int depoisDe, tentativas, conferidas;
+  unsigned listaGeracao;
+  FonteFalhaSessao *falha;
+  DebridContexto debrid;
+  int falhaEstado, servico, escolhida;
+  uint64_t sessaoPerfil;
+  unsigned preparoRodada;
+  FontePreparoContexto contexto;
+  int lembrada, catalogo, temporada, episodio, renovar;
   char id[80];
   char url[4096];
+  AddonsConsulta *consulta;
+  Stream renovada;
+  char tipoVod[16];
 } FonteJob;
 static FonteJob fonteJob;
+static _Atomic unsigned preparoGeracao;
+static int preparoRodando, preparoEspera, preparoLembradaPlay, preparoLembradaRod;
+static struct {
+  int tem, idx, lembrada, servico, linkRenovado, falhou;
+  int catalogo, temporada, episodio, bufferTentou;
+  unsigned lista, token;
+  Uint32 quando;
+  char alvo[64];
+  FontePreparoContexto contexto;
+  FonteFalhaSessao *falha;
+} preparo;
+static struct {
+  int tem;
+  char alvo[64];
+  unsigned lista;
+  Uint32 quando;
+  FontePreparoContexto contexto;
+} preparoUltimo;
+static int fonteDepoisDe, fonteRestantes; // pedido pendente; nunca mexer no job ativo
 static unsigned fontePedidoGeracao;
 static int fontePendenteTipo;
 static int fontePendenteRenovando;
@@ -262,17 +462,76 @@ static int    folhaParaTocar;
 #define CANAL_STALKER_TENTATIVAS 3
 static int    stalkerTentativas;
 static int    canalFonteIdx = -1;         // indice na lista de streams, -1 = fora
+static NvLiveStall liveStall;             // vigia de trava do canal (livestall.h)
+// CANAL DE ADDON PELO PROXY DE TS (#283). 1 = a tentativa em curso de
+// canalFonteIdx foi entregue ao player por proxyts; se ela morrer, a MESMA
+// fonte e tentada direto antes de passar para a proxima.
+static int    canalViaProxy;
 static Uint32 canalFonteDesde;            // quando a fonte atual foi pedida
 // So o automatico usa o fallback. Uma escolha manual e uma decisao explicita
 // do dono e nao pode ser trocada por outra fonte por tras da tela.
 static int    fonteVODAutomatica;
 static int    fonteVODTentativas;
+static int    fonteVODRetentou;
 // Retomar pela fonte guardada em curso (tocarFonteGuardada); 0 = caminho normal.
 static int    voltaAtiva;
+static Stream voltaFonte;  // fonte aberta fora da lista; vive alem da conferencia
+// O episodio que o Next abriu buscando (sem preparo): a escolha dele pensa
+// primeiro no bingeGroup da fonte que tocava (escolhaDoNext).
+static char buscaNextAlvo[64];
 static Uint32 voltaDesde;
 static Uint32 fonteVODDesde;
 static Uint32 fonteManualDesde;   // OK na folha de Fontes: prazo ate o primeiro quadro
+static FonteFalhaSessao *fonteFalha;
+static unsigned fonteFalhaLista;
+static int fonteFalhaEsperando, fonteFalhaN;
+static int fonteFalhaManual = -1;
+static double fonteFalhaPos = -1.0;
+static int vodRenovou;
+static Uint32 vodRenovandoDesde;
+static double vodRenovarPos;
+// TOCAR ENQUANTO CONFERE (fonteantecipa.h): a candidata que o player abriu antes
+// do veredito da conferencia (-1 = nenhuma) e o que valia antes de abrir, para
+// desfazer sem perder a conta das tentativas.
+static int    antAberta = -1;
+static int    antPreAuto, antPreTent;
+static Uint32 antPreDesde;
 static void limparFonteVOD(void);
+static int tocarParteGuardada(void);   // partes.h, mais abaixo
+// FONTE PROVOU TOCAR: a posicao andou >= 2 s reais nesta candidata, seja qual for
+// a duracao da midia e o estado de aguardandoFonte (automatica, manual, aberta
+// antes do veredito). E a UNICA porta da marca de fonte morta: so se grava com
+// ela falsa (marcarFonteMorta) e ela verdadeira apaga a marca. Pulos de posicao
+// (retomada, seek) nao contam: so passos curtos entre quadros.
+static int    provaAtual = -1, provaTocou, provaLimpa;
+static unsigned provaGeracao;
+static double provaPos = -1, provaSeg;
+static void provaZerar(void) {
+  provaAtual = -1; provaTocou = provaLimpa = 0; provaPos = -1; provaSeg = 0;
+}
+static int fonteProvouTocar(void) {
+  double p;
+  if (provaAtual != stream_atual() || provaGeracao != stream_lista_geracao()) {
+    provaZerar();
+    provaAtual = stream_atual(); provaGeracao = stream_lista_geracao();
+  }
+  if (provaTocou || !player_aberto() || player_id_canal()[0] || !video_pronto()) return provaTocou;
+  p = video_pos();
+  if (provaPos >= 0 && p > provaPos && p - provaPos <= 5.0) provaSeg += p - provaPos;
+  provaPos = p;
+  if (provaSeg >= 2.0) provaTocou = 1;
+  return provaTocou;
+}
+static void marcarFonteMorta(int indice) {
+  if (fonteProvouTocar()) stream_automatico_excluir(indice);
+  else stream_vod_falhou(indice);
+}
+// A fonte que vai para o player e outra candidata: a prova recomeca.
+static void definirFonteVOD(const char *url) {
+  fonteVODRetentou = 0;
+  vodRenovou = 0;
+  provaZerar(); player_definir_fonte(url);
+}
 #define CANAL_FONTE_PRAZO_MS 25000
 // PRAZO CURTO para fonte que JA PROVOU estar ruim. A conferencia de playlist
 // (stream_canal_primeira_viva) classifica cada candidata antes de tocar; quando
@@ -302,6 +561,7 @@ static void limparFonteVOD(void);
 
 static PerfilDados perfilPendente;
 static int perfilSucesso;
+static unsigned long long perfilSimklCredencial;
 static _Atomic int perfilCarga; // 0=ocioso, 1=rede, 2=snapshot pronto
 static _Atomic unsigned perfilGeracao = 1;
 static pthread_mutex_t perfilTrava = PTHREAD_MUTEX_INITIALIZER;
@@ -309,7 +569,23 @@ typedef struct { unsigned geracao; int perfil; char conta[96]; } PerfilPedido;
 static void *carregarPerfil(void *u) {
   PerfilPedido *pedido=u;
   PerfilDados novo={0};
-  int sucesso=trakt_perfil(&novo);
+  int sucesso=0;
+  unsigned long long skCredencial=0;
+  // A pagina pertence a pessoa, nao ao Trakt. Preferimos o Trakt quando os
+  // dois estao ligados para preservar o snapshot antigo; num perfil so com
+  // Simkl, identidade e historico mensal vem do proprio Simkl.
+  if (trakt_ativo()) sucesso=trakt_perfil(&novo);
+  if (!sucesso && simkl_ativo()) {
+    skCredencial=simklauth_credencial_copiar(NULL,0);
+    sucesso=simkl_perfil(&novo);
+  }
+  // SEM TRAKT, O DIARIO: "Perfil e Stats so funciona com Trakt" acabou. O
+  // snapshot vem do que esta TV e a conta ja sabem (diarioperfil.h).
+  if(!sucesso && diario_perfil_dados(pedido->perfil,&novo,(long long)time(NULL))){
+    const ContaPerfil *cp=perfis_item_ativo();
+    if(cp){snprintf(novo.nome,sizeof novo.nome,"%s",cp->nome);snprintf(novo.avatar,sizeof novo.avatar,"%s",cp->avatarUrl);}
+    sucesso=1;
+  }
   pthread_mutex_lock(&perfilTrava);
   // A troca de conta/perfil invalida a resposta. O worker termina, mas nunca
   // publica uma identidade antiga nem deixa um snapshot obsoleto na fila.
@@ -317,6 +593,7 @@ static void *carregarPerfil(void *u) {
      atomic_load_explicit(&perfilCarga,memory_order_relaxed)==1 && sessao_logada() &&
      perfis_ativo()==pedido->perfil && !strcmp(sessao_usuario(),pedido->conta)){
     perfilSucesso=sucesso;
+    perfilSimklCredencial=skCredencial;
     perfilPendente=novo;
     atomic_store_explicit(&perfilCarga,2,memory_order_release);
   }
@@ -325,6 +602,9 @@ static void *carregarPerfil(void *u) {
   return NULL;
 }
 static void invalidarPerfil(void) {
+  retomamorna_cancelar(); cacheboost_backend_quadro(0);
+  player_descartar_retido();
+  cacheboost_backend_descartar();   // #492: o trecho guardado do ultimo titulo era do perfil anterior
   ilhacart_esquecer_vivo();
   home_retomar_esquecer();
   atomic_fetch_add_explicit(&perfilGeracao,1,memory_order_acq_rel);
@@ -351,12 +631,15 @@ static void pedirPerfil(void) {
 // proprio a tela segue em 60fps mostrando "Abrindo fonte".
 static void *escolherFonte(void *u) {
   FonteJob *job = u;
+  debrid_contexto_entrar(&job->debrid);
   // Ate 8: numa lista tipica de 12, as primeiras costumam ser do mesmo
   // provedor e falham juntas quando o arquivo nao esta em cache. Testar poucas
   // devolvia "nenhuma fonte serve" com fontes boas logo adiante. Sao 8 NO
   // MAXIMO e uma por vez, parando na primeira que serve; com "Primeira da
   // lista" streams.c reduz para 1 (issue #130).
-  job->resultado = stream_primeira_boa(8);
+  job->resultado = nv_perfil_sessao_atual(job->sessaoPerfil)
+      ? stream_primeira_boa_sessao(8, job->sessaoPerfil) : -1;
+  debrid_contexto_sair();
   atomic_store_explicit(&job->estado, FJOB_DONE, memory_order_release);
   return NULL;
 }
@@ -367,16 +650,68 @@ static void *escolherFonte(void *u) {
 // guia fica travando"). O prazo do watchdog e decidido aqui tambem, com a
 // classe da escolhida, e lido pelo laco quando fonteEscolhida deixa de ser -2.
 static Uint32 canalFontePrazo;
+static void *escolherProximaVOD(void *u) {
+  FonteJob *job = u;
+  debrid_contexto_entrar(&job->debrid);
+  job->resultado = perfis_sessao_atual(job->sessaoPerfil)
+      ? stream_verificar_proxima_vod_sessao(job->depoisDe, job->tentativas, &job->conferidas, job->sessaoPerfil) : -1;
+  debrid_contexto_sair();
+  atomic_store_explicit(&job->estado, FJOB_DONE, memory_order_release);
+  return NULL;
+}
+static int fonteJobCancelado(void *u) {
+  FonteJob *job = u;
+  if (job->tipo == FJOB_RENOVAR_VOD && (Sint32)(SDL_GetTicks() - job->prazo) >= 30000) return 1;
+  if (!nv_perfil_sessao_atual(job->sessaoPerfil)) return 1;
+  if (job->tipo == FJOB_PREPARO || job->tipo == FJOB_PREPARO_FALHA)
+    return job->preparoRodada != atomic_load_explicit(&preparoGeracao, memory_order_acquire);
+  return job->geracao != atomic_load_explicit(&stalkerGeracao, memory_order_acquire);
+}
+static void *renovarFonteVod(void *u) {
+  FonteJob *job = u;
+  debrid_contexto_entrar(&job->debrid);
+  job->resultado = stream_vod_renovar(job->consulta, job->id, job->tipoVod,
+      job->depoisDe, job->listaGeracao, fonteJobCancelado, job, &job->renovada)
+      ? job->depoisDe : -1;
+  debrid_contexto_sair();
+  atomic_store_explicit(&job->estado, FJOB_DONE, memory_order_release);
+  return NULL;
+}
+static void *escolherFonteFalha(void *u) {
+  FonteJob *job = u;
+  debrid_contexto_entrar(&job->debrid);
+  if (job->renovar) {
+    job->resultado = stream_falha_renovar(job->escolhida, job->listaGeracao, job->servico,
+                       fonteJobCancelado, job, job->url, sizeof job->url)
+                       ? job->escolhida : -1;
+    job->falhaEstado = job->resultado >= 0 ? FONTEFALHA_PROXIMA : FONTEFALHA_FIM;
+    if (job->resultado >= 0 && job->falha)
+      fontefalha_url_registrar(job->falha, job->url);
+    else if (job->falha && !fonteJobCancelado(job)) {
+      // A mesma rota expirou/falhou ao renovar. A proxima continua a sessao
+      // preparada, sem devolver as vagas nem repetir os pares anteriores.
+      job->falhaEstado = stream_falha_verificar(job->falha, job->listaGeracao, -1,
+                          fonteJobCancelado, job, &job->resultado, &job->servico,
+                          job->url, sizeof job->url);
+    } else if (!job->falha && !fonteJobCancelado(job))
+      job->resultado = stream_primeira_boa_sessao(8, job->sessaoPerfil);
+  } else job->falhaEstado = stream_falha_verificar(job->falha, job->listaGeracao, job->escolhida,
+                      fonteJobCancelado, job, &job->resultado, &job->servico,
+                      job->url, sizeof job->url);
+  debrid_contexto_sair();
+  atomic_store_explicit(&job->estado, FJOB_DONE, memory_order_release);
+  return NULL;
+}
 static void *escolherFonteCanal(void *u) {
   FonteJob *job = u;
   int e;
-  e = stream_canal_primeira_viva(8);
+  e = perfis_sessao_atual(job->sessaoPerfil) ? stream_canal_primeira_viva_sessao(8, job->sessaoPerfil) : -1;
   job->prazo = (e >= 0 && !stream_canal_prazo_longo(e))
                   ? CANAL_FONTE_PRAZO_MUDA_MS : CANAL_FONTE_PRAZO_MS;
   // -1 so acontece quando TODAS responderam dizendo que nao tem segmento.
   // Ai nao ha o que tentar, mas a primeira da lista com o watchdog ainda e
   // melhor que uma tela de erro sem nenhuma tentativa.
-  if (e < 0) e = stream_automatico();
+  if (e < 0 && perfis_sessao_atual(job->sessaoPerfil)) e = stream_automatico_canal();
   job->resultado = e;
   atomic_store_explicit(&job->estado, FJOB_DONE, memory_order_release);
   return NULL;
@@ -384,7 +719,9 @@ static void *escolherFonteCanal(void *u) {
 static void *escolherFonteStalker(void *u) {
   FonteJob *job = u;
   char url[4096];
-  int ok = stalker_resolver(job->id, url, sizeof url);
+  int ok = perfis_sessao_atual(job->sessaoPerfil) && (m3u_e_id(job->id)
+    ? m3u_resolver_sessao(job->id, url, sizeof url, job->sessaoPerfil, job->renovando)
+    : stalker_resolver_sessao(job->id, url, sizeof url, job->sessaoPerfil));
   // O worker publica somente no seu job. O consumidor confere a geracao e o
   // id depois do acquire; nenhuma resposta velha toca o mailbox da sessao
   // corrente.
@@ -403,9 +740,19 @@ static void limparFontePendente(void) {
   fontePendenteId[0] = 0;
 }
 static void limparFonteVOD(void) {
+  fontefalha_sessao_liberar(fonteFalha); fonteFalha = NULL;
+  fonteFalhaEsperando = fonteFalhaN = 0;
+  fonteFalhaManual = -1;
+  fonteFalhaPos = -1.0; fonteFalhaLista = 0;
+  vodRenovou = 0; vodRenovandoDesde = 0;
+  antAberta = -1;
   fonteVODAutomatica = 0;
   voltaAtiva = 0;
+  memset(&voltaFonte, 0, sizeof voltaFonte);
+  buscaNextAlvo[0] = 0;
   fonteVODTentativas = 0;
+  fonteVODRetentou = 0;
+  provaZerar();
   fonteVODDesde = 0;
   fonteManualDesde = 0;
   player_definir_tentativa(0, 0);
@@ -424,19 +771,82 @@ static int iniciarFonteJob(int tipo, unsigned geracao, const char *id, int renov
   job->tipo = tipo;
   job->renovando = renovando;
   job->geracao = geracao;
+  job->depoisDe = fonteDepoisDe;
+  job->tentativas = fonteRestantes;
+  job->conferidas = 0;
+  job->listaGeracao = stream_lista_geracao();
+  job->sessaoPerfil = nv_perfil_sessao_ler();
+  memset(&job->debrid, 0, sizeof job->debrid);
+  debrid_contexto_capturar(&job->debrid);
+  job->falha = NULL; job->falhaEstado = FONTEFALHA_FIM;
+  job->servico = FONTEFALHA_DIRETA;
+  job->escolhida = fonteFalhaManual;
+  job->renovar = 0;
+  job->preparoRodada = 0;
+  job->consulta = NULL;
+  if (tipo == FJOB_RENOVAR_VOD) {
+    const CatItem *c = cat_item(player_indice());
+    if (!c || !(job->consulta = addons_consulta_capturar())) return -1;
+    snprintf(job->tipoVod, sizeof job->tipoVod, "%s", c->tipo);
+    job->prazo = vodRenovandoDesde;
+  }
+  if (tipo == FJOB_FALHA) {
+    if (!fonteFalha || fonteFalhaLista != job->listaGeracao ||
+        !(job->falha = fontefalha_sessao_clonar(fonteFalha))) return -1;
+  }
+  if (tipo == FJOB_PREPARO || tipo == FJOB_PREPARO_FALHA) {
+    preparoContexto(&job->contexto);
+    job->preparoRodada = atomic_load_explicit(&preparoGeracao, memory_order_acquire);
+    job->lembrada = preparoLembradaRod;
+    job->catalogo = detail_indice(); job->temporada = job->episodio = 0;
+    detail_ep_foco(&job->temporada, &job->episodio);
+    const Stream *s = preparo.tem ? stream_item(preparo.idx) : NULL;
+    job->renovar = preparo.tem && !preparo.falhou && preparo.lista == job->listaGeracao &&
+                   preparo.lembrada == job->lembrada && s && s->infoHash[0] &&
+                   stream_filtro_permite(s) &&
+                   preparoContextoAtual(&preparo.contexto) && id && !strcmp(preparo.alvo, id);
+    job->escolhida = job->renovar ? preparo.idx : -1;
+    if (job->renovar) job->servico = preparo.servico;
+    if (tipo == FJOB_PREPARO_FALHA) {
+      // Cada worker e dono da sua sessao; o Play recebe este mesmo estado
+      // depois da rede, incluindo candidatas recusadas e vagas consumidas.
+      int continuar = preparo.tem && preparo.falha && preparo.lista == job->listaGeracao &&
+                      preparo.lembrada == job->lembrada && preparoContextoAtual(&preparo.contexto) &&
+                      id && !strcmp(preparo.alvo, id);
+      FonteFalhaSessao *base = continuar ? preparo.falha :
+          fontefalha_sessao_nova(&job->contexto.politica, job->contexto.disponiveis, job->lembrada);
+      job->falha = fontefalha_sessao_clonar(base);
+      if (!continuar) fontefalha_sessao_liberar(base);
+      if (!job->falha) return -1;
+    }
+  }
   if (id) snprintf(job->id, sizeof job->id, "%s", id);
+  if (!nv_perfil_sessao_atual(job->sessaoPerfil) ||
+      ((tipo == FJOB_PREPARO || tipo == FJOB_PREPARO_FALHA) &&
+       job->contexto.sessaoPerfil != job->sessaoPerfil)) {
+    fontefalha_sessao_liberar(job->falha); job->falha = NULL;
+    addons_consulta_liberar(job->consulta); job->consulta = NULL;
+    return -1;
+  }
   atomic_store_explicit(&job->estado, FJOB_RUNNING, memory_order_release);
   if (pthread_create(&fioFonte, NULL,
+                     tipo == FJOB_RENOVAR_VOD ? renovarFonteVod :
                      tipo == FJOB_STALKER ? escolherFonteStalker :
-                     tipo == FJOB_CANAL ? escolherFonteCanal : escolherFonte,
+                     tipo == FJOB_CANAL ? escolherFonteCanal :
+                     (tipo == FJOB_FALHA || tipo == FJOB_PREPARO_FALHA || job->renovar) ? escolherFonteFalha :
+                     tipo == FJOB_PROXIMA_VOD ? escolherProximaVOD : escolherFonte,
                      job) != 0) {
     atomic_store_explicit(&job->estado, FJOB_IDLE, memory_order_release);
+    fontefalha_sessao_liberar(job->falha); job->falha = NULL;
+    addons_consulta_liberar(job->consulta); job->consulta = NULL;
     return -1;
   }
   fioFonteVivo = 1;
   return 0;
 }
 static int pedirFonteJob(int tipo, unsigned geracao, const char *id, int renovando) {
+  // Toda escolha de VOD abre uma rodada nova da fonte aberta antes do veredito.
+  if (tipo == FJOB_ADDON || tipo == FJOB_PREPARO) fa_nova_rodada();
   int r = iniciarFonteJob(tipo, geracao, id, renovando);
   if (r == 1) {
     fontePendenteTipo = tipo;
@@ -448,11 +858,27 @@ static int pedirFonteJob(int tipo, unsigned geracao, const char *id, int renovan
   if (r < 0) return -1;
   return 0;
 }
+static int iniciarPoliticaFonte(int preferida, int manual) {
+  FonteFalhaConfig cfg;
+  unsigned disponiveis = 0;
+  fontefalha_sessao_liberar(fonteFalha); fonteFalha = NULL;
+  fontefalha_config(&cfg);
+  for (int servico = 0; servico < DEBRID_N; servico++)
+    if (debrid_servico_disponivel(servico)) disponiveis |= 1u << servico;
+  fonteFalha = fontefalha_sessao_nova(&cfg, disponiveis, preferida);
+  fonteFalhaLista = stream_lista_geracao(); fonteFalhaPos = -1.0;
+  fonteFalhaEsperando = 0; fonteFalhaManual = manual ? preferida : -1;
+  return fonteFalha != NULL;
+}
 #include "catalogo.h"
 #include "gfx.h"
 #include "catalogo.h"
 #include "layout.h"
+#include "segurar.h"
 #include "servidores.h"
+#include "srvidx.h"
+#include "partes.h"
+#include "logrede.h"
 #include <stdio.h>
 
 static Tela tela = TELA_HOME;
@@ -480,13 +906,73 @@ const char *app_tela_nome(void) {
   if ((unsigned)tela < sizeof NOMES / sizeof *NOMES) return NOMES[tela];
   return "?";
 }
-static int saiuPorEsquerda;   // a ultima tecla foi ESQUERDA (ver app_evento)
+static int saiuPorEsquerda, saiuPorCima;   // a ultima tecla foi ESQUERDA ou CIMA (ver app_evento)
 // A barra e uma camada de navegacao, mas nao pode disputar o Guia de TV nem
 // um canal minimizado. Manter a regra aqui evita que cada tela invente sua
 // propria nocao de PiP/Guia.
 static int sidebar_permitida(void) {
   return tela != TELA_GUIA && !player_mini_ativo();
 }
+#ifdef NV_TOUCH_UI
+static int sidebarToquePode(void) {
+  return layout_modo_mobile() && sidebar_permitida() && !menu_aberto() && !player_aberto() &&
+         !central_aberta() && !ilha_modal_aberto() && !celb_aberto() &&
+         !ctx_aberto() && !spainel_aberto() && app_central_pode();
+}
+static void sidebarToqueAbrirTela(Tela origem) {
+  if (!sidebarToquePode() || tela != origem || detail_aberto() || vertudo_aberta()) return;
+  saiuPorEsquerda = saiuPorCima = 0;
+  menu_abrir();
+}
+#define SIDEBAR_TOQUE_TELA(nome, origem) static void nome(void) { sidebarToqueAbrirTela(origem); }
+SIDEBAR_TOQUE_TELA(sidebarToqueHome, TELA_HOME)
+SIDEBAR_TOQUE_TELA(sidebarToqueExplorar, TELA_EXPLORAR)
+SIDEBAR_TOQUE_TELA(sidebarToqueBusca, TELA_BUSCA)
+SIDEBAR_TOQUE_TELA(sidebarToqueBiblioteca, TELA_BIBLIOTECA)
+SIDEBAR_TOQUE_TELA(sidebarToquePerfil, TELA_PERFIL)
+SIDEBAR_TOQUE_TELA(sidebarToqueAjustes, TELA_AJUSTES)
+SIDEBAR_TOQUE_TELA(sidebarToqueDiagnostico, TELA_DIAGNOSTICO)
+SIDEBAR_TOQUE_TELA(sidebarToqueSocial, TELA_SOCIAL)
+SIDEBAR_TOQUE_TELA(sidebarToqueAddons, TELA_ADDONS)
+SIDEBAR_TOQUE_TELA(sidebarToqueAgenda, TELA_AGENDA)
+SIDEBAR_TOQUE_TELA(sidebarToqueLiveTVDiag, TELA_LIVETV_DIAG)
+SIDEBAR_TOQUE_TELA(sidebarToquePlugins, TELA_PLUGINS)
+#undef SIDEBAR_TOQUE_TELA
+static void sidebarToqueDetalhe(void) {
+  if (!sidebarToquePode() || !detail_aberto()) return;
+  saiuPorEsquerda = saiuPorCima = 0;
+  menu_abrir_sobre(1);
+}
+static void sidebarToqueLista(void) {
+  if (!sidebarToquePode() || !vertudo_aberta() || detail_aberto()) return;
+  saiuPorEsquerda = saiuPorCima = 0;
+  menu_abrir_sobre(0);
+}
+static void sidebarToqueRegistrar(int contexto) {
+  PonteiroBordaFn fn = NULL;
+  if (!sidebarToquePode()) return;
+  if (contexto == 1 && detail_aberto()) fn = sidebarToqueDetalhe;
+  else if (contexto == 2 && vertudo_aberta() && !detail_aberto()) fn = sidebarToqueLista;
+  else if (contexto == 0 && !detail_aberto() && !vertudo_aberta()) {
+    switch (tela) {
+      case TELA_HOME: fn = sidebarToqueHome; break;
+      case TELA_EXPLORAR: fn = sidebarToqueExplorar; break;
+      case TELA_BUSCA: fn = sidebarToqueBusca; break;
+      case TELA_BIBLIOTECA: fn = sidebarToqueBiblioteca; break;
+      case TELA_PERFIL: fn = sidebarToquePerfil; break;
+      case TELA_AJUSTES: fn = sidebarToqueAjustes; break;
+      case TELA_DIAGNOSTICO: fn = sidebarToqueDiagnostico; break;
+      case TELA_SOCIAL: fn = sidebarToqueSocial; break;
+      case TELA_ADDONS: fn = sidebarToqueAddons; break;
+      case TELA_AGENDA: fn = sidebarToqueAgenda; break;
+      case TELA_LIVETV_DIAG: fn = sidebarToqueLiveTVDiag; break;
+      case TELA_PLUGINS: fn = sidebarToquePlugins; break;
+      default: break;
+    }
+  }
+  if (fn) ponteiro_borda_esquerda(120.0f, fn);
+}
+#endif
 // perfis_ativo() no instante em que a tela de escolha abriu. So serve para uma
 // pergunta: a pessoa TROCOU de perfil, ou confirmou o mesmo? Agora que a tela
 // aparece a cada arranque, confirmar o mesmo perfil e o caso comum — e recarga
@@ -494,6 +980,11 @@ static int sidebar_permitida(void) {
 // requisicoes) num perfil que nao mudou seria pagar o preco da troca em toda
 // abertura do app.
 static int perfilAntes = 1;
+// 1 quando a conta entrou AGORA pelo login (0 = sessao restaurada do disco).
+// O Comecar da 2.1 (comecar.h) decide o que mostrar com isto.
+static int loginNovo;
+static uint64_t perfilSessaoAplicada;
+static char perfilDirArte[512];
 // Quando a troca de perfil comecou a preparar a home nova. Ver o teto abaixo.
 static Uint32 trocaPerfilDesde;
 // Teto da espera pela home do perfil novo. A rede lenta nunca prende a pessoa
@@ -503,29 +994,15 @@ static Uint32 trocaPerfilDesde;
 // O detalhe precisa do retangulo REAL de onde o card saiu para o voo comecar
 // dali. Cada tela que abre um titulo entrega o seu; quando nenhuma entrega
 // (caso do menu ou de um indice vindo de fora), cai para a tela inteira.
-static void abrirTitulo(const HomeItem *it) {
-  const CatItem *c;
-  if (!it || !it->arte) return;
-  // ITEM COM ID "tmdb:<n>" — resultado de busca de um addon do TMDB (o dono,
-  // 20/09/2026: "tem titulos da busca que quando abre nao vem com as artes e
-  // informacoes nenhuma"). O detalhe pede tudo ao Cinemeta por imdb, e
-  // /meta/series/tmdb:456.json responde 404: sem temporadas, sem episodios,
-  // addons sem fonte. O vertudo ja resolvia esse id pelo caminho da
-  // filmografia (external_ids -> imdb -> meta); a busca e a home entravam por
-  // aqui e nao. Um so lugar para os dois: o titulo resolvido entra no catalogo
-  // e trocaDeTituloSeSolicitada abre ele.
-  c = cat_item(it->indice);
+// `exigeArte` = 0 para o pos-play e a grade (abriam mesmo sem arte);
+// `descartarRetido` = 0 so no pos-play (nunca descartou a sessao retida).
+static void abrirTitulo(const HomeItem *it, int exigeArte, int descartarRetido) {
+  if (!it || (exigeArte && !it->arte)) return;
   // Uma pagina nova pode abrir trailer no mesmo plano. Retomar na ilha ja
   // foi tratado antes deste caminho, sem passar pela pagina nem por fontes.
-  player_descartar_retido();
-  if (c && !strncmp(c->imdb, "tmdb:", 5) && desc_chave_tmdb() &&
-      desc_chave_tmdb()[0] && !desc_titulo_buscando()) {
-    // Sem chave do TMDB nao ha como resolver: abre como dava (arte e sinopse,
-    // sem episodios) em vez de nao abrir nada.
-    desc_pedir_titulo_tmdb(atol(c->imdb + 5),
-                           !strcmp(c->tipo, "series") ? "tv" : "movie");
-    return;
-  }
+  if (descartarRetido) player_descartar_retido();
+  // Discovery serves native tmdb: ids through Nuvio, including titles with
+  // no IMDb mapping. Open the existing card and let its metadata load there.
   detail_abrir(it);
 }
 
@@ -550,7 +1027,7 @@ static void abrirPorIndice(int i) {
   it.titulo = c->titulo;
   it.genero = c->genero;
   it.meta = c->meta;
-  abrirTitulo(&it);
+  abrirTitulo(&it, 1, 1);
 }
 
 // Monta o id que os addons esperam. Para serie e "tt1234567:temporada:episodio";
@@ -560,7 +1037,7 @@ static void abrirPorIndice(int i) {
 static void idDoAlvo(const CatItem *ci, char *dst, size_t n) {
   int t = 0, e = 0;
   if (!ci) { if (n) dst[0] = 0; return; }
-  if (!strcmp(ci->tipo, "series") && detail_ep_foco(&t, &e) && t > 0 && e > 0)
+  if (!strcmp(ci->tipo, "series") && detail_ep_foco(&t, &e) && t >= 0 && e > 0)
     // cat_id_stream: "tt:T:E" no IMDb; o id do video do addon nos demais
     // ("kitsu:41370:5"). Os dois callers passam o item do detalhe.
     cat_id_stream(detail_indice(), t, e, dst, (unsigned)n);
@@ -580,10 +1057,24 @@ static int cacaDoPerfil;
 
 static void trocarTela(Tela nova) {
   if (nova == tela) return;
+  glance_fechar();
   if (nova != TELA_SOCIAL) socialDoPerfil = 0;
   if (nova != TELA_CACA) cacaDoPerfil = 0;
   if (tela == TELA_AJUSTES) ajustes_encerrar();
   if (tela == TELA_LIVETV_DIAG) livetvdiag_encerrar();
+  // ESQUERDA na borda do Perfil so pede a barra e deixa a pagina aberta (#371).
+  // Se o roteador vai para OUTRA tela (barra proibida no PiP, ou um destino da
+  // barra), o Perfil fecha aqui: senao perfil_atualizar/socialvis_atualizar
+  // seguiam rodando todo quadro. Voltar ao Perfil passa por perfil_abrir.
+  if (tela == TELA_PERFIL) perfil_fechar();
+  // #318: a tela piscava e congelava logo depois de uma troca de tela
+  // (Android). A linha fica para o proximo relato, com teto: as 120 primeiras
+  // trocas e depois no maximo uma a cada 10 s.
+  { static int nTr; static Uint32 ultTr; Uint32 agTr = SDL_GetTicks();
+    if (nTr < 120 || agTr - ultTr >= 10000) {
+      nTr++; ultTr = agTr;
+      printf("[transicao] tela %d -> %d t=%u\n", (int)tela, (int)nova, (unsigned)agTr);
+    } }
   tela = nova;
   // Cada tela zera o proprio estado ao ser aberta: voltar para a busca com o
   // texto de duas navegacoes atras seria lixo, nao memoria util.
@@ -593,12 +1084,20 @@ static void trocarTela(Tela nova) {
     case TELA_BUSCA:      busca_iniciar();      break;
     case TELA_BIBLIOTECA: biblioteca_iniciar(); break;
     case TELA_AGENDA:     agendaui_iniciar();   break;
-    case TELA_PERFIL:     perfil_abrir(); pedirPerfil(); break;
+    case TELA_PERFIL:     perfil_abrir(); pedirPerfil(); diarionuvem_perguntar_se_preciso(); break;
     case TELA_AJUSTES:    ajustes_iniciar();    break;
     case TELA_DIAGNOSTICO: diagnostico_iniciar(); break;
     case TELA_LIVETV_DIAG: livetvdiag_iniciar(); break;
     default: break;
   }
+}
+
+static int episodioNaSala(int titulo, int t, int e) {
+  const CatItem *c = cat_item(titulo);
+  char alvo[64] = "";
+  if (!juntos_ativo()) return 0;
+  if (c) snprintf(alvo, sizeof alvo, "%s:%d:%d", c->imdb, t, e);
+  return juntos_ao_proximo(alvo);
 }
 
 static void alvoPlayer(char *alvo, size_t tam) {
@@ -609,7 +1108,7 @@ static void alvoPlayer(char *alvo, size_t tam) {
   // republicacao do catalogo ja pode ter apontado para outro item.
   if (player_id_canal()[0]) { snprintf(alvo,tam,"%s",player_id_canal()); return; }
   if (!c) { alvo[0] = 0; return; }
-  if (t > 0 && e > 0) cat_id_stream(player_indice(), t, e, alvo, (unsigned)tam);
+  if (t >= 0 && e > 0) cat_id_stream(player_indice(), t, e, alvo, (unsigned)tam);
   else snprintf(alvo,tam,"%s",c->imdb);
 }
 // --- StreamFit runtime and passive gate (F03) -------------------------------
@@ -623,7 +1122,7 @@ static void alvoPlayer(char *alvo, size_t tam) {
 static double fitRuntimeItem(int indice, int t, int e) {
   const CatItem *c = cat_item(indice);
   if (!c) return 0;
-  if (t > 0 && e > 0) {
+  if (t >= 0 && e > 0) {
     int n = cat_n_episodios(indice);
     for (int k = 0; k < n; k++) {
       const CatEp *ep = cat_episodio(indice, k);
@@ -644,7 +1143,7 @@ static double fitRuntimeMeta(const char *alvo) {
   { const CatItem *ci = cat_item(detail_indice());
     idDoAlvo(ci, a, sizeof a);
     if (ci && !strcmp(a, alvo)) {
-      if (!strcmp(ci->tipo, "series") && !(detail_ep_foco(&t, &e) && t > 0 && e > 0)) return 0;
+      if (!strcmp(ci->tipo, "series") && !(detail_ep_foco(&t, &e) && t >= 0 && e > 0)) return 0;
       return fitRuntimeItem(detail_indice(), t, e);
     }
   }
@@ -684,6 +1183,13 @@ static void fitPassivaPermitir(void) {
 #endif
 }
 
+static void origemFontes(const CatItem *c) {
+  char base[NV_ADDON_URL_MAX] = "";
+  if (c && !idbase_e_imdb(c->imdb))
+    addons_base_por_id_copiar(c->origem, base, sizeof base);
+  addons_definir_origem(base);
+}
+
 static void buscarParaPlayerModo(int renovar) {
   char alvo[64]; alvoPlayer(alvo,sizeof alvo);
   const char *idC = player_id_canal();
@@ -698,12 +1204,16 @@ static void buscarParaPlayerModo(int renovar) {
   if (idC[0]) {
     // SEM LEGENDA DE ADDON NO CANAL: o id do canal ia ao OpenSubtitles como
     // "movie" (Recarregar da folha). As do canal sao as do fluxo (faixas.c).
-    if (renovar) addons_buscar_renovar(alvo,"tv"); else addons_buscar(alvo,"tv");
+    const char *tipo = player_tipo_canal();
+    if (!tipo[0]) tipo = "tv";
+    if (renovar) addons_buscar_renovar(alvo,tipo); else addons_buscar(alvo,tipo);
     return;
   }
   {
     const CatItem *c = cat_item(player_indice());
     if (c && alvo[0]) {
+      servidores_dica(alvo, c->titulo, srvidx_ano_de(c->meta));   // last match rule of the servers
+      origemFontes(c);
       if (renovar) addons_buscar_renovar(alvo,c->tipo); else addons_buscar(alvo,c->tipo);
       addons_buscar_legendas(alvo,c->tipo);
     }
@@ -731,6 +1241,8 @@ static void renovarListaDoPlayer(void) {
            (unsigned)stream_idade_ms(),
            stream_lista_do_alvo(alvoP) ? "" : " e de outro alvo", alvoP);
     stream_definir_alvo(alvoP);
+    servidores_dica(alvoP, ci->titulo, srvidx_ano_de(ci->meta));
+    origemFontes(ci);
     addons_buscar(alvoP, ci->tipo);
   }
 }
@@ -749,37 +1261,113 @@ static void renovarListaDoPlayer(void) {
 // FONTEVOLTA_PRAZO_MS sem abrir — o video para, a tela continua em "abrindo
 // fonte" e a escolha normal assume (aguardandoFonte = 1), com a lista que a
 // busca de fundo ja trouxe ou esta trazendo.
+// A URL QUE O PLAYER RECEBE PARA UMA FONTE DE CANAL (#283).
+//
+// Relato #283 (QNED70B e NanoCell, 2.0.1): os canais dos addons nao tocam na
+// LG e tocam no Mi Stick. Nos registros 41889/41909/41918/42119/42328 (mesma
+// conta, webOS 11.2 e 6.5) o padrao e o do #158 no Xtream: a playlist do addon
+// e viva para a sonda, o uMS recebe o load, ganha VDEC, enche 4-8 s de buffer
+// e o decoder nunca anuncia (`buffer=4.0s decoder=0 ... 21061ms`, Fenix TV), ou
+// o servidor recusa os pedidos do motor HLS do uMS (`server error:40404`, `203
+// AV Type Not Founded`) numa playlist que a sonda, com os cabecalhos do addon,
+// leu viva. O Xtream ja passa pelo proxy de TS desde o #158 e toca; os canais
+// de addon iam sempre direto.
+//
+// Agora a fonte HTTP de canal de addon que nao e arquivo (.mp4/.mkv) vai pelo
+// proxy, com os cabecalhos do addon em todo pedido (playlist e segmentos). O
+// proxy redireciona o que ja e TS continuo ou nao e playlist, entao o caminho
+// que ja tocava nao muda. Desligado em Ajustes > Live TV, como no Xtream.
+static const char *urlCanal(const Stream *s, char *buf, size_t n) {
+  const char *id = player_id_canal();
+  canalViaProxy = 0;
+  if (s && xtream_url_limitada(s->url)) return s->url;
+  if (!s) return "";
+  // Toda troca de fonte do guia passa aqui, inclusive a do watchdog.
+  video_definir_cabecalhos(s->cabecalhos);
+  // Confirmed TS already plays directly; avoid another probe and a local 302.
+  if (s->tsContinuo) {
+    proxyts_definir_cabecalhos("");
+    return s->url;
+  }
+  if (!strncmp(s->url, PROXYTS_PREFIXO, strlen(PROXYTS_PREFIXO))) {
+    // Xtream: a lista ja vem marcada, e sem cabecalho de addon.
+    proxyts_definir_cabecalhos(s->cabecalhos);
+    return s->url;
+  }
+  if (id[0] && !xtream_e_id(id) && !stalker_e_id(id) && ajustes_livetv_proxy() &&
+      proxyts_disponivel() && proxyts_candidata(s->url, s->mp4) &&
+      strlen(s->url) + strlen(PROXYTS_PREFIXO) < n) {
+    proxyts_definir_cabecalhos(s->cabecalhos);
+    snprintf(buf, n, "%s%s", PROXYTS_PREFIXO, s->url);
+    canalViaProxy = 1;
+    printf("[canal] fonte de addon pelo proxy-ts%s\n",
+           s->cabecalhos[0] ? ", com os cabecalhos do addon" : "");
+    fflush(stdout);
+    return buf;
+  }
+  proxyts_definir_cabecalhos("");
+  return s->url;
+}
+
 static int tocarFonteGuardada(void) {
   Stream s;
   char alvo[64];
-  if (player_id_canal()[0] || !player_aberto()) return 0;
+  // #618: a fresh automatic choice must use the add-on's current order.
+  // Keep the saved link intact for the other selection modes.
+  if (ajustes_fonte_prioridade() == 3) return 0;
+  // "Escolher a fonte ao reproduzir": a URL da ultima sessao nao toca
+  // sozinha. A folha e quem escolhe (detail_pediu_fontes, e o #62 quando a
+  // lista chega). O Retomar do Continuar assistindo pede reproducao e cai
+  // aqui tambem — com o ajuste ligado ele espera a folha, como o Play.
+  if (!fontevolta_toca_guardada(ajustes_fonte_manual(), fontefalha_ativa(),
+                                player_id_canal()[0], player_aberto()))
+    return 0;
   alvoPlayer(alvo, sizeof alvo);
   if (!alvo[0] || !fontevolta_pegar(alvo, sessao_usuario(), perfis_ativo(), SDL_GetTicks(), &s))
     return 0;
+  if (!stream_filtro_permite(&s)) return 0;
+  if (fontesmortas_idade(&s) >= 0) {
+    fontevolta_esquecer_alvo(alvo, sessao_usuario(), perfis_ativo(), "fonte falhou antes");
+    return 0;
+  }
+  if (servidores_tem(alvo, "movie") || servidores_tem(alvo, "series")) return 0;
   marco("abrir: fonte guardada, sem busca");
   stream_definir_atual(-1);
+  voltaFonte = s;
   video_definir_dv(s.dolbyVision);
   video_definir_cabecalhos(s.cabecalhos);
-  video_definir_mp4(s.mp4 || strstr(s.url, ".mp4") != NULL);
+  video_definir_mp4(stream_e_mp4(&s));
   fontevolta_conferir(s.url, s.cabecalhos);
-  player_definir_fonte(s.url);
+  definirFonteVOD(s.url);
   voltaAtiva = 1;
   voltaDesde = SDL_GetTicks();
   return 1;
 }
+// Test hook for tests/detail_ep_fonte.c. Same function the router calls.
+int app_teste_tocar_guardada(void) { return tocarFonteGuardada(); }
+// Test hooks for tests/detail_ep_fonte_trava.c.
+void app_teste_cw_tocar(int t, int e) { cwTocarT = t; cwTocarE = e; }
+void app_teste_gravar_folha(int t, int e, int tem) { gravarFolhaTocar(t, e, tem); }
+int app_teste_consumir_folha(int *t, int *e) { return consumirFolhaTocar(t, e); }
 static void vigiarFonteGuardada(void) {
+  FontevoltaSinais g;
   const char *motivo = NULL;
   Uint32 desde;
   if (!voltaAtiva) return;
   if (!player_aberto() || player_quer_sair() || player_id_canal()[0] || aguardandoFonte) {
     voltaAtiva = 0; return;
   }
-  { FontevoltaSinais g;
-    int d;
+  { int d;
     g.falhou = video_falhou() || player_fonte_falhou();
     g.pronto = video_pronto();
     g.duracao = video_duracao();
     g.carregando = player_carregando();
+#ifdef NV_ANDROID
+    g.quadro = video_quadro_visto();
+#endif
+#ifdef NV_ANDROID
+  g.quadro = video_quadro_visto();
+#endif
     g.conferencia = fontevolta_conferencia();
     g.desdeMs = desde = SDL_GetTicks() - voltaDesde;
     d = fontevolta_decidir(&g, &motivo);
@@ -794,7 +1382,17 @@ static void vigiarFonteGuardada(void) {
   fflush(stdout);
   marco("abrir: fonte guardada falhou, busca normal");
   voltaAtiva = 0;
-  fontevolta_esquecer(motivo);
+  // Sonda isolada so recua; a marca exige erro, clipe curto ou prazo do player.
+  if (g.falhou || (g.pronto && g.duracao > 1.0 && g.duracao < 120.0) ||
+      (g.carregando && !g.quadro && desde > FONTEVOLTA_PRAZO_MS)) {
+    Stream s; char alvo[64];
+    alvoPlayer(alvo, sizeof alvo);
+    if (!fonteProvouTocar() &&
+        fontevolta_pegar(alvo, sessao_usuario(), perfis_ativo(), SDL_GetTicks(), &s))
+      fontesmortas_marcar(&s);
+  }
+  { char alvo[64]; alvoPlayer(alvo, sizeof alvo);
+    fontevolta_esquecer_alvo(alvo, sessao_usuario(), perfis_ativo(), motivo); }
   player_voltar_a_esperar();
   limparFonteVOD();
   renovarListaDoPlayer();
@@ -826,7 +1424,7 @@ static void nomeParaFolha(void) {
   const CatItem *c = player_id_canal()[0] ? NULL
                    : cat_item(player_aberto() ? player_indice() : detail_indice());
   stream_folha_nome(c ? c->titulo : "");
-  stream_folha_canal(player_id_canal()[0] != 0);
+  stream_folha_canal(player_id_canal()[0] != 0 || (c && nv_tipo_canal(c->tipo)));
   stream_folha_item(c ? (player_aberto() ? player_indice() : detail_indice()) : -1);
 }
 
@@ -851,8 +1449,9 @@ static int montarCanalStalker(const char *id, const char *url) {
   if (!id || !id[0] || !url || !url[0]) return -1;
   memset(&s, 0, sizeof s);
   snprintf(s.url, sizeof s.url, "%s", url);
-  snprintf(s.rotulo, sizeof s.rotulo, "%s", "Portal IPTV");
-  snprintf(s.provedor, sizeof s.provedor, "%s", "stalker");
+  snprintf(s.rotulo, sizeof s.rotulo, "%s", m3u_e_id(id) ? "M3U" : "Portal IPTV");
+  snprintf(s.provedor, sizeof s.provedor, "%s", m3u_e_id(id) ? "m3u" : "stalker");
+  if (m3u_e_id(id)) m3u_cabecalhos(id, s.cabecalhos, sizeof s.cabecalhos);
   s.fileIdx = -1;
   stream_definir_lista(&s, 1);
   return 0;
@@ -877,7 +1476,7 @@ static int resolverCanalXtream(void) {
   static Stream s[3 * XT_VARIANTES_MAX];
   GuiaVariante v[XT_VARIANTES_MAX], ord[XT_VARIANTES_MAX];
   const char *ext[2];
-  int k = xtream_formatos(ext), i, j, n = 0, nv, no = 0;
+  int k = xtream_formatos_canal(player_id_canal(), ext), i, j, n = 0, nv, no = 0;
   int alvo = nv_res_opcao_altura(ajustes_livetv_resolucao());
   memset(s, 0, sizeof s);
   nv = guia_variantes(player_id_canal(), v, XT_VARIANTES_MAX);
@@ -896,7 +1495,7 @@ static int resolverCanalXtream(void) {
       // pelo proxy local — HLS (ou .ts que o painel responde com playlist) vira
       // TS continuo; o que ja e TS continuo o proxy redireciona direto. As
       // fontes diretas ficam atras, de reserva.
-      if (!i && ajustes_livetv_proxy() && proxyts_disponivel() && n < (int)(sizeof s / sizeof *s) - 1) {
+      if (!i && !xtream_conexoes_limitadas() && ajustes_livetv_proxy() && proxyts_disponivel() && n < (int)(sizeof s / sizeof *s) - 1) {
         snprintf(s[n].url, sizeof s[n].url, "%s%s", PROXYTS_PREFIXO, url);
         if (strcmp(ord[j].id, player_id_canal()) && ord[j].nome[0])
           snprintf(s[n].rotulo, sizeof s[n].rotulo, "Xtream (%s, proxy) · %s", f, ord[j].nome);
@@ -923,6 +1522,28 @@ static int resolverCanalXtream(void) {
   return 0;
 }
 
+// CANAL DE LISTA M3U (M9): UMA fonte, a URL guardada no canal, com o
+// User-Agent e o Referer da lista (|user-agent=, #EXTVLCOPT). O resto (proxy de
+// TS, cabecalhos em todo pedido, fonte direto de reserva) e o caminho de canal
+// de addon (urlCanal). A URL pode ter usuario e senha: nunca vai para o log.
+static int resolverCanalM3u(void) {
+  static Stream s;
+  char ua[256], ref[256];
+  memset(&s, 0, sizeof s);
+  if (!guia_m3u_canal(player_id_canal(), s.url, sizeof s.url, ua, sizeof ua, ref, sizeof ref)) return -1;
+  { size_t u = 0;
+    if (ua[0]) u += (size_t)snprintf(s.cabecalhos + u, sizeof s.cabecalhos - u, "User-Agent: %s\n", ua);
+    if (ref[0]) snprintf(s.cabecalhos + u, sizeof s.cabecalhos - u, "Referer: %s\n", ref); }
+  snprintf(s.rotulo, sizeof s.rotulo, "%s", "M3U");
+  snprintf(s.provedor, sizeof s.provedor, "%s", "m3u");
+  s.mp4 = strstr(s.url, ".mp4") != NULL;
+  s.fileIdx = -1;
+  stream_definir_lista(&s, 1);
+  printf("[livetv] m3u: 1 fonte%s%s\n", ua[0] ? ", com User-Agent" : "", ref[0] ? ", com Referer" : "");
+  fflush(stdout);
+  return 0;
+}
+
 // O CARTAO DE ERRO DO CANAL XTREAM diz o que se sabe (#158). O generico
 // "nao foi possivel abrir a fonte" era tudo o que a pessoa via — e no registro
 // 6314 nem isso ficava, porque o "voltou a entregar" tirava o cartao. A conta
@@ -931,21 +1552,24 @@ static int resolverCanalXtream(void) {
 static void motivoCanalXtream(char *t, size_t nt, char *d, size_t nd) {
   XtreamConta c;
   const char *err = video_erro_texto();
-  int aviso = xtream_conta(&c) ? xtream_conta_aviso(&c, (long long)time(NULL)) : XA_NADA;
+  int aviso = xtream_conta_canal(player_id_canal(), &c) ? xtream_conta_aviso(&c, (long long)time(NULL)) : XA_NADA;
   // SO UM FORMATO TENTADO (#158, registro 13776): a conta declara
   // allowed_output_formats=["ts"], a lista do canal tem uma fonte so, e o
   // cartao dizia "nao abriu em HLS nem em TS" sem HLS nenhum ter sido pedido.
   const char *ext[2], *umFormato = NULL;
-  if (xtream_formatos(ext) == 1) umFormato = !strcmp(ext[0], "ts") ? "TS" : "HLS";
+  if (xtream_formatos_canal(player_id_canal(), ext) == 1) umFormato = !strcmp(ext[0], "ts") ? "TS" : "HLS";
   if (aviso == XA_EXPIRADA) {
     snprintf(t, nt, "%s", i18n("A assinatura Xtream venceu."));
     snprintf(d, nd, "%s", i18n("Renove com o seu provedor. Os canais voltam sozinhos depois disso."));
   } else if (aviso == XA_DESATIVADA || aviso == XA_RECUSOU) {
     snprintf(t, nt, "%s", i18n("O provedor desativou esta conta Xtream."));
     snprintf(d, nd, "%s", i18n("Fale com o seu provedor ou confira o cadastro em Ajustes."));
+  } else if ((xtream_conexoes_limitadas() && aviso == XA_TELAS_CHEIAS) || (xtream_conexoes_limitadas() && err &&
+             (strstr(err, "403") || strstr(err, "458") || strstr(err, "509")))) {
+    snprintf(t, nt, "%s", i18n("Esta linha está em uso em outra tela"));
+    snprintf(d, nd, "%s", i18n("Feche o Xtream em outro aparelho e tente de novo."));
   } else if (aviso == XA_TELAS_CHEIAS) {
-    snprintf(t, nt, i18n("Todas as telas da conta Xtream estão em uso (%d de %d)."),
-             c.conexoes, c.maxConexoes);
+    snprintf(t, nt, i18n("Todas as telas da conta Xtream estão em uso (%d de %d)."), c.conexoes, c.maxConexoes);
     snprintf(d, nd, "%s", i18n("Feche o Xtream em outro aparelho e tente de novo."));
   } else if (err && err[0]) {
     snprintf(t, nt, "%s", i18n("O provedor não entregou este canal."));
@@ -1014,7 +1638,7 @@ static void sondarCanalXtream(const char *id) {
   static char ultimo[80];
   pthread_t t;
   char *c;
-  if (!id || !id[0] || !strcmp(ultimo, id)) return;
+  if (!id || !id[0] || !strcmp(ultimo, id) || xtream_conexoes_limitadas()) return;
   snprintf(ultimo, sizeof ultimo, "%s", id);
   c = strdup(id);
   if (!c) return;
@@ -1029,6 +1653,13 @@ static void avisoCanalXtreamMini(void) {
   motivoCanalXtream(t, sizeof t, d, sizeof d);
   glem_aviso_curto(t);
 }
+
+// Preparar a fonte ao abrir o titulo (ver prepararAoAbrir, mais abaixo).
+static void preparoGuardar(FonteJob *job);
+static int  preparoUsar(const char *alvoPlay, int lembrada, int *idx);
+static int preparoEmCurso(const char *alvo, int lembrada);
+static void preparoVigiar(void);
+static void preparoInvalidar(void);
 
 // Um unico worker pode existir. O fio de desenho so junta depois de DONE;
 // enquanto RUNNING, uma troca invalida por geracao e agenda o pedido seguinte.
@@ -1052,9 +1683,82 @@ static void processarFonteJob(void) {
   snprintf(id, sizeof id, "%s", job->id);
   snprintf(url, sizeof url, "%s", job->url);
   atomic_store_explicit(&job->estado, FJOB_IDLE, memory_order_release);
+  if (!nv_perfil_sessao_atual(job->sessaoPerfil)) {
+    fontefalha_sessao_liberar(job->falha); job->falha = NULL;
+    addons_consulta_liberar(job->consulta); job->consulta = NULL;
+    goto iniciarPendente;
+  }
+  if (tipo == FJOB_PREPARO || tipo == FJOB_PREPARO_FALHA) {
+    // Resposta do preparo (ver prepararAoAbrir): guarda, e se o Play ja estava
+    // esperando por ela, entrega no ato. Nunca passa pelo bloco generico.
+    if (job->preparoRodada == atomic_load_explicit(&preparoGeracao, memory_order_acquire))
+      preparoRodando = 0;
+    preparoGuardar(job);
+    if (preparoEspera) {
+      char alvoP[64];
+      int idx;
+      preparoEspera = 0;
+      alvoPlayer(alvoP, sizeof alvoP);
+      if (aguardandoFonte == 2 && preparoUsar(alvoP, preparoLembradaPlay, &idx)) {
+        fonteEscolhida = idx;
+        limparFontePendente();   // o pedido normal que esperava na fila nao e mais preciso
+        printf("[fonte] preparada ao abrir: o Play esperou por ela e abriu\n");
+        fflush(stdout);
+      } else if (aguardandoFonte == 2) {
+        // O resultado obsoleto/falho sai uma unica vez. O Play prossegue
+        // pelo caminho frio e nunca espera por um worker ja recolhido.
+        if (fontefalha_ativa()) {
+          if (!iniciarPoliticaFonte(preparoLembradaPlay, 0)) fonteEscolhida = -1;
+          else fontePendenteTipo = FJOB_FALHA;
+        } else { fa_nova_rodada(); fontePendenteTipo = FJOB_ADDON; }
+        fontePendenteGeracao = fontePedidoGeracao;
+        fontePendenteRenovando = 0; fontePendenteId[0] = 0;
+      }
+    }
+    fontefalha_sessao_liberar(job->falha); job->falha = NULL;
+  }
   aplicar = geracao == fontePedidoGeracao &&
             geracao == atomic_load_explicit(&stalkerGeracao, memory_order_acquire);
-  if (tipo == FJOB_STALKER) {
+  if (tipo == FJOB_PREPARO || tipo == FJOB_PREPARO_FALHA) aplicar = 0;
+  if (tipo == FJOB_RENOVAR_VOD) {
+    if (aplicar && vodRenovandoDesde && aguardandoFonte == 2 &&
+        player_aberto() && !player_quer_sair()) {
+      aguardandoFonte = 0; vodRenovandoDesde = 0;
+      if (resultado >= 0 && addons_consulta_atual(job->consulta) &&
+          stream_vod_renovada_aplicar(resultado, job->listaGeracao,
+                                     &job->renovada, job->sessaoPerfil)) {
+        const Stream *s = stream_item(resultado);
+        stream_definir_atual(resultado);
+        video_definir_cabecalhos(s->cabecalhos);
+        player_definir_retomada_fonte(vodRenovarPos);
+        definirFonteVOD(s->url);
+        vodRenovou = 1;
+        fonteVODDesde = fonteManualDesde = SDL_GetTicks() | 1u;
+      } else player_erro_fonte_motivo(i18n("A fonte não respondeu a tempo."), NULL);
+    }
+    addons_consulta_liberar(job->consulta); job->consulta = NULL;
+  } else if (tipo == FJOB_FALHA) {
+    aplicar = aplicar && fonteFalha && job->listaGeracao == fonteFalhaLista &&
+              job->listaGeracao == stream_lista_geracao() &&
+              (player_aberto() || player_mini_ativo()) && !player_quer_sair();
+    if (aplicar) {
+      fontefalha_sessao_liberar(fonteFalha);
+      fonteFalha = job->falha; job->falha = NULL;
+      fonteFalhaEsperando = job->falhaEstado == FONTEFALHA_ESPERAR;
+      fonteFalhaN = stream_n();
+      if (fonteFalhaEsperando) fonteEscolhida = -2;
+      else fonteEscolhida = resultado >= 0 &&
+             stream_falha_aplicar_sessao(resultado, job->listaGeracao, job->servico, url, job->sessaoPerfil)
+                               ? resultado : -1;
+    } else if (geracao == fontePedidoGeracao &&
+               geracao == atomic_load_explicit(&stalkerGeracao, memory_order_acquire) &&
+               aguardandoFonte == 2) {
+      // Lista substituida durante a rede: nunca deixar o player esperando
+      // uma resposta rejeitada nem abrir um indice da lista anterior.
+      fonteEscolhida = -1;
+    }
+    fontefalha_sessao_liberar(job->falha); job->falha = NULL;
+  } else if (tipo == FJOB_STALKER) {
     const char *idAtual = player_id_canal();
     mesmoId = idAtual[0] && !strcmp(id, idAtual);
     if (renovando) {
@@ -1067,6 +1771,7 @@ static void processarFonteJob(void) {
         stream_definir_atual(0);
         canalFonteIdx = 0;
         canalFonteDesde = SDL_GetTicks();
+        canalViaProxy = 0;
         if (s) player_definir_fonte(s->url);
         marco("canal: link renovado");
       } else if (aplicar && mesmoId) {
@@ -1088,9 +1793,15 @@ static void processarFonteJob(void) {
       fonteEscolhida = -1;
     }
   } else if (aplicar) {
-    fonteEscolhida = resultado;
+    fonteEscolhida = tipo == FJOB_PROXIMA_VOD && job->listaGeracao != stream_lista_geracao()
+                      ? -1 : resultado;
+    // O consumidor ja cobra a candidata final; somar as anteriores do job.
+    if (tipo == FJOB_PROXIMA_VOD && job->listaGeracao == stream_lista_geracao() &&
+        job->conferidas > 1)
+      fonteVODTentativas += job->conferidas - 1;
     if (tipo == FJOB_CANAL) canalFontePrazo = prazo;
   }
+iniciarPendente:
   // O job antigo foi recolhido. Só agora o slot pode receber o pedido que
   // ficou pendente durante a troca; uma geracao nova torna o pendente obsoleto.
   if (fontePendenteTipo &&
@@ -1109,15 +1820,18 @@ static void processarFonteJob(void) {
   }
 }
 static void cancelarFonteSeSaiu(void) {
-  int jobStalker = (fioFonteVivo && fonteJob.tipo == FJOB_STALKER) ||
-                   fontePendenteTipo == FJOB_STALKER;
-  if (jobStalker &&
+  int jobSessao = (fioFonteVivo && (fonteJob.tipo == FJOB_STALKER || fonteJob.tipo == FJOB_FALHA ||
+                                                  fonteJob.tipo == FJOB_RENOVAR_VOD)) ||
+                   fontePendenteTipo == FJOB_STALKER || fontePendenteTipo == FJOB_FALHA ||
+                   fontePendenteTipo == FJOB_RENOVAR_VOD || fonteFalha;
+  if (jobSessao &&
       (player_quer_sair() || (!player_aberto() && !player_mini_ativo()))) {
     novaGeracaoFonte();
     stalkerRenovando = 0;
     fonteEscolhida = -1;
     canalFonteIdx = -1;
     limparFontePendente();
+    if (fonteFalha) { aguardandoFonte = 0; limparFonteVOD(); }
   }
 }
 
@@ -1134,6 +1848,11 @@ static void erroSemFonte(void) {
   char motivo[160];
   int canal = player_id_canal()[0] != 0;
   int semPlano = debrid_sem_plano();
+  if (!canal && stream_filtro_bloqueou()) {
+    player_erro_fonte_motivo(i18n("Nenhuma fonte passa pelos filtros"),
+        i18n("Revise os filtros em Fontes e addons."));
+    return;
+  }
   // CONTA DE DEBRID SEM PLANO vem antes de tudo: e a causa que a pessoa pode
   // resolver, e "nenhuma fonte serve" sozinho a mandava procurar outra fonte
   // do mesmo servico (registros 1731-1774). O aviso fica marcado como dado.
@@ -1152,6 +1871,14 @@ static void erroSemFonte(void) {
     // ficaria parada). A folha toca.
     player_erro_fonte_motivo(i18n("As fontes desta lista são P2P (torrent)"),
         i18n("Abra Fontes e escolha uma: ela toca pelo servidor P2P."));
+  } else if (!canal && stream_torrents_para_p2p() > 0) {
+    // #486/#505: fontes descartadas por falta de debrid ou por P2P desligado
+    // (o notWebReady do .tpk — debrid nao o traz de volta). So com a lista
+    // realmente vazia: com fonte direta que nao serviu, o motivo dela vale.
+    if (stream_n() == 0) {
+      snprintf(motivo, sizeof motivo, "%s", i18n("As fontes desta lista são P2P (torrent)"));
+      player_erro_fonte_motivo(motivo, i18n("Ligue o P2P em Ajustes ou conecte uma conta de debrid."));
+    } else player_erro_fonte();
   } else if (addons_motivo_vazio(motivo, sizeof motivo))
     player_erro_fonte_motivo(motivo, canal
         ? i18n("Escolha outro canal no guia ou tente de novo mais tarde.")
@@ -1184,6 +1911,8 @@ typedef struct {
   _Atomic int estado;           // 0 livre, 1 rodando, 2 pronto
   int indice, resultado, pct;
   unsigned geracaoLista, sessao;
+  uint64_t sessaoPerfil;
+  DebridContexto debrid;
   char url[4096], servico[32];
 } TorrentJob;
 static TorrentJob torrentJob;
@@ -1195,9 +1924,11 @@ static unsigned torrentPendenteGeracao;
 
 static void *resolverTorrentEscolhido(void *u) {
   TorrentJob *j = u;
-  j->resultado = stream_resolver_escolhida(j->indice, j->geracaoLista, j->url,
+  debrid_contexto_entrar(&j->debrid);
+  j->resultado = perfis_sessao_atual(j->sessaoPerfil) ? stream_resolver_escolhida(j->indice, j->geracaoLista, j->url,
                                            sizeof j->url, j->servico,
-                                           sizeof j->servico, &j->pct);
+                                           sizeof j->servico, &j->pct) : 0;
+  debrid_contexto_sair();
   atomic_store_explicit(&j->estado, 2, memory_order_release);
   return NULL;
 }
@@ -1209,7 +1940,10 @@ static int iniciarTorrentJob(int indice, unsigned geracaoLista) {
     return 1;
   }
   j->indice = indice; j->geracaoLista = geracaoLista; j->sessao = torrentSessao;
+  j->sessaoPerfil = perfis_sessao_geracao();
   j->resultado = 0; j->pct = -1; j->url[0] = 0; j->servico[0] = 0;
+  memset(&j->debrid, 0, sizeof j->debrid);
+  debrid_contexto_capturar(&j->debrid);
   atomic_store_explicit(&j->estado, 1, memory_order_release);
   if (pthread_create(&fioTorrent, NULL, resolverTorrentEscolhido, j) != 0) {
     atomic_store_explicit(&j->estado, 0, memory_order_release);
@@ -1242,6 +1976,9 @@ static void pedirTorrentEscolhido(int indice) {
 // destroy rodam em fios proprios.
 static void vigiarMotorP2p(void) {
   int m;
+  // #334/#205: limite e destino do cache valem na proxima subida do motor.
+  p2pmotor_definir_limite_mb(ajustes_p2p_limite_mb());
+  p2pmotor_definir_usb(ajustes_p2p_usb());
   // Sem p2pmotor_disponivel() aqui: no .tpk ele abre a libnuvio_engine.so
   // (dlopen), e isso so deve acontecer quando alguem pede P2P. ativo() e
   // motivo_parada() so leem estado.
@@ -1260,9 +1997,22 @@ static void vigiarMotorP2p(void) {
     else if (m == P2P_ERR_DISCO)
       player_erro_fonte_motivo(i18n("Não foi possível medir o espaço livre da TV"),
           i18n("Sem essa medida o P2P não baixa nada. Abra Fontes para escolher outra opção."));
-    else
-      player_erro_fonte_motivo(i18n("O P2P encheu o espaço livre da TV"),
-          i18n("O vídeo parou para não lotar a TV. Escolha uma fonte menor."));
+    else {
+      // #334: dizer os numeros. Com janela o motor so para aqui quando
+      // o sistema de arquivos nao abre buraco (FAT/exFAT) e vale o teto duro;
+      // "escolha uma fonte menor" sem o tamanho nao explicava por que.
+      uint64_t tam = 0, teto = 0, livre = 0;
+      char corpo[300];
+      p2pmotor_arquivo_atual(&tam, &teto, &livre);
+      if (tam > 0 && teto > 0) {
+        snprintf(corpo, sizeof corpo,
+                 i18n("O vídeo tem %.1f GB e o P2P só pode guardar %.1f GB nesta TV (%.1f GB livres). Escolha uma fonte menor ou mude o limite em Ajustes > P2P."),
+                 (double)tam / 1073741824.0, (double)teto / 1073741824.0, (double)livre / 1073741824.0);
+        player_erro_fonte_motivo(i18n("O P2P encheu o espaço livre da TV"), corpo);
+      } else
+        player_erro_fonte_motivo(i18n("O P2P encheu o espaço livre da TV"),
+            i18n("O vídeo parou para não lotar a TV. Escolha uma fonte menor."));
+    }
   }
 }
 static void processarTorrentJob(void) {
@@ -1277,12 +2027,15 @@ static void processarTorrentJob(void) {
   // A resposta so vale para a MESMA escolha, na mesma lista, com o player
   // ainda esperando por ela: um episodio novo, outra fonte escolhida ou o
   // player fechado no meio fazem a resposta velha nao tocar nada.
-  valido = j->sessao == torrentSessao && player_aberto() && !player_quer_sair() &&
+  valido = perfis_sessao_atual(j->sessaoPerfil) && j->sessao == torrentSessao && player_aberto() && !player_quer_sair() &&
            stream_atual() == j->indice && stream_lista_geracao() == j->geracaoLista;
   if (valido) {
     if (j->resultado == 1 && j->url[0]) {
-      player_definir_fonte(j->url);
+      definirFonteVOD(j->url);
+      // Torrent resolution retains the exact manual file, with no failover.
+      if (!player_id_canal()[0]) fonteManualDesde = SDL_GetTicks();
     } else if (j->resultado == DEBRID_BAIXANDO) {
+      if (!fontefalha_ativa() && !player_id_canal()[0]) marcarFonteMorta(j->indice);
       char titulo[160];
       const char *serv = j->servico[0] ? j->servico : "debrid";
       if (j->pct >= 0)
@@ -1322,10 +2075,23 @@ static void processarTorrentJob(void) {
           player_erro_fonte_motivo(i18n("O P2P desta TV não iniciou"),
               i18n("Abra Fontes para escolher outra opção."));
           break;
-        case P2P_ERR_SEM_ESPACO:
-          player_erro_fonte_motivo(i18n("Falta espaço livre na TV para o P2P"),
-              i18n("O P2P precisa de 256 MB livres. Abra Fontes para escolher outra opção."));
+        case P2P_ERR_SEM_ESPACO: {
+          // #334: recusado antes de tocar porque nem a janela minima cabe:
+          // os numeros (o arquivo e maior que o teto). Sem tamanho = faltou
+          // o minimo de 256 MB ao subir.
+          uint64_t tam = 0, teto = 0, livre = 0;
+          char corpo[300];
+          p2pmotor_arquivo_atual(&tam, &teto, &livre);
+          if (tam > 0 && teto > 0 && tam > teto) {
+            snprintf(corpo, sizeof corpo,
+                     i18n("O vídeo tem %.1f GB e o P2P só pode guardar %.1f GB nesta TV (%.1f GB livres). Escolha uma fonte menor ou mude o limite em Ajustes > P2P."),
+                     (double)tam / 1073741824.0, (double)teto / 1073741824.0, (double)livre / 1073741824.0);
+            player_erro_fonte_motivo(i18n("Falta espaço livre na TV para o P2P"), corpo);
+          } else
+            player_erro_fonte_motivo(i18n("Falta espaço livre na TV para o P2P"),
+                i18n("O P2P precisa de 256 MB livres. Abra Fontes para escolher outra opção."));
           break;
+        }
         case P2P_ERR_DISCO:
           player_erro_fonte_motivo(i18n("Não foi possível medir o espaço livre da TV"),
               i18n("Sem essa medida o P2P não baixa nada. Abra Fontes para escolher outra opção."));
@@ -1340,8 +2106,9 @@ static void processarTorrentJob(void) {
       player_erro_fonte_motivo(i18n(debrid_sem_plano_frase(debrid_sem_plano())),
           i18n("Abra Fontes para escolher uma fonte direta."));
     } else if (j->resultado == 0) {
+      if (!player_id_canal()[0]) marcarFonteMorta(j->indice);
       player_erro_fonte_motivo(i18n("O serviço de debrid não abriu este torrent"),
-          i18n("Abra Fontes para escolher outra opção."));
+          i18n("O problema é do serviço de debrid, não do app. Abra Fontes e tente outra fonte."));
     } else {
       player_erro_fonte();
     }
@@ -1359,15 +2126,489 @@ static void processarTorrentJob(void) {
 // alguns links respondem HTTP 200 e o uMS fica em load sem erro. Se o
 // automatico caiu nesse caso, tira a candidata da fila e verifica a proxima;
 // escolha manual fica intacta.
+// A preparacao usa o mesmo seletor do Play. Quando ha failover, a sessao
+// inteira atravessa o worker e o cache: abrir nao reinicia vagas nem pares
+// tentados. O buffer nativo e opcional e pertence ao token deste alvo.
+static void preparoLimparCache(int cancelar) {
+#ifdef NV_ANDROID
+  if (cancelar && preparo.token) player_precarregar_cancelar(preparo.token);
+#else
+  (void)cancelar;
+#endif
+  fontefalha_sessao_liberar(preparo.falha);
+  memset(&preparo, 0, sizeof preparo);
+}
+static int preparoAtivo(void) {
+  return ajustes_fonte_preparar() || ajustes_fonte_precarregar();
+}
+static void preparoInvalidar(void) {
+  atomic_fetch_add_explicit(&preparoGeracao, 1, memory_order_acq_rel);
+  preparoLimparCache(1);
+  if (preparoEspera && aguardandoFonte == 2) aguardandoFonte = 1;
+  preparoEspera = preparoRodando = 0;
+  memset(&preparoUltimo, 0, sizeof preparoUltimo);
+}
+static int preparoBufferPronto(void) {
+#ifdef NV_ANDROID
+  return preparo.token && player_precarregar_estado(preparo.token) == 2;
+#else
+  return 0;
+#endif
+}
+static void preparoObservarBuffer(void) {
+#ifdef NV_ANDROID
+  if (preparo.tem && preparo.token && player_precarregar_estado(preparo.token) < 0) {
+    player_precarregar_cancelar(preparo.token); preparo.token = 0;
+    if (preparo.lista != stream_lista_geracao() || !preparoContextoAtual(&preparo.contexto)) return;
+    preparo.falhou = 1;
+    if (preparo.falha) fontefalha_marcar_aberta(preparo.falha);
+    else stream_automatico_excluir(preparo.idx);
+  }
+#endif
+}
+static int preparoVale(const char *alvo, int lembrada) {
+  preparoObservarBuffer();
+  if (!preparo.tem || !preparoAtivo() || ajustes_fonte_manual() ||
+      preparo.falhou || !preparoContextoAtual(&preparo.contexto)) return 0;
+  // Uma escolha esgotada tambem e um resultado: Play mostra o erro sem
+  // refazer os links que este mesmo snapshot acabou de recusar.
+  if (preparo.idx < 0 && preparo.falha)
+    return !strcmp(preparo.alvo, alvo) && preparo.lista == stream_lista_geracao() &&
+           preparo.lembrada == lembrada && stream_idade_ms() <= FA_LINK_VALE_MS &&
+           SDL_GetTicks() - preparo.quando <= FA_PREPARADA_VALE_MS;
+  FaPreparada p = { preparo.alvo, preparo.lista, preparo.lembrada, preparo.idx,
+                    SDL_GetTicks() - preparo.quando };
+  FaAgora a = { alvo, stream_lista_geracao(), lembrada, stream_n(),
+               stream_automatico_disponivel(preparo.idx), stream_idade_ms() };
+  return fa_preparada_vale_buffer(&p, &a, preparoBufferPronto(), preparo.linkRenovado);
+}
+// A sonda pode terminar com um trailer no video. Guarda a mesma fonte e
+// tenta SO o buffer quando esse video sair, sem refazer escolha ou orcamento.
+static void preparoBufferTentar(void) {
+#ifdef NV_ANDROID
+  char alvo[64];
+  if (!preparo.tem || preparo.idx < 0 || preparo.token || preparo.bufferTentou ||
+      !ajustes_fonte_precarregar() || ajustes_fonte_manual() || player_aberto() ||
+      player_mini_ativo() || player_retido() || video_ativo() || !detail_aberto() ||
+      detail_indice() != preparo.catalogo) return;
+  idDoAlvo(cat_item(detail_indice()), alvo, sizeof alvo);
+  if (!preparoVale(alvo, preparo.lembrada) ||
+      !nv_perfil_sessao_travar(preparo.contexto.sessaoPerfil)) return;
+  preparo.bufferTentou = 1;
+  unsigned token = player_precarregar_novo_token();
+  int criado = player_precarregar_fonte(preparo.catalogo, preparo.temporada,
+                                       preparo.episodio, preparo.idx, token);
+  nv_perfil_sessao_destravar();
+  // A criacao so enfileira legenda/JNI, sem HTTP ou espera de worker. Se o
+  // ator mudar ao sair, cancelar o token depois de liberar a trava do perfil.
+  if (!nv_perfil_sessao_atual(preparo.contexto.sessaoPerfil)) {
+    if (criado) player_precarregar_cancelar(token);
+    return;
+  }
+  if (criado) preparo.token = token;
+#endif
+}
+static int preparoEmCurso(const char *alvo, int lembrada) {
+  FonteJob *j = &fonteJob;
+  return preparoRodando && fioFonteVivo &&
+         nv_perfil_sessao_atual(j->sessaoPerfil) &&
+         (j->tipo == FJOB_PREPARO || j->tipo == FJOB_PREPARO_FALHA) &&
+         j->preparoRodada == atomic_load_explicit(&preparoGeracao, memory_order_acquire) &&
+         j->listaGeracao == stream_lista_geracao() && j->lembrada == lembrada &&
+         !strcmp(j->id, alvo) && preparoContextoAtual(&j->contexto);
+}
+static void preparoVigiar(void) {
+  const FontePreparoContexto *c = NULL;
+  const char *esperado = NULL;
+  unsigned lista = 0;
+  char alvo[64] = "";
+  if (preparoRodando && fioFonteVivo) {
+    c = &fonteJob.contexto; esperado = fonteJob.id; lista = fonteJob.listaGeracao;
+  } else if (preparo.tem) {
+    c = &preparo.contexto; esperado = preparo.alvo; lista = preparo.lista;
+  } else if (preparoUltimo.tem) {
+    c = &preparoUltimo.contexto; esperado = preparoUltimo.alvo; lista = preparoUltimo.lista;
+  }
+  if (!c) return;
+  if (preparoEspera && player_aberto() && !player_quer_sair()) alvoPlayer(alvo, sizeof alvo);
+  else if (detail_aberto() && !player_aberto() && !player_mini_ativo())
+    idDoAlvo(cat_item(detail_indice()), alvo, sizeof alvo);
+  if (!alvo[0] || strcmp(alvo, esperado) || lista != stream_lista_geracao() ||
+      !stream_lista_do_alvo(alvo) || !preparoAtivo() || ajustes_fonte_manual() ||
+      !preparoContextoAtual(c)) preparoInvalidar();
+}
+static void preparoGuardar(FonteJob *j) {
+  char alvo[64] = "";
+  if (preparoEspera && player_aberto() && !player_quer_sair()) alvoPlayer(alvo, sizeof alvo);
+  else if (detail_aberto() && !player_aberto() && !player_mini_ativo())
+    idDoAlvo(cat_item(detail_indice()), alvo, sizeof alvo);
+  if (!nv_perfil_sessao_atual(j->sessaoPerfil) ||
+      j->preparoRodada != atomic_load_explicit(&preparoGeracao, memory_order_acquire) ||
+      j->listaGeracao != stream_lista_geracao() || strcmp(alvo, j->id) ||
+      !stream_lista_do_alvo(j->id) || !preparoAtivo() || ajustes_fonte_manual() ||
+      !preparoContextoAtual(&j->contexto)) return;
+  if (j->resultado < 0 && !j->falha) { preparoLimparCache(1); return; }
+  if (j->url[0] && !stream_falha_aplicar_sessao(j->resultado, j->listaGeracao, j->servico, j->url,
+                                              j->sessaoPerfil)) return;
+  preparoLimparCache(1);
+  snprintf(preparo.alvo, sizeof preparo.alvo, "%s", j->id);
+  preparo.lista = j->listaGeracao; preparo.idx = j->resultado; preparo.lembrada = j->lembrada;
+  preparo.servico = j->servico; preparo.contexto = j->contexto;
+  preparo.catalogo = j->catalogo; preparo.temporada = j->temporada; preparo.episodio = j->episodio;
+  preparo.falha = j->falha; j->falha = NULL;
+  preparo.quando = SDL_GetTicks(); preparo.tem = 1;
+  const Stream *s = stream_item(preparo.idx);
+  preparo.linkRenovado = s && s->infoHash[0];
+  preparoBufferTentar();
+  printf("[fonte] preparada ao abrir: \"%s\" (%d)\n", s ? s->rotulo : "?", preparo.idx);
+  fflush(stdout);
+}
+// Consome antes de player_abrir: a adocao sobrevive ao video_parar daquela
+// abertura. A espera de MKV em curso conserva o seu prazo original; a ponte
+// nativa so transfere os bytes se eles estiverem prontos.
+static int preparoUsar(const char *alvoPlay, int lembrada, int *idx) {
+  if (!preparo.tem) return 0;
+  int vale = preparoVale(alvoPlay, lembrada);
+  if (preparo.falhou && preparoRodando) return 0;
+  int continuar = preparo.falhou && preparo.falha && preparoAtivo() && !ajustes_fonte_manual() &&
+                  !strcmp(preparo.alvo, alvoPlay) && preparo.lista == stream_lista_geracao() &&
+                  preparo.lembrada == lembrada && preparoContextoAtual(&preparo.contexto);
+  if (!vale && !continuar) { preparoInvalidar(); return 0; }
+  if (!nv_perfil_sessao_travar(preparo.contexto.sessaoPerfil)) { preparoInvalidar(); return 0; }
+  *idx = continuar ? -2 : preparo.idx;
+  if (preparo.falha) {
+    fontefalha_sessao_liberar(fonteFalha);
+    fonteFalha = preparo.falha; preparo.falha = NULL;
+    fonteFalhaLista = preparo.lista; fonteFalhaManual = -1;
+    fonteFalhaPos = -1.0; fonteFalhaEsperando = fonteFalhaN = 0;
+  }
+#ifdef NV_ANDROID
+  if (preparo.token) {
+    if (player_precarregar_estado(preparo.token) > 0) player_precarregar_adotar(preparo.token);
+    else player_precarregar_cancelar(preparo.token);
+  }
+#endif
+  preparo.token = 0;
+  preparoLimparCache(0);
+  atomic_fetch_add_explicit(&preparoGeracao, 1, memory_order_acq_rel);
+  preparoRodando = preparoEspera = 0;
+  memset(&preparoUltimo, 0, sizeof preparoUltimo);
+  nv_perfil_sessao_destravar();
+  return 1;
+}
+static void prepararAoAbrir(void) {
+  char alvo[64], base[24];
+  FontePreparoContexto contexto;
+  const CatItem *ci;
+  unsigned g;
+  int lembrada;
+  if (!preparoAtivo() || ajustes_fonte_manual() || player_aberto() || player_mini_ativo() ||
+      player_retido() || aguardandoFonte || !detail_aberto() || preparoRodando) return;
+  if (addons_estado() == ADD_BUSCANDO || stream_n() < 1 || stream_n_candidatas() < 1) return;
+  ci = cat_item(detail_indice());
+  if (!ci || !ci->imdb[0] || !nv_tipo_vod(ci->tipo)) return;
+  idDoAlvo(ci, alvo, sizeof alvo);
+  if (!stream_lista_do_alvo(alvo)) return;
+  g = stream_lista_geracao();
+  idBaseDoTitulo(base, sizeof base);
+  // Runs every frame on the detail page: pick (and log) once per list, title
+  // and preference change, not 60 times a second.
+  // The 1 s refresh follows verification marking a source dead in place.
+  { static char ultBase[24]; static unsigned ultG, ultRev; static Uint32 ultT;
+    static int ultN = -1, ultLembrada = -1;
+    if (ultN != stream_n() || ultG != g || ultRev != fontepref_revisao() || strcmp(ultBase, base) ||
+        SDL_GetTicks() - ultT > 1000) {
+      ultLembrada = base[0] ? fontepref_escolher(base) : -1;
+      ultN = stream_n(); ultG = g; ultRev = fontepref_revisao(); ultT = SDL_GetTicks();
+      snprintf(ultBase, sizeof ultBase, "%s", base);
+    }
+    lembrada = ultLembrada; }
+  preparoContexto(&contexto);
+  if (preparoVale(alvo, lembrada)) { preparoBufferTentar(); return; }
+  if (!preparo.falhou && preparoUltimo.tem && preparoUltimo.lista == g && !strcmp(preparoUltimo.alvo, alvo) &&
+      !memcmp(&preparoUltimo.contexto, &contexto, sizeof contexto) &&
+      SDL_GetTicks() - preparoUltimo.quando < FA_RENOVAR_INTERVALO_MS) return;
+  const Stream *s = preparo.tem ? stream_item(preparo.idx) : NULL;
+  int mesmoNativo = preparo.tem && !preparo.falhou && preparo.lista == g && preparo.lembrada == lembrada &&
+                    !strcmp(preparo.alvo, alvo) && preparoContextoAtual(&preparo.contexto) &&
+                    s && s->infoHash[0];
+  // URL assinada de addon nao ganha vida nova por uma sonda tardia. Busca
+  // real renova a lista; hash nativo renova somente a mesma rota cache-only.
+  if (!mesmoNativo && !(preparo.falhou && preparo.falha && s && s->infoHash[0]) &&
+      stream_idade_ms() > FA_LINK_VALE_MS) {
+    preparoInvalidar();
+    preparoUltimo.tem = 1; preparoUltimo.lista = g; preparoUltimo.quando = SDL_GetTicks();
+    preparoUltimo.contexto = contexto;
+    snprintf(preparoUltimo.alvo, sizeof preparoUltimo.alvo, "%s", alvo);
+    // LISTA VELHA NAO E MOTIVO PARA PERGUNTAR A TODOS OS ADDONS DE NOVO SOZINHO
+    // (PR #567): esta funcao roda a cada quadro com a pagina do titulo aberta
+    // e a folha de Fontes esvaziava e enchia de novo no meio da escolha. O
+    // Play renova a lista velha; "perguntar de novo" segue manual.
+    printf("[fonte] preparo: lista com %u s, nao renova sozinho (o Play renova)\n",
+           (unsigned)(stream_idade_ms() / 1000u));
+    return;
+  }
+  stream_preferir(lembrada); preparoLembradaRod = lembrada;
+  int tipo = fontefalha_ativa() ? FJOB_PREPARO_FALHA : FJOB_PREPARO;
+  if (iniciarFonteJob(tipo, g, alvo, 0) != 0) return;
+  preparoUltimo.tem = 1; preparoUltimo.lista = g; preparoUltimo.quando = SDL_GetTicks();
+  preparoUltimo.contexto = contexto;
+  snprintf(preparoUltimo.alvo, sizeof preparoUltimo.alvo, "%s", alvo);
+  preparoRodando = 1;
+  marco("fonte: preparando ao abrir o titulo");
+}
+// Next e uma intencao explicita (botao ou contagem que ja disparou). Enquanto
+// o worker independente termina, o episodio atual continua sendo o dono do
+// video/progresso; nunca resolve a mesma escolha outra vez no caminho frio.
+static struct { int tem, titulo, t, e, apontar; unsigned geracao; uint64_t sessaoPerfil; char atual[64], alvo[64]; } proximoIntento;
+// 1 quando a escolha em curso e a do Next com uma fonte tocando para seguir
+// (bingeGroup); *prov recebe o add-on dela.
+static int escolhaDoNext(const char *base, char *prov, unsigned tam) {
+  char alvo[64];
+  if (!buscaNextAlvo[0] || !base[0] || player_id_canal()[0]) return 0;
+  alvoPlayer(alvo, sizeof alvo);
+  return !strcmp(alvo, buscaNextAlvo) && fontepref_tocando_de(base, prov, tam, NULL, 0);
+}
+static void abrirProximoEpisodio(int t, int e, int apontar) {
+  uint64_t sessaoEntrada = nv_perfil_sessao_ler();
+  int titulo = player_indice();
+  char atual[64], alvo[64];
+  alvoPlayer(atual, sizeof atual);
+  if (!cat_id_stream(titulo, t, e, alvo, sizeof alvo) || !alvo[0]) {
+    player_episodio_pedido_liberar(); return;
+  }
+  uint64_t sessaoPerfil = proximoIntento.tem && !strcmp(proximoIntento.alvo, alvo)
+      ? proximoIntento.sessaoPerfil : sessaoEntrada;
+  ProximoPreparoResultado preparada = {0};
+  int pronta = proximopreparo_consumir(alvo, &preparada);
+  if (!nv_perfil_sessao_atual(sessaoPerfil) || (pronta && preparada.sessaoPerfil != sessaoPerfil)) {
+    proximopreparo_liberar_resultado(&preparada);
+    memset(&proximoIntento, 0, sizeof proximoIntento); proximopreparo_cancelar();
+    player_episodio_pedido_liberar();
+    return;
+  }
+  if (!pronta && proximopreparo_em_curso(alvo)) {
+    if (!proximoIntento.tem || strcmp(proximoIntento.alvo, alvo))
+      player_toast(i18n("Abrindo fonte"), 1500);
+    proximoIntento.tem = 1; proximoIntento.titulo = titulo;
+    proximoIntento.t = t; proximoIntento.e = e; proximoIntento.apontar = apontar;
+    proximoIntento.geracao = proximopreparo_geracao();
+    proximoIntento.sessaoPerfil = sessaoPerfil;
+    snprintf(proximoIntento.atual, sizeof proximoIntento.atual, "%s", atual);
+    snprintf(proximoIntento.alvo, sizeof proximoIntento.alvo, "%s", alvo);
+    return;
+  }
+  memset(&proximoIntento, 0, sizeof proximoIntento);
+  // A conta pode mudar num worker depois de consumir. So adotar os bytes
+  // sob o mesmo ator; nao segurar esta trava ao salvar/fechar o player.
+  if (!nv_perfil_sessao_travar(sessaoPerfil)) {
+    proximopreparo_liberar_resultado(&preparada); proximopreparo_cancelar();
+    player_episodio_pedido_liberar();
+    return;
+  }
+#ifdef NV_ANDROID
+  unsigned tokenAdotado = pronta ? preparada.token : 0;
+  if (pronta && preparada.token) {
+    player_precarregar_adotar(preparada.token); preparada.token = 0;
+  }
+#endif
+  nv_perfil_sessao_destravar();
+  // Consumir/adotar vem antes do encerramento: posplay_fechar e video_parar
+  // so podem cancelar os trabalhos que ainda pertencem ao episodio antigo.
+  diagnostico_cancelar_vazao();
+  player_encerrar();
+  limparFonteVOD();
+  if (!nv_perfil_sessao_atual(sessaoPerfil)) {
+#ifdef NV_ANDROID
+    if (tokenAdotado) player_precarregar_cancelar(tokenAdotado);
+#endif
+    proximopreparo_liberar_resultado(&preparada); proximopreparo_cancelar();
+    return;
+  }
+  player_abrir(titulo, NULL);
+  player_definir_episodio(t, e);
+  // Abrir/fechar nao seguram a trava de identidade. Conferir outra vez antes
+  // de publicar a lista e seu orcamento como uma unica transferencia curta.
+  if (!nv_perfil_sessao_travar(sessaoPerfil)) {
+#ifdef NV_ANDROID
+    if (tokenAdotado) player_precarregar_cancelar(tokenAdotado);
+#endif
+    proximopreparo_liberar_resultado(&preparada); proximopreparo_cancelar();
+    player_encerrar();
+    return;
+  }
+  // O caminho pronto dispensa addons_buscar, que normalmente atualiza este
+  // alvo. Os recuos futuros tambem devem capturar o episodio que abriu.
+  debrid_definir_episodio(t, e);
+  // A ordem conserva o progresso do episodio anterior e nao transfere seu
+  // percentual para o proximo. O painel precisa apontar o novo episodio.
+  if (apontar) cat_apontar_episodio(titulo, t, e);
+  if (pronta) {
+    unsigned listaAntes = stream_lista_geracao();
+    stream_definir_alvo(alvo);
+    stream_definir_lista_idade(preparada.fontes, preparada.n, preparada.idadeMs);
+    // O setter conserva a lista anterior se faltar memoria. Nunca transferir
+    // indices/politica do Next para aquela lista ou adotar seu buffer depois.
+    if (stream_lista_geracao() == listaAntes || stream_n() != preparada.n ||
+        !stream_lista_do_alvo(alvo)) {
+      // Nao repetir automaticamente os links ja cobrados do snapshot. A
+      // abertura falha sem fonte, e a lista antiga tambem sai da folha.
+      stream_definir_lista(NULL, 0);
+      aguardandoFonte = 0; fonteEscolhida = -1;
+      nv_perfil_sessao_destravar();
+#ifdef NV_ANDROID
+      if (tokenAdotado) player_precarregar_cancelar(tokenAdotado);
+#endif
+      proximopreparo_liberar_resultado(&preparada);
+      player_erro_fonte();
+      return;
+    }
+    fonteFalha = preparada.politica; preparada.politica = NULL;
+    fonteFalhaLista = stream_lista_geracao();
+    fonteFalhaManual = -1; fonteFalhaPos = -1.0;
+    fonteFalhaEsperando = fonteFalhaN = 0;
+    fontePedidoGeracao = novaGeracaoFonte(); limparFontePendente();
+    fonteEscolhida = preparada.indiceFonte; aguardandoFonte = 2;
+    if (fonteEscolhida == -2 && fonteFalha &&
+        pedirFonteJob(FJOB_FALHA, fontePedidoGeracao, NULL, 0) < 0) fonteEscolhida = -1;
+    nv_perfil_sessao_destravar();
+    const CatItem *ci = cat_item(titulo);
+    if (ci) addons_buscar_legendas(alvo, ci->tipo);
+    proximopreparo_liberar_resultado(&preparada);
+    marco("proximo episodio: fonte preparada");
+  } else {
+    nv_perfil_sessao_destravar();
+    marco("proximo episodio: buscando fontes");
+    snprintf(buscaNextAlvo, sizeof buscaNextAlvo, "%s", alvo);
+    buscarParaPlayer();
+    if (!tocarParteGuardada() && !(ajustes_link_reusar() && tocarFonteGuardada())) aguardandoFonte = 1;
+  }
+}
+static void proximoPreparoPasso(void) {
+  // O gesto novo tem prioridade sobre uma contagem ja entregue. O worker
+  // fica para o roteador consumir se for o mesmo Next, ou cancelar no Anterior.
+  if (player_transporte_pedido_pendente()) {
+    memset(&proximoIntento, 0, sizeof proximoIntento);
+    return;
+  }
+  char atual[64] = "";
+  if (player_aberto() && !player_quer_sair() && !player_id_canal()[0]) alvoPlayer(atual, sizeof atual);
+  proximopreparo_passo(atual);
+  if (!proximoIntento.tem) return;
+  if (!atual[0] || strcmp(atual, proximoIntento.atual) || player_indice() != proximoIntento.titulo ||
+      proximoIntento.geracao != proximopreparo_geracao() ||
+      !nv_perfil_sessao_atual(proximoIntento.sessaoPerfil)) {
+    memset(&proximoIntento, 0, sizeof proximoIntento); proximopreparo_cancelar();
+    player_episodio_pedido_liberar();
+  } else if (!proximopreparo_em_curso(proximoIntento.alvo))
+    abrirProximoEpisodio(proximoIntento.t, proximoIntento.e, proximoIntento.apontar);
+}
+// AQUECER CONEXOES (aquecer.h). Sem efeito no .wgt (o navegador cuida das dele).
+// Na pagina do titulo: a API do debrid; quando a lista de fontes chega ou cresce:
+// o host de cada uma das primeiras. Nunca resolve link nem cria arquivo.
+static void aquecerAoAbrirTitulo(void) {
+#ifndef __EMSCRIPTEN__
+  const char *api[4];
+  int n;
+  if (!ajustes_fonte_aquecer()) return;
+  n = debrid_origens(api, 4);
+  if (n > 0) aquecer_pedir(api, n);
+#endif
+}
+static void aquecerQuandoChegarem(void) {
+#ifndef __EMSCRIPTEN__
+  static int visto = -1;
+  int sn;
+  if (!detail_aberto() || player_aberto() || aguardandoFonte || !ajustes_fonte_aquecer()) { visto = -1; return; }
+  sn = stream_n();
+  if (sn == visto) return;
+  visto = sn;
+  if (sn > 0) {
+    char u[6][256];
+    const char *p[6];
+    int k, q = stream_urls_para_aquecer(u, 6);
+    for (k = 0; k < q; k++) p[k] = u[k];
+    if (q > 0) aquecer_pedir(p, q);
+  }
+#endif
+}
+// TOCAR ENQUANTO CONFERE. O fio que confere publica a primeira candidata da
+// fila (streams.c); aqui ela entra no player na hora, SEM esperar o veredito.
+// Mesmo estado de uma fonte automatica aberta (fonteVODAutomatica, a contagem
+// de tentativas e o relogio dos 15 s sem sinal), so que aguardandoFonte fica em
+// 2 ate o veredito: e ele que impede o resto do app de trocar a fonte por baixo.
+static void abrirAntecipada(int i) {
+  const Stream *s = stream_item(i);
+  if (!s || !s->url[0]) return;
+  antPreAuto = fonteVODAutomatica; antPreTent = fonteVODTentativas; antPreDesde = fonteVODDesde;
+  antAberta = i;
+  printf("[fonte] tocando enquanto confere: \"%s\" (%d)\n", s->rotulo, i);
+  fflush(stdout);
+  marco("fonte: tocando enquanto confere");
+  stream_definir_atual(i);
+  video_definir_dv(s->dolbyVision);
+  video_definir_cabecalhos(s->cabecalhos);
+  video_definir_mp4(stream_e_mp4(s));
+  definirFonteVOD(s->url);
+  fonteVODAutomatica = 1;
+  fonteVODTentativas++;
+  fonteVODDesde = SDL_GetTicks();
+  player_definir_tentativa(fonteVODTentativas, VOD_FONTE_MAX_TENTATIVAS);
+}
+// A candidata aberta nao serve (veredito, erro do player ou outra escolhida):
+// o player volta a "abrindo fonte" e a conta volta ao que era. A fila segue.
+static void desfazerAntecipada(const char *porque) {
+  if (antAberta < 0) return;
+  printf("[fonte] aberta antes do veredito e descartada: %s (%d)\n", porque, antAberta);
+  fflush(stdout);
+  antAberta = -1;
+  if (player_aberto()) player_voltar_a_esperar();
+  fonteVODAutomatica = antPreAuto; fonteVODTentativas = antPreTent; fonteVODDesde = antPreDesde;
+  player_definir_tentativa(antPreTent, antPreTent ? VOD_FONTE_MAX_TENTATIVAS : 0);
+}
+static void vigiarAntecipada(void) {
+  int est = FA_NADA, i;
+  if (fonteFalha) return;
+  if (aguardandoFonte != 2 || fonteEscolhida != -2 || player_id_canal()[0] ||
+      !player_aberto() || player_quer_sair()) {
+    if (antAberta >= 0 && aguardandoFonte != 2) antAberta = -1;
+    return;
+  }
+  i = stream_antecipada(&est);
+  switch (fa_acao(antAberta, i, est, video_falhou() || player_fonte_falhou())) {
+    case FA_ACAO_ABRIR: abrirAntecipada(i); break;
+    case FA_ACAO_DESFAZER_VEREDITO: desfazerAntecipada("a conferencia reprovou"); break;
+    case FA_ACAO_DESFAZER_PLAYER:
+      printf("[fonte] erro do player antes do veredito: %s\n", video_erro_texto());
+#ifdef NV_ANDROID
+      stream_automatico_erro_decoder(antAberta, video_erro_decoder_codigo(), 0);
+#endif
+      fa_player_falhou(antAberta);
+      marcarFonteMorta(antAberta);
+      stream_automatico_excluir_irmas(antAberta);
+      desfazerAntecipada("o player errou primeiro");
+      break;
+    default: break;
+  }
+}
 // Pede a verificacao da proxima candidata automatica, com a sessao do player
 // aberta. 0 quando nem deu para pedir (ja mostrou o erro).
-static int pedirProximaFonteVOD(void) {
+static int pedirProximaFonteVOD(int depoisDe) {
   unsigned geracao = novaGeracaoFonte();
+  juntos_preferir_reserva();
   aguardandoFonte = 2;
   fontePedidoGeracao = geracao;
   fonteEscolhida = -2;
   limparFontePendente();
-  if (pedirFonteJob(FJOB_ADDON, geracao, NULL, 0) < 0) {
+  if (fonteFalha) {
+    fonteFalhaEsperando = 0;
+    if (pedirFonteJob(FJOB_FALHA, geracao, NULL, 0) >= 0) return 1;
+    aguardandoFonte = 0; limparFonteVOD(); player_erro_fonte(); return 0;
+  }
+  fonteDepoisDe = depoisDe;
+  fonteRestantes = VOD_FONTE_MAX_TENTATIVAS - fonteVODTentativas;
+  if (fonteRestantes < 1) fonteRestantes = 1;
+  if (pedirFonteJob(FJOB_PROXIMA_VOD, geracao, NULL, 0) < 0) {
     aguardandoFonte = 0;
     limparFonteVOD();
     player_erro_fonte();
@@ -1375,37 +2616,740 @@ static int pedirProximaFonteVOD(void) {
   }
   return 1;
 }
+// O titulo tocando desmente a marca, mesmo depois de o vigia vencer.
+// A duracao real desta sessao rejeita clipes de aviso e o trailer do detalhe.
+// Clipe de aviso (duracao conhecida e curta) tambem anda, mas nao e o titulo.
+static void registrarFonteVODTocando(void) {
+  double d = video_duracao();
+  if (player_quer_sair() || video_falhou() || !fonteProvouTocar() || provaLimpa ||
+      (d > 1.0 && d < 120.0)) return;
+  provaLimpa = 1;
+  stream_vod_tocou(stream_atual());
+}
+
+// SONDA DEPOIS DA RECUSA DO PLAYER (#364, fontesonda.h). O player nativo
+// recusou a URL no preparo (erro de conexao): repete o pedido pelo nosso
+// cliente, FORA do fio de quadro, e escreve uma linha so, sem caminho nem query.
+// Uma vez por URL.
+typedef struct { char url[4096]; char cab[512]; } SondaRecusa;
+static void *sondarRecusaFio(void *u) {
+  SondaRecusa *p = u;
+  const char *vetor[8];
+  char *l, *ctx = NULL, fim[4096], mime[96], linha[400];
+  int nc = 0, http = 0, ok;
+  long corpo = -1;
+  Uint32 t0 = SDL_GetTicks();
+  fim[0] = 0; mime[0] = 0;
+  for (l = strtok_r(p->cab, "\n", &ctx); l && nc < 7; l = strtok_r(NULL, "\n", &ctx)) vetor[nc++] = l;
+  vetor[nc] = NULL;
+  ok = rede_url_final_tipo(p->url, 6, nc ? vetor : NULL, fim, sizeof fim, &http,
+                           mime, sizeof mime, &corpo);
+  // O pedido nao conta os saltos: 1 = "houve ao menos um" quando o destino mudou.
+  fontesonda_linha(linha, sizeof linha, ok && fim[0] ? fim : p->url, http,
+                   ok && fim[0] && strcmp(fim, p->url) ? 1 : 0, mime,
+                   (unsigned)(SDL_GetTicks() - t0));
+  printf("%s\n", linha);
+  fflush(stdout);
+  free(p);
+  return NULL;
+}
+static void sondarAposRecusa(void) {
+#ifndef __EMSCRIPTEN__
+  static char ultima[4096];
+  const char *url = video_url_atual();
+  const Stream *s;
+  SondaRecusa *p;
+  pthread_t t;
+  if (!url || !*url || xtream_url_limitada(url) || !fontesonda_erro_conexao(video_erro_texto())) return;
+  if (!strcmp(url, ultima)) return;
+  snprintf(ultima, sizeof ultima, "%s", url);
+  s = stream_atual() >= 0 ? stream_item(stream_atual()) : NULL;
+  p = calloc(1, sizeof *p);
+  if (!p) return;
+  snprintf(p->url, sizeof p->url, "%s", url);
+  if (s) snprintf(p->cab, sizeof p->cab, "%s", s->cabecalhos);
+  if (pthread_create(&t, NULL, sondarRecusaFio, p) == 0) pthread_detach(t);
+  else free(p);
+#endif
+}
+// ---------------------------------------------------------------- partes
+// UM ARQUIVO DE DENTRO DA FONTE, E O FILME EM PARTES (partes.h).
+//
+// Tres caminhos chegam aqui, e os tres pedem o link do CDN ao TorBox num fio
+// (partes_link_pedir) com o player em "abrindo fonte":
+//   - escolha em "Arquivos desta fonte" (segurar OK na folha): abrirParte;
+//   - fim de uma parte com a seguinte na sessao: o link sai 60 s antes do fim
+//     e a troca acontece no fim do fluxo;
+//   - Retomar com um ponto guardado (tocarParteGuardada): a mesma parte, no
+//     mesmo ponto. Falhou? A escolha normal assume, com a busca de fundo.
+// A fonte escolhida a mao que nao abre mostra o cartao de erro e NAO marca o
+// link do addon como morto: o arquivo e outro.
+enum { PF_NADA = 0, PF_LINK, PF_RETOMAR, PF_ABRINDO, PF_TOCANDO };
+static int parteFase;
+static int parteRetomada;           // o arquivo aberto veio do ponto guardado
+static double partePos = -1;        // onde abrir dentro do arquivo (-1 = do inicio)
+static Uint32 parteDesde, parteGuardouEm;
+static char parteUrl[4096];
+static int parteMp4, parteRenovou;   // .mp4; links novos pedidos depois de tocar
+static PartesLista parteArqLista;    // o item do arquivo tocando (sessao ou nao)
+static int parteArqK = -1;
+// A FONTE QUE TOCA E UMA PARTE? Arquivo bem mais curto que o titulo (o aviso
+// de duracao, player_parece_parte): pergunta ao TorBox pelos outros arquivos
+// do item, uma vez por link. Com 2 partes ou mais, a sessao liga sem reabrir
+// nada (o link do addon continua tocando) e a parte seguinte entra no fim.
+static char parteAutoUrl[4096];
+static int parteAutoEsperando;
+static int parteProx = -1, parteProxFase;   // 0 nada, 1 pedido, 2 pronto, 3 falhou, 4 ultima tentativa
+static Uint32 parteProxDesde;
+static char parteProxUrl[4096];
+
+static void parteAviso(int k) {
+  const PartesLista *l = partes_sessao_lista();
+  char t[64];
+  if (!l || partes_numero(l, k) <= 0) return;
+  snprintf(t, sizeof t, i18n("Parte %d de %d"), partes_numero(l, k), partes_principais(l));
+  player_toast_ex(t, 3500, "aj_film", 0);
+}
+static int nomeMp4(const char *nome) {
+  size_t L = nome ? strlen(nome) : 0;
+  return L > 4 && (!strcasecmp(nome + L - 4, ".mp4") || !strcasecmp(nome + L - 4, ".m4v"));
+}
+static void parteZerar(void) {
+  parteFase = PF_NADA; parteRetomada = 0; partePos = -1; parteRenovou = 0; parteArqK = -1;
+  parteUrl[0] = 0; parteProx = -1; parteProxFase = 0; parteProxUrl[0] = 0;
+  partes_link_cancelar();
+  partes_arquivo_limpar();
+}
+// Entrega o link ao player: sempre sem o ponto do catalogo (ele e o do FILME
+// inteiro, partes_virtual), com o ponto DENTRO do arquivo quando ha.
+static void parteTocar(const char *url, double pos) {
+  player_do_inicio();
+  if (pos > 1.0) player_definir_retomada_fonte(pos);
+  snprintf(parteUrl, sizeof parteUrl, "%s", url);
+  video_definir_cabecalhos("");
+  video_definir_mp4(parteMp4);
+  definirFonteVOD(url);
+#ifdef NV_TPK
+  video_tpk_cdn_arquivo(url, parteArqLista.usenet, parteArqLista.item,
+                        parteArqK >= 0 && parteArqK < parteArqLista.n ? parteArqLista.arq[parteArqK].id : -1);
+#endif
+  parteFase = PF_ABRINDO; parteDesde = SDL_GetTicks(); parteGuardouEm = 0;
+  parteProx = -1; parteProxFase = 0; parteProxUrl[0] = 0;
+  // O arquivo que toca: a saida do player guarda o ponto dele (partes.h).
+  if (parteArqK >= 0 && parteArqK < parteArqLista.n) {
+    char a[64];
+    alvoPlayer(a, sizeof a);
+    partes_arquivo_definir(a, parteArqLista.usenet, parteArqLista.item, parteArqLista.arq[parteArqK].id);
+  }
+}
+static void abrirParte(int fonte, const PartesLista *l, int k) {
+  const Stream *s = stream_item(fonte);
+  Stream escolhida;
+  char alvo[64];
+  int titulo, t = 0, e = 0, serie;
+  PartesPonto pt;
+  if (!s || !l || k < 0 || k >= l->n) return;
+  escolhida = *s; s = &escolhida;
+  aguardandoFonte = 0;
+  limparFonteVOD();
+  titulo = player_aberto() ? player_indice() : detail_indice();
+  { const CatItem *ci = cat_item(titulo); serie = ci && !strcmp(ci->tipo, "series"); }
+  // Fecha ANTES de zerar: a saida grava o ponto do arquivo que tocava.
+  if (player_aberto()) { player_episodio_atual(&t, &e); player_encerrar(); }
+  else detail_ep_foco(&t, &e);
+  parteZerar();
+  consumirFolhaTocar(&t, &e);
+  if (serie) {
+    const ParteArq *a = &l->arq[k];
+    if (a->episodio > 0 && a->tipo != PARTE_EXTRA) {
+      if (a->temporada > 0 || a->temporadaZero || a->tipo == PARTE_ESPECIAL) t = a->temporada;
+      e = a->episodio;
+    } else if (k != l->atual || a->tipo != PARTE_EP) t = e = -1;
+  }
+  diagnostico_cancelar_vazao();
+  player_abrir(titulo, NULL);
+  player_definir_episodio(t, e);
+  stream_definir_atual(fonte);
+  voltaFonte = escolhida;
+  torrentSessao++;
+  p2pmotor_cancelar();
+  p2pmotor_parar_fundo();
+  video_definir_dv(s->dolbyVision);
+  alvoPlayer(alvo, sizeof alvo);
+  // O MESMO ARQUIVO do ponto guardado continua de onde parou; outro comeca.
+  if (partes_ponto_pegar(alvo, sessao_usuario(), perfis_ativo(), &pt) &&
+      pt.item == l->item && pt.usenet == l->usenet && pt.arquivo == l->arq[k].id)
+    partePos = pt.pos;
+  // SERIE: o pacote da temporada tem os episodios como "partes", mas episodio
+  // seguinte e o Next de sempre. Num episodio o arquivo escolhido (um OVA, um
+  // especial) toca sozinho, sem sessao de partes.
+  if (serie) partes_sessao_parar("series episode: the file plays alone");
+  else partes_sessao_iniciar(alvo, l, k);
+  // Outro arquivo que o do ponto guardado: o ponto antigo nao vale mais.
+  if (partePos < 0) partes_ponto_esquecer(alvo, sessao_usuario(), perfis_ativo());
+  if (!partes_lista_copiar(&parteArqLista, l)) { parteZerar(); return; }
+  parteArqK = k;
+  parteMp4 = nomeMp4(l->arq[k].nome);
+  // O prazo de 30 s do link conta DAQUI. Sem isto ele contava de um relogio
+  // velho e, minutos depois da primeira abertura, toda escolha "vencia" no
+  // primeiro quadro (log da TV, 16/10: "no link from TorBox in 30 s" na hora,
+  // e o link chegando 1 s depois).
+  parteDesde = SDL_GetTicks();
+  parteFase = PF_LINK;
+  partes_link_pedir(l->usenet, l->item, l->arq[k].id, 0);
+  marco("abrir: arquivo da fonte (partes)");
+  printf("[partes] playing file %d of %d from source #%d (%s, %s)%s\n", k + 1, l->n, fonte,
+         l->arq[k].extra ? "extra" : "part", l->usenet ? "usenet" : "torrent",
+         partePos > 1 ? ", from the saved point" : "");
+  fflush(stdout);
+}
+// RETOMAR NA PARTE GUARDADA. 1 = assumiu a abertura (o link vem num fio).
+static int tocarParteGuardada(void) {
+  PartesPonto p;
+  char alvo[64];
+  if (ajustes_fonte_manual() || !partes_disponivel() || player_id_canal()[0] || !player_aberto()) return 0;
+  alvoPlayer(alvo, sizeof alvo);
+  if (!alvo[0] || !partes_ponto_pegar(alvo, sessao_usuario(), perfis_ativo(), &p)) return 0;
+  // "Do inicio" (ou o ponto do catalogo ja zerado): o filme comeca na parte 1
+  // pela escolha normal, e o ponto da parte nao vale mais.
+  if (player_sem_retomada()) {
+    partes_ponto_esquecer(alvo, sessao_usuario(), perfis_ativo());
+    return 0;
+  }
+  if (debrid_tb_disponivel() <= 0) return 0;
+  parteZerar();
+  limparFonteVOD();
+  stream_definir_atual(-1);
+  parteFase = PF_RETOMAR; parteRetomada = 1; partePos = p.pos; parteDesde = SDL_GetTicks();
+  partes_link_pedir(p.usenet, p.item, p.arquivo, 1);
+  marco("abrir: parte guardada, sem busca");
+  printf("[partes] resume: opening the saved part at %.0f s\n", p.pos);
+  fflush(stdout);
+  return 1;
+}
+// Nao deu na parte guardada: a escolha normal assume, com a busca de fundo
+// que ja saiu (renovarListaDoPlayer / buscarParaPlayer antes daqui).
+static void parteRecuar(const char *porque) {
+  char alvo[64];
+  alvoPlayer(alvo, sizeof alvo);
+  printf("[partes] resume falls back to the normal pick: %s\n", porque);
+  fflush(stdout);
+  partes_ponto_esquecer(alvo, sessao_usuario(), perfis_ativo());
+  partes_sessao_parar(porque);
+  parteZerar();
+  player_voltar_a_esperar();
+  limparFonteVOD();
+  aguardandoFonte = 1;
+}
+static void parteFalhou(const char *porque) {
+  printf("[partes] the file did not open: %s\n", porque);
+  fflush(stdout);
+  if (parteRetomada) { parteRecuar(porque); return; }
+  partes_sessao_parar("file did not open");
+  parteZerar();
+  if (!player_fonte_falhou()) player_erro_fonte_motivo(i18n("Não foi possível abrir este arquivo"), NULL);
+}
+static void vigiarPartes(void) {
+  char alvo[64];
+  static char url[4096];
+  static PartesLista l;   // ~13 KB: fora da pilha, como as listas de partes.c
+  int r;
+  if (parteFase == PF_NADA) {
+    // Sessao sem player (saiu) ou de outro alvo (outro titulo/episodio).
+    if (partes_sessao_lista()) {
+      if (!player_aberto()) partes_sessao_parar("player closed");
+      else { alvoPlayer(alvo, sizeof alvo); if (!partes_sessao_de(alvo)) partes_sessao_parar("another title"); }
+    }
+    if (!partes_disponivel() || !player_aberto() || player_quer_sair() || player_id_canal()[0]) {
+      parteAutoEsperando = 0;
+      return;
+    }
+    { const Stream *fs = stream_atual() >= 0 ? stream_item(stream_atual()) : NULL;
+      const CatItem *ci = cat_item(player_indice());
+      int et = 0, ee = 0;
+      player_episodio_atual(&et, &ee);
+      if (!parteAutoEsperando && fs && ci && !strcmp(ci->tipo, "movie") && !(et > 0 && ee > 0) && player_parece_parte() && video_pronto() && !video_falhou() &&
+          video_duracao() >= 600.0 &&
+          video_url_atual()[0] && strcmp(parteAutoUrl, video_url_atual()) &&
+          (!strncmp(fs->url, "http", 4) || fs->infoHash[0]) && debrid_tb_disponivel() > 0) {
+        snprintf(parteAutoUrl, sizeof parteAutoUrl, "%s", video_url_atual());
+        parteAutoEsperando = 1;
+        printf("[partes] the playing file is much shorter than the title: asking TorBox for the other parts\n");
+        fflush(stdout);
+        { const CatItem *ci = cat_item(player_indice());
+          partes_pedir(fs, ci ? ci->titulo : ""); }
+      }
+      if (parteAutoEsperando) {
+        int e = partes_resultado_de(fs, &l);
+        if (e == PARTES_BUSCANDO || e == PARTES_ADICIONANDO) return;
+        parteAutoEsperando = 0;
+        // So com o arquivo que toca achado de verdade (nunca a "melhor copia").
+        if (e != PARTES_PRONTO || !fs || strcmp(parteAutoUrl, video_url_atual()) || video_falhou() ||
+            l.atual < 0 || l.arq[l.atual].extra || partes_principais(&l) < 2 || !strcmp(l.como, "best match")) return;
+        alvoPlayer(alvo, sizeof alvo);
+        partes_sessao_iniciar(alvo, &l, l.atual);
+        if (!partes_sessao_de(alvo)) return;
+        player_confirmar_partes();
+        if (!partes_lista_copiar(&parteArqLista, &l)) { parteFalhou("file list allocation failed"); return; }
+        parteArqK = l.atual; parteMp4 = nomeMp4(l.arq[l.atual].nome);
+        partes_arquivo_definir(alvo, l.usenet, l.item, l.arq[l.atual].id);
+        snprintf(parteUrl, sizeof parteUrl, "%s", video_url_atual());
+        parteFase = PF_TOCANDO; parteGuardouEm = 0; parteRenovou = 0;
+        parteProx = -1; parteProxFase = 0; parteProxUrl[0] = 0;
+        // Confirmed multipart identity has canceled the duration warning.
+        if (!player_aviso_duracao_ativo()) {
+          char t[128];
+          snprintf(t, sizeof t, i18n("Esta fonte tem %d partes: elas tocam em sequência"), partes_principais(&l));
+          player_toast_ex(t, 6000, "aj_film", 0);
+        }
+      } }
+    return;
+  }
+  if (!player_aberto() || player_quer_sair() || player_id_canal()[0]) {
+    partes_sessao_parar("player closed");
+    parteZerar();
+    return;
+  }
+  if (parteFase == PF_LINK || parteFase == PF_RETOMAR) {
+    r = partes_link_estado(url, sizeof url, &l);
+    if (r == 0) {
+      if (SDL_GetTicks() - parteDesde > 30000u) {
+        if (parteFase == PF_RETOMAR) parteRecuar("no link from TorBox in 30 s");
+        else parteFalhou("no link from TorBox in 30 s");
+      }
+      return;
+    }
+    if (r != 1) {
+      if (parteFase == PF_RETOMAR) parteRecuar("TorBox gave no link");
+      else parteFalhou("TorBox gave no link");
+      return;
+    }
+    if (parteFase == PF_RETOMAR) {
+      int rt = 0, re = 0;
+      const CatItem *ci = cat_item(player_indice());
+      alvoPlayer(alvo, sizeof alvo);
+      if (l.atual < 0) { parteRecuar("the saved file is gone"); return; }
+      // Episodio: o arquivo toca sozinho, como na escolha (abrirParte).
+      player_episodio_atual(&rt, &re);
+      if (!(ci && !strcmp(ci->tipo, "series")) && !(rt > 0 && re > 0))
+        partes_sessao_iniciar(alvo, &l, l.atual);
+      if (!partes_lista_copiar(&parteArqLista, &l)) { parteRecuar("file list allocation failed"); return; }
+      parteArqK = l.atual;
+      parteMp4 = nomeMp4(l.arq[l.atual].nome);
+    }
+    parteTocar(url, partePos);
+    { int k = partes_sessao_indice(); if (k >= 0) parteAviso(k); }
+    return;
+  }
+  if (parteFase == PF_ABRINDO) {
+    if (video_pronto() && video_pos() > 0.25 && !video_falhou()) {
+      parteFase = PF_TOCANDO;
+      printf("[partes] the file plays (%u ms)\n", (unsigned)(SDL_GetTicks() - parteDesde));
+      fflush(stdout);
+      return;
+    }
+    // O falhou do video anterior fica ate o video novo abrir: so vale o deste link.
+    if ((video_ativo() && video_falhou() && !strcmp(video_url_atual(), parteUrl)) || player_fonte_falhou())
+      parteFalhou(video_erro_texto()[0] ? video_erro_texto() : "player error");
+    else if (SDL_GetTicks() - parteDesde > 45000u)
+      parteFalhou("no picture in 45 s");
+    return;
+  }
+  // LINK DO CDN VENCIDO (pausa longa, ou horas de filme): o link do TorBox nao
+  // se renova seguindo o mesmo endereco, como o do addon. Erro depois de ter
+  // tocado = pede um link novo do MESMO arquivo e reabre no ponto. Duas vezes
+  // por arquivo; depois, o cartao de erro de sempre.
+  if (video_ativo() && video_falhou() && !strcmp(video_url_atual(), parteUrl) && parteArqK >= 0 &&
+      parteArqK < parteArqLista.n) {
+    if (parteRenovou >= 2) { parteFalhou(video_erro_texto()[0] ? video_erro_texto() : "player error"); return; }
+    parteRenovou++;
+    partePos = video_pos();
+    printf("[partes] the player failed after playing (%s): asking TorBox for a fresh link, reopening at %.0f s\n",
+           video_erro_texto()[0] ? video_erro_texto() : "player error", partePos);
+    fflush(stdout);
+    { int ren = parteRenovou; double pos = partePos;
+      player_voltar_a_esperar();
+      parteFase = PF_LINK; parteDesde = SDL_GetTicks();
+      partePos = pos; parteRenovou = ren;
+      partes_link_pedir(parteArqLista.usenet, parteArqLista.item, parteArqLista.arq[parteArqK].id, 0); }
+    return;
+  }
+  // O player passou a tocar OUTRO link (o automatico pulou a fonte, outro
+  // caminho reabriu): a sessao era daquele arquivo.
+  if (video_url_atual()[0] && strcmp(video_url_atual(), parteUrl)) {
+    partes_sessao_parar("the player plays another link");
+    parteZerar();
+    return;
+  }
+  alvoPlayer(alvo, sizeof alvo);
+  // O ponto para o Retomar, a cada 60 s tocando, de QUALQUER arquivo aberto
+  // pela lista (episodio solto tambem); a saida grava o ultimo.
+  { PartesPonto pt;
+    double pos = video_pos();
+    if (video_pronto() && pos > 1 && SDL_GetTicks() - parteGuardouEm > 60000u &&
+        partes_arquivo_de(alvo, &pt)) {
+      pt.pos = pos;
+      partes_ponto_guardar(alvo, sessao_usuario(), perfis_ativo(), &pt);
+      parteGuardouEm = SDL_GetTicks();
+    } }
+  // Daqui para baixo, so com sessao de partes.
+  if (!partes_sessao_de(alvo)) return;
+  {
+    const PartesLista *sl = partes_sessao_lista();
+    int k = partes_sessao_indice(), prox = partes_seguinte(sl, k);
+    double d = video_duracao(), pos = video_pos();
+    if (prox < 0) return;   // ultima parte: o fim e o do filme
+    if (parteProx != prox) { parteProx = prox; parteProxFase = 0; parteProxUrl[0] = 0; }
+    // O link da seguinte sai 60 s antes do fim, para a troca nao esperar rede.
+    if (parteProxFase == 0 && d > 120 && pos > d - 60) {
+      partes_link_pedir(sl->usenet, sl->item, sl->arq[prox].id, 0);
+      parteProxFase = 1; parteProxDesde = SDL_GetTicks();
+    }
+    if (parteProxFase == 1 || parteProxFase == 4) {
+      r = partes_link_estado(parteProxUrl, sizeof parteProxUrl, NULL);
+      if (r == 1) parteProxFase = 2;
+      else if (r == -1 || r == -2) {
+        if (parteProxFase == 4) { parteFalhou("no link for the next part"); return; }
+        parteProxFase = 3;
+      }
+    }
+    // Fim de verdade: o fluxo acabou PERTO do fim do arquivo. Um fim de fluxo
+    // no meio e queda de rede, que a reconexao do video cuida.
+    if (!video_terminou() || (d > 120 && pos < d - 90)) return;
+    if (parteProxFase == 0 || parteProxFase == 3) {
+      // Fim sem o link (fluxo curto, ou o pedido falhou): pede agora, uma vez.
+      if (parteProxFase == 3) {
+        printf("[partes] next part: the early link failed, asking again\n");
+        fflush(stdout);
+      }
+      partes_link_pedir(sl->usenet, sl->item, sl->arq[prox].id, 0);
+      parteProxFase = 4; parteProxDesde = SDL_GetTicks();
+      return;
+    }
+    if (parteProxFase == 1 || parteProxFase == 4) {
+      if (SDL_GetTicks() - parteProxDesde > 30000u) {
+        parteProxFase = 0;
+        parteFalhou("no link for the next part");
+      }
+      return;
+    }
+    // parteProxFase == 2: troca para a parte seguinte.
+    printf("[partes] part %d ended: playing part %d of %d\n", partes_numero(sl, k),
+           partes_numero(sl, prox), partes_principais(sl));
+    fflush(stdout);
+    { char u[4096];
+      PartesPonto pt = { sl->usenet, sl->item, sl->arq[prox].id, 0 };
+      snprintf(u, sizeof u, "%s", parteProxUrl);
+      partes_sessao_ir(prox);
+      partes_ponto_guardar(alvo, sessao_usuario(), perfis_ativo(), &pt);
+      parteRetomada = 0; parteRenovou = 0;
+      parteArqK = prox; parteMp4 = nomeMp4(sl->arq[prox].nome);
+      player_voltar_a_esperar();
+      parteTocar(u, -1);
+      parteAviso(prox); }
+  }
+}
 // ESCOLHA MANUAL QUE NAO ABRE: prazo ate o primeiro quadro (fontevolta.h).
 // Vence -> o erro de fonte do player, com "A fonte nao respondeu" e as saidas
 // de sempre. O automatico ja tem o proprio prazo (tentarProximaFonteVOD).
 static void vigiarAberturaManual(void) {
   FontevoltaSinais g;
   Uint32 desde;
+  registrarFonteVODTocando();
   if (!fonteManualDesde) return;
   if (!player_aberto() || player_quer_sair() || player_id_canal()[0] ||
-      fonteVODAutomatica || aguardandoFonte != 0 || player_fonte_falhou() || video_pronto()) {
+      fonteVODAutomatica || aguardandoFonte != 0) {
+    fonteManualDesde = 0; return;
+  }
+  // Progresso encerra a abertura mesmo sem duracao.
+  if (fonteProvouTocar() || (!video_falhou() && video_pronto() && video_pos() > 0.25)) {
     fonteManualDesde = 0; return;
   }
   desde = SDL_GetTicks() - fonteManualDesde;
   memset(&g, 0, sizeof g);
   g.falhou = video_falhou() || player_fonte_falhou();
-  g.pronto = video_pronto();
+  g.pronto = video_pronto() && video_pos() > 0.25;
   g.carregando = player_carregando();
+#ifdef NV_ANDROID
+  g.quadro = video_quadro_visto();
+#endif
   g.desdeMs = desde;
   // Erro do player no preparo (Media3 2004 etc., video_android.c): sem isto a
   // tela ficava em "Abrindo fonte" ate o prazo, ou para sempre.
-  if (video_falhou()) {
-    printf("[fonte] escolha manual: erro do player em %u ms (%s)\n", (unsigned)desde, video_erro_texto());
+  if (g.falhou) {
+    fontesonda_recusa(video_url_atual(), video_erro_texto(), 0);
     fflush(stdout);
+    sondarAposRecusa();
     fonteManualDesde = 0;
-    player_erro_fonte_motivo(i18n("Não foi possível abrir a fonte"), NULL);
+    marcarFonteMorta(stream_atual());
+    if (!player_fonte_falhou()) player_erro_fonte();   // the cause comes from the player error
     return;
   }
-  if (!fontevolta_abertura_vencida(&g, FONTE_MANUAL_PRAZO_MS)) return;
+  if (!fontevolta_abertura_vencida(&g, FONTE_MANUAL_PRAZO_MS) &&
+      !(desde > FONTE_MANUAL_PRAZO_MS && !g.pronto)) return;
   printf("[fonte] escolha manual nao abriu em %u ms: erro de fonte\n", (unsigned)desde);
   fflush(stdout);
   fonteManualDesde = 0;
+  marcarFonteMorta(stream_atual());
   player_erro_fonte_motivo(i18n("A fonte não respondeu a tempo."), NULL);
+}
+// PRAZO DE ABERTURA (#202, inicio.h): 15 s sem nenhum sinal de vida, 30 s com
+// dado chegando — e o curto so quando a proxima candidata nao e pior que esta
+// (nunca baixar a qualidade por pressa; sem proxima, 30 s).
+static int aberturaVencida(Uint32 desde) {
+  static int chaveAt = -1, chaveN = -1, chaveT = -1, semPerda;
+  InicioAbertura g;
+  int at;
+  if (!player_carregando() || desde <= INICIO_ABRE_SEM_SINAL_MS || video_fonte_tocou()) return 0;
+  // O CAMINHO DO DV ABRINDO nao e fonte muda: o nosso demux abre o arquivo de
+  // novo (22,8 s numa fonte lenta da C9, 08/10) e tem o recuo proprio (fonte
+  // lenta ou que nao abre volta ao player da TV, video_dv_recuo_consumir).
+  if (video_dv_ativo()) return 0;
+  at = stream_atual();
+  if (at != chaveAt || stream_n() != chaveN || fonteVODTentativas != chaveT) {
+    chaveAt = at; chaveN = stream_n(); chaveT = fonteVODTentativas;
+    semPerda = (fonteFalha || fonteVODTentativas < VOD_FONTE_MAX_TENTATIVAS) && stream_proxima_sem_perda(at);
+  }
+  memset(&g, 0, sizeof g);
+  g.desdeMs = desde;
+  g.proximaSemPerda = semPerda;
+  g.dadoChegando = video_pronto() || video_buffer_fim() > 0.5;
+  { const Stream *s = stream_item(at);
+    g.pesado = s && (s->badges & (badges_bit("r-4k") | badges_bit("v-dv"))); }
+#ifdef NV_ANDROID
+  g.quadro = video_quadro_visto();
+#endif
+#if defined(NV_ANDROID) || defined(NV_TPK)
+  // Trilhas do player ja provam resposta antes do primeiro quadro (DV na TCL).
+  g.dadoChegando |= video_n_audio() > 0 || video_n_legenda() > 0;
+#endif
+  if (!inicio_abre_vencida(&g)) return 0;
+  printf("[fonte] sem sinal de abertura em %u ms (prazo %u ms%s)\n", (unsigned)desde,
+         inicio_abre_prazo_ms(&g), semPerda ? ", proxima nao e pior" : "");
+  fflush(stdout);
+  return 1;
+}
+// A EXPLICACAO DA ESPERA NA ILHA (#202, inicio.h). Por quadro enquanto o cartao
+// "Abrindo fonte" esta de pe: o que a abertura esta esperando, em palavras, para
+// a pessoa mudar "Espera pelos add-ons" / "Escolha da fonte" se quiser. So
+// texto e a dica OK > Ajustes: nunca segura nem decide nada.
+// (strcasestr e extensao GNU que a toolchain da webOS nao declara.)
+static int contemSemCaixa(const char *h, const char *n) {
+  size_t ln = strlen(n);
+  for (; *h; h++) if (!strncasecmp(h, n, ln)) return 1;
+  return 0;
+}
+static int fonteViaDebrid(const Stream *s) {
+  char u[160];
+  if (!s) return 0;
+  if (s->infoHash[0]) return 1;
+  snprintf(u, sizeof u, "%s", s->url);
+  return contemSemCaixa(u, "debrid") || contemSemCaixa(u, "torbox") ||
+         contemSemCaixa(u, "premiumize") || contemSemCaixa(u, "/resolve/");
+}
+static void atualizarMotivoInicio(void) {
+  static int ultMotivo = -1;
+  static char ultTxt[112];
+  InicioSinais sn;
+  AddonsInicioInfo ai;
+  char txt[112];
+  const Stream *st = NULL;
+  int m;
+  txt[0] = 0;
+  if (!player_aberto() || player_id_canal()[0] || !player_carregando() || player_quer_sair()) {
+    if (ultTxt[0]) { ultTxt[0] = 0; ultMotivo = -1; player_definir_motivo_inicio(""); }
+    return;
+  }
+  memset(&sn, 0, sizeof sn);
+  memset(&ai, 0, sizeof ai);
+  // Com a candidata ja aberta antes do veredito (antAberta) a espera e de ABRIR:
+  // a conferencia corre por tras e nao e o que a pessoa esta esperando.
+  sn.fase = aguardandoFonte == 1 ? INI_FASE_BUSCA
+          : aguardandoFonte == 2 && antAberta < 0 ? INI_FASE_VERIFICA : INI_FASE_ABRE;
+  sn.desdeMs = sn.fase == INI_FASE_ABRE && fonteVODDesde ? SDL_GetTicks() - fonteVODDesde
+                                                          : player_aberto_ha_ms();
+  sn.tentativa = fonteVODAutomatica ? fonteVODTentativas : 1;
+  if (sn.fase == INI_FASE_BUSCA) {
+    addons_inicio_info(&ai);
+    sn.pendentes = ai.pendentes; sn.pendenteMudo = ai.pendenteMudo; sn.semResposta = ai.semResposta;
+    sn.fontesChegaram = stream_n() > 0;
+  } else if (sn.fase == INI_FASE_ABRE) {
+    st = stream_item(stream_atual());
+    sn.viaDebrid = fonteViaDebrid(st);
+  }
+  m = inicio_motivo(&sn);
+  switch (m) {
+    case INI_ESPERA_UM:
+      snprintf(txt, sizeof txt, i18n("Esperando %s (lento)"), ai.pendente); break;
+    case INI_ESPERA_MUDO:
+      snprintf(txt, sizeof txt, i18n("%s não respondeu da última vez"), ai.pendente); break;
+    case INI_ESPERA_VARIOS:
+      snprintf(txt, sizeof txt, i18n("Esperando %d add-ons"), sn.pendentes); break;
+    case INI_NAO_RESPONDEU:
+      snprintf(txt, sizeof txt, i18n("%s não respondeu"), ai.semRespostaNome); break;
+    case INI_VERIFICANDO:
+      snprintf(txt, sizeof txt, "%s", i18n("Verificando a fonte…")); break;
+    case INI_FALLBACK:
+      snprintf(txt, sizeof txt, "%s", i18n("Fonte falhou, tentando a próxima")); break;
+    case INI_ABRINDO_DEBRID: {
+      char q[16];
+      if (st && st->altura >= 2160) snprintf(q, sizeof q, "4K");
+      else if (st && st->altura > 0) snprintf(q, sizeof q, "%dp", st->altura);
+      else q[0] = 0;
+      if (q[0]) snprintf(txt, sizeof txt, i18n("Abrindo %s pelo debrid…"), q);
+      else snprintf(txt, sizeof txt, "%s", i18n("Abrindo pelo debrid…"));
+      break; }
+    default: break;
+  }
+  player_definir_motivo_inicio(txt);
+  // O que a ilha disse vai para o log uma vez por mudanca: e como se prova, num
+  // registro, o que a pessoa viu esperando.
+  if (m != ultMotivo || strcmp(txt, ultTxt)) {
+    ultMotivo = m;
+    snprintf(ultTxt, sizeof ultTxt, "%s", txt);
+    if (txt[0]) { printf("[fonte] ilha: %s (%u ms)\n", txt, (unsigned)sn.desdeMs); fflush(stdout); }
+  }
+}
+// A FONTE DO AUTOMATICO TOCOU: vira a preferencia do titulo quando nao ha
+// escolha a mao em vigor (fontepref.h, a memoria do automatico). So depois de
+// o video estar pronto e andando — uma fonte que foi escolhida e falhou na
+// conferencia, ou que o player nao abriu, nunca chega aqui. Serie apenas
+// (filme: "Reusar o ultimo link"). Uma vez por fonte/lista.
+static void lembrarAutomatica(void) {
+  static int ultAtual = -1;
+  static unsigned ultGer;
+  int t = 0, e = 0, at;
+  if (!fonteVODAutomatica || player_id_canal()[0] || !player_aberto() || player_quer_sair() ||
+      aguardandoFonte != 0 || !video_pronto() || video_pos() < 3.0 ||
+      video_falhou() || player_fonte_falhou()) return;
+  at = stream_atual();
+  if (at < 0 || (at == ultAtual && stream_lista_geracao() == ultGer)) return;
+  player_episodio_atual(&t, &e);
+  if (t < 0 || e <= 0) return;
+  ultAtual = at; ultGer = stream_lista_geracao();
+  { char base[24];
+    idBaseDoTitulo(base, sizeof base);
+    if (base[0]) fontepref_auto_guardar(base, stream_item(at)); }
+}
+// O BINGEGROUP DA FONTE QUE TOCA, para a faixa de audio exata (audiomemoria.h):
+// copiado aqui, no fio do app, a cada troca de fonte ou de lista. A escolha do
+// audio no Android roda no fio do Kotlin e nao pode ler a lista de fontes.
+static void bingeDaFonteAtual(void) {
+  static int ultAtual = -2;
+  static unsigned ultGer;
+  int at = stream_atual();
+  const Stream *s;
+  if (at == ultAtual && stream_lista_geracao() == ultGer) return;
+  ultAtual = at; ultGer = stream_lista_geracao();
+  s = at >= 0 ? stream_item(at) : NULL;
+  audioesc_fonte_binge(s ? s->bingeGroup : "");
+}
+
+// A FONTE QUE ESTA TOCANDO, para o Next (fontepref.h, dono 16/10, como o
+// Nuvio): qualquer fonte de episodio — do automatico, a mao, ou o link
+// reusado — depois de pronta e andando 3 s. So na RAM.
+static void lembrarTocando(void) {
+  static const Stream *ultS;
+  static unsigned ultGer;
+  static char ultAlvo[64];
+  char alvo[64], base[24];
+  const Stream *s;
+  int t = 0, e = 0;
+  if (player_id_canal()[0] || !player_aberto() || player_quer_sair() || aguardandoFonte != 0 ||
+      !video_pronto() || video_pos() < 3.0 || video_falhou() || player_fonte_falhou()) return;
+  s = stream_item(stream_atual());
+  if (!s && voltaFonte.url[0]) s = &voltaFonte;
+  if (!s) return;
+  alvoPlayer(alvo, sizeof alvo);
+  if (s == ultS && stream_lista_geracao() == ultGer && !strcmp(alvo, ultAlvo)) return;
+  player_episodio_atual(&t, &e);
+  if (t < 0 || e <= 0) return;
+  ultS = s; ultGer = stream_lista_geracao();
+  snprintf(ultAlvo, sizeof ultAlvo, "%s", alvo);
+  idBaseDoTitulo(base, sizeof base);
+  if (base[0]) fontepref_tocando(base, s);
+}
+static void guardarPosicaoFonteFalha(void) {
+  // Keep the last valid position for both manual and automatic VOD. A
+  // reopening backend may temporarily report zero, so skip recovery frames.
+  if (player_aberto() && !player_quer_sair() && !player_id_canal()[0] &&
+      aguardandoFonte == 0 && video_pronto() && !video_reconectando() &&
+      !video_falhou() && !player_fonte_falhou()) {
+    double pos = video_pos();
+    if (pos >= 0.0 && isfinite(pos)) fonteFalhaPos = pos;
+  }
+}
+// One fresh addon query per interrupted VOD; silent workers have a deadline.
+static void renovarVodInterrompido(void) {
+  if (vodRenovandoDesde) {
+    if ((Sint32)(SDL_GetTicks() - vodRenovandoDesde) >= 30000) {
+      novaGeracaoFonte(); limparFontePendente();
+      vodRenovandoDesde = 0; aguardandoFonte = 0;
+      player_erro_fonte_motivo(i18n("A fonte não respondeu a tempo."), NULL);
+    }
+    return;
+  }
+  if (vodRenovou && video_pronto() && !video_falhou() &&
+      video_pos() >= vodRenovarPos + 10.0) vodRenovou = 0;
+  if (vodRenovou || fonteFalhaPos <= 0.0 || !video_falhou() ||
+      !player_aberto() || player_quer_sair() || player_id_canal()[0] ||
+      aguardandoFonte || player_fonte_falhou()) return;
+  int causa = fontesonda_causa(video_erro_texto(), NULL);
+  if (causa != FS_CAUSA_REDE && causa != FS_CAUSA_HTTP) return;
+  char alvo[64]; alvoPlayer(alvo, sizeof alvo);
+  fonteDepoisDe = stream_atual();
+  if (fonteDepoisDe < 0 || !alvo[0] ||
+      partes_sessao_lista() || parteFase != PF_NADA) return;
+  vodRenovou = 1; vodRenovarPos = fonteFalhaPos;
+#ifdef NV_ANDROID
+  // Android retains the exact failure point through failed reopens.
+  if (video_pos() > 0.0) vodRenovarPos = video_pos();
+#endif
+  unsigned geracao = novaGeracaoFonte();
+  vodRenovandoDesde = SDL_GetTicks() | 1u;
+  aguardandoFonte = 2; fontePedidoGeracao = geracao; fonteEscolhida = -2;
+  limparFontePendente();
+  player_voltar_a_esperar();
+  player_toast(i18n("Conexão caiu, reconectando…"), 3000);
+  if (pedirFonteJob(FJOB_RENOVAR_VOD, geracao, alvo, 0) < 0) {
+    vodRenovandoDesde = 0; aguardandoFonte = 0;
+    player_erro_fonte();
+  }
+}
+static void recarregarFonteVOD(void) {
+  uint64_t sessaoPerfil = nv_perfil_sessao_ler();
+  if (!player_aberto() || player_quer_sair() || player_id_canal()[0] ||
+      aguardandoFonte != 0 || !nv_perfil_sessao_atual(sessaoPerfil)) return;
+  // Reabrir o pipeline pode chamar firmware; nao segurar a trava do perfil.
+  int aceita = video_recarregar();
+  if (!nv_perfil_sessao_atual(sessaoPerfil)) return;
+  if (!aceita) { player_toast(i18n("Indisponível agora"), 2000); return; }
+  // A mesma fonte ganha prazo para reabrir, sem recomecar seu orcamento,
+  // refazer a escolha ou marcar o episodio como concluido.
+  Uint32 agora = SDL_GetTicks() | 1u;
+  if (fonteVODAutomatica) fonteVODDesde = agora;
+  else fonteManualDesde = agora;
+}
+// #415: ao lado das texturas saem tambem os buffers que tex_aliviar nao ve —
+// colheita/legenda do mkvass (parar grava o sidecar parcial e nao bloqueia) e
+// a grade de linhas rasterizadas. O texto se refaz sob demanda no quadro.
+static void aliviarMemoria(void) {
+  tex_aliviar();
+  mkvass_parar();
+  txt_aliviar();
+  assrender_aliviar();
+  memlog_devolver();
+}
+static void abrirFonteManualDireta(const Stream *s) {
+  novaGeracaoFonte(); limparFontePendente();
+  aguardandoFonte = 0; preparoEspera = 0;
+  limparFonteVOD();
+  video_definir_dv(s->dolbyVision);
+  video_definir_cabecalhos(s->cabecalhos);
+  video_definir_mp4(stream_e_mp4(s));
+  definirFonteVOD(s->url);
+  fonteManualDesde = SDL_GetTicks();
+  if (!fonteManualDesde) fonteManualDesde = 1;
 }
 static void tentarProximaFonteVOD(void) {
   Uint32 desde;
@@ -1416,29 +3360,120 @@ static void tentarProximaFonteVOD(void) {
   // (video_reconexao.h). So vira troca de fonte quando ela desistir (falhou).
   if (video_reconectando()) return;
   desde = SDL_GetTicks() - fonteVODDesde;
-  if (video_falhou() || player_fonte_falhou()) motivo = 1;
-  else if (player_carregando() && desde > VOD_FONTE_PRAZO_MS) motivo = 2;
-  else if (video_bufferando_ms() > VOD_FONTE_BUFFER_MS) motivo = 3;
+  const char *err = video_erro_texto();
+  if (xtream_url_limitada(video_url_atual()) && err &&
+      (strstr(err, "403") || strstr(err, "458") || strstr(err, "509"))) {
+    fonteVODAutomatica = 0;
+    player_erro_fonte();
+    video_parar();
+    return;
+  }
+  if (video_falhou() || player_fonte_falhou()) {
+    fontesonda_recusa(video_url_atual(), err, 0);
+    motivo = 1; sondarAposRecusa();
+  }
+  // Reloading a source that already played (Dolby Vision path handing back
+  // to the TV player, track switch) is not a source that never opened: on
+  // the C9 the 30 s deadline, counted from the first open, swapped a playing
+  // film to another source and lost the position.
+  else if (aberturaVencida(desde)) motivo = 2;
+  else if (!fonteFalha && video_bufferando_ms() > VOD_FONTE_BUFFER_MS) {
+#ifdef NV_ANDROID
+    // Segura a troca so enquanto o fim do buffer ANDA (bufavanco.h), por fonte.
+    // Para VOD no Android, a borda vem de VideoStats.bufferSeg.
+    { static BufAvanco av; VideoStats vs;
+      video_estatisticas(&vs);
+      if (bufavanco_segura(&av, fonteVODDesde, video_bufferando_ms(), SDL_GetTicks(),
+                           bufavanco_borda(video_pos(), vs.bufferSeg))) return;
+    }
+#endif
+    motivo = 3;
+  }
+#ifdef NV_ANDROID
+  // Playback StreamFit: this source cannot keep up while playing (slow
+  // download vs declared bitrate, or rebuffers). Same path as the stall, but
+  // only with a next candidate: a slow film keeps playing, never an error.
+  else if (video_rede_lenta() &&
+           (fonteFalha ? stream_falha_tem_proxima(fonteFalha, fonteFalhaLista)
+                       : fonteVODTentativas < VOD_FONTE_MAX_TENTATIVAS &&
+                         stream_proxima_vod(stream_atual()) >= 0)) motivo = 4;
+#endif
   if (!motivo) return;
+  // #415 (LG G4, webOS 9): erro 600 com 4K tocando, 92 MB livres, e o app
+  // reabria a fonte no mesmo instante — o webOS o fechou por memoria. Antes de
+  // outro pipeline, solta o que der; ainda abaixo do piso, mostra o erro.
+  if (motivo == 1 && !memlog_pode_reabrir(memlog_livre_mb, aliviarMemoria)) {
+    printf("[mem] fonte falhou com %ld MB livres: sem nova tentativa\n", memlog_livre_mb());
+    fflush(stdout);
+    fonteVODAutomatica = 0;
+    player_erro_fonte();
+    return;
+  }
 
   atual = stream_atual();
-  if (atual >= 0) stream_automatico_excluir(atual);
-  // Erro do PLAYER (nao prazo nem buffer): as irmas desta fonte saem junto,
-  // senao as vagas que sobram vao todas para links que falham igual.
-  if (atual >= 0 && motivo == 1) {
+  if (fonteFalha) {
+#ifdef NV_ANDROID
+    if (atual >= 0 && motivo == 1)
+      stream_automatico_erro_decoder(atual, video_erro_decoder_codigo(), 0);
+#endif
+    // O backend pode zerar a posicao ao desistir de reconectar. A amostra do
+    // ultimo quadro valido fica na sessao, antes de parar o pipeline.
+    guardarPosicaoFonteFalha();
+    if (fonteFalhaPos >= 0.0) player_definir_retomada_fonte(fonteFalhaPos);
+    player_voltar_a_esperar();
+    if (pedirProximaFonteVOD(atual)) {
+      player_toast(i18n("Fonte falhou, tentando a próxima"), 3000);
+      player_definir_tentativa(fontefalha_tentativas(fonteFalha) + 1, fontefalha_teto(fonteFalha));
+      printf("[fonte] failover: fonte %d falhou (motivo=%d); verificando rota seguinte\n", atual, motivo);
+    }
+    return;
+  }
+  // A post-open player failure is not a dead URL. Retry this candidate once
+  // without consuming another selection slot, then keep sibling links eligible.
+  int abriu = video_fonte_tocou() || fonteVODRetentou;
+#ifdef NV_ANDROID
+  abriu |= video_quadro_visto();
+#endif
+  if (atual >= 0 && motivo == 1 && abriu && !fonteVODRetentou) {
+    const Stream *s = stream_item(atual);
+    if (s && s->url[0]) {
+      double pos = video_pos();
+      fonteVODRetentou = 1;
+      if (pos >= 0.0 && isfinite(pos)) player_definir_retomada_fonte(pos);
+      player_voltar_a_esperar();
+      player_definir_fonte(s->url);
+      fonteVODDesde = SDL_GetTicks();
+      return;
+    }
+  }
+  guardarPosicaoFonteFalha();
+  if (fonteFalhaPos >= 0.0) player_definir_retomada_fonte(fonteFalhaPos);
+  if (atual >= 0) {
+    if (abriu) stream_automatico_excluir(atual);
+    else marcarFonteMorta(atual);
+  }
+  if (atual >= 0 && motivo == 1 && !abriu) {
+#ifdef NV_ANDROID
+    stream_automatico_erro_decoder(atual, video_erro_decoder_codigo(), 0);
+#endif
     int k = stream_automatico_excluir_irmas(atual);
     if (k) printf("[fonte] automatico VOD pulou %d link(s) irmao(s) de %d\n", k, atual);
   }
   if (fonteVODTentativas >= VOD_FONTE_MAX_TENTATIVAS ||
-      stream_automatico() < 0) {
+      stream_proxima_vod(atual) < 0) {
     printf("[fonte] automatico VOD sem proxima candidata (motivo=%d, %d de %d)\n",
            motivo, fonteVODTentativas, VOD_FONTE_MAX_TENTATIVAS);
     fonteVODAutomatica = 0;
-    if (motivo == 2) player_erro_fonte_motivo(i18n("A fonte não respondeu a tempo."), NULL);
+    // Stall / slow answer: point at the speed test before the user reports buffering.
+    if (motivo == 2 || motivo == 3)
+      player_erro_fonte_motivo(i18n(motivo == 2 ? "A fonte não respondeu a tempo." : "A fonte respondeu, mas não entregou dados suficientes."),
+          i18n("Confira Ajustes > Esta TV > Teste de velocidade e veja se o arquivo é menor que o tamanho recomendado antes de relatar um problema de travamento."));
     else player_erro_fonte();
     return;
   }
-  if (!pedirProximaFonteVOD()) return;
+  player_voltar_a_esperar();
+  if (!pedirProximaFonteVOD(atual)) return;
+  player_toast(i18n("Fonte falhou, tentando a próxima"), 3000);
   player_definir_tentativa(fonteVODTentativas + 1, VOD_FONTE_MAX_TENTATIVAS);
   printf("[fonte] automatico VOD descartou %d; verificando proxima (%d/%d)\n",
          atual, fonteVODTentativas + 1, VOD_FONTE_MAX_TENTATIVAS);
@@ -1454,9 +3489,19 @@ static void tentarProximaFonteVOD(void) {
 // aguardandoFonte=1 manda a escolha para stream_primeira_boa, como o
 // Reproduzir do detalhe — sem folha de fontes no meio, que para um canal ao
 // vivo so atrapalharia o zapear.
+// ULTIMO CANAL (recall, M7): o canal que estava no ar antes do atual. Guardado
+// em toda troca de canal; o "0" e o botao do OSD voltam a ele (e trocam de lugar).
+static char ultCanalId[80], ultCanalNome[140], ultCanalBase[600];
+static char atualCanalBase[600];
 static void tocarCanal(const CatItem *it) {
   int ni;
   if (!it || !it->imdb[0]) return;
+  if (player_aberto() && player_id_canal()[0] && strcmp(player_id_canal(), it->imdb)) {
+    snprintf(ultCanalId, sizeof ultCanalId, "%s", player_id_canal());
+    snprintf(ultCanalNome, sizeof ultCanalNome, "%s", player_titulo_canal());
+    snprintf(ultCanalBase, sizeof ultCanalBase, "%s", atualCanalBase);
+  }
+  snprintf(atualCanalBase, sizeof atualCanalBase, "%s", guia_canal_origem());
   ni = cat_indice_por_imdb(it->imdb);
   if (ni < 0) ni = cat_acrescentar(it);
   if (ni < 0) return;
@@ -1470,15 +3515,16 @@ static void tocarCanal(const CatItem *it) {
   novaGeracaoFonte();        // invalida qualquer resolver do canal anterior
   limparFontePendente();
   canalFonteIdx = -1;             // canal novo: watchdog arma de novo no fim da busca
+  canalViaProxy = 0;
   stalkerTentativas = 0;          // canal novo: o teto de renovacao recomeca
   stalkerRenovando = 0;            // resposta de renovacao antiga sera descartada
   // Canal de portal nao esta em addon nenhum: perguntar seria esperar o prazo
   // de todos eles para receber lista vazia, com a pessoa olhando "carregando".
-  if (!stalker_e_id(it->imdb) && !xtream_e_id(it->imdb)) {
+  if (!stalker_e_id(it->imdb) && !xtream_e_id(it->imdb) && !guia_e_m3u(it->imdb) && !m3u_e_id(it->imdb)) {
     // So o addon que publicou o canal responde por ele; ver alvoBase em
     // addons.c e o que o FrostView fora do ar custava.
     addons_definir_origem(guia_canal_origem());
-    addons_buscar(it->imdb, "tv");
+    addons_buscar(it->imdb, guia_canal_tipo());
     addons_definir_origem(NULL);
   }
   aguardandoFonte = 1;
@@ -1499,6 +3545,7 @@ static void tocarCanal(const CatItem *it) {
 // sem rede (cwfrente.h) — a home so remonta a fileira, sem refazer o resto.
 static void cwRetidoSincronizar(void) {
   char antes[64];
+  cw_retido_tambem_definir(ajustes_cw_retido_tambem());
   snprintf(antes, sizeof antes, "%s", cw_retido());
   if (!cw_retido_definir(cw_retido_escolher(ajustes_relogio_ligado(), ilhacart_vivo_imdb(),
                                             home_retomar_imdb())))
@@ -1514,6 +3561,7 @@ static void guiaComCanalNoAr(void) {
   float x, y, w, h;
   snprintf(id, sizeof id, "%s", player_id_canal());
   guia_preview_rect(&x, &y, &w, &h);
+  // Moving the current stream opens no connection, even on limited accounts.
   if (player_mini_ativo()) player_mini_no_guia(x, y, w, h);
   else player_minimizar_para_guia(x, y, w, h);
   if (tela != TELA_GUIA || !guia_aberta()) {
@@ -1553,25 +3601,132 @@ static void salvoParaConta(const CatItem *ci, int salvo) {
     contapend_chutar();
 }
 
+// Finish under the outgoing identity. Selection advances the session epoch
+// immediately afterwards; old jobs may finish but cannot update the new UI.
+static void perfilEncerrarSessao(void) {
+  // End input capture before resetting the Home it belongs to. Hit targets
+  // from the outgoing frame cannot activate under the destination profile.
+  ponteiro_abrir_sessao();
+  ctx_abrir_sessao();
+  estatvivo_fechar();
+  celb_fechar();
+  preparoInvalidar();
+  proximopreparo_cancelar();
+  memset(&proximoIntento, 0, sizeof proximoIntento);
+  if (player_mini_ativo()) player_fechar_mini();
+  if (player_aberto() || player_retido()) player_encerrar();
+  player_descartar_retido();
+  fontevolta_esquecer("nova sessao de perfil");
+  trailer_fechar();
+  p2pmotor_cancelar();
+  novaGeracaoFonte();
+  fa_nova_rodada();
+  limparFontePendente();
+  limparFonteVOD();
+  aguardandoFonte = autoEsperaN = 0;
+  fonteEscolhida = -1;
+  torrentSessao++;
+  torrentPendente = -1;
+  canalFonteIdx = -1;
+  canalFonteDesde = 0;
+  canalViaProxy = stalkerTentativas = stalkerRenovando = 0;
+  memset(&liveStall, 0, sizeof liveStall);
+  abrirTeste[0] = 0;
+  cwTocarT = cwTocarE = cwEspera = 0;
+  cwEsperaDesde = 0;
+  memset(&cwEsperaItem, 0, sizeof cwEsperaItem);
+  prefFolhaN = -1;
+  if (detail_aberto()) detail_fechar_seco();
+  stream_definir_lista(NULL, 0);
+  if (vertudo_aberta()) vertudo_fechar_seco();
+  spot_fechar();
+  spainel_fechar();
+  central_fechar();
+  ilha_modal_fechar(1);
+  invalidarPerfil();
+  ilhasalvar_abrir_sessao();
+  ilhaacao_abrir_sessao();
+  agendaviso_abrir_sessao();
+  ilha_abrir_sessao();
+}
+
+static void perfilAbrirSessao(int antes) {
+  uint64_t sessao = perfis_sessao_geracao();
+  // All hooks reset live state or reload profile-owned files. They neither
+  // reload artwork nor wait for the old profile's network requests.
+  addons_abrir_sessao();
+  trakt_abrir_sessao();
+  simkl_abrir_sessao();
+  traktauth_trocar_perfil(perfis_ativo());
+  simklauth_trocar_perfil(perfis_ativo());
+  col_esquecer_perfil();
+  // #488: a troca espera o ciclo da conta antes de montar a Home nova.
+  if (antes > 0 && antes != perfis_ativo()) desc_esperar_conta();
+  sync_abrir_sessao(antes);
+  cat_cache_substituido();
+  cat_ler_cache(perfilDirArte);
+  debrid_abrir_sessao(perfis_sessao_geracao());
+  ajustes_provedores_abrir_sessao();
+  trocarSalvosDePerfil();
+  lst_abrir_sessao();
+  agenda_iniciar();
+  atividade_iniciar();
+  recomenda_abrir_sessao();
+  biblioteca_abrir_sessao();
+  guia_abrir_sessao();
+  avisos_abrir_sessao();
+  home_abrir_sessao();
+  menu_definir_destino(MENU_INICIO);
+  saiuPorEsquerda = 0;
+  ilhasinais_perfil_trocado();
+  enquete_perfil_trocado();
+  juntos_perfil_trocado();
+  perfilSessaoAplicada = sessao;
+}
+
 int app_iniciar(const char *dirArte) {
+  // #415: MemAvailable abaixo do piso -> despeja texturas, mkvass, texto,
+  // libass e heap; sem isto o aviso so rodava malloc_trim.
+  memlog_quando_aviso(aliviarMemoria);
+  legenda2_vincular_atraso(ajustes_leg2_atraso(), ajustes_leg2_definir_atraso);
+  // A faixa de audio escolhida a mao fica gravada por perfil (audiomemoria.h).
+  audioesc_definir_memoria(audiomem_ler, audiomem_gravar);
+  perfis_ao_abrir_sessao(perfilEncerrarSessao);
+  cat_cache_perfis(1);
+  snprintf(perfilDirArte, sizeof perfilDirArte, "%s", dirArte ? dirArte : "");
 #ifdef NV_LINUX_DESKTOP
   const char *preview = getenv("NUVIO_UI_PREVIEW");
   uiPreview = preview && !strcmp(preview, "1");
 #endif
+  // Antes de tudo que mexe na conta: o login e o sync criam os arquivos que o
+  // Começar olha para saber se esta instalacao ja vem de uso anterior.
+  comecar_marcar_dados();
+  arranque_etapa("app_iniciar/ajustes_recursos");
   ajustes_recursos(dirArte);
+  arranque_etapa("app_iniciar/login_recursos");
   login_recursos(dirArte);
+  arranque_etapa("app_iniciar/diagnostico_recuperar_checkpoint");
   diagnostico_recuperar_checkpoint();
+  arranque_etapa("app_iniciar/stream_fit_fonte_metadados");
   stream_fit_fonte_metadados(fitRuntimeMeta);
+  arranque_etapa("app_iniciar/home_iniciar");
   homePronta = home_iniciar(dirArte);
+  arranque_etapa("app_iniciar/novidades148_dir");
   novidades148_dir(dirArte);
   novidades170_dir(dirArte);
   novidades180_dir(dirArte);
+  arranque_etapa("app_iniciar/novidades20_dir");
   novidades20_dir(dirArte);
   novidades201_dir(dirArte);
+  novidades202_dir(dirArte);
+  novcartao_dir(dirArte);
+  arranque_etapa("app_iniciar/apoio_dir");
   apoio_dir(dirArte);
   if (!homePronta)
     printf("[app] sem arte no pacote: a home so aparece depois do primeiro sync\n");
+  arranque_etapa("app_iniciar/menu_iniciar");
   menu_iniciar();
+  arranque_etapa("app_iniciar/perfil_iniciar");
   perfil_iniciar();
   caca_iniciar();
   // ANTES do primeiro sync e da primeira descoberta: salvos_aplicar_catalogo
@@ -1579,32 +3734,57 @@ int app_iniciar(const char *dirArte) {
   // abrem certos no primeiro quadro. Ler depois faria a lista local piscar.
   // A LISTA E DO PERFIL (salvos-p<N>.txt); perfis_carregar_ativo ja rodou.
   salvos_perfil(perfis_ativo());
+  arranque_etapa("app_iniciar/salvos_iniciar");
   salvos_iniciar();
   // O JORNAL DA CONTA (contapend.h): todo "+"/tirar vira entrada por perfil, e
   // o pull da biblioteca e dos vistos respeita o que a pessoa mudou aqui.
   salvos_ao_definir(salvoParaConta);
   contalib_filtros(contapend_lista_oculta, contapend_visto_oculto);
+  // DESMARCAR GANHA (vistonao.h): o que a pessoa desmarcou nesta TV fica
+  // guardado por perfil e barra o "visto" de qualquer fonte (Trakt, conta,
+  // jornal) que nao seja mais novo que o gesto. Antes da primeira leitura.
+  vistoep_lapides(vistonao_barra, vistonao_gesto);
+  // E o "a seguir" do Continuar assistindo recua para o primeiro desmarcado.
+  desc_lapides_primeira(vistonao_primeira);
   // AS LISTAS FIXADAS, PELO MESMO MOTIVO E ANTES DA PRIMEIRA HOME. Uma lista do
   // Trakt que a Biblioteca levou para a Home so vira fileira quando lst_iniciar
   // reinjeta a pasta dela em colecoes.c; chamando isto so ao ABRIR a Biblioteca,
   // a fileira sumiria da home a cada reinicio ate a pessoa passar por la.
+  arranque_etapa("app_iniciar/lst_iniciar");
   lst_iniciar();
+  arranque_etapa("app_iniciar/agenda_iniciar");
   agenda_iniciar();
   // A FONTE LEMBRADA, do mesmo jeito e pelo mesmo motivo: ela e lida antes do
   // primeiro Reproduzir, que pode acontecer segundos depois do arranque quando
   // a pessoa abre direto no "Continuar assistindo".
+  arranque_etapa("app_iniciar/ondever_iniciar");
   ondever_iniciar();
+  arranque_etapa("app_iniciar/fontepref_iniciar");
   fontepref_iniciar();
+  // "Reusar o ultimo link" ligado guarda os links no disco (fontevolta.h).
+  fontevolta_definir_arquivo(dados_ler, dados_gravar, dados_apagar);
+  fontesmortas_iniciar();
+  arranque_etapa("app_iniciar/addonstats_ler");
+  addonstats_ler();   // #202: latencia de cada add-on NESTA TV (addonstats.h)
   // A ARTE ESCOLHIDA A MAO (#142) tambem, antes do primeiro destaque: sem ela
   // lida, o hero abriria na foto automatica e trocaria no quadro seguinte.
+  arranque_etapa("app_iniciar/arteesc_iniciar");
   arteesc_iniciar();
   // MESMA RAZAO, OUTRA LISTA: o cache de recomendacoes guarda titulo e poster,
   // entao a aba Social do painel AZUL desenha no primeiro quadro, antes de
   // existir catalogo e antes de a rede responder. Isto nao abre conexao — quem
   // faz isso e recomenda_verificar, la embaixo, com a home ja de pe.
+  arranque_etapa("app_iniciar/recomenda_iniciar");
   recomenda_iniciar();
+  arranque_etapa("app_iniciar/ilhasinais_iniciar");
   ilhasinais_iniciar();  // a saude da rede passa a ouvir os pedidos (ilha, 02/10)
+  arranque_etapa("app_iniciar/atividade_iniciar");
   atividade_iniciar();   // a fila de POST /v1/atividade que nao saiu (atividade.h)
+  diario_dono(sessao_usuario());   // arquivo de outra conta nao e lido
+  diario_iniciar();      // o Diario por perfil (diario.h), carregado sob demanda
+  travajuntos_iniciar(); // Juntos: o episodio do player vira marca nos outros membros
+  dormiu_iniciar();      // a sessao que morreu tocando vira suspeita de sono
+  travarede_iniciar();   // trava de serie: arquivo da conta, fila e ouvinte do visto
   // O envio da atividade segue o nivel de privacidade (alcance) do Social: a
   // funcao e chamada agora e a cada mudanca; "nao perguntado" chega como 0.
   recomenda_ao_mudar_alcance(atividade_definir_permitido);
@@ -1620,6 +3800,9 @@ int app_iniciar(const char *dirArte) {
     tela = TELA_HOME;
     // Com sessao gravada o ciclo comeca no arranque: e ele que traz os addons
     // e o Trakt da pessoa, sem os quais a home mostra so o que veio no pacote.
+    perfilAntes = perfis_ativo();
+    perfilAbrirSessao(perfilAntes);
+    arranque_etapa("app_iniciar/sync_iniciar");
     sync_iniciar();
     // A ESCOLHA DE PERFIL ABRE AQUI, e nao daqui a alguns segundos.
     //
@@ -1637,6 +3820,7 @@ int app_iniciar(const char *dirArte) {
     if (perfis_precisa_escolher()) {
       tela = TELA_ESCOLHA_PERFIL;
       perfilAntes = perfis_ativo();
+      arranque_etapa("app_iniciar/perfilsel_iniciar");
       perfilsel_iniciar();
     } else {
       // NO CHOOSER = THE CHOICE IS ALREADY MADE (#228). A restored session
@@ -1647,12 +3831,15 @@ int app_iniciar(const char *dirArte) {
       // (no such guard) played. Registros 23154 (Q80A) and 41271 (S90C): one
       // profile, gate stuck on top-overlay. If the sync later finds a second
       // profile, the chooser opens via perfilsel_iniciar, which resets this.
+      arranque_etapa("app_iniciar/perfilsel_continuar_ativo");
       perfilsel_continuar_ativo();
     }
   } else {
     tela = TELA_LOGIN;
+    arranque_etapa("app_iniciar/login_iniciar");
     login_iniciar();
   }
+  arranque_etapa("app_iniciar/fim");
   return 1;
 }
 
@@ -1666,12 +3853,54 @@ static int spotAtalho(const SDL_Event *e) {
   if (e->type != SDL_KEYDOWN) return 0;
   k = e->key.keysym.sym;
   if (k == SPOT_TECLA_VOZ || k == SPOT_TECLA_ABRIR) return 1;
-  return e->key.keysym.scancode == NV_SCANCODE_YELLOW && tela != TELA_GUIA;
+  // AMARELA e CH- abrem o Spotlight fora do guia; no guia o CH- e o salto de
+  // categoria (guia.c). As dicas do controle ensinam CH+/CH- nas tres plataformas.
+  return (e->key.keysym.scancode == NV_SCANCODE_YELLOW ||
+          e->key.keysym.scancode == NV_SCANCODE_CH_DOWN) && tela != TELA_GUIA;
 }
 static int spotPode(void) {
   return tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL && !player_aberto() &&
          !spainel_aberto() && !guia_overlay_aberta();
 }
+// LINK EXTERNO (deeplink.h, docs/deeplink.md): o titulo/busca/reproducao que
+// outro app, o launcher ou o adb pediu. Fora do player e do detalhe de antes,
+// como um clique do Spotlight. Titulo fora do catalogo so abre (a descoberta o
+// busca num fio); o episodio pedido so toca se ele ja esta no catalogo.
+static void deeplinkAbrir(const DeepLink *d) {
+  int k = -1, i;
+  // Invalidate outgoing source work before a new title can request Play.
+  preparoInvalidar();
+  novaGeracaoFonte();
+  fa_nova_rodada();
+  limparFontePendente();
+  limparFonteVOD();
+  aguardandoFonte = autoEsperaN = stalkerRenovando = 0;
+  fonteEscolhida = -1;
+  torrentSessao++;
+  torrentPendente = -1;
+  p2pmotor_cancelar();
+  if (player_aberto() || player_retido()) player_encerrar();
+  if (detail_aberto()) detail_fechar_seco();
+  if (spainel_aberto()) spainel_fechar();
+  if (d->tipo == DL_BUSCA) {
+    trocarTela(TELA_BUSCA); menu_definir_destino(MENU_BUSCAR);
+    busca_definir_consulta(d->consulta);
+    return;
+  }
+  if (d->imdb[0]) k = cat_indice_por_imdb(d->imdb);
+  else for (i = 0; i < cat_n() && k < 0; i++) {
+    const CatItem *ci = cat_item(i);
+    if (ci && ci->tmdb == d->tmdb && !strcmp(ci->tipo, d->serie ? "series" : "movie")) k = i;
+  }
+  cwTocarT = cwTocarE = 0; cwEspera = 0;
+  if (k >= 0) {
+    if (d->tipo == DL_TOCAR && d->episodio > 0) { cwTocarT = d->temporada; cwTocarE = d->episodio; }
+    abrirPorIndice(k);
+    if (d->tipo == DL_TOCAR && detail_aberto()) detail_pedir_reproduzir();
+  } else if (d->imdb[0]) desc_pedir_titulo(d->imdb);
+  else desc_pedir_titulo_tmdb(d->tmdb, d->serie ? "tv" : "movie");
+}
+
 static void spotAbrir(int voz) {
   static Uint32 ultimo;
   Uint32 t = SDL_GetTicks();
@@ -1761,7 +3990,8 @@ int app_no_login(void) { return tela == TELA_LOGIN; }
 
 int app_na_home(void) {
   return tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() &&
-         !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto();
+         !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() &&
+         !novcartao_aberto() && !resolver_aberto() && !comecar_aberto() && !dicascontrole_ocupado();
 }
 
 // ONDE A AZUL/CH+ ABRE O PAINEL DE SALVOS/AVISOS (dono, 04/10: "tem que dar
@@ -1775,7 +4005,8 @@ int app_na_home(void) {
 static int azulPodeAbrirSalvos(const SDL_Event *e) {
   if (player_aberto() || player_mini_ativo() || menu_aberto() || ctx_aberto() ||
       faixas_aberta() || episodios_aberto() || stream_folha_aberta() ||
-      guia_overlay_aberta() || pessoas_aberto() || recomenda_aberta() || recenviar_aberto())
+      guia_overlay_aberta() || pessoas_aberto() || recomenda_aberta() || recenviar_aberto() ||
+      travaui_aberta())
     return 0;
   // So no teclado de verdade (Mac/desktop). No Android a AZUL, o CH+ e o
   // MENU/BOOKMARK CHEGAM como "s" (NuvioActivity/main.c) e o SDL pode deixar o
@@ -1830,12 +4061,204 @@ static void abrirExplorarNoTitulo(void) {
   explorar_abrir_titulo(&o);
 }
 
+// Foco por controle na ilha: cada pagina pede somente ao ultrapassar seu
+// proprio topo. A geometria do ultimo desenho nao decide quem possui a tecla.
+static int relogioCabe(void);
+static int relogioCamadaAberta(void);
+static struct {
+  int ativo, okArmado, detalhe, colecao, mobile;
+  SDL_Keycode devolverTecla;
+  Tela tela;
+  NvPerfilSessao sessao;
+  char imdb[160], tipo[32];
+} relogioFoco;
+
+static int relogioFocoMobile(void) {
+#ifdef NV_TOUCH_UI
+  return layout_modo_mobile();
+#else
+  return 0;
+#endif
+}
+static int relogioFocoPermitido(void) {
+  if (!ajustes_relogio_ligado() || !relogioCabe() ||
+      !login_concluido() || !perfilsel_concluido() ||
+      tela == TELA_LOGIN || tela == TELA_ESCOLHA_PERFIL ||
+      player_aberto() || player_mini_ativo() || menu_aberto() ||
+      spainel_aberto() || central_aberta() || ilha_modal_aberto() ||
+      registro_aberto() || registro_envio_aberto() || estatvivo_aberto() ||
+      spot_aberto() || teclado_aberto() || celb_aberto() || avisos_aberto() ||
+      ctx_aberto() || faixas_aberta() || episodios_aberto() ||
+      stream_folha_aberta() || guia_overlay_aberta() || relogioCamadaAberta()) return 0;
+  if (detail_aberto()) return detail_relogio_navegavel();
+  if (tela == TELA_AJUSTES) return ajustes_relogio_navegavel();
+  if (tela == TELA_BUSCA) return busca_relogio_navegavel();
+  if (tela == TELA_AGENDA && agendaui_menu_aberto()) return 0;
+  return 1;
+}
+static void relogioFocoLimpar(void) {
+  relogioFoco.ativo = 0;
+  ilha_relogio_focar(0);
+  // Um OK ja pressionado continua nosso ate soltar, mesmo se outra camada
+  // aparecer: a soltura nao pode confirmar uma escolha nessa nova camada.
+}
+static int relogioFocoMesmoContexto(void) {
+  const CatItem *c = detail_aberto() ? cat_item(detail_indice()) : NULL;
+  return relogioFoco.tela == tela &&
+      relogioFoco.sessao == nv_perfil_sessao_ler() &&
+      relogioFoco.detalhe == detail_aberto() &&
+      relogioFoco.colecao == vertudo_aberta() &&
+      relogioFoco.mobile == relogioFocoMobile() &&
+      !strcmp(relogioFoco.imdb, c ? c->imdb : "") &&
+      !strcmp(relogioFoco.tipo, c ? c->tipo : "");
+}
+static void relogioFocoValidar(void) {
+  if (relogioFoco.ativo && (!relogioFocoMesmoContexto() || !relogioFocoPermitido()))
+    relogioFocoLimpar();
+}
+static int relogioFocoPedir(int pedido) {
+  const CatItem *c;
+  if (!pedido || !relogioFocoPermitido()) return 0;
+  c = detail_aberto() ? cat_item(detail_indice()) : NULL;
+  relogioFoco.ativo = 1;
+  relogioFoco.tela = tela;
+  relogioFoco.sessao = nv_perfil_sessao_ler();
+  relogioFoco.detalhe = detail_aberto();
+  relogioFoco.colecao = vertudo_aberta();
+  relogioFoco.mobile = relogioFocoMobile();
+  snprintf(relogioFoco.imdb, sizeof relogioFoco.imdb, "%s", c ? c->imdb : "");
+  snprintf(relogioFoco.tipo, sizeof relogioFoco.tipo, "%s", c ? c->tipo : "");
+  ilha_relogio_focar(1);
+  return 1;
+}
+static void relogioFocoAcionar(void) {
+  SDL_Event atalho;
+  SDL_zero(atalho);
+  atalho.type = SDL_KEYDOWN;
+  atalho.key.keysym.sym = SDLK_s;
+  atalho.key.keysym.scancode = NV_SCANCODE_BLUE;
+  // O mesmo toque curto de CH+/AZUL: aviso/enquete tem prioridade sobre o
+  // cartao de atividade, que por sua vez tem prioridade sobre Salvos.
+  if (!ilha_evento(&atalho) && !avisos_evento(&atalho)) alternarSalvos(1);
+}
+static int relogioFocoEvento(const SDL_Event *e) {
+  SDL_Keycode k;
+  int ok;
+  relogioFocoValidar();
+  if ((e->type == SDL_WINDOWEVENT &&
+       (e->window.event == SDL_WINDOWEVENT_FOCUS_LOST || e->window.event == SDL_WINDOWEVENT_HIDDEN)) ||
+      e->type == SDL_APP_WILLENTERBACKGROUND) {
+    relogioFoco.devolverTecla = 0;
+    relogioFocoLimpar();
+    return 1;
+  }
+  if (e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEWHEEL ||
+      e->type == SDL_FINGERDOWN) {
+    relogioFocoLimpar();
+    return 0;
+  }
+  if (e->type != SDL_KEYDOWN && e->type != SDL_KEYUP) return 0;
+  k = e->key.keysym.sym;
+  if (e->key.keysym.scancode == NV_SCANCODE_BACK || k == SDLK_DELETE ||
+      k == SDLK_AC_BACK || k == SDLK_BACKSPACE) k = SDLK_ESCAPE;
+  ok = k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE;
+  if (ok && relogioFoco.okArmado) {
+    if (e->type == SDL_KEYUP && k == relogioFoco.okArmado) {
+      int acionar = relogioFoco.ativo && relogioFocoPermitido();
+      relogioFoco.okArmado = 0;
+      relogioFocoLimpar();
+      if (acionar) relogioFocoAcionar();
+    }
+    return 1;
+  }
+  if (k == relogioFoco.devolverTecla && relogioFoco.devolverTecla) {
+    if (e->type == SDL_KEYUP) relogioFoco.devolverTecla = 0;
+    return 1;
+  }
+  if (!relogioFoco.ativo) return 0;
+  if (ok) {
+    if (e->type == SDL_KEYDOWN && !e->key.repeat) relogioFoco.okArmado = k;
+    return 1;
+  }
+  if (k == SDLK_UP) return 1;
+  if (k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_RIGHT ||
+      k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE) {
+    if (e->type == SDL_KEYDOWN) {
+      relogioFoco.devolverTecla = k;
+      relogioFocoLimpar();
+    }
+    return 1;
+  }
+  relogioFocoLimpar();
+  return 0; // Os atalhos existentes continuam com seus donos.
+}
+static int relogioPedidoPagina(void) {
+  switch (tela) {
+    case TELA_EXPLORAR: return explorar_pediu_relogio();
+    case TELA_BUSCA: return busca_pediu_relogio();
+    case TELA_BIBLIOTECA: return biblioteca_pediu_relogio();
+    case TELA_AGENDA: return agendaui_pediu_relogio();
+    case TELA_PERFIL: return perfil_pediu_relogio();
+    case TELA_SOCIAL: return amigoperfil_pediu_relogio();
+    case TELA_ADDONS: return addonsui_pediu_relogio();
+    case TELA_PLUGINS: return pluginsui_pediu_relogio();
+    case TELA_AJUSTES: return ajustes_pediu_relogio();
+    case TELA_HOME: return home_pediu_relogio();
+    default: return 0;
+  }
+}
+
 void app_evento(const SDL_Event *e) {
-  if (e->type == SDL_QUIT) { sair = 1; return; }
+  static int backRetido;
+  static Uint32 backUltimo;
+  // Guard before any sheet/panel consumes Back. Flagged repeats are always held;
+  // only a non-repeat after 1.5 s of silence recovers from a lost keyup.
+  if ((e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) && nv_tecla_voltar(e)) {
+    Uint32 agora = SDL_GetTicks();
+    if (e->type == SDL_KEYUP || !player_aberto()) backRetido = 0;
+    else {
+      int retido = e->key.repeat || (backRetido && agora - backUltimo < 1500u);
+      backRetido = 1;
+      backUltimo = agora;
+      if (retido) return;
+    }
+  }
+  // Measurement anchors: only with perf enabled and an authenticated profile.
+  // D-pad scrolling still follows the real screen handlers.
+  if (perftv_enabled && e->type == SDL_KEYDOWN && !e->key.repeat &&
+      login_concluido() && perfilsel_concluido()) {
+    SDL_Keycode k = e->key.keysym.sym;
+    if (k == SDLK_F1 && !player_aberto()) {
+      menu_fechar(); ctx_abrir_sessao(); estatvivo_fechar();
+      detail_fechar_seco(); vertudo_fechar_seco();
+      trocarTela(TELA_HOME); home_ir_topo(); return;
+    }
+    if (k == SDLK_F2 && !player_aberto()) {
+      detail_fechar_seco(); vertudo_perf_cycle(); return;
+    }
+    if (k == SDLK_F3 && !player_aberto() && detail_aberto()) {
+      // Waiting overlay only: never selects a source or starts playback.
+      int i = detail_indice();
+      if (i >= 0) { player_abrir(i, NULL); trocarTela(TELA_PLAYER); }
+      return;
+    }
+    if (k == SDLK_F4 && app_na_home()) { home_perf_style_menu(); return; }
+    if (k == SDLK_F11 && !player_aberto()) {
+      menu_fechar(); detail_fechar_seco(); vertudo_fechar_seco();
+      trocarTela(TELA_AJUSTES); return;
+    }
+    if (k == SDLK_F12 && player_aberto()) { estatvivo_abrir(); return; }
+  }
+  if (e->type == SDL_QUIT) { retomamorna_cancelar(); sair = 1; return; }
+  if (dicascontrole_ocupado()) { dicascontrole_evento(e); return; }
+  if (rewatchui_aberta()) { rewatchui_evento(e); return; }
   ilhacart_validar_identidade();
   // Qualquer gesto da pessoa: a atividade ao vivo da ilha conta 30 min daqui.
-  if (e->type == SDL_KEYDOWN || e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEWHEEL)
+  if (e->type == SDL_KEYDOWN || e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEWHEEL) {
     ilhacart_tecla(SDL_GetTicks());
+    dormiu_tecla();   // "Pegou no sono": qualquer gesto fecha o vao sem tecla
+  }
+  if (relogioFocoEvento(e)) return;
 
   // A explicacao de primeira abertura bloqueia o restante da interface ate
   // ser reconhecida ou fechada. Ela aparece na Home, mas pertence ao fluxo de
@@ -1853,6 +4276,13 @@ void app_evento(const SDL_Event *e) {
   // login, a tecla vermelha nao chegaria ali e o painel seria inutil onde ele
   // mais importa. Enquanto aberto ele engole todo o teclado, incluindo o KEYUP
   // do toque que o abriu ou fechou (ver a nota da armadilha em registro.c).
+#ifdef NV_ANDROID
+  // O Info do controle Android chega como F9 (o painel de registro). Com a
+  // folha de fontes aberta ele e dos DETALHES DA FONTE (#355); o registro
+  // continua na tecla vermelha / Ajustes, e aberto ele ainda fecha o painel.
+  if (e->type == SDL_KEYDOWN && e->key.keysym.sym == SDLK_F9 && stream_folha_aberta() &&
+      !registro_aberto()) { stream_folha_evento(e); return; }
+#endif
   if (registro_evento(e)) return;
   // O painel de envio do registro (Ajustes > Enviar registro, ou o "Enviar
   // agora" do painel): modal, come o teclado enquanto aberto.
@@ -1860,6 +4290,16 @@ void app_evento(const SDL_Event *e) {
   // A CENTRAL DE CONTROLE (central.h, CH+ segurado) e uma camada: aberta, come
   // o teclado todo, por cima do player, das folhas e das ilhas.
   if (central_aberta()) { central_evento(e); return; }
+  // WATCH TOGETHER (juntosui.h): a folha, o cartao da sala, a pergunta de
+  // sair e a regua de reacoes sao camadas; e o OK segurado no player e dela.
+  if (juntosui_evento_sdl(e)) return;
+  // Statistics owns input while focused. UP enters a pinned panel; Back/DOWN
+  // return to the player. OK resizes, LEFT/RIGHT move it, UP unpins.
+  // Com uma folha/aviso/overlay de pe ou foco no player que usa CIMA (barra,
+  // "Pular abertura"), so o painel ABERTO come o teclado: o CIMA que o
+  // focaria fica de quem esta na frente (a folha mora mais abaixo nesta fila).
+  if (estatvivo_evento(e, faixas_aberta() || episodios_aberto() || stream_folha_aberta() ||
+                        guia_overlay_aberta() || avisos_aberto() || player_cima_dele())) return;
   // O MODAL DA ILHA (ilha.h) e uma camada: aberto, come o teclado todo.
   if (ilha_evento(e)) return;
   // A CENTRAL DE AVISOS vem logo depois do painel de log: com o toast na tela
@@ -1872,11 +4312,46 @@ void app_evento(const SDL_Event *e) {
   // O CARTAO DO CELULAR (celbotao.h), aberto de qualquer campo de texto: come
   // o teclado todo ate fechar.
   if (celb_evento(e)) return;
+  // O AVISO DAS CONQUISTAS (depois dos creditos) nao toma o foco: so o Voltar e
+  // dele, e so enquanto estiver na tela. Vem antes do Voltar do app.
+  if (conquistas_aviso_evento(e)) return;
+  // A TELA DE CONQUISTAS (2.1), aberta pelo Perfil: tela inteira, come o teclado.
+  if (conquistas_aberto()) { conquistas_evento(e); return; }
   // O GUIA DA 2.0 (novidades20.h) e tela inteira e come o teclado todo,
   // inclusive a AZUL (pula para o resumo). "Abrir o Guia de uso" leva a
   // Ajustes › Sobre e ajuda › Guia de uso.
   // O CARTAO DA 2.0.1 (novidades201.h): come o teclado todo; "Abrir a
   // Central" fecha o cartao e abre a Central de controle no lugar.
+  // O DA 2.0.2 (novidades202.h) e igual, sem a Central.
+  // O CARTAO DA VERSAO ATUAL (novidades_cartao.h, 2.0.3 em diante) tambem.
+  // O COMECAR da 2.1 (comecar.h): primeiro uso guiado, tela inteira, come o
+  // teclado todo. O tour do fim e o guia da 2.0 reaberto pelo pedido.
+  if (comecar_aberto()) {
+    comecar_evento(e);
+    if (comecar_pedido() == COMECAR_PEDIU_TOUR) novidades20_abrir(loginNovo);
+    return;
+  }
+  if (novcartao_aberto()) {
+    novcartao_evento(e);
+    return;
+  }
+  if (novidades202_aberto()) {
+    novidades202_evento(e);
+    return;
+  }
+  // RESOLVER UM PROBLEMA (2.1, resolver.h): tela inteira, come o teclado todo.
+  // "Ver Fontes e addons" fecha a tela e abre Ajustes no lugar.
+  if (resolver_aberto()) {
+    resolver_evento(e);
+    if (resolver_pedido() == RESOLVER_PEDIU_FONTES) {
+      menu_fechar();
+      ajustes_abrir_na_espera_fonte();
+      if (tela == TELA_AJUSTES) ajustes_iniciar();
+      else trocarTela(TELA_AJUSTES);
+      menu_definir_destino(MENU_AJUSTES);
+    }
+    return;
+  }
   if (novidades201_aberto()) {
     novidades201_evento(e);
     if (novidades201_pedido() == N201_PEDIU_CENTRAL && app_central_pode()) central_abrir();
@@ -1900,7 +4375,8 @@ void app_evento(const SDL_Event *e) {
   // esta. Em 18/09 eu naveguei as cegas ate o guia tres vezes; nas tres o foco
   // caiu num card de filme e o OK marcou "A Captura" como assistido na conta
   // do dono. Uma tecla que vai direto elimina a classe inteira de acidente.
-  // Nao ha F10 em controle de TV, entao isto nao muda nada para quem usa.
+  // Android Guide/Menu and Tizen TV Guide also map to F10. During playback,
+  // the live player or mini guide handles it below, preserving modal priority.
   if (e->type == SDL_KEYDOWN && e->key.keysym.sym == SDLK_F10 &&
       login_concluido() && perfilsel_concluido() && !player_aberto()) {
     menu_fechar();
@@ -1918,6 +4394,11 @@ void app_evento(const SDL_Event *e) {
   // O SPOTLIGHT ABERTO e dono de todo o teclado: e uma caixa modal por cima da
   // tela, e o que ele escolhe so e feito depois de ele fechar.
   if (spot_aberto()) { spot_evento(e); spotAtender(); return; }
+
+  if (glance_aberto()) {
+    if (ctx_aberto()) ctx_evento(e); else glance_evento(e);
+    return;
+  }
 
   // ALTERNA O PAINEL DE SALVOS, COM REPOUSO — e o repouso e o conserto.
   //
@@ -1941,6 +4422,13 @@ void app_evento(const SDL_Event *e) {
   // de dois toques deliberados. Vale para os dois sentidos (abrir e fechar),
   // porque o defeito nao distingue: o segundo evento e que sobra.
   //
+  // CH+ NA LG (dono, 07/10: "junta o CH+ e o AZUL"): nas outras plataformas o
+  // CH+ chega aqui como AZUL/"s" (main.c, remapCanal) e o toque curto sempre
+  // abriu este painel; segurado abre a central. Na LG o CH+ curto so valia com
+  // um cartao na ilha — e a AZUL era a unica porta. Agora o CH+ curto e o
+  // mesmo toque, e segurado segue para a central (central.h). Com canal na
+  // tela (zap, PiP) ele nao chega aqui: azulPodeAbrirSalvos recusa.
+  //
   // COM O RELOGIO NA TELA a mesma tecla passa pela ilha (ilha.h, pedido do
   // dono de 01/10): com um cartao na pilula (atividade ao vivo, estreia) ela
   // abre o MODAL — e ai o CH+ tambem, como no toast da central —; sem cartao
@@ -1948,8 +4436,7 @@ void app_evento(const SDL_Event *e) {
   // Relogio desligado: o de sempre.
   if(e->type==SDL_KEYDOWN && !e->key.repeat &&
      (e->key.keysym.sym==SDLK_s || e->key.keysym.scancode==NV_SCANCODE_BLUE ||
-      ((ilha_cartao_na_tela() || ilha_atividade_expansivel()) && !spainel_aberto() &&
-       (e->key.keysym.scancode==NV_SCANCODE_CH_UP || e->key.keysym.sym==SDLK_PAGEUP))) &&
+      e->key.keysym.scancode==NV_SCANCODE_CH_UP || e->key.keysym.sym==SDLK_PAGEUP) &&
      azulPodeAbrirSalvos(e)) {
     alternarSalvos(1);
     return;
@@ -2045,12 +4532,35 @@ void app_evento(const SDL_Event *e) {
   // deixar a tecla vazar para a home moveria o foco dela debaixo do cartao.
   if (recintro_aberto()) { recintro_evento(e); return; }
   if (atualizacao_aberta()) { atualizacao_evento(e); return; }
-  if (agendaviso_aberto()) { agendaviso_evento(e); return; }
-  if (recomenda_aberta()) { recomenda_evento(e); return; }
+  if (agendaviso_aberto()) {
+    agendaviso_evento(e);
+    AgItem aviso;
+    if (agendaviso_tomar_filme(&aviso)) {
+      int i = cat_indice_por_imdb_tipo(aviso.imdb, "movie");
+      if (i < 0) {
+        CatItem ci = {0};
+        snprintf(ci.imdb, sizeof ci.imdb, "%s", aviso.imdb);
+        snprintf(ci.tipo, sizeof ci.tipo, "movie");
+        snprintf(ci.titulo, sizeof ci.titulo, "%s", aviso.titulo);
+        snprintf(ci.poster, sizeof ci.poster, "%s", aviso.poster);
+        i = cat_acrescentar(&ci);
+      }
+      if (i >= 0) {
+        HomeItem it = {0}; it.indice = i;
+        it.rect = (GfxRect){0, 0, NV_TELA_W, NV_TELA_H};
+        abrirTitulo(&it, 0, 1);
+      }
+    }
+    return;
+  }
+  if (recomenda_tecla(e)) return;
   // A MODAL DE RECOMENDAR fica acima do detalhe, do menu do cartaz e do
   // painel da tecla AZUL — as tres portas que a abrem. Abaixo do cartao de
   // aviso, que e uma pergunta sobre outra recomendacao.
   if (recenviar_aberto()) { recenviar_evento(e); return; }
+  // TRAVA DE SERIE (travaui.c): o modal e a folha de espera abrem da pagina do
+  // titulo e do Perfil, na mesma altura da modal de recomendar.
+  if (travaui_aberta()) { travaui_evento(e); return; }
   // ENCONTRAR PESSOAS (busca, perfil, pedidos): mesma altura da modal de
   // recomendar — abre da aba Social e de Ajustes, e devolve o foco a quem abriu.
   if (pessoas_aberto()) { pessoas_evento(e); return; }
@@ -2107,7 +4617,10 @@ void app_evento(const SDL_Event *e) {
   // ESQUERDA quando nao ha mais para onde ir a esquerda; aqui, se a saida foi
   // por essa tecla, a home volta JA com a barra aberta em vez de exigir um
   // segundo ESQUERDA. `saiuPorEsquerda` e o que o bloco de sair le.
-  if (e->type == SDL_KEYDOWN) saiuPorEsquerda = (e->key.keysym.sym == SDLK_LEFT);
+  if (e->type == SDL_KEYDOWN) {
+    saiuPorEsquerda = (e->key.keysym.sym == SDLK_LEFT);
+    saiuPorCima = (e->key.keysym.sym == SDLK_UP);
+  }
   if (spotAtalho(e) && spotPode()) { spotAbrir(e->key.keysym.sym == SPOT_TECLA_VOZ); return; }
   if (player_aberto()) { player_evento(e); return; }
   // A BARRA LATERAL POR CIMA DA PAGINA DO TITULO (dono, 03/10: "pode abrir por
@@ -2119,16 +4632,23 @@ void app_evento(const SDL_Event *e) {
     if (ctx_aberto()) ctx_evento(e); else spainel_evento(e);
     return;
   }
+  // O MENU DO CARTAZ ABERTO DE DENTRO DA PAGINA DO TITULO (segurar OK nas
+  // Recomendacoes, na filmografia ou na lista da saga): modal, por cima dela.
+  if (detail_aberto() && ctx_aberto()) { ctx_evento(e); return; }
   if (detail_aberto() && menu_aberto()) { menu_evento(e); return; }
   if (detail_aberto()) {
     detail_evento(e);
     // CIMA no alto da pagina (controle sem tecla colorida): o mesmo painel.
-    if (detail_aberto() && detail_pediu_social() && azulPodeAbrirSalvos(e)) alternarSalvos(0);
+    { int pedido = detail_pediu_relogio();
+      int social = detail_pediu_social();
+      if (!relogioFocoPedir(pedido) && social && detail_aberto() && azulPodeAbrirSalvos(e))
+        alternarSalvos(0);
+    }
     // No MESMO evento, como a home: diferido um quadro, as teclas seguintes
     // do controle ainda cairiam na pagina.
     if (detail_aberto() && detail_pediu_menu() && sidebar_permitida()) {
       menu_abrir_sobre(1);
-      saiuPorEsquerda = 0;
+      saiuPorEsquerda = saiuPorCima = 0;
     }
     { char im[24];
       if (detail_aberto() && detail_pediu_amigos(im, sizeof im)) abrirSocialNoTitulo(im); }
@@ -2148,11 +4668,12 @@ void app_evento(const SDL_Event *e) {
   if (ctx_aberto())     { ctx_evento(e);     return; }
   if (vertudo_aberta()) {
     vertudo_evento(e);
+    relogioFocoPedir(vertudo_pediu_relogio());
     // ESQUERDA na coluna 0 de "Ver tudo"/colecao: a barra por cima dela.
     // Por cima: DIREITA/Voltar voltam para a lista, um destino a fecha.
     if (vertudo_aberta() && vertudo_pediu_menu() && sidebar_permitida()) {
       menu_abrir_sobre(0);
-      saiuPorEsquerda = 0;
+      saiuPorEsquerda = saiuPorCima = 0;
     }
     return;
   }
@@ -2174,13 +4695,17 @@ void app_evento(const SDL_Event *e) {
     default:              home_evento(e);       break;
   }
 
+  // Consome inclusive um pedido negado por teclado/modal: nunca o reproduz
+  // depois que a camada fechar. A selecao da pagina permanece intacta.
+  relogioFocoPedir(relogioPedidoPagina());
+
   // O menu abre AQUI, no mesmo evento que o pediu, e nao no proximo
   // app_atualizar. Diferido por um quadro, as teclas que vierem logo depois do
   // ESQUERDA — e num controle elas vem — sao entregues a tela de tras, que
   // ainda acha que e a dona do foco.
   if (tela == TELA_HOME && home_pediu_menu() && sidebar_permitida()) {
     menu_abrir();
-    saiuPorEsquerda = 0;
+    saiuPorEsquerda = saiuPorCima = 0;
   }
 }
 
@@ -2218,9 +4743,12 @@ static void marcarAssistidoSeSolicitado(void) {
   // olho aberto e o toque "marcava" de novo em vez de desmarcar.
   { int visto = cat_visto(c);
     const double dur = 3600.0;
+    if (!visto) {
+      printf("[visto] marcado por detalhe-manual pos=3600 dur=3600 assistido=0s id=%s\n", c->imdb);
+      fflush(stdout);
+    }
     cat_salvar_progresso(i, visto ? 0.0 : dur, dur);
     if (c->imdb[0]) {
-      trakt_assistido(c->imdb, !visto);
       // SIMKL E CONTA NUVIO tambem (visto.c), cada um se vinculado. O Trakt
       // segue pela linha acima, que nao mudou; sem ele a unica marca era o
       // progresso de 100% (que a conta ja entende como concluido), e o
@@ -2249,6 +4777,8 @@ static void trocaDeTituloSeSolicitada(void) {
     // detalhe abria por baixo do video e ninguem via — "clico e nao faz nada".
     // O caminho do titulo que JA esta no catalogo (posplay_pediu_titulo)
     // encerra o player antes; este faz o mesmo.
+    // Pedido de um MENU (segurar OK numa lista): o titulo chegou, abre o menu.
+    if (novo >= 0 && (glance_tomar_acao(novo) || ctxlista_tomar(novo))) novo = -1;
     if (novo >= 0) {
       if (player_aberto() || player_retido()) player_encerrar();
       detail_volta_notar(novo);
@@ -2273,8 +4803,12 @@ static void legendasDaFonte(void) {
   char chave[sizeof ultimo], alvo[64];
   const Stream *s;
   const CatItem *c;
-  if (!player_aberto() || player_id_canal()[0] || !player_com_video()) return;
+  // A legenda automatica compara o release com este nome, entao ele vale desde
+  // que o player abre (antes do primeiro quadro), nao so com video.
   s = stream_item(stream_atual());
+  if (!s && voltaFonte.url[0]) s = &voltaFonte;
+  legauto_fonte(player_aberto() && !player_id_canal()[0] && s ? s->arquivo : NULL);
+  if (!player_aberto() || player_id_canal()[0] || !player_com_video()) return;
   c = cat_item(player_indice());
   if (!s || !c || !c->imdb[0]) return;
   alvoPlayer(alvo, sizeof alvo);
@@ -2299,24 +4833,183 @@ static const char *homeTrailerBloqueio(void) {
   if (player_aberto() || player_retido() || player_mini_ativo()) return "player";
   if (detail_aberto()) return "detail";
   if (spainel_aberto()) return "saved-panel";
+  if (glance_aberto()) return "glance";
   if (menu_aberto() || ctx_aberto()) return "menu";
   if (vertudo_aberta()) return "see-all";
   if (avisos_aberto() || avisos_cartao_aberto()) return "notices";
   if (sintro_aberto() || pipintro_aberto() || recintro_aberto() || telemetria_aberto()) return "intro";
+  if (comecar_aberto()) return "comecar";
+  if (conquistas_aberto()) return "achievements";
   if (novidades_aberto() || novidades11_aberto() || novidades12_aberto() ||
       novidades13_aberto() || novidades131_aberto() || novidades132_aberto() ||
       novidades133_aberto() || novidades134_aberto() || novidades139_aberto() || novidades1312_aberto() ||
       novidades142_aberto() || novidades148_aberto() || novidades170_aberto() || novidades180_aberto() ||
-      novidades20_aberto()) return "whats-new";
+      novidades20_aberto() || novidades201_aberto() || novidades202_aberto() ||
+      novcartao_aberto() || dicascontrole_ocupado()) return "whats-new";
+  if (resolver_aberto()) return "resolver";
   if (atualizacao_aberta() || agendaviso_aberto()) return "update-notice";
-  if (recomenda_aberta() || recenviar_aberto() || pessoas_aberto()) return "recommend";
+  if (recomenda_aberta() || recenviar_aberto() || travaui_aberta() || pessoas_aberto()) return "recommend";
   if (faixas_aberta() || episodios_aberto() || stream_folha_aberta()) return "sheet";
   if (guia_overlay_aberta()) return "guide";
   if (registro_aberto()) return "log";
   return NULL;
 }
 
+static void tocarFonteEscolhida(int fonte, int manual) {
+  int alvo = player_aberto() ? player_indice() : detail_indice(), t = 0, e = 0;
+  if (player_aberto()) player_episodio_atual(&t, &e);
+  else detail_ep_foco(&t, &e);
+  if (manual) consumirFolhaTocar(&t, &e);
+  if (travaui_abrir_espera(alvo, t, e)) { aguardandoFonte = 0; folhaParaTocar = 0; return; }
+  {
+    const Stream *s = stream_item(fonte);
+    if (manual) {
+      if (partes_sessao_lista() || parteFase != PF_NADA) {
+        char alvoP[64];
+        if (player_aberto()) { alvoPlayer(alvoP, sizeof alvoP); partes_ponto_esquecer(alvoP, sessao_usuario(), perfis_ativo()); }
+        partes_sessao_parar("another source picked"); parteZerar();
+      }
+      novaGeracaoFonte(); limparFontePendente(); preparoEspera = 0;
+    }
+    folhaParaTocar = 0;
+    printf("fonte escolhida: %s\n", s ? s->rotulo : "?");
+    // GUARDAR A ESCOLHA, e SO a manual. O que o automatico escolhe nao vira
+    // preferencia: quem nunca abriu esta folha continua com a regra da
+    // pontuacao para sempre, que e a condicao de nao quebrar o app de quem
+    // nunca escolheu nada.
+    if (s && manual) {
+      char base[24];
+      idBaseDoTitulo(base, sizeof base);
+      if (base[0]) fontepref_guardar(base, s);
+      // A MARCA DA FOLHA SEGUE A ESCOLHA NOVA. Sem esta linha, reabrir a folha
+      // logo depois de trocar de fonte mostraria "Sua escolha anterior" na
+      // fonte antiga — a tela contradizendo o que a pessoa acabou de fazer.
+      stream_preferir(fonte);
+    }
+    if (s) video_definir_dv(s->dolbyVision);
+    if (s) video_definir_cabecalhos(s->cabecalhos);
+    if (s) {
+      aguardandoFonte=0;
+      limparFonteVOD();
+      int titulo = alvo;
+      if (player_aberto()) player_encerrar();
+      diagnostico_cancelar_vazao();
+      player_abrir(titulo,NULL);
+      player_definir_episodio(t,e);
+      if (!manual && juntos_ativo()) {
+        player_do_inicio(); // The room clock restores position after load.
+        fonteVODAutomatica = 1;
+        fonteVODTentativas = 1;
+        fonteVODDesde = SDL_GetTicks();
+      }
+      stream_definir_atual(fonte);
+      // Qualquer escolha nova invalida a resposta de um torrent anterior; o
+      // motor P2P corta o pedido velho ja (sem isso a escolha nova esperaria
+      // ate 55 s na fila do fio unico).
+      torrentSessao++;
+      p2pmotor_cancelar();
+      if (s->infoHash[0] && (!s->url[0] ||
+          (fontefalha_ativa() && !s->urlP2P && s->foraCache && debrid_ativo()))) {
+        pedirTorrentEscolhido(fonte);
+      } else {
+        // Fonte direta: o torrent do motor (se havia) para de baixar.
+        p2pmotor_parar_fundo();
+        if (manual) abrirFonteManualDireta(s);
+        else { video_definir_mp4(stream_e_mp4(s)); definirFonteVOD(s->url); }
+        // FONTE QUE O ADDON MARCA COMO FORA DE CACHE ("⏳", "[TB download]"):
+        // tocar o link e o que manda o servico baixar, e o que o addon devolve
+        // enquanto baixa e um clipe de aviso de ~8 s (registros 1136, 2191,
+        // 2501). O clipe fecha o player sem nada na tela; o aviso diz o que
+        // esta acontecendo e o que fazer.
+        if (s->foraCache)
+          player_toast_ex(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 9000, "aj_download", 0);
+      }
+      // Escolha manual num canal tambem entra no watchdog: fonte viva escolhida
+      // a dedo pode morrer igual.
+      if (player_id_canal()[0]) { canalFonteIdx = fonte; canalFonteDesde = SDL_GetTicks(); canalViaProxy = 0; }
+    }
+  }
+}
+
+// WATCH TOGETHER: o titulo que a sala pediu (convidado entrando, ou a sala
+// trocou de episodio) abre como o Reproduzir do detalhe; a fonte do convidado
+// sai da impressao do release da sala (juntosfonte), nao do automatico.
+static Uint32 juntosListaDesde;
+static void juntosAbrirEFonte(Uint32 agora) {
+  char imdb[24], titulo[160], poster[512], alvo[64];
+  int t, e;
+  if (juntosui_pediu_fechar_player()) player_sair();
+  if (juntosui_pediu_reproduzir()) detail_pedir_reproduzir();
+  if (juntosui_pediu_escolher_filme()) trocarTela(TELA_BUSCA);
+  if (juntos_pediu_abrir(imdb, sizeof imdb, &t, &e, titulo, sizeof titulo, poster, sizeof poster)) {
+    int idx = cat_indice_por_imdb(imdb);
+    if (idx < 0) {
+      static CatItem novo;
+      memset(&novo, 0, sizeof novo);
+      snprintf(novo.imdb, sizeof novo.imdb, "%s", imdb);
+      snprintf(novo.tipo, sizeof novo.tipo, "%s", t > 0 ? "series" : "movie");
+      snprintf(novo.titulo, sizeof novo.titulo, "%s", titulo);
+      snprintf(novo.poster, sizeof novo.poster, "%s", poster);
+      idx = cat_acrescentar(&novo);
+    }
+    if (idx >= 0) {
+      if (travaui_abrir_espera(idx, t, e)) return;
+      limparFonteVOD();
+      if (player_aberto() || player_retido()) player_encerrar();
+      diagnostico_cancelar_vazao();
+      player_abrir(idx, NULL);
+      if (t > 0 && e > 0) player_definir_episodio(t, e);
+      player_do_inicio();          // a posicao e a da sala, nao a retomada
+      renovarListaDoPlayer();
+      juntosListaDesde = 0;
+      if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
+      printf("[juntos] abrindo o titulo da sala\n");
+    }
+  }
+  if (juntos_escolhendo_fonte() && player_aberto() && aguardandoFonte != 2) {
+    int n, i;
+    alvoPlayer(alvo, sizeof alvo);
+    n = stream_lista_do_alvo(alvo) ? stream_n() : 0;
+    if (n > 0 && !juntosListaDesde) juntosListaDesde = agora ? agora : 1;
+    if (n > 0) {
+      // juntos_escolher_fonte le a lista contigua; stream_item devolve dela.
+      const Stream *base = stream_item(0);
+      if (base && stream_item(n - 1) == base + (n - 1)) {
+        i = juntos_escolher_fonte(base, n, agora, juntosListaDesde);
+        if (i >= 0) tocarFonteEscolhida(i, 0);
+      }
+    }
+  }
+}
+
+static void atualizarFolha(float dt, Uint32 agora) {
+  stream_folha_atualizar(dt, agora);
+  // Picks consume the latch before this step; every other close discards it.
+  if (!stream_folha_aberta()) gravarFolhaTocar(0, 0, 0);
+}
+
+// Android's live buffer end is unknown (zero). READY video that is actually
+// playing again also proves recovery; audio alone or continued buffering does not.
+static void recuperarErroFonte(void) {
+  if ((player_aberto() || player_mini_ativo()) && player_fonte_falhou() &&
+      player_tem_video() && !video_falhou() &&
+      (video_buffer_fim() > 0.5 ||
+       (player_id_canal()[0] && video_tocando() && !video_bufferando_ms())) &&
+      video_pronto()) {
+    printf("[player] a fonte voltou a entregar (buffer %.1fs): tirando o erro da tela\n",
+           video_buffer_fim());
+    fflush(stdout);
+    player_limpar_erro_fonte();
+    canalFonteDesde = SDL_GetTicks();
+  }
+}
+
 void app_atualizar(float dt, Uint32 agora) {
+  relogioFocoValidar();
+  ajustes_fontes_atualizar();
+  { static int morno = -1; int ligado = ajustes_retomada_morna();
+    if (morno != ligado) { morno = ligado; cacheboost_backend_morno(ligado); }
+  }
   if (player_aberto() || player_mini_ativo()) diagnostico_cancelar_vazao();
   // Login e escolha de perfil retornam cedo; a atividade da conta anterior
   // precisa sair antes deles, junto de qualquer modal/pedido ja enfileirado.
@@ -2324,7 +5017,19 @@ void app_atualizar(float dt, Uint32 agora) {
   // Animacoes reduzidas valem para TODA mola e rampa do app (anim.h), nao so
   // para as telas que lembravam de perguntar. Uma leitura por quadro.
   anim_politica_reduzida = ajustes_animacoes_reduzidas();
+  // Os quatro ajustes da memoria de fonte (Reproducao > Escolha da fonte),
+  // tambem uma leitura por quadro: fontepref.h.
+  // "Preferir o mesmo grupo de fonte" governa as duas memorias: a escolha a
+  // mao (o titulo inteiro, 180 dias) e a do automatico.
+  fontepref_configurar(ajustes_fonte_grupo(), 0, ajustes_fonte_grupo(), ajustes_fonte_grupo_sessoes());
+  // Pagina de registro na rede local (logrede.h): Ajustes > Sobre e ajuda > Registro.
+  logrede_configurar(ajustes_log_rede(), registro_arquivo());
+  fontevolta_configurar(ajustes_link_reusar(), ajustes_link_prazo_s());
+  // Pausa entre quadros medida uma vez, antes de qualquer tela perguntar se o
+  // OK segurado venceu (segurar.h, #387).
+  segurar_quadro(agora);
   central_atualizar(dt, agora);
+  estatvivo_atualizar(agora);
   // OK na vitrine da tela de descanso (descanso.h): abre o titulo, so com a
   // Home na frente. Em outra tela o OK so acordou.
   { int k = descanso_pedido_abrir();
@@ -2338,7 +5043,9 @@ void app_atualizar(float dt, Uint32 agora) {
   if (menu_pediu_spotlight() && spotPode()) spotAbrir(0);
   if (spot_aberto() && !spotPode()) spot_fechar();
   cancelarFonteSeSaiu();
+  preparoVigiar();   // tambem no login/perfis/ajustes, antes dos returns cedo
   processarFonteJob();
+  proximoPreparoPasso();
   // A QUALIDADE DA IMAGEM CHEGA AOS DOIS MODULOS QUE A CONSOMEM, e so quando
   // muda. tex_cache e artehero nao incluem ajustes.h de proposito: o cache de
   // texturas e a politica de url nao tem por que saber que existe uma tela de
@@ -2359,6 +5066,17 @@ void app_atualizar(float dt, Uint32 agora) {
   // O backend precisa progredir mesmo no login, perfis e transicoes que
   // retornam cedo: seek pendente no Tizen e prazo de recuo DV no webOS.
   video_bombear();
+  // Dolby Vision in MKV handed playback back to the TV player (HDR10).
+  { int dvr = video_dv_recuo_consumir();
+    if (dvr) {
+      const char *t = dvr == 1
+        ? i18n("A conexão não acompanhou o Dolby Vision. Continuando em HDR10.")
+        : i18n("Dolby Vision não abriu nesta fonte. Continuando em HDR10.");
+      // The island is hidden while a film plays: the player's own toast is
+      // what the person sees there (the island alone showed it after exit).
+      if (player_aberto()) player_toast(t, 6000u);
+      else ilha_avisar("dv-mkv", ILHA_INFO, NULL, t, 6000u, 0);
+    } }
   player_validar_retido(agora);
   if (tela == TELA_LOGIN) {
     login_atualizar(dt, agora);
@@ -2369,8 +5087,12 @@ void app_atualizar(float dt, Uint32 agora) {
       // Logo apos entrar, o primeiro ciclo de sync: e ele que descobre quantos
       // perfis a conta tem, e sem isso a tela de escolha nao teria o que
       // mostrar.
+      perfis_invalidar_sessao();
+      perfilAntes = perfis_ativo();
+      perfilAbrirSessao(perfilAntes);
       sync_reaplicar_ajustes();
       sync_iniciar();
+      loginNovo = 1;
       tela = TELA_ESCOLHA_PERFIL;
       perfilAntes = perfis_ativo();
       perfilsel_iniciar();
@@ -2387,9 +5109,29 @@ void app_atualizar(float dt, Uint32 agora) {
       && !uiPreview
 #endif
      ) {
-    invalidarPerfil();
+    perfilEncerrarSessao();
+    perfis_invalidar_sessao();
+    perfilSessaoAplicada = 0;
     tela = TELA_LOGIN;
     login_iniciar();
+    return;
+  }
+
+  // Recover every logged-in screen, including same-profile HTTP 401 renewal.
+  // Only the drawing thread may install the profile's live state and sources.
+  if (sessao_logada() &&
+      (perfis_sessao_geracao() != perfilSessaoAplicada || !desc_sessao_aberta())) {
+    printf("[app] retry profile session opening: %s\n",
+           perfis_sessao_geracao() != perfilSessaoAplicada
+             ? "profile generation changed" : "discovery session unopened");
+    fflush(stdout);
+    perfilAbrirSessao(perfilAntes);
+    perfilAntes = perfis_ativo();
+    sync_iniciar();
+    if (tela == TELA_ESCOLHA_PERFIL && perfilsel_concluido()) {
+      trocaPerfilDesde = agora;
+      perfilsel_preparar(1, agora);
+    }
     return;
   }
 
@@ -2403,8 +5145,10 @@ void app_atualizar(float dt, Uint32 agora) {
   // PERSONAL SERVERS (servidores.h: Jellyfin, Emby, Plex): the modules fetches on its own workers; the
   // Home is rebuilt when its row snapshot changes or the option flips. One
   // integer compare per frame, no network here.
-  if (servidores_passo()) desc_repetir_silencioso();
+  if (servidores_passo()) { desc_repetir_silencioso(); desc_refazer_continuar(); }
+  menu_servidores(ajustes_jellyfin_ligado() && servidores_conectado());
   simklauth_passo((unsigned)agora);
+  if (!player_aberto()) simkl_scrobble_retentar();
 
   if (tela == TELA_ESCOLHA_PERFIL) {
     sync_passo((unsigned)agora);
@@ -2417,7 +5161,9 @@ void app_atualizar(float dt, Uint32 agora) {
     // segundos que o cache de 844 ms existe para economizar. Custa uma
     // atualizacao sem desenho: a tela de escolha e opaca e a home nao e pintada
     // aqui (ver desenharTelas).
+    home_oculta(1);          // montada, nao pintada: o destaque nao gira
     home_atualizar(dt, agora);
+    home_oculta(0);
     perfilsel_atualizar(dt, agora);
     if (perfilsel_pediu_repetir()) { sync_iniciar(); return; }
     if (perfilsel_quer_sair()) {
@@ -2444,7 +5190,8 @@ void app_atualizar(float dt, Uint32 agora) {
       // Continuar). O teto existe para uma rede lenta nunca prender a pessoa
       // na tela de escolha: passado ele, a home abre como estiver e termina de
       // se montar ali, como antes.
-      if ((sync_perfil_pronto() && !desc_montando()) ||
+      if ((cat_do_cache() && home_tem_fileiras()) ||
+          (sync_perfil_pronto() && !desc_montando()) ||
           agora - trocaPerfilDesde >= TROCA_PERFIL_TETO_MS) {
         printf("[perfis] home do perfil %d %s em %u ms\n", perfis_ativo(),
                (sync_perfil_pronto() && !desc_montando()) ? "pronta" : "aberta pelo teto",
@@ -2456,88 +5203,11 @@ void app_atualizar(float dt, Uint32 agora) {
       }
       return;
     }
-    if (perfilsel_concluido()) {
-      int trocou = perfis_ativo() != perfilAntes;
-      // O perfil mudou o destino do sync: rodar de novo traz os addons e o
-      // progresso DESTE perfil, e nao os do perfil anterior que o primeiro
-      // ciclo pegou. So quando MUDOU: confirmar o mesmo perfil e o caso comum
-      // agora que a tela abre a cada arranque, e recarregar tudo ali seria
-      // cobrar o preco de uma troca em toda abertura do app.
-      // O CICLO PRECISA CONTINUAR MESMO QUANDO O PERFIL NAO MUDOU, e foi isso
-      // que eu errei ao economizar aqui.
-      //
-      // rodar() PARA depois de perfis_puxar() quando ha escolha pendente — o
-      // sync fica interrompido justamente esperando esta tela. Se confirmar o
-      // mesmo perfil nao reinicia nada, o ciclo nunca termina e a conta NAO
-      // SINCRONIZA a sessao inteira: os addons, o Trakt e o progresso ficam nos
-      // do cache da abertura anterior. Medido na TV do dono: ele acrescentou um
-      // addon na conta, confirmou o mesmo perfil, e o app seguiu listando os 4
-      // addons antigos, com "[sync] ciclo interrompido" como ultima linha.
-      // Confirmar o mesmo perfil e o caso COMUM, entao o defeito valia para
-      // quase toda abertura de quem tem mais de um perfil.
-      //
-      // O que continua condicionado a troca e so o CARO: invalidarPerfil()
-      // joga fora o que ja foi carregado, e reaplicar ajustes so faz sentido
-      // quando o destino mudou.
-      if (trocou) {
-        invalidarPerfil();
-        // Os ajustes DESTE perfil nesta TV (ou os do principal, na primeira
-        // visita), e o blob da conta dele por cima. Ver sync_trocar_perfil.
-        sync_trocar_perfil(perfilAntes);
-        ilhasinais_perfil_trocado();   // "Agora no perfil Lia" na ilha (02/10)
-        enquete_perfil_trocado();      // a enquete do perfil anterior sai (N3)
-        // AS COLECOES DO PERFIL ANTERIOR SAEM JA. col_definir_json so roda
-        // quando a conta manda linhas, entao um perfil sem colecoes ficava
-        // com as do anterior para sempre.
-        col_esquecer_perfil();
-        // OS SALVOS SAO DO PERFIL: a lista do anterior sai da tela (so os
-        // titulos que o novo nao tem) e entra a deste.
-        trocarSalvosDePerfil();
-        // E A FILEIRA DE CONTINUAR, que invalidarPerfil() nao alcanca.
-        //
-        // invalidarPerfil() so zera a tela de Perfil/Stats. Quem refaz o
-        // "Continuar assistindo" e desc_refazer_continuar(), chamada em apenas
-        // dois lugares: o fim de uma reproducao (player.c) e sync.c, sob
-        // `if (syncprog_aplicar(NULL) > 0)`. E ai esta o defeito: progresso.txt
-        // guarda TODOS os perfis num arquivo so, e prog_aplicar_remoto devolve
-        // 0 quando o registro que veio nao e mais novo que o que ja esta em
-        // disco. Voltar para um perfil JA SINCRONIZADO nao traz novidade
-        // nenhuma -> 0 -> a fileira nunca era refeita e continuava mostrando a
-        // do perfil anterior. Relatado por um testador na exp.4: abriu no
-        // perfil 2, trocou para o 1, e o "Continuar assistindo" seguiu sendo o
-        // do 2.
-        //
-        // Aqui NAO se pergunta se o sync trouxe algo: o perfil mudou, e isso
-        // por si so ja torna a fileira na tela a fileira errada. A leitura em
-        // si sempre esteve certa (prog_ler filtra por perfis_ativo()); o que
-        // faltava era o pedido de refazer.
-        desc_refazer_continuar();
-      }
-      // O TRAKT E O SIMKL TAMBEM SAO DO PERFIL. O vinculo local era um so por
-      // aparelho e o perfil 2 seguia com o Trakt do 1 — watchlist, historico,
-      // "continuar" e as fileiras do Trakt (relato do dono na C9). Aqui a
-      // credencial do perfil anterior sai da memoria e entra a deste, ou
-      // nenhuma; a da conta, se o perfil tiver, chega pelo sync_iniciar abaixo.
-      // Quando algum dos dois estava ou ficou ligado, as fileiras na tela sao do
-      // perfil errado e a home inteira e remontada — desc_refazer_continuar so
-      // refaz o "Continuar", e a watchlist e as listas do Trakt ficariam.
-      //
-      // FORA do `if` acima de proposito: as duas comparam com o perfil DELAS, nao
-      // com perfilAntes, e devolvem 0 sem mexer em nada quando ja estao certas.
-      { int tk = traktauth_trocar_perfil(perfis_ativo());
-        int sk = simklauth_trocar_perfil(perfis_ativo());
-        if (sk) simkl_esquecer();
-        if (tk || sk) desc_repetir(); }
+    // #551: a PIN confirmed inside perfilsel_atualizar changed the session
+    // after the check above ran. Stay one frame so that check opens it;
+    // otherwise discovery refuses every round of the unopened session.
+    if (perfilsel_concluido() && perfis_sessao_geracao() == perfilSessaoAplicada) {
       sync_iniciar();
-      if (trocou) {
-        // Fica nesta tela, com o indicador no cartao, ate a home estar pronta
-        // (bloco acima). Confirmar o mesmo perfil nao espera nada: a home ja e
-        // a dele.
-        perfilAntes = perfis_ativo();
-        trocaPerfilDesde = agora;
-        perfilsel_preparar(1, agora);
-        return;
-      }
       tela = TELA_HOME;
     }
     return;
@@ -2550,6 +5220,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // Um ciclo por vez, e so quando a conta existe. O passo e barato: sem fio
   // terminado ele nao faz nada.
   sync_passo((unsigned)agora);
+  agenda_filmes_atualizar();
   // SERVIDOR DA CONTA FORA DO AR (#215): um aviso discreto na ilha, uma vez
   // por queda, e retirado quando ele volta. Sem isto a pessoa via a home sem
   // addons (ou com os de ontem) e concluia que o app quebrou — e saia da conta
@@ -2605,11 +5276,25 @@ void app_atualizar(float dt, Uint32 agora) {
   // e mais chamada: o cartao da 1.8.0 so vive como cena do Guia de uso.
   // A 2.0.1 decide ANTES do guia da 2.0, no mesmo quadro: ela olha se o guia
   // ja foi visto antes de ele gravar a marca (novidades201.h).
+  // O CARTAO DA VERSAO ATUAL (novidades_cartao.h) decide antes de todos: ele
+  // grava as marcas da 2.0.1 e da 2.0.2, que entao nao abrem nunca mais. A
+  // condicao (Home pronta, sem player nem pagina do titulo) mora nele, onde o
+  // teste a exercita.
+  novcartao_decidir(tela == TELA_HOME && homePronta, player_aberto(), detail_aberto());
   if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto()) {
+    // O COMECAR da 2.1 primeiro: e ele o primeiro uso. Quando abre, o guia da
+    // 2.0 fica so gravado (novidades20_suprimir) — o tour sai do proprio
+    // Comecar — e a fila antiga nao abre nada embaixo dele.
+    comecar_decidir(loginNovo);
+    if (comecar_aberto()) novidades20_suprimir();
+  }
+  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() && !comecar_aberto()) {
+    // A 2.0.2 antes da 2.0.1: ela substitui o cartao da 2.0.1.
+    novidades202_primeira_vez();
     novidades201_primeira_vez();
     novidades20_primeira_vez();
   }
-  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !novidades201_aberto()) {
+  if (tela == TELA_HOME && homePronta && !player_aberto() && !detail_aberto() && !novidades170_aberto() && !novidades180_aberto() && !novidades20_aberto() && !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() && !resolver_aberto() && !comecar_aberto() && !dicascontrole_ocupado()) {
     // Esta e a primeira explicacao da versao: aparece antes dos demais
     // cartoes de onboarding. Depois de OK, o bloco abaixo continua a fila
     // antiga no quadro seguinte.
@@ -2792,21 +5477,25 @@ void app_atualizar(float dt, Uint32 agora) {
     char base[24];
     prefFolhaN = stream_n();
     idBaseDoTitulo(base, sizeof base);
-    if (base[0] && fontepref_tem(base)) stream_preferir(fontepref_escolher(base));
+    if (base[0] && fontepref_tem(base)) stream_preferir(fontepref_escolher_manual(base));
   } else if (!stream_folha_aberta()) prefFolhaN = -1;
   trocaDeTituloSeSolicitada();
   marcarAssistidoSeSolicitado();
   if (atomic_load_explicit(&perfilCarga, memory_order_acquire) == 2) {
     PerfilDados snapshot; int sucesso;
-    pthread_mutex_lock(&perfilTrava); snapshot=perfilPendente; sucesso=perfilSucesso; pthread_mutex_unlock(&perfilTrava);
+    pthread_mutex_lock(&perfilTrava); snapshot=perfilPendente; sucesso=perfilSucesso;
+    if (perfilSimklCredencial && perfilSimklCredencial != simklauth_credencial_copiar(NULL,0)) sucesso=0;
+    pthread_mutex_unlock(&perfilTrava);
     if (sucesso) perfil_definir_dados(&snapshot);
-    else if (!trakt_ativo()) perfil_definir_estado(PERFIL_ESTADO_DESCONECTADO,
-                                                    "Trakt desconectado. Vincule a conta para ver seu perfil.");
+    else if (!trakt_ativo() && !simkl_ativo())
+      perfil_definir_estado(PERFIL_ESTADO_DESCONECTADO,
+                            "Seu Diário ainda está vazio.");
     else perfil_definir_estado(PERFIL_ESTADO_INDISPONIVEL,
                                "Perfil indisponível. O último resumo continua seguro, se houver.");
     atomic_store_explicit(&perfilCarga, 0, memory_order_release);
   }
   if (tela == TELA_PERFIL && perfil_pediu_atualizar()) pedirPerfil();
+  if (tela == TELA_PERFIL && perfil_pediu_conquistas()) conquistas_abrir();
   // Titulo escolhido no painel de Salvos. Ele entrega o IMDb e nao um indice:
   // a lista dele inclui titulos que NAO estao no catalogo (vieram do arquivo
   // local, ver salvospainel.c), e um indice para esses nao existe. Sem item no
@@ -2824,6 +5513,16 @@ void app_atualizar(float dt, Uint32 agora) {
     int qual = 0, o;
     ilhacart_atualizar(agora, ab && ab->imdb[0] ? ab->imdb : NULL);
     ilhasinais_passo(agora);
+    // DIARIO: ouvintes, gravacao com folga, vistos da conta, nomes do titulo
+    // aberto e a pergunta do "Pegou no sono" na pagina do titulo.
+    diario_dono(sessao_usuario());   // troca de conta solta o que estava carregado
+    diario_passo();
+    diariofontes_passo();
+    diarionuvem_passo();
+    diariotrakt_passo();
+    if (ab && detail_assentado()) diariofontes_nome(ab);
+    dormiu_passo();
+    travarede_passo(agora);
     // O "Reconectar" do Trakt (modal da ilha): Ajustes, na linha do Trakt.
     if (ilhasinais_pediu_trakt() && !player_aberto()) {
       if (detail_aberto()) detail_fechar_seco();
@@ -2837,7 +5536,20 @@ void app_atualizar(float dt, Uint32 agora) {
         if (im[0]) spainel_abrir_titulo(im);
         else spainel_ir_aba(1);                       // 1 = aba Atividade
       } }
+    { static char focoChave[80]; IlhaCartao foco; Stream s; char alvo[64];
+      if (ajustes_retomada_morna() && !player_retido() && !player_aberto() &&
+          ilha_retomar_focado(&foco) && ilhacart_vivo_vale(&foco)) {
+        if (strcmp(focoChave, foco.chave)) {
+          snprintf(focoChave, sizeof focoChave, "%s", foco.chave);
+          int idxFoco = cat_indice_por_imdb(foco.imdb);
+          cat_id_stream(idxFoco, foco.serie ? foco.t : 0, foco.serie ? foco.e : 0, alvo, sizeof alvo);
+          if (fontevolta_pegar(alvo, sessao_usuario(), perfis_ativo(), agora, &s)) retomamorna_foco(s.url);
+          else retomamorna_cancelar();
+        }
+      } else { focoChave[0] = 0; retomamorna_cancelar(); }
+    }
     o = ilha_pediu(&ic, &qual);
+    if (o) retomamorna_cancelar();
     if (o && qual == ILHA_VIVO && !ilhacart_vivo_vale(&ic)) o = ILHA_PEDIU_NADA;
     if (o == ILHA_PEDIU_SALVOS) {
       // O PAINEL NASCE DO MODAL: o retangulo de agora e o do modal, que some
@@ -2857,11 +5569,12 @@ void app_atualizar(float dt, Uint32 agora) {
         if (menu_aberto()) menu_fechar();
         ilha_modal_fechar(1);
       } else if (idx >= 0) {
+        if (o == ILHA_PEDIU_TOCAR && qual == ILHA_VIVO && ajustes_retomada_morna()) cacheboost_backend_quadro(2);
         // O mesmo caminho do OK no card de "Continuar assistindo" com "OK no
         // card" = Retomar: a pagina abre e a reproducao e pedida junto, no
         // episodio que o cartao mostrava (cwTocarT/E, issue #93).
         cwTocarT = cwTocarE = 0; cwEspera = 0;
-        if (o == ILHA_PEDIU_TOCAR && ic.serie && ic.t > 0 && ic.e > 0) { cwTocarT = ic.t; cwTocarE = ic.e; }
+        if (o == ILHA_PEDIU_TOCAR && ic.serie && ic.t >= 0 && ic.e > 0) { cwTocarT = ic.t; cwTocarE = ic.e; }
         abrirPorIndice(idx);
         if (o == ILHA_PEDIU_TOCAR) detail_pedir_reproduzir();
       } else desc_pedir_titulo(ic.imdb);
@@ -2870,6 +5583,9 @@ void app_atualizar(float dt, Uint32 agora) {
       ilhacart_dispensar(qual);
     } else if (o == ILHA_PEDIU_DEPOIS) ilhacart_adiar(qual);
   }
+  { DeepLink dl;
+    if (tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL &&
+        !desc_titulo_buscando() && deeplink_pegar(&dl)) deeplinkAbrir(&dl); }
   // Da pagina do titulo, um titulo escolhido no painel de Salvos/avisos TROCA a
   // pagina (a de baixo fecha seca). So esse pedido: os demais seguem de fora.
   if (detail_aberto() && !player_aberto()) {
@@ -2903,7 +5619,15 @@ void app_atualizar(float dt, Uint32 agora) {
         } else desc_pedir_titulo(tc);
       }
     }
-    if (!alvo && abrirTeste[0]) { alvo = abrirTeste; abrirTeste[0] = 0; }
+    // COPIA antes de esvaziar: `alvo = abrirTeste; abrirTeste[0] = 0` deixava
+    // `alvo` apontando para a string que acabara de virar "" — a porta de
+    // teste "abrir:<tt>" (main.c) nao abria nada.
+    { static char abrirAgora[sizeof abrirTeste];
+      if (!alvo && abrirTeste[0]) {
+        snprintf(abrirAgora, sizeof abrirAgora, "%s", abrirTeste);
+        abrirTeste[0] = 0;
+        alvo = abrirAgora;
+      } }
     if (alvo && alvo[0]) {
       int k = cat_indice_por_imdb(alvo);
       if (k >= 0) abrirPorIndice(k); else desc_pedir_titulo(alvo);
@@ -2929,6 +5653,11 @@ void app_atualizar(float dt, Uint32 agora) {
       amigoperfil_abrir(pid); trocarTela(TELA_SOCIAL);
       socialDoPerfil = 1;
     } }
+  // "ABRIR A AGENDA COMPLETA" da aba Agenda do painel Social.
+  if (spainel_pediu_agenda()) {
+    if (spainel_aberto()) spainel_fechar();
+    trocarTela(TELA_AGENDA); menu_definir_destino(MENU_AGENDA);
+  }
   if (tela==TELA_HOME && home_pediu_social()) {
     trocarTela(TELA_AJUSTES);menu_definir_destino(MENU_AJUSTES);
   }
@@ -2943,11 +5672,12 @@ void app_atualizar(float dt, Uint32 agora) {
   // A lista de addons foi aberta DE Ajustes, entao o Back dela volta para
   // Ajustes. Cair na home aqui faria a pessoa refazer o caminho inteiro so
   // para ligar dois addons seguidos.
-  if (tela == TELA_ADDONS && addonsui_quer_sair() && saiuPorEsquerda &&
-      sidebar_permitida()) {
-    saiuPorEsquerda = 0;
-    menu_abrir();
-  } else if (tela == TELA_ADDONS && addonsui_quer_sair()) {
+  // 2.0.3: Voltar ou Esquerda devolvem a categoria Fontes e addons com o foco
+  // na linha "Addons" (antes a Esquerda abria a barra lateral e o Voltar caia
+  // no indice dos Ajustes).
+  if (tela == TELA_ADDONS && addonsui_quer_sair()) {
+    saiuPorEsquerda = saiuPorCima = 0;
+    ajustes_voltar_de_lista(0);
     trocarTela(TELA_AJUSTES); menu_definir_destino(MENU_AJUSTES);
   }
   if (tela == TELA_AJUSTES) {
@@ -2960,6 +5690,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // Ajustes › Sobre e ajuda › Novidades 2.0: o guia por cima de Ajustes, do
   // comeco; ao fechar, Ajustes continua onde estava.
   if (tela == TELA_AJUSTES && ajustes_pediu_novidades20()) novidades20_abrir(0);
+  if (tela == TELA_AJUSTES && ajustes_pediu_dicascontrole()) dicascontrole_abrir();
   if (tela == TELA_AJUSTES && ajustes_pediu_novidades()) {
     trocarTela(TELA_HOME);
     menu_definir_destino(MENU_INICIO);
@@ -2983,6 +5714,8 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   // Plugins (F09): o mesmo caminho da lista de addons (abre de Ajustes, volta a ela).
   if (tela == TELA_PLUGINS && pluginsui_quer_sair()) {
+    saiuPorEsquerda = saiuPorCima = 0;
+    ajustes_voltar_de_lista(1);
     trocarTela(TELA_AJUSTES); menu_definir_destino(MENU_AJUSTES);
   }
   if (tela == TELA_AJUSTES && ajustes_pediu_plugins()) {
@@ -3047,7 +5780,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // ESQUERDA na borda abre a barra SOBRE a tela atual. Voltar continua
       // sendo a saída normal para a Home; assim o foco da tela não é perdido
       // só para alcançar a navegação principal.
-      if (saiuPorEsquerda && sidebar_permitida()) {
+      if ((saiuPorEsquerda || saiuPorCima) && sidebar_permitida()) {
         menu_abrir();
       } else if (tela == TELA_CACA && cacaDoPerfil) {
         trocarTela(TELA_PERFIL);
@@ -3060,7 +5793,7 @@ void app_atualizar(float dt, Uint32 agora) {
         trocarTela(TELA_HOME);
         menu_definir_destino(MENU_INICIO);
       }
-      saiuPorEsquerda = 0;
+      saiuPorEsquerda = saiuPorCima = 0;
     }
   } else if (home_quer_sair()) {
     sair = 1;
@@ -3104,6 +5837,7 @@ void app_atualizar(float dt, Uint32 agora) {
       case MENU_EXPLORAR:   trocarTela(TELA_EXPLORAR);   break;
       case MENU_BUSCAR:     trocarTela(TELA_BUSCA);      break;
       case MENU_BIBLIOTECA: trocarTela(TELA_BIBLIOTECA); break;
+      case MENU_SERVIDORES: trocarTela(TELA_HOME); vertudo_servidores(NULL); break;
       case MENU_AGENDA:     trocarTela(TELA_AGENDA);     break;
       // DIRETO PARA A TELA, e nao mais para o painel lateral. O item do menu
       // se chama "Perfil e Stats" e abria um resumo de tres botoes por cima da
@@ -3121,7 +5855,7 @@ void app_atualizar(float dt, Uint32 agora) {
     HomeItem it;
     SpotPedido pedPessoa;
     if (tela == TELA_HOME && home_pediu_abrir()) {
-      if (home_item_focado(&it)) abrirTitulo(&it);
+      if (home_item_focado(&it)) abrirTitulo(&it, 1, 1);
     } else if (tela == TELA_EXPLORAR && explorar_pediu_abrir(&idx)) {
       abrirPorIndice(idx);
     } else if (tela == TELA_HOME && home_pediu_tocar()) {
@@ -3136,16 +5870,18 @@ void app_atualizar(float dt, Uint32 agora) {
         // porque a lista de episodios ainda nao chegou da rede.
         const CatItem *cw = cat_item(it.indice);
         int tocar = 1;
+        cwRewatch = cw ? cw->rewatch : 0;
         cwTocarT = cwTocarE = 0;
         cwEspera = 0;
         if (cw && !strcmp(cw->tipo, "series")) {
           cwTocarT = cw->temporada; cwTocarE = cw->episodio;
+          if (cw->episodio <= 0) tocar = 0;
           // EPISODIO TERMINADO NUNCA TOCA DE NOVO DO COMECO. O card ja anuncia
           // o proximo quando a lista existe; sem lista (a copia do card nao
           // tem), a pagina abre e o toque espera a lista (cwEsperarProximo).
           // Sem proximo — fim da serie, ou o seguinte ainda nao foi ao ar —,
           // so a pagina abre.
-          if (cw->progresso >= ajustes_cw_concluido() && cw->temporada > 0 &&
+          if (cw->progresso >= ajustes_cw_concluido() && cw->temporada >= 0 &&
               cw->episodio > 0) {
             int k = cat_indice_titulo(cw->imdb, it.indice);
             ProxSugestao prox;
@@ -3167,13 +5903,13 @@ void app_atualizar(float dt, Uint32 agora) {
             }
           }
         }
-        abrirTitulo(&it);
+        abrirTitulo(&it, 1, 1);
         if (tocar) detail_pedir_reproduzir();
       }
     } else if (tela == TELA_BUSCA && busca_pediu_pessoa(&pedPessoa)) {
       abrirPessoa(&pedPessoa);
     } else if (tela == TELA_BUSCA && busca_pediu_abrir(&idx)) {
-      if (busca_item_focado(&it)) abrirTitulo(&it); else abrirPorIndice(idx);
+      if (busca_item_focado(&it) && it.indice == idx) abrirTitulo(&it, 1, 1); else abrirPorIndice(idx);
     } else if (tela == TELA_BIBLIOTECA && biblioteca_pediu_abrir(&idx)) {
       abrirPorIndice(idx);
     } else if (tela == TELA_PERFIL) {
@@ -3221,6 +5957,12 @@ void app_atualizar(float dt, Uint32 agora) {
   }
 
   legendasDaFonte();
+  { char rwId[64]; int rt=0,re=0;
+    if (rewatchui_tocar(rwId,sizeof rwId,&rt,&re)) {
+      int k=cat_indice_titulo(rwId,detail_aberto() ? detail_indice() : -1);
+      if (k>=0) { abrirPorIndice(k); cwTocarT=rt; cwTocarE=re; cwRewatch=1; detail_pedir_reproduzir(); }
+    }
+  }
 
   // Botoes do detalhe: quem sabe que existe player e biblioteca e o roteador,
   // nao a tela de detalhe.
@@ -3245,8 +5987,21 @@ void app_atualizar(float dt, Uint32 agora) {
       int i = detail_indice();
       const CatItem *ci = cat_item(i);
       char alvo[64];
+      int esperaFoco = 0;
       idDoAlvo(ci, alvo, sizeof alvo);
-      if (!player_aberto() && aguardandoFonte != 2 && ci && ci->imdb[0] &&
+      // ANDAR PELOS EPISODIOS NAO E PEDIR FONTES (PR #567): trocar so o
+      // episodio do mesmo titulo espera o foco parar 1,2 s nele; titulo novo,
+      // folha de Fontes aberta ou lista de addons mudada buscam na hora.
+      { static char pendAlvo[64];
+        static Uint32 pendDesde;
+        char b1[24], b2[24];
+        fontepref_id_base(alvo, b1, sizeof b1);
+        fontepref_id_base(ultimoAlvo, b2, sizeof b2);
+        if (ultimoAlvo[0] && strcmp(alvo, ultimoAlvo) && !strcmp(b1, b2) && !stream_folha_aberta()) {
+          if (strcmp(pendAlvo, alvo)) { snprintf(pendAlvo, sizeof pendAlvo, "%s", alvo); pendDesde = SDL_GetTicks(); }
+          esperaFoco = SDL_GetTicks() - pendDesde < 1200u;
+        } }
+      if (!player_aberto() && aguardandoFonte != 2 && ci && ci->imdb[0] && !esperaFoco &&
           (strcmp(alvo, ultimoAlvo) || (detail_aberto() && ultimaVersao != addons_versao()))) {
         if (!strcmp(alvo, ultimoAlvo)) printf("[addons] lista mudou: refazendo a busca de fontes de %s\n", alvo);
         snprintf(ultimoAlvo, sizeof ultimoAlvo, "%s", alvo);
@@ -3261,19 +6016,26 @@ void app_atualizar(float dt, Uint32 agora) {
         // Tipo incerto ("anime" do AIOMetadata) tambem: e o /meta que diz se
         // e serie, mesmo quando o catalogo ja trouxe elenco.
         if (!strcmp(ci->tipo, "series") || strcmp(ci->tipo, "movie") ||
-            ci->nElenco == 0) desc_episodios(i, 0);
-        { stream_definir_alvo(alvo); addons_buscar(alvo, ci->tipo); }
+            ci->nElenco == 0 || desc_elenco_precisa_pessoas(ci)) desc_episodios(i, 0);
+        { stream_definir_alvo(alvo); servidores_dica(alvo, ci->titulo, srvidx_ano_de(ci->meta)); origemFontes(ci); addons_buscar(alvo, ci->tipo); }
+        aquecerAoAbrirTitulo();
         // Legendas do OpenSubtitles junto: sao dezenas por titulo e a busca
         // leva segundos. Pedir so quando o dono abre a folha de faixas faria
         // ele esperar de olho numa lista vazia.
         addons_buscar_legendas(alvo, ci->tipo);
       } }
+    aquecerQuandoChegarem();
+    prepararAoAbrir();
     // "Assistir do comeco" (issue #46) segue o MESMO caminho do primario; a
     // unica diferenca e a trava de retomada, armada depois de o episodio ficar
     // definitivo — player_do_inicio sobrevive as re-chamadas tardias de
     // player_definir_episodio.
     int doInicio = detail_pediu_do_inicio();
-    if ((detail_pediu_reproduzir() || doInicio) && aguardandoFonte != 2) {
+    int querTocar = detail_pediu_reproduzir() || doInicio;
+    // TRAVA DE SERIE: o episodio alvo alem do limite (quem esta a frente
+    // espera) nao toca: abre a folha de espera, que tem "Assistir mesmo assim".
+    if (querTocar && aguardandoFonte != 2 && travaui_segurar_detalhe()) querTocar = 0;
+    if (querTocar && aguardandoFonte != 2) {
       marco("abrir: reproduzir pedido");
       // A tela abre JA, no estado "abrindo fonte", e a escolha acontece depois.
       // Escolher antes deixaria o botao sem resposta por segundos, e escolher
@@ -3281,16 +6043,36 @@ void app_atualizar(float dt, Uint32 agora) {
       // por isso passa por sucesso.
       const CatItem *ci = cat_item(detail_indice());
       limparFonteVOD();
+      char alvoPreparo[64], basePreparo[24];
+      int idxPreparado = -1;
+      idDoAlvo(ci, alvoPreparo, sizeof alvoPreparo);
+      if (ci && cwTocarT >= 0 && cwTocarE > 0)
+        cat_id_stream(detail_indice(), cwTocarT, cwTocarE, alvoPreparo, sizeof alvoPreparo);
+      idBaseDoTitulo(basePreparo, sizeof basePreparo);
+      int lembradaPreparo = basePreparo[0] ? fontepref_escolher(basePreparo) : -1;
+#ifdef NV_ANDROID
+      if (doInicio && preparo.token) {
+        player_precarregar_cancelar(preparo.token); preparo.token = 0;
+      }
+#endif
+      int usouPreparo = !ajustes_fonte_manual() &&
+                       preparoUsar(alvoPreparo, lembradaPreparo, &idxPreparado);
+      // Armado antes da abertura: o proximo quadro nao cancela o worker
+      // quando a pagina do titulo cede lugar ao player.
+      if (!usouPreparo && preparoEmCurso(alvoPreparo, lembradaPreparo)) {
+        preparoEspera = 1; preparoLembradaPlay = lembradaPreparo;
+      }
       diagnostico_cancelar_vazao();
       player_abrir(detail_indice(), NULL);
       episodioDoDetalhe();
       // CW direto (issue #93): o episodio que o card anunciava vale sobre o
       // que episodioAlvo resolveu — ele e a unica copia fiel do "T/E do card"
       // quando a lista de episodios ainda esta a caminho.
-      if (cwTocarT > 0 && cwTocarE > 0) {
+      if (cwTocarT >= 0 && cwTocarE > 0) {
         player_definir_episodio(cwTocarT, cwTocarE);
         cwTocarT = cwTocarE = 0;
       }
+      if (cwRewatch >= 0) { player_rewatch(cwRewatch); cwRewatch=-1; }
       if (doInicio) player_do_inicio();
       // O episodio so fica definitivo DEPOIS de abrir o player. Refaça sempre
       // o pedido de legenda nesse ponto; a busca de prefetch pode ter comecado
@@ -3302,8 +6084,19 @@ void app_atualizar(float dt, Uint32 agora) {
       }
       // A busca de fontes sai SEMPRE (renovarListaDoPlayer): com a fonte
       // guardada ela corre em segundo plano e so serve a folha e ao recuo.
-      renovarListaDoPlayer();
-      if (!tocarFonteGuardada()) aguardandoFonte = 1;
+      char alvoDefinitivo[64]; alvoPlayer(alvoDefinitivo, sizeof alvoDefinitivo);
+      if (usouPreparo && !strcmp(alvoDefinitivo, alvoPreparo)) {
+        fontePedidoGeracao = novaGeracaoFonte();
+        limparFontePendente();
+        fonteEscolhida = idxPreparado; aguardandoFonte = 2;
+        if (idxPreparado == -2 && fonteFalha &&
+            pedirFonteJob(FJOB_FALHA, fontePedidoGeracao, NULL, 0) < 0) fonteEscolhida = -1;
+      } else {
+        if (usouPreparo) limparFonteVOD();
+        renovarListaDoPlayer();
+        if (!preparoEspera && (tocarParteGuardada() || tocarFonteGuardada())) { /* parte ou fonte guardada abriu */ }
+        else aguardandoFonte = 1;
+      }
     }
     if (detail_pediu_marcar()) {
       // Alterna no Trakt E no espelho local. O estado de partida vem de
@@ -3317,7 +6110,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // oposto do que gravava no espelho local sempre que a ordem mudasse. E a
       // mesma disciplina que ctxmenu.c ja aplica (e que o teste de contrato
       // cobra la).
-      int entrar = c ? !c->naLista : 0;
+      int entrar = c ? !biblioteca_na_lista(i) : 0;
       // Primeira vez: a ilha pergunta onde o + salva e grava DEPOIS (ilhasalvar.c).
       if (c && ilhasalvar_perguntar(c, entrar)) c = NULL;
       biblioteca_alternar_lista(i);
@@ -3339,14 +6132,31 @@ void app_atualizar(float dt, Uint32 agora) {
         else simkl_lista_tipo(c->imdb, c->tipo, entrar);
       }
       if (c) cat_definir_na_lista(i, entrar);
+      // Marca de Origem do servico que recebeu o pedido, para o filtro da
+      // Biblioteca ja mostrar o titulo sem esperar o proximo ciclo.
+      if (c && entrar && c->imdb[0]) {
+        if (ajustes_salvos_no_trakt() && trakt_ativo()) cat_marcar_fonte_imdb(c->imdb, CAT_FONTE_TRAKT);
+        if (ajustes_salvos_no_simkl() && simkl_ativo()) cat_marcar_fonte_imdb(c->imdb, CAT_FONTE_SIMKL);
+      }
       if (c) ilhasalvar_aviso(c, entrar);   // o voo da capa e o "Salvo em ..." na ilha
     }
     if (detail_pediu_fontes()) {
       // A lembrada e localizada ANTES de abrir, para a folha ja desenhar a
       // marca no primeiro quadro. E so uma varredura da lista em memoria.
       char base[24];
+      int epT, epE;
+      // O pedido pode trazer um episodio travado (toque no card com
+      // "Escolher a fonte ao reproduzir", ou "Fontes deste episodio" no
+      // menu, #513): a folha rouba o foco e detail_ep_foco passa a responder
+      // pelo episodio EM ANDAMENTO. O episodio travado vai por folhaTocarT/E,
+      // NAO por cwTocar: esse e o slot do Continuar assistindo e os ramos de
+      // cima (card, ilha, agenda) o reescrevem no quadro seguinte, com a
+      // folha ainda aberta (#513). Sem trava (folha do titulo) zera, senao
+      // um "Assistir T2E5" da agenda colaria no pedido.
+      int temEp = detail_pediu_fontes_ep(&epT, &epE);
+      gravarFolhaTocar(epT, epE, temEp);
       idBaseDoTitulo(base, sizeof base);
-      stream_preferir(base[0] ? fontepref_escolher(base) : -1);
+      stream_preferir(base[0] ? fontepref_escolher_manual(base) : -1);
       nomeParaFolha(); stream_folha_abrir();
     }
   }
@@ -3356,8 +6166,14 @@ void app_atualizar(float dt, Uint32 agora) {
   // A busca disparada por Reproduzir terminou: agora VERIFICA as fontes, em
   // ordem, ate achar uma que leve ao arquivo — e so entao liga o video.
   if (aguardandoFonte == 1 &&
-      (addons_estado() != ADD_BUSCANDO || autoParcialPronto())) {
+      (addons_estado() != ADD_BUSCANDO ||
+       ((player_id_canal()[0] || !fontefalha_ativa()) && autoParcialPronto()))) {
     unsigned geracao = novaGeracaoFonte();
+    // QUANTO O PLAY ESPEROU PELA DECISAO, e por que ela saiu (#202). Medido no
+    // D1 so havia a decisao parcial; a completa nao deixava rastro.
+    printf("[fonte] decisao em %u ms (%s)\n", (unsigned)player_aberto_ha_ms(),
+           addons_busca_parcial() ? autoMotivo : addons_busca_incompleta() ? "busca encerrada com respostas pendentes" : "todos os add-ons responderam");
+    fflush(stdout);
     if (addons_busca_parcial()) {
       char faltam[160];
       int k = addons_faltam(faltam, sizeof faltam);
@@ -3383,7 +6199,10 @@ void app_atualizar(float dt, Uint32 agora) {
       if (xtream_e_id(player_id_canal())) {
         fonteEscolhida = resolverCanalXtream();
         canalFontePrazo = CANAL_FONTE_PRAZO_MS;
-      } else if (stalker_e_id(player_id_canal())) {
+      } else if (guia_e_m3u(player_id_canal())) {
+        fonteEscolhida = resolverCanalM3u();
+        canalFontePrazo = CANAL_FONTE_PRAZO_MS;
+      } else if (stalker_e_id(player_id_canal()) || m3u_e_id(player_id_canal())) {
         // UMA fonte, e ela acabou de nascer: nao ha lista para conferir nem
         // ranking para aplicar. O create_link bloqueia centenas de ms, entao
         // captura o id e deixa a rede fora do fio de desenho. Sem `return` de
@@ -3394,7 +6213,7 @@ void app_atualizar(float dt, Uint32 agora) {
         canalFontePrazo = CANAL_FONTE_PRAZO_MS;
       } else {
         int r = pedirFonteJob(FJOB_CANAL, geracao, NULL, 0);
-        if (r < 0) fonteEscolhida = stream_automatico();
+        if (r < 0) fonteEscolhida = stream_automatico_canal();
         canalFontePrazo = CANAL_FONTE_PRAZO_MS;
       }
       canalFonteDesde = SDL_GetTicks();
@@ -3414,7 +6233,15 @@ void app_atualizar(float dt, Uint32 agora) {
       char base[24];
       int lembrada;
       idBaseDoTitulo(base, sizeof base);
-      lembrada = base[0] ? fontepref_escolher(base) : -1;
+      // Com "escolher a fonte ao reproduzir" ligado so vale a escolha da PESSOA:
+      // a memoria do automatico (bingeGroup) nao pode tocar sozinha aqui nem
+      // aparecer como "Sua escolha anterior" na folha que vai abrir.
+      // NEXT: o bingeGroup exato da fonte que tocava vem antes de tudo (o Nuvio
+      // faz o mesmo, tambem com a escolha manual ligada).
+      lembrada = escolhaDoNext(base, NULL, 0) ? fontepref_binge_tocando(base) : -1;
+      if (lembrada < 0)
+        lembrada = base[0] ? (ajustes_fonte_manual() ? fontepref_escolher_manual(base)
+                                                     : fontepref_escolher(base)) : -1;
       stream_preferir(lembrada);
       // QUEM ESCOLHE E A PESSOA, quando ela pediu isso em Ajustes.
       //
@@ -3427,25 +6254,49 @@ void app_atualizar(float dt, Uint32 agora) {
       // uma folha entre um zap e outro e o oposto do que se quer de TV ao
       // vivo, e la a escolha ja e feita pela playlist que responde.
       //
-      // ISSUE #62: COM "ESCOLHER A FONTE AO REPRODUZIR" LIGADO, "RETOMAR"
-      // ABRIA A FOLHA DE NOVO. A pessoa ja tinha escolhido a fonte deste
-      // titulo na folha — e a escolha esta guardada (fontepref) e presente na
-      // lista de agora. Perguntar de novo e o que o relator chamou de "o bug
-      // antigo": o ajuste quer que a PESSOA escolha, e ela escolheu. So
-      // pergunta quando nao ha escolha lembrada que sirva para esta lista;
-      // trocar de fonte continua a um hold de distancia (menu do episodio,
-      // hold no botao primario).
-      if (ajustes_fonte_manual() && stream_n() > 0 && lembrada < 0) {
+      // #667: a remembered source sets the sheet's focus, never consent to play.
+      if (ajustes_fonte_manual() && stream_n() > 0) {
         aguardandoFonte = 0;
         folhaParaTocar = 1;
         nomeParaFolha(); stream_folha_abrir();
-      } else if (pedirFonteJob(FJOB_ADDON, geracao, NULL, 0) < 0) {
-        aguardandoFonte = 0; player_erro_fonte();
+      } else {
+        char alvoP[64];
+        int idx;
+        alvoPlayer(alvoP, sizeof alvoP);
+        if (preparoUsar(alvoP, lembrada, &idx)) {
+          fonteEscolhida = idx;
+          if (idx == -2 && fonteFalha && pedirFonteJob(FJOB_FALHA, geracao, NULL, 0) < 0)
+            fonteEscolhida = -1;
+          printf("[fonte] preparada ao abrir: usada, o Play abriu sem conferir de novo\n");
+          fflush(stdout);
+        } else if (preparoEmCurso(alvoP, lembrada)) {
+          preparoEspera = 1; preparoLembradaPlay = lembrada;
+          // O mesmo worker termina a escolha para este Play; nenhuma outra
+          // politica ou conferencia e posta na fila enquanto ele resolve.
+        } else if (fontefalha_ativa()) {
+          preparoEspera = 0;
+          if (!iniciarPoliticaFonte(lembrada, 0) || pedirFonteJob(FJOB_FALHA, geracao, NULL, 0) < 0) {
+            aguardandoFonte = 0; limparFonteVOD(); player_erro_fonte();
+          }
+        } else {
+          preparoEspera = 0;
+          if (pedirFonteJob(FJOB_ADDON, geracao, NULL, 0) < 0) { aguardandoFonte = 0; player_erro_fonte(); }
+        }
       }
     }
   }
+  if (fonteFalha && fonteFalhaEsperando && aguardandoFonte == 2 &&
+      (stream_n() != fonteFalhaN || addons_estado() != ADD_BUSCANDO)) {
+    fonteFalhaEsperando = 0;
+    if (pedirFonteJob(FJOB_FALHA, fontePedidoGeracao, NULL, 0) < 0) fonteEscolhida = -1;
+  }
+  vigiarAntecipada();
   if (aguardandoFonte == 2 && fonteEscolhida != -2) {
     const Stream *s = fonteEscolhida >= 0 ? stream_item(fonteEscolhida) : NULL;
+    // O player ja esta tocando a escolhida (aberta antes do veredito)?
+    int jaTocando = fa_ja_tocando(antAberta, fonteEscolhida) && s != NULL;
+    if (antAberta >= 0 && !jaTocando) desfazerAntecipada("outra fonte foi a escolhida");
+    antAberta = -1;
     aguardandoFonte = 0;
     printf("automatico (verificado): %s\n", s ? s->rotulo : "(nenhuma fonte serve)");
     // A afirmacao de HDR/DV vai ANTES do tocar: e ela que o bind do ACB
@@ -3454,7 +6305,7 @@ void app_atualizar(float dt, Uint32 agora) {
     if (s) video_definir_cabecalhos(s->cabecalhos);
     // Anuncia o CONTENTOR pelo mesmo caminho: e o que dispensa a sonda de
     // Matroska num arquivo que nunca teria um cabecalho desses.
-    if (s) video_definir_mp4(s->mp4 || strstr(s->url, ".mp4") != NULL);
+    if (s) video_definir_mp4(stream_e_mp4(s));
     { int esperarMais = !s && !player_id_canal()[0] && !ajustes_fonte_primeira() &&
                         addons_busca_parcial();
       marco(s ? "fonte escolhida" : esperarMais ? "fonte: nenhuma das parciais serve"
@@ -3469,7 +6320,7 @@ void app_atualizar(float dt, Uint32 agora) {
     // falharam ja sairam da fila (stream_automatico_excluir); a proxima
     // escolha so sai com lista maior. "Primeira da lista" segue o caminho dela
     // abaixo (uma conferida por vez, dentro do orcamento de tentativas).
-    if (!s && !player_id_canal()[0] && !ajustes_fonte_primeira() &&
+    if (!fonteFalha && !s && !player_id_canal()[0] && !ajustes_fonte_primeira() &&
         addons_busca_parcial() && (player_aberto() || player_mini_ativo()) &&
         !player_quer_sair()) {
       printf("[fonte] nenhuma das %d que chegaram serve; esperando os addons que faltam\n",
@@ -3482,17 +6333,32 @@ void app_atualizar(float dt, Uint32 agora) {
     if ((player_aberto() || player_mini_ativo()) && !player_quer_sair()) {
       stream_definir_atual(fonteEscolhida);
       if (s) {
-        player_definir_fonte(s->url);
+        if (player_id_canal()[0]) {
+          static char viaProxy[4200];
+          player_definir_fonte(urlCanal(s, viaProxy, sizeof viaProxy));
+        } else if (jaTocando) {
+          printf("[fonte] conferencia confirmou a fonte que ja tocava (%u ms)\n",
+                 (unsigned)(SDL_GetTicks() - fonteVODDesde));
+          fflush(stdout);
+        } else definirFonteVOD(s->url);
         // Tocou por outra fonte, mas um servico de debrid ficou de fora por
         // conta sem plano: diz uma vez por sessao, sem bloquear nada.
         { int novo = debrid_sem_plano_novo();
           if (novo) player_toast_ex(i18n(debrid_sem_plano_frase(novo)), 7000, "aj_triangle-alert", 1); }
         if (!player_id_canal()[0]) {
           fonteVODAutomatica = 1;
-          fonteVODTentativas++;
-          fonteVODDesde = SDL_GetTicks();
-          // "Fonte 2 de 3" na ilha do player: a troca deixa de ser muda.
-          player_definir_tentativa(fonteVODTentativas, VOD_FONTE_MAX_TENTATIVAS);
+          // Aberta antes do veredito: a contagem e o relogio dos 15 s sem sinal
+          // ja correm desde a abertura (abrirAntecipada), e nao recomecam.
+          if (!jaTocando) {
+            if (fonteFalha) {
+              fontefalha_marcar_aberta(fonteFalha);
+              fonteVODTentativas = fontefalha_tentativas(fonteFalha);
+            } else fonteVODTentativas++;
+            fonteVODDesde = SDL_GetTicks();
+            // "Fonte 2 de 3" na ilha do player: a troca deixa de ser muda.
+            player_definir_tentativa(fonteVODTentativas,
+                  fonteFalha ? fontefalha_teto(fonteFalha) : VOD_FONTE_MAX_TENTATIVAS);
+          }
         }
         // Armado so em sessao de canal: o indice passa a responder ao
         // watchdog de fonte morta ate a lista acabar ou o canal trocar.
@@ -3503,13 +6369,22 @@ void app_atualizar(float dt, Uint32 agora) {
       // que trava: a proxima da lista so e conferida se ainda cabe em "Outra
       // fonte se falhar". No modo "Melhor fonte" a conferencia ja percorreu a
       // fila dela, e aqui e erro como sempre foi.
-      else if (!player_id_canal()[0] && ajustes_fonte_primeira() &&
+      else if (!fonteFalha && !player_id_canal()[0] && ajustes_fonte_primeira() &&
                ++fonteVODTentativas < VOD_FONTE_MAX_TENTATIVAS &&
-               stream_automatico() >= 0) {
+               stream_proxima_vod(stream_atual()) >= 0) {
         printf("[fonte] primeira da lista nao serviu; conferindo a seguinte (%d/%d)\n",
                fonteVODTentativas + 1, VOD_FONTE_MAX_TENTATIVAS);
         player_definir_tentativa(fonteVODTentativas + 1, VOD_FONTE_MAX_TENTATIVAS);
-        (void)pedirProximaFonteVOD();
+        (void)pedirProximaFonteVOD(stream_atual());
+      }
+      // AS REGRAS DE AUTO-PLAY NAO DEIXARAM NENHUMA (#202: so add-ons
+      // permitidos sem "usar os outros", ou regex exigida que nada casa): a
+      // lista existe, so o automatico nao pode escolher. Como o oficial, abre
+      // a folha de fontes para a pessoa escolher, em vez do erro.
+      else if (!player_id_canal()[0] && stream_regra_bloqueou() && stream_n() > 0) {
+        limparFonteVOD();
+        folhaParaTocar = 1;
+        nomeParaFolha(); stream_folha_abrir();
       }
       else { limparFonteVOD(); erroSemFonte(); }
     }
@@ -3544,16 +6419,11 @@ void app_atualizar(float dt, Uint32 agora) {
   // com "buffer 9.0s" numa fonte que nunca chegou ao loadCompleted: o buffer
   // enchia, o decoder nao comecava, e o cartao era tirado para uma tela
   // preta. O caso que motivou o conserto (18/09) tinha loadCompleted.
-  if ((player_aberto() || player_mini_ativo()) && player_fonte_falhou() &&
-      player_tem_video() && video_buffer_fim() > 0.5 && !video_falhou() &&
-      video_pronto()) {
-    printf("[player] a fonte voltou a entregar (buffer %.1fs): tirando o erro da tela\n",
-           video_buffer_fim());
-    fflush(stdout);
-    player_limpar_erro_fonte();
-    canalFonteDesde = SDL_GetTicks();
-  }
+  recuperarErroFonte();
   if (canalFonteIdx >= 0 && (player_aberto() || player_mini_ativo()) &&
+#ifdef NV_ANDROID
+      !video_recuperando_live() &&
+#endif
       !player_quer_sair() && player_id_canal()[0]) {
     // TRAVOU DEPOIS DE ABRIR conta como morta, e sem isto nao contava.
     //
@@ -3577,6 +6447,14 @@ void app_atualizar(float dt, Uint32 agora) {
     // longo — o uMS que engole 39 s e nao toca em 45 s esta mesmo travado.
     Uint32 desde = SDL_GetTicks() - canalFonteDesde;
     int xt = xtream_e_id(player_id_canal());
+    const char *limitedError = video_erro_texto();
+    if (xt && xtream_conexoes_limitadas() && limitedError &&
+        (strstr(limitedError, "403") || strstr(limitedError, "458") || strstr(limitedError, "509"))) {
+      canalFonteIdx = -1;
+      erroCanalXtream();
+      video_parar();
+      return;
+    }
     // ESPERA DE AJUSTES (Live TV > Espera para abrir o canal, ou o "Aplicar"
     // do diagnostico da Live TV): 25 ou 45 s no lugar dos 15 s do Xtream sem
     // decoder e dos 25 s da fonte viva sem dado. O prazo curto da fonte MUDA
@@ -3585,17 +6463,88 @@ void app_atualizar(float dt, Uint32 agora) {
     Uint32 semDecMs = espera ? espera : CANAL_SEM_DECODER_MS;
     Uint32 prazo = (espera && canalFontePrazo == CANAL_FONTE_PRAZO_MS) ? espera : canalFontePrazo;
     Uint32 teto = espera > CANAL_ABRE_TETO_MS ? espera : CANAL_ABRE_TETO_MS;
-    int semDecoder = xt && player_carregando() && desde > semDecMs &&
+    int semDecoder = (xt || canalViaProxy) && player_carregando() && desde > semDecMs &&
         video_buffer_fim() > 0.5 && !video_decoder_anunciou();
+    unsigned bufferMs = video_bufferando_ms();
+    unsigned travaMs = CANAL_TRAVA_MS, paradoMs = NV_LS_PARADO_MS;
+#ifdef NV_ANDROID
+    if (bufferMs) {
+      paradoMs = nv_ls_buffer_prazo(video_live_segmento_ms());
+      // Give the same-source watchdog its normal four-second lead over failover.
+      if (paradoMs > NV_LS_PARADO_MS) travaMs = paradoMs + 4000u;
+    }
+#endif
     int morta = player_fonte_falhou() || video_falhou() ||
         (player_carregando() && desde > prazo && video_buffer_fim() <= 0.5) ||
         (player_carregando() && desde > teto) ||
-        video_bufferando_ms() > CANAL_TRAVA_MS || semDecoder;
+        bufferMs > travaMs || semDecoder;
+    // CANAL QUE PAROU DEPOIS DE TOCAR (#302): fim de fluxo, posicao parada ou
+    // buffering por 8 s (HLS Android usa o prazo limitado do segmento).
+    // EOF de live TPK com progresso reabre imediatamente
+    // sem gastar tentativa; as demais quedas reabrem a MESMA fonte, ate
+    // NV_LS_MAX vezes (livestall.h); esgotou, cai no caminho de sempre (proxima
+    // fonte). Pausa da pessoa nunca entra. No webOS o fim do buffer parado
+    // com reserva curta tambem conta (fonte seca, reabre antes de congelar).
+    // So roda se o watchdog acima nao ja declarou a fonte morta (erro de
+    // verdade tem o seu proprio caminho).
+    { static int lsIdx = -1;
+      static char lsId[64];
+      int ls;
+      if (lsIdx != canalFonteIdx || strncmp(lsId, player_id_canal(), sizeof lsId - 1)) {
+        nv_ls_zerar(&liveStall);
+        lsIdx = canalFonteIdx;
+        snprintf(lsId, sizeof lsId, "%s", player_id_canal());
+      }
+      double livePos = video_pronto() ? video_pos() : 0.0, liveFim = video_buffer_fim();
+#ifdef NV_ANDROID
+      if (video_pronto()) video_live_progresso(&livePos, &liveFim);
+#endif
+      int estavaPendente = liveStall.pendente;
+      ls = nv_ls_passo_buf_prazo(&liveStall, SDL_GetTicks(), livePos,
+                           video_pronto(), player_pausa_pessoa(), video_terminou(),
+                           bufferMs, liveFim, paradoMs);
+      if (morta) {
+        nv_ls_zerar(&liveStall);
+      } else if (estavaPendente && !liveStall.pendente && ls == NV_LS_NADA) {
+        printf("[canal] reproducao recuperou: reabertura pendente cancelada (fonte %d)\n", canalFonteIdx);
+        fflush(stdout);
+      } else if (ls == NV_LS_AGENDOU) {
+        printf("[canal] parou de tocar (fim de fluxo=%d, posicao %.1fs, buffering %u ms): "
+               "reabrindo a fonte %d, tentativa %d/%d em %u ms\n", video_terminou(),
+               livePos, video_bufferando_ms(), canalFonteIdx, liveStall.tentativa,
+               NV_LS_MAX, nv_ls_espera_ms(liveStall.tentativa));
+        fflush(stdout);
+        player_toast_ex(i18n("Conexão caiu, reconectando…"), 4000, "aj_wifi-off", 1);
+      } else if (ls == NV_LS_REABRIR) {
+        const Stream *mesma = stream_item(canalFonteIdx);
+        if (mesma) {
+          static char viaProxy[4200];
+#ifdef NV_TPK
+          if (video_terminou() && !liveStall.pendente)
+            printf("[canal] tpk EOF de live: reabrindo a fonte %d imediatamente (sem tentativa)\n", canalFonteIdx);
+          else
+#endif
+          printf("[canal] reabrindo a fonte %d (tentativa %d/%d)\n", canalFonteIdx,
+                 liveStall.tentativa, NV_LS_MAX);
+          fflush(stdout);
+          marco("canal: parou, reabrindo a mesma fonte");
+          canalFonteDesde = SDL_GetTicks();
+          player_definir_fonte(urlCanal(mesma, viaProxy, sizeof viaProxy));
+          nv_ls_reaberto(&liveStall, SDL_GetTicks());
+        } else {
+          morta = 1;
+        }
+      } else if (ls == NV_LS_DESISTIR) {
+        printf("[canal] fonte %d parou %d vezes seguidas: proxima fonte\n", canalFonteIdx, NV_LS_MAX);
+        fflush(stdout);
+        morta = 1;
+      }
+    }
     // O formato que tocou vai na frente nos proximos canais (xtream.h).
     { static char tocouUrl[64];
       if (xt && video_pronto() && strncmp(tocouUrl, player_id_canal(), sizeof tocouUrl - 1)) {
         snprintf(tocouUrl, sizeof tocouUrl, "%s", player_id_canal());
-        xtream_formato_funcionou(video_url_atual());
+        xtream_formato_canal_funcionou(player_id_canal(), video_url_atual());
       }
       if (!video_pronto()) tocouUrl[0] = 0; }
     if (morta) {
@@ -3608,6 +6557,26 @@ void app_atualizar(float dt, Uint32 agora) {
       fflush(stdout);
       int prox = stream_canal_proxima(canalFonteIdx);
       const Stream *s;
+      // PELO PROXY NAO ABRIU: a MESMA fonte direto, antes da proxima (#283).
+      // Cobre o HLS que o proxy nao converte (cifrado, fMP4, audio a parte) e
+      // a TV em que o motor HLS do uMS toca melhor que o TS continuo. Se o
+      // proxy so redirecionou, a tentativa direta ja foi esta.
+      if (canalViaProxy) {
+        const Stream *mesma = stream_item(canalFonteIdx);
+        int redir = proxyts_redirecionou();
+        canalViaProxy = 0;
+        if (mesma && !redir) {
+          printf("[canal] fonte %d pelo proxy nao abriu (%s); tentando direto\n", canalFonteIdx,
+                 video_falhou() ? video_erro_texto()
+                                : semDecoder ? "dado sem decoder" : "sem dado no prazo");
+          fflush(stdout);
+          marco("canal: proxy falhou, fonte direto");
+          proxyts_definir_cabecalhos("");
+          canalFonteDesde = SDL_GetTicks();
+          player_definir_fonte(mesma->url);
+          return;
+        }
+      }
       // PORTAL STALKER: nao existe "proxima fonte" — cada canal tem uma so, e
       // o que morre nao e o canal, e o LINK, que vale minutos. Avancar o indice
       // aqui cairia direto no ramo de desistir, entao o conserto e pedir um
@@ -3616,7 +6585,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // Com teto: `stalkerTentativas` impede que um portal fora do ar vire um
       // laco de create_link a cada 12 s para sempre. O teto zera quando o canal
       // troca (canalFonteIdx = -1 em tocarCanal).
-      if (stalker_e_id(player_id_canal())) {
+      if (stalker_e_id(player_id_canal()) || m3u_e_id(player_id_canal())) {
         if (stalkerRenovando) return;
         if (stalkerTentativas < CANAL_STALKER_TENTATIVAS) {
           unsigned geracao = novaGeracaoFonte();
@@ -3661,7 +6630,8 @@ void app_atualizar(float dt, Uint32 agora) {
         // com todas mudas o curto matava a 4K que abre em 11,8 s (25/09).
         canalFontePrazo = stream_canal_prazo_longo(prox)
                             ? CANAL_FONTE_PRAZO_MS : CANAL_FONTE_PRAZO_MUDA_MS;
-        player_definir_fonte(s->url);
+        { static char viaProxy[4200];
+          player_definir_fonte(urlCanal(s, viaProxy, sizeof viaProxy)); }
       } else {
         canalFonteIdx = -1;
         // Sem mais fonte na lista: na tela cheia vira o erro de sempre; no
@@ -3672,85 +6642,98 @@ void app_atualizar(float dt, Uint32 agora) {
         if (semDecoder) { video_parar(); sondarCanalXtream(player_id_canal()); }
       }
     }
+  } else {
+    nv_ls_zerar(&liveStall);   // fora de canal / fonte em troca: o vigia recomeca do zero
   }
 
   vigiarFonteGuardada();
+  vigiarPartes();
+  guardarPosicaoFonteFalha();
+  registrarFonteVODTocando();
   fitDuracaoMidia();
   fitPassivaPermitir();
+  // Mesmo resolver/ranking da troca VOD. A trava de UMA vez mora no player;
+  // sem candidata, conserva o video e o aviso (o OK abre a folha existente).
+  if (player_aberto() && !player_quer_sair() &&
+      !player_id_canal()[0] && aguardandoFonte == 0) {
+    int pedido = player_pediu_proxima_fonte();
+    // O pulo AUTOMATICO obedece "Outra fonte se falhar" (Ajustes): esgotadas
+    // as tentativas da reproducao, o que sobra e o aviso na tela — o OK do
+    // usuario (pedido 1) continua abrindo a folha de fontes.
+    if (pedido == 2 && (fonteFalha || fonteVODTentativas >= VOD_FONTE_MAX_TENTATIVAS))
+      pedido = 0;
+    if (pedido && fonteFalha) {
+      // O pedido explicito abre Fontes; um aviso de duracao nao e erro de
+      // playback nem timeout e nao pode gastar a politica de failover.
+      nomeParaFolha(); stream_folha_abrir();
+    } else if (pedido) {
+      int atual = stream_atual();
+      if (atual >= 0) stream_automatico_excluir(atual);
+      if (stream_proxima_vod(atual) >= 0) {
+        printf("[fonte] duracao: descartou %d; tentando proxima (%s)\n",
+               atual, pedido == 2 ? "automatico" : "OK");
+        player_voltar_a_esperar();
+        (void)pedirProximaFonteVOD(atual);
+      } else if (pedido == 1) {
+        nomeParaFolha(); stream_folha_abrir();
+      }
+    }
+  }
+  renovarVodInterrompido();
   tentarProximaFonteVOD();
+  lembrarAutomatica();
+  bingeDaFonteAtual();
+  lembrarTocando();
+  atualizarMotivoInicio();
+  // O OK na explicacao da ilha: sai do player e cai em Ajustes > Fontes e addons
+  // > Escolha da fonte, na linha da espera. A pessoa pediu: e o unico caso em
+  // que a explicacao leva a algum lugar.
+  if (player_pediu_ajustes_fonte() && player_aberto()) {
+    printf("[fonte] ilha: OK abriu Ajustes > Escolha da fonte\n"); fflush(stdout);
+    aguardandoFonte = 0;
+    limparFonteVOD();
+    novaGeracaoFonte();
+    limparFontePendente();
+    diagnostico_cancelar_vazao();
+    player_definir_motivo_inicio("");
+    player_encerrar();
+    if (detail_aberto()) detail_fechar_seco();
+    ajustes_abrir_na_espera_fonte();
+    trocarTela(TELA_AJUSTES); menu_definir_destino(MENU_AJUSTES);
+  }
   vigiarAberturaManual();
   processarTorrentJob();
 
+  // UM ARQUIVO escolhido em "Arquivos desta fonte" (segurar OK na folha).
+  { int pf, pk; static PartesLista pl;
+    if (aguardandoFonte != 2 && stream_partes_escolheu(&pf, &pl, &pk)) abrirParte(pf, &pl, pk); }
   int fonte;
-  if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) {
-    const Stream *s = stream_item(fonte);
-    folhaParaTocar = 0;
-    printf("fonte escolhida: %s\n", s ? s->rotulo : "?");
-    // GUARDAR A ESCOLHA, e SO a manual. O que o automatico escolhe nao vira
-    // preferencia: quem nunca abriu esta folha continua com a regra da
-    // pontuacao para sempre, que e a condicao de nao quebrar o app de quem
-    // nunca escolheu nada.
-    if (s) {
-      char base[24];
-      idBaseDoTitulo(base, sizeof base);
-      if (base[0]) fontepref_guardar(base, s);
-      // A MARCA DA FOLHA SEGUE A ESCOLHA NOVA. Sem esta linha, reabrir a folha
-      // logo depois de trocar de fonte mostraria "Sua escolha anterior" na
-      // fonte antiga — a tela contradizendo o que a pessoa acabou de fazer.
-      stream_preferir(fonte);
-    }
-    if (s) video_definir_dv(s->dolbyVision);
-    if (s) video_definir_cabecalhos(s->cabecalhos);
-    if (s) {
-      aguardandoFonte=0;
-      limparFonteVOD();
-      int titulo=player_aberto()?player_indice():detail_indice(), t=0,e=0;
-      if (player_aberto()) { player_episodio_atual(&t,&e); player_encerrar(); }
-      else detail_ep_foco(&t,&e);
-      diagnostico_cancelar_vazao();
-      player_abrir(titulo,NULL);
-      player_definir_episodio(t,e);
-      stream_definir_atual(fonte);
-      // Qualquer escolha nova invalida a resposta de um torrent anterior; o
-      // motor P2P corta o pedido velho ja (sem isso a escolha nova esperaria
-      // ate 55 s na fila do fio unico).
-      torrentSessao++;
-      p2pmotor_cancelar();
-      if (!s->url[0] && s->infoHash[0]) {
-        pedirTorrentEscolhido(fonte);
-      } else {
-        // Fonte direta: o torrent do motor (se havia) para de baixar.
-        p2pmotor_parar_fundo();
-        player_definir_fonte(s->url);
-        if (!player_id_canal()[0]) fonteManualDesde = SDL_GetTicks();
-        // FONTE QUE O ADDON MARCA COMO FORA DE CACHE ("⏳", "[TB download]"):
-        // tocar o link e o que manda o servico baixar, e o que o addon devolve
-        // enquanto baixa e um clipe de aviso de ~8 s (registros 1136, 2191,
-        // 2501). O clipe fecha o player sem nada na tela; o aviso diz o que
-        // esta acontecendo e o que fazer.
-        if (s->foraCache)
-          player_toast_ex(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 9000, "aj_download", 0);
-      }
-      // Escolha manual num canal tambem entra no watchdog: fonte viva escolhida
-      // a dedo pode morrer igual.
-      if (player_id_canal()[0]) { canalFonteIdx = fonte; canalFonteDesde = SDL_GetTicks(); }
-    }
-  }
-  if (aguardandoFonte != 2 && player_pediu_fontes()) {
+  if (aguardandoFonte != 2 && stream_folha_escolheu(&fonte)) tocarFonteEscolhida(fonte, 1);
+  juntosAbrirEFonte(agora);
+  if (aguardandoFonte != 2 && (player_pediu_fontes() || juntosui_pediu_fontes())) {
     char base[24];
     stream_folha_contexto(player_linha_episodio());
     idBaseDoTitulo(base, sizeof base);
-    stream_preferir(base[0] ? fontepref_escolher(base) : -1);
+    stream_preferir(base[0] ? fontepref_escolher_manual(base) : -1);
     nomeParaFolha(); stream_folha_abrir();
   }
 
   // CANAL ESCOLHIDO NO GUIA — tela cheia ou faixa, mesma acao: toca direto.
   { CatItem it;
-    if (aguardandoFonte != 2 && guia_pediu_canal(&it)) tocarCanal(&it); }
+    if (aguardandoFonte != 2 && guia_pediu_canal(&it)) {
+      // OK num canal que nao e o do preview abre em tela cheia: a sessao do
+      // preview sai antes (miniGuia armado mandaria o canal novo para o preview).
+      if (player_mini_no_guia_ativo()) player_fechar_mini();
+      tocarCanal(&it);
+    } }
   // O PREVIEW DO GUIA e uma sessao "mini no guia" do player: mesma busca de
   // fonte, mesmo watchdog, e o OK nele depois so faz a janela crescer.
   { CatItem it;
     if (aguardandoFonte != 2 && guia_pediu_preview(&it)) {
+      // UMA conexao por vez (conta limitada ou nao): o preview novo so abre
+      // depois de a sessao anterior estar fechada — nunca duas no ar.
+      if (player_mini_no_guia_ativo() && strcmp(player_id_canal(), it.imdb))
+        player_fechar_mini();
       float x, y, w, h;
       guia_preview_rect(&x, &y, &w, &h);
       player_mini_no_guia(x, y, w, h);
@@ -3764,7 +6747,7 @@ void app_atualizar(float dt, Uint32 agora) {
     printf("[guia] preview -> tela cheia no mesmo fluxo\n");
     fflush(stdout);
   }
-  // Azul na faixa do mini guia: o guia completo, com o canal no preview.
+  // Second OK on the playing channel, Guide/Menu or BLUE: full guide with preview.
   if (guia_pediu_guia_cheio() && player_aberto() && player_id_canal()[0]) guiaComCanalNoAr();
   // O botao "Guia" do OSD do canal: o mesmo guia completo, com o canal no
   // preview e tocando.
@@ -3787,15 +6770,35 @@ void app_atualizar(float dt, Uint32 agora) {
       else guia_carregar();
     } }
 
+  // ULTIMO CANAL: "0" ou o botao do OSD na Live TV.
+  if (player_pediu_ultimo() && player_aberto() && aguardandoFonte != 2) {
+    CatItem it;
+    if (ultCanalId[0] && guia_item_do_canal(ultCanalId, ultCanalNome, ultCanalBase, &it)) {
+      printf("[livetv] ultimo canal\n"); fflush(stdout);
+      tocarCanal(&it);
+    }
+  }
+  // NUMERO DIGITADO (M7): o canal que a regra da decisao 7 acha.
+  { int n = player_pediu_numero();
+    if (n > 0 && player_aberto() && aguardandoFonte != 2) {
+      CatItem it;
+      if (guia_numero_canal(n, &it, NULL, 0, 1)) {
+        printf("[livetv] numero %d\n", n); fflush(stdout);
+        tocarCanal(&it);
+      } else guia_carregar();
+    } }
   // RECARREGAR (botao do OSD do canal): mesma acao do zap com deslocamento 0 —
   // o proprio canal, fonte buscada de novo.
+  // Canal conserva o zap zero. Filme/serie reabre so o pipeline da fonte
+  // corrente, sem consultar addons ou pedir outro link ao provedor.
   if (player_pediu_recarregar() && player_aberto() && aguardandoFonte != 2) {
     const char *id = player_id_canal();
     CatItem it;
-    if (id[0] && guia_zap(id, 0, &it)) tocarCanal(&it);
+    if (id[0]) { if (guia_zap(id, 0, &it)) tocarCanal(&it); }
+    else recarregarFonteVOD();
   }
 
-  // BAIXO/AZUL COM CANAL NO AR: o overlay do guia abre focado no canal que
+  // Live OK without controls, DOWN or BLUE: the mini guide focuses the channel
   // esta tocando. player_id_canal e o id congelado na abertura — o indice no
   // catalogo pode ja ter sido remapeado por uma republicacao da descoberta.
   if (player_pediu_guia() && player_aberto()) {
@@ -3808,24 +6811,32 @@ void app_atualizar(float dt, Uint32 agora) {
     else {
       const CatItem *ci=cat_item(detail_indice()); char id[64];
       idDoAlvo(ci,id,sizeof id);
-      if (ci) { stream_definir_alvo(id); addons_buscar_renovar(id,ci->tipo); }
+      if (ci) { stream_definir_alvo(id); origemFontes(ci); addons_buscar_renovar(id,ci->tipo); }
     }
   }
-  { int t,e;
-    if (aguardandoFonte != 2 && episodios_escolheu(&t,&e) && player_aberto()) {
-      int titulo=player_indice();
+  { int t,e, autorizado = -1;
+    int retomar = travaui_pediu_reproduzir(&autorizado, &t, &e);
+    if (aguardandoFonte != 2 && (retomar || episodios_escolheu(&t,&e)) && player_aberto()) {
+      int titulo = retomar ? autorizado : player_indice(), reassistindo=player_reassistindo();
+      if (travaui_abrir_espera(titulo, t, e)) goto semEscolhaEpisodio;
+      if (episodioNaSala(titulo, t, e)) goto semEscolhaEpisodio;
       diagnostico_cancelar_vazao();
       player_encerrar(); player_abrir(titulo,NULL);
+      player_rewatch(reassistindo);
       player_definir_episodio(t,e);
-      marco("buscando fontes"); buscarParaPlayer(); aguardandoFonte=1;
+      buscaNextAlvo[0] = 0;   // episodio escolhido na lista: a memoria do titulo, nao o Next
+      marco("buscando fontes"); buscarParaPlayer();
+      // "Reusar o ultimo link": o episodio ja tocou com um link que vale? Abre
+      // nele; a busca acima segue em segundo plano para o recuo e a folha.
+      if (!tocarParteGuardada() && !(ajustes_link_reusar() && tocarFonteGuardada())) aguardandoFonte=1;
     }
+    semEscolhaEpisodio:;
   }
   { int t,e;
     if (aguardandoFonte != 2 && player_pediu_proximo(&t,&e) && player_aberto()) {
-      int titulo=player_indice();
-      diagnostico_cancelar_vazao();
-      player_encerrar(); player_abrir(titulo,NULL); player_definir_episodio(t,e);
-      marco("proximo episodio: buscando fontes"); buscarParaPlayer(); aguardandoFonte=1;
+      int titulo = player_indice();
+      if (!travaui_abrir_espera(titulo, t, e) && !episodioNaSala(titulo, t, e))
+        abrirProximoEpisodio(t,e,0);
     }
   }
   episodios_atualizar(dt);
@@ -3833,7 +6844,7 @@ void app_atualizar(float dt, Uint32 agora) {
   { int q = player_pediu_faixas();
     if (q) faixas_abrir_em(q == 2 ? 1 : 0); }
   if (!player_retido()) faixas_atualizar(dt, agora);
-  stream_folha_atualizar(dt, agora);
+  atualizarFolha(dt, agora);
   // FOLHA FECHADA SEM ESCOLHER, com o player esperando por ela. Voltar na
   // folha e "desisti", nao "tente sozinho": abrir a fonte que a pessoa acabou
   // de recusar seria contradizer o gesto. O player mostra o erro de fonte, que
@@ -3858,7 +6869,11 @@ void app_atualizar(float dt, Uint32 agora) {
   // VOLTAR NUM CANAL ABERTO PELO GUIA: o video encolhe para o preview do guia,
   // na hora (sem esperar o fade da interface do player) e sem recarregar. O
   // PiP de canto ficou para os canais abertos fora do guia.
-  if (player_quer_sair() && player_minimizavel() && tela == TELA_GUIA && guia_aberta())
+  // player_minimizavel exclui a conta Xtream limitada, mas AQUI o fluxo ja
+  // esta no ar: encolher para o preview nao abre conexao nenhuma, e BACK tem
+  // de se comportar como o botao GUIA (mesmo pipeline, sem recarregar).
+  if (player_quer_sair() && player_eh_canal() && player_com_video() &&
+      tela == TELA_GUIA && guia_aberta())
     guiaComCanalNoAr();
   if (player_quer_sair() && !player_minimizavel() && ajustes_saida_player_home())
     player_preparar_retencao();
@@ -3885,6 +6900,8 @@ void app_atualizar(float dt, Uint32 agora) {
     snprintf(imdbSaiu, sizeof imdbSaiu, "%s", ci ? ci->imdb : "");
     { unsigned vivoAntes = ilhacart_vivo_seq();
       if (!ajustes_saida_player_home() || !player_suspender()) player_encerrar();
+      // Titulo visto: arma o aviso das Conquistas (so se ligado em Ajustes).
+      if (player_saiu_visto()) conquistas_aviso_armar();
       // UM LUGAR SO (cwretido.h): o cartao da ilha / a faixa "Retomar agora"
       // acabaram de pegar o titulo (player_encerrar -> ilhacart_player_saiu,
       // home_registrar_retorno) e ele NAO entra em "Continuar assistindo"
@@ -3916,6 +6933,18 @@ void app_atualizar(float dt, Uint32 agora) {
   }
 
   cwRetidoSincronizar();
+#ifdef NV_TOUCH_UI
+  { static float guiaW, guiaH;
+    if (guiaW != NV_TELA_W || guiaH != NV_TELA_H) {
+      guiaW = NV_TELA_W; guiaH = NV_TELA_H;
+      if (player_mini_no_guia_ativo()) {
+        float x, y, w, h;
+        guia_preview_rect(&x, &y, &w, &h);
+        player_mini_no_guia(x, y, w, h);
+      }
+    }
+  }
+#endif
   player_atualizar(dt, agora);
   // A barra por cima da pagina: o trailer do fundo fica mudo enquanto ela
   // esta aberta (detail_sob_menu). O pedido de barra da pagina e lido em
@@ -3928,40 +6957,11 @@ void app_atualizar(float dt, Uint32 agora) {
   // escolhe se quer mesmo assistir.
   { int t = 0, e = 0;
     if (aguardandoFonte != 2 && posplay_pediu_episodio(&t, &e) && player_aberto()) {
-      // O MESMO CAMINHO do botao de proximo episodio do player, logo acima, e
-      // nao um atalho proprio.
-      //
-      // Este bloco tinha um caminho curto (compor o id na mao e chamar
-      // addons_buscar) que NUNCA rodou: posplay_evento zerava o pedido ao
-      // fechar o painel, e so a correcao em posplay.c abriu este portao. Ao
-      // abrir, tres coisas que o atalho nao fazia passaram a importar:
-      //
-      //   - player_encerrar SALVA o progresso do episodio que acabou. Sem ele,
-      //     maratonar nunca marcava nada como visto.
-      //   - player_definir_episodio atualiza epT/epE, o rotulo da barra e os
-      //     marcos de introducao. Sem ele o player seguia se dizendo no
-      //     episodio anterior, e o proximo player_encerrar gravaria o
-      //     progresso do episodio NOVO por cima do ANTIGO.
-      //   - buscarParaPlayer pede LEGENDA tambem, e compoe o id por alvoPlayer
-      //     (que ja corta no ':' — era o que o atalho reimplementava a mao).
       int titulo = player_indice();
-      player_encerrar();
-      diagnostico_cancelar_vazao();
-      player_abrir(titulo, NULL);
-      player_definir_episodio(t, e);
-      // DEPOIS de player_definir_episodio, e a ordem e o conserto de um bug
-      // que so existe nesta ordem invertida: definir_episodio retoma a posicao
-      // quando o episodio pedido E o que o item aponta. Apontar antes faria o
-      // episodio NOVO herdar o progresso do que acabou — quem apertasse OK aos
-      // 85% comecaria o seguinte aos 85%.
-      //
-      // Apontar, porem, tem de acontecer: e de ci->temporada/ci->episodio que
-      // o proximo pos-reproducao descobre qual episodio oferecer.
-      cat_apontar_episodio(titulo, t, e);
-      marco("posplay: proximo episodio");
-      buscarParaPlayer();
-      aguardandoFonte = 1;
-    } }
+      if (!travaui_abrir_espera(titulo, t, e) && !episodioNaSala(titulo, t, e))
+        abrirProximoEpisodio(t,e,1);
+    }
+  }
   { int i = posplay_pediu_titulo();
     if (i >= 0) {
       const CatItem *ci = cat_item(i);
@@ -3975,7 +6975,9 @@ void app_atualizar(float dt, Uint32 agora) {
       it.titulo = ci ? ci->titulo : NULL;
       it.genero = ci ? ci->genero : NULL;
       it.meta   = ci ? ci->meta : NULL;
-      detail_abrir(&it);
+      // Mesma resolucao de "tmdb:<n>" do funil, sem o descarte da sessao
+      // retida (o pos-reproducao nunca fez) nem a exigencia de arte.
+      abrirTitulo(&it, 0, 0);
     } }
 
   vertudo_atualizar(dt, agora);
@@ -3985,25 +6987,9 @@ void app_atualizar(float dt, Uint32 agora) {
   guia_atualizar(dt, agora);
   if (player_aberto()) epg_passo();
   ctx_atualizar(dt, agora);
-  { int i = ctx_pediu_detalhes();
-    if (i >= 0) {
-      player_descartar_retido();
-      const CatItem *ci = cat_item(i);
-      HomeItem it;
-      memset(&it, 0, sizeof it);
-      it.indice = i;
-      it.rect = (GfxRect){ NV_TELA_W * 0.5f - 124.0f, NV_TELA_H * 0.5f - 186.0f,
-                           248.0f, 372.0f };
-      it.arte   = ci ? (ci->poster[0] ? ci->poster : ci->backdrop) : NULL;
-      it.titulo = ci ? ci->titulo : NULL;
-      it.genero = ci ? ci->genero : NULL;
-      it.meta   = ci ? ci->meta : NULL;
-      detail_abrir(&it);
-    } }
   // Titulo escolhido na grade: abre o detalhe, como se tivesse vindo da home.
   { int idx = vertudo_pediu_abrir();
     if (idx >= 0) {
-      player_descartar_retido();
       const CatItem *ci = cat_item(idx);
       // A grade nao tem retangulo de origem para a transicao crescer a partir
       // dele: o card fica na tela que esta saindo. Entra centrado, do tamanho
@@ -4017,7 +7003,7 @@ void app_atualizar(float dt, Uint32 agora) {
       it.titulo = ci ? ci->titulo : NULL;
       it.genero = ci ? ci->genero : NULL;
       it.meta   = ci ? ci->meta : NULL;
-      detail_abrir(&it);
+      abrirTitulo(&it, 0, 1);
     } }
   switch (tela) {
     case TELA_EXPLORAR:   explorar_atualizar(dt, agora);   break;
@@ -4028,7 +7014,8 @@ void app_atualizar(float dt, Uint32 agora) {
     case TELA_AJUSTES:    ajustes_atualizar(dt, agora);    break;
     case TELA_DIAGNOSTICO: diagnostico_atualizar(dt, agora); break;
     case TELA_LIVETV_DIAG: livetvdiag_atualizar(dt, agora); break;
-    default:              home_atualizar(dt, agora);       break;
+    default:              home_painel_aberto(spainel_aberto());
+                          home_atualizar(dt, agora);       break;
   }
   // TRAILER NO DESTAQUE: so com a home na frente de tudo. A lista e a mesma
   // ordem de app_evento — o que come tecla antes da home tambem esta na
@@ -4037,6 +7024,8 @@ void app_atualizar(float dt, Uint32 agora) {
     home_trailer_topo_motivo(porque);
     home_trailer_passo(porque == NULL, dt, agora); }
   trailer_atualizar(agora);
+  glance_atualizar(dt, agora);
+  if (detail_aberto() && glance_pediu_tocar(cat_item(detail_indice()))) detail_pedir_reproduzir();
   perfil_atualizar(dt, agora);
   // A Caca anda em toda tela: o aviso de conquista sai sem player (depois
   // dos creditos, na volta a Home), nunca durante o filme.
@@ -4045,6 +7034,7 @@ void app_atualizar(float dt, Uint32 agora) {
   spainel_atualizar(dt, agora);
   recomenda_atualizar(dt, agora);
   recenviar_atualizar(dt, agora);
+  travaui_atualizar(dt, agora);
   pessoas_atualizar(dt, agora);
   sintro_atualizar(dt, agora);
   novidades_atualizar(dt, agora);
@@ -4062,7 +7052,17 @@ void app_atualizar(float dt, Uint32 agora) {
   novidades170_atualizar(dt, agora);
   novidades180_atualizar(dt, agora);
   novidades20_atualizar(dt, agora);
+  comecar_atualizar(dt, agora);
+  conquistas_atualizar(dt, agora);
+  // O pedido de tour sai de ok() (tecla ou ponteiro): conferir aqui cobre os
+  // dois caminhos sem duplicar — comecar_pedido consome.
+  if (comecar_pedido() == COMECAR_PEDIU_TOUR) novidades20_abrir(loginNovo);
   novidades201_atualizar(dt, agora);
+  novidades202_atualizar(dt, agora);
+  resolver_atualizar(dt, agora);
+  novcartao_atualizar(dt, agora);
+  dicascontrole_home_livre(app_home_recebe_teclas(), dt);
+  dicascontrole_atualizar(dt, agora);
   telemetria_atualizar(dt, agora);
   recintro_atualizar(dt, agora);
   atualizacao_atualizar(dt, agora);
@@ -4097,7 +7097,22 @@ void app_atualizar(float dt, Uint32 agora) {
 // descarta, antes de se desenhar, os alvos de quem ficou por baixo — o
 // ponteiro so pode focar o que as setas focariam. A pergunta e a mesma que o
 // roteador de app_evento faz ("esta aberta?"), so que na ordem do desenho.
+#ifdef NV_TOUCH_UI
+#define CAMADA_SE(aberta) do { if (aberta) { \
+  ponteiro_camada(); \
+  if (layout_modo_mobile()) ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, NULL, 0, 0); \
+} } while (0)
+#else
 #define CAMADA_SE(aberta) do { if (aberta) ponteiro_camada(); } while (0)
+#endif
+static void desenharCtxDoPainel(Uint32 agora) {
+  CAMADA_SE(ctx_aberto()
+#ifdef NV_TOUCH_UI
+            && !(telefoneui_ativo() && ctx_inline_painel_ativo())
+#endif
+  );
+  ctx_desenhar(agora);
+}
 
 // TUDO QUE FICA ATRAS DO PAINEL DE SALVOS: a tela, "Ver tudo", o cartaz com
 // menu, o detalhe e o menu lateral. Funcao propria para spainel_fundo poder
@@ -4107,6 +7122,9 @@ static void desenharAtrasDoPainel(void *ctx) {
   // "Ver tudo" cobre a tela de tras por completo (fundo opaco), entao a home
   // nao precisa ser desenhada por baixo — a mesma conta do detail_cobre_tela.
   if (!detail_cobre_tela() && !vertudo_aberta()) {
+#ifdef NV_TOUCH_UI
+    sidebarToqueRegistrar(0);
+#endif
     switch (tela) {
       case TELA_EXPLORAR:   explorar_desenhar(agora);   break;
       case TELA_GUIA:       guia_desenhar(agora);       break;
@@ -4125,15 +7143,29 @@ static void desenharAtrasDoPainel(void *ctx) {
     }
   }
   CAMADA_SE(vertudo_aberta());
+#ifdef NV_TOUCH_UI
+  if (!detail_cobre_tela()) sidebarToqueRegistrar(2);
+#endif
   if (!detail_cobre_tela()) vertudo_desenhar(agora);
   // Com o painel de Salvos na tela o menu do cartaz e desenhado DEPOIS dele
   // (desenharTelas): e o painel que o abre, e por baixo ele ficaria sob o veu.
-  if (!spainel_visivel()) {
+  if (!spainel_visivel() && !detail_aberto()) {
     CAMADA_SE(ctx_aberto());
     ctx_desenhar(agora);
   }
   CAMADA_SE(detail_aberto());
+#ifdef NV_TOUCH_UI
+  sidebarToqueRegistrar(1);
+#endif
   detail_desenhar(agora);
+  // Aberto de dentro da pagina do titulo, o menu vai POR CIMA dela.
+  if (!spainel_visivel() && detail_aberto() && ctx_aberto()) {
+    CAMADA_SE(1);
+    ctx_desenhar(agora);
+  }
+  CAMADA_SE(glance_aberto());
+  glance_desenhar(agora);
+  if (glance_aberto() && ctx_aberto()) { CAMADA_SE(1); ctx_desenhar(agora); }
   // A rail NAO existe na tela de detalhe do app web: ela e full-bleed e a
   // coluna de conteudo comeca em x=72, ou seja, DENTRO do que a rail ocuparia.
   // Com a rail por cima, o logo, o botao "Reproduzir" e a linha de duracao
@@ -4164,12 +7196,16 @@ static void desenharAtrasDoPainel(void *ctx) {
     // barra abre pelo ESQUERDA na borda e pela faixa do ponteiro.
     menu_pilula_mostrar(vertudo_aberta() || detail_aberto() ? -1.0f   // "Ver tudo"/colecao/pagina tem cabecalho proprio
                         : tela == TELA_HOME ? home_topo_fracao()
+                        : ajustes_menu_topo() ? -1.0f   // #461: a barra no topo fechada so mora na home
                         : (tela == TELA_EXPLORAR || tela == TELA_BUSCA ||
                            tela == TELA_BIBLIOTECA || tela == TELA_AGENDA ||
                            tela == TELA_PERFIL || tela == TELA_AJUSTES) ? 1.0f : -1.0f);
     CAMADA_SE(menu_aberto());
     menu_desenhar(agora);
   }
+  // Palco: o holofote escurece a home e a barra, nunca um menu ou a pagina.
+  if (tela == TELA_HOME && !detail_aberto() && !vertudo_aberta() && !ctx_aberto() && !menu_aberto())
+    home_holofote_desenhar(agora);
 }
 
 static void desenharTelas(Uint32 agora) {
@@ -4194,6 +7230,9 @@ static void desenharTelas(Uint32 agora) {
 
   // Estado vazio de verdade, em vez de uma tela preta que parece travamento.
   if (!homePronta && tela == TELA_HOME && !player_aberto() && !detail_aberto()) {
+#ifdef NV_TOUCH_UI
+    sidebarToqueRegistrar(0);
+#endif
     GfxRect fundo = { 0, 0, NV_TELA_W, NV_TELA_H };
     TxtLinha t, sb;
     gfx_cor(fundo, 0.0f, NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
@@ -4235,13 +7274,15 @@ static void desenharTelas(Uint32 agora) {
     CAMADA_SE(spainel_aberto());
     if (spainel_visivel()) {
       spainel_desenhar(agora);
-      CAMADA_SE(ctx_aberto());
-      ctx_desenhar(agora);
+      desenharCtxDoPainel(agora);
     }
   }
   // BRILHO DA INTERFACE DO PLAYER (esmaecer.h): tudo daqui ate a ilha do player
   // multiplica a cor pelo fator (a legenda se isenta em player.c).
   if (player_aberto()) gfx_osd_mult = player_osd_brilho();
+  // UI EM HDR (esmaecer.h): branco a 80% e veus mais densos com o video em
+  // HDR/DV, legenda e tela do DV inclusive. Volta a 1 depois da tela do DV.
+  if (player_aberto()) gfx_hdr_ui = player_ui_hdr();
   CAMADA_SE(player_aberto());
   player_desenhar(agora);
   // O overlay do guia vai POR CIMA do player — o video continua atras do fundo
@@ -4257,8 +7298,20 @@ static void desenharTelas(Uint32 agora) {
   // camadas dele: a pilula da hora, os avisos e o que nasce dela (Audio,
   // Legendas, estilo, carregando, erro) — e a folha de Fontes, que cresce
   // dela (streams.c) e por isso nao a esconde mais.
-  if (player_aberto()) { central_desenhar(agora); plrilha_desenhar(agora); }
+  if (player_aberto()) {
+    estatvivo_desenhar(agora);
+#ifdef NV_TOUCH_UI
+    if (telefoneui_ativo()) { CAMADA_SE(central_aberta()); }
+#endif
+    central_desenhar(agora); plrilha_desenhar(agora);
+    if (episodios_aberto() && sinopse_aberta()) sinopse_desenhar();
+  }
   gfx_osd_mult = 1.0f;
+  // A TELA DO DOLBY VISION EM MKV (dvtela.h) por cima de TUDO do player, ilha
+  // inclusive: ela cobre a troca do HDR10 pelo caminho do DV e esvai sobre o
+  // filme. Sem o brilho do OSD (e tela, nao controle).
+  if (player_aberto()) dvtela_desenhar(agora);
+  gfx_hdr_ui = 1.0f;
 }
 
 // ONDE O RELOGIO DA ILHA CABE (ilha.h). Em toda tela de menu (Home, Explorar,
@@ -4270,11 +7323,35 @@ static void desenharTelas(Uint32 agora) {
 // faixas): a pilula ficaria boiando sobre o veu de outra coisa. Os AVISOS da
 // ilha nao passam por aqui — eles aparecem em qualquer tela fora do player.
 static int spotVeuPronto;   // o veu do Spotlight ja esta na copia congelada
+static int relogioCamadaAberta(void) {
+  return sintro_aberto() || novidades_aberto() || novidades11_aberto() || novidades12_aberto() ||
+      novidades13_aberto() || novidades131_aberto() || novidades132_aberto() ||
+      novidades133_aberto() || novidades134_aberto() || novidades139_aberto() ||
+      novidades1312_aberto() || novidades142_aberto() || novidades148_aberto() ||
+      novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || novidades202_aberto() || novcartao_aberto() || resolver_aberto() || telemetria_aberto() || recintro_aberto() ||
+      atualizacao_aberta() || agendaviso_aberto() || avisos_cartao_aberto() ||
+      glem_cartao_aberto() || recenviar_aberto() || pessoas_aberto() ||
+      recomenda_aberta() || pipintro_aberto() || diagnostico_intro_aberto() || travaui_aberta();
+}
+// FPS scenes need the Home to own the D-pad, not merely be underneath a modal.
+int app_home_recebe_teclas(void) {
+  return app_na_home() && !relogioCamadaAberta() &&
+      !ctx_aberto() && !menu_aberto() && !spainel_aberto() && !vertudo_aberta() &&
+      !central_aberta() && !ilha_modal_aberto() && !celb_aberto() && !spot_aberto() &&
+      !registro_aberto() && !registro_envio_aberto() && !estatvivo_aberto() &&
+      !avisos_aberto() && !teclado_aberto() && !texto_sistema_aberto() &&
+      !faixas_aberta() && !episodios_aberto() && !stream_folha_aberta() &&
+      !guia_overlay_aberta();
+}
+
 static int relogioCabe(void) {
   // AJUSTES NO GLASS UI (mockup de 03/10): o relogio fica no canto, em cima da
   // ilha de categorias — a tela nao tem mais titulo ali. Com folha, vinculo ou
   // teclado por cima ele some, como na home com um cartao na frente.
   if (tela == TELA_AJUSTES) return !menu_aberto() && ajustes_relogio_cabe();
+  // BARRA DA APPLE TV ABERTA: o cabecalho do painel ja tem relogio; a ilha no
+  // canto mostrava a mesma hora duas vezes (captura da TCL, 11:29 + 11:29).
+  if (!menu_relogio_cabe()) return 0;
   // CARROSSEL DE TITULOS DA APPLE TV (cartao de vizinhos, sem expandir): sem
   // relogio (dono, 04/10). Ele volta, pela animacao da ilha, quando o cartao
   // estica para a pagina.
@@ -4287,19 +7364,50 @@ static int relogioCabe(void) {
   // a ilha do menu nasce logo abaixo da do relogio, na mesma margem
   // (ilha_posicionar), e as duas formam a coluna da esquerda.
   if (ctx_aberto() || stream_folha_aberta() || faixas_aberta() || episodios_aberto()) return 0;
+  if (relogioCamadaAberta()) return 0;
   if (sintro_aberto() || novidades_aberto() || novidades11_aberto() || novidades12_aberto() ||
       novidades13_aberto() || novidades131_aberto() || novidades132_aberto() ||
       novidades133_aberto() || novidades134_aberto() || novidades139_aberto() ||
       novidades1312_aberto() || novidades142_aberto() || novidades148_aberto() ||
       novidades170_aberto() || novidades180_aberto() || novidades20_aberto() || novidades201_aberto() || telemetria_aberto() || recintro_aberto() ||
       atualizacao_aberta() || agendaviso_aberto() || avisos_cartao_aberto() ||
-      glem_cartao_aberto() || recenviar_aberto() || pessoas_aberto() ||
+      glem_cartao_aberto() || recenviar_aberto() || travaui_aberta() || pessoas_aberto() ||
       recomenda_aberta() || pipintro_aberto() || diagnostico_intro_aberto())
     return 0;
   return 1;
 }
 
+#ifdef NV_TOUCH_UI
+static int playerToquePermitido(void) {
+  if (!app_central_pode() || menu_aberto() || spainel_aberto() ||
+      central_aberta() || ilha_modal_aberto() || celb_aberto() || ctx_aberto() ||
+      recenviar_aberto() || pessoas_aberto() || stream_folha_aberta() ||
+      faixas_aberta() || episodios_aberto() || guia_overlay_aberta() || avisos_aberto() ||
+      relogioCamadaAberta()) return 0;
+  if (tela == TELA_DIAGNOSTICO && diagnostico_apresentacao_aberta()) return 0;
+  if (tela == TELA_AJUSTES && !ajustes_relogio_cabe()) return 0;
+  if (tela == TELA_AGENDA && agendaui_menu_aberto()) return 0;
+  return 1;
+}
+static int miniToquePermitido(void) {
+  if (player_aberto() || !playerToquePermitido()) return 0;
+  if (telefoneui_ativo() && tela == TELA_AJUSTES && ajustes_edicao_ativa()) return 0;
+  // In the Guide its own preview and modal controls own the video rectangle.
+  return tela != TELA_GUIA;
+}
+#endif
+
 void app_desenhar(Uint32 agora) {
+  // O COMECAR da 2.1 e tela inteira e opaco, como o guia da 2.0.
+  if (comecar_aberto() && !registro_aberto() && !player_aberto()) {
+    gfx_sem_recorte();
+    gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0,
+            NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
+    ponteiro_camada();
+    comecar_desenhar(agora);
+    return;
+  }
+  relogioFocoValidar();
   // O GUIA DA 2.0 e tela inteira e opaco: nada do app por baixo (uma camada
   // de tela cheia a menos; o fundo dele e o assado do Borrada).
   if (novidades20_aberto() && !registro_aberto() && !player_aberto()) {
@@ -4319,6 +7427,30 @@ void app_desenhar(Uint32 agora) {
             NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     ponteiro_camada();
     novidades201_desenhar(agora);
+    return;
+  }
+  if (novidades202_aberto() && !registro_aberto() && !player_aberto()) {
+    gfx_sem_recorte();
+    gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0,
+            NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
+    ponteiro_camada();
+    novidades202_desenhar(agora);
+    return;
+  }
+  if (resolver_aberto() && !registro_aberto() && !player_aberto()) {
+    gfx_sem_recorte();
+    gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0,
+            NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
+    ponteiro_camada();
+    resolver_desenhar(agora);
+    return;
+  }
+  if (novcartao_aberto() && !registro_aberto() && !player_aberto()) {
+    gfx_sem_recorte();
+    gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0,
+            NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
+    ponteiro_camada();
+    novcartao_desenhar(agora);
     return;
   }
   // The highlights modal owns input and covers almost the whole screen.
@@ -4352,6 +7484,14 @@ void app_desenhar(Uint32 agora) {
   // ainda chegava aparecer. Nada de congelar com video no ar (o PiP pinta o
   // furo) nem com o painel de Salvos, que usa o mesmo FBO.
   { static int pronto, refeitas, regCongelado;
+#ifdef NV_TOUCH_UI
+    static float fundoW, fundoH;
+    static unsigned fundoGeracao;
+    if (fundoW != NV_TELA_W || fundoH != NV_TELA_H || fundoGeracao != gfx_snap_geracao()) {
+      pronto = refeitas = regCongelado = 0;
+      fundoW = NV_TELA_W; fundoH = NV_TELA_H;
+    }
+#endif
     static unsigned revPronta;
     static Uint32 desde;
     static const Uint32 REFAZ[] = { 400, 1500, 4000 };
@@ -4394,11 +7534,20 @@ void app_desenhar(Uint32 agora) {
       }
       if (regCongelado) gfx_snap_desenhar();
     } else desenharTelas(agora);
-    if (!registro_aberto()) regCongelado = 0; }
+    if (!registro_aberto()) regCongelado = 0;
+#ifdef NV_TOUCH_UI
+    fundoGeracao = gfx_snap_geracao();
+#endif
+  }
   // O explicador fica ACIMA de qualquer tela (menos do painel de log, que e
   // ferramenta de diagnostico): ele e a primeira coisa que a pessoa ve depois
   // desta atualizacao, e nada pode aparecer por cima dele.
+#ifdef NV_TOUCH_UI
+  player_mini_toque_guarda(miniToquePermitido);
+  player_toque_modal_guarda(playerToquePermitido);
+#endif
   player_mini_desenhar(agora);
+  rewatchui_desenhar();
   CAMADA_SE(sintro_aberto());
   if (!registro_aberto()) sintro_desenhar(agora);
   CAMADA_SE(novidades_aberto());
@@ -4431,7 +7580,11 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades180_desenhar(agora);
   // O esmaecer de saida do guia da 2.0, por cima do app que ja voltou.
   if (!registro_aberto() && novidades20_visivel()) novidades20_desenhar(agora);
+  if (!registro_aberto()) comecar_desenhar(agora);        // so o esmaecer de saida
   if (!registro_aberto()) novidades201_desenhar(agora);   // so o esmaecer de saida
+  if (!registro_aberto()) novidades202_desenhar(agora);
+  if (!registro_aberto()) resolver_desenhar(agora);        // so o esmaecer de saida
+  if (!registro_aberto()) novcartao_desenhar(agora);      // so o esmaecer de saida
   CAMADA_SE(telemetria_aberto());
   if (!registro_aberto()) telemetria_desenhar(agora);
   CAMADA_SE(recintro_aberto());
@@ -4453,6 +7606,9 @@ void app_desenhar(Uint32 agora) {
   // (plrilha.h, desenhada em desenharTelas): a mesma pilula, no mesmo canto,
   // com a hora e o "termina as" do titulo. No Guia ela vai para o topo direito
   // (o titulo do guia ocupa o esquerdo).
+#ifndef HOME_CARGA_AVISO_MAX_MS
+#define HOME_CARGA_AVISO_MAX_MS 20000u
+#endif
   static int homeCarregando;
   static Uint32 homeConcluida;
   // O VOO DO PLAYER ATE A PILULA NAO DIVIDE A ILHA COM A CARGA DA HOME
@@ -4468,6 +7624,10 @@ void app_desenhar(Uint32 agora) {
   }
   else if (tela == TELA_HOME && !detail_aberto()) {
     DescHomeCarga load; desc_home_carga(&load);
+    // TETO DO AVISO: um catalogo que nunca responde (ou voltas que recomecam)
+    // mantem `buscando` ligado e a pilula ficava em "Carregando fileiras…" com
+    // a Home ja pronta. Passado o teto o aviso se encerra e a ilha volta ao relogio.
+    if (load.ativo && load.ms > HOME_CARGA_AVISO_MAX_MS) load.ativo = 0;
     if (load.ativo) { homeCarregando = 1; homeConcluida = 0; }
     else if (homeCarregando) { homeCarregando = 0; homeConcluida = agora; }
     int concluida = homeConcluida && agora - homeConcluida < 1000u;
@@ -4497,8 +7657,15 @@ void app_desenhar(Uint32 agora) {
     // O CARTAO DA ATUALIZACAO e a pilula crescida (atualizacao.c): enquanto
     // ele esta na tela, ela fica por baixo, medindo, sem se desenhar.
     ilha_coberta(spainel_da_ilha() || atualizacao_cobre_ilha());
+#ifdef NV_TOUCH_UI
+    if (layout_modo_mobile()) CAMADA_SE(central_aberta() || ilha_modal_aberto());
+#endif
     ilha_desenhar(agora);
   }
+  // As Conquistas: tela inteira (ou o esmaecer de saida) e, por baixo de tudo
+  // que e aviso, o aviso depois dos creditos, que nao e camada do ponteiro.
+  CAMADA_SE(conquistas_aberto());
+  if (!registro_aberto()) { conquistas_desenhar(agora); conquistas_aviso_desenhar(); }
   // O cartao do lembrete fica acima do player e da tela: e um aviso com hora.
   CAMADA_SE(glem_cartao_aberto());
   if (!registro_aberto() && sessao_logada() && tela != TELA_LOGIN &&
@@ -4506,25 +7673,51 @@ void app_desenhar(Uint32 agora) {
     glem_desenhar(agora);
   CAMADA_SE(recenviar_aberto());
   if (!registro_aberto()) recenviar_desenhar(agora);
+  CAMADA_SE(travaui_aberta());
+  if (!registro_aberto()) travaui_desenhar(agora);
   CAMADA_SE(pessoas_aberto());
   if (!registro_aberto()) pessoas_desenhar(agora);
   CAMADA_SE(recomenda_aberta());
   if (!registro_aberto()) recomenda_desenhar(agora);
   CAMADA_SE(pipintro_aberto());
   if (!registro_aberto()) pipintro_desenhar(agora);
-  if (!registro_aberto()) spot_desenhar(agora, spotVeuPronto);
-  if (!registro_aberto()) celb_desenhar();
+  if (!registro_aberto()) {
+#ifdef NV_TOUCH_UI
+    if (layout_modo_mobile()) CAMADA_SE(spot_aberto());
+#endif
+    spot_desenhar(agora, spotVeuPronto);
+  }
+  if (!registro_aberto()) {
+#ifdef NV_TOUCH_UI
+    if (layout_modo_mobile()) CAMADA_SE(celb_aberto());
+#endif
+    celb_desenhar();
+  }
   CAMADA_SE(diagnostico_intro_aberto());
   if (!registro_aberto()) diagnostico_intro_desenhar(agora);
   // O MEDIDOR DE DESEMPENHO (Ajustes > Desempenho desta TV) nao e mais camada
   // propria: e conteudo da ilha do relogio (ilha.c, plrilha.c; desempenho.h).
+  // Watch Together: rostos e reacoes no player, folha e cartao da sala.
+  if (!registro_aberto()) juntosui_desenhar(agora);
   CAMADA_SE(registro_aberto());
   registro_desenhar();
   // A ilha do relogio fica acima do painel de registro, no canto de sempre.
   if (registro_aberto() && sessao_logada()) {
     ilha_relogio_visivel(ajustes_relogio_ligado());
     ilha_posicionar(1);
+#ifdef NV_TOUCH_UI
+    if (layout_modo_mobile()) CAMADA_SE(central_aberta() || ilha_modal_aberto());
+#endif
     ilha_desenhar(agora);
+  }
+  // AS DICAS DO CONTROLE por ultimo, por cima de tudo: a dica abre o
+  // componente DE VERDADE pelo caminho normal (spainel, Spotlight, Central
+  // e o menu do cartaz ja foram desenhados acima) e esta camada so soma o
+  // controle animado, a legenda e os pontinhos. O app continua desenhado
+  // por baixo — sem FBO nem desfoque proprio (TV fraca).
+  if (dicascontrole_visivel()) {
+    CAMADA_SE(dicascontrole_ocupado());
+    dicascontrole_desenhar(agora);
   }
 }
 
@@ -4538,11 +7731,15 @@ int app_central_pode(void) {
   return tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL && login_concluido() &&
          perfilsel_concluido() && !registro_aberto() && !spot_aberto() &&
          !teclado_aberto() && !diagnostico_intro_aberto() && !novidades20_aberto() &&
-         !novidades201_aberto();
+         !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() &&
+         !resolver_aberto() && !comecar_aberto() && !conquistas_aberto() && !dicascontrole_ocupado();
 }
 
 void app_encerrar(void) {
   avisos_encerrar();   // saida limpa: apaga a marca de sessao viva
+  diario_gravar_agora();
+  preparoInvalidar();
+  proximopreparo_encerrar();
   if (fioFonteVivo) {
     // O encerramento acontece depois do laco de desenho: aqui podemos
     // aguardar o transporte para fechar player/AVPlay e os demais modulos em
@@ -4556,10 +7753,14 @@ void app_encerrar(void) {
     }
     pthread_join(fioFonte, NULL);
     fioFonteVivo = 0;
+    fontefalha_sessao_liberar(fonteJob.falha); fonteJob.falha = NULL;
+    addons_consulta_liberar(fonteJob.consulta); fonteJob.consulta = NULL;
     atomic_store_explicit(&fonteJob.estado, FJOB_IDLE, memory_order_release);
   }
   aguardandoFonte = 0;
+  limparFonteVOD();
   player_encerrar();
+  simkl_scrobble_drenar(3000);   // stop sem resposta fica em disco para retry
   legsync_destruir();   // F05: join dos fios do AutoSync, depois do player
   discord_encerrar();   // a atividade some na hora, sem esperar o Discord notar a queda
   video_encerrar();    // solta o nome LS2 antes do processo sumir (deploy mata sem aviso)

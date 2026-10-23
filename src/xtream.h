@@ -28,11 +28,13 @@
 #define NV_XTREAM_H
 
 #include <time.h>
+#include <stdint.h>
 
 // ---------------------------------------------------------------- cadastro
 void xtream_carregar(void);
 int  xtream_configurado(void);          // servidor, usuario e senha presentes
-void xtream_definir_servidor(const char *servidor);
+int xtream_definir_servidor(const char *servidor);
+int xtream_conta_definir(const char *servidor,const char *usuario,const char *senha);
 void xtream_definir_usuario(const char *usuario);
 void xtream_definir_senha(const char *senha);
 void xtream_esquecer(void);
@@ -43,6 +45,12 @@ const char *xtream_servidor_curto(void);
 const char *xtream_usuario(void);
 const char *xtream_senha_mascarada(void);
 
+// Per-account connection policy: 0 Auto, 1 On, 2 Off. Unknown limits stay Off.
+int xtream_conexoes_modo(void);
+void xtream_definir_conexoes_modo(int modo);
+int xtream_conexoes_limitadas(void);
+int xtream_url_limitada(const char *url);
+
 // ----------------------------------------------------------------- canais
 typedef struct {
   char id[80];        // "xtream:<stream_id>"
@@ -52,9 +60,26 @@ typedef struct {
   char epgId[64];     // epg_channel_id do servidor, quando ha
 } XtreamCanal;
 
+// A mesma lista EM FLUXO (guia de TV): `cat` recebe as categorias na ordem do
+// painel com a contagem de cada uma (antes de qualquer canal), `cb` cada canal
+// (0 = parar). Sem vetor intermediario. Devolve o total do painel.
+typedef struct {
+  const char *id, *nome, *logo, *categoria, *epgId;
+  int num;           // "num" do painel (0 = nao veio)
+  int catOrdem;      // posicao da categoria na lista do painel
+  int semCategoria;  // category id absent/unknown; preserve a real provider group named Outros
+  int arquivo, arquivoDias;   // tv_archive (catch-up, v2)
+} XtreamItem;
+typedef int (*XtreamCb)(const XtreamItem *c, void *u);
+int xtream_canais_cb(void (*cat)(const char *nome, int ordem, int n, void *u),
+                     XtreamCb cb, void *u, int *total);
+int xtream_canais_cb_sessao(void (*cat)(const char *, int, int, void *),
+                     XtreamCb cb, void *u, int *total, uint64_t sessao);
 // Baixa categorias + canais ao vivo e preenche `saida`. Devolve quantos; 0 sem
 // cadastro ou sem resposta. BLOQUEIA: e do fio do guia.
 int xtream_canais(XtreamCanal *saida, int max);
+// Mesmo pedido, com a abertura do guia capturada antes de criar o worker.
+int xtream_canais_sessao(XtreamCanal *saida, int max, uint64_t sessao);
 // Por que a ULTIMA xtream_canais devolveu 0 (issue #112): XT_OK (respondeu,
 // mesmo vazia, ou sem cadastro), XT_SEM_RESPOSTA, XT_RECUSOU (auth 0). O guia
 // diz isso na tela; antes o "0" do Xtream sumia no meio dos canais dos addons
@@ -66,6 +91,9 @@ int xtream_canais(XtreamCanal *saida, int max);
 enum { XT_OK, XT_SEM_RESPOSTA, XT_RECUSOU, XT_PAGINA, XT_HTTP };
 int xtream_ultima_falha(void);
 int xtream_ultimo_http(void);
+// Quantos canais o servidor mandou na ULTIMA xtream_canais, mesmo os que nao
+// couberam em `max` (o guia usa para dizer "Mostrando N de M").
+int xtream_ultimo_total(void);
 
 // ----------------------------------------------------------------- conta
 // user_info do player_api.php (#158). Tudo opcional: -1/0/"" = nao veio.
@@ -118,4 +146,17 @@ int xtream_epg_parse(const char *json, XtreamProg *out, int cap);
 // 0 sem cadastro, ou na Samsung com painel http (bloqueado, ver xtream.c).
 int xtream_url_xmltv(char *url, unsigned n);
 
+void xtream_fonte_selecionar(unsigned id);
+int xtream_fonte_configurado(unsigned id);
+int xtream_fonte_canais(unsigned id, XtreamCanal *out, int max, uint64_t sessao);
+int xtream_fonte_canais_cb(unsigned id, void (*cat)(const char *, int, int, void *),
+                         XtreamCb cb, void *u, int *total, uint64_t sessao);
+int xtream_fonte_xmltv(unsigned id, char *out, unsigned n);
+int xtream_fonte_total(unsigned id);
+int xtream_fonte_estado(unsigned id, int *http);
+void xtream_fonte_esquecer(unsigned id);
+int xtream_formatos_canal(const char *id, const char *ext[2]);
+int xtream_conta_canal(const char *id, XtreamConta *out);
+void xtream_formato_canal_funcionou(const char *id, const char *url);
+void xtream_fontes_invalidar(void);
 #endif

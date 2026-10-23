@@ -22,6 +22,10 @@ const char *legsync_acao_rotulo(int a) {
   return "";
 }
 
+void legsync_audio_offset_texto(int ms, char *dst, unsigned tam) {
+  snprintf(dst, tam, "%+d ms", ms);
+}
+
 static void segundos(int ms, char *dst, unsigned tam) {
   snprintf(dst, tam, "%+.2f s", ms / 1000.0);
   plrui_decimal(dst);
@@ -71,11 +75,14 @@ static void textoBase(const LegSyncVisao *v, char *dst, unsigned tam) {
       snprintf(dst, tam, "%s", i18n("Pronta: compara com a legenda incorporada do arquivo")); return;
     case LEGSYNC_LENDO:      snprintf(dst, tam, i18n("Lendo a legenda incorporada\xe2\x80\xa6 %d%%"), v->progresso); return;
     case LEGSYNC_ANALISANDO: snprintf(dst, tam, "%s", i18n("Analisando\xe2\x80\xa6")); return;
-    case LEGSYNC_ACEITA:     segundos(v->offsetAutoMs, s, sizeof s);
+    case LEGSYNC_ACEITA:     segundos(-v->offsetAutoMs, s, sizeof s);   // user sign: + = later
                              snprintf(dst, tam, i18n("Sincronizada: %s"), s); return;
     case LEGSYNC_OUVINDO:    snprintf(dst, tam, i18n("Ouvindo as falas\xe2\x80\xa6 %d%%"), v->progresso); return;
     case LEGSYNC_RECUSADA:
       if ((a = motivoAudioTexto(v->motivo)) != NULL) { snprintf(dst, tam, "%s", a); return; }
+      if (v->motivo == LEGSYNC_M_REGION_DISAGREEMENT) {
+        snprintf(dst, tam, "%s", i18n("N\xc3\xa3o deu para sincronizar: tempos n\xc3\xa3o batem em todo o filme")); return;
+      }
       snprintf(dst, tam, "%s", i18n("Sem confian\xc3\xa7" "a suficiente; nada foi alterado")); return;
     case LEGSYNC_PAUSADA:    snprintf(dst, tam, "%s", i18n("Pausada pela busca no v\xc3\xad" "deo; retoma sozinha")); return;
     case LEGSYNC_DESFEITA:   snprintf(dst, tam, "%s", i18n("Corre\xc3\xa7\xc3\xa3o desfeita; o atraso manual continua")); return;
@@ -87,6 +94,8 @@ static void textoBase(const LegSyncVisao *v, char *dst, unsigned tam) {
     case LEGSYNC_M_PLATAFORMA: snprintf(dst, tam, "%s", i18n("Indispon\xc3\xadvel nesta plataforma")); break;
     case LEGSYNC_M_EXTERNA_INCOMPLETA:
       snprintf(dst, tam, "%s", i18n("Legenda externa incompleta; n\xc3\xa3o d\xc3\xa1 para sincronizar")); break;
+    case LEGSYNC_M_SEM_TEXTO:
+      snprintf(dst, tam, "%s", i18n("Sem legenda de texto neste arquivo para usar como refer\xc3\xaancia")); break;
     case LEGSYNC_M_SEM_REFERENCIA:
       snprintf(dst, tam, "%s", i18n("Indispon\xc3\xadvel: sem legenda de texto indexada no arquivo")); break;
     case LEGSYNC_M_SEM_RANGE:  snprintf(dst, tam, "%s", i18n("Indispon\xc3\xadvel: o servidor n\xc3\xa3o aceita leitura parcial")); break;
@@ -110,7 +119,15 @@ void legsync_texto_simples(const LegSyncVisao *v, char *dst, unsigned tam) {
   if (v->fase == LEGSYNC_DESFEITA) {
     snprintf(dst, tam, "%s", i18n("Corre\xc3\xa7\xc3\xa3o desfeita; o atraso manual continua")); return;
   }
-  if (v->autoFase == 3) { snprintf(dst, tam, "%s", i18n("N\xc3\xa3o deu para sincronizar")); return; }
+  if (v->fase == LEGSYNC_INDISPONIVEL && v->motivo == LEGSYNC_M_SEM_TEXTO) {
+    textoBase(v, dst, tam); return;
+  }
+  if (v->autoFase == 3) {
+    if (v->motivo == LEGSYNC_M_REGION_DISAGREEMENT)
+      snprintf(dst, tam, "%s", i18n("N\xc3\xa3o deu para sincronizar: tempos n\xc3\xa3o batem em todo o filme"));
+    else snprintf(dst, tam, "%s", i18n("N\xc3\xa3o deu para sincronizar"));
+    return;
+  }
   if (v->fase == LEGSYNC_ACEITA || v->autoFase == 2) {
     if (v->autoTrocou && v->autoNome[0]) snprintf(dst, tam, i18n("N\xc3\xa3o deu para sincronizar \xe2\x80\x94 usando %s"), v->autoNome);
     else snprintf(dst, tam, "%s", i18n("Sincronizada"));
@@ -139,34 +156,42 @@ int legsync_pilula_final(const LegSyncVisao *v, const char *provedor, char *dst,
   const char *p = provedor && *provedor ? provedor : "";
   if (!dst || !tam) return 0;
   if (v && v->fase == LEGSYNC_ACEITA) {
-    segundos(v->offsetAutoMs, s, sizeof s);
+    segundos(-v->offsetAutoMs, s, sizeof s);   // user sign: + = later
     snprintf(dst, tam, i18n("Legenda sincronizada \xc2\xb7 %s \xc2\xb7 %s"), p, s);
     return 1;
   }
-  snprintf(dst, tam, i18n("Legenda aplicada \xc2\xb7 %s \xc2\xb7 n\xc3\xa3o sincronizada"), p);
+  if (v && v->motivo == LEGSYNC_M_REGION_DISAGREEMENT)
+    snprintf(dst, tam, i18n("Legenda aplicada \xc2\xb7 %s \xc2\xb7 n\xc3\xa3o sincronizada (tempos n\xc3\xa3o batem em todo o filme)"), p);
+  else if (v && (v->motivo == LEGSYNC_M_SEM_REFERENCIA || v->motivo == LEGSYNC_M_SEM_TEXTO))
+    snprintf(dst, tam, i18n("Legenda aplicada \xc2\xb7 %s \xc2\xb7 n\xc3\xa3o sincronizada (sem legenda embutida para comparar)"), p);
+  else snprintf(dst, tam, i18n("Legenda aplicada \xc2\xb7 %s \xc2\xb7 n\xc3\xa3o sincronizada"), p);
   return 0;
 }
 
 int legsync_pil_passo(LegSyncPil *p, const LegSyncVisao *v, unsigned agora, const char *provedor, char *texto, unsigned tam) {
   int quer, r = 0;
+  // Sync pedido a mao segue o mesmo ciclo, com o automatico ligado ou nao.
+  int af = v->manualFase ? v->manualFase : v->autoFase;
+  if (v->autoDesligado && !v->manualFase) { p->espera = 0; return LEGSYNC_PIL_ZERAR; }
+  if (v->falhaDownload && af != 1) { p->espera = 0; return LEGSYNC_PIL_BAIXAR; }
   // Fechada, esperando o fim do plano: so o fim reabre. 2/3 = terminou (aceito,
   // desistiu/recusou/sem referencia); 1 segue; 0 = cancelado (sem plano): nada.
   if (p->espera && p->estado == LEGSYNC_PIL_OFF) {
-    if (v->autoFase == 2 || v->autoFase == 3) {
+    if (af == 2 || af == 3) {
       p->espera = 0; p->rastreia = 0;
       p->final = legsync_pilula_final(v, provedor, texto, tam);
       p->estado = LEGSYNC_PIL_APLICADA; p->desde = agora | 1u;
-      r |= LEGSYNC_PIL_FINAL_TARDE | (v->autoFase == 2 ? LEGSYNC_PIL_LEMBRAR : 0);
-    } else if (v->autoFase != 1) p->espera = 0;
+      r |= LEGSYNC_PIL_FINAL_TARDE | (af == 2 ? LEGSYNC_PIL_LEMBRAR : 0);
+    } else if (af != 1) p->espera = 0;
     return r;
   }
   if (p->estado == LEGSYNC_PIL_OFF) return 0;
   if (p->rastreia) {
     if (v->fase == LEGSYNC_AGUARDANDO) quer = LEGSYNC_PIL_PROCURANDO;
-    else if (v->autoFase == 1) quer = LEGSYNC_PIL_SINCRONIZANDO;
+    else if (af == 1) quer = LEGSYNC_PIL_SINCRONIZANDO;
     else quer = LEGSYNC_PIL_APLICADA;
-    if (quer == LEGSYNC_PIL_PROCURANDO && agora - p->iniciou > LEGSYNC_PIL_BAIXAR_TETO) return LEGSYNC_PIL_BAIXAR;
-    if (quer == LEGSYNC_PIL_APLICADA && v->autoFase == 2) r |= LEGSYNC_PIL_LEMBRAR;
+    // Cada troca baixa de novo. Só o callback pode declarar falha de download.
+    if (quer == LEGSYNC_PIL_APLICADA && af == 2) r |= LEGSYNC_PIL_LEMBRAR;
     // Leitura longa: a ilha encolhe de volta no relogio e o plano segue; o
     // aviso final reabre quando a sessao terminar.
     if (p->estado == LEGSYNC_PIL_SINCRONIZANDO && quer == LEGSYNC_PIL_SINCRONIZANDO && agora - p->desde >= LEGSYNC_PIL_SINC_MS) {
@@ -196,7 +221,12 @@ static int acoesAgora(int slot, int *lista, int max) {
   int n = 0;
   if (slot != 0 || max < 1) return 0;
   v = legsync_visao(0);
-  if (v.acoes & LEGSYNC_ACAO_DESFAZER) lista[n++] = LEGSYNC_ACAO_DESFAZER;
+  if (v.autoDesligado) {
+    static const int a[] = { LEGSYNC_ACAO_RAPIDA, LEGSYNC_ACAO_COMPLETA, LEGSYNC_ACAO_AUDIO,
+                            LEGSYNC_ACAO_DESFAZER, LEGSYNC_ACAO_OUTRA, LEGSYNC_ACAO_PARAR };
+    for (unsigned i = 0; i < sizeof a / sizeof *a && n < max; i++)
+      if (v.acoes & a[i]) lista[n++] = a[i];
+  } else if (v.acoes & LEGSYNC_ACAO_DESFAZER) lista[n++] = LEGSYNC_ACAO_DESFAZER;
   return n;
 }
 
@@ -207,19 +237,20 @@ static const char *pEstado(int slot, void *u) {
   if (slot < 0 || slot > 1 || player_id_canal()[0]) return NULL;
   v = legsync_visao(slot);
   if (v.fase == LEGSYNC_INDISPONIVEL && v.autoFase == 0) return NULL;
-  legsync_texto_simples(&v, b, sizeof b);
+  if (v.autoDesligado) legsync_texto(&v, b, sizeof b);
+  else legsync_texto_simples(&v, b, sizeof b);
   return b[0] ? b : NULL;
 }
 
 static int pAcoes(int slot, const char **rot, int max, void *u) {
-  int l[2], n = acoesAgora(slot, l, max < 2 ? max : 2), i;
+  int l[6], n = acoesAgora(slot, l, max < 6 ? max : 6), i;
   (void)u;
   for (i = 0; i < n; i++) rot[i] = legsync_acao_rotulo(l[i]);
   return n;
 }
 
 static void pExecutar(int slot, int acao, void *u) {
-  int l[2], n = acoesAgora(slot, l, 2);
+  int l[6], n = acoesAgora(slot, l, 6);
   (void)u;
   if (acao >= 0 && acao < n) legsync_acao(l[acao]);
 }

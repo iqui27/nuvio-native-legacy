@@ -72,6 +72,7 @@ static void gravar(void) {
   free(b);
 }
 
+void sorg_recarregar(void) { perfilLido = -1; sorg_carregar(); }
 void sorg_carregar(void) {
   int p = perfis_ativo();
   char *b, *linha, *prox;

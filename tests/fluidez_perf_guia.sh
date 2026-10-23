@@ -5,7 +5,7 @@
 #
 #   bash tests/fluidez_perf_guia.sh                 # esta arvore
 #   bash tests/fluidez_perf_guia.sh /outra/arvore   # ex.: worktree da v1.7.4
-set -eu
+set -euo pipefail
 aqui="$(cd "$(dirname "$0")/.." && pwd)"
 raiz="${1:-$aqui}"
 cd "$raiz"

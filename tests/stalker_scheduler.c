@@ -6,6 +6,7 @@
 // reproduzir uma resposta velha sem depender de rede ou de temporizacao.
 #define SDL_MAIN_HANDLED
 #include "../src/app.c"
+#include "stub_m3u.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -157,8 +158,81 @@ int stream_primeira_boa(int tentativas) {
   __atomic_add_fetch(&addonChamadas, 1, __ATOMIC_RELAXED);
   return 7;
 }
-
+int stream_primeira_boa_sessao(int tentativas, uint64_t sessao) {
+  (void)sessao; return stream_primeira_boa(tentativas);
+}
+int stream_verificar_proxima_vod(int atual, int tentativas, int *conferidas) {
+  (void)atual; (void)tentativas; if (conferidas) *conferidas = 0; return -1;
+}
+int stream_verificar_proxima_vod_sessao(int atual, int tentativas, int *conferidas, uint64_t sessao) {
+  (void)sessao; return stream_verificar_proxima_vod(atual, tentativas, conferidas);
+}
 int stream_canal_primeira_viva(int tentativas) { (void)tentativas; return -1; }
+int stream_canal_primeira_viva_sessao(int tentativas, uint64_t sessao) {
+  (void)sessao; return stream_canal_primeira_viva(tentativas);
+}
+int stalker_resolver_sessao(const char *id, char *url, unsigned n, uint64_t sessao) {
+  (void)sessao; return stalker_resolver(id, url, n);
+}
+uint64_t perfis_sessao_geracao(void) { return 1; }
+int perfis_sessao_atual(uint64_t g) { return g == 1; }
+int perfis_sessao_travar(uint64_t g) { return g == 1; }
+void perfis_sessao_destravar(void) {}
+int perfis_ativo(void) { return 1; }
+const char *sessao_usuario(void) { return ""; }
+void debrid_contexto_capturar(DebridContexto *c) { if (c) memset(c, 0, sizeof *c); }
+void debrid_contexto_entrar(const DebridContexto *c) { (void)c; }
+void debrid_contexto_sair(void) {}
+int debrid_servico_disponivel(int servico) { (void)servico; return 0; }
+unsigned fonteregra_versao(void) { return 0; }
+int detail_aberto(void) { return 0; }
+int detail_indice(void) { return 0; }
+int detail_ep_foco(int *t, int *e) { if (t) *t = 0; if (e) *e = 0; return 0; }
+int stream_filtro_permite(const Stream *fonte) { (void)fonte; return 1; }
+int stream_lista_do_alvo(const char *id) { (void)id; return 1; }
+int stream_falha_verificar(FonteFalhaSessao *s, unsigned ger, int escolhida,
+                          int (*cancelado)(void *), void *ctx,
+                          int *idx, int *serv, char *url, unsigned n) {
+  (void)s; (void)ger; (void)escolhida; (void)cancelado; (void)ctx; (void)n;
+  if (idx) *idx = -1; if (serv) *serv = -1; if (url) url[0] = 0; return 0;
+}
+int stream_falha_aplicar_sessao(int idx, unsigned ger, int serv, const char *url, uint64_t sessao) {
+  (void)idx; (void)ger; (void)serv; (void)url; (void)sessao; return 0;
+}
+int stream_falha_renovar(int indice, unsigned ger, int servico,
+                         int (*cancelado)(void *), void *ctx, char *url, unsigned tam) {
+  (void)indice; (void)ger; (void)servico; (void)cancelado; (void)ctx; (void)tam;
+  if (url) url[0] = 0; return 0;
+}
+void fontefalha_config(FonteFalhaConfig *saida) { if (saida) memset(saida, 0, sizeof *saida); }
+int fontefalha_ativa(void) { return 0; }
+FonteFalhaSessao *fontefalha_sessao_nova(const FonteFalhaConfig *c, unsigned d, int p) {
+  (void)c; (void)d; (void)p; return NULL;
+}
+FonteFalhaSessao *fontefalha_sessao_clonar(const FonteFalhaSessao *s) { (void)s; return NULL; }
+void fontefalha_sessao_liberar(FonteFalhaSessao *s) { (void)s; }
+int fontefalha_url_registrar(FonteFalhaSessao *s, const char *url) { (void)s; (void)url; return 0; }
+void player_definir_tentativa(int n, int t) { (void)n; (void)t; }
+int ajustes_fonte_preparar(void) { return 0; }
+int ajustes_fonte_precarregar(void) { return 0; }
+int ajustes_fonte_manual(void) { return 0; }
+int ajustes_fonte_primeira(void) { return 0; }
+int ajustes_fonte_escopo(void) { return 0; }
+int ajustes_fonte_regex_modo(void) { return 0; }
+int ajustes_fonte_usar_outros(void) { return 0; }
+int ajustes_fonte_ordem_uso(void) { return 0; }
+int ajustes_fonte_prioridade(void) { return 0; }
+int ajustes_fonte_hdr(void) { return 0; }
+int ajustes_fonte_conferir_varias(void) { return 0; }
+int ajustes_fonte_tocar_conferindo(void) { return 0; }
+int ajustes_dolby_vision(void) { return 0; }
+int ajustes_dv_mkv(void) { return 0; }
+int ajustes_dolby_atmos(void) { return 0; }
+int ajustes_tamanho_min_gb(void) { return 0; }
+int ajustes_tamanho_max_gb(void) { return 0; }
+int ajustes_buffer_preset(void) { return 0; }
+int ajustes_cache_seek_mb(void) { return 0; }
+const char *ajustes_qualidade(void) { return ""; }
 int stream_canal_classe_escolhida(void) { return 0; }
 int stream_canal_proxima(int a) { return a + 1; }
 int stream_canal_prazo_longo(int i) { (void)i; return 1; }
@@ -177,6 +251,7 @@ const Stream *stream_item(int indice) {
 void stream_definir_atual(int indice) { fonteAtual = indice; }
 
 const char *player_id_canal(void) { return idCanal; }
+const char *player_tipo_canal(void) { return idCanal[0] ? "tv" : ""; }
 int player_aberto(void) { return idPlayerAberto; }
 int player_mini_ativo(void) { return 0; }
 int player_quer_sair(void) { return playerSaindo; }
@@ -186,6 +261,16 @@ void player_definir_fonte(const char *url) {
 void player_erro_fonte(void) { errosPlayer++; }
 void player_fechar_mini(void) { idPlayerAberto = 0; }
 void marco(const char *texto) { (void)texto; }
+// Dobles inertes: o scheduler (app.c) os referencia, mas estes testes nao os exercitam.
+int cat_id_stream(int i, int t, int e, char *dst, unsigned tam) { (void)i; (void)t; (void)e; (void)dst; (void)tam; return 0; }
+const CatItem *cat_item(int i) { (void)i; return NULL; }
+void player_episodio_atual(int *t, int *e) { if (t) *t = 0; if (e) *e = 0; }
+int player_indice(void) { return -1; }
+int stream_n(void) { return listaN; }
+int stream_automatico_canal(void) { return -1; }
+int stream_automatico_disponivel(int i) { (void)i; return 0; }
+Uint32 stream_idade_ms(void) { return 0; }
+unsigned stream_lista_geracao(void) { return 0; }
 
 static void test_gera_invalida_e_single_flight(void) {
   limpar_cenario();

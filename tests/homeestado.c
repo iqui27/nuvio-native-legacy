@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "homeestado.h"
+#include "nvtmp.h"
 #include "ajustes.h"
 #include "sessao.h"
 #include "perfis.h"
@@ -26,6 +27,8 @@ int ajustes_idioma(void) { return 0; }
 int ajustes_cw_ligado(void) { return 1; }
 int ajustes_cw_estilo(void) { return 0; }
 int ajustes_posteres_deitados(void) { return 0; }
+float ajustes_espaco_fileiras(void) { return 1.0f; }
+float ajustes_espaco_titulos(void)  { return 1.0f; }
 int ajustes_rotulos_poster(void) { return 1; }
 int ajustes_hero_fonte(void) { return config; }
 const char *fil_hero_fonte(void) { return "auto"; }
@@ -45,7 +48,9 @@ int catordem_tem_ocultar_sublinhado(void) { return 0; }
 int catordem_ocultar_sublinhado(void) { return 0; }
 int col_n(void) { return 0; }
 const ColFolder *col_folder(int i) { (void)i; return NULL; }
+unsigned col_hash_estrutura(void) { return 0; }
 int addons_n(void) { return 0; }
+int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 const char *addons_base(int i) { (void)i; return ""; }
 int addons_tem_catalogo(int i) { (void)i; return 0; }
 int addons_ativo(int i) { (void)i; return 1; }
@@ -118,7 +123,7 @@ int main(int argc, char **argv) {
     config = getenv("HOMEESTADO_TEST_CONFIG") ? atoi(getenv("HOMEESTADO_TEST_CONFIG")) : 1;
     return child(argv[1]);
   }
-  snprintf(dir, sizeof dir, "/tmp/nuvio-homeestado-%ld", (long)getpid());
+  snprintf(dir, sizeof dir, "%s/nuvio-homeestado-%ld", nvt_dir(), (long)getpid());
   expect(mkdir(dir, 0700) == 0, "create isolated storage");
   setenv("HOMEESTADO_TEST_DIR", dir, 1); owner = "owner-A"; config = 1;
   homeestado_iniciar(); expect(!homeestado_contexto_valido(), "first start has no stale rows");

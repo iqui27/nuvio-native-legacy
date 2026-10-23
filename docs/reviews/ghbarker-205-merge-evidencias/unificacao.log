@@ -1,0 +1,12 @@
+src/ajustes.c: identico a integracao
+src/ajustes.h: identico a integracao
+src/ajustes_ux_padrao.inc: identico a integracao
+src/ajustes_ux_tela.inc: identico a integracao
+src/ajustes_ux_ilha.inc: identico a integracao
+src/ajustes_ux_dados.inc: identico a integracao
+src/ajustes_ux_visual.inc: identico a integracao
+src/ajustes_ux_secoes.inc: identico a integracao
+src/sync.c: identico a integracao
+279 indices de ajustes preservados; nenhuma opcao nova
+AJ_AUTO_CREDITOS, ajustes_auto_creditos, autoCreditosLocal: ausentes do codigo
+player: um disparo de pulo; posplay: uma contagem configuravel

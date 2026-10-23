@@ -7,6 +7,7 @@
 // Frames: simple view, More options, dual subtitles without and with the
 // controls, and a three-line primary to show the bands do not collide.
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "player.h"
 #include "ajustes.h"
 #include "faixas.h"
@@ -134,7 +135,7 @@ static void estado(int controles) {
 
 int main(int argc, char **argv) {
   Legenda add[6];
-  saida = argc > 1 ? argv[1] : "/tmp/nv-legauto-shot";
+  saida = argc > 1 ? argv[1] : nvt("/nv-legauto-shot");
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);

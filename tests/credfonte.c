@@ -19,6 +19,11 @@ int main(void) {
   assert(f == CRED_FONTE_VIZINHO && s == 1350);
   e.introdb = 1346; s = cred_escolher(&e, &f);
   assert(f == CRED_FONTE_INTRODB && s == 1346);
+  // AniSkip: mesma prioridade do introdb, mas o rotulo e o da fonte real.
+  { CredEntrada a; memset(&a, 0, sizeof a); a.dur = 1500; a.aniskip = 1340;
+    s = cred_escolher(&a, &f);
+    assert(f == CRED_FONTE_ANISKIP && s == 1340 && !strcmp(cred_fonte_nome(f), "aniskip"));
+    assert(!strcmp(cred_fonte_nome(CRED_FONTE_INTRODB), "introdb")); }
   e.capitulo = 1380; s = cred_escolher(&e, &f);
   assert(f == CRED_FONTE_CAPITULO && s == 1380);
   // derivado fora da metade final nao vale

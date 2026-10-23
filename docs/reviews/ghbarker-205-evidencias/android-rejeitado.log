@@ -1,0 +1,667 @@
+[1/5] fontes do SDL em /Volumes/ExternalSSD/nv-203-shield-cache/src
+[2/5] arte e fontes -> /Volumes/ExternalSSD/nv-205-prghbarker/build/android/assets
+tizen-art.sh: 171 webp converted to png (via sips)
+tizen-art.sh:  25M em build/android/assets/art
+[3/5] chaves (-D) e libs nativas
+[4/5] gradle
+== FFmpeg JNI 1.8.0+1 arm64-v8a, paginas 16 KB
+ffmpeg-android.sh: /Volumes/ExternalSSD/nv-205-prghbarker/build/android/media3-ffmpeg-16kb.aar, JNI 16 KB: arm64-v8a
+  motor P2P: LIGADO (/Volumes/ExternalSSD/nuvio-p2p-motor/android)
+> Task :app:copiaSdlJava
+> Task :app:preBuild
+> Task :app:preDebugBuild
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:generateDebugResValues
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:mergeDebugResources
+> Task :app:parseDebugLocalResources
+
+> Task :app:processDebugMainManifest
+/Volumes/ExternalSSD/nv-205-prghbarker/android/app/src/main/AndroidManifest.xml:46:9-41 Warning:
+	android:extractNativeLibs should not be specified in this source AndroidManifest.xml file. See https://d.android.com/guide/topics/manifest/application-element#extractNativeLibs for more information.
+The AGP Upgrade Assistant can remove the attribute from the AndroidManifest.xml file and update the build file accordingly. See https://d.android.com/studio/build/agp-upgrade-assistant for more information.
+
+> Task :app:processDebugManifest
+> Task :app:javaPreCompileDebug
+> Task :app:mergeDebugShaders
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets
+> Task :app:checkDebugDuplicateClasses
+> Task :app:desugarDebugFileDependencies
+> Task :app:compressDebugAssets
+> Task :app:configureCMakeDebug[arm64-v8a]
+> Task :app:mergeLibDexDebug
+> Task :app:mergeExtDexDebug
+
+> Task :app:buildCMakeDebug[arm64-v8a]
+C/C++: ninja: Entering directory `/Volumes/ExternalSSD/nv-205-prghbarker/android/app/.cxx/Debug/5u665y2l/arm64-v8a'
+C/C++: /Volumes/ExternalSSD/nv-205-prghbarker/src/faixas.c:1731:73: error: use of undeclared identifier 'ponteiroAtrasoPasso'
+C/C++:  1731 |       if (pont && !pres) ponteiro_alvo(disc.x,disc.y,disc.w,disc.h,NULL,ponteiroAtrasoPasso,d ? 1 : -1,0);
+C/C++:       |                                                                         ^
+C/C++: 1 error generated.
+
+> Task :app:processDebugManifestForPackage
+> Task :app:buildCMakeDebug[arm64-v8a] FAILED
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:buildCMakeDebug[arm64-v8a]'.
+> com.android.ide.common.process.ProcessException: ninja: Entering directory `/Volumes/ExternalSSD/nv-205-prghbarker/android/app/.cxx/Debug/5u665y2l/arm64-v8a'
+  [0/2] Re-checking globbed directories...
+  [1/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/rescaler_sse2.c.o
+  [2/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/upsampling_sse2.c.o
+  [3/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/yuv_sse2.c.o
+  [4/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/lossless_sse2.c.o
+  [5/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/dec_msa.c.o
+  [6/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftbdf.c.o
+  [7/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/filters_msa.c.o
+  [8/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftbbox.c.o
+  [9/752] Generating include/SDL2/SDL.h
+  [10/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftcid.c.o
+  [11/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftotval.c.o
+  [12/752] Generating include/SDL2/SDL_assert.h
+  [13/752] Generating include/SDL2/SDL_bits.h
+  [14/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/filters_neon.c.o
+  [15/752] Generating include/SDL2/SDL_audio.h
+  [16/752] Generating include/SDL2/SDL_atomic.h
+  [17/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/rescaler_neon.c.o
+  [18/752] Generating include/SDL2/SDL_blendmode.h
+  [19/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftmm.c.o
+  [20/752] Generating include/SDL2/SDL_clipboard.h
+  [21/752] Generating include/SDL2/SDL_copying.h
+  [22/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/alpha_processing_neon.c.o
+  [23/752] Generating include/SDL2/SDL_cpuinfo.h
+  [24/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftbitmap.c.o
+  [25/752] Generating include/SDL2/SDL_endian.h
+  [26/752] Generating include/SDL2/SDL_egl.h
+  [27/752] Generating include/SDL2/SDL_events.h
+  [28/752] Generating include/SDL2/SDL_error.h
+  [29/752] Generating include/SDL2/SDL_filesystem.h
+  [30/752] Generating include/SDL2/SDL_gamecontroller.h
+  [31/752] Generating include/SDL2/SDL_guid.h
+  [32/752] Generating include/SDL2/SDL_gesture.h
+  [33/752] Generating include/SDL2/SDL_haptic.h
+  [34/752] Generating include/SDL2/SDL_hidapi.h
+  [35/752] Generating include/SDL2/SDL_hints.h
+  [36/752] Generating include/SDL2/SDL_keyboard.h
+  [37/752] Generating include/SDL2/SDL_keycode.h
+  [38/752] Generating include/SDL2/SDL_joystick.h
+  [39/752] Generating include/SDL2/SDL_loadso.h
+  [40/752] Generating include/SDL2/SDL_log.h
+  [41/752] Generating include/SDL2/SDL_locale.h
+  [42/752] Generating include/SDL2/SDL_main.h
+  [43/752] Generating include/SDL2/SDL_misc.h
+  [44/752] Generating include/SDL2/SDL_messagebox.h
+  [45/752] Generating include/SDL2/SDL_metal.h
+  [46/752] Generating include/SDL2/SDL_mutex.h
+  [47/752] Generating include/SDL2/SDL_mouse.h
+  [48/752] Generating include/SDL2/SDL_name.h
+  [49/752] Generating include/SDL2/SDL_opengl.h
+  [50/752] Generating include/SDL2/SDL_opengles2.h
+  [51/752] Generating include/SDL2/SDL_opengles.h
+  [52/752] Generating include/SDL2/SDL_opengl_glext.h
+  [53/752] Generating include/SDL2/SDL_opengles2_gl2platform.h
+  [54/752] Generating include/SDL2/SDL_opengles2_gl2.h
+  [55/752] Generating include/SDL2/SDL_opengles2_khrplatform.h
+  [56/752] Generating include/SDL2/SDL_opengles2_gl2ext.h
+  [57/752] Generating include/SDL2/SDL_pixels.h
+  [58/752] Generating include/SDL2/SDL_power.h
+  [59/752] Generating include/SDL2/SDL_platform.h
+  [60/752] Generating include/SDL2/SDL_quit.h
+  [61/752] Generating include/SDL2/SDL_render.h
+  [62/752] Generating include/SDL2/SDL_rwops.h
+  [63/752] Generating include/SDL2/SDL_rect.h
+  [64/752] Generating include/SDL2/SDL_sensor.h
+  [65/752] Generating include/SDL2/SDL_scancode.h
+  [66/752] Generating include/SDL2/SDL_shape.h
+  [67/752] Generating include/SDL2/SDL_stdinc.h
+  [68/752] Generating include/SDL2/SDL_surface.h
+  [69/752] Generating include/SDL2/SDL_system.h
+  [70/752] Generating include/SDL2/SDL_syswm.h
+  [71/752] Generating include/SDL2/SDL_test.h
+  [72/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/lossless_neon.c.o
+  [73/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/yuv_neon.c.o
+  [74/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/rescaler_mips32.c.o
+  [75/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/alpha_processing_mips_dsp_r2.c.o
+  [76/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/yuv_mips32.c.o
+  [77/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/filters_mips_dsp_r2.c.o
+  [78/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/lossless_msa.c.o
+  [79/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/dec_mips_dsp_r2.c.o
+  [80/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/rescaler_msa.c.o
+  [81/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/upsampling_msa.c.o
+  [82/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/dec_mips32.c.o
+  [83/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/lossless_mips_dsp_r2.c.o
+  [84/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/rescaler_mips_dsp_r2.c.o
+  [85/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftfstype.c.o
+  [86/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/upsampling_mips_dsp_r2.c.o
+  [87/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/yuv_mips_dsp_r2.c.o
+  [88/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/cost.c.o
+  [89/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/cost_sse2.c.o
+  [90/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/enc.c.o
+  [91/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/lossless_enc_sse2.c.o
+  [92/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/enc_sse2.c.o
+  [93/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/ssim_sse2.c.o
+  [94/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/ssim.c.o
+  [95/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/enc_sse41.c.o
+  [96/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/lossless_enc_sse41.c.o
+  [97/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/lossless_enc.c.o
+  [98/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/enc_msa.c.o
+  [99/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/cost_mips32.c.o
+  [100/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/enc_mips32.c.o
+  [101/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/lossless_enc_msa.c.o
+  [102/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/lossless_enc_mips32.c.o
+  [103/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/cost_mips_dsp_r2.c.o
+  [104/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/lossless_enc_mips_dsp_r2.c.o
+  [105/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/enc_mips_dsp_r2.c.o
+  [106/752] Building C object webp/CMakeFiles/webputils.dir/src/utils/color_cache_utils.c.o
+  [107/752] Building C object webp/CMakeFiles/webputils.dir/src/utils/filters_utils.c.o
+  [108/752] Building C object webp/CMakeFiles/webputils.dir/src/utils/bit_reader_utils.c.o
+  [109/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftgasp.c.o
+  [110/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftglyph.c.o
+  [111/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/lossless_enc_neon.c.o
+  [112/752] Generating include/SDL2/SDL_test_assert.h
+  [113/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftpatent.c.o
+  [114/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftinit.c.o
+  [115/752] Generating include/SDL2/SDL_test_compare.h
+  [116/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/dec_neon.c.o
+  [117/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/cost_neon.c.o
+  [118/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftgxval.c.o
+  [119/752] Generating include/SDL2/SDL_test_common.h
+  [120/752] Generating include/SDL2/SDL_test_font.h
+  [121/752] Generating include/SDL2/SDL_test_crc32.h
+  [122/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftpfr.c.o
+  [123/752] Generating include/SDL2/SDL_test_fuzzer.h
+  [124/752] Generating include/SDL2/SDL_test_harness.h
+  [125/752] Generating include/SDL2/SDL_test_images.h
+  [126/752] Generating include/SDL2/SDL_test_log.h
+  [127/752] Generating include/SDL2/SDL_test_md5.h
+  [128/752] Generating include/SDL2/SDL_test_memory.h
+  [129/752] Generating include/SDL2/SDL_test_random.h
+  [130/752] Generating include/SDL2/SDL_timer.h
+  [131/752] Generating include/SDL2/SDL_thread.h
+  [132/752] Generating include/SDL2/SDL_touch.h
+  [133/752] Generating include/SDL2/SDL_version.h
+  [134/752] Generating include/SDL2/SDL_types.h
+  [135/752] Generating include/SDL2/SDL_vulkan.h
+  [136/752] Generating include/SDL2/SDL_video.h
+  [137/752] Generating include/SDL2/close_code.h
+  [138/752] Generating include/SDL2/begin_code.h
+  [139/752] Building C object webp/CMakeFiles/sharpyuv.dir/sharpyuv/sharpyuv_cpu.c.o
+  [140/752] Building C object webp/CMakeFiles/sharpyuv.dir/sharpyuv/sharpyuv_sse2.c.o
+  [141/752] Building C object webp/CMakeFiles/sharpyuv.dir/sharpyuv/sharpyuv_csp.c.o
+  [142/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftstroke.c.o
+  [143/752] Building C object webp/CMakeFiles/cpufeatures-webp.dir/Users/hrocha/Library/Android/sdk/ndk/27.2.12479018/sources/android/cpufeatures/cpu-features.c.o
+  [144/752] Building C object webp/CMakeFiles/sharpyuv.dir/sharpyuv/sharpyuv_dsp.c.o
+  [145/752] Building C object webp/CMakeFiles/sharpyuv.dir/sharpyuv/sharpyuv_gamma.c.o
+  [146/752] Building C object webp/CMakeFiles/sharpyuv.dir/sharpyuv/sharpyuv.c.o
+  [147/752] Building C object webp/CMakeFiles/webpdecode.dir/src/dec/alpha_dec.c.o
+  [148/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/upsampling_neon.c.o
+  [149/752] Building C object webp/CMakeFiles/webpdecode.dir/src/dec/buffer_dec.c.o
+  [150/752] Building C object webp/CMakeFiles/webpdecode.dir/src/dec/quant_dec.c.o
+  [151/752] Building C object webp/CMakeFiles/webpdecode.dir/src/dec/frame_dec.c.o
+  [152/752] Building C object webp/CMakeFiles/webpdecode.dir/src/dec/idec_dec.c.o
+  [153/752] Building C object webp/CMakeFiles/webpdecode.dir/src/dec/tree_dec.c.o
+  [154/752] Building C object webp/CMakeFiles/webpdecode.dir/src/dec/io_dec.c.o
+  [155/752] Linking C static library webp/libcpufeatures-webp.a
+  [156/752] Building C object webp/CMakeFiles/webputils.dir/src/utils/palette.c.o
+  [157/752] Building C object webp/CMakeFiles/webputils.dir/src/utils/huffman_utils.c.o
+  [158/752] Building C object webp/CMakeFiles/webpencode.dir/src/enc/picture_tools_enc.c.o
+  [159/752] Building C object webp/CMakeFiles/webpdecode.dir/src/dec/vp8_dec.c.o
+  [160/752] Building C object webp/CMakeFiles/webpencode.dir/src/enc/syntax_enc.c.o
+  [161/752] Building C object webp/CMakeFiles/webpencode.dir/src/enc/token_enc.c.o
+  [162/752] Building C object webp/CMakeFiles/webpencode.dir/src/enc/tree_enc.c.o
+  [163/752] Building C object webp/CMakeFiles/webpdecode.dir/src/dec/webp_dec.c.o
+  [164/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/cpu.c.o
+  [165/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/alpha_processing.c.o
+  [166/752] Building C object webp/CMakeFiles/webpencode.dir/src/enc/predictor_enc.c.o
+  [167/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/autofit/autofit.c.o
+  [168/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/dec.c.o
+  [169/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/dec_clip_tables.c.o
+  [170/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/filters.c.o
+  [171/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/enc_neon.c.o
+  [172/752] Building C object webp/CMakeFiles/sharpyuv.dir/sharpyuv/sharpyuv_neon.c.o
+  [173/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/rescaler.c.o
+  [174/752] Building C object webp/CMakeFiles/webpencode.dir/src/enc/webp_enc.c.o
+  [175/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/alpha_processing_sse41.c.o
+  [176/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/lossless_sse41.c.o
+  [177/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/upsampling.c.o
+  [178/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/upsampling_sse41.c.o
+  [179/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/yuv.c.o
+  [180/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/dec_sse41.c.o
+  [181/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/yuv_sse41.c.o
+  [182/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/alpha_processing_sse2.c.o
+  [183/752] Linking C static library webp/libsharpyuv.a
+  [184/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/filters_sse2.c.o
+  [185/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/dec_sse2.c.o
+  [186/752] Building C object webp/CMakeFiles/webputils.dir/src/utils/quant_levels_dec_utils.c.o
+  [187/752] Building C object webp/CMakeFiles/webputils.dir/src/utils/rescaler_utils.c.o
+  [188/752] Building C object webp/CMakeFiles/webputils.dir/src/utils/random_utils.c.o
+  [189/752] Building C object webp/CMakeFiles/webputils.dir/src/utils/utils.c.o
+  [190/752] Building C object webp/CMakeFiles/webputils.dir/src/utils/thread_utils.c.o
+  [191/752] Building C object webp/CMakeFiles/webputils.dir/src/utils/quant_levels_utils.c.o
+  [192/752] Building C object webp/CMakeFiles/webpdsp.dir/src/dsp/lossless.c.o
+  [193/752] Building C object webp/CMakeFiles/webputils.dir/src/utils/bit_writer_utils.c.o
+  [194/752] Building C object webp/CMakeFiles/webputils.dir/src/utils/huffman_encode_utils.c.o
+  [195/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftwinfnt.c.o
+  [196/752] Building C object webp/CMakeFiles/webpdemux.dir/src/demux/anim_decode.c.o
+  [197/752] Building C object webp/CMakeFiles/webpdecode.dir/src/dec/vp8l_dec.c.o
+  [198/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/bzip2/ftbzip2.c.o
+  [199/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/lzw/ftlzw.c.o
+  [200/752] Building C object webp/CMakeFiles/webpencode.dir/src/enc/vp8l_enc.c.o
+  [201/752] Building C object webp/CMakeFiles/webpdemux.dir/src/demux/demux.c.o
+  [202/752] Building C object webp/CMakeFiles/webpencode.dir/src/enc/quant_enc.c.o
+  [203/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftbase.c.o
+  [204/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/gzip/ftgzip.c.o
+  [205/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/pfr/pfr.c.o
+  [206/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/raster/raster.c.o
+  [207/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/cache/ftcache.c.o
+  [208/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/pcf/pcf.c.o
+  [209/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/svg/svg.c.o
+  [210/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/cid/type1cid.c.o
+  [211/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/psnames/psnames.c.o
+  [212/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/smooth/smooth.c.o
+  [213/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/pshinter/pshinter.c.o
+  [214/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/bdf/bdf.c.o
+  [215/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/base/ftdebug.c.o
+  [216/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/winfonts/winfnt.c.o
+  [217/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/builds/unix/ftsystem.c.o
+  [218/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/type42/type42.c.o
+  [219/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/sdf/sdf.c.o
+  [220/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/traktscrobble.c.o
+  [221/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/hidapi/SDL_hidapi_wii.c.o
+  [222/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/vazao.c.o
+  [223/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/cff/cff.c.o
+  [224/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/trailerfonte.c.o
+  [225/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/type1/type1.c.o
+  [226/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/hidapi/SDL_hidapi_xbox360.c.o
+  [227/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/hidapi/SDL_hidapi_xbox360w.c.o
+  [228/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/trailerimdb.c.o
+  [229/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/hidapi/SDL_hidapi_xboxone.c.o
+  [230/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/hidapi/SDL_hidapijoystick.c.o
+  [231/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/traktauth.c.o
+  [232/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/android/SDL_sysjoystick.c.o
+  [233/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/steam/SDL_steamcontroller.c.o
+  [234/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/power/android/SDL_syspower.c.o
+  [235/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/locale/android/SDL_syslocale.c.o
+  [236/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/timer/unix/SDL_systimer.c.o
+  [237/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/android/SDL_androidmessagebox.c.o
+  [238/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/android/SDL_androidgl.c.o
+  [239/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/android/SDL_androidkeyboard.c.o
+  [240/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/android/SDL_androidclipboard.c.o
+  [241/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/android/SDL_androidevents.c.o
+  [242/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/android/SDL_androidvulkan.c.o
+  [243/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/android/SDL_androidmouse.c.o
+  [244/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/seekr.c.o
+  [245/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/trailerapple.c.o
+  [246/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/android/SDL_androidtouch.c.o
+  [247/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/psaux/psaux.c.o
+  [248/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/android/SDL_androidwindow.c.o
+  [249/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_avif.c.o
+  [250/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_bmp.c.o
+  [251/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG.c.o
+  [252/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_jxl.c.o
+  [253/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_gif.c.o
+  [254/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_lbm.c.o
+  [255/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_pcx.c.o
+  [256/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/android/SDL_androidvideo.c.o
+  [257/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_qoi.c.o
+  [258/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_pnm.c.o
+  [259/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_svg.c.o
+  [260/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_tga.c.o
+  [261/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_tif.c.o
+  [262/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_xcf.c.o
+  [263/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_jpg.c.o
+  [264/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_webp.c.o
+  [265/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/sfnt/sfnt.c.o
+  [266/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_xpm.c.o
+  [267/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/abrecine.c.o
+  [268/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_xv.c.o
+  [269/752] Building C object sdl2_ttf/external/freetype/CMakeFiles/freetype.dir/src/truetype/truetype.c.o
+  [270/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/trocaarte.c.o
+  [271/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_png.c.o
+  [272/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/abertura.c.o
+  [273/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/addonstats.c.o
+  [274/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/addonsui.c.o
+  [275/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/ajlog.c.o
+  [276/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/artehero.c.o
+  [277/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/aovivo.c.o
+  [278/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/agendaviso.c.o
+  [279/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/apoio.c.o
+  [280/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/amigostitulo_ui.c.o
+  [281/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/arranque.c.o
+  [282/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/aquecer.c.o
+  [283/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/arteescolha.c.o
+  [284/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/android.c.o
+  [285/752] Building C object CMakeFiles/SDL2_image.dir/Volumes/ExternalSSD/nv-203-shield-cache/src/SDL2_image-2.8.2/src/IMG_stb.c.o
+  [286/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/amigosfil.c.o
+  [287/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/amigoperfil.c.o
+  [288/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/artetamanho.c.o
+  [289/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/artefontes.c.o
+  [290/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/amigostitulo.c.o
+  [291/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/aovivoui.c.o
+  [292/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/assrender.c.o
+  [293/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/audioinfo.c.o
+  [294/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/avisodisp.c.o
+  [295/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/audsync.c.o
+  [296/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/audvad.c.o
+  [297/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/trakt.c.o
+  [298/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/atividade.c.o
+  [299/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/bidi.c.o
+  [300/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/botoes.c.o
+  [301/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/buscanorm.c.o
+  [302/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/buscasrec.c.o
+  [303/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/artereserva.c.o
+  [304/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/cachearte.c.o
+  [305/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/cacheboost.c.o
+  [306/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/agenda.c.o
+  [307/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/cachedisco.c.o
+  [308/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/capmkv.c.o
+  [309/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/catordemcache.c.o
+  [310/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/catordem.c.o
+  [311/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/badges.c.o
+  [312/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/celbotao.c.o
+  [313/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/atualizacao.c.o
+  [314/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/chsegura.c.o
+  [315/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/centrallista.c.o
+  [316/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/addons.c.o
+  [317/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/celular.c.o
+  [318/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/colfileiras.c.o
+  [319/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/contacache.c.o
+  [320/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/avisos.c.o
+  [321/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/pessoa.c.o
+  [322/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/contalib.c.o
+  [323/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/plainass.c.o
+  [324/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/pipintro.c.o
+  [325/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/central.c.o
+  [326/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/plexaddons.c.o
+  [327/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/autosync.c.o
+  [328/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/plrguia.c.o
+  [329/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/plrui.c.o
+  [330/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/biblioteca.c.o
+  [331/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/plrilha.c.o
+  [332/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/plugrede.c.o
+  [333/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/pluginsui.c.o
+  [334/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/busca.c.o
+  [335/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/colecoes.c.o
+  [336/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/catalogo.c.o
+  [337/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/proxyts.c.o
+  [338/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/pluginjs.c.o
+  [339/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/proximo.c.o
+  [340/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/app.c.o
+  [341/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/progresso.c.o
+  [342/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/posterprov.c.o
+  [343/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/posplay.c.o
+  [344/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades.c.o
+  [345/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/plugins.c.o
+  [346/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidadesfila.c.o
+  [347/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades174.c.o
+  [348/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/ponteiro.c.o
+  [349/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/nuvem.c.o
+  [350/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades172.c.o
+  [351/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/pessoas.c.o
+  [352/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades202.c.o
+  [353/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/p2pmotor_motor.c.o
+  [354/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/parental.c.o
+  [355/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/agendaui.c.o
+  [356/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades_cartao.c.o
+  [357/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/pausao.c.o
+  [358/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/perfilcont.c.o
+  [359/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/p2pmotor.c.o
+  [360/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades201.c.o
+  [361/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/ondever.c.o
+  [362/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/p2p.c.o
+  [363/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/perfiltv.c.o
+  [364/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/perfis.c.o
+  [365/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/simklauth.c.o
+  [366/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades180.c.o
+  [367/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/sistexto.c.o
+  [368/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/syncprog.c.o
+  [369/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/ps2/SDL_render_ps2.c.o
+  [370/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/regexjs.c.o
+  [371/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/social.c.o
+  [372/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/psp/SDL_render_psp.c.o
+  [373/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/simkl.c.o
+  [374/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/software/SDL_blendpoint.c.o
+  [375/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/software/SDL_blendfillrect.c.o
+  [376/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/software/SDL_drawpoint.c.o
+  [377/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/software/SDL_drawline.c.o
+  [378/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/hidapi/SDL_hidapi_rumble.c.o
+  [379/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/hidapi/SDL_hidapi_stadia.c.o
+  [380/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/plex.c.o
+  [381/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/software/SDL_blendline.c.o
+  [382/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/perfilsel.c.o
+  [383/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/hidapi/SDL_hidapi_shield.c.o
+  [384/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/hidapi/SDL_hidapi_steam.c.o
+  [385/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/hidapi/SDL_hidapi_steamdeck.c.o
+  [386/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/socialvis.c.o
+  [387/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/hidapi/SDL_hidapi_switch.c.o
+  [388/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/continuar.c.o
+  [389/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades13.c.o
+  [390/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades131.c.o
+  [391/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades12.c.o
+  [392/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/perfil.c.o
+  [393/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades132.c.o
+  [394/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades1312.c.o
+  [395/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades133.c.o
+  [396/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades11.c.o
+  [397/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades134.c.o
+  [398/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades139.c.o
+  [399/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/psfundo.c.o
+  [400/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/psestilos.c.o
+  [401/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades142.c.o
+  [402/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/contapend.c.o
+  [403/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/psparede.c.o
+  [404/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades148.c.o
+  [405/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades151.c.o
+  [406/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/player.c.o
+  [407/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades20.c.o
+  [408/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/teclado.c.o
+  [409/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/queda.c.o
+  [410/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/recresp.c.o
+  [411/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/recintro.c.o
+  [412/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/redemarca.c.o
+  [413/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/regcodigo.c.o
+  [414/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/redesaude.c.o
+  [415/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/redeurl.c.o
+  [416/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/qr.c.o
+  [417/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades160.c.o
+  [418/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/reacao.c.o
+  [419/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/telemetria.c.o
+  [420/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/tendencia.c.o
+  [421/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/tpkdesp.c.o
+  [422/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/spotlight.c.o
+  [423/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/recenviar.c.o
+  [424/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/tirarremoto.c.o
+  [425/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/novidades170.c.o
+  [426/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/tpkteclas.c.o
+  [427/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/velocidade.c.o
+  [428/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/video_modo.c.o
+  [429/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/video.c.o
+  [430/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/trailer.c.o
+  [431/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/temporadas_grafico.c.o
+  [432/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/visto.c.o
+  [433/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/vistoep.c.o
+  [434/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/xtepg.c.o
+  [435/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/webosver.c.o
+  [436/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/vistonao.c.o
+  [437/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/libm/s_scalbn.c.o
+  [438/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/libm/s_sin.c.o
+  [439/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/misc/SDL_url.c.o
+  [440/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/webp.c.o
+  [441/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/locale/SDL_locale.c.o
+  [442/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/libm/s_tan.c.o
+  [443/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/power/SDL_power.c.o
+  [444/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/video_android.c.o
+  [445/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/SDL_d3dmath.c.o
+  [446/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/direct3d/SDL_render_d3d.c.o
+  [447/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/direct3d/SDL_shaders_d3d.c.o
+  [448/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/xtream.c.o
+  [449/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/direct3d11/SDL_shaders_d3d11.c.o
+  [450/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/SDL_yuv_sw.c.o
+  [451/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/direct3d12/SDL_render_d3d12.c.o
+  [452/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/direct3d11/SDL_render_d3d11.c.o
+  [453/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/direct3d12/SDL_shaders_d3d12.c.o
+  [454/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/opengl/SDL_render_gl.c.o
+  [455/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/opengl/SDL_shaders_gl.c.o
+  [456/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/opengles2/SDL_shaders_gles2.c.o
+  [457/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/opengles/SDL_render_gles.c.o
+  [458/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/registro.c.o
+  [459/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/vitagxm/SDL_render_vita_gxm.c.o
+  [460/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/vitagxm/SDL_render_vita_gxm_memory.c.o
+  [461/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/vertudo.c.o
+  [462/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/software/SDL_render_sw.c.o
+  [463/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/software/SDL_rotate.c.o
+  [464/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/opengles2/SDL_render_gles2.c.o
+  [465/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/stdlib/SDL_crc16.c.o
+  [466/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/vitagxm/SDL_render_vita_gxm_tools.c.o
+  [467/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/software/SDL_triangle.c.o
+  [468/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/stdlib/SDL_crc32.c.o
+  [469/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/stdlib/SDL_getenv.c.o
+  [470/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/sensor/SDL_sensor.c.o
+  [471/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/stdlib/SDL_malloc.c.o
+  [472/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/stdlib/SDL_iconv.c.o
+  [473/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/stdlib/SDL_qsort.c.o
+  [474/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/stdlib/SDL_mslibc.c.o
+  [475/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/render/SDL_render.c.o
+  [476/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/stdlib/SDL_string.c.o
+  [477/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/stdlib/SDL_strtokr.c.o
+  [478/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/stdlib/SDL_stdlib.c.o
+  [479/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/thread/SDL_thread.c.o
+  [480/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/text.c.o
+  [481/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/timer/SDL_timer.c.o
+  [482/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_blit.c.o
+  [483/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_rect.c.o
+  [484/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_egl.c.o
+  [485/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_blit_1.c.o
+  [486/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_blit_0.c.o
+  [487/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_fillrect.c.o
+  [488/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_RLEaccel.c.o
+  [489/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_blit_A.c.o
+  [490/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_pixels.c.o
+  [491/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/yuv2rgb/yuv_rgb_lsx.c.o
+  [492/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_shape.c.o
+  [493/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_stretch.c.o
+  [494/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/thread/pthread/SDL_systhread.c.o
+  [495/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/loadso/dlopen/SDL_sysloadso.c.o
+  [496/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/yuv2rgb/yuv_rgb_sse.c.o
+  [497/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/yuv2rgb/yuv_rgb_std.c.o
+  [498/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/thread/pthread/SDL_sysmutex.c.o
+  [499/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/thread/pthread/SDL_systls.c.o
+  [500/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/thread/pthread/SDL_syscond.c.o
+  [501/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/audio/dummy/SDL_dummyaudio.c.o
+  [502/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/joystick/virtual/SDL_virtualjoystick.c.o
+  [503/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/thread/pthread/SDL_syssem.c.o
+  [504/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/sensor/dummy/SDL_dummysensor.c.o
+  [505/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/credaprende.c.o
+  [506/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/credfio.c.o
+  [507/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/credfonte.c.o
+  [508/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/cotacat.c.o
+  [509/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/libm/e_sqrt.c.o
+  [510/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/libm/k_cos.c.o
+  [511/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/libm/k_rem_pio2.c.o
+  [512/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/ctxlista.c.o
+  [513/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/rede.c.o
+  [514/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/tex_cache.c.o
+  [515/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/libm/s_atan.c.o
+  [516/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/libm/s_copysign.c.o
+  [517/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/libm/k_sin.c.o
+  [518/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/libm/k_tan.c.o
+  [519/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/cwordem.c.o
+  [520/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/libm/s_fabs.c.o
+  [521/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/libm/s_cos.c.o
+  [522/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_blit_N.c.o
+  [523/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/libm/s_floor.c.o
+  [524/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_clipboard.c.o
+  [525/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_blit_copy.c.o
+  [526/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_bmp.c.o
+  [527/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_blit_slow.c.o
+  [528/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_vulkan_utils.c.o
+  [529/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/dummy/SDL_nullevents.c.o
+  [530/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/ctxinfo.c.o
+  [531/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/dummy/SDL_nullframebuffer.c.o
+  [532/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/offscreen/SDL_offscreenframebuffer.c.o
+  [533/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_surface.c.o
+  [534/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/offscreen/SDL_offscreenevents.c.o
+  [535/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/offscreen/SDL_offscreenopengles.c.o
+  [536/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/dummy/SDL_nullvideo.c.o
+  [537/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/offscreen/SDL_offscreenvideo.c.o
+  [538/752] Building C object sdl2/CMakeFiles/SDL2.dir/Users/hrocha/Library/Android/sdk/ndk/27.2.12479018/sources/android/cpufeatures/cpu-features.c.o
+  [539/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_yuv.c.o
+  [540/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/offscreen/SDL_offscreenwindow.c.o
+  [541/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/misc/android/SDL_sysurl.c.o
+  [542/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/filesystem/android/SDL_sysfilesystem.c.o
+  [543/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/cwretido.c.o
+  [544/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/haptic/android/SDL_syshaptic.c.o
+  [545/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/dados.c.o
+  [546/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/core/android/SDL_android.c.o
+  [547/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/corviva.c.o
+  [548/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_blit_auto.c.o
+  [549/752] Building CXX object sdl2/CMakeFiles/SDL2.dir/src/hidapi/android/hid.cpp.o
+  [550/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/descanso.c.o
+  [551/752] Building C object sdl2/CMakeFiles/SDL2.dir/src/video/SDL_video.c.o
+  [552/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/desempenho.c.o
+  [553/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/detmais.c.o
+  [554/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/recomenda.c.o
+  [555/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/dobra.c.o
+  [556/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/dts/dts_engine.c.o
+  [557/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/diretor.c.o
+  [558/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/dts/dts_overlay.c.o
+  [559/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/dts/dts_pipeline.c.o
+  [560/752] Building C object sdl2_ttf/CMakeFiles/SDL2_ttf.dir/SDL_ttf.c.o
+  [561/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/discordws.c.o
+  [562/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/dts/dts_subtitles.c.o
+  [563/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/dts/rt_shim.c.o
+  [564/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/dvtela.c.o
+  [565/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/entrada_texto.c.o
+  [566/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/discord.c.o
+  [567/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/esmaecer.c.o
+  [568/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/dvtelaui.c.o
+  [569/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/dts/dts_playback.c.o
+  [570/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/debrid.c.o
+  [571/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/enquete.c.o
+  [572/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/fichameta.c.o
+  [573/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/faixas.c.o
+  FAILED: CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/faixas.c.o 
+  /Volumes/ExternalSSD/nv-205-prghbarker/src/faixas.c:1731:73: error: use of undeclared identifier 'ponteiroAtrasoPasso'
+   1731 |       if (pont && !pres) ponteiro_alvo(disc.x,disc.y,disc.w,disc.h,NULL,ponteiroAtrasoPasso,d ? 1 : -1,0);
+        |                                                                         ^
+  1 error generated.
+  [574/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/faixasmkv.c.o
+  [575/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/focus.c.o
+  [576/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/epg.c.o
+  [577/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/ctxmenu.c.o
+  [578/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/episodios.c.o
+  [579/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/extras.c.o
+  [580/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/fileiras.c.o
+  [581/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/explorar.c.o
+  [582/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/diagnostico.c.o
+  [583/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/detail.c.o
+  [584/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/descoberta.c.o
+  [585/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/ajustes.c.o
+  [586/752] Building C object CMakeFiles/main.dir/Volumes/ExternalSSD/nv-205-prghbarker/src/qjs.c.o
+  ninja: build stopped: subcommand failed.
+  
+  C++ build system [build] failed while executing:
+      /Users/hrocha/Library/Android/sdk/cmake/3.22.1/bin/ninja \
+        -C \
+        /Volumes/ExternalSSD/nv-205-prghbarker/android/app/.cxx/Debug/5u665y2l/arm64-v8a \
+        SDL2 \
+        main
+    from /Volumes/ExternalSSD/nv-205-prghbarker/android/app
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 41s
+23 actionable tasks: 23 executed

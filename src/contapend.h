@@ -47,16 +47,42 @@
 // perfis_ativo() no momento do gesto. Devolve quantas entradas mudaram.
 int  contapend_episodios(const char *imdb, const char *tipo,
                          const VistoPar *pares, int n, int visto);
+// O MESMO, num perfil que nao e o ativo: a trava de serie no modo Juntos marca
+// o episodio para os outros perfis-membro que estavam no sofa (trava.h). A
+// conta aceita `p_profile_id` de qualquer perfil da mesma conta (o token e da
+// CONTA; o PIN e so uma porta no cliente) — ver STATUS-trava.md secao 1.
+int  contapend_episodios_perfil(int perfil, const char *imdb, const char *tipo,
+                                const VistoPar *pares, int n, int visto);
 int  contapend_titulo(const char *imdb, const char *tipo, int visto);
+// O mesmo, para OUTRO perfil da conta (Trava em modo Juntos).
+int  contapend_episodios_perfil(int perfil, const char *imdb, const char *tipo,
+                                const VistoPar *pares, int n, int visto);
 // "+" / tirar da lista. `nome`/`poster` so servem ao item novo na conta.
 int  contapend_lista(const char *imdb, const char *tipo, const char *nome,
                      const char *poster, int salvo);
+
+// Persist local watched intent even without a Nuvio account. Destinations are
+// retried independently; seasons are retained for safe Simkl series removal.
+long long contapend_gesto(const char *id, const char *tipo, const VistoPar *pares, int n,
+                          int visto, int destinos, const int *temporadas, int nt);
+// Check queued intent after acquiring the profile write gate.
+int contapend_gesto_atual(const char *id, int t, int e, long long ms);
+void contapend_confirmar_gesto(const char *id, const VistoPar *pares, int n,
+                              long long ms, int destinos);
+// Resolve against the latest local gesture (including whole-series intent).
+// Unknown/older remote timestamps cannot undo it; a strictly newer one wins.
+int contapend_estado(const char *id, const char *tipo, int t, int e, long long remotoMs, int remoto);
 
 // ---- envio ------------------------------------------------------------------
 // SINCRONO. Manda tudo que esta pendente (todos os perfis do usuario logado).
 // Devolve quantas entradas foram confirmadas, ou -1 se alguma falhou (o que
 // falhou continua pendente).
 int  contapend_enviar(void);
+// Replay newer episode overrides rearmed by a successful whole-series write.
+int contapend_reenviar_overrides(const char *id, long long ms);
+int  contapend_reenviar(void); // Retry pending Trakt/Simkl for the active profile.
+void contapend_reenviar_com(int (*f)(const char *, const char *, const VistoPar *,
+                                     int, int, int, const int *, int));
 // Dispara contapend_enviar num fio, se nenhum estiver no ar (se estiver, ele
 // repete uma volta ao terminar).
 void contapend_chutar(void);
@@ -68,11 +94,14 @@ void contapend_chutar(void);
 int  contapend_visto_oculto(const char *imdb, int temporada, int episodio,
                             long long remotoMs);
 int  contapend_lista_oculta(const char *imdb, long long remotoMs);
+// 1 quando ha um '+' de lista PENDENTE (nao confirmado) para o titulo neste
+// perfil: o snapshot da conta nao pode apagar o espelho local dele.
+int  contapend_lista_pendente(const char *imdb);
 // Reaplica no estado local (vistoep + historico de titulo) o que esta no
 // jornal para o perfil ativo. Barato; chamado a cada ciclo aplicado.
 int  contapend_aplicar_local(void);
-// Tira do jornal as entradas JA CONFIRMADAS antes de `desdeMs` — o pull que
-// comecou depois disso ja reflete o servidor.
+// Prune confirmed library entries before `desdeMs`. Watched intent stays
+// until a newer remote timestamp supersedes it or the bounded journal fills.
 void contapend_podar(long long desdeMs);
 
 // ---- estado -------------------------------------------------------------------

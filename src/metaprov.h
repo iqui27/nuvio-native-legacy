@@ -54,6 +54,10 @@ int metaprov_busca_valida(const char *corpo);
 char *metaprov_meta_com(const char *tipo, const char *id, int seg_cine,
                         MetaprovGet get, void *ctx, int *prov);
 char *metaprov_meta(const char *tipo, const char *id, int seg_cine, int *prov);
+// So o Cinemeta (sem passar pelo catalogo do Nuvio); NULL se falhar ou vier
+// sem ficha valida. Para quem precisa conferir o que o Nuvio nao listou.
+char *metaprov_meta_cinemeta_com(const char *tipo, const char *id, int seg,
+                                 MetaprovGet get, void *ctx);
 
 // Busca com reserva: Cinemeta so quando o Nuvio FALHA (rede/HTTP/JSON
 // invalido); resposta valida e vazia nao cai para o Cinemeta.

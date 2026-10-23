@@ -64,7 +64,7 @@ int main(int argc, char **argv) {
     OK(avisos_n_novos() == 0);
     // Liga vidro e 4K, sai limpo (confirma).
     ajustes_definir_vidro(1);
-    { int a = valor[AJ_RESOLUCAO]; valor[AJ_RESOLUCAO] = 1; gravar(); riscoNotar(AJ_RESOLUCAO, a); }
+    { int a = valor[AJ_RESOLUCAO]; valor[AJ_RESOLUCAO] = RES_4K; gravar(); riscoNotar(AJ_RESOLUCAO, a); }
     OK(seguro_n_provisorias() == 2);
     seguro_encerrar();
     _exit(0);
@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
     // Perfil seguro: acessores devolvem o seguro, o ARQUIVO nao mudou.
     OK(seguro_perfil_ativo());
     OK(!ajustes_vidro() && !ajustes_4k() && fil_limite() == FIL_LIMITE_VIGIADO);
-    OK(valor[AJ_VIDRO] == 0 && valor[AJ_RESOLUCAO] == 1 && fil_limite_gravado() == 30);
+    OK(valor[AJ_VIDRO] == 0 && valor[AJ_RESOLUCAO] == RES_4K && fil_limite_gravado() == 30);
     OK(avisos_n_novos() == 1);
     // Editar durante o perfil seguro mostra e grava o valor REAL, nunca o teto.
     ajustes_definir_p2p_ligado(0);

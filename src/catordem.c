@@ -3,20 +3,42 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <pthread.h>
 
 // Chave de DESATIVAR do web (<base>_<tipo>_<catalogoId>_<nome>) nao cabe em 192:
 // so a base do Xperience tem 367 caracteres. A lista de ocultos guarda as duas
 // formas misturadas, entao ela usa o tamanho da maior.
 #define CATORD_DESL 384
 
-static char ordem[CATORD_MAX][CATORD_CHAVE];
-static int  nOrdem;
-static char ocultos[CATORD_MAX][CATORD_DESL];
-static int  nOcultos;
+// CONCORRENCIA (#203): catordem_ler roda no fio do sync e a `montar` da
+// descoberta (e o hash da home) le por catordem_n/catordem_chave em outro. Duas
+// bancadas: o leitor monta na que nao esta publicada e so troca o ponteiro
+// `vivo` sob `trava`; as consultas olham `vivo` sob a mesma trava. O ponteiro
+// devolvido por catordem_chave segue valido ate DUAS leituras depois (a bancada
+// so e reescrita na leitura seguinte a seguinte), e leituras sao minutos
+// separadas.
+typedef struct {
+  char ord[CATORD_MAX][CATORD_CHAVE];
+  int  no;
+  char ocu[CATORD_MAX][CATORD_DESL];
+  int  nc;
+} Banca;
+static Banca bancas[2];
+static Banca *vivo = &bancas[0];
+static Banca *alvo = &bancas[0];   // onde add* escreve (so durante a leitura)
+#define ordem   (alvo->ord)
+#define nOrdem  (alvo->no)
+#define ocultos (alvo->ocu)
+#define nOcultos (alvo->nc)
+static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static int  temOrdem;
 static int  temNLanc, valNLanc, temSublinhado, valSublinhado;
 static unsigned revisao;
-unsigned catordem_revisao(void) { return revisao; }
+unsigned catordem_revisao(void) {
+  unsigned r;
+  pthread_mutex_lock(&trava); r = revisao; pthread_mutex_unlock(&trava);
+  return r;
+}
 // Itens da resposta que nao couberam (ordem ou ocultos), so para o log.
 static int nAlem;
 
@@ -105,7 +127,7 @@ static int chaveDoItem(const char *ini, const char *fim, char *dst, size_t tam) 
 // `order` manda, e nao a posicao no array — o web ordena por ele antes de
 // gravar, mas nada garante que o servidor devolva ja ordenado.
 static int lerItens(const char *ini, const char *fim) {
-  typedef struct { char chave[CATORD_CHAVE]; int ordem, ligado; } Ent;
+  typedef struct { char chave[CATORD_CHAVE]; int pos, ligado; } Ent;
   // Applied on the main thread, like the module state. Keep TV stacks small.
   static Ent v[CATORD_MAX];
   int nv = 0, i, j;
@@ -125,7 +147,7 @@ static int lerItens(const char *ini, const char *fim) {
     if (*p != '{') continue;
     if (nv >= CATORD_MAX) { nAlem++; continue; }
     if (!chaveDoItem(p, f, v[nv].chave, CATORD_CHAVE)) continue;
-    v[nv].ordem  = (int)js_num(p, f, "order", nv);
+    v[nv].pos  = (int)js_num(p, f, "order", nv);
     // `enabled !== false`: ausente significa LIGADO. Tratar ausencia como
     // desligado esconderia toda fileira que o web nunca precisou marcar.
     v[nv].ligado = !(js_bruto(p, f, "enabled", b, sizeof b) && strstr(b, "false"));
@@ -134,7 +156,7 @@ static int lerItens(const char *ini, const char *fim) {
   if (!nv) return 0;
   for (i = 1; i < nv; i++) {           // Stable insertion sort over bounded account configuration
     int k = i;
-    while (k > 0 && v[k - 1].ordem > v[k].ordem) {
+    while (k > 0 && v[k - 1].pos > v[k].pos) {
       Ent t = v[k - 1]; v[k - 1] = v[k]; v[k] = t; k--;
     }
   }
@@ -205,10 +227,11 @@ static const char *blobDe(const char *resposta, const char **fimOut) {
 }
 
 int catordem_ler(const char *resposta) {
-  unsigned long long antes = assinaturaLida();
-  int nAntesOrdem = nOrdem, nAntesOcultos = nOcultos, mudou = 0;
+  unsigned long long antes;
+  int nAntesOrdem, nAntesOcultos, mudou = 0;
   int nlAntes = temNLanc, vnlAntes = valNLanc;
   int suAntes = temSublinhado, vsuAntes = valSublinhado;
+  int nlNovo = temNLanc, vnlNovo = valNLanc, suNovo = temSublinhado, vsuNovo = valSublinhado;
   const char *fim = NULL, *blob;
   static const char *NOMES_ORDEM[4] = {
     "catalog_order_keys", "home_catalog_order", "catalog_order", "order"
@@ -217,6 +240,9 @@ int catordem_ler(const char *resposta) {
     "disabled_catalog_keys", "hidden_catalog_keys", "catalog_disabled_keys",
     "home_catalog_disabled", "disabled"
   };
+  alvo = vivo;                    // so este fio troca `vivo`: ler sem trava
+  antes = assinaturaLida();
+  nAntesOrdem = nOrdem; nAntesOcultos = nOcultos;
   if (!resposta || !*resposta) { printf("[catordem] resposta vazia\n"); return 0; }
   blob = blobDe(resposta, &fim);
   // DIZ QUAL DOS CASOS E. Este ponto ja devolveu 0 em silencio uma vez, e do
@@ -239,10 +265,10 @@ int catordem_ler(const char *resposta) {
     return 0;
   }
 
-  // Sem copia do que estava: quando nenhum dos dois formatos responde, nada foi
-  // escrito (lerItens so grava depois de ler ao menos um item, e lerLista sem
-  // array nao grava), entao voltar os contadores devolve o estado anterior.
+  // Monta na bancada que NAO esta publicada; se nenhum formato responder, `vivo`
+  // continua intacto e nada precisa ser desfeito.
   nAlem = 0;
+  alvo = (vivo == &bancas[0]) ? &bancas[1] : &bancas[0];
   nOrdem = nOcultos = 0;
 
   if (!lerItens(blob, fim)) {
@@ -252,25 +278,28 @@ int catordem_ler(const char *resposta) {
     // ordem VAZIA — devolver a lista local para o comeco aqui apagaria a home.
     if (!a && !d) {
       printf("[catordem] a conta nao gravou ordem nem catalogos ocultos\n");
-      nOrdem = nAntesOrdem;
-      nOcultos = nAntesOcultos;
+      alvo = vivo;
       return 0;
     }
   }
 
   { char b[16];
     if (js_bruto(blob, fim, "hide_unreleased_content", b, sizeof b)) {
-      temNLanc = 1; valNLanc = strstr(b, "true") != NULL;
+      nlNovo = 1; vnlNovo = strstr(b, "true") != NULL;
     }
     if (js_bruto(blob, fim, "hide_catalog_underline", b, sizeof b)) {
-      temSublinhado = 1; valSublinhado = strstr(b, "true") != NULL;
+      suNovo = 1; vsuNovo = strstr(b, "true") != NULL;
     } }
 
   if (nOrdem != nAntesOrdem || nOcultos != nAntesOcultos || assinaturaLida() != antes) mudou = 1;
+  if (nlAntes != nlNovo || vnlAntes != vnlNovo ||
+      suAntes != suNovo || vsuAntes != vsuNovo) mudou = 1;
+  pthread_mutex_lock(&trava);
+  vivo = alvo;
   temOrdem = nOrdem > 0 || nOcultos > 0;
-  if (nlAntes != temNLanc || vnlAntes != valNLanc ||
-      suAntes != temSublinhado || vsuAntes != valSublinhado) mudou = 1;
+  temNLanc = nlNovo; valNLanc = vnlNovo; temSublinhado = suNovo; valSublinhado = vsuNovo;
   if (mudou) revisao++;
+  pthread_mutex_unlock(&trava);
   // Imprime TAMBEM quando nao mudou nada, e dizendo qual dos dois casos e. Uma
   // conta sem ordem configurada e uma leitura que falhou davam a mesma linha
   // (nenhuma), e "a home nao obedeceu" nao tem como ser respondido assim.
@@ -288,23 +317,42 @@ int catordem_ler(const char *resposta) {
 
 // ---------------------------------------------------------------- consulta
 
-int         catordem_tem_ordem(void) { return temOrdem; }
-int         catordem_n(void)         { return nOrdem; }
-const char *catordem_chave(int i)    { return (i >= 0 && i < nOrdem) ? ordem[i] : ""; }
+static int lerInt(const int *p) {
+  int v;
+  pthread_mutex_lock(&trava); v = *p; pthread_mutex_unlock(&trava);
+  return v;
+}
+int         catordem_tem_ordem(void) { return lerInt(&temOrdem); }
+int         catordem_n(void) {
+  int v;
+  pthread_mutex_lock(&trava); v = vivo->no; pthread_mutex_unlock(&trava);
+  return v;
+}
+const char *catordem_chave(int i) {
+  const char *r = "";
+  pthread_mutex_lock(&trava);
+  if (i >= 0 && i < vivo->no) r = vivo->ord[i];
+  pthread_mutex_unlock(&trava);
+  return r;
+}
 
 int catordem_unir(const char *const *locais, int nLocais, int *saida, int max) {
   int n = 0, i, j;
+  Banca *b;
   // Locais vem do registro de fileiras (FIL_MAX) ou dos catalogos declarados;
   // nao do tamanho da ordem da conta. Pilha fixa, como era (6 KB).
   char usado[6144];
   if (!locais || !saida || nLocais < 1) return 0;
   if (nLocais > (int)sizeof usado) nLocais = (int)sizeof usado;
   memset(usado, 0, (size_t)nLocais);
-  for (i = 0; i < nOrdem; i++)
+  pthread_mutex_lock(&trava);
+  b = vivo;
+  for (i = 0; i < b->no; i++)
     for (j = 0; j < nLocais && n < max; j++)
-      if (!usado[j] && locais[j] && !strcmp(locais[j], ordem[i])) {
+      if (!usado[j] && locais[j] && !strcmp(locais[j], b->ord[i])) {
         saida[n++] = j; usado[j] = 1; break;
       }
+  pthread_mutex_unlock(&trava);
   // O QUE O REMOTO NAO CONHECE NAO SE PERDE: vai para o fim, na ordem em que
   // ja estava. Sem este laco, todo catalogo instalado depois de a ordem ter
   // sido gravada sumiria da home a cada sync.
@@ -313,24 +361,26 @@ int catordem_unir(const char *const *locais, int nLocais, int *saida, int max) {
 }
 
 int catordem_oculta(const char *chave, const char *chaveDesativar) {
-  int i;
-  for (i = 0; i < nOcultos; i++) {
-    if (chave && chave[0] && !strcmp(ocultos[i], chave)) return 1;
-    if (chaveDesativar && chaveDesativar[0] && !strcmp(ocultos[i], chaveDesativar)) return 1;
+  int i, r = 0;
+  pthread_mutex_lock(&trava);
+  for (i = 0; !r && i < vivo->nc; i++) {
+    if (chave && chave[0] && !strcmp(vivo->ocu[i], chave)) r = 1;
+    else if (chaveDesativar && chaveDesativar[0] && !strcmp(vivo->ocu[i], chaveDesativar)) r = 1;
   }
-  return 0;
+  pthread_mutex_unlock(&trava);
+  return r;
 }
 
-int catordem_tem_ocultar_nao_lancados(void) { return temNLanc; }
-int catordem_ocultar_nao_lancados(void)     { return valNLanc; }
-int catordem_tem_ocultar_sublinhado(void)   { return temSublinhado; }
-int catordem_ocultar_sublinhado(void)       { return valSublinhado; }
+int catordem_tem_ocultar_nao_lancados(void) { return lerInt(&temNLanc); }
+int catordem_ocultar_nao_lancados(void)     { return lerInt(&valNLanc); }
+int catordem_tem_ocultar_sublinhado(void)   { return lerInt(&temSublinhado); }
+int catordem_ocultar_sublinhado(void)       { return lerInt(&valSublinhado); }
 
 void catordem_esquecer(void) {
+  pthread_mutex_lock(&trava);
   revisao++;
-  nOrdem = nOcultos = 0;
   temOrdem = 0;
   temNLanc = valNLanc = temSublinhado = valSublinhado = 0;
-  memset(ordem, 0, sizeof ordem);
-  memset(ocultos, 0, sizeof ocultos);
+  memset(bancas, 0, sizeof bancas);   // zera as duas: n=0 e sem chave de quem saiu
+  pthread_mutex_unlock(&trava);
 }

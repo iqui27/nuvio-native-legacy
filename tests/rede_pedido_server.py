@@ -63,10 +63,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 location = self.server.other + "/echo"
             status = 303 if path == "/cross303" else 307 if path == "/cross307" else 302
             self.response(status, headers={"Location": location, "Retry-After": "99"})
+        elif path == "/otherhost":
+            # Same machine, other host NAME: what mesmo_host refuses.
+            self.response(302, headers={"Location": self.server.other.replace("127.0.0.1", "localhost") + "/echo"})
         elif path == "/loop":
             self.response(302, headers={"Location": "/loop"})
         elif path == "/file":
             self.response(302, headers={"Location": "file:///not-read"})
+        elif path == "/tlsother":
+            # Same TLS server under another origin (127.0.0.1): the certificate
+            # only names localhost, so a verified hop must fail.
+            self.response(302, headers={"Location": f"https://127.0.0.1:{self.server.server_port}/ok"})
         elif path == "/downgrade":
             self.response(302, headers={"Location": self.server.other + "/echo"})
         elif path == "/bin":

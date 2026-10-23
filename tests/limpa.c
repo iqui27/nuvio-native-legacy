@@ -130,6 +130,22 @@ int main(int argc, char **argv) {
   assert(nv_limpar_texto("", out, sizeof out, 0) == 0);
   assert(nv_limpar_texto("abc", out, 0, 0) == 0);
   { char um[1] = { 'x' }; assert(nv_limpar_texto("abc", um, 1, 0) == 0 && !um[0]); }
+  // nv_aparar_separadores (add-on text mode)
+  { static const char *const C[][2] = {
+      { "31.4 GB | 43.2 Mbps |", "31.4 GB | 43.2 Mbps" },
+      { "| A |  | B |", "A | B" },
+      { "  -  A  \xE2\x80\xA2 \xC2\xB7 B / ", "A \xC2\xB7 B" },
+      { "WEB-DL x265-ELiTE", "WEB-DL x265-ELiTE" },
+      { "EN | PT,", "EN | PT" },
+      { "|", "" }, { " | - ", "" }, { "", "" },
+      { "A   B", "A B" },
+    };
+    for (i = 0; i < (int)(sizeof C / sizeof C[0]); i++) {
+      char b[128];
+      snprintf(b, sizeof b, "%s", C[i][0]);
+      nv_aparar_separadores(b);
+      if (strcmp(b, C[i][1])) { fprintf(stderr, "aparar: '%s' -> '%s' (want '%s')\n", C[i][0], b, C[i][1]); return 1; }
+    } }
   puts("limpa: ok");
   return 0;
 }

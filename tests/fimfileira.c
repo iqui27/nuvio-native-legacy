@@ -20,6 +20,18 @@
 #include <stdatomic.h>
 int ctx_aberto(void) { return 0; }   // home.c asks whether the context menu is open
 #include "../src/home.c"
+// #204: o "Ocultar filmes assistidos" e o cartao do QR da home sem add-ons,
+// parados neste teste (descoberta.c e homevazio.c ficam fora do link).
+void desc_ocultar_vistos_atualizar(void) {}
+int  homevazio_ativo(int fileiras) { (void)fileiras; return 0; }
+int  homevazio_evento(const SDL_Event *e) { (void)e; return 0; }
+// heroAquecerVizinhos (home_atualizar) pede a arte dos vizinhos: sem textura aqui.
+unsigned long tex_hash_public(const char *c) { (void)c; return 0; }
+GLuint tex_obter_hero_quente(const char *c) { (void)c; return 0; }
+GLuint tex_obter_larg(const char *c, float w) { (void)c; (void)w; return 0; }
+GLuint tex_obter_logo_larg_qualquer(const char *c, float w) { (void)c; (void)w; return 0; }
+void marco(const char *m) { (void)m; }
+void desc_sinopse_hero(const int *idx, int n) { (void)idx; (void)n; }
 
 void cachearte_marcar_grupo(int grupo, const char *url, int variante, int essencial, int emUso) {
   (void)grupo; (void)url; (void)variante; (void)essencial; (void)emUso;

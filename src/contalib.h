@@ -1,3 +1,4 @@
+#include "arteurl.h"
 // Biblioteca e vistos DA CONTA — as duas superficies que o sync baixava e
 // jogava fora.
 //
@@ -74,7 +75,10 @@ typedef struct {
   char id[24];        // content_id, "tt0111161"
   char tipo[8];       // "movie" | "series", ja normalizado
   char titulo[160];
-  char poster[512];
+  // poster com o teto de CatItem.poster (#433): cartaz de provedor com nota passa
+  // de 500 caracteres. O fundo fica em 512, o tamanho do CatItem.backdrop que
+  // ele alimenta; mais longo que isso e descartado com linha no registro.
+  char poster[NV_ARTE_URL_MAX];
   char backdrop[512];
   char meta[96];      // release_info ("1994", "2008–2013")
   char genero[160];   // "Filme · Drama · Crime", ja composto
@@ -117,9 +121,8 @@ int contalib_tem_conta(void);
 // Devolve quantos itens do catalogo ficaram marcados. FIO PRINCIPAL apenas —
 // mexe no vetor que o desenho le.
 //
-// NUNCA DESMARCA. Ela so liga `naLista`; a lista da conta vazia nao apaga o que
-// o Trakt marcou, e o inverso tambem vale. Desmarcar exigiria saber que a
-// resposta foi completa e correta, e uma resposta vazia nunca prova isso.
+// Complete nonempty replacements clear previous account membership during
+// parsing. Empty responses remain non-destructive; provider bits survive.
 int contalib_aplicar_catalogo(void);
 
 // Reaplica se o catalogo foi TROCADO desde a ultima aplicacao. Chamar por
@@ -142,6 +145,10 @@ void contalib_reconciliar(void);
 // o historico daqui responde "esta obra esta marcada como vista?", e um
 // episodio nao responde isso por uma serie de oito temporadas.
 int contalib_aplicar_vistos(void);
+// Para o LOG por fonte (vistoep_fonte_log): quantas linhas de EPISODIO a conta
+// tem para este titulo no ultimo pull, e em `*desmarcados` (pode ser NULL)
+// quantas delas estao como NAO vistas no mapa desta TV. Qualquer fio.
+int contalib_vistos_do_titulo(const char *id, int *desmarcados);
 // Filtros do jornal da conta (contapend.h), ligados por app.c: 1 = a linha
 // remota fica de fora porque a pessoa tirou/desmarcou o item nesta TV depois
 // dela. NULL desliga (os testes deste modulo nao ligam).
@@ -169,6 +176,10 @@ typedef struct {
   int  temporada, episodio;   // o episodio SUGERIDO, nao o visto
   long long vistoMs;          // quando o episodio-ancora foi visto
 } ContaSemente;
+// Validade do retrato dos vistos: 24 h. Passou disso sem um pull bom (rede fora,
+// 401), o "a seguir" da conta nao e confiavel e a funcao abaixo devolve -1.
+#define CONTALIB_VISTOS_VALIDADE_S (24 * 3600)
+// Devolve -1 quando os vistos nao foram puxados ou estao velhos.
 int contalib_sementes_a_seguir(ContaSemente *saida, int max, int doMaisAlto);
 // Sobe quando contalib_ler_vistos trouxe vistos DIFERENTES dos guardados. O
 // sync refaz o "Continuar assistindo" so entao: o "a seguir" da conta depende

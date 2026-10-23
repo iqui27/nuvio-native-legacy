@@ -12,6 +12,7 @@
  * Aqui se prova a ORDEM: os bytes chegam ao decode (e viram superficie)
  * antes de o arquivo existir, e a gravacao acontece depois, em fundo. */
 #include <stdio.h>
+#include "nvtmp.h"
 #include <assert.h>
 #include <pthread.h>
 #include <sys/time.h>
@@ -58,7 +59,7 @@ static void pedido(int idx, const char *url) {
 }
 
 int main(void) {
-  char dir[] = "/tmp/nuvio-texlento-XXXXXX", dst[600], arq[600], cmd[700];
+  char dir[NVT_MAX], dst[600], arq[600], cmd[700]; nvt_set(dir, sizeof dir, "/nuvio-texlento-XXXXXX");
   FILE *f; int i; pthread_t th; double t, entrega, superficie;
   SDL_Surface *s;
   f = fopen("tests/amostra.jpg", "rb"); assert(f);

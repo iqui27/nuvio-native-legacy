@@ -11,6 +11,12 @@
 //
 //   tests/mkvass <base-url> <nome.mkv> <caminho.ass> <nome_srt.mkv> <nome.ass>
 #include "../src/mkvass.h"
+// Teto de Ranges por segundo compilado no modulo (default 3 desde #308,
+// b65c3324; era 8). O .sh pode subi-lo (-D) so para o teste andar mais
+// depressa — o teto e conferido contra o valor compilado.
+#ifndef MKVASS_RANGES_POR_SEG
+#define MKVASS_RANGES_POR_SEG 3
+#endif
 #include "../src/legenda.h"
 #include "../src/rede.h"
 #include "../src/dados.h"
@@ -22,6 +28,9 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/stat.h>
+
+const char *i18n(const char *s) { return s; }
+const char *ajustes_idioma(void) { return "pt"; }
 
 static int falhas;
 static void ok(int cond, const char *o) {
@@ -104,11 +113,18 @@ static void videoServidor(int aberto) {
 
 // O player segurando o video: espera a pre-busca acabar ou o teto vencer.
 // Devolve os ms ate o video ser "solto".
-static long esperarPrebusca(void) {
-  long t0 = agoraMs();
-  while (mkvass_prebusca_fase() == 1 && agoraMs() - t0 < MKVASS_PREBUSCA_MS) usleep(5 * 1000);
-  return agoraMs() - t0;
+static long esperarPrebuscaRelogio(long (*agora)(void), void (*passo)(void)) {
+  long t0 = agora();
+  while (mkvass_prebusca_fase() == 1 && agora() - t0 < MKVASS_PREBUSCA_MS) passo();
+  return agora() - t0;
 }
+static void esperarQuadro(void) { usleep(5 * 1000); }
+static long esperarPrebusca(void) {
+  return esperarPrebuscaRelogio(agoraMs, esperarQuadro);
+}
+static long relogioPrebusca;
+static long agoraPrebusca(void) { return relogioPrebusca; }
+static void avancarPrebusca(void) { relogioPrebusca++; }
 
 static void zerarServidor(void) {
   char url[600]; char *r;
@@ -138,17 +154,24 @@ static void nomeSidecar(const char *url, int faixa, char *dst, size_t tam) {
 // Espera o estado ficar terminal (COMPLETO ou no-go) simulando o player: a
 // posicao anda `fator` vezes o tempo real e mkvass_passo e chamado a cada
 // "quadro". Devolve o maior numero de Ranges observado num mesmo segundo.
+// So para o teste andar: nos casos de COMPLETUDE da varredura (6b, 6c, 6f, 6g)
+// o playhead simulado corre ESCALA vezes mais depressa (o .sh passa -D, junto
+// com um teto de Ranges/s maior). Nos casos que medem janela/ritmo ele fica
+// em 1x. 1 = ritmo original.
+#ifndef MKVASS_TESTE_ESCALA
+#define MKVASS_TESTE_ESCALA 1.0
+#endif
 static int rodarAte(double fator, long timeoutMs, double posIni) {
-  long t0 = agoraMs(), ultSeg = -1, ultPed = 0; int maxSeg = 0, noSeg = 0;
+  long t0 = agoraMs();
   for (;;) {
-    long ag = agoraMs(), ped; int e = mkvass_estado();
+    long ag = agoraMs(); int e = mkvass_estado();
     double pos = posIni + (ag - t0) / 1000.0 * fator;
     mkvass_passo(pos);
-    mkvass_estatisticas(&ped, NULL, NULL, NULL);
-    if (ag / 1000 != ultSeg) { ultSeg = ag / 1000; noSeg = 0; }
-    noSeg += (int)(ped - ultPed); ultPed = ped;
-    if (noSeg > maxSeg) maxSeg = noSeg;
-    if (e == MKVASS_COMPLETO || e >= MKVASS_NOGO) return maxSeg;
+    // Count actual request arrivals, not deltas sampled across scheduler gaps.
+    if (e == MKVASS_COMPLETO || e >= MKVASS_NOGO) {
+      esperarFio();
+      return (int)contagemDe("picosegundo");
+    }
     if (ag - t0 > timeoutMs) return -1;
     usleep(20 * 1000);
   }
@@ -270,7 +293,7 @@ int main(int argc, char **argv) {
   ok(colhidos == nEsp, "blocos colhidos == Dialogue do .ass");
   ok(bytes * 100 < tamMkv * 2, "bytes lidos < 2 % do arquivo");
   ok(ped == contagemServidor(), "pedidos contados == GETs no servidor");
-  ok(maxSeg >= 0 && maxSeg <= 8, "teto: no maximo 8 Ranges num mesmo segundo");
+  ok(maxSeg >= 0 && maxSeg <= MKVASS_RANGES_POR_SEG, "teto: no maximo MKVASS_RANGES_POR_SEG Ranges num mesmo segundo");
   r = conferirCues(esp, nEsp);
   printf("    %d/%d cues casaram (texto, ±20 ms, \\an, \\pos)\n", r, nEsp);
   ok(r == nEsp, "todos os cues batem com o .ass original");
@@ -393,11 +416,12 @@ int main(int argc, char **argv) {
   ok(ped <= 2, "no-go de faixa custou <= 2 Ranges (so o cabecalho)");
 
   mkvass_parar(); esperarFio();
+  mkvass_aceitar_texto(0);
   mkvass_iniciar(urlSrt, 3);              // S_TEXT/UTF8
   rodarAte(1.0, 20000, 0.0);
   ok(mkvass_estado() == MKVASS_NOGO_FAIXA, "faixa SRT: NOGO_FAIXA");
   // A faixa de verdade (ordinal 0 = a S_TEXT/UTF8) sem o pedido do .tpk:
-  // continua no-go de codec, a LG nao muda.
+  // continua no-go de codec com a opcao desligada.
   mkvass_parar(); esperarFio();
   mkvass_iniciar_ordinal(urlSrt, 0);
   rodarAte(1.0, 20000, 0.0);
@@ -517,14 +541,14 @@ int main(int argc, char **argv) {
     mkvass_parar(); esperarFio(); legenda_desligar();
     zerarServidor();
     mkvass_iniciar(urlSem, 3);
-    maxSeg = rodarAte(4.0, 120000, 0.0);
+    maxSeg = rodarAte(4.0 * MKVASS_TESTE_ESCALA, 120000, 0.0);
     ok(mkvass_estado() == MKVASS_COMPLETO, "sem cues da faixa: termina COMPLETO (antes: NOGO_SEM_INDICE)");
     ok(mkvass_varredura() == 1, "colheu em modo varredura");
     mkvass_estatisticas(&ped, &bytes, &colhidos, &total);
     printf("    %d/%d trechos, %ld Ranges, %ld bytes de %ld (%.1f %%), pico %d/s\n",
            colhidos, total, ped, bytes, tamMkv, 100.0 * bytes / tamMkv, maxSeg);
     ok(total > 1 && colhidos == total, "todos os trechos varridos");
-    ok(maxSeg >= 0 && maxSeg <= 8, "teto: no maximo 8 Ranges num mesmo segundo (varredura)");
+    ok(maxSeg >= 0 && maxSeg <= MKVASS_RANGES_POR_SEG, "teto: no maximo MKVASS_RANGES_POR_SEG Ranges num mesmo segundo (varredura)");
     r = conferirCues(esp, nEsp);
     printf("    %d/%d cues casaram (texto, ±20 ms, \\an, \\pos)\n", r, nEsp);
     ok(r == nEsp, "varredura: todos os cues batem com o .ass original");
@@ -544,7 +568,7 @@ int main(int argc, char **argv) {
     mkvass_parar(); esperarFio(); legenda_desligar();
     zerarServidor();
     mkvass_iniciar(urlNo, 3);
-    maxSeg = rodarAte(4.0, 120000, 0.0);
+    maxSeg = rodarAte(4.0 * MKVASS_TESTE_ESCALA, 120000, 0.0);
     ok(mkvass_estado() == MKVASS_COMPLETO, "--no-cues: termina COMPLETO");
     ok(mkvass_varredura() == 1, "colheu em modo varredura");
     mkvass_estatisticas(&ped, &bytes, &colhidos, &total);
@@ -628,14 +652,16 @@ int main(int argc, char **argv) {
       mkvass_parar(); esperarFio(); legenda_desligar();
       zerarServidor();
       mkvass_iniciar(urlR, 3);
-      maxSeg = rodarAte(4.0, 120000, 0.0);
+      // 6g (Cluster inteiro, ~124 Ranges) e limitado pelo teto de Ranges/s,
+      // nao pelo playhead: so o 6f acelera.
+      maxSeg = rodarAte(caso ? 4.0 : 4.0 * MKVASS_TESTE_ESCALA, 120000, 0.0);
       ok(mkvass_estado() == MKVASS_COMPLETO, "termina COMPLETO");
       ok(mkvass_varredura() == 0, "pelo indice da faixa, sem cair na varredura");
       mkvass_estatisticas(&ped, &bytes, &colhidos, &total);
       printf("    %d/%d pontos, %ld Ranges, %ld bytes de %ld (%.1f %%), pico %d/s\n",
              colhidos, total, ped, bytes, tamMkv, 100.0 * bytes / tamMkv, maxSeg);
       ok(total == nEsp && colhidos == nEsp, "um ponto por Dialogue, todos colhidos (nenhum desistido)");
-      ok(maxSeg >= 0 && maxSeg <= 8, "teto: no maximo 8 Ranges num mesmo segundo");
+      ok(maxSeg >= 0 && maxSeg <= MKVASS_RANGES_POR_SEG, "teto: no maximo MKVASS_RANGES_POR_SEG Ranges num mesmo segundo");
       r = conferirCues(esp, nEsp);
       printf("    %d/%d cues casaram\n", r, nEsp);
       ok(r == nEsp, "todos os cues batem com o .ass original");
@@ -680,7 +706,7 @@ int main(int argc, char **argv) {
 
   printf("\n[8] servidor lento (1,2 s por Range, o medido na C9): Ranges em paralelo\n");
   mkvass_parar(); esperarFio(); legenda_desligar();
-  { char scLento[64]; long t0, tIndice = -1, tPrimeira = -1; int c = 0, n = 0;
+  { char scLento[64]; long t0, tIndice = -1, tPrimeira = -1, pedL = 0; int c = 0, n = 0;
     LegendaCue v[LEGENDA_SIMULTANEAS];
     nomeSidecar(urlLento, 3, scLento, sizeof scLento);
     dados_apagar(scLento);
@@ -690,7 +716,7 @@ int main(int argc, char **argv) {
     mkvass_iniciar(urlLento, 3);
     while (agoraMs() - t0 < 15000 && mkvass_estado() < MKVASS_NOGO) {
       mkvass_passo(0.0);
-      mkvass_estatisticas(NULL, NULL, &c, &n);
+      mkvass_estatisticas(&pedL, NULL, &c, &n);
       if (tIndice < 0 && n > 0) tIndice = agoraMs() - t0;
       if (tPrimeira < 0 && legenda_cues(1.2, 0, v, LEGENDA_SIMULTANEAS) > 0) tPrimeira = agoraMs() - t0;
       if (mkvass_estado() == MKVASS_COMPLETO) break;
@@ -700,7 +726,13 @@ int main(int argc, char **argv) {
            tIndice, tPrimeira, c, n, agoraMs() - t0);
     ok(tIndice >= 0 && tIndice < 3000, "indice com 2 Ranges (cabecalho + Cues de uma vez), sem esperar as fontes");
     ok(tPrimeira >= 0 && tPrimeira < 4500, "primeira fala em < 4,5 s (antes: fontes e Cues em serie, ~7 Ranges)");
-    ok(c >= 20, "15 s colhem >= 20 blocos (um Range por vez: ~10)"); }
+    // #308 (b65c3324): com o video aberto o fio usa UMA conexao (o pool
+    // paralelo so existe na pre-busca) e o teto e de 3 Ranges/s. Aqui sao
+    // ~1,2 s por Range, um por vez: ~10 blocos em 15 s, nao os 20+ de tres
+    // conexoes em paralelo (a expectativa antiga, da era MKVASS_PARALELOS).
+    // (`c` so sobe ao fim de cada passada do fio, entao o que se mede e o
+    // numero de Ranges: ~9 em 15 s a 1,2 s cada, nunca os 20+ em paralelo.)
+    ok(pedL >= 6 && pedL <= 14, "15 s fazem ~9 Ranges (um por vez, uma conexao)"); }
 
   // Troca de faixa com colheita EM VOO (servidor lento: sempre ha um Range
   // no ar). Nenhum lote da faixa anterior pode chegar a tela depois.
@@ -745,6 +777,10 @@ int main(int argc, char **argv) {
       usleep(20 * 1000);
     }
     if (vivosDe(esp, nEsp) > 0) viuA = 1;
+    // Uma ultima olhada: a faixa B (10 blocos) pode completar entre duas
+    // voltas do laco e o laco sai no COMPLETO sem ter olhado o overlay.
+    { int m = legenda_cues(1.5, 0, v, LEGENDA_SIMULTANEAS), k;
+      for (k = 0; k < m; k++) if (!strncmp(v[k].texto, "Outra faixa", 11)) viuB = 1; }
     ok(mkvass_estado() == MKVASS_COMPLETO, "faixa B termina COMPLETO");
     ok(viuB, "faixa B entregue ao overlay");
     ok(!viuA, "nenhum texto da faixa A depois da troca");
@@ -839,7 +875,9 @@ int main(int argc, char **argv) {
     printf("    estado %d, %d tentativa(s) de faixas.c, %ld recusas 429 em %ld Ranges\n", e, tent, r429, ped429);
     ok(e == MKVASS_COMPLETO, "termina COMPLETO com uma conexao so");
     ok(conferirCues(esp, nEsp) == nEsp, "todos os cues batem");
-    ok(r429 >= 1 && r429 <= 6, "freio: poucas recusas, nao uma por Range");
+    // #308 (b65c3324): UMA conexao lateral so, entao o CDN de "uma conexao por
+    // link" nunca chega a recusar (antes: 429 na segunda, freio, 1-6 recusas).
+    ok(r429 <= 6, "freio: poucas recusas (0 com uma conexao so), nao uma por Range");
 
     printf("\n[11b] link que redireciona (307) ao arquivo: url final UMA vez\n");
     snprintf(urlL, sizeof urlL, "%s/redir/%s", base, argv[2]);
@@ -879,11 +917,17 @@ int main(int argc, char **argv) {
     snprintf(scLF, sizeof scLF, "%s.fonts", scL); dados_apagar(scLF);
     mkvass_parar(); esperarFio(); legenda_desligar();
     zerarServidor();
+    { long p0 = mkvass_pausas_cdn();
     mkvass_iniciar(urlL, 3);
-    tent = retomarAte(300000, 1, &cedo);
+    tent = retomarAte(60000, 1, &cedo);
+    // O CDN pediu calma de verdade (pausa curta, via -D no .sh) E a leitura
+    // voltou depois dela: sem isso o COMPLETO abaixo nao aconteceria.
+    ok(mkvass_pausas_cdn() > p0, "o 503 prolongado fez pelo menos uma pausa de CDN");
+    }
     e = mkvass_estado();
     printf("    %d tentativa(s), estado final %d\n", tent, e);
-    ok(tent > 3, "precisou de mais de 3 tentativas (a 1.4.5 desistia na 3a)");
+    // Desde #308 o modulo nao devolve mais a faixa: pausa e segue (tent pode
+    // ser 0). Quem prova que nao desistiu na 3a e a pausa + o COMPLETO.
     ok(e == MKVASS_COMPLETO, "e mesmo assim termina COMPLETO");
     ok(conferirCues(esp, nEsp) == nEsp, "todos os cues batem apos as retomadas");
     ok(!cedo, "com a TV desenhando, o overlay so religou com fala nova");
@@ -931,7 +975,8 @@ int main(int argc, char **argv) {
   // Range do mkvass era cortado e o resto recusado. PRE-BUSCA antes do video,
   // recuo longo no resto recusado, fontes que nao derrubam a legenda e a
   // varredura quando o Cues nao vem.
-  { char urlP[600], scP[64], scPF[80]; long ms, pedAntes, pedDepois, gets; int e, col = 0, tot = 0;
+  { char urlP[600], scP[64], scPF[80]; long ms, pedAntes, pedDepois, gets; int e, col = 0, tot = 0, nJan = 0;
+    for (int i = 0; i < nEsp; i++) if (esp[i].inicio <= 12.0) nJan++;
     printf("\n[12a] pre-busca antes do video, CDN que corta e recusa o resto COM o video aberto\n");
     snprintf(urlP, sizeof urlP, "%s/rd11929/%s", base, argv[2]);
     nomeSidecar(urlP, -1, scP, sizeof scP); dados_apagar(scP);
@@ -946,13 +991,17 @@ int main(int argc, char **argv) {
            mkvass_prebusca_fase());
     ok(ms <= MKVASS_PREBUSCA_MS + 250, "o video sai dentro do teto da pre-busca");
     ok(mkvass_prebusca_fase() == 2, "pre-busca terminou dentro do teto (servidor local)");
-    ok(tot == nEsp && col == nEsp, "cabecalho, Cues e os blocos da janela lidos antes do video");
+    // Desde cd22ce703 a pre-busca colhe so a janela lateral de 12 s (o video
+    // nao espera); o resto vem depois da adocao, com o playhead andando.
+    ok(tot == nEsp && nJan > 0 && col == nJan, "cabecalho, Cues e os blocos da janela lidos antes do video");
     ok(!legenda_ligada_em(legenda_geracao()), "sem adocao, nada foi entregue ao overlay");
     { unsigned char *cab = NULL; long cabN = 0; MkvFaixa fx[MKV_MAX_FAIXAS]; int nfx = 0;
-      long g0 = contagemServidor();
+      long g0 = contagemDe("contagemcabecalhos");
       if (mkvass_cabecalho(urlP, &cab, &cabN)) nfx = mkv_faixas_do_trecho(cab, cabN, fx, MKV_MAX_FAIXAS, NULL, 0, NULL);
       free(cab);
-      ok(nfx >= 3 && contagemServidor() == g0, "sonda do cabecalho pelo trecho da pre-busca: faixas, sem rede"); }
+      ok(nfx >= 3 && contagemDe("contagemcabecalhos") == g0, "sonda do cabecalho pelo trecho da pre-busca: faixas, sem rede"); }
+    // Count header requests only: queued font jobs may finish during adoption.
+    gets = contagemDe("contagemcabecalhos");
     // O video abre; faixas.c escolhe a faixa (legenda_desligar + ordinal 0).
     videoServidor(1);
     legenda_desligar();
@@ -961,13 +1010,16 @@ int main(int argc, char **argv) {
       while (!legenda_ligada_em(legenda_geracao()) && agoraMs() - t0 < 3000) usleep(5 * 1000);
       printf("    adocao: overlay com a legenda em %ld ms\n", agoraMs() - t0);
       ok(legenda_ligada_em(legenda_geracao()), "adotada: a legenda chega ao overlay"); }
+    ok(contagemDe("contagemcabecalhos") == gets, "a adocao nao repetiu o cabecalho no servidor");
+    // Keep the playhead at zero: later playback must not fill missing initial cues.
+    for (int i = 0; i < nEsp; i++) if (esp[i].inicio <= 12.0)
+      ok(conferirCues(esp + i, 1) == 1, "adocao preservou o cue da janela inicial");
     rodarAte(4.0, 30000, 0.0);
     e = mkvass_estado();
     mkvass_estatisticas(&pedDepois, NULL, NULL, NULL);
     printf("    estado %d, %ld Ranges antes da adocao, %ld depois, %ld resto(s) recusado(s)\n",
            e, pedAntes, pedDepois, contagemDe("contagemrecusas"));
     ok(e == MKVASS_COMPLETO, "COMPLETO com o video aberto, sem no-go");
-    ok(pedDepois == pedAntes, "a adocao nao pediu nada de novo ao servidor");
     ok(conferirCues(esp, nEsp) == nEsp, "todos os cues batem");
     esperarFio(); videoServidor(0);
 
@@ -1056,21 +1108,31 @@ int main(int argc, char **argv) {
       ok(ms < 1000 && contagemServidor() <= 2, "nenhuma legenda no idioma: so o cabecalho e o video sai");
       (void)t0; }
 
-    // O TETO: servidor de 1,2 s por Range (o medido na C9). O video sai no
-    // teto com o que chegou, e o fio segue em segundo plano.
+    // Hold bodies after Header/Cues. Advance only the player's injected clock:
+    // release must occur exactly at the cap while prefetch remains unfinished.
     printf("\n[12f] servidor lento: o video sai no teto (%d ms) com o indice lido\n", MKVASS_PREBUSCA_MS);
-    snprintf(urlP, sizeof urlP, "http://localhost:%s/lento/%s", strrchr(base, ':') + 1, argv[2]);
+    snprintf(urlP, sizeof urlP, "http://localhost:%s/lentocontrolado/%s", strrchr(base, ':') + 1, argv[2]);
     nomeSidecar(urlP, -1, scP, sizeof scP); dados_apagar(scP);
     mkvass_parar(); esperarFio(); legenda_desligar();
     zerarServidor();
-    mkvass_prebuscar(urlP, escolherPrimeira, 0.0);
-    ms = esperarPrebusca();
+    ok(mkvass_prebuscar(urlP, escolherPrimeira, 0.0), "pre-busca lenta comecou");
+    { long t0 = agoraMs();
+      do {
+        mkvass_estatisticas(NULL, NULL, NULL, &tot);
+        if (tot == nEsp || mkvass_nogo()) break;
+        esperarQuadro();
+      } while (agoraMs() - t0 < 30000); } // Watchdog only; no timing assertion.
+    relogioPrebusca = 0;
+    ms = esperarPrebuscaRelogio(agoraPrebusca, avancarPrebusca);
     mkvass_estatisticas(&pedAntes, NULL, &col, &tot);
-    printf("    video solto em %ld ms (fase %d): %d/%d blocos, %ld Ranges\n", ms, mkvass_prebusca_fase(),
+    printf("    video solto em %ld ms virtuais (fase %d): %d/%d blocos, %ld Ranges\n", ms, mkvass_prebusca_fase(),
            col, tot, pedAntes);
-    ok(ms >= MKVASS_PREBUSCA_MS - 50 && ms <= MKVASS_PREBUSCA_MS + 250, "o video sai no teto, nao depois");
+    ok(ms == MKVASS_PREBUSCA_MS && mkvass_prebusca_fase() == 1 && col == 0,
+       "o video sai no teto, com a pre-busca ainda bloqueada");
     ok(tot == nEsp, "cabecalho e Cues chegaram antes do teto");
-    mkvass_parar(); esperarFio(); }
+    mkvass_parar();
+    ok(contagemDe("liberarlento") == 1, "libera os pedidos pendentes depois do video");
+    esperarFio(); }
 
   mkvass_parar(); esperarFio();
   free(esp);

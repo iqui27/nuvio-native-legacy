@@ -1,0 +1,16 @@
+{
+  "groups": [{
+    "id": "offline-protocol",
+    "title": "Offline protocol fixture",
+    "folders": [{
+      "id": "new-releases",
+      "title": "New releases",
+      "sources": [
+        {"title": "New movies", "base": "https://collection.invalid/addon?config=fixture", "type": "movie", "catId": "new/movies #1?fresh%", "genre": "New & fresh/TV"},
+        {"title": "New series", "base": "https://collection.invalid/addon?config=fixture", "type": "series", "catId": "new/series #1?fresh%", "genre": ""},
+        {"title": "TV catalog", "base": "https://collection.invalid/addon?config=fixture", "type": "tv", "catId": "new/series #1?fresh%", "genre": ""},
+        {"title": "Other addon", "base": "https://collection.invalid/other?config=fixture", "type": "movie", "catId": "new/movies #1?fresh%", "genre": ""}
+      ]
+    }]
+  }]
+}

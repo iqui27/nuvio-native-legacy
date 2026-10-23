@@ -70,7 +70,7 @@ int arte_reserva_registrar(const char *url, const char *imdb, int poster);
 //                                    padrao (af_tmdb_fundos) — "destaque com
 //                                    outra arte" com TMDB
 //   trakt/<medium|full>/<tt>
-//   apple/<1920|1280>/<tt>/<m|s>/<ano>/<titulo>   arte-chave da Apple TV
+//   apple/<1920|1280>/v2/<tt>/<m|s>/<ano>/<titulo> arte-chave da Apple TV
 //   fanart/full/<tt>/<m|s>/<id tmdb>              so com a chave pessoal
 //   anime/large/<tt|kitsu:N|mal:N|anilist:N>/<m|s>/<ano>/<titulo>
 // O titulo vai codificado por af_codificar (artefontes.h).

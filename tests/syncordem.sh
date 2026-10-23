@@ -55,18 +55,14 @@ echo "$SAIDA" | grep -qF 'nao tento de novo por 7 dias' \
 sessao credencial-reabrir
 echo "$SAIDA" | grep -qF 'recusa lembrada do disco' \
   || { echo "FALHOU: recusa nao sobreviveu ao arranque"; exit 1; }
-sessao addons
-# Fila de addon entre PROCESSOS: uma sessao cai em 500 e termina; a seguinte
-# parte so do disco. O nome vazio e estado desligado tambem devem sobreviver.
-export NV_T_DIR="$dir/addons-boot"; mkdir "$NV_T_DIR"
-sessao addons-gravar
-sessao addons-reabrir
-sessao addons-boot-leitura
-sessao addons-ack
-sessao addons-limpo
-for caso in identidade ack-perfil disco ram8 teto; do
-  export NV_T_DIR="$dir/addons-$caso"; mkdir "$NV_T_DIR"
-  sessao "addons-$caso"
-done
+# #378: com os ajustes locais protegidos, os idiomas da conta chegam assim mesmo.
+export NV_T_DIR="$dir/legconta"; mkdir "$NV_T_DIR"
+sessao legconta
+echo "$SAIDA" | grep -qF 'idiomas da conta entregues mesmo protegido' \
+  || { echo "FALHOU: sessao legconta"; exit 1; }
+export NV_T_DIR="$dir/legconta-troca"; mkdir "$NV_T_DIR"
+sessao legconta-troca
+echo "$SAIDA" | grep -qF 'idiomas do perfil 1 nao vazam para o 2' \
+  || { echo "FALHOU: sessao legconta-troca"; exit 1; }
 echo "$SAIDA" | grep -q 'FALHOU' && exit 1
 echo "syncordem.sh: ok"

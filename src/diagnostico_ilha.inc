@@ -78,7 +78,57 @@ static void dgPonto(float x, float yc, float r, float g, float b) {
 }
 
 // --- APRESENTACAO (primeira abertura e o "Antes de comecar") ---------------------
+#ifdef NV_TOUCH_UI
+static TelefoneCartao dgIntroPhone;
+static int dgIntroPhoneRolar(const PonteiroRolagem *e) {
+  return introGlobal || d.intro ? toquerol_evento(&dgIntroPhone.rolagem, e) : 0;
+}
+static void dgIntroPhoneAcao(int i, int primeira) {
+  if (primeira) {
+    if (!introGlobal) return;
+    if (!i) marcarApresentacaoVista();
+    introGlobal = 0;
+  } else {
+    if (!d.intro || introGlobal || sairTela) return;
+    if (!i) marcarApresentacaoVista();
+    else sairTela = 1;
+    d.intro = 0;
+  }
+}
+static float dgIntroPhoneCorpo(float x, float y, float w, float a) {
+  static const char *const IC[3] = {"aj_images", "aj_activity", "aj_circle-play"};
+  static const char *const TX[3] = {"Artes, logos e fundos", "Tempos, bytes e falhas", "Fontes de vídeo"};
+  float inicio = y;
+  y += telefonecartao_titulo("Antes de começar", x, y, w, a);
+  y += telefonecartao_texto(TXT_AJ_SUB, "O que será medido", x, y, w, 34, .7f * a) + 24;
+  for (int i = 0; i < 3; i++) y += telefonecartao_item(IC[i], TX[i], NULL, x, y, w, a);
+  y += telefonecartao_texto(TXT_AJ_TEXTO, "O app lê manifestos e catálogos, testa artes e fontes de vídeo e compara o caminho de carregamento desta TV.",
+                            x, y, w, 30, .7f * a) + 24;
+  y += telefonecartao_item("aj_triangle-alert", "Haverá testes de rede e consumo de dados. O relatório técnico será enviado automaticamente ao suporte.",
+                           NULL, x, y, w, a);
+  y += telefonecartao_texto(TXT_ILHA_GENERO, "Não altera assistidos, histórico, progresso ou scrobbling.", x, y, w, 30, .65f * a) + 12;
+  return y - inicio;
+}
+static void dgApresentacaoPhone(int primeira) {
+  float antes = gfx_escala();
+  gfx_escala_sair(gfx_escala_ui());
+  float W = nv_layout_w / gfx_escala(), H = nv_layout_h / gfx_escala();
+  telefonecartao_medir(&dgIntroPhone, W, H, 2);
+  GfxRect corpo = dgIntroPhone.corpo;
+  float total = dgIntroPhoneCorpo(corpo.x, corpo.y, corpo.w, 0);
+  telefonecartao_comecar(&dgIntroPhone, total, primeira, primeira ? introGlobal : d.intro,
+                        dgIntroPhoneRolar, 1);
+  dgIntroPhoneCorpo(corpo.x, corpo.y - dgIntroPhone.offset, corpo.w, 1);
+  gfx_sem_recorte();
+  telefonecartao_botao(&dgIntroPhone, 0, primeira ? "Continuar" : "Começar", 1, NULL, dgIntroPhoneAcao, primeira, 1);
+  telefonecartao_botao(&dgIntroPhone, 1, primeira ? "Fechar" : "Cancelar", 0, NULL, dgIntroPhoneAcao, primeira, 1);
+  gfx_escala_sair(antes);
+}
+#endif
 static void dgApresentacao(int primeiraAbertura) {
+#ifdef NV_TOUCH_UI
+  if (telefoneui_ativo()) { dgApresentacaoPhone(primeiraAbertura); return; }
+#endif
   GfxRect m = { 300, 0, 1320, 0 };
   float x, y, cw;
   static const char *const IC[3] = { "aj_images", "aj_activity", "aj_circle-play" };
@@ -148,6 +198,7 @@ static void dgObjetivo(void) {
     float cw = (w - 16) * 0.5f;
     GfxRect c = { x + i * (cw + 16), y, cw, 126 };
     int sel = focoModo == i;
+    ponteiro_alvo(c.x, c.y, c.w, c.h, ponteiroModo, ponteiroModo, i, 0);
     if (sel && !focoLinha) ajustes_ui_foco_linha(c, 26);
     else ajustes_ui_neutro(c, 26, sel ? 0.14f : 0.05f);
     { TxtLinha t = dgT(TXT_AJ_NOME, i ? "Desempenho" : "Qualidade");
@@ -170,8 +221,11 @@ static void dgObjetivo(void) {
     txt_desenhar(t, x, y + 8);
   }
   { float by = e.y + e.h - 42 - 18 - 16 - 60, bx = x;
-    bx += ajustes_ui_botao(i18n("Iniciar diagnóstico"), "aj_activity", bx, by, !focoLinha) + 12;
-    ajustes_ui_botao(i18n("Teste de velocidade"), "aj_gauge", bx, by, focoLinha);
+    { float bw = ajustes_ui_botao(i18n("Iniciar diagnóstico"), "aj_activity", bx, by, !focoLinha);
+      ponteiro_alvo(bx, by, bw, 60, ponteiroLinhaObj, NULL, 0, 0);
+      bx += bw + 12; }
+    { float bw = ajustes_ui_botao(i18n("Teste de velocidade"), "aj_gauge", bx, by, focoLinha);
+      ponteiro_alvo(bx, by, bw, 60, ponteiroLinhaObj, NULL, 1, 0); }
     { TxtLinha t = dgTC(TXT_ILHA_APOIO, i18n("Até 3 títulos, 6 fontes e 12 imagens; limite de 8 minutos"), w);
       txt_desenhar_alpha(t, x, by + 60 + 16, 0.45f); } }
   // Como funciona
@@ -484,7 +538,11 @@ static void dgResultado(void) {
   { int lista[B_N], n = botoesVisiveis(lista);
     float bx = X, by = NV_TELA_H - 40 - 60;
     if (d.botao >= n) d.botao = n > 0 ? n - 1 : 0;
-    for (i = 0; i < n; i++) bx += ajustes_ui_botao(i18n(BOTAO_ROTULO[lista[i]]), NULL, bx, by, i == d.botao) + 12;
+    for (i = 0; i < n; i++) {
+      float bw = ajustes_ui_botao(i18n(BOTAO_ROTULO[lista[i]]), NULL, bx, by, i == d.botao);
+      if (d.sugEstado != DS_TESTANDO) ponteiro_alvo(bx, by, bw, 60, ponteiroBotaoRes, NULL, i, 0);
+      bx += bw + 12;
+    }
     { const char *k[3] = { "← →", "OK", "Voltar" }, *l[3] = { "Escolher", "Confirmar", "Sair" };
       float dw = ajustes_ui_dicas(k, l, 3, 0, 0, 0);
       ajustes_ui_dicas(k, l, 3, NV_TELA_W - 40 - dw, by + 15, 1); } }
@@ -568,8 +626,11 @@ static void dgVazaoResultado(Uint32 agora) {
   { int lista[VB_N], n = vazBotoes(lista);
     float bx = x, by = e.y + e.h - 40 - 60;
     if (vz.botao >= n) vz.botao = n - 1;
-    for (i = 0; i < n; i++)
-      bx += ajustes_ui_botao(i18n(VB_ROTULO[lista[i]]), i == 0 ? "aj_rotate-cw" : NULL, bx, by, i == vz.botao) + 12;
+    for (i = 0; i < n; i++) {
+      float bw = ajustes_ui_botao(i18n(VB_ROTULO[lista[i]]), i == 0 ? "aj_rotate-cw" : NULL, bx, by, i == vz.botao);
+      ponteiro_alvo(bx, by, bw, 60, ponteiroBotaoVaz, NULL, i, 0);
+      bx += bw + 12;
+    }
     snprintf(a, sizeof a, i18n("%d de %d tentadas · %d segundos"), nf, vz.tentadas, vz.nAmostra);
     { TxtLinha t = dgTC(TXT_ILHA_APOIO, a, x + w - bx - 10); txt_desenhar_alpha(t, x + w - t.w, by + (60 - t.h) * 0.5f, 0.45f); } }
   // VAZAO POR FONTE
@@ -687,9 +748,248 @@ static void dgVazaoGenerico(Uint32 agora) {
     int lista[VB_N], n = vazBotoes(lista), i;
     float bx = e.x, by = NV_TELA_H - 40 - 60;
     if (vz.botao >= n) vz.botao = n - 1;
-    for (i = 0; i < n; i++) bx += ajustes_ui_botao(i18n(VB_ROTULO[lista[i]]), NULL, bx, by, i == vz.botao) + 12;
+    for (i = 0; i < n; i++) {
+      float bw = ajustes_ui_botao(i18n(VB_ROTULO[lista[i]]), NULL, bx, by, i == vz.botao);
+      ponteiro_alvo(bx, by, bw, 60, ponteiroBotaoVaz, NULL, i, 0);
+      bx += bw + 12;
+    }
   } else {
     const char *k[1] = { "Voltar" }, *l[1] = { "Cancelar" };
     ajustes_ui_dicas(k, l, 1, e.x, NV_TELA_H - 40 - 45, 1);
   }
 }
+
+#ifdef NV_TOUCH_UI
+static ToqueRolagem toqueDiagPagina;
+static float diagPaginaY;
+static int diagPaginaEstado = -1;
+static void dgPhoneReiniciar(void) {
+  diagPaginaEstado = -1; diagPaginaY = 0; memset(&toqueDiagPagina, 0, sizeof toqueDiagPagina);
+  telefonecartao_limpar(&dgIntroPhone);
+}
+static int dgPhoneRolar(const PonteiroRolagem *e) {
+  return d.intro ? 0 : toquerol_evento(&toqueDiagPagina, e);
+}
+static void dgPhoneAcao(int tipo, int i) {
+  if (d.intro || introGlobal || sairTela) return;
+  int estado = atomic_load(&d.estado), ve = atomic_load(&vz.estado);
+  if (tipo == 0 && !vz.aberto && estado == 0) { focoModo = i; focoLinha = 0; }
+  else if (tipo == 1 && !vz.aberto && estado == 0) { focoLinha = i; if (i) iniciarVazao(); else iniciarTeste(); }
+  else if (tipo == 5 && !vz.aberto && estado > 2) iniciarTeste();
+  else if (tipo == 2 && !vz.aberto && estado == 2 && d.sugEstado != DS_TESTANDO) {
+    int lista[B_N], n = botoesVisiveis(lista);
+    if (i >= 0 && i < n) { d.botao = i; acionarBotao(lista[i]); }
+  } else if (tipo == 3 && vz.aberto && ve != 1) {
+    int lista[VB_N], n = vazBotoes(lista);
+    if (i >= 0 && i < n) { vz.botao = i; acionarVazBotao(lista[i]); }
+  } else if (tipo == 4) {
+    if (vz.aberto) {
+      if (ve == 1) atomic_store(&vz.cancelado, 1);
+      else { vz.aberto = 0; if (soVelocidade) { soVelocidade = 0; sairTela = 1; } }
+    } else if (estado == 1 || d.sugEstado == DS_TESTANDO) atomic_store(&d.cancelado, 1);
+    else sairTela = 1;
+  }
+}
+static float dgPhoneCard(const char *titulo, const char *texto, float y, float W, int draw) {
+  float h = 36 + txt_bloco_corta(TXT_AJ_TIT28, i18n(titulo), 243, 242, 239, 80, y + 20, W - 160, 34, 0, 8);
+  if (texto && texto[0]) h += 12 + txt_bloco_corta(TXT_AJ_TEXTO, texto, 243, 242, 239, 80, y + h, W - 160, 30, 0, 40);
+  h += 20;
+  if (draw) { /* text above is measured first, material must precede it */
+    ajustes_ui_ilha((GfxRect){48, y, W - 96, h}, 24, 0);
+    float yy = y + 20;
+    yy += txt_bloco_corta(TXT_AJ_TIT28, i18n(titulo), 243, 242, 239, 80, yy, W - 160, 34, 1, 8) + 12;
+    if (texto && texto[0]) txt_bloco_corta(TXT_AJ_TEXTO, texto, 243, 242, 239, 80, yy, W - 160, 30, .7f, 40);
+  }
+  return y + h + 18;
+}
+static float dgPhoneBotao(const char *rot, int tipo, int i, int foco, float y, float W, float topo, float base, int draw) {
+  GfxRect r = {48, y, W - 96, 60};
+  if (draw) {
+    if (foco) plrui_pilula_foco(r, 1); else plrui_botao_repouso(r, 1);
+    int tinta = ajustes_tinta_foco();
+    TxtLinha l = foco ? txt_linha_corta(TXT_ILHA_ITEM, i18n(rot), tinta, tinta, tinta, 255, r.w - 40)
+                     : txt_linha_corta(TXT_ILHA_ITEM, i18n(rot), DG_TX, r.w - 40);
+    txt_desenhar_alpha(l, r.x + 20, y + (60 - l.h) * .5f, 1);
+    if (!d.intro) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, NULL, dgPhoneAcao, tipo, i);
+  }
+  return y + 72;
+}
+static float dgPhoneCorpo(float y, float W, float topo, float base, int draw) {
+  int est = atomic_load(&d.estado), i, cor;
+  char texto[1600], v[200];
+  if (vz.aberto) {
+    int ve = atomic_load(&vz.estado);
+    char med[32], pior[32], ot[200], mx[200];
+    vazao_fmt_mbps(med, sizeof med, vz.resumo.medianaKbps, sepDecimal());
+    vazao_fmt_mbps(pior, sizeof pior, vz.resumo.p20Kbps, sepDecimal());
+    if (ve == 1) {
+      int fase = atomic_load(&vz.fase), nf = atomic_load(&vz.nFonte);
+      snprintf(texto, sizeof texto, "%s\n%s: %d / %d\n%s: %d / %d",
+               i18n(fase <= 1 ? "Perguntando as fontes a cada add-on" : "Baixando um trecho de cada fonte"),
+               i18n("Etapas de rede"), atomic_load(&vz.feitos), atomic_load(&vz.total),
+               i18n("Fontes medidas"), vz.ciclo == VCM_RAPIDO ? nf : atomic_load(&vz.nCic),
+               vz.ciclo == VCM_RAPIDO ? VAZAO_FONTES_MAX : vz.nFila);
+      y = dgPhoneCard("Teste de velocidade", texto, y, W, draw);
+      if (draw) {
+        int total = atomic_load(&vz.total);
+        float pct = total > 0 ? 100.0f * atomic_load(&vz.feitos) / total : 0;
+        float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+        barraProgresso((GfxRect){80, y, W - 160, 12}, pct, ar, ag, ab, 1, SDL_GetTicks());
+      }
+      y += 30;
+    } else if (vz.resultado == VR_OK && vz.ciclo == VCM_RAPIDO) {
+      snprintf(texto, sizeof texto, i18n("Velocidade: %s Mbps (pior trecho %s Mbps)"), med, pior);
+      y = dgPhoneCard("Tamanho de arquivo que toca sem parar nesta TV", texto, y, W, draw);
+      linhaTamanho(ot, sizeof ot, i18n("Ótimo: até %s GB por filme de 2 h · %s GB por episódio"), vz.resumo.otimoKbps);
+      linhaTamanho(mx, sizeof mx, i18n("Máximo: até %s GB por filme de 2 h · %s GB por episódio"), vz.resumo.maximoKbps);
+      snprintf(texto, sizeof texto, "%s\n%s\n%s\n%s", ot, mx, i18n(vazao_dica(vz.resumo.otimoKbps)),
+               i18n("Filme de 2 h e episódio de 45 min; o tamanho do arquivo aparece no nome da fonte."));
+      y = dgPhoneCard("Filme de 2 h · tamanho do arquivo", texto, y, W, draw);
+      snprintf(texto, sizeof texto, i18n("%d de %d tentadas · %d segundos"), atomic_load(&vz.nFonte), vz.tentadas, vz.nAmostra);
+      y = dgPhoneCard("Fontes medidas", texto, y, W, draw);
+    }
+    y = dgPhoneCard("Vazão por fonte", i18n(vz.ciclo == VCM_RAPIDO
+             ? "Baixa por 8 s até 3 fontes de servidores diferentes, começando no meio do arquivo; os dados são descartados."
+             : "Mediana de cada add-on e ranking das fontes"), y, W, draw);
+    if (vz.ciclo != VCM_RAPIDO) {
+      int n = atomic_load(&vz.nCic), ordem[VAZ_CICLO_LISTA_MAX];
+      vazao_ordenar(vz.cic, n, ordem);
+      for (i = 0; i < n; i++) {
+        const VazCicloRes *c = &vz.cic[ordem[i]];
+        char mb[32], selos[96];
+        vazao_fmt_mbps(mb, sizeof mb, c->r.medianaKbps, sepDecimal()); selosDaFonte(selos, sizeof selos, c);
+        snprintf(texto, sizeof texto, "#%d %s · %s\n%s · %s · HTTP %d · %d ms\n%s Mbps · %s",
+                 i + 1, addons_nome(c->addon), c->nome, selos, c->host, c->http, c->esperaMs, mb, i18n(veredito(c, &cor)));
+        y = dgPhoneCard("Vazão por fonte", texto, y, W, draw);
+      }
+      for (i = 0; i < vz.nAddon; i++) {
+        int usa, mb = vazao_mediana_addon(vz.cic, n, i, &usa);
+        if (!usa) continue;
+        char b[32]; vazao_fmt_mbps(b, sizeof b, mb, sepDecimal());
+        snprintf(texto, sizeof texto, "%s · %s Mbps · %d %s", addons_nome(i), b, usa, i18n("Fontes medidas"));
+        y = dgPhoneCard("Mediana por add-on", texto, y, W, draw);
+      }
+      snprintf(texto, sizeof texto, "%s: %d\n%s: %d\n%s: %d", i18n("Não testadas (debrid)"), vz.debridTotal,
+               i18n("Fora do limite"), vz.sel.foraDoLimite, i18n("Não testadas (tempo)"), vz.agenda.restantes);
+      y = dgPhoneCard("Fontes medidas", texto, y, W, draw);
+    } else {
+      for (i = 0; i < atomic_load(&vz.nFonte); i++) {
+        char b[32], p[32]; vazao_fmt_mbps(b, sizeof b, vz.fonte[i].r.medianaKbps, sepDecimal());
+        vazao_fmt_mbps(p, sizeof p, vz.fonte[i].r.p20Kbps, sepDecimal());
+        snprintf(texto, sizeof texto, "%s Mbps · %s %s Mbps · HTTP %d · %lu ms", b, i18n("pior trecho"), p, vz.fonte[i].http, vz.fonte[i].ms);
+        y = dgPhoneCard("Vazão por fonte", texto, y, W, draw);
+      }
+    }
+    if (ve != 1 || atomic_load(&vz.fase) >= 2) for (i = 0; i < vz.nAddon; i++) {
+      const VazAddon *a = &vz.addon[i];
+      if (!a->medido) continue;
+      if (a->ok) snprintf(texto, sizeof texto, "%s · %d ms · %d %s", addons_nome(i), a->ms, a->fontes, i18n("Fontes"));
+      else snprintf(texto, sizeof texto, "%s · HTTP %d · %s", addons_nome(i), a->http, i18n("falhou"));
+      y = dgPhoneCard("Add-ons e fontes", texto, y, W, draw);
+    }
+    /* Keep the original explicit empty/error explanation, rather than fake zero success. */
+    if (ve != 1 && vz.resultado != VR_OK) {
+      const char *det, *falha = textoFalhaVazao(vz.resultado, &det);
+      snprintf(texto, sizeof texto, "%s%s%s", i18n(falha), det ? "\n" : "", det ? i18n(det) : "");
+      y = dgPhoneCard("Teste de velocidade", texto, y, W, draw);
+    }
+    if (ve != 1) {
+      int lista[VB_N], n = vazBotoes(lista);
+      for (i = 0; i < n; i++) y = dgPhoneBotao(VB_ROTULO[lista[i]], 3, i, i == vz.botao, y, W, topo, base, draw);
+    }
+  } else if (est == 0) {
+    PtvPerfil atual, cand; int travado; long mem;
+    perfilAtual(&atual, &travado, &mem);
+    ptv_candidato(ptv_plataforma(), mem, focoModo ? PTV_DESEMPENHO : PTV_QUALIDADE, travado, &cand);
+    y = dgPhoneCard("Objetivo", i18n("Teste os addons, artes e fontes desta TV; o relatório é enviado ao suporte."), y, W, draw);
+    y = dgPhoneBotao("Qualidade", 0, 0, focoModo == 0, y, W, topo, base, draw);
+    y = dgPhoneBotao("Desempenho", 0, 1, focoModo == 1, y, W, topo, base, draw);
+    snprintf(texto, sizeof texto, "%s: %d → %d MB\n%s: %d → %d\n%s: %d → %d px",
+             i18n("Memória para imagens"), atual.texMb, cand.texMb, i18n("Fios de rede das artes"), atual.fiosRede, cand.fiosRede,
+             i18n("Largura do fundo em tela cheia"), atual.heroiLarg, cand.heroiLarg);
+    y = dgPhoneCard("Candidato desta rodada", texto, y, W, draw);
+    y = dgPhoneCard("Como funciona", i18n("Se o reteste da mesma amostra piorar, o perfil anterior volta sozinho e a tela diz o motivo."), y, W, draw);
+    y = dgPhoneCard("Como funciona", i18n("Até 3 títulos, 6 fontes e 12 imagens; limite de 8 minutos"), y, W, draw);
+    if (travado) y = dgPhoneCard("Memória para imagens", i18n("A memória para imagens foi escolhida em Ajustes e não muda."), y, W, draw);
+    y = dgPhoneBotao("Iniciar diagnóstico", 1, 0, !focoLinha, y, W, topo, base, draw);
+    y = dgPhoneBotao("Teste de velocidade", 1, 1, focoLinha, y, W, topo, base, draw);
+  } else if (est == 1) {
+    static const char *const etapas[] = {"Sondando manifestos, catálogos e fontes", "Medindo cada fonte de arte", "Artes com o cache frio",
+      "Artes com o perfil atual", "Artes com o perfil candidato", "Gravando e enviando o relatório"};
+    int fase = atomic_load(&d.fase); fase = fase < 1 ? 1 : fase > 6 ? 6 : fase;
+    snprintf(texto, sizeof texto, "%s · %d / %d", i18n(etapas[fase - 1]), atomic_load(&d.feitos), atomic_load(&d.total));
+    y = dgPhoneCard("Diagnóstico em andamento", texto, y, W, draw);
+    for (i = 0; i < 6; i++) y = dgPhoneCard(etapas[i], i + 1 == fase ? i18n("agora") : NULL, y, W, draw);
+  } else if (est > 2) {
+    y = dgPhoneCard("Diagnóstico e otimização", i18n(d.erro[0] ? d.erro : "O teste foi cancelado."), y, W, draw);
+    y = dgPhoneCard("Agora nesta TV", i18n(d.aplicacao == DA_CANCELADO ? textoAplicacao(&cor)
+                                          : "Nenhuma configuração foi alterada."), y, W, draw);
+    y = dgPhoneBotao("Testar de novo", 5, 0, 1, y, W, topo, base, draw);
+  } else {
+    snprintf(texto, sizeof texto, "%d%% · %s", coberturaPercentual(), gargaloPrincipal());
+    y = dgPhoneCard("Resultado geral", texto, y, W, draw);
+    y = dgPhoneCard("Agora nesta TV", i18n(textoAplicacao(&cor)), y, W, draw);
+    if (d.motivo) y = dgPhoneCard("Resultado geral", i18n(d.motivo), y, W, draw);
+    y = dgPhoneCard("Relatório", i18n(atomic_load(&d.enviando) ? "enviando…" : d.envioFalhou ? "guardado; envio falhou"
+                    : d.enviado ? "enviado ao suporte" : "guardado localmente"), y, W, draw);
+    for (i = 1; i < PTV_N_FONTES; i++) {
+      const PtvFonte *f = &d.fonte[i];
+      if (!f->ok && !f->falhas) continue;
+      snprintf(texto, sizeof texto, "%d ms · %d×%d · %d %s", ptv_fonte_ms(f), f->largura, f->altura, f->falhas, i18n("falhas"));
+      y = dgPhoneCard(ptv_fonte_rotulo(i), texto, y, W, draw);
+    }
+    snprintf(texto, sizeof texto, "%s: %d ms\n%s: %d ms\n%s: %d ms\n%s: %d ms",
+             i18n("Manifestos"), d.manifestMs, i18n("Catálogos"), d.catalogMs, i18n("Artes"), d.assetsMs + d.fontesMs, i18n("Fontes"), d.streamMs);
+    y = dgPhoneCard("Tempo por etapa", texto, y, W, draw);
+    PtvPerfil antes, depois; perfilDoResultado(&antes, &depois);
+    snprintf(texto, sizeof texto, "%s: %d → %d MB\n%s: %d → %d\n%s: %d → %d px\n%s: %d / %d / %d ms",
+             i18n("Memória para imagens agora"), antes.texMb, depois.texMb, i18n("Fios de rede das artes"), antes.fiosRede, depois.fiosRede,
+             i18n("Largura do fundo em tela cheia"), antes.heroiLarg, depois.heroiLarg, i18n("Artes, mesma amostra"), d.medFrio.artesMs, d.medAntes.artesMs, d.medDepois.artesMs);
+    y = dgPhoneCard("Agora nesta TV", texto, y, W, draw);
+    if (d.sugEstado == DS_PROPOSTA || d.sugEstado == DS_TESTANDO) {
+      if (d.sug.motivo == PTV_MOTIVO_IGUAL && d.sug.alvo > 0)
+        snprintf(texto, sizeof texto, i18n("Destaque em %s repete a imagem do card; %s é outra arte, %d ms."),
+                 i18n(ptv_fonte_rotulo(d.sug.lenta)), i18n(ptv_fonte_rotulo(d.sug.alvo)), ptv_fonte_ms(&d.fonte[d.sug.alvo]));
+      else snprintf(texto, sizeof texto, i18n("Destaque em %s: %d ms por arte; %s: %d ms."),
+                    i18n(ptv_fonte_rotulo(d.sug.lenta)), d.sug.msLenta, i18n(ptv_fonte_rotulo(d.sug.base)), d.sug.msBase);
+      y = dgPhoneCard("Artes por fonte", texto, y, W, draw);
+      if (d.sugEstado == DS_TESTANDO) snprintf(texto, sizeof texto, "%s", i18n("Retestando a arte do destaque…"));
+      else if (!d.sug.diferente) snprintf(texto, sizeof texto, "%s", i18n("Vai mudar: Destaque com outra arte, de Ligado para Desligado."));
+      else snprintf(texto, sizeof texto, i18n("Vai mudar: Background do hero, de %s para %s."),
+                    i18n(nomeFonteAjuste(ajustes_hero_fonte())), i18n(nomeFonteAjuste(d.sug.fonte)));
+      y = dgPhoneCard("Artes por fonte", texto, y, W, draw);
+    } else {
+      if (d.sugEstado == DS_DESFEITA) snprintf(texto, sizeof texto, i18n("Sugestão desfeita sozinha: %s"), i18n(d.sugMotivo ? d.sugMotivo : ""));
+      else snprintf(texto, sizeof texto, "%s", i18n(d.sugEstado == DS_MANTIDA
+                 ? "Sugestão aplicada: o destaque ficou mais rápido no reteste." : "A fonte do destaque não está mais lenta que a do card."));
+      y = dgPhoneCard("Artes por fonte", texto, y, W, draw);
+    }
+    int lista[B_N], n = botoesVisiveis(lista);
+    for (i = 0; i < n; i++) y = dgPhoneBotao(BOTAO_ROTULO[lista[i]], 2, i, i == d.botao, y, W, topo, base, draw);
+  }
+  long bytes = 0; int pend = 0, quentes = 0;
+  tex_estatisticas(NULL, &pend, &bytes, &quentes, NULL);
+  snprintf(v, sizeof v, "%ld / %ld MB · %d %s · %d %s", bytes >> 20, tex_orcamento_bytes() >> 20,
+           pend, i18n("pendentes"), quentes, i18n("quentes"));
+  return dgPhoneCard("Memória usada por imagens", v, y, W, draw);
+}
+static void dgTelefone(Uint32 agora) {
+  (void)agora;
+  float W = nv_layout_w / gfx_escala(), H = nv_layout_h / gfx_escala(), topo = 116, base = H - 36;
+  int key = vz.aberto ? 100 + atomic_load(&vz.estado) : atomic_load(&d.estado);
+  ajustes_ui_fundo();
+  if (key != diagPaginaEstado) { diagPaginaEstado = key; diagPaginaY = 0; memset(&toqueDiagPagina, 0, sizeof toqueDiagPagina); }
+  TxtLinha t = txt_linha_corta(TXT_TITULO3, i18n(vz.aberto ? "Teste de velocidade" : "Diagnóstico e otimização"), DG_TX, W - 196);
+  txt_desenhar(t, 48, 32);
+  GfxRect fechar = {W - 100, 32, 52, 52};
+  gfx_icone(fechar, "aj_x", 1, 1, 1, 1);
+  if (!d.intro) ponteiro_alvo(fechar.x, fechar.y, fechar.w, fechar.h, NULL, dgPhoneAcao, 4, 0);
+  float fim = dgPhoneCorpo(topo, W, topo, base, 0), max = fmaxf(0, fim - base);
+  toquerol_vincular(&toqueDiagPagina, (GfxRect){48, topo, W - 96, base - topo}, gfx_escala(), 0, max, 1, &diagPaginaY);
+  diagPaginaY = toquerol_clamp(diagPaginaY, 0, max);
+  if (!d.intro) ponteiro_rolagem(dgPhoneRolar);
+  gfx_recorte(48, topo, W - 96, base - topo);
+  dgPhoneCorpo(topo - diagPaginaY, W, topo, base, 1);
+  gfx_sem_recorte();
+}
+#endif

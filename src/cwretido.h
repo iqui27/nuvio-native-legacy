@@ -31,6 +31,10 @@ int cw_retido_definir(const char *imdb);
 // O id base retido ("" quando nada).
 const char *cw_retido(void);
 unsigned cw_retido_rev(void);
-// 1 quando `imdb` e a mesma obra que a retida.
+// 1 quando `imdb` e a mesma obra que a retida (sempre 0 com "tambem em
+// Continuar assistindo" ligado: a ilha/faixa o seguram e a fileira o mostra).
 int cw_retido_exclui(const char *imdb);
+// Ajustes -> Home -> "Tambem em Continuar assistindo". Anda a revisao quando
+// muda, para a home e os Salvos remontarem a fileira.
+void cw_retido_tambem_definir(int ligado);
 #endif

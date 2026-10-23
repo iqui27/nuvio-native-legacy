@@ -5,6 +5,7 @@
 // troca nao deixa token, autorizar no 2 grava so o do 2, sair apaga todos.
 // Disco e rede sao dubles em memoria; tokens de mentira.
 #include "simklauth.h"
+#include "sync.h"
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -56,6 +57,20 @@ static int contem(const char *n, const char *t) {
 const char *nuvem_simkl_cliente(void) { return "cliente-teste"; }
 const char *nuvem_simkl_app(void)     { return "nuvio"; }
 void nuvem_url_escapar(const char *v, char *d, unsigned t) { snprintf(d, t, "%s", v); }
+uint64_t perfis_sessao_geracao(void) { return 1; }
+int perfis_sessao_atual(uint64_t g) { return g == 1; }
+int perfis_sessao_travar(uint64_t g) { return g == 1; }
+void perfis_sessao_destravar(void) {}
+const char *sessao_usuario(void) { return ""; }
+int sessao_identidade_local_copiar(char *u, size_t nu, char *jwt, size_t nj) {
+  if (nu) u[0] = 0;
+  if (nj) jwt[0] = 0;
+  return 0;
+}
+int sync_credencial_pedido(SyncCredencialPedido *p) { (void)p; return 0; }
+int sync_empurrar_credencial_pedido(const SyncCredencialPedido *p, const char *prov, const char *j) {
+  (void)p; (void)prov; (void)j; assert(0); return 0;
+}
 int  sync_empurrar_credencial(const char *p, const char *j) { (void)p; (void)j; return 0; }
 const char *i18n(const char *s) { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
@@ -101,7 +116,21 @@ int main(void) {
   assert(simklauth_trocar_perfil(1) == 1 && !strcmp(simklauth_token(), "SIMKL-FALSO-P1"));
   printf("ok  autorizar no perfil 2 grava so simkl-p2.txt\n");
 
+  // Recarregar a credencial no MESMO perfil invalida consultas em andamento;
+  // a copia antiga continua inteira, nunca aponta para o buffer vivo.
+  char copia[300];
+  unsigned long long cred = simklauth_credencial_copiar(copia, sizeof copia);
+  assert(!strcmp(copia, "SIMKL-FALSO-P1"));
+  dados_gravar("simkl-p1.txt", "SIMKL-OUTRA-CONTA\n");
+  assert(simklauth_carregar());
+  assert(simklauth_credencial_copiar(NULL, 0) != cred);
+  assert(!strcmp(copia, "SIMKL-FALSO-P1"));
+  cred = simklauth_credencial_copiar(copia, sizeof copia);
+  assert(!strcmp(copia, "SIMKL-OUTRA-CONTA"));
+  assert(simklauth_carregar() && simklauth_credencial_copiar(NULL, 0) == cred);
+
   simklauth_esquecer();
+  assert(simklauth_credencial_copiar(copia, sizeof copia) != cred && !copia[0]);
   assert(!existe("simkl-p1.txt") && !existe("simkl-p2.txt") && !simklauth_token()[0]);
   printf("ok  sair apaga o vinculo de todos os perfis\n");
   printf("simklauth_perfil: tudo ok\n");

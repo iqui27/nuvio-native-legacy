@@ -16,6 +16,7 @@
 // Este teste le o disco como o arranque le (ajustes_dir sem a tela aberta) e
 // abre a tela duas vezes, conferindo o valor e o que fica gravado.
 #include "../src/ajustes.c"
+#include "nvtmp.h"
 #include <assert.h>
 #include <unistd.h>
 
@@ -39,7 +40,7 @@ static int noDisco(const char *caminho) {
 }
 
 int main(void) {
-  char dir[] = "/tmp/nuvio-aj-envio-XXXXXX";
+  char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-aj-envio-XXXXXX");
   char caminho[700];
   assert(mkdtemp(dir));
   snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dir);
@@ -47,7 +48,7 @@ int main(void) {
   // 0. MIGRACAO UNICA (1.5.1): quem chega da 1.5.0 com "desligado" no disco
   //    (quase sempre gravado pelo defeito) volta ligado UMA vez; a marca
   //    envio-151.txt impede a segunda. Diretorio proprio, sem marca.
-  { char d0[] = "/tmp/nuvio-aj-envio0-XXXXXX", c0[700], m0[700];
+  { char d0[NVT_MAX], c0[700], m0[700]; nvt_set(d0, sizeof d0, "/nuvio-aj-envio0-XXXXXX");
     FILE *mf;
     assert(mkdtemp(d0));
     snprintf(c0, sizeof c0, "%s/ajustes.txt", d0);

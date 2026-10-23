@@ -61,14 +61,14 @@ int main(void) {
   // Copy remains valid after catalog replacement and frame retirement.
   cat_definir(cache, 6); cat_quadro(); cat_quadro(); assert(!strcmp(copia.titulo, "Kitsu salvo"));
   prog_definir_relogio(relogioProg); prog_esquecer_tudo();
-  assert(prog_gravar_local("tt101", 1, 3, 120, 300));
-  assert(prog_gravar_local("tmdb:t101", 2, 3, 120, 300));
-  assert(prog_gravar_local("kitsu:41370", 1, 5, 120, 300));
-  assert(prog_gravar_local("provider:42", 0, 0, 120, 300));
-  assert(prog_gravar_local("provider:99", 0, 0, 120, 300));
-  assert(prog_gravar_local("ttStarted", 0, 0, 1, 300));
-  assert(prog_gravar_local("ttDone", 0, 0, 270, 300));
-  assert(prog_gravar_local("ttShort", 0, 0, 10, 30));
+  assert(prog_gravar_local("tt101", 1, 3, 120, 300, -1));
+  assert(prog_gravar_local("tmdb:t101", 2, 3, 120, 300, -1));
+  assert(prog_gravar_local("kitsu:41370", 1, 5, 120, 300, -1));
+  assert(prog_gravar_local("provider:42", 0, 0, 120, 300, -1));
+  assert(prog_gravar_local("provider:99", 0, 0, 120, 300, -1));
+  assert(prog_gravar_local("ttStarted", 0, 0, 1, 300, -1));
+  assert(prog_gravar_local("ttDone", 0, 0, 270, 300, -1));
+  assert(prog_gravar_local("ttShort", 0, 0, 10, 30, -1));
   int n = continuarLocal(lote, 12); verificar(lote, n); assert(enriquecidos == 4);
   assert(!strcmp(porId(lote, n, "tt101:1:3")->sinopse, "Metadados novos"));
   falhaMeta = 1; n = continuarLocal(lote, 12); verificar(lote, n); assert(enriquecidos == 0);
@@ -86,6 +86,11 @@ int main(void) {
   cat_definir(&reserva, 1); falhaMeta = 0;
   n = continuarLocal(lote, 12);
   assert(!strcmp(porId(lote, n, "tt101:1:3")->titulo, "IMDb recuperado"));
+  // "Trakt only" inherited from the main profile by a profile without Trakt:
+  // the account progress must still fill the row, not an empty one.
+  fonteTeste = AJ_CWF_TRAKT; traktAtivoTeste = 0; traktFalhouTeste = 1;
+  n = montarContinuar(lote, 12);
+  assert(n == 5 && porId(lote, n, "tt101:1:3")->progresso == 40);
   prog_esquecer_tudo();
   puts("cwlocal: IMDb/TMDB/Kitsu/provider cache, offline/uncached progress, base+type identity and original thresholds ok");
 }

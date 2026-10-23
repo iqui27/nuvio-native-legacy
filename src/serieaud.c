@@ -741,7 +741,9 @@ static int eixoBruto(int i, int eixo) {
 // dado diz que nao ha (ou que ainda vem), nunca desenha numero inventado.
 #define BL_CAB      104.0f    // titulo + linha de apoio
 #define BL_GAP       24.0f
-#define BL_ESQ_W    884.0f
+#include "telefoneui.h"
+static int blocoEmpilhado(void) { return telefoneui_ativo() && NV_TELA_W < 1500; }
+#define BL_ESQ_W    (blocoEmpilhado() ? NV_TELA_W - 192.0f : 884.0f)
 #define BL_RET_H    396.0f
 #define BL_DIG_H    380.0f
 #define BL_PAD       34.0f
@@ -751,7 +753,9 @@ static int eixoBruto(int i, int eixo) {
 
 static TextoGate gateBloco;
 void serieaud_bloco_reiniciar(void) { textogate_reiniciar(&gateBloco); }
-float serieaud_bloco_altura(void) { return BL_CAB + BL_RET_H + BL_GAP + BL_DIG_H; }
+float serieaud_bloco_altura(void) {
+  return BL_CAB + BL_RET_H + BL_GAP + BL_DIG_H + (blocoEmpilhado() ? BL_GAP + 480 : 0);
+}
 
 // Frase de estado de um cartao sem dado: tres situacoes diferentes, e dizer
 // uma pela outra faz a secao parecer quebrada.
@@ -921,6 +925,33 @@ static void cardRetencao(GfxRect c, const SaBloco *b, int usar, float a) {
 #undef BL_RY
 }
 
+// Minimo e maximo de cada eixo na temporada (so episodios com dado).
+static void extremos(int *mini, int *maxi) {
+  int i, e;
+  for (e = 0; e < SA_NEIXOS; e++) { mini[e] = 0x7fffffff; maxi[e] = -1; }
+  for (i = 0; i < nEps; i++)
+    for (e = 0; e < SA_NEIXOS; e++) {
+      int v = eixoBruto(i, e);
+      if (v < 0) continue;
+      if (v < mini[e]) mini[e] = v;
+      if (v > maxi[e]) maxi[e] = v;
+    }
+}
+
+// A fracao 0..1 que pinta o quadrado, em %: a nota e v/10, os outros eixos a
+// posicao na temporada. -1 sem dado.
+static float celFracao(int i, int e, const int *mini, const int *maxi) {
+  int v = eixoBruto(i, e);
+  if (v < 0) return -1.0f;
+  if (e == SA_NOTA) return (float)v / 100.0f;
+  return maxi[e] > mini[e] ? (float)(v - mini[e]) / (float)(maxi[e] - mini[e]) : 1.0f;
+}
+
+static int celPct(int i, int e, const int *mini, const int *maxi) {
+  float f = celFracao(i, e, mini, maxi);
+  return f < 0.0f ? -1 : (int)(f * 100.0f + 0.5f);
+}
+
 static void cardDigital(GfxRect c, const SaBloco *b, int usar, float a) {
   float px = c.x + BL_PAD, pw = c.w - BL_PAD * 2.0f, py = c.y + 30.0f;
   float labW = 130.0f, gx = px + labW, gw = pw - labW, cw;
@@ -937,14 +968,7 @@ static void cardDigital(GfxRect c, const SaBloco *b, int usar, float a) {
     for (i = 0; i < nEps; i++)
       for (e = 0; e < SA_NEIXOS; e++) if (eixoBruto(i, e) >= 0) { n++; e = SA_NEIXOS; }
   if (!usar || n < 1) { mensagem(px, py, pw, estadoVazio(b->aberto), a); return; }
-  for (e = 0; e < SA_NEIXOS; e++) { mini[e] = 0x7fffffff; maxi[e] = -1; }
-  for (i = 0; i < nEps; i++)
-    for (e = 0; e < SA_NEIXOS; e++) {
-      int v = eixoBruto(i, e);
-      if (v < 0) continue;
-      if (v < mini[e]) mini[e] = v;
-      if (v > maxi[e]) maxi[e] = v;
-    }
+  extremos(mini, maxi);
   cw = (gw - BL_CEL_GAP * (float)(nEps - 1)) / (float)nEps;
   if (cw > 90.0f) cw = 90.0f;
   while (cw * (float)passoNum < 26.0f && passoNum < nEps) passoNum++;
@@ -970,15 +994,27 @@ static void cardDigital(GfxRect c, const SaBloco *b, int usar, float a) {
     for (i = 0; i < nEps; i++) {
       GfxRect q = { gx + (cw + BL_CEL_GAP) * (float)i, ry, cw, BL_CEL_H };
       float rr = raioPx(q.w, q.h, 9.0f);
-      int v = eixoBruto(i, e);
+      int v = eixoBruto(i, e), pct = celPct(i, e, mini, maxi);
+      int claro = 0;
       if (v < 0) gfx_cor(q, rr, 1, 1, 1, 0.06f * a);
       else if (e == SA_NOTA) {
         float cr, cg, cb;
         notasui_cor_rampa(v, &cr, &cg, &cb);
         gfx_cor(q, rr, cr, cg, cb, a);
       } else {
-        float t = maxi[e] > mini[e] ? (float)(v - mini[e]) / (float)(maxi[e] - mini[e]) : 1.0f;
+        float t = celFracao(i, e, mini, maxi);
         gfx_cor(q, rr, EIXO[e].r, EIXO[e].g, EIXO[e].b, (0.30f + 0.70f * t) * a);
+        claro = t < 0.6f;   // quadrado quase transparente: texto escuro some
+      }
+      // A porcentagem dentro do quadrado, como no mapa de notas (mesma fonte,
+      // texto escuro; escondida quando a celula e pequena).
+      if (pct >= 0 && cw >= 40.0f && BL_CEL_H >= 28.0f) {
+        char pv[8];
+        TxtLinha pl;
+        snprintf(pv, sizeof pv, "%d%%", pct);
+        pl = claro ? txt_linha(TXT_LOG_19B, pv, 245, 245, 245, 255)
+                   : txt_linha(TXT_LOG_19B, pv, 13, 18, 16, 255);
+        txt_desenhar_alpha(pl, q.x + (cw - (float)pl.w) * 0.5f, q.y + (BL_CEL_H - (float)pl.h) * 0.5f, a);
       }
       if (i == b->sel) gfx_anel_fora(q, rr, 2.0f, 2.0f, 1, 1, 1, 0.85f * a);
     }
@@ -1050,9 +1086,10 @@ float serieaud_bloco(float x, float y, const SaBloco *b, float a) {
   cardRetencao((GfxRect){ x, y0, BL_ESQ_W, BL_RET_H }, b, usar, aa);
   cardDigital((GfxRect){ x, y0 + BL_RET_H + BL_GAP, BL_ESQ_W, BL_DIG_H }, b, usar, aa);
   notasui_mapa_card(b->notas,
-                    (GfxRect){ x + BL_ESQ_W + BL_GAP, y0,
-                               NV_TELA_W - 2.0f * x - BL_ESQ_W - BL_GAP,
-                               BL_RET_H + BL_GAP + BL_DIG_H },
+                    (GfxRect){ blocoEmpilhado() ? x : x + BL_ESQ_W + BL_GAP,
+                               y0 + (blocoEmpilhado() ? BL_RET_H + BL_GAP + BL_DIG_H + BL_GAP : 0),
+                               blocoEmpilhado() ? BL_ESQ_W : NV_TELA_W - 2.0f * x - BL_ESQ_W - BL_GAP,
+                               blocoEmpilhado() ? 480 : BL_RET_H + BL_GAP + BL_DIG_H },
                     b->tempIdx, b->sel, a);
   if (!aberto) textogate_passo(&gateBloco, txt_pendentes - pend0, SDL_GetTicks());
   return alt;

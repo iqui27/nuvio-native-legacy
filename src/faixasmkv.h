@@ -29,6 +29,17 @@
 int faixasmkv_aplicar(VideoFaixa *aud, int nAud, VideoFaixa *leg, int nLeg,
                       const MkvFaixa *fx, int n);
 
+// Fallback de listas diferentes: apenas idiomas unicos, indices em fx ou -1.
+int faixasmkv_legendas_por_idioma(const VideoFaixa *leg, int nLeg,
+                                 const MkvFaixa *fx, int n, int *mapa);
+
+// Casamento "sem legendas de imagem" (MKV_CASA_SEM_IMAGEM) so confere contagem:
+// uma TV que esconde um texto e MOSTRA uma PGS casaria errado em silencio.
+// Com idioma dos dois lados (tpk, Tizen), exige que concordem; vazio ou "und"
+// de um dos lados nao contradiz. `idx[i]` = indice em `fx` da faixa `i` da TV
+// (ou -1). 0 quando alguma contradiz.
+int faixasmkv_idiomas_coerentes(const VideoFaixa *leg, int nLeg, const MkvFaixa *fx, const int *idx);
+
 // "2.0", "5.1", "7.1" ou "" (mesma tabela do sourceInfo da LG, video.c).
 const char *faixasmkv_canais(int canais);
 
@@ -39,8 +50,20 @@ const char *faixasmkv_codec(const char *codecId);
 // #269: a faixa de legenda deste CodecID e desenhada pelo overlay do app,
 // lida do MKV pelo mkvass, em vez do player da TV? ASS/SSA sempre (#92).
 // Texto simples (S_TEXT/UTF8 = SRT, S_TEXT/WEBVTT) so quando `textoSimples`
-// — o .tpk, cujo player nao entrega o texto da legenda embutida (#269).
-// Imagem (PGS/VobSub) e desconhecido: nunca.
+// — LG e .tpk (#421); Android recebe texto do Media3.
+// Imagem (PGS/VobSub) nao entra aqui: faixasmkv_imagem_overlay.
 int faixasmkv_overlay(const char *codecId, int textoSimples);
+
+// Legenda de imagem que o app decodifica e desenha (PGS) no lugar do player.
+int faixasmkv_imagem_overlay(const char *codecId);
+int faixasmkv_tem_imagem(const MkvFaixa *fx, int n);
+// Acrescenta ao fim de `leg` (de `nLeg` entradas, ate `max`) as faixas de imagem
+// do arquivo que o player nao lista, com numero -1 (sem faixa no player) e o
+// ordinalMkv do arquivo. Idempotente. Devolve o novo `nLeg`.
+int faixasmkv_acrescentar_imagem(VideoFaixa *leg, int nLeg, int max, const MkvFaixa *fx, int n);
+
+// Append omitted ASS/SSA/SRT/WebVTT tracks for the LG overlay. Native entries
+// stay unchanged; recovered entries have unique negative numbers. Idempotent.
+int faixasmkv_acrescentar_texto(VideoFaixa *leg, int nLeg, int max, const MkvFaixa *fx, int n);
 
 #endif

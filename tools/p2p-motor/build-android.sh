@@ -12,13 +12,12 @@ set -eu
 cd "$(dirname "$0")/../.."
 . tools/p2p-motor/pasta.sh; nv_p2p_raiz
 W="${1:-${NV_P2P_RAIZ:-/Volumes/ExternalSSD/nuvio-p2p-motor}/android}"
-COMMIT=02938d7
 SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 NDK="$SDK/ndk/27.2.12479018"
 [ -d "$NDK" ] || { echo "build-android.sh: NDK ausente em $NDK" >&2; exit 1; }
 mkdir -p "$W"
 [ -d "$W/nuvio-engine/.git" ] || git clone -q https://github.com/NuvioMedia/nuvio-engine "$W/nuvio-engine"
-git -C "$W/nuvio-engine" checkout -q "$COMMIT"
+nv_p2p_fonte "$W/nuvio-engine"
 E="$W/nuvio-engine"
 
 sed -e 's/^abis=(.*/abis=(armeabi-v7a arm64-v8a)/' -e 's/^targets=(.*/targets=(android-arm android-arm64)/' \

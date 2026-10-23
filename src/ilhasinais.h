@@ -10,7 +10,8 @@
 // estado que ja tinham. Tambem e daqui que sai o que cada botao de modal faz.
 //
 // O QUE ESTA LIGADO (texto, tipo, prazo e chave do mockup):
-//   pedido de amizade   ACENTO 10 s "pedido:<pub>"  modal Aceitar / Recusar
+//   pedido de amizade   ACENTO  6 s "pedido:<pub>"  modal Aceitar / Recusar;
+//                       "dito" (avisodisp) so depois de APARECER (ilha_mostrou)
 //   amizade nova        OK      6 s "amigo:<id>"    (contatos que entraram)
 //   Trakt desconectado  ERRO    9 s "trakt"         modal Reconectar / Depois
 //   debrid sem plano    ERRO    8 s "debrid-plano"  uma vez por servico/sessao

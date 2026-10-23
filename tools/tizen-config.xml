@@ -2,7 +2,7 @@
 <widget xmlns="http://www.w3.org/ns/widgets"
         xmlns:tizen="http://tizen.org/ns/widgets"
         id="http://nuvio.tv/native"
-        version="2.0.1"
+        version="2.0.8"
         viewmodes="maximized">
 
   <!-- required_version 5.5: e a partir dele que a TV executa WebAssembly
@@ -36,6 +36,7 @@
        nivel acima do certificado faz a instalacao falhar inteira com
        MISMATCHED_PRIVILEGE_LEVEL — nao e degradacao, e recusa. -->
   <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://developer.samsung.com/privilege/productinfo"/>
   <tizen:privilege name="http://tizen.org/privilege/appmanager.launch"/>
   <!-- tv.inputdevice: sem ele registerKey nao funciona e o firmware engole as
        teclas coloridas, as de midia e o Return, entregando so setas e OK. E o

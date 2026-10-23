@@ -45,6 +45,8 @@
 #include "ilhaacao.h"
 #define NV_ESCALA_TELA_ATIVA   // mede pela tela do fator ativo (escala.h)
 #include "escala.h"
+#include "ponteiro.h"
+#include "rolagemtoque.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -121,6 +123,17 @@ static float focoAnim[RE_MAXL];
 // (entra 24 px de lado, como as folhas) e a rolagem da lista.
 static float wAnim, hAnim, troca = 1.0f, rolar;
 static int   trocaDir = 1, assentar_ = 1;
+#ifdef NV_TOUCH_UI
+static ToqueRolagem toque;
+static float toquePasso;
+static void toqueRetomar(void);
+static int toqueRolar(const PonteiroRolagem *e) {
+  PonteiroRolagem local = *e;
+  if (!aberto || teclado_aberto() || pagina == RE_PAG_ENVIO || toquePasso <= 0.0f) return 0;
+  local.delta /= toquePasso;
+  return toquerol_evento(&toque, &local);
+}
+#endif
 
 static int teclaOk(SDL_Keycode k) {
   return k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE;
@@ -218,6 +231,9 @@ static void abrirComum(void) {
   confirmandoRemover = -1;
   memset(focoAnim, 0, sizeof focoAnim);
   troca = 1.0f; rolar = 0.0f; assentar_ = 1;
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toque);
+#endif
   recarregarContatos();
   // A lista ja esta no aparelho (recomenda.c a guarda do ultimo ciclo); o
   // pedido em paralelo e para o caso de um amigo ter entrado desde a ultima
@@ -303,6 +319,9 @@ static void irPara(int pag, int novoFoco) {
   trocaDir = pag == RE_PAG_AMIGOS || pag > pagina ? 1 : -1;
   if (pagina == RE_PAG_AMIGOS && pag != RE_PAG_AMIGOS) trocaDir = -1;
   pagina = pag;
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toque);
+#endif
   foco = novoFoco; topo = 0;
   confirmandoRemover = -1;
   aviso[0] = 0;
@@ -380,6 +399,9 @@ void recenviar_evento(const SDL_Event *e) {
   if (!aberto) return;
   if (teclado_aberto()) { teclado_evento(e); return; }
   if (e->type != SDL_KEYDOWN) return;
+#ifdef NV_TOUCH_UI
+  if (toquerol_navegacao(e)) toqueRetomar();
+#endif
   k = e->key.keysym.sym;
   // Repeticao automatica NUNCA e uma segunda escolha: quem quer clicar duas
   // vezes solta e aperta de novo. Sem isto, o OK ainda afundado que veio do
@@ -626,7 +648,10 @@ void recenviar_atualizar(float dt, Uint32 agora) {
       hAnim = anim_mola(hAnim, g.h, dt, NV_MOLA_FOCO * 0.6f);
     }
     troca = red ? 1.0f : anim_mola(troca, 1.0f, dt, NV_MOLA_FOCO * 0.5f);
-    rolar = red ? (float)topo : anim_mola(rolar, (float)topo, dt, NV_MOLA_FOCO * 0.7f); }
+#ifdef NV_TOUCH_UI
+    if (!toquerol_livre(&toque))
+#endif
+      rolar = red ? (float)topo : anim_mola(rolar, (float)topo, dt, NV_MOLA_FOCO * 0.7f); }
 }
 
 // --- DESENHO -----------------------------------------------------------------
@@ -634,13 +659,7 @@ void recenviar_atualizar(float dt, Uint32 agora) {
 // A ilha: o material da folha de Fontes e do menu do cartaz (vidro com a
 // opacidade e o Frost configurados, ou o solido equivalente).
 static void ilhaMaterial(GfxRect p, float a) {
-  float raio = RE_RAIO / (p.h > 1.0f ? p.h : 1.0f);
-  if (ajustes_vidro()) {
-    gfx_rect((GfxRect){p.x-18.0f,p.y-8.0f,p.w+36.0f,p.h+40.0f},
-             0,GFX_SOMBRA,1.0f,0,0,.5f,0,0,0,.38f*a);
-    gfx_vidro_folha(p,raio,a);
-    gfx_luz_canto(p, raio, p.w * .22f, -p.h * .40f, p.w * .62f, 1, 1, 1, .06f * a);
-  } else plrui_material(p, RE_RAIO, 1, a);
+  plrui_material(p, RE_RAIO, 1, a);
 }
 
 // O ROSTO de 52: a foto, ou o disco na cor do id com a inicial em 20/700
@@ -734,10 +753,59 @@ static void desenhaLinha(int i, float x, float y, float w, float a) {
 
 // A LISTA, com a rolagem em mola e recortada na janela. A barra fina a direita
 // so aparece quando ha mais linhas do que cabem.
+// PONTEIRO (#99): foco pela MESMA variavel das setas (`foco`, com a janela
+// acertada como no ↑ ↓); o OK do clique segue por recenviar_evento (aplicar).
+// Idempotente; com o teclado aberto ou no resultado do envio nao mexe.
+static void ponteiroLinha(int i, int b) {
+  (void)b;
+  if (!aberto || teclado_aberto() || pagina == RE_PAG_ENVIO) return;
+  if (i < 0 || i >= nLinhas()) return;
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toque);
+#endif
+  foco = i; confirmandoRemover = -1; ajustarJanela();
+}
+int recenviar_teste_foco(int *pag) { if (pag) *pag = pagina; return foco; }
+#ifdef NV_TOUCH_UI
+static void toqueRetomar(void) {
+  if (toquerol_livre(&toque) && nLinhas() > 0) {
+    float ponto = rolar * toquePasso + toque.regiao.h * 0.35f, y = 0.0f;
+    int i;
+    for (i = 0; i + 1 < nLinhas(); i++) {
+      if (pagina == RE_PAG_AMIGOS && i == 2 && nCtts > 0) y += RE_SECAO;
+      if (y + alturaLinha(i) >= ponto) break;
+      y += alturaLinha(i) + RE_L_GAP;
+    }
+    foco = i;
+  }
+  toquerol_limpar(&toque);
+  ajustarJanela();
+}
+#endif
+
 static void desenhaLista(float x, float y, float w, float a) {
   int i, n = nLinhas(), jan = janela();
   float visH = listaAltura(topo, jan);
+  // So assentada: a entrada e a troca de passo paradas e a lista sem rolar.
+  int reg = aberto && anim > 0.99f && anim < 1.01f && troca > 0.99f &&
+            !teclado_aberto() &&
+#ifdef NV_TOUCH_UI
+            (toquerol_livre(&toque) ||
+#endif
+            (rolar > (float)topo - 0.01f && rolar < (float)topo + 0.01f)
+#ifdef NV_TOUCH_UI
+            )
+#endif
+            ;
   float passo = (pagina == RE_PAG_MODELOS ? RE_L_FRASE : RE_L_PESSOA) + RE_L_GAP;
+#ifdef NV_TOUCH_UI
+  if (reg) {
+    toquePasso = passo;
+    toquerol_vincular(&toque, (GfxRect){ x, y, w, visH }, gfx_escala(), 0.0f,
+                      fmaxf(0.0f, listaAltura(0, n) - visH) / passo, 1, &rolar);
+    ponteiro_rolagem(toqueRolar);
+  }
+#endif
   float desl = (rolar - (float)topo) * passo;
   int rola = n > jan;
   if (rola) gfx_recorte(x - 12.0f, y - 4.0f, w + 24.0f, visH + 8.0f);
@@ -749,8 +817,10 @@ static void desenhaLista(float x, float y, float w, float a) {
           plrui_kicker("Seus amigos", x + 12.0f, yy + 12.0f, 243, 242, 239, .45f * a);
         yy += RE_SECAO;
       }
-      if (yy + h >= y - passo && yy <= y + visH + passo)
+      if (yy + h >= y - passo && yy <= y + visH + passo) {
+        if (reg) ponteiro_alvo_faixa(x, yy, w, h, y - 4.0f, y + visH + 4.0f, ponteiroLinha, NULL, i, 0);
         desenhaLinha(i, x, yy, w, a);
+      }
       yy += h + RE_L_GAP;
     } }
   if (rola) {
@@ -913,6 +983,7 @@ static void recenviar_desenharCorpo_(Uint32 agora) {
 
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0,
           (ajustes_vidro() ? 0.34f : 0.46f) * anim);
+  gfx_vidro_cobrir();
   // A ILHA no tamanho da mola, centrada; entra subindo 40 px.
   cx = NV_TELA_W * 0.5f;
   cy = NV_TELA_H * 0.5f + (1.0f - a) * 40.0f;

@@ -29,4 +29,7 @@ for i in $(seq 50); do nc -z 127.0.0.1 $((P + 1)) 2>/dev/null && nc -z 127.0.0.1
 "$D/http" "http://127.0.0.1:$P/f/ff.mkv" 2>/dev/null | tee "$D/h1" | grep -q 'fase=2 motivo=ok doc=1 n=113' || { cat "$D/h1"; echo "http completo falhou"; exit 1; }
 "$D/http" "http://127.0.0.1:$P/redir/ff.mkv" 2>/dev/null | tee "$D/h2" | grep -q 'fase=2 motivo=ok doc=1 n=113' || { cat "$D/h2"; echo "http redirect falhou"; exit 1; }
 "$D/http" "http://127.0.0.1:$((P + 1))/f/ff.mkv" 2>/dev/null | tee "$D/h3" | grep -q 'motivo=no_range doc=0 n=0 pedidos=1 bytes=0' || { cat "$D/h3"; echo "http sem Range falhou"; exit 1; }
-echo "legref http: completo, redirect e sem-Range ok"
+# Fonte de addon com proxyHeaders: sem os cabecalhos do player o CDN recusa.
+"$D/http" "http://127.0.0.1:$P/ref/ff.mkv" 2>/dev/null | tee "$D/h4" | grep -q 'motivo=network' || { cat "$D/h4"; echo "http sem Referer devia falhar"; exit 1; }
+CABS=$'User-Agent: Nuvio\nReferer: https://addon.test/' "$D/http" "http://127.0.0.1:$P/ref/ff.mkv" 2>/dev/null | tee "$D/h5" | grep -q 'fase=2 motivo=ok doc=1 n=113' || { cat "$D/h5"; echo "http com Referer do addon falhou"; exit 1; }
+echo "legref http: completo, redirect, sem-Range e cabecalhos do addon ok"

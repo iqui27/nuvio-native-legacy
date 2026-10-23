@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nuvio 2.1 · Home com Coleções e fileiras</title>
+<link rel="stylesheet" href="tv.css">
+<style>
+.pg{position:absolute;left:200px;right:0;top:0;bottom:0}
+.fil{position:absolute;left:0;right:0}
+.cab{display:flex;align-items:baseline;gap:14px;margin:0 0 18px}
+.cab .h2{font-size:28px}
+.cab .dica{margin-left:auto;margin-right:96px;font-size:16px;color:var(--mut2)}
+.trem{display:flex;gap:24px;align-items:flex-start}
+.cwt{font-size:20px;font-weight:600;margin-top:14px;color:rgba(243,242,239,.72)}
+.cws{font-size:17px;color:var(--mut2);margin-top:4px}
+.cz.foco~.cwt{color:#fff;margin-top:20px}
+.cz.foco~.cws{color:var(--mut)}
+.novo{position:absolute;left:12px;top:12px;z-index:1;font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;background:var(--ac);color:var(--tinta);padding:6px 10px;border-radius:999px}
+.quando{position:absolute;left:12px;top:12px;z-index:1;font-size:14px;font-weight:700;background:rgba(10,10,12,.75);padding:6px 10px;border-radius:999px}
+/* coleção: cartazes em leque sobre a arte */
+.col{width:520px;height:292px;border-radius:22px;padding:22px 26px;display:flex;flex-direction:column;justify-content:flex-end}
+.col .leque{position:absolute;right:22px;top:22px;display:flex}
+.col .leque .cz{width:96px;height:144px;border-radius:10px;margin-left:-34px;box-shadow:-8px 8px 20px rgba(0,0,0,.45)}
+.col .leque .cz::after{display:none}
+.col .nome{font-size:28px;font-weight:700;position:relative}
+.col .det{font-size:17px;color:var(--mut);margin-top:6px;position:relative}
+.col .trilho{margin-top:14px;width:200px}
+.col.foco{transform:scale(1.04);transition:transform .18s}
+.num{position:absolute;left:12px;top:10px;z-index:1;font-size:40px;font-weight:800;color:rgba(255,255,255,.92);text-shadow:0 2px 12px rgba(0,0,0,.6)}
+.prox{position:absolute;left:12px;right:12px;bottom:12px;z-index:1;font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--tinta);background:var(--ac);border-radius:999px;padding:6px 10px;text-align:center}
+</style>
+</head>
+<body>
+
+<section class="quadro">
+<p class="leg"><b>1A · Home</b> — Continuar assistindo e Próximos episódios logo abaixo do destaque; cada fileira diz de onde vem.</p>
+<div class="caixa"><div class="tv">
+  <div class="arte a1"></div><div class="veu"></div>
+  <div class="ilha relogio">20:41<span class="s"></span><span class="av" style="background:#7c5cff">M</span></div>
+  <nav class="ilha rail" aria-label="Menu">
+    <a class="ativo" data-f><span data-i="home"></span></a><a data-f><span data-i="explorar"></span></a><a data-f><span data-i="guia"></span></a><a data-f><span data-i="busca"></span></a><a data-f><span data-i="biblio"></span></a><a data-f><span data-i="agenda"></span></a><a data-f><span data-i="perfil"></span></a><a data-f><span data-i="ajustes"></span></a>
+  </nav>
+  <div class="pg">
+    <div style="position:absolute;left:0;top:140px;width:860px">
+      <div class="mk"><i></i>Em destaque · AIOMetadata</div>
+      <div style="font-size:92px;font-weight:800;letter-spacing:.04em;line-height:.95;margin:18px 0 20px">OS RELOJOEIROS</div>
+      <div class="meta">Série<span class="pt"></span>2 temporadas<span class="pt"></span>2025<span class="pt"></span><span class="tag">16</span><span class="tag">4K</span><span class="tag">DV</span><span class="pt"></span>IMDb 7,9</div>
+      <p class="sub" style="margin:18px 0 26px;max-width:760px">Numa cidade onde o tempo é racionado, uma família de relojoeiros descobre que alguém está vendendo horas que não existem.</p>
+      <div style="display:flex;gap:16px"><span class="btn" data-f><span data-i="play"></span>Continuar T2:E5</span><span class="btn" data-f><span data-i="info"></span>Detalhes</span><span class="btn redondo" data-f><span data-i="mais"></span></span></div>
+    </div>
+
+    <div class="fil" style="top:596px">
+      <div class="cab"><span class="h2">Continuar assistindo</span><span class="org">Trakt · este aparelho</span></div>
+      <div class="trem">
+        <div><div class="cz a2 foco" data-f style="width:400px;height:225px"><b>Estação Ômega</b><div class="trilho" style="position:absolute;left:14px;right:14px;bottom:10px;z-index:1"><i style="width:62%"></i></div></div><div class="cwt">Estação Ômega · T1:E8 “Silêncio no anel”</div><div class="cws">faltam 19 min · visto ontem</div></div>
+        <div><div class="cz a1" data-f style="width:400px;height:225px"><b>Os Relojoeiros</b><div class="trilho" style="position:absolute;left:14px;right:14px;bottom:10px;z-index:1"><i style="width:34%"></i></div></div><div class="cwt">Os Relojoeiros · T2:E5</div><div class="cws">faltam 31 min</div></div>
+        <div><div class="cz a8" data-f style="width:400px;height:225px"><b>Sal e Cinza</b><div class="trilho" style="position:absolute;left:14px;right:14px;bottom:10px;z-index:1"><i style="width:81%"></i></div></div><div class="cwt">Sal e Cinza</div><div class="cws">faltam 22 min</div></div>
+        <div><div class="cz a7" data-f style="width:400px;height:225px"><b>Torre do Vento</b><div class="trilho" style="position:absolute;left:14px;right:14px;bottom:10px;z-index:1"><i style="width:12%"></i></div></div><div class="cwt">Torre do Vento · E14</div><div class="cws">faltam 21 min</div></div>
+      </div>
+    </div>
+
+    <div class="fil" style="top:990px">
+      <div class="cab"><span class="h2">Próximos episódios</span><span class="org">Trakt · Simkl</span></div>
+      <div class="trem">
+        <div class="cz a10" data-f style="width:400px;height:225px"><span class="novo">Novo</span><b>Meridiano</b></div>
+        <div class="cz a13" data-f style="width:400px;height:225px"><span class="quando">sex · 21:00</span><b>Corrente Fria</b></div>
+        <div class="cz a4" data-f style="width:400px;height:225px"><b>Terra Baixa</b></div>
+        <div class="cz a5" data-f style="width:400px;height:225px"><span class="novo">Novo</span><b>Noite Âmbar</b></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+</section>
+
+<section class="quadro">
+<p class="leg"><b>1B · Home, mais abaixo</b> — Coleções do add-on viram fileira; uma coleção fixada mostra ordem, vistos e o próximo.</p>
+<div class="caixa"><div class="tv">
+  <div class="arte a2" style="opacity:.5"></div><div class="fundo"></div>
+  <div class="ilha relogio">20:42<span class="s"></span><span class="av" style="background:#7c5cff">M</span></div>
+  <nav class="ilha rail" aria-label="Menu">
+    <a class="ativo" data-f><span data-i="home"></span></a><a data-f><span data-i="explorar"></span></a><a data-f><span data-i="guia"></span></a><a data-f><span data-i="busca"></span></a><a data-f><span data-i="biblio"></span></a><a data-f><span data-i="agenda"></span></a><a data-f><span data-i="perfil"></span></a><a data-f><span data-i="ajustes"></span></a>
+  </nav>
+  <div class="pg">
+    <div class="fil" style="top:120px">
+      <div class="cab"><span class="h2">Coleções</span><span class="org">AIOMetadata · Nuvio</span><span class="dica">Segure OK: fixar na Home · mover · ocultar</span></div>
+      <div class="trem">
+        <div class="vid col foco" data-f>
+          <div class="leque"><div class="cz a2"></div><div class="cz a10"></div><div class="cz a7"></div><div class="cz a13"></div></div>
+          <div class="nome">Saga Estação Ômega</div><div class="det">4 filmes · 2 vistos · fixada na Home</div><div class="trilho"><i style="width:50%"></i></div>
+        </div>
+        <div class="vid col" data-f>
+          <div class="leque"><div class="cz a8"></div><div class="cz a1"></div><div class="cz a11"></div></div>
+          <div class="nome">Trilogia do Deserto</div><div class="det">3 filmes · nenhum visto</div>
+        </div>
+        <div class="vid col" data-f>
+          <div class="leque"><div class="cz a12"></div><div class="cz a4"></div><div class="cz a9"></div><div class="cz a5"></div></div>
+          <div class="nome">Do mesmo diretor: Vento Leste</div><div class="det">6 títulos · 1 visto</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fil" style="top:520px">
+      <div class="cab"><span class="h2">Saga Estação Ômega</span><span class="org">coleção fixada · em ordem de lançamento</span></div>
+      <div class="trem">
+        <div class="cz a2" data-f style="width:200px;height:300px"><span class="num">1</span><span class="visto"><span data-i="ok"></span></span><b>Estação Ômega</b></div>
+        <div class="cz a10" data-f style="width:200px;height:300px"><span class="num">2</span><span class="visto"><span data-i="ok"></span></span><b>Ômega: Deriva</b></div>
+        <div class="cz a7" data-f style="width:200px;height:300px"><span class="num">3</span><b style="bottom:52px">Ômega: Anel</b><span class="prox">Próximo</span></div>
+        <div class="cz a13" data-f style="width:200px;height:300px"><span class="num">4</span><b>Ômega: Retorno</b></div>
+        <div style="width:1px;height:300px;background:rgba(255,255,255,.1);margin:0 12px"></div>
+        <div style="width:420px;padding-top:8px"><div class="kick">A coleção mostra</div><p class="sub" style="margin:10px 0 0;font-size:19px">Ordem do add-on, o que você já viu e qual é o próximo. Igual ao Continuar, mas para filmes que não são série.</p></div>
+      </div>
+    </div>
+
+    <div class="fil" style="top:920px">
+      <div class="cab"><span class="h2">Premiados da década</span><span class="org">AIOMetadata</span><span class="chip on" style="height:40px;font-size:15px;margin-left:12px">vistos ocultos</span></div>
+      <div class="trem">
+        <div class="cz a3" data-f style="width:200px;height:300px"><b>Fogo Lento</b></div>
+        <div class="cz a11" data-f style="width:200px;height:300px"><b>Os Silenciosos</b></div>
+        <div class="cz a14" data-f style="width:200px;height:300px"><b>Céu de Chumbo</b></div>
+        <div class="cz a9" data-f style="width:200px;height:300px"><b>Ponte Quebrada</b></div>
+        <div class="cz a6" data-f style="width:200px;height:300px"><b>Asfalto</b></div>
+        <div class="cz a12" data-f style="width:200px;height:300px"><b>Norte Selvagem</b></div>
+        <div class="cz a5" data-f style="width:200px;height:300px"><b>Noite Âmbar</b></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+</section>
+
+<script src="tv.js"></script>
+</body>
+</html>

@@ -4,6 +4,8 @@
 #include "legenda.h"
 #include "assrender.h"
 #include "dados.h"
+#include "imgsub.h"
+#include "pgs.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,15 +27,16 @@
 // Blocos que COMECARAM ate isto atras do playhead ainda entram: uma fala longa
 // ou um letreiro de 8 s que comecou antes do seek precisa aparecer.
 #define MKVASS_ATRAS_SEG 8.0
+#define MKVASS_LATERAL_SEG 12.0
 // Teto de Ranges por segundo de relogio. O fio de rede compete com o pipeline
 // pela MESMA conexao/servidor (ver a nota de 320 KB em mkv.c); 8 pedidos
 // pequenos por segundo e uma fracao do que um segmento de video custa.
 #ifndef MKVASS_RANGES_POR_SEG
-#define MKVASS_RANGES_POR_SEG 8
+#define MKVASS_RANGES_POR_SEG 3
 #endif
 // Dois blocos do MESMO Cluster a menos de isto um do outro saem num Range so:
 // baixar 64 KB de video no meio custa menos que um round-trip a mais na TV.
-#define MKVASS_JUNTAR      (64L * 1024)
+#define MKVASS_JUNTAR      (256L * 1024)
 // Primeira leitura do arquivo: SeekHead, Info e Tracks moram nos primeiros KB
 // em tudo que ffmpeg e mkvmerge produzem. Se o SeekHead apontar para fora, o
 // elemento e buscado onde ele diz.
@@ -56,16 +59,71 @@
 // quadro-chave de video fica em algumas centenas de KB.
 #define MKVASS_CUES_MAX    (4L * 1024 * 1024)
 #define MKVASS_CUES_1      (256L * 1024)
-// Teto de blocos e de corpo. O mesmo teto de legenda.c (LEG_MAX_CUES): mais
-// do que isto o overlay nao aceita de qualquer forma.
-#define MKVASS_MAX_PONTOS  8000
+// Teto do INDICE (pontos) e do CORPO (texto colhido). Sao coisas diferentes, e
+// trata-las como uma so foi o #384: o indice parava em 8000 pontos ("o mesmo
+// teto de legenda.c, mais que isto o overlay nao aceita") e, num anime com
+// karaoke e letreiro quadro a quadro, os 8000 acabavam junto com a abertura —
+// dali ate o fim do episodio nao havia fala, e a colheita ainda fechava
+// "completo: 8000/8000". Um ponto custa ~40 bytes: o indice cobre a faixa
+// INTEIRA (o Cues tem teto proprio, MKVASS_CUES_MAX, que nem chega a tantos
+// pontos). O que tem de caber na memoria da TV e o corpo, e esse fica na
+// JANELA do playhead quando passa de MKVASS_CORPO_ALTO (ver despejar).
+#ifndef MKVASS_MAX_PONTOS
+#define MKVASS_MAX_PONTOS  200000
+#endif
+#ifndef MKVASS_CORPO_MAX
 #define MKVASS_CORPO_MAX   (16L * 1024 * 1024)
+#endif
+// A faixa INTEIRA so e colhida em segundo plano ate este tanto de pontos — o
+// teto antigo do indice, ou seja, exatamente o que a 2.0.2 ja colhia. Acima
+// disso a faixa e colhida SO na janela do playhead, desde o primeiro bloco:
+// o #384 nao pode virar o #308/#385 (o leitor lateral pedindo Range demais ao
+// CDN do debrid, que freia e derruba o VIDEO). Uma faixa de 20 mil blocos em
+// segundo plano seriam milhares de Ranges que ninguem pediu para ver.
+#ifndef MKVASS_PONTOS_INTEIRA
+#define MKVASS_PONTOS_INTEIRA 8000
+#endif
+// Acima disto o corpo deixa de ser "a faixa inteira" e passa a ser a janela.
+// A folga ate MKVASS_CORPO_MAX e para o grupo que estiver chegando.
+#ifndef MKVASS_CORPO_ALTO
+#define MKVASS_CORPO_ALTO  (MKVASS_CORPO_MAX / 4 * 3)
+#endif
+// O que o despejo tenta manter em volta do playhead; encolhe (ate
+// MKVASS_ATRAS_SEG atras e MKVASS_URGENTE_SEG a frente) enquanto o que fica
+// passar de metade de MKVASS_CORPO_ALTO.
+#define MKVASS_MANTER_ATRAS_SEG  30.0
+#define MKVASS_MANTER_FRENTE_SEG (2.0 * MKVASS_JANELA_SEG)
+// Dois pontos a menos disto um do outro nao sao separados pelo corte do
+// despejo: a linha do corpo guarda o inicio em centesimos, e o corte so e
+// exato (nenhuma linha fica do lado errado do seu ponto) com folga entre eles.
+#define MKVASS_DESPEJO_FOLGA_SEG 0.025
 // Falhas de Range seguidas antes de desistir (NOGO_REDE). Entre uma e outra
 // o fio RECUA (0,5, 1, 2, 4 s): antes eram 500 ms fixos, e cinco pedidos em
 // 2,5 s contra um CDN que acabou de recusar uma conexao so repetiam a recusa.
 // NOGO_REDE nao e o fim: faixas.c tenta de novo com recuo, sem limite, enquanto
 // a faixa estiver escolhida (ver mkvass_recuo_ms).
 #define MKVASS_FALHAS_MAX  5
+// Pausa apos o CDN pedir calma (#308) e recuo entre falhas: so os testes
+// encurtam (-D); na TV valem 10 s (dobra ate 60 s) e 0,5 s (ate 8 s).
+#ifndef MKVASS_PAUSA_CDN_INI_MS
+#define MKVASS_PAUSA_CDN_INI_MS 10000L
+#endif
+#ifndef MKVASS_PAUSA_CDN_MAX_MS
+#define MKVASS_PAUSA_CDN_MAX_MS 60000L
+#endif
+#ifndef MKVASS_RECUO_INI_MS
+#define MKVASS_RECUO_INI_MS 500L
+#endif
+#ifndef MKVASS_RECUO_MAX_MS
+#define MKVASS_RECUO_MAX_MS 8000L
+#endif
+static long pausasCdn;   // quantas pausas de CDN o modulo ja fez (testes)
+// #385: os fios do mkvass sao leitura LATERAL ao video (rede_lateral). Fraca:
+// os testes que trocam rede.c por um transporte local nao precisam defini-la.
+__attribute__((weak)) void rede_lateral(int sim) { (void)sim; }
+// Conexao que nem abriu (curl 6, 7, 35): o no do CDN recusou, sumiu ou
+// derrubou o aperto de mao. Mesma familia do "CDN pediu calma" do #308.
+static int conexaoRecusada(int e) { return e == 6 || e == 7 || e == 35; }
 // Janela menor da varredura, depois de estouros de prazo: cada estouro corta a
 // janela pela metade ate aqui. 64 KB ainda cobre o cabecalho de um Cluster e
 // dezenas de blocos de legenda.
@@ -81,6 +139,14 @@
 // Fora do urgente, uma entrega a cada isto no maximo: cada entrega reparseia
 // o corpo inteiro (legenda.c e libass).
 #define MKVASS_ENTREGA_MS  2000L
+// Com o corpo em janela (#384) o documento tem MBs e a colheita nunca acaba:
+// ela acompanha o playhead, um Cluster por segundo de filme. Entregar a cada
+// passada seria reparsear esses MBs uma vez por segundo o episodio inteiro.
+// Fora do urgente a entrega espera isto — o que foi colhido esta a mais de
+// MKVASS_URGENTE_SEG do playhead, entao chega com folga.
+#ifndef MKVASS_ENTREGA_JANELA_MS
+#define MKVASS_ENTREGA_JANELA_MS 10000L
+#endif
 // Ranges EM PARALELO. Medido na C9 com a fonte Debridio (23/09): ~1,2 s por
 // Range, qualquer tamanho — um por vez colhia uma fala a cada 1,2 s, e a
 // janela de 90 s levou 49 s. Tres conexoes a mais (o pipeline ja usa uma ou
@@ -147,6 +213,29 @@ static unsigned long lerId(const unsigned char *p, long resta, int *usou) {
   return v;
 }
 
+// POSICAO NO ARQUIVO: 64 bits mesmo no ARM de 32 bits (#269). `long` tem 32
+// bits na TV (webOS e .tpk sao ARMv7): o Segment de um remux 4K passa de
+// 2 GiB, e lerTam o recusava ("nao e MKV", HTTP 0) — e as posicoes do
+// SeekHead e do Cues alem de 2 GiB davam a volta. Tamanhos DENTRO de um
+// buffer continuam `long` (nada em memoria passa de 2 GiB).
+typedef long long Off;
+
+// Tamanho de elemento que pode passar de 2 GiB (o Segment). -1 invalido, -2
+// desconhecido.
+static Off lerTam64(const unsigned char *p, long resta, int *usou) {
+  int w, i, todosUm = 1; unsigned long long v;
+  if (resta < 1) return -1;
+  w = larguraDe(p[0]);
+  if (w < 1 || w > 8 || resta < w) return -1;
+  v = p[0] & (0xFF >> w);
+  if ((unsigned char)(p[0] & (0xFF >> w)) != (unsigned char)(0xFF >> w)) todosUm = 0;
+  for (i = 1; i < w; i++) { if (p[i] != 0xFF) todosUm = 0; v = (v << 8) | p[i]; }
+  *usou = w;
+  if (todosUm) return -2;
+  if (v > (unsigned long long)LLONG_MAX) return -1;
+  return (Off)v;
+}
+
 // -1 invalido, -2 tamanho desconhecido.
 static long lerTam(const unsigned char *p, long resta, int *usou) {
   int w, i, todosUm = 1; unsigned long long v;
@@ -186,6 +275,14 @@ static unsigned long lerUint(const unsigned char *p, long n) {
   if (n < 1 || n > 8) return 0;
   for (i = 0; i < n; i++) v = (v << 8) | p[i];
   return v;
+}
+
+// Posicao (SeekPosition, CueClusterPosition): 64 bits, -1 quando nao cabe.
+static Off lerPos(const unsigned char *p, long n) {
+  unsigned long long v = 0; long i;
+  if (n < 1 || n > 8) return -1;
+  for (i = 0; i < n; i++) v = (v << 8) | p[i];
+  return v > (unsigned long long)LLONG_MAX ? -1 : (Off)v;
 }
 
 // Itera os filhos de um elemento: a cada chamada devolve id, ponteiro para os
@@ -241,26 +338,26 @@ static int proximo(Iter *it, unsigned long *id, const unsigned char **dados, lon
 // --- estado ------------------------------------------------------------------
 
 typedef struct {
-  long          cluster;   // posicao ABSOLUTA do elemento Cluster no arquivo
+  Off           cluster;   // posicao ABSOLUTA do elemento Cluster no arquivo
   long          rel;       // CueRelativePosition: a partir dos DADOS do Cluster
   unsigned long tempo;     // CueTime, em unidades de TimestampScale
   unsigned char colhido;   // 0 nao; 1 sim; 2 desistiu (bloco nao bate)
-  long          cursor;    // varredura: onde retomar dentro do trecho (0 = do inicio)
+  Off           cursor;    // varredura: onde retomar (posicao absoluta; 0 = do inicio)
   double        cursorTs;  // tempo do Cluster no cursor (-1 = desconhecido). Enquanto
                            // ele passa da janela, o fio dorme SEM tocar a rede.
 } Ponto;
 
 // Varredura sem Cues nenhum: trecho ja lido, em bytes e em tempo de midia.
-typedef struct { long b0, b1; double t0, t1; } Cob;
+typedef struct { Off b0, b1; double t0, t1; } Cob;
 // Janela de bytes da varredura: [ini, ini+n) do arquivo, num buffer so.
 // `eof`: o servidor devolveu menos do que o pedido sem fim conhecido.
-typedef struct { unsigned char *p; long ini, n; int eof; } Janela;
+typedef struct { unsigned char *p; Off ini; long n; int eof; } Janela;
 
 // Cache do cabecalho dos ultimos Clusters visitados: largura do cabecalho
 // (id + tamanho) e Timestamp. Os blocos vem em ordem de tempo, entao os
 // Clusters repetem-se em sequencia — um anel pequeno resolve.
 #define CL_CACHE 16
-typedef struct { long pos; int hdr; unsigned long ts; int temTs; } ClCache;
+typedef struct { Off pos; int hdr; unsigned long ts; int temTs; } ClCache;
 
 typedef struct {
   char *nome;
@@ -268,7 +365,7 @@ typedef struct {
   long tam;
 } FonteMkv;
 
-static struct {
+struct MkvassPreparo {
   pthread_mutex_t trava;
   pthread_cond_t  sinal;
   char     url[4096];       // mesmo limite de Stream.url e video_url_atual
@@ -299,32 +396,100 @@ static struct {
   // escolheu no cabecalho (-1 = ainda nao). `adotar`/`adotarLegG`: o pedido de
   // adocao de faixas.c e a geracao da legenda a que o fio passa a entregar.
   int      prebusca, prebuscaFase, prebuscaOrdinal, adotar;
+  int      lateral;        // conserva pacing nas retomadas de rede
   unsigned adotarLegG;
   int      videoAberto;     // o pipeline esta com a url (mkvass_video_aberto)
   // Inicio do arquivo lido pela pre-busca, para a sonda (mkvass_cabecalho).
   unsigned char *cab;
   long     cabN;
   char     cabUrl[4096];
-} S = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, "", 0, 0,
-        MKVASS_OCIOSO, 0.0, 0, 0, 0, 0, 0, 0, 0, -1.0, 0, "", 0, 0, 0, 0 };
+  LegendaDocumento *referencia;
+  char refUrl[4096];
+  int refFaixa;
+  unsigned referencias;
+  int isolado;
+  void (*destruir)(MkvassPreparo *);
+  void *contextoEscolha;
+  size_t tamanhoContexto;
+  MkvassEscolherCom escolherCom;
+  double fracPreparo;
+};
+
+static MkvassPreparo estadoInicial = {
+  .trava = PTHREAD_MUTEX_INITIALIZER, .sinal = PTHREAD_COND_INITIALIZER,
+  .estado = MKVASS_OCIOSO, .folga = -1.0, .referencias = 1
+};
+static pthread_mutex_t ativoTrava = PTHREAD_MUTEX_INITIALIZER;
+static MkvassPreparo *estadoAtivo = &estadoInicial;
+// Mantem o nome usado pelas provas que incluem este arquivo. A API e os
+// workers abaixo sempre retêm o seu dono; nao seguem este ponteiro mutavel.
+#define S (*estadoAtivo)
+
+static MkvassPreparo *reterEstado(MkvassPreparo *s) {
+  __atomic_add_fetch(&s->referencias, 1, __ATOMIC_RELAXED);
+  return s;
+}
+static void destruirEstado(MkvassPreparo *s) {
+  free(s->cab);
+  legenda_documento_liberar(s->referencia);
+  free(s->contextoEscolha);
+  if (s == &estadoInicial) {
+    s->cab = NULL; s->cabN = 0; s->referencia = NULL; s->contextoEscolha = NULL;
+    return;
+  }
+  pthread_cond_destroy(&s->sinal);
+  pthread_mutex_destroy(&s->trava);
+  free(s);
+}
+static void soltarEstado(MkvassPreparo *s) {
+  void (*destruir)(MkvassPreparo *);
+  if (!s || __atomic_sub_fetch(&s->referencias, 1, __ATOMIC_ACQ_REL)) return;
+  destruir = __atomic_load_n(&s->destruir, __ATOMIC_ACQUIRE);
+  if (destruir) destruir(s);
+}
+static MkvassPreparo *reterAtivo(void) {
+  MkvassPreparo *s;
+  pthread_mutex_lock(&ativoTrava);
+  s = reterEstado(estadoAtivo);
+  pthread_mutex_unlock(&ativoTrava);
+  return s;
+}
+static int estadoDe(MkvassPreparo *s) {
+  int e;
+  pthread_mutex_lock(&s->trava); e = s->estado; pthread_mutex_unlock(&s->trava);
+  return e;
+}
+static void pararEstado(MkvassPreparo *s) {
+  pthread_mutex_lock(&s->trava);
+  if (s->vivos > 0) s->parar = 1;
+  s->prebusca = 0; s->adotar = 0;
+  if (s->prebuscaFase == 1) s->prebuscaFase = 2;
+  if (s->estado != MKVASS_COMPLETO && s->estado < MKVASS_NOGO) s->estado = MKVASS_OCIOSO;
+  s->pos = 0.0;
+  pthread_cond_broadcast(&s->sinal);
+  pthread_mutex_unlock(&s->trava);
+}
 
 // Tudo abaixo e DO FIO: so o fio de colheita toca, sem trava.
 typedef struct {
+  MkvassPreparo *dono;
   unsigned g;
   char     url[sizeof S.url];
   int      faixa;
-  long     segIni;         // onde comecam os dados do Segment
+  Off      segIni;         // onde comecam os dados do Segment
   unsigned long escala;    // TimestampScale (ns por unidade)
-  long     posTracks, posCues, posInfo;   // absolutas; -1 = SeekHead nao disse
-  long     posAttachments;
+  Off      posTracks, posCues, posInfo;   // absolutas; -1 = SeekHead nao disse
+  Off      posAttachments;
+  Off      posSeek2;       // SeekHead que o primeiro aponta (mkvpropedit); -1 nenhum
   int      seekHeadVisto;
-  long     segFim;         // fim do Segment (absoluto); -1 = tamanho desconhecido
-  long     primeiroCluster;// posicao do primeiro Cluster; -1 = ainda nao visto
+  Off      segFim;         // fim do Segment (absoluto); -1 = tamanho desconhecido
+  Off      primeiroCluster;// posicao do primeiro Cluster; -1 = ainda nao visto
   // VARREDURA (ver MKVASS_VARRE_CH): os `pontos` deixam de ser blocos e passam
   // a ser Clusters a varrer (rel = -1). `varreEncadeia`: a lista veio do
   // indice do VIDEO e pode faltar Cluster entre dois pontos — a varredura
   // segue de um ponto ate o Cluster do seguinte; 0 = a lista veio da propria
   // faixa (sem CueRelativePosition) e cada Cluster listado basta.
+  long     pausaMs;        // pausa atual apos freio do CDN (0 = nenhuma); dobra ate 60 s
   int      varredura, varreEncadeia;
   // Modo SEM Cues nenhum (varreInteira): um trecho so, lido por um cursor
   // dentro da janela; seek longe salta por bitrate (varreDur vem do Info) e
@@ -338,10 +503,20 @@ typedef struct {
   Ponto   *pontos;
   int      nPontos, nColhidos;
   char    *corpo;          // cabecalho ASS + linhas Dialogue: colhidas (ou SRT, ver `texto`)
-  // #269: faixa de TEXTO SIMPLES (S_TEXT/UTF8, S_TEXT/WEBVTT), aceita so com
-  // mkvass_aceitar_texto. O corpo e SubRip: o overlay desenha com o estilo do
+  // #421: faixa de TEXTO SIMPLES (S_TEXT/UTF8, S_TEXT/WEBVTT). O corpo e SubRip: o overlay desenha com o estilo do
   // app, igual a legenda externa (que funciona na mesma TV).
   int      texto;
+  // Legenda de IMAGEM (S_HDMV/PGS): `imagem` usa o corpo vazio so para o overlay
+  // reconhecer o dono (`texto` tambem fica ligado e desvia sidecar e despejo).
+  // Os blocos esperam em `pend` (bytes crus, pequenos) ate a adocao e viram
+  // bitmaps no imgsub em entregarImagens. `durCerta`: o bloco trazia
+  // BlockDuration; sem ele o quadro fica na tela ate o proximo.
+  int      imagem, durCerta;
+  Pgs     *pgs;
+  struct PendImg { double ini, fim; unsigned char *b; long n; } *pend;
+  int      nPend, capPend;
+  size_t   bytesPend;
+  int      refInvalida; // forced, letreiro, comentario ou faixa codificada
   size_t   corpoTam, corpoCap;
   ClCache  cl[CL_CACHE];
   int      clProx;
@@ -380,6 +555,7 @@ typedef struct {
   int      segurar, colhidosIni;
   int      entregas;       // 0 = a proxima e a primeira (fontes + carga cheia)
   long     t0, ultEntrega; // ms monotonicos: pedido, ultima entrega
+  long     refUltima; int refColhidos; // snapshot so quando houve progresso
   int      eventosEntregues, primeiraFala;
   double   posRef;         // playhead quando o grupo foi pedido (medida)
   int      atrasados, perdidos, palpites, palpitesFalhos;
@@ -389,7 +565,7 @@ typedef struct {
   // 0 nada; 1 cabecalho pedido; 2 dados pedidos; 3 feito; 4 ADIADO do cabecalho;
   // 5 ADIADO dos dados (uma conexao so: ver buscarFontesAdiadas)
   int      fontesPasso;
-  long     fontesCabN, fontesDadosIni;
+  long     fontesCabN; Off fontesDadosIni;
   int      fontesRepetidas;             // pedidos de fontes refeitos apos falha de rede
   FonteMkv *fontes;
   int      nFontes;
@@ -397,24 +573,53 @@ typedef struct {
   // PRE-BUSCA: `prebusca` = ainda nao adotado (nao entrega); `escolher` decide
   // o ordinal pelo idioma; `fracIni` e onde o player vai comecar; `ordinal` e a
   // faixa escolhida (-1 = nenhuma).
-  int      prebusca, ordinal;
+  int      prebusca, ordinal, lateral;
   MkvassEscolher escolher;
+  MkvassEscolherCom escolherCom;
+  const void *contextoEscolha;
+  int independente;
   double   fracIni;
   // O servidor recusou o resto de um Range cortado (rede_resto_recusado): esta
   // tentativa para e vira MKVASS_NOGO_RESTO, com recuo longo em faixas.c.
   int      restoRecusado;
   int      fontesFalharam; // fontes anexadas indisponiveis: o libass usa as do app
+  // #384 — CORPO EM JANELA. `janela`: o corpo ja passou de MKVASS_CORPO_ALTO
+  // uma vez e deixou de guardar a faixa inteira; dali em diante so se colhe em
+  // volta do playhead (ver despejar). `manterFrente`: quanto a frente o ultimo
+  // despejo conseguiu manter — a colheita nao passa disso, senao baixaria o
+  // que o proximo despejo joga fora. `despejados`: pontos devolvidos a fila.
+  // `despejoPos`: o playhead no ultimo despejo. `cheio`: nem a janela minima
+  // coube; espera o playhead andar.
+  // `indiceCortado`: o Cues tinha mais pontos que MKVASS_MAX_PONTOS.
+  // `corpoCortou`: uma linha nao coube em MKVASS_CORPO_MAX e se perdeu.
+  // Com qualquer um dos dois a faixa NAO esta inteira: nada de "completo".
+  int      janela, cheio, indiceCortado, corpoCortou;
+  double   manterFrente, despejoPos;
+  long     despejados, despejos;
 } Fio;
 
+// Fios construidos pela API sempre têm dono. O fallback so conserva as
+// provas antigas que criam Fio/Job sinteticos com calloc/memset.
+static MkvassPreparo *estadoDoFio(const Fio *f) {
+  return f->dono ? f->dono : &estadoInicial;
+}
+
 // #269: ver mkvass_aceitar_texto. Lido pelo fio no cabecalho.
-static volatile int aceitaTexto;
+#ifdef NV_ANDROID
+static volatile int aceitaTexto; // Media3 ja entrega texto ao overlay.
+#else
+static volatile int aceitaTexto = 1;
+#endif
 void mkvass_aceitar_texto(int sim) { aceitaTexto = sim ? 1 : 0; }
+// Legenda de imagem (PGS) decodificada aqui e desenhada pelo app: so o .tpk liga.
+static volatile int aceitaImagem;
+void mkvass_aceitar_imagem(int sim) { aceitaImagem = sim ? 1 : 0; }
 
 static int minhaVez(const Fio *f) {
   int ok;
-  pthread_mutex_lock(&S.trava);
-  ok = (f->g == S.geracao) && !S.parar;
-  pthread_mutex_unlock(&S.trava);
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  ok = (f->g == estadoDoFio(f)->geracao) && !estadoDoFio(f)->parar;
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
   return ok;
 }
 
@@ -423,16 +628,16 @@ static int minhaVez(const Fio *f) {
 // que o pedido novo pode nascer e o fio velho ainda sobrescrever seu estado.
 static int definirEstadoSeAtual(Fio *f, int e) {
   int ok = 0;
-  pthread_mutex_lock(&S.trava);
-  if (f->g == S.geracao && !S.parar) { S.estado = e; ok = 1; }
-  pthread_mutex_unlock(&S.trava);
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  if (f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar) { estadoDoFio(f)->estado = e; ok = 1; }
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
   return ok;
 }
 
 // Estado do pipeline de video, so para o log das falhas (#92).
-static const char *momentoVideo(void) {
+static const char *momentoVideo(const Fio *f) {
   int v;
-  pthread_mutex_lock(&S.trava); v = S.videoAberto; pthread_mutex_unlock(&S.trava);
+  pthread_mutex_lock(&estadoDoFio(f)->trava); v = estadoDoFio(f)->videoAberto; pthread_mutex_unlock(&estadoDoFio(f)->trava);
   return v ? "com video aberto" : "antes do video";
 }
 
@@ -442,7 +647,7 @@ static const char *momentoVideo(void) {
 static int foraDoTeto(const Fio *f) {
   int v;
   if (!f->prebusca) return 0;
-  pthread_mutex_lock(&S.trava); v = !S.videoAberto; pthread_mutex_unlock(&S.trava);
+  pthread_mutex_lock(&estadoDoFio(f)->trava); v = !estadoDoFio(f)->isolado && !estadoDoFio(f)->videoAberto; pthread_mutex_unlock(&estadoDoFio(f)->trava);
   return v;
 }
 
@@ -480,8 +685,9 @@ static void esperarVez(void) {
 // (rede.c: um handle por fio), e a conexao TLS fica aberta entre pedidos. Um
 // fio novo por pedido pagaria o handshake de novo a cada fala.
 typedef struct Job {
-  char url[sizeof S.url];
-  long ini, n;
+  MkvassPreparo *dono;
+  char url[sizeof estadoInicial.url];
+  Off  ini; long n;
   unsigned char *r; long tam, ms;
   int st, erro;               // HTTP e libcurl da resposta (ver rede_baixar_trecho_st)
   int resto;                  // rede_resto_recusado() do fio do pool, logo apos o pedido
@@ -504,8 +710,22 @@ static int prazoDe(long n) {
   return s > 45 ? 45 : (int)s;
 }
 
+// Geracao velha ou mkvass_parar(): o pedido nao serve mais a ninguem.
+static MkvassPreparo *estadoDoJob(const Job *j) {
+  return j->dono ? j->dono : &estadoInicial;
+}
+
+static int jobObsoleto(const Job *j) {
+  int velho;
+  pthread_mutex_lock(&estadoDoJob(j)->trava);
+  velho = j->g != estadoDoJob(j)->geracao || estadoDoJob(j)->parar;
+  pthread_mutex_unlock(&estadoDoJob(j)->trava);
+  return velho;
+}
+
 static void *poolFio(void *u) {
   (void)u;
+  rede_lateral(1);
   for (;;) {
     Job *j; long t;
     pthread_mutex_lock(&PT);
@@ -513,6 +733,19 @@ static void *poolFio(void *u) {
     j = filaIni; filaIni = j->prox; if (!filaIni) filaFim = NULL;
     j->estado = 1;
     pthread_mutex_unlock(&PT);
+    // #330: Range de uma geracao que ja passou (a pessoa abriu outra fonte, ou
+    // saiu do player) nao e baixado: ninguem vai usa-lo (colherJobDe descarta o
+    // corpo) e, numa fila FIFO de 3 fios, ele atrasava os Ranges da fonte nova
+    // e disputava a rede e a CPU com o video. Abrir a mesma serie varias vezes
+    // empilhava ate 8 pre-buscas + as fontes anexadas (MBs) de cada fonte velha.
+    if (jobObsoleto(j)) {
+      j->tam = 0; j->st = j->erro = 0; j->r = NULL; j->resto = 0; j->ms = 0;
+      pthread_mutex_lock(&PT);
+      j->estado = 2;
+      pthread_cond_broadcast(&PFeito);
+      pthread_mutex_unlock(&PT);
+      continue;
+    }
     if (!j->semTeto) esperarVez();
     t = agoraMs();
     j->tam = 0; j->st = j->erro = 0;
@@ -522,9 +755,9 @@ static void *poolFio(void *u) {
     j->ms = agoraMs() - t;
     // Contado AQUI, quando o servidor respondeu, e nao quando o fio consome:
     // a pre-busca consumida em rajada parecia 10 pedidos num segundo.
-    pthread_mutex_lock(&S.trava);
-    if (j->g == S.geracao && !S.parar) { S.pedidos++; if (j->r) S.bytes += j->tam; }
-    pthread_mutex_unlock(&S.trava);
+    pthread_mutex_lock(&estadoDoJob(j)->trava);
+    if (j->g == estadoDoJob(j)->geracao && !estadoDoJob(j)->parar) { estadoDoJob(j)->pedidos++; if (j->r) estadoDoJob(j)->bytes += j->tam; }
+    pthread_mutex_unlock(&estadoDoJob(j)->trava);
     pthread_mutex_lock(&PT);
     j->estado = 2;
     pthread_cond_broadcast(&PFeito);
@@ -533,9 +766,10 @@ static void *poolFio(void *u) {
   return NULL;
 }
 
-static Job *submeter(Fio *f, long ini, long n) {
+static Job *submeter(Fio *f, Off ini, long n) {
   Job *j = calloc(1, sizeof *j);
   if (!j) return NULL;
+  j->dono = reterEstado(estadoDoFio(f));
   snprintf(j->url, sizeof j->url, "%s", f->url);
   j->ini = ini; j->n = n; j->g = f->g; j->semTeto = foraDoTeto(f);
   pthread_mutex_lock(&PT);
@@ -544,7 +778,7 @@ static Job *submeter(Fio *f, long ini, long n) {
     if (pthread_create(&t, NULL, poolFio, NULL) != 0) break;
     pthread_detach(t); poolFios++;
   }
-  if (!poolFios) { pthread_mutex_unlock(&PT); free(j); return NULL; }
+  if (!poolFios) { pthread_mutex_unlock(&PT); soltarEstado(j->dono); free(j); return NULL; }
   if (filaFim) filaFim->prox = j; else filaIni = j;
   filaFim = j;
   pthread_cond_signal(&PTem);
@@ -565,7 +799,7 @@ static void contarRede(Fio *f, long ms) {
 // Recusa que NAO passa tentando de novo a mesma url: arquivo que sumiu (404,
 // 410), link sem permissao (401), pedido mal formado (400) e 416 no byte 0 (o
 // servidor nao serve Range nenhum). 416 mais adiante e so "passou do fim".
-static int httpDefinitivo(int st, long ini) {
+static int httpDefinitivo(int st, Off ini) {
   return st == 400 || st == 401 || st == 404 || st == 410 || (st == 416 && ini == 0);
 }
 // FREIO do CDN: 429 (pedidos demais), 503 (ocupado) e 403 — que os CDNs de
@@ -574,14 +808,14 @@ static int httpDefinitivo(int st, long ini) {
 static int httpFreio(int st) { return st == 403 || st == 429 || st == 503; }
 
 static void publicarAprendido(Fio *f) {
-  pthread_mutex_lock(&S.trava);
-  if (f->g == S.geracao && !S.parar) {
-    S.ultHttp = f->ultSt; S.ultCurl = f->ultErro;
-    S.paralelos = f->paralelos; S.varreCh = f->varreCh;
-    if (strcmp(f->url, f->urlOrig)) snprintf(S.urlFinal, sizeof S.urlFinal, "%s", f->url);
-    else S.urlFinal[0] = 0;
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  if (f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar) {
+    estadoDoFio(f)->ultHttp = f->ultSt; estadoDoFio(f)->ultCurl = f->ultErro;
+    estadoDoFio(f)->paralelos = f->paralelos; estadoDoFio(f)->varreCh = f->varreCh;
+    if (strcmp(f->url, f->urlOrig)) snprintf(estadoDoFio(f)->urlFinal, sizeof estadoDoFio(f)->urlFinal, "%s", f->url);
+    else estadoDoFio(f)->urlFinal[0] = 0;
   }
-  pthread_mutex_unlock(&S.trava);
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
 }
 
 // UM Range falhou. Conta a falha e decide O QUE ELA ENSINA (#92):
@@ -599,17 +833,17 @@ static void publicarAprendido(Fio *f) {
 //     do resto voltou com zero bytes. Insistir 0,5-8 s depois so repete a
 //     recusa (medido no relato: 77465 e 11929 bytes, toda vez): a tentativa
 //     para e faixas.c recua 20-60 s (MKVASS_NOGO_RESTO).
-static void falhou(Fio *f, long ini, long n, int st, int erro, int resto) {
+static void falhou(Fio *f, Off ini, long n, int st, int erro, int resto) {
   int def;
   f->falhas++;
   f->ultSt = st; f->ultErro = erro;
-  printf("[mkvass] Range %ld+%ld falhou: HTTP %d, curl %d (%d seguida(s), %d conexao(oes) extra(s), url %s, %s)\n",
+  printf("[mkvass] Range %lld+%ld falhou: HTTP %d, curl %d (%d seguida(s), %d conexao(oes) extra(s), url %s, %s)\n",
          ini, n, st, erro, f->falhas, f->paralelos, strcmp(f->url, f->urlOrig) ? "final" : "original",
-         momentoVideo());
+         momentoVideo(f));
   if (resto && !f->restoRecusado) {
     f->restoRecusado = 1;
-    printf("[mkvass] servidor recusou o resto do Range %ld+%ld (0 bytes depois do corte, %s): "
-           "esta tentativa para\n", ini, n, momentoVideo());
+    printf("[mkvass] servidor recusou o resto do Range %lld+%ld (0 bytes depois do corte, %s): "
+           "esta tentativa para\n", ini, n, momentoVideo(f));
   }
   def = httpDefinitivo(st, ini) || (st == 403 && f->paralelos <= 1 && f->freios > 0);
   if (def) {
@@ -624,6 +858,18 @@ static void falhou(Fio *f, long ini, long n, int st, int erro, int resto) {
       f->falhas = MKVASS_FALHAS_MAX;
       printf("[mkvass] HTTP %d: recusa definitiva, nao adianta tentar de novo\n", st);
     }
+  } else if (conexaoRecusada(erro)) {
+    // #385: o host do video RECUSOU a conexao (no registro do .tpk, o no do
+    // CDN do TorBox, 11 vezes em 13-15 s com o video aberto). Nada de mais
+    // quatro Ranges com recuo de 0,5-8 s: esta rodada acaba aqui (a pre-busca
+    // desiste, o cabecalho e o Cues voltam no-go de rede para faixas.c recuar,
+    // o laco dos blocos pausa como no #308) e, quando voltar, UMA conexao
+    // extra. rede.c ja pos o host em pausa: ate ela vencer, nenhum Range
+    // lateral abre conexao a ele.
+    f->falhas = MKVASS_FALHAS_MAX;
+    f->paralelos = 1;
+    printf("[mkvass] host do video recusou conexao (curl %d, %s): sem nova tentativa agora, "
+           "leitura da legenda em pausa\n", erro, momentoVideo(f));
   } else {
     if (httpFreio(st)) f->freios++;
     // curl 18/56 aqui e um corte que NEM o resto trouxe (rede.c ja junta os
@@ -661,23 +907,28 @@ static void conferirCorte(Fio *f) {
 
 // Recuo entre falhas seguidas DENTRO do fio: 0,5, 1, 2, 4, 8 s. Acorda antes
 // so para parar ou trocar de faixa — o playhead andando nao encurta o recuo.
+static void esperarMs(Fio *f, long ms);
 static void recuar(Fio *f) {
-  long ms = 500L, ate;
+  long ms = MKVASS_RECUO_INI_MS;
   int k;
-  for (k = 1; k < f->falhas && ms < 8000L; k++) ms *= 2;
-  if (ms > 8000L) ms = 8000L;
-  ate = agoraMs() + ms;
+  for (k = 1; k < f->falhas && ms < MKVASS_RECUO_MAX_MS; k++) ms *= 2;
+  if (ms > MKVASS_RECUO_MAX_MS) ms = MKVASS_RECUO_MAX_MS;
+  esperarMs(f, ms);
+}
+
+static void esperarMs(Fio *f, long ms) {
+  long ate = agoraMs() + ms;
   while (minhaVez(f)) {
     long falta = ate - agoraMs();
     struct timespec rt;
     if (falta <= 0) break;
     if (falta > 250) falta = 250;
-    pthread_mutex_lock(&S.trava);
+    pthread_mutex_lock(&estadoDoFio(f)->trava);
     clock_gettime(CLOCK_REALTIME, &rt);
     rt.tv_nsec += falta * 1000000L;
     while (rt.tv_nsec >= 1000000000L) { rt.tv_sec++; rt.tv_nsec -= 1000000000L; }
-    if (f->g == S.geracao && !S.parar) pthread_cond_timedwait(&S.sinal, &S.trava, &rt);
-    pthread_mutex_unlock(&S.trava);
+    if (f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar) pthread_cond_timedwait(&estadoDoFio(f)->sinal, &estadoDoFio(f)->trava, &rt);
+    pthread_mutex_unlock(&estadoDoFio(f)->trava);
   }
 }
 
@@ -691,22 +942,22 @@ static void recuar(Fio *f) {
 // vem e so fonte: o libass desenha com as do app. Tambem nao vira recusa
 // definitiva nem freio: quem decide isso sao os Ranges da propria legenda.
 static unsigned char *colherJobDe(Fio *f, Job *j, long *tam, int fontes) {
-  unsigned char *r; int atual, st, erro, resto; long ini, n;
+  unsigned char *r; int atual, st, erro, resto; Off ini; long n;
   pthread_mutex_lock(&PT);
   while (j->estado != 2) pthread_cond_wait(&PFeito, &PT);
   pthread_mutex_unlock(&PT);
   r = j->r; *tam = j->tam;
   st = j->st; erro = j->erro; ini = j->ini; n = j->n; resto = j->resto;
   contarRede(f, j->ms);
-  free(j);
-  pthread_mutex_lock(&S.trava);
-  atual = f->g == S.geracao && !S.parar;
-  pthread_mutex_unlock(&S.trava);
+  soltarEstado(j->dono); free(j);
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  atual = f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar;
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
   if (!atual) { free(r); *tam = 0; return NULL; }
   if (!r && fontes) {
     f->ultSt = st; f->ultErro = erro;
-    printf("[mkvass] Range %ld+%ld (fontes anexadas) falhou: HTTP %d, curl %d (%s%s) — nao conta "
-           "como falha da legenda\n", ini, n, st, erro, momentoVideo(), resto ? ", resto recusado" : "");
+    printf("[mkvass] Range %lld+%ld (fontes anexadas) falhou: HTTP %d, curl %d (%s%s) — nao conta "
+           "como falha da legenda\n", ini, n, st, erro, momentoVideo(f), resto ? ", resto recusado" : "");
     fflush(stdout);
     return NULL;
   }
@@ -721,7 +972,7 @@ static unsigned char *colherJob(Fio *f, Job *j, long *tam) { return colherJobDe(
 // pedido ao pool (pre-busca do laco), espera aquele em vez de pedir de novo.
 static int avancarFontes(Fio *f, int esperar);
 
-static unsigned char *range(Fio *f, long ini, long n, long *tam) {
+static unsigned char *range(Fio *f, Off ini, long n, long *tam) {
   char *r; int atual, k, st = 0, erro = 0, pedirFinal = !f->finalVisto; long t;
   char fin[sizeof f->url];
   for (k = 0; k < MKVASS_PREBUSCA; k++)
@@ -736,7 +987,7 @@ static unsigned char *range(Fio *f, long ini, long n, long *tam) {
   // deste sair — mas SO ELE (#92, v1.4.7): o passo seguinte e os pedidos de
   // novo ficam adiados (avancarFontes com esperar 1). Antes o Cues esperava o
   // anexo de 5,6 MB inteiro, e as quatro falhas dele contavam como da legenda.
-  if (f->paralelos <= 1 && f->jobFontes && !foraDoTeto(f)) avancarFontes(f, 1);
+  if (f->jobFontes && !foraDoTeto(f)) avancarFontes(f, 1);
   // PRE-BUSCA fora do teto por segundo: o teto existe para nao disputar a
   // conexao com o VIDEO, e ele ainda nao comecou. Quem segura o ritmo ali e
   // MKVASS_PARALELOS (e o freio do CDN, que derruba para uma conexao).
@@ -746,13 +997,13 @@ static unsigned char *range(Fio *f, long ini, long n, long *tam) {
   r = rede_baixar_trecho_st(f->url, prazoDe(n), ini, ini + n - 1, tam, &st, &erro,
                             pedirFinal ? fin : NULL, sizeof fin);
   contarRede(f, agoraMs() - t);
-  pthread_mutex_lock(&S.trava);
-  atual = f->g == S.geracao && !S.parar;
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  atual = f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar;
   if (atual) {
-    S.pedidos++;
-    if (r) S.bytes += *tam;
+    estadoDoFio(f)->pedidos++;
+    if (r) estadoDoFio(f)->bytes += *tam;
   }
-  pthread_mutex_unlock(&S.trava);
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
   if (!atual) { free(r); *tam = 0; return NULL; }
   if (!r) { falhou(f, ini, n, st, erro, rede_resto_recusado()); return NULL; }
   f->falhas = 0;
@@ -783,7 +1034,7 @@ static unsigned char *range(Fio *f, long ini, long n, long *tam) {
 // faixas.c — devolviam a faixa a TV com "falha de rede" em poucos segundos.
 // Agora cada um insiste com recuo, como os blocos, ate MKVASS_FALHAS_MAX ou
 // uma recusa definitiva.
-static unsigned char *rangeInsistir(Fio *f, long ini, long n, long *tam) {
+static unsigned char *rangeInsistir(Fio *f, Off ini, long n, long *tam) {
   for (;;) {
     unsigned char *p = range(f, ini, n, tam);
     if (p) return p;
@@ -807,7 +1058,17 @@ static int corpoAnexar(Fio *f, const char *s, size_t n) {
     size_t nc = f->corpoCap ? f->corpoCap : 8192;
     char *nv;
     while (nc < f->corpoTam + n + 1) nc *= 2;
-    if (nc > MKVASS_CORPO_MAX) return 0;
+    if (nc > MKVASS_CORPO_MAX) {
+      // A linha se perde. Antes isto era calado e a faixa ainda fechava
+      // "completo"; agora fica marcado (ver corpoCortou na struct).
+      if (!f->corpoCortou) {
+        f->corpoCortou = 1;
+        printf("[mkvass] corpo no teto de %ld KB com %zu KB colhidos: uma fala de %zu bytes ficou de fora "
+               "(a faixa nao fecha completa)\n", (long)(MKVASS_CORPO_MAX / 1024), f->corpoTam / 1024, n);
+        fflush(stdout);
+      }
+      return 0;
+    }
     nv = realloc(f->corpo, nc);
     if (!nv) return 0;
     f->corpo = nv; f->corpoCap = nc;
@@ -825,6 +1086,11 @@ static int corpoAnexar(Fio *f, const char *s, size_t n) {
 // Effect, Text) e nao a ordem que o arquivo original declarou — o bloco do
 // Matroska ja vem SEM Start/End e com ReadOrder na frente, entao a ordem do
 // arquivo nao serve para nada aqui.
+// A secao de eventos que o modulo abre. O despejo (#384) acha por ela onde o
+// cabecalho acaba e as linhas Dialogue: comecam.
+static const char CORPO_EVENTOS[] = "\n[Events]\nFormat: Layer, Start, End, Style, Name, "
+                                    "MarginL, MarginR, MarginV, Effect, Text\n";
+
 static int montarCabecalho(Fio *f, const unsigned char *priv, long n) {
   const char *ev;
   size_t ate = (size_t)n;
@@ -837,9 +1103,7 @@ static int montarCabecalho(Fio *f, const unsigned char *priv, long n) {
   if (!corpoAnexar(f, tmp, ate)) { free(tmp); return 0; }
   free(tmp);
   if (f->corpoTam && f->corpo[f->corpoTam - 1] != '\n') corpoAnexar(f, "\n", 1);
-  { static const char EV[] = "\n[Events]\nFormat: Layer, Start, End, Style, Name, "
-                             "MarginL, MarginR, MarginV, Effect, Text\n";
-    return corpoAnexar(f, EV, sizeof EV - 1); }
+  return corpoAnexar(f, CORPO_EVENTOS, sizeof CORPO_EVENTOS - 1);
 }
 
 static int extensaoFonte(const char *nome, const char *mime) {
@@ -950,6 +1214,35 @@ static void tempoAss(double s, char *dst, size_t tam) {
   snprintf(dst, tam, "%d:%02d:%02d.%02ld", h, m, sec, cs);
 }
 
+#define MKVASS_PEND_MAX 512
+#define MKVASS_PEND_BYTES (16u << 20)
+
+// PGS: guarda o bloco cru (RLE, dezenas de KB no maximo) para decodificar na
+// entrega, na ordem de chegada. Sem BlockDuration o fim fica -1.
+static int anexarImagem(Fio *f, const unsigned char *dados, long n, double ini, double fim) {
+  struct PendImg *p;
+  if (n <= 0 || f->nPend >= MKVASS_PEND_MAX || f->bytesPend + (size_t)n > MKVASS_PEND_BYTES) return 0;
+  if (f->nPend == f->capPend) {
+    int c = f->capPend ? f->capPend * 2 : 32;
+    struct PendImg *g = realloc(f->pend, (size_t)c * sizeof *g);
+    if (!g) return 0;
+    f->pend = g; f->capPend = c;
+  }
+  p = &f->pend[f->nPend];
+  p->b = malloc((size_t)n);
+  if (!p->b) return 0;
+  memcpy(p->b, dados, (size_t)n);
+  p->n = n; p->ini = ini; p->fim = f->durCerta ? fim : -1.0;
+  f->nPend++; f->bytesPend += (size_t)n;
+  return 1;
+}
+
+static void soltarPendentes(Fio *f) {
+  int i;
+  for (i = 0; i < f->nPend; i++) free(f->pend[i].b);
+  f->nPend = 0; f->bytesPend = 0;
+}
+
 // Bloco "ReadOrder,Layer,Style,Name,MarginL,MarginR,MarginV,Effect,Text" ->
 // "Dialogue: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text".
 static int anexarEvento(Fio *f, const unsigned char *dados, long n,
@@ -959,6 +1252,7 @@ static int anexarEvento(Fio *f, const unsigned char *dados, long n,
   const char *p = (const char *)dados;
   long i = 0, layerIni, layerFim, k;
   size_t w, capacidade;
+  if (f->imagem) return anexarImagem(f, dados, n, ini, fim);
   if (f->texto) return anexarTexto(f, dados, n, ini, fim);
   // Pula ReadOrder; guarda Layer.
   while (i < n && p[i] != ',') i++;
@@ -1006,7 +1300,16 @@ static void nomeSidecar(const char *url, int faixa, char *dst, size_t tam) {
 
 // v3: os tempos passaram a centesimos (ver tempoAss). Sidecars v2 guardam
 // milesimos, que o libass le errado — sao descartados e colhidos de novo.
-#define MARCA_COMPLETO "; mkvass-estado: completo-v3\n"
+// v4 (#384): o "completo-v3" podia ser um corpo TRUNCADO nos 8000 primeiros
+// pontos do indice (a abertura do anime e mais nada), gravado como completo.
+// O completo passa a ser gravado como v4. Um v3 ainda vale quando tem menos
+// eventos do que o teto antigo deixaria num truncado (sidecarCompleto): sao as
+// faixas normais, que nao precisam ser colhidas de novo. O parcial nao muda de
+// versao: ele leva um bit por ponto, e um parcial feito com o indice cortado
+// tem 8000 bits para um indice que agora e maior — restaurarParcial o ignora.
+#define MARCA_COMPLETO    "; mkvass-estado: completo-v4\n"
+#define MARCA_COMPLETO_V3 "; mkvass-estado: completo-v3\n"
+#define MARCA_V3_EVENTOS  7000
 #define MARCA_PARCIAL  "; mkvass-estado: parcial-v3 "
 #define MARCA_FONTES   "NVASS-FONTES-1\n"
 
@@ -1057,12 +1360,37 @@ static unsigned char *b64_decodificar(const char *src, size_t n, size_t *tam) {
   return dst;
 }
 
+// Corpo de um sidecar COMPLETO em que se pode confiar, ou NULL (parcial,
+// outra versao, ou o "completo" truncado da 2.0.2 — ver MARCA_COMPLETO).
+static const char *sidecarCompleto(const char *sc) {
+  const char *corpo, *p; int n = 0;
+  if (!sc) return NULL;
+  if (!strncmp(sc, MARCA_COMPLETO, strlen(MARCA_COMPLETO))) return sc + strlen(MARCA_COMPLETO);
+  if (strncmp(sc, MARCA_COMPLETO_V3, strlen(MARCA_COMPLETO_V3))) return NULL;
+  corpo = sc + strlen(MARCA_COMPLETO_V3);
+  // Um truncado tem os 8000 pontos do teto antigo (menos os desistidos, que
+  // sao raros): na duvida, colhe de novo — custa uma colheita, uma vez.
+  for (p = corpo; n < MARCA_V3_EVENTOS && (p = strstr(p, "\nDialogue: ")) != NULL; p += 11) n++;
+  for (p = corpo; n < MARCA_V3_EVENTOS && (p = strstr(p, " --> ")) != NULL; p += 5) n++;
+  if (n >= MARCA_V3_EVENTOS) {
+    printf("[mkvass] sidecar completo antigo com %d+ eventos: pode estar cortado no teto de 8000, "
+           "a faixa e colhida de novo\n", n);
+    fflush(stdout);
+    return NULL;
+  }
+  return corpo;
+}
+
 static const char *linhaCache(const char **p, size_t *n) {
   const char *ini = *p, *fim = strchr(ini, '\n');
   if (!fim) return NULL;
   *n = (size_t)(fim - ini); *p = fim + 1;
   return ini;
 }
+
+// Somente workers: serializa o par corpo/fontes entre donos independentes.
+// Nenhum Range, renderer ou lock da UI e chamado dentro desta trava.
+static pthread_mutex_t cacheTrava = PTHREAD_MUTEX_INITIALIZER;
 
 static int lerFontesSidecar(Fio *f) {
   char *cache = dados_ler(f->sidecarFontes);
@@ -1108,6 +1436,32 @@ falha:
   liberarFontes(f); free(cache); return 0;
 }
 
+static char *lerSidecar(Fio *f, int *fontesConfirmadas) {
+  char *corpo;
+  pthread_mutex_lock(&cacheTrava);
+  corpo = dados_ler(f->sidecar);
+  *fontesConfirmadas = sidecarCompleto(corpo) && lerFontesSidecar(f);
+  pthread_mutex_unlock(&cacheTrava);
+  return corpo;
+}
+
+// Uma limpeza tardia nao rebaixa um cache completo, validado pelo mesmo
+// leitor de fontes da abertura. Nao troca as fontes ja colhidas por `f`.
+// Quem chama segura cacheTrava.
+static int cacheCompleto(Fio *f) {
+  char *corpo = dados_ler(f->sidecar);
+  int ok = 0;
+  if (sidecarCompleto(corpo)) {
+    Fio prova = {0};
+    snprintf(prova.sidecarFontes, sizeof prova.sidecarFontes, "%s", f->sidecarFontes);
+    ok = lerFontesSidecar(&prova);
+    liberarFontes(&prova);
+  }
+  free(corpo);
+  return ok;
+}
+
+// Quem chama segura cacheTrava durante o par fontes/corpo.
 static int gravarFontesSidecar(Fio *f) {
   size_t cap = strlen(MARCA_FONTES) + 8u, usado;
   char *cache, *p;
@@ -1139,33 +1493,37 @@ static int gravarFontesSidecar(Fio *f) {
 static void gravarSidecar(Fio *f, int completo, int saindo) {
   char *tudo; size_t n, i; int gravou = 0;
   if (!f->corpo || !f->corpoTam || !f->sidecar[0]) return;
-  if (completo && !gravarFontesSidecar(f)) {
-    fprintf(stderr, "[mkvass] cache completo adiado: fontes Matroska nao foram confirmadas\n");
-    return;
-  }
   n = f->corpoTam + 64 + (completo ? 0 : (size_t)f->nPontos);
   tudo = malloc(n + 1);
   if (!tudo) return;
   if (completo) strcpy(tudo, MARCA_COMPLETO);
   else {
+    // Escreve pelo ponteiro: strcat por bit relia a marca inteira a cada um, e
+    // com o indice cobrindo a faixa toda (#384) isso virou dezenas de milhares.
+    char *w;
     strcpy(tudo, MARCA_PARCIAL);
-    for (i = 0; i < (size_t)f->nPontos; i++)
-      strcat(tudo, f->pontos[i].colhido == 1 ? "1" : "0");
-    strcat(tudo, "\n");
+    w = tudo + strlen(tudo);
+    for (i = 0; i < (size_t)f->nPontos; i++) *w++ = f->pontos[i].colhido == 1 ? '1' : '0';
+    *w++ = '\n'; *w = 0;
   }
-  strcat(tudo, f->corpo);
-  // Segura a troca de geracao durante a escrita. O parcial do pedido que esta
-  // sendo parado e valido; um fio velho depois de uma troca nao pode tocar o
-  // mesmo sidecar e contaminar a nova faixa.
-  // SAINDO (parar ou troca de faixa) pode gravar com a geracao ja nova: o fio
-  // seguinte so le o sidecar depois que este morre (espera S.vivos), entao nao
-  // ha contaminacao — e o parcial deixava de ser salvo justo na troca.
-  pthread_mutex_lock(&S.trava);
-  if (f->g == S.geracao || saindo) {
-    dados_gravar_leve(f->sidecar, tudo);
-    gravou = 1;
+  memcpy(tudo + strlen(tudo), f->corpo, f->corpoTam + 1);
+  // Dentro de um dono, o novo fio espera o anterior terminar. Entre donos,
+  // a transacao de cache protege os .tmp e mantem corpo/fontes da mesma
+  // escrita. A UI nao segura nem espera esta trava ao cancelar o preparo.
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  int atual = f->g == estadoDoFio(f)->geracao || saindo;
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
+  if (atual) {
+    pthread_mutex_lock(&cacheTrava);
+    if (!completo && cacheCompleto(f)) {
+      // Preserva um completo que outro dono terminou antes desta limpeza.
+    } else if (completo && !gravarFontesSidecar(f)) {
+      fprintf(stderr, "[mkvass] cache completo adiado: fontes Matroska nao foram confirmadas\n");
+    } else {
+      gravou = dados_gravar_leve(f->sidecar, tudo);
+    }
+    pthread_mutex_unlock(&cacheTrava);
   }
-  pthread_mutex_unlock(&S.trava);
   free(tudo);
   if (!gravou) return;
   printf("[mkvass] sidecar %s gravado (%s, %d/%d blocos, %zu bytes)\n",
@@ -1181,16 +1539,17 @@ static void lerSeekHead(Fio *f, const unsigned char *p, long n) {
   while (proximo(&it, &id, &d, &t)) {
     if (id != ID_SEEK) continue;
     { Iter j = { d, t, 0 }; unsigned long sid; const unsigned char *sd; long st;
-      unsigned long alvo = 0; long pos = -1;
+      unsigned long alvo = 0; Off pos = -1;
       while (proximo(&j, &sid, &sd, &st)) {
         if (sid == ID_SEEKID)  alvo = lerUint(sd, st);
-        if (sid == ID_SEEKPOS) pos  = (long)lerUint(sd, st);
+        if (sid == ID_SEEKPOS) pos  = lerPos(sd, st);
       }
-      if (pos < 0) continue;
+      if (pos < 0 || pos > LLONG_MAX - f->segIni) continue;
       if (alvo == ID_TRACKS)      f->posTracks = f->segIni + pos;
       if (alvo == ID_CUES)        f->posCues = f->segIni + pos;
       if (alvo == ID_INFO)        f->posInfo = f->segIni + pos;
-      if (alvo == ID_ATTACHMENTS) f->posAttachments = f->segIni + pos; }
+      if (alvo == ID_ATTACHMENTS) f->posAttachments = f->segIni + pos;
+      if (alvo == ID_SEEKHEAD)    f->posSeek2 = f->segIni + pos; }
   }
 }
 
@@ -1248,7 +1607,9 @@ static int escolherNoCabecalho(Fio *f, const unsigned char *p, long n) {
     vetor[nLeg] = idiomas[nLeg];
     nLeg++;
   }
-  ord = nLeg && f->escolher ? f->escolher(vetor, nLeg) : -1;
+  ord = nLeg && f->escolherCom
+      ? f->escolherCom(vetor, nLeg, f->contextoEscolha)
+      : nLeg && f->escolher ? f->escolher(vetor, nLeg) : -1;
   if (ord < 0 || ord >= nLeg) {
     printf("[mkvass] pre-busca: %d legenda(s) no arquivo, nenhuma no idioma preferido\n", nLeg);
     fflush(stdout);
@@ -1262,6 +1623,12 @@ static int escolherNoCabecalho(Fio *f, const unsigned char *p, long n) {
   return 0;
 }
 
+// Soltar o player de uma pre-busca de TEXTO: a TV ja desenha a faixa nativa
+// desde o primeiro quadro (faixas.c overlayAssumir, "TV enquanto aguarda
+// texto"), os cues do app chegam em segundo plano e o handoff acontece no
+// PROGRESSO de faixas.c. Nao ha por que segurar o video ate MKVASS_PREBUSCA_MS.
+static void prebuscaTextoSoltar(Fio *f);
+
 // Devolve: 1 achou a faixa e e ASS (ou texto simples aceito); 0 nao achou;
 // -1 achou e nao serve.
 static int lerTracks(Fio *f, const unsigned char *p, long n) {
@@ -1270,7 +1637,7 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
   if (f->faixa == 0 && escolherNoCabecalho(f, p, n) < 0) return -1;
   while (proximo(&it, &id, &d, &t)) {
     Iter j; unsigned long fid; const unsigned char *fd; long ft;
-    int numero = 0, tipo = 0, ehAss = 0, ehTexto = 0; const unsigned char *priv = NULL; long privN = 0;
+    int numero = 0, tipo = 0, ehAss = 0, ehTexto = 0, ehPgs = 0, refInvalida = 0; const unsigned char *priv = NULL; long privN = 0;
     if (id != ID_TRACKENTRY) continue;
     j.p = d; j.n = t; j.o = 0;
     while (proximo(&j, &fid, &fd, &ft)) {
@@ -1281,24 +1648,54 @@ static int lerTracks(Fio *f, const unsigned char *p, long n) {
                              !strncmp((const char *)fd, "S_TEXT/SSA", 10));
         ehTexto = (ft == 11 && !memcmp(fd, "S_TEXT/UTF8", 11)) ||
                   (ft == 13 && !memcmp(fd, "S_TEXT/WEBVTT", 13));
+        ehPgs = ft == 10 && !memcmp(fd, "S_HDMV/PGS", 10);
       }
       else if (fid == ID_CODECPRIV) { priv = fd; privN = ft; }
+      else if (fid == 0x55AA && lerUint(fd, ft)) refInvalida = 1;
+      else if (fid == 0x6D80) refInvalida = 1;
+      else if (fid == 0x536E) {
+        char nome[96]; size_t k = (size_t)ft < sizeof nome - 1 ? (size_t)ft : sizeof nome - 1;
+        memcpy(nome, fd, k); nome[k] = 0;
+        for (size_t x = 0; x < k; x++) if (nome[x] >= 'A' && nome[x] <= 'Z') nome[x] += 'a' - 'A';
+        if (strstr(nome, "forced") || strstr(nome, "sign") || strstr(nome, "song") ||
+            strstr(nome, "letreiro") || strstr(nome, "forzad") || strstr(nome, "forc") ||
+            strstr(nome, "comment") || strstr(nome, "coment")) refInvalida = 1;
+      }
     }
     if (f->faixa < 0) {
       if (tipo != 17 || ordinalLeg++ != -f->faixa - 1) continue;
       f->faixa = numero;
     } else if (numero != f->faixa) continue;
-    // Texto simples: so com o pedido explicito (.tpk) e nunca na pre-busca —
-    // ela segura o video, e na LG a TV desenha SRT bem.
-    if (!ehAss && ehTexto && aceitaTexto && !f->prebusca) {
+    f->refInvalida = refInvalida;
+    // #421: o mesmo SubRip das externas, inclusive na pre-busca.
+    if (!ehAss && ehTexto && aceitaTexto) {
       f->texto = 1;
       f->corpoTam = 0;
       if (!corpoAnexar(f, "", 0)) return -1;
+      if (f->prebusca) prebuscaTextoSoltar(f);
       printf("[mkvass] faixa %d e texto simples (SubRip pelo overlay do app)\n", f->faixa);
       fflush(stdout);
       return 1;
     }
+    if (ehPgs && aceitaImagem) {
+      f->pgs = pgs_novo();
+      if (!f->pgs) return -1;
+      f->texto = f->imagem = 1;
+      f->corpoTam = 0;
+      if (!corpoAnexar(f, "", 0)) return -1;
+      if (f->prebusca) prebuscaTextoSoltar(f);
+      printf("[mkvass] faixa %d e PGS (bitmap decodificado pelo app)\n", f->faixa);
+      fflush(stdout);
+      return 1;
+    }
     if (!ehAss || !priv) return -1;
+    // O libass sobe aqui, com a faixa ASS ja achada, e nao quando o fio nasce:
+    // o aquecimento le a pasta de fontes inteira para a memoria (106 MB na C9,
+    // 2-12 s e +65-120 MB de RSS na webOS) e antes rodava em toda pre-busca,
+    // mesmo para MP4 e MKV sem ASS. 2.0.1: 35 de 38 pessoas com "[ass] libass
+    // iniciado" nunca carregaram uma faixa ASS nesse log.
+    // O proximo episodio somente colhe: nao aquece/troca o renderer atual.
+    if (!f->independente) assrender_preaquecer();
     return montarCabecalho(f, priv, privN) ? 1 : -1;
   }
   return 0;
@@ -1322,7 +1719,7 @@ static long tamCabecalho(const Fio *f) {
 }
 
 static int lerCabecalho(Fio *f) {
-  long n = 0, o = 0; int ui = 0, ut = 0; unsigned long id; long tam;
+  long n = 0, o = 0; int ui = 0, ut = 0; unsigned long id; long tam; Off segTam;
   int achouTracks = 0, achouInfo = 0, achouAttachments = 0, tracksVisto = 0;
   unsigned char *p = rangeInsistir(f, 0, tamCabecalho(f), &n);
   if (!p) return MKVASS_NOGO_REDE;
@@ -1332,12 +1729,12 @@ static int lerCabecalho(Fio *f) {
     unsigned char *c = malloc((size_t)n);
     if (c) {
       memcpy(c, p, (size_t)n);
-      pthread_mutex_lock(&S.trava);
-      if (f->g == S.geracao && !S.parar) {
-        free(S.cab); S.cab = c; S.cabN = n; c = NULL;
-        snprintf(S.cabUrl, sizeof S.cabUrl, "%s", f->urlOrig);
+      pthread_mutex_lock(&estadoDoFio(f)->trava);
+      if (f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar) {
+        free(estadoDoFio(f)->cab); estadoDoFio(f)->cab = c; estadoDoFio(f)->cabN = n; c = NULL;
+        snprintf(estadoDoFio(f)->cabUrl, sizeof estadoDoFio(f)->cabUrl, "%s", f->urlOrig);
       }
-      pthread_mutex_unlock(&S.trava);
+      pthread_mutex_unlock(&estadoDoFio(f)->trava);
       free(c);
     }
   }
@@ -1345,23 +1742,29 @@ static int lerCabecalho(Fio *f) {
   if (tam < 0) { free(p); return MKVASS_NOGO_NAO_MKV; }
   o = ui + ut + tam;
   if (lerId(p + o, n - o, &ui) != ID_SEGMENT) { free(p); return MKVASS_NOGO_NAO_MKV; }
-  tam = lerTam(p + o + ui, n - o - ui, &ut);
-  if (tam == -1) { free(p); return MKVASS_NOGO_NAO_MKV; }
+  // 64 bits: o Segment de um filme 4K passa de 2 GiB (#269).
+  segTam = lerTam64(p + o + ui, n - o - ui, &ut);
+  if (segTam == -1) { free(p); return MKVASS_NOGO_NAO_MKV; }
   o += ui + ut;
   f->segIni = o;
   // O tamanho do Segment e o fim do arquivo para a varredura: pedir alem dele
   // e um 416 que rede.c devolve como falha. -2 = desconhecido (transmissao).
-  f->segFim = tam >= 0 ? o + tam : -1;
+  f->segFim = segTam >= 0 && segTam <= LLONG_MAX - o ? o + segTam : -1;
   f->primeiroCluster = -1;
   f->escala = 1000000UL;
-  f->posTracks = f->posCues = f->posInfo = f->posAttachments = -1;
+  f->posTracks = f->posCues = f->posInfo = f->posAttachments = f->posSeek2 = -1;
   while (o < n) {
     id = lerId(p + o, n - o, &ui);
     if (!id) break;
     tam = lerTam(p + o + ui, n - o - ui, &ut);
     if (tam < 0) break;
     o += ui + ut;
-    if (o + tam > n) break;        // elemento passa da janela: o SeekHead resolve
+    if (o + tam > n) {             // elemento passa da janela: o SeekHead resolve
+      // Sem SeekHead que diga onde esta o Tracks, o proprio inicio dele serve
+      // (#308: Tracks de 96 KB num remux sem SeekHead para ele).
+      if (id == ID_TRACKS && f->posTracks < 0) f->posTracks = f->segIni + (o - ui - ut - f->segIni);
+      break;
+    }
     if (id == ID_SEEKHEAD) { f->seekHeadVisto = 1; lerSeekHead(f, p + o, tam); }
     else if (id == ID_INFO) { lerInfo(f, p + o, tam); achouInfo = 1; }
     else if (id == ID_TRACKS) {
@@ -1401,7 +1804,7 @@ static int lerCabecalho(Fio *f) {
   // Na pre-busca com o video ainda fechado sai em paralelo mesmo assim: nao ha
   // video para disputar a conexao, e depois dele e que o CDN do relato cortava.
   if (!achouAttachments && !f->fontesCompletas && f->posAttachments >= 0) {
-    if (f->paralelos > 1 || foraDoTeto(f)) {
+    if (foraDoTeto(f)) {
       f->jobFontes = submeter(f, f->posAttachments, 64);
       f->fontesPasso = f->jobFontes ? 1 : 3;
     } else f->fontesPasso = 4;
@@ -1416,7 +1819,34 @@ static int lerCabecalho(Fio *f) {
     ui = 0;
     if (lerId(p, n, &ui) != ID_TRACKS) { free(p); return MKVASS_NOGO_SEM_RANGE; }
     tam = lerTam(p + ui, n - ui, &ut);
+    // #308: o CodecPrivate de um fansub (estilos e typesetting) leva o Tracks a
+    // 96 KB; com os 64 KB fixos acima o elemento vinha cortado e a faixa ASS
+    // virava "nao e ASS", indo para a TV como texto simples. Agora pede o
+    // elemento inteiro (teto de MKVASS_CORPO_MAX, o mesmo do corpo ASS).
+    if (tam > 0 && tam <= MKVASS_CORPO_MAX && ui + ut + tam > n) {
+      long total = ui + ut + tam;
+      free(p);
+      p = rangeInsistir(f, f->posTracks, total, &n);
+      if (!p) return MKVASS_NOGO_REDE;
+      ui = 0;
+      if (lerId(p, n, &ui) != ID_TRACKS) { free(p); return MKVASS_NOGO_SEM_RANGE; }
+      tam = lerTam(p + ui, n - ui, &ut);
+    }
     if (tam <= 0 || ui + ut + tam > n) { free(p); return MKVASS_NOGO_FAIXA; }
+    // #308: a sonda de rotulos (mkv.c) le o cabecalho guardado em estadoDoFio(f)->cab; com o
+    // Tracks inteiro agora na mao, estende o cabecalho ate o fim dele.
+    if (f->prebusca && f->posTracks > 0) {
+      pthread_mutex_lock(&estadoDoFio(f)->trava);
+      if (f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar && estadoDoFio(f)->cab && estadoDoFio(f)->cabN >= f->posTracks && estadoDoFio(f)->cabN < f->posTracks + n) {
+        long ptr = (long)f->posTracks, nn = ptr + n;
+        unsigned char *nc = malloc((size_t)nn);
+        if (nc) {
+          memcpy(nc, estadoDoFio(f)->cab, (size_t)ptr); memcpy(nc + ptr, p, (size_t)n);
+          free(estadoDoFio(f)->cab); estadoDoFio(f)->cab = nc; estadoDoFio(f)->cabN = nn;
+        }
+      }
+      pthread_mutex_unlock(&estadoDoFio(f)->trava);
+    }
     achouTracks = lerTracks(f, p + ui + ut, tam);
     free(p);
     if (achouTracks <= 0) return MKVASS_NOGO_FAIXA;
@@ -1426,7 +1856,7 @@ static int lerCabecalho(Fio *f) {
 
 // As fontes podem ir ao pool AGORA, ao lado dos Ranges da legenda? Com mais
 // de uma conexao extra, ou na pre-busca com o video fechado.
-static int fontesEmParalelo(const Fio *f) { return f->paralelos > 1 || foraDoTeto(f); }
+static int fontesEmParalelo(const Fio *f) { return foraDoTeto(f); }
 
 // Anda o pedido das fontes. `esperar`: 0 so olha; 1 espera o pedido que esta
 // no ar (uma conexao so: range() nao sai com ele no ar); 2 espera ate o fim,
@@ -1438,7 +1868,7 @@ static int avancarFontes(Fio *f, int esperar) {
   long n = 0; unsigned char *p;
   if (f->fontesPasso != 1 && f->fontesPasso != 2) return 0;
   if (!esperar && !jobPronto(f->jobFontes)) return 0;
-  { long ji = f->jobFontes->ini, jn = f->jobFontes->n; int resto = 0, passo = f->fontesPasso;
+  { Off ji = f->jobFontes->ini; long jn = f->jobFontes->n; int resto = 0, passo = f->fontesPasso;
     pthread_mutex_lock(&PT); while (f->jobFontes->estado != 2) pthread_cond_wait(&PFeito, &PT);
     resto = f->jobFontes->resto; pthread_mutex_unlock(&PT);
     p = colherJobDe(f, f->jobFontes, &n, 1);
@@ -1501,7 +1931,7 @@ static int avancarFontes(Fio *f, int esperar) {
   if (f->entregas >= 0) f->entregas = 0;
   // Retomada so recarrega se as fontes ainda nao estao no libass desta geracao.
   { int temFontes;
-    pthread_mutex_lock(&S.trava); temFontes = S.fontesLegG && S.fontesLegG == f->legG; pthread_mutex_unlock(&S.trava);
+    pthread_mutex_lock(&estadoDoFio(f)->trava); temFontes = estadoDoFio(f)->fontesLegG && estadoDoFio(f)->fontesLegG == f->legG; pthread_mutex_unlock(&estadoDoFio(f)->trava);
     if (f->nFontes && !temFontes) f->herdar = 0; }
   f->sujo = 1;
   printf("[mkvass] fontes anexadas: %d, %ld ms desde a escolha\n", f->nFontes, agoraMs() - f->t0);
@@ -1514,7 +1944,7 @@ falhou:
   // falhas, que agora nao inclui as fontes).
   f->fontesFalharam = 1;
   printf("[mkvass] fontes anexadas indisponiveis: usando as do app (HTTP %d, curl %d, %s)\n",
-         f->ultSt, f->ultErro, momentoVideo());
+         f->ultSt, f->ultErro, momentoVideo(f));
   fflush(stdout);
   return 0;
 }
@@ -1545,14 +1975,14 @@ static int cmpPonto(const void *a, const void *b) {
 // --- varredura: quando o indice nao aponta os blocos da faixa ------------------
 
 // Um Cluster candidato a varredura: posicao absoluta e o CueTime do indice.
-typedef struct { long cluster; unsigned long tempo; } ClVarre;
+typedef struct { Off cluster; unsigned long tempo; } ClVarre;
 
 static int cmpClVarre(const void *a, const void *b) {
   const ClVarre *x = a, *y = b;
   return x->cluster < y->cluster ? -1 : x->cluster > y->cluster;
 }
 
-static int anexarClVarre(ClVarre **v, int *n, int *cap, long cluster, unsigned long tempo) {
+static int anexarClVarre(ClVarre **v, int *n, int *cap, Off cluster, unsigned long tempo) {
   if (*n >= MKVASS_MAX_PONTOS) return 1;
   if (*n >= *cap) {
     int nc = *cap ? *cap * 2 : 64;
@@ -1570,13 +2000,13 @@ static int anexarClVarre(ClVarre **v, int *n, int *cap, long cluster, unsigned l
 // os Clusters estao e o primeiro nao coube na janela do cabecalho (fontes
 // anexadas de varios MB antes do video, o caso dos fansubs).
 static int acharPrimeiroCluster(Fio *f) {
-  long o = f->segIni; int passos = 0;
+  Off o = f->segIni; int passos = 0;
   while (passos++ < 32 && (f->segFim < 0 || o < f->segFim)) {
-    long n = 0, tam; int ui = 0, ut = 0; unsigned long id;
+    long n = 0; Off tam; int ui = 0, ut = 0; unsigned long id;
     unsigned char *p = rangeInsistir(f, o, 16, &n);
     if (!p) return 0;
     id = lerId(p, n, &ui);
-    tam = id ? lerTam(p + ui, n - ui, &ut) : -1;
+    tam = id ? lerTam64(p + ui, n - ui, &ut) : -1;
     free(p);
     if (!id || tam == -1) return 0;
     if (id == ID_CLUSTER) { f->primeiroCluster = o; return 1; }
@@ -1632,7 +2062,7 @@ static int cuesPorVarredura(Fio *f, const char *porque) {
   if (f->definitivo || !minhaVez(f)) return MKVASS_NOGO_REDE;
   if (!f->restoRecusado && teto <= 0) return MKVASS_NOGO_REDE;
   printf("[mkvass] Cues ilegivel (%s, %s): varrendo os Clusters perto do playhead "
-         "(salto por bitrate, pedidos de ate %ld KB)\n", porque, momentoVideo(),
+         "(salto por bitrate, pedidos de ate %ld KB)\n", porque, momentoVideo(f),
          (teto > 0 ? teto : MKVASS_VARRE_CH) / 1024);
   fflush(stdout);
   // A varredura e outra tentativa: o resto recusado do Cues nao a condena.
@@ -1650,6 +2080,25 @@ static int lerCues(Fio *f) {
   // o indice por bloco nao existe.
   ClVarre *daFaixa = NULL, *doVideo = NULL;
   int nFaixa = 0, capFaixa = 0, nVideo = 0, capVideo = 0;
+  // SEEKHEAD ENCADEADO (dono, 16/10, log 21: Baka and Test [KH] S1-01). O
+  // mkvpropedit, sem espaco no SeekHead do inicio, deixa nele UMA entrada que
+  // aponta para um segundo SeekHead no fim do arquivo, e e esse que diz onde
+  // esta o Cues. Sem segui-lo a legenda baixava o arquivo inteiro (~128 MB por
+  // minuto) achando que nao havia indice.
+  if (f->posCues < 0 && f->posSeek2 > 0) {
+    long n2 = 0; int u1 = 0, u2 = 0;
+    long quer = f->segFim > f->posSeek2 && f->segFim - f->posSeek2 < 4096 ? (long)(f->segFim - f->posSeek2) : 4096;
+    unsigned char *q = rangeInsistir(f, f->posSeek2, quer, &n2);
+    unsigned long id2 = q ? lerId(q, n2, &u1) : 0;
+    long t2 = id2 == ID_SEEKHEAD ? lerTam(q + u1, n2 - u1, &u2) : -1;
+    Off antes = f->posSeek2;
+    if (t2 > 0 && u1 + u2 + t2 <= n2) lerSeekHead(f, q + u1 + u2, t2);
+    f->posSeek2 = -1;   // nunca encadeia de novo
+    printf("[mkvass] faixa %d: segundo SeekHead em %lld (%s): Cues %s\n", f->faixa, (long long)antes,
+           id2 == ID_SEEKHEAD ? "lido" : "ilegivel", f->posCues >= 0 ? "achado" : "nao listado");
+    fflush(stdout);
+    free(q);
+  }
   // Sem Cues no SeekHead: nao ha indice nenhum. Varre do primeiro Cluster.
   if (f->posCues < 0) return armarVarreduraInteira(f) ? 0 : MKVASS_NOGO_SEM_INDICE;
   // UM Range com folga (MKVASS_CUES_1) em vez de "16 bytes para ler o tamanho
@@ -1661,7 +2110,7 @@ static int lerCues(Fio *f) {
   // O fim do Segment tambem limita: nao ha Cues depois dele.
   { long primeiro = MKVASS_CUES_1, t = tetoHost(f);
     if (t > 0 && t < primeiro) primeiro = t;
-    if (f->segFim > f->posCues && f->posCues + primeiro > f->segFim) primeiro = f->segFim - f->posCues;
+    if (f->segFim > f->posCues && f->posCues + primeiro > f->segFim) primeiro = (long)(f->segFim - f->posCues);
     p = rangeInsistir(f, f->posCues, primeiro, &n); }
   if (!p) return cuesPorVarredura(f, f->restoRecusado ? "resto recusado" : "o host corta Range");
   id = lerId(p, n, &ui);
@@ -1705,13 +2154,13 @@ static int lerCues(Fio *f) {
       if (cid == ID_CUETIME) tempo = lerUint(cd, ct);
       else if (cid == ID_CUETRACKPOS) {
         Iter k = { cd, ct, 0 }; unsigned long kid; const unsigned char *kd; long kt;
-        long trk = -1, cl = -1, rel = -1;
+        long trk = -1, rel = -1; Off cl = -1;
         while (proximo(&k, &kid, &kd, &kt)) {
           if (kid == ID_CUETRACK)   trk = (long)lerUint(kd, kt);
-          if (kid == ID_CUECLUSTER) cl  = (long)lerUint(kd, kt);
+          if (kid == ID_CUECLUSTER) cl  = lerPos(kd, kt);
           if (kid == ID_CUERELPOS)  rel = (long)lerUint(kd, kt);
         }
-        if (cl < 0) continue;
+        if (cl < 0 || cl > LLONG_MAX - f->segIni) continue;
         if (trk != f->faixa) {
           if (!anexarClVarre(&doVideo, &nVideo, &capVideo, f->segIni + cl, tempo)) r = MKVASS_NOGO_REDE;
           continue;
@@ -1721,7 +2170,7 @@ static int lerCues(Fio *f) {
         // conhecido e sera lido inteiro (colherCluster). Antes isto mandava a
         // faixa TODA para a varredura.
         if (rel < 0) semRel++;
-        if (f->nPontos >= MKVASS_MAX_PONTOS) continue;
+        if (f->nPontos >= MKVASS_MAX_PONTOS) { f->indiceCortado = 1; continue; }
         if (f->nPontos >= cap) {
           Ponto *nv = realloc(f->pontos, (size_t)cap * 2 * sizeof *nv);
           if (!nv) break;
@@ -1741,6 +2190,11 @@ static int lerCues(Fio *f) {
     free(daFaixa); free(doVideo);
     qsort(f->pontos, (size_t)f->nPontos, sizeof *f->pontos, cmpPonto);
     f->semRel = semRel;
+    if (f->indiceCortado) {
+      printf("[mkvass] faixa %d: o indice tem mais de %d pontos — o que passa disso fica de fora "
+             "e a faixa nao fecha completa\n", f->faixa, MKVASS_MAX_PONTOS);
+      fflush(stdout);
+    }
     if (semRel)
       printf("[mkvass] faixa %d: %d de %d CuePoints sem CueRelativePosition — "
              "o Cluster deles e lido inteiro, na janela do playhead\n", f->faixa, semRel, f->nPontos);
@@ -1770,7 +2224,7 @@ static double segundosDe(const Fio *f, unsigned long unidades) {
 // Cabecalho do Cluster: largura (id + tamanho) e o Timestamp, que e o primeiro
 // filho em tudo que os muxers produzem. Um Range de 24 bytes por Cluster
 // novo; repetidos saem do anel.
-static const ClCache *cluster(Fio *f, long pos) {
+static const ClCache *cluster(Fio *f, Off pos) {
   int i; long n = 0; int ui = 0, ut = 0; long tam; unsigned char *p; ClCache *c;
   for (i = 0; i < CL_CACHE; i++) if (f->cl[i].hdr && f->cl[i].pos == pos) return &f->cl[i];
   p = range(f, pos, 24, &n);
@@ -1883,6 +2337,7 @@ static long lerBloco(Fio *f, const unsigned char *p, long n, const ClCache *cl,
                     : segundosDe(f, cueTempo);
     fim = ini + (temDur ? segundosDe(f, dur) : MKVASS_DUR_PADRAO);
     if (fim <= ini) fim = ini + 0.5;
+    f->durCerta = temDur;
     {
       const unsigned char *frames = bl + vt + 3;
       long framesN = blN - vt - 3, cab, *tams = NULL, off = 0;
@@ -1913,11 +2368,13 @@ static int blocoDaFaixa(const Fio *f, const unsigned char *p, long n);
 
 // Interpreta os pontos [i..j] a partir de um buffer que comeca no byte
 // `bufIni` do arquivo. Mesmo contrato de colherGrupo.
-static int colherDoBuffer(Fio *f, int i, int j, unsigned char *p, long n, long bufIni,
+static int colherDoBuffer(Fio *f, int i, int j, unsigned char *p, long n, Off bufIni,
                           const ClCache *cl) {
   int k;
   for (k = i; k <= j; k++) {
-    long o = f->pontos[k].cluster + cl->hdr + f->pontos[k].rel - bufIni;
+    // A diferenca e pequena (cabe no buffer) so quando o ponto esta nele.
+    Off oo = f->pontos[k].cluster + cl->hdr + f->pontos[k].rel - bufIni;
+    long o = oo >= 0 && oo < n ? (long)oo : -1;
     // So um bloco DESTA faixa vale: lerBloco tambem "aceita" um bloco de video
     // (devolve o tamanho para andar), e o ponto sairia colhido sem fala.
     long r = (o >= 0 && o < n && blocoDaFaixa(f, p + o, n - o))
@@ -1979,14 +2436,14 @@ static int blocoDaFaixa(const Fio *f, const unsigned char *p, long n) {
 // UM lugar que bate; ambiguo ou nenhum, volta ao caminho do cabecalho.
 // Devolve: 1 colheu, 0 rede, -2 resposta curta, 2 palpite nao serviu.
 static int colherPorPalpite(Fio *f, int i, int j) {
-  long cl0 = f->pontos[i].cluster;
-  long base = cl0 + 5 + f->pontos[i].rel;
-  long fim = cl0 + 12 + f->pontos[j].rel + MKVASS_BLOCO;
+  Off cl0 = f->pontos[i].cluster;
+  Off base = cl0 + 5 + f->pontos[i].rel;
+  long len = 7 + f->pontos[j].rel - f->pontos[i].rel + MKVASS_BLOCO;
   long n = 0; unsigned char *p; int h, achou = 0, bate = 0, r;
   ClCache *c;
-  p = range(f, base, fim - base, &n);
+  p = range(f, base, len, &n);
   if (!p) return 0;
-  if (n < fim - base) { free(p); return -2; }
+  if (n < len) { free(p); return -2; }
   for (h = 5; h <= 12; h++)
     if (blocoDaFaixa(f, p + (h - 5), n - (h - 5))) { achou = h; bate++; }
   if (bate != 1) { free(p); f->palpitesFalhos++; return 2; }
@@ -1998,13 +2455,13 @@ static int colherPorPalpite(Fio *f, int i, int j) {
   return r;
 }
 
-static const ClCache *clusterVisto(const Fio *f, long pos) {
+static const ClCache *clusterVisto(const Fio *f, Off pos) {
   int k;
   for (k = 0; k < CL_CACHE; k++) if (f->cl[k].hdr && f->cl[k].pos == pos) return &f->cl[k];
   return NULL;
 }
 
-static int temPre(const Fio *f, long ini, long n) {
+static int temPre(const Fio *f, Off ini, long n) {
   int k;
   for (k = 0; k < MKVASS_PREBUSCA; k++)
     if (f->pre[k] && f->pre[k]->ini == ini && f->pre[k]->n == n) return 1;
@@ -2012,14 +2469,14 @@ static int temPre(const Fio *f, long ini, long n) {
 }
 
 // Da varredura (definidas adiante): a primeira janela de um trecho.
-static long varreTam(const Fio *f, long o, long fim, long precisa);
-static long varreFim(const Fio *f, int i);
+static long varreTam(const Fio *f, Off o, Off fim, long precisa);
+static Off varreFim(const Fio *f, int i);
 
 // O Range que colherGrupo vai pedir para [i..j]: pelo cabecalho conhecido,
 // ou o do palpite.
-static void rangeDoGrupo(const Fio *f, int i, int j, long *ini, long *n) {
+static void rangeDoGrupo(const Fio *f, int i, int j, Off *ini, long *n) {
   const ClCache *cl = clusterVisto(f, f->pontos[i].cluster);
-  long cl0 = f->pontos[i].cluster;
+  Off cl0 = f->pontos[i].cluster;
   // Varredura: a primeira janela do trecho (o mesmo calculo de garantir).
   if (f->varredura || f->pontos[i].rel < 0) { *ini = cl0; *n = varreTam(f, cl0, varreFim(f, i), 16); return; }
   // Palpite ja no ar para este grupo: e ele que colherGrupo vai usar.
@@ -2042,16 +2499,16 @@ static void entregar(Fio *f);
 // Tamanho do proximo pedido da varredura a partir de `o`, sem passar de `fim`
 // (0 = desconhecido). O MESMO calculo na pre-busca (rangeDoGrupo), senao o
 // Range pedido de antemao nao casa com o que a varredura pede.
-static long varreTam(const Fio *f, long o, long fim, long precisa) {
+static long varreTam(const Fio *f, Off o, Off fim, long precisa) {
   long ch = f->varreCh > 0 ? f->varreCh : MKVASS_VARRE_CH;
   long len = precisa > ch ? precisa : ch;
-  if (fim > 0 && o + len > fim) len = fim - o;
+  if (fim > 0 && o + len > fim) len = (long)(fim - o);
   return len;
 }
 
 // Fim do trecho do ponto i: o Cluster do ponto seguinte, ou o fim do Segment
 // (0 = desconhecido: le ate o servidor devolver menos do que o pedido).
-static long varreFim(const Fio *f, int i) {
+static Off varreFim(const Fio *f, int i) {
   // Pelo indice da faixa (colherCluster) o proximo ponto pode ser do MESMO
   // Cluster: o trecho vai ate o fim do Segment e para no fim deste Cluster
   // (varreEncadeia = 0).
@@ -2063,17 +2520,17 @@ static long varreFim(const Fio *f, int i) {
 // quando e o caso. *out aponta para o byte `o`; *disp diz quantos ha dali
 // ate o fim da janela. Devolve 1 ok; 2 acabou o trecho/arquivo; 0 a rede
 // falhou; -2 resposta curta dentro de um fim conhecido (truncada).
-static int garantir(Fio *f, Janela *w, long o, long precisa, long fim,
+static int garantir(Fio *f, Janela *w, Off o, long precisa, Off fim,
                     const unsigned char **out, long *disp) {
   long n = 0, len; unsigned char *p;
-  if (fim > 0 && o + precisa > fim) precisa = fim - o;
+  if (fim > 0 && o + precisa > fim) precisa = (long)(fim - o);
   if (precisa <= 0) return 2;
   if (w->p && o >= w->ini && o + precisa <= w->ini + w->n) {
-    *out = w->p + (o - w->ini); *disp = w->ini + w->n - o; return 1;
+    *out = w->p + (o - w->ini); *disp = (long)(w->ini + w->n - o); return 1;
   }
   if (w->p && w->eof && o >= w->ini) {
     if (o >= w->ini + w->n) return 2;
-    *out = w->p + (o - w->ini); *disp = w->ini + w->n - o; return 1;
+    *out = w->p + (o - w->ini); *disp = (long)(w->ini + w->n - o); return 1;
   }
   len = varreTam(f, o, fim, precisa);
   if (len <= 0) return 2;
@@ -2087,7 +2544,7 @@ static int garantir(Fio *f, Janela *w, long o, long precisa, long fim,
 
 // --- cobertura (modo sem Cues nenhum) ------------------------------------------
 
-static const Cob *cobQueContem(const Fio *f, long b) {
+static const Cob *cobQueContem(const Fio *f, Off b) {
   int k;
   for (k = 0; k < f->nCob; k++) if (b >= f->cob[k].b0 && b < f->cob[k].b1) return &f->cob[k];
   return NULL;
@@ -2100,7 +2557,7 @@ static const Cob *cobNoTempo(const Fio *f, double t) {
 }
 
 // Registra [b0,b1) como lido, fundindo com vizinhos que encostam.
-static void cobAdicionar(Fio *f, long b0, long b1, double t0, double t1) {
+static void cobAdicionar(Fio *f, Off b0, Off b1, double t0, double t1) {
   int k;
   if (b1 <= b0) return;
   for (k = 0; k < f->nCob; k++) {
@@ -2131,12 +2588,12 @@ static int cobCompleta(const Fio *f) {
 // conferindo que o que segue e um tamanho valido e um Timestamp (E7). E a
 // ressincronizacao classica do Matroska. Devolve a posicao e o tempo do
 // Cluster em *ts; -1 se nao achou em ate 4 MB.
-static long ressincronizar(Fio *f, long byte, double *ts) {
+static Off ressincronizar(Fio *f, Off byte, double *ts) {
   int tent;
   for (tent = 0; tent < 8; tent++) {
     long n = 0, k; unsigned char *p;
     long len = f->varreCh > 0 ? f->varreCh : MKVASS_VARRE_CH;
-    if (f->segFim > 0 && byte + len > f->segFim) len = f->segFim - byte;
+    if (f->segFim > 0 && byte + len > f->segFim) len = (long)(f->segFim - byte);
     if (len < 16) return -1;
     p = range(f, byte, len, &n);
     if (!p) return -1;
@@ -2171,7 +2628,7 @@ static void posicionarVarredura(Fio *f, double pos) {
   Ponto *p = &f->pontos[0];
   double alvo = pos - MKVASS_VARRE_ATRAS_SEG / 3.0, ts = -1.0;
   const Cob *c;
-  long byte, b; int tent;
+  Off byte, b = -1; int tent;
   if (f->varreTs >= 0.0 && f->varreTs >= pos - MKVASS_VARRE_ATRAS_SEG &&
       f->varreTs <= pos + MKVASS_VARRE_JANELA_SEG) return;
   // Ja lemos o tempo do playhead: continua do fim daquele trecho.
@@ -2179,7 +2636,7 @@ static void posicionarVarredura(Fio *f, double pos) {
   if (c) { p->cursor = c->b1; p->cursorTs = -1.0; f->varreTs = c->t1; return; }
   if (alvo <= 0.0) { p->cursor = f->primeiroCluster; p->cursorTs = -1.0; f->varreTs = 0.0; return; }
   if (f->varreDur <= 1.0 || f->segFim <= f->primeiroCluster) return;
-  byte = f->primeiroCluster + (long)((double)(f->segFim - f->primeiroCluster) * (alvo / f->varreDur));
+  byte = f->primeiroCluster + (Off)((double)(f->segFim - f->primeiroCluster) * (alvo / f->varreDur));
   for (tent = 0; tent < 4; tent++) {
     if (byte < f->primeiroCluster) byte = f->primeiroCluster;
     if (byte >= f->segFim) byte = f->segFim - MKVASS_VARRE_CH;
@@ -2187,7 +2644,7 @@ static void posicionarVarredura(Fio *f, double pos) {
     if (b < 0) return;
     // Aceita ate 60 s antes do alvo (custa varrer isso) e nunca depois dele.
     if (ts <= alvo + 2.0 && ts >= alvo - 60.0) break;
-    byte = b + (long)((alvo - ts) * (double)(f->segFim - f->primeiroCluster) / f->varreDur);
+    byte = b + (Off)((alvo - ts) * (double)(f->segFim - f->primeiroCluster) / f->varreDur);
     if (ts > alvo) byte -= MKVASS_VARRE_CH;   // errou para a frente: recua um pouco mais
   }
   if (b < 0) return;
@@ -2196,7 +2653,7 @@ static void posicionarVarredura(Fio *f, double pos) {
   else   { p->cursor = b; f->varreTs = ts; }
   p->cursorTs = -1.0;
   f->varreSaltou = 1;
-  printf("[mkvass] varredura saltou para %.0f s (byte %ld, alvo %.0f s, playhead %.0f s)\n",
+  printf("[mkvass] varredura saltou para %.0f s (byte %lld, alvo %.0f s, playhead %.0f s)\n",
          f->varreTs, p->cursor, alvo, pos);
   fflush(stdout);
 }
@@ -2212,7 +2669,7 @@ static void posicionarVarredura(Fio *f, double pos) {
 // falhou, -2 numa resposta curta.
 // Pelo indice: o bloco no offset `rel` dos dados do Cluster `pos` ja veio pelo
 // CueRelativePosition de outro ponto. Ler o Cluster inteiro nao o repete.
-static int relJaColhido(const Fio *f, long pos, long rel) {
+static int relJaColhido(const Fio *f, Off pos, long rel) {
   int k;
   if (f->varredura) return 0;
   for (k = 0; k < f->nPontos; k++)
@@ -2224,8 +2681,8 @@ static int varrerTrecho(Fio *f, int i, double tLim) {
   // A janela VIVE no Fio: o trecho seguinte costuma comecar dentro dela
   // (cauda do Range anterior), e uma janela local por trecho rebaixava isso.
   Janela *wp = &f->jan;
-  long ini = f->pontos[i].cursor > 0 ? f->pontos[i].cursor : f->pontos[i].cluster;
-  long o = ini, fim = varreFim(f, i), t0 = agoraMs();
+  Off ini = f->pontos[i].cursor > 0 ? f->pontos[i].cursor : f->pontos[i].cluster;
+  Off o = ini, fim = varreFim(f, i); long t0 = agoraMs();
   unsigned long cueTempo = f->pontos[i].tempo;
   double tsIni = -1.0, tsFim = -1.0;
   int r = 3, clusters = 0, blocos = 0, terminou = 0;
@@ -2234,7 +2691,7 @@ static int varrerTrecho(Fio *f, int i, double tLim) {
   if (f->pontos[i].cursor > 0 && f->pontos[i].cursorTs >= 0.0 && tLim > 0.0 &&
       f->pontos[i].cursorTs > tLim) return 3;
   while (fim <= 0 || o < fim) {
-    const unsigned char *p; long disp, tam, dados, clFim; int ui = 0, ut = 0, g;
+    const unsigned char *p; long disp, tam; Off dados, clFim; int ui = 0, ut = 0, g;
     unsigned long id; ClCache cl;
     if (!minhaVez(f)) goto sair;
     // Modo sem Cues: o que ja foi lido (antes de um salto) e pulado.
@@ -2286,8 +2743,8 @@ static int varrerTrecho(Fio *f, int i, double tLim) {
     clusters++;
     o = dados;
     while (clFim <= 0 || o < clFim) {
-      long ctam, cfim, cab; int cui = 0, cut = 0; unsigned long cid;
-      long lim = clFim > 0 ? clFim : fim;
+      long ctam, cab; Off cfim; int cui = 0, cut = 0; unsigned long cid;
+      Off lim = clFim > 0 ? clFim : fim;
       if (!minhaVez(f)) goto sair;
       g = garantir(f, wp, o, 16, lim, &p, &disp);
       if (g == 2) { o = clFim > 0 ? clFim : o; if (clFim <= 0) fim = o; break; }
@@ -2307,7 +2764,7 @@ static int varrerTrecho(Fio *f, int i, double tLim) {
         long peek = cab + ctam; if (peek > 40) peek = 40;
         g = garantir(f, wp, o, peek, lim, &p, &disp);
         if (g == 1 && ctam <= MKVASS_VARRE_BLOCO && blocoDaFaixa(f, p, disp) &&
-            !relJaColhido(f, cl.pos, o - dados)) {
+            !relJaColhido(f, cl.pos, (long)(o - dados))) {
           g = garantir(f, wp, o, cab + ctam, lim, &p, &disp);
           if (g == 1) {
             if (lerBloco(f, p, cab + ctam, &cl, cueTempo) > 0) blocos++;
@@ -2355,7 +2812,7 @@ static int proximoVarre(const Fio *f, double pos) {
   for (i = 0; i < f->nPontos; i++) {
     double t = segundosDe(f, f->pontos[i].tempo);
     if (f->pontos[i].colhido) continue;
-    if (t > pos + MKVASS_VARRE_JANELA_SEG) break;
+    if (t > pos + (f->lateral ? MKVASS_LATERAL_SEG : MKVASS_VARRE_JANELA_SEG)) break;
     if (i != ult && t < pos - MKVASS_VARRE_ATRAS_SEG) continue;
     return i;
   }
@@ -2363,23 +2820,32 @@ static int proximoVarre(const Fio *f, double pos) {
 }
 
 static void dormir(Fio *f, long ms) {
-  pthread_mutex_lock(&S.trava);
-  if (f->g == S.geracao && !S.parar) {
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  if (f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar) {
     struct timespec rt; clock_gettime(CLOCK_REALTIME, &rt);
     rt.tv_nsec += ms * 1000000L;
     while (rt.tv_nsec >= 1000000000L) { rt.tv_sec++; rt.tv_nsec -= 1000000000L; }
-    pthread_cond_timedwait(&S.sinal, &S.trava, &rt);
+    pthread_cond_timedwait(&estadoDoFio(f)->sinal, &estadoDoFio(f)->trava, &rt);
   }
-  pthread_mutex_unlock(&S.trava);
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
 }
 
 // --- pre-busca: adocao ------------------------------------------------------------
 
 static void prebuscaFase(Fio *f, int fase) {
-  pthread_mutex_lock(&S.trava);
-  if (f->g == S.geracao) S.nColhidos = f->nColhidos;   // o player loga o que chegou
-  if (f->g == S.geracao && S.prebuscaFase) S.prebuscaFase = fase;
-  pthread_mutex_unlock(&S.trava);
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  if (f->g == estadoDoFio(f)->geracao) estadoDoFio(f)->nColhidos = f->nColhidos;   // o player loga o que chegou
+  if (f->g == estadoDoFio(f)->geracao && estadoDoFio(f)->prebuscaFase) estadoDoFio(f)->prebuscaFase = fase;
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
+}
+
+// Definida antes de lerTracks: quando a faixa escolhida na pre-busca e TEXTO
+// simples, o player e solto na hora (fase 2) — a TV desenha a nativa enquanto
+// os cues chegam em segundo plano. A colheita segue normalmente.
+static void prebuscaTextoSoltar(Fio *f) {
+  prebuscaFase(f, 2);
+  printf("[mkvass] pre-busca de texto: video solto, colheita segue em segundo plano\n");
+  fflush(stdout);
 }
 
 // faixas.c pediu esta mesma faixa (mkvass_iniciar_ordinal com a url e o
@@ -2388,16 +2854,17 @@ static void prebuscaFase(Fio *f, int fase) {
 static void verAdocao(Fio *f) {
   int adotou = 0;
   if (!f->prebusca) return;
-  pthread_mutex_lock(&S.trava);
-  if (f->g == S.geracao && !S.parar && S.adotar) {
-    f->prebusca = 0; f->legG = S.adotarLegG;
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  if (f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar && estadoDoFio(f)->adotar) {
+    f->prebusca = 0; f->legG = estadoDoFio(f)->adotarLegG;
     f->herdar = 0; f->segurar = 0; f->entregas = 0;
-    S.adotar = 0; S.prebusca = 0;
-    if (S.prebuscaFase == 1) S.prebuscaFase = 2;
+    estadoDoFio(f)->adotar = 0; estadoDoFio(f)->prebusca = 0;
+    if (estadoDoFio(f)->prebuscaFase == 1) estadoDoFio(f)->prebuscaFase = 2;
     adotou = 1;
   }
-  pthread_mutex_unlock(&S.trava);
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
   if (!adotou) return;
+  if (!f->texto) assrender_preaquecer();
   printf("[mkvass] pre-busca ADOTADA (ordinal %d): %d/%d blocos ja colhidos, %zu bytes de corpo, "
          "%ld ms desde a pre-busca\n", f->ordinal, f->nColhidos, f->nPontos, f->corpoTam, agoraMs() - f->t0);
   fflush(stdout);
@@ -2427,16 +2894,17 @@ static int esperarAdocao(Fio *f) {
 //     (o player informa por mkvass_folga; sem informacao nao pausa);
 //   - uma linha por minuto com os bytes varridos.
 // Devolve 1 quando fechou COMPLETO; 0 quando saiu (parar, troca, rede).
+static double alcanceFrente(const Fio *f);
 static int varrerLaco(Fio *f) {
   long ultLog = agoraMs(), bytesMarca, pausas = 0;
   int pausado = 0;
-  pthread_mutex_lock(&S.trava); bytesMarca = S.bytes; pthread_mutex_unlock(&S.trava);
+  pthread_mutex_lock(&estadoDoFio(f)->trava); bytesMarca = estadoDoFio(f)->bytes; pthread_mutex_unlock(&estadoDoFio(f)->trava);
   while (minhaVez(f)) {
     double pos, folga; int i, ocioso = 0;
     verAdocao(f);
-    pthread_mutex_lock(&S.trava);
-    pos = S.pos; folga = S.folga; S.nColhidos = f->nColhidos;
-    pthread_mutex_unlock(&S.trava);
+    pthread_mutex_lock(&estadoDoFio(f)->trava);
+    pos = estadoDoFio(f)->pos; folga = estadoDoFio(f)->folga; estadoDoFio(f)->nColhidos = f->nColhidos;
+    pthread_mutex_unlock(&estadoDoFio(f)->trava);
     avancarFontes(f, 0);
     if (folga >= 0.0 && folga < MKVASS_VARRE_FOLGA_SEG) {
       if (!pausado) {
@@ -2456,7 +2924,7 @@ static int varrerLaco(Fio *f) {
       i = proximoVarre(f, pos);
       // Pre-busca: a janela a frente de onde o video vai comecar ja foi lida.
       if (f->prebusca && (i < 0 || (f->pontos[i].cursorTs >= 0.0 &&
-                                    f->pontos[i].cursorTs > pos + MKVASS_PREBUSCA_SEG))) {
+                                    f->pontos[i].cursorTs > pos + alcanceFrente(f)))) {
         entregar(f);
         printf("[mkvass] pre-busca pronta (varredura): cursor %.0f s, %ld ms\n", f->varreTs, agoraMs() - f->t0);
         fflush(stdout);
@@ -2466,11 +2934,11 @@ static int varrerLaco(Fio *f) {
       }
       if (i < 0) ocioso = 1;
       else if (f->pontos[i].cursor > 0 && f->pontos[i].cursorTs >= 0.0 &&
-               f->pontos[i].cursorTs > pos + MKVASS_VARRE_JANELA_SEG) ocioso = 1;
+               f->pontos[i].cursorTs > pos + (f->lateral ? MKVASS_LATERAL_SEG : MKVASS_VARRE_JANELA_SEG)) ocioso = 1;
       else {
         int r;
         f->posRef = pos;
-        r = varrerTrecho(f, i, pos + (f->prebusca ? MKVASS_PREBUSCA_SEG : MKVASS_VARRE_JANELA_SEG));
+        r = varrerTrecho(f, i, pos + (f->lateral ? MKVASS_LATERAL_SEG : f->prebusca ? MKVASS_PREBUSCA_SEG : MKVASS_VARRE_JANELA_SEG));
         if (r == -2) {
           if (definirEstadoSeAtual(f, MKVASS_NOGO_REDE)) {
             printf("[mkvass] Range curto na varredura: desistindo\n"); fflush(stdout);
@@ -2481,7 +2949,7 @@ static int varrerLaco(Fio *f) {
           if (f->restoRecusado) {
             if (definirEstadoSeAtual(f, MKVASS_NOGO_RESTO)) {
               printf("[mkvass] varredura: o servidor recusou o resto (HTTP %d, curl %d, %s)\n",
-                     f->ultSt, f->ultErro, momentoVideo());
+                     f->ultSt, f->ultErro, momentoVideo(f));
               fflush(stdout);
             }
             return 0;
@@ -2503,7 +2971,7 @@ static int varrerLaco(Fio *f) {
       entregar(f);
     if (agoraMs() - ultLog >= 60000L) {
       long bytes;
-      pthread_mutex_lock(&S.trava); bytes = S.bytes; pthread_mutex_unlock(&S.trava);
+      pthread_mutex_lock(&estadoDoFio(f)->trava); bytes = estadoDoFio(f)->bytes; pthread_mutex_unlock(&estadoDoFio(f)->trava);
       printf("[mkvass] varredura: %ld KB no ultimo minuto, cursor %.0f s, playhead %.0f s, "
              "buffer %.0f s, %d/%d trechos, pausas %ld\n",
              (bytes - bytesMarca) / 1024, f->varreTs, pos, folga, f->nColhidos, f->nPontos, pausas);
@@ -2515,13 +2983,15 @@ static int varrerLaco(Fio *f) {
       if (avancarFontes(f, 2)) entregar(f);
       buscarFontesAdiadas(f);
       entregar(f);
-      gravarSidecar(f, 1, 0);
-      pthread_mutex_lock(&S.trava);
-      if (f->g == S.geracao) S.nColhidos = f->nColhidos;
-      pthread_mutex_unlock(&S.trava);
+      // Fala que nao coube no corpo (#384): o que ha nao e a faixa inteira, e
+      // um sidecar "completo" o repetiria em toda reabertura.
+      if (!f->corpoCortou) gravarSidecar(f, 1, 0);
+      pthread_mutex_lock(&estadoDoFio(f)->trava);
+      if (f->g == estadoDoFio(f)->geracao) estadoDoFio(f)->nColhidos = f->nColhidos;
+      pthread_mutex_unlock(&estadoDoFio(f)->trava);
       if (!definirEstadoSeAtual(f, MKVASS_COMPLETO)) return 0;
       printf("[mkvass] varredura completa: %d trecho(s), %ld Ranges, %ld ms desde a escolha (pausas %ld)\n",
-             f->nPontos, S.pedidos, agoraMs() - f->t0, pausas);
+             f->nPontos, estadoDoFio(f)->pedidos, agoraMs() - f->t0, pausas);
       fflush(stdout);
       return 1;
     }
@@ -2558,7 +3028,7 @@ static int colherCluster(Fio *f, int i) {
 // respondeu.
 static int colherGrupo(Fio *f, int i, int j) {
   const ClCache *cl = NULL;
-  long ini, n = 0, fim; unsigned char *p; int k, r;
+  Off ini; long n = 0, len; unsigned char *p; int k, r;
   // Na varredura quem colhe e varrerLaco; este caminho e o indexado.
   if (f->pontos[i].rel < 0) return colherCluster(f, i);
   cl = clusterVisto(f, f->pontos[i].cluster);
@@ -2579,14 +3049,15 @@ static int colherGrupo(Fio *f, int i, int j) {
     return 1;
   }
   ini = f->pontos[i].cluster + cl->hdr + f->pontos[i].rel;
-  fim = f->pontos[j].cluster + cl->hdr + f->pontos[j].rel + MKVASS_BLOCO;
-  p = range(f, ini, fim - ini, &n);
+  // Mesmo Cluster (grupoFim): a distancia e a dos `rel`, nunca de GB.
+  len = (long)(f->pontos[j].cluster + cl->hdr + f->pontos[j].rel + MKVASS_BLOCO - ini);
+  p = range(f, ini, len, &n);
   if (!p) return 0;
   // Um 206 curto nao e um bloco invalido: e uma resposta truncada. Nao
   // transforme isso em "desistido", pois os desistidos contam como completos
   // e poderiam fechar um sidecar sem o texto. O worker converte o caso em
   // NOGO_REDE apos a politica de falhas, preservando o fallback nativo.
-  if (n < fim - ini) { free(p); return -2; }
+  if (n < len) { free(p); return -2; }
   r = colherDoBuffer(f, i, j, p, n, ini, cl);
   free(p);
   return r;
@@ -2595,12 +3066,12 @@ static int colherGrupo(Fio *f, int i, int j) {
 // Entrega o corpo ao overlay. legenda_definir_corpo REFAZ o vetor de cues do
 // zero a partir do corpo inteiro, em vez de um "anexar" incremental — e por
 // escolha: o vetor precisa continuar ordenado e com a maior duracao
-// recalculada, e reparsear algumas centenas de linhas custa menos de um
-// quadro; um anexar teria de reimplementar isso dentro de legenda.c so para
-// este chamador. A entrega e por LOTE (uma vez por passada do laco), nao por
+// recalculada. Documentos grandes custam mais que um quadro (#412), por
+// isso os lotes seguintes nao seguram a trava lida pelo player.
+// A entrega e por LOTE (uma vez por passada do laco), nao por
 // bloco.
 //
-// O mutex de S fica preso DURANTE a publicacao. Conferir a geracao, soltar o
+// Na PRIMEIRA entrega o mutex de S fica preso. Conferir a geracao, soltar o
 // mutex e so entao chamar legenda_definir_corpo deixava a troca de faixa entrar
 // no meio: o fio velho publicava cues antigos depois que o novo ja era atual.
 // legenda_definir_corpo so toma a trava interna de legenda e nao chama mkvass,
@@ -2610,10 +3081,14 @@ static int colherGrupo(Fio *f, int i, int j) {
 // libass sem apagar o quadro em tela. Antes, TODA entrega (uma por passada, a
 // cada 1-2 s enquanto colhia) apagava a legenda, desligava o libass e
 // reenviava as fontes — o pisca "por lote".
+// Serializa so os coletores: uma retomada pode herdar legG, entao o lote
+// velho deve terminar antes da primeira publicacao do coletor novo.
+static pthread_mutex_t entregaTrava = PTHREAD_MUTEX_INITIALIZER;
 static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
-  int ok = 0;
-  pthread_mutex_lock(&S.trava);
-  if (f->g == S.geracao && !S.parar) {
+  int ok = 0, travado = 1;
+  pthread_mutex_lock(&entregaTrava);
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  if (f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar) {
     int i;
     if (!f->entregas && !(f->herdar && legenda_ligada_em(f->legG))) {
       // Primeira carga: so se a legenda ainda e da geracao que a escolha
@@ -2626,9 +3101,17 @@ static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
           assrender_adicionar_fonte(f->fontes[i].nome, f->fontes[i].dados,
                                     (size_t)f->fontes[i].tam);
         g = legenda_definir_corpo_se(corpo, f->legG);
-        if (g) { f->legG = g; ok = 1; S.fontesLegG = f->nFontes ? g : 0; }
+        if (g) { f->legG = g; ok = 1; estadoDoFio(f)->fontesLegG = f->nFontes ? g : 0; }
       }
-    } else ok = legenda_atualizar_corpo_se(corpo, f->legG);
+    } else {
+      // #412: parse/recriacao do ASS pode levar >120 ms. O quadro usa
+      // estadoDoFio(f)->trava em passo/folga/estado; nao espera pelo documento inteiro.
+      // A geracao da legenda e conferida atomicamente por *_corpo_se e
+      // pelo assrender. `f` pertence apenas a este coletor.
+      pthread_mutex_unlock(&estadoDoFio(f)->trava);
+      travado = 0;
+      ok = legenda_atualizar_corpo_se(corpo, f->legG);
+    }
     if (ok) f->entregas++;
     else if (f->entregas >= 0) {
       printf("[mkvass] lote da faixa %d DESCARTADO: a legenda trocou de dono (geracao %u)\n",
@@ -2637,7 +3120,8 @@ static int entregarCorpoSeAtual(Fio *f, const char *corpo) {
       f->entregas = -1000000;     // loga uma vez; nunca volta a ser a primeira
     }
   }
-  pthread_mutex_unlock(&S.trava);
+  if (travado) pthread_mutex_unlock(&estadoDoFio(f)->trava);
+  pthread_mutex_unlock(&entregaTrava);
   return ok;
 }
 
@@ -2649,12 +3133,89 @@ static int contarEventos(const Fio *f) {
   return n;
 }
 
+// ponytail: um snapshot por fonte, limitado ao corpo existente. Sem cache de rede novo.
+static void guardarReferencia(Fio *f) {
+  LegendaDocumento *doc = NULL;
+  // Faixas menores seguem pelo coletor completo de sempre. Este desvio so
+  // cobre o indice que ja excede o teto de 7999 eventos do legref/AutoSync.
+  if (f->nPontos >= 8000 && f->corpo && !f->texto && !f->varredura && !f->indiceCortado &&
+      !f->corpoCortou && !f->refInvalida) {
+    int a = 0, melhor = 0, de = 0, ate = 0;
+    // Maior sequencia sem buracos. Cortes conservadores nos tempos dos cues
+    // vizinhos: nunca inclui um ponto nao colhido (inclusive no mesmo tempo).
+    for (int b = 0; b <= f->nPontos; b++) {
+      if (b < f->nPontos && f->pontos[b].colhido == 1) continue;
+      if (b - a > melhor) { melhor = b - a; de = a; ate = b; }
+      a = b + 1;
+    }
+    if (melhor > 0) {
+      LegendaDocumentoInfo info = { .flags = LEGENDA_DOC_COMPLETO | LEGENDA_DOC_JANELA };
+      info.janelaInicio = de ? segundosDe(f, f->pontos[de - 1].tempo) + .01 : 0;
+      info.janelaFim = ate < f->nPontos ? segundosDe(f, f->pontos[ate].tempo) - .01
+                                     : segundosDe(f, f->pontos[ate - 1].tempo) + 15;
+      if (info.janelaFim > info.janelaInicio) {
+        snprintf(info.origem, sizeof info.origem, "Embedded");
+        snprintf(info.identidade, sizeof info.identidade, "mkv-track:%d", f->faixa);
+        LegendaDocumento *todo = legenda_documento_criar(f->corpo, &info);
+        int n = 0, k = 0; const LegendaCue *v = legenda_documento_dados(todo, &n);
+        if (todo && !(legenda_documento_info(todo)->flags & LEGENDA_DOC_COMPLETO)) n = 0;
+        LegendaCue *rec = n > 0 ? malloc((size_t)n * sizeof *rec) : NULL;
+        if (rec) {
+          for (int i = 0; i < n; i++)
+            if (v[i].inicio >= info.janelaInicio && v[i].fim <= info.janelaFim) rec[k++] = v[i];
+          if (k > 0 && k < 8000) doc = legenda_documento_de_cues(rec, k, &info);
+        }
+        free(rec); legenda_documento_liberar(todo);
+      }
+    }
+  }
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  if (f->g == estadoDoFio(f)->geracao) {
+    legenda_documento_liberar(estadoDoFio(f)->referencia); estadoDoFio(f)->referencia = doc; doc = NULL;
+    snprintf(estadoDoFio(f)->refUrl, sizeof estadoDoFio(f)->refUrl, "%s", f->urlOrig); estadoDoFio(f)->refFaixa = f->faixa;
+  }
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
+  legenda_documento_liberar(doc);
+}
+
 static int contarDesistidos(const Fio *f);
+
+// Decodifica os blocos pendentes para o armazem do desenho. O corpo vazio so
+// confere (e toma) o dono do overlay: se a legenda trocou de dono, o lote some.
+static void entregarImagens(Fio *f) {
+  int i, n;
+  PgsQuadro *dec;
+  if (!f->nPend) return;
+  // RLE + paleta de um PGS 1080p passa de um quadro. O passo do player
+  // tambem toma S.trava; a decodificacao fica fora dela. entregarCorpoSeAtual
+  // ja toma a trava so para conferir o dono.
+  n = (f->entregas >= 0 && entregarCorpoSeAtual(f, "")) ? f->nPend : 0;
+  dec = n ? calloc((size_t)n, sizeof *dec) : NULL;
+  if (n && !dec) n = 0;
+  for (i = 0; i < n; i++)
+    if (!pgs_decodificar(f->pgs, f->pend[i].b, (size_t)f->pend[i].n, &dec[i])) dec[i].n = -1;
+  for (i = 0; i < n; i++) {
+    int publica;
+    if (dec[i].n < 0) continue;
+    pthread_mutex_lock(&estadoDoFio(f)->trava);
+    publica = f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar;
+    pthread_mutex_unlock(&estadoDoFio(f)->trava);
+    if (publica) imgsub_por(f->legG, f->pend[i].ini, f->pend[i].fim, &dec[i]);
+    else pgs_quadro_liberar(&dec[i]);
+  }
+  free(dec);
+  soltarPendentes(f);
+}
 
 static void entregar(Fio *f) {
   int n;
+  // O snapshot independe da adocao/dono do overlay, inclusive na pre-busca.
+  if (f->sujo && f->refColhidos != f->nColhidos && agoraMs() - f->refUltima >= MKVASS_ENTREGA_MS) {
+    guardarReferencia(f); f->refUltima = agoraMs(); f->refColhidos = f->nColhidos;
+  }
   // Pre-busca nao adotada: colhe, mas o overlay ainda nao e deste fio.
   if (f->prebusca) { verAdocao(f); if (f->prebusca) return; }
+  if (f->imagem) { entregarImagens(f); f->sujo = 0; return; }
   if (!f->sujo || !f->corpo) return;
   // TV desenhando por enquanto: so religa o overlay com fala NOVA (ver
   // mkvass_retomar_segurando). A faixa completa solta sempre.
@@ -2671,7 +3232,7 @@ static void entregar(Fio *f) {
   if (n > 0 && !f->primeiraFala) {
     f->primeiraFala = 1;
     printf("[mkvass] primeira entrega com fala: %d eventos, %ld ms desde a escolha (playhead %.1f s, %ld Ranges)\n",
-           n, f->ultEntrega - f->t0, f->posRef, S.pedidos);
+           n, f->ultEntrega - f->t0, f->posRef, estadoDoFio(f)->pedidos);
     fflush(stdout);
   }
   f->eventosEntregues = n;
@@ -2701,8 +3262,138 @@ static int contarDesistidos(const Fio *f) {
   return n;
 }
 
+// --- #384: corpo em janela ---------------------------------------------------
+//
+// A faixa de um anime com karaoke e letreiro quadro a quadro nao cabe inteira:
+// no relato, os 8000 eventos da ABERTURA ja eram 9,6 MB de corpo. Enquanto o
+// corpo cabe (MKVASS_CORPO_ALTO), nada muda: a faixa inteira e colhida em
+// segundo plano e o sidecar fecha completo. Quando passa, o que esta LONGE do
+// playhead sai do corpo e os pontos correspondentes voltam a fila (colhido =
+// 0); dali em diante so se colhe em volta do playhead, e um seek colhe de
+// novo o que tinha saido. "Completo" so acontece se tudo estiver colhido ao
+// mesmo tempo — com a faixa em janela, nao acontece, e nao deve.
+//
+// Antes, o que nao cabia era recusado em silencio (corpoAnexar devolvia 0 e o
+// ponto ficava marcado como colhido), sempre do bloco N em diante.
+
+// Inicio, em segundos, de uma linha "Dialogue: Layer,H:MM:SS.cc,..." do corpo
+// (o formato que anexarEvento escreve). < 0 quando a linha nao e um evento.
+// Na mao e nao com sscanf: ha libc em que sscanf mede a string INTEIRA a cada
+// chamada, e aqui a string e o corpo de varios MB.
+static double inicioDaLinha(const char *l, const char *fim) {
+  const char *p; long v[4] = { 0, 0, 0, 0 }; int k = 0, dig = 0;
+  if (fim - l < 20 || memcmp(l, "Dialogue: ", 10)) return -1.0;
+  p = memchr(l + 10, ',', (size_t)(fim - l - 10));
+  if (!p) return -1.0;
+  for (p++; p < fim; p++) {
+    if (*p >= '0' && *p <= '9') {
+      if (v[k] > 1000000L) return -1.0;
+      v[k] = v[k] * 10 + (*p - '0'); dig++;
+    } else if (dig && ((*p == ':' && k < 2) || (*p == '.' && k == 2))) { k++; dig = 0; }
+    else if (dig && *p == ',' && k == 3) return (double)v[0] * 3600.0 + (double)v[1] * 60.0 + (double)v[2] + (double)v[3] / 100.0;
+    else return -1.0;
+  }
+  return -1.0;
+}
+
+// Os pontos a manter para a janela [a, b] s: o intervalo [*i0, *i1) do indice
+// (ordenado por tempo) e os cortes *ta / *tb em segundos. Cada corte cai no
+// MEIO de uma folga de pelo menos MKVASS_DESPEJO_FOLGA_SEG entre dois pontos,
+// andando para FORA ate achar uma: assim a linha de um ponto mantido nunca e
+// lida como de fora (o inicio da linha e o do ponto arredondado a centesimos),
+// e nenhuma fala sai do corpo com o ponto ainda marcado, nem fica no corpo com
+// o ponto de volta a fila (que a colheria em dobro).
+static void limitesDaJanela(const Fio *f, double a, double b, int *i0, int *i1, double *ta, double *tb) {
+  int n = f->nPontos, i, j;
+  for (i = 0; i < n && segundosDe(f, f->pontos[i].tempo) < a; i++) {}
+  while (i > 0 && i < n && segundosDe(f, f->pontos[i].tempo) -
+                           segundosDe(f, f->pontos[i - 1].tempo) < MKVASS_DESPEJO_FOLGA_SEG) i--;
+  for (j = i; j < n && segundosDe(f, f->pontos[j].tempo) <= b; j++) {}
+  while (j > 0 && j < n && segundosDe(f, f->pontos[j].tempo) -
+                           segundosDe(f, f->pontos[j - 1].tempo) < MKVASS_DESPEJO_FOLGA_SEG) j++;
+  *i0 = i; *i1 = j;
+  *ta = i <= 0 ? -1e300 : i >= n ? 1e300
+      : (segundosDe(f, f->pontos[i - 1].tempo) + segundosDe(f, f->pontos[i].tempo)) / 2.0;
+  *tb = j >= n ? 1e300 : j <= 0 ? -1e300
+      : (segundosDe(f, f->pontos[j - 1].tempo) + segundosDe(f, f->pontos[j].tempo)) / 2.0;
+}
+
+// Bytes de eventos que ficam com os cortes [ta, tb). Linha que nao e evento
+// (ou cujo tempo nao se le) fica sempre.
+static size_t bytesNaJanela(const char *ev, const char *fim, double ta, double tb) {
+  size_t fica = 0; const char *l = ev;
+  while (l < fim) {
+    const char *nl = memchr(l, '\n', (size_t)(fim - l)), *prox = nl ? nl + 1 : fim;
+    double t = inicioDaLinha(l, prox);
+    if (t < 0.0 || (t >= ta && t < tb)) fica += (size_t)(prox - l);
+    l = prox;
+  }
+  return fica;
+}
+
+// Tira do corpo o que esta longe de `pos` e devolve os pontos a fila. So no
+// caminho indexado de ASS: a varredura tem o laco proprio (ja preso a janela)
+// e uma faixa de texto simples nao chega a este tamanho.
+static void despejar(Fio *f, double pos) {
+  double atras = MKVASS_MANTER_ATRAS_SEG, frente = MKVASS_MANTER_FRENTE_SEG, ta, tb;
+  char *ev, *fim, *l, *w; size_t cab, antes = f->corpoTam;
+  int i, i0, i1, saiu = 0;
+  if (f->texto || f->varredura || !f->corpo || !f->nPontos) return;
+  ev = strstr(f->corpo, CORPO_EVENTOS);
+  if (!ev) return;
+  ev += sizeof CORPO_EVENTOS - 1;
+  cab = (size_t)(ev - f->corpo);
+  fim = f->corpo + f->corpoTam;
+  for (;;) {
+    limitesDaJanela(f, pos - atras, pos + frente, &i0, &i1, &ta, &tb);
+    if (cab + bytesNaJanela(ev, fim, ta, tb) <= (size_t)(MKVASS_CORPO_ALTO / 2) ||
+        (atras <= MKVASS_ATRAS_SEG && frente <= MKVASS_URGENTE_SEG)) break;
+    atras /= 2.0;  if (atras < MKVASS_ATRAS_SEG) atras = MKVASS_ATRAS_SEG;
+    frente /= 2.0; if (frente < MKVASS_URGENTE_SEG) frente = MKVASS_URGENTE_SEG;
+  }
+  for (l = w = ev; l < fim; ) {
+    char *nl = memchr(l, '\n', (size_t)(fim - l)), *prox = nl ? nl + 1 : fim;
+    double t = inicioDaLinha(l, prox);
+    if (t < 0.0 || (t >= ta && t < tb)) { if (w != l) memmove(w, l, (size_t)(prox - l)); w += prox - l; }
+    l = prox;
+  }
+  f->corpoTam = (size_t)(w - f->corpo);
+  f->corpo[f->corpoTam] = 0;
+  for (i = 0; i < f->nPontos; i++)
+    if ((i < i0 || i >= i1) && f->pontos[i].colhido == 1) { f->pontos[i].colhido = 0; saiu++; }
+  f->nColhidos -= saiu; f->despejados += saiu; f->despejos++;
+  // TV desenhando por enquanto (segurar): a fala nova continua sendo "mais do
+  // que ha agora", nao "mais do que havia antes do despejo".
+  if (f->colhidosIni > f->nColhidos) f->colhidosIni = f->nColhidos;
+  f->janela = 1; f->manterFrente = frente; f->despejoPos = pos;
+  if (f->corpoTam == antes) return;      // nada longe do playhead: nem log
+  f->sujo = 1;
+  // As dez primeiras e depois uma a cada dez: tocando uma abertura densa o
+  // despejo se repete a cada minuto ou dois.
+  if (f->despejos <= 10 || f->despejos % 10 == 0) {
+    printf("[mkvass] corpo em janela (despejo %ld, playhead %.0f s): de %zu para %zu KB, ficam %d/%d blocos "
+           "entre %.0f e %.0f s — o resto da faixa volta quando o playhead chegar\n",
+           f->despejos, pos, antes / 1024, f->corpoTam / 1024, f->nColhidos, f->nPontos,
+           i0 < f->nPontos ? segundosDe(f, f->pontos[i0].tempo) : 0.0,
+           i1 > 0 ? segundosDe(f, f->pontos[i1 - 1].tempo) : 0.0);
+    fflush(stdout);
+  }
+}
+
+// Ate onde a frente do playhead a colheita vai. Em janela, com o corpo ja
+// acima do alvo do despejo (metade de MKVASS_CORPO_ALTO), nao alem do que o
+// ultimo despejo manteve: colher mais longe seria baixar o que o proximo
+// despejo joga fora. Abaixo do alvo ha espaco, e vale a janela de sempre.
+static double alcanceFrente(const Fio *f) {
+  // O leitor lateral conserva a janela depois de adotado por faixas.c.
+  double a = f->lateral ? MKVASS_LATERAL_SEG : f->prebusca ? MKVASS_PREBUSCA_SEG : MKVASS_JANELA_SEG;
+  return f->janela && f->manterFrente < a && f->corpoTam >= (size_t)(MKVASS_CORPO_ALTO / 2)
+         ? f->manterFrente : a;
+}
+
 // Proximo ponto pendente pela prioridade do laco (ver trabalhar). -1 quando
-// nao ha nenhum. *noJanela diz se ele esta em [ini, fim].
+// nao ha nenhum. *noJanela diz se ele esta em [ini, fim]. Com o corpo em
+// janela (#384) so vale o que esta em [ini, fim]: o resto seria despejado.
 static int proximoPendente(const Fio *f, double ini, double fim, int *noJanela) {
   int i, frente = -1, atras = -1;
   double pos = ini + MKVASS_ATRAS_SEG;
@@ -2718,6 +3409,7 @@ static int proximoPendente(const Fio *f, double ini, double fim, int *noJanela) 
     if (f->pontos[i].rel < 0 &&
         (pausa || t > pos + MKVASS_VARRE_JANELA_SEG || t < pos - MKVASS_VARRE_ATRAS_SEG)) continue;
     if (t >= ini && t <= fim) { *noJanela = 1; return i; }
+    if (f->janela || f->lateral) { if (t > fim) break; continue; }
     if (t > fim) { if (frente < 0) frente = i; }
     else atras = i;               // o ultimo antes de ini: o mais perto
   }
@@ -2732,7 +3424,8 @@ static int grupoFim(const Fio *f, int i) {
   while (j + 1 < f->nPontos && !f->pontos[j + 1].colhido &&
          f->pontos[j + 1].cluster == f->pontos[i].cluster &&
          f->pontos[j + 1].rel >= f->pontos[i].rel &&
-         f->pontos[j + 1].rel - f->pontos[i].rel < MKVASS_JUNTAR) j++;
+         f->pontos[j + 1].rel - f->pontos[i].rel < MKVASS_JUNTAR &&
+         (!f->lateral || segundosDe(f, f->pontos[j + 1].tempo) <= f->posRef + MKVASS_LATERAL_SEG)) j++;
   return j;
 }
 
@@ -2740,9 +3433,11 @@ static int grupoFim(const Fio *f, int i) {
 // prioridade do laco (reservados com colhido = 3 so durante a escolha).
 static void preBuscar(Fio *f, double pos) {
   int ii[MKVASS_PARALELOS], jj[MKVASS_PARALELOS], n, k, m, noAr = 0;
+  f->posRef = pos;
   for (k = 0; k < MKVASS_PREBUSCA; k++) if (f->pre[k]) noAr++;
   for (n = 0; n < MKVASS_PARALELOS; n++) {
-    int noJ, i = proximoPendente(f, pos - MKVASS_ATRAS_SEG, pos + MKVASS_JANELA_SEG, &noJ);
+    int noJ, i = proximoPendente(f, pos - MKVASS_ATRAS_SEG,
+                                 pos + alcanceFrente(f), &noJ);
     if (i < 0) break;
     ii[n] = i; jj[n] = grupoFim(f, i);
     for (m = ii[n]; m <= jj[n]; m++) f->pontos[m].colhido = 3;
@@ -2754,7 +3449,7 @@ static void preBuscar(Fio *f, double pos) {
     int serve = 0;
     if (!f->pre[m]) continue;
     for (k = 0; k < n && !serve; k++) {
-      long ini, len; rangeDoGrupo(f, ii[k], jj[k], &ini, &len);
+      Off ini; long len; rangeDoGrupo(f, ii[k], jj[k], &ini, &len);
       serve = f->pre[m]->ini == ini && f->pre[m]->n == len;
     }
     if (!serve && jobPronto(f->pre[m])) { long t; Job *j = f->pre[m]; f->pre[m] = NULL; free(colherJob(f, j, &t)); noAr--; }
@@ -2763,8 +3458,8 @@ static void preBuscar(Fio *f, double pos) {
   // pre-busca nenhuma, o fio pede um Range por vez e o servidor ve UMA
   // conexao alem da do video. (Com a pre-busca de 1, o cabecalho de Cluster e
   // o palpite que o fio pede por conta propria ainda saiam em paralelo.)
-  for (k = 0; k < n && f->paralelos > 1 && noAr < f->paralelos; k++) {
-    long ini, len; int slot;
+  for (k = 0; k < n && f->paralelos > 1 && foraDoTeto(f) && noAr < f->paralelos; k++) {
+    Off ini; long len; int slot;
     rangeDoGrupo(f, ii[k], jj[k], &ini, &len);
     if (temPre(f, ini, len)) continue;
     for (slot = 0; slot < MKVASS_PREBUSCA && f->pre[slot]; slot++) {}
@@ -2779,13 +3474,14 @@ static void preBuscar(Fio *f, double pos) {
 static void *trabalhar(void *arg) {
   Fio *f = arg;
   char *sc;
-  int r;
+  int r, fontesConfirmadas = 0;
+  rede_lateral(1);
 
   // Espera o fio anterior morrer: os dois escreveriam o mesmo sidecar e
   // entregariam corpos ao overlay fora de ordem.
-  pthread_mutex_lock(&S.trava);
-  while (S.vivos > 1 && f->g == S.geracao) pthread_cond_wait(&S.sinal, &S.trava);
-  pthread_mutex_unlock(&S.trava);
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  while (estadoDoFio(f)->vivos > 1 && f->g == estadoDoFio(f)->geracao) pthread_cond_wait(&estadoDoFio(f)->sinal, &estadoDoFio(f)->trava);
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
   if (!minhaVez(f)) goto fim;
 
   // Pre-busca: a faixa so e conhecida depois do cabecalho, e o nome do sidecar
@@ -2794,13 +3490,13 @@ static void *trabalhar(void *arg) {
   if (!f->prebusca) {
     nomeSidecar(f->url, f->faixa, f->sidecar, sizeof f->sidecar);
     snprintf(f->sidecarFontes, sizeof f->sidecarFontes, "%s.fonts", f->sidecar);
-    sc = dados_ler(f->sidecar);
+    sc = lerSidecar(f, &fontesConfirmadas);
   }
-  if (sc && !strncmp(sc, MARCA_COMPLETO, strlen(MARCA_COMPLETO))) {
+  if (sidecarCompleto(sc)) {
     // Os eventos e anexos usam versoes/provas separadas. Um marcador de corpo
     // sem cache de fontes correspondente nao pode virar cache completo.
-    if (lerFontesSidecar(f)) {
-      if (!entregarCorpoSeAtual(f, sc + strlen(MARCA_COMPLETO))) { free(sc); goto fim; }
+    if (fontesConfirmadas) {
+      if (!entregarCorpoSeAtual(f, sidecarCompleto(sc))) { free(sc); goto fim; }
       if (!definirEstadoSeAtual(f, MKVASS_COMPLETO)) { free(sc); goto fim; }
       printf("[mkvass] sidecar completo %s: sem rede\n", f->sidecar);
       fflush(stdout);
@@ -2810,12 +3506,12 @@ static void *trabalhar(void *arg) {
   }
 
   // Tentativa nova da mesma url: o endereco final que a anterior leu.
-  pthread_mutex_lock(&S.trava);
-  if (f->g == S.geracao && S.urlFinal[0] && strcmp(S.urlFinal, f->url)) {
-    snprintf(f->url, sizeof f->url, "%s", S.urlFinal);
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  if (f->g == estadoDoFio(f)->geracao && estadoDoFio(f)->urlFinal[0] && strcmp(estadoDoFio(f)->urlFinal, f->url)) {
+    snprintf(f->url, sizeof f->url, "%s", estadoDoFio(f)->urlFinal);
     f->finalVisto = 1;
   }
-  pthread_mutex_unlock(&S.trava);
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
   if (f->finalVisto) {
     char a[120], b[120];
     printf("[mkvass] url final reaproveitada: %s -> %s\n",
@@ -2831,16 +3527,17 @@ static void *trabalhar(void *arg) {
     char *c;
     nomeSidecar(f->urlOrig, -f->ordinal - 1, f->sidecar, sizeof f->sidecar);
     snprintf(f->sidecarFontes, sizeof f->sidecarFontes, "%s.fonts", f->sidecar);
-    pthread_mutex_lock(&S.trava);
-    if (f->g == S.geracao) S.prebuscaOrdinal = f->ordinal;
+    pthread_mutex_lock(&estadoDoFio(f)->trava);
+    if (f->g == estadoDoFio(f)->geracao) estadoDoFio(f)->prebuscaOrdinal = f->ordinal;
     // Onde o player vai comecar: a janela pre-buscada comeca ali.
-    if (f->g == S.geracao && f->fracIni > 0.0 && f->varreDur > 1.0) S.pos = f->fracIni * f->varreDur;
-    pthread_mutex_unlock(&S.trava);
-    c = dados_ler(f->sidecar);
-    if (c && !strncmp(c, MARCA_COMPLETO, strlen(MARCA_COMPLETO)) && lerFontesSidecar(f)) {
+    if (f->g == estadoDoFio(f)->geracao && f->fracIni > 0.0 && f->varreDur > 1.0) estadoDoFio(f)->pos = f->fracIni * f->varreDur;
+    pthread_mutex_unlock(&estadoDoFio(f)->trava);
+    c = lerSidecar(f, &fontesConfirmadas);
+    const char *cc;
+    if ((cc = sidecarCompleto(c)) != NULL && fontesConfirmadas) {
       printf("[mkvass] pre-busca: sidecar completo %s, sem mais rede\n", f->sidecar);
       fflush(stdout);
-      if (!esperarAdocao(f) || !entregarCorpoSeAtual(f, c + strlen(MARCA_COMPLETO)) ||
+      if (!esperarAdocao(f) || !entregarCorpoSeAtual(f, cc) ||
           !definirEstadoSeAtual(f, MKVASS_COMPLETO)) { free(c); goto fim; }
       free(c);
       goto fim;
@@ -2856,7 +3553,7 @@ static void *trabalhar(void *arg) {
   // escolheu nada. Volta a ocioso; a escolha de verdade comeca do zero.
   if (r && f->prebusca) {
     printf("[mkvass] pre-busca sem colheita: %s (HTTP %d, curl %d, %ld ms)\n",
-           r == MKVASS_NOGO_NAO_MKV ? "nao e MKV" : r == MKVASS_NOGO_FAIXA ? "nenhuma faixa ASS a colher"
+           r == MKVASS_NOGO_NAO_MKV ? "nao e MKV" : r == MKVASS_NOGO_FAIXA ? "nenhuma faixa de texto a colher"
            : r == MKVASS_NOGO_RESTO ? "o servidor recusou o resto" : "rede ou indice",
            f->ultSt, f->ultErro, agoraMs() - f->t0);
     fflush(stdout);
@@ -2878,17 +3575,17 @@ static void *trabalhar(void *arg) {
     free(sc);
     goto fim;
   }
-  pthread_mutex_lock(&S.trava);
-  if (f->g != S.geracao || S.parar) { pthread_mutex_unlock(&S.trava); free(sc); goto fim; }
-  S.nPontos = f->nPontos; S.varredura = f->varredura;
-  pthread_mutex_unlock(&S.trava);
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  if (f->g != estadoDoFio(f)->geracao || estadoDoFio(f)->parar) { pthread_mutex_unlock(&estadoDoFio(f)->trava); free(sc); goto fim; }
+  estadoDoFio(f)->nPontos = f->nPontos; estadoDoFio(f)->varredura = f->varredura;
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
   if (f->varredura) {
     // A linha que separa as hipoteses do #92 no log de quem nao tem indice:
     // o app NAO entregou a faixa a TV, esta varrendo.
     // Sem ';' dentro do formato: a varredura-i18n anda para tras ate o ';'
     // anterior para achar o printf, e um ';' no texto a deixava sem contexto.
     printf("[mkvass] faixa %d: o indice nao aponta os blocos desta faixa — VARREDURA de %d trecho(s) "
-           "(lista=%s, baixa os Clusters e nao so as falas, Segment ate %ld)\n",
+           "(lista=%s, baixa os Clusters e nao so as falas, Segment ate %lld)\n",
            f->faixa, f->nPontos, f->varreEncadeia ? "cues-do-video" : "cues-da-faixa", f->segFim);
     fflush(stdout);
   }
@@ -2897,6 +3594,17 @@ static void *trabalhar(void *arg) {
     printf("[mkvass] sidecar parcial: %d/%d blocos ja colhidos\n", f->nColhidos, f->nPontos);
   f->colhidosIni = f->nColhidos;
   free(sc);
+  // #384: faixa maior que o que a 2.0.2 colhia inteira. So a janela do
+  // playhead, pelo mesmo leitor (uma conexao, mesmo teto de Ranges, pausa no
+  // freio do CDN); nunca fecha "completo" e o sidecar sai parcial.
+  if (!f->varredura && f->nPontos > MKVASS_PONTOS_INTEIRA) {
+    f->janela = 1; f->manterFrente = MKVASS_MANTER_FRENTE_SEG;
+    pthread_mutex_lock(&estadoDoFio(f)->trava); f->despejoPos = estadoDoFio(f)->pos; pthread_mutex_unlock(&estadoDoFio(f)->trava);
+    printf("[mkvass] faixa %d: %d blocos, mais que os %d colhidos inteiros — colheita SO na janela do playhead "
+           "(sem faixa inteira em segundo plano, sem sidecar completo)\n",
+           f->faixa, f->nPontos, MKVASS_PONTOS_INTEIRA);
+    fflush(stdout);
+  }
   printf("[mkvass] faixa %d: %d blocos indexados, escala %lu ns, cabecalho %zu bytes "
          "(%ld ms desde a escolha, %ld Ranges, medio %ld ms, max %ld; fontes=%d)\n",
          f->faixa, f->nPontos, f->escala, f->corpoTam, agoraMs() - f->t0, f->redeN,
@@ -2920,14 +3628,30 @@ static void *trabalhar(void *arg) {
   while (minhaVez(f)) {
     double pos, ini, fim; int i, feitos = 0, colheuAlgo = 0;
     verAdocao(f);
-    pthread_mutex_lock(&S.trava);
-    if (f->g != S.geracao || S.parar) { pthread_mutex_unlock(&S.trava); goto sair; }
-    pos = S.pos; S.nColhidos = f->nColhidos; f->folgaJan = S.folga;
-    pthread_mutex_unlock(&S.trava);
+    pthread_mutex_lock(&estadoDoFio(f)->trava);
+    if (f->g != estadoDoFio(f)->geracao || estadoDoFio(f)->parar) { pthread_mutex_unlock(&estadoDoFio(f)->trava); goto sair; }
+    // Publica os colhidos ATE AGORA, contando os que o despejo devolveu a fila
+    // (#384): faixas.c mede progresso por este numero crescer.
+    pos = estadoDoFio(f)->pos; estadoDoFio(f)->nColhidos = f->nColhidos + (int)f->despejados; f->folgaJan = estadoDoFio(f)->folga;
+    pthread_mutex_unlock(&estadoDoFio(f)->trava);
     while (feitos < MKVASS_RANGES_POR_SEG && minhaVez(f)) {
       double t; int j, noJanela;
+      // #384: o corpo passou do que a TV guarda. Fica a janela do playhead; o
+      // que saiu volta a fila e e colhido de novo quando o playhead chegar.
+      // Se nem a janela minima coube (`cheio`), nada mais entra ate o playhead
+      // andar — sem isto o laco colheria e despejaria o mesmo trecho sem fim.
+      if (f->corpoTam > (size_t)MKVASS_CORPO_ALTO) {
+        if (!f->cheio || fabs(pos - f->despejoPos) >= 1.0) despejar(f, pos);
+        f->cheio = f->corpoTam > (size_t)MKVASS_CORPO_ALTO;
+        if (f->cheio) break;
+      } else {
+        f->cheio = 0;
+        // Ja em janela e o playhead foi para longe (seek, ou minutos tocando):
+        // o que ficou do trecho antigo sai, e abre espaco para a janela cheia.
+        if (f->janela && fabs(pos - f->despejoPos) > MKVASS_MANTER_FRENTE_SEG) despejar(f, pos);
+      }
       ini = pos - MKVASS_ATRAS_SEG;
-      fim = pos + (f->prebusca ? MKVASS_PREBUSCA_SEG : MKVASS_JANELA_SEG);
+      fim = pos + alcanceFrente(f);
       i = proximoPendente(f, ini, fim, &noJanela);
       // Pre-busca: a janela dos primeiros minutos esta colhida. Solta o video
       // e espera a adocao sem rede; o resto da faixa vem depois, adotada.
@@ -2946,7 +3670,7 @@ static void *trabalhar(void *arg) {
         janelaCheia = 1; janelaDe = pos;
         printf("[mkvass] janela %.0f-%.0f s colhida: %ld ms desde a escolha, %d/%d blocos, %ld Ranges "
                "(medio %ld ms, max %ld), palpites %d (falhos %d), tarde %d, antes do playhead %d\n",
-               ini, fim, agoraMs() - f->t0, f->nColhidos, f->nPontos, S.pedidos,
+               ini, fim, agoraMs() - f->t0, f->nColhidos, f->nPontos, estadoDoFio(f)->pedidos,
                f->redeN ? f->redeMs / f->redeN : 0, f->redeMaxMs,
                f->palpites, f->palpitesFalhos, f->atrasados, f->perdidos);
         fflush(stdout);
@@ -2956,6 +3680,7 @@ static void *trabalhar(void *arg) {
       }
       t = segundosDe(f, f->pontos[i].tempo);
       // Junta os vizinhos do mesmo Cluster que cabem em MKVASS_JUNTAR.
+      f->posRef = pos;
       j = grupoFim(f, i);
       // Os proximos grupos ja vao para o pool enquanto este e lido.
       preBuscar(f, pos);
@@ -2973,10 +3698,25 @@ static void *trabalhar(void *arg) {
         if (f->restoRecusado) {
           if (definirEstadoSeAtual(f, MKVASS_NOGO_RESTO)) {
             printf("[mkvass] o servidor recusou o resto: parando esta tentativa (HTTP %d, curl %d, %s)\n",
-                   f->ultSt, f->ultErro, momentoVideo());
+                   f->ultSt, f->ultErro, momentoVideo(f));
             fflush(stdout);
           }
           goto sair;
+        }
+        // #308: curl 28, 429 e 5xx sao o CDN pedindo calma, nao o fim da faixa.
+        // PAUSA a leitura lateral (10 s, dobrando ate 60 s) em vez de falhar:
+        // a faixa nao vai para a TV, e o video fica com a conexao so para ele.
+        // #385: conexao recusada (curl 6/7/35) e o mesmo pedido, ja na primeira.
+        if (f->falhas >= MKVASS_FALHAS_MAX && !f->definitivo &&
+            (f->ultErro == 28 || f->ultSt == 429 || f->ultSt >= 500 || conexaoRecusada(f->ultErro))) {
+          f->pausaMs = f->pausaMs ? (f->pausaMs * 2 > MKVASS_PAUSA_CDN_MAX_MS ? MKVASS_PAUSA_CDN_MAX_MS : f->pausaMs * 2) : MKVASS_PAUSA_CDN_INI_MS;
+          __atomic_add_fetch(&pausasCdn, 1, __ATOMIC_RELAXED);
+          printf("[mkvass] CDN pediu calma (HTTP %d, curl %d): leitura da legenda em pausa %ld ms\n",
+                 f->ultSt, f->ultErro, f->pausaMs);
+          fflush(stdout);
+          f->falhas = 1;
+          esperarMs(f, f->pausaMs);
+          continue;
         }
         if (f->falhas >= MKVASS_FALHAS_MAX) {
           if (definirEstadoSeAtual(f, f->definitivo ? MKVASS_NOGO_HTTP : MKVASS_NOGO_REDE)) {
@@ -2987,23 +3727,29 @@ static void *trabalhar(void *arg) {
           goto sair;
         }
         recuar(f);
-      } else colheuAlgo = 1;
+      } else { colheuAlgo = 1; f->pausaMs = 0; }
       }
       feitos++;
       // Fala da cena de agora: ao overlay ja, sem esperar a passada.
-      if (t < pos + MKVASS_URGENTE_SEG || agoraMs() - f->ultEntrega >= MKVASS_ENTREGA_MS)
+      if (t < pos + MKVASS_URGENTE_SEG ||
+          agoraMs() - f->ultEntrega >= (f->janela ? MKVASS_ENTREGA_JANELA_MS : MKVASS_ENTREGA_MS))
         entregar(f);
       // O playhead pode ter saltado (seek) durante o Range: reprioriza.
-      pthread_mutex_lock(&S.trava);
-      pos = S.pos;
-      pthread_mutex_unlock(&S.trava);
+      pthread_mutex_lock(&estadoDoFio(f)->trava);
+      pos = estadoDoFio(f)->pos;
+      pthread_mutex_unlock(&estadoDoFio(f)->trava);
     }
-    entregar(f);
-    pthread_mutex_lock(&S.trava);
-    if (f->g != S.geracao || S.parar) { pthread_mutex_unlock(&S.trava); goto sair; }
-    S.nColhidos = f->nColhidos;
-    pthread_mutex_unlock(&S.trava);
-    if (f->nColhidos + contarDesistidos(f) >= f->nPontos) {
+    // Em janela a entrega do fim da passada tambem espera (ver
+    // MKVASS_ENTREGA_JANELA_MS); a urgente, acima, nao.
+    if (!f->janela || agoraMs() - f->ultEntrega >= MKVASS_ENTREGA_JANELA_MS) entregar(f);
+    pthread_mutex_lock(&estadoDoFio(f)->trava);
+    if (f->g != estadoDoFio(f)->geracao || estadoDoFio(f)->parar) { pthread_mutex_unlock(&estadoDoFio(f)->trava); goto sair; }
+    estadoDoFio(f)->nColhidos = f->nColhidos + (int)f->despejados;
+    pthread_mutex_unlock(&estadoDoFio(f)->trava);
+    // #384: indice cortado ou fala que nao coube = a faixa NAO esta inteira,
+    // por mais que todo ponto conhecido esteja marcado. Fica colhendo (ocioso).
+    if (!f->indiceCortado && !f->corpoCortou &&
+        f->nColhidos + contarDesistidos(f) >= f->nPontos) {
       soltarPrebusca(f);
       // Faixa inteira colhida ainda na pre-busca (episodio curto, rede boa):
       // espera a adocao antes de fechar, senao o fio morreria com tudo e
@@ -3018,7 +3764,7 @@ static void *trabalhar(void *arg) {
       if (!definirEstadoSeAtual(f, MKVASS_COMPLETO)) goto fim;
       printf("[mkvass] completo: %d/%d blocos, %ld Ranges, %ld ms desde a escolha "
              "(palpites %d, falhos %d; tarde %d, antes do playhead %d)\n",
-             f->nColhidos, f->nPontos, S.pedidos, agoraMs() - f->t0,
+             f->nColhidos, f->nPontos, estadoDoFio(f)->pedidos, agoraMs() - f->t0,
              f->palpites, f->palpitesFalhos, f->atrasados, f->perdidos);
       fflush(stdout);
       goto fim;
@@ -3027,67 +3773,69 @@ static void *trabalhar(void *arg) {
       // Ocioso com a janela colhida: e a hora das fontes adiadas.
       if (!feitos && buscarFontesAdiadas(f)) entregar(f);
       // Nada pendente que a rede devolvesse: espera a posicao andar.
-      pthread_mutex_lock(&S.trava);
-      if (f->g == S.geracao && !S.parar) {
+      pthread_mutex_lock(&estadoDoFio(f)->trava);
+      if (f->g == estadoDoFio(f)->geracao && !estadoDoFio(f)->parar) {
         // CLOCK_MONOTONIC no cond exigiria pthread_condattr_setclock, que o
         // sysroot do webOS 4 nao garante; um timeout de 250 ms por REALTIME
         // erra pouco e o laco tolera.
         struct timespec rt; clock_gettime(CLOCK_REALTIME, &rt);
         rt.tv_nsec += 250L * 1000000L;
         if (rt.tv_nsec >= 1000000000L) { rt.tv_sec++; rt.tv_nsec -= 1000000000L; }
-        pthread_cond_timedwait(&S.sinal, &S.trava, &rt);
+        pthread_cond_timedwait(&estadoDoFio(f)->sinal, &estadoDoFio(f)->trava, &rt);
       }
-      pthread_mutex_unlock(&S.trava);
+      pthread_mutex_unlock(&estadoDoFio(f)->trava);
     }
   } }
 sair:
   // Saiu antes do fim (parar, troca de faixa, rede): guarda o que ha para a
   // proxima abertura nao repetir os Ranges ja pagos.
-  pthread_mutex_lock(&S.trava);
-  if (f->g == S.geracao) S.nColhidos = f->nColhidos;
-  pthread_mutex_unlock(&S.trava);
-  if (f->nColhidos > 0 && mkvass_estado() != MKVASS_COMPLETO) gravarSidecar(f, 0, 1);
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  if (f->g == estadoDoFio(f)->geracao) estadoDoFio(f)->nColhidos = f->nColhidos + (int)f->despejados;
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
+  if (f->nColhidos > 0 && estadoDe(estadoDoFio(f)) != MKVASS_COMPLETO) gravarSidecar(f, 0, 1);
 
 fim:
+  guardarReferencia(f);
   soltarPrebusca(f);
   free(f->jan.p); f->jan.p = NULL;
   // A pre-busca acabou de qualquer jeito: o player nao espera mais por ela.
-  pthread_mutex_lock(&S.trava);
-  if (f->g == S.geracao) {
-    if (S.prebuscaFase == 1) S.prebuscaFase = 2;
-    if (f->prebusca) S.prebusca = 0;
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  if (f->g == estadoDoFio(f)->geracao) {
+    if (estadoDoFio(f)->prebuscaFase == 1) estadoDoFio(f)->prebuscaFase = 2;
+    if (f->prebusca) estadoDoFio(f)->prebusca = 0;
   }
-  pthread_mutex_unlock(&S.trava);
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
   if (f->jobFontes) { long t; free(colherJobDe(f, f->jobFontes, &t, 1)); f->jobFontes = NULL; }
-  pthread_mutex_lock(&S.trava);
-  S.vivos--;
-  pthread_cond_broadcast(&S.sinal);
-  pthread_mutex_unlock(&S.trava);
-  free(f->pontos); free(f->corpo); liberarFontes(f); free(f);
+  pthread_mutex_lock(&estadoDoFio(f)->trava);
+  estadoDoFio(f)->vivos--;
+  pthread_cond_broadcast(&estadoDoFio(f)->sinal);
+  pthread_mutex_unlock(&estadoDoFio(f)->trava);
+  soltarPendentes(f); free(f->pend); pgs_liberar(f->pgs);
+  free(f->pontos); free(f->corpo); liberarFontes(f); soltarEstado(f->dono); free(f);
   return NULL;
 }
 
 // --- API ---------------------------------------------------------------------------
 
 // `escolher` != NULL: PRE-BUSCA (numeroFaixa 0; a faixa sai do cabecalho).
-static int iniciarFio(const char *url, int numeroFaixa, int herdar, int segurar,
+static int iniciarFioDe(MkvassPreparo *s, const char *url, int numeroFaixa, int herdar, int segurar,
                       MkvassEscolher escolher, double fracIni) {
   Fio *f; pthread_t t;
-  if (!url || !*url || (numeroFaixa == 0 && !escolher)) return 0;
+  if (!url || !*url || (numeroFaixa == 0 && !escolher && !s->escolherCom)) return 0;
   // ADOCAO: faixas.c pede por ordinal a faixa que a pre-busca desta url ja
   // esta colhendo. Nada de fio novo: o vivo passa a entregar (verAdocao).
-  if (!escolher && !herdar && numeroFaixa < 0) {
+  if (!escolher && !s->isolado && !herdar && numeroFaixa < 0) {
     int adotou = 0, col = 0, tot = 0; long ped = 0;
-    pthread_mutex_lock(&S.trava);
-    if (S.prebusca && S.vivos > 0 && !S.parar && S.estado < MKVASS_NOGO &&
-        S.prebuscaOrdinal == -numeroFaixa - 1 && !strcmp(S.url, url)) {
-      S.adotar = 1; S.adotarLegG = legenda_geracao();
-      S.faixa = numeroFaixa;
-      col = S.nColhidos; tot = S.nPontos; ped = S.pedidos;
-      pthread_cond_broadcast(&S.sinal);
+    pthread_mutex_lock(&s->trava);
+    if (s->prebusca && s->vivos > 0 && !s->parar && s->estado < MKVASS_NOGO &&
+        s->prebuscaOrdinal == -numeroFaixa - 1 && !strcmp(s->url, url)) {
+      s->adotar = 1; s->adotarLegG = legenda_geracao();
+      s->faixa = numeroFaixa;
+      col = s->nColhidos; tot = s->nPontos; ped = s->pedidos;
+      pthread_cond_broadcast(&s->sinal);
       adotou = 1;
     }
-    pthread_mutex_unlock(&S.trava);
+    pthread_mutex_unlock(&s->trava);
     if (adotou) {
       printf("[mkvass] ordinal %d pedido: adota a pre-busca em curso (%d/%d blocos, %ld Ranges ja feitos)\n",
              -numeroFaixa - 1, col, tot, ped);
@@ -3097,6 +3845,7 @@ static int iniciarFio(const char *url, int numeroFaixa, int herdar, int segurar,
   }
   f = calloc(1, sizeof *f);
   if (!f) return 0;
+  f->dono = reterEstado(s);
   snprintf(f->url, sizeof f->url, "%s", url);
   snprintf(f->urlOrig, sizeof f->urlOrig, "%s", url);
   f->faixa = numeroFaixa;
@@ -3105,50 +3854,73 @@ static int iniciarFio(const char *url, int numeroFaixa, int herdar, int segurar,
   f->segurar = segurar;
   f->t0 = agoraMs();
   f->ordinal = -1;
-  f->prebusca = escolher != NULL;
+  f->prebusca = escolher != NULL || (numeroFaixa == 0 && s->escolherCom);
+  f->lateral = f->prebusca;
   f->escolher = escolher;
+  if (s->isolado && numeroFaixa == 0 && !escolher) {
+    f->escolherCom = s->escolherCom;
+    f->contextoEscolha = s->contextoEscolha;
+    f->independente = 1;
+  }
   f->fracIni = fracIni > 0.0 && fracIni < 1.0 ? fracIni : 0.0;
-  assrender_preaquecer();
-  pthread_mutex_lock(&S.trava);
+  pthread_mutex_lock(&s->trava);
   // Tentativa nova da MESMA url (mkvass_retomar): herda o que ela ensinou —
   // url final, uma conexao so, janela menor. Escolha nova: comeca do zero,
   // MENOS a url final da mesma url (a pre-busca ja pagou o redirecionamento;
   // pagar de novo e um pedido a mais no addon e no CDN).
-  if (!herdar || strcmp(S.url, url)) {
-    if (strcmp(S.url, url)) S.urlFinal[0] = 0;
-    S.paralelos = MKVASS_PARALELOS; S.varreCh = MKVASS_VARRE_CH;
-    S.ultHttp = S.ultCurl = 0;
+  if (!herdar || strcmp(s->url, url)) {
+    if (strcmp(s->url, url)) s->urlFinal[0] = 0;
+    s->paralelos = MKVASS_PARALELOS; s->varreCh = MKVASS_VARRE_CH;
+    s->ultHttp = s->ultCurl = 0;
   }
-  if (strcmp(S.cabUrl, url)) { free(S.cab); S.cab = NULL; S.cabN = 0; S.cabUrl[0] = 0; }
-  f->paralelos = S.paralelos > 0 ? S.paralelos : MKVASS_PARALELOS;
+  if (strcmp(s->refUrl, url) || !herdar) {
+    legenda_documento_liberar(s->referencia); s->referencia = NULL; s->refUrl[0] = 0;
+  }
+  if (strcmp(s->cabUrl, url)) { free(s->cab); s->cab = NULL; s->cabN = 0; s->cabUrl[0] = 0; }
+  // CORRIDA DA ADOCAO: faixas.c escolheu antes de a pre-busca publicar o
+  // ordinal (cabecalho lateral lento, por exemplo no .tpk). A adocao la em
+  // cima falhou e este fio substitui o leitor lateral da MESMA url: conserva
+  // a janela lateral de 12 s em vez de voltar a colher 90 s a frente.
+  if (herdar || (s->prebusca && !strcmp(s->url, url))) f->lateral = s->lateral;
+  s->lateral = f->lateral;
+  f->paralelos = s->paralelos > 0 ? s->paralelos : MKVASS_PARALELOS;
   // Host que ja cortou Range nesta sessao (rede_corte_host): comeca com UMA.
-  if (rede_corte_host(url) > 0 || (S.urlFinal[0] && rede_corte_host(S.urlFinal) > 0))
+  if (rede_corte_host(url) > 0 || (s->urlFinal[0] && rede_corte_host(s->urlFinal) > 0))
     f->paralelos = 1;
-  f->varreCh = S.varreCh > 0 ? S.varreCh : MKVASS_VARRE_CH;
-  S.geracao++;
-  f->g = S.geracao;
-  snprintf(S.url, sizeof S.url, "%s", url);
-  S.faixa = numeroFaixa;
-  S.estado = MKVASS_PREPARANDO;
-  S.parar = 0;
-  S.pedidos = S.bytes = 0;
-  S.nPontos = S.nColhidos = 0; S.varredura = 0; S.folga = -1.0;
-  S.prebusca = escolher != NULL; S.prebuscaFase = escolher ? 1 : 0;
-  S.prebuscaOrdinal = -1; S.adotar = 0;
-  if (escolher) S.pos = 0.0;
-  S.vivos++;
-  pthread_cond_broadcast(&S.sinal);   // acorda o fio antigo para ele ver a geracao nova
-  pthread_mutex_unlock(&S.trava);
+  f->varreCh = s->varreCh > 0 ? s->varreCh : MKVASS_VARRE_CH;
+  s->geracao++;
+  f->g = s->geracao;
+  snprintf(s->url, sizeof s->url, "%s", url);
+  s->faixa = numeroFaixa;
+  s->estado = MKVASS_PREPARANDO;
+  s->parar = 0;
+  s->pedidos = s->bytes = 0;
+  s->nPontos = s->nColhidos = 0; s->varredura = 0; s->folga = -1.0;
+  s->prebusca = f->prebusca; s->prebuscaFase = f->prebusca ? 1 : 0;
+  s->prebuscaOrdinal = -1; s->adotar = 0;
+  if (f->prebusca) s->pos = 0.0;
+  s->vivos++;
+  pthread_cond_broadcast(&s->sinal);   // acorda o fio antigo para ele ver a geracao nova
+  pthread_mutex_unlock(&s->trava);
+  imgsub_limpar();   // fora de s->trava (ver mkvass_parar); o dono mais novo ja expulsa quadro velho
   if (pthread_create(&t, NULL, trabalhar, f) == 0) pthread_detach(t);
   else {
-    pthread_mutex_lock(&S.trava);
-    S.vivos--; S.estado = escolher ? MKVASS_OCIOSO : MKVASS_NOGO_REDE;
-    S.prebusca = 0; S.prebuscaFase = 0;
-    pthread_mutex_unlock(&S.trava);
-    free(f);
+    pthread_mutex_lock(&s->trava);
+    s->vivos--; s->estado = f->prebusca ? MKVASS_OCIOSO : MKVASS_NOGO_REDE;
+    s->prebusca = 0; s->prebuscaFase = 0;
+    pthread_mutex_unlock(&s->trava);
+    soltarEstado(f->dono); free(f);
     return 0;
   }
   return 1;
+}
+
+static int iniciarFio(const char *url, int numeroFaixa, int herdar, int segurar,
+                      MkvassEscolher escolher, double fracIni) {
+  MkvassPreparo *s = reterAtivo();
+  int ok = iniciarFioDe(s, url, numeroFaixa, herdar, segurar, escolher, fracIni);
+  soltarEstado(s);
+  return ok;
 }
 
 static void iniciarFaixa(const char *url, int numeroFaixa, int herdar, int segurar) {
@@ -3167,45 +3939,72 @@ void mkvass_iniciar_ordinal(const char *url, int ordinalFaixa) {
 
 int mkvass_prebuscar(const char *url, MkvassEscolher escolher, double fracInicio) {
   if (!url || !*url || !escolher) return 0;
-  printf("[mkvass] pre-busca antes do video: cabecalho, fontes, Cues e %.0f s de legenda "
-         "(teto %d ms, inicio em %.0f %%)\n", MKVASS_PREBUSCA_SEG, MKVASS_PREBUSCA_MS, fracInicio * 100.0);
+  printf("[mkvass] leitura lateral: cabecalho, fontes, Cues e janela de 12 s "
+         "(inicio em %.0f %%)\n", fracInicio * 100.0);
   fflush(stdout);
   return iniciarFio(url, 0, 0, 0, escolher, fracInicio);
 }
 
 int mkvass_prebusca_fase(void) {
+  MkvassPreparo *s = reterAtivo();
   int v;
-  pthread_mutex_lock(&S.trava); v = S.prebuscaFase; pthread_mutex_unlock(&S.trava);
+  pthread_mutex_lock(&s->trava); v = s->prebuscaFase; pthread_mutex_unlock(&s->trava);
+  soltarEstado(s);
   return v;
 }
 
 int mkvass_cabecalho(const char *url, unsigned char **buf, long *n) {
+  MkvassPreparo *s = reterAtivo();
   int ok = 0;
-  if (!url) return 0;
+  if (!url) { soltarEstado(s); return 0; }
   if (buf) *buf = NULL;
   if (n) *n = 0;
-  pthread_mutex_lock(&S.trava);
-  if (S.cab && S.cabN > 0 && !strcmp(S.cabUrl, url)) {
+  pthread_mutex_lock(&s->trava);
+  if (s->cab && s->cabN > 0 && !strcmp(s->cabUrl, url)) {
     if (!buf || !n) ok = 1;          // so a pergunta "ha?"
     else {
-      *buf = malloc((size_t)S.cabN);
-      if (*buf) { memcpy(*buf, S.cab, (size_t)S.cabN); *n = S.cabN; ok = 1; }
+      *buf = malloc((size_t)s->cabN);
+      if (*buf) { memcpy(*buf, s->cab, (size_t)s->cabN); *n = s->cabN; ok = 1; }
     }
   }
-  pthread_mutex_unlock(&S.trava);
+  pthread_mutex_unlock(&s->trava);
+  soltarEstado(s);
   return ok;
 }
 
+LegendaDocumento *mkvass_referencia(const char *url, uint64_t sessao,
+                                    const int *excluidas, int nExcluidas) {
+  MkvassPreparo *s = reterAtivo();
+  LegendaDocumento *d = NULL, *base = NULL;
+  pthread_mutex_lock(&s->trava);
+  int ok = url && !strcmp(url, s->refUrl);
+  for (int i = 0; i < nExcluidas; i++) if (excluidas[i] == s->refFaixa) ok = 0;
+  if (ok) base = legenda_documento_reter(s->referencia);
+  pthread_mutex_unlock(&s->trava);
+  if (base) {
+    int n; const LegendaCue *v = legenda_documento_dados(base, &n);
+    LegendaDocumentoInfo info = *legenda_documento_info(base); info.sessao = sessao;
+    d = legenda_documento_de_cues(v, n, &info);
+    legenda_documento_liberar(base);
+  }
+  soltarEstado(s);
+  return d;
+}
+
 void mkvass_video_aberto(int aberto) {
-  pthread_mutex_lock(&S.trava); S.videoAberto = aberto ? 1 : 0; pthread_mutex_unlock(&S.trava);
+  MkvassPreparo *s = reterAtivo();
+  pthread_mutex_lock(&s->trava); s->videoAberto = aberto ? 1 : 0; pthread_mutex_unlock(&s->trava);
+  soltarEstado(s);
 }
 
 static void retomar(int segurar) {
-  char url[sizeof S.url]; int faixa;
-  pthread_mutex_lock(&S.trava);
-  snprintf(url, sizeof url, "%s", S.url); faixa = S.faixa;
-  pthread_mutex_unlock(&S.trava);
-  iniciarFaixa(url, faixa, 1, segurar);
+  MkvassPreparo *s = reterAtivo();
+  char url[sizeof s->url]; int faixa;
+  pthread_mutex_lock(&s->trava);
+  snprintf(url, sizeof url, "%s", s->url); faixa = s->faixa;
+  pthread_mutex_unlock(&s->trava);
+  iniciarFioDe(s, url, faixa, 1, segurar, NULL, 0.0);
+  soltarEstado(s);
 }
 
 void mkvass_retomar(void) { retomar(0); }
@@ -3217,6 +4016,8 @@ void mkvass_retomar_segurando(void) { retomar(1); }
 // um minuto volta, e a legenda do app volta com ela. O resto e do arquivo
 // (nao e MKV, faixa nao e ASS, sem indice) ou do servidor (recusa HTTP
 // definitiva, Range recusado de novo) e nao muda tentando.
+long mkvass_pausas_cdn(void) { return __atomic_load_n(&pausasCdn, __ATOMIC_RELAXED); }
+
 long mkvass_recuo_ms(int estado, int falhas, int recusasRange) {
   static const long recuo[] = { 2000L, 5000L, 15000L, 30000L, 60000L };
   // Resto recusado: 2 s e 5 s depois o CDN recusava igual (#92, v1.4.7).
@@ -3231,71 +4032,152 @@ long mkvass_recuo_ms(int estado, int falhas, int recusasRange) {
 }
 
 void mkvass_ultima_falha(int *http, int *curl) {
-  pthread_mutex_lock(&S.trava);
-  if (http) *http = S.ultHttp;
-  if (curl) *curl = S.ultCurl;
-  pthread_mutex_unlock(&S.trava);
+  MkvassPreparo *s = reterAtivo();
+  pthread_mutex_lock(&s->trava);
+  if (http) *http = s->ultHttp;
+  if (curl) *curl = s->ultCurl;
+  pthread_mutex_unlock(&s->trava);
+  soltarEstado(s);
 }
 
 void mkvass_passo(double posSeg) {
-  pthread_mutex_lock(&S.trava);
+  MkvassPreparo *s = reterAtivo();
+  pthread_mutex_lock(&s->trava);
   // Pre-busca nao adotada: a janela e a de onde o video VAI comecar; o 0 do
   // pipeline antes da retomada a arrastaria para o inicio do arquivo.
-  if (S.prebusca) { pthread_mutex_unlock(&S.trava); return; }
-  if (S.estado == MKVASS_COLHENDO || S.estado == MKVASS_PREPARANDO) {
+  if (s->prebusca) { pthread_mutex_unlock(&s->trava); soltarEstado(s); return; }
+  if (s->estado == MKVASS_COLHENDO || s->estado == MKVASS_PREPARANDO) {
     // Meio segundo de histerese: acordar o fio a cada quadro por 16 ms de
     // avanco nao muda a janela e so custa trocas de contexto.
-    if (fabs(posSeg - S.pos) >= 0.5) { S.pos = posSeg; pthread_cond_broadcast(&S.sinal); }
+    if (fabs(posSeg - s->pos) >= 0.5) { s->pos = posSeg; pthread_cond_broadcast(&s->sinal); }
   }
-  pthread_mutex_unlock(&S.trava);
+  pthread_mutex_unlock(&s->trava);
+  soltarEstado(s);
 }
 
 void mkvass_folga(double segundosAFrente) {
-  pthread_mutex_lock(&S.trava);
+  MkvassPreparo *s = reterAtivo();
+  pthread_mutex_lock(&s->trava);
   // Acorda o fio so quando cruza o limiar da pausa, nos dois sentidos.
-  { int antes = S.folga >= 0.0 && S.folga < MKVASS_VARRE_FOLGA_SEG;
+  { int antes = s->folga >= 0.0 && s->folga < MKVASS_VARRE_FOLGA_SEG;
     int depois = segundosAFrente >= 0.0 && segundosAFrente < MKVASS_VARRE_FOLGA_SEG;
-    S.folga = segundosAFrente;
-    if (antes != depois) pthread_cond_broadcast(&S.sinal); }
-  pthread_mutex_unlock(&S.trava);
+    s->folga = segundosAFrente;
+    if (antes != depois) pthread_cond_broadcast(&s->sinal); }
+  pthread_mutex_unlock(&s->trava);
+  soltarEstado(s);
 }
 
 void mkvass_parar(void) {
-  pthread_mutex_lock(&S.trava);
-  if (S.vivos > 0) S.parar = 1;
-  S.prebusca = 0; S.adotar = 0;
-  if (S.prebuscaFase == 1) S.prebuscaFase = 2;
-  if (S.estado != MKVASS_COMPLETO && S.estado < MKVASS_NOGO) S.estado = MKVASS_OCIOSO;
-  S.pos = 0.0;
-  pthread_cond_broadcast(&S.sinal);
-  pthread_mutex_unlock(&S.trava);
+  imgsub_limpar();   // fora da trava: o desenho segura a trava do imgsub entre pegar e soltar
+  MkvassPreparo *s = reterAtivo();
+  pararEstado(s);
+  soltarEstado(s);
 }
 
 int mkvass_estado(void) {
+  MkvassPreparo *s = reterAtivo();
   int e;
-  pthread_mutex_lock(&S.trava); e = S.estado; pthread_mutex_unlock(&S.trava);
+  pthread_mutex_lock(&s->trava); e = s->estado; pthread_mutex_unlock(&s->trava);
+  soltarEstado(s);
   return e;
 }
 
 int mkvass_nogo(void) { return mkvass_estado() >= MKVASS_NOGO; }
 
 int mkvass_varredura(void) {
+  MkvassPreparo *s = reterAtivo();
   int v;
-  pthread_mutex_lock(&S.trava); v = S.varredura; pthread_mutex_unlock(&S.trava);
+  pthread_mutex_lock(&s->trava); v = s->varredura; pthread_mutex_unlock(&s->trava);
+  soltarEstado(s);
   return v;
 }
 
 int mkvass_ocupado(void) {
+  MkvassPreparo *s = reterAtivo();
   int v;
-  pthread_mutex_lock(&S.trava); v = S.vivos; pthread_mutex_unlock(&S.trava);
+  pthread_mutex_lock(&s->trava); v = s->vivos; pthread_mutex_unlock(&s->trava);
+  soltarEstado(s);
   return v > 0;
 }
 
 void mkvass_estatisticas(long *pedidos, long *bytes, int *colhidos, int *total) {
-  pthread_mutex_lock(&S.trava);
-  if (pedidos)  *pedidos  = S.pedidos;
-  if (bytes)    *bytes    = S.bytes;
-  if (colhidos) *colhidos = S.nColhidos;
-  if (total)    *total    = S.nPontos;
-  pthread_mutex_unlock(&S.trava);
+  MkvassPreparo *s = reterAtivo();
+  pthread_mutex_lock(&s->trava);
+  if (pedidos)  *pedidos  = s->pedidos;
+  if (bytes)    *bytes    = s->bytes;
+  if (colhidos) *colhidos = s->nColhidos;
+  if (total)    *total    = s->nPontos;
+  pthread_mutex_unlock(&s->trava);
+  soltarEstado(s);
+}
+
+MkvassPreparo *mkvass_preparo_criar(const char *url, MkvassEscolherCom escolher,
+                                  const void *contexto, size_t tamanhoContexto,
+                                  double fracInicio) {
+  MkvassPreparo *s;
+  if (!url || !*url || strlen(url) >= sizeof estadoInicial.url || !escolher ||
+      tamanhoContexto > 4096 || (tamanhoContexto && !contexto) ||
+      !isfinite(fracInicio) || fracInicio < 0.0 || fracInicio >= 1.0) return NULL;
+  s = calloc(1, sizeof *s);
+  if (!s) return NULL;
+  if (pthread_mutex_init(&s->trava, NULL)) { free(s); return NULL; }
+  if (pthread_cond_init(&s->sinal, NULL)) { pthread_mutex_destroy(&s->trava); free(s); return NULL; }
+  s->referencias = 1; s->isolado = 1; s->destruir = destruirEstado;
+  // O estado inicial e estatico; habilita sua limpeza somente quando a
+  // API independente pode substituir seu dono. Publica uma unica vez.
+  void (*semDestrutor)(MkvassPreparo *) = NULL;
+  __atomic_compare_exchange_n(&estadoInicial.destruir, &semDestrutor, destruirEstado,
+                              0, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+  s->estado = MKVASS_OCIOSO; s->folga = -1.0;
+  s->escolherCom = escolher; s->fracPreparo = fracInicio;
+  if (tamanhoContexto) {
+    s->contextoEscolha = malloc(tamanhoContexto);
+    if (!s->contextoEscolha) { soltarEstado(s); return NULL; }
+    memcpy(s->contextoEscolha, contexto, tamanhoContexto);
+    s->tamanhoContexto = tamanhoContexto;
+  }
+  if (!iniciarFioDe(s, url, 0, 0, 0, NULL, fracInicio)) { soltarEstado(s); return NULL; }
+  return s;
+}
+
+int mkvass_preparo_fase(MkvassPreparo *s) {
+  int fase = 0;
+  if (!s) return 0;
+  pthread_mutex_lock(&s->trava);
+  if (!s->parar) fase = s->prebuscaFase;
+  pthread_mutex_unlock(&s->trava);
+  return fase;
+}
+
+int mkvass_preparo_adotar(MkvassPreparo **preparo, const char *url, double fracInicio) {
+  MkvassPreparo *s, *antigo;
+  int ok;
+  if (!preparo || !(s = *preparo) || !url || !isfinite(fracInicio)) return 0;
+  pthread_mutex_lock(&ativoTrava);
+  antigo = estadoAtivo;
+  pthread_mutex_lock(&antigo->trava);
+  ok = !antigo->videoAberto;
+  pthread_mutex_unlock(&antigo->trava);
+  pthread_mutex_lock(&s->trava);
+  ok = ok && s->isolado && !s->parar && !strcmp(s->url, url) &&
+       fabs(s->fracPreparo - fracInicio) < 0.000001;
+  if (ok) {
+    pararEstado(antigo);
+    s->isolado = 0;
+    estadoAtivo = s; // transfere a referencia do handle para a API ativa
+    *preparo = NULL;
+  }
+  pthread_mutex_unlock(&s->trava);
+  pthread_mutex_unlock(&ativoTrava);
+  if (!ok) return 0;
+  soltarEstado(antigo);
+  return 1;
+}
+
+void mkvass_preparo_cancelar(MkvassPreparo **preparo) {
+  MkvassPreparo *s;
+  if (!preparo || !(s = *preparo)) return;
+  *preparo = NULL;
+  pararEstado(s);
+  soltarEstado(s); // worker e jobs em voo guardam suas proprias referencias
 }

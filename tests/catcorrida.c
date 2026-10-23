@@ -34,8 +34,8 @@ const char *sessao_usuario(void)        { return ""; }
 int         perfis_ativo(void)          { return 1; }
 const char *desc_genero_pt(const char *g) { return g; }
 int prog_ler(ProgRegistro *saida, int max) { (void)saida; (void)max; return 0; }
-int prog_gravar_local(const char *imdb, int t, int e, double p, double d) {
-  (void)imdb; (void)t; (void)e; (void)p; (void)d; return 0;
+int prog_gravar_local(const char *imdb, int t, int e, double p, double d, int tocou) {
+  (void)imdb; (void)t; (void)e; (void)p; (void)d; (void)tocou; return 0;
 }
 
 #define GRANDE 40
@@ -95,6 +95,24 @@ int main(void) {
   idx = cat_acrescentar(&extra);
   conferirExtra(idx, "tt8888888");
   printf("ok  cat_acrescentar com catalogo crescendo antes da trava\n");
+
+  // Mutacoes de episodio/progresso revalidam o indice DEPOIS da trava.
+  // O bloco cresce de 4 para 40 no gancho: 39 agora e 39, nao 39 % 4.
+  publicar(4, 0);
+  publicarNoGancho = 1;
+  cat_apontar_episodio(39, 2, 3);
+  assert(!publicarNoGancho && cat_n() == GRANDE);
+  assert(cat_item(39)->temporada == 2 && cat_item(39)->episodio == 3);
+  assert(cat_item(3)->temporada == 0);
+  printf("ok  apontar episodio revalida o indice sob a trava\n");
+
+  publicar(4, 0);
+  publicarNoGancho = 1;
+  cat_aplicar_progresso(39, 600, 3000, 2, 4);
+  assert(!publicarNoGancho && cat_n() == GRANDE);
+  assert(cat_item(39)->progresso == 20 && cat_item(39)->episodio == 4);
+  assert(cat_item(3)->progresso == 0);
+  printf("ok  aplicar progresso revalida o indice sob a trava, sem trava recursiva\n");
 
   cat_quadro();
   cat_quadro();

@@ -7,6 +7,9 @@
 // preferencias do player, mas quem o define e o modulo de video.
 #include "video.h"
 #include "catalogo.h"
+#ifdef NV_ANDROID
+#include "streams.h"
+#endif
 #include "aovivo.h"
 #include <SDL2/SDL.h>
 
@@ -15,25 +18,68 @@
 //
 // Com NULL, aguarda a consulta de fontes; nao simula uma reproducao.
 void player_abrir(int indiceCatalogo, const char *url);
+// A3: o logo e o Play do detalhe neste quadro; a abertura que comeca logo
+// depois parte deles (o logo vai ao centro, o Play vira o anel).
+void player_morph_de(GfxRect logo, GfxRect play);
 void player_definir_episodio(int temporada, int episodio);
+int player_reassistindo(void);
+void player_rewatch(int sim); // 0: retomada normal mesmo com reprise ativa
 void player_do_inicio(void);
+// 1 depois de player_do_inicio nesta abertura ("Do inicio"): sem ponto salvo.
+int  player_sem_retomada(void);
+// O arquivo tocando e bem mais curto que o titulo (o aviso de duracao viu):
+// pode ser uma parte de um filme em partes (partes.h).
+int  player_parece_parte(void);
+// Cancel duration rejection after confirming the playing file's multipart session.
+void player_confirmar_partes(void);
+// O aviso de duracao com a acao "Manter esta fonte (OK)" ainda esta no ar.
+int  player_aviso_duracao_ativo(void);
 // Posicao confiavel para preparar o Android: registro com duracao conhecida,
 // coerente com o percentual escolhido. Zero mantem a retomada normal depois
 // da duracao real; metadados/reservas nao servem para converter percentual.
 double player_regra_retomada_inicial(double posSalva, double durSalva,
                                      int percentual, int concluido);
+#ifdef NV_ANDROID
+// Prepara a mesma retomada do Play sem abrir sessao nem gravar progresso.
+int player_precarregar_fonte(int indiceCatalogo, int temporada, int episodio,
+                            int indiceFonte, unsigned token);
+unsigned player_precarregar_novo_token(void);
+int player_precarregar_proxima_fonte(int indiceCatalogo, int temporada, int episodio,
+                                    const Stream *fonte, unsigned token);
+int player_precarregar_estado(unsigned token);
+void player_precarregar_cancelar(unsigned token);
+void player_precarregar_adotar(unsigned token);
+#endif
 void player_episodio_atual(int *temporada, int *episodio);
 void player_aprender_creditos(void);
 int player_indice(void);
 const char *player_linha_episodio(void);
 int player_pediu_fontes(void);
+// Troca pelo caminho VOD existente: 1 = OK no aviso, 2 = salto automatico.
+int player_pediu_proxima_fonte(void);
+// A explicacao da espera na ilha do player (inicio.h, #202): texto ja traduzido
+// por quadro, "" = nada. O OK no cartao de abertura com texto pede Ajustes >
+// Fontes e addons > Escolha da fonte; o app.c consome com este.
+void player_definir_motivo_inicio(const char *texto);
+int  player_pediu_ajustes_fonte(void);
+// Ha quantos ms o player abriu (o Play); 0 fechado. Para o log do inicio (#202).
+Uint32 player_aberto_ha_ms(void);
 int player_pediu_proximo(int *temporada, int *episodio);
+int player_transporte_pedido_pendente(void);
+// Libera somente uma troca ja consumida que o roteador cancelou; preserva a fila.
+void player_episodio_pedido_liberar(void);
 const CatEp *player_proximo_episodio(void);
 // A REGRA DO CARTAO DE PROXIMO EPISODIO, isolada do estado do player para
 // poder ser exercitada por teste. `cred` e o segundo em que os creditos
 // comecam (0 quando nenhuma das duas fontes tem marcador). Devolve 1 quando o
 // cartao deve estar no ar.
 int player_regra_proximo(double posSeg, double durSeg, double cred);
+// Mesma janela do cartao, antecipada em segundos reais (0 = agora).
+int player_janela_proximo(double antecedencia);
+// Base (y, tela de 1080) da legenda principal: sobe para 690 so com o cartao
+// do proximo episodio NA TELA (posplay_sobre_video), e volta no quadro em que
+// ele some — dispensado, aceito ou contagem encerrada (2.0.3).
+float player_base_legenda(float baseNormal, int cartaoProximoNoAr);
 // A duracao do pipeline e menos de um terco da minutagem do catalogo (>= 15
 // min): ela nao descreve este episodio e a estimativa de fim nao pode usa-la.
 int player_duracao_suspeita(double durSeg, double catSeg);
@@ -54,6 +100,12 @@ int player_duracao_suspeita(double durSeg, double catSeg);
 // Um numero so: o mesmo que abre o cartao. Mais os 60 s de folga de sempre,
 // para quem sai por cima do fim sem passar pelo cartao.
 int player_regra_concluiu(double posSeg, double durSeg, double cred);
+// VISTO (#205): `tocado` segundos de midia tocados desde `base` (o ponto
+// retomado, 0 quando ele nao foi alcancado tocando) cobrem o trecho ate `pos`?
+// `*chegou` e o `tocou` gravado com a posicao. Visto = `fim` (concluiu) com
+// cobertura e ao menos 2 min no total: o seek ate o fim nao marca, e 70 s
+// contra a duracao falsa de 129 s de um trailer tambem nao.
+int player_regra_visto(double base, double tocado, double pos, int fim, int *chegou);
 void player_erro_fonte(void);
 // O mesmo cartao, com a causa no lugar das frases genericas (issue #112):
 // `titulo` substitui "Nao foi possivel abrir a fonte" e `dica` a linha de
@@ -88,6 +140,9 @@ int  player_carregando(void);
 int  player_controles_visiveis(void);
 // Idem, para #121: foco na barra de tempo e a posicao que ela mostra.
 int   player_foco_na_barra(void);
+// 1 quando o CIMA e do player (controles na tela, "Pular abertura", cartao de
+// abertura, painel de pausa): as estatisticas fixadas cedem a tecla.
+int   player_cima_dele(void);
 // #128: 1 na busca que comecou com os controles escondidos, quando so a barra
 // e o tempo estao na tela.
 int   player_so_barra(void);
@@ -99,9 +154,11 @@ void  player_limpar_legenda_nativa(char *s);
 int   player_texto_legenda_nativa(char *dst, int tam);
 float player_posicao_seg(void);
 int   player_pausado(void);
+int   player_pausa_pessoa(void);   // so a pausa pedida pela pessoa (#302)
 // Fator de cor do OSD do player (Ajustes > Brilho da interface no player + degrau
 // automatico com a barra parada). 1 = sem efeito. Ver esmaecer.h.
 float player_osd_brilho(void);
+float player_ui_hdr(void);   // HDR_UI_BRILHO com o video em HDR/DV, senao 1 (esmaecer.h)
 float player_duracao_seg(void);
 int   player_eh_canal(void);
 // StreamFit (F03): 1 + real backend duration of the player's own source.
@@ -111,6 +168,10 @@ int   player_duracao_midia(double *seg);
 // no ultimo instante (ver stream_idade_ms), entao a tela abre antes de haver
 // URL e o video entra quando chega.
 void player_definir_fonte(const char *url);
+// Troca automatica do mesmo filme/episodio: preservar segundos, inclusive
+// quando a sessao foi iniciada com "Assistir do comeco". Chamar antes de parar.
+// Zero e um ponto valido (a pessoa voltou ao inicio), nao retomada ausente.
+void player_definir_retomada_fonte(double segundos);
 // Desfaz a fonte em curso SEM fechar a tela: o video para e a sessao volta a
 // "abrindo fonte", como logo depois de player_abrir. E o recuo da fonte
 // guardada (fontevolta.h) para a busca normal, sem a pessoa ver o player
@@ -119,26 +180,43 @@ void player_voltar_a_esperar(void);
 
 int  player_aberto(void);   // 1 enquanto a tela existe, inclusive durante o fade de saida
 // Pedidos que so existem com um CANAL no ar (tipo "channel"/"tv"):
-// `player_pediu_guia` — BAIXO ou a tecla azul pediram o overlay do guia.
+// Live OK without controls, DOWN or BLUE requested the mini guide.
 // `player_pediu_zap` — CH+/CH- (NV_SCANCODE_CH_UP/DOWN), PgUp/PgDn e os botoes
 //   do OSD, somados por um debounce de 600 ms (aovivo.h): o deslocamento total.
 int  player_pediu_guia(void);
-// O botao "Guia" do OSD do canal: o guia COMPLETO com o canal no preview.
+// Guide/Menu or the live OSD Guide button: full guide with channel preview.
 int  player_pediu_guia_cheio(void);
 int  player_pediu_zap(void);        // deslocamento em canais (+3, -1...), 0 = nenhum
-int  player_pediu_recarregar(void);  // "Recarregar" do OSD: refaz a fonte do mesmo canal
+int  player_pediu_recarregar(void);  // live OSD or current VOD source reload
+// Capture on Sources open. A changed source/session rejects the request.
+unsigned player_recarregar_contexto(void);
+int player_recarregar_fonte(unsigned contexto);
+// "0" ou o botao "Ultimo canal" na Live TV (decisao 5): voltar ao canal anterior.
+int  player_pediu_ultimo(void);
+// Numero digitado na Live TV (M7) ja confirmado (1,5 s ou OK); 0 = nada.
+int  player_pediu_numero(void);
+const char *player_titulo_canal(void);   // nome do canal no ar ("" sem canal)
 // Identidade do canal congelada na abertura: o indice do catalogo pode ser
 // remapeado por uma republicacao da descoberta em plena reproducao, e zap/foco
 // do guia nao podem depender dele. "" quando a sessao nao e de canal.
 const char *player_id_canal(void);
+// Original resource type, including live-event add-ons using sport/sports.
+const char *player_tipo_canal(void);
 // Marca a sessao como CANAL com o item inteiro de quem abriu — usada pelo
 // guia, que e quem sabe o que pediu para tocar.
 void player_marcar_canal(const CatItem *item);
 void player_evento(const SDL_Event *e);
+// Watch Together (juntos.c): o relogio da sala pausa/solta e busca por aqui.
+void player_juntos_pausar(int pausado);
+void player_juntos_buscar(double seg);
+// "Sair da sessao" confirmado: fecha o player como o VOLTAR.
+void player_sair(void);
 void player_atualizar(float dt, Uint32 agora);
 void player_desenhar(Uint32 agora);
 int  player_quer_sair(void);  // 1 assim que o Back foi apertado
 void player_encerrar(void);
+// 1 uma vez se a ultima saida marcou o titulo como visto (aviso das Conquistas).
+int player_saiu_visto(void);
 // VOD na ilha: pausa antecipada durante a saida, conserva somente com ack,
 // depois retoma o mesmo IMDb/episodio sem reabrir fonte ou buscar posicao.
 void player_preparar_retencao(void);
@@ -150,6 +228,7 @@ int  player_retido_so_voo(void);
 int  player_retomar_retido(const char *imdb, int temporada, int episodio);
 void player_validar_retido(Uint32 agora);
 void player_descartar_retido(void);
+void player_ciclo_evento(Uint32 tipo);
 
 // --- MINI-PLAYER (PiP) DE CANAL ---------------------------------------------
 // Sair de um canal para a home nao mata a transmissao: o destino do plano de
@@ -169,6 +248,12 @@ void player_manter_mini(void);
 void player_restaurar(void);
 void player_fechar_mini(void);
 void player_mini_desenhar(Uint32 agora);
+#ifdef NV_TOUCH_UI
+// The app supplies its current modal eligibility; saved touch callbacks check
+// it again before restoring or closing the PiP. Drawing keeps page targets.
+void player_mini_toque_guarda(int (*pode)(void));
+void player_toque_modal_guarda(int (*pode)(void));
+#endif
 // MINI NO GUIA: o "mini" cujo destino e o preview do guia (sem moldura: o
 // guia fura e desenha em volta). `player_mini_no_guia` define a caixa e liga
 // o modo — antes de player_manter_mini()+abrir, a sessao nova ja nasce no
@@ -231,7 +316,16 @@ void        player_aspecto_ciclar(void);       // proximo modo + aviso na tela
 // preferencia do APARELHO e nao do titulo. A folha de faixas edita a struct e
 // chama player_leg_estilo_mudou(), que aplica no pipeline e grava.
 VideoLegendaEstilo *player_leg_estilo(void);
+// The same persisted style, before the first playback as well.
+void player_leg_estilo_carregar(void);
 void player_leg_estilo_mudou(void);
+// Settings commits a complete draft only after confirmation. A failed write
+// leaves both the playing style and its authored-ASS override flags intact.
+int player_leg_fonte_definir(int familia);
+int player_leg_fonte_local_definir(int indice);
+int player_leg_estilo_restaurar(void);
+int player_leg_estilo_definir(const VideoLegendaEstilo *estilo, int tocou);
+const VideoLegendaEstilo *player_leg_estilo_padrao(void);
 
 // QUAIS CAMPOS A PESSOA MEXEU DE FATO.
 //
@@ -243,15 +337,16 @@ void player_leg_estilo_mudou(void);
 //
 // "Restaurar padrao" LIMPA a marca (PLR_LEG_NADA): voltar ao padrao e dizer
 // "quero o comportamento normal do app", e o normal do app e respeitar o
-// arquivo. Tamanho, fonte e borda nao entram nesta conta — eles vencem o ASS
-// SEMPRE, porque tamanho de legenda numa TV e acessibilidade, nao estilo.
-//
-// Tudo isto vale para o parser REDUZIDO (legenda.c). Com o libass desenhando,
-// o arquivo manda em cor, fonte, fundo, posicao e borda (decisao do dono em
-// 25/09/2026, alinhada ao app web 1.2.0): trocar a cor apagava karaoke e
-// placas. O tamanho continua da pessoa, como escala proporcional do libass.
+// arquivo. Authored ASS overrides only the marked fields; size remains a
+// proportional libass scale. These bits match PLAIN_ASS_* in plainass.h.
 #define PLR_LEG_NADA  0
 #define PLR_LEG_COR   1
+#define PLR_LEG_FONTE 2
+#define PLR_LEG_COR_BORDA 4
+#define PLR_LEG_BORDA 8
+#define PLR_LEG_FUNDO 16
+#define PLR_LEG_POSICAO 32
+#define PLR_LEG_NEGRITO 64
 void player_leg_estilo_tocou(int campos);  // PLR_LEG_NADA zera
 int  player_leg_estilo_tocado(int campo);
 // Diretorio de DADOS (nao de arte) onde art/player.txt e gravado. Chamada por
@@ -267,9 +362,11 @@ void player_shot_estado(Uint32 agora, float pos, float dur, int tocando, int bot
 void player_shot_foco(int botao, int barra);
 void player_shot_toast(Uint32 agora, const char *texto, const char *icone, int ambar, int modo);
 void player_shot_esconder(void);
+const char *player_shot_toast_texto(Uint32 agora);
 void player_shot_carregando(int sim);
 void player_shot_buscando(int sim);
 void player_shot_video(int sim);
+void player_shot_furo_real(void);
 // Canal: a grade, o numero, quanto atras do ao vivo, o botao em foco e o
 // painel de Informacoes.
 void player_shot_favorito(int f);   // 1 = botao Favorito na fileira, 2 = e o canal nos favoritos

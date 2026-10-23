@@ -20,6 +20,7 @@
 //    frase + o que fazer), e nao uma linha de rodape que some em 4 s.
 #include "pessoas.h"
 #include "recomenda.h"
+#include "recenviar.h"
 #include "teclado.h"
 #include "gfx.h"
 #include "text.h"
@@ -33,6 +34,9 @@
 #include "plrui.h"
 #define NV_ESCALA_TELA_ATIVA   // mede pela tela do fator ativo (escala.h)
 #include "escala.h"
+#include "ponteiro.h"
+#include "rolagemtoque.h"
+#include "telefoneui.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -65,7 +69,7 @@ enum { PG_MENU = 0, PG_LISTA, PG_CARTAO, PG_PEDIDOS, PG_BLOQ, PG_PERFIL, PG_GEN 
 // O que cada linha faz ao OK.
 enum { A_NADA = 0,
        A_BUSCAR, A_GOSTO, A_PEDIDOS, A_PERFIL, A_BLOQUEADOS,
-       A_COMUNIDADE, A_MAIS,           // a lista da comunidade e "Ver mais"
+       A_COMUNIDADE, A_MAIS, A_CODIGO,           // a lista da comunidade e "Ver mais"
        A_PESSOA,                       // abre o cartao de quem esta na linha
        A_PEDIR, A_CANCELAR, A_ACEITAR, A_RECUSAR, A_BLOQUEAR, A_DESBLOQ,
        A_P_PESQ, A_P_APELIDO, A_P_BIO, A_P_GEN, A_P_FOTO, A_P_REC, A_P_ATIV,
@@ -91,6 +95,16 @@ typedef struct {
 
 static int   aberto, foco, coluna = 1;   // coluna 1 = a pilula de acao da linha
 static float anim, rolagem, rolagemAlvo;
+#ifdef NV_TOUCH_UI
+static ToqueRolagem toque;
+static void toqueRetomar(void);
+static int toqueRolar(const PonteiroRolagem *e) {
+  if (!aberto || teclado_aberto()) return 0;
+  int r = toquerol_evento(&toque, e);
+  if (r) rolagemAlvo = rolagem;
+  return r;
+}
+#endif
 static Linha linhas[PE_MAXL];
 static float linhaY[PE_MAXL];            // topo de cada linha dentro da lista
 static float conteudoH;
@@ -151,6 +165,9 @@ static void irPara(int pg) {
   pagina = pg;
   foco = 0; coluna = 1;
   rolagem = rolagemAlvo = 0.0f;
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toque);
+#endif
   confirmando = -1;
   memset(focoAnim, 0, sizeof focoAnim);
   memset(colAnim, 0, sizeof colAnim);
@@ -291,6 +308,14 @@ static void montar(void) {
   nL = 0;
   if (pagina == PG_MENU) {
     nova(T_BUSCA, A_BUSCAR, "");
+    // O CODIGO NA MESMA FOLHA (06/10, "tudo mais junto"): o painel tem um botao
+    // so, "Adicionar pessoas", e aqui estao as duas formas — buscar e digitar
+    // o codigo de um amigo — com o codigo de quem esta olhando logo ali.
+    { const char *cod = recomenda_meu_codigo();
+      Linha *l = navL(A_CODIGO, "aj_user-plus", "Adicionar por código", NULL);
+      if (l) {
+        if (cod[0]) snprintf(l->sub, sizeof l->sub, i18n("O seu código é %s"), cod);
+        else snprintf(l->sub, sizeof l->sub, "%s", i18n("Digite o código de um amigo")); } }
     if (np > 0) {
       secao("Pedidos de amizade", np);
       for (i = 0; i < np && i < 3; i++) { RecPessoa p; if (recomenda_pedido(i, &p)) pessoaL(&p); }
@@ -463,6 +488,25 @@ static int temColunaAcao(int i) {
   return i >= 0 && i < nL && linhas[i].tipo == T_PESSOA && acaoDaPessoa(&linhas[i].p) != A_NADA;
 }
 
+// PONTEIRO (#99): foco pelas MESMAS variaveis das setas — `foco` (a linha) e,
+// numa pessoa com acao, `coluna` (b: 1 = a pilula, 0 = a pessoa). O OK do
+// clique segue por pessoas_evento (aplicar). Idempotente; com o teclado
+// aberto nao mexe em nada (ele e camada propria).
+static int   pnRegistrar;          // a ilha assentada: vale registrar alvos
+static float pnTopo, pnBase;       // a janela da lista (recorte vertical)
+static void ponteiroLinha(int i, int col) {
+  int temCol;
+  if (!aberto || teclado_aberto() || !focavel(i)) return;
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toque);
+#endif
+  temCol = temColunaAcao(i);
+  if (foco == i && (!temCol || coluna == col)) return;
+  foco = i; confirmando = -1;
+  if (temCol) coluna = col;
+}
+int pessoas_teste_foco(int *col) { if (col) *col = coluna; return foco; }
+
 // --- acao ---------------------------------------------------------------------------
 
 static void abrirTeclado(int alvo) {
@@ -542,6 +586,11 @@ static void aplicar(void) {
       if (recomenda_listar_pedidos()) opAtual = A_PEDIDOS;
       return;
     case A_PERFIL: carregarRascunho(); irPara(PG_PERFIL); return;
+    case A_CODIGO:
+      // A folha do codigo e outra modal: esta se fecha antes de abri-la.
+      aberto = 0;
+      recenviar_abrir_amigos();
+      return;
     case A_BLOQUEADOS:
       irPara(PG_BLOQ);
       if (recomenda_listar_bloqueados()) opAtual = A_BLOQUEADOS;
@@ -626,6 +675,9 @@ void pessoas_evento(const SDL_Event *e) {
   if (!aberto) return;
   if (teclado_aberto()) { teclado_evento(e); return; }
   if (e->type != SDL_KEYDOWN) return;
+#ifdef NV_TOUCH_UI
+  if (toquerol_navegacao(e)) toqueRetomar();
+#endif
   k = e->key.keysym.sym;
   if (e->key.repeat && teclaOk(k)) return;
   // ← NA PILULA VAI A PESSOA (OK abre o perfil); → volta a pilula. Em qualquer
@@ -776,6 +828,20 @@ static void medir(void) {
 }
 
 static float janelaH(float cab);
+static float alturaIlha(void);
+static float janelaFoco(void) {
+#ifdef NV_TOUCH_UI
+  if (telefoneui_ativo()) {
+    /* Choose the same scale from the same unscaled geometry as drawing,
+     * including on the first frame or after a rotation. */
+    ESCALA_SE_COUBER_INI(PE_W, alturaIlha());
+    float h = janelaH(0);
+    ESCALA_SE_COUBER_FIM();
+    return h;
+  }
+#endif
+  return janelaH(0);
+}
 
 void pessoas_atualizar(float dt, Uint32 agora) {
   int i, est;
@@ -838,7 +904,14 @@ void pessoas_atualizar(float dt, Uint32 agora) {
   // ROLAGEM: a linha focada inteira na janela, com meia linha de folga quando
   // da (quem desce ve que ha mais embaixo). A secao logo acima da linha focada
   // entra junto: um cabecalho sozinho no pe da janela nao diz nada.
-  { float jh = janelaH(0.0f), topoF, baseF;
+#ifdef NV_TOUCH_UI
+  if (toquerol_livre(&toque)) {
+    float jh = telefoneui_ativo() ? janelaFoco() : toque.regiao.h;
+    rolagem = rolagemAlvo = toquerol_clamp(rolagem, 0.0f, fmaxf(0.0f, conteudoH - jh));
+    return;
+  }
+#endif
+  { float jh = janelaFoco(), topoF, baseF;
     if (foco >= 0 && foco < nL) {
       topoF = linhaY[foco];
       if (foco > 0 && linhas[foco - 1].tipo == T_SECAO) topoF = linhaY[foco - 1];
@@ -972,7 +1045,11 @@ static void desenhaPessoa(float x, float y, int i, Uint32 agora, float a) {
   rec_avatar_estilo((GfxRect){ x, yc - PE_AV * 0.5f, PE_AV, PE_AV }, p->avatar, l1, p->pub, a, TXT_ILHA_INICIAL);
   tx = x + PE_AV + 20.0f;
   xd = x + PE_INTERNO;
-  xd -= pilulaPessoa(xd, yc, p, colAnim[i], agora, a) + 24.0f;
+  { float pw = pilulaPessoa(xd, yc, p, colAnim[i], agora, a);
+    // A pilula por cima da linha (registrada depois): ali o foco e a coluna 1.
+    if (pnRegistrar && temColunaAcao(i))
+      ponteiro_alvo_faixa(xd - pw, yc - 30.0f, pw, 60.0f, pnTopo, pnBase, ponteiroLinha, NULL, i, 1);
+    xd -= pw + 24.0f; }
   // O FOCO NA PESSOA (coluna 0, ← na pilula): o chevron antes da pilula diz
   // "OK abre o perfil" sem precisar ler o rodape.
   if (naPessoa) {
@@ -1143,7 +1220,7 @@ static float selosGeneros(float x, float y, float larg, unsigned m, float a) {
 static const char *chapeuDe(void) { return pagina == PG_CARTAO ? "Perfil" : "Amigos"; }
 static const char *tituloDe(void) {
   switch (pagina) {
-    case PG_MENU:    return "Encontrar pessoas";
+    case PG_MENU:    return "Adicionar pessoas";
     case PG_LISTA:   return tituloLista(listaOrigem);
     case PG_PEDIDOS: return "Pedidos de amizade";
     case PG_BLOQ:    return "Pessoas bloqueadas";
@@ -1154,7 +1231,7 @@ static const char *tituloDe(void) {
 }
 static const char *subDe(void) {
   switch (pagina) {
-    case PG_MENU:    return "Ache amigos pelo apelido ou pelo código de 6 letras que eles te passarem.";
+    case PG_MENU:    return "Busque pelo nome ou @apelido, ou digite o código de 6 letras de um amigo.";
     case PG_LISTA:   return listaOrigem == 3 ? "Quem ligou o Perfil pesquisável, com atividade mais recente primeiro."
                           : listaOrigem == 2 ? "Quem tem títulos ou gêneros em comum com você."
                           : "";
@@ -1271,6 +1348,17 @@ static float alturaIlha(void) {
   float cab = alturaCab(&c, temC);
   return PE_PAD * 2.0f + cab + janelaH(cab) + PE_RODAPE;
 }
+#ifdef NV_TOUCH_UI
+static void toqueRetomar(void) {
+  if (toquerol_livre(&toque) && nL > 0) {
+    float ponto = rolagem + toque.regiao.h * 0.35f;
+    int i = 0;
+    while (i + 1 < nL && linhaY[i + 1] <= ponto) i++;
+    foco = i; acertarFoco();
+  }
+  toquerol_limpar(&toque);
+}
+#endif
 // Cartao de tela quase cheia: ampliado so se ainda couber (escala.h).
 void pessoas_desenhar(Uint32 agora) {
   ESCALA_SE_COUBER_INI(PE_W, alturaIlha());
@@ -1292,6 +1380,7 @@ static void pessoas_desenharCorpo_(Uint32 agora) {
   y = (NV_TELA_H - alt) * 0.5f + (1.0f - a) * 40.0f;
 
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, (ajustes_vidro() ? 0.55f : 0.66f) * anim);
+  gfx_vidro_cobrir();
   // A ILHA no material das outras do Glass UI (plrui_material): o mesmo miolo
   // da folha de Fontes e do player, vidro ou solido pelo ajuste.
   plrui_material((GfxRect){ x, y, PE_W, alt }, PE_RAIO, 1, a);
@@ -1312,9 +1401,22 @@ static void pessoas_desenharCorpo_(Uint32 agora) {
   // A LISTA, recortada na janela e rolada pela mola.
   ly = y + PE_PAD + cab;
   gfx_recorte(x, ly - 8.0f, PE_W, jh + 16.0f);
+  // So assentada (a mola da entrada passa de 1) e sem o teclado por cima.
+  pnRegistrar = aberto && anim > 0.99f && anim < 1.01f && !teclado_aberto();
+  pnTopo = ly - 8.0f; pnBase = ly + jh + 8.0f;
+#ifdef NV_TOUCH_UI
+  if (pnRegistrar) {
+    toquerol_vincular(&toque, (GfxRect){ x, ly, PE_W, jh }, gfx_escala(), 0.0f, fmaxf(0.0f, conteudoH - jh), 1, &rolagem);
+    ponteiro_rolagem(toqueRolar);
+  }
+#endif
   for (i = 0; i < nL; i++) {
     float ry = ly + linhaY[i] - rolagem, h = alturaLinha(&linhas[i]);
     if (ry + h < ly - 8.0f || ry > ly + jh + 8.0f) continue;
+    if (pnRegistrar && focavel(i)) {
+      GfxRect r = retLinha(hx, ry, h);
+      ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, pnTopo, pnBase, ponteiroLinha, NULL, i, 0);
+    }
     switch (linhas[i].tipo) {
       case T_PESSOA: desenhaPessoa(hx, ry, i, agora, a); break;
       case T_BUSCA:  desenhaBusca(hx, ry, i, a); break;
@@ -1331,6 +1433,7 @@ static void pessoas_desenharCorpo_(Uint32 agora) {
   if (rolagem + jh < conteudoH - 1.0f)
     gfx_cor((GfxRect){ hx, ly + jh + 8.0f, PE_INTERNO, 1.0f }, 0.0f, 1, 1, 1, 0.12f * a);
 
+  pnRegistrar = 0;
   desenhaRodape(hx, y + alt - PE_PAD - PE_RODAPE + 18.0f, a);
   teclado_desenhar(agora);
 }

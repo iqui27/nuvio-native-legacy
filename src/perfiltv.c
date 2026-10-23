@@ -82,6 +82,15 @@ static int gpuFraca = 0;
 void ptv_definir_gpu_fraca(int f) { gpuFraca = f ? 1 : 0; }
 int  ptv_gpu_fraca_atual(void) { return gpuFraca; }
 
+static int gpuUtgardAtual = 0;
+void ptv_definir_gpu_utgard(int u) { gpuUtgardAtual = u ? 1 : 0; }
+int  ptv_gpu_utgard_atual(void) { return gpuUtgardAtual; }
+
+int ptv_gpu_utgard(const char *r) {
+  const char *m = r ? strstr(r, "Mali-") : NULL;
+  return m && m[5] == '4' && m[6] >= '0' && m[6] <= '9';
+}
+
 int ptv_gpu_fraca(const char *r) {
   const char *m;
   if (!r) return 0;
@@ -89,7 +98,7 @@ int ptv_gpu_fraca(const char *r) {
   if (!m) return 0;
   m += 5;
   // Utgard (Mali-400/450/470): so GLES2, o mais fraco de todos.
-  if (m[0] == '4' && m[1] >= '0' && m[1] <= '9') return 1;
+  if (ptv_gpu_utgard(r)) return 1;
   // Midgard (Mali-T6xx/T7xx/T8xx) e o "Mali-TDVX" que a Samsung rebatiza.
   if (m[0] == 'T') return 1;
   return 0;
@@ -147,8 +156,9 @@ int ptv_tex_teto_mb(PtvPlataforma p, long mem) {
   }
   if (!mem) return 160;
   if (mem < 1200) return 64;
+  if (mem <= 1300) return 128;
   if (mem < 2000) return 160;
-  if (mem < 3000) return 300;
+  if (mem < 3000) return p == PTV_ANDROID ? 192 : 300;
   return 512;
 }
 
@@ -169,8 +179,25 @@ static int fiosTeto(PtvPlataforma p, long mem) {
 int ptv_heroi_max(PtvPlataforma p, long mem) {
   if (p == PTV_TIZEN) return mem >= 2000 ? 1920 : 1280;
   if (p == PTV_TPK && !mem) return 1280;
-  if (mem && mem < 1200) return 1280;
+  if (mem && mem <= 1300) return 1280;
   return 1920;
+}
+
+// Trailer em MP4 progressive (#584): sem ABR, o Samsung mostra o que ja baixou,
+// entao o 1080p chega borrado e demora a firmar. Em Automatico (teto 0) a TV
+// Samsung de 2 GB ou menos comeca no 720p. `alt` vem em ordem decrescente;
+// devolve o indice da maior definicao que nao passa do teto (ou a menor).
+int ptv_trailer_indice(PtvPlataforma p, long mem, int teto, const int *alt, int n) {
+  int i;
+  if (!teto && (p == PTV_TIZEN || p == PTV_TPK) && mem > 0 && mem <= 2048) teto = 720;
+  for (i = 0; i < n; i++) if (!teto || alt[i] <= teto) return i;
+  return n - 1;
+}
+
+// Teto duro (Android fraco): -1 quando nem a menor definicao cabe no teto.
+int ptv_trailer_indice_duro(PtvPlataforma p, long mem, int teto, const int *alt, int n) {
+  int i = ptv_trailer_indice(p, mem, teto, alt, n);
+  return (teto && alt[i] > teto) ? -1 : i;
 }
 
 void ptv_padrao(PtvPlataforma p, long mem, PtvPerfil *out) {
@@ -182,6 +209,11 @@ void ptv_padrao(PtvPlataforma p, long mem, PtvPerfil *out) {
   out->heroiLarg = p == PTV_TIZEN ? 1280 : ptv_heroi_max(p, mem);
   // .tpk: 1920 so com 2 GB ou mais E GPU que nao e das fracas (tabela acima).
   if (p == PTV_TPK && (gpuFraca || mem < 2000)) out->heroiLarg = 1280;
+  // Utgard (#286, registro 1V5YJY): o heroi decodificado a 1280 chegava depois
+  // do prazo de 600 ms em 26 de 55 trocas, e a TV so tem 2 fios de decode. 960
+  // tem 56% dos pixels de 1280 (decode e upload menores) e a tela de 1920 ja
+  // ampliava a arte; GPUs que nao sao Utgard continuam em 1280/1920.
+  if (p == PTV_TPK && gpuUtgardAtual) out->heroiLarg = 960;
 }
 
 // QUALIDADE = o teto que a RAM permite em tudo. DESEMPENHO = menos pressao:
