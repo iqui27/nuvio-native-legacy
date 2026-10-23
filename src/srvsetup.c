@@ -537,13 +537,13 @@ void srvsetup_desenhar(Uint32 now) {
   } else if (screen == ADDRESS || screen == PASSWORD || screen == CONNECT_PASSWORD) {
     panel(200,386,750,430,0); panel(1020,386,804,430,0);
     if(screen==ADDRESS) { button(0,addressText[0]?addressText:"Endereço",232,440,680); button(1,"Conectar",232,580,260); button(2,"Buscar",510,580,300); }
-    else { button(0,username[0]?username:"Usuário do Jellyfin",232,420,680); button(1,password[0]?"••••••••":"Senha",232,500,680); button(2,"Entrar",232,620,260); button(3,screen==CONNECT_PASSWORD?"Emby Connect":"Voltar",510,620,300); }
+    else { button(0,username[0]?username:provider==2?"Usuário do Emby":"Usuário do Jellyfin",232,420,680); button(1,password[0]?"••••••••":"Senha",232,500,680); button(2,"Entrar",232,620,260); button(3,screen==CONNECT_PASSWORD?"Emby Connect":"Voltar",510,620,300); }
     text(TXT_G30B,"Teclado",1052,420,243,680);
     paragraph("Em campos de texto, o botão do celular mostra um QR. Você digita no telefone e o texto chega na TV.",1052,480,680);
     if (screen != ADDRESS) text(TXT_ILHA_SUB,"Senha",1052,620,155,680);
   } else if(screen==LIBRARIES || screen==ROWS) {
     panel(200,386,750,500,0);
-    if(!nLibraries) paragraph("Carregando…",232,420,680);
+    if(!nLibraries) paragraph(worker.alive?"Carregando…":"Não configurado",232,420,680);
     int shown=nLibraries>4?4:nLibraries;
     int start=selected>3?selected-3:0; if(start+shown>nLibraries)start=nLibraries-shown; if(start<0)start=0;
     for(int j=0;j<shown;j++){int i=start+j; char label[192]; snprintf(label,sizeof label,"%s  %s",screen==ROWS?"":checked[i]?"[x]":"[ ]",libraries[i].titulo); row(i,label,libraries[i].tipo,410+j*88,provider);}

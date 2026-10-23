@@ -853,7 +853,8 @@ static void reconstruir(void) {
   memset(addonOrigens, 0, sizeof addonOrigens); nAddonOrigens = 0;
   for (int i = 0; i < n; i++) {
     const CatItem *ci = cat_item(i);
-    if (!ci || !noModo(modo, ci, i) || !ci->origem[0]) continue;
+    if (!ci || !noModo(modo, ci, i) || !ci->origem[0] ||
+        !strcmp(ci->origem,"plex") || !strcmp(ci->origem,"jellyfin") || !strcmp(ci->origem,"emby")) continue;
     int k;
     for (k = 0; k < nAddonOrigens; k++) if (!strcmp(addonOrigens[k].id, ci->origem)) break;
     if (k == nAddonOrigens) {
@@ -2274,7 +2275,7 @@ static void bibSourceBadges(const CatItem *ci, float x, float y, float a) {
     txt_desenhar_alpha(t, x + (26 - t.w) / 2, y + (26 - t.h) / 2, a);
     x += 31;
   }
-  if (ci->origem[0]) {
+  if (ci->origem[0] && strcmp(ci->origem,"plex") && strcmp(ci->origem,"jellyfin") && strcmp(ci->origem,"emby")) {
     gfx_cor((GfxRect){x, y, 26, 26}, 8.0f / 26, .035f, .035f, .045f, .85f * a);
     txt_desenhar_alpha(txt_linha(TXT_MINI, "A", 230, 230, 230, 255), x + 8, y + 5, a);
     x += 31;
