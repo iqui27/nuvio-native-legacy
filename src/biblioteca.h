@@ -7,6 +7,7 @@
 #ifndef NV_BIBLIOTECA_H
 #define NV_BIBLIOTECA_H
 #include <SDL2/SDL.h>
+#include "catalogo.h"
 
 int  biblioteca_iniciar(void);
 void biblioteca_evento(const SDL_Event *e);
@@ -19,6 +20,9 @@ void biblioteca_encerrar(void);
 // Called on the UI thread; no server connection or network work belongs here.
 typedef int (*BibliotecaOrigens)(int index, const char **name, int *count);
 void biblioteca_origens_servidores(BibliotecaOrigens rows, void (*select)(int index));
+// Membership callback: provider -1 means any server, 0 Plex, 1 Jellyfin, 2 Emby.
+void biblioteca_servidores_contem(int (*contains)(const CatItem *, int));
+void biblioteca_servidor_filtrar(int provider);
 
 // OK pressionado sobre um poster: consome o pedido e devolve 1, escrevendo em
 // *indiceCatalogo o indice do item NO CATALOGO (nao a posicao na grade — a

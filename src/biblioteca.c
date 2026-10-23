@@ -317,6 +317,15 @@ static struct { char id[96], nome[96]; int count; } addonOrigens[8];
 static int nAddonOrigens;
 static BibliotecaOrigens serverRows;
 static void (*serverSelect)(int);
+static int (*serverContains)(const CatItem *, int);
+static int serverFilter = -1;
+void biblioteca_servidores_contem(int (*contains)(const CatItem *, int)) { serverContains = contains; }
+static void reconstruir(void);
+void biblioteca_servidor_filtrar(int provider) {
+  serverFilter = provider >= 0 && provider < 3 ? provider : -1;
+  origem = ORIG_TODAS;
+  reconstruir();
+}
 void biblioteca_origens_servidores(BibliotecaOrigens rows, void (*select)(int)) {
   serverRows = rows; serverSelect = select;
 }
@@ -773,7 +782,7 @@ static int daOrigem(int fontes) {
 //   Coleções     : naColecao ou comprado (independe do estado).
 static int noModo(int m, const CatItem *ci, int i) {
   switch (m) {
-    case MODO_PARAVER:    return ci->naLista && !emAndamento(ci);
+    case MODO_PARAVER:    return (ci->naLista || (serverContains && serverContains(ci, -1))) && !emAndamento(ci);
     case MODO_ANDAMENTO:  return emAndamento(ci);
     case MODO_ASSISTIDOS: return cat_visto(ci);
     case MODO_COLECOES:   return ci->naColecao || (i >= 0 && i < CAT_MAX && comprado[i]);
@@ -872,6 +881,7 @@ static void reconstruir(void) {
     // rede a cada descoberta, entao a posicao 3 de hoje e outro titulo amanha —
     // a marca "salvo" migrava sozinha para um filme que ninguem salvou.
     if (!noModo(modo, ci, i)) continue;
+    if (serverFilter >= 0 && (!serverContains || !serverContains(ci, serverFilter))) continue;
     // UM CARTAZ POR TITULO. O mesmo titulo vive em varias fileiras, cada uma
     // com a sua copia marcada, e a serie com progresso tem id "tt123:1:2" ao
     // lado do "tt123" da watchlist — a grade mostrava o titulo duas vezes. A
@@ -907,7 +917,7 @@ static void reconstruir(void) {
       if (!s || !s->id[0] || cat_indice_por_imdb(s->id) >= 0) continue;
       contaOrigem[ORIG_TODAS]++;
       contaOrigem[ORIG_NUVIO]++;
-      if (!daOrigem(0) || origem >= BIB_N_ORIG) continue;
+      if (serverFilter >= 0 || !daOrigem(0) || origem >= BIB_N_ORIG) continue;
       totalModo++;
       locaisFora++;
       if (generoSel) continue;
@@ -977,7 +987,7 @@ int biblioteca_iniciar(void) {
   prefPerfil = -1;
   lerPref();
   lst_iniciar();
-  modo = MODO_PARAVER; tipo = TIPO_TODOS; ordem = ORD_ADICIONADOS; origem = ORIG_TODAS; trilha = 0;
+  modo = MODO_PARAVER; tipo = TIPO_TODOS; ordem = ORD_ADICIONADOS; origem = ORIG_TODAS; serverFilter = -1; trilha = 0;
   focoOrigem = 0; origemSel = 0; esconderVistos = 0; generoSel = 0;
   pickSel = 0; temAberta = 0; acaoSel = 0; listaTab = 0; recado[0] = 0; recadoAte = 0.0f;
   tecPara = TEC_NADA; abertaPropria = 0; edModo = ED_NADA; ordemPega = -1;
@@ -1419,7 +1429,7 @@ void biblioteca_evento(const SDL_Event *e) {
       if (modo == MODO_LISTAS) { fonte = origemSel; pedirFonte(); }
       else if (origemSel >= BIB_N_ORIG + nAddonOrigens) {
         if (serverSelect) serverSelect(origemSel - BIB_N_ORIG - nAddonOrigens);
-      } else { origem = origemSel; reconstruir(); }
+      } else { serverFilter = -1; origem = origemSel; reconstruir(); }
     }
     return;
   }
