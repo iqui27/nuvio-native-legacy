@@ -26,6 +26,7 @@ int servidores_catalogo_copiar(CatItem *out, int max);
 int servidores_cache_gravar(int profile, int provider, const char *server, const CatItem *items, int n);
 int servidores_cache_ler(int profile, int provider, const char *server, CatItem *out, int max);
 void servidores_cache_apagar(int profile, int provider);
+long long servidores_cache_instante(int profile, int provider, const char *server);
 // Offline (index only): a server of this profile has this catalogue title
 // ("tt...", "tmdb:...", with or without :season:episode). The source cache
 // never keeps a list for such a title: server sources carry a token and a

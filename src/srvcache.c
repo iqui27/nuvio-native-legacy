@@ -6,11 +6,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 static void filename(char *out, size_t n, int p, int provider){snprintf(out,n,"server-library-p%d-%d.json",p,provider);}
 void servidores_cache_apagar(int profile,int provider){char name[80];filename(name,sizeof name,profile,provider);dados_apagar(name);}
 int servidores_cache_gravar(int profile,int provider,const char *server,const CatItem *items,int n){
   if(!server||!*server||!items||n<0||provider<0||provider>2)return 0;
-  Jsw w;jsw_iniciar(&w);jsw_obj_ini(&w);jsw_cs(&w,"server",server);jsw_chave(&w,"items");jsw_arr_ini(&w);
+  Jsw w;jsw_iniciar(&w);jsw_obj_ini(&w);jsw_cs(&w,"server",server);jsw_ci(&w,"synced",(long long)time(NULL));jsw_chave(&w,"items");jsw_arr_ini(&w);
   if(n>CAT_MAX)n=CAT_MAX;
   for(int i=0;i<n;i++){
     const CatItem *it=&items[i];if(!it->imdb[0]||(!strcmp(it->tipo,"group")||!strcmp(it->tipo,"list")))continue;
@@ -19,6 +20,13 @@ int servidores_cache_gravar(int profile,int provider,const char *server,const Ca
   }
   jsw_arr_fim(&w);jsw_obj_fim(&w);char name[80];filename(name,sizeof name,profile,provider);
   const char *text=jsw_texto_final(&w);int ok=text&&dados_gravar_leve(name,text);jsw_livre(&w);return ok;
+}
+long long servidores_cache_instante(int profile,int provider,const char *server){
+  char name[80],id[64]="";
+  if(!server||!*server||provider<0||provider>2)return 0;
+  filename(name,sizeof name,profile,provider);char *body=dados_ler(name);if(!body)return 0;
+  long long stamp=js_texto_raiz(body,"server",id,sizeof id)&&!strcmp(id,server)?(long long)js_num(body,NULL,"synced",0):0;
+  free(body);return stamp;
 }
 int servidores_cache_ler(int profile,int provider,const char *server,CatItem *out,int max){
   char name[80],id[64]="";if(!server||!*server||!out||max<1)return 0;filename(name,sizeof name,profile,provider);
