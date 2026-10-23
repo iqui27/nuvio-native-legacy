@@ -170,6 +170,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_QUALIDADE: return "aj_monitor-play";
     case AJ_DV: return "aj_monitor-play";
     case AJ_DV_MKV: return "aj_monitor-play";
+    case AJ_HDR10P_STRIP: return "aj_monitor-play";
     case AJ_ATMOS: return "aj_monitor-play";
     case AJ_PAUSA_OVERLAY: return "aj_circle-play";
     case AJ_PAUSA_COMENTARIOS: return "aj_message-square";

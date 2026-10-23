@@ -74,13 +74,13 @@ void detail_volta_notar(int novo);
 int  detail_pediu_assistido(void);
 int  detail_pediu_amigos(char *imdb, size_t tam); // OK na ilha de amigos: o imdb do titulo, uma vez
 int  detail_pediu_marcar(void);       // botao "+"
+int  detail_fonte_servidor(void); // consumes requested provider; -1 ordinary Sources
 int  detail_pediu_fontes_ep(int *temporada, int *episodio);
 int  detail_pediu_fontes(void);       // OK segurado, ou o botao "..."
 // O episodio travado junto com o pedido de fontes (toque no card com
 // "Escolher a fonte ao reproduzir", ou "Fontes deste episodio" no menu).
 // A folha rouba o foco da fileira: ler detail_ep_foco depois apontava o
 // episodio em andamento, nao o escolhido (#513). 0 = folha do titulo.
-int  detail_pediu_fontes_ep(int *temporada, int *episodio);
 int  detail_pediu_explorar(void);     // circular "Explorar": abrir a toca (explorar.h) neste titulo, uma vez
 // Botao secundario "Reproduzir desde o inicio", que so existe quando ha
 // progresso. Hoje ele tambem marca `detail_pediu_reproduzir`, porque o roteador

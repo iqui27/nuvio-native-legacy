@@ -86,7 +86,9 @@ def movie(i):
         "ImageTags": {"Primary": "ptag%d" % i, "Logo": "ltag"},
         "BackdropImageTags": ["btag%d" % i],
         "UserData": {"PlaybackPositionTicks": 36000000000, "PlayedPercentage": 50.0,
-                     "Played": False, "Key": mid},
+                     # 6: watched without a date — the "unknown timestamp" case of #617
+                     "Played": i in (5, 6), "Key": mid,
+                     "LastPlayedDate": "2026-09-15T12:00:00.0000000Z" if i == 5 else ""},
     }
 
 
@@ -289,7 +291,10 @@ class Handler(BaseHTTPRequestHandler):
                                 "ParentIndexNumber": s, "IndexNumber": e, "RunTimeTicks": 26400000000,
                                 "SeriesId": m.group(1),
                                 "PremiereDate": "2019-0%d-1%dT00:00:00.0000000Z" % (s, e),
-                                "Overview": "ep", "ImageTags": {"Primary": "et"}})
+                                "Overview": "ep", "ImageTags": {"Primary": "et"},
+                                "UserData": {"Played": s == 1 and e <= 2, "PlaybackPositionTicks": 0,
+                                             "LastPlayedDate": "2026-09-10T10:00:00.0000000Z"
+                                             if s == 1 and e <= 2 else ""}})
             return self.reply(200, {"Items": eps, "TotalRecordCount": len(eps)})
         m = re.match(r"^/Items/([0-9a-f]{32})/PlaybackInfo$", p)
         if m and method == "POST":
@@ -330,6 +335,16 @@ class Handler(BaseHTTPRequestHandler):
             with lock:
                 state["events"].append({"op": "release", "session": q.get("playSessionId", [""])[0]})
             return self.reply(204)
+        if p == "/UserItems/Resume" and method == "GET":
+            return self.reply(200, {"Items": [movie(5)], "TotalRecordCount": 1})
+        if p == "/Shows/NextUp" and method == "GET":
+            ep = {"Name": "S2E1", "Id": episode_id(2, 1), "Type": "Episode",
+                  "SeriesId": SERIES2, "SeriesName": "The Matched Show",
+                  "ParentIndexNumber": 2, "IndexNumber": 1, "RunTimeTicks": 26400000000,
+                  "UserData": {"PlaybackPositionTicks": 0, "Played": False,
+                               "LastPlayedDate": "2026-09-20T08:00:00.0000000Z"},
+                  "ProviderIds": {"IMDB": "tt0900001"}}
+            return self.reply(200, {"Items": [ep], "TotalRecordCount": 1})
         return self.reply(404)
 
     def control(self, p, q):

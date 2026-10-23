@@ -118,6 +118,17 @@ static void migrarLegado(void) {
   free(b);
 }
 
+int simklauth_token_perfil(int p, char *dst, size_t tam) {
+  char *b = dados_ler(arq(p > 0 ? p : 1).s);
+  size_t n;
+  if (dst && tam) dst[0] = 0;
+  if (!b) return 0;
+  n = strcspn(b, "\r\n"); b[n] = 0;
+  if (b[0] && strcmp(b, "!") && dst && tam) snprintf(dst, tam, "%s", b);
+  free(b);
+  return dst && dst[0];
+}
+
 int simklauth_carregar(void) {
   char *b;
   usuarioCopiar(usuarioEstado);

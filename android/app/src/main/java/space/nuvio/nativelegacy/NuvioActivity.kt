@@ -112,6 +112,9 @@ class NuvioActivity : SDLActivity() {
     // retained-video and guide/PiP surfaces keep the browsing orientation.
     fun orientarPlayer(telaCheia: Boolean) {
         playerTelaCheiaTouch = telaCheia
+        // Player saiu da frente (inclusive com video retido): devolve o modo
+        // do painel; o retomar re-aplica pelo pausar(0).
+        if (!telaCheia) NvPlayer.afrSair()
         runOnUiThread { aplicarOrientacaoTouch() }
     }
 

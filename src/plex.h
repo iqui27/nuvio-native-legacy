@@ -114,6 +114,7 @@ typedef struct {
   char servidorNome[96];
   char versao[24];
   char usuario[96];        // plex.tv display name (never the e-mail)
+  char bibliotecas[256];   // selected section IDs, newline-delimited; empty means all
   char tokenConta[96];     // plex.tv account token — never logged
   char token[96];          // server access token — never logged
   char dispositivoId[80];  // X-Plex-Client-Identifier, per device + profile
@@ -237,6 +238,9 @@ int  plex_conectado(void);
 int  plex_ultimo_erro(void);
 int  plex_n_servidores(void);
 
+unsigned px_setup_conta(PxConta *out, int *perfil);
+int px_setup_aceitar(const PxConta *c, int perfil, unsigned generation);
+int px_setup_manual(PxConta *c, const char *url, RedeJob *job);
 int  plex_entrar(void);               // starts the PIN flow (queued)
 void plex_cancelar_entrada(void);
 int  plex_proximo_servidor(void);     // cycle to the next server of the account
@@ -280,6 +284,9 @@ void plex_preparo_liberar(PlexPreparo *p);
 int  plex_casamento_ativo(void);       // connected and the index has entries
 // Offline: the index has this title; fills `info` (name, quality, LAN) when not NULL.
 int  plex_tem(const char *id, const char *tipo, SrvAchado *info);
+// Per-episode user data of a series the server has (issue #617). Same contract
+// as jellyfin_episodios.
+int  plex_episodios(const char *id, SrvEp *out, int max);
 int  plex_indice_n(void);              // entries in the index (tests)
 
 #define PX_PROGRESSO_MS 10000u

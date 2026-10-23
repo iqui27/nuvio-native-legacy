@@ -121,6 +121,7 @@ int ajustes_animacoes_reduzidas(void);
 int ajustes_esmaecer(void);
 int ajustes_brilho_player(void);
 int ajustes_tunneling(void); // Android-only tunneled playback; default off.
+int ajustes_afr(void);       // #641 Android-only display refresh-rate match; default off.
 int ajustes_hdr_interface(void); // Experimental Android HDR output; default off.
 int ajustes_hdr_ui(void);   // #205: 1 = Automatico (padrao), 0 = Desligado
 // #202: -1 = ultimo modo usado (padrao); 0..7 = PlrAspecto aplicado ao abrir o video.
@@ -273,6 +274,7 @@ int  ajustes_addons_do_principal(void);
 void ajustes_definir_vidro(int ligado);
 // P2P EXPERIMENTAL (p2p.h). Desligado de fabrica. O endereco (o servidor de
 // streaming do Stremio na rede local) e por aparelho, em p2p.txt.
+void ajustes_definir_servidores(int ligado);
 int  ajustes_jellyfin_ligado(void);   // F11: personal servers on AND strict HTTP here
 int  ajustes_p2p_ligado(void);
 void ajustes_definir_p2p_ligado(int ligado);
@@ -675,8 +677,10 @@ int   ajustes_ps_continuar(void);        // #303: 0 = sem o cartao "continuar" n
 int   ajustes_hist_conta(void);          // 1 = this profile's history goes to the Nuvio account (per profile, default on)
 int   ajustes_amigos_estilo(void); // 0 Feed, 1 Live, 2 Stories, 3 Presence, 4 Poster, 5 Classic
 int   ajustes_social(void);              // 1 = friends/social features on (per profile, default on)
+int   ajustes_social_perfil(int perfil); // mesmo ajuste lido de OUTRO perfil (#643)
 int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)
 int   ajustes_dv7(void);
+int   ajustes_hdr10p_strip(void);
 int   ajustes_cw_retido_tambem(void);   // 1 = o titulo da ilha/Retomar tambem fica em Continuar assistindo
 // Percentual (70-98, padrao 90) a partir do qual o episodio conta como
 // assistido: sai do Continuar assistindo e o card passa ao proximo. Local.
