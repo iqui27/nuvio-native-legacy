@@ -205,7 +205,7 @@ static int nConteudo(void) {
   if(pagina==PRONTO) return 2;
   if(pagina==PAINEL) return 9;
   if(pagina==CATALOGOS) return snap.catalogos+4;
-  if(pagina==FONTES) return snap.addons-nLegendas()+snap.servicos+3;
+  if(pagina==FONTES) return snap.addons-nLegendas()+snap.servicos+4;
   if(pagina==LEGENDAS) return nLegendas()+snap.legendas+2;
   if(pagina==LINKS) return snap.links+3;
   if(pagina==FILTROS) {
@@ -260,8 +260,10 @@ static void acao(void) {
     } else if(foco==snap.catalogos+2) { desc_repetir(); geracao++; atualizarRede(0); }
     else mudar(SERVICOS);
   } else if(pagina==FONTES) {
-    if(foco==snap.addons-nLegendas()+snap.servicos) ajustes_definir_p2p_ligado(!ajustes_p2p_ligado());
-    else if(foco==snap.addons-nLegendas()+snap.servicos+1) campo(2);
+    int n=snap.addons-nLegendas()+snap.servicos;
+    if(foco==n) ajustes_definir_p2p_ligado(!ajustes_p2p_ligado());
+    else if(foco==n+1) snprintf(mensagem,sizeof mensagem,"%s",i18n("O AIOStreams suporta Usenet por provedores compatíveis. Reproduzir NZB direto exige integração."));
+    else if(foco==n+2) campo(2);
     else mudar(SERVICOS);
   } else if(pagina==FILTROS) {
     if(regraSelecionada<0 && foco<8) { regraSelecionada=foco; foco=0; }
@@ -670,11 +672,41 @@ static void workspace(void) {
       row++;
     }
     if(!snap.addons) bloco(i18n("Conecte a configuração para ver addons e serviços. O manifesto não revela suas chaves."),473,326,880,3);
-    gfx_cor((GfxRect){453,708,980,1},0,1,1,1,.08f);
-    char resumo[160]; snprintf(resumo,sizeof resumo,i18n("%d serviços · %d resultados · %d links · %d P2P"),snap.servicos,snap.resultados,snap.links,snap.p2p);
-    texto(TXT_ILHA_SUB,resumo,473,731,880,178);
-    linha(n,"aj_layers",i18n("P2P / torrents"),ajustes_p2p_ligado()?i18n("Política local Nuvio: ligado"):i18n("Política local Nuvio: desligado"),453,776,980);
-    botao(n+1,i18n("Inspecionar título"),453,900,430); botao(n+2,i18n("Serviços no celular"),905,900,490);
+    gfx_cor((GfxRect){453,700,980,1},0,1,1,1,.08f);
+    // Aggregated debrid strip: one enabled service plus per-title cache evidence.
+    const char *ativoServico=NULL;
+    for(int i=0;i<snap.servicos;i++) if(snap.servico[i].ativo) { ativoServico=snap.servico[i].nome; break; }
+    gfx_icone((GfxRect){473,722,26,26},"aj_cloud",.8f,.85f,.87f,1);
+    if(ativoServico) {
+      char titulo[128]; snprintf(titulo,sizeof titulo,i18n("%s conectado"),ativoServico);
+      texto(TXT_ILHA_NOME,titulo,512,714,700,238);
+      int emCache=0,semCache=0,httpDireto=0;
+      for(int i=0;i<snap.resultados;i++) {
+        if(snap.resultado[i].cache==1) emCache++;
+        else if(snap.resultado[i].cache==0) semCache++;
+        if(!strcmp(snap.resultado[i].tipo,"HTTP") && snap.resultado[i].cache<0) httpDireto++;
+      }
+      char sub[128]; snprintf(sub,sizeof sub,i18n("%d em cache · %d sem cache · %d HTTP direto"),emCache,semCache,httpDireto);
+      texto(TXT_ILHA_NUM,sub,512,748,700,178);
+    } else {
+      texto(TXT_ILHA_NOME,i18n("Acesso ao serviço indisponível"),512,714,700,238);
+      texto(TXT_ILHA_NUM,i18n("Conecte a configuração para ver o inventário de serviços"),512,748,700,178);
+    }
+    // P2P policy and Usenet sit side by side, as in the approved mock.
+    float mx[2]={453,955}; int mw[2]={478,451};
+    const char *mNome[2]={i18n("P2P / torrents"),i18n("Usenet")};
+    const char *mSub[2]={ajustes_p2p_ligado()?i18n("Política local Nuvio: ligado"):i18n("Política local Nuvio: desligado"),i18n("Compatível · Não configurado")};
+    const char *mIcone[2]={"aj_layers","aj_info"};
+    for(int i=0;i<2;i++) {
+      if(!lateral && foco==n+i) gfx_cor((GfxRect){mx[i],784,mw[i],80},.22f,.19f,.205f,.22f,.9f);
+      gfx_icone((GfxRect){mx[i]+14,806,22,22},mIcone[i],.77f,.82f,.84f,1);
+      texto(TXT_ILHA_NOME,mNome[i],mx[i]+48,796,mw[i]-92,239);
+      texto(TXT_ILHA_NUM,mSub[i],mx[i]+48,828,mw[i]-92,174);
+      gfx_icone((GfxRect){mx[i]+mw[i]-34,813,20,20},"aj_chevron-right",.68f,.73f,.76f,1);
+      ponteiro_alvo(mx[i],784,mw[i],80,pointer,click,n+i,0);
+    }
+    texto(TXT_ILHA_NUM,i18n("Debrid por torrent usa HTTPS. A regra local não altera restrições da instância."),473,870,930,150);
+    botao(n+2,i18n("Inspecionar título"),453,900,430); botao(n+3,i18n("Serviços no celular"),905,900,490);
   } else if(pagina==FILTROS && regraSelecionada>=0) {
     int row=0, first=foco>4?foco-4:0;
     for(int i=0;i<snap.detalhes;i++) if(snap.detalhe[i].grupo==regraSelecionada) {
