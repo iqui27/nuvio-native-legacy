@@ -3839,9 +3839,10 @@ static void aplicarEstilo(void) {
     snprintf(b, sizeof b, "{\"mediaId\":\"%s\",\"charOpacity\":%d}", midia, op);
     chamar("setSubtitleCharacterOpacity", b, soLog); }
   // O fundo e a dupla cor+opacidade: sem declarar a cor, mudar so a opacidade
-  // nao tem o que revelar.
+  // nao tem o que revelar. A opacidade vem do campo proprio, independente da
+  // opacidade da letra (video_leg_fundo_opacidade, video.h).
   { int f = estilo.fundo; if (f < 0) f = 0; if (f > 4) f = 4;
-    int op = f == 4 ? 255 : f * 64;
+    int op = f ? (video_leg_fundo_opacidade(&estilo) * 255 + 50) / 100 : 0;
     snprintf(b, sizeof b, "{\"mediaId\":\"%s\",\"bgColor\":\"black\"}", midia);
     chamar("setSubtitleBackgroundColor", b, soLog);
     snprintf(b, sizeof b, "{\"mediaId\":\"%s\",\"bgOpacity\":%d}", midia, op);
