@@ -163,7 +163,7 @@ static const char *const COM_TXT[] = {
   "as cenas em que aparece.",
   "Perfeito para uma tarde de chuva." };
 static const int COM_NOTA[] = { 8, 6, 7 }, COM_CUR[] = { 6, 3, 1 };
-int fx_com_spoiler(int i) { return i == 1; }
+int fx_com_spoiler(int ep, int i) { return i == 1; }
 int fx_n_comentarios(void)    { return ehSerieDeEnsaio() && !getenv("NUVIO_SHOT_REFERENCE") ? 0 :
     (getenv("NUVIO_DETAIL_CHECK") && !strcmp(getenv("NUVIO_DETAIL_CHECK"), "comments")) || (getenv("NUVIO_TRAKT_CHECK") && (!strcmp(getenv("NUVIO_TRAKT_CHECK"), "perf") || !strcmp(getenv("NUVIO_TRAKT_CHECK"), "vidro"))) ? 8 : 3; }
 int fx_n_comentarios_ep(void) { return 0; }
@@ -677,6 +677,8 @@ int main(int argc, char **argv) {
       }
       shotScroll=-1;
     }
+  }
+
   // NUVIO_VIDRO_TELAS=<dir> (tests/vidro_telas.sh): glass budget with the
   // sources sheet open and with the Trakt comments row focused.
   if (vt_ligado()) {

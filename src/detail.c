@@ -4523,23 +4523,52 @@ static int    metaEsqVisto;       // o esqueleto da linha de meta foi mostrado
 static Uint32 metaChegouEm;
 
 static void topoEstadoTexto(char *dst, size_t n, int durMin, int pessoal) {
-  const CatItem *ci=cat_item(idx); if (!n) return; dst[0]=0; if (!ci) return;
+  // A linha da PESSOA no mockup v2: "Nunca visto · 2h36 · termina às 22:47"
+  // ou "Parou em T1E3 · faltam 18 min · termina às 20:29". A duracao abre a
+  // linha quando nao ha estado melhor para contar; "termina às" fecha sempre.
+  const CatItem *ci = cat_item(idx);
+  int durAbriu = 0;
+  if (!n) return;
+  dst[0] = 0;
+  if (!ci) return;
   if (pessoal) {
-    int st=0,ep=0,de=0;
-    if (ehSerie() && episodioAlvo(&st,&ep,&de) && de==2)
-      snprintf(dst,n,i18n("%s T%dE%d"),i18n("Retomar"),st,ep);
-    else if (ci->progresso>0 && ci->progresso<ajustes_cw_concluido()) snprintf(dst,n,"%s",i18n("Retomar"));
-    else if (cat_visto(ci)) snprintf(dst,n,"%s",i18n("Assistido"));
-    else if (cat_historico_estado_id(ci->imdb,ci->tipo)==0) snprintf(dst,n,"%s",i18n("Não assistido"));
-    if (ci->restanteMin>0) {
-      char falta[64]; snprintf(falta,sizeof falta,i18n("%d min restantes"),ci->restanteMin);
-      size_t k=strlen(dst); snprintf(dst+k,n-k,"%s%s",k ? " · " : "",falta);
+    int st = 0, ep = 0, de = 0;
+    if (ehSerie() && episodioAlvo(&st, &ep, &de) && ci->progresso > 0)
+      snprintf(dst, n, i18n("Parou em T%dE%d"), st, ep);
+    else if (ehSerie() && episodioAlvo(&st, &ep, &de) && de == 2)
+      snprintf(dst, n, i18n("%s T%dE%d"), i18n("Retomar"), st, ep);
+    else if (ci->progresso > 0 && ci->progresso < ajustes_cw_concluido())
+      snprintf(dst, n, "%s", i18n("Retomar"));
+    else if (cat_visto(ci)) snprintf(dst, n, "%s", i18n("Assistido"));
+    else if (cat_historico_estado_id(ci->imdb, ci->tipo) == 0)
+      snprintf(dst, n, "%s", i18n("Nunca visto"));
+    if (!ehSerie() && durMin > 0) {
+      char curta[32];
+      desc_duracao_min(durMin, curta, sizeof curta);
+      size_t k = strlen(dst);
+      snprintf(dst + k, n - k, "%s%s", k ? " · " : "", curta);
+      durAbriu = 1;
+    }
+    if (ci->restanteMin > 0) {
+      char falta[64];
+      snprintf(falta, sizeof falta, i18n("faltam %d min"), ci->restanteMin);
+      size_t k = strlen(dst);
+      snprintf(dst + k, n - k, "%s%s", k ? " · " : "", falta);
     }
   }
-  if (ci->restanteMin>0 || (!ehSerie() && durMin>0)) {
-    char fim[160]; int minutos=ci->restanteMin>0 ? ci->restanteMin : durMin;
-    relogio_fim(fim,sizeof fim,time(NULL),minutos*60.0);
-    size_t k=strlen(dst); snprintf(dst+k,n-k,"%s%s",k ? " · " : "",fim);
+  if (ci->restanteMin > 0 || (!ehSerie() && durMin > 0)) {
+    // O mockup v2 escreve "termina às" em minusculas na pagina do titulo.
+    char h[16], fim[160];
+    int minutos = ci->restanteMin > 0 ? ci->restanteMin : durMin;
+    time_t t2 = time(NULL) + (time_t)(minutos * 60.0);
+    struct tm lf;
+    localtime_r(&t2, &lf);
+    hora_tela(h, sizeof h, &lf);
+    snprintf(fim, sizeof fim, i18n("termina \xc3\xa0s %s"), h);
+    if (!pessoal || !durAbriu || ci->restanteMin > 0) {
+      size_t k = strlen(dst);
+      snprintf(dst + k, n - k, "%s%s", k ? " · " : "", fim);
+    } else snprintf(dst, n, "%s · %s", dst, fim);
   }
 }
 
@@ -5192,8 +5221,13 @@ static void heroWeb(float a, float desloc) {
     g=p ? p+2 : g;
     while (g && *g==' ') g++;
     topoEstadoTexto(fim,sizeof fim,durMin,0);
-    snprintf(meta,sizeof meta,"%s%s%s%s%s%s%s",ano,g && *g ? " · " : "",g ? g : "",
-             dur[0] ? " · " : "",dur,!topoPessoal() && fim[0] ? " · " : "",!topoPessoal() ? fim : "");
+    { int temps = ehSerie() ? nTemporadasReais() : 0;
+      char col[32] = "";
+      if (temps > 0) snprintf(col,sizeof col,i18n(temps==1 ? "%d temporada" : "%d temporadas"),temps);
+      snprintf(meta,sizeof meta,"%s%s%s%s%s%s%s%s%s",ano,g && *g ? " · " : "",g ? g : "",
+               (temps ? col : dur)[0] ? " · " : "",temps ? col : dur,
+               !topoPessoal() && !temps && fim[0] ? " · " : "",!topoPessoal() && !temps ? fim : "",
+               topoPessoal() && fim[0] ? " · " : "",topoPessoal() ? fim : ""); }
     TxtLinha lm=txt_linha(TXT_DET_META2,meta,189,189,189,255);
     txt_desenhar_alpha(lm,NV_DETW2_X,yMeta1,a);
     desenhaSeloImdb(NV_DETW2_X+lm.w+12,yMeta1+15,notaDe(idx),a);
@@ -5264,6 +5298,18 @@ static void heroWeb(float a, float desloc) {
     }
     // DURACAO so em FILME: em serie o campo e a contagem de temporadas, que
     // as abas logo abaixo ja mostram.
+    if (ehSerie()) {
+      int temps = nTemporadasReais();
+      if (temps > 0) {
+        if (algo) { desenhaPonto(x + NV_DETW2_SEP, yc, 0.502f, a);
+                    x += NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D; }
+        char col[32];
+        snprintf(col,sizeof col,i18n(temps==1 ? "%d temporada" : "%d temporadas"),temps);
+        TxtLinha lt = txt_linha(TXT_DET_META_FORTE, col, 255, 255, 255, 255);
+        txt_desenhar_alpha(lt, x, yc - lt.h * 0.5f, a);
+        x += lt.w; algo = 1;
+      }
+    }
     if (!ehSerie() && dur[0]) {
       if (algo) { desenhaPonto(x + NV_DETW2_SEP, yc, 0.502f, a);
                   x += NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D; }
@@ -6705,6 +6751,14 @@ static void desenhaMusicas(float x, float y, float f, float a) {
     { GfxRect ic = { pil.x + 20.0f, pil.y + 11.0f, 26.0f, 26.0f };
       gfx_icone(ic, "aj_music", cc / 255.0f, cc / 255.0f, cc / 255.0f, a); }
     txt_desenhar_alpha(lr, pil.x + 56.0f, pil.y + (pil.h - lr.h) * 0.5f, a); }
+}
+
+static void cartaoComentario(GfxRect card, float raio, float a) {
+  if (!ajustes_vidro()) {
+    gfx_cor(card, raio, 0.082f, 0.094f, 0.118f, 0.92f * a);
+    return;
+  }
+  cartaoVidro(card, 0, a);
 }
 
 static void desenhaTimeline(float x,float y,int c,float f,float a) {
