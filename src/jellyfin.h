@@ -269,6 +269,11 @@ int  jellyfin_relatorios_pendentes(void);
 // -1 cancelled; the list is malloc'd for the caller.
 int  jellyfin_tem(const char *id, const char *tipo, SrvAchado *info);
 int  jellyfin_indice_n(void);
+// Per-episode user data of a series the server has (issue #617): watched flag
+// and instant, resume position in ticks. Offline when the episode index is
+// already in memory; otherwise one fetch feeds the index first. Returns
+// episodes filled, 0 none, -1 cancelled/failed.
+int  jellyfin_episodios(const char *id, SrvEp *out, int max);
 int  jellyfin_consultar(const char *id, const char *tipo, const char *titulo, int ano,
                         int (*cancelado)(void *), void *ctx, Stream **saida);
 
@@ -306,6 +311,7 @@ int  jellyfin_consultar(const char *id, const char *tipo, const char *titulo, in
   void P##_reproducao_fim(const char *url, double posSeg, double durSeg);                \
   int P##_relatorios_pendentes(void);                                                    \
   int P##_tem(const char *id, const char *tipo, SrvAchado *info);                        \
+  int P##_episodios(const char *id, SrvEp *out, int max);                                  \
   int P##_indice_n(void);                                                                \
   int P##_consultar(const char *id, const char *tipo, const char *titulo, int ano,       \
                     int (*cancelado)(void *), void *ctx, Stream **saida);

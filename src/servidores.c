@@ -27,6 +27,40 @@ int servidores_tem(const char *id, const char *tipo) {
   return servidores_info(id, tipo, NULL);
 }
 
+// Watched flag the servers report for a catalogue title, index only. Any
+// server saying watched counts; the person's own unmark still wins, through
+// contapend inside cat_historico_estado_id (#617).
+int servidores_visto(const char *id, const char *tipo) {
+  SrvAchado a;
+  if (!id || jfid_e(id)) return 0;
+  return (jellyfin_tem(id, tipo, &a) && a.visto) ||
+         (emby_tem(id, tipo, &a) && a.visto) ||
+         (plex_tem(id, tipo, &a) && a.visto);
+}
+
+// Each server's list; a server that lacks the series adds nothing, one that
+// fails does not block the others (#617).
+int servidores_episodios(const char *id, SrvEp *out, int max) {
+  SrvEp lote[2048];
+  int n = 0, m, falhou = 0;
+  if (!id || jfid_e(id) || !out || max <= 0 || !ajustes_jellyfin_ligado()) return 0;
+  for (m = 0; m < 3; m++) {
+    int k = m == 0 ? jellyfin_episodios(id, lote, (int)(sizeof lote / sizeof *lote))
+          : m == 1 ? emby_episodios(id, lote, (int)(sizeof lote / sizeof *lote))
+                   : plex_episodios(id, lote, (int)(sizeof lote / sizeof *lote));
+    int i;
+    if (k < 0) { falhou = 1; continue; }
+    for (i = 0; i < k && n < max; i++) {
+      int j;
+      for (j = 0; j < n; j++)
+        if (out[j].temporada == lote[i].temporada && out[j].episodio == lote[i].episodio) break;
+      if (j == n) out[n++] = lote[i];
+      else if (lote[i].vistoMs > out[j].vistoMs) out[j] = lote[i];
+    }
+  }
+  return n ? n : (falhou ? -1 : 0);
+}
+
 // LAN before remote, then Jellyfin, Emby, Plex: the first that has the title
 // names the badge on the title page.
 int servidores_info(const char *id, const char *tipo, SrvAchado *info) {
