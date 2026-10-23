@@ -292,8 +292,10 @@ static GfxRect maisAncora;  // onde o "..." foi desenhado (ilha detmais.h)
 // nela, baixo nela entra nas secoes, cima volta aos botoes. OK pede ao roteador
 // (app.c) para abrir o painel Social na atividade deste titulo.
 static int  focoAmigos = 0;
-static int focoServidor = -1;
+static int focoServidor = -1, fonteServidorPedida = -1;
 static unsigned char servidoresDisponiveis;
+static int srvAvailabilityIndex = -1;
+static unsigned srvAvailabilityVersion;
 static void ponteiroServidor(int p, int unused) { (void)unused; nivel = 0; focoAmigos = 0; focoServidor = p; }
 static int  pedAmigos = 0;
 static int  pedExplorar = 0;   // circular "Explorar": o roteador abre a toca neste titulo
@@ -1394,7 +1396,7 @@ static void abrirInterno(const HomeItem *it) {
   trocaarte_fechar();
   audAberta = 0; audTempAberta = -1; audTempVista = -1; frasesAberta = 0;
   item = *it;
-  aberto = 1; saindo = 0; nivel = 0; botao = 0; focoAmigos = 0; focoServidor = -1; servidoresDisponiveis = 0;
+  aberto = 1; saindo = 0; nivel = 0; botao = 0; focoAmigos = 0; focoServidor = -1; fonteServidorPedida = -1; servidoresDisponiveis = 0; srvAvailabilityIndex = -1;
   amtui_fechar();
   detmais_zerar();
   heroReiniciar();
@@ -2758,7 +2760,7 @@ void detail_evento(const SDL_Event *e) {
     if (!okDesceEm) return;
     dur = ponteiro_ok_longo() ? NV_HOLD_MS : SDL_GetTicks() - okDesceEm;
     okDesceEm = 0;
-    if (nivel == 0 && focoServidor >= 0) { pedFontes = 1; }
+    if (nivel == 0 && focoServidor >= 0) { pedFontes = 1; fonteServidorPedida = focoServidor; }
     else if (nivel == 0 && focoAmigos) {
       // A lista do que cada amigo achou, AQUI (dono, 06/10/2026), e nao mais a
       // aba Atividade do painel — que repetia so "viu".
@@ -4888,12 +4890,11 @@ static void heroWeb(float a, float desloc) {
   }
 
   // Availability chips use the same source picker as the Sources action.
-  static int srvIndex = -1; static unsigned srvVersion;
   unsigned version = servidores_fileiras_versao();
-  if (srvIndex != idx || srvVersion != version) {
+  if (srvAvailabilityIndex != idx || srvAvailabilityVersion != version) {
     servidoresDisponiveis = 0; const CatItem *item = cat_item(idx);
     for (int p = 0; item && p < 3; p++) if (servidores_contem_item(item, p)) servidoresDisponiveis |= 1 << p;
-    srvIndex = idx; srvVersion = version;
+    srvAvailabilityIndex = idx; srvAvailabilityVersion = version;
   }
   if (servidoresDisponiveis) {
     const char *names[] = {"Plex","Jellyfin","Emby"};
@@ -7617,6 +7618,7 @@ int detail_pediu_amigos(char *imdb, size_t tam) {
   if (imdb && tam) snprintf(imdb, tam, "%s", c ? c->imdb : "");
   return 1;
 }
+int detail_fonte_servidor(void) { int p = fonteServidorPedida; fonteServidorPedida = -1; return p; }
 int detail_pediu_fontes(void)     { int v = pedFontes;     pedFontes = 0;     return v; }
 int detail_pediu_explorar(void)   { int v = pedExplorar;   pedExplorar = 0;   return v; }
 // "Reproduzir desde o inicio" ainda cai no mesmo caminho do primario: o

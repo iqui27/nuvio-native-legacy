@@ -2209,6 +2209,7 @@ int stream_automatico_canal(void) { return automaticoCom(0); }
 
 
 static int grupo, filtro, soMp4, soCache, soDub;
+static int filtroServidor = -1;
 
 // BOTOES DO CABECALHO. "Sem HDR" so existe onde ha o que renegociar (webOS);
 // ver o bloco "TELA PRETA COM AUDIO TOCANDO" em video.h. Oferecer um botao que
@@ -2259,6 +2260,10 @@ static int passaChips(int i) {
 }
 static int passaFiltro(int i) {
   if (filtro < 0) return 0;
+  if (filtroServidor >= 0) {
+    const char *pre[] = {"plex|", "jellyfin|", "emby|"};
+    if (strncmp(lista[i].bingeGroup, pre[filtroServidor], strlen(pre[filtroServidor]))) return 0;
+  }
   if (!passaChips(i)) return 0;
   if (filtro && strcmp(lista[i].provedor, provedores[filtro])) return 0;
   return 1;
@@ -2956,7 +2961,12 @@ static void desenharAudioBars(float x, float y, float alt, float alfa, Uint32 ag
   }
 }
 
+void stream_folha_servidor(int provider) {
+  filtroServidor = provider >= 0 && provider < 3 ? provider : -1;
+  grupo = 1; foco = 0; rolagem = 0;
+}
 void stream_folha_abrir(void) {
+  filtroServidor = -1;
 #ifdef NV_TOUCH_UI
   toquerol_limpar(&toqueFontes); toquerol_limpar(&toqueFontesAbas); toqueFontesAbasOffset = 0;
 #endif
@@ -3155,6 +3165,7 @@ void stream_folha_evento(const SDL_Event *e) {
   // seletor: a lista nao tem nada na horizontal, e subir ate as abas para
   // trocar de addon eram duas teclas a mais a cada troca.
   if(grupo>=0 && (k==SDLK_LEFT || k==SDLK_RIGHT)) {
+    filtroServidor = -1;
     filtro+=k==SDLK_RIGHT?1:-1;
     if(filtro < -1) filtro=-1;
     if(filtro>=nProvedores) filtro=nProvedores-1;
@@ -3265,7 +3276,7 @@ static void ponteiroFolhaFiltro(int i, int b) {
 #endif
   (void)b;
   if (i < -1 || i >= nProvedores) return;
-  filtro = i; foco = 0; rolagem = 0; grupo = 1;
+  filtroServidor = -1; filtro = i; foco = 0; rolagem = 0; grupo = 1;
 }
 static void ponteiroFolhaFora(int a, int b) { (void)a; (void)b; aberta = 0; }
 

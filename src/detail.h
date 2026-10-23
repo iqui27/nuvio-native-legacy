@@ -64,6 +64,7 @@ void detail_volta_notar(int novo);
 int  detail_pediu_assistido(void);
 int  detail_pediu_amigos(char *imdb, size_t tam); // OK na ilha de amigos: o imdb do titulo, uma vez
 int  detail_pediu_marcar(void);       // botao "+"
+int detail_fonte_servidor(void); // consumes requested provider; -1 ordinary Sources
 int  detail_pediu_fontes(void);       // OK segurado, ou o botao "..."
 int  detail_pediu_explorar(void);     // circular "Explorar": abrir a toca (explorar.h) neste titulo, uma vez
 // Botao secundario "Reproduzir desde o inicio", que so existe quando ha

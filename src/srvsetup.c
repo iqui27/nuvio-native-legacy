@@ -80,7 +80,8 @@ static void *work(void *unused) {
       PxBiblioteca px[PX_FIL_MAX]; JfBiblioteca jf[JF_FIL_MAX];
       int nl = worker.provider == 0 ? px_bibliotecas(&worker.px, worker.job, px, PX_FIL_MAX) : jf_bibliotecas(&worker.jf, worker.job, jf, JF_FIL_MAX);
       worker.items = calloc(CAT_MAX, sizeof *worker.items); worker.n = 0;
-      if (!worker.items || nl < 0) { e = nl < 0 ? nl : JF_ERR_REDE; break; }
+      if (!worker.items) { e = JF_ERR_REDE; break; }
+      if (nl < 0) { worker.n=servidores_cache_ler(worker.profile,worker.provider,worker.provider?worker.jf.servidorId:worker.px.servidorId,worker.items,CAT_MAX); e=worker.n?JF_OK:nl; break; }
       for (int i = 0; i < nl && !cancelled(); i++) {
         const char *id = worker.provider == 0 ? px[i].id : jf[i].id;
         if (!srv_biblioteca_selecionada(worker.provider ? worker.jf.bibliotecas : worker.px.bibliotecas, id)) continue;
@@ -92,6 +93,8 @@ static void *work(void *unused) {
           worker.n += got; offset += got;
         }
       }
+      if (!cancelled() && e == JF_OK && worker.n > 0) servidores_cache_gravar(worker.profile,worker.provider,worker.provider?worker.jf.servidorId:worker.px.servidorId,worker.items,worker.n);
+      if (!cancelled() && worker.n == 0 && e != JF_OK) { worker.n=servidores_cache_ler(worker.profile,worker.provider,worker.provider?worker.jf.servidorId:worker.px.servidorId,worker.items,CAT_MAX); if(worker.n)e=JF_OK; }
       break;
     }
     case JOB_LIBRARIES: {
@@ -304,7 +307,7 @@ static void activate(void) {
       } else change(READY); break;
     case REMOVE:
       if (!selected) change(MANAGE);
-      else { if (!provider) plex_esquecer(); else if (provider == 1) jellyfin_esquecer(); else emby_esquecer(); desc_repetir_silencioso(); change(MANAGE); } break;
+      else { servidores_cache_apagar(profile,provider); if (!provider) plex_esquecer(); else if (provider == 1) jellyfin_esquecer(); else emby_esquecer(); desc_repetir_silencioso(); change(MANAGE); } break;
     case ERROR_SCREEN:
       if (!selected) { if (!provider) enterCode(); else change(LOGIN); }
       else if (selected == 1) { change(ADDRESS); keyboard(1); } else srvsetup_fechar(); break;

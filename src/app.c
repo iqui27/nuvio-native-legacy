@@ -4391,6 +4391,7 @@ void app_atualizar(float dt, Uint32 agora) {
       idBaseDoTitulo(base, sizeof base);
       stream_preferir(base[0] ? fontepref_escolher_manual(base) : -1);
       nomeParaFolha(); stream_folha_abrir();
+      stream_folha_servidor(detail_fonte_servidor());
     }
   }
   // Escolher uma fonte na folha inicia a reproducao DELA. Trocar de fonte com o

@@ -10,8 +10,8 @@ Validation fixtures exercise Library membership, selected-library ID matching, c
 
 - Pixel parity is not achieved. Setup copy, shell/clock/rail, user layout, fields, keyboard placement, state descriptions and row editor differ from the approved mock. Shared keyboard/pairing opens as the existing modal.
 - Home row setup does not yet expose the approved content/style/order/hide-watched controls. Explicit collection/playlist rows now use the server pager; live end-to-end proof remains missing.
-- Offline catalog metadata is not persisted for the new Library flow; last-sync timestamps and dedicated offline/expired recovery screens are incomplete.
-- Detail provider chips open the ordinary Sources picker; provider-specific source filtering and exact source-sheet composition remain incomplete.
+- Offline catalog metadata is cached per profile/provider/server without credential-bearing art URLs; offline posters fall back to title cards. Last-sync timestamps and dedicated offline/expired recovery screens remain incomplete.
+- Detail provider chips filter the existing Sources picker by provider. Exact source-sheet composition remains incomplete.
 - Watched synchronization is existing playback reporting, not a new two-way import of all watched history. No synchronization toggle is presented.
 - Emby Connect AccessKey is persisted in the existing protected profile credential file and refreshed on library reload. Live vendor login/reconnect was not tested.
 - Existing adapters cap available libraries at six per provider. Catalog loading is bounded by CAT_MAX and startup/selection memory has not been measured on weak TVs.

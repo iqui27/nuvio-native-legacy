@@ -15,3 +15,9 @@ cc tests/servidores_setup_http.c src/srvsetup_net.c src/jellyfin.c src/js.c src/
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -O1 \
   -ffunction-sections -fdata-sections -Wl,-dead_strip -o "$work/http"
 "$work/http"
+cc tests/servidores_source_filter.c -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -O1 \
+  -ffunction-sections -fdata-sections -Wl,-dead_strip -Wno-deprecated-declarations -o "$work/sources"
+"$work/sources"
+cc tests/servidores_cache.c src/srvcache.c src/js.c src/jsw.c -Isrc \
+  -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -O1 -o "$work/cache"
+"$work/cache"

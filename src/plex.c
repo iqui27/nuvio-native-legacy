@@ -14,6 +14,7 @@
 // behaviour, and are pinned by fixture tests (tests/plex.c).
 #include "plex.h"
 #include "srvprefs.h"
+#include "servidores.h"
 #include "dados.h"
 #include "js.h"
 #include "jsraiz.h"
@@ -1507,7 +1508,7 @@ void plex_esquecer(void) {
   cancelEntrada++;
   arquivo(nome, sizeof nome, perfis_ativo());
   dados_apagar(nome);
-  srvidx_apagar(perfis_ativo(), "px");
+  srvidx_apagar(perfis_ativo(), "px"); servidores_cache_apagar(perfis_ativo(), 0);
   apagarSegredo(&conta, sizeof conta);
   carregarLocked();
   pthread_mutex_unlock(&trava);
@@ -1524,7 +1525,7 @@ void plex_esquecer_todos(void) {
   avancarLocked();
   cancelEntrada++;
   for (i = 1; i <= 32; i++) { arquivo(nome, sizeof nome, i); dados_apagar(nome); }
-  for (i = 0; i <= 32; i++) srvidx_apagar(i, "px");
+  for (i = 0; i <= 32; i++) { srvidx_apagar(i, "px"); servidores_cache_apagar(i, 0); }
   apagarSegredo(&conta, sizeof conta);
   carregarLocked();
   pthread_mutex_unlock(&trava);

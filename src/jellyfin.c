@@ -8,6 +8,7 @@
 #include "jellyfin.h"
 #include "srvprefs.h"
 #include "srvsetup.h"
+#include "servidores.h"
 #include "dados.h"
 #include "js.h"
 #include "jsraiz.h"
@@ -1429,6 +1430,7 @@ static void jfi_esquecer(JfInst *I) {
   arquivo(I, nome, sizeof nome, perfis_ativo());
   dados_apagar(nome);
   srvidx_apagar(perfis_ativo(), I->idxTipo);
+  servidores_cache_apagar(perfis_ativo(), I->tipo == JF_TIPO_EMBY ? 2 : 1);
   apagarSegredo(&I->conta, sizeof I->conta);
   carregarLocked(I);
   pthread_mutex_unlock(&I->trava);
@@ -1442,7 +1444,7 @@ static void jfi_esquecer_todos(JfInst *I) {
   pthread_mutex_lock(&I->trava);
   avancarLocked(I);
   for (i = 1; i <= 32; i++) { arquivo(I, nome, sizeof nome, i); dados_apagar(nome); }
-  for (i = 0; i <= 32; i++) srvidx_apagar(i, I->idxTipo);
+  for (i = 0; i <= 32; i++) { srvidx_apagar(i, I->idxTipo); servidores_cache_apagar(i, I->tipo == JF_TIPO_EMBY ? 2 : 1); }
   apagarSegredo(&I->conta, sizeof I->conta);
   carregarLocked(I);
   pthread_mutex_unlock(&I->trava);
