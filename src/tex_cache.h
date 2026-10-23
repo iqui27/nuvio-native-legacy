@@ -78,6 +78,8 @@ GLuint tex_obter_larg(const char *caminho, float largLayout);
 // Publica sob demanda a paleta ja extraida, inclusive de retratos opacos.
 // Chamar a cada quadro enquanto o decode nao terminou; nao pede novo decode.
 void tex_publicar_paleta(const char *caminho);
+// Sixteen-by-sixteen spatial RGBA averages computed during the existing decode.
+int tex_cores(const char *caminho, unsigned char out[16*16*4]);
 // Entrega a textura menor ja existente enquanto a maior e reprocessada.
 GLuint tex_obter_larg_qualquer(const char *caminho, float largLayout);
 // Para LOGO DE TITULO: igual as duas acima, mas o pedido fura a fila de rede e
@@ -174,6 +176,11 @@ int  tex_opaca(const char *caminho);
 // Chamar uma vez por quadro, na thread de desenho: sobe para a GPU o que a
 // thread de decode terminou. Devolve quantas subiu.
 int tex_bombear(int max_por_quadro);
+#define NV_CACHE_RESIDENCY 1
+// Main thread: refresh cached row membership before new requests. No fetch/decode.
+void tex_residencia_inicio(int foco);
+int tex_residencia_fileiras(void);
+void tex_residencia_marcar(const char *url, int fileira);
 // Estado por tela: aguarda dois quadros parados; no maximo um pedido/quadro.
 typedef struct { float scroll; unsigned long quadro; int parados, direcao; } TexLookahead;
 int tex_lookahead_parado(TexLookahead *s, float scroll);

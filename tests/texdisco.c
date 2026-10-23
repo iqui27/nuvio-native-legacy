@@ -191,6 +191,7 @@ int main(void) {
     condDec = SDL_CreateCond(); condLivre = SDL_CreateCond();
     assert(mtx && cond && condDec && condLivre);
     memset(itens, 0, sizeof itens); nMax = 1; rodando = 1;
+    orcamento = 48L * 1048576; // Real startup establishes compressed admission budget.
     itens[0].estado = PENDENTE; itens[0].limite = 704;
     snprintf(itens[0].caminho, sizeof itens[0].caminho, "%s", original);
     nomeDeCache(original, originalPath, sizeof originalPath);
@@ -221,7 +222,7 @@ int main(void) {
     tex_cache_esperar_gravacoes();
     assert(access(dst, F_OK) != 0);
     assert(access(originalPath, F_OK) == 0);
-    SDL_LockMutex(mtx); itens[0].estado = PENDENTE; SDL_UnlockMutex(mtx);
+    SDL_LockMutex(mtx); rodando = 1; itens[0].estado = PENDENTE; SDL_UnlockMutex(mtx);
     assert(baixarParaItem(0, original, dst, sizeof dst, &foi, NULL) == 1);
     assert(foi && downloads == before + 2);
     soltarBruto(&itens[0]); tex_cache_esperar_gravacoes();

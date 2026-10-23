@@ -1,5 +1,6 @@
 #include "addonmodo.h"
 #include "dados.h"
+#include "addons.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,7 +8,7 @@
 #include <inttypes.h>
 #define MAX 256
 static struct { uint64_t id; int modo, visto, http, valida, diretos, torrents; } tab[MAX];
-static int n;
+static int n, migracao;
 static char arquivo[96];
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 uint64_t addonmodo_id(const char *s) {
@@ -38,18 +39,27 @@ static void carregar(const char *nome) {
     }
     p=strchr(p,'\n'); if(p) p++;
   }
+  migracao = !t;
   free(t);
+}
+static void migrar(void) {
+  if (!migracao || !addons_n()) return;
+  for (int a=0;a<addons_n();a++) {
+    int i=slot(addonmodo_id(addons_base(a)),1);
+    if(i>=0)tab[i].visto=1;
+  }
+  if(salvar())migracao=0;
 }
 static void nomeArquivo(const char *conta,int perfil,char *out,size_t tam) {
   snprintf(out,tam,"addon-modes-%016" PRIx64 "-p%d.txt",addonmodo_id(conta),perfil>0?perfil:1);
 }
 void addonmodo_carregar(const char *conta,int perfil) {
   char nome[96]; nomeArquivo(conta,perfil,nome,sizeof nome);
-  pthread_mutex_lock(&trava); carregar(nome); pthread_mutex_unlock(&trava);
+  pthread_mutex_lock(&trava); carregar(nome); migrar(); pthread_mutex_unlock(&trava);
 }
 void addonmodo_preparar(const char *conta,int perfil) {
   char nome[96]; nomeArquivo(conta,perfil,nome,sizeof nome);
-  pthread_mutex_lock(&trava); if(strcmp(nome,arquivo)) carregar(nome); pthread_mutex_unlock(&trava);
+  pthread_mutex_lock(&trava); if(strcmp(nome,arquivo)) carregar(nome); migrar(); pthread_mutex_unlock(&trava);
 }
 AddonModo addonmodo_get(uint64_t id) {
   pthread_mutex_lock(&trava); int i=slot(id,0), m=i<0?AM_AUTO:tab[i].modo; pthread_mutex_unlock(&trava); return m;

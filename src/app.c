@@ -88,6 +88,7 @@
 #include "home.h"
 #include "trailer.h"
 #include "detail.h"
+#include "musicaui.h"
 #include "menu.h"
 #include "busca.h"
 #include "spotlight.h"
@@ -4219,6 +4220,13 @@ static int relogioPedidoPagina(void) {
 }
 
 void app_evento(const SDL_Event *e) {
+  if (musicaui_aberta()) {
+    if (e->type == SDL_APP_WILLENTERBACKGROUND || e->type == SDL_APP_TERMINATING || e->type == SDL_QUIT)
+      musicaui_fechar();
+    else if (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) {
+      musicaui_evento(e); return;
+    }
+  }
   static int backRetido;
   static Uint32 backUltimo;
   // Guard before any sheet/panel consumes Back. Flagged repeats are always held;
@@ -5683,6 +5691,10 @@ void app_atualizar(float dt, Uint32 agora) {
       menu_definir_destino(MENU_GUIA);
       if (gid[0]) guia_focar_id(gid);
     } }
+  // "Ver tudo" da fileira da Biblioteca (#672) abre a Biblioteca inteira.
+  if (tela == TELA_HOME && home_pediu_biblioteca()) {
+    trocarTela(TELA_BIBLIOTECA); menu_definir_destino(MENU_BIBLIOTECA);
+  }
   // A lista de addons foi aberta DE Ajustes, entao o Back dela volta para
   // Ajustes. Cair na home aqui faria a pessoa refazer o caminho inteiro so
   // para ligar dois addons seguidos.

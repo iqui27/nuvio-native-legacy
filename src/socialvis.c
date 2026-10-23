@@ -700,7 +700,7 @@ void socialvis_atualizar(void) {
   refazer();
 }
 
-unsigned socialvis_revisao(void) { return rev; }
+unsigned socialvis_revisao(void) { return rev + simkl_vistos_revisao(); }
 int socialvis_n_amigos(void) { return nAmigos; }
 const SvAmigo *socialvis_amigo(int i) { return (i >= 0 && i < nAmigos) ? &amigos[i] : NULL; }
 int socialvis_amigo_indice(const char *id) { return id ? achaAmigo(id) : -1; }

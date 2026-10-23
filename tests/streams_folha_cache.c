@@ -24,6 +24,10 @@ static float headlessBlock(TxtEstilo e, const char *s, int r, int g, int b,
 #define txt_tracking(e,s,r,g,b,x,y,a,t) ((float)strlen(s) * 8)
 #define gfx_recorte(...) ((void)0)
 #define gfx_sem_recorte() ((void)0)
+#include "addons.h"
+static unsigned addonRevision;
+static unsigned testAddonRevision(void) { return addons_parcial_rev() + addonRevision; }
+#define addons_parcial_rev testAddonRevision
 #include "../src/streams.c"
 #include "dados.h"
 #include <assert.h>
@@ -80,6 +84,12 @@ static void cacheProof(void) {
   for (int i = 0; i < 60; i++) assert(stream_play_candidata() == best);
   counting = 0;
   check(queues == 0, "unchanged candidate never rebuilds Play queue");
+  addonRevision++;
+  counting = 1; queues = 0;
+  assert(stream_play_candidata() == best);
+  assert(stream_play_candidata() == best);
+  counting = 0;
+  check(queues == 1, "addon tab revision invalidates candidate once");
   stream_preferir(24);
   check(stream_play_candidata() == 24, "preferred source invalidates candidate");
   stream_automatico_excluir(24);

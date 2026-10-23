@@ -2,6 +2,7 @@
 // matching, and the whole integration against tests/plex_server.py (a fake
 // plex.tv + PMS). No real server, no real account, never prints a token.
 #include "plex.h"
+#include "servidores.h"
 #include "srvidx.h"
 #include "stub_perfisessao.h"
 #include "idbase.h"
@@ -49,12 +50,14 @@ int dados_gravar_leve(const char *nome, const char *conteudo) {
 void dados_fs_travar(void) {}
 void dados_fs_liberar(void) {}
 // The index feeds the catalogue watched history (issue #617): record it.
+static int partialShowHistoryCalls;
 static int nHistVistos;
 static char histId[8][16];
 static long long histMs[8];
 void cat_historico_definir_tempo(const char *imdb, const char *tipo,
                                  int visto, long long ms) {
   (void)tipo;
+  if (imdb && !strcmp(imdb, "tt0000201")) partialShowHistoryCalls++;
   if (!visto || nHistVistos >= 8) return;
   snprintf(histId[nHistVistos], sizeof histId[0], "%s", imdb ? imdb : "");
   histMs[nHistVistos] = ms;
@@ -500,15 +503,23 @@ static void integracao(void) {
   nf = 0;
   while (ms() < fim) {
     nf = plex_fileiras_copiar(itens, PX_FIL_MAX * PX_POR_FILEIRA, fils, PX_FIL_MAX, &nItens);
-    if (nf == 2 && plex_indice_n() == 4) break;
+    if (nf == 2 && plex_indice_n() == 5) break;
     dormir(30);
   }
-  assert(nf == 2 && nItens == 4);                  // movies + shows; the music library is skipped
+  assert(nf == 2 && nItens == 5);                  // movies + shows; the music library is skipped
   assert(!strcmp(fils[0].titulo, "Movies · Plex") && !strcmp(fils[0].chave, "plex_1") && fils[0].n == 3);
   assert(!strcmp(fils[1].titulo, "TV Shows · Plex") && fils[1].ini == 3 && !strcmp(fils[1].tipo, "series"));
   assert(plex_chave_fileira(fils[0].chave) && !plex_chave_fileira("cinemeta_movie_top"));
   assert(!strcmp(itens[0].imdb, "tt0000101") && itens[0].progresso == 50 && !strcmp(itens[2].imdb, "px:01234567.103"));
-  assert(plex_indice_n() == 4 && plex_casamento_ativo());   // 3 movies (one without Guid: title+year) + 1 show
+  assert(plex_indice_n() == 5 && plex_casamento_ativo());   // 3 movies + 2 shows
+  assert(partialShowHistoryCalls == 0);
+  assert(servidores_visto("tt0000201", "series") == 0);
+  assert(servidores_visto("tt0000202", "series") == 1);
+  { int i;
+    for (i = 0; i < nHistVistos; i++)
+      if (!strcmp(histId[i], "tt0000202")) break;
+    assert(i < nHistVistos); }
+  printf("partial show stays unwatched; completed show reaches history and watched state\n");
 
   { int total;
     assert(plex_pagina("plex_collections", 0, 60, itens, 60, &total, NULL) == 1 && !strcmp(itens[0].tipo, "group"));
@@ -650,7 +661,7 @@ static void integracao(void) {
   perfilAtivo = 1;
   plex_perfil_trocou();
   assert(plex_conectado());                                                     // loaded from plex-p1.txt, no new PIN
-  assert(plex_indice_n() >= 4 && plex_tem("tt0000101", "movie", NULL));        // the index came back from disk, at once
+  assert(plex_indice_n() >= 5 && plex_tem("tt0000101", "movie", NULL));        // the index came back from disk, at once
   // #617: episodes restored from disk are refetched once — cached flags may be stale.
   { SrvEp e2[8]; char *ct = controle("counts");
     int antes = atoi(strstr(ct, "\"leaves\": ") + 10); free(ct);
@@ -672,7 +683,7 @@ static void integracao(void) {
       if (!incr) dormir(30);
     }
     assert(incr); }                                                              // the reload asked only what changed
-  assert(plex_indice_n() >= 4);
+  assert(plex_indice_n() >= 5);
 
   // ---- sign out: file gone, state clean
   plex_esquecer();

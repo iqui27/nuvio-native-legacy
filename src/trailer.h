@@ -49,6 +49,8 @@ void trailer_no_cartao(int sim);
 void trailer_recorte(int vw, int vh, float z, float dw, float dh,
                      int *sx, int *sy, int *sw, int *sh);
 void trailer_fechar(void);
+// Music page owns the shared media backend, including between previews.
+void trailer_bloquear_musica(int sim);
 int  trailer_aberto(void);
 // Tests (desktop): fake native trailer. -1 off, 0 open but no image (stall), 1 playing.
 void trailer_teste_falso(int tocando);

@@ -49,6 +49,8 @@
 #define NV_MKVFIX_H
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
+#include <strings.h>
 
 enum {
   MKVFIX_NADA = 0,      // nada sondado
@@ -93,11 +95,31 @@ int  mkvfix_legendas_texto(const unsigned char *b, long n, int64_t *off, int max
 // SeekHead ou pelos elementos do topo dentro de `n`); -1 se nao achou.
 int64_t mkvfix_tracks_pos(const unsigned char *b, long n, const MkvfixCab *c);
 
+// 1 = a lista "Nome: valor\n" da fonte tem algum cabecalho que o player da
+// TV nao sabe mandar: qualquer um alem de User-Agent e Cookie (Video.cs, so
+// esses dois viram propriedade do Tizen.Multimedia.Player). Puro, testavel.
+static inline int mkvfix_cab_fora_da_tv(const char *cab) {
+  const char *p = cab;
+  while (p && *p) {
+    size_t n = strcspn(p, "\r\n");
+    if (n && strncasecmp(p, "User-Agent:", 11) && strncasecmp(p, "Cookie:", 7)) return 1;
+    p += n; while (*p == '\r' || *p == '\n') p++;
+  }
+  return 0;
+}
+
 // ---- o servidor (fio do app) ----------------------------------------------
 // Sonda `url` (o link que o player tocou) num fio. `origem` (pode ser NULL ou
 // igual) e de onde pedir um link novo se o do CDN vencer. Troca a sessao
 // anterior (cancela as conexoes dela).
 void mkvfix_sondar(const char *url, const char *cabecalhos, const char *origem);
+// #648: o player da TV so manda User-Agent e Cookie; uma fonte cujo addon
+// exige outro cabecalho (Referer, Origin, Authorization) pede ao servidor a
+// mesma sonda, marcada como repasse puro de bytes (o curl envia os cabecalhos).
+void mkvfix_sondar_relay(const char *url, const char *cabecalhos, const char *origem);
+// 1 = a sessao atual e um repasse de cabecalhos (mkvfix_sondar_relay) ja
+// servivel: o arquivo deve tocar pelo servidor (mkvfix_url) desde a abertura.
+int  mkvfix_relay(void);
 // Selected-file refresh identity is copied before the probe thread starts.
 void mkvfix_sondar_arquivo(const char *url, const char *cabecalhos, int usenet, int item, int file);
 int  mkvfix_estado(void);
