@@ -61,6 +61,7 @@ static void wipe(void *p, size_t n) { volatile unsigned char *v = p; while (n--)
 static int connected(int p) { return p == 0 ? plex_conectado() : p == 1 ? jellyfin_conectado() : emby_conectado(); }
 static const char *serverName(int p) { return p == 0 ? plex_servidor_nome() : p == 1 ? jellyfin_servidor_curto() : emby_servidor_curto(); }
 static void cancelLogin(void) {
+  if (connected(provider)) return;
   if (provider == 0) plex_cancelar_entrada(); else if (provider == 1) jellyfin_cancelar_entrada(); else emby_cancelar_entrada();
 }
 static void stopWorker(void) {
@@ -93,7 +94,6 @@ static void *work(void *unused) {
           worker.n += got; offset += got;
         }
       }
-      if (!cancelled() && e == JF_OK && worker.n > 0) servidores_cache_gravar(worker.profile,worker.provider,worker.provider?worker.jf.servidorId:worker.px.servidorId,worker.items,worker.n);
       if (!cancelled() && worker.n == 0 && e != JF_OK) { worker.n=servidores_cache_ler(worker.profile,worker.provider,worker.provider?worker.jf.servidorId:worker.px.servidorId,worker.items,CAT_MAX); if(worker.n)e=JF_OK; }
       break;
     }
@@ -360,6 +360,7 @@ void srvsetup_atualizar(Uint32 now) {
         int p; JfConta jf; PxConta px;
         unsigned g = worker.provider ? jf_setup_conta(worker.provider == 2, &jf, &p) : px_setup_conta(&px, &p);
         if (p == worker.profile && g == worker.generation && worker.result == JF_OK) {
+          if (worker.n > 0) servidores_cache_gravar(worker.profile,worker.provider,worker.provider?worker.jf.servidorId:worker.px.servidorId,worker.items,worker.n);
           int w = 0;
           for (int i = 0; i < worker.n; i++) if (cat_indice_por_imdb(worker.items[i].imdb) < 0) {
             int j; for (j = 0; j < w && strcmp(worker.items[j].imdb, worker.items[i].imdb); j++) {}

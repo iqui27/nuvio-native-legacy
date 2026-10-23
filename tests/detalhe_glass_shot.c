@@ -77,7 +77,12 @@
 #define extras_ficha_paises       fx_ficha_paises
 #define extras_ficha_classificacao fx_ficha_classificacao
 
+#define servidores_contem_item fx_servidor_contem
 #include "../src/detail.c"
+#undef servidores_contem_item
+int fx_servidor_contem(const CatItem *item, int provider) {
+  return getenv("NUVIO_SHOT_SERVIDORES") && item && provider < 2;
+}
 
 #include "dados.h"
 #include "ilha.h"
@@ -429,6 +434,12 @@ int main(int argc, char **argv) {
   }
 
   if (quer(argc, argv, "filme-topo")) { abrir(1, 0, 0, 0); gravar("filme-topo"); }
+  if (quer(argc, argv, "detalhe-chip")) {
+    abrir(1,0,0,0); quadros(4); focoServidor = 0; gravar("detalhe-chip");
+    SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RETURN; detail_evento(&e);
+    e.type=SDL_KEYUP; detail_evento(&e);
+    assert(detail_pediu_fontes() && detail_fonte_servidor()==0);
+  }
   // O ULTIMO circular da linha aberta em foco: hoje o "..." (Mais opcoes).
   if (quer(argc, argv, "filme-explorar")) {
     abrir(1, 0, 0, 0);

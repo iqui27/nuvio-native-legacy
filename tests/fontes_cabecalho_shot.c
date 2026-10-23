@@ -146,6 +146,11 @@ int main(int argc, char **argv) {
     player_shot_esconder();
     quadros(10);
   }
+  if (getenv("NUVIO_SHOT_SERVIDORES")) {
+    fonte(&v[0],"Plex · Casa","Plex · Casa","Direct Play · Local · 62.4 GB",2160,1,1);
+    fonte(&v[1],"Jellyfin · Sala","Jellyfin · Sala","Transcode · AAC · 28.1 GB",2160,0,0);
+    strcpy(v[0].bingeGroup,"plex|fixture"); strcpy(v[1].bingeGroup,"jellyfin|fixture");
+  }
   stream_definir_alvo("tt14688458:2:5");
   stream_definir_lista(v, 6);
   stream_folha_nome("Silo");
@@ -153,6 +158,7 @@ int main(int argc, char **argv) {
   stream_folha_abrir();
   quadros(50);
   salvar("1-lista");
+  if (getenv("NUVIO_SHOT_SERVIDORES")) return 0;
   // Ate as abas (UP da primeira linha), depois a fileira de botoes.
   for (int i = 0; i < 12; i++) tecla(SDLK_UP);
   // Fileira em foco no ultimo botao (Fechar); anda ate "So MP4" e liga.
