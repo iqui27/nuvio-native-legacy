@@ -135,6 +135,7 @@ static void afLegenda(int i, GfxRect r, float alpha) {
     return;
   }
   afTexto(linha, r.x, r.y + r.h + 12.0f, r.w, TXT_CAPTION, alpha);
+  if (!e) afTexto(i18n("Ainda sem atividade"), r.x, r.y + r.h + 42.0f, r.w, TXT_CAPTION2, alpha * 0.65f);
   if (e) {
     socialvis_status(e, status, sizeof status);
     afTexto(status, r.x, r.y + r.h + 42.0f, r.w, TXT_CAPTION2, alpha * 0.65f);
@@ -177,12 +178,14 @@ static void afCartao(int i, GfxRect r, int foco, Uint32 agora) {
       socialvis_ep(e, ep, sizeof ep);
       snprintf(linha, sizeof linha, "%s%s%s", e->titulo, ep[0] ? " · " : "", ep);
       afTexto(linha, r.x + 82, r.y + 34, r.w - 96, TXT_CAPTION2, .65f);
-    }
+    } else afTexto(i18n("Ainda sem atividade"), r.x + 82, r.y + 34, r.w - 96, TXT_CAPTION2, .65f);
     return;
   }
   const char *arte = !e ? "" : vertical ? (e->poster[0] ? e->poster : e->arte) : afArteDeitada(e);
   if (!vertical) gfx_card_forcar_cover_atual = 1.0f;   // fill the landscape card, no side bars
-  int comArte = svd_arte_card(r, arte, raio, 1);   // no art: the home skeleton card
+  int comArte = 0;
+  if (e) comArte = svd_arte_card(r, arte, raio, 1);
+  else svd_superficie(r, raio, 0, 1);   // a connected person with no activity is not an artwork download
   gfx_card_forcar_cover_atual = 0.0f;
   if (comArte && !vertical) gfx_veu_base(r, raio, .70f, .90f);   // the caption veil; vertical cards carry no caption
   if (e) {
@@ -270,7 +273,11 @@ static void afAtualizar(float dt, int focada, int *colunaP) {
     snprintf(afId, sizeof afId, "%s", a->id);
     snprintf(afImdb, sizeof afImdb, "%s", e ? e->imdb : "");
   } else if (focada) afId[0] = afImdb[0] = 0;
-  if (ultX0 >= 0 && focada && c < afN) {
+  if (ultX0 >= 0 && focada && c < afN
+#ifdef NV_TOUCH_UI
+      && !toquerol_livre(&toque)
+#endif
+      ) {
     GfxRect r = afRect(c, ultX0, 0);
     float alvo = scroll;
     float dir = ajustes_amigos_estilo() == 3 ? afDetalheX(ultX0) - 16 : amigosfilDireita() - 12;
@@ -291,6 +298,21 @@ static void afAtualizar(float dt, int focada, int *colunaP) {
 }
 static void afDesenhar(float x0, float y, float corte, int focada, int coluna, Uint32 agora) {
   afMontar(); afFoco = (GfxRect){0}; afExemplos = 0;
+#ifdef NV_TOUCH_UI
+  // Each layout has its own card widths and clipping. Classic's region is
+  // initialized after this branch returns, so it cannot own these hit targets.
+  float toqueDir = ajustes_amigos_estilo() == 3 ? afDetalheX(x0) - 16 : amigosfilDireita();
+  float toqueLeft = x0 + (ajustes_amigos_estilo() == 3 ? 132 : 0), maxX = 0;
+  for (int i = 0; i < afN; i++) {
+    GfxRect r = afRect(i, x0, y);
+    maxX = fmaxf(maxX, r.x + r.w - toqueDir);
+  }
+  float toqueTop = fmaxf(y, corte), toqueBase = fminf(y + ultAlt, NV_TELA_H);
+  toquerol_vincular(&toque, (GfxRect){toqueLeft, toqueTop, fmaxf(0,toqueDir-toqueLeft), fmaxf(0,toqueBase-toqueTop)},
+                    gfx_escala(), 0, maxX, 0, &scroll);
+  if (amigosfil_convite())
+    alvoToque((GfxRect){x0,y+8,fminf(640,(amigosfilDireita()-x0)*.43f),NV_DESTAQUE_H},corte,0,-1);
+#endif
   if (amigosfil_convite()) { afConvite(x0, y, focada); return; }
   float dir = amigosfilDireita();
   if (ajustes_amigos_estilo() == 3) {

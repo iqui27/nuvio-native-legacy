@@ -297,6 +297,10 @@ static void irFileira(void) {
   abort();
 }
 
+#ifdef NV_AMIGOS_TOUCH_AUDIT
+#include "amigosfil_toque.inc"
+#endif
+
 int main(int argc, char **argv) {
   const char *saida = argc > 1 ? argv[1] : nvt("/nv-abas/s");
   static CatItem itens[40];
@@ -315,8 +319,14 @@ int main(int argc, char **argv) {
   }
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+#ifdef NV_LINUX_DESKTOP
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_ES);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,0);
+#else
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
+#endif
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   janela = SDL_CreateWindow("Nuvio: abas", 0, 0, 1920, 1080,
                             SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
@@ -376,6 +386,9 @@ int main(int argc, char **argv) {
   contato(nContatos++, "nuvio:pedro", "Pedro", "deploy/app/art/elenco/00_0.jpg", "nuvio");
   contato(nContatos++, "nuvio:marina", "Marina", "", "nuvio");
   contato(nContatos++, "trakt:vlern", "vlern", "", "trakt");
+#ifdef NV_AMIGOS_TOUCH_AUDIT
+  return amigosToqueAuditar();
+#endif
   socialvis_demo(4);
   desenho = D_HOME;
 #ifdef NV_AMIGOSFIL_TESTE

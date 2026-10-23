@@ -68,6 +68,9 @@ void amigosfil_focar(int coluna, int cartao) {
 #endif
 
 static int afNum(void);
+#ifdef NV_TOUCH_UI
+static GfxRect afRect(int i,float x0,float y);
+#endif
 int amigosfil_dentro(void) { return dentro; }
 int amigosfil_convite(void) { return socialvis_n_amigos() == 0; }
 int amigosfil_n_colunas(void) {
@@ -131,7 +134,11 @@ void amigosfil_retomar_foco(int *coluna) {
     float ponto = toque.regiao.x + toque.regiao.w * 0.35f, melhor = 1e9f;
     int n = amigosfil_n_colunas();
     for (int i = 0; i < n; i++) {
-      float d = fabsf(rostoX(i, ultX0, ultAlt) + AF_D * 0.5f - ponto);
+      float centro = rostoX(i, ultX0, ultAlt) + AF_D * 0.5f;
+      if (ajustes_amigos_estilo() != 5) {
+        GfxRect r = afRect(i, ultX0 - scroll, 0); centro = r.x + r.w * .5f;
+      }
+      float d = fabsf(centro - ponto);
       if (d < melhor) { melhor = d; *coluna = i; }
     }
     dentro = -1;
@@ -199,7 +206,10 @@ void amigosfil_ok(int coluna) {
     const SvEvento *ev = afEvento(coluna);
     const SvAmigo *am = afAmigo(coluna);
     if (ev && ev->imdb[0]) { snprintf(pedTitulo, sizeof pedTitulo, "%s", ev->imdb); temTitulo = 1; }
-    else if (am) { snprintf(pedPerfil, sizeof pedPerfil, "%s", am->id); temPerfil = 1; }
+    else if (am) {
+      snprintf(pedPerfil, sizeof pedPerfil, "%s", am->id); temPerfil = 1;
+      printf("[amigos] perfil solicitado estilo=%d atividade=%d\n",ajustes_amigos_estilo(),am->nTit);
+    }
     return;
   }
   if (amigosfil_convite()) {
@@ -222,6 +232,7 @@ void amigosfil_ok(int coluna) {
   }
   snprintf(pedPerfil, sizeof pedPerfil, "%s", a->id);
   temPerfil = 1;
+  printf("[amigos] perfil solicitado estilo=%d atividade=%d\n",ajustes_amigos_estilo(),a->nTit);
   socialvis_marcar_visto(a->id);
 }
 

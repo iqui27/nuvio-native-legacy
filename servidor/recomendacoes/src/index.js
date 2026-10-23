@@ -10,6 +10,7 @@
 // e-mail, IP. A identidade e um identificador estavel e um nome de exibicao.
 
 import { rotaXtream } from "./xtream.js";
+import { rotaPerfisContatos } from "./perfis-contatos.js";
 import { codigoRegistro } from "./codigo.js";
 import { rotaTrailerImdb, rotaTrailerYoutube } from "./trailer.js";
 import { rotaNoticia, rotaNoticiaImg } from "./noticia.js";
@@ -1095,6 +1096,8 @@ export default {
     if (rota === "/v1/feed" && req.method === "GET") return rotaFeed(env, quem, url, req, h, garantirPerfil);
     if (rota === "/v1/amigo" && req.method === "GET") return rotaAmigo(env, quem, url, h, garantirPerfil);
 
+    const perfisContatos = await rotaPerfisContatos(req, env, quem, quemToken, corpo, h, registrar, bloqueadoPar);
+    if (perfisContatos) return perfisContatos;
     if (rota === "/v1/contatos" && req.method === "GET")  return rotaContatosLer(env, quem);
     if (rota === "/v1/contatos" && req.method === "POST") return rotaContatosVincular(env, quem, corpo);
     if (rota === "/v1/contatos/trakt" && req.method === "POST") return rotaContatosTrakt(env, quem, corpo);

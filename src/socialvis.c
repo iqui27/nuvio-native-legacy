@@ -646,7 +646,7 @@ static void refazer(void) {
   unsigned h;
   if (temExterno) {
     nBrutos = nExterno < SV_EVENTOS_MAX ? nExterno : SV_EVENTOS_MAX;
-    memcpy(brutos, externo, sizeof *brutos * (size_t)nBrutos);
+    if (nBrutos) memcpy(brutos, externo, sizeof *brutos * (size_t)nBrutos);
     nCtts = recomenda_contatos(ctts, REC_CONTATOS_MAX);
   } else {
     int n = svDoServidor(brutos, SV_EVENTOS_MAX);

@@ -29,6 +29,7 @@ int  recenviar_abrir(const CatItem *ci);
 // Social e do estado vazio: "nao tenho amigos" nao se resolve escolhendo um
 // filme primeiro.
 int  recenviar_abrir_amigos(void);
+int  recenviar_abrir_perfis(void);
 
 int  recenviar_aberto(void);
 void recenviar_evento(const SDL_Event *e);
