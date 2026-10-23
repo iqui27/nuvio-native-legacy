@@ -1354,6 +1354,17 @@ int main(void) {
     } }
   puts("ok  #204: catalogo que nenhum addon declara sai antes de recusar o novo; escolha explicita fica");
 
+  fil_esquecer();
+  usaArquivo = 1;
+  fil_registrar("plex_1", "Films", "Plex", "movie", 3);
+  assert(fil_definir_servidor("plex_1", 1, 1));
+  assert(fil_servidor_ordem("plex_1") == 1 && fil_servidor_ocultar_vistos("plex_1"));
+  fil_teste_recarregar();
+  assert(fil_servidor_ordem("plex_1") == 1 && fil_servidor_ocultar_vistos("plex_1"));
+  assert(!fil_servidor_ordem("emby_1") && !fil_servidor_ocultar_vistos("emby_1"));
+  assert(!fil_definir_servidor("plex_1", 2, 0));
+  remove("/tmp/fileirasui.txt"); usaArquivo = 0;
+  puts("ok server row order and hide-watched survive reload, isolated by key");
   puts("fileiras: tudo ok");
   return 0;
 }

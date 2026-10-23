@@ -33,6 +33,7 @@ typedef struct {
   // "o addon declarou hoje e entrou no fim ligado". Vai para o arquivo como
   // quinto numero, ANTES do titulo; o leitor aceita a linha sem ele.
   int  fila;
+  int servidorOrdem, servidorOcultarVistos;
   // SO EM MEMORIA — nao entram no arquivo. Ver o cabecalho de fil_registrar em
   // fileiras.h: o formato gravado tem o titulo no fim da linha e acrescentar
   // campos faria o arquivo de quem ja usa o app ser descartado inteiro.
@@ -322,6 +323,9 @@ static void gravar(void) {
   for (i = 0; i < nLinhas && k < cap; i++)
     if (linhas[i].nova)
       k += (size_t)snprintf(txt + k, cap - k, "nova %s\n", linhas[i].chave);
+  for (i = 0; i < nLinhas && k < cap; i++)
+    if (linhas[i].servidorOrdem || linhas[i].servidorOcultarVistos)
+      k += (size_t)snprintf(txt + k, cap - k, "servidor %d %d %s\n", linhas[i].servidorOrdem, linhas[i].servidorOcultarVistos, linhas[i].chave);
   if (k < cap) dados_gravar(arquivoDoPerfil(), txt);
   free(txt);
   revisao++;
@@ -379,6 +383,12 @@ static void carregar(void) {
     } else if (!strncmp(buf, "addvence ", 9)) {
       for (int i = 0; i < nLinhas; i++)
         if (!strcmp(linhas[i].chave, buf + 9)) linhas[i].addVenceConta = 1;
+    } else if (!strncmp(buf, "servidor ", 9)) {
+      int order, hide; char key[FIL_CHAVE];
+      if (sscanf(buf + 9, "%d %d %191s", &order, &hide, key) == 3)
+        for (int i = 0; i < nLinhas; i++) if (!strcmp(linhas[i].chave, key)) {
+          linhas[i].servidorOrdem = order == 1; linhas[i].servidorOcultarVistos = hide == 1;
+        }
     } else if (!strncmp(buf, "linha ", 6) && nLinhas < FIL_MAX) {
       char *p = buf + 6, *campo[4];
       int c;
@@ -1571,6 +1581,22 @@ int fil_definir_tipo(const char *chave, int t) {
   return ok;
 }
 
+int fil_definir_servidor(const char *chave, int ordem, int ocultarVistos) {
+  if (!chave || ordem < 0 || ordem > 1 || fil_origem_de(chave) != FIL_ORIGEM_SERVIDOR) return 0;
+  pthread_mutex_lock(&trava); garantir(); int i = achar(chave);
+  if (i >= 0 && (linhas[i].servidorOrdem != ordem || linhas[i].servidorOcultarVistos != !!ocultarVistos)) {
+    linhas[i].servidorOrdem = ordem; linhas[i].servidorOcultarVistos = !!ocultarVistos; gravar();
+  }
+  pthread_mutex_unlock(&trava); return i >= 0;
+}
+int fil_servidor_ordem(const char *chave) {
+  pthread_mutex_lock(&trava); garantir(); int i = chave ? achar(chave) : -1;
+  int r = i >= 0 ? linhas[i].servidorOrdem : 0; pthread_mutex_unlock(&trava); return r;
+}
+int fil_servidor_ocultar_vistos(const char *chave) {
+  pthread_mutex_lock(&trava); garantir(); int i = chave ? achar(chave) : -1;
+  int r = i >= 0 ? linhas[i].servidorOcultarVistos : 0; pthread_mutex_unlock(&trava); return r;
+}
 void fil_ciclar_tam(int i) {
   pthread_mutex_lock(&trava);
   if (i >= 0 && i < nLinhas) {

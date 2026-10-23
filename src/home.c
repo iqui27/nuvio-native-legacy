@@ -2778,6 +2778,26 @@ static void sincronizarFileiras(void) {
       }
       if (nProxHome || tirou) { cw->usaItens = 1; cw->n = nm; }
     }
+    if (fil_origem_de(cf->chave) == FIL_ORIGEM_SERVIDOR) {
+      Fileira *srv = &fileiras[destino];
+      int order = fil_servidor_ordem(cf->chave), hide = fil_servidor_ocultar_vistos(cf->chave);
+      if (order || hide) {
+        int n = 0, teto = srv->n;
+        for (int c = 0; c < cf->n && n < MAX_CARDS - 1; c++) {
+          const CatItem *it = cat_item(cf->ini + c);
+          if (!it || (hide && cat_visto(it))) continue;
+          srv->itens[n++] = cf->ini + c;
+        }
+        if (order) for (int c = 1; c < n; c++) {
+          int idx = srv->itens[c], j = c;
+          while (j > 0 && strcasecmp(cat_item(srv->itens[j-1])->titulo, cat_item(idx)->titulo) > 0) {
+            srv->itens[j] = srv->itens[j-1]; j--;
+          }
+          srv->itens[j] = idx;
+        }
+        srv->usaItens = 1; srv->n = n < teto ? n : teto;
+      }
+    }
     snprintf(fileiras[destino].chave, sizeof fileiras[destino].chave,
              "%s", cf->chave);
     destino++;
