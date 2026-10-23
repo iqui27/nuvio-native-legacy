@@ -24,6 +24,7 @@ static void aj4Botao(const char *s, const char *ic, float x, float y, float w, i
     else if(x>=1550)aj4Alvo(r,0,2);
   }
 }
+static int aj4SeloAviso; // mixed-scope review: scope chips draw in the warning amber (mock .warning).
 static void aj4LinhaDesenhar(const char *rot, const char *sub, const char *val, const char *selo,
                             const char *ic, float y, int foco, int marcado) {
   GfxRect r = {622,y,1198,113};
@@ -38,8 +39,13 @@ static void aj4LinhaDesenhar(const char *rot, const char *sub, const char *val, 
     txt_desenhar_alpha(t,1750-t.w,y+24,.72f);
   }
   if (selo && selo[0]) {
-    TxtLinha t=ajTxtC(TXT_V2_24,selo,260);
-    txt_desenhar_alpha(t,1750-t.w,y+68,.55f);
+    if (aj4SeloAviso) {
+      TxtLinha t=txt_linha(TXT_V2_24,selo,232,176,92,255);
+      txt_desenhar_alpha(t,1750-t.w,y+68,.85f);
+    } else {
+      TxtLinha t=ajTxtC(TXT_V2_24,selo,260);
+      txt_desenhar_alpha(t,1750-t.w,y+68,.55f);
+    }
   }
   ajIcone(marcado ? "aj_check" : "aj_chevron-right",1778,y+44,26,foco?1:.5f);
   int row=(int)((y-(aj4Util==3?400:387))/(aj4Util==3?120:123));
@@ -91,7 +97,8 @@ static void aj4Home(void) {
               av?"Os mesmos ajustes e valores, organizados pelo que você quer fazer.":"Escolha o que quer mudar. Os detalhes técnicos ficam no Avançado.");
   gfx_cor((GfxRect){100,582,470,1},0,.22f,.23f,.26f,1);
   aj4Texto("SUA CONFIGURAÇÃO",TXT_V2_KICK,100,620,470,.55f);
-  aj4Texto("Personalizada",TXT_V2_26,100,670,470,.85f);
+  char aj4Predef[160]; aj4PredefRotulo(aj4Predef,sizeof aj4Predef);
+  aj4Texto(aj4Predef,TXT_V2_26,100,670,470,.85f);
   ajBloco(TXT_V2_26,av?"Trocar de modo mantém suas escolhas salvas.":"Experimente uma configuração pronta para esta TV.",100,724,470,32,.65f,2);
   aj4Botao("Predefinições","aj_sparkles",100,806,320,aj4Linha==4 && aj4Topo<0,0);
   if (av) {
@@ -118,20 +125,32 @@ static void aj4SecaoDesenhar(void) {
   const char *titulo=av?AJ4_SECOES[sec]:AJ4_TAREFAS[sec];
   aj4Pagina(titulo,"Escolha um grupo e avance para seus ajustes.");
   if(av) {
-    int gs[AJ4_N_GRUPOS], n=aj4GruposLista(sec,gs), start=aj4GrupoFoco/4*4;
+    int gs[AJ4_N_GRUPOS], n=aj4GruposLista(sec,gs), start=0;
+    for(int i=0;i<n;i++) if(gs[i]==aj4Grupo) start=i/4*4;
+    if(n<=4) aj4Mais=0;
+    if(!aj4Mais && (aj4GrupoFoco<start || aj4GrupoFoco>=start+4)) aj4GrupoFoco=start;
     aj4Texto("NESTA SEÇÃO",TXT_V2_KICK,100,332,470,.55f);
     aj4Texto("Um grupo por vez.",TXT_G30B,100,372,470,1);
     ajBloco(TXT_V2_26,"Escolha um grupo e avance para seus ajustes.",100,420,470,32,.65f,2);
     for(int i=start;i<n && i<start+4;i++) {
       float y=510+(i-start)*76;
-      if(aj4Grupos && i==aj4GrupoFoco && aj4Topo<0)ajNeutro((GfxRect){100,y,470,68},18,.13f,.169f,.176f,.204f,1);
+      if(aj4Grupos && i==aj4GrupoFoco && !aj4Mais && aj4Topo<0)ajNeutro((GfxRect){100,y,470,68},18,.13f,.169f,.176f,.204f,1);
       if(gs[i]==aj4Grupo) { float ar,ag,ab;ajustes_acento_marca(&ar,&ag,&ab);gfx_cor((GfxRect){120,y+29,7,7},.5f,ar,ag,ab,1); }
       aj4Texto(AJ4_GRUPOS[gs[i]],TXT_V2_26,142,y+20,385,.8f);
       ajIcone("aj_chevron-right",522,y+22,26,.7f);
       aj4Alvo((GfxRect){100,y,470,68},2,i);
     }
-    char b[80];snprintf(b,sizeof b,i18n("%d grupos · ↑ ↓ para navegar"),n);
+    char b[96];snprintf(b,sizeof b,i18n("%s · %d grupos"),titulo,n);
     aj4Texto(b,TXT_V2_24,100,832,470,.55f);
+    if(n>4) {
+      // Mock "More groups" textbutton: pages the group list forward.
+      GfxRect r={100,850,320,50};
+      if(aj4Mais && aj4Topo<0)ajNeutro(r,14,.13f,.169f,.176f,.204f,1);
+      TxtLinha t=ajTxtC(TXT_V2_24,"Mais grupos",250);
+      txt_desenhar_alpha(t,116,850+(50-t.h)*.5f,aj4Mais?.9f:.6f);
+      ajIcone("aj_chevrons-down",128+t.w,850+(50-26)*.5f,26,aj4Mais?.95f:.5f);
+      aj4Alvo(r,2,999);
+    }
     aj4Texto(AJ4_GRUPOS[aj4Grupo],TXT_V2_24,622,343,1000,.6f);
   } else {
     aj4Lateral("ESCOLHAS DO DIA A DIA","Do seu jeito.","Escolha uma opção. OK abre a prévia; Voltar mantém o valor atual.");
@@ -156,15 +175,48 @@ static void aj4UtilDesenhar(void) {
   int review=aj4Review, preset=aj4Util==2;
   const char *title=review?"Revisar mudanças":preset?"Predefinições":"Diferente do padrão";
   aj4Pagina(title,review?"Confira valores e escopos antes de aplicar.":preset?"Configurações prontas, com prévia antes de aplicar.":"Compare suas escolhas com o padrão de fábrica.");
-  aj4Lateral(review?"ANTES DE APLICAR":preset?"UM BOM COMEÇO":"SUAS ESCOLHAS",review?"Você decide.":preset?"Pronta para assistir.":"Só o que mudou.",
-    review?"Somente as opções listadas serão alteradas. Contas e credenciais ficam preservadas.":preset?"Escolha uma configuração e revise as mudanças antes de confirmar.":"Restaure apenas o escopo escolhido. O outro escopo mantém seus valores.");
   int n=review?aj4N:preset?3:aj4Diferencas(aj4Opcoes), start=aj4Linha/4*4;
+  int misto=0;
+  if(review) { int tv=0,pr=0; for(int i=0;i<aj4N;i++) escopoDe(aj4Ops[i])==ESC_TV?(tv=1):(pr=1); misto=tv&&pr; }
+  aj4SeloAviso=misto;
+  char esc[160];
+  if(review) {
+    aj4Lateral("ANTES DE APLICAR","Você decide.","Somente as opções listadas serão alteradas. Contas e credenciais ficam preservadas.");
+    if(misto) {
+      // Mock .warning: mixed-scope review tells who else sees the changes.
+      gfx_cor((GfxRect){100,620,470,1},0,.22f,.23f,.26f,1);
+      txt_bloco_corta(TXT_V2_26,i18n("Esta predefinição afeta seu perfil e esta TV. Quem usar esta TV pode ver as mudanças."),232,176,92,100,642,470,32,.85f,3);
+    }
+  } else if(preset) aj4Lateral("UM BOM COMEÇO","Pronta para assistir.","Escolha uma configuração e revise as mudanças antes de confirmar.");
+  else {
+    // Mock: the scope selector lives in the left column as group buttons,
+    // not a toggle row in the main area.
+    char nome[160]; pfRotuloChip(nome,sizeof nome);
+    { char *u=strstr(nome,"Perfil: "); if(u) memmove(u,u+8,strlen(u+8)+1); }
+    if(aj4Escopo) snprintf(esc,sizeof esc,"%s",i18n("Esta TV"));
+    else if(!nome[0] || !strcmp(nome,i18n("Perfil"))) snprintf(esc,sizeof esc,"%s",i18n("Este perfil"));
+    else snprintf(esc,sizeof esc,i18n("Este perfil · %s"),nome);
+    char tit[80]; snprintf(tit,sizeof tit,i18n("%d alterações.\nSem adivinhação."),n);
+    aj4Texto("UM CAMINHO DE VOLTA",TXT_V2_KICK,100,332,470,.55f);
+    ajBloco(TXT_ILHA_PERGUNTA,tit,100,372,470,44,1,2);
+    ajBloco(TXT_V2_26,"Compare valores salvos com os padrões deste escopo.",100,470,470,32,.65f,2);
+    for(int i=0;i<2;i++) {
+      float y=510+i*76;
+      if(i==aj4Escopo) { float ar,ag,ab;ajustes_acento_marca(&ar,&ag,&ab);gfx_cor((GfxRect){120,y+29,7,7},.5f,ar,ag,ab,1); }
+      aj4Texto(i?"Esta TV":esc,TXT_V2_26,142,y+20,385,i==aj4Escopo?.85f:.6f);
+      ajIcone("aj_chevron-right",522,y+22,26,.7f);
+      aj4Alvo((GfxRect){100,y,470,68},6,i);
+    }
+    gfx_cor((GfxRect){100,676,470,1},0,.22f,.23f,.26f,1);
+    ajBloco(TXT_V2_26,"Restaurar ajustes não remove complementos, acesso nem histórico.",100,698,470,32,.65f,2);
+    ajIcone("aj_info",100,898,28,.6f);
+    aj4Texto("Cada ajuste alterado mostra onde se aplica.",TXT_V2_24,142,902,430,.65f);
+  }
   if(!review && !preset) {
-    aj4Botao("Este perfil",NULL,622,323,190,0,!aj4Escopo);
-    aj4Botao("Esta TV",NULL,820,323,180,0,aj4Escopo);
-    aj4Texto("← →  Escolher escopo",TXT_V2_24,1430,343,390,.6f);
+    aj4Texto(esc,TXT_V2_24,622,343,900,.6f);
+    char b[64]; snprintf(b,sizeof b,i18n("%d alterações"),n);
+    aj4Texto(b,TXT_V2_24,1620,343,200,.65f);
   } else aj4Texto(review?"ATUAL / NOVO VALOR":"ESCOLHA UMA CONFIGURAÇÃO",TXT_V2_24,622,343,1100,.6f);
-  static const char *const nomes[]={"Melhor qualidade","Economizar dados","TV mais leve"};
   static const char *const desc[]={"Prioriza a qualidade das fontes disponíveis.","Reduz qualidade, tamanho de arquivo e trailers automáticos.","Reduz efeitos e mantém a memória de imagens automática."};
   for(int i=start;i<n && i<start+4;i++) {
     int op=review?aj4Ops[i]:preset?-1:aj4Opcoes[i];
@@ -175,7 +227,7 @@ static void aj4UtilDesenhar(void) {
       uxValorTexto(op,review?aj4Depois[i]:uxValorPadrao(op),novo,sizeof novo);
       snprintf(val,sizeof val,"%s",old);snprintf(sub,sizeof sub,i18n("%s · %s"),i18n(review?"Novo valor":"Padrão"),novo);
     }
-    aj4LinhaDesenhar(preset && !review?nomes[i]:aj4Rotulo(op),preset && !review?desc[i]:sub,val,
+    aj4LinhaDesenhar(preset && !review?AJ4_PRESET_NOMES[i]:aj4Rotulo(op),preset && !review?desc[i]:sub,val,
       op>=0?(escopoDe(op)==ESC_TV?"Esta TV":"Este perfil"):"",preset && !review?"aj_sparkles":NULL,
       387+(i-start)*123,aj4Linha==i && !aj4Acao && aj4Topo<0,0);
   }
@@ -236,6 +288,7 @@ static void aj4PerfilDesenhar(void) {
 }
 static void aj4Desenhar(void) {
   ponteiro_camada();
+  aj4SeloAviso=0;
   if(pfTela==PF_MENU)aj4PerfilDesenhar();
   else if(uxEditor)aj4Editor();
   else if(aj4Util==3)aj4BuscaDesenhar();

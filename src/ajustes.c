@@ -11240,10 +11240,19 @@ int ajustes_teste_quadro(const char *id) {
   if (teclado_aberto()) { SDL_Event e = { 0 }; e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_ESCAPE; teclado_evento(&e); }
   aj2PoseFixa = 0;
   if (!strncmp(id, "v4-", 3)) {
+    static const char *const PF_V4[] = { "Henrique" };
+    perfis_teste_definir(PF_V4, NULL, 1, 1);   // chip e escopo com nome, como o mockup
     aj4Iniciar(); pfTela=0; uxVeioBusca=0;
     valor[AJ_TEMA]=2; valor[AJ_AVANCADAS]=1;
     if (!strcmp(id,"v4-inicio-avancado")) valor[AJ_AVANCADAS]=0;
     else if (!strcmp(id,"v4-secao")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); aj4Grupos=0; }
+    else if (!strcmp(id,"v4-secao-grupos")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); }   // pagina de grupos com "Mais grupos"
+    else if (!strcmp(id,"v4-review")) {   // revisao com escopo misto (TV + perfil)
+      valor[AJ_AVANCADAS]=0;
+      valor[AJ_QUALIDADE_IMG]=1; valor[AJ_ANIM]=0; valor[AJ_VIDRO]=0; valor[AJ_GPU_EFEITOS]=0;
+      valor[AJ_HERO_TRAILER]=0; valor[AJ_DET_TRAILER_AUTO]=0; valor[AJ_TEX_MB]=1;
+      aj4PrepararPreset(2); focoIndice=0;
+    }
     else if (!strcmp(id,"v4-submenu")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); aj4Grupo=aj4GrupoDe(AJ_FONTE_MANUAL); aj4Grupos=0; }
     else if (!strcmp(id,"v4-opcao-lista")) { focarOpcao(AJ_QUALIDADE); uxAbrirEditor(AJ_QUALIDADE); }
     else if (!strcmp(id,"v4-predefinicoes")) { aj4Util=2; focoIndice=0; }

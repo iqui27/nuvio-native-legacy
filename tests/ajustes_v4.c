@@ -76,6 +76,42 @@ int main(void) {
   snprintf(dirAjustes, sizeof dirAjustes, "%s/missing/dir", dir);
   assert(!aj4Aplicar()); assert(!memcmp(before, valor, sizeof before));
   snprintf(dirAjustes, sizeof dirAjustes, "%s", saved);
+  // "Mais grupos" paging: four groups per page, More groups advances and wraps.
+  {
+    int gs[AJ4_N_GRUPOS], ng;
+    valor[AJ_AVANCADAS] = 0; focoIndice = 1; aj4Linha = 0; aj4Topo = -1; // advanced
+    aj4Review = 0; aj4Util = 0; aj4Acao = 0; // clear the failed-save review state
+    key(SDLK_RETURN);
+    assert(aj4Grupos && aj4Atual == 0);
+    ng = aj4GruposLista(aj4Atual, gs);
+    assert(ng > 4);
+    assert(aj4Grupo == gs[0] && aj4GrupoFoco == 0 && !aj4Mais);
+    aj4GrupoFoco = 3; key(SDLK_DOWN); assert(aj4Mais);
+    key(SDLK_DOWN); assert(aj4Mais); // nothing below the button
+    key(SDLK_UP); assert(!aj4Mais && aj4GrupoFoco == 3);
+    aj4Mais = 1; key(SDLK_RETURN);
+    assert(aj4Grupo == gs[4] && aj4GrupoFoco == 4 && aj4Mais);
+    for (int guard = 0; aj4Grupo != gs[0] && guard < 8; guard++) key(SDLK_RETURN);
+    assert(aj4Grupo == gs[0]); // wrapped back to the first page
+    key(SDLK_UP); key(SDLK_UP); key(SDLK_UP); key(SDLK_UP);
+    assert(!aj4Mais); // focus never escapes the visible page
+    aj4GrupoFoco = 1; key(SDLK_RIGHT);
+    assert(!aj4Grupos && !aj4Mais && aj4Grupo == gs[1]);
+  }
+  // Home preset label derives live from stored values, not a static string.
+  {
+    char rot[160];
+    assert(aj4PrepararPreset(1) > 0 && aj4Aplicar());
+    assert(aj4PresetCombina(1));
+    aj4PredefRotulo(rot, sizeof rot);
+    assert(!strcmp(rot, "Economizar dados"));
+    valor[AJ_QUALIDADE] = 0;
+    assert(!aj4PresetCombina(1));
+    aj4PredefRotulo(rot, sizeof rot);
+    assert(strcmp(rot, "Economizar dados") && strstr(rot, " · ")); // derived Custom · value
+    valor[AJ_QUALIDADE] = 3;
+    assert(aj4Desfazer());
+  }
   puts("Settings v4: mode, complete catalog, search, scoped reset, presets, undo, save failure OK");
 #endif
   SDL_Quit(); return 0;

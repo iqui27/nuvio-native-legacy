@@ -1,6 +1,6 @@
 // Approved v4 presentation. TELA, enum, CHAVE and positional defaults remain intact.
 #define AJUSTES_V4 1
-static int aj4Atual, aj4Grupo, aj4Grupos = 1, aj4GrupoFoco;
+static int aj4Atual, aj4Grupo, aj4Grupos = 1, aj4GrupoFoco, aj4Mais;
 static int aj4Topo = -1, aj4Set, aj4Linha, aj4Util, aj4Escopo, aj4Review, aj4Acao;
 static int aj4Opcoes[AJ_N], aj4Ops[AJ_N], aj4Antes[AJ_N], aj4Depois[AJ_N], aj4N;
 static int aj4UndoOps[AJ_N], aj4UndoAntes[AJ_N], aj4UndoDepois[AJ_N], aj4UndoN, aj4UndoPerfil;
@@ -10,6 +10,7 @@ static int aj4BuscaTeclado, aj4BuscaRetorno, aj4BuscaFoco;
 static AjusteBuscaResultado aj4Resultados[AJ_N];
 static void aj4Iniciar(void) {
   aj4Topo = -1; aj4Util = aj4Review = aj4Acao = aj4Linha = 0; aj4Excecao = -1;
+  aj4Mais = 0;
   aj4BuscaTeclado=aj4BuscaRetorno=0;
 }
 static const char *const AJ4_SECOES[] = {
@@ -142,7 +143,7 @@ static void aj4Focar(int op) {
 static void aj4Entrar(int sec) {
   int gs[AJ4_N_GRUPOS];
   aj4Atual = sec; aj4Excecao = -1; aj4Grupos = lig(AJ_AVANCADAS);
-  aj4GrupoFoco = 0; aj4Linha = 0; aj4Topo = -1; aj4Util = 0;
+  aj4GrupoFoco = 0; aj4Mais = 0; aj4Linha = 0; aj4Topo = -1; aj4Util = 0;
   int n = aj4GruposLista(sec, gs);
   aj4Grupo = n ? gs[0] : AJ4_GRUPO_BASE[sec];
   n = aj4Lista(sec, aj4Grupos ? aj4Grupo : -1, aj4Opcoes);
@@ -167,19 +168,36 @@ static int aj4PrepararReset(int sec, int tv) {
   }
   aj4Review = 1; aj4Linha = 0; aj4Acao = 0; return aj4N;
 }
+static const int AJ4_PRESET_OPS[3][7] = {
+  {AJ_QUALIDADE, AJ_FONTE_PRIORIDADE, -1},
+  {AJ_QUALIDADE, AJ_TAM_MAX, AJ_TRAILER_QUAL, AJ_HERO_TRAILER, AJ_DET_TRAILER_AUTO, -1},
+  {AJ_QUALIDADE_IMG, AJ_ANIM, AJ_VIDRO, AJ_GPU_EFEITOS, AJ_HERO_TRAILER, AJ_DET_TRAILER_AUTO, AJ_TEX_MB}
+};
+static const int AJ4_PRESET_VALS[3][7] = {{1,1}, {3,2,3,1,1}, {0,1,1,2,1,1,0}};
+static const char *const AJ4_PRESET_NOMES[] = {"Melhor qualidade", "Economizar dados", "TV mais leve"};
+// The home label derives live: a preset name only while the stored values
+// still match it (mock: "Custom · automatic video").
+static int aj4PresetCombina(int preset) {
+  int dispo = 0;
+  if (preset < 0 || preset > 2) return 0;
+  for (int i = 0; i < 7 && AJ4_PRESET_OPS[preset][i] >= 0; i++) {
+    int op = AJ4_PRESET_OPS[preset][i];
+    if (ajOpcaoDisponivel(op)) { dispo = 1; if (valor[op] != AJ4_PRESET_VALS[preset][i]) return 0; }
+  }
+  return dispo;
+}
+static void aj4PredefRotulo(char *b, int n) {
+  for (int p = 0; p < 3; p++) if (aj4PresetCombina(p)) { snprintf(b, n, "%s", AJ4_PRESET_NOMES[p]); return; }
+  char q[96]; uxValorTexto(AJ_QUALIDADE, valor[AJ_QUALIDADE], q, sizeof q);
+  snprintf(b, n, i18n("Personalizada · %s"), q);
+}
 static int aj4PrepararPreset(int preset) {
-  static const int ops[3][7] = {
-    {AJ_QUALIDADE, AJ_FONTE_PRIORIDADE, -1},
-    {AJ_QUALIDADE, AJ_TAM_MAX, AJ_TRAILER_QUAL, AJ_HERO_TRAILER, AJ_DET_TRAILER_AUTO, -1},
-    {AJ_QUALIDADE_IMG, AJ_ANIM, AJ_VIDRO, AJ_GPU_EFEITOS, AJ_HERO_TRAILER, AJ_DET_TRAILER_AUTO, AJ_TEX_MB}
-  };
-  static const int vals[3][7] = {{1,1}, {3,2,3,1,1}, {0,1,1,2,1,1,0}};
   aj4N = 0;
   if (preset < 0 || preset > 2) return 0;
-  for (int i = 0; i < 7 && ops[preset][i] >= 0; i++) {
-    int op = ops[preset][i];
-    if (ajOpcaoDisponivel(op) && valor[op] != vals[preset][i]) {
-      aj4Ops[aj4N] = op; aj4Antes[aj4N] = valor[op]; aj4Depois[aj4N++] = vals[preset][i];
+  for (int i = 0; i < 7 && AJ4_PRESET_OPS[preset][i] >= 0; i++) {
+    int op = AJ4_PRESET_OPS[preset][i];
+    if (ajOpcaoDisponivel(op) && valor[op] != AJ4_PRESET_VALS[preset][i]) {
+      aj4Ops[aj4N] = op; aj4Antes[aj4N] = valor[op]; aj4Depois[aj4N++] = AJ4_PRESET_VALS[preset][i];
     }
   }
   aj4Review = 2; aj4Linha = 0; aj4Acao = 0; return aj4N;
@@ -226,9 +244,10 @@ static void ajPontEdValor(int i,int b);
 static void aj4PontFoco(int zona,int row) {
   if(zona==0)aj4Topo=row;
   else if(zona==1) { aj4Topo=-1; aj4Linha=row; aj4Acao=0; }
-  else if(zona==2) { aj4Topo=-1; aj4GrupoFoco=row; aj4Grupos=1; }
+  else if(zona==2) { aj4Topo=-1; if(row==999)aj4Mais=1; else { aj4Mais=0; aj4GrupoFoco=row; } aj4Grupos=1; }
   else if(zona==3) { aj4Topo=-1; aj4Acao=row; }
   else if(zona==4 && uxEditor==1)ajPontEdValor(row,0);
+  else if(zona==6) { aj4Topo=-1; aj4Escopo=row; aj4Linha=0; aj4Acao=0; }
   if(zona==5) { focoIndice=1; aj4Linha=aj4FocoModo[lig(AJ_AVANCADAS)]; }
 }
 static int aj4Evento(SDL_Keycode k) {
@@ -309,10 +328,28 @@ static int aj4Evento(SDL_Keycode k) {
     return 1;
   }
   if (aj4Grupos) {
+    // Mock paging: the visible page is the current group's page of four; the
+    // "Mais grupos" textbutton advances to the next page (wrapping).
     int gs[AJ4_N_GRUPOS], n = aj4GruposLista(aj4Atual, gs);
-    if (k == SDLK_UP) { if (aj4GrupoFoco) aj4GrupoFoco--; else aj4Topo = 0; }
-    if (k == SDLK_DOWN && aj4GrupoFoco + 1 < n) aj4GrupoFoco++;
-    if ((uxOk(k) || k == SDLK_RIGHT) && n) {
+    int start = 0;
+    for (int i = 0; i < n; i++) if (gs[i] == aj4Grupo) start = i / 4 * 4;
+    int fim = start + 4 < n ? start + 4 : n;
+    if (n <= 4) aj4Mais = 0;
+    if (k == SDLK_UP) {
+      if (aj4Mais) { aj4Mais = 0; aj4GrupoFoco = fim - 1; }
+      else if (aj4GrupoFoco > start) aj4GrupoFoco--;
+      else aj4Topo = 0;
+    }
+    if (k == SDLK_DOWN && !aj4Mais) {
+      if (aj4GrupoFoco + 1 < fim) aj4GrupoFoco++;
+      else if (n > 4) aj4Mais = 1;
+    }
+    if (n && uxOk(k) && aj4Mais) {
+      int idx = (start + 4) % n;
+      aj4Grupo = gs[idx]; aj4GrupoFoco = idx; aj4Linha = 0;
+    }
+    else if ((uxOk(k) || k == SDLK_RIGHT) && n && !aj4Mais) {
+      aj4Mais = 0;
       aj4Grupo = gs[aj4GrupoFoco]; aj4Linha = 0; aj4Grupos = 0;
       n = aj4Lista(aj4Atual, aj4Grupo, aj4Opcoes);
       if (n) { int sec = aj4Atual, ex=aj4Excecao; focarOpcao(aj4Opcoes[0]); aj4Excecao = ex; aj4Atual = sec; }
