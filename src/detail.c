@@ -4508,7 +4508,13 @@ static void heroWeb(float a, float desloc) {
         if (fabsf(alvo - hVaiVis) < 0.5f) hVaiVis = alvo;
       }
       hVai = hVaiVis; } }
-  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai;
+  unsigned srvCurrentVersion = servidores_fileiras_versao();
+  if (srvAvailabilityIndex != idx || srvAvailabilityVersion != srvCurrentVersion) {
+    servidoresDisponiveis = 0;
+    for (int p = 0; ci && p < 3; p++) if (servidores_contem_item(ci, p)) servidoresDisponiveis |= 1 << p;
+    srvAvailabilityIndex = idx; srvAvailabilityVersion = srvCurrentVersion;
+  }
+  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai - (servidoresDisponiveis ? 64 : 0);
   // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
   // botoes. Sao duas, e a ordem tem razao: a retomada explica o BOTAO e fica
   // colada nele; a agenda ("Próximo episódio T2E5 · em 3 dias") explica o
@@ -4890,12 +4896,6 @@ static void heroWeb(float a, float desloc) {
   }
 
   // Availability chips use the same source picker as the Sources action.
-  unsigned version = servidores_fileiras_versao();
-  if (srvAvailabilityIndex != idx || srvAvailabilityVersion != version) {
-    servidoresDisponiveis = 0; const CatItem *item = cat_item(idx);
-    for (int p = 0; item && p < 3; p++) if (servidores_contem_item(item, p)) servidoresDisponiveis |= 1 << p;
-    srvAvailabilityIndex = idx; srvAvailabilityVersion = version;
-  }
   if (servidoresDisponiveis) {
     const char *names[] = {"Plex","Jellyfin","Emby"};
     const char *logos[] = {"deploy/app/art/marcas/plex.png","deploy/app/art/marcas/jellyfin.png","deploy/app/art/marcas/emby.png"};

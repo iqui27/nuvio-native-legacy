@@ -412,7 +412,9 @@ void srvsetup_atualizar(Uint32 now) {
     } else if ((!provider && (state == PX_EST_ERRO || state == PX_EST_EXPIROU)) || (provider && (state == JF_EST_ERRO || state == JF_EST_EXPIROU))) change(ERROR_SCREEN);
   }
   if ((screen == PASSWORD || screen == LOGIN) && connected(provider)) { change(LIBRARIES); librariesLoad(); }
-  if (screen == LIBRARIES && !nLibraries) librariesLoad();
+  if (screen == LIBRARIES && !nLibraries && !worker.alive) {
+    snprintf(message, sizeof message, "%s", i18n("Não configurado"));
+  }
   if (screen == PASSWORD) {
     int state = provider == 1 ? jellyfin_estado(NULL, 0) : emby_estado(NULL, 0);
     if (state == JF_EST_ERRO) snprintf(message, sizeof message, "%s", i18n("Usuário ou senha incorretos"));
