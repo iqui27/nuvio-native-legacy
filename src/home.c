@@ -555,9 +555,12 @@ static int dinPalcoSplit(void) {
 }
 static int palcoFundoDestino(void) {
   if (dinPalcoSplit() && fileiras[foco.fileira].tipo == FILEIRA_HEROI_DIVIDIDO) return PALCO_ARTE;
-  return (ajustes_home_layout() == HOME_LAYOUT_MODERNA || dinPalcoSplit()) && !focoHero &&
-         foco.fileira >= 0 && foco.fileira < nFileiras &&
-         fileiras[foco.fileira].tipo == FILEIRA_PALCO ? ajustes_palco_fundo() : PALCO_ATUAL;
+  if (!((ajustes_home_layout() == HOME_LAYOUT_MODERNA || dinPalcoSplit()) && !focoHero &&
+        foco.fileira >= 0 && foco.fileira < nFileiras &&
+        fileiras[foco.fileira].tipo == FILEIRA_PALCO)) return PALCO_ATUAL;
+  // #659: a fileira pode pedir um fundo proprio; sem escolha dela manda o global.
+  int p = fil_palco(fileiras[foco.fileira].chave);
+  return p >= 0 ? p : ajustes_palco_fundo();
 }
 // TROCA DESLIZADA (dono, 30/09: "a hero passando animado, tipo trocando a
 // imagem pro lado e a outra bem grudada nela"; ajuste "Transicao do destaque").

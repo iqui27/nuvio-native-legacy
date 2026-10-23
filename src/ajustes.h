@@ -571,8 +571,12 @@ int   ajustes_abertura_addon(void);
 int   ajustes_abertura_fundo(void);
 // Modern/Dynamic Stage background. Stored 0 was Black: it now means Cortina, so old
 // defaults move to the new default with no migration.
-enum { PALCO_CORTINA, PALCO_ATUAL, PALCO_ARTE, PALCO_PRETO, PALCO_AURA, PALCO_TRIPTICO, PALCO_MONUMENTO };
+enum { PALCO_CORTINA, PALCO_ATUAL, PALCO_ARTE, PALCO_PRETO, PALCO_AURA, PALCO_TRIPTICO, PALCO_MONUMENTO, PALCO_N };
+// #659: per-row Stage background (fileiras.c). -1 = inherit the global setting.
+#define PALCO_PADRAO (-1)
 int   ajustes_palco_fundo(void);
+// pt label of a PALCO_* mode (the V_PALCO_FUNDO table); i18n at draw time.
+const char *ajustes_palco_fundo_rotulo(int modo);
 int   ajustes_titulo_fil(void);        // 0 Classico, 1 Ilha, 2 Editorial, 3 Acento
 int   ajustes_abertura_estilo(void);   // 0 Centro (A3), 1 Canto (B3)
 int   ajustes_fundo_din(void);         // #205: fundo da Dinamica, 0 Cinza (padrao), 1 Cor, 2 Imersivo, 3 Cinza escuro

@@ -1,4 +1,5 @@
 #include "streams.h"
+#include "aiostreamsui.h"
 #include "addonmodo.h"
 #include "vaitocar.h"
 #include "plrui.h"
@@ -70,7 +71,8 @@
 // player-mockup de 03/10): 820 de largura, a 40 das bordas, raio 36 — a
 // mesma folha dos Episodios no player.
 #include "telefoneui.h"
-#define FOLHA_W        telefoneui_largura(820.0f, NV_TELA_W, FOLHA_MARGEM)
+static int temAio(void);
+#define FOLHA_W        telefoneui_largura(temAio()?1336.0f:820.0f, NV_TELA_W, FOLHA_MARGEM)
 #define FOLHA_MARGEM    40.0f
 #define FOLHA_RAIO_IL   36.0f
 #define FOLHA_PAD_E     48.0f  // da borda da folha ao cartao da linha
@@ -3456,10 +3458,14 @@ static int grupo, filtro, soMp4, soCache, soDub;
 // "EM CACHE" E "DUBLADO" (dono, 02/10, escolheu entre tres): filtros como o
 // MP4, e nao grupos — resolucao x HDR/SDR ja da ate 8 grupos, e mais um eixo
 // picotaria a lista em grupos de 1 ou 2 fontes. Em cache = o debrid ja tem o
+static int temAio(void) {
+  for (int i=0; i<addons_n(); i++) if(aioui_detectar(i)) return 1;
+  return 0;
+}
 // arquivo (Stream.foraCache e 0), toca agora; Audio = idioma escolhido, ou o
 // idioma da interface (que em Automatico acompanha conta/aparelho).
 enum { BT_RECARREGAR, BT_SEM_HDR, BT_SO_MP4, BT_CACHE, BT_DUB, BT_FECHAR,
-       BT_RECARREGAR_FONTE, BT_N };
+       BT_RECARREGAR_FONTE, BT_AIO, BT_AIO_GERENCIAR, BT_N };
 // Mixed source lists keep VOD chips; live rows always pass through them.
 static int filtrosVisiveisCalcular(void) {
   if (!filtrosVod()) return 0;
@@ -3481,12 +3487,17 @@ static int botaoDe(int i) {
   if (i == 2) return BT_CACHE;
   if (i == 3) return BT_DUB;
   if (i == 4) return BT_RECARREGAR;
-  if (i == 5 && recarregarFonteContexto) return BT_RECARREGAR_FONTE;
+  i -= 5;
+  if (recarregarFonteContexto) { if (i == 0) return BT_RECARREGAR_FONTE; i--; }
+  if (temAio()) {
+    if (i == 0) return BT_AIO;
+    if (i == 1) return BT_AIO_GERENCIAR;
+  }
   return BT_FECHAR;
 }
 static int nBotoes(void) {
   if (!filtrosVisiveis()) return video_pode_forcar_sdr() ? 3 : 2;
-  return (video_pode_forcar_sdr() ? 6 : 5) + (recarregarFonteContexto != 0);
+  return (video_pode_forcar_sdr() ? 6 : 5) + (recarregarFonteContexto != 0) + temAio() * 2;
 }
 static const char *idiomaFiltroAudio(void) {
   return ling_audio_fonte(idioma_iso(ajustes_idioma()));
@@ -3495,6 +3506,8 @@ static const char *rotuloBotao(int b) {
   if (b == BT_SEM_HDR) return "Sem HDR";
   if (b == BT_SO_MP4)  return "Só MP4";
   if (b == BT_CACHE)   return "Em cache";
+  if (b == BT_AIO)     return "Inspecionar título";
+  if (b == BT_AIO_GERENCIAR) return "Abrir painel";
   if (b == BT_DUB) {
     static char rotulo[96];
     const char *pref = idiomaFiltroAudio();
@@ -3507,7 +3520,7 @@ static int botaoLigado(int b) {
   return (b == BT_SO_MP4 && soMp4) || (b == BT_CACHE && soCache) || (b == BT_DUB && soDub);
 }
 static const char *iconeBotao(int b) {
-  return b == BT_RECARREGAR ? "aj_rotate-cw" : b == BT_RECARREGAR_FONTE
+  return b == BT_AIO_GERENCIAR ? "aj_settings-2" : b == BT_AIO ? "aj_layers" : b == BT_RECARREGAR ? "aj_rotate-cw" : b == BT_RECARREGAR_FONTE
       ? "pl_rotate-ccw" : b == BT_FECHAR ? "aj_x" : NULL;
 }
 static char provedores[13][96];
@@ -4753,6 +4766,10 @@ void stream_atualizar_lista(const Stream *l, int qtd) {
   }
 }
 int stream_folha_n(void) { return nFiltrados(); }
+void stream_inspecao_ordem(int *ranks,int capacidade) {
+  montar(automaticaDaFolha());
+  for(int i=0;i<capacidade;i++) { int r=linhaDe(i); ranks[i]=r<0?0:r+1; }
+}
 #ifdef NV_SHOT_HOOKS
 // Capturas: altura do cartao da escolha automatica (0 = sem cartao nesta aba),
 // linhas que a lista desenha e copias que dobraram em outra linha.
@@ -5142,6 +5159,10 @@ void stream_folha_evento(const SDL_Event *e) {
     if(grupo==-1) {
       switch(botaoDe(foco)) {
         case BT_RECARREGAR: recarregar=1; break;
+        case BT_AIO: aioui_inspecionar(alvoPedido, strchr(alvoPedido, ':') ? "series" : "movie"); break;
+        case BT_AIO_GERENCIAR:
+          for(int j=0;j<addons_n();j++) if(aioui_detectar(j)) { aioui_abrir(j); break; }
+          break;
         case BT_RECARREGAR_FONTE:
           if (!e->key.repeat && !recarregarFonteConfirmacao && recarregarFontePode())
             recarregarFonteConfirmacao = k;
@@ -5595,6 +5616,60 @@ static void medirCabecalho(void) {
 }
 
 static void stream_folha_desenharCorpo_(Uint32 agora);
+static void corpoAio(float x,float w,float a) {
+  float left=x+45, width=w-90;
+  txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NUM,nomeFolha,170,179,185,255,width),left,174,a);
+  txt_desenhar_alpha(txt_linha(TXT_ILHA_TITULO,i18n("Fontes"),243,242,239,255),left,207,a);
+  medirCabecalho();
+  float bx=left+width;
+  for(int i=nBotoes()-1;i>=0;i--) {
+    int b=botaoDe(i), aio=b==BT_AIO || b==BT_AIO_GERENCIAR;
+    float bw=aio?280:bwCab[i];
+    GfxRect r={aio?left+width-bw:(bx-=bw),b==BT_AIO?217:b==BT_AIO_GERENCIAR?305:884,bw,56};
+    const char *label=aio?i18n(rotuloBotao(b)):rotCab[i];
+    chipFolha(r,label,aio?210:rotWCab[i],icoCab[i],grupo==-1 && foco==i,botaoLigado(b),a);
+    ponteiro_alvo(r.x,r.y,r.w,r.h,ponteiroFolhaBotao,NULL,i,0);
+    if(!aio) bx-=gapCab;
+  }
+  float sx=left;
+  for(int i=0;i<nProvedores;i++) {
+    GfxRect r={sx,305,i?230:150,56};
+    if(filtro==i) gfx_cor(r,.5f,.2f,.22f,.24f,a);
+    char label[128]; int count=0;
+    for(int j=0;j<n;j++) if(passaChips(j) && (!i || !strcmp(lista[j].provedor,provedores[i]))) count++;
+    snprintf(label,sizeof label,"%s %d",i?provedores[i]:i18n("Todos"),count);
+    txt_desenhar_alpha(txt_linha_corta(TXT_G20M,label,220,223,225,255,r.w-32),sx+16,323,a);
+    ponteiro_alvo(r.x,r.y,r.w,r.h,NULL,ponteiroFolhaFiltro,i,0); sx+=r.w+6; if(sx>left+width-520) break;
+  }
+  montar(automaticaDaFolha());
+  int first=foco>2?foco-2:0, prev=-1; float y=403;
+  gfx_recorte(left,390,width,485);
+  for(int row=first;row<nOrdem && y<875;row++) {
+    int i=filtrado(row); if(i<0) continue; const Stream *s=&lista[i]; int res=grupoRes(s)/2;
+    if(res!=prev) {
+      txt_desenhar_alpha(txt_linha(TXT_ILHA_NOME,GRUPO_NOME[res],240,241,242,255),left,y,a);
+      int count=0; for(int k=0;k<nOrdem;k++) { int j=filtrado(k); if(j>=0 && grupoRes(&lista[j])/2==res) count++; }
+      char label[24]; snprintf(label,sizeof label,"%d",count);
+      txt_desenhar_alpha(txt_linha(TXT_ILHA_NUM,label,174,179,185,255),left+width-40,y+6,a);
+      gfx_cor((GfxRect){left,y+39,width,1},0,1,1,1,.08f*a); y+=51; prev=res;
+    }
+    int best=i==automaticaDaFolha();
+    float h=best?119:94;
+    if(grupo==1 && foco==row) gfx_cor((GfxRect){left,y,width,h},22/h,.19f,.205f,.22f,a);
+    if(i==automaticaDaFolha()) txt_desenhar_alpha(txt_linha(TXT_ILHA_NUM,i18n("Melhor para esta TV"),180,205,210,255),left+20,y+12,a);
+    float ty=y+(best?40:17);
+    txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,s->rotulo[0]?s->rotulo:s->provedor,240,241,242,255,width-210),left+20,ty,a);
+    char meta[256]; snprintf(meta,sizeof meta,"%s · %s",s->provedor,s->foraCache?i18n("Fora do cache"):i18n("Em cache"));
+    txt_desenhar_alpha(txt_linha_corta(TXT_G20M,meta,174,179,185,255,width-210),left+20,ty+35,a);
+    if(s->mp4) chipFolha((GfxRect){left+width-225,ty+10,60,32},"MP4",44,NULL,0,1,a);
+    char size[48]; snprintf(size,sizeof size,s->tamanhoMB?"%.1f GB":"—",s->tamanhoMB/1024.0);
+    txt_desenhar_alpha(txt_linha(TXT_G20M,size,174,179,185,255),left+width-150,ty+20,a);
+    ponteiro_alvo(left,y,width,h,ponteiroFolhaLinha,NULL,row,0); y+=h+6;
+  }
+  gfx_sem_recorte();
+  gfx_cor((GfxRect){left,976,width,1},0,1,1,1,.08f*a);
+  txt_desenhar_alpha(txt_linha(TXT_G20M,i18n("Ordem das fontes"),174,179,185,255),left,991,a);
+}
 static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha);
 // MODAL DE DETALHES: cartao de vidro no meio da folha, veu sobre a lista.
 // O corpo rola (CIMA/BAIXO) com esmaecido nas bordas; altura medida no proprio
@@ -5858,21 +5933,34 @@ static void stream_folha_desenharCorpo_(Uint32 agora) {
       plrilha_pedir(&p); }
     return;
   }
-  if (folhaRelogio) {
+  if (folhaRelogio && !temAio()) {
     if (aberta) { ilha_corpo(FOLHA_W, folhaBase + 16.0f - NV_ILHA_Y, corpoIlhaFolha, NULL); ilha_corpo_sem_sombra(); }
     return; // ilha_desenhar owns the surface, dim and closing.
   }
-  float x=NV_TELA_W-FOLHA_W-FOLHA_MARGEM+(1-anim)*(FOLHA_W+FOLHA_MARGEM);
+  if(temAio()) {
+    folhaOY=118;
+    const CatItem *item=itemFolha>=0?cat_item(itemFolha):NULL;
+    GLuint art=item && item->backdrop[0]?tex_obter_hero(item->backdrop):0;
+    if(art) gfx_rect((GfxRect){0,0,NV_TELA_W,NV_TELA_H},art,GFX_HERO,0,0,0,0,0,0,0,1);
+  }
+  float x=NV_TELA_W-FOLHA_W-(temAio()?24:FOLHA_MARGEM)+(1-anim)*(FOLHA_W+FOLHA_MARGEM);
   // A FOLHA E UMA ILHA (dono, 02/10, mockups "Glass UI — ilha"): flutua a
   // NV_FOLHA_MARGEM das tres bordas, raio NV_FOLHA_RAIO, sombra curta e uma
   // luz larga no canto de cima — o mesmo material da ilha do relogio. O ajuste
   // de vidro escolhe o miolo: translucido (gfx_vidro_folha) ou solido.
   { const int vid = ajustes_vidro();
-    GfxRect corpo={x,FOLHA_MARGEM,FOLHA_W,NV_TELA_H-2*FOLHA_MARGEM};
+    GfxRect corpo={x,temAio()?136:FOLHA_MARGEM,FOLHA_W,temAio()?920:NV_TELA_H-2*FOLHA_MARGEM};
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,(vid?.30f:.42f)*anim);
-    if (vid) gfx_vidro_folha(corpo,FOLHA_RAIO_IL/corpo.h,anim);
-    else plrui_material_s(corpo,FOLHA_RAIO_IL,0,anim,1); }
-  corpoFolha(x, FOLHA_W, anim, agora, 0);
+    if (vid) {
+      gfx_rect((GfxRect){corpo.x-18.0f,corpo.y-8.0f,corpo.w+36.0f,corpo.h+40.0f},
+               0,GFX_SOMBRA,1.0f,0,0,.5f,0,0,0,.38f*anim);
+      gfx_vidro_folha(corpo,FOLHA_RAIO_IL/corpo.h,anim);
+    } else plrui_material(corpo,FOLHA_RAIO_IL,0,anim); }
+  if(temAio()) {
+    txt_bloco_corta(TXT_V2_A3TIT,nomeFolha,240,241,242,72,390,430,56,anim,4);
+    txt_bloco_corta(TXT_G22M,i18n("Melhor para esta TV"),174,179,185,72,555,410,32,anim,2);
+    corpoAio(x,FOLHA_W,anim);
+  } else corpoFolha(x, FOLHA_W, anim, agora, 0);
 }
 // Pinta o cartao da escolha automatica (ver escolhaAtualizar). (x, y, w, h) e o
 // retangulo do cartao, sem o vao. Linhas cumpridas no acento com "check"; as que

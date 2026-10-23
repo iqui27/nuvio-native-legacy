@@ -444,8 +444,9 @@ void addonguia_lista(int f) {
     int anteriorFoco=foco;foco=i==f?50+i:-1;
     botaoEm(acao,NULL,-1780,y+38,50+i,1,0);foco=anteriorFoco;
   }
-  if(f==addons_n()) {
-    botao(i18n("Sincronizar addons"),"aj_rotate-cw",228,820,0);
+  if(f>=addons_n()) {
+    const char *acao=f==addons_n()?"Sincronizar addons":f==addons_n()+1?"TV ao vivo":"AIOStreams";
+    botao(i18n(acao),f==addons_n()?"aj_rotate-cw":NULL,228,820,0);
   }
   if(f<addons_n()) {
     indice=f;identidade=addonmodo_id(addons_base(f));snprintf(nome,sizeof nome,"%s",addons_nome(f));
