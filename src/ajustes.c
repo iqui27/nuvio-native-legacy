@@ -3849,6 +3849,17 @@ int ajustes_dv7(void) { return lig(AJ_DV7); }
 int ajustes_hdr10p_strip(void) { return lig(AJ_HDR10P_STRIP); }
 int ajustes_hist_conta(void)          { return lig(AJ_HIST_CONTA); }
 int ajustes_social(void)              { return lig(AJ_SOCIAL); }
+// socialLocal de OUTRO perfil desta TV (#643): sem mexer em valor[] do ativo.
+// Sem copia em disco = padrao do ajuste (ligado).
+int ajustes_social_perfil(int perfil) {
+  int v[AJ_N];
+  char tem[AJ_N];
+  if (perfil <= 0) return 0;
+  if (perfil == perfis_ativo() && !edPerfil) return lig(AJ_SOCIAL);
+  memcpy(v, valorPadrao, sizeof v);
+  perfilLerVetor(perfil, v, tem);
+  return v[AJ_SOCIAL] == 0;
+}
 int ajustes_amigos_estilo(void)       { return valor[AJ_AMIGOS_ESTILO]; }
 // Espaco da Home em fracao do valor medido. Fora da faixa do NUM (arquivo torto)
 // volta para dentro dela; 0 (arquivo sem a chave) nao chega aqui: o padrao e 100.
