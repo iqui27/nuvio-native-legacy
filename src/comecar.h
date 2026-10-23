@@ -6,8 +6,9 @@
 // O QUE ESTA LIGADO DE VERDADE: o login do Trakt e do Simkl (o mesmo codigo de
 // Ajustes), o nome digitado no teclado da TV e o que ficou gravado em
 // comecar.txt. O QUE AINDA NAO: nome e cor so valem para a saudacao do resumo —
-// nao criam nem renomeiam o perfil da conta. Conta Stremio e AIOManager
-// aparecem apagados, com "Em breve". Nao ha "perfil infantil": o app nao tem
+// nao criam nem renomeiam o perfil da conta. Conta Stremio (link de
+// autenticacao) e AIOManager (link digitado no celular) importam via
+// importarfluxo.h. Nao ha "perfil infantil": o app nao tem
 // filtro de classificacao, e a tela nao promete o que nao cumpre (NOTAS.md,
 // pergunta 11).
 //
