@@ -65,6 +65,7 @@ static void aj4Pagina(const char *titulo, const char *sub) {
   aj4Botao("Simples",NULL,1241,179,132,aj4Topo==1 && !lig(AJ_AVANCADAS),!lig(AJ_AVANCADAS));
   aj4Botao("Avançado",NULL,1377,179,164,aj4Topo==1 && lig(AJ_AVANCADAS),lig(AJ_AVANCADAS));
   char perfil[160]; pfRotuloChip(perfil,sizeof perfil);
+  { char *u = strstr(perfil, "Perfil: "); if (u) memmove(perfil, u + 8, strlen(u + 8) + 1); }
   aj4Botao(perfil,"aj_user-round",1558,174,262,aj4Topo==2,0);
   aj4Texto(sub,TXT_V2_26,100,270,1170,.65f);
   const char *modo = lig(AJ_AVANCADAS) ? "Todos os ajustes, organizados" : "Escolhas do dia a dia";
