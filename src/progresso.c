@@ -118,9 +118,11 @@ static int lerLinhaNova(const char *linha, ProgRegistro *r) {
   return 1;
 }
 
+static int gravar(void);
+
 static void carregar(void) {
   char *buf, *linha, *ctx;
-  int novo = 0;
+  int novo = 0, reparados = 0;
   if (carregado) return;
   carregado = 1;
   nRegs = 0;
@@ -132,6 +134,13 @@ static void carregar(void) {
     if (!linha[0] || linha[0] == '\r') continue;
     if (!strncmp(linha, CABECALHO, strlen(CABECALHO))) { novo = 1; continue; }
     if (novo ? lerLinhaNova(linha, &r) : lerLinhaAntiga(linha, &r)) {
+      // Episode coordinates prove the type even in a poisoned old cache (#524).
+      if (r.temporada >= 0 && r.episodio > 0 && strcmp(r.tipo, "series")) {
+        snprintf(r.tipo, sizeof r.tipo, "series");
+        prog_chave(r.chave, sizeof r.chave, r.contentId, r.temporada, r.episodio);
+        r.pendente = 1;
+        reparados++;
+      }
       // Duplicata (mesmo perfil e chave) fica com a mais nova.
       int i, dup = -1;
       for (i = 0; i < nRegs; i++)
@@ -145,6 +154,7 @@ static void carregar(void) {
   }
   free(buf);
   if (!novo && nRegs) printf("[progresso] %d linhas migradas do formato antigo\n", nRegs);
+  if (reparados) gravar();
 }
 
 static int gravar(void) {

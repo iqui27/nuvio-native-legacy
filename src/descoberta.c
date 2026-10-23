@@ -9946,7 +9946,9 @@ void desc_episodios_pendente(void) {
 // O meta vem do Cinemeta, a mesma fonte do resto do catalogo, e o item entra no
 // FIM do vetor (cat_acrescentar). O tipo do TMDB e o sufixo de episodio sao
 // preservados: movie e tv podem compartilhar o numero no TMDB, mas sao obras
-// diferentes. So sem tipo conhecido tenta filme e depois serie.
+// diferentes. Sem tipo conhecido vale desc_meta_tipos: serie com temporada
+// primeiro. Aceitar o filme antes foi o que gravou tt9054364 como
+// "Chasing Mavericks" (#524) — o /meta/movie desse id e outro filme.
 static char sobId[24];
 static long sobTmdb;          // quando > 0, o id do IMDb ainda precisa ser resolvido
 static char sobTipo[8];
@@ -10019,10 +10021,17 @@ static void *buscarTitulo(void *arg) {
     }
   }
 
-  for (passo = 0; passo < (sobTipo[0] ? 1 : 2) && achou < 0; passo++) {
-    const char *tipo = sobTipo[0] ? sobTipo : passo ? "series" : "movie";
+  const char *tiposPedido[2];
+  int nTipos = sobTipo[0] ? 1 : desc_meta_tipos("", tiposPedido);
+  if (sobTipo[0]) tiposPedido[0] = sobTipo;
+  for (passo = 0; passo < nTipos && achou < 0; passo++) {
+    const char *tipo = tiposPedido[passo];
+    int ultimo = passo == nTipos - 1;
     corpo = metaprov_meta(tipo, id, 20, NULL);   // Nuvio, depois Cinemeta
     if (!corpo) continue;
+    // Serie sem temporada nao prova o tipo (o filme cai no passo seguinte).
+    // Com temporada, o filme do mesmo id nao entra: e a colisao do #524.
+    if (!ultimo && !desc_meta_tem_temporadas(corpo)) { free(corpo); continue; }
     { const char *m = strstr(corpo, "\"meta\"");
       CatItem it;
       if (m && deMeta(m, NULL, tipo, &it) &&

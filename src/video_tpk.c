@@ -118,6 +118,14 @@ static volatile int comecou;                 // the FRAME arrived (not EV_TOCAND
 static Uint32 comecouEm;                     // when the frame arrived (SDL clock)
 static volatile int audioComecou;            // audio only needs the first tick
 static int audioPend = -1, legPend = -1;     // choice waiting to be written
+// A seek landing right after a track write resets demuxer selection to track 0.
+// Choices wait while a seek is in flight and re-send if the seek collided.
+static int legReescrever = -1;
+static int legEscrito = -1;
+static int seekNearWrite;
+static atomic_int legSeekChegou;
+#define LEG_ESPERA_SEEK_MS 10000u
+static Uint32 legEsperaSeekEm;
 
 // RECONEXAO (video_reconexao.h). O evento 5 chega de qualquer fio e so ANOTA;
 // a decisao e o recarregar sao do video_bombear. A classe do erro sai do
@@ -351,12 +359,15 @@ __attribute__((visibility("default")))
 void nv_tpk_video_legenda(const char *texto, int durMs) {
   int primeiroSessao = 0, primeiroEnv = 0, faixa = -1, chars = texto ? (int)strlen(texto) : 0;
   Uint32 agora = SDL_GetTicks(), desdeEnv = 0, desdeAbriu = 0;
+  // The player emits an empty cue right after the write; it must not consume
+  // the one-shot evidence line, or the log says "0 chars" and nothing more.
+  int temTexto = chars > 0;
   if (!travaLeg) return;
   SDL_LockMutex(travaLeg);
     // O cue que chega DURANTE a escrita (bloqueado) e da faixa velha: nao prova
   // a nova.
-  if (!legCueSessao) { legCueSessao = 1; primeiroSessao = 1; desdeAbriu = agora - legAbriuEm; }
-  if (legEnvAtivo && !legCueEnv && !legCuesBloqueados) {
+  if (temTexto && !legCueSessao) { legCueSessao = 1; primeiroSessao = 1; desdeAbriu = agora - legAbriuEm; }
+  if (temTexto && legEnvAtivo && !legCueEnv && !legCuesBloqueados) {
     legCueEnv = 1; primeiroEnv = 1; desdeEnv = agora - legEnvEm; faixa = legEnvFaixa;
   }
   SDL_UnlockMutex(travaLeg);
@@ -441,7 +452,8 @@ void nv_tpk_video_evento(int tipo, int a, int b) {
       break;
     }
     case EV_BUSCOU:
-      atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1);
+      if (atomic_compare_exchange_strong(&buscaAlvoMs, &a, -1))
+        atomic_store(&legSeekChegou, 1);
       break;
     case EV_CONSULTA_LENTA: atomic_store(&consultaLentaEm, SDL_GetTicks() | 1u); break;
     case EV_PRONTO:  durMs = a; pronto = 1; break;
@@ -492,6 +504,7 @@ static void legendaEnviar(int i) {
   legendaLimpar(1);
   legendaMarcarEnvio(i);
   if (hEscolher) hEscolher(1, faixaLeg[i].numero);
+  legEscrito = i;
   legendaLimpar(0);
 }
 
@@ -801,7 +814,9 @@ static void abrirSessao(void) {
     if (!(legOcultas() && mkvN > 0)) { nLeg = 0; legAtual = -1; }
   }
   audioNaoSup = faixasLidas = audioLogado = 0;
-  comecou = 0; comecouEm = 0; audioComecou = 0; audioPend = legPend = -1;
+  comecou = 0; comecouEm = 0; audioComecou = 0; audioPend = legPend = -1; legReescrever = -1;
+  legEscrito = -1; seekNearWrite = 0; legEsperaSeekEm = 0;
+  atomic_store(&legSeekChegou, 0);
   if (!travaLeg) travaLeg = SDL_CreateMutex();
   legendaLimpar(1);
   legendaMarcarEnvio(-1);
@@ -1432,12 +1447,39 @@ static void escolhasPendentes(void) {
     fflush(stdout);
   }
   if (!comecou) return;
+  // Hold writes while a seek is in flight; timeout if the host never confirms.
+  if (atomic_load(&buscaAlvoMs) >= 0) {
+    if (!legEsperaSeekEm) legEsperaSeekEm = agora ? agora : 1u;
+    if (agora - legEsperaSeekEm < LEG_ESPERA_SEEK_MS) return;
+    atomic_store(&buscaAlvoMs, -1);
+    printf("[video] tpk: seek did not confirm in %u ms; choosing the subtitle anyway\n",
+           LEG_ESPERA_SEEK_MS);
+    fflush(stdout);
+  }
+  legEsperaSeekEm = 0;
+  // Seek landed: restart the settle clock and repeat an earlier write if it collided.
+  if (atomic_exchange(&legSeekChegou, 0)) {
+    comecouEm = agora;
+    if (seekNearWrite && legAtual >= 0 && legEscrito == legAtual && legPend < 0)
+      legReescrever = legAtual;
+    seekNearWrite = 0;
+  }
   if (legPend >= 0 && agora - comecouEm >= LEG_ACOMODAR_MS) {
-    int i = legPend; legPend = -1;
+    int i = legPend; legPend = -1; legReescrever = -1;
     printf("[video] tpk: settled subtitle dispatched track=%d (frame at %u ms)\n",
            i, (unsigned)(agora - comecouEm));
     fflush(stdout);
     legendaEnviar(i);
+    return;
+  }
+  // Once, and only for the track that is still the current one.
+  if (legReescrever >= 0 && agora - comecouEm >= LEG_ACOMODAR_MS) {
+    int i = legReescrever; legReescrever = -1;
+    if (legAtual >= 0 && i == legAtual) {
+      printf("[video] tpk: subtitle track=%d written again after the seek\n", i);
+      fflush(stdout);
+      legendaEnviar(i);
+    }
   }
 }
 
@@ -1780,7 +1822,9 @@ void video_parar(void) {
   memset(&mf, 0, sizeof mf);
   mkvfix_parar();
   capmkv_zerar();   // fio de capitulos em voo nao alimenta o proximo titulo
-  audioPend = legPend = -1; comecou = 0; comecouEm = 0; audioComecou = 0;
+  audioPend = legPend = -1; comecou = 0; comecouEm = 0; audioComecou = 0; legReescrever = -1;
+  legEscrito = -1; seekNearWrite = 0; legEsperaSeekEm = 0;
+  atomic_store(&legSeekChegou, 0);
   legendaLimpar(1);
   nv_recon_zerar(&recon);
   reconErroPend = 0; reconFaixasPend = 0; reconBuscarMs = -1; reconPausa = -1;
@@ -1805,6 +1849,14 @@ void video_buscar(double s) {
   }
   progressoEm = SDL_GetTicks(); progressoPos = video_pos(); vigiaAtiva = 1;
   buscaAlvoMs = (int)(s * 1000.0);
+  legEsperaSeekEm = 0;
+  if (legEscrito >= 0 && travaLeg) {
+    Uint32 envEm;
+    SDL_LockMutex(travaLeg);
+    envEm = legEnvEm;
+    SDL_UnlockMutex(travaLeg);
+    if (SDL_GetTicks() - envEm < LEG_ACOMODAR_MS * 2) seekNearWrite = 1;
+  }
   if (cv.ativo) { cv.seekPend = 1; cv.seekAlvo = s; cv.seekEm = SDL_GetTicks(); }
   if (cv.ativo && cv.prog) {
     // Progressivo: o fluxo recomeca no quadro-chave antes de `s` (?t=).
@@ -2248,13 +2300,14 @@ void video_escolher_legenda(int i) {
   legAtual = i;
   // Every new choice supersedes an older deferred one, including immediate
   // choices made after the settle window but before the next pump.
-  legPend = -1;
+  legPend = -1; legReescrever = -1; seekNearWrite = 0;
   legendaLimpar(1);
   // Faixa so do app (PGS, numero -1): nada a escrever no player.
   if (i >= 0 && faixaLeg[i].numero < 0) { legendaMarcarEnvio(-1); return; }
   if (i < 0) legendaMarcarEnvio(-1);
   if (i >= 0 && hEscolher) {
-    if (!comecou || SDL_GetTicks() - comecouEm < LEG_ACOMODAR_MS) { legPend = i; return; }
+    if (!comecou || SDL_GetTicks() - comecouEm < LEG_ACOMODAR_MS ||
+        atomic_load(&buscaAlvoMs) >= 0) { legPend = i; return; }
     legendaEnviar(i);
   }
 }
