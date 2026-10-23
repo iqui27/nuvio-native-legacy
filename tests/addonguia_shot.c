@@ -112,7 +112,27 @@ int main(int argc,char **argv) {
   // E o 401 do addon da propria fonte continua valendo.
   addonguia_fechar();Stream mesma[1]={0};mesma[0].addonIdentidade=id;strcpy(mesma[0].url,"https://video.invalid/mesma.mp4");
   stream_definir_lista(mesma,1);stream_definir_atual(0);addonguia_falha();assert(addonguia_shot_tela()==AG_401);
-  addonguia_fechar();stream_definir_lista(NULL,0);
+  // A selected direct source must ignore another addon's unavailable torrents.
+  addonguia_fechar();addonmodo_nova_busca();
+  ajustes_definir_p2p_ligado(0);
+  assert(addonmodo_set(id,AM_AUTO));assert(addonmodo_set(id3,AM_DIRETO));
+  addonmodo_resposta(id,200,1,0,2);
+  stream_definir_lista(outras,1);stream_definir_atual(0);
+  const int statuses[]={200,401,403};
+  const int reasons[]={AG_ERRO,AG_401,AG_403};
+  for(int n=0;n<3;n++) {
+    addonmodo_resposta(id3,statuses[n],statuses[n]==200,1,0);
+    addonguia_falha();
+    assert(addonguia_shot_tela()==reasons[n]);
+    assert(addonguia_identidade()==id3);
+    tecla(SDLK_RETURN);
+    assert(addonguia_identidade()==id3);
+    assert(addonmodo_get(id)==AM_AUTO&&!ajustes_p2p_ligado());
+    if(statuses[n]==401)assert(addonguia_shot_tela()==AG_NOVO_DIRETO);
+    else assert(!addonguia_aberto());
+    addonguia_fechar();
+  }
+  stream_definir_lista(NULL,0);
   addonguia_fechar();addonmodo_resposta(id,403,0,0,0);addonguia_falha();assert(addonguia_shot_tela()==AG_403);
   addonguia_fechar();addonmodo_nova_busca();addonmodo_resposta(id,200,1,0,2);
   assert(addonmodo_set(id,AM_AUTO));ajustes_definir_p2p_ligado(0);addonguia_falha();assert(addonguia_shot_tela()==AG_P2P);

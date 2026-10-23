@@ -264,7 +264,7 @@ void addonguia_falha(void) {
     int ah,av,ad,at;uint64_t id=addonmodo_id(addons_base(a));addonmodo_fatos(id,&ah,&av,&ad,&at);
     consultados++;
     if(!av||ad||at)vazio=0;
-    if(at&&!p2p_ativo()&&!debrid_ativo()&&addonmodo_get(id)!=AM_DIRETO){p=1;i=a;}
+    if(!s&&at&&!p2p_ativo()&&!debrid_ativo()&&addonmodo_get(id)!=AM_DIRETO){p=1;i=a;}
     if(!s&& (ah==401||ah==403)){h=ah;i=a;}
   }
   // O 401/403 vale para o addon da FONTE escolhida, nao para o ultimo do laco:
