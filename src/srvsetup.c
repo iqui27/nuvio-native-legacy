@@ -607,6 +607,7 @@ void srvsetup_desenhar(Uint32 now) {
     const char *steps[] = {"Serviço","Conectar","Entrar","Bibliotecas","Pronto"};
     int step=screen==CHOOSE?0:screen==LIBRARIES?3:screen==READY?4:screen==DISCOVER||screen==ADDRESS?1:2;
     float x=200;
+    if (screen != MANAGE)
     for(int i=0;i<5;i++) {
       char label[120];
       if(i<step){ gfx_icone((GfxRect){x,331,16,16},"check",.6f,.6f,.6f,1); snprintf(label,sizeof label,"%s",i18n(steps[i])); }
