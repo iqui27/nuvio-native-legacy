@@ -14,6 +14,8 @@
   T(" · sync ±1 s", " · sync ±1 s"),
   T("IMDb · traço = visto", ""),
   T("OK abre no player, com som", ""),
+  T("OK para avaliar", ""),
+  T("OK recomenda a um amigo", ""),
   T("Parou em T%dE%d", ""),
   T("Trakt · ordenado por curtidas", ""),
   T("\"HDR\" do grupo", "\"HDR\" do grupo"),

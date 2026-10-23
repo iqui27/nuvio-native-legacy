@@ -1203,7 +1203,9 @@ static void desenhaNotasTiles(float x,float y,float a) {
     gfx_cor(b,20.0f/150,1,1,1,a*(.06f+.06f*f));
     if (own) gfx_anel(b,20.0f/150,1.5f,ar,ag,ab,a);
     const char *label=own ? "Sua nota" : friend ? "Amigos" : nf_nome(fonte);
-    txt_desenhar_alpha(txt_linha(TXT_G18R,label,243,242,239,153),b.x+22,b.y+18,a);
+    txt_desenhar_alpha(txt_linha(TXT_G18R,label,
+      own ? (int)(ar*255) : 243, own ? (int)(ag*255) : 242,
+      own ? (int)(ab*255) : 239, own ? 220 : 153),b.x+22,b.y+18,a);
     if (fonte>=0) {
       char val[32]; nf_texto(fonte,notasDados()->cru[fonte],ajustes_idioma()==IDIOMA_PT,0,val,sizeof val);
       txt_desenhar_alpha(txt_linha(TXT_LOG_N44,val,243,242,239,255),b.x+22,b.y+46,a);
@@ -1212,8 +1214,8 @@ static void desenhaNotasTiles(float x,float y,float a) {
       bar.w*=nf_norm100(fonte,notasDados()->cru[fonte])*.01f;
       gfx_cor(bar,.5f,1,1,1,.7f*a);
     } else if (own) {
-      txt_desenhar_alpha(txt_linha(TXT_G30B,"★",243,242,239,255),b.x+22,b.y+48,a);
-      txt_desenhar_alpha(txt_linha(TXT_G18R,"Avaliar",243,242,239,140),b.x+22,b.y+112,a);
+      txt_desenhar_alpha(txt_linha(TXT_G30B,"★",(int)(ar*255),(int)(ag*255),(int)(ab*255),255),b.x+22,b.y+48,a);
+      txt_desenhar_alpha(txt_linha(TXT_G18R,i18n("OK para avaliar"),243,242,239,140),b.x+22,b.y+112,a);
     } else {
       AmigosTitulo am;
       if (amigosDoTitulo(&am)) {
@@ -1223,6 +1225,8 @@ static void desenhaNotasTiles(float x,float y,float a) {
         amigostitulo_resumo(&am,ut,ue,(long long)time(NULL),l1,sizeof l1,l2,sizeof l2);
         txt_desenhar_alpha(txt_linha_corta(TXT_G20M,l1,243,242,239,255,264),b.x+150,b.y+52,a);
         txt_desenhar_alpha(txt_linha_corta(TXT_G18R,l2,243,242,239,140,264),b.x+150,b.y+82,a);
+        // A dica do OK, no pe do cartao — o mesmo lugar do "OK para avaliar"
+        txt_desenhar_alpha(txt_linha(TXT_G18R,i18n("OK recomenda a um amigo"),243,242,239,140),b.x+22,b.y+118,a);
       }
     }
   }

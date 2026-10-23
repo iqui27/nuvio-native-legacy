@@ -13,6 +13,8 @@
   { " · sync ±1 s", " · sync ±1 s" },
   { "IMDb · traço = visto", "" },
   { "OK abre no player, com som", "" },
+  { "OK para avaliar", "" },
+  { "OK recomenda a um amigo", "" },
   { "Parou em T%dE%d", "" },
   { "Trakt · ordenado por curtidas", "" },
   { "\"HDR\" do grupo", "Group \"HDR\"" },
