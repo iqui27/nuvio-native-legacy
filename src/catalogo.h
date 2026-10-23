@@ -96,6 +96,9 @@ typedef struct {
   // filme mostra so o tempo que falta. Temporada/episodio ficam em 0 no filme,
   // e e isso que separa os dois casos no desenho.
   int  temporada, episodio;
+  // Exact remote episode identity. The visible/source season and episode stay
+  // in their provider's numbering; this field is only a proven bridge.
+  int  tvdbEp;
   int  restanteMin;
   char nomeEpisodio[120]; // titulo do episodio em andamento, nunca nome do arquivo
   // Temporadas que a serie tem, na ordem. Sai do campo `videos` do Cinemeta,
@@ -197,6 +200,7 @@ typedef struct {
   // Episodios do pacote antigo deixam vazio e conservam a leitura de `data`.
   // CatEp nao tem dump binario; o cache de metadata guarda o JSON original.
   char dataIso[32];
+  int  tvdbEp; // exact episode identity published by metadata; 0 = unproven
 } CatEp;
 
 // Le <dir>/catalogo.txt. Devolve quantos itens carregou (0 = nenhum, e quem
@@ -579,5 +583,13 @@ const CatEp  *cat_episodio(int indiceItem, int i);   // indice circular; NULL se
 // dele "<id>:<E>" (a convencao do Kitsu/MAL). t<=0 ou e<=0 = sem episodio: devolve o id
 // do titulo. 1 se escreveu algo.
 int           cat_id_stream(int indiceItem, int t, int e, char *dst, unsigned tam);
+// Exact-identity lookups are accepted only after the final episode list has
+// replaced any provisional early list. Conflicting assignments return 0.
+int           cat_episodios_finais(int indiceItem, const char *id);
+int           cat_episodio_tvdb(int indiceItem, const char *id, int t, int e);
+int           cat_episodio_tvdb_qualquer(int indiceItem, const char *id, int t, int e);
+int           cat_episodio_existe_final(int indiceItem, const char *id, int t, int e);
+int           cat_episodio_por_tvdb(int indiceItem, const char *id, int tvdb,
+                                    int *t, int *e);
 
 #endif

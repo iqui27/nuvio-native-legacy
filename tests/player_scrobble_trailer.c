@@ -3,16 +3,24 @@
 // Contadores POR EVENTO E SERVICO, checados ANTES do player_encerrar: o
 // scrobble de SAIDA so satisfaz um contador unico, nunca o evento certo.
 #define main main_base
+#define trakt_scrobble_alvo nv_fixture_trakt_scrobble_alvo
 #include "player_visto_trailer.c"
+#undef trakt_scrobble_alvo
 #undef main
 #include "traktscrobble.h"   // SCR_EV_TOCANDO / SCR_EV_PAUSOU / SCR_EV_SAIU
-static int nTk[4], nSk[4];   // [SCR_EV_TOCANDO, SCR_EV_PAUSOU, SCR_EV_SAIU]
+static double posTk[SCR_EV_PONTO + 1], durTk[SCR_EV_PONTO + 1], posSk[SCR_EV_PONTO + 1], durSk[SCR_EV_PONTO + 1];
+static int nTk[SCR_EV_PONTO + 1], nSk[SCR_EV_PONTO + 1];   // [SCR_EV_TOCANDO, SCR_EV_PAUSOU, SCR_EV_SAIU]
 static void zera(void) { memset(nTk, 0, sizeof nTk); memset(nSk, 0, sizeof nSk); }
 int nv_cnt_trakt_scrobble(int ev, const char *id, double p, double d, double a, int x) {
-  (void)id; (void)p; (void)d; (void)a; (void)x; nTk[ev]++; return 0;
+  (void)id; (void)a; (void)x; assert(ev > 0 && ev <= SCR_EV_PONTO); posTk[ev] = p; durTk[ev] = d; nTk[ev]++; return 0;
+}
+int nv_cnt_trakt_scrobble_alvo(int ev, const TraktScrobbleAlvo *alvo,
+                               double p, double d, double a, int x) {
+  assert(alvo && alvo->id[0]);
+  return nv_cnt_trakt_scrobble(ev, alvo->id, p, d, a, x);
 }
 int nv_cnt_simkl_scrobble(int ev, const char *id, double p, double d, double a, int x) {
-  (void)id; (void)p; (void)d; (void)a; (void)x; nSk[ev]++; return 0;
+  (void)id; (void)a; (void)x; assert(ev > 0 && ev <= SCR_EV_PONTO); posSk[ev] = p; durSk[ev] = d; nSk[ev]++; return 0;
 }
 // Abre o titulo `imdb` ("1 h 46 min" no catalogo) com a pipeline dizendo `d`.
 static void ao_vivo(const char *imdb, double d) {
@@ -26,6 +34,35 @@ static void ao_vivo(const char *imdb, double d) {
 // 60 quadros so acumulam 0,96 s e nao provam nada do ramo de start.
 static void tocar_dt(double seg) {
   for (int i = 0, n = (int)(seg / .016) + 1; i < n; i++) { agoraMono += 1; pos += .05; quadro(); }
+}
+// Canonical episode tracking must retain upstream's whole-movie coordinates
+// when the source is one file from a multipart release (rebase regression).
+#include "partes.h"
+static void multipart_scrobble(void) {
+  ParteArq arquivos[2] = {{0}};
+  PartesLista lista = {0};
+  double vp, vd;
+  arquivos[0].bytes = arquivos[1].bytes = 1000;
+  arquivos[0].id = 1; arquivos[1].id = 2;
+  lista.estado = PARTES_PRONTO; lista.n = 2; lista.arq = arquivos;
+  ao_vivo("tt22687804", 3200);
+  partes_sessao_iniciar("tt22687804", &lista, 1);
+  tocar_dt(5.2);
+  assert(partes_conta_virtual(&lista, 1, pos, dur, 6360, &vp, &vd));
+  assert(nTk[SCR_EV_TOCANDO] && nSk[SCR_EV_TOCANDO]);
+  assert(fabs(posTk[SCR_EV_TOCANDO] - vp) < 1.0);
+  assert(fabs(durTk[SCR_EV_TOCANDO] - vd) < 1.0);
+  assert(fabs(posSk[SCR_EV_TOCANDO] - vp) < 1.0);
+  pausado = 1; quadro(); quadro();
+  assert(nTk[SCR_EV_PAUSOU] && nSk[SCR_EV_PAUSOU]);
+  assert(fabs(posTk[SCR_EV_PAUSOU] - vp) < 1.0);
+  assert(fabs(durTk[SCR_EV_PAUSOU] - vd) < 1.0);
+  player_encerrar(); pausado = 0;
+  assert(nTk[SCR_EV_SAIU] && nSk[SCR_EV_SAIU]);
+  assert(fabs(posTk[SCR_EV_SAIU] - vp) < 1.0);
+  assert(fabs(durTk[SCR_EV_SAIU] - vd) < 1.0);
+  assert(fabs(durSk[SCR_EV_SAIU] - vd) < 1.0);
+  partes_sessao_parar("fixture done");
 }
 int main(void) {
   assert(SDL_Init(SDL_INIT_TIMER) == 0); dados_iniciar(""); ling_local_legenda("none");
@@ -64,6 +101,8 @@ int main(void) {
     assert(nTk[SCR_EV_PAUSOU] == 0 && nSk[SCR_EV_PAUSOU] == 0); }
   player_encerrar(); pausado = 0;
   assert(nTk[SCR_EV_PAUSOU] == 0 && nSk[SCR_EV_PAUSOU] == 0);
+
+  multipart_scrobble();
 
   puts("ok");
   return 0;

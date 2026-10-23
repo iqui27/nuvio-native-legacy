@@ -14,6 +14,7 @@
 #define NV_TRAKT_H
 #include "catalogo.h"
 #include "perfil.h"
+#include "traktscrobble.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -96,6 +97,8 @@ typedef struct { uint64_t sessao; unsigned long long mapa, credencial; char aut[
 int trakt_destino_capturar(TraktDestino *);
 int trakt_titulo_marcar_destino(const TraktDestino *, const char *, const char *, int);
 int trakt_episodios_marcar_destino(const TraktDestino *, const char *, const VistoPar *, int, int);
+typedef struct { VistoPar par; int tvdbEp; } TraktEpisodioAlvo;
+int trakt_episodios_marcar_alvos_destino(const TraktDestino *, const char *, const TraktEpisodioAlvo *, int, int);
 #define TRAKT_REMOVER_MAX 64
 typedef struct {
   TraktDestino destino;
@@ -118,6 +121,7 @@ int  trakt_continuar_falhou(void);
 int trakt_e_a_seguir(const char *id);
 // Historico lido confirmou o mesmo episodio depois do progresso informado.
 int trakt_cw_concluiu(const char *id, long long progressoMs);
+int trakt_cw_concluiu_tvdb(const char *id, int tvdbEp, long long progressoMs);
 // Oculta/reexibe a serie no progresso do Trakt (POST /users/hidden/progress_watched).
 // Sincrono, para fio de trabalho. 0 sem Trakt ou sem IMDb.
 int trakt_progresso_ocultar(const char *imdb, int ocultar);
@@ -144,6 +148,8 @@ void trakt_marcar(const char *imdb, double posSeg, double durSeg, double assisti
 // sai stop. Saida recusada tambem encerra o start em pe.
 int  trakt_scrobble(int evento, const char *imdb, double posSeg, double durSeg, double assistidoSeg,
                     int assistiu);
+int  trakt_scrobble_alvo(int evento, const TraktScrobbleAlvo *alvo, double posSeg,
+                         double durSeg, double assistidoSeg, int assistiu);
 
 // Watchlist ("Minha Lista") e colecao ("Comprados") do dono. `qual` e
 // "watchlist" ou "collection". BLOQUEIA — chamar do fio de descoberta.

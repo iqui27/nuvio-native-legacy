@@ -429,8 +429,8 @@ static int aplicarVisto(int modo, int visto) {
   for (int i = 0; i < mudou; i += SMK_LOTE_MAX) {
     int qtd = mudou - i;
     if (qtd > SMK_LOTE_MAX) qtd = SMK_LOTE_MAX;
-    visto_episodios(ci->imdb, ci->tipo[0] ? ci->tipo : "series", envio + i, qtd, visto,
-                    visto_destinos());
+    visto_episodios_item(vmIdx, ci->imdb, ci->tipo[0] ? ci->tipo : "series",
+                         envio + i, qtd, visto, visto_destinos());
   }
   return mudou;
 }

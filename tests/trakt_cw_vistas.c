@@ -122,6 +122,14 @@ int main(void) {
   assert(marca("tt3000003") == 1);     // Bug B: selo sem abrir o titulo
   assert(marca("tt2000002") == 0);     // incompleta nao ganha selo
   assert(marca("tt4000069") == 1);     // selo alem das 64 candidatas antigas
+  // The canonical-ID remap must retain upstream's confirmed-next marker.
+  // Force another enrichment pass after the mapped IDs have been published.
+  for (i = 0; i < n; i++) if (!strcmp(v[i].imdb, "tt2000002:1:2")) {
+    CatItem confirmado = v[i]; confirmado.sinopse[0] = 0;
+    assert(trakt_enfeitar_lote(&confirmado, 1) == 1);
+    assert(!strcmp(confirmado.imdb, "tt2000002:1:2"));
+    assert(confirmado.temporada == 1 && confirmado.episodio == 2);
+  }
   proximo = 0;
   nMarcados = 0;
   n = trakt_continuar(v, 12);
@@ -131,3 +139,5 @@ int main(void) {
   puts("trakt_cw_vistas: PASS");
   return 0;
 }
+
+#include "trakt_transport_fixture.inc"
