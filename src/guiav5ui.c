@@ -1122,7 +1122,9 @@ static void gv_chip(float x,float y,float w,const char *text,const char *icon,in
     int di=dot==2?1:dot==3?2:0;gfx_cor(d,12.0f/12,c[di][0],c[di][1],c[di][2],1);tx=x+42;}
   float cr=on?.051f:.604f,cg=on?.053f:.604f,cb=on?.066f:.596f;
   if(icon&&*icon){GfxRect i2={tx+16,y+14,28,28};gfx_icone(i2,icon,cr,cg,cb,1);tx+=32;}
-  gv_label(TXT_ILHA_CORPO,text,tx+16,y+15,w-(tx-x)-24,dim);
+  if(on){TxtLinha l=txt_linha_corta(TXT_ILHA_CORPO,text,13,14,17,255,w-(tx-x)-24);
+    txt_desenhar(l,tx+16,y+(GV_CHIP_H-(float)l.h)/2);}
+  else gv_label(TXT_ILHA_CORPO,text,tx+16,y+15,w-(tx-x)-24,dim);
   ponteiro_alvo(x,y,w,GV_CHIP_H,point_focus,point_activate,id,0);
 }
 static void gv_button(int id,const char *text,const char *icon,float x,float y,float w,int lit,int small){
@@ -1189,6 +1191,11 @@ static void gv_topbar(void){
 static void gv_chips_row(void){
   char txt[96];float x=GV_X;
   int foc=gv_zone==4;
+  if(!gv_total_n){
+    float w=(float)txt_linha(TXT_ILHA_CORPO,i18n("Adicionar M3U / Xtream / XMLTV"),13,14,17,255).w+44;
+    gv_chip(x,GV_CHIP_Y,w,i18n("Adicionar M3U / Xtream / XMLTV"),"aj_plus",1,0,1200);
+    return;
+  }
   snprintf(txt,sizeof txt,"%s  %d",i18n("Todos ao vivo"),gv_total_n);
   float w=(float)txt_linha(TXT_ILHA_CORPO,txt,243,242,239,255).w+44;
   gv_chip(x,GV_CHIP_Y,w,txt,NULL,gv_chipi==0&&foc||gv_chipi==0&&0?gv_chipi==0:0,0,1200);
@@ -1636,7 +1643,7 @@ static void gv_busca_sheet(void){
     char meta[160];snprintf(meta,sizeof meta,"%s · %d",gv_ch[i].nome,gv_ch[i].num);
     gv_opt(1810+k,"aj_play",p->titulo,meta,x,my+44+k*70,1176,64);k++;
   }
-  gv_label(TXT_ILHA_SUB,i18n("5 resultados · use o teclado do controle ou o celular"),x,756,800,1);
+  {char fr[96];snprintf(fr,sizeof fr,i18n("%d resultados · use o teclado do controle ou o celular"),nc+np2);gv_label(TXT_ILHA_SUB,fr,x,756,900,1);}
 }
 static void gv_numero_sheet(void){
   gv_dim(0,.42f);
@@ -1645,12 +1652,19 @@ static void gv_numero_sheet(void){
   {TxtLinha t=txt_linha(TXT_V2_TIT,gv_numero[0]?gv_numero:"_",243,242,239,255);
    txt_desenhar(t,x,296);}
   gfx_cor((GfxRect){x+(float)txt_linha(TXT_V2_TIT,gv_numero[0]?gv_numero:"_",243,242,239,255).w+20,300,6,90},0,.953f,.949f,.937f,.5f);
-  int alvo=-1;for(int i=0;i<gv_n;i++){char nn[24];snprintf(nn,sizeof nn,"%d",gv_ch[i].num);
-    if(!strncmp(nn,gv_numero,strlen(gv_numero)))alvo=i;}
-  if(alvo>=0){char meta[160];
-    snprintf(meta,sizeof meta,"%s · %s · %s",gv_ch[alvo].nome,gv_quali(gv_ch[alvo].nome),gv_prog(&gv_ch[alvo])?gv_prog(&gv_ch[alvo])->titulo:"");
+  int alvo=-1,nm2=0;
+  for(int i=0;i<gv_n;i++){char nn[24];snprintf(nn,sizeof nn,"%d",gv_ch[i].num);
+    if(!strncmp(nn,gv_numero,strlen(gv_numero))){if(alvo<0)alvo=i;nm2++;}}
+  if(alvo>=0){char meta[160];EpgProg *pp=gv_prog(&gv_ch[alvo]);
+    snprintf(meta,sizeof meta,"%s · %s · %s",gv_ch[alvo].nome,gv_quali(gv_ch[alvo].nome),pp?pp->titulo:"");
     gv_opt(1900,"aj_tv-minimal-play",gv_ch[alvo].nome,meta,x,452,816,84);}
   gv_label(TXT_ILHA_SUB,i18n("Também corresponde…"),x,552,400,1);
+  {int k=0;for(int i=0;i<gv_n&&k<2;i++){
+    if(i==alvo)continue;char nn[24];snprintf(nn,sizeof nn,"%d",gv_ch[i].num);
+    if(!strncmp(nn,gv_numero,strlen(gv_numero))){
+      GfxRect r2={x,596+k*64,816,58};gfx_cor(r2,18.0f/58,.114f,.118f,.137f,1);
+      gv_label(TXT_ILHA_SUB,nn,x+20,596+k*64+18,80,1);
+      gv_label(TXT_ILHA_CORPO,gv_ch[i].nome,x+110,596+k*64+16,600,0);k++;}}}
   gv_label(TXT_ILHA_CORPO,i18n("OK para ir agora · vai sozinho em 2 s"),x,740,700,1);
 }
 static void gv_opcoes_sheet(void){
@@ -1660,12 +1674,12 @@ static void gv_opcoes_sheet(void){
   float r2,g2,b2;gv_hsl(gv_hue(c->nome),.45f,.30f,&r2,&g2,&b2);
   gfx_cor((GfxRect){x,228,60,60},15.0f/60,r2,g2,b2,1);
   char ini[8];gv_iniciais(c->nome,ini,sizeof ini);gv_label(TXT_W20_24B,ini,x,246,60,0);
-  gv_label(TXT_TITULO2,c->nome,x+80,232,400,0);
+  {char tt[180];snprintf(tt,sizeof tt,"%d %s",c->num,c->nome);gv_label(TXT_TITULO2,tt,x+80,232,400,0);}
   char meta[96];snprintf(meta,sizeof meta,"%s · %s","IPTV",gv_quali(c->nome));
   gv_label(TXT_ILHA_SUB,meta,x+80,276,400,1);
   gv_opt(1910,"aj_star",c->fav?"Remover dos favoritos":"Adicionar aos favoritos",NULL,x,320,536,76);
   {EpgProg *p=gv_prog(c);char sub[96];
-   if(p)snprintf(sub,sizeof sub,"%s · %ld",p->titulo,(long)(p->fim-time(NULL))/60);
+   if(p)snprintf(sub,sizeof sub,"%s · %ld min",p->titulo,(long)(p->fim-time(NULL))/60);
    else snprintf(sub,sizeof sub,"%s",i18n("Sem programação"));
    gv_opt(1911,"aj_bell",i18n("Criar lembrete"),sub,x,404,536,76);}
   gv_opt(1912,"aj_calendar",i18n("Vincular guia manualmente"),i18n("Agora: vinculado pelo nome (95%)"),x,488,536,76);
@@ -1675,26 +1689,27 @@ static void gv_canal_opcoes_sheet(void){
   gv_dim(0,.42f);
   float x=gv_sheet_base(360,190,1440,580);
   GVCh *c=gv_focus();if(!c)c=&gv_ch[0];
-  gv_sheet_head(x,222,i18n("101 SporTV"),i18n("Segure OK num canal · opções do canal"));
+  {char titulo[160];snprintf(titulo,sizeof titulo,"%d %s",c?c->num:0,c?c->nome:"");
+   gv_sheet_head(x,222,titulo,i18n("Segure OK num canal · opções do canal"));}
   const char *ops[]={"Adicionar aos favoritos","Ocultar canal","Editar nome do canal","Vincular canal EPG","Buscar logo do canal","Adicionar à pasta","Criar lembrete"};
   const char *oicons[]={"aj_star","aj_eye-off","aj_pencil","aj_calendar","aj_search","aj_folders","aj_bell"};
-  for(int i=0;i<7;i++)gv_opt(1920+i,oicons[i],ops[i],NULL,x,300+i*74,560,68);
+  for(int i=0;i<7;i++)gv_opt(1920+i,oicons[i],ops[i],NULL,x,296+i*64,560,58);
   float rx=x+620;
   gv_label(TXT_TITULO2,i18n("Vincular guia manualmente"),rx,300,700,0);
   GfxRect f={rx,352,700,60};gfx_cor(f,20.0f/60,.114f,.118f,.137f,1);
   gfx_icone((GfxRect){rx+18,368,26,26},"aj_search",.6f,.6f,.6f,1);
   gv_label(TXT_ILHA_CORPO,i18n("Buscar canais EPG:"),rx+56,372,500,0);
   for(int i=0;i<2;i++){
-    GfxRect mr={rx,432+i*92,700,80};gfx_cor(mr,18.0f/80,.082f,.09f,.106f,1);
-    gv_label(TXT_ILHA_NOME,i==0?c->nome:i18n("Outro guia"),rx+20,448,600,0);
-    gv_label(TXT_ILHA_SUB,i?i18n("Guia mundial · nome parecido"):i18n("XMLTV do provedor · id exato"),rx+20,480,600,1);
+    GfxRect mr={rx,432+i*88,700,80};gfx_cor(mr,18.0f/80,.082f,.09f,.106f,1);
+    gv_label(TXT_ILHA_NOME,i==0?c->nome:i18n("Outro guia"),rx+20,444,600,0);
+    gv_label(TXT_ILHA_SUB,i?i18n("Guia mundial · nome parecido"):i18n("XMLTV do provedor · id exato"),rx+20,478,600,1);
   }
   gv_button(1930,i18n("Usar correspondência"),"aj_check",rx,628,430,0,1);
   gfx_cor((GfxRect){rx,700,700,1},0,1,1,1,.14f);
   gv_label(TXT_ILHA_SUB,i18n("Limpeza do nome"),rx,716,400,1);
   gv_label(TXT_ILHA_CORPO,c->nome,rx,750,500,0);
   gv_badge(gv_quali(c->nome),rx+320,746);
-  gv_label(TXT_ILHA_SUB,i18n("Etiquetas do provedor viram selos. O nome original fica para casar o guia."),rx,800,700,1);
+  gv_label(TXT_ILHA_SUB,i18n("Etiquetas do provedor viram selos. O nome original fica para casar o guia."),rx,798,700,1);
 }
 static void gv_ajustes_sheet(void){
   gv_dim(0,.42f);
@@ -1712,11 +1727,11 @@ static void gv_ajustes_sheet(void){
     float y=300+i*98;
     gv_label(TXT_ILHA_NOME,i18n(rows[i].nome),x,y,900,0);
     if(rows[i].sub[0])gv_label(TXT_ILHA_SUB,i18n(rows[i].sub),x,y+34,900,1);
-    if(i==0)gv_button(1940,guia_preview_ligado()?i18n("Ativada"):i18n("Desativada"),NULL,x+1000,y,180,0,1);
-    if(i==1){gv_button(1941,i18n("Cartão"),NULL,x+880,y,150,0,1);gv_button(1942,i18n("Grande"),NULL,x+1040,y,150,0,1);}
-    if(i==2){gv_button(1943,i18n("Ao destacar"),NULL,x+880,y,220,0,1);gv_button(1944,i18n("Ao selecionar"),NULL,x+1110,y,240,0,1);}
-    if(i==3)gv_button(1945,i18n("Ativada"),NULL,x+1000,y,180,0,1);
-    if(i==4){gv_button(1946,i18n("Um dia"),NULL,x+880,y,180,0,1);gv_button(1947,i18n("Três dias"),NULL,x+1070,y,210,0,1);}
+    if(i==0)gv_button(1940,guia_preview_ligado()?i18n("Ativada"):i18n("Desativada"),NULL,x+1000,y,180,guia_preview_ligado(),1);
+    if(i==1){int big=ajustes_guia_previa_grande();gv_button(1941,i18n("Cartão"),NULL,x+880,y,150,!big,1);gv_button(1942,i18n("Grande"),NULL,x+1040,y,150,big,1);}
+    if(i==2){gv_button(1943,i18n("Ao destacar"),NULL,x+880,y,220,0,1);gv_button(1944,i18n("Ao selecionar"),NULL,x+1110,y,240,1,1);}
+    if(i==3)gv_button(1945,i18n("Ativada"),NULL,x+1000,y,180,1,1);
+    if(i==4){gv_button(1946,i18n("Um dia"),NULL,x+880,y,180,1,1);gv_button(1947,i18n("Três dias"),NULL,x+1070,y,210,0,1);}
     if(i==5)gv_button(1948,i18n("Desativada"),NULL,x+1000,y,180,0,1);
     gfx_cor((GfxRect){x,y+78,1380,1},0,1,1,1,.12f);
   }
@@ -1727,21 +1742,22 @@ static void gv_pastas_sheet(void){
   gv_dim(0,.42f);
   float x=gv_sheet_base(360,190,1440,580);
   gv_sheet_head(x,222,i18n("Suas pastas"),i18n("Pastas agrupam categorias de várias fontes. Os canais ficam nas categorias originais."));
-  gv_button(1950,i18n("Nova pasta"),"aj_folders",x,300,340,1,1);
-  gv_label(TXT_ILHA_SUB,i18n("Ordem"),x+700,312,100,1);
-  gv_button(1951,i18n("Mais assistidos"),NULL,x+790,300,260,0,1);
-  gv_button(1952,i18n("A–Z"),NULL,x+1060,300,120,0,1);
-  gv_button(1953,i18n("Personalizada"),NULL,x+1190,300,240,0,1);
-  gv_label(TXT_ILHA_CORPO,i18n("Sem pastas ainda. Crie uma para reunir as categorias que você mais abre."),x,390,560,1);
+  gv_button(1950,i18n("Nova pasta"),"aj_folders",x,300,300,1,1);
+  gv_label(TXT_ILHA_SUB,i18n("Ordem"),x,372,100,1);
+  gv_button(1951,i18n("Mais assistidos"),NULL,x+80,360,240,0,1);
+  gv_button(1952,i18n("A–Z"),NULL,x+330,360,110,0,1);
+  gv_button(1953,i18n("Personalizada"),NULL,x+450,360,220,1,1);
+  gv_label(TXT_ILHA_CORPO,i18n("Sem pastas ainda. Crie uma para reunir as categorias que você mais abre."),x,450,540,1);
   float rx=x+620;
   gv_label(TXT_TITULO2,i18n("Categorias nesta pasta"),rx,300,700,0);
+  {float bx=rx,by=352;
   for(int i=0;i<4&&i<gv_cats;i++){
     char b[96];snprintf(b,sizeof b,"%s · %d",gv_cat[i],gv_cat_n[i]);
     float w=(float)txt_linha(TXT_ILHA_CORPO,b,243,242,239,255).w+24;
-    gfx_cor((GfxRect){rx+(i%3)*240,340+(i/3)*56,w,44},12.0f/44,.168f,.176f,.204f,1);
-    gv_label(TXT_ILHA_CORPO,b,rx+(i%3)*240+12,350,w-20,0);
-  }
-  gv_label(TXT_ILHA_SUB,i18n("Excluir a pasta remove só a pasta. Categorias e canais ficam."),rx,480,700,1);
+    if(bx+w>rx+700){bx=rx;by+=56;}
+    gfx_cor((GfxRect){bx,by,w,44},12.0f/44,.168f,.176f,.204f,1);
+    gv_label(TXT_ILHA_CORPO,b,bx+12,by+8,w-20,0);bx+=w+12;}
+  gv_label(TXT_ILHA_SUB,i18n("Excluir a pasta remove só a pasta. Categorias e canais ficam."),rx,by+70,700,1);}
 }
 static void gv_epg_sheet(void){
   gv_dim(0,.42f);

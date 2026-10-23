@@ -67,6 +67,8 @@ static void semear(void) {
     { "Telecine Pipoca", "Filme: O resgate", -42, 170 },
     { "Telecine Pipoca", "A última estação", 170, 230 },
     { "Gloob", "Mundo Bita", -2, 8 },
+    { "Band", "Flamengo hoje", 98, 158 },
+    { "Canal Brasil", "Fla × Flu: Retrospectiva", 200, 260 },
     { "Gloob", "Peppa Pig", 8, 28 },
   };
   char *xml = malloc(24000), ini[24], fim[24];
@@ -92,7 +94,7 @@ static void semear(void) {
     { "SporTV", 0, 1 }, { "GloboNews", 1, 1 }, { "Discovery", 2, 1 },
     { "Telecine Pipoca", 3, 0 }, { "Record", 4, 1 }, { "BBC News", 1, 0 },
     { "CNN Int'l", 1, 0 }, { "Gloob", 5, 0 }, { "Canal Brasil", 3, 0 },
-    { "Band", 1, 0 },
+    { "Band", 1, 0 }, { "Flash News 24", 1, 0 }, { "Canal Flamengo TV", 0, 0 },
   };
   snprintf(cats[0], sizeof cats[0], "Esportes");
   snprintf(cats[1], sizeof cats[1], "Notícias");
@@ -153,7 +155,7 @@ int main(int argc, char **argv) {
       nCanais = 0; nCats = 0; gv_n = 0; gv_total_n = 0;  /* estado vazio real */
     }
     g5ui_open(names[n]);
-    if (!strcmp(names[n], "numero")) snprintf(gv_numero, sizeof gv_numero, "10");
+    if (!strcmp(names[n], "numero")) snprintf(gv_numero, sizeof gv_numero, "1");
     if (!strcmp(names[n], "busca")) snprintf(query, sizeof query, "fla");
     if (!strcmp(names[n], "fontes-erro")) { falhas = 0; }
     capture(window, dir, names[n]);
