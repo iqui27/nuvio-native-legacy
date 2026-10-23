@@ -2210,6 +2210,8 @@ int stream_automatico_canal(void) { return automaticoCom(0); }
 
 static int grupo, filtro, soMp4, soCache, soDub;
 static int filtroServidor = -1;
+static int serverSectionN;
+static float serverSectionY;
 
 // BOTOES DO CABECALHO. "Sem HDR" so existe onde ha o que renegociar (webOS);
 // ver o bloco "TELA PRETA COM AUDIO TOCANDO" em video.h. Oferecer um botao que
@@ -2797,6 +2799,7 @@ static void montarLinhas(int automatica) {
   float y;
   int g, i, k, m = -1, nt;
   int needed = filtro == -1 ? ondever_n(alvoPedido) : n;
+  serverSectionN = 0;
   escolhaAtualizar();
   y = escAlt;
   if (ordemCap < needed) {
@@ -2848,7 +2851,13 @@ static void montarLinhas(int automatica) {
   }
   fitAtualizar();
   nOrdem = 0;
-  if (melhorFolha >= 0 && melhorFolha < n && !lista[melhorFolha].foraCache && passaFiltro(melhorFolha) && nFiltrados() > 1 &&
+  for (k = 0; k < n; k++) { i = ORD(k); if (ehServidor(&lista[i]) && passaFiltro(i)) serverSectionN++; }
+  if (serverSectionN) {
+    serverSectionY = y; y += FOLHA_SEC_H;
+    for (k = 0; k < n; k++) { i = ORD(k); if (ehServidor(&lista[i]) && passaFiltro(i)) porLinha(i, &y, automatica); }
+    y += FOLHA_SEC_GAP;
+  }
+  if (melhorFolha >= 0 && melhorFolha < n && !ehServidor(&lista[melhorFolha]) && !lista[melhorFolha].foraCache && passaFiltro(melhorFolha) && nFiltrados() > 1 &&
       (melhorFolha >= fitN || fitClasses[melhorFolha] != SF_PESADA)) {
     m = melhorFolha;
     porLinha(m, &y, automatica);
@@ -2861,7 +2870,7 @@ static void montarLinhas(int automatica) {
     // addon (#221) e o empate de tamanho fica com a ordem do addon.
     for (k = 0; k < n; k++) {
       i = ORD(k);
-      if (i != m && !lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g && !dobravel(i)) grupoTmp[nt++] = i;
+      if (i != m && !ehServidor(&lista[i]) && !lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g && !dobravel(i)) grupoTmp[nt++] = i;
     }
     // Insercao estavel: em tamanho igual vale a ordem do addon.
     for (k = 1; k < nt; k++) {
@@ -2877,7 +2886,7 @@ static void montarLinhas(int automatica) {
     // secao do grupo as abriga, na ordem do addon.
     for (k = 0; k < n; k++) {
       i = ORD(k);
-      if (i != m && lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g && !dobravel(i)) grupoTmp[nt++] = i;
+      if (i != m && !ehServidor(&lista[i]) && lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g && !dobravel(i)) grupoTmp[nt++] = i;
     }
     if (!nt) continue;
     if (nOrdem) y += FOLHA_SEC_GAP;
@@ -3819,6 +3828,14 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   gfx_recorte(x,FOLHA_TOPO-8,w,folhaBase-(FOLHA_TOPO-8));
   if (escAlt > 0.0f && FOLHA_TOPO - rolagem + escAlt - ESC_VAO > FOLHA_TOPO - 8)
     escDesenhar(lx, FOLHA_TOPO - rolagem, rw, escAlt - ESC_VAO, ar, ag, ab, anim);
+  if (serverSectionN) {
+    float y = FOLHA_TOPO + serverSectionY - rolagem;
+    if (y + FOLHA_SEC_H >= FOLHA_TOPO - 8 && y <= NV_TELA_H) {
+      txt_desenhar_alpha(txt_linha(TXT_PAINEL_ITEM,"No seu servidor",242,242,240,255),tx,y+8,anim);
+      char count[48]; snprintf(count,sizeof count,i18n(serverSectionN==1?"%d fonte":"%d fontes"),serverSectionN);
+      TxtLinha c=txt_linha(TXT_PG_FIM,count,110,110,108,255); txt_desenhar_alpha(c,tr-c.w,y+12,anim);
+    }
+  }
   // CABECALHOS DE GRUPO: "4K  ULTRA HD ........ 3 fontes", com um fio embaixo.
   for(int g=0;g<FOLHA_GRUPOS;g++){
     float y; char q[48];
