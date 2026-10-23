@@ -39,7 +39,11 @@ SHOWS = [
     {"ratingKey": "201", "type": "show", "title": "Show One", "year": 2020, "summary": "Show overview",
      "thumb": "/library/metadata/201/thumb/17",
      "Genre": [{"tag": "Comedy"}],
+     "viewCount": 3, "leafCount": 10, "viewedLeafCount": 1,
      "updatedAt": 1700000201, "Guid": [{"id": "imdb://tt0000201"}, {"id": "tmdb://7201"}]},
+    {"ratingKey": "202", "type": "show", "title": "Completed Show", "year": 2020,
+     "viewCount": 3, "leafCount": 10, "viewedLeafCount": 10,
+     "updatedAt": 1700000202, "Guid": [{"id": "imdb://tt0000202"}]},
 ]
 EPISODES = [
     {"ratingKey": "301", "type": "episode", "parentIndex": 1, "index": 1, "title": "Pilot", "duration": 2700000,
