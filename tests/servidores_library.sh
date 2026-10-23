@@ -11,3 +11,7 @@ cc tests/servidores_setup.c src/srvsetup_net.c src/jellyfin.c src/js.c src/redeu
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -O1 \
   -ffunction-sections -fdata-sections -Wl,-dead_strip -o "$work/setup"
 "$work/setup"
+cc tests/servidores_setup_http.c src/srvsetup_net.c src/jellyfin.c src/js.c src/jsw.c src/redeurl.c \
+  -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -O1 \
+  -ffunction-sections -fdata-sections -Wl,-dead_strip -o "$work/http"
+"$work/http"

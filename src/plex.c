@@ -13,6 +13,7 @@
 // shapes follow Plex's public API documentation and community-documented
 // behaviour, and are pinned by fixture tests (tests/plex.c).
 #include "plex.h"
+#include "srvprefs.h"
 #include "dados.h"
 #include "js.h"
 #include "jsraiz.h"
@@ -1331,6 +1332,9 @@ static int gravarConta(const PxConta *c, int perfil) {
   linha(txt, sizeof txt, &k, "dev", c->dispositivoId);
   linha(txt, sizeof txt, &k, "tokc", c->tokenConta);
   linha(txt, sizeof txt, &k, "toks", c->token);
+  char selection[256]; copiar(selection, sizeof selection, c->bibliotecas);
+  for (char *p = selection; *p; p++) if (*p == '\n') *p = ',';
+  linha(txt, sizeof txt, &k, "libs", selection);
   if (k >= sizeof txt) { apagarSegredo(txt, sizeof txt); return 0; }
   snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
   dados_fs_travar();
@@ -1410,6 +1414,8 @@ static void carregarLocked(void) {
     lerCampo(txt, "dev", conta.dispositivoId, sizeof conta.dispositivoId);
     lerCampo(txt, "tokc", conta.tokenConta, sizeof conta.tokenConta);
     lerCampo(txt, "toks", conta.token, sizeof conta.token);
+    lerCampo(txt, "libs", conta.bibliotecas, sizeof conta.bibliotecas);
+    for (char *p = conta.bibliotecas; *p; p++) if (*p == ',') *p = '\n';
     apagarSegredo(txt, strlen(txt));
     free(txt);
   }
@@ -2084,6 +2090,7 @@ static void tarefaBibliotecas(const Tarefa *t) {
   nl = px_bibliotecas(&c, j, libs, PX_FIL_MAX);
   if (nl < 0) e = nl;
   for (i = 0; i < nl && e == PX_OK; i++) {
+    if (!srv_biblioteca_selecionada(c.bibliotecas, libs[i].id)) continue;
     int total, n = px_itens(&c, j, libs[i].id, 0, PX_POR_FILEIRA, itens + ni, PX_POR_FILEIRA, &total);
     if (n < 0) { e = n; break; }
     if (!n) continue;

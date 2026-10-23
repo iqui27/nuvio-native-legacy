@@ -124,8 +124,14 @@ int em_connect_pedir(const char *path, const char *body, const char *token, Rede
 }
 int em_connect_ler_conta(const char *body, char *token, size_t nt, char *user, size_t nu) {
   token[0] = user[0] = 0;
-  if (!body || !js_texto_raiz(body, "ConnectAccessToken", token, nt) ||
-      !js_texto_raiz(body, "ConnectUserId", user, nu) || !token[0] || !user[0] || strpbrk(token, "\r\n") || strpbrk(user, "\r\n?&#")) {
+  if (body) {
+    if (!js_texto_raiz(body, "ConnectAccessToken", token, nt)) js_texto_raiz(body, "AccessToken", token, nt);
+    if (!js_texto_raiz(body, "ConnectUserId", user, nu) && !js_texto_raiz(body, "UserId", user, nu)) {
+      char object[1024];
+      if (js_bruto(body, NULL, "User", object, sizeof object)) js_texto_raiz(object, "Id", user, nu);
+    }
+  }
+  if (!token[0] || !user[0] || strpbrk(token, "\r\n") || strspn(user, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-") != strlen(user)) {
     wipe(token, nt); wipe(user, nu); return 0;
   }
   return 1;
@@ -148,19 +154,20 @@ int em_connect_servidores(const char *token, const char *user, RedeJob *job, EmC
 }
 int em_connect_trocar(JfConta *c, const EmConnectServidor *s, const char *user, RedeJob *job) {
   int e = JF_ERR_REDE;
+  if (!c || !s || !user || !*user || strspn(user, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-") != strlen(user)) return JF_ERR_ENTRADA;
   for (int i = 0; i < 2; i++) {
     char base[512], url[1024], auth[512], key[160]; RedeResposta r;
     if (!address(i ? s->remoto : s->local, base, sizeof base)) continue;
     JfConta candidate = *c; candidate.tipo = JF_TIPO_EMBY;
     snprintf(candidate.base, sizeof candidate.base, "%s", base);
     e = jf_publico(base, job, &candidate);
-    if (e || strcmp(candidate.servidorId, s->id)) { if (!e) e = JF_ERR_OUTRO_SERVIDOR; continue; }
+    if (e || strcmp(candidate.servidorId, s->id)) { if (!e) e = JF_ERR_OUTRO_SERVIDOR; wipe(&candidate, sizeof candidate); continue; }
     jf_cabecalho_auth(&candidate, auth, sizeof auth);
     snprintf(key, sizeof key, "X-Emby-Token: %s", s->chave);
     const char *h[] = {"Accept: application/json", auth, key, NULL};
     snprintf(url, sizeof url, "%s/emby/Connect/Exchange?format=json&ConnectUserId=%s", candidate.base, user);
     e = request(url, NULL, h, job, 1, &r); wipe(auth, sizeof auth); wipe(key, sizeof key);
-    if (e) continue;
+    if (e) { wipe(&candidate, sizeof candidate); continue; }
     int ok = js_texto_raiz(r.corpo, "AccessToken", candidate.token, sizeof candidate.token) &&
       js_texto_raiz(r.corpo, "LocalUserId", candidate.usuarioId, sizeof candidate.usuarioId);
     if (r.corpo) wipe(r.corpo, r.n_corpo); rede_resposta_limpar(&r);

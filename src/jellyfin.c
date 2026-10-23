@@ -6,6 +6,7 @@
 // the POST-only /QuickConnect/Initiate exist there). Older servers answer 404
 // on the item route and the title page stays with the row data.
 #include "jellyfin.h"
+#include "srvprefs.h"
 #include "dados.h"
 #include "js.h"
 #include "jsraiz.h"
@@ -1233,6 +1234,9 @@ static int gravarConta(JfInst *I, const JfConta *c, int perfil) {
   linha(txt, sizeof txt, &k, "unome", c->usuarioNome);
   linha(txt, sizeof txt, &k, "dev", c->dispositivoId);
   linha(txt, sizeof txt, &k, "token", c->token);
+  char selection[256]; copiar(selection, sizeof selection, c->bibliotecas);
+  for (char *p = selection; *p; p++) if (*p == '\n') *p = ',';
+  linha(txt, sizeof txt, &k, "libs", selection);
   if (k >= sizeof txt) { apagarSegredo(txt, sizeof txt); return 0; }
   snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
   dados_fs_travar();
@@ -1312,6 +1316,8 @@ static void carregarLocked(JfInst *I) {
     lerCampo(txt, "unome", I->conta.usuarioNome, sizeof I->conta.usuarioNome);
     lerCampo(txt, "dev", I->conta.dispositivoId, sizeof I->conta.dispositivoId);
     lerCampo(txt, "token", I->conta.token, sizeof I->conta.token);
+    lerCampo(txt, "libs", I->conta.bibliotecas, sizeof I->conta.bibliotecas);
+    for (char *p = I->conta.bibliotecas; *p; p++) if (*p == ',') *p = '\n';
     apagarSegredo(txt, strlen(txt));
     free(txt);
   }
@@ -1990,6 +1996,7 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   nl = jf_bibliotecas(&c, j, libs, JF_FIL_MAX);
   if (nl < 0) e = nl;
   for (i = 0; i < nl && e == JF_OK; i++) {
+    if (!srv_biblioteca_selecionada(c.bibliotecas, libs[i].id)) continue;
     int total, n = jf_itens(&c, j, libs[i].id, 0, JF_POR_FILEIRA, itens + ni, JF_POR_FILEIRA, &total);
     if (n < 0) { e = n; break; }
     if (!n) continue;

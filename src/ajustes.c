@@ -57,6 +57,7 @@
 #include "artehero.h"
 #include "jellyfin.h"
 #include "plex.h"
+#include "srvsetup.h"
 #include "vertudo.h"
 #include "artereserva.h"
 #include "corviva.h"
@@ -2343,6 +2344,7 @@ unsigned ajustes_p2p_limite_mb(void) {
 // jellyfin_disponivel() e 0 la). Fica FORA do #ifdef acima: dentro do #else ela
 // sumia do WASM e o link do .wgt falhava (app.c e descoberta.c a chamam).
 int ajustes_jellyfin_ligado(void) { return lig(AJ_JF_LIGADO) && jellyfin_disponivel(); }
+void ajustes_definir_servidores(int ligado) { valor[AJ_JF_LIGADO] = ligado ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 void ajustes_definir_p2p_ligado(int ligado) { int a = valor[AJ_P2P_LIGADO]; valor[AJ_P2P_LIGADO] = ligado ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); riscoNotar(AJ_P2P_LIGADO, a); }
 
 // Cor do ANEL DE FOCO. Ver TEMA_ACENTO: um tema aqui e so isto.
@@ -7263,9 +7265,9 @@ static void eventoTela(const SDL_Event *e) {
                         64, ST_ALFA_PORTAL, p2pEndereco[0] ? p2pEndereco : NULL);
       return;
     }
-    if (focoOp >= AJ_JF_SERVIDOR && focoOp <= AJ_JF_SAIR) { jfAtivar(focoOp); return; }
-    if (focoOp >= AJ_EM_SERVIDOR && focoOp <= AJ_EM_SAIR) { emAtivar(focoOp); return; }
-    if (focoOp >= AJ_PX_ENTRAR && focoOp <= AJ_PX_SAIR) { pxAtivar(focoOp); return; }
+    if (focoOp >= AJ_JF_SERVIDOR && focoOp <= AJ_JF_SAIR) { srvsetup_abrir(1); return; }
+    if (focoOp >= AJ_EM_SERVIDOR && focoOp <= AJ_EM_SAIR) { srvsetup_abrir(2); return; }
+    if (focoOp >= AJ_PX_ENTRAR && focoOp <= AJ_PX_SAIR) { srvsetup_abrir(0); return; }
     if (focoOp == AJ_PERFIL_EDITAR) { pessoas_abrir_perfil(); return; }
     if (focoOp == AJ_P2P_TESTAR) { p2pTesteIniciar(); return; }
     if (focoOp >= AJ_POSTER_INST && focoOp <= AJ_POSTER_TESTAR) { pstAtivar(focoOp); return; }

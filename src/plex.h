@@ -114,6 +114,7 @@ typedef struct {
   char servidorNome[96];
   char versao[24];
   char usuario[96];        // plex.tv display name (never the e-mail)
+  char bibliotecas[256];   // selected section IDs, newline-delimited; empty means all
   char tokenConta[96];     // plex.tv account token — never logged
   char token[96];          // server access token — never logged
   char dispositivoId[80];  // X-Plex-Client-Identifier, per device + profile

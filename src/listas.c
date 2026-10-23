@@ -12,6 +12,8 @@
 #include "recomenda.h"
 #include "rede.h"
 #include "js.h"
+#include "servidores.h"
+#include "idioma.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -83,16 +85,17 @@ static void limpo(char *dst, size_t tam, const char *s) {
 static void chaveDe(const LstLista *l, char *dst, size_t n) {
   if (!l) { if (n) dst[0] = 0; return; }
   if (l->fonte == LST_TRAKT)      snprintf(dst, n, "%ld", l->traktId);
-  else if (l->fonte == LST_NUVIO) snprintf(dst, n, "%s", l->colId);
+  else if (l->fonte == LST_NUVIO || l->fonte == LST_SERVIDOR) snprintf(dst, n, "%s", l->colId);
   else                            snprintf(dst, n, "%s", l->estado);
 }
 
 static const char *nomeFonte(int f) {
-  return f == LST_TRAKT ? "trakt" : f == LST_SIMKL ? "simkl" : "nuvio";
+  return f == LST_TRAKT ? "trakt" : f == LST_SIMKL ? "simkl" : f == LST_SERVIDOR ? "servidor" : "nuvio";
 }
 static int fonteDeNome(const char *s) {
   if (!strcmp(s, "trakt")) return LST_TRAKT;
   if (!strcmp(s, "simkl")) return LST_SIMKL;
+  if (!strcmp(s, "servidor")) return LST_SERVIDOR;
   return LST_NUVIO;
 }
 
@@ -167,6 +170,7 @@ static int acharFixa(const LstLista *l) {
 
 int lst_fixada(const LstLista *l) { lerFixas(); return acharFixa(l) >= 0; }
 int lst_na_home(const LstLista *l) {
+  if (l && l->fonte == LST_SERVIDOR) return fil_estado_chave(l->colId) >= 0 && fil_estado_chave(l->colId) != FIL_FORA;
   int i;
   lerFixas();
   i = acharFixa(l);
@@ -262,6 +266,14 @@ int lst_alternar_home(const LstLista *l) {
   int i;
   const char *porque;
   if (!lst_aceita_home(l, &porque)) return 0;
+  if (l->fonte == LST_SERVIDOR) {
+    fil_registrar(l->colId, l->titulo, "", "", 0); fil_gravar_registro();
+    for (int k = 0; k < fil_n(); k++) if (!strcmp(fil_chave(k), l->colId)) {
+      if (fil_estado(k) == FIL_FORA) { int state; fil_adicionar(k, &state); } else fil_remover(k);
+      desc_repetir_silencioso(); return fil_estado(k) != FIL_FORA;
+    }
+    return 0;
+  }
   lerFixas();
   // Levar para a Home IMPLICA fixar: a pasta que a Home desenha e montada a
   // partir da linha do arquivo, e sem a linha nao ha o que montar.
@@ -616,7 +628,7 @@ static int montarFixadas(void) {
       d->traktId = atol(fixas[i].id);
       d->propria = fixas[i].propria;
     }
-    else if (fixas[i].fonte == LST_NUVIO) snprintf(d->colId, sizeof d->colId, "%s", fixas[i].id);
+    else if (fixas[i].fonte == LST_NUVIO || fixas[i].fonte == LST_SERVIDOR) snprintf(d->colId, sizeof d->colId, "%s", fixas[i].id);
     else                                  snprintf(d->estado, sizeof d->estado, "%s", fixas[i].id);
   }
   nTabela = n;
@@ -728,6 +740,19 @@ void lst_buscar(const char *termo) {
   disparar(PED_TRAKT_BUSCA);
 }
 
+void lst_pedir_servidores(int provider, int collections) {
+  const char *pre[] = {"plex_", "jellyfin_", "emby_"};
+  if (provider < 0 || provider > 2) return;
+  pthread_mutex_lock(&trava); geracao++; nTabela = 0; aviso[0] = 0;
+  const char *names[] = {"Coleções", "Listas"};
+  for (int i = collections ? 0 : 1; i < (collections ? 1 : 2); i++) {
+    LstLista *l = &tabela[nTabela++]; memset(l, 0, sizeof *l); l->fonte = LST_SERVIDOR;
+    snprintf(l->colId, sizeof l->colId, "%s%s", pre[provider], i ? "playlists" : "collections");
+    snprintf(l->titulo, sizeof l->titulo, "%s", i18n(names[i])); l->itens = -1;
+  }
+  pthread_mutex_unlock(&trava);
+}
+
 void lst_pedir_fixadas(void) {
   pthread_mutex_lock(&trava);
   aviso[0] = 0; geracao++;
@@ -776,7 +801,7 @@ const char *lst_aviso(void) {
 static struct { int fonte; long id; char chave[96]; LstPrevia arte; } previas[24];
 static unsigned previaVez;
 static const char *previaChave(const LstLista *l) {
-  return l->fonte == LST_NUVIO ? l->colId : l->estado;
+  return l->fonte == LST_NUVIO || l->fonte == LST_SERVIDOR ? l->colId : l->estado;
 }
 void lst_previa_limpar(void) { memset(previas, 0, sizeof previas); previaVez = 0; }
 int lst_previa(const LstLista *l, LstPrevia *out) {
@@ -886,6 +911,9 @@ void lst_abrir(const LstLista *l, const char *midia) {
     return;
   }
 
+  if (l->fonte == LST_SERVIDOR) {
+    desc_vertudo_filtro("servidores", "", l->colId, ""); return;
+  }
   memset(&s, 0, sizeof s);
   if (l->fonte == LST_TRAKT) {
     snprintf(s.prov, sizeof s.prov, "trakt");
