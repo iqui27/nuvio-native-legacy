@@ -8,15 +8,19 @@
 #include <time.h>
 
 static CatItem catalogoTeste[127];
-static int ocultar;
+static int ocultar, watched = -1;
+float gfx_escala_ui(void) { return 1.0f; }
+float gfx_escala_ui_base(void) { return 1.0f; }
+const char *i18n(const char *s) { return s; }
+const char *addons_nome_por_id(const char *s) { return s; }
 int cat_n(void) { return 127; }
-int cat_visto(const CatItem *item) { (void)item; return 0; }
 const CatItem *cat_item(int i) { return i >= 0 && i < 127 ? &catalogoTeste[i] : NULL; }
 int cat_indice_por_imdb(const char *id) {
   for (int i = 0; i < 127; i++)
     if (salvos_mesmo_titulo(id, catalogoTeste[i].imdb)) return i;
   return -1;
 }
+int cat_visto(const CatItem *c) { return watched >= 0 && c == &catalogoTeste[watched]; }
 int ajustes_ocultar_nao_lancados(void) { return ocultar; }
 void ajustes_area_conteudo(float e, float d, float *x, float *w) {
   if (x) *x = e;
@@ -105,6 +109,11 @@ int main(void) {
   tipo = TIPO_SERIE; confere(118);
   tipo = TIPO_TODOS;
 
+  assert(hdrX() == 200.0f);
+  assert(bibX() == 564.0f && bibW() == 1260.0f);
+  assert(colunasCartaz() == 5);
+  assert(gradeY() == 388.0f && pickerY() == 312.0f);
+
   // Mesmo criterio da Home: desconhecido/passado/ano atual ficam; futuro sai.
   time_t agora = time(NULL);
   struct tm tmv;
@@ -144,9 +153,44 @@ int main(void) {
   origem = ORIG_TODAS; reconstruir(); assert(nFiltro == 130);
   origem = ORIG_TRAKT; reconstruir(); assert(nFiltro == 15);
   origem = ORIG_SIMKL; reconstruir(); assert(nFiltro == 10);
-  origem = ORIG_NUVIO; reconstruir(); assert(nFiltro == 110);
-  assert(bibNPicks() == 4);
-  modo = MODO_ASSISTIDOS; assert(bibNPicks() == 3);
+  origem = ORIG_NUVIO; reconstruir(); assert(nFiltro == 109 + extraLocal);
+  assert(bibNPicks() == 6);
+  assert(contaOrigem[ORIG_TODAS] == 129 + extraLocal);
+  assert(contaOrigem[ORIG_TRAKT] == 15 && contaOrigem[ORIG_SIMKL] == 10);
+  modo = MODO_ASSISTIDOS; assert(bibNPicks() == 5);
+  origem = ORIG_TODAS; modo = MODO_PARAVER; tipo = TIPO_TODOS;
+  generoSel = 1;
+  strcpy(catalogoTeste[0].genero, "Movie · Drama");
+  reconstruir(); assert(nFiltro == 1);
+  strcpy(catalogoTeste[0].genero, "Movie · Comedy");
+  generoSel = 2; reconstruir(); assert(nFiltro == 1);
+  generoSel = 0; watched = 0; esconderVistos = 1;
+  reconstruir(); assert(nFiltro == 128 + extraLocal);
+  modo = MODO_ASSISTIDOS; reconstruir(); assert(nFiltro == 1);
+  esconderVistos = 0; watched = -1; modo = MODO_PARAVER;
+  strcpy(catalogoTeste[0].origem, "org.example.list");
+  reconstruir(); assert(nAddonOrigens == 1 && addonOrigens[0].count == 1);
+  origem = BIB_N_ORIG; reconstruir(); assert(nFiltro == 1);
+  // Preserve an add-on selection when switching to Watched: label stays valid.
+  modo = MODO_ASSISTIDOS; watched = 0;
+  reconstruir();
+  const char *rot, *val;
+  pickerTexto(0, &rot, &val);
+  assert(!strcmp(rot, "Origem") && !strcmp(val, "org.example.list"));
+  // A vanished add-on must also have a safe label.
+  origem = BIB_N_ORIG + 7;
+  pickerTexto(0, &rot, &val);
+  assert(!strcmp(val, "Todas"));
+  origem = ORIG_TODAS; generoSel = 1;
+  reconstruir(); assert(nFiltro == 1); // hidden genre cannot filter Watched
+  generoSel = 0; watched = -1; modo = MODO_PARAVER;
+  strcpy(catalogoTeste[125].origem, "addon.a");
+  strcpy(catalogoTeste[126].origem, "addon.b");
+  reconstruir();
+  origem = BIB_N_ORIG + 2;
+  reconstruir();
+  assert(addonOrigens[2].count == 1 && nFiltro == 1 && filtro[0] == 126);
+  assert(contaOrigem[ORIG_TODAS] == 129 + extraLocal);
   origem = ORIG_TODAS;
   puts("biblioteca filtro: PASS (regressao sintetica; sem prova da TV)");
   return 0;
