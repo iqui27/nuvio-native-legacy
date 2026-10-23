@@ -171,7 +171,11 @@ int em_connect_trocar(JfConta *c, const EmConnectServidor *s, const char *user, 
     int ok = js_texto_raiz(r.corpo, "AccessToken", candidate.token, sizeof candidate.token) &&
       js_texto_raiz(r.corpo, "LocalUserId", candidate.usuarioId, sizeof candidate.usuarioId);
     if (r.corpo) wipe(r.corpo, r.n_corpo); rede_resposta_limpar(&r);
-    if (ok && candidate.token[0] && candidate.usuarioId[0]) { *c = candidate; wipe(&candidate, sizeof candidate); return JF_OK; }
+    if (ok && candidate.token[0] && candidate.usuarioId[0]) {
+      snprintf(candidate.connectKey, sizeof candidate.connectKey, "%s", s->chave);
+      snprintf(candidate.connectUser, sizeof candidate.connectUser, "%s", user);
+      *c = candidate; wipe(&candidate, sizeof candidate); return JF_OK;
+    }
     wipe(&candidate, sizeof candidate); e = JF_ERR_FORMATO;
   }
   return e;

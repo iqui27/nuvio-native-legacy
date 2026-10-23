@@ -39,6 +39,7 @@ int main(void){
   EmConnectServidor server[2];assert(em_connect_servidores(token,user,NULL,server,2)==1);
   JfConta c={0};c.tipo=JF_TIPO_EMBY;strcpy(c.dispositivoId,"fixture-device");
   assert(!em_connect_trocar(&c,server,user,NULL));assert(!strcmp(c.token,"fixture-local") && !strcmp(c.usuarioId,"987"));
+  assert(!strcmp(c.connectKey,"fixture-exchange") && !strcmp(c.connectUser,"123"));
   SrvUsuario users[2];assert(srv_usuarios(&c,NULL,users,2)==1);assert(!strcmp(users[0].nome,"Visible"));
   assert(step==5);puts("Server HTTP: Connect password, server list, identity, exchange and public users: PASS");return 0;
 }

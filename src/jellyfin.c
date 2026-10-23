@@ -7,6 +7,7 @@
 // on the item route and the title page stays with the row data.
 #include "jellyfin.h"
 #include "srvprefs.h"
+#include "srvsetup.h"
 #include "dados.h"
 #include "js.h"
 #include "jsraiz.h"
@@ -1244,6 +1245,8 @@ static int gravarConta(JfInst *I, const JfConta *c, int perfil) {
   char selection[256]; copiar(selection, sizeof selection, c->bibliotecas);
   for (char *p = selection; *p; p++) if (*p == '\n') *p = ',';
   linha(txt, sizeof txt, &k, "libs", selection);
+  linha(txt, sizeof txt, &k, "connectUser", c->connectUser);
+  linha(txt, sizeof txt, &k, "connectKey", c->connectKey);
   if (k >= sizeof txt) { apagarSegredo(txt, sizeof txt); return 0; }
   snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
   dados_fs_travar();
@@ -1324,6 +1327,8 @@ static void carregarLocked(JfInst *I) {
     lerCampo(txt, "dev", I->conta.dispositivoId, sizeof I->conta.dispositivoId);
     lerCampo(txt, "token", I->conta.token, sizeof I->conta.token);
     lerCampo(txt, "libs", I->conta.bibliotecas, sizeof I->conta.bibliotecas);
+    lerCampo(txt, "connectUser", I->conta.connectUser, sizeof I->conta.connectUser);
+    lerCampo(txt, "connectKey", I->conta.connectKey, sizeof I->conta.connectKey);
     for (char *p = I->conta.bibliotecas; *p; p++) if (*p == ',') *p = '\n';
     apagarSegredo(txt, strlen(txt));
     free(txt);
@@ -2000,7 +2005,18 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   // Limit checked before allocating: JF_FIL_MAX x JF_POR_FILEIRA items.
   itens = calloc((size_t)JF_FIL_MAX * JF_POR_FILEIRA, sizeof *itens);
   if (!itens) { fecharTarefa(I, j); return; }
-  nl = jf_bibliotecas(&c, j, libs, JF_FIL_MAX);
+  if (c.tipo == JF_TIPO_EMBY && c.connectKey[0] && c.connectUser[0]) {
+    EmConnectServidor server = {0};
+    copiar(server.id, sizeof server.id, c.servidorId); copiar(server.chave, sizeof server.chave, c.connectKey);
+    copiar(server.local, sizeof server.local, c.base);
+    e = em_connect_trocar(&c, &server, c.connectUser, j); apagarSegredo(&server, sizeof server);
+    if (e == JF_OK) {
+      pthread_mutex_lock(&I->trava);
+      if (aindaVale(I, t, j)) { I->conta = c; gravarConta(I, &c, I->perfilLido); }
+      pthread_mutex_unlock(&I->trava);
+    }
+  }
+  nl = e == JF_OK ? jf_bibliotecas(&c, j, libs, JF_FIL_MAX) : e;
   if (nl < 0) e = nl;
   for (i = 0; i < nl && e == JF_OK; i++) {
     if (!srv_biblioteca_selecionada(c.bibliotecas, libs[i].id)) continue;

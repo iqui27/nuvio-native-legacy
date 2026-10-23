@@ -92,6 +92,7 @@ typedef struct {
   char usuarioNome[96];
   char token[80];          // never logged
   char bibliotecas[256];   // selected library IDs, newline-delimited; empty means all
+  char connectUser[64], connectKey[128]; // Emby exchange credentials, never logged
   char dispositivoId[80];  // per device + profile (Jellyfin binds tokens to it)
   char dispositivoNome[48];
 } JfConta;
