@@ -333,7 +333,7 @@ int main(int argc, char **argv) {
   povoar();
   biblioteca_iniciar();
   if (argc > 2 && !strcmp(argv[2], "mock")) {
-    tecla(SDLK_DOWN); tecla(SDLK_RIGHT);
+    tecla(SDLK_DOWN); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_DOWN);
     snprintf(nome, sizeof nome, "%s-grid.bmp", saida); captura(nome);
     return 0;
   }

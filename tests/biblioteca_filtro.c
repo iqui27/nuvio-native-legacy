@@ -8,8 +8,9 @@
 #include <time.h>
 
 static CatItem catalogoTeste[127];
-static int ocultar;
+static int ocultar, watched = -1;
 float gfx_escala_ui(void) { return 1.0f; }
+const char *i18n(const char *s) { return s; }
 int cat_n(void) { return 127; }
 const CatItem *cat_item(int i) { return i >= 0 && i < 127 ? &catalogoTeste[i] : NULL; }
 int cat_indice_por_imdb(const char *id) {
@@ -17,7 +18,7 @@ int cat_indice_por_imdb(const char *id) {
     if (salvos_mesmo_titulo(id, catalogoTeste[i].imdb)) return i;
   return -1;
 }
-int cat_visto(const CatItem *c) { (void)c; return 0; }
+int cat_visto(const CatItem *c) { return watched >= 0 && c == &catalogoTeste[watched]; }
 int ajustes_ocultar_nao_lancados(void) { return ocultar; }
 void ajustes_area_conteudo(float e, float d, float *x, float *w) {
   if (x) *x = e;
@@ -123,9 +124,18 @@ int main(void) {
   origem = ORIG_TRAKT; reconstruir(); assert(nFiltro == 15);
   origem = ORIG_SIMKL; reconstruir(); assert(nFiltro == 10);
   origem = ORIG_NUVIO; reconstruir(); assert(nFiltro == 109);
-  assert(bibNPicks() == 4);
-  modo = MODO_ASSISTIDOS; assert(bibNPicks() == 3);
-  origem = ORIG_TODAS;
+  assert(bibNPicks() == 6);
+  assert(contaOrigem[ORIG_TODAS] == 129);
+  assert(contaOrigem[ORIG_TRAKT] == 15 && contaOrigem[ORIG_SIMKL] == 10);
+  modo = MODO_ASSISTIDOS; assert(bibNPicks() == 6);
+  origem = ORIG_TODAS; modo = MODO_PARAVER; tipo = TIPO_TODOS;
+  generoSel = 1;
+  strcpy(catalogoTeste[0].genero, "Movie · Drama");
+  reconstruir(); assert(nFiltro == 1);
+  generoSel = 0; watched = 0; esconderVistos = 1;
+  reconstruir(); assert(nFiltro == 128);
+  modo = MODO_ASSISTIDOS; reconstruir(); assert(nFiltro == 1);
+  esconderVistos = 0; watched = -1;
   puts("biblioteca filtro: PASS (regressao sintetica; sem prova da TV)");
   return 0;
 }
