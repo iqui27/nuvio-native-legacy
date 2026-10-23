@@ -85,6 +85,7 @@ int main(void) {
     fundo(); if (!gfx_foco_placa(r, 0.5f, 1.0f, 1.0f)) gfx_cor(r, 0.5f, 1, 1, 1, .12f);
     px(700, 345, off); assert(memcmp(off, gray, 3) == 0);
     // ON: accent plate
+    valor[AJ_VIDRO_CONTORNO] = 0;
     liga(1); fundo(); assert(gfx_foco_placa(r, 0.5f, 1.0f, 1.0f) == 1); px(700, 345, on); px(700, 300 + 1, rim);
     printf("%s: bg %d,%d,%d gray %d,%d,%d on %d,%d,%d rim %d,%d,%d\n", NOMES[a], bg[0], bg[1], bg[2], gray[0], gray[1], gray[2], on[0], on[1], on[2], rim[0], rim[1], rim[2]);
     assert(memcmp(on, gray, 3) != 0);
@@ -95,6 +96,12 @@ int main(void) {
     if (a == 1) assert(on[0] > on[2] + 20 && on[1] > on[2] + 15);
     // the rim is stronger than the fill
     assert(lum(rim) > lum(on) || a == 2);
+    // outline OFF: fill and tint stay, the accent ring is gone (rim == fill)
+    { unsigned char in[3], rim2[3];
+      valor[AJ_VIDRO_CONTORNO] = 1; fundo(); assert(gfx_foco_placa(r, 0.5f, 1.0f, 1.0f) == 1);
+      px(400 + 1, 345, rim2); px(400 + 30, 345, in);
+      assert(memcmp(rim2, in, 3) == 0);
+      valor[AJ_VIDRO_CONTORNO] = 0; }
     // setting forced off when glass is off
     valor[AJ_VIDRO] = 1; assert(!ajustes_foco_acento()); valor[AJ_VIDRO] = 0;
   }
@@ -116,6 +123,20 @@ int main(void) {
       snprintf(nome, sizeof nome, "ajustes-%s", tag); salvar(stage, nome);
       ctx_abrir_salvo(&it); quadros(90, dCtx);
       snprintf(nome, sizeof nome, "ctx-%s", tag); salvar(stage, nome);
+    }
+  }
+  if (getenv("REMOVER_STAGE")) {
+    CatItem it; char nome[80];
+    memset(&it, 0, sizeof it);
+    snprintf(it.imdb, sizeof it.imdb, "tt0000010"); snprintf(it.titulo, sizeof it.titulo, "Matchbox the Movie");
+    snprintf(it.tipo, sizeof it.tipo, "movie");
+    valor[AJ_TEMA] = 1; liga(1);
+    for (int c = 0; c < 2; c++) {
+      valor[AJ_VIDRO_CONTORNO] = c ? 0 : 1;
+      spainel_fechar(); spainel_abrir(); quadros(60, dSalvos);
+      ctx_inline_pedir(1); ctx_abrir_salvo(&it); quadros(120, dSalvos);
+      snprintf(nome, sizeof nome, "salvosremover-%s-contorno-%s", getenv("REMOVER_TAG"), c ? "on" : "off");
+      salvar(getenv("REMOVER_STAGE"), nome);
     }
   }
   printf("foco_acento: ok\n");

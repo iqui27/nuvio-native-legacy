@@ -11,6 +11,9 @@
 #include "recomenda.h"
 #include "dados.h"
 #include "ajustes.h"
+#include "perfis.h"
+#include "trakt.h"
+#include "ilhaacao.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -100,7 +103,9 @@ static void cartao(void) {
   CHECA(!reacao_evento(&e, 0), "BAIXO passa");
   e = tecla(SDLK_RIGHT); CHECA(reacao_evento(&e, 0), "DIREITA anda");
   e = tecla(SDLK_RETURN); CHECA(reacao_evento(&e, 0), "OK escolhe");
-  CHECA(!reacao_aberta(), "responder fecha");
+  CHECA(reacao_aberta() && reacao_passo() == 2, "rating opens optional quick tags");
+  e = tecla(SDLK_ESCAPE); reacao_evento(&e, 0);
+  CHECA(!reacao_aberta(), "Back dismisses tags without losing rating");
   CHECA(reacao_estado("tt0111161") == REACAO_MAIS_MENOS, "OK na segunda opcao = Mais ou menos");
   // Respondida: outra sessao do player nao pergunta de novo.
   reacao_fechar();
@@ -139,6 +144,111 @@ static void cartao(void) {
   { char *b = dados_ler("reacoes-p1.txt");
     if (!b) b = dados_ler("reacoes.txt");
     CHECA(b && strstr(b, "tt0111161\t0\t") && strstr(b, "tt0903747\t1\t"), "reacoes gravadas por perfil");
+    free(b); }
+}
+
+static void nota(void) {
+  CHECA(reacao_nota("tt0111161") == 5, "atalho Mais ou menos grava nota 5");
+  CHECA(reacao_nota("tt0903747") == 8, "atalho Gostei grava nota 8");
+  CHECA(reacao_nota("tt9999999") == 0, "sem nota = 0");
+  reacao_nota_definir("tt0111161", 9);
+  CHECA(reacao_nota("tt0111161") == 9 && reacao_estado("tt0111161") == REACAO_GOSTEI,
+        "4,5 estrelas vira Gostei");
+  reacao_nota_definir("tt0111161", 1);
+  CHECA(reacao_nota("tt0111161") == 1 && reacao_estado("tt0111161") == REACAO_NAO, "meia estrela vira Nao gostei");
+  { CatItem f = item("tt0111161", "movie", "Rated movie");
+    SDL_Event e;
+    CHECA(reacao_detalhe_abrir(&f), "rated title can reopen rating editor");
+    e = tecla(SDLK_RIGHT); reacao_evento(&e, 1);
+    e = tecla(SDLK_RETURN); reacao_evento(&e, 1);
+    CHECA(reacao_nota("tt0111161") == 2, "title editor starts on stars and moves half a star");
+    CHECA(ilhaacao_tem_desfazer(), "rating confirms through island with undo");
+    ilhaacao_botao(1);
+    CHECA(reacao_nota("tt0111161") == 1, "undo restores previous rating");
+    e = tecla(SDLK_ESCAPE); reacao_evento(&e, 1);
+  }
+  { CatItem f = item("tt0777777", "movie", "Island rating");
+    SDL_Event e;
+    reacao_teste_abrir(f.imdb, f.titulo, f.tipo, 0, "", 0);
+    // Up reaches the star row; one Right is exactly half a star.
+    e = tecla(SDLK_UP); reacao_evento(&e, 0);
+    e = tecla(SDLK_RIGHT); reacao_evento(&e, 0);
+    e = tecla(SDLK_RETURN); reacao_evento(&e, 0);
+    CHECA(reacao_nota(f.imdb) == 9, "island Up/Right saves 4.5 stars");
+    e = tecla(SDLK_LEFT); reacao_evento(&e, 0);
+    e = tecla(SDLK_RETURN); reacao_evento(&e, 0);
+    CHECA(reacao_nota(f.imdb) == 0 && reacao_estado(f.imdb) == REACAO_NENHUMA,
+          "saved island undo restores unrated title");
+    reacao_fechar();
+    perfis_definir_ativo(2); perfis_definir_ativo(1);
+    CHECA(reacao_nota(f.imdb) == 0, "undo removal survives profile reload");
+  }
+  reacao_nota_definir("tt0111161", 11);
+  CHECA(reacao_nota("tt0111161") == 1, "nota fora de 1 a 10 ignorada");
+  reacao_nota_definir("tt0903747:1:2", 7);
+  CHECA(reacao_nota("tt0903747:1:2") == 7 && reacao_nota("tt0903747") == 8, "episodio guarda so a propria nota");
+  { char corpo[300];
+    CHECA(trakt_nota_corpo(corpo, sizeof corpo, "tt0903747:1:2", "series", 7) &&
+          strstr(corpo, "\"number\":1,\"episodes\":[{\"number\":2,\"rating\":7}"), "Trakt payload targets episode");
+    CHECA(!trakt_nota_corpo(corpo, sizeof corpo, "tt123:1:2junk", "series", 7), "invalid episode rejected");
+    CatItem s = item("tt0903747", "series", "Breaking Bad");
+    SDL_Event e;
+    CHECA(reacao_episodio_abrir(&s, 1, 2), "episode opens star editor");
+    e = tecla(SDLK_RIGHT); reacao_evento(&e, 1);
+    e = tecla(SDLK_RETURN); reacao_evento(&e, 1);
+    CHECA(reacao_nota("tt0903747:1:2") == 8 && reacao_nota("tt0903747") == 8, "episode UI preserves series score");
+    for (int i = 0; i < 15; i++) { e = tecla(SDLK_LEFT); reacao_evento(&e, 1); }
+    for (int i = 0; i < 4; i++) {
+      e = tecla(SDLK_RETURN); reacao_evento(&e, 1);
+      e = tecla(SDLK_RIGHT); reacao_evento(&e, 1);
+    }
+    CHECA(reacao_tags("tt0903747:1:2") == (7u << 12), "quick tags cap at three without reusing legacy IDs");
+    e = tecla(SDLK_LEFT); reacao_evento(&e, 1);
+    e = tecla(SDLK_LEFT); reacao_evento(&e, 1);
+    e = tecla(SDLK_RETURN); reacao_evento(&e, 1);
+    CHECA(reacao_tags("tt0903747:1:2") == (3u << 12), "selected tag toggles off");
+    e = tecla(SDLK_ESCAPE); reacao_evento(&e, 1);
+    // Grade 3x2 por pagina: Right, Down, OK fica sempre num chip visivel
+    // (o modelo de 5 colunas pulava para a pagina escondida).
+    reacao_episodio_abrir(&s, 1, 2);
+    { SDL_Event ev = tecla(SDLK_RETURN); reacao_evento(&ev, 1); }
+    { int j;
+      for (j = 0; j < 15; j++) { e = tecla(SDLK_LEFT); reacao_evento(&e, 1); }
+      e = tecla(SDLK_RIGHT); reacao_evento(&e, 1);
+      CHECA(reacao_tag_foco() == 1, "ep foco no segundo chip");
+      e = tecla(SDLK_DOWN); reacao_evento(&e, 1);
+      CHECA(reacao_tag_foco() == 4, "ep baixo fica na mesma pagina");
+      e = tecla(SDLK_RETURN); reacao_evento(&e, 1);
+      CHECA(reacao_tags("tt0903747:1:2") == (3u << 12) + 2u, "chip visivel alternado");
+      e = tecla(SDLK_DOWN); reacao_evento(&e, 1);
+      CHECA(reacao_tag_foco() == 7, "ep terceira linha sobe de pagina");
+      e = tecla(SDLK_DOWN); reacao_evento(&e, 1);
+      CHECA(reacao_tag_foco() == 10, "ep pagina 3 pelo baixo");
+      e = tecla(SDLK_UP); reacao_evento(&e, 1);
+      CHECA(reacao_tag_foco() == 7, "ep volta uma linha"); }
+    e = tecla(SDLK_ESCAPE); reacao_evento(&e, 1);
+    perfis_definir_ativo(2);
+    CHECA(reacao_nota("tt0903747:1:2") == 0 && !reacao_tags("tt0903747:1:2"), "profile isolates ratings and tags");
+    perfis_definir_ativo(1);
+    CHECA(reacao_nota("tt0903747:1:2") == 8 && reacao_tags("tt0903747:1:2") == (3u << 12) + 2u, "ratings and tags reload from disk");
+    reacao_episodio_abrir(&s, 1, 2);
+    perfis_definir_ativo(2);
+    e = tecla(SDLK_RETURN); reacao_evento(&e, 1);
+    CHECA(!reacao_aberta() && reacao_nota("tt0903747:1:2") == 0, "profile change invalidates open card");
+    perfis_definir_ativo(1);
+    reacao_fechar(); reacao_player_episodio(1, 3);
+    Uint32 agora = 20000;
+    quadros(&s, 1, 1000, 2400, 1, 0, 100, &agora);
+    CHECA(!reacao_aberta(), "episode rating never opens during story");
+    quadros(&s, 1, 2370, 2400, 1, 0, 1, &agora);
+    CHECA(reacao_aberta(), "ordinary episode credits offer rating");
+    e = tecla(SDLK_ESCAPE); reacao_evento(&e, 0);
+    quadros(&s, 1, 2370, 2400, 1, 0, 100, &agora);
+    CHECA(!reacao_aberta(), "dismissed popup stays closed in session");
+  }
+  { char *b = dados_ler("notas-p1.txt");
+    if (!b) b = dados_ler("notas.txt");
+    CHECA(b && strstr(b, "tt0111161\t1\t") && strstr(b, "tt0903747:1:2\t8\t"), "notas gravadas por perfil");
     free(b); }
 }
 
@@ -278,6 +388,7 @@ int main(void) {
   if (strcmp(dados_dir(), dir)) { puts("reacao: dados_dir() nao e NUVIO_DADOS; recusando rodar"); return 1; }
   regra();
   cartao();
+  nota();
   fila();
   if (falhas) { printf("reacao: %d falha(s)\n", falhas); return 1; }
   printf("reacao: tudo ok (%s)\n", recomenda_ativo() ? "com servico" : "sem servico");

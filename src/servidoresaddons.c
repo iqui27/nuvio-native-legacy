@@ -30,10 +30,10 @@ void servidores_rotular(Stream *l, int n) {
 static int origem(const char *id, const char *tipo, int (*cancelado)(void *), void *ctx,
                   OrigemAviso aviso, void *avisoU, void *saida) {
   Stream **l = (Stream **)saida;
-  if (aviso) aviso(avisoU, ORIGEM_SERVIDOR, "", 1, NULL, 0);
+  if (aviso) aviso(avisoU, ORIGEM_SERVIDOR, "", "", 1, NULL, 0);
   int n = servidores_consultar(id, tipo, cancelado, ctx, l);
   if (n > 0 && *l) servidores_rotular(*l, n);
-  if (aviso) aviso(avisoU, ORIGEM_SERVIDOR, "", 2, *l, n);
+  if (aviso) aviso(avisoU, ORIGEM_SERVIDOR, "", "", 2, *l, n);
   return n;
 }
 
@@ -42,10 +42,10 @@ static int preparoAtual(const void *p) { return plex_preparo_atual(p); }
 static int preparoConsultar(const void *p, const char *id, const char *tipo,
                             int (*cancelado)(void *), void *ctx,
                             OrigemAviso aviso, void *avisoU, Stream **saida) {
-  if (aviso) aviso(avisoU, ORIGEM_SERVIDOR, "", 1, NULL, 0);
+  if (aviso) aviso(avisoU, ORIGEM_SERVIDOR, "", "", 1, NULL, 0);
   int n = plex_preparo_consultar(p, id, tipo, cancelado, ctx, saida);
   if (n > 0 && *saida) servidores_rotular(*saida, n);
-  if (aviso) aviso(avisoU, ORIGEM_SERVIDOR, "", 2, *saida, n);
+  if (aviso) aviso(avisoU, ORIGEM_SERVIDOR, "", "", 2, *saida, n);
   return n;
 }
 static void preparoLiberar(void *p) { plex_preparo_liberar(p); }

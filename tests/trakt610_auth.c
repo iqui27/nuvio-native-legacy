@@ -48,7 +48,7 @@ static void terminar(void) {
 int main(void) {
   traktauth_comecar(); terminar();
   assert(traktauth_estado() == TRA_PEDINDO && traktauth_aguardando());
-  assert(strstr(traktauth_erro(), "Tente novamente"));
+  assert(strstr(traktauth_erro(), "Trakt limitou"));
   traktauth_passo(1000);
   traktauth_passo(90999); assert(pedidos == 1);
   traktauth_passo(91000); terminar();
@@ -56,6 +56,7 @@ int main(void) {
   respostas429 = 1; retry = 120;
   traktauth_passo(92000); terminar();
   assert(traktauth_estado() == TRA_AGUARDANDO);
+  assert(strstr(traktauth_erro(), "Trakt limitou"));
   traktauth_passo(93000);
   int antes = pedidos;
   traktauth_passo(212999); assert(pedidos == antes);
@@ -76,6 +77,14 @@ int main(void) {
   antes = pedidos;
   traktauth_passo(371999); assert(pedidos == antes);
   traktauth_passo(372000); terminar();
+  // A server delay cannot keep a device flow alive past its expiry.
+  expiraEm = (long)time(NULL) + 2;
+  respostas429 = 1; retry = 2147483647;
+  traktauth_passo(380000); terminar();
+  assert(esperaMs <= 2000u);
+  expiraEm = (long)time(NULL) - 1;
+  traktauth_passo(381000);
+  assert(traktauth_estado() == TRA_ERRO && !traktauth_aguardando());
   // Refresh 429 preserves the session and observes headers longer than 60 s.
   traktauth_esquecer();
   snprintf(token, sizeof token, "OLD"); snprintf(refresh, sizeof refresh, "R1");

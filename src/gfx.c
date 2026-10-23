@@ -4403,7 +4403,8 @@ int gfx_foco_placa(GfxRect r, float raio, float foco, float a) {
   gfx_cor(r, raio, 1, 1, 1, 0.05f * f * a);
   gfx_cor(r, raio, cr, cg, cb, gfx_foco_placa_alfa(cr, cg, cb) * f * a);
   if (!efeitosMinimos) gfx_brilho_topo(r, raio, 0.45f, 1.0f, 1.0f, 1.0f, 0.07f * f * a);
-  gfx_anel(r, raio, ajustes_vidro_contorno() ? 2.0f : 1.5f, cr, cg, cb, (ajustes_vidro_contorno() ? 0.90f : 0.62f) * f * a);
+  // The accent ring only exists with "Contorno do vidro" on (owner 21/10).
+  if (ajustes_vidro_contorno()) gfx_anel(r, raio, 2.0f, cr, cg, cb, 0.90f * f * a);
   return 1;
 }
 void gfx_vidro_cartao(GfxRect r, float raio, float foco, float a) {

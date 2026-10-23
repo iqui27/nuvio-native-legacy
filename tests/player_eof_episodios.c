@@ -3,6 +3,7 @@
 #include "player_visto_trailer.c"
 #undef main
 #include "posplay.h"
+#include "reacao.h"
 
 int main(void) {
   static const char *const nomes[] = {
@@ -109,6 +110,36 @@ int main(void) {
     }
     puts("PASS season zero remote Next delivers once, no Previous");
   }
+  // #675: dismissing Up next must not leave an empty player at EOF.
+  // Keep the manual card at EOF until dismissed; both Back and Down count.
+  for (int key = 0; key < 2; key++) {
+    CatItem c = {0}; CatEp eps[2] = {{0}};
+    SDL_Event ev = {0};
+    strcpy(c.imdb, "tt90000675"); strcpy(c.tipo, "series");
+    c.temporada = c.episodio = 1;
+    eps[0].temporada = eps[1].temporada = 1;
+    eps[0].episodio = 1; eps[1].episodio = 2;
+    cat_definir(&c, 1); cat_definir_episodios(0, eps, 2);
+    carregando = 0; dur = 3600;
+    ajustes_shot_valor("proximoAutoLocal", 1);
+    assert(!ajustes_proximo_auto());
+    player_abrir(0, fonte); player_definir_episodio(1, 1);
+    quadro(); quadro(); pos = dur - 2;
+    for (int i = 0; i < 600; i++) quadro();
+    assert(posplay_visivel());
+    pos = dur; terminou = 1; quadro();
+    assert(!player_quer_sair() && posplay_visivel());
+    reacao_fechar(); // The separate rating prompt otherwise consumes Back.
+    ev.type = SDL_KEYDOWN;
+    ev.key.keysym.sym = key ? SDLK_DOWN : SDLK_AC_BACK;
+    player_evento(&ev);
+    assert(!posplay_visivel());
+    for (int i = 0; i < 600; i++) quadro();
+    assert(player_quer_sair() && !player_aberto());
+    assert(!posplay_pediu_episodio(NULL, NULL));
+    player_encerrar();
+  }
+  puts("PASS dismissed Up next exits at EOF with autoplay disabled");
   SDL_Quit();
   return falhas ? 1 : 0;
 }

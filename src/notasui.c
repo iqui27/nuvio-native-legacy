@@ -8,6 +8,7 @@
 #include "tex_cache.h"
 #include "textogate.h"
 #include "focoprof.h"
+#include "plrui.h"
 #define NV_TXT_TELA
 #include "escala.h"
 #include <SDL2/SDL.h>
@@ -365,7 +366,7 @@ static void medir(const NotasSecao *s, Medidas *m) {
     m->nFontes++;
   }
   if (m->nFontes) {
-    int linhas = (m->nFontes + TILE_COLS - 1) / TILE_COLS;
+    int linhas = (m->nFontes + 1 + TILE_COLS - 1) / TILE_COLS;
     float hg = (float)linhas * TILE_H + (float)(linhas - 1) * TILE_GAP;
     // UMA fonte nao enche o cartao de resumo: sem "Menor/Maior" e sem a barra
     // critica x publico (os dois precisam de r.n > 1), um piso de 448 deixava
@@ -589,6 +590,26 @@ float notasui_fontes_desenhar(const NotasSecao *s, float x, float y, float a,
     float ty = y + (notasEmpilhadas() ? m.scoreH + COL_GAP : 0) + (float)(i / TILE_COLS) * (TILE_H + TILE_GAP);
     if (ty > NV_TELA_H || ty + TILE_H < 0.0f) continue;
     desenhaBloco(s, m.fontes[i], m.norm[i], &r, tx, ty, 0.0f, aa);
+  }
+  // Personal score shares the source grid, with a solid surface in both materials.
+  float px = gx + (m.nFontes % TILE_COLS) * (TILE_W + TILE_GAP);
+  float py = y + (notasEmpilhadas() ? m.scoreH + COL_GAP : 0) +
+             (m.nFontes / TILE_COLS) * (TILE_H + TILE_GAP);
+  GfxRect tile = {px, py, TILE_W, TILE_H};
+  if (py < NV_TELA_H && py + TILE_H > 0) {
+    float ar, ag, ab;
+    char value[24];
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(tile, 18 / TILE_H, .094f, .098f, .11f, aa);
+    TxtLinha label = txt_linha(TXT_G18M, "Sua nota", 174, 179, 186, 255);
+    txt_desenhar_alpha(label, px + 24, py + 16, aa);
+    if (s->notaPessoal > 0) {
+      snprintf(value, sizeof value, "%d.%d", s->notaPessoal / 2, s->notaPessoal % 2 * 5);
+      plrui_decimal(value);
+    } else snprintf(value, sizeof value, "—");
+    TxtLinha number = txt_linha(TXT_ILHA_PERGUNTA, value, 243, 242, 239, 255);
+    gfx_icone((GfxRect){px + 24, py + 53, 26, 26}, "pl_star-f", ar, ag, ab, aa);
+    txt_desenhar_alpha(number, px + 60, py + 44, aa);
   }
   if (!aberto) textogate_passo(&gateFontes, txt_pendentes - pend0, SDL_GetTicks());
   return m.h;

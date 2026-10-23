@@ -67,6 +67,16 @@ static struct {
   int fonte, catalogo, legenda;
   int meta;      // declara o resource "meta" (ficha e lista de episodios)
   int ativo, sondado;
+  // sondado=1 e capPresumida=1: o manifesto foi lido mas sem "resources"
+  // legivel na raiz (FrostView, 23/10) — fonte/catalogo/legenda continuam
+  // sendo a suposicao inicial, e um /stream/ malformado ou sem o recurso
+  // desse addon nunca e erro para o usuario.
+  int capPresumida;
+  // Com capPresumida: o manifesto declara POSITIVAMENTE so conteudo ao vivo
+  // (types/catalogos so tv|channel|live|iptv, ou idPrefixes que nao casam
+  // "tt"). So ele dispensa a consulta de filme/serie; presumido sem essa
+  // declaracao continua tentando.
+  int soVivo;
   char id[96];   // "id" do manifesto; as colecoes da conta apontam para ele
   int identidadeFalhou;   // tentativa terminou sem id; nao e ausencia confirmada
   // Catalogos de canal do manifesto (ver addons_catalogos_canal). `canalLido`
@@ -96,7 +106,7 @@ void addons_lista_destravar(void) { pthread_mutex_unlock(&listaTrava); }
 static _Atomic unsigned versaoLista;   // ver addons_versao
 typedef struct {
   char nome[64], base[NV_ADDON_URL_MAX], estatistica[32], tipoCanal[16];
-  int ativo, fonte, legenda, sondado, mudoSeg;
+  int ativo, fonte, legenda, sondado, capPresumida, soVivo, mudoSeg;
   char streamTipos[64];
   char streamPref[ADD_PREF_MAX][ADD_PREF_TAM]; int nStreamPref;
 } AddonPedido;
@@ -114,6 +124,8 @@ static void copiarPedido(int i, AddonPedido *p) {
   snprintf(p->base, sizeof p->base, "%s", addon[i].base);
   p->ativo = addon[i].ativo; p->fonte = addon[i].fonte;
   p->legenda = addon[i].legenda; p->sondado = addon[i].sondado;
+  p->capPresumida = addon[i].capPresumida;
+  p->soVivo = addon[i].soVivo;
   p->mudoSeg = addon[i].mudoSeg;
   memcpy(p->streamTipos, addon[i].streamTipos, sizeof p->streamTipos);
   chaveEstatistica(p->base, 0, p->estatistica);
@@ -246,6 +258,13 @@ static pthread_mutex_t progTrava = PTHREAD_MUTEX_INITIALIZER;
 static unsigned char progEstado[ADD_MAX];
 static unsigned char progEstadoEx[ADD_EXTRA_MAX];
 static char progNomeEx[ADD_EXTRA_MAX][48];
+// A chave da aba do plugin nasce do ID do scraper ("plugin:<id>"), o mesmo que
+// fonteExtraChave tira do bingeGroup das fontes — chavear pelo nome de exibicao
+// abria uma aba duplicada para cada plugin que entregasse fontes.
+static char progChaveEx[ADD_EXTRA_MAX][FONTEFALHA_CHAVE];
+// Sobe a cada progMarcar/progMarcarEx: a folha observa e reavalie as abas
+// mesmo quando a parte terminou sem fontes (0 ou falha nao geram Chegada).
+static _Atomic unsigned progRev;
 static Chegada progFila[ADD_MAX * 2 + ADD_EXTRA_MAX];
 static int progN;
 static int progLigado, progPublicou, progExtraPublicou;
@@ -303,6 +322,7 @@ static void progMarcar(int i, const Stream *a, int n, int estadoNovo) {
     copia = malloc(sizeof(Stream) * (size_t)n);
     if (copia) memcpy(copia, a, sizeof(Stream) * (size_t)n);
   }
+  atomic_fetch_add(&progRev, 1);
   pthread_mutex_lock(&progTrava);
   progEstado[i] = (unsigned char)estadoNovo;
   if (copia && progN < (int)(sizeof progFila / sizeof *progFila)) {
@@ -314,9 +334,11 @@ static void progMarcar(int i, const Stream *a, int n, int estadoNovo) {
 }
 
 // A parte `k` da origem extra (um scraper). Mesmo contrato de progMarcar,
-// com a ordem de exibicao ADD_MAX + k.
-static void progMarcarEx(int k, const char *nome, const Stream *a, int n, int estadoNovo) {
+// com a ordem de exibicao ADD_MAX + k. `id` identifica o scraper na chave da
+// aba ("plugin:<id>", a mesma das fontes); fallback: a das proprias fontes.
+static void progMarcarEx(int k, const char *nome, const char *id, const Stream *a, int n, int estadoNovo) {
   Stream *copia = NULL;
+  char chave[FONTEFALHA_CHAVE];
   if (k < 0 || k >= ADD_EXTRA_MAX) return;
   stream_preparar_dica_p2p(a, n);
   if (a && n > 0) {
@@ -326,9 +348,18 @@ static void progMarcarEx(int k, const char *nome, const Stream *a, int n, int es
       fonteExtraCarimbar(copia, n, k);
     }
   }
+  chave[0] = 0;
+  if (id && *id) {
+    char base[80];
+    snprintf(base, sizeof base, "plugin:%s", id);
+    fontefalha_addon_chave(base, chave, sizeof chave);
+  } else if (a && n > 0)
+    fonteExtraChave(a, chave, sizeof chave);
+  atomic_fetch_add(&progRev, 1);
   pthread_mutex_lock(&progTrava);
   progEstadoEx[k] = (unsigned char)estadoNovo;
   if (nome) snprintf(progNomeEx[k], sizeof progNomeEx[k], "%s", nome);
+  if (chave[0]) snprintf(progChaveEx[k], sizeof progChaveEx[k], "%s", chave);
   if (copia && progN < (int)(sizeof progFila / sizeof *progFila)) {
     progFila[progN].idx = ADD_MAX + k; progFila[progN].a = copia; progFila[progN].n = n;
     progN++; copia = NULL;
@@ -366,6 +397,7 @@ static void progLimpar(void) {
   progN = 0;
   memset(progEstado, 0, sizeof progEstado);
   memset(progEstadoEx, 0, sizeof progEstadoEx);
+  memset(progChaveEx, 0, sizeof progChaveEx);
   pthread_mutex_unlock(&progTrava);
   for (q = 0; q < progPubN; q++) free(progPub[q].a);
   progPubN = 0;
@@ -899,6 +931,8 @@ int addons_busca_parcial(void) {
   return fioVivo && progLigado && atomic_load(&estado) == ADD_BUSCANDO;
 }
 
+unsigned addons_parcial_rev(void) { return atomic_load(&progRev); }
+
 unsigned addons_busca_ms(void) {
   return addons_busca_parcial() ? SDL_GetTicks() - progInicio : 0;
 }
@@ -1025,6 +1059,37 @@ int addons_pendente_grupo_min(int (*f)(const char *nome, int plugin, void *u), v
     if (progEstadoEx[i] == 1 && !naoSegura(chaveEstatisticaPlugin(progNomeEx[i]))) { int g = f(progNomeEx[i], 1, u); if (g >= 0 && g < m) m = g; }
   pthread_mutex_unlock(&progTrava);
   return m;
+}
+
+static int abaEstado(unsigned char est) {
+  if (est == 1) return ADDON_ABA_BUSCANDO;
+  if (est == 3) return ADDON_ABA_FALHOU;
+  return ADDON_ABA_PRONTO;
+}
+
+int addons_parcial_abas(AddonAba *out, int max) {
+  int i, k = 0;
+  if (!out || max <= 0) return 0;
+  if (!addons_busca_parcial()) return 0;
+  pthread_mutex_lock(&progTrava);
+  for (i = 0; i < nAddon && i < ADD_MAX && k < max; i++) {
+    if (!progEstado[i]) continue;
+    snprintf(out[k].nome, sizeof out[k].nome, "%s", addon[i].nome);
+    fontefalha_addon_chave(addon[i].base, out[k].chave, sizeof out[k].chave);
+    out[k].ordem = i;
+    out[k].estado = abaEstado(progEstado[i]);
+    k++;
+  }
+  for (i = 0; i < ADD_EXTRA_MAX && k < max; i++) {
+    if (!progEstadoEx[i]) continue;
+    snprintf(out[k].nome, sizeof out[k].nome, "%s", progNomeEx[i]);
+    snprintf(out[k].chave, sizeof out[k].chave, "%s", progChaveEx[i]);
+    out[k].ordem = ADD_MAX + i;
+    out[k].estado = abaEstado(progEstadoEx[i]);
+    k++;
+  }
+  pthread_mutex_unlock(&progTrava);
+  return k;
 }
 
 int addons_ocupado(void) {
@@ -1976,8 +2041,46 @@ int addons_identidade_recebida(const char *base, unsigned versao, uint64_t sessa
   return aplicada;
 }
 
+// O manifesto declara so conteudo AO VIVO? Usado quando "resources" nao da
+// para ler: types/catalogos so tv|channel|live|iptv, ou idPrefixes declarados
+// que nao casam "tt" (id de filme/serie), marcam um addon de canais — a
+// consulta de movie/series e dispensada. Sem declaracao nenhuma fica-se no
+// otimista, como antes.
+static int tipoVivo(const char *t) {
+  return !strcasecmp(t, "tv") || !strcasecmp(t, "channel") ||
+         !strcasecmp(t, "channels") || !strcasecmp(t, "live") ||
+         !strcasecmp(t, "iptv");
+}
+static int manifestoSoVivo(const char *corpo, const AddCatCanal *canal, int nCanal) {
+  char tipos[ADD_PREF_MAX][ADD_PREF_TAM];
+  char pref[ADD_PREF_MAX][ADD_PREF_TAM];
+  int n = lerStringsDoArray(chaveNaRaiz(corpo, NULL, "types"), tipos, ADD_PREF_MAX);
+  int nP = lerStringsDoArray(chaveNaRaiz(corpo, NULL, "idPrefixes"), pref, ADD_PREF_MAX);
+  int k;
+  if (n > 0) {
+    for (k = 0; k < n; k++) if (!tipoVivo(tipos[k])) return 0;
+    return 1;
+  }
+  if (nCanal > 0) {
+    for (k = 0; k < nCanal; k++) if (!tipoVivo(canal[k].tipo)) return 0;
+    return 1;
+  }
+  if (nP > 0) {
+    for (k = 0; k < nP; k++) if (!strncmp(pref[k], "tt", 2)) return 0;
+    return 1;
+  }
+  return 0;
+}
+
 static void capacidadesDoManifesto(int i, const char *corpo) {
-  const char *r = strstr(corpo, "\"resources\"");
+  // chaveNaRaiz, nao strstr: o primeiro "resources" do documento pode estar
+  // dentro de uma STRING (description: "resources required..."), dentro de
+  // catalogs[]/resources[] ou em outra chave — o strstr pegava esse, o
+  // strchr seguinte achava o ':' de outra coisa e o trecho ficava ilegivel.
+  // O do FrostView TV (TCL, 23/10): um "resources" assim antes do verdadeiro
+  // fazia o addon inteiro cair no ramo "suposto", e um /stream/ 200 sem o
+  // recurso virava erro na tela — ele so serve canais.
+  const char *r = corpo ? chaveNaRaiz(corpo, NULL, "resources") : NULL;
   int cat = 0, str = 0, leg = 0, met = 0;
   // O ID E O NOME VEM PRIMEIRO, ANTES DE QUALQUER RETORNO CEDO.
   //
@@ -2033,20 +2136,26 @@ static void capacidadesDoManifesto(int i, const char *corpo) {
       p = js_prox(f);
     }
     addon[i].canalLido = 1; }
-  if (!r) {
-    printf("[addons] %s: manifesto sem \"resources\" legivel; capacidades ficam supostas\n",
-           addon[i].nome);
+  // Sem "resources" na raiz, ou com um valor que nao e array nem objeto: as
+  // capacidades ficam a suposicao inicial, `sondado` marca que o manifesto ja
+  // respondeu e `capPresumida` separa "suposto" de "declarado" — um /stream/
+  // 200 sem o recurso desse addon vale "sem fonte para o titulo", nunca erro.
+  // A regra e UMA: ausente ou nao-array/nao-objeto ("resources":0, null, "",
+  // true) valem o mesmo "nao da para ler".
+  if (!r || (*r != '[' && *r != '{')) {
+    addon[i].capPresumida = 1;
+    addon[i].soVivo = manifestoSoVivo(corpo, addon[i].canal, addon[i].nCanal);
+    __atomic_store_n(&addon[i].sondado, 1, __ATOMIC_RELEASE);
+    printf("[addons] %s: manifesto sem \"resources\" legivel; capacidades ficam supostas%s\n",
+           addon[i].nome, addon[i].soVivo ? " soVivo=1" : "");
     fflush(stdout);
     return;
   }
-  // Pular a CHAVE e ir ao valor. MEDIDO na TV: js_fim sobre a aspa de
-  // "resources" devolve o proprio ponteiro, o trecho ficava vazio e TODO addon
-  // virava catalogo=0 stream=0 legenda=0 — a primeira busca de fontes (antes
-  // da sonda) achava 38, e a partir da segunda nenhum addon era consultado.
-  r = strchr(r + 11, ':');
-  if (!r) return;
-  r++;
-  while (*r == ' ' || *r == '\n' || *r == '\t') r++;
+  addon[i].capPresumida = 0;
+  addon[i].soVivo = 0;
+  // chaveNaRaiz ja devolve O VALOR. (Antes se pulava a chave com
+  // strchr +11 a partir de um strstr solto — que pegava "resources" dentro
+  // de catalogs[] ou de uma string, e o ':' seguinte era de outra chave.)
   // O campo aceita duas formas no protocolo Stremio: lista de strings
   // ("catalog") e lista de objetos ({"name":"stream",...}). Procurar o NOME
   // solto cobre as duas sem escrever dois analisadores.
@@ -2503,6 +2612,12 @@ static int semSegunda(const AddonPedido *a) {
 }
 static int aceitaStream(const AddonPedido *p, const char *tipo, const char *id) {
   if (!p->ativo || !p->fonte) return 0;
+  // Capacidades so PRESUMIDAS: a consulta continua otimista, EXCETO quando o
+  // manifesto declara positivamente so conteudo ao vivo (soVivo) — o
+  // FrostView TV, um addon de canais, respondia 200 sem o recurso e virava
+  // "stream query failed" na tela (TCL, 23/10).
+  if (p->capPresumida && p->soVivo && tipo &&
+      (!strcmp(tipo, "movie") || !strcmp(tipo, "series"))) return 0;
   if (p->streamTipos[0]) {
     char marca[40];
     snprintf(marca, sizeof marca, "|%s|", tipo);
@@ -2575,9 +2690,15 @@ static int prazoDoAddon(const Consulta *c, int i) {
 }
 
 // Diagnose stream failures without logging provider URLs or payloads.
-static char *baixarStream(const char *nome, const char *url, int segundos) {
+// `semRecurso` (quando nao NULL) recebe 1 = HTTP ok mas o corpo nao traz o
+// array "streams" — resposta valida de quem nao serve esse endpoint, e nao
+// uma falha; 0 = veio o array (vazio conta). 4xx/sem corpo: *semRecurso = -1.
+static char *baixarStream(const char *nome, const char *url, int segundos,
+                          int *semRecurso, RedeMedida *medida) {
   int status = 0;
+  RedeMedida m = {0};
   (void)nome;
+  if (semRecurso) *semRecurso = -1;
   char host[256];
   const char *h = strstr(url, "://");
   h = h ? h + 3 : url;
@@ -2585,7 +2706,9 @@ static char *baixarStream(const char *nome, const char *url, int segundos) {
   const char *at = memchr(h, '@', len);
   if (at) { len -= (size_t)(at + 1 - h); h = at + 1; }
   snprintf(host, sizeof host, "%.*s", (int)len, h);
-  char *corpo = rede_baixar_st(url, segundos, NULL, &status);
+  char *corpo = rede_baixar_medido(url, segundos, NULL, &m);
+  status = m.status;
+  if (medida) *medida = m;
   printf("[addons] stream host=%s HTTP %d\n", host, status);
   if (status >= 400) {
     free(corpo); return NULL;
@@ -2603,8 +2726,10 @@ static char *baixarStream(const char *nome, const char *url, int segundos) {
     if (!js_array(corpo, fim, "streams") &&
         !(js_bruto(corpo, fim, "streams", curto, sizeof curto) && curto[0] == '[')) {
       printf("[addons] stream host=%s HTTP %d (missing streams array)\n", host, status);
+      if (semRecurso) *semRecurso = 1;
       free(corpo); return NULL;
     }
+    if (semRecurso) *semRecurso = 0;
   }
   return corpo;
 }
@@ -2638,7 +2763,7 @@ static void *fioIdsExtras(void *u) {
     if (!nv_addon_id(idX, sizeof idX, x->extra[x->xi]) || !idX[0]) continue;
     cx = nv_addon_pedido_coube(x->a->nome, nv_addon_url(url, sizeof url, x->a->base, "/stream/%s/%s.json",
                                  x->c->tipo, idX), sizeof url)
-         ? baixarStream(x->a->nome, url, restanteS) : NULL;
+         ? baixarStream(x->a->nome, url, restanteS, NULL, NULL) : NULL;
     if (!cx) continue;
     x->respondeu = 1;
     nx = stream_extrair(cx, x->a->nome, &ax);
@@ -2743,10 +2868,10 @@ static void *fioFontes(void *u) {
       memcpy(ex.extra, extra, sizeof ex.extra);
       exVivo = pthread_create(&exFio, NULL, fioIdsExtras, &ex) == 0;
     }
+    int semRecurso = -1, semRecursoAlt = -1;
     corpo = nv_addon_pedido_coube(origem->nome, nv_addon_url(url, sizeof url, origem->base, "/stream/%s/%s.json",
                                     t1, idUrl), sizeof url) && idUrl[0]
-            ? rede_baixar_medido(url, prazoS, NULL, &medida) : NULL;
-    if (corpo && medida.status >= 400) { free(corpo); corpo = NULL; }
+            ? baixarStream(origem->nome, url, prazoS, &semRecurso, &medida) : NULL;
     if (consultaCancelada(c)) {
       if (exVivo) pthread_join(exFio, NULL);
       if (exUsar) free(ex.l);
@@ -2792,8 +2917,7 @@ static void *fioFontes(void *u) {
       RedeMedida alternativa = {0};
       alt = nv_addon_pedido_coube(origem->nome, nv_addon_url(url, sizeof url, origem->base, "/stream/%s/%s.json",
                                     t2, idUrl), sizeof url) && idUrl[0]
-            ? rede_baixar_medido(url, restanteS, NULL, &alternativa) : NULL;
-      if (alt && alternativa.status >= 400) { free(alt); alt = NULL; }
+            ? baixarStream(origem->nome, url, restanteS, &semRecursoAlt, &alternativa) : NULL;
       if (consultaCancelada(c)) {
         if (exVivo) pthread_join(exFio, NULL);
         if (exUsar) free(ex.l);
@@ -2808,6 +2932,7 @@ static void *fioFontes(void *u) {
         if (n2 > 0 || !corpo) {
           free(achados); free(corpo);
           achados = a2; n = n2; corpo = alt; medida = alternativa;
+          semRecurso = semRecursoAlt;
           printf("[addons] %s: respondeu como \"%s\" (nao como \"%s\")\n",
                  origem->nome, t2, t1);
         } else { free(a2); free(alt); }
@@ -2847,6 +2972,13 @@ static void *fioFontes(void *u) {
       }
       if (!corpo && ex.respondeu) corpo = strdup("{\"streams\":[]}");
     }
+    // 200 SEM o array "streams" de um addon de canais cujo manifesto so
+    // declara conteudo ao vivo (capPresumida + soVivo — ver
+    // capacidadesDoManifesto): vale como "respondeu vazio", nao como falha.
+    // Presumido sem essa declaracao segue a regra de sempre: resposta sem o
+    // recurso e erro, nenhuma excecao.
+    if (!corpo && semRecurso == 1 && origem->capPresumida && origem->soVivo)
+      corpo = strdup("{\"streams\":[]}");
     if (!corpo) {
       free(achados);
       printf("[addons] %s: stream query failed (%u ms, budget %d s; reason above)\n",
@@ -3006,7 +3138,8 @@ static int cancelaExtra(void *u) {
   PedidoExtra *p = u;
   return !nv_perfil_sessao_atual(p->sessao) || (p->cancelado && p->cancelado(p->ctx));
 }
-static void avisoExtra(void *u, int k, const char *nome, int estado, const void *fontes, int n) {
+static void avisoExtra(void *u, int k, const char *nome, const char *id,
+                       int estado, const void *fontes, int n) {
   UmaOrigem *o = u;
   PedidoExtra *p = o->pai;
   if (cancelaExtra(p)) return;
@@ -3030,7 +3163,7 @@ static void avisoExtra(void *u, int k, const char *nome, int estado, const void 
     }
   if (nv_perfil_sessao_travar(p->sessao)) {
     if (k == ORIGEM_SERVIDOR) progMarcarSrv((const Stream *)fontes, n);
-    else progMarcarEx(k, nome, (const Stream *)fontes, n, estado);
+    else progMarcarEx(k, nome, id, (const Stream *)fontes, n, estado);
     nv_perfil_sessao_destravar();
   }
 }
@@ -3231,8 +3364,9 @@ static int consultar(const char *id, const char *tipo, const char *base, int fio
     // Junta NA ORDEM DOS ADDONS, que e a ordem em que o dono os instalou.
     for (q = 0; q < c.nBaldes; q++) {
       int k = c.baldes[q].n;
-      // Tambem quem respondeu 200 vazio: sem recurso stream, "veio vazio" nao
-      // diz nada. Limite que fica: a sonda terminando DEPOIS deste resumo.
+      // Tambem quem respondeu 200 vazio: sem recurso stream (declarado ou so
+      // presumido, capPresumida), "veio vazio" nao diz nada. Limite que fica:
+      // a sonda terminando DEPOIS deste resumo.
       if (k <= 0 && semStreamSondado(&c, c.baldes[q].idx)) {
         printf("[addons] %s: o manifesto nao declara stream; fora do resumo da busca\n",
                c.origens[c.baldes[q].idx].nome);
@@ -3520,10 +3654,10 @@ static int cancelaConsultaCapturada(void *u) {
   if (!nv_perfil_sessao_atual(c->snapshot->sessao)) return 1;
   return c->cancelado && c->cancelado(c->ctx);
 }
-static void avisoExtraCapturado(void *u, int k, const char *nome, int estado,
-                                const void *fontes, int n) {
+static void avisoExtraCapturado(void *u, int k, const char *nome, const char *id,
+                                int estado, const void *fontes, int n) {
   ResultadoExtraCapturado *o = u;
-  (void)nome;
+  (void)nome; (void)id;
   if (fontes && n > 0 && k >= 0 && k < ADD_EXTRA_MAX) {
     const Stream *s = fontes;
     if (s->addonChave[0]) snprintf(o->chaves[k], sizeof o->chaves[k], "%s", s->addonChave);

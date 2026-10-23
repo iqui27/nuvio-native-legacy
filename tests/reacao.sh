@@ -17,6 +17,7 @@ cd "$(dirname "$0")/.."
 sources=()
 for source in src/*.c src/dts/*.c; do
   [ "$source" = src/main.c ] && continue
+  if [ "$source" = src/reacao.c ] && [ -n "${NV_REACAO_BASELINE:-}" ]; then source="$NV_REACAO_BASELINE/reacao.c"; fi
   sources+=("$source")
 done
 

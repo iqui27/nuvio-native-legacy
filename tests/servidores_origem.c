@@ -44,9 +44,10 @@ int stream_extrair(const char *json, const char *nome, Stream **out) {
 const char *idcanal_longo(const char *id, char *out, size_t tam) { (void)out; (void)tam; return id; }
 void fontefalha_addon_chave(const char *base, char *out, unsigned tam) { snprintf(out, tam, "%s", base); }
 
-static void notice(void *u, int k, const char *nome, int state, const void *streams, int n) {
+static void notice(void *u, int k, const char *nome, const char *id, int state,
+                  const void *streams, int n) {
   (void)u;
-  assert(k == ORIGEM_SERVIDOR && !strcmp(nome, ""));
+  assert(k == ORIGEM_SERVIDOR && !strcmp(nome, "") && !strcmp(id, ""));
   assert(state == ++notices);
   if (state == 1) assert(!streams && n == 0);
   else assert(n == answer && (answer <= 0 || streams));

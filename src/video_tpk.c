@@ -701,13 +701,22 @@ static int mkvTemAss(void) {
   return 0;
 }
 static int mfEsperarAntes(const char *url, const char *cab) {
-  if (!mfPode() || mf.ativo || mkvfix_e_url(url) || mkvEstado != 3 || !mkvTemAss()) return 0;
+  if (!mfPode() || mf.ativo || mkvfix_e_url(url)) return 0;
+  // #648: o Tizen.Multimedia.Player so entrega User-Agent e Cookie na rede
+  // (host: "cabecalho ignorado pelo player"). Uma fonte cujo addon exige
+  // outro cabecalho (Referer, Origin, Authorization — medido: CDN responde
+  // 403/timeout sem ele) nunca abre direto: repassa pelo servidor local do
+  // mkvfix, cujo curl manda os cabecalhos em todo Range.
+  int relay = cab && mkvfix_cab_fora_da_tv(cab);
+  if (!relay && (mkvEstado != 3 || !mkvTemAss())) return 0;
   mf.sondou = 1; mf.esperando = 1; mf.esperaDesde = SDL_GetTicks();
   snprintf(mfEspUrl, sizeof mfEspUrl, "%s", url ? url : "");
   snprintf(mfEspCab, sizeof mfEspCab, "%s", cab ? cab : "");
   if (cdn.arquivo) mkvfix_sondar_arquivo(hostUrl, hostCab, cdn.usenet, cdn.item, cdn.file);
+  else if (relay) mkvfix_sondar_relay(hostUrl, hostCab, strcmp(urlAtual, hostUrl) ? urlAtual : NULL);
   else mkvfix_sondar(hostUrl, hostCab, strcmp(urlAtual, hostUrl) ? urlAtual : NULL);
-  printf("[mkvfix] the file has ASS/SSA subtitles: checking it before the TV opens it\n");
+  printf(relay ? "[mkvfix] a fonte exige cabecalho que o player da TV nao envia: abrindo pelo servidor local\n"
+              : "[mkvfix] the file has ASS/SSA subtitles: checking it before the TV opens it\n");
   fflush(stdout);
   // O player anterior nao segue tocando durante a sonda (como no cdnAbrir).
   if (hParar) hParar();
@@ -724,9 +733,10 @@ static void mfBombear(void) {
     if (e == MKVFIX_SONDANDO && SDL_GetTicks() - mf.esperaDesde < MF_ESPERA_MS) return;
     mf.esperando = 0;
     if (!ativo || parado || !hAbrir) return;
-    if (mkvfix_ocultas() > 0 && mkvfix_url(u, sizeof u)) {
+    if ((mkvfix_ocultas() > 0 || mkvfix_relay()) && mkvfix_url(u, sizeof u)) {
       mf.ativo = 1;
-      printf("[mkvfix] the TV opens the file through the local server (subtitle tracks hidden), %u ms\n",
+      printf("[mkvfix] the TV opens the file through the local server (%s), %u ms\n",
+             mkvfix_relay() ? "addon headers the TV cannot send" : "subtitle tracks hidden",
              (unsigned)(SDL_GetTicks() - mf.esperaDesde));
       fflush(stdout);
       abrirHost(u, "");

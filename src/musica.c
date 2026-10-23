@@ -48,7 +48,7 @@ static Entrada *reservar(const char *chave) {
 }
 
 int mus_pagina(int atual, int faixas, int direcao) {
-  int ultima = faixas > 0 ? (faixas - 1) / 2 : 0;
+  int ultima = faixas > 0 ? (faixas - 1) / MUS_POR_PAGINA : 0;
   int nova = atual + direcao;
   return nova < 0 ? 0 : (nova > ultima ? ultima : nova);
 }
@@ -66,6 +66,7 @@ int mus_interpretar(const char *json, MusAlbum *out) {
   js_texto(a, fim, "artista", out->artista, sizeof out->artista);
   js_texto(a, fim, "capa", out->capa, sizeof out->capa);
   js_texto(a, fim, "apple", out->apple, sizeof out->apple);
+  out->ano = (int)js_num(a, fim, "ano", 0);
   if (!out->titulo[0]) return 0;
   for (p = js_array(json, NULL, "faixas"); p && out->n < MUS_FAIXAS_MAX; p = js_prox(js_fim(p))) {
     const char *f = js_fim(p);
@@ -75,9 +76,73 @@ int mus_interpretar(const char *json, MusAlbum *out) {
     js_texto(p, f, "titulo", out->faixa[k].titulo, sizeof out->faixa[k].titulo);
     js_texto(p, f, "artista", out->faixa[k].artista, sizeof out->faixa[k].artista);
     out->faixa[k].dur = (int)js_num(p, f, "dur", 0);
+    js_texto(p, f, "previa", out->faixa[k].previa, sizeof out->faixa[k].previa);
+    if (strncmp(out->faixa[k].previa, "https://", 8)) out->faixa[k].previa[0] = 0;
     if (out->faixa[k].titulo[0]) out->n++;
   }
   return out->n > 0;
+}
+
+void mus_previa_parar(MusPrevia *p) {
+  p->ativa = p->pronta = 0; p->faixa = -1;
+}
+
+int mus_previa_iniciar(MusPrevia *p, const MusAlbum *a, int faixa, int shuffle,
+                       unsigned seed, unsigned agora, int ocupado) {
+  mus_previa_parar(p); p->n = p->pos = 0;
+  if (ocupado || !a || faixa >= a->n || faixa < -1) return -1;
+  for (int i = 0; i < a->n && i < MUS_FAIXAS_MAX; i++)
+    if (a->faixa[i].previa[0] && (faixa < 0 || faixa == i)) p->ordem[p->n++] = i;
+  if (!p->n) return -1;
+  if (shuffle) for (int i = p->n - 1; i > 0; i--) {
+    seed = seed * 1664525u + 1013904223u;
+    int j = (int)(seed % (unsigned)(i + 1)), t = p->ordem[i];
+    p->ordem[i] = p->ordem[j]; p->ordem[j] = t;
+  }
+  p->ativa = 1; p->desde = agora; p->faixa = p->ordem[0];
+  return p->faixa;
+}
+
+int mus_previa_passo(MusPrevia *p, unsigned agora, double segundos, int pronta, int evento) {
+  if (!p->ativa) return -1;
+  if (evento >= MUS_PREV_ERRO || (!p->pronta && agora - p->desde > 15000u)) {
+    mus_previa_parar(p); return -1;
+  }
+  if (pronta && !p->pronta) { p->pronta = 1; p->desde = agora; }
+  if (evento == MUS_PREV_FIM || segundos >= 30.0 ||
+      (p->pronta && agora - p->desde >= 30000u)) {
+    if (++p->pos >= p->n) { mus_previa_parar(p); return -1; }
+    p->faixa = p->ordem[p->pos]; p->pronta = 0; p->desde = agora;
+  }
+  return p->faixa;
+}
+
+void mus_cores(const unsigned char *px, int w, int h, int pitch, unsigned char *out) {
+  // Bounded box sampling preserves separate fire/blue regions, once per decode.
+  for (int y = 0; y < 18; y++) for (int x = 0; x < 32; x++) {
+    unsigned sum[3] = {0}; int n = 0;
+    if (px && w > 0 && h > 0 && pitch >= w * 4)
+      for (int dy = -3; dy <= 3; dy++) for (int dx = -3; dx <= 3; dx++) {
+        // Match the mock's 100px overscan before its static 90px blur.
+        int sx = ((x * 1920 / 32 + 100 + dx * 60) * w) / 2120;
+        int sy = ((y * 1080 / 18 + 100 + dy * 60) * h) / 1280;
+        if (sx < 0) sx = 0; if (sx >= w) sx = w - 1;
+        if (sy < 0) sy = 0; if (sy >= h) sy = h - 1;
+        const unsigned char *q = px + sy * pitch + sx * 4;
+        static const int weight[7] = {1,4,7,10,7,4,1};
+        int wt = weight[dx+3] * weight[dy+3];
+        for (int c = 0; c < 3; c++) sum[c] += q[c] * wt;
+        n += wt;
+      }
+    float lum = n ? (sum[0] * .213f + sum[1] * .715f + sum[2] * .072f) / n : 13;
+    float veil = .52f * (1.0f - .7f * y / 17.0f);
+    for (int c = 0; c < 3; c++) {
+      float v = n ? (lum + (sum[c] / (float)n - lum) * 1.65f) * veil : 13;
+      if (n) v += (c == 0 ? 5 : c == 1 ? 8 : 15) * .7f * y / 17.0f;
+      out[(y*32+x)*4+c] = (unsigned char)(v < 0 ? 0 : v > 255 ? 255 : v);
+    }
+    out[(y*32+x)*4+3] = 255;
+  }
 }
 
 static void codificar(char *dst, unsigned tam, const char *s) {
@@ -120,6 +185,12 @@ static void *buscar(void *arg) {
     corpo = rede_baixar(url, 15);
   }
   if (corpo) achou = mus_interpretar(corpo, &alb);
+  // Sem a URL (ela leva o segredo do worker): id, se o pedido saiu e quantas
+  // faixas vieram — o "nao aparece a secao" se distingue entre nao-pedido,
+  // erro de rede e resposta vazia.
+  printf("[musica] %s temp=%d pedido=%d faixas=%d\n", pd.imdb, pd.temp,
+         NV_REC_URL[0] != 0, achou ? alb.n : 0);
+  fflush(stdout);
   chaveDe(chave, sizeof chave, pd.imdb, pd.temp);
   pthread_mutex_lock(&mtx);
   e = reservar(chave);
