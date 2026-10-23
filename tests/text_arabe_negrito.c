@@ -30,6 +30,15 @@ static int failures;
 int main(void) {
   assert(SDL_Init(SDL_INIT_TIMER)==0);
   gfx_tamanho_alvo(1920,1080); assert(txt_iniciar("deploy/app",1));
+  // Arabic UI must prefer bundled Sans even when system Naskh is available.
+  const char *selected = txt_fonte_da_linha(TXT_FAMILIA_INTER, TXT_DET_META, "الإعدادات");
+  CHECK(selected && strstr(selected, "NotoSansArabic-Regular-Subset.ttf"));
+  TTF_Font *regular = fonteDe(TXT_FAMILIA_INTER, TXT_DET_META, "الإعدادات");
+  arabeCorpo = (int)(corpoAtual(TXT_DET_META) * ESC_T + 0.5f);
+  TTF_Font *bold = arabeBoldFace(regular);
+  CHECK(bold && !strcmp(TTF_FontFaceFamilyName(bold), "Noto Sans Arabic"));
+  CHECK(bold && !strcmp(TTF_FontFaceStyleName(bold), "Bold"));
+  CHECK(bold && bold != regular);
   const int percentages[]={90,120,250,300};
   for(unsigned i=0;i<sizeof percentages/sizeof *percentages;i++) {
     TxtEstilo est=(TxtEstilo)(TXT_LEG_50+(percentages[i]-50)/10);

@@ -121,6 +121,10 @@ static void cancelarPreparo(int apagar) {
 // seguem no limiar de creditos (player.c, concluiuAgora).
 static int    cenaPendente, cenaNoFim, aguardaCena;
 int posplay_visivel(void) { return visivel; }
+// Preserve a pending card/Next; a dismissed card leaves no choice at EOF.
+int posplay_aguarda_escolha(void) {
+  return !dispensado || visivel || temPedidoEpisodio() || automaticoEntregue;
+}
 // Cartao do proximo episodio: SOBRE o video em tela cheia (o video nao recua).
 // Os relacionados do filme, bem mais altos, continuam recuando o video.
 int posplay_sobre_video(void) { return visivel && (serie || aguardaCena); }

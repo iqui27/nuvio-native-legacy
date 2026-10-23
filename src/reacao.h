@@ -62,6 +62,14 @@ int  reacao_estado(const char *imdb);
 // de uma linha ja guardada.
 void reacao_responder(const char *imdb, int reacao);
 
+// Nota em meia estrela, 1 a 10 (0 = sem nota). `imdb` do titulo ou "tt:S:E".
+int  reacao_nota(const char *imdb);
+unsigned reacao_tags(const char *id);
+int reacao_episodio_abrir(const CatItem *ci, int temporada, int episodio);
+void reacao_player_episodio(int temporada, int episodio);
+void reacao_nota_definir(const char *imdb, int nota);
+int  reacao_nota_para_reacao(int nota);   // >=7 gostei, 4-6 mais ou menos, 1-3 nao
+
 // --- player -----------------------------------------------------------------------
 // Por quadro, com o titulo de verdade (nao canal). Abre o cartao no momento.
 void reacao_player_atualizar(float dt, Uint32 agora, const CatItem *ci,
@@ -100,6 +108,7 @@ void reacao_painel_desenhar(Uint32 agora);
 int  reacao_passo(void);
 // Teste do ponteiro (#99): a resposta em foco (0..2).
 int  reacao_teste_foco(void);
+int  reacao_tag_foco(void);
 
 // Para o teste de tela: abre o cartao como no player, com origem opcional.
 void reacao_teste_abrir(const char *imdb, const char *titulo, const char *midia,

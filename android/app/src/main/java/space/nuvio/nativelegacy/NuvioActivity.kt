@@ -67,6 +67,30 @@ class NuvioActivity : SDLActivity() {
     // SDL2 e compartilhada; SDL2_image e SDL2_ttf entram estaticas na libmain.
     override fun getLibraries(): Array<String> = arrayOf("SDL2", "main")
 
+    // Bounds pass allocates no pixels; subsampling happens inside the codec.
+    fun decodeArtwork(bytes: ByteArray, width: Int, original: IntArray): android.graphics.Bitmap? {
+        val options = android.graphics.BitmapFactory.Options()
+        options.inJustDecodeBounds = true
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        if (options.outWidth <= 0 || options.outHeight <= 0 || width <= 0) return null
+        original[0] = options.outWidth
+        original[1] = options.outHeight
+        var sample = 1
+        while (options.outWidth / (sample * 2) >= width) sample *= 2
+        // Reject pathological aspect ratios before allocating codec pixels.
+        val pixels = ((options.outWidth.toLong() + sample - 1) / sample) *
+            ((options.outHeight.toLong() + sample - 1) / sample)
+        if (pixels > 2L * 1024 * 1024) return null
+        options.inSampleSize = sample
+        options.inJustDecodeBounds = false
+        options.inScaled = false
+        options.inPremultiplied = false
+        options.inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+        return try {
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        } catch (_: OutOfMemoryError) { null }
+    }
+
     private var camadaVideo: FrameLayout? = null
     private var touchInsetLeft = 0
     private var touchInsetTop = 0
@@ -319,6 +343,11 @@ class NuvioActivity : SDLActivity() {
     // onLowMemory (o aviso mais forte), nao estes degraus.
     private external fun nativeTrimMemoria(nivel: Int)
     private var trimResumida = false
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        try { nativeTrimMemoria(80) } catch (_: UnsatisfiedLinkError) { }
+    }
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)

@@ -801,41 +801,170 @@ int simkl_ler_vistos(const char *json, SimklVisto *dst, int max) {
   return n;
 }
 
-// /sync/all-items e PROIBIDO em timer pela doc do Simkl (suspende o client).
-// socialvis pede o perfil do amigo a cada ~1s; guarda o ultimo resultado por
-// perfil por VISTOS_TTL_S, sucesso ou falha — falha repetida seria o mesmo
-// polling. simkl_esquecer (troca de perfil/sessao) derruba o cache.
+// Only activities are polled. HTTP, token files and persistence stay off UI.
 #define VISTOS_TTL_S 120
 #define VISTOS_CACHE_MAX 24
-static int vistosCachePerfil, nVistosCache;
-static SimklVisto vistosCache[VISTOS_CACHE_MAX];
-static time_t vistosCacheQuando;
-static uint64_t vistosCacheGeracao;
+#define VISTOS_PERFIS 16
+static struct {
+  SimklVisto itens[VISTOS_CACHE_MAX];
+  int n, vivo, pronto;
+  char nome[128], datas[3][48];
+  time_t quando;
+} vistosCache[VISTOS_PERFIS + 1];
+static unsigned vistosRev;
+unsigned simkl_vistos_revisao(void) { return __atomic_load_n(&vistosRev, __ATOMIC_ACQUIRE); }
+typedef struct {
+  int perfil;
+  SmkPedido pedido;
+} VistosPedido;
+
+// Reuse the scrobble journal's stable token fingerprint; never persist tokens.
+static void scrobbleJornalNome(char *, size_t, const char *);
+static void vistosNome(char *dst, size_t tam, int perfil, const char *tk) {
+  char vinculo[80]; scrobbleJornalNome(vinculo, sizeof vinculo, tk);
+  snprintf(dst, tam, "simkl-history-p%d-%s", perfil, vinculo);
+}
+
+// Local, versioned binary records encoded as hex for dados_gravar's atomic
+// string writer. A different record size/ABI invalidates this disposable cache.
+static int vistosDisco(const char *nome, SimklVisto *itens, int *n,
+                        char datas[3][48], int gravar) {
+  size_t bytes = sizeof *itens * (size_t)*n;
+  char *b;
+  if (gravar) {
+    b = calloc(1, 256 + bytes * 2); if (!b) return 0;
+    int k = snprintf(b, 256, "SMKH1 %zu %d\n%s\n%s\n%s\n", sizeof *itens, *n, datas[0], datas[1], datas[2]);
+    const unsigned char *p = (const unsigned char *)itens;
+    static const char hex[] = "0123456789abcdef";
+    for (size_t i = 0; i < bytes; i++) { b[k++] = hex[p[i] >> 4]; b[k++] = hex[p[i] & 15]; }
+    int ok = dados_gravar(nome, b); free(b); return ok;
+  }
+  b = dados_ler(nome); if (!b) return 0;
+  size_t tamanho = 0; int qtd = 0, k = 0;
+  int ok = sscanf(b, "SMKH1 %zu %d\n%47[^\n]\n%47[^\n]\n%47[^\n]\n%n",
+                  &tamanho, &qtd, datas[0], datas[1], datas[2], &k) == 5;
+  bytes = qtd >= 0 && qtd <= VISTOS_CACHE_MAX ? sizeof *itens * (size_t)qtd : 0;
+  ok = ok && tamanho == sizeof *itens && qtd >= 0 && qtd <= VISTOS_CACHE_MAX &&
+       strlen(b + k) == bytes * 2;
+  for (int i = 0; ok && i < 3; i++) ok = js_ms_iso(datas[i]) > 0;
+  unsigned char *p = (unsigned char *)itens;
+  for (size_t i = 0; ok && i < bytes; i++) {
+    unsigned v = 0;
+    const char *hex = "0123456789abcdef";
+    if (!strchr(hex, b[k + i * 2]) || !strchr(hex, b[k + i * 2 + 1]) ||
+        sscanf(b + k + i * 2, "%2x", &v) != 1) ok = 0; else p[i] = (unsigned char)v;
+  }
+  for (int i = 0; ok && i < qtd; i++)
+    ok = memchr(itens[i].imdb, 0, sizeof itens[i].imdb) &&
+         memchr(itens[i].tipo, 0, sizeof itens[i].tipo) &&
+         memchr(itens[i].titulo, 0, sizeof itens[i].titulo) &&
+         memchr(itens[i].poster, 0, sizeof itens[i].poster);
+  if (ok) *n = qtd;
+  free(b); return ok;
+}
+
+static int vistosDatas(const char *json, char datas[3][48]) {
+  static const char *tipos[] = { "movies", "tv_shows", "anime" };
+  if (!json || *json != '{' || js_fim(json)[-1] != '}') return 0;
+  const char *end = js_fim(json);
+  while (*end && (unsigned char)*end <= ' ') end++;
+  if (*end) return 0;
+  for (int i = 0; i < 3; i++) {
+    const char *p, *fim;
+    const char *v, *vf;
+    if (!objetoRaiz(json, js_fim(json), tipos[i], &p, &fim) ||
+        !valorRaiz(p, fim, "completed", &v, &vf)) return 0;
+    // An unused list has a null timestamp, not a reason to refetch everything.
+    if (vf - v == 4 && !strncmp(v, "null", 4))
+      snprintf(datas[i], 48, "1970-01-01T00:00:01Z");
+    else if (!js_texto_raiz_em(p, fim, "completed", datas[i], 48) ||
+             !js_ms_iso(datas[i])) return 0;
+  }
+  return 1;
+}
+
+static void *fioVistos(void *u) {
+  VistosPedido a = *(VistosPedido *)u; free(u);
+  SimklVisto itens[VISTOS_CACHE_MAX] = {0}, novos[VISTOS_CACHE_MAX] = {0};
+  char tk[300] = "", atual[300] = "", nome[128];
+  char datas[3][48] = {{0}}, recebidas[3][48] = {{0}};
+  int n = 0, st = 0, pronto = 0, vinculado = 0;
+  if (!simklauth_token_perfil(a.perfil, tk, sizeof tk)) goto fim;
+  vistosNome(nome, sizeof nome, a.perfil, tk);
+  if (!pedidoTravar(a.pedido)) goto fim;
+  if (vistosCache[a.perfil].pronto && !strcmp(vistosCache[a.perfil].nome, nome)) {
+    n = vistosCache[a.perfil].n;
+    memcpy(itens, vistosCache[a.perfil].itens, sizeof itens);
+    memcpy(datas, vistosCache[a.perfil].datas, sizeof datas);
+    pronto = 1;
+  }
+  pedidoDestravar();
+  if (!pronto) pronto = vistosDisco(nome, itens, &n, datas, 0);
+  char *r = pedirComToken('G', "/sync/activities", NULL, NULL, &st, tk);
+  int valido = st >= 200 && st < 300 && vistosDatas(r, recebidas);
+  free(r);
+  if (valido && (!pronto || memcmp(datas, recebidas, sizeof datas))) {
+    char consulta[256] = "extended=full&episode_watched_at=yes";
+    if (pronto) {
+      // Earliest prior type watermark covers independent movie/show/anime updates.
+      const char *desde = datas[0];
+      for (int i = 1; i < 3; i++) if (js_ms_iso(datas[i]) < js_ms_iso(desde)) desde = datas[i];
+      char escaped[160]; nuvem_url_escapar(desde, escaped, sizeof escaped);
+      snprintf(consulta, sizeof consulta, "extended=full&episode_watched_at=yes&date_from=%s", escaped);
+    }
+    if (!pedidoAtual(a.pedido)) goto fim;
+    r = pedirComToken('G', "/sync/all-items/all/completed", consulta, NULL, &st, tk);
+    if (st >= 200 && st < 300 && perfilHistoricoValido(r)) {
+      int nn = simkl_ler_vistos(r, novos, VISTOS_CACHE_MAX);
+      for (int i = 0; i < nn; i++) vistoAdd(itens, &n, VISTOS_CACHE_MAX, &novos[i]);
+      memcpy(datas, recebidas, sizeof datas); pronto = 1;
+    }
+    free(r);
+  }
+  vinculado = simklauth_token_perfil(a.perfil, atual, sizeof atual) && !strcmp(tk, atual);
+  if (vinculado && pronto && pedidoAtual(a.pedido))
+    // Disk I/O never holds the cache mutex read by UI.
+    vistosDisco(nome, itens, &n, datas, 1);
+fim:
+  memset(tk, 0, sizeof tk); memset(atual, 0, sizeof atual);
+  if (pedidoTravar(a.pedido)) {
+    int publicar = vinculado && pronto;
+    if (publicar) {
+      memcpy(vistosCache[a.perfil].itens, itens, sizeof itens);
+      memcpy(vistosCache[a.perfil].datas, datas, sizeof datas);
+      snprintf(vistosCache[a.perfil].nome, sizeof vistosCache[a.perfil].nome, "%s", nome);
+      vistosCache[a.perfil].n = n; vistosCache[a.perfil].pronto = 1;
+    } else if (!vinculado) {
+      publicar = vistosCache[a.perfil].pronto;
+      vistosCache[a.perfil].n = vistosCache[a.perfil].pronto = 0;
+    }
+    vistosCache[a.perfil].vivo = 0;
+    if (publicar) __atomic_add_fetch(&vistosRev, 1, __ATOMIC_RELEASE);
+    pedidoDestravar();
+  }
+  return NULL;
+}
 
 int simkl_vistos_perfil(int perfil, SimklVisto *dst, int max) {
-  char tk[300];
-  int st = 0, n = 0;
-  char *corpo;
+  if (perfil < 1 || perfil > VISTOS_PERFIS || !dst || max <= 0) return 0;
+  SmkPedido pedido = pedidoCapturar();
+  if (!pedidoTravar(pedido)) return 0;
   time_t agora = time(NULL);
-  if (perfil == vistosCachePerfil && vistosCacheGeracao == cacheGeracao &&
-      agora - vistosCacheQuando < VISTOS_TTL_S) {
-    n = nVistosCache < max ? nVistosCache : max;
-    memcpy(dst, vistosCache, sizeof *dst * (size_t)n);
-    return n;
+  if (!vistosCache[perfil].vivo && (!vistosCache[perfil].quando ||
+      agora - vistosCache[perfil].quando >= VISTOS_TTL_S)) {
+    VistosPedido *a = malloc(sizeof *a);
+    if (a) {
+      a->perfil = perfil; a->pedido = pedido;
+      pthread_t t;
+      vistosCache[perfil].vivo = 1;
+      if (!pthread_create(&t, NULL, fioVistos, a)) {
+        vistosCache[perfil].quando = agora; pthread_detach(t);
+      } else { vistosCache[perfil].vivo = 0; free(a); }
+    }
   }
-  if (!simklauth_token_perfil(perfil, tk, sizeof tk)) return 0;
-  corpo = pedirComToken('G', "/sync/all-items/all/completed", "extended=full&episode_watched_at=yes", NULL, &st, tk);
-  memset(tk, 0, sizeof tk);
-  if (st >= 200 && st < 300)
-    nVistosCache = n = simkl_ler_vistos(corpo, vistosCache, VISTOS_CACHE_MAX);
-  else { nVistosCache = 0; printf("[simkl] all-items do perfil %d: HTTP %d\n", perfil, st); }
-  vistosCachePerfil = perfil;
-  vistosCacheQuando = agora;
-  vistosCacheGeracao = cacheGeracao;
-  free(corpo);
-  n = nVistosCache < max ? nVistosCache : max;
-  memcpy(dst, vistosCache, sizeof *dst * (size_t)n);
-  return n;
+  int n = vistosCache[perfil].n < max ? vistosCache[perfil].n : max;
+  memcpy(dst, vistosCache[perfil].itens, sizeof *dst * (size_t)n);
+  pedidoDestravar(); return n;
 }
 
 // Assinatura barata de um corpo (FNV-1a). 0 = sem corpo.
@@ -887,6 +1016,8 @@ void simkl_esquecer(void) {
   listaFioVivo = 0;
   __atomic_store_n(&listaEstado, SMK_OP_NENHUMA, __ATOMIC_RELEASE);
   nPlay = nProx = nPtw = 0;
+  memset(vistosCache, 0, sizeof vistosCache);
+  __atomic_add_fetch(&vistosRev, 1, __ATOMIC_RELEASE);
   assCw = assPtw = 0;
   trocar(&corpoPlay, NULL); trocar(&corpoAssist, NULL);
   trocar(&corpoAssistAnime, NULL);
@@ -1137,6 +1268,30 @@ int simkl_lista_tipo(const char *imdb, const char *tipo, int adicionar) {
   if (ok) pthread_detach(t);
   else { listaFioVivo = 0; __atomic_store_n(&listaEstado, SMK_OP_FALHA, __ATOMIC_RELEASE); free(a); }
   pedidoDestravar(); return ok;
+}
+// NOTA (/sync/ratings): mesmo corpo do Trakt, um fio solto por resposta.
+typedef struct { char id[24], tipo[8]; int nota; SmkPedido pedido; } SmkNota;
+static void *fioNota(void *u) {
+  SmkNota *a = u; char corpo[200], *r; int st = 0;
+  snprintf(corpo, sizeof corpo, "{\"%s\":[{\"rating\":%d,\"ids\":{\"imdb\":\"%s\"}}]}",
+           !strcmp(a->tipo, "series") ? "shows" : "movies", a->nota, a->id);
+  r = pedir(a->pedido, 'P', a->nota ? "/sync/ratings" : "/sync/ratings/remove", NULL, corpo, &st);
+  printf("[simkl] nota %d %s (%s) -> HTTP %d\n", a->nota, a->id, a->tipo, st);
+  fflush(stdout); free(r); memset(a, 0, sizeof *a); free(a);
+  return NULL;
+}
+int simkl_avaliar(const char *imdb, const char *tipo, int nota) {
+  pthread_t t;
+  if (!imdbValido(imdb) || strchr(imdb, ':') || nota < 0 || nota > 10) return 0;
+  SmkNota *a = calloc(1, sizeof *a); if (!a) return 0;
+  a->pedido = pedidoCapturar();
+  if (!a->pedido.aut[0]) { free(a); return 0; }
+  { size_t k = strcspn(imdb, ":"); if (k >= sizeof a->id) k = sizeof a->id - 1;
+    memcpy(a->id, imdb, k); a->id[k] = 0; }
+  snprintf(a->tipo, sizeof a->tipo, "%s", tipo && !strcmp(tipo, "series") ? "series" : "movie");
+  a->nota = nota;
+  if (pthread_create(&t, NULL, fioNota, a) != 0) { free(a); return 0; }
+  pthread_detach(t); return 1;
 }
 int simkl_lista_estado(void) { return __atomic_load_n(&listaEstado, __ATOMIC_ACQUIRE); }
 

@@ -102,7 +102,8 @@ static void gravar(const char *bmp) {
   }
   for (y = 0; y < 1080; y++)
     memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
-  assert(SDL_SaveBMP(s, bmp) == 0);
+  if (getenv("NV_HERO_FOCUS")) assert(IMG_SavePNG(s, bmp) == 0);
+  else assert(SDL_SaveBMP(s, bmp) == 0);
   SDL_FreeSurface(s);
   free(pix);
 }
@@ -194,6 +195,9 @@ static void ajusta(int layout, int vidro) {
   if (getenv("NV_AJ")) fprintf(a, "%s\n", getenv("NV_AJ"));   // ex.: "heroSectionEnabled 1"
   fclose(a);
   ajustes_dir(dirDados);
+  // Migrations may override vidroLocal; screenshots use the real settings action.
+  ajustes_definir_vidro(vidro);
+  assert(ajustes_vidro() == vidro);
   gfx_escala_txt_definir(getenv("NV_STAGE_SCALE") ? (float)atof(getenv("NV_STAGE_SCALE")) : ajustes_escala_texto());
   ajustes_teste_vidro_env();   // NUVIO_SHOT_VIDRO_OPAC / _FOSCO
   // O roteamento de app.c (app_atualizar), que este teste nao roda.
@@ -446,6 +450,23 @@ int main(int argc, char **argv) {
   SDL_GL_DeleteContext(gl); SDL_DestroyWindow(janela); SDL_Quit();
   return rc;
 #endif
+
+  // Focused Moderna hero only: let real navigation settle before capturing.
+  if (getenv("NV_HERO_FOCUS")) {
+    for (int glass = 0; glass < 2; glass++) {
+      ajusta(HOME_LAYOUT_MODERNA, glass);
+      assert(ajustes_home_layout() == HOME_LAYOUT_MODERNA);
+      for (int r = 0; r < 14; r++) tecla(SDLK_UP);
+      quadros(120, NULL);
+      assert(strcmp(home_rastro_foco(), "hero") == 0);
+      snprintf(bmp, sizeof bmp, "%s-glass-%s-focused.png", saida, glass ? "on" : "off");
+      quadros(1, bmp);
+      printf("[hero-focus] glass=%d focus=%s PNG=%s\n", ajustes_vidro(), home_rastro_foco(), bmp);
+    }
+    tex_encerrar(); txt_encerrar();
+    SDL_GL_DeleteContext(gl); SDL_DestroyWindow(janela); SDL_Quit();
+    return 0;
+  }
 
   // Focused Stage/Split comparison, using the production renderer and local art.
   if (getenv("NV_DINPALCO")) {
