@@ -94,6 +94,7 @@
 #include "ponteiro.h"
 #include "sync.h"
 #include "addons.h"
+#include "servidores.h"
 
 // Tinta do texto sobre o foco: em vidro o foco e so contorno sobre superficie
 // escura, entao o texto fica CLARO mesmo com realce branco (que pede escuro).
@@ -179,23 +180,23 @@ static int bibTinta2(void) { return 205; }
 // linha de texto so boiando em 168 px.
 #define BIB_LL_H         96.0f
 #define BIB_LL_PASSO    112.0f
-// A COLUNA DA NOTA, ancorada na direita da linha. Largura fixa: e ela que faz o
-// olho descer a coluna de numeros em vez de cacar a nota em cada linha. O grupo
-// e o mesmo selo do detalhe (NV_DETW2_IMDB_*), reaproveitado medida por medida.
-#define BIB_COL_DIR      30.0f    // folga entre a coluna e a borda da linha
-// O CHEVRON "›" no canto direito da linha EM FOCO, no lugar do travessao que
-// ficava em toda linha sem nota. O travessao segurava a coluna, mas o dono o
-// leu como "um – perdido": um sinal de ausencia repetido em metade das linhas
-// vira ruido. A coluna continua alinhada porque o espaco do chevron e
-// RESERVADO em toda linha; ele so e desenhado na focada, onde responde "OK
-// abre". Sem nota a coluna fica vazia — com 168 px de linha e a meta cheia,
-// vazio ali le como "sem nota", nao mais como buraco.
-#define BIB_CHEV_W       22.0f
-// Barra de progresso da retomada. Aparece SO quando ha progresso — ver a nota
-// no desenho sobre por que ela nao reserva coluna e a nota reserva.
-#define BIB_COL_PROG_W  132.0f
-#define BIB_COL_PROG_H    8.0f
-#define BIB_COL_PROG_GAP 44.0f
+
+// LISTA DE TITULOS (grade de titulos em exibicao de lista). O mockup aprovado
+// "biblioteca-lista-servidor" (dono, 24/10/2026: "na biblioteca so a lista
+// que poderia ficar mais parecido com o mockup") pede uma TABELA: linha
+// compacta de 126 px, cartaz 2:3 de 64x96, UMA linha de meta, e na direita a
+// coluna de origens e a de disponibilidade. Medido no PNG: pilula do foco em
+// #363838 sobre a pagina, passo de ~130 px, 4-5 linhas visiveis. A pagina de
+// uma lista aberta (EST_ITENS) NAO muda: os 168 de BIB_LIN_* continuam la.
+#define BIB_TL_H        126.0f
+#define BIB_TL_GAP        4.0f
+#define BIB_TL_PASSO    (BIB_TL_H + BIB_TL_GAP)
+#define BIB_TL_MINI_W    64.0f
+#define BIB_TL_MINI_H    96.0f
+#define BIB_TL_PAD       24.0f    // do inicio da linha ao cartaz
+#define BIB_TL_TX_GAP    20.0f    // do cartaz ao texto (mockup: 652 -> 672)
+#define BIB_TL_DIR       32.0f    // folga da coluna de disponibilidade
+#define BIB_TL_CAB       42.0f    // altura do cabecalho de colunas acima
 
 // CARTAO DE LISTA (o modo Listas em exibicao de cartaz): CINCO por linha.
 // (1728 - 4*24)/5 = 326.4, arredondado para 326.
@@ -319,9 +320,14 @@ static int nAddonOrigens;
 static BibliotecaOrigens serverRows;
 static void (*serverSelect)(int);
 static int (*serverContains)(const CatItem *, int);
+// Qualidade de um titulo nos servidores (altura/hdr), para a coluna de
+// disponibilidade da lista. Teste de captura injeta um falso aqui; sem ele
+// vale o caminho de producao (servidores_info).
+static int (*serverQualidade)(const CatItem *, int *, int *);
 static unsigned char serverMembership[CAT_MAX];
 static int serverFilter = -1;
 void biblioteca_servidores_contem(int (*contains)(const CatItem *, int)) { serverContains = contains; }
+void biblioteca_servidores_qualidade(int (*info)(const CatItem *, int *altura, int *hdr)) { serverQualidade = info; }
 static void reconstruir(void);
 void biblioteca_servidor_filtrar(int provider) {
   serverFilter = provider >= 0 && provider < 3 ? provider : -1;
@@ -585,18 +591,25 @@ static float passoColuna(void) {
 // e e por isso que a exibicao de lista pergunta o estado.
 static float alturaLinha(void) {
   if (modo == MODO_ASSISTIDOS && modoLinha()) return 120;
-  if (modoLinha()) return estado() == EST_LISTAS ? BIB_LL_H : BIB_LIN_H;
+  if (modoLinha())
+    return estado() == EST_LISTAS ? BIB_LL_H
+         : paginaLista() ? BIB_LIN_H : BIB_TL_H;
   if (estado() == EST_LISTAS) return BIB_LC_H;
   // poster + 10 + o titulo em ate duas linhas (o focado abre a segunda)
   return BIB_POSTER_H + BIB_TIT_GAP + 14.0f + 52.0f;
 }
 static float passoLinha(void) {
   if (modo == MODO_ASSISTIDOS && modoLinha()) return 126;
-  if (modoLinha()) return estado() == EST_LISTAS ? BIB_LL_PASSO : BIB_LIN_PASSO;
+  if (modoLinha())
+    return estado() == EST_LISTAS ? BIB_LL_PASSO
+         : paginaLista() ? BIB_LIN_PASSO : BIB_TL_PASSO;
   if (estado() == EST_LISTAS) return BIB_LC_LINHA;
   return BIB_LINHA_PASSO;
 }
 static float gradeY(void) {
+  // A tabela de titulos comeca mais baixo para caber o cabecalho de colunas
+  // (mockup: etiqueta em ~395, primeira linha em ~433).
+  if (modoLinha() && estado() == EST_TITULOS) return BIB_GRADE_Y_TITULOS + BIB_TL_CAB;
   float y = estado() == EST_ITENS ? BIB_GRADE_Y_ABERTA : BIB_GRADE_Y_TITULOS;
   y *= bibHS();
   if (modo == MODO_ASSISTIDOS && modoLinha()) y += 44;
@@ -2498,28 +2511,79 @@ static void linhaMeta(const CatItem *ci, char *dst, size_t n) {
   }
 }
 
-// O selo IMDb e o mesmo helper usado nas outras telas. Sem nota, a coluna nao
-// ganha um travessao decorativo: a linha focada recebe apenas um chevron, que
-// responde visualmente ao OK de abrir; em repouso o espaco fica limpo.
-static float larguraNota(const CatItem *ci) {
-  return ci && ci->nota > 0 ? badge_imdb_largura(ci->nota) : BIB_CHEV_W;
+// META CURTA DA TABELA (mockup "biblioteca-lista-servidor"): tipo, o que
+// identifica (ano ou T1 E4) e o ESTADO — "Filme · 2025 · Pode continuar",
+// "Série · T1 E4 · Pode continuar", "Filme · 2025 · Não assistido". E uma
+// linha so: generos e duracao ficam para o detalhe; aqui a coluna responde
+// "o que e e em que ponto estou".
+static void linhaMetaLista(const CatItem *ci, char *dst, size_t n) {
+  char ano[8] = "", item[96], seg[48];
+  const char *p;
+  size_t k = 0;
+  dst[0] = 0;
+  if (!ci) return;
+  for (p = ci->meta; proximoMeta(&p, item, sizeof item); )
+    if (ehAnoMeta(item)) { snprintf(ano, sizeof ano, "%s", item); break; }
+  acrescentarMeta(dst, n, &k, i18n(ehSerie(ci) ? "Série" : "Filme"));
+  if (ehSerie(ci) && ci->temporada > 0 && ci->episodio > 0) {
+    snprintf(seg, sizeof seg, "T%d E%d", ci->temporada, ci->episodio);
+    acrescentarMeta(dst, n, &k, seg);
+  } else if (ano[0])
+    acrescentarMeta(dst, n, &k, ano);
+  acrescentarMeta(dst, n, &k,
+                  i18n(ci->progresso > 0 && ci->progresso < 100
+                         ? "Pode continuar" : "Não assistido"));
 }
 
-static void desenhaNota(const CatItem *ci, float xDir, float yCentro,
-                        int tinta, float f, float a) {
-  if (ci && ci->nota > 0) {
-    float w = badge_imdb_largura(ci->nota);
-    badge_imdb(xDir - w, yCentro - BADGE_H * 0.5f, ci->nota,
-               0, a);
+// COLUNA DE DISPONIBILIDADE: a retomada quando ha, senao a melhor qualidade
+// que um servidor pessoal informa ("4K · HDR"). Sem dado, coluna vazia —
+// inventar "4K" onde nenhum servidor falou e pior do que o silencio.
+static void disponibilidadeTexto(const CatItem *ci, char *dst, size_t n) {
+  dst[0] = 0;
+  if (!ci) return;
+  if (ci->restanteMin > 0 && ci->progresso > 0 && ci->progresso < 100) {
+    snprintf(dst, n, i18n("Restam %d min"), ci->restanteMin);
     return;
   }
-  if (f > 0.5f) {
-    int c = bibTinta2();
-    TxtLinha t = txt_linha(TXT_HEADLINE, "›", c, c, c, 255);
-    txt_desenhar_alpha(t, xDir - t.w, yCentro - t.h * 0.5f, a);
-  } else {
-    (void)tinta;
+  { int altura = 0, hdr = 0, tem = 0;
+    const char *p1, *p2;
+    if (ci->imdb[0]) {
+      if (serverQualidade) tem = serverQualidade(ci, &altura, &hdr);
+      else {
+        SrvAchado ach;
+        if (servidores_info(ci->imdb, ci->tipo, &ach)) {
+          altura = ach.altura;
+          hdr = ach.hdr;
+          tem = 1;
+        }
+      }
+    }
+    if (!tem) return;
+    p1 = altura >= 2000 ? "4K" : altura >= 1000 ? "1080p" : NULL;
+    p2 = hdr ? "HDR" : NULL;
+    if (p1 && p2) snprintf(dst, n, "%s · %s", p1, p2);
+    else if (p1 || p2) snprintf(dst, n, "%s", p1 ? p1 : p2);
   }
+}
+
+// QUANTOS BADGES bibSourceBadges VAI DESENHAR (para alinhar a coluna pela
+// direita sem desenhar duas vezes).
+static int bibSourceBadgesCont(const CatItem *ci) {
+  int bits = ci->fontes ? ci->fontes : ci->naLista ? CAT_FONTE_NUVIO : 0;
+  int membership = 0, n = 0;
+  for (int b = 0; b < 3; b++) if (bits & (1 << b)) n++;
+  if (ci->origem[0] && strcmp(ci->origem, "plex") && strcmp(ci->origem, "jellyfin")
+      && strcmp(ci->origem, "emby")) n++;
+  if (serverContains)
+    for (int i = 0; i < cat_n() && i < CAT_MAX; i++) {
+      const CatItem *stored = cat_item(i);
+      if (stored && !strcmp(stored->imdb, ci->imdb)) {
+        for (int p = 0; p < 3; p++) if (serverContains(ci, p)) membership |= 1 << p;
+        break;
+      }
+    }
+  for (int p = 0; p < 3; p++) if (membership & (1 << p)) n++;
+  return n;
 }
 
 // Um TITULO, na exibicao de lista. Linha inteira preenchida, miniatura a
@@ -2594,119 +2658,92 @@ static void desenhaWatched(const CatItem *ci, float y, float f, float a) {
 
 static void desenhaLinhaTitulo(const CatItem *ci, int idx, float y, float f, float a) {
   if (modo == MODO_ASSISTIDOS) { desenhaWatched(ci, y, f, a); return; }
-  GfxRect r = { bibX(), y, bibW(), BIB_LIN_H };
-  int cor;
+  // PAGINA DE UMA LISTA ABERTA: a linha de 168 com rank, meta rica e nota do
+  // curador continua como era — o mockup aprovado e o da GRADE de titulos.
   if (paginaLista() && !trilha) {
+    GfxRect r = { bibX(), y, bibW(), BIB_LIN_H };
+    DescItemLista ex = { 0 };
+    GfxRect mini;
+    float dx = 0.0f;
     if (f > .01f) gfx_cor(r, 18.0f / r.h, 1, 1, 1, .13f * f * a);
-    cor = 235;
-  } else cor = superficieLinha(r, raioPx(18.0f, r.w, r.h), f, a);
-  int sr, sg, sb;
-  float yc = y + BIB_LIN_H * 0.5f;
-  // O titulo PEGO na Ordem: barra de acento na borda esquerda da linha.
-  if (edModo == ED_ORDEM && idx >= 0 && idx == ordemPega) {
-    float ar, ag, ab;
-    ajustes_acento(&ar, &ag, &ab);
-    gfx_cor((GfxRect){ r.x - 14.0f, y + 10.0f, 6.0f, BIB_LIN_H - 20.0f }, 0.5f, ar, ag, ab, a);
-  }
-  float xNotaDir = r.x + bibW() - BIB_COL_DIR;
-  float xNotaIni = xNotaDir - larguraNota(ci);
-  float xProgDir = xNotaIni - BIB_COL_PROG_GAP;
-  DescItemLista ex = { 0 };
-  float dx = 0.0f;
-  GfxRect mini;
-  if (idx >= 0) {
-    lst_item_extra(idx, &ex);
-    dx = BIB_PAG_RANK_W;
-    // Ordem em edicao: o numero e a posicao NA TELA, nao o rank do servidor.
-    if (edModo == ED_ORDEM && ex.rank > 0) ex.rank = idx + 1;
-  }
-  mini = (GfxRect){ r.x + BIB_LIN_PAD + dx, y + (BIB_LIN_H - BIB_LIN_MINI_H) * 0.5f,
-                    BIB_LIN_MINI_W, BIB_LIN_MINI_H };
-  const char *arte;
-  GLuint tex = bibPoster(ci, BIB_LIN_MINI_W, &arte);
-  float raioMini = raioPx(8.0f, mini.w, mini.h);
-  tintaSecundaria(cor, &sr, &sg, &sb);
-  if (tex) {
-    gfx_tex_aspect_atual = tex_aspecto(arte);
-    gfx_rect(mini, tex, GFX_CARD, 0.0f, 0.0f, 0.0f, raioMini, 0, 0, 0, a);
-    gfx_tex_aspect_atual = 0.0f;
-  } else bibTitleCard(ci, mini, a);
-  if (!ci) return;
-  if (paginaLista() && !trilha) {
-    float tx = mini.x + mini.w + 16;
-    if (ex.rank > 0) {
-      char rank[16]; snprintf(rank, sizeof rank, "%d", ex.rank);
-      txt_desenhar_alpha(txt_linha(TXT_CALLOUT, rank, 120, 122, 128, 255), r.x + 14, y + 20, a);
+    if (idx >= 0) {
+      lst_item_extra(idx, &ex);
+      dx = BIB_PAG_RANK_W;
+      // Ordem em edicao: o numero e a posicao NA TELA, nao o rank do servidor.
+      if (edModo == ED_ORDEM && ex.rank > 0) ex.rank = idx + 1;
     }
-    txt_desenhar_alpha(txt_linha_corta(TXT_HERO_SEC, ci->titulo, 243, 242, 239, 255, r.x + r.w - tx - 18), tx, y + 16, a);
-    char meta[220]; linhaMeta(ci, meta, sizeof meta);
-    txt_desenhar_alpha(txt_linha_corta(TXT_MINI, meta, 125, 127, 133, 255, r.x + r.w - tx - 18), tx, y + 42, a);
-    if (ex.nota[0]) txt_bloco_corta(TXT_HERO_META, ex.nota, 195, 197, 203, tx, y + 74, r.x + r.w - tx - 18, 23, a, 3);
-    if (cat_visto(ci)) gfx_icone((GfxRect){r.x + r.w - 34, y + 15, 20, 20}, "aj_check", .7f, .8f, .7f, a);
+    mini = (GfxRect){ r.x + BIB_LIN_PAD + dx, y + (BIB_LIN_H - BIB_LIN_MINI_H) * 0.5f,
+                      BIB_LIN_MINI_W, BIB_LIN_MINI_H };
+    { const char *arte;
+      GLuint tex = bibPoster(ci, BIB_LIN_MINI_W, &arte);
+      float raioMini = raioPx(8.0f, mini.w, mini.h);
+      if (tex) {
+        gfx_tex_aspect_atual = tex_aspecto(arte);
+        gfx_rect(mini, tex, GFX_CARD, 0.0f, 0.0f, 0.0f, raioMini, 0, 0, 0, a);
+        gfx_tex_aspect_atual = 0.0f;
+      } else bibTitleCard(ci, mini, a); }
+    if (!ci) return;
+    { float tx = mini.x + mini.w + 16;
+      if (ex.rank > 0) {
+        char rank[16]; snprintf(rank, sizeof rank, "%d", ex.rank);
+        txt_desenhar_alpha(txt_linha(TXT_CALLOUT, rank, 120, 122, 128, 255), r.x + 14, y + 20, a);
+      }
+      txt_desenhar_alpha(txt_linha_corta(TXT_HERO_SEC, ci->titulo, 243, 242, 239, 255, r.x + r.w - tx - 18), tx, y + 16, a);
+      char meta[220]; linhaMeta(ci, meta, sizeof meta);
+      txt_desenhar_alpha(txt_linha_corta(TXT_MINI, meta, 125, 127, 133, 255, r.x + r.w - tx - 18), tx, y + 42, a);
+      if (ex.nota[0]) txt_bloco_corta(TXT_HERO_META, ex.nota, 195, 197, 203, tx, y + 74, r.x + r.w - tx - 18, 23, a, 3);
+      if (cat_visto(ci)) gfx_icone((GfxRect){r.x + r.w - 34, y + 15, 20, 20}, "aj_check", .7f, .8f, .7f, a); }
     return;
   }
-  if (ajustes_selo_visto() && cat_visto(ci))
-    badges_selo_visto(mini.x, mini.y, mini.w, a);
-  if (idx >= 0 && ex.rank > 0) {
-    char n[16];
-    TxtLinha tr;
-    snprintf(n, sizeof n, "%d", ex.rank);
-    tr = txt_linha_corta(TXT_HEADLINE, n, sr, sg, sb, 255, BIB_PAG_RANK_W - 12.0f);
-    txt_desenhar_alpha(tr, r.x + BIB_LIN_PAD + (BIB_PAG_RANK_W - 12.0f - (float)tr.w) * 0.5f,
-                       yc - (float)tr.h * 0.5f, a * 0.85f);
+  // GRADE DE TITULOS EM LISTA: a TABELA do mockup "biblioteca-lista-servidor".
+  // Linha de 126, cartaz 64x96, titulo 24 + UMA meta curta. Na direita, a
+  // coluna de ORIGENS (badges) e a de DISPONIBILIDADE (retomada ou
+  // qualidade). SEM sinopse e SEM selo IMDb: foi o que transformava a linha
+  // num cartao grande e o dono pediu o compacto do mockup. O foco e a pilula
+  // clara do mockup; em repouso a linha e a propria pagina, sem superficie.
+  { GfxRect r = { bibX(), y, bibW(), BIB_TL_H };
+    float yc = y + BIB_TL_H * 0.5f;
+    float v = anim_clamp(f, 0.0f, 1.0f);
+    if (v > 0.01f) gfx_cor(r, raioPx(12.0f, r.w, r.h), 1, 1, 1, 0.19f * v * a);
+    // O titulo PEGO na Ordem: barra de acento na borda esquerda da linha.
+    if (edModo == ED_ORDEM && idx >= 0 && idx == ordemPega) {
+      float ar, ag, ab;
+      ajustes_acento(&ar, &ag, &ab);
+      gfx_cor((GfxRect){ r.x - 14.0f, y + 10.0f, 6.0f, BIB_TL_H - 20.0f }, 0.5f, ar, ag, ab, a);
+    }
+    { GfxRect mini = { r.x + BIB_TL_PAD, y + (BIB_TL_H - BIB_TL_MINI_H) * 0.5f,
+                       BIB_TL_MINI_W, BIB_TL_MINI_H };
+      const char *arte;
+      GLuint tex = bibPoster(ci, BIB_TL_MINI_W, &arte);
+      float raioMini = raioPx(9.0f, mini.w, mini.h);
+      if (tex) {
+        gfx_tex_aspect_atual = tex_aspecto(arte);
+        gfx_rect(mini, tex, GFX_CARD, 0.0f, 0.0f, 0.0f, raioMini, 0, 0, 0, a);
+        gfx_tex_aspect_atual = 0.0f;
+      } else bibTitleCard(ci, mini, a); }
+    if (!ci) return;
+    { float tx = r.x + BIB_TL_PAD + BIB_TL_MINI_W + BIB_TL_TX_GAP;
+      char disp[64];
+      TxtLinha t, av;
+      float larg = r.w - BIB_TL_PAD - BIB_TL_MINI_W - BIB_TL_TX_GAP - 440.0f;
+      if (larg < 80.0f) larg = 80.0f;
+      t = txt_linha_corta(TXT_ILHA_NOME, ci->titulo, 243, 242, 239, 255, larg);
+      txt_desenhar_alpha(t, tx, yc - (float)t.h - 5.0f, a);
+      { char sub[96];
+        linhaMetaLista(ci, sub, sizeof sub);
+        txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_GENERO, sub, 151, 153, 163, 255, larg),
+                           tx, yc + 8.0f, a * 0.95f); }
+      // COLUNA DE DISPONIBILIDADE, ancorada na direita como no mockup: o que
+      // resta da retomada, ou a melhor qualidade que um servidor informa.
+      disponibilidadeTexto(ci, disp, sizeof disp);
+      av = txt_linha(TXT_ILHA_GENERO, disp, 151, 153, 163, 255);
+      txt_desenhar_alpha(av, r.x + r.w - BIB_TL_DIR - (float)av.w, yc - (float)av.h * 0.5f, a);
+      // COLUNA DE ORIGEM: os badges terminam antes da disponibilidade.
+      { int n = bibSourceBadgesCont(ci);
+        float largB = n > 0 ? n * 31.0f - 5.0f : 0.0f;
+        float xB = r.x + r.w - BIB_TL_DIR - (float)av.w - 40.0f - largB;
+        bibSourceBadges(ci, xB, yc - 13.0f, a); } }
   }
-
-  // BARRA DE RETOMADA.
-  //
-  // O TRILHO CONTRASTA COM A LINHA, NAO COM A PAGINA — e a correcao que a
-  // captura obrigou. Eu tinha posto o #202124 que o DESIGN.md chama de "calha",
-  // mas aquele valor foi medido contra o fundo da PAGINA (#0D0D0D); sobre a
-  // linha de repouso (#222) ele e mais ESCURO que a superficie, some, e a barra
-  // vira um toco branco flutuando. O documento diz a regra certa ("o leito tem
-  // de ser visivelmente mais claro que o painel"), e a regra so se cumpre
-  // derivando o trilho da superficie em que ele esta.
-  //
-  // 100% NAO DESENHA NADA: titulo terminado nao esta "em andamento", e a barra
-  // cheia seria lida como progresso parado no fim.
-  if (ci->progresso > 0 && ci->progresso < 100) {
-    GfxRect calha = { xProgDir - BIB_COL_PROG_W, yc - BIB_COL_PROG_H * 0.5f,
-                      BIB_COL_PROG_W, BIB_COL_PROG_H };
-    GfxRect ativo = calha;
-    float raioB = raioPx(BIB_COL_PROG_H * 0.5f, calha.w, calha.h);
-    float c = (float)cor / 255.0f;
-    float t = (cor > 128) ? 0.26f : 0.62f;   // linha escura: trilho mais claro
-    ativo.w = calha.w * (float)ci->progresso / 100.0f;
-    if (ativo.w < BIB_COL_PROG_H) ativo.w = BIB_COL_PROG_H;
-    gfx_cor(calha, raioB, t, t, t * 1.04f, a * 0.9f);
-    gfx_cor(ativo, raioPx(BIB_COL_PROG_H * 0.5f, ativo.w, ativo.h), c, c, c, a);
-  }
-
-  desenhaNota(ci, xNotaDir, yc, cor, f, a);
-
-  { float tx = mini.x + mini.w + BIB_LIN_TX_GAP;
-    float larg = xProgDir - BIB_COL_PROG_W - 28.0f - tx;
-    char sub[220];
-    TxtLinha t, sl, ss = { 0, 0, 0 };
-    linhaMeta(ci, sub, sizeof sub);
-    if (larg < 80.0f) larg = 80.0f;
-    t = txt_linha_corta(TXT_HEADLINE, ci->titulo, cor, cor, cor, 255, larg);
-    sl = txt_linha_corta(TXT_CAPTION2, sub, sr, sg, sb, 255, larg);
-    if (ex.nota[0]) {
-      char q[340];
-      snprintf(q, sizeof q, "“%s”", ex.nota);
-      ss = txt_linha_corta(TXT_CAPTION, q, sr, sg, sb, 255, larg);
-    } else if (f > 0.5f && ci->sinopse[0])
-      ss = txt_linha_corta(TXT_CAPTION, ci->sinopse, sr, sg, sb, 255, larg);
-    { float hBloco = (float)t.h + 7.0f + (float)sl.h;
-      if (ss.h) hBloco += 6.0f + (float)ss.h;
-      // O bloco fica centrado na linha: a sinopse so aparece quando a linha
-      // ja esta realmente em foco, sem roubar altura das linhas em repouso.
-      float ty = yc - hBloco * 0.5f;
-      txt_desenhar_alpha(t, tx, ty, a);
-      txt_desenhar_alpha(sl, tx, ty + (float)t.h + 7.0f, a * 0.95f);
-      if (ss.h)
-        txt_desenhar_alpha(ss, tx, ty + (float)t.h + 7.0f + (float)sl.h + 6.0f,
-                           a * 0.90f); } }
 }
 
 static const char *rotuloFonte(int f) {
@@ -2977,9 +3014,21 @@ static void desenhaCabecalho(void) {
 
   if (!temAberta) {
     float x = hdrDir();
-    const char *status = sync_estado() == SYNC_RODANDO ? "Sincronizando…"
-                       : sync_estado() == SYNC_FALHOU ? "sem sincronizar"
-                       : sync_estado() == SYNC_PRONTO ? "Sincronizada" : "Local";
+    char status[96];
+    if (sync_estado() == SYNC_RODANDO) snprintf(status, sizeof status, "%s", "Sincronizando…");
+    else if (sync_estado() == SYNC_FALHOU) snprintf(status, sizeof status, "%s", "sem sincronizar");
+    else if (sync_estado() == SYNC_PRONTO) {
+      // "Sincronizado há 3 min" do mockup: o instante vem de sync_ultimo_ok.
+      // Sem instante (nunca terminou um ciclo nesta sessao) fica a palavra seca
+      // — escrever "há 0 min" e inventar relogio.
+      unsigned ok = sync_ultimo_ok();
+      unsigned t = SDL_GetTicks();
+      if (ok && t > ok) {
+        long long min = (t - ok) / 60000ull;
+        if (min < 1) min = 1;
+        snprintf(status, sizeof status, i18n("Sincronizado há %d min"), (int)min);
+      } else snprintf(status, sizeof status, "%s", "Sincronizada");
+    } else snprintf(status, sizeof status, "%s", "Local");
     TxtLinha st = txt_linha(TXT_MINI, status, 112, 114, 120, 255);
     x -= st.w; txt_desenhar(st, x, 204);
     const char *services[] = { "Trakt", "Simkl", "Conta Nuvio" };
@@ -3275,6 +3324,13 @@ void biblioteca_desenhar(Uint32 agora) {
     for (int i = 0; i < 4; i++) txt_desenhar(txt_linha(TXT_MINI, labels[i], 115, 117, 123, 255), x + dx[i], 384);
     gfx_cor((GfxRect){x, 414, bibDireita() - x, 1}, 0, 1, 1, 1, .08f);
   }
+  // CABECALHO DE COLUNAS da tabela de titulos (mockup "biblioteca-lista-
+  // servidor"): uma unica etiqueta em caixa alta com tracking, na largura da
+  // tabela, SEM linha divisoria — o espaco acima dos chips ja separa. As linhas
+  // comecam BIB_TL_CAB abaixo (gradeY).
+  if (modoLinha() && estado() == EST_TITULOS)
+    txt_tracking(TXT_ILHA_HORA, i18n("TÍTULO / ORIGEM / PROGRESSO / DISPONIBILIDADE"),
+                 110, 112, 114, bibX() + 1.0f, BIB_GRADE_Y_TITULOS + 7.0f, 1.0f, 1.8f);
   if (paginaLista() && trilha && nCelulas) {
     desenhaTrilha();
     desenhaCompartilhar();
@@ -3326,7 +3382,7 @@ void biblioteca_desenhar(Uint32 agora) {
         // vez por celula, recortado a janela da grade.
         if (passe == 0) {
           GfxRect ra = modoLinha()
-            ? (GfxRect){ bibX(), topo, bibW(), estado() == EST_LISTAS ? BIB_LL_H : BIB_LIN_H }
+            ? (GfxRect){ bibX(), topo, bibW(), alturaLinha() }
             : estado() == EST_LISTAS
               ? (GfxRect){ bibX() + c * passoC, topo, larguraCartaoLista(), BIB_LC_H }
               : (GfxRect){ bibX() + c * passoC, topo, BIB_CARD_W, BIB_POSTER_H };
@@ -3358,7 +3414,7 @@ void biblioteca_desenhar(Uint32 agora) {
           else                       ci = itemFiltro(filtro[i], &tmp);
           if (modoLinha()) {
             desenhaLinhaTitulo(ci, paginaLista() ? i : -1, ty, f, ac);
-            if (i == celulaEmFoco()) barraHold((GfxRect){ bibX(), ty, bibW(), BIB_LIN_H }, ac);
+            if (i == celulaEmFoco()) barraHold((GfxRect){ bibX(), ty, bibW(), alturaLinha() }, ac);
           } else {
             GfxRect rp = { bibX() + c * passoC, ty, BIB_CARD_W, BIB_POSTER_H };
             desenhaCartaz(ci, rp, f, ac,
