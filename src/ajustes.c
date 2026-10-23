@@ -11012,8 +11012,7 @@ static void ajDesenharTudo(Uint32 agora) {
 #endif
     ESCALA_REAL_INI(); desenhaFileiras(); ESCALA_REAL_FIM(); }
   if (riscoFolha) desenhaRiscoFolha();
-  if (pfTela==PF_MENU) aj4PerfilDesenhar();
-  else if (pfTela) pfDesenhar();
+  if (pfTela) pfDesenhar();
   else pfFaixaEdicao();
   if (frAberta == 7) desenhaFolhaOrdem();
   else if (frAberta == 6) desenhaFolhaFiltros();
@@ -11256,9 +11255,9 @@ int ajustes_teste_quadro(const char *id) {
     else if (!strcmp(id,"v4-submenu")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); aj4Grupo=aj4GrupoDe(AJ_FONTE_MANUAL); aj4Grupos=0; }
     else if (!strcmp(id,"v4-opcao-lista")) { focarOpcao(AJ_QUALIDADE); uxAbrirEditor(AJ_QUALIDADE); }
     else if (!strcmp(id,"v4-predefinicoes")) { aj4Util=2; focoIndice=0; }
-    else if (!strcmp(id,"v4-diferentes")) { valor[AJ_QUALIDADE]=2; valor[AJ_ANIM]=1; valor[AJ_VIDRO]=1; aj4Util=1; focoIndice=0; }
-    else if (!strcmp(id,"v4-perfil")) { pfAbrir(); }
-    else if (!strcmp(id,"v4-busca")) { snprintf(aj4Consulta,sizeof aj4Consulta,"regex"); aj4Util=3; focoIndice=0; }
+    else if (!strcmp(id,"v4-diferentes")) { valor[AJ_TEMA]=valorPadrao[AJ_TEMA]; valor[AJ_QUALIDADE]=2; valor[AJ_AUD_LINGUA]=1; valor[AJ_LEG_LINGUA]=2; aj4Escopo=0; aj4Util=1; focoIndice=0; }
+    else if (!strcmp(id,"v4-perfil")) { aj4AbrirPerfil(); }
+    else if (!strcmp(id,"v4-busca")) { aj4Consulta[0]=0; aj4Util=3; focoIndice=0; }
     return 1;
   }
   if (!strncmp(id, "v2-", 3)) {   // Ajustes v2 (ajustes-v2.html): os quadros do mockup

@@ -6,12 +6,13 @@ static int aj4Opcoes[AJ_N], aj4Ops[AJ_N], aj4Antes[AJ_N], aj4Depois[AJ_N], aj4N;
 static int aj4UndoOps[AJ_N], aj4UndoAntes[AJ_N], aj4UndoDepois[AJ_N], aj4UndoN, aj4UndoPerfil;
 static int aj4FocoModo[2], aj4Excecao = -1;
 static char aj4Consulta[128];
-static int aj4BuscaTeclado, aj4BuscaRetorno, aj4BuscaFoco;
+static int aj4BuscaTeclado, aj4BuscaRetorno, aj4BuscaFoco, aj4TrocarPerfil, aj4PerfilRetorno;
+int ajustes_pediu_trocar_perfil(void) { int v=aj4TrocarPerfil; aj4TrocarPerfil=0; return v; }
 static AjusteBuscaResultado aj4Resultados[AJ_N];
 static void aj4Iniciar(void) {
   aj4Topo = -1; aj4Util = aj4Review = aj4Acao = aj4Linha = 0; aj4Excecao = -1;
   aj4Mais = 0;
-  aj4BuscaTeclado=aj4BuscaRetorno=0;
+  aj4BuscaTeclado=aj4BuscaRetorno=aj4TrocarPerfil=aj4PerfilRetorno=0;
 }
 static const char *const AJ4_SECOES[] = {
   "Reprodução", "Áudio e legendas", "Fontes e serviços", "TV ao vivo",
@@ -61,6 +62,13 @@ static int aj4ListaBruta(int sec, int grupo, int *ops) {
       visto[op] = 1; ops[n++] = op;
     }
   }
+  if(sec==0 && grupo>=0) {
+    static const int primeiros[]={AJ_FONTE_MANUAL,AJ_FONTE_PRIORIDADE,AJ_FONTE_PRAZO,AJ_FONTE_REPOR};
+    int pos=0;
+    for(int k=0;k<4;k++)for(int j=pos;j<n;j++)if(ops[j]==primeiros[k]) {
+      int op=ops[j];memmove(ops+pos+1,ops+pos,(j-pos)*sizeof *ops);ops[pos++]=op;break;
+    }
+  }
   return n;
 }
 static int aj4Disponivel(int op) {
@@ -101,6 +109,9 @@ static const char *aj4Rotulo(int op) {
   switch (op) {
     case AJ_QUALIDADE: return "Qualidade do vídeo";
     case AJ_FONTE_MANUAL: return "Quem escolhe o vídeo?";
+    case AJ_FONTE_PRIORIDADE: return "Prioridade da seleção automática";
+    case AJ_FONTE_PRAZO: return "Aguardar complementos";
+    case AJ_FONTE_REPOR: return "Se um vídeo não abrir";
     case AJ_PROXIMO_AUTO: return "Reproduzir o próximo episódio";
     case AJ_SEEKR_LIGADO: return "Miniaturas ao avançar";
     case AJ_AUD_LINGUA: return "Áudio preferido";
@@ -119,7 +130,10 @@ static const char *aj4Rotulo(int op) {
 static const char *aj4Ajuda(int op) {
   switch (op) {
     case AJ_QUALIDADE: return "Escolha a maior resolução que o Nuvio pode selecionar.";
-    case AJ_FONTE_MANUAL: return "O Nuvio escolhe automaticamente ou mostra a lista de fontes.";
+    case AJ_FONTE_MANUAL: return "Escolher automaticamente ou mostrar fontes.";
+    case AJ_FONTE_PRIORIDADE: return "Equilibrar qualidade da imagem e velocidade da conexão.";
+    case AJ_FONTE_PRAZO: return "Iniciar logo ou aguardar mais fontes de vídeo.";
+    case AJ_FONTE_REPOR: return "Tentar outra fonte antes de pedir sua escolha.";
     case AJ_PROXIMO_AUTO: return "Continue a série sem escolher o próximo episódio.";
     case AJ_SEEKR_LIGADO: return "Veja uma miniatura da cena ao avançar no vídeo.";
     case AJ_AUD_LINGUA: return "Seu primeiro idioma ao começar um vídeo.";
@@ -188,8 +202,20 @@ static int aj4PresetCombina(int preset) {
 }
 static void aj4PredefRotulo(char *b, int n) {
   for (int p = 0; p < 3; p++) if (aj4PresetCombina(p)) { snprintf(b, n, "%s", AJ4_PRESET_NOMES[p]); return; }
-  char q[96]; uxValorTexto(AJ_QUALIDADE, valor[AJ_QUALIDADE], q, sizeof q);
+  char q[96];
+  if (!valor[AJ_QUALIDADE]) snprintf(q,sizeof q,"%s",i18n("Vídeo automático"));
+  else uxValorTexto(AJ_QUALIDADE, valor[AJ_QUALIDADE], q, sizeof q);
   snprintf(b, n, i18n("Personalizada · %s"), q);
+}
+static int aj4PresetContar(int preset, int *tv, int *perfil) {
+  int n=0; *tv=*perfil=0;
+  for(int i=0;i<7 && AJ4_PRESET_OPS[preset][i]>=0;i++) {
+    int op=AJ4_PRESET_OPS[preset][i];
+    if(ajOpcaoDisponivel(op) && valor[op]!=AJ4_PRESET_VALS[preset][i]) {
+      n++; if(escopoDe(op)==ESC_TV)*tv=1;else *perfil=1;
+    }
+  }
+  return n;
 }
 static int aj4PrepararPreset(int preset) {
   aj4N = 0;
@@ -235,6 +261,18 @@ static int aj4Diferencas(int *ops) {
       (escopoDe(i) == ESC_TV) == aj4Escopo) ops[n++] = i;
   return n;
 }
+static int aj4BuscarResultados(void) {
+  if(aj4Consulta[0]) return ajustes_buscar(aj4Consulta,aj4Resultados,AJ_N);
+  static const int sugestoes[]={AJ_QUALIDADE,AJ_FONTE_REGEX,AJ_AUD_LINGUA,AJ_TEX_MB};
+  int n=0;
+  for(int i=0;i<4;i++) if(aj4Disponivel(sugestoes[i])) {
+    int op=sugestoes[i]; AjusteBuscaResultado *r=&aj4Resultados[n++];
+    memset(r,0,sizeof *r); r->op=op; r->avancado=!aj4Simples(op);
+    snprintf(r->caminho,sizeof r->caminho,"%s / %s",i18n(AJ4_SECOES[aj4Secao(op)]),i18n(AJ4_GRUPOS[aj4GrupoDe(op)]));
+  }
+  return n;
+}
+static void aj4AbrirPerfil(void) { aj4Util=4; aj4Linha=aj4Acao=0; aj4Topo=-1; focoIndice=0; }
 static void aj4Buscar(void) {
   aj4Util=3; aj4Linha=0; aj4Acao=0; focoIndice=0; aj4Topo=-1;
   aj4BuscaTeclado=1;
@@ -248,10 +286,12 @@ static void aj4PontFoco(int zona,int row) {
   else if(zona==3) { aj4Topo=-1; aj4Acao=row; }
   else if(zona==4 && uxEditor==1)ajPontEdValor(row,0);
   else if(zona==6) { aj4Topo=-1; aj4Escopo=row; aj4Linha=0; aj4Acao=0; }
-  if(zona==5) { focoIndice=1; aj4Linha=aj4FocoModo[lig(AJ_AVANCADAS)]; }
+  if(zona==7) { aj4Topo=-1; aj4Acao=row; }
+  if(zona==5) { focoIndice=1; aj4Util=0; aj4Linha=aj4FocoModo[lig(AJ_AVANCADAS)]; }
 }
 static int aj4Evento(SDL_Keycode k) {
   if (uxEditor) return -1; // Existing draft editor owns its keys and guards.
+  if (aj4PerfilRetorno && uxVoltar(k)) { aj4PerfilRetorno=0; aj4AbrirPerfil(); return 1; }
   if (aj4BuscaRetorno && uxVoltar(k)) {
     aj4BuscaRetorno=0; aj4Util=3; aj4Linha=aj4BuscaFoco; aj4Topo=-1; focoIndice=0; return 1;
   }
@@ -282,17 +322,31 @@ static int aj4Evento(SDL_Keycode k) {
           focoIndice = 1; aj4Util = 0; uxNotificar("Suas escolhas continuam salvas.");
         }
       }
-      if (aj4Topo == 2) pfAbrir();
+      if (aj4Topo == 2) aj4AbrirPerfil();
     }
     return 1;
   }
   if (aj4Util) {
     if (uxVoltar(k)) { aj4Util = 0; focoIndice = 1; aj4Linha = 0; aj4Acao = 0; return 1; }
-    int n = aj4Util == 1 ? aj4Diferencas(aj4Opcoes) : aj4Util==3 ? ajustes_buscar(aj4Consulta,aj4Resultados,AJ_N) : 3;
+    int n = aj4Util == 1 ? aj4Diferencas(aj4Opcoes) : aj4Util==3 ? aj4BuscarResultados() : aj4Util==4 ? 4 : 3;
+    if(aj4Util==4 && uxOk(k)) {
+      if(aj4Acao)pfAbrir();
+      else if(!aj4Linha)aj4TrocarPerfil=1;
+      else { int op=aj4Linha==1?AJ_AUD_LINGUA:aj4Linha==2?AJ_TRAKT:AJ_GPU_EFEITOS;
+        aj4Util=0; focarOpcao(op); aj4PerfilRetorno=1; }
+      return 1;
+    }
+    if(aj4Util==3 && (k==SDLK_LEFT || k==SDLK_RIGHT)) { aj4Acao=k==SDLK_LEFT?2:0; return 1; }
+    if(aj4Util==3 && aj4Acao>=2) {
+      if(k==SDLK_DOWN)aj4Acao=3;
+      if(k==SDLK_UP)aj4Acao=2;
+      if(uxOk(k)) { snprintf(aj4Consulta,sizeof aj4Consulta,"%s",i18n(aj4Acao==2?"Áudio":"Fontes")); aj4Linha=aj4Acao=0; }
+      return 1;
+    }
     if (aj4Util == 1 && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
       aj4Escopo = k == SDLK_RIGHT; aj4Linha = 0; aj4Acao = 0; return 1;
     }
-    if (k == SDLK_DOWN) { if (aj4Linha + 1 < n && !aj4Acao) aj4Linha++; else aj4Acao = 1; }
+    if (k == SDLK_DOWN) { if (aj4Linha + 1 < n && !aj4Acao) aj4Linha++; else if(aj4Util!=2)aj4Acao = 1; }
     if (k == SDLK_UP) { if (aj4Acao) aj4Acao = 0; else if (aj4Linha) aj4Linha--; else aj4Topo = 0; }
     if (uxOk(k)) {
       if(aj4Util==3) {
@@ -370,7 +424,7 @@ static int aj4Evento(SDL_Keycode k) {
         if(uxLigarRequisitos(op,1))return 1;
         if(req>=0) { focarOpcao(req); uxRetornarOp=op; return 1; }
       }
-      if (op == AJ_PERFIL_ATIVO) { pfAbrir(); return 1; }
+      if (op == AJ_PERFIL_ATIVO) { aj4AbrirPerfil(); return 1; }
       if (!lig(AJ_AVANCADAS) && op == AJ_TRAKT && aj4Excecao<0) {
         focarOpcao(AJ_TRAKT); aj4Util=0; aj4Grupos=1; return 1;
       }

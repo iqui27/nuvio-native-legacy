@@ -112,7 +112,37 @@ int main(void) {
     valor[AJ_QUALIDADE] = 3;
     assert(aj4Desfazer());
   }
-  puts("Settings v4: mode, complete catalog, search, scoped reset, presets, undo, save failure OK");
+  // Approved landing routes preserve values, including return from language/account groups.
+  aj4Review=aj4Util=0; aj4Topo=2; focoIndice=1; key(SDLK_RETURN);
+  assert(aj4Util==4 && !pfTela);
+  key(SDLK_RETURN); assert(ajustes_pediu_trocar_perfil()==1);
+  assert(!ajustes_pediu_trocar_perfil());
+  key(SDLK_DOWN); key(SDLK_RETURN);
+  assert(!aj4Util && aj4Opcoes[aj4Linha]==AJ_AUD_LINGUA);
+  key(SDLK_ESCAPE); assert(aj4Util==4);
+  aj4Acao=1; key(SDLK_RETURN); assert(pfTela==PF_MENU);
+  key(SDLK_ESCAPE); assert(!pfTela && aj4Util==4);
+  // Blank search offers all-mode suggestions; task chips search without writing values.
+  aj4Util=3; aj4Consulta[0]=0; aj4Acao=aj4Linha=0;
+  n=aj4BuscarResultados(); assert(n==4 && aj4Resultados[0].op==AJ_QUALIDADE);
+  assert(aj4Resultados[1].op==AJ_FONTE_REGEX && aj4Resultados[1].avancado);
+  memcpy(before,valor,sizeof before);
+  key(SDLK_LEFT); key(SDLK_RETURN);
+  assert(aj4Consulta[0] && !aj4Acao && aj4BuscarResultados()>0);
+  assert(!memcmp(before,valor,sizeof before));
+  // Displayed preset counts and scopes agree with the transaction being previewed.
+  for(int p=0;p<3;p++) {
+    int tv,pr,count=aj4PresetContar(p,&tv,&pr),actualTv=0,actualPr=0;
+    assert(aj4PrepararPreset(p)==count);
+    for(int i=0;i<aj4N;i++)if(escopoDe(aj4Ops[i])==ESC_TV)actualTv=1;else actualPr=1;
+    assert(tv==actualTv && pr==actualPr);
+  }
+  valor[AJ_QUALIDADE]=0; char label[160];aj4PredefRotulo(label,sizeof label);
+  assert(strstr(label,i18n("Vídeo automático")));
+  valor[AJ_AVANCADAS]=0;aj4Review=aj4Util=0;aj4Entrar(0);
+  n=aj4Lista(0,aj4GrupoDe(AJ_FONTE_MANUAL),ops);
+  assert(n>=4 && ops[0]==AJ_FONTE_MANUAL && ops[1]==AJ_FONTE_PRIORIDADE && ops[2]==AJ_FONTE_PRAZO && ops[3]==AJ_FONTE_REPOR);
+  puts("Settings v4: navigation, suggestions, profile routes, preset counts/scopes, persistence OK");
 #endif
   SDL_Quit(); return 0;
 }
