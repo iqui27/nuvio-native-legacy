@@ -16,6 +16,8 @@ int main(void) {
   modo = MODO_PARAVER; tipo = TIPO_TODOS; origem = ORIG_TODAS;
   reconstruir();
   assert(nFiltro == 2 && contaModo[MODO_PARAVER] == 2);
+  origem=ORIG_NUVIO; reconstruir(); assert(nFiltro==0 && contaOrigem[ORIG_NUVIO]==0);
+  origem=ORIG_TODAS; reconstruir();
   biblioteca_servidor_filtrar(0); assert(nFiltro == 1 && filtro[0] == 0);
   biblioteca_servidor_filtrar(1); assert(nFiltro == 1 && filtro[0] == 0);
   biblioteca_servidor_filtrar(2); assert(nFiltro == 1 && filtro[0] == 1);

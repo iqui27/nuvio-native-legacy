@@ -898,10 +898,11 @@ static void reconstruir(void) {
     if (jaNoFiltro(ci->imdb)) continue;
     if (nContados < CAT_MAX) contados[nContados++] = i;
     contaOrigem[ORIG_TODAS]++;
-    int bits = ci->fontes ? ci->fontes : CAT_FONTE_NUVIO;
+    int bits = ci->fontes ? ci->fontes : ci->naLista ? CAT_FONTE_NUVIO : 0;
     if (bits & CAT_FONTE_TRAKT) contaOrigem[ORIG_TRAKT]++;
     if (bits & CAT_FONTE_SIMKL) contaOrigem[ORIG_SIMKL]++;
     if (bits & CAT_FONTE_NUVIO) contaOrigem[ORIG_NUVIO]++;
+    if (origem > ORIG_TODAS && origem < BIB_N_ORIG && !bits) continue;
     if (!daOrigem(ci->fontes)) continue;
     if (origem >= BIB_N_ORIG && (origem - BIB_N_ORIG >= nAddonOrigens || strcmp(ci->origem, addonOrigens[origem - BIB_N_ORIG].id))) continue;
     totalModo++;
