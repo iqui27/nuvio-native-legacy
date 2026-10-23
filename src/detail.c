@@ -847,7 +847,17 @@ static const char *cabecalhoDe(int r) {
     case SEC_ELENCO:   return "Elenco";
     case SEC_TRAILERS:     return "Trailers e extras";
     case SEC_RELACIONADOS: return "Recomendações";
-    case SEC_COLECAO:      return "Coleção";
+    case SEC_COLECAO: {
+      // O cabecalho do mockup v2 nomeia o AUTOR ("Do mesmo autor · Andy
+      // Weir"); o nome que o app tem e o da colecao do TMDB. O modo mini-card
+      // (colecao de uma parte so) segue "Colecao", que e o que ele e.
+      static char cab[160];
+      if (secaoN(SEC_COLECAO) > 1) {
+        const char *nome = extras_colecao_nome();
+        if (nome && nome[0]) snprintf(cab, sizeof cab, i18n("Do mesmo autor · %s"), nome);
+        else snprintf(cab, sizeof cab, "%s", i18n("Do mesmo autor"));
+      } else snprintf(cab, sizeof cab, "%s", i18n("Coleção"));
+      return cab; }
     // Sem cabecalho de secao: a propria secao ja abre com "trakt Comentários" e
     // o subtitulo "Avaliações do Trakt". Com os dois saiam DOIS titulos
     // empilhados dizendo a mesma coisa.
@@ -6823,19 +6833,30 @@ static void cartaoComentario(GfxRect card, float raio, float a) {
 
 static void desenhaTimeline(float x,float y,int c,float f,float a) {
   const char *img=extras_colecao_poster(c);
+  const char *ano=extras_colecao_ano(c);
   GfxRect r={x,y,400,225};
   GLuint tex=img && img[0] ? tex_obter_larg(img,400) : 0;
   if (tex) {
     gfx_tex_aspect_atual=tex_aspecto(img); gfx_card_forcar_cover_atual=1;
     gfx_rect(r,tex,GFX_CARD,0,0,0,18.0f/225,1,1,1,a);
     gfx_tex_aspect_atual=0; gfx_card_forcar_cover_atual=0;
-  } else gfx_cor(r,18.0f/225,1,1,1,.06f*a);
+  } else if (ano && ano[0]) gfx_cor(r,18.0f/225,1,1,1,.06f*a);
+  else {
+    // PARTE ANUNCIADA (mockup v2): sem data e sem poster, o card e so o
+    // contorno com "Em produção · sem data" no centro.
+    gfx_anel(r,18.0f/225,2,1,1,1,.22f*a);
+    TxtLinha la=txt_linha(TXT_G18R,i18n("Em produção · sem data"),243,242,239,140);
+    txt_desenhar_alpha(la,x+(400-la.w)*.5f,y+(225-la.h)*.5f,a);
+  }
   float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
   if (c==parteAtualColecao()) gfx_anel(r,18.0f/225,3,ar,ag,ab,a);
   if (f>.01f) gfx_anel(r,18.0f/225,3,1,1,1,f*a);
   if (c+1<secaoN(SEC_COLECAO)) gfx_cor((GfxRect){x+200,y+252,464,2},0,1,1,1,.18f*a);
   gfx_cor((GfxRect){x+194,y+247,12,12},.5f,c==parteAtualColecao() ? ar : .6f,c==parteAtualColecao() ? ag : .6f,c==parteAtualColecao() ? ab : .6f,a);
-  char line[256]; snprintf(line,sizeof line,"%s · %s%s%s",extras_colecao_titulo(c),extras_colecao_ano(c),
+  char line[256];
+  if (!(ano && ano[0]) && !tex)
+    snprintf(line,sizeof line,"%s · %s",extras_colecao_titulo(c),i18n("anunciado · sem data"));
+  else snprintf(line,sizeof line,"%s · %s%s%s",extras_colecao_titulo(c),ano,
     c==parteAtualColecao() ? " · " : "",c==parteAtualColecao() ? i18n("Você está aqui") : "");
   TxtLinha l=txt_linha_corta(TXT_G18R,line,243,242,239,200,450);
   txt_desenhar_alpha(l,x+(400-l.w)*.5f,y+270,a);
