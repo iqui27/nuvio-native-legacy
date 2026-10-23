@@ -567,6 +567,10 @@ void recomenda_ao_mudar_alcance(void (*fn)(int nivel));
 int  recomenda_cabecalhos(const char **cab, char *aut, size_t na, char *via, size_t nv,
                           char *perfil, size_t np);
 
+// Immutable local snapshot for queued requests; never refreshes over HTTP.
+int recomenda_cabecalhos_local(const char **cab, char *aut, size_t na, char *via, size_t nv,
+                               char *perfil, size_t np);
+
 // --- ATIVIDADE DO PLAYER (contrato com o agente do player) --------------------
 //
 // O player preenche e chama recomenda_atividade(); o modulo decide se sai (so

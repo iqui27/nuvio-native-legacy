@@ -49,7 +49,8 @@ typedef struct {
 } Slot;
 
 static Slot slots[CACA_MAX + 1];
-static int nSlots, perfilLido = -1;
+static int nSlots;
+static char donoLido[192];
 static unsigned revisao = 1;
 static unsigned long long genVisto = ~0ull;
 static unsigned recalcEm, ultimoPasso;
@@ -72,8 +73,8 @@ typedef struct {
   char lista[64];
   char chave[96];
   char corpo[256];
-  int  vis;             // JOB_POSTAR: decisao de privacidade na hora do gesto
-  char dono[80];        // JOB_POSTAR: conta+perfil de quem desbloqueou
+  // Immutable request headers, captured on the main thread before enqueueing.
+  char aut[3100], via[64], perfil[64];
 } Job;
 typedef struct {
   char chave[96];
@@ -569,17 +570,10 @@ static void fazerTrilhas(void) {
 }
 
 static void fazerPostar(const Job *j) {
-  const char *cab[5] = { 0 };
-  char aut[600], via[64], pf[64], url[300], atual[80];
+  const char *cab[] = { j->aut, j->via, j->perfil[0] ? j->perfil : NULL, NULL };
+  char url[300];
   int st = 0;
-  if (!NV_REC_URL[0]) return;
-  // STALE: a conquista era da conta/perfil de quando foi enfileirada. Trocou
-  // antes de a fila escoar -> nao posta (decisao de visibilidade tambem era
-  // daquela conta).
-  snprintf(atual, sizeof atual, "%s:%d", sessao_usuario(), perfis_ativo());
-  if (strcmp(atual, j->dono)) return;
-  if (!recomenda_cabecalhos(cab, aut, sizeof aut, via, sizeof via, pf, sizeof pf)) return;
-  if (strstr(j->corpo, "\"visivel\":1") && recomenda_alcance() < 1) return;
+  if (!NV_REC_URL[0] || !j->aut[0]) return;
   snprintf(url, sizeof url, "%s/v1/conquista", NV_REC_URL);
   free(rede_postar_st(url, PRAZO_S, cab, j->corpo, &st));
   printf("[caca] conquista enviada: HTTP %d\n", st);
@@ -631,13 +625,22 @@ static void pedirLista(Slot *s) {
 // ---------------------------------------------------------------------------
 // Disco das cacadas (por perfil)
 // ---------------------------------------------------------------------------
-static void arquivoCacas(char *dst, size_t tam) { snprintf(dst, tam, "cacas-p%d.txt", perfis_ativo()); }
+// Legacy profile-only files have no provable account owner.
+static void arquivoCacas(char *dst, size_t tam) {
+  char conta[160];
+  const unsigned char *u = (const unsigned char *)sessao_usuario();
+  size_t n = 0;
+  while (*u && n + 2 < sizeof conta) {
+    snprintf(conta + n, 3, "%02x", *u++); n += 2;
+  }
+  conta[n] = 0;
+  snprintf(dst, tam, "cacas-%s-p%d.txt", n ? conta : "anon", perfis_ativo());
+}
 
 static void gravarCacas(void) {
-  char arq[48], *b;
+  char *b;
   size_t cap = (size_t)(nSlots + 1) * 600, k = 0;
   int i;
-  arquivoCacas(arq, sizeof arq);
   b = malloc(cap);
   if (!b) return;
   b[0] = 0;
@@ -651,20 +654,19 @@ static void gravarCacas(void) {
                           s->i.flags, s->criado, s->i.ganhos, s->completaEm, nome[0] ? nome : "-",
                           foto[0] ? foto : "-");
   }
-  dados_gravar(arq, b);
+  dados_gravar(donoLido, b);
   free(b);
 }
 
 static void soltar(Slot *s) { free(s->f); memset(s, 0, sizeof *s); }
 
 static void lerCacas(void) {
-  char arq[48], *t, *l, *sv;
+  char *t, *l, *sv;
   int i;
   for (i = 0; i < nSlots; i++) soltar(&slots[i]);
   nSlots = 0;
-  perfilLido = perfis_ativo();
-  arquivoCacas(arq, sizeof arq);
-  t = dados_ler(arq);
+  arquivoCacas(donoLido, sizeof donoLido);
+  t = dados_ler(donoLido);
   if (t) {
     for (l = strtok_r(t, "\n", &sv); l && nSlots < CACA_MAX; l = strtok_r(NULL, "\n", &sv)) {
       char *c[11], *q = l;
@@ -736,8 +738,9 @@ static void postarConquista(const Slot *s, int degrau) {
            "{\"chave\":\"%s\",\"nivel\":%d,\"visivel\":%d,\"nome\":\"%s\",\"vistos\":%d,\"total\":%d}",
            s->chave, conq_indice(degrau) + 1, vis, nome, s->i.vistos, s->i.total);
   snprintf(j.chave, sizeof j.chave, "%s", s->chave);
-  j.vis = vis;
-  snprintf(j.dono, sizeof j.dono, "%s:%d", sessao_usuario(), perfis_ativo());
+  const char *cab[4];
+  if (!recomenda_cabecalhos_local(cab, j.aut, sizeof j.aut, j.via, sizeof j.via,
+                                  j.perfil, sizeof j.perfil)) return;
   enfileirar(&j);
 }
 
@@ -888,7 +891,9 @@ static Slot *slotPorChave(const char *chave) {
 
 void caca_passo(unsigned agora, int momentoBom) {
   int i, adotou = 0;
-  if (perfilLido != perfis_ativo()) caca_perfil_trocado();
+  char dono[sizeof donoLido];
+  arquivoCacas(dono, sizeof dono);
+  if (strcmp(donoLido, dono)) caca_perfil_trocado();
   // Adota o que o fio trouxe.
   pthread_mutex_lock(&trava);
   for (i = 0; i < nRes; i++) {
@@ -1035,6 +1040,8 @@ void caca_alternar_escopo(int i, int bit) {
 int caca_alternar(int i, int marca) {
   if (i < 0 || i >= nSlots) return 0;
   slots[i].i.flags ^= marca;
+  if ((marca & CACA_F_PRIVADA) && slots[i].i.ganhos)
+    postarConquista(&slots[i], conq_maior(slots[i].i.ganhos));
   gravarCacas();
   extrasSujos = 1; revisao++;
   return (slots[i].i.flags & marca) != 0;
