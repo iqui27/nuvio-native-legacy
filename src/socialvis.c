@@ -6,6 +6,7 @@
 #include "artemetahub.h"
 #include "recomenda.h"
 #include "perfis.h"
+#include "simkl.h"
 #include "dados.h"
 #include "idioma.h"
 #include <SDL2/SDL.h>
@@ -804,6 +805,23 @@ int socialvis_perfil(const char *id, SvPerfil *p) {
       if (e->acao == SV_AGORA) p->a.agora = 1;
       for (j = 0; j < p->a.nTit; j++) if (!strcmp(p->a.tit[j].imdb, e->imdb)) repetido = 1;
       if (!repetido && p->a.nTit < SV_TIT_MAX) p->a.tit[p->a.nTit++] = *e;
+    }
+  }
+  // Issue #643: a profile of this TV ("perfil:<N>") shows its own Simkl history,
+  // by original watched date. Sharing off / blocked already returned above.
+  if (!strncmp(id, "perfil:", 7) && atoi(id + 7) > 0 && !p->a.nTit) {
+    SimklVisto v[SV_TIT_MAX];
+    int nv = simkl_vistos_perfil(atoi(id + 7), v, SV_TIT_MAX);
+    for (i = 0; i < nv; i++) {
+      SvEvento *e = &p->a.tit[p->a.nTit++];
+      memset(e, 0, sizeof *e);
+      snprintf(e->pessoaId, sizeof e->pessoaId, "%s", id);
+      e->fonte = SV_FONTE_SIMKL; e->acao = SV_FIM; e->pct = -1; e->restanteMin = -1;
+      snprintf(e->imdb, sizeof e->imdb, "%s", v[i].imdb);
+      snprintf(e->tipo, sizeof e->tipo, "%s", v[i].tipo);
+      snprintf(e->titulo, sizeof e->titulo, "%s", v[i].titulo);
+      snprintf(e->poster, sizeof e->poster, "%s", v[i].poster);
+      e->temporada = v[i].temporada; e->episodio = v[i].episodio; e->quando = v[i].quando;
     }
   }
   // An unqualified rating does not prove a positive reaction. Only explicitly

@@ -726,6 +726,91 @@ int simkl_perfil(PerfilDados *d) {
   return ok;
 }
 
+// ------------------------------------------------------------ vistos (issue #643)
+
+static long long vistoEpoch(const char *iso) {
+  struct tm t = {0};
+  int a, m, d, h = 0, mi = 0, s = 0;
+  if (!iso || sscanf(iso, "%d-%d-%dT%d:%d:%d", &a, &m, &d, &h, &mi, &s) < 3) return 0;
+  t.tm_year = a - 1900; t.tm_mon = m - 1; t.tm_mday = d;
+  t.tm_hour = h; t.tm_min = mi; t.tm_sec = s;
+  return (long long)timegm(&t);
+}
+
+// Insere em ordem decrescente; mesmo imdb+T:E fica com o mais novo.
+static void vistoAdd(SimklVisto *dst, int *n, int max, const SimklVisto *v) {
+  int i, k;
+  for (i = 0; i < *n; i++)
+    if (!strcmp(dst[i].imdb, v->imdb) && dst[i].temporada == v->temporada &&
+        dst[i].episodio == v->episodio) {
+      if (dst[i].quando >= v->quando) return;
+      memmove(dst + i, dst + i + 1, sizeof *dst * (size_t)(*n - i - 1)); (*n)--;
+      break;
+    }
+  for (k = 0; k < *n && dst[k].quando >= v->quando; k++) ;
+  if (k >= max) return;
+  if (*n < max) (*n)++;
+  memmove(dst + k + 1, dst + k, sizeof *dst * (size_t)(*n - k - 1));
+  dst[k] = *v;
+}
+
+static void vistosTipo(const char *json, const char *lista, int filme,
+                       SimklVisto *dst, int *n, int max) {
+  const char *p;
+  for (p = js_array(json, NULL, lista); p && *p == '{'; p = js_prox(js_fim(p))) {
+    const char *f = js_fim(p), *obra, *obraFim, *ids, *idsFim;
+    SimklVisto v = {0};
+    char quando[48] = "";
+    if (!objetoRaiz(p, f, filme ? "movie" : !strcmp(lista, "anime") ? "anime" : "show", &obra, &obraFim)) continue;
+    js_texto_raiz_em(obra, obraFim, "title", v.titulo, sizeof v.titulo);
+    if (objetoRaiz(obra, obraFim, "ids", &ids, &idsFim)) js_texto(ids, idsFim, "imdb", v.imdb, sizeof v.imdb);
+    if (!imdbValido(v.imdb)) continue;
+    snprintf(v.poster, sizeof v.poster, "https://images.metahub.space/poster/medium/%s/img", v.imdb);
+    if (filme) {
+      snprintf(v.tipo, sizeof v.tipo, "movie");
+      js_texto_raiz_em(p, f, "last_watched_at", quando, sizeof quando);
+      v.quando = vistoEpoch(quando);
+      if (v.quando) vistoAdd(dst, n, max, &v);
+    } else {
+      const char *s;
+      snprintf(v.tipo, sizeof v.tipo, "series");
+      for (s = js_array(p, f, "seasons"); s && *s == '{'; s = js_prox(js_fim(s))) {
+        const char *sf = js_fim(s), *e;
+        int temporada = (int)js_num(s, sf, "number", 0);
+        for (e = js_array(s, sf, "episodes"); e && *e == '{'; e = js_prox(js_fim(e))) {
+          const char *ef = js_fim(e);
+          quando[0] = 0;
+          js_texto_raiz_em(e, ef, "watched_at", quando, sizeof quando);
+          v.temporada = temporada; v.episodio = (int)js_num(e, ef, "number", 0);
+          v.quando = vistoEpoch(quando);
+          if (v.quando) vistoAdd(dst, n, max, &v);
+        }
+      }
+    }
+  }
+}
+
+int simkl_ler_vistos(const char *json, SimklVisto *dst, int max) {
+  int n = 0;
+  if (!dst || max <= 0 || !perfilHistoricoValido(json)) return 0;
+  vistosTipo(json, "movies", 1, dst, &n, max);
+  vistosTipo(json, "shows", 0, dst, &n, max);
+  vistosTipo(json, "anime", 0, dst, &n, max);
+  return n;
+}
+
+int simkl_vistos_perfil(int perfil, SimklVisto *dst, int max) {
+  char tk[300];
+  int st = 0, n = 0;
+  char *corpo;
+  if (!simklauth_token_perfil(perfil, tk, sizeof tk)) return 0;
+  corpo = pedirComToken('G', "/sync/all-items/all/completed", "extended=full&episode_watched_at=yes", NULL, &st, tk);
+  memset(tk, 0, sizeof tk);
+  if (st >= 200 && st < 300) n = simkl_ler_vistos(corpo, dst, max);
+  free(corpo);
+  return n;
+}
+
 // Assinatura barata de um corpo (FNV-1a). 0 = sem corpo.
 static unsigned long assinar(const char *s) {
   unsigned long h = 1469598103UL;
