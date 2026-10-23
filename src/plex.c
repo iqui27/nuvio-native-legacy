@@ -380,7 +380,10 @@ static int linhaIndice(const char *p, const char *f, const char *serieRk, SrvIdx
   txtRaiz(p, f, "title", titulo, sizeof titulo);
   e->ano = (short)numRaiz(p, f, "year", 0);
   e->atualizado = (long long)numRaiz(p, f, "updatedAt", 0);
-  e->visto = numRaiz(p, f, "viewCount", 0) > 0;
+  e->visto = e->tipo == 's'
+    ? numRaiz(p, f, "leafCount", 0) > 0 &&
+      numRaiz(p, f, "viewedLeafCount", 0) >= numRaiz(p, f, "leafCount", 0)
+    : numRaiz(p, f, "viewCount", 0) > 0;
   e->vistoMs = (long long)numRaiz(p, f, "lastViewedAt", 0) * 1000LL;
   // Same clock unit as Jellyfin ticks: both are position * 10,000,000.
   e->retomadoTicks = (long long)(numRaiz(p, f, "viewOffset", 0) * 10000.0 + 0.5);
