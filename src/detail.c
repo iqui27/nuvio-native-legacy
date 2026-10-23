@@ -3425,14 +3425,18 @@ static void detail_evento_(const SDL_Event *e) {
       }
       if (k != SDLK_DOWN) return;
       focoServidor = -1;
-    } else if (k == SDLK_DOWN && servidoresDisponiveis) {
+    } else if (k == SDLK_DOWN && servidoresDisponiveis && !focoAmigos) {
       for (int p = 0; p < 3; p++) if (servidoresDisponiveis & (1 << p)) { focoServidor = p; return; }
     }
     // Up opens the existing rating card; rated titles can edit their stars.
     // CIMA na ilha de amigos volta ao botao em que estava; BAIXO entra nas secoes;
     // ESQUERDA pede o menu lateral como o primeiro botao.
     if (focoAmigos) {
-      if (k == SDLK_UP) { focoAmigos = 0; return; }
+      if (k == SDLK_UP) {
+        focoAmigos = 0;
+        for (int p = 0; p < 3; p++) if (servidoresDisponiveis & (1 << p)) { focoServidor = p; break; }
+        return;
+      }
       if (k == SDLK_LEFT) { pediuMenu = 1; return; }
       if (k != SDLK_DOWN) return;
       focoAmigos = 0;
@@ -4952,7 +4956,8 @@ static void heroWeb(float a, float desloc) {
     for (int p = 0; ci && p < 3; p++) if (servidores_contem_item(ci, p)) servidoresDisponiveis |= 1 << p;
     srvAvailabilityIndex = idx; srvAvailabilityVersion = srvCurrentVersion;
   }
-  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai - (servidoresDisponiveis ? 64 : 0);
+  float srvH = servidoresDisponiveis ? 64.0f : 0.0f;
+  float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai - srvH;
   // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
   // botoes. Sao duas, e a ordem tem razao: a retomada explica o BOTAO e fica
   // colada nele; a agenda ("Próximo episódio T2E5 · em 3 dias") explica o
@@ -5274,7 +5279,7 @@ static void heroWeb(float a, float desloc) {
   // --- ILHA DE AMIGOS, logo abaixo dos botoes ----------------------------------
   if (temAmg) {
     static const float ANEL[3] = { 0.075f, 0.08f, 0.095f };
-    float y0 = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + hCaption + NV_DETW_AMIGOS_GAP;
+    float y0 = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + srvH + hCaption + NV_DETW_AMIGOS_GAP;
     float d = 52.0f, pad = (NV_DETW_AMIGOS_H - d) * 0.5f;
     int foc = nivel == 0 && focoAmigos;
     char l1[200], l2[220];
@@ -5303,7 +5308,7 @@ static void heroWeb(float a, float desloc) {
   // --- FAIXA "VAI TOCAR", logo abaixo dos botoes (e da ilha de amigos) ---------
   if (vaiTocar.tem && hVai > 1.0f) {
     float alvoH = vtui_altura(&vaiTocar) + DET_VAI_GAP;
-    float yV = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + hCaption + hAmg + DET_VAI_GAP;
+    float yV = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + srvH + hCaption + hAmg + DET_VAI_GAP;
     float wV = larguraTextoHero() < 1000.0f ? larguraTextoHero() : 1000.0f;
     float fV = hVai / alvoH;
     vtui_desenhar(&vaiTocar, NV_DETW2_X - 24.0f, yV, wV, a * (fV > 1.0f ? 1.0f : fV));
@@ -5385,7 +5390,7 @@ static void heroWeb(float a, float desloc) {
   // in the artwork slot, without truncating it.
   if (nomeAbaixo)
     txt_bloco(TXT_DET_META2, nome, 255, 255, 255, NV_DETW2_X,
-               yAcoes + NV_DETW2_BTN_H + hAcoesExtra + 16.0f, larguraLogoHero(), 34, a, 0);
+               yAcoes + NV_DETW2_BTN_H + hAcoesExtra + srvH + 16.0f, larguraLogoHero(), 34, a, 0);
 
   // --- sinopse --------------------------------------------------------------
   { float f = 1.0f;
