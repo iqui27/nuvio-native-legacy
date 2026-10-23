@@ -552,6 +552,15 @@ static const char *regraNome(const AioRegra *r) {
 static const char *decisao(const AioResultado *r) {
   return r->decisao==1?i18n("Destino externo: fora do player da TV."):r->decisao==2?i18n("Oculto pelos filtros locais"):r->decisao==3?i18n("Fora do cache: escolha manual."):r->decisao==4?i18n("Mantido na lista da TV"):i18n("Resultado recebido. Compatibilidade ainda não verificada.");
 }
+// Mock-style reason: one bounded sentence per observable state. When the
+// playback list is not loaded there is no rank to explain, and the text says so.
+static const char *motivo(const AioResultado *r) {
+  if(r->decisao==1) return i18n("Destino externo: o Nuvio entrega ao celular; nada é reproduzido na TV.");
+  if(r->decisao==2) return i18n("Os filtros locais do Nuvio ocultam esta fonte da lista automática.");
+  if(r->decisao==3) return i18n("Sem cache no debrid: fora da escolha automática, disponível para escolha manual.");
+  if(r->decisao==4) return i18n("Em cache e reproduzível: mantida na lista com a posição calculada pelo Nuvio.");
+  return i18n("Resultado recebido. Sem lista de reprodução carregada nesta TV, a posição não é calculada.");
+}
 static void tituloDesenhar(void) {
   painel(72,148,1362,824); painel(1458,148,390,824);
   texto(TXT_ILHA_TITULO,i18n("Inspeção do título"),108,184,1080,242);
@@ -596,10 +605,12 @@ static void tituloDesenhar(void) {
     txt_bloco_corta(TXT_ILHA_NOME,r->nome,240,240,238,1490,217,326,34,1,3);
     texto(TXT_G20M,i18n("Posição na TV"),1490,340,230,174);
     char rank[32]; snprintf(rank,sizeof rank,r->rank?"%d":"—",r->rank); texto(TXT_G20M,rank,1765,340,50,236);
-    bloco(decisao(r),1490,454,326,5);
+    bloco(decisao(r),1490,454,326,3);
+    texto(TXT_ILHA_HORA,i18n("Motivo da decisão"),1490,556,326,174);
+    bloco(motivo(r),1490,580,326,4);
   }
   char stats[192]; snprintf(stats,sizeof stats,i18n("%d estatísticas · %d erros · %d sem campos obrigatórios"),snap.estatisticas,snap.erros,snap.filtrados);
-  bloco(snap.search?stats:i18n("Não informado"),1490,650,326,4);
+  bloco(snap.search?stats:i18n("Não informado"),1490,706,326,2);
   bloco(i18n("Ordem e regras dependem desta TV. A inspeção não abre links para verificar reprodução."),1490,780,326,5);
   if(linkSelecionado>=0) qrDesenhar(celular_url(),1490,580,176);
   if(!snap.resultados) bloco(i18n("Escolha um ID de título para consultar as fontes. Nenhum link de reprodução será aberto."),124,420,1100,4);
