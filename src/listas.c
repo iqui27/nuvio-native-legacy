@@ -678,33 +678,39 @@ typedef struct {
 static void *fioListas(void *u) {
   ListaTarefa *t = u;
   char url[300], termo[300], *corpo = NULL;
-  int qual = t->qual;
+  int qual = t->qual, st = 0;
   escapar(t->termo, termo, sizeof termo);
   if (perfis_sessao_atual(t->sessao)) {
     if (qual == PED_TRAKT_MINHAS && t->aut[0]) {
       const char *cab[] = { t->aut, "trakt-api-version: 2", t->chave, NULL };
-      corpo = rede_baixar_com("https://api.trakt.tv/users/me/lists", 15, cab);
+      corpo = rede_baixar_st("https://api.trakt.tv/users/me/lists", 15, cab, &st);
     } else if (qual != PED_TRAKT_MINHAS && t->chave[0]) {
       const char *cab[] = { "trakt-api-version: 2", t->chave, NULL };
       if (termo[0])
         snprintf(url, sizeof url, "https://api.trakt.tv/search/list?query=%s&limit=%d", termo, LST_MAX);
       else snprintf(url, sizeof url, "https://api.trakt.tv/lists/trending?limit=%d", LST_MAX);
-      corpo = rede_baixar_com(url, 15, cab);
+      corpo = rede_baixar_st(url, 15, cab, &st);
     }
   }
+  // So 2xx vale: um corpo de erro (403 com JSON) nao e "zero listas".
+  if (corpo && (st < 200 || st > 299)) { free(corpo); corpo = NULL; }
   // Publicacao e troca de sessao se excluem; a rede nunca segura essa trava.
   if (perfis_sessao_travar(t->sessao)) {
     pthread_mutex_lock(&trava);
     if (t->geracao == geracao) {
-      nTabela = 0;
-      if (corpo) lst_ler_trakt(corpo, qual != PED_TRAKT_MINHAS);
-      if (!nTabela) {
-        if (qual == PED_TRAKT_MINHAS)
-          snprintf(aviso, sizeof aviso, "%s", t->aut[0]
-            ? "Você ainda não criou listas no Trakt"
-            : "Conecte sua conta do Trakt em Ajustes para ver suas listas");
-        else snprintf(aviso, sizeof aviso, "%s", t->chave[0]
-            ? "Nenhuma lista pública para este termo" : "Este pacote não tem a chave do Trakt");
+      // Sem resposta util (rede, ou nao-2xx descartado acima): a tabela que ja
+      // estava na tela fica; so um corpo 2xx decide se ha listas ou aviso.
+      if (corpo) {
+        nTabela = 0;
+        lst_ler_trakt(corpo, qual != PED_TRAKT_MINHAS);
+        if (!nTabela) {
+          if (qual == PED_TRAKT_MINHAS)
+            snprintf(aviso, sizeof aviso, "%s", t->aut[0]
+              ? "Você ainda não criou listas no Trakt"
+              : "Conecte sua conta do Trakt em Ajustes para ver suas listas");
+          else snprintf(aviso, sizeof aviso, "%s", t->chave[0]
+              ? "Nenhuma lista pública para este termo" : "Este pacote não tem a chave do Trakt");
+        }
       }
       fioVivo = 0;
     }
