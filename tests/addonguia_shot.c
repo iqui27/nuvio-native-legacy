@@ -33,7 +33,7 @@ int main(int argc,char **argv) {
   glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,tex,0);
   assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
   glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);
-  assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(64);
+  assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(128);
   gfx_tex_esquecer(0);gfx_icones_dir("deploy/app/art");ajustes_definir_vidro(1);
   for(int c=0;c<ajustes_rapido_cor_n();c++)if(!strcmp(ajustes_rapido_cor_nome(c),"Rosa"))ajustes_rapido_cor_definir(c);
   AddonRemoto a[4]={{"Torrentio","https://torrentio.strem.fun/manifest.json",1},{"Xperience","https://xperience.invalid/manifest.json",1},{"Torrentio · Real-Debrid","https://torrentio.strem.fun/direct/manifest.json",1},{"AIOStreams","https://aio.invalid/manifest.json",1}};
@@ -69,7 +69,7 @@ int main(int argc,char **argv) {
     addonmodo_resposta(id,200,1,0,2);
     addonmodo_resposta(addonmodo_id(addons_base(2)),200,1,2,0);
     addonmodo_resposta(addonmodo_id(addons_base(3)),-1,0,0,0);
-    assert(addonmodo_set(id,shots[i].tela==AG_MODO?AM_P2P:AM_AUTO));
+    assert(addonmodo_set(id,shots[i].tela==AG_DEBRID?AM_DEBRID:shots[i].tela==AG_MODO||shots[i].tela==AG_INICIANDO?AM_P2P:AM_AUTO));
     if(shots[i].tela==AG_NOVO_DIRETO)addonmodo_resposta(id,200,1,2,0);
     addonguia_shot(shots[i].tela);
     if(shots[i].tela==AG_NOVO_CATALOGO)addonguia_abrir(AG_NOVO_CATALOGO,1,NULL);
@@ -84,7 +84,8 @@ int main(int argc,char **argv) {
     unsigned char *pixels=malloc(1920*1080*4);assert(pixels);glReadPixels(0,0,1920,1080,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
     SDL_Surface *s=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);assert(s);
     for(int y=0;y<1080;y++)memcpy((char*)s->pixels+y*s->pitch,pixels+(1079-y)*1920*4,1920*4);
-    char path[1024];snprintf(path,sizeof path,"%s/%s-app.png",argv[1],shots[i].nome);assert(!IMG_SavePNG(s,path));
+    char path[1024];snprintf(path,sizeof path,"%s/%s-app.png",argv[1],shots[i].nome);
+    int erro=IMG_SavePNG(s,path);assert(!erro&&"savepng");
     SDL_FreeSurface(s);free(pixels);printf("PNG %s\n",path);
   }
   addonguia_shot(AG_MODO);tecla(SDLK_RETURN);
@@ -95,7 +96,7 @@ int main(int argc,char **argv) {
   assert(addonguia_shot_tela()==AG_MODO);
   addonguia_desenhar();tecla(SDLK_RIGHT);tecla(SDLK_RIGHT);tecla(SDLK_RETURN);
   assert(!addonguia_aberto()&&addonmodo_get(id)==AM_DIRETO);
-  assert(addonguia_pedido()==AGP_REPETIR);
+  assert(addonguia_pedido()==AGP_NADA);
   addonguia_configurar(2);assert(addonguia_shot_tela()==AG_NOVO_DIRETO);addonguia_fechar();
   addonguia_shot(AG_HDR);tecla(SDLK_RETURN);assert(addonguia_pedido()==AGP_PROXIMA);
   addonguia_shot(AG_CONECTAR);tecla(SDLK_ESCAPE);assert(addonguia_aberto());

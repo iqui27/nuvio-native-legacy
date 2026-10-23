@@ -63,7 +63,7 @@ static void icone(const char *s,float x,float y,float lado,float a) {
 static void painel(GfxRect r,float raio) {
   if(ajustes_vidro()) {
     gfx_vidro_painel(r,raio/r.h,0.94f,1);
-    gfx_cor(r,raio/r.h,0.055f,0.059f,0.071f,0.94f);
+    gfx_cor(r,raio/r.h,0.055f,0.059f,0.071f,tela==AG_MODO||tela==AG_LISTA||tela==AG_CONECTAR?0.94f:0.74f);
     gfx_luz_canto(r,raio/r.h,r.w*0.2f,-r.h*0.4f,r.w,1,1,1,0.035f);
   }
   else gfx_cor(r,raio/r.h,0.071f,0.075f,0.086f,0.98f);
@@ -95,10 +95,14 @@ static void kicker(const char *s,float x,float y) {
 static float chip(const char *s,float x,float y,int pequeno) {
   TxtEstilo estilo=pequeno?TXT_ILHA_HORA:TXT_G18R;
   TxtLinha l=txt_linha(estilo,s,243,242,239,255);
-  float pad=pequeno?10:15,h=pequeno?26:42;
-  gfx_cor((GfxRect){x,y,l.w+pad*2,h},0.5f,1,1,1,pequeno?0.043f:0.07f);
-  txt_desenhar_alpha(l,x+pad,y+(h-l.h)/2,pequeno?0.64f:0.8f);
-  return l.w+pad*2+(pequeno?9:10);
+  float pad=pequeno?10:15,h=pequeno?26:42,extra=pequeno?0:29;
+  gfx_cor((GfxRect){x,y,l.w+pad*2+extra,h},0.5f,1,1,1,pequeno?0.043f:0.07f);
+  if(!pequeno) {
+    const char *ic=!strcmp(s,i18n("Fontes para tocar"))?"aj_play":!strcmp(s,i18n("Torrent / P2P"))?"aj_users":!strcmp(s,i18n("Links diretos"))?"aj_link":!strcmp(s,i18n("Catálogos"))?"aj_layout-grid":!strcmp(s,i18n("Legendas"))?"aj_captions":"aj_file-text";
+    icone(ic,x+pad,y+11,20,0.8f);
+  }
+  txt_desenhar_alpha(l,x+pad+extra,y+(h-l.h)/2,pequeno?0.64f:0.8f);
+  return l.w+pad*2+extra+(pequeno?9:10);
 }
 static void capacidades(int i,float x,float y,int pequeno) {
   int d,t;addonmodo_fatos(addonmodo_id(addons_base(i)),NULL,NULL,&d,&t);
@@ -123,14 +127,14 @@ static void rotas(float x,float y,float w) {
   icone("aj_chevron-right",x+w-16,y+28,16,0.6f);
   float cw=(w-24)/3;
   for(int i=0;i<3;i++) {
-    GfxRect r={x+i*(cw+12),y+60,cw,92};
+    GfxRect r={x+i*(cw+12),y+60,cw,w>1200?92:108};
     gfx_cor(r,20/r.h,1,1,1,foco==10+i||addonmodo_get(identidade)==i+1?0.14f:0.035f);
     icone(ICONES[i],r.x+18,r.y+20,21,0.9f);
     texto(TXT_G20B,i18n(i==0&&ajustes_p2p_url()[0]?"Servidor P2P":MODOS[i]),r.x+48,r.y+16,cw-58,1);
     texto(TXT_G18R,i18n(DESCR[i]),r.x+18,r.y+50,cw-30,0.64f);
     if(addonmodo_get(identidade)==i+1) {
-      float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
-      gfx_cor((GfxRect){r.x+cw-18,r.y+12,6,6},0.5f,ar,ag,ab,1);
+      TxtLinha ativo=txt_linha(TXT_G14B,i18n("Em uso nesta TV"),236,64,122,255);
+      txt_desenhar(ativo,r.x+cw-ativo.w-18,r.y+20);
     }
     alvo(r,10+i);
   }
@@ -553,7 +557,8 @@ void addonguia_desenhar(void) {
   }
   const char *acao=tela==AG_NOVO_CATALOGO?i18n("Escolher fileiras da Home"):tela==AG_NOVO_DIRETO?i18n("Continuar"):tela==AG_INICIANDO?i18n("Voltar às fontes"):tela==AG_401?i18n("Rever acesso no celular"):tela==AG_P2P||tela==AG_NOVO_TORRENT?(localDisponivel()||ajustes_p2p_url()[0]?i18n("Ligar P2P e tentar"):i18n("Conectar pelo celular")):tela!=AG_VAZIO&&proxima()?i18n("Tentar a próxima fonte"):i18n("Buscar fontes de novo");
   if(tela==AG_NOVO_TORRENT&&!player_aberto())acao=i18n("Escolher como tocar");
-  float w=botao(acao,tela==AG_P2P||tela==AG_NOVO_TORRENT?"aj_power":NULL,x,cy,0);
+  const char *acaoIcone=tela==AG_P2P||tela==AG_NOVO_TORRENT?"aj_power":tela==AG_NOVO_CATALOGO?"aj_layout-grid":tela==AG_NOVO_DIRETO?"aj_check":tela==AG_401?"aj_smartphone":tela==AG_VAZIO?"aj_rotate-cw":"aj_arrow-right";
+  float w=botao(acao,acaoIcone,x,cy,0);
   if(tela!=AG_INICIANDO)botao(novo?i18n("Agora não"):i18n("Voltar às fontes"),NULL,x+w+12,cy,1);
   cy+=84;
   if(routes){rotas(x,cy,1076);cy+=188;}
