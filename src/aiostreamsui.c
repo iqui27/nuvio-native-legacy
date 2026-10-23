@@ -615,9 +615,18 @@ static void workspace(void) {
     for(int i=0;i<7;i++) if(!strcmp(host,hosts[i])) displayHost=nomes[i];
     texto(TXT_ILHA_NOME,displayHost,518,306,1160,236);
     gfx_cor((GfxRect){453,374,1353,1},0,.8f,.84f,.88f,.08f);
-    texto(TXT_ILHA_SUB,snap.configurada?i18n("Configuração conectada"):i18n("Somente manifesto"),518,350,1160,170);
+    texto(TXT_ILHA_SUB,snap.configurada?i18n("Configuração conectada"):i18n("Somente manifesto"),518,350,1100,170);
+    if(snap.valida) {
+      gfx_cor((GfxRect){1690,313,116,34},.2f,.25f,.32f,.34f,.55f);
+      gfx_icone((GfxRect){1700,322,16,16},"aj_check",.7f,.84f,.86f,1);
+      texto(TXT_ILHA_NUM,i18n("Pronto"),1722,322,76,214);
+    }
     const char *sub[]={i18n("Catálogos publicados pelo manifesto"),i18n("Addons, serviços, cache e P2P"),i18n("Destinos externos e instalação"),i18n("Separadas das faixas dentro do vídeo"),i18n("Resumo somente leitura · Edite pelo celular"),i18n("Instância, latência e erros observados")};
-    for(int i=0;i<6;i++) linha(i,icons[i+1],nav[i+1],sub[i],453+(i%2)*727,389+(i/2)*112,i%2?626:702);
+    for(int i=0;i<6;i++) {
+      float x=453+(i%2)*727, w=i%2?626:702, y=389+(i/2)*112;
+      linha(i,icons[i+1],nav[i+1],sub[i],x,y,w);
+      texto(TXT_ILHA_NUM,snap.configurada?i18n("Configuração conectada"):i18n("Somente manifesto"),x+w-240,y+22,190,158);
+    }
     gfx_cor((GfxRect){453,741,1353,1},0,.8f,.84f,.88f,.08f);
     texto(TXT_ILHA_NOME,i18n("Inspeção do título"),453,770,900,238);
     texto(TXT_G20M,i18n("Todos os resultados recebidos, na ordem do AIOStreams."),453,804,980,174);
