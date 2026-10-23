@@ -315,6 +315,15 @@ static int focoOrigem, origemSel;
 static int contaOrigem[BIB_N_ORIG];
 static struct { char id[96], nome[96]; int count; } addonOrigens[8];
 static int nAddonOrigens;
+
+// Source labels share one bounds check, including stale add-on selections.
+static const char *rotuloOrigem(int indice, int listas) {
+  if (listas) return ROT_FONTE[indice >= 0 && indice < BIB_N_FONTES ? indice : FONTE_TRAKT];
+  if (indice >= 0 && indice < BIB_N_ORIG) return ROT_ORIG[indice];
+  if (indice >= BIB_N_ORIG && indice - BIB_N_ORIG < nAddonOrigens)
+    return addonOrigens[indice - BIB_N_ORIG].nome;
+  return ROT_ORIG[ORIG_TODAS];
+}
 static BibliotecaOrigens serverRows;
 static void (*serverSelect)(int);
 void biblioteca_origens_servidores(BibliotecaOrigens rows, void (*select)(int)) {
@@ -1425,7 +1434,9 @@ void biblioteca_evento(const SDL_Event *e) {
     else if (k == SDLK_RIGHT) { focoOrigem = 0; foco.fileira = BIB_FIL_GRADE; foco.coluna = 0; }
     else if (k == SDLK_LEFT) sair = 1;
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
-      if (modo == MODO_LISTAS) { fonte = origemSel; pedirFonte(); }
+      if (modo == MODO_LISTAS) {
+        if (origemSel >= 0 && origemSel < BIB_N_FONTES) { fonte = origemSel; pedirFonte(); }
+      }
       else if (origemSel >= BIB_N_ORIG + nAddonOrigens) {
         if (serverSelect) serverSelect(origemSel - BIB_N_ORIG - nAddonOrigens);
       } else { origem = origemSel; reconstruir(); }
@@ -1488,7 +1499,7 @@ void biblioteca_evento(const SDL_Event *e) {
     if (k == SDLK_LEFT)  { foco.fileira = BIB_FIL_MODO; foco.coluna = modo == MODO_LISTAS ? listaTab : BIB_N_MODOS - 1; return; }
     if (k == SDLK_UP) { foco.fileira = BIB_FIL_MODO; foco.coluna = modo == MODO_LISTAS ? listaTab : modo; return; }
     if (k == SDLK_DOWN) {
-      if (temOrigens() && pickSel == 0) { focoOrigem = 1; origemSel = origem; }
+      if (temOrigens() && pickSel == 0) { focoOrigem = 1; origemSel = modo == MODO_LISTAS ? fonte : origem; }
       else descerDaFaixa();
       return;
     }
@@ -1999,12 +2010,10 @@ static void desenhaModos(void) {
 static void pickerTexto(int p, const char **rot, const char **val) {
   if (modo == MODO_LISTAS) {
     *rot = p == 0 ? "Fonte" : p == 1 ? "Exibição" : p == 2 ? "Listas públicas" : "Nova lista";
-    *val = p == 0 ? ROT_FONTE[fonte] : p == 1 ? ROT_VIS[exibicao] : p == 2 ? "Procurar" : "Criar";
+    *val = p == 0 ? rotuloOrigem(fonte, 1) : p == 1 ? ROT_VIS[exibicao] : p == 2 ? "Procurar" : "Criar";
   } else if (modo == MODO_ASSISTIDOS) {
     *rot = p == 0 ? "Origem" : p == 1 ? "Tipo" : p == 2 ? "Ordem" : "";
-    const char *nomeOrigem = origem >= 0 && origem < BIB_N_ORIG ? ROT_ORIG[origem]
-      : origem >= BIB_N_ORIG && origem - BIB_N_ORIG < nAddonOrigens
-        ? addonOrigens[origem - BIB_N_ORIG].nome : ROT_ORIG[ORIG_TODAS];
+    const char *nomeOrigem = rotuloOrigem(origem, 0);
     *val = p == 0 ? nomeOrigem : p == 1 ? ROT_TIPO[tipo] : p == 2 ? ROT_ORD[ordem] : "";
   } else {
     *rot = p == 0 ? "Tipo" : p == 1 ? "Gênero" : p == 2 ? "Ordem" : p == 3 ? "Esconder assistidos" : "";
@@ -2855,7 +2864,7 @@ static void desenhaOrigens(void) {
       GfxRect row = {panel.x + 12, panel.y + 56 + i * 76, 296, 70};
       ponteiro_alvo(row.x, row.y, row.w, row.h, ponteiroOrigem, NULL, i, 0);
       if ((focoOrigem && origemSel == i) || fonte == i) gfx_cor(row, 18.0f / row.h, 1, 1, 1, .10f);
-      txt_desenhar(txt_linha(TXT_HERO_SEC, ROT_FONTE[i], 243, 242, 239, 255), row.x + 22, row.y + 22);
+      txt_desenhar(txt_linha(TXT_HERO_SEC, rotuloOrigem(i, 1), 243, 242, 239, 255), row.x + 22, row.y + 22);
     }
     return;
   }
@@ -2867,11 +2876,11 @@ static void desenhaOrigens(void) {
   const char *letra[] = { "", "T", "S", "N" };
   int start = focoOrigem && origemSel > 6 ? origemSel - 6 : 0;
   for (int i = start; i < nOrigens() && i < start + 7; i++) {
-    const char *name = i < BIB_N_ORIG ? ROT_ORIG[i] : NULL;
+    const char *name = rotuloOrigem(i, 0);
     const char *description = i < BIB_N_ORIG ? sub[i] : "lista do add-on";
     int count = i < BIB_N_ORIG ? contaOrigem[i] : 0;
     if (i >= BIB_N_ORIG && i < BIB_N_ORIG + nAddonOrigens) {
-      name = addonOrigens[i - BIB_N_ORIG].nome; count = addonOrigens[i - BIB_N_ORIG].count;
+      count = addonOrigens[i - BIB_N_ORIG].count;
     } else if (i >= BIB_N_ORIG + nAddonOrigens) {
       if (!serverRows || !serverRows(i - BIB_N_ORIG - nAddonOrigens, &name, &count)) continue;
       description = "Biblioteca";
