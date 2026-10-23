@@ -205,7 +205,7 @@ static int nConteudo(void) {
   if(pagina==PRONTO) return 2;
   if(pagina==PAINEL) return 9;
   if(pagina==CATALOGOS) return snap.catalogos+4;
-  if(pagina==FONTES) return snap.addons+snap.servicos+3;
+  if(pagina==FONTES) return snap.addons-nLegendas()+snap.servicos+3;
   if(pagina==LEGENDAS) return nLegendas()+snap.legendas+2;
   if(pagina==LINKS) return snap.links+3;
   if(pagina==FILTROS) {
@@ -260,8 +260,8 @@ static void acao(void) {
     } else if(foco==snap.catalogos+2) { desc_repetir(); geracao++; atualizarRede(0); }
     else mudar(SERVICOS);
   } else if(pagina==FONTES) {
-    if(foco==snap.addons+snap.servicos) ajustes_definir_p2p_ligado(!ajustes_p2p_ligado());
-    else if(foco==snap.addons+snap.servicos+1) campo(2);
+    if(foco==snap.addons-nLegendas()+snap.servicos) ajustes_definir_p2p_ligado(!ajustes_p2p_ligado());
+    else if(foco==snap.addons-nLegendas()+snap.servicos+1) campo(2);
     else mudar(SERVICOS);
   } else if(pagina==FILTROS) {
     if(regraSelecionada<0 && foco<8) { regraSelecionada=foco; foco=0; }
@@ -429,12 +429,13 @@ static void setup(void) {
   texto(TXT_ILHA_SUB,i18n("Um addon, todas as suas fontes"),199,248,440,174);
   gfx_cor((GfxRect){661,156,1,815},0,.8f,.84f,.88f,.08f);
   static const char *const story[]={"Um lugar.\nTodas as fontes.","Escolha onde\nele roda.","Sua configuração.\nNesta TV.","Configure uma vez.\nAssista do seu jeito.","Conectado.\nPronto para explorar."};
-  texto(TXT_ILHA_HORA,i18n(titulos[pagina]),124,312,490,174);
+  int step=pagina==PRONTO?2:pagina==IMPORTAR||pagina==SERVICOS?1:0;
+  char kicker[128]; snprintf(kicker,sizeof kicker,"%s · %d / 3",i18n(titulos[pagina]),step+1);
+  texto(TXT_ILHA_HORA,kicker,124,312,490,174);
   float storyHeight=txt_bloco(TXT_V2_A3TIT,i18n(story[pagina]),240,241,242,124,345,490,56,1,4);
   bloco(i18n("Reúna addons, catálogos e legendas. Configure os detalhes no celular e acompanhe tudo nesta TV."),124,345+storyHeight+34,485,5);
   const char *steps[]={i18n("Escolha sua instância"),i18n("Conecte e configure"),i18n("Valide nesta TV")};
   for(int i=0;i<3;i++) {
-    int step=pagina==PRONTO?2:pagina==IMPORTAR||pagina==SERVICOS?1:0;
     int done=i<step;
     gfx_cor((GfxRect){124,800+i*49,30,30},.5f,.35f,.45f,.47f,i==step?.6f:.22f);
     if(done) gfx_icone((GfxRect){129,805+i*49,20,20},"aj_check",.7f,.76f,.79f,1);
@@ -450,8 +451,13 @@ static void setup(void) {
     bloco(i18n("Debrid é opcional. HTTP, P2P e canais dependem da instância e desta TV."),716,774,1040,4);
   } else if(pagina==INSTANCIA) {
     botao(7,i18n("Meu servidor"),716,263,320); botao(8,i18n("Já tenho o link"),1056,263,350);
+    for(int i=0;i<3;i++) gfx_cor((GfxRect){1678+i*42,214,34,4},.5f,.65f,.84f,.86f,i==0?1:.18f);
     int start=foco<7 && foco>3?foco-3:0;
-    for(int i=start;i<7 && i<start+4;i++) linha(i,"aj_globe",nomes[i],i==2?i18n("Pública: sem P2P, HTTP ou canais ao vivo"):i==3?i18n("Versão de desenvolvimento"):i18n("Estável · Servidor comunitário"),716,345+(i-start)*94,1078);
+    for(int i=start;i<7 && i<start+4;i++) {
+      float y=345+(i-start)*94;
+      linha(i,"aj_globe",nomes[i],i==2?i18n("Pública: sem P2P, HTTP ou canais ao vivo"):i==3?i18n("Versão de desenvolvimento"):i18n("Estável · Servidor comunitário"),716,y,1078);
+      if(i==hostIdx) { gfx_cor((GfxRect){1650,y+29,90,32},.2f,.33f,.43f,.45f,.7f); texto(TXT_ILHA_NUM,i18n("Ativado"),1660,y+38,70,216); }
+    }
     bloco(i18n("Debrid é opcional. HTTP, P2P e canais dependem da instância e desta TV."),738,772,1040,2);
     botao(9,i18n("Continuar"),716,877,360);
   } else if(pagina==SERVICOS) {
@@ -479,7 +485,8 @@ static void setup(void) {
     ponteiro_alvo(716,655,1078,66,pointer,click,1,0);
     botao(0,i18n("Enviar pelo celular"),716,842,380); botao(1,i18n("Colar link"),1116,842,350);
   } else {
-    gfx_icone((GfxRect){716,207,84,84},"aj_circle-check",.65f,.84f,.83f,1);
+    gfx_cor((GfxRect){716,195,84,84},.5f,.25f,.32f,.34f,.55f);
+    gfx_icone((GfxRect){736,215,44,44},"aj_check",.65f,.84f,.83f,1);
     texto(TXT_ILHA_PERGUNTA,i18n("AIOStreams adicionado"),716,307,1040,240);
     texto(TXT_G20M,host,716,361,1040,174);
     const char *checks[]={i18n("Manifesto"),snap.configurada?i18n("Configuração conectada"):i18n("Somente manifesto"),i18n("Credenciais ocultas")};
@@ -487,8 +494,8 @@ static void setup(void) {
       gfx_icone((GfxRect){716,411+i*43,24,24},"aj_check",.65f,.84f,.83f,1);
       texto(TXT_G20M,checks[i],756,411+i*43,1000,220);
     }
-    const char *labels[]={i18n("Catálogos"),i18n("Addons"),i18n("Serviços")};
-    int counts[]={snap.catalogos,snap.addons,snap.servicos};
+    const char *labels[]={i18n("Catálogos"),i18n("Fontes e serviços"),i18n("Legendas")};
+    int counts[]={snap.catalogos,snap.addons-nLegendas(),nLegendas()};
     gfx_cor((GfxRect){716,548,1078,1},0,1,1,1,.08f);
     for(int i=0;i<3;i++) { char count[24]; snprintf(count,sizeof count,"%d",counts[i]);
       texto(TXT_G30B,count,716+i*180,576,170,240); texto(TXT_ILHA_SUB,labels[i],716+i*180,618,170,174);
@@ -615,18 +622,30 @@ static void workspace(void) {
     texto(TXT_ILHA_HORA,i18n("CH+ / CH-: mover na Home"),473,822,890,148);
     botao(snap.catalogos+2,i18n("Atualizar catálogos"),453,900,450); botao(snap.catalogos+3,i18n("Gerenciar no celular"),925,900,470);
   } else if(pagina==FONTES) {
-    int n=snap.addons+snap.servicos;
-    int first=foco>2?foco-2:0;
-    if(first>=n && n>0) first=n>3?n-3:0;
-    for(int i=first;i<n && i<first+3;i++) {
+    int n=snap.addons-nLegendas()+snap.servicos, row=0;
+    int first=foco>3?foco-3:0;
+    if(first>=n && n>0) first=n>4?n-4:0;
+    for(int i=0;i<snap.addons+snap.servicos;i++) {
       AioItem *item=i<snap.addons?&snap.addon[i]:&snap.servico[i-snap.addons];
-      linha(i,i<snap.addons?"aj_layers":"aj_cloud",item->nome,item->ativo?i18n("Ativado"):i18n("Desativado"),453,310+(i-first)*104,950);
+      if(i<snap.addons && item->legenda) continue;
+      if(row>=first && row<first+4) {
+        float y=330+(row-first)*88;
+        char sub[256]; int total=0,cached=0,uncached=0;
+        for(int k=0;k<snap.resultados;k++) if(!strcmp(snap.resultado[k].provedor,item->nome)) {
+          total++; cached+=snap.resultado[k].cache==1; uncached+=snap.resultado[k].cache==0;
+        }
+        snprintf(sub,sizeof sub,"%s · %s: %d · %s: %d",item->ativo?i18n("Ativado"):i18n("Desativado"),i18n("Em cache"),cached,i18n("Fora do cache"),uncached);
+        linha(row,i<snap.addons?"aj_layers":"aj_cloud",item->nome,total?sub:item->ativo?i18n("Ativado"):i18n("Desativado"),453,y,980);
+        if(total) { char count[24]; snprintf(count,sizeof count,"%d",total); texto(TXT_G30B,count,1350,y+22,60,230); }
+      }
+      row++;
     }
     if(!snap.addons) bloco(i18n("Conecte a configuração para ver addons e serviços. O manifesto não revela suas chaves."),473,326,880,3);
+    gfx_cor((GfxRect){453,708,980,1},0,1,1,1,.08f);
     char resumo[160]; snprintf(resumo,sizeof resumo,i18n("%d serviços · %d resultados · %d links · %d P2P"),snap.servicos,snap.resultados,snap.links,snap.p2p);
-    texto(TXT_ILHA_SUB,resumo,473,748,880,178);
-    linha(n,"aj_layers",i18n("P2P / torrents"),ajustes_p2p_ligado()?i18n("Política local Nuvio: ligado"):i18n("Política local Nuvio: desligado"),453,650,950);
-    botao(n+1,i18n("Inspecionar título"),453,866,430); botao(n+2,i18n("Serviços no celular"),905,866,490);
+    texto(TXT_ILHA_SUB,resumo,473,731,880,178);
+    linha(n,"aj_layers",i18n("P2P / torrents"),ajustes_p2p_ligado()?i18n("Política local Nuvio: ligado"):i18n("Política local Nuvio: desligado"),453,776,980);
+    botao(n+1,i18n("Inspecionar título"),453,900,430); botao(n+2,i18n("Serviços no celular"),905,900,490);
   } else if(pagina==FILTROS && regraSelecionada>=0) {
     int row=0, first=foco>4?foco-4:0;
     for(int i=0;i<snap.detalhes;i++) if(snap.detalhe[i].grupo==regraSelecionada) {
@@ -672,18 +691,23 @@ static void workspace(void) {
     botao(nConteudo()-1,i18n("Gerenciar legendas no celular"),453,900,540);
   } else if(pagina==SAUDE) {
     char state[192]; snprintf(state,sizeof state,"%s · %s · %d ms",snap.versaoInstancia[0]?snap.versaoInstancia:i18n("Não informado"),snap.canal,snap.ms[1]);
-    texto(TXT_ILHA_NOME,i18n("Status da instância"),473,305,940,236);
-    texto(TXT_G20M,state,473,343,940,174);
+    gfx_cor((GfxRect){453,286,1353,112},.25f,.21f,.27f,.29f,.35f);
+    gfx_icone((GfxRect){475,325,28,28},"aj_circle-check",.65f,.84f,.83f,1);
+    texto(TXT_G30B,i18n("Status da instância"),550,310,670,236);
+    texto(TXT_G20M,state,550,350,670,174);
+    char total[24]; snprintf(total,sizeof total,"%d",snap.erros);
+    texto(TXT_G30B,total,1685,309,100,236);
+    texto(TXT_ILHA_NUM,i18n("Saúde"),1685,366,100,174);
     const char *names[]={i18n("Manifesto"),i18n("Status da instância"),i18n("Configuração"),i18n("Consulta de fontes"),i18n("Legendas"),i18n("Inspeção do título")};
     for(int i=0;i<6;i++) {
-      float y=407+i*49; char status[80];
+      float y=445+i*49; char status[80];
       texto(TXT_G20M,names[i],473,y,530,220);
       snprintf(status,sizeof status,snap.http[i]?"HTTP %d · %d ms":"—",snap.http[i],snap.ms[i]); texto(TXT_G20M,status,1060,y,360,174);
       gfx_cor((GfxRect){453,y+39,980,1},0,.8f,.84f,.88f,.08f);
     }
     char stats[192]; snprintf(stats,sizeof stats,i18n("%d estatísticas · %d erros · %d sem campos obrigatórios"),snap.estatisticas,snap.erros,snap.filtrados);
-    texto(TXT_ILHA_SUB,snap.search?stats:i18n("Não informado"),473,722,950,174);
-    bloco(i18n("Cota restante não informada. Nenhuma sondagem de reprodução. Em HTTP 429, aguarde antes de atualizar."),473,764,880,3);
+    texto(TXT_ILHA_SUB,snap.search?stats:i18n("Não informado"),473,765,950,174);
+    bloco(i18n("Cota restante não informada. Nenhuma sondagem de reprodução. Em HTTP 429, aguarde antes de atualizar."),473,805,880,2);
     botao(0,i18n("Atualizar"),453,866,350); botao(1,i18n("Configuração no celular"),825,866,530);
   } else {
     int row=0, first=foco>3?foco-3:0;
@@ -692,10 +716,14 @@ static void workspace(void) {
       row++;
     }
     if(!row) bloco(i18n("Links externos, YouTube e NZB não são vídeos HTTP reproduzíveis. Abra e gerencie pelo celular."),473,340,850,4);
-    if(linkSelecionado>=0) { qrDesenhar(celular_url(),473,640,176); bloco(i18n("Credenciais ocultas"),690,670,700,2); }
-    botao(snap.links,i18n("Inspecionar título"),453,842,400);
-    botao(snap.links+1,i18n("Reconectar"),875,842,350);
-    botao(snap.links+2,i18n("Fontes e serviços"),453,906,400);
+    if(linkSelecionado>=0) { qrDesenhar(celular_url(),1185,575,176); texto(TXT_ILHA_HORA,i18n("Credenciais ocultas"),1185,765,220,142); }
+    gfx_cor((GfxRect){453,622,980,1},0,1,1,1,.08f);
+    texto(TXT_ILHA_NOME,i18n("Link de instalação"),453,648,720,239);
+    bloco(i18n("Links pessoais permanecem ocultos. Exporte ou importe arquivos JSON pelo celular."),453,690,700,2);
+    botao(snap.links+1,i18n("Reconectar"),453,756,300);
+    gfx_cor((GfxRect){453,830,980,1},0,1,1,1,.08f);
+    botao(snap.links,i18n("Inspecionar título"),453,866,400);
+    botao(snap.links+2,i18n("Fontes e serviços"),875,866,480);
   }
 }
 static void addonPointer(int i,int b) { (void)b; addonsui_ponteiro(i,0); }

@@ -3544,23 +3544,34 @@ static void corpoAio(float x,float w,float a) {
   medirCabecalho();
   float bx=left+width;
   for(int i=nBotoes()-1;i>=0;i--) {
-    bx-=bwCab[i]; GfxRect r={bx,207,bwCab[i],56};
-    chipFolha(r,rotCab[i],rotWCab[i],icoCab[i],grupo==-1 && foco==i,botaoLigado(botaoDe(i)),a);
-    ponteiro_alvo(r.x,r.y,r.w,r.h,ponteiroFolhaBotao,NULL,i,0); bx-=gapCab;
+    int b=botaoDe(i), aio=b==BT_AIO || b==BT_AIO_GERENCIAR;
+    float bw=aio?280:bwCab[i];
+    GfxRect r={aio?left+width-bw:(bx-=bw),b==BT_AIO?217:b==BT_AIO_GERENCIAR?305:884,bw,56};
+    const char *label=aio?i18n(rotuloBotao(b)):rotCab[i];
+    chipFolha(r,label,aio?210:rotWCab[i],icoCab[i],grupo==-1 && foco==i,botaoLigado(b),a);
+    ponteiro_alvo(r.x,r.y,r.w,r.h,ponteiroFolhaBotao,NULL,i,0);
+    if(!aio) bx-=gapCab;
   }
   float sx=left;
   for(int i=0;i<nProvedores;i++) {
-    GfxRect r={sx,283,i?240:170,56};
+    GfxRect r={sx,305,i?230:150,56};
     if(filtro==i) gfx_cor(r,.5f,.2f,.22f,.24f,a);
-    txt_desenhar_alpha(txt_linha_corta(TXT_G20M,i?provedores[i]:i18n("Todos"),220,223,225,255,r.w-32),sx+16,301,a);
-    ponteiro_alvo(r.x,r.y,r.w,r.h,NULL,ponteiroFolhaFiltro,i,0); sx+=r.w+6; if(sx>left+width-240) break;
+    char label[128]; int count=0;
+    for(int j=0;j<n;j++) if(passaChips(j) && (!i || !strcmp(lista[j].provedor,provedores[i]))) count++;
+    snprintf(label,sizeof label,"%s %d",i?provedores[i]:i18n("Todos"),count);
+    txt_desenhar_alpha(txt_linha_corta(TXT_G20M,label,220,223,225,255,r.w-32),sx+16,323,a);
+    ponteiro_alvo(r.x,r.y,r.w,r.h,NULL,ponteiroFolhaFiltro,i,0); sx+=r.w+6; if(sx>left+width-520) break;
   }
   montar(automaticaDaFolha());
-  int first=foco>3?foco-3:0, prev=-1; float y=369;
-  for(int row=first;row<nOrdem && y<950;row++) {
+  int first=foco>2?foco-2:0, prev=-1; float y=403;
+  gfx_recorte(left,390,width,485);
+  for(int row=first;row<nOrdem && y<875;row++) {
     int i=filtrado(row); if(i<0) continue; const Stream *s=&lista[i]; int res=grupoRes(s)/2;
     if(res!=prev) {
       txt_desenhar_alpha(txt_linha(TXT_ILHA_NOME,GRUPO_NOME[res],240,241,242,255),left,y,a);
+      int count=0; for(int k=0;k<nOrdem;k++) { int j=filtrado(k); if(j>=0 && grupoRes(&lista[j])/2==res) count++; }
+      char label[24]; snprintf(label,sizeof label,"%d",count);
+      txt_desenhar_alpha(txt_linha(TXT_ILHA_NUM,label,174,179,185,255),left+width-40,y+6,a);
       gfx_cor((GfxRect){left,y+39,width,1},0,1,1,1,.08f*a); y+=51; prev=res;
     }
     int best=i==automaticaDaFolha();
@@ -3569,11 +3580,16 @@ static void corpoAio(float x,float w,float a) {
     if(i==automaticaDaFolha()) txt_desenhar_alpha(txt_linha(TXT_ILHA_NUM,i18n("Melhor para esta TV"),180,205,210,255),left+20,y+12,a);
     float ty=y+(best?40:17);
     txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,s->rotulo[0]?s->rotulo:s->provedor,240,241,242,255,width-210),left+20,ty,a);
-    txt_desenhar_alpha(txt_linha_corta(TXT_G20M,s->provedor,174,179,185,255,width-210),left+20,ty+35,a);
+    char meta[256]; snprintf(meta,sizeof meta,"%s · %s",s->provedor,s->foraCache?i18n("Fora do cache"):i18n("Em cache"));
+    txt_desenhar_alpha(txt_linha_corta(TXT_G20M,meta,174,179,185,255,width-210),left+20,ty+35,a);
+    if(s->mp4) chipFolha((GfxRect){left+width-225,ty+10,60,32},"MP4",44,NULL,0,1,a);
     char size[48]; snprintf(size,sizeof size,s->tamanhoMB?"%.1f GB":"—",s->tamanhoMB/1024.0);
     txt_desenhar_alpha(txt_linha(TXT_G20M,size,174,179,185,255),left+width-150,ty+20,a);
     ponteiro_alvo(left,y,width,h,ponteiroFolhaLinha,NULL,row,0); y+=h+6;
   }
+  gfx_sem_recorte();
+  gfx_cor((GfxRect){left,976,width,1},0,1,1,1,.08f*a);
+  txt_desenhar_alpha(txt_linha(TXT_G20M,i18n("Ordem das fontes"),174,179,185,255),left,991,a);
 }
 static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha);
 // MODAL DE DETALHES: cartao de vidro no meio da folha, veu sobre a lista.
@@ -3658,7 +3674,12 @@ static void stream_folha_desenharCorpo_(Uint32 agora) {
       plrilha_pedir(&p); }
     return;
   }
-  if(temAio()) folhaOY=118;
+  if(temAio()) {
+    folhaOY=118;
+    const CatItem *item=itemFolha>=0?cat_item(itemFolha):NULL;
+    GLuint art=item && item->backdrop[0]?tex_obter_hero(item->backdrop):0;
+    if(art) gfx_rect((GfxRect){0,0,NV_TELA_W,NV_TELA_H},art,GFX_HERO,0,0,0,0,0,0,0,1);
+  }
   float x=NV_TELA_W-FOLHA_W-(temAio()?24:FOLHA_MARGEM)+(1-anim)*(FOLHA_W+FOLHA_MARGEM);
   // A FOLHA E UMA ILHA (dono, 02/10, mockups "Glass UI — ilha"): flutua a
   // NV_FOLHA_MARGEM das tres bordas, raio NV_FOLHA_RAIO, sombra curta e uma
@@ -3674,6 +3695,7 @@ static void stream_folha_desenharCorpo_(Uint32 agora) {
     } else plrui_material(corpo,FOLHA_RAIO_IL,0,anim); }
   if(temAio()) {
     txt_bloco_corta(TXT_V2_A3TIT,nomeFolha,240,241,242,72,390,430,56,anim,4);
+    txt_bloco_corta(TXT_G22M,i18n("Melhor para esta TV"),174,179,185,72,555,410,32,anim,2);
     corpoAio(x,FOLHA_W,anim);
   } else corpoFolha(x, FOLHA_W, anim, agora, 0);
 }

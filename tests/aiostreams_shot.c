@@ -7,6 +7,7 @@
 #include "text.h"
 #include "tex_cache.h"
 #include "streams.h"
+#include "catalogo.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -58,12 +59,15 @@ int main(int argc,char **argv) {
     txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); glBindFramebuffer(GL_FRAMEBUFFER,fbo); gfx_novo_quadro(); addonsui_desenhar(100000);
   }
   save(argv[1],"integracao-addons");
-  Stream streams[2]={0}; strcpy(streams[0].provedor,"AIOStreams"); strcpy(streams[0].rotulo,"4K · Dolby Vision · MP4"); strcpy(streams[0].url,"https://example.invalid/video"); streams[0].altura=2160; streams[0].mp4=1;
-  streams[1]=streams[0]; streams[1].altura=1080; strcpy(streams[1].rotulo,"1080p · Blu-ray · SDR");
+  CatItem movie={0}; strcpy(movie.titulo,"Batman: O Cavaleiro das Trevas");
+  strcpy(movie.backdrop,"/Volumes/ExternalSSD/tmp/aiostreams-mock/assets/backdrop.png");
+  cat_definir(&movie,1); stream_folha_item(0);
+  Stream streams[2]={0}; strcpy(streams[0].provedor,"AIOStreams"); strcpy(streams[0].rotulo,"4K · Dolby Vision · MP4"); strcpy(streams[0].url,"https://example.invalid/video"); streams[0].altura=2160; streams[0].mp4=1; streams[0].tamanhoMB=10035;
+  streams[1]=streams[0]; streams[1].altura=1080; streams[1].tamanhoMB=3277; strcpy(streams[1].rotulo,"1080p · Blu-ray · SDR");
   stream_definir_alvo("tt0468569"); stream_definir_lista(streams,2); stream_folha_nome("Batman: O Cavaleiro das Trevas"); stream_folha_abrir();
   for(int frame=0;frame<40;frame++) {
     aioui_shot(5,&s); aioui_desenhar(100000);
-    txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); stream_folha_atualizar(1.f/60,100000+frame*16); glBindFramebuffer(GL_FRAMEBUFFER,fbo); gfx_novo_quadro(); stream_folha_desenhar(100000+frame*16);
+    SDL_Delay(8); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); stream_folha_atualizar(1.f/60,100000+frame*16); glBindFramebuffer(GL_FRAMEBUFFER,fbo); gfx_novo_quadro(); stream_folha_desenhar(100000+frame*16);
   }
   save(argv[1],"integracao-fontes");
   return 0;
