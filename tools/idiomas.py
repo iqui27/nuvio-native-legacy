@@ -179,7 +179,7 @@ def ler_irma(cod):
 def conferir():
     erros = []
     def erro(msg):
-        if len(erros) < 60: erros.append(msg)
+        erros.append(msg)
     mestra = ler_mestra()
     # 2. ordem da mestra, pelos bytes decodificados
     ant = None
