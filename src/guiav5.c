@@ -26,6 +26,9 @@ static void number_id(const char *p,const char *end,const char *key,char *out,si
   for(const char *s=out;*s;s++) if(!isdigit((unsigned char)*s)){out[0]=0;break;}
 }
 int g5_parse_xtream(const char *json,int kind,G5Item *out,int cap,int *total) {
+  return g5_parse_xtream_page(json,kind,out,cap,0,total);
+}
+int g5_parse_xtream_page(const char *json,int kind,G5Item *out,int cap,int skip,int *total) {
   int n=0,t=0;
   if(total)*total=0;
   if(!json || !out || cap<1)return -1;
@@ -51,7 +54,7 @@ int g5_parse_xtream(const char *json,int kind,G5Item *out,int cap,int *total) {
     if(!g5_http_url(it.backdrop))it.backdrop[0]=0;
     it.adult=js_num(p,end,"is_adult",0)>0;
     char adult[8]="";js_texto(p,end,"is_adult",adult,sizeof adult);it.adult|=!strcmp(adult,"1");
-    if(it.id[0] && it.name[0]){t++;if(n<cap)out[n++]=it;}
+    if(it.id[0] && it.name[0]){t++;if(skip>0)skip--;else if(n<cap)out[n++]=it;}
     p=js_prox(end);
   }
   if(total)*total=t;

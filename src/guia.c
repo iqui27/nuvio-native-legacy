@@ -5032,6 +5032,11 @@ int guia_canal_campos(int i, const char **id, const char **nome, const char **lo
                       const char **cat, const char **base) {
   if (i < 0 || i >= nCanais) return 0;
   if(!g5ui_channel_allowed(canais[i].id,canais[i].nome,canais[i].cat>=0?cats[canais[i].cat]:"",canais[i].base))return 0;
+  return guia_canal_regra_campos(i,id,nome,logo,cat,base);
+}
+/* Only the PIN-authenticated parental editor may use the unfiltered inventory. */
+int guia_canal_regra_campos(int i,const char **id,const char **nome,const char **logo,const char **cat,const char **base){
+  if(i<0||i>=nCanais)return 0;
   if (id) *id = canais[i].id;
   if (nome) *nome = canais[i].nome;
   if (logo) *logo = canais[i].logo;

@@ -13,6 +13,7 @@ typedef struct {
 const char *g5_item_category(const G5Item *item, int kind);
 /* A bounded catalog. Review scores never become parental age ratings. */
 int g5_parse_xtream(const char *json, int kind, G5Item *out, int cap, int *total);
+int g5_parse_xtream_page(const char *json,int kind,G5Item *out,int cap,int skip,int *total);
 int g5_parse_episodes(const char *json,int season,G5Item *out,int cap);
 typedef struct {
   G5Item *items, pending;

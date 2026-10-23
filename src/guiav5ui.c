@@ -201,7 +201,7 @@ void g5ui_open(const char *name){context();go(name);edit=-1;
     for(int i=0;i<count&&picker_count<48;i++)if(inventory[i].kind==G5_LIVE&&!restricted(&inventory[i])&&group_allowed(inventory[i].group))picker_items[picker_count++]=inventory[i];
   }
   if(!strncmp(name,"setup-",6)&&!draft.live&&!draft.movies&&!draft.series){draft.live=draft.movies=draft.series=draft.epg=1;}
-  if(!strcmp(name,"setup-credenciais")||!strcmp(name,"fontes-gerenciar"))load_saved_credentials();
+  if((!strcmp(name,"setup-credenciais")||!strcmp(name,"fontes-gerenciar"))&&use_saved)load_saved_credentials();
   if(!strncmp(name,"vod-",4)&&!source_loaded&&!atomic_load(&busy)){
     if(draft.type==0 && xtream_configurado()){
       use_saved=1;action[0]=0;draft.movies=draft.series=1;start(2);
@@ -504,7 +504,7 @@ static void parental_screen(void){
   if(!strcmp(screen,"parental-lista")){
     panel(100,128,1720,848);label(TXT_TITULO2,i18n(rules_mode?"Canais ao vivo":"Categorias"),142,170,1450,0);
     int begin=focus>=0&&focus<900?(focus/8)*8:0;
-    if(rules_mode){for(int i=begin;i<begin+8;i++){const char *id,*name,*logo,*group,*base;if(!guia_canal_campos(i,&id,&name,&logo,&group,&base))continue;
+    if(rules_mode){for(int i=begin;i<begin+8;i++){const char *id,*name,*logo,*group,*base;if(!guia_canal_regra_campos(i,&id,&name,&logo,&group,&base))continue;
       int on=!strcmp(rules.blocked_channel,id);for(int j=0;j<rules.channel_count;j++)on|=!strcmp(rules.blocked_channels[j],id);
       toggle(i,name,on,142,270+(i-begin)*70,1620);
     }}else for(int i=begin;i<group_count&&i<begin+8;i++){int on=!strcmp(rules.blocked_group,groups[i]);for(int j=0;j<rules.group_count;j++)on|=!strcmp(rules.blocked_groups[j],groups[i]);toggle(i,groups[i],on,142,270+(i-begin)*70,1620);}
@@ -611,7 +611,7 @@ int g5ui_draw(void){
   return 1;
 }
 static void activate(int id){
-  if(id>=1000){episodes_mode=0;int n=id-1000;
+  if(id>=1000){if(episodes_mode&&series_catalog){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;selected=parent_series;}episodes_mode=0;int n=id-1000;
     if(n<0||n>6)return;if(n<2){g5ui_close();return;}if(n==5){want_pin(1);return;}g5ui_open(top_destinations[n]);return;}
   if(atomic_load(&busy)){snprintf(message,sizeof message,"%s",i18n("Aguarde…"));return;}
   if(!strcmp(screen,"setup-tipo")){
@@ -674,7 +674,7 @@ static void activate(int id){
   if(!strcmp(screen,"parental-lista")){
     if(id==900){go("parental-ajustes");return;}
     if(rules_mode){const char *channel_id,*name,*logo,*group,*base;
-      if(!guia_canal_campos(id,&channel_id,&name,&logo,&group,&base))return;
+      if(!guia_canal_regra_campos(id,&channel_id,&name,&logo,&group,&base))return;
       int i;for(i=0;i<rules.channel_count;i++)if(!strcmp(rules.blocked_channels[i],channel_id))break;
       if(i<rules.channel_count){memmove(rules.blocked_channels[i],rules.blocked_channels[i+1],(rules.channel_count-i-1)*sizeof rules.blocked_channels[0]);rules.channel_count--;}
       else if(i<G5_RULES_MAX)snprintf(rules.blocked_channels[rules.channel_count++],80,"%s",channel_id);
@@ -734,6 +734,7 @@ int g5ui_event(const SDL_Event *e){
   if(k==SDLK_ESCAPE||k==SDLK_AC_BACK||k==SDLK_BACKSPACE){
     if(!strcmp(screen,"setup-celular-tv")){celular_fechar();go("setup-tipo");}
     else if(!strncmp(screen,"setup-",6)&&strcmp(screen,"setup-tipo"))go("setup-tipo");
+    else if(!strcmp(screen,"parental-lista"))go("parental-ajustes");
     else if(episodes_mode&&series_catalog){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;selected=parent_series;episodes_mode=0;go("vod-serie-temporadas");}
     else g5ui_close();return 1;
   }

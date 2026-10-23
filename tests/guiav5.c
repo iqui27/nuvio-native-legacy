@@ -15,6 +15,7 @@ int main(void) {
   assert(items[1].adult);
   assert(g5_parse_xtream("{\"error\":\"denied\"}", G5_MOVIE, items, 4, &total) == -1);
   assert(g5_parse_xtream("[]", G5_MOVIE, items, 4, &total) == 0 && total == 0);
+  assert(g5_parse_xtream_page(movies,G5_MOVIE,items,2,2,&total)==1&&!strcmp(items[0].id,"19")&&total==3);
   assert(g5_parse_xtream("[{\"stream_id\":1}", G5_MOVIE, items, 4, &total) == -1);
   G5Playlist p = {0};
   g5_playlist_init(&p, items, 4);
