@@ -37,6 +37,14 @@ int main(void) {
     fputs("FAIL: server refresh leaves previous recent title in hero\n", stderr);
     return 1;
   }
-  puts("servers hero: recent-row refresh with unchanged counts: OK");
+  row.ini = 0; row.n = 3;
+  strcpy(items[0].titulo,"Zulu"); strcpy(items[1].titulo,"Alpha"); strcpy(items[2].titulo,"Beta");
+  cat_definir_tudo(items,3,&row,1);
+  fil_registrar(row.chave,row.titulo,"Jellyfin","movie",3);
+  assert(fil_definir_servidor(row.chave,1,0));
+  sincronizarFileiras();
+  int found=-1; for(int i=0;i<nFileiras;i++)if(!strcmp(fileiras[i].chave,row.chave))found=i;
+  assert(found>=0 && fileiras[found].usaItens && fileiras[found].itens[0]==1 && fileiras[found].itens[2]==0);
+  puts("servers hero: recent refresh and persisted server title ordering: OK");
   return 0;
 }

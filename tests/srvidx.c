@@ -104,6 +104,10 @@ int main(void) {
   assert(srvidx_achar_ep(&x, "bbb1", 1, 2) >= 0 && !strcmp(x.v[srvidx_achar_ep(&x, "bbb1", 1, 2)].item, "ep2"));
   assert(srvidx_achar_ep(&x, "bbb1", 2, 1) == -1 && srvidx_achar_ep(&x, "bbb2", 1, 1) == -1);
   assert(srvidx_n_eps(&x, "bbb1") == 3);
+  // resume position + duration (#617): both must survive the disk round trip
+  { int ke = srvidx_achar_ep(&x, "bbb1", 1, 2);
+    x.v[ke].visto = 1; x.v[ke].vistoMs = 1234;
+    x.v[ke].retomadoTicks = 100; x.v[ke].duracaoTicks = 200; }
 
   // ---- text round trip; another server's file is ignored
   x.total = 7;
@@ -114,6 +118,9 @@ int main(void) {
   assert(srvidx_desserializar(&y, t, "0f1e2d3c") == x.n && y.n == x.n && y.total == 7 && y.marca == 500);
   assert(srvidx_achar(&y, "tt0111161", 0, 0, 'm') >= 0 && y.v[srvidx_achar(&y, "tt0111161", 0, 0, 'm')].hdr == SRVIDX_HDR_DV);
   assert(srvidx_achar_ep(&y, "bbb1", 1, 3) >= 0);
+  { int ke = srvidx_achar_ep(&y, "bbb1", 1, 2);
+    assert(ke >= 0 && y.v[ke].visto && y.v[ke].vistoMs == 1234 &&
+           y.v[ke].retomadoTicks == 100 && y.v[ke].duracaoTicks == 200); }
   assert(srvidx_achar_titulo(&y, srvidx_titulo_hash("Dune"), 1984, 'm') >= 0);
   free(t);
   // A damaged line is skipped, the rest is read.

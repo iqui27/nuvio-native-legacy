@@ -179,6 +179,8 @@ int         extras_estudio_rede(int i);
 // episodio ganha uma mascara e um check quando o dono ja viu. Sem isto, quem
 // acompanha uma serie nao tinha como saber onde parou olhando a lista.
 int  extras_ep_visto(int temporada, int episodio);
+// Resume % from a personal server for this episode (issue #617). 0 = none.
+int  extras_ep_progresso(int temporada, int episodio);
 // 1 apenas depois de receber o historico desta obra. Sem resposta nao inferir
 // que todos os episodios estao por assistir.
 int extras_progresso_pronto(void);

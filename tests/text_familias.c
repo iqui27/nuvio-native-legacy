@@ -154,11 +154,11 @@ int main(int argc, char **argv) {
     assert(largura(TXT_DET_SIN, "\xe8\xa8\xad\xe5\xae\x9a") > 0);
     r = txt_fonte_da_linha(TXT_FAMILIA_ATKINSON, TXT_DET_SIN, "\xce\xa3\xce\xb5\xcf\x80"); assert(r && !strcmp(r, "inter"));
     // Arabe na Samsung (#253, #258): letras base e as formas de apresentacao
-    // que o bidi.c produz saem da Noto Naskh embarcada.
+    // que o bidi.c produz saem da Noto Sans Arabic embarcada.
     r = txt_fonte_da_linha(TXT_FAMILIA_INTER, TXT_DET_SIN, "\xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7");
-    assert(r && strstr(r, "NotoNaskhArabic-Subset.ttf") && !strncmp(r, "reserva:arabe", 13));
+    assert(r && strstr(r, "NotoSansArabic-Regular-Subset.ttf") && !strncmp(r, "reserva:arabe", 13));
     r = txt_fonte_da_linha(TXT_FAMILIA_INTER, TXT_DET_SIN, "\xef\xbb\xa3\xef\xba\xae\xef\xba\xa3\xef\xba\x92\xef\xba\x8e");
-    assert(r && strstr(r, "NotoNaskhArabic-Subset.ttf"));
+    assert(r && strstr(r, "NotoSansArabic-Regular-Subset.ttf"));
     assert(largura(TXT_DET_SIN, "\xef\xbb\xa3\xef\xba\xae\xef\xba\xa3\xef\xba\x92\xef\xba\x8e") > 0); }
   txt_encerrar();
   unsetenv("NUVIO_SEM_RESERVA_DE_SISTEMA");

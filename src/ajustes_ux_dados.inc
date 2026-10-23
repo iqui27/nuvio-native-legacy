@@ -209,6 +209,7 @@ static const char *uxSinonimos(int op) {
     case AJ_DTS_AC3: return "dts truehd convertido ac3 aac dolby digital 5.1 surround estereo audio som barra de som receiver arc earc conversao lg samsung desligado converted stereo off";
     case AJ_PS_CONTINUAR: return "continuar escolha perfil cartao card tela abertura inicial assistindo retomar remover esconder desligar quem esta assistindo continue watching profile picker";
     case AJ_DV_MKV: return "dolby vision dv dovi mkv matroska perfil 8 5 hdr hdr10 experimental imagem cores";
+    case AJ_HDR10P_STRIP: return "hdr10+ hdr10plus 2094-40 dinamico strip remover tirar hevc pq smpte hdr10 tv trava congela tela preta desligar philips";
     case AJ_CW_RETIDO_TAMBEM: return "continuar assistindo tambem ilha retomar agora fileira duplicar repetir aparecer dois lugares titulo continue watching also island resume";
     case AJ_HIST_CONTA: return "historico historico vistos progresso conta nuvio enviar scrobble simkl trakt perfil sincronizar sync history watched";
     case AJ_SOCIAL: return "social amigos amigo atividade recomendar recomendacoes friends activity recommend presenca desligar remover";
@@ -275,6 +276,7 @@ static const char *uxSinonimos(int op) {
     case AJ_TMDB_IDIOMA: return "idioma metadados titulo sinopse traducao tmdb";
     case AJ_HERO_GENERO: return "genero destaque hero logo titulo categoria esconder mostrar card genre";
     case AJ_HERO_SINOPSE: return "sinopse destaque hero texto descricao resumo esconder mostrar synopsis description";
+    case AJ_HERO_TAMANHO: return "tamanho destaque hero logo informacoes texto grande muito grande normal hero size logo info";
     case AJ_HERO_SINOPSE_TAM: return "sinopse tamanho destaque hero texto grande normal synopsis size";
     case AJ_HERO_NOTAS: return "nota notas imdb destaque hero avaliacao rating ratings esconder mostrar";
     case AJ_HERO_ANO: return "ano destaque hero lancamento year data esconder mostrar";

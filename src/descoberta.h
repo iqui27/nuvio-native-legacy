@@ -203,6 +203,12 @@ const char *desc_busca_alvo_addon(int alvo);    // "Cinemeta", "Xperience"
 // "" enquanto o manifesto nao passou pela descoberta. Para a aba da colecao
 // quando a conta manda a fonte sem titulo (#76).
 const char *desc_nome_catalogo(const char *base, const char *tipo, const char *id);
+// OS GENEROS que o catalogo oferece para escolha manual (issue #656): os
+// `options` do extra `genre` do manifesto. Devolve quantos entram em `out`
+// (ate `max` de 128 colunas). 0 sem opcoes — o filtro da conta segue valendo.
+int desc_genero_obrigatorio(const char *base, const char *tipo, const char *id);
+int desc_genero_opcoes(const char *base, const char *tipo, const char *id,
+                       char (*out)[128], int max);
 int  desc_busca_alvo_n(int alvo, const char *termo);
 int  desc_busca_alvo_item(int alvo, int i, CatItem *dst);
 // Sobe a cada termo novo. Quem guarda posicao de foco entre quadros deve

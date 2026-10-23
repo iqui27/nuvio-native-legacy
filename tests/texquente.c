@@ -56,9 +56,9 @@ int main(void) {
   orcamento = 1; podar();
   assert(itens[0].estado == PRONTO && itens[1].estado == PRONTO && itens[2].estado == PRONTO);
   assert(tex_despejos == 0);
-  assert(despejar(1) == 1);
-  assert(tex_despejos == 1 && tex_despejos_quentes == 1);
-  puts("ok  so quentes: podar segura, slotLivre forca e conta");
+  assert(despejar(1) == -1);
+  assert(tex_despejos == 0 && tex_despejos_quentes == 0);
+  puts("ok  hot artwork survives forced eviction too");
 
   // 4. O QUADRO ANTERIOR ainda e quente (o bombear roda antes de o quadro
   //    avancar); dois atras nao e.

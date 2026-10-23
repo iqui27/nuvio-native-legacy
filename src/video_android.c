@@ -712,6 +712,12 @@ JNIEXPORT jboolean JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeTunnelin
   return ajustes_tunneling();
 }
 
+// #641: 1 = match the panel refresh rate to the video frame rate.
+JNIEXPORT jint JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAfr(JNIEnv *env, jclass cls) {
+  (void)env; (void)cls;
+  return ajustes_afr();
+}
+
 JNIEXPORT jint JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeLimitedStatus(JNIEnv *env, jclass cls) {
   XtreamConta c;
   (void)env; (void)cls;

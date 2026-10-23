@@ -2337,10 +2337,45 @@ static int aceitaSkip(const char *p, const char *f) {
 // com NV_ADDON_URL_MAX custariam ~900 KB. Por isso a comparacao e por PREFIXO
 // (nomeCatBase): com strcmp, a base cortada de um addon de URL longa nunca
 // casava com a inteira e o nome do catalogo dele nunca era achado (#201).
-static struct { char base[300], tipo[8], id[96], nome[96], extras[768]; } nomeCat[NOMECAT_MAX];
+static struct { char base[300], tipo[8], id[96], nome[96], extras[768], generos[768]; } nomeCat[NOMECAT_MAX];
 #define nomeCatBase(i, b) (!strncmp(nomeCat[i].base, (b), sizeof nomeCat[i].base - 1))
 static int nNomeCat, nomeCatProx;
 static pthread_mutex_t nomeCatTrava = PTHREAD_MUTEX_INITIALIZER;
+// Junta os `options` do extra `genre` DESTE catalogo em `dst`, separados por
+// '\t' (issue #656). So quando `options` e declarado: sem ele a escolha livre
+// de genero nao existe, e o filtro da conta continua valendo como antes.
+static void registrarGenerosCatalogo(const char *base, const char *tipo, const char *id,
+                                     const char *p, const char *f) {
+  char generos[768] = "";
+  for (const char *ex = js_array(p, f, "extra"); ex; ex = js_prox(js_fim(ex))) {
+    const char *end = js_fim(ex), *op;
+    char name[64] = "";
+    if (*ex != '{' || !js_texto_raiz_em(ex, end, "name", name, sizeof name) || strcmp(name, "genre")) continue;
+    size_t used = strlen(generos);
+    for (op = js_array(ex, end, "options"); op && op < end;) {
+      char v[128];
+      if (*op != '"' || !js_cadeia(op, v, sizeof v)) break;
+      const char *next = op + 1;
+      while (next < end && *next && *next != '"') {
+        if (*next == '\\' && next + 1 < end) next++;
+        next++;
+      }
+      op = next < end ? js_prox(next + 1) : NULL;
+      if (!v[0] || strchr(v, '\t')) continue;
+      size_t l = strlen(v);
+      if (used + l + 2 >= sizeof generos) break;
+      if (used) generos[used++] = '\t';
+      memcpy(generos + used, v, l + 1); used += l;
+    }
+    break;
+  }
+  pthread_mutex_lock(&nomeCatTrava);
+  for (int i = 0; i < nNomeCat; i++)
+    if (nomeCatBase(i, base) && !strcmp(nomeCat[i].tipo, tipo) && !strcmp(nomeCat[i].id, id)) {
+      snprintf(nomeCat[i].generos, sizeof nomeCat[i].generos, "%s", generos); break;
+    }
+  pthread_mutex_unlock(&nomeCatTrava);
+}
 // Required defaults belong to the manifest, not to an addon's hostname.
 static void registrarExtrasCatalogo(const char *base, const char *tipo, const char *id,
                                     const char *p, const char *f) {
@@ -2417,6 +2452,7 @@ static void registrarNomeCatalogo(const char *base, const char *tipo, const char
     if (nomeCatBase(i, base) && !strcmp(nomeCat[i].tipo, tipo) && !strcmp(nomeCat[i].id, id)) break;
   if (i == nNomeCat) { i = nomeCatProx; nomeCatProx = (nomeCatProx + 1) % NOMECAT_MAX; if (nNomeCat < NOMECAT_MAX) nNomeCat++; }
   nomeCat[i].extras[0] = 0;
+  nomeCat[i].generos[0] = 0;
   snprintf(nomeCat[i].base, sizeof nomeCat[i].base, "%s", base);
   snprintf(nomeCat[i].tipo, sizeof nomeCat[i].tipo, "%s", tipo);
   snprintf(nomeCat[i].id, sizeof nomeCat[i].id, "%s", id);
@@ -2450,6 +2486,42 @@ const char *desc_nome_catalogo(const char *base, const char *tipo, const char *i
   }
   pthread_mutex_unlock(&nomeCatTrava);
   return saida;
+}
+
+// OS GENEROS QUE O CATALOGO OFERECE (issue #656): os `options` do extra
+// `genre` do manifesto, na ordem declarada. Devolve quantos entram em `out`
+// (ate `max`, cada um com 128 colunas). 0 quando o catalogo nao declara
+// opcoes — o filtro da conta segue valendo, como antes.
+int desc_genero_obrigatorio(const char *base, const char *tipo, const char *id) {
+  int required = 0;
+  if (!base || !tipo || !id) return 0;
+  pthread_mutex_lock(&nomeCatTrava);
+  for (int i = 0; i < nNomeCat; i++)
+    if (nomeCatBase(i, base) && !strcmp(nomeCat[i].tipo, tipo) && !strcmp(nomeCat[i].id, id)) {
+      required = !strncmp(nomeCat[i].extras, "genre=", 6) || strstr(nomeCat[i].extras, "&genre=") != NULL;
+      break;
+    }
+  pthread_mutex_unlock(&nomeCatTrava);
+  return required;
+}
+int desc_genero_opcoes(const char *base, const char *tipo, const char *id,
+                       char (*out)[128], int max) {
+  char todos[768];
+  int n = 0;
+  if (!base || !base[0] || !tipo || !id || !out || max < 1) return 0;
+  todos[0] = 0;
+  pthread_mutex_lock(&nomeCatTrava);
+  for (int i = 0; i < nNomeCat; i++)
+    if (nomeCatBase(i, base) && !strcmp(nomeCat[i].tipo, tipo) && !strcmp(nomeCat[i].id, id)) {
+      snprintf(todos, sizeof todos, "%s", nomeCat[i].generos); break;
+    }
+  pthread_mutex_unlock(&nomeCatTrava);
+  for (char *p = todos, *t; n < max && p && *p; p = t ? t + 1 : NULL) {
+    t = strchr(p, '\t');
+    if (t) *t = 0;
+    snprintf(out[n++], 128, "%s", p);
+  }
+  return n;
 }
 
 // --- QUAIS CATALOGOS A COTA LE (issue #126) -----------------------------------
@@ -2660,6 +2732,7 @@ static int lerManifesto(int iAddon, const char *base, Decl *saida, int max,
       int exige = exigeBusca(p, f), guardar = 0;
       registrarNomeCatalogo(base, tipo, id, nome);
       registrarExtrasCatalogo(base, tipo, id, p, f);
+      registrarGenerosCatalogo(base, tipo, id, p, f);
       if (!ativo) { p = js_prox(f); continue; }
       // QUEM A COTA LE sai de escolherPelaCota; sem escolha (cabem todos, ou a
       // memoria faltou) vale a regra antiga, os primeiros ate encher. Catalogo
@@ -5474,6 +5547,30 @@ static void *montar(void *u) {
       }
     }
     free(jfItens);
+  }
+  // Explicit personal-server collection/playlist rows use the same pager as Library.
+  if (ajustes_jellyfin_ligado()) {
+    char keys[SRV_FIL_MAX][FIL_CHAVE]; char names[SRV_FIL_MAX][128]; int nk = 0;
+    for (int i = 0; i < fil_n() && nk < SRV_FIL_MAX; i++) {
+      const char *key = fil_chave(i);
+      if (!servidores_chave_fileira(key) || fil_estado(i) != FIL_NA_HOME ||
+          (!strstr(key, "_group_") && !strstr(key, "_list_") && !strstr(key, "_recent_") && strncmp(key, "jellyfin_", 9) && strncmp(key, "emby_", 5))) continue;
+      int exists = 0; for (int j = 0; j < nFilsLote; j++) if (!strcmp(filsLote[j].chave, key)) { exists = 1; break; }
+      if (exists) continue;
+      snprintf(keys[nk], sizeof keys[nk], "%s", key); snprintf(names[nk], sizeof names[nk], "%s", fil_titulo(i)); nk++;
+    }
+    CatItem *items = nk ? calloc(24, sizeof *items) : NULL;
+    for (int i = 0; items && i < nk && nFilsLote < CAT_FIL_MAX; i++) {
+      int total = 0, raw = 0, count = servidores_pagina(keys[i], 0, 24, items, 24, &total, &raw);
+      if (count <= 0) continue;
+      GARANTE(count); int begin = n;
+      for (int j = 0; j < count && n < cap; j++) if (items[j].imdb[0] && !jfid_e(items[j].imdb)) lote[n++] = items[j];
+      if (n == begin) continue;
+      CatFileira *row = &filsLote[nFilsLote++]; memset(row, 0, sizeof *row);
+      snprintf(row->chave, sizeof row->chave, "%s", keys[i]); snprintf(row->titulo, sizeof row->titulo, "%s", names[i]);
+      snprintf(row->tipo, sizeof row->tipo, "%s", "movie"); row->ini = begin; row->n = n - begin;
+    }
+    free(items);
   }
 #undef GARANTE
 

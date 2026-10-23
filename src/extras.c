@@ -14,6 +14,7 @@
 #include "js.h"
 #include "descoberta.h"
 #include "ajustes.h"
+#include "servidores.h"
 #include "agenda.h"
 #include "comentordem.h"
 #include "idiomacod.h"
@@ -228,6 +229,11 @@ static int progressoPronto, proximoT, proximoE;
 // "aired" do Trakt ja desconta episodio que ainda nao foi ao ar, que e
 // justamente o denominador certo para uma porcentagem.
 static int epsExibidos, epsVistos;
+// Per-episode resume % from personal servers (issue #617), filled on the fetch
+// thread; the episode list reads it when the current CatItem has no progress.
+#define EX_EP_PROG_MAX 256
+static struct { short t, e; int pct; } epProg[EX_EP_PROG_MAX];
+static int nEpProg;
 // QUANTOS VISTOS O MAPA (vistoep) TINHA quando epsVistos foi lido do Trakt. O
 // hero mostra epsVistos + (mapa agora - epsBase): marcar/desmarcar pelo menu,
 // player ou Agenda mexe no mapa na hora, e sem isto a linha "% assistido"
@@ -883,6 +889,32 @@ static void *buscar(void *arg) {
     } else {
       printf("[vistoep] %s: consulta trakt sem corpo; mapa preservado\n", id);
       fflush(stdout);
+    }
+  }
+  // PERSONAL SERVER (#617): watched flags and resume positions for episodes,
+  // same thread as Trakt — no extra round trip when the index is already warm.
+  if (parte != 1 && serie && ajustes_jellyfin_ligado()) {
+    SrvEp srv[512];
+    int k = servidores_episodios(id, srv, (int)(sizeof srv / sizeof *srv));
+    int i, w = 0;
+    if (k > 0) {
+      for (i = 0; i < k && w < EX_EP_PROG_MAX; i++) {
+        if (srv[i].visto)
+          vistoep_fonte_se_sessao(id, srv[i].temporada, srv[i].episodio, 1,
+                                  srv[i].vistoMs, NULL, perfilSessao);
+        if (srv[i].retomadoTicks > 0 && srv[i].duracaoTicks > srv[i].retomadoTicks) {
+          int pct = (int)(srv[i].retomadoTicks * 100.0 / srv[i].duracaoTicks + 0.5);
+          if (pct > 1 && pct < 98) {
+            epProg[w].t = srv[i].temporada;
+            epProg[w].e = srv[i].episodio;
+            epProg[w].pct = pct;
+            w++;
+          }
+        }
+      }
+      pthread_mutex_lock(&trava);
+      if (!strcmp(id, idPedido) && sessaoDoFioAtual()) { nEpProg = w; progressoPronto = 1; }
+      pthread_mutex_unlock(&trava);
     }
   }
 
@@ -1767,6 +1799,7 @@ void extras_pedir(const char *imdb, int serie, long tmdbId) {
   seriePedido = serie;
   tmdbPedido = tmdbId;
   zerarPublicado();
+  nEpProg = 0;
   snprintf(idEmCurso, sizeof idEmCurso, "%s", imdb);
   serieEmCurso = serie;
   tmdbEmCurso = tmdbId;
@@ -2408,6 +2441,15 @@ int extras_ep_visto(int temporada, int episodio) {
   // muda no proximo fetch. -1 = o mapa nao sabe, vale a matriz.
   m = id[0] ? vistoep_estado(id, temporada, episodio) : -1;
   return m >= 0 ? m : visto;
+}
+
+int extras_ep_progresso(int temporada, int episodio) {
+  int i, pct = 0;
+  pthread_mutex_lock(&trava);
+  for (i = 0; i < nEpProg; i++)
+    if (epProg[i].t == temporada && epProg[i].e == episodio) { pct = epProg[i].pct; break; }
+  pthread_mutex_unlock(&trava);
+  return pct;
 }
 
 int extras_progresso_pronto(void) {

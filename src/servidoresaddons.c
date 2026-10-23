@@ -33,7 +33,7 @@ static int origem(const char *id, const char *tipo, int (*cancelado)(void *), vo
   int n = servidores_consultar(id, tipo, cancelado, ctx, l);
   if (n > 0 && *l) {
     servidores_rotular(*l, n);
-    if (aviso) aviso(avisoU, ORIGEM_SERVIDOR, "", 2, *l, n);
+    if (aviso) aviso(avisoU, ORIGEM_SERVIDOR, "", "", 2, *l, n);
   }
   return n;
 }
@@ -46,7 +46,7 @@ static int preparoConsultar(const void *p, const char *id, const char *tipo,
   int n = plex_preparo_consultar(p, id, tipo, cancelado, ctx, saida);
   if (n > 0 && *saida) {
     servidores_rotular(*saida, n);
-    if (aviso) aviso(avisoU, ORIGEM_SERVIDOR, "", 2, *saida, n);
+    if (aviso) aviso(avisoU, ORIGEM_SERVIDOR, "", "", 2, *saida, n);
   }
   return n;
 }

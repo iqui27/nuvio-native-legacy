@@ -410,8 +410,11 @@ static GfxRect naTela(GfxRect r) {
   return (GfxRect){ r.x * k, r.y * k, r.w * k, r.h * k };
 }
 
+static int bloqueadoMusica;
+void trailer_bloquear_musica(int sim) { bloqueadoMusica = sim; }
 void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
   int nova;
+  if (bloqueadoMusica) return;
   if (!trailer_suportado() || !fonte || !fonte[0]) return;
   r = naTela(r);
   // SAMSUNG E SEMPRE MUDO, tambem em tela cheia (dono, 22/09/2026: "trailer

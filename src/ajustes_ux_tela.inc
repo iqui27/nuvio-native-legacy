@@ -44,7 +44,11 @@ static const Item TELA[] = {
       OPC(AJ_SELOS_PACOTE), OPC(AJ_SELOS_PACOTE_ADD), OPC(AJ_SELOS_PACOTE_REM),
     ROT("Som e vídeo desta TV"),
       OPC(AJ_DTS_AC3),
-#ifdef NV_ANDROID
+#if defined(NV_TPK) || defined(NV_WEBOS)
+      OPC(AJ_HDR10P_STRIP),
+#endif
+#if defined(NV_ANDROID) || defined(AJUSTES_TESTE)
+      OPC(AJ_AFR),
       OPC(AJ_TUNNELING),
 #endif
 #if !defined(NV_TPK) && !defined(NV_ANDROID)
@@ -141,7 +145,7 @@ static const Item TELA[] = {
       OPC(AJ_FUNDO_DIN), OPC(AJ_FUNDO_DIN_COR),
       OPC(AJ_HERO_CATALOGOS), OPC(AJ_HERO_GENERO),
       OPC(AJ_HERO_SINOPSE), OPC(AJ_HERO_NOTAS), OPC(AJ_HERO_ANO), OPC(AJ_HERO_DURACAO),
-      OPC(AJ_HERO_SINOPSE_TAM),
+      OPC(AJ_HERO_TAMANHO), OPC(AJ_HERO_SINOPSE_TAM),
     ROT("Fileiras"),
       OPC(AJ_FIL_ORDEM), OPC(AJ_FIL_LIMITE), OPC(AJ_ITENS_FILEIRA),
       OPC(AJ_ESPACO_FILEIRAS), OPC(AJ_ESPACO_TITULOS),

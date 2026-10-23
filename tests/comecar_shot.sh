@@ -1,7 +1,7 @@
 #!/bin/bash
 # Capturas da tela "Começar" (2.1) em PNG 1920x1080: os 4 passos e o teclado
 # da TV por cima. Antes, as regras por evento de tecla (teclado D-pad, gravacao
-# so no fim, "Em breve" que não avança, Voltar/Pular, upgrade com dados, pedidos
+# so no fim, Stremio/AIOManager abrem o fluxo de importação, Voltar/Pular, upgrade com dados, pedidos
 # do fim) e a varredura de navegação D-pad. Janela GL ESCONDIDA e desenho num FBO: nada
 # aparece na tela de quem roda. Fica fora da suite (*_shot.sh): precisa de GL.
 # Sem rede: traktauth_comecar parte só com a chave de rede, e aqui ele falha

@@ -48,6 +48,18 @@ int dados_gravar_leve(const char *nome, const char *conteudo) {
 }
 void dados_fs_travar(void) {}
 void dados_fs_liberar(void) {}
+// The index feeds the catalogue watched history (issue #617): record it.
+static int nHistVistos;
+static char histId[8][16];
+static long long histMs[8];
+void cat_historico_definir_tempo(const char *imdb, const char *tipo,
+                                 int visto, long long ms) {
+  (void)tipo;
+  if (!visto || nHistVistos >= 8) return;
+  snprintf(histId[nHistVistos], sizeof histId[0], "%s", imdb ? imdb : "");
+  histMs[nHistVistos] = ms;
+  nHistVistos++;
+}
 
 #define MACHINE "0123456789abcdef0123456789abcdef01234567"
 static char raiz[256];
@@ -639,6 +651,18 @@ static void integracao(void) {
   plex_perfil_trocou();
   assert(plex_conectado());                                                     // loaded from plex-p1.txt, no new PIN
   assert(plex_indice_n() >= 4 && plex_tem("tt0000101", "movie", NULL));        // the index came back from disk, at once
+  // #617: episodes restored from disk are refetched once — cached flags may be stale.
+  { SrvEp e2[8]; char *ct = controle("counts");
+    int antes = atoi(strstr(ct, "\"leaves\": ") + 10); free(ct);
+    assert(plex_episodios("tt0000201", e2, 8) > 0);
+    ct = controle("counts");
+    assert(atoi(strstr(ct, "\"leaves\": ") + 10) == antes + 1);
+    free(ct); }
+  // watched without lastViewedAt reached the catalogue as "unknown" (ms 1, never "now")
+  { int i;
+    for (i = 0; i < nHistVistos; i++)
+      if (!strcmp(histId[i], "tt0000101")) break;
+    assert(i < nHistVistos && histMs[i] == 1); }
   fim = ms() + 8000;
   { int incr = 0;
     while (ms() < fim && !incr) {
