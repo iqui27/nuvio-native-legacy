@@ -3,6 +3,7 @@
 #include "idbase.h"
 #include "armids.h"
 #include "idcanal.h"
+#include "addonmodo.h"
 #include "idioma.h"
 #include "linguas.h"
 #include "streams.h"
@@ -2732,6 +2733,8 @@ static void *fioFontes(void *u) {
     // Prazo da consulta (c->timeout): 30 s para filme/serie, 12 s para canal e
     // prefetch. Ver ADD_PRAZO_VOD_S em consultar().
     prazoS = prazoDoAddon(c, i);
+    RedeMedida medida = {0};
+    uint64_t identidade = addonmodo_id(origem->base);
     Uint32 inicioAddon = SDL_GetTicks();
     if (exUsar) {
       memset(&ex, 0, sizeof ex);
@@ -2742,7 +2745,8 @@ static void *fioFontes(void *u) {
     }
     corpo = nv_addon_pedido_coube(origem->nome, nv_addon_url(url, sizeof url, origem->base, "/stream/%s/%s.json",
                                     t1, idUrl), sizeof url) && idUrl[0]
-            ? baixarStream(origem->nome, url, prazoS) : NULL;
+            ? rede_baixar_medido(url, prazoS, NULL, &medida) : NULL;
+    if (corpo && medida.status >= 400) { free(corpo); corpo = NULL; }
     if (consultaCancelada(c)) {
       if (exVivo) pthread_join(exFio, NULL);
       if (exUsar) free(ex.l);
@@ -2785,9 +2789,11 @@ static void *fioFontes(void *u) {
       int restanteS = ((Uint32)prazoS * 1000u - gasto) / 1000u;
       if (restanteS <= 0) break;
       char *alt;
+      RedeMedida alternativa = {0};
       alt = nv_addon_pedido_coube(origem->nome, nv_addon_url(url, sizeof url, origem->base, "/stream/%s/%s.json",
                                     t2, idUrl), sizeof url) && idUrl[0]
-            ? baixarStream(origem->nome, url, restanteS) : NULL;
+            ? rede_baixar_medido(url, restanteS, NULL, &alternativa) : NULL;
+      if (alt && alternativa.status >= 400) { free(alt); alt = NULL; }
       if (consultaCancelada(c)) {
         if (exVivo) pthread_join(exFio, NULL);
         if (exUsar) free(ex.l);
@@ -2801,11 +2807,25 @@ static void *fioFontes(void *u) {
         // vazio" do primeiro, que e o que a mensagem de erro vai citar.
         if (n2 > 0 || !corpo) {
           free(achados); free(corpo);
-          achados = a2; n = n2; corpo = alt;
+          achados = a2; n = n2; corpo = alt; medida = alternativa;
           printf("[addons] %s: respondeu como \"%s\" (nao como \"%s\")\n",
                  origem->nome, t2, t1);
         } else { free(a2); free(alt); }
       }
+    }
+    int diretos = 0, torrents = 0;
+    for (int a = 0; a < n; a++) {
+      achados[a].addonIdentidade = identidade;
+      if (achados[a].url[0]) diretos++;
+      else if (achados[a].infoHash[0]) torrents++;
+    }
+    if (c->progresso && !(c->cancelado && c->cancelado(c->ctx))) {
+      char vazio[8];
+      int valida = corpo && js_fim(corpo) &&
+          (js_array(corpo, NULL, "streams") ||
+           (js_bruto(corpo, NULL, "streams", vazio, sizeof vazio) &&
+            vazio[0] == '[' && vazio[strspn(vazio + 1, " \t\r\n") + 1] == ']'));
+      addonmodo_resposta(identidade, medida.status ? medida.status : -1, valida, diretos, torrents);
     }
     // O mesmo episodio pelo id da outra familia que o addon aceita (Torrentio,
     // AIOStreams: "tt" e "kitsu"). O que ja veio pelo id do item vai para a tela
@@ -2820,7 +2840,11 @@ static void *fioFontes(void *u) {
       else fioIdsExtras(&ex);
       if (consultaCancelada(c)) { free(ex.l); free(corpo); free(achados); return NULL; }
       { int novos = idsExtrasJuntar(&ex, &achados, &n);
-        if (novos > 0) printf("[addons] %s: +%d fontes pelos ids do mesmo titulo\n", origem->nome, novos); }
+        if (novos > 0) {
+          for (int a = n - novos; a < n; a++) achados[a].addonIdentidade = identidade;
+          printf("[addons] %s: +%d fontes pelos ids do mesmo titulo\n", origem->nome, novos);
+        }
+      }
       if (!corpo && ex.respondeu) corpo = strdup("{\"streams\":[]}");
     }
     if (!corpo) {
@@ -3708,6 +3732,7 @@ static void dispararBusca(void) {
   // teria sido adotado em addons_buscar) larga os addons que faltam.
   fontecache_ceder();
   estado = ADD_BUSCANDO;
+  addonmodo_nova_busca();
   fioVivo = 1; atomic_store(&fioTerminou, 0);
   progLimpar();
   progLigado = alvoVod();
@@ -3855,6 +3880,14 @@ static void buscarPedido(const char *imdb, const char *tipo, int forcar) {
 
 void addons_buscar(const char *imdb, const char *tipo) { buscarPedido(imdb, tipo, 0); }
 void addons_buscar_renovar(const char *imdb, const char *tipo) { buscarPedido(imdb, tipo, 1); }
+void addons_tentar_de_novo(void) {
+  if (alvoId[0]) {
+    char id[sizeof alvoId], tipo[sizeof alvoTipo];
+    snprintf(id, sizeof id, "%s", alvoId);
+    snprintf(tipo, sizeof tipo, "%s", alvoTipo);
+    addons_buscar_renovar(id, tipo);
+  } else addons_sondar_manifestos();
+}
 
 void addons_encerrar(void) {
   int juntarLeg;

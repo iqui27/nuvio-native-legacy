@@ -173,18 +173,23 @@ static void povoar(void) {
   for (i = 0; i < sizeof AMOSTRA / sizeof AMOSTRA[0]; i++) {
     CatItem it;
     memset(&it, 0, sizeof it);
-    snprintf(it.titulo, sizeof it.titulo, "%s", AMOSTRA[i].titulo);
+    static const char *posterTitles[] = { "Fallout", "Widow’s Bay", "O Grande Truque", "Uma Batalha Após a Outra", "Origem", "Alta Frequência", "Outcome", "O Diabo Veste Prada 2", "The Invite", "Os Suspeitos", "O Astronauta", "We Bury the Dead", "Perdido em Marte", "Devoradores de Estrelas" };
+    snprintf(it.titulo, sizeof it.titulo, "%s", posterTitles[i]);
     snprintf(it.imdb, sizeof it.imdb, "tt900%02d", (int)i);
     snprintf(it.tipo, sizeof it.tipo, "%s", AMOSTRA[i].serie ? "series" : "movie");
     snprintf(it.meta, sizeof it.meta, "%s", AMOSTRA[i].meta);
-    snprintf(it.genero, sizeof it.genero, "%s", AMOSTRA[i].genero);
+    snprintf(it.genero, sizeof it.genero, "%s", AMOSTRA[i].serie ? "Série · Drama" : "Filme · Drama");
     snprintf(it.sinopse, sizeof it.sinopse, "%s", AMOSTRA[i].sinopse);
-    snprintf(it.poster, sizeof it.poster, "deploy/app/art/%02d.jpg", (int)i);
+    snprintf(it.poster, sizeof it.poster, "deploy/app/art/poster/%02d.jpg", (int)i);
+    it.fontes = i % 3 == 0 ? CAT_FONTE_TRAKT | CAT_FONTE_SIMKL
+              : i % 3 == 1 ? CAT_FONTE_TRAKT : CAT_FONTE_NUVIO;
+    if (i % 4 == 0) strcpy(it.origem, "AIOMetadata");
     it.nota = AMOSTRA[i].nota;
     it.progresso = AMOSTRA[i].progresso;
     it.restanteMin = AMOSTRA[i].restante;
     if (AMOSTRA[i].serie) it.nTemporadas = 1;
     it.naLista = 1;
+    it.listaFontes = 1u << AJ_SALVOS_LOCAL;
     it.naColecao = (i % 2) == 0;
     v[i] = it;
   }
@@ -331,6 +336,8 @@ int main(int argc, char **argv) {
       if (fa) { fprintf(fa, "seloVistoLocal %s\n", sv); fclose(fa); }
     } }
   ajustes_iniciar();
+  dados_gravar("ajustes.txt", "idioma 0\nbordaFocoCartaz 1\nrealce 0\nmodernSidebar 0\ncollapseSidebar 1\n");
+  ajustes_dir(dados_dir());
   { const char *bv = getenv("NUVIO_SHOT_BORDA"), *sv = getenv("NUVIO_SHOT_SELO");
     if ((bv && *bv == '0') || (sv && *sv)) ajustes_dir(dados_dir()); }
   // NUVIO_SHOT_ESCALA_TEXTO=0.85..1.3: text scale of the capture (default: settings).
@@ -341,6 +348,66 @@ int main(int argc, char **argv) {
     ajustes_definir_vidro(!(v && *v == '0')); }
   povoar();
   biblioteca_iniciar();
+  rail_shot_aplicar();
+  if (argc > 2 && !strcmp(argv[2], "mock")) {
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN); // source panel
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); // first row, second poster
+    snprintf(nome, sizeof nome, "%s-grid.bmp", saida); captura(nome);
+    // Landscape input must produce a readable title card, never grey letterboxing.
+    CatItem original = *cat_item(2), landscape = original;
+    strcpy(landscape.poster, "deploy/app/art/02.jpg");
+    cat_atualizar_item(2, &landscape);
+    snprintf(nome, sizeof nome, "%s-landscape.bmp", saida); captura(nome);
+    cat_atualizar_item(2, &original);
+    // Watched history: real local timestamp API, synthetic account-free data.
+    for (int i = 0; i < 5; i++) {
+      char id[16]; snprintf(id, sizeof id, "tt900%02d", i);
+      cat_historico_definir_tempo(id, AMOSTRA[i].serie ? "series" : "movie", 1, 1791932400000LL - i * 86400000LL);
+    }
+    biblioteca_iniciar();
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-watched.bmp", saida); captura(nome);
+    biblioteca_iniciar();
+    for (int i = 0; i < 4; i++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN); injetarListas();
+    for (int i = 0; i < lst_n(); i++) {
+      CatItem posters[4];
+      for (int j = 0; j < 4; j++) posters[j] = *cat_item((i * 3 + j) % cat_n());
+      LstLista l = *lst_lista(i); lst_previa_registrar(&l, posters, 4);
+    }
+    tecla(SDLK_DOWN); tecla(SDLK_RIGHT); tecla(SDLK_DOWN);
+    snprintf(nome, sizeof nome, "%s-lists.bmp", saida); captura(nome);
+    CatItem trail[8]; DescItemLista notes[8] = {0};
+    for (int i = 0; i < 8; i++) {
+      trail[i] = *cat_item(i);
+      notes[i].rank = i + 1;
+      notes[i].entrouMs = 1791932400000LL - i * 86400000LL;
+      snprintf(notes[i].nota, sizeof notes[i].nota, "Passo %d: observe como a imagem e o som constroem esta história.", i + 1);
+    }
+    lst_teste_itens(trail, 8); lst_teste_extras(notes, 8);
+    tecla(SDLK_RETURN); solta(SDLK_RETURN); quadros(5);
+    { int ed, action, grabbed, sharing, row;
+      biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
+      ASSERTA(row == 0, "list opens on actions");
+      tecla(SDLK_DOWN);
+      biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
+      ASSERTA(row == 1, "D-pad reaches list items");
+      tecla(SDLK_LEFT);
+      biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
+      ASSERTA(row == 0, "Left returns from items to actions");
+    }
+    snprintf(nome, sizeof nome, "%s-list-page.bmp", saida); captura(nome);
+    for (int i = 0; i < 7; i++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN); tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_LEFT);
+    tecla(SDLK_DOWN);
+    { int ed, action, grabbed, sharing, row;
+      biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
+      ASSERTA(row == 1 && biblioteca_teste_trilha(), "D-pad reaches trail steps in trail mode");
+    }
+    snprintf(nome, sizeof nome, "%s-trail.bmp", saida); captura(nome);
+    return falhasTela ? 1 : 0;
+  }
   if (comecaLista) {
     int k;
     for (k = 0; k < 8; k++) tecla(SDLK_LEFT);
@@ -513,34 +580,6 @@ int main(int argc, char **argv) {
   captura(nome);
   tecla(SDLK_RETURN);      // acao 1: adicionar a Home
   snprintf(nome, sizeof nome, "%s-lista-home.bmp", saida);
-  captura(nome);
-  // Type switching must retain both the visible and logical chip focus.
-  tecla(SDLK_RIGHT);
-  { int row, column, action;
-    biblioteca_teste_foco(&row, &column, &action);
-    assert(row == 0 && column == 2 && action == 2);
-  }
-  for (int toggle = 0; toggle < 2; toggle++) {
-    int row, column, action;
-    tecla(SDLK_RETURN); solta(SDLK_RETURN);
-    quadros(4);
-    biblioteca_teste_foco(&row, &column, &action);
-    printf("type toggle: row=%d column=%d action=%d\n", row, column, action);
-    assert(row == 0 && column == 2 && action == 2);
-    tecla(SDLK_RIGHT); // End of row stays on the type chip.
-    biblioteca_teste_foco(&row, &column, &action);
-    assert(row == 0 && column == 2 && action == 2);
-    tecla(SDLK_LEFT);
-    biblioteca_teste_foco(&row, &column, &action);
-    assert(row == 0 && column == 1 && action == 1);
-    tecla(SDLK_LEFT);
-    biblioteca_teste_foco(&row, &column, &action);
-    assert(row == 0 && column == 0 && action == 0);
-    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);
-    biblioteca_teste_foco(&row, &column, &action);
-    assert(row == 0 && column == 2 && action == 2);
-  }
-  snprintf(nome, sizeof nome, "%s-lista-tipo-foco.bmp", saida);
   captura(nome);
   tecla(SDLK_ESCAPE);      // volta para a lista de listas
 

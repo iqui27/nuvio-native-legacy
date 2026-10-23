@@ -765,13 +765,14 @@ static int ajLinhaFilha(int i) {
 // filhas recuadas (a mae esta logo acima, a frase explica o apagado).
 static int ajLinhaAviso(int i) {
   int op = TELA[i].op;
-  return inativa(op) && uxRequisito(op) >= 0 && (aj2FocoNaLista(i) || ajLinhaFilha(i));
+  return inativa(op) && (aj2FocoNaLista(i) || ajLinhaFilha(i));
 }
 static int uxLigarRequisitos(int op, int aplicar);
 static void ajAvisoTexto(int op, char *b, size_t n) {
   int req = uxRequisito(op);
   const char *nome = req >= 0 ? i18n(rotuloOpcao(req)) : "";
   int liga = uxLigarRequisitos(op, 0);
+  if (req < 0) { primeiraFrase(i18n(ajudaOpcaoBase(op)), b, n); return; }
   if (liga == 2) snprintf(b, n, i18n("Precisa ligar \"%s\" — OK liga as duas"), nome);
   else if (liga == 1) snprintf(b, n, i18n("Precisa ligar \"%s\" — OK liga"), nome);
   else snprintf(b, n, i18n("Depende de \"%s\" — OK mostra"), nome);

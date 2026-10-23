@@ -96,6 +96,8 @@
 #include "agenda.h"
 #include "agendaviso.h"
 #include "perfil.h"
+#include "caca.h"
+#include "cacaui.h"
 #include "salvos.h"
 #include "contapend.h"
 #include "vistonao.h"
@@ -128,6 +130,7 @@
 #include "novidades_cartao.h"
 #include "resolver.h"
 #include "dicascontrole.h"
+#include "addonguia.h"
 #include "apoio.h"
 #include "telemetria.h"
 #include "avisos.h"
@@ -1050,11 +1053,14 @@ static int ltdDoGuia;
 // O perfil do amigo aberto pelo DUELO do Perfil e Stats: Voltar nele volta ao
 // Perfil, nao a home. Qualquer outra troca de tela esquece.
 static int socialDoPerfil;
+// A Caca aberta pelo Perfil volta para o Perfil (como o perfil do amigo).
+static int cacaDoPerfil;
 
 static void trocarTela(Tela nova) {
   if (nova == tela) return;
   glance_fechar();
   if (nova != TELA_SOCIAL) socialDoPerfil = 0;
+  if (nova != TELA_CACA) cacaDoPerfil = 0;
   if (tela == TELA_AJUSTES) ajustes_encerrar();
   if (tela == TELA_LIVETV_DIAG) livetvdiag_encerrar();
   // ESQUERDA na borda do Perfil so pede a barra e deixa a pagina aberta (#371).
@@ -1916,6 +1922,7 @@ static int fioTorrentVivo;
 static unsigned torrentSessao;
 static int torrentPendente = -1;
 static unsigned torrentPendenteGeracao;
+static uint64_t guiaTorrentRepetir; /* Explicit mode action may retry a previously withheld hash. */
 
 static void *resolverTorrentEscolhido(void *u) {
   TorrentJob *j = u;
@@ -1958,8 +1965,10 @@ static void pedirTorrentEscolhido(int indice) {
   }
   // Sem debrid, quem responde e o servidor P2P, que espera peers: dizer que
   // pode levar meio minuto evita a pessoa achar que travou.
-  if (!debrid_ativo() && p2p_usa_motor())
-    player_toast_ex(i18n("Baixando o torrent nesta TV… pode levar até um minuto"), 30000, "aj_download", 0);
+  const Stream *escolhida = stream_item(indice);
+  if (p2p_usa_motor() && (!debrid_ativo() || (escolhida &&
+      addonmodo_get(escolhida->addonIdentidade) == AM_P2P)))
+    addonguia_abrir(AG_INICIANDO, stream_ordem_addon(indice), NULL);
   else if (!debrid_ativo() && p2p_ativo())
     player_toast_ex(i18n("Pedindo o torrent ao servidor P2P… pode levar até um minuto"), 30000, "aj_download", 0);
   else
@@ -2025,11 +2034,14 @@ static void processarTorrentJob(void) {
   valido = perfis_sessao_atual(j->sessaoPerfil) && j->sessao == torrentSessao && player_aberto() && !player_quer_sair() &&
            stream_atual() == j->indice && stream_lista_geracao() == j->geracaoLista;
   if (valido) {
+    if (addonguia_aberto()) addonguia_fechar();
     if (j->resultado == 1 && j->url[0]) {
       definirFonteVOD(j->url);
       // Torrent resolution retains the exact manual file, with no failover.
       if (!player_id_canal()[0]) fonteManualDesde = SDL_GetTicks();
     } else if (j->resultado == DEBRID_BAIXANDO) {
+      addonguia_abrir(AG_DEBRID, stream_ordem_addon(j->indice), NULL);
+      addonguia_progresso(j->servico, j->pct);
       if (!fontefalha_ativa() && !player_id_canal()[0]) marcarFonteMorta(j->indice);
       char titulo[160];
       const char *serv = j->servico[0] ? j->servico : "debrid";
@@ -3723,6 +3735,7 @@ int app_iniciar(const char *dirArte) {
   menu_iniciar();
   arranque_etapa("app_iniciar/perfil_iniciar");
   perfil_iniciar();
+  caca_iniciar();
   // ANTES do primeiro sync e da primeira descoberta: salvos_aplicar_catalogo
   // marca `naLista` no catalogo do cache, entao o painel e a Biblioteca ja
   // abrem certos no primeiro quadro. Ler depois faria a lista local piscar.
@@ -4333,6 +4346,7 @@ void app_evento(const SDL_Event *e) {
     novidades202_evento(e);
     return;
   }
+  if (addonguia_aberto()) { addonguia_evento(e); return; }
   // RESOLVER UM PROBLEMA (2.1, resolver.h): tela inteira, come o teclado todo.
   // "Ver Fontes e addons" fecha a tela e abre Ajustes no lugar.
   if (resolver_aberto()) {
@@ -4680,6 +4694,7 @@ void app_evento(const SDL_Event *e) {
     case TELA_AGENDA:     agendaui_evento(e);   break;
     case TELA_PERFIL:     perfil_evento(e);     break;
     case TELA_SOCIAL:     amigoperfil_evento(e); break;
+    case TELA_CACA:       cacaui_evento(e);     break;
     case TELA_ADDONS:     addonsui_evento(e);   break;
     case TELA_PLUGINS:    pluginsui_evento(e);  break;
     case TELA_AJUSTES:    ajustes_evento(e);    break;
@@ -5635,6 +5650,13 @@ void app_atualizar(float dt, Uint32 agora) {
       if (spainel_aberto()) spainel_fechar();
       amigoperfil_abrir(pid); trocarTela(TELA_SOCIAL);
     }
+    if (tela == TELA_PERFIL && perfil_pediu_caca()) {
+      cacaui_abrir(-1); trocarTela(TELA_CACA);
+      cacaDoPerfil = 1;
+    }
+    if (tela == TELA_CACA && cacaui_pediu_busca()) {
+      trocarTela(TELA_BUSCA); menu_definir_destino(MENU_BUSCAR);
+    }
     if (tela == TELA_PERFIL && perfil_pediu_amigo(pid, sizeof pid)) {
       amigoperfil_abrir(pid); trocarTela(TELA_SOCIAL);
       socialDoPerfil = 1;
@@ -5759,6 +5781,7 @@ void app_atualizar(float dt, Uint32 agora) {
               || (tela == TELA_AGENDA     && agendaui_quer_sair())
               || (tela == TELA_PERFIL      && perfil_quer_sair())
               || (tela == TELA_SOCIAL      && amigoperfil_quer_sair())
+              || (tela == TELA_CACA        && cacaui_quer_sair())
               || (tela == TELA_AJUSTES    && ajustes_quer_sair())
               || (tela == TELA_DIAGNOSTICO && diagnostico_quer_sair());
     if (fechar) {
@@ -5767,6 +5790,9 @@ void app_atualizar(float dt, Uint32 agora) {
       // só para alcançar a navegação principal.
       if ((saiuPorEsquerda || saiuPorCima) && sidebar_permitida()) {
         menu_abrir();
+      } else if (tela == TELA_CACA && cacaDoPerfil) {
+        trocarTela(TELA_PERFIL);
+        menu_definir_destino(MENU_PERFIL);
       } else if (tela == TELA_SOCIAL && socialDoPerfil) {
         trocarTela(TELA_PERFIL);
         menu_definir_destino(MENU_PERFIL);
@@ -5899,6 +5925,12 @@ void app_atualizar(float dt, Uint32 agora) {
       if (perfil_item_selecionado(&p) && p.id[0]) {
         idx = cat_indice_por_imdb(p.id);
         if (idx >= 0) abrirPorIndice(idx); else desc_pedir_titulo(p.id);
+      }
+    } else if (tela == TELA_CACA) {
+      char si[24];
+      if (cacaui_pediu_titulo(si, sizeof si) && si[0]) {
+        idx = cat_indice_por_imdb(si);
+        if (idx >= 0) abrirPorIndice(idx); else desc_pedir_titulo(si);
       }
     } else if (tela == TELA_SOCIAL) {
       char si[24];
@@ -6141,7 +6173,18 @@ void app_atualizar(float dt, Uint32 agora) {
   // duas ficariam presas no mesmo pipeline.
   // A busca disparada por Reproduzir terminou: agora VERIFICA as fontes, em
   // ordem, ate achar uma que leve ao arquivo — e so entao liga o video.
-  if (aguardandoFonte == 1 &&
+  if (guiaTorrentRepetir && player_aberto() && !player_quer_sair()) {
+    (void)addons_estado();
+    for (int i = 0; i < stream_n(); i++) {
+      const Stream *s = stream_item(i);
+      if (s && s->addonIdentidade == guiaTorrentRepetir && !s->url[0] && s->infoHash[0]) {
+        guiaTorrentRepetir = 0; aguardandoFonte = 0;
+        stream_definir_atual(i); pedirTorrentEscolhido(i); break;
+      }
+    }
+    if (addons_estado() != ADD_BUSCANDO) guiaTorrentRepetir = 0;
+  }
+  if (aguardandoFonte == 1 && !guiaTorrentRepetir &&
       (addons_estado() != ADD_BUSCANDO ||
        ((player_id_canal()[0] || !fontefalha_ativa()) && autoParcialPronto()))) {
     unsigned geracao = novaGeracaoFonte();
@@ -6628,6 +6671,40 @@ void app_atualizar(float dt, Uint32 agora) {
   registrarFonteVODTocando();
   fitDuracaoMidia();
   fitPassivaPermitir();
+  addonguia_atualizar(tela == TELA_HOME && homePronta && !player_aberto() &&
+      !detail_aberto() && !resolver_aberto() && !novcartao_aberto() && !comecar_aberto());
+  {
+    int p = addonguia_pedido();
+    if (p == AGP_FONTES && player_aberto()) {
+      guiaTorrentRepetir = 0;
+      torrentSessao++; torrentPendente = -1; p2pmotor_cancelar();
+      player_voltar_a_esperar(); nomeParaFolha(); stream_folha_abrir();
+    }
+    else if (p == AGP_PROXIMA && player_aberto()) {
+      int atual = stream_atual();
+      if (atual >= 0) stream_automatico_excluir(atual);
+      player_voltar_a_esperar(); (void)pedirProximaFonteVOD(atual);
+    } else if (p == AGP_REPETIR && player_aberto()) {
+      int atual = stream_atual();
+      const Stream *s = stream_item(atual);
+      player_voltar_a_esperar();
+      if (s && (!s->url[0] || s->appResolvido) && s->infoHash[0] &&
+          addonmodo_get(s->addonIdentidade) != AM_DIRETO) pedirTorrentEscolhido(atual);
+      else {
+        uint64_t id = addonguia_identidade();
+        guiaTorrentRepetir = addonmodo_get(id) == AM_P2P ? id : 0;
+        buscarParaPlayerModo(1); aguardandoFonte = 1;
+      }
+    } else if (p == AGP_FILEIRAS) {
+      ajustes_abrir_fileiras(); trocarTela(TELA_AJUSTES);
+    }
+  }
+  {
+    static int falhaMostrada;
+    int falhou = player_aberto() && !player_id_canal()[0] && player_fonte_falhou();
+    if (!falhou) falhaMostrada = 0;
+    else if (!falhaMostrada && !addonguia_aberto()) { addonguia_falha(); falhaMostrada = 1; }
+  }
   // Mesmo resolver/ranking da troca VOD. A trava de UMA vez mora no player;
   // sem candidata, conserva o video e o aviso (o OK abre a folha existente).
   if (player_aberto() && !player_quer_sair() &&
@@ -7003,6 +7080,10 @@ void app_atualizar(float dt, Uint32 agora) {
   glance_atualizar(dt, agora);
   if (detail_aberto() && glance_pediu_tocar(cat_item(detail_indice()))) detail_pedir_reproduzir();
   perfil_atualizar(dt, agora);
+  // A Caca anda em toda tela: o aviso de conquista sai sem player (depois
+  // dos creditos, na volta a Home), nunca durante o filme.
+  caca_passo(agora, !player_aberto());
+  if (tela == TELA_CACA) cacaui_atualizar(dt, agora);
   spainel_atualizar(dt, agora);
   recomenda_atualizar(dt, agora);
   recenviar_atualizar(dt, agora);
@@ -7105,6 +7186,7 @@ static void desenharAtrasDoPainel(void *ctx) {
       case TELA_AGENDA:     agendaui_desenhar(agora);   break;
       case TELA_PERFIL:     perfil_desenhar(agora);     break;
       case TELA_SOCIAL:     amigoperfil_desenhar(agora);     break;
+      case TELA_CACA:       cacaui_desenhar(agora);     break;
       case TELA_ADDONS:     addonsui_desenhar(agora);   break;
       case TELA_PLUGINS:    pluginsui_desenhar(agora);  break;
       case TELA_AJUSTES:    ajustes_desenhar(agora);    break;
@@ -7555,6 +7637,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades201_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades202_desenhar(agora);
   if (!registro_aberto()) resolver_desenhar(agora);        // so o esmaecer de saida
+  if (!registro_aberto()) { CAMADA_SE(addonguia_aberto()); addonguia_desenhar(); }
   if (!registro_aberto()) novcartao_desenhar(agora);      // so o esmaecer de saida
   CAMADA_SE(telemetria_aberto());
   if (!registro_aberto()) telemetria_desenhar(agora);

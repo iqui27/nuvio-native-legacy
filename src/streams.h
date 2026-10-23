@@ -28,6 +28,8 @@ typedef struct Stream {
   // 0 = URL do addon; servico nativo + 1 quando resolvida pelo failover.
   int debridServico;
   int urlP2P; // provenance da resolucao manual; nao e servico de debrid
+  uint64_t addonIdentidade; /* Installation identity; survives cache and list reorder. */
+  int appResolvido; /* URL obtained by the app; never confused with an addon HTTP link. */
   // 1024 e nao 512. MEDIDO: os links de reproducao do AIOStreams tem 525 a 547
   // caracteres (dois segmentos assinados), e com 512 TODOS eram cortados em
   // silencio. O servidor entao respondia com um MP4 de aviso de 120s que TOCA
@@ -260,6 +262,7 @@ int  stream_proxima_sem_perda(int atual);
 // Primeira VOD nao tentada na ordem do addon, inclusive antes da atual.
 // Pula a atual e as ja falhadas; leitura protegida contra troca de lista.
 int  stream_proxima_vod(int atual);
+int  stream_incompativel(int indice);
 // Confere a proxima da ordem do addon fora do fio de desenho; -1 se acabou.
 // Devolve tambem quantas candidatas consumiram o orcamento (se nao NULL).
 int  stream_verificar_proxima_vod(int atual, int tentativas, int *conferidas);

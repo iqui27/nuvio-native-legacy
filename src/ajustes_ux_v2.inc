@@ -726,6 +726,13 @@ static GfxRect aj2TopoRetratoR(int t) {
   }
   return (GfxRect){x, aj2GradeDescY() + (t == AJ2_T_TOUR ? 0.0f : AJ2_G_DESC + 20.0f), fim - x, AJ2_G_DESC};
 }
+static const char *aj2DescobertaTit(int t) { return t == AJ2_T_TOUR ? "O que o Nuvio faz?" : "Resolver um problema"; }
+static const char *aj2DescobertaSub(int t) { return t == AJ2_T_TOUR ? "Tour pelas funções, com atalho para ligar cada uma" : "TV lenta, sem som, legenda errada"; }
+// tile 65 plus the paddings of aj2GradeDescoberta, and the longer text line
+static float aj2DescobertaLargura(int t) {
+  float a = (float)txt_largura(TXT_V3_DESC, aj2DescobertaTit(t)), b = (float)txt_largura(TXT_V3_SUB, aj2DescobertaSub(t));
+  return 25 + 65 + 25 + (a > b ? a : b) + 34;
+}
 static GfxRect aj2TopoR(int t) {
   if (!aj2TopoVisivel(t)) return (GfxRect){0};
   if (ajRetrato()) return aj2TopoRetratoR(t);
@@ -744,8 +751,13 @@ static GfxRect aj2TopoR(int t) {
   if (t == AJ2_T_PERFIL) return (GfxRect){ x + wb + 20 + wa + 20, y, wp, AJ2_G_CHIP };
   if (t == AJ2_T_DIF) return (GfxRect){ x + wb + 20 + wa + 20 + wp + 20, y, wd, AJ2_G_CHIP };
   if (t == AJ2_T_LAYOUT) return (GfxRect){ fim - wl, y, wl, AJ2_G_CHIP };
-  if (t == AJ2_T_TOUR) return (GfxRect){ x, aj2GradeDescY(), 2 * cw + AJ2_G_VAO, AJ2_G_DESC };
-  return (GfxRect){ x + 2 * (cw + AJ2_G_VAO), aj2GradeDescY(), cw, AJ2_G_DESC };
+  // "Resolver um problema" did not fit one column ("Resolver um..."): it takes
+  // what it needs from the guide card, which has room to spare.
+  { float wr = aj2DescobertaLargura(AJ2_T_RESOLVER), wt = fim - x - AJ2_G_VAO;
+    if (wr < cw) wr = cw;
+    if (wr > wt - cw) wr = wt - cw;
+    if (t == AJ2_T_TOUR) return (GfxRect){ x, aj2GradeDescY(), wt - wr, AJ2_G_DESC };
+    return (GfxRect){ fim - wr, aj2GradeDescY(), wr, AJ2_G_DESC }; }
 }
 static void aj2GradeAtualizar(float dt) {
   uxLayoutDisponibilidade();
@@ -791,9 +803,10 @@ static void aj2GradeIcone(const char *ic, float x, float y, float lado, float k)
 // categoria). Fundo neutro e, em foco, o acento com o halo (a linguagem das
 // pilulas); o lado escolhido ganha uma pilula clara por dentro. Sem
 // animacao: a troca e instantanea, o arranjo inteiro muda junto.
-static const char *aj2LayoutRot(int i) { return i ? "Lista" : "Painel"; }
+// Icon only: the two words pushed the four pills of the index into "Pai..."
+// and "Perfil:..." (ajustes UX M1); the chosen side is the lit one.
 static const char *aj2LayoutIco(int i) { return i ? "aj_layout-list" : "aj_layout-dashboard"; }
-static float aj2LayoutSegLado(TxtEstilo e, float ico, int i) { return 22.0f + ico + 10.0f + (float)txt_largura(e, aj2LayoutRot(i)) + 24.0f; }
+static float aj2LayoutSegLado(TxtEstilo e, float ico, int i) { (void)e; (void)i; return 22.0f + ico + 22.0f; }
 static float aj2LayoutSegW(TxtEstilo e, float ico) { return 12.0f + aj2LayoutSegLado(e, ico, 0) + aj2LayoutSegLado(e, ico, 1); }
 static void aj2LayoutSeg(GfxRect r0, TxtEstilo e, float ico, float k) {
   GfxRect r = aj2GradeSuperficie(r0, r0.h * 0.5f, k, 3.0f, 0.35f, 1);
@@ -810,7 +823,6 @@ static void aj2LayoutSeg(GfxRect r0, TxtEstilo e, float ico, float k) {
       if (k > 0.01f) gfx_cor(q, 0.5f, ti, ti, ti, 0.22f * k);
     }
     aj2GradeIcone(aj2LayoutIco(i), xi, yc - ico * 0.5f, ico, k);
-    aj2GradeTexto(e, aj2LayoutRot(i), xi + ico + 10.0f, yc, x + lw - (xi + ico + 10.0f) - 12.0f, i == lista ? 1.0f : 0.55f, k);
     x += lw;
   }
 }
@@ -837,8 +849,7 @@ static void aj2GradePilula(int t) {
 static void aj2GradeDescoberta(int t) {
   float k = aj2Suave(aj2TF[t]);
   GfxRect r = aj2GradeSuperficie(aj2TopoR(t), 22.0f, k, 6.0f, 0.42f, 0);
-  const char *tit = t == AJ2_T_TOUR ? "O que o Nuvio faz?" : "Resolver um problema";
-  const char *sub = t == AJ2_T_TOUR ? "Tour pelas funções, com atalho para ligar cada uma" : "TV lenta, sem som, legenda errada";
+  const char *tit = aj2DescobertaTit(t), *sub = aj2DescobertaSub(t);
   float tile = 65.0f, x = r.x + 25, tw;
   GfxRect tr = { x, r.y + (r.h - tile) * 0.5f, tile, tile };
   gfx_cor(tr, 17.0f / tile, 1, 1, 1, 0.08f + 0.10f * k);

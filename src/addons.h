@@ -161,6 +161,8 @@ void addons_buscar(const char *imdb, const char *tipo);
 // Recarregar explicito: descarta a resposta anterior e vai a rede, inclusive
 // quando a lista atual esta vazia ou foi filtrada por falta de debrid.
 void addons_buscar_renovar(const char *imdb, const char *tipo);
+// Retry the last source query; before any query, retry manifest discovery.
+void addons_tentar_de_novo(void);
 
 // --- busca em andamento, addon a addon (#221) --------------------------------
 // A busca real de filme/serie publica cada addon que responde, sem esperar os

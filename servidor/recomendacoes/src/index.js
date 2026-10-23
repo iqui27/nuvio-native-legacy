@@ -19,9 +19,9 @@ import { rotaAmigos, limpezaAmigos, despublicar, garantirPerfil, avatarPublico, 
 import { rotaEuNome, rotaAlcance, rotaEvento, rotaFeed, rotaAmigo, limpezaSocial,
          limparNome, avatarPerfilOk, resolverNome, rotaRecResposta } from "./social.js";
 import { rotaEnquete } from "./enquete.js";
+import { rotaCaca } from "./conquista.js";
 import { rotaSala, limpezaSala } from "./sala.js";
 import { rotaDiario, DIARIO_CORPO_MAX, DIARIO_CORPO_MAX_LB } from "./diario.js";
-import { rotaCaca } from "./conquista.js";
 import { rotaTrava, travaRev } from "./trava.js";
 import { resolverCanonica, canonizarEntrada, identidadesDe, rotaIdentidades, idSimkl,
          perfilExiste, RECURSO } from "./identidade.js";

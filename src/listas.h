@@ -67,6 +67,13 @@ typedef struct {
   int  propria;           // veio de /users/me/lists
 } LstLista;
 
+// Small per-profile session previews, populated only when a list is opened.
+// No extra HTTP request per card; URLs only, no retained CatItem/GL texture.
+typedef struct { int n; char poster[4][512]; } LstPrevia;
+int lst_previa(const LstLista *l, LstPrevia *out);
+void lst_previa_registrar(const LstLista *l, const CatItem *itens, int n);
+void lst_previa_limpar(void);
+
 // --- ciclo de vida -----------------------------------------------------------
 // Le as fixadas do perfil ATIVO (perfis_ativo()) e reaplica as que vao para a
 // Home. Idempotente; chamar ao abrir a Biblioteca.
