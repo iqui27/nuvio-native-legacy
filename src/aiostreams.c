@@ -172,10 +172,58 @@ static void summarize(char *dst,size_t n,const char *p) {
     }
   } else if(*p=='"') { js_cadeia(p,dst,n); safe(dst); }
 }
+static void detail(AioSnapshot *s,int group,const char *name,const char *v) {
+  if(!v || s->detalhes>=AIO_MAX) return;
+  AioRegra *r=&s->detalhe[s->detalhes];
+  memset(r,0,sizeof *r); r->grupo=group;
+  snprintf(r->nome,sizeof r->nome,"%s",name);
+  if(*v=='[' || *v=='\"') summarize(r->valor,sizeof r->valor,v);
+  else if(!strncmp(v,"true",4)) strcpy(r->valor,"true");
+  else if(!strncmp(v,"false",5)) strcpy(r->valor,"false");
+  else if(isdigit((unsigned char)*v) || *v=='-') snprintf(r->valor,sizeof r->valor,"%g",strtod(v,NULL));
+  if(r->valor[0]) s->detalhes++;
+}
+static void config_details(AioSnapshot *s,const char *u) {
+  const char *prefix[]={"required","included","excluded","preferred"};
+  const char *suffix[]={"Resolutions","Qualities","VisualTags","AudioTags","Languages","Subtitles","StreamTypes"};
+  char key[96];
+  for(int a=0;a<7;a++) for(int b=0;b<4;b++) {
+    snprintf(key,sizeof key,"%s%s",prefix[b],suffix[a]);
+    detail(s,a<4?0:a<6?2:3,key,member(u,key));
+  }
+  detail(s,3,"excludeCached",member(u,"excludeCached"));
+  detail(s,3,"excludeUncached",member(u,"excludeUncached"));
+  const char *range[]={"size","bitrate"}, *media[]={"movies","series","anime"};
+  const char *res[]={"2160p","1440p","1080p","720p","480p","360p","unknown"};
+  for(int a=0;a<2;a++) for(int b=-1;b<7;b++) for(int c=0;c<3;c++) {
+    const char *obj=member(u,range[a]);
+    obj=b<0?member(obj,"global"):member(member(obj,"resolution"),res[b]);
+    snprintf(key,sizeof key,"%s.%s.%s",range[a],b<0?"global":res[b],media[c]);
+    detail(s,1,key,member(obj,media[c]));
+  }
+  const char *sort[]={"global","cached","uncached","movies","series","anime","cachedMovies","uncachedMovies","cachedSeries","uncachedSeries","cachedAnime","uncachedAnime"};
+  for(int i=0;i<12;i++) { snprintf(key,sizeof key,"sort.%s",sort[i]); detail(s,5,key,member(member(u,"sortCriteria"),sort[i])); }
+  detail(s,6,"formatter.id",member(member(u,"formatter"),"id"));
+  detail(s,6,"formatter.selectedSaved",member(member(u,"formatter"),"selectedSaved"));
+  detail(s,7,"proxy.enabled",member(member(u,"proxy"),"enabled"));
+  detail(s,7,"proxy.id",member(member(u,"proxy"),"id"));
+  detail(s,7,"proxy.proxiedServices",member(member(u,"proxy"),"proxiedServices"));
+  detail(s,7,"proxy.proxiedAddons",member(member(u,"proxy"),"proxiedAddons"));
+  const char *seed[]={"minSeeders","maxSeeders"};
+  for(int i=0;i<2;i++) detail(s,3,seed[i],member(u,seed[i]));
+  const char *templates=member(u,"appliedTemplates"), *p=templates&&*templates=='['?templates+1:NULL;
+  while(p && s->detalhes<AIO_MAX) {
+    while(isspace((unsigned char)*p)||*p==',') p++;
+    if(*p!='{') break;
+    detail(s,6,"template.id",member(p,"id")); detail(s,6,"template.version",member(p,"version"));
+    const char *next=value_end(p); if(!next||next<=p) break; p=next;
+  }
+}
 void aio_configuracao(AioSnapshot *s, const char *json) {
   const char *u = member(member(json,"data"),"userData");
   s->configurada = s->servicos = s->addons = 0; memset(s->regras,0,sizeof s->regras);
-  if (!u || *u != '{' || value_end(u)[-1]!='}') return;
+  s->detalhes=0;
+  if (!u || *u != '{' || !value_end(u) || value_end(u)[-1]!='}') return;
   s->configurada = 1;
   s->servicos = inventory(u,"services",s->servico,32);
   s->addons = inventory(u,"presets",s->addon,AIO_MAX);
@@ -203,6 +251,41 @@ void aio_configuracao(AioSnapshot *s, const char *json) {
   // Numeric ranges only; never render custom expressions or proxy addresses.
   const char *limits=member(member(u,"size"),"global");
   summarize(s->resumo[1],256,member(limits,"movies"));
+  config_details(s,u);
+}
+void aio_status(AioSnapshot *s,const char *json) {
+  const char *u=member(json,"data"); if(!u) u=json;
+  js_texto_raiz_em(u,u?js_fim(u):NULL,"version",s->versaoInstancia,sizeof s->versaoInstancia); safe(s->versaoInstancia);
+  js_texto_raiz_em(u,u?js_fim(u):NULL,"channel",s->canal,sizeof s->canal); safe(s->canal);
+  s->searchAtiva=boolean(member(u,"settings"),"searchApiDisabled",1)==0;
+  s->p2pInstancia=boolean(member(u,"settings"),"allowP2P",-1);
+}
+static int count_array(const char *a) {
+  int n=0; const char *p=a&&*a=='['?a+1:NULL;
+  while(p) { while(isspace((unsigned char)*p)||*p==',') p++; if(!*p||*p==']') break;
+    const char *end=value_end(p); if(!end||end<=p) break; n++; p=end;
+  } return n;
+}
+void aio_search(AioSnapshot *s,const char *json) {
+  const char *u=member(json,"data");
+  s->search=boolean(json,"success",0) && u;
+  if(!s->search) return;
+  s->estatisticas=count_array(member(u,"statistics")); s->erros=count_array(member(u,"errors"));
+  const char *f=member(u,"filtered"); s->filtrados=f&&isdigit((unsigned char)*f)?atoi(f):0;
+}
+void aio_legendas(AioSnapshot *s,const char *json) {
+  const char *a=member(json,"subtitles"), *p=a&&*a=='['?a+1:NULL;
+  s->legendas=0;
+  while(p && s->legendas<AIO_MAX) {
+    while(isspace((unsigned char)*p)||*p==',') p++;
+    if(*p!='{') break;
+    const char *end=value_end(p); if(!end||end<=p) break;
+    AioLegenda r={0};
+    js_texto_raiz_em(p,end,"lang",r.idioma,sizeof r.idioma); safe(r.idioma);
+    js_texto_raiz_em(p,end,"name",r.nome,sizeof r.nome); safe(r.nome);
+    r.forcada=boolean(p,"forced",-1); r.sdh=boolean(p,"sdh",-1);
+    s->legenda[s->legendas++]=r; p=end;
+  }
 }
 void aio_resultados(AioSnapshot *s, const char *json) {
   const char *a = member(json,"streams"), *p = a && *a == '[' ? a+1 : NULL;
@@ -213,12 +296,21 @@ void aio_resultados(AioSnapshot *s, const char *json) {
     const char *end = js_fim(p); if (!end) break;
     AioResultado r = {0}; r.cache = -1;
     js_texto_raiz_em(p,end,"name",r.nome,sizeof r.nome); safe(r.nome);
-    const char *kind = member(p,"url") ? "HTTP" : member(p,"infoHash") ? "P2P" :
-      member(p,"externalUrl") ? "Externo" : member(p,"nzbUrl") ? "NZB" : member(p,"ytId") ? "YouTube" : "Desconhecido";
+    const char *kind = member(p,"externalUrl") ? "Externo" : member(p,"nzbUrl") ? "NZB" :
+      member(p,"ytId") ? "YouTube" : member(p,"url") ? "HTTP" : member(p,"infoHash") ? "P2P" : "Desconhecido";
+    char target[2048]="", origin[256];
+    js_texto_raiz_em(p,end,!strcmp(kind,"Externo")?"externalUrl":"nzbUrl",target,sizeof target);
+    if(!strcmp(kind,"YouTube")) {
+      char id[96]=""; js_texto_raiz_em(p,end,"ytId",id,sizeof id);
+      if(id[0] && strspn(id,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")==strlen(id))
+        snprintf(target,sizeof target,"https://www.youtube.com/watch?v=%s",id);
+    }
+    if(aio_url(target,origin,sizeof origin)) snprintf(r.destino,sizeof r.destino,"%s",target);
     snprintf(r.tipo,sizeof r.tipo,"%s",kind);
     if (!strcmp(kind,"P2P")) s->p2p++;
     if (!strcmp(kind,"Externo") || !strcmp(kind,"NZB") || !strcmp(kind,"YouTube")) s->links++;
     const char *sd = member(p,"streamData");
+    js_texto_raiz_em(sd,sd?js_fim(sd):NULL,"addon",r.provedor,sizeof r.provedor); safe(r.provedor);
     r.cache = boolean(sd,"cached",-1);
     if(r.cache<0) r.cache=boolean(member(p,"clientResolve"),"isCached",-1);
     const char *parsed=member(sd,"parsedFile"), *resolution=member(parsed,"resolution");

@@ -11,10 +11,16 @@
 #define AIO_ADDONS 16
 typedef struct { char nome[128], id[128], tipo[32]; } AioCatalogo;
 typedef struct { char nome[96]; int ativo, legenda; } AioItem;
-typedef struct { char nome[192], tipo[24]; int cache, altura, mp4; } AioResultado;
+typedef struct { char nome[192], tipo[24], destino[2048], provedor[96]; int cache, altura, mp4, rank, decisao; } AioResultado;
+typedef struct { char idioma[48], nome[128]; int forcada, sdh; } AioLegenda;
+typedef struct { int grupo; char nome[96], valor[256]; } AioRegra;
 typedef struct {
   int valida, requerida, configurada, recursos, catalogos, servicos, addons;
-  int resultados, links, p2p, regras[8], http[4], ms[4], retry[4];
+  int resultados, links, p2p, regras[8], http[6], ms[6], retry[6];
+  int legendas, detalhes, search, estatisticas, erros, filtrados, searchAtiva, p2pInstancia;
+  char versaoInstancia[40], canal[24];
+  AioLegenda legenda[AIO_MAX];
+  AioRegra detalhe[AIO_MAX];
   char nome[96], versao[40], host[256], resumo[8][256];
   int regraCache, regraUncached;
   char resolucaoObrigatoria[128], resolucaoExcluida[128], idiomaPreferido[128];
@@ -27,6 +33,9 @@ int aio_autorizacao(const char *manifesto, char *dst, size_t n);
 int aio_manifesto(AioSnapshot *s, const char *json);
 void aio_configuracao(AioSnapshot *s, const char *json);
 void aio_resultados(AioSnapshot *s, const char *json);
+void aio_status(AioSnapshot *s, const char *json);
+void aio_legendas(AioSnapshot *s, const char *json);
+void aio_search(AioSnapshot *s, const char *json);
 #ifdef NV_SHOT_HOOKS
 void aio_shot(const AioSnapshot *s);
 #endif
