@@ -258,11 +258,11 @@ static void phone_status_counts(const char *state);
 static void phone(void){
   static char html[24000];
   snprintf(html,sizeof html,"<!doctype html><html lang='pt-BR'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>%s</title>"
-    "<style>*{box-sizing:border-box}body{margin:0;background:#0d0d0d;color:#f3f2ef;font:16px system-ui}main{max-width:480px;margin:auto;padding:20px 22px 16px}h1{font-size:30px;line-height:1.1;margin:14px 0 8px}p{color:#b2b4b8;line-height:1.45;margin:0 0 14px;font-size:14px}[hidden]{display:none!important}"
+    "<style>*{box-sizing:border-box}body{margin:0;background:#0d0d0d;color:#f3f2ef;font:16px system-ui}main{max-width:480px;margin:auto;padding:20px 22px 16px}h1{font-size:27px;line-height:1.1;margin:14px 0 8px}p{color:#b2b4b8;line-height:1.45;margin:0 0 14px;font-size:14px}[hidden]{display:none!important}"
     ".k{font-size:12px;letter-spacing:.12em;color:#b2b4b8}.rail{display:flex;gap:6px;margin:14px 0 4px}.rail i{flex:1;height:4px;border-radius:2px;background:#343941}.rail i.on{background:#bbcfc3}"
     ".row{display:flex;justify-content:space-between;align-items:center;margin:10px 0 6px}.chip{background:#24262c;border-radius:10px;padding:6px 12px;font-size:13px}"
     "label{display:block;font-size:13px;color:#c9cbce;margin-top:8px}input,select{font:inherit;border:1px solid #42464e;border-radius:14px;padding:11px 12px;background:#22252b;color:#f3f2ef;width:100%%;margin-top:4px}"
-    "button{font:inherit;border:0;border-radius:32px;background:#e5e9e6;color:#15171b;font-weight:600;width:100%%;padding:15px;margin-top:16px}button.sec{background:#24262c;color:#f3f2ef}"
+    "button{font:inherit;border:0;border-radius:32px;background:#e5e9e6;color:#15171b;font-weight:600;width:100%%;padding:15px;margin-top:16px;display:flex;justify-content:center;align-items:center}button.sec{background:#24262c;color:#f3f2ef}"
     ".note{display:flex;gap:10px;align-items:center;background:#1a1c21;border-radius:14px;padding:12px 14px;font-size:13px;color:#c9cbce;margin-top:14px}"
     ".ft{text-align:center;color:#8b8e94;font-size:12px;margin-top:14px}input[type=checkbox]{width:22px;height:22px;margin:0 12px 0 0;vertical-align:middle;accent-color:#e5e9e6}"
     "#s2 label.tipo{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #26292f;padding:10px 0;font-size:16px;color:#f3f2ef}#s2 label.tipo span:last-child{color:#8b8e94;font-size:14px}"
@@ -273,9 +273,9 @@ static void phone(void){
     "<main><div class='row' style='margin-top:0'><div class=k>NUVIO LEGACY</div><div class=chip>%s</div></div><div class=rail><i class=on id=r1></i><i id=r2></i><i id=r3></i></div>"
     "<form method=post action='' id=f><section id=s1><h1>%s</h1><p>%s</p>"
     "<div class=row><select id=kind style='width:auto'><option value=0>Xtream Codes</option><option value=1>M3U URL</option></select><span class=chip>1 / 3</span></div>"
-    "<label>%s<input id=name autocomplete=off maxlength=95></label><div id=xtream><label>%s<input id=server type=url autocomplete=off></label><label>%s<input id=user autocomplete=off></label><label>%s<input id=password type=password autocomplete=off></label></div>"
+    "<label>%s<input id=name autocomplete=off maxlength=95 placeholder='%s'></label><div id=xtream><label>%s<input id=server type=url autocomplete=off placeholder='https://provider.example'></label><label>%s<input id=user autocomplete=off placeholder='%s'></label><label>%s<input id=password type=password autocomplete=off placeholder='%s'></label></div>"
     "<div id=m3u hidden><label>%s<input id=playlist type=url autocomplete=off></label><label>%s<input id=file type=file accept='.m3u,.m3u8,text/plain'></label></div>"
-    "<div class=note><svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='#b2b4b8' stroke-width='2'><rect x='3' y='11' width='18' height='11' rx='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/></svg> %s</div><button type=button id=next>%s</button><div class=ft>%s</div></section>"
+    "<div class=note><svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='#b2b4b8' stroke-width='2'><rect x='3' y='11' width='18' height='11' rx='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/></svg> %s</div><button type=button id=next><span>%s</span><svg width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='#15171b' stroke-width='2.4' style='margin-left:8px'><path d='M9 18l6-6-6-6'/></svg></button><div class=ft>%s</div></section>"
     "<section id=s2 hidden><div class=row><span class=chip id=prov></span><span class=chip>2 / 3</span></div><h1>%s</h1><p id=sub2></p>"
     "<label class=tipo><span><input type=checkbox id=live checked>%s</span><span id=nlive></span></label>"
     "<label class=tipo><span><input type=checkbox id=movies checked>%s</span><span id=nmovies></span></label>"
@@ -310,7 +310,7 @@ static void phone(void){
     "$('finish').onclick=async()=>{try{const r=await post({step:3});if(r.ok){$('finish').disabled=true;$('finish').textContent=$('s3 h1').textContent;}}catch(e){fail();}};$('f').onsubmit=()=>false;</script></html>",
     i18n("Guia TV"),i18n("Guia TV"),
     i18n("Sua fonte. Pronta para a sua TV."),i18n("Use os dados enviados pelo seu provedor."),
-    i18n("Nome da fonte"),i18n("Servidor"),i18n("Usuário"),i18n("Senha"),i18n("URL da lista M3U"),i18n("Arquivo"),
+    i18n("Nome da fonte"),i18n("Ex.: IPTV da sala"),i18n("Servidor"),i18n("Usuário"),i18n("Usuário do provedor"),i18n("Senha"),i18n("Senha do provedor"),i18n("URL da lista M3U"),i18n("Arquivo"),
     i18n("Os dados ficam só na sua TV."),i18n("Testar conexão"),i18n("Conectado à TV"),
     i18n("Escolha o que importar"),i18n("Canais ao vivo"),i18n("Filmes"),i18n("Séries"),i18n("Guia de programação"),
     i18n("Selecionar tudo"),i18n("Categorias"),i18n("Conteúdo adulto oculto por padrão."),i18n("URL XMLTV"),i18n("Revisar e adicionar à TV"),i18n("Voltar"),
