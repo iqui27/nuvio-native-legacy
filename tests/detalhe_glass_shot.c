@@ -109,6 +109,7 @@ void b2_panel(GfxRect r, float radius, float density, float a);
 #ifndef NV_DETAIL_SOURCE
 #define NV_DETAIL_SOURCE "../src/detail.c"
 #endif
+#define servidores_contem_item fx_servidor_contem
 #include NV_DETAIL_SOURCE
 #undef gfx_vidro_material
 #undef gfx_vidro_painel
@@ -116,6 +117,10 @@ void b2_panel(GfxRect r, float radius, float density, float a);
 #undef txt_bloco
 #undef txt_largura
 #undef txt_token_tam
+#undef servidores_contem_item
+int fx_servidor_contem(const CatItem *item, int provider) {
+  return getenv("NUVIO_SHOT_SERVIDORES") && item && provider < 2;
+}
 
 float trakt_bloco(TxtEstilo e, const char *s, int r, int g, int b,
                    float x, float y, float w, float lead, float a, int max) {
@@ -129,6 +134,8 @@ int trakt_largura(TxtEstilo e, const char *s) {
 size_t trakt_token_tam(const char *s) {
   traktLayoutCalls++;
   return txt_token_tam(s);
+}
+
 }
 
 #include "dados.h"
@@ -638,6 +645,12 @@ int main(int argc, char **argv) {
     return 0;
   }
   if (quer(argc, argv, "filme-topo")) { abrir(1, 0, 0, 0); gravar("filme-topo"); }
+  if (quer(argc, argv, "detalhe-chip")) {
+    abrir(1,0,0,0); quadros(4); focoServidor = 0; gravar("detalhe-chip");
+    SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RETURN; detail_evento(&e);
+    e.type=SDL_KEYUP; detail_evento(&e);
+    assert(detail_pediu_fontes() && detail_fonte_servidor()==0);
+  }
   // O ULTIMO circular da linha aberta em foco: hoje o "..." (Mais opcoes).
   if (quer(argc, argv, "filme-explorar")) {
     abrir(1, 0, 0, 0);

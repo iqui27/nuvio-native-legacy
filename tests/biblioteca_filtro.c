@@ -112,7 +112,13 @@ int main(void) {
   assert(hdrX() == 200.0f);
   assert(bibX() == 564.0f && bibW() == 1260.0f);
   assert(colunasCartaz() == 5);
-  assert(gradeY() == 388.0f && pickerY() == 312.0f);
+  // A tabela em exibicao de lista comeca mais baixo para caber o cabecalho
+  // de colunas (mockup "biblioteca-lista-servidor"); a grade de cartazes
+  // continua em 388.
+  assert(gradeY() == 388.0f + 42.0f && pickerY() == 312.0f);
+  exibicao = VIS_CARTAZ;
+  assert(gradeY() == 388.0f);
+  exibicao = VIS_LISTA;
 
   // Mesmo criterio da Home: desconhecido/passado/ano atual ficam; futuro sai.
   time_t agora = time(NULL);

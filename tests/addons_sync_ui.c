@@ -6,7 +6,9 @@
 #include <string.h>
 #include <assert.h>
 #include <stdio.h>
-static int total, logada, ocupado, pedidos, avisos, trocas, guia, configurou, repetiu;
+static int total, logada, ocupado, pedidos, avisos, trocas, guia, configurou, repetiu, aio, detectado;
+void aioui_abrir(int i) { (void)i; aio++; }
+int aioui_detectar(int i) { return detectado && i == 0; }
 static int http, diretos, torrents, catalogo;
 static int flags[128], saveFail, reapplied;
 const char *addons_base(int i) { static char b[64]; snprintf(b,sizeof b,"addon-%d",i); return b; }
@@ -42,7 +44,7 @@ static void tecla(SDL_Keycode k) {
 }
 int main(void) {
   // Empty list still offers sync; signed out explains, signed in requests once.
-  addonsui_abrir(); tecla(SDLK_RETURN); assert(avisos == 1 && !pedidos);
+  addonsui_abrir(); assert(aio == 1); tecla(SDLK_RETURN); assert(avisos == 1 && !pedidos);
   logada = 1; tecla(SDLK_RETURN); tecla(SDLK_RETURN); assert(pedidos == 1);
   for (int n = 2; n <= 128; n += 126) {
     total = n; ocupado = 0; addonsui_abrir();
@@ -52,7 +54,9 @@ int main(void) {
     tecla(SDLK_KP_ENTER); assert(pedidos == (n == 2 ? 2 : 3));
     addonsui_abrir();
     for (int i = 0; i < n + 3; i++) tecla(SDLK_DOWN);
-    assert(addonsui_foco() == n + 1);
+    assert(addonsui_foco() == n + 2);
+    tecla(SDLK_RETURN); assert(aio > 1);
+    tecla(SDLK_UP); assert(addonsui_foco() == n + 1);
     tecla(SDLK_UP); assert(addonsui_foco() == n);
     tecla(SDLK_DOWN); tecla(SDLK_RETURN);
     assert(addonsui_ao_vivo() && addonsui_foco() == 0);
@@ -69,5 +73,7 @@ int main(void) {
   catalogo=0;http=200;diretos=1;tecla(SDLK_RETURN);assert(configurou==1);
   http=-1;tecla(SDLK_RETURN);assert(repetiu==1);
   http=403;tecla(SDLK_RETURN);assert(repetiu==2);
+  http=200;detectado=1;int oldAio=aio;tecla(SDLK_RETURN);assert(aio==oldAio+1);
+  tecla(SDLK_a);assert(aio==oldAio+2);
   puts("addons_sync_ui: ok (empty list, 128 addons, remote, pointer, busy, row actions)");
 }

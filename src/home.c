@@ -555,9 +555,12 @@ static int dinPalcoSplit(void) {
 }
 static int palcoFundoDestino(void) {
   if (dinPalcoSplit() && fileiras[foco.fileira].tipo == FILEIRA_HEROI_DIVIDIDO) return PALCO_ARTE;
-  return (ajustes_home_layout() == HOME_LAYOUT_MODERNA || dinPalcoSplit()) && !focoHero &&
-         foco.fileira >= 0 && foco.fileira < nFileiras &&
-         fileiras[foco.fileira].tipo == FILEIRA_PALCO ? ajustes_palco_fundo() : PALCO_ATUAL;
+  if (!((ajustes_home_layout() == HOME_LAYOUT_MODERNA || dinPalcoSplit()) && !focoHero &&
+        foco.fileira >= 0 && foco.fileira < nFileiras &&
+        fileiras[foco.fileira].tipo == FILEIRA_PALCO)) return PALCO_ATUAL;
+  // #659: a fileira pode pedir um fundo proprio; sem escolha dela manda o global.
+  int p = fil_palco(fileiras[foco.fileira].chave);
+  return p >= 0 ? p : ajustes_palco_fundo();
 }
 // TROCA DESLIZADA (dono, 30/09: "a hero passando animado, tipo trocando a
 // imagem pro lado e a outra bem grudada nela"; ajuste "Transicao do destaque").
@@ -3164,6 +3167,26 @@ static void sincronizarFileiras(void) {
         if (nm < teto && nm < MAX_CARDS) cw->itens[nm++] = idx;
       }
       if (nProxHome || tirou) { cw->usaItens = 1; cw->n = nm; }
+    }
+    if (fil_origem_de(cf->chave) == FIL_ORIGEM_SERVIDOR) {
+      Fileira *srv = &fileiras[destino];
+      int order = fil_servidor_ordem(cf->chave), hide = fil_servidor_ocultar_vistos(cf->chave);
+      if (order || hide) {
+        int n = 0, teto = srv->n;
+        for (int c = 0; c < cf->n && n < MAX_CARDS - 1; c++) {
+          const CatItem *it = cat_item(cf->ini + c);
+          if (!it || (hide && cat_visto(it))) continue;
+          srv->itens[n++] = cf->ini + c;
+        }
+        if (order) for (int c = 1; c < n; c++) {
+          int idx = srv->itens[c], j = c;
+          while (j > 0 && strcasecmp(cat_item(srv->itens[j-1])->titulo, cat_item(idx)->titulo) > 0) {
+            srv->itens[j] = srv->itens[j-1]; j--;
+          }
+          srv->itens[j] = idx;
+        }
+        srv->usaItens = 1; srv->n = n < teto ? n : teto;
+      }
     }
     snprintf(fileiras[destino].chave, sizeof fileiras[destino].chave,
              "%s", cf->chave);

@@ -47,7 +47,8 @@ static const Item TELA[] = {
 #if defined(NV_TPK) || defined(NV_WEBOS)
       OPC(AJ_HDR10P_STRIP),
 #endif
-#ifdef NV_ANDROID
+#if defined(NV_ANDROID) || defined(AJUSTES_TESTE)
+      OPC(AJ_AFR),
       OPC(AJ_TUNNELING),
 #endif
 #if !defined(NV_TPK) && !defined(NV_ANDROID)

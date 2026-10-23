@@ -7,6 +7,7 @@
 #ifndef NV_BIBLIOTECA_H
 #define NV_BIBLIOTECA_H
 #include <SDL2/SDL.h>
+#include "catalogo.h"
 
 int  biblioteca_iniciar(void);
 void biblioteca_abrir_sessao(void); // foco/fonte transitorios; conserva preferencias
@@ -21,8 +22,14 @@ void biblioteca_teste_foco(int *fileira, int *coluna, int *acao);
 
 // Optional personal-server ORIGENS rows. Provider owns data and selection.
 // Called on the UI thread; no server connection or network work belongs here.
-typedef int (*BibliotecaOrigens)(int index, const char **name, int *count);
+typedef int (*BibliotecaOrigens)(int index, const char **name, const char **sub, int *count);
 void biblioteca_origens_servidores(BibliotecaOrigens rows, void (*select)(int index));
+// Membership callback: provider -1 means any server, 0 Plex, 1 Jellyfin, 2 Emby.
+void biblioteca_servidores_contem(int (*contains)(const CatItem *, int));
+// Quality (height/HDR) of a title on the personal servers, for the Library
+// list availability column. Optional: without it the list asks servidores_info.
+void biblioteca_servidores_qualidade(int (*info)(const CatItem *, int *altura, int *hdr));
+void biblioteca_servidor_filtrar(int provider);
 
 // OK pressionado sobre um poster: consome o pedido e devolve 1, escrevendo em
 // *indiceCatalogo o indice do item NO CATALOGO (nao a posicao na grade — a
