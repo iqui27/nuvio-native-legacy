@@ -59,6 +59,7 @@ pause send scroll-text server-crash shield-check cpu log-out
 panel-left list-x bell audio-lines layers type sliders-horizontal book-open user-plus
 alarm-clock badge-check captions chart-column chevrons-down circle-check circle-dot compass droplet feather film funnel globe image image-plus inbox key key-round layout-list life-buoy link list-ordered list-video loader log-in map maximize-2 menu message-square monitor-play mouse-pointer move-horizontal pause picture-in-picture-2 play quote send server settings-2 shield sparkle stethoscope telescope thumbs-up unlink wand sparkles corner-up-left book-open-text
 pipette blend spotlight paint-roller
+trophy crosshair circle contrast hexagon ribbon
 lock lock-open
 ellipsis
 hard-drive volume-2 package tag
@@ -78,6 +79,9 @@ hard-drive volume-2 package tag
 # o botao "Travar" e o selo da trava. SVG da tag 1.48.0 transcritos a mao.
 # A linha "pipette blend spotlight paint-roller" e da REGUA de cores (05/10): um desenho por dinamica (Da arte,
 # Gradiente, Imersiva, Textura), que antes mostravam todas a mesma miniatura.
+# A linha "trophy" e da CACA (06/10, plano social-pessoal secao 8): o trofeu do
+# aviso de conquista na ilha, a mira do "Cacar" e as cinco formas dos degraus
+# (circulo, meia-lua, hexagono, estrela, fita) da legenda da tela Caca.
 # A ultima e do "..." da pagina do titulo (06/10): o circular "Mais opcoes" que
 # guarda trailer, Explorar, Trocar arte e Recomendar (src/detmais.h).
 # A de baixo e do TEXTO DO ADDON na folha de fontes (07/10): os emojis do AIOStreams
