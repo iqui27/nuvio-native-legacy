@@ -13,6 +13,7 @@ int addonmodo_visto(uint64_t id);
 int addonmodo_marcar(uint64_t id);
 /* Last real request only. Unknown/failed responses never become catalog-only. */
 void addonmodo_resposta(uint64_t id, int http, int valida, int diretos, int torrents);
+void addonmodo_nova_busca(void);
 void addonmodo_fatos(uint64_t id, int *http, int *valida, int *diretos, int *torrents);
 int addonmodo_permite(uint64_t id, int direto, int debrid, int p2p);
 AddonGuiaRazao addonguia_razao(int http, int offline, int p2p, int debrid, int hdr, int vazio);

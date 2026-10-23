@@ -1543,7 +1543,9 @@ static void pedirTorrentEscolhido(int indice) {
   }
   // Sem debrid, quem responde e o servidor P2P, que espera peers: dizer que
   // pode levar meio minuto evita a pessoa achar que travou.
-  if (!debrid_ativo() && p2p_usa_motor())
+  const Stream *escolhida = stream_item(indice);
+  if (p2p_usa_motor() && (!debrid_ativo() || (escolhida &&
+      addonmodo_get(escolhida->addonIdentidade) == AM_P2P)))
     addonguia_abrir(AG_INICIANDO, stream_ordem_addon(indice), NULL);
   else if (!debrid_ativo() && p2p_ativo())
     player_toast_ex(i18n("Pedindo o torrent ao servidor P2P… pode levar até um minuto"), 30000, "aj_download", 0);
@@ -4849,7 +4851,10 @@ void app_atualizar(float dt, Uint32 agora) {
       !detail_aberto() && !resolver_aberto() && !novcartao_aberto() && !comecar_aberto());
   {
     int p = addonguia_pedido();
-    if (p == AGP_FONTES && player_aberto()) { nomeParaFolha(); stream_folha_abrir(); }
+    if (p == AGP_FONTES && player_aberto()) {
+      torrentSessao++; torrentPendente = -1; p2pmotor_cancelar();
+      player_voltar_a_esperar(); nomeParaFolha(); stream_folha_abrir();
+    }
     else if (p == AGP_PROXIMA && player_aberto()) {
       int atual = stream_atual();
       if (atual >= 0) stream_automatico_excluir(atual);
@@ -4858,7 +4863,8 @@ void app_atualizar(float dt, Uint32 agora) {
       int atual = stream_atual();
       const Stream *s = stream_item(atual);
       player_voltar_a_esperar();
-      if (s && !s->url[0] && s->infoHash[0]) pedirTorrentEscolhido(atual);
+      if (s && (!s->url[0] || s->appResolvido) && s->infoHash[0] &&
+          addonmodo_get(s->addonIdentidade) != AM_DIRETO) pedirTorrentEscolhido(atual);
       else { buscarParaPlayerModo(1); aguardandoFonte = 1; }
     } else if (p == AGP_FILEIRAS) {
       ajustes_abrir_fileiras(); trocarTela(TELA_AJUSTES);

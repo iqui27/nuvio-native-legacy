@@ -21,6 +21,7 @@ typedef struct {
   char rotulo[192];     // Nome curto da fonte
   char provedor[96];
   uint64_t addonIdentidade; /* Installation identity; survives cache and list reorder. */
+  int appResolvido; /* URL obtained by the app; never confused with an addon HTTP link. */
   // 1024 e nao 512. MEDIDO: os links de reproducao do AIOStreams tem 525 a 547
   // caracteres (dois segmentos assinados), e com 512 TODOS eram cortados em
   // silencio. O servidor entao respondia com um MP4 de aviso de 120s que TOCA

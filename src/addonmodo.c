@@ -68,6 +68,11 @@ int addonmodo_marcar(uint64_t id) {
   if(i>=0) { tab[i].visto=1; ok=salvar(); if(!ok)tab[i].visto=0; }
   pthread_mutex_unlock(&trava); return ok;
 }
+void addonmodo_nova_busca(void) {
+  pthread_mutex_lock(&trava);
+  for(int i=0;i<n;i++)tab[i].http=tab[i].valida=tab[i].diretos=tab[i].torrents=0;
+  pthread_mutex_unlock(&trava);
+}
 void addonmodo_resposta(uint64_t id,int http,int valida,int diretos,int torrents) {
   pthread_mutex_lock(&trava); int i=slot(id,1);
   if(i>=0) {tab[i].http=http;tab[i].valida=valida;tab[i].diretos=diretos;tab[i].torrents=torrents;}
@@ -94,6 +99,6 @@ AddonGuiaRazao addonguia_razao(int http,int offline,int p2p,int debrid,int hdr,i
 }
 AddonGuiaAcao addonguia_acao(AddonGuiaRazao r,int motor,int proxima) {
   if(r==AG_P2P)return motor?AGA_P2P:AGA_CONECTAR;
-  if(r==AG_401||r==AG_403)return AGA_CONFIG;
+  if(r==AG_401)return AGA_CONFIG;
   return proxima?AGA_PROXIMA:AGA_BUSCAR;
 }

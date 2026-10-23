@@ -78,11 +78,13 @@ void addonsui_evento(const SDL_Event *e) {
     case SDLK_RETURN: case SDLK_KP_ENTER:
       if (foco >= n) { sincronizar(); break; }
       if (n > 0) {
+        int http, valida, diretos, torrents;
+        addonmodo_fatos(addonmodo_id(addons_base(foco)), &http, &valida, &diretos, &torrents);
         addonguia_abrir(addons_sondado(foco) && !addons_fornece(foco, ADD_STREAM)
-                         ? AG_NOVO_CATALOGO : AG_MODO, foco, NULL);
+                         ? AG_NOVO_CATALOGO : diretos && !torrents ? AG_NOVO_DIRETO : AG_MODO, foco, NULL);
       }
       break;
-    case SDLK_SPACE:
+    case SDLK_SPACE: case SDLK_RIGHT:
       if (foco < n) { addons_alternar(foco); mexeu = 1; }
       break;
     // Voltar (qualquer tecla de voltar) e Esquerda: de volta a linha "Addons"

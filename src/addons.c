@@ -2181,9 +2181,10 @@ static void *fioFontes(void *u) {
     // Origin: null e User-Agent a resposta e a mesma, byte a byte.
     if (n <= 0 && t2 && t2[0] && !(c->cancelado && c->cancelado(c->ctx))) {
       char *alt;
+      RedeMedida alternativa = {0};
       alt = pedidoCoube(i, nv_addon_url(url, sizeof url, addon[i].base, "/stream/%s/%s.json",
                                     t2, idUrl), sizeof url) && idUrl[0]
-            ? rede_baixar(url, prazoS) : NULL;
+            ? rede_baixar_medido(url, prazoS, NULL, &alternativa) : NULL;
       if (alt) {
         Stream *a2 = NULL;
         int n2 = stream_extrair(alt, addon[i].nome, &a2);
@@ -2192,7 +2193,7 @@ static void *fioFontes(void *u) {
         // vazio" do primeiro, que e o que a mensagem de erro vai citar.
         if (n2 > 0 || !corpo) {
           free(achados); free(corpo);
-          achados = a2; n = n2; corpo = alt;
+          achados = a2; n = n2; corpo = alt; medida = alternativa;
           printf("[addons] %s: respondeu como \"%s\" (nao como \"%s\")\n",
                  addon[i].nome, t2, t1);
         } else { free(a2); free(alt); }
@@ -2204,8 +2205,14 @@ static void *fioFontes(void *u) {
       if (achados[a].url[0]) diretos++;
       else if (achados[a].infoHash[0]) torrents++;
     }
-    addonmodo_resposta(identidade, medida.status, corpo && strstr(corpo, "\"streams\"") != NULL,
-                       diretos, torrents);
+    if (c->progresso && !(c->cancelado && c->cancelado(c->ctx))) {
+      char vazio[8];
+      int valida = corpo && js_fim(corpo) &&
+          (js_array(corpo, NULL, "streams") ||
+           (js_bruto(corpo, NULL, "streams", vazio, sizeof vazio) &&
+            vazio[0] == '[' && vazio[strspn(vazio + 1, " \t\r\n") + 1] == ']'));
+      addonmodo_resposta(identidade, medida.status, valida, diretos, torrents);
+    }
     if (!corpo) {
       free(achados);
       // O MOTIVO NA MESMA LINHA (#202): "curl 28: Operation timed out after
@@ -2720,6 +2727,7 @@ static void dispararBusca(void) {
   // teria sido adotado em addons_buscar) larga os addons que faltam.
   fontecache_ceder();
   estado = ADD_BUSCANDO;
+  addonmodo_nova_busca();
   fioVivo = 1;
   progLimpar();
   progLigado = alvoVod();

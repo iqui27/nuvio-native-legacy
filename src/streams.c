@@ -492,7 +492,13 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   // que nunca toca (shouldListStream do web). O servidor P2P experimental
   // (p2p.h) tambem o resolve, e so quando ligado.
   for (i = 0; i < qtd && nova; i++)
-    if (addonmodo_permite(l[i].addonIdentidade, l[i].url[0] != 0, debrid_ativo(), p2p_ativo())) nova[k++] = l[i];
+    if (addonmodo_permite(l[i].addonIdentidade, l[i].url[0] && !l[i].appResolvido, debrid_ativo(), p2p_ativo())) {
+      nova[k] = l[i];
+      if (nova[k].appResolvido && addonmodo_get(l[i].addonIdentidade) == AM_P2P) {
+        nova[k].url[0] = 0; nova[k].appResolvido = 0;
+      }
+      k++;
+    }
   if (nova && qtd - k) printf("[fonte] %d torrents sem debrid descartados\n", qtd - k);
   descartadosSemDebrid = nova ? qtd - k : 0;
   for (i = 0; i < k && nova; i++) nova[i].selosPacoteVer = 0;   // os selos saem do fio de fundo (selosAgendar)
@@ -563,7 +569,13 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   nova = malloc(sizeof(Stream) * (size_t)qtd);
   if (!nova) return;
   for (i = 0; i < qtd; i++)
-    if (addonmodo_permite(l[i].addonIdentidade, l[i].url[0] != 0, debrid_ativo(), p2p_ativo())) nova[k++] = l[i];
+    if (addonmodo_permite(l[i].addonIdentidade, l[i].url[0] && !l[i].appResolvido, debrid_ativo(), p2p_ativo())) {
+      nova[k] = l[i];
+      if (nova[k].appResolvido && addonmodo_get(l[i].addonIdentidade) == AM_P2P) {
+        nova[k].url[0] = 0; nova[k].appResolvido = 0;
+      }
+      k++;
+    }
   if (qtd - k) printf("[fonte] %d torrents sem debrid descartados\n", qtd - k);
   descartadosSemDebrid += qtd - k;
   if (!k) { free(nova); return; }
@@ -1324,6 +1336,7 @@ static int verificarUma(int i, Conferencia *c) {
       pthread_mutex_lock(&verTrava);
       if (listaGeracao == c->geracao && i < n) {
         snprintf(lista[i].url, sizeof lista[i].url, "%s", url);
+        lista[i].appResolvido = 1;
         ok = 1;
       } else c->abortou = 1;
       pthread_mutex_unlock(&verTrava);
@@ -1470,6 +1483,8 @@ int stream_resolver_escolhida(int i, unsigned geracao, char *url, unsigned nu,
     pthread_mutex_unlock(&verTrava);
     return -1;
   }
+  modo = addonmodo_get(lista[i].addonIdentidade);
+  if (lista[i].appResolvido && (modo == AM_P2P || modo == AM_DIRETO)) lista[i].url[0] = 0;
   // Ja resolvida (pelo automatico, ou por uma escolha anterior desta lista):
   // e a url pronta, sem ir a rede.
   if (lista[i].url[0]) {
@@ -1499,7 +1514,10 @@ int stream_resolver_escolhida(int i, unsigned geracao, char *url, unsigned nu,
     // torrent e pedido (um por vez) ou o player fecha, e escolher esta fonte
     // de novo tem de passar pelo motor outra vez.
     if (listaGeracao != geracao || i >= n) r = -1;
-    else if (!p2pmotor_e_url(url)) snprintf(lista[i].url, sizeof lista[i].url, "%s", url);
+    else if (!p2pmotor_e_url(url)) {
+      snprintf(lista[i].url, sizeof lista[i].url, "%s", url);
+      lista[i].appResolvido = 1;
+    }
     pthread_mutex_unlock(&verTrava);
     if (r < 0) url[0] = 0;
   } else if (r == STREAM_P2P_FALHOU) {
