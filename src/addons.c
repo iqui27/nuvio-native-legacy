@@ -2211,7 +2211,7 @@ static void *fioFontes(void *u) {
           (js_array(corpo, NULL, "streams") ||
            (js_bruto(corpo, NULL, "streams", vazio, sizeof vazio) &&
             vazio[0] == '[' && vazio[strspn(vazio + 1, " \t\r\n") + 1] == ']'));
-      addonmodo_resposta(identidade, medida.status, valida, diretos, torrents);
+      addonmodo_resposta(identidade, medida.status ? medida.status : -1, valida, diretos, torrents);
     }
     if (!corpo) {
       free(achados);
@@ -2866,6 +2866,14 @@ static void buscarPedido(const char *imdb, const char *tipo, int forcar) {
 
 void addons_buscar(const char *imdb, const char *tipo) { buscarPedido(imdb, tipo, 0); }
 void addons_buscar_renovar(const char *imdb, const char *tipo) { buscarPedido(imdb, tipo, 1); }
+void addons_tentar_de_novo(void) {
+  if (alvoId[0]) {
+    char id[sizeof alvoId], tipo[sizeof alvoTipo];
+    snprintf(id, sizeof id, "%s", alvoId);
+    snprintf(tipo, sizeof tipo, "%s", alvoTipo);
+    addons_buscar_renovar(id, tipo);
+  } else addons_sondar_manifestos();
+}
 
 void addons_encerrar(void) {
   int juntarLeg;

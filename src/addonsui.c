@@ -80,8 +80,10 @@ void addonsui_evento(const SDL_Event *e) {
       if (n > 0) {
         int http, valida, diretos, torrents;
         addonmodo_fatos(addonmodo_id(addons_base(foco)), &http, &valida, &diretos, &torrents);
+        if (http < 0 || http >= 400) { addons_tentar_de_novo(); break; }
+        if (diretos && !torrents) { addonguia_configurar(foco); break; }
         addonguia_abrir(addons_sondado(foco) && !addons_fornece(foco, ADD_STREAM)
-                         ? AG_NOVO_CATALOGO : diretos && !torrents ? AG_NOVO_DIRETO : AG_MODO, foco, NULL);
+                         ? AG_NOVO_CATALOGO : AG_MODO, foco, NULL);
       }
       break;
     case SDLK_SPACE: case SDLK_RIGHT:

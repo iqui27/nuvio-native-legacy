@@ -6,6 +6,7 @@ enum { AG_NOVO_TORRENT=10, AG_NOVO_CATALOGO, AG_NOVO_DIRETO, AG_MODO, AG_CONECTA
 enum { AGP_NADA, AGP_FONTES, AGP_REPETIR, AGP_PROXIMA, AGP_FILEIRAS };
 void addonguia_abrir(int tela, int addon, const char *titulo);
 void addonguia_fechar(void);
+void addonguia_configurar(int addon);
 int addonguia_aberto(void);
 void addonguia_evento(const SDL_Event *e);
 void addonguia_atualizar(int permitirBoasVindas);

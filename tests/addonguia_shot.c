@@ -6,6 +6,7 @@
 #include "text.h"
 #include "tex_cache.h"
 #include "streams.h"
+#include "perfis.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <OpenGL/gl.h>
@@ -37,6 +38,8 @@ int main(int argc,char **argv) {
   for(int c=0;c<ajustes_rapido_cor_n();c++)if(!strcmp(ajustes_rapido_cor_nome(c),"Rosa"))ajustes_rapido_cor_definir(c);
   AddonRemoto a[4]={{"Torrentio","https://torrentio.strem.fun/manifest.json",1},{"Xperience","https://xperience.invalid/manifest.json",1},{"Torrentio · Real-Debrid","https://torrentio.strem.fun/direct/manifest.json",1},{"AIOStreams","https://aio.invalid/manifest.json",1}};
   assert(addons_definir_lista(a,4));
+  assert(dados_gravar("perfis.txt","1\t0\t1\t0\t#7553c8\tM\t\t\n"));
+  perfis_carregar_ativo();
   for(int i=0;i<4;i++)addons_manifesto_lido(i,i==1?"{\"id\":\"xperience\",\"resources\":[\"catalog\",\"meta\",\"subtitles\"]}":"{\"id\":\"torrentio\",\"resources\":[\"stream\"]}");
   addonmodo_carregar("shot",1);
   uint64_t id=addonmodo_id(addons_base(0));
@@ -63,6 +66,11 @@ int main(int argc,char **argv) {
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
   SDL_FreeSurface(backdrop);
   for(int i=0;i<14;i++) {
+    addonmodo_resposta(id,200,1,0,2);
+    addonmodo_resposta(addonmodo_id(addons_base(2)),200,1,2,0);
+    addonmodo_resposta(addonmodo_id(addons_base(3)),-1,0,0,0);
+    assert(addonmodo_set(id,shots[i].tela==AG_MODO?AM_P2P:AM_AUTO));
+    if(shots[i].tela==AG_NOVO_DIRETO)addonmodo_resposta(id,200,1,2,0);
     addonguia_shot(shots[i].tela);
     if(shots[i].tela==AG_NOVO_CATALOGO)addonguia_abrir(AG_NOVO_CATALOGO,1,NULL);
     for(int f=0;f<40;f++) {

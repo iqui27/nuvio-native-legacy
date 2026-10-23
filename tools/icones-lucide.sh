@@ -62,6 +62,7 @@ pipette blend spotlight paint-roller
 lock lock-open
 ellipsis
 hard-drive volume-2 package tag
+tv layout-grid unplug chevron-down chevron-up arrow-left arrow-right
 "
 # A linha que comeca em "clock" e da ILHA DO RELOGIO (02/10, mockup aprovado em design/ilha):
 # os icones dos avisos (alerta, wifi, debrid baixando, Trakt desconectado...) e
