@@ -47,7 +47,10 @@ static int lease_seconds=7200, pin_settings, pin_result, rules_mode;
 static int episodes_mode;
 static char groups[G5_GROUPS][64];
 static unsigned char group_on[G5_GROUPS];
-static int group_count;
+static int group_count, group_totals[G5_GROUPS];
+/* Phone-guided setup: 1 = test/fetch posted, waiting worker; 2 = counts on the
+ * phone, waiting for the final choices. Status never carries credentials. */
+static int phone_stage;
 static atomic_int busy, ready;
 static int operation, worker_profile, worker_ok;
 static atomic_int worker_cancel;
@@ -76,7 +79,7 @@ static void context(void){
   if(profile==p&&!strcmp(account,owner))return;
   catalog_group[0]=0;
   if(atomic_load(&busy))worker_cancel=1;
-  if(screen[0])celular_fechar();screen[0]=0;
+  if(screen[0])celular_fechar();phone_stage=0;screen[0]=0;
   profile=p;snprintf(account,sizeof account,"%s",owner);
   worker_cancel=1;clear_catalog();erase(&draft,sizeof draft);erase(&lease,sizeof lease);committed=0;catalog_fetch_pending=0;
   memset(&rules,0,sizeof rules);rules.hide_adult=1;rules.max_age=18;group_count=0;
@@ -113,7 +116,8 @@ static void build_groups(void){
     if(adult_group(inventory[i].group))inventory[i].adult=1;
     if(!inventory[i].group[0])snprintf(inventory[i].group,sizeof inventory[i].group,"%s","Outros");
     int g;for(g=0;g<group_count;g++)if(!strcmp(groups[g],inventory[i].group))break;
-    if(g==group_count&&g<G5_GROUPS){snprintf(groups[g],sizeof groups[g],"%s",inventory[i].group);group_on[g]=!inventory[i].adult;group_count++;}
+    if(g==group_count&&g<G5_GROUPS){snprintf(groups[g],sizeof groups[g],"%s",inventory[i].group);group_on[g]=!inventory[i].adult;group_totals[g]=0;group_count++;}
+    if(g<G5_GROUPS)group_totals[g]++;
   }
   if(committed){char file[64];filename(file,sizeof file,"source");char *b=dados_ler(file);
     if(b){const char *p=js_array(b,NULL,"groups");while(p){const char *e=js_fim(p);if(!e)break;char name[64]="";js_texto(p,e,"name",name,sizeof name);
@@ -159,7 +163,10 @@ static void *load(void *unused){
           while(cat){const char *end=js_fim(cat);if(!end)break;char id[64]="",name[64]="";js_texto(cat,end,"category_id",id,sizeof id);js_texto(cat,end,"category_name",name,sizeof name);
             if(name[0])for(int i=staging_count;i<staging_count+n;i++)if(!strcmp(staging[i].group,id)){snprintf(staging[i].group,sizeof staging[i].group,"%s",name);if(adult_group(name))staging[i].adult=1;}cat=js_prox(end);
           }free(categories);
-          staging_count+=n;staging_total+=t;if(action[0]||staging_count>=G5_CAP)break;
+          staging_count+=n;staging_total+=t;
+          if(phone_stage==1){char st[160];int l=0,m=0,s=0;for(int i=0;i<staging_count;i++){if(staging[i].kind==G5_LIVE)l++;else if(staging[i].kind==G5_MOVIE)m++;else if(staging[i].kind==G5_SERIES)s++;}
+            snprintf(st,sizeof st,"{\"s\":\"fetch\",\"live\":%d,\"movies\":%d,\"series\":%d}",l,m,s);celular_status(st);}
+          if(action[0]||staging_count>=G5_CAP)break;
         }
       }
     }
@@ -213,7 +220,7 @@ void g5ui_forget(void){
   for(int p=1;p<=32;p++){char file[80];const char *parts[]={"source","rules"};for(int k=0;k<2;k++){snprintf(file,sizeof file,"guiav5-%s-p%d.json",parts[k],p);dados_apagar(file);}}
   profile=-1;
 }
-void g5ui_close(void){celular_fechar();screen[0]=0;edit=-1;worker_cancel=1;erase(draft.password,sizeof draft.password);nav=-1;}
+void g5ui_close(void){celular_fechar();phone_stage=0;screen[0]=0;edit=-1;worker_cancel=1;erase(draft.password,sizeof draft.password);nav=-1;}
 int g5ui_active(void){return screen[0]!=0;}
 static void persist(void){
   extern void g5ui_save_source(const char *,const char *,int,int,int,int,int);
@@ -243,28 +250,86 @@ static void input(int field,const char *title,const char *initial,int secret){
   edit=field;teclado_contexto("Guia TV");teclado_abrir_com(title,"",field==1||field==2?95:TECLADO_LONGO,alphabet,initial);
   if(secret)teclado_mascarar(1);
 }
+/* Phone setup: a short pairing SESSION (test -> choices -> done), same token,
+ * Host/Origin and expiry as the single-use pairing. The page only builds JSON
+ * form values and polls a credential-free status; the native worker validates
+ * everything and talks to the provider. */
+static void phone_status_counts(const char *state);
 static void phone(void){
   static char html[24000];
-  /* Same expiring, single-use local pairing. Browser only builds one JSON form
-   * value; the native worker validates it and performs provider requests. */
   snprintf(html,sizeof html,"<!doctype html><html lang='pt-BR'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>%s</title>"
-    "<style>*{box-sizing:border-box}body{margin:0;background:#0d0d0d;color:#f3f2ef;font:17px system-ui}main{max-width:480px;min-height:100vh;margin:auto;padding:48px 22px 24px}h1{font-size:34px;line-height:1.08;margin:24px 0 16px}p{color:#b2b4b8;line-height:1.5}input,select,button{font:inherit;border:0;border-radius:16px;padding:16px;background:#24262c;color:inherit;width:100%%;margin:7px 0 16px}button{border-radius:32px;background:#e5e9e6;color:#15171b;font-weight:600}label{display:block}input[type=checkbox]{width:auto}[hidden]{display:none!important}.rail{height:4px;background:linear-gradient(to right,#bbcfc3 32%%,#343941 32%%,#343941 65%%,#0d0d0d 65%%,#0d0d0d 67%%,#343941 67%%);margin:24px 0}.k{font-size:13px;letter-spacing:.12em;color:#b2b4b8}input,select{padding:12px;margin:3px 0 14px;border:1px solid #42464e;border-radius:14px;background:#22252b}label{font-size:14px}button{margin-top:22px}input[type=checkbox]{width:24px;height:24px;margin:10px 14px 10px 0;vertical-align:middle}#s2 label{border-bottom:1px solid #30343b;padding:4px 0;font-size:17px}#s2 h1{margin-bottom:24px}</style>"
-    "<main><div class=k>NUVIO LEGACY · %s</div><div class=rail></div><form method=post action='' id=f><section id=s1><h1>%s</h1><p>%s</p>"
-    "<label>%s<select id=kind><option value=0>Xtream Codes</option><option value=1>M3U URL</option></select></label>"
+    "<style>*{box-sizing:border-box}body{margin:0;background:#0d0d0d;color:#f3f2ef;font:16px system-ui}main{max-width:480px;margin:auto;padding:20px 22px 16px}h1{font-size:30px;line-height:1.1;margin:14px 0 8px}p{color:#b2b4b8;line-height:1.45;margin:0 0 14px;font-size:14px}[hidden]{display:none!important}"
+    ".k{font-size:12px;letter-spacing:.12em;color:#b2b4b8}.rail{display:flex;gap:6px;margin:14px 0 4px}.rail i{flex:1;height:4px;border-radius:2px;background:#343941}.rail i.on{background:#bbcfc3}"
+    ".row{display:flex;justify-content:space-between;align-items:center;margin:10px 0 6px}.chip{background:#24262c;border-radius:10px;padding:6px 12px;font-size:13px}"
+    "label{display:block;font-size:13px;color:#c9cbce;margin-top:8px}input,select{font:inherit;border:1px solid #42464e;border-radius:14px;padding:11px 12px;background:#22252b;color:#f3f2ef;width:100%%;margin-top:4px}"
+    "button{font:inherit;border:0;border-radius:32px;background:#e5e9e6;color:#15171b;font-weight:600;width:100%%;padding:15px;margin-top:16px}button.sec{background:#24262c;color:#f3f2ef}"
+    ".note{display:flex;gap:10px;align-items:center;background:#1a1c21;border-radius:14px;padding:12px 14px;font-size:13px;color:#c9cbce;margin-top:14px}"
+    ".ft{text-align:center;color:#8b8e94;font-size:12px;margin-top:14px}input[type=checkbox]{width:22px;height:22px;margin:0 12px 0 0;vertical-align:middle;accent-color:#e5e9e6}"
+    "#s2 label.tipo{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #26292f;padding:10px 0;font-size:16px;color:#f3f2ef}#s2 label.tipo span:last-child{color:#8b8e94;font-size:14px}"
+    "#cats{background:#17191e;border-radius:16px;padding:6px 14px;margin-top:14px}#cats h2{font-size:16px;margin:8px 0 2px}#cats .sel{float:right;font-size:13px;color:#b2b4b8;margin-top:10px}"
+    "#cats label{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #26292f;padding:9px 0;font-size:15px}#cats label span:last-child{color:#8b8e94;font-size:13px}"
+    ".okc{width:64px;height:64px;border-radius:50%%;background:#bbcfc3;color:#15171b;font-size:30px;display:flex;align-items:center;justify-content:center;margin:26px 0 6px}"
+    ".resumo{background:#17191e;border-radius:16px;padding:6px 16px;margin-top:16px}.resumo div{display:flex;justify-content:space-between;border-bottom:1px solid #26292f;padding:12px 0;font-size:15px}.resumo div span:last-child{color:#8b8e94;font-size:13px}</style>"
+    "<main><div class='row' style='margin-top:0'><div class=k>NUVIO LEGACY</div><div class=chip>%s</div></div><div class=rail><i class=on id=r1></i><i id=r2></i><i id=r3></i></div>"
+    "<form method=post action='' id=f><section id=s1><h1>%s</h1><p>%s</p>"
+    "<div class=row><select id=kind style='width:auto'><option value=0>Xtream Codes</option><option value=1>M3U URL</option></select><span class=chip>1 / 3</span></div>"
     "<label>%s<input id=name autocomplete=off maxlength=95></label><div id=xtream><label>%s<input id=server type=url autocomplete=off></label><label>%s<input id=user autocomplete=off></label><label>%s<input id=password type=password autocomplete=off></label></div>"
-    "<div id=m3u hidden><label>%s<input id=playlist type=url autocomplete=off></label><label>%s<input id=file type=file accept='.m3u,.m3u8,text/plain'></label></div><button type=button id=next>%s</button></section>"
-    "<section id=s2 hidden><h1>%s</h1><p>%s</p><label><input type=checkbox id=live checked>%s</label><label><input type=checkbox id=movies checked>%s</label><label><input type=checkbox id=series checked>%s</label>"
-    "<label><input type=checkbox id=epg checked>%s</label><label>%s<input id=xmltv type=url></label><p>%s</p><input type=hidden name=t id=t><button>%s</button><button type=button id=back>%s</button></section></form></main>"
-    "<script>const $=id=>document.getElementById(id);let fileText='';$('file').onchange=async()=>{const f=$('file').files[0];if(f&&f.size<=3000)fileText=await f.text();else alert('%s');};"
+    "<div id=m3u hidden><label>%s<input id=playlist type=url autocomplete=off></label><label>%s<input id=file type=file accept='.m3u,.m3u8,text/plain'></label></div>"
+    "<div class=note><svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='#b2b4b8' stroke-width='2'><rect x='3' y='11' width='18' height='11' rx='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/></svg> %s</div><button type=button id=next>%s</button><div class=ft>%s</div></section>"
+    "<section id=s2 hidden><div class=row><span class=chip id=prov></span><span class=chip>2 / 3</span></div><h1>%s</h1><p id=sub2></p>"
+    "<label class=tipo><span><input type=checkbox id=live checked>%s</span><span id=nlive></span></label>"
+    "<label class=tipo><span><input type=checkbox id=movies checked>%s</span><span id=nmovies></span></label>"
+    "<label class=tipo><span><input type=checkbox id=series checked>%s</span><span id=nseries></span></label>"
+    "<label class=tipo><span><input type=checkbox id=epg checked>%s</span><span></span></label>"
+    "<div id=cats hidden><span class=sel id=selall>%s</span><h2>%s</h2><div id=catlist></div></div>"
+    "<p style='margin-top:12px'>%s</p><label id=lx hidden>%s<input id=xmltv type=url></label>"
+    "<button type=button id=send>%s</button><button type=button class=sec id=back>%s</button></section>"
+    "<section id=s3 hidden><div class=rail style='display:none'></div><div class=okc>&#10003;</div><h1>%s</h1><p>%s</p>"
+    "<div class=resumo><div><span>%s</span><span id=rlive></span></div><div><span>%s</span><span id=rvod></span></div><div><span>%s</span><span>%s</span></div></div>"
+    "<button type=button id=finish>%s</button><div class=ft>%s</div></section>"
+    "<input type=hidden name=t id=t></form></main>"
+    "<script>const $=id=>document.getElementById(id);let fileText='',last=null;"
+    "const post=o=>fetch(location.pathname,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({t:JSON.stringify(o)})});"
+    "const sleep=ms=>new Promise(r=>setTimeout(r,ms));"
+    "async function poll(want){for(;;){try{const r=await fetch(location.pathname+'/s');const s=JSON.parse(await r.text());last=s;if(s.s==='err'){fail();return null;}if(s.s===want)return s;}catch(e){}await sleep(1000);}}"
+    "function creds(step){return {step,name:$('name').value,type:Number($('kind').value),server:$('server').value,user:$('user').value,password:$('password').value,playlist:$('playlist').value,file:fileText};}"
+    "function fail(){$('next').disabled=false;$('next').textContent='%s';}"
+    "function step2(s){$('s1').hidden=true;$('s2').hidden=false;$('r1').className='on';$('r2').className='on';$('prov').textContent=$('name').value||($('kind').value==='0'?'Xtream Codes':'M3U');$('sub2').textContent='%s';"
+    "if(s.live)$('nlive').textContent=s.live;if(s.movies)$('nmovies').textContent=s.movies;if(s.series)$('nseries').textContent=s.series;"
+    "if(s.groups&&s.groups.length){$('cats').hidden=false;$('catlist').innerHTML=s.groups.map((g,i)=>`<label><span><input type=checkbox class=cat id=cat${i} checked>${g.n}</span><span>${g.c}</span></label>`).join('');window._g=s.groups;}}"
+    "function step3(s){$('s2').hidden=true;$('s3').hidden=false;$('r3').className='on';$('rlive').textContent=(s.live||0)+' %s';$('rvod').textContent=((s.movies||0)+(s.series||0))+' %s';}"
+    "window.__demo2=s=>step2(s);window.__demo3=s=>{step2(s);step3(s);};"
+    "$('file').onchange=async()=>{const f=$('file').files[0];if(f&&f.size<=3000)fileText=await f.text();else alert('%s');};"
     "$('kind').onchange=()=>{$('xtream').hidden=$('kind').value!=='0';$('m3u').hidden=$('kind').value==='0';};"
-    "$('next').onclick=()=>{if($('kind').value==='0'&&(!$('server').value||!$('user').value||!$('password').value)){$('server').focus();return;}if($('kind').value!=='0'&&!$('playlist').value&&!fileText){$('playlist').focus();return;}$('s1').hidden=true;$('s2').hidden=false;};$('back').onclick=()=>{$('s1').hidden=false;$('s2').hidden=true;};$('f').onsubmit=()=>{let o={name:$('name').value,type:Number($('kind').value),server:$('server').value,user:$('user').value,password:$('password').value,playlist:$('playlist').value,file:fileText,xmltv:$('xmltv').value,live:+$('live').checked,movies:+$('movies').checked,series:+$('series').checked,epg:+$('epg').checked};$('t').value=JSON.stringify(o);if($('t').value.length>4000){alert('%s');return false;}};</script></html>",
-    i18n("Guia TV"),i18n("Configurar pelo celular"),i18n("Dados do provedor"),i18n("Use os dados enviados pelo seu provedor."),
-    i18n("Tipo de fonte"),i18n("Nome"),i18n("Servidor"),i18n("Usuário"),i18n("Senha"),i18n("URL da lista M3U"),i18n("Arquivo"),i18n("Continuar"),
-    i18n("Escolha o que importar"),i18n("Confira as opções e continue na TV."),i18n("Canais ao vivo"),i18n("Filmes"),i18n("Séries"),i18n("Guia de programação"),i18n("URL XMLTV"),
-    i18n("Conteúdo adulto oculto por padrão."),i18n("Enviar para a TV"),i18n("Voltar"),i18n("Arquivo muito grande. Use uma URL."),i18n("Arquivo muito grande. Use uma URL."));
-  char sent[4096];snprintf(sent,sizeof sent,"<!doctype html><html lang=pt-BR><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><style>body{background:#0d0d0d;color:#f3f2ef;font:20px system-ui;padding:36px;max-width:480px;margin:auto}h1{font-size:38px}p{color:#b2b4b8}</style><h1>%s</h1><p>%s</p><p>%s</p></html>",i18n("Dados enviados. Olhe para a TV."),i18n("Confira as opções e continue na TV."),i18n("A fonte ainda precisa ser testada e confirmada."));
-  if(celular_abrir_pagina("Guia TV",html,sent))go("setup-celular-tv");else snprintf(message,sizeof message,"%s",i18n("Não foi possível conectar"));
+    "$('selall').onclick=()=>{document.querySelectorAll('.cat').forEach(c=>c.checked=true);};"
+    "$('epg').onchange=()=>{$('lx').hidden=!$('epg').checked;};"
+    "$('next').onclick=async()=>{if($('kind').value==='0'&&(!$('server').value||!$('user').value||!$('password').value)){$('server').focus();return;}if($('kind').value!=='0'&&!$('playlist').value&&!fileText){$('playlist').focus();return;}"
+    "$('next').disabled=true;$('next').textContent='%s';await post(creds(1));const s=await poll('ok');if(s)step2(s);};"
+    "$('back').onclick=()=>{$('s1').hidden=false;$('s2').hidden=true;$('next').disabled=false;};"
+    "$('send').onclick=async()=>{let o=creds(2);o.live=+$('live').checked;o.movies=+$('movies').checked;o.series=+$('series').checked;o.epg=+$('epg').checked;o.xmltv=$('xmltv').value;"
+    "o.off=(window._g||[]).filter((g,i)=>!$('cat'+i).checked).map(g=>g.n);$('send').disabled=true;await post(o);const s=await poll('done');if(s)step3(s);else{$('send').disabled=false;}};"
+    "$('finish').onclick=()=>{window.close();};$('f').onsubmit=()=>false;</script></html>",
+    i18n("Guia TV"),i18n("Guia TV"),
+    i18n("Sua fonte. Pronta para a sua TV."),i18n("Use os dados enviados pelo seu provedor."),
+    i18n("Nome da fonte"),i18n("Servidor"),i18n("Usuário"),i18n("Senha"),i18n("URL da lista M3U"),i18n("Arquivo"),
+    i18n("Os dados ficam só na sua TV."),i18n("Testar conexão"),i18n("Conectado à TV"),
+    i18n("Escolha o que importar"),i18n("Canais ao vivo"),i18n("Filmes"),i18n("Séries"),i18n("Guia de programação"),
+    i18n("Selecionar tudo"),i18n("Categorias"),i18n("Conteúdo adulto oculto por padrão."),i18n("URL XMLTV"),i18n("Revisar e adicionar à TV"),i18n("Voltar"),
+    i18n("Tudo certo. Olhe para a TV."),i18n("Suas escolhas já estão na tela grande."),i18n("Canais ao vivo"),i18n("Filmes e séries"),i18n("Conteúdo adulto"),i18n("Oculto"),
+    i18n("Concluir"),i18n("Guia TV"),
+    i18n("Não foi possível conectar"),i18n("Conectado. Escolha o conteúdo e os grupos antes de importar."),
+    i18n("canais"),i18n("títulos"),i18n("Arquivo muito grande. Use uma URL."),i18n("Testando conexão…"));
+  if(celular_abrir_sessao("Guia TV",html))go("setup-celular-tv");else snprintf(message,sizeof message,"%s",i18n("Não foi possível conectar"));
 }
+/* Short public session status for the phone page: state and counts only. */
+static void phone_status_counts(const char *state){
+  int nl=0,nm=0,ns=0;for(int i=0;i<count;i++){if(inventory[i].kind==G5_LIVE)nl++;else if(inventory[i].kind==G5_MOVIE)nm++;else if(inventory[i].kind==G5_SERIES)ns++;}
+  Jsw w;jsw_iniciar(&w);jsw_obj_ini(&w);jsw_cs(&w,"s",state);
+  jsw_chave(&w,"live");jsw_int(&w,nl);jsw_chave(&w,"movies");jsw_int(&w,nm);jsw_chave(&w,"series");jsw_int(&w,ns);
+  jsw_chave(&w,"groups");jsw_arr_ini(&w);for(int i=0;i<group_count;i++){jsw_obj_ini(&w);jsw_cs(&w,"n",groups[i]);jsw_chave(&w,"c");jsw_int(&w,group_totals[i]);jsw_obj_fim(&w);}jsw_arr_fim(&w);jsw_obj_fim(&w);
+  const char *j=jsw_texto_final(&w);celular_status(j?j:"{\"s\":\"err\"}");jsw_livre(&w);
+}
+static void drop_kind(int kind){int w=0;for(int i=0;i<count;i++)if(inventory[i].kind!=kind)inventory[w++]=inventory[i];count=w;}
 static int match_query(const char *name){char hay[256],needle[256];busca_normalizar(name,hay,sizeof hay);busca_normalizar(query,needle,sizeof needle);return !needle[0]||strstr(hay,needle);}
 static int visible_item(int i,int kind){
   G5Item *it=&inventory[i];return (kind<0||it->kind==kind)&&(!catalog_group[0]||!strcmp(catalog_group,it->group))&&group_allowed(it->group)&&match_query(it->name)&&(!(rules.hide_locked||rules.kids)||!restricted(it));
@@ -406,6 +471,8 @@ static void phone_screen(void){
   panel(48,128,1824,848);label(TXT_TITULO2,i18n("Mais fácil pelo celular."),102,200,1500,0);
   label(TXT_ILHA_CORPO,i18n("Leia o QR e continue no celular."),102,286,1500,1);
   if(celular_estado()==CEL_ESPERANDO){celb_qr_desenhar(celular_url(),128,392,1);label(TXT_ILHA_SUB,celular_url(),102,740,740,0);}
+  else if(phone_stage==1)label(TXT_ILHA_CORPO,i18n(atomic_load(&busy)?"Testando conexão…":"Conferindo os dados com o provedor."),102,450,660,0);
+  else if(phone_stage==2)label(TXT_ILHA_CORPO,i18n("Confira as opções e continue na TV."),102,450,660,0);
   else label(TXT_ILHA_CORPO,i18n("Pareamento expirado"),102,450,660,0);
   const char *names[]={"Dados do provedor","Teste de conexão","Escolha o que importar","Confira as opções e continue na TV."};
   for(int i=0;i<4;i++)label(TXT_ILHA_CORPO,i18n(names[i]),876,410+i*108,830,1);
@@ -776,6 +843,7 @@ void g5ui_update(void){
         if(committed)dirty=1;
         if(operation==2&&strstr(screen,"vod-"))focus=0;
       }
+      if(phone_stage==1&&operation==2){phone_stage=worker_ok?2:0;if(worker_ok)phone_status_counts("ok");else celular_status("{\"s\":\"err\"}");}
       if(!worker_ok&&operation!=3)snprintf(message,sizeof message,"%s",i18n("Falha na conexão"));
     }
     free(staging);staging=NULL;
@@ -794,15 +862,38 @@ void g5ui_update(void){
   if(!strcmp(screen,"setup-celular-tv")){
     char data[CEL_CORPO_MAX+1];
     if(celular_pegar(data,sizeof data)){
+      int pstep=(int)js_num(data,NULL,"step",0);
       draft.type=(int)js_num(data,NULL,"type",0);js_texto(data,NULL,"name",draft.name,sizeof draft.name);js_texto(data,NULL,"server",draft.server,sizeof draft.server);js_texto(data,NULL,"user",draft.user,sizeof draft.user);js_texto(data,NULL,"password",draft.password,sizeof draft.password);
-      js_texto(data,NULL,"playlist",draft.playlist,sizeof draft.playlist);js_texto(data,NULL,"xmltv",draft.xmltv,sizeof draft.xmltv);
-      draft.live=js_num(data,NULL,"live",1)!=0;draft.movies=js_num(data,NULL,"movies",1)!=0;draft.series=js_num(data,NULL,"series",1)!=0;draft.epg=js_num(data,NULL,"epg",1)!=0;
+      js_texto(data,NULL,"playlist",draft.playlist,sizeof draft.playlist);
       char file[3100]="";js_texto_linhas(data,NULL,"file",file,sizeof file);
-      if(file[0]){
-        G5Playlist p;G5Item *items=calloc(G5_CAP,sizeof *items);g5_playlist_init(&p,items,G5_CAP);
-        if(items&&g5_playlist_feed(&p,file,strlen(file))&&g5_playlist_finish(&p)>=0){free(inventory);inventory=items;count=p.count;total=p.total;draft.type=2;snprintf(draft.file,sizeof draft.file,"%s",file);build_groups();test_ok=1;go("setup-importar");}
-        else{free(items);snprintf(message,sizeof message,"%s",i18n("Formato não suportado"));}
-      }else{use_saved=0;go("setup-teste");start(1);}erase(file,sizeof file);erase(data,sizeof data);celular_fechar();
+      if(pstep==1){
+        /* Test = the real catalog fetch; counts and groups go to the phone. */
+        use_saved=0;if(file[0]){draft.type=2;snprintf(draft.file,sizeof draft.file,"%s",file);}
+        draft.live=draft.movies=draft.series=1;draft.epg=0;phone_stage=1;
+        celular_status("{\"s\":\"fetch\"}");
+        if(!start(2)){phone_stage=0;celular_status("{\"s\":\"err\"}");}
+      }else if(pstep==2&&phone_stage==2){
+        draft.live=js_num(data,NULL,"live",1)!=0;draft.movies=js_num(data,NULL,"movies",1)!=0;draft.series=js_num(data,NULL,"series",1)!=0;draft.epg=js_num(data,NULL,"epg",1)!=0;
+        js_texto(data,NULL,"xmltv",draft.xmltv,sizeof draft.xmltv);
+        if(!draft.live&&!draft.movies&&!draft.series)celular_status("{\"s\":\"err\"}");
+        else{
+          if(!draft.live)drop_kind(G5_LIVE);if(!draft.movies)drop_kind(G5_MOVIE);if(!draft.series)drop_kind(G5_SERIES);
+          const char *g=js_array(data,NULL,"off");while(g){const char *e=js_fim(g);if(!e)break;char name[64]="";js_cadeia(g,name,sizeof name);
+            for(int i=0;i<group_count;i++)if(!strcmp(groups[i],name))group_on[i]=0;g=js_prox(e);}
+          persist();
+          if(save_failed)celular_status("{\"s\":\"err\"}");
+          else{phone_status_counts("done");phone_stage=0;go("setup-pronto");}
+        }
+      }else if(pstep==0){
+        draft.live=js_num(data,NULL,"live",1)!=0;draft.movies=js_num(data,NULL,"movies",1)!=0;draft.series=js_num(data,NULL,"series",1)!=0;draft.epg=js_num(data,NULL,"epg",1)!=0;
+        js_texto(data,NULL,"xmltv",draft.xmltv,sizeof draft.xmltv);
+        if(file[0]){
+          G5Playlist p;G5Item *items=calloc(G5_CAP,sizeof *items);g5_playlist_init(&p,items,G5_CAP);
+          if(items&&g5_playlist_feed(&p,file,strlen(file))&&g5_playlist_finish(&p)>=0){free(inventory);inventory=items;count=p.count;total=p.total;draft.type=2;snprintf(draft.file,sizeof draft.file,"%s",file);build_groups();test_ok=1;go("setup-importar");}
+          else{free(items);snprintf(message,sizeof message,"%s",i18n("Formato não suportado"));}
+        }else{use_saved=0;go("setup-teste");start(1);}celular_fechar();
+      }
+      erase(file,sizeof file);erase(data,sizeof data);
     }
   }
 }
