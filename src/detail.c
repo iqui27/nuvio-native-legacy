@@ -812,6 +812,20 @@ static float docFim = NV_DETP_FIM;
 // Cabecalho de secao: so o filme tem. Na serie o rotulo "Temporadas" e desenhado
 // pelo caminho antigo, e "Elenco" ficaria repetindo a aba "Criador e elenco"
 // logo acima (ver detail.c:1611).
+// A DIREITA do cabecalho, a linha de contexto do mockup v2 ("OK abre no
+// player, com som", "Trakt · ordenado por curtidas"): cinza 21px, alinhada
+// na margem direita. NULL = sem linha (Notas ja tem a classificacao ali).
+static int progTemNotas(void);   // definida adiante, junto da grade
+static const char *dicaSecao(int r) {
+  switch (r) {
+    case SEC_TRAILERS:     return "OK abre no player, com som";
+    case SEC_COMENTARIOS:  return "Trakt · ordenado por curtidas";
+    case SEC_PROGTEMP:     return progTemNotas() ? "IMDb · traço = visto" : NULL;
+    case SEC_COLECAO:      return ehSerie() ? NULL : "ordem de lançamento";
+    default:               return NULL;
+  }
+}
+
 static const char *cabecalhoDe(int r) {
   // TRAILERS E A EXCECAO na serie (#123): a fileira entrou empilhada abaixo
   // das bandas de audiencia e nao ha aba acima dela que diga o que ela e.
@@ -2238,13 +2252,13 @@ static int secaoN(int r) {
     // filme: os dados sempre estiveram la (o log mostra "coment=8 rel=12"),
     // mas sem aba e sem secao nao havia como chegar neles.
     case SEC_TRAILERS:
-#ifdef __EMSCRIPTEN__
+      // A FILEIRA do mockup v2 ("trailers e extras"): trailer oficial,
+      // trailer 2, bastidores, cena — cada card com o nome e a miniatura que
+      // o TMDB devolve. O #417 dizia que no nativo todo cartao tocava o MESMO
+      // trailer do titulo e por isso so existia um; a decisao aprovada agora
+      // e a fileira inteira (README §2), e o OK de cada card segue passando
+      // por trailerFonte(k), que resolve o que de fato toca.
       return extras_n_trailers();
-#else
-      // #417: no nativo nao ha player de YouTube; todo cartao tocava o MESMO
-      // trailer do titulo (Apple/IMDb). Um cartao so, que e o que de fato toca.
-      return extras_n_trailers() > 0 ? 1 : 0;
-#endif
     case SEC_RELACIONADOS: {
       int n;
       n = extras_n_relacionados();
@@ -7655,6 +7669,11 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     if (cab) {
       char caps[160]; idioma_maiusc_em(ajustes_idioma(),caps,sizeof caps,i18n(cab));
       txt_tracking(TXT_G20M,caps,243,242,239,NV_DETP_X,y-48,a*.6f,3.6f);
+    }
+    const char *dica = dicaSecao(r);
+    if (dica) {
+      TxtLinha l = txt_linha(TXT_G20M,i18n(dica),243,242,239,140);
+      txt_desenhar_alpha(l,NV_TELA_W-96-l.w,y-46,a*.85f);
     } }
   { float alt = alturaSecao(r);
     if (y > NV_TELA_H || y + alt < -40.0f) return; }

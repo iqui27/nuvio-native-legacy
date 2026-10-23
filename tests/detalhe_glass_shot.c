@@ -217,11 +217,12 @@ int fx_n_estudios(void)       { return 3; }
 const char *fx_estudio_nome(int i) { return EST_NOME[i]; }
 const char *fx_estudio_logo(int i) { static const char *const L[] = { "deploy/app/art/logo/00.png", "deploy/app/art/logo/07.png", "" }; return L[i]; }
 
-static const char *const TR_NOME[] = { "Trailer oficial", "Teaser", "Por trás das câmeras", "Entrevista com o elenco" };
+static const char *const TR_NOME_F[] = { "Trailer oficial", "Trailer 2", "Bastidores", "Cena · Rocky" };
+static const char *const TR_NOME_S[] = { "Recap · T1 em 3 min", "Trailer · T1", "Teaser · T5", "Bastidores" };
 static const char *const TR_MINI[] = { A "07.jpg", A "13.jpg", A "30.jpg", A "22.jpg" };
 int fx_n_trailers(void) { return 4; }
 const char *fx_trailer_yt(int i) { (void)i; return "abc"; }
-const char *fx_trailer_nome(int i) { return TR_NOME[i]; }
+const char *fx_trailer_nome(int i) { return (ehSerieDeEnsaio() ? TR_NOME_S : TR_NOME_F)[i]; }
 const char *fx_trailer_miniatura(int i) {
   const char *ref=getenv("NUVIO_SHOT_REFERENCE");
   static char path[1024];
