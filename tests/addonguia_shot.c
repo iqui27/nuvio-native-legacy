@@ -90,6 +90,13 @@ int main(int argc,char **argv) {
   addonguia_shot(AG_MODO);tecla(SDLK_RETURN);
   assert(!addonguia_aberto()&&addonmodo_get(id)==AM_P2P&&ajustes_p2p_ligado());
   assert(addonguia_pedido()==AGP_REPETIR);
+  addonguia_shot(AG_MODO);addonguia_desenhar();tecla(SDLK_RIGHT);tecla(SDLK_RETURN);
+  assert(addonguia_shot_tela()==AG_CONECTAR);tecla(SDLK_ESCAPE);
+  assert(addonguia_shot_tela()==AG_MODO);
+  addonguia_desenhar();tecla(SDLK_RIGHT);tecla(SDLK_RIGHT);tecla(SDLK_RETURN);
+  assert(!addonguia_aberto()&&addonmodo_get(id)==AM_DIRETO);
+  assert(addonguia_pedido()==AGP_REPETIR);
+  addonguia_configurar(2);assert(addonguia_shot_tela()==AG_NOVO_DIRETO);addonguia_fechar();
   addonguia_shot(AG_HDR);tecla(SDLK_RETURN);assert(addonguia_pedido()==AGP_PROXIMA);
   addonguia_shot(AG_CONECTAR);tecla(SDLK_ESCAPE);assert(addonguia_aberto());
   addonguia_fechar();stream_definir_lista(NULL,0);
