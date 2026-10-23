@@ -60,6 +60,12 @@ int main(void) {
   traceStream.foraCache=1; trace(); assert(snap.resultado[0].decisao==3);
   pagina=LINKS; lateral=0; foco=0; acao(); assert(linkSelecionado==1);
   pagina=FILTROS; regraSelecionada=-1; foco=2; acao(); assert(regraSelecionada==2);
+  pagina=CATALOGOS; foco=nLinhas()-1; pendente=0; acao();
+  assert(pagina==CATALOGOS && pendente==1);
+  pendente=0; foco=nLinhas()-2; acao(); assert(pagina==SERVICOS);
+  pagina=LEGENDAS; snap.addons=2; snap.addon[0].legenda=1; snap.addon[1].legenda=1;
+  snap.legendas=2; assert(nLinhas()==8);
+  foco=1; acao(); assert(pagina==SERVICOS);
   activeProfile=2; aioui_atualizar(0,100); assert(!aioui_aberto() && !base[0]);
   puts("aiostreams UI: setup, masked import, P2P, navigation and profile isolation passed");
   return 0;
