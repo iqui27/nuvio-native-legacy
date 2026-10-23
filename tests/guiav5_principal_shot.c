@@ -155,12 +155,16 @@ int main(int argc, char **argv) {
       nCanais = 0; nCats = 0; gv_n = 0; gv_total_n = 0;  /* estado vazio real */
     }
     g5ui_open(names[n]);
+    gv_zone = 0; gv_lin = 0; gv_pin = 0; gv_sb = 3; gv_chipi = 0; gv_card = 0;
+    if (!strcmp(names[n], "preview-foco")) gv_zone = 2;
+    if (!strcmp(names[n], "dock")) gv_zone = 1;
+    if (!strcmp(names[n], "categorias")) { gv_zone = 3; gv_sb = 6; }
+    if (!strcmp(names[n], "cartoes")) gv_zone = 6;
     if (!strcmp(names[n], "numero")) snprintf(gv_numero, sizeof gv_numero, "1");
     if (!strcmp(names[n], "busca")) snprintf(query, sizeof query, "fla");
     if (!strcmp(names[n], "fontes-erro")) { falhas = 0; }
     capture(window, dir, names[n]);
     if (!strcmp(names[n], "vazio")) semear();
-    if (!strcmp(names[n], "preview-foco")) { gv_zone = 2; }
   }
   puts("PASS: 28 native v5 guide states captured");
   return 0;
