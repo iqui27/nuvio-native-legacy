@@ -66,9 +66,15 @@ int main(void) {
   ass_plain_style_locked(&p);
   assert(style->Shadow == 4 && style->BackColour == 0xffff007fu);
   assert(style->OutlineColour == 0xffff0000u);
-  p.background = 2; p.overrides |= PLAIN_ASS_BG;
+  p.background = 1; p.bgOpacity = 75; p.overrides |= PLAIN_ASS_BG;
   ass_plain_style_locked(&p);
-  assert(style->BorderStyle == 4 && style->BackColour == 174u);
+  assert(style->BorderStyle == 4 && style->BackColour == 64u);
+  p.bgOpacity = 100;
+  ass_plain_style_locked(&p);
+  assert(style->BackColour == 0u);
+  p.bgOpacity = 0;
+  ass_plain_style_locked(&p);
+  assert(style->BackColour == 255u);
   p.background = 0;
   ass_plain_style_locked(&p);
   assert(style->BorderStyle == 1 && style->BackColour == 0xffff002eu);
