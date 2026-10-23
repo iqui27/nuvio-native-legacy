@@ -164,6 +164,7 @@ object NvPlayer {
     @JvmStatic external fun nativeIniciar()
     @JvmStatic external fun nativeLimitedStatus(): Int
     @JvmStatic external fun nativeTunneling(): Boolean
+    @JvmStatic external fun nativeAfr(): Int
     @JvmStatic external fun nativeEvento(tipo: Int, a: Int, b: Int)
     // flags (#287): 1 = forcada (SELECTION_FLAG_FORCED), 2 = SDH
     // (ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND); nome = Format.label.
@@ -1052,13 +1053,14 @@ object NvPlayer {
         try { player?.pause() } catch (e: Exception) { Log.w(TAG, "pausarPeloSistema: $e") }
     }
 
-    // onDestroy: solta player e superficie.
+        // onDestroy: solta player e superficie.
     @JvmStatic
     fun encerrar() {
         cancelarPreparo(0)
         soltarPreparo()
         pedidos.incrementAndGet()
         liberar()
+        afrRestaurar()
         esquecerQuadro(); CacheMidia.descartar("app exit")
         val sv = superficie
         if (sv != null) (sv.parent as? FrameLayout)?.removeView(sv)
@@ -1566,6 +1568,7 @@ object NvPlayer {
         tap.encerrar()
         try { nativeAudioEstado(AudioSyncTap.FMT_NENHUM) } catch (_: UnsatisfiedLinkError) {}
         superficie?.visibility = View.GONE
+        afrRestaurar()
     }
 
     private fun novaSuperficie(act: Activity) {
@@ -1927,6 +1930,67 @@ object NvPlayer {
             Log.i(TAG, "[audio] ${a?.sampleMimeType} ${a?.channelCount}ch ${a?.sampleRate}Hz atraso=${atrasoMs}ms")
         } catch (e: Exception) { Log.w(TAG, "logTaxaDeQuadros: $e") }
     }
+
+    // --- #641: casamento da taxa de quadros (AFR) -------------------------------
+
+    // preferredDisplayModeId: a API publica desde o API 23 (Display.Mode existe
+    // desde o 1) e a que o proprio ExoPlayer usa em setVideoFrameRate; funciona
+    // mesmo em aparelhos cujo SurfaceControl.Transaction nao aceita
+    // Surface.setFrameRate. O modo pedido guardado aqui e restaurado no
+    // liberar()/encerrar() — a TV volta ao que o usuario tinha de fabrica.
+    private var afrModoAnterior = -1
+
+    // Escolhe o modo cuja taxa casa (ou e multiplo inteiro) do fps do video na
+    // mesma resolucao atual; a tela so troca quando e de fato melhor para o
+    // quadro — um fps desconhecido ou um painel sem modo compativel nao tocam
+    // em nada (a TCL do dono so tem 60 Hz, e nao ha o que trocar).
+    private fun afrModoPara(fps: Float, display: android.view.Display): android.view.Display.Mode? {
+        if (fps <= 0f) return null
+        val atual = display.mode ?: return null
+        var melhor: android.view.Display.Mode? = null
+        var melhorErro = Float.MAX_VALUE
+        for (m in display.supportedModes) {
+            if (m.physicalWidth != atual.physicalWidth || m.physicalHeight != atual.physicalHeight) continue
+            // Multiplo inteiro cobre o caso 23,976/24/25/30/50/60 em painel de
+            // 60 Hz (2x30, 3x20) e o 120 Hz (5x24); a mesma tolerancia aceita o
+            // 23,976 que a TV anuncia como 24. A taxa "casada" vale mais que a
+            // mais proxima quando a diferenca cabe num quadro.
+            val razao = m.refreshRate / fps
+            val inteiro = kotlin.math.abs(razao - kotlin.math.round(razao)) < 0.02f ||
+                kotlin.math.abs(kotlin.math.round(m.refreshRate) - kotlin.math.round(fps)) < 0.6f
+            val erro = if (inteiro) kotlin.math.abs(m.refreshRate - fps)
+                else kotlin.math.abs(m.refreshRate - fps) + 1000f
+            if (erro < melhorErro) { melhor = m; melhorErro = erro }
+        }
+        return melhor
+    }
+
+    private fun afrAplicar() {
+        if (nativeAfr() != 1) return
+        val act = activity ?: return
+        val display = act.windowManager?.defaultDisplay ?: return
+        val fps = player?.videoFormat?.frameRate ?: return
+        val destino = afrModoPara(fps, display) ?: return
+        val atual = display.mode
+        if (destino.modeId == atual.modeId) return
+        val lp = act.window.attributes
+        if (afrModoAnterior < 0) afrModoAnterior = atual.modeId
+        if (lp.preferredDisplayModeId != destino.modeId) {
+            lp.preferredDisplayModeId = destino.modeId
+            act.window.attributes = lp
+            Log.i(TAG, "[afr] tela ${atual.modeId}@${atual.refreshRate} -> ${destino.modeId}@${destino.refreshRate} para ${fps}fps")
+        }
+    }
+
+    private fun afrRestaurar() {
+        if (afrModoAnterior < 0) return
+        val act = activity ?: return
+        val lp = act.window.attributes
+        lp.preferredDisplayModeId = afrModoAnterior
+        act.window.attributes = lp
+        Log.i(TAG, "[afr] tela restaurada para o modo $afrModoAnterior")
+        afrModoAnterior = -1
+    }
     private fun hdrNaSuperficie() {
         // Native DV handles the panel transition without destroying its output.
         if (semRecriar || decoderDv) return
@@ -2063,6 +2127,7 @@ object NvPlayer {
             ev(EV_PRIMEIRO_QUADRO)
             quadroVisto = true
             logTaxaDeQuadros()
+            afrAplicar()
             hdrNaSuperficie()
             avaliarEstavel()
         }
