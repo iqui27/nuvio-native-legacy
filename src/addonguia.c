@@ -46,7 +46,7 @@ static void texto(TxtEstilo estilo,const char *s,float x,float y,float w,float a
   TxtLinha l=txt_linha_corta(estilo,s,243,242,239,255,w); txt_desenhar_alpha(l,x,y,a);
 }
 static void bloco(const char *s,float x,float y,float w,float a,int linhas) {
-  txt_bloco(TXT_ILHA_CORPO,s,243,242,239,x,y,w,1.45f,a,linhas);
+  txt_bloco(TXT_ILHA_CORPO,s,243,242,239,x,y,w,35.0f,a,linhas);
 }
 static void icone(const char *s,float x,float y,float lado,float a) {
   gfx_icone((GfxRect){x,y,lado,lado},s,0.95f,0.95f,0.94f,a);
@@ -244,7 +244,7 @@ static void modoDesenhar(void) {
     painel(r,28);gfx_cor(r,28/r.h,1,1,1,foco==i?0.09f:0.015f);alvo(r,i);
     icone(ICONES[i],r.x+28,r.y+52,36,0.8f);
     texto(TXT_G28B,i18n(i==0&&ajustes_p2p_url()[0]?"Servidor P2P":MODOS[i]),r.x+28,r.y+108,460,1);
-    txt_bloco(TXT_ILHA_TEXTO,i18n(DESCR[i]),243,242,239,r.x+28,r.y+158,450,1.4f,0.64f,3);
+    txt_bloco(TXT_ILHA_TEXTO,i18n(DESCR[i]),243,242,239,r.x+28,r.y+158,450,28.0f,0.64f,3);
     texto(TXT_G18R,i==0?i18n("Recebe o começo e continua durante o vídeo."):i==1?"Real-Debrid · TorBox · Premiumize · AllDebrid":i18n("Outros addons ainda podem trazer vídeos."),r.x+28,r.y+244,460,0.46f);
     if(i==0&&!localDisponivel()&&!ajustes_p2p_url()[0])texto(TXT_G18R,i18n("Indisponível nesta TV"),r.x+28,r.y+286,440,0.46f);
     else texto(TXT_G20B,addonmodo_get(identidade)==i+1?i18n("Em uso nesta TV"):i==1&&!debrid_ativo()?i18n("Conectar pelo celular"):i18n("Confirmar"),r.x+28,r.y+286,460,1);
