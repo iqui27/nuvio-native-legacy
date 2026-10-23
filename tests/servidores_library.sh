@@ -21,3 +21,7 @@ cc tests/servidores_source_filter.c -Isrc -I/opt/homebrew/include -I/opt/homebre
 cc tests/servidores_cache.c src/srvcache.c src/js.c src/jsw.c -Isrc \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -O1 -o "$work/cache"
 "$work/cache"
+cc tests/servidores_rows.c src/servidores.c -Isrc \
+  -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -O1 \
+  -ffunction-sections -fdata-sections -Wl,-dead_strip -Wno-macro-redefined -o "$work/rows"
+"$work/rows"
