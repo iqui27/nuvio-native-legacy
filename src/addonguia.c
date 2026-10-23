@@ -13,6 +13,9 @@
 #include "perfis.h"
 #include "ponteiro.h"
 #include "player.h"
+#include "ilha.h"
+#include "menu.h"
+#include "tex_cache.h"
 #include "redesaude.h"
 #include "sessao.h"
 #include "streams.h"
@@ -23,6 +26,7 @@
 #include <string.h>
 
 static int tela=-1, anterior=AG_MODO, indice, foco, pedido, detalhes, pct=-1, serv, acessoConfig;
+static int modoSelecionado;
 static uint64_t identidade;
 static char nome[96], titulo[160], servico[32];
 static const char *const MODOS[]={"P2P nesta TV","Serviço de debrid","Só links diretos"};
@@ -83,7 +87,7 @@ static void rotas(float x,float y,float w) {
   float cw=(w-24)/3;
   for(int i=0;i<3;i++) {
     GfxRect r={x+i*(cw+12),y+60,cw,108};
-    gfx_cor(r,20/r.h,1,1,1,foco==10+i?0.14f:0.035f);
+    gfx_cor(r,20/r.h,1,1,1,foco==10+i||addonmodo_get(identidade)==i+1?0.14f:0.035f);
     icone(ICONES[i],r.x+18,r.y+20,21,0.9f);
     texto(TXT_G20B,i18n(i==0&&ajustes_p2p_url()[0]?"Servidor P2P":MODOS[i]),r.x+48,r.y+16,cw-58,1);
     texto(TXT_G18R,i18n(DESCR[i]),r.x+18,r.y+58,cw-30,0.64f);
@@ -104,6 +108,8 @@ static int configUrl(char *out,size_t n) {
 }
 void addonguia_abrir(int t,int addon,const char *tit) {
   tela=t; indice=addon; foco=0;detalhes=0;anterior=AG_MODO;acessoConfig=0;
+  modoSelecionado=addonmodo_get(addonmodo_id(addons_base(addon)));
+  if(modoSelecionado<AM_P2P)modoSelecionado=AM_P2P;
   identidade=addonmodo_id(addons_base(addon));
   snprintf(nome,sizeof nome,"%s",addons_nome(addon));
   snprintf(titulo,sizeof titulo,"%s",tit&&*tit? tit:addons_nome(addon));
@@ -123,10 +129,11 @@ static int escolher(int modo) {
 static void conectar(void) {anterior=tela;tela=AG_CONECTAR;foco=0;}
 static void ativar(void) {
   if(foco==20){detalhes=!detalhes;return;}
-  if(foco>=10 && foco<=12){tela=AG_MODO;foco-=10;return;}
+  if(foco>=10 && foco<=12){tela=AG_MODO;modoSelecionado=foco-9;foco-=10;return;}
   if(foco==30){anterior=tela;tela=AG_NOVO_DIRETO;acessoConfig=1;foco=0;return;}
   if(tela==AG_MODO) {
-    if(foco==40)foco=addonmodo_get(identidade)>=AM_P2P?addonmodo_get(identidade)-1:0;
+    if(foco==40)foco=modoSelecionado-1;
+    if(foco<=2)modoSelecionado=foco+1;
     if(foco==1 && !debrid_ativo()){conectar();return;}
     if(foco<=2 && escolher(foco+1))entregar(AGP_REPETIR);
     return;
@@ -233,26 +240,42 @@ static void configuracao(float x,float y,float w) {
   texto(TXT_ILHA_TEXTO,i18n("Se ele entrega links prontos, o Nuvio toca direto."),x+156,y+65,w-180,0.64f);
   texto(TXT_ILHA_TEXTO,i18n("Para mudar o serviço, abra o site do próprio addon pelo QR."),x+156,y+96,w-180,0.64f);
 }
+static void moldura(int pagina) {
+  if(pagina)gfx_cor((GfxRect){0,0,1920,1080},0,0.045f,0.047f,0.057f,1);
+  ilha_ancorar(48,36,0);ilha_relogio_visivel(1);ilha_desenhar(SDL_GetTicks());
+  texto(TXT_ILHA_NOME,"nuvio",1775,44,85,0.64f);
+  if(pagina) {
+    painel((GfxRect){48,112,88,420},44);
+    const char *icons[]={"aj_house","aj_search","aj_library","aj_user-round","aj_sliders-horizontal"};
+    for(int i=0;i<5;i++)icone(icons[i],80,140+i*72,24,i==4?1:0.64f);
+  }
+  icone("aj_arrow-left",200,1014,20,0.46f);
+  texto(TXT_G18R,i18n("Voltar"),230,1011,300,0.46f);
+  texto(TXT_G18R,i18n("A escolha do Nuvio não muda a configuração do addon."),1260,1011,600,0.46f);
+}
 static void modoDesenhar(void) {
   char s[180];pergunta(s,sizeof s);
-  texto(TXT_ILHA_HORA,i18n("Meus addons"),200,134,1000,0.46f);
+  snprintf(s,sizeof s,"%s › %s",i18n("Meus addons"),nome);
+  texto(TXT_V2_KICK,s,200,134,1000,0.46f);
+  pergunta(s,sizeof s);
   texto(TXT_LOG_N44,s,200,167,1600,1);
   bloco(i18n("O addon encontrou o vídeo. O Nuvio cuida de como ele chega até você."),200,232,1600,0.64f,2);
   texto(TXT_ILHA_TEXTO,i18n("Para estas fontes, escolha P2P nesta TV ou um serviço conectado ao Nuvio."),200,270,1600,0.64f);
   for(int i=0;i<3;i++) {
-    GfxRect r={200+i*540,322,518,350};
+    GfxRect r={200+i*540,322,518,416};
     painel(r,28);gfx_cor(r,28/r.h,1,1,1,foco==i?0.09f:0.015f);alvo(r,i);
-    icone(ICONES[i],r.x+28,r.y+52,36,0.8f);
-    texto(TXT_G28B,i18n(i==0&&ajustes_p2p_url()[0]?"Servidor P2P":MODOS[i]),r.x+28,r.y+108,460,1);
-    txt_bloco(TXT_ILHA_TEXTO,i18n(DESCR[i]),243,242,239,r.x+28,r.y+158,450,28.0f,0.64f,3);
+    texto(TXT_ILHA_HORA,i18n(i==0?"Nesta TV":i==1?"Conta":"Fontes"),r.x+28,r.y+24,460,0.46f);
+    icone(ICONES[i],r.x+28,r.y+64,36,0.8f);
+    texto(TXT_G28B,i18n(i==0&&ajustes_p2p_url()[0]?"Servidor P2P":MODOS[i]),r.x+28,r.y+120,460,1);
+    txt_bloco(TXT_ILHA_TEXTO,i18n(DESCR[i]),243,242,239,r.x+28,r.y+174,450,28.0f,0.64f,3);
     texto(TXT_G18R,i==0?i18n("Recebe o começo e continua durante o vídeo."):i==1?"Real-Debrid · TorBox · Premiumize · AllDebrid":i18n("Outros addons ainda podem trazer vídeos."),r.x+28,r.y+244,460,0.46f);
     if(i==0&&!localDisponivel()&&!ajustes_p2p_url()[0])texto(TXT_G18R,i18n("Indisponível nesta TV"),r.x+28,r.y+286,440,0.46f);
     else texto(TXT_G20B,addonmodo_get(identidade)==i+1?i18n("Em uso nesta TV"):i==1&&!debrid_ativo()?i18n("Conectar pelo celular"):i18n("Confirmar"),r.x+28,r.y+286,460,1);
   }
-  configuracao(200,694,1598);
-  botao(i18n("Continuar"),"aj_arrow-right",200,870,40);
-  texto(TXT_G18R,i18n("Mude depois em Meus addons."),470,887,700,0.46f);
-  detalhe(1560,886,240);
+  configuracao(200,760,1598);
+  botao(i18n("Continuar"),"aj_arrow-right",200,934,40);
+  texto(TXT_G18R,i18n("Mude depois em Meus addons."),470,951,700,0.46f);
+  detalhe(1560,950,240);
 }
 static const char *falhaTitulo(int t) {
   switch(t) {
@@ -280,7 +303,8 @@ static const char *falhaCorpo(int t) {
 }
 void addonguia_lista(int f) {
   nAlvos=0;
-  texto(TXT_ILHA_HORA,i18n("Fontes e addons"),200,136,1300,0.46f);
+  moldura(1);
+  texto(TXT_V2_KICK,i18n("Fontes e addons"),200,136,1300,0.46f);
   texto(TXT_LOG_N44,i18n("Meus addons"),200,169,1300,1);
   texto(TXT_ILHA_CORPO,i18n("O que cada um traz. E o próximo passo, se precisar."),200,232,1400,0.64f);
   int inicio=f>3?f-3:0;
@@ -288,16 +312,23 @@ void addonguia_lista(int f) {
     float y=294+(i-inicio)*118;
     if(i==f)gfx_cor((GfxRect){200,y,1600,118},24/118.0f,1,1,1,0.075f);
     ponteiro_alvo(200,y,1600,118,addonsui_ponteiro,NULL,i,0);
-    icone("aj_puzzle",224,y+30,34,0.7f);
+    gfx_cor((GfxRect){224,y+20,58,58},18/58.0f,1,1,1,0.06f);
+    icone("aj_puzzle",239,y+35,28,0.7f);
     texto(TXT_G28B,addons_nome(i),306,y+17,800,1);
     int h,v,d,t;uint64_t id=addonmodo_id(addons_base(i));addonmodo_fatos(id,&h,&v,&d,&t);
     const char *estado=!addons_sondado(i)?i18n("conferindo o manifesto…"):h==401?falhaTitulo(AG_401):h==403?falhaTitulo(AG_403):t&&!debrid_ativo()&&!p2p_ativo()?i18n("Escolher como tocar"):!v&&h?i18n("Última tentativa: demorou para responder"):!v?i18n("Nenhuma consulta recente"):i18n("Tudo certo");
-    texto(TXT_G18R,estado,800,y+25,550,0.6f);
+    texto(TXT_G18R,estado,addons_nome(i)[0]?306+txt_linha(TXT_G28B,addons_nome(i),243,242,239,255).w+24:800,y+25,650,0.6f);
     const char *papel=!addons_sondado(i)?i18n("conferindo o manifesto…"):addons_fornece(i,ADD_STREAM)?i18n("Fontes para tocar"):i18n("Catálogos");
-    texto(TXT_G18R,papel,306,y+58,700,0.64f);
+    char papeis[240];snprintf(papeis,sizeof papeis,"%s",papel);
+    if(addons_sondado(i)&&!addons_fornece(i,ADD_STREAM)) {
+      if(addons_fornece(i,ADD_META)){strncat(papeis," · ",sizeof papeis-strlen(papeis)-1);strncat(papeis,i18n("Fichas dos títulos"),sizeof papeis-strlen(papeis)-1);}
+      if(addons_fornece(i,ADD_LEGENDA)){strncat(papeis," · ",sizeof papeis-strlen(papeis)-1);strncat(papeis,i18n("Legendas"),sizeof papeis-strlen(papeis)-1);}
+    }
+    texto(TXT_G18R,papeis,306,y+58,700,0.64f);
     texto(TXT_G18R,addons_ativo(i)?i18n("Ligado"):i18n("Desligado"),1100,y+58,240,0.6f);
     const char *acao=addons_sondado(i)&&!addons_fornece(i,ADD_STREAM)?i18n("Escolher fileiras da Home"):d&&!t?i18n("Rever acesso no celular"):i18n("Escolher como tocar");
-    texto(TXT_G20B,acao,1400,y+40,370,1);
+    int anteriorFoco=foco;foco=i==f?50+i:-1;
+    botao(acao,NULL,1400,y+30,50+i);foco=anteriorFoco;
   }
   if(f==addons_n()) {
     botao(i18n("Sincronizar addons"),"aj_rotate-cw",228,820,0);
@@ -312,54 +343,55 @@ void addonguia_desenhar(void) {
   if(tela<0)return;
   nAlvos=0;
   gfx_cor((GfxRect){0,0,1920,1080},0,0,0,0,0.30f);
-  if(tela==AG_MODO){modoDesenhar();return;}
+  if(tela==AG_MODO){moldura(1);modoDesenhar();return;}
   if(tela==AG_LISTA){addonguia_lista(foco);return;}
+  moldura(tela==AG_CONECTAR);
   if(tela==AG_CONECTAR) {
-    painel((GfxRect){380,180,1180,700},32);
-    texto(TXT_ILHA_HORA,i18n("Fontes e addons"),432,222,1076,0.46f);
-    texto(TXT_ILHA_TITULO,i18n("Conecte seu serviço pelo celular"),432,276,1076,1);
-    bloco(i18n("Use sua conta do serviço para preparar o vídeo fora da TV."),432,340,1076,0.64f,2);
+    painel((GfxRect){380,244,1180,640},32);
+    texto(TXT_ILHA_HORA,i18n("Fontes e addons"),432,286,1076,0.46f);
+    texto(TXT_ILHA_TITULO,i18n("Conecte seu serviço pelo celular"),432,396,1076,1);
+    bloco(i18n("Use sua conta do serviço para preparar o vídeo fora da TV."),432,460,1076,0.64f,2);
     float x=432;
-    for(int i=0;i<4;i++)x+=botao(SERVICOS[i],NULL,x,442,i)+12;
-    if(celb_embutido(CELB_ADDON))celb_desenhar_em(CELB_ADDON,(GfxRect){432,530,1076,240},1);
-    else bloco(i18n("Escolha seu serviço. Você não precisa digitar chaves nesta TV."),432,550,1076,0.64f,2);
-    botao(i18n("Voltar à escolha"),"aj_arrow-left",432,788,4);return;
+    for(int i=0;i<4;i++)x+=botao(SERVICOS[i],NULL,x,542,i)+12;
+    if(celb_embutido(CELB_ADDON))celb_desenhar_em(CELB_ADDON,(GfxRect){432,612,1076,170},1);
+    else bloco(i18n("Escolha seu serviço. Você não precisa digitar chaves nesta TV."),432,632,1076,0.64f,2);
+    botao(i18n("Voltar à escolha"),"aj_arrow-left",432,790,4);return;
   }
   if(tela==AG_INICIANDO) {
     painel((GfxRect){380,130,1180,850},32);
     texto(TXT_ILHA_TEXTO,titulo,432,174,1076,0.64f);
     TxtLinha cab=txt_linha(TXT_ILHA_TITULO,i18n("Conectando a outras pessoas…"),243,242,239,255);
-    txt_desenhar(cab,960-cab.w/2,230);
-    bloco(i18n("A TV recebe os primeiros pedaços para começar. O restante chega enquanto você assiste."),548,294,824,0.64f,2);
+    txt_desenhar(cab,960-cab.w/2,310);
+    bloco(i18n("A TV recebe os primeiros pedaços para começar. O restante chega enquanto você assiste."),548,372,824,0.64f,2);
     const char *nodes[]={"aj_users","aj_tv-minimal-play","aj_circle-play"};
     for(int a=0;a<3;a++) {
-      float nx=704+a*180;gfx_cor((GfxRect){nx,390,74,74},24/74.0f,1,1,1,0.06f);
-      icone(nodes[a],nx+21,411,32,0.8f);
-      if(a<2){float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);gfx_cor((GfxRect){nx+88,426,78,2},0,ar,ag,ab,0.7f);}
+      float nx=704+a*180;gfx_cor((GfxRect){nx,210,74,74},24/74.0f,1,1,1,0.06f);
+      icone(nodes[a],nx+21,231,32,0.8f);
+      if(a<2){float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);gfx_cor((GfxRect){nx+88,246,78,2},0,ar,ag,ab,0.7f);}
     }
     P2pmEstado e;p2pmotor_estado(&e);
 #ifdef NV_SHOT_HOOKS
     if(shot){e.pares=8;e.buffer_pct=68;}
 #endif
     char s[120];snprintf(s,sizeof s,i18n("%u pessoas conectadas"),e.pares);
-    texto(TXT_ILHA_TEXTO,s,740,494,600,0.64f);
+    texto(TXT_ILHA_TEXTO,s,740,458,600,0.64f);
     texto(TXT_ILHA_TEXTO,i18n("Preparando o início do vídeo"),502,540,850,0.8f);
     if(e.buffer_pct>=0){snprintf(s,sizeof s,"%d%%",e.buffer_pct);texto(TXT_ILHA_TEXTO,s,1340,540,120,0.8f);}
     gfx_cor((GfxRect){502,578,936,7},0.5f,1,1,1,0.09f);
     if(e.buffer_pct>=0){float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);gfx_cor((GfxRect){502,578,936*e.buffer_pct/100.0f,7},0.5f,ar,ag,ab,1);}
     texto(TXT_G18R,i18n("Não precisa esperar o filme inteiro para começar."),692,605,746,0.46f);
     botao(i18n("Voltar às fontes"),NULL,850,646,0);
-    rotas(432,730,1076);detalhe(432,900,1076);return;
+    rotas(432,730,1076);detalhe(432,920,1076);return;
   }
   int novo=tela>=AG_NOVO_TORRENT&&tela<=AG_NOVO_DIRETO;
   int acesso=tela==AG_NOVO_DIRETO&&acessoConfig;
-  int routes=tela==AG_P2P||tela==AG_DEBRID||tela==AG_NOVO_TORRENT||tela==AG_INICIANDO;
-  float y=tela==AG_INICIANDO?130:novo?140:175;
+  int routes=tela==AG_P2P||tela==AG_DEBRID||tela==AG_NOVO_TORRENT;
+  float y=tela==AG_NOVO_CATALOGO?238:tela==AG_NOVO_DIRETO?180:novo?140:175;
   float h=routes?610:416;
   if(tela==AG_DEBRID)h=694;
   if(tela==AG_401||tela==AG_403||tela==AG_VAZIO||tela==AG_HDR)h=490;
   if(tela==AG_NOVO_TORRENT)h=834;
-  if(tela==AG_NOVO_CATALOGO)h=650;
+  if(tela==AG_NOVO_CATALOGO)h=636;
   if(tela==AG_NOVO_DIRETO)h=650;
   if(tela==AG_INICIANDO)h=780;
   painel((GfxRect){380,y,1180,h},32);
@@ -435,16 +467,17 @@ void addonguia_desenhar(void) {
     if(progresso>=0){float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);gfx_cor((GfxRect){x,cy+36,1076*progresso/100.0f,7},0.5f,ar,ag,ab,1);}
     cy+=64;
   }
+  if(tela==AG_NOVO_CATALOGO) {
+    linha(x,cy,1076);icone("aj_check",x,cy+28,24,0.64f);
+    texto(TXT_ILHA_TEXTO,i18n("Não precisa ligar o P2P para usar estes catálogos."),x+44,cy+22,1032,0.64f);
+    texto(TXT_ILHA_TEXTO,i18n("Você pode escolher quais fileiras aparecem na Home."),x+44,cy+56,1032,0.64f);cy+=116;
+  }
   const char *acao=tela==AG_NOVO_CATALOGO?i18n("Escolher fileiras da Home"):tela==AG_NOVO_DIRETO?i18n("Continuar"):tela==AG_INICIANDO?i18n("Voltar às fontes"):tela==AG_401?i18n("Rever acesso no celular"):tela==AG_P2P||tela==AG_NOVO_TORRENT?(localDisponivel()||ajustes_p2p_url()[0]?i18n("Ligar P2P e tentar"):i18n("Conectar pelo celular")):tela!=AG_VAZIO&&proxima()?i18n("Tentar a próxima fonte"):i18n("Buscar fontes de novo");
   if(tela==AG_NOVO_TORRENT&&!player_aberto())acao=i18n("Escolher como tocar");
   float w=botao(acao,tela==AG_P2P||tela==AG_NOVO_TORRENT?"aj_power":NULL,x,cy,0);
   if(tela!=AG_INICIANDO)botao(novo?i18n("Agora não"):i18n("Voltar às fontes"),NULL,x+w+12,cy,1);
   cy+=84;
   if(routes){rotas(x,cy,1076);cy+=188;}
-  if(tela==AG_NOVO_CATALOGO) {
-    texto(TXT_ILHA_TEXTO,i18n("Não precisa ligar o P2P para usar estes catálogos."),x,cy,1076,0.64f);cy+=46;
-    texto(TXT_ILHA_TEXTO,i18n("Você pode escolher quais fileiras aparecem na Home."),x,cy,1076,0.64f);cy+=46;
-  }
   if(tela==AG_NOVO_DIRETO){
     char url[512];if(configUrl(url,sizeof url)){qrPequeno(url,x+930,cy-6,126);}
     texto(TXT_ILHA_NOME,acesso?i18n("Rever acesso no celular"):i18n("Quer mudar o serviço?"),x,cy,740,1);
