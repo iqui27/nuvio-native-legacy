@@ -3,7 +3,7 @@
 #include "logoapp.h"
 #include "sessao.h"
 #include "nuvem.h"
-#include "qr.h"
+#include "qrtex.h"
 #include "gfx.h"
 #include "text.h"
 #include "anim.h"
@@ -29,10 +29,6 @@
 #define LG_CAMPO_W       760.0f
 #define LG_CAMPO_H        88.0f
 #define LG_MOSTRAR_W     150.0f
-// Zona de silencio: 4 modulos claros em volta, exigidos pela norma. Vao DENTRO
-// da textura para que nenhum ajuste de layout possa comer a margem por
-// acidente — sem ela, leitor nenhum acha o simbolo.
-#define LG_QR_MARGEM       4
 static float lgBlocoW(void) {
 #ifdef NV_TOUCH_UI
   if (NV_TELA_H > NV_TELA_W) return NV_TELA_W - 2.0f * NV_MARGEM_X;
@@ -180,37 +176,10 @@ void login_soltar(void) {
 // versao 4 tem 33x33 = 1089 modulos, e mil chamadas de desenho por quadro
 // custam mais que a tela inteira.
 static void gerarTexQr(const char *texto) {
-  Qr q;
-  int n, lado, x, y;
-  unsigned char *px;
   if (!texto || !texto[0]) return;
   if (!strcmp(qrDe, texto) && texQr) return;
-  if (!qr_gerar(&q, texto)) { printf("[login] URL nao cabe num QR: %s\n", texto); return; }
-
-  lado = q.lado + 2 * LG_QR_MARGEM;
-  px = (unsigned char *)malloc((size_t)lado * lado * 3);
-  if (!px) return;
-  memset(px, 255, (size_t)lado * lado * 3);   // fundo claro, inclusive a margem
-  for (y = 0; y < q.lado; y++)
-    for (x = 0; x < q.lado; x++)
-      if (qr_modulo(&q, x, y)) {
-        size_t i = ((size_t)(y + LG_QR_MARGEM) * lado + (x + LG_QR_MARGEM)) * 3;
-        px[i] = px[i + 1] = px[i + 2] = 0;
-      }
-
-  if (!texQr) glGenTextures(1, &texQr);
-  glBindTexture(GL_TEXTURE_2D, texQr);
-  // NEAREST, nao LINEAR: um modulo borrado com o vizinho e o jeito mais rapido
-  // de tornar o simbolo ilegivel numa camera de celular.
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, lado, lado, 0, GL_RGB, GL_UNSIGNED_BYTE, px);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  free(px);
-  n = snprintf(qrDe, sizeof qrDe, "%s", texto);
-  (void)n;
+  if (!qr_textura(&texQr, texto)) { printf("[login] stage=qr class=capacity\n"); return; }
+  snprintf(qrDe, sizeof qrDe, "%s", texto);
 }
 
 void login_iniciar(void) {

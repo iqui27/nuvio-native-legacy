@@ -1,8 +1,10 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Requires a native GL window; compares framebuffer pixels without TV or network.
 set -eu
 cd "$(dirname "$0")/.."
-tmp=$(mktemp -d /tmp/nuvio-gfx-cor-painel.XXXXXX)
+tmp=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-gfx-cor-painel.XXXXXX)
 trap 'rm -rf "$tmp"' EXIT
 sources=()
 for source in src/*.c src/dts/*.c; do

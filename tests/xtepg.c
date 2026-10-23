@@ -1,6 +1,8 @@
+#include "stub_perfisessao.h"
 // tests/xtepg.sh: a fila da grade curta do Xtream contra um painel FALSO que
 // devolve 429 acima de PAINEL_MAX pedidos por segundo (o que a TCL do dono
 // mediu: "50 pedido(s) ... 6 falha(s) (ultimo HTTP 429)").
+#include "stub_perfisessao.h"
 #include "../src/xtepg.c"
 #include <assert.h>
 #include <sys/time.h>

@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # #92: MKV com VARIAS legendas (ASS, SRT, ASS) — o caso dos lancamentos de
 # anime "Multi-Subs". Prova que o trackNum da LG (ordinal entre as legendas)
 # casa com a TrackEntry certa, e que o mkvass colhe a faixa pedida e nao a
@@ -9,7 +11,7 @@ cd "$(dirname "$0")/.."
 FFMPEG=${FFMPEG:-/opt/homebrew/bin/ffmpeg}
 [ -x "$FFMPEG" ] || { echo "mkv_legendas.sh: ffmpeg nao encontrado em $FFMPEG"; exit 1; }
 
-DIR=$(mktemp -d /tmp/nuvio-mkvleg.XXXXXX)
+DIR=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-mkvleg.XXXXXX)
 trap 'kill $SRV 2>/dev/null || true; rm -rf "$DIR"' EXIT
 
 # Tres legendas com texto que denuncia a origem: "Faixa A n", "Faixa B n"...
@@ -60,8 +62,9 @@ for _ in $(seq 1 50); do grep -q porta "$DIR/porta.txt" 2>/dev/null && break; sl
 PORTA=$(awk '/porta/{print $2}' "$DIR/porta.txt")
 [ -n "$PORTA" ] || { echo "mkv_legendas.sh: servidor nao subiu"; exit 1; }
 
-cc -Isrc tests/mkv_legendas.c src/mkv.c src/mkvass.c src/assrender.c src/legenda.c \
-  src/rede.c src/redeurl.c src/dados.c -o /tmp/nuvio-mkv-legendas-tests -O1 -g -Wall \
-  -I/opt/homebrew/include -Wno-deprecated-declarations
+. tests/mkvcore_flag.sh
+cc -Isrc tests/mkv_legendas.c src/mkv.c src/mkvass.c src/imgsub.c src/pgs.c src/assrender.c src/legenda.c \
+  src/rede.c src/redeurl.c src/dados.c -o ${TMPDIR:-/tmp}/nuvio-mkv-legendas-tests -O1 -g -Wall \
+  -I/opt/homebrew/include -Wno-deprecated-declarations ${MKVCORE_CC[@]+"${MKVCORE_CC[@]}"}
 mkdir -p "$DIR/dados"
-NUVIO_DADOS="$DIR/dados" /tmp/nuvio-mkv-legendas-tests "http://127.0.0.1:$PORTA/multi.mkv"
+NUVIO_DADOS="$DIR/dados" ${TMPDIR:-/tmp}/nuvio-mkv-legendas-tests "http://127.0.0.1:$PORTA/multi.mkv"

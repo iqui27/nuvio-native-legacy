@@ -4,6 +4,8 @@
 #include "layout.h"
 #include "ajustes.h"
 #include "trailerfonte.h"
+#include "extras.h"
+#include "linguas.h"
 #include "video.h"      // trailer_osd_desenhar reads video_pos/duracao on every target
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +26,9 @@ static Uint32 abertoEm;   // SDL_GetTicks da abertura da fonte atual, para o log
 static int    dono;       // TRAILER_DONO_* (trailer.h)
 static int    noCartao;   // trailer_no_cartao: quadro inteiro encaixado no .tpk
 static char   donoImdb[32];
+static int    falso;      // trailer_teste_falso: 0 off, 1 open without image, 2 playing
+
+void trailer_teste_falso(int tocando) { falso = tocando < 0 ? 0 : 1 + (tocando != 0); }
 
 void trailer_recorte(int vw, int vh, float z, float dw, float dh,
                      int *sx, int *sy, int *sw, int *sh) {
@@ -75,6 +80,20 @@ void trailer_recorte(int vw, int vh, float z, float dw, float dh,
 // nao de 1920x1080 diretos. `origin` no embed e o que a IFrame API exige
 // para aceitar postMessage; a origem de um wgt e "file://" ou "null", e ai
 // vai sem.
+// Legenda do trailer do YouTube: a do idioma de legenda da pessoa, nunca com
+// audio dublado nesse idioma, nunca sem faixa nesse idioma. `sub`/`audio` sao
+// ISO de 2 letras ("" = sem preferencia / audio desconhecido).
+EM_JS(void, trailer_js_legenda, (const char *sub, const char *audio), {
+  Module.nvLegendaEscolher = function (tracks, s, a) {
+    if (!s || s === 'none' || s === a || !tracks) return '';
+    for (var i = 0; i < tracks.length; i++) {
+      var c = tracks[i] && tracks[i].languageCode;
+      if (c && c.slice(0, 2).toLowerCase() === s) return c;
+    }
+    return '';
+  };
+  Module.nvLegenda = { sub: UTF8ToString(sub), audio: UTF8ToString(audio) };
+});
 EM_JS(int, trailer_js_abrir, (const char *fonte, float x, float y, float w, float h, int som, float zoom, const char *proxy), {
   var id = UTF8ToString(fonte);
   var base = proxy ? UTF8ToString(proxy) : '';
@@ -186,6 +205,18 @@ EM_JS(int, trailer_js_abrir, (const char *fonte, float x, float y, float w, floa
           if (T.estado === -3) return;   // erro e final para este elemento
           if (m.event === 'infoDelivery' && m.info && typeof m.info.playerState === 'number') T.estado = m.info.playerState;
           if (m.event === 'onStateChange' && typeof m.info === 'number') T.estado = m.info;
+          // Legenda: com o video tocando pede a lista de faixas; a resposta
+          // (info.tracklist) escolhe o idioma ou nenhuma. Sem lista, sem legenda.
+          var L = Module.nvLegenda, pw = T.f.contentWindow;
+          var cmd = function (fn, args) { try { pw.postMessage(JSON.stringify({ event: 'command', func: fn, args: args }), '*'); } catch (e) {} };
+          if (L && Module.nvLegendaEscolher && !T.f.nvLegPedida && T.estado === 1) {
+            T.f.nvLegPedida = 1; cmd('loadModule', ['captions']); cmd('getOption', ['captions', 'tracklist']);
+          }
+          if (L && Module.nvLegendaEscolher && m.info && m.info.tracklist && !T.f.nvLegAplicada) {
+            T.f.nvLegAplicada = 1;
+            var cod = Module.nvLegendaEscolher(m.info.tracklist, L.sub, L.audio);
+            if (cod) cmd('setOption', ['captions', 'track', { languageCode: cod }]); else cmd('unloadModule', ['captions']);
+          }
         });
       }
       // A IFrame API so fala depois de "listening"; mandamos ao carregar.
@@ -232,7 +263,13 @@ EM_JS(int, trailer_js_pausado, (), {
   if (!T || !T.f) return 0;
   return T.ehVideo ? (T.f.paused ? 1 : 0) : (T.estado === 2 ? 1 : 0);
 });
-int trailer_suportado(void) { return 1; }
+int trailer_suportado(void) {
+#ifdef NV_TIZEN3_LITE
+  return 0;
+#else
+  return 1;
+#endif
+}
 #else
 // LG (e Mac, onde video_iniciar devolve 0 e nada disto acontece): o trailer
 // e um MP4 no plano de video da TV. O volume so pode ser mexido depois de o
@@ -278,7 +315,7 @@ static Uint32 tocandoVisto;
 #endif
 int trailer_suportado(void) {
 #if defined(__APPLE__) || defined(NV_LINUX_DESKTOP)
-  return 0;
+  return falso != 0;
 #else
   // O FRACASSO NAO TRAVA, MAS TEM TETO. O deploy mata o processo e relanca
   // em seguida, e o hub LS2 pode demorar para soltar o nome anterior; so o
@@ -365,9 +402,18 @@ static void nativoAplicar(void) {
 }
 #endif
 
+// Callers pass the rect in their own layer px (home/detail run inside the text
+// scale layer, #205); the video plane wants real 1920x1080 px. `rect` keeps the
+// real one, trailer_retangulo hands it back in the caller's units.
+static GfxRect naTela(GfxRect r) {
+  float k = gfx_escala_tela_txt();
+  return (GfxRect){ r.x * k, r.y * k, r.w * k, r.h * k };
+}
+
 void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
   int nova;
   if (!trailer_suportado() || !fonte || !fonte[0]) return;
+  r = naTela(r);
   // SAMSUNG E SEMPRE MUDO, tambem em tela cheia (dono, 22/09/2026: "trailer
   // fica mudo"). A trava fica AQUI, no unico caminho ate o elemento, e nao so
   // em quem chama: um `som` 1 esquecido num chamador novo desmutaria o embed
@@ -387,10 +433,17 @@ void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
 #endif
   if (nova) falhouUltima = 0;
 #ifdef __EMSCRIPTEN__
+  {
+    char sub[8] = "", aud[3] = "";
+    ling_normalizar(ling_legenda(), sub, sizeof sub);
+    sub[2] = 0;
+    extras_trailer_audio_iso(aud);
+    trailer_js_legenda(sub, aud);
+  }
   if (!trailer_js_abrir(fonte, r.x, r.y, r.w, r.h, som, ajustes_trailer_zoom(), NV_REC_URL)) return;
 #else
   if (nova) {
-    if (!video_tocar(fonte)) return;
+    if (!falso && !video_tocar(fonte)) return;
 #ifdef NV_TPK
     video_tpk_trailer_marcar(1);
 #endif
@@ -420,6 +473,7 @@ void trailer_abrir(const char *fonte, GfxRect r, int som, int modoCheia) {
 
 void trailer_rect(GfxRect r) {
   if (!aberto) return;
+  r = naTela(r);
 #ifdef NV_TOUCH_UI
   if (rect.x == r.x && rect.y == r.y && rect.w == r.w && rect.h == r.h) return;
 #endif
@@ -484,12 +538,16 @@ int trailer_tocando(void) {
   int e = aberto ? trailer_js_estado() : -2;
   return e == 1 || e == 3;
 #else
+  if (falso) return aberto && falso == 2;
   if(!aberto||!video_pronto()||video_falhou()||video_terminou()||video_conflito_recurso())return 0;
   if(video_tocando())tocouFonte=1;
   return tocouFonte;
 #endif
 }
 int trailer_mostra_video(void) {
+#ifdef NV_ANDROID
+  if (noCartao && !video_janela_pronta()) return 0;
+#endif
 #if defined(NV_TPK) && !defined(__EMSCRIPTEN__)
   Uint32 t = SDL_GetTicks();
   const char *porque = NULL;
@@ -528,7 +586,10 @@ int trailer_mostra_video(void) {
   return 1;
 #endif
 }
-GfxRect trailer_retangulo(void) { return rect; }
+GfxRect trailer_retangulo(void) {
+  float k = gfx_escala_tela_txt();
+  return (GfxRect){ rect.x / k, rect.y / k, rect.w / k, rect.h / k };
+}
 int trailer_estado(void) {
 #ifdef __EMSCRIPTEN__
   return aberto ? trailer_js_estado() : -2;
@@ -604,6 +665,16 @@ int trailer_pausado(void) {
 #else
   return aberto && cheia && pausado;
 #endif
+}
+// MEDIDOR DE DESEMPENHO (#338, revisao do job 205): main chama isto por quadro
+// para desempenho_trailer. No nativo (webOS/Android/.tpk) trailer_tocando
+// fica preso em 1 durante a pausa da tela cheia (o furo segura o ultimo
+// quadro), entao o medidor pergunta a pausa a parte e VOLTA quando o trailer
+// pausa. No iframe (__EMSCRIPTEN__) o estado pausado ja nao e PLAYING nem
+// BUFFERING, trailer_tocando ja responde 0 e o !trailer_pausado() e so
+// cinto de seguranca.
+int trailer_medidor_esconde(void) {
+  return trailer_aberto() && trailer_tocando() && !trailer_pausado();
 }
 void trailer_osd_desenhar(const char *titulo, float a) {
   double pos = video_pos(), dur = video_duracao();

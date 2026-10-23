@@ -24,6 +24,15 @@ int ajustes_leg2_tamanho(void) { return segundaPct; }
 int ajustes_leg2_cor(void) { return -1; }
 int ajustes_leg2_fundo(void) { return -1; }
 int ajustes_leg2_borda(void) { return -1; }
+// Same sizing as ajustes.c; the other leg2 fields stay the primary's here.
+void ajustes_leg2_estilo(const VideoLegendaEstilo *p, VideoLegendaEstilo *o) {
+  *o = *p;
+  o->tamanho = segundaPct > 0 ? segundaPct : p->tamanho * 9 / 10;
+  if (o->tamanho < TXT_LEG_PCT_MIN) o->tamanho = TXT_LEG_PCT_MIN;
+  if (o->tamanho > TXT_LEG_PCT_MAX) o->tamanho = TXT_LEG_PCT_MAX;
+  o->tamanho = o->tamanho / 10 * 10;
+}
+void ajustes_leg_contorno_rgb(int *r, int *g, int *b) { *r = *g = *b = 0; }
 
 int video_n_legenda(void) { return nEmb; }
 const VideoFaixa *video_legenda(int i) { return i >= 0 && i < nEmb ? &emb[i] : NULL; }
@@ -312,6 +321,91 @@ int main(void) {
   legendasui_abrir(); assert(recP == 1);
   legauto_fonte(NULL); montarLinhas(); assert(recP == 0);
 
-  puts("legendasui: identities, formats, kinds, full list, late arrivals, second-slot refusals, offsets, AutoSync, settings, active-outside-recommendations OK");
+  // --- #511: the row title is the track name, the language moves below ---
+  { LegUiCand c[8]; const VideoFaixa *pe[8]; char t[96], su[256];
+    const char *id, *ic; int k, at, ap, sv = nEmb, sa = nAdd;
+    VideoFaixa sal[8]; memcpy(sal, emb, sizeof sal);
+    faixa(0, 1, "en", "English  \xc2\xb7  Full", "S_TEXT/UTF8", 0);
+    faixa(1, 2, "en", "English  \xc2\xb7  Full w/ honorifics", "S_TEXT/UTF8", 0);
+    faixa(2, 3, "en", "English  \xc2\xb7  Full", "S_TEXT/UTF8", 0);
+    faixa(3, 4, "pt", "Português", "S_TEXT/UTF8", 0);                     // empty name
+    faixa(4, 5, "es", "Español  \xc2\xb7  S_TEXT/ASS", "S_TEXT/ASS", 0);   // codec id only
+    faixa(5, 6, "fr", "Français", "S_TEXT/UTF8", 0);
+    addon(0, "fr", "Prov", "An extremely long add-on label that must be cut cleanly.srt", "https://h.invalid/x.srt");
+    for (k = 0; k < 6; k++) pe[k] = &emb[k];
+    assert(legendasui_montar(pe, 6, add, 1, c, 8) == 7);
+    legendasui_titulo(c, 7, 0, t, sizeof t); assert(!strcmp(t, "Full (1)"));
+    legendasui_titulo(c, 7, 2, t, sizeof t); assert(!strcmp(t, "Full (2)"));
+    assert(legendasui_titulo(c, 7, 1, t, sizeof t) && !strcmp(t, "Full w/ honorifics"));
+    assert(!legendasui_titulo(c, 7, 3, t, sizeof t) && !strcmp(t, nomeIdioma("pt")));
+    assert(!legendasui_titulo(c, 7, 4, t, sizeof t) && !strcmp(t, nomeIdioma("es")));
+    legendasui_titulo(c, 7, 6, t, sizeof t);
+    assert(strlen(t) <= 43 && !strncmp(t, "An extremely", 12) && strstr(t, "\xe2\x80\xa6"));
+    // On screen: name first, language below it.
+    nEmb = 6; nAdd = 0; mais = 1; montarLinhas();
+    snprintf(t, sizeof t, "m|%s", cand[1].id);
+    { char nome[96]; textoLinha(&linhas[linhaDe(t)], nome, sizeof nome, su, sizeof su, &id, &ic, &at, &ap);
+      assert(!strcmp(nome, "Full w/ honorifics") && strstr(su, nomeIdioma("en"))); }
+    mais = 0; nEmb = sv; nAdd = sa; memcpy(emb, sal, sizeof sal); }
+
+  // #518 / #511: preserve integration titles in recommended, full and version rows.
+  { char title[96], detail[256]; const char *language, *icon; int active, dim;
+    char unnamed[2][96];
+    snprintf(unnamed[0], sizeof unnamed[0], "%s (1)", nomeIdioma("en"));
+    snprintf(unnamed[1], sizeof unnamed[1], "%s (2)", nomeIdioma("en"));
+    const char *expected[] = { "Full (1)", "Full (2)", unnamed[0], unnamed[1],
+      "Legacy name", "Full w/ honorifics", nomeIdioma("es") };
+    nEmb = 7; nAdd = 0;
+    for (int k = 0; k < nEmb; k++) faixa(k, k + 1, "en", "English", "S_TEXT/UTF8", 0);
+    snprintf(emb[0].nome, sizeof emb[0].nome, "Full");
+    snprintf(emb[1].nome, sizeof emb[1].nome, "Full");
+    snprintf(emb[4].rotulo, sizeof emb[4].rotulo, "English  ·  Legacy name");
+    snprintf(emb[5].nome, sizeof emb[5].nome, "Full w/ honorifics");
+    snprintf(emb[5].rotulo, sizeof emb[5].rotulo, "English  ·  Discarded label");
+    faixa(6, 7, "es", "Español", "S_TEXT/ASS", 0);
+    snprintf(emb[6].nome, sizeof emb[6].nome, "S_TEXT/ASS");
+    montarLinhas();
+    for (int mode = 0; mode < 3; mode++) {
+      mais = mode == 1; ver = mode == 2;
+      for (int k = 0; k < nEmb; k++) {
+        LuiLinha row = {0}; row.tipo = LR_CAND; row.cand = k;
+        textoLinha(&row, title, sizeof title, detail, sizeof detail, &language, &icon, &active, &dim);
+        assert(!strcmp(title, expected[k]));
+        if (k == 0 || k == 1 || k == 4 || k == 5) assert(strstr(detail, nomeIdioma("en")));
+      }
+      // A multibyte codepoint crosses the title's 37-byte truncation boundary.
+      snprintf(cand[5].nome, sizeof cand[5].nome, "123456789012345678901234567890123456éééé");
+      { LuiLinha row = {0}; row.tipo = LR_CAND; row.cand = 5;
+        textoLinha(&row, title, sizeof title, detail, sizeof detail, &language, &icon, &active, &dim);
+        assert(!strcmp(title, "123456789012345678901234567890123456…")); }
+      snprintf(cand[5].nome, sizeof cand[5].nome, "Full w/ honorifics");
+    }
+    mais = ver = 0;
+  }
+
+  // Provider labels survive menu formatting without becoming release filenames.
+  { const char *labels[] = { "⚠️ Not synced · OpenSubtitles · Release",
+      "Weak sync", "Syncs when picked", "Weak sync" };
+    char title[96], detail[512]; const char *language, *icon; int active, dim;
+    nEmb = 0; nAdd = 4;
+    for (int k = 0; k < nAdd; k++) {
+      addon(k, "en", "SubtitleSync", k == 3 ? "Release.srt" : "", "");
+      snprintf(add[k].rotulo, sizeof add[k].rotulo, "%s", labels[k]);
+    }
+    montarLinhas();
+    for (int mode = 0; mode < 3; mode++) {
+      mais = mode == 1; ver = mode == 2;
+      for (int k = 0; k < nAdd; k++) {
+        LuiLinha row = {0}; row.tipo = LR_CAND; row.cand = k;
+        textoLinha(&row, title, sizeof title, detail, sizeof detail, &language, &icon, &active, &dim);
+        assert(strstr(title, k == 0 ? "Not synced" : k == 3 ? "Release.srt" : labels[k]));
+        assert(strstr(detail, labels[k]));
+        assert(!strcmp(cand[k].arquivo, k == 3 ? "Release.srt" : ""));
+      }
+    }
+    mais = ver = 0;
+  }
+
+  puts("legendasui: identities, formats, kinds, full list, late arrivals, second-slot refusals, offsets, AutoSync, settings, active-outside-recommendations, track titles OK");
   return 0;
 }

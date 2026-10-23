@@ -11,5 +11,5 @@
 set -eu
 cd "$(dirname "$0")/.."
 SDL="-I/opt/homebrew/include $(sdl2-config --cflags) $(sdl2-config --libs)"
-cc -O1 -g -Wall -DNV_TPK -DLEG_SEM_CUE_MS=1000u -Isrc tests/tpk-escolha.c src/video_tpk.c src/video_modo.c src/vazao.c src/velocidade.c src/faixasmkv.c src/audioinfo.c src/mkv.c src/capmkv.c tests/capmkv_stub.c -lpthread $SDL -o "${TMPDIR:-/tmp}/nuvio-tpk-escolha"
+cc -O1 -g -Wall -DNV_TPK -DLEG_SEM_CUE_MS=1000u -Isrc tests/tpk-escolha.c src/video_tpk.c src/video_modo.c src/mkvfix.c -DNV_MKVFIX_SEM_REDE src/vazao.c src/velocidade.c src/faixasmkv.c src/audioinfo.c src/audioescolha.c src/mkv.c src/capmkv.c tests/capmkv_stub.c tests/dts_tpk_stub.c -lpthread $SDL -o "${TMPDIR:-/tmp}/nuvio-tpk-escolha"
 "${TMPDIR:-/tmp}/nuvio-tpk-escolha"

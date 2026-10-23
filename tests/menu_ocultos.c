@@ -1,6 +1,7 @@
 // #162: itens escondidos nos Ajustes somem da barra lateral e as setas pulam
 // por cima deles. Guia e Agenda desligados pelo ajustes.txt, como o arranque le.
 #include "ajustes.h"
+#include "nvtmp.h"
 #include "menu.h"
 #include <SDL2/SDL.h>
 #include <assert.h>
@@ -27,7 +28,7 @@ static int descer(int n) {
 }
 
 int main(void) {
-  char dir[] = "/tmp/nuvio-menu-ocultos-XXXXXX", caminho[700];
+  char dir[NVT_MAX], caminho[700]; nvt_set(dir, sizeof dir, "/nuvio-menu-ocultos-XXXXXX");
   FILE *f;
   assert(mkdtemp(dir));
   snprintf(caminho, sizeof caminho, "%s/ajustes.txt", dir);

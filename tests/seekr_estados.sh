@@ -1,7 +1,9 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 set -euo pipefail
 cd "$(dirname "$0")/.."
-binary=$(mktemp /tmp/nuvio-seekr-estados.XXXXXX)
+binary=$(mktemp ${TMPDIR:-/tmp}/nuvio-seekr-estados.XXXXXX)
 trap 'rm -f "$binary"' EXIT
 case "$(uname -s)" in
   Darwin) stripflag=-Wl,-dead_strip ;;

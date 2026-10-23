@@ -117,6 +117,55 @@ const call = (op, text = '', a = 0, b = 0, c = 0, d = 0, dst = 0, size = 0) =>
     assert.equal(call('pausar', '', 0), 1);
     assert.equal(call('pausa_confirmada'), 0);
   });
+  check('ROI distinguishes a missing API from transient rejection', () => {
+    const av = context.webapis.avplay;
+    const originalRoi = av.setVideoRoi;
+    try {
+      av.setVideoRoi = undefined;
+      assert.equal(call('roi', '', 0, 0, 3840, 2160), -1);
+      av.setVideoRoi = () => { throw new Error('temporarily unavailable'); };
+      assert.equal(call('roi', '', 0, 0, 3840, 2160), 0);
+      av.setVideoRoi = () => {};
+      assert.equal(call('roi', '', 0, 0, 3840, 2160), 1);
+    } finally {
+      av.setVideoRoi = originalRoi;
+    }
+  });
+  // #426: the hardware plane needs a presentation update after a paused
+  // crop, even when C deduplicates the unchanged destination rectangle.
+  // This proves the bridge contract; only a TV can prove the frozen frame redraw.
+  check('paused aspect presents the current rectangle without resuming (#426)', () => {
+    const av = context.webapis.avplay;
+    const originalRoi = av.setVideoRoi;
+    av.setVideoRoi = () => {};
+    try {
+      call('rect', '', 0, 138, 1920, 804);
+      for (const paused of [false, true]) {
+        call('pausar', '', paused ? 1 : 0);
+        for (const op of ['roi', 'rect']) {
+          const before = context.__avReg().length;
+          const position = context.__nvav.posMs;
+          const args = op === 'roi' ? [244, 0, 1422, 800] : [240, 0, 1440, 1080];
+          assert.equal(call(op, '', ...args), 1);
+          const calls = context.__avReg().slice(before);
+          const rect = op === 'roi' ? 'setDisplayRect(0, 138, 1920, 804)' : 'setDisplayRect(240, 0, 1440, 1080)';
+          assert.ok(calls.includes(rect) || (!paused && op === 'roi'),
+            'paused ROI must reapply its unchanged destination');
+          assert.equal(calls.includes('setDisplayMethod("PLAYER_DISPLAY_MODE_FULL_SCREEN")'), paused,
+            'only PAUSED requests need the presentation update');
+          assert.equal(av.getState(), paused ? 'PAUSED' : 'PLAYING');
+          assert.equal(context.__nvav.tocando, paused ? 0 : 1);
+          assert.equal(context.__nvav.posMs, position);
+          assert.ok(calls.every(entry => /^setDisplay(Rect|Method)\(/.test(entry)),
+            'aspect must not play, pause, seek or reopen');
+        }
+        call('rect', '', 0, 138, 1920, 804);
+      }
+    } finally {
+      av.setVideoRoi = originalRoi;
+      call('pausar', '', 0);
+    }
+  });
   check('app pumps video before any screen can return', () => {
     const app = fs.readFileSync('src/app.c', 'utf8');
     const start = app.indexOf('void app_atualizar(float dt, Uint32 agora)');

@@ -15,6 +15,10 @@ void *SDL_AndroidGetActivity(void);
 #include <stdint.h>
 #include <stdlib.h>
 
+int xtream_url_limitada(const char *u) { (void)u; return 0; }
+int xtream_conexoes_limitadas(void) { return 0; }
+int xtream_conta_ler(XtreamConta *c) { memset(c, 0, sizeof *c); return 0; }
+int stream_kbps_atual(void) { return 0; }
 static int cap4k[4];
 void stream_definir_decoder4k(int h, int a, int v, int av) {
   cap4k[0] = h; cap4k[1] = a; cap4k[2] = v; cap4k[3] = av;
@@ -23,12 +27,19 @@ static struct JNINativeInterface_ jni;
 static const struct JNINativeInterface_ *env = &jni;
 static int chamadasJanela, chamadasNormais, chamadasPosicao, recebidoGeracao, excecao, lancar;
 static int janelaX, janelaY, janelaW, janelaH, janelaEncaixa;
+static int appliedWindow;
+static jboolean JNICALL windowReady(JNIEnv *e, jclass c, jmethodID m, ...) {
+  (void)e; (void)c; (void)m;
+  return appliedWindow == chamadasJanela;
+}
 static unsigned relogio = 100;
 void *SDL_AndroidGetJNIEnv(void) { return &env; }
 void *SDL_AndroidGetActivity(void) { return NULL; }
 Uint32 SDL_GetTicks(void) { return relogio; }
 SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex *)(uintptr_t)1; }
 void marco(const char *s) { (void)s; }
+const char *ling_audio(void) { return ""; }
+void tex_pressao_reproducao(int l) { (void)l; }
 void vel_log(int cent, const char *estado) { (void)cent; (void)estado; }
 
 static jobject JNICALL global(JNIEnv *e, jobject o) { (void)e; return o; }
@@ -83,6 +94,7 @@ int main(void) {
   jni.NewString = texto; jni.DeleteLocalRef = apagar;
   jni.ExceptionCheck = temExcecao; jni.ExceptionClear = limparExcecao;
   jni.CallStaticVoidMethod = chamar;
+  jni.CallStaticBooleanMethod = windowReady;
   Java_space_nuvio_nativelegacy_NvPlayer_nativeIniciar(&env, (jclass)(uintptr_t)3);
   mParar = (jmethodID)(uintptr_t)4;
   assert(video_tocar_posicao("https://example.invalid/filme.mp4", 0));
@@ -94,6 +106,9 @@ int main(void) {
   assert(chamadasJanela == 1);
   assert(janelaX == -189 && janelaY == -80 && janelaW == 2300 && janelaH == 1242);
   assert(janelaEncaixa == 0);
+  assert(!video_janela_pronta());
+  appliedWindow = chamadasJanela;
+  assert(video_janela_pronta());
   // 2. O MESMO retangulo de novo (dois modos que coincidem, videoInfo de
   // novo): nada via JNI — o log da TCL pedia "1920x1037" duas vezes.
   zoomLeve();
@@ -102,6 +117,7 @@ int main(void) {
   // dele (a superficie pode ter sido montada de novo la fora).
   video_recorte_reaplicar();
   assert(chamadasJanela == 2 && janelaX == -189 && janelaW == 2300);
+  assert(!video_janela_pronta()); // Previous layout acknowledgement cannot release a new request.
   video_recorte_reaplicar();
   assert(chamadasJanela == 3);
   puts("ok dedupe do reenvio; reaplicar fora dele de proposito");

@@ -64,6 +64,14 @@ class AspectoTest {
             Roi(0,0,1920,1080); Roi(0,0,1920,1080); Roi(0,0,1920,1080); // 16:9
             Roi(0,138,1920,804); Roi(0,0,1920,1080); Roi(-331,0,2581,1080); // 2.39:1 (1912x800)
             Roi(240,0,1440,1080); Roi(0,0,1920,1080); Roi(0,-180,1920,1440); // 4:3
+            // #426: paused geometry still reaches the native bridge on both hosts.
+            var pausedPlayer=Player.All[Player.All.Count-1];
+            Entry("fPausar",1); Pump();
+            Check(pausedPlayer.State==PlayerState.Paused,"pause acknowledged before aspect");
+            int pausedStarts=pausedPlayer.Starts, pausedSeeks=pausedPlayer.SeekCalls;
+            Simple(240,0,1440,1080); Roi(-331,0,2581,1080);
+            Check(pausedPlayer.State==PlayerState.Paused && pausedPlayer.Starts==pausedStarts && pausedPlayer.SeekCalls==pausedSeeks,"paused aspect never resumes or seeks");
+            Entry("fPausar",0); Pump();
         }
         // #426: Tizen 4.0 plane takes no off-screen ROI. Everything stays inside
         // the panel, contain-fit and centered; on-screen requests are untouched.

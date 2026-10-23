@@ -1,7 +1,9 @@
 #!/bin/sh
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 set -eu
 cd "$(dirname "$0")/.."
-TMP=$(mktemp -d /tmp/nuvio-dts-debug-test.XXXXXXXX)
+TMP=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-dts-debug-test.XXXXXXXX)
 trap 'rm -rf "$TMP"' EXIT
 for mode in production debug; do
   FLAGS=''

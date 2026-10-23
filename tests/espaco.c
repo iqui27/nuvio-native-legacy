@@ -82,7 +82,7 @@ static void confere(const char *onde, const char *veio, const char *quer) {
   printf("ok   %-22s \"%s\"\n", onde, veio);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
   static const struct { int lg; const char *tecla; } ROTULO[] = {
     { IDIOMA_EN, "space" }, { IDIOMA_DE, "Leertaste" }, { IDIOMA_RU, "пробел" },
     { IDIOMA_UK, "пробіл" }, { IDIOMA_JA, "スペース" }, { IDIOMA_ZHCN, "空格" },
@@ -90,6 +90,27 @@ int main(void) {
   };
   size_t i;
 
+  if (argc > 1 && !strcmp(argv[1], "spacing")) {
+    int ops[] = { AJ_ESPACO_FILEIRAS, AJ_ESPACO_TITULOS };
+    for (int o = 0; o < 2; o++) {
+      for (int v = 50; v <= 300; v += 10) {
+        valor[ops[o]] = v;
+        assert(passoAdiante(ops[o], -1) == (v <= 50 ? 50 : ((v - 51) / 25) * 25 + 50));
+        assert(passoAdiante(ops[o], 1) == (v >= 300 ? 300 : ((v - 50) / 25 + 1) * 25 + 50));
+        assert(valor[ops[o]] == v);  // preserva o valor carregado
+      }
+    }
+    puts("spacing legacy: ok"); return 0;
+  }
+  if (argc > 1 && !strcmp(argv[1], "flow-i18n")) {
+    const int langs[] = { IDIOMA_PT, IDIOMA_EN, IDIOMA_JA, IDIOMA_ZHCN, IDIOMA_ZHTW };
+    const char *names[] = { "Fluxo de capas", "Cover Flow", "カバーフロー", "封面流", "封面流" };
+    for (int l = 0; l < 5; l++) {
+      valor[AJ_IDIOMA] = langs[l] + 1;
+      confere("flow chip", i18n("Fluxo de capas"), names[l]);
+    }
+    puts("flow i18n: ok"); return 0;
+  }
   valor[AJ_IDIOMA] = IDIOMA_PT + 1;
 
   alvo = busca_evento;

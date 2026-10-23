@@ -4,6 +4,7 @@
 // cursor e estado vazio depois de duas letras. A lista real e assincrona e fica
 // para o teste manual do aparelho; aqui o importante e a casca da interacao.
 #include "busca.h"
+#include "nvtmp.h"
 #include "buscasrec.h"
 #include "dados.h"
 #include "ajustes.h"
@@ -14,6 +15,7 @@
 #include "catalogo.h"
 #include "sistexto.h"
 #include "spotpessoa.h"
+#include "vidro_telas.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -48,12 +50,14 @@ static void quadro(void) {
   tex_novo_quadro();
   tex_bombear(12);
   gfx_novo_quadro();
+  vt_antes();
   busca_atualizar(1.0f / 60.0f, SDL_GetTicks());
   glClearColor(0.051f, 0.051f, 0.051f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
   busca_desenhar(SDL_GetTicks());
   rail_shot_desenhar(MENU_BUSCAR);
-  SDL_GL_SwapWindow(janela);
+  vt_depois();
+  if (!vt_ligado()) SDL_GL_SwapWindow(janela);
 }
 
 // `ms` > 0: grava depois de tantos milissegundos de quadros, e nao depois de
@@ -81,7 +85,7 @@ static void capturaEm(const char *nome, Uint32 ms) {
 static void captura(const char *nome) { capturaEm(nome, 0); }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-busca";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-busca");
   const char *dir = getenv("NUVIO_DADOS");
   char nome[600];
   SDL_GLContext gl;
@@ -107,7 +111,19 @@ int main(int argc, char **argv) {
   assert(!strcmp(dados_dir(), dir));
   ajustes_iniciar();
   if (getenv("NUVIO_SHOT_SOLIDO")) ajustes_aplicar_blob("{\"vidro\":false}");
+  if (getenv("NUVIO_SHOT_ESCALA")) gfx_escala_txt_definir((float)atof(getenv("NUVIO_SHOT_ESCALA")));
   busca_iniciar();
+  // NUVIO_VIDRO_TELAS=<dir> (tests/vidro_telas.sh): glass budget, popular grid.
+  if (vt_ligado()) {
+    int i;
+    vt_vidro(); busca_iniciar();
+    for (i = 0; i < 120; i++) { quadro(); SDL_Delay(2); }
+    vt_zerar(); for (i = 0; i < 30; i++) quadro();
+    vt_png("busca"); vt_relatar("search", 1);
+    for (i = 0; i < 8; i++) { tecla(SDLK_RIGHT); quadro(); quadro(); quadro(); }
+    vt_relatar("search", 0);
+    return vtFalhas ? 1 : 0;
+  }
 
   snprintf(nome, sizeof nome, "%s-vazio.bmp", saida);
   captura(nome);
@@ -118,6 +134,17 @@ int main(int argc, char **argv) {
   tecla(SDLK_g);
   snprintf(nome, sizeof nome, "%s-digitado.bmp", saida);
   captura(nome);
+  // ?!# page: bottom row, 4th key; types "é" and ":".
+  { int i;
+    for (i = 0; i < 6; i++) tecla(SDLK_DOWN);
+    for (i = 0; i < 3; i++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN);
+    for (i = 0; i < 6; i++) tecla(SDLK_UP);
+    for (i = 0; i < 4; i++) tecla(SDLK_RIGHT);
+    tecla(SDLK_RETURN);
+    snprintf(nome, sizeof nome, "%s-simbolos.bmp", saida);
+    captura(nome);
+  }
 
   // COM HISTORICO: campo vazio mostra as pilulas no lugar do estado vazio.
   // Termos de tamanhos diferentes e um longo, para a quebra de linha e o
@@ -154,7 +181,7 @@ int main(int argc, char **argv) {
   captura(nome);
   { int i;
     for (i = 0; i < 6; i++) tecla(SDLK_DOWN);      /* fileira de baixo */
-    for (i = 0; i < 3; i++) tecla(SDLK_RIGHT);     /* tecla de layout */
+    for (i = 0; i < 4; i++) tecla(SDLK_RIGHT);     /* tecla de layout */
     tecla(SDLK_RETURN);                            /* cirilico */
     snprintf(nome, sizeof nome, "%s-cirilico.bmp", saida);
     captura(nome);

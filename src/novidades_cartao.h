@@ -44,7 +44,7 @@ void novcartao_evento(const SDL_Event *e);
 void novcartao_atualizar(float dt, Uint32 agora);
 void novcartao_desenhar(Uint32 agora);
 
-const char *novcartao_versao(void);    // "2.0.5"
+const char *novcartao_versao(void);    // "2.0.7"
 const char *novcartao_arquivo(void);   // a marca de "ja visto" desta versao
 
 // ---- Para a captura e os testes.

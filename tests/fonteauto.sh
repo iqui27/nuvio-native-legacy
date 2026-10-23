@@ -13,7 +13,7 @@ cc -O1 -g -Wall -Wextra -Isrc src/fonteauto.c tests/fonteauto.c -o "${TMPDIR:-/t
 # streams.c antes. (O paralelismo de 2.0.2, so para fontes ja em cache no debrid, mora em
 # fonteparalela.c e e chamado por stream_primeira_boa atras do ajuste; ver
 # tests/fonteparalela.sh.)
-corpo=$(awk '/^int stream_primeira_boa\(/,/^}/' src/streams.c)
+corpo=$(awk '/^int stream_primeira_boa_sessao\(/,/^}/' src/streams.c)
 if [ -z "$corpo" ]; then echo "fonteauto: stream_primeira_boa sumiu de streams.c"; exit 1; fi
 if printf '%s' "$corpo" | grep -q 'pthread_create'; then
   echo "fonteauto: stream_primeira_boa voltou a criar fios (issue #130)"; exit 1

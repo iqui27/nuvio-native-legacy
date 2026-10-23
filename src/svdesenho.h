@@ -63,9 +63,12 @@ void  svd_barra(GfxRect r, int pct, float a);
 
 // O CARTAO DEITADO (E1): arte 16:9, veu embaixo, titulo, status e barra.
 // `foco` acende o aro de foco da home por fora.
+// Home card focus ring (accent outline / glass), shared by every home-style card.
+void  svd_aro_foco(GfxRect r, float raio, float f, float a);
 void  svd_cartao(GfxRect r, const SvEvento *ev, float foco, float a, Uint32 t);
 // Cartaz 2:3 (ou arte) com o esqueleto enquanto nao chega.
 void  svd_poster(GfxRect r, const char *url, float raio, float a);
+int   svd_arte_card(GfxRect r, const char *url, float raio, float a);
 
 // UMA PILULA DA CADEIA ("Voce mandou", "viu", "gostou") e o separador. Devolve
 // a largura gasta. estilo: 0 neutro, 1 feito (verde), 2 gostou (realce quente).

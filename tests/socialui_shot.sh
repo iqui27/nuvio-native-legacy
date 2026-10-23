@@ -1,11 +1,13 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas do social redesenhado (fileira de amigos, painel Atividade/Amigos,
 # perfil do amigo), em PNG, sem rede. Nao entra na suite (*_shot).
 #
 #   bash tests/socialui_shot.sh /tmp/nv-socialui
 set -eu
 cd "$(dirname "$0")/.."
-saida="${1:-/tmp/nv-socialui}"
+saida="${1:-${TMPDIR:-/tmp}/nv-socialui}"
 mkdir -p "$saida"
 NUVIO_DADOS=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-socialui-shot.XXXXXX")
 export NUVIO_DADOS

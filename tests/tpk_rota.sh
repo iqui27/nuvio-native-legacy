@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # A .so ENCENADA do .tpk 6+ tem de ser a que os DllImport chamam (#184).
 #
 # MEDIDO na S90D e na UE75U8072F (Tizen 9): o host dizia "loaded staged lib by
@@ -17,7 +19,7 @@ set -eu
 cd "$(dirname "$0")/.."
 export DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}" PATH="$HOME/.dotnet:$PATH" DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 command -v dotnet >/dev/null 2>&1 && command -v cc >/dev/null 2>&1 || { echo "pulado: sem dotnet ou cc"; exit 0; }
-T=$(mktemp -d /tmp/nv-tpk-rota.XXXXXX)
+T=$(mktemp -d ${TMPDIR:-/tmp}/nv-tpk-rota.XXXXXX)
 trap 'rm -rf "$T"' EXIT
 cp tests/tpk_rota/TpkRota.csproj tests/tpk_rota/Rota.cs "$T/"
 sed -i '' "s#../../tizen-tpk/Carga.cs#$PWD/tizen-tpk/Carga.cs#" "$T/TpkRota.csproj" 2>/dev/null || \

@@ -25,6 +25,7 @@
 #include "redesaude.h"
 #include <math.h>
 #include "agenda.h"
+#include "perfis.h"
 #include "catalogo.h"
 #include "salvos.h"
 #include "sessao.h"
@@ -202,14 +203,25 @@ static void vistosLer(void) {
   free(t);
 }
 static int foiVisto(const char *id) {
+  char chave[72];
   int i;
+  int privado = !strcmp(id, "rec") || !strncmp(id, "agenda:", 7) ||
+                !strncmp(id, "pedidos:", 8);
+  if (privado) {
+    snprintf(chave, sizeof chave, "p%d:%s", perfis_ativo(), id);
+    for (i = 0; i < nVistos; i++) if (!strcmp(vistos[i], chave)) return 1;
+    // As marcas antigas pertenciam ao perfil principal.
+    if (perfis_ativo() != 1) return 0;
+  }
   for (i = 0; i < nVistos; i++) if (!strcmp(vistos[i], id)) return 1;
   return 0;
 }
 static void marcarVisto(const char *id) {
   if (foiVisto(id)) return;
   if (nVistos >= 120) { memmove(vistos[0], vistos[1], sizeof vistos[0] * 119); nVistos = 119; }
-  snprintf(vistos[nVistos++], sizeof vistos[0], "%s", id);
+  if (!strcmp(id, "rec") || !strncmp(id, "agenda:", 7) || !strncmp(id, "pedidos:", 8))
+    snprintf(vistos[nVistos++], sizeof vistos[0], "p%d:%s", perfis_ativo(), id);
+  else snprintf(vistos[nVistos++], sizeof vistos[0], "%s", id);
   vistosSujos = 1;
 }
 static void vistosGravar(void) {
@@ -411,7 +423,11 @@ int avisos_enviar_diagnostico(const char *execucao_id, const char *relatorio,
            "{\"versao\":\"%s\",\"plataforma\":\"%s\",\"execucao_id\":\"%s\",\"texto\":\"%s\"}",
            NV_VERSAO,
 #ifdef __EMSCRIPTEN__
+#ifdef NV_VIDAA
+           "vidaa",
+#else
            "tizen",
+#endif
 #elif defined(NV_TPK)
            "tizen-tpk",
 #elif defined(NV_ANDROID)
@@ -484,18 +500,37 @@ static void *enviarRegistro(void *u) {
   int status = 0;
   int manual = (u == &ATUAL || u == &AUTO_ATUAL);
   int automatico = (u == &AUTO_ATUAL || u == &AUTO_ANTERIOR);
+  int comAnterior = (u == &ATUAL);
 #ifdef __EMSCRIPTEN__
   { const char *fonte = manual ? logAtual : logAnterior;
     if (fonte) { texto = strdup(fonte); if (texto) nTexto = strlen(texto); } }
 #else
-  { const char *arq = manual ? registro_arquivo() : AV_LOG_ANTERIOR;
-    FILE *f = arq ? fopen(arq, "rb") : NULL;
+  { const char *arq = manual ? registro_arquivo() : (AV_LOG_ANTERIOR && AV_LOG_ANTERIOR[0] ? AV_LOG_ANTERIOR : "");
+    FILE *f = (arq && arq[0]) ? fopen(arq, "rb") : NULL;
     if (f) {
-      long tam;
-      fseek(f, 0, SEEK_END); tam = ftell(f);
-      if (tam > AV_REGISTRO_MAX) fseek(f, tam - AV_REGISTRO_MAX, SEEK_SET); else rewind(f);
-      texto = malloc(AV_REGISTRO_MAX + 1);
-      if (texto) { nTexto = fread(texto, 1, AV_REGISTRO_MAX, f); texto[nTexto] = 0; }
+      size_t max = automatico ? AV_REGISTRO_AUTO_MAX : AV_REGISTRO_MAX;
+      FILE *ant = NULL;
+      char *cauda = NULL;
+      size_t nCauda = 0;
+      if (comAnterior) ant = fopen(AV_LOG_ANTERIOR, "rb");
+      if (ant) {
+        cauda = malloc(max / 4 + 1);
+        if (cauda) nCauda = lerRegistroCabecaCauda(ant, cauda, max / 4);
+        fclose(ant);
+        if (nCauda && !strstr(cauda, "[player]") && !strstr(cauda, "[video]") &&
+            !strstr(cauda, "[queda]")) { free(cauda); cauda = NULL; nCauda = 0; }
+      }
+      texto = malloc(max + nCauda + 64);
+      if (texto) nTexto = lerRegistroCabecaCauda(f, texto, max);
+      if (texto && nCauda && nTexto + 32 + nCauda < max + nCauda + 64) {
+        int m = snprintf(texto + nTexto, 48, "\n--- sessao anterior ---\n");
+        if (m > 0) {
+          memcpy(texto + nTexto + m, cauda, nCauda);
+          nTexto += (size_t)m + nCauda;
+          texto[nTexto] = 0;
+        }
+      }
+      free(cauda);
       fclose(f);
     } }
 #endif
@@ -523,7 +558,11 @@ static void *enviarRegistro(void *u) {
              "{\"versao\":\"%s\",\"plataforma\":\"%s\",\"quando\":\"%s\",\"texto\":\"%s\"}",
              NV_VERSAO,
 #ifdef __EMSCRIPTEN__
+#ifdef NV_VIDAA
+             "vidaa",
+#else
              "tizen",
+#endif
 #elif defined(NV_TPK)
              "tizen-tpk",
 #elif defined(NV_ANDROID)
@@ -546,7 +585,7 @@ static void *enviarRegistro(void *u) {
   { char url[300];
     Uint32 t0 = SDL_GetTicks();
     snprintf(url, sizeof url, "%s/v1/registro", NV_REC_URL);
-    resp = rede_postar_st(url, 30, cab, corpo, &status);
+    resp = rede_postar_repetindo(url, 30, cab, corpo, &status, 3);
     if (automatico && status >= 200 && status < 300) ultimoHashAuto = hAuto;
     if (!automatico) {
       char id[32], cod[8] = "";
@@ -641,7 +680,11 @@ static void *fioCanalFn(void *u) {
       if (ate[0] && strcmp(hoje, ate) > 0) ok = 0;
       if (ateV[0] && versaoMaior(NV_VERSAO, ateV)) ok = 0;
 #ifdef __EMSCRIPTEN__
+#ifdef NV_VIDAA
+      if (plat[0] && strcmp(plat, "todas") && strcmp(plat, "vidaa")) ok = 0;
+#else
       if (plat[0] && strcmp(plat, "todas") && strcmp(plat, "tizen")) ok = 0;
+#endif
 #elif defined(NV_TPK)
       // O .tpk tambem e Samsung: vale o "tizen" de sempre, mais o "tizen-tpk"
       // so dele. O anuncio do proprio preview (id com "tpk-preview") nao faz
@@ -960,8 +1003,8 @@ static void cartaoDesenhar(void) {
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, 0.70f * a);
   // Mantem a luz ambiente do cartao para dar profundidade sem tornar o estado
   // de foco da acao um bloco saturado.
-  gfx_cor((GfxRect){ x, y, W, H }, 28.0f / H, 0.055f, 0.058f, 0.068f, 0.94f * a);
-  gfx_luz_canto((GfxRect){ x, y, W, H }, 28.0f / H, W * 0.05f, -W * 0.15f, W * 0.5f, ar, ag, ab, 0.22f * a);
+  gfx_vidro_ou_solido((GfxRect){ x, y, W, H }, 28.0f / H, GFX_VIDRO_DENS_MODAL, a, 0.055f, 0.058f, 0.068f, 0.94f);
+  if (!ajustes_vidro()) gfx_luz_canto((GfxRect){ x, y, W, H }, 28.0f / H, W * 0.05f, -W * 0.15f, W * 0.5f, ar, ag, ab, 0.22f * a);
   gfx_cor((GfxRect){ x + 56.0f, y + 56.0f, 56.0f, 56.0f }, 0.5f, 0.16f, 0.17f, 0.20f, a);
   gfx_icone((GfxRect){ x + 69.0f, y + 69.0f, 30.0f, 30.0f }, "fluxo", 0.62f, 0.80f, 0.96f, a);
   { TxtLinha t = txt_linha(TXT_TITULO3, i18n("O app fechou sozinho"), 246, 247, 252, 255);
@@ -1104,6 +1147,22 @@ const char *avisos_pediu_abrir(void) {
   return saida;
 }
 int avisos_pediu(void) { int c = pediuCodigo; pediuCodigo = 0; return c; }
+
+void avisos_abrir_sessao(void) {
+  pthread_mutex_lock(&trava);
+  // As marcas ja possuem o dono no id; gravar nao as transfere para o novo perfil.
+  vistosGravar();
+  for (int i = n - 1; i >= 0; i--)
+    if (itens[i].tipo == AV_REC || itens[i].tipo == AV_AGENDA || itens[i].tipo == AV_PEDIDO)
+      tirar(itens[i].id);
+  aberto = foco = 0; entrada = rol = 0.0f; okDesde = 0;
+  toastN = toastPendente = 0; recAnunciada = -1;
+  pediuAbrir[0] = 0; pediuCodigo = 0;
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toqueAvisos);
+#endif
+  pthread_mutex_unlock(&trava);
+}
 
 // PONTEIRO (#99): a linha sob o cursor vira o foco, pela MESMA variavel das
 // setas. Trocar de linha solta um OK afundado, como a seta faz.
@@ -1514,7 +1573,7 @@ void avisos_lista_desenhar_ptr(float x, float y0, float w, float a, int focoLinh
     const char *acao = NULL;
     if (focar) ponteiro_alvo_faixa(x, y, w, rowH, clipY0, clipY1, focar, NULL, i, 0);
     if (f) {
-      if (ajustes_vidro()) gfx_cor(row, 22.0f / row.h, 1, 1, 1, .12f * a);
+      if (ajustes_vidro()) { if (!gfx_foco_placa(row, 22.0f / row.h, 1.0f, a)) gfx_cor(row, 22.0f / row.h, 1, 1, 1, .12f * a); }
       else {
         gfx_rect((GfxRect){ row.x - 14.0f, row.y - 2.0f, row.w + 28.0f, row.h + 30.0f }, 0,
                  GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, .30f * a);
@@ -1569,7 +1628,7 @@ void avisos_lista_desenhar_ptr(float x, float y0, float w, float a, int focoLinh
     GfxRect row = { x, y, w, AVL_TODOS_H };
     if (focar) ponteiro_alvo_faixa(x, y, w, AVL_TODOS_H, clipY0, clipY1, focar, NULL, n, 0);
     if (f) {
-      if (ajustes_vidro()) gfx_cor(row, 22.0f / row.h, 1, 1, 1, .12f * a);
+      if (ajustes_vidro()) { if (!gfx_foco_placa(row, 22.0f / row.h, 1.0f, a)) gfx_cor(row, 22.0f / row.h, 1, 1, 1, .12f * a); }
       else gfx_cor(row, 22.0f / row.h, .169f, .176f, .204f, a);
     }
     if (ajustes_vidro()) gfx_cor((GfxRect){ x + AVL_PADX, y + 16.0f, 52.0f, 52.0f }, 0.5f, 1, 1, 1, .08f * a);
@@ -1745,8 +1804,8 @@ static void avisos_desenharCorpo_(Uint32 agora) {
   // a nova superficie tonal sem retirar a profundidade aprovada da camada.
   { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
     GfxRect p = { AVP_X + dx, 24.0f, AVP_W, NV_TELA_H - 48.0f };
-    gfx_cor(p, 28.0f / AVP_W, 0.055f, 0.058f, 0.068f, 0.94f * a);
-    gfx_luz_canto(p, 28.0f / AVP_W, AVP_W * 0.9f, -AVP_W * 0.1f, AVP_W * 0.65f, ar, ag, ab, 0.22f * a); }
+    gfx_vidro_ou_solido(p, 28.0f / AVP_W, GFX_VIDRO_DENS_MODAL, a, 0.055f, 0.058f, 0.068f, 0.94f);
+    if (!ajustes_vidro()) gfx_luz_canto(p, 28.0f / AVP_W, AVP_W * 0.9f, -AVP_W * 0.1f, AVP_W * 0.65f, ar, ag, ab, 0.22f * a); }
   { TxtLinha t = txt_linha(TXT_HEADLINE, i18n("Avisos"), 240, 242, 248, 255);
     txt_desenhar_alpha(t, AVP_X + dx + AVP_MARG, 64.0f, a); }
   txt_bloco(TXT_CAPTION, i18n("Recomendações, estreias, versões novas, avisos de quem faz o app e o que aconteceu com ele."),
@@ -1761,7 +1820,7 @@ static void avisos_desenharCorpo_(Uint32 agora) {
     toquerol_vincular(&toqueAvisos, (GfxRect){AVP_X + dx, AVP_TOPO, AVP_W, areaH}, gfx_escala(),
                      0, total - areaH, 1, &rol);
     if (aberto && !cartao && a > .99f) ponteiro_rolagem(toqueAvisosRolar);
-    if (!toqueAvisos.livre)
+    if (!toquerol_livre(&toqueAvisos))
 #endif
     rol += (alvo - rol) * 0.25f; }
   // A linha da ilha tem 22 de recuo proprio: a caixa dela sai 22 para fora,

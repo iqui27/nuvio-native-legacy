@@ -1,5 +1,6 @@
 // Ver celular.h para o porque e as regras de seguranca.
 #include "celular.h"
+#include "posterprov.h"
 #include <string.h>
 
 #ifdef __EMSCRIPTEN__
@@ -227,7 +228,7 @@ static void montarPaginas(const char *titulo) {
     "if(navigator.clipboard&&navigator.clipboard.readText){c.hidden=false;"
     "c.onclick=function(){navigator.clipboard.readText().then(function(x){t.value=x;}).catch(function(){t.focus();});};}"
     "</script></body></html>",
-    idioma_iso(lang), cel, cv, t, h1, token, CEL_CORPO_MAX / 4, ph, colar, enviar);
+    idioma_iso(lang), cel, cv, t, h1, token, PP_MODELO_MAX - 1, ph, colar, enviar);
   snprintf(pagEnviado, sizeof pagEnviado,
     "<!doctype html><html lang='%s'><head><meta charset=utf-8><title>%s</title>" CEL_ESTILO "%s"
     "</head><body><main class=v><div class=c>&#10003;</div>" CEL_MARCA

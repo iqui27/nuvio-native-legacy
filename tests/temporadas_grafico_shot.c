@@ -12,6 +12,7 @@
 // E confere o gesto: OK numa coluna leva a fileira de episodios para aquela
 // temporada, no primeiro episodio nao visto.
 #include <SDL2/SDL.h>
+#include "nvtmp.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <stdio.h>
@@ -164,7 +165,7 @@ static void tecla(SDL_Keycode k, int up) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-tgraf";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-tgraf");
   char nome[600];
   SDL_GLContext gl;
   const char *dd;

@@ -9,11 +9,15 @@
 #include <SDL2/SDL.h>
 
 int  biblioteca_iniciar(void);
+void biblioteca_abrir_sessao(void); // foco/fonte transitorios; conserva preferencias
 void biblioteca_evento(const SDL_Event *e);
 void biblioteca_atualizar(float dt, Uint32 agora);
 void biblioteca_desenhar(Uint32 agora);
 int  biblioteca_quer_sair(void);   // 1 quando o Back deve fechar a tela
+int  biblioteca_pediu_relogio(void);
 void biblioteca_encerrar(void);
+// Headless navigation checks: actual row/column and selected action.
+void biblioteca_teste_foco(int *fileira, int *coluna, int *acao);
 
 // Optional personal-server ORIGENS rows. Provider owns data and selection.
 // Called on the UI thread; no server connection or network work belongs here.

@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas da Biblioteca renovada, em BMP, sem interacao e sem rede.
 # Nao entra na suite: precisa de janela GL e de olho humano para julgar.
 #
@@ -8,7 +10,7 @@
 # nao for ela: fixar uma lista GRAVA.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-saida="${1:-/tmp/nuvio-biblioteca}"
+saida="${1:-${TMPDIR:-/tmp}/nuvio-biblioteca}"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-bibshot-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 sources=()

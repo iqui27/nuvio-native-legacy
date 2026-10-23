@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Roda o player do alvo Tizen contra um DUBLE de webapis.avplay e imprime a
 # sequencia de chamadas. Ver o cabecalho de tools/teste-avplay.c para o que isto
 # prova e o que nao prova.
@@ -6,7 +8,7 @@ set -e
 cd "$(dirname "$0")/.."
 [ -n "$EMSDK" ] || source ~/emsdk/emsdk_env.sh >/dev/null 2>&1
 SAIDA=build/teste-av
-LOG=${NUVIO_LOG:-/tmp/nvteste.txt}
+LOG=${NUVIO_LOG:-${TMPDIR:-/tmp}/nvteste.txt}
 mkdir -p "$SAIDA"
 ENV_D=$(tools/env.sh)
 

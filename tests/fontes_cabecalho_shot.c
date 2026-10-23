@@ -11,6 +11,7 @@
 // da folha. NAO ENTRA NA SUITE (*_shot.sh): janela GL e olho humano.
 //   bash tests/fontes_cabecalho_shot.sh /Volumes/ExternalSSD/nv-202-fontes-out/after
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "player.h"
 #include "ajustes.h"
 #include "faixas.h"
@@ -90,7 +91,7 @@ static void fonte(Stream *s, const char *prov, const char *rot, const char *desc
 int main(int argc, char **argv) {
   const char *li = getenv("NUVIO_SHOT_IDIOMA");
   Stream v[6];
-  saida = argc > 1 ? argv[1] : "/tmp/nv-fontes-cab";
+  saida = argc > 1 ? argv[1] : nvt("/nv-fontes-cab");
   noPlayer = getenv("NUVIO_SHOT_PLAYER") && atoi(getenv("NUVIO_SHOT_PLAYER"));
   video_shot_pode_forcar_sdr(getenv("NUVIO_SHOT_SEMHDR") && atoi(getenv("NUVIO_SHOT_SEMHDR")));
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");

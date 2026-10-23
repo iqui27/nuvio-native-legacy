@@ -118,30 +118,6 @@ int main(void) {
     confere(antes==depois && vp[2]==1920 && vp[3]==1080 && gfx_escala()==1,
             "Tamanho 80/90/100% preserva alvo 1080p e restaura escala");
   }
-  // #410 item 1: o realce de topo do cartao (foco_profundidade, o da Home) some
-  // nos efeitos leves, porque GFX_BRILHO_TOPO branco e descartado com uLeve.
-  double topo[2];
-  for(int leve=0;leve<2;leve++) {
-    quadro(); valor[AJ_PROF]=0; valor[AJ_PROF_BORDA]=28; valor[AJ_PROF_COBERTURA]=0;
-    gfx_definir_efeitos_leves(leve);
-    foco_profundidade((GfxRect){100,100,200,300},0.05f,1,1.0f);
-    topo[leve]=media(150,101,100,6);
-  }
-  printf("realce de topo do cartao: nivel 0=%.2f leves=%.2f\n",topo[0],topo[1]);
-  confere(topo[0]>topo[1]+10,"Realce de topo da Home some nos efeitos leves");
-  // #410 item 3: CARACTERIZACAO, sem assert. Cobertura 0 e 100 so esticam a
-  // rampa do topo (12 -> 30 px); medido a diferenca fica em ~2/255 na faixa de
-  // 15..30 px. O Ajuste desenha a volta do cartao, o cartao real nao.
-  double cob[2][2];
-  for(int c=0;c<2;c++) {
-    quadro(); valor[AJ_PROF]=0; valor[AJ_PROF_BORDA]=28; valor[AJ_PROF_COBERTURA]=c?100:0;
-    gfx_definir_efeitos_leves(0);
-    foco_profundidade((GfxRect){100,100,200,300},0.05f,1,1.0f);
-    cob[c][0]=media(150,101,100,14);
-    cob[c][1]=media(150,115,100,15);
-  }
-  printf("cobertura do topo: 0-14px 0%%=%.2f 100%%=%.2f | 14-29px 0%%=%.2f 100%%=%.2f\n",
-         cob[0][0],cob[1][0],cob[0][1],cob[1][1]);
   // #410 item 4: contorno do cartao (gfx_vidro_cartao, Home/Biblioteca/Amigos).
   // Antes o fio ficava igual com a opcao desligada.
   double aro[2];

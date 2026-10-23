@@ -1,6 +1,7 @@
 // Retomar real de app.c: fonte fora da lista conserva o release e os extras.
 #define fontevolta_conferir teste_conferir
 #include "../src/app.c"
+#include "stub_m3u.h"
 #undef fontevolta_conferir
 #include "../src/legauto.c"
 #include <assert.h>

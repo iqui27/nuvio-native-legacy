@@ -18,7 +18,11 @@ USER_ID = "aa11bb22cc33dd44ee55ff6677889900"
 LIB_MOVIES = "1111aaaa2222bbbb3333cccc4444dddd"
 LIB_SHOWS = "5555eeee6666ffff7777aaaa8888bbbb"
 LIB_MUSIC = "9999cccc0000dddd1111eeee2222ffff"
-SERIES = "abcdef0123456789abcdef0123456789"      # no external id: stays opaque
+# AIOMetadata-style server: one view per catalog, mixed collection types (#468).
+CATALOG_VIEWS = [{"Name": "Catalog %d" % i, "Id": "%032x" % (0xca7a1000 + i),
+                  "CollectionType": ["movies", "tvshows", "boxsets", ""][i % 4]} for i in range(9)] + [
+    {"Name": "Playlists", "Id": "%032x" % 0xca7a1fff, "CollectionType": "playlists"}]
+SERIES = "abcdef0123456789abcdef0123456789"
 SERIES2 = "5e1e5e1e5e1e5e1e5e1e5e1e5e1e5e1e"     # IMDb + TVDB: matched
 PASSWORD = "pässwörd \"quoted\""
 
@@ -211,8 +215,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {"Items": [
                 {"Name": "Movies", "Id": LIB_MOVIES, "CollectionType": "movies"},
                 {"Name": "Shows", "Id": LIB_SHOWS, "CollectionType": "tvshows"},
-                {"Name": "Music", "Id": LIB_MUSIC, "CollectionType": "music"}],
-                "TotalRecordCount": 3})
+                {"Name": "Music", "Id": LIB_MUSIC, "CollectionType": "music"}] + CATALOG_VIEWS,
+                "TotalRecordCount": 3 + len(CATALOG_VIEWS)})
         if p == "/Playlists/00000000000000000000000000005002/Items":
             items = [dict(Id=episode_id(1, 2), Type="Episode", SeriesId=SERIES,
                           SeriesName="Show", Name="Second", ParentIndexNumber=1, IndexNumber=2),

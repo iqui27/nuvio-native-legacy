@@ -3,6 +3,7 @@
 // FBO, quadro por glReadPixels, como tests/explorar_shot.c. Antes das
 // capturas, confere as regras do cartao por evento de tecla.
 #include "novidades142.h"
+#include "nvtmp.h"
 #include "diagnostico.h"
 #include "dados.h"
 #include "ajustes.h"
@@ -119,7 +120,7 @@ static void captura(const char *nome) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-novidades142";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-novidades142");
   const char *dir = getenv("NUVIO_DADOS");
   char nome[700];
   SDL_Window *w;

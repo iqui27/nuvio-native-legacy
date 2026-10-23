@@ -1,0 +1,42 @@
+[package]
+name = "mkvcore"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "EBML/NAL core of src/mkv.c (phase 1 Rust pilot, docs/plans/rust-mapa.md). Enabled in product builds via -DNV_RUST_MKVCORE."
+
+# Standalone: never picked up as a member of another workspace.
+[workspace]
+
+[lib]
+crate-type = ["staticlib"]
+
+[features]
+# Another Rust archive (the DV7 converter) already supplies std personality.
+external-personality = []
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+indexing_slicing = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+undocumented_unsafe_blocks = "deny"
+redundant_clone = "deny"
+needless_collect = "deny"
+
+# A panic must never cross the FFI boundary: abort in every profile. The size
+# flags matter because the Android/TV links are size-sensitive.
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = false

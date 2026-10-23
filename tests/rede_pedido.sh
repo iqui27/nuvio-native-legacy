@@ -15,8 +15,8 @@ base=$(sed -n '1p' "$tmp/ports")
 tlsbase=$(sed -n '2p' "$tmp/ports")
 flags=(-O1 -g -std=gnu11 -Wall -Wextra -Werror -Isrc -pthread)
 if [ "$(uname -s)" != Darwin ]; then flags+=(-ldl); fi
-if [ "${NV_SANITIZERS:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
-if [ "${NV_TSAN:-0}" = 1 ]; then flags+=(-fsanitize=thread -fno-omit-frame-pointer); fi
+if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
+if [ "${SANITIZE:-0}" = thread ]; then flags+=(-fsanitize=thread -fno-omit-frame-pointer); fi
 if [ "${NV_TPK40_TEST:-0}" = 1 ]; then
   printf '%s\n' 'void nv_tpk40_etapa(const char *);' > "$tmp/tpk40.h"
   flags+=(-DNV_TPK40 -include "$tmp/tpk40.h")

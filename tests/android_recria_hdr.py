@@ -18,6 +18,10 @@ fun main() {
     caso("MStar (OMX.MS)", listOf("OMX.MS.HEVC.Decoder"), "MStar")
     caso("TCL do dono (c2.mtk) recria", listOf("c2.mtk.hevc.decoder", "c2.mtk.dvhe.stn.decoder"), null)
     caso("decoder do Google so nao dispensa", listOf("c2.android.avc.decoder"), null)
+    check(RecriaHdr.timeoutRecuperavel(1003, true, 3))
+    check(!RecriaHdr.timeoutRecuperavel(1003, false, 3))
+    check(!RecriaHdr.timeoutRecuperavel(1003, true, 1))
+    check(!RecriaHdr.timeoutRecuperavel(4003, true, 3))
     if (falhas > 0) { println("FAIL KM7: $falhas caso(s)"); kotlin.system.exitProcess(1) }
     println("PASS KM7: Amlogic e MStar nao recriam a superficie no HDR")
 }

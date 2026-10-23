@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "nvtmp.h"
 
 const char *addons_base_por_id(const char *id) { (void)id; return "https://fixture.example"; }
 int addons_n(void) { return 1; }

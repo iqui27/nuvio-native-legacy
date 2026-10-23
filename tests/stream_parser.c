@@ -46,5 +46,60 @@ int main(void) {
   assert(strstr(v[0].descricao,"\n") && v[0].dolbyVision && v[0].dolbyAtmos);
   assert(!strcmp(v[1].descricao,"Show 1080p\n1.4 GB") && v[1].altura==1080);
   free(v);
-  puts("PASS ASan/UBSan: parser isolado, 100 fontes, MP4/DV na última posição.");
+  // Plugin bridge fields are siblings; nested metadata must not name a stream.
+  // Official Nuvio keeps title and description separately (toPluginStream).
+  count=stream_extrair("{\"streams\":["
+    "{\"url\":\"https://example.invalid/bridge\","
+    "\"meta\":{\"name\":\"Error getting meta. Please try again later.\"},"
+    "\"name\":\"4K\",\"title\":\"CastleTVProvider HDR10 DDP 5.1\",\"description\":\"2.1 GB\"},"
+    "{\"url\":\"https://example.invalid/nested\","
+    "\"meta\":{\"name\":\"Error getting meta. Please try again later.\"},"
+    "\"title\":\"HDHub4u 1080p\"}]}","CNCVerse Bridge",&v);
+  assert(count==2);
+  assert(!strcmp(v[0].rotulo,"4K"));
+  assert(!strcmp(v[0].descricao,"CastleTVProvider HDR10 DDP 5.1\n2.1 GB"));
+  assert(v[0].altura==2160 && v[0].tamanhoMB>2000);
+  assert(!strcmp(v[1].rotulo,"CNCVerse Bridge"));
+  assert(!strcmp(v[1].descricao,"HDHub4u 1080p"));
+  free(v);
+  // #499: only explicit add-on signals claim cache; negatives win conflicts.
+  count=stream_extrair("{\"streams\":["
+    "{\"url\":\"https://example.invalid/1\",\"name\":\"⚡️ AIOStreams FHD\"},"
+    "{\"url\":\"https://example.invalid/2\",\"name\":\"[TB+] Torrentio\"},"
+    "{\"url\":\"https://example.invalid/3\",\"name\":\"[RD+] Torrentio\"},"
+    "{\"url\":\"https://example.invalid/4\",\"name\":\"[AD+] Torrentio\"},"
+    "{\"url\":\"https://example.invalid/5\",\"name\":\"[PM+] Torrentio\"},"
+    "{\"url\":\"https://example.invalid/6\",\"clientResolve\":{\"isCached\":true}},"
+    "{\"infoHash\":\"abc\",\"clientResolve\":{\"isCached\":true}},"
+    "{\"url\":\"https://example.invalid/8\"},"
+    "{\"url\":\"https://example.invalid/9\",\"name\":\"[TB download] Torrentio\"},"
+    "{\"infoHash\":\"def\",\"name\":\"⚡ AIOStreams\",\"clientResolve\":{\"isCached\":false}},"
+    "{\"url\":\"https://example.invalid/11\",\"name\":\"[RD+] uncached\"},"
+    "{\"url\":\"https://example.invalid/12\",\"clientResolve\":{\"isCached\":\"true\"}},"
+    "{\"url\":\"https://example.invalid/13\",\"other\":{\"clientResolve\":{\"isCached\":true}}},"
+    "{\"url\":\"https://example.invalid/14\",\"clientResolve\":{\"other\":{\"isCached\":true}}},"
+    "{\"infoHash\":\"ghi\"},"
+    "{\"url\":\"https://example.invalid/16\",\"name\":\"⚡ AIOStreams\",\"clientResolve\":{\"isCached\":false}},"
+    "{\"url\":\"https://example.invalid/17\",\"description\":\"[TB+] 1080p\"}]}","fixture",&v);
+  assert(count==17);
+  for (int i=0;i<7;i++) assert(v[i].emCache && !v[i].foraCache);
+  assert(!strcmp(v[0].rotulo,"⚡️ AIOStreams FHD")); // raw name survives for details
+  for (int i=7;i<16;i++) assert(!v[i].emCache);
+  assert(v[16].emCache && !v[16].foraCache);
+  assert(!v[7].foraCache && v[8].foraCache && v[9].foraCache && v[10].foraCache);
+  for (int i=11;i<count;i++) assert(!v[i].foraCache);
+  free(v);
+  FILE *f = fopen("tests/fixtures/streams_notwebready.json", "r");
+  assert(f);
+  n = fread(json, 1, sizeof json - 1, f);
+  assert(!ferror(f) && feof(f));
+  fclose(f); json[n] = 0;
+  count = stream_extrair(json, "fixture", &v);
+  assert(count == 10);
+  assert(!v[0].notWebReady && v[1].notWebReady && v[2].notWebReady && v[9].notWebReady);
+  assert(!v[2].url[0] && !strcmp(v[2].infoHash, "abc"));
+  for (int i = 3; i < 9; i++) assert(!v[i].notWebReady);
+  assert(!strcmp(v[8].url, "https://example.invalid/media.mp4"));
+  free(v);
+  puts("PASS: parser isolado, cache explicito, notWebReady ancorado e externalUrl sem midia oculto.");
 }

@@ -33,6 +33,7 @@ PY
   -map 0:v -map 1:a -c:v copy -c:a ac3 -metadata:s:a:0 language=pol "$DIR/hdr10.mkv"
 "$FFMPEG" -v error -y -fflags +genpts -f hevc -r 24 -i "$DIR/rpu.hevc" -f lavfi -i "sine=duration=1" \
   -map 0:v -map 1:a -c:v copy -c:a ac3 -metadata:s:a:0 language=pol "$DIR/rpu.mkv"
+. tests/mkvcore_flag.sh
 cc -Isrc tests/mkv_dvrpu.c src/mkv.c src/rede.c src/redeurl.c \
-  -o "$DIR/t" -O1 -g -Wall -I/opt/homebrew/include -Wno-deprecated-declarations
+  -o "$DIR/t" -O1 -g -Wall -I/opt/homebrew/include -Wno-deprecated-declarations ${MKVCORE_CC[@]+"${MKVCORE_CC[@]}"}
 "$DIR/t" "$DIR/rpu.mkv" "$DIR/hdr10.mkv"

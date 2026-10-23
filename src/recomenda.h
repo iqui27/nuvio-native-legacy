@@ -29,6 +29,7 @@
 #include "badges.h"
 #include <SDL2/SDL.h>
 #include <stddef.h>
+#include <stdint.h>
 
 // Teto da lista guardada. 60 x ~900 bytes = ~54 KB estaticos, pela mesma razao
 // de SALVOS_MAX: esta lista e percorrida por quadro com o painel aberto, e o
@@ -124,6 +125,8 @@ int  recomenda_ativo(void);
 // Le cursor e cache do disco. Chamar UMA vez no arranque, depois de
 // dados_iniciar. Nao abre conexao.
 void recomenda_iniciar(void);
+void recomenda_abrir_sessao(void); // carrega somente dados locais deste perfil e invalida fios antigos
+void recomenda_esquecer_conta(void); // logout: apaga caches privados de TODOS os perfis
 
 // Liga a sondagem. A PRIMEIRA chamada cria o fio e faz um ciclo imediato; as
 // seguintes NAO FAZEM NADA.
@@ -413,8 +416,9 @@ enum { REC_SOC_NADA = 0, REC_SOC_INDO, REC_SOC_OK,
        REC_SOC_CURTA,          // busca com menos de 3 letras (nem sai do aparelho)
        REC_SOC_NEGADO };       // explicit 403; different from unavailable source/404
 
-// UMA OPERACAO SOCIAL POR VEZ (a mesma disciplina de vincular/remover): todas
-// devolvem 1 quando entraram na fila e o resultado sai em recomenda_soc_estado().
+// UMA OPERACAO SOCIAL DE TELA POR VEZ (como vincular/remover). Aceitar/recusar
+// ja confirmados tem fila propria; todas devolvem 1 quando entraram na fila
+// e o resultado da abertura atual sai em recomenda_soc_estado().
 int  recomenda_buscar(const char *texto);        // apelido (3+) ou codigo de 6
 int  recomenda_sugeridos_gosto(void);            // ver nota em recomenda.c
 // COMUNIDADE NUVIO NATIVE: todo mundo que publicou o perfil (servidor:
@@ -428,6 +432,10 @@ int  recomenda_ver_perfil(const char *pub);
 int  recomenda_pedir_amizade(const char *pub);
 int  recomenda_aceitar(const char *pub);
 int  recomenda_recusar(const char *pub);
+// Captura a identidade no OK. A resposta confirmada termina com esses
+// cabecalhos mesmo depois de trocar de perfil; o resultado so aparece na
+// abertura que a originou. 1 = enfileirada, 0 = nao entrou na fila.
+int  recomenda_responder_pedido(const char *pub, int aceitar);
 int  recomenda_cancelar_pedido(const char *pub);
 int  recomenda_bloquear(const char *pubOuId);
 int  recomenda_desbloquear(const char *pub);
@@ -468,12 +476,13 @@ void recomenda_atividade_fim(const CatItem *ci, int concluiu);
 typedef struct { char imdb[24]; char titulo[160]; char tipo[8]; int agora; long long criado; } RecAtivAmigo;
 int  recomenda_amigo_atividades(const char *id, RecAtivAmigo *saida, int max);
 int  recomenda_social_mesclar(CatItem *itens, int nTrakt, int max);
+int  recomenda_social_mesclar_sessao(CatItem *itens, int nTrakt, int max, uint64_t sessao);
 // Funde `novos` (n) em `itens`(nTrakt) SEM rede: a regra de uniao, separada
 // para o teste. Devolve o novo total.
 int  rec_social_unir(CatItem *itens, int nTrakt, const CatItem *nuvio, int nNuvio, int max);
 
-// Apaga cache, cursor e marca do cartao do aparelho. Chamar de
-// sync_esquecer_usuario: recomendacao e tao pessoal quanto a lista de salvos.
+// Esquece somente a identidade social do perfil atual (por exemplo, Trakt
+// ligado/desligado). Logout da conta inteira usa recomenda_esquecer_conta.
 void recomenda_esquecer(void);
 // Changes when the account/profile is forgotten. UI caches consume it on their thread.
 unsigned recomenda_geracao(void);

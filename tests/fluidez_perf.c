@@ -39,6 +39,7 @@
 #include "dados.h"
 #include "detail.h"
 #include "extras.h"   // extras_shot_relacionados (NV_SHOT_HOOKS): fileiras do detalhe
+#include "fpscena.h"
 #include "fundo.h"
 #include "gfx.h"
 #include "home.h"
@@ -65,7 +66,7 @@ static const char *dirDados;
 
 typedef struct {
   double upd, des, gpu, fill, fillVis, fillGpu, fillGpuMist;
-  int rects, progs, binds, cheios, cheiosMist, txtRast, upl;
+  int rects, progs, binds, cheios, cheiosMist, txtRast, upl, vidCap, vidPas;
   double txtMs;
   double modo[GFX_NMODOS];
 } Quadro;
@@ -137,7 +138,6 @@ static void quadro(SDL_Window *w, Quadro *q, Uint32 agora) {
   tex_novo_quadro();
   gfx_sem_recorte();
   gfx_ambiente_preparar();
-  fundo_fosco_quadro();   // main.c: vidro fosco
   glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
   gfx_ambiente(1.0f);
@@ -158,6 +158,7 @@ static void quadro(SDL_Window *w, Quadro *q, Uint32 agora) {
     q->rects = gfx_n_rect; q->progs = gfx_n_prog; q->binds = gfx_n_bind;
     q->cheios = gfx_n_cheio; q->cheiosMist = gfx_n_cheio_mistura;
     q->txtRast = txt_rasterizadas; q->txtMs = txt_ms; q->upl = tex_upl_n;
+    q->vidCap = gfx_vidro_capturas; q->vidPas = gfx_vidro_passadas;
     for (k = 0; k < GFX_NMODOS; k++) q->modo[k] = gfx_fill_modo[k];
   }
   SDL_GL_SwapWindow(w);
@@ -262,6 +263,22 @@ static int cmpd(const void *a, const void *b) {
 }
 static double p95(double *v, int n) { qsort(v, (size_t)n, sizeof *v, cmpd); return v[(int)(0.95 * (n - 1))]; }
 
+// FPS GATE (fpscena.h): every reported phase also prints its percentiles and a
+// `FPSBASE <cena> <p95> <upl>` line. Save the output and compare it offline
+// with tests/fps_gate.sh. These CPU samples exclude GPU/swap waits; never
+// compare this baseline with the TV's full frame intervals.
+static void fps_gate_fase(const char *cen, const char *rotulo, const Quadro *qs, int n) {
+  static FpsAmostra am;
+  char nome[96], l[400];
+  int i;
+  snprintf(nome, sizeof nome, "cpu/%s/%s", cen, rotulo);
+  fps_zerar(&am);
+  for (i = 0; i < n; i++) fps_add(&am, qs[i].des + qs[i].upd, qs[i].upl);
+  fps_linha(&am, nome, l, sizeof l);
+  printf("%s\n", l);
+  printf("FPSBASE %s %.3f %ld\n", nome, fps_percentil(&am, 95), am.upl);
+}
+
 static void relatar(const char *cen, const char *rotulo, Quadro *qs, int n) {
   double *v = malloc(sizeof(double) * (size_t)n);
   double su = 0, sd = 0, sg = 0, sf = 0, sfv = 0, sfg = 0, sfm = 0, sm[GFX_NMODOS];
@@ -275,6 +292,7 @@ static void relatar(const char *cen, const char *rotulo, Quadro *qs, int n) {
     st += qs[i].txtRast;
     for (k = 0; k < GFX_NMODOS; k++) sm[k] += qs[i].modo[k];
   }
+  fps_gate_fase(cen, rotulo, qs, n);
   { int pi = 0, su_upl = 0; double pm = -1;
     for (i = 0; i < n; i++) su_upl += qs[i].upl;
     for (i = 0; i < n; i++) if (qs[i].des + qs[i].upd > pm) { pm = qs[i].des + qs[i].upd; pi = i; }
@@ -295,6 +313,9 @@ static void relatar(const char *cen, const char *rotulo, Quadro *qs, int n) {
          (double)sc / n, (double)scm / n, sr / n, sp / n, sb / n, st);
   // O que a GPU pinta de fato (gfx.h, gfx_fill_gpu) e a parte com mistura.
   printf("[%s] %-10s gpu-fill=%.2fx mist=%.2fx\n", cen, rotulo, sfg / n, sfm / n);
+  { long vc = 0, vp = 0; int qc = 0;
+    for (i = 0; i < n; i++) { vc += qs[i].vidCap; vp += qs[i].vidPas; qc += qs[i].vidCap > 0; }
+    printf("[%s] %-10s vidro: capturas=%ld passadas=%ld quadros-com-captura=%d/%d\n", cen, rotulo, vc, vp, qc, n); }
   printf("[%s] %-10s fill por modo:", cen, rotulo);
   for (k = 0; k < GFX_NMODOS; k++) if (sm[k] / n >= 0.005) printf(" %d=%.2f", k, sm[k] / n);
   printf("\n");

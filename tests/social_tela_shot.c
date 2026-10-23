@@ -6,6 +6,7 @@
 // src/social.c e INCLUIDO: `dados` e estatico do modulo e semea-lo por dentro e
 // o unico jeito de ter a lista cheia sem o Trakt no ar.
 #include "../src/social.c"
+#include "nvtmp.h"
 #include "rail_shot.h"
 #include "dados.h"
 #include <SDL2/SDL_image.h>
@@ -49,7 +50,7 @@ static void captura(const char *nome, SDL_Window *win) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-social-tela";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-social-tela");
   const char *dir = getenv("NUVIO_DADOS");
   static const char *const PESSOAS[5] = { "Marina", "Rafa", "Joana", "Pedro", "Lu" };
   static const char *const ACOES[5] = { "assistiu", "assistiu", "avaliou 9", "assistiu", "começou" };

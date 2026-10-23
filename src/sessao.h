@@ -61,6 +61,8 @@ const char *sessao_usuario(void);         // `sub` do JWT; "" quando deslogado
 // 0 (e dst = "") quando nao ha. O antigo sessao_token() saiu de proposito:
 // nao ha como devolver ponteiro para um buffer que outro fio reescreve.
 int sessao_token_copiar(char *dst, size_t n);
+// Local immutable identity for queued actions. Never refreshes or performs HTTP.
+int sessao_identidade_local_copiar(char *usuario, size_t nUsuario, char *jwt, size_t nJwt);
 // Token vencido (ou a 60 s de vencer) NAO sai: a copia renova antes, uma vez,
 // pela mesma renovacao unica do 401. Renovacao falha (servidor fora, sem
 // refresh token, recusa) = 0 e dst = "": nada vai ao Worker.

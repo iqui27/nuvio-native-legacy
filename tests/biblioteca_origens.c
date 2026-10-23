@@ -20,6 +20,7 @@ int main(void) {
     strcpy(items[i].tipo, "movie");
     snprintf(items[i].origem, sizeof items[i].origem, "addon.%d", i);
     items[i].naLista = 1;
+    items[i].listaFontes = 1u << AJ_SALVOS_LOCAL;
   }
   cat_definir(items, 2);
   biblioteca_iniciar();

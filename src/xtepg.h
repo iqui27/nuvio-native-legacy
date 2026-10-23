@@ -34,5 +34,9 @@ int  xtepg_faixa(const char *id, time_t de, time_t ate, EpgProg *out, int cap);
 int  xtepg_faixa_desde(const char *id, time_t de, time_t ate, int pular, EpgProg *out, int cap);
 // Esquece tudo (troca de perfil ou de cadastro do Xtream).
 void xtepg_limpar(void);
+// Distinguish a real empty response from a failed request in the guide.
+enum { XTEPG_PARADO, XTEPG_CARREGANDO, XTEPG_PRONTO, XTEPG_VAZIO, XTEPG_FALHOU };
+int xtepg_estado(const char *id);
+void xtepg_priorizar(const char *id);
 
 #endif

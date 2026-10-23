@@ -38,5 +38,7 @@ void ilhaacao_feita(const IlhaAcao *a);
 void ilhaacao_botao(int botao);
 // 1 se a ultima acao postada ainda tem Desfazer a oferecer (testes).
 int  ilhaacao_tem_desfazer(void);
+// Solta a copia da acao anterior, sem executar Desfazer.
+void ilhaacao_abrir_sessao(void);
 
 #endif

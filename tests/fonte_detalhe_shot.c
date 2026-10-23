@@ -2,6 +2,7 @@
 // Stremio JSON through stream_extrair (multi-line description + emojis).
 //   bash tests/fonte_addon_texto_shot.sh <dir>
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "player.h"
 #include "ajustes.h"
 #include "faixas.h"
@@ -87,7 +88,7 @@ static const char *JSON =
 int main(int argc, char **argv) {
   Stream *v = NULL;
   int count;
-  saida = argc > 1 ? argv[1] : "/tmp/nv-fonte-addon";
+  saida = argc > 1 ? argv[1] : nvt("/nv-fonte-addon");
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);

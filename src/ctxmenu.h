@@ -24,6 +24,9 @@
 void ctx_abrir(int indice);
 // Quick glance uses the same Save/Watched actions and their existing flows.
 void ctx_acao_rapida(const CatItem *titulo, int visto);
+// Fecha a UI e descarta copias/pedidos do perfil anterior. Escritas ja
+// despachadas continuam nos seus proprios workers, com o dono original.
+void ctx_abrir_sessao(void);
 int  ctx_aberto(void);
 void ctx_evento(const SDL_Event *e);
 void ctx_atualizar(float dt, Uint32 agora);
@@ -76,6 +79,7 @@ int  ctx_pediu_extra(void);
 // ctx_inline_pedir(1) ANTES de ctx_abrir_salvo liga o modo (so a lista em linhas).
 void  ctx_inline_pedir(int on);
 float ctx_inline_t(void);
+float ctx_estilo_t(void);   // 0..1: abertura da pagina de estilos
 float ctx_inline_altura(float w, float faixaH);
 void  ctx_inline_desenhar(float x, float y, float w, float faixaH, float a);
 #ifdef NV_TOUCH_UI
@@ -100,9 +104,8 @@ void ctx_fileira(const char *chave, const char *titulo);
 // passa 0 nos outros cartoes.
 void ctx_dispensar_retomar(int on);
 // Menu SO da fileira, para o cartao que nao e titulo (pasta de colecao, pilha
-// fechada do ranking): abre direto no modal de estilo — formas a esquerda,
-// previa da fileira a direita (home_previa_fileira). Nao abre nada se a chave
-// nao aceita forma.
+// fechada do ranking): abre direto no menu de estilo, ao lado da fileira (a
+// propria fileira e a previa). Nao abre nada se a chave nao aceita forma.
 void ctx_abrir_fileira(const char *chave, const char *titulo);
 // MENU DA FILEIRA da Home 2.1 (segurar OK numa colecao ou numa fileira fixada):
 // fixar/tirar a colecao da Home (`pastaId` vazio = nao e colecao), mover,
@@ -110,6 +113,8 @@ void ctx_abrir_fileira(const char *chave, const char *titulo);
 void ctx_abrir_filmenu(const char *chave, const char *titulo, const char *pastaId, int comVistos);
 // 1 UMA vez quando o menu mudou fixacao/ordem/visibilidade: a Home se refaz.
 int  ctx_fil_alterou(void);
+// O retangulo (tela virtual) do menu de estilo aberto; 0 com ele fechado.
+int ctx_estilo_rect(GfxRect *out);
 // O MESMO MENU, aberto pela BIBLIOTECA (biblioteca.c) segurando OK num cartaz.
 // `r` e a caixa do cartaz na tela virtual (1920x1080) e `arte` o poster dele: o
 // menu nasce ao lado e o poster volta por cima do veu, como na home. Sem arte

@@ -19,6 +19,7 @@
 // FOCO SEM CONTORNO (regra do Glass UI): o botao em foco e a pilula cheia no
 // acento; o resto e neutro. Material (vidro/solido) e acento seguem Ajustes.
 #include "novidades20.h"
+#include "dicascontrole.h"
 #include "novidadesfila.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -119,7 +120,7 @@ static const Cap CAP[N20_NCAP] = {
       { "Recomende, responda <b>Já assisti</b>, e receba enquete no relógio (dá pra desligar).", 0, 0, 0 } },
     { { "Pedido de amizade avisa no relógio", 0, 0, 0 }, { "Recusar não avisa a pessoa", 0, 0, 0 },
       { "Assistidas sincronizam sozinhas", 0, 0, 0 }, { "Lista com capa maior", 0, 0, 0 },
-      { "Painel Social abre com o Azul", 0, 0, 0 }, { "Enquetes", "Depende do servidor", TG_CINZA, 0 } },
+      { "Painel Social abre com o CH+", 0, 0, 0 }, { "Enquetes", "Depende do servidor", TG_CINZA, 0 } },
     { "Painel Social", "Amigos no pôster · enquete", NULL },
     "Pessoa única, amigos nos pôsteres, enquetes." },
   { 3, "aj_user-round", "Perfis 2.0", 1, 0, "00.jpg",
@@ -572,7 +573,7 @@ static void cenaHome(int s) {
     { TxtLinha t = txt(TXT_G18R, "Um pedaço da fileira de cima aparece aqui");
       GfxRect r = { 520, 300, t.w + 44, 44 };
       sIlha(r, 22); txtMeio(t, r.x + 22, r.y, 44, 1); }
-    gfx_cor((GfxRect){ 0, 0, 96, 720 }, 0, 0.039f, 0.043f, 0.055f, 0.86f);
+    gfx_vidro_ou_solido((GfxRect){ 0, 0, 96, 720 }, 0, GFX_VIDRO_DENS, 1.0f, 0.039f, 0.043f, 0.055f, 0.86f);
     gfx_cor((GfxRect){ 95, 0, 1, 720 }, 0, 1, 1, 1, 0.10f);
     for (i = 0; i < 5; i++) {
       GfxRect r = { 33, 360 - 2.5f * 56 + i * 56 - 15, 30, 30 };
@@ -1127,6 +1128,7 @@ static void fechar(const char *aviso, int oQue) {
   saindo = 0;
   pedido = oQue;
   dados_gravar(N20_ARQ, "1\n");
+  dicascontrole_depois_novidades();
   if (aviso) ilha_avisar("novidades20", ILHA_OK, "aj_book-open", i18n(aviso), 4500, 0);
 }
 #define AV_GUARDADO "Guardado em Ajustes › Sobre e ajuda › Novidades 2.0"
@@ -1376,8 +1378,8 @@ static void dicas(float a) {
       if (aberto && !saindo) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroNada, ptLater, 0, 0);
       xd -= wl + 22;
     }
-    wb = tecla("Azul", rot, -10000, y, 1, 0) - 26;
-    tecla("Azul", rot, xd - wb, y, 1, a);
+    wb = tecla("CH+", rot, -10000, y, 1, 0) - 26;
+    tecla("CH+", rot, xd - wb, y, 1, a);
     if (aberto && !saindo) ponteiro_alvo(xd - wb, y, wb, 38, ponteiroNada, ptAcao, 4, 0); }
 }
 

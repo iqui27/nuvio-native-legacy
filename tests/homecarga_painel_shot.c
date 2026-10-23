@@ -2,6 +2,7 @@
 // ilha_atividade_carga). Nao entra na suite: precisa de janela GL e de olho.
 // Compila com -DANTES contra a ilha antiga (texto corrido) para o "antes".
 #include "ilha.h"
+#include "nvtmp.h"
 #include "ilhasinais.h"
 #include "dados.h"
 #include "anim.h"
@@ -78,7 +79,7 @@ static void quadros(int n) {
 int main(int argc, char **argv) {
   const char *dir = getenv("NUVIO_DADOS");
   char ajustes[700]; FILE *f; SDL_GLContext gl;
-  base = argc > 1 ? argv[1] : "/tmp/nuvio-homecarga-painel";
+  base = argc > 1 ? argv[1] : nvt("/nuvio-homecarga-painel");
   assert(dir && *dir);
   snprintf(ajustes, sizeof ajustes, "%s/ajustes.txt", dir);
   f = fopen(ajustes, "w"); assert(f);

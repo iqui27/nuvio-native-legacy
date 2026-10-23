@@ -93,8 +93,10 @@ int main(int argc, char **argv) {
     px(100, 100, a); assert(a[0] >= 75 && a[0] <= 78 && a[3] == 255); }
 
   /* (2) VIDRO FOSCO SO SEM VIDEO VIVO. Painel de vidro sobre o "video" (um
-   * verde chapado): sem o bloqueio o fosco pinta o assado opaco (cor da luz
-   * ambiente, nada a ver com o video); com o bloqueio sobra o vidro de sempre. */
+   * verde chapado). O vidro le a propria tela (gfx_vidro): livre ele captura
+   * o que esta atras; com o bloqueio (o player abriu o furo, a tela ali nao e
+   * o video) ele nao captura nada e sai chapado. Nos dois o verde transparece:
+   * a luz ambiente (vermelho/azul/amarelo) nao entra mais no vidro. */
   { float cor[4][3] = { { .85f, .2f, .2f }, { .2f, .8f, .3f }, { .2f, .3f, .95f }, { .95f, .9f, .2f } };
     GfxRect painel = { 1440, 48, 432, 984 };
     int k;
@@ -112,15 +114,10 @@ int main(int argc, char **argv) {
       px(1500, 80, a); px(1850, 1000, b);
       printf("fosco %s: topo-esq %d,%d,%d  base-dir %d,%d,%d\n", k ? "bloqueado" : "livre",
              a[0], a[1], a[2], b[0], b[1], b[2]);
-      if (k == 0) { unsigned char ref[4]; memcpy(ref, a, 4); (void)ref;
-        salvar(dir, "folha-fosco-livre.bmp"); }
-      else {
-        /* o vidro comum sobre verde: o verde do video ainda transparece
-         * (g > r e g > b); o assado opaco era vermelho/azul/amarelo. */
-        assert(a[1] > a[0] && a[1] > a[2]);
-        assert(b[1] > b[0] && b[1] > b[2]);
-        salvar(dir, "folha-fosco-bloqueado.bmp");
-      }
+      assert(a[1] > a[0] && a[1] > a[2]);
+      assert(b[1] > b[0] && b[1] > b[2]);
+      assert(k ? gfx_vidro_capturas == 0 : gfx_vidro_capturas == 1);
+      salvar(dir, k ? "folha-fosco-bloqueado.bmp" : "folha-fosco-livre.bmp");
     }
   }
   /* o bloqueio vale por quadro: o seguinte volta ao normal */
@@ -128,8 +125,9 @@ int main(int argc, char **argv) {
   glBindFramebuffer(GL_FRAMEBUFFER, fbo); glViewport(0, 0, LW, LH);
   glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
   gfx_cor((GfxRect){ 0, 0, 1920, 1080 }, 0, 0.1f, 0.5f, 0.1f, 1.0f);
-  gfx_vidro_fosco((GfxRect){ 1440, 48, 432, 984 }, 0, 1.0f);
-  px(1500, 80, a); assert(!(a[1] > a[0] && a[1] > a[2]));       // assado de volta
+  gfx_vidro_folha((GfxRect){ 1440, 48, 432, 984 }, 36.0f / 984.0f, 1.0f);
+  assert(gfx_vidro_capturas == 1);                                // o bloqueio era so daquele quadro
+  px(1500, 80, a); assert(a[1] > a[0] && a[1] > a[2]);           // o video atras, de novo
   puts("player_fundo: ok");
   return 0;
 }

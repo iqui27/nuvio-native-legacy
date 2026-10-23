@@ -1,23 +1,15 @@
 // MARCADORES DE ABERTURA, RESUMO E CREDITOS.
 //
-// A fonte e o TheIntroDB (api.theintrodb.org/v3/media), e a troca foi feita por
-// uma razao concreta: o servico anterior (api.introdb.app) e indexado POR
-// EPISODIO — sem `season` e `episode` ele nao responde. Filme, portanto, nao
-// tinha marcador nenhum e caia na estimativa proporcional do posplay.c. O app
-// web tem a mesma limitacao, pelo mesmo motivo (skipIntroRepository.js exige os
-// dois numeros antes de chamar).
+// TheIntroDB (api.theintrodb.org/v4/media) e a fonte principal. IntroDB
+// (api.introdb.app/segments) e outro servico: preenche apenas tipos ausentes,
+// sem substituir TheIntroDB, AniSkip ou capitulos do arquivo.
 //
-// O TheIntroDB aceita `imdb_id` sozinho e devolve marcador de FILME. Conferido
-// ao vivo antes de escrever este arquivo:
-//
-//   GET /v3/media?imdb_id=tt0111161
-//   {"tmdb_id":278,"type":"movie","credits":[{"start_ms":8300000,"end_ms":null}]}
-//
-// (Shawshank: creditos aos 8300 s de um filme de 8520 s.) Para serie, com
-// season/episode, vem tambem o `intro`:
-//
-//   {"type":"tv","intro":[{"start_ms":272500,"end_ms":366000}],
-//    "credits":[{"start_ms":3503000,"end_ms":null}]}
+// v4 accepts imdb_id or tmdb_id for lookup; responses carry tvdb_id only.
+// Movies need no season/episode. TV coordinates use the provider's numbering.
+// Example from the v4 OpenAPI (episode-media):
+//   {"tvdb_id":71663,"type":"tv","season":1,"episode":1,
+//    "intro":[{"start_ms":30000,"end_ms":90000},
+//             {"start_ms":120000,"end_ms":150000}]}
 //
 // SEM CHAVE e sem cadastro. Titulo desconhecido responde 404 com
 // {"error":"media not found"}, que aqui vira "zero marcadores".
@@ -45,6 +37,13 @@ void intro_pedir_vizinhos(const char *imdb,int temporada,int episodio,double dur
 // tmdb 0: imdb_id com a numeracao do Cinemeta. A duracao vai depois, sozinha,
 // quando o player a informar (intro_definir_duracao).
 void intro_pedir_ids(const char *imdb,long tmdb,int temporada,int episodio,double durAnt,double durProx);
+// O backup IntroDB usa o par original do catalogo/IMDb, mesmo quando a fonte
+// principal recebe o par confirmado pelo TMDB. Nunca reutilizar o par remapeado.
+void intro_pedir_ids_mapeados(const char *imdb,long tmdb,int t,int e,int imdbT,int imdbE,double durAnt,double durProx);
+// Contrato do backup: URL /segments e objetos em segundos (ou ms). Retorna
+// -1 para identidade/resposta invalida; zero para resposta valida sem trechos.
+int intro_montar_url_backup(char *url,size_t n,const char *imdb,int t,int e);
+int intro_extrair_backup(const char *json,const char *imdb,int t,int e,IntroTrecho *out,int max);
 // Evidencia local: corpo TMDB ja baixado; Animation + ja/JP, sem GET novo.
 // Se chegar depois do pedido, refaz uma vez ao reconhecer anime.
 void intro_registrar_tmdb(const char *id,long tmdb,const char *json);
@@ -143,6 +142,7 @@ int  intro_resposta_confere(const char *json,int temporada,int episodio);
 #define INTRO_BOTAO_SEG 10.0
 int  intro_botao(double posSeg,double agora,int osd,int focado,double *fim,int *tipo);
 int  intro_botao_visivel(double *fim,int *tipo);
+void intro_botao_esconder(double agora);
 // #329/#331: o trecho (tipo, fim) deve ser pulado sozinho? Abertura/resumo: ajuste ligado e
 // fim conhecido. Creditos: ajuste proprio, fim EXPLICITO do marcador e a pelo menos 5 s do fim
 // da midia `dur` (creditos ate o fim ficam com o proximo episodio, nunca um seek para alem do fim).

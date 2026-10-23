@@ -43,6 +43,9 @@ const char *js_array(const char *ini, const char *fim, const char *chave);
 // Proximo elemento do array a partir do fim do anterior; NULL no fim.
 const char *js_prox(const char *fimAnterior);
 
+// Reject season-per-video numbering only with repeated episode 1 and year-only dates.
+int js_videos_temporadas_falsas(const char *corpo);
+
 // Primeiro elemento de um array que e a RAIZ do documento. Toda RPC do
 // Supabase responde `[{...},{...}]` sem chave em volta, e js_array — que
 // procura por nome — nao tem o que procurar ali. Avance com js_prox.

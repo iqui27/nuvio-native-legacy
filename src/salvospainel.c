@@ -1,3 +1,4 @@
+#include "amigoslista.h"
 #include "arteurl.h"
 // Painel "Salvos" — a camada da direita que a tecla AZUL abre. Ver salvospainel.h
 // para o que ele substituiu e por que.
@@ -15,6 +16,7 @@
 // atalho mais rapido do controle abriria vazio por ~20 s toda vez que a TV
 // liga, que e justamente quando alguem aperta.
 #include "salvospainel.h"
+#include "home.h"
 #include "cwretido.h"
 #include "salvos.h"
 #include "salvosorg.h"
@@ -89,7 +91,8 @@
 #define SP_LINHA_W    (SP_W - SP_LINHA_X * 2.0f)
 #define SP_LINHA_PADX   22.0f
 #define SP_LINHA_RAIO   22.0f
-#define SP_KICK_Y      (SP_Y + 40.0f)
+// Reserve a full font line plus breathing room above the title/tab row.
+#define SP_KICK_Y      fminf(SP_Y + 40.0f, SP_ABAS_Y - txt_linha(TXT_MINI, "Ag", 255, 255, 255, 255).h - 12.0f)
 #define SP_TIT_Y       (SP_Y + 62.0f)
 // ABAS. Elas so existem quando o servico de recomendacoes foi compilado
 // (recomenda_ativo); sem ele o painel e exatamente o que era, sem uma linha a
@@ -307,7 +310,9 @@ enum { SPS_CONSENT_NAO = 0, SPS_CONSENT_SIM, SPS_REC, SPS_SUG,
        // lugar para aceitar era o modal da pilula, que vive 10 s, e uma pagina
        // dentro de Encontrar pessoas; esta aba so mostrava "(N)" no fim da
        // lista. Agora os pedidos abrem a aba, cada um com Aceitar e Recusar.
-       SPS_PEDIDO };
+       SPS_PEDIDO,
+       // "Ver mais pessoas": abre as sugestoes cortadas (amigoslista.h).
+       SPS_MAIS };
 // A API do alcance e do nome so existe no socialsrv (branch agente/socialsrv).
 // Ate o merge as linhas ficam desligadas; NV_SOCIAL_V2_UI liga so a tela (o
 // teste de captura o usa com a API de mentira).
@@ -322,6 +327,7 @@ static SPSocial social[SP_SOCIAL_MAX];
 static int nSocial;
 static RecSugestao sugs[REC_SUGESTOES_MAX];
 static int nSugs;
+static int sugAberto;   // 1 = a pessoa pediu todas as sugestoes
 static RecContato ctts[REC_CONTATOS_MAX];
 static int nCtts;
 // Pedidos recebidos (copia, como as outras listas). `pedCol` = a pilula em
@@ -605,12 +611,12 @@ static int ehSerie(const char *tipo, int nTemporadas) {
 // quadro e comparar dois inteiros, e a reconstrucao so acontece quando ha o
 // que mostrar de diferente (tests/salvospainel.sh conta quantas vezes).
 static unsigned marcaRevCat, marcaRevSalvos, marcaRevOrg, marcaRevRet;
-static int reconstrucoes, fundosPintados;
+static int reconstrucoes, fundosPintados, marcaFonte = -1;
 int spainel_n_reconstrucoes(void) { return reconstrucoes; }
 int spainel_n_fundos(void) { return fundosPintados; }
 static int listaVelha(void) {
   sorg_carregar();   // troca de perfil sobe a revisao da organizacao
-  return marcaCatN < 0 || sorg_revisao() != marcaRevOrg || cat_revisao_itens() != marcaRevCat ||
+  return marcaFonte != ajustes_fonte_biblioteca() || marcaCatN < 0 || sorg_revisao() != marcaRevOrg || cat_revisao_itens() != marcaRevCat ||
          salvos_revisao() != marcaRevSalvos || cat_n() != marcaCatN ||
          cw_retido_rev() != marcaRevRet;
 }
@@ -753,6 +759,7 @@ static void reconstruir(void) {
   marcaCatN = catN;
   marcaRevCat = revCat;
   marcaRevSalvos = revSalvos;
+  marcaFonte = ajustes_fonte_biblioteca();
   marcaRevRet = cw_retido_rev();
   // O FOCO DAS ABAS (-1) NAO E UM FOCO FORA DA FAIXA. Sem esta guarda, uma
   // reconstrucao com a lista vazia jogaria o foco de volta para a linha 0, que
@@ -1135,6 +1142,7 @@ static float socialAlt(int i) {
                           ((social[i].idx >= 0 && social[i].idx < REC_CONTATOS_MAX &&
                             cttCadeia[social[i].idx]) ? SPS_CADEIA_H : 0.0f);
     case SPS_ADICIONAR: return SPS_H_PORTA;
+    case SPS_MAIS:      return SPS_H_PORTA;
     case SPS_ENCONTRAR: return SPS_H_PORTA;
     case SPS_APARECER:  return SPS_H_APARECER;
     case SPS_ALCANCE:   return SPS_H_ALCANCE;
@@ -1316,9 +1324,6 @@ static void reconstruirSocial(void) {
   for (i = 0; i < nRecs && nSocial < SP_SOCIAL_MAX; i++) {
     social[nSocial].tipo = SPS_REC; social[nSocial].idx = (short)i; nSocial++;
   }
-  for (i = 0; i < nSugs && nSocial < SP_SOCIAL_MAX; i++) {
-    social[nSocial].tipo = SPS_SUG; social[nSocial].idx = (short)i; nSocial++;
-  }
   // OS AMIGOS JA ADICIONADOS, com foto, antes de "Adicionar um amigo": a aba
   // dizia o codigo e oferecia adicionar, mas nunca mostrava QUEM ja estava
   // na lista.
@@ -1328,9 +1333,25 @@ static void reconstruirSocial(void) {
     cttSv[i] = (short)socialvis_amigo_indice(ctts[i].id);
     cttCadeia[i] = (unsigned char)socialvis_ultima_enviada(ctts[i].id, NULL);
   }
-  for (i = 0; i < nCtts && nSocial < SP_SOCIAL_MAX; i++) {
-    social[nSocial].tipo = SPS_AMIGO; social[nSocial].idx = (short)i; nSocial++;
-  }
+  // QUEM ESTA ASSISTINDO SOBE; os amigos vem ANTES das sugestoes, que sao a
+  // parte secundaria e se cortam em amigoslista.h.
+  { unsigned char vivo[REC_CONTATOS_MAX];
+    int ordem[REC_CONTATOS_MAX], nv, k;
+    for (i = 0; i < nCtts; i++) {
+      const SvAmigo *am = (cttSv[i] >= 0) ? socialvis_amigo(cttSv[i]) : NULL;
+      vivo[i] = (unsigned char)(am && am->agora && am->nTit > 0);
+    }
+    amigoslista_ordem(vivo, nCtts, ordem);
+    for (k = 0; k < nCtts && nSocial < SP_SOCIAL_MAX; k++) {
+      social[nSocial].tipo = SPS_AMIGO; social[nSocial].idx = (short)ordem[k]; nSocial++;
+    }
+    nv = amigoslista_sug_visiveis(nSugs, sugAberto);
+    for (i = 0; i < nv && nSocial < SP_SOCIAL_MAX; i++) {
+      social[nSocial].tipo = SPS_SUG; social[nSocial].idx = (short)i; nSocial++;
+    }
+    if (nv < nSugs && nSocial < SP_SOCIAL_MAX) {
+      social[nSocial].tipo = SPS_MAIS; social[nSocial].idx = 0; nSocial++;
+    } }
   // O INTERRUPTOR FECHA A ABA, e nao mora em Ajustes. Ele responde uma pergunta
   // que so faz sentido olhando para esta lista ("quem me ve?"), e quem quiser
   // mudar de ideia vai procura-lo onde a pergunta foi feita. A alternativa em
@@ -1786,7 +1807,7 @@ void spainel_abrir(void) {
   toquerol_limpar(&toquePainel); toquerol_limpar(&toquePop);
   memset(toqueSocial, 0, sizeof toqueSocial);
 #endif
-  foco = 0;
+  foco = 0; sugAberto = 0;
   okDesde = 0;
   menuId[0] = menuProximo[0] = 0;
   seguirId[0] = 0;
@@ -2095,6 +2116,11 @@ static void okSocial(void) {
         // (a pessoa revogou entre a tela e o OK) volta recusado.
         if (social[foco].idx >= 0 && social[foco].idx < nSugs)
           recomenda_adicionar_sugerido(sugs[social[foco].idx].id);
+        reconstruirSocial();
+        if (foco >= nSocial) foco = nSocial > 0 ? nSocial - 1 : 0;
+        return;
+      case SPS_MAIS:
+        sugAberto = 1;
         reconstruirSocial();
         if (foco >= nSocial) foco = nSocial > 0 ? nSocial - 1 : 0;
         return;
@@ -2642,7 +2668,7 @@ void spainel_atualizar(float dt, Uint32 agora) {
     if (topoR + POP_LINHA_H - alvoR > janela) alvoR = topoR + POP_LINHA_H - janela;
     if (topoR < alvoR) alvoR = topoR;
 #ifdef NV_TOUCH_UI
-    if (!toquePop.livre)
+    if (!toquerol_livre(&toquePop))
 #endif
     popRol = ajustes_animacoes_reduzidas() ? alvoR : anim_mola(popRol, alvoR, dt, NV_MOLA_FOCO);
   }
@@ -2694,7 +2720,7 @@ void spainel_atualizar(float dt, Uint32 agora) {
   }
   if (alvo < 0.0f) alvo = 0.0f;
 #ifdef NV_TOUCH_UI
-  if (toquePainel.livre) { scrollY = toquerol_clamp(scrollY, 0, toquePainelMax()); velY = 0; }
+  if (toquerol_livre(&toquePainel)) { scrollY = toquerol_clamp(scrollY, 0, toquePainelMax()); velY = 0; }
   else
 #endif
   scrollY = anim_mola2_reduzida(&velY, scrollY, alvo, dt, NV_MOLA2_SCROLL,
@@ -2780,7 +2806,10 @@ static float focoTexto(float f) { (void)f; return 0.0f; }
 static void superficieItem(GfxRect r, float raio, float f, float a) {
   float v = focoVisual(f);
   if (v <= .001f || a <= .001f) return;
-  if (ajustes_vidro()) { gfx_cor(r, raio, 1, 1, 1, .12f * v * a); return; }
+  if (ajustes_vidro()) {
+    if (!gfx_foco_placa(r, raio, v, a)) gfx_cor(r, raio, 1, 1, 1, .12f * v * a);
+    return;
+  }
   // NO SOLIDO A LINHA FOCADA SOBE: #2b2d34 com a sombra curta do mockup
   // (".row.foco" solido: 0 10px 30px a 40 %) e o fio claro de 1 px no topo
   // ("inset 0 1px 0" a 6 %). Sem a sombra o degrau cinza sobre o cinza do
@@ -2838,6 +2867,20 @@ static void desenhaSecao(float x, float y, const char *rotulo, float a, int prim
   txt_desenhar_alpha(t, x + SP_PAD, ty, a);
   gfx_cor((GfxRect){ x + SP_LINHA_X, ty + SP_SECAO_TXT + 10.0f, SP_LINHA_W, 1.0f }, 0.0f,
           1.0f, 1.0f, 1.0f, 0.08f * a);
+}
+
+// Secao com a contagem ao lado (a digito, sem chave de i18n nova), em tinta fraca.
+static void desenhaSecaoN(float x, float y, int n, const char *rotulo, float a, int primeira) {
+  desenhaSecao(x, y, rotulo, a, primeira);
+  if (n > 0) {
+    char num[16];
+    TxtLinha t = txt_linha_corta(TXT_ILHA_SECAO, rotulo, 243, 242, 239, 255, SP_INTERNO);
+    TxtLinha c;
+    snprintf(num, sizeof num, "%d", n);
+    c = txt_linha(TXT_ILHA_SECAO, num, 243, 242, 239, 255);
+    txt_desenhar_alpha(c, x + SP_PAD + (float)t.w + 14.0f,
+                       y + (primeira ? SP_SECAO_AR1 : SP_SECAO_AR), a * 0.45f);
+  }
 }
 
 // --- A LINHA DA ILHA ---------------------------------------------------------
@@ -2989,7 +3032,8 @@ static void barraSobreArte(GfxRect arte, int progresso, float a) {
   if (progresso <= 0) return;
   ajustes_acento(&pr, &pg, &pb);
   c.w = t.w * p;
-  gfx_cor(t, 0.5f, 0.0f, 0.0f, 0.0f, 0.55f * a);
+  if (ajustes_vidro()) gfx_vidro_chip(t, 0.5f, 0.55f, a);
+  else gfx_cor(t, 0.5f, 0.0f, 0.0f, 0.0f, 0.55f * a);
   if (c.w > t.h) gfx_cor(c, 0.5f, pr, pg, pb, a);
 }
 
@@ -3517,7 +3561,7 @@ static void desenhaAbas(float dx, float a, float larguraDisp) {
         if (foco == SP_FOCO_ABAS && !editLapis) {
           if (ajustes_vidro()) gfx_vidro_pilula_cheia(p, 0.5f, 1.0f, a);
           else { botao_luz(p, .55f, a); gfx_cor(p, 0.5f, ar, ag, ab, a); }
-        } else {
+        } else if (!gfx_foco_placa(p, 0.5f, 1.0f, a)) {
           if (ajustes_vidro()) gfx_cor(p, 0.5f, 1, 1, 1, .14f * a);
           else gfx_cor(p, 0.5f, .204f, .212f, .243f, a);
         }
@@ -3552,7 +3596,7 @@ static void desenhaAbas(float dx, float a, float larguraDisp) {
       contaDaAba(i, &novo);
       // Sobre a pilula de acento a contagem vai na tinta do foco: no acento
       // ela sumiria justamente na aba em que o dedo esta.
-      if (focada) {
+      if (focada || (ativa && ajustes_foco_acento())) {
         char b[16];
         int n = contaDaAba(i, &novo);
         snprintf(b, sizeof b, "%d", n > 99 ? 99 : n);
@@ -3561,7 +3605,7 @@ static void desenhaAbas(float dx, float a, float larguraDisp) {
       }
       txt_desenhar_alpha(num, x + SP_SEG_PX + SP_SEG_ICO + SP_SEG_NUM,
                          p.y + (p.h - num.h) * 0.5f,
-                         a * (novo ? 1.0f : focada ? 0.7f : 0.45f));
+                         a * (novo ? 1.0f : focada || (ativa && ajustes_foco_acento()) ? 0.7f : 0.45f));
     }
     x += w + SP_SEG_VAO;
   }
@@ -3717,7 +3761,7 @@ static void desenhaPop(float a) {
              1.0f, 0, 0, 0.5f, 0, 0, 0, .42f * e);
     if (vid) gfx_vidro_folha(r, 28.0f / h, e);
     else gfx_cor(r, 28.0f / h, .098f, .102f, .118f, .99f * e);
-    gfx_luz_canto(r, 28.0f / h, w * .25f, -h * .25f, w * .9f, 1, 1, 1, (vid ? .06f : .04f) * e); }
+    if (!vid) gfx_luz_canto(r, 28.0f / h, w * .25f, -h * .25f, w * .9f, 1, 1, 1, .04f * e); }
   // O TEXTO NA ESCALA DA ILHA: titulo 24 semibold, apoio 19 a 62 %, opcoes
   // 24 regular a 88 % (branco cheio na focada).
   { TxtLinha t = txtIlha(TXT_ILHA_NOME, popTitulo, w - 64.0f);
@@ -4627,7 +4671,7 @@ static void desenhaEditar(float dx, float a) {
 #ifdef NV_TOUCH_UI
   float topo = SP_LISTA_Y + SP_FOCO_AR + 6.0f, base = SP_LISTA_BASE;
   float maximo = fmaxf(0, n * SPE_LIN_H + 18 + NV_CTRL_H - (base - topo));
-  if (!toqueEditar.livre) {
+  if (!toquerol_livre(&toqueEditar)) {
     float fim = editLin >= n ? n * SPE_LIN_H + 18 + NV_CTRL_H : (editLin + 1) * SPE_LIN_H;
     toqueEditarOffset = toquerol_clamp(fim - (base - topo), 0, maximo);
   }
@@ -4793,7 +4837,7 @@ void spainel_fundo(int podeParar, unsigned rev, void (*fundo)(void *), void *ctx
   }
   if (parado && !pronto && !motivo[0]) motivo = "abertura";
   veuNoFundo = parado;
-  if (parado && pronto) { gfx_snap_desenhar(); return; }
+  if (parado && pronto) { home_fileiras_vistas(SDL_GetTicks()); gfx_snap_desenhar(); return; }
   if (parado) {
     gfx_snap_comecar();
     gfx_sem_recorte();
@@ -4922,6 +4966,7 @@ static void desenharPainel(Uint32 agora) {
   // veu ja nao custa nada por quadro; o que sobra sao a entrada, a saida e o
   // painel sobre outras telas.
   if (!veuNoFundo) veuInteiro();
+  gfx_vidro_cobrir();   // the veil covers the home glass drawn before: the island frosts
   // Painel flutuante escuro e neutro; o veu separa a camada do conteudo sem
   // uma luz decorativa colorida competindo com posters e selos.
   { GfxRect p = { SP_X + x, SP_Y, SP_W, SP_H };
@@ -4936,7 +4981,7 @@ static void desenharPainel(Uint32 agora) {
                    0, 0, 0, .38f * as, p, raioForma * p.h, vid ? 0.0f : .98f * as);
     if (vid) gfx_vidro_folha(p, raioForma, as);
     else gfx_cor(p, raioForma, .071f, .075f, .086f, .98f * as);
-    gfx_luz_canto(p, raioForma, p.w * .25f, -p.h * .25f, p.w * .9f, 1, 1, 1, (vid ? .06f : .04f) * as);
+    if (!vid) gfx_luz_canto(p, raioForma, p.w * .25f, -p.h * .25f, p.w * .9f, 1, 1, 1, .04f * as);
   }
 
   // Tudo daqui para baixo fica preso ao painel: sem o recorte, a lista rolada
@@ -5112,7 +5157,8 @@ static void desenharPainel(Uint32 agora) {
         if ((social[i].tipo == SPS_SUG || social[i].tipo == SPS_AMIGO || social[i].tipo == SPS_NOME ||
              spsConta(social[i].tipo)) &&
             y + cab >= listaTopo() && y <= SP_LISTA_BASE)
-          desenhaSecao(SP_X + x, y,
+          desenhaSecaoN(SP_X + x, y,
+                       social[i].tipo == SPS_SUG ? nSugs : social[i].tipo == SPS_AMIGO ? nCtts : 0,
                        social[i].tipo == SPS_NOME ? "Você para os outros"
                        : spsConta(social[i].tipo) ? "Contas ligadas"
                        : social[i].tipo == SPS_SUG ? "Pessoas que você talvez conheça"
@@ -5143,6 +5189,9 @@ static void desenharPainel(Uint32 agora) {
           case SPS_ENCONTRAR:
           case SPS_ADICIONAR:
             desenhaPorta(i, x, y, alt, a);
+            break;
+          case SPS_MAIS:
+            desenhaBotaoLinha(i, x, y, alt, a, "Ver mais pessoas", NULL, NULL, 0);
             break;
           case SPS_APARECER:
             // NAO e desenhaBotaoLinha, e a diferenca e o ponto todo desta
@@ -5253,6 +5302,7 @@ const char *spainel_foco_social(void) {
     case SPS_AMIGO: return "amigo";
     case SPS_REC: return "rec";
     case SPS_SUG: return "sug";
+    case SPS_MAIS: return "mais";
     default: return "outra";
   }
 }

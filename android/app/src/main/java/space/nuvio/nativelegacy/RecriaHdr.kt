@@ -13,6 +13,10 @@ package space.nuvio.nativelegacy
 //   SDR, sem recriacao, nao caiu (registros D1 66008, 66017, 65445).
 // Devolve o nome da familia dispensada, ou null para recriar.
 object RecriaHdr {
+    // Media3 ExoTimeoutException.OPERATION_DETACH_SURFACE = 3.
+    fun timeoutRecuperavel(codigo: Int, recriando: Boolean, operacao: Int): Boolean =
+        codigo == 1003 && recriando && operacao == 3
+
     fun dispensa(decoders: List<String>): String? {
         if (decoders.any { it.startsWith("OMX.MS.") }) return "MStar"
         if (decoders.any { it.startsWith("OMX.amlogic.") || it.startsWith("c2.amlogic.") }) return "Amlogic"

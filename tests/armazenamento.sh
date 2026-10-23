@@ -1,7 +1,9 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 set -eu
 cd "$(dirname "$0")/.."
-dir=$(mktemp -d /tmp/nuvio-espaco.XXXXXX)
+dir=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-espaco.XXXXXX)
 trap 'rm -rf "$dir"' EXIT
 rc=0
 for alvo in NV_WEBOS NV_TPK NV_ANDROID; do

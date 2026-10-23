@@ -131,7 +131,7 @@ static void testarUrl(void) {
 static void testarProtocolo(void) {
   JfConta c;
   char segredo[160], codigo[16], senha[64], perfil[2048];
-  JfBiblioteca libs[6];
+  JfBiblioteca libs[JF_FIL_MAX];
   CatItem *itens = calloc(100, sizeof *itens), det;
   CatEp eps[16];
   JfPlayback *pb = malloc(sizeof *pb);
@@ -156,13 +156,17 @@ static void testarProtocolo(void) {
   snprintf(senha, sizeof senha, "wrong");
   assert(jf_autenticar_senha(&c, NULL, "ana", senha) == JF_ERR_AUTH);
   assert(senha[0] == 0);
+  memset(senha, 0, sizeof senha);
   snprintf(senha, sizeof senha, "%s", "p\xc3\xa4ssw\xc3\xb6rd \"quoted\"");
   assert(jf_autenticar_senha(&c, NULL, "ana", senha) == JF_OK);
   for (k = 0; k < (int)sizeof senha; k++) assert(senha[k] == 0);
   assert(!strcmp(c.usuarioId, "aa11bb22cc33dd44ee55ff6677889900"));
-  // Libraries: music filtered out.
-  n = jf_bibliotecas(&c, NULL, libs, 6);
-  assert(n == 2 && !strcmp(libs[0].tipo, "movie") && !strcmp(libs[1].tipo, "series"));
+  // Libraries: music and playlists filtered out; every catalog view of a
+  // many-library server is listed (was capped at 6 and movies/tvshows only, #468).
+  n = jf_bibliotecas(&c, NULL, libs, JF_FIL_MAX);
+  assert(n == 11 && !strcmp(libs[0].tipo, "movie") && !strcmp(libs[1].tipo, "series"));
+  assert(!strcmp(libs[10].nome, "Catalog 8") && !strcmp(libs[4].tipo, "movie"));
+  assert(jf_por_fileira(n) == JF_ITENS_MAX / 11 && jf_por_fileira(2) == JF_POR_FILEIRA);
   // Paging: 60 movies, two pages, prefixed ids, root-level fields.
   n = jf_itens(&c, NULL, libs[0].id, 0, 24, itens, 100, &total);
   assert(n == 24 && total == 60);
@@ -283,6 +287,7 @@ static void testarIntegracao(void) {
   assert(jellyfin_qc_permitido() == 1);
   assert(!strncmp(jellyfin_servidor_curto(), "127.0.0.1:", 10));
   v0 = jellyfin_fileiras_versao();
+  memset(senha, 0, sizeof senha);
   snprintf(senha, sizeof senha, "%s", "p\xc3\xa4ssw\xc3\xb6rd \"quoted\"");
   assert(jellyfin_entrar_senha("ana", senha));
   assert(senha[0] == 0);
@@ -296,8 +301,9 @@ static void testarIntegracao(void) {
   // Home rows arrive as a new snapshot version.
   fim = ms() + 5000;
   while (jellyfin_fileiras_versao() == v0 && ms() < fim) dormir(20);
-  n = jellyfin_fileiras_copiar(itens, JF_FIL_MAX * JF_POR_FILEIRA, fils, JF_FIL_MAX, &ni);
-  assert(n == 2 && ni == JF_POR_FILEIRA + 2);
+  n = jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, fils, JF_FIL_MAX, &ni);
+
+  assert(n == 2 && ni == jf_por_fileira(10) + 1);
   assert(jellyfin_chave_fileira(fils[0].chave) && !fils[0].base[0] && strstr(fils[0].titulo, "Jellyfin"));
   { int total;
     assert(jellyfin_pagina("jellyfin_collections", 0, 60, itens, 60, &total, NULL) == 1 && !strcmp(itens[0].tipo, "group"));
@@ -316,8 +322,9 @@ static void testarIntegracao(void) {
   }
   jellyfin_fileiras_copiar(itens, JF_FIL_MAX * JF_POR_FILEIRA, fils, JF_FIL_MAX, &ni);
   // Title page through the profile's connection.
-  det = itens[JF_POR_FILEIRA];                 // the series
+  det = itens[fils[1].ini];                 // the series
   r = jellyfin_ficha(&det, eps, 16);
+
   assert(r == 6 && det.nTemporadas == 2 && det.temporadas[1] == 2);
   // MATCHED TITLES: the index arrives after the rows (full pass), and is on disk.
   fim = ms() + 5000;

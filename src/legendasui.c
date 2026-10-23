@@ -1,5 +1,6 @@
 // Subtitle selector and second subtitle drawing. See legendasui.h.
 #include "legendasui.h"
+#include "legfontes.h"
 #include "legenda2.h"
 #include "legenda.h"
 #include "faixas.h"
@@ -102,6 +103,7 @@ int legendasui_montar(const VideoFaixa *const *emb, int nEmb,
       c->tipo = f->tipoLeg ? f->tipoLeg : f->letreiro ? LING_LEG_LETREIROS : LING_LEG_COMUM;
       snprintf(c->idioma, sizeof c->idioma, "%s", f->idioma);
       snprintf(c->rotulo, sizeof c->rotulo, "%s", f->rotulo);
+      snprintf(c->nome, sizeof c->nome, "%s", f->nome);
       snprintf(c->codec, sizeof c->codec, "%s", f->codec);
       formatoDoCodec(f->codec, c->formato);
     }
@@ -642,7 +644,7 @@ int legendasui_evento(const SDL_Event *e) {
 // --- drawing the panel ---------------------------------------------------------------
 #define LU_PAD_X   18.0f
 #define LU_PAD_Y   22.0f
-#define LU_TIT_H   64.0f
+#define LU_TIT_H   42.0f   // heading only: the title already sits in the header by the clock
 #define LU_LN_H    88.0f
 #define LU_LN_VAO   4.0f
 #define LU_PE_H    47.0f
@@ -728,10 +730,60 @@ static float pilulaSlot(int slot, float xDir, float yc, int sel, float a) {
   return w;
 }
 
+#define LU_SEP "  \xc2\xb7  "
 static void juntar(char *dst, size_t n, const char *parte) {
   size_t l = strlen(dst);
   if (!parte || !parte[0] || l + 1 >= n) return;
-  snprintf(dst + l, n - l, "%s%s", l ? "  \xc2\xb7  " : "", parte);
+  snprintf(dst + l, n - l, "%s%s", l ? LU_SEP : "", parte);
+}
+
+// ROW TITLE (#511). The track name ("Full", "Signs & Songs", an add-on's
+// file label) is what tells two tracks of one language apart; the language
+// alone made them identical. Names that say nothing fall back to the language:
+// empty, the language itself, a codec id, the kind already shown below.
+static int nomeInutil(const LegUiCand *c, const char *nome) {
+  static const char *const lixo[] = { "srt", "ass", "ssa", "vtt", "pgs", "subrip", "webvtt", "utf-8",
+    "utf8", "vobsub", "hdmv_pgs_subtitle", "dvd_subtitle", "mov_text", "subtitle", "subtitles", "sub", NULL };
+  const char *t = legendasui_tipo_rotulo(c);
+  int i;
+  if (!nome[0] || !strcasecmp(nome, c->idioma) || !strcasecmp(nome, nomeIdioma(c->idioma))) return 1;
+  if (ling_do_nome(nome) && !strchr(nome, ' ')) return 1;          // a lone language word
+  if (!strncmp(nome, "S_", 2) || !strcasecmp(nome, c->formato) || (t && !strcasecmp(nome, t))) return 1;
+  for (i = 0; lixo[i]; i++) if (!strcasecmp(nome, lixo[i])) return 1;
+  if (!strncasecmp(nome, "track ", 6) && !nome[6 + strspn(nome + 6, "0123456789")]) return 1;
+  return 0;
+}
+// Copies `src` into `out` (<= 40 bytes + index), cutting on a UTF-8 boundary with "…".
+static void corteLimpo(char *out, size_t sz, const char *src) {
+  size_t n = strlen(src), max = 40;
+  if (max >= sz) max = sz - 1;
+  if (n > max) {
+    n = max - 3;
+    while (n && ((unsigned char)src[n] & 0xC0) == 0x80) n--;
+    snprintf(out, sz, "%.*s\xe2\x80\xa6", (int)n, src);
+  } else snprintf(out, sz, "%s", src);
+}
+// Title of candidate `i` among `cs[0..n)`: its name, else its language; equal
+// titles of one language get " (k)". Returns 1 when the title is a name.
+int legendasui_titulo(const LegUiCand *cs, int n, int i, char *out, size_t sz) {
+  const LegUiCand *c = &cs[i];
+  const char *nome = c->embutida ? (c->nome[0] ? c->nome : strstr(c->rotulo, LU_SEP)) : (c->arquivo[0] ? c->arquivo : c->rotulo);
+  int j, dup = 0, pos = 0, nomeado;
+  char outro[96];
+  if (c->embutida && !c->nome[0] && nome) nome += strlen(LU_SEP);
+  nomeado = nome && !nomeInutil(c, nome);
+  corteLimpo(out, sz, nomeado ? nome : c->idioma[0] ? nomeIdioma(c->idioma) : c->rotulo);
+  for (j = 0; j < n; j++) {
+    const char *on = cs[j].embutida ? (cs[j].nome[0] ? cs[j].nome : strstr(cs[j].rotulo, LU_SEP)) : (cs[j].arquivo[0] ? cs[j].arquivo : cs[j].rotulo);
+    if (j == i || cs[j].embutida != c->embutida || cs[j].tipo != c->tipo || !ling_casa(cs[j].idioma, c->idioma) || !ling_casa(c->idioma, cs[j].idioma)) continue;
+    if (cs[j].embutida && !cs[j].nome[0] && on) on += strlen(LU_SEP);
+    corteLimpo(outro, sizeof outro, on && !nomeInutil(&cs[j], on) ? on : nomeIdioma(cs[j].idioma));
+    if (strcmp(outro, out)) continue;
+    dup = 1;
+    if (j < i) pos++;
+  }
+  if (dup) { size_t l = strlen(out); snprintf(out + l, sz - l, " (%d)", pos + 1); }
+  return nomeado;
 }
 
 // State of the second subtitle for the row that holds the active selection.
@@ -794,19 +846,21 @@ static void textoLinha(const LuiLinha *l, char *nome, size_t tn, char *sub, size
       if (!c) break;
       *idioma = c->idioma;
       *ativo = ativoNoSlot(l->slot, c) && (l->slot == 0 || legenda2_estado() == LEG2_ATIVA);
-      if (!mais && !ver) {
-        snprintf(nome, tn, "%s", nomeIdioma(c->idioma));
-        juntar(sub, ts, c->embutida ? i18n("Embutida") : c->origem);
-        juntar(sub, ts, legendasui_tipo_rotulo(c));
-      } else {
+      { int nomeado = legendasui_titulo(cand, nCand, l->cand, nome, tn);
+        if (nomeado) juntar(sub, ts, nomeIdioma(c->idioma));   // language is secondary
+        if (!c->embutida && strcmp(c->rotulo, c->arquivo) && !nomeInutil(c, c->rotulo)) juntar(sub, ts, c->rotulo);
+        if (!mais && !ver) {
+          juntar(sub, ts, c->embutida ? i18n("Embutida") : c->origem);
+          juntar(sub, ts, legendasui_tipo_rotulo(c));
+        } else {
         const char *marca = c->embutida ? faixas_legenda_marca(c->indice) : NULL;
-        snprintf(nome, tn, "%s", c->embutida ? c->rotulo : nomeIdioma(c->idioma));
         juntar(sub, ts, c->embutida ? i18n("Embutida") : c->origem);
         juntar(sub, ts, c->formato);
         { const char *t = legendasui_tipo_rotulo(c);
-          if (t && !strstr(nome, t)) juntar(sub, ts, t); }   // the title may already say it
+          if (t && !strstr(nome, t)) juntar(sub, ts, t); }
         juntar(sub, ts, c->arquivo);
         if (l->slot == 0 && marca) juntar(sub, ts, marca);
+        }
       }
       if (l->slot == 1 && !legendasui_cand_secundaria_ok(c)) {
         sub[0] = 0;
@@ -931,11 +985,6 @@ static void desenharLinha(const LuiLinha *l, int idx, int sel, float x, float y,
     if (sub[0]) txt_desenhar_alpha(ls, tx, ty + (float)ln.h + 5.0f, aL); }
 }
 
-static const char *tituloSessao(void) {
-  const CatItem *c = cat_item(player_indice());
-  return c && c->titulo[0] ? c->titulo : "";
-}
-
 static void ponteiroMenu(int i, int b) { (void)b; if (menu) menuFoco = i; }
 static void ponteiroMenuEscolher(int i, int b) { (void)b; if (menu) { menuFoco = i; menuEscolher(); } }
 static void ponteiroMenuAbrir(int i, int b) { (void)b; if (ponteiroAqui(i)) { focar(i); abrirMenu(); } }
@@ -994,9 +1043,8 @@ void legendasui_corpo(GfxRect c, float a) {
   int vis = luVis(), fim, i;
   montarLinhas();
   pont = !menu && a > 0.99f && ponteiro_ativo();
-  plrui_kicker(tituloSessao(), x0 + 10.0f, y, 115, 115, 113, a);
   { TxtLinha t = txt_linha(TXT_ILHA_PERGUNTA, ver ? nomeIdioma(verIdioma) : mais ? "Todas as legendas" : "Recomendadas", 243, 242, 239, 255);
-    float ty = y + 22.0f;
+    float ty = y;
     const char *rot[2] = { "Faixas", "Estilo" };
     int cont[2] = { nCand, -1 };
     float sw = plrui_seg(rot, cont, 2, 0, 0, -1.0f, 0, a);
@@ -1009,7 +1057,7 @@ void legendasui_corpo(GfxRect c, float a) {
   y += LU_TIT_H + 14.0f;
 #ifdef NV_TOUCH_UI
   if (telefoneui_ativo()) {
-    if (!toqueLegendas.livre) {
+    if (!toquerol_livre(&toqueLegendas)) {
       ajustarRolagem(vis);
       toqueLegendasOffset = rolagem * (LU_LN_H + LU_LN_VAO);
     }
@@ -1110,11 +1158,12 @@ static void visualLinha(TxtFamilia fam, TxtEstilo est, char *linha) {
   if (txt_bidi_legenda(fam, est, linha, v, sizeof v) > 0) memcpy(linha, v, strlen(v) + 1);
 }
 
-static int quebrar(const LegendaCue *c, TxtEstilo est, int r, int g, int b, int borda,
+static int quebrar(const LegendaCue *c, const VideoLegendaEstilo *e, TxtEstilo est, int r, int g, int b, int borda, unsigned corBorda,
                    float maxW, Leg2Linha *out, int max) {
   char texto[768], *linha, *salva;
-  TxtFamilia fam = (TxtFamilia)player_leg_estilo()->familia;
-  int enf = (c->negrito || player_leg_estilo()->negrito ? TXT_ENF_NEGRITO : 0) | (c->italico ? TXT_ENF_ITALICO : 0);
+  TxtFamilia fam = legfontes_caminho(1) ? TXT_FAMILIA_IMPORTADA2 :
+    ajustes_leg2_fonte_principal() && legfontes_caminho(0) ? TXT_FAMILIA_IMPORTADA1 : (TxtFamilia)e->familia;
+  int enf = (c->negrito || e->negrito ? TXT_ENF_NEGRITO : 0) | (c->italico ? TXT_ENF_ITALICO : 0);
   int n = 0;
   snprintf(texto, sizeof texto, "%s", c->texto);
   for (linha = strtok_r(texto, "\n", &salva); linha && n < max; linha = strtok_r(NULL, "\n", &salva)) {
@@ -1125,7 +1174,7 @@ static int quebrar(const LegendaCue *c, TxtEstilo est, int r, int g, int b, int 
         if (n >= max) break;
         visualLinha(fam, est, atual);
         out[n].cor = txt_linha_corta_enfase(est, atual, r, g, b, 255, maxW, fam, enf);
-        out[n].borda = borda ? txt_linha_corta_enfase(est, atual, 0, 0, 0, 255, maxW, fam, enf) : (TxtLinha){0};
+        out[n].borda = borda ? txt_linha_corta_enfase(est, atual, (corBorda >> 16) & 255, (corBorda >> 8) & 255, corBorda & 255, 255, maxW, fam, enf) : (TxtLinha){0};
         n++;
         snprintf(atual, sizeof atual, "%s", pal);
       } else snprintf(atual, sizeof atual, "%s", tent);
@@ -1133,7 +1182,7 @@ static int quebrar(const LegendaCue *c, TxtEstilo est, int r, int g, int b, int 
     if (atual[0] && n < max) {
       visualLinha(fam, est, atual);
       out[n].cor = txt_linha_corta_enfase(est, atual, r, g, b, 255, maxW, fam, enf);
-      out[n].borda = borda ? txt_linha_corta_enfase(est, atual, 0, 0, 0, 255, maxW, fam, enf) : (TxtLinha){0};
+      out[n].borda = borda ? txt_linha_corta_enfase(est, atual, (corBorda >> 16) & 255, (corBorda >> 8) & 255, corBorda & 255, 255, maxW, fam, enf) : (TxtLinha){0};
       n++;
     }
   }
@@ -1142,26 +1191,38 @@ static int quebrar(const LegendaCue *c, TxtEstilo est, int r, int g, int b, int 
 
 void legendasui_banda_zerar(void) { bandaFim = 0.0f; }
 
+// Same eight vertical offsets as baseLegendaPrincipal. The player supplies its
+// actual safe bottom anchor (controls, mobile transport and next-episode card).
+// Remove the primary's offset before applying the independent secondary one.
+static float deslocamentoPosicao(int posicao) {
+  return posicao >= 3 ? -(posicao - 3) * 48.0f : (3 - posicao) * 20.0f;
+}
+
 // Estilo proprio da segunda legenda (Ajustes): cada campo "igual a principal"
 // (0 / -1) segue o estilo da principal, como era antes.
-static void estiloSecundario(const VideoLegendaEstilo *e, TxtEstilo *est, int *r, int *g, int *b,
-                             int *fundo, int *borda) {
-  int pct = ajustes_leg2_tamanho(), c = ajustes_leg2_cor(), f = ajustes_leg2_fundo(), bd = ajustes_leg2_borda();
-  if (pct <= 0) pct = e->tamanho * 9 / 10;
+static VideoLegendaEstilo estiloSecundario(const VideoLegendaEstilo *e, TxtEstilo *est, int *r, int *g, int *b,
+                                           int *fundo, int *borda) {
+  VideoLegendaEstilo secundario;
+  int pct;
+  ajustes_leg2_estilo(e, &secundario);
+  pct = secundario.tamanho;
   if (pct < TXT_LEG_PCT_MIN) pct = TXT_LEG_PCT_MIN;
   if (pct > TXT_LEG_PCT_MAX) pct = TXT_LEG_PCT_MAX;
   pct = (pct / 10) * 10;
   *est = (TxtEstilo)(TXT_LEG_50 + (pct - TXT_LEG_PCT_MIN) / 10);
-  corEstilo(c >= 0 ? c : e->cor, r, g, b);
-  *fundo = f >= 0 ? f : e->fundo;
-  *borda = bd >= 0 ? bd : e->borda;
+  corEstilo(secundario.cor, r, g, b);
+  *fundo = secundario.fundo;
+  *borda = secundario.borda;
+  return secundario;
 }
 
 void legendasui_desenhar_secundaria(const LegendasGeo *g) {
   LegendaCue cues[LEGENDA_SIMULTANEAS];
   Leg2Linha ln[LEG2_LINHAS];
-  const VideoLegendaEstilo *e = player_leg_estilo();
-  int n, i, nl = 0, r, gg, b, fundo, borda;
+  const VideoLegendaEstilo *principal = player_leg_estilo();
+  VideoLegendaEstilo secundario;
+  const VideoLegendaEstilo *e = &secundario;
+  int n, i, nl = 0, r, gg, b, fundo, borda, posicao = ajustes_leg2_posicao();
   float topo, x0 = 60.0f, x1 = 60.0f + larguraSecundaria(), alpha, y, altura = 0.0f;
   TxtEstilo est;
   GfxRect il;
@@ -1169,13 +1230,14 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
   // Minimised player / window animation: the second line has nowhere honest
   // to go, and the primary still identifies the scene.
   if (!g || g->videoW < NV_TELA_W * 0.6f) return;
+  if (posicao >= 0 && g->baseY <= 0.0f) return;   // explicit position needs the real safe anchor
   n = legenda2_cues(g->pos, cues, LEGENDA_SIMULTANEAS);
   if (n <= 0) return;
-  estiloSecundario(e, &est, &r, &gg, &b, &fundo, &borda);
+  secundario = estiloSecundario(principal, &est, &r, &gg, &b, &fundo, &borda);
   alpha = (e->opacidade == 3 ? .25f : e->opacidade == 2 ? .5f : e->opacidade == 1 ? .75f : 1.f) * g->alpha;
   topo = 48.0f + 72.0f * (g->osd < 0 ? 0 : g->osd > 1 ? 1 : g->osd);
   if (g->videoY > topo) topo = g->videoY + 24.0f;   // letterbox: start on the picture
-  if (!g->junto && plrilha_rect(&il)) {
+  if (posicao < 0 && !g->junto && plrilha_rect(&il)) {
     float s = gfx_escala_ui();
     il.x *= s; il.y *= s; il.w *= s; il.h *= s;
     if (il.y < topo + 260.0f && il.y + il.h > topo) {
@@ -1186,12 +1248,14 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
     }
   }
   for (i = 0; i < n && nl < LEG2_LINHAS; i++)
-    nl += quebrar(&cues[i], est, r, gg, b, borda, x1 - x0, ln + nl, LEG2_LINHAS - nl);
-  if (g->junto) {
+    nl += quebrar(&cues[i], e, est, r, gg, b, borda, ajustes_leg_borda_rgb(e->corBorda), x1 - x0, ln + nl, LEG2_LINHAS - nl);
+  if (g->junto || posicao >= 0) {
     // Stacked: the whole block ends just above the primary (2-line cues grow
     // upward, never over it) and stays inside the picture.
     for (i = 0; i < nl; i++) altura += (float)ln[i].cor.h + (i ? 5.0f : 0.0f);
-    topo = g->baseY - 10.0f - altura;
+    if (posicao >= 0)
+      topo = g->baseY - deslocamentoPosicao(principal->posicao) + deslocamentoPosicao(posicao) - altura;
+    else topo = g->baseY - 10.0f - altura;
     if (topo < 8.0f) topo = 8.0f;
   }
   y = topo;
@@ -1199,18 +1263,11 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
     TxtLinha l = ln[i].cor;
     float x = (x0 + x1) * 0.5f - (float)l.w * 0.5f;
     if (fundo) gfx_cor((GfxRect){ x - 18, y - 6, (float)l.w + 36, (float)l.h + 12 }, .16f, 0, 0, 0, fundo * .16f * alpha);
-    if (ln[i].borda.tex) {
-      float d = borda == 2 ? 4.f : 2.f;
-      txt_desenhar_alpha(ln[i].borda, x + d, y + d, .82f * alpha);
-      if (borda == 1) {
-        txt_desenhar_alpha(ln[i].borda, x - d, y, .82f * alpha);
-        txt_desenhar_alpha(ln[i].borda, x, y - d, .82f * alpha);
-      }
-    }
+    txt_desenhar_borda(ln[i].borda, x, y, borda, alpha);
     txt_desenhar_alpha(l, x, y, alpha);
     y += (float)l.h + 5.0f;
   }
-  if (!g->junto) bandaFim = y;
+  if (posicao < 0 && !g->junto) bandaFim = y;
 }
 
 // Altura do bloco da segunda legenda agora (0 = nada a mostrar). O player usa
@@ -1218,16 +1275,19 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
 float legendasui_altura_secundaria(const LegendasGeo *g) {
   LegendaCue cues[LEGENDA_SIMULTANEAS];
   Leg2Linha ln[LEG2_LINHAS];
-  const VideoLegendaEstilo *e = player_leg_estilo();
+  const VideoLegendaEstilo *principal = player_leg_estilo();
+  VideoLegendaEstilo secundario;
+  const VideoLegendaEstilo *e = &secundario;
   int n, i, nl = 0, r, gg, b, fundo, borda;
   float altura = 0.0f;
   TxtEstilo est;
   if (!g || g->videoW < NV_TELA_W * 0.6f) return 0.0f;
+  if (ajustes_leg2_posicao() >= 0) return 0.0f;   // manual position overrides stacking
   n = legenda2_cues(g->pos, cues, LEGENDA_SIMULTANEAS);
   if (n <= 0) return 0.0f;
-  estiloSecundario(e, &est, &r, &gg, &b, &fundo, &borda);
+  secundario = estiloSecundario(principal, &est, &r, &gg, &b, &fundo, &borda);
   for (i = 0; i < n && nl < LEG2_LINHAS; i++)
-    nl += quebrar(&cues[i], est, r, gg, b, borda, larguraSecundaria(), ln + nl, LEG2_LINHAS - nl);
+    nl += quebrar(&cues[i], e, est, r, gg, b, borda, ajustes_leg_borda_rgb(e->corBorda), larguraSecundaria(), ln + nl, LEG2_LINHAS - nl);
   for (i = 0; i < nl; i++) altura += (float)ln[i].cor.h + (i ? 5.0f : 0.0f);
   return altura;
 }

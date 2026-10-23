@@ -7,6 +7,7 @@
 // desenha num FBO de 3840x2160 (o drawable de uma TV que concede 4K) com o
 // mesmo layout de 1920x1080 — o painel tem de cobrir a tela inteira nos dois.
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "player.h"
 #include "pausao.h"
 #include "ajustes.h"
@@ -62,7 +63,7 @@ static void quadros(int n) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-player-live-shots/pausa";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-player-live-shots/pausa");
   char nome[600];
   const char *e4 = getenv("NUVIO_SHOT_4K");
   SDL_Event ev = {0};

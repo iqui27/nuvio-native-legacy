@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "nvtmp.h"
 
 #define LW 1920
 #define LH 1080
@@ -56,7 +57,7 @@ static double rampa(const unsigned char *a, int pitch, int bpp, int w, int h) {
 }
 
 int main(int argc, char **argv) {
-  const char *dir = argc > 1 ? argv[1] : "/tmp";
+  const char *dir = argc > 1 ? argv[1] : nvt_dir();
   int pctTam = 90, corpo = 20 + (pctTam - 50) / 10 * 4;   // TXT_LEG_90 = 36 px
   TxtEstilo est = (TxtEstilo)(TXT_LEG_50 + (pctTam - 50) / 10);
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");

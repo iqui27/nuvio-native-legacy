@@ -5,6 +5,7 @@
 //
 //   bash tests/legenda_ass_shot.sh /tmp/nuvio-legass
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "player.h"
 #include "faixas.h"
 #include "legenda.h"
@@ -77,7 +78,7 @@ static char *ler(const char *nome) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-legass";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-legass");
   char nome[600], *corpo;
   const char *en = getenv("NUVIO_SHOT_EN");
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");

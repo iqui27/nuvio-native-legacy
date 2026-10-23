@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Cache de fontes por canal e prefetch dos vizinhos do guia (src/fontecache.c).
 #
 #   bash tests/fontecache.sh
@@ -17,6 +19,6 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 if [ "${SANITIZE:-0}" = thread ]; then flags+=(-fsanitize=thread -fno-omit-frame-pointer); fi
 cc ${flags[@]+"${flags[@]}"} ${NUVIO_CFLAGS:-} tests/fontecache.c \
   -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -o /tmp/nuvio-fontecache-tests -O1 -g -Wall -Wextra -lpthread \
+  -o ${TMPDIR:-/tmp}/nuvio-fontecache-tests -O1 -g -Wall -Wextra -lpthread \
   -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-fontecache-tests
+${TMPDIR:-/tmp}/nuvio-fontecache-tests

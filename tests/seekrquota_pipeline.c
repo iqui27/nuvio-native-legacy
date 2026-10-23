@@ -1,10 +1,12 @@
 // Exercise the production asynchronous lookup/refresh path with deterministic
 // HTTP responses. The ledger uses real atomic files/fsync; no external API.
 #include "dados.h"
+#include "nvtmp.h"
 #include "rede.h"
 #include <SDL2/SDL.h>
 #include <assert.h>
 #include <stdio.h>
+int perftv_enabled, perftv_uploads;
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -13,6 +15,9 @@ static time_t tempo(time_t *p) { if (p) *p = agora; return agora; }
 #define time tempo
 #include "../src/seekr.c"
 #undef time
+
+// Ajustes nao entra nesta bancada: relogio de 12 h desligado (tests/guia_logos.c).
+int ajustes_relogio_12h(void) { return 0; }
 
 void gfx_tex_esquecer(GLuint t) { (void)t; }
 static pthread_mutex_t redeTrava = PTHREAD_MUTEX_INITIALIZER;
@@ -101,7 +106,7 @@ static void recorte(void) {
 }
 int main(void) {
   assert(SDL_Init(SDL_INIT_TIMER) == 0);
-  dados_iniciar("/tmp");
+  dados_iniciar(nvt(""));
   // Sem chave: nem a validacao nem a miniatura chegam a rede.
   assert(seekr_validar("") == 0);
   seekr_pedir("tt0133093", 0, 0, 7200000);

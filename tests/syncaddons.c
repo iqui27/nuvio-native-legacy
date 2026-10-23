@@ -23,11 +23,14 @@
 //               qualquer conta/perfil, inclusive .tmp) sao apagadas na
 //               primeira execucao, sem nunca serem enviadas.
 #include "sync.h"
+#include "nvtmp.h"
 #include "addons.h"
 #include "catordem.h"
 #include "contacache.h"
 #include "traktauth.h"
 #include "perfis.h"
+#include "debrid.h"
+#include "stub_perfisessao.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,7 +41,7 @@
 
 static const char *pasta(void) {
   const char *d = getenv("NV_T_DIR");
-  return d && *d ? d : "/tmp";
+  return d && *d ? d : nvt_dir();
 }
 static void caminho(char *dst, size_t tam, const char *nome) {
   snprintf(dst, tam, "%s/%s", pasta(), nome);
@@ -185,6 +188,35 @@ char *sessao_rpc(const char *funcao, const char *corpo, int *st) {
 }
 int  sessao_logada(void)          { return 1; }
 const char *sessao_usuario(void)  { return "conta-a"; }
+int perfis_puxar_sessao(uint64_t s, const char *u, const char *t) { (void)s; (void)u; (void)t; return perfis_puxar(); }
+void perfis_invalidar_sessao(void) {}
+int sessao_token_copiar(char *t, size_t n) { snprintf(t, n, "fixture"); return 1; }
+int sessao_identidade_local_copiar(char *u, size_t n, char *t, size_t m) {
+  snprintf(u, n, "%s", sessao_usuario()); return sessao_token_copiar(t, m);
+}
+void sessao_token_recusado(const char *t) { (void)t; }
+char *nuvem_tabela(const char *t, const char *q, const char *jwt, int *st) {
+  (void)jwt; return sessao_tabela(t, q, st);
+}
+char *nuvem_rpc_com(const char *f, const char *b, const char *jwt, int *st) {
+  (void)jwt; return sessao_rpc(f, b, st);
+}
+#ifndef ADDON_PULL_FIXTURE
+char *nuvem_addon_alternar(const char *q, int a, const char *jwt, unsigned prazo_ms, int *st) {
+  (void)prazo_ms; (void)q; (void)a; (void)jwt; *st = 503; return NULL;
+}
+#endif
+void ajustes_perfil_padrao(void) {}
+void desc_abrir_sessao(void) {}
+void desc_sessao_preparada(void) {}
+void desc_sessao_passo(void) {}
+void extras_abrir_sessao(void) {}
+void recomenda_esquecer_conta(void) {}
+void debrid_conta_iniciar(DebridConta *c) { memset(c, 0, sizeof *c); }
+void debrid_conta_definir(DebridConta *c, const char *s, const char *k) { (void)c; (void)s; (void)k; }
+int debrid_aplicar_chaves_conta(const DebridConta *c, uint64_t s) { (void)c; (void)s; return 0; }
+int syncprog_puxar_sessao(int p, uint64_t s) { (void)p; (void)s; return 0; }
+int syncprog_empurrar_sessao(int p, uint64_t s) { (void)p; (void)s; return 0; }
 int  nuvem_freio_ativo(void)      { return 0; }
 int  nuvem_erro_ausente(const char *c) { (void)c; return 0; }
 const char *nuvem_trakt_cliente(void) { return ""; }
@@ -278,6 +310,7 @@ void debrid_esquecer(void) {}
 void extras_definir_chave(const char *c) { (void)c; }
 void fontepref_esquecer(void) {}
 void legmem_esquecer(void) {}
+void audiomem_esquecer(void) {}
 void homeestado_esquecer(void) {}
 void mapa_esquecer(void) {}
 void prog_esquecer_tudo(void) {}
@@ -379,20 +412,20 @@ int main(int argc, char **argv) {
     int aplicou = aplicacoes;
     proximoCiclo();
     confere("pull identico nao reaplica", aplicacoes == aplicou);
-    tvAcrescentar('D'); sync_sujar_addons();
+    tvAcrescentar('D'); sync_sujar_addons(NULL);
     confere("edicao local nao cria pendencia", !existe(PEND));
     proximoCiclo(); tvLetras(l, sizeof l);
     confere("conta inalterada e nenhum push", pushes == 0 && !strcmp(conta, "AB"));
     confere("pull sobrescreve edicao local mesmo com conta igual", !strcmp(l, "AB"));
-    tv[0].ativo = 0; sync_sujar_addons();
+    tv[0].ativo = 0; sync_sujar_addons(tv[0].url);
     proximoCiclo(); tvLetras(l, sizeof l);
-    confere("ligar e desligar tambem fica local ate o pull", !strcmp(l, "AB"));
+    confere("pull preserves explicit local disable", !strcmp(l, "aB"));
     AddonRemoto tmp = tv[0]; tv[0] = tv[1]; tv[1] = tmp;
-    sync_sujar_addons(); proximoCiclo(); tvLetras(l, sizeof l);
-    confere("pull restaura ordem da conta", !strcmp(l, "AB"));
+    sync_sujar_addons(NULL); proximoCiclo(); tvLetras(l, sizeof l);
+    confere("pull restores account order and preserves local disable", !strcmp(l, "aB"));
     snprintf(conta, sizeof conta, "A");
     sync_manual_addons(); ateTerminar(); tvLetras(l, sizeof l);
-    confere("botao puxa nova lista na hora", !strcmp(l, "A") && !pushes);
+    confere("manual pull removes addon and preserves local disable", !strcmp(l, "a") && !pushes);
   } else if (!strcmp(cen, "duplicata")) {
     snprintf(conta, sizeof conta, "ABB");
     sync_iniciar(); ateTerminar();

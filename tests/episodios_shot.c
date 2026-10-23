@@ -5,6 +5,7 @@
 // tecla injetada — ela abre pelo botao de episodios DO PLAYER, e chegar la
 // exige reproduzir algo. Uma captura headless e repetivel e nao gasta fonte.
 #include "episodios.h"
+#include "nvtmp.h"
 #include "catalogo.h"
 #include "vistoep.h"
 #include "gfx.h"
@@ -58,7 +59,7 @@ static void captura(const char *nome, SDL_Window *win) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-episodios";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-episodios");
   char nome[600];
   SDL_Window *w;
   SDL_GLContext gl;

@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Compila o WGT de diagnóstico ASS, separado do pacote NuvioTV002.
 #
 # O vídeo e a legenda ficam fora do pacote e são servidos por
@@ -7,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-FIXTURE="${NUVIO_ASS_FIXTURE:-/tmp/nuvio-tizen-ass-1312-1790022235}"
+FIXTURE="${NUVIO_ASS_FIXTURE:-${TMPDIR:-/tmp}/nuvio-tizen-ass-1312-1790022235}"
 BASE="${NUVIO_ASS_BASE_URL:-}"
 SAIDA="${NUVIO_SAIDA:-build/tizen-ass-diagnostic}"
 NOME="${NUVIO_WGT_NOME:-NuvioTV-ass-diagnostic-0.1.0}"

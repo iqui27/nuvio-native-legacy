@@ -1,3 +1,7 @@
+// Teto de "Continuar assistindo" (issue #205). descoberta.c (CONT_MAX) e
+// home.c (CW_TETO) repetem este numero; a tabela de futuros tambem.
+#define CWO_FILEIRA_MAX 40
+
 // ORDENACAO DE "CONTINUAR ASSISTINDO" (issue #127).
 //
 // Ajustes -> Continuar assistindo -> Ordenacao sempre existiu (AJ_CW_ORDEM,
@@ -12,7 +16,7 @@
 // ao ar (hasAired === false, que resolveNextUpReleaseState tira da data de
 // estreia: `released <= Date.now()`; sem data, conta como exibido).
 //
-//   default          -> pausados primeiro, depois sugestoes; recencia por grupo.
+//   default          -> most recently watched first, across both groups (#610).
 //   streaming_style  -> pausados, sugestoes exibidas e futuros, nessa ordem;
 //                       recencia dentro de cada grupo.
 //   split_upcoming   -> a mesma lista, mas os futuros saem da fileira e viram
@@ -72,7 +76,7 @@ int cwo_ordenar(const CwoItem *v, int n, int modo, long long agoraMs, int *perm)
 // futuros" e "Estilo streaming" nao mudavam nada: o episodio que ainda nao foi
 // ao ar sumia da tela em vez de ir para o fim ou para "Proximos episodios". O
 // web nao tem esse problema porque o slice dele e de 300 (CW_MAX_VISIBLE_ITEMS);
-// aqui a fileira e de 12, entao os futuros ganham ate um terco dela (minimo 1).
+// aqui a fileira e de 40 (CONT_MAX), entao os futuros ganham ate um terco dela (minimo 1).
 // Lugar que os futuros nao usam fica com os exibidos, e vice-versa.
 // montarContinuar reserva os pausados ANTES de chamar com os lugares restantes.
 void cwo_corte(int principal, int nFut, int max, int *nPrincipal, int *nFuturos);

@@ -44,6 +44,27 @@ int nf_na_posicao(int pos) {
   return -1;
 }
 
+int nf_na_posicao_ord(int pos, int letterFirst) {
+  int pl = F[EX_LETTERBOXD].pos;
+  if (!letterFirst) return nf_na_posicao(pos);
+  if (pos == 0) return EX_LETTERBOXD;
+  return nf_na_posicao(pos <= pl ? pos - 1 : pos);
+}
+
+int nf_prioridade_ord(int f, int letterFirst) {
+  (void)letterFirst;
+  return f == EX_LETTERBOXD ? -1 : nf_prioridade(f);
+}
+
+// Decimos da nota crua. O IMDb e 0..10, mas o MDBList as vezes manda 0..100
+// (80 = 8,0): sem isto vira "80%" / "80.0".
+int nf_cru(int f, double v) {
+  int n;
+  if (f == EX_IMDB && v > 10.0) v /= 10.0;
+  n = (int)(v * 10.0 + 0.5);
+  return n < 0 ? 0 : n > 1000 ? 1000 : n;
+}
+
 int nf_norm100(int f, int cru) {
   int esc, n;
   if (!valida(f) || cru <= 0) return 0;

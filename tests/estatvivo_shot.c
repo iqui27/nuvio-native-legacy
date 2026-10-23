@@ -1,9 +1,11 @@
 // CAPTURAS DAS ESTATISTICAS AO VIVO (estatvivoui.h) para comparar com o
 // mockup stats-velocidade (telas 2 e 3): o cartao com os numeros de cada
 // plataforma (Android tudo medido, LG com velocidade estimada, Samsung so %)
-// e a pilula fixada no canto. Sem player nem video: o estado e montado a mao.
-// Saida: <prefixo>-N-*.bmp. Ver tests/estatvivo_shot.sh.
+// e os tres tamanhos (completo, compacto e minimo). Sem player nem video: o
+// estado e montado a mao.
+// Saida: <prefixo>-N-*.png. Ver tests/estatvivo_shot.sh.
 #include "estatvivoui.h"
+#include "nvtmp.h"
 #include "ajustes.h"
 #include "ajustes_ux.h"
 #include "gfx.h"
@@ -18,6 +20,7 @@
 #include <string.h>
 
 static GLuint fbo, fboTex;
+static int claro;   // o quadro claro: o vidro contra um filme claro
 
 static void salvar(const char *nome) {
   unsigned char *pix = malloc(1920 * 1080 * 4);
@@ -30,15 +33,15 @@ static void salvar(const char *nome) {
   assert(s);
   for (y = 0; y < 1080; y++)
     memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
-  assert(SDL_SaveBMP(s, nome) == 0);
+  assert(IMG_SavePNG(s, nome) == 0);
   SDL_FreeSurface(s);
   free(pix);
   printf("captura: %s\n", nome);
 }
 
-static void captura(const char *nome) {
+static void captura(const char *nome, int quadros) {
   int i;
-  for (i = 0; i < 30; i++) {
+  for (i = 0; i < quadros; i++) {
     SDL_PumpEvents();
     txt_novo_quadro();
     tex_novo_quadro();
@@ -48,8 +51,15 @@ static void captura(const char *nome) {
     glClearColor(0.06f, 0.055f, 0.05f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     // "O filme": a mancha quente do mockup, so para o cartao ter o que cobrir.
-    gfx_cor((GfxRect){ 0, 0, 1920, 1080 }, 0, 0.09f, 0.08f, 0.07f, 1);
-    gfx_cor((GfxRect){ 300, 200, 900, 560 }, 0.5f, 0.20f, 0.17f, 0.14f, 0.5f);
+    if (claro) {
+      gfx_cor((GfxRect){ 0, 0, 1920, 1080 }, 0, 0.86f, 0.84f, 0.78f, 1);
+      gfx_cor((GfxRect){ 0, 0, 1920, 420 }, 0, 0.55f, 0.75f, 0.95f, 1);
+      gfx_cor((GfxRect){ 1100, 300, 700, 500 }, 0.5f, 0.98f, 0.80f, 0.35f, 1);
+      gfx_cor((GfxRect){ 120, 500, 600, 420 }, 0.5f, 0.40f, 0.70f, 0.45f, 1);
+    } else {
+      gfx_cor((GfxRect){ 0, 0, 1920, 1080 }, 0, 0.09f, 0.08f, 0.07f, 1);
+      gfx_cor((GfxRect){ 300, 200, 900, 560 }, 0.5f, 0.20f, 0.17f, 0.14f, 0.5f);
+    }
     estatvivo_desenhar(SDL_GetTicks());
   }
   salvar(nome);
@@ -70,7 +80,7 @@ static EvEstado base(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-estatvivo";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-estatvivo");
   const char *dir = getenv("NUVIO_DADOS");
   char nome[600], arq[700];
   SDL_Window *w;
@@ -127,8 +137,8 @@ int main(int argc, char **argv) {
   t.plataforma = PTV_ANDROID;
   estatvivo_teste(&e, &t);
   estatvivo_abrir();
-  snprintf(nome, sizeof nome, "%s-1-android.bmp", saida);
-  captura(nome);
+  snprintf(nome, sizeof nome, "%s-1-android.png", saida);
+  captura(nome, 90);
 
   // 2. LG: buffer em segundos medido, velocidade estimada, servidor do link.
   e = base();
@@ -139,8 +149,8 @@ int main(int argc, char **argv) {
   e.quadrosOrigem = EVO_SEM;
   t.plataforma = PTV_LG;
   estatvivo_teste(&e, &t);
-  snprintf(nome, sizeof nome, "%s-2-lg.bmp", saida);
-  captura(nome);
+  snprintf(nome, sizeof nome, "%s-2-lg.png", saida);
+  captura(nome, 90);
 
   // 3. SAMSUNG: so porcentagem, velocidade estimada, sem quadros.
   e = base();
@@ -152,17 +162,62 @@ int main(int argc, char **argv) {
   snprintf(t.codecHdr, sizeof t.codecHdr, "HEVC · HDR10 (add-on)");
   t.plataforma = PTV_TPK;
   estatvivo_teste(&e, &t);
-  snprintf(nome, sizeof nome, "%s-3-samsung.bmp", saida);
-  captura(nome);
+  snprintf(nome, sizeof nome, "%s-3-samsung.png", saida);
+  captura(nome, 90);
 
-  // 4. OK fixa no canto.
+  // 4. COMPACTO: OK (depois da graca do OK que abriu). A captura no meio da
+  // troca prova que o painel anda, nao salta.
+  SDL_Delay(650);
   memset(&ok, 0, sizeof ok);
   ok.type = SDL_KEYDOWN;
   ok.key.keysym.sym = SDLK_RETURN;
-  assert(estatvivo_evento(&ok) == 1);
-  assert(!estatvivo_aberto() && estatvivo_fixado());
-  snprintf(nome, sizeof nome, "%s-4-fixado.bmp", saida);
-  captura(nome);
+  assert(estatvivo_evento(&ok, 0) == 1);
+  assert(estatvivo_aberto() && estatvivo_tamanho() == EV_TAM_COMPACTO);
+  snprintf(nome, sizeof nome, "%s-5-transicao.png", saida);
+  captura(nome, 6);
+  snprintf(nome, sizeof nome, "%s-4-compacto.png", saida);
+  captura(nome, 90);
+
+  // 5. MINIMO: a linha fina do canto, que nao rouba tecla.
+  assert(estatvivo_evento(&ok, 0) == 1);
+  assert(estatvivo_aberto() && estatvivo_tamanho() == EV_TAM_MINIMO);
+  snprintf(nome, sizeof nome, "%s-6-minimo.png", saida);
+  captura(nome, 90);
+
+  ok.key.keysym.sym = SDLK_DOWN;
+  assert(estatvivo_evento(&ok, 0) == 1 && estatvivo_fixado());
+  snprintf(nome, sizeof nome, "%s-7-fixado.png", saida);
+  captura(nome, 90);
+  estatvivo_abrir();
+  snprintf(nome, sizeof nome, "%s-8-desafixado.png", saida);
+  captura(nome, 90);
+  estatvivo_fechar();
+  snprintf(nome, sizeof nome, "%s-9-fechando.png", saida);
+  captura(nome, 6);
+
+  // 6. LADOS: cada tamanho na direita e na esquerda, sobre um quadro claro, para
+  // comparar com a lateral de legendas (mesma margem, largura e vidro).
+  { static const char *const N[EV_TAM_N] = { "completo", "compacto", "minimo" };
+    int lado, i;
+    claro = 1;
+    ajustes_definir_vidro(1);   // o vidro, como nas laterais com o Glass UI ligado
+    estatvivo_abrir();
+    SDL_Delay(650);
+    ok.key.keysym.sym = SDLK_RETURN;
+    for (lado = 0; lado < 2; lado++) {
+      ajustes_definir_estat_lado(lado);
+      for (i = 0; i < EV_TAM_N; i++) {
+        while (estatvivo_tamanho() != i) estatvivo_evento(&ok, 0);
+        snprintf(nome, sizeof nome, "%s-lado-%s-%s.png", saida, lado ? "esq" : "dir", N[i]);
+        captura(nome, 90);
+      }
+    }
+    ajustes_definir_estat_lado(0);
+    while (estatvivo_tamanho() != EV_TAM_COMPLETO) estatvivo_evento(&ok, 0);
+    ok.key.keysym.sym = SDLK_DOWN;
+    assert(estatvivo_evento(&ok, 0) == 1 && estatvivo_fixado());
+    snprintf(nome, sizeof nome, "%s-completo-fixado.png", saida);
+    captura(nome, 90); }
 
   tex_encerrar(); txt_encerrar(); gfx_encerrar();
   SDL_GL_DeleteContext(gl); SDL_DestroyWindow(w); SDL_Quit();

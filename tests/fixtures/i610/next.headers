@@ -1,0 +1,4 @@
+HTTP/1.1 200 OK
+x-pagination-page-count: 3
+Link: <https://api.trakt.tv/sync/watchlist/movies/added/desc?page=3&limit=12>; rel="next"
+

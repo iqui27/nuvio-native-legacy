@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <time.h>
 #include "filmomodelo.h"
+int ajustes_tmdb_elenco(void) { return 1; }
 static int trocar;
 static int juntarDuranteTroca(const FmBruto *,int,const char *,FmCredito *,int);
 #define fm_juntar juntarDuranteTroca

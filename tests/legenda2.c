@@ -19,6 +19,7 @@
 int rede_pedir(const RedePedido *p, RedeResposta *r) { (void)p; memset(r, 0, sizeof *r); abort(); }
 void rede_resposta_limpar(RedeResposta *r) { (void)r; }
 char *rede_baixar_bin(const char *u, int s, long *n) { (void)u; (void)s; (void)n; abort(); }
+const char *i18n(const char *s) { return s; }
 
 static const char *SRT_A =
   "1\n00:00:10,000 --> 00:00:12,000\nsegunda A\n\n"
@@ -129,14 +130,17 @@ int main(void) {
     assert(!strstr(in->identidade, "http"));
     legenda_documento_liberar(d); }
 
-  // 2. Independent offset, applied once: +1000 ms moves the lookup 1 s earlier
-  //    for the SECOND document only; the primary keeps its own timing.
+  // 2. Independent offset, applied once: +1000 ms of USER DELAY shows the cue
+  //    1 s LATER (visible at 11.0, gone at 12.0); the primary keeps its own.
   legenda2_definir_offset_manual(1000);
-  assert(textoEm(9.5, t, sizeof t) == 1 && !strcmp(t, "segunda A"));
-  assert(textoEm(11.5, t, sizeof t) == 0);          // 12.5 > end: applied exactly once
+  assert(textoEm(10.5, t, sizeof t) == 0);          // delayed: not yet
+  assert(textoEm(11.5, t, sizeof t) == 1 && !strcmp(t, "segunda A"));
   legenda2_definir_offset_auto(500);
   assert(legenda2_offset_total() == 1500);
-  assert(textoEm(8.6, t, sizeof t) == 1);
+  // lookup = offAuto - manual = 500 - 1000 = -500: cue reappears when
+  // pos - 0.5 >= 10 -> pos 10.5.
+  assert(textoEm(10.4, t, sizeof t) == 0);
+  assert(textoEm(10.6, t, sizeof t) == 1 && !strcmp(t, "segunda A"));
   { LegendaCue c[2];
     assert(legenda_cues(10.5, 0, c, 2) == 1 && !strcmp(c[0].texto, "principal"));
     assert(legenda_cues(9.5, 0, c, 2) == 0); }      // primary not shifted by the secondary

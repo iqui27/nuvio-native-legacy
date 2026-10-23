@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas da Agenda em BMP, sem interacao e sem rede.
 #
 #   bash tests/agenda_shot.sh /tmp/nuvio-agenda
@@ -12,7 +14,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-agenda-shot.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-agenda-shot.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 echo "dados da captura em $NUVIO_DADOS"
@@ -22,9 +24,9 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c) continue;; esac
   sources+=("$source")
 done
-cc "${sources[@]}" tests/agenda_shot.c -Isrc -o /tmp/nuvio-agenda-shot \
+cc "${sources[@]}" tests/agenda_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-agenda-shot \
   -O1 -g \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-agenda-shot "$@"
+${TMPDIR:-/tmp}/nuvio-agenda-shot "$@"

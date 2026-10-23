@@ -9,4 +9,12 @@ trap 'rm -rf "$tmp"' EXIT
 cc -O1 -g -Wall -Wextra -Isrc -Wno-deprecated-declarations -Wno-macro-redefined \
   src/contapend.c src/vistoep.c src/js.c src/jsw.c tests/contapend.c \
   -o "$tmp/contapend" -lpthread
-"$tmp/contapend"
+if [ "$#" -gt 0 ]; then
+  "$tmp/contapend" "$@"
+else
+  rc=0
+  "$tmp/contapend" retry || rc=1
+  "$tmp/contapend" progress || rc=1
+  "$tmp/contapend" || rc=1
+  exit "$rc"
+fi

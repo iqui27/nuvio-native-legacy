@@ -10,9 +10,13 @@
 // ("Τελειώνει στις %s") cortava do mesmo jeito. A pausa usava fim[40] e
 // passava raspando. tests/relogiofim.c varre os 30 idiomas.
 //
-// A hora fica em 24 h ("%H:%M"), como o relogio de cima: o defeito era o
-// corte, nao o formato. RELOGIO_FIM_MAX cabe tambem uma hora de 12 h
-// ("11:59 PM") na traducao mais longa, se algum dia o formato mudar.
+// A hora segue o AJUSTE da TV (Aparencia > Formato do relogio), como o
+// relogio de cima e a ilha: 24 h de fabrica, "9:10 PM" com o relogio de 12 h
+// ligado. O relato da Tizen ("ends at 21:10" com o relogio em 12 h) era o
+// strftime "%H:%M" fixo aqui; hora_tela() (horafmt.h) e o mesmo que o relogio
+// de cima usa. RELOGIO_FIM_MAX cabe tambem uma hora de 12 h ("11:59 PM") na
+// traducao mais longa, e h2[16] cabe "12:59 PM" com folga.
+#include "horafmt.h"
 #include "idioma.h"
 #include <stdio.h>
 #include <time.h>
@@ -25,7 +29,7 @@ static inline void relogio_fim(char *fim, size_t tam, time_t agora, double falta
   struct tm lf;
   char h2[16];
   localtime_r(&t2, &lf);
-  strftime(h2, sizeof h2, "%H:%M", &lf);
+  hora_tela(h2, sizeof h2, &lf);
   // i18n NO FORMATO: frase montada nao casa com chave (issue #12). O "a" com
   // crase vai escrito como \xc3\xa0, com o literal partido em dois.
   snprintf(fim, tam, i18n("Termina \xc3\xa0" "s %s"), h2);
@@ -38,7 +42,7 @@ static inline void relogio_fim_ilha(char *fim, size_t tam, time_t agora, double 
   struct tm lf;
   char h2[16];
   localtime_r(&t2, &lf);
-  strftime(h2, sizeof h2, "%H:%M", &lf);
+  hora_tela(h2, sizeof h2, &lf);
   snprintf(fim, tam, i18n("termina \xc3\xa0" "s %s"), h2);
 }
 

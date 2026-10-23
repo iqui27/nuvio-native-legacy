@@ -41,6 +41,7 @@ static const CentralItem CATALOGO[] = {
   { "selosColoridosLocal", "aj_badge-check", "Selos em cor" },
 };
 #define N_CAT ((int)(sizeof CATALOGO / sizeof *CATALOGO))
+_Static_assert(CENTRAL_MAX == N_CAT, "CENTRAL_MAX must cover every catalog tile");
 
 // DE FABRICA: o que se troca no sofa entre um titulo e outro, sem entrar em
 // Ajustes. Qualidade e Dolby Vision/Atmos mudam a proxima fonte; escolher a

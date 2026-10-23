@@ -82,6 +82,23 @@ int main(int argc, char **argv) {
     return 0;
   }
 
-  fprintf(stderr, "uso: %s escrever|ler\n", argv[0]);
+  // Sign-fix migration: a leg_atraso saved before the fix (no
+  // leg_atraso_sinal marker) is negated exactly once. "migrar" seeds the old
+  // file and expects -1500; "migrado" (new process) expects it unchanged.
+  if (!strcmp(argv[1], "migrar") || !strcmp(argv[1], "migrado")) {
+    if (!strcmp(argv[1], "migrar")) {
+      FILE *fw = fopen(caminhoDados, "w");
+      assert(fw);
+      fprintf(fw, "aspecto 0\nleg_atraso 1500\n");
+      fclose(fw);
+    }
+    player_abrir(0, NULL);
+    int a = player_leg_estilo()->atrasoMs;
+    printf("[teste] %s: leg_atraso=%d\n", argv[1], a);
+    if (a != -1500) { fprintf(stderr, "FALHOU: esperava -1500, veio %d\n", a); return 1; }
+    return 0;
+  }
+
+  fprintf(stderr, "uso: %s escrever|ler|migrar|migrado\n", argv[0]);
   return 2;
 }

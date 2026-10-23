@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas da PAGINA DE TITULO com as duas secoes novas (audiencia e frases),
 # em PNG, sem rede e sem interacao. Nao entra na suite (testa-tudo.sh pula
 # *_shot.sh): precisa de janela GL e de olho humano para julgar.
@@ -15,7 +17,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-detsec-dados.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-detsec-dados.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 echo "dados do teste em $NUVIO_DADOS"
@@ -26,8 +28,8 @@ for source in src/*.c src/dts/*.c; do
   sources+=("$source")
 done
 
-cc "${sources[@]}" tests/detail_secoes_shot.c -Isrc -o /tmp/nuvio-detsec-shot \
+cc "${sources[@]}" tests/detail_secoes_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-detsec-shot \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-/tmp/nuvio-detsec-shot "$@"
+${TMPDIR:-/tmp}/nuvio-detsec-shot "$@"

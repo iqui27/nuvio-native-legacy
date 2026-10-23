@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Captura dos selos de formato do player e da tabela de amostras (ver o .c).
 # Nao entra na suite: precisa de janela GL e de olho humano.
 #
@@ -6,7 +8,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 FLAGS="-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wno-deprecated-declarations -Wno-macro-redefined"
-OBJ=$(mktemp -d /tmp/nuvio-logos-obj.XXXXXX)
+OBJ=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-logos-obj.XXXXXX)
 trap 'rm -rf "$OBJ"' EXIT
 # video.c com os leitores de formato e de estado renomeados: o harness define os dele.
 cc -c $FLAGS -Dvideo_largura=video_largura_mac -Dvideo_hdr=video_hdr_mac \
@@ -17,9 +19,9 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/video.c) continue;; esac
   sources+=("$source")
 done
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-logos-dados.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-logos-dados.XXXXXX)
 export NUVIO_DADOS
-cc $FLAGS "${sources[@]}" "$OBJ/video.o" tests/logos_formato_shot.c -o /tmp/nuvio-logos-shot \
+cc $FLAGS "${sources[@]}" "$OBJ/video.o" tests/logos_formato_shot.c -o ${TMPDIR:-/tmp}/nuvio-logos-shot \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
-/tmp/nuvio-logos-shot "$@"
+${TMPDIR:-/tmp}/nuvio-logos-shot "$@"
 rm -rf "$NUVIO_DADOS"

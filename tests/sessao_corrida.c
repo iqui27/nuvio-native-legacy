@@ -32,9 +32,10 @@ const char *sessao_token(void);   // sessao.c de antes de #203
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nvtmp.h"
 
 // ------------------------------------------------------------ disco dublado
-static const char *pasta(void) { const char *d = getenv("NV_T_DIR"); return d && *d ? d : "/tmp"; }
+static const char *pasta(void) { const char *d = getenv("NV_T_DIR"); return d && *d ? d : nvt_dir(); }
 static pthread_mutex_t discoTrava = PTHREAD_MUTEX_INITIALIZER;
 char *dados_ler(const char *nome) {
   char c[600]; FILE *f; long n; char *b;

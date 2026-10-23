@@ -10,6 +10,7 @@
 #include "idioma.h"
 #include "servidores.h"
 #include "srvidx.h"
+#include "plex.h"
 #include <stdio.h>
 
 // "Local · Casa" / "Remoto · Casa": the source chip and card say where the
@@ -37,4 +38,21 @@ static int origem(const char *id, const char *tipo, int (*cancelado)(void *), vo
   return n;
 }
 
-void servidores_ligar_aos_addons(void) { addons_definir_origem_extra(origem, servidores_casamento_ativo); }
+static void *preparoCapturar(void) { return plex_preparo_capturar(); }
+static int preparoAtual(const void *p) { return plex_preparo_atual(p); }
+static int preparoConsultar(const void *p, const char *id, const char *tipo,
+                            int (*cancelado)(void *), void *ctx,
+                            OrigemAviso aviso, void *avisoU, Stream **saida) {
+  int n = plex_preparo_consultar(p, id, tipo, cancelado, ctx, saida);
+  if (n > 0 && *saida) {
+    servidores_rotular(*saida, n);
+    if (aviso) aviso(avisoU, ORIGEM_SERVIDOR, "", 2, *saida, n);
+  }
+  return n;
+}
+static void preparoLiberar(void *p) { plex_preparo_liberar(p); }
+void servidores_ligar_aos_addons(void) {
+  static const OrigemPreparoOps ops = {preparoCapturar, preparoAtual, preparoConsultar, preparoLiberar};
+  addons_definir_origem_extra(origem, servidores_casamento_ativo);
+  addons_definir_origem_extra_preparo(origem, &ops);
+}
