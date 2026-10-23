@@ -1992,7 +1992,8 @@ static void indexar(JfInst *I, const Tarefa *t, RedeJob *j, const JfConta *c) {
         if (I->idx.v[i].visto && (I->idx.v[i].tipo == 'm' || I->idx.v[i].tipo == 's') &&
             I->idx.v[i].imdb[0])
           cat_historico_definir_tempo(I->idx.v[i].imdb, I->idx.v[i].tipo == 's' ? "series" : "movie",
-                                    1, I->idx.v[i].vistoMs); }
+                                    // Watched without a date: keep any newer known mark (ms 0 = "now").
+                                    1, I->idx.v[i].vistoMs > 0 ? I->idx.v[i].vistoMs : 1); }
     pthread_mutex_unlock(&I->trava);
     printf("[%s] index: %d title(s), %s pass\n", I->log, nAtual, incremental ? "incremental" : "full");
     // Deletions are invisible to an incremental pass: a count that disagrees
@@ -2435,7 +2436,7 @@ static int jfi_episodios(JfInst *I, const char *id, SrvEp *out, int max) {
   if (k >= 0) {
     copiar(item, sizeof item, I->idx.v[k].item);
     temSerie = 1;
-    buscar = !epsRecentesLocked(I, item) && srvidx_n_eps(&I->idx, item) == 0;
+    buscar = !epsRecentesLocked(I, item);   // #617: expiry refreshes, not only an empty cache
     c = I->conta; g = I->geracao;
     copiar(tag, sizeof tag, I->idxTag);
     if (buscar) j = rede_job_criar(I->grupo);

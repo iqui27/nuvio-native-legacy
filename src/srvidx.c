@@ -287,8 +287,9 @@ int srvidx_host_local(const char *url) {
 // -------------------------------------------------------------------- text
 // Header: "srvidx 1 <tag> <marca> <total>\n"; then one row per line,
 // tab-separated: kind, item, series, imdb, tmdb, tvdb, year, season, episode,
-// height, hdr, watched, title hash, save time[, watched ms, resume ticks].
-// The last two are optional: indexes written before them still load.
+// height, hdr, watched, title hash, save time[, watched ms, resume ticks,
+// duration ticks]. The last three are optional: indexes written before them
+// still load.
 char *srvidx_serializar(const SrvIdx *x, const char *tag) {
   size_t cap = 96 + (size_t)x->n * 200, k;
   char *t = malloc(cap);
@@ -297,10 +298,10 @@ char *srvidx_serializar(const SrvIdx *x, const char *tag) {
   k = (size_t)snprintf(t, cap, "srvidx 1 %s %lld %d\n", tag && *tag ? tag : "-", x->marca, x->total);
   for (i = 0; i < x->n && k < cap; i++) {
     const SrvIdxItem *e = &x->v[i];
-    k += (size_t)snprintf(t + k, cap - k, "%c\t%s\t%s\t%s\t%ld\t%ld\t%d\t%d\t%d\t%u\t%u\t%u\t%u\t%lld\t%lld\t%lld\n",
+    k += (size_t)snprintf(t + k, cap - k, "%c\t%s\t%s\t%s\t%ld\t%ld\t%d\t%d\t%d\t%u\t%u\t%u\t%u\t%lld\t%lld\t%lld\t%lld\n",
                           e->tipo, e->item, e->serie[0] ? e->serie : "-", e->imdb[0] ? e->imdb : "-",
                           e->tmdb, e->tvdb, e->ano, e->temporada, e->episodio, e->altura, e->hdr,
-                          e->visto, e->tituloHash, e->atualizado, e->vistoMs, e->retomadoTicks);
+                          e->visto, e->tituloHash, e->atualizado, e->vistoMs, e->retomadoTicks, e->duracaoTicks);
   }
   if (k >= cap) { free(t); return NULL; }
   return t;
@@ -324,12 +325,12 @@ int srvidx_desserializar(SrvIdx *x, const char *txt, const char *tag) {
   if (tag && *tag && strcmp(t, tag)) return 0;          // another server's index
   p = strchr(txt, '\n');
   while (p && *++p) {
-    const char *f[16], *q = p, *fim = strchr(p, '\n');
-    size_t nf[16];
+    const char *f[17], *q = p, *fim = strchr(p, '\n');
+    size_t nf[17];
     int k = 0;
     SrvIdxItem e;
     if (!fim) fim = p + strlen(p);
-    while (k < 16 && q <= fim) {
+    while (k < 17 && q <= fim) {
       const char *tb = memchr(q, '\t', (size_t)(fim - q));
       f[k] = q;
       nf[k] = (size_t)((tb ? tb : fim) - q);
@@ -357,6 +358,7 @@ int srvidx_desserializar(SrvIdx *x, const char *txt, const char *tag) {
     e.atualizado = strtoll(f[13], NULL, 10);
     if (k > 14) e.vistoMs = strtoll(f[14], NULL, 10);
     if (k > 15) e.retomadoTicks = strtoll(f[15], NULL, 10);
+    if (k > 16) e.duracaoTicks = strtoll(f[16], NULL, 10);
     if (srvidx_por(x, &e)) lidas++;
   }
   x->marca = marca > x->marca ? marca : x->marca;

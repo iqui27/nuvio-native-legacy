@@ -49,11 +49,13 @@ void dados_fs_liberar(void) {}
 // The index feeds the catalogue watched history (issue #617): record it.
 static int nHistVistos;
 static char histId[8][16];
+static long long histMs[8];
 void cat_historico_definir_tempo(const char *imdb, const char *tipo,
                                  int visto, long long ms) {
-  (void)tipo; (void)ms;
+  (void)tipo;
   if (!visto || nHistVistos >= 8) return;
   snprintf(histId[nHistVistos], sizeof histId[0], "%s", imdb ? imdb : "");
+  histMs[nHistVistos] = ms;
   nHistVistos++;
 }
 
@@ -364,7 +366,11 @@ static void testarIntegracao(void) {
   { int i;
     for (i = 0; i < nHistVistos; i++)
       if (!strcmp(histId[i], "tt0001005")) break;
-    assert(i < nHistVistos); }
+    assert(i < nHistVistos);
+    // tt0001006: watched, no LastPlayedDate -> never "now" (would clobber a newer mark)
+    for (i = 0; i < nHistVistos; i++)
+      if (!strcmp(histId[i], "tt0001006")) break;
+    assert(i < nHistVistos && histMs[i] == 1); }
   { CatItem atv[4];
     assert(jellyfin_atividade("resume", atv, 4) == 1 && !strcmp(atv[0].imdb, "tt0001005"));
     assert(jellyfin_atividade("nextup", atv, 4) == 1 && atv[0].temporada == 2); }
@@ -480,6 +486,13 @@ static void testarIntegracao(void) {
   jellyfin_perfil_trocou();
   assert(jellyfin_conectado());
   assert(jellyfin_tem("tt0001070", "movie", NULL) && jellyfin_tem("tt0900001:2:3", "series", NULL));
+  // #617: episodes restored from disk are refetched once — cached flags may be stale.
+  { SrvEp e2[8]; char *ix;
+    free(controle("index"));
+    assert(jellyfin_episodios("tt0900001", e2, 8) == 6);
+    ix = controle("index");
+    assert(strstr(ix, "\"episodes\": 1"));
+    free(ix); }
   free(controle("revoke"));
   jellyfin_recarregar_bibliotecas();
   assert(esperarEstado(JF_EST_EXPIROU, 5000) == JF_EST_EXPIROU);

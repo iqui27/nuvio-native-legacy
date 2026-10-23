@@ -86,7 +86,8 @@ def movie(i):
         "ImageTags": {"Primary": "ptag%d" % i, "Logo": "ltag"},
         "BackdropImageTags": ["btag%d" % i],
         "UserData": {"PlaybackPositionTicks": 36000000000, "PlayedPercentage": 50.0,
-                     "Played": i == 5, "Key": mid,
+                     # 6: watched without a date — the "unknown timestamp" case of #617
+                     "Played": i in (5, 6), "Key": mid,
                      "LastPlayedDate": "2026-09-15T12:00:00.0000000Z" if i == 5 else ""},
     }
 

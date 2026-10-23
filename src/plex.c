@@ -2077,7 +2077,8 @@ static void indexar(const Tarefa *t, RedeJob *j, const PxConta *c, const PxBibli
         if (idx.v[i].visto && (idx.v[i].tipo == 'm' || idx.v[i].tipo == 's') &&
             idx.v[i].imdb[0])
           cat_historico_definir_tempo(idx.v[i].imdb, idx.v[i].tipo == 's' ? "series" : "movie",
-                                    1, idx.v[i].vistoMs); }
+                                    // Watched without a date: keep any newer known mark (ms 0 = "now").
+                                    1, idx.v[i].vistoMs > 0 ? idx.v[i].vistoMs : 1); }
     pthread_mutex_unlock(&trava);
     srvidx_limpar(&novo);
     if (e != PX_OK) break;
@@ -2471,7 +2472,7 @@ int plex_episodios(const char *id, SrvEp *out, int max) {
   if (k >= 0) {
     copiar(rk, sizeof rk, idx.v[k].item);
     temSerie = 1;
-    buscar = !epsRecentesLocked(rk) && srvidx_n_eps(&idx, rk) == 0;
+    buscar = !epsRecentesLocked(rk);        // #617: expiry refreshes, not only an empty cache
     c = conta; g = geracao;
     copiar(tag, sizeof tag, idxTag);
     if (buscar) j = rede_job_criar(grupo);
