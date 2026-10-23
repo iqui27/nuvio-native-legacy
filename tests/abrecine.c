@@ -70,6 +70,29 @@ int main(void) {
   abrecine_passo(&a, 0, 1, 0, t, dt, 1);
   assert(a.veu == 0.0f);
 
-  puts("PASS: abrecine: padrao Cinema, tecla, demora e crossfade so com quadro real");
+  // Linha de estado: resolvendo ate a URL chegar, depois carregando o video.
+  assert(abrecine_etapa(1) == ABRECINE_RESOLVENDO);
+  assert(abrecine_etapa(0) == ABRECINE_CARREGANDO);
+
+  // OSD calado: desde a abertura ate a primeira tecla com a fonte aberta, tambem
+  // no DV que comeca pausado (a abertura acaba e ninguem aperta nada).
+  memset(&a, 0, sizeof a);
+  abrecine_passo(&a, 1, 0, 0, t, dt, 0);
+  assert(abrecine_osd_calado(&a));
+  abrecine_acordou(&a, 1);                       // tecla com a fonte abrindo: nao conta
+  assert(abrecine_osd_calado(&a));
+  abrecine_passo(&a, 0, 0, 0, t + 100, dt, 0);   // fonte aberta, DV pausado, sem imagem
+  assert(abrecine_osd_calado(&a));
+  abrecine_passo(&a, 0, 1, 0, t + 200, dt, 0);   // primeiro quadro: suave, ainda sem OSD
+  for (i = 0; i < 120; i++) abrecine_passo(&a, 0, 1, 0, t + 16u * i, dt, 0);
+  assert(!abrecine_cinema(&a) && abrecine_osd_calado(&a));
+  abrecine_acordou(&a, 0);                       // OK/setas: o OSD aparece
+  assert(!abrecine_osd_calado(&a));
+  abrecine_passo(&a, 0, 1, 0, t, dt, 0);         // e fica (so uma abertura nova cala de novo)
+  assert(!abrecine_osd_calado(&a));
+  abrecine_passo(&a, 1, 0, 0, t + 9000, dt, 0);
+  assert(abrecine_osd_calado(&a));
+
+  puts("PASS: abrecine: padrao Cinema, tecla, demora, crossfade so com quadro real e OSD calado ate a tecla");
   return 0;
 }

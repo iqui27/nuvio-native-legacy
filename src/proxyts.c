@@ -28,6 +28,9 @@ const char *proxyts_resolver(const char *url, char *buf, size_t n) {
 #else
 
 #include "rede.h"
+#include "livetv_regras.h"
+// Keep the network proxy independent of SDL headers.
+extern int ajustes_livetv_resolucao(void);
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
@@ -100,11 +103,13 @@ static void pxJuntar(const char *base, const char *rel, char *dst, size_t n) {
   snprintf(dst, n, "%.*s/%s", (int)barra, base, rel);
 }
 
-// Le uma playlist (master ou de midia). Na master, fica a primeira variante
-// (a ordem do provedor) em uri[0] com mestre=1.
+// Parse a media/master playlist. Automatic uses the highest variant; an
+// explicit resolution uses the nearest height. Re-read settings on each open.
 static int pxLer(const char *texto, const char *base, PxLista *l) {
   const char *p = texto;
-  int proximaEhVariante = 0;
+  int proximaEhVariante = 0, altura = 0, melhorAltura = -1;
+  int alvo = nv_res_opcao_altura(ajustes_livetv_resolucao()), melhorDif = 1 << 30;
+  long banda = 0, melhorBanda = -1;
   memset(l, 0, sizeof *l);
   l->alvo = 6;
   if (!texto || strncmp(texto, "#EXTM3U", 7)) return 0;
@@ -117,10 +122,21 @@ static int pxLer(const char *texto, const char *base, PxLista *l) {
     else if (!strncmp(linha, "#EXT-X-ENDLIST", 14)) l->fim = 1;
     else if (!strncmp(linha, "#EXT-X-KEY:", 11) && !strstr(linha, "METHOD=NONE")) l->cifrado = 1;
     else if (!strncmp(linha, "#EXT-X-MAP:", 11)) l->fmp4 = 1;
-    else if (!strncmp(linha, "#EXT-X-STREAM-INF", 17)) proximaEhVariante = 1;
+    else if (!strncmp(linha, "#EXT-X-STREAM-INF", 17)) {
+      const char *r = strstr(linha, "RESOLUTION="), *b = strstr(linha, "BANDWIDTH=");
+      int largura;
+      altura = 0; banda = b ? atol(b + 10) : 0;
+      if (r) sscanf(r + 11, "%dx%d", &largura, &altura);
+      proximaEhVariante = 1;
+    }
     else if (linha[0] && linha[0] != '#') {
       if (proximaEhVariante) {
-        if (!l->mestre) { l->mestre = 1; pxJuntar(base, linha, l->uri[0], sizeof l->uri[0]); l->n = 1; }
+        int dif = abs(altura - alvo);
+        if (!l->mestre || (alvo ? dif < melhorDif :
+            altura > melhorAltura || (altura == melhorAltura && banda > melhorBanda))) {
+          melhorAltura = altura; melhorBanda = banda; melhorDif = dif;
+          l->mestre = 1; pxJuntar(base, linha, l->uri[0], sizeof l->uri[0]); l->n = 1;
+        }
         proximaEhVariante = 0;
       } else if (!l->mestre && l->n < PX_SEG_MAX) {
         pxJuntar(base, linha, l->uri[l->n], sizeof l->uri[0]);

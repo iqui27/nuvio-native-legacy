@@ -1,4 +1,6 @@
 #!/bin/sh
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # libwebp (decode + demux) para o alvo Tizen WebAssembly, para o WebP ANIMADO
 # das capas de colecao (#141). Rode depois de ativar o emsdk; tools/tizen.sh
 # liga NV_WEBP_ANIM quando acha o resultado em build/webp-wasm.
@@ -14,7 +16,7 @@
 set -eu
 
 PREFIX=${NUVIO_WEBP_ROOT:-$(pwd)/build/webp-wasm}
-BUILD=${NUVIO_WEBP_BUILD:-/tmp/nuvio-webp-wasm-build}
+BUILD=${NUVIO_WEBP_BUILD:-${TMPDIR:-/tmp}/nuvio-webp-wasm-build}
 EMCC=${EMCC:-emcc}
 EMAR=${EMAR:-emar}
 LIBWEBP_VERSION=${LIBWEBP_VERSION:-1.4.0}

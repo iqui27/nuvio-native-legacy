@@ -4,6 +4,7 @@
 #include "intro.h"
 #define desc_episodios_garantir(i) ((void)(i))
 #define intro_pedir_ids(id, tmdb, t, e, da, dp) ((void)0)
+#define intro_pedir_ids_mapeados(id, tmdb, t, e, it, ie, da, dp) ((void)0)
 #include "../src/player.c"
 #include "dados.h"
 #include "perfis.h"

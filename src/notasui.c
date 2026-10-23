@@ -1,5 +1,6 @@
 #include "notasui.h"
 #include "ajustes.h"
+#include "detail.h"
 #include "badges.h"
 #include "idioma.h"
 #include "layout.h"
@@ -7,6 +8,8 @@
 #include "tex_cache.h"
 #include "textogate.h"
 #include "focoprof.h"
+#define NV_TXT_TELA
+#include "escala.h"
 #include <SDL2/SDL.h>
 #include <math.h>
 #include <stdio.h>
@@ -30,7 +33,7 @@ static void painel(GfxRect r, float raio, float a) {
   float teto = r.h > 0.0f ? 0.5f * r.w / r.h : 0.5f;
   if (rf > 0.5f) rf = 0.5f;
   if (rf > teto) rf = teto;
-  if (ajustes_vidro()) { gfx_vidro_painel(r, rf, 0.5f, a); return; }
+  if (ajustes_vidro()) { gfx_cor(r, rf, 1, 1, 1, 0.07f * a); return; }
   gfx_cor(r, rf, 0.082f, 0.094f, 0.118f, 0.92f * a);
 }
 
@@ -51,6 +54,10 @@ static void pilula(float x, float yc, float w, float h, const char *txt,
 // item da linha NAO PODE depender de a textura ja ter carregado, senao o
 // encaixe decidiria diferente no primeiro quadro e no segundo.
 typedef struct { const char *nome; float asp; } Png;
+// 1 = a linha usa o logotipo do Trakt (o check vermelho) em vez do wordmark e o logo do
+// Metacritic em vez do quadro colorido (o painel de pausa).
+static int modoIcone;
+void notasui_modo_icone(int ligado) { modoIcone = ligado; }
 
 static Png pngDe(int f, int cru, int nalinha) {
   Png p = { NULL, 1.0f };
@@ -63,9 +70,9 @@ static Png pngDe(int f, int cru, int nalinha) {
     case EX_TMDB:     p.nome = "tmdb";       p.asp = 1.40f; break;
     // Trakt: o WORDMARK na linha (o nome), o icone redondo nas linhas do
     // heatmap e nos cartoes.
-    case EX_TRAKT:    p.nome = nalinha ? "trakt_wordmark" : "trakt";
-                      p.asp = nalinha ? 2.62f : 1.0f; break;
-    case EX_LETTERBOXD: p.nome = "letterboxd"; p.asp = 1.0f; break;
+    case EX_TRAKT:    p.nome = modoIcone ? "trakt_logomark" : nalinha ? "trakt_wordmark" : "trakt";
+                      p.asp = (nalinha && !modoIcone) ? 2.62f : 1.0f; break;
+    case EX_LETTERBOXD: p.nome = "letterboxd"; p.asp = 2.2f; break;
     case EX_IMDB:     p.nome = "imdb";       p.asp = 1.98f; break;
     case EX_METACRITIC: case EX_METAUSER:
                       p.nome = "metacritic"; p.asp = 1.0f; break;
@@ -137,7 +144,7 @@ static float larguraItem(int f, int cru) {
   (void)n100;
   if (f == EX_IMDB) return badge_imdb_largura(cru);
   textoLinha(f, cru, v, sizeof v);
-  if (f == EX_METACRITIC) {
+  if (f == EX_METACRITIC && !modoIcone) {
     float w = (float)txt_largura(TXT_CAPTION2, v) + 14.0f;
     return w > ALT_QUADRO ? w : ALT_QUADRO;
   }
@@ -157,11 +164,11 @@ void notasui_planejar(NotasPlano *p, const int cru[EX_NFONTES], float disp,
   unsigned char manter[EX_NFONTES];
   memset(p, 0, sizeof *p);
   for (pos = 0; pos < EX_NFONTES; pos++) {
-    int f = nf_na_posicao(pos);
+    int f = ajustes_nota_fonte(pos);
     if (f < 0 || cru[f] <= 0) continue;
     if (querer ? !querer[f] : !ajustes_nota_titulo(f)) continue;
     fonte[n] = f;
-    prio[n] = nf_prioridade(f);
+    prio[n] = nf_prioridade_ord(f, 0);
     larg[n] = larguraItem(f, cru[f]);
     comVao[n] = larg[n] + VAO_ITEM;
     n++;
@@ -184,7 +191,7 @@ static void desenhaItem(int f, int cru, float x, float yc, float a) {
   char v[24];
   textoLinha(f, cru, v, sizeof v);
   if (f == EX_IMDB) { badge_imdb(x, yc - BADGE_H * 0.5f, cru, 0, a); return; }
-  if (f == EX_METACRITIC) {
+  if (f == EX_METACRITIC && !modoIcone) {
     float r, g, b, w = larguraItem(f, cru);
     int c;
     TxtLinha l;
@@ -222,14 +229,23 @@ static void desenhaItem(int f, int cru, float x, float yc, float a) {
   }
 }
 
-float notasui_desenhar_linha(const NotasPlano *p, float x, float yc, float a) {
+float notasui_desenhar_linha_vao(const NotasPlano *p, float x, float yc, float vao, float a) {
   int i;
   for (i = 0; i < p->n; i++) {
-    if (i) x += VAO_ITEM;
+    if (i) x += vao;
     desenhaItem(p->fonte[i], p->cru[i], x, yc, a);
     x += p->larg[i];
   }
   return x;
+}
+float notasui_desenhar_linha(const NotasPlano *p, float x, float yc, float a) {
+  return notasui_desenhar_linha_vao(p, x, yc, VAO_ITEM, a);
+}
+float notasui_plano_largura(const NotasPlano *p, float vao) {
+  float w = 0.0f;
+  int i;
+  for (i = 0; i < p->n; i++) w += p->larg[i] + (i ? vao : 0.0f);
+  return w;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,7 +284,7 @@ float notasui_marca_cartao(int f, int cru, float xc, float yc, float h, float a)
 // ---------------------------------------------------------------------------
 // A esquerda um CARTAO DE NOTA: a media 0..100 grande, a divisao critica x
 // publico numa barra com os dois numeros, uma frase que explica a diferenca e
-// "Menor · Maior". A direita uma GRADE DE DUAS COLUNAS com um bloco por fonte:
+// "Menor · Maior". A direita, quatro colunas no B2 com vidro, duas sem vidro:
 // marca, nota no formato do site, uma barra fina 0..100 com a marca branca na
 // media e a diferenca para a media. A regua 45..100 e a lista longa sairam.
 //
@@ -277,13 +293,15 @@ float notasui_marca_cartao(int f, int cru, float xc, float yc, float h, float a)
 // (detail.c faz o cima/baixo dentro da grade).
 #include "telefoneui.h"
 static int notasEmpilhadas(void) { return telefoneui_ativo() && NV_TELA_W < 1500; }
-#define SEC_W       (notasEmpilhadas() ? NV_TELA_W - 192.0f : 1728.0f)
-#define SCORE_W     (notasEmpilhadas() ? SEC_W : 520.0f)
+static int notasB2(void) { return ajustes_vidro() && !notasEmpilhadas(); }
+#define TILE_COLS    (notasB2() ? 4 : 2)
+#define SEC_W       (NV_TELA_W - 2.0f * NV_DETP_X)
+#define SCORE_W     (notasEmpilhadas() ? SEC_W : notasB2() ? 420.0f : 520.0f)
 #define SCORE_MIN_H  448.0f
-#define COL_GAP       28.0f
-#define TILE_GAP      14.0f
-#define TILE_H       104.0f
-#define TILE_W     ((SEC_W - (notasEmpilhadas() ? 0 : SCORE_W + COL_GAP) - TILE_GAP) * 0.5f)
+#define COL_GAP      (28.0f + 8.0f * NV_DETP_ESP)
+#define TILE_GAP     (14.0f + 8.0f * NV_DETP_ESP)
+#define TILE_H       (notasB2() ? 217.0f : 104.0f)
+#define TILE_W     ((SEC_W - (notasEmpilhadas() ? 0 : SCORE_W + COL_GAP) - (TILE_COLS - 1) * TILE_GAP) / TILE_COLS)
 #define TILE_PAD      24.0f
 #define TILE_LOGO_W   64.0f
 #define TILE_VAL_W   128.0f
@@ -334,6 +352,8 @@ typedef struct {
   float h, scoreH;             // altura da secao e do resumo
 } Medidas;
 
+static float desenhaCartao(const Medidas *m, float x, float y, float h, float f, float a);
+
 static void medir(const NotasSecao *s, Medidas *m) {
   int pos;
   memset(m, 0, sizeof *m);
@@ -345,9 +365,16 @@ static void medir(const NotasSecao *s, Medidas *m) {
     m->nFontes++;
   }
   if (m->nFontes) {
-    int linhas = (m->nFontes + 1) / 2;
+    int linhas = (m->nFontes + TILE_COLS - 1) / TILE_COLS;
     float hg = (float)linhas * TILE_H + (float)(linhas - 1) * TILE_GAP;
-    m->scoreH = notasEmpilhadas() ? SCORE_MIN_H : fmaxf(hg, SCORE_MIN_H);
+    // UMA fonte nao enche o cartao de resumo: sem "Menor/Maior" e sem a barra
+    // critica x publico (os dois precisam de r.n > 1), um piso de 448 deixava
+    // a metade de baixo do cartao vazia a cada titulo novo demais para o
+    // MDBList — o "52 de 100 · so uma fonte" da TCL. 208 cabem o numero e a
+    // linha "de 100"; com 2+ o resumo cheio volta a precisar da altura toda.
+    float minimo = m->nFontes == 1 ? 208.0f : SCORE_MIN_H;
+    if (notasB2()) minimo = fmaxf(minimo, desenhaCartao(m, 0, 0, 0, 0, 0));
+    m->scoreH = notasEmpilhadas() ? minimo : fmaxf(hg, minimo);
     m->h = notasEmpilhadas() ? m->scoreH + COL_GAP + hg : m->scoreH;
   }
 }
@@ -386,7 +413,8 @@ static TxtLinha texto(TxtEstilo e, const char *s, int c) {
 static const char *nomeCurto(int f) { return f == EX_METAUSER ? "Metacritic" : nf_nome(f); }
 
 // CARTAO DE NOTA, a esquerda.
-static void desenhaCartao(const Medidas *m, float x, float y, float h, float f, float a) {
+// Alpha zero measures the same text flow without submitting draw commands.
+static float desenhaCartao(const Medidas *m, float x, float y, float h, float f, float a) {
   NfResumo r;
   GfxRect box = { x, y, SCORE_W, h };
   float px = x + 40.0f, py = y + 34.0f, larg = SCORE_W - 80.0f;
@@ -395,14 +423,14 @@ static void desenhaCartao(const Medidas *m, float x, float y, float h, float f, 
   // O foco da secao mora AQUI, no numero grande: os blocos de fonte nao sao
   // paradas do D-pad (o detalhe de cada um ja esta na grade ao lado).
   if (!ajustes_vidro()) foco_anel(box, CARD_RAIO / h, f, a);
-  painel(box, CARD_RAIO, a);
+  if (a > 0) painel(box, CARD_RAIO, a);
   if (f > 0.01f) gfx_cor(box, CARD_RAIO / h, 1, 1, 1, 0.07f * f * a);
-  if (ajustes_vidro()) foco_anel(box, CARD_RAIO / h, f, a);
+  if (ajustes_vidro() && a > 0) foco_anel(box, CARD_RAIO / h, f, a);
   if (r.n == 0) {
     // So a nota agregada do MDBList (ou nenhuma que conte): nada a comparar.
     txt_bloco_corta(TXT_DET_META2, i18n("Só a nota agregada chegou; não há o que comparar."),
                     180, 184, 192, px, py, larg, 32.0f, a, 3);
-    return;
+    return 34.0f + 3.0f * 32.0f + 34.0f;
   }
   // MEDIA grande, com "de 100 / media de N fontes" na linha de base dela.
   { char n[8]; TxtLinha big, l1, l2;
@@ -448,11 +476,11 @@ static void desenhaCartao(const Medidas *m, float x, float y, float h, float f, 
     if (tot < 1.0f) tot = 1.0f;
     wc = (larg - gap) * (float)r.criticos / tot;
     wp = (larg - gap) - wc;
-    gfx_cor((GfxRect){ px, py, wc, 14.0f }, 0.5f, 0.486f, 0.769f, 1.0f, a);          // #7cc4ff
-    gfx_cor((GfxRect){ px + wc + gap, py, wp, 14.0f }, 0.5f, 0.788f, 0.655f, 1.0f, a); // #c9a7ff
+    if (a > 0) gfx_cor((GfxRect){ px, py, wc, 14.0f }, 0.5f, 0.486f, 0.769f, 1.0f, a);          // #7cc4ff
+    if (a > 0) gfx_cor((GfxRect){ px + wc + gap, py, wp, 14.0f }, 0.5f, 0.788f, 0.655f, 1.0f, a); // #c9a7ff
     py += 14.0f + 26.0f;
     // A frase que explica a diferenca, sob um fio.
-    gfx_cor((GfxRect){ px, py, larg, 1.0f }, 0, 1, 1, 1, 0.09f * a);
+    if (a > 0) gfx_cor((GfxRect){ px, py, larg, 1.0f }, 0, 1, 1, 1, 0.09f * a);
     py += 20.0f;
     { int d = r.diff < 0 ? -r.diff : r.diff;
       const char *v;
@@ -469,8 +497,9 @@ static void desenhaCartao(const Medidas *m, float x, float y, float h, float f, 
     { int duas = (float)txt_largura(TXT_ILHA_SUB, buf) > larg;
       float yl = y + h - 34.0f - (duas ? 52.0f : 26.0f);
       if (yl < py + 8.0f) yl = py + 8.0f;
-      txt_bloco_corta(TXT_ILHA_SUB, buf, 140, 144, 152, px, yl, larg, 26.0f, a, 2); }
+      py = yl + txt_bloco_corta(TXT_ILHA_SUB, buf, 140, 144, 152, px, yl, larg, 26.0f, a, 2); }
   }
+  return py - y + 34.0f;
 }
 
 // UM BLOCO DE FONTE. `f` = foco 0..1 (mola de detail.c).
@@ -480,8 +509,8 @@ static void desenhaBloco(const NotasSecao *s, int fonte, int norm, const NfResum
   GfxRect rz = foco_zoom(r0, f);
   float raio = TILE_RAIO / TILE_H;
   float cr, cg, cb;
-  float bx = x + TILE_PAD + TILE_LOGO_W + 18.0f;
-  float bw = x + TILE_W - TILE_PAD - TILE_VAL_W - 16.0f - bx;
+  float bx = notasB2() ? x + TILE_PAD : x + TILE_PAD + TILE_LOGO_W + 18.0f;
+  float bw = notasB2() ? TILE_W - 2 * TILE_PAD : x + TILE_W - TILE_PAD - TILE_VAL_W - 16.0f - bx;
   float by = y + TILE_H - 30.0f;
   char v[24];
   TxtLinha ln, lv;
@@ -489,15 +518,29 @@ static void desenhaBloco(const NotasSecao *s, int fonte, int norm, const NfResum
   // bloco cresce. A superficie clareia um degrau, como o .f.on do mockup.
   if (!ajustes_vidro()) foco_anel(r0, raio, f, a);
   painel(rz, TILE_RAIO, a);
+  // B2: each source tile carries its brand colour, a glow from the top-left
+  // corner (the mockup's 150deg tint), one quad, no blur.
+  if (ajustes_vidro()) {
+    static const unsigned char C[EX_NFONTES][3] = {
+      [EX_TRAKT] = {237, 28, 36}, [EX_IMDB] = {245, 197, 24}, [EX_TMDB] = {1, 210, 119},
+      [EX_TOMATOES] = {236, 72, 48}, [EX_AUDIENCE] = {236, 72, 48},
+      [EX_METACRITIC] = {255, 204, 52}, [EX_METAUSER] = {255, 204, 52},
+      [EX_LETTERBOXD] = {64, 188, 244}, [EX_MAL] = {46, 81, 162},
+      [EX_EBERT] = {243, 242, 239}, [EX_MDBSCORE] = {243, 242, 239} };
+    gfx_luz_canto(rz, raio, 0.0f, 0.0f, rz.w * 0.95f,
+                  C[fonte][0] / 255.0f, C[fonte][1] / 255.0f, C[fonte][2] / 255.0f, 0.24f * a);
+  }
   if (f > 0.01f) gfx_cor(rz, raio, 1, 1, 1, 0.07f * f * a);
   if (ajustes_vidro()) foco_anel(r0, raio, f, a);
-  marcaCaixa(fonte, s->cru[fonte], x + TILE_PAD, y + TILE_H * 0.5f, TILE_LOGO_W, a);
+  marcaCaixa(fonte, s->cru[fonte], x + TILE_PAD,
+             y + (notasB2() ? 38.0f : TILE_H * 0.5f), TILE_LOGO_W, a);
   ln = txt_linha_corta(TXT_DET_META2, rotulo(fonte), 190, 194, 202, 255, bw);
-  txt_desenhar_alpha(ln, bx, y + 22.0f, a);
+  txt_desenhar_alpha(ln, bx, y + (notasB2() ? 72.0f : 22.0f), a);
   // Valor no formato do site e a diferenca para a media.
   nf_texto(fonte, s->cru[fonte], virgula(), 1, v, sizeof v);
   lv = texto(TXT_LOG_T34, v, 245);
-  txt_desenhar_alpha(lv, x + TILE_W - TILE_PAD - (float)lv.w, y + 14.0f, a);
+  float valY = y + (notasB2() ? 110.0f : 14.0f);
+  txt_desenhar_alpha(lv, x + TILE_W - TILE_PAD - (float)lv.w, valY, a);
   if (r->n > 1 && nf_grupo(fonte) != NF_AGREGADA) {
     int d = norm - r->media;
     char dl[12];
@@ -506,7 +549,7 @@ static void desenhaBloco(const NotasSecao *s, int fonte, int norm, const NfResum
     if (d > 0)      ld = txt_linha(TXT_G16B, dl, 67, 211, 158, 255);
     else if (d < 0) ld = txt_linha(TXT_G16B, dl, 240, 138, 75, 255);
     else            ld = texto(TXT_G16B, dl, 140);
-    txt_desenhar_alpha(ld, x + TILE_W - TILE_PAD - (float)ld.w, y + 14.0f + (float)lv.h, a);
+    txt_desenhar_alpha(ld, x + TILE_W - TILE_PAD - (float)ld.w, valY + (float)lv.h, a);
   }
   // Barra 0..100 na escala comum, e a marca branca na media.
   gfx_cor((GfxRect){ bx, by, bw, 8.0f }, 0.5f, 1, 1, 1, 0.07f * a);
@@ -542,8 +585,8 @@ float notasui_fontes_desenhar(const NotasSecao *s, float x, float y, float a,
   nf_resumo(m.fontes, m.norm, m.nFontes, &r);
   desenhaCartao(&m, x, y, m.scoreH, foco ? foco[0] : 0.0f, aa);
   for (i = 0; i < m.nFontes; i++) {
-    float tx = gx + (float)(i % 2) * (TILE_W + TILE_GAP);
-    float ty = y + (notasEmpilhadas() ? m.scoreH + COL_GAP : 0) + (float)(i / 2) * (TILE_H + TILE_GAP);
+    float tx = gx + (float)(i % TILE_COLS) * (TILE_W + TILE_GAP);
+    float ty = y + (notasEmpilhadas() ? m.scoreH + COL_GAP : 0) + (float)(i / TILE_COLS) * (TILE_H + TILE_GAP);
     if (ty > NV_TELA_H || ty + TILE_H < 0.0f) continue;
     desenhaBloco(s, m.fontes[i], m.norm[i], &r, tx, ty, 0.0f, aa);
   }

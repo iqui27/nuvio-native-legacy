@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include "nvtmp.h"
 
 int ajustes_p2p_ligado(void) { return 1; }
 const char *ajustes_p2p_url(void) { return ""; }
@@ -43,7 +44,7 @@ int main(int argc, char **argv) {
   const char *modo = argc > 1 ? argv[1] : "ciclo";
   char raiz[700];
   setvbuf(stdout, NULL, _IOLBF, 0);
-  dados_iniciar(getenv("NUVIO_DADOS") ? getenv("NUVIO_DADOS") : "/tmp");
+  dados_iniciar(getenv("NUVIO_DADOS") ? getenv("NUVIO_DADOS") : nvt_dir());
   snprintf(raiz, sizeof raiz, "%s/p2p", dados_dir());
   if (!p2p_ativo() || !p2p_usa_motor()) { puts("p2pmotor_real: motor ausente neste build"); return 1; }
   printf("motor %s, dados em %s\n", p2pmotor_versao(), dados_dir());

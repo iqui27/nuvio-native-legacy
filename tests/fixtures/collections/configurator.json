@@ -1,0 +1,28 @@
+{
+  "collections": [
+    {
+      "id": "configurator-offline",
+      "title": "Configurator fixture",
+      "folders": [
+        {
+          "id": "movies",
+          "title": "Movies",
+          "tileShape": "POSTER",
+          "sources": [],
+          "catalogSources": [
+            {"provider": "addon", "addonId": "offline.metadata", "addonBaseUrl": "https://example.invalid/manifest.json", "type": "movie", "catalogId": "popular", "catalogName": "Popular"},
+            {"provider": "addon", "addonId": "offline.metadata", "addonBaseUrl": "https://example.invalid/manifest.json", "type": "movie", "catalogId": "recent", "catalogName": "Recent"}
+          ]
+        },
+        {
+          "id": "mixed",
+          "title": "Movies and series",
+          "sources": [
+            {"provider": "addon", "addonId": "offline.metadata", "type": "movie", "catalogId": "popular", "title": "Movies"},
+            {"provider": "addon", "addonId": "offline.metadata", "type": "series", "catalogId": "popular", "title": "Series"}
+          ]
+        }
+      ]
+    }
+  ]
+}

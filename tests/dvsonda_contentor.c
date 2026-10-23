@@ -53,20 +53,26 @@
 
 // A rede da sonda: o que o servidor devolveu no Range 0-327679.
 static int contentorVisto = MKV_CONT_NADA, sondas;
+static int dvFixture;
+static MkvFaixa fixtureVideo;
+static MkvDiag fixtureDiag;
+static const MkvDiag *fixtureMkvDiag(void) { return &fixtureDiag; }
 static int dubleCab(const char *url, unsigned char **buf, long *n) {
   (void)url; if (buf) *buf = NULL; if (n) *n = 0; return 0;   // sem pre-busca
 }
 static int dubleFaixas(const char *url, MkvFaixa *saida, int max, MkvCap *caps, int maxCaps,
                        int *nCaps) {
-  (void)url; (void)saida; (void)max; (void)caps; (void)maxCaps;
+  (void)url; (void)max; (void)caps; (void)maxCaps;
   if (nCaps) *nCaps = 0;
   sondas++;
+  if (dvFixture) { saida[0] = fixtureVideo; return 1; }
   return 0;                       // nenhuma faixa: MP4, TS ou rede, tanto faz aqui
 }
 static int dubleContentor(void) { return contentorVisto; }
 #define mkvass_cabecalho dubleCab
 #define mkv_faixas_e_caps dubleFaixas
 #define mkv_ultimo_contentor dubleContentor
+#define mkv_diag fixtureMkvDiag
 #define dts_playback_start dublePartida
 #define dts_playback_close dubleFechar
 static DtsPlayback *dublePartida(const char *url, const char *headers, int audio_stream,
@@ -172,5 +178,44 @@ int main(void) {
   assert(mkvRetryEm != 0 && mkvRetry.falhas == 1 && !mkvRetry.desistiu);
   assert(dvSondado == 0 && dvNao == VIDEO_DV_NAO_NADA);
   puts("dvsonda_contentor: rede sem resposta -> nova tentativa 1/3 agendada, tela fica");
+
+  // C9 crash input: a valid dvvC declaration, but no observed video frame.
+  // Removing the probe guard must reopen the unsafe native DV path.
+  dvFixture = 1;
+  const struct { int profile, rpu, frames, hvccRpu, ready; } cases[] = {
+    {8, -1, 0, 0, 0}, // Exact report: unknown in-band RPU.
+    {8,  0, 1, 0, 0}, // Complete frame without RPU.
+    {8, -1, 0, 1, 0}, // hvcC declaration is not in-band proof.
+    {8,  1, 1, 0, 1}, // Confirmed in-band RPU retains DV.
+    {5, -1, 0, 0, 1}, // Profile 5 has no HDR10 base-layer fallback.
+    {8, -1, 0, 0, 0}, // A later source must not reuse earlier proof.
+  };
+  for (unsigned i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+    fonteDoRelato();
+    memset(&fixtureVideo, 0, sizeof fixtureVideo);
+    fixtureVideo.tipo = fixtureVideo.numero = 1;
+    snprintf(fixtureVideo.codec, sizeof fixtureVideo.codec, "V_MPEGH/ISO/HEVC");
+    fixtureVideo.dvPerfil = cases[i].profile; fixtureVideo.dvNivel = 6;
+    fixtureVideo.dvRpu = fixtureVideo.dvBl = fixtureVideo.dvCompat = 1;
+    fixtureVideo.cpN = 129; fixtureVideo.nalTam = 4;
+    fixtureVideo.entradaInteira = fixtureVideo.bamN = 1;
+    fixtureVideo.bamTipo = 0x64767643; fixtureVideo.hvccNal62 = cases[i].hvccRpu;
+    memset(&fixtureDiag, 0, sizeof fixtureDiag);
+    fixtureDiag.lidos = 327680; fixtureDiag.tracksTam = 709;
+    fixtureDiag.tracksAchado = fixtureDiag.tracksInteiro = 1;
+    fixtureDiag.rpu = cases[i].rpu; fixtureDiag.quadros = cases[i].frames;
+    fixtureDiag.rpuTipo = fixtureDiag.rpuPerfil = -1;
+    fixtureDiag.blocoIni = fixtureDiag.blocoFim = -1;
+    lerMkv(NULL);
+    assert(dvSondado && !fioMkvVivo);
+    assert(dvPronto() == cases[i].ready);
+    if (!cases[i].ready) {
+      int saida = 0;
+      assert(!dvHabilitado && !dtsSessao && !dtsTentou);
+      assert(seekEm && seekAlvo > 599.9 && seekAlvo < 600.1);
+      assert(telaSaiEm(1000, &saida) >= 0 && saida == DVT_SAIDA_RECUSA);
+    }
+  }
+  puts("dvsonda_contentor: C9 unconfirmed RPU stays HDR10; confirmed RPU retains DV");
   return 0;
 }

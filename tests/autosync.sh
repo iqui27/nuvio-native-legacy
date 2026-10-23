@@ -1,7 +1,9 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 set -euo pipefail
 cd "$(dirname "$0")/.."
-AS_DIR=$(mktemp -d /tmp/nuvio-autosync.XXXXXX)
+AS_DIR=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-autosync.XXXXXX)
 trap 'rm -rf "$AS_DIR"' EXIT
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then

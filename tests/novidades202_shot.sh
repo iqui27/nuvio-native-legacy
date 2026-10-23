@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Capturas do cartao da 2.0.2 em BMP: a previa nas tres cenas (menu de
 # contexto, destaque da Home, ilha do relogio), a pagina "Apoie o projeto" com
 # os QRs, ingles e animacoes reduzidas. Antes, as regras: Continuar leva ao
@@ -22,4 +24,4 @@ cc "${sources[@]}" tests/novidades202_shot.c -Isrc \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-"${TMPDIR:-/tmp}/nuvio-n202-shot" "${1:-/tmp/nuvio-novidades202}"
+"${TMPDIR:-/tmp}/nuvio-n202-shot" "${1:-${TMPDIR:-/tmp}/nuvio-novidades202}"

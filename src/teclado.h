@@ -30,6 +30,7 @@
 #ifndef NV_TECLADO_H
 #define NV_TECLADO_H
 #include <SDL2/SDL.h>
+#include "arteurl.h"
 
 // Os 36 caracteres da grade, em ordem de leitura (6 fileiras de 6).
 const char *teclado_alfabeto(void);
@@ -39,9 +40,13 @@ const char *teclado_alfabeto(void);
 // estreitas rola pelo fim — texto longo sempre foi desenhavel aqui.
 #define TECLADO_MAX 64
 // Teto do campo LONGO: quem pede `max` acima de TECLADO_MAX ate isto. Existe
-// para o token de configuracao do SpatialPosters (centenas de caracteres). Quem
-// passa TECLADO_MAX ou menos continua igual.
-#define TECLADO_LONGO 400
+// para o token de configuracao do SpatialPosters (centenas de caracteres) e para
+// a regex do auto-play, que o oficial guarda ate 500 (FR_REGEX_MAX): com 400, uma
+// regex de 450 vinda da conta era cortada so de abrir o campo e dar OK, e o corte
+// voltava para a conta. Em BYTES (o texto e UTF-8). Quem passa TECLADO_MAX ou
+// menos continua igual.
+// Posters Plus templates share the poster URL limit, including native/phone input.
+#define TECLADO_LONGO (NV_ARTE_URL_MAX - 1)
 
 // Abre a modal. `titulo` e a linha de cima ("Código do amigo"), `dica` a linha
 // de apoio logo abaixo, e `max` o teto de caracteres (limitado a TECLADO_MAX).
@@ -66,6 +71,9 @@ void teclado_abrir(const char *titulo, const char *dica, int max);
 // a nota no topo: a saida errada seria uma segunda modal.
 void teclado_abrir_com(const char *titulo, const char *dica, int max,
                        const char *alfabeto, const char *inicial);
+// Opt-in after opening an optional field: Concluir may submit empty text to
+// clear its saved value. Every new keyboard resets this to disabled.
+void teclado_permitir_vazio(int permitir);
 // Depois de teclado_abrir_com: que campo e este. SENHA mostra um ponto por
 // caractere; EMAIL e SENHA pedem o teclado certo ao sistema (Android). A
 // proxima abertura volta a TEXTO.
@@ -78,6 +86,12 @@ void teclado_tipo(int tipo);
 // Senha: pontos (1) ou texto (0). Quem abre pode comecar mostrando; quem
 // fecha le o que a pessoa escolheu.
 void teclado_mascarar(int liga);
+// Depois de teclado_abrir_com: o texto que chega do CELULAR ou do teclado do
+// sistema mantem os caracteres fora do ASCII (n, acentos, emoji) inteiros, em vez
+// de descarta-los. Para a regex: "Espa(ñ|n)ol|🇪🇸" sem eles virava
+// "Espa(|n)ol||", e a alternativa vazia casa com TUDO. A grade da TV continua
+// com o alfabeto do chamador. A proxima abertura volta a so ASCII.
+void teclado_aceitar_utf8(int liga);
 // Linha de contexto da PROXIMA modal ("Contas e serviços · Chaves"), em caixa
 // alta acima do titulo. Consumida pela abertura seguinte.
 void teclado_contexto(const char *kicker);

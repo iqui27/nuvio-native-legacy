@@ -11,6 +11,7 @@
 // mockup, 1920x1080, sem a ilha) — assim o vidro fica sobre a MESMA arte. Sem
 // a pasta, a arte embarcada 00.jpg. NUVIO_SHOT_VIDRO=0 = solido.
 #include "ilha.h"
+#include "nvtmp.h"
 #include "ajustes.h"
 #include "gfx.h"
 #include "text.h"
@@ -146,7 +147,7 @@ int main(int argc, char **argv) {
   SDL_GLContext gl;
   FILE *f;
   const char *vidro = getenv("NUVIO_SHOT_VIDRO");
-  base = argc > 1 ? argv[1] : "/tmp/nuvio-ilha3";
+  base = argc > 1 ? argv[1] : nvt("/nuvio-ilha3");
   assert(dir && *dir);
   snprintf(ajustes, sizeof ajustes, "%s/ajustes.txt", dir);
   f = fopen(ajustes, "w"); assert(f);

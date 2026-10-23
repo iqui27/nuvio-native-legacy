@@ -1,8 +1,10 @@
 #!/bin/sh
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 set -eu
 
 PREFIX=${NUVIO_ASS_ROOT:-/opt/nuvio-ass}
-BUILD=${NUVIO_ASS_BUILD:-/tmp/nuvio-ass-build}
+BUILD=${NUVIO_ASS_BUILD:-${TMPDIR:-/tmp}/nuvio-ass-build}
 CC=${CC:?CC must be the webOS cross compiler}
 CXX=${CXX:-${CC%-gcc}-g++}
 AR=${AR:-${CC%-gcc}-ar}

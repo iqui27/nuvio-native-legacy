@@ -2,6 +2,7 @@
 // A revisao visual e parte do teste: a ilustraçao vetorial, o titulo em duas
 // linhas e a legibilidade do accent precisam ser conferidos em 1920x1080.
 #include "novidades1312.h"
+#include "nvtmp.h"
 #include "dados.h"
 #include "ajustes.h"
 #include "gfx.h"
@@ -60,7 +61,7 @@ static void captura(const char *nome, SDL_Window *win) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-novidades1312";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-novidades1312");
   const char *dir = getenv("NUVIO_DADOS");
   char nome[700];
   SDL_Window *w;

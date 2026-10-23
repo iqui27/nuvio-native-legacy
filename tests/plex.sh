@@ -2,8 +2,8 @@
 # Plex: parsers on fixtures, PIN state machine, id/GUID matching and the whole
 # integration against a local fake plex.tv + PMS (tests/plex_server.py).
 #   bash tests/plex.sh
-#   NV_SANITIZERS=1 bash tests/plex.sh     # ASan + UBSan
-#   NV_TSAN=1 bash tests/plex.sh           # ThreadSanitizer
+#   SANITIZE=1 bash tests/plex.sh         # ASan + UBSan
+#   SANITIZE=thread bash tests/plex.sh    # ThreadSanitizer
 set -euo pipefail
 cd "$(dirname "$0")/.."
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-plex.XXXXXX")
@@ -23,8 +23,8 @@ if command -v sdl2-config >/dev/null; then
   flags+=($(sdl2-config --cflags) -I"$(sdl2-config --prefix)/include")
 fi
 if [ "$(uname -s)" != Darwin ]; then flags+=(-ldl); fi
-if [ "${NV_SANITIZERS:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
-if [ "${NV_TSAN:-0}" = 1 ]; then flags+=(-fsanitize=thread -fno-omit-frame-pointer); fi
+if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
+if [ "${SANITIZE:-0}" = thread ]; then flags+=(-fsanitize=thread -fno-omit-frame-pointer); fi
 # plex.tv is the fake too: the override is compile-time only.
 flags+=("-DNV_PX_TV=\"$base\"")
 cc "${flags[@]}" tests/plex.c src/plex.c src/jellyfin.c src/srvidx.c src/rede.c src/redeurl.c src/js.c src/jsw.c \

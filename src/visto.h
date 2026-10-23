@@ -18,9 +18,9 @@
 //   Trakt  POST /sync/history[/remove]           (trakt.c, se ligado)
 //   Simkl  POST /sync/history[/remove]           (simkl.c, se vinculado)
 //   Conta  sync_push|delete_watched_items          (jornal contapend.c, se logada)
-// Com mais de um vinculado vai a todos. O Trakt do TITULO inteiro continua em
-// trakt_assistido_tipo (ctxmenu.c depende do estado dele); aqui o Trakt so
-// entra no lote de episodios, com a mesma funcao e o mesmo corpo de antes.
+// Every gesture is persisted before network work. Failed destinations retry
+// independently after restart through the existing sync cycle.
+void visto_iniciar(void);
 #ifndef NV_VISTO_H
 #define NV_VISTO_H
 #include "vistoep.h"
@@ -37,6 +37,8 @@ int visto_destinos(void);
 // argumento invalido. `destinos` e uma mascara de VISTO_*.
 int visto_episodios(const char *imdb, const char *tipo, const VistoPar *pares,
                     int n, int visto, int destinos);
+// Async actions freeze their original tracker authentication at enqueue;
+// late workers never use the destination profile's accounts.
 // O mesmo, SINCRONO — para o teste e para quem ja esta num fio.
 int visto_episodios_ja(const char *imdb, const char *tipo, const VistoPar *pares,
                        int n, int visto, int destinos);
@@ -48,8 +50,8 @@ int visto_episodios_ja(const char *imdb, const char *tipo, const VistoPar *pares
 typedef void (*VistoOuvinte)(const char *imdb, const VistoPar *pares, int n, int visto);
 void visto_ao_marcar(VistoOuvinte fn);
 
-// Titulo inteiro (filme ou serie), em fio. VISTO_TRAKT e IGNORADO aqui: ver o
-// cabecalho. `temporadas` (numeros) so importa para desmarcar serie no Simkl.
+// Whole title (movie or series), persisted before dispatch to every destination.
+// `temporadas` (numeros) so importa para desmarcar serie no Simkl.
 int visto_titulo(const char *imdb, const char *tipo, const int *temporadas,
                  int nt, int visto, int destinos);
 int visto_titulo_ja(const char *imdb, const char *tipo, const int *temporadas,

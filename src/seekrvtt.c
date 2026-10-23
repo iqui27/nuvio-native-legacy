@@ -26,7 +26,7 @@ int seekr_url_lookup(char *dst, size_t tam, const char *imdb, int t, int e,
   if (!dst || !imdb || strncmp(imdb, "tt", 2) || durMs <= 0) return 0;
   // O id do catalogo pode vir como "tt123:1:2"; a API quer so o imdb.
   nId = (int)strcspn(imdb, ":");
-  if (t > 0 && e > 0)
+  if (t >= 0 && e > 0)
     n = snprintf(dst, tam,
                  "https://api.seekr.tv/sprites?duration_ms=%ld&show_imdb_id=%.*s&season=%d&episode=%d",
                  durMs, nId, imdb, t, e);

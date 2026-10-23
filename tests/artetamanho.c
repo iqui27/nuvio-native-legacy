@@ -76,6 +76,15 @@ int main(void) {
   fica("https://images.metahub.space/logo/medium/tt3032476/img", 128);
   puts("ok  fundo do metahub: small ate 480, medium acima; cartaz e logo intactos");
 
+  // 5b. Qualidade Alta nao baixa o fundo de 480 para um card de ate 640.
+  assert(arte_tamanho_fundo_pequeno(520, 0));   // Padrao: small, como o #72
+  assert(arte_tamanho_fundo_pequeno(640, 0));
+  assert(!arte_tamanho_fundo_pequeno(608, 1));  // Alta: 608 px pedem o medium
+  assert(!arte_tamanho_fundo_pequeno(672, 1));
+  assert(arte_tamanho_fundo_pequeno(480, 1));
+  assert(!arte_tamanho_fundo_pequeno(0, 0));
+  puts("ok  small do metahub: ate 640 no Padrao, ate 480 na Alta");
+
   // 6. Host desconhecido, caminho local, teto invalido, saida pequena.
   fica("https://pub-c3220058d0b8427593faaf225ea539fd.r2.dev/Backdrops%20festivales/Oscars/Untitled%20design.png", 704);
   fica("https://proxy.example/?u=https://image.tmdb.org/t/p/original/a.jpg", 704);
@@ -85,6 +94,29 @@ int main(void) {
   fica(NULL, 704);
   assert(!arte_tamanho_url(orig, 704, saida, 20));
   puts("ok  host desconhecido, local, teto 0 e saida curta ficam como vieram");
+
+  // 7. Qualidade Alta: o cartaz w342 e o fundo w780 guardados sobem quando o
+  // teto do pedido e maior; Baixa e Padrao ficam como estavam.
+  {
+    const char *p342 = "https://image.tmdb.org/t/p/w342/a.jpg";
+    const char *b780 = "https://image.tmdb.org/t/p/w780/a.jpg";
+    assert(arte_tamanho_poster_w() == 342);
+    fica(p342, 460); fica(b780, 1100);
+    arte_tamanho_qualidade(1);
+    fica(p342, 460); fica(b780, 1100);
+    arte_tamanho_qualidade(2);
+    assert(arte_tamanho_poster_w() == 780);
+    vira(p342, 460, "https://image.tmdb.org/t/p/w500/a.jpg");
+    vira(p342, 600, "https://image.tmdb.org/t/p/w780/a.jpg");
+    vira(p342, 1000, "https://image.tmdb.org/t/p/w780/a.jpg");
+    fica(p342, 342); fica(p342, 288);
+    vira(b780, 1100, "https://image.tmdb.org/t/p/w1280/a.jpg");
+    fica(b780, 780);
+    arte_tamanho_qualidade(0);
+    fica(p342, 460);
+    assert(arte_tamanho_poster_w() == 342);
+    puts("ok  Alta sobe cartaz w342 e fundo w780; Baixa e Padrao nao");
+  }
 
   puts("artetamanho: tudo ok");
   return 0;

@@ -40,6 +40,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "nvtmp.h"
 
 // --- DUBLES ------------------------------------------------------------------
 static char dirDados[512];
@@ -220,7 +221,7 @@ int main(int argc, char **argv) {
   const char *base = getenv("NV_TESTE_DIR");
   if (argc > 1) voltasDesc = atoi(argv[1]);
   snprintf(dirDados, sizeof dirDados, "%s/catcachecorrida-%d",
-           base && *base ? base : "/tmp", (int)getpid());
+           base && *base ? base : nvt_dir(), (int)getpid());
   mkdir(dirDados, 0700);
   montarLote();
   montarJsonConta();

@@ -58,8 +58,14 @@ int fa_ja_tocando(int abertaIdx, int escolhida);
 // MESMA fonte lembrada, enquanto o link vale e a fonte ainda esta no automatico.
 #define FA_PREPARADA_VALE_MS 45000u
 #define FA_LINK_VALE_MS 60000u
+#define FA_BUFFER_VALE_MS 120000u
+#define FA_RENOVAR_INTERVALO_MS 30000u
 typedef struct { const char *alvo; unsigned lista; int lembrada, idx; unsigned idadeMs; } FaPreparada;
 typedef struct { const char *alvo; unsigned lista; int lembrada, n, idxDisponivel; unsigned idadeListaMs; } FaAgora;
 int fa_preparada_vale(const FaPreparada *p, const FaAgora *a);
+// O buffer Android pronto conserva os bytes por uma janela limitada. Um
+// hash nativo renovado tem idade propria: nao herda a idade da URL do addon.
+int fa_preparada_vale_buffer(const FaPreparada *p, const FaAgora *a,
+                            int bufferPronto, int linkRenovado);
 
 #endif

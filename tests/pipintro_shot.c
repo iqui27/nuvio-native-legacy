@@ -5,6 +5,7 @@
 // Sem dados_iniciar: dados_dir() e "", dados_ler devolve NULL e o cartao abre
 // como na primeira vez — e nao grava marca nenhuma em disco de verdade.
 #include "pipintro.h"
+#include "nvtmp.h"
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
@@ -46,7 +47,7 @@ static void captura(const char *nome, SDL_Window *win) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-pipintro";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-pipintro");
   char nome[600];
   SDL_Window *w;
   SDL_GLContext gl;

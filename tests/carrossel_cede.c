@@ -5,6 +5,7 @@
 // sai depois. Nao existe versao deste teste para o pai: desc_episodios_precarregar
 // e do conserto.
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "descoberta.h"
 #include <SDL2/SDL.h>
 #include <assert.h>
@@ -15,7 +16,7 @@
 
 int main(void) {
   CatItem v[3];
-  char log[] = "/tmp/nuvio-cede-XXXXXX", linha[512];
+  char log[NVT_MAX], linha[512]; nvt_set(log, sizeof log, "/nuvio-cede-XXXXXX");
   int i, achou = 0;
   FILE *f;
   for (i = 0; i < 3; i++) {

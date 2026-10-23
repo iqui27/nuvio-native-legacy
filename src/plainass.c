@@ -92,6 +92,7 @@ static void append(char *dst, size_t *n, const char *s, size_t len) {
   *n += len;
 }
 
+int plainass_arabic_bold;   /* set by assrender when NotoNaskhArabic-Bold is loaded */
 static size_t escape_text(char *dst, const char *src) {
   size_t n = 0; int arabicFont = 0, lineStart = 1;
   const char *dialogueMarker = NULL;
@@ -129,8 +130,10 @@ static size_t escape_text(char *dst, const char *src) {
      * The SDK disables system font providers, so select the face explicitly.
      * Whole-event layout still shapes/BiDi-processes across these tags. */
     if (!control && arabic != arabicFont) {
-      const char *tag = arabic ? "{\\fnNoto Naskh Arabic\\fscx150\\fscy150}"
-                               : "{\\fn\\fscx100\\fscy100}";
+      const char *tag = arabic ? (plainass_arabic_bold ? "{\\fnNoto Naskh Arabic\\b1\\fscx150\\fscy150}"
+                                                       : "{\\fnNoto Naskh Arabic\\fscx150\\fscy150}")
+                               : (plainass_arabic_bold ? "{\\fn\\b\\fscx100\\fscy100}"
+                                                       : "{\\fn\\fscx100\\fscy100}");
       append(dst, &n, tag, strlen(tag)); arabicFont = arabic;
     }
     if (cp == '\r') { src++; continue; }
@@ -142,8 +145,8 @@ static size_t escape_text(char *dst, const char *src) {
     src += len;
   }
   if (arabicFont) {
-    static const char reset[] = "{\\fn\\fscx100\\fscy100}";
-    append(dst, &n, reset, sizeof reset - 1);
+    const char *reset = plainass_arabic_bold ? "{\\fn\\b\\fscx100\\fscy100}" : "{\\fn\\fscx100\\fscy100}";
+    append(dst, &n, reset, strlen(reset));
   }
   return n;
 }

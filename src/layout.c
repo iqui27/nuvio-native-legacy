@@ -1,5 +1,12 @@
 #include "layout.h"
 
+int layout_modo_resolver(int preferencia, int automaticoMobile) {
+  if (preferencia == 0) return 0;
+  if (preferencia == 1) return 1;
+  return automaticoMobile != 0;
+}
+
+
 #ifdef NV_TOUCH_UI
 float nv_layout_w = NV_TELA_BASE_W;
 float nv_layout_h = NV_TELA_BASE_H;

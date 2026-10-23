@@ -1,4 +1,6 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Biblioteca e vistos da conta. NAO precisa de rede: o teste alimenta o leitor
 # com as respostas que o servidor manda, transcritas do contrato da secao 1.5 do
 # PLANO-CONTA-SYNC.md e conferidas contra o app web.
@@ -15,6 +17,6 @@ if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit
 # src/vistoep.c ENTRA porque contalib passou a mandar a linha de episodio para
 # o mapa de episodios vistos, em vez de descarta-la.
 cc ${flags[@]+"${flags[@]}"} src/contalib.c src/js.c src/vistoep.c tests/contalib.c \
-  -Isrc -o /tmp/nuvio-contalib-tests -O1 -g \
+  -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -o ${TMPDIR:-/tmp}/nuvio-contalib-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined -lpthread
-/tmp/nuvio-contalib-tests
+${TMPDIR:-/tmp}/nuvio-contalib-tests

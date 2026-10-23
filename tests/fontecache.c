@@ -21,6 +21,7 @@
 static Uint32 relogio = 100000;
 static Uint32 relogioTeste(void) { return relogio; }
 #define FC_AGORA() relogioTeste()
+#include "stub_perfisessao.h"
 #include "../src/fontecache.c"
 
 // --- dubles ------------------------------------------------------------------------
@@ -91,6 +92,12 @@ int addons_consultar(const char *id, const char *tipo, const char *base, int fio
   if (n <= 0) { free(l); return 0; }
   *saida = l;
   return n;
+}
+
+int addons_consultar_sessao(const char *id, const char *tipo, const char *base, int fios,
+                            int (*cancelado)(void *), void *ctx, Stream **saida, uint64_t sessao) {
+  assert(perfis_sessao_atual(sessao));
+  return addons_consultar(id, tipo, base, fios, cancelado, ctx, saida);
 }
 
 // --- apoio -----------------------------------------------------------------------

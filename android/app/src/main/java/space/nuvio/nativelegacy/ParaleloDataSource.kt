@@ -36,6 +36,46 @@ import java.util.concurrent.TimeUnit
 // Senao, devolve o fluxo da conexao unica, como o DefaultHttpDataSource.
 internal class FalhaDownloadParalelo(causa: IOException) : IOException(causa)
 
+// DESTINO DO LINK DO ADDON, por sessao do player. O link do addon (AIOStreams,
+// Torrentio, MediaFusion...) redireciona para o CDN do debrid, e cada abertura
+// nova do Media3 (o indice no fim do arquivo, a volta ao inicio, cada seek)
+// pagava esse redirecionamento de novo: 1-2 s pelo Torrentio, ate 10 s pelo
+// MediaFusion no Shield (16/10/2026). Guardado o destino, a abertura seguinte
+// vai direto ao CDN; se ele recusar (link vencido, 403/410) ou cair, volta UMA
+// vez ao link do addon, que pede um novo. Mesma ideia do cdnlink.c do .tpk
+// (PR #567), aqui dentro do proprio DataSource. Nunca loga o destino: o link
+// do CDN carrega token.
+class DestinosAddon(private val agora: () -> Long = { android.os.SystemClock.elapsedRealtime() }) {
+    companion object {
+        // O TorBox da ~3 h ao link do CDN; o resto do caminho cobre a sobra.
+        const val VALIDADE_MS = 2L * 60 * 60 * 1000
+    }
+    private var original: String? = null
+    private var destino: URL? = null
+    private var tamanho = -1L
+    private var desde = 0L
+
+    @Synchronized fun buscar(orig: String): URL? =
+        if (orig == original && agora() - desde < VALIDADE_MS) destino else null
+
+    // Tamanho do arquivo que o destino guardado serviu (-1 = desconhecido).
+    // Uma resposta "OK" do destino com OUTRO tamanho nao e este arquivo: um
+    // CDN vencido pode responder 200 com um clipe de erro em vez de 403.
+    @Synchronized fun tamanhoDe(orig: String): Long = if (orig == original) tamanho else -1L
+
+    // So guarda um redirecionamento de verdade (host diferente).
+    @Synchronized fun lembrar(orig: String, fim: URL, total: Long = -1L) {
+        val o = try { URL(orig) } catch (_: java.net.MalformedURLException) { return }
+        if (fim.host.isNullOrEmpty() || fim.host.equals(o.host, true)) return
+        if (orig == original && fim == destino && (total <= 0 || total == tamanho)) return
+        original = orig; destino = fim; tamanho = if (total > 0) total else -1L; desde = agora()
+    }
+
+    @Synchronized fun esquecer(orig: String) {
+        if (orig == original) { original = null; destino = null }
+    }
+}
+
 /** Nao repete no Loader o ciclo de tentativas que este DataSource ja esgotou. */
 internal class PoliticaErroParalelo : DefaultLoadErrorHandlingPolicy() {
     override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
@@ -57,6 +97,7 @@ class ParaleloDataSource(
     // por estas transferencias, nunca a entrega de memoria ao ExoPlayer.
     private val medidor: PassivoMedidor? = null,
     private val token: Long = 0L,
+    private val destinos: DestinosAddon? = null,
     // Injetaveis para os testes de falha/cancelamento; producao usa a rede real.
     private val novaConexao: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
     private val dormir: (Long) -> Unit = { Thread.sleep(it) },
@@ -87,6 +128,8 @@ class ParaleloDataSource(
         private val ESPERA_TENTATIVA_MS = longArrayOf(250L, 750L)
         // O primeiro pedido e menor: a imagem nao espera 4 MB chegarem.
         private const val PRIMEIRO = 1 shl 20
+        // Menor pedaco do FIM DO ARQUIVO (ver `cauda` em abrir).
+        private const val PEDACO_CAUDA_MIN = 128 shl 10
 
         // Manifesto e segmento de streaming adaptativo: conexao unica.
         fun serve(uri: Uri): Boolean {
@@ -103,18 +146,22 @@ class ParaleloDataSource(
                   private val unica: HttpDataSource.Factory,
                   private val medidor: PassivoMedidor? = null,
                   private val token: Long = 0L) : DataSource.Factory {
-        override fun createDataSource(): DataSource = Seletor(ua, props, unica.createDataSource(), medidor, token)
+        // Uma fabrica por sessao do player (NvPlayer): o destino vale para todas
+        // as aberturas dela.
+        private val destinos = DestinosAddon()
+        override fun createDataSource(): DataSource = Seletor(ua, props, unica.createDataSource(), medidor, token, destinos)
     }
 
     // Escolhe por pedido: paralelo para arquivo progressivo, unica para o resto.
     // Os ouvintes de transferencia (medidor de banda do ExoPlayer) vao para os dois.
     private class Seletor(private val ua: String?, private val props: Map<String, String>,
                           private val unica: DataSource,
-                          private val medidor: PassivoMedidor?, private val token: Long) : DataSource {
+                          private val medidor: PassivoMedidor?, private val token: Long,
+                          private val destinos: DestinosAddon) : DataSource {
         private var atual: DataSource? = null
         private val ouvintes = ArrayList<androidx.media3.datasource.TransferListener>()
         override fun open(dataSpec: DataSpec): Long {
-            val d = if (serve(dataSpec.uri)) ParaleloDataSource(ua, props, medidor = medidor, token = token).also { p ->
+            val d = if (serve(dataSpec.uri)) ParaleloDataSource(ua, props, medidor = medidor, token = token, destinos = destinos).also { p ->
                 for (o in ouvintes) p.addTransferListener(o)
             } else unica
             atual = d
@@ -139,6 +186,7 @@ class ParaleloDataSource(
     private var exec: ExecutorService? = null
     private val pedidos = HashMap<Long, Future<ByteArray>>()   // inicio do pedaco -> dados
     private var proximoPedido = 0L
+    private var pedacoAtual = pedaco
     private var buf: ByteArray? = null
     private var bufIni = 0L
     // Conexao unica: servidor sem Range, ou arquivo pequeno.
@@ -171,9 +219,12 @@ class ParaleloDataSource(
         c.disconnect()
     }
 
-    private fun esperarTentativa(indice: Int) {
+    private fun esperarTentativa(indice: Int, atrasoMs: Long = -1L) {
         conferirCancelamento()
-        try { dormir(ESPERA_TENTATIVA_MS[indice.coerceAtMost(ESPERA_TENTATIVA_MS.lastIndex)]) }
+        val ms = if (atrasoMs >= 0) atrasoMs
+                   else ESPERA_TENTATIVA_MS[indice.coerceAtMost(ESPERA_TENTATIVA_MS.lastIndex)]
+        if (ms <= 0) return
+        try { dormir(ms) }
         catch (e: InterruptedException) { Thread.currentThread().interrupt(); throw cancelado(e) }
         conferirCancelamento()
     }
@@ -224,7 +275,7 @@ class ParaleloDataSource(
     // ConnectException escapava daqui e encerrava a fonte, embora os pedacos
     // posteriores aparentassem ter TENTATIVAS. Mantem o retry no Loader (nao no
     // fio do player) e curto o bastante para nao esconder uma rota morta.
-    internal fun conectarComRetry(u: URL, ini: Long, ultimo: Long): HttpURLConnection {
+    internal fun conectarComRetry(u: URL, ini: Long, ultimo: Long, atrasoPrimeiraMs: Long = -1L): HttpURLConnection {
         var erro: IOException? = null
         repeat(TENTATIVAS) { tentativa ->
             try { return conectar(u, ini, ultimo) }
@@ -235,11 +286,48 @@ class ParaleloDataSource(
                 if (foiCancelado(e)) throw cancelado(e)
                 if (tentativa + 1 < TENTATIVAS) {
                     Log.w(TAG, "conexao ${tentativa + 1}/$TENTATIVAS falhou em ${u.host}; tentando de novo")
-                    esperarTentativa(tentativa)
+                    esperarTentativa(tentativa, if (tentativa == 0) atrasoPrimeiraMs else -1L)
                 }
             }
         }
         throw FalhaDownloadParalelo(erro ?: IOException("conexao falhou"))
+    }
+
+    // Abertura pelo destino ja conhecido do link do addon; recusa ou queda
+    // volta ao link do addon com o retry normal, e o destino novo fica guardado.
+    private fun abrirSonda(original: URL, ini: Long, ultimo: Long): HttpURLConnection {
+        val chave = original.toString()
+        val guardado = destinos?.buscar(chave)
+        if (guardado != null) {
+            try {
+                val c = conectar(guardado, ini, ultimo)
+                val esperado = destinos?.tamanhoDe(chave) ?: -1L
+                val visto = totalDe(c)
+                if (c.responseCode in 200..299 && (esperado <= 0 || visto == esperado)) {
+                    Log.i(TAG, "destino guardado: ${guardado.host} direto, sem passar por ${original.host}")
+                    return c
+                }
+                if (c.responseCode in 200..299)
+                    Log.i(TAG, "destino guardado serviu outro arquivo ($visto bytes, esperado $esperado); de volta a ${original.host}")
+                else Log.i(TAG, "destino guardado recusou (HTTP ${c.responseCode}); de volta a ${original.host}")
+                desconectar(c)
+            } catch (e: IOException) {
+                if (foiCancelado(e)) throw cancelado(e)
+                Log.i(TAG, "destino guardado falhou (${e.javaClass.simpleName}); de volta a ${original.host}")
+            }
+            destinos?.esquecer(chave)
+        }
+        val c = conectarComRetry(original, ini, ultimo, 0L)
+        if (c.responseCode in 200..299) destinos?.lembrar(chave, c.url, totalDe(c))
+        return c
+    }
+
+    // Tamanho do arquivo inteiro segundo a resposta: o total do Content-Range
+    // num 206, o corpo num 200 (o servidor ignorou o Range). -1 se nao se sabe.
+    private fun totalDe(c: HttpURLConnection): Long = when (c.responseCode) {
+        206 -> (c.getHeaderField("Content-Range") ?: "").substringAfter('/', "").trim().toLongOrNull() ?: -1L
+        200 -> c.contentLengthLong.takeIf { it > 0 } ?: -1L
+        else -> -1L
     }
 
     override fun open(dataSpec: DataSpec): Long {
@@ -259,21 +347,61 @@ class ParaleloDataSource(
         transferInitializing(dataSpec)
         Log.i(TAG, "abrindo ${dataSpec.uri.host} a partir de ${dataSpec.position}")
         pos = dataSpec.position
+        val pedido = dataSpec.length
+        if (pedido == 0L) {
+            // Janela vazia (DataSpec de 0 byte): abre vazio, sem pedir um Range
+            // invalido (ultimo < primeiro) e sem gastar conexao.
+            aberto = true
+            transferStarted(dataSpec)
+            return 0L
+        }
+        // A sonda cabe no que foi pedido, mas nunca passa de PRIMEIRO: um
+        // buraco do cache maior que a janela (seek para tras sobre regiao
+        // sem cache) entraria inteiro num ByteArray so, na thread de quem
+        // chamou, antes do pool existir.
+        val primeiroUltimo = pos + (if (pedido != C.LENGTH_UNSET.toLong()) minOf(pedido, PRIMEIRO.toLong()) else PRIMEIRO.toLong()) - 1
         // Primeiro pedaco pela URL original: segue os redirecionamentos do debrid
-        // uma vez so; os pedacos seguintes vao direto ao endereco final.
-        val c = conectarComRetry(URL(dataSpec.uri.toString()), pos, pos + PRIMEIRO - 1)
+        // uma vez so; os pedacos seguintes vao direto ao endereco final. Uma
+        // abertura seguinte da mesma sessao ja comeca no destino (DestinosAddon).
+        val c = abrirSonda(URL(dataSpec.uri.toString()), pos, primeiroUltimo)
         val code = c.responseCode
         if (code == 206) {
             val cr = c.getHeaderField("Content-Range") ?: ""
             total = cr.substringAfter('/', "").trim().toLongOrNull() ?: C.LENGTH_UNSET.toLong()
         }
-        if (code != 206 || total <= 0 || total - pos <= pedaco.toLong() * 2) {
+        // Janela que ESTA abertura pode servir: o tamanho que o ExoPlayer
+        // pediu ou, na abertura progressiva comum (length UNSET), o resto do
+        // arquivo — nunca o pedaco de sonda, senao nenhuma abertura comum
+        // caberia no paralelo e tudo viraria conexao unica.
+        val janela = when {
+            pedido != C.LENGTH_UNSET.toLong() -> pedido
+            total > 0 -> total - pos
+            else -> C.LENGTH_UNSET.toLong()
+        }
+        val paralelo = code == 206 && total > 0 && janela > pedaco.toLong() * 2
+        // FIM DO ARQUIVO: o indice do MKV (Cues) e o moov do MP4 ficam nos
+        // ultimos MB, e o Media3 vai ate la ANTES do primeiro quadro. Pela
+        // conexao unica, os 4 MB finais de um remux de 50 GB levaram 24 s no
+        // Shield (Ant-Man, 16/10/2026: 170 KB/s naquele trecho do TorBox) e a
+        // imagem esperou tudo; os 612 KB finais de outro remux, 5,3 s. Uma
+        // janela que vai ate o fim e tem mais de dois pedacos minimos vai pelo
+        // pool: a sonda fica com a sua parte e o resto se divide entre as
+        // outras conexoes, todas ao mesmo tempo.
+        val cauda = !paralelo && code == 206 && total > 0 &&
+            janela > PEDACO_CAUDA_MIN.toLong() * 2 && pos + janela >= total
+        if (!paralelo && !cauda) {
             Log.i(TAG, "conexao unica: HTTP $code, total=$total, pos=$pos (${dataSpec.uri.host})")
             // Sem Range (ou pequeno demais para valer a pena): conexao unica.
             if (code == 206 || code == 200) {
-                // 206 de um pedaco so: reabre sem teto para o arquivo inteiro.
-                if (code == 206) { desconectar(c); unicaCon = conectarComRetry(URL(dataSpec.uri.toString()), pos, -1) }
-                else unicaCon = c
+                // 206 so da sonda: reabre ate o fim da janela pedida (sem teto
+                // se ela e o arquivo inteiro). Janela que cabe na sonda segue.
+                if (code == 206 && (pedido == C.LENGTH_UNSET.toLong() || pedido > PRIMEIRO)) {
+                    // A sonda acabou de resolver o destino: reabre nele.
+                    val alvo = c.url
+                    desconectar(c)
+                    unicaCon = conectarComRetry(alvo, pos,
+                        if (pedido == C.LENGTH_UNSET.toLong()) -1 else pos + pedido - 1)
+                } else unicaCon = c
                 val uc = unicaCon!!
                 if (uc.responseCode !in 200..299) {
                     val erro = HttpDataSource.InvalidResponseCodeException(
@@ -298,29 +426,51 @@ class ParaleloDataSource(
             throw HttpDataSource.InvalidResponseCodeException(code, msg, null, hdr, dataSpec, ByteArray(0))
         }
         urlFinal = c.url
-        fim = if (dataSpec.length != C.LENGTH_UNSET.toLong()) minOf(total, pos + dataSpec.length) else total
-        val primeiro = try { lerTudo(c) } finally { desconectar(c) }
+        fim = if (pedido != C.LENGTH_UNSET.toLong()) minOf(total, pos + pedido) else total
+        // No fim do arquivo a sonda le so a sua parte (o pedido dela ja foi ate
+        // PRIMEIRO; o resto daquela resposta e descartado ao desconectar).
+        val parte = ((fim - pos + conexoes - 1) / conexoes.coerceAtLeast(1))
+            .coerceIn(PEDACO_CAUDA_MIN.toLong(), PRIMEIRO.toLong())
+        val sondaFim = minOf(primeiroUltimo + 1, fim, if (cauda) pos + parte else Long.MAX_VALUE)
+        if (cauda) {
+            val outras = (conexoes - 1).coerceAtLeast(1)
+            val resto = fim - sondaFim
+            pedacoAtual = ((resto + outras - 1) / outras)
+                .coerceIn(PEDACO_CAUDA_MIN.toLong(), pedaco.toLong()).toInt()
+            proximoPedido = sondaFim
+            exec = Executors.newFixedThreadPool(conexoes)
+            encher()
+        }
+        val primeiro = try { lerTudo(c, if (cauda) sondaFim - pos else -1L) } finally { desconectar(c) }
+        if (cauda && primeiro.size.toLong() != sondaFim - pos)
+            throw IOException("sonda curta: ${primeiro.size} de ${sondaFim - pos}")
         bufIni = pos
         buf = primeiro
-        proximoPedido = pos + primeiro.size
-        exec = Executors.newFixedThreadPool(conexoes)
-        encher()
+        if (!cauda) {
+            proximoPedido = pos + primeiro.size
+            exec = Executors.newFixedThreadPool(conexoes)
+            encher()
+        }
         aberto = true
         transferStarted(dataSpec)
-        Log.i(TAG, "paralelo: $conexoes conexoes, pedaco ${pedaco shr 20} MB, ${(fim - pos) shr 20} MB a partir de $pos")
+        if (cauda) Log.i(TAG, "paralelo no fim do arquivo: ${fim - pos} bytes, pedaco ${pedacoAtual shr 10} KB a partir de $pos")
+        else Log.i(TAG, "paralelo: $conexoes conexoes, pedaco ${pedaco shr 20} MB, ${(fim - pos) shr 20} MB a partir de $pos")
         return fim - pos
     }
 
-    private fun lerTudo(c: HttpURLConnection): ByteArray {
+    // `limite` >= 0: para ali (o resto da resposta fica para quem desconectar).
+    private fun lerTudo(c: HttpURLConnection, limite: Long = -1L): ByteArray {
         val esperado = c.contentLengthLong
-        val out = java.io.ByteArrayOutputStream(if (esperado > 0) esperado.toInt() else pedaco)
+        val cap = if (limite >= 0) limite else if (esperado > 0) esperado else pedaco.toLong()
+        val out = java.io.ByteArrayOutputStream(cap.toInt())
         val origem = PassivoMedidor.origemDe(c.url)
         conferirCancelamento()
         c.inputStream.use { inp ->
             val tmp = ByteArray(64 * 1024)
-            while (true) {
+            while (limite < 0 || out.size() < limite) {
                 conferirCancelamento()
-                val n = inp.read(tmp)
+                val quero = if (limite < 0) tmp.size else minOf(tmp.size.toLong(), limite - out.size()).toInt()
+                val n = inp.read(tmp, 0, quero)
                 conferirCancelamento()
                 if (n < 0) break
                 out.write(tmp, 0, n)
@@ -337,7 +487,7 @@ class ParaleloDataSource(
         val u = urlFinal ?: return
         while (pedidos.size < conexoes * ADIANTE && proximoPedido < fim) {
             val ini = proximoPedido
-            val ult = minOf(fim, ini + pedaco) - 1
+            val ult = minOf(fim, ini + pedacoAtual) - 1
             pedidos[ini] = ex.submit<ByteArray> { baixar(u, ini, ult) }
             proximoPedido = ult + 1
         }

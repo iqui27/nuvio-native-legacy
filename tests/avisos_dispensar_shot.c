@@ -7,6 +7,7 @@
 //
 // NAO ENTRA NA SUITE (*_shot.sh): precisa de janela GL e de olho humano.
 #include "ilha.h"
+#include "nvtmp.h"
 #include "salvospainel.h"
 #include "avisos.h"
 #include "ctxmenu.h"
@@ -86,7 +87,7 @@ int main(int argc, char **argv) {
   FILE *f;
   IlhaCartao est;
   int k;
-  base = argc > 1 ? argv[1] : "/tmp/nuvio-dispensar";
+  base = argc > 1 ? argv[1] : nvt("/nuvio-dispensar");
   assert(dir && *dir);
   snprintf(ajustes, sizeof ajustes, "%s/ajustes.txt", dir);
   f = fopen(ajustes, "w"); assert(f);

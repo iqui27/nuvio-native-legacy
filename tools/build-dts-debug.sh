@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Build an independent DTS Debug IPK. All arm.sh mutations occur in a private tree.
 # Never installs, launches, or contacts a TV. Production staging/IPKs stay untouched.
 set -euo pipefail
@@ -25,7 +27,7 @@ runtime=$(command -v "$runtime")
 [ -f "$repo/src/app_id.h" ] || { echo 'DTS Debug app identity support is missing (src/app_id.h).' >&2; exit 2; }
 mkdir -p "$output"
 output=$(cd "$output" && pwd)
-work=$(mktemp -d /tmp/nuvio-dts-debug.XXXXXXXX)
+work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-dts-debug.XXXXXXXX")
 mkdir -p "$work/tmp"
 export TMPDIR="$work/tmp"
 cleanup() { python3 - "$work" <<'PY'

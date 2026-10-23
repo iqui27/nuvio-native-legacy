@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include "nvtmp.h"
 #include <errno.h>
 #include <assert.h>
 #include <sys/statvfs.h>
@@ -6,7 +7,8 @@
 #include "artehero.h"
 #include "../src/sdlcompat.h"
 static int falhaEscrita, falhaFechar, downloads;
-static int livreTesteMB;
+static int livreTesteMB, moveDownload;
+static void moveDownloadSlot(void);
 static int statvfsTeste(const char *p, struct statvfs *fs) {
   if (!livreTesteMB) return statvfs(p, fs);
   memset(fs, 0, sizeof *fs); fs->f_frsize=1048576; fs->f_bavail=livreTesteMB;
@@ -48,7 +50,14 @@ char *redeTeste(const char *url, int timeout, long *n) {
   if (strstr(url, "nao-webp")) {
     memcpy(b, "RIFF", 4); memcpy(b + 8, "NOPE", 4);
   } else { b[0] = 0xff; b[1] = 0xd8; }
+  if (moveDownload) moveDownloadSlot();
   *n = 1024; downloads++; return (char *)b;
+}
+static void moveDownloadSlot(void) {
+  itens[1] = itens[0];
+  itens[1].filaRedeEm = 1;
+  snprintf(itens[0].caminho, sizeof itens[0].caminho, "https://teste/replacement.jpg");
+  moveDownload = 0;
 }
 static void criar(const char *dir, const char *nome, time_t uso) {
   char p[1024]; struct utimbuf t = {uso, uso};
@@ -68,7 +77,7 @@ static int appleTeste(const char *id, const char *titulo, int ano, int serie, ch
   return 1;
 }
 int main(void) {
-  char dir[] = "/tmp/nuvio-texdisco-XXXXXX", nome[32], dst[600], tmp[640];
+  char dir[NVT_MAX], nome[32], dst[600], tmp[640]; nvt_set(dir, sizeof dir, "/nuvio-texdisco-XXXXXX");
   long total = 700 * 1024;
   assert(mkdtemp(dir));
   assert(NV_CACHE_DISCO_MAX <= 512L * 1024 * 1024);
@@ -94,6 +103,18 @@ int main(void) {
   snprintf(tmp, sizeof tmp, "%s/00000000.jpg", dir);
   assert(noCache(tmp));
   puts("ok: caminho com prefixo parecido nao pertence a pasta de cache");
+  // #676: a completed response follows its URL, never the reused slot.
+  mtx = SDL_CreateMutex(); condDec = SDL_CreateCond(); rodando = 1; nMax = 8;
+  snprintf(itens[0].caminho, sizeof itens[0].caminho, "https://teste/moved.jpg");
+  itens[0].estado = PENDENTE; itens[0].limite = 640;
+  moveDownload = 1;
+  assert(baixarParaItem(0, "https://teste/moved.jpg", dst, sizeof dst, NULL, NULL) == -1);
+  assert(!itens[0].bruto && itens[1].bruto && itens[1].nBruto == 1024);
+  assert(itens[1].naFilaDec && tirarFila(filaDec, &decIni, decFim) == 1);
+  soltarBruto(&itens[1]); memset(itens, 0, sizeof itens);
+  SDL_DestroyCond(condDec); SDL_DestroyMutex(mtx); mtx = NULL; condDec = NULL;
+  rodando = 0; downloads = 0;
+  puts("ok: #676 completed download survives slot replacement without wrong artwork");
   falhaEscrita=ENOSPC;
   assert(garantirLocal("https://teste/primeira.jpg",dst,sizeof dst,NULL,NULL));
   assert(downloads==1 && !stat(dst,&st) && st.st_size==1024);

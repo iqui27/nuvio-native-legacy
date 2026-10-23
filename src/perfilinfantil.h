@@ -17,4 +17,10 @@ int  perfil_infantil_definir(int idx, int ligado);
 // Apaga todas as marcas (sair da conta).
 void perfil_infantil_esquecer(void);
 
+// 2.1: o menu Ajustes pode ser TRAVADO num perfil infantil (so abre com o PIN de
+// administrador). So vale quando o perfil tambem e infantil. Arquivo proprio
+// (perfil-ajustes-travados.txt), mesma regra de sair da conta.
+int  perfil_ajustes_travados(int idx);
+int  perfil_ajustes_travar(int idx, int travado);
+
 #endif

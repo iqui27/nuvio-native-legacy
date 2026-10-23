@@ -26,6 +26,7 @@
 #include "horafmt.h"
 #include "aovivo.h"
 #include "ajustes.h"
+#include "anim.h"
 #include "badges.h"
 #include "botoes.h"
 #include "guia.h"
@@ -72,6 +73,7 @@ static const char *icone(int b) {
     case AV_B_FONTE: return "pl_layers";
     case AV_B_AOVIVO: return "pl_skip-forward";
     case AV_B_ASPECTO: return "pl_ratio";
+    case AV_B_ULTIMO: return "pl_chevron-left";
     default: return NULL;
   }
 }
@@ -90,6 +92,7 @@ const char *aovivo_rotulo(int b) {
     case AV_B_FONTE: return "Fonte";
     case AV_B_AOVIVO: return "Voltar ao vivo";
     case AV_B_ASPECTO: return "Proporção";
+    case AV_B_ULTIMO: return "Último canal";
     default: return "";
   }
 }
@@ -149,14 +152,75 @@ static int toqueRolar(const PonteiroRolagem *e) {
 }
 #endif
 
+// O FOCO DA FILEIRA E DO CARTAO DE ERRO EM MOLA (o dono: "tudo meio
+// duro"). O disco vira a pilula com o nome crescendo, em ~120 ms na mola
+// padrao de foco (NV_MOLA_FOCO), em vez de saltar num quadro. O desenho
+// fotografa o estado (tests/aovivo_shot) e NAO recebe dt do player: o relogio
+// e o SDL_GetTicks da ultima passada DAQUELA superficie (um por superficie,
+// para o erro desenhado todo quadro nao manter o OSD "fresco" e entregar o
+// quadro no meio do voo), e `osdPasso` e puro para o teste
+// (tests/animacoes205.c) dirigir os quadros que quiser.
+static float    osdFoco[AV_B_N], erroFocoA[3];
+static unsigned char osdFocoPronto[AV_B_N], erroFocoPronto[3];
+static Uint32 osdUlt, erroUlt;
+static unsigned osdQuadro, erroQuadro;
+static int osdFocoAlvo = -1, erroFocoAlvo = -1;
+static void osdPasso(float dt) {
+  int i, red = ajustes_animacoes_reduzidas();
+  for (i = 0; i < AV_B_N; i++) {
+    float alvo = (i == osdFocoAlvo) ? 1.0f : 0.0f;
+    // Cada APARICAO nasce assentada no foco atual (o alvo e zerado quando a
+    // superficie sai da tela, antes do passo): "pronto" vale por visita, nao
+    // por processo.
+    if (!osdFocoPronto[i]) { osdFoco[i] = alvo; osdFocoPronto[i] = 1; }
+    else osdFoco[i] = red ? alvo : anim_mola(osdFoco[i], alvo, dt, NV_MOLA_FOCO);
+  }
+  if (osdFocoAlvo < 0) memset(osdFocoPronto, 0, sizeof osdFocoPronto);
+}
+static void erroPasso(float dt) {
+  int i, red = ajustes_animacoes_reduzidas();
+  for (i = 0; i < 3; i++) {
+    float alvo = (i == erroFocoAlvo) ? 1.0f : 0.0f;
+    if (!erroFocoPronto[i]) { erroFocoA[i] = alvo; erroFocoPronto[i] = 1; }
+    else erroFocoA[i] = red ? alvo : anim_mola(erroFocoA[i], alvo, dt, NV_MOLA_FOCO);
+  }
+  if (erroFocoAlvo < 0) memset(erroFocoPronto, 0, sizeof erroFocoPronto);
+}
+// dt da superficie (SDL_GetTicks DELA, com teto de 50 ms) e se ela REAPARECEU:
+// reaparecer e nao ter desenhado no quadro anterior (gfx_quadro_n), nao um
+// buraco de relogio — um engasgo de 250 ms com o OSD na tela nao pode virar um
+// salto, e o cartao de erro desenhado todo quadro nao mexe no OSD.
+static float tic(Uint32 *ult, unsigned *quadro, int *reapareceu) {
+  Uint32 agora = SDL_GetTicks();
+  float dt = *ult ? (float)(agora - *ult) / 1000.0f : 0.0f;
+  *reapareceu = gfx_quadro_n - *quadro > 1u;
+  *ult = agora; *quadro = gfx_quadro_n;
+  return dt > 0.05f ? 0.05f : dt;
+}
+static void osdTic(void) {
+  int reapareceu;
+  float dt = tic(&osdUlt, &osdQuadro, &reapareceu);
+  if (reapareceu) memset(osdFocoPronto, 0, sizeof osdFocoPronto);
+  osdPasso(dt);
+}
+static void erroTic(void) {
+  int reapareceu;
+  float dt = tic(&erroUlt, &erroQuadro, &reapareceu);
+  if (reapareceu) memset(erroFocoPronto, 0, sizeof erroFocoPronto);
+  erroPasso(dt);
+}
+
 // Com nome em repouso: os sem icone (Canal -/+) e o Guia, a porta principal.
 static int comNome(const AoVivoOsd *o, int b) { return !iconeDe(o, b) || b == AV_B_GUIA; }
-static float larguraBotaoAv(const AoVivoOsd *o, int b, int foco) {
+static float larguraBotaoAv(const AoVivoOsd *o, int b, float foco) {
   const char *ic = iconeDe(o, b);
   float t = (float)txt_largura(TXT_G21B, i18n(rotuloDe(o, b)));
-  if (foco) return 22.0f + (ic ? 30.0f + 12.0f : 0.0f) + t + 28.0f;
-  if (comNome(o, b)) return 26.0f * 2.0f + (ic ? 26.0f + 12.0f : 0.0f) + t;
-  return AV_BTN_D;
+  float wf = 22.0f + (ic ? 30.0f + 12.0f : 0.0f) + t + 28.0f;
+  if (comNome(o, b)) {
+    float wr = 26.0f * 2.0f + (ic ? 26.0f + 12.0f : 0.0f) + t;
+    return anim_mistura(wr, wf, foco);
+  }
+  return anim_mistura(AV_BTN_D, wf, foco);
 }
 static void fileiraBotoes(const AoVivoOsd *o, float y, float a) {
   float x = AV_X;
@@ -168,12 +232,12 @@ static void fileiraBotoes(const AoVivoOsd *o, float y, float a) {
     if (toqueFoco != o->foco) { toquerol_limpar(&toqueLista); toqueFoco = o->foco; }
     float total = 0, fx = 0, fw = 0;
     for (i = 0; i < o->nBotoes; i++) {
-      float w = larguraBotaoAv(o, o->botoes[i], o->foco == i);
+      float w = larguraBotaoAv(o, o->botoes[i], osdFoco[o->botoes[i]]);
       if (i == o->foco) { fx = total; fw = w; }
       total += w + (i + 1 < o->nBotoes ? 12 : 0);
     }
     float max = fmaxf(0, total - faixa.w);
-    if (!toqueLista.livre) {
+    if (!toquerol_livre(&toqueLista)) {
       if (fx < toqueRol) toqueRol = fx;
       if (fx + fw > toqueRol + faixa.w) toqueRol = fx + fw - faixa.w;
     }
@@ -184,9 +248,14 @@ static void fileiraBotoes(const AoVivoOsd *o, float y, float a) {
   }
 #endif
   for (i = 0; i < o->nBotoes; i++) {
-    int b = o->botoes[i], foco = (o->foco == i);
+    int b = o->botoes[i];
+    // FOCO EM MOLA: 0..1 interpola largura, disco/pilula, icone e rotulo.
+    // A tinta do TEXTO troca no ponto medio (convencao: rasterizado nao
+    // recolore por quadro); superficie e icone crossfadezam de verdade.
+    float f = osdFoco[b], al = comNome(o, b) ? 1.0f : f;
+    int emFoco = f > 0.5f;
     const char *ic = iconeDe(o, b), *rot = rotuloDe(o, b);
-    float w = larguraBotaoAv(o, b, foco), k;
+    float w = larguraBotaoAv(o, b, f), k;
     GfxRect r = { x, y, w, AV_BTN_D };
 #ifdef NV_TOUCH_UI
     if (!phone && x + w > NV_TELA_W - AV_X) break;
@@ -194,14 +263,17 @@ static void fileiraBotoes(const AoVivoOsd *o, float y, float a) {
 #else
     if (x + w > NV_TELA_W - AV_X) break;
 #endif
-    if (foco) plrui_pilula_foco(r, a); else plrui_disco_osd(r, a);
-    k = (foco ? tinta : 230) / 255.0f;
-    if (foco || comNome(o, b)) {
-      float tx = x + (foco ? 22.0f : 26.0f), is = foco ? 30.0f : 26.0f;
-      TxtLinha l = txt_linha(TXT_G21B, rot, foco ? tinta : 230, foco ? tinta : 230, foco ? tinta : 230, 255);
-      if (ic) { gfx_icone((GfxRect){ tx, y + (AV_BTN_D - is) * 0.5f, is, is }, ic, k, k, k, a); tx += is + 12.0f; }
-      txt_desenhar_alpha(l, tx, y + (AV_BTN_D - (float)l.h) * 0.5f, a);
-    } else gfx_icone((GfxRect){ x + 19.0f, y + 19.0f, 30.0f, 30.0f }, ic, k, k, k, a);
+    if (f > 0.005f) plrui_pilula_foco(r, a * f);
+    if (f < 0.995f) plrui_disco_osd(r, a * (1.0f - f));
+    k = (emFoco ? tinta : 230) / 255.0f;
+    if (f > 0.005f || comNome(o, b)) {
+      float tx = x + anim_mistura(26.0f, 22.0f, f), is = anim_mistura(26.0f, 30.0f, f);
+      TxtLinha l = txt_linha(TXT_G21B, rot, emFoco ? tinta : 230, emFoco ? tinta : 230, emFoco ? tinta : 230, 255);
+      if (ic) { gfx_icone((GfxRect){ tx, y + (AV_BTN_D - is) * 0.5f, is, is }, ic, k, k, k, a * al); tx += is + 12.0f; }
+      txt_desenhar_alpha(l, tx, y + (AV_BTN_D - (float)l.h) * 0.5f, a * al);
+    }
+    if (f < 0.995f && ic && !comNome(o, b))
+      gfx_icone((GfxRect){ x + 19.0f, y + 19.0f, 30.0f, 30.0f }, ic, k, k, k, a * (1.0f - f));
 #ifdef NV_TOUCH_UI
     if (pont) {
       float ax = fmaxf(x, faixa.x), ar = fminf(x + w, faixa.x + faixa.w);
@@ -245,6 +317,10 @@ void aovivo_osd_desenhar(const AoVivoOsd *o, float a) {
 static void aovivo_osd_desenharCorpo_(const AoVivoOsd *o, float a) {
   time_t agoraT = time(NULL);
   if (a <= 0.004f || !o) return;
+  // O alvo das molas e o foco DESTE quadro; o relogio e interno porque o
+  // desenho nao recebe dt (o player chama por quadro, o shot fotografa).
+  osdFocoAlvo = o->nBotoes > 0 && o->foco >= 0 ? o->botoes[o->foco] : -1;
+  osdTic();
   gfx_veu_css((GfxRect){ 0, 0, NV_TELA_W, 260.0f }, 1, 1.38f, 1.0f, 0.52f * a);
   gfx_veu_css((GfxRect){ 0, NV_TELA_H - 520.0f, NV_TELA_W, 520.0f }, 0, 1.25f, 1.0f, 0.80f * a);
 
@@ -443,6 +519,38 @@ static void aovivo_banner_desenharCorpo_(const AoVivoBanner *b, float a) {
       } } }
 }
 
+
+// O SELO DO NUMERO DIGITADO (M7): como na TV, os digitos grandes no canto de
+// cima e, abaixo, o canal que o numero leva — ou a frase de que nao ha. Some
+// quando o player confirma (1,5 s sem tecla ou OK).
+static void aovivo_numero_corpo_(const char *dig, const char *nome, const char *fonte, float a);
+void aovivo_numero_desenhar(const char *digitos, const char *nome, const char *fonte, float a) {
+  ESCALA_INI();
+  aovivo_numero_corpo_(digitos, nome, fonte, a);
+  ESCALA_FIM();
+}
+static void aovivo_numero_corpo_(const char *dig, const char *nome, const char *fonte, float a) {
+  TxtLinha td, tn;
+  char sub[200];
+  float pad = 30.0f, w, h, x, y = 64.0f;
+  if (a <= 0.004f || !dig || !dig[0]) return;
+  td = txt_linha(TXT_TITULO2, dig, 243, 242, 239, 255);
+  if (nome) {
+    if (fonte && fonte[0]) snprintf(sub, sizeof sub, "%s  \xc2\xb7  %s", nome, fonte);
+    else snprintf(sub, sizeof sub, "%s", nome);
+    tn = txt_linha_corta(TXT_G20M, sub, 243, 242, 239, 200, 520.0f);
+  } else {
+    tn = txt_linha_corta(TXT_G20M, i18n("Nenhum canal com esse número"), 243, 160, 150, 230, 520.0f);
+  }
+  w = (float)(td.w > tn.w ? td.w : tn.w) + 2.0f * pad;
+  if (w < 220.0f) w = 220.0f;
+  h = (float)td.h + (float)tn.h + 2.0f * pad - 4.0f;
+  x = NV_TELA_W - NV_MARGEM_X - w;
+  plrui_material((GfxRect){ x, y, w, h }, 28.0f, 0, a);
+  txt_desenhar_alpha(td, x + w - pad - (float)td.w, y + pad - 8.0f, a);
+  txt_desenhar_alpha(tn, x + w - pad - (float)tn.w, y + pad - 8.0f + (float)td.h + 4.0f, a);
+}
+
 // O CANAL NAO ABRIU: a ilha modal (a mesma do erro de filme), com o canal no
 // kicker, a frase, o motivo do Xtream e as acoes que o texto cita — Recarregar,
 // Fonte, Guia — e a dica de CH+/CH-. player.c leva o foco (aovivo_erro_foco).
@@ -462,9 +570,11 @@ static void aovivo_erro_desenharCorpo_(const char *nome, const char *logo, const
   const float w = telefoneui_largura(960.0f, NV_TELA_W, 48.0f), pad = 44.0f, tw = w - 2.0f * pad;
   const char *tit = titulo && titulo[0] ? titulo : "Não foi possível abrir a fonte";
   const char *dc = dica && dica[0] ? dica : "Abra Fontes para escolher outra opção ou recarregar.";
-  static const char *rot[3] = { "Recarregar", "Fonte", "Guia" };
+  const char *rot[3] = { titulo && !strcmp(titulo, i18n("Esta linha está em uso em outra tela")) ? "Tentar de novo" : "Recarregar", "Fonte", "Guia" };
   static const char *ic[3] = { "pl_rotate-ccw", "pl_layers", "pl_list" };
   float x = (NV_TELA_W - w) * 0.5f, y = 290.0f, h, hTit, hDica, yy, lead;
+  erroFocoAlvo = erroFoco;
+  erroTic();
   int i;
   if (a <= 0.004f) return;
   lead = (float)txt_linha(TXT_ILHA_PERGUNTA, "Ag", 0, 0, 0, 255).h + 7.0f;
@@ -495,8 +605,10 @@ static void aovivo_erro_desenharCorpo_(const char *nome, const char *logo, const
     yy += hDica + 28;
     for (i = 0; i < 3; i++) {
       GfxRect r = {x + pad + i * (bw + gap), yy, bw, bh};
-      int cor = erroFoco == i ? plrui_tinta() : 230;
-      if (erroFoco == i) plrui_pilula_foco(r, a); else plrui_disco_osd(r, a);
+      float f = erroFocoA[i];
+      int cor = f > 0.5f ? plrui_tinta() : 230;
+      if (f > 0.005f) plrui_pilula_foco(r, a * f);
+      if (f < 0.995f) plrui_disco_osd(r, a * (1.0f - f));
       float th = txt_bloco_corta(TXT_G21B, rot[i], cor, cor, cor, -1, 0, bw - 24, 24, 0, 3);
       txt_bloco_corta(TXT_G21B, rot[i], cor, cor, cor, r.x + 12, yy + (bh - th) * .5f, bw - 24, 24, a, 3);
       if (pont) ponteiro_alvo(r.x, r.y, r.w, r.h, NULL, toqueErro, ac[i], toqueQuadro);
@@ -515,7 +627,7 @@ static void aovivo_erro_desenharCorpo_(const char *nome, const char *logo, const
   txt_bloco_corta(TXT_ILHA_TEXTO, dc, 243, 242, 239, x + pad, yy, tw, 30.0f, a * 0.62f, 2);
   yy += hDica + 34.0f;
   { float bx = x + pad;
-    for (i = 0; i < 3; i++) bx += plrui_botao(bx, yy, rot[i], ic[i], erroFoco == i ? 1.0f : 0.0f, a) + 12.0f; }
+    for (i = 0; i < 3; i++) bx += plrui_botao(bx, yy, rot[i], ic[i], erroFocoA[i], a) + 12.0f; }
   yy += 60.0f + 22.0f;
   { const char *k[2] = { "CH+", "CH\xe2\x88\x92" }, *r[2] = { "Próximo canal", "Canal anterior" };
     plrui_dicas(k, r, 2, x + pad, yy + 15.0f, 0, a); }

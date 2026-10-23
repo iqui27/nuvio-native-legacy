@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "homeestado.h"
+#include "nvtmp.h"
 #include "ajustes.h"
 #include "sessao.h"
 #include "perfis.h"
@@ -122,7 +123,7 @@ int main(int argc, char **argv) {
     config = getenv("HOMEESTADO_TEST_CONFIG") ? atoi(getenv("HOMEESTADO_TEST_CONFIG")) : 1;
     return child(argv[1]);
   }
-  snprintf(dir, sizeof dir, "/tmp/nuvio-homeestado-%ld", (long)getpid());
+  snprintf(dir, sizeof dir, "%s/nuvio-homeestado-%ld", nvt_dir(), (long)getpid());
   expect(mkdir(dir, 0700) == 0, "create isolated storage");
   setenv("HOMEESTADO_TEST_DIR", dir, 1); owner = "owner-A"; config = 1;
   homeestado_iniciar(); expect(!homeestado_contexto_valido(), "first start has no stale rows");

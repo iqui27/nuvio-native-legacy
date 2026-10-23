@@ -14,6 +14,7 @@
 //   6. "Assistir agora em HDR10" chama video_dv_recusar; Voltar sai do player.
 // E salva uma captura 1920x1080 de cada passo.
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "player.h"
 #include "pausao.h"
 #include "plrilha.h"
@@ -144,7 +145,7 @@ static void abrirFonte(void) {
 }
 
 int main(int argc, char **argv) {
-  saida = argc > 1 ? argv[1] : "/tmp/nv-dvtela/dv";
+  saida = argc > 1 ? argv[1] : nvt("/nv-dvtela/dv");
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
@@ -163,10 +164,14 @@ int main(int argc, char **argv) {
     const char *en = getenv("NUVIO_SHOT_EN");
     snprintf(caminho, sizeof caminho, "%s/ajustes.txt", getenv("NUVIO_DADOS"));
     f = fopen(caminho, "w"); assert(f);
-    fprintf(f, "idioma %d\nselected_theme 2\n", en && *en == '1');
+    fprintf(f, "idioma %d\nselected_theme 2\ntelaAberturaLocal %d\n", en && *en == '1',
+            getenv("NUVIO_SHOT_DETALHADA") != NULL);
     fclose(f);
     ajustes_dir(getenv("NUVIO_DADOS")); }
   ajustes_iniciar();
+  // #205: a cara Cinema e a abertura normal; a medida das faixas e a do degrade
+  // desfocado (a arte nitida tem faixas chapadas dela mesma).
+  assert(ajustes_shot_valor("aberturaFundoLocal", 2));
   if (getenv("NUVIO_SHOT_VIDRO")) ajustes_definir_vidro(1);
   { CatItem c; memset(&c, 0, sizeof c);
     snprintf(c.tipo, sizeof c.tipo, "movie");
@@ -189,6 +194,8 @@ int main(int argc, char **argv) {
   { int q = esperarFundo();
     printf("fundo pronto depois de %d quadros a mais\n", q);
     assert(q >= 0); }
+  // #205: o ajuste manda na cara da tela (Cinema por padrao; Detalhada = a de sempre).
+  assert(dvtela_variante() == (getenv("NUVIO_SHOT_DETALHADA") ? DVT_VAR_DETALHADA : DVT_VAR_CINEMA));
   salvar("1-lendo");
   { int patamar, niveis;
     medirFaixas(&patamar, &niveis);
@@ -228,6 +235,12 @@ int main(int argc, char **argv) {
   assert(dvtela_ativa() && dvtela_estado()->dica);
   quadros(40);
   salvar("5-dica");
+  // Cinema: Para baixo mostra o cartao detalhado (e a maquina segue a mesma).
+  if (dvtela_variante() == DVT_VAR_CINEMA) {
+    tecla(SDLK_DOWN); quadros(30);
+    assert(dvtela_ativa() && dvtela_variante() == DVT_VAR_DETALHADA);
+    salvar("5b-detalhe");
+  }
 
   // ---- 6. DV confirmado e tocando: esvai sobre o filme ---------------------
   V.dvFase.dvConfirmado = 1; V.dvFase.tocando = 1;
@@ -264,6 +277,12 @@ int main(int argc, char **argv) {
     quadros(2);
     assert(dvtela_ativa() && video_simulado_dv_recusas() == antes);
     quadros(60);
+    if (dvtela_variante() == DVT_VAR_CINEMA) {
+      tecla(SDLK_RETURN); quadros(2);
+      assert(dvtela_ativa() && video_simulado_dv_recusas() == antes);
+      tecla(SDLK_DOWN); quadros(2);
+      assert(dvtela_variante() == DVT_VAR_DETALHADA);
+    }
     tecla(SDLK_RETURN);
     quadros(2);
     assert(video_simulado_dv_recusas() == antes + 1);

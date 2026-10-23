@@ -10,6 +10,10 @@ static float ajcT_cl(float v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 static void ajcT_txtc(const char *t, float px, int forte, float x, float y, int r, int g, int b, float a) {
   ajTextoMini(t, ajc_px(px), forte, ajc_x(x), ajc_y(y), r, g, b, a);
 }
+// O VIVO (ajcTextoVivoRGB): contador que anda com o relogio da cena.
+static void ajcT_txtcVivo(const char *t, float px, int forte, float x, float y, int r, int g, int b, float a) {
+  ajcTextoVivoRGB(t, px, forte, x, y, r, g, b, a);
+}
 static void ajcT_txtAcento(const char *t, float px, float x, float y, float a) {
   float r, g, b;
   ajc_acento(&r, &g, &b);
@@ -405,7 +409,7 @@ static void ajcT_idioma(void) {
   }
   ajc_foco(88, 112, 134, 30, 10, 1);
   ajc_icone("aj_languages", 320, 100, 44, 0.9f);
-  for (i = 0; i < 4; i++) ajcSelo(L[i], 258 + i * 76, 150, 16, i == a ? t : 0, 1);
+  for (i = 0; i < 4; i++) ajcSeloVivo(L[i], 258 + i * 76, 150, 16, i == a ? t : 0, 1);
   ajc_cartaz(258, 200, 140, 100, 2, 1);
   ajc_barras(414, 210, 130, 5, 1);
 }
@@ -418,7 +422,7 @@ static void ajcT_tmdbIdioma(void) {
   ajcSelo("TMDB", 28, 22, 13, 1, 1);
   ajc_ret(70, 90, 160 + 80 * ((a & 1) ? t : 1 - t), 24, 7, 1, 1, 1, 0.9f);
   for (i = 0; i < 5; i++) ajc_barra(70, 140 + i * 24, (i == 4 ? 200 : 440) - 30 * ((i + a) % 3) * t, 0.55f);
-  for (i = 0; i < 3; i++) ajcSelo(L[i], 440 + i * 56, 80, 14, i == a ? t : 0, 1);
+  for (i = 0; i < 3; i++) ajcSeloVivo(L[i], 440 + i * 56, 80, 14, i == a ? t : 0, 1);
   ajc_icone("aj_languages", 560, 30, 28, 0.8f);
   ajc_foco(60, 80, 400, 190, 14, 0.5f + 0.5f * ajc_onda(2.0f));
 }
@@ -432,7 +436,7 @@ static void ajcT_audioLingua(void) {
     float y = 60 + i * 66;
     ajc_neutro(346, y, 248, 54, 12, i == a ? 0.9f : 0.5f);
     ajc_icone(i == a ? "aj_audio-lines" : "aj_volume-2", 376, y + 27, 26, i == a ? 1.0f : 0.5f);
-    ajcSelo(L[i], 412, y + 14, 14, i == a ? 1.0f : 0, 1);
+    ajcSeloVivo(L[i], 412, y + 14, 14, i == a ? 1.0f : 0, 1);
     ajcT_txtc(C[i], 16, 1, 520, y + 16, 243, 242, 239, 0.7f);
     if (i == a) ajc_foco(346, y, 248, 54, 12, 1);
   }
@@ -449,7 +453,7 @@ static void ajcT_legendaLingua(void) {
   ajc_legenda(320, 330, 1.0f, 0.45f, 1, 1, 1, 0, 1);
   ajc_vidro(430, 30, 180, 60, 16, 1);
   ajc_icone("aj_captions", 458, 60, 22, 0.9f);
-  for (i = 0; i < 3; i++) ajcSelo(L[i], 482 + i * 42 - 20, 46, 12, i == a ? 1.0f : 0, 1);
+  for (i = 0; i < 3; i++) ajcSeloVivo(L[i], 482 + i * 42 - 20, 46, 12, i == a ? 1.0f : 0, 1);
   ajc_icone("aj_chevron-right", 560, 190, 0.0f, 0.0f);
 }
 static void ajcT_forcada(int op) {
@@ -460,7 +464,7 @@ static void ajcT_forcada(int op) {
   ajcSelo("PT", 36, 34, 14, 1, 1);
   ajc_icone("aj_audio-lines", 100, 49, 22, 0.9f);
   // um letreiro: a placa em outra lingua, que a forcada mostra
-  if (f > 0.35f && f < 0.75f) { ajc_legenda(320, 190, 1.0f, 0.45f, 1, 0.9f, 0.2f, 0, 1); ajcSelo("JP", 36, 70, 13, 0, 1); }
+  if (f > 0.35f && f < 0.75f) { ajc_legenda(320, 190, 1.0f, 0.45f, 1, 0.9f, 0.2f, 0, 1); ajcSeloVivo("JP", 36, 70, 13, 0, 1); }
   // a linha do tempo: todas as falas (desligado) ou so as forcadas (ligado)
   ajc_ret(30, 250, 580, 4, 2, 1, 1, 1, 0.16f);
   for (i = 0; i < 12; i++) {
@@ -501,7 +505,7 @@ static void ajcT_leg2(int op) {
   }
   if (op == AJ_LEG_LINGUA2) {
     int a = ajc_passo(1.8f, 3);
-    for (i = 0; i < 3; i++) ajcSelo(L[i], 130 + i * 140, 140, 28, i == a ? 1.0f : 0, 1);
+    for (i = 0; i < 3; i++) ajcSeloVivo(L[i], 130 + i * 140, 140, 28, i == a ? 1.0f : 0, 1);
     ajc_icone("aj_languages", 70, 160, 44, 0.85f);
   }
   if (op == AJ_LEG2_TAMANHO) tm = tam * (0.82f + 0.18f * ajc_onda(2.4f));
@@ -545,6 +549,12 @@ static void ajcT_leg2(int op) {
       ajcT_txtc("Aa", 80, 1, x, y, 255, 255, 255, 1);
       if (i == vb || (vb == 0 && i == 1)) ajc_foco(x - 14, y - 6, 130, 110, 12, 1);
     }
+  }
+  if (op == AJ_LEG_CONTORNO_COR) {   // #475: "Aa" com o contorno na cor escolhida
+    int oR, oG, oB, dx, dy;
+    ajustes_leg_contorno_rgb(&oR, &oG, &oB);
+    for (dx = -3; dx <= 3; dx += 3) for (dy = -3; dy <= 3; dy += 3) if (dx || dy) ajcT_txtc("Aa", 100, 1, 270 + dx, 110 + dy, oR, oG, oB, 1);
+    ajcT_txtc("Aa", 100, 1, 270, 110, 255, 255, 255, 1);
   }
 }
 
@@ -635,7 +645,7 @@ static void ajcT_velocidade(void) {
   char b[16];
   snprintf(b, sizeof b, "%d", 20 + (int)(f * 60));
   ajc_anel(190, 170, 96, 0.2f + 0.7f * f, 1);
-  ajcT_txtc(b, 54, 1, 190 - ajcLargura(b, 54, 1) * 0.5f, 130, 243, 242, 239, 1);
+  ajcT_txtcVivo(b, 54, 1, 190 - ajcLarguraViva(b, 54, 1) * 0.5f, 130, 243, 242, 239, 1);
   ajcT_txtc("Mb/s", 20, 1, 190 - ajcLargura("Mb/s", 20, 1) * 0.5f, 196, 243, 242, 239, 0.7f);
   ajc_icone("aj_arrow-down", 190, 280 + 4 * f, 26, 0.5f + 0.5f * f);
   ajc_neutro(370, 80, 230, 70, 16, 1);
@@ -663,7 +673,7 @@ static void ajcT_memImg(int op) {
   }
   if (op == AJ_ESPACO) {
     snprintf(b, sizeof b, "%d MB", 30 * cheios + 20);
-    ajcT_txtc(b, 36, 1, 110, 190, 243, 242, 239, 1);
+    ajcT_txtcVivo(b, 36, 1, 110, 190, 243, 242, 239, 1);
     ajc_progresso(110, 250, 460, (float)cheios / 10.0f, 1);
     ajc_icone("aj_images", 540, 205, 30, 0.7f);
   } else {
@@ -828,10 +838,11 @@ static int ajcNovaTitulo(int sec, int op) {
     case AJ_DET_SO_CINEMETA: ajcT_soCinemeta(op); return 1;
     case AJ_IDIOMA: ajcT_idioma(); return 1;
     case AJ_TMDB_IDIOMA: ajcT_tmdbIdioma(); return 1;
-    case AJ_AUD_LINGUA: ajcT_audioLingua(); return 1;
+    case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: ajcT_audioLingua(); return 1;
     case AJ_LEG_LINGUA: ajcT_legendaLingua(); return 1;
     case AJ_LEG_FORCADA: ajcT_forcada(op); return 1;
     case AJ_LEG_LINGUA2: case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
+    case AJ_LEG_CONTORNO_COR:
       ajcT_leg2(op); return 1;
     case AJ_QUALIDADE_IMG: ajcT_qualImg(); return 1;
     case AJ_MEDIDOR: ajcT_medidor(); return 1;

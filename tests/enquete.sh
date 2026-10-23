@@ -1,13 +1,15 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Enquete na ilha (N3): cliente contra um servidor de mentira, sem rede nem janela.
 #   bash tests/enquete.sh
 # Compila tudo MENOS src/enquete.c, que o teste inclui. Escreve so em NUVIO_DADOS
 # (pasta temporaria; o teste se recusa a rodar fora dela).
 set -eu
 cd "$(dirname "$0")/.."
-NUVIO_DADOS=$(mktemp -d /tmp/nuvio-enq-dados.XXXXXX)
+NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-enq-dados.XXXXXX)
 export NUVIO_DADOS
-binary="$(mktemp /tmp/nuvio-enquete.XXXXXX)"
+binary="$(mktemp ${TMPDIR:-/tmp}/nuvio-enquete.XXXXXX)"
 trap 'rm -rf "$NUVIO_DADOS" "$binary"' EXIT
 sources=()
 for source in src/*.c src/dts/*.c; do

@@ -12,6 +12,7 @@
 // mudarem la, este teste continua valido para o formato; o que ele mede e a
 // grade.
 #include "teclado.h"
+#include "nvtmp.h"
 #include "dados.h"
 #include "ajustes.h"
 #include "gfx.h"
@@ -110,7 +111,7 @@ static void fechar(void) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-teclado";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-teclado");
   const char *dir = getenv("NUVIO_DADOS");
   SDL_GLContext gl;
   int falhou = 0;
@@ -273,7 +274,10 @@ int main(int argc, char **argv) {
   CONF(!strcmp(teclado_texto(), "m+"), "e-mail: CIMA dos atalhos prende na ultima tecla da fileira curta");
   tecla(SDLK_DOWN); teclas(SDLK_LEFT, 4);
   CONF(teclado_foco_campo() == 1, "e-mail: ESQUERDA dos atalhos entra no campo");
-  tecla(SDLK_DOWN); teclas(SDLK_RIGHT, 2);
+  // With larger text (escala de texto) TV and Falar wrap into two rows, and
+  // RIGHT leaves the bar from TV already: walk right until it does.
+  tecla(SDLK_DOWN);
+  for (int k = 0; k < 2 && teclado_foco_campo() != 0; k++) tecla(SDLK_RIGHT);
   CONF(teclado_foco_campo() == 0 && teclado_foco_tipo() == TECLADO_FOCO_MEIO, "e-mail: so TV e Falar; DIREITA volta aos atalhos");
   tecla(SDLK_RETURN);
   CONF(!strcmp(teclado_texto(), "m+.com"), "e o atalho .com digita o pedaco inteiro");

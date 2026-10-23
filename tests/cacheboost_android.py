@@ -138,6 +138,23 @@ fun main() {
     check(CacheSessao.apagar(atual) && !atual.exists())
     raiz.deleteRecursively(); fora.deleteRecursively()
 
+    // Warm resume: actual disk bytes survive close and the very same cache is reused.
+    run {
+        val raizWarm = Files.createTempDirectory("nv-warm").toFile()
+        val f = File(raizWarm, "part.exo"); f.writeText("downloaded bytes")
+        val vaga = CacheSessao.Vaga<File> { CacheSessao.apagar(it) }
+        fun guardar() { f.writeText("downloaded bytes"); check(vaga.guardar(f, "title", "url", 256, 100, 768 * MB)) }
+        guardar()
+        check(f.exists() && vaga.pegar("", "trailer", 0, 101) == null && f.exists())
+        check(vaga.pegar("title", "url", 256, 102) === f && f.readText() == "downloaded bytes")
+        guardar(); check(vaga.pegar("other", "url", 256, 102) == null && !f.exists())
+        guardar(); check(vaga.largar() && !f.exists()) // profile switch / toggle off
+        guardar(); check(vaga.vencer(100 + CacheSessao.LIMITE_MS, 768 * MB) && !f.exists())
+        guardar(); check(vaga.vencer(101, 512 * MB - 1) && !f.exists())
+        guardar(); check(vaga.pegar("title", "different source", 256, 102) == null && !f.exists())
+        raizWarm.deleteRecursively()
+    }
+
     // --- ENOSPC recognition (Android wraps ErrnoException in IOException)
     check(CacheSessao.semEspaco(IOException("write failed", IOException("write failed: ENOSPC (No space left on device)"))))
     check(CacheSessao.semEspaco(IOException("No space left on device")))

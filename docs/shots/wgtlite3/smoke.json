@@ -1,0 +1,15 @@
+{
+  "browser": "145.0.7632.6",
+  "args": "--js-flags=--noexpose_wasm",
+  "nativeWasmAfterFlag": "object",
+  "nativeWasmAtStart": "undefined",
+  "runtime": true,
+  "frames": 226,
+  "shared": "undefined",
+  "offscreen": "undefined",
+  "avplay": "undefined",
+  "size": [
+    1920,
+    1080
+  ]
+}

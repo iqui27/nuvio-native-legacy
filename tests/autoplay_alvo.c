@@ -28,6 +28,7 @@ void wsenvio_podar(void) {}
 void wsenvio_podar_addon(const char *base) { (void)base; }
 #include <string.h>
 #include <unistd.h>
+#include "stub_perfisessao.h"
 #include "../src/fontecache.c"
 
 void ondever_pedir(const char *id, int series, long tmdb) {
@@ -62,6 +63,14 @@ const char *rede_url_publica(const char *url, char *d, unsigned tam) {
   snprintf(d, tam, "%s", url); return d;
 }
 const char *rede_ultimo_erro(void) { return ""; }
+void stream_filtro_tipo(const char *type) { (void)type; }
+void stream_folha_canal(int enabled) { (void)enabled; }
+char *rede_baixar(const char *url, int timeout);
+char *rede_baixar_st(const char *url, int seconds, const char *const *headers, int *status) {
+  (void)headers; char *body = rede_baixar(url, seconds);
+  if (status) *status = body ? 200 : 0;
+  return body;
+}
 char *rede_baixar(const char *url, int timeout) {
   (void)timeout;
   assert(strstr(url, "/stream/") && strstr(url, ".json"));
@@ -99,6 +108,7 @@ void stream_definir_lista_idade(const Stream *l, int n, Uint32 idade) {
   nLista = n;
   snprintf(listaAlvo, sizeof listaAlvo, "%s", pedidoAlvo);   // streams.c:476
 }
+void stream_preparar_dica_p2p(const Stream *l, int n) { (void)l; (void)n; }
 void stream_definir_lista(const Stream *l, int n) { stream_definir_lista_idade(l, n, 0); }
 void stream_lista_acrescentar(const Stream *l, int n, int o) {
   Stream *t;

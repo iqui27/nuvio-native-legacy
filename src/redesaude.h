@@ -31,26 +31,40 @@
 #define REDE_SAUDE_HOSTS    2
 #define REDE_SAUDE_JANELA   3000u
 #define REDE_SAUDE_CARENCIA 10000u
+// #382: depois do boot o resolvedor da TV leva minutos para responder (19 curl 28
+// "Resolving timed out" em hosts distintos, sem a casa estar fora). Enquanto
+// nenhum pedido deu certo, nos primeiros 60 s, timeout de DNS nao conta.
+// CURLcode 28 sem resolver chega aqui como REDE_CURL_DNS_LENTO.
+#define REDE_CURL_DNS_LENTO 1028
+#define REDE_SAUDE_ARRANQUE 60000u
 
 typedef struct {
   int falhas;               // falhas de transporte seguidas
-  unsigned primeira;        // ms da primeira falha da sequencia
+  unsigned primeira;        // ms da primeira falha da sequencia, incluindo retry
+  unsigned ultimoOk;        // a janela nunca comeca antes do ultimo sucesso
+  int temOk;
   unsigned hosts[4];        // hosts distintos da sequencia (hash)
   int nHosts;
   int offline;              // 1 = "sem internet" declarado
   unsigned voltou;          // ms em que voltou (carencia)
   int voltouOk;
   unsigned seq;             // sobe a cada troca de estado
+  unsigned inicio;          // ms da primeira nota (0 = ainda nenhuma)
+  int temInicio;
 } RedeSaude;
 
 // O nucleo: um pedido terminou. `ok` 1 = transporte ok, 0 = falha de
 // transporte. `host` = hash do host (0 = ignorar). Devolve 1 se o estado mudou.
 int  rede_saude_passo(RedeSaude *s, int ok, unsigned host, unsigned agoraMs);
+// Igual, para falha que e so timeout de DNS (ignorada no arranque).
+int  rede_saude_passo_dns(RedeSaude *s, unsigned host, unsigned agoraMs);
 
 // Para rede.c: o resultado de um pedido. `codigo` e o CURLcode (0 = ok) ou,
 // no wasm, 0 para resposta e 6 para "sem resposta". Codigos que nao sao de
 // transporte (cancelamento, teto) sao ignorados aqui mesmo.
 void rede_saude_nota(int codigo, const char *url);
+// Resultado final com o instante da primeira falha do retry (0 = agora).
+void rede_saude_nota_desde(int codigo, const char *url, unsigned primeiraMs);
 // Estado atual e o contador de trocas (quem avisa compara com o que viu).
 int      rede_saude_offline(void);
 unsigned rede_saude_seq(void);

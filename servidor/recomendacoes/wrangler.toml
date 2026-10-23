@@ -7,6 +7,14 @@ binding = "DB"
 database_name = "nuvio-recomendacoes"
 database_id = "fbea4764-9125-474e-ae4e-875d2e21b2fc"
 
+# Channel categories, cached 30 days. Wrangler provisions KV on a future deploy.
+[[kv_namespaces]]
+binding = "CATS"
+
+# Music soundtrack lookups (musica.js), cached 30 days (7 when nothing found).
+[[kv_namespaces]]
+binding = "MUS"
+
 # TV VIDAA: o site e o proxy dela vivem no worker nuvio-tv (servidor/tv). Este
 # binding so repassa /tv/* e /v1/proxy para la (ver index.js). NUNCA ponha
 # [assets] aqui de novo: todo deploy sem o site montado apagava a pagina da TV.
@@ -32,6 +40,7 @@ JUNTOS_URL = "https://nuvio-juntos.henriquef29.workers.dev"
 crons = ["17 4 * * *"]
 
 # Segredos (nao vao aqui; use `wrangler secret put`):
+#   TYPESAFE_KEY        Jev HTTP API key for Live TV category suggestions
 #   TRAKT_CLIENT_ID     client id do aplicativo no Trakt
 #   SUPABASE_URL        url do projeto Supabase do Nuvio (/user e default da JWKS)
 #   SUPABASE_ANON_KEY   anon key do mesmo projeto

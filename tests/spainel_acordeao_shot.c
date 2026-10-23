@@ -3,6 +3,7 @@
 //   bash tests/spainel_acordeao_shot.sh /tmp/nv-acordeao
 #define NV_REC_URL "http://127.0.0.1:8799"
 #include "../src/recomenda.c"
+#include "nvtmp.h"
 #include "salvospainel.h"
 #include "ctxmenu.h"
 #include "salvosorg.h"
@@ -119,7 +120,7 @@ static int primeiroDesenhado(int x, int y0, int y1) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-foco";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-foco");
   const char *dir = getenv("NUVIO_DADOS");
   char nome[700];
   SDL_Window *w;

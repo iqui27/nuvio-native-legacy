@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static int nivel, foco, repo, armado, sair, focoSalvo;
+static int nivel, foco, repo, armado, sair, focoSalvo, pediuRelogio;
 static char aviso[160];
 
 static const char *ALFA_URL =
@@ -26,12 +26,13 @@ static int linhas(void) {
 }
 
 void pluginsui_abrir(void) {
-  nivel = 0; foco = 0; repo = 0; armado = 0; sair = 0; aviso[0] = 0;
+  nivel = 0; foco = 0; repo = 0; armado = 0; sair = 0; pediuRelogio = 0; aviso[0] = 0;
   // Os manifestos se conferem ao abrir (cache de 6 h; fio proprio).
   if (plugins_disponivel()) plugins_atualizar();
 }
 
 int pluginsui_quer_sair(void) { int v = sair; sair = 0; return v; }
+int pluginsui_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return v; }
 
 static void voltar(void) {
   armado = 0; aviso[0] = 0;
@@ -79,11 +80,12 @@ void pluginsui_detalhes(int i, int b) {
 
 void pluginsui_evento(const SDL_Event *e) {
   int n;
+  pediuRelogio = 0;
   if (teclado_aberto()) { teclado_evento(e); return; }
   if (e->type != SDL_KEYDOWN) return;
   n = linhas();
   switch (e->key.keysym.sym) {
-    case SDLK_UP:   if (foco > 0) { foco--; armado = 0; } break;
+    case SDLK_UP:   if (foco > 0) { foco--; armado = 0; } else pediuRelogio = 1; break;
     case SDLK_DOWN: if (foco < n - 1) { foco++; armado = 0; } break;
     case SDLK_RETURN: case SDLK_KP_ENTER: ok(); break;
     case SDLK_RIGHT:

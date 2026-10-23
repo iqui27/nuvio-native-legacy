@@ -27,6 +27,7 @@
 #define NV_CHSEGURA_H
 
 #define CHS_SEGURAR_MS  600u
+#define CHS_ATRASO_MS   300u   // dead zone: no progress drawn, a click shows nothing
 #define CHS_EMENDA_MS    90u
 #define CHS_FANTASMA_MS  35u
 #define CHS_SILENCIO_MS 450u

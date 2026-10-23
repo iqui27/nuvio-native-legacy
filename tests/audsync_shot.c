@@ -9,6 +9,7 @@
 // NUVIO_SHOT_IDIOMA=N troca o idioma (2 = romeno). Fonte da interface: Montserrat (a TV
 // do dono).
 #include "catalogo.h"
+#include "nvtmp.h"
 #include "player.h"
 #include "ajustes.h"
 #include "faixas.h"
@@ -101,7 +102,7 @@ static void tocar(double de, double ate, double offset, int tipo) {
 }
 
 int main(int argc, char **argv) {
-  const char *saida = argc > 1 ? argv[1] : "/tmp/nv-audsync";
+  const char *saida = argc > 1 ? argv[1] : nvt("/nv-audsync");
   const char *base = getenv("NV_AUDSYNC_BASE");   // http://127.0.0.1:PORTA
   char srt[300];
   LegSyncVisao v;

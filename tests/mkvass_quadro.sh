@@ -1,8 +1,10 @@
 #!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 # Publicacao ASS concorrente ao quadro (#412), sem rede ou TV.
 set -eu
 cd "$(dirname "$0")/.."
-DIR=$(mktemp -d /tmp/nuvio-mkvass-quadro.XXXXXX)
+DIR=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-mkvass-quadro.XXXXXX)
 trap 'rm -rf "$DIR"' EXIT
 flags=(-ffunction-sections -fdata-sections)
 if [ "$(uname -s)" = Darwin ]; then flags+=(-Wl,-dead_strip); else flags+=(-Wl,--gc-sections -pthread -lm); fi

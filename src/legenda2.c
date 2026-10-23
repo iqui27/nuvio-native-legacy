@@ -19,6 +19,8 @@ static Leg2Estado estado;
 static char ident[128];
 static LegendaDocumento *doc;
 static int offManual, offAuto;
+static Leg2SalvarAtraso salvarAtraso;
+static unsigned atrasoVinculo;
 
 typedef struct {
   int pendente;
@@ -158,7 +160,7 @@ void legenda2_reiniciar(void) {
   pthread_mutex_lock(&trava);
   d = limpar();
   sessao++;
-  offManual = 0;
+  if (!salvarAtraso) offManual = 0;   // the unbound loader keeps its original session contract
   pthread_mutex_unlock(&trava);
   legenda_documento_liberar(d);
 }
@@ -217,13 +219,32 @@ static int limitarManual(int ms) {
   return ms > LEG_ATRASO_MANUAL_MAX ? LEG_ATRASO_MANUAL_MAX : ms < -LEG_ATRASO_MANUAL_MAX ? -LEG_ATRASO_MANUAL_MAX : ms;
 }
 static int limitar(int ms) { return ms > 30000 ? 30000 : ms < -30000 ? -30000 : ms; }
+void legenda2_vincular_atraso(int ms, Leg2SalvarAtraso salvar) {
+  pthread_mutex_lock(&trava);
+  offManual = limitarManual(ms);
+  salvarAtraso = salvar;
+  atrasoVinculo++;
+  pthread_mutex_unlock(&trava);
+}
+void legenda2_atualizar_offset_manual(int ms) {
+  pthread_mutex_lock(&trava); offManual = limitarManual(ms); pthread_mutex_unlock(&trava);
+}
 int legenda2_offset_manual(void) {
   int v;
   pthread_mutex_lock(&trava); v = offManual; pthread_mutex_unlock(&trava);
   return v;
 }
 void legenda2_definir_offset_manual(int ms) {
-  pthread_mutex_lock(&trava); offManual = limitarManual(ms); pthread_mutex_unlock(&trava);
+  Leg2SalvarAtraso salvar;
+  unsigned vinculo;
+  ms = limitarManual(ms);
+  pthread_mutex_lock(&trava); salvar = salvarAtraso; vinculo = atrasoVinculo; pthread_mutex_unlock(&trava);
+  // Settings may write to disk and publish the committed value back to us.
+  // Neither filesystem work nor callbacks run while the subtitle lock is held.
+  if (salvar && !salvar(ms)) return;
+  pthread_mutex_lock(&trava);
+  if (vinculo == atrasoVinculo) offManual = ms;
+  pthread_mutex_unlock(&trava);
 }
 void legenda2_definir_offset_auto(int ms) {
   pthread_mutex_lock(&trava); offAuto = limitar(ms); pthread_mutex_unlock(&trava);
@@ -250,11 +271,12 @@ int legenda2_cues(double posSeg, LegendaCue *dst, int max) {
   double (*f)(double) = tempoMapa;
   if (f) posSeg = f(posSeg);   // fora da trava: legsync tem a sua
   pthread_mutex_lock(&trava);
-  if (doc && estado == LEG2_ATIVA) { d = legenda_documento_reter(doc); off = limitar(offManual + offAuto); }
+  if (doc && estado == LEG2_ATIVA) { d = legenda_documento_reter(doc); off = limitarManual(offAuto - offManual); }
   pthread_mutex_unlock(&trava);
   if (!d) return 0;
   // The offset is applied HERE and only here (legenda_documento_cues adds it
-  // to the lookup time: positive = earlier, like the primary overlay).
+  // to the lookup time: positive = earlier). offManual is the user's delay
+  // (positive = later), so it enters subtracted; offAuto is already lookup.
   n = legenda_documento_cues(d, posSeg, off, dst, max);
   legenda_documento_liberar(d);
   return n;

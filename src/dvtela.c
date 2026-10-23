@@ -119,7 +119,17 @@ static void logSaida(void) {
   fflush(stdout);
 }
 
+// A cara (#205). Padrao Detalhada: sem o player dizendo, a tela e a de sempre.
+static int apresDetalhada = 1, apresDetalhe;
+
+int dvt_variante(int aberturaDetalhada, int detalheTecla) {
+  return aberturaDetalhada || detalheTecla ? DVT_VAR_DETALHADA : DVT_VAR_CINEMA;
+}
+void dvtela_apresentacao(int aberturaDetalhada) { apresDetalhada = aberturaDetalhada; }
+int dvtela_variante(void) { return dvt_variante(apresDetalhada, apresDetalhe); }
+
 void dvtela_entrar(Uint32 agora) {
+  if (!E.ativa) apresDetalhe = 0;   // tela nova volta a cinema; fonte nova com ela de pe, nao
   // Fonte nova com a tela de pe (a troca automatica caiu noutra fonte DV): os
   // passos recomecam, a tela fica.
   if (E.ativa) printf("[dvtela] fonte nova (%u ms)\n", (unsigned)(agora - E.entrouEm));
@@ -188,10 +198,17 @@ int dvtela_evento(const SDL_Event *e, Uint32 agora) {
   if (e->type != SDL_KEYDOWN) return DVT_EV_ENGOLIU;
   if (nv_tecla_voltar(e)) { dvtela_sair(DVT_SAIDA_VOLTAR, agora); return DVT_EV_VOLTAR; }
   if (ehOk(e)) {
-    // Tecla segurada ou o segundo toque do Play: nao e escolha.
-    if (e->key.repeat || (Uint32)(agora - E.entrouEm) < DVT_OK_ESPERA_MS) return DVT_EV_ENGOLIU;
+    // Botao oculto, tecla segurada ou o segundo toque do Play: nao e escolha.
+    if (dvtela_variante() == DVT_VAR_CINEMA || e->key.repeat ||
+        (Uint32)(agora - E.entrouEm) < DVT_OK_ESPERA_MS) return DVT_EV_ENGOLIU;
     dvtela_sair(DVT_SAIDA_HDR10, agora);
     return DVT_EV_HDR10;
+  }
+  // Cinema: Para cima / Para baixo mostram o cartao detalhado (a tela segue).
+  if (dvtela_variante() == DVT_VAR_CINEMA &&
+      (e->key.keysym.sym == SDLK_UP || e->key.keysym.sym == SDLK_DOWN)) {
+    apresDetalhe = 1;
+    return DVT_EV_ENGOLIU;
   }
   // Setas, Pause, numeros: nada a fazer, e nada passa ao OSD que esta coberto.
   return DVT_EV_ENGOLIU;

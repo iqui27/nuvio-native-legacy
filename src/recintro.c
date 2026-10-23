@@ -399,7 +399,7 @@ static void recintro_desenharCorpo_(Uint32 agora) {
 
   dy = (1.0f - a) * 36.0f;
   { GfxRect p = { RI_X, RI_Y + dy, RI_W, RI_H };
-    gfx_cor(p, 0.030f, 0.075f, 0.078f, 0.088f, 0.98f * a); }
+    gfx_vidro_ou_solido(p, 0.030f, GFX_VIDRO_DENS_MODAL, a, 0.075f, 0.078f, 0.088f, 0.98f); }
   gfx_recorte(RI_X, RI_Y + dy, RI_W, RI_H);
 
   // A TROCA DE PAGINA E UM DESLIZE CURTO, na direcao da tecla: sem ele as tres
@@ -429,11 +429,7 @@ static void recintro_desenharCorpo_(Uint32 agora) {
   y = RI_Y + dy + 96.0f;
   if (pagina == 0) {
     y += feature(RI_TXT_X + dx, y, RI_TXT_W, "menu_library",
-#ifdef NV_ANDROID
           "Está no CH+",
-#else
-          "Está na tecla AZUL",
-#endif
           "O painel de Salvos ganhou uma segunda aba, Social — é ali que chega "
           "o que os seus amigos mandaram.", ap);
     y += feature(RI_TXT_X + dx, y, RI_TXT_W, "recomendar",

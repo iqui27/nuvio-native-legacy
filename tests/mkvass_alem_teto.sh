@@ -16,7 +16,7 @@ if [ "${SANITIZE:-0}" = 1 ]; then
 fi
 # A entrega em janela, que na TV espera 10 s, nos testes espera 300 ms.
 flags=("${base[@]}" -DMKVASS_RANGES_POR_SEG=400 -DMKVASS_ENTREGA_JANELA_MS=300L)
-FONTES="tests/mkvass_alem_teto.c src/mkvass.c src/legenda.c src/dados.c"
+FONTES="tests/mkvass_alem_teto.c src/mkvass.c src/imgsub.c src/pgs.c src/legenda.c tests/mkvass_i18n.c src/dados.c"
 # O assrender e um duble dentro do teste: guarda o documento que iria ao libass.
 cc "${flags[@]}" $FONTES -o "$DIR/padrao" -lm
 # Teto de corpo pequeno (1 MiB, despejo a partir de 768 KiB): a abertura do

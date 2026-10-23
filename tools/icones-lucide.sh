@@ -47,10 +47,10 @@ SVG="$DIR/lucide"
 NOMES="
 circle-play file-text folders house
 images info layout-dashboard monitor-cog palette panel-top plug puzzle
-rotate-ccw-clock rows-3 star user-round mic keyboard smartphone
+rotate-ccw-clock rows-3 star user-round mic keyboard smartphone shuffle
 rotate-cw x library eye eye-off users
 clock triangle-alert tv-minimal-play calendar download wifi-off wifi link-2-off
-cloud megaphone bookmark
+cloud megaphone bookmark music
 clapperboard languages search chevron-right check plus minus memory-stick delete
 activity gauge zap database
 arrow-up-down heart moon sun-dim
@@ -59,6 +59,7 @@ pause send scroll-text server-crash shield-check cpu log-out
 panel-left list-x bell audio-lines layers type sliders-horizontal book-open user-plus
 alarm-clock badge-check captions chart-column chevrons-down circle-check circle-dot compass droplet feather film funnel globe image image-plus inbox key key-round layout-list life-buoy link list-ordered list-video loader log-in map maximize-2 menu message-square monitor-play mouse-pointer move-horizontal pause picture-in-picture-2 play quote send server settings-2 shield sparkle stethoscope telescope thumbs-up unlink wand sparkles corner-up-left book-open-text
 pipette blend spotlight paint-roller
+trophy crosshair circle contrast hexagon ribbon
 lock lock-open
 ellipsis
 hard-drive volume-2 package tag
@@ -79,6 +80,9 @@ tv layout-grid unplug chevron-down chevron-up arrow-left arrow-right
 # o botao "Travar" e o selo da trava. SVG da tag 1.48.0 transcritos a mao.
 # A linha "pipette blend spotlight paint-roller" e da REGUA de cores (05/10): um desenho por dinamica (Da arte,
 # Gradiente, Imersiva, Textura), que antes mostravam todas a mesma miniatura.
+# A linha "trophy" e da CACA (06/10, plano social-pessoal secao 8): o trofeu do
+# aviso de conquista na ilha, a mira do "Cacar" e as cinco formas dos degraus
+# (circulo, meia-lua, hexagono, estrela, fita) da legenda da tela Caca.
 # A ultima e do "..." da pagina do titulo (06/10): o circular "Mais opcoes" que
 # guarda trailer, Explorar, Trocar arte e Recomendar (src/detmais.h).
 # A de baixo e do TEXTO DO ADDON na folha de fontes (07/10): os emojis do AIOStreams

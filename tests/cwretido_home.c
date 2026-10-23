@@ -9,6 +9,8 @@
 // direto, como tests/cwremover_home.c. Sem janela, rede ou TV.
 #include <assert.h>
 // Duples do cache de arte do Codex (mesmos de tests/home_layout.c).
+// #204: o "Ocultar filmes assistidos" da descoberta, parado neste teste.
+void desc_ocultar_vistos_atualizar(void) {}
 void cachearte_marcar_grupo(int grupo, const char *url, int variante, int essencial, int emUso) {
   (void)grupo; (void)url; (void)variante; (void)essencial; (void)emUso; }
 void cachearte_limpar_referencias_grupo(int grupo) { (void)grupo; }
@@ -112,7 +114,7 @@ int main(void) {
   static CatFileira fs[2];
   const Fileira *lista;
   fil_definir_limite(FIL_LIMITE_MAX);
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":true}");
+  assert(ajustes_shot_valor("continueWatchingEnabled", 0));
   item(&it[0], "tt100", "movie", 0, 0, 40);
   item(&it[1], "tt200:2:3", "series", 2, 3, 30);
   item(&it[2], "tt300", "movie", 0, 0, 20);

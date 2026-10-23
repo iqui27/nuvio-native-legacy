@@ -7,5 +7,5 @@ flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -ffunct
 if [ "$(uname -s)" = Darwin ]; then flags+=(-Wl,-dead_strip); else flags+=(-Wl,--gc-sections); fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 # O teste inclui src/streams.c para observar a ordem realmente montada.
-cc "${flags[@]}" tests/fonte_ordem_addon.c src/fontesmortas.c src/stream_parse.c src/js.c src/badges.c src/streamfit.c src/naovideo.c -pthread -o "$dir/test"
+cc "${flags[@]}" tests/fonte_ordem_addon.c src/fontesmortas.c src/stream_parse.c src/fontefiltro.c src/linguas.c src/js.c src/badges.c src/streamfit.c src/naovideo.c -pthread -o "$dir/test"
 "$dir/test"

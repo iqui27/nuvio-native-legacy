@@ -1,10 +1,12 @@
 #!/bin/sh
+export TMPDIR="${TMPDIR:-/tmp}"
+TMPDIR="${TMPDIR%/}"
 set -eu
 
 # Build the same libass stack for the Tizen WebAssembly target. Run after
 # emsdk activation, or let CI call it before tools/tizen.sh.
 PREFIX=${NUVIO_ASS_ROOT:-$(pwd)/build/ass-wasm}
-BUILD=${NUVIO_ASS_BUILD:-/tmp/nuvio-ass-wasm-build}
+BUILD=${NUVIO_ASS_BUILD:-${TMPDIR:-/tmp}/nuvio-ass-wasm-build}
 EMCONFIGURE=${EMCONFIGURE:-emconfigure}
 EMMAKE=${EMMAKE:-emmake}
 EMCC=${EMCC:-emcc}
