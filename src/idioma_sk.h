@@ -6319,7 +6319,7 @@
   T("Travar série com…", "Zamknúť seriál s…"),
   T("Travas de série", "Zámky seriálov"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Vráti panel diagnostiky prehliadača, ktorý žije mimo aplikácie."),
-  T("Trilha", "Trasa"),
+  T("Trilha de filmes", "Trasa"),
   T("Trilha de maio, com o Festival de Cannes", "Májová cesta s festivalom v Cannes"),
   T("Trilha de março, aberta o ano todo", "Marcová cesta, otvorená celý rok"),
   T("Trilha original · Prévias de áudio", "Pôvodná hudba · Zvukové ukážky"),

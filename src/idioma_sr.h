@@ -6319,7 +6319,7 @@
   T("Travar série com…", "Zaključaj seriju sa…"),
   T("Travas de série", "Zaključavanja serija"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Vraća dijagnostički panel pregledača, koji živi izvan aplikacije."),
-  T("Trilha", "Staza"),
+  T("Trilha de filmes", "Staza"),
   T("Trilha de maio, com o Festival de Cannes", "Majska staza sa festivalom u Kanu"),
   T("Trilha de março, aberta o ano todo", "Martovska staza, otvorena cele godine"),
   T("Trilha original · Prévias de áudio", "Originalna muzika · Audio isečci"),

@@ -6319,7 +6319,7 @@
   T("Travar série com…", "与谁锁定剧集…"),
   T("Travas de série", "剧集锁定"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "调出位于应用之外的浏览器诊断面板。"),
-  T("Trilha", "观影路线"),
+  T("Trilha de filmes", "观影路线"),
   T("Trilha de maio, com o Festival de Cannes", "五月路线，与戛纳电影节同行"),
   T("Trilha de março, aberta o ano todo", "三月路线，全年开放"),
   T("Trilha original · Prévias de áudio", "原创配乐 · 音频试听"),

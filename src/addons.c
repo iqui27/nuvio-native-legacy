@@ -379,6 +379,7 @@ static void progMarcarSrv(const Stream *a, int n) {
   if (progN < (int)(sizeof progFila / sizeof *progFila)) {
     progFila[progN].idx = -1; progFila[progN].a = copia; progFila[progN].n = n;
     progN++; copia = NULL;
+    atomic_fetch_add(&progRev, 1);
   }
   pthread_mutex_unlock(&progTrava);
   free(copia);

@@ -6319,7 +6319,7 @@
   T("Travar série com…", "Zablokuj serial z…"),
   T("Travas de série", "Blokady seriali"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Przywraca panel diagnostyczny przeglądarki, który żyje poza aplikacją."),
-  T("Trilha", "Ścieżka"),
+  T("Trilha de filmes", "Ścieżka"),
   T("Trilha de maio, com o Festival de Cannes", "Ścieżka majowa, z Festiwalem w Cannes"),
   T("Trilha de março, aberta o ano todo", "Ścieżka marcowa, otwarta cały rok"),
   T("Trilha original · Prévias de áudio", "Muzyka oryginalna · Fragmenty audio"),

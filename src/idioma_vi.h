@@ -6319,7 +6319,7 @@
   T("Travar série com…", "Khóa phim bộ cùng…"),
   T("Travas de série", "Khóa phim bộ"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Đưa trở lại bảng chẩn đoán của trình duyệt, vốn nằm ngoài ứng dụng."),
-  T("Trilha", "Hành trình"),
+  T("Trilha de filmes", "Hành trình"),
   T("Trilha de maio, com o Festival de Cannes", "Lộ trình tháng năm, cùng Liên hoan phim Cannes"),
   T("Trilha de março, aberta o ano todo", "Lộ trình tháng ba, mở quanh năm"),
   T("Trilha original · Prévias de áudio", "Nhạc gốc · Đoạn nghe thử"),
