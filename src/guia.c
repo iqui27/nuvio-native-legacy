@@ -161,7 +161,6 @@ static float gPreviewLargura(void);
 // de secao, e uma vez no modo cada repeticao do firmware (~130 ms) pulava
 // outra — dez secoes num piscar. Pedido do dono em 18/09: mais lerdo para
 // entrar e mais lerdo para andar.
-#define G_HOLD_MS    1100
 #define G_CAT_PASSO_MS 550
 #define G_REP_MS     450
 
@@ -1286,7 +1285,7 @@ static int    catAberto, catFoco;
 static Uint32 catUlt;
 static float  catAnim, catRol, catVelRol;
 static int    dirSeg;                 // SDLK_UP/DOWN segurado, 0 = solto
-static Uint32 dirDesde, dirTick, ultNavCat;
+static Uint32 dirTick, ultNavCat;
 
 // OK longo = favorito.
 static Uint32 okDesde; static int okLongo;
@@ -2195,7 +2194,7 @@ void guia_evento(const SDL_Event *e) {
 
   if (k == SDLK_UP || k == SDLK_DOWN) {
     int dir = (k == SDLK_DOWN) ? 1 : -1;
-    int fresco = !(dirSeg == k && agora - dirTick < G_REP_MS);
+    int fresco = !e->key.repeat && !(dirSeg == k && agora - dirTick < G_REP_MS);
     // CIMA na primeira linha sobe ao cabecalho — so num toque FRESCO: quem
     // esta segurando CIMA quer o modo salta-categoria, nao o controle.
     if (dir < 0 && fresco && focoLin == 0 && (!modoLista || focoCol == 0)) {
@@ -2203,15 +2202,8 @@ void guia_evento(const SDL_Event *e) {
       dirSeg = 0;
       return;
     }
-    // Ainda segurando a mesma direcao? O firmware repete o KEYDOWN a cada
-    // ~130 ms; o relogio e quem distingue "toque" de "segurado".
-    if (!fresco) {
-      if (agora - dirDesde >= G_HOLD_MS) {
-        catAbrir(1, dir);
-        ultNavCat = agora; dirTick = agora;
-        return;
-      }
-    } else { dirSeg = k; dirDesde = agora; }
+    // Held arrows scroll channels, including firmware repeats with repeat=0.
+    dirSeg = k;
     dirTick = agora;
     if (modoLista) moverLista(dir); else moverVertical(dir);
     return;
