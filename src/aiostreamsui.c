@@ -759,7 +759,7 @@ static void workspace(void) {
         else if(total) snprintf(sub,sizeof sub,"%s",i18n("HTTP direto · Cache não se aplica"));
         else snprintf(sub,sizeof sub,"%s",item->ativo?i18n("Ativado"):i18n("Desativado"));
         linha(row,i<snap.addons?"aj_layers":"aj_cloud",item->nome,sub,453,y,980);
-        if(total) { char count[32]; snprintf(count,sizeof count,i18n("%d resultados"),total); texto(TXT_G20M,count,1230,y+30,110,222); }
+        if(total) { char count[32]; snprintf(count,sizeof count,i18n("%d resultados"),total); texto(TXT_G20M,count,1216,y+30,168,222); }
       }
       row++;
     }
