@@ -18,7 +18,12 @@
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 
+#include "j4_proof.h"
 static GLuint fbo, fboTex;
+static void proof_reset(void) { irPara(PG_MENU);aberto=1;anim=0; }
+static void proof_focus(void) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;pessoas_evento(&e); }
+static void proof_step(float dt) { pessoas_atualizar(dt,SDL_GetTicks()); }
+static void proof_draw(void) { pessoas_desenhar(SDL_GetTicks()); }
 
 static void captura(const char *nome, SDL_Window *win) {
   int i;
@@ -140,7 +145,7 @@ int main(int argc, char **argv) {
   assert(gfx_iniciar());
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
-  gfx_icones_dir("deploy/app/art");
+  char *art=realpath("deploy/app/art",NULL);assert(art);gfx_icones_dir(art);free(art);
   if (!mtx) mtx = SDL_CreateMutex();
 
   memset(&perfil, 0, sizeof perfil);
@@ -352,6 +357,7 @@ int main(int argc, char **argv) {
   irPara(PG_PERFIL);
   shot("meu-perfil");
 
+  j4_proof("friends",proof_reset,proof_focus,proof_step,proof_draw);
   printf("pronto\n");
   return 0;
 }
