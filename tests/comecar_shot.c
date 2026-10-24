@@ -120,7 +120,7 @@ static void quadro(float dt) {
 
 static void adiantar(int quadros) {
   int i;
-  for (i = 0; i < quadros; i++) quadro(1000.0f / 60.0f);
+  for (i = 0; i < quadros; i++) { quadro(1.0f / 60.0f); SDL_Delay(2); tex_bombear(8); }
 }
 
 static void captura(const char *nome, int quadros) {
@@ -194,13 +194,21 @@ static void digitar(const char *txt) {
 
 // Leva o foco a um item pelo D-pad: sobe ao campo, ou desce ao rodape e anda de lado.
 static void ir_para(int id) {
-  int i;
-  for (i = 0; i < 16 && comecar_foco() != id; i++) {
-    int f = comecar_foco();
-    if (id < 100) tecla(SDLK_UP);
-    else if (f < 100) tecla(SDLK_DOWN);
-    else tecla(f < id ? SDLK_RIGHT : SDLK_LEFT);
+  static const SDL_Keycode keys[] = {SDLK_LEFT, SDLK_RIGHT, SDLK_UP, SDLK_DOWN};
+  int start = foco, queue[128], parent[128], via[128], head = 0, tail = 0;
+  for (int i = 0; i < 128; i++) parent[i] = -1;
+  queue[tail++] = start; parent[start] = start;
+  while (head < tail && parent[id] < 0) {
+    int current = queue[head++];
+    for (int d = 0; d < 4; d++) {
+      foco = current; mover(d == 1 ? 1 : d == 0 ? -1 : 0, d == 3 ? 1 : d == 2 ? -1 : 0);
+      if (parent[foco] < 0) { parent[foco] = current; via[foco] = d; queue[tail++] = foco; }
+    }
   }
+  foco = start; assert(parent[id] >= 0);
+  int path[128], n = 0;
+  for (int i = id; i != start; i = parent[i]) path[n++] = via[i];
+  while (n) tecla(keys[path[--n]]);
   assert(comecar_foco() == id);
 }
 
@@ -239,6 +247,24 @@ static void navegacao(int passoEsperado) {
   assert(andadas > 0);   // o D-pad mexeu alguma coisa em algum passo
 }
 
+static void motion_proof(const char *prefix, int step) {
+  static const int times[] = {0,80,160,320};
+  char path[900];
+  for (int kind = 0; kind < 2; kind++) {
+    previa("estado=nenhum\nnome=Ana\ncor=1\n");
+    ir_passo(step);
+    if (kind) { adiantar(45); tecla(SDLK_DOWN); }
+    int previous = 0;
+    for (int i = 0; i < 4; i++) {
+      for (int t = previous; t < times[i]; t += 10) quadro(.01f);
+      if (!times[i]) quadro(0);
+      snprintf(path, sizeof path, "%s-step%d-%s-%03d.png", prefix, step + 1, kind ? "focus" : "entry", times[i]);
+      captura(path, 0); previous = times[i];
+    }
+    if (kind) assert(focoAnim[foco] > .99f);
+  }
+}
+
 int main(int argc, char **argv) {
   const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-comecar";
   const char *dir = getenv("NUVIO_DADOS");
@@ -272,7 +298,10 @@ int main(int argc, char **argv) {
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
   gfx_tex_esquecer(0);
-  gfx_icones_dir("deploy/app/art");
+  char art[1024]; assert(realpath("deploy/app/art", art));
+  gfx_icones_dir(art);
+  dados_gravar("ajustes.txt", "idioma 0\n"); ajustes_dir(dir);
+  ajustes_definir_vidro(getenv("NUVIO_SHOT_VIDRO") ? atoi(getenv("NUVIO_SHOT_VIDRO")) : 0);
 
   // ---- Regras, por evento de tecla. (Ids: 0=campo, 1..6=cores, 100=Voltar,
   // 101=Continuar/principal, 102=secundario, 103=Pular tudo.)
@@ -495,8 +524,9 @@ int main(int argc, char **argv) {
     dados_gravar("ajustes.txt", "homeLayoutLocal 0\nmodernSidebar 0\ncollapseSidebar 1\n");
     ajustes_dir(dir);
   }
+  ajustes_definir_vidro(getenv("NUVIO_SHOT_VIDRO") ? atoi(getenv("NUVIO_SHOT_VIDRO")) : 0);
   const char *requestedScale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
-  const float scales[] = { .8f, .85f, 1, 1.15f, 1.3f };
+  const float scales[] = { .8f, .85f, .9f, 1, 1.1f, 1.2f, 1.3f };
   for (unsigned scaleIndex = 0; scaleIndex < sizeof scales / sizeof *scales; scaleIndex++) {
   float scale = requestedScale ? (float)atof(requestedScale) : scales[scaleIndex];
   char prefix[700];
@@ -513,16 +543,17 @@ int main(int argc, char **argv) {
   tecla(SDLK_RETURN);
   assert(comecar_passo() == 1);
   snprintf(nome, sizeof nome, "%s-2-trazer.png", prefix);
-  captura(nome, 2);
+  captura(nome, 40);
 
   // Stremio e AIOManager: estados forcados (sem rede) so para a captura.
   tecla(SDLK_UP); tecla(SDLK_UP);
   importarfluxo_teste(IMPF_STREMIO, IMPF_ESPERA, "K7QX2M", "https://link.stremio.com/", 0, 0);
   snprintf(nome, sizeof nome, "%s-2b-stremio-codigo.png", prefix);
-  captura(nome, 2);
+  captura(nome, 40);
   importarfluxo_teste(IMPF_STREMIO, IMPF_OK, "", "", 7, 42);
+  assert(!strcmp(rotulo_botao(B_PRINC), i18n("Continuar")));
   snprintf(nome, sizeof nome, "%s-2c-stremio-ok.png", prefix);
-  captura(nome, 2);
+  captura(nome, 40);
   tecla(SDLK_DOWN);
   importarfluxo_teste(IMPF_AIOM, IMPF_ESPERA, "", "", 0, 0);
   celb_abrir_embutido(CELB_IMPORTAR, "Link do AIOManager");
@@ -534,14 +565,15 @@ int main(int argc, char **argv) {
   tecla(SDLK_RETURN);   // Conta Nuvio
   assert(comecar_passo() == 2);
   snprintf(nome, sizeof nome, "%s-3-acompanhar.png", prefix);
-  captura(nome, 2);
+  captura(nome, 40);
 
   tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
   assert(comecar_passo() == 3);
   snprintf(nome, sizeof nome, "%s-4-pronto.png", prefix);
-  captura(nome, 2);
+  captura(nome, 40);
 
   checkBounds = 0;
+  if (scale == 1 || scale == .85f) for (int step = 0; step < 4; step++) motion_proof(prefix, step);
   if (requestedScale) break;
   }
 
