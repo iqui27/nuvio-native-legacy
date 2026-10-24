@@ -14,6 +14,7 @@ int main(void) {
   arq("trilha:ghibli", CQ_FAM_TRILHA, 3, "studio-silver.png");
   arq("trilha:cult-80s", CQ_FAM_TRILHA, 0, "decade-locked.png");
   arq("trilha:noir", CQ_FAM_TRILHA, 5, "noir-gold.png");
+  arq("trilha:oscar-filme-internacional", CQ_FAM_TRILHA, 2, "international-silver.png");
   arq("trilha:outra", CQ_FAM_TRILHA, 1, "trail-bronze.png");
   arq("top:250", CQ_FAM_EXPLORADOR, 4, "top250-gold.png");
   arq("ator:tilda", CQ_FAM_PREMIO, 2, "actor-silver.png");

@@ -107,6 +107,12 @@ static void captura(const char *prefixo, const char *nome, int quadros) {
   gravar(caminho);
 }
 
+static void gravar_nome(const char *prefixo, const char *nome) {
+  char caminho[700];
+  snprintf(caminho, sizeof caminho, "%s-%s.png", prefixo, nome);
+  gravar(caminho);
+}
+
 // ---------------------------------------------------------------- estado
 static void semear(void) {
   CqEstado s;
@@ -405,7 +411,20 @@ int main(int argc, char **argv) {
     conferir_layout("detalhe");
     captura(prefixo, "detalhe", 30);
     voltar();
-    assert(conquistas_vista() == CONQUISTAS_VISTA_HUB && conquistas_foco() == antes); }
+    assert(conquistas_vista() == CONQUISTAS_VISTA_HUB && conquistas_foco() == antes);
+    // Sheet-open motion strip: 0/50/100/150/250/400 ms after OK.
+    adiantar(40);
+    tecla(SDLK_RETURN);
+    { static const int ms[] = { 0, 50, 100, 150, 250, 400 };
+      int i, t = 0;
+      for (i = 0; i < 6; i++) {
+        char nome[32];
+        int alvo = ms[i] * 60 / 1000;
+        adiantar(alvo - t); t = alvo;
+        snprintf(nome, sizeof nome, "abrir-%03d", ms[i]);
+        gravar_nome(prefixo, nome);
+      } }
+    voltar(); }
   // Voltar no hub fecha a tela.
   voltar();
   assert(!conquistas_aberto());

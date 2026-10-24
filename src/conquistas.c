@@ -5,6 +5,7 @@
 #include "tex_cache.h"
 #include "ajustes.h"
 #include "anim.h"
+#include "movimento.h"
 #include "revela.h"
 #include "botoes.h"
 #include "idioma.h"
@@ -33,13 +34,13 @@
 
 enum { V_HUB = CONQUISTAS_VISTA_HUB, V_FAM = CONQUISTAS_VISTA_FAMILIAS, V_DET = CONQUISTAS_VISTA_DETALHE };
 enum { A_TODAS, A_GANHAS, A_ANDAMENTO, A_SECRETAS, A_COMUNIDADE, A_N };
-enum { B_VOLTAR = 1, B_FAMS, B_ORDEM, B_RETOMAR, T_ABA0 = 10, F_CARD0 = 30, C_CARD0 = 100 };
+enum { B_VOLTAR = 1, B_FAMS, B_ORDEM, B_RETOMAR, B_FECHAR, T_ABA0 = 10, F_CARD0 = 30, C_CARD0 = 100 };
 
 typedef struct { int id; GfxRect r; } Item;
 typedef struct { int r, g, b; } Tinta;
 
 static int   aberto, view, aba, ordem, famF = -1, topo, foco, detIdx, famAnt;
-static float entrada, tempo, scrollY, scrollV, tabSel, tabFoco;
+static float detP, detV, entrada, tempo, scrollY, scrollV, tabSel, tabFoco;
 static float focos[C_CARD0 + CQ_MAX];
 static int vistaAnim = -1;
 static float qf(int id) { return focos[id]; }
@@ -105,7 +106,7 @@ int  conquistas_abrir_trilha(const char *chave) { (void)chave; return 0; }
 
 void conquistas_teste_esquecer(void) {
   memset(focos, 0, sizeof focos);
-  tempo = scrollY = scrollV = tabSel = tabFoco = 0; vistaAnim = -1;
+  tempo = scrollY = scrollV = tabSel = tabFoco = 0; vistaAnim = -1; detP = detV = 0;
   aberto = 0; entrada = 0.0f; view = V_HUB; aba = A_TODAS; ordem = 0; famF = -1; topo = 0;
   foco = B_VOLTAR; detIdx = 0; backPressionado = backVisto = 0; nvis = 0;
   avAberto = 0; avBackPress = 0; avBackUltimo = 0; avTempo = avAlfa = 0.0f;
@@ -196,10 +197,6 @@ static void origem(void) {
 }
 
 static GfxRect em(float x, float y, float w, float h) {
-  if (view == V_DET && y >= 108.0f) {
-    float k = fminf(1, largura / 1624.0f);
-    return (GfxRect){ox + MG + (x - MG) * k, oy + ANC(y), w * k, h};
-  }
   return (GfxRect){ ox + x, oy + y, w, h };
 }
 
@@ -268,6 +265,7 @@ static int montar(Item *it) {
   origem();
   filtrar();
   poe(it, &n, B_VOLTAR, r_voltar());
+  if (view == V_DET) return n;
   if (view == V_HUB) {
     if (!ajustes_conquistas()) return n;
     poe(it, &n, B_FAMS, r_fams());
@@ -326,6 +324,7 @@ static void mover_geo(int dx, int dy) {
 }
 
 static void mover(int dx, int dy) {
+  if (view == V_DET) return;
   if (view == V_HUB) {
     if (foco == B_VOLTAR && dx > 0) { foco = B_FAMS; return; }
     if (foco == B_FAMS && dx < 0) { foco = B_VOLTAR; return; }
@@ -355,7 +354,7 @@ static void mover(int dx, int dy) {
   garantir_visivel();
 }
 
-static void abrir_detalhe(int idx) { detIdx = idx; view = V_DET; foco = B_VOLTAR; }
+static void abrir_detalhe(int idx) { detIdx = idx; view = V_DET; }
 
 static void voltar(void) {
   if (view == V_DET) {
@@ -375,6 +374,7 @@ static void voltar(void) {
 }
 
 static void ok(void) {
+  if (view == V_DET) { voltar(); return; }
   if (foco == B_VOLTAR) { voltar(); return; }
   if (foco == B_FAMS) { view = V_FAM; foco = F_CARD0; return; }
   if (foco == B_ORDEM) { ordem = !ordem; topo = 0; return; }
@@ -454,7 +454,7 @@ static void pt_foco(int id, int nada) { (void)nada; foco = id; }
 static void pt_ativar(int id, int nada) { (void)nada; foco = id; ok(); }
 
 static void alvo(GfxRect r, int id) {
-  if (aberto) ponteiro_alvo(r.x, r.y, r.w, r.h, pt_foco, pt_ativar, id, 0);
+  if (aberto && (view != V_DET || id == B_FECHAR)) ponteiro_alvo(r.x, r.y, r.w, r.h, pt_foco, pt_ativar, id, 0);
 }
 
 // Cards retain light ink over the official neutral focus surface.
@@ -505,7 +505,7 @@ static void emblema(float x, float y, float lado, int fam, int estado, float a) 
     cadeado(q, a);
     return;
   }
-  if (estado == 1) { r = r * 0.45f + 0.20f * 0.55f; g = g * 0.45f + 0.21f * 0.55f; b = b * 0.45f + 0.24f * 0.55f; }
+  if (estado == 1) { r = 0.30f; g = 0.32f; b = 0.36f; }
   gfx_cor(q, 0.32f, r, g, b, a);
   gfx_icone((GfxRect){ x + lado * 0.27f, y + lado * 0.27f, lado * 0.46f, lado * 0.46f }, ICO_FAM[fam],
             1, 1, 1, (estado ? 0.65f : 1.0f) * a);
@@ -551,11 +551,11 @@ static void desenha_card(GfxRect r, const CqEntrada *e, float foc, float a) {
   int i;
   superficie(r, T21_R_CARD, foc, a, &p, &s);
   mudo = MUDO;
-  float lado = 104 * (1 + .06f * foc);
+  float lado = 140 * (1 + .06f * foc);
   tinta_de(e, &fr, &fg, &fb);
   // Focus surface tinted by the achievement accent (no outline, no glow).
   gfx_cor(r, T21_R_CARD, fr, fg, fb, .12f * foc * a);
-  emblema_e(r.x + 64 - lado / 2, r.y + 64 - lado / 2, lado, e, a);
+  emblema_e(r.x + 62 - lado / 2, r.y + 68 - lado / 2, lado, e, a);
   texto(TXT_V2_KICK, nome_nivel_arte(e->nivel), x, r.y + 16.0f, w, (Tinta){ (int)(fr * 255), (int)(fg * 255), (int)(fb * 255) }, a);
   bloco(TXT_ILHA_NOME, e->nome, p, x, r.y + 42.0f, w, 28.0f, a, 1);
   if (e->total > 0) snprintf(b, sizeof b, i18n("Nível %d de 5 · %d de %d"), e->nivel, e->vistos, e->total);
@@ -742,54 +742,75 @@ static void desenha_familias(float a) {
   for (i = 0; i < n; i++) alvo(it[i].r, it[i].id);
 }
 
+// Approved mock: an island sheet floating over the hub, large 3D object on the
+// left, progress + five numbered steps on the right. detP is the sheet spring.
 static void desenha_detalhe(float a) {
   const CqEntrada *e;
   char k[96], b[96];
-  int i, n, nivel;
-  Item it[MAX_ITENS];
-  float hh, y;
-  float colunaK = fminf(1, largura / 1624.0f);
+  int i, nivel, ink;
+  float fr, fg, fb, pr, cA, sc = gfx_escala_tela_txt(), f, passo = 51.0f / sc;
+  float W = fminf((1200.0f / sc), NV_TELA_W - (120.0f / sc)), H = 760.0f / sc + (passo - 51.0f / sc) * 5.0f;
+  GfxRect s, r;
+  TxtLinha l;
+  float x0, y0, cx, rx, rw;
   if (detIdx < 0 || detIdx >= st.n) return;
   e = &st.e[detIdx];
   nivel = e->nivel;
-  n = montar(it);
+  tinta_de(e, &fr, &fg, &fb);
+  pr = anim_clamp(detP, 0.0f, 1.0f);
+  a *= anim_suave(pr);
+  cA = anim_clamp((detP - 0.30f) / 0.70f, 0.0f, 1.0f) * a;   // body arrives after the island shape
+  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0.02f, 0.025f, 0.03f, .70f * a);
+  x0 = (NV_TELA_W - W) * 0.5f; y0 = (NV_TELA_H - H) * 0.5f;
+  f = anim_mistura(T21_SHEET_SCALE, 1.0f, pr);
+  s = (GfxRect){ x0 + W * (1 - f) * .5f, y0 + H * (1 - f) * .5f, W * f, H * f };
+  gfx_cor(s, T21_R_SHEET / fminf(s.w, s.h), .06f, .064f, .074f, .96f * a);   // opaque base: no blur to hide the hub
+  t21_ilha(s, T21_R_SHEET, a);
+  // Left column: kicker, object, level dots.
+  cx = x0 + 258.0f * W / 1200.0f;
+  snprintf(k, sizeof k, "%s · %s", i18n(FAM[e->familia].nome), nome_nivel_arte(nivel));
+  l = txt_linha_corta(TXT_V2_KICK, k, MUDO.r, MUDO.g, MUDO.b, 255, (400.0f / sc));
+  txt_desenhar_alpha(l, cx - (float)l.w * .5f, y0 + (70.0f / sc), cA);
+  emblema_e(cx - (150.0f / sc), y0 + (130.0f / sc), (300.0f / sc), e, cA);
+  for (i = 0; i < CQ_NIVEIS; i++) {
+    GfxRect q = { cx - (44.0f / sc) + i * (18.0f / sc), y0 + (558.0f / sc), 10, 10 };
+    plrui_trilho(q, i < nivel ? 1.0f : 0.0f, fr, fg, fb, cA);
+  }
+  snprintf(b, sizeof b, i18n("Nível %d de 5"), nivel);
+  l = txt_linha(TXT_V2_24, b, SEC.r, SEC.g, SEC.b, 255);
+  txt_desenhar_alpha(l, cx - (float)l.w * .5f, y0 + (580.0f / sc), cA);
+  if (raridade_txt(e->chave, b, sizeof b)) {
+    l = txt_linha(TXT_V2_18, b, MUDO.r, MUDO.g, MUDO.b, 255);
+    txt_desenhar_alpha(l, cx - (float)l.w * .5f, y0 + (624.0f / sc), cA);
+  }
+  // Right column.
+  rx = x0 + 518.0f * W / 1200.0f; rw = x0 + W - (48.0f / sc) - rx;
   kicker_trilha(k, sizeof k, i18n(FAM[e->familia].nome));
-  texto(TXT_V2_KICK, k, MG + ox, ANC(108.0f) + oy, 900.0f, MUDO, a);
-  // Coluna da esquerda: emblema, nome e estado.
-  emblema_e(ox + MG, oy + ANC(164.0f), 230.0f * colunaK, e, a);
-  hh = bloco(TXT_NOV_TITULO, e->nome, PRI, ox + MG, oy + ANC(418.0f), 420.0f * colunaK, 58.0f, a, 2);
-  y = oy + ANC(418.0f) + hh + 12.0f;
-  snprintf(b, sizeof b, i18n(e->total > 0 && e->vistos >= e->total ? "Completa · nível %d de 5" : "Em andamento · nível %d de 5"), nivel);
-  texto(TXT_V2_24, b, ox + MG, y, 420.0f, SEC, a);
-  y += 36.0f;
+  texto(TXT_V2_KICK, k, rx, y0 + (100.0f / sc), rw, MUDO, cA);
+  texto(TXT_NOV_TITULO, e->nome, rx, y0 + (126.0f / sc), rw - (140.0f / sc), PRI, cA);
+  texto(TXT_V2_24, i18n(FAM[e->familia].lema), rx, y0 + (206.0f / sc), rw, SEC, cA);
+  f = e->total > 0 ? (float)e->vistos / (float)e->total : 0.0f;
+  if (f > 1.0f) f = 1.0f;
   if (e->total > 0) {
     snprintf(b, sizeof b, i18n("%d de %d filmes"), e->vistos, e->total);
-    texto(TXT_V2_24, b, ox + MG, y, 420.0f, SEC, a);
-    y += 36.0f;
+    texto(TXT_V2_24, b, rx, y0 + (264.0f / sc), rw * .7f, SEC, cA);
+    snprintf(b, sizeof b, "%d%%", (int)(f * 100.0f + .5f));
+    texto_dir(TXT_V2_24, b, rx + rw, y0 + (264.0f / sc), (140.0f / sc), SEC, cA);
   }
-  if (raridade_txt(e->chave, b, sizeof b)) texto(TXT_V2_24, b, ox + MG, y, 420.0f, SEC, a);
-  botao_breve(em(MG, 700.0f, 420.0f, PILULA_H), "Ir à trilha", "aj_play", 0, a);
-  botao_breve(em(MG, 700.0f + 64.0f * gfx_escala_tela_txt(), 420.0f, PILULA_H), "Fixar no perfil", "aj_bookmark", 0, a);
-  // Meio: os cinco niveis.
+  plrui_trilho((GfxRect){ rx, y0 + (298.0f / sc), rw, 6 }, f, fr, fg, fb, cA);
   for (i = 0; i < CQ_NIVEIS; i++) {
-    GfxRect r = em(MG + 460.0f, 164.0f + (float)i * 122.0f * gfx_escala_tela_txt(), 700.0f, 108.0f);
     int lv = i + 1, feito = lv <= nivel;
-    float fr, fg, fb;
     const char *regra, *estado;
     char rb[64], eb[48];
-    tinta_de(e, &fr, &fg, &fb);
-    t21_ilha(r, T21_R_ROW, a);
-    {
-      GfxRect c = { r.x + 22.0f, r.y + 32.0f, 44.0f, 44.0f };
-      gfx_cor(c, 0.5f, feito ? fr : 1, feito ? fg : 1, feito ? fb : 1, (feito ? 1.0f : 0.10f) * a);
-      if (feito) gfx_icone((GfxRect){ c.x + 10.0f, c.y + 10.0f, 24.0f, 24.0f }, "aj_check", 1, 1, 1, a);
-      else {
-        char nb[4];
-        TxtLinha l;
-        snprintf(nb, sizeof nb, "%d", lv);
-        l = txt_linha(TXT_ILHA_NOME, nb, SEC.r, SEC.g, SEC.b, 255);
-        txt_desenhar_alpha(l, c.x + (44.0f - (float)l.w) * 0.5f, c.y + (44.0f - (float)l.h) * 0.5f, a);
-      }
+    float yy = y0 + (336.0f / sc) + (float)i * passo;
+    GfxRect c = { rx, yy + (2.0f / sc), (32.0f / sc), (32.0f / sc) };
+    gfx_cor(c, 0.5f, feito ? fr : 1, feito ? fg : 1, feito ? fb : 1, (feito ? 1.0f : 0.10f) * cA);
+    if (feito) gfx_icone((GfxRect){ c.x + (6.0f / sc), c.y + (6.0f / sc), (20.0f / sc), (20.0f / sc) }, "aj_check", 1, 1, 1, cA);
+    else {
+      char nb[4];
+      snprintf(nb, sizeof nb, "%d", lv);
+      l = txt_linha(TXT_V2_18, nb, SEC.r, SEC.g, SEC.b, 255);
+      txt_desenhar_alpha(l, c.x + ((32.0f / sc) - (float)l.w) * 0.5f, c.y + ((32.0f / sc) - (float)l.h) * 0.5f, cA);
     }
     if (lv == 5) regra = "Veja todos, na ordem do curador";
     else if (!strncmp(e->chave, "top:", 4)) { snprintf(rb, sizeof rb, i18n("Veja %d filmes"), alvo_nivel(e, lv)); regra = rb; }
@@ -802,30 +823,20 @@ static void desenha_detalhe(float a) {
       if (falta <= 1) estado = i18n("Falta 1 passo");
       else { snprintf(eb, sizeof eb, i18n("Faltam %d passos"), falta); estado = eb; }
     }
-    texto(TXT_ILHA_NOME, NIVEL[i], r.x + 86.0f, r.y + 20.0f, 330.0f, feito ? PRI : SEC, a);
-    texto(TXT_V2_18, regra, r.x + 86.0f, r.y + 58.0f, 330.0f, MUDO, a);
-    texto_dir(TXT_V2_18, estado, r.x + r.w - 24.0f, r.y + 42.0f, 210.0f, feito ? PRI : MUDO, a);
+    l = txt_linha(TXT_ILHA_NOME, NIVEL[i], PRI.r, PRI.g, PRI.b, 255);
+    txt_desenhar_alpha(l, rx + (48.0f / sc), yy, cA);
+    texto(TXT_V2_18, regra, rx + (48.0f / sc) + (float)l.w + (14.0f / sc), yy + (5.0f / sc), rw - (48.0f / sc) - (float)l.w - (14.0f / sc) - (190.0f / sc), MUDO, cA);
+    texto_dir(TXT_V2_18, estado, rx + rw, yy + (5.0f / sc), (180.0f / sc), feito ? PRI : MUDO, cA);
   }
-  // Direita: amigos (ambar) e como conta.
-  {
-    GfxRect p1 = em(MG + 1200.0f, 164.0f, 424.0f, 230.0f), p2 = em(MG + 1200.0f, 164.0f + 250.0f * gfx_escala_tela_txt(), 424.0f, 346.0f);
-    int am = cqd_amigos_na_trilha(e->chave);
-    painel(p1, a);
-    texto(TXT_V2_KICK, i18n("Amigos nesta trilha"), p1.x + 24.0f, p1.y + 22.0f, p1.w - 48.0f, MUDO, a);
-    if (am > 0) { snprintf(b, sizeof b, i18n("%d amigos nesta trilha"), am); texto(TXT_V2_26, b, p1.x + 24.0f, p1.y + 66.0f, p1.w - 48.0f, PRI, a); }
-    else {
-      bloco(TXT_V2_18, "Quantos amigos fazem esta trilha, sem placar e sem aviso para ninguém.", SEC, p1.x + 24.0f, p1.y + 66.0f, p1.w - 48.0f, 26.0f, a, 4);
-      texto(TXT_V2_18, i18n("Em breve"), p1.x + 24.0f, p1.y + 176.0f, 200.0f, AMBAR, a);
-    }
-    painel(p2, a);
-    texto(TXT_V2_KICK, i18n("Como conta"), p2.x + 24.0f, p2.y + 22.0f, p2.w - 48.0f, MUDO, a);
-    hh = bloco(TXT_V2_18, "Cada filme vira passo quando está no histórico do Trakt ou você marca Já vi. O app avisa uma vez, no fim da sessão.",
-               SEC, p2.x + 24.0f, p2.y + 62.0f, p2.w - 48.0f, 26.0f, a, 6);
-    bloco(TXT_V2_18, "Filme que você já viu antes de abrir a trilha conta para os níveis 1 a 4.", SEC,
-          p2.x + 24.0f, p2.y + 62.0f + hh + 16.0f, p2.w - 48.0f, 26.0f, a, 4);
-  }
-  pilula(r_voltar(), i18n("Voltar"), NULL, qf(B_VOLTAR), 0, 0, a);
-  for (i = 0; i < n; i++) alvo(it[i].r, it[i].id);
+  bloco(TXT_V2_18, "Filme que você já viu antes de abrir a trilha conta para os níveis 1 a 4.", MUDO,
+        rx, y0 + (336.0f / sc) + 5.0f * passo + (12.0f / sc), rw, (26.0f / sc), cA, 2);
+  // Neutral close pill (no accent): official island surface + neutral focus surface.
+  ink = 255;
+  r = (GfxRect){ x0 + W - (32.0f / sc) - (larg_pilula(i18n("Fechar"), NULL)), y0 + (28.0f / sc), larg_pilula(i18n("Fechar"), NULL), PILULA_H };
+  superficie(r, PILULA_H * .5f, 1.0f, cA, &(Tinta){0}, &(Tinta){0});
+  l = txt_linha(TXT_ILHA_NOME, i18n("Fechar"), ink, ink, ink, 255);
+  txt_desenhar_alpha(l, r.x + (r.w - (float)l.w) * .5f, r.y + (r.h - (float)l.h) * .5f, cA);
+  if (view == V_DET) alvo(r, B_FECHAR);
 }
 
 void conquistas_desenhar(Uint32 agora) {
@@ -836,8 +847,8 @@ void conquistas_desenhar(Uint32 agora) {
   origem();
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0.051f, 0.051f, 0.051f, entrada);
   if (view == V_FAM) desenha_familias(a);
-  else if (view == V_DET) desenha_detalhe(a);
   else desenha_hub(a);
+  if (detP > 0.002f) desenha_detalhe(a);
   TXT_FIM();
 }
 
@@ -904,7 +915,8 @@ void conquistas_atualizar(float dt, Uint32 agora) {
     avAlfa = red ? 0.0f : anim_rampa(avAlfa, 0.0f, dt, AVISO_FADE_MS);
   }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
-  if (vistaAnim != view) { vistaAnim = view; tempo = 0; }
+  if (vistaAnim != (view == V_DET ? V_HUB : view)) { vistaAnim = view == V_DET ? V_HUB : view; tempo = 0; }
+  detP = red ? (view == V_DET) : mov_mola_assenta(&detV, detP, view == V_DET, dt, MOV_MODAL_W, MOV_MODAL_Z);
   tempo += dt;
   for (int i = 0; i < C_CARD0 + CQ_MAX; i++)
     focos[i] = red ? (aberto && foco == i) : anim_mola(focos[i], aberto && foco == i, dt, NV_MOLA_FOCO);

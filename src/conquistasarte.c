@@ -22,7 +22,7 @@ static const char *const PADRAO[CQ_FAM_N] = { "trail", "director", "explorer", "
 // Trilhas curadas: pedaco do slug -> objeto.
 static const char *const PALAVRA[][2] = {
   {"ghibli","studio"}, {"studio","studio"}, {"cult","decade"}, {"80","decade"}, {"90","decade"}, {"decad","decade"},
-  {"noir","noir"}, {"fantas","fantasy"}, {"terror","horror"}, {"horror","horror"}, {"oscar","award"},
+  {"noir","noir"}, {"fantas","fantasy"}, {"terror","horror"}, {"horror","horror"}, {"internacional","international"}, {"oscar","award"},
   {"melhor","award"}, {"palma","palm"}, {"cannes","palm"}, {"silenc","silent"}, {"mudo","silent"},
   {"pais","country"}, {"mundo","country"}, {"idioma","language"}, {"lingua","language"}, {"lista","list"},
   {"secret","secret"}, {"saga","saga"},
