@@ -20,6 +20,7 @@
 //   6. D-pad: toda fileira e alcancavel descendo e todo cartao da fileira
 //      pela direita; Voltar fecha o menu; ocultar tira a fileira.
 #include "ajustes.h"
+#include "addons.h"
 #include "artehero.h"
 #include "catalogo.h"
 #include "colecoes.h"
@@ -156,7 +157,7 @@ static void ajusta(void) {
   a = fopen(cam, "w");
   assert(a);
   fprintf(a, "idioma 0\ntrailerHero 1\nhomeLayoutLocal 0\nvidroLocal 1\n"
-             "modernLandscapePostersEnabled 1\nselected_theme 0\n");
+             "modernLandscapePostersEnabled 1\nselected_theme 0\nescalaTextoLocal 2\n");
   fclose(a);
   ajustes_dir(dirDados);
   artehero_fundo_addon(ajustes_fundo_addon());
@@ -172,6 +173,8 @@ static int focarFileira(const char *chave) {
     if (!strcmp(home_fileira_focada(), chave)) { quadros(40, NULL); return 1; }
     tecla(SDLK_DOWN);
   }
+  fprintf(stderr, "Home target %s not reached; current %s, cards %d\n", chave,
+          home_fileira_focada(), home_fileira_n(chave));
   return !strcmp(home_fileira_focada(), chave);
 }
 
@@ -215,6 +218,8 @@ int main(int argc, char **argv) {
   ajustes_aplicar_blob("{\"continueWatchingEnabled\":true,\"continueWatchingSortMode\":\"split_upcoming\"}");
   assert(ajustes_cw_ordem() == CWO_SEPARAR);
   assert(home_iniciar("deploy/app/art"));
+  AddonRemoto addon = {.nome = "Offline", .url = "local", .ativo = 1};
+  assert(addons_definir_lista(&addon, 1));
 
   memset(itens, 0, sizeof itens);
   memset(fils, 0, sizeof fils);
@@ -296,6 +301,7 @@ int main(int argc, char **argv) {
     for (q = 0; q < n; q++) {
       char chave[96];
       snprintf(chave, sizeof chave, "%s", home_fileira_chave(q));
+      if (home_fileira_n(chave) == 0) continue;
       assert(focarFileira(chave));
       for (r = 0; r < home_fileira_n(chave) + 1; r++) tecla(SDLK_RIGHT);
       for (r = 0; r < home_fileira_n(chave) + 1; r++) tecla(SDLK_LEFT);
@@ -424,6 +430,26 @@ int main(int argc, char **argv) {
     snprintf(bmp, sizeof bmp, "%s-7-depois.bmp", saida); quadros(1, bmp);
   }
 
+  // Same production row owners at both scales/materials.
+  for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
+    gfx_escala_txt_definir(scale ? .85f : 1); ajustes_definir_vidro(glass);
+    assert(focarFileira("pop_movie"));
+    snprintf(bmp, sizeof bmp, "%s-%s-%s.bmp", saida, scale ? "85" : "100", glass ? "glass" : "solid");
+    quadros(45, bmp);
+  }
+  gfx_escala_txt_definir(1); ajustes_definir_vidro(1);
+  SDL_Event move = {0}; move.type = SDL_KEYDOWN; move.key.keysym.sym = SDLK_RIGHT;
+  home_evento(&move); move.type = SDL_KEYUP; home_evento(&move);
+  const int times[] = {0, 80, 160, 320};
+  for (int i = 0, elapsed = 0; i < 4; i++) {
+    while (elapsed < times[i]) { quadros(1, NULL); elapsed += 16; }
+    snprintf(bmp, sizeof bmp, "%s-focus-%03d.bmp", saida, times[i]); gravar(bmp);
+  }
+  home_abrir_sessao();
+  for (int i = 0, elapsed = 0; i < 4; i++) {
+    while (elapsed < times[i]) { quadros(1, NULL); elapsed += 16; }
+    snprintf(bmp, sizeof bmp, "%s-entry-%03d.bmp", saida, times[i]); gravar(bmp);
+  }
   tex_encerrar();
   txt_encerrar();
   SDL_GL_DeleteContext(gl);
