@@ -4383,16 +4383,12 @@ static int minutosDe(const char *s) {
 }
 
 static void desenhaDicaBotao(GfxRect rc, const char *texto, float a) {
-  float ar, ag, ab;
   TxtLinha label = txt_linha_corta(TXT_CAPTION2, texto, 232, 235, 240, 255,
                                    NV_DETW2_TEXTO_W - 28.0f);
   float w = label.w + 28.0f, h = 34.0f;
   GfxRect pill = { rc.x + (rc.w - w) * 0.5f, rc.y - h - 14.0f, w, h };
   if (pill.x < NV_DETW2_X) pill.x = NV_DETW2_X;
-  ajustes_acento(&ar, &ag, &ab);
-  gfx_cor(pill, .5f, ar, ag, ab, .16f * a);
-  gfx_cor((GfxRect){ pill.x + 1, pill.y + 1, pill.w - 2, pill.h - 2 }, .5f,
-          .075f, .08f, .095f, .76f * a);
+  plrui_botao_repouso(pill, a);
   txt_desenhar_alpha(label, pill.x + 14.0f, pill.y + (h - label.h) * .5f, a);
 }
 
