@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import hashlib
+import shutil
 from pathlib import Path
 
 BASE = Path('/Volumes/ExternalSSD/tmp/rev/diretor21/21-j5')
@@ -58,7 +59,7 @@ for screen, directory, prefix, still in (
     ('servers-detail', 'servers-detail', 'server', 'server-{scale}-{material}'),
     ('servers-sources', 'servers-sources', 'native', 'native-{scale}-{material}'),
     ('servers-overview', 'servers-overview', 'overview', 'overview-{scale}-{material}'),
-    ('together', 'together', '', 'matrix-7-{scale}-{material}'),
+    ('together', 'together-final', '', 'matrix-3-{scale}-{material}'),
 ):
     frames = OUT / directory
     for scale in (100, 85):
@@ -70,22 +71,29 @@ for screen, directory, prefix, still in (
             after = native(frames / (still.format(scale=scale, material=material) + '.png'))
             magick(reference, after, '+append', target)
             pngs.append(str(target))
+            shutil.copy2(target, BASE / target.name)
             if scale == 100 and material == 'glass':
-                magick(target, OUT / f'{screen}-tri.png')
+                shutil.copy2(target, OUT / f'{screen}-tri.png')
+                shutil.copy2(target, BASE / f'{screen}-tri.png')
     for mode in ('entry', 'focus'):
         paths = [frames / f'{prefix + "-" if prefix else ""}{mode}-{t:03}.png' for t in TIMES]
         strip(paths, OUT / f'{screen}-{mode}-anim.png')
     target = OUT / f'{screen}-anim.png'
     magick(OUT / f'{screen}-entry-anim.png', OUT / f'{screen}-focus-anim.png', '-append', target)
     pngs.append(str(target))
+    shutil.copy2(target, BASE / target.name)
 
 for layer in range(1, 8):
     for scale in (100, 85):
         for material in ('glass', 'solid'):
+            target = OUT / f'together-layer-{layer}-{scale}-{material}-tri.png'
+            magick(OUT / 'together-reference.png',
+                   native(OUT / 'together-final' / f'matrix-{layer}-{scale}-{material}.png'), '+append', target)
+            pngs.append(str(target))
             rows = []
             for mode in ('entry', 'focus', 'exit', 'reverse'):
                 target = OUT / f'together-layer-{layer}-{scale}-{material}-{mode}-anim.png'
-                clock_strip([OUT / 'together' / f'layer-{layer}-{scale}-{material}-{mode}-{t:03}.png' for t in CLOCK_TIMES], target)
+                clock_strip([OUT / 'together-final' / f'layer-{layer}-{scale}-{material}-{mode}-{t:03}.png' for t in CLOCK_TIMES], target)
                 rows.append(target)
             target = OUT / f'together-layer-{layer}-{scale}-{material}-anim.png'
             magick(*rows, '-append', target)

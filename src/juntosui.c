@@ -902,7 +902,7 @@ static void desenharSala(void) {
   GfxRect tela = { 360, 144, 1200, 456 };
   int compacto = NV_VTELA_W < 1600;
   float textoX = fmaxf(160, esquerda), total = 0;
-  float textoY = tela.y - (compacto ? 44 : 0);
+  float textoY = tela.y;
   float a = 1;
   int i, b[BT_N], n = botoesSala(b), nm, vazio;
   char linha[200];
@@ -915,17 +915,17 @@ static void desenharSala(void) {
   snprintf(linha, sizeof linha, i18n("Sua sessão privada · %d de %d lugares"), nm, 5);
   texto(TXT_CAPTION, linha, textoX, textoY + 56, 235, a, tela.w - 96);
   txt_bloco_corta(TXT_ILHA_TITULO, i18n("Os melhores lugares são juntos"), 250, 250, 250, textoX, textoY + 92, 460, 52, a, 2);
-  texto(TXT_ILHA_NOME, m->temSala && m->sala.titulo[0] ? m->sala.titulo : juntos_titulo(), textoX, textoY + 214, 235, a, 900);
+  texto(TXT_ILHA_NOME, m->temSala && m->sala.titulo[0] ? m->sala.titulo : juntos_titulo(), textoX, textoY + (compacto ? 200 : 214), 235, a, 900);
   if (mostrarQr) {
     float lado = compacto ? 160 : 220;
-    GfxRect q = { fminf(tela.x + tela.w - 48, direita) - lado, textoY + 56, lado, lado };
+    GfxRect q = { fminf(tela.x + tela.w - 48, direita) - lado, textoY + (compacto ? 24 : 56), lado, lado };
     GLuint t = qrTextura(juntos_url_celular());
     gfx_cor((GfxRect){ q.x - 12, q.y - 12, q.w + 24, q.h + 24 }, 0.06f, 1, 1, 1, a);
     if (t) gfx_rect(q, t, GFX_SNAP, 0, 0, 0, 0, 1, 1, 1, a);
     if (juntos_codigo()[0]) {
       char c[64];
       snprintf(c, sizeof c, i18n("Código %.3s-%s"), juntos_codigo(), juntos_codigo() + 3);
-      texto(TXT_ILHA_NOME, c, q.x + (q.w - largura(TXT_ILHA_NOME, c)) / 2, q.y + q.h + 24, 245, a, q.w);
+      texto(TXT_ILHA_NOME, c, q.x + (q.w - largura(TXT_ILHA_NOME, c)) / 2, q.y + q.h + 24, 245, a, 0);
     }
   }
   for (i = 0; i < 5; i++) {
@@ -1110,6 +1110,8 @@ static void desenharCorpo(GfxRect c, float a, void *u) {
   origemX = c.x - corpoBase.x;
   origemY = c.y + (noPlayer() ? 0 : NV_ILHA_H_ABERTA) - corpoBase.y;
   gfx_transformar(0, 0, 1, origemX, origemY);
+  // Keep whole labels hidden until the clock shape contains the body padding.
+  if (!noPlayer()) a *= anim_clamp((ilha_corpo_t() - .95f) / .05f, 0, 1);
   gfx_opacidade_grupo *= a;
   corpoDesenhando = 1;
   switch (visual) {
