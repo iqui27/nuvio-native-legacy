@@ -1559,7 +1559,8 @@ static void biblioteca_evento_(const SDL_Event *e) {
     if (k == SDLK_UP || nv_tecla_voltar(e)) { estadoFoco = 0; return; }
     return;
   }
-  if (k == SDLK_DOWN && estadoFalhou() && !focoOrigem) { estadoFoco = 1; return; }
+  if (k == SDLK_DOWN && estadoFalhou() && !focoOrigem &&
+      (temAberta || foco.fileira == BIB_FIL_PICK)) { estadoFoco = 1; return; }
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE) {
     // Dentro de uma lista, o Back volta PARA A LISTA DE LISTAS antes de fechar
@@ -3409,7 +3410,9 @@ static void desenhaTrilha(Uint32 agora) {
   if (selected < 0) selected = 0;
   int first = selected / 8 * 8;
   float x = bibX(), step = BIB_CARD_W + BIB_CARD_GAP;
-  float posterY = ANC(404), noteY = posterY + BIB_POSTER_H + 70;
+  float posterY = ANC(404);
+  float captionH = BIB_TIT_GAP + 14 + 28 + txt_linha(TXT_MINI, "Hg", 255, 255, 255, 255).h;
+  float noteY = posterY + BIB_POSTER_H + captionH + 12;
   gfx_recorte(x - 12, ANC(330), bibW() + 24, noteY - ANC(330));
   float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
   gfx_cor((GfxRect){x + step / 2 - trilhaX, ANC(360), step * 7, 3}, 0, 1, 1, 1, .16f);
