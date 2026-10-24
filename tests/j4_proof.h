@@ -12,6 +12,7 @@ static void j4_save(const char *path) {
 }
 static void j4_frame(float dt, void (*step)(float), void (*draw)(void)) {
   txt_novo_quadro(); tex_novo_quadro(); tex_bombear(6); gfx_novo_quadro();
+  glViewport(0,0,1920,1080);
   step(dt); glClear(GL_COLOR_BUFFER_BIT); draw();
 }
 static void j4_proof(const char *screen, void (*reset)(void), void (*focus)(void),

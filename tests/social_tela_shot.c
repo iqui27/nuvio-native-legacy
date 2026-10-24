@@ -12,7 +12,12 @@
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 
+#include "j4_proof.h"
 static GLuint fbo, fboTex;
+static void proof_reset(void) { entrada=tempo=rolagem=velocidade=0;sair=0;selecionado=0;memset(focoAnim,0,sizeof focoAnim); }
+static void proof_focus(void) { selecionado=1; }
+static void proof_step(float dt) { social_atualizar(dt,SDL_GetTicks()); }
+static void proof_draw(void) { social_desenhar(SDL_GetTicks()); }
 
 static void captura(const char *nome, SDL_Window *win) {
   int i;
@@ -27,6 +32,7 @@ static void captura(const char *nome, SDL_Window *win) {
     glViewport(0, 0, 1920, 1080);
     glClearColor(0.025f, 0.025f, 0.03f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
+    social_atualizar(1.0f/60,SDL_GetTicks());
     social_desenhar(SDL_GetTicks());
     rail_shot_desenhar(MENU_PERFIL);
     if (i == 29) {
@@ -67,7 +73,9 @@ int main(int argc, char **argv) {
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
   dados_iniciar(dir);
   assert(!strcmp(dados_dir(), dir));
+  assert(dados_gravar("ajustes.txt","idioma 0\nidiomaAutoLocal 0\n"));
   ajustes_iniciar();
+  ajustes_dir(dir);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
   w = SDL_CreateWindow("Nuvio: captura social", 0, 0, 64, 64,
@@ -86,7 +94,7 @@ int main(int argc, char **argv) {
   assert(gfx_iniciar());
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
-  gfx_icones_dir("deploy/app/art");
+  char *art=realpath("deploy/app/art",NULL);assert(art);gfx_icones_dir(art);free(art);
 
   memset(&dados, 0, sizeof dados);
   snprintf(dados.pessoa.socialNome, sizeof dados.pessoa.socialNome, "Marina Albuquerque");
@@ -103,6 +111,7 @@ int main(int argc, char **argv) {
     snprintf(a->detalhe, sizeof a->detalhe, "Filme · 2024 · Drama");
     snprintf(a->horario, sizeof a->horario, "2%d/09/2026 · 21:%02d", i, 10 + i);
   }
+  j4_proof("social",proof_reset,proof_focus,proof_step,proof_draw);
   selecionado = 1;
   snprintf(nome, sizeof nome, "%s-pronto.bmp", saida);
   captura(nome, w);
