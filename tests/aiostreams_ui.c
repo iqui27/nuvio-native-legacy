@@ -81,6 +81,9 @@ int main(void) {
   float old=scrollFoco;
   foco=1; movimento(.01f);
   assert(scrollFoco>old && scrollVel>0);
+  // Footer focus keeps the scrolled viewport instead of resetting it.
+  pagina=CATALOGOS; snap.catalogos=8; scrollFoco=11;
+  assert(janelaCatalogos()==3);
   activeProfile=2; aioui_atualizar(0,100); assert(aioui_aberto());
   aioui_atualizar(.2f,300); assert(!aioui_aberto() && !base[0]);
   puts("aiostreams UI: setup, masked import, P2P, navigation and profile isolation passed");

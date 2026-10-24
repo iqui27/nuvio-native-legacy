@@ -86,6 +86,8 @@ void aioui_arte(const char *dir) {
 static char usuario[96], base[2048], host[256], alvo[128], tipo[32], mensagem[256];
 static char configure[320];
 static AioSnapshot snap;
+// Footer actions below the rows keep the viewport (no snap back to the top).
+static float janelaCatalogos(void) { return janela(4,snap.catalogos,5,pagina==CATALOGOS); }
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 static int ocupado, entregue;
 static unsigned entregaGeracao;
@@ -795,7 +797,7 @@ static void workspace(void) {
     return;
   }
   if(pagina!=TITULO) aside();
-  listaPos=janela(4,snap.catalogos,5,pagina==CATALOGOS && foco<snap.catalogos); int start=(int)listaPos;
+  listaPos=janelaCatalogos(); int start=(int)listaPos;
 
   if(pagina==CATALOGOS) {
     texto(TXT_ILHA_SECAO,i18n("Catálogos publicados pelo manifesto"),453,285,690,220);

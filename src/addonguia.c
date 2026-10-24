@@ -532,7 +532,8 @@ void addonguia_lista(int f) {
   }
   if(f>=addons_n()) {
     const char *acao=f==addons_n()?"Sincronizar addons":f==addons_n()+1?"TV ao vivo":"AIOStreams";
-    botao(i18n(acao),f==addons_n()?"aj_rotate-cw":NULL,228,820,0);
+    float w=botaoEm(i18n(acao),f==addons_n()?"aj_rotate-cw":NULL,228,820,50+f,0,0);
+    ponteiro_alvo(228,820,w,T21_CTRL_H*gfx_escala_txt(),addonsui_ponteiro,NULL,f,0);
   }
   if(f<addons_n()) {
     indice=f;identidade=addonmodo_id(addons_base(f));snprintf(nome,sizeof nome,"%s",addons_nome(f));

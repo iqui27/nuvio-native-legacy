@@ -3,3 +3,5 @@ set -eu
 cd "$(dirname "$0")/.."
 cc -std=c11 -D_DARWIN_C_SOURCE -Isrc src/addonmodo.c tests/addonguia.c -o /tmp/nuvio-addonguia-test
 /tmp/nuvio-addonguia-test
+# Footer actions (no AIO addon) must read the list focus channel 50+f, not focoAnim[0].
+grep -q 'botaoEm(i18n(acao),f==addons_n()?"aj_rotate-cw":NULL,228,820,50+f' src/addonguia.c
