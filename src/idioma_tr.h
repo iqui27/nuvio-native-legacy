@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Ana darboğaz"),
   T("Gerenciar", "Yönet"),
   T("Gerenciar conexões", "Bağlantıları yönet"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Telefondaki altyazıları yönet"),
   T("Gerenciar no celular", "Telefonda yönet"),
   T("Gerenciar perfis", "Profilleri yönet"),

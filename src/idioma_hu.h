@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Fő szűk keresztmetszet"),
   T("Gerenciar", "Kezelés"),
   T("Gerenciar conexões", "Kapcsolatok kezelése"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Feliratok kezelése telefonon"),
   T("Gerenciar no celular", "Kezelése telefonon"),
   T("Gerenciar perfis", "Profilok kezelése"),

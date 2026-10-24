@@ -2914,6 +2914,8 @@
   T("Gargalo principal", "Cuello de botella principal"),
   T("Gerenciar", "Gestionar"),
   T("Gerenciar conexões", "Gestionar conexiones"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Administrar subtítulos en el teléfono"),
   T("Gerenciar no celular", "Administrar por teléfono"),
   T("Gerenciar perfis", "Administrar perfiles"),

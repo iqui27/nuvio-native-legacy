@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Hlavní úzké místo"),
   T("Gerenciar", "Spravovat"),
   T("Gerenciar conexões", "Spravovat připojení"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Správa titulků v telefonu"),
   T("Gerenciar no celular", "Správa na telefonu"),
   T("Gerenciar perfis", "Spravovat profily"),

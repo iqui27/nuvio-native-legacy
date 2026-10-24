@@ -2914,6 +2914,8 @@
   { "Gargalo principal", "Main bottleneck" },
   { "Gerenciar", "Manage" },
   { "Gerenciar conexões", "Manage connections" },
+  { "O + salva em Trakt e Simkl.", "The + saves to Trakt and Simkl." },
+  { "Muda em Ajustes › Contas.", "Change it in Settings › Accounts." },
   { "Gerenciar legendas no celular", "Manage subtitles on phone" },
   { "Gerenciar no celular", "Manage on phone" },
   { "Gerenciar perfis", "Manage profiles" },

@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "主なボトルネック"),
   T("Gerenciar", "管理"),
   T("Gerenciar conexões", "接続を管理"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "電話で字幕を管理する"),
   T("Gerenciar no celular", "電話で管理"),
   T("Gerenciar perfis", "プロファイルを管理する"),

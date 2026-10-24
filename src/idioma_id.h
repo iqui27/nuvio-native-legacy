@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Hambatan utama"),
   T("Gerenciar", "Kelola"),
   T("Gerenciar conexões", "Kelola koneksi"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Kelola subtitle di ponsel"),
   T("Gerenciar no celular", "Kelola di ponsel"),
   T("Gerenciar perfis", "Kelola profil"),

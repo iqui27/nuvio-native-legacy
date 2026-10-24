@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Glavno usko grlo"),
   T("Gerenciar", "Upravljaj"),
   T("Gerenciar conexões", "Upravljaj vezama"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Upravljajte titlovima na telefonu"),
   T("Gerenciar no celular", "Upravljajte na telefonu"),
   T("Gerenciar perfis", "Upravljaj profilima"),

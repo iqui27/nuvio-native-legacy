@@ -2914,6 +2914,8 @@
   T("Gargalo principal", "Основне вузьке місце"),
   T("Gerenciar", "Керувати"),
   T("Gerenciar conexões", "Керувати підключеннями"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Керуйте субтитрами на телефоні"),
   T("Gerenciar no celular", "Керувати по телефону"),
   T("Gerenciar perfis", "Керувати профілями"),

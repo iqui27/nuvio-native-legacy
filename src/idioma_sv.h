@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Främsta flaskhals"),
   T("Gerenciar", "Hantera"),
   T("Gerenciar conexões", "Hantera anslutningar"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Hantera undertexter på telefonen"),
   T("Gerenciar no celular", "Hantera på telefonen"),
   T("Gerenciar perfis", "Hantera profiler"),

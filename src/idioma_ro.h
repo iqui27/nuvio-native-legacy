@@ -2914,6 +2914,8 @@
   T("Gargalo principal", "Blocajul principal"),
   T("Gerenciar", "Gestionează"),
   T("Gerenciar conexões", "Gestionează conexiunile"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Gestionați subtitrările pe telefon"),
   T("Gerenciar no celular", "Gestionați la telefon"),
   T("Gerenciar perfis", "Gestionează profiluri"),

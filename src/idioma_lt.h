@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Pagrindinė kliūtis"),
   T("Gerenciar", "Tvarkyti"),
   T("Gerenciar conexões", "Valdyti ryšius"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Tvarkyti subtitrus telefone"),
   T("Gerenciar no celular", "Tvarkyti telefonu"),
   T("Gerenciar perfis", "Tvarkyti profilius"),

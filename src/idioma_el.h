@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Κύριο σημείο συμφόρησης"),
   T("Gerenciar", "Διαχείριση"),
   T("Gerenciar conexões", "Διαχείριση συνδέσεων"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Διαχείριση υπότιτλων στο τηλέφωνο"),
   T("Gerenciar no celular", "Διαχείριση στο τηλέφωνο"),
   T("Gerenciar perfis", "Διαχείριση προφίλ"),

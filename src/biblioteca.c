@@ -3046,15 +3046,15 @@ static void desenhaOrigens(void) {
     }
     return;
   }
-  GfxRect painel = { paginaX(), 388.0f, 320.0f, fminf(700, 76 + nOrigens() * 62 + (serverRows ? 54 : 0)) };
+  GfxRect painel = { paginaX(), 388.0f, 320.0f, fminf(700, 50 + nOrigens() * 76 + (serverRows ? 54 : 0) + 96) };
   t21_ilha(painel, T21_R_SHEET, 1);
   // Heading as in the mock: tracked caps, dim.
-  txt_tracking(TXT_MINI, seloCaixaAlta("Origens"), 115, 117, 122, painel.x + 30, painel.y + 24, 1.0f, 2.2f);
+  txt_tracking(TXT_MINI, seloCaixaAlta("Origens"), 115, 117, 122, painel.x + 30, painel.y + 20, 1.0f, 2.2f);
   const char *sub[] = { "sem repetir títulos", "Para ver", "Para ver", "salvos neste perfil" };
   float footerY = 0;
   const char *letra[] = { "", "T", "S", "N" };
-  int start = focoOrigem && origemSel > 8 ? origemSel - 8 : 0;
-  for (int i = start; i < nOrigens() && i < start + 9; i++) {
+  int vis = (int)((painel.h - 50 - 96) / 76), start = focoOrigem && origemSel > vis - 1 ? origemSel - (vis - 1) : 0;
+  for (int i = start; i < nOrigens() && i < start + vis; i++) {
     const char *name = rotuloOrigem(i, 0);
     const char *description = i < BIB_N_ORIG ? sub[i] : "lista do add-on";
     int count = i < BIB_N_ORIG ? contaOrigem[i] : 0;
@@ -3065,38 +3065,43 @@ static void desenhaOrigens(void) {
       if (!serverRows || !serverRows(i - BIB_N_ORIG - nAddonOrigens, &name, &serverSub, &count)) continue;
       description = serverSub ? serverSub : "Biblioteca";
     }
-    GfxRect row = { painel.x + 12, painel.y + 62 + (i - start) * 62, 296, 60 };
+    GfxRect row = { painel.x + 12, painel.y + 50 + (i - start) * 76, 296, 76 };
     ponteiro_alvo(row.x, row.y, row.w, row.h, ponteiroOrigem, NULL, i, 0);
     plrui_linha_foco(row, T21_R_ROW, i < 64 ? animOrigem[i] : 0);
     float tx = row.x + 18;
     if (i) {
-      gfx_cor((GfxRect){tx, row.y + 13, 34, 34}, 10.0f / 34, 1, 1, 1, .08f);
+      gfx_cor((GfxRect){tx, row.y + 21, 34, 34}, 10.0f / 34, 1, 1, 1, .08f);
       TxtLinha t = txt_linha(TXT_HERO_SEC, i < BIB_N_ORIG ? letra[i] : "A", 235, 235, 235, 255);
       int p = i - BIB_N_ORIG - nAddonOrigens;
       const char *logos[] = {"deploy/app/art/marcas/plex.png","deploy/app/art/marcas/jellyfin.png","deploy/app/art/marcas/emby.png"};
       GLuint brand = p >= 0 && p < 3 ? tex_obter_larg(logos[p], 28) : 0;
-      if (brand) gfx_rect((GfxRect){tx + 4,row.y + 17,26,26},brand,GFX_MARCA,0,0,0,0,1,1,1,1);
-      else txt_desenhar(t, tx + (34 - t.w) / 2, row.y + 13 + (34 - t.h) / 2);
+      if (brand) gfx_rect((GfxRect){tx + 4,row.y + 25,26,26},brand,GFX_MARCA,0,0,0,0,1,1,1,1);
+      else txt_desenhar(t, tx + (34 - t.w) / 2, row.y + 21 + (34 - t.h) / 2);
       tx += 48;
     }
     if ((serverFilter < 0 && origem == i) || (serverFilter >= 0 && i == BIB_N_ORIG + nAddonOrigens + serverFilter)) {
       float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      gfx_cor((GfxRect){tx, row.y + 21, 7, 7}, .5f, ar, ag, ab, 1);
+      gfx_cor((GfxRect){tx, row.y + 29, 7, 7}, .5f, ar, ag, ab, 1);
       tx += 16;
     }
-    txt_desenhar(txt_linha_corta(TXT_ILHA_NOME, name, 243, 242, 239, 255, row.x + row.w - tx - 48), tx, row.y + 7);
-    txt_desenhar(txt_linha(TXT_MINI, description, 112, 114, 120, 255), tx, row.y + 35);
+    txt_desenhar(txt_linha_corta(TXT_ILHA_NOME, name, 243, 242, 239, 255, row.x + row.w - tx - 48), tx, row.y + 14);
+    txt_desenhar(txt_linha(TXT_MINI, description, 98, 100, 106, 255), tx, row.y + 44);
     char num[16]; snprintf(num, sizeof num, "%d", count);
     TxtLinha ct = txt_linha(TXT_HERO_META, num, 140, 142, 148, 255);
-    txt_desenhar(ct, row.x + row.w - 18 - ct.w, row.y + 18);
+    txt_desenhar(ct, row.x + row.w - 18 - ct.w, row.y + 26);
     footerY = row.y + row.h;
   }
-  if (serverRows && footerY && footerY + 52 < painel.y + painel.h - 8) {
+  if (serverRows && footerY && footerY + 52 < painel.y + painel.h - 90) {
     // The approved Library mock keeps server actions under the origins list:
     // one connect entry and one manage entry, both opening the same setup.
     txt_desenhar(txt_linha_corta(TXT_MINI, "+ Conectar servidor", 150, 153, 162, 255, 280), painel.x + 18, footerY + 8);
     txt_desenhar(txt_linha_corta(TXT_MINI, "Gerenciar conexões", 150, 153, 162, 255, 280), painel.x + 18, footerY + 30);
   }
+  // Footer note of the mock: divider, then two muted lines.
+  { float ny = painel.y + painel.h - 84;
+    gfx_cor((GfxRect){painel.x + 18, ny, painel.w - 36, 1}, 0, 1, 1, 1, .07f);
+    txt_desenhar(txt_linha_corta(TXT_MINI, "O + salva em Trakt e Simkl.", 98, 100, 106, 255, 280), painel.x + 18, ny + 14);
+    txt_desenhar(txt_linha_corta(TXT_MINI, "Muda em Ajustes › Contas.", 98, 100, 106, 255, 280), painel.x + 18, ny + 38); }
   // Provider rows share this page's focus and title filters.
 }
 
@@ -3160,12 +3165,12 @@ static void desenhaCabecalho(void) {
 #endif
     // Same baseline as the subtitle on the left, so the two read as one row.
     float lineY = BIB_TOPO + (float)txt_linha(TXT_TITULO2, "Hg", 255, 255, 255, 255).h + 2.0f;
-    TxtLinha st = txt_linha(TXT_MINI, status, 112, 114, 120, 255);
+    TxtLinha st = txt_linha(TXT_MINI, status, 98, 100, 106, 255);
     float y = lineY + (float)(txt_linha(TXT_CAPTION2, "Hg", 255, 255, 255, 255).h - st.h) * 0.5f;
     x -= st.w; txt_desenhar(st, x, y);
     const char *services[] = { "Trakt", "Simkl", "Conta Nuvio", "AIOMetadata" };
     for (int i = 3; i >= 0; i--) if (active[i]) {
-      TxtLinha name = txt_linha(TXT_MINI, services[i], 145, 147, 153, 255);
+      TxtLinha name = txt_linha(TXT_MINI, services[i], 120, 122, 128, 255);
       x -= name.w + (status[0] ? 42 : 30); txt_desenhar(name, x, y);
       float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
       gfx_icone((GfxRect){x - 24, y + (name.h - 17) * 0.5f, 17, 17}, "aj_check", ar, ag, ab, 1);

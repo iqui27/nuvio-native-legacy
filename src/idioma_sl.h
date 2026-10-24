@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Glavno ozko grlo"),
   T("Gerenciar", "Upravljaj"),
   T("Gerenciar conexões", "Upravljaj povezave"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Upravljanje podnapisov v telefonu"),
   T("Gerenciar no celular", "Upravljanje na telefonu"),
   T("Gerenciar perfis", "Upravljanje profilov"),

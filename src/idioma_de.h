@@ -2914,6 +2914,8 @@
   T("Gargalo principal", "Hauptengpass"),
   T("Gerenciar", "Verwalten"),
   T("Gerenciar conexões", "Verbindungen verwalten"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Untertitel am Telefon verwalten"),
   T("Gerenciar no celular", "Am Telefon verwalten"),
   T("Gerenciar perfis", "Profile verwalten"),

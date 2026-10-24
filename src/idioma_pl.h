@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Główne wąskie gardło"),
   T("Gerenciar", "Zarządzaj"),
   T("Gerenciar conexões", "Zarządzaj połączeniami"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Zarządzaj napisami na telefonie"),
   T("Gerenciar no celular", "Zarządzaj na telefonie"),
   T("Gerenciar perfis", "Zarządzaj profilami"),

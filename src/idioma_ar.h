@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "عنق الزجاجة الرئيسي"),
   T("Gerenciar", "Manage"),
   T("Gerenciar conexões", "إدارة الاتصالات"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "إدارة الترجمات على الهاتف"),
   T("Gerenciar no celular", "الإدارة على الهاتف"),
   T("Gerenciar perfis", "إدارة الملفات الشخصية"),

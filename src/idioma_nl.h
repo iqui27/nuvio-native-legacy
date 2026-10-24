@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Grootste knelpunt"),
   T("Gerenciar", "Beheren"),
   T("Gerenciar conexões", "Verbindingen beheren"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Beheer ondertitels op de telefoon"),
   T("Gerenciar no celular", "Beheer op telefoon"),
   T("Gerenciar perfis", "Profielen beheren"),

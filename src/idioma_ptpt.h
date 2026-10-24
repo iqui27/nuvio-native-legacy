@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Principal estrangulamento"),
   T("Gerenciar", "Gerir"),
   T("Gerenciar conexões", "Gerir ligações"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Gerir legendas no telefone"),
   T("Gerenciar no celular", "Gerir por telefone"),
   T("Gerenciar perfis", "Gerir perfis"),

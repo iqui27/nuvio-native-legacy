@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "主要瓶頸"),
   T("Gerenciar", "管理"),
   T("Gerenciar conexões", "管理連線"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "在手機上管理字幕"),
   T("Gerenciar no celular", "透過電話進行管理"),
   T("Gerenciar perfis", "管理個人資料"),

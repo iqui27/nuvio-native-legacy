@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Primær flaskehals"),
   T("Gerenciar", "Administrer"),
   T("Gerenciar conexões", "Håndtér forbindelser"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Administrer undertekster på telefonen"),
   T("Gerenciar no celular", "Administrer på telefonen"),
   T("Gerenciar perfis", "Administrer profiler"),

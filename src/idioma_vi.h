@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Điểm nghẽn chính"),
   T("Gerenciar", "Quản lý"),
   T("Gerenciar conexões", "Quản lý kết nối"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Quản lý phụ đề trên điện thoại"),
   T("Gerenciar no celular", "Quản lý trên điện thoại"),
   T("Gerenciar perfis", "Quản lý hồ sơ"),

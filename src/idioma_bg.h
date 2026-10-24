@@ -2915,6 +2915,8 @@
   T("Gargalo principal", "Основно тясно място"),
   T("Gerenciar", "Управление"),
   T("Gerenciar conexões", "Управление на връзките"),
+  T("O + salva em Trakt e Simkl.", ""),
+  T("Muda em Ajustes › Contas.", ""),
   T("Gerenciar legendas no celular", "Управление на субтитри на телефона"),
   T("Gerenciar no celular", "Управление на телефона"),
   T("Gerenciar perfis", "Управление на профили"),
