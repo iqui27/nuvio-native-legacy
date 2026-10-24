@@ -25,7 +25,7 @@
 #define BACK_DEBOUNCE_MS 250
 #define AVISO_S        6.0f
 #define AVISO_FADE_MS  220.0f
-#define LINHAS_VISIVEIS 3
+#define LINHAS_VISIVEIS linhasVis
 #define TRILHA_LIGADA   0   // 1 quando conquistas_abrir_trilha() existir de verdade
 
 enum { V_HUB = CONQUISTAS_VISTA_HUB, V_FAM = CONQUISTAS_VISTA_FAMILIAS, V_DET = CONQUISTAS_VISTA_DETALHE };
@@ -41,7 +41,8 @@ static Uint32 backUltimo;
 static int   backPressionado, backVisto;
 static CqEstado st;
 static int   vis[CQ_MAX], nvis;
-static float ox, oy;
+static float ox, oy, largura, gradeW;
+static int colunas = 3, linhasVis = 3;
 
 // Aviso depois dos creditos.
 static int    avAberto, avFam, avBackPress;
@@ -136,7 +137,7 @@ static void filtrar(void) {
       vis[j + 1] = v;
     }
   }
-  linhas = (nvis + 2) / 3;
+  linhas = (nvis + colunas - 1) / colunas;
   if (topo > linhas - LINHAS_VISIVEIS) topo = linhas - LINHAS_VISIVEIS;
   if (topo < 0) topo = 0;
 }
@@ -177,12 +178,21 @@ static int alvo_nivel(const CqEntrada *e, int n) {
 
 // ------------------------------------------------------------------- layout
 static void origem(void) {
-  t21_inicio(&ox, NULL);
+  t21_inicio(&ox, &largura);
   ox -= MG;
   oy = 0;
+  gradeW = largura - 444.0f;
+  colunas = gradeW < 1100.0f ? 2 : 3;
+  linhasVis = gfx_escala_txt() > 1.0f ? 2 : 3;
 }
 
-static GfxRect em(float x, float y, float w, float h) { return (GfxRect){ ox + x, oy + y, w, h }; }
+static GfxRect em(float x, float y, float w, float h) {
+  if (view == V_DET && y >= 108.0f) {
+    float k = fminf(1, largura / 1624.0f);
+    return (GfxRect){ox + MG + (x - MG) * k, oy + ANC(y), w * k, h};
+  }
+  return (GfxRect){ ox + x, oy + y, w, h };
+}
 
 static void poe(Item *it, int *n, int id, GfxRect r) {
   if (*n >= MAX_ITENS) return;
@@ -205,12 +215,12 @@ static void rotulo_aba(int a, char *dst, size_t n) {
   }
 }
 
-#define TABS_Y   262.0f
-#define GRADE_Y  344.0f
+#define TABS_Y   ANC(262.0f)
+#define GRADE_Y  (TABS_Y + PILULA_H + 26.0f)
 #define PASSO_Y  190.0f
-#define CARD_W   380.0f
+#define CARD_W   ((gradeW - (colunas - 1) * 20.0f) / colunas)
 #define CARD_H   170.0f
-#define COL_X    (MG + 1180.0f + 40.0f)
+#define COL_X    (MG + gradeW + 40.0f)
 #define COL_W    404.0f
 
 static GfxRect r_aba(int a) {
@@ -229,30 +239,30 @@ static GfxRect r_aba(int a) {
 
 static GfxRect r_ordem(void) {
   float w = larg_pilula(i18n("Mais perto de completar"), "aj_funnel");
-  return em(Q_W - MG - w, TABS_Y, w, PILULA_H);
+  return em(MG + largura - w, TABS_Y, w, PILULA_H);
 }
 
-static GfxRect r_voltar(void) { return em(MG, 32.0f, larg_pilula(i18n("Voltar"), NULL), PILULA_H); }
+static GfxRect r_voltar(void) { return em(MG, ANC(32.0f), larg_pilula(i18n("Voltar"), NULL), PILULA_H); }
 
 static GfxRect r_fams(void) {
   float w = larg_pilula(i18n("O que dá emblema"), "aj_folders");
-  return em(Q_W - MG - w, 32.0f, w, PILULA_H);
+  return em(MG + largura - w, ANC(32.0f), w, PILULA_H);
 }
 
 static GfxRect r_card(int i) {
-  int col = i % 3, lin = i / 3 - topo;
+  int col = i % colunas, lin = i / colunas - topo;
   return em(MG + (float)col * (CARD_W + 20.0f), GRADE_Y + (float)lin * PASSO_Y, CARD_W, CARD_H);
 }
 
-static int card_visivel(int i) { int lin = i / 3 - topo; return lin >= 0 && lin < LINHAS_VISIVEIS; }
+static int card_visivel(int i) { int lin = i / colunas - topo; return lin >= 0 && lin < LINHAS_VISIVEIS; }
 
-#define FAM_W  ((1624.0f - 2.0f * 28.0f) / 3.0f)
-#define FAM_H  330.0f
+#define FAM_W  ((largura - 2.0f * 28.0f) / 3.0f)
+#define FAM_H  fminf(330.0f, (ANC(960.0f) - ANC(250.0f) - 28.0f) / 2.0f)
 static GfxRect r_famcard(int i) {
-  return em(MG + (float)(i % 3) * (FAM_W + 28.0f), 250.0f + (float)(i / 3) * (FAM_H + 28.0f), FAM_W, FAM_H);
+  return em(MG + (float)(i % 3) * (FAM_W + 28.0f), ANC(250.0f) + (float)(i / 3) * (FAM_H + 28.0f), FAM_W, FAM_H);
 }
 
-static GfxRect r_retomar_btn(void) { return em(COL_X + 24.0f, GRADE_Y + 190.0f, COL_W - 48.0f, PILULA_H); }
+static GfxRect r_retomar_btn(void) { return em(COL_X + 24.0f, GRADE_Y + 270.0f * fminf(1, (ANC(920.0f) - GRADE_Y) / 550.0f) - 80.0f, COL_W - 48.0f, PILULA_H); }
 
 static int montar(Item *it) {
   int n = 0, i;
@@ -273,16 +283,22 @@ static int montar(Item *it) {
 }
 
 int conquistas_teste_itens(int *ids, GfxRect *rs, int max) {
+  TXT_INI();
   Item it[MAX_ITENS];
   int n = montar(it), i;
-  for (i = 0; i < n && i < max; i++) { ids[i] = it[i].id; rs[i] = it[i].r; }
+  for (i = 0; i < n && i < max; i++) {
+    float k = gfx_escala();
+    ids[i] = it[i].id;
+    rs[i] = (GfxRect){it[i].r.x * k, it[i].r.y * k, it[i].r.w * k, it[i].r.h * k};
+  }
+  TXT_FIM();
   return i;
 }
 
 // ----------------------------------------------------------- foco / eventos
 static void garantir_visivel(void) {
   if (foco >= C_CARD0) {
-    int lin = (foco - C_CARD0) / 3;
+    int lin = (foco - C_CARD0) / colunas;
     if (lin < topo) topo = lin;
     if (lin > topo + LINHAS_VISIVEIS - 1) topo = lin - (LINHAS_VISIVEIS - 1);
   }
@@ -311,24 +327,30 @@ static void mover_geo(int dx, int dy) {
 }
 
 static void mover(int dx, int dy) {
+  if (view == V_HUB) {
+    if (foco == B_VOLTAR && dx > 0) { foco = B_FAMS; return; }
+    if (foco == B_FAMS && dx < 0) { foco = B_VOLTAR; return; }
+    if (foco == B_FAMS && dy > 0) { foco = B_ORDEM; return; }
+    if (foco == B_ORDEM && dy < 0) { foco = B_FAMS; return; }
+  }
   if (view == V_HUB && foco >= C_CARD0) {
-    int i = foco - C_CARD0, col = i % 3, lin = i / 3, ni;
+    int i = foco - C_CARD0, col = i % colunas, lin = i / colunas, ni;
     filtrar();
     if (dx) {
       ni = i + dx;
       if (col + dx < 0) return;
-      if (col + dx > 2) { if (retomar_ligado()) foco = B_RETOMAR; return; }
+      if (col + dx >= colunas) { if (retomar_ligado()) foco = B_RETOMAR; return; }
       if (ni < nvis) foco = C_CARD0 + ni;
       return;
     }
     if (dy > 0) {
-      ni = i + 3;
-      if (ni >= nvis) { if (lin < (nvis - 1) / 3) ni = nvis - 1; else return; }
+      ni = i + colunas;
+      if (ni >= nvis) { if (lin < (nvis - 1) / colunas) ni = nvis - 1; else return; }
       foco = C_CARD0 + ni;
       garantir_visivel();
       return;
     }
-    if (lin > 0) { foco = C_CARD0 + i - 3; garantir_visivel(); return; }
+    if (lin > 0) { foco = C_CARD0 + i - colunas; garantir_visivel(); return; }
   }
   mover_geo(dx, dy);
   garantir_visivel();
@@ -524,9 +546,9 @@ static int raridade_txt(const char *chave, char *dst, size_t n) {
 }
 
 static void cabecalho(float a, const char *kick, const char *titulo, const char *sub) {
-  texto(TXT_V2_KICK, kick, MG, 108.0f + oy, 900.0f, MUDO, a);
-  texto(TXT_NOV_TITULO, titulo, MG, 134.0f + oy, 1000.0f, PRI, a);
-  if (sub) texto_dir(TXT_V2_24, sub, ox + Q_W - MG, 162.0f + oy, 900.0f, SEC, a);
+  texto(TXT_V2_KICK, kick, MG + ox, ANC(108.0f) + oy, 900.0f, MUDO, a);
+  texto(TXT_NOV_TITULO, titulo, MG + ox, ANC(134.0f) + oy, 1000.0f, PRI, a);
+  if (sub) texto_dir(TXT_V2_24, sub, ox + MG + largura, ANC(162.0f) + oy, 900.0f, SEC, a);
 }
 
 static void kicker_trilha(char *dst, size_t n, const char *terceiro) {
@@ -569,9 +591,9 @@ static void botao_breve(GfxRect r, const char *s, const char *ic, int foc, float
 }
 
 static void desenha_vazio(float a) {
-  GfxRect r = em(MG, GRADE_Y, 1180.0f, 550.0f);
+  GfxRect r = em(MG, GRADE_Y, gradeW, fminf(550.0f, ANC(920.0f) - GRADE_Y));
   const char *tit, *corpo;
-  float cx = r.x + r.w * 0.5f, w = 760.0f;
+  float cx = r.x + r.w * 0.5f, w = fminf(760.0f, r.w - 80.0f);
   int fam = famF >= 0 ? famF : CQ_FAM_TRILHA, secreto = aba == A_SECRETAS;
   painel(r, a);
   if (aba == A_SECRETAS) {
@@ -598,26 +620,30 @@ static void desenha_vazio(float a) {
     texto_dir(TXT_V2_18, i18n("Em breve"), r.x + r.w - 28.0f, r.y + 24.0f, 120.0f, AMBAR, a);
 }
 
+static float infoK(void) { return fminf(1, (ANC(920.0f) - GRADE_Y) / 550.0f); }
+
 static void desenha_retomar(float a) {
-  GfxRect p = em(COL_X, GRADE_Y, COL_W, 270.0f);
+  float k = infoK();
+  GfxRect p = em(COL_X, GRADE_Y, COL_W, 270.0f * k);
   int c = cand_retomar();
   char b[64];
   painel(p, a);
-  texto(TXT_V2_KICK, i18n("Retomar"), p.x + 24.0f, p.y + 22.0f, COL_W - 48.0f, MUDO, a);
+  texto(TXT_V2_KICK, i18n("Retomar"), p.x + 24.0f, p.y + 22.0f * k, COL_W - 48.0f, MUDO, a);
   if (c < 0) {
     bloco(TXT_V2_24, "Nada para retomar ainda. Quando você começar uma trilha, ela aparece aqui.", SEC,
-          p.x + 24.0f, p.y + 66.0f, COL_W - 48.0f, 32.0f, a, 5);
+          p.x + 24.0f, p.y + 66.0f * k, COL_W - 48.0f, 32.0f, a, 5);
     return;
   }
-  emblema(p.x + 24.0f, p.y + 60.0f, 96.0f, st.e[c].familia, st.e[c].nivel >= 1 ? 0 : 1, a);
-  bloco(TXT_ILHA_NOME, st.e[c].nome, PRI, p.x + 136.0f, p.y + 62.0f, COL_W - 160.0f, 28.0f, a, 2);
+  emblema(p.x + 24.0f, p.y + 60.0f * k, 96.0f, st.e[c].familia, st.e[c].nivel >= 1 ? 0 : 1, a);
+  bloco(TXT_ILHA_NOME, st.e[c].nome, PRI, p.x + 136.0f, p.y + 62.0f * k, COL_W - 160.0f, 28.0f, a, 2);
   snprintf(b, sizeof b, i18n("%d de %d filmes"), st.e[c].vistos, st.e[c].total);
-  texto(TXT_V2_18, b, p.x + 136.0f, p.y + 128.0f, COL_W - 160.0f, SEC, a);
+  texto(TXT_V2_18, b, p.x + 136.0f, p.y + 128.0f * k, COL_W - 160.0f, SEC, a);
   botao_breve(r_retomar_btn(), "Continuar a trilha", "aj_play", foco == B_RETOMAR && retomar_ligado(), a);
 }
 
 static void desenha_mapa(float a) {
-  GfxRect p = em(COL_X, GRADE_Y + 290.0f, COL_W, 260.0f);
+  float k = infoK();
+  GfxRect p = em(COL_X, GRADE_Y + 290.0f * k, COL_W, 260.0f * k);
   CqMapa m;
   char b[24];
   int i;
@@ -626,19 +652,19 @@ static void desenha_mapa(float a) {
   cqd_mapa(&m);
   val[0] = m.decadas; val[1] = m.paises; val[2] = m.idiomas;
   painel(p, a);
-  texto(TXT_V2_KICK, i18n("Seu mapa de descobertas"), p.x + 24.0f, p.y + 22.0f, COL_W - 48.0f, MUDO, a);
+  texto(TXT_V2_KICK, i18n("Seu mapa de descobertas"), p.x + 24.0f, p.y + 22.0f * k, COL_W - 48.0f, MUDO, a);
   for (i = 0; i < 10; i++)
-    gfx_cor((GfxRect){ p.x + 24.0f + (float)i * 36.0f, p.y + 60.0f, 30.0f, 30.0f }, 0.25f, 1, 1, 1,
+    gfx_cor((GfxRect){ p.x + 24.0f + (float)i * 36.0f, p.y + 60.0f * k, 30.0f, 30.0f }, 0.25f, 1, 1, 1,
             (m.ok && m.decada[i] ? 0.55f : 0.08f) * a);
-  texto(TXT_V2_18, "1920", p.x + 24.0f, p.y + 96.0f, 100.0f, MUDO, a);
-  texto_dir(TXT_V2_18, "2020", p.x + COL_W - 26.0f, p.y + 96.0f, 100.0f, MUDO, a);
+  texto(TXT_V2_18, "1920", p.x + 24.0f, p.y + 96.0f * k, 100.0f, MUDO, a);
+  texto_dir(TXT_V2_18, "2020", p.x + COL_W - 26.0f, p.y + 96.0f * k, 100.0f, MUDO, a);
   for (i = 0; i < 3; i++) {
     float x = p.x + 24.0f + (float)i * 120.0f;
     if (m.ok) snprintf(b, sizeof b, "%d", val[i]); else snprintf(b, sizeof b, "—");
-    texto(TXT_ILHA_TITULO, b, x, p.y + 126.0f, 110.0f, PRI, a);
-    texto(TXT_V2_18, rot[i], x, p.y + 178.0f, 112.0f, SEC, a);
+    texto(TXT_ILHA_TITULO, b, x, p.y + 126.0f * k, 110.0f, PRI, a);
+    texto(TXT_V2_18, rot[i], x, p.y + 178.0f * k, 112.0f, SEC, a);
   }
-  texto(TXT_V2_18, "Em breve, com o nosso servidor.", p.x + 24.0f, p.y + 218.0f, COL_W - 48.0f, AMBAR, a);
+  texto(TXT_V2_18, "Em breve, com o nosso servidor.", p.x + 24.0f, p.y + 218.0f * k, COL_W - 48.0f, AMBAR, a);
 }
 
 static void desenha_hub(float a) {
@@ -650,7 +676,7 @@ static void desenha_hub(float a) {
   kicker_trilha(k, sizeof k, famF >= 0 ? FAM[famF].nome : NULL);
   snprintf(sub, sizeof sub, i18n("Emblemas: %d · Em andamento: %d"), ganhas, anda);
   if (!ajustes_conquistas()) {
-    GfxRect r = em(MG, GRADE_Y, 1624.0f, 300.0f);
+    GfxRect r = em(MG, GRADE_Y, largura, 300.0f);
     cabecalho(a, k, i18n("Conquistas"), NULL);
     painel(r, a);
     texto(TXT_ILHA_TITULO, i18n("Conquistas desligadas"), r.x + 40.0f, r.y + 48.0f, r.w - 80.0f, PRI, a);
@@ -666,7 +692,7 @@ static void desenha_hub(float a) {
     pilula(r_fams(), i18n("O que dá emblema"), "aj_folders", foco == B_FAMS, 0, 0, a);
     if (nvis == 0) desenha_vazio(a);
     else for (i = 0; i < nvis; i++) if (card_visivel(i)) desenha_card(r_card(i), &st.e[vis[i]], foco == C_CARD0 + i, a);
-    linhas = (nvis + 2) / 3;
+    linhas = (nvis + colunas - 1) / colunas;
     if (linhas > LINHAS_VISIVEIS) {
       float alt = PASSO_Y * (float)LINHAS_VISIVEIS - 20.0f, th = alt * (float)LINHAS_VISIVEIS / (float)linhas;
       float ty = alt * (float)topo / (float)linhas;
@@ -676,7 +702,7 @@ static void desenha_hub(float a) {
     desenha_retomar(a);
     desenha_mapa(a);
     bloco(TXT_V2_18, "Emblemas premiam o que você descobriu, não quanto tempo ficou na frente da tela. Sem prazo, sem sequência para manter. Tudo isso se desliga em Ajustes.",
-          MUDO, ox + MG, oy + 930.0f, 1624.0f, 26.0f, a, 2);
+          MUDO, ox + MG, oy + ANC(930.0f), largura, 26.0f, a, 2);
   }
   pilula(r_voltar(), i18n("Voltar"), NULL, foco == B_VOLTAR, 0, 0, a);
   for (i = 0; i < n; i++) alvo(it[i].r, it[i].id);
@@ -701,14 +727,14 @@ static void desenha_familias(float a) {
     gfx_cor((GfxRect){ r.x + 24.0f, r.y + 100.0f, r.w - 48.0f, 1.0f }, 0, 1, 1, 1, 0.10f * a);
     for (j = 0; j < 3; j++) {
       const FamLinha *l = &FAM[i].l[j];
-      float y = r.y + 112.0f + (float)j * 72.0f, tw = r.w - 24.0f - 48.0f - 14.0f - 24.0f;
+      float y = r.y + 112.0f + (float)j * fminf(72.0f, (r.h - 168.0f) / 2.0f), tw = r.w - 24.0f - 48.0f - 14.0f - 24.0f;
       emblema(r.x + 24.0f, y + 8.0f, 48.0f, i, 1, a);
       texto(TXT_ILHA_SUB, l->nome, r.x + 86.0f, y + 4.0f, l->breve ? tw - 96.0f : tw, p, a);
       if (l->breve) texto_dir(TXT_V2_18, i18n("Em breve"), r.x + r.w - 24.0f, y + 6.0f, 96.0f, foc ? s : AMBAR, a);
-      texto(TXT_V2_18, l->desc, r.x + 86.0f, y + 36.0f, tw, s, a);
+      texto(TXT_V2_18, l->desc, r.x + 86.0f, y + fminf(36.0f, (r.h - 168.0f) / 2.0f - 25.0f), tw, s, a);
     }
   }
-  texto(TXT_V2_18, "Fora, por princípio: sequência de dias, horas assistidas, maratonas.", ox + MG, oy + 1004.0f, 1624.0f, MUDO, a);
+  texto(TXT_V2_18, "Fora, por princípio: sequência de dias, horas assistidas, maratonas.", ox + MG, oy + ANC(1004.0f), largura, MUDO, a);
   pilula(r_voltar(), i18n("Voltar"), NULL, foco == B_VOLTAR, 0, 0, a);
   for (i = 0; i < n; i++) alvo(it[i].r, it[i].id);
 }
@@ -719,16 +745,17 @@ static void desenha_detalhe(float a) {
   int i, n, nivel;
   Item it[MAX_ITENS];
   float hh, y;
+  float colunaK = fminf(1, largura / 1624.0f);
   if (detIdx < 0 || detIdx >= st.n) return;
   e = &st.e[detIdx];
   nivel = e->nivel;
   n = montar(it);
   kicker_trilha(k, sizeof k, i18n(FAM[e->familia].nome));
-  texto(TXT_V2_KICK, k, MG + ox, 108.0f + oy, 900.0f, MUDO, a);
+  texto(TXT_V2_KICK, k, MG + ox, ANC(108.0f) + oy, 900.0f, MUDO, a);
   // Coluna da esquerda: emblema, nome e estado.
-  emblema(ox + MG, oy + 164.0f, 230.0f, e->familia, nivel >= 1 ? 0 : 1, a);
-  hh = bloco(TXT_NOV_TITULO, e->nome, PRI, ox + MG, oy + 418.0f, 420.0f, 58.0f, a, 2);
-  y = oy + 418.0f + hh + 12.0f;
+  emblema(ox + MG, oy + ANC(164.0f), 230.0f * colunaK, e->familia, nivel >= 1 ? 0 : 1, a);
+  hh = bloco(TXT_NOV_TITULO, e->nome, PRI, ox + MG, oy + ANC(418.0f), 420.0f * colunaK, 58.0f, a, 2);
+  y = oy + ANC(418.0f) + hh + 12.0f;
   snprintf(b, sizeof b, i18n(e->total > 0 && e->vistos >= e->total ? "Completa · nível %d de 5" : "Em andamento · nível %d de 5"), nivel);
   texto(TXT_V2_24, b, ox + MG, y, 420.0f, SEC, a);
   y += 36.0f;
@@ -739,10 +766,10 @@ static void desenha_detalhe(float a) {
   }
   if (raridade_txt(e->chave, b, sizeof b)) texto(TXT_V2_24, b, ox + MG, y, 420.0f, SEC, a);
   botao_breve(em(MG, 700.0f, 420.0f, PILULA_H), "Ir à trilha", "aj_play", 0, a);
-  botao_breve(em(MG, 764.0f, 420.0f, PILULA_H), "Fixar no perfil", "aj_bookmark", 0, a);
+  botao_breve(em(MG, 700.0f + 64.0f * gfx_escala_tela_txt(), 420.0f, PILULA_H), "Fixar no perfil", "aj_bookmark", 0, a);
   // Meio: os cinco niveis.
   for (i = 0; i < CQ_NIVEIS; i++) {
-    GfxRect r = em(MG + 460.0f, 164.0f + (float)i * 122.0f, 700.0f, 108.0f);
+    GfxRect r = em(MG + 460.0f, 164.0f + (float)i * 122.0f * gfx_escala_tela_txt(), 700.0f, 108.0f);
     int lv = i + 1, feito = lv <= nivel;
     float fr, fg, fb;
     const char *regra, *estado;
@@ -779,21 +806,21 @@ static void desenha_detalhe(float a) {
   }
   // Direita: amigos (ambar) e como conta.
   {
-    GfxRect p1 = em(MG + 1200.0f, 164.0f, 424.0f, 230.0f), p2 = em(MG + 1200.0f, 414.0f, 424.0f, 346.0f);
+    GfxRect p1 = em(MG + 1200.0f, 164.0f, 424.0f, 230.0f), p2 = em(MG + 1200.0f, 164.0f + 250.0f * gfx_escala_tela_txt(), 424.0f, 346.0f);
     int am = cqd_amigos_na_trilha(e->chave);
     painel(p1, a);
-    texto(TXT_V2_KICK, i18n("Amigos nesta trilha"), p1.x + 24.0f, p1.y + 22.0f, 376.0f, MUDO, a);
-    if (am > 0) { snprintf(b, sizeof b, i18n("%d amigos nesta trilha"), am); texto(TXT_V2_26, b, p1.x + 24.0f, p1.y + 66.0f, 376.0f, PRI, a); }
+    texto(TXT_V2_KICK, i18n("Amigos nesta trilha"), p1.x + 24.0f, p1.y + 22.0f, p1.w - 48.0f, MUDO, a);
+    if (am > 0) { snprintf(b, sizeof b, i18n("%d amigos nesta trilha"), am); texto(TXT_V2_26, b, p1.x + 24.0f, p1.y + 66.0f, p1.w - 48.0f, PRI, a); }
     else {
-      bloco(TXT_V2_18, "Quantos amigos fazem esta trilha, sem placar e sem aviso para ninguém.", SEC, p1.x + 24.0f, p1.y + 66.0f, 376.0f, 26.0f, a, 4);
+      bloco(TXT_V2_18, "Quantos amigos fazem esta trilha, sem placar e sem aviso para ninguém.", SEC, p1.x + 24.0f, p1.y + 66.0f, p1.w - 48.0f, 26.0f, a, 4);
       texto(TXT_V2_18, i18n("Em breve"), p1.x + 24.0f, p1.y + 176.0f, 200.0f, AMBAR, a);
     }
     painel(p2, a);
-    texto(TXT_V2_KICK, i18n("Como conta"), p2.x + 24.0f, p2.y + 22.0f, 376.0f, MUDO, a);
+    texto(TXT_V2_KICK, i18n("Como conta"), p2.x + 24.0f, p2.y + 22.0f, p2.w - 48.0f, MUDO, a);
     hh = bloco(TXT_V2_18, "Cada filme vira passo quando está no histórico do Trakt ou você marca Já vi. O app avisa uma vez, no fim da sessão.",
-               SEC, p2.x + 24.0f, p2.y + 62.0f, 376.0f, 26.0f, a, 6);
+               SEC, p2.x + 24.0f, p2.y + 62.0f, p2.w - 48.0f, 26.0f, a, 6);
     bloco(TXT_V2_18, "Filme que você já viu antes de abrir a trilha conta para os níveis 1 a 4.", SEC,
-          p2.x + 24.0f, p2.y + 62.0f + hh + 16.0f, 376.0f, 26.0f, a, 4);
+          p2.x + 24.0f, p2.y + 62.0f + hh + 16.0f, p2.w - 48.0f, 26.0f, a, 4);
   }
   pilula(r_voltar(), i18n("Voltar"), NULL, foco == B_VOLTAR, 0, 0, a);
   for (i = 0; i < n; i++) alvo(it[i].r, it[i].id);

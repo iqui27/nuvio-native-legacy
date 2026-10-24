@@ -251,8 +251,10 @@ static void regras_perfil(const char *prefixo) {
     perfil_tecla(SDLK_RETURN);
     assert(perfil_pediu_conquistas());
     assert(!perfil_pediu_conquistas());
-    // Esquerda escapa da tela inteira.
+    // Left visits Hunt before leaving the header.
     assert(!perfil_quer_sair());
+    perfil_tecla(SDLK_LEFT);
+    assert(!perfil_foco_conquistas() && !perfil_quer_sair());
     perfil_tecla(SDLK_LEFT);
     assert(perfil_quer_sair());
   }
@@ -268,8 +270,11 @@ static void regras_perfil(const char *prefixo) {
       assert(perfil_foco_conquistas());
       perfil_tecla(SDLK_RETURN);
       assert(perfil_pediu_conquistas() && !perfil_pediu_atualizar());
-      perfil_tecla(SDLK_DOWN);
-      assert(!perfil_foco_conquistas());
+      // Down opens profile controls without tracker data; reopen the summary
+      // to exercise its retry action independently of that newer page.
+      perfil_tecla(SDLK_ESCAPE);
+      assert(!perfil_aberto());
+      perfil_abrir();
       perfil_tecla(SDLK_RETURN);
       assert(perfil_pediu_atualizar() == (estados[j] != PERFIL_ESTADO_CARREGANDO));
     }
