@@ -3947,14 +3947,12 @@ static float desenharFaixas(const Stream *s, float x, float y, float w, int sel,
   }
   return altura;
 }
-static int audioDeclaradoEm(const Stream *s, const char *pref) {
-  const char *p = s->audioIdiomas;
-  const char *fim = p + strnlen(p, sizeof s->audioIdiomas);
-  // A mesma lista que aparece em "Audio:" governa o chip. Legendas nunca
-  // entram nesta leitura, e audio declarado prevalece sobre o nome do arquivo.
+static int audioListaEm(const char *p,size_t limite,const char *pref) {
+  const char *fim = p + strnlen(p,limite);
+  // Both lists contain audio language tokens; subtitle hints stay separate.
   while (p < fim) {
     const char *f = memchr(p, ',', (size_t)(fim - p)), *ate = f ? f : fim;
-    char raw[sizeof s->audioIdiomas + 1], codigo[32];
+    char raw[513], codigo[32];
     while (p < ate && isspace((unsigned char)*p)) p++;
     while (ate > p && isspace((unsigned char)ate[-1])) ate--;
     size_t len = (size_t)(ate - p);
@@ -3965,6 +3963,9 @@ static int audioDeclaradoEm(const Stream *s, const char *pref) {
     p = f ? f + 1 : fim;
   }
   return 0;
+}
+static int audioDeclaradoEm(const Stream *s,const char *pref) {
+  return audioListaEm(s->audioIdiomas,sizeof s->audioIdiomas,pref);
 }
 // O IDIOMA nao tem logo no pacote de selos, entao vai como texto no fim da
 // fileira. Os rotulos antigos continuam onde o addon nao informa audio;
@@ -3982,10 +3983,56 @@ static const char *idiomaDa(const Stream *s) {
 }
 static int temAudioPreferido(const Stream *s) {
   const char *pref = idiomaFiltroAudio();
-  // An explicit "All" (or an unresolved "Original") is not a guessed
-  // language. Otherwise require declared audio metadata, never subtitles,
-  // filenames or generic "dub/dual" labels whose language is unknown.
-  return !pref[0] || audioDeclaradoEm(s, pref);
+  // Explicit audio wins. Add-on release labels are a fallback only; their
+  // hints do not claim that a playback track has been inspected.
+  return !pref[0] || (s->audioIdiomas[0] ? audioDeclaradoEm(s,pref) :
+    audioListaEm(s->audioRotulos,sizeof s->audioRotulos,pref));
+}
+typedef struct {
+  int declarados,rotulos,desconhecidos,casaDeclarado,casaRotulo,soLegenda;
+  int regras,mp4,cache,addon,visiveis;
+} AudioFiltroResumo;
+static AudioFiltroResumo resumoFiltroAudio(void) {
+  AudioFiltroResumo r={0};
+  const char *pref=idiomaFiltroAudio();
+  for(int i=0;i<n;i++) {
+    const Stream *s=&lista[i];
+    if(s->audioIdiomas[0])r.declarados++;
+    else if(s->audioRotulos[0])r.rotulos++;
+    else r.desconhecidos++;
+    if(!temAudioPreferido(s)) {
+      if(pref[0] && audioListaEm(s->legendaIdiomas,sizeof s->legendaIdiomas,pref))r.soLegenda++;
+      continue;
+    }
+    if(s->audioIdiomas[0])r.casaDeclarado++;
+    else if(s->audioRotulos[0])r.casaRotulo++;
+    if(!canalFolha && !stream_filtro_permite(s))r.regras++;
+    else if(soMp4 && !s->mp4)r.mp4++;
+    else if(soCache && !cacheConfirmado(s))r.cache++;
+    else if(filtro<0 || (filtro && strcmp(s->provedor,provedores[filtro])))r.addon++;
+    else r.visiveis++;
+  }
+  return r;
+}
+static int logAudioValido;
+static void logarFiltroAudio(void) {
+  static unsigned geracao;
+  static int total,aba,mp4,cache,ativo;
+  static char idioma[32];
+  const char *pref=idiomaFiltroAudio();
+  if(logAudioValido && geracao==listaGeracao && total==n && aba==filtro &&
+     mp4==soMp4 && cache==soCache && ativo==soDub && !strcmp(idioma,pref))return;
+  logAudioValido=1;geracao=listaGeracao;total=n;aba=filtro;
+  mp4=soMp4;cache=soCache;ativo=soDub;snprintf(idioma,sizeof idioma,"%s",pref);
+  if(!soDub)return;
+  AudioFiltroResumo r=resumoFiltroAudio();
+  // Counts only: never log source URLs, filenames, descriptions or credentials.
+  // A zero match can now be distinguished from another chip hiding a match.
+  printf("[fonte] audio-filter language=%s total=%d declared=%d hinted=%d unknown=%d "
+         "matched-declared=%d matched-hints=%d subtitle-only=%d "
+         "blocked-rules=%d blocked-mp4=%d blocked-cache=%d blocked-tab=%d visible=%d\n",
+         pref[0]?pref:"all",n,r.declarados,r.rotulos,r.desconhecidos,
+         r.casaDeclarado,r.casaRotulo,r.soLegenda,r.regras,r.mp4,r.cache,r.addon,r.visiveis);
 }
 static const char *ajudaFiltroAudio(void) {
   static char ajuda[512];
@@ -4239,6 +4286,7 @@ static float medirDicaTorrents(void) {
   return dicaTorrentsAltura;
 }
 static void montarBase(int automatica) {
+  logarFiltroAudio();
   float y = 0;
   int g, i, k, m = -1, nt;
   int needed = filtro == -1 ? ondever_n(alvoPedido) : n;
@@ -4509,6 +4557,7 @@ static void desenharAudioBars(float x, float y, float alt, float alfa, Uint32 ag
 }
 
 void stream_folha_abrir(void) {
+  logAudioValido=0;
   // A busca nova pode estar na fila enquanto a lista ainda e do episodio
   // anterior. A folha fica vazia ate chegarem fontes do alvo pedido (#513).
   if (alvoPedido[0] && n > 0 && !stream_lista_do_alvo(alvoPedido))

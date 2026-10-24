@@ -54,6 +54,9 @@ typedef struct Stream {
   // Legendas anexadas pelo addon tambem contam, sem afirmar que sao embutidas.
   char audioIdiomas[512];
   char legendaIdiomas[512];
+  // Label hints for the audio chip only, used when declared audio is absent.
+  // Not verified tracks: never feed playback selection or the metadata rows.
+  char audioRotulos[512];
   // Metadados canonicos para as exclusoes compartilhadas. Independentes dos
   // badges importados e do tamanho exato exigido pelo StreamFit.
   FonteFiltroDados filtro;
