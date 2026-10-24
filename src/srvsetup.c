@@ -22,6 +22,7 @@
 #include "botoes.h"
 #include "revela.h"
 #include "teclavoltar.h"
+#include "ponteiro.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,7 +43,7 @@ static float entry, page, pageSeconds, focusAnim[SRV_VISAO_MAX + 8], scroll, scr
 static Uint32 motionTime;
 static float contentX, contentW;
 static GfxMini previousPage;
-static float bodyScroll, bodyVelocity, bodyTarget;
+static float bodyScroll, bodyVelocity, bodyTarget, userScroll, userVelocity, userTarget;
 static int bodyDrawing;
 static float lastButtonY, nextButtonX;
 static float sy(float y) {
@@ -226,7 +227,7 @@ static void change(int next) {
     gfx_mini_terminar();
   }
   screen = next; selected = 0; message[0] = 0;
-  bodyScroll = bodyVelocity = bodyTarget = 0;
+  bodyScroll = bodyVelocity = bodyTarget = userScroll = userVelocity = userTarget = 0;
   page = pageSeconds = scroll = scrollVelocity = 0;
   memset(focusAnim, 0, sizeof focusAnim);
 }
@@ -458,6 +459,8 @@ void srvsetup_atualizar(Uint32 now) {
   page = reduced ? 1 : anim_rampa(page, 1, dt, 180);
   if (page >= 1) gfx_mini_liberar(&previousPage);
   bodyScroll = anim_mola2_reduzida(&bodyVelocity, bodyScroll, bodyTarget, dt, NV_MOLA2_SCROLL, reduced);
+  if (screen == USERS && !worker.alive && selected < worker.n) userTarget = (float)(selected / 3 * 3);
+  userScroll = anim_mola2_reduzida(&userVelocity, userScroll, userTarget, dt, NV_MOLA2_SCROLL, reduced);
   pageSeconds += dt;
   for (int i = 0; i < SRV_VISAO_MAX + 8; i++) {
     float target = opened && selected == i ? 1 : 0;
@@ -567,10 +570,27 @@ static void text(int style, const char *s, float x, float y, int tone, float wid
 static void paragraph(const char *s, float x, float y, float width) {
   txt_bloco(TXT_ILHA_CORPO, i18n(s), 186, 192, 204, px(x), sy(y), pw(width), 32, 1, 3);
 }
-static void panel(float x, float y, float w, float h, float focus) {
+static void pointFocus(int i, int unused) { (void)unused; selected = i; }
+static void pointActivate(int i, int unused) { (void)unused; selected = i; activate(); }
+// Magic Remote target at the rect as drawn now: entry rise, body scroll and
+// the horizontal clip of the user group are applied, so it follows the motion.
+static float targetX0 = -1e9f, targetX1 = 1e9f;
+static void pointerTarget(GfxRect r, int id) {
+  if (!opened) return;
+  float x0 = fmaxf(r.x, targetX0), x1 = fminf(r.x + r.w, targetX1);
+  if (x1 <= x0) return;
+  r.x = x0; r.w = x1 - x0;
+  r.y += (1 - anim_suave(entry)) * NV_ENTRA_DY;
+  if (bodyDrawing) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, ANC(386), ANC(978), pointFocus, pointActivate, id, 0);
+  else {
+    if (gfx_escala_txt() > 1) r.y -= bodyScroll;
+    ponteiro_alvo(r.x, r.y, r.w, r.h, pointFocus, pointActivate, id, 0);
+  }
+}
+static void panel(float x, float y, float w, float h, int id) {
   GfxRect r = {px(x), sy(y), pw(w), bodyDrawing ? h : ANC(h)};
-  if (focus < 0) t21_ilha(r, T21_R_SHEET, 1);
-  else plrui_linha_foco(r, T21_R_ROW, focus);
+  if (id < 0) t21_ilha(r, T21_R_SHEET, 1);
+  else { plrui_linha_foco(r, T21_R_ROW, focusValue(id)); pointerTarget(r, id); }
 }
 static void logo(int p, float x, float y, float size) {
   x = px(x); y = sy(y);
@@ -586,6 +606,7 @@ static void button(int i, const char *label, float x, float y, float w) {
   float reveal = ajustes_animacoes_reduzidas() ? 1 :
     revela_entra(1, revela_onda_atraso(i < 8 ? i : 7, 0), 1 + (Uint32)(pageSeconds * 1000));
   plrui_botao(r.x, r.y + (1 - reveal) * NV_ENTRA_DY, localized, NULL, focusValue(i), reveal);
+  pointerTarget((GfxRect){r.x, r.y + (1 - reveal) * NV_ENTRA_DY, width, r.h}, i);
   lastButtonY = by; nextButtonX = bx + r.w + 12;
   if (selected == i && bodyDrawing) {
     float low = ANC(386), high = ANC(966);
@@ -603,7 +624,7 @@ static void row(int i, const char *title, const char *sub, float y, int p) {
     if (top < low) bodyTarget = fmaxf(0, bodyScroll + top - low);
     else if (top + 86 > high) bodyTarget = bodyScroll + top + 86 - high;
   }
-  panel(220,y,710,86,focusValue(i));
+  panel(220,y,710,86,i);
   if (p >= 0) logo(p,242,y+21,40);
   text(TXT_ILHA_NOME,title,p>=0?304:248,y+12,243,580);
   text(TXT_ILHA_SUB,sub,p>=0?304:248,y+48,186,580);
@@ -686,7 +707,7 @@ void srvsetup_desenhar(Uint32 now) {
   else if (gfx_escala_txt() > 1) {
     float target = selected >= nLibraries ? fmaxf(0, (1040 + 60) - ANC(966)) : 0;
     bodyTarget = target;
-    gfx_transformar(0, 0, 1, 0, -bodyScroll);
+    gfx_transformar(0, 0, 1, 0, -bodyScroll + (1 - anim_suave(entry)) * NV_ENTRA_DY);
   }
   if (screen == CHOOSE) {
     const char *desc[] = {"Vincule sua conta com um código. Escolha um servidor da sua conta ou da sua rede.","Encontre seu servidor. Use o Quick Connect ou entre com seu usuário do servidor.","Encontre seu servidor. Use o Emby Connect ou entre diretamente."};
@@ -695,7 +716,7 @@ void srvsetup_desenhar(Uint32 now) {
       float old = gfx_opacidade_grupo, x=200+i*550;
       gfx_opacidade_grupo *= reveal;
       t21_ilha((GfxRect){px(x), sy(405) + (1-reveal)*NV_ENTRA_DY, pw(523), 274}, T21_R_SHEET, 1);
-      panel(x,405,523,274,focusValue(i)); logo(i,x+34,428,66);
+      panel(x,405,523,274,i); logo(i,x+34,428,66);
       text(TXT_V2_GRUPO,providers[i],x+34,520,243,450); paragraph(desc[i],x+34,568,455);
       gfx_opacidade_grupo = old;
     }
@@ -729,16 +750,22 @@ void srvsetup_desenhar(Uint32 now) {
     text(TXT_ILHA_APOIO,"Remover a conexão não apaga arquivos do servidor.",232,800,155,1500);
   } else if (screen == USERS) {
     panel(200,386,750,402,-1);
-    int total=!worker.alive&&worker.n>0?worker.n:0,first=selected<total?(selected/3)*3:0;
+    int total=!worker.alive&&worker.n>0?worker.n:0;
     if(worker.alive)paragraph("Carregando…",232,440,680);
-    for(int j=0;j<3 && first+j<total;j++) {
-      int i=first+j;float x=232+j*182;
-      panel(x,442,150,202,focusValue(i));
+    // Groups of three slide as one strip: the outgoing group leaves while the next enters.
+    targetX0=px(222);targetX1=px(756);
+    gfx_recorte(targetX0,ANC(386),targetX1-targetX0,ANC(592));
+    for(int i=(int)floorf(userScroll);i<total&&i<(int)floorf(userScroll)+5;i++) {
+      if(i<0)continue;
+      float x=232+(i-userScroll)*182;
+      panel(x,442,150,202,i);
       GLuint avatar=worker.users[i].imagem[0]?tex_obter_larg(worker.users[i].imagem,100):0;
       if(avatar)gfx_rect((GfxRect){px(x+25),sy(458),100,100},avatar,GFX_AVATAR,0,0,0,.5f,1,1,1,1);
       else { gfx_cor((GfxRect){px(x+25),sy(458),100,100},.5f,1,1,1,.08f); gfx_icone((GfxRect){px(x+53),sy(486),44,44},"aj_user-round",.6f,.6f,.6f,1); }
       text(TXT_ILHA_NOME,worker.users[i].nome,x+10,582,243,130);
     }
+    targetX0=-1e9f;targetX1=1e9f;
+    gfx_recorte(contentX, ANC(386), contentW, ANC(592));
     button(total,"Trocar de usuário",232,674,270);
     button(total+1,provider==1?"Quick Connect":"Emby Connect",514,674,300);
     text(TXT_V2_GRUPO,"Perfil",1020,412,243,680);
@@ -762,7 +789,7 @@ void srvsetup_desenhar(Uint32 now) {
       if (usuarios) {
         GLuint avatar = worker.users[i].imagem[0] ? tex_obter_larg(worker.users[i].imagem, 64) : 0;
         if (avatar) gfx_rect((GfxRect){px(242),sy(421+j*88),64,64},avatar,GFX_AVATAR,0,0,0,.5f,1,1,1,1);
-        panel(220,410+j*88,710,86,focusValue(i));
+        panel(220,410+j*88,710,86,i);
       }
     }
     gfx_recorte(contentX, ANC(386), contentW, ANC(592));
@@ -817,7 +844,7 @@ void srvsetup_desenhar(Uint32 now) {
     int visible=nLibraries-first;if(visible>5)visible=5;
     for(int j=0;j<visible;j++) {
       int i=first+j;float y=394+(i-scroll)*100;
-      panel(820,y,1036,92,focusValue(i));
+      panel(820,y,1036,92,i);
       logo(provider,844,y+25,34);text(TXT_ILHA_NOME,libraries[i].titulo,902,y+14,243,900);
       text(TXT_ILHA_SUB,!strcmp(libraries[i].tipo,"group")?"Coleções":!strcmp(libraries[i].tipo,"list")?"Listas":"Biblioteca",902,y+50,145,900);
     }

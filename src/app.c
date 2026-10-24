@@ -7228,7 +7228,7 @@ static void desenharAtrasDoPainel(void *ctx) {
       default:              home_desenhar(agora);       break;
     }
   }
-  if (srvsetup_aberto()) srvsetup_desenhar(agora);
+  if (srvsetup_aberto()) { ponteiro_camada(); srvsetup_desenhar(agora); }
   CAMADA_SE(vertudo_aberta());
 #ifdef NV_TOUCH_UI
   if (!detail_cobre_tela()) sidebarToqueRegistrar(2);
@@ -7672,7 +7672,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades180_desenhar(agora);
   // O esmaecer de saida do guia da 2.0, por cima do app que ja voltou.
   if (!registro_aberto() && novidades20_visivel()) novidades20_desenhar(agora);
-  if (!registro_aberto()) comecar_desenhar(agora);        // so o esmaecer de saida
+  if (!registro_aberto() && comecar_visivel()) comecar_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades201_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades202_desenhar(agora);
   if (!registro_aberto()) resolver_desenhar(agora);        // so o esmaecer de saida

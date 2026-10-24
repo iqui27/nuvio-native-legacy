@@ -241,6 +241,50 @@ int main(int argc,char **argv){
       if (reduced) { assert(ajustes_animacoes_reduzidas()); assert(focusAnim[selected] == 1); }
     }
   }
+  // Pointer + user-strip regressions (review P1-2, P1-3).
+  {
+    const PonteiroAlvo *v; int n;
+    ponteiro_teste_toque(1);
+    dados_gravar("ajustes.txt","idioma 0\nanimacoes 0\n"); ajustes_dir(dados_dir()); assert(!ajustes_animacoes_reduzidas());
+    opened=1; provider=1; change(USERS); worker.n=5; entry=1; selected=2;
+    for(int j=0;j<5;j++) snprintf(worker.users[j].nome,96,"User%d",j);
+    for(int f=0;f<120;f++){shotTime+=16;srvsetup_atualizar(shotTime);}
+    assert(userScroll<.01f);
+    ponteiro_camada(); srvsetup_desenhar(shotTime); ponteiro_desenhar();
+    n=ponteiro_teste_lista(&v); assert(n>=5);
+    int cards=0; for(int j=0;j<n;j++) if(v[j].focar&&v[j].ativar&&v[j].a<5) cards++;
+    assert(cards>=3);
+    // 3rd -> 4th user: group must slide, never jump.
+    key(SDLK_RIGHT); assert(selected==3);
+    float prev=userScroll, firstStep=-1, maxStep=0; int mid=0;
+    for(int f=0;f<120;f++){
+      shotTime+=16; srvsetup_atualizar(shotTime);
+      assert(userScroll>=-.01f && userScroll<=3.05f);
+      if(userScroll>.05f && userScroll<2.95f) mid++;
+      if(firstStep<0 && userScroll>0) firstStep=userScroll;
+      if(userScroll-prev>maxStep) maxStep=userScroll-prev; prev=userScroll;
+    }
+    assert(mid>=3); assert(maxStep<2.0f); assert(fabsf(userScroll-3)<.02f);
+    // Pointer rect for the user card follows the animated scroll.
+    ponteiro_camada(); srvsetup_desenhar(shotTime); ponteiro_desenhar();
+    n=ponteiro_teste_lista(&v); float settledX=-1;
+    for(int j=0;j<n;j++) if(v[j].a==3&&v[j].focar) settledX=v[j].x;
+    assert(settledX>0);
+    key(SDLK_LEFT); key(SDLK_LEFT); key(SDLK_LEFT); assert(selected==0);
+    float xs[3]; for(int k=0;k<3;k++){
+      for(int f=0;f<6;f++){shotTime+=16;srvsetup_atualizar(shotTime);}
+      ponteiro_camada(); srvsetup_desenhar(shotTime); ponteiro_desenhar();
+      n=ponteiro_teste_lista(&v); xs[k]=-1;
+      for(int j=0;j<n;j++) if(v[j].a==3&&v[j].focar) xs[k]=v[j].x;
+    }
+    assert(xs[0]!=xs[1]||xs[1]!=xs[2]); assert(xs[0]>0);
+    assert(xs[0]<=settledX+200 || xs[0]>=0);
+    // Closed wizard registers no targets.
+    srvsetup_fechar(); for(int f=0;f<60;f++){shotTime+=16;srvsetup_atualizar(shotTime);}
+    ponteiro_camada(); srvsetup_desenhar(shotTime); ponteiro_desenhar();
+    n=ponteiro_teste_lista(&v); for(int j=0;j<n;j++) assert(!(v[j].focar==pointFocus));
+    ponteiro_teste_toque(0);
+  }
   puts("Setup D-pad: bounded focus, Back, safe removal default, library toggle: PASS");
   return 0;
 }

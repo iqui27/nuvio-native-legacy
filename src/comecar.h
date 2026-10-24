@@ -31,6 +31,7 @@ void comecar_decidir(int loginNovo);
 void comecar_abrir(void);
 
 int  comecar_aberto(void);
+int  comecar_visivel(void);
 void comecar_evento(const SDL_Event *e);
 void comecar_atualizar(float dt, Uint32 agora);
 // Desenha a tela inteira, ou o fim do esmaecer de saida por cima do app.
