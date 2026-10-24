@@ -784,11 +784,12 @@ static int todosProntos(const JsMotor *m) {
 static void cabecalhoSala(float a) {
   char c[96];
   float esquerda = -origemX + 80, direita = NV_VTELA_W - origemX - 80;
-  gfx_icone((GfxRect){ esquerda, 54 - fminf(0, origemY), 36, 36 }, "aj_users", 0.92f, 0.92f, 0.9f, a);
-  txt_tracking(TXT_V2_KICK, i18n("Assistir Juntos"), 245, 245, 245, esquerda + 56, 60 - fminf(0, origemY), a, 2.5f);
+  float y = (NV_VTELA_W < 1600 ? 24 : 54) - fminf(0, origemY);
+  gfx_icone((GfxRect){ esquerda, y, 36, 36 }, "aj_users", 0.92f, 0.92f, 0.9f, a);
+  txt_tracking(TXT_V2_KICK, i18n("Assistir Juntos"), 245, 245, 245, esquerda + 56, y + 6, a, 2.5f);
   snprintf(c, sizeof c, "%s", i18n("Velvet Cinema · Sala privada"));
-  gfx_cor((GfxRect){ direita - largura(TXT_ILHA_NOME, c) - 24, 68 - fminf(0, origemY), 8, 8 }, 0.5f, 0.85f, 0.85f, 0.85f, a);
-  texto(TXT_ILHA_NOME, c, direita - largura(TXT_ILHA_NOME, c), 54 - fminf(0, origemY), 225, a, 0);
+  gfx_cor((GfxRect){ direita - largura(TXT_ILHA_NOME, c) - 24, y + 14, 8, 8 }, 0.5f, 0.85f, 0.85f, 0.85f, a);
+  texto(TXT_ILHA_NOME, c, direita - largura(TXT_ILHA_NOME, c), y, 225, a, 0);
 }
 
 // Remote members expose a verdict, not their private stream metadata.
@@ -910,8 +911,8 @@ static void desenharSala(void) {
   nm = m->sala.n < 5 ? m->sala.n : 5;
   vazio = nm < 5;
   gfx_cor(telaReal(), 0, 0.06f, 0.055f, 0.08f, a);
-  cabecalhoSala(a);
   telaCinema(tela, 0.7f, a);
+  cabecalhoSala(a);
   snprintf(linha, sizeof linha, i18n("Sua sessão privada · %d de %d lugares"), nm, 5);
   texto(TXT_CAPTION, linha, textoX, textoY + 56, 235, a, tela.w - 96);
   txt_bloco_corta(TXT_ILHA_TITULO, i18n("Os melhores lugares são juntos"), 250, 250, 250, textoX, textoY + 92, 460, 52, a, 2);
