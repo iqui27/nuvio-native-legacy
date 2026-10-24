@@ -33,7 +33,12 @@
 #include <OpenGL/gl.h>
 #endif
 
+#include "j4_proof.h"
 static GLuint fbo, fboTex;
+static void proof_reset(void) { conquistas_teste_esquecer(); conquistas_abrir(); }
+static void proof_focus(void) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;conquistas_evento(&e); }
+static void proof_step(float dt) { conquistas_atualizar(dt,SDL_GetTicks()); }
+static void proof_draw(void) { conquistas_desenhar(SDL_GetTicks()); }
 
 static void evento(int tipo, SDL_Keycode k) {
   SDL_Event e;
@@ -133,7 +138,7 @@ static void conferir_layout(const char *onde) {
   assert(n > 0);
   for (i = 0; i < n; i++) {
     if (rs[i].x < 0 || rs[i].y < 0 || rs[i].x + rs[i].w > 1920.5f || rs[i].y + rs[i].h > 1080.5f ||
-        rs[i].w < 40 || rs[i].h < 40) {
+        rs[i].w < 40 || rs[i].h < ((ids[i] >= 10 && ids[i] < 15) ? 44 * ajustes_escala_texto() - .5f : 40)) {
       printf("FALHA (%s): alvo %d fora da tela ou pequeno (%.0f,%.0f %.0fx%.0f)\n", onde, ids[i], rs[i].x, rs[i].y, rs[i].w, rs[i].h);
       exit(1);
     }
@@ -338,10 +343,11 @@ int main(int argc, char **argv) {
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
   gfx_tex_esquecer(0);
-  gfx_icones_dir("deploy/app/art");
+  char *art=realpath("deploy/app/art",NULL);assert(art);gfx_icones_dir(art);free(art);
 
   assert(ajustes_conquistas() && ajustes_conquistas_aviso());
   semear();
+  j4_proof("achievements",proof_reset,proof_focus,proof_step,proof_draw);
 
   // ---- Hub: layout, varredura D-pad, captura.
   conquistas_teste_esquecer();
