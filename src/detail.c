@@ -3832,6 +3832,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     }
   }
   if (!aberto) { blocoAnt[0] = blocoAnt[1] = blocoAnt[2] = -1.0f; return; }
+  if (pessoaAberta && filmo_atualizar(dt)) pessoaAberta = 0;
   if (pessoaAberta && pessoa_falhou()) {
     pessoaAberta = 0;
     ilha_avisar("det-elenco-sem-pagina", ILHA_INFO, NULL,
