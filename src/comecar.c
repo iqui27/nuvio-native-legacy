@@ -8,6 +8,8 @@
 #include "comecarregra.h"
 #include "ajustes.h"
 #include "anim.h"
+#include "revela.h"
+#include "teclavoltar.h"
 #include "botoes.h"
 #include "dados.h"
 #include "gfx.h"
@@ -47,11 +49,15 @@ typedef struct { int id; GfxRect r; } Item;
 static int   aberto, passo, foco = B_PRINC, pedido, esperaTeclado, decidido, temDados;
 static Uint32 backDesde, backUltimo;   // relogio proprio: main.c zera o evento LG
 static int backPressionado, backVisto;
-static float entrada;
+static float entrada, pagina, tempoPasso, focoAnim[B_PULAR + 1];
 static ComecarSalvo dados;   // o que a pessoa esta preenchendo (so vai ao disco no fim)
 static ComecarSalvo antes;   // o que ja estava gravado quando a tela abriu
 
-static const unsigned CORES[COMECAR_CORES] = { 0x7c5cff, 0xe0565b, 0x00a88f, 0xf0a030, 0x3d8bff, 0xe05aa0 };
+// Profile identity colors; never used for navigation focus.
+static const SDL_Color CORES[COMECAR_CORES] = {
+  {124,92,255,255}, {224,86,91,255}, {0,168,143,255},
+  {240,160,48,255}, {61,139,255,255}, {224,90,160,255}
+};
 
 int comecar_aberto(void) { return aberto; }
 int comecar_passo(void) { return passo; }
@@ -110,11 +116,14 @@ static void ir_passo(int p) {
   if (p != passo) importarfluxo_cancelar();
   passo = p < 0 ? 0 : p >= PASSOS ? PASSOS - 1 : p;
   foco = foco_padrao();
+  pagina = tempoPasso = 0;
+  memset(focoAnim, 0, sizeof focoAnim);
 }
 
 static void abrir(void) {
   aberto = 1;
-  entrada = 0.0f;
+  entrada = pagina = tempoPasso = 0.0f;
+  memset(focoAnim, 0, sizeof focoAnim);
   pedido = COMECAR_PEDIU_NADA;
   esperaTeclado = 0;
   backPressionado = backVisto = 0;
@@ -158,7 +167,8 @@ static const char *rotulo_botao(int id) {
   if (id == B_PULAR) return i18n("Pular tudo");
   switch (passo) {
     case 0: return i18n("Continuar");
-    case 1: return id == B_VOLTAR ? i18n("Voltar") : i18n("Pular este passo");
+    case 1: return id == B_VOLTAR ? i18n("Voltar") :
+      i18n(importarfluxo_estado() == IMPF_OK ? "Continuar" : "Pular este passo");
     case 2: return id == B_VOLTAR ? i18n("Voltar") : i18n("Continuar");
     default: return id == B_PRINC ? i18n("Ir para a Home") : i18n("Fazer o tour · 1 min");
   }
@@ -199,7 +209,6 @@ static void rodape(Item *it, int *n) {
   else {
     if (passo > 0) ids[k++] = B_VOLTAR;
     ids[k++] = B_PRINC;
-    ids[k++] = B_PULAR;
   }
   for (i = 0; i < k; i++) {
     int prim = ids[i] == B_PRINC;
@@ -207,6 +216,10 @@ static void rodape(Item *it, int *n) {
     float h = prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
     poe(it, n, ids[i], x, yc - h * 0.5f, w, h);
     x += w + BOTAO_GAP;
+  }
+  if (passo < PASSOS - 1) {
+    float w = botao_largura(rotulo_botao(B_PULAR), NULL, 0);
+    poe(it, n, B_PULAR, MARGEM + largura - w, ANC(T21_SAFE_T), w, BOTAO_H_SECUNDARIO);
   }
 }
 
@@ -287,8 +300,7 @@ static void comecar_evento_(const SDL_Event *e) {
   if (teclado_aberto()) { teclado_evento(e); return; }
   if (e->type != SDL_KEYDOWN && e->type != SDL_KEYUP) return;
   k = e->key.keysym.sym;
-  if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE ||
-      k == SDLK_DELETE || e->key.keysym.scancode == NV_SCANCODE_BACK) {
+  if (nv_tecla_voltar(e)) {
     Uint32 agora = SDL_GetTicks();
     if (e->type == SDL_KEYUP) { backPressionado = 0; return; }
     // O Back LG traduzido nao tem repeat/timestamp. Descida volta uma vez;
@@ -328,8 +340,14 @@ void comecar_atualizar(float dt, Uint32 agora) {
     } else if (r == TECLADO_CANCELOU) esperaTeclado = 0;
   }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
-  if (red) { entrada = aberto ? 1.0f : 0.0f; return; }
   entrada = t21_entrada(entrada, dt, aberto);
+  pagina = red ? 1 : anim_rampa(pagina, 1, dt, 180);
+  tempoPasso += dt;
+  for (int i = 0; i <= B_PULAR; i++) {
+    float target = aberto && foco == i ? 1 : 0;
+    focoAnim[i] = red ? target : anim_mola(focoAnim[i], target, dt,
+                         target > focoAnim[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+  }
 }
 
 // ------------------------------------------------------------------- desenho
@@ -340,10 +358,8 @@ static void txt_em(TxtEstilo est, const char *s, float x, float y, float maxW, i
   txt_desenhar_alpha(l, x, y, a);
 }
 
-static void cor_hex(unsigned h, float *r, float *g, float *b) {
-  *r = (float)((h >> 16) & 255) / 255.0f;
-  *g = (float)((h >> 8) & 255) / 255.0f;
-  *b = (float)(h & 255) / 255.0f;
+static void cor_perfil(SDL_Color c, float *r, float *g, float *b) {
+  *r = c.r / 255.0f; *g = c.g / 255.0f; *b = c.b / 255.0f;
 }
 
 static void pt_foco(int id, int nada) { (void)nada; foco = id; }
@@ -352,26 +368,25 @@ static void alvo(GfxRect r, int id) {
   if (aberto) ponteiro_alvo(r.x, r.y, r.w, r.h, pt_foco, NULL, id, 0);
 }
 
-// Superficie de um cartao/linha: repouso cinza tingido, foco na cor de realce.
-// Devolve as tintas de texto (principal e secundaria) para ESSE estado.
-static void superficie(GfxRect r, float raioPx, int focado, float a, Tinta *pri, Tinta *sec) {
-  if (focado) {
-    float fr, fg, fb, t = botao_cor_foco(&fr, &fg, &fb);
-    int p = (int)(t * 255.0f + 0.5f);
-    botao_luz(r, 1.0f, a);
-    gfx_cor(r, raioPx / r.h, fr, fg, fb, a);
-    *pri = (Tinta){ p, p, p };
-    *sec = p > 128 ? (Tinta){ 238, 238, 238 } : (Tinta){ 60, 60, 60 };
-  } else {
-    gfx_cor(r, raioPx / r.h, 0.14f, 0.15f, 0.17f, 0.92f * a);
-    *pri = (Tinta){ 243, 242, 239 };
-    *sec = (Tinta){ 186, 192, 204 };
-  }
+static float entrada_item(GfxRect *r, int i) {
+  float p = ajustes_animacoes_reduzidas() ? 1 :
+    anim_saida(anim_atraso(tempoPasso, i, T21_STAGGER_MS, T21_ENTER_MS));
+  float a = gfx_opacidade_grupo;
+  gfx_opacidade_grupo *= p;
+  r->y += (1 - p) * NV_ENTRA_DY;
+  return a;
 }
 
-static void bola(float x, float y, float lado, const char *letra, const char *icone, Tinta t, int focado, float a) {
+// Shared neutral row focus keeps readable ink in both materials.
+static void superficie(GfxRect r, float raioPx, float f, float a, Tinta *pri, Tinta *sec) {
+  plrui_linha_foco(r, raioPx, f * a);
+  *pri = (Tinta){243, 242, 239};
+  *sec = (Tinta){186, 192, 204};
+}
+
+static void bola(float x, float y, float lado, const char *letra, const char *icone, Tinta t, float focado, float a) {
   GfxRect b = { x, y, lado, lado };
-  gfx_cor(b, 0.31f, 1, 1, 1, focado ? 0.16f : 0.07f * a);
+  gfx_cor(b, 0.31f, 1, 1, 1, (.07f + .09f * focado) * a);
   if (icone) gfx_icone((GfxRect){ x + lado * 0.28f, y + lado * 0.28f, lado * 0.44f, lado * 0.44f }, icone,
                        (float)t.r / 255.0f, (float)t.g / 255.0f, (float)t.b / 255.0f, a);
   else if (letra) {
@@ -396,7 +411,7 @@ static void avatar(float cx, float cy, float lado, float a) {
   float r, g, b;
   char ini[8];
   TxtLinha l;
-  cor_hex(CORES[dados.cor], &r, &g, &b);
+  cor_perfil(CORES[dados.cor], &r, &g, &b);
   gfx_cor((GfxRect){ cx - lado * 0.5f, cy - lado * 0.5f, lado, lado }, 0.5f, r, g, b, a);
   inicial(ini, sizeof ini);
   l = txt_linha(TXT_NOV_TITULO, ini, 255, 255, 255, 255);
@@ -408,7 +423,8 @@ static const char *nome_exibido(void) { return dados.nome[0] ? dados.nome : i18n
 static void cabecalho(float a) {
   static const char *const ROT[PASSOS] = { "1 · Perfil", "2 · Trazer suas coisas", "3 · Acompanhar", "4 · Pronto" };
   float inicio = fminf(400.0f, largura * .24f);
-  float ar, ag, ab, segW = (largura - inicio - 3.0f * 12.0f) / 4.0f;
+  float skip = passo < PASSOS - 1 ? botao_largura(rotulo_botao(B_PULAR), NULL, 0) + BOTAO_GAP : 0;
+  float ar, ag, ab, segW = (largura - inicio - skip - 3.0f * 12.0f) / 4.0f;
   int i;
   txt_em(TXT_NOV_TITULO, "nuvio", ox + MARGEM, ANC(T21_SAFE_T), inicio - 24.0f, 243, 242, 239, a);
   ajustes_acento(&ar, &ag, &ab);
@@ -416,7 +432,11 @@ static void cabecalho(float a) {
     float x = ox + MARGEM + inicio + (float)i * (segW + 12.0f);
     GfxRect s = { x, ANC(T21_SAFE_T) + 10.0f, segW, 5.0f };
     if (i < passo) gfx_cor(s, 0.5f, 1, 1, 1, 0.55f * a);
-    else if (i == passo) gfx_cor(s, 0.5f, ar, ag, ab, a);
+    else if (i == passo) {
+      gfx_cor(s, .5f, 1, 1, 1, .12f * a);
+      s.w *= anim_saida(anim_atraso(tempoPasso, 0, 0, T21_ENTER_MS));
+      if (s.w > .01f) gfx_cor(s, .5f, ar, ag, ab, a);
+    }
     else gfx_cor(s, 0.5f, 1, 1, 1, 0.12f * a);
     txt_em(TXT_CAPTION, i18n(ROT[i]), x, ANC(T21_SAFE_T) + 26.0f, segW, i <= passo ? 186 : 120, i <= passo ? 192 : 126, i <= passo ? 204 : 138, a);
   }
@@ -438,7 +458,9 @@ static void desenha_passo0(float a) {
          820.0f, a);
   for (i = 0; i < n; i++) {
     GfxRect r = it[i].r;
-    int id = it[i].id, f = foco == id;
+    int id = it[i].id;
+    float f = focoAnim[id];
+    float grupo = entrada_item(&r, i);
     if (id == I_NOME) {
       superficie(r, 24.0f, f, a, &p, &s);
       if (dados.nome[0]) txt_em(TXT_ILHA_TITULO, dados.nome, r.x + 28.0f, r.y + (r.h - 48.0f) * 0.5f, r.w - 360.0f, p.r, p.g, p.b, a);
@@ -447,16 +469,16 @@ static void desenha_passo0(float a) {
       alvo(r, id);
     } else if (id >= I_COR0 && id < I_COR0 + COMECAR_CORES) {
       int c = id - I_COR0;
-      float fr, fg, fb, g = f ? 6.0f : 0.0f;
+      float fr, fg, fb, g = f * 6.0f;
       GfxRect d = { r.x - g, r.y - g, r.w + 2 * g, r.h + 2 * g };
-      cor_hex(CORES[c], &fr, &fg, &fb);
+      cor_perfil(CORES[c], &fr, &fg, &fb);
       gfx_cor(d, 0.5f, fr, fg, fb, a);
       if (c == dados.cor) {
-        gfx_anel((GfxRect){ d.x - 6.0f, d.y - 6.0f, d.w + 12.0f, d.h + 12.0f }, 0.5f, 3.0f, 1, 1, 1, 0.85f * a);
         gfx_icone((GfxRect){ d.x + d.w * 0.3f, d.y + d.h * 0.3f, d.w * 0.4f, d.h * 0.4f }, "aj_check", 1, 1, 1, a);
       }
       alvo(r, id);
     }
+    gfx_opacidade_grupo = grupo;
   }
   // O painel da direita: o perfil como vai ficar.
   { float x = ox + MARGEM + coluna + T21_GAP_BIG, cx = x + lateral * .5f;
@@ -480,10 +502,12 @@ static void desenha_passo1(float a) {
          i18n("Add-ons, catálogos e o que estava assistindo. Escolha uma; dá para juntar outra depois."), 860.0f, a);
   for (i = 0; i < n; i++) {
     GfxRect r = it[i].r;
-    int id = it[i].id, f = foco == id;
+    int id = it[i].id;
+    float f = focoAnim[id];
     float al = OP[id < 4 ? id : 0].breve ? 0.5f * a : a;
     Tinta p, s;
     if (id >= 4) continue;
+    float grupo = entrada_item(&r, i);
     superficie(r, 24.0f, f, a, &p, &s);
     bola(r.x + 26.0f, r.y + 20.0f, 64.0f, OP[id].letra, OP[id].icone, p, f, al);
     txt_em(TXT_ILHA_NOME, i18n(OP[id].nome), r.x + 114.0f, r.y + 20.0f, r.w - 300.0f, p.r, p.g, p.b, al);
@@ -496,12 +520,13 @@ static void desenha_passo1(float a) {
                 (float)s.r / 255.0f, (float)s.g / 255.0f, (float)s.b / 255.0f, a);
     }
     alvo(r, id);
+    gfx_opacidade_grupo = grupo;
   }
   // O painel da direita explica a opcao em foco; as apagadas dizem a verdade.
   { float x = ox + MARGEM + coluna + T21_GAP_BIG, y = ANC(330.0f), w = lateral;
     const char *t, *d;
     int extra = 0;
-    float ph = 340.0f;
+    float ph = 4 * 114.0f - 10;
     int ativo = (foco == I_STREMIO && importarfluxo_fonte() == IMPF_STREMIO) ||
                 (foco == I_AIO && importarfluxo_fonte() == IMPF_AIOM);
     ImpfEstado e = ativo ? importarfluxo_estado() : IMPF_PARADO;
@@ -519,7 +544,6 @@ static void desenha_passo1(float a) {
       else d = i18n(foco == I_STREMIO ? "Entre com a sua conta Stremio pelo celular. Os add-ons e a biblioteca vêm para cá."
                                       : "Cole no celular o link de exportação do AIOManager. Só os add-ons entram.");
       extra = e == IMPF_ESPERA;
-      if (extra && foco == I_AIO) ph = 480.0f;   // o cartao do celular (QR + endereco) pede altura
     } else if (foco == I_NUVIO) {
       t = i18n("Conta Nuvio");
       d = i18n("Você já entrou na sua conta Nuvio. Perfis, Ajustes e salvos de outras TVs chegam por ela.");
@@ -528,8 +552,7 @@ static void desenha_passo1(float a) {
       d = i18n("Você segue com o que já está nesta TV e junta o resto quando quiser.");
     }
     ph = fminf(ph, rodape_topo() - T21_GAP_CARD - y);
-    gfx_cor((GfxRect){ x, y, w, ph }, 32.0f / ph, 0.12f, 0.125f, 0.145f, 0.9f * a);
-    gfx_anel((GfxRect){ x, y, w, ph }, 32.0f / ph, 1.0f, 1, 1, 1, 0.08f * a);
+    t21_ilha((GfxRect){x, y, w, ph}, T21_R_SHEET, a);
     txt_em(TXT_ILHA_TITULO, t, x + 32.0f, y + 32.0f, w - 64.0f, 248, 249, 252, a);
     txt_bloco(TXT_V2_26, d, 200, 205, 215, x + 32.0f, y + 96.0f, w - 64.0f, 36.0f, 0.9f * a, extra ? 2 : 5);
     if (extra && foco == I_STREMIO && importarfluxo_codigo()[0]) {
@@ -556,11 +579,13 @@ static void desenha_passo2(float a) {
          1100.0f, a);
   for (i = 0; i < n; i++) {
     GfxRect r = it[i].r;
-    int id = it[i].id, f = foco == id;
+    int id = it[i].id;
+    float f = focoAnim[id];
     Tinta p, s;
     const char *st = NULL;
     int ligado = 0;
     if (id >= 3) continue;
+    float grupo = entrada_item(&r, i);
     if (id == I_TRAKT) {
       TraEstado e = traktauth_estado();
       ligado = trakt_ativo();
@@ -582,12 +607,12 @@ static void desenha_passo2(float a) {
                           (float)p.r / 255.0f, (float)p.g / 255.0f, (float)p.b / 255.0f, a);
     txt_em(TXT_CAPTION, i18n(st), r.x + 30.0f + (ligado ? 36.0f : 0.0f), r.y + r.h - 30.0f - 22.0f, r.w - 90.0f, p.r, p.g, p.b, a);
     alvo(r, id);
+    gfx_opacidade_grupo = grupo;
   }
   // O codigo do dispositivo: nao desenho QR, a pessoa digita no endereco.
   if (espera) {
     float x = ox + MARGEM, y = ANC(330.0f) + tracker_altura() + T21_GAP_CARD, w = largura;
-    gfx_cor((GfxRect){ x, y, w, 140.0f }, 28.0f / 140.0f, 0.12f, 0.125f, 0.145f, 0.9f * a);
-    gfx_anel((GfxRect){ x, y, w, 140.0f }, 28.0f / 140.0f, 1.0f, 1, 1, 1, 0.08f * a);
+    t21_ilha((GfxRect){x, y, w, 140}, T21_R_SHEET, a);
     txt_em(TXT_V2_26, i18n("Abra este endereço no celular e digite o código:"), x + 32.0f, y + 24.0f, w - 64.0f, 200, 205, 215, a);
     txt_em(TXT_ILHA_TITULO, url, x + 32.0f, y + 76.0f, w * .55f, 248, 249, 252, a);
     txt_tracking(TXT_NOV_TITULO, cod, 248, 249, 252, x + w - 44.0f - txt_tracking(TXT_NOV_TITULO, cod, 0, 0, 0, -1, 0, 0, 8.0f),
@@ -596,9 +621,7 @@ static void desenha_passo2(float a) {
 }
 
 static void linha_resumo(float x, float y, float w, const char *t, const char *d, float a) {
-  float ar, ag, ab;
-  ajustes_acento(&ar, &ag, &ab);
-  gfx_cor((GfxRect){ x, y + 4.0f, 36.0f, 36.0f }, 0.5f, ar, ag, ab, a);
+  plrui_material((GfxRect){x, y, w, 96}, T21_R_ROW, 0, a);
   gfx_icone((GfxRect){ x + 8.0f, y + 12.0f, 20.0f, 20.0f }, "aj_check", 1, 1, 1, a);
   txt_em(TXT_ILHA_NOME, t, x + 54.0f, y, w - 54.0f, 243, 242, 239, a);
   txt_bloco(TXT_CAPTION, d, 186, 192, 204, x + 54.0f, y + 36.0f, w - 54.0f, 26.0f, 0.92f * a, 2);
@@ -631,7 +654,7 @@ static void desenha_rodape(float a) {
     const char *ic = NULL;
     if (id < B_VOLTAR) continue;
     if (passo == PASSOS - 1) ic = id == B_PRINC ? "aj_house" : "aj_sparkles";
-    botao_pilula(it[i].r, rotulo_botao(id), ic, foco == id ? 1.0f : 0.0f, prim, 0, a);
+    botao_pilula(it[i].r, rotulo_botao(id), ic, focoAnim[id], prim, 0, a * (id == B_PULAR ? .72f + .28f * focoAnim[id] : 1));
     alvo(it[i].r, id);
   }
 }
@@ -643,10 +666,13 @@ void comecar_desenhar(Uint32 agora) {
   origem();
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0.051f, 0.051f, 0.051f, entrada);
   cabecalho(a);
-  if (passo == PASSOS - 1) desenha_passo3(a);
-  else if (passo == 0) desenha_passo0(a);
-  else if (passo == 1) desenha_passo1(a);
-  else desenha_passo2(a);
+  float p = anim_saida(pagina);
+  gfx_transformar(0, 0, 1, (1 - p) * T21_GAP_CARD, 0);
+  if (passo == PASSOS - 1) desenha_passo3(a * p);
+  else if (passo == 0) desenha_passo0(a * p);
+  else if (passo == 1) desenha_passo1(a * p);
+  else desenha_passo2(a * p);
+  gfx_sem_transformar();
   desenha_rodape(a);
   TXT_FIM();
   // O teclado da TV cuida da propria escala e vai por cima de tudo.
