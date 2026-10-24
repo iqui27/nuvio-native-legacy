@@ -20,10 +20,15 @@
 
 #include "j4_proof.h"
 static GLuint fbo, fboTex;
-static void proof_reset(void) { irPara(PG_MENU);aberto=1;anim=0; }
+static void semearBusca(void);
+static void proof_reset(void) {
+  semearBusca();irPara(PG_LISTA);listaOrigem=1;listaCarregando=0;
+  foco=1;coluna=0;aberto=1;anim=formaV=0;
+}
 static void proof_focus(void) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;pessoas_evento(&e); }
+static void proof_close(void) { aberto=0; }
 static void proof_step(float dt) { pessoas_atualizar(dt,SDL_GetTicks()); }
-static void proof_draw(void) { pessoas_desenhar(SDL_GetTicks()); }
+static void proof_draw(void) { shot_arte_desenhar(.35f);pessoas_desenhar(SDL_GetTicks()); }
 
 static void captura(const char *nome, SDL_Window *win) {
   int i;
@@ -69,6 +74,8 @@ static void pessoa(RecPessoa *p, const char *pub, const char *nome, const char *
   snprintf(p->relacao, sizeof p->relacao, "%s", rel);
   snprintf(p->selo, sizeof p->selo, "%s", selo);
   p->generos = g; p->emComum = comum;
+  snprintf(p->avatar,sizeof p->avatar,"deploy/app/art/elenco/09_%d.jpg",(int)strlen(pub)%6);
+  tex_obter(p->avatar);
 }
 
 static const char *saida, *prefixo;
@@ -357,7 +364,8 @@ int main(int argc, char **argv) {
   irPara(PG_PERFIL);
   shot("meu-perfil");
 
-  j4_proof("friends",proof_reset,proof_focus,proof_step,proof_draw);
+  semearBusca();j4_art_ready();
+  j4_proof("friends",proof_reset,proof_focus,proof_step,proof_draw,proof_close);
   printf("pronto\n");
   return 0;
 }

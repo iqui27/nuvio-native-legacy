@@ -36,6 +36,8 @@
 #include "escala.h"
 #include "ponteiro.h"
 #include "rolagemtoque.h"
+#include "movimento.h"
+#include "revela.h"
 #include "telefoneui.h"
 #include <stdio.h>
 #include <string.h>
@@ -110,6 +112,7 @@ static float linhaY[PE_MAXL];            // topo de cada linha dentro da lista
 static float conteudoH;
 static int   nL;
 static float focoAnim[PE_MAXL], colAnim[PE_MAXL];
+static float formaV;
 static char  aviso[220];
 static int   avisoErro;
 static Uint32 avisoAte;
@@ -848,7 +851,7 @@ void pessoas_atualizar(float dt, Uint32 agora) {
   if (!aberto && anim < 0.002f) { anim = 0.0f; return; }
   anim = ajustes_animacoes_reduzidas()
            ? (aberto ? 1.0f : 0.0f)
-           : anim_mola(anim, aberto ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
+           : mov_mola_assenta(&formaV, anim, aberto ? 1.0f : 0.0f, dt, MOV_MODAL_W, MOV_MODAL_Z);
   entradaItens += dt;
   teclado_atualizar(dt, agora);
   for (i = 0; i < PE_MAXL; i++) {
@@ -1419,7 +1422,8 @@ static void pessoas_desenharCorpo_(Uint32 agora) {
       GfxRect r = retLinha(hx, ry, h);
       ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, pnTopo, pnBase, ponteiroLinha, NULL, i, 0);
     }
-    float itemA = ajustes_animacoes_reduzidas() ? 1 : anim_atraso(entradaItens, i, 28, 320);
+    float itemA = ajustes_animacoes_reduzidas() ? 1 : revela_entra(1,
+      revela_onda_atraso(0, i), 1 + (Uint32)(entradaItens * 1000));
     ry += (1 - itemA) * 22;
     float salvoA = a; a *= itemA;
     switch (linhas[i].tipo) {
