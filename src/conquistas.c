@@ -1,6 +1,8 @@
 // CONQUISTAS. Ver conquistas.h.
 #include "conquistas.h"
 #include "conquistasdados.h"
+#include "conquistasarte.h"
+#include "tex_cache.h"
 #include "ajustes.h"
 #include "anim.h"
 #include "revela.h"
@@ -468,6 +470,27 @@ static void pilula(GfxRect r, const char *s, const char *ic, float foc, int sel,
   botao_pilula(r, s, ic, foc, 0, 0, a * (apagada ? .45f : 1));
 }
 
+// 3D object badge of one achievement (family x tier art). Returns 0 until the
+// texture is loaded, so the caller keeps the flat emblem as fallback.
+static char dirArteCq[256];
+void conquistas_arte_dir(const char *d) { snprintf(dirArteCq, sizeof dirArteCq, "%s", d && d[0] ? d : "."); }
+
+static void tinta_de(const CqEntrada *e, float *r, float *g, float *b) {
+  CqTinta t = cqarte_tinta(e->chave, e->familia, e->nivel);
+  *r = t.r / 255.0f; *g = t.g / 255.0f; *b = t.b / 255.0f;
+}
+
+static int objeto3d(GfxRect q, const CqEntrada *e, float a) {
+  char f[48], p[320];
+  GLuint t;
+  if (!cqarte_arquivo(e->chave, e->familia, e->nivel, f, sizeof f)) return 0;
+  snprintf(p, sizeof p, "%s/conquistas/%s", dirArteCq, f);
+  t = tex_obter_larg(p, q.w);
+  if (!t) return 0;
+  gfx_rect(q, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1, 1, 1, a);
+  return 1;
+}
+
 static void cadeado(GfxRect q, float a) {
   gfx_icone((GfxRect){q.x + q.w * .27f, q.y + q.h * .27f, q.w * .46f, q.h * .46f}, "aj_lock", .72f, .74f, .80f, a);
 }
@@ -486,6 +509,14 @@ static void emblema(float x, float y, float lado, int fam, int estado, float a) 
   gfx_cor(q, 0.32f, r, g, b, a);
   gfx_icone((GfxRect){ x + lado * 0.27f, y + lado * 0.27f, lado * 0.46f, lado * 0.46f }, ICO_FAM[fam],
             1, 1, 1, (estado ? 0.65f : 1.0f) * a);
+}
+
+static void emblema_e(float x, float y, float lado, const CqEntrada *e, float a) {
+  if (!objeto3d((GfxRect){ x, y, lado, lado }, e, a)) emblema(x, y, lado, e->familia, e->nivel >= 1 ? 0 : 1, a);
+}
+
+static const char *nome_nivel_arte(int nivel) {
+  return i18n(nivel <= 0 ? "A conquistar" : nivel == 1 ? "Bronze" : nivel <= 3 ? "Prata" : "Ouro");
 }
 
 static const char *nome_faixa(int f) {
@@ -520,16 +551,19 @@ static void desenha_card(GfxRect r, const CqEntrada *e, float foc, float a) {
   int i;
   superficie(r, T21_R_CARD, foc, a, &p, &s);
   mudo = MUDO;
-  float lado = 88 * (1 + .06f * foc);
-  emblema(r.x + 64 - lado / 2, r.y + 64 - lado / 2, lado, e->familia, e->nivel >= 1 ? 0 : 1, a);
-  bloco(TXT_ILHA_NOME, e->nome, p, x, r.y + 20.0f, w, 28.0f, a, 2);
+  float lado = 104 * (1 + .06f * foc);
+  tinta_de(e, &fr, &fg, &fb);
+  // Focus surface tinted by the achievement accent (no outline, no glow).
+  gfx_cor(r, T21_R_CARD, fr, fg, fb, .12f * foc * a);
+  emblema_e(r.x + 64 - lado / 2, r.y + 64 - lado / 2, lado, e, a);
+  texto(TXT_V2_KICK, nome_nivel_arte(e->nivel), x, r.y + 16.0f, w, (Tinta){ (int)(fr * 255), (int)(fg * 255), (int)(fb * 255) }, a);
+  bloco(TXT_ILHA_NOME, e->nome, p, x, r.y + 42.0f, w, 28.0f, a, 1);
   if (e->total > 0) snprintf(b, sizeof b, i18n("Nível %d de 5 · %d de %d"), e->nivel, e->vistos, e->total);
   else snprintf(b, sizeof b, i18n("Nível %d de 5"), e->nivel);
   texto(TXT_V2_18, b, x, r.y + 84.0f, w, s, a);
   // Barra de progresso e os cinco pontos de nivel.
   f = e->total > 0 ? (float)e->vistos / (float)e->total : 0.0f;
   if (f > 1.0f) f = 1.0f;
-  cor_hex(COR_FAM[e->familia], &fr, &fg, &fb);
   plrui_trilho((GfxRect){r.x + 20, r.y + 126, barW, 5}, f, fr, fg, fb, a);
   for (i = 0; i < CQ_NIVEIS; i++) {
     GfxRect q = {r.x + 20 + i * 18, r.y + 146, 12, 12};
@@ -589,7 +623,7 @@ static void desenha_retomar(float a) {
           p.x + 24.0f, p.y + 66.0f * k, COL_W - 48.0f, 32.0f, a, 5);
     return;
   }
-  emblema(p.x + 24.0f, p.y + 60.0f * k, 96.0f, st.e[c].familia, st.e[c].nivel >= 1 ? 0 : 1, a);
+  emblema_e(p.x + 24.0f, p.y + 60.0f * k, 96.0f, &st.e[c], a);
   bloco(TXT_ILHA_NOME, st.e[c].nome, PRI, p.x + 136.0f, p.y + 62.0f * k, COL_W - 160.0f, 28.0f, a, 2);
   snprintf(b, sizeof b, i18n("%d de %d filmes"), st.e[c].vistos, st.e[c].total);
   texto(TXT_V2_18, b, p.x + 136.0f, p.y + 128.0f * k, COL_W - 160.0f, SEC, a);
@@ -722,7 +756,7 @@ static void desenha_detalhe(float a) {
   kicker_trilha(k, sizeof k, i18n(FAM[e->familia].nome));
   texto(TXT_V2_KICK, k, MG + ox, ANC(108.0f) + oy, 900.0f, MUDO, a);
   // Coluna da esquerda: emblema, nome e estado.
-  emblema(ox + MG, oy + ANC(164.0f), 230.0f * colunaK, e->familia, nivel >= 1 ? 0 : 1, a);
+  emblema_e(ox + MG, oy + ANC(164.0f), 230.0f * colunaK, e, a);
   hh = bloco(TXT_NOV_TITULO, e->nome, PRI, ox + MG, oy + ANC(418.0f), 420.0f * colunaK, 58.0f, a, 2);
   y = oy + ANC(418.0f) + hh + 12.0f;
   snprintf(b, sizeof b, i18n(e->total > 0 && e->vistos >= e->total ? "Completa · nível %d de 5" : "Em andamento · nível %d de 5"), nivel);
@@ -743,7 +777,7 @@ static void desenha_detalhe(float a) {
     float fr, fg, fb;
     const char *regra, *estado;
     char rb[64], eb[48];
-    cor_hex(COR_FAM[e->familia], &fr, &fg, &fb);
+    tinta_de(e, &fr, &fg, &fb);
     t21_ilha(r, T21_R_ROW, a);
     {
       GfxRect c = { r.x + 22.0f, r.y + 32.0f, 44.0f, 44.0f };

@@ -348,7 +348,7 @@ int main(int argc, char **argv) {
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
   gfx_tex_esquecer(0);
-  char *art=realpath("deploy/app/art",NULL);assert(art);gfx_icones_dir(art);free(art);
+  char *art=realpath("deploy/app/art",NULL);assert(art);gfx_icones_dir(art);conquistas_arte_dir(art);free(art);
 
   assert(ajustes_conquistas() && ajustes_conquistas_aviso());
   semear();
