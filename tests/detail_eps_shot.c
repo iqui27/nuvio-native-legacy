@@ -112,7 +112,7 @@ static int fxTrailerVivo;
 static int fx_trailer_aberto(void) { return fxTrailerVivo; }
 #define trailer_aberto fx_trailer_aberto
 static Uint32 fxTick;
-static Uint32 fx_ticks(void) { return getenv("NV_EP_PERF") || getenv("NV_EP_FINAL_SHOTS") ? fxTick : SDL_GetTicks(); }
+static Uint32 fx_ticks(void) { return getenv("NV_EP_PERF") || getenv("NV_EP_FINAL_SHOTS") || getenv("NV_J1_SHOT") ? fxTick : SDL_GetTicks(); }
 #define SDL_GetTicks fx_ticks
 #ifdef NV_REACAO_DETAIL_SOURCE
 #include NV_REACAO_DETAIL_SOURCE
@@ -482,7 +482,7 @@ static void quadros(int n) {
     // do backdrop e as miniaturas dos episodios em cinza — de volta ao chao
     // chapado que este arquivo existe para nao ter.
     tex_bombear(3);
-    if (getenv("NV_EP_PERF") && !parado) fxTick += 16;
+    if ((getenv("NV_EP_PERF") || getenv("NV_J1_SHOT")) && !parado) fxTick += 16;
     if (!parado) detail_atualizar(1.0f / 60.0f, fx_ticks());
     if (fxTrailerVivo) trailerFade = 1.0f;
     txt_novo_quadro();
@@ -496,6 +496,7 @@ static void quadros(int n) {
     glClear(GL_COLOR_BUFFER_BIT);
     gfx_ambiente(1.0f);
     detail_desenhar(fx_ticks());
+    if (getenv("NV_REWATCH_SHOT")) rewatchui_desenhar();
     gfx_ambiente_descarregar();
     // MENU OVER THE PAGE (NV_MENU_SOBRE): the same order as app.c — page,
     // side menu on top, clock island last (always top-right).
@@ -733,6 +734,8 @@ int main(int argc, char **argv) {
     fclose(f);
     ajustes_dir(dados_dir()); }
 
+  if (getenv("NUVIO_SHOT_ESCALA_TEXTO")) gfx_escala_txt_definir(atof(getenv("NUVIO_SHOT_ESCALA_TEXTO")));
+  if (getenv("NUVIO_SHOT_VIDRO")) ajustes_definir_vidro(atoi(getenv("NUVIO_SHOT_VIDRO")));
   montarCatalogo();
   if (getenv("NV_674_SHOTS")) {
     itens[0].progresso = 0;
@@ -782,6 +785,20 @@ int main(int argc, char **argv) {
     assert(rewatchui_aberta() && !detail_pediu_reproduzir());
     quadros(120); rewatchui_desenhar();
     snprintf(nome,sizeof nome,"%s-start.png",saida); gravar(nome);
+    if (getenv("NV_J1_SHOT")) {
+      const int times[] = {0,80,160,320};
+      for (int sequence = 0; sequence < 2; sequence++) {
+        rwFoco = sequence ? 0 : 1;
+        if (sequence) { rwEntrada = 0; rwQuadro = fxTick; }
+        int elapsed = 0;
+        for (int frame = 0; frame < 4; frame++) {
+          while (elapsed < times[frame]) { quadros(1); elapsed += 16; }
+          if (frame == 0) { int wasPaused = parado; parado = 1; quadros(1); parado = wasPaused; }
+          snprintf(nome,sizeof nome,"%s-%s-%03d.png",saida, sequence ? "entry" : "focus",times[frame]); gravar(nome);
+        }
+      }
+      rwFoco = 0;
+    }
     // O soltar herdado da abertura nao inicia nada.
     rewatchui_evento(&ev); assert(!rewatch_ativa(IMDB_SERIE));
     ev.type=SDL_KEYDOWN; rewatchui_evento(&ev);
@@ -806,6 +823,7 @@ int main(int argc, char **argv) {
     quadros(120);
     snprintf(nome,sizeof nome,"%s-ended.png",saida); gravar(nome);
     puts("PASS: D-pad start/end, orphan OK, target, partial, session badge and preserved history");
+    if (getenv("NV_J1_SHOT")) return 0;
   } else if (getenv("NV_EP_FINAL_SHOTS")) { episodeShots(saida); return 0; }
   if (getenv("NV_EP_PERF")) {
     assert(ajustes_home_layout() == HOME_LAYOUT_MODERNA && ajustes_vidro());
