@@ -423,6 +423,9 @@ static int    trailerTentado = 0;
 // proximo degrau uma vez.
 static int    trailerEtapa = 0;
 static Uint32 trailerPrazo = 0;
+#ifdef __EMSCRIPTEN__
+static int trailerDublado, trailerEtapaCheia;
+#endif
 // ESQUERDA no comeco de QUALQUER fileira da pagina (e na coluna 0 da
 // filmografia, e na lista da colecao): o app abre a barra lateral POR CIMA da
 // pagina, que continua viva embaixo — mesmo foco, rolagem e trailer (dono,
@@ -544,7 +547,8 @@ static const char *trailerFonte(int k, int *qual, int cheia) {
   } else c.appleRespondeu = c.imdbRespondeu = 1;   // sem id nao ha o que esperar
 #ifdef __EMSCRIPTEN__
   if (k >= 0 && k < extras_n_trailers() && extras_trailer_yt(k)[0]) c.youtube = extras_trailer_yt(k);
-  else if (extras_n_trailers() > 0 && extras_trailer_yt(0)[0]) c.youtube = extras_trailer_yt(0);
+  else if (extras_n_trailers() > 0 && extras_trailer_yt(0)[0]) { k = 0; c.youtube = extras_trailer_yt(0); }
+  c.youtubeIdiomaPreferido = extras_trailer_idioma_preferido(k);
 #else
   (void)k;
 #endif
@@ -2636,7 +2640,7 @@ static int secaoN(int r) {
 // Este arquivo desenhava TRES nos dois casos.
 static int temInicio(void) {
   const CatItem *ci = cat_item(idx);
-  if (!ci || !detalheRetrato()) return 0;
+  if (!ci) return 0;
   // O MESMO criterio do player (player.c: retomarPct): progresso guardado
   // abaixo do Percentual assistido (ajustes_cw_concluido, 90 de fabrica). Em serie, so quando o episodio-alvo e o "Retomar" — com um
   // episodio em foco na fileira (origem 1) o primario toca AQUELE episodio e
@@ -2742,6 +2746,10 @@ static void maisDisponiveis(int d[DMAIS_N]) {
   d[DMAIS_REWATCH_FIM] = rw && rewatch_ativa(ci->imdb);
   const char *sin = sinopseDe(idx);
   d[DMAIS_SINOPSE] = sin && sin[0];
+  d[DMAIS_INICIO] = !detalheRetrato() && temInicio();
+  d[DMAIS_LEMBRAR] = !detalheRetrato() && temLembrar();
+  d[DMAIS_JUNTOS] = !detalheRetrato() && temJuntos();
+  d[DMAIS_TRAVAR] = !detalheRetrato() && temTravar();
 }
 static int temMais(void) {
   int d[DMAIS_N], i;
@@ -2813,11 +2821,17 @@ static int acaoEm(int n) {
 // "Assistir trailer" da linha de acoes passam por aqui). Voltar fecha o trailer
 // (trailer_evento) e a pagina continua com o mesmo foco.
 static void tocarTrailerCheio(int k) {
-  const char *u = trailer_suportado() ? trailerFonte(k, NULL, 1) : NULL;
+  int qual = 0;
+  const char *u = trailer_suportado() ? trailerFonte(k, &qual, 1) : NULL;
   if (u) {
     GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-    trailerEtapa = 0; trailerPrazo = 0;   // tela cheia: so o teclado fecha
-    trailer_abrir(u, tela, trailerfonte_com_som(trailerfonte_tizen()), 1);
+    trailer_abrir(u, tela, ajustes_trailer_som(), 1);
+#ifdef __EMSCRIPTEN__
+    trailerEtapa = qual;
+    trailerDublado = qual == TRF_YOUTUBE;
+    trailerEtapaCheia = 1;
+    trailerPrazo = SDL_GetTicks() + NV_TRAILER_PREPARA_MS;
+#endif
   }
 #ifdef __EMSCRIPTEN__
   // SAMSUNG: NUNCA o navegador (#136). O window.open do wgt trocava a
@@ -2829,12 +2843,55 @@ static void tocarTrailerCheio(int k) {
            extras_trailer_yt(k)[0]) {
     GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
     trailerEtapa = 0; trailerPrazo = 0;
-    trailer_abrir(extras_trailer_yt(k), tela, 0, 1);
+    trailer_abrir(extras_trailer_yt(k), tela, ajustes_trailer_som(), 1);
   }
 #else
   else extras_trailer_abrir(k);
 #endif
 }
+
+#ifdef __EMSCRIPTEN__
+static void trailerEscada(Uint32 agora, int topo) {
+  // O PRAZO. Tocou: o prazo morre (buffering depois de `playing` nao e
+  // falha). Nao tocou a tempo, ou o elemento deu erro (trailer_atualizar
+  // ja fechou e marcou trailer_falhou): loga e passa para a PROXIMA fonte da
+  // ordem do ajuste que tem trailer — em Automatico, Apple -> IMDb ->
+  // YouTube (o erro 153 do embed chega como -3 e anda na hora, #136); com
+  // uma fonte fixa nao ha proxima e fica a arte. Tela cheia (trailerEtapaCheia)
+  // entra tambem, fora do topo, e reabre em tela cheia.
+  // trailerEtapa: 0 nada, TRF_* a fonte aberta, -1 acabou.
+  if (trailerEtapa > 0) {
+    int venceu = trailer_aberto() && (trailerEtapaCheia || !trailer_cheia()) && !trailer_tocando() &&
+                 trailerPrazo && (Sint32)(agora - trailerPrazo) >= 0;
+    int errou = !trailer_aberto() && trailer_falhou();
+    if (trailer_aberto() && trailer_tocando()) trailerPrazo = 0;
+    if ((venceu || errou) && (topo || trailerEtapaCheia)) {
+      // A PROXIMA DA ORDEM QUE TEM TRAILER: Apple -> IMDb -> YouTube na
+      // Samsung (#136). Uma fonte da ordem sem trailer para o titulo e
+      // pulada, nao encerra a fila.
+      int (*depois)(int, int, int) = trailerDublado ? trailerfonte_depois_dublado : trailerfonte_depois;
+      int prox = depois(trailerfonte_ajuste(), trailerfonte_tizen(), trailerEtapa);
+      const char *seg = NULL;
+      while (prox && !(seg = trailerUrlDaFonte(prox)))
+        prox = depois(trailerfonte_ajuste(), trailerfonte_tizen(), prox);
+      printf("[trailer] detalhe: %s %d ms (%s, estado %d), %s%s\n",
+             errou ? "erro em" : "sem playing em", NV_TRAILER_PREPARA_MS,
+             trailerfonte_nome(trailerEtapa), trailer_estado(),
+             seg ? "tenta " : "fica a arte", seg ? trailerfonte_nome(prox) : "");
+      fflush(stdout);
+      if (trailer_aberto()) trailer_fechar();
+      if (seg) {
+        GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+        trailer_abrir(seg, tela, ajustes_trailer_som(), trailerEtapaCheia);
+        trailerEtapa = prox;
+        trailerPrazo = agora + NV_TRAILER_PREPARA_MS;
+      } else { trailerEtapa = -1; trailerPrazo = 0; }
+    } else if (!trailer_aberto() && !errou) {
+      trailerEtapa = 0; trailerPrazo = 0;   // fechou por fim ou por navegacao
+    }
+  }
+}
+#endif
 
 // ---- segurar OK numa lista da pagina (ctxlista.h) -------------------------
 // A celula em foco aceita o menu? Filmografia e saga: sempre que ha obra (o
@@ -2911,7 +2968,23 @@ static void abrirCredito(void) {
 // O QUE A ILHA "MAIS OPCOES" ESCOLHEU (detmais.h). Eram os ramos dos quatro
 // circulares que sairam da linha; o comportamento de cada um e o mesmo.
 static void executarMais(int dm) {
-  if (dm == DMAIS_REWATCH || dm == DMAIS_REWATCH_FIM) {
+  if (dm == DMAIS_INICIO) {
+    pedDoInicio = 1;
+  } else if (dm == DMAIS_LEMBRAR) {
+    const CatItem *ci = cat_item(idx);
+    if (ci && ci->imdb[0]) {
+      agenda_alternar_lembrete(ci->imdb);
+      lembreteEm = SDL_GetTicks();
+    }
+  } else if (dm == DMAIS_TRAVAR) {
+    trailer_fechar();
+    travaui_abrir(cat_item(idx), idx);
+  } else if (dm == DMAIS_JUNTOS) {
+    int t = 0, e = 0;
+    trailer_fechar();
+    if (ehSerie()) episodioAlvo(&t, &e, NULL);
+    juntosui_abrir_folha(idx, t, e);
+  } else if (dm == DMAIS_REWATCH || dm == DMAIS_REWATCH_FIM) {
     rewatchui_abrir(cat_item(idx), RW_ORIGEM_TITULO, 0, 0);
   } else if (dm == DMAIS_SINOPSE) {
     const CatItem *ci = cat_item(idx);
@@ -2959,7 +3032,8 @@ void detail_evento(const SDL_Event *e) {
       SDL_Keycode key=e->key.keysym.sym;
       if (key==SDLK_LEFT && notaEscolhida>1) notaEscolhida--;
       else if (key==SDLK_RIGHT && notaEscolhida<10) notaEscolhida++;
-      else if (key==SDLK_ESCAPE || key==SDLK_BACKSPACE) notaAberta=0;
+      else if (key==SDLK_ESCAPE || key==SDLK_BACKSPACE || key==SDLK_AC_BACK ||
+               key==SDLK_DELETE || e->key.keysym.scancode==NV_SCANCODE_BACK) notaAberta=0;
     } else if (e->type==SDL_KEYUP && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) {
       const CatItem *ci=cat_item(idx);
       if (ci && diario_avaliar(0,ci->imdb,ehSerie() ? DIARIO_SERIE : DIARIO_FILME,notaEscolhida)) {
@@ -3023,7 +3097,10 @@ void detail_evento(const SDL_Event *e) {
     episodios_menu_evento(e);
     // "Fontes deste episodio" e a porta que a pressao longa tomou do card:
     // antes dela, qualquer OK ali abria as fontes.
-    if (episodios_menu_pediu_fontes()) pedFontes = 1;
+    if (episodios_menu_pediu_fontes()) {
+      episodios_menu_fontes(&pedFontesT, &pedFontesE);
+      pedFontes = 1;
+    }
     return;
   }
 
@@ -3942,47 +4019,14 @@ void detail_atualizar(float dt, Uint32 agora) {
         // A etapa e a FONTE aberta (TRF_*), para o prazo saber qual e a
         // proxima na ordem do ajuste (trailerfonte_depois).
         trailerEtapa = qual;
+        trailerDublado = qual == TRF_YOUTUBE;
+        trailerEtapaCheia = 0;
         trailerPrazo = agora + NV_TRAILER_PREPARA_MS;
 #endif
       }
     }
 #ifdef __EMSCRIPTEN__
-    // O PRAZO. Tocou: o prazo morre (buffering depois de `playing` nao e
-    // falha). Nao tocou a tempo, ou o elemento deu erro (trailer_atualizar
-    // ja fechou e marcou trailer_falhou): loga e passa para a PROXIMA fonte da
-    // ordem do ajuste que tem trailer — em Automatico, Apple -> IMDb ->
-    // YouTube (o erro 153 do embed chega como -3 e anda na hora, #136); com
-    // uma fonte fixa nao ha proxima e fica a arte. Tela cheia nao entra aqui.
-    // trailerEtapa: 0 nada, TRF_* a fonte aberta, -1 acabou.
-    if (trailerEtapa > 0) {
-      int venceu = trailer_aberto() && !trailer_cheia() && !trailer_tocando() &&
-                   trailerPrazo && (Sint32)(agora - trailerPrazo) >= 0;
-      int errou = !trailer_aberto() && trailer_falhou();
-      if (trailer_aberto() && trailer_tocando()) trailerPrazo = 0;
-      if ((venceu || errou) && topo) {
-        // A PROXIMA DA ORDEM QUE TEM TRAILER: Apple -> IMDb -> YouTube na
-        // Samsung (#136). Uma fonte da ordem sem trailer para o titulo e
-        // pulada, nao encerra a fila.
-        int prox = trailerfonte_depois(trailerfonte_ajuste(), trailerfonte_tizen(), trailerEtapa);
-        const char *seg = NULL;
-        while (prox && !(seg = trailerUrlDaFonte(prox)))
-          prox = trailerfonte_depois(trailerfonte_ajuste(), trailerfonte_tizen(), prox);
-        printf("[trailer] detalhe: %s %d ms (%s, estado %d), %s%s\n",
-               errou ? "erro em" : "sem playing em", NV_TRAILER_PREPARA_MS,
-               trailerfonte_nome(trailerEtapa), trailer_estado(),
-               seg ? "tenta " : "fica a arte", seg ? trailerfonte_nome(prox) : "");
-        fflush(stdout);
-        if (trailer_aberto()) trailer_fechar();
-        if (seg) {
-          GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-          trailer_abrir(seg, tela, ajustes_trailer_som(), 0);
-          trailerEtapa = prox;
-          trailerPrazo = agora + NV_TRAILER_PREPARA_MS;
-        } else { trailerEtapa = -1; trailerPrazo = 0; }
-      } else if (!trailer_aberto() && !errou) {
-        trailerEtapa = 0; trailerPrazo = 0;   // fechou por fim ou por navegacao
-      }
-    }
+    if (!saindo) trailerEscada(agora, topo);
 #endif
     // trailer_mostra_video: no .tpk a arte fica ate o recorte do zoom
     // assentar (#178); na LG e no .wgt e sempre 1.
@@ -5338,7 +5382,7 @@ static void heroWeb(float a, float desloc) {
     primarioPct = -1;   // os outros botoes nao tem trilho
     if (a > 0.3f) ponteiro_alvo(rp.x, rp.y, rp.w, rp.h, ponteiroDetalhe, NULL, -1, nb);
     bx += rp.w + NV_DETW2_BTN_GAP; nb++;
-    if (temInicio()) {
+    if (detalheRetrato() && temInicio()) {
       // "Assistir do comeco" entre o primario e os circulares (issue #46).
       const char *rotIni = i18n("Assistir do começo");
       int selIni = nivel == 0 && botao == nb;

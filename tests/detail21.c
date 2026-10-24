@@ -3,7 +3,16 @@
 #define extras_comentario_spoiler comSpoilerFixture
 #define extras_n_comentarios comCountFixture
 #define extras_relacionado_imdb relFixture
+#define juntos_disponivel togetherAvailableFixture
+#define travaui_disponivel lockAvailableFixture
+#define juntosui_abrir_folha togetherOpenFixture
+#define travaui_abrir lockOpenFixture
 #include "../src/detail.c"
+static int eligible, roomT, roomE, lockIdx=-1;
+int togetherAvailableFixture(void) { return eligible; }
+int lockAvailableFixture(void) { return eligible; }
+void togetherOpenFixture(int i,int t,int e) { (void)i; roomT=t; roomE=e; }
+int lockOpenFixture(const CatItem *ci,int i) { (void)ci; lockIdx=i; return 1; }
 #undef extras_relacionado_imdb
 static int quoteCount;
 int quoteCountFixture(void) { return quoteCount; }
@@ -14,7 +23,7 @@ const char *relFixture(int i) { (void)i; return "tt9000011"; }
 #include <assert.h>
 #include "dados.h"
 
-int main(void) {
+int main(int argc, char **argv) {
   assert(SDL_Init(SDL_INIT_TIMER) == 0);
   dados_iniciar("deploy/app/art");
   ajustes_iniciar();
@@ -35,6 +44,48 @@ int main(void) {
   snprintf(itemTeste.imdb, sizeof itemTeste.imdb, "tt9000011");
   itemTeste.temporadas[0] = 1; itemTeste.nTemporadas = 1;
   cat_definir_tudo(&itemTeste, 1, NULL, 0); idx = 0;
+  if (argc > 1) {
+    SDL_Event key = {0}; key.type = SDL_KEYDOWN;
+    if (!strcmp(argv[1], "actions")) {
+      agenda_definir_hoje("2026-10-22");
+      agenda_registrar(itemTeste.imdb,"Fixture",NULL,"Returning Series",2,1,"Premiere","2027-01-01","");
+      eligible=1;
+      itemTeste.temporada=2; itemTeste.episodio=9; itemTeste.progresso=40;
+      cat_definir_tudo(&itemTeste,1,NULL,0);
+      int d[DMAIS_N]; maisDisponiveis(d);
+      assert(d[DMAIS_JUNTOS] && d[DMAIS_TRAVAR] && d[DMAIS_INICIO]);
+      executarMais(DMAIS_JUNTOS); assert(roomT==2 && roomE==9);
+      executarMais(DMAIS_TRAVAR); assert(lockIdx==0);
+      executarMais(DMAIS_INICIO); assert(pedDoInicio);
+      int before=agenda_lembrete(itemTeste.imdb);
+      executarMais(DMAIS_LEMBRAR); assert(agenda_lembrete(itemTeste.imdb)!=before);
+      int found = 0;
+      detmais_abrir(d);
+      for (int i=0; i<detmais_n(); i++)
+        if (!strcmp(detmais_rotulo(detmais_acao(i)), "Lembrar-me")) found=1;
+      assert(found); // landscape must retain the eligible reminder
+    } else if (!strcmp(argv[1], "sources")) {
+      itemTeste.temporada=2; itemTeste.episodio=9; itemTeste.progresso=40;
+      cat_definir_tudo(&itemTeste,1,NULL,0);
+      episodios_menu_visto(0,1,3,"Selected episode");
+      // This fixture has no watched later episodes: sources is row five.
+      key.key.keysym.sym=SDLK_DOWN;
+      for (int i=0;i<4;i++) detail_evento(&key);
+      key.key.keysym.sym=SDLK_RETURN; detail_evento(&key);
+      int t=0, ep=0;
+      assert(detail_pediu_fontes());
+      assert(detail_pediu_fontes_ep(&t,&ep) && t==1 && ep==3);
+    } else if (!strcmp(argv[1], "back")) {
+      SDL_Keycode backs[]={SDLK_ESCAPE,SDLK_BACKSPACE,SDLK_AC_BACK,SDLK_DELETE,SDLK_UNKNOWN};
+      for (int i=0;i<5;i++) {
+        notaAbrir(); key.key.keysym.sym=backs[i];
+        key.key.keysym.scancode=i==4 ? NV_SCANCODE_BACK : 0;
+        detail_evento(&key); assert(!notaAberta);
+        assert(!saindo && notaMinha()==0);
+      }
+    }
+    SDL_Quit(); return 0;
+  }
   CatEp ep = {0}; ep.temporada = 1; ep.episodio = 1;
   cat_definir_episodios(0, &ep, 1);
   FILE *f = fopen(path, "w"); assert(f);
@@ -156,7 +207,8 @@ int main(void) {
   foco.fileira=SEC_FRASES; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_UP;
   detail_evento(&e); assert(foco.fileira==SEC_COMENTARIOS);
   quoteCount=0; assert(parEsq(SEC_DETALHES)==-1);
-  // Hero enters the current episode; vertical moves keep that episode.
+  // A browsed episode stays selected; an unopened page instead seeds the default.
+  epEscolhido=1;
   sincronizarColunas(); nivel=0; botao=1; focoAmigos=0; carro=0; saindo=0;
   foco.colunaLembrada[SEC_EPISODIOS]=1;
   e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_DOWN; detail_evento(&e);

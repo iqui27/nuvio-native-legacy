@@ -17,4 +17,4 @@ cc "${flags[@]}" tests/detail21.c "${objs[@]}" -o "$OBJ/detail21" \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
 D=$(mktemp -d /tmp/nv21-resto-test.XXXXXX)
 trap 'rm -rf "$D"' EXIT
-NUVIO_DADOS="$D" "$OBJ/detail21"
+NUVIO_DADOS="$D" "$OBJ/detail21" "$@"
