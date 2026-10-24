@@ -253,7 +253,11 @@ static void motion_proof(const char *prefix, int step) {
   for (int kind = 0; kind < 2; kind++) {
     previa("estado=nenhum\nnome=Ana\ncor=1\n");
     ir_passo(step);
-    if (kind) { adiantar(45); tecla(SDLK_DOWN); }
+    if (kind) {
+      adiantar(45); int old = foco;
+      tecla(step == 0 ? SDLK_UP : step == 1 ? SDLK_DOWN : SDLK_RIGHT);
+      assert(foco != old);
+    }
     int previous = 0;
     for (int i = 0; i < 4; i++) {
       for (int t = previous; t < times[i]; t += 10) quadro(.01f);

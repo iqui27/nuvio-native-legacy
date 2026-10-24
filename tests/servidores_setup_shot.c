@@ -9,6 +9,14 @@ char shotServerNames[3][96];
 #define plex_servidor_nome shotPlexNome
 #define jellyfin_servidor_curto shotJfCurto
 #define emby_servidor_curto shotEmbyCurto
+#define plex_estado shotPlexEstado
+#define jellyfin_estado shotJellyfinEstado
+#define plex_entrar shotPlexEntrar
+#define plex_cancelar shotPlexCancelar
+#define jellyfin_cancelar shotJellyfinCancelar
+#define jellyfin_entrar_quick_connect shotJellyfinEntrar
+#define jellyfin_definir_servidor shotJellyfinServidor
+#define emby_definir_servidor shotEmbyServidor
 static int shotPlexConectado(void) { return shotServerNames[0][0] != 0; }
 static int shotJfConectado(void) { return shotServerNames[1][0] != 0; }
 static int shotEmbyConectado(void) { return shotServerNames[2][0] != 0; }
@@ -16,19 +24,29 @@ static const char *shotPlexNome(void) { return shotServerNames[0]; }
 static const char *shotJfCurto(void) { return shotServerNames[1]; }
 static const char *shotEmbyCurto(void) { return shotServerNames[2]; }
 #include "../src/srvsetup.c"
+PxEstado shotPlexEstado(char *out, size_t n) { if(out && n) snprintf(out,n,"H7KM"); return PX_EST_CODIGO; }
+JfEstado shotJellyfinEstado(char *out, size_t n) { if(out && n) snprintf(out,n,"482916"); return JF_EST_QC_CODIGO; }
+int shotPlexEntrar(void) { return 1; }
+void shotPlexCancelar(void) {}
+void shotJellyfinCancelar(void) {}
+int shotJellyfinEntrar(void) { return 1; }
+int shotJellyfinServidor(const char *url) { (void)url; return 1; }
+int shotEmbyServidor(const char *url) { (void)url; return 1; }
 #include "rail_shot.h"
 #include "home.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 static GLuint target;
 static int homeShot;
+static Uint32 shotTime = 30000;
+static int motionCapture;
 static void capture(const char *dir, const char *name) {
-  for (int i=0;i<45;i++) {
+  for (int i=0;i<(motionCapture ? 1 : 45);i++) {
     SDL_Delay(10);
     SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); gfx_novo_quadro();
     glBindFramebuffer(GL_FRAMEBUFFER,target);glViewport(0,0,1920,1080);glClear(GL_COLOR_BUFFER_BIT);
     if(homeShot) { home_atualizar(1.0f/60,codeSince+28000+i*16);home_desenhar(codeSince+28000+i*16); }
-    else { srvsetup_atualizar(codeSince+28000+i*16); srvsetup_desenhar(codeSince+28000); }
+    else { if (!motionCapture) { shotTime += 16; srvsetup_atualizar(shotTime); } srvsetup_desenhar(shotTime); }
     rail_shot_desenhar(homeShot?MENU_INICIO:MENU_BIBLIOTECA);glFinish();
   }
   unsigned char *pixels=malloc(1920*1080*4); assert(pixels);
@@ -46,7 +64,11 @@ int main(int argc,char **argv){
   SDL_Window *w=SDL_CreateWindow("Personal servers proof",0,0,64,64,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);assert(w);assert(SDL_GL_CreateContext(w));
   GLuint texture;glGenTextures(1,&texture);glBindTexture(GL_TEXTURE_2D,texture);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,1920,1080,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
   glGenFramebuffers(1,&target);glBindFramebuffer(GL_FRAMEBUFFER,target);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,texture,0);assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
-  gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(64);gfx_icones_dir("deploy/app/art");rail_shot_aplicar();
+  gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(64);
+  char art[1024];assert(realpath("deploy/app/art",art));gfx_icones_dir(art);rail_shot_aplicar();
+  dados_gravar("ajustes.txt","idioma 0\nmodernSidebar 0\ncollapseSidebar 1\n");ajustes_dir(dados_dir());
+  const char *scale=getenv("NUVIO_SHOT_ESCALA_TEXTO");gfx_escala_txt_definir(scale?atof(scale):1);
+  ajustes_definir_vidro(getenv("NUVIO_SHOT_VIDRO")?atoi(getenv("NUVIO_SHOT_VIDRO")):0);
   opened=1;profile=perfis_ativo();provider=0;codeSince=1000;change(CHOOSE);capture(argv[1],"setup-escolher");
   key(SDLK_RIGHT);assert(selected==1);key(SDLK_LEFT);assert(selected==0);key(SDLK_ESCAPE);assert(!opened);
   struct {int state,p;const char *name;} scenes[]={
@@ -72,7 +94,9 @@ int main(int argc,char **argv){
       // Manage and offline shots need all three rows live; discovery shows the
       // chosen provider only, as the approved fixture does.
       int live = screen==MANAGE||screen==REMOVE||screen==ERROR_SCREEN;
-      for(int p=0;p<3;p++) if(live || p==scenes[i].p || screen==CHOOSE) snprintf(shotServerNames[p],96,"%s",snames[p]); }
+      memset(shotServerNames,0,sizeof shotServerNames);
+      if(screen!=CODE && screen!=CONNECT_CODE && screen!=PASSWORD && screen!=LOGIN)
+        for(int p=0;p<3;p++) if(live || p==scenes[i].p || screen==CHOOSE) snprintf(shotServerNames[p],96,"%s",snames[p]); }
     for(int j=0;j<2;j++){
       const char *name=j?"Cinema":"Home";
       snprintf(worker.servers[j].nome,96,"%s",name);snprintf(worker.plex[j].nome,96,"%s",name);
@@ -92,6 +116,17 @@ int main(int argc,char **argv){
     if(!strcmp(scenes[i].name,"setup-buscando"))worker.alive=1;
     strcpy(username,"Marina");strcpy(password,"fixture");strcpy(addressText,"http://media.example.test:8096");
     capture(argv[1],scenes[i].name);worker.alive=0;
+    static const int moments[]={0,80,160,320};
+    for(int kind=0;kind<2;kind++) {
+      if(!kind){entry=page=pageSeconds=0;memset(focusAnim,0,sizeof focusAnim);}
+      else { for(int f=0;f<60;f++){shotTime+=16;srvsetup_atualizar(shotTime);} key(SDLK_RIGHT); }
+      motionCapture=1;int previous=0;
+      for(int t=0;t<4;t++) {
+        for(int ms=previous;ms<moments[t];ms+=10){shotTime+=10;srvsetup_atualizar(shotTime);}
+        char name[180];snprintf(name,sizeof name,"%s-%s-%03d",scenes[i].name,kind?"focus":"entry",moments[t]);capture(argv[1],name);previous=moments[t];
+      }
+      motionCapture=0;
+    }
   }
   static CatItem items[5];CatFileira ready={0};
   for(int i=0;i<5;i++){
@@ -113,6 +148,18 @@ int main(int argc,char **argv){
   screen=LOGIN;key(SDLK_ESCAPE);assert(screen==CHOOSE);
   screen=ROWS;key(SDLK_ESCAPE);assert(screen==READY);
   { screen=ADDRESS; provider=1; keyboard(1); capture(argv[1],"setup-manual-teclado"); field=0; teclado_esquecer(); }
+  teclado_esquecer();field=0;
+  static const int times[]={0,80,160,320};
+  for(int kind=0;kind<2;kind++) {
+    opened=1;entry=0;change(CHOOSE);
+    if(kind) { for(int i=0;i<60;i++){shotTime+=16;srvsetup_atualizar(shotTime);} key(SDLK_RIGHT); }
+    motionCapture=1;int previous=0;
+    for(int i=0;i<4;i++) {
+      for(int t=previous;t<times[i];t+=10){shotTime+=10;srvsetup_atualizar(shotTime);}
+      char name[128];snprintf(name,sizeof name,"setup-%s-%03d",kind?"focus":"entry",times[i]);capture(argv[1],name);previous=times[i];
+    }
+  }
+  motionCapture=0;
   puts("Setup D-pad: bounded focus, Back, safe removal default, library toggle: PASS");
   return 0;
 }
