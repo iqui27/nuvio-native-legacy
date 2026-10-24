@@ -2652,6 +2652,8 @@ int ajustes_pediu_livetv_diag(void) { int v = pediuLivetvDiag; pediuLivetvDiag =
 // escreve, e por isso os dois nunca discordam.
 static int focoItem = 0;
 static int focoOp = -1;
+static void aj4Focar(int op);
+static void aj4Iniciar(void);
 // Pedido do cartao de novidades ("Experimentar a cor viva"): a proxima
 // abertura pousa na linha da cor, dentro de Aparencia (ver ajustes_iniciar).
 static int abrirNaCor, abrirNaFonte, abrirNoLayout, abrirNoVidro, abrirNoTrakt, abrirNaEspera, abrirFileiras;
@@ -2819,6 +2821,10 @@ static char uxAviso[160];
 static Uint32 uxAvisoAte;
 static const char *textoValor(int op);
 static int ajOpcaoDisponivel(int op);
+static int aj4Evento(SDL_Keycode k);
+static int aj4RTL(void);
+static const char *aj4Rotulo(int op);
+static int aj4Simples(int op);
 static int uxTemPadrao(int op);
 static int uxDiferente(int op);
 static void uxCancelar(void);
@@ -6931,6 +6937,7 @@ int ajustes_iniciar(void) {
   // Reabre na categoria em que estava, com o foco no indice (ver focoIndice).
   if (secAtual < 0 || secAtual >= nSecoes) secAtual = 0;
   focoIndice = 1; uxChipAv = 0; uxTopo = -1;
+  aj4Iniciar();
   focarSecao(secAtual);
   uxTopo = -1; uxCabLayout = 0;
   // "Experimentar a cor viva" (cartao de novidades): abre em Aparencia com o
@@ -7709,6 +7716,7 @@ static void focarOpcao(int op) {
     if (uxAvancada(op) && !lig(AJ_AVANCADAS)) maisAberto[secDoItem[i]] = 1;
     focar(i);
     focoIndice = 0;
+    aj4Focar(op);
     return;
   }
 }
@@ -9877,6 +9885,7 @@ static int ehInterruptor(int op) {
 #include "ajustes_ux_dados.inc"
 #include "ajustes_ux_interacao.inc"
 #include "ajustes_ux_perfil.inc"
+#include "ajustes_ux_v4.inc"
 
 static const char *uxCaminho(int op);
 static const char *uxBloco(int op);
@@ -10238,6 +10247,10 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   // resultado antes de ela ver (e o apelido digitado se perderia em silencio).
   if (!pessoas_aberto()) hcTecladoLer();
   { int r = pessoas_aberto() ? TECLADO_NADA : teclado_resultado();
+    if (aj4BuscaTeclado && r != TECLADO_NADA) {
+      if(r==TECLADO_PRONTO)snprintf(aj4Consulta,sizeof aj4Consulta,"%s",teclado_texto());
+      aj4BuscaTeclado=0; teclado_esquecer(); r=TECLADO_NADA;
+    }
     if (r == TECLADO_PRONTO && stCampo) {
       size_t cap;char *rascunho=ajIptvRascunho(stCampo,&cap);
       if(rascunho) {
@@ -11029,6 +11042,7 @@ static AjPreview familiaPreviaOpcao(int op) {
 
 #include "ajustes_ux_desenho.inc"
 #include "ajustes_ux_perfil_desenho.inc"
+#include "ajustes_ux_v4_desenho.inc"
 
 #ifdef AJUSTES_TESTE
 void teclado_teste_texto(const char *t);
@@ -11055,7 +11069,7 @@ static void ajDesenharTudo(Uint32 agora) {
 #endif
   montarTela();
   if (guiaAberto) { ponteiro_camada(); guiaDesenhar(); return; }
-  ajDesenharTela();
+  aj4Desenhar();
 
   // A folha de fileiras cobre a lista; o vinculo cobre as duas, porque ele e a
   // unica coisa aqui com prazo (o codigo do dispositivo expira).
@@ -11297,6 +11311,28 @@ int ajustes_teste_quadro(const char *id) {
   ajArteFundoN = 12; ajMemFixa = 0; ajQuadroAddons = 0; ajQuadroPlugins = 0; ajVinculoTeste = 0;
   if (teclado_aberto()) { SDL_Event e = { 0 }; e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_ESCAPE; teclado_evento(&e); }
   aj2PoseFixa = 0;
+  if (!strncmp(id, "v4-", 3)) {
+    static const char *const PF_V4[] = { "Henrique" };
+    perfis_teste_definir(PF_V4, NULL, 1, 1);   // chip e escopo com nome, como o mockup
+    aj4Iniciar(); pfTela=0; uxVeioBusca=0;
+    valor[AJ_TEMA]=2; valor[AJ_AVANCADAS]=1;
+    if (!strcmp(id,"v4-inicio-avancado")) valor[AJ_AVANCADAS]=0;
+    else if (!strcmp(id,"v4-secao")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); aj4Grupos=0; }
+    else if (!strcmp(id,"v4-secao-grupos")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); }   // pagina de grupos com "Mais grupos"
+    else if (!strcmp(id,"v4-review")) {   // revisao com escopo misto (TV + perfil)
+      valor[AJ_AVANCADAS]=0;
+      valor[AJ_QUALIDADE_IMG]=1; valor[AJ_ANIM]=0; valor[AJ_VIDRO]=0; valor[AJ_GPU_EFEITOS]=0;
+      valor[AJ_HERO_TRAILER]=0; valor[AJ_DET_TRAILER_AUTO]=0; valor[AJ_TEX_MB]=1;
+      aj4PrepararPreset(2); focoIndice=0;
+    }
+    else if (!strcmp(id,"v4-submenu")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); aj4Grupo=aj4GrupoDe(AJ_FONTE_MANUAL); aj4Grupos=0; }
+    else if (!strcmp(id,"v4-opcao-lista")) { focarOpcao(AJ_QUALIDADE); uxAbrirEditor(AJ_QUALIDADE); }
+    else if (!strcmp(id,"v4-predefinicoes")) { aj4Util=2; focoIndice=0; }
+    else if (!strcmp(id,"v4-diferentes")) { valor[AJ_TEMA]=valorPadrao[AJ_TEMA]; valor[AJ_QUALIDADE]=2; valor[AJ_AUD_LINGUA]=1; valor[AJ_LEG_LINGUA]=2; aj4Escopo=0; aj4Util=1; focoIndice=0; }
+    else if (!strcmp(id,"v4-perfil")) { aj4AbrirPerfil(); }
+    else if (!strcmp(id,"v4-busca")) { aj4Consulta[0]=0; aj4Util=3; focoIndice=0; }
+    return 1;
+  }
   if (!strncmp(id, "v2-", 3)) {   // Ajustes v2 (ajustes-v2.html): os quadros do mockup
     valor[AJ_TEMA] = getenv("NUVIO_SHOT_TEMA") ? tema : 2;   // Oceano, como o mockup
     valor[AJ_LANDSCAPE] = 1;   // o mockup: "Pôsteres horizontais" desligado

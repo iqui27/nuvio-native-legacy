@@ -87,6 +87,7 @@ int  ajustes_guia_aberto(void);
 // Perfil e Stats" do guia: 1..5 na ordem, lido e zerado pelo app.c.
 enum { AJ_TELA_GUIA_TV = 1, AJ_TELA_BIBLIOTECA, AJ_TELA_AGENDA, AJ_TELA_EXPLORAR, AJ_TELA_PERFIL };
 int  ajustes_pediu_tela(void);
+int  ajustes_pediu_trocar_perfil(void);
 // O guia para o Spotlight no modo guia (spot_abrir_guia): as entradas que
 // casam com `consulta` (titulo antes de texto), os textos de cada uma e a
 // imagem dela; ajustes_guia_ir abre o guia na entrada.

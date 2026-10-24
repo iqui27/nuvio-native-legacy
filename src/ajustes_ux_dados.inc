@@ -439,6 +439,8 @@ int ajustes_buscar(const char *consulta, AjusteBuscaResultado *resultados, int c
     uxIndiceAcrescentar(indice, sizeof indice, titulo);
     uxIndiceAcrescentar(indice, sizeof indice, tituloPt);
     uxIndiceAcrescentar(indice, sizeof indice, aliases);
+    uxIndiceAcrescentar(indice, sizeof indice, aj4Rotulo(op));
+    uxIndiceAcrescentar(indice, sizeof indice, i18n(aj4Rotulo(op)));
     // 2.0.3: o nome de antes da linha (ROTULO NOVO), em portugues e traduzido.
     if (rotuloTecnico(op)) {
       uxIndiceAcrescentar(indice, sizeof indice, rotuloTecnico(op));
@@ -489,7 +491,7 @@ int ajustes_buscar(const char *consulta, AjusteBuscaResultado *resultados, int c
     else snprintf(caminho, sizeof caminho, "%s", i18n(item->secao));
     uxTextoCopiar(r->caminho, sizeof r->caminho, caminho);
     uxValorTexto(r->op, uxValorAtual(r->op), r->valor, sizeof r->valor);
-    r->avancado = uxAvancada(r->op);
+    r->avancado = !aj4Simples(r->op);
     r->bloqueado = inativa(r->op);
     { int k;
       for (k = 0; k < AJ_N_TELA; k++)

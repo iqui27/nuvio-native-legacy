@@ -5846,7 +5846,7 @@ void app_atualizar(float dt, Uint32 agora) {
     if (detail_aberto()) detail_fechar_seco();
     if (vertudo_aberta()) vertudo_fechar_seco();
   }
-  if (menu_pediu_trocar()) {
+  if (menu_pediu_trocar() || (tela == TELA_AJUSTES && ajustes_pediu_trocar_perfil())) {
     player_descartar_retido();
     fontevolta_esquecer("troca de usuario");
     invalidarPerfil();
