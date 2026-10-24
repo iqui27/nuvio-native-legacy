@@ -84,6 +84,10 @@ int main(void) {
   // Footer focus keeps the scrolled viewport instead of resetting it.
   pagina=CATALOGOS; snap.catalogos=8; scrollFoco=11;
   assert(janelaCatalogos()==3);
+  // Link/subtitle windows follow the fractional spring, rows fade across one slot (no integer jump).
+  scrollFoco=3.5f; float w=janela(2,8,3,1);
+  assert(w>1.4f && w<1.6f && (int)w==1);
+  assert(rolaAlfa(-.5f,3)>.45f && rolaAlfa(-.5f,3)<.55f && rolaAlfa(1,3)==1 && rolaAlfa(3,3)==0 && rolaAlfa(-1,3)==0);
   activeProfile=2; aioui_atualizar(0,100); assert(aioui_aberto());
   aioui_atualizar(.2f,300); assert(!aioui_aberto() && !base[0]);
   puts("aiostreams UI: setup, masked import, P2P, navigation and profile isolation passed");

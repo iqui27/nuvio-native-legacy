@@ -49,6 +49,8 @@ static Uint32 addonsTick;
 static float janela(int manter,int total,int visiveis,int ativo) {
   return ativo ? anim_clamp(scrollFoco-manter,0,fmaxf(0,total-visiveis)) : 0;
 }
+// Row at r slots from the window top fades in/out across one slot, so a fractional offset never pops.
+static float rolaAlfa(float r,int vis) { return anim_clamp(r+1,0,1)*anim_clamp(vis-r,0,1); }
 static float focoDe(int i,int nav) {
   return i>=0 && i<AIO_MAX+40 ? focoAnim[nav!=0][i] : 0;
 }
@@ -912,17 +914,20 @@ static void workspace(void) {
     texto(TXT_ILHA_SECAO,i18n("Addons"),453,285,650,220);
     listaPos=janela(2,nLegendas(),2,foco<=nLegendas()); int row=0, first=(int)listaPos;
     for(int i=0;i<snap.addons;i++) if(snap.addon[i].legenda) {
-      if(row>=first && row<first+2) linha(row+1,"aj_captions",snap.addon[i].nome,snap.addon[i].ativo?i18n("Ativado"):i18n("Desativado"),453,330+(row-listaPos)*100,980);
+      float r=row-listaPos, g=gfx_opacidade_grupo;
+      if(row>=first && row<=first+2) { gfx_opacidade_grupo=g*rolaAlfa(r,2); linha(row+1,"aj_captions",snap.addon[i].nome,snap.addon[i].ativo?i18n("Ativado"):i18n("Desativado"),453,330+r*100,980); gfx_opacidade_grupo=g; }
       row++;
     }
     gfx_cor((GfxRect){453,540,980,1},0,1,1,1,.08f);
     bloco(i18n("Addons de legenda e faixas embutidas são diferentes. Resultados variam por título, arquivo e hash do vídeo."),453,560,980,2);
     texto(TXT_ILHA_SECAO,i18n("Legendas"),453,638,650,220);
     listaPos=janela(nLegendas()+2,snap.legendas,2,foco<=nLegendas()+snap.legendas); first=(int)listaPos;
-    for(int i=first;i<snap.legendas && i<first+2;i++) {
-      char flags[192];
+    for(int i=first;i<snap.legendas && i<=first+2;i++) {
+      char flags[192]; float r=i-listaPos, g=gfx_opacidade_grupo;
       snprintf(flags,sizeof flags,"%s · %s: %s · SDH: %s",snap.legenda[i].idioma,i18n("Forçada"),snap.legenda[i].forcada<0?i18n("Não informado"):snap.legenda[i].forcada?i18n("Sim"):i18n("Não"),snap.legenda[i].sdh<0?i18n("Não informado"):snap.legenda[i].sdh?i18n("Sim"):i18n("Não"));
-      linha(nLegendas()+i+1,"aj_captions",i18n(ling_nome(snap.legenda[i].idioma)),flags,453,674+(i-first)*80,980);
+      gfx_opacidade_grupo=g*rolaAlfa(r,2);
+      linha(nLegendas()+i+1,"aj_captions",i18n(ling_nome(snap.legenda[i].idioma)),flags,453,674+r*80,980);
+      gfx_opacidade_grupo=g;
     }
     char languages[320]; snprintf(languages,sizeof languages,i18n("Principal: %s · Secundária: %s"),ling_legenda()[0]?i18n(ling_nome(ling_legenda())):i18n("Não informado"),ling_legenda2()[0]?i18n(ling_nome(ling_legenda2())):i18n("Não informado"));
     texto(TXT_ILHA_SUB,languages,453,852,980,180);
@@ -949,9 +954,12 @@ static void workspace(void) {
     bloco(i18n("Cota restante não informada. Nenhuma sondagem de reprodução. Em HTTP 429, aguarde antes de atualizar."),473,805,880,2);
     botao(0,i18n("Atualizar"),453,866,350); botao(1,i18n("Configuração no celular"),825,866,530);
   } else {
-    int row=0, first=foco>3?foco-3:0;
+    int row=0, n=0;
+    for(int i=0;i<snap.resultados;i++) if(strcmp(snap.resultado[i].tipo,"HTTP") && strcmp(snap.resultado[i].tipo,"P2P") && strcmp(snap.resultado[i].tipo,"Desconhecido")) n++;
+    listaPos=janela(2,n,3,1); int first=(int)listaPos;
     for(int i=0;i<snap.resultados;i++) if(strcmp(snap.resultado[i].tipo,"HTTP") && strcmp(snap.resultado[i].tipo,"P2P") && strcmp(snap.resultado[i].tipo,"Desconhecido")) {
-      if(row>=first && row<first+3) linha(row,"aj_smartphone",snap.resultado[i].nome[0]?snap.resultado[i].nome:i18n(snap.resultado[i].tipo),i18n("Abrir no celular"),453,310+(row-first)*104,980);
+      float r=row-listaPos, g=gfx_opacidade_grupo;
+      if(row>=first && row<=first+3) { gfx_opacidade_grupo=g*rolaAlfa(r,3); linha(row,"aj_smartphone",snap.resultado[i].nome[0]?snap.resultado[i].nome:i18n(snap.resultado[i].tipo),i18n("Abrir no celular"),453,310+r*104,980); gfx_opacidade_grupo=g; }
       row++;
     }
     if(!row) bloco(i18n("Links externos, YouTube e NZB não são vídeos HTTP reproduzíveis. Abra e gerencie pelo celular."),473,340,850,4);

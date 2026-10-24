@@ -4004,7 +4004,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   if (r.w <= 0.0f || r.h <= 0.0f || a <= 0.001f) return;
   if (!vidroPronto()) {
     gfx_cor(r, raio, 0x1a / 255.0f, 0x1c / 255.0f, 0x21 / 255.0f, 0.94f * a);
-    if (tipo != GFX_VIDRO_ILHA) gfx_anel(r, raio, 1.0f, 1.0f, 1.0f, 1.0f, 0.22f * a);
+    // Flat fallback panel carries no rim: islands never get an outline.
     return;
   }
   GFX_TR_RECT(t.x, t.y, t.w, t.h);
