@@ -210,8 +210,8 @@ static void overlay(const FdFicha *d){drawZona=5;drawItem=0;float x=1130,w=690;c
 static void corpoFilmo(GfxRect r,float a,void *u) {
   (void)u;
   TXT_INI();
-  GfxRect g=ilha_corpo_rect();
-  float ox=px(1090),oy=py(50),k=fminf(1,fminf(g.w/r.w,g.h/r.h));
+  GfxRect g=ilha_corpo_rect();(void)r;
+  float ox=px(1090),oy=py(50),k=1;/* island rect animates, body keeps its size */
   int atual=camada; float pa=alpha;
   camada=folhaAnterior; alpha=a*entrada;
   folhaDx=g.x-ox; folhaDy=g.y-oy; folhaK=k; folhaVista=1;
