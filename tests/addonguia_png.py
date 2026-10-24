@@ -1,9 +1,10 @@
 from pathlib import Path
 import subprocess,sys
 out=Path(sys.argv[1]);mocks=Path('/Volumes/ExternalSSD/tmp/addon-guia-mock')
-files=sorted(out.glob('*-app.png'));assert len(files)==14,len(files)
+files=sorted(out.glob('*-app.png'));assert len(files)==56,len(files)
 for file in files:
-    mock=mocks/(file.stem.removesuffix('-app')+'.png')
+    screen=file.stem.removesuffix('-app').rsplit('-',2)[0]
+    mock=mocks/(screen+'.png')
     for p in (file,mock):
         size=subprocess.check_output(['magick','identify','-format','%wx%h',str(p)],text=True)
         assert size=='1920x1080',(p,size)
@@ -11,4 +12,4 @@ for file in files:
     assert std>0.04,(file,std)
     pair=out/(file.stem.removesuffix('-app')+'-side-by-side.png')
     subprocess.run(['magick',str(mock),str(file),'+append',str(pair)],check=True)
-print('14 native PNGs: dimensions/content and side-by-side OK')
+print('56 native PNGs: two scales, both materials, dimensions/content and side-by-side OK')

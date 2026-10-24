@@ -14,6 +14,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+extern void addonguia_shot_passo(float dt);
+static void save(const char *dir,const char *name) {
+  static unsigned char pixels[1920*1080*4];
+  glReadPixels(0,0,1920,1080,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+  SDL_Surface *s=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);assert(s);
+  for(int y=0;y<1080;y++)memcpy((char*)s->pixels+y*s->pitch,pixels+(1079-y)*1920*4,1920*4);
+  char path[1024];snprintf(path,sizeof path,"%s/%s.png",dir,name);assert(!IMG_SavePNG(s,path));SDL_FreeSurface(s);
+}
+static void settle(void) { for(int i=0;i<80;i++)addonguia_shot_passo(.01f); }
 static void tecla(SDL_Keycode k) {
   SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;addonguia_evento(&e);
 }
@@ -65,7 +74,9 @@ int main(int argc,char **argv) {
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,backdrop->w,backdrop->h,0,GL_RGBA,GL_UNSIGNED_BYTE,backdrop->pixels);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
   SDL_FreeSurface(backdrop);
-  for(int i=0;i<14;i++) {
+  const int scales[]={100,85};
+  for(int scale=0;scale<2;scale++)for(int glass=0;glass<2;glass++)for(int i=0;i<14;i++) {
+    gfx_escala_txt_definir(scales[scale]/100.f);ajustes_definir_vidro(glass);
     addonmodo_resposta(id,200,1,0,2);
     addonmodo_resposta(addonmodo_id(addons_base(2)),200,1,2,0);
     addonmodo_resposta(addonmodo_id(addons_base(3)),-1,0,0,0);
@@ -73,32 +84,67 @@ int main(int argc,char **argv) {
     if(shots[i].tela==AG_NOVO_DIRETO)addonmodo_resposta(id,200,1,2,0);
     addonguia_shot(shots[i].tela);
     if(shots[i].tela==AG_NOVO_CATALOGO)addonguia_abrir(AG_NOVO_CATALOGO,1,NULL);
-    for(int f=0;f<40;f++) {
+    for(int f=0;f<=40;f++) {
+      if(f)addonguia_shot_passo(.02f);
       SDL_PumpEvents();txt_novo_quadro();tex_novo_quadro();tex_bombear(12);gfx_novo_quadro();
       glClearColor(0.05f,0.05f,0.05f,1);glClear(GL_COLOR_BUFFER_BIT);
       gfx_textura((GfxRect){0,0,1920,1080},bg);
       gfx_veu_css((GfxRect){0,0,1920,1080},0,1,1,0.5f);
       addonguia_desenhar();SDL_Delay(6);
+      if(scale==0 && glass && (f==0||f==4||f==8||f==16)) {
+        char name[160];snprintf(name,sizeof name,"%s-entry-%03d",shots[i].nome,f*20);save(argv[1],name);
+      }
     }
     assert(bg);
     unsigned char *pixels=malloc(1920*1080*4);assert(pixels);glReadPixels(0,0,1920,1080,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
     SDL_Surface *s=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);assert(s);
     for(int y=0;y<1080;y++)memcpy((char*)s->pixels+y*s->pitch,pixels+(1079-y)*1920*4,1920*4);
-    char path[1024];snprintf(path,sizeof path,"%s/%s-app.png",argv[1],shots[i].nome);
+    char path[1024];snprintf(path,sizeof path,"%s/%s-%d-%s-app.png",argv[1],shots[i].nome,scales[scale],glass?"glass":"solid");
     int erro=IMG_SavePNG(s,path);assert(!erro&&"savepng");
     SDL_FreeSurface(s);free(pixels);printf("PNG %s\n",path);
+    if(scale==0 && glass) {
+      tecla(SDLK_RIGHT);
+      for(int f=0;f<=32;f++) {
+        if(f)addonguia_shot_passo(.01f);
+        txt_novo_quadro();gfx_novo_quadro();glClear(GL_COLOR_BUFFER_BIT);
+        gfx_textura((GfxRect){0,0,1920,1080},bg);addonguia_desenhar();
+        if(f==0||f==8||f==16||f==32) {
+          char name[160];snprintf(name,sizeof name,"%s-focus-%03d",shots[i].nome,f*10);save(argv[1],name);
+        }
+      }
+    }
   }
-  addonguia_shot(AG_MODO);tecla(SDLK_RETURN);
+  gfx_escala_txt_definir(1);ajustes_definir_vidro(1);
+  const int times[]={0,80,160,320};
+  for(int kind=0;kind<3;kind++) {
+    addonguia_shot(AG_MODO);
+    if(kind)settle();
+    if(kind==1){addonguia_desenhar();tecla(SDLK_RIGHT);}
+    if(kind==2)tecla(SDLK_ESCAPE);
+    for(int t=0;t<4;t++) {
+      for(int ms=t?times[t-1]:0;ms<times[t];ms+=10)addonguia_shot_passo(.01f);
+      txt_novo_quadro();gfx_novo_quadro();glClear(GL_COLOR_BUFFER_BIT);
+      gfx_textura((GfxRect){0,0,1920,1080},bg);addonguia_desenhar();
+      static unsigned char pixels[1920*1080*4];glReadPixels(0,0,1920,1080,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+      SDL_Surface *s=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);assert(s);
+      for(int y=0;y<1080;y++)memcpy((char*)s->pixels+y*s->pitch,pixels+(1079-y)*1920*4,1920*4);
+      char path[1024];snprintf(path,sizeof path,"%s/%s-%03d.png",argv[1],kind==0?"entry":kind==1?"focus":"exit",times[t]);
+      assert(!IMG_SavePNG(s,path));SDL_FreeSurface(s);
+    }
+  }
+  addonguia_shot(AG_MODO);settle();tecla(SDLK_RETURN);
+  assert(addonguia_aberto()&&addonguia_pedido()==0);
+  settle();
   assert(!addonguia_aberto()&&addonmodo_get(id)==AM_P2P&&ajustes_p2p_ligado());
   assert(addonguia_pedido()==AGP_REPETIR);
   addonguia_shot(AG_MODO);addonguia_desenhar();tecla(SDLK_RIGHT);tecla(SDLK_RETURN);
   assert(addonguia_shot_tela()==AG_CONECTAR);tecla(SDLK_ESCAPE);
   assert(addonguia_shot_tela()==AG_MODO);
   addonguia_desenhar();tecla(SDLK_RIGHT);tecla(SDLK_RIGHT);tecla(SDLK_RETURN);
-  assert(!addonguia_aberto()&&addonmodo_get(id)==AM_DIRETO);
+  settle();assert(!addonguia_aberto()&&addonmodo_get(id)==AM_DIRETO);
   assert(addonguia_pedido()==AGP_NADA);
   addonguia_configurar(2);assert(addonguia_shot_tela()==AG_NOVO_DIRETO);addonguia_fechar();
-  addonguia_shot(AG_HDR);tecla(SDLK_RETURN);assert(addonguia_pedido()==AGP_PROXIMA);
+  addonguia_shot(AG_HDR);settle();tecla(SDLK_RETURN);settle();assert(addonguia_pedido()==AGP_PROXIMA);
   addonguia_shot(AG_CONECTAR);tecla(SDLK_ESCAPE);assert(addonguia_aberto());
   addonguia_fechar();stream_definir_lista(NULL,0);
   // Sem fonte escolhida, o 401 do laco vale como antes.
@@ -129,7 +175,7 @@ int main(int argc,char **argv) {
     assert(addonguia_identidade()==id3);
     assert(addonmodo_get(id)==AM_AUTO&&!ajustes_p2p_ligado());
     if(statuses[n]==401)assert(addonguia_shot_tela()==AG_NOVO_DIRETO);
-    else assert(!addonguia_aberto());
+    else {settle();assert(!addonguia_aberto());}
     addonguia_fechar();
   }
   stream_definir_lista(NULL,0);
@@ -138,6 +184,6 @@ int main(int argc,char **argv) {
   assert(addonmodo_set(id,AM_AUTO));ajustes_definir_p2p_ligado(0);addonguia_falha();assert(addonguia_shot_tela()==AG_P2P);
   addonguia_fechar();addonmodo_nova_busca();
   for(int a=0;a<4;a++)if(a!=1)addonmodo_resposta(addonmodo_id(addons_base(a)),200,1,0,0);
-  addonguia_falha();assert(addonguia_shot_tela()==AG_VAZIO);tecla(SDLK_RETURN);assert(addonguia_pedido()==AGP_REPETIR);
+  addonguia_falha();assert(addonguia_shot_tela()==AG_VAZIO);tecla(SDLK_RETURN);settle();assert(addonguia_pedido()==AGP_REPETIR);
   puts("addonguia shot: native mode/filter/actions OK");
 }
