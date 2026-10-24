@@ -5462,6 +5462,7 @@
   T("UMA PONTE ENTRE HISTÓRIAS", "EEN BRUG TUSSEN VERHALEN"),
   T("URL da lista M3U", "URL van M3U-lijst"),
   T("URL da programação XMLTV", "URL van XMLTV-gids"),
+  T("URL direta de uma fonte TTF ou OTF (https://…). Até 32 MB.", "Directe URL naar een TTF- of OTF-lettertype (https://…). Maximaal 32 MB."),
   T("Ucraniano", "Oekraïens"),
   T("Ucrânia", "Oekraïne"),
   T("Ultra HD · HDR", "Ultra HD · HDR"),

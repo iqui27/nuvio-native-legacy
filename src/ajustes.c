@@ -2510,6 +2510,10 @@ static int ajLegendaPrincipal(int op) { return op >= AJ_LEG1_TAMANHO && op <= AJ
 static int ajLegendaSecundaria(int op) {
   return (op >= AJ_LEG2_POS && op <= AJ_LEG2_BORDA) || (op >= AJ_LEG2_FONTE && op <= AJ_LEG2_RESTAURAR);
 }
+#ifndef NV_ANDROID
+static int ajFonteUrlOp;
+static NvPerfilSessao ajFonteUrlSessao;
+#endif
 static int ajFonte(int op) { return op == AJ_LEG1_FONTE || op == AJ_LEG2_FONTE || op == AJ_FONTE_UI; }
 static int ajFonteSlot(int op) { return op == AJ_FONTE_UI ? LEGFONTE_INTERFACE : op == AJ_LEG2_FONTE; }
 static void ajFonteInterfaceAplicar(void) {
@@ -2525,10 +2529,8 @@ static const char *ajFonteNome(int op, int v) {
   int base = ajFonteBase(op), n = legfontes_n();
   if (v >= 0 && v < base) return i18n(OPCOES[op].valores[v]);
   if (v >= base && v < base + n) return legfontes_nome(v - base);
-#ifdef NV_ANDROID
   if (v == base + n) return i18n("Importar fonte TTF/OTF");
   v--;
-#endif
   return v == base + n ? i18n("Excluir fonte importada") : "";
 }
 static int ajLegendaValor(int op) {
@@ -6885,6 +6887,10 @@ int ajustes_iniciar(void) {
 }
 static int fileirasBusca;  // network cycle owed; run once when Settings closes
 void ajustes_encerrar(void) {
+#ifndef NV_ANDROID
+  // A later Settings editor must not inherit a cancelled font-URL prompt.
+  ajFonteUrlOp = 0;
+#endif
   // Save file-backed and scalar preferences when leaving Settings as well as
   // during periodic sync; no editor-specific cloud hook is required.
   if (sessao_logada()) sync_iniciar();
@@ -9549,12 +9555,17 @@ static int ajFonteAplicar(int op, int novo) {
     if (ok && op == AJ_FONTE_UI) ajFonteInterfaceAplicar();
     return ok;
   }
+  if (novo == base + n) {
 #ifdef NV_ANDROID
-  if (novo == base + n) return legfontes_pedir_importacao(slot);
-  int excluir = base + n + 1;
+    return legfontes_pedir_importacao(slot);
 #else
-  int excluir = base + n;
+    ajFonteUrlOp = op; ajFonteUrlSessao = nv_perfil_sessao_ler();
+    teclado_abrir_com("Importar fonte TTF/OTF", "URL direta de uma fonte TTF ou OTF (https://…). Até 32 MB.",
+      4095, CUR_ALFA_URL, NULL);
+    return 1;
 #endif
+  }
+  int excluir = base + n + 1;
   if (novo == excluir && anterior >= 0) {
     int ok = legfontes_remover(anterior);
     if (ok) ajFonteInterfaceAplicar();
@@ -9583,6 +9594,7 @@ static int definirValorDireto(int op, int novo) {
     if(!gravar()) { valor[op]=antes;return 0; }
     guia_reordenar();return 1;
   }
+  if (ajFonte(op)) return ajFonteAplicar(op, novo);
   if (ajLegendaPrincipal(op)) return ajLegendaDefinir(op, novo);
   if (ajFalhaBackend(op)) return ajFalhaDefinir(op, novo);
   if(op==AJ_IPTV_ATIVA && iptvForm.tipo && iptvForm.nova) { iptvForm.ativa=novo==0;valor[op]=novo;return 1; }
@@ -10033,6 +10045,13 @@ void ajustes_fontes_atualizar(void) {
   if (fonteStatus) uxNotificar(fonteStatus);
 }
 void ajustes_atualizar(float dt, Uint32 agora) {
+#ifndef NV_ANDROID
+  if (ajFonteUrlOp && !nv_perfil_sessao_atual(ajFonteUrlSessao)) {
+    ajFonteUrlOp = 0;
+    if (teclado_aberto()) { SDL_Event e = {.type=SDL_KEYDOWN}; e.key.keysym.sym=SDLK_ESCAPE; teclado_evento(&e); }
+    teclado_esquecer();
+  }
+#endif
   if(iptvForm.tipo && !nv_perfil_sessao_atual(iptvForm.sessao)) { ajIptvLimparForm();uxCancelar();stCampo=0;teclado_esquecer(); }
   ajLegendaEspelhar(); ajIptvEspelhar();
   AJ_ESCALA_INI();
@@ -10059,6 +10078,16 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   // resultado antes de ela ver (e o apelido digitado se perderia em silencio).
   if (!pessoas_aberto()) hcTecladoLer();
   { int r = pessoas_aberto() ? TECLADO_NADA : teclado_resultado();
+#ifndef NV_ANDROID
+    if (ajFonteUrlOp && r != TECLADO_NADA) {
+      int op = ajFonteUrlOp; ajFonteUrlOp = 0;
+      if (r == TECLADO_PRONTO && nv_perfil_sessao_atual(ajFonteUrlSessao) && teclado_texto()[0]) {
+        int ok = legfontes_pedir_url(ajFonteSlot(op), teclado_texto());
+        uxNotificar(ok ? "Baixando" : "Não foi possível importar a fonte. Use um arquivo TTF ou OTF de até 32 MB.");
+      }
+      teclado_esquecer(); r = TECLADO_NADA;
+    }
+#endif
     if (r == TECLADO_PRONTO && stCampo) {
       size_t cap;char *rascunho=ajIptvRascunho(stCampo,&cap);
       if(rascunho) {
@@ -10238,6 +10267,11 @@ static int nValores(int op) {
   if(op==AJ_GUIA_CATEGORIAS)return uxNCategorias>0?uxNCategorias:1;
   if(ajIptvGerenciador(op)) { int n=ajIptvQuantos(ajIptvTipo(op));return (n?n:1)+1; }
   if(op==AJ_IPTV_CONTA){int n=iptv_contas(NULL,0);return n>0?n:1;}
+  if (ajFonte(op)) {
+    int n = ajFonteBase(op) + legfontes_n();
+    n++;
+    return n + (legfontes_selecionada(ajFonteSlot(op)) >= 0);
+  }
   if (op == AJ_LEG_LINGUA || op == AJ_LEG_LINGUA2 || op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2) return nLingua > 0 ? nLingua : 1;
   if (op == AJ_TRAILER_AUDIO) return nTrAud > 0 ? nTrAud : 1;
   if (op == AJ_SELOS_PACOTE) return 1 + selospacote_n();
@@ -10265,6 +10299,7 @@ static const char *textoValor(int op) {
   if (op == AJ_AMPLIAR_UI && valor[op] != 2 && !ampliarUiVale()) return "Pela TV";
   if(ajIptvGerenciador(op))return i18n("Abrir");
   if(op==AJ_IPTV_CONTA)return ajIptvNome(iptv_conta_indice());
+  if (ajFonte(op)) return ajFonteNome(op, ajFonteAtual(op));
   static char buf[48];
   if (op == AJ_XTREAM_CONEXOES) return i18n(V_CONEXOES[xtream_conexoes_modo()]);
   if (ajFalhaBackend(op)) {

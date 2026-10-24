@@ -3,6 +3,8 @@
 #include "perfisessao.h"
 #ifdef NV_ANDROID
 #include "android.h"
+#else
+#include "fonteurl.h"
 #endif
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
@@ -15,16 +17,26 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#ifdef __EMSCRIPTEN__
+#include "dados.h"
+static unsigned fonteFsNivel;
+static void fonteFsTravar(void) { if(!fonteFsNivel++)dados_fs_travar(); }
+static void fonteFsLiberar(void) {
+  if(!--fonteFsNivel){dados_fs_liberar();dados_marcar_sujo(0);dados_sincronizar_logo();}
+}
+#else
+#define fonteFsTravar() ((void)0)
+#define fonteFsLiberar() ((void)0)
+#endif
+
 typedef struct { char id[21], nome[96], nomeAss[96], caminho[768]; } Fonte;
 static Fonte fontes[LEGFONTES_MAX];
 static int nFontes, lidas, aplicada, importando = -1;
 static char pasta[640], prefs[700], escolha[LEGFONTES_SLOTS][21];
 static unsigned revisao = 1;
-#ifdef NV_ANDROID
 static NvPerfilSessao importacaoSessao;
 static int confirmandoImportacao;
 static char importacaoPasta[640];
-#endif
 
 static uint32_t be32(const unsigned char *p) {
   return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
@@ -159,6 +171,10 @@ void legfontes_dir(const char *dir) {
   if (dir && dir[0] && strlen(dir) + 20 < sizeof nova)
     snprintf(nova, sizeof nova, "%s/%s%s", dir, nomePastaA, nomePastaB);
   if (!strcmp(nova, pasta)) return;
+#ifndef NV_ANDROID
+  fonteurl_cancelar(); importando = -1;
+#endif
+  fonteFsTravar();
   snprintf(pasta, sizeof pasta, "%s", nova);
   prefs[0] = 0;
   if (pasta[0]) snprintf(prefs, sizeof prefs, "%s/fontes-legenda.txt", dir);
@@ -192,6 +208,7 @@ void legfontes_dir(const char *dir) {
     }
   }
   revisao++;
+  fonteFsLiberar();
 }
 static int comparar(const void *a, const void *b) {
   const Fonte *fa = a, *fb = b;
@@ -272,22 +289,24 @@ static void restaurarArquivo(const char *de, const char *para) {
 }
 static int confirmarPreferencias(EscolhaCommit *c) {
   if (!memcmp(c->ids, escolha, sizeof escolha)) return !c->confirmar || c->confirmar(c->u);
-  if (!c->confirmar) return gravarEscolhas(c->ids);
+  fonteFsTravar();
+  if (!c->confirmar) { int ok=gravarEscolhas(c->ids); fonteFsLiberar(); return ok; }
   EscolhaAnterior a;
-  if (!prepararPreferencias(&a)) return 0;
-  if (!gravarEscolhas(c->ids)) { liberarPreferencias(&a); return 0; }
-  if (!c->confirmar(c->u)) {
-    restaurarPreferencias(&a);
-    return 0;
-  }
-  liberarPreferencias(&a);
-  return 1;
+  if (!prepararPreferencias(&a)) { fonteFsLiberar(); return 0; }
+  if (!gravarEscolhas(c->ids)) { liberarPreferencias(&a); fonteFsLiberar(); return 0; }
+  // The related Settings writer owns its own filesystem lock. Call it outside
+  // ours; native rollback semantics and the renderer transaction stay intact.
+  fonteFsLiberar();
+  int ok=c->confirmar(c->u);
+  fonteFsTravar();
+  if (!ok) restaurarPreferencias(&a);
+  else liberarPreferencias(&a);
+  fonteFsLiberar();
+  return ok;
 }
 static int confirmarEscolha(void *u) {
   EscolhaCommit *c = u;
-#ifdef NV_ANDROID
   if (confirmandoImportacao && !nv_perfil_sessao_atual(importacaoSessao)) return 0;
-#endif
   if (!c->origem) return confirmarPreferencias(c);
   EscolhaAnterior a;
   if (!prepararPreferencias(&a)) return 0;
@@ -299,7 +318,7 @@ static int confirmarEscolha(void *u) {
   liberarPreferencias(&a);
   return 1;
 }
-int legfontes_escolher_transacao(int slot, int i, int (*confirmar)(void *), void *u) {
+static int escolherInterno(int slot, int i, int (*confirmar)(void *), void *u) {
   carregar();
   if (slot < 0 || slot >= LEGFONTES_SLOTS || i < -1 || i >= nFontes) return 0;
   EscolhaCommit c = {0}; memcpy(c.ids, escolha, sizeof escolha);
@@ -313,7 +332,7 @@ int legfontes_escolher_transacao(int slot, int i, int (*confirmar)(void *), void
   return 1;
 }
 int legfontes_escolher(int slot, int i) { return legfontes_escolher_transacao(slot, i, NULL, NULL); }
-int legfontes_remover(int i) {
+static int removerInterno(int i) {
   carregar();
   if (i < 0 || i >= nFontes) return 0;
   EscolhaCommit c = {0}; memcpy(c.ids, escolha, sizeof escolha);
@@ -335,7 +354,7 @@ static int entradaValida(const char *s) {
     if (!((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f'))) return 0;
   return 1;
 }
-int legfontes_importar(int slot, const char *arquivo) {
+static int importarInterno(int slot, const char *arquivo) {
   if (slot < 0 || slot >= LEGFONTES_SLOTS || !pasta[0] || !entradaValida(arquivo)) return 0;
   char entrada[768], id[21], destino[768], nome[96], nomeAss[96]; size_t n;
   snprintf(entrada, sizeof entrada, "%s/%s", pasta, arquivo);
@@ -386,19 +405,34 @@ int legfontes_pedir_importacao(int slot) {
   return 0;
 #endif
 }
+int legfontes_pedir_url(int slot, const char *url) {
+#ifndef NV_ANDROID
+  if (slot < 0 || slot >= LEGFONTES_SLOTS || !pasta[0] || importando >= 0) return 0;
+  importacaoSessao = nv_perfil_sessao_ler();
+  snprintf(importacaoPasta, sizeof importacaoPasta, "%s", pasta);
+  if (!nv_perfil_sessao_atual(importacaoSessao) || !fonteurl_iniciar(url, pasta)) return 0;
+  importando = slot; return 1;
+#else
+  (void)slot; (void)url; return 0;
+#endif
+}
 const char *legfontes_atualizar(void) {
   if (!aplicada && TTF_WasInit()) {
     carregar();
     aplicada = assrender_fonte_local_transacao(legfontes_caminho(0), NULL, NULL);
   }
-#ifdef NV_ANDROID
   char evento[80];
+#ifdef NV_ANDROID
   if (!android_fonte_evento(evento, sizeof evento)) return NULL;
+#else
+  if (!fonteurl_resultado(evento, sizeof evento)) return NULL;
+#endif
   int slot = importando; importando = -1;
   int atual = slot >= 0 && !strcmp(pasta, importacaoPasta) && nv_perfil_sessao_atual(importacaoSessao);
   if (!strncmp(evento, "R:", 2) && entradaValida(evento + 2)) {
     if (!atual) {
-      char caminho[768]; snprintf(caminho, sizeof caminho, "%s/%s", importacaoPasta, evento + 2); unlink(caminho);
+      char caminho[768]; snprintf(caminho, sizeof caminho, "%s/%s", importacaoPasta, evento + 2);
+      fonteFsTravar(); unlink(caminho); fonteFsLiberar();
       return NULL;
     }
     confirmandoImportacao = 1;
@@ -407,7 +441,17 @@ const char *legfontes_atualizar(void) {
     return ok ? "Fonte importada." : "Não foi possível importar a fonte. Use um arquivo TTF ou OTF de até 32 MB.";
   }
   return !atual || !strcmp(evento, "C") ? NULL : "Não foi possível importar a fonte. Use um arquivo TTF ou OTF de até 32 MB.";
-#else
-  return NULL;
-#endif
+}
+
+int legfontes_importar(int slot,const char *arquivo) {
+  fonteFsTravar();int ok=importarInterno(slot,arquivo);fonteFsLiberar();return ok;
+}
+int legfontes_remover(int i) {
+  fonteFsTravar();int ok=removerInterno(i);fonteFsLiberar();return ok;
+}
+int legfontes_escolher_transacao(int slot,int i,int (*confirmar)(void *),void *u) {
+  if(!confirmar)fonteFsTravar();
+  int ok=escolherInterno(slot,i,confirmar,u);
+  if(!confirmar)fonteFsLiberar();
+  return ok;
 }

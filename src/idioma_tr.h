@@ -5462,6 +5462,7 @@
   T("UMA PONTE ENTRE HISTÓRIAS", "HİKÂYELER ARASINDA BİR KÖPRÜ"),
   T("URL da lista M3U", "M3U listesi URL’si"),
   T("URL da programação XMLTV", "XMLTV rehberi URL’si"),
+  T("URL direta de uma fonte TTF ou OTF (https://…). Até 32 MB.", "TTF veya OTF yazı tipinin doğrudan URL adresi (https://…). En fazla 32 MB."),
   T("Ucraniano", "Ukraynaca"),
   T("Ucrânia", "Ukrayna"),
   T("Ultra HD · HDR", "Ultra HD · HDR"),

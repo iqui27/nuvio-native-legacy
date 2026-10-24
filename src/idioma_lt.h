@@ -5462,6 +5462,7 @@
   T("UMA PONTE ENTRE HISTÓRIAS", "TILTAS TARP ISTORIJŲ"),
   T("URL da lista M3U", "M3U sąrašo URL"),
   T("URL da programação XMLTV", "XMLTV programos URL"),
+  T("URL direta de uma fonte TTF ou OTF (https://…). Até 32 MB.", "Tiesioginis TTF arba OTF šrifto URL (https://…). Iki 32 MB."),
   T("Ucraniano", "Ukrainiečių"),
   T("Ucrânia", "Ukraina"),
   T("Ultra HD · HDR", "Ultra HD · HDR"),

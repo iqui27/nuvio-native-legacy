@@ -5462,6 +5462,7 @@
   T("UMA PONTE ENTRE HISTÓRIAS", "物語をつなぐ橋"),
   T("URL da lista M3U", "M3UリストのURL"),
   T("URL da programação XMLTV", "XMLTV番組表のURL"),
+  T("URL direta de uma fonte TTF ou OTF (https://…). Até 32 MB.", "TTF または OTF フォントへの直接 URL（https://…）。最大 32 MB。"),
   T("Ucraniano", "ウクライナ語"),
   T("Ucrânia", "ウクライナ"),
   T("Ultra HD · HDR", "Ultra HD · HDR"),
