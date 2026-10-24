@@ -26,7 +26,7 @@ def pixels(path, crop=None):
     args = ['magick', str(path)]
     if crop:
         args += ['-crop', crop, '+repage']
-    return subprocess.check_output(args + ['-format', '%#', 'info:'])
+    return hashlib.sha256(subprocess.check_output(args + ['-depth', '8', 'rgba:-'])).digest()
 
 for screen, folder, pattern in (
     ('home21', 'home21', 'home21'),
