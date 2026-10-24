@@ -14,6 +14,7 @@
 #include "dados.h"
 #include "gfx.h"
 #include "ilha.h"
+#include "plrilha.h"
 #include "ilhasinais.h"
 #include "juntosui.h"
 #include "tex_cache.h"
@@ -75,13 +76,30 @@ static void quadros(int n) {
     glClear(GL_COLOR_BUFFER_BIT);
     if (fundoTex) gfx_rect((GfxRect){ 0, 0, 1920, 1080 }, fundoTex, GFX_SNAP, 0, 0, 0, 0, 1, 1, 1, 1);
     ilha_relogio_visivel(1);
-    ilha_ancorar(1920 - 64, 36, 1);
-    ilha_desenhar(agora);
+    ilha_ancorar((1920 - 64) / gfx_escala_ui(), 36 / gfx_escala_ui(), 1);
     anim_politica_reduzida = ajustes_animacoes_reduzidas_usuario();
     juntosui_atualizar(agora);
+    ilha_desenhar(agora);
+    plrilha_desenhar(agora);
     juntosui_desenhar(agora);
     SDL_GL_SwapWindow(win);
     SDL_Delay(16);
+  }
+}
+
+static Uint32 motionNow;
+static void motionFrame(int ms) {
+  for (int elapsed = 0; elapsed < ms || elapsed == 0; elapsed += 10) {
+    if (ms) motionNow += 10;
+    txt_novo_quadro(); tex_novo_quadro(); gfx_novo_quadro();
+    juntosui_atualizar(motionNow);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ilha_relogio_visivel(1);
+    ilha_desenhar(motionNow);
+    plrilha_desenhar(motionNow);
+    juntosui_desenhar(motionNow);
+    glFinish();
+    if (!ms) break;
   }
 }
 
@@ -243,15 +261,17 @@ fontes:
   captura("08-reactions", 1080);
   // Native scale/material matrix; logical focus remains independent of springs.
   juntosui_shot_player(0);
-  for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
-    gfx_escala_txt_definir(scale ? .85f : 1);
+  const float scales[] = {1, .85f, .9f, 1.1f, 1.2f, 1.3f};
+  for (int scale = 0; scale < 6; scale++) for (int glass = 0; glass < 2; glass++) {
+    ajustes_shot_valor("selected_theme", glass ? 2 : 0);
+    gfx_escala_txt_definir(scales[scale]);
     ajustes_definir_vidro(glass);
     for (int c = 1; c <= 7; c++) {
       char name[96];
       juntosui_shot_camada(c, 0);
       if (c == 6) juntosui_shot_player(1);
       quadros(45);
-      snprintf(name, sizeof name, "matrix-%d-%s-%s", c, scale ? "85" : "100", glass ? "glass" : "solid");
+      snprintf(name, sizeof name, "matrix-%d-%d-%s", c, (int)lroundf(scales[scale] * 100), glass ? "glass" : "solid");
       captura(name, 1080);
       juntosui_shot_player(0);
     }
@@ -285,6 +305,40 @@ fontes:
   assert(juntosui_shot_entrada() > 0 && juntosui_shot_entrada() < 1);
   juntosui_atualizar(now + 1380); juntosui_atualizar(now + 1430); juntosui_atualizar(now + 1480); juntosui_atualizar(now + 1530);
   assert(juntosui_shot_entrada() == 0);
+  motionNow = now + 1600;
+  const char *friends[] = {"Henrique", "Rafa", "Fabi", "Ana", "Pedro", "Maria", "João", "Luiza"};
+  juntosui_shot_folha(0, friends, 8);
+  for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
+    gfx_escala_txt_definir(scale ? .85f : 1); ajustes_definir_vidro(glass);
+    for (int layer = 1; layer <= 7; layer++) {
+      juntosui_shot_player(layer == 6);
+      juntosui_shot_camada(0, 0); motionFrame(1400);
+      for (int mode = 0; mode < 4; mode++) {
+        if (mode == 3) { juntosui_shot_camada(0, 0); motionFrame(80); }
+        if (mode == 0 || mode == 3) juntosui_shot_camada(layer, 0);
+        if (mode == 1) { motionFrame(1400); juntosui_shot_camada(layer, 1); }
+        if (mode == 2) { motionFrame(500); juntosui_shot_camada(0, 0); }
+        for (int i = 0; i < 4; i++) {
+          motionFrame(i ? times[i] - times[i - 1] : 0);
+          char name[120];
+          snprintf(name, sizeof name, "layer-%d-%s-%s-%s-%03d", layer, scale ? "85" : "100",
+            glass ? "glass" : "solid", (const char *[]){"entry", "focus", "exit", "reverse"}[mode], times[i]);
+          captura(name, 1080);
+        }
+      }
+    }
+  }
+  juntosui_shot_player(0);
+  gfx_escala_txt_definir(1.3f);
+  juntosui_shot_camada(1, 10); motionFrame(1400); captura("friends-scroll-end", 1080);
+  juntosui_shot_camada(1, 0); motionFrame(80); captura("friends-scroll-reverse", 1080);
+  juntosui_shot_folha(0, NULL, 0); motionFrame(1000); captura("friends-empty", 1080);
+  for (int state = 0; state < 3; state++) {
+    snprintf(motor.sala.m[0].st, sizeof motor.sala.m[0].st, "%s", (const char *[]){"carregando", "semfonte", "erro"}[state]);
+    motor.sala.n = 1;
+    juntosui_shot_camada(3, 0); motionFrame(1000);
+    captura((const char *[]){"state-loading", "state-no-source", "state-error"}[state], 1080);
+  }
   printf("juntos_shot: ok\n");
   return 0;
 }
