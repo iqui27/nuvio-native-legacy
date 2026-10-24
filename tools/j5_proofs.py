@@ -59,7 +59,7 @@ for screen, directory, prefix, still in (
     ('servers-detail', 'servers-detail', 'server', 'server-{scale}-{material}'),
     ('servers-sources', 'servers-sources', 'native', 'native-{scale}-{material}'),
     ('servers-overview', 'servers-overview', 'overview', 'overview-{scale}-{material}'),
-    ('together', 'together-current', '', 'matrix-3-{scale}-{material}'),
+    ('together', 'together-verified', '', 'matrix-3-{scale}-{material}'),
 ):
     frames = OUT / directory
     for scale in (100, 85):
@@ -88,12 +88,12 @@ for layer in range(1, 8):
         for material in ('glass', 'solid'):
             target = OUT / f'together-layer-{layer}-{scale}-{material}-tri.png'
             magick(OUT / 'together-reference.png',
-                   native(OUT / 'together-current' / f'matrix-{layer}-{scale}-{material}.png'), '+append', target)
+                   native(OUT / 'together-verified' / f'matrix-{layer}-{scale}-{material}.png'), '+append', target)
             pngs.append(str(target))
             rows = []
             for mode in ('entry', 'focus', 'exit', 'reverse'):
                 target = OUT / f'together-layer-{layer}-{scale}-{material}-{mode}-anim.png'
-                clock_strip([OUT / 'together-current' / f'layer-{layer}-{scale}-{material}-{mode}-{t:03}.png' for t in CLOCK_TIMES], target)
+                clock_strip([OUT / 'together-verified' / f'layer-{layer}-{scale}-{material}-{mode}-{t:03}.png' for t in CLOCK_TIMES], target)
                 rows.append(target)
             target = OUT / f'together-layer-{layer}-{scale}-{material}-anim.png'
             magick(*rows, '-append', target)
