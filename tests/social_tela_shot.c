@@ -73,9 +73,10 @@ int main(int argc, char **argv) {
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
   dados_iniciar(dir);
   assert(!strcmp(dados_dir(), dir));
-  assert(dados_gravar("ajustes.txt","idioma 0\nidiomaAutoLocal 0\n"));
   ajustes_iniciar();
+  assert(dados_gravar("ajustes.txt","idioma 0\nidiomaAutoLocal 0\n"));
   ajustes_dir(dir);
+  assert(ajustes_idioma()==0);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
   w = SDL_CreateWindow("Nuvio: captura social", 0, 0, 64, 64,
