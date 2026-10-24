@@ -15,7 +15,9 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-bibshot-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 sources=()
 for source in src/*.c src/dts/*.c; do
-  if [ "$source" != src/main.c ]; then sources+=("$source"); fi
+  if [ "$source" = src/main.c ]; then continue; fi
+  if [ "${NV_J1_SHOT:-}" = 1 ] && [ "$source" = src/biblioteca.c ]; then continue; fi
+  sources+=("$source")
 done
 mkdir -p "$(dirname "$saida")"
 compiler=(cc)
@@ -24,10 +26,12 @@ if command -v ccache >/dev/null; then
   compiler=(ccache cc)
 fi
 objects=()
+shot_flags=()
+if [ "${NV_J1_SHOT:-}" = 1 ]; then shot_flags+=(-DNV_J1_SHOT); fi
 for source in "${sources[@]}" tests/biblioteca_shot.c; do
   object="$tmp/$(basename "$source" .c).o"
   "${compiler[@]}" -c "$source" -Isrc -o "$object" \
-    -DNV_TRAKT_CLIENT_ID='"chave-de-teste"' \
+    "${shot_flags[@]}" -DNV_TRAKT_CLIENT_ID='"chave-de-teste"' \
     -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
     -Wno-deprecated-declarations -Wno-macro-redefined
   objects+=("$object")
@@ -36,6 +40,19 @@ cc "${objects[@]}" -o "$tmp/shot" -L/opt/homebrew/lib \
   -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
 if [ "${NV_MODO:-}" = mock ] || [ "${NV_MODO:-}" = servers ]; then
   export NUVIO_RAIL=moderna NUVIO_SHOT_RELOGIO=1 NUVIO_SHOT_PT=1
+fi
+if [ "${NV_J1_SHOT:-}" = 1 ]; then
+  for scale in 1 .85; do
+    for glass in 1 0; do
+      for mode in mock servers; do
+        mkdir -p "$saida/$scale-$glass/$mode"
+        NUVIO_RAIL=moderna NUVIO_SHOT_RELOGIO=1 NUVIO_SHOT_PT=1 \
+        NUVIO_SHOT_ESCALA_TEXTO="$scale" NUVIO_SHOT_VIDRO="$glass" \
+        NUVIO_DADOS="$tmp/dados-$scale-$glass-$mode" "$tmp/shot" "$saida/$scale-$glass/$mode/native" "$mode"
+      done
+    done
+  done
+  exit 0
 fi
 NUVIO_DADOS="$tmp/dados" "$tmp/shot" "$saida" "${NV_MODO:-}"
 if [ "${NV_MODO:-}" = mock ] || [ "${NV_MODO:-}" = servers ]; then exit 0; fi

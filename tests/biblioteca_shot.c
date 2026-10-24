@@ -12,6 +12,9 @@
 // ESCREVE EM NUVIO_DADOS, e recusa rodar se dados_dir() nao for essa pasta:
 // fixar uma lista GRAVA, e um teste deste repositorio ja sobrescreveu os dados
 // reais do dono.
+#ifdef NV_J1_SHOT
+#include "../src/biblioteca.c"
+#endif
 #include "biblioteca.h"
 #include "nvtmp.h"
 #include "ctxmenu.h"
@@ -100,16 +103,61 @@ static void medir(const char *rotulo) {
   fflush(stdout);
 }
 
+#ifdef NV_J1_SHOT
+static void j1_movimento(const char *nome) {
+  const int times[] = {0, 80, 160, 320};
+  float savedFocus[BIB_MAX_LINHAS][BIB_COLUNAS_MAX];
+  memcpy(savedFocus, animFoco, sizeof savedFocus);
+  Foco saved = foco;
+  float savedScroll = scrollY, savedVelocity = velY;
+  for (int sequence = 0; sequence < 2; sequence++) {
+    Uint32 base = SDL_GetTicks();
+    if (!sequence) {
+      focoOrigem = 0; foco.fileira = gradeIni(); foco.coluna = 0;
+      for (int warm = 0; warm < 60; warm++) biblioteca_atualizar(1.0f / 60, base);
+      focus_mover_grade(&foco, colunas() > 1 ? 1 : 0, colunas() > 1 ? 0 : 1);
+    } else { animTela = 0; ondaEm = base; ondaArmada = 0; }
+    int elapsed = 0;
+    for (int frame = 0; frame < 4; frame++) {
+      while (elapsed < times[frame]) {
+        elapsed += 10;
+        biblioteca_atualizar(.01f, base + elapsed);
+      }
+      txt_novo_quadro(); tex_novo_quadro(); tex_bombear(6);
+      glClear(GL_COLOR_BUFFER_BIT);
+      biblioteca_desenhar(base + elapsed);
+      unsigned char *pixels = malloc(1920 * 1080 * 4);
+      SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
+      assert(pixels && surface);
+      glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+      for (int y = 0; y < 1080; y++) memcpy((char *)surface->pixels + y * surface->pitch, pixels + (1079-y)*1920*4, 1920*4);
+      char path[1024]; snprintf(path, sizeof path, "%s-%s-%03d.png", nome, sequence ? "entry" : "focus", times[frame]);
+      assert(!IMG_SavePNG(surface, path)); SDL_FreeSurface(surface); free(pixels);
+    }
+    foco = saved; scrollY = savedScroll; velY = savedVelocity;
+    memcpy(animFoco, savedFocus, sizeof savedFocus);
+    animTela = animVista = 1; ondaEm = 0;
+  }
+}
+#endif
 static void captura(const char *nome) {
   unsigned char *pix;
   SDL_Surface *s;
   int y;
   rail_shot_aplicar();
+  if (getenv("NUVIO_SHOT_VIDRO")) ajustes_definir_vidro(atoi(getenv("NUVIO_SHOT_VIDRO")));
   // 50 quadros E pelo menos 0,9 s: a onda da grade (revela.h) dura ~0,6 s de
   // relogio, e sem o piso a foto saia com a segunda fileira ainda entrando.
   { Uint32 t0 = SDL_GetTicks();
     quadros(50);
-    while (SDL_GetTicks() - t0 < 900u) quadros(1); }
+    while (SDL_GetTicks() - t0 < 900u) quadros(1);
+    if (getenv("NV_J1_SHOT")) {
+      int pending = 1;
+      while (pending && SDL_GetTicks() - t0 < 5000u) {
+        quadros(1); SDL_Delay(2);
+        tex_estatisticas(NULL, &pending, NULL, NULL, NULL);
+      }
+    } }
   SDL_PumpEvents();
   txt_novo_quadro();
   tex_novo_quadro();
@@ -133,6 +181,9 @@ static void captura(const char *nome) {
   free(pix);
   SDL_GL_SwapWindow(win);
   printf("captura: %s\n", nome);
+#ifdef NV_J1_SHOT
+  j1_movimento(nome);
+#endif
 }
 
 // TITULOS DE MENTIRA, escolhidos para cobrir OS CASOS DA LINHA, e nao para
@@ -442,6 +493,17 @@ int main(int argc, char **argv) {
       ASSERTA(row == 1 && biblioteca_teste_trilha(), "D-pad reaches trail steps in trail mode");
     }
     snprintf(nome, sizeof nome, "%s-trail.bmp", saida); captura(nome);
+#ifdef NV_J1_SHOT
+    Foco expected = focoListas;
+    tecla(SDLK_ESCAPE);
+    ASSERTA(!temAberta && foco.fileira == expected.fileira && foco.coluna == expected.coluna,
+            "Back restores the selected list cell");
+    biblioteca_iniciar(); quadros(60);
+    tecla(SDLK_ESCAPE);
+    ASSERTA(!biblioteca_quer_sair(), "Back retains Library while exit animates");
+    quadros(90);
+    ASSERTA(biblioteca_quer_sair(), "Library exits after its fade settles");
+#endif
     return falhasTela ? 1 : 0;
   }
   if (comecaLista) {

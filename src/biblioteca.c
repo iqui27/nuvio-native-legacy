@@ -537,7 +537,8 @@ static float bibDireita(void) {
   return x + w;
 }
 static float bibW(void) {
-  if (temAberta && aberta.fonte == LST_TRAKT && !trilha) return 600;
+  if (temAberta && aberta.fonte == LST_TRAKT && !trilha)
+    return fmaxf(320, bibDireita() - bibX() - 448);
   return bibDireita() - bibX();
 }
 // O TOPO (modos, chips, botoes, titulo, resumo e selo) NASCE A 120% E ACOMPANHA
@@ -1080,6 +1081,7 @@ int biblioteca_iniciar(void) {
   memset(animModo, 0, sizeof animModo);
   memset(animPick, 0, sizeof animPick);
   sair = 0; pedido = -1; pediuRelogio = 0;
+  animTela = 0; temFocoListas = 0;
   reconstruir();
   // O foco nasce na barra de modos: quem entra ainda esta escolhendo o recorte.
   foco.fileira = BIB_FIL_MODO;
@@ -1165,8 +1167,11 @@ static void fecharAberta(void) {
   // apareceu assim na captura, sobre a aba do Simkl.
   recado[0] = 0; recadoAte = 0.0f;
   remapear(0);
-  foco.fileira = BIB_FIL_GRADE;
-  foco.coluna = 0;
+  if (temFocoListas) {
+    foco.fileira = focoListas.fileira < foco.nFileiras ? focoListas.fileira : foco.nFileiras - 1;
+    foco.coluna = focoListas.coluna < foco.nColunas[foco.fileira] ? focoListas.coluna : 0;
+    temFocoListas = 0;
+  } else { foco.fileira = BIB_FIL_GRADE; foco.coluna = 0; }
 }
 
 static void abrirLista(int i) {
@@ -1735,11 +1740,6 @@ static void biblioteca_atualizar_(float dt, Uint32 agora) {
   animListaEd = anim_mola(animListaEd, !focoOrigem && foco.fileira == BIB_FIL_MODO, dt, NV_MOLA_FOCO);
   for (int i = 0; i < 64; i++)
     animOrigem[i] = anim_mola(animOrigem[i], focoOrigem && origemSel == i, dt, NV_MOLA_FOCO);
-  if (!temAberta && temFocoListas && modo == MODO_LISTAS && nCelulas) {
-    foco.fileira = focoListas.fileira < foco.nFileiras ? focoListas.fileira : foco.nFileiras - 1;
-    foco.coluna = focoListas.coluna < foco.nColunas[foco.fileira] ? focoListas.coluna : 0;
-    temFocoListas = 0;
-  }
   lerPref();
   atualizarFonte();
   if (teclado_aberto()) teclado_atualizar(dt, agora);
@@ -3242,8 +3242,8 @@ static void desenhaPaginaCab(void) {
     GfxRect track = {x, 514, 510, 6};
     gfx_cor(track, .5f, 1, 1, 1, .12f);
     if (nCelulas && pagVistos) { track.w *= (float)pagVistos / nCelulas; float ar, ag, ab; ajustes_acento(&ar, &ag, &ab); gfx_cor(track, .5f, ar, ag, ab, 1); }
-    GfxRect history = {paginaX() + 1200, 124, 424, 770};
-    gfx_cor(history, 26.0f / history.h, .047f, .051f, .059f, .96f);
+    GfxRect history = {bibDireita() - 424, 124, 424, 770};
+    t21_ilha(history, T21_R_SHEET, 1);
     txt_desenhar(txt_linha(TXT_CAPTION2, "História", 170, 172, 178, 255), history.x + 26, 150);
     CatItem it; DescItemLista ex;
     float y = 204;
@@ -3327,7 +3327,7 @@ static void desenhaCompartilhar(void) {
   txt_desenhar(u, (NV_TELA_W - u.w) * 0.5f, y + lado + 24.0f);
 }
 
-static void desenhaTrilha(void) {
+static void desenhaTrilha(Uint32 agora) {
   int selected = celulaEmFoco();
   if (selected < 0) selected = 0;
   int first = selected / 8 * 8;
@@ -3337,7 +3337,7 @@ static void desenhaTrilha(void) {
   for (int k = 0; k < 8 && first + k < nCelulas; k++) {
     int index = first + k; CatItem ci;
     if (!lst_item(index, &ci)) continue;
-    float entry = ondaEm ? revela_entra(ondaEm, revela_onda_atraso(k, 0), SDL_GetTicks()) : 1;
+    float entry = ondaEm ? revela_entra(ondaEm, revela_onda_atraso(k, 0), agora) : 1;
     float opacity = gfx_opacidade_grupo;
     gfx_opacidade_grupo *= entry;
     float cx = x + step * (k + .5f);
@@ -3362,15 +3362,16 @@ static void desenhaTrilha(void) {
   CatItem ci; DescItemLista ex;
   if (!lst_item(selected, &ci)) return;
   lst_item_extra(selected, &ex);
-  GfxRect note = {x, 740, 1060, 292};
+  float noteW = (bibDireita() - x - 40) * .66f;
+  GfxRect note = {x, 740, noteW, 292};
   t21_ilha(note, T21_R_SHEET, 1);
   char heading[180]; snprintf(heading, sizeof heading, "%s %d · %s", i18n("Passo"), selected + 1, ci.titulo);
-  txt_desenhar(txt_linha_corta(TXT_CAPTION2, heading, 180, 182, 188, 255, 1000), x + 30, 766);
-  txt_bloco_corta(TXT_CALLOUT, ex.nota[0] ? ex.nota : ci.sinopse, 220, 222, 228, x + 30, 812, 1000, 30, 1, 5);
-  GfxRect about = {x + 1100, 740, 524, 292};
+  txt_desenhar(txt_linha_corta(TXT_CAPTION2, heading, 180, 182, 188, 255, noteW - 60), x + 30, 766);
+  txt_bloco_corta(TXT_CALLOUT, ex.nota[0] ? ex.nota : ci.sinopse, 220, 222, 228, x + 30, 812, noteW - 60, 30, 1, 5);
+  GfxRect about = {x + noteW + 40, 740, bibDireita() - x - noteW - 40, 292};
   t21_ilha(about, T21_R_SHEET, 1);
   txt_desenhar(txt_linha(TXT_CAPTION2, "Sobre", 180, 182, 188, 255), about.x + 28, 766);
-  txt_bloco_corta(TXT_HERO_META, aberta.descricao, 160, 162, 168, about.x + 28, 810, 468, 26, 1, 5);
+  txt_bloco_corta(TXT_HERO_META, aberta.descricao, 160, 162, 168, about.x + 28, 810, about.w - 56, 26, 1, 5);
   char progress[80]; snprintf(progress, sizeof progress, "%s %d/%d", i18n("você viu"), pagVistos, nCelulas);
   txt_desenhar(txt_linha(TXT_HERO_META, progress, 220, 222, 228, 255), about.x + 28, 986);
 }
@@ -3416,7 +3417,7 @@ static void biblioteca_desenhar_(Uint32 agora) {
                  110, 112, 114, bibX() + 1.0f, BIB_GRADE_Y_TITULOS + 7.0f, 1.0f, 1.8f);
   if (ondaArmada && nCelulas) { ondaEm = agora ? agora : 1u; ondaArmada = 0; }
   if (paginaLista() && trilha && nCelulas) {
-    desenhaTrilha();
+    desenhaTrilha(agora);
     desenhaCompartilhar();
     if (teclado_aberto()) teclado_desenhar(agora);
     gfx_borda_foco_atual = 1;
