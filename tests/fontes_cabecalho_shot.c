@@ -161,9 +161,10 @@ int main(int argc, char **argv) {
   salvar("1-lista");
   if (getenv("NUVIO_SHOT_SERVIDORES")) {
     txt_definir_fonte_interface(TXT_FAMILIA_INTER);
-    for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
-      char name[80]; gfx_escala_txt_definir(scale ? .85f : 1); ajustes_definir_vidro(glass);
-      quadros(40); snprintf(name, sizeof name, "%s-%s", scale ? "85" : "100", glass ? "glass" : "solid"); salvar(name);
+    const float scales[] = {1, .85f, .9f, 1.1f, 1.2f, 1.3f};
+    for (int scale = 0; scale < 6; scale++) for (int glass = 0; glass < 2; glass++) {
+      char name[80]; gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
+      quadros(40); snprintf(name, sizeof name, "%d-%s", (int)(scales[scale] * 100 + .5f), glass ? "glass" : "solid"); salvar(name);
     }
     gfx_escala_txt_definir(1); ajustes_definir_vidro(1);
     tecla(SDLK_ESCAPE); quadros(90); stream_folha_abrir();
