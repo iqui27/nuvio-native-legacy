@@ -455,7 +455,7 @@ static void alvo(GfxRect r, int id) {
   if (aberto) ponteiro_alvo(r.x, r.y, r.w, r.h, pt_foco, pt_ativar, id, 0);
 }
 
-// Cartao/linha: repouso cinza tingido, foco na cor de realce (como comecar.c).
+// Cards retain light ink over the official neutral focus surface.
 static void superficie(GfxRect r, float raioPx, float f, float a, Tinta *pri, Tinta *sec) {
   t21_ilha(r, raioPx, a);
   plrui_linha_foco(r, raioPx, f * a);
@@ -518,7 +518,7 @@ static void desenha_card(GfxRect r, const CqEntrada *e, float foc, float a) {
   char b[96];
   float x = r.x + 124.0f, w = CARD_W - 124.0f - 20.0f, fr, fg, fb, barW = CARD_W - 40.0f, f;
   int i;
-  superficie(r, 24.0f, foc, a, &p, &s);
+  superficie(r, T21_R_CARD, foc, a, &p, &s);
   mudo = MUDO;
   float lado = 88 * (1 + .06f * foc);
   emblema(r.x + 64 - lado / 2, r.y + 64 - lado / 2, lado, e->familia, e->nivel >= 1 ? 0 : 1, a);
@@ -652,7 +652,8 @@ static void desenha_hub(float a) {
         GfxRect r = r_card(i);
         r.y += topo * PASSO_Y - scrollY;
         if (r.y + r.h < GRADE_Y || r.y > GRADE_Y + PASSO_Y * LINHAS_VISIVEIS) continue;
-        float e = ajustes_animacoes_reduzidas() ? 1 : anim_atraso(tempo, i, T21_STAGGER_MS, T21_ENTER_MS);
+        float e = ajustes_animacoes_reduzidas() ? 1 : revela_entra(1,
+          revela_onda_atraso(i % colunas, i / colunas - topo), 1 + (Uint32)(tempo * 1000));
         r.y += (1 - e) * NV_ENTRA_DY;
         desenha_card(r, &st.e[vis[i]], qf(C_CARD0 + i), a * e);
       }

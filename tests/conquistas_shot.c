@@ -35,8 +35,13 @@
 
 #include "j4_proof.h"
 static GLuint fbo, fboTex;
-static void proof_reset(void) { conquistas_teste_esquecer(); conquistas_abrir(); }
-static void proof_focus(void) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;conquistas_evento(&e); }
+static void proof_reset(void) {
+  conquistas_teste_esquecer(); conquistas_abrir();
+  SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_DOWN;
+  conquistas_evento(&e); assert(conquistas_foco() >= 100);
+}
+static void proof_focus(void) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_RIGHT;conquistas_evento(&e); }
+static void proof_close(void) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_ESCAPE;conquistas_evento(&e); }
 static void proof_step(float dt) { conquistas_atualizar(dt,SDL_GetTicks()); }
 static void proof_draw(void) { conquistas_desenhar(SDL_GetTicks()); }
 
@@ -347,7 +352,7 @@ int main(int argc, char **argv) {
 
   assert(ajustes_conquistas() && ajustes_conquistas_aviso());
   semear();
-  j4_proof("achievements",proof_reset,proof_focus,proof_step,proof_draw);
+  j4_proof("achievements",proof_reset,proof_focus,proof_step,proof_draw,proof_close);
 
   // ---- Hub: layout, varredura D-pad, captura.
   conquistas_teste_esquecer();
