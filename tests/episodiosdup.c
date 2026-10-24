@@ -4,7 +4,6 @@
 //
 //   bash tests/episodiosdup.sh
 int ajustes_social(void) { return 1; }
-int ajustes_fonte_biblioteca(void) { return 0; }
 int ajustes_nota_episodio(int fonte) { (void)fonte; return 0; }
 int ajustes_hist_conta(void) { return 1; }
 int ajustes_busca_cinemeta(void) { return 1; }
@@ -53,6 +52,8 @@ void addons_manifesto_lido_base(int i, const char *b, const char *d,
 int         ajustes_idioma_ingles(void) { return 0; }
 int ajustes_idioma(void) { return 0; }
 int ajustes_cw_minimo(void) { return 1; }
+int ajustes_cw_proximo(void) { return 1; }
+int ajustes_fonte_biblioteca(void) { return 0; }
 int   ajustes_cw_concluido(void)         { return 90; }  // factory "watched" threshold
 unsigned recomenda_geracao(void)         { return 0; }   // social generation: no social layer here
 int   ajustes_cw_ordem(void)               { return 0; }   // Padrao (issue #127)
@@ -62,6 +63,8 @@ const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nom
 static const char *fakeDados = "";
 const char *dados_dir(void)             { return fakeDados; }
 char *dados_caminho(char *dst, unsigned tam, const char *nome) {
+  // Isolate fake metadata responses from the upstream persistent disk cache.
+  if (!fakeDados[0]) return NULL;
   snprintf(dst, tam, "%s/%s", fakeDados, nome); return dst;
 }
 void addons_catalogo_chave(const char *id, const char *base, const char *tipo,
@@ -889,6 +892,25 @@ int main(void) {
     addonMeta = 0; cineSerie = NULL; addonResp = NULL;
     limparCacheMeta();
     free(cine); free(arq); free(maior);
+  }
+  // Complete primary metadata must publish season tabs with its episode cards,
+  // before any optional addon text/artwork request can block or be cancelled.
+  {
+    const char *body = "{\"videos\":["
+      "{\"id\":\"tt0944947:1:1\",\"season\":1,\"episode\":1,\"name\":\"Winter Is Coming\"},"
+      "{\"id\":\"tt0944947:8:6\",\"season\":8,\"episode\":6,\"name\":\"The Iron Throne\"},"
+      "{\"id\":\"tt0944947:0:1\",\"season\":0,\"episode\":1,\"name\":\"Special\"}]}";
+    TempsPub tp = {0};
+    catalogoCom("tt0944947", "series", "Game of Thrones");
+    snprintf(epAlvoId, sizeof epAlvoId, "%s", "tt0944947");
+    assert(publicarEpisodios(body, 0, "Game of Thrones", NULL, 0, &tp) == 3);
+    const CatItem *item = cat_item(0);
+    assert(cat_n_episodios(0) == 3 && !item->epsParciais);
+    assert(item->nTemporadas == 3);
+    assert(item->temporadas[0] == 1 && item->temporadas[1] == 8 && item->temporadas[2] == 0);
+    // An empty follow-up must preserve the usable cards and their matching tabs.
+    assert(publicarEpisodios("{\"videos\":[]}", 0, "Game of Thrones", NULL, 0, &tp) == 0);
+    assert(cat_n_episodios(0) == 3 && cat_item(0)->nTemporadas == 3);
   }
   puts("episodiosdup: ok");
   return 0;
