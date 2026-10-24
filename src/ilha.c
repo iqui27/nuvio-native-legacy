@@ -123,6 +123,7 @@ static int corpoPed, corpoSemSombra;
 static float corpoW, corpoH, corpoT, corpoV;
 static float corpoWa, corpoHa, corpoVw, corpoVh;   // o tamanho na mola (o pedido muda)
 static IlhaCorpo corpoFn;
+static GfxRect corpoR;   // the animated island rect the body is drawn into
 static void *corpoU;
 static Uint32 modalDesde;
 static int pedido, pedidoQual;
@@ -2003,6 +2004,7 @@ void ilha_corpo(float w, float h, IlhaCorpo corpo, void *u) {
   if (modalAberto) ilha_modal_fechar(1);
 }
 float ilha_corpo_t(void) { return corpoT; }
+GfxRect ilha_corpo_rect(void) { return corpoR; }
 void ilha_corpo_sem_sombra(void) { corpoSemSombra = 1; }
 
 // A hora da pilula em repouso, no lugar exato dela: com o corpo aberto e a
@@ -2292,6 +2294,7 @@ static void ilha_desenharCorpo_(Uint32 agora) {
     if (aMod > 0.0f && modalT > 0.0f) desenharModal(modalAlvo(r, dir), A * aMod);
     if (corpoT > 0.0f && corpoFn && modalT <= 0.0f) {
       horaNoLugar(x, dir, y, A * aHora);
+      corpoR = R;
       if (aMod > 0.0f) corpoFn((GfxRect){ dir ? x - corpoWa : x, y, corpoWa, corpoHa }, A * aMod, corpoU);
     }
     gfx_sem_recorte();

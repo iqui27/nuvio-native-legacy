@@ -309,6 +309,8 @@ void ilha_coberta(int coberta);
 // com o alfa caindo. Efeitos leves: mola sem repique; minimos: sem animacao.
 typedef void (*IlhaCorpo)(GfxRect r, float a, void *u);
 void  ilha_corpo(float w, float h, IlhaCorpo corpo, void *u);
+// The island's animated rect while a body is open (last drawn frame).
+GfxRect ilha_corpo_rect(void);
 // 0 = pilula, 1 = painel assentado (passa um pouco de 1 no repique).
 float ilha_corpo_t(void);
 // Chamar logo depois de ilha_corpo: este corpo (e a saida dele) sem sombra caida.
