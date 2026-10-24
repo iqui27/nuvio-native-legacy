@@ -53,30 +53,47 @@ int main(int argc,char **argv) {
   s.addon[s.addons++]=(AioItem){.nome="OpenSubtitles v3 Plus",.ativo=1,.legenda=1};
   s.addon[s.addons++]=(AioItem){.nome="SubDL",.ativo=1,.legenda=1};
   const char *names[]={"sem-config","setup-instancia","setup-importar","setup-servicos","setup-pronto","painel","catalogos","fontes","links","legendas","filtros","saude","titulo-debug"};
-  const int scales[]={100,85};
-  for(int scale=0;scale<2;scale++) for(int glass=0;glass<2;glass++) {
+  const int scales[]={100,85,90,110,120,130};
+  for(int scale=0;scale<6;scale++) for(int glass=0;glass<2;glass++) {
     gfx_escala_txt_definir(scales[scale]/100.f); ajustes_definir_vidro(glass);
     for(int p=0;p<13;p++) {
       aioui_shot(p,&s);
       for(int f=0;f<=80;f++) {
         frame(f?10:0); SDL_Delay(2);
-        if(scale==0 && glass && (f==0||f==8||f==16||f==32)) {
-          char name[160]; snprintf(name,sizeof name,"%s-entry-%03d",names[p],f*10);save(argv[1],name);
+        if(scale<2 && (f==0||f==5||f==8||f==10||f==15||f==16||f==25||f==32||f==40)) {
+          char name[160]; snprintf(name,sizeof name,"%s-%d-%s-entry-%03d",names[p],scales[scale],glass?"glass":"solid",f*10);save(argv[1],name);
         }
       }
       char name[160]; snprintf(name,sizeof name,"%s-%d-%s",names[p],scales[scale],glass?"glass":"solid");
       save(argv[1],name);
-      if(scale==0 && glass) {
+      if(scale<2) {
         SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;aioui_evento(&e);
-        for(int f=0;f<=32;f++) {
+        for(int f=0;f<=40;f++) {
           frame(f?10:0);
-          if(f==0||f==8||f==16||f==32) {
-            snprintf(name,sizeof name,"%s-focus-%03d",names[p],f*10);save(argv[1],name);
+          if(f==0||f==5||f==8||f==10||f==15||f==16||f==25||f==32||f==40) {
+            snprintf(name,sizeof name,"%s-%d-%s-focus-%03d",names[p],scales[scale],glass?"glass":"solid",f*10);save(argv[1],name);
+          }
+        }
+        e.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&e);
+        for(int f=0;f<=40;f++) {
+          frame(f?10:0);
+          if(f==0||f==5||f==8||f==10||f==15||f==16||f==25||f==32||f==40) {
+            snprintf(name,sizeof name,"%s-%d-%s-back-%03d",names[p],scales[scale],glass?"glass":"solid",f*10);save(argv[1],name);
           }
         }
       }
     }
   }
+  // Back reverses from the current progress without destroying the origin.
+  aioui_shot(0,&s); frame(160);
+  SDL_Event reverse={0}; reverse.type=SDL_KEYDOWN; reverse.key.keysym.sym=SDLK_ESCAPE;
+  aioui_evento(&reverse); frame(50); assert(aioui_aberto()&&!aioui_opaco());
+  aioui_evento(&reverse); frame(400); assert(aioui_opaco());
+  // Interrupt a moving grid row, return, and keep the sheet alive.
+  aioui_shot(5,&s); frame(800);
+  reverse.key.keysym.sym=SDLK_RIGHT; aioui_evento(&reverse); frame(50);
+  reverse.key.keysym.sym=SDLK_DOWN; aioui_evento(&reverse); frame(50);
+  reverse.key.keysym.sym=SDLK_UP; aioui_evento(&reverse); frame(400); assert(aioui_aberto());
   gfx_escala_txt_definir(1); ajustes_definir_vidro(1);
   const int times[]={0,80,160,320};
   for(int kind=0;kind<3;kind++) {

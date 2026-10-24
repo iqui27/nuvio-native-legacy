@@ -3943,7 +3943,8 @@ static void vidroAplicar(Programa *P, GfxRect r) {
   float hw = r.w * sx * 0.5f, hh = r.h * sy * 0.5f, rp = vidPend.raio * r.h * sy;
   int barra = vidPend.tipo == GFX_VIDRO_BARRA;
   // Standing (barras) e Bevelled (paineis), os dois perfis do fs_glass deles.
-  float bevel = (barra ? 12.0f : 28.0f) * sy, lente = (barra ? 24.0f : 38.0f) * sy;
+  int ilha = vidPend.tipo == GFX_VIDRO_ILHA;
+  float bevel = (barra ? 12.0f : 28.0f) * sy, lente = ilha ? 0 : (barra ? 24.0f : 38.0f) * sy;
   if (rp > hw) rp = hw;
   if (rp > hh) rp = hh;
   if (bevel > hh) bevel = hh;
@@ -3954,9 +3955,9 @@ static void vidroAplicar(Programa *P, GfxRect r) {
   glUniform4fv(u[VID_SCRB], 1, vidPend.scrB);
   glUniform4f(u[VID_ARO], 1.0f, 1.0f, 1.0f, vidPend.aro);
   glUniform4f(u[VID_AROLUZ], 1.0f, 1.0f, 1.0f, vidPend.aroLuz);
-  glUniform4f(u[VID_LUZBORDA], 1.0f, 1.0f, 1.0f, 0.14f);
+  glUniform4f(u[VID_LUZBORDA], 1.0f, 1.0f, 1.0f, ilha ? 0 : 0.14f);
   glUniform3f(u[VID_LUZDIR], -0.35f, -0.94f, 0.0f);
-  if (barra) glUniform4f(u[VID_ESPEC], 0.0f, 0.0f, 1.0f, 0.0f);
+  if (barra || ilha) glUniform4f(u[VID_ESPEC], 0.0f, 0.0f, 1.0f, 0.0f);
   else glUniform4f(u[VID_ESPEC], -0.7071f, -0.7071f, 3.0f, 0.80f);
   glUniform4fv(u[VID_DENS], 1, vidPend.dens);
   glUniform4f(u[VID_AMOSTRA], (r.x + r.w * 0.5f) / NV_TELA_W, 1.0f - (r.y + r.h * 0.5f) / NV_TELA_H,
@@ -4003,7 +4004,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   if (r.w <= 0.0f || r.h <= 0.0f || a <= 0.001f) return;
   if (!vidroPronto()) {
     gfx_cor(r, raio, 0x1a / 255.0f, 0x1c / 255.0f, 0x21 / 255.0f, 0.94f * a);
-    gfx_anel(r, raio, 1.0f, 1.0f, 1.0f, 1.0f, 0.22f * a);
+    if (tipo != GFX_VIDRO_ILHA) gfx_anel(r, raio, 1.0f, 1.0f, 1.0f, 1.0f, 0.22f * a);
     return;
   }
   GFX_TR_RECT(t.x, t.y, t.w, t.h);
@@ -4072,14 +4073,16 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   vidPend.dens[0] = 0.125f; vidPend.dens[1] = 0.72f; vidPend.dens[2] = 0.82f; vidPend.dens[3] = 1.0f;
   // A27 chrome: the same solve, scaled by "Opacidade do vidro" (gfx_chrome_dens).
   if (tipo == GFX_VIDRO_BARRA) gfx_chrome_dens(vidPend.dens);
-  vidPend.aro = 0.14f + (contorno ? 0.0f : video ? 0.04f : 0.0f);
-  vidPend.aroLuz = 0.28f;
+  vidPend.aro = tipo == GFX_VIDRO_ILHA ? 0 : 0.14f + (contorno ? 0.0f : video ? 0.04f : 0.0f);
+  vidPend.aroLuz = tipo == GFX_VIDRO_ILHA ? 0 : 0.28f;
   gfx_vidro_com_fonte += vidPend.fonte != 0;
   gfx_vidro_chapados += vidPend.fonte == 0;
   gfx_vidro_area += (int)(r.w * r.h);
   gfx_rect(r, vidPend.fonte, GFX_VIDRO, 0, 0, 0, raio, 1, 1, 1, a);
   gfx_vidro_matiz(r, raio, a);
-  if (tipo == GFX_VIDRO_PAINEL) gfx_vidro_luz(r, raio, a);
+  if (tipo == GFX_VIDRO_ILHA)
+    gfx_luz_canto(r, raio, r.w * .22f, -r.h * .40f, fmaxf(r.w, r.h) * .62f, 1, 1, 1, .05f * a);
+  else if (tipo == GFX_VIDRO_PAINEL) gfx_vidro_luz(r, raio, a);
 }
 
 // OS CANAIS DE FUNDO DA LUZ ASSADA (fundo.c: "Arte borrada" e "Frost" de tela

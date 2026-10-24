@@ -34,6 +34,7 @@ int celular_abrir(const char *t) { (void)t;return 0; }
 void celular_fechar(void) { }
 int celular_pegar(char *d,size_t n) { (void)d;(void)n;return 0; }
 int ajustes_p2p_ligado(void) { return p2p; }
+int ajustes_animacoes_reduzidas_usuario(void) { return 0; }
 void ajustes_definir_p2p_ligado(int v) { p2p=v; }
 int fil_n(void) { return 0; }
 const char *fil_chave(int i) { (void)i;return ""; }
@@ -68,7 +69,20 @@ int main(void) {
   foco=1; acao(); assert(pagina==SERVICOS);
   pagina=TITULO; evidenciaSelecionada=0; foco=nLinhas()-1; acao(); assert(evidenciaSelecionada);
   foco=nLinhas()-1; acao(); assert(!evidenciaSelecionada);
-  activeProfile=2; aioui_atualizar(0,100); assert(!aioui_aberto() && !base[0]);
+  // Content swaps retain the old page until its text has faded.
+  pagina=PAINEL; paginaAnterior=-1;
+  for(int i=0;i<20;i++)movimento(.01f);
+  mudar(CATALOGOS); movimento(.02f);
+  assert(paginaAnterior==PAINEL && corpo>0 && corpo<1);
+  for(int i=0;i<20;i++)movimento(.01f);
+  assert(paginaAnterior==CATALOGOS && corpo==1);
+  foco=3; movimento(.02f);
+  assert(focoDe(3,0)>0 && focoDe(3,0)<1);
+  float old=scrollFoco;
+  foco=1; movimento(.01f);
+  assert(scrollFoco>old && scrollVel>0);
+  activeProfile=2; aioui_atualizar(0,100); assert(aioui_aberto());
+  aioui_atualizar(.2f,300); assert(!aioui_aberto() && !base[0]);
   puts("aiostreams UI: setup, masked import, P2P, navigation and profile isolation passed");
   return 0;
 }

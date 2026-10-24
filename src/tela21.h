@@ -76,13 +76,34 @@ static inline void t21_inicio(float *x, float *w) {
 
 static inline void t21_ilha(GfxRect r, float raioPx, float a) {
   if (r.w <= 0 || r.h <= 0 || a <= .002f) return;
-  float raio = raioPx / fminf(r.w, r.h);
-  if (ajustes_vidro()) { plrui_material(r, raioPx, 0, a); return; }
+  float raio = raioPx / r.h;
   gfx_sombra_sob((GfxRect){r.x - 16, r.y - 4, r.w + 32, r.h + 30},
                 1, 0, .5f, 0, 0, 0, .36f * a, r, raioPx, a);
+  if (ajustes_vidro()) {
+    gfx_vidro(r, raio, GFX_VIDRO_ILHA, .06f, GFX_VIDRO_DENS * gfx_vidro_opacidade(), a);
+    return;
+  }
   gfx_cor(r, raio, .071f, .075f, .086f, .98f * a);
   gfx_luz_canto(r, raio, r.w * .22f, -r.h * .40f, fmaxf(r.w, r.h) * .62f,
                 1, 1, 1, .04f * a);
+}
+
+// Text in approved fixed panel geometry still follows the user's text scale.
+static inline TxtLinha t21_texto_linha(TxtEstilo estilo, const char *s,
+                                      int r, int g, int b, int a, float max) {
+  float scale = gfx_escala_txt();
+  TXT_INI();
+  TxtLinha l = txt_linha_corta(estilo, s, r, g, b, a, max / scale);
+  TXT_FIM();
+  l.w *= scale; l.h *= scale;
+  return l;
+}
+static inline void t21_texto_desenhar(TxtLinha l, float x, float y, float a) {
+  float scale = gfx_escala_txt();
+  l.w /= scale; l.h /= scale;
+  TXT_INI();
+  txt_desenhar_alpha(l, x / scale, y / scale, a);
+  TXT_FIM();
 }
 
 // Caller owns progress; anim_suave(progress) drives alpha and

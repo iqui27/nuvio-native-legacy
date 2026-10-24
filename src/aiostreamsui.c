@@ -41,7 +41,7 @@ static const char *const hosts[] = {"https://aiostreams.fortheweak.cloud","https
 static const char *const nomes[] = {"Yeb’s", "Midnight’s", "ElfHosted", "Viren’s", "Kuu’s", "ATBP Hosting", "Omni’s"};
 static int aberto, pagina, foco, lateral, hostIdx, indice = -1, entrada, pendente, perfil;
 static Uint32 proximaConsulta;
-static int saindo, paginaAnterior=-1;
+static int saindo, paginaAnterior=-1, regraVisivel=-1, evidenciaVisivel;
 static float abertura, corpo=1, entradaTempo, scrollFoco, scrollVel;
 static float focoAnim[2][AIO_MAX+40];
 static float listaPos, deslocamento, addonsFoco[168], addonsScroll, addonsVel;
@@ -52,13 +52,20 @@ static float janela(int manter,int total,int visiveis,int ativo) {
 static float focoDe(int i,int nav) {
   return i>=0 && i<AIO_MAX+40 ? focoAnim[nav!=0][i] : 0;
 }
+static int regraSelecionada=-1, evidenciaSelecionada;
 static void movimento(float dt) {
   abertura=t21_entrada(abertura,dt,!saindo);
-  if(paginaAnterior!=pagina) {
-    paginaAnterior=pagina; corpo=0; entradaTempo=0; scrollFoco=0; scrollVel=0;
+  if(paginaAnterior<0) {
+    paginaAnterior=pagina; regraVisivel=regraSelecionada; evidenciaVisivel=evidenciaSelecionada;
+    corpo=0; entradaTempo=0;
+  }
+  int mesma=paginaAnterior==pagina && regraVisivel==regraSelecionada && evidenciaVisivel==evidenciaSelecionada;
+  corpo=anim_rampa(corpo,mesma,dt,90);
+  if(!mesma && corpo<=0) {
+    paginaAnterior=pagina; regraVisivel=regraSelecionada; evidenciaVisivel=evidenciaSelecionada;
+    entradaTempo=0; scrollFoco=0; scrollVel=0;
     memset(focoAnim,0,sizeof focoAnim);
   }
-  corpo=anim_rampa(corpo,1,dt,180);
   entradaTempo+=dt;
   scrollFoco=anim_mola2(&scrollVel,scrollFoco,lateral?0:foco,dt,NV_MOLA2_SCROLL);
   for(int nav=0;nav<2;nav++) for(int i=0;i<AIO_MAX+40;i++) {
@@ -69,7 +76,7 @@ static void movimento(float dt) {
 }
 
 static unsigned versao, geracao;
-static int catalogoSelecionado, regraSelecionada=-1, linkSelecionado=-1, evidenciaSelecionada, maisHosts;
+static int catalogoSelecionado, linkSelecionado=-1, maisHosts;
 static void trace(void);
 static char arteFundo[700], arteLogo[700];
 void aioui_arte(const char *dir) {
@@ -220,6 +227,7 @@ void aioui_inspecionar(const char *id,const char *t) {
   }
 }
 int aioui_aberto(void) { return aberto; }
+int aioui_opaco(void) { return aberto && abertura>=1 && !saindo; }
 static void mudar(int p) { pagina=p; foco=0; lateral=0; mensagem[0]=0; regraSelecionada=-1; linkSelecionado=-1; evidenciaSelecionada=0; celular_fechar(); }
 static void campo(int qual) {
   entrada=qual;
@@ -332,7 +340,11 @@ static void acao(void) {
   else mudar(SERVICOS);
 }
 void aioui_evento(const SDL_Event *e) {
-  if(!aberto || saindo) return;
+  if(!aberto) return;
+  if(saindo) {
+    if(nv_tecla_voltar(e)) saindo=0;
+    return;
+  }
   if(teclado_aberto()) { teclado_evento(e); return; }
   if(e->type!=SDL_KEYDOWN) return;
   SDL_Keycode k=e->key.keysym.sym;
@@ -370,7 +382,7 @@ void aioui_evento(const SDL_Event *e) {
   else if(k==SDLK_RIGHT && lateral) { lateral=0; foco=0; }
   else if(k==SDLK_UP && foco>0) foco--;
   else if(k==SDLK_DOWN && foco<(lateral?7:nLinhas())-1) foco++;
-  else if(k==SDLK_RETURN || k==SDLK_KP_ENTER) acao();
+  else if((k==SDLK_RETURN || k==SDLK_KP_ENTER) && !e->key.repeat) acao();
 }
 static void receber(const char *texto) {
   char origem[256];
@@ -430,16 +442,21 @@ static void texto(TxtEstilo e,const char *s,float x,float y,float w,int cor) {
   txt_desenhar(t,x/escala,y/escala);
   TXT_FIM();
 }
-static void bloco(const char *s,float x,float y,float w,int linhas) {
+static float blocoEstilo(TxtEstilo estilo,const char *s,float x,float y,float w,float leading,int linhas) {
   float scale=gfx_escala_txt();
   TXT_INI();
-  txt_bloco_corta(TXT_ILHA_SUB,s,170,179,185,x/scale,y/scale,w/scale,28,1,linhas);
+  float h=txt_bloco_corta(estilo,s,238,238,238,x/scale,y/scale,w/scale,leading,1,linhas)*scale;
   TXT_FIM();
+  return h;
+}
+static void bloco(const char *s,float x,float y,float w,int linhas) {
+  float alpha=gfx_opacidade_grupo; gfx_opacidade_grupo=alpha*.72f;
+  blocoEstilo(TXT_ILHA_SUB,s,x,y,w,28,linhas);
+  gfx_opacidade_grupo=alpha;
 }
 static void painel(float x,float y,float w,float h) {
   GfxRect r={x,y,w,h};
-  if(w<h)plrui_material(r,T21_R_MODAL,0,1);
-  else t21_ilha(r,T21_R_MODAL,1);
+  t21_ilha(r,T21_R_MODAL,1);
 }
 static void pointer(int i,int b) { lateral=b; foco=i; }
 // Upstream wrapper attribution: a catalog id carries the wrapper addon when it
@@ -470,12 +487,21 @@ static void voltarClick(int a,int b) {
   (void)a; (void)b; SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_ESCAPE;
   aioui_evento(&e);
 }
+static float entradaDe(int coluna,int fila) {
+  return ajustes_animacoes_reduzidas_usuario()?1:revela_entra(1,revela_onda_atraso(coluna,fila),1+(Uint32)(entradaTempo*1000));
+}
+static float itemInicio(int coluna,int fila,float *y) {
+  float alpha=gfx_opacidade_grupo, entry=entradaDe(coluna,fila);
+  gfx_opacidade_grupo=alpha*entry;
+  *y+=(1-entry)*NV_ENTRA_DY;
+  return alpha;
+}
 static void linha(int i,const char *icon,const char *nome,const char *sub,float x,float y,float w) {
   float h=pagina==SEM?145:94, ty=pagina==SEM?38:17;
   if(y+h<260 || y>920) return;
   float alpha=gfx_opacidade_grupo;
   float edge=anim_clamp(fminf((y+h-260)/24,(920-y)/24),0,1);
-  float entry=anim_saida(anim_atraso(entradaTempo,i,38,300));
+  float entry=entradaDe(pagina==PAINEL?i%2:0,pagina==PAINEL?i/2:(int)((y-263)/94));
   gfx_opacidade_grupo=alpha*edge*entry;
   y+=(1-entry)*NV_ENTRA_DY;
   plrui_linha_foco((GfxRect){x,y,w,h},22,focoDe(i,0));
@@ -506,7 +532,7 @@ static void qrDesenhar(const char *url,float x,float y,float size) {
 static void aside(void) {
   gfx_cor((GfxRect){1466,285,1,545},0,.8f,.84f,.88f,.08f);
   plrui_kicker(i18n(titulos[pagina]),1497,289,243,242,239,.65f);
-  txt_bloco_corta(TXT_ILHA_SECAO,i18n(pagina==CATALOGOS?"Gerenciar no celular":pagina==FONTES?"Serviços no celular":pagina==LEGENDAS?"Gerenciar legendas no celular":pagina==SAUDE?"Status da instância":"Edite pelo celular"),238,238,238,1497,320,302,28,1,2);
+  blocoEstilo(TXT_ILHA_SECAO,i18n(pagina==CATALOGOS?"Gerenciar no celular":pagina==FONTES?"Serviços no celular":pagina==LEGENDAS?"Gerenciar legendas no celular":pagina==SAUDE?"Status da instância":"Edite pelo celular"),1497,320,302,28,2);
   bloco(i18n("Regras avançadas ficam no AIOStreams. Salve lá e atualize esta TV."),1497,378,290,3);
   qrDesenhar(configure,1497,483,152);
   bloco(i18n("Página oficial de configuração. Entre com sua própria conta."),1497,650,290,3);
@@ -525,7 +551,7 @@ static void setup(void) {
   int step=pagina==PRONTO?2:pagina==IMPORTAR||pagina==SERVICOS?1:0;
   char kicker[128]; snprintf(kicker,sizeof kicker,"%s · %d / 3",i18n(titulos[pagina]),step+1);
   texto(TXT_ILHA_HORA,kicker,124,312,490,174);
-  float storyHeight=txt_bloco(TXT_V2_A3TIT,i18n(story[pagina]),240,241,242,124,345,490,56,1,4);
+  float storyHeight=blocoEstilo(TXT_V2_A3TIT,i18n(story[pagina]),124,345,490,56,4);
   bloco(i18n("Reúna addons, catálogos e legendas. Configure os detalhes no celular e acompanhe tudo nesta TV."),124,345+storyHeight+34,485,5);
   const char *steps[]={i18n("Escolha sua instância"),i18n("Conecte e configure"),i18n("Valide nesta TV")};
   for(int i=0;i<3;i++) {
@@ -590,7 +616,7 @@ static void setup(void) {
     gfx_cor((GfxRect){716,195,84,84},.5f,.25f,.32f,.34f,.55f);
     gfx_icone((GfxRect){736,215,44,44},"aj_check",.65f,.84f,.83f,1);
     texto(TXT_ILHA_PERGUNTA,i18n("AIOStreams adicionado"),716,307,1040,240);
-    texto(TXT_ILHA_SUB,host,716,361,1040,174);
+    texto(TXT_ILHA_SUB,snap.nome[0]?snap.nome:"AIOStreams",716,361,1040,174);
     const char *checks[]={i18n("Manifesto"),snap.configurada?i18n("Configuração conectada"):i18n("Somente manifesto"),i18n("Credenciais ocultas")};
     for(int i=0;i<3;i++) {
       gfx_icone((GfxRect){716,411+i*43,24,24},"aj_check",.65f,.84f,.83f,1);
@@ -656,12 +682,13 @@ static void tituloDesenhar(void) {
   if(evidenciaSelecionada) {
     listaPos=janela(6,snap.evidencias,5,1); int first=(int)listaPos;
     for(int i=first;i<snap.evidencias && i<first+5;i++) {
-      AioEvidencia *e=&snap.evidencia[i]; float y=380+(i-listaPos)*98;
+      AioEvidencia *e=&snap.evidencia[i]; float y=380+(i-listaPos)*98, alpha=itemInicio(0,i-first,&y);
       plrui_linha_foco((GfxRect){108,y,1290,90},22,focoDe(i+2,0));
       gfx_icone((GfxRect){125,y+18,24,24},e->erro?"aj_info":"aj_activity",.7f,.8f,.82f,1);
       texto(TXT_ILHA_NOME,e->titulo,168,y+12,1200,239);
       texto(TXT_ILHA_SUB,e->descricao,168,y+48,1200,174);
       ponteiro_alvo(108,y,1290,90,pointer,click,i+2,0);
+      gfx_opacidade_grupo=alpha;
     }
     if(!snap.evidencias) bloco(i18n("Não informado"),125,390,1100,2);
     texto(TXT_ILHA_SECAO,i18n("Estatísticas"),1490,184,326,238);
@@ -673,7 +700,7 @@ static void tituloDesenhar(void) {
   texto(TXT_ILHA_HORA,i18n("Decisão Nuvio"),1175,363,220,148);
   listaPos=janela(9,snap.resultados,8,1); int first=(int)listaPos;
   for(int i=first;i<snap.resultados && i<first+8;i++) {
-    float y=389+(i-listaPos)*60; AioResultado *r=&snap.resultado[i];
+    float y=389+(i-listaPos)*60, alpha=itemInicio(0,i-first,&y); AioResultado *r=&snap.resultado[i];
     plrui_linha_foco((GfxRect){108,y,1290,59},22,focoDe(i+2,0));
     char num[24]; snprintf(num,sizeof num,"%d",i+1); texto(TXT_ILHA_SUB,num,125,y+20,50,150);
     texto(TXT_ILHA_SECAO,r->nome[0]?r->nome:i18n("Fonte sem nome"),193,y+7,810,238);
@@ -682,13 +709,14 @@ static void tituloDesenhar(void) {
     snprintf(num,sizeof num,r->rank?"%d":"—",r->rank); texto(TXT_ILHA_SUB,num,1034,y+20,120,222);
     texto(TXT_ILHA_NUM,decisao(r),1160,y+22,230,184);
     ponteiro_alvo(108,y,1290,60,pointer,click,i+2,0);
+    gfx_opacidade_grupo=alpha;
   }
   texto(TXT_ILHA_NUM,i18n("Ordem recebida; rejeições anteriores não são fornecidas pelo manifesto."),124,890,1270,150);
   int selected=foco>=2?foco-2:0;
   texto(TXT_ILHA_HORA,i18n("Decisão Nuvio"),1490,184,326,174);
   if(selected<snap.resultados) {
     AioResultado *r=&snap.resultado[selected];
-    txt_bloco_corta(TXT_ILHA_NOME,r->nome,240,240,238,1490,217,326,34,1,3);
+    blocoEstilo(TXT_ILHA_NOME,r->nome,1490,217,326,34,3);
     static const char *const regras[]={"Equilíbrio","Qualidade máxima","Começar rápido"};
     int prio=ajustes_fonte_prioridade(); if(prio<0||prio>2) prio=0;
     char posicao[24]; snprintf(posicao,sizeof posicao,r->rank?"%d":"—",r->rank);
@@ -725,13 +753,13 @@ static void workspace(void) {
   gfx_cor((GfxRect){91,830,277,1},0,1,1,1,.08f);
   gfx_cor((GfxRect){108,850,254,34},.2f,.25f,.32f,.34f,.55f);
   texto(TXT_ILHA_HORA,snap.configurada?i18n("Configuração conectada"):i18n("Somente manifesto"),118,860,234,192);
-  texto(TXT_ILHA_HORA,host,108,891,252,134);
+  texto(TXT_ILHA_SUB,snap.nome[0]?snap.nome:"AIOStreams",108,891,252,174);
   texto(TXT_ILHA_TITULO,i18n(titulos[pagina]),453,184,1290,243);
   const char *intro=pagina==CATALOGOS?"CH+ / CH-: mover na Home":pagina==FONTES?"Addons, serviços, cache e P2P":pagina==LINKS?"Destinos externos e instalação":pagina==LEGENDAS?"Separadas das faixas dentro do vídeo":pagina==FILTROS?"Resumo somente leitura · Edite pelo celular":pagina==SAUDE?"Instância, latência e erros observados":"Sua configuração, com cada recurso no seu lugar.";
   bloco(i18n(intro),453,245,1240,1);
   if(pagina==PAINEL) {
     gfx_icone((GfxRect){473,318,25,25},"aj_shield-check",.8f,.86f,.88f,1);
-    const char *displayHost=host;
+    const char *displayHost=snap.nome[0]?snap.nome:"AIOStreams";
     for(int i=0;i<7;i++) if(!strcmp(host,hosts[i])) displayHost=nomes[i];
     texto(TXT_ILHA_NOME,displayHost,518,306,1160,236);
     gfx_cor((GfxRect){453,374,1353,1},0,.8f,.84f,.88f,.08f);
@@ -778,7 +806,7 @@ static void workspace(void) {
     for(int i=start;i<snap.catalogos && i<start+5;i++) {
       int f=fileira(i); char sub[192];
       snprintf(sub,sizeof sub,"%s · %s",origemCatalogo(i),!strcmp(snap.catalogo[i].tipo,"movie")?i18n("Filmes"):!strcmp(snap.catalogo[i].tipo,"series")?i18n("Séries"):snap.catalogo[i].tipo);
-      float y=370+(i-listaPos)*88;
+      float y=370+(i-listaPos)*88, alpha=itemInicio(0,i-start,&y);
       plrui_linha_foco((GfxRect){453,y,980,86},22,focoDe(i,0));
       char rank[16]; snprintf(rank,sizeof rank,"%d",i+1); texto(TXT_ILHA_ITEM,rank,470,y+30,40,150);
       texto(TXT_ILHA_NOME,snap.catalogo[i].nome,520,y+16,640,239);
@@ -790,6 +818,7 @@ static void workspace(void) {
       gfx_cor((GfxRect){1308+(on?15:0),y+33,18,18},.5f,on?r:.67f,on?g:.7f,on?b:.71f,1);
       texto(TXT_ILHA_NUM,on?i18n("Ligado"):i18n("Desligado"),1354,y+33,78,180);
       ponteiro_alvo(453,y,980,86,pointer,click,i,0);
+      gfx_opacidade_grupo=alpha;
     }
     botao(snap.catalogos,i18n("Mover para cima"),453,743,240); botao(snap.catalogos+1,i18n("Mover para baixo"),705,743,270);
     texto(TXT_ILHA_HORA,i18n("CH+ / CH-: mover na Home"),473,822,890,148);
@@ -868,12 +897,13 @@ static void workspace(void) {
       else if(i==3) snprintf(sub,sizeof sub,i18n("Excluir cache: %s · Excluir sem cache: %s"),snap.regraCache<0?i18n("Não informado"):snap.regraCache?i18n("Sim"):i18n("Não"),snap.regraUncached<0?i18n("Não informado"):snap.regraUncached?i18n("Sim"):i18n("Não"));
       else if(snap.resumo[i][0]) snprintf(sub,sizeof sub,"%s",valorRegra(snap.resumo[i]));
       else snprintf(sub,sizeof sub,i18n("%d campos informados · Somente leitura"),snap.regras[i]);
-      float x=453+(i%2)*504, y=330+(i/2)*124;
+      float x=453+(i%2)*504, y=330+(i/2)*124, alpha=itemInicio(i%2,i/2,&y);
       plrui_linha_foco((GfxRect){x,y,478,100},22,focoDe(i,0));
       texto(TXT_ILHA_NOME,names[i],x+12,y+20,412,239);
       texto(TXT_ILHA_SUB,sub,x+12,y+57,418,174);
       gfx_icone((GfxRect){x+440,y+38,20,20},"aj_lock",.6f,.65f,.68f,1);
       ponteiro_alvo(x,y,478,100,pointer,click,i,0);
+      gfx_opacidade_grupo=alpha;
     }
     botao(8,i18n("Editar no celular"),453,866,440);
   } else if(pagina==LEGENDAS) {
@@ -900,16 +930,16 @@ static void workspace(void) {
     char state[192]; snprintf(state,sizeof state,"%s · %s · %d ms",snap.versaoInstancia[0]?snap.versaoInstancia:i18n("Não informado"),snap.canal,snap.ms[1]);
     gfx_cor((GfxRect){453,286,980,112},.25f,.21f,.27f,.29f,.35f);
     gfx_icone((GfxRect){475,325,28,28},"aj_circle-check",.65f,.84f,.83f,1);
-    texto(TXT_G30B,i18n("Status da instância"),550,310,670,236);
-    texto(TXT_G20M,state,550,350,670,174);
+    texto(TXT_ILHA_NOME_L,i18n("Status da instância"),550,310,670,236);
+    texto(TXT_ILHA_SUB,state,550,350,670,174);
     char total[24]; snprintf(total,sizeof total,"%d",snap.erros);
-    texto(TXT_G30B,total,1320,309,100,236);
+    texto(TXT_ILHA_NOME_L,total,1320,309,100,236);
     texto(TXT_ILHA_NUM,i18n("Saúde"),1320,366,100,174);
     const char *names[]={i18n("Manifesto"),i18n("Status da instância"),i18n("Configuração"),i18n("Consulta de fontes"),i18n("Legendas"),i18n("Inspeção do título")};
     for(int i=0;i<6;i++) {
       float y=445+i*49; char status[80];
-      texto(TXT_G20M,names[i],473,y,530,220);
-      snprintf(status,sizeof status,snap.http[i]?"HTTP %d · %d ms":"—",snap.http[i],snap.ms[i]); texto(TXT_G20M,status,1060,y,360,174);
+      texto(TXT_ILHA_SUB,names[i],473,y,530,220);
+      snprintf(status,sizeof status,snap.http[i]?"HTTP %d · %d ms":"—",snap.http[i],snap.ms[i]); texto(TXT_ILHA_SUB,status,1060,y,360,174);
       gfx_cor((GfxRect){453,y+39,980,1},0,.8f,.84f,.88f,.08f);
     }
     char stats[192]; snprintf(stats,sizeof stats,i18n("%d estatísticas · %d erros · %d sem campos obrigatórios"),snap.estatisticas,snap.erros,snap.filtrados);
@@ -997,7 +1027,11 @@ void aioui_desenhar(Uint32 agora) {
   gfx_opacidade_grupo=alpha*entry*anim_suave(corpo);
   deslocamento=(1-entry)*NV_ENTRA_DY;
   if(deslocamento) gfx_transformar(0,0,1,0,deslocamento);
+  int destino=pagina, regra=regraSelecionada, evidencia=evidenciaSelecionada;
+  pagina=paginaAnterior<0?pagina:paginaAnterior;
+  regraSelecionada=regraVisivel; evidenciaSelecionada=evidenciaVisivel;
   if(pagina<PAINEL) setup(); else workspace();
+  pagina=destino; regraSelecionada=regra; evidenciaSelecionada=evidencia;
   if(deslocamento) gfx_sem_transformar();
   deslocamento=0;
   gfx_opacidade_grupo=alpha*entry;

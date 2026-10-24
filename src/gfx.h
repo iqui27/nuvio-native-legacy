@@ -643,7 +643,7 @@ void gfx_ambiente_preparar(void);
 // scrim (R = G = B); `dens` = alfa dele no painel (a barra usa o perfil
 // proprio, escalado pela "Opacidade do vidro"). Chapado (so o scrim) com "Vidro
 // fosco" desligado, efeitos minimos, video por baixo, ou sobre outro vidro.
-enum { GFX_VIDRO_PAINEL = 0, GFX_VIDRO_BARRA = 1 };
+enum { GFX_VIDRO_PAINEL = 0, GFX_VIDRO_BARRA = 1, GFX_VIDRO_ILHA = 2 };
 void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a);
 // A27 TOP CHROME (avatar chip, top bar, clock island): one material, one tint.
 // gfx_chrome_tinta = scrim alpha from "Opacidade do vidro", >= the floor;
