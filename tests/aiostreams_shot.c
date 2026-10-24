@@ -24,6 +24,14 @@ static void save(const char *dir,const char *name) {
   char path[1024]; snprintf(path,sizeof path,"%s/aio-%s.png",dir,name); assert(!IMG_SavePNG(s,path)); SDL_FreeSurface(s);
   printf("PNG %s\n",path);
 }
+static Uint32 clockMs=100000;
+static void frame(int ms) {
+  for(int t=0;t<ms;t+=10) { aioui_atualizar(.01f,clockMs); clockMs+=10; }
+  SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8);
+  glBindFramebuffer(GL_FRAMEBUFFER,fbo); glViewport(0,0,1920,1080);
+  glClearColor(.05f,.05f,.05f,1); glClear(GL_COLOR_BUFFER_BIT);
+  gfx_novo_quadro(); aioui_desenhar(clockMs);
+}
 int main(int argc,char **argv) {
   assert(argc==2);
   SDL_SetHint("SDL_MAC_BACKGROUND_APP","1"); assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)); IMG_Init(IMG_INIT_PNG|IMG_INIT_JPG);
@@ -45,14 +53,49 @@ int main(int argc,char **argv) {
   s.addon[s.addons++]=(AioItem){.nome="OpenSubtitles v3 Plus",.ativo=1,.legenda=1};
   s.addon[s.addons++]=(AioItem){.nome="SubDL",.ativo=1,.legenda=1};
   const char *names[]={"sem-config","setup-instancia","setup-importar","setup-servicos","setup-pronto","painel","catalogos","fontes","links","legendas","filtros","saude","titulo-debug"};
-  for(int p=0;p<13;p++) {
-    aioui_shot(p,&s);
-    for(int frame=0;frame<160;frame++) {
-      SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); SDL_Delay(8);
-      glBindFramebuffer(GL_FRAMEBUFFER,fbo); glViewport(0,0,1920,1080); glClear(GL_COLOR_BUFFER_BIT); gfx_novo_quadro(); aioui_desenhar(100000);
+  const int scales[]={100,85};
+  for(int scale=0;scale<2;scale++) for(int glass=0;glass<2;glass++) {
+    gfx_escala_txt_definir(scales[scale]/100.f); ajustes_definir_vidro(glass);
+    for(int p=0;p<13;p++) {
+      aioui_shot(p,&s);
+      for(int f=0;f<=80;f++) {
+        frame(f?10:0); SDL_Delay(2);
+        if(scale==0 && glass && (f==0||f==8||f==16||f==32)) {
+          char name[160]; snprintf(name,sizeof name,"%s-entry-%03d",names[p],f*10);save(argv[1],name);
+        }
+      }
+      char name[160]; snprintf(name,sizeof name,"%s-%d-%s",names[p],scales[scale],glass?"glass":"solid");
+      save(argv[1],name);
+      if(scale==0 && glass) {
+        SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;aioui_evento(&e);
+        for(int f=0;f<=32;f++) {
+          frame(f?10:0);
+          if(f==0||f==8||f==16||f==32) {
+            snprintf(name,sizeof name,"%s-focus-%03d",names[p],f*10);save(argv[1],name);
+          }
+        }
+      }
     }
-    save(argv[1],names[p]);
   }
+  gfx_escala_txt_definir(1); ajustes_definir_vidro(1);
+  const int times[]={0,80,160,320};
+  for(int kind=0;kind<3;kind++) {
+    aioui_shot(0,&s);
+    if(kind) for(int f=0;f<80;f++) frame(10);
+    SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=kind==1?SDLK_DOWN:SDLK_ESCAPE;
+    if(kind) aioui_evento(&e);
+    for(int t=0;t<4;t++) {
+      frame(t?times[t]-times[t-1]:0);
+      char name[80]; snprintf(name,sizeof name,"%s-%03d",kind==0?"entry":kind==1?"focus":"exit",times[t]); save(argv[1],name);
+    }
+  }
+  aioui_shot(0,&s);
+  for(int f=0;f<80;f++) frame(10);
+  SDL_Event back={0}; back.type=SDL_KEYDOWN; back.key.keysym.sym=SDLK_ESCAPE;
+  aioui_evento(&back);
+  assert(aioui_aberto() && "Back must retain the sheet through exit");
+  for(int i=0;i<30;i++) aioui_atualizar(.01f,100000+i*10);
+  assert(!aioui_aberto());
   AddonRemoto add={.nome="AIOStreams",.url="https://example.invalid/stremio/sample/sample/manifest.json",.ativo=1}; addons_definir_lista(&add,1);
   // Drawing only: opening the list starts manifest network probes.
 
@@ -66,8 +109,10 @@ int main(int argc,char **argv) {
   Stream streams[2]={0}; strcpy(streams[0].provedor,"AIOStreams"); strcpy(streams[0].rotulo,"4K · Dolby Vision · MP4"); strcpy(streams[0].arquivo,"Torrentio · TorBox"); strcpy(streams[0].url,"https://example.invalid/video"); streams[0].altura=2160; streams[0].mp4=1; streams[0].tamanhoMB=10035;
   streams[1]=streams[0]; streams[1].altura=1080; streams[1].tamanhoMB=3277; strcpy(streams[1].rotulo,"1080p · Blu-ray · SDR"); strcpy(streams[1].arquivo,"Comet · TorBox");
   stream_definir_alvo("tt0468569"); stream_definir_lista(streams,2); stream_folha_nome("Batman: O Cavaleiro das Trevas"); stream_folha_abrir();
+  aioui_shot(5,&s);
+  for(int f=0;f<80;f++) frame(10);
   for(int frame=0;frame<40;frame++) {
-    aioui_shot(5,&s); aioui_desenhar(100000);
+    aioui_desenhar(100000);
     SDL_Delay(8); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); stream_folha_atualizar(1.f/60,100000+frame*16); glBindFramebuffer(GL_FRAMEBUFFER,fbo); gfx_novo_quadro(); stream_folha_desenhar(100000+frame*16);
   }
   save(argv[1],"integracao-fontes");
