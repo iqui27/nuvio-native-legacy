@@ -66,7 +66,6 @@
 #include "botoes.h"
 #include "teclavoltar.h"
 #include "jfid.h"
-#include "glance.h"
 #include "posterprov.h"
 #include "contalib.h"
 #include "salvos.h"
@@ -1380,23 +1379,6 @@ static int celulaEmFoco(void) {
   return (foco.fileira >= gradeIni() && i >= 0 && i < nCelulas) ? i : -1;
 }
 
-static int glanceBibTotal(void) { return nCelulas; }
-static int glanceBibItem(int i, CatItem *out) {
-  const CatItem *ci;
-  CatItem tmp;
-  if (i < 0 || i >= nCelulas || estado() == EST_LISTAS) return 0;
-  if (estado() == EST_ITENS) return lst_item(i, out);
-  ci = itemFiltro(filtro[i], &tmp);
-  if (!ci) return 0;
-  *out = *ci; return 1;
-}
-static void glanceBibFoco(int i) { foco.fileira = gradeIni() + i / colunas(); foco.coluna = i % colunas(); }
-static void glanceBibDetalhes(int i) {
-  glanceBibFoco(i);
-  if (estado() == EST_ITENS) abrirItemDaLista(i);
-  else { int idx = indiceDaCelula(i); if (idx >= 0) pedido = idx; }
-}
-
 // O OK CURTO NUMA CELULA: abre. Roda no KEYUP (ver okDesde): so ali se sabe se
 // foi toque ou pressao longa.
 static void okNaCelula(int i) {
@@ -1414,9 +1396,9 @@ static void okNaCelula(int i) {
     return;
   }
   if (estado() == EST_LISTAS) { abrirLista(i); return; }
-  if (estado() == EST_ITENS && aberta.fonte == LST_SERVIDOR) { abrirItemDaLista(i); return; }
-  { static const GlanceFonte f = {glanceBibTotal, glanceBibItem, glanceBibFoco, glanceBibDetalhes};
-    glance_abrir(&f, i); }
+  if (estado() == EST_ITENS) { abrirItemDaLista(i); return; }
+  { int idx = indiceDaCelula(i);
+    if (idx >= 0) pedido = idx; }
 }
 
 // SEGURAR OK NUMA CELULA: o menu de contexto. Cartaz de titulo/item = o MESMO

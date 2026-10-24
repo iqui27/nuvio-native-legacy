@@ -11,7 +11,7 @@ variants = [(s, 'moderna', 0, 0) for s in ('.9', '1.1', '1.2', '1.3')]
 variants += [('.85', rail, layout, accent)
              for rail, layout in [('fixa', 0), ('recolhida', 0), ('moderna', 1), ('dinamica', 2)]
              for accent in (0, 6)]
-for screen in ('library', 'glance', 'rewatch'):
+for screen in ('library', 'rewatch'):
     executable = out / screen / 'capture'
     if not executable.exists():
         raise SystemExit(f'Missing capture executable: {executable}')

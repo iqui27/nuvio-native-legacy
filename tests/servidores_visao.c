@@ -1,8 +1,6 @@
 // Server navigation uses the existing grid; no network or renderer needed.
 #include "../src/vertudo.c"
 #include <assert.h>
-
-void glance_abrir(const GlanceFonte *fonte, int i) { fonte->detalhes(i); }
 Uint32 SDL_GetTicks(void) { return 0; }
 float ajustes_conteudo_x(void) { return 48; }
 int ajustes_menu_topo(void) { return 0; }

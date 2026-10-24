@@ -13,9 +13,7 @@ __attribute__((weak)) int trakt_ativo(void) { return 0; }
 __attribute__((weak)) int simkl_ativo(void) { return 0; }
 __attribute__((weak)) int gpun_efeito_ativo(int effect) { (void)effect; return 0; }
 
-#include "glance.h"
 #include "proximo.h"
-__attribute__((weak)) void glance_abrir(const GlanceFonte *f, int i) { (void)f; (void)i; }
 __attribute__((weak)) int prox_seguinte(const CatItem *ci, const CatEp *eps, int n, int pct, long long agora, ProxSugestao *out) {
   (void)ci; (void)eps; (void)n; (void)pct; (void)agora; (void)out; return 0;
 }
