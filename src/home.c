@@ -2690,8 +2690,14 @@ static void home_evento_(const SDL_Event *e) {
                         fileiras[foco.fileira].catId, fileiras[foco.fileira].titulo);
       } else if (dur >= NV_HOLD_MS) {
         abrirMenuCartaz();
+      } else if (fileiras[foco.fileira].tipo == FILEIRA_CONTINUE ||
+                 fileiras[foco.fileira].tipo == FILEIRA_RETORNO ||
+                 !strcmp(fileiras[foco.fileira].chave, "continue_watching") ||
+                 !strcmp(fileiras[foco.fileira].chave, "upcoming_section")) {
+        if (ajustes_cw_ok_toca() && strcmp(fileiras[foco.fileira].chave, "upcoming_section"))
+          pedidoTocar = 1;
+        else pedidoAbrir = 1;
       } else {
-        // Short OK now opens quick glance, including Continue Watching.
         previaHome();
       }
       return;

@@ -12,6 +12,7 @@ static int grouped, restart, nivel, botao, maisAcoes, idx, primarioPct;
 static int vidro, count, failures, total, reminder;
 static float expansion, yAcoes;
 static GfxRect drawn[8], maisAncora;
+static float growth[8];
 static CatItem item = {"test"}, *ci = &item;
 static const char *rot = "Play", *morphLogo;
 static int ponteiroDetalhe;
@@ -21,9 +22,11 @@ static int ponteiroDetalhe;
 #define ACAO_LISTA 1
 #define ACAO_LEMBRAR 2
 #define ACAO_MAIS 3
+#define ACAO_JUNTOS 11
+#define ACAO_TRAVAR 13
 #define BT_TEXTO_REP 235
 #define NV_RAIO_PILL .5f
-static void record(GfxRect r, int action) { (void)action; drawn[count++] = r; }
+static void record(GfxRect r, int action, float extra) { (void)action; growth[count]=extra; drawn[count++] = r; }
 static int acoesAgrupadas(void) { return grouped; }
 static int temInicio(void) { return restart; }
 static int nBotoesTodos(void) { return total; }
@@ -47,6 +50,9 @@ static const char *i18n(const char *s) { return s; }
 static const CatItem *cat_item(int i) { return ci; }
 static int agenda_lembrete(const char *s) { return 0; }
 static TxtLinha txt_linha(int e,const char *s,int r,int g,int b,int a) { return (TxtLinha){100,24}; }
+static TxtLinha txt_linha_corta(int e,const char *s,int r,int g,int b,int a,float w) { return txt_linha(e,s,r,g,b,a); }
+static int travaui_tem_trava(const char *imdb) { return 0; }
+static void desenhaDicaBotao(GfxRect r,const char *texto,float a) {}
 #define foco_anel(...) ((void)0)
 #define player_morph_de(...) ((void)0)
 #define ponteiro_alvo(...) ((void)0)
@@ -73,15 +79,19 @@ int main(void) {
       // Grouped circles render back to front. Compare actual surface edges.
       for (int i=0; i<count; i++)
       for (int j=i+1; j<count; j++)
-        if (drawn[j].x<drawn[i].x) { GfxRect r=drawn[i]; drawn[i]=drawn[j]; drawn[j]=r; }
+        if (drawn[j].x<drawn[i].x) {
+          GfxRect r=drawn[i]; drawn[i]=drawn[j]; drawn[j]=r;
+          float extra=growth[i]; growth[i]=growth[j]; growth[j]=extra;
+        }
       for (int i=1; i<count; i++) {
         float gap=drawn[i].x-drawn[i-1].x-drawn[i-1].w;
-        if (fabsf(gap-NV_DETW2_BTN_GAP)>.01f) {
+        float expected=NV_DETW2_BTN_GAP-growth[i-1]-growth[i];
+        if (fabsf(gap-expected)>.01f || gap<=0) {
           if (failures++<12) printf("FAIL grouped=%d restart=%d focus=%d level=%d expansion=%.2f neighbour=%d gap=%.3f\n",grouped,restart,botao,nivel,expansion,i,gap);
         }
       }
     }
   }
-  printf("%s: production row gaps (%d failures)\n",failures?"FAIL":"PASS",failures);
+  printf("%s: approved row gaps with focus growth (%d failures)\n",failures?"FAIL":"PASS",failures);
   return failures?1:0;
 }

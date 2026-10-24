@@ -354,7 +354,7 @@
   1, /* player format position: Original, the top corner (V_PLR_FORMATO_POS 1) */
   0, /* show the audio codec in the format row: On (V_LIGA 0) */
   0, /* gradient smoothing: Automatic */
-  0, /* title hero: Ready version */
-  0, /* cast history: On */
   0, /* #641 display refresh-rate match (AFR): Off */
   0, /* hero logo and information size: Normal */
+  0, /* title hero: Ready version */
+  0, /* cast history: On */

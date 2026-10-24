@@ -1,4 +1,23 @@
-# Detail integration merge
+# Current merge verification
+
+Merged `integracao/2.1` at `147263c2c`, retaining 2.0.8 fixes and Settings v4. Detail-only settings follow integration IDs in the enum, options, keys and defaults; existing section order is preserved. Both Detail options route to the title-page group. All 30 language tables retain both parents' keys, including `Trilha`; incoming Arabic translations win shared-key conflicts.
+
+Restored integration's #595 title-bound watched-request guard. Updated action-spacing and cast fixtures for the approved layout and current quick-glance entry; supplied missing metadata fixture stubs. No stash, push or deployment.
+
+Final verification: **21 pass, 10 fail**. Ratings, fullscreen trailer fallback, Settings v4, Detail 2.1, action spacing, watched-request isolation, Mac compilation, cast memory/navigation, all four episode-source checks, stored episode evidence, metadata re-request, remount, PNG generation, both language checks and local build returned 0.
+
+Remaining failures:
+
+- rc 1: `bash tests/detail_epcard.sh`, `bash tests/detail_epinfo.sh`, `bash tests/detail_episode_perf.sh`, `bash tests/detail_episode_review.sh`, `bash tests/detail_epmaterial_shot.sh`, `bash tests/detail_eps.sh`, `bash tests/detail_eps_shot.sh`, `bash tests/detail_epslista.sh`.
+- rc 134: `bash tests/detail_layout.sh`, `bash tests/detail_secoes_shot.sh`.
+
+These checks reference older episode geometry/APIs (`epFuros`, `epEscala`, `NV_DETP_EPM_*`), old source guards, or old button/collection behavior. They remain unresolved; this merge does not claim a green full Detail suite.
+
+Regenerated PNGs preserve the pre-merge layout. `series-pronta.png` and `notas-media.png` are pixel-identical to saved pre-merge captures; other full pages differ by less than 0.01% of pixels. Existing differences from the original mock (fixture content, average-rating summary, season shuffle and spoiler state) remain. Output: `/Volumes/ExternalSSD/tmp/rev/detalhe21-layout-png/`. After the external SSD filled, capture scratch directories `pronta` and `pessoal` moved to `/tmp` with symlinks preserving output paths.
+
+---
+
+# Previous Detail integration merge
 
 The approved detail layout is retained while integrating the 2.0.8 fixes and current `integracao/2.1` through `c77a2e59d8ed26c717e93987193d2eeab79b7486`.
 

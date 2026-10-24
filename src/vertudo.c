@@ -989,7 +989,7 @@ static void montar(int n) {
     case VT_LAY_LINHA: {
       GfxRect card = vtTimelineCard(0);
       tlProg = -1.0f;
-      for (i = 0; i < n; i++) cel(i, card.x - vtInicio(), i * (VT_LINHA_H + VT_TL_GAP), card.w, card.h, i, 0);
+      for (i = 0; i < n; i++) cel(i, card.x - vtInicio(), i * (VT_LINHA_H + VT_TL_GAP), card.w, VT_LINHA_H, i, 0);
       break; }
     case VT_LAY_RANKING: {
       // Quatro por linha: o numeral mora no vao a ESQUERDA do cartaz, como o
@@ -3356,7 +3356,7 @@ static void timelineCard(int i,float cy,float a,float x0) {
   float rail = vtTimelineRetrato() ? 64.0f : 109.0f, rx = x0 + rail;
   // O trecho de cada cartao vai de meio vao acima a meio vao abaixo: os
   // trechos emendam e o ponto cai no meio. Sem tiques soltos entre os anos.
-  float t = i < VT_MAX ? tlFoco[i] : 0.0f, segY = cy - VT_TL_GAP * 0.5f, segH = VT_CARD_H + VT_TL_GAP;
+  float t = i < VT_MAX ? tlFoco[i] : 0.0f, segY = cy - VT_TL_GAP * 0.5f, segH = VT_LINHA_H + VT_TL_GAP;
   float fim = tlProg < 0.0f ? segY : tlProg + cy - celY[i];   // o mesmo deslocamento do cartao
   gfx_cor((GfxRect){rx,segY,2,segH},0,.48f,.47f,.46f,a*.45f);
   if(fim>segY)gfx_cor((GfxRect){rx-1,segY,4,fminf(segH,fim-segY)},0,r,g,b,a*.95f);

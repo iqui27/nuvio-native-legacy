@@ -367,7 +367,7 @@ void reacao_fechar(void) {
 }
 
 static const char *const TAGS[] = {
-  "Visual", "Trilha", "Atuações", "Roteiro", "Final", "Ritmo lento",
+  "Visual", "Trilha sonora", "Atuações", "Roteiro", "Final", "Ritmo lento",
   "Chorei", "Ri muito", "Assustador", "Quero rever", "Superestimado", "Subestimado",
   "Engraçado", "Emocionante", "Previsível"
 };
@@ -390,6 +390,7 @@ static void desfazerNota(const void *ctx) {
   salvarNota(anterior.id, anterior.nota);
   if (!strchr(anterior.id, ':')) {
     Reacao *r = linhaDe(anterior.id); r->estado = anterior.estado; gravar();
+    diario_avaliar(0, anterior.id, !strcmp(anterior.tipo, "series") ? DIARIO_SERIE : DIARIO_FILME, anterior.nota);
     if (simkl_ativo()) simkl_avaliar(anterior.id, anterior.tipo, anterior.nota);
   }
   if (trakt_ativo()) trakt_avaliar(anterior.id, anterior.tipo, anterior.nota);
@@ -459,10 +460,10 @@ static void responder(const char *imdb, int v, int nota) {
   atividade_reacao(r->imdb, r->midia, r->titulo,
                    c.imdb[0] && !strcmp(c.imdb, r->imdb) ? c.poster : "", v, r->rec);
   salvarNota(r->imdb, nota);
-  // O DIARIO guarda a nota sempre (8/5/2, a escala de 1 a 10 das estrelas):
+  // The diary preserves the exact 1..10 score, including half stars:
   // e a mesma resposta, so que local e por perfil, com ou sem Trakt.
   diario_avaliar(0, r->imdb, !strcmp(r->midia, "series") ? DIARIO_SERIE : DIARIO_FILME,
-                 diario_nota_da_reacao(v));
+                 nota);
   // SO COM O TRAKT LIGADO. Sem ele a resposta fica nesta TV (e no servico,
   // se a pessoa permitiu) e o Trakt nao fica sabendo — e e o certo.
   if (nota && trakt_ativo()) trakt_avaliar(r->imdb, r->midia, nota);

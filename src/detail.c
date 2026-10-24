@@ -342,6 +342,7 @@ static void ultimoEpisodio(int *t, int *e);
 static int  pedReproduzir = 0, pedMarcar = 0, pedFontes = 0;
 // Marcar como ASSISTIDO. Separado de pedMarcar, que e "adicionar a lista".
 static int  pedAssistido = 0;
+static char pedAssistidoId[24];
 static int  pedDoInicio = 0;         // botao "Reproduzir desde o inicio"
 static Uint32 okDesceEm = 0;
 static float pg = 0.0f;              // 0..1: hero -> pagina rolada
@@ -3303,7 +3304,9 @@ void detail_evento(const SDL_Event *e) {
       } else if (acao == ACAO_NOTA) {
         notaAbrir();
       } else if (acao == ACAO_ASSISTIDO) {
+        const CatItem *ci = cat_item(idx);
         pedAssistido = 1;
+        snprintf(pedAssistidoId, sizeof pedAssistidoId, "%s", ci ? ci->imdb : "");
       } else if (acao == ACAO_TRAVAR) {
         trailer_fechar();
         travaui_abrir(cat_item(idx), idx);
@@ -8903,7 +8906,17 @@ void detail_volta_notar(int novo) {
   memcpy(voltaEstado[nVolta].colunas,foco.colunaLembrada,sizeof voltaEstado[nVolta].colunas);
   voltaPilha[nVolta++] = idx;
 }
-int detail_pediu_assistido(void) { int v = pedAssistido; pedAssistido = 0; return v; }
+// Consume only on the same title that received the request.
+int detail_pediu_assistido(void) {
+  const CatItem *ci;
+  int v = pedAssistido;
+  char id[sizeof pedAssistidoId];
+  pedAssistido = 0;
+  snprintf(id, sizeof id, "%s", pedAssistidoId);
+  pedAssistidoId[0] = 0;
+  ci = cat_item(idx);
+  return v && ci && !strcmp(ci->imdb, id);
+}
 int detail_pediu_marcar(void)     { int v = pedMarcar;     pedMarcar = 0;     return v; }
 int detail_pediu_amigos(char *imdb, size_t tam) {
   const CatItem *c = cat_item(idx);
