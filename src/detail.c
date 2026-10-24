@@ -5489,7 +5489,7 @@ static void heroWeb(float a, float desloc) {
       ajustes_acento(&ar, &ag, &ab);
       x += 24;
       gfx_icone((GfxRect){x, yc - 10, 20, 20}, "pl_star", ar, ag, ab, a);
-      plrui_kicker(mine, x + 28, yc - 9, 208, 195, 181, a);
+      x += 28 + plrui_kicker(mine, x + 28, yc - 9, 208, 195, 181, a);
     }
     // QUANTO DA SERIE VOCE JA VIU, no fim da linha de meta.
     //
