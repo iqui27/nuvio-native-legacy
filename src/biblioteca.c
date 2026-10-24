@@ -2763,10 +2763,10 @@ static void desenhaLinhaTitulo(const CatItem *ci, int idx, float y, float f, flo
         char rank[16]; snprintf(rank, sizeof rank, "%d", ex.rank);
         txt_desenhar_alpha(txt_linha(TXT_CALLOUT, rank, 120, 122, 128, 255), r.x + 14, y + 20, a);
       }
-      txt_desenhar_alpha(txt_linha_corta(TXT_HERO_SEC, ci->titulo, 243, 242, 239, 255, r.x + r.w - tx - 18), tx, y + 16, a);
+      txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME, ci->titulo, 243, 242, 239, 255, r.x + r.w - tx - 18), tx, y + 16, a);
       char meta[220]; linhaMeta(ci, meta, sizeof meta);
-      txt_desenhar_alpha(txt_linha_corta(TXT_MINI, meta, 125, 127, 133, 255, r.x + r.w - tx - 18), tx, y + 42, a);
-      if (ex.nota[0]) txt_bloco_corta(TXT_HERO_META, ex.nota, 195, 197, 203, tx, y + 74, r.x + r.w - tx - 18, 23, a, 3);
+      txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_SUB, meta, 151, 153, 163, 255, r.x + r.w - tx - 18), tx, y + 48, a);
+      if (ex.nota[0]) txt_bloco_corta(TXT_ILHA_TEXTO, ex.nota, 195, 197, 203, tx, y + 82, r.x + r.w - tx - 18, 26, a, 3);
       if (cat_visto(ci)) gfx_icone((GfxRect){r.x + r.w - 34, y + 15, 20, 20}, "aj_check", .7f, .8f, .7f, a); }
     return;
   }
@@ -2999,7 +2999,7 @@ static void desenhaOrigens(void) {
       plrui_linha_foco(row, T21_R_ROW, i < 64 ? animOrigem[i] : 0);
       if (fonte == i) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
         gfx_cor((GfxRect){row.x + 9, row.y + 26, 5, 5}, .5f, ar, ag, ab, 1); }
-      txt_desenhar(txt_linha(TXT_HERO_SEC, rotuloOrigem(i, 1), 243, 242, 239, 255), row.x + 22, row.y + 22);
+      txt_desenhar(txt_linha(TXT_ILHA_NOME, rotuloOrigem(i, 1), 243, 242, 239, 255), row.x + 22, row.y + 22);
     }
     return;
   }
@@ -3040,7 +3040,7 @@ static void desenhaOrigens(void) {
       gfx_cor((GfxRect){tx, row.y + 19, 7, 7}, .5f, ar, ag, ab, 1);
       tx += 16;
     }
-    txt_desenhar(txt_linha_corta(TXT_HERO_SEC, name, 243, 242, 239, 255, row.x + row.w - tx - 48), tx, row.y + 5);
+    txt_desenhar(txt_linha_corta(TXT_ILHA_NOME, name, 243, 242, 239, 255, row.x + row.w - tx - 48), tx, row.y + 5);
     txt_desenhar(txt_linha(TXT_MINI, description, 112, 114, 120, 255), tx, row.y + 32);
     char num[16]; snprintf(num, sizeof num, "%d", count);
     TxtLinha ct = txt_linha(TXT_HERO_META, num, 140, 142, 148, 255);
@@ -3236,7 +3236,7 @@ static void desenhaPaginaCab(void) {
   if (!trilha) {
     float x = paginaX();
     txt_desenhar(txt_linha(TXT_HERO_META, aberta.autorNome[0] ? aberta.autorNome : aberta.autor, 160, 162, 168, 255), x, 260);
-    txt_bloco_corta(TXT_HERO_META, aberta.descricao, 195, 197, 203, x, 304, 510, 28, 1, 5);
+    txt_bloco_corta(TXT_ILHA_CORPO, aberta.descricao, 195, 197, 203, x, 304, 510, 30, 1, 5);
     char progress[80]; snprintf(progress, sizeof progress, "%s %d/%d", i18n("você viu"), pagVistos, nCelulas);
     txt_desenhar(txt_linha(TXT_HERO_META, progress, 175, 177, 183, 255), x, 478);
     GfxRect track = {x, 514, 510, 6};
