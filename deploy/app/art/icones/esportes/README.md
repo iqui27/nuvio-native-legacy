@@ -1,0 +1,1 @@
+Original generic symbols for all supported sports, drawn for Nuvio. These do not represent a team or league. Runtime uses the matching esp_<sport>.png in the parent folder, through the normal shared icon renderer. Rebuild offline with tools/icones-esportes.sh.

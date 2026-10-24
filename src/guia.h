@@ -172,4 +172,12 @@ void guia_preparar_busca(void);
 int  guia_canal_campos(int i, const char **id, const char **nome, const char **logo,
                        const char **cat, const char **base);
 
+// Bounded programme search for the Sports catalog, on the UI thread.
+unsigned guia_busca_revisao(void);
+int guia_busca_elegivel(int indice);
+int guia_pedir_canal_id(const char *id);
+int guia_busca_carregando(void);
+const char *guia_busca_conta(int indice);
+int guia_busca_programas(int indice, time_t de, time_t ate, int pular, EpgProg *out, int cap);
+
 #endif
