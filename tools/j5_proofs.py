@@ -10,13 +10,14 @@ from pathlib import Path
 BASE = Path('/Volumes/ExternalSSD/tmp/rev/diretor21/21-j5')
 OUT = BASE / 'r3'
 os.environ['MAGICK_TEMPORARY_PATH'] = os.environ.get('TMPDIR', '/Volumes/ExternalSSD/tmp')
+os.environ['MAGICK_THREAD_LIMIT'] = '1'
 TIMES = (0, 80, 160, 320)
 CLOCK_TIMES = (0, 50, 100, 150, 250, 400)
 sources = []
 
 
 def magick(*args):
-    subprocess.run(['magick', *map(str, args)], check=True, capture_output=True)
+    subprocess.run(['magick', '-define', 'png:compression-level=1', *map(str, args)], check=True, capture_output=True)
 
 
 def native(path):
