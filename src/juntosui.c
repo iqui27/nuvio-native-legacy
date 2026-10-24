@@ -1111,8 +1111,6 @@ static void desenharCorpo(GfxRect c, float a, void *u) {
   origemX = c.x - corpoBase.x;
   origemY = c.y + (noPlayer() ? 0 : NV_ILHA_H_ABERTA) - corpoBase.y;
   gfx_transformar(0, 0, 1, origemX, origemY);
-  // Keep whole labels hidden until the clock shape contains the body padding.
-  if (!noPlayer()) a *= anim_clamp((ilha_corpo_t() - .95f) / .05f, 0, 1);
   gfx_opacidade_grupo *= a;
   corpoDesenhando = 1;
   switch (visual) {

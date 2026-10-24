@@ -2065,13 +2065,12 @@ static void ilha_desenharCorpo_(Uint32 agora) {
   { int quer = corpoPed;
     float alvoC = quer ? 1.0f : 0.0f;
     corpoPed = 0;
-    if (gfx_efeitos_minimos()) { corpoT = alvoC; corpoV = 0.0f; }
-    else if (gfx_efeitos_leves()) corpoT = molaIlhaWZ(&corpoV, corpoT, alvoC, dt, MODAL_MOLA_W * 1.5f, 1.0f);
+    if (ajustes_animacoes_reduzidas()) { corpoT = alvoC; corpoV = 0.0f; }
     else corpoT = molaIlhaWZ(&corpoV, corpoT, alvoC, dt, MODAL_MOLA_W, MODAL_MOLA_Z);
     if (!quer && corpoT < 0.01f) { corpoT = 0.0f; corpoV = 0.0f; }
     // O TAMANHO PEDIDO MUDA com o painel aberto (botao posto ou tirado, a
     // edicao): anda na mola da pilula em vez de saltar. Nascendo, ja e o alvo.
-    if (corpoT <= 0.0f || corpoWa <= 0.0f || gfx_efeitos_minimos()) {
+    if (corpoT <= 0.0f || corpoWa <= 0.0f || ajustes_animacoes_reduzidas()) {
       corpoWa = corpoW; corpoHa = corpoH; corpoVw = corpoVh = 0.0f;
     } else {
       corpoWa = molaIlha(&corpoVw, corpoWa, corpoW, dt);
@@ -2217,7 +2216,7 @@ static void ilha_desenharCorpo_(Uint32 agora) {
       // O painel e muito maior que o modal: o conteudo so entra com a forma
       // quase assentada, senao ele aparece cortado pela borda que ainda cresce.
       aMod = (corpoT - 0.78f) / 0.20f; aMod = aMod < 0.0f ? 0.0f : aMod > 1.0f ? 1.0f : aMod;
-      if (anim_politica_reduzida || ajustes_animacoes_reduzidas() || gfx_efeitos_minimos())
+      if (anim_politica_reduzida || ajustes_animacoes_reduzidas())
         aMod = corpoT >= 0.5f ? 1.0f : 0.0f;
     }
     // A PILULA RECEBE O QUADRO: depois do pouso ela cresce ~6% e assenta

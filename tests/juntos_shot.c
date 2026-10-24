@@ -309,6 +309,13 @@ fontes:
   assert(juntosui_shot_entrada() == 0);
   motionNow = now + 1600;
   const int clockTimes[] = {0, 50, 100, 150, 250, 400};
+  // Sheet motion follows the animation setting only: minimal GPU effects must not snap it.
+  gfx_definir_efeitos_minimos(1);
+  juntosui_shot_player(0); juntosui_shot_camada(0, 0); motionFrame(1400);
+  juntosui_shot_camada(2, 0); motionFrame(50);
+  assert(ilha_corpo_t() > 0.01f && ilha_corpo_t() < 0.99f);
+  juntosui_shot_camada(0, 0); motionFrame(1400);
+  gfx_definir_efeitos_minimos(0);
   const char *friends[] = {"Henrique", "Rafa", "Fabi", "Ana", "Pedro", "Maria", "João", "Luiza"};
   juntosui_shot_folha(0, friends, 8);
   for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
@@ -319,7 +326,13 @@ fontes:
       for (int mode = 0; mode < 4; mode++) {
         if (mode == 3) { juntosui_shot_camada(0, 0); motionFrame(80); }
         if (mode == 0 || mode == 3) juntosui_shot_camada(layer, 0);
-        if (mode == 1) { motionFrame(1400); juntosui_shot_camada(layer, 1); }
+        if (mode == 1) {
+          motionFrame(1400); juntosui_shot_camada(layer, 1);
+          if (layer == 2) {  // code sheet focus lives in codPos: move it for real
+            SDL_Event key = {0}; key.type = SDL_KEYDOWN; key.key.keysym.sym = SDLK_RIGHT;
+            assert(juntosui_evento_sdl(&key));
+          }
+        }
         if (mode == 2) { motionFrame(500); juntosui_shot_camada(0, 0); }
         for (int i = 0; i < 6; i++) {
           // t=0 keeps the preceding rendered frame; input has no elapsed update.
