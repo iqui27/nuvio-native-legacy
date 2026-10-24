@@ -256,11 +256,11 @@ static int bibTinta2(void) { return 205; }
 // abaixo de 24 px que a Inter estatica daqui.
 #define BIB_TOPO         124.0f
 #define BIB_FAIXA_Y      232.0f
-#define BIB_SEG_H         55.0f   // .seg: 5 + (23 + 2 x 11) + 5
+#define BIB_SEG_H         NV_CTRL_H   // .seg: 5 + (23 + 2 x 11) + 5
 #define BIB_SEG_PAD        5.0f
 #define BIB_SEG_ITEM_PADX 20.0f
 #define BIB_SEG_ITEM_GAP   4.0f
-#define BIB_CHIP_H        52.0f   // .vid dos filtros: 12 + 21 + 12
+#define BIB_CHIP_H        NV_CTRL_H   // .vid dos filtros: 12 + 21 + 12
 #define BIB_CHIP_PADX     20.0f
 #define BIB_FAIXA_GAP     16.0f   // entre seletor, fio e chips
 #define BIB_GRADE_Y      388.0f   // faixa + 36
@@ -412,6 +412,9 @@ void biblioteca_teste_foco(int *fileira, int *coluna, int *acao) {
 }
 static float animModo[BIB_N_MODOS];
 static float animPick[8];
+static float animOrigem[64], animTela, animVista = 1, animListaTab, animListaEd;
+static Foco focoListas;
+static int temFocoListas;
 static float animFoco[BIB_MAX_LINHAS][BIB_COLUNAS_MAX];
 // Arte chegando, a mesma da home (revela.h): um registro por celula da grade.
 static RevelaArte revArte[BIB_MAX_LINHAS][BIB_COLUNAS_MAX];
@@ -747,6 +750,7 @@ static void remapear(int preservar) {
 #endif
   memset(animFoco, 0, sizeof animFoco); memset(revArte, 0, sizeof revArte);
   ondaArmada = 1; ondaEm = 0;
+  animVista = 0;
 }
 
 // O item de uma posicao de `filtro`. Salvo local fora do catalogo vira um
@@ -1054,6 +1058,7 @@ static void pedirFonte(void) {
 static int iniciado;
 void biblioteca_abrir_sessao(void) {
   fonte = FONTE_TRAKT;
+  animTela = 0;
   pedido = -1; sair = 0; pediuRelogio = 0; temAberta = 0;
   okDesde = 0;
   prefPerfil = -1;
@@ -1106,7 +1111,7 @@ void biblioteca_alternar_lista(int i) {
   if (modo != MODO_LISTAS) reconstruir();
 }
 
-int biblioteca_quer_sair(void) { return sair; }
+int biblioteca_quer_sair(void) { return sair && animTela < .005f; }
 int biblioteca_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return v; }
 
 int biblioteca_pediu_abrir(int *indiceCatalogo) {
@@ -1167,6 +1172,7 @@ static void fecharAberta(void) {
 static void abrirLista(int i) {
   const LstLista *l = lst_lista(i);
   if (!l) return;
+  focoListas = foco; temFocoListas = 1;
   aberta = *l;
   snprintf(abertaMidia, sizeof abertaMidia, "%s",
            l->midia[0] ? l->midia : "MOVIE");
@@ -1723,7 +1729,17 @@ static void biblioteca_atualizar_(float dt, Uint32 agora) {
 #ifdef NV_TOUCH_UI
   if (!layout_modo_mobile()) toqueLivre = 0;
 #endif
-  (void)agora;
+  animTela = anim_mola(animTela, sair ? 0 : 1, dt, NV_MOLA_TELA);
+  animVista = anim_rampa(animVista, 1, dt, 160);
+  animListaTab = anim_mola(animListaTab, listaTab, dt, NV_MOLA_FOCO);
+  animListaEd = anim_mola(animListaEd, !focoOrigem && foco.fileira == BIB_FIL_MODO, dt, NV_MOLA_FOCO);
+  for (int i = 0; i < 64; i++)
+    animOrigem[i] = anim_mola(animOrigem[i], focoOrigem && origemSel == i, dt, NV_MOLA_FOCO);
+  if (!temAberta && temFocoListas && modo == MODO_LISTAS && nCelulas) {
+    foco.fileira = focoListas.fileira < foco.nFileiras ? focoListas.fileira : foco.nFileiras - 1;
+    foco.coluna = focoListas.coluna < foco.nColunas[foco.fileira] ? focoListas.coluna : 0;
+    temFocoListas = 0;
+  }
   lerPref();
   atualizarFonte();
   if (teclado_aberto()) teclado_atualizar(dt, agora);
@@ -1906,13 +1922,8 @@ static int pilula(GfxRect r, float raio, float f, int escolhida) {
 // degrau mais clara (branco 12 % / cinza opaco), sem realce nem brilho. Devolve
 // a tinta principal do texto (clara nos dois estados).
 static int superficieLinha(GfxRect r, float raio, float f, float a) {
-  float v = anim_clamp(f, 0.0f, 1.0f);
-  if (ajustes_vidro()) gfx_cor(r, raio, 1, 1, 1, (.05f + .07f * v) * a);
-  else {
-    gfx_cor(r, raio, 0.10f, 0.11f, 0.13f, a);
-    if (v > 0.01f) gfx_cor(r, raio, .17f, .176f, .204f, v * a);
-  }
-  return v > 0.5f ? bibTinta() : 235;
+  plrui_linha_foco(r, raio * r.h, anim_clamp(f, 0, 1) * a);
+  return 235;
 }
 
 // O WORDMARK DO TRAKT, no lugar da palavra "TRAKT" composta com a fonte da
@@ -2045,19 +2056,12 @@ static void ponteiroCelula(int i, int b) {
 
 static void desenhaModos(void) {
   if (modo == MODO_LISTAS) {
-    float widths[4], total = 10;
-    for (int i = 0; i < 4; i++) { widths[i] = txt_linha(TXT_HERO_SEC, ROT_LISTA_TAB[i], 200, 200, 200, 255).w + 50; total += widths[i] + 4; }
-    GfxRect bar = {hdrX(), BIB_FAIXA_Y, total, BIB_SEG_H};
-    gfx_cor(bar, .5f, 1, 1, 1, .06f);
-    float x = bar.x + 5;
+    plrui_seg(ROT_LISTA_TAB, NULL, 4, animListaTab, animListaEd, hdrX(), BIB_FAIXA_Y, 1);
+    float x = hdrX() + 5;
     for (int i = 0; i < 4; i++) {
-      GfxRect button = {x, bar.y + 5, widths[i], bar.h - 10};
-      if (listaTab == i || (!focoOrigem && foco.fileira == 0 && foco.coluna == i))
-        gfx_cor(button, .5f, 1, 1, 1, listaTab == i ? .14f : .08f);
-      TxtLinha t = txt_linha(TXT_HERO_SEC, ROT_LISTA_TAB[i], listaTab == i ? 243 : 145, listaTab == i ? 242 : 147, listaTab == i ? 239 : 153, 255);
-      txt_desenhar(t, x + 22, button.y + (button.h - t.h) / 2);
-      ponteiro_alvo(button.x, button.y, button.w, button.h, ponteiroModo, NULL, i, 0);
-      x += widths[i] + 4;
+      float w = txt_linha(TXT_ILHA_SEG, ROT_LISTA_TAB[i], 243, 243, 243, 255).w + 40;
+      ponteiro_alvo(x, BIB_FAIXA_Y + 5, w, 44, ponteiroModo, NULL, i, 0);
+      x += w + 4;
     }
     return;
   }
@@ -2348,12 +2352,9 @@ static GLuint bibPoster(const CatItem *ci, float largura, const char **url) {
 }
 
 static void bibTitleCard(const CatItem *ci, GfxRect r, float a) {
-  unsigned hash = 2166136261u;
   const char *s = ci ? ci->titulo : "";
-  for (const unsigned char *p = (const unsigned char *)s; *p; p++) hash = (hash ^ *p) * 16777619u;
-  float cr = .08f + (hash & 31) / 600.0f, cg = .07f + ((hash >> 5) & 31) / 700.0f;
-  float cb = .10f + ((hash >> 10) & 31) / 500.0f;
-  gfx_cor(r, 14.0f / r.h, cr, cg, cb, a);
+  plrui_material_s(r, 14, 0, a, 1);
+  gfx_icone((GfxRect){r.x + (r.w - 32) / 2, r.y + 22, 32, 32}, "aj_film", 1, 1, 1, .5f * a);
   if (r.w > 100)
     txt_bloco_corta(TXT_HERO_SEC, s, 243, 242, 239, r.x + 14, r.y + r.h - 85, r.w - 28, 23, a, 3);
 }
@@ -2427,12 +2428,7 @@ static void desenhaCartaz(const CatItem *ci, GfxRect base, float f, float a,
                     NV_COR_ESQUELETO_B, a);
     else bibTitleCard(ci, card, a);
   }
-  if (f > 0.01f && ajustes_borda_foco()) {
-    float ar, ag, ab;
-    ajustes_acento(&ar, &ag, &ab);
-    if (ajustes_vidro()) gfx_vidro_cartao(card, raio, f, a);
-    else gfx_anel(card, raio, NV_BIB_POSTER_BORDA, ar, ag, ab, f * a);
-  }
+  // GFX_CARD owns the configured poster border, as in Home.
   bibSourceBadges(ci, card.x + 10, card.y + 10, a);
   // Selo de assistido: o da Home (badges_selo_visto), no cartaz JA ESCALADO,
   // entao acompanha o foco de 1.08. Salvo local fora do catalogo chega como
@@ -2710,7 +2706,7 @@ static int bibSourceBadgesCont(const CatItem *ci) {
 static void desenhaWatched(const CatItem *ci, float y, float f, float a) {
   if (!ci) return;
   GfxRect row = {paginaX(), y, bibDireita() - paginaX(), 120};
-  if (f > .01f) gfx_cor(row, 18.0f / 120, 1, 1, 1, .13f * f * a);
+  plrui_linha_foco(row, T21_R_ROW, f * a);
   GfxRect poster = {row.x + 22, y + 12, 64, 96};
   const char *url; GLuint tex = bibPoster(ci, 64, &url);
   if (tex) {
@@ -2744,7 +2740,7 @@ static void desenhaLinhaTitulo(const CatItem *ci, int idx, float y, float f, flo
     DescItemLista ex = { 0 };
     GfxRect mini;
     float dx = 0.0f;
-    if (f > .01f) gfx_cor(r, 18.0f / r.h, 1, 1, 1, .13f * f * a);
+    plrui_linha_foco(r, T21_R_ROW, f * a);
     if (idx >= 0) {
       lst_item_extra(idx, &ex);
       dx = BIB_PAG_RANK_W;
@@ -2783,7 +2779,7 @@ static void desenhaLinhaTitulo(const CatItem *ci, int idx, float y, float f, flo
   { GfxRect r = { bibX(), y, bibW(), BIB_TL_H };
     float yc = y + BIB_TL_H * 0.5f;
     float v = anim_clamp(f, 0.0f, 1.0f);
-    if (v > 0.01f) gfx_cor(r, raioPx(12.0f, r.w, r.h), 1, 1, 1, 0.19f * v * a);
+    plrui_linha_foco(r, T21_R_ROW, v * a);
     // O titulo PEGO na Ordem: barra de acento na borda esquerda da linha.
     if (edModo == ED_ORDEM && idx >= 0 && idx == ordemPega) {
       float ar, ag, ab;
@@ -2879,7 +2875,8 @@ static float seloFonte(const LstLista *l, float x, float y, float h,
 static void desenhaCartaoLista(const LstLista *l, GfxRect r, float f, float a) {
   if (!telefoneui_ativo()) {
     if (!l) return;
-    superficieLinha(r, 22.0f / r.h, f, a);
+    plrui_material_s(r, T21_R_CARD, 0, a, 1);
+    plrui_linha_foco(r, T21_R_CARD, f * a);
     LstPrevia preview; lst_previa(l, &preview);
     for (int i = 0; i < 4; i++) {
       GfxRect tile = { r.x + i * r.w / 4, r.y, r.w / 4 + 1, 150 };
@@ -2994,19 +2991,20 @@ static void ponteiroOrigem(int a, int b) {
 static void desenhaOrigens(void) {
   if (modo == MODO_LISTAS) {
     GfxRect panel = {paginaX(), 388, 320, 590};
-    gfx_cor(panel, 26.0f / panel.h, .047f, .051f, .059f, .96f);
+    t21_ilha(panel, T21_R_SHEET, 1);
     txt_desenhar(txt_linha(TXT_CAPTION2, "Origens", 115, 117, 122, 255), panel.x + 30, panel.y + 20);
     for (int i = 0; i < BIB_N_FONTES; i++) {
       GfxRect row = {panel.x + 12, panel.y + 56 + i * 62, 296, 58};
       ponteiro_alvo(row.x, row.y, row.w, row.h, ponteiroOrigem, NULL, i, 0);
-      if ((focoOrigem && origemSel == i) || fonte == i) gfx_cor(row, 18.0f / row.h, 1, 1, 1, .10f);
+      plrui_linha_foco(row, T21_R_ROW, i < 64 ? animOrigem[i] : 0);
+      if (fonte == i) { float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
+        gfx_cor((GfxRect){row.x + 9, row.y + 26, 5, 5}, .5f, ar, ag, ab, 1); }
       txt_desenhar(txt_linha(TXT_HERO_SEC, rotuloOrigem(i, 1), 243, 242, 239, 255), row.x + 22, row.y + 22);
     }
     return;
   }
   GfxRect painel = { paginaX(), 388.0f, 320.0f, fminf(700, 66 + nOrigens() * 58 + (serverRows ? 54 : 0)) };
-  if (ajustes_vidro()) gfx_cor(painel, 26.0f / painel.h, .047f, .051f, .059f, .92f);
-  else gfx_cor(painel, 26.0f / painel.h, .047f, .051f, .059f, 1);
+  t21_ilha(painel, T21_R_SHEET, 1);
   txt_desenhar(txt_linha(TXT_CAPTION2, "Origens", 115, 117, 122, 255), painel.x + 30, painel.y + 20);
   const char *sub[] = { "sem repetir títulos", "Para ver", "Para ver", "salvos neste perfil" };
   float footerY = 0;
@@ -3025,7 +3023,7 @@ static void desenhaOrigens(void) {
     }
     GfxRect row = { painel.x + 12, painel.y + 56 + (i - start) * 58, 296, 56 };
     ponteiro_alvo(row.x, row.y, row.w, row.h, ponteiroOrigem, NULL, i, 0);
-    if (focoOrigem && origemSel == i) gfx_cor(row, 18.0f / row.h, 1, 1, 1, .13f);
+    plrui_linha_foco(row, T21_R_ROW, i < 64 ? animOrigem[i] : 0);
     float tx = row.x + 18;
     if (i) {
       gfx_cor((GfxRect){tx, row.y + 10, 34, 34}, 10.0f / 34, 1, 1, 1, .08f);
@@ -3107,7 +3105,7 @@ static void desenhaCabecalho(void) {
         if (min < 1) min = 1;
         snprintf(status, sizeof status, i18n("Sincronizado há %d min"), (int)min);
       } else snprintf(status, sizeof status, "%s", "Sincronizada");
-    } else snprintf(status, sizeof status, "%s", "Local");
+    } else status[0] = 0;
     TxtLinha st = txt_linha(TXT_MINI, status, 112, 114, 120, 255);
     x -= st.w; txt_desenhar(st, x, 204);
     const char *services[] = { "Trakt", "Simkl", "Conta Nuvio" };
@@ -3339,33 +3337,38 @@ static void desenhaTrilha(void) {
   for (int k = 0; k < 8 && first + k < nCelulas; k++) {
     int index = first + k; CatItem ci;
     if (!lst_item(index, &ci)) continue;
+    float entry = ondaEm ? revela_entra(ondaEm, revela_onda_atraso(k, 0), SDL_GetTicks()) : 1;
+    float opacity = gfx_opacidade_grupo;
+    gfx_opacidade_grupo *= entry;
     float cx = x + step * (k + .5f);
-    int done = cat_visto(&ci), focus = index == selected && foco.fileira >= 1;
+    int done = cat_visto(&ci);
+    float focus = animFoco[index / 8][index % 8];
     GfxRect circle = {cx - 22, 340, 44, 44};
     gfx_cor(circle, .5f, done ? ar : .085f, done ? ag : .09f, done ? ab : .105f, 1);
-    if (focus) gfx_anel(circle, .5f, 3, ar, ag, ab, 1);
+    plrui_linha_foco(circle, 22, focus);
     char number[16]; snprintf(number, sizeof number, "%d", index + 1);
     TxtLinha n = txt_linha(TXT_HERO_SEC, number, done ? ajustes_tinta_foco() : 220, done ? ajustes_tinta_foco() : 220, done ? ajustes_tinta_foco() : 220, 255);
     txt_desenhar(n, cx - n.w / 2, 351);
-    GfxRect poster = {cx - 80, 404, 160, 240};
-    if (focus) { poster.x -= 6.4f; poster.y -= 9.6f; poster.w *= 1.08f; poster.h *= 1.08f; }
+    GfxRect poster = {cx - 80 - 6.4f * focus, 404 - 9.6f * focus + (1 - entry) * NV_ENTRA_DY,
+                      160 * (1 + .08f * focus), 240 * (1 + .08f * focus)};
     const char *url; GLuint t = bibPoster(&ci, 174, &url);
     if (t) { gfx_tex_aspect_atual = tex_aspecto(url); gfx_rect(poster, t, GFX_CARD, focus, 0, 0, 14.0f / poster.h, 0, 0, 0, 1); gfx_tex_aspect_atual = 0; }
     else bibTitleCard(&ci, poster, 1);
     TxtLinha title = txt_linha_corta(TXT_HERO_SEC, ci.titulo, 235, 235, 235, 255, 170);
     txt_desenhar(title, cx - title.w / 2, 664);
     ponteiro_alvo(poster.x, poster.y, poster.w, poster.h, ponteiroCelula, NULL, index, 0);
+    gfx_opacidade_grupo = opacity;
   }
   CatItem ci; DescItemLista ex;
   if (!lst_item(selected, &ci)) return;
   lst_item_extra(selected, &ex);
   GfxRect note = {x, 740, 1060, 292};
-  gfx_cor(note, 26.0f / note.h, .047f, .051f, .059f, .96f);
+  t21_ilha(note, T21_R_SHEET, 1);
   char heading[180]; snprintf(heading, sizeof heading, "%s %d · %s", i18n("Passo"), selected + 1, ci.titulo);
   txt_desenhar(txt_linha_corta(TXT_CAPTION2, heading, 180, 182, 188, 255, 1000), x + 30, 766);
   txt_bloco_corta(TXT_CALLOUT, ex.nota[0] ? ex.nota : ci.sinopse, 220, 222, 228, x + 30, 812, 1000, 30, 1, 5);
   GfxRect about = {x + 1100, 740, 524, 292};
-  gfx_cor(about, 26.0f / about.h, .047f, .051f, .059f, .96f);
+  t21_ilha(about, T21_R_SHEET, 1);
   txt_desenhar(txt_linha(TXT_CAPTION2, "Sobre", 180, 182, 188, 255), about.x + 28, 766);
   txt_bloco_corta(TXT_HERO_META, aberta.descricao, 160, 162, 168, about.x + 28, 810, 468, 26, 1, 5);
   char progress[80]; snprintf(progress, sizeof progress, "%s %d/%d", i18n("você viu"), pagVistos, nCelulas);
@@ -3408,9 +3411,10 @@ static void biblioteca_desenhar_(Uint32 agora) {
   // servidor"): uma unica etiqueta em caixa alta com tracking, na largura da
   // tabela, SEM linha divisoria — o espaco acima dos chips ja separa. As linhas
   // comecam BIB_TL_CAB abaixo (gradeY).
-  if (modoLinha() && estado() == EST_TITULOS)
+  if (modoLinha() && estado() == EST_TITULOS && modo != MODO_ASSISTIDOS)
     txt_tracking(TXT_ILHA_HORA, i18n("TÍTULO / ORIGEM / PROGRESSO / DISPONIBILIDADE"),
                  110, 112, 114, bibX() + 1.0f, BIB_GRADE_Y_TITULOS + 7.0f, 1.0f, 1.8f);
+  if (ondaArmada && nCelulas) { ondaEm = agora ? agora : 1u; ondaArmada = 0; }
   if (paginaLista() && trilha && nCelulas) {
     desenhaTrilha();
     desenhaCompartilhar();
@@ -3490,7 +3494,7 @@ static void biblioteca_desenhar_(Uint32 agora) {
         // ONDA: atraso pela coluna e pela fileira visiveis (revela.h).
         entra = ondaEm ? revela_entra(ondaEm, revela_onda_atraso(c, r - lin0), agora)
                        : 1.0f;
-        ac = a * entra;
+        ac = a * entra * anim_suave(animVista);
         if (ac <= 0.005f) continue;
         ty = topo + (1.0f - entra) * NV_ENTRA_DY;
 
@@ -3588,4 +3592,13 @@ static void biblioteca_desenhar_(Uint32 agora) {
 // de texto; o corpo mede NV_TELA_W/H na tela virtual dela.
 void biblioteca_evento(const SDL_Event *e) { TXT_INI(); biblioteca_evento_(e); TXT_FIM(); }
 void biblioteca_atualizar(float dt, Uint32 agora) { TXT_INI(); biblioteca_atualizar_(dt, agora); TXT_FIM(); }
-void biblioteca_desenhar(Uint32 agora) { TXT_INI(); biblioteca_desenhar_(agora); TXT_FIM(); }
+void biblioteca_desenhar(Uint32 agora) {
+  TXT_INI();
+  float opacity = gfx_opacidade_grupo;
+  gfx_opacidade_grupo *= animTela;
+  gfx_transformar(0, 0, 1, 0, (1 - animTela) * NV_ENTRA_DY);
+  biblioteca_desenhar_(agora);
+  gfx_sem_transformar();
+  gfx_opacidade_grupo = opacity;
+  TXT_FIM();
+}
