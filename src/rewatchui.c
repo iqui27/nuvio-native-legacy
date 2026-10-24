@@ -30,6 +30,8 @@ static CtxLinha rwLinhas[3];
 static int rwN;
 static float rwEntrada, rwForma, rwFormaV, rwAnimFoco[3];
 static Uint32 rwQuadro;
+#define RW_LARGURA 1040.0f
+#define RW_ALTURA(topo) ((topo) + 252 + rwN * (BOTAO_H_PRIMARIO + T21_CTRL_GAP))
 
 void rewatchui_abrir(const CatItem *ci, int de, int t, int e) {
   if (!ci || strcmp(ci->tipo,"series") || !ci->imdb[0]) return;
@@ -116,21 +118,21 @@ static void rwCorpo(GfxRect r, float a, void *u) {
   if (a < .01f) return;
   float opacity = gfx_opacidade_grupo;
   gfx_opacidade_grupo *= a;
-  plrui_kicker(i18n("Reassistir do início"), r.x + 40, r.y + dy + 32, 243, 242, 239, .55f);
+  plrui_kicker(i18n("Reassistir do início"), r.x + 48, r.y + dy + 36, 243, 242, 239, .55f);
   txt_desenhar(txt_linha(TXT_ILHA_TITULO, rwFim ? "Encerrar reassistida" : "Reassistir do início",
-                         243, 242, 239, 255), r.x + 40, r.y + dy + 68);
-  txt_bloco(TXT_ILHA_TEXTO, rwFim ? "Os plays enviados ficam no histórico." :
+                         243, 242, 239, 255), r.x + 48, r.y + dy + 76);
+  txt_bloco(TXT_ILHA_CORPO, rwFim ? "Os plays enviados ficam no histórico." :
              "Cada episódio revisto gera um novo play. O histórico fica.",
-             243, 242, 239, r.x + 40, r.y + dy + 128, r.w - 80, 28, .65f, 2);
+             243, 242, 239, r.x + 48, r.y + dy + 140, r.w - 96, 32, .65f, 2);
   if (rwAberta && a > .5f) {
     ponteiro_camada();
     ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, rwFora, 0, 0);
     ponteiro_alvo(r.x, r.y, r.w, r.h, NULL, NULL, 0, 0);
   }
   for (int i = 0; i < rwN; i++) {
-    GfxRect button = {r.x + 40, r.y + dy + 204 + i * (T21_CTRL_H + T21_CTRL_GAP),
-                      r.w - 80, T21_CTRL_H};
-    botao_pilula(button, rwLinhas[i].rot, rwLinhas[i].icone, rwAnimFoco[i], 0, 1, 1);
+    GfxRect button = {r.x + 48, r.y + dy + 232 + i * (BOTAO_H_PRIMARIO + T21_CTRL_GAP),
+                      r.w - 96, BOTAO_H_PRIMARIO};
+    botao_pilula(button, rwLinhas[i].rot, rwLinhas[i].icone, rwAnimFoco[i], 1, 1, 1);
     if (rwAberta && a > .5f) ponteiro_alvo(button.x, button.y, button.w, button.h, rwFocar, NULL, i, 0);
   }
   gfx_opacidade_grupo = opacity;
@@ -147,12 +149,12 @@ void rewatchui_desenhar(void) {
   float ix, iy, iw, ih;
   if (ajustes_relogio_ligado() && ilha_rect(&ix, &iy, &iw, &ih)) {
     // The shared island owns shape, shadow and exit; it replays the last body.
-    if (rwAberta) ilha_corpo(960, 236 + NV_ILHA_H + rwN * (T21_CTRL_H + T21_CTRL_GAP), rwCorpo, rwLinhas);
+    if (rwAberta) ilha_corpo(RW_LARGURA, RW_ALTURA(NV_ILHA_H), rwCorpo, rwLinhas);
     return;
   }
   TXT_INI();
   float x, w; t21_inicio(&x, &w);
-  float width = fminf(w, 960), height = 236 + rwN * (T21_CTRL_H + T21_CTRL_GAP);
+  float width = fminf(w, RW_LARGURA), height = RW_ALTURA(0);
   GfxRect r = {x + (w - width) / 2, (NV_TELA_H - height) / 2, width, height};
   gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0, 0, 0, 0, T21_VEIL * rwEntrada);
   float opacity = gfx_opacidade_grupo;
