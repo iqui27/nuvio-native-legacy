@@ -2090,6 +2090,7 @@ static void ponteiroPicker(int p, int b) {
   if (estado() == EST_ITENS || p < 0 || p >= bibNPicks()) return;
   pickSel = p; foco.fileira = BIB_FIL_PICK; foco.coluna = p;
 }
+static void ponteiroRetry(int a, int b) { (void)a; (void)b; estadoFoco = 1; }
 static void ponteiroAcao(int a, int b) {
 #ifdef NV_TOUCH_UI
   toqueLivre = 0;
@@ -2389,6 +2390,7 @@ static void desenhaVazio(void) {
     GfxRect button = {panel.x + T21_SHEET_PAD, panel.y + panel.h - 96,
                       botao_largura(label, "aj_rotate-cw", 0), BOTAO_H_SECUNDARIO};
     botao_pilula(button, label, "aj_rotate-cw", animEstado, 0, 1, 1);
+    ponteiro_alvo(button.x, button.y, button.w, button.h, ponteiroRetry, NULL, 0, 0);
   } else txt_bloco_corta(TXT_CAPTION2, dica, 150, 153, 162, panel.x + T21_SHEET_PAD,
                          panel.y + panel.h - 72, panel.w - 2 * T21_SHEET_PAD, 28, 1, 2);
 }
