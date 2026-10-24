@@ -9,6 +9,7 @@
 #define desc_vertudo_carregando shot_carregando
 #define desc_vertudo_mais shot_mais
 #define desc_vertudo_filtro shot_filtro
+#define desc_vertudo_filtro_desde shot_filtro_desde
 #include "../src/vertudo.c"
 #include "dados.h"
 #include <SDL2/SDL_image.h>
@@ -17,6 +18,8 @@
 static CatItem fixtures[8];
 static int fixtureN;
 static GLuint target;
+static int settleFrames = 90;
+static float frameDt = 1.0f / 60;
 int shot_conectado(void) { return 1; }
 int shot_n(void) { return fixtureN; }
 int shot_fim(void) { return 1; }
@@ -59,16 +62,26 @@ void shot_filtro(const char *base, const char *type, const char *key, const char
     snprintf(it->meta, sizeof it->meta, "%d", 2008 + i);
   }
 }
+void shot_filtro_desde(const char *base, const char *type, const char *key, const char *genre, int page) {
+  (void)page; shot_filtro(base, type, key, genre);
+}
 static void key(SDL_Keycode code) {
   SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = code;
   vertudo_evento(&e);
   e.type = SDL_KEYUP; vertudo_evento(&e);
 }
+static void openFocused(void) {
+  key(SDLK_RETURN);
+  assert(glance_aberto());
+  SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_RETURN;
+  glance_evento(&e);
+  assert(!glance_aberto());
+}
 static void capture(const char *dir, const char *name) {
   static Uint32 now = 1000;
-  for (int i = 0; i < 90; i++, now += 16) {
+  for (int i = 0; i < settleFrames; i++, now += (Uint32)lroundf(frameDt * 1000)) {
     SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); gfx_novo_quadro();
-    vertudo_atualizar(1.0f / 60, now);
+    vertudo_atualizar(frameDt, now);
     glBindFramebuffer(GL_FRAMEBUFFER, target); glViewport(0, 0, 1920, 1080);
     glClear(GL_COLOR_BUFFER_BIT); vertudo_desenhar(now); glFinish();
   }
@@ -87,7 +100,7 @@ int main(int argc, char **argv) {
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
   dados_iniciar(getenv("NUVIO_DADOS"));
   assert(dados_gravar("aparencia-20.txt", "1\n"));
-  assert(dados_gravar("ajustes.txt", "idioma 1\njellyfinLocal 0\nvidroLocal 1\nbordaFocoCartaz 1\n"));
+  assert(dados_gravar("ajustes.txt", "idioma 0\njellyfinLocal 0\nvidroLocal 1\nbordaFocoCartaz 1\nescalaTextoLocal 2\n"));
   ajustes_dir(dados_dir()); assert(ajustes_jellyfin_ligado());
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
   SDL_Window *window = SDL_CreateWindow("Server view proof", 0, 0, 64, 64, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN); assert(window);
@@ -103,15 +116,31 @@ int main(int argc, char **argv) {
   key(SDLK_DOWN); for (int i = 0; i < 5; i++) key(SDLK_RETURN);
   capture(argv[1], "server-4k-filter");
   vertudo_servidores("jellyfin_collections"); capture(argv[1], "server-collections");
-  key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  key(SDLK_DOWN); key(SDLK_DOWN); openFocused();
   assert(!strcmp(catalogId, "jellyfin_1")); capture(argv[1], "server-collection-items");
   key(SDLK_ESCAPE); assert(!strcmp(catalogId, "jellyfin_collections"));
   vertudo_servidores("plex_playlists"); capture(argv[1], "server-playlists");
-  key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  key(SDLK_DOWN); key(SDLK_DOWN); openFocused();
   assert(!strcmp(catalogId, "plex_list_1")); capture(argv[1], "server-playlist-items");
-  assert(dados_gravar("ajustes.txt", "idioma 1\njellyfinLocal 0\nvidroLocal 0\nbordaFocoCartaz 1\n"));
+  assert(dados_gravar("ajustes.txt", "idioma 0\njellyfinLocal 0\nvidroLocal 0\nbordaFocoCartaz 1\nescalaTextoLocal 2\n"));
   ajustes_dir(dados_dir());
   vertudo_servidores("jellyfin_movies"); capture(argv[1], "server-grid-glass");
+  for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
+    char name[80]; gfx_escala_txt_definir(scale ? .85f : 1); ajustes_definir_vidro(glass);
+    snprintf(name, sizeof name, "overview-%s-%s", scale ? "85" : "100", glass ? "glass" : "solid");
+    capture(argv[1], name);
+  }
+  gfx_escala_txt_definir(1); ajustes_definir_vidro(1);
+  key(SDLK_DOWN); key(SDLK_DOWN); capture(argv[1], "overview-ready"); key(SDLK_RIGHT);
+  const int times[] = {0, 80, 160, 320};
+  for (int mode = 0; mode < 2; mode++) {
+    if (mode) vertudo_servidores("jellyfin_movies");
+    for (int i = 0; i < 4; i++) {
+      char name[80]; settleFrames = i ? (times[i] - times[i - 1]) / 10 : 1;
+      frameDt = i ? .01f : 0;
+      snprintf(name, sizeof name, "overview-%s-%03d", mode ? "entry" : "focus", times[i]); capture(argv[1], name);
+    }
+  }
   tex_encerrar(); txt_encerrar();
   SDL_GL_DeleteContext(context); SDL_DestroyWindow(window); SDL_Quit();
   return 0;
