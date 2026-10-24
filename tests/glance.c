@@ -62,6 +62,24 @@ static void soltar(int k) {
 static int falhas;
 #define CHECA(c) do { if (!(c)) { fprintf(stderr, "  FALHOU: %s (linha %d)\n", #c, __LINE__); falhas++; } } while (0)
 
+static void movimento(const char *prefixo) {
+  const int times[] = {0, 80, 160, 320};
+  for (int sequence = 0; sequence < 2; sequence++) {
+    if (sequence) glance_abrir(&fonte, 2); else tecla(SDLK_DOWN);
+    Uint32 base = SDL_GetTicks(); int elapsed = 0;
+    for (int frame = 0; frame < 4; frame++) {
+      while (elapsed < times[frame]) { elapsed += 10; glance_atualizar(.01f, base + elapsed); }
+      txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8);
+      glClear(GL_COLOR_BUFFER_BIT); glance_desenhar(base + elapsed);
+      unsigned char *pixels = malloc(1920 * 1080 * 4);
+      SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
+      assert(pixels && s); glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+      for (int y = 0; y < 1080; y++) memcpy((char *)s->pixels + y*s->pitch, pixels + (1079-y)*1920*4, 1920*4);
+      char path[1024]; snprintf(path, sizeof path, "%s-%s-%03d.png", prefixo, sequence ? "entry" : "focus", times[frame]);
+      assert(!IMG_SavePNG(s, path)); SDL_FreeSurface(s); free(pixels);
+    }
+  }
+}
 static void capturar(const char *png) {
   unsigned char *pix = malloc(1920 * 1080 * 4);
   SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
@@ -76,11 +94,18 @@ static void capturar(const char *png) {
   for (int y = 0; y < 1080; y++) memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
   assert(IMG_SavePNG(s, png) == 0);
   free(pix); SDL_FreeSurface(s);
+  if (getenv("NV_J1_SHOT")) movimento(png);
 }
 static void capturas(const char *prefixo) {
   char png[800];
   CatFileira fil = {0};
-  dados_iniciar("deploy/app/art"); ajustes_dir(dados_dir());
+  dados_iniciar("deploy/app/art");
+  dados_gravar("ajustes.txt", "idioma 0\nbordaFocoCartaz 0\n");
+  ajustes_dir(dados_dir());
+  const char *scale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
+  if (scale) gfx_escala_txt_definir(atof(scale));
+  const char *glass = getenv("NUVIO_SHOT_VIDRO");
+  ajustes_definir_vidro(!glass || *glass != '0');
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);

@@ -53,6 +53,16 @@ objects=()
 for source in "${sources[@]}" tests/glance.c; do objects+=("$tmp/obj/${source%.c}.o"); done
 cc "${objects[@]}" -o "$tmp/teste" -L/opt/homebrew/lib \
   -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
-NUVIO_DADOS="$tmp/dados" "$tmp/teste" "$@" || falhou=1
+if [ "${NV_J1_SHOT:-}" = 1 ]; then
+  for scale in 1 .85; do
+    for glass in 1 0; do
+      mkdir -p "$1/$scale-$glass"
+      NUVIO_SHOT_ESCALA_TEXTO="$scale" NUVIO_SHOT_VIDRO="$glass" \
+      NUVIO_DADOS="$tmp/dados-$scale-$glass" "$tmp/teste" "$1/$scale-$glass/glance" || falhou=1
+    done
+  done
+else
+  NUVIO_DADOS="$tmp/dados" "$tmp/teste" "$@" || falhou=1
+fi
 if [ "$falhou" != 0 ]; then echo "glance.sh: FALHOU"; exit 1; fi
 echo "glance.sh: ok"

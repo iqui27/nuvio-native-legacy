@@ -36,8 +36,11 @@ static int acaoEpisodios = -1;
 static CatItem acaoTitulo, resolucaoTitulo;
 static Uint32 acaoDesde;
 static GfxRect videoRect(void) {
+  TXT_INI();
   float x, w; t21_inicio(&x, &w);
-  return (GfxRect){x + w - 700, ANC(180), 700, 394};
+  GfxRect r = {x + w - 700, ANC(180), 700, 394};
+  TXT_FIM();
+  return r;
 }
 
 void glance_fechar(void) {
@@ -227,10 +230,11 @@ static void texto(TxtEstilo estilo, const char *s, float x, float y, float w, in
 static void cartaz(const CatItem *it, GfxRect r) {
   const char *arte = it->poster[0] ? it->poster : it->backdrop;
   GLuint tex = tex_obter_larg(arte, r.w);
-  gfx_vidro_painel(r, 0.04f, 0.78f, 1);
+  plrui_cartao(r, T21_R_CARD, 1);
+  if (!tex) gfx_icone((GfxRect){r.x + (r.w - 32) / 2, r.y + (r.h - 32) / 2, 32, 32}, "aj_film", 1, 1, 1, .6f);
   if (tex) {
     gfx_tex_aspect_atual = tex_aspecto(arte);
-    gfx_rect(r, tex, GFX_CARD, 0, 0, 0, 0.04f, 0, 0, 0, 1);
+    gfx_rect(r, tex, GFX_CARD, 0, 0, 0, T21_R_CARD / r.h, 0, 0, 0, 1);
     gfx_tex_aspect_atual = 0;
   }
 }
@@ -297,7 +301,7 @@ static void glance_desenhar_(Uint32 agora) {
     float nx = vr.x + (d < 0 ? 0 : 500);
     cartaz(&viz, (GfxRect){ nx + 48, ANC(650), 106, 159 });
     gfx_icone((GfxRect){nx + (d < 0 ? 0 : 168), ANC(710), 28, 28},
-               d < 0 ? "aj_chevron-left" : "aj_chevron-right", 1, 1, 1, .9f);
+               d < 0 ? "pl_chevron-left" : "aj_chevron-right", 1, 1, 1, .9f);
     texto(TXT_ILHA_ITEM, viz.titulo, nx, ANC(830), 200, 195);
   }
   t21_dica("Voltar", i18n("Retornar"), x, ANC(T21_SAFE_B), 1);
