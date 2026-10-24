@@ -304,7 +304,7 @@ static void glance_desenhar_(Uint32 agora) {
                d < 0 ? "pl_chevron-left" : "aj_chevron-right", 1, 1, 1, .9f);
     texto(TXT_ILHA_ITEM, viz.titulo, nx, ANC(830), 200, 195);
   }
-  t21_dica("Voltar", i18n("Retornar"), x, ANC(T21_SAFE_B), 1);
+  t21_dica("Voltar", i18n("Voltar"), x, ANC(T21_SAFE_B), 1);
 }
 
 void glance_desenhar(Uint32 agora) {

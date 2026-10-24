@@ -121,7 +121,7 @@ void rewatchui_desenhar(void) {
   gfx_transformar(r.x + r.w / 2, r.y + r.h / 2,
                    anim_mistura(T21_SHEET_SCALE, 1, rwEntrada), 0, 0);
   t21_ilha(r, T21_R_MODAL, 1);
-  plrui_kicker(i18n("Reassistir"), r.x + 40, r.y + 32, 243, 242, 239, .55f);
+  plrui_kicker(i18n("Reassistir do início"), r.x + 40, r.y + 32, 243, 242, 239, .55f);
   txt_desenhar(txt_linha(TXT_ILHA_TITULO, rwFim ? "Encerrar reassistida" : "Reassistir do início",
                          243, 242, 239, 255), r.x + 40, r.y + 68);
   txt_bloco(TXT_ILHA_TEXTO, rwFim ? "Os plays enviados ficam no histórico." :

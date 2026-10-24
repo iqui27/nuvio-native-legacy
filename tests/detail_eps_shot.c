@@ -705,7 +705,7 @@ int main(int argc, char **argv) {
   gfx_tamanho_alvo(1920, 1080);
   assert(gfx_iniciar());
   assert(txt_iniciar("deploy/app", 1));
-  tex_iniciar(16);
+  tex_iniciar(getenv("NV_J1_SHOT") ? 128 : 16);
   gfx_icones_dir("deploy/app/art");   // o check do card visto e icone (#74)
   ajustes_iniciar();
   dados_iniciar("deploy/app/art");
@@ -784,6 +784,13 @@ int main(int argc, char **argv) {
     ev.type=SDL_KEYUP; detail_evento(&ev);
     assert(rewatchui_aberta() && !detail_pediu_reproduzir());
     quadros(120); rewatchui_desenhar();
+    if (getenv("NV_J1_SHOT")) {
+      Uint32 ready = SDL_GetTicks();
+      int pending = 1;
+      while (pending && SDL_GetTicks() - ready < 5000) {
+        quadros(1); SDL_Delay(2); tex_estatisticas(NULL, &pending, NULL, NULL, NULL);
+      }
+    }
     snprintf(nome,sizeof nome,"%s-start.png",saida); gravar(nome);
     if (getenv("NV_J1_SHOT")) {
       const int times[] = {0,80,160,320};
