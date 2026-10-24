@@ -331,6 +331,55 @@ static void persistence(const char *dir) {
   puts("settings: OFF/3 defaults, stable addon instances, save/reload, validation and failed-save rollback PASS");
 }
 
+static void cache_filter(const char *dir) {
+  FonteFiltroConfig filtro = {0}, salvo;
+  FonteFiltroDados estado[3] = {0};
+  estado[1].cache = FONTEFILTRO_CACHE_SIM;
+  estado[2].cache = FONTEFILTRO_CACHE_NAO;
+
+  for (unsigned escolha = FONTEFILTRO_CACHE_TODAS; escolha < FONTEFILTRO_CACHE_N; escolha++) {
+    filtro.cache = escolha;
+    assert(fontefiltro_config_validar(&filtro));
+    for (unsigned atual = FONTEFILTRO_CACHE_TODAS; atual < FONTEFILTRO_CACHE_N; atual++)
+      assert(fontefiltro_permite(&filtro, &estado[atual]) ==
+             (escolha == FONTEFILTRO_CACHE_TODAS || escolha == atual));
+  }
+  filtro.cache = FONTEFILTRO_CACHE_N;
+  assert(!fontefiltro_config_validar(&filtro));
+
+  fontefalha_dir(dir);
+  memset(&filtro, 0, sizeof filtro); filtro.cache = FONTEFILTRO_CACHE_SIM;
+  assert(fontefalha_filtro_definir(&filtro) && fontefalha_filtro_ativo());
+  fontefalha_config_ler(); fontefalha_filtro(&salvo);
+  assert(salvo.cache == FONTEFILTRO_CACHE_SIM);
+  filtro.cache = FONTEFILTRO_CACHE_N;
+  assert(!fontefalha_filtro_definir(&filtro));
+  fontefalha_filtro(&salvo); assert(salvo.cache == FONTEFILTRO_CACHE_SIM);
+
+  FonteFalhaCandidata candidatas[] = {
+    candidate(101, 1, A, 0, "unknown/file-0"),
+    candidate(102, 1, A, 0, "cached/file-0"),
+    candidate(103, 1, A, 0, "uncached/file-0")};
+  candidatas[1].filtro.cache = FONTEFILTRO_CACHE_SIM;
+  candidatas[2].filtro.cache = FONTEFILTRO_CACHE_NAO;
+  for (unsigned escolha = FONTEFILTRO_CACHE_TODAS; escolha < FONTEFILTRO_CACHE_N; escolha++) {
+    FonteFalhaConfig cfg = config(1, 0);
+    cfg.filtro.cache = escolha; cfg.limites[0] = 1;
+    FonteFalhaSessao *s = session(&cfg, 1, -1);
+    int esperado = escolha == FONTEFILTRO_CACHE_TODAS ? 101
+                 : escolha == FONTEFILTRO_CACHE_SIM ? 102 : 103;
+    attempt(s, candidatas, 3, 1, 0, esperado);
+    status(s, candidatas, 3, 1, FONTEFALHA_FIM);
+    fontefalha_sessao_liberar(s);
+  }
+
+  memset(&filtro, 0, sizeof filtro);
+  assert(fontefalha_filtro_definir(&filtro) && !fontefalha_filtro_ativo());
+  fontefalha_config_ler(); fontefalha_filtro(&salvo);
+  assert(salvo.cache == FONTEFILTRO_CACHE_TODAS);
+  puts("cache filter: all/cached/uncached persistence and pre-limit routing PASS");
+}
+
 int main(int argc, char **argv) {
   assert(argc == 2);
   fontefalha_addon_chave("https://aio.invalid/same-name/secret-config-a/manifest.json", A, sizeof A);
@@ -339,7 +388,7 @@ int main(int argc, char **argv) {
   char repeated[FONTEFALHA_CHAVE];
   fontefalha_addon_chave("https://aio.invalid/same-name/secret-config-a/manifest.json", repeated, sizeof repeated);
   assert(strlen(A) == 32 && !strcmp(A, repeated) && strcmp(A, B) && strcmp(A, C));
-  persistence(argv[1]); provider_first(); exhausted_and_partial(); first_counts_and_next_links();
+  persistence(argv[1]); cache_filter(argv[1]); provider_first(); exhausted_and_partial(); first_counts_and_next_links();
   duplicate_routes_and_urls(); direct_and_legacy(); manual_success(); snapshot_and_cancel();
   puts("fontefalha: all policy and persistence regressions PASS"); return 0;
 }
