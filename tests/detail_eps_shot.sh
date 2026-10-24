@@ -40,7 +40,9 @@ cc -DNV_SHOT_HOOKS "${sources[@]}" tests/detail_eps_shot.c "${baseline_flags[@]}
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined ${NV_CC_EXTRA:-}
 if [ "${NV_J1_SHOT:-}" = 1 ]; then
-  for scale in 1 .85; do
+  mkdir -p "$1"
+  cp "${TMPDIR:-/tmp}/nuvio-deteps-shot" "$1/capture"
+  for scale in ${NV_J1_SCALES:-1 .85 .9 1.1 1.2 1.3}; do
     for glass in 1 0; do
       mkdir -p "$1/$scale-$glass"
       NUVIO_SHOT_ESCALA_TEXTO="$scale" NUVIO_SHOT_VIDRO="$glass" NV_REWATCH_SHOT=1 \

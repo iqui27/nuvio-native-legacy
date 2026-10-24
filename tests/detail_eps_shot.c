@@ -734,6 +734,11 @@ int main(int argc, char **argv) {
     fclose(f);
     ajustes_dir(dados_dir()); }
 
+  if (getenv("NUVIO_SHOT_ACCENT")) {
+    char settings[100];
+    snprintf(settings, sizeof settings, "idioma 0\nbordaFocoCartaz 1\nselected_theme %d\n", atoi(getenv("NUVIO_SHOT_ACCENT")));
+    dados_gravar("ajustes.txt", settings); ajustes_dir(dados_dir());
+  }
   if (getenv("NUVIO_SHOT_ESCALA_TEXTO")) gfx_escala_txt_definir(atof(getenv("NUVIO_SHOT_ESCALA_TEXTO")));
   if (getenv("NUVIO_SHOT_VIDRO")) ajustes_definir_vidro(atoi(getenv("NUVIO_SHOT_VIDRO")));
   montarCatalogo();
@@ -792,16 +797,27 @@ int main(int argc, char **argv) {
       }
     }
     snprintf(nome,sizeof nome,"%s-start.png",saida); gravar(nome);
-    if (getenv("NV_J1_SHOT")) {
-      const int times[] = {0,80,160,320};
-      for (int sequence = 0; sequence < 2; sequence++) {
+    const char *captureScale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
+    if (getenv("NV_J1_SHOT") && !getenv("NV_J1_STILLS") && (!captureScale || !strcmp(captureScale, "1") || !strcmp(captureScale, ".85"))) {
+      const int times[] = {0,50,80,100,150,160,250,320,400};
+      const char *names[] = {"focus", "entry", "exit", "reverse"};
+      for (int sequence = 0; sequence < 4; sequence++) {
         rwFoco = sequence ? 0 : 1;
-        if (sequence) { rwEntrada = rwForma = rwFormaV = 0; rwQuadro = fxTick; }
+        if (sequence == 1) { rwEntrada = rwForma = rwFormaV = 0; rwQuadro = fxTick; }
+        if (sequence == 2) rwAberta = 0;
+        if (sequence == 3) {
+          rwAberta = 1; quadros(120);
+          rwAberta = 0; quadros(5);
+          rwAberta = 1;
+        }
         int elapsed = 0;
-        for (int frame = 0; frame < 4; frame++) {
-          while (elapsed < times[frame]) { quadros(1); elapsed += 16; }
+        for (int frame = 0; frame < (int)(sizeof times / sizeof *times); frame++) {
+          while (elapsed < times[frame]) {
+            int delta = times[frame] - elapsed < 16 ? times[frame] - elapsed : 16;
+            fxTick += delta - 16; quadros(1); elapsed += delta;
+          }
           if (frame == 0) { int wasPaused = parado; parado = 1; quadros(1); parado = wasPaused; }
-          snprintf(nome,sizeof nome,"%s-%s-%03d.png",saida, sequence ? "entry" : "focus",times[frame]); gravar(nome);
+          snprintf(nome,sizeof nome,"%s-%s-%03d.png",saida, names[sequence],times[frame]); gravar(nome);
         }
       }
       rwFoco = 0;
