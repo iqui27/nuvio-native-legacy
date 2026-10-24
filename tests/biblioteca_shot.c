@@ -397,6 +397,13 @@ int main(int argc, char **argv) {
   // marca.
   extras_carregar("deploy/app/art");
 
+#ifdef NV_J1_SHOT
+  // A named active profile, as a real account has: the subtitle says "perfil
+  // Marina" and the sidebar footer shows her initial instead of the no-profile glyph.
+  { extern void perfis_teste_definir(const char *const *, const int *, int, int);
+    const char *nomes[] = { "Marina" };
+    perfis_teste_definir(nomes, NULL, 1, 1); }
+#endif
   dados_iniciar(quero);
   if (strcmp(dados_dir(), quero)) {
     printf("RECUSADO: dados_dir()=\"%s\" nao e a pasta do teste \"%s\".\n",

@@ -5480,16 +5480,19 @@ static void heroWeb(float a, float desloc) {
         algo = 1;
       }
     }
+    // Sem nota dada a pessoa nao tem "Sua nota": o item some em vez de
+    // mostrar um traco solto.
     { char mine[96], value[24];
       int n = reacao_nota(cat_item(idx)->imdb);
-      if (n) { snprintf(value, sizeof value, "%d.%d", n / 2, n % 2 * 5); plrui_decimal(value); }
-      else snprintf(value, sizeof value, "—");
+      if (n) {
+      snprintf(value, sizeof value, "%d.%d", n / 2, n % 2 * 5); plrui_decimal(value);
       snprintf(mine, sizeof mine, "%s  %s", i18n("Sua nota"), value);
       float ar, ag, ab;
       ajustes_acento(&ar, &ag, &ab);
       x += 24;
       gfx_icone((GfxRect){x, yc - 10, 20, 20}, "pl_star", ar, ag, ab, a);
       x += 28 + plrui_kicker(mine, x + 28, yc - 9, 208, 195, 181, a);
+      }
     }
     // QUANTO DA SERIE VOCE JA VIU, no fim da linha de meta.
     //

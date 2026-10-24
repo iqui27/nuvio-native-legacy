@@ -2169,8 +2169,8 @@ static float pickerLarguraNat(int p) {
   if (modo != MODO_LISTAS && p >= bibViewStart()) return 58.0f;
   const char *rot, *val;
   pickerTexto(p, &rot, &val);
-  return (float)txt_linha(TXT_CAPTION2, rot, 117, 117, 117, 255).w * BIB_ESC_ROT + 6.0f
-       + (float)txt_linha(TXT_HERO_SEC, val, 245, 245, 245, 255).w * BIB_ESC_VAL
+  return (float)txt_linha(TXT_HERO_SEC, rot, 245, 245, 245, 255).w * BIB_ESC_VAL + 8.0f
+       + (float)txt_linha(TXT_CAPTION2, val, 117, 117, 117, 255).w * BIB_ESC_ROT
        + BIB_CHIP_PADX * 2.0f;
 }
 
@@ -2226,23 +2226,24 @@ static void desenhaPicker(int p, float f) {
     float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
     gfx_cor((GfxRect){r.x + 9, r.y + 23, 6, 6}, .5f, ar, ag, ab, 1);
   }
+  // Mockup: rotulo em negrito claro, valor apagado e normal.
   { int valor = v > 0.5f ? ajustes_tinta_foco2() : 125;
-    int rotulo = v > 0.5f ? ajustes_tinta_foco() : 215;
+    int rotulo = v > 0.5f ? ajustes_tinta_foco() : 240;
     TxtLinha tr, tv;
     float x = r.x + BIB_CHIP_PADX;
     pickerTexto(p, &rot, &val);
     if (bibRetrato()) {
       float util = r.w - BIB_CHIP_PADX * 2.0f;
-      tr = txt_linha_corta(TXT_CAPTION2, rot, rotulo, rotulo, rotulo, 255, util * .45f / BIB_ESC_ROT);
-      tv = txt_linha_corta(TXT_HERO_SEC, val, valor, valor, valor, 255,
-                           (util - (float)tr.w * BIB_ESC_ROT - 6.0f) / BIB_ESC_VAL);
+      tr = txt_linha_corta(TXT_HERO_SEC, rot, rotulo, rotulo, rotulo, 255, util * .55f / BIB_ESC_VAL);
+      tv = txt_linha_corta(TXT_CAPTION2, val, valor, valor, valor, 255,
+                           (util - (float)tr.w * BIB_ESC_VAL - 8.0f) / BIB_ESC_ROT);
     } else {
-      tr = txt_linha(TXT_CAPTION2, rot, rotulo, rotulo, rotulo, 255);
-      tv = txt_linha(TXT_HERO_SEC, val, valor, valor, valor, 255);
+      tr = txt_linha(TXT_HERO_SEC, rot, rotulo, rotulo, rotulo, 255);
+      tv = txt_linha(TXT_CAPTION2, val, valor, valor, valor, 255);
     }
-    txtEsc(tr, x, r.y + (r.h - (float)tr.h * BIB_ESC_ROT) * 0.5f, BIB_ESC_ROT, 1.0f);
-    x += (float)tr.w * BIB_ESC_ROT + 6.0f;
-    txtEsc(tv, x, r.y + (r.h - (float)tv.h * BIB_ESC_VAL) * 0.5f, BIB_ESC_VAL, 1.0f); }
+    txtEsc(tr, x, r.y + (r.h - (float)tr.h * BIB_ESC_VAL) * 0.5f, BIB_ESC_VAL, 1.0f);
+    x += (float)tr.w * BIB_ESC_VAL + 8.0f;
+    txtEsc(tv, x, r.y + (r.h - (float)tv.h * BIB_ESC_ROT) * 0.5f, BIB_ESC_ROT, 1.0f); }
 }
 
 // Barra de acoes de uma lista aberta: fixar, levar para a Home e trocar o tipo
@@ -3045,9 +3046,10 @@ static void desenhaOrigens(void) {
     }
     return;
   }
-  GfxRect painel = { paginaX(), 388.0f, 320.0f, fminf(700, 66 + nOrigens() * 58 + (serverRows ? 54 : 0)) };
+  GfxRect painel = { paginaX(), 388.0f, 320.0f, fminf(700, 76 + nOrigens() * 62 + (serverRows ? 54 : 0)) };
   t21_ilha(painel, T21_R_SHEET, 1);
-  txt_desenhar(txt_linha(TXT_CAPTION2, "Origens", 115, 117, 122, 255), painel.x + 30, painel.y + 20);
+  // Heading as in the mock: tracked caps, dim.
+  txt_tracking(TXT_MINI, seloCaixaAlta("Origens"), 115, 117, 122, painel.x + 30, painel.y + 24, 1.0f, 2.2f);
   const char *sub[] = { "sem repetir títulos", "Para ver", "Para ver", "salvos neste perfil" };
   float footerY = 0;
   const char *letra[] = { "", "T", "S", "N" };
@@ -3063,30 +3065,30 @@ static void desenhaOrigens(void) {
       if (!serverRows || !serverRows(i - BIB_N_ORIG - nAddonOrigens, &name, &serverSub, &count)) continue;
       description = serverSub ? serverSub : "Biblioteca";
     }
-    GfxRect row = { painel.x + 12, painel.y + 56 + (i - start) * 58, 296, 56 };
+    GfxRect row = { painel.x + 12, painel.y + 62 + (i - start) * 62, 296, 60 };
     ponteiro_alvo(row.x, row.y, row.w, row.h, ponteiroOrigem, NULL, i, 0);
     plrui_linha_foco(row, T21_R_ROW, i < 64 ? animOrigem[i] : 0);
     float tx = row.x + 18;
     if (i) {
-      gfx_cor((GfxRect){tx, row.y + 10, 34, 34}, 10.0f / 34, 1, 1, 1, .08f);
+      gfx_cor((GfxRect){tx, row.y + 13, 34, 34}, 10.0f / 34, 1, 1, 1, .08f);
       TxtLinha t = txt_linha(TXT_HERO_SEC, i < BIB_N_ORIG ? letra[i] : "A", 235, 235, 235, 255);
       int p = i - BIB_N_ORIG - nAddonOrigens;
       const char *logos[] = {"deploy/app/art/marcas/plex.png","deploy/app/art/marcas/jellyfin.png","deploy/app/art/marcas/emby.png"};
       GLuint brand = p >= 0 && p < 3 ? tex_obter_larg(logos[p], 28) : 0;
-      if (brand) gfx_rect((GfxRect){tx + 4,row.y + 13,26,26},brand,GFX_MARCA,0,0,0,0,1,1,1,1);
-      else txt_desenhar(t, tx + (34 - t.w) / 2, row.y + 10 + (34 - t.h) / 2);
+      if (brand) gfx_rect((GfxRect){tx + 4,row.y + 17,26,26},brand,GFX_MARCA,0,0,0,0,1,1,1,1);
+      else txt_desenhar(t, tx + (34 - t.w) / 2, row.y + 13 + (34 - t.h) / 2);
       tx += 48;
     }
     if ((serverFilter < 0 && origem == i) || (serverFilter >= 0 && i == BIB_N_ORIG + nAddonOrigens + serverFilter)) {
       float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      gfx_cor((GfxRect){tx, row.y + 19, 7, 7}, .5f, ar, ag, ab, 1);
+      gfx_cor((GfxRect){tx, row.y + 21, 7, 7}, .5f, ar, ag, ab, 1);
       tx += 16;
     }
-    txt_desenhar(txt_linha_corta(TXT_ILHA_NOME, name, 243, 242, 239, 255, row.x + row.w - tx - 48), tx, row.y + 5);
-    txt_desenhar(txt_linha(TXT_MINI, description, 112, 114, 120, 255), tx, row.y + 32);
+    txt_desenhar(txt_linha_corta(TXT_ILHA_NOME, name, 243, 242, 239, 255, row.x + row.w - tx - 48), tx, row.y + 7);
+    txt_desenhar(txt_linha(TXT_MINI, description, 112, 114, 120, 255), tx, row.y + 35);
     char num[16]; snprintf(num, sizeof num, "%d", count);
     TxtLinha ct = txt_linha(TXT_HERO_META, num, 140, 142, 148, 255);
-    txt_desenhar(ct, row.x + row.w - 18 - ct.w, row.y + 16);
+    txt_desenhar(ct, row.x + row.w - 18 - ct.w, row.y + 18);
     footerY = row.y + row.h;
   }
   if (serverRows && footerY && footerY + 52 < painel.y + painel.h - 8) {
@@ -3148,15 +3150,25 @@ static void desenhaCabecalho(void) {
         snprintf(status, sizeof status, i18n("Sincronizado há %d min"), (int)min);
       } else snprintf(status, sizeof status, "%s", "Sincronizada");
     } else status[0] = 0;
+    int active[] = { trakt_ativo(), simkl_ativo(), contalib_tem_conta(), nAddonOrigens > 0 };
+#ifdef NV_J1_SHOT
+    // Capture hook: pretend every source is connected and synced N minutes ago.
+    { const char *fake = getenv("NUVIO_SHOT_SYNC_MIN");
+      if (fake && fake[0]) {
+        for (int i = 0; i < 4; i++) active[i] = 1;
+        snprintf(status, sizeof status, i18n("Sincronizado há %d min"), atoi(fake)); } }
+#endif
+    // Same baseline as the subtitle on the left, so the two read as one row.
+    float lineY = BIB_TOPO + (float)txt_linha(TXT_TITULO2, "Hg", 255, 255, 255, 255).h + 2.0f;
     TxtLinha st = txt_linha(TXT_MINI, status, 112, 114, 120, 255);
-    x -= st.w; txt_desenhar(st, x, 204);
-    const char *services[] = { "Trakt", "Simkl", "Conta Nuvio" };
-    int active[] = { trakt_ativo(), simkl_ativo(), contalib_tem_conta() };
-    for (int i = 2; i >= 0; i--) if (active[i]) {
+    float y = lineY + (float)(txt_linha(TXT_CAPTION2, "Hg", 255, 255, 255, 255).h - st.h) * 0.5f;
+    x -= st.w; txt_desenhar(st, x, y);
+    const char *services[] = { "Trakt", "Simkl", "Conta Nuvio", "AIOMetadata" };
+    for (int i = 3; i >= 0; i--) if (active[i]) {
       TxtLinha name = txt_linha(TXT_MINI, services[i], 145, 147, 153, 255);
-      x -= name.w + 42; txt_desenhar(name, x, 204);
+      x -= name.w + (status[0] ? 42 : 30); txt_desenhar(name, x, y);
       float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      gfx_icone((GfxRect){x - 24, 205, 17, 17}, "aj_check", ar, ag, ab, 1);
+      gfx_icone((GfxRect){x - 24, y + (name.h - 17) * 0.5f, 17, 17}, "aj_check", ar, ag, ab, 1);
     }
     return;
   }
@@ -3233,6 +3245,11 @@ static void desenhaResumo(void) {
                   : modo == MODO_ANDAMENTO ? "Retome de onde parou"
                   : modo == MODO_ASSISTIDOS ? "Seu histórico"
                   : "Sua coleção no Trakt"));
+    // "· perfil Marina" do mockup: de quem e esta lista.
+    { const ContaPerfil *pf = perfis_item_ativo();
+      if (pf && pf->nome[0]) {
+        size_t k = strlen(resumo);
+        snprintf(resumo + k, sizeof resumo - k, "   ·   %s %s", i18n("perfil"), pf->nome); } }
   }
   // O TETO DA GRADE NUNCA E CALADO. Com a exibicao de lista (uma coluna) a
   // grade para em BIB_MAX_LINHAS titulos; o contador acima continua dizendo
