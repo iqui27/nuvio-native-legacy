@@ -85,13 +85,16 @@ static void motionExtra(const char *dir) {
   motionCapture = 0;
 }
 static void capture(const char *dir, const char *name) {
-  for (int i=0;i<(motionCapture ? 1 : 75);i++) {
+  if (!motionCapture && !homeShot) for (int i=0;i<90;i++) { shotTime+=16; srvsetup_atualizar(shotTime); }
+  for (int i=0;i<(motionCapture ? 1 : homeShot ? 45 : 3);i++) {
     if (!motionCapture) SDL_Delay(2);
     SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); gfx_novo_quadro();
     glBindFramebuffer(GL_FRAMEBUFFER,target);glViewport(0,0,1920,1080);glClear(GL_COLOR_BUFFER_BIT);
     if(homeShot) { home_atualizar(1.0f/60,codeSince+28000+i*16);home_desenhar(codeSince+28000+i*16); }
     else { if (!motionCapture) { shotTime += 16; srvsetup_atualizar(shotTime); } srvsetup_desenhar(shotTime); }
     rail_shot_desenhar(homeShot?MENU_INICIO:MENU_BIBLIOTECA);glFinish();
+    if (!motionCapture && !homeShot && !i)
+      for(int step=0;step<150;step++){shotTime+=16;srvsetup_atualizar(shotTime);}
   }
   unsigned char *pixels=malloc(1920*1080*4); assert(pixels);
   glReadPixels(0,0,1920,1080,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
