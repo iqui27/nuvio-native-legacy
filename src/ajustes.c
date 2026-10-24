@@ -6726,10 +6726,6 @@ static int foraDestaPlataforma(int op) {
   if (op >= AJ_MDB_TRAKT && op <= AJ_MDB_MAL) return 1;
   // #509: um so interruptor de som; AJ_DET_TRAILER_SOM fica so para a migracao.
   if (op == AJ_DET_TRAILER_SOM) return 1;
-#ifndef __EMSCRIPTEN__
-  // O trailer dublado e um id do YouTube: o player nativo nao toca.
-  if (op == AJ_TRAILER_AUDIO) return 1;
-#endif
 #ifndef NV_TPK
   if (op == AJ_TRAILER_ZOOM_TPK || op == AJ_AUDIO_OFFSET) return 1;
 #endif
@@ -7895,7 +7891,7 @@ static const char *ajudaOpcaoBase(int op) {
       return "Alguns segundos depois de abrir um título, o trailer toca no lugar da arte de fundo; o som segue Som do trailer. Rolar a página ou sair dela volta para a arte.";
 #endif
     case AJ_TRAILER_QUAL: return "Definição do vídeo do trailer. Máxima usa a maior que existir para o título; as outras são um teto, para conexões mais lentas.";
-    case AJ_TRAILER_AUDIO: return "Idioma do áudio do trailer. Automático segue o idioma da interface; Original usa o idioma do título; ou escolha um idioma. Sem trailer nele, cai no inglês.";
+    case AJ_TRAILER_AUDIO: return "Áudio do trailer prioriza trailers dublados, e Original mantém o idioma do título. Automático segue sua preferência de áudio. Se o YouTube falhar, entra o trailer da Apple ou do IMDb.";
     case AJ_TRAILER_ASPECTO: return "Quanto o trailer é ampliado para encher a tela. Zoom cinema tira a tarja preta de um trailer de cinema; Original mostra o quadro inteiro, com tarja.";
     case AJ_TRAILER_FONTE:
       // O que cada TV toca (trailerfonte.c, existe): a ajuda nomeia a fonte que

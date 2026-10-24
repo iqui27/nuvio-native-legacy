@@ -259,14 +259,14 @@ check('retry vazio tem cooldown e nao bloqueio permanente', extras.includes('HER
 // o master da Apple (o motor HLS da TV trava no ABR dele — trailerapple.c,
 // varianteMidia), so a playlist de midia. NV_TRAILER_SAMSUNG cobre os dois.
 check('Samsung entrega a variante de midia, nao o master',
-  /#ifdef NV_TRAILER_SAMSUNG\s*r = e->toca\[0\] \? e->toca : NULL;/.test(apple) && /#if defined\(__EMSCRIPTEN__\) \|\| defined\(NV_TPK\)\s*#define NV_TRAILER_SAMSUNG 1/.test(apple) && /varianteMidia\(m, /.test(apple));
+  /#ifdef NV_TRAILER_SAMSUNG\s*r = e->toca\[0\] \? e->toca : NULL;/.test(apple) && /#if defined\(__EMSCRIPTEN__\) \|\| defined\(NV_TPK\)\s*#define NV_TRAILER_SAMSUNG 1/.test(apple) && /varianteMidia\(master, /.test(apple));
 // Pagina de titulo: prazo e degrau seguinte, com log.
 const prep = number('NV_TRAILER_PREPARA_MS');
 check('detalhe tem prazo finito de preparo (~8 s)', prep >= 5000 && prep <= 10000);
 check('detalhe: sem playing no prazo ou erro sobe para a proxima fonte do ajuste e loga',
   /trailerPrazo = agora \+ NV_TRAILER_PREPARA_MS/.test(detail) &&
   /\[trailer\] detalhe: %s %d ms/.test(detail) &&
-  /trailerfonte_depois\(trailerfonte_ajuste\(\), trailerfonte_tizen\(\), trailerEtapa\)/.test(detail) &&
+  /depois\(trailerfonte_ajuste\(\), trailerfonte_tizen\(\), trailerEtapa\)/.test(detail) &&
   /trailerEtapa = prox;/.test(detail) && /trailerEtapa = -1;/.test(detail) &&
   /while \(prox && !\(seg = trailerUrlDaFonte\(prox\)\)\)/.test(detail));
 check('hero loga a desistencia de cada fonte', /\[trailer\] hero: sem playing em %d ms/.test(home));
@@ -351,7 +351,7 @@ check('com onReady o prazo nao mata o player', estado() === -1);
 fechar();
 check('C passa NV_REC_URL ao elemento', /trailer_js_abrir\(fonte, r\.x, r\.y, r\.w, r\.h, som, ajustes_trailer_zoom\(\), NV_REC_URL\)/.test(trailer));
 check('hero da Samsung so abre YouTube no idioma do "Audio do trailer" (iframe = long task de ~1 s)',
-  /#ifdef __EMSCRIPTEN__[\s\S]{0,1200}c\.youtube = c\.youtubeIdiomaPreferido > 0 \? heroTrailerYoutube\(ci->imdb\) : NULL;\s*c\.youtubeRespondeu = 1;/.test(home));
+  /#ifdef __EMSCRIPTEN__[\s\S]{0,1200}c\.youtube = c\.youtubeIdiomaPreferido > 0 \? heroTrailerYoutube\(ci->imdb\) : NULL;[\s\S]{0,180}c\.youtubeRespondeu = 1;/.test(home));
 check('hero e detalhe pedem o IMDb na Samsung quando ha servico',
   /if \(!trailerfonte_tizen\(\) \|\| trailerfonte_imdb_tizen\(\)\) trailerimdb_pedir\(ci->imdb\);/.test(home) &&
   /if \(!trailerfonte_tizen\(\) \|\| trailerfonte_imdb_tizen\(\)\) trailerimdb_pedir\(ci->imdb\);/.test(detail));

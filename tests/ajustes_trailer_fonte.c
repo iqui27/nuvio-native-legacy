@@ -57,6 +57,42 @@ int main(void) {
   valor[AJ_TRAILER_FONTE] = 3;
   assert(ajustes_trailer_fonte() == 0);
 
+  // #687: the same Trailer audio row is available and persists on native
+  // players; it must not remain hidden as a YouTube-only preference.
+  int alemao = -1;
+  for (int i = 0; i < nTrAud; i++) if (!strcmp(TRAUD_COD[i], "de")) alemao = i;
+  assert(alemao > 1 && !foraDestaPlataforma(AJ_TRAILER_AUDIO));
+  valor[AJ_TRAILER_AUDIO] = alemao;
+  gravar();
+  valor[AJ_TRAILER_AUDIO] = 0;
+  ajustes_dir(dir);
+  assert(!strcmp(ajustes_trailer_audio(), "de"));
+  ajustes_iniciar();
+  assert(!strcmp(ajustes_trailer_audio(), "de"));
+
+  // Exercise actual language resolution, including local-over-account audio
+  // and a metadata language that differs from the interface language.
+  char audio[16];
+  valor[AJ_TRAILER_AUDIO] = 0;
+  ling_conta_audio("en"); ling_local_audio("de");
+  extras_trailer_audio_idioma(audio, sizeof audio);
+  assert(!strcmp(audio, "de"));
+  ling_local_audio("~"); ling_definir_original("fr");
+  extras_trailer_audio_idioma(audio, sizeof audio);
+  assert(!strcmp(audio, "~")); // Must not reuse the previous title's French.
+  ling_local_audio(""); ling_conta_audio("original");
+  extras_trailer_audio_idioma(audio, sizeof audio);
+  assert(!strcmp(audio, "~"));
+  valor[AJ_TRAILER_AUDIO] = alemao; ling_local_audio("fr");
+  extras_trailer_audio_idioma(audio, sizeof audio);
+  assert(!strcmp(audio, "de"));
+  valor[AJ_TRAILER_AUDIO] = 0;
+  ling_local_audio(""); ling_conta_audio("");
+  valor[AJ_IDIOMA] = IDIOMA_EN + 1;
+  valor[AJ_TMDB_IDIOMA] = 4; // French metadata, English UI.
+  extras_trailer_audio_idioma(audio, sizeof audio);
+  assert(!strcmp(audio, "en"));
+
   // VETO INVISIVEL (herotrailer, 2.0.5): a linha "Trailer no destaque" fica
   // Ligada e a home nao toca nada — SEGURO ou a GPU vetada tiram o efetivo sem
   // mexer no gravado. ajustes_trailer_hero_vetado() diz qual e o veto para a

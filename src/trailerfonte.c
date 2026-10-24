@@ -115,6 +115,18 @@ static TrailerDecisao escolherNaOrdem(const int *ordem, int n, const TrailerCand
       if (qual) *qual = TRF_YOUTUBE;
       return TRF_ABRE;
     }
+  // Native TPK normally prefers IMDb for sound. A verified localized Apple
+  // trailer must win over that English default; fixed providers stay fixed.
+  if (n > 1 && c->appleIdiomaPreferido && !c->appleFalhou)
+    for (i = 0; i < n; i++) if (ordem[i] == TRF_APPLE) {
+      if (c->appleIdiomaPreferido < 0 && !c->appleRespondeu) return TRF_ESPERA;
+      if (c->appleIdiomaPreferido > 0 && c->apple && c->apple[0]) {
+        if (url) *url = c->apple;
+        if (qual) *qual = TRF_APPLE;
+        return TRF_ABRE;
+      }
+      break;
+    }
   for (i = 0; i < n; i++) {
     const char *u = NULL;
     int respondeu = 1;

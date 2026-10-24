@@ -11,6 +11,7 @@ char *dados_caminho(char *dst, unsigned tam, const char *nome) { snprintf(dst, t
 void dados_marcar_sujo(int leve) { (void)leve; }
 const char *dados_dir(void) { return nvt("/nuvio-trailerapple-teste"); }
 int qualidade = 0;
+void extras_trailer_audio_idioma(char *dst, unsigned cap) { snprintf(dst, cap, "en-US"); }
 int ajustes_trailer_qualidade(void) { return qualidade; }
 static int esperar(const char *id) { int i; for (i = 0; i < 300 && !trailerapple_respondeu(id); i++) usleep(100000); return trailerapple_respondeu(id); }
 int main(void) {

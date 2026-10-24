@@ -226,7 +226,7 @@ int ling_afinidade(const char *cod, const char *pref) {
 
 static char contaLeg[16], contaLeg2[16], contaAud[16], contaAud2[16];
 static char localLeg[16], localAud[16], localLeg2[16], localAud2[16];
-static int contaAudLivre;
+static int contaAudLivre, contaAudOriginal;
 
 // As sentinelas do web viram vazio (= sem filtro) ou "none" (= nenhuma).
 // "DEVICE"/"DEFAULT"/"ORIGINAL" dizem "deixe o arquivo decidir", que deste lado
@@ -248,6 +248,7 @@ void ling_conta_legenda2(const char *v) { guardar(contaLeg2, sizeof contaLeg2, v
 void ling_conta_audio(const char *v) {
   // Preserve the account's explicit unfiltered/original choice for the
   // optional source chip, without changing playback's existing preferences.
+  contaAudOriginal = v && (!strcmp(v, "~") || !strcasecmp(v, "original"));
   contaAudLivre = v && (!strcmp(v, "*") || !strcasecmp(v, "original") || !strcasecmp(v, "off"));
   guardar(contaAud, sizeof contaAud, v);
 }
@@ -307,6 +308,9 @@ const char *ling_legenda2(void) {
   return localLeg[0] ? "" : contaLeg2;
 }
 const char *ling_audio(void)    { return emVigor(localAud, contaAud); }
+const char *ling_audio_preferencia(void) {
+  return localAud[0] ? localAud : contaAudOriginal ? "~" : contaAud;
+}
 // O SEGUNDO IDIOMA DE AUDIO (secondary_preferred_audio_language do app
 // oficial): a mesma regra da segunda legenda acima.
 const char *ling_audio2(void) {

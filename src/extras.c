@@ -43,8 +43,10 @@ char *rede_postar_teste(const char *url, int segundos, const char *const *cab,
 #define rede_baixar_st   rede_baixar_st_teste
 #define rede_postar      rede_postar_teste
 static const char *testeAudioPref = "";
-const char *ling_conta_audio_valor(void) { return testeAudioPref; }
+#define AUDIO_PREFERIDO() testeAudioPref
 void extras_teste_audio_pref(const char *v) { testeAudioPref = v ? v : ""; }
+#else
+#define AUDIO_PREFERIDO() ling_audio_preferencia()
 #endif
 
 static int  notaTrakt, votosTrakt;
@@ -406,9 +408,18 @@ void extras_teste_trailer_audio(const char *cod) { testeAudio = cod ? cod : ""; 
 static void alvoDeVideo(const char *idioma, const char *original, char *dst, size_t cap) {
   const char *p = PREF_AUDIO();
   const char *audioLang = idioma;
+  if ((!p || !p[0]) && !strcmp(AUDIO_PREFERIDO(), "~")) p = "~";
   if (!p || !p[0]) {
-    audioLang = ling_conta_audio_valor();
-    if (!audioLang || !audioLang[0]) audioLang = idioma;
+    audioLang = AUDIO_PREFERIDO();
+    if (!audioLang || !audioLang[0] || !strcmp(audioLang, "*")) {
+#ifdef NUVIO_TRAILER_TEST
+      audioLang = idioma;
+#else
+      int ui = ajustes_idioma();
+      audioLang = ui == IDIOMA_PT ? "pt-BR" : ui == IDIOMA_PTPT ? "pt-PT" :
+                  ui == IDIOMA_ZHCN ? "zh-CN" : ui == IDIOMA_ZHTW ? "zh-TW" : idioma_iso(ui);
+#endif
+    }
     snprintf(dst, cap, "%s", audioLang && audioLang[0] && audioLang[1] ? audioLang : "en");
   }
   else if (!strcmp(p, "~")) snprintf(dst, cap, "%s", original && original[0] ? original : "en");
@@ -417,20 +428,35 @@ static void alvoDeVideo(const char *idioma, const char *original, char *dst, siz
   else snprintf(dst, cap, "%s", p);
 }
 
+// Same resolved preference for TMDB/YouTube and native Apple trailers.
+// Original is resolved from this title, never from a previous profile/title.
+void extras_trailer_audio_idioma(char *dst, unsigned cap) {
+  if (!strcmp(PREF_AUDIO(), "~") ||
+      (!PREF_AUDIO()[0] && !strcmp(AUDIO_PREFERIDO(), "~")))
+    snprintf(dst, cap, "~");
+  else alvoDeVideo(desc_tmdb_idioma(), "", dst, cap);
+}
+
 void extras_trailer_audio_iso(char *dst) {
   char alvo[16];
   dst[0] = 0;
-  if (!strcmp(PREF_AUDIO(), "~")) return;
-  alvoDeVideo(desc_tmdb_idioma(), "", alvo, sizeof alvo);
+  extras_trailer_audio_idioma(alvo, sizeof alvo);
+  if (!strcmp(alvo, "~")) return;
   if (alvo[0] && alvo[1]) { dst[0] = (char)(alvo[0] | 32); dst[1] = (char)(alvo[1] | 32); dst[2] = 0; }
 }
 
 // The chosen trailer audio may not be English, so callers wait for TMDB.
 // Original is only known once TMDB answers.
+static int audioAindaAtual(const char *audio) {
+  char atual[16];
+  extras_trailer_audio_idioma(atual, sizeof atual);
+  return !strcmp(audio, atual);
+}
+
 static int idiomaPedido(void) {
   char alvo[16];
-  if (!strcmp(PREF_AUDIO(), "~")) return 1;
-  alvoDeVideo(desc_tmdb_idioma(), "", alvo, sizeof alvo);
+  extras_trailer_audio_idioma(alvo, sizeof alvo);
+  if (!strcmp(alvo, "~")) return 1;
   return strncasecmp(alvo, "en", 2) != 0;
 }
 
@@ -1726,7 +1752,7 @@ static void esquecerPedido(void) {
 }
 
 void extras_pedir(const char *imdb, int serie, long tmdbId) {
-  char id[24];
+  char id[24], audio[16];
   const char *dp;
   if (!imdb || imdb[0] != 't' || !strncmp(imdb, "tmdb:", 5)) { esquecerPedido(); return; }
   // Sem nenhuma fonte online nao ha o que buscar: o Trakt alimenta vistos,
@@ -1745,18 +1771,19 @@ void extras_pedir(const char *imdb, int serie, long tmdbId) {
             memcpy(id, imdb, n); id[n] = 0; }
   else snprintf(id, sizeof id, "%s", imdb);
   imdb = id;
+  extras_trailer_audio_idioma(audio, sizeof audio);
   pthread_mutex_lock(&trava);
   // Mesmo id com OUTRO tipo e outro pedido: um titulo de tipo incerto
   // ("anime") abre como filme e o /meta o resolve como serie — ai os extras
   // tem de ser refeitos por /tv e /shows (detail.c repede).
   if (!strcmp(idPedido, imdb) && seriePedido == serie &&
-      !strcmp(audioPedido, PREF_AUDIO()) && nv_perfil_sessao_atual(sessaoPedido)) {
+      !strcmp(audioPedido, audio) && nv_perfil_sessao_atual(sessaoPedido)) {
     printf("[vistoep] %s: extras reutilizados; fio=%d pronto=%d; sem nova consulta\n",
            imdb, fioVivo, progressoPronto);
     fflush(stdout);
     pthread_mutex_unlock(&trava); return; }
   snprintf(idPedido, sizeof idPedido, "%s", imdb);
-  snprintf(audioPedido, sizeof audioPedido, "%s", PREF_AUDIO());
+  snprintf(audioPedido, sizeof audioPedido, "%s", audio);
   sessaoPedido = nv_perfil_sessao_ler();
   seriePedido = serie;
   tmdbPedido = tmdbId;
@@ -2125,7 +2152,7 @@ static int parsearHeroVideos(const char *corpo, int serie, const char *idioma,
 // exercita o mesmo filtro de site/tipo/chave sem simular o JSON em JavaScript.
 void extras_teste_publicar_hero(const char *id, const char *corpo, const char *idioma) {
   snprintf(heroTrailerPedido, sizeof heroTrailerPedido, "%s", id);
-  snprintf(heroTrailerAudio, sizeof heroTrailerAudio, "%s", PREF_AUDIO());
+  extras_trailer_audio_idioma(heroTrailerAudio, sizeof heroTrailerAudio);
   nHeroTrailer = parsearHeroVideos(corpo, 0, idioma, heroTrailer);
   heroTrailerVivo = 0;
   heroTrailerExecutada = heroTrailerGer;
@@ -2219,13 +2246,14 @@ static void *lacoHeroTrailer(void *ignorado) {
 }
 
 void extras_hero_trailer_pedir(const char *imdb, int serie, long tmdbId) {
-  char id[24];
+  char id[24], audio[16];
   time_t agora = time(NULL);
   normalizarHeroId(imdb, id, sizeof id);
   if (!id[0] || !desc_chave_tmdb()[0] || !ajustes_tmdb_trailers()) return;
+  extras_trailer_audio_idioma(audio, sizeof audio);
   pthread_mutex_lock(&heroTrailerTrava);
   if (!strcmp(heroTrailerPedido, id) && heroTrailerSerie == serie &&
-      heroTrailerTmdb == tmdbId && !strcmp(heroTrailerAudio, PREF_AUDIO())) {
+      heroTrailerTmdb == tmdbId && !strcmp(heroTrailerAudio, audio)) {
     if (heroTrailerVivo || nHeroTrailer > 0 ||
         agora - heroTrailerTentativaEm < HERO_TRAILER_RETRY_S) {
       pthread_mutex_unlock(&heroTrailerTrava);
@@ -2235,7 +2263,7 @@ void extras_hero_trailer_pedir(const char *imdb, int serie, long tmdbId) {
     heroTrailerTentativas = 0;
   }
   snprintf(heroTrailerPedido, sizeof heroTrailerPedido, "%s", id);
-  snprintf(heroTrailerAudio, sizeof heroTrailerAudio, "%s", PREF_AUDIO());
+  snprintf(heroTrailerAudio, sizeof heroTrailerAudio, "%s", audio);
   heroTrailerSerie = serie;
   heroTrailerTmdb = tmdbId;
   nHeroTrailer = 0;
@@ -2266,7 +2294,7 @@ int extras_hero_trailer_obter(const char *imdb, char *dst, unsigned cap) {
   pthread_mutex_lock(&heroTrailerTrava);
   if (!strcmp(heroTrailerPedido, id) && !heroTrailerVivo &&
       heroTrailerExecutada == heroTrailerGer && nHeroTrailer > 0 &&
-      !strcmp(heroTrailerAudio, PREF_AUDIO())) {
+      audioAindaAtual(heroTrailerAudio)) {
     snprintf(dst, cap, "%s", heroTrailer[0].yt);
     ok = 1;
   }
@@ -2280,7 +2308,7 @@ int extras_hero_trailer_idioma_preferido(const char *imdb) {
   normalizarHeroId(imdb, id, sizeof id);
   pthread_mutex_lock(&heroTrailerTrava);
   if (id[0] && !strcmp(heroTrailerPedido, id) && !heroTrailerVivo &&
-      heroTrailerExecutada == heroTrailerGer && !strcmp(heroTrailerAudio, PREF_AUDIO()))
+      heroTrailerExecutada == heroTrailerGer && audioAindaAtual(heroTrailerAudio))
     preferido = nHeroTrailer > 0 && heroTrailer[0].idiomaPreferido;
   else preferido = idiomaPedido() ? -1 : 0;
   pthread_mutex_unlock(&heroTrailerTrava);

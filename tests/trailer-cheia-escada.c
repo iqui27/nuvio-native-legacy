@@ -7,6 +7,7 @@
 #include <string.h>
 #define __EMSCRIPTEN__ 1
 #define cat_item                         f_cat_item
+#define trailerapple_idioma_preferido    f_apple_idioma
 #define trailerapple_url                 f_apple_url
 #define trailerapple_respondeu           f_apple_respondeu
 #define trailerimdb_url                  f_imdb_url
@@ -29,6 +30,7 @@
 static CatItem fItem;
 const CatItem *f_cat_item(int i) { (void)i; return &fItem; }
 const char *f_apple_url(const char *id) { (void)id; return "apple.m3u8"; }
+int f_apple_idioma(const char *id) { (void)id; return 0; }
 int f_apple_respondeu(const char *id) { (void)id; return 1; }
 const char *f_imdb_url(const char *id, const char **x) { (void)id; (void)x; return "imdb.mp4"; }
 int f_imdb_respondeu(const char *id) { (void)id; return 1; }

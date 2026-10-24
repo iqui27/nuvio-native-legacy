@@ -6058,6 +6058,14 @@ static void heroTrailerVetoLog(void) {
 // for the dubbed trailer (Trailer audio), ranked first, so a failed embed
 // falls back to Apple -> IMDb instead of keeping the art.
 static int heroTrailerDepois(int qual) {
+  unsigned falhas = heroTrailerFalhas;
+  if (qual > 0 && qual <= TRF_YOUTUBE) falhas |= 1u << qual;
+  if (trailerfonte_ajuste() == TRF_AUTO && (falhas & (1u << TRF_APPLE))) {
+    int ordem[3], n = trailerfonte_ordem_destaque(TRF_AUTO, trailerfonte_tizen(), ordem);
+    for (int i = 0; i < n; i++)
+      if (!(falhas & (1u << ordem[i]))) return ordem[i];
+    return 0;
+  }
 #ifdef __EMSCRIPTEN__
   if (qual == TRF_YOUTUBE || (heroTrailerFalhas & (1u << TRF_YOUTUBE)))
     return trailerfonte_depois_dublado(trailerfonte_ajuste(), trailerfonte_tizen(), qual);
@@ -6303,6 +6311,7 @@ static void home_trailer_passo_(int topo, float dt, Uint32 agora) {
     int qual = 0, venceu = decorrido >= heroTrailerMaxEspera();
     memset(&c, 0, sizeof c);
     c.apple = trailerapple_url(ci->imdb);
+    c.appleIdiomaPreferido = trailerapple_idioma_preferido(ci->imdb);
     c.appleRespondeu = trailerapple_respondeu(ci->imdb) || venceu;
     c.appleFalhou = heroTrailerAppleFalhou;
     if (!trailerfonte_tizen() || trailerfonte_imdb_tizen()) {

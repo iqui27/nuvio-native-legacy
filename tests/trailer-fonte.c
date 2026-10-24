@@ -166,6 +166,21 @@ int main(void) {
 #else
   confere("sem NV_TPK: IMDb-primeiro da tela cheia desligado por padrao", trailerfonte_imdb_primeiro_cheia() == 0);
 #endif
+  trailerfonte_definir_imdb_primeiro_cheia(1);
+  c = todas(); c.appleIdiomaPreferido = 1;
+  confere("localized Apple beats English IMDb on native TPK fullscreen",
+          trailerfonte_escolher_cheia(TRF_AUTO, 0, 1, &c, &u, &n) == TRF_ABRE && n == TRF_APPLE);
+  confere("localized Apple respects a fixed IMDb provider",
+          escolhe(TRF_IMDB, 0, &c, &u) == TRF_IMDB);
+  c.appleIdiomaPreferido = -1; c.apple = NULL; c.appleRespondeu = 0;
+  confere("wait for localized Apple before native TPK English default",
+          trailerfonte_escolher_cheia(TRF_AUTO, 0, 1, &c, &u, &n) == TRF_ESPERA);
+  c.appleRespondeu = 1;
+  confere("localized lookup deadline releases English fallback",
+          trailerfonte_escolher_cheia(TRF_AUTO, 0, 1, &c, &u, &n) == TRF_ABRE && n == TRF_IMDB);
+  c = todas(); c.appleIdiomaPreferido = 1; c.appleFalhou = 1;
+  confere("failed localized Apple releases fallback",
+          trailerfonte_escolher_cheia(TRF_AUTO, 0, 1, &c, &u, &n) == TRF_ABRE && n == TRF_IMDB);
   trailerfonte_definir_imdb_primeiro_cheia(0);   // o que o .wgt e a LG compilam
   for (tz = 0; tz <= 1; tz++) {
     int aj, a[3], b[3], na, nb, k, igual;
