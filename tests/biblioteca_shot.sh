@@ -42,11 +42,13 @@ if [ "${NV_MODO:-}" = mock ] || [ "${NV_MODO:-}" = servers ]; then
   export NUVIO_RAIL=moderna NUVIO_SHOT_RELOGIO=1 NUVIO_SHOT_PT=1
 fi
 if [ "${NV_J1_SHOT:-}" = 1 ]; then
-  for scale in 1 .85; do
+  mkdir -p "$saida"
+  cp "$tmp/shot" "$saida/capture"
+  for scale in ${NV_J1_SCALES:-1 .85 .9 1.1 1.2 1.3}; do
     for glass in 1 0; do
       for mode in mock servers; do
         mkdir -p "$saida/$scale-$glass/$mode"
-        NUVIO_RAIL=moderna NUVIO_SHOT_RELOGIO=1 NUVIO_SHOT_PT=1 \
+        NUVIO_RAIL="${NUVIO_RAIL:-moderna}" NUVIO_SHOT_RELOGIO=1 NUVIO_SHOT_PT=1 \
         NUVIO_SHOT_ESCALA_TEXTO="$scale" NUVIO_SHOT_VIDRO="$glass" \
         NUVIO_DADOS="$tmp/dados-$scale-$glass-$mode" "$tmp/shot" "$saida/$scale-$glass/$mode/native" "$mode"
       done

@@ -63,6 +63,8 @@
 //      ao topo empurra o cabecalho para fora da tela na primeira descida.
 #include "menu.h"
 #include "biblioteca.h"
+#include "botoes.h"
+#include "teclavoltar.h"
 #include "jfid.h"
 #include "glance.h"
 #include "posterprov.h"
@@ -413,6 +415,20 @@ void biblioteca_teste_foco(int *fileira, int *coluna, int *acao) {
 static float animModo[BIB_N_MODOS];
 static float animPick[8];
 static float animOrigem[64], animTela, animVista = 1, animListaTab, animListaEd;
+// Retain only rendered cells, not a second catalog, during tab crossfades.
+#define BIB_TRANSITION_CELLS 32
+typedef struct {
+  CatItem item;
+  LstLista lista;
+  GfxRect rect;
+  float focus, alpha;
+  int kind;
+} BibTransitionCell;
+static BibTransitionCell vistaAtual[BIB_TRANSITION_CELLS], vistaAnterior[BIB_TRANSITION_CELLS];
+static int nVistaAtual, nVistaAnterior, modoAnterior, exibicaoAnterior, vistaModo, vistaExibicao;
+static int estadoFoco;
+static float animEstado;
+static float trilhaX, trilhaVel, vistaClipY, anteriorClipY;
 static Foco focoListas;
 static int temFocoListas;
 static float animFoco[BIB_MAX_LINHAS][BIB_COLUNAS_MAX];
@@ -707,6 +723,12 @@ static int contarCelulas(void) {
 // refaz o mapa, senao a grade de 5 andaria com a navegacao de 6.
 static int ncMapa = 0;
 static int bibNPicks(void);
+static int estadoFalhou(void) {
+  if (nCelulas) return 0;
+  if (estado() == EST_ITENS)
+    return aberta.fonte != LST_SIMKL && !lst_itens_carregando() && desc_vertudo_erro();
+  return estado() == EST_LISTAS && !lst_carregando() && strstr(lst_aviso(), "Não foi possível");
+}
 // Quantos dos itens da lista aberta a pessoa ja viu, para o cabecalho da pagina.
 // Contado aqui e nao por quadro: remapear roda quando chegam itens, e varrer
 // ate 960 CatItem a 60 Hz seria custo sem ninguem pedindo.
@@ -745,12 +767,20 @@ static void remapear(int preservar) {
     // enquanto a lista carregava.
     return;
   }
+  if (!temAberta && nVistaAtual) {
+    memcpy(vistaAnterior, vistaAtual, nVistaAtual * sizeof *vistaAtual);
+    nVistaAnterior = nVistaAtual;
+    modoAnterior = vistaModo; exibicaoAnterior = vistaExibicao;
+    anteriorClipY = vistaClipY;
+  }
+  nVistaAtual = 0; estadoFoco = 0;
+  trilhaX = trilhaVel = 0;
   scrollY = 0.0f; velY = 0.0f;
 #ifdef NV_TOUCH_UI
   toqueLivre = 0;
 #endif
   memset(animFoco, 0, sizeof animFoco); memset(revArte, 0, sizeof revArte);
-  ondaArmada = 1; ondaEm = 0;
+  ondaArmada = nVistaAnterior == 0; ondaEm = 0;
   animVista = 0;
 }
 
@@ -1059,12 +1089,14 @@ static void pedirFonte(void) {
 static int iniciado;
 void biblioteca_abrir_sessao(void) {
   fonte = FONTE_TRAKT;
+  nVistaAtual = nVistaAnterior = 0;
   animTela = 0;
   pedido = -1; sair = 0; pediuRelogio = 0; temAberta = 0;
   okDesde = 0;
   prefPerfil = -1;
 }
 int biblioteca_iniciar(void) {
+  nVistaAtual = nVistaAnterior = 0;
   // Zerado UMA vez por processo, e nao a cada entrada.
   if (!iniciado) {
     memset(comprado, 0, sizeof comprado);
@@ -1519,6 +1551,15 @@ static void biblioteca_evento_(const SDL_Event *e) {
   }
   if (e->type != SDL_KEYDOWN) return;
   SDL_Keycode k = e->key.keysym.sym;
+  if (estadoFoco && estadoFalhou()) {
+    if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
+      if (temAberta) lst_abrir(&aberta, abertaMidia); else pedirFonte();
+      estadoFoco = 0; return;
+    }
+    if (k == SDLK_UP || nv_tecla_voltar(e)) { estadoFoco = 0; return; }
+    return;
+  }
+  if (k == SDLK_DOWN && estadoFalhou() && !focoOrigem) { estadoFoco = 1; return; }
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE) {
     // Dentro de uma lista, o Back volta PARA A LISTA DE LISTAS antes de fechar
@@ -1736,6 +1777,7 @@ static void biblioteca_atualizar_(float dt, Uint32 agora) {
 #endif
   animTela = anim_mola(animTela, sair ? 0 : 1, dt, NV_MOLA_TELA);
   animVista = anim_rampa(animVista, 1, dt, 160);
+  animEstado = anim_mola(animEstado, estadoFoco && estadoFalhou(), dt, NV_MOLA_FOCO);
   animListaTab = anim_mola(animListaTab, listaTab, dt, NV_MOLA_FOCO);
   animListaEd = anim_mola(animListaEd, !focoOrigem && foco.fileira == BIB_FIL_MODO, dt, NV_MOLA_FOCO);
   for (int i = 0; i < 64; i++)
@@ -1793,7 +1835,18 @@ static void biblioteca_atualizar_(float dt, Uint32 agora) {
   // Rola o MINIMO para a linha focada caber inteira na area util. Com o foco no
   // cabecalho o alvo e 0 — voltar ao topo faz parte de voltar para a barra.
   float alvo = scrollY;
-  if (trilha) alvo = 0;
+  if (trilha) {
+    alvo = 0;
+    int index = celulaEmFoco();
+    float step = BIB_CARD_W + BIB_CARD_GAP;
+    float target = trilhaX;
+    if (index >= 0) {
+      float left = (index % 8) * step;
+      if (left < target) target = left;
+      if (left + BIB_CARD_W > target + bibW()) target = left + BIB_CARD_W - bibW();
+    }
+    trilhaX = anim_mola2(&trilhaVel, trilhaX, fmaxf(0, target), dt, NV_MOLA2_SCROLL);
+  }
   else if (foco.fileira >= ini) {
     float topo = gradeY() + (foco.fileira - ini) * passoLinha();
     float base = topo + alturaLinha();
@@ -2282,22 +2335,26 @@ static const char *seloCaixaAlta(const char *chave) {
 // util. Uma grade em branco parece tela quebrada.
 static void desenhaVazio(void) {
   const char *l1, *l2, *dica = "↑ Voltar aos filtros   ·   Voltar: menu";
+  int kind = T21_EMPTY;
   if (estado() == EST_ITENS) {
     // DENTRO DE UMA LISTA o aviso da FONTE nao se aplica: ele fala do pedido
     // que traz as listas, nao dos itens desta. Reusa-lo aqui dizia "conecte sua
     // conta do Trakt" dentro de uma lista publica que nao precisa de conta
     // nenhuma — visto na captura, nao deduzido.
     dica = "↑ Voltar às ações   ·   Voltar: lista de listas";
-    if (lst_itens_carregando()) { l1 = "Carregando os títulos"; l2 = "Um instante."; }
-    else { l1 = "Nada nesta lista";
+    if (lst_itens_carregando()) { kind = T21_LOADING; l1 = "Carregando os títulos"; l2 = "Um instante."; }
+    else if (aberta.fonte != LST_SIMKL && desc_vertudo_erro()) {
+      kind = T21_ERROR; l1 = "Não foi possível carregar. OK para tentar novamente."; l2 = NULL;
+    } else { l1 = "Nada nesta lista";
            l2 = "Uma lista do Trakt vem por tipo: experimente trocar entre Filmes e Séries."; }
   } else if (estado() == EST_LISTAS) {
     // O AVISO DA FONTE VEM DO MODULO e diz o que falta (sem conta do Trakt, sem
     // vinculo do Simkl, nada fixado). Uma frase generica aqui esconderia
     // exatamente a informacao que resolve.
     const char *av = lst_aviso();
-    if (lst_carregando()) { l1 = "Carregando listas"; l2 = "Um instante."; }
-    else if (av[0])       { l1 = "Nada para mostrar aqui"; l2 = av; }
+    if (lst_carregando()) { kind = T21_LOADING; l1 = "Carregando listas"; l2 = "Um instante."; }
+    else if (av[0])       { kind = strstr(av, "Não foi possível") ? T21_ERROR : T21_EMPTY;
+                            l1 = "Nada para mostrar aqui"; l2 = av; }
     else                  { l1 = "Nada para mostrar aqui";
                             l2 = "Escolha outra fonte no seletor acima."; }
   } else {
@@ -2323,16 +2380,16 @@ static void desenhaVazio(void) {
           ? "O que você termina de ver fica registrado aqui."
           : "Abra um filme ou série e escolha Adicionar à lista para guardar.";
   }
-  { TxtLinha t1 = txt_linha(TXT_TITULO2, l1, 255, 255, 255, 255);
-    TxtLinha t2 = txt_linha_corta(TXT_CALLOUT, l2, 150, 153, 162, 255, bibW());
-    float cx = bibX() + bibW() * 0.5f;
-    float y = gradeY() + 190.0f;
-    gfx_icone((GfxRect){cx - 32.0f, y - 100.0f, 64.0f, 64.0f},
-               "menu_library", 0.70f, 0.70f, 0.72f, 1.0f);
-    txt_desenhar_alpha(t1, cx - t1.w * 0.5f, y, 0.96f);
-    txt_desenhar_alpha(t2, cx - t2.w * 0.5f, y + t1.h + 18.0f, 0.85f);
-    { TxtLinha d = txt_linha(TXT_CAPTION2, dica, 150, 153, 162, 255);
-      txt_desenhar(d, cx - d.w * 0.5f, y + t1.h + t2.h + 58.0f); } }
+  float y = fmaxf(gradeY(), ANC(360));
+  GfxRect panel = {bibX(), y, fminf(bibW(), 1240), fminf(440, ANC(T21_SAFE_B) - y)};
+  t21_estado(panel, kind, "menu_library", l1, l2, NULL, SDL_GetTicks() * .001f, 1);
+  if (kind == T21_ERROR) {
+    const char *label = i18n("Recarregar");
+    GfxRect button = {panel.x + T21_SHEET_PAD, panel.y + panel.h - 96,
+                      botao_largura(label, "aj_rotate-cw", 0), BOTAO_H_SECUNDARIO};
+    botao_pilula(button, label, "aj_rotate-cw", animEstado, 0, 1, 1);
+  } else txt_bloco_corta(TXT_CAPTION2, dica, 150, 153, 162, panel.x + T21_SHEET_PAD,
+                         panel.y + panel.h - 72, panel.w - 2 * T21_SHEET_PAD, 28, 1, 2);
 }
 
 // Reject landscape artwork after decode; try the item's portrait poster, then a title card.
@@ -3327,53 +3384,73 @@ static void desenhaCompartilhar(void) {
   txt_desenhar(u, (NV_TELA_W - u.w) * 0.5f, y + lado + 24.0f);
 }
 
+static void desenhaVistaAnterior(Uint32 agora) {
+  float alpha = 1 - anim_suave(animVista);
+  if (temAberta || alpha <= .005f || ajustes_animacoes_reduzidas()) {
+    nVistaAnterior = 0; return;
+  }
+  int currentMode = modo, currentView = exibicao;
+  modo = modoAnterior; exibicao = exibicaoAnterior;
+  gfx_recorte(0, anteriorClipY, NV_TELA_W, BIB_GRADE_BASE - anteriorClipY);
+  for (int i = 0; i < nVistaAnterior; i++) {
+    const BibTransitionCell *cell = &vistaAnterior[i];
+    float a = alpha * cell->alpha;
+    if (cell->kind == 0) desenhaCartaz(&cell->item, cell->rect, cell->focus, a, NULL, agora);
+    else if (cell->kind == 1) desenhaLinhaTitulo(&cell->item, -1, cell->rect.y, cell->focus, a);
+    else if (cell->kind == 2) desenhaCartaoLista(&cell->lista, cell->rect, cell->focus, a);
+    else desenhaLinhaLista(&cell->lista, cell->rect.y, cell->focus, a);
+  }
+  gfx_sem_recorte();
+  modo = currentMode; exibicao = currentView;
+}
+
 static void desenhaTrilha(Uint32 agora) {
   int selected = celulaEmFoco();
   if (selected < 0) selected = 0;
   int first = selected / 8 * 8;
-  float x = paginaX(), step = (bibDireita() - x) / 8;
+  float x = bibX(), step = BIB_CARD_W + BIB_CARD_GAP;
+  float posterY = ANC(404), noteY = posterY + BIB_POSTER_H + 70;
+  gfx_recorte(x - 12, ANC(330), bibW() + 24, noteY - ANC(330));
   float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-  gfx_cor((GfxRect){x + step / 2, 360, step * 7, 3}, 0, 1, 1, 1, .16f);
+  gfx_cor((GfxRect){x + step / 2 - trilhaX, ANC(360), step * 7, 3}, 0, 1, 1, 1, .16f);
   for (int k = 0; k < 8 && first + k < nCelulas; k++) {
     int index = first + k; CatItem ci;
     if (!lst_item(index, &ci)) continue;
     float entry = ondaEm ? revela_entra(ondaEm, revela_onda_atraso(k, 0), agora) : 1;
     float opacity = gfx_opacidade_grupo;
     gfx_opacidade_grupo *= entry;
-    float cx = x + step * (k + .5f);
+    float cx = x + k * step + BIB_CARD_W / 2 - trilhaX;
     int done = cat_visto(&ci);
     float focus = animFoco[index / 8][index % 8];
-    GfxRect circle = {cx - 22, 340, 44, 44};
+    GfxRect circle = {cx - 22, ANC(340), 44, 44};
     gfx_cor(circle, .5f, done ? ar : .085f, done ? ag : .09f, done ? ab : .105f, 1);
     plrui_linha_foco(circle, 22, focus);
     char number[16]; snprintf(number, sizeof number, "%d", index + 1);
     TxtLinha n = txt_linha(TXT_HERO_SEC, number, done ? ajustes_tinta_foco() : 220, done ? ajustes_tinta_foco() : 220, done ? ajustes_tinta_foco() : 220, 255);
-    txt_desenhar(n, cx - n.w / 2, 351);
-    GfxRect poster = {cx - 80 - 6.4f * focus, 404 - 9.6f * focus + (1 - entry) * NV_ENTRA_DY,
-                      160 * (1 + .08f * focus), 240 * (1 + .08f * focus)};
-    const char *url; GLuint t = bibPoster(&ci, 174, &url);
-    if (t) { gfx_tex_aspect_atual = tex_aspecto(url); gfx_rect(poster, t, GFX_CARD, focus, 0, 0, 14.0f / poster.h, 0, 0, 0, 1); gfx_tex_aspect_atual = 0; }
-    else bibTitleCard(&ci, poster, 1);
-    TxtLinha title = txt_linha_corta(TXT_HERO_SEC, ci.titulo, 235, 235, 235, 255, 170);
-    txt_desenhar(title, cx - title.w / 2, 664);
+    txt_desenhar(n, cx - n.w / 2, circle.y + (circle.h - n.h) / 2);
+    GfxRect poster = {cx - BIB_CARD_W / 2, posterY + (1 - entry) * NV_ENTRA_DY,
+                      BIB_CARD_W, BIB_POSTER_H};
+    desenhaCartaz(&ci, poster, focus, 1, &revArte[index / 8][index % 8], agora);
     ponteiro_alvo(poster.x, poster.y, poster.w, poster.h, ponteiroCelula, NULL, index, 0);
     gfx_opacidade_grupo = opacity;
   }
+  gfx_sem_recorte();
   CatItem ci; DescItemLista ex;
   if (!lst_item(selected, &ci)) return;
   lst_item_extra(selected, &ex);
   float noteW = (bibDireita() - x - 40) * .66f;
-  GfxRect note = {x, 740, noteW, 292};
+  float noteH = fmaxf(120, ANC(T21_SAFE_B) - noteY);
+  GfxRect note = {x, noteY, noteW, noteH};
   t21_ilha(note, T21_R_SHEET, 1);
   char heading[180]; snprintf(heading, sizeof heading, "%s %d · %s", i18n("Passo"), selected + 1, ci.titulo);
-  txt_desenhar(txt_linha_corta(TXT_CAPTION2, heading, 180, 182, 188, 255, noteW - 60), x + 30, 766);
-  txt_bloco_corta(TXT_CALLOUT, ex.nota[0] ? ex.nota : ci.sinopse, 220, 222, 228, x + 30, 812, noteW - 60, 30, 1, 5);
-  GfxRect about = {x + noteW + 40, 740, bibDireita() - x - noteW - 40, 292};
+  txt_desenhar(txt_linha_corta(TXT_CAPTION2, heading, 180, 182, 188, 255, noteW - 60), x + 30, noteY + 20);
+  txt_bloco_corta(TXT_CALLOUT, ex.nota[0] ? ex.nota : ci.sinopse, 220, 222, 228, x + 30, noteY + 60, noteW - 60, 30, 1, (int)((noteH - 74) / 30));
+  GfxRect about = {x + noteW + 40, noteY, bibDireita() - x - noteW - 40, noteH};
   t21_ilha(about, T21_R_SHEET, 1);
-  txt_desenhar(txt_linha(TXT_CAPTION2, "Sobre", 180, 182, 188, 255), about.x + 28, 766);
-  txt_bloco_corta(TXT_HERO_META, aberta.descricao, 160, 162, 168, about.x + 28, 810, about.w - 56, 26, 1, 5);
+  txt_desenhar(txt_linha(TXT_CAPTION2, "Sobre", 180, 182, 188, 255), about.x + 28, noteY + 20);
+  txt_bloco_corta(TXT_HERO_META, aberta.descricao, 160, 162, 168, about.x + 28, noteY + 60, about.w - 56, 26, 1, (int)fmaxf(1, (noteH - 110) / 26));
   char progress[80]; snprintf(progress, sizeof progress, "%s %d/%d", i18n("você viu"), pagVistos, nCelulas);
-  txt_desenhar(txt_linha(TXT_HERO_META, progress, 220, 222, 228, 255), about.x + 28, 986);
+  txt_desenhar(txt_linha(TXT_HERO_META, progress, 220, 222, 228, 255), about.x + 28, noteY + noteH - 34);
 }
 
 static void biblioteca_desenhar_(Uint32 agora) {
@@ -3401,6 +3478,8 @@ static void biblioteca_desenhar_(Uint32 agora) {
     desenhaResumo();
     ESCALA_MIN_FIM(); }
   if (temOrigens()) desenhaOrigens();
+  desenhaVistaAnterior(agora);
+  nVistaAtual = 0; vistaModo = modo; vistaExibicao = exibicao;
   if (modo == MODO_ASSISTIDOS && modoLinha()) {
     float x = paginaX();
     const char *labels[] = { "Título", "Data", "Vezes", "Origens" };
@@ -3443,6 +3522,7 @@ static void biblioteca_desenhar_(Uint32 agora) {
   // The boundary sits just under the tab pills (faixa ends at y 248), not at
   // the grid origin (284): art scrolls up close to the buttons, no black band.
   gcy = gy - 18.0f * bibRel();
+  vistaClipY = gcy;
   gfx_recorte(0.0f, gcy, NV_TELA_W, BIB_GRADE_BASE - gcy);
   { int lin0 = passoL > 0.0f ? (int)(scrollY / passoL) : 0;
 
@@ -3496,8 +3576,24 @@ static void biblioteca_desenhar_(Uint32 agora) {
         entra = ondaEm ? revela_entra(ondaEm, revela_onda_atraso(c, r - lin0), agora)
                        : 1.0f;
         ac = a * entra * anim_suave(animVista);
-        if (ac <= 0.005f) continue;
         ty = topo + (1.0f - entra) * NV_ENTRA_DY;
+        if (!temAberta && nVistaAtual < BIB_TRANSITION_CELLS) {
+          BibTransitionCell *cell = &vistaAtual[nVistaAtual++];
+          cell->rect = (GfxRect){bibX() + c * passoC, ty, BIB_CARD_W, BIB_POSTER_H};
+          cell->focus = f; cell->alpha = ac;
+          cell->kind = modoLinha() ? 1 : 0;
+          if (estado() == EST_LISTAS) {
+            const LstLista *list = lst_lista(i);
+            if (list) cell->lista = *list;
+            cell->kind = modoLinha() ? 3 : 2;
+            cell->rect.w = larguraCartaoLista(); cell->rect.h = BIB_LC_H;
+          } else {
+            CatItem tmp;
+            const CatItem *item = itemFiltro(filtro[i], &tmp);
+            if (item) cell->item = *item;
+          }
+        }
+        if (ac <= 0.005f) continue;
 
         if (estado() == EST_LISTAS) {
           const LstLista *l = lst_lista(i);

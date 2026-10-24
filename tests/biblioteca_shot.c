@@ -105,20 +105,37 @@ static void medir(const char *rotulo) {
 
 #ifdef NV_J1_SHOT
 static void j1_movimento(const char *nome) {
-  const int times[] = {0, 80, 160, 320};
+  const int times[] = {0, 50, 80, 100, 150, 160, 250, 320, 400};
+  const char *names[] = {"focus", "entry", "exit", "reverse", "tabs"};
   float savedFocus[BIB_MAX_LINHAS][BIB_COLUNAS_MAX];
   memcpy(savedFocus, animFoco, sizeof savedFocus);
   Foco saved = foco;
   float savedScroll = scrollY, savedVelocity = velY;
-  for (int sequence = 0; sequence < 2; sequence++) {
+  int savedExit = sair, savedOrigin = focoOrigem, savedMode = modo, savedView = exibicao;
+  int oldCount = nVistaAnterior;
+  for (int sequence = 0; sequence < 5; sequence++) {
     Uint32 base = SDL_GetTicks();
     if (!sequence) {
       focoOrigem = 0; foco.fileira = gradeIni(); foco.coluna = 0;
       for (int warm = 0; warm < 60; warm++) biblioteca_atualizar(1.0f / 60, base);
       focus_mover_grade(&foco, colunas() > 1 ? 1 : 0, colunas() > 1 ? 0 : 1);
-    } else { animTela = 0; ondaEm = base; ondaArmada = 0; }
+    } else if (sequence == 1) { animTela = 0; ondaEm = base; ondaArmada = 0; }
+    else if (sequence == 2) { sair = 1; }
+    else if (sequence == 3) {
+      sair = 1;
+      for (int i = 0; i < 8; i++) biblioteca_atualizar(.01f, base);
+      sair = 0;
+    }
+    else {
+      if (temAberta || modo == MODO_LISTAS || !nVistaAtual) continue;
+      focoOrigem = 0;
+      int previous = modo;
+      foco.fileira = BIB_FIL_MODO; foco.coluna = (modo + 1) % 4;
+      tecla(SDLK_RETURN);
+      assert(modo != previous && nVistaAnterior > 0);
+    }
     int elapsed = 0;
-    for (int frame = 0; frame < 4; frame++) {
+    for (int frame = 0; frame < (int)(sizeof times / sizeof *times); frame++) {
       while (elapsed < times[frame]) {
         elapsed += 10;
         biblioteca_atualizar(.01f, base + elapsed);
@@ -131,13 +148,21 @@ static void j1_movimento(const char *nome) {
       assert(pixels && surface);
       glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
       for (int y = 0; y < 1080; y++) memcpy((char *)surface->pixels + y * surface->pitch, pixels + (1079-y)*1920*4, 1920*4);
-      char path[1024]; snprintf(path, sizeof path, "%s-%s-%03d.png", nome, sequence ? "entry" : "focus", times[frame]);
+      char path[1024]; snprintf(path, sizeof path, "%s-%s-%03d.png", nome, names[sequence], times[frame]);
       assert(!IMG_SavePNG(surface, path)); SDL_FreeSurface(surface); free(pixels);
     }
     foco = saved; scrollY = savedScroll; velY = savedVelocity;
     memcpy(animFoco, savedFocus, sizeof savedFocus);
-    animTela = animVista = 1; ondaEm = 0;
+    animTela = animVista = 1; ondaEm = 0; sair = savedExit; focoOrigem = savedOrigin;
+    if (sequence == 4) {
+      modo = savedMode; exibicao = savedView; reconstruir(); foco = saved;
+      scrollY = savedScroll; velY = savedVelocity; focoOrigem = savedOrigin;
+      animTela = animVista = 1; ondaEm = 0;
+      for (int i = 0; i < 60; i++) biblioteca_atualizar(1.0f / 60, SDL_GetTicks());
+      biblioteca_desenhar(SDL_GetTicks());
+    }
   }
+  nVistaAnterior = oldCount;
 }
 #endif
 static void captura(const char *nome) {
@@ -176,13 +201,15 @@ static void captura(const char *nome) {
   assert(s);
   for (y = 0; y < 1080; y++)
     memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
-  assert(SDL_SaveBMP(s, nome) == 0);
+  if (getenv("NV_J1_SHOT")) assert(IMG_SavePNG(s, nome) == 0);
+  else assert(SDL_SaveBMP(s, nome) == 0);
   SDL_FreeSurface(s);
   free(pix);
   SDL_GL_SwapWindow(win);
   printf("captura: %s\n", nome);
 #ifdef NV_J1_SHOT
-  j1_movimento(nome);
+  const char *scale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
+  if (!getenv("NV_J1_STILLS") && (!scale || !strcmp(scale, "1") || !strcmp(scale, ".85"))) j1_movimento(nome);
 #endif
 }
 
@@ -440,6 +467,12 @@ int main(int argc, char **argv) {
     tecla(SDLK_DOWN); tecla(SDLK_DOWN); // source panel
     tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); // first row, second poster
     snprintf(nome, sizeof nome, "%s-grid.bmp", saida); captura(nome);
+#ifdef NV_J1_SHOT
+    ASSERTA(nVistaAtual > 0, "Library retains rendered outgoing cells");
+    remapear(0);
+    ASSERTA(nVistaAnterior > 0 && animVista == 0, "tab remap retains outgoing cells for crossfade");
+    quadros(60);
+#endif
     // Landscape input must produce a readable title card, never grey letterboxing.
     CatItem original = *cat_item(2), landscape = original;
     strcpy(landscape.poster, "deploy/app/art/02.jpg");
@@ -491,6 +524,20 @@ int main(int argc, char **argv) {
     { int ed, action, grabbed, sharing, row;
       biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
       ASSERTA(row == 1 && biblioteca_teste_trilha(), "D-pad reaches trail steps in trail mode");
+#ifdef NV_J1_SHOT
+      { TXT_INI();
+      ASSERTA(fabsf(BIB_CARD_W * gfx_escala_txt() - 220) < .1f,
+              "Trail keeps normal 220px physical Library poster width");
+      TXT_FIM(); }
+      for (int i = 0; i < 7; i++) tecla(SDLK_RIGHT);
+      quadros(90);
+      { TXT_INI();
+      ASSERTA(trilhaX > 0 && (7 * (BIB_CARD_W + BIB_CARD_GAP) - trilhaX + BIB_CARD_W) <= bibW() + 1,
+              "last Trail poster remains reachable at normal Library size");
+      TXT_FIM(); }
+      for (int i = 0; i < 7; i++) tecla(SDLK_LEFT);
+      quadros(90);
+#endif
     }
     snprintf(nome, sizeof nome, "%s-trail.bmp", saida); captura(nome);
 #ifdef NV_J1_SHOT
