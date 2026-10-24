@@ -806,9 +806,13 @@ int main(int argc, char **argv) {
         if (sequence == 1) { rwEntrada = rwForma = rwFormaV = 0; rwQuadro = fxTick; }
         if (sequence == 2) rwAberta = 0;
         if (sequence == 3) {
-          rwAberta = 1; quadros(120);
+          rewatchui_abrir(cat_item(0),RW_ORIGEM_TITULO,0,0); quadros(120);
           rwAberta = 0; quadros(5);
-          rwAberta = 1;
+          // Production opener during the exit: must reverse, not restart.
+          float entradaAntes = rwEntrada, formaAntes = rwForma;
+          assert(entradaAntes > .005f && entradaAntes < 1);
+          rewatchui_abrir(cat_item(0),RW_ORIGEM_TITULO,0,0);
+          assert(rwEntrada == entradaAntes && rwForma == formaAntes);
         }
         int elapsed = 0;
         for (int frame = 0; frame < (int)(sizeof times / sizeof *times); frame++) {
