@@ -40,11 +40,6 @@ for row in result.stdout.splitlines():
     path, line, rule = match.groups()
     pos = sum(map(len, code.splitlines(True)[:int(line)-1]))
     owner = next((name for start, end, name in spans if start <= pos < end), '')
-    if (path == 'src/filmo.c' and rule == 'ring' and
-        Path(path).read_text().splitlines()[int(line)-1].strip() ==
-        'foco_anel(zoom,ajustes_raio_poster_px()/zoom.h,f,alpha*e);'):
-        print(f'Ledger section 5: {path}:{line}: Home7971, user-configured poster border through foco_anel')
-        continue
     if path == 'src/ilha.c' and rule == 'ring' and any(
         Path(path).read_text().splitlines()[int(line)-1].strip().startswith(t)
         for t in ('gfx_anel_fora(r, raio, 4.0f', 'if (em > 0.01f) gfx_anel(R, raio, 1.5f')):

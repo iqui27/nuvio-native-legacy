@@ -153,8 +153,13 @@ static void cartaz(int idx,float x,float y,float w,float h,int foco) {
   snprintf(ci.poster,sizeof ci.poster,"%s",c->poster);
   float f=focoCred[idx];
   GfxRect zoom=foco_zoom(r,f);
-  // Preserve the user's configured poster-border mode, as Home does.
-  foco_anel(zoom,ajustes_raio_poster_px()/zoom.h,f,alpha*e);
+  // Optional "Foco no cartaz" border, drawn exactly like the Home poster row.
+  if(f>.01f&&ajustes_borda_foco()){
+    float raio=ajustes_raio_poster_px()/zoom.h,menor=zoom.w<zoom.h?zoom.w:zoom.h,ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
+    if(ajustes_vidro())gfx_vidro_cartao(zoom,raio,f,alpha*e);
+    else gfx_cor((GfxRect){zoom.x-NV_ANEL_FOCO,zoom.y-NV_ANEL_FOCO,zoom.w+2*NV_ANEL_FOCO,zoom.h+2*NV_ANEL_FOCO},
+      (raio*menor+NV_ANEL_FOCO)/(menor+2*NV_ANEL_FOCO),ar,ag,ab,f*alpha*e);
+  }
   home_vitrine_cartao(&ci,zoom,zoom,alpha*e,0,f);
   r=zoom;
   char b[100];
@@ -210,13 +215,13 @@ static void overlay(const FdFicha *d){drawZona=5;drawItem=0;float x=1130,w=690;c
 static void corpoFilmo(GfxRect r,float a,void *u) {
   (void)u;
   TXT_INI();
-  GfxRect g=ilha_corpo_rect();(void)r;
-  float ox=px(1090),oy=py(50),k=1;/* island rect animates, body keeps its size */
+  GfxRect fim=area((GfxRect){1090,50,770,980}),g=ilha_corpo_rect();(void)r;
+  /* content keeps its final place; it appears only once the growing island holds it whole */
+  float cob=fminf(g.w/fim.w,g.h/fim.h),rev=fminf(1,fmaxf(0,(cob-.9f)/.09f));
   int atual=camada; float pa=alpha;
-  camada=folhaAnterior; alpha=a*entrada;
-  folhaDx=g.x-ox; folhaDy=g.y-oy; folhaK=k; folhaVista=1;
-  gfx_transformar(ox,oy,k,folhaDx,folhaDy);
-  overlay(fd_ficha()); gfx_sem_transformar();
+  camada=folhaAnterior; alpha=a*entrada*rev;
+  folhaDx=folhaDy=0; folhaK=1; folhaVista=rev>.5f;
+  overlay(fd_ficha());
   camada=atual; alpha=pa; TXT_FIM();
 }
 static void toqueFoco(int z,int c){if(z==5){op=c;return;}zona=z;col=c;if(z==1&&aba!=c){aba=c;topo=0;if(aba==2)fd_sobre();}if(z==3)ano=c;}
