@@ -1,4 +1,8 @@
+#define NV_TXT_TELA
 #include "rewatchui.h"
+#include "tela21.h"
+#include "botoes.h"
+#include "teclavoltar.h"
 #include "rewatch.h"
 #include "ctxmenu.h"
 #include "descoberta.h"
@@ -21,6 +25,8 @@ static int rwAberta, rwFoco, rwArmado, rwOrigem, rwAlvoT, rwAlvoE, rwPedido, rwF
 static char rwTocarId[64];
 static CtxLinha rwLinhas[3];
 static int rwN;
+static float rwEntrada, rwAnimFoco[3];
+static Uint32 rwQuadro;
 
 void rewatchui_abrir(const CatItem *ci, int de, int t, int e) {
   if (!ci || strcmp(ci->tipo,"series") || !ci->imdb[0]) return;
@@ -28,10 +34,12 @@ void rewatchui_abrir(const CatItem *ci, int de, int t, int e) {
   rwFim = rewatch_ativa(rwItem.imdb);
   rwConflito = !rwFim && rwItem.progresso > 0 && rwItem.progresso < 90;
   rwAberta = 1; rwFoco = rwArmado = 0;
+  rwEntrada = 0; rwQuadro = SDL_GetTicks();
+  memset(rwAnimFoco, 0, sizeof rwAnimFoco);
   rwN = 0;
   if (rwFim) rwLinhas[rwN++] = (CtxLinha){"Encerrar reassistida", "aj_x"};
   else {
-    rwLinhas[rwN++] = (CtxLinha){rwConflito ? "Manter e reassistir junto" : "Começar a reassistir", "pl_play-f"};
+    rwLinhas[rwN++] = (CtxLinha){rwConflito ? "Manter e reassistir junto" : "Começar a reassistir", "aj_play"};
     if (rwConflito) rwLinhas[rwN++] = (CtxLinha){"Trocar retomada por reassistida", "aj_layers"};
   }
   rwLinhas[rwN++] = (CtxLinha){"Cancelar", "aj_x"};
@@ -91,22 +99,47 @@ void rewatchui_evento(const SDL_Event *ev) {
   if (k==SDLK_RETURN || k==SDLK_KP_ENTER) { if (!ev->key.repeat) rwArmado=1; }
   else if (k==SDLK_UP && rwFoco>0) rwFoco--;
   else if (k==SDLK_DOWN && rwFoco+1<rwN) rwFoco++;
-  else if (k==SDLK_ESCAPE || k==SDLK_BACKSPACE || k==SDLK_AC_BACK || k==SDLK_DELETE ||
-           ev->key.keysym.scancode==NV_SCANCODE_BACK) rwAberta=rwArmado=0;
+  else if (nv_tecla_voltar(ev)) rwAberta=rwArmado=0;
 }
 static void rwFocar(int a,int b) { (void)b; if (a>=0 && a<rwN) rwFoco=a; }
 static void rwFora(int a,int b) { (void)a; (void)b; rwAberta=0; }
 void rewatchui_desenhar(void) {
-  float f[3]={0};
-  if (!rwAberta) return;
-  f[rwFoco]=1;
-  GfxRect r={(NV_TELA_W-860)/2,(NV_TELA_H-ctx_menu_altura(rwN))/2,860,ctx_menu_altura(rwN)};
-  ctx_menu_veu(.65f);
-  ponteiro_camada();
-  ponteiro_alvo(0,0,NV_TELA_W,NV_TELA_H,NULL,rwFora,0,0);
-  ctx_menu_desenhar(r,i18n(rwFim ? "Encerrar reassistida" : "Reassistir do início"),
-    i18n(rwFim ? "Os plays enviados ficam no histórico." : "Cada episódio revisto gera um novo play. O histórico fica."),
-    .7f,rwLinhas,rwN,f,1,1,rwFocar);
+  if (!rwAberta && rwEntrada < .005f) return;
+  Uint32 now = SDL_GetTicks();
+  float dt = fminf((now - rwQuadro) / 1000.0f, .05f);
+  rwQuadro = now;
+  rwEntrada = anim_mola(rwEntrada, rwAberta ? 1 : 0, dt, NV_MOLA_TELA);
+  for (int i = 0; i < rwN; i++)
+    rwAnimFoco[i] = anim_mola(rwAnimFoco[i], rwAberta && rwFoco == i, dt, NV_MOLA_FOCO);
+  TXT_INI();
+  float x, w; t21_inicio(&x, &w);
+  float width = fminf(w, 960), height = 236 + rwN * (T21_CTRL_H + T21_CTRL_GAP);
+  GfxRect r = {x + (w - width) / 2, (NV_TELA_H - height) / 2, width, height};
+  gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0, 0, 0, 0, T21_VEIL * rwEntrada);
+  float opacity = gfx_opacidade_grupo;
+  gfx_opacidade_grupo *= rwEntrada;
+  gfx_transformar(r.x + r.w / 2, r.y + r.h / 2,
+                   anim_mistura(T21_SHEET_SCALE, 1, rwEntrada), 0, 0);
+  t21_ilha(r, T21_R_MODAL, 1);
+  plrui_kicker(i18n("Reassistir"), r.x + 40, r.y + 32, 243, 242, 239, .55f);
+  txt_desenhar(txt_linha(TXT_ILHA_TITULO, rwFim ? "Encerrar reassistida" : "Reassistir do início",
+                         243, 242, 239, 255), r.x + 40, r.y + 68);
+  txt_bloco(TXT_ILHA_TEXTO, rwFim ? "Os plays enviados ficam no histórico." :
+             "Cada episódio revisto gera um novo play. O histórico fica.",
+             243, 242, 239, r.x + 40, r.y + 128, r.w - 80, 28, .65f, 2);
+  if (rwAberta) {
+    ponteiro_camada();
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, rwFora, 0, 0);
+  }
+  for (int i = 0; i < rwN; i++) {
+    GfxRect button = {r.x + 40, r.y + 204 + i * (T21_CTRL_H + T21_CTRL_GAP),
+                      r.w - 80, T21_CTRL_H};
+    botao_pilula(button, rwLinhas[i].rot, rwLinhas[i].icone, rwAnimFoco[i], 0, 1, 1);
+    if (rwAberta) ponteiro_alvo(button.x, button.y, button.w, button.h, rwFocar, NULL, i, 0);
+  }
+  gfx_sem_transformar();
+  gfx_opacidade_grupo = opacity;
+  TXT_FIM();
 }
 int rewatchui_tocar(char *id,size_t tam,int *t,int *e) {
   if (!rwPedido) return 0;
