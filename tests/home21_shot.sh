@@ -20,18 +20,7 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c) continue;; esac
   sources+=("$source")
 done
-objects="${TMPDIR:-/tmp}/nuvio-home21-shot-objects"
-mkdir -p "$objects"
-objectsToLink=()
-for source in "${sources[@]}" tests/home21_shot.c; do
-  object="$objects/${source//\//_}.o"
-  if [ ! -e "$object" ] || [ "$source" -nt "$object" ] || [ -n "$(find src -name '*.h' -newer "$object" -print -quit)" ]; then
-    cc -c "$source" -Isrc -o "$object" -O1 -g ${NV_CFLAGS:-} \
-      -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -w
-  fi
-  objectsToLink+=("$object")
-done
-if ! cc "${objectsToLink[@]}" -o "$NUVIO_DADOS/shot" \
+if ! cc "${sources[@]}" tests/home21_shot.c -Isrc -o "$NUVIO_DADOS/shot" \
   -O1 -g ${NV_CFLAGS:-} -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined \
