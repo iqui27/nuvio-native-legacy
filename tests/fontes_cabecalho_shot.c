@@ -159,7 +159,26 @@ int main(int argc, char **argv) {
   stream_folha_abrir();
   quadros(50);
   salvar("1-lista");
-  if (getenv("NUVIO_SHOT_SERVIDORES")) return 0;
+  if (getenv("NUVIO_SHOT_SERVIDORES")) {
+    txt_definir_fonte_interface(TXT_FAMILIA_INTER);
+    for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
+      char name[80]; gfx_escala_txt_definir(scale ? .85f : 1); ajustes_definir_vidro(glass);
+      quadros(40); snprintf(name, sizeof name, "%s-%s", scale ? "85" : "100", glass ? "glass" : "solid"); salvar(name);
+    }
+    gfx_escala_txt_definir(1); ajustes_definir_vidro(1);
+    tecla(SDLK_ESCAPE); quadros(90); stream_folha_abrir();
+    const int times[] = {0, 80, 160, 320};
+    for (int i = 0, elapsed = 0; i < 4; i++) {
+      while (elapsed < times[i]) { quadros(1); elapsed += 16; }
+      char name[80]; snprintf(name, sizeof name, "entry-%03d", times[i]); salvar(name);
+    }
+    quadros(90); tecla(SDLK_DOWN);
+    for (int i = 0, elapsed = 0; i < 4; i++) {
+      while (elapsed < times[i]) { quadros(1); elapsed += 16; }
+      char name[80]; snprintf(name, sizeof name, "focus-%03d", times[i]); salvar(name);
+    }
+    return 0;
+  }
   // Ate as abas (UP da primeira linha), depois a fileira de botoes.
   for (int i = 0; i < 12; i++) tecla(SDLK_UP);
   // Fileira em foco no ultimo botao (Fechar); anda ate "So MP4" e liga.
