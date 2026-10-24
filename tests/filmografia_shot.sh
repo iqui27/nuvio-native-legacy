@@ -16,4 +16,4 @@ cc -DAJUSTES_TESTE "${sources[@]}" tests/filmografia_shot.c -Isrc -o "$bin" \
  -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
  -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-"$bin" /Volumes/ExternalSSD/tmp/rev/filmo-impl
+"$bin" "${1:-/Volumes/ExternalSSD/tmp/rev/filmo-impl}"

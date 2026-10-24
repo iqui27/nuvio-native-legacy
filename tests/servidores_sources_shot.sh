@@ -9,7 +9,7 @@ cc -DNV_SHOT_HOOKS "${sources[@]}" tests/fontes_cabecalho_shot.c -Isrc -o "$work
   -O1 -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wno-deprecated-declarations -Wno-macro-redefined
-output=/Volumes/ExternalSSD/tmp/rev/servidores-sources-png
+output=${1:-/Volumes/ExternalSSD/tmp/rev/servidores-sources-png}
 mkdir -p "$output" "$work/data"
 NUVIO_DADOS="$work/data" NUVIO_TESTE_DIR="$work/data" NUVIO_SHOT_IDIOMA=0 NUVIO_SHOT_SERVIDORES=1 "$work/shot" "$output/native"
 mv "$output/native-1-lista.png" "$output/fontes-servidor-app.png"
