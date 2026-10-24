@@ -1,4 +1,8 @@
+#define NV_TXT_TELA
 #include "glance.h"
+#include "tela21.h"
+#include "botoes.h"
+#include "revela.h"
 #include "anim.h"
 #include "ajustes.h"
 #include "ctxmenu.h"
@@ -24,13 +28,17 @@ static GlanceFonte fonte;
 static CatItem atual, tocar;
 static int aberta, indice, botao, trailerPedido, trailerFim, trailerQual;
 static Uint32 desde, prazo;
-static float focoAnim[4];
+static float focoAnim[4], entrada;
+static Uint32 entradaEm;
 static unsigned revisao;
 static int acaoPendente, acaoResolucao;
 static int acaoEpisodios = -1;
 static CatItem acaoTitulo, resolucaoTitulo;
 static Uint32 acaoDesde;
-static GfxRect videoRect(void) { return (GfxRect){ 1110, 180, 700, 394 }; }
+static GfxRect videoRect(void) {
+  float x, w; t21_inicio(&x, &w);
+  return (GfxRect){x + w - 700, ANC(180), 700, 394};
+}
 
 void glance_fechar(void) {
   acaoPendente = 0; acaoEpisodios = -1;
@@ -59,6 +67,7 @@ void glance_abrir(const GlanceFonte *f, int i) {
   glance_fechar();
   fonte = *f;
   tocar.imdb[0] = 0;
+  entrada = 0; entradaEm = SDL_GetTicks();
   aberta = selecionar(i);
   revisao = cat_revisao();
 }
@@ -141,6 +150,7 @@ void glance_atualizar(float dt, Uint32 agora) {
   const char *url = NULL;
   char youtube[32] = "";
   int qual = 0, venceu;
+  entrada = anim_mola(entrada, aberta ? 1 : 0, dt, NV_MOLA_TELA);
   if (!aberta) return;
   if (acaoPendente && acaoEpisodios >= 0) {
     CatItem ci;
@@ -199,7 +209,11 @@ void glance_atualizar(float dt, Uint32 agora) {
   }
   switch (trailerfonte_escolher(trailerfonte_ajuste(), trailerfonte_tizen(), &c, &url, &qual)) {
     case TRF_ABRE:
-      trailer_abrir(url, videoRect(), 0, 0);
+      ;
+      GfxRect video = videoRect();
+      float scale = gfx_escala_txt();
+      video.x *= scale; video.y *= scale; video.w *= scale; video.h *= scale;
+      trailer_abrir(url, video, 0, 0);
       trailerQual = qual; prazo = agora + NV_TRAILER_PREPARA_MS;
       break;
     case TRF_NENHUMA: trailerFim = 1; break;
@@ -220,14 +234,16 @@ static void cartaz(const CatItem *it, GfxRect r) {
     gfx_tex_aspect_atual = 0;
   }
 }
-void glance_desenhar(Uint32 agora) {
+static void glance_desenhar_(Uint32 agora) {
   GfxRect tela = {0, 0, NV_TELA_W, NV_TELA_H}, vr = videoRect();
   char linha[240];
   const char *rot[4], *ic[4] = { "aj_play", "aj_info", "aj_bookmark", "aj_eye" };
   int idx, visto, salvo;
   CatItem live;
   (void)agora;
-  if (!aberta) return;
+  if (!aberta && entrada < .005f) return;
+  float x, w; t21_inicio(&x, &w);
+  float leftW = fminf(900, vr.x - x - 64);
   // Read action state by identity: saving may rebuild the underlying list.
   idx = cat_indice_por_imdb(atual.imdb);
   live = atual;
@@ -241,30 +257,30 @@ void glance_desenhar(Uint32 agora) {
       gfx_rect(tela, tex, GFX_DETALHE, 0, 0, 0, 0, 0, 0, 0, 0.65f); gfx_tex_aspect_atual = 0; }
   }
   snprintf(linha, sizeof linha, "%s · %d / %d", i18n(!strcmp(atual.tipo, "series") ? "Série" : "Filme"), indice + 1, fonte.total());
-  texto(TXT_DET_META, linha, 104, 100, 900, 185);
-  float h = txt_bloco_corta(TXT_TITULO2, atual.titulo, 245, 245, 245, 104, 150, 900, 64, 1, 2);
-  float y = 158 + h;
+  texto(TXT_DET_META, linha, x, ANC(100), leftW, 185);
+  float h = txt_bloco_corta(TXT_TITULO2, atual.titulo, 245, 245, 245, x, ANC(150), leftW, 64, 1, 2);
+  float y = ANC(158) + h;
   snprintf(linha, sizeof linha, "%s%s", atual.meta, atual.nota ? " · IMDb " : "");
   if (atual.nota) { size_t n = strlen(linha); snprintf(linha + n, sizeof linha - n, "%.1f", atual.nota / 10.0f); }
-  texto(TXT_DET_META, linha, 104, y, 900, 210);
-  txt_bloco_corta(TXT_DET_SIN, atual.sinopse, 225, 225, 225, 104, y + 50, 900, 36, 1, 3);
-  if (visto) texto(TXT_DET_META, i18n("Visto"), 104, 498, 900, 220);
+  texto(TXT_DET_META, linha, x, y, leftW, 210);
+  txt_bloco_corta(TXT_DET_SIN, atual.sinopse, 225, 225, 225, x, y + 50, leftW, 36, 1, 3);
+  if (visto) texto(TXT_DET_META, i18n("Visto"), x, ANC(498), leftW, 220);
   else if (live.progresso > 0) { snprintf(linha, sizeof linha, "%d%%", live.progresso);
-    texto(TXT_DET_META, linha, 104, 498, 900, 220); }
+    texto(TXT_DET_META, linha, x, ANC(498), leftW, 220); }
   rot[0] = i18n(live.progresso > 0 && live.progresso < 90 ? "Continuar" : "Assistir");
   rot[1] = i18n("Detalhes"); rot[2] = i18n(salvo ? "Salvo" : "Salvar");
   rot[3] = i18n(visto ? "Visto" : "Marcar como assistido");
   for (int b = 0; b < 4; b++) {
-    GfxRect r = {104, 544 + b * 94.0f, 650, 78};
-    gfx_vidro_painel(r, 0.2f, 0.78f, 1);
-    gfx_vidro_foco(r, 0.2f, focoAnim[b], 1);
-    ctx_menu_linha(r, rot[b], ic[b], focoAnim[b], 1, -1);
+    float entry = revela_entra(entradaEm, revela_onda_atraso(0, b), agora);
+    GfxRect r = {x, ANC(544) + b * 88 + (1 - entry) * NV_ENTRA_DY,
+                 botao_largura(rot[b], ic[b], b == 0), b == 0 ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO};
+    botao_pilula(r, rot[b], ic[b], focoAnim[b], b == 0, 1, entry);
   }
   if (live.restanteMin > 0 && live.progresso > 0 && live.progresso < 90) {
     snprintf(linha, sizeof linha, i18n("%d min restantes"), live.restanteMin);
-    texto(TXT_DET_META2, linha, 788, 565, 255, 205);
+    texto(TXT_DET_META2, linha, x + 680, ANC(565), 255, 205);
   }
-  gfx_vidro_painel(vr, 0.035f, 0.78f, 1);
+  plrui_cartao(vr, T21_R_CARD, 1);
   if (trailer_aberto() && trailer_tocando() && trailer_mostra_video()) gfx_furo_raio(vr, 0.035f);
   else {
     const char *arte = atual.backdrop[0] ? atual.backdrop : atual.poster;
@@ -273,15 +289,27 @@ void glance_desenhar(Uint32 agora) {
       gfx_rect(vr, tex, GFX_CARD, 0, 0, 0, 0.035f, 0, 0, 0, 1); gfx_tex_aspect_atual = 0; }
   }
   texto(TXT_DET_META, i18n("Trailer"), vr.x, vr.y - 46, vr.w, 210);
-  cartaz(&atual, (GfxRect){ 1358, 610, 166, 249 });
+  cartaz(&atual, (GfxRect){ vr.x + 248, ANC(610), 166, 249 });
   for (int d = -1; d <= 1; d += 2) {
     CatItem viz;
     int i = indice + d;
     if (i < 0 || i >= fonte.total() || !fonte.item(i, &viz)) continue;
-    float x = d < 0 ? 1110 : 1610;
-    cartaz(&viz, (GfxRect){ x + 48, 650, 106, 159 });
-    texto(TXT_DET_META, d < 0 ? "‹" : "›", x + (d < 0 ? 0 : 168), 710, 40, 235);
-    texto(TXT_ILHA_ITEM, viz.titulo, x, 830, 210, 195);
+    float nx = vr.x + (d < 0 ? 0 : 500);
+    cartaz(&viz, (GfxRect){ nx + 48, ANC(650), 106, 159 });
+    gfx_icone((GfxRect){nx + (d < 0 ? 0 : 168), ANC(710), 28, 28},
+               d < 0 ? "aj_chevron-left" : "aj_chevron-right", 1, 1, 1, .9f);
+    texto(TXT_ILHA_ITEM, viz.titulo, nx, ANC(830), 200, 195);
   }
-  texto(TXT_DET_META2, i18n("Voltar"), 104, 980, 900, 185);
+  t21_dica("Voltar", i18n("Retornar"), x, ANC(T21_SAFE_B), 1);
+}
+
+void glance_desenhar(Uint32 agora) {
+  TXT_INI();
+  float opacity = gfx_opacidade_grupo;
+  gfx_opacidade_grupo *= entrada;
+  gfx_transformar(0, 0, 1, 0, (1 - entrada) * NV_ENTRA_DY);
+  glance_desenhar_(agora);
+  gfx_sem_transformar();
+  gfx_opacidade_grupo = opacity;
+  TXT_FIM();
 }
