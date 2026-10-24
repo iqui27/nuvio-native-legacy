@@ -1,3 +1,28 @@
+# Detail check follow-up
+
+The ten inherited failures were investigated against the approved fixed Detail layout. No tests were deleted. Production changes are limited to cancelling a pending cast lookup on Back and resuming an in-progress season-zero special. Neither changes drawing or layout.
+
+| Check | Classification and retained protection |
+| --- | --- |
+| `detail_epcard.sh` | Stale size/API expectations; fixed 420×530 cards, 236 px thumbnail, 448 px pitch, all Home layouts and legacy size preferences, full row navigation. |
+| `detail_epinfo.sh` | Stale Modern C panel and hole API, plus duplicate embedded rewatch implementation in the link; current title, absent duration/date, three-line synopsis bounds, all Home layouts and both glass settings captured. |
+| `detail_episode_perf.sh` | Stale cast-relative viewport comparison and removed hole API. Approved episode viewport includes hero/season controls while the cast viewport does not. Explicit ceiling: 220 submissions and 1.15 screen fills; measured maximum 204/1.126, zero navigation cache churn across 5,120 frames. Alpha-zero, rating measurement, text-weight pixels and frost checks remain. |
+| `detail_episode_review.sh` | Stale renderer guards; retains highp text, dither, scaled rect visibility, focus/page alpha, filter/navigation/rating wiring and executable portrait material checks. |
+| `detail_epmaterial_shot.sh` | Stale hole API, still-pixel invariance and settings migration fixture; validates fixed geometry, visible focus changes confined to the scaled thumbnail, and Modern/Standard captures. |
+| `detail_eps.sh` | Stale global source guards: progress-grid columns are intentionally absolute; episode-card columns remain season-relative. Initial selection now routes through `episodioPadrao`. |
+| `detail_eps_shot.sh` | Stale hole API, hidden/offscreen blur targets, unpinned fixture season and old source-strip height. Explicitly scrolls both unseen episodes into view and retains watched/unknown blur, source metadata and native captures. |
+| `detail_epslista.sh` | Stale scaled-gap API plus real regression: season-zero resume was rejected by `temporada > 0`. Retains special selection/resume, first regular fallback, spring, reduced motion and stable neighbors. |
+| `detail_layout.sh` | SIGABRT/rc 134 was an assertion expecting the retired collapsed two-button group. Ports direct List/More actions. Subsequent cancellation assertion exposed a real regression: Back left cast lookup pending. Fix cancels it before navigating; worker isolation/cancellation/cache tests remain. |
+| `detail_secoes_shot.sh` | SIGABRT/rc 134 was `colListaAberta && colListaFoco == 1`: retired collection-list behavior. Approved row opens each part directly; fixture asserts current-part no-op and another part's exact TMDB routing, retaining all section captures. |
+
+Final verification: **25/25 `tests/detail*.sh` commands returned 0**, as did `python3 tools/varredura-i18n.py`, `python3 tools/idiomas.py`, `python3 tools/detalhe21-layout-png.py` and `bash tools/build-local.sh`. Every originally failing check listed above now returns 0. No tests were removed.
+
+All **21 PNGs are pixel-identical** to the saved pre-task contents of `/Volumes/ExternalSSD/tmp/rev/detalhe21-layout-png/`, copied to `/tmp/detail21-resto-png-before/` before capture. ImageMagick `compare -metric AE` returned 0 and zero differing pixels for every file, including all four full pages and all comparison crops. Initial differences were exclusively estimated-finish clock labels (baseline 08:41 versus current wall clock); the capture fixture now accepts `NUVIO_SHOT_TIME`, and the generator fixes that clock and timezone to the saved reference. Production rendering was not changed. Output remains `/Volumes/ExternalSSD/tmp/rev/detalhe21-layout-png/`.
+
+No push, deployment, stash, or TV validation. Host draw/fill budgets do not establish TV performance.
+
+---
+
 # Current merge verification
 
 Merged `integracao/2.1` at `147263c2c`, retaining 2.0.8 fixes and Settings v4. Detail-only settings follow integration IDs in the enum, options, keys and defaults; existing section order is preserved. Both Detail options route to the title-page group. All 30 language tables retain both parents' keys, including `Trilha`; incoming Arabic translations win shared-key conflicts.

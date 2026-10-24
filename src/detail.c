@@ -2106,7 +2106,7 @@ static int episodioPadrao(int *temp, int *epis, int *origem) {
     return 1;
   }
   // Em andamento: o item do "Continuar assistindo" traz temporada e episodio.
-  if (ci && ci->progresso > 0 && ci->progresso < ajustes_cw_concluido() && ci->temporada > 0 && ci->episodio > 0 &&
+  if (ci && ci->progresso > 0 && ci->progresso < ajustes_cw_concluido() && ci->temporada >= 0 && ci->episodio > 0 &&
       !extras_ep_visto(ci->temporada, ci->episodio)) {
     if (temp) *temp = ci->temporada;
     if (epis) *epis = ci->episodio;
@@ -3504,6 +3504,7 @@ void detail_evento(const SDL_Event *e) {
 
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE) {
+    pessoaBuscaCancelar();
     if (comPicando) comentariosVoltar();
     else if (acoesAgrupadas() && maisAcoes && nivel == 0) { maisAcoes = 0; botao = temInicio() ? 1 : 0; }
     else if (focoVersao) { focoVersao = 0; botao = 0; }

@@ -133,8 +133,17 @@ void b2_panel(GfxRect r, float radius, float density, float a);
 #ifndef NV_DETAIL_SOURCE
 #define NV_DETAIL_SOURCE "../src/detail.c"
 #endif
+// Freeze only Detail's wall clock for reproducible estimated-finish labels.
+static time_t detailShotTime(time_t *result) {
+  const char *fixed = getenv("NUVIO_SHOT_TIME");
+  time_t value = fixed ? (time_t)strtoll(fixed, NULL, 10) : time(NULL);
+  if (result) *result = value;
+  return value;
+}
+#define time detailShotTime
 #define servidores_contem_item fx_servidor_contem
 #include NV_DETAIL_SOURCE
+#undef time
 #undef gfx_vidro_material
 #undef gfx_vidro_painel
 #undef gfx_cor

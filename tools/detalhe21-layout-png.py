@@ -23,7 +23,8 @@ for mode, name in enumerate(('pronta', 'pessoal')):
     work.mkdir(exist_ok=True)
     env = dict(os.environ, OBJ='/tmp/nv21-resto-shot-obj', NUVIO_SHOT_IDIOMA='0',
                NUVIO_SHOT_REFERENCE=str(REF / 'assets'), NUVIO_SHOT_SOURCE='1',
-               NUVIO_SHOT_AMIGOS='1', NUVIO_SHOT_TOPO=str(mode))
+               NUVIO_SHOT_AMIGOS='1', NUVIO_SHOT_TOPO=str(mode),
+               NUVIO_SHOT_TIME='1792842060', TZ='America/Sao_Paulo')  # Saved reference: 08:41.
     with (work / 'capture.log').open('w') as log:
         run('bash', 'tests/detalhe_glass_shot.sh', work, 'full', env=env,
             stdout=log, stderr=subprocess.STDOUT)
