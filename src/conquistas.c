@@ -187,11 +187,12 @@ static int alvo_nivel(const CqEntrada *e, int n) {
 }
 
 // ------------------------------------------------------------------- layout
+#define COL_W    470.0f
 static void origem(void) {
   t21_inicio(&ox, &largura);
   ox -= MG;
   oy = 0;
-  gradeW = largura - 444.0f;
+  gradeW = largura - COL_W - 40.0f;
   colunas = gradeW < 1100.0f ? 2 : 3;
   linhasVis = gfx_escala_txt() > 1.0f ? 2 : 3;
 }
@@ -214,11 +215,10 @@ static float larg_pilula(const char *s, const char *ic) {
 
 #define TABS_Y   ANC(262.0f)
 #define GRADE_Y  (TABS_Y + PILULA_H + 26.0f)
-#define PASSO_Y  190.0f
+#define PASSO_Y  224.0f
 #define CARD_W   ((gradeW - (colunas - 1) * 20.0f) / colunas)
-#define CARD_H   170.0f
+#define CARD_H   200.0f
 #define COL_X    (MG + gradeW + 40.0f)
-#define COL_W    404.0f
 
 static const char *const tabs[A_N] = { "Todas", "Ganhas", "Em andamento", "Secretas", "Comunidade" };
 static GfxRect r_aba(int a) {
@@ -459,8 +459,10 @@ static void alvo(GfxRect r, int id) {
 
 // Cards retain light ink over the official neutral focus surface.
 static void superficie(GfxRect r, float raioPx, float f, float a, Tinta *pri, Tinta *sec) {
-  t21_ilha(r, raioPx, a);
-  plrui_linha_foco(r, raioPx, f * a);
+  // Flat island surface for glass on or off: the glass rim and corner light read as an outline.
+  gfx_sombra_sob((GfxRect){r.x - 16, r.y - 4, r.w + 32, r.h + 30}, 1, 0, .5f, 0, 0, 0, .36f * a, r, raioPx, a);
+  gfx_cor(r, raioPx / fminf(r.w, r.h), .071f, .075f, .086f, .98f * a);
+  gfx_cor(r, raioPx / fminf(r.w, r.h), 1, 1, 1, .06f * f * a); // one step lighter, no outline
   *pri = PRI; *sec = SEC;
 }
 
@@ -547,30 +549,30 @@ static void kicker_trilha(char *dst, size_t n, const char *terceiro) {
 static void desenha_card(GfxRect r, const CqEntrada *e, float foc, float a) {
   Tinta p, s, mudo;
   char b[96];
-  float x = r.x + 124.0f, w = CARD_W - 124.0f - 20.0f, fr, fg, fb, barW = CARD_W - 40.0f, f;
+  float x = r.x + 176.0f, w = CARD_W - 176.0f - 20.0f, fr, fg, fb, barW = CARD_W - 40.0f, f;
   int i;
   superficie(r, T21_R_CARD, foc, a, &p, &s);
   mudo = MUDO;
-  float lado = 140 * (1 + .06f * foc);
+  float lado = 176 * (1 + .06f * foc);
   tinta_de(e, &fr, &fg, &fb);
   // Focus surface tinted by the achievement accent (no outline, no glow).
-  gfx_cor(r, T21_R_CARD, fr, fg, fb, .12f * foc * a);
-  emblema_e(r.x + 62 - lado / 2, r.y + 68 - lado / 2, lado, e, a);
-  texto(TXT_V2_KICK, nome_nivel_arte(e->nivel), x, r.y + 16.0f, w, (Tinta){ (int)(fr * 255), (int)(fg * 255), (int)(fb * 255) }, a);
-  bloco(TXT_ILHA_NOME, e->nome, p, x, r.y + 42.0f, w, 28.0f, a, 1);
+  gfx_cor(r, T21_R_CARD / fminf(r.w, r.h), fr, fg, fb, .12f * foc * a);
+  emblema_e(r.x + 88 - lado / 2, r.y + 84 - lado / 2, lado, e, a); // breaks above the card top like the mock
+  texto(TXT_V2_KICK, nome_nivel_arte(e->nivel), x, r.y + 24.0f, w, (Tinta){ (int)(fr * 255), (int)(fg * 255), (int)(fb * 255) }, a);
+  bloco(TXT_ILHA_NOME_L, e->nome, p, x, r.y + 52.0f, w, 32.0f, a, 1);
   if (e->total > 0) snprintf(b, sizeof b, i18n("Nível %d de 5 · %d de %d"), e->nivel, e->vistos, e->total);
   else snprintf(b, sizeof b, i18n("Nível %d de 5"), e->nivel);
-  texto(TXT_V2_18, b, x, r.y + 84.0f, w, s, a);
+  texto(TXT_V2_18, b, x, r.y + 112.0f, w, s, a);
   // Barra de progresso e os cinco pontos de nivel.
   f = e->total > 0 ? (float)e->vistos / (float)e->total : 0.0f;
   if (f > 1.0f) f = 1.0f;
-  plrui_trilho((GfxRect){r.x + 20, r.y + 126, barW, 5}, f, fr, fg, fb, a);
+  plrui_trilho((GfxRect){r.x + 20, r.y + 152, barW, 5}, f, fr, fg, fb, a);
   for (i = 0; i < CQ_NIVEIS; i++) {
-    GfxRect q = {r.x + 20 + i * 18, r.y + 146, 12, 12};
+    GfxRect q = {r.x + 20 + i * 18, r.y + 174, 12, 12};
     float nivelA = ajustes_animacoes_reduzidas() ? 1 : anim_atraso(tempo, i, T21_STAGGER_MS, T21_ENTER_MS);
     plrui_trilho(q, i < e->nivel ? nivelA : 0, fr, fg, fb, a);
   }
-  if (raridade_txt(e->chave, b, sizeof b)) texto_dir(TXT_V2_18, b, r.x + CARD_W - 20.0f, r.y + 138.0f, 200.0f, mudo, a);
+  if (raridade_txt(e->chave, b, sizeof b)) texto_dir(TXT_V2_18, b, r.x + CARD_W - 20.0f, r.y + 170.0f, 200.0f, mudo, a);
 }
 
 static void painel(GfxRect r, float a) { t21_ilha(r, T21_R_SHEET, a); }
@@ -640,7 +642,6 @@ static void desenha_mapa(float a) {
   int val[3];
   cqd_mapa(&m);
   val[0] = m.decadas; val[1] = m.paises; val[2] = m.idiomas;
-  if (!m.ok) return; // No empty statistics until the server supplies real data.
   painel(p, a);
   texto(TXT_V2_KICK, i18n("Seu mapa de descobertas"), p.x + 24.0f, p.y + 22.0f * k, COL_W - 48.0f, MUDO, a);
   for (i = 0; i < 10; i++)
@@ -681,7 +682,7 @@ static void desenha_hub(float a) {
     pilula(r_fams(), i18n("O que dá emblema"), "aj_folders", qf(B_FAMS), 0, 0, a);
     if (nvis == 0) desenha_vazio(a);
     else {
-      gfx_recorte(ox + MG - 8, GRADE_Y - 8, gradeW + 16, PASSO_Y * LINHAS_VISIVEIS);
+      gfx_recorte(ox + MG - 8, GRADE_Y - 40, gradeW + 16, PASSO_Y * LINHAS_VISIVEIS + 32);
       for (i = 0; i < nvis; i++) {
         GfxRect r = r_card(i);
         r.y += topo * PASSO_Y - scrollY;
