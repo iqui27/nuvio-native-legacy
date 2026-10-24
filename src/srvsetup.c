@@ -41,6 +41,13 @@ static unsigned libraryVersion;
 static float entry, page, pageSeconds, focusAnim[SRV_VISAO_MAX + 8], scroll, scrollVelocity;
 static Uint32 motionTime;
 static float contentX, contentW;
+static GfxMini previousPage;
+static float bodyScroll, bodyVelocity, bodyTarget;
+static int bodyDrawing;
+static float lastButtonY, nextButtonX;
+static float sy(float y) {
+  return bodyDrawing ? ANC(386) + y - 386 - bodyScroll : ANC(y);
+}
 static float px(float x) { return contentX + (x - 200) * contentW / 1624; }
 static float pw(float w) { return w * contentW / 1624; }
 static float focusValue(int i) { return i >= 0 && i < SRV_VISAO_MAX + 8 ? focusAnim[i] : 0; }
@@ -212,7 +219,14 @@ static int startWorker(int kind) {
   return worker.alive;
 }
 static void change(int next) {
+  if (opened && entry > .99f && !gfx_mini_ativo() &&
+      !ajustes_animacoes_reduzidas() && gfx_mini_alvo(&previousPage, 1920, 1080)) {
+    gfx_mini_comecar(&previousPage, 0, 0, 1);
+    srvsetup_desenhar(SDL_GetTicks());
+    gfx_mini_terminar();
+  }
   screen = next; selected = 0; message[0] = 0;
+  bodyScroll = bodyVelocity = bodyTarget = 0;
   page = pageSeconds = scroll = scrollVelocity = 0;
   memset(focusAnim, 0, sizeof focusAnim);
 }
@@ -263,6 +277,7 @@ void srvsetup_abrir(int p) {
   ajustes_definir_servidores(1);
   profile = perfis_ativo(); provider = p >= 0 && p < 3 ? p : 0;
   syncTimes(); recoveryAuth = 0;
+  gfx_mini_liberar(&previousPage);
   entry = page = pageSeconds = 0; motionTime = 0;
   opened = 1; rowChoice = rowStyle = 0; restartPin = enterManual = 0; username[0] = password[0] = addressText[0] = code[0] = qrUrl[0] = 0; qr.lado = 0;
   change(p == -2 ? MANAGE : p < 0 ? CHOOSE : connected(provider) ? LIBRARIES : provider ? DISCOVER : CODE);
@@ -441,6 +456,8 @@ void srvsetup_atualizar(Uint32 now) {
   int reduced = ajustes_animacoes_reduzidas();
   entry = t21_entrada(entry, dt, opened);
   page = reduced ? 1 : anim_rampa(page, 1, dt, 180);
+  if (page >= 1) gfx_mini_liberar(&previousPage);
+  bodyScroll = anim_mola2_reduzida(&bodyVelocity, bodyScroll, bodyTarget, dt, NV_MOLA2_SCROLL, reduced);
   pageSeconds += dt;
   for (int i = 0; i < SRV_VISAO_MAX + 8; i++) {
     float target = opened && selected == i ? 1 : 0;
@@ -545,30 +562,47 @@ void srvsetup_atualizar(Uint32 now) {
 }
 
 static void text(int style, const char *s, float x, float y, int tone, float width) {
-  txt_desenhar(txt_linha_corta(style, i18n(s), tone, tone, tone, 255, pw(width)), px(x), ANC(y));
+  txt_desenhar(txt_linha_corta(style, i18n(s), tone, tone, tone, 255, pw(width)), px(x), sy(y));
 }
 static void paragraph(const char *s, float x, float y, float width) {
-  txt_bloco(TXT_ILHA_CORPO, i18n(s), 186, 192, 204, px(x), ANC(y), pw(width), 32, 1, 3);
+  txt_bloco(TXT_ILHA_CORPO, i18n(s), 186, 192, 204, px(x), sy(y), pw(width), 32, 1, 3);
 }
 static void panel(float x, float y, float w, float h, float focus) {
-  GfxRect r = {px(x), ANC(y), pw(w), ANC(h)};
+  GfxRect r = {px(x), sy(y), pw(w), bodyDrawing ? h : ANC(h)};
   if (focus < 0) t21_ilha(r, T21_R_SHEET, 1);
   else plrui_linha_foco(r, T21_R_ROW, focus);
 }
 static void logo(int p, float x, float y, float size) {
-  x = px(x); y = ANC(y);
+  x = px(x); y = sy(y);
   GLuint t = tex_obter_larg(marks[p], size);
   if (t) { float a = tex_aspecto(marks[p]); if (a <= 0) a = 1; gfx_rect((GfxRect){x,y + (size - size / a) / 2,size,size / a}, t, GFX_TEXTO, 0,0,0,0,1,1,1,1); }
 }
 static void button(int i, const char *label, float x, float y, float w) {
-  GfxRect r = {px(x), ANC(y), pw(w), NV_CTRL_H};
-  botao_pilula(r, i18n(label), NULL, focusValue(i), 0, 0, 1);
+  const char *localized = i18n(label);
+  float bx = px(x), by = sy(y), width = plrui_botao_largura(localized, NULL);
+  if (fabsf(by - lastButtonY) < 1) bx = fmaxf(bx, nextButtonX);
+  if (bx + width > contentX + contentW) { bx = px(screen == ROWS ? 820 : 232); by += 72; }
+  GfxRect r = {bx, by, fmaxf(width, fminf(pw(w), contentX + contentW - bx)), 60};
+  float reveal = ajustes_animacoes_reduzidas() ? 1 :
+    revela_entra(1, revela_onda_atraso(i < 8 ? i : 7, 0), 1 + (Uint32)(pageSeconds * 1000));
+  plrui_botao(r.x, r.y + (1 - reveal) * NV_ENTRA_DY, localized, NULL, focusValue(i), reveal);
+  lastButtonY = by; nextButtonX = bx + r.w + 12;
+  if (selected == i && bodyDrawing) {
+    float low = ANC(386), high = ANC(966);
+    if (r.y < low) bodyTarget = fmaxf(0, bodyScroll + r.y - low);
+    else if (r.y + r.h > high) bodyTarget = bodyScroll + r.y + r.h - high;
+  }
 }
 static void row(int i, const char *title, const char *sub, float y, int p) {
   float group = gfx_opacidade_grupo;
-  float reveal = ajustes_animacoes_reduzidas() ? 1 : anim_saida(anim_atraso(pageSeconds, i, T21_STAGGER_MS, T21_ENTER_MS));
+  float reveal = ajustes_animacoes_reduzidas() ? 1 : revela_entra(1, revela_onda_atraso(i, 0), 1 + (Uint32)(pageSeconds * 1000));
   gfx_opacidade_grupo *= reveal;
   y += (1 - reveal) * NV_ENTRA_DY;
+  if (bodyDrawing && selected == i) {
+    float top = sy(y), low = ANC(386), high = ANC(966);
+    if (top < low) bodyTarget = fmaxf(0, bodyScroll + top - low);
+    else if (top + 86 > high) bodyTarget = bodyScroll + top + 86 - high;
+  }
   panel(220,y,710,86,focusValue(i));
   if (p >= 0) logo(p,242,y+21,40);
   text(TXT_ILHA_NOME,title,p>=0?304:248,y+12,243,580);
@@ -587,7 +621,7 @@ static void syncLabel(int p, char *out, size_t n) {
 }
 static void drawQR(void) {
   if (!qr.lado) return;
-  float x=px(1052),y=ANC(418),side=246,unit=side/(qr.lado+8);
+  float x=px(1052),y=sy(418),side=fminf(246,pw(246)),unit=side/(qr.lado+8);
   gfx_cor((GfxRect){x,y,side,side},.08f,1,1,1,1);
   for (int j=0;j<qr.lado;j++) for(int i=0;i<qr.lado;i++) if(qr_modulo(&qr,i,j))
     gfx_cor((GfxRect){x+(i+4)*unit,y+(j+4)*unit,unit+.1f,unit+.1f},0,0,0,0,1);
@@ -596,10 +630,11 @@ void srvsetup_desenhar(Uint32 now) {
   if (!srvsetup_aberto()) return;
   TXT_INI();
   t21_inicio(&contentX, &contentW);
+  lastButtonY = -1000; nextButtonX = 0;
   float group = gfx_opacidade_grupo;
   gfx_opacidade_grupo *= anim_suave(entry);
   gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.035f,.038f,.044f,1);
-  gfx_opacidade_grupo *= anim_saida(page);
+  if (!previousPage.tex) gfx_opacidade_grupo *= anim_saida(page);
   gfx_transformar(0, 0, 1, 0, (1 - anim_suave(entry)) * NV_ENTRA_DY);
   const char *srv = serverName(provider)[0] ? serverName(provider) : providers[provider];
   char title[192];
@@ -646,20 +681,27 @@ void srvsetup_desenhar(Uint32 now) {
     int step=screen==CHOOSE?0:screen==LIBRARIES?3:screen==READY?4:screen==DISCOVER||screen==ADDRESS?1:2;
     if (screen != MANAGE) t21_passos((GfxRect){px(200), ANC(320), pw(1624), 5}, 5, step, steps, 1);
   }
+  bodyDrawing = screen != ROWS;
+  if (bodyDrawing) gfx_recorte(contentX, ANC(386), contentW, ANC(592));
+  else if (gfx_escala_txt() > 1) {
+    float target = selected >= nLibraries ? fmaxf(0, (1040 + 60) - ANC(966)) : 0;
+    bodyTarget = target;
+    gfx_transformar(0, 0, 1, 0, -bodyScroll);
+  }
   if (screen == CHOOSE) {
     const char *desc[] = {"Vincule sua conta com um código. Escolha um servidor da sua conta ou da sua rede.","Encontre seu servidor. Use o Quick Connect ou entre com seu usuário do servidor.","Encontre seu servidor. Use o Emby Connect ou entre diretamente."};
     for(int i=0;i<3;i++) {
-      float reveal = ajustes_animacoes_reduzidas() ? 1 : anim_saida(anim_atraso(pageSeconds, i, T21_STAGGER_MS, T21_ENTER_MS));
+      float reveal = ajustes_animacoes_reduzidas() ? 1 : revela_entra(1, revela_onda_atraso(i, 0), 1 + (Uint32)(pageSeconds * 1000));
       float old = gfx_opacidade_grupo, x=200+i*550;
       gfx_opacidade_grupo *= reveal;
-      t21_ilha((GfxRect){px(x), ANC(405) + (1-reveal)*NV_ENTRA_DY, pw(523), ANC(274)}, T21_R_SHEET, 1);
+      t21_ilha((GfxRect){px(x), sy(405) + (1-reveal)*NV_ENTRA_DY, pw(523), 274}, T21_R_SHEET, 1);
       panel(x,405,523,274,focusValue(i)); logo(i,x+34,428,66);
       text(TXT_V2_GRUPO,providers[i],x+34,520,243,450); paragraph(desc[i],x+34,568,455);
       gfx_opacidade_grupo = old;
     }
     paragraph("Seu servidor continua seu. O Nuvio conecta esta TV e este perfil a ele.",200,714,1500);
   } else if (screen == CODE || screen == CONNECT_CODE) {
-    panel(200,386,750,390,-1); panel(1020,386,804,390,-1);
+    panel(200,386,750,456,-1); panel(1020,386,804,456,-1);
     const char *url = screen==CONNECT_CODE?"emby.media/pin":provider?"Quick Connect":"plex.tv/link";
     char eyebrow[160]; snprintf(eyebrow,sizeof eyebrow,i18n("Vá em %s e digite"),url);
     text(TXT_ILHA_SUB,eyebrow,232,422,150,680);
@@ -670,7 +712,8 @@ void srvsetup_desenhar(Uint32 now) {
     else snprintf(remaining,sizeof remaining,i18n("Aguardando aprovação · O código expira em %02d:%02d"),left/60,left%60);
     text(TXT_ILHA_TEXTO,remaining,232,580,155,690);
     button(0,screen==CONNECT_CODE||provider?"Já aprovei esta TV":"Já vinculei esta TV",232,630,300); button(1,"Novo código",544,630,200);
-    text(TXT_ILHA_APOIO,screen==CONNECT_CODE||provider?"Digite este código para aprovar o Nuvio.":"Não compartilhe este código.",232,706,155,690);
+    button(2,screen==CONNECT_CODE||provider?"Usuário e senha":"Buscar na rede",232,716,330);
+    text(TXT_ILHA_APOIO,screen==CONNECT_CODE||provider?"Digite este código para aprovar o Nuvio.":"Não compartilhe este código.",232,798,155,690);
     drawQR(); text(TXT_V2_GRUPO,provider==1?"Abra seu servidor":screen==CONNECT_CODE?"Abra o Emby Connect":"Escaneie para abrir o Plex",1332,494,243,450);
     paragraph(screen==CONNECT_CODE?"Entre e digite o código desta TV.":provider==1?"Entre e digite o código no Quick Connect.":"Entre no Plex e digite o código mostrado nesta TV.",1332,548,430);
     text(TXT_ILHA_SUB,provider==1?"Se o Quick Connect estiver desativado, use usuário e senha.":screen==CONNECT_CODE?"Depois: escolha um servidor compartilhado e suas bibliotecas.":"Buscar na minha rede · Digitar endereço",1332,650,155,430);
@@ -692,8 +735,8 @@ void srvsetup_desenhar(Uint32 now) {
       int i=first+j;float x=232+j*182;
       panel(x,442,150,202,focusValue(i));
       GLuint avatar=worker.users[i].imagem[0]?tex_obter_larg(worker.users[i].imagem,100):0;
-      if(avatar)gfx_rect((GfxRect){px(x+25),ANC(458),100,100},avatar,GFX_AVATAR,0,0,0,.5f,1,1,1,1);
-      else { gfx_cor((GfxRect){px(x+25),ANC(458),100,100},.5f,1,1,1,.08f); gfx_icone((GfxRect){px(x+53),ANC(486),44,44},"aj_user-round",.6f,.6f,.6f,1); }
+      if(avatar)gfx_rect((GfxRect){px(x+25),sy(458),100,100},avatar,GFX_AVATAR,0,0,0,.5f,1,1,1,1);
+      else { gfx_cor((GfxRect){px(x+25),sy(458),100,100},.5f,1,1,1,.08f); gfx_icone((GfxRect){px(x+53),sy(486),44,44},"aj_user-round",.6f,.6f,.6f,1); }
       text(TXT_ILHA_NOME,worker.users[i].nome,x+10,582,243,130);
     }
     button(total,"Trocar de usuário",232,674,270);
@@ -708,7 +751,7 @@ void srvsetup_desenhar(Uint32 now) {
     float scrollPart=scroll-start;
     if(worker.alive) paragraph(screen==DISCOVER?"Procurando na sua rede… Isso pode levar alguns segundos.":"Carregando…",232,420,680);
     else if(!n) { char vazio[160]; snprintf(vazio,sizeof vazio,i18n("Nenhum servidor %s por perto"),providers[provider]); gfx_icone((GfxRect){px(232),ANC(414),44,44},"aj_search",.4f,.4f,.4f,1); text(TXT_ILHA_NOME,vazio,232,472,243,680); paragraph("Confira se o servidor está ligado e na mesma rede desta TV.",232,520,680); }
-    gfx_recorte(px(220), ANC(400), pw(710), ANC(370));
+    gfx_recorte(px(220), fmaxf(ANC(386), sy(400)), pw(710), fminf(370, ANC(978) - fmaxf(ANC(386), sy(400))));
     int visible = total - start; if (visible > 5) visible = 5;
     for(int j=0;j<visible;j++) {
       int i=start+j;
@@ -718,11 +761,11 @@ void srvsetup_desenhar(Uint32 now) {
       row(i,name,usuarios?i18n("Senha necessária"):screen==DISCOVER?sub:screen==CONNECT_SERVERS?i18n("Compartilhado com você · Emby Connect"):screen==PLEX_SERVERS?i18n("Da sua conta Plex"):i18n("Servidor"),410+(j-scrollPart)*88,usuarios?-1:provider);
       if (usuarios) {
         GLuint avatar = worker.users[i].imagem[0] ? tex_obter_larg(worker.users[i].imagem, 64) : 0;
-        if (avatar) gfx_rect((GfxRect){px(242),ANC(421+j*88),64,64},avatar,GFX_AVATAR,0,0,0,.5f,1,1,1,1);
+        if (avatar) gfx_rect((GfxRect){px(242),sy(421+j*88),64,64},avatar,GFX_AVATAR,0,0,0,.5f,1,1,1,1);
         panel(220,410+j*88,710,86,focusValue(i));
       }
     }
-    gfx_sem_recorte();
+    gfx_recorte(contentX, ANC(386), contentW, ANC(592));
     float y= n?430+n*88:600;
     button(total,screen==USERS?"Outro usuário":screen==CONNECT_SERVERS?"Usuário e senha":screen==PLEX_SERVERS?"Buscar na rede local":n?"Digitar endereço":"Buscar de novo",232,y,330);
     if(screen!=CONNECT_SERVERS) button(total+1,screen==USERS?(provider==1?"Usar Quick Connect":"Usar Emby Connect"):"Digitar endereço",574,y,330);
@@ -779,16 +822,17 @@ void srvsetup_desenhar(Uint32 now) {
       text(TXT_ILHA_SUB,!strcmp(libraries[i].tipo,"group")?"Coleções":!strcmp(libraries[i].tipo,"list")?"Listas":"Biblioteca",902,y+50,145,900);
     }
     gfx_sem_recorte();
+    int stacked = gfx_escala_txt() > 1;
     if(nLibraries && rowChoice<nLibraries) {
       const char *key=libraries[rowChoice].chave;char label[180];
       snprintf(label,sizeof label,"%s · %s",i18n("Estilo"),i18n(fil_estilo_rotulo(key,fil_tipo(key))));
       button(nLibraries,label,820,824,325);
       snprintf(label,sizeof label,"%s · %s",i18n("Ordem"),i18n(fil_servidor_ordem(key)?"Título":"Padrão"));
-      button(nLibraries+1,label,1157,824,310);
+      button(nLibraries+1,label,stacked?820:1157,stacked?896:824,310);
       snprintf(label,sizeof label,"%s · %s",i18n("Ocultar vistos"),i18n(fil_servidor_ocultar_vistos(key)?"Ligado":"Desligado"));
-      button(nLibraries+2,label,1479,824,365);
+      button(nLibraries+2,label,stacked?820:1479,stacked?968:824,365);
     }
-    button(nLibraries+3,"Adicionar à Home",820,912,330);button(nLibraries+4,"Cancelar",1162,912,260);
+    button(nLibraries+3,"Adicionar à Home",820,stacked?1040:912,330);button(nLibraries+4,"Cancelar",1162,stacked?1040:912,260);
     text(TXT_ILHA_APOIO,"Só filmes e séries encontrados no catálogo aparecem na Home.",820,982,145,1010);
     if(message[0])text(TXT_ILHA_SUB,message,820,1000,215,1000);
   } else if(screen==LIBRARIES) {
@@ -797,15 +841,17 @@ void srvsetup_desenhar(Uint32 now) {
     if(!nLibraries) paragraph(worker.alive?"Carregando…":"Não configurado",232,460,680);
     int shown=nLibraries>4?4:nLibraries;
     int start=(int)floorf(scroll); if(start+shown>nLibraries)start=nLibraries-shown; if(start<0)start=0;
-    gfx_recorte(px(220), ANC(448), pw(710), ANC(364));
+    gfx_recorte(px(220), fmaxf(ANC(386), sy(448)), pw(710), fminf(364, ANC(978) - fmaxf(ANC(386), sy(448))));
     int visible=nLibraries-start;if(visible>5)visible=5;
-    for(int j=0;j<visible;j++){int i=start+j; char sub[96]; snprintf(sub,sizeof sub,i18n("%d títulos"),libraries[i].n); row(i,libraries[i].titulo,sub,452+(i-scroll)*88,provider); if(checked[i]) gfx_icone((GfxRect){px(880),ANC(482+(i-scroll)*88),28,28},"aj_check",.9f,.9f,.9f,1); else gfx_cor((GfxRect){px(880),ANC(482+(i-scroll)*88),28,28},10.0f/28,1,1,1,.10f);}
-    gfx_sem_recorte();
+    for(int j=0;j<visible;j++){int i=start+j; char sub[96]; snprintf(sub,sizeof sub,i18n("%d títulos"),libraries[i].n); row(i,libraries[i].titulo,sub,452+(i-scroll)*88,provider); if(checked[i]) gfx_icone((GfxRect){px(880),sy(482+(i-scroll)*88),28,28},"aj_check",.9f,.9f,.9f,1); else gfx_cor((GfxRect){px(880),sy(482+(i-scroll)*88),28,28},10.0f/28,1,1,1,.10f);}
+    gfx_recorte(contentX, ANC(386), contentW, ANC(592));
     button(nLibraries,"Continuar",232,822,240); button(nLibraries+1,"Voltar",486,822,200);
     text(TXT_V2_GRUPO,"Parte da sua Biblioteca",1020,412,243,700);
     paragraph("As bibliotecas escolhidas aparecem junto de Trakt, Simkl e dos seus títulos salvos.",1020,470,680);
-    row(-1,"Continuar assistindo","Une o progresso dos títulos encontrados",566,provider);
-    row(-2,"Marcas de visto","Sincroniza nos dois sentidos",654,provider);
+    text(TXT_ILHA_NOME,"Continuar assistindo",1020,566,243,680);
+    paragraph("Une o progresso dos títulos encontrados",1020,606,680);
+    text(TXT_ILHA_NOME,"Marcas de visto",1020,654,243,680);
+    paragraph("Sincroniza nos dois sentidos",1020,694,680);
     paragraph("Coleções e playlists aparecem em Listas. As fileiras da Home são adicionadas no editor de fileiras.",1020,742,680);
   } else if(screen==LOGIN) {
     panel(200,386,750,400,-1); panel(1020,386,804,400,-1);
@@ -844,6 +890,8 @@ void srvsetup_desenhar(Uint32 now) {
     else { char stamp2[96];syncLabel(provider,stamp2,sizeof stamp2);text(TXT_ILHA_APOIO,stamp2,1020,548,155,680); }
   }
   if(message[0] && screen!=ERROR_SCREEN && screen!=ROWS) text(TXT_ILHA_TEXTO,message,200,920,215,1624);
+  if (bodyDrawing) gfx_sem_recorte();
+  bodyDrawing = 0;
   if (screen != ROWS) {
     float hx = dicaChip("OK","Escolher",200,1014);
     dicaChip("Voltar","Voltar",hx,1014);
@@ -851,6 +899,8 @@ void srvsetup_desenhar(Uint32 now) {
     txt_desenhar(nota,px(1824)-nota.w,ANC(1018));
   }
   gfx_sem_transformar();
+  if (previousPage.tex && !gfx_mini_ativo())
+    gfx_mini_desenhar(&previousPage, (GfxRect){0,0,NV_TELA_W,NV_TELA_H}, 0, 1 - anim_saida(page));
   gfx_opacidade_grupo = group;
   TXT_FIM();
   if(teclado_aberto()) teclado_desenhar(now);

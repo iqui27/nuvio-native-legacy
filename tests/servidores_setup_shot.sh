@@ -17,5 +17,21 @@ cc "${sources[@]}" tests/servidores_setup_shot.c -Isrc -o "$work/shot" -O1 \
   -Wno-deprecated-declarations -Wno-macro-redefined
 output=${1:-/Volumes/ExternalSSD/tmp/rev/servidores-setup-png}
 mkdir -p "$output" "$work/data"
-NUVIO_DADOS="$work/data" NUVIO_RAIL=moderna NUVIO_SHOT_PT=1 NUVIO_SHOT_RELOGIO=1 "$work/shot" "$output"
-python3 tools/servidores_png_check.py "$output"
+run_capture() {
+  NUVIO_DADOS="$work/data" NUVIO_RAIL="${NUVIO_RAIL:-moderna}" NUVIO_SHOT_PT=1 NUVIO_SHOT_RELOGIO=1 sandbox-exec -p '(version 1) (allow default) (deny network*)' "$work/shot" "$1"
+  python3 tools/servidores_png_check.py "$1"
+}
+if [ "${NUVIO_J2_MATRIX:-0}" = 1 ]; then
+  for scale in .85 1 .9 1.1 1.2 1.3; do
+    for glass in 0 1; do
+      variant="$output/$scale-$glass"
+      mkdir -p "$variant"
+      NUVIO_SHOT_QUICK=1
+      if [ "$scale" = .85 ] || [ "$scale" = 1 ]; then unset NUVIO_SHOT_QUICK; fi
+      export NUVIO_SHOT_QUICK
+      NUVIO_SHOT_ESCALA_TEXTO=$scale NUVIO_SHOT_VIDRO=$glass run_capture "$variant"
+    done
+  done
+else
+  run_capture "$output"
+fi

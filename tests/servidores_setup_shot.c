@@ -1,5 +1,6 @@
 // Offline fixtures, production setup renderer and keyboard navigation.
 #define SRVSETUP_SHOT 1
+#include <assert.h>
 // Fixture server names for manage/discovery shots; without them connected()
 // is false and every row reads "Não configurado".
 char shotServerNames[3][96];
@@ -23,7 +24,30 @@ static int shotEmbyConectado(void) { return shotServerNames[2][0] != 0; }
 static const char *shotPlexNome(void) { return shotServerNames[0]; }
 static const char *shotJfCurto(void) { return shotServerNames[1]; }
 static const char *shotEmbyCurto(void) { return shotServerNames[2]; }
+#define NV_TXT_TELA
+#include "../src/tela21.h"
+static void shotIsland(GfxRect r, float radius, float alpha);
+static float shotButton(float x, float y, const char *label, const char *icon, float focus, float alpha);
+static GfxRect focusedButton;
+#define plrui_botao shotButton
+#define t21_ilha shotIsland
 #include "../src/srvsetup.c"
+#undef t21_ilha
+#undef plrui_botao
+static float shotButton(float x, float y, const char *label, const char *icon, float focus, float alpha) {
+  float w = plrui_botao_largura(label, icon), k = gfx_escala();
+  if (focus > .99f && alpha > .99f) focusedButton = (GfxRect){x*k,(y-(screen==ROWS?bodyScroll:0))*k,w*k,60*k};
+  assert(x*k >= 0 && (x+w)*k <= 1920.1f);
+  return plrui_botao(x,y,label,icon,focus,alpha);
+}
+static int brightArt;
+static void shotIsland(GfxRect r, float radius, float alpha) {
+  if (brightArt) {
+    GLuint art = tex_obter_larg("/Volumes/ExternalSSD/tmp/servidores-polish/assets/martian.jpg", 1920);
+    if (art) gfx_rect(r, art, GFX_TEXTO, 0, 0, 0, radius / r.h, 1, 1, 1, 1);
+  }
+  t21_ilha(r, radius, alpha);
+}
 PxEstado shotPlexEstado(char *out, size_t n) { if(out && n) snprintf(out,n,"H7KM"); return PX_EST_CODIGO; }
 JfEstado shotJellyfinEstado(char *out, size_t n) { if(out && n) snprintf(out,n,"482916"); return JF_EST_QC_CODIGO; }
 int shotPlexEntrar(void) { return 1; }
@@ -40,9 +64,29 @@ static GLuint target;
 static int homeShot;
 static Uint32 shotTime = 30000;
 static int motionCapture;
+static void capture(const char *dir, const char *name);
+static void motionExtra(const char *dir) {
+  static const int times[] = {0,50,80,100,150,160,250,320,400};
+  const char *kinds[] = {"exit", "reversal", "page"};
+  for (int kind = 0; kind < 3; kind++) {
+    opened = 1; change(CHOOSE);
+    for (int f = 0; f < 60; f++) { shotTime += 16; srvsetup_atualizar(shotTime); }
+    if (kind == 2) { change(ADDRESS); assert(previousPage.tex); }
+    else { srvsetup_fechar(); if (kind == 1) { shotTime += 50; srvsetup_atualizar(shotTime); opened = 1; } }
+    motionCapture = 1; int previous = 0;
+    for (unsigned i = 0; i < sizeof times / sizeof *times; i++) {
+      for (int t = previous; t < times[i]; t += 10) { shotTime += 10; srvsetup_atualizar(shotTime); }
+      char name[128]; snprintf(name, sizeof name, "setup-%s-%03d", kinds[kind], times[i]);
+      capture(dir, name); previous = times[i];
+    }
+    if (!kind) assert(entry == 0);
+    if (kind == 1) assert(entry == 1);
+  }
+  motionCapture = 0;
+}
 static void capture(const char *dir, const char *name) {
-  for (int i=0;i<(motionCapture ? 1 : 45);i++) {
-    SDL_Delay(10);
+  for (int i=0;i<(motionCapture ? 1 : 75);i++) {
+    if (!motionCapture) SDL_Delay(2);
     SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); gfx_novo_quadro();
     glBindFramebuffer(GL_FRAMEBUFFER,target);glViewport(0,0,1920,1080);glClear(GL_COLOR_BUFFER_BIT);
     if(homeShot) { home_atualizar(1.0f/60,codeSince+28000+i*16);home_desenhar(codeSince+28000+i*16); }
@@ -66,7 +110,7 @@ int main(int argc,char **argv){
   glGenFramebuffers(1,&target);glBindFramebuffer(GL_FRAMEBUFFER,target);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,texture,0);assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
   gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(64);
   char art[1024];assert(realpath("deploy/app/art",art));gfx_icones_dir(art);rail_shot_aplicar();
-  dados_gravar("ajustes.txt","idioma 0\nmodernSidebar 0\ncollapseSidebar 1\n");ajustes_dir(dados_dir());
+  rail_shot_aplicar();
   const char *scale=getenv("NUVIO_SHOT_ESCALA_TEXTO");gfx_escala_txt_definir(scale?atof(scale):1);
   ajustes_definir_vidro(getenv("NUVIO_SHOT_VIDRO")?atoi(getenv("NUVIO_SHOT_VIDRO")):0);
   opened=1;profile=perfis_ativo();provider=0;codeSince=1000;change(CHOOSE);capture(argv[1],"setup-escolher");
@@ -116,12 +160,20 @@ int main(int argc,char **argv){
     if(!strcmp(scenes[i].name,"setup-buscando"))worker.alive=1;
     strcpy(username,"Marina");strcpy(password,"fixture");strcpy(addressText,"http://media.example.test:8096");
     capture(argv[1],scenes[i].name);worker.alive=0;
-    static const int moments[]={0,80,160,320};
-    for(int kind=0;kind<2;kind++) {
+    if (gfx_escala_txt() > 1) {
+      selected = targets() - 1;
+      if (selected < 0) selected = 0;
+      focusedButton = (GfxRect){0};
+      char reachable[180]; snprintf(reachable, sizeof reachable, "%s-last-control", scenes[i].name);
+      capture(argv[1],reachable);
+      if (focusedButton.w) assert(focusedButton.y >= 385 && focusedButton.y + focusedButton.h <= 980);
+    }
+    static const int moments[]={0,50,80,100,150,160,250,320,400};
+    for(int kind=0;kind<2 && !getenv("NUVIO_SHOT_QUICK");kind++) {
       if(!kind){entry=page=pageSeconds=0;memset(focusAnim,0,sizeof focusAnim);}
       else { for(int f=0;f<60;f++){shotTime+=16;srvsetup_atualizar(shotTime);} key(SDLK_RIGHT); }
       motionCapture=1;int previous=0;
-      for(int t=0;t<4;t++) {
+      for(unsigned t=0;t<sizeof moments/sizeof *moments;t++) {
         for(int ms=previous;ms<moments[t];ms+=10){shotTime+=10;srvsetup_atualizar(shotTime);}
         char name[180];snprintf(name,sizeof name,"%s-%s-%03d",scenes[i].name,kind?"focus":"entry",moments[t]);capture(argv[1],name);previous=moments[t];
       }
@@ -147,19 +199,45 @@ int main(int argc,char **argv){
   screen=LIBRARIES;key(SDLK_ESCAPE);assert(screen==MANAGE);
   screen=LOGIN;key(SDLK_ESCAPE);assert(screen==CHOOSE);
   screen=ROWS;key(SDLK_ESCAPE);assert(screen==READY);
-  { screen=ADDRESS; provider=1; keyboard(1); capture(argv[1],"setup-manual-teclado"); field=0; teclado_esquecer(); }
+  { screen=ADDRESS; provider=1; keyboard(1); capture(argv[1],"setup-manual-teclado"); key(SDLK_ESCAPE); field=0; teclado_esquecer(); }
   teclado_esquecer();field=0;
-  static const int times[]={0,80,160,320};
-  for(int kind=0;kind<2;kind++) {
+  static const int times[]={0,50,80,100,150,160,250,320,400};
+  for(int kind=0;kind<2 && !getenv("NUVIO_SHOT_QUICK");kind++) {
     opened=1;entry=0;change(CHOOSE);
     if(kind) { for(int i=0;i<60;i++){shotTime+=16;srvsetup_atualizar(shotTime);} key(SDLK_RIGHT); }
     motionCapture=1;int previous=0;
-    for(int i=0;i<4;i++) {
+    for(unsigned i=0;i<sizeof times/sizeof *times;i++) {
       for(int t=previous;t<times[i];t+=10){shotTime+=10;srvsetup_atualizar(shotTime);}
       char name[128];snprintf(name,sizeof name,"setup-%s-%03d",kind?"focus":"entry",times[i]);capture(argv[1],name);previous=times[i];
     }
   }
   motionCapture=0;
+  if (!getenv("NUVIO_SHOT_QUICK")) {
+    opened=1; change(LIBRARIES); nLibraries=8; selected=7;
+    shotTime+=40; srvsetup_atualizar(shotTime);
+    assert(scroll>0 && scrollVelocity>0);
+    float moving=scroll; selected=0;
+    shotTime+=10; srvsetup_atualizar(shotTime);
+    assert(scroll>=0 && fabsf(scroll-moving)<1);
+    for(int i=0;i<120;i++){shotTime+=10;srvsetup_atualizar(shotTime);}
+    assert(scroll<.01f);
+    nLibraries=3;
+    motionExtra(argv[1]);
+    brightArt = 1; opened = 1; provider = 0; change(CODE);
+    strcpy(code, "H7KM"); makeQR("https://plex.tv/link");
+    capture(argv[1], "setup-bright-art"); brightArt = 0;
+    const char *modes[] = {"collapseSidebar 1\nmodernSidebar 1\nhomeLayoutLocal 0\n", "collapseSidebar 0\nmodernSidebar 1\nhomeLayoutLocal 0\n", "collapseSidebar 1\nmodernSidebar 1\nhomeLayoutLocal 2\n"};
+    for (int m = 0; m < 3; m++) for (int reduced = 0; reduced < 2; reduced++) {
+      char settings[256], name[128];
+      snprintf(settings, sizeof settings, "idioma 0\nperformanceAutoVersaoLocal 1\nselected_theme 6\nanimacoes %d\n%s", reduced, modes[m]);
+      dados_gravar("ajustes.txt", settings); ajustes_dir(dados_dir());
+      gfx_escala_txt_definir(scale ? atof(scale) : 1);
+      ajustes_definir_vidro(getenv("NUVIO_SHOT_VIDRO") ? atoi(getenv("NUVIO_SHOT_VIDRO")) : 0);
+      opened = 1; change(CHOOSE);
+      snprintf(name, sizeof name, "setup-rail%d-reduced%d", m, reduced); capture(argv[1], name);
+      if (reduced) { assert(ajustes_animacoes_reduzidas()); assert(focusAnim[selected] == 1); }
+    }
+  }
   puts("Setup D-pad: bounded focus, Back, safe removal default, library toggle: PASS");
   return 0;
 }
