@@ -64,7 +64,8 @@ static float vtCardLargura(void);
 static float vtCardAltura(void);
 #define VT_COLS      vtColunas()
 #define VT_COLS_MAX  5
-#define VT_CARD_BASE_W (248.0f / gfx_escala_txt())
+// BIB_CARD_W: Library posters retain their physical width as text reflows.
+#define VT_CARD_BASE_W (servidorAtivo ? 220.0f * (gfx_escala() == gfx_escala_txt() ? gfx_poster_k() : 1.0f / gfx_escala_txt()) : 248.0f / gfx_escala_txt())
 #define VT_CARD_W   vtCardLargura()
 #define VT_CARD_H   vtCardAltura()
 // .seeall-grid tinha 16; na TV o dono pediu mais ar entre os cartazes (13/10).
@@ -88,8 +89,8 @@ static float vtCardAltura(void);
 // FIXO e nao rolando junto: o proprio CSS registra que `position: sticky` nao
 // existe no Chromium 53 da TV e que sem `fixed` o painel sumia assim que o dono
 // descia. Aqui nao ha fluxo nenhum — ele so nao recebe scrollY.
-#define VT_PAN_W   336.0f
-#define VT_PAN_X   (NV_TELA_W - NV_ILHA_MARGEM_D - VT_PAN_W)
+#define VT_PAN_W   (servidorAtivo ? 336.0f / gfx_escala_txt() : 336.0f)
+#define VT_PAN_X   (NV_TELA_W - (servidorAtivo ? NV_ILHA_MARGEM_D / gfx_escala_txt() : NV_ILHA_MARGEM_D) - VT_PAN_W)
 #define VT_PAN_VAO  24.0f   // vao minimo entre a ultima coluna e o painel
 #define VT_PAN_Y   VT_TOPO
 #define VT_PAN_ART_H (330.0f / gfx_escala_txt())
@@ -127,7 +128,8 @@ static float vtEscala(void) { return vtTelefone() ? gfx_escala_ui() : gfx_escala
 #define NV_TELA_H (NV_LAYOUT_REAL_H / vtEscala())
 static int vtTimelineRetrato(void) { return timeline && vtTelefone() && NV_TELA_H > NV_TELA_W; }
 static float vtInicio(void) {
-  return vtTelefone() ? 48.0f + ajustes_rail_largura_fixa() / vtEscala() : ajustes_conteudo_x();
+  return vtTelefone() ? 48.0f + ajustes_rail_largura_fixa() / vtEscala() :
+         servidorAtivo ? ajustes_conteudo_x() / gfx_escala_txt() : ajustes_conteudo_x();
 }
 static float vtFim(void) { return vtTelefone() ? NV_TELA_W - 48.0f : VT_PAN_X - VT_PAN_VAO; }
 static float vtCabecalhoLargura(float x, float original) {
@@ -165,7 +167,8 @@ static int vtColunas(void) {
   }
   // #521/#205: contam as colunas que cabem em px REAIS (o cartaz sai da escala
   // de texto); contar na camada ampliada perderia uma coluna por quadro.
-  float livre = (NV_LAYOUT_REAL_W - NV_CHROME_EDGE - VT_PAN_W - VT_PAN_VAO) / gfx_escala_txt() - ajustes_conteudo_x() + VT_GAP_X;
+  float livre = servidorAtivo ? vtFim() - vtInicio() + VT_GAP_X :
+    (NV_LAYOUT_REAL_W - NV_CHROME_EDGE - VT_PAN_W - VT_PAN_VAO) / gfx_escala_txt() - ajustes_conteudo_x() + VT_GAP_X;
   int n = (int)(livre / (VT_CARD_BASE_W + VT_GAP_X) + 0.001f);
   return n < 1 ? 1 : n > VT_COLS_MAX ? VT_COLS_MAX : n;
 }
@@ -278,6 +281,7 @@ static Uint32 vistosEm;             // ajustes_conteudo_x() do quadro (desenho)
 // preenchimento da linha (coordenada da grade; < 0 = posicionar sem animar).
 // Floats por quadro, nenhuma textura; a mola ja respeita a animacao reduzida.
 static float tlFoco[VT_MAX], tlProg = -1.0f;
+static float cartazFoco[VT_MAX];
 #define VT_TL_PONTO (VT_LINHA_H * 0.5f)   // centro do ponto do ano: o centro do cartao
 
 // LINHA DO TEMPO HORIZONTAL (Cover Flow, 13/10; 14/10 sem inclinacao): o cartaz
@@ -2615,6 +2619,11 @@ void vertudo_atualizar(float dt, Uint32 agora) {
          barraW = anim_mola(barraW, barraAlvoW, dt, NV_MOLA_FOCO * 0.6f); }
   if (lay == VT_LAY_VITRINE) { vitAtualizar(dt, agora); return; }
   n = atualizarGrade();
+  for (int i = 0; servidorAtivo && i < n; i++) {
+    float alvoF = i == foco && !tabFocus;
+    cartazFoco[i] = anim_mola(cartazFoco[i], alvoF, dt,
+      alvoF > cartazFoco[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+  }
   if (lay == VT_LAY_LINHA && celN > 0) {
     float alvoP = celY[foco < celN ? foco : celN - 1] + VT_TL_PONTO;
     for (int i = 0; i < celN; i++) {
@@ -3147,6 +3156,11 @@ static void themeHeader(float a,float x0) {
     float w=vtCabecalhoLargura(x0,560),h=w/aspect,y=grupo("Streaming")?56:83;if(h>108){h=108;w=h*aspect;}
     gfx_rect((GfxRect){x0,y,w,h},logo,tex_marca_escura(wm)?GFX_MARCA:GFX_TEXTO,0,0,0,0,.96f,.97f,.98f,a);
     fim=y+h;
+  } else if (servidorAtivo) {
+    TxtLinha title = txt_linha_corta(TXT_TITULO2, titulo, 245, 245, 243, 255, vtFim() - x0);
+    txt_desenhar_alpha(title, x0, 124.0f, a);
+    cabTt = (GfxRect){x0, 124.0f, title.w, title.h};
+    fim = 124.0f + title.h;
   } else {
     // Nome em 76; o que nao cabe cai para 56 em ate duas linhas (uma so com
     // abas: a fileira delas mora logo abaixo).
@@ -3557,13 +3571,14 @@ static void cartazGrade(int i, const CatItem *it, float cx, float cy, float w, f
     float raio = ajustes_raio_poster_px() / VT_CARD_W, aArte;
     const char *arteCard = artePoster(it);
     GLuint t;
-    if (sel && !ajustes_borda_foco()) r = foco_zoom(r0, 1.0f);
-    if (sel && ajustes_borda_foco()) {
+    float f = servidorAtivo ? cartazFoco[i] : sel;
+    if (!ajustes_borda_foco()) r = foco_zoom(r0, f);
+    if (f > .01f && ajustes_borda_foco()) {
       GfxRect anel = { cx - NV_ANEL_FOCO, cy - NV_ANEL_FOCO,
                        w + 2 * NV_ANEL_FOCO, h + 2 * NV_ANEL_FOCO };
       float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      if (ajustes_vidro()) gfx_vidro_cartao(r, raio, 1.0f, ac);
-      else gfx_cor(anel, (ajustes_raio_poster_px() + NV_ANEL_FOCO) / (w + 2 * NV_ANEL_FOCO), ar, ag, ab, ac);
+      if (ajustes_vidro()) gfx_vidro_cartao(r, raio, f, ac);
+      else gfx_cor(anel, (ajustes_raio_poster_px() + NV_ANEL_FOCO) / (w + 2 * NV_ANEL_FOCO), ar, ag, ab, ac * f);
     }
     t = arteCard[0] ? tex_obter_larg(arteCard, w) : 0;
     aArte = i < VT_MAX ? revela_arte(&revArte[i], t != 0, agora) : 1.0f;
@@ -3571,7 +3586,7 @@ static void cartazGrade(int i, const CatItem *it, float cx, float cy, float w, f
       gfx_cor(r, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, ac);
     if (t) {
       gfx_tex_aspect_atual = tex_aspecto(arteCard);
-      gfx_rect(r, t, GFX_CARD, sel ? 1.0f : 0.0f, 0, 0, raio, 0, 0, 0, ac * aArte);
+      gfx_rect(r, t, GFX_CARD, f, 0, 0, raio, 0, 0, 0, ac * aArte);
       gfx_tex_aspect_atual = 0.0f;
     }
   } else cartaoArte(i, (GfxRect){ cx, cy, w, h }, artePoster(it), ac, agora, sel);
@@ -4032,8 +4047,8 @@ void vertudo_desenhar(Uint32 agora) {
   }
   if (!n) botaoMaisVistos(a, x0, VT_TOPO + 32.0f, 0);
   if(!n&&desc_vertudo_carregando())for(int i=0;i<VT_COLS;i++) {
-    float w=vtTelefone()&&!timeline?VT_CARD_W:248.0f;
-    float h=vtTelefone()&&!timeline?VT_CARD_H:372.0f;
+    float w=VT_CARD_W;
+    float h=VT_CARD_H;
     gfx_cor((GfxRect){x0+i*(w+VT_GAP_X),VT_TOPO,w,h},.06f,.12f,.13f,.15f,a);
   }
   // O que passa da base apaga no fundo, nao e cortado seco na borda da tela.

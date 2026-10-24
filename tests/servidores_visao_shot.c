@@ -125,13 +125,17 @@ int main(int argc, char **argv) {
   assert(dados_gravar("ajustes.txt", "idioma 0\njellyfinLocal 0\nvidroLocal 0\nbordaFocoCartaz 1\nescalaTextoLocal 2\n"));
   ajustes_dir(dados_dir());
   vertudo_servidores("jellyfin_movies"); capture(argv[1], "server-grid-glass");
-  for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
-    char name[80]; gfx_escala_txt_definir(scale ? .85f : 1); ajustes_definir_vidro(glass);
-    snprintf(name, sizeof name, "overview-%s-%s", scale ? "85" : "100", glass ? "glass" : "solid");
+  const float scales[] = {1, .85f, .9f, 1.1f, 1.2f, 1.3f};
+  for (int scale = 0; scale < 6; scale++) for (int glass = 0; glass < 2; glass++) {
+    char name[80]; gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
+    snprintf(name, sizeof name, "overview-%d-%s", (int)lroundf(scales[scale] * 100), glass ? "glass" : "solid");
     capture(argv[1], name);
   }
   gfx_escala_txt_definir(1); ajustes_definir_vidro(1);
-  key(SDLK_DOWN); key(SDLK_DOWN); capture(argv[1], "overview-ready"); key(SDLK_RIGHT);
+  key(SDLK_DOWN); key(SDLK_DOWN); capture(argv[1], "overview-ready");
+  assert(fabsf(VT_CARD_W * gfx_escala_txt() - 220) < .01f);
+  assert((vtInicio() + VT_COLS * (VT_CARD_W + VT_GAP_X) - VT_GAP_X) <= VT_PAN_X - VT_PAN_VAO + .01f);
+  key(SDLK_RIGHT);
   const int times[] = {0, 80, 160, 320};
   for (int mode = 0; mode < 2; mode++) {
     if (mode) vertudo_servidores("jellyfin_movies");
