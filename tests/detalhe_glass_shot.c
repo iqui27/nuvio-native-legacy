@@ -679,9 +679,10 @@ int main(int argc, char **argv) {
     candidate.altura = 2160;
     stream_definir_alvo(IMDB_FILME); stream_definir_lista(&candidate, 1);
     abrir(1,0,0,0); quadros(4); gravar("detalhe-chip");
-    for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
-      char name[80]; gfx_escala_txt_definir(scale ? .85f : 1); ajustes_definir_vidro(glass);
-      quadros(40); snprintf(name, sizeof name, "server-%s-%s", scale ? "85" : "100", glass ? "glass" : "solid"); gravar(name);
+    const float scales[] = {1, .85f, .9f, 1.1f, 1.2f, 1.3f};
+    for (int scale = 0; scale < 6; scale++) for (int glass = 0; glass < 2; glass++) {
+      char name[80]; gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
+      quadros(40); snprintf(name, sizeof name, "server-%d-%s", (int)(scales[scale] * 100 + .5f), glass ? "glass" : "solid"); gravar(name);
     }
     gfx_escala_txt_definir(1); ajustes_definir_vidro(1); quadros(40);
     SDL_Event e = {0}; e.type = SDL_KEYDOWN;
