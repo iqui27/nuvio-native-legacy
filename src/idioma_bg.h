@@ -6514,7 +6514,7 @@
   T("Travar série com…", "Заключи сериала с…"),
   T("Travas de série", "Заключени сериали"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Връща диагностичния панел на браузъра, който живее извън приложението."),
-  T("Trilha", "Пътека"),
+  T("Trilha de filmes", "Пътека"),
   T("Trilha de maio, com o Festival de Cannes", "Майска пътека с Фестивала в Кан"),
   T("Trilha de março, aberta o ano todo", "Мартенска пътека, отворена през цялата година"),
   T("Trilha original · Prévias de áudio", "Оригинална музика · Аудио откъси"),

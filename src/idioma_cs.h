@@ -6514,7 +6514,7 @@
   T("Travar série com…", "Zamknout seriál s…"),
   T("Travas de série", "Zámky seriálů"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Vrátí panel diagnostiky prohlížeče, který žije mimo aplikaci."),
-  T("Trilha", "Trasa"),
+  T("Trilha de filmes", "Trasa"),
   T("Trilha de maio, com o Festival de Cannes", "Květnová stezka s festivalem v Cannes"),
   T("Trilha de março, aberta o ano todo", "Březnová stezka, otevřená celý rok"),
   T("Trilha original · Prévias de áudio", "Původní hudba · Zvukové ukázky"),

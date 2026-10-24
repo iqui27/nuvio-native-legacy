@@ -6514,7 +6514,7 @@
   T("Travar série com…", "Sorozat zárolása vele…"),
   T("Travas de série", "Sorozatzárak"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Visszahozza a böngésző diagnosztikai panelét, amely az appon kívül él."),
-  T("Trilha", "Útvonal"),
+  T("Trilha de filmes", "Útvonal"),
   T("Trilha de maio, com o Festival de Cannes", "Májusi ösvény a cannes-i filmfesztivállal"),
   T("Trilha de março, aberta o ano todo", "Márciusi ösvény, egész évben nyitva"),
   T("Trilha original · Prévias de áudio", "Eredeti zene · Hangrészletek"),

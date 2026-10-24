@@ -6514,7 +6514,7 @@
   T("Travar série com…", "Κλείδωμα σειράς με…"),
   T("Travas de série", "Κλειδώματα σειρών"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Επαναφέρει τον πίνακα διαγνωστικών του προγράμματος περιήγησης, που ζει έξω από την εφαρμογή."),
-  T("Trilha", "Διαδρομή"),
+  T("Trilha de filmes", "Διαδρομή"),
   T("Trilha de maio, com o Festival de Cannes", "Διαδρομή του Μαΐου, με το Φεστιβάλ των Καννών"),
   T("Trilha de março, aberta o ano todo", "Διαδρομή του Μαρτίου, ανοιχτή όλο τον χρόνο"),
   T("Trilha original · Prévias de áudio", "Πρωτότυπη μουσική · Ηχητικά αποσπάσματα"),

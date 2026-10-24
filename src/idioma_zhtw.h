@@ -6514,7 +6514,7 @@
   T("Travar série com…", "與誰鎖定影集…"),
   T("Travas de série", "影集鎖定"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "叫出位於應用程式之外的瀏覽器診斷面板。"),
-  T("Trilha", "觀影路線"),
+  T("Trilha de filmes", "觀影路線"),
   T("Trilha de maio, com o Festival de Cannes", "五月路線，與坎城影展同行"),
   T("Trilha de março, aberta o ano todo", "三月路線，全年開放"),
   T("Trilha original · Prévias de áudio", "原創配樂 · 音訊試聽"),

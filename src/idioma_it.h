@@ -6514,7 +6514,7 @@
   T("Travar série com…", "Blocca la serie con…"),
   T("Travas de série", "Blocchi serie"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Riporta il pannello diagnostico del browser, che vive fuori dall'app."),
-  T("Trilha", "Percorso"),
+  T("Trilha de filmes", "Percorso"),
   T("Trilha de maio, com o Festival de Cannes", "Percorso di maggio, con il Festival di Cannes"),
   T("Trilha de março, aberta o ano todo", "Percorso di marzo, aperto tutto l’anno"),
   T("Trilha original · Prévias de áudio", "Musica originale · Anteprime audio"),

@@ -6513,7 +6513,7 @@
   T("Travar série com…", "Serie sperren mit…"),
   T("Travas de série", "Serien-Sperren"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Bringt das Diagnosefenster des Browsers zurück, das außerhalb der App liegt."),
-  T("Trilha", "Pfad"),
+  T("Trilha de filmes", "Pfad"),
   T("Trilha de maio, com o Festival de Cannes", "Pfad im Mai, mit dem Filmfestival von Cannes"),
   T("Trilha de março, aberta o ano todo", "Pfad im März, das ganze Jahr offen"),
   T("Trilha original · Prévias de áudio", "Originalmusik · Hörproben"),

@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+/* This unit fixture has no installed addons; upgrade coverage is separate. */
+int addons_n(void) { return 0; }
+const char *addons_base(int i) { (void)i; return ""; }
 static char disk[20000];
 char *dados_ler(const char *name) { (void)name; return disk[0] ? strdup(disk) : NULL; }
 int dados_gravar(const char *name, const char *value) { (void)name; snprintf(disk,sizeof disk,"%s",value); return 1; }

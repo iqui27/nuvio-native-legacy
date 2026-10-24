@@ -31,7 +31,7 @@
 #include <string.h>
 
 static int tela=-1, anterior=AG_MODO, indice, foco, pedido, detalhes, pct=-1, serv, acessoConfig, semCel;
-static int modoSelecionado;
+static int modoSelecionado, guiaMostrado;
 static uint64_t identidade;
 static char nome[96], titulo[160], servico[32];
 static const char *const MODOS[]={"P2P nesta TV","Serviço de debrid","Só links diretos"};
@@ -242,13 +242,14 @@ void addonguia_atualizar(int permitir) {
       if(ok && addonmodo_set(identidade,AM_DEBRID)){tela=AG_MODO;foco=1;}
     }
   }
-  if(tela>=0||!permitir)return;
+  if(tela>=0||!permitir||guiaMostrado)return;
   for(int i=0;i<addons_n();i++) {
     uint64_t id=addonmodo_id(addons_base(i));
     if(!addons_ativo(i)||!addons_sondado(i)||addonmodo_visto(id))continue;
     int h,v,d,t;addonmodo_fatos(id,&h,&v,&d,&t);
+    if(addons_fornece(i,ADD_STREAM)&&h<=0)continue;
     int nova=!addons_fornece(i,ADD_STREAM)?AG_NOVO_CATALOGO:d&&!t?AG_NOVO_DIRETO:AG_NOVO_TORRENT;
-    if(addonmodo_marcar(id))addonguia_abrir(nova,i,NULL);
+    if(addonmodo_marcar(id)){guiaMostrado=1;addonguia_abrir(nova,i,NULL);}
     return;
   }
 }

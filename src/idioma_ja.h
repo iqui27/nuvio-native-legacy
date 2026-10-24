@@ -6514,7 +6514,7 @@
   T("Travar série com…", "シリーズを一緒にロック…"),
   T("Travas de série", "シリーズロック一覧"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "アプリの外にあるブラウザの診断パネルを呼び戻します。"),
-  T("Trilha", "トレイル"),
+  T("Trilha de filmes", "トレイル"),
   T("Trilha de maio, com o Festival de Cannes", "カンヌ国際映画祭の5月コース"),
   T("Trilha de março, aberta o ano todo", "3月のコース、一年中オープン"),
   T("Trilha original · Prévias de áudio", "オリジナル音楽 · 試聴"),

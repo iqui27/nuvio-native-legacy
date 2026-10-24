@@ -6514,7 +6514,7 @@
   T("Travar série com…", "Lås serien med…"),
   T("Travas de série", "Serielåser"),
   T("Traz de volta o painel de diagnóstico do navegador, que fica fora do app.", "Henter tilbake nettleserens diagnostikkpanel, som ligger utenfor appen."),
-  T("Trilha", "Løype"),
+  T("Trilha de filmes", "Løype"),
   T("Trilha de maio, com o Festival de Cannes", "Mai-spor, med filmfestivalen i Cannes"),
   T("Trilha de março, aberta o ano todo", "Mars-spor, åpent hele året"),
   T("Trilha original · Prévias de áudio", "Originalmusikk · Lydutdrag"),
