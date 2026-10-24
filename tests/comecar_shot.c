@@ -49,9 +49,15 @@ static void check_rect(GfxRect r) {
   }
 }
 static void checked_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca);
+static void offline_import(int source) {
+  importarfluxo_teste(source, IMPF_ESPERA, source == IMPF_STREMIO ? "K7QX2M" : "",
+                     source == IMPF_STREMIO ? "https://link.stremio.com/" : "", 0, 0);
+}
+#define importarfluxo_comecar offline_import
 #define gfx_cor checked_cor
 #include "../src/comecar.c"
 #undef gfx_cor
+#undef importarfluxo_comecar
 static void checked_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
   if (checkBounds) check_rect(r);
   gfx_cor(r, raio, cr, cg, cb, ca);
@@ -248,20 +254,36 @@ static void navegacao(int passoEsperado) {
 }
 
 static void motion_proof(const char *prefix, int step) {
-  static const int times[] = {0,80,160,320};
+  static const int times[] = {0,50,80,100,150,160,250,320,400};
   char path[900];
-  for (int kind = 0; kind < 2; kind++) {
+  for (int kind = 0; kind < 5; kind++) {
     previa("estado=nenhum\nnome=Ana\ncor=1\n");
     ir_passo(step);
-    if (kind) { adiantar(45); tecla(SDLK_DOWN); }
+    if (kind) {
+      adiantar(60);
+      if (kind == 1) {
+        int old = foco;
+        tecla(step == 0 ? SDLK_UP : step == 1 ? SDLK_DOWN : SDLK_RIGHT);
+        assert(foco != old);
+      } else if (kind == 2 || kind == 3) {
+        pular();
+        if (kind == 3) { quadro(.05f); aberto = 1; }
+      } else {
+        ir_passo((step + 1) % 4);
+        assert(paginaAnterior.tex);
+      }
+    }
     int previous = 0;
-    for (int i = 0; i < 4; i++) {
+    const char *kinds[] = {"entry", "focus", "exit", "reversal", "page"};
+    for (unsigned i = 0; i < sizeof times / sizeof *times; i++) {
       for (int t = previous; t < times[i]; t += 10) quadro(.01f);
       if (!times[i]) quadro(0);
-      snprintf(path, sizeof path, "%s-step%d-%s-%03d.png", prefix, step + 1, kind ? "focus" : "entry", times[i]);
+      snprintf(path, sizeof path, "%s-step%d-%s-%03d.png", prefix, step + 1, kinds[kind], times[i]);
       captura(path, 0); previous = times[i];
     }
-    if (kind) assert(focoAnim[foco] > .99f);
+    if (kind == 1) assert(focoAnim[foco] > .99f);
+    if (kind == 2) assert(entrada == 0);
+    if (kind == 3) assert(entrada == 1);
   }
 }
 
@@ -550,10 +572,12 @@ int main(int argc, char **argv) {
   importarfluxo_teste(IMPF_STREMIO, IMPF_ESPERA, "K7QX2M", "https://link.stremio.com/", 0, 0);
   snprintf(nome, sizeof nome, "%s-2b-stremio-codigo.png", prefix);
   captura(nome, 40);
+  assert(!strcmp(ultimoCodigo, "K7QX2M") && ultimoLink[0]);
   importarfluxo_teste(IMPF_STREMIO, IMPF_OK, "", "", 7, 42);
   assert(!strcmp(rotulo_botao(B_PRINC), i18n("Continuar")));
   snprintf(nome, sizeof nome, "%s-2c-stremio-ok.png", prefix);
   captura(nome, 40);
+  assert(!strcmp(ultimoCodigo, "K7QX2M") && ultimoLink[0]);
   tecla(SDLK_DOWN);
   importarfluxo_teste(IMPF_AIOM, IMPF_ESPERA, "", "", 0, 0);
   celb_abrir_embutido(CELB_IMPORTAR, "Link do AIOManager");
@@ -573,7 +597,7 @@ int main(int argc, char **argv) {
   captura(nome, 40);
 
   checkBounds = 0;
-  if (scale == 1 || scale == .85f) for (int step = 0; step < 4; step++) motion_proof(prefix, step);
+  if (!getenv("NUVIO_SHOT_QUICK") && (scale == 1 || scale == .85f)) for (int step = 0; step < 4; step++) motion_proof(prefix, step);
   if (requestedScale) break;
   }
 
@@ -585,6 +609,19 @@ int main(int argc, char **argv) {
   captura(nome, 40);
   tecla(SDLK_ESCAPE);
 
+  const char *modes[] = {"collapseSidebar 1\nmodernSidebar 1\nhomeLayoutLocal 0\n", "collapseSidebar 0\nmodernSidebar 1\nhomeLayoutLocal 0\n", "collapseSidebar 1\nmodernSidebar 1\nhomeLayoutLocal 2\n"};
+  gfx_escala_txt_definir(1);
+  for (int m = 0; m < 3; m++) for (int reduced = 0; reduced < 2; reduced++) {
+    char settings[256];
+    snprintf(settings, sizeof settings, "idioma 0\nperformanceAutoVersaoLocal 1\nselected_theme 6\nanimacoes %d\n%s", reduced, modes[m]);
+    dados_gravar("ajustes.txt", settings); ajustes_dir(dir);
+    ajustes_definir_vidro(getenv("NUVIO_SHOT_VIDRO") ? atoi(getenv("NUVIO_SHOT_VIDRO")) : 0);
+    previa("estado=nenhum\nnome=Ana\ncor=1\n");
+    ir_passo(1);
+    snprintf(nome, sizeof nome, "%s-rail%d-reduced%d.png", saida, m, reduced);
+    captura(nome, 40);
+    if (reduced) { assert(ajustes_animacoes_reduzidas()); assert(focoAnim[foco] == 1); }
+  }
   tex_encerrar();
   txt_encerrar();
   gfx_encerrar();

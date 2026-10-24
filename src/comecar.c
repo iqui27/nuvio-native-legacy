@@ -50,6 +50,8 @@ static int   aberto, passo, foco = B_PRINC, pedido, esperaTeclado, decidido, tem
 static Uint32 backDesde, backUltimo;   // relogio proprio: main.c zera o evento LG
 static int backPressionado, backVisto;
 static float entrada, pagina, tempoPasso, focoAnim[B_PULAR + 1];
+static GfxMini paginaAnterior;
+static char ultimoCodigo[24], ultimoLink[200];
 static ComecarSalvo dados;   // o que a pessoa esta preenchendo (so vai ao disco no fim)
 static ComecarSalvo antes;   // o que ja estava gravado quando a tela abriu
 
@@ -113,6 +115,12 @@ static int foco_padrao(void) {
 }
 
 static void ir_passo(int p) {
+  if (p != passo && entrada > .99f && !gfx_mini_ativo() &&
+      !ajustes_animacoes_reduzidas() && gfx_mini_alvo(&paginaAnterior, 1920, 1080)) {
+    gfx_mini_comecar(&paginaAnterior, 0, 0, 1);
+    comecar_desenhar(SDL_GetTicks());
+    gfx_mini_terminar();
+  }
   if (p != passo) importarfluxo_cancelar();
   passo = p < 0 ? 0 : p >= PASSOS ? PASSOS - 1 : p;
   foco = foco_padrao();
@@ -122,6 +130,8 @@ static void ir_passo(int p) {
 
 static void abrir(void) {
   aberto = 1;
+  gfx_mini_liberar(&paginaAnterior);
+  ultimoCodigo[0] = ultimoLink[0] = 0;
   entrada = pagina = tempoPasso = 0.0f;
   memset(focoAnim, 0, sizeof focoAnim);
   pedido = COMECAR_PEDIU_NADA;
@@ -342,6 +352,7 @@ void comecar_atualizar(float dt, Uint32 agora) {
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
   entrada = t21_entrada(entrada, dt, aberto);
   pagina = red ? 1 : anim_rampa(pagina, 1, dt, 180);
+  if (pagina >= 1) gfx_mini_liberar(&paginaAnterior);
   tempoPasso += dt;
   for (int i = 0; i <= B_PULAR; i++) {
     float target = aberto && foco == i ? 1 : 0;
@@ -370,7 +381,7 @@ static void alvo(GfxRect r, int id) {
 
 static float entrada_item(GfxRect *r, int i) {
   float p = ajustes_animacoes_reduzidas() ? 1 :
-    anim_saida(anim_atraso(tempoPasso, i, T21_STAGGER_MS, T21_ENTER_MS));
+    revela_entra(1, revela_onda_atraso(i, 0), 1 + (Uint32)(tempoPasso * 1000));
   float a = gfx_opacidade_grupo;
   gfx_opacidade_grupo *= p;
   r->y += (1 - p) * NV_ENTRA_DY;
@@ -482,11 +493,14 @@ static void desenha_passo0(float a) {
   }
   // O painel da direita: o perfil como vai ficar.
   { float x = ox + MARGEM + coluna + T21_GAP_BIG, cx = x + lateral * .5f;
-    avatar(cx, ANC(400.0f), 200.0f, a);
+    GfxRect r = {x, 0, lateral, 1};
+    float grupo = entrada_item(&r, 2);
+    avatar(cx, ANC(400.0f) + r.y, 200.0f, a);
     txt_bloco(TXT_ILHA_TITULO, nome_exibido(), 248, 249, 252, x, ANC(550.0f), lateral, 46.0f, a, 1);
     txt_em(TXT_CAPTION, i18n("Perfil principal · desta TV"), x, ANC(616.0f), lateral, 150, 156, 168, a);
     txt_bloco(TXT_CAPTION, i18n("Já usa o Nuvio em outra TV? No próximo passo, “Conta Nuvio” traz os perfis de lá."),
-              150, 156, 168, x, ANC(680.0f), lateral, 28.0f, 0.9f * a, 3); }
+              150, 156, 168, x, ANC(680.0f), lateral, 28.0f, 0.9f * a, 3);
+    gfx_opacidade_grupo = grupo; }
 }
 
 static void desenha_passo1(float a) {
@@ -526,43 +540,67 @@ static void desenha_passo1(float a) {
   { float x = ox + MARGEM + coluna + T21_GAP_BIG, y = ANC(330.0f), w = lateral;
     const char *t, *d;
     int extra = 0;
+    int opcao = foco <= I_ZERO ? foco : importarfluxo_fonte() == IMPF_STREMIO ? I_STREMIO :
+                importarfluxo_fonte() == IMPF_AIOM ? I_AIO : I_NUVIO;
     float ph = 4 * 114.0f - 10;
-    int ativo = (foco == I_STREMIO && importarfluxo_fonte() == IMPF_STREMIO) ||
-                (foco == I_AIO && importarfluxo_fonte() == IMPF_AIOM);
+    int ativo = (opcao == I_STREMIO && importarfluxo_fonte() == IMPF_STREMIO) ||
+                (opcao == I_AIO && importarfluxo_fonte() == IMPF_AIOM);
     ImpfEstado e = ativo ? importarfluxo_estado() : IMPF_PARADO;
     char msg[200];
-    if (foco == I_STREMIO || foco == I_AIO) {
-      t = i18n(foco == I_STREMIO ? "Conta Stremio" : "AIOManager");
+    if (opcao == I_STREMIO || opcao == I_AIO) {
+      t = i18n(opcao == I_STREMIO ? "Conta Stremio" : "AIOManager");
       if (e == IMPF_OK) {
         snprintf(msg, sizeof msg, i18n("Entraram %d add-ons e %d salvos."), importarfluxo_addons(), importarfluxo_titulos());
         d = msg;
       } else if (e == IMPF_ERRO) d = i18n("Não deu certo. OK para tentar de novo.");
       else if (e == IMPF_TRABALHA) d = i18n("Importando…");
       else if (e == IMPF_ESPERA)
-        d = i18n(foco == I_STREMIO ? "Abra este endereço no celular e digite o código:"
+        d = i18n(opcao == I_STREMIO ? "Abra este endereço no celular e digite o código:"
                                    : "Cole no celular o link de exportação do AIOManager.");
-      else d = i18n(foco == I_STREMIO ? "Entre com a sua conta Stremio pelo celular. Os add-ons e a biblioteca vêm para cá."
+      else d = i18n(opcao == I_STREMIO ? "Entre com a sua conta Stremio pelo celular. Os add-ons e a biblioteca vêm para cá."
                                       : "Cole no celular o link de exportação do AIOManager. Só os add-ons entram.");
       extra = e == IMPF_ESPERA;
-    } else if (foco == I_NUVIO) {
+    } else if (opcao == I_NUVIO) {
       t = i18n("Conta Nuvio");
       d = i18n("Você já entrou na sua conta Nuvio. Perfis, Ajustes e salvos de outras TVs chegam por ela.");
     } else {
       t = i18n("Começar do zero");
       d = i18n("Você segue com o que já está nesta TV e junta o resto quando quiser.");
     }
-    ph = fminf(ph, rodape_topo() - T21_GAP_CARD - y);
-    t21_ilha((GfxRect){x, y, w, ph}, T21_R_SHEET, a);
+    ph = fminf(fmaxf(ph, 540.0f), rodape_topo() - T21_GAP_CARD - y);
+    GfxRect r = {x, y, w, ph};
+    float grupo = entrada_item(&r, 4);
+    y = r.y;
+    t21_ilha(r, T21_R_SHEET, a);
     txt_em(TXT_ILHA_TITULO, t, x + 32.0f, y + 32.0f, w - 64.0f, 248, 249, 252, a);
-    txt_bloco(TXT_V2_26, d, 200, 205, 215, x + 32.0f, y + 96.0f, w - 64.0f, 36.0f, 0.9f * a, extra ? 2 : 5);
-    if (extra && foco == I_STREMIO && importarfluxo_codigo()[0]) {
-      float lado = 120.0f, k = lado / celb_qr_lado();
-      txt_tracking(TXT_NOV_TITULO, importarfluxo_codigo(), 248, 249, 252, x + 44.0f, y + 250.0f, a, 8.0f);
-      gfx_transformar(x + w - 32.0f - lado, y + 200.0f, k, 0, 0);
-      celb_qr_desenhar(importarfluxo_link(), x + w - 32.0f - lado, y + 200.0f, a);
+    if (ativo && opcao == I_STREMIO && importarfluxo_codigo()[0]) {
+      snprintf(ultimoCodigo, sizeof ultimoCodigo, "%s", importarfluxo_codigo());
+      snprintf(ultimoLink, sizeof ultimoLink, "%s", importarfluxo_link());
+    }
+    if (opcao == I_STREMIO && ultimoCodigo[0] && ativo) {
+      float lado = fminf(fminf(246.0f, ph - 284.0f), (w - 88.0f) * .46f);
+      float qy = y + 100, tx = x + 56 + lado, tw = w - lado - 88;
+      float k = lado / celb_qr_lado();
+      gfx_transformar(x + 32, qy, k, 0, 0);
+      celb_qr_desenhar(ultimoLink, x + 32, qy, a);
       gfx_sem_transformar();
-    } else if (extra && foco == I_AIO && celb_embutido(CELB_IMPORTAR))
-      celb_desenhar_em(CELB_IMPORTAR, (GfxRect){ x + 32.0f, y + 164.0f, w - 64.0f, ph - 184.0f }, a); }
+      txt_bloco(TXT_CAPTION, i18n("Abra este endereço no celular e digite o código:"),
+                200, 205, 215, tx, qy, tw, 29, a, 3);
+      txt_em(TXT_ILHA_SUB, ultimoLink, tx, qy + 96, tw, 186, 192, 204, a);
+      txt_em(TXT_ILHA_TITULO, ultimoCodigo, tx, qy + 132, tw, 248, 249, 252, a);
+      float sy = qy + fmaxf(lado, 192) + 16;
+      for (int j = 0; j < 3; j++)
+        plrui_respira(x + 38 + j * 18, sy + 14, 8, SDL_GetTicks() + j * 180, a);
+      txt_em(TXT_CAPTION, e == IMPF_OK ? d : i18n("Esperando você autorizar"),
+             x + 100, sy, w - 132, 200, 205, 215, a);
+      txt_bloco(TXT_CAPTION, i18n("Entre com a sua conta Stremio pelo celular. Os add-ons e a biblioteca vêm para cá."),
+                186, 192, 204, x + 32, sy + 48, w - 64, 29, a, 2);
+    } else {
+      txt_bloco(TXT_V2_26, d, 200, 205, 215, x + 32.0f, y + 96.0f, w - 64.0f, 36.0f, 0.9f * a, extra ? 2 : 5);
+      if (extra && opcao == I_AIO && celb_embutido(CELB_IMPORTAR))
+        celb_desenhar_em(CELB_IMPORTAR, (GfxRect){ x + 32.0f, y + 164.0f, w - 64.0f, ph - 184.0f }, a);
+    }
+    gfx_opacidade_grupo = grupo; }
 }
 
 static void desenha_passo2(float a) {
@@ -621,11 +659,15 @@ static void desenha_passo2(float a) {
 }
 
 static void linha_resumo(float x, float y, float w, const char *t, const char *d, float a) {
-  plrui_material((GfxRect){x, y, w, 96}, T21_R_ROW, 0, a);
+  GfxRect r = {x, y, w, 96};
+  float grupo = entrada_item(&r, (int)((y - ANC(330.0f)) / 110.0f));
+  y = r.y;
+  plrui_material(r, T21_R_ROW, 0, a);
   gfx_icone((GfxRect){ x + 8.0f, y + 12.0f, 20.0f, 20.0f }, "aj_check", 1, 1, 1, a);
   txt_em(TXT_ILHA_NOME, t, x + 54.0f, y, w - 54.0f, 243, 242, 239, a);
   txt_bloco(TXT_CAPTION, d, 186, 192, 204, x + 54.0f, y + 36.0f, w - 54.0f, 26.0f, 0.92f * a, 2);
   gfx_cor((GfxRect){ x, y + 92.0f, w, 1.0f }, 0, 1, 1, 1, 0.07f * a);
+  gfx_opacidade_grupo = grupo;
 }
 
 static void desenha_passo3(float a) {
@@ -642,8 +684,11 @@ static void desenha_passo3(float a) {
   linha_resumo(ox + MARGEM, ANC(330.0f) + 220.0f, coluna, i18n("Tour de 1 minuto"),
                i18n("Opcional: um passeio rápido pela Home, pela busca e pela Central de controle."), a);
   { float x = ox + MARGEM + coluna + T21_GAP_BIG;
-    avatar(x + lateral * .5f, ANC(430.0f), 200.0f, a);
-    txt_bloco(TXT_ILHA_TITULO, nome_exibido(), 248, 249, 252, x, ANC(590.0f), lateral, 46.0f, a, 1); }
+    GfxRect r = {x, ANC(430.0f), lateral, 200};
+    float grupo = entrada_item(&r, 3);
+    avatar(x + lateral * .5f, r.y, 200.0f, a);
+    txt_bloco(TXT_ILHA_TITULO, nome_exibido(), 248, 249, 252, x, ANC(590.0f), lateral, 46.0f, a, 1);
+    gfx_opacidade_grupo = grupo; }
 }
 
 static void desenha_rodape(float a) {
@@ -666,7 +711,7 @@ void comecar_desenhar(Uint32 agora) {
   origem();
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0.051f, 0.051f, 0.051f, entrada);
   cabecalho(a);
-  float p = anim_saida(pagina);
+  float p = paginaAnterior.tex ? 1 : anim_saida(pagina);
   gfx_transformar(0, 0, 1, (1 - p) * T21_GAP_CARD, 0);
   if (passo == PASSOS - 1) desenha_passo3(a * p);
   else if (passo == 0) desenha_passo0(a * p);
@@ -674,6 +719,8 @@ void comecar_desenhar(Uint32 agora) {
   else desenha_passo2(a * p);
   gfx_sem_transformar();
   desenha_rodape(a);
+  if (paginaAnterior.tex && !gfx_mini_ativo())
+    gfx_mini_desenhar(&paginaAnterior, (GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0, a * (1 - anim_saida(pagina)));
   TXT_FIM();
   // O teclado da TV cuida da propria escala e vai por cima de tudo.
   if (esperaTeclado && teclado_aberto()) teclado_desenhar(agora);
