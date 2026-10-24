@@ -165,12 +165,22 @@ static const char *rotulo_botao(int id) {
 }
 
 // ------------------------------------------------------------------- layout
-static float ox, oy;
+static float ox, oy, largura, coluna, lateral;
 
 static void origem(void) {
-  t21_inicio(&ox, NULL);
+  t21_inicio(&ox, &largura);
   ox -= MARGEM;
   oy = 0;
+  coluna = fminf(860.0f, (largura - T21_GAP_BIG) * 0.55f);
+  lateral = largura - coluna - T21_GAP_BIG;
+}
+
+static float rodape_topo(void) {
+  return ANC(T21_SAFE_B) - BOTAO_H_PRIMARIO;
+}
+
+static float tracker_altura(void) {
+  return fminf(330.0f, rodape_topo() - ANC(330.0f) - 140.0f - 2 * T21_GAP_CARD);
 }
 
 static void poe(Item *it, int *n, int id, float x, float y, float w, float h) {
@@ -183,7 +193,7 @@ static void poe(Item *it, int *n, int id, float x, float y, float w, float h) {
 // Rodape: os botoes da esquerda para a direita; o ultimo e o primario, salvo
 // no resumo, onde o primario vem primeiro.
 static void rodape(Item *it, int *n) {
-  float x = MARGEM, yc = 972.0f;
+  float x = MARGEM, yc = ANC(T21_SAFE_B) - BOTAO_H_PRIMARIO * 0.5f;
   int ids[3], k = 0, i;
   if (passo == PASSOS - 1) { ids[k++] = B_PRINC; ids[k++] = B_SEC; }
   else {
@@ -204,13 +214,13 @@ static int montar(Item *it) {
   int n = 0, i;
   origem();
   if (passo == 0) {
-    poe(it, &n, I_NOME, MARGEM, 430.0f, 820.0f, 84.0f);
-    for (i = 0; i < COMECAR_CORES; i++) poe(it, &n, I_COR0 + i, MARGEM + (float)i * 90.0f, 548.0f, 72.0f, 72.0f);
+    poe(it, &n, I_NOME, MARGEM, ANC(430.0f), fminf(820.0f, coluna), 84.0f);
+    for (i = 0; i < COMECAR_CORES; i++) poe(it, &n, I_COR0 + i, MARGEM + (float)i * 90.0f, ANC(568.0f), 72.0f, 72.0f);
   } else if (passo == 1) {
-    for (i = 0; i < 4; i++) poe(it, &n, i, MARGEM, 330.0f + (float)i * 114.0f, 860.0f, 104.0f);
+    for (i = 0; i < 4; i++) poe(it, &n, i, MARGEM, ANC(330.0f) + (float)i * 114.0f, coluna, 104.0f);
   } else if (passo == 2) {
-    float w = (1680.0f - 2.0f * 28.0f) / 3.0f;
-    for (i = 0; i < 3; i++) poe(it, &n, i, MARGEM + (float)i * (w + 28.0f), 330.0f, w, 330.0f);
+    float w = (largura - 2.0f * T21_GAP_CARD) / 3.0f;
+    for (i = 0; i < 3; i++) poe(it, &n, i, MARGEM + (float)i * (w + T21_GAP_CARD), ANC(330.0f), w, tracker_altura());
   }
   rodape(it, &n);
   return n;
@@ -397,24 +407,26 @@ static const char *nome_exibido(void) { return dados.nome[0] ? dados.nome : i18n
 
 static void cabecalho(float a) {
   static const char *const ROT[PASSOS] = { "1 · Perfil", "2 · Trazer suas coisas", "3 · Acompanhar", "4 · Pronto" };
-  float ar, ag, ab, segW = (1800.0f - 520.0f - 3.0f * 12.0f) / 4.0f;
+  float inicio = fminf(400.0f, largura * .24f);
+  float ar, ag, ab, segW = (largura - inicio - 3.0f * 12.0f) / 4.0f;
   int i;
-  txt_em(TXT_NOV_TITULO, "nuvio", ox + MARGEM, oy + 50.0f, 380.0f, 243, 242, 239, a);
+  txt_em(TXT_NOV_TITULO, "nuvio", ox + MARGEM, ANC(T21_SAFE_T), inicio - 24.0f, 243, 242, 239, a);
   ajustes_acento(&ar, &ag, &ab);
   for (i = 0; i < PASSOS; i++) {
-    float x = ox + 520.0f + (float)i * (segW + 12.0f);
-    GfxRect s = { x, oy + 70.0f, segW, 5.0f };
+    float x = ox + MARGEM + inicio + (float)i * (segW + 12.0f);
+    GfxRect s = { x, ANC(T21_SAFE_T) + 10.0f, segW, 5.0f };
     if (i < passo) gfx_cor(s, 0.5f, 1, 1, 1, 0.55f * a);
     else if (i == passo) gfx_cor(s, 0.5f, ar, ag, ab, a);
     else gfx_cor(s, 0.5f, 1, 1, 1, 0.12f * a);
-    txt_em(TXT_CAPTION, i18n(ROT[i]), x, oy + 86.0f, segW, i <= passo ? 186 : 120, i <= passo ? 192 : 126, i <= passo ? 204 : 138, a);
+    txt_em(TXT_CAPTION, i18n(ROT[i]), x, ANC(T21_SAFE_T) + 26.0f, segW, i <= passo ? 186 : 120, i <= passo ? 192 : 126, i <= passo ? 204 : 138, a);
   }
 }
 
 static void titulo(const char *t, const char *sub, float w, float a) {
-  float y = oy + 190.0f;
+  float y = ANC(150.0f);
+  w = fminf(w, largura);
   txt_em(TXT_NOV_TITULO, t, ox + MARGEM, y, w, 248, 249, 252, a);
-  txt_bloco(TXT_V2_26, sub, 186, 192, 204, ox + MARGEM, y + 76.0f, w, 34.0f, 0.9f * a, 3);
+  txt_bloco(TXT_V2_26, sub, 186, 192, 204, ox + MARGEM, y + 64.0f, w, 34.0f, 0.9f * a, 2);
 }
 
 static void desenha_passo0(float a) {
@@ -447,12 +459,12 @@ static void desenha_passo0(float a) {
     }
   }
   // O painel da direita: o perfil como vai ficar.
-  { float cx = ox + 1360.0f;
-    avatar(cx, oy + 400.0f, 200.0f, a);
-    txt_bloco(TXT_ILHA_TITULO, nome_exibido(), 248, 249, 252, cx - 260.0f, oy + 530.0f, 520.0f, 46.0f, a, 1);
-    txt_em(TXT_CAPTION, i18n("Perfil principal · desta TV"), cx - 260.0f, oy + 586.0f, 520.0f, 150, 156, 168, a);
+  { float x = ox + MARGEM + coluna + T21_GAP_BIG, cx = x + lateral * .5f;
+    avatar(cx, ANC(400.0f), 200.0f, a);
+    txt_bloco(TXT_ILHA_TITULO, nome_exibido(), 248, 249, 252, x, ANC(550.0f), lateral, 46.0f, a, 1);
+    txt_em(TXT_CAPTION, i18n("Perfil principal · desta TV"), x, ANC(616.0f), lateral, 150, 156, 168, a);
     txt_bloco(TXT_CAPTION, i18n("Já usa o Nuvio em outra TV? No próximo passo, “Conta Nuvio” traz os perfis de lá."),
-              150, 156, 168, cx - 260.0f, oy + 660.0f, 520.0f, 28.0f, 0.9f * a, 3); }
+              150, 156, 168, x, ANC(680.0f), lateral, 28.0f, 0.9f * a, 3); }
 }
 
 static void desenha_passo1(float a) {
@@ -486,7 +498,7 @@ static void desenha_passo1(float a) {
     alvo(r, id);
   }
   // O painel da direita explica a opcao em foco; as apagadas dizem a verdade.
-  { float x = ox + 1100.0f, y = oy + 330.0f;
+  { float x = ox + MARGEM + coluna + T21_GAP_BIG, y = ANC(330.0f), w = lateral;
     const char *t, *d;
     int extra = 0;
     float ph = 340.0f;
@@ -515,18 +527,19 @@ static void desenha_passo1(float a) {
       t = i18n("Começar do zero");
       d = i18n("Você segue com o que já está nesta TV e junta o resto quando quiser.");
     }
-    gfx_cor((GfxRect){ x, y, 700.0f, ph }, 32.0f / ph, 0.12f, 0.125f, 0.145f, 0.9f * a);
-    gfx_anel((GfxRect){ x, y, 700.0f, ph }, 32.0f / ph, 1.0f, 1, 1, 1, 0.08f * a);
-    txt_em(TXT_ILHA_TITULO, t, x + 44.0f, y + 44.0f, 612.0f, 248, 249, 252, a);
-    txt_bloco(TXT_V2_26, d, 200, 205, 215, x + 44.0f, y + 120.0f, 612.0f, 36.0f, 0.9f * a, extra ? 2 : 5);
+    ph = fminf(ph, rodape_topo() - T21_GAP_CARD - y);
+    gfx_cor((GfxRect){ x, y, w, ph }, 32.0f / ph, 0.12f, 0.125f, 0.145f, 0.9f * a);
+    gfx_anel((GfxRect){ x, y, w, ph }, 32.0f / ph, 1.0f, 1, 1, 1, 0.08f * a);
+    txt_em(TXT_ILHA_TITULO, t, x + 32.0f, y + 32.0f, w - 64.0f, 248, 249, 252, a);
+    txt_bloco(TXT_V2_26, d, 200, 205, 215, x + 32.0f, y + 96.0f, w - 64.0f, 36.0f, 0.9f * a, extra ? 2 : 5);
     if (extra && foco == I_STREMIO && importarfluxo_codigo()[0]) {
       float lado = 120.0f, k = lado / celb_qr_lado();
       txt_tracking(TXT_NOV_TITULO, importarfluxo_codigo(), 248, 249, 252, x + 44.0f, y + 250.0f, a, 8.0f);
-      gfx_transformar(x + 700.0f - 44.0f - lado, y + 200.0f, k, 0, 0);
-      celb_qr_desenhar(importarfluxo_link(), x + 700.0f - 44.0f - lado, y + 200.0f, a);
+      gfx_transformar(x + w - 32.0f - lado, y + 200.0f, k, 0, 0);
+      celb_qr_desenhar(importarfluxo_link(), x + w - 32.0f - lado, y + 200.0f, a);
       gfx_sem_transformar();
     } else if (extra && foco == I_AIO && celb_embutido(CELB_IMPORTAR))
-      celb_desenhar_em(CELB_IMPORTAR, (GfxRect){ x + 44.0f, y + 164.0f, 612.0f, 290.0f }, a); }
+      celb_desenhar_em(CELB_IMPORTAR, (GfxRect){ x + 32.0f, y + 164.0f, w - 64.0f, ph - 184.0f }, a); }
 }
 
 static void desenha_passo2(float a) {
@@ -564,7 +577,7 @@ static void desenha_passo2(float a) {
     superficie(r, 28.0f, f, a, &p, &s);
     bola(r.x + 30.0f, r.y + 30.0f, 64.0f, TK[id].letra, TK[id].icone, p, f, a);
     txt_em(TXT_ILHA_TITULO, i18n(TK[id].nome), r.x + 30.0f, r.y + 120.0f, r.w - 60.0f, p.r, p.g, p.b, a);
-    txt_bloco(TXT_CAPTION, i18n(TK[id].desc), s.r, s.g, s.b, r.x + 30.0f, r.y + 176.0f, r.w - 60.0f, 28.0f, a, 3);
+    txt_bloco(TXT_CAPTION, i18n(TK[id].desc), s.r, s.g, s.b, r.x + 30.0f, r.y + 162.0f, r.w - 60.0f, 28.0f, a, 2);
     if (ligado) gfx_icone((GfxRect){ r.x + 30.0f, r.y + r.h - 30.0f - 24.0f, 24.0f, 24.0f }, "aj_circle-check",
                           (float)p.r / 255.0f, (float)p.g / 255.0f, (float)p.b / 255.0f, a);
     txt_em(TXT_CAPTION, i18n(st), r.x + 30.0f + (ligado ? 36.0f : 0.0f), r.y + r.h - 30.0f - 22.0f, r.w - 90.0f, p.r, p.g, p.b, a);
@@ -572,13 +585,13 @@ static void desenha_passo2(float a) {
   }
   // O codigo do dispositivo: nao desenho QR, a pessoa digita no endereco.
   if (espera) {
-    float x = ox + MARGEM, y = oy + 700.0f, w = 1680.0f;
-    gfx_cor((GfxRect){ x, y, w, 190.0f }, 28.0f / 190.0f, 0.12f, 0.125f, 0.145f, 0.9f * a);
-    gfx_anel((GfxRect){ x, y, w, 190.0f }, 28.0f / 190.0f, 1.0f, 1, 1, 1, 0.08f * a);
-    txt_em(TXT_V2_26, i18n("Abra este endereço no celular e digite o código:"), x + 44.0f, y + 36.0f, 800.0f, 200, 205, 215, a);
-    txt_em(TXT_ILHA_TITULO, url, x + 44.0f, y + 96.0f, 800.0f, 248, 249, 252, a);
+    float x = ox + MARGEM, y = ANC(330.0f) + tracker_altura() + T21_GAP_CARD, w = largura;
+    gfx_cor((GfxRect){ x, y, w, 140.0f }, 28.0f / 140.0f, 0.12f, 0.125f, 0.145f, 0.9f * a);
+    gfx_anel((GfxRect){ x, y, w, 140.0f }, 28.0f / 140.0f, 1.0f, 1, 1, 1, 0.08f * a);
+    txt_em(TXT_V2_26, i18n("Abra este endereço no celular e digite o código:"), x + 32.0f, y + 24.0f, w - 64.0f, 200, 205, 215, a);
+    txt_em(TXT_ILHA_TITULO, url, x + 32.0f, y + 76.0f, w * .55f, 248, 249, 252, a);
     txt_tracking(TXT_NOV_TITULO, cod, 248, 249, 252, x + w - 44.0f - txt_tracking(TXT_NOV_TITULO, cod, 0, 0, 0, -1, 0, 0, 8.0f),
-                 y + 56.0f, a, 8.0f);
+                 y + 76.0f, a, 8.0f);
   }
 }
 
@@ -598,16 +611,16 @@ static void desenha_passo3(float a) {
   snprintf(t, sizeof t, i18n("Pronto, %s."), nome_exibido());
   titulo(t, i18n("Isto ficou arrumado:"), 860.0f, a);
   snprintf(t, sizeof t, i18n("Perfil: %s"), nome_exibido());
-  linha_resumo(ox + MARGEM, oy + 330.0f, 860.0f, t, i18n("Nome e cor guardados nesta TV."), a);
+  linha_resumo(ox + MARGEM, ANC(330.0f), coluna, t, i18n("Nome e cor guardados nesta TV."), a);
   snprintf(lig, sizeof lig, "%s", tr && sk ? i18n("Trakt e Simkl ligados") : tr ? i18n("Trakt ligado")
                                  : sk ? i18n("Simkl ligado") : i18n("Só nesta TV"));
-  linha_resumo(ox + MARGEM, oy + 330.0f + 110.0f, 860.0f, lig,
+  linha_resumo(ox + MARGEM, ANC(330.0f) + 110.0f, coluna, lig,
                tr || sk ? i18n("Dá para mudar em Ajustes › Contas.") : i18n("Você liga o Trakt ou o Simkl depois, em Ajustes › Contas."), a);
-  linha_resumo(ox + MARGEM, oy + 330.0f + 220.0f, 860.0f, i18n("Tour de 1 minuto"),
+  linha_resumo(ox + MARGEM, ANC(330.0f) + 220.0f, coluna, i18n("Tour de 1 minuto"),
                i18n("Opcional: um passeio rápido pela Home, pela busca e pela Central de controle."), a);
-  { float cx = ox + 1360.0f;
-    avatar(cx, oy + 430.0f, 200.0f, a);
-    txt_bloco(TXT_ILHA_TITULO, nome_exibido(), 248, 249, 252, cx - 260.0f, oy + 560.0f, 520.0f, 46.0f, a, 1); }
+  { float x = ox + MARGEM + coluna + T21_GAP_BIG;
+    avatar(x + lateral * .5f, ANC(430.0f), 200.0f, a);
+    txt_bloco(TXT_ILHA_TITULO, nome_exibido(), 248, 249, 252, x, ANC(590.0f), lateral, 46.0f, a, 1); }
 }
 
 static void desenha_rodape(float a) {

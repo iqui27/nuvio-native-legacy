@@ -36,6 +36,49 @@
 #include <OpenGL/gl.h>
 #endif
 
+// Compile the real screen here so bounds checks cover the shared drawing,
+// D-pad and pointer rectangles without adding a production test API.
+static int checkBounds;
+static void check_rect(GfxRect r) {
+  float k = gfx_escala();
+  if (r.x * k < -0.01f || r.y * k < -0.01f || r.w <= 0 || r.h <= 0 ||
+      (r.x + r.w) * k > 1920.01f || (r.y + r.h) * k > 1080.01f) {
+    fprintf(stderr, "FAIL Onboarding step %d at %.0f%%: rect %.1f %.1f %.1f %.1f\n",
+            comecar_passo() + 1, k * 100, r.x * k, r.y * k, r.w * k, r.h * k);
+    abort();
+  }
+}
+static void checked_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca);
+#define gfx_cor checked_cor
+#include "../src/comecar.c"
+#undef gfx_cor
+static void checked_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
+  if (checkBounds) check_rect(r);
+  gfx_cor(r, raio, cr, cg, cb, ca);
+}
+static void check_controls(void) {
+  Item items[MAX_ITENS];
+  TXT_INI();
+  int n = montar(items);
+  for (int i = 0; i < n; i++) {
+    GfxRect r = items[i].r;
+    check_rect(r);
+    assert(r.x * gfx_escala() >= T21_SAFE_L - .01f);
+    assert((r.x + r.w) * gfx_escala() <= 1816.01f);
+    assert(r.y * gfx_escala() >= 59.99f);
+    assert((r.y + r.h) * gfx_escala() <= 1020.01f);
+    if (items[i].id == B_PRINC)
+      assert(fabsf((r.y + r.h) * gfx_escala() - 1020) < .01f);
+    for (int j = 0; j < i; j++) {
+      GfxRect q = items[j].r;
+      assert(r.x >= q.x + q.w - .01f || q.x >= r.x + r.w - .01f ||
+             r.y >= q.y + q.h - .01f || q.y >= r.y + r.h - .01f);
+    }
+  }
+  assert(fabsf(items[0].r.x * gfx_escala() - T21_SAFE_L) < .01f);
+  TXT_FIM();
+}
+
 static GLuint fbo, fboTex;
 
 void teclado_teste_sistema(const char *t);   // teclado.c (uso de teste)
@@ -71,6 +114,7 @@ static void quadro(float dt) {
   gfx_cor((GfxRect){ 200, 300, 600, 400 }, 0.02f, 0.35f, 0.55f, 1.0f, 1.0f);
   for (i = 0; i < 12; i++)
     gfx_cor((GfxRect){ 960 + i * 70, 700, 60, 160 }, 0.04f, 0.12f + 0.06f * i, 0.2f, 0.8f, 0.9f);
+  if (checkBounds) check_controls();
   comecar_desenhar(SDL_GetTicks());
 }
 
@@ -451,40 +495,55 @@ int main(int argc, char **argv) {
     dados_gravar("ajustes.txt", "homeLayoutLocal 0\nmodernSidebar 0\ncollapseSidebar 1\n");
     ajustes_dir(dir);
   }
-  { const char *scale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
-    if (scale && *scale) gfx_escala_txt_definir((float)atof(scale)); }
+  const char *requestedScale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
+  const float scales[] = { .8f, .85f, 1, 1.15f, 1.3f };
+  for (unsigned scaleIndex = 0; scaleIndex < sizeof scales / sizeof *scales; scaleIndex++) {
+  float scale = requestedScale ? (float)atof(requestedScale) : scales[scaleIndex];
+  char prefix[700];
+  snprintf(prefix, sizeof prefix, "%s", saida);
+  if (!requestedScale) snprintf(prefix, sizeof prefix, "%s%.0f", saida, scale * 100);
+  gfx_escala_txt_definir(scale);
+  checkBounds = 1;
   apagar(); comecar_abrir();
-  snprintf(nome, sizeof nome, "%s-1-perfil.png", saida);
+  assert(comecar_passo() == 0);
+  snprintf(nome, sizeof nome, "%s-1-perfil.png", prefix);
   captura(nome, 40);
 
   previa("estado=nenhum\nnome=so\ncor=1\n");
   tecla(SDLK_RETURN);
-  snprintf(nome, sizeof nome, "%s-2-trazer.png", saida);
+  assert(comecar_passo() == 1);
+  snprintf(nome, sizeof nome, "%s-2-trazer.png", prefix);
   captura(nome, 2);
 
   // Stremio e AIOManager: estados forcados (sem rede) so para a captura.
   tecla(SDLK_UP); tecla(SDLK_UP);
   importarfluxo_teste(IMPF_STREMIO, IMPF_ESPERA, "K7QX2M", "https://link.stremio.com/", 0, 0);
-  snprintf(nome, sizeof nome, "%s-2b-stremio-codigo.png", saida);
+  snprintf(nome, sizeof nome, "%s-2b-stremio-codigo.png", prefix);
   captura(nome, 2);
   importarfluxo_teste(IMPF_STREMIO, IMPF_OK, "", "", 7, 42);
-  snprintf(nome, sizeof nome, "%s-2c-stremio-ok.png", saida);
+  snprintf(nome, sizeof nome, "%s-2c-stremio-ok.png", prefix);
   captura(nome, 2);
   tecla(SDLK_DOWN);
   importarfluxo_teste(IMPF_AIOM, IMPF_ESPERA, "", "", 0, 0);
   celb_abrir_embutido(CELB_IMPORTAR, "Link do AIOManager");
   for (int i = 0; i < 90; i++) celb_atualizar(0.016f);   // a mola do cartao
-  snprintf(nome, sizeof nome, "%s-2d-aiom-link.png", saida);
+  snprintf(nome, sizeof nome, "%s-2d-aiom-link.png", prefix);
   captura(nome, 40);
   importarfluxo_cancelar();
   tecla(SDLK_DOWN);
   tecla(SDLK_RETURN);   // Conta Nuvio
-  snprintf(nome, sizeof nome, "%s-3-acompanhar.png", saida);
+  assert(comecar_passo() == 2);
+  snprintf(nome, sizeof nome, "%s-3-acompanhar.png", prefix);
   captura(nome, 2);
 
   tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
-  snprintf(nome, sizeof nome, "%s-4-pronto.png", saida);
+  assert(comecar_passo() == 3);
+  snprintf(nome, sizeof nome, "%s-4-pronto.png", prefix);
   captura(nome, 2);
+
+  checkBounds = 0;
+  if (requestedScale) break;
+  }
 
   // O teclado da TV por cima do passo 1: aberto pelo OK, desenhado pelo Comecar.
   apagar(); comecar_abrir();
@@ -501,6 +560,6 @@ int main(int argc, char **argv) {
   SDL_DestroyWindow(w);
   IMG_Quit();
   SDL_Quit();
-  puts("PASS: comecar: regras conferidas e 5 capturas gravadas.");
+  puts("PASS: Onboarding rules, rendered bounds and controls at 80/85/100/115/130%.");
   return 0;
 }

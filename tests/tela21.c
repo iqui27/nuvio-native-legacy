@@ -28,7 +28,7 @@ static void near(const char *name, float actual, float expected) {
   failures++;
 }
 int main(void) {
-  const float scales[] = { .8f, .85f, 1, 1.3f };
+  const float scales[] = { .8f, .85f, 1, 1.15f, 1.3f };
   for (int layout = HOME_LAYOUT_MODERNA; layout < HOME_LAYOUT_N; layout++) {
     valor[AJ_HOME_LAYOUT] = layout;
     for (int rail = 0; rail < 2; rail++) {
@@ -74,6 +74,6 @@ int main(void) {
       near("only explicit reduced motion", ajustes_animacoes_reduzidas(), choice == 1);
     }
   }
-  if (!failures) puts("PASS tela21: safe area 80/85/100/130%, entry, stagger, explicit reduced motion");
+  if (!failures) puts("PASS tela21: safe area 80/85/100/115/130%, entry, stagger, explicit reduced motion");
   return failures ? 1 : 0;
 }
