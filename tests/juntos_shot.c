@@ -8,6 +8,7 @@
 #include "../src/juntos.c"
 #include "ajustes.h"
 #include "badges.h"
+#include "anim.h"
 #include "idioma.h"
 #include "catalogo.h"
 #include "dados.h"
@@ -26,6 +27,8 @@ void juntosui_shot_bolhas(void);
 void juntosui_shot_camada(int c, int f);
 void juntosui_shot_arte(const char *caminho);
 void juntosui_shot_contagem(int n);
+float juntosui_shot_entrada(void);
+float juntosui_shot_foco(int i);
 
 static SDL_Window *win;
 static const char *base;
@@ -74,6 +77,8 @@ static void quadros(int n) {
     ilha_relogio_visivel(1);
     ilha_ancorar(1920 - 64, 36, 1);
     ilha_desenhar(agora);
+    anim_politica_reduzida = ajustes_animacoes_reduzidas_usuario();
+    juntosui_atualizar(agora);
     juntosui_desenhar(agora);
     SDL_GL_SwapWindow(win);
     SDL_Delay(16);
@@ -96,7 +101,7 @@ int main(int argc, char **argv) {
   base = argc > 1 ? argv[1] : "/tmp/nuvio-juntos";
   snprintf(aj, sizeof aj, "%s/ajustes.txt", dir);
   sourcesOnly = argc > 2 && !strcmp(argv[2], "--sources");
-  f = fopen(aj, "w"); fprintf(f, "idioma %d\nselected_theme 2\n", sourcesOnly ? 0 : 1); fclose(f);
+  f = fopen(aj, "w"); fprintf(f, "idioma 0\nselected_theme 2\nescalaTextoLocal 2\n"); fclose(f);
   ajustes_dir(dir);
   dados_iniciar("deploy/app");
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
@@ -110,7 +115,7 @@ int main(int argc, char **argv) {
   assert(gfx_iniciar());
   gfx_snap_iniciar(1920, 1080);
   assert(txt_iniciar("deploy/app", 1));
-  txt_definir_fonte_interface(sourcesOnly ? TXT_FAMILIA_INTER : TXT_FAMILIA_MONTSERRAT);
+  txt_definir_fonte_interface(TXT_FAMILIA_INTER);
   badges_carregar("deploy/app/art");
   tex_iniciar(64);
   gfx_icones_dir("deploy/app/art");
@@ -236,6 +241,50 @@ fontes:
   juntosui_shot_camada(6, 2);
   quadros(20);
   captura("08-reactions", 1080);
+  // Native scale/material matrix; logical focus remains independent of springs.
+  juntosui_shot_player(0);
+  for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
+    gfx_escala_txt_definir(scale ? .85f : 1);
+    ajustes_definir_vidro(glass);
+    for (int c = 1; c <= 7; c++) {
+      char name[96];
+      juntosui_shot_camada(c, 0);
+      if (c == 6) juntosui_shot_player(1);
+      quadros(45);
+      snprintf(name, sizeof name, "matrix-%d-%s-%s", c, scale ? "85" : "100", glass ? "glass" : "solid");
+      captura(name, 1080);
+      juntosui_shot_player(0);
+    }
+  }
+  gfx_escala_txt_definir(1);
+  ajustes_definir_vidro(1);
+  juntosui_shot_camada(0, 0); quadros(30);
+  juntosui_shot_camada(3, 0);
+  Uint32 now = SDL_GetTicks();
+  juntosui_atualizar(now);
+  const int times[] = {0, 80, 160, 320};
+  for (int i = 0, elapsed = 0; i < 4; i++) {
+    while (elapsed < times[i]) { elapsed += 10; juntosui_atualizar(now + elapsed); }
+    glClear(GL_COLOR_BUFFER_BIT); juntosui_desenhar(now + elapsed); glFinish();
+    char name[80]; snprintf(name, sizeof name, "entry-%03d", times[i]); captura(name, 1080);
+  }
+  assert(juntosui_shot_entrada() == 1);
+  juntosui_atualizar(now + 1000);
+  SDL_Event event = {0}; event.type = SDL_KEYDOWN; event.key.keysym.sym = SDLK_RIGHT;
+  assert(juntosui_evento_sdl(&event));
+  assert(juntosui_shot_foco(1) < .01f);
+  for (int i = 0, elapsed = 0; i < 4; i++) {
+    while (elapsed < times[i]) { elapsed += 10; juntosui_atualizar(now + 1000 + elapsed); }
+    glClear(GL_COLOR_BUFFER_BIT); juntosui_desenhar(now + 1000 + elapsed); glFinish();
+    char name[80]; snprintf(name, sizeof name, "focus-%03d", times[i]); captura(name, 1080);
+    if (i == 1) assert(juntosui_shot_foco(1) > .5f && juntosui_shot_foco(1) < 1);
+  }
+  event.key.keysym.sym = SDLK_ESCAPE;
+  assert(juntosui_evento_sdl(&event));
+  juntosui_atualizar(now + 1330);
+  assert(juntosui_shot_entrada() > 0 && juntosui_shot_entrada() < 1);
+  juntosui_atualizar(now + 1380); juntosui_atualizar(now + 1430); juntosui_atualizar(now + 1480); juntosui_atualizar(now + 1530);
+  assert(juntosui_shot_entrada() == 0);
   printf("juntos_shot: ok\n");
   return 0;
 }

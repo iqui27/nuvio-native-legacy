@@ -15,6 +15,9 @@
 #include "socialvis.h"
 #include "tex_cache.h"
 #include "text.h"
+#include "tela21.h"
+#include "revela.h"
+#include "teclavoltar.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,6 +43,14 @@ static void iconeReacao(char *dst, size_t n, const char *k) { snprintf(dst, n, "
 typedef enum { CAMADA_NADA = 0, CAMADA_FOLHA, CAMADA_CODIGO, CAMADA_SALA, CAMADA_SAIR, CAMADA_PEDIDO, CAMADA_REACOES, CAMADA_FONTES } Camada;
 static Camada camada;
 static int foco, linhaReacao;
+static Camada camadaVisual;
+static float entrada, tempoEntrada, focoAnim[8][16], lugarAnim[5], fonteExp[5];
+static Uint32 ultimoQuadro;
+static float contagemAnim;
+static int ultimaContagem;
+static float origemX, origemY, folhaScroll, folhaVel;
+
+static float focoDe(int i) { return focoAnim[camadaVisual][i + 1]; }
 
 // folha do anfitriao
 static int folhaIdx, folhaT, folhaE, soEu, nAmigos;
@@ -59,15 +70,17 @@ static JuntosConvite conv;
 static Uint32 okDesceEm, agoraUlt;
 static SDL_Event okEvento;
 static int okSegurando;
-static struct { char quem[96], nome[64], av[256], icone[32], txt[220]; Uint32 ate; } bolha[BOLHAS];
+static struct { char quem[96], nome[64], av[256], icone[32], txt[220]; Uint32 ate, desde; } bolha[BOLHAS];
 // QR
 static GLuint texQr;
 static char texQrDe[200];
 static int mostrarQr;
 
 static void poeBolha(const char *quem, const char *icone, const char *txt, unsigned ms);
+static const Stream *fonteLocal(const JsMotor *m);
+static int contagemRestante(void);
 #ifdef NV_SHOT_HOOKS
-static int shotPlayer, shotSemFade, shotContagem;
+static int shotPlayer, shotContagem;
 static char shotArte[512];
 void juntosui_shot_player(int sim) { shotPlayer = sim; }
 // A folha com amigos de mentira (o catalogo e o social estao vazios na captura).
@@ -88,7 +101,9 @@ void juntosui_shot_bolhas(void) {
   poeBolha("nuvio:f", NULL, "Volta um pouco", 60000);
   poeBolha("nuvio:r", "aj_message-square", "a pipoca acabou", 60000);
 }
-void juntosui_shot_camada(int c, int f) { camada = (Camada)c; foco = f; linhaReacao = 0; shotSemFade = 1; }
+void juntosui_shot_camada(int c, int f) { camada = (Camada)c; foco = f; linhaReacao = 0; }
+float juntosui_shot_entrada(void) { return entrada; }
+float juntosui_shot_foco(int i) { return focoDe(i); }
 void juntosui_shot_arte(const char *caminho) { snprintf(shotArte, sizeof shotArte, "%s", caminho); }
 void juntosui_shot_contagem(int n) { shotContagem = n; }
 static int noPlayer(void) { return player_aberto() || shotPlayer; }
@@ -173,6 +188,7 @@ static void poeBolha(const char *quem, const char *icone, const char *txt, unsig
   if (p) { snprintf(bolha[alvo].nome, sizeof bolha[0].nome, "%s", p->nome); snprintf(bolha[alvo].av, sizeof bolha[0].av, "%s", p->av); }
   if (icone) snprintf(bolha[alvo].icone, sizeof bolha[0].icone, "%s", icone);
   if (txt) snprintf(bolha[alvo].txt, sizeof bolha[0].txt, "%s", txt);
+  bolha[alvo].desde = agoraUlt;
   bolha[alvo].ate = agoraUlt + ms;
 }
 
@@ -380,7 +396,10 @@ static void apertarSala(int b) {
 
 // --- teclas -----------------------------------------------------------------------------------------
 static int ehOk(SDL_Keycode k) { return k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE; }
-static int ehVoltar(SDL_Keycode k) { return k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE; }
+static int ehVoltar(SDL_Keycode k) {
+  SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = k;
+  return nv_tecla_voltar(&e);
+}
 
 int juntosui_evento_sdl(const SDL_Event *e) {
   SDL_Keycode k;
@@ -501,6 +520,8 @@ int juntosui_evento_sdl(const SDL_Event *e) {
 }
 
 void juntosui_atualizar(Uint32 agora) {
+  float dt = ultimoQuadro ? fminf((Uint32)(agora - ultimoQuadro) / 1000.0f, .05f) : 0;
+  ultimoQuadro = agora;
   agoraUlt = agora;
   if (okSegurando && agora - okDesceEm >= SEGURAR_OK_MS && camada == CAMADA_NADA) {
     okSegurando = 0;
@@ -509,6 +530,31 @@ void juntosui_atualizar(Uint32 agora) {
   if (!juntos_ativo() && (camada == CAMADA_SALA || camada == CAMADA_REACOES || camada == CAMADA_SAIR || camada == CAMADA_PEDIDO || camada == CAMADA_FONTES))
     camada = CAMADA_NADA;
   if (!noPlayer() && camada == CAMADA_REACOES) camada = CAMADA_NADA;
+  if (camada != CAMADA_NADA && camada != camadaVisual) {
+    camadaVisual = camada;
+    entrada = tempoEntrada = 0;
+    memset(focoAnim[camadaVisual], 0, sizeof focoAnim[0]);
+    memset(lugarAnim, 0, sizeof lugarAnim);
+    folhaScroll = folhaVel = 0;
+  }
+  entrada = t21_entrada(entrada, dt, camada != CAMADA_NADA);
+  folhaScroll = anim_mola2(&folhaVel, folhaScroll, fmaxf(0, foco - 5) * 76, dt, NV_MOLA2_SCROLL);
+  if (camada != CAMADA_NADA) tempoEntrada += dt;
+  else if (entrada <= 0) camadaVisual = CAMADA_NADA;
+  for (int c = 1; c < 8; c++) for (int i = 0; i < 16; i++) {
+    int alvo = camada == c && (camada == CAMADA_CODIGO ? codPos + 1 :
+               camada == CAMADA_REACOES ? foco + 1 + linhaReacao * 6 : foco + 1) == i;
+    focoAnim[c][i] = anim_mola(focoAnim[c][i], alvo, dt, NV_MOLA_FOCO);
+  }
+  for (int i = 0; i < 5; i++) {
+    const JsMotor *m = juntos_motor();
+    int presente = m && (i < m->sala.n || i == m->sala.n);
+    lugarAnim[i] = anim_mola(lugarAnim[i], presente, dt, NV_MOLA_FOCO);
+    int local = m && i < m->sala.n && !strcmp(m->sala.m[i].id, m->eu) && fonteLocal(m);
+    fonteExp[i] = anim_mola(fonteExp[i], camada == CAMADA_FONTES && foco == i + 1 && local, dt, NV_MOLA_TELA);
+  }
+  if (ultimaContagem != contagemRestante()) { ultimaContagem = contagemRestante(); contagemAnim = 0; }
+  contagemAnim = anim_mola(contagemAnim, 1, dt, NV_MOLA_FOCO);
 }
 
 // --- desenho ---------------------------------------------------------------------------------------
@@ -518,9 +564,13 @@ static void texto(TxtEstilo es, const char *s, float x, float y, int c, float a,
 }
 static float largura(TxtEstilo es, const char *s) { return (float)txt_linha(es, s, 255, 255, 255, 255).w; }
 
+static GfxRect telaReal(void) {
+  return (GfxRect){-origemX, -origemY, NV_VTELA_W, NV_VTELA_H};
+}
+
 static void painel(GfxRect r) {
-  gfx_cor((GfxRect){ 0, 0, 1920, 1080 }, 0, 0, 0, 0, 0.55f);
-  gfx_vidro_painel(r, 0.06f, 0.92f, 1.0f);
+  gfx_cor(telaReal(), 0, 0, 0, 0, T21_VEIL);
+  t21_ilha(r, T21_R_SHEET, 1);
 }
 
 static const char *estadoTexto(const JsMembro *p) {
@@ -570,7 +620,7 @@ static GLuint qrTextura(const char *u) {
 }
 
 static void desenharFolha(void) {
-  float h = 48 + 40 + 72 + 48 + folhaLinhas() * 76.0f + 12 + 40;
+  float h = fminf(948, 48 + 40 + 72 + 48 + folhaLinhas() * 76.0f + 12 + 40);
   GfxRect r = { 560, (1080 - h) / 2, 800, h };
   float y = r.y + 48;
   int i;
@@ -582,11 +632,14 @@ static void desenharFolha(void) {
   texto(TXT_ILHA_CORPO, nAmigos ? i18n("Quem vai assistir com você") : i18n("Nenhum amigo ainda. Quem tiver o código entra pedindo."),
         r.x + 48, y, 190, 1, r.w - 96);
   y += 48;
+  gfx_recorte(r.x + origemX, y + origemY, r.w, r.y + r.h - 32 - y);
+  y -= folhaScroll;
   for (i = 0; i < folhaLinhas(); i++) {
     GfxRect l = { r.x + 32, y, r.w - 64, 64 };
-    float f = foco == i ? 1.0f : 0.0f;
+    float f = focoDe(i);
     if (i < nAmigos) {
-      int c = botao_superficie(l, f, 1);
+      plrui_linha_foco(l, T21_R_ROW, f);
+      int c = 245;
       rec_avatar((GfxRect){ l.x + 16, l.y + 10, 44, 44 }, amigoAv[i], amigoNome[i], amigoId[i], 1);
       texto(TXT_ILHA_NOME, amigoNome[i], l.x + 76, l.y + 16, c, 1, l.w - 160);
       gfx_icone((GfxRect){ l.x + l.w - 56, l.y + 16, 32, 32 }, marcado[i] ? "aj_circle-check" : "aj_circle-dot",
@@ -602,6 +655,7 @@ static void desenharFolha(void) {
     y += 76;
     if (i == nAmigos) y += 12;
   }
+  gfx_sem_recorte();
 }
 
 static void desenharCodigo(void) {
@@ -614,7 +668,7 @@ static void desenharCodigo(void) {
   for (i = 0; i < 6; i++) {
     GfxRect c = { r.x + 64 + i * 98.0f + (i >= 3 ? 20 : 0), r.y + 190, 80, 110 };
     char s[2] = { cod[i], 0 };
-    float f = codPos == i ? 1.0f : 0.0f;
+    float f = focoDe(i);
     int tinta = botao_superficie(c, f, 1);
     TxtLinha l = txt_linha(TXT_ILHA_TITULO, s, tinta, tinta, tinta, 255);
     txt_desenhar_alpha(l, c.x + (c.w - l.w) / 2, c.y + (c.h - l.h) / 2, 1);
@@ -663,17 +717,8 @@ static void telaCinema(GfxRect r, float luz, float a) {
   gfx_veu_css(r, 2, 1.0f, 1.0f, 0.6f * a);   // sombra a esquerda: o texto da tela le sobre qualquer arte
 }
 
-// Entrada da cena: 550 ms de fade; parada com animacoes reduzidas.
-static float fadeSala(void) {
-  static Uint32 desde, visto;
-  Uint32 agora = SDL_GetTicks();
-#ifdef NV_SHOT_HOOKS
-  if (shotArte[0] || shotSemFade) return 1;
-#endif
-  if (agora - visto > 250) desde = agora;
-  visto = agora;
-  if (ajustes_animacoes_reduzidas()) return 1;
-  return fminf(1.0f, (float)(agora - desde) / 550.0f);
+static float entradaItem(int i) {
+  return anim_suave(anim_atraso(tempoEntrada, i, T21_STAGGER_MS, T21_ENTER_MS));
 }
 
 static void textoCentro(TxtEstilo es, const char *s, float cx, float y, int c, float a, float maxW) {
@@ -681,36 +726,31 @@ static void textoCentro(TxtEstilo es, const char *s, float cx, float y, int c, f
   txt_desenhar_alpha(l, cx - l.w / 2.0f, y, a);
 }
 
-static const float COR_LUGAR[5][3] = {
-  { 0.95f, 0.78f, 0.35f }, { 0.62f, 0.52f, 0.96f }, { 0.30f, 0.80f, 0.74f },
-  { 0.96f, 0.52f, 0.46f }, { 0.50f, 0.72f, 0.96f } };
 #define LUGAR_W 234.0f
 #define LUGAR_H 214.0f
 static float lugarX(int i) { return 960.0f + (i - 2) * 286.0f - LUGAR_W / 2; }
 static float lugarY(int i) { return 530.0f + (i - 2) * (i - 2) * 8.0f; }
 
-static void desenharLugar(int i, const JsMembro *p, int vazio, int focado, float a) {
+static void desenharLugar(int i, const JsMembro *p, int vazio, float f, float a) {
   GfxRect c = { lugarX(i), lugarY(i), LUGAR_W, LUGAR_H };
   GfxRect av = { c.x + (LUGAR_W - 78) / 2, c.y + 30, 78, 78 };
   float cx = c.x + LUGAR_W / 2;
-  int solido = ajustes_animacoes_reduzidas();
-  gfx_cor((GfxRect){ c.x - 4, c.y + 14, LUGAR_W + 8, LUGAR_H + 8 }, 28.0f / LUGAR_H, 0, 0, 0, 0.35f * a);   // sombra no chao
-  gfx_cor((GfxRect){ c.x - 12, c.y + LUGAR_H - 26, LUGAR_W + 24, 30 }, 0.5f, 0.30f, 0.18f, 0.30f, a);     // base mais larga que o encosto
-  gfx_cor(c, 28.0f / LUGAR_H, solido ? 0.14f : 0.21f, solido ? 0.14f : 0.15f, solido ? 0.19f : 0.24f, a);
-  gfx_cor((GfxRect){ c.x + 6, c.y + 6, LUGAR_W - 12, 60 }, 0.45f, 1, 1, 1, 0.05f * a);                   // luz no topo do encosto
+  float e = ajustes_animacoes_reduzidas_usuario() ? 1 : entradaItem(i);
+  float s = (.8f + .2f * lugarAnim[i]) * (1 + .06f * f);
+  a *= e;
+  gfx_transformar(cx, c.y + LUGAR_H / 2, s, origemX, origemY - NV_FOCO_LIFT * f + (1 - e) * NV_ENTRA_DY);
+  t21_ilha(c, T21_R_SHEET, a);
+  plrui_linha_foco(c, T21_R_SHEET, f * a);
   if (vazio) {
-    gfx_anel(av, 0.5f, 3, 0.95f, 0.95f, 0.93f, 0.55f * a);
-    gfx_icone((GfxRect){ av.x + 21, av.y + 21, 36, 36 }, "aj_user-plus", 0.95f, 0.95f, 0.93f, a);
+    botao_disco(av, "aj_user-plus", f, a);
     textoCentro(TXT_ILHA_NOME, i18n("Mais um lugar"), cx, c.y + 122, 245, a, LUGAR_W - 20);
     textoCentro(TXT_CAPTION, i18n("Convide um amigo"), cx, c.y + 158, 190, a, LUGAR_W - 20);
   } else {
     const JsMembro *m0 = p;
-    const float *k = COR_LUGAR[i];
     int pronto = !strcmp(m0->st, "pronto") || !strcmp(m0->st, "tocando");
     char st[120];
     const JsMotor *m = juntos_motor();
     rec_avatar(av, m0->av, m0->nome, m0->id, m0->on ? a : 0.4f * a);
-    gfx_anel(av, 0.5f, 4, k[0], k[1], k[2], a);
     char nome[160];
     if (m && !strcmp(m0->id, m->eu)) snprintf(nome, sizeof nome, "%s%s%s", i18n("Você"), m0->anf ? " · " : "", m0->anf ? i18n("anfitrião") : "");
     else snprintf(nome, sizeof nome, "%s", m0->nome);
@@ -723,7 +763,7 @@ static void desenharLugar(int i, const JsMembro *p, int vazio, int focado, float
       texto(TXT_CAPTION, st, cx - (w + 30) / 2 + 30, c.y + 160, 200, a, 0);
     } else textoCentro(TXT_CAPTION, st, cx, c.y + 160, 170, a, LUGAR_W - 20);
   }
-  if (focado) gfx_anel_fora(c, 28.0f / LUGAR_H, 4, 3, 0.95f, 0.95f, 0.93f, a);
+  gfx_transformar(960, 540, 1, origemX, origemY);
 }
 
 static int todosProntos(const JsMotor *m) {
@@ -736,7 +776,7 @@ static int todosProntos(const JsMotor *m) {
 static void cabecalhoSala(float a) {
   char c[96];
   gfx_icone((GfxRect){ 80, 54, 36, 36 }, "aj_users", 0.92f, 0.92f, 0.9f, a);
-  txt_tracking(TXT_ILHA_TITULO, "JUNTOS", 245, 245, 245, 136, 50, a, 8.0f);
+  txt_tracking(TXT_V2_KICK, i18n("Assistir Juntos"), 245, 245, 245, 136, 60, a, 2.5f);
   snprintf(c, sizeof c, "%s", i18n("Velvet Cinema · Sala privada"));
   gfx_cor((GfxRect){ 1840 - largura(TXT_ILHA_NOME, c) - 24, 68, 8, 8 }, 0.5f, 0.85f, 0.85f, 0.85f, a);
   texto(TXT_ILHA_NOME, c, 1840 - largura(TXT_ILHA_NOME, c), 54, 225, a, 0);
@@ -788,21 +828,15 @@ static void fonteSelos(const Stream *s, const JsImpressao *imp, float x, float y
 static void desenharFontes(void) {
   const JsMotor *m = juntos_motor();
   GfxRect painelFontes = { 460, 124, 1380, 868 };
-  float a = fadeSala(), y = 306;
-  static float expansao[5], realce[5];
-  static Uint32 ultimo;
-  Uint32 agora = SDL_GetTicks();
-  float passo = 1 - expf(-(float)(agora - ultimo) / 65.0f);
+  float a = 1, y = 306;
   int i, n;
   char sala[128];
   if (!m) return;
-  ultimo = agora;
   n = m->sala.n < 5 ? m->sala.n : 5;
-  telaCinema((GfxRect){ 0, 0, 1920, 1080 }, 0.8f, a);
+  telaCinema(telaReal(), 0.8f, a);
   gfx_icone((GfxRect){ 80, 58, 30, 30 }, "aj_users", 0.94f, 0.94f, 0.92f, a);
   texto(TXT_ILHA_NOME, i18n("Assistir Juntos"), 126, 58, 245, a, 600);
-  gfx_vidro_painel(painelFontes, 28.0f / painelFontes.h, ajustes_vidro() ? 0.80f : 0.98f, a);
-  gfx_luz_canto(painelFontes, 28.0f / painelFontes.h, 0.1f, 0, 0.9f, 1, 1, 1, 0.05f * a);
+  t21_ilha(painelFontes, T21_R_SHEET, a);
   texto(TXT_ILHA_TITULO, i18n("Cada TV, sua fonte"), 500, 160, 245, a, 1200);
   texto(TXT_ILHA_META, i18n("Cada um assiste pela própria conta. Se a sua fonte for outra versão, o app avisa."), 500, 222, 180, a, 1260);
   gfx_cor((GfxRect){ 500, 278, 1300, 1 }, 0, 1, 1, 1, 0.08f * a);
@@ -830,13 +864,8 @@ static void desenharFontes(void) {
     const char *impacto = mesma ? i18n("Mesmo arquivo. Sincronia automática.") : parecida ? i18n("Arquivo parecido. A sincronia pode variar.") : diferente ? i18n("Duração diferente. Algumas cenas podem desalinhar.") : i18n("Aguardando uma fonte para sincronizar.");
     float r = mesma ? 0.55f : 0.96f, g = mesma ? 0.90f : parecida ? 0.78f : 0.56f, b = mesma ? 0.70f : 0.42f;
     float alvo = foco == i + 1 && eu && s ? 1 : 0;
-    if (ajustes_animacoes_reduzidas()) { expansao[i] = alvo; realce[i] = foco == i + 1; }
-    else {
-      expansao[i] += (alvo - expansao[i]) * passo;
-      realce[i] += ((foco == i + 1) - realce[i]) * passo;
-    }
-    float h = 96 + 62 * expansao[i];
-    gfx_cor((GfxRect){ 484, y - 10, 1332, h }, 20.0f / h, 1, 1, 1, 0.12f * realce[i] * a);
+    float h = 96 + 62 * fonteExp[i];
+    plrui_linha_foco((GfxRect){ 484, y - 10, 1332, h }, T21_R_ROW, focoDe(i + 1) * a);
     rec_avatar((GfxRect){ 504, y + 6, 56, 56 }, p->av, p->nome, p->id, p->on ? a : 0.45f * a);
     texto(TXT_ILHA_NOME, p->nome, 580, y, 245, a, 290);
     snprintf(sala, sizeof sala, "%s%s%s", plataformaFonte(p), eu ? " · " : "", eu ? i18n("Sua TV") : "");
@@ -847,24 +876,24 @@ static void desenharFontes(void) {
     TxtLinha status = txt_linha(TXT_ILHA_NOME, p->fonte[0] ? fonteTexto(p->fonte) : estadoTexto(p), r * 255, g * 255, b * 255, 255);
     txt_desenhar_alpha(status, 1338, y, a);
     txt_bloco_corta(TXT_ILHA_APOIO, impacto, 190, 190, 190, 1338, y + 37, 438, 24, a, 2);
-    if (expansao[i] > 0.01f) botao_pilula((GfxRect){ 580, y + 82, 236, 52 }, i18n("Trocar fonte"), "aj_monitor-cog", alvo, 0, 0, a * expansao[i]);
+    if (fonteExp[i] > 0.01f) botao_pilula((GfxRect){ 580, y + 82, botao_largura(i18n("Trocar fonte"), "aj_monitor-cog", 0), BOTAO_H_SECUNDARIO }, i18n("Trocar fonte"), "aj_monitor-cog", focoDe(i + 1) * alvo, 0, 0, a * fonteExp[i]);
     y += h + 2;
   }
   botao_pilula((GfxRect){ 500, 888, botao_largura(i18n("Voltar à sala"), "aj_users", 1), BOTAO_H_PRIMARIO },
-               i18n("Voltar à sala"), "aj_users", foco == 0, 1, 0, a);
+               i18n("Voltar à sala"), "aj_users", focoDe(0), 1, 0, a);
   texto(TXT_ILHA_APOIO, i18n("Setas para mover · OK para escolher · Voltar para retornar"), 80, 1020, 190, a, 1760);
 }
 
 static void desenharSala(void) {
   const JsMotor *m = juntos_motor();
   GfxRect tela = { 360, 144, 1200, 456 };
-  float a = fadeSala();
+  float a = 1;
   int i, b[BT_N], n = botoesSala(b), nm, vazio;
   char linha[200];
   if (!m) return;
   nm = m->sala.n < 5 ? m->sala.n : 5;
   vazio = nm < 5;
-  gfx_cor((GfxRect){ 0, 0, 1920, 1080 }, 0, 0.06f, 0.055f, 0.08f, 1.0f * a);
+  gfx_cor(telaReal(), 0, 0.06f, 0.055f, 0.08f, a);
   cabecalhoSala(a);
   telaCinema(tela, 0.7f, a);
   snprintf(linha, sizeof linha, i18n("Sua sessão privada · %d de %d lugares"), nm, 5);
@@ -884,7 +913,7 @@ static void desenharSala(void) {
   }
   for (i = 0; i < 5; i++) {
     if (i < nm) desenharLugar(i, &m->sala.m[i], 0, 0, a);
-    else if (i == nm) desenharLugar(i, NULL, 1, foco == -1, a);
+    else if (i == nm) desenharLugar(i, NULL, 1, focoDe(-1), a);
   }
   {
     int pr = !mostrarQr && todosProntos(m);
@@ -901,7 +930,7 @@ static void desenharSala(void) {
       if (!esq) continue;
       float w = botao_largura(rotuloBotao(b[i]), iconeBotao(b[i]), prim), h = prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
       botao_pilula((GfxRect){ xe, 905 + (BOTAO_H_PRIMARIO - h) / 2, w, h }, rotuloBotao(b[i]), iconeBotao(b[i]),
-                   foco == i ? 1.0f : 0.0f, prim, 0, a);
+                   focoDe(i), prim, 0, a * entradaItem(i));
       xe += w + BOTAO_GAP;
     }
     for (i = n - 1; i >= 0; i--) {
@@ -910,7 +939,7 @@ static void desenharSala(void) {
       w = botao_largura(rotuloBotao(b[i]), iconeBotao(b[i]), 0);
       xd -= w;
       botao_pilula((GfxRect){ xd, 905 + (BOTAO_H_PRIMARIO - BOTAO_H_SECUNDARIO) / 2, w, BOTAO_H_SECUNDARIO },
-                   rotuloBotao(b[i]), iconeBotao(b[i]), foco == i ? 1.0f : 0.0f, 0, 0, a);
+                   rotuloBotao(b[i]), iconeBotao(b[i]), focoDe(i), 0, 0, a * entradaItem(i));
       xd -= BOTAO_GAP;
     }
   }
@@ -926,9 +955,9 @@ static void desenharPergunta(const char *titulo, const char *corpo, const char *
   if (rostoNome) { rec_avatar((GfxRect){ r.x + 48, r.y + 44, 64, 64 }, rostoUrl, rostoNome, rostoNome, 1); x = r.x + 132; }
   texto(TXT_ILHA_TITULO, titulo, x, r.y + 52, 245, 1, r.w - (x - r.x) - 48);
   if (corpo) txt_bloco_corta(TXT_ILHA_CORPO, corpo, 190, 190, 190, r.x + 48, r.y + 136, r.w - 96, 34, 1, 3);
-  botao_pilula((GfxRect){ r.x + 48, r.y + r.h - 48 - BOTAO_H_SECUNDARIO, w0, BOTAO_H_SECUNDARIO }, b0, NULL, foco == 0, 1, 0, 1);
+  botao_pilula((GfxRect){ r.x + 48, r.y + r.h - 48 - BOTAO_H_SECUNDARIO, w0, BOTAO_H_SECUNDARIO }, b0, NULL, focoDe(0), 1, 0, 1);
   botao_pilula((GfxRect){ r.x + 48 + w0 + BOTAO_GAP, r.y + r.h - 48 - BOTAO_H_SECUNDARIO, w1, BOTAO_H_SECUNDARIO }, b1, NULL,
-               foco == 1, 0, 0, 1);
+               focoDe(1), 0, 0, 1);
 }
 
 static void desenharReacoes(void) {
@@ -938,19 +967,22 @@ static void desenharReacoes(void) {
   for (i = 0; i < 4; i++) wFrases += botao_largura(frase(FRASES[i]), NULL, 0) + (i ? 12 : 0);
   w = (wFrases > wDiscos ? wFrases : wDiscos) + 80;
   r = (GfxRect){ (1920 - w) / 2, 820, w, 204 };
-  gfx_vidro_painel(r, 0.2f, 0.82f, 1);
+  t21_ilha(r, T21_R_SHEET, 1);
   for (i = 0; i < 6; i++) {
     GfxRect d = { r.x + (w - wDiscos) / 2 + i * 124.0f, r.y + 24, 88, 88 };
     char ic[40];
     if (i < 5) iconeReacao(ic, sizeof ic, REACOES[i]); else snprintf(ic, sizeof ic, "aj_users");
-    botao_disco(d, ic, linhaReacao == 0 && foco == i ? 1.0f : 0.0f, 1);
+    float f = focoDe(i);
+    gfx_transformar(d.x + d.w / 2, d.y + d.h / 2, 1 + .08f * f, origemX, origemY);
+    botao_disco(d, ic, f, entradaItem(i));
+    gfx_transformar(960, 540, 1, origemX, origemY);
   }
   {
     float x = r.x + (w - wFrases) / 2;
     for (i = 0; i < 4; i++) {
       const char *t = frase(FRASES[i]);
       float w = botao_largura(t, NULL, 0);
-      botao_pilula((GfxRect){ x, r.y + 128, w, 52 }, t, NULL, linhaReacao == 1 && foco == i ? 1.0f : 0.0f, 0, 0, 1);
+      botao_pilula((GfxRect){ x, r.y + 128, w, BOTAO_H_SECUNDARIO }, t, NULL, focoDe(i + 6), 0, 0, 1);
       x += w + 12;
     }
   }
@@ -983,8 +1015,8 @@ static void desenharBolhas(Uint32 agora) {
   for (i = 0; i < BOLHAS; i++) {
     float a, w;
     if (!bolha[i].ate || agora >= bolha[i].ate) continue;
-    a = (float)(bolha[i].ate - agora) / 400.0f;
-    if (a > 1) a = 1;
+    a = ajustes_animacoes_reduzidas_usuario() ? 1 :
+        anim_suave(fminf((agora - bolha[i].desde) / 220.0f, (bolha[i].ate - agora) / 220.0f));
     w = 64 + (bolha[i].icone[0] ? 52 : 0) + (bolha[i].txt[0] ? fminf(520, largura(TXT_ILHA_CORPO, bolha[i].txt)) + 24 : 0) + 16;
     gfx_vidro_painel((GfxRect){ 1920 - 60 - w, y, w, 68 }, 0.5f, 0.82f, a);
     rec_avatar((GfxRect){ 1920 - 60 - w + 12, y + 10, 48, 48 }, bolha[i].av, bolha[i].nome, bolha[i].quem, a);
@@ -1018,19 +1050,20 @@ static void desenharContagem(int num) {
   float x0;
   if (!m) return;
   nm = m->sala.n < 5 ? m->sala.n : 5;
-  gfx_cor((GfxRect){ 0, 0, 1920, 1080 }, 0, 0.04f, 0.035f, 0.06f, 1.0f);
+  gfx_cor(telaReal(), 0, 0.04f, 0.035f, 0.06f, 1.0f);
   telaCinema(tela, 0.45f, 1);
   gfx_cor(tela, 0, 0.04f, 0.035f, 0.06f, 0.45f);
   textoCentro(TXT_CAPTION, i18n("Todos prontos"), 960, 190, 235, 1, 1200);
   textoCentro(TXT_ILHA_TITULO, i18n("As luzes se apagam. Juntos."), 960, 236, 250, 1, 1300);
   snprintf(n, sizeof n, "%d", num);
-  textoCentro(TXT_RANK_GRANDE, n, 960, 340, 255, 1, 300);
+  gfx_transformar(960, 450, .8f + .2f * contagemAnim, origemX, origemY);
+  textoCentro(TXT_RANK_GRANDE, n, 960, 340, 255, contagemAnim, 300);
+  gfx_transformar(960, 540, 1, origemX, origemY);
   x0 = 960 - nm * 92.0f / 2;
   for (i = 0; i < nm; i++) {
     const JsMembro *p = &m->sala.m[i];
     GfxRect av = { x0 + i * 92.0f + 7, 610, 78, 78 };
     rec_avatar(av, p->av, p->nome, p->id, 1);
-    gfx_anel(av, 0.5f, 4, COR_LUGAR[i][0], COR_LUGAR[i][1], COR_LUGAR[i][2], 1);
   }
   textoCentro(TXT_ILHA_NOME, i18n("Começando juntos"), 960, 730,
               230, 1, 1200);
@@ -1039,8 +1072,15 @@ static void desenharContagem(int num) {
 
 void juntosui_desenhar(Uint32 agora) {
   float esc = gfx_escala_entrar();
+  origemX = (NV_VTELA_W - 1920) / 2;
+  origemY = (NV_VTELA_H - 1080) / 2;
+  gfx_transformar(960, 540, 1, origemX, origemY);
   if (noPlayer() && juntos_ativo()) { desenharRostos(); desenharBolhas(agora); }
-  switch (camada) {
+  float opacidade = gfx_opacidade_grupo;
+  gfx_opacidade_grupo *= anim_suave(entrada);
+  int folha = camadaVisual != CAMADA_SALA && camadaVisual != CAMADA_FONTES && camadaVisual != CAMADA_REACOES;
+  if (folha) gfx_transformar(960, 540, T21_SHEET_SCALE + (1 - T21_SHEET_SCALE) * anim_suave(entrada), origemX, origemY);
+  switch (camadaVisual) {
     case CAMADA_FOLHA: desenharFolha(); break;
     case CAMADA_CODIGO: desenharCodigo(); break;
     case CAMADA_SALA: desenharSala(); break;
@@ -1058,6 +1098,9 @@ void juntosui_desenhar(Uint32 agora) {
     case CAMADA_REACOES: desenharReacoes(); break;
     default: break;
   }
+  gfx_transformar(960, 540, 1, origemX, origemY);
+  gfx_opacidade_grupo = opacidade;
   { int c = juntos_ativo() ? contagemRestante() : 0; if (c) desenharContagem(c); }
+  gfx_sem_transformar();
   gfx_escala_sair(esc);
 }
