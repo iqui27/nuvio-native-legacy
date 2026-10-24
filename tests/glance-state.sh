@@ -5,6 +5,10 @@ export TMPDIR=/Volumes/ExternalSSD/tmp/jobtmp
 mkdir -p "$TMPDIR"
 tmp="$(mktemp -d "$TMPDIR/glance-state-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
+cc -O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+  -Wno-deprecated-declarations -ffunction-sections -fdata-sections \
+  tests/glance-retarget.c src/trailerfonte.c -Wl,-dead_strip -o "$tmp/retarget"
+"$tmp/retarget"
 python3 - "$tmp/router.h" <<'PY'
 from pathlib import Path
 import sys

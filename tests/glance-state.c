@@ -22,7 +22,13 @@ void desc_pedir_titulo_semente(const char *id, long tmdb, const char *type, cons
   (void)id; (void)tmdb; (void)title; (void)year; (void)poster;
   requests++; busy = 1; snprintf(requestedType, sizeof requestedType, "%s", type);
 }
-int ajustes_animacoes_reduzidas(void) { return 1; }
+float gfx_escala_txt(void) { return 1; }
+float gfx_escala_txt_entrar(void) { return 1; }
+float gfx_escala_tela_txt(void) { return 1; }
+void gfx_escala_sair(float a) { (void)a; }
+void ajustes_area_conteudo(float l, float r, float *x, float *w) { (void)l; (void)r; *x = 0; *w = 1920; }
+static int reduced = 1;
+int ajustes_animacoes_reduzidas(void) { return reduced; }
 int ajustes_trailer_fonte(void) { return 0; }
 int trailer_suportado(void) { return 1; }
 int trailer_aberto(void) { return opened; }

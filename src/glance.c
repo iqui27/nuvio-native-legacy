@@ -25,8 +25,11 @@
 #include <string.h>
 
 static GlanceFonte fonte;
-static CatItem atual, tocar, anterior;
-static int indiceAnterior;
+static CatItem atual, tocar;
+// Layers under the incoming title, each with the alpha frozen when it was
+// retargeted: layer 0 is opaque, so a new press never snaps the composite.
+static struct { CatItem it; int idx; float a; } camada[3];
+static int nCamada;
 static float troca = 1;
 static int aberta, indice, botao, trailerPedido, trailerFim, trailerQual;
 static Uint32 desde, prazo;
@@ -54,13 +57,19 @@ void glance_fechar(void) {
 int glance_aberto(void) { return aberta; }
 int glance_indice(void) { return indice; }
 int glance_botao(void) { return botao; }
+int glance_camadas(void) { return troca < 1 ? nCamada : 0; }
 
 static int selecionar(int i) {
   CatItem it;
   if (!fonte.total || !fonte.item || i < 0 || i >= fonte.total() || !fonte.item(i, &it)) return 0;
-  int settled = troca >= 1;
-  if (aberta && settled) { anterior = atual; indiceAnterior = indice; }
-  troca = aberta && settled && !ajustes_animacoes_reduzidas() ? 0 : 1;
+  if (aberta && !ajustes_animacoes_reduzidas()) {
+    float a = troca >= 1 ? 1 : anim_suave(troca);
+    if (troca >= 1) nCamada = 0;
+    if (nCamada == 3) { memmove(camada, camada + 1, 2 * sizeof *camada); nCamada = 2; camada[0].a = 1; }
+    camada[nCamada].it = atual; camada[nCamada].idx = indice; camada[nCamada].a = nCamada ? a : 1;
+    nCamada++;
+    troca = 0;
+  } else { nCamada = 0; troca = 1; }
   trailer_fechar();
   acaoPendente = 0; acaoEpisodios = -1;
   atual = it; indice = i; botao = GLANCE_BT_PRIMARIO;
@@ -166,6 +175,7 @@ void glance_atualizar(float dt, Uint32 agora) {
   entrada = anim_mola(entrada, aberta ? 1 : 0, dt, NV_MOLA_TELA);
   if (!aberta) return;
   troca = anim_rampa(troca, 1, dt, 320);
+  if (troca >= 1) nCamada = 0;
   if (acaoPendente && acaoEpisodios >= 0) {
     CatItem ci;
     if (agora - acaoDesde < 20000 && cat_copiar_item(acaoEpisodios, &ci) &&
@@ -326,10 +336,14 @@ void glance_desenhar(Uint32 agora) {
   CatItem selected = atual;
   int selectedIndex = indice;
   if (troca < 1) {
-    atual = anterior; indice = indiceAnterior;
-    glance_desenhar_(agora);
+    float base = gfx_opacidade_grupo;
+    for (int i = 0; i < nCamada; i++) {
+      atual = camada[i].it; indice = camada[i].idx;
+      gfx_opacidade_grupo = base * camada[i].a;
+      glance_desenhar_(agora);
+    }
     atual = selected; indice = selectedIndex;
-    gfx_opacidade_grupo *= anim_suave(troca);
+    gfx_opacidade_grupo = base * anim_suave(troca);
   }
   glance_desenhar_(agora);
   gfx_sem_transformar();

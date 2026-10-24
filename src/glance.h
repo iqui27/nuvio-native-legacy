@@ -15,6 +15,8 @@ void glance_fechar(void);
 int glance_aberto(void);
 int glance_indice(void);
 int glance_botao(void);
+// Outgoing title layers still fading under the incoming one (0 when settled).
+int glance_camadas(void);
 void glance_evento(const SDL_Event *e);
 void glance_atualizar(float dt, Uint32 agora);
 void glance_desenhar(Uint32 agora);
