@@ -45,7 +45,7 @@ def clock_strip(paths, target):
         args = []
         for t, path in zip(CLOCK_TIMES[start:start + 3], paths[start:start + 3]):
             args += ['(', native(path), '-resize', '640x360', '-background', '#121316',
-                     '-fill', 'white', '-font', 'Helvetica', '-pointsize', '18',
+                     '-fill', 'white', '-font', '/System/Library/Fonts/Helvetica.ttc', '-pointsize', '18',
                      '-gravity', 'southwest', '-splice', '0x28', '-annotate', '+12+4', f'{t} ms', ')']
         magick(*args, '+append', row)
         rows.append(row)
