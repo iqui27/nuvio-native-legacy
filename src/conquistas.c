@@ -354,7 +354,7 @@ static void mover(int dx, int dy) {
   garantir_visivel();
 }
 
-static void abrir_detalhe(int idx) { detIdx = idx; view = V_DET; }
+static void abrir_detalhe(int idx) { detIdx = idx; view = V_DET; foco = B_FECHAR; }
 
 static void voltar(void) {
   if (view == V_DET) {
@@ -747,7 +747,7 @@ static void desenha_familias(float a) {
 static void desenha_detalhe(float a) {
   const CqEntrada *e;
   char k[96], b[96];
-  int i, nivel, ink;
+  int i, nivel;
   float fr, fg, fb, pr, cA, sc = gfx_escala_tela_txt(), f, passo = 51.0f / sc;
   float W = fminf((1200.0f / sc), NV_TELA_W - (120.0f / sc)), H = 760.0f / sc + (passo - 51.0f / sc) * 5.0f;
   GfxRect s, r;
@@ -760,18 +760,19 @@ static void desenha_detalhe(float a) {
   pr = anim_clamp(detP, 0.0f, 1.0f);
   a *= anim_suave(pr);
   cA = anim_clamp((detP - 0.30f) / 0.70f, 0.0f, 1.0f) * a;   // body arrives after the island shape
-  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0.02f, 0.025f, 0.03f, .70f * a);
+  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, T21_VEIL * a);
+  gfx_vidro_cobrir();
   x0 = (NV_TELA_W - W) * 0.5f; y0 = (NV_TELA_H - H) * 0.5f;
   f = anim_mistura(T21_SHEET_SCALE, 1.0f, pr);
   s = (GfxRect){ x0 + W * (1 - f) * .5f, y0 + H * (1 - f) * .5f, W * f, H * f };
-  gfx_cor(s, T21_R_SHEET / fminf(s.w, s.h), .06f, .064f, .074f, .96f * a);   // opaque base: no blur to hide the hub
-  t21_ilha(s, T21_R_SHEET, a);
+  plrui_material(s, T21_R_SHEET, 1, a);
+  x0 = s.x; y0 = s.y; W = s.w; H = s.h;   // content rides the scaled sheet
   // Left column: kicker, object, level dots.
   cx = x0 + 258.0f * W / 1200.0f;
   snprintf(k, sizeof k, "%s · %s", i18n(FAM[e->familia].nome), nome_nivel_arte(nivel));
   l = txt_linha_corta(TXT_V2_KICK, k, MUDO.r, MUDO.g, MUDO.b, 255, (400.0f / sc));
   txt_desenhar_alpha(l, cx - (float)l.w * .5f, y0 + (70.0f / sc), cA);
-  emblema_e(cx - (150.0f / sc), y0 + (130.0f / sc), (300.0f / sc), e, cA);
+  emblema_e(cx - (210.0f / sc), y0 + (112.0f / sc), (420.0f / sc), e, cA);
   for (i = 0; i < CQ_NIVEIS; i++) {
     GfxRect q = { cx - (44.0f / sc) + i * (18.0f / sc), y0 + (558.0f / sc), 10, 10 };
     plrui_trilho(q, i < nivel ? 1.0f : 0.0f, fr, fg, fb, cA);
@@ -830,12 +831,8 @@ static void desenha_detalhe(float a) {
   }
   bloco(TXT_V2_18, "Filme que você já viu antes de abrir a trilha conta para os níveis 1 a 4.", MUDO,
         rx, y0 + (336.0f / sc) + 5.0f * passo + (12.0f / sc), rw, (26.0f / sc), cA, 2);
-  // Neutral close pill (no accent): official island surface + neutral focus surface.
-  ink = 255;
-  r = (GfxRect){ x0 + W - (32.0f / sc) - (larg_pilula(i18n("Fechar"), NULL)), y0 + (28.0f / sc), larg_pilula(i18n("Fechar"), NULL), PILULA_H };
-  superficie(r, PILULA_H * .5f, 1.0f, cA, &(Tinta){0}, &(Tinta){0});
-  l = txt_linha(TXT_ILHA_NOME, i18n("Fechar"), ink, ink, ink, 255);
-  txt_desenhar_alpha(l, r.x + (r.w - (float)l.w) * .5f, r.y + (r.h - (float)l.h) * .5f, cA);
+  r = (GfxRect){ x0 + W - (32.0f / sc) - larg_pilula(i18n("Fechar"), NULL), y0 + (28.0f / sc), larg_pilula(i18n("Fechar"), NULL), PILULA_H };
+  pilula(r, i18n("Fechar"), NULL, qf(B_FECHAR), 0, 0, cA);
   if (view == V_DET) alvo(r, B_FECHAR);
 }
 
