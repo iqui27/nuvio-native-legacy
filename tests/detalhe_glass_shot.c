@@ -679,7 +679,27 @@ int main(int argc, char **argv) {
     candidate.altura = 2160;
     stream_definir_alvo(IMDB_FILME); stream_definir_lista(&candidate, 1);
     abrir(1,0,0,0); quadros(4); gravar("detalhe-chip");
+    for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
+      char name[80]; gfx_escala_txt_definir(scale ? .85f : 1); ajustes_definir_vidro(glass);
+      quadros(40); snprintf(name, sizeof name, "server-%s-%s", scale ? "85" : "100", glass ? "glass" : "solid"); gravar(name);
+    }
+    gfx_escala_txt_definir(1); ajustes_definir_vidro(1); quadros(40);
     SDL_Event e = {0}; e.type = SDL_KEYDOWN;
+    e.key.keysym.sym = SDLK_DOWN; detail_evento(&e);
+    const int times[] = {0, 80, 160, 320};
+    for (int i = 0, elapsed = 0; i < 4; i++) {
+      while (elapsed < times[i]) { quadros(1); elapsed += 16; }
+      char name[80]; snprintf(name, sizeof name, "server-focus-%03d", times[i]); gravar(name);
+    }
+    e.key.keysym.sym = SDLK_UP; detail_evento(&e); quadros(90);
+    HomeItem hi = {0}; hi.indice = 1; hi.rect.w = NV_TELA_W; hi.rect.h = NV_TELA_H;
+    hi.titulo = itens[1].titulo; hi.genero = itens[1].genero; hi.meta = itens[1].meta;
+    detail_abrir(&hi);
+    for (int i = 0, elapsed = 0; i < 4; i++) {
+      while (elapsed < times[i]) { quadros(1); elapsed += 16; }
+      char name[80]; snprintf(name, sizeof name, "server-entry-%03d", times[i]); gravar(name);
+    }
+    quadros(160);
     int nav = 1;
 #define STEP(code, expected) do { e.key.keysym.sym = code; detail_evento(&e); nav &= !!(expected); } while (0)
     STEP(SDLK_DOWN, focoServidor == 0 && !focoAmigos);
