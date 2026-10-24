@@ -29,6 +29,7 @@ void juntosui_shot_camada(int c, int f);
 void juntosui_shot_arte(const char *caminho);
 void juntosui_shot_contagem(int n);
 float juntosui_shot_entrada(void);
+float juntosui_shot_corpo_alfa(void);
 float juntosui_shot_foco(int i);
 
 static SDL_Window *win;
@@ -309,16 +310,20 @@ fontes:
   assert(juntosui_shot_entrada() == 0);
   motionNow = now + 1600;
   const int clockTimes[] = {0, 50, 100, 150, 250, 400};
+  const char *only = getenv("JUNTOS_SHOT_ONLY");  // e.g. "85-solid": split the clock matrix across runs
   // Sheet motion follows the animation setting only: minimal GPU effects must not snap it.
   gfx_definir_efeitos_minimos(1);
   juntosui_shot_player(0); juntosui_shot_camada(0, 0); motionFrame(1400);
   juntosui_shot_camada(2, 0); motionFrame(50);
   assert(ilha_corpo_t() > 0.01f && ilha_corpo_t() < 0.99f);
+  motionFrame(150);  // 200 ms: body rides the island, visible long before the spring settles
+  assert(ilha_corpo_t() < 0.9f && juntosui_shot_corpo_alfa() > 0.3f);
   juntosui_shot_camada(0, 0); motionFrame(1400);
   gfx_definir_efeitos_minimos(0);
   const char *friends[] = {"Henrique", "Rafa", "Fabi", "Ana", "Pedro", "Maria", "João", "Luiza"};
   juntosui_shot_folha(0, friends, 8);
   for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
+    if (only) { char key[16]; snprintf(key, sizeof key, "%d-%s", scale ? 85 : 100, glass ? "glass" : "solid"); if (strcmp(only, key)) continue; }
     gfx_escala_txt_definir(scale ? .85f : 1); ajustes_definir_vidro(glass);
     for (int layer = 1; layer <= 7; layer++) {
       juntosui_shot_player(layer == 6);

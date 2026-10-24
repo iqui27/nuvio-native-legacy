@@ -2213,9 +2213,9 @@ static void ilha_desenharCorpo_(Uint32 agora) {
       aPil = soHora ? 0.0f : 1.0f - corpoT * 10.0f;
       if (aPil < 0.0f) aPil = 0.0f;
       aHora = soHora && conteudoA > k3 ? conteudoA : k3;
-      // O painel e muito maior que o modal: o conteudo so entra com a forma
-      // quase assentada, senao ele aparece cortado pela borda que ainda cresce.
-      aMod = (corpoT - 0.78f) / 0.20f; aMod = aMod < 0.0f ? 0.0f : aMod > 1.0f ? 1.0f : aMod;
+      // O corpo entra junto com a forma (a ilha o recorta enquanto cresce):
+      // fade curto a partir de 30%, sem esperar a mola assentar.
+      aMod = (corpoT - 0.30f) / 0.35f; aMod = aMod < 0.0f ? 0.0f : aMod > 1.0f ? 1.0f : aMod;
       if (anim_politica_reduzida || ajustes_animacoes_reduzidas())
         aMod = corpoT >= 0.5f ? 1.0f : 0.0f;
     }

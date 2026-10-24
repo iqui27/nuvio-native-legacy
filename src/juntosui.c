@@ -86,6 +86,7 @@ static void pedirCorpo(void);
 static float corpoAltura(float h) {
   return fminf(h, (NV_LAYOUT_REAL_H - NV_ILHA_Y - 24) / gfx_escala_ui() - NV_ILHA_H_ABERTA);
 }
+static float corpoAlfaAtual;
 #ifdef NV_SHOT_HOOKS
 static int shotPlayer, shotContagem;
 static char shotArte[512];
@@ -108,7 +109,7 @@ void juntosui_shot_bolhas(void) {
   poeBolha("nuvio:f", NULL, "Volta um pouco", 60000);
   poeBolha("nuvio:r", "aj_message-square", "a pipoca acabou", 60000);
 }
-void juntosui_shot_camada(int c, int f) { camada = (Camada)c; foco = f; linhaReacao = 0; }
+void juntosui_shot_camada(int c, int f) { camada = (Camada)c; foco = f; linhaReacao = 0; corpoAlfaAtual = 0; }
 float juntosui_shot_entrada(void) { return entrada; }
 float juntosui_shot_foco(int i) { return focoDe(i); }
 void juntosui_shot_arte(const char *caminho) { snprintf(shotArte, sizeof shotArte, "%s", caminho); }
@@ -847,7 +848,7 @@ static void desenharFontes(void) {
   n = m->sala.n < 5 ? m->sala.n : 5;
   (void)painelFontes;
   texto(TXT_ILHA_TITULO, i18n("Cada TV, sua fonte"), 500, 160, 245, a, corpoBase.w - 80);
-  texto(TXT_ILHA_META, i18n("Cada um assiste pela própria conta. Se a sua fonte for outra versão, o app avisa."), 500, 222, 180, a, corpoBase.w - 80);
+  texto(TXT_ILHA_CORPO, i18n("Cada um assiste pela própria conta. Se a sua fonte for outra versão, o app avisa."), 500, 218, 180, a, corpoBase.w - 80);
   gfx_cor((GfxRect){ 500, 278, corpoBase.w - 80, 1 }, 0, 1, 1, 1, 0.08f * a);
 
   if (!corpoDesenhando && m->sala.poster[0]) {
@@ -887,7 +888,7 @@ static void desenharFontes(void) {
     gfx_icone((GfxRect){ statusX, y + 1, 26, 26 }, icone, r, g, b, a);
     TxtLinha status = txt_linha_corta(TXT_ILHA_NOME, p->fonte[0] ? fonteTexto(p->fonte) : estadoTexto(p), r * 255, g * 255, b * 255, 255, statusW);
     txt_desenhar_alpha(status, statusX + 38, y, a);
-    txt_bloco_corta(TXT_ILHA_APOIO, impacto, 190, 190, 190, statusX + 38, y + 37, statusW, 24, a, 2);
+    txt_bloco_corta(TXT_ILHA_META, impacto, 190, 190, 190, statusX + 38, y + 37, statusW, 26, a, 2);
     if (fonteExp[i] > 0.01f) botao_pilula((GfxRect){ 580, y + 82, botao_largura(i18n("Trocar fonte"), "aj_monitor-cog", 0), BOTAO_H_SECUNDARIO }, i18n("Trocar fonte"), "aj_monitor-cog", focoDe(i + 1) * alvo, 0, 0, a * fonteExp[i]);
     y += h + 2;
   }
@@ -1103,6 +1104,7 @@ static int camadaCorpo(Camada c) {
   return c != CAMADA_NADA && c != CAMADA_SALA;
 }
 
+float juntosui_shot_corpo_alfa(void) { return corpoAlfaAtual; }
 static void desenharCorpo(GfxRect c, float a, void *u) {
   Camada visual = (Camada)(intptr_t)u;
   float opacidade = gfx_opacidade_grupo;
@@ -1112,6 +1114,7 @@ static void desenharCorpo(GfxRect c, float a, void *u) {
   origemY = c.y + (noPlayer() ? 0 : NV_ILHA_H_ABERTA) - corpoBase.y;
   gfx_transformar(0, 0, 1, origemX, origemY);
   gfx_opacidade_grupo *= a;
+  corpoAlfaAtual = a;
   corpoDesenhando = 1;
   switch (visual) {
     case CAMADA_FOLHA: desenharFolha(); break;
