@@ -3,6 +3,7 @@
 #include "tela21.h"
 #include "botoes.h"
 #include "teclavoltar.h"
+#include "movimento.h"
 #include "rewatch.h"
 #include "ctxmenu.h"
 #include "descoberta.h"
@@ -25,7 +26,7 @@ static int rwAberta, rwFoco, rwArmado, rwOrigem, rwAlvoT, rwAlvoE, rwPedido, rwF
 static char rwTocarId[64];
 static CtxLinha rwLinhas[3];
 static int rwN;
-static float rwEntrada, rwAnimFoco[3];
+static float rwEntrada, rwForma, rwFormaV, rwAnimFoco[3];
 static Uint32 rwQuadro;
 
 void rewatchui_abrir(const CatItem *ci, int de, int t, int e) {
@@ -34,7 +35,7 @@ void rewatchui_abrir(const CatItem *ci, int de, int t, int e) {
   rwFim = rewatch_ativa(rwItem.imdb);
   rwConflito = !rwFim && rwItem.progresso > 0 && rwItem.progresso < 90;
   rwAberta = 1; rwFoco = rwArmado = 0;
-  rwEntrada = 0; rwQuadro = SDL_GetTicks();
+  rwEntrada = rwForma = rwFormaV = 0; rwQuadro = SDL_GetTicks();
   memset(rwAnimFoco, 0, sizeof rwAnimFoco);
   rwN = 0;
   if (rwFim) rwLinhas[rwN++] = (CtxLinha){"Encerrar reassistida", "aj_x"};
@@ -109,6 +110,7 @@ void rewatchui_desenhar(void) {
   float dt = fminf((now - rwQuadro) / 1000.0f, .05f);
   rwQuadro = now;
   rwEntrada = anim_mola(rwEntrada, rwAberta ? 1 : 0, dt, NV_MOLA_TELA);
+  rwForma = mov_mola_assenta(&rwFormaV, rwForma, rwAberta ? 1 : 0, dt, MOV_MODAL_W, MOV_MODAL_Z);
   for (int i = 0; i < rwN; i++)
     rwAnimFoco[i] = anim_mola(rwAnimFoco[i], rwAberta && rwFoco == i, dt, NV_MOLA_FOCO);
   TXT_INI();
@@ -119,7 +121,7 @@ void rewatchui_desenhar(void) {
   float opacity = gfx_opacidade_grupo;
   gfx_opacidade_grupo *= rwEntrada;
   gfx_transformar(r.x + r.w / 2, r.y + r.h / 2,
-                   anim_mistura(T21_SHEET_SCALE, 1, rwEntrada), 0, 0);
+                   anim_mistura(T21_SHEET_SCALE, 1, rwForma), 0, 0);
   t21_ilha(r, T21_R_MODAL, 1);
   plrui_kicker(i18n("Reassistir do início"), r.x + 40, r.y + 32, 243, 242, 239, .55f);
   txt_desenhar(txt_linha(TXT_ILHA_TITULO, rwFim ? "Encerrar reassistida" : "Reassistir do início",

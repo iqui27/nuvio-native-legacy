@@ -796,7 +796,7 @@ int main(int argc, char **argv) {
       const int times[] = {0,80,160,320};
       for (int sequence = 0; sequence < 2; sequence++) {
         rwFoco = sequence ? 0 : 1;
-        if (sequence) { rwEntrada = 0; rwQuadro = fxTick; }
+        if (sequence) { rwEntrada = rwForma = rwFormaV = 0; rwQuadro = fxTick; }
         int elapsed = 0;
         for (int frame = 0; frame < 4; frame++) {
           while (elapsed < times[frame]) { quadros(1); elapsed += 16; }
