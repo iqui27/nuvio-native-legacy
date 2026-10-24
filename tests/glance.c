@@ -63,11 +63,27 @@ static int falhas;
 #define CHECA(c) do { if (!(c)) { fprintf(stderr, "  FALHOU: %s (linha %d)\n", #c, __LINE__); falhas++; } } while (0)
 
 static void movimento(const char *prefixo) {
-  const int times[] = {0, 80, 160, 320};
-  for (int sequence = 0; sequence < 2; sequence++) {
-    if (sequence) glance_abrir(&fonte, 2); else tecla(SDLK_DOWN);
+  const int times[] = {0, 50, 80, 100, 150, 160, 250, 320, 400};
+  const char *names[] = {"focus", "entry", "neighbor", "exit", "reverse"};
+  for (int sequence = 0; sequence < 5; sequence++) {
+    if (sequence == 1) {
+      glance_fechar();
+      for (int i = 0; i < 90; i++) glance_atualizar(1.0f / 60, SDL_GetTicks());
+      glance_abrir(&fonte, 2);
+    }
+    else if (sequence == 2) tecla(SDLK_RIGHT);
+    else if (sequence == 3) glance_fechar();
+    else if (sequence == 4) {
+      glance_abrir(&fonte, 2);
+      for (int i = 0; i < 60; i++) glance_atualizar(1.0f / 60, SDL_GetTicks());
+      glance_fechar();
+      for (int i = 0; i < 8; i++) glance_atualizar(.01f, SDL_GetTicks());
+      // Reverse the existing exit channel without rebuilding its content.
+      glance_abrir(&fonte, 2);
+    }
+    else tecla(SDLK_DOWN);
     Uint32 base = SDL_GetTicks(); int elapsed = 0;
-    for (int frame = 0; frame < 4; frame++) {
+    for (int frame = 0; frame < (int)(sizeof times / sizeof *times); frame++) {
       while (elapsed < times[frame]) { elapsed += 10; glance_atualizar(.01f, base + elapsed); }
       txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8);
       glClear(GL_COLOR_BUFFER_BIT); glance_desenhar(base + elapsed);
@@ -75,7 +91,7 @@ static void movimento(const char *prefixo) {
       SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
       assert(pixels && s); glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
       for (int y = 0; y < 1080; y++) memcpy((char *)s->pixels + y*s->pitch, pixels + (1079-y)*1920*4, 1920*4);
-      char path[1024]; snprintf(path, sizeof path, "%s-%s-%03d.png", prefixo, sequence ? "entry" : "focus", times[frame]);
+      char path[1024]; snprintf(path, sizeof path, "%s-%s-%03d.png", prefixo, names[sequence], times[frame]);
       assert(!IMG_SavePNG(s, path)); SDL_FreeSurface(s); free(pixels);
     }
   }
@@ -94,13 +110,18 @@ static void capturar(const char *png) {
   for (int y = 0; y < 1080; y++) memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
   assert(IMG_SavePNG(s, png) == 0);
   free(pix); SDL_FreeSurface(s);
-  if (getenv("NV_J1_SHOT")) movimento(png);
+  const char *scale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
+  if (getenv("NV_J1_SHOT") && strstr(png, "continuar.png") && !getenv("NV_J1_STILLS") && (!scale || !strcmp(scale, "1") || !strcmp(scale, ".85"))) movimento(png);
 }
 static void capturas(const char *prefixo) {
   char png[800];
   CatFileira fil = {0};
   dados_iniciar("deploy/app/art");
-  dados_gravar("ajustes.txt", "idioma 0\nbordaFocoCartaz 0\n");
+  char settings[180];
+  snprintf(settings, sizeof settings, "idioma 0\nbordaFocoCartaz 1\nselected_theme %d\nhomeLayoutLocal %d\n",
+           getenv("NUVIO_SHOT_ACCENT") ? atoi(getenv("NUVIO_SHOT_ACCENT")) : 0,
+           getenv("NUVIO_SHOT_LAYOUT") ? atoi(getenv("NUVIO_SHOT_LAYOUT")) : 0);
+  dados_gravar("ajustes.txt", settings);
   ajustes_dir(dados_dir());
   const char *scale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
   if (scale) gfx_escala_txt_definir(atof(scale));

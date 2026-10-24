@@ -25,7 +25,9 @@
 #include <string.h>
 
 static GlanceFonte fonte;
-static CatItem atual, tocar;
+static CatItem atual, tocar, anterior;
+static int indiceAnterior;
+static float troca = 1;
 static int aberta, indice, botao, trailerPedido, trailerFim, trailerQual;
 static Uint32 desde, prazo;
 static float focoAnim[4], entrada;
@@ -56,6 +58,9 @@ int glance_botao(void) { return botao; }
 static int selecionar(int i) {
   CatItem it;
   if (!fonte.total || !fonte.item || i < 0 || i >= fonte.total() || !fonte.item(i, &it)) return 0;
+  int settled = troca >= 1;
+  if (aberta && settled) { anterior = atual; indiceAnterior = indice; }
+  troca = aberta && settled && !ajustes_animacoes_reduzidas() ? 0 : 1;
   trailer_fechar();
   acaoPendente = 0; acaoEpisodios = -1;
   atual = it; indice = i; botao = GLANCE_BT_PRIMARIO;
@@ -67,10 +72,15 @@ static int selecionar(int i) {
 }
 void glance_abrir(const GlanceFonte *f, int i) {
   if (!f) return;
+  if (!aberta && entrada >= .005f && indice == i && fonte.item == f->item &&
+      fonte.total == f->total && revisao == cat_revisao()) {
+    aberta = 1; return;
+  }
   glance_fechar();
   fonte = *f;
   tocar.imdb[0] = 0;
-  entrada = 0; entradaEm = SDL_GetTicks();
+  if (entrada < .005f) entrada = 0;
+  entradaEm = SDL_GetTicks();
   aberta = selecionar(i);
   revisao = cat_revisao();
 }
@@ -155,6 +165,7 @@ void glance_atualizar(float dt, Uint32 agora) {
   int qual = 0, venceu;
   entrada = anim_mola(entrada, aberta ? 1 : 0, dt, NV_MOLA_TELA);
   if (!aberta) return;
+  troca = anim_rampa(troca, 1, dt, 320);
   if (acaoPendente && acaoEpisodios >= 0) {
     CatItem ci;
     if (agora - acaoDesde < 20000 && cat_copiar_item(acaoEpisodios, &ci) &&
@@ -172,7 +183,7 @@ void glance_atualizar(float dt, Uint32 agora) {
   if (cat_revisao() != revisao) { glance_fechar(); return; }
   for (int b = 0; b < 4; b++) focoAnim[b] = ajustes_animacoes_reduzidas()
     ? b == botao : anim_mola(focoAnim[b], b == botao, dt, NV_MOLA_FOCO);
-  if (player_mini_ativo() || player_retido()) return;
+  if (troca < .5f || player_mini_ativo() || player_retido()) return;
   if (!trailer_suportado() || trailerFim || !atual.imdb[0]) return;
   if (ctx_aberto()) return;
   if (!trailerPedido) {
@@ -285,7 +296,7 @@ static void glance_desenhar_(Uint32 agora) {
     texto(TXT_DET_META2, linha, x + 680, ANC(565), 255, 205);
   }
   plrui_cartao(vr, T21_R_CARD, 1);
-  if (trailer_aberto() && trailer_tocando() && trailer_mostra_video()) gfx_furo_raio(vr, 0.035f);
+  if (troca >= 1 && trailer_aberto() && trailer_tocando() && trailer_mostra_video()) gfx_furo_raio(vr, 0.035f);
   else {
     const char *arte = atual.backdrop[0] ? atual.backdrop : atual.poster;
     GLuint tex = tex_obter_larg(arte, vr.w);
@@ -312,6 +323,14 @@ void glance_desenhar(Uint32 agora) {
   float opacity = gfx_opacidade_grupo;
   gfx_opacidade_grupo *= entrada;
   gfx_transformar(0, 0, 1, 0, (1 - entrada) * NV_ENTRA_DY);
+  CatItem selected = atual;
+  int selectedIndex = indice;
+  if (troca < 1) {
+    atual = anterior; indice = indiceAnterior;
+    glance_desenhar_(agora);
+    atual = selected; indice = selectedIndex;
+    gfx_opacidade_grupo *= anim_suave(troca);
+  }
   glance_desenhar_(agora);
   gfx_sem_transformar();
   gfx_opacidade_grupo = opacity;
