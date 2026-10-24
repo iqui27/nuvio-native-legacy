@@ -16,6 +16,7 @@
 static GLuint fbo, fboTex;
 static void proof_reset(void) { entrada=tempo=rolagem=velocidade=0;sair=0;selecionado=0;memset(focoAnim,0,sizeof focoAnim); }
 static void proof_focus(void) { selecionado=1; }
+static void proof_close(void) { sair=1; }
 static void proof_step(float dt) { social_atualizar(dt,SDL_GetTicks()); }
 static void proof_draw(void) { social_desenhar(SDL_GetTicks()); }
 
@@ -111,8 +112,12 @@ int main(int argc, char **argv) {
     snprintf(a->titulo, sizeof a->titulo, "%s", TITULOS[i]);
     snprintf(a->detalhe, sizeof a->detalhe, "Filme · 2024 · Drama");
     snprintf(a->horario, sizeof a->horario, "2%d/09/2026 · 21:%02d", i, 10 + i);
+    snprintf(a->poster,sizeof a->poster,"deploy/app/art/poster/%02d.jpg",i);
+    tex_obter(a->poster);
   }
-  j4_proof("social",proof_reset,proof_focus,proof_step,proof_draw);
+  snprintf(dados.pessoa.socialAvatar,sizeof dados.pessoa.socialAvatar,"deploy/app/art/elenco/09_0.jpg");
+  tex_obter(dados.pessoa.socialAvatar);j4_art_ready();
+  j4_proof("social",proof_reset,proof_focus,proof_step,proof_draw,proof_close);
   selecionado = 1;
   snprintf(nome, sizeof nome, "%s-pronto.bmp", saida);
   captura(nome, w);

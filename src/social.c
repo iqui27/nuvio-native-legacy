@@ -14,6 +14,7 @@
 #define NV_TXT_TELA
 #include "tela21.h"
 #include "svdesenho.h"
+#include "revela.h"
 #include "teclavoltar.h"
 #include <pthread.h>
 #include <stdlib.h>
@@ -175,7 +176,7 @@ void social_atualizar(float dt,Uint32 agora){(void)agora;
   int red=ajustes_animacoes_reduzidas();
   tempo += dt; entrada = red ? !sair : anim_mola(entrada, !sair, dt, NV_MOLA_TELA);
   for(int i=0;i<20;i++) focoAnim[i]=red ? (i==selecionado&&!sair) : anim_mola(focoAnim[i],i==selecionado&&!sair,dt,NV_MOLA_FOCO);
-  rolagem=anim_mola2_reduzida(&velocidade,rolagem,fmaxf(0,selecionado-3)*154,dt,NV_MOLA2_SCROLL,red);pthread_mutex_lock(&trava);if(temPronto){SocialDados novo=pronto;if((novo.estado==SOCIAL_PRIVADO||novo.estado==SOCIAL_INDISPONIVEL||novo.estado==SOCIAL_DESCONECTADO)&&dados.n>0){novo.n=dados.n;memcpy(novo.atividades,dados.atividades,sizeof novo.atividades);novo.estado=SOCIAL_STALE;}dados=novo;temPronto=0;if(selecionado>=dados.n)selecionado=dados.n?dados.n-1:0;}pthread_mutex_unlock(&trava);}
+  rolagem=anim_mola2_reduzida(&velocidade,rolagem,fmaxf(0,selecionado-3)*156,dt,NV_MOLA2_SCROLL,red);pthread_mutex_lock(&trava);if(temPronto){SocialDados novo=pronto;if((novo.estado==SOCIAL_PRIVADO||novo.estado==SOCIAL_INDISPONIVEL||novo.estado==SOCIAL_DESCONECTADO)&&dados.n>0){novo.n=dados.n;memcpy(novo.atividades,dados.atividades,sizeof novo.atividades);novo.estado=SOCIAL_STALE;}dados=novo;temPronto=0;if(selecionado>=dados.n)selecionado=dados.n?dados.n-1:0;}pthread_mutex_unlock(&trava);}
 static void texto(TxtEstilo estilo,const char *s,float x,float y,float w,int cor){txt_desenhar(txt_linha_corta(estilo,s?s:"",cor,cor,cor,255,w),x,y);}
 static const char *estadoTexto(SocialEstado estado){switch(estado){case SOCIAL_CARREGANDO:return "Carregando atividade…";case SOCIAL_ATUALIZANDO:return "Atualizando · atividade anterior preservada";case SOCIAL_STALE:return "Atualização indisponível · mostrando atividade anterior";case SOCIAL_SEM_ATIVIDADE:return "Sem atividade pública por enquanto";case SOCIAL_PRIVADO:return "Atividade privada ou não compartilhada";case SOCIAL_DESCONECTADO:return "Trakt desconectado";case SOCIAL_INDISPONIVEL:return "Serviço indisponível";default:return "Atividade recente";}}
 // A RAIL FIXA EMPURRA A TELA (26/09). As duas colunas foram medidas para a
@@ -209,14 +210,14 @@ void social_desenhar(Uint32 agora) {
     gfx_recorte(rx-16,ANC(184),rw+32,ANC(970)-ANC(184));
     for(int i=0;i<dados.n;i++) {
       Atividade *at=&dados.atividades[i];
-      float e=ajustes_animacoes_reduzidas()?1:anim_atraso(tempo,i,28,320),y=ANC(196)+i*154-rolagem+(1-e)*22;
+      float e=ajustes_animacoes_reduzidas()?1:revela_entra(1,revela_onda_atraso(0,i),1+(Uint32)(tempo*1000)),y=ANC(196)+i*156-rolagem+(1-e)*NV_ENTRA_DY;
       if(y+144<ANC(184)||y>ANC(970))continue;
-      plrui_linha_foco((GfxRect){rx-16,y-12,rw+16,144},T21_R_ROW,focoAnim[i]*e);
-      svd_poster((GfxRect){rx,y,96,134},at->poster,8,e);
-      texto(TXT_ILHA_APOIO,at->pessoa,rx+116,y+4,cw,179);
-      texto(TXT_CALLOUT,at->acao,rx+116,y+36,cw,235);
-      texto(TXT_CAPTION,at->titulo,tx,y+4,tw,245);
-      texto(TXT_CAPTION,at->detalhe,tx,y+42,tw,179);
+      plrui_linha_foco((GfxRect){rx-16,y-12,rw+16,156},T21_R_ROW,focoAnim[i]*e);
+      svd_poster((GfxRect){rx,y+9,76,114},at->poster,8.0f/114.0f,e);
+      texto(TXT_ILHA_APOIO,at->pessoa,rx+100,y+9,cw,179);
+      texto(TXT_CALLOUT,at->acao,rx+100,y+45,cw,235);
+      texto(TXT_ILHA_NOME_L,at->titulo,tx,y+4,tw,245);
+      texto(TXT_ILHA_SUB_L,at->detalhe,tx,y+42,tw,179);
       texto(TXT_ILHA_APOIO,at->horario,tx,y+82,tw,179);
     }
     gfx_sem_recorte();
