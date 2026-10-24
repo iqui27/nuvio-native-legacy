@@ -431,10 +431,11 @@ int main(int argc, char **argv) {
   }
 
   // Same production row owners at both scales/materials.
-  for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
-    gfx_escala_txt_definir(scale ? .85f : 1); ajustes_definir_vidro(glass);
+  const float scales[] = {1, .85f, .9f, 1.1f, 1.2f, 1.3f};
+  for (int scale = 0; scale < 6; scale++) for (int glass = 0; glass < 2; glass++) {
+    gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
     assert(focarFileira("pop_movie"));
-    snprintf(bmp, sizeof bmp, "%s-%s-%s.bmp", saida, scale ? "85" : "100", glass ? "glass" : "solid");
+    snprintf(bmp, sizeof bmp, "%s-%d-%s.bmp", saida, (int)(scales[scale] * 100 + .5f), glass ? "glass" : "solid");
     quadros(45, bmp);
   }
   gfx_escala_txt_definir(1); ajustes_definir_vidro(1);

@@ -29,7 +29,7 @@ if ! cc "${sources[@]}" tests/home21_shot.c -Isrc -o "$NUVIO_DADOS/shot" \
   exit 1
 fi
 grep -E "home21_shot" "$NUVIO_DADOS/build.log" || true
-"$NUVIO_DADOS/shot" "$saida/home21"
+sandbox-exec -p '(version 1) (allow default) (deny network*)' "$NUVIO_DADOS/shot" "$saida/home21"
 for f in "$saida"/home21-*.bmp; do
   [ -e "$f" ] || continue
   sips -s format png "$f" --out "${f%.bmp}.png" >/dev/null 2>&1 && rm -f "$f"
