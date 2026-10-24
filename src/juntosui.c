@@ -736,7 +736,7 @@ static float lugarX(int i) {
   return 960.0f + (i - 2) * passo - LUGAR_W / 2;
 }
 static float lugarY(int i) {
-  return 530.0f + fminf(0, NV_VTELA_H - 1080) * .5f + (i - 2) * (i - 2) * 8.0f;
+  return 530.0f + fminf(0, NV_VTELA_H - 1080) * .5f - (NV_VTELA_W < 1600 ? 32 : 0) + (i - 2) * (i - 2) * 8.0f;
 }
 
 static void desenharLugar(int i, const JsMembro *p, int vazio, float f, float a) {
@@ -783,11 +783,12 @@ static int todosProntos(const JsMotor *m) {
 
 static void cabecalhoSala(float a) {
   char c[96];
-  gfx_icone((GfxRect){ 80, 54, 36, 36 }, "aj_users", 0.92f, 0.92f, 0.9f, a);
-  txt_tracking(TXT_V2_KICK, i18n("Assistir Juntos"), 245, 245, 245, 136, 60, a, 2.5f);
+  float esquerda = -origemX + 80, direita = NV_VTELA_W - origemX - 80;
+  gfx_icone((GfxRect){ esquerda, 54 - fminf(0, origemY), 36, 36 }, "aj_users", 0.92f, 0.92f, 0.9f, a);
+  txt_tracking(TXT_V2_KICK, i18n("Assistir Juntos"), 245, 245, 245, esquerda + 56, 60 - fminf(0, origemY), a, 2.5f);
   snprintf(c, sizeof c, "%s", i18n("Velvet Cinema · Sala privada"));
-  gfx_cor((GfxRect){ 1840 - largura(TXT_ILHA_NOME, c) - 24, 68, 8, 8 }, 0.5f, 0.85f, 0.85f, 0.85f, a);
-  texto(TXT_ILHA_NOME, c, 1840 - largura(TXT_ILHA_NOME, c), 54, 225, a, 0);
+  gfx_cor((GfxRect){ direita - largura(TXT_ILHA_NOME, c) - 24, 68 - fminf(0, origemY), 8, 8 }, 0.5f, 0.85f, 0.85f, 0.85f, a);
+  texto(TXT_ILHA_NOME, c, direita - largura(TXT_ILHA_NOME, c), 54 - fminf(0, origemY), 225, a, 0);
 }
 
 // Remote members expose a verdict, not their private stream metadata.
@@ -899,6 +900,9 @@ static void desenharSala(void) {
   float baixo = fminf(0, NV_VTELA_H - 1080) * .5f;
   float esquerda = -origemX + 80, direita = NV_VTELA_W - origemX - 80;
   GfxRect tela = { 360, 144, 1200, 456 };
+  int compacto = NV_VTELA_W < 1600;
+  float textoX = fmaxf(160, esquerda), total = 0;
+  float textoY = tela.y - (compacto ? 44 : 0);
   float a = 1;
   int i, b[BT_N], n = botoesSala(b), nm, vazio;
   char linha[200];
@@ -909,11 +913,12 @@ static void desenharSala(void) {
   cabecalhoSala(a);
   telaCinema(tela, 0.7f, a);
   snprintf(linha, sizeof linha, i18n("Sua sessão privada · %d de %d lugares"), nm, 5);
-  texto(TXT_CAPTION, linha, 160, tela.y + 56, 235, a, tela.w - 96);
-  txt_bloco_corta(TXT_ILHA_TITULO, i18n("Os melhores lugares são juntos"), 250, 250, 250, 160, tela.y + 92, 460, 52, a, 2);
-  texto(TXT_ILHA_NOME, m->temSala && m->sala.titulo[0] ? m->sala.titulo : juntos_titulo(), 160, tela.y + 214, 235, a, 900);
+  texto(TXT_CAPTION, linha, textoX, textoY + 56, 235, a, tela.w - 96);
+  txt_bloco_corta(TXT_ILHA_TITULO, i18n("Os melhores lugares são juntos"), 250, 250, 250, textoX, textoY + 92, 460, 52, a, 2);
+  texto(TXT_ILHA_NOME, m->temSala && m->sala.titulo[0] ? m->sala.titulo : juntos_titulo(), textoX, textoY + 214, 235, a, 900);
   if (mostrarQr) {
-    GfxRect q = { tela.x + tela.w - 48 - 220, tela.y + 56, 220, 220 };
+    float lado = compacto ? 160 : 220;
+    GfxRect q = { fminf(tela.x + tela.w - 48, direita) - lado, textoY + 56, lado, lado };
     GLuint t = qrTextura(juntos_url_celular());
     gfx_cor((GfxRect){ q.x - 12, q.y - 12, q.w + 24, q.h + 24 }, 0.06f, 1, 1, 1, a);
     if (t) gfx_rect(q, t, GFX_SNAP, 0, 0, 0, 0, 1, 1, 1, a);
@@ -932,10 +937,23 @@ static void desenharSala(void) {
     const char *s = mostrarQr ? i18n("Escaneie com o celular para mandar mensagens e controlar a sessão.")
         : pr ? i18n("Todos prontos. O filme está preparado em cada TV.") : i18n("Esperando os outros ficarem prontos");
     float w = largura(TXT_ILHA_NOME, s) + (pr ? 48 : 0), x = 960 - w / 2;
-    if (pr) gfx_icone((GfxRect){ x, 806 + baixo, 36, 36 }, "aj_circle-check", 0.55f, 0.92f, 0.65f, a);
-    texto(TXT_ILHA_NOME, s, x + (pr ? 48 : 0), 806 + baixo, 235, a, NV_VTELA_W - 160);
+    float y = 806 + baixo - (compacto ? 32 : 0);
+    if (pr) gfx_icone((GfxRect){ x, y, 36, 36 }, "aj_circle-check", 0.55f, 0.92f, 0.65f, a);
+    texto(TXT_ILHA_NOME, s, x + (pr ? 48 : 0), y, 235, a, NV_VTELA_W - 160);
   }
-  {
+  for (i = 0; i < n; i++) total += botao_largura(rotuloBotao(b[i]), iconeBotao(b[i]), b[i] == BT_COMECAR) + (i ? BOTAO_GAP : 0);
+  if (total > direita - esquerda) {
+    float x = esquerda, y = 905 + baixo - BOTAO_H_PRIMARIO - BOTAO_GAP;
+    for (i = 0; i < n; i++) {
+      int prim = b[i] == BT_COMECAR;
+      float w = botao_largura(rotuloBotao(b[i]), iconeBotao(b[i]), prim);
+      float h = prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
+      if (x + w > direita) { x = esquerda; y += BOTAO_H_PRIMARIO + BOTAO_GAP; }
+      botao_pilula((GfxRect){ x, y + (BOTAO_H_PRIMARIO - h) / 2, w, h }, rotuloBotao(b[i]), iconeBotao(b[i]),
+                   focoDe(i), prim, 0, a * entradaItem(i));
+      x += w + BOTAO_GAP;
+    }
+  } else {
     float xe = esquerda, xd = direita;
     for (i = 0; i < n; i++) {
       int prim = b[i] == BT_COMECAR, esq = b[i] <= BT_FONTES;

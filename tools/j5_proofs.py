@@ -3,12 +3,15 @@
 import json
 import os
 import subprocess
+import hashlib
 from pathlib import Path
 
 BASE = Path('/Volumes/ExternalSSD/tmp/rev/diretor21/21-j5')
-OUT = BASE / 'r2'
-os.environ['MAGICK_TEMPORARY_PATH'] = '/tmp'
+OUT = BASE / 'r3'
+os.environ['MAGICK_TEMPORARY_PATH'] = os.environ.get('TMPDIR', '/Volumes/ExternalSSD/tmp')
 TIMES = (0, 80, 160, 320)
+CLOCK_TIMES = (0, 50, 100, 150, 250, 400)
+sources = []
 
 
 def magick(*args):
@@ -16,18 +19,37 @@ def magick(*args):
 
 
 def native(path):
-    if path.exists():
-        return path
     bmp = path.with_suffix('.bmp')
-    if bmp.exists():
+    if bmp.exists() and (not path.exists() or bmp.stat().st_mtime_ns > path.stat().st_mtime_ns):
         magick(bmp, path)
     if not path.exists():
         raise FileNotFoundError(path)
+    if not path.resolve().is_relative_to(OUT.resolve()):
+        raise ValueError(f'Native frame outside fresh capture directory: {path}')
+    sources.append({'path': str(path), 'mtime_ns': path.stat().st_mtime_ns,
+                    'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
     return path
 
 
 def strip(paths, target):
     magick(*map(native, paths), '+append', target)
+
+
+def clock_strip(paths, target):
+    # Same six-frame, 3x2 composition as the official native sheet reference.
+    rows = []
+    for start in (0, 3):
+        row = target.with_name(target.stem + f'-row{start}.png')
+        args = []
+        for t, path in zip(CLOCK_TIMES[start:start + 3], paths[start:start + 3]):
+            args += ['(', native(path), '-resize', '640x360', '-background', '#121316',
+                     '-fill', 'white', '-font', 'Helvetica', '-pointsize', '18',
+                     '-gravity', 'southwest', '-splice', '0x28', '-annotate', '+12+4', f'{t} ms', ')']
+        magick(*args, '+append', row)
+        rows.append(row)
+    magick(*rows, '-append', target)
+    for row in rows:
+        row.unlink()
 
 
 pngs = []
@@ -51,10 +73,7 @@ for screen, directory, prefix, still in (
             if scale == 100 and material == 'glass':
                 magick(target, OUT / f'{screen}-tri.png')
     for mode in ('entry', 'focus'):
-        if screen == 'together':
-            paths = [frames / f'layer-7-100-glass-{mode}-{t:03}.png' for t in TIMES]
-        else:
-            paths = [frames / f'{prefix}-{mode}-{t:03}.png' for t in TIMES]
+        paths = [frames / f'{prefix + "-" if prefix else ""}{mode}-{t:03}.png' for t in TIMES]
         strip(paths, OUT / f'{screen}-{mode}-anim.png')
     target = OUT / f'{screen}-anim.png'
     magick(OUT / f'{screen}-entry-anim.png', OUT / f'{screen}-focus-anim.png', '-append', target)
@@ -66,12 +85,21 @@ for layer in range(1, 8):
             rows = []
             for mode in ('entry', 'focus', 'exit', 'reverse'):
                 target = OUT / f'together-layer-{layer}-{scale}-{material}-{mode}-anim.png'
-                strip([OUT / 'together' / f'layer-{layer}-{scale}-{material}-{mode}-{t:03}.png' for t in TIMES], target)
+                clock_strip([OUT / 'together' / f'layer-{layer}-{scale}-{material}-{mode}-{t:03}.png' for t in CLOCK_TIMES], target)
                 rows.append(target)
             target = OUT / f'together-layer-{layer}-{scale}-{material}-anim.png'
             magick(*rows, '-append', target)
             pngs.append(str(target))
 
+            if layer != 3:
+                for mode in ('entry', 'focus', 'exit'):
+                    target = OUT / f'together-clock-{layer}-{scale}-{material}-{mode}-compare.png'
+                    magick('/Volumes/ExternalSSD/tmp/rev/linguagem/ref/sheet-open-strip.png',
+                           OUT / f'together-layer-{layer}-{scale}-{material}-{mode}-anim.png', '+append', target)
+                    pngs.append(str(target))
+
 (OUT / 'proofs.json').write_text(json.dumps({'pngs': pngs, 'times_ms': TIMES,
-    'reference_limit': 'Retained round-one mock/reference columns; Juntos has no approved mock.'}, indent=2) + '\n')
+    'clock_times_ms': CLOCK_TIMES, 'native_sources': sources,
+    'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+    'reference_limit': 'Retained mock/reference columns only; every app column is recaptured. Juntos has no approved mock.'}, indent=2) + '\n')
 print(f'{len(pngs)} proof images assembled from native frames')

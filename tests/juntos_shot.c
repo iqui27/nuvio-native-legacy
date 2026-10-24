@@ -94,7 +94,9 @@ static void motionFrame(int ms) {
     txt_novo_quadro(); tex_novo_quadro(); gfx_novo_quadro();
     juntosui_atualizar(motionNow);
     glClear(GL_COLOR_BUFFER_BIT);
+    if (fundoTex) gfx_rect((GfxRect){ 0, 0, 1920, 1080 }, fundoTex, GFX_SNAP, 0, 0, 0, 0, 1, 1, 1, 1);
     ilha_relogio_visivel(1);
+    ilha_ancorar((1920 - 64) / gfx_escala_ui(), 36 / gfx_escala_ui(), 1);
     ilha_desenhar(motionNow);
     plrilha_desenhar(motionNow);
     juntosui_desenhar(motionNow);
@@ -306,6 +308,7 @@ fontes:
   juntosui_atualizar(now + 1380); juntosui_atualizar(now + 1430); juntosui_atualizar(now + 1480); juntosui_atualizar(now + 1530);
   assert(juntosui_shot_entrada() == 0);
   motionNow = now + 1600;
+  const int clockTimes[] = {0, 50, 100, 150, 250, 400};
   const char *friends[] = {"Henrique", "Rafa", "Fabi", "Ana", "Pedro", "Maria", "João", "Luiza"};
   juntosui_shot_folha(0, friends, 8);
   for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
@@ -318,11 +321,12 @@ fontes:
         if (mode == 0 || mode == 3) juntosui_shot_camada(layer, 0);
         if (mode == 1) { motionFrame(1400); juntosui_shot_camada(layer, 1); }
         if (mode == 2) { motionFrame(500); juntosui_shot_camada(0, 0); }
-        for (int i = 0; i < 4; i++) {
-          motionFrame(i ? times[i] - times[i - 1] : 0);
+        for (int i = 0; i < 6; i++) {
+          // t=0 keeps the preceding rendered frame; input has no elapsed update.
+          if (i) motionFrame(clockTimes[i] - clockTimes[i - 1]);
           char name[120];
           snprintf(name, sizeof name, "layer-%d-%s-%s-%s-%03d", layer, scale ? "85" : "100",
-            glass ? "glass" : "solid", (const char *[]){"entry", "focus", "exit", "reverse"}[mode], times[i]);
+            glass ? "glass" : "solid", (const char *[]){"entry", "focus", "exit", "reverse"}[mode], clockTimes[i]);
           captura(name, 1080);
         }
       }
