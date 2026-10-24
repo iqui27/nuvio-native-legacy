@@ -444,9 +444,8 @@ int jf_ler_bibliotecas(const char *corpo, size_t nCorpo, JfBiblioteca *out, int 
         txtRaiz(p, f, "Id", id, sizeof id);
         txtRaiz(p, f, "Name", nome, sizeof nome);
         txtRaiz(p, f, "CollectionType", col, sizeof col);
-        // Mixed libraries have no CollectionType; catalog servers use boxsets/mixed.
-        if (jfid_hex_limpo(id, limpo, 32) && (!strcmp(col, "movies") || !strcmp(col, "tvshows") ||
-                                              !strcmp(col, "boxsets") || !strcmp(col, "mixed") || !col[0])) {
+        // AIOStreams/AIOMetadata tag every catalog movies or tvshows (#468).
+        if (jfid_hex_limpo(id, limpo, 32) && (!strcmp(col, "movies") || !strcmp(col, "tvshows"))) {
           copiar(out[n].id, sizeof out[n].id, limpo);
           copiar(out[n].nome, sizeof out[n].nome, nome);
           copiar(out[n].tipo, sizeof out[n].tipo, strcmp(col, "tvshows") ? "movie" : "series");
@@ -1562,11 +1561,13 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   RedeJob *j = abrirTarefa(I, t, &c);
   JfBiblioteca libs[JF_FIL_MAX];
   CatItem *itens;
-  CatFileira fils[JF_FIL_MAX];
+  CatFileira *fils;
   int nl, nf = 0, ni = 0, e = JF_OK, i, por;
   if (!j) return;
+  // Heap, not the control-thread stack: one CatFileira is ~2.5 KB.
   itens = calloc((size_t)JF_ITENS_MAX, sizeof *itens);
-  if (!itens) { fecharTarefa(I, j); return; }
+  fils = calloc((size_t)JF_FIL_MAX, sizeof *fils);
+  if (!itens || !fils) { free(itens); free(fils); fecharTarefa(I, j); return; }
   nl = jf_bibliotecas(&c, j, libs, JF_FIL_MAX);
   if (nl < 0) e = nl;
   por = jf_por_fileira(nl);
@@ -1594,6 +1595,7 @@ static void tarefaBibliotecas(JfInst *I, const Tarefa *t) {
   }
   pthread_mutex_unlock(&I->trava);
   free(itens);
+  free(fils);
   apagarSegredo(&c, sizeof c);
   fecharTarefa(I, j);
 }

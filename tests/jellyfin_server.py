@@ -17,9 +17,13 @@ USER_ID = "aa11bb22cc33dd44ee55ff6677889900"
 LIB_MOVIES = "1111aaaa2222bbbb3333cccc4444dddd"
 LIB_SHOWS = "5555eeee6666ffff7777aaaa8888bbbb"
 LIB_MUSIC = "9999cccc0000dddd1111eeee2222ffff"
-# AIOMetadata-style server: one view per catalog, mixed collection types (#468).
+# AIOMetadata-style server: one movies/tvshows view per catalog (#468).
+# The other collection types are present so the client can prove it skips them.
 CATALOG_VIEWS = [{"Name": "Catalog %d" % i, "Id": "%032x" % (0xca7a1000 + i),
-                  "CollectionType": ["movies", "tvshows", "boxsets", ""][i % 4]} for i in range(9)] + [
+                  "CollectionType": "movies" if i % 2 == 0 else "tvshows"} for i in range(24)] + [
+    {"Name": "Boxsets", "Id": "%032x" % 0xca7a1ffd, "CollectionType": "boxsets"},
+    {"Name": "Mixed", "Id": "%032x" % 0xca7a1ffe, "CollectionType": "mixed"},
+    {"Name": "Untyped", "Id": "%032x" % 0xca7a1ffc, "CollectionType": ""},
     {"Name": "Playlists", "Id": "%032x" % 0xca7a1fff, "CollectionType": "playlists"}]
 SERIES = "abcdef0123456789abcdef0123456789"
 PASSWORD = "pässwörd \"quoted\""

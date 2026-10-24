@@ -195,9 +195,11 @@ void jellyfin_recarregar_bibliotecas(void);
 
 // Home rows. Copies the current snapshot without network; rows have empty
 // `base` (fixed rows: they do not consume the addon row limit).
-// Libraries per server (AIOMetadata exposes one per catalog, #468). The item
-// budget stays 6 full rows: more libraries just get fewer items each.
-#define JF_FIL_MAX 16
+// Libraries per server (AIOMetadata: one movies/tvshows view per catalog, #468).
+// shortcut: 32 views, raise when a server reports more (CatFileira is ~2.5 KB
+// and the control thread stack is 256 KB on the single-thread build).
+// The item budget stays 6 full rows: more libraries just get fewer items each.
+#define JF_FIL_MAX 32
 #define JF_POR_FILEIRA 24
 #define JF_ITENS_MAX (6 * JF_POR_FILEIRA)
 unsigned jellyfin_fileiras_versao(void);

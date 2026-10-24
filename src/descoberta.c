@@ -5400,8 +5400,8 @@ static void *montar(void *u) {
   if (ajustes_jellyfin_ligado() && servidores_conectado()) {
     int cabe = SRV_ITENS_MAX, jn = 0, jnf, k, pos = 0;
     CatItem *jfItens = malloc(sizeof(CatItem) * (size_t)cabe);
-    CatFileira jfFils[SRV_FIL_MAX];
-    jnf = jfItens ? servidores_fileiras_copiar(jfItens, cabe, jfFils, SRV_FIL_MAX, &jn) : 0;
+    CatFileira *jfFils = malloc(sizeof(CatFileira) * (size_t)SRV_FIL_MAX);
+    jnf = jfItens && jfFils ? servidores_fileiras_copiar(jfItens, cabe, jfFils, SRV_FIL_MAX, &jn) : 0;
     for (k = 0; k < nFilsLote; k++)
       if (servidores_chave_fileira(filsLote[k].chave)) { jnf = 0; break; }
     // Over the row cap: keep the first rows that fit instead of dropping all.
@@ -5423,6 +5423,7 @@ static void *montar(void *u) {
       }
     }
     free(jfItens);
+    free(jfFils);
   }
 #undef GARANTE
 
