@@ -1,6 +1,7 @@
 """Assemble native J3 captures beside approved mocks and the 2.0.8 ruler."""
 from pathlib import Path
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 
 root = Path('/Volumes/ExternalSSD/tmp/rev/diretor21/21-j3')
 reference = Path('/Volumes/ExternalSSD/tmp/rev/diretor21/antes/208-player/fontes-solido.png')
@@ -19,14 +20,17 @@ def proof(folder, screen, mock, app_prefix='', app_suffix=''):
             assert app.exists(), app
             # Keep full 1080p panels: no resampling hides physical size differences.
             magick(mock, reference, app, '+append', target)
-    frames = []
-    for kind in ('entry', 'focus'):
-        row = root / f'{app_prefix}{screen}-{kind}-strip.png'
-        sources = [folder / f'{app_prefix}{screen}-{kind}-{ms:03d}.png' for ms in (0, 80, 160, 320)]
-        assert all(p.exists() for p in sources), sources
-        magick(*sources, '-resize', '480x270', '+append', row)
-        frames.append(row)
-    magick(*frames, '-append', root / f'{app_prefix}{screen}-anim.png')
+            for native, times, size in ((False, (0, 80, 160, 320), '480x270'),
+                                        (True, (0, 50, 100, 150, 250, 400), '320x180')):
+                args = []
+                for kind in ('entry', 'focus', 'back'):
+                    sources = [folder / f'{app_prefix}{screen}-{scale}-{material}-{kind}-{ms:03d}.png'
+                               for ms in times]
+                    assert all(p.exists() for p in sources), sources
+                    args += ['(', *sources, '-resize', size, '+append', ')']
+                suffix = '-native' if native else ''
+                magick(*args, '-append', root / f'{app_prefix}{screen}-{scale}-{material}{suffix}-anim.png')
+    magick(root / f'{app_prefix}{screen}-100-glass-anim.png', root / f'{app_prefix}{screen}-anim.png')
     # Canonical triptych is 100%, glass; all four variants remain alongside it.
     magick(root / f'{app_prefix}{screen}-100-glass-tri.png', root / f'{app_prefix}{screen}-tri.png')
 
@@ -36,8 +40,11 @@ addon = ('novo-addon-torrent', 'novo-addon-catalogo', 'novo-addon-debrid', 'esco
          'conectar-debrid', 'nao-tocou-p2p', 'nao-tocou-debrid', 'nao-tocou-offline',
          'nao-tocou-acesso-401', 'nao-tocou-acesso-403', 'nao-tocou-hdr',
          'nao-tocou-sem-fontes', 'p2p-iniciando', 'meus-addons')
-for screen in aio:
-    proof(root / 'aio', screen, aio_mock / f'aio-{screen}.png', 'aio-')
-for screen in addon:
-    proof(root / 'addon-guide', screen, addon_mock / f'{screen}.png', app_suffix='-app')
-print('27 routes: 108 scale/material triptychs, 27 entry/focus strips; native source frames retained')
+with ThreadPoolExecutor(max_workers=4) as pool:
+    jobs = [pool.submit(proof, root / 'aio', screen, aio_mock / f'aio-{screen}.png', 'aio-')
+            for screen in aio]
+    jobs += [pool.submit(proof, root / 'addon-guide', screen, addon_mock / f'{screen}.png', '', '-app')
+             for screen in addon]
+    for job in jobs:
+        job.result()
+print('27 routes: 108 scale/material triptychs and motion strips; native source frames retained')

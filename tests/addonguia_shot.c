@@ -22,7 +22,7 @@ static void save(const char *dir,const char *name) {
   for(int y=0;y<1080;y++)memcpy((char*)s->pixels+y*s->pitch,pixels+(1079-y)*1920*4,1920*4);
   char path[1024];snprintf(path,sizeof path,"%s/%s.png",dir,name);assert(!IMG_SavePNG(s,path));SDL_FreeSurface(s);
 }
-static void settle(void) { for(int i=0;i<80;i++)addonguia_shot_passo(.01f); }
+static void settle(void) { for(int i=0;i<100;i++){addonguia_shot_passo(.01f);addonguia_desenhar();} }
 static void tecla(SDL_Keycode k) {
   SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;addonguia_evento(&e);
 }
@@ -74,8 +74,8 @@ int main(int argc,char **argv) {
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,backdrop->w,backdrop->h,0,GL_RGBA,GL_UNSIGNED_BYTE,backdrop->pixels);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
   SDL_FreeSurface(backdrop);
-  const int scales[]={100,85};
-  for(int scale=0;scale<2;scale++)for(int glass=0;glass<2;glass++)for(int i=0;i<14;i++) {
+  const int scales[]={100,85,90,110,120,130};
+  for(int scale=0;scale<6;scale++)for(int glass=0;glass<2;glass++)for(int i=0;i<14;i++) {
     gfx_escala_txt_definir(scales[scale]/100.f);ajustes_definir_vidro(glass);
     addonmodo_resposta(id,200,1,0,2);
     addonmodo_resposta(addonmodo_id(addons_base(2)),200,1,2,0);
@@ -84,15 +84,15 @@ int main(int argc,char **argv) {
     if(shots[i].tela==AG_NOVO_DIRETO)addonmodo_resposta(id,200,1,2,0);
     addonguia_shot(shots[i].tela);
     if(shots[i].tela==AG_NOVO_CATALOGO)addonguia_abrir(AG_NOVO_CATALOGO,1,NULL);
-    for(int f=0;f<=40;f++) {
-      if(f)addonguia_shot_passo(.02f);
+    for(int f=0;f<=80;f++) {
+      if(f)addonguia_shot_passo(.01f);
       SDL_PumpEvents();txt_novo_quadro();tex_novo_quadro();tex_bombear(12);gfx_novo_quadro();
       glClearColor(0.05f,0.05f,0.05f,1);glClear(GL_COLOR_BUFFER_BIT);
       gfx_textura((GfxRect){0,0,1920,1080},bg);
       gfx_veu_css((GfxRect){0,0,1920,1080},0,1,1,0.5f);
       addonguia_desenhar();SDL_Delay(6);
-      if(scale==0 && glass && (f==0||f==4||f==8||f==16)) {
-        char name[160];snprintf(name,sizeof name,"%s-entry-%03d",shots[i].nome,f*20);save(argv[1],name);
+      if(scale<2 && (f==0||f==5||f==8||f==10||f==15||f==16||f==25||f==32||f==40)) {
+        char name[160];snprintf(name,sizeof name,"%s-%d-%s-entry-%03d",shots[i].nome,scales[scale],glass?"glass":"solid",f*10);save(argv[1],name);
       }
     }
     assert(bg);
@@ -102,18 +102,31 @@ int main(int argc,char **argv) {
     char path[1024];snprintf(path,sizeof path,"%s/%s-%d-%s-app.png",argv[1],shots[i].nome,scales[scale],glass?"glass":"solid");
     int erro=IMG_SavePNG(s,path);assert(!erro&&"savepng");
     SDL_FreeSurface(s);free(pixels);printf("PNG %s\n",path);
-    if(scale==0 && glass) {
+    if(scale<2) {
       tecla(SDLK_RIGHT);
-      for(int f=0;f<=32;f++) {
+      for(int f=0;f<=40;f++) {
         if(f)addonguia_shot_passo(.01f);
         txt_novo_quadro();gfx_novo_quadro();glClear(GL_COLOR_BUFFER_BIT);
         gfx_textura((GfxRect){0,0,1920,1080},bg);addonguia_desenhar();
-        if(f==0||f==8||f==16||f==32) {
-          char name[160];snprintf(name,sizeof name,"%s-focus-%03d",shots[i].nome,f*10);save(argv[1],name);
+        if(f==0||f==5||f==8||f==10||f==15||f==16||f==25||f==32||f==40) {
+          char name[160];snprintf(name,sizeof name,"%s-%d-%s-focus-%03d",shots[i].nome,scales[scale],glass?"glass":"solid",f*10);save(argv[1],name);
+        }
+      }
+      tecla(SDLK_ESCAPE);
+      for(int f=0;f<=40;f++) {
+        if(f)addonguia_shot_passo(.01f);
+        txt_novo_quadro();gfx_novo_quadro();glClear(GL_COLOR_BUFFER_BIT);
+        gfx_textura((GfxRect){0,0,1920,1080},bg);addonguia_desenhar();
+        if(f==0||f==5||f==8||f==10||f==15||f==16||f==25||f==32||f==40) {
+          char name[160];snprintf(name,sizeof name,"%s-%d-%s-back-%03d",shots[i].nome,scales[scale],glass?"glass":"solid",f*10);save(argv[1],name);
         }
       }
     }
   }
+  addonguia_shot(AG_P2P); addonguia_shot_passo(.05f); tecla(SDLK_ESCAPE);
+  addonguia_shot_passo(.02f); assert(addonguia_aberto());
+  tecla(SDLK_ESCAPE); settle(); assert(addonguia_aberto());
+  addonguia_fechar();
   gfx_escala_txt_definir(1);ajustes_definir_vidro(1);
   const int times[]={0,80,160,320};
   for(int kind=0;kind<3;kind++) {

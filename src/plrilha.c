@@ -6,6 +6,7 @@
 #include "central.h"
 #include "horafmt.h"
 #include "plrilha.h"
+#include "tela21.h"
 #include "plrui.h"
 #include "ajustes.h"
 #include "anim.h"
@@ -96,6 +97,7 @@ static char cenT[200], cenD[80], cenI[32], cenUT[200], cenUD[80], cenUI[32];
 static int temCen;
 static float cenA, cenCorpoA, cenW, cenH, cenVW, cenVH;
 static Uint32 cenQuadro;
+int plrilha_centro_visivel(void) { return cenA >= .01f || temCen; }
 // Quanto a pilula da HORA segura depois que um corpo com `voltaRelogio` acaba,
 // antes de encolher e sair (o corpo vira o relogio e ai some).
 #define HORA_SEGURA_MS 800u
@@ -290,6 +292,11 @@ static void cartaoCentro(Uint32 agora) {
     float w = cenW < 8.0f ? 8.0f : cenW, h = cenH < 8.0f ? 8.0f : cenH;
     GfxRect R = { (NV_TELA_W - w) * 0.5f, (NV_TELA_H - h) * 0.5f, w, h };
     GfxRect F = { (NV_TELA_W - c->w) * 0.5f, (NV_TELA_H - c->h) * 0.5f, c->w, c->h };
+    if (c->destino.w > 0) {
+      F = c->destino;
+      R.x = F.x + (F.w - w) * .5f;
+      R.y = F.y + (F.h - h) * .5f;
+    }
 #ifdef NV_SHOT_HOOKS
     shotCentro = R;
 #endif
@@ -299,7 +306,8 @@ static void cartaoCentro(Uint32 agora) {
     float raio = RAIO_CORPO * cresce + h * 0.5f * (1.0f - cresce);
     if (raio > h * 0.5f) raio = h * 0.5f;
     if (raio > w * 0.5f) raio = w * 0.5f;
-    if (c->video) plrui_material_video(R, raio, cenA);
+    if (c->semContorno) t21_ilha(R, raio, cenA);
+    else if (c->video) plrui_material_video(R, raio, cenA);
     else plrui_material_s(R, raio, c->modal, cenA, c->semSombra);
     gfx_recorte(R.x, R.y, R.w, R.h);
     // O corpo fica no tamanho final e o recorte da forma o corta (centrado, ou

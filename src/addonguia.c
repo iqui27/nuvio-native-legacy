@@ -20,6 +20,7 @@
 #include "ponteiro.h"
 #include "player.h"
 #include "ilha.h"
+#include "plrilha.h"
 #include "menu.h"
 #include "nuvem.h"
 #include "sync.h"
@@ -38,17 +39,22 @@ static int modoSelecionado, guiaMostrado;
 static int saindo, ultimaTela=-2, listaFoco;
 static Uint32 ultimoTick;
 static float abertura, paginaAlpha=1, entradaTempo, focoAnim[256], listaAnim[256];
+static int telaVisivel=-1, folhaTela=-1, desenhandoFolha;
+static GfxRect folhaRect;
+static float folhaTempo;
 static float listaScroll, listaVel, deslocamento;
 #ifdef NV_SHOT_HOOKS
 static int tempoManual;
 #endif
 static void movimento(float dt) {
-  if(ultimaTela!=tela) {
-    ultimaTela=tela; paginaAlpha=0; entradaTempo=0;
+  if(ultimaTela==-2) { ultimaTela=tela; telaVisivel=tela; paginaAlpha=0; entradaTempo=0; }
+  abertura=t21_entrada(abertura,dt,!saindo);
+  paginaAlpha=anim_rampa(paginaAlpha,telaVisivel==tela,dt,90);
+  if(telaVisivel!=tela && paginaAlpha<=0) {
+    telaVisivel=tela; ultimaTela=tela; entradaTempo=0;
     memset(focoAnim,0,sizeof focoAnim);
   }
-  abertura=t21_entrada(abertura,dt,!saindo);
-  paginaAlpha=anim_rampa(paginaAlpha,1,dt,180);
+  folhaTempo+=dt;
   entradaTempo+=dt;
   for(int i=0;i<256;i++) {
     float target=!saindo && foco==i;
@@ -57,7 +63,9 @@ static void movimento(float dt) {
     listaAnim[i]=anim_mola(listaAnim[i],target,dt,target>listaAnim[i]?NV_MOLA_FOCO:NV_MOLA_DESFOCO);
   }
   listaScroll=anim_mola2(&listaVel,listaScroll,fmaxf(0,listaFoco-3),dt,NV_MOLA2_SCROLL);
-  if(saindo && abertura<=0) { tela=-1; saindo=0; }
+  if(saindo && abertura<=0 && (tela==AG_MODO || tela==AG_LISTA || !plrilha_centro_visivel())) {
+    tela=-1; saindo=0;
+  }
 }
 static void relogioMovimento(void) {
 #ifdef NV_SHOT_HOOKS
@@ -68,11 +76,13 @@ static void relogioMovimento(void) {
   ultimoTick=now; movimento(dt);
 }
 static float focoDe(int id) { return id>=0 && id<256?focoAnim[id]:0; }
-static float entradaDe(int id) { return anim_saida(anim_atraso(entradaTempo,id,38,300)); }
+static float entradaDe(int id) {
+  return ajustes_animacoes_reduzidas_usuario()?1:revela_entra(1,revela_onda_atraso(id,0),1+(Uint32)(entradaTempo*1000));
+}
 static void acentoTexto(const char *s,TxtEstilo estilo,float x,float y) {
   float r,g,b; ajustes_acento(&r,&g,&b);
-  TxtLinha l=txt_linha(estilo,s,(int)(r*255),(int)(g*255),(int)(b*255),255);
-  txt_desenhar(l,x,y);
+  TxtLinha l=t21_texto_linha(estilo,s,(int)(r*255),(int)(g*255),(int)(b*255),255,1920-x);
+  t21_texto_desenhar(l,x,y,1);
 }
 static uint64_t identidade;
 static char nome[96], titulo[160], servico[32];
@@ -110,8 +120,8 @@ static void icone(const char *s,float x,float y,float lado,float a) {
   gfx_icone((GfxRect){x,y,lado,lado},s,0.95f,0.95f,0.94f,a);
 }
 static void painel(GfxRect r,float raio) {
-  if(r.w<r.h)plrui_material(r,raio,0,1);
-  else t21_ilha(r,raio,1);
+  if(desenhandoFolha && r.w==1180) return;
+  t21_ilha(r,raio,1);
 }
 static void apontar(int id,int unused) { (void)unused; foco=id;if(tela==AG_MODO&&id>=0&&id<3)modoSelecionado=id+1; }
 static void alvo(GfxRect r,int id) {
@@ -135,18 +145,21 @@ static float botao(const char *rot,const char *ic,float x,float y,int id) {
 }
 static void kicker(const char *s,float x,float y) {
   char up[240];idioma_maiusc_em(ajustes_idioma(),up,sizeof up,s);
-  txt_tracking(TXT_MINI,up,243,242,239,x,y,0.46f,2.1f);
+  float scale=gfx_escala_txt();
+  TXT_INI();
+  txt_tracking(TXT_MINI,up,243,242,239,x/scale,y/scale,0.46f,2.1f);
+  TXT_FIM();
 }
 static float chip(const char *s,float x,float y,int pequeno) {
   TxtEstilo estilo=pequeno?TXT_ILHA_HORA:TXT_ILHA_SUB;
-  TxtLinha l=txt_linha(estilo,s,243,242,239,255);
+  TxtLinha l=t21_texto_linha(estilo,s,243,242,239,255,1600);
   float pad=pequeno?10:15,h=pequeno?26:42,extra=pequeno?0:29;
   plrui_botao_repouso((GfxRect){x,y,l.w+pad*2+extra,h},pequeno?.55f:.8f);
   if(!pequeno) {
     const char *ic=!strcmp(s,i18n("Fontes para tocar"))?"aj_play":!strcmp(s,i18n("Torrent / P2P"))?"aj_users":!strcmp(s,i18n("Links diretos"))?"aj_link":!strcmp(s,i18n("Catálogos"))?"aj_layout-grid":!strcmp(s,i18n("Legendas"))?"aj_captions":"aj_file-text";
     icone(ic,x+pad,y+11,20,0.8f);
   }
-  txt_desenhar_alpha(l,x+pad+extra,y+(h-l.h)/2,pequeno?0.64f:0.8f);
+  t21_texto_desenhar(l,x+pad+extra,y+(h-l.h)/2,pequeno?0.64f:0.8f);
   return l.w+pad*2+extra+(pequeno?9:10);
 }
 static void capacidades(int i,float x,float y,int pequeno) {
@@ -167,21 +180,24 @@ static void pergunta(char *s,size_t n) {snprintf(s,n,i18n("Como o %s vai tocar?"
 static void rotas(float x,float y,float w) {
   char s[180]; pergunta(s,sizeof s);
   separador(x,y,w); texto(TXT_ILHA_SECAO,s,x,y+22,w,1);
-  TxtLinha estado=txt_linha(TXT_ILHA_SUB,addonmodo_get(identidade)==AM_AUTO?i18n("Nenhum modo ativo · escolher"):i18n("Mudar o modo"),243,242,239,255);
-  txt_desenhar_alpha(estado,x+w-estado.w-22,y+24,0.6f);
+  TxtLinha estado=t21_texto_linha(TXT_ILHA_SUB,addonmodo_get(identidade)==AM_AUTO?i18n("Nenhum modo ativo · escolher"):i18n("Mudar o modo"),243,242,239,255,w);
+  t21_texto_desenhar(estado,x+w-estado.w-22,y+24,0.6f);
   icone("aj_chevron-right",x+w-16,y+28,16,0.6f);
   float cw=(w-24)/3;
   for(int i=0;i<3;i++) {
-    GfxRect r={x+i*(cw+12),y+60,cw,w>1200?92:108};
+    float alpha=gfx_opacidade_grupo, entry=entradaDe(i);
+    gfx_opacidade_grupo=alpha*entry;
+    GfxRect r={x+i*(cw+12),y+60+(1-entry)*NV_ENTRA_DY,cw,w>1200?92:108};
     plrui_linha_foco(r,20,fmaxf(focoDe(10+i),addonmodo_get(identidade)==i+1?.35f:0));
     icone(ICONES[i],r.x+18,r.y+20,21,0.9f);
     texto(TXT_ILHA_ITEM,i18n(i==0&&ajustes_p2p_url()[0]?"Servidor P2P":MODOS[i]),r.x+48,r.y+16,cw-58,1);
     texto(TXT_ILHA_SUB,i18n(DESCR[i]),r.x+18,r.y+50,cw-30,0.64f);
     if(addonmodo_get(identidade)==i+1) {
-      TxtLinha ativo=txt_linha(TXT_ILHA_APOIO,i18n("Em uso nesta TV"),243,242,239,255);
+      TxtLinha ativo=t21_texto_linha(TXT_ILHA_APOIO,i18n("Em uso nesta TV"),243,242,239,255,cw);
       acentoTexto(i18n("Em uso nesta TV"),TXT_ILHA_APOIO,r.x+cw-ativo.w-18,r.y+20);
     }
     alvo(r,10+i);
+    gfx_opacidade_grupo=alpha;
   }
 }
 /* Public configurator only: never put installation credentials in a QR. */
@@ -194,7 +210,8 @@ static int configUrl(char *out,size_t n) {
 }
 void addonguia_abrir(int t,int addon,const char *tit) {
   abertura=0; saindo=0; ultimaTela=-2; ultimoTick=SDL_GetTicks();
-  tela=t; indice=addon; foco=0;detalhes=0;anterior=AG_MODO;acessoConfig=0;semCel=0;
+  tela=t; telaVisivel=t; paginaAlpha=0; entradaTempo=0;
+  indice=addon; foco=0;detalhes=0;anterior=AG_MODO;acessoConfig=0;semCel=0;
   modoSelecionado=addonmodo_get(addonmodo_id(addons_base(addon)));
   if(modoSelecionado<AM_P2P)modoSelecionado=AM_P2P;
   identidade=addonmodo_id(addons_base(addon));
@@ -257,13 +274,17 @@ static void ativar(void) {
   entregar(tela!=AG_VAZIO&&proxima()?AGP_PROXIMA:AGP_REPETIR);
 }
 void addonguia_evento(const SDL_Event *e) {
-  if(tela<0||saindo||e->type!=SDL_KEYDOWN)return;
+  if(tela<0||e->type!=SDL_KEYDOWN)return;
+  if(saindo) {
+    if(nv_tecla_voltar(e) && !pedido) saindo=0;
+    return;
+  }
   SDL_Keycode k=e->key.keysym.sym;
   if(nv_tecla_voltar(e)){
     if(tela==AG_CONECTAR){tela=anterior;foco=0;celb_fechar_dono(CELB_ADDON);}
     else sair();return;
   }
-  if(k==SDLK_RETURN||k==SDLK_KP_ENTER){ativar();return;}
+  if(k==SDLK_RETURN||k==SDLK_KP_ENTER){if(!e->key.repeat)ativar();return;}
   int atual=-1;for(int i=0;i<nAlvos;i++)if(alvos[i].id==foco)atual=i;
   if(atual<0)return;
   GfxRect r=alvos[atual].r;float best=1e20f;int novo=foco;
@@ -331,7 +352,7 @@ void addonguia_falha(void) {
 }
 static void detalhe(float x,float y,float w) {
   icone("aj_info",x,y+4,19,0.6f);
-  TxtLinha l=txt_linha(TXT_ILHA_SUB,i18n("Ver detalhes"),243,242,239,255);
+  TxtLinha l=t21_texto_linha(TXT_ILHA_SUB,i18n("Ver detalhes"),243,242,239,255,w);
   plrui_linha_foco((GfxRect){x-8,y-10,l.w+78,T21_CTRL_H},20,focoDe(20));
   texto(TXT_ILHA_SUB,i18n("Ver detalhes"),x+28,y,w-58,.6f+.4f*focoDe(20));
   icone(detalhes?"aj_chevron-up":"aj_chevron-down",x+36+l.w,y+4,18,0.6f);
@@ -374,7 +395,7 @@ static void moldura(int pagina) {
     gfx_cor((GfxRect){172,47,34,34},0.5f,((cor>>16)&255)/255.0f,((cor>>8)&255)/255.0f,(cor&255)/255.0f,1);
     char inicial[8]="?";
     if(perfil&&perfil->nome[0]){size_t n=1;while(n<4&&((unsigned char)perfil->nome[n]&0xc0)==0x80)n++;memcpy(inicial,perfil->nome,n);inicial[n]=0;}
-    TxtLinha l=txt_linha(TXT_MINI,inicial,243,242,239,255);txt_desenhar(l,189-l.w/2,64-l.h/2);
+    TxtLinha l=t21_texto_linha(TXT_MINI,inicial,243,242,239,255,34);t21_texto_desenhar(l,189-l.w/2,64-l.h/2,1);
   }
   texto(TXT_ILHA_NOME,"nuvio",1775,44,85,0.64f);
   if(pagina) {
@@ -388,17 +409,17 @@ static void moldura(int pagina) {
   icone("aj_arrow-left",200,1014,20,0.46f);
   texto(TXT_ILHA_SUB,i18n("Voltar"),230,1011,300,0.46f);
   const char *rodape=pagina==2?i18n("Estado da última consulta · mude o modo de tocar quando quiser"):i18n("A escolha do Nuvio não muda a configuração do addon.");
-  TxtLinha l=txt_linha(TXT_ILHA_SUB,rodape,243,242,239,255);
-  txt_desenhar_alpha(l,1804-l.w,1011,0.46f);
+  TxtLinha l=t21_texto_linha(TXT_ILHA_SUB,rodape,243,242,239,255,1500);
+  t21_texto_desenhar(l,1804-l.w,1011,0.46f);
 }
 static void modoDesenhar(void) {
   char s[180];pergunta(s,sizeof s);
   snprintf(s,sizeof s,"%s › %s",i18n("Meus addons"),nome);
   kicker(s,200,134);
-  TxtLinha etapa=txt_linha(TXT_ILHA_SUB,i18n("Escolher como tocar"),243,242,239,255);
+  TxtLinha etapa=t21_texto_linha(TXT_ILHA_SUB,i18n("Escolher como tocar"),243,242,239,255,600);
   float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
   gfx_cor((GfxRect){1800-etapa.w-73,148,65,4},0.5f,ar,ag,ab,1);
-  txt_desenhar_alpha(etapa,1800-etapa.w,138,0.64f);
+  t21_texto_desenhar(etapa,1800-etapa.w,138,0.64f);
   pergunta(s,sizeof s);
   texto(TXT_ILHA_TITULO,s,200,167,1600,1);
   bloco(i18n("O addon encontrou o vídeo. O Nuvio cuida de como ele chega até você."),200,232,1600,0.64f,2);
@@ -408,7 +429,7 @@ static void modoDesenhar(void) {
     float alpha=gfx_opacidade_grupo, entry=entradaDe(i);
     gfx_opacidade_grupo=alpha*entry;
     r.y+=(1-entry)*NV_ENTRA_DY;
-    plrui_material(r,28,0,1);
+    t21_ilha(r,28,1);
     plrui_linha_foco(r,28,fmaxf(focoDe(i),modoSelecionado==i+1?.25f:0));
     alvo(r,i);
     kicker(i18n(i==0?"Nesta TV":i==1?"Pela sua conta":"Outras fontes"),r.x+28,r.y+24);
@@ -479,7 +500,9 @@ void addonguia_lista(int f) {
   float scroll=anim_clamp(listaScroll,0,fmaxf(0,addons_n()-4));
   int inicio=(int)scroll;
   for(int i=inicio;i<addons_n()&&i<inicio+4;i++) {
-    float y=290+(i-scroll)*128;
+    float alpha=gfx_opacidade_grupo, entry=entradaDe(i-inicio);
+    gfx_opacidade_grupo=alpha*entry;
+    float y=290+(i-scroll)*128+(1-entry)*NV_ENTRA_DY;
     plrui_linha_foco((GfxRect){200,y,1604,128},24,listaAnim[i]);
     ponteiro_alvo(200,y,1604,128,addonsui_ponteiro,NULL,i,0);
     gfx_cor((GfxRect){224,y+35,58,58},18/58.0f,1,1,1,0.06f);
@@ -489,8 +512,8 @@ void addonguia_lista(int f) {
     int ok=catalogo||v, desativado=!addons_ativo(i);
     const char *estado=desativado?i18n("Desligado"):falhou?i18n("Não respondeu"):precisa?i18n("Precisa escolher como tocar"):ok?i18n("Tudo certo"):i18n("conferindo o manifesto…");
     icone(papelIcone(i,falhou),239,y+50,28,0.7f);
-    TxtLinha tit=txt_linha_corta(TXT_ILHA_NOME,addons_nome(i),243,242,239,255,580);
-    txt_desenhar(tit,310,y+17);
+    TxtLinha tit=t21_texto_linha(TXT_ILHA_NOME,addons_nome(i),243,242,239,255,580);
+    t21_texto_desenhar(tit,310,y+17,1);
     float sx=310+tit.w+16;
     gfx_cor((GfxRect){sx,y+28,8,8},0.5f,falhou?0.698f:precisa?0.878f:ok?0.584f:0.55f,falhou?0.506f:precisa?0.694f:ok?0.729f:0.55f,falhou?0.533f:precisa?0.431f:ok?0.624f:0.55f,1);
     texto(TXT_ILHA_SUB,estado,sx+16,y+18,1380-sx,0.64f);
@@ -505,6 +528,7 @@ void addonguia_lista(int f) {
     const char *acao=falhou?i18n("Tentar de novo"):catalogo?i18n("Escolher fileiras da Home"):d&&!t?i18n("Configurar pelo celular"):i18n("Escolher como tocar");
     int anteriorFoco=foco;foco=i==f?50+i:-1;
     botaoEm(acao,NULL,-1780,y+38,50+i,1,0);foco=anteriorFoco;
+    gfx_opacidade_grupo=alpha;
   }
   if(f>=addons_n()) {
     const char *acao=f==addons_n()?"Sincronizar addons":f==addons_n()+1?"TV ao vivo":"AIOStreams";
@@ -518,10 +542,9 @@ void addonguia_lista(int f) {
 static void corpoDesenhar(void) {
   if(tela<0)return;
   nAlvos=0;
-  gfx_cor((GfxRect){0,0,1920,1080},0,0,0,0,T21_VEIL);
   if(tela==AG_MODO){moldura(1);modoDesenhar();return;}
   if(tela==AG_LISTA){addonguia_lista(foco);return;}
-  moldura(tela==AG_CONECTAR);
+  if(!desenhandoFolha) moldura(0);
   if(tela==AG_CONECTAR) {
     painel((GfxRect){380,244,1180,640},32);
     kicker(i18n("Fontes e addons"),432,286);
@@ -543,8 +566,8 @@ static void corpoDesenhar(void) {
   if(tela==AG_INICIANDO) {
     painel((GfxRect){380,130,1180,850},32);
     texto(TXT_ILHA_TEXTO,titulo,432,174,1076,0.64f);
-    TxtLinha cab=txt_linha(TXT_ILHA_TITULO,i18n("Conectando a outras pessoas…"),243,242,239,255);
-    txt_desenhar(cab,960-cab.w/2,310);
+    TxtLinha cab=t21_texto_linha(TXT_ILHA_TITULO,i18n("Conectando a outras pessoas…"),243,242,239,255,1076);
+    t21_texto_desenhar(cab,960-cab.w/2,310,1);
     bloco(i18n("A TV recebe os primeiros pedaços para começar. O restante chega enquanto você assiste."),548,372,824,0.64f,2);
     const char *nodes[]={"aj_users","aj_tv-minimal-play","aj_circle-play"};
     for(int a=0;a<3;a++) {
@@ -644,17 +667,56 @@ static void corpoDesenhar(void) {
   }
   detalhe(x,cy,1076);
 }
+static GfxRect folhaDestino(int t) {
+  float y=t==AG_NOVO_CATALOGO?238:t==AG_NOVO_DIRETO?180:175, h=416;
+  if(t==AG_P2P)h=610;
+  if(t==AG_DEBRID)h=694;
+  if(t==AG_401||t==AG_403||t==AG_VAZIO||t==AG_HDR)h=490;
+  if(t==AG_NOVO_TORRENT){y=140;h=834;}
+  if(t==AG_NOVO_CATALOGO)h=636;
+  if(t==AG_NOVO_DIRETO)h=650;
+  if(t==AG_INICIANDO){y=130;h=850;}
+  if(t==AG_CONECTAR){y=244;h=640;}
+  return (GfxRect){380,y,1180,h};
+}
+static void folhaCorpo(GfxRect r,float a,void *u) {
+  (void)r;(void)u;
+  float escalaAnterior=gfx_escala(), alpha=gfx_opacidade_grupo;
+  gfx_escala_sair(1);
+  gfx_opacidade_grupo=alpha*a*anim_suave(paginaAlpha);
+  int destino=tela; tela=folhaTela;
+  desenhandoFolha=1; corpoDesenhar(); desenhandoFolha=0;
+  tela=destino;
+  gfx_opacidade_grupo=alpha; gfx_escala_sair(escalaAnterior);
+}
 void addonguia_desenhar(void) {
   relogioMovimento();
   if(tela<0)return;
   float alpha=gfx_opacidade_grupo;
   float entry=anim_suave(abertura);
+  int visivel=telaVisivel<0?tela:telaVisivel;
+  if(visivel!=AG_MODO && visivel!=AG_LISTA) {
+    gfx_cor((GfxRect){0,0,1920,1080},0,0,0,0,T21_VEIL*entry);
+    folhaRect=folhaDestino(visivel);
+    if(!saindo) {
+      folhaTela=visivel;
+      float scale=gfx_escala_ui();
+      PlrIlhaPedido p={.centro=1,.modal=1,.semContorno=1,.corpo=folhaCorpo,
+        .w=folhaRect.w/scale,.h=folhaRect.h/scale,
+        .destino={folhaRect.x/scale,folhaRect.y/scale,folhaRect.w/scale,folhaRect.h/scale}};
+      plrilha_pedir(&p);
+    }
+    // The player owns its island pass; standalone guidance owns this pass.
+    if(!player_aberto()) plrilha_desenhar(1+(Uint32)(folhaTempo*1000));
+    return;
+  }
   gfx_opacidade_grupo=alpha*entry*anim_suave(paginaAlpha);
   deslocamento=(1-entry)*NV_ENTRA_DY;
   if(deslocamento) gfx_transformar(0,0,1,0,deslocamento);
-  corpoDesenhar();
+  int destino=tela; tela=visivel; corpoDesenhar(); tela=destino;
   if(deslocamento)gfx_sem_transformar();
   deslocamento=0; gfx_opacidade_grupo=alpha;
+  if(!player_aberto()) plrilha_desenhar(1+(Uint32)(folhaTempo*1000));
 }
 #ifdef NV_SHOT_HOOKS
 void addonguia_shot_passo(float dt) { tempoManual=1; movimento(dt); }
