@@ -40,8 +40,7 @@ static int saindo, ultimaAba = -1, ultimoAno, folhaAnterior;
 static long pessoaLembrada = -1;
 static float focoBtns[6][FM_MAX], focoCred[FM_MAX], focoAnos[FM_MAX];
 static int drawZona, drawItem;
-static float compactoT, folhaDx, folhaDy, folhaK = 1;
-static int folhaVista;
+static float compactoT;
 static int atualizar(float dt) {
   preparar();
   int red = ajustes_animacoes_reduzidas();
@@ -212,22 +211,32 @@ static void overlay(const FdFicha *d){drawZona=5;drawItem=0;float x=1130,w=690;c
   else if(camada==3){texto("Quando você viu?",x,190,w,TXT_TITULO3,235);bloco("Vai para o histórico do Nuvio, do Trakt e do Simkl com esta data.",x,270,w,3);botao("Hoje",x,400,w,op==0);botao("Não lembro",x,530,w,op==1);char b[180];snprintf(b,sizeof b,i18n("Usa a data de lançamento: %s"),c->lancamento);bloco(b,x,605,w,3);botao("Agora não",x,730,w,op==2);bloco(como==FM_COMO_QUIZ?"Conta para conquistas: você passou nas perguntas.":"Não conta para conquistas: marcado sem as perguntas.",x,850,w,4);}
   else{texto("Tudo bem, às vezes faz tempo.",x,210,w,TXT_V2_GRUPO,230);bloco("Nada foi marcado. Ninguém mais vê isso.",x,280,w,3);botao("Marcar como visto mesmo assim",x,430,w,op==0);botao("Tentar com outras perguntas",x,550,w,op==1);botao("Fechar",x,670,w,op==2);}}
 // The clock island owns the sheet's material, shape, veil and retained closing body.
+// Content is laid out in the island's own layer and pinned to its right edge: it keeps its final place while the island grows.
+static void toqueFoco(int z,int c);
+static int toqueRolar(const PonteiroRolagem *e);
+static void alvoFolha(float x,float y,float w,float h,int z,int c,float dx,float dy){GfxRect r=area((GfxRect){x,y,w,h});if(h==60)r.h=60;ponteiro_alvo(r.x+dx,r.y+dy,r.w,r.h,toqueFoco,NULL,z,c);}
+static void alvosFolha(int c,float dx,float dy){
+  if(c==5){ponteiro_rolagem(toqueRolar);alvoFolha(1130,935,690,60,5,0,dx,dy);return;}
+  int n=c==1?5:c==2?6:3;
+  for(int i=0;i<n;i++){float y=c==1?300+i*90:c==2?(i<4?300+i*90:i==4?700:790):c==3?(i==0?400:i==1?530:730):(i==0?430:i==1?550:670);alvoFolha(1130,y,690,60,5,i,dx,dy);}
+}
 static void corpoFilmo(GfxRect r,float a,void *u) {
   (void)u;
-  TXT_INI();
-  GfxRect fim=area((GfxRect){1090,50,770,980}),g=ilha_corpo_rect();(void)r;
-  /* content keeps its final place; it appears only once the growing island holds it whole */
-  float cob=fminf(g.w/fim.w,g.h/fim.h),rev=fminf(1,fmaxf(0,(cob-.9f)/.09f));
+  GfxRect fim=area((GfxRect){1090,50,770,980}),g=ilha_corpo_rect();
+  float dx=r.x+r.w-(fim.x+fim.w),dy=r.y-fim.y;
+  /* content appears only once the growing island holds it whole */
+  float cob=fminf(g.w/fim.w,g.h/fim.h),rev=fminf(1,fmaxf(0,(cob-.96f)/.04f));
   int atual=camada; float pa=alpha;
   camada=folhaAnterior; alpha=a*entrada*rev;
-  folhaDx=folhaDy=0; folhaK=1; folhaVista=rev>.5f;
+  gfx_transformar(0,0,1,dx,dy);
   overlay(fd_ficha());
-  camada=atual; alpha=pa; TXT_FIM();
+  gfx_sem_transformar();
+  if(atual&&rev>.5f)alvosFolha(atual,dx,dy);
+  camada=atual; alpha=pa;
 }
 static void toqueFoco(int z,int c){if(z==5){op=c;return;}zona=z;col=c;if(z==1&&aba!=c){aba=c;topo=0;if(aba==2)fd_sobre();}if(z==3)ano=c;}
 static float gesto;
 static int toqueRolar(const PonteiroRolagem *e){if(camada==5){if(e->fase==PONT_ROL_MOVER&&e->delta){bioPagina+=e->delta<0?1:-1;if(bioPagina<0)bioPagina=0;}return 1;}if(camada||!(aba==0||aba==1))return 0;if(e->fase==PONT_ROL_INICIO){gesto=0;return e->eixoY==(aba==1)&&e->y>=550;}if(e->fase==PONT_ROL_MOVER||e->fase==PONT_ROL_INERCIA){gesto-=e->delta;int step=(int)(gesto/(aba==1?350:-81));if(step){gesto-=step*(aba==1?350:81);if(aba==1){int max=(ni+gradeCols()-1)/gradeCols()-gradeLinhas();if(max<0)max=0;topo+=step;if(topo<0)topo=0;if(topo>max)topo=max;zona=4;col=topo*gradeCols();}else{int j=0;while(j<na&&anos[j]!=ano)j++;j+=step;if(j<0)j=0;if(j>=na)j=na-1;if(j>=0)ano=anos[j];}}return 1;}return 1;}
-static void alvoFolha(float x,float y,float w,float h,int z,int c){float ox=px(1090),oy=py(50);GfxRect r=area((GfxRect){x,y,w,h});ponteiro_alvo(ox+(r.x-ox)*folhaK+folhaDx,oy+(r.y-oy)*folhaK+folhaDy,r.w*folhaK,(h==60?60:r.h)*folhaK,toqueFoco,NULL,z,c);}
 static void alvoToque(float x,float y,float w,float h,int z,int c){GfxRect r=area((GfxRect){x,y,w,h});if(h==60)r.h=60;ponteiro_alvo(r.x+paginaX(),r.y,r.w,r.h,toqueFoco,NULL,z,c);}
-static void registrarToque(void){int vista=folhaVista;folhaVista=0;if(camada){ponteiro_camada();if(!vista)return;if(camada==5){ponteiro_rolagem(toqueRolar);alvoFolha(1130,935,690,60,5,0);return;}int n=camada==1?5:camada==2?6:3;for(int i=0;i<n;i++){float y=camada==1?300+i*90:camada==2?(i<4?300+i*90:i==4?700:790):camada==3?(i==0?400:i==1?530:730):(i==0?430:i==1?550:670);alvoFolha(1130,y,690,60,5,i);}return;}float c=compactoT;if(c<.5f){alvoToque(250,265,420,60,0,0);alvoToque(690,265,180,60,0,1);alvoToque(890,265,160,60,0,2);}float tabX=72;for(int i=0;i<4;i++){float tw=txt_largura(TXT_ILHA_SEG,i18n(abas[i]))+40;alvoToque(tabX,compacta(365,130),tw/colunaK(),54/linhaK(),1,i);tabX+=(tw+4)/colunaK();}if(aba==0){FmMarco m[10];FmCap caps[6];const FdFicha *d=fd_ficha();int nm=fm_marcos(d->c,d->n,m,10),nc=fm_capitulos(d->c,d->n,m,nm,caps,6);for(int i=0;i<nc;i++)alvoToque(72+i*290,465,270,60,2,i);int start=0;for(int i=0;i<na;i++)if(anos[i]==ano)start=i-10;if(start<0)start=0;if(start>na-21)start=na>21?na-21:0;for(int i=start;i<na&&i<start+21;i++)alvoToque(100+(i-start)*81,550,76,95,3,anos[i]);for(int i=0;i<ni&&i<5;i++)alvoToque(530+i*(212*gfx_poster_k()+24),670,212*gfx_poster_k()/colunaK(),322*gfx_poster_k()/linhaK(),4,i);if(ni>5)alvoToque(1640,970,200,60,4,5);ponteiro_rolagem(toqueRolar);}else if(aba==1){float y=compacta(465,230);for(int i=0;i<5;i++)alvoToque(72+i*345,y,325,60,2,i);for(int i=topo*gradeCols();i<ni&&i<(topo+gradeLinhas())*gradeCols();i++)alvoToque(72+(i%gradeCols())*(220*gfx_poster_k()+24)/colunaK(),60+(py(y)+100+(i/gradeCols())*gradePasso()-scroll-60)/linhaK(),220*gfx_poster_k()/colunaK(),330*gfx_poster_k()/linhaK(),4,i);ponteiro_rolagem(toqueRolar);}else if(aba==2)alvoToque(100,775,580,60,2,0);}
-void filmo_desenhar(float a){TXT_INI();alpha=a*entrada;preparar();const FdFicha *d=fd_ficha();gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.047f,.055f,alpha);gfx_transformar(0,0,1,paginaX(),0);header(d);if(!d->pronto)t21_estado(area((GfxRect){72,465,1750,430}),d->erro?T21_ERROR:T21_LOADING,"aj_user",i18n(d->erro?"Serviço indisponível":"Carregando…"),NULL,NULL,tempo,alpha);else if(aba==0)historia(d);else if(aba==1)grade(d);else if(aba==2)sobre(d);else conquistas(d);if(camada){GfxRect sheet=area((GfxRect){1090,50,770,980});ilha_corpo(sheet.w,sheet.h,corpoFilmo,NULL);}texto(fd_aviso(),72,1000,1150,TXT_ILHA_SUB,180);const char *keys[]={"OK","Voltar"},*labels[]={"Abrir opções","Voltar"};plrui_dicas(keys,labels,2,px(1830),ANC(T21_SAFE_B),1,alpha);gfx_sem_transformar();registrarToque();TXT_FIM();conquistas_aviso_desenhar();}
+static void registrarToque(void){if(camada){ponteiro_camada();return;}float c=compactoT;if(c<.5f){alvoToque(250,265,420,60,0,0);alvoToque(690,265,180,60,0,1);alvoToque(890,265,160,60,0,2);}float tabX=72;for(int i=0;i<4;i++){float tw=txt_largura(TXT_ILHA_SEG,i18n(abas[i]))+40;alvoToque(tabX,compacta(365,130),tw/colunaK(),54/linhaK(),1,i);tabX+=(tw+4)/colunaK();}if(aba==0){FmMarco m[10];FmCap caps[6];const FdFicha *d=fd_ficha();int nm=fm_marcos(d->c,d->n,m,10),nc=fm_capitulos(d->c,d->n,m,nm,caps,6);for(int i=0;i<nc;i++)alvoToque(72+i*290,465,270,60,2,i);int start=0;for(int i=0;i<na;i++)if(anos[i]==ano)start=i-10;if(start<0)start=0;if(start>na-21)start=na>21?na-21:0;for(int i=start;i<na&&i<start+21;i++)alvoToque(100+(i-start)*81,550,76,95,3,anos[i]);for(int i=0;i<ni&&i<5;i++)alvoToque(530+i*(212*gfx_poster_k()+24),670,212*gfx_poster_k()/colunaK(),322*gfx_poster_k()/linhaK(),4,i);if(ni>5)alvoToque(1640,970,200,60,4,5);ponteiro_rolagem(toqueRolar);}else if(aba==1){float y=compacta(465,230);for(int i=0;i<5;i++)alvoToque(72+i*345,y,325,60,2,i);for(int i=topo*gradeCols();i<ni&&i<(topo+gradeLinhas())*gradeCols();i++)alvoToque(72+(i%gradeCols())*(220*gfx_poster_k()+24)/colunaK(),60+(py(y)+100+(i/gradeCols())*gradePasso()-scroll-60)/linhaK(),220*gfx_poster_k()/colunaK(),330*gfx_poster_k()/linhaK(),4,i);ponteiro_rolagem(toqueRolar);}else if(aba==2)alvoToque(100,775,580,60,2,0);}
+void filmo_desenhar(float a){TXT_INI();alpha=a*entrada;preparar();const FdFicha *d=fd_ficha();gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.047f,.055f,alpha);gfx_transformar(0,0,1,paginaX(),0);header(d);if(!d->pronto)t21_estado(area((GfxRect){72,465,1750,430}),d->erro?T21_ERROR:T21_LOADING,"aj_user",i18n(d->erro?"Serviço indisponível":"Carregando…"),NULL,NULL,tempo,alpha);else if(aba==0)historia(d);else if(aba==1)grade(d);else if(aba==2)sobre(d);else conquistas(d);if(camada){ESCALA_INI();GfxRect sheet=area((GfxRect){1090,50,770,980});ESCALA_FIM();ilha_corpo(sheet.w,sheet.h,corpoFilmo,NULL);}texto(fd_aviso(),72,1000,1150,TXT_ILHA_SUB,180);const char *keys[]={"OK","Voltar"},*labels[]={"Abrir opções","Voltar"};plrui_dicas(keys,labels,2,px(1830),ANC(T21_SAFE_B),1,alpha);gfx_sem_transformar();registrarToque();TXT_FIM();conquistas_aviso_desenhar();}
