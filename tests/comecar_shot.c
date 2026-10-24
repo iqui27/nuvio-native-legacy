@@ -445,7 +445,14 @@ int main(int argc, char **argv) {
 
   navegacao(0); navegacao(1); navegacao(2); navegacao(3);
 
-  // ---- Capturas em 1920x1080.
+  // ---- Captures at the requested text scale (rules above stay at 100%).
+  // Match Library's pinned Modern rail when comparing real content anchors.
+  if (getenv("NUVIO_RAIL") && !strcmp(getenv("NUVIO_RAIL"), "moderna")) {
+    dados_gravar("ajustes.txt", "homeLayoutLocal 0\nmodernSidebar 0\ncollapseSidebar 1\n");
+    ajustes_dir(dir);
+  }
+  { const char *scale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
+    if (scale && *scale) gfx_escala_txt_definir((float)atof(scale)); }
   apagar(); comecar_abrir();
   snprintf(nome, sizeof nome, "%s-1-perfil.png", saida);
   captura(nome, 40);

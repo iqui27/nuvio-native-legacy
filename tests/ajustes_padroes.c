@@ -456,7 +456,7 @@ int main(void) {
     if (level) for (int r = 0; r < 3; r++) gpun_relatar(30, 40, 16.667, 1, 1);
     if (level) for (int r = 0; r < 3; r++) gpun_relatar(34, 40, 16.667, 1, 1);
     assert(gpun_degrau() == level);
-    assert(ajustes_animacoes_reduzidas() == (level >= 3));
+    assert(!ajustes_animacoes_reduzidas()); // Only explicit Reduced may cut motion.
     assert(ajustes_vidro() == (level < 4));
     assert(ajustes_vidro_contorno());
     assert(ajustes_vidro_fosco() == (level < 2));

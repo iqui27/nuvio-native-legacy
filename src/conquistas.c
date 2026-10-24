@@ -7,8 +7,8 @@
 #include "idioma.h"
 #include "ponteiro.h"
 #include "text.h"
-#define NV_ESCALA_TELA_ATIVA
-#include "escala.h"
+#define NV_TXT_TELA
+#include "tela21.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -177,8 +177,9 @@ static int alvo_nivel(const CqEntrada *e, int n) {
 
 // ------------------------------------------------------------------- layout
 static void origem(void) {
-  ox = (NV_TELA_W - Q_W) * 0.5f;
-  oy = (NV_TELA_H - Q_H) * 0.5f;
+  t21_inicio(&ox, NULL);
+  ox -= MG;
+  oy = 0;
 }
 
 static GfxRect em(float x, float y, float w, float h) { return (GfxRect){ ox + x, oy + y, w, h }; }
@@ -382,7 +383,7 @@ static int eh_voltar(const SDL_Event *e) {
          e->key.keysym.scancode == NV_SCANCODE_BACK;
 }
 
-void conquistas_evento(const SDL_Event *e) {
+static void conquistas_evento_(const SDL_Event *e) {
   SDL_Keycode k;
   if (!aberto) return;
   if (e->type != SDL_KEYDOWN && e->type != SDL_KEYUP) return;
@@ -802,14 +803,16 @@ void conquistas_desenhar(Uint32 agora) {
   float a = anim_suave(entrada);
   (void)agora;
   if (entrada < 0.002f) return;
-  ESCALA_SE_COUBER_INI(Q_W, Q_H);
+  TXT_INI();
   origem();
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0.051f, 0.051f, 0.051f, entrada);
   if (view == V_FAM) desenha_familias(a);
   else if (view == V_DET) desenha_detalhe(a);
   else desenha_hub(a);
-  ESCALA_SE_COUBER_FIM();
+  TXT_FIM();
 }
+
+void conquistas_evento(const SDL_Event *e) { TXT_INI(); conquistas_evento_(e); TXT_FIM(); }
 
 // -------------------------------------------------------------------- aviso
 int conquistas_aviso_aberto(void) { return avAberto; }

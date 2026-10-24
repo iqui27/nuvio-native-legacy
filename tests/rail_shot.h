@@ -65,6 +65,9 @@ static void rail_shot_aplicar(void) {
     if (o && *o == '1') fputs("menuGuiaLocal 1\nmenuAgendaLocal 1\n", f); }
   fclose(f);
   ajustes_dir(dir);
+  // Settings reload must not erase the capture's requested text scale.
+  { const char *scale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
+    if (scale && *scale) gfx_escala_txt_definir((float)atof(scale)); }
 }
 
 // Pinta a rail por cima do quadro ja desenhado, com `destino` aceso.

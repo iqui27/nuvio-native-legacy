@@ -22,19 +22,15 @@
 #include "text.h"
 #include "trakt.h"
 #include "traktauth.h"
-#define NV_ESCALA_TELA_ATIVA
-#include "escala.h"
+#define NV_TXT_TELA
+#include "tela21.h"
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define Q_W        1920.0f
-#define Q_H        1080.0f
 #define MARGEM      120.0f
-#define ABRIR_MS    320.0f
-#define FECHAR_MS   180.0f
 #define PASSOS        4
 #define MAX_ITENS    16
 #define BACK_LONGO_MS 700   // Voltar segurado por tanto tempo pula o fluxo todo
@@ -172,8 +168,9 @@ static const char *rotulo_botao(int id) {
 static float ox, oy;
 
 static void origem(void) {
-  ox = (NV_TELA_W - Q_W) * 0.5f;
-  oy = (NV_TELA_H - Q_H) * 0.5f;
+  t21_inicio(&ox, NULL);
+  ox -= MARGEM;
+  oy = 0;
 }
 
 static void poe(Item *it, int *n, int id, float x, float y, float w, float h) {
@@ -272,7 +269,7 @@ static void ok(void) {
   }
 }
 
-void comecar_evento(const SDL_Event *e) {
+static void comecar_evento_(const SDL_Event *e) {
   SDL_Keycode k;
   if (!aberto) return;
   // O teclado da TV e modal: com ele aberto, toda tecla e dele (digitar,
@@ -322,7 +319,7 @@ void comecar_atualizar(float dt, Uint32 agora) {
   }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
   if (red) { entrada = aberto ? 1.0f : 0.0f; return; }
-  entrada = anim_rampa(entrada, aberto ? 1.0f : 0.0f, dt, aberto ? ABRIR_MS : FECHAR_MS);
+  entrada = t21_entrada(entrada, dt, aberto);
 }
 
 // ------------------------------------------------------------------- desenho
@@ -629,7 +626,7 @@ static void desenha_rodape(float a) {
 void comecar_desenhar(Uint32 agora) {
   float a = anim_suave(entrada);
   if (entrada < 0.002f) return;
-  ESCALA_SE_COUBER_INI(Q_W, Q_H);
+  TXT_INI();
   origem();
   gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0.051f, 0.051f, 0.051f, entrada);
   cabecalho(a);
@@ -638,7 +635,9 @@ void comecar_desenhar(Uint32 agora) {
   else if (passo == 1) desenha_passo1(a);
   else desenha_passo2(a);
   desenha_rodape(a);
-  ESCALA_SE_COUBER_FIM();
+  TXT_FIM();
   // O teclado da TV cuida da propria escala e vai por cima de tudo.
   if (esperaTeclado && teclado_aberto()) teclado_desenhar(agora);
 }
+
+void comecar_evento(const SDL_Event *e) { TXT_INI(); comecar_evento_(e); TXT_FIM(); }

@@ -2863,7 +2863,7 @@ static int cinemetaInstalado(void) {
 
 int ajustes_animacoes_reduzidas_usuario(void) { return valor[AJ_ANIM] == 1; }
 int ajustes_animacoes_reduzidas(void) {
-  return ajustes_animacoes_reduzidas_usuario() || (valor[AJ_ANIM] == 2 && gpun_efeito_ativo(3));
+  return ajustes_animacoes_reduzidas_usuario();
 }
 int ajustes_interface_mobile(void) {
 #ifdef NV_TOUCH_UI
@@ -3942,9 +3942,11 @@ float ajustes_rail_largura_fixa(void) {
   return borda * (gfx_escala() != 1.0f ? 1.0f : gfx_escala_txt()) + NV_MENU_RAIL_VAO - NV_CONTENT_PAD;
 }
 void ajustes_area_conteudo(float padEsq, float padDir, float *x, float *w) {
-  float x0 = ajustes_rail_largura_fixa() + padEsq;
+  // Margins are real pixels; return coordinates in the active text layer.
+  float s = gfx_escala_tela_txt();
+  float x0 = (ajustes_rail_largura_fixa() + padEsq) / s;
   if (x) *x = x0;
-  if (w) *w = NV_TELA_W - padDir - x0;
+  if (w) *w = (NV_LAYOUT_REAL_W - padDir) / s - x0;
 }
 const char *ajustes_qualidade(void)   { return V_QUALIDADE[valor[AJ_QUALIDADE]]; }
 

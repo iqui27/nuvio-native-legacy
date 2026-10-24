@@ -90,6 +90,7 @@
 #include "ajustes.h"
 #include "nlanc.h"
 #include "ctxmenu.h"
+#include "tela21.h"
 #define NV_TXT_TELA   // NV_TELA_W/H = tela virtual da escala de texto (escala.h)
 #include "escala.h"
 #include "telefoneui.h"
@@ -515,8 +516,8 @@ static int gradeIni(void) { return estado() == EST_ITENS ? 1 : BIB_FIL_GRADE; }
 // esquerda, e quem nao cabe e COLUNA, nao pixel.
 static float paginaX(void) {
   float x;
-  ajustes_area_conteudo(NV_CONTENT_PAD, NV_LAYOUT_REAL_W / gfx_escala_txt() - NV_BIB_DIR, &x, NULL);
-  return fmaxf(200.0f, x - 18.0f);
+  t21_inicio(&x, NULL);
+  return x;
 }
 static int temOrigens(void) { return estado() != EST_ITENS && modo != MODO_ASSISTIDOS; }
 static float bibX(void) {
@@ -528,11 +529,9 @@ static float bibX(void) {
 // text scale alone: the same left/right margins at every scale, and the grid,
 // the columns and the header badge all agree on it.
 static float bibDireita(void) {
-  float txtDx = NV_LAYOUT_REAL_W / gfx_escala_txt() - NV_LAYOUT_REAL_W;
-#ifdef NV_TOUCH_UI
-  if (NV_LAYOUT_REAL_W < NV_LAYOUT_REAL_H) return NV_LAYOUT_REAL_W / gfx_escala_txt() - NV_BIB_X;
-#endif
-  return NV_BIB_DIR + txtDx;
+  float x, w;
+  t21_inicio(&x, &w);
+  return x + w;
 }
 static float bibW(void) {
   if (temAberta && aberta.fonte == LST_TRAKT && !trilha) return 600;
