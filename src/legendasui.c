@@ -1223,7 +1223,9 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
   VideoLegendaEstilo secundario;
   const VideoLegendaEstilo *e = &secundario;
   int n, i, nl = 0, r, gg, b, fundo, borda, posicao = ajustes_leg2_posicao();
-  float topo, x0 = 60.0f, x1 = 60.0f + larguraSecundaria(), alpha, y, altura = 0.0f;
+  float topo, x0 = 60.0f, x1 = 60.0f + larguraSecundaria(), alpha, bgAlpha, y, altura = 0.0f;
+  float xs[LEG2_LINHAS];
+  int vao;
   TxtEstilo est;
   GfxRect il;
   bandaFim = 0.0f;
@@ -1235,6 +1237,8 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
   if (n <= 0) return;
   secundario = estiloSecundario(principal, &est, &r, &gg, &b, &fundo, &borda);
   alpha = (e->opacidade == 3 ? .25f : e->opacidade == 2 ? .5f : e->opacidade == 1 ? .75f : 1.f) * g->alpha;
+  bgAlpha = (float)video_leg_fundo_opacidade(e) / 100.0f * g->alpha;
+  vao = video_leg_espaco(e);
   topo = 48.0f + 72.0f * (g->osd < 0 ? 0 : g->osd > 1 ? 1 : g->osd);
   if (g->videoY > topo) topo = g->videoY + 24.0f;   // letterbox: start on the picture
   if (posicao < 0 && !g->junto && plrilha_rect(&il)) {
@@ -1249,10 +1253,10 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
   }
   for (i = 0; i < n && nl < LEG2_LINHAS; i++)
     nl += quebrar(&cues[i], e, est, r, gg, b, borda, ajustes_leg_borda_rgb(e->corBorda), x1 - x0, ln + nl, LEG2_LINHAS - nl);
+  for (i = 0; i < nl; i++) altura += (float)ln[i].cor.h + (i ? (float)vao : 0.0f);
   if (g->junto || posicao >= 0) {
     // Stacked: the whole block ends just above the primary (2-line cues grow
     // upward, never over it) and stays inside the picture.
-    for (i = 0; i < nl; i++) altura += (float)ln[i].cor.h + (i ? 5.0f : 0.0f);
     if (posicao >= 0)
       topo = g->baseY - deslocamentoPosicao(principal->posicao) + deslocamentoPosicao(posicao) - altura;
     else topo = g->baseY - 10.0f - altura;
@@ -1260,12 +1264,25 @@ void legendasui_desenhar_secundaria(const LegendasGeo *g) {
   }
   y = topo;
   for (i = 0; i < nl; i++) {
+    const TxtLinha *l = &ln[i].cor;
+    xs[i] = (x0 + x1) * 0.5f - (float)l->w * 0.5f;
+  }
+  // UMA caixa para o bloco inteiro: a segunda legenda tinha o mesmo defeito da
+  // principal (uma caixa por linha, sobrepostas no encontro).
+  if (fundo && bgAlpha > 0.0f && nl > 0) {
+    float bx0 = xs[0], bx1 = xs[0] + ln[0].cor.w;
+    for (i = 1; i < nl; i++) {
+      if (xs[i] < bx0) bx0 = xs[i];
+      if (xs[i] + ln[i].cor.w > bx1) bx1 = xs[i] + ln[i].cor.w;
+    }
+    gfx_cor((GfxRect){ bx0 - 18.0f, y - 6.0f, bx1 - bx0 + 36.0f, altura + 12.0f },
+            .16f, 0, 0, 0, bgAlpha);
+  }
+  for (i = 0; i < nl; i++) {
     TxtLinha l = ln[i].cor;
-    float x = (x0 + x1) * 0.5f - (float)l.w * 0.5f;
-    if (fundo) gfx_cor((GfxRect){ x - 18, y - 6, (float)l.w + 36, (float)l.h + 12 }, .16f, 0, 0, 0, fundo * .16f * alpha);
-    txt_desenhar_borda(ln[i].borda, x, y, borda, alpha);
-    txt_desenhar_alpha(l, x, y, alpha);
-    y += (float)l.h + 5.0f;
+    txt_desenhar_borda(ln[i].borda, xs[i], y, borda, alpha);
+    txt_desenhar_alpha(l, xs[i], y, alpha);
+    y += (float)l.h + (float)vao;
   }
   if (posicao < 0 && !g->junto) bandaFim = y;
 }
@@ -1288,7 +1305,7 @@ float legendasui_altura_secundaria(const LegendasGeo *g) {
   secundario = estiloSecundario(principal, &est, &r, &gg, &b, &fundo, &borda);
   for (i = 0; i < n && nl < LEG2_LINHAS; i++)
     nl += quebrar(&cues[i], e, est, r, gg, b, borda, ajustes_leg_borda_rgb(e->corBorda), larguraSecundaria(), ln + nl, LEG2_LINHAS - nl);
-  for (i = 0; i < nl; i++) altura += (float)ln[i].cor.h + (i ? 5.0f : 0.0f);
+  for (i = 0; i < nl; i++) altura += (float)ln[i].cor.h + (i ? (float)video_leg_espaco(e) : 0.0f);
   return altura;
 }
 

@@ -579,6 +579,14 @@ static void ass_trilha_tailandes(ASS_Track *t) {
   }
 }
 
+// ASS alpha is inverted (0 = opaque, 255 = transparent), and the background
+// opacity is the person's choice, independent of the text opacity.
+static unsigned ass_bg_alpha(int pct) {
+  if (pct < 0) pct = 0;
+  if (pct > 100) pct = 100;
+  return (unsigned)(255 - (pct * 255 + 50) / 100);
+}
+
 static void ass_plain_style_locked(const PlainAssStyle *p) {
   ASS_Style *s;
   if (!assTrack || !assTrack->n_styles) return;
@@ -609,7 +617,7 @@ static void ass_plain_style_locked(const PlainAssStyle *p) {
       }
       if (p->overrides & PLAIN_ASS_BG) {
         s->BorderStyle = p->background ? 4 : 1;
-        s->BackColour = p->background ? (unsigned)(255 - p->background * 255 * 16 / 100) : 46u;
+        s->BackColour = p->background ? ass_bg_alpha(p->bgOpacity) : 46u;
       }
       // BackColour carries shadow RGB unless it is a background box.
       if ((p->overrides & PLAIN_ASS_OUTLINE) && s->BorderStyle == 1)
@@ -634,7 +642,7 @@ static void ass_plain_style_locked(const PlainAssStyle *p) {
   s->OutlineColour = (uint32_t)p->outlineRgb << 8;
   // BorderStyle=4 uses BackColour for the existing black background box.
   // Without that box, BackColour is the shadow, at its original opacity.
-  s->BackColour = p->background ? (unsigned)(255 - (p->background * 255 * 16 / 100))
+  s->BackColour = p->background ? ass_bg_alpha(p->bgOpacity)
                    : (p->border == 2 ? (uint32_t)p->outlineRgb << 8 : 0u) | 46u;
   s->Bold = p->bold ? 1 : 0;
   s->BorderStyle = p->background ? 4 : 1;
