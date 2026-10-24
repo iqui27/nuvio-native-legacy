@@ -918,8 +918,8 @@ static void desenharSala(void) {
   txt_bloco_corta(TXT_ILHA_TITULO, i18n("Os melhores lugares são juntos"), 250, 250, 250, textoX, textoY + 92, 460, 52, a, 2);
   texto(TXT_ILHA_NOME, m->temSala && m->sala.titulo[0] ? m->sala.titulo : juntos_titulo(), textoX, textoY + (compacto ? 200 : 214), 235, a, 900);
   if (mostrarQr) {
-    float lado = compacto ? 160 : 220;
-    GfxRect q = { fminf(tela.x + tela.w - 48, direita) - lado, textoY + (compacto ? 24 : 56), lado, lado };
+    float lado = compacto ? 140 : 220;
+    GfxRect q = { fminf(tela.x + tela.w - 48, direita) - lado, textoY + 56, lado, lado };
     GLuint t = qrTextura(juntos_url_celular());
     gfx_cor((GfxRect){ q.x - 12, q.y - 12, q.w + 24, q.h + 24 }, 0.06f, 1, 1, 1, a);
     if (t) gfx_rect(q, t, GFX_SNAP, 0, 0, 0, 0, 1, 1, 1, a);
