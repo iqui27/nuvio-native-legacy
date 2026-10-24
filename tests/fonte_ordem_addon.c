@@ -3,6 +3,9 @@
 #include "../src/streams.c"
 #include "stub_player_source_actions.h"
 
+int ajustes_fonte_prioridade(void) { return 0; }
+int fontefalha_addon_ao_vivo(const char *key) { (void)key; return 0; }
+int xtream_url_limitada(const char *url) { (void)url; return 0; }
 static int modo;
 static int negativa, consultas;
 int debrid_resolver_cache(const char *h, int f, char *u, unsigned t, int *fora) {

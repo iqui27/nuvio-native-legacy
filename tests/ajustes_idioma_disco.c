@@ -252,7 +252,7 @@ int main(void) {
   reiniciarIdioma();
   ajustes_dir(dir);
   assert(ajustes_idioma() == IDIOMA_ZHTW);
-  escrever(caminho, "idioma 30\nidiomaAutoLocal 0\n");       // fora da faixa: nao inventa idioma
+  escrever(caminho, "idioma 31\nidiomaAutoLocal 0\n");       // outside the append-only language range
   reiniciarIdioma();
   ajustes_dir(dir);
   assert(ajustes_idioma() == IDIOMA_EN);
@@ -272,7 +272,7 @@ int main(void) {
       "pt-BR", "en-US", "ro-RO", "uk-UA", "ru-RU", "fr-FR", "de-DE", "es-ES", "it-IT",
       "nl-NL", "pl-PL", "tr-TR", "pt-PT", "sv-SE", "da-DK", "nb-NO", "cs-CZ", "sk-SK",
       "sl-SI", "hu-HU", "lt-LT", "bs-BA", "sr-RS", "bg-BG", "el-GR", "id-ID", "vi-VN",
-      "ja-JP", "zh-CN", "zh-TW" };
+      "ja-JP", "zh-CN", "zh-TW", "ar-SA" };
     int i;
     valor[AJ_TMDB_IDIOMA] = 0;
     for (i = 0; i < IDIOMA_N; i++) {

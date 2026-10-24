@@ -74,7 +74,7 @@ static void checkReviewP1(const char *out, const char *finding) {
         char path[900]; snprintf(path,sizeof path,"%s/ajustes.txt",dados_dir());
         FILE *file=fopen(path,"w"); assert(file);
         // Saved values 0/1 mean enabled/disabled for these toggles.
-        fprintf(file,"idioma 1\nhomeLayoutLocal %d\nbordaFocoCartaz %d\nvidroLocal %d\nnotaEpisodio 0\nselected_theme 2\nescalaTextoVersaoLocal 1\nescalaTextoLocal 2\n",layout,ring?0:1,glass?0:1);
+        fprintf(file,"performanceAutoVersaoLocal 1\nidioma 1\nhomeLayoutLocal %d\nbordaFocoCartaz %d\nvidroLocal %d\nnotaEpisodio 0\nselected_theme 2\nescalaTextoVersaoLocal 1\nescalaTextoLocal 2\n",layout,ring?0:1,glass?0:1);
         fclose(file); ajustes_dir(dados_dir());
         assert(ajustes_home_layout()==layout && ajustes_vidro()==glass && ajustes_borda_foco()==ring);
         assert(ajustes_nota_episodio(EX_TRAKT));
@@ -227,7 +227,7 @@ int main(int argc, char **argv) {
     for(int layout=0;layout<3;layout+=2) {
       char settings[700]; snprintf(settings,sizeof settings,"%s/ajustes.txt",dados_dir());
       FILE *file=fopen(settings,"w"); assert(file);
-      fprintf(file,"idioma 1\nhomeLayoutLocal %d\nbordaFocoCartaz 1\nvidroLocal 1\nnotaEpisodio 3\nselected_theme %d\nshowFullReleaseDate 0\nescalaTextoVersaoLocal 1\nescalaTextoLocal 2\n",layout,light?0:2); fclose(file);
+      fprintf(file,"performanceAutoVersaoLocal 1\nidioma 1\nhomeLayoutLocal %d\nbordaFocoCartaz 1\nvidroLocal 1\nnotaEpisodio 3\nselected_theme %d\nshowFullReleaseDate 0\nescalaTextoVersaoLocal 1\nescalaTextoLocal 2\n",layout,light?0:2); fclose(file);
       ajustes_dir(dados_dir());
       montarCatalogo();
       snprintf(itens[0].backdrop,sizeof itens[0].backdrop,"%s",art);

@@ -91,8 +91,12 @@ enum { CTX_PENDENTE = 1, CTX_CONFIRMADA = 2, CTX_FALHA = 3 };
 // copia do CatItem nao tem a marca — so a da watchlist tem. Pergunta a todas as
 // fontes que sabem: a copia do cartao, a lista local, qualquer outra copia do
 // catalogo (watchlist do Trakt) e o Plan to Watch do Simkl.
+static int doPainel, doSocial;
 static int tituloSalvo(const CatItem *ci) {
   if (!ci) return 0;
+  // Owner 21/10: a title opened from the Saved panel IS saved, so its card
+  // offers "Remover" (never "Salvar"), whatever source the card copy knows.
+  if (doPainel && !doSocial) return 1;
   int fonte = ajustes_fonte_biblioteca();
   if (ci->naLista && (ci->listaFontes & (1u << fonte))) return 1;
   if (!ci->imdb[0]) return 0;

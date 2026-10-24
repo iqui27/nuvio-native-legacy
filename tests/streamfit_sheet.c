@@ -22,6 +22,9 @@ void partes_pedir_cedo(const Stream *s,const char *t) { (void)s;(void)t; }
 void partes_pedir_item(const Stream *s,int i) { (void)s;(void)i; }
 int partes_resultado(PartesLista *l) { (void)l;return PARTES_VAZIO; }
 void partes_aquecer(void) {}
+int partes_airlock_estado(int *l,char *d,unsigned n) { (void)l;(void)d;(void)n;return -2; }
+void partes_airlock_pedir(int u,int i,int l) { (void)u;(void)i;(void)l; }
+int debrid_tb_disponivel(void) { return 0; }
 void partes_cancelar(void) {}
 void ctxhold_cancelar(CtxHold *h) { memset(h,0,sizeof *h); }
 int ctxhold_passo(CtxHold *h,Uint32 t,int f) { (void)h;(void)t;(void)f;return 0; }

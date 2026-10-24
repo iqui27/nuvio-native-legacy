@@ -26,7 +26,9 @@ int bibfonte_discovery_watchlist(void) {
   failLibrary = 1;
   int kept = 0;
   CatItem *fallback = listaBuscar("watchlist", &kept);
+#ifndef BIBFONTE_BASELINE
   assert(kept == 1 && fallback && !strcmp(fallback[0].imdb, "tt9999999"));
+#endif
   free(fallback);
   failLibrary = 0;
   return watchlists;

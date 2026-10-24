@@ -74,6 +74,14 @@ const char *sessao_usuario(void)  { return __atomic_load_n(&fixtureDono, __ATOMI
 int         perfis_ativo(void)    { return 1; }
 #endif
 const char *dados_dir(void)       { return dirDados; }
+char *dados_caminho(char *dst, unsigned size, const char *name) {
+  snprintf(dst, size, "%s/%s", dirDados, name); return dst;
+}
+int ajustes_nota_episodio(int source) { (void)source; return 1; }
+void addons_catalogo_chave(const char *id, const char *base, const char *type,
+                           const char *catalog, char *dst, unsigned size) {
+  (void)base; snprintf(dst, size, "%s_%s_%s", id, type, catalog);
+}
 static void caminhoDado(char *dst, size_t tam, const char *nome) {
   snprintf(dst, tam, "%s/%s", dirDados, nome);
 }
@@ -123,8 +131,9 @@ static const char *baseAtual(void)     { return versaoAtual() > 1 ? BASE_NOVA : 
 int   addons_n(void)                   { return 1; }
 const char *addons_base(int i)         { (void)i; return baseAtual(); }
 int   addons_ativo(int i)              { (void)i; return 1; }
-int   addons_fornece(int i, int oque)     { (void)i; (void)oque; return 0; }
-int   addons_sondado(int i)              { (void)i; return 0; }
+static int fixtureMeta;
+int   addons_fornece(int i, int oque)     { (void)i; return fixtureMeta && oque == ADD_META; }
+int   addons_sondado(int i)              { (void)i; return fixtureMeta; }
 const char *addons_id_manifesto(int i) { (void)i; return AID; }
 const char *addons_nome(int i)         { (void)i; return "Addon"; }
 unsigned addons_versao(void)           { return versaoAtual(); }
@@ -182,7 +191,9 @@ static int imdbNaTela(const char *imdb, int (*campo)(const CatItem *)) {
 }
 static int ehNaLista(const CatItem *c) { return c->naLista; }
 
+static char *(*fixtureRede)(const char *url);
 char *rede_baixar(const char *url, int t) {
+  if (fixtureRede) return fixtureRede(url);
   assert(!fixtureAddonListDepth); // snapshots must release before transport
   char buf[600];
   const char *p;

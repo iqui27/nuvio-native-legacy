@@ -114,7 +114,11 @@ static int fx_trailer_aberto(void) { return fxTrailerVivo; }
 static Uint32 fxTick;
 static Uint32 fx_ticks(void) { return getenv("NV_EP_PERF") || getenv("NV_EP_FINAL_SHOTS") ? fxTick : SDL_GetTicks(); }
 #define SDL_GetTicks fx_ticks
+#ifdef NV_REACAO_DETAIL_SOURCE
+#include NV_REACAO_DETAIL_SOURCE
+#else
 #include "../src/detail.c"
+#endif
 #undef SDL_GetTicks
 #undef gfx_rect_furos
 #include "menu.h"
@@ -700,6 +704,7 @@ int main(int argc, char **argv) {
     snprintf(cam, sizeof cam, "%s/ajustes.txt", dados_dir());
     f = fopen(cam, "w");
     assert(f);
+    if (getenv("NV_AVALIAR_SHOTS")) fprintf(f, "vidroLocal 1\n");
     // NUVIO_SHOT_IDIOMA=N troca o idioma das capturas que nao sao as das notas
     // da release (0 pt ... 7 es; ver idiomacod.h): serve a conferir traducao.
     fprintf(f, "idioma %d\n", getenv("NUVIO_SHOT_IDIOMA") ? atoi(getenv("NUVIO_SHOT_IDIOMA")) : 0);
@@ -712,6 +717,44 @@ int main(int argc, char **argv) {
     ajustes_dir(dados_dir()); }
 
   montarCatalogo();
+  if (getenv("NV_674_SHOTS")) {
+    itens[0].progresso = 0;
+    cat_definir_tudo(itens, 2, &filEnsaio, 1);
+    cat_definir_episodios(0, episodios, T1_N + T2_N + T3_N);
+    semear(1, T1_N, T1_N); semear(2, T2_N, 8); semear(3, T3_N, 0);
+    HomeItem hi = {0}; hi.indice = 0;
+    detail_abrir(&hi); quadros(120);
+    nivel = 1; foco.fileira = SEC_EPISODIOS;
+    foco.coluna = foco.colunaLembrada[SEC_EPISODIOS];
+    quadros(120);
+    snprintf(nome, sizeof nome, "%s-pt-BR.png", saida); gravar(nome);
+    return 0;
+  }
+  if (getenv("NV_AVALIAR_SHOTS")) {
+    ajustes_definir_vidro(0);
+    semear(1, T1_N, 3);
+    reacao_nota_definir(IMDB_SERIE ":1:2", 9);
+    abrir(0, 0); nosEpisodios(1); quadros(120);
+    snprintf(nome, sizeof nome, "%s/episode-rating.png", saida); gravar(nome);
+    nivel = 0; quadros(120);
+    assert(reacao_detalhe_abrir(cat_item(0)));
+    quadros(120);
+    assert(reacao_aberta() && reacao_passo() == 0);
+    snprintf(nome, sizeof nome, "%s/reacao-detalhe.png", saida); gravar(nome);
+    SDL_Event ratingKey = {0};
+    ratingKey.type = SDL_KEYDOWN; ratingKey.key.keysym.sym = SDLK_RETURN;
+    assert(reacao_evento(&ratingKey, 1));
+    assert(reacao_passo() == 2 && reacao_nota(IMDB_SERIE) == 8);
+    ratingKey.key.keysym.sym = SDLK_ESCAPE;
+    assert(reacao_evento(&ratingKey, 1));
+    quadros(120);
+    assert(!reacao_aberta() && reacao_nota(IMDB_SERIE) == 8);
+    snprintf(nome, sizeof nome, "%s/reacao-detalhe-nota.png", saida); gravar(nome);
+    foco.fileira = SEC_NOTAS; foco.coluna = 0; nivel = 1; quadros(120);
+    SDL_Delay(200); quadros(3); // Finish the text gate's wall-clock fade.
+    snprintf(nome, sizeof nome, "%s/title-rating.png", saida); gravar(nome);
+    return 0;
+  }
   if (getenv("NV_EP_FINAL_SHOTS")) { episodeShots(saida); return 0; }
   if (getenv("NV_EP_PERF")) {
     assert(ajustes_home_layout() == HOME_LAYOUT_MODERNA && ajustes_vidro());

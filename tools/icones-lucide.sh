@@ -50,7 +50,7 @@ images info layout-dashboard monitor-cog palette panel-top plug puzzle
 rotate-ccw-clock rows-3 star user-round mic keyboard smartphone shuffle
 rotate-cw x library eye eye-off users
 clock triangle-alert tv-minimal-play calendar download wifi-off wifi link-2-off
-cloud megaphone bookmark
+cloud megaphone bookmark music
 clapperboard languages search chevron-right check plus minus memory-stick delete
 activity gauge zap database
 arrow-up-down heart moon sun-dim

@@ -55,6 +55,11 @@ const char *i18n(const char *s)         { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
 static const char *fakeDados = "";
 const char *dados_dir(void)             { return fakeDados; }
+char *dados_caminho(char *dst, unsigned size, const char *name) {
+  snprintf(dst, size, "%s/%s", fakeDados, name); return dst;
+}
+int ajustes_nota_episodio(int source) { (void)source; return 1; }
+int ajustes_fonte_biblioteca(void) { return 0; }
 const char *sessao_usuario(void)        { return ""; }
 static int fakePerfil = 1;
 int         perfis_ativo(void)          { return fakePerfil; }
@@ -277,6 +282,11 @@ char *rede_baixar(const char *u, int t) {
 }
 char *rede_baixar_com(const char *u, int t, const char *const *c) {
   (void)c; return rede_baixar(u, t); }
+char *rede_baixar_st(const char *u, int t, const char *const *c, int *status) {
+  char *r = rede_baixar_com(u, t, c);
+  if (status) *status = r ? 200 : 0;
+  return r;
+}
 int arte_reserva_registrar(const char *url, const char *imdb, int poster) {
   (void)url; (void)imdb; (void)poster; return 1; }
 

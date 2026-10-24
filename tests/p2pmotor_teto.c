@@ -2,6 +2,8 @@
 // COMPILADOS de verdade (P2PM_DURO_MAX_MB 1536, reserva 512 MB). So conta: nao
 // sobe motor. Rodado por tests/p2pmotor.sh.
 #include "p2pmotor.h"
+#include "p2p.h"
+#include <string.h>
 #include "rede.h"
 #include <assert.h>
 #include <stdio.h>
@@ -22,6 +24,14 @@ void rede_resposta_limpar(RedeResposta *r) { (void)r; }
 #define GB(x) ((uint64_t)(x) << 30)
 
 int main(void) {
+  // No NV_P2P_MOTOR: even a saved enabled setting cannot open a torrent.
+  assert(!p2pmotor_disponivel());
+  assert(strstr(p2pmotor_motivo_indisponivel(), "package built without the P2P engine"));
+  assert(!p2p_ativo());
+  assert(!p2p_usa_motor());
+  char url[512] = "stale";
+  assert(p2p_resolver("0123456789012345678901234567890123456789", 0, "", url, sizeof url) == P2P_ERR_DESLIGADO);
+  assert(!url[0]);
 #ifdef NV_ANDROID
   uint64_t ceiling = p2pmotor_teto_duro(GB(8), 0);
   assert(p2pmotor_cabe(MB(700), ceiling));

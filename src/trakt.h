@@ -178,4 +178,6 @@ int trakt_ler_filmes_vistos(const char *corpo);
 // Nota de 1 a 10 em /sync/ratings (a reacao dos creditos, reacao.c). Nao
 // bloqueia; 0 quando o Trakt esta desligado ou o id nao e IMDb.
 int trakt_avaliar(const char *imdb, const char *tipo, int nota);
+// Pure payload builder: title or series IMDb:season:episode; zero removes.
+int trakt_nota_corpo(char *dst, size_t tam, const char *imdb, const char *tipo, int nota);
 #endif

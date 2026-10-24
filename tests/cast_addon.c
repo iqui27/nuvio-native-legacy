@@ -1,16 +1,8 @@
 // #528: addon portraits must survive unavailable optional TMDB enrichment.
-#include "stub_perfisessao.h"
 #define main detail_main
 #include "detalheanime.c"
 #undef main
 
-int ajustes_ocultar_filmes_vistos(void) { return 0; }
-int recomenda_social_mesclar_sessao(CatItem *items, int n, int max, uint64_t session) {
-  (void)session; return recomenda_social_mesclar(items, n, max);
-}
-int trakt_enfeitar_lote_sessao(CatItem *items, int n, uint64_t session) {
-  (void)session; return trakt_enfeitar_lote(items, n);
-}
 
 static int sawTmdb;
 static void beforeTmdb(const char *url) {

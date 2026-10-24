@@ -134,7 +134,7 @@ static void recApagar(const char *nome) {
 static int recFalhas;
 static void recMarcarRede(int st) {
   if (recSessaoFio() && !perfis_sessao_travar(recSessaoFio())) return;
-  if (st >= 200 && st < 500) recFalhas = 0;
+  if (st >= 200 && st < 500 && st != 401) recFalhas = 0;
   else if (recFalhas < REC_RECUO_MAX) recFalhas++;
   if (recSessaoFio()) perfis_sessao_destravar();
 }
@@ -1531,7 +1531,7 @@ static int perfilCab(char *dst, size_t tam, int viaNuvio) {
 static int bearerSessao(char *dst, size_t n) {
   char t[3000];
   int ok = sessao_token_copiar(t, sizeof t);
-  if (ok) snprintf(dst, n, "Authorization: Bearer %s", t);
+  if (ok) ok = snprintf(dst, n, "Authorization: Bearer %s", t) < (int)n;
   memset(t, 0, sizeof t);
   return ok;
 }
@@ -1547,7 +1547,7 @@ static void recAtualizarToken(void) {
 static int bearerSessaoLocal(char *dst, size_t n) {
   char usuario[80], t[3000];
   int ok = sessao_identidade_local_copiar(usuario, sizeof usuario, t, sizeof t);
-  if (ok) snprintf(dst, n, "Authorization: Bearer %s", t);
+  if (ok) ok = snprintf(dst, n, "Authorization: Bearer %s", t) < (int)n;
   memset(t, 0, sizeof t);
   return ok;
 }
@@ -1570,6 +1570,7 @@ static char *recBaixarEtag(const char *url, int tempo, const char **cab, int *st
 }
 
 static int identidade(const char **cab) {
+  if (perfis_precisa_escolher()) return 0;
   const char *tcab[4];
   char chave[160];
   if (trakt_ativo() && trakt_cabecalhos(tcab, fioAut, sizeof fioAut,
@@ -2953,6 +2954,7 @@ static void tratarSocial(const char **cab) {
 // Identidade em buffers do CHAMADOR. identidade() usa os estaticos do fio de
 // rede; esta e chamada pela descoberta, em outro fio, e nao pode pisar neles.
 static int identidadeEm(const char **cab, char *aut, size_t na, char *via, size_t nv) {
+  if (perfis_precisa_escolher()) return 0;
   const char *tcab[4];
   char chave[160];
   if (trakt_ativo() && trakt_cabecalhos(tcab, aut, na, chave, sizeof chave)) {
@@ -3458,7 +3460,7 @@ int recomenda_cabecalhos(const char **cab, char *aut, size_t na, char *via, size
                          char *perfil, size_t np) {
   const char *tcab[4];
   char chave[160];
-  if (!recomenda_ativo() || !cab || !aut || !via || !perfil) return 0;
+  if (!recomenda_ativo() || perfis_precisa_escolher() || !cab || !aut || !via || !perfil) return 0;
   if (trakt_ativo() && trakt_cabecalhos(tcab, aut, na, chave, sizeof chave)) {
     snprintf(via, nv, "X-Nuvio-Auth: trakt");
   } else if (bearerSessao(aut, na)) {

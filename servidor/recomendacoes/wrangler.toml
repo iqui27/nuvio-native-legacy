@@ -11,6 +11,10 @@ database_id = "fbea4764-9125-474e-ae4e-875d2e21b2fc"
 [[kv_namespaces]]
 binding = "CATS"
 
+# Music soundtrack lookups (musica.js), cached 30 days (7 when nothing found).
+[[kv_namespaces]]
+binding = "MUS"
+
 # TV VIDAA: o site e o proxy dela vivem no worker nuvio-tv (servidor/tv). Este
 # binding so repassa /tv/* e /v1/proxy para la (ver index.js). NUNCA ponha
 # [assets] aqui de novo: todo deploy sem o site montado apagava a pagina da TV.
@@ -35,6 +39,13 @@ JUNTOS_URL = "https://nuvio-juntos.henriquef29.workers.dev"
 [triggers]
 crons = ["17 4 * * *"]
 
+# Optional Apple Music catalog secrets (names only; no values in this file):
+#   APPLE_MUSIC_TEAM_ID
+#   APPLE_MUSIC_KEY_ID
+#   APPLE_MUSIC_P8
+# All three enable catalog search first; otherwise MusicBrainz/iTunes is used.
+# ES256 developer tokens stay in worker memory for up to 12 hours, never in KV.
+# Request country=br selects the storefront (default us); cache is storefront-specific.
 # Segredos (nao vao aqui; use `wrangler secret put`):
 #   TYPESAFE_KEY        Jev HTTP API key for Live TV category suggestions
 #   TRAKT_CLIENT_ID     client id do aplicativo no Trakt

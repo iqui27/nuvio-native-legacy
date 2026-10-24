@@ -27,6 +27,9 @@ Uint32 SDL_GetTicks(void) { return 0; }
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
+#define NV_TEST_SESSAO_PROPRIA
+#define NV_TEST_ADDONS_PROPRIOS
+#define NV_TEST_SOCIAL_PROPRIO
 #include "jellyfin_stub.inc"
 // Manifest loading is outside this metadata harness.
 void addons_lista_travar(void) {}
@@ -53,6 +56,15 @@ const char *i18n(const char *s)         { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
 static const char *fakeDados = "";
 const char *dados_dir(void)             { return fakeDados; }
+char *dados_caminho(char *dst, unsigned size, const char *name) {
+  snprintf(dst, size, "%s/%s", fakeDados, name); return dst;
+}
+int ajustes_nota_episodio(int source) { (void)source; return 1; }
+int ajustes_fonte_biblioteca(void) { return 0; }
+void addons_catalogo_chave(const char *id, const char *base, const char *type,
+                           const char *catalog, char *dst, unsigned size) {
+  (void)base; snprintf(dst, size, "%s_%s_%s", id, type, catalog);
+}
 const char *sessao_usuario(void)        { return ""; }
 static int fakePerfil = 1;
 int         perfis_ativo(void)          { return fakePerfil; }
@@ -276,6 +288,10 @@ char *rede_baixar(const char *u, int t) {
   if (strstr(u, "themoviedb.org/3/tv/555/season/")) return strdup("{\"episodes\":[]}");
   if (strstr(u, "themoviedb.org/3/movie/278?") && tmdbFilme) return strdup(tmdbFilme);
   return NULL;   // outros addons: fora do teste
+}
+char *rede_baixar_st(const char *u, int t, const char *const *c, int *status) {
+  (void)c; char *body = rede_baixar(u, t);
+  if (status) *status = body ? 200 : 0; return body;
 }
 char *rede_baixar_com(const char *u, int t, const char *const *c) {
   (void)c; return rede_baixar(u, t); }

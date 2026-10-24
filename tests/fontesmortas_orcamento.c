@@ -43,6 +43,9 @@ int player_mini_ativo(void) { return 0; }
 int player_quer_sair(void) { return 0; }
 const char *player_id_canal(void) { return ""; }
 void player_definir_fonte(const char *u) { (void)u; }
+void player_definir_retomada_fonte(double seconds) { (void)seconds; }
+int addons_consulta_atual(const AddonsConsulta *query) { (void)query; return 1; }
+void addons_consulta_liberar(AddonsConsulta *query) { (void)query; }
 void player_definir_tentativa(int i, int n) { (void)i; (void)n; }
 void video_definir_dv(int d) { (void)d; }
 void video_definir_cabecalhos(const char *c) { (void)c; }

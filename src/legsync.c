@@ -39,6 +39,7 @@ static struct {
   int primFase;                   // 0 baixando, 1 pronta e completa, 2 falhou/incompleta
   LegendaDocumento *primDoc;
   char primIdioma[24];
+  uint64_t primUrlHash;
   // referencia
   uint64_t refPedido;
   LegendaDocumento *refDoc;
@@ -234,6 +235,11 @@ void legsync_primaria_externa(const char *url, const char *idioma, const char *o
   pthread_mutex_lock(&M);
   if (m && L.criado) {
     uint64_t h = fnv(url);
+    if (!L.autoTroca && L.primTipo == 1 && L.primUrlHash == h &&
+        (L.primFase == 0 || (L.primFase == 1 && legenda_geracao() == L.primGer))) {
+      pthread_mutex_unlock(&M); free(m); return;
+    }
+    L.primUrlHash = h;
     m->token = ++L.primToken; m->sessao = L.sessao;
     m->info.sessao = L.sessao; m->info.flags = LEGENDA_DOC_COMPLETO;
     snprintf(m->info.idioma, sizeof m->info.idioma, "%s", idioma ? idioma : "");
@@ -250,6 +256,7 @@ void legsync_primaria_externa(const char *url, const char *idioma, const char *o
     // R4: a pessoa (ou a automatica de idioma) escolheu: plano novo. Vinda do
     // trocador, o plano continua e so anota a legenda tentada.
     L.autoEtapa = 0; L.autoRefTent = 0; L.autoPend = 0; L.manualFase = L.manualLog = 0;
+    L.autoFalha = AUTOSYNC_OK;
     if (L.autoTroca && L.autoVolta) { L.autoFase = 3; L.autoEtapa = 9; L.autoTrocou = 0; L.autoNome[0] = 0; }
     else if (L.autoTroca) {
       L.autoFase = 1; L.autoTrocou = 1; L.autoNome[0] = 0; L.autoTrocasEp++;
@@ -480,7 +487,7 @@ static void autoPasso(void) {
         if (!L.refPedido) { L.querModo = -1; if (audioPossivel()) { L.autoEtapa = 2; iniciarAudio(); } else autoFalhou(1); }
       }
     } else if (audioPossivel()) { L.autoEtapa = 2; iniciarAudio(); }
-    else { L.autoFase = 3; L.autoEtapa = 9; }
+    else autoEncerrar("sem referencia nesta plataforma");
     return;
   }
   e = autosync_estado(L.sync, 0);
@@ -678,7 +685,8 @@ void legsync_passo(const char *url, double pos, double folga, int sensivel, unsi
       printf("[legsync] automatico: %u s sem progresso (etapa %d, fase %d, ref=%d, pedido=%d); a legenda fica como esta\n",
              LS_AUTO_TETO_MS / 1000u, L.autoEtapa, L.primFase, L.refDoc != NULL, (int)L.refPedido);
       fflush(stdout);
-      L.autoFase = 3; L.autoEtapa = 9; L.autoPend = 0; L.autoDesde = 0;
+      autoEncerrar("sem progresso");
+      L.autoPend = 0; L.autoDesde = 0;
       if (L.refPedido) { legref_cancelar(L.ref); L.refPedido = 0; }
       if (L.audPedido) pararAudio();
       autosync_cancelar(L.sync, 0);
@@ -689,12 +697,12 @@ void legsync_passo(const char *url, double pos, double folga, int sensivel, unsi
   if (autoLigado) segundaPasso(sensivel);
   if (L.autoFase * 3 + L.primFase != L.autoLog) {
     L.autoLog = L.autoFase * 3 + L.primFase;
-    printf("[legsync] automatico: %s (etapa %d, legenda %s, referencia %s%s)\n",
+    printf("[legsync] automatico: %s (etapa %d, legenda %s, referencia %s%s%s)\n",
            L.autoFase == 1 ? "sincronizando" : L.autoFase == 2 ? "sincronizada" : L.autoFase == 3 ? "nao deu" : "sem plano",
            L.autoEtapa, L.primFase == 0 ? "baixando" : L.primFase == 2 ? "incompleta" : "baixada",
            L.refDoc ? "lida" : L.refPedido ? "lendo" : L.ref ? "nenhuma" : "indisponivel nesta plataforma",
-           L.autoFase == 3 && L.autoFalha != AUTOSYNC_OK ? ", motivo " : "");
-    if (L.autoFase == 3 && L.autoFalha != AUTOSYNC_OK) printf("%s", autosync_motivo(L.autoFalha));
+           L.autoFase == 3 ? ", motivo " : "",
+           L.autoFase == 3 ? (L.refMotivo != LEGREF_OK ? legref_motivo(L.refMotivo) : autosync_motivo(L.autoFalha)) : "");
     fflush(stdout);
   }
   legref_pausar(L.ref, sensivel || (folga >= 0.0 && folga < LS_FOLGA_MIN));

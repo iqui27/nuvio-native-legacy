@@ -29,7 +29,7 @@ typedef struct {
   char ordenar[48];    // sort_by do TMDB / sort_by da lista Trakt
   char ordem[8];       // sort_how do Trakt: "asc" | "desc"
   long traktLista;     // id da lista no Trakt
-  char filtros[384];   // objeto "filters" cru; o montador da URL traduz
+  char filtros[1024];  // Web snapshots include every null default (~500 bytes).
 } ColSource;
 typedef struct {
   char id[96], title[128], group[64], cover[512], hero[512], logo[512];

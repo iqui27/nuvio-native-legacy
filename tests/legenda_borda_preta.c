@@ -1,6 +1,7 @@
 // Exercise the actual preference reader, Settings controls and overlay RGB resolver.
 #include "../src/ajustes.c"
 #include <assert.h>
+void sync_proteger_ajustes_locais(void) {}
 
 static char dirPrefs[512];
 static int prefsLidas, aspecto;

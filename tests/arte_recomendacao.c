@@ -6,11 +6,14 @@
 #include "js.h"
 #include "idiomacod.h"
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
+static uint64_t sobSessao;
+static uint64_t nv_perfil_sessao_ler(void) { return 1; }
 static CatItem probe, sobSemente;
 static int idx, arteFixaPoster, sobFioVivo, sobIndice;
 static char arteFixa[NV_ARTE_URL_MAX];
@@ -22,6 +25,7 @@ static const char *landscape = "https://image.tmdb.org/t/p/w1280/full-backdrop.j
 
 const CatItem *cat_item(int i) { return i == 0 ? &probe : NULL; }
 int cat_indice_por_imdb(const char *id) { (void)id; return -1; }
+int cat_indice_por_imdb_tipo(const char *id, const char *tipo) { (void)tipo; return cat_indice_por_imdb(id); }
 static int descCatAcrescentar(const CatItem *c) { probe = *c; return 0; }
 // These asynchronous service paths must not run for a complete IMDb seed.
 void desc_pedir_titulo(const char *id) { (void)id; abort(); }

@@ -175,6 +175,21 @@ const char *artehero_url_episodio(const CatItem *item) {
   return fixar(buf, buf);
 }
 
+static const char *tmdbReserva(const CatItem *item, int logo) {
+  char tmp[512];
+  long id = item->tmdb;
+  if (!strncmp(item->imdb, "tmdb:", 5)) id = atol(item->imdb + 5);
+  if (id <= 0 && strncmp(item->imdb, "tt", 2)) return NULL;
+  snprintf(tmp, sizeof tmp, "%s%s/%s/%s", ARTE_VIRTUAL_PREFIXO,
+           logo ? "tmdblogo" : "tmdb", qualidadeImg == 2 ? "original" :
+           qualidadeImg == 0 ? (logo ? "w500" : "w780") : "w1280", item->imdb);
+  if (id > 0) {
+    size_t len = strlen(tmp);
+    snprintf(tmp + len, sizeof tmp - len, "/%c%ld", !strcmp(item->tipo, "series") ? 't' : 'm', id);
+  }
+  return falhou(tmp) ? NULL : fixar(tmp, tmp);
+}
+
 const char *artehero_url(const CatItem *item) {
   char buf[512];   // sai pelo anel (fixar): ver artehero_url_episodio
   const char *b;
@@ -183,6 +198,13 @@ const char *artehero_url(const CatItem *item) {
   // por aqui.
   if ((b = artehero_url_escolhida(item)) != NULL) return b;
   b = item->backdrop;
+  // Search seeds may repeat the poster as a backdrop. Resolve by TMDB ID.
+  if (!strncmp(item->imdb, "tmdb:", 5) &&
+      (!b[0] || !strcmp(b, item->poster) || falhou(b))) {
+    if (item->backdropTmdb[0] && !falhou(item->backdropTmdb)) return item->backdropTmdb;
+    const char *u = tmdbReserva(item, 0);
+    if (u) return u;
+  }
   // A MESMA IMAGEM DO CARD, SEMPRE (19/09, pedido do dono): "clicar no card e
   // as coisas simplesmente se posicionarem, nao uma mudanca de pagina". Ate
   // aqui o heroi e o detalhe pediam o fundo do METAHUB para todo titulo com
@@ -380,6 +402,7 @@ static const char *urlDaFonte(const CatItem *item, int fonte, int grande,
       }
       return saida;
     case ARTEHERO_TMDB:
+      if (!temTt && !strncmp(item->imdb, "tmdb:", 5)) return tmdbReserva(item, 0);
       b = item->backdropTmdb[0] ? item->backdropTmdb :
           strstr(item->backdrop, "image.tmdb.org/t/p/") ? item->backdrop : NULL;
       if (!b && temTt) {
@@ -761,22 +784,27 @@ void artehero_logo_sessao_iniciar(const CatItem *item) {
   }
 }
 
+static const char *logoAutomatico(const CatItem *item) {
+  if (!item) return NULL;
+  const char *url = artehero_url_logo(item->logo);
+  if (url && url[0] && !falhou(url)) return url;
+  return tmdbReserva(item, 1);
+}
+
 const char *artehero_logo_sessao(const CatItem *item) {
   const char *url;
   if ((url = artehero_logo_escolhido(item)) != NULL) return url;
-  if (!item || !item->logo[0])
-    return logo_sessao_mesma(item) && logoSessao.url[0] &&
-                   !falhou(logoSessao.url) ? logoSessao.url : NULL;
+  if (!item) return NULL;
   if (logo_sessao_mesma(item)) {
     if (logoSessao.url[0] && !falhou(logoSessao.url)) return logoSessao.url;
     logoSessao.url[0] = 0;
-    url = artehero_url_logo(item->logo);
-    if (url && !falhou(url)) logo_sessao_guardar(url);
+    url = logoAutomatico(item);
+    if (url) logo_sessao_guardar(url);
     return url;
   }
   // A Home sem uma sessão aberta apenas normaliza o item corrente; não o
   // transforma em snapshot, para um card vizinho nunca roubar a identidade.
-  return artehero_url_logo(item->logo);
+  return logoAutomatico(item);
 }
 
 const char *artehero_logo_sessao_observar(const CatItem *item) {
@@ -791,16 +819,14 @@ const char *artehero_logo_sessao_observar(const CatItem *item) {
   }
   if (logoSessao.url[0] && !falhou(logoSessao.url)) return logoSessao.url;
   logoSessao.url[0] = 0;
-  if (item->logo[0]) {
-    const char *url = artehero_url_logo(item->logo);
-    if (url && !falhou(url)) logo_sessao_guardar(url);
-    return url;
-  }
-  return NULL;
+  const char *url = logoAutomatico(item);
+  if (url) logo_sessao_guardar(url);
+  return url;
 }
 
 const char *artehero_logo_sessao_larg(const CatItem *item, float larg) {
   { const char *e = artehero_logo_escolhido(item); if (e) return e; }
   if (logo_sessao_mesma(item)) return artehero_logo_sessao(item);
-  return item && item->logo[0] ? artehero_url_logo_larg(item->logo, larg) : NULL;
+  (void)larg;
+  return logoAutomatico(item);
 }

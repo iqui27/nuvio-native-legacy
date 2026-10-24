@@ -427,6 +427,21 @@ int perfis_puxar(void) {
   return quantidade;
 }
 
+#ifdef AJUSTES_TESTE
+// Capturas de Ajustes: uma lista de perfis de mentira, sem conta nem rede.
+void perfis_teste_definir(const char *const *nomes, const int *pin, int quantos, int ativo_) {
+  int i;
+  n = quantos > CONTA_PERFIL_MAX ? CONTA_PERFIL_MAX : quantos;
+  memset(lista, 0, sizeof lista);
+  for (i = 0; i < n; i++) {
+    lista[i].indice = i + 1;
+    snprintf(lista[i].nome, sizeof lista[i].nome, "%s", nomes[i]);
+    lista[i].primario = i == 0;
+    lista[i].temPin = pin ? pin[i] : 0;
+  }
+  ativo = ativo_;
+}
+#endif
 int           perfis_n(void)         { return n; }
 const ContaPerfil *perfis_item(int i)     { return (i >= 0 && i < n) ? &lista[i] : NULL; }
 
@@ -437,6 +452,11 @@ const ContaPerfil *perfis_item_ativo(void) {
 }
 const char   *perfis_dono(void)      { return dono; }
 int           perfis_ativo(void)     { int p = atomic_load_explicit(&ativo, memory_order_acquire); return p > 0 ? p : 1; }
+int           perfis_principal(void) {
+  int i;
+  for (i = 0; i < n; i++) if (lista[i].primario) return lista[i].indice;
+  return 1;
+}
 
 // Addons NAO sao por perfil quando o perfil diz herdar os do primario.
 //

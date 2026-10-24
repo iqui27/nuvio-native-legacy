@@ -4,7 +4,7 @@
 #include <assert.h>
 
 static char *saved;
-static int returnHit, slow, animeTitle;
+static int returnHit, slow, animeTitle, crowded, ran;
 static const char *manifest = "{\"scrapers\":["
   "{\"id\":\"anime\",\"filename\":\"anime.js\",\"supportedTypes\":[\"anime\"]},"
   "{\"id\":\"general\",\"filename\":\"general.js\",\"supportedTypes\":[\"movie\",\"tv\"]},"
@@ -34,7 +34,11 @@ int dados_gravar(const char *nome, const char *text) { (void)nome; free(saved); 
 size_t pj_pilha(void) { return 1024 * 1024; }
 int pj_executar(const PjPedido *p, PjResultado *r) {
   memset(r, 0, sizeof *r);
-  assert(p->prazoMs == 20000 && p->redeSegundos == 15);
+  if (crowded) {
+    __atomic_add_fetch(&ran, 1, __ATOMIC_RELAXED);
+    struct timespec t = {0, p->prazoMs * 1000L};
+    nanosleep(&t, NULL); // Scale scraper deadlines by 1000; no network.
+  }
   if (slow) {
     while (!__atomic_load_n(p->cancelado, __ATOMIC_ACQUIRE)) {
       struct timespec t = {0, 1000000}; nanosleep(&t, NULL);
@@ -48,14 +52,27 @@ int stream_extrair(const char *json, const char *nome, Stream **out) {
   (void)nome; *out = !strcmp(json, "hit") ? calloc(1, sizeof **out) : NULL;
   return *out != NULL;
 }
-static void order(void *u, int k, const char *nome, int estado, const void *f, int n) {
-  (void)f; (void)n;
+static void order(void *u, int k, const char *nome, const char *id, int estado, const void *f, int n) {
+  (void)f; (void)n; (void)id;
   if (estado == 1) assert(!strcmp(nome, ((const char **)u)[k]));
 }
 
 int main(void) {
   char msg[256]; Stream *out = NULL; PlugResumo p;
-  assert(PLUG_PARALELOS == 2);
+  // A large pool must query substantially more than the old six scrapers.
+  E.ligado = ligadoAt = 1;
+  E.nRepos = 1; E.repos[0].r.ativo = 1;
+  E.nScr = 130;
+  for (int i = 0; i < E.nScr; i++) {
+    E.scr[i] = (Scraper){.ativo=1, .filme=1};
+    snprintf(E.scr[i].id, sizeof E.scr[i].id, "fixture-%d", i);
+    strcpy(E.scr[i].url, "https://fixture.invalid/script.js");
+  }
+  crowded = 1;
+  assert(plugins_consultar("tmdb:603", "movie", NULL, NULL, NULL, NULL, &out) == 0);
+  free(out);
+  assert(ran >= 64);
+  crowded = 0; E.nScr = 0;
   const char *normal[] = {"general", "hit", "anime"};
   const char *hits[] = {"hit", "general", "anime"};
   const char *anime[] = {"hit", "anime", "general"};
@@ -63,7 +80,10 @@ int main(void) {
   E.nRepos = 1; E.repos[0].r.ativo = 1;
   strcpy(E.repos[0].r.url, "https://fixture.invalid/manifest.json");
   aplicarManifesto(&E, 0, manifest, E.repos[0].r.url);
-  resumo = (Resumo){ .valido = 1 };
+  resumo = (Resumo){ .valido = 1, .extraIncompleta = 1 };
+  assert(addons_busca_incompleta());
+  resumo.extraIncompleta = 0;
+  assert(!addons_busca_incompleta());
   strcpy(alvoId, "tmdb:603:1:2"); strcpy(alvoTipo, "series");
   assert(addons_motivo_vazio(msg, sizeof msg));
   assert(strstr(msg, "Plugins") && strstr(msg, "0 de 3"));

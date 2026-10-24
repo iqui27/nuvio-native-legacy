@@ -1,10 +1,13 @@
 // Exercise the production stream worker against a local CNCVerse resource.
 #define main addonslista_legacy_main
 #define rede_baixar legacy_baixar
+#define rede_baixar_st legacy_baixar_st
 #include "addonslista.c"
 #undef main
 #undef rede_baixar
+#undef rede_baixar_st
 char *rede_baixar(const char *url, int seconds);
+char *rede_baixar_st(const char *url, int seconds, const char *const *headers, int *status);
 #include "../src/addons.c"
 #include "idcanal.h"
 #include <assert.h>

@@ -26,6 +26,7 @@
 #include "plrilha.h"
 #include "ctxmenu.h"
 #include "epcoment.h"
+#include "reacao.h"
 #include "movimento.h"
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
@@ -113,7 +114,7 @@ static int semMolaScroll;
 // este menu, entao ele precisa carregar a porta que tomou. Dentro da folha de
 // episodios a opcao nao existe — quem abriu a folha veio do player e ja tem
 // fonte tocando; oferece-la ali seria uma linha que nao leva a lugar nenhum.
-enum { VM_ESTE = 0, VM_ATE, VM_TEMP, VM_FONTES, VM_DAQUI, VM_SINOPSE, VM_COMENT, VM_N };
+enum { VM_ESTE = 0, VM_ATE, VM_TEMP, VM_FONTES, VM_DAQUI, VM_SINOPSE, VM_NOTA, VM_COMENT, VM_N };
 static int vmAcoes[VM_N], vmN; // linhas visiveis -> gesto (daqui em diante e opcional)
 // O MENU DA TEMPORADA (issue #108, "Pressing 'Season' brings up option to mark
 // all as watched"): o mesmo cartao, aberto pela ABA e nao por um episodio, com
@@ -230,6 +231,9 @@ static void montarRotulos(void) {
     } else if (modo == VM_TEMP) {
       snprintf(vmRot[i], sizeof vmRot[i], quantos == 1 ? i18n("Temporada inteira (%d episódio)") : i18n("Temporada inteira (%d episódios)"), quantos);
       ic = "aj_list-video";
+    } else if (modo == VM_NOTA) {
+      snprintf(vmRot[i], sizeof vmRot[i], "%s", i18n("Sua nota"));
+      ic = "aj_star";
     } else if (modo == VM_COMENT) {
       snprintf(vmRot[i], sizeof vmRot[i], "%s", i18n("Comentários"));
       ic = "aj_message-square";
@@ -288,6 +292,7 @@ static void menuAbrir(int idx, int t, int e, const char *nome, int so) {
       }
   }
   vmAcoes[vmN++] = VM_TEMP;
+  if (so && e > 0) vmAcoes[vmN++] = VM_NOTA;
   if (so) vmAcoes[vmN++] = VM_FONTES;
   vmSinopse[0] = 0;
   if (e > 0) {
@@ -663,6 +668,7 @@ static void menuDesenhar(GfxRect area, float a0) {
   else if (vmFoco<0) meta = "← / →";
   else if (vmAcoes[vmFoco] == VM_COMENT) meta = extras_comentarios_ep_tmdb() ? "TMDB · reviews da série" : "Comentários do Trakt";
   else if (vmAcoes[vmFoco] == VM_SINOPSE) meta = "Ler sinopse";
+  else if (vmAcoes[vmFoco] == VM_NOTA) meta = "Sua nota";
   else meta = vmAcoes[vmFoco] != VM_DAQUI && vmVisto ? "Marcar como assistido" : "Desmarcar como assistido";
   float content=a;
   if (vmSo && !vmModoTemp) {
@@ -739,6 +745,9 @@ static void menuEvento(const SDL_Event *ev) {
     if (vmFoco<0) { vmFoco=0; return; }
     int modo = vmAcoes[vmFoco], v = modo == VM_DAQUI ? 0 : vmVisto;
     if (modo == VM_COMENT) { epcoment_entrar(); return; }
+    if (modo == VM_NOTA) {
+      reacao_episodio_abrir(cat_item(vmIdx), vmT, vmE); vmAberto = 0; return;
+    }
     if (modo == VM_FONTES) { vmFontesPed = 1; vmAberto = 0; return; }
     if (modo == VM_SINOPSE) { sinopse_abrir(vmNome, vmSinopse); vmAberto = 0; return; }
     menuFeito(aplicarVisto(modo, v), v);

@@ -58,14 +58,17 @@ void gpun_log_perfil(long memMB, int texMb, int fios, int heroi);
 // Automatic ladder (only raw Automatic settings participate; forced values skip):
 // 0 full glass, frost on, full animations; 1 glass Performance; 2 frost off;
 // 3 reduced animations; 4 glass off. Each trial needs >=10% AND >=3 FPS gain
-// in the next eligible window, otherwise revert and skip it this boot. Only
+// for three clean report windows, otherwise revert and skip it this boot. Only
 // accepted effects remain active. Step 2 persists foscoVetado in gpu-nivel.txt
 // under the existing GPU/driver/firmware/surface key after proven gain.
 // Explicit Frost Automatic resets the mark; recovery never clears it.
 // Existing ~3-second reports only: 3 consecutive FPS < min(refresh,60)-5
-// downgrade one eligible step (~9s); 10 FPS >= min(refresh,60)-2 recover one
+// advance one rung (~9s), even when its effect is forced; never jump rungs.
+// 10 FPS >= min(refresh,60)-2 recover one
 // (~30s). Neutral/invalid/mixed/stall >1s reports break streaks. Only full
-// Home/browse frames without video qualify. Scene changes reset streaks.
+// Home/browse frames without video qualify. Scene changes discard a window;
+// player/screen changes and texture work require 3 seconds to settle. Any
+// ineligible frame invalidates its report and cancels a pending trial.
 // Failed recovery delays retries for 100 eligible reports (~5min); no permanent
 // floor. Startup restores full recoverable quality; persisted frost stays off.
 // The gfx light budget engages only at step 3 with Automatic animations.
@@ -100,7 +103,7 @@ int  gpun_alvo_1080_ativo(void);
 void gpun_quadro_inicio(void);
 void gpun_quadro_fim(void);
 
-// Legacy frame hook, retained as a no-op; live reports are the sole authority.
+// Accumulate clean frame timing; any ineligible frame invalidates the report.
 void gpun_medir(double dtms, double espera, double cpu, int cena, int cheia);
 // Live FPS/[gpu-modos] report (~3 seconds), same scene/artwork eligibility.
 // Three reports below refresh minus 5 FPS shed one effects tier; ten above

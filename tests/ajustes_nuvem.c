@@ -50,6 +50,7 @@ static int recoveryStage(const char *dir, const char *stage) {
     for (int i = 0; i < EX_NFONTES; i++) notaFontes[i] = EX_NFONTES - 1 - i;
     bibliotecaFonteEscolhida = memoriaEscolhida = 1;
     gravar(); memcpy(expected, valor, sizeof expected);
+    expected[AJ_DV7] = valorPadrao[AJ_DV7]; // Experimental conversion is excluded from device backup.
     snprintf(path, sizeof path, "%s/../expected.bin", dir); fileWrite(path, expected, sizeof expected);
     dados_gravar("fanart.txt", "0123456789abcdef");
     dados_gravar("seekr.txt", "own-seekr-key");

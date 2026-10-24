@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+static unsigned long agoraMs(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return t.tv_sec*1000ul+t.tv_nsec/1000000ul;}
 int main(void) {
   char json[32000];size_t n=0;
   n+=snprintf(json+n,sizeof json-n,"{\"streams\":[");
@@ -101,5 +103,29 @@ int main(void) {
   for (int i = 3; i < 9; i++) assert(!v[i].notWebReady);
   assert(!strcmp(v[8].url, "https://example.invalid/media.mp4"));
   free(v);
+  // #205: as buscas por stream nao podem varrer a resposta inteira. Com os
+  // strstr soltos, 3000 fontes mistas custavam ~750 ms aqui (quadratico);
+  // limitadas ao proprio objeto caem para ~100 ms. O teto de 500 ms passa com
+  // folga na maquina mais lenta e ainda reprova a versao quadratica.
+  { char *grande=malloc(8<<20); size_t g=0; assert(grande);
+    g+=snprintf(grande+g,(8<<20)-g,"{\"streams\":[");
+    for(int i=0;i<3000;i++){
+      if(i%2)
+        g+=snprintf(grande+g,(8<<20)-g,"%s{\"infoHash\":\"h%08x\",\"fileIdx\":%d,\"name\":\"\\u26a1 AIOStreams FHD\",\"clientResolve\":{\"isCached\":true},\"behaviorHints\":{\"bingeGroup\":\"g%d\",\"videoSize\":2147483648}}",i?",":"",i,i%7,i);
+      else
+        g+=snprintf(grande+g,(8<<20)-g,"%s{\"url\":\"https://example.invalid/%d\",\"name\":\"[RD+] Torrentio FHD\",\"title\":\"T %d\",\"description\":\"1.5 GB\",\"behaviorHints\":{\"bingeGroup\":\"g%d\",\"videoSize\":1610612736}}",i?",":"",i,i,i);
+    }
+    snprintf(grande+g,(8<<20)-g,"]}");
+    unsigned long t0=agoraMs();
+    count=stream_extrair(grande,"fixture",&v);
+    unsigned long ms=agoraMs()-t0;
+    assert(count==3000);
+    assert(v[1].emCache && !strcmp(v[1].bingeGroup,"g1") && v[1].fileIdx==1);
+    assert(v[2998].emCache && v[2998].tamanhoMB==1536);
+    assert(!strcmp(v[2998].bingeGroup,"g2998"));
+    free(v); free(grande);
+    fprintf(stderr,"3000 streams: %lums\n",ms);
+    assert(ms<500);
+  }
   puts("PASS: parser isolado, cache explicito, notWebReady ancorado e externalUrl sem midia oculto.");
 }

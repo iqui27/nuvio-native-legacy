@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
     SDL_Surface *sheet = SDL_CreateRGBSurfaceWithFormat(0, width, height * 6, 32, SDL_PIXELFORMAT_RGBA32);
     assert(sheet);
     snprintf(path, sizeof path, "%s/ajustes.txt", dir); settings = fopen(path, "w"); assert(settings);
-    fprintf(settings, "idioma %d\nidiomaAutoLocal 0\nselected_theme 1\nfonteInterface 3\nvidroLocal %d\nfocoAcentoLocal %d\nescalaTextoLocal %d\n",
+    fprintf(settings, "performanceAutoVersaoLocal 1\nidioma %d\nidiomaAutoLocal 0\nselected_theme 1\nfonteInterface 3\nvidroLocal %d\nfocoAcentoLocal %d\nescalaTextoLocal %d\n",
             langs[l], !g, !c, s == 0 ? 0 : s == 1 ? 2 : 5);
     fclose(settings); ajustes_dir(dir); ajustes_dir(dir);
     gfx_escala_ui_definir(1); gfx_escala_txt_definir(scale);

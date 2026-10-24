@@ -652,7 +652,9 @@ typedef struct PreDownload {
   long nb;
   int refs, terminou;
   unsigned sessao;
+  struct PreDownload *next;
 } PreDownload;
+static PreDownload *downloadsSessao;
 static unsigned preGeracao;
 static PreDownload *preDownload;
 static int preTentou;
@@ -675,6 +677,11 @@ void legenda_pre_descartar(const char *motivo) {
 void legenda_pre_reiniciar(void) {
   pthread_mutex_lock(&trava);
   preDescartar("novo play"); preGeracao++; preTentou = 0;
+  while (downloadsSessao) {
+    PreDownload *p = downloadsSessao;
+    downloadsSessao = p->next;
+    preLiberar(p);
+  }
   pthread_mutex_unlock(&trava);
 }
 
@@ -703,6 +710,10 @@ static void *preBaixar(void *u) {
   PreDownload *p = u;
   double t0 = msAgora(); long nb = 0;
   char *bruto = rede_baixar_bin(p->url, 20, &nb);
+  char host[128]; hostDoLink(p->url, host, sizeof host);
+  printf("[legenda] download: host=%s %ld bytes em %.0f ms%s\n",
+         host, bruto ? nb : 0L, msAgora() - t0, bruto ? "" : " (falhou)");
+  fflush(stdout);
   pthread_mutex_lock(&trava);
   p->bruto = bruto; p->nb = nb; p->terminou = 1;
   if (preDownload == p && p->sessao == preGeracao) {
@@ -714,19 +725,28 @@ static void *preBaixar(void *u) {
   pthread_mutex_unlock(&trava);
   return NULL;
 }
-void legenda_pre_baixar(const char *url) {
+/* Cache owns one reference; each consumer and the worker own another. */
+static PreDownload *downloadSessao(const char *url) {
   PreDownload *p; pthread_t fio;
+  for (p = downloadsSessao; p; p = p->next)
+    if (!strcmp(p->url, url) && (!p->terminou || p->bruto)) { p->refs++; return p; }
+  p = calloc(1, sizeof *p);
+  if (!p) return NULL;
+  snprintf(p->url, sizeof p->url, "%s", url);
+  p->refs = 3; p->sessao = preGeracao;
+  if (pthread_create(&fio, NULL, preBaixar, p)) { free(p); return NULL; }
+  pthread_detach(fio);
+  p->next = downloadsSessao; downloadsSessao = p;
+  return p;
+}
+void legenda_pre_baixar(const char *url) {
+  PreDownload *p;
   if (!url || !*url) return;
   pthread_mutex_lock(&trava);
   if (preTentou) { pthread_mutex_unlock(&trava); return; }
   preTentou = 1;
-  p = calloc(1, sizeof *p);
-  if (p) {
-    snprintf(p->url, sizeof p->url, "%s", url);
-    p->refs = 2; p->sessao = preGeracao; preDownload = p;
-    if (pthread_create(&fio, NULL, preBaixar, p) == 0) pthread_detach(fio);
-    else { preDescartar(i18n("sem fio")); preLiberar(p); }
-  }
+  p = downloadSessao(url);
+  if (p) preDownload = p;
   pthread_mutex_unlock(&trava);
 }
 
@@ -739,7 +759,9 @@ static void *baixar(void *u) {
   if (p->pre) {
     pthread_mutex_lock(&trava);
     while (!p->pre->terminou) pthread_cond_wait(&prePronto, &trava);
-    bruto = p->pre->bruto; nb = p->pre->nb; p->pre->bruto = NULL;
+    nb = p->pre->nb;
+    bruto = p->pre->bruto ? malloc((size_t)nb + 1) : NULL;
+    if (bruto) { memcpy(bruto, p->pre->bruto, (size_t)nb); bruto[nb] = 0; }
     preLiberar(p->pre); p->pre = NULL;
     pthread_mutex_unlock(&trava);
   } else bruto = rede_baixar_bin(p->url,20,&nb);
@@ -795,7 +817,10 @@ unsigned legenda_carregar_com(const char *url, LegendaBaixada pronto, void *u) {
   pthread_mutex_lock(&trava);
   if (preDownload && !strcmp(preDownload->url, url)) {
     p->pre = preDownload; preDownload = NULL; // transfere a referencia ao pedido
-  } else preDescartar("outra escolha");
+  } else {
+    preDescartar("outra escolha");
+    p->pre = downloadSessao(url);
+  }
   ligada=1;p->g=++geracao;free(cues);cues=NULL;nCues=0;maiorDur=0;
   pthread_mutex_unlock(&trava);
   assrender_geracao(p->g);

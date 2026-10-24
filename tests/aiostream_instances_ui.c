@@ -2,7 +2,6 @@
 #include "fonte_ordem_addon.c"
 #undef main
 
-int fontefalha_addon_ao_vivo(const char *key) { (void)key; return 0; }
 int main(void) {
   static Stream sources[2];
   for (int i = 0; i < 2; i++) {

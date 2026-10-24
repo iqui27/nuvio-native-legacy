@@ -8,6 +8,7 @@
 #include "tex_cache.h"
 #include "textogate.h"
 #include "focoprof.h"
+#include "plrui.h"
 #define NV_TXT_TELA
 #include "escala.h"
 #include <SDL2/SDL.h>
@@ -54,6 +55,10 @@ static void pilula(float x, float yc, float w, float h, const char *txt,
 // item da linha NAO PODE depender de a textura ja ter carregado, senao o
 // encaixe decidiria diferente no primeiro quadro e no segundo.
 typedef struct { const char *nome; float asp; } Png;
+// 1 = a linha usa o logotipo do Trakt (o check vermelho) em vez do wordmark e o logo do
+// Metacritic em vez do quadro colorido (o painel de pausa).
+static int modoIcone;
+void notasui_modo_icone(int ligado) { modoIcone = ligado; }
 
 static Png pngDe(int f, int cru, int nalinha) {
   Png p = { NULL, 1.0f };
@@ -66,9 +71,9 @@ static Png pngDe(int f, int cru, int nalinha) {
     case EX_TMDB:     p.nome = "tmdb";       p.asp = 1.40f; break;
     // Trakt: o WORDMARK na linha (o nome), o icone redondo nas linhas do
     // heatmap e nos cartoes.
-    case EX_TRAKT:    p.nome = nalinha ? "trakt_wordmark" : "trakt";
-                      p.asp = nalinha ? 2.62f : 1.0f; break;
-    case EX_LETTERBOXD: p.nome = "letterboxd"; p.asp = 1.0f; break;
+    case EX_TRAKT:    p.nome = modoIcone ? "trakt_logomark" : nalinha ? "trakt_wordmark" : "trakt";
+                      p.asp = (nalinha && !modoIcone) ? 2.62f : 1.0f; break;
+    case EX_LETTERBOXD: p.nome = "letterboxd"; p.asp = 2.2f; break;
     case EX_IMDB:     p.nome = "imdb";       p.asp = 1.98f; break;
     case EX_METACRITIC: case EX_METAUSER:
                       p.nome = "metacritic"; p.asp = 1.0f; break;
@@ -140,7 +145,7 @@ static float larguraItem(int f, int cru) {
   (void)n100;
   if (f == EX_IMDB) return badge_imdb_largura(cru);
   textoLinha(f, cru, v, sizeof v);
-  if (f == EX_METACRITIC) {
+  if (f == EX_METACRITIC && !modoIcone) {
     float w = (float)txt_largura(TXT_CAPTION2, v) + 14.0f;
     return w > ALT_QUADRO ? w : ALT_QUADRO;
   }
@@ -187,7 +192,7 @@ static void desenhaItem(int f, int cru, float x, float yc, float a) {
   char v[24];
   textoLinha(f, cru, v, sizeof v);
   if (f == EX_IMDB) { badge_imdb(x, yc - BADGE_H * 0.5f, cru, 0, a); return; }
-  if (f == EX_METACRITIC) {
+  if (f == EX_METACRITIC && !modoIcone) {
     float r, g, b, w = larguraItem(f, cru);
     int c;
     TxtLinha l;
@@ -225,14 +230,23 @@ static void desenhaItem(int f, int cru, float x, float yc, float a) {
   }
 }
 
-float notasui_desenhar_linha(const NotasPlano *p, float x, float yc, float a) {
+float notasui_desenhar_linha_vao(const NotasPlano *p, float x, float yc, float vao, float a) {
   int i;
   for (i = 0; i < p->n; i++) {
-    if (i) x += VAO_ITEM;
+    if (i) x += vao;
     desenhaItem(p->fonte[i], p->cru[i], x, yc, a);
     x += p->larg[i];
   }
   return x;
+}
+float notasui_desenhar_linha(const NotasPlano *p, float x, float yc, float a) {
+  return notasui_desenhar_linha_vao(p, x, yc, VAO_ITEM, a);
+}
+float notasui_plano_largura(const NotasPlano *p, float vao) {
+  float w = 0.0f;
+  int i;
+  for (i = 0; i < p->n; i++) w += p->larg[i] + (i ? vao : 0.0f);
+  return w;
 }
 
 // ---------------------------------------------------------------------------
@@ -352,7 +366,7 @@ static void medir(const NotasSecao *s, Medidas *m) {
     m->nFontes++;
   }
   if (m->nFontes) {
-    int linhas = (m->nFontes + TILE_COLS - 1) / TILE_COLS;
+    int linhas = (m->nFontes + 1 + TILE_COLS - 1) / TILE_COLS;
     float hg = (float)linhas * TILE_H + (float)(linhas - 1) * TILE_GAP;
     // UMA fonte nao enche o cartao de resumo: sem "Menor/Maior" e sem a barra
     // critica x publico (os dois precisam de r.n > 1), um piso de 448 deixava
@@ -576,6 +590,26 @@ float notasui_fontes_desenhar(const NotasSecao *s, float x, float y, float a,
     float ty = y + (notasEmpilhadas() ? m.scoreH + COL_GAP : 0) + (float)(i / TILE_COLS) * (TILE_H + TILE_GAP);
     if (ty > NV_TELA_H || ty + TILE_H < 0.0f) continue;
     desenhaBloco(s, m.fontes[i], m.norm[i], &r, tx, ty, 0.0f, aa);
+  }
+  // Personal score shares the source grid, with a solid surface in both materials.
+  float px = gx + (m.nFontes % TILE_COLS) * (TILE_W + TILE_GAP);
+  float py = y + (notasEmpilhadas() ? m.scoreH + COL_GAP : 0) +
+             (m.nFontes / TILE_COLS) * (TILE_H + TILE_GAP);
+  GfxRect tile = {px, py, TILE_W, TILE_H};
+  if (py < NV_TELA_H && py + TILE_H > 0) {
+    float ar, ag, ab;
+    char value[24];
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_cor(tile, 18 / TILE_H, .094f, .098f, .11f, aa);
+    TxtLinha label = txt_linha(TXT_G18M, "Sua nota", 174, 179, 186, 255);
+    txt_desenhar_alpha(label, px + 24, py + 16, aa);
+    if (s->notaPessoal > 0) {
+      snprintf(value, sizeof value, "%d.%d", s->notaPessoal / 2, s->notaPessoal % 2 * 5);
+      plrui_decimal(value);
+    } else snprintf(value, sizeof value, "—");
+    TxtLinha number = txt_linha(TXT_ILHA_PERGUNTA, value, 243, 242, 239, 255);
+    gfx_icone((GfxRect){px + 24, py + 53, 26, 26}, "pl_star-f", ar, ag, ab, aa);
+    txt_desenhar_alpha(number, px + 60, py + 44, aa);
   }
   if (!aberto) textogate_passo(&gateFontes, txt_pendentes - pend0, SDL_GetTicks());
   return m.h;

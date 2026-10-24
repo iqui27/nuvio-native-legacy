@@ -24,10 +24,18 @@ echo "dados do teste em $NUVIO_DADOS"
 sources=()
 for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/detail.c) continue;; esac
+  case "$source" in
+    src/reacao.c|src/notasui.c)
+      if [ -n "${NV_REACAO_BASELINE:-}" ]; then source="$NV_REACAO_BASELINE/${source#src/}"; fi;;
+  esac
   sources+=("$source")
 done
 
-cc "${sources[@]}" tests/detail_eps_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-deteps-shot \
+baseline_flags=()
+if [ -n "${NV_REACAO_BASELINE:-}" ]; then
+  baseline_flags+=("-DNV_REACAO_DETAIL_SOURCE=\"$NV_REACAO_BASELINE/detail.c\"")
+fi
+cc "${sources[@]}" tests/detail_eps_shot.c "${baseline_flags[@]}" -Isrc -o ${TMPDIR:-/tmp}/nuvio-deteps-shot \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined ${NV_CC_EXTRA:-}

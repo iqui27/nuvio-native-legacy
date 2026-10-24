@@ -152,6 +152,10 @@ int main(void) {
     return 2;
   }
 
+  CONFERE(strstr(CAB[0], "https://github.com/iqui27/nuvio-native-legacy") &&
+          strstr(CAB_WQ[0], "https://github.com/iqui27/nuvio-native-legacy"),
+          "Wikimedia User-Agent needs a public contact URL");
+
   // --- 1. sparqlCampo PEGA A VARIAVEL CERTA ---------------------------------
   // O documento tem "value" em toda variavel. Um js_texto cru devolveria o
   // primeiro deles para qualquer pergunta — e a bilheteria apareceria como

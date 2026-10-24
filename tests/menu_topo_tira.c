@@ -208,7 +208,7 @@ int main(void) {
   assert(PERTO(g.foc[0], g.x[0], 0.01f));
 
   // Animacoes reduzidas: salta no primeiro quadro.
-  gravar(CFG "idioma 0\nanimacoes 1\n");
+  gravar(CFG "performanceAutoVersaoLocal 1\nidioma 0\nanimacoes 1\n");
   assert(ajustes_animacoes_reduzidas());
   tecla(SDLK_RIGHT);
   passo(0.016f, 1);

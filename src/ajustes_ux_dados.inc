@@ -18,6 +18,7 @@ static int uxValorPadrao(int op) {
 /* Fileiras tem uma fonte propria. valor[] e apenas seu espelho na tela. */
 static int uxValorAtual(int op) {
   if (op < 0 || op >= AJ_N) return 0;
+  if (ajFonte(op)) return ajFonteAtual(op);
   if (op == AJ_XTREAM_CONEXOES) return xtream_conexoes_modo();
   if (op == AJ_SALVOS_DEST) return ajustes_fonte_biblioteca();
   if(op==AJ_GUIA_CATEGORIAS || op==AJ_IPTV_ACOES || op==AJ_IPTV_EXCLUIR)return 0;
@@ -37,9 +38,14 @@ static int uxDiferente(int op) {
  * Audio/legenda, inclusive "Da conta", continuam no conjunto dePerfil: a
  * escolha e guardada por perfil nesta TV, sem prometer que ja sincronizou. */
 static const char *uxEscopoValor(int op, int v) {
-  if (op == AJ_TEMA && v >= AJ_TEMA_DINAMICA) return "Só nesta TV";
-  if (op == AJ_TMDB_IDIOMA && v == 0) return "Só nesta TV";
-  return op >= 0 && op < AJ_N && dePerfil(op) ? "Conta/perfil" : "Só nesta TV";
+  if (op == AJ_TEMA && v >= AJ_TEMA_DINAMICA) return "Só este perfil, nesta TV";
+  if (op == AJ_TMDB_IDIOMA && v == 0) return "Só este perfil, nesta TV";
+  switch (escopoDe(op)) {   // 2.1: tres escopos
+    case ESC_PERFIL_CONTA: return "Conta/perfil";
+    case ESC_PERFIL_LOCAL: return "Só este perfil, nesta TV";
+    case ESC_TV: return "Todos os perfis desta TV";
+    default: return "Só nesta TV";
+  }
 }
 
 static const char *uxEscopo(int op) {
@@ -103,7 +109,8 @@ static void uxValorTexto(int op, int v, char *buf, size_t tam) {
     snprintf(buf,tam,"%s",s);return;
   }
   o = &OPCOES[op];
-  if (o->tipo == OP_ACAO) texto = i18n("Abrir");
+  if (ajFonte(op)) texto = ajFonteNome(op, v);
+  else if (o->tipo == OP_ACAO) texto = i18n("Abrir");
   else if (o->tipo == OP_LEITURA) texto = i18n("Ver detalhes");
   else if (op == AJ_FILTRO_TAM_MAX && v == 0) texto = i18n("Sem limite de tamanho");
   else if (op == AJ_HERO_TRAILER_ESPERA) {
@@ -266,6 +273,7 @@ static const char *uxSinonimos(int op) {
     case AJ_TMDB_IDIOMA: return "idioma metadados titulo sinopse traducao tmdb";
     case AJ_HERO_GENERO: return "genero destaque hero logo titulo categoria esconder mostrar card genre";
     case AJ_HERO_SINOPSE: return "sinopse destaque hero texto descricao resumo esconder mostrar synopsis description";
+    case AJ_HERO_TAMANHO: return "tamanho destaque hero logo informacoes texto grande muito grande normal hero size logo info";
     case AJ_HERO_SINOPSE_TAM: return "sinopse tamanho destaque hero texto grande normal synopsis size";
     case AJ_HERO_NOTAS: return "nota notas imdb destaque hero avaliacao rating ratings esconder mostrar";
     case AJ_HERO_ANO: return "ano destaque hero lancamento year data esconder mostrar";
@@ -315,7 +323,7 @@ static const char *uxCaminhoAntigo(int op) {
     case AJ_JF_LIGADO: case AJ_JF_SERVIDOR: case AJ_JF_ENTRAR: case AJ_JF_SAIR:
     case AJ_EM_SERVIDOR: case AJ_EM_ENTRAR: case AJ_EM_SAIR:
     case AJ_PX_ENTRAR: case AJ_PX_SERVIDOR: case AJ_PX_SAIR:
-    case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_SAIR:
+    case AJ_PERFIL_ATIVO: case AJ_SYNC: case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
     case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_SALVOS_DEST: case AJ_CW_FONTE: case AJ_CW_PROXIMO: case AJ_ENQUETES:
     case AJ_HIST_CONTA: case AJ_SOCIAL:
       return "Contas e serviços";

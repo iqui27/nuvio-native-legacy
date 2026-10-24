@@ -50,6 +50,7 @@ static int estVivo;
 static int ordemLinha = 1, ordemSel, aberto = 1, pagina = 1;
 static const char *filChave = "collection_test";
 static int savedStyle, savedOrder;
+void sync_proteger_ajustes_locais(void) {}
 int fil_definir_tipo(const char *key, int type) { (void)key; savedStyle = type; return 1; }
 int fil_ordem(const char *key) { (void)key; return savedOrder; }
 int fil_definir_ordem(const char *key, int order) { (void)key; savedOrder = order; return 1; }

@@ -899,6 +899,15 @@ char *rede_patch_st(const char *url, int segundos, const char *const *cab,
   return r;
 }
 
+// PUT de JSON pela mesma ponte (o TorBox edita um item so por PUT).
+char *rede_colocar_st(const char *url, int segundos, const char *const *cab,
+                      const char *corpo, int *status) {
+  char *r = pedir2("PUT", url, segundos, cab, "Content-Type: application/json",
+                   corpo ? corpo : "", NULL, status, NULL, 0, NULL);
+  if (!r && status && *status > 0) return strdup("");
+  return r;
+}
+
 void rede_discord_ca(const char *caminho) { (void)caminho; }
 const char *rede_ultimo_erro(void) { return ""; }
 
@@ -2072,8 +2081,8 @@ static int abrir(void) { return abrirAte(20000); }
 // cabecalhos) que a libcurl nao pode atender — nao ficou pronta, ou caiu no
 // transporte — vai por NuvioActivity.httpPedir (HttpURLConnection). A conta, o
 // login e o Supabase passam por aqui (nuvem.c: rede_*_st), e assim o login
-// nunca depende so da nossa libcurl. `curlRuim` gruda na sessao: se a libcurl
-// falhou onde o Android respondeu, os proximos pedidos simples vao direto.
+// nunca depende so da nossa libcurl. The session latch requires transport
+// failures recovered by Android on three distinct hostnames.
 static int curlRuim;
 static char *viaAndroid(const char *verbo, const char *url, int segundos,
                         const char *const *cab, const char *corpo, int *status,
@@ -2137,13 +2146,35 @@ static int androidPrimeiro(void) {
 // Falha de TRANSPORTE da libcurl num pedido simples: tenta o Android uma vez.
 static char *androidDepois(const char *verbo, const char *url, int segundos,
                            const char *const *cab, const char *corpo, int *status, int *retryAfter) {
-  char *r;
+  static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
+  static char hosts[3][256];
+  static unsigned nHosts;
+  char *r, origem[320], *host, *fim;
+  int codigo = redeCurlLocal;
+  unsigned i;
   if (redeCancelouLocal || (redeCancelLocal && *redeCancelLocal)) return NULL;
   r = viaAndroid(verbo, url, segundos, cab, corpo, status, NULL, retryAfter, "curl falhou");
-  if (r && !__atomic_exchange_n(&curlRuim, 1, __ATOMIC_ACQ_REL)) {
-    printf("[rede] libcurl falhou onde o Android respondeu: pedidos simples ficam pelo Android nesta sessao\n");
-    fflush(stdout);
+  // Only transport errors count; malformed URLs, unsupported protocols,
+  // allocation failures and deliberate aborts say nothing about curl health.
+  if (!r || !(codigo == 5 || codigo == 6 || codigo == 7 || codigo == 28 ||
+              codigo == 35 || codigo == 52 || codigo == 55 || codigo == 56)) return r;
+  hostDaUrl(url, origem, sizeof origem);
+  host = strstr(origem, "://");
+  if (!host) return r;
+  host += 3;
+  fim = *host == '[' ? strchr(host, ']') : strchr(host, ':');
+  if (fim) { if (*fim == ']') fim++; *fim = 0; }
+  if (!*host || strlen(host) >= sizeof hosts[0]) return r;
+  pthread_mutex_lock(&trava);
+  for (i = 0; i < nHosts; i++) if (!strcasecmp(hosts[i], host)) break;
+  if (i == nHosts && nHosts < 3) {
+    snprintf(hosts[nHosts++], sizeof hosts[0], "%s", host);
+    if (nHosts == 3 && !__atomic_exchange_n(&curlRuim, 1, __ATOMIC_ACQ_REL)) {
+      printf("[rede] libcurl failed on three distinct hosts recovered by Android; simple requests use Android this session\n");
+      fflush(stdout);
+    }
   }
+  pthread_mutex_unlock(&trava);
   return r;
 }
 void rede_preparar(void) { iniciarFioCurl(); }
@@ -2225,6 +2256,7 @@ char *rede_baixar_st(const char *url, int segundos, const char *const *cab,
     if (status) *status = st;
     return r;
   }
+  redeCurlLocal = 0;
   r = rede_baixar_interno2(url, segundos, NULL, cab, &st, NULL, 0);
   if (status) *status = st;
   if (!r && st == 0) {
@@ -2720,13 +2752,15 @@ void rede_discord_ca(const char *caminho) {
 #define OPT_CAINFO 10065
 
 static char *postarNativo(const char *url, int segundos, const char *const *cab,
-                          const char *corpo, int *status, int seguro, int *retryAfter) {
+                          const char *corpo, int *status, int seguro, int *retryAfter,
+                          const char *verbo) {
   Balde b = {0};
   CacaCab respostaCab = { NULL, 0, retryAfter };
   if (retryAfter) *retryAfter = 0;
   void *c, *lista = NULL;
   int r;
   if (status) *status = 0;
+  redeCurlLocal = 0;
   anotarErro(0);
   if (!url || !*url) { anotarErro(3); return NULL; }
   if (!abrir()) { anotarErro(2); return NULL; }
@@ -2749,6 +2783,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
   }
   curl_setopt(c, OPT_POST, (long)1);
   curl_setopt(c, OPT_POSTFIELDS, corpo ? corpo : "");
+  if (verbo) curl_setopt(c, OPT_CUSTOMREQUEST, verbo);
   if (slist_append) {
     int k;
     // JSON e o padrao (Supabase, Trakt); quem manda o proprio Content-Type
@@ -2760,6 +2795,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
   r = performTmdb(c, url);
+  redeCurlLocal = r;
   anotarErro(r);
   if (r != 0) { char seg[120];
     printf("[rede] POST falhou em %s: %s\n", rede_url_publica(url, seg, sizeof seg), redeErroTxt);
@@ -2783,35 +2819,49 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
   return rede_postar_st_retry(url, segundos, cab, corpo, status, NULL);
 }
 
-char *rede_postar_st_retry(const char *url, int segundos, const char *const *cab,
-                           const char *corpo, int *status, int *retryAfter) {
+// POST e PUT de JSON: a mesma rota (Android: libcurl primeiro, HttpURLConnection
+// se ela nao respondeu). `verbo` NULL = POST.
+static char *enviarNativo(const char *verbo, const char *url, int segundos, const char *const *cab,
+                          const char *corpo, int *status, int *retryAfter) {
 #ifdef NV_ANDROID
+  const char *v = verbo ? verbo : "POST";
   char *r;
   int st = 0;
   if (retryAfter) *retryAfter = 0;
   if (!url || !*url) { if (status) *status = 0; return NULL; }
   if (androidPrimeiro()) {   // st local: com status NULL o 4xx tambem volta com corpo, como no curl
-    r = viaAndroid("POST", url, segundos, cab, corpo ? corpo : "", &st, NULL, retryAfter, "libcurl fora");
+    r = viaAndroid(v, url, segundos, cab, corpo ? corpo : "", &st, NULL, retryAfter, "libcurl fora");
     if (status) *status = st;
     return r;
   }
-  r = postarNativo(url, segundos, cab, corpo, &st, 0, retryAfter);
+  r = postarNativo(url, segundos, cab, corpo, &st, 0, retryAfter, verbo);
   if (status) *status = st;
   if (!r && st == 0) {
-    r = androidDepois("POST", url, segundos, cab, corpo ? corpo : "", &st, retryAfter);
+    r = androidDepois(v, url, segundos, cab, corpo ? corpo : "", &st, retryAfter);
     if (status) *status = st;
   }
   return r;
 #else
-  return postarNativo(url, segundos, cab, corpo, status, 0, retryAfter);
+  return postarNativo(url, segundos, cab, corpo, status, 0, retryAfter, verbo);
 #endif
+}
+
+char *rede_postar_st_retry(const char *url, int segundos, const char *const *cab,
+                           const char *corpo, int *status, int *retryAfter) {
+  return enviarNativo(NULL, url, segundos, cab, corpo, status, retryAfter);
+}
+
+// PUT de JSON. Existe para o TorBox, que edita um item (airlocked) so por PUT.
+char *rede_colocar_st(const char *url, int segundos, const char *const *cab,
+                      const char *corpo, int *status) {
+  return enviarNativo("PUT", url, segundos, cab, corpo, status, NULL);
 }
 
 char *rede_postar_seguro_st(const char *url, int segundos, const char *const *cab,
                             const char *corpo, int *status) {
   if (status) *status = 0;
   if (!url || strncmp(url, "https://", 8)) return NULL;
-  return postarNativo(url, segundos, cab, corpo, status, 1, NULL);
+  return postarNativo(url, segundos, cab, corpo, status, 1, NULL, NULL);
 }
 
 // ------------------------------------------------------------ VAZAO (curl)
@@ -3243,12 +3293,14 @@ static int dtsRangeProgress(void *user, long long dt, long long dn,
   }
   return 0;
 }
-static void *dtsRangeHeaders(const char *raw, int public_only) {
+char *rede_range_headers(const char *raw, int public_only) {
   char *copy, *line, *ctx = NULL;
-  void *list = NULL;
-  if (!raw || !*raw || !slist_append) return NULL;
+  size_t used = 0;
+  if (!raw) raw = "";
+  char *out = malloc(strlen(raw) + 2);
+  if (!out) return NULL;
   copy = strdup(raw);
-  if (!copy) return NULL;
+  if (!copy) { free(out); return NULL; }
   for (line = strtok_r(copy, "\n", &ctx); line; line = strtok_r(NULL, "\n", &ctx)) {
     char *colon = strchr(line, ':');
     size_t n = strlen(line), key;
@@ -3260,8 +3312,18 @@ static void *dtsRangeHeaders(const char *raw, int public_only) {
     if (public_only && !((key == 7 && !strncasecmp(line, "referer", key)) ||
                         (key == 10 && !strncasecmp(line, "user-agent", key)) ||
                         (key == 6 && !strncasecmp(line, "origin", key)))) continue;
-    list = slist_append(list, line);
+    memcpy(out + used, line, n); used += n; out[used++] = '\n';
   }
+  out[used] = 0;
+  free(copy);
+  return out;
+}
+static void *dtsRangeHeaders(const char *raw, int public_only) {
+  void *list = NULL;
+  char *copy = rede_range_headers(raw, public_only), *ctx = NULL;
+  if (!copy) return NULL;
+  if (slist_append) for (char *line = strtok_r(copy, "\n", &ctx); line; line = strtok_r(NULL, "\n", &ctx))
+    list = slist_append(list, line);
   free(copy);
   return list;
 }
@@ -3356,7 +3418,7 @@ char *rede_baixar_trecho64_vigiado(const char *url, const char *headers,
       if (size) *size = (long)r.body.n;
       if (total) *total = r.total;
       if (final && hop > 0) snprintf(final, 8192, "%s", current);
-      if (cross) *cross = public_only;
+      if (cross) *cross = downgraded ? 2 : public_only;
       return baldeFinal(&r.body);
     }
     /* Numeric only: identify failed interval, response validation and discarded
@@ -3503,7 +3565,7 @@ int rede_fluxo64(const char *url, const char *headers, int64_t start,
     }
     if (f.accepted) {
       if (final && hop > 0) snprintf(final, 8192, "%s", current);
-      if (cross) *cross = public_only;
+      if (cross) *cross = downgraded ? 2 : public_only;
     }
     if (f.stopped) return 1;                 /* the sink asked to stop */
     if (!result && f.accepted) return 0;     /* body ended (EOF or a capped range) */

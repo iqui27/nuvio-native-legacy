@@ -80,3 +80,18 @@ WEAK int perfis_sessao_travar(uint64_t g) { return g == 0; }
 WEAK void perfis_sessao_destravar(void) {}
 WEAK void fontevolta_esquecer_tudo(void) {}
 WEAK void guia_fonte_esquecer(const char *id) { (void)id; }
+#include "contalib.h"
+WEAK int ajustes_fonte_biblioteca(void) { return 0; }
+WEAK int contalib_n(void) { return 0; }
+WEAK const ContaLibItem *contalib_item(int i) { (void)i; return NULL; }
+WEAK void iptv_contas_esquecer_todas(void) {}
+WEAK void m3u_fontes_invalidar(void) {}
+WEAK void stalker_fontes_invalidar(void) {}
+WEAK void xtream_fontes_invalidar(void) {}
+WEAK int traktauth_desconectado(void) { return 0; }
+WEAK char *nuvem_addon_alternar(const char *query, int enabled, const char *bearer,
+                                unsigned deadline, int *status) {
+  (void)query; (void)enabled; (void)bearer; (void)deadline;
+  if (status) *status = 503;
+  return NULL;
+}

@@ -19,6 +19,7 @@ int main(void) {
   return 0;
 }
 #elif defined(I610_RESUME)
+int simkl_e_a_seguir(const char *id) { (void)id; return 0; }
 #include "stub_perfisessao.h"
 #define main previous_main
 #include "trakt_arranque.c"
@@ -109,7 +110,13 @@ const char *i18n(const char *s) { return s; }
 #define main previous_main
 #define rede_baixar_st previous_get
 #define atividades fixture_activities
+#define rede_pedir previous_request
+#define rede_resposta_limpar previous_response_clear
+#define rede_baixar_st_retry previous_retry
 #include "simkl_cw.c"
+#undef rede_baixar_st_retry
+#undef rede_resposta_limpar
+#undef rede_pedir
 #undef atividades
 #undef rede_baixar_st
 #undef main
@@ -214,7 +221,7 @@ int main(void) {
   // A newly watched next episode must precede an older paused movie.
   simkl_esquecer();
   CatItem ordered[12];
-  int count = simkl_continuar(ordered, 12); assert(count == 5);
+  int count = simkl_continuar(ordered, 12); assert(count == 6);
   assert(!strncmp(ordered[0].imdb, "tt22248376", 10));
   for (int i = 1; i < count; i++) assert(ordered[i-1].retomadoMs >= ordered[i].retomadoMs);
 #endif

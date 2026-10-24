@@ -144,6 +144,56 @@ int main(void) {
   ok("off clears and suppresses native cues",!video_legenda_nativa(cue,sizeof cue));
   video_escolher_audio(0);ok("playback audio changes immediately",nAudios==2);
 
+  // --- 1b. a seek drops the subtitle track -----------------------------------
+  // The TV accepted the write and the intro skip's seek, 3 ms later, put the
+  // demuxer back on the file's first track.
+  {
+    int escritas;
+    video_tocar("http://x/seek.mkv"); nv_tpk_video_evento(1,100000,0);
+    nv_tpk_video_faixa(1,0,"ar"); nv_tpk_video_faixa(1,1,"en"); nv_tpk_video_faixas_fim(0,0);
+    video_escolher_legenda(1);
+    nv_tpk_video_evento(2,0,0); fakePosMs = 300; video_bombear();
+    // A seek is asked for, and the settle window has already expired, so this is
+    // the exact tick that used to write into a moving player.
+    video_buscar(49.0); escritas = nLegs;
+    SDL_Delay(2600); video_bombear();
+    ok("no subtitle write while a seek is in flight", nLegs == escritas);
+    // The host confirms the seek with EV_BUSCOU 11, and the write goes out again.
+    nv_tpk_video_evento(11, 49000, 0); video_bombear();
+    ok("the seek restarts the settle window", nLegs == escritas);
+    SDL_Delay(2600); video_bombear();
+    ok("the choice is written again after the seek lands", nLegs == escritas + 1 && ultLeg == 1);
+    // And once, not on every pump.
+    video_bombear(); SDL_Delay(2600); video_bombear();
+    ok("the re-write happens once", nLegs == escritas + 1);
+    // A seek long after the write must not re-write or wipe active cues.
+    SDL_Delay(5200); video_bombear();
+    escritas = nLegs;
+    video_buscar(90.0);
+    nv_tpk_video_evento(11, 90000, 0); video_bombear();
+    SDL_Delay(2600); video_bombear();
+    ok("a seek long after does not rewrite the track", nLegs == escritas);
+  }
+
+  // --- 1c. a seek that never confirms must not withhold the subtitle ----------
+  // The host sends no EV_BUSCOU when the seek fails, so the hold needs a ceiling.
+  {
+    int escritas;
+    video_tocar("http://x/seek-preso.mkv"); nv_tpk_video_evento(1,100000,0);
+    nv_tpk_video_faixa(1,0,"ar"); nv_tpk_video_faixa(1,1,"en"); nv_tpk_video_faixas_fim(0,0);
+    video_escolher_legenda(1);
+    nv_tpk_video_evento(2,0,0); fakePosMs = 300; video_bombear();
+    video_buscar(49.0); escritas = nLegs;
+    // The host answers the failure and never confirms the seek.
+    nv_tpk_video_evento(12, 49000, 0);
+    SDL_Delay(2600); video_bombear();
+    ok("an unconfirmed seek still holds at first", nLegs == escritas);
+    // Our own ceiling is 10 s, so the choice must go out after it.
+    bombearPor(10500);
+    ok("an unconfirmed seek does not withhold the subtitle forever",
+       nLegs == escritas + 1 && ultLeg == 1);
+  }
+
   // New session resets settle state. Superseded deferred choice uses latest.
   // A new session means a new buffer, so the position starts at 0 again.
   fakePosMs = 0;
@@ -167,13 +217,15 @@ int main(void) {
 
   video_tocar("http://x/stopped.mkv");nv_tpk_video_evento(1,100000,0);
   nv_tpk_video_faixa(1,0,"ru");nv_tpk_video_faixas_fim(0,0);
+  legAntes = nLegs;
   video_escolher_legenda(0);video_parar();nv_tpk_video_legenda("stopped cue",3000);video_bombear();
-  ok("stop cancels deferred choices and cached cues",nLegs==2&&!video_legenda_nativa(cue,sizeof cue));
+  ok("stop cancels deferred choices and cached cues",nLegs==legAntes&&!video_legenda_nativa(cue,sizeof cue));
   video_tocar("http://x/reset.mkv");nv_tpk_video_evento(1,100000,0);
   nv_tpk_video_faixa(1,0,"ru");nv_tpk_video_faixas_fim(0,0);
+  legAntes = nLegs;
   video_escolher_legenda(0);video_escolher_legenda(-1);nv_tpk_video_evento(2,0,0);video_bombear();
   SDL_Delay(2600);video_bombear();
-  ok("off also cancels a deferred choice in new session",nLegs==2&&!video_legenda_nativa(cue,sizeof cue));
+  ok("off also cancels a deferred choice in new session",nLegs==legAntes&&!video_legenda_nativa(cue,sizeof cue));
 
   // #202 SPEED: goes to the host as escolher(3, cents) only with the player
   // prepared, once per value, again on a new host Player (it starts at 1x);
@@ -196,12 +248,14 @@ int main(void) {
 
   // #269 MKV PROBE STATE: the subtitle sheet waits for 1 before routing a text
   // track to the app overlay. It used to be a constant 2 ("not MKV") here.
+  video_definir_reconexao(1);
   video_definir_mp4(0);
   video_tocar("http://x/sonda.mkv");
   ok("probe pending on a fresh MKV source", video_mkv_sondado() == 0);
   video_definir_mp4(1);
   ok("MP4 source has no probe", video_mkv_sondado() == 2);
   video_definir_mp4(0);
+  video_definir_reconexao(0);
 
   // #269 NATIVE CUE DIAGNOSTICS (LEG_SEM_CUE_MS shortened by the .sh).
   fakePosMs = 0;
@@ -234,6 +288,19 @@ int main(void) {
     ok("diag: first cue after the write is logged with its size",
        strstr(log, "[video] tpk: first subtitle cue after") && strstr(log, "5 chars") && strstr(log, "track=0"));
     ok("diag: no silence report once a cue arrived", !strstr(log, "no subtitle cue")); }
+
+  // An empty cue must not consume the one-shot evidence line.
+  { char *log;
+    video_tocar("http://x/diag-vazio.mkv"); nv_tpk_video_evento(1, 100000, 0);
+    nv_tpk_video_faixa(1, 0, "en"); nv_tpk_video_faixas_fim(0, -1);
+    nv_tpk_video_evento(2, 0, 0); fakePosMs = 300; video_bombear();
+    SDL_Delay(2600); video_bombear();
+    capturar();
+    nv_tpk_video_legenda("", 0);          // the empty cue the TV emits
+    nv_tpk_video_legenda("Hello there", 2000);
+    log = soltar();
+    ok("diag: an empty cue does not consume the evidence line",
+       strstr(log, "first subtitle cue") && strstr(log, "11 chars") && !strstr(log, "0 chars")); }
 
   printf(falhas ? "tpk-escolha: %d falha(s)\n" : "tpk-escolha: ok\n", falhas);
   return falhas != 0;

@@ -27,7 +27,19 @@ static const char *canalId = "";
 const char *player_id_canal(void) { return canalId; }
 static int capacidades = REDE_CAP_JOB;
 unsigned rede_pedido_capacidades(void) { return (unsigned)capacidades; }
-int rede_pedir(const RedePedido *p, RedeResposta *r) { (void)p; memset(r, 0, sizeof *r); r->erro = REDE_INDISPONIVEL; return 0; }
+static int httpTeste, httpCancelar;
+static unsigned char *lerMkv(void *, const char *, long long, long, long *, int *, int (*)(void *), void *);
+int rede_pedir(const RedePedido *p, RedeResposta *r) {
+  memset(r, 0, sizeof *r);
+  if (!httpTeste) { r->erro = REDE_INDISPONIVEL; return 0; }
+  if (httpCancelar) { r->status = 206; r->erro = REDE_CANCELADO; r->curl_erro = 42; return 0; }
+  long long ini, fim; long n;
+  assert(sscanf(p->cabecalhos[0], "Range: bytes=%lld-%lld", &ini, &fim) == 2);
+  r->corpo = (char *)lerMkv(NULL, p->url, ini, (long)(fim - ini + 1), &n, &r->status, p->parar, p->parar_usuario);
+  r->n_corpo = r->corpo ? (size_t)n : 0;
+  r->erro = r->corpo ? REDE_OK : REDE_CANCELADO;
+  return r->erro == REDE_OK;
+}
 void rede_resposta_limpar(RedeResposta *r) { free(r->corpo); free(r->cabecalhos); r->corpo = r->cabecalhos = NULL; }
 
 static char *arquivo(const char *nome, long *n) {
@@ -45,7 +57,9 @@ static int baixar2(const char *url, long maxBytes, unsigned prazoMs, int (*parar
   *corpo = arquivo(nome, n); return *corpo == NULL;
 }
 // Download da legenda externa (legenda.c): "ext://atraso_ms/arquivo".
+static _Atomic int downloads;
 char *rede_baixar_bin(const char *url, int segundos, long *n) {
+  downloads++;
   int ms = 0; char nome[200]; (void)segundos;
   if (sscanf(url, "ext://%d/%199s", &ms, nome) != 2) return NULL;
   if (ms) usleep((useconds_t)ms * 1000);
@@ -293,6 +307,43 @@ static LegendaDocumento *janelaLocal(const char *url, uint64_t sessao, const int
 int main(int argc, char **argv) {
   LegSyncVisao v; int casos = 0;
   DIR = argc > 1 ? argv[1] : nvt("/nv-legref-fx");
+  if (getenv("LEGREF_SESSION")) {
+    httpTeste = 1;
+    legenda_pre_reiniciar();
+    legenda_carregar("ext://20/ext_mais2500.srt");
+    usleep(100000);
+    legenda_carregar("ext://20/ext_mais2500.srt");
+    usleep(100000);
+    assert(downloads == 1); /* Session URL cache. */
+    legsync_iniciar(MKV);
+    legsync_primaria_externa("ext://20/ext_mais2500.srt", "pt", "Subtitle Sync");
+    v = esperarAuto(MKV, 2);
+    unsigned ger = legenda_geracao();
+    legsync_primaria_externa("ext://20/ext_mais2500.srt", "pt", "Subtitle Sync");
+    assert(legenda_geracao() == ger && legsync_visao(0).autoFase == 2);
+    assert(downloads == 1);
+    legsync_destruir();
+    httpCancelar = 1;
+    LegRef *r = legref_criar(NULL, NULL);
+    LegRefOrcamento o = { .maxBytes = 1024 * 1024, .maxPedidos = 10 };
+    assert(legref_pedir(r, MKV, 1, "pt", NULL, 0, &o));
+    LegRefStatus st;
+    for (int i = 0; i < 1000; i++) {
+      st = legref_status(r);
+      if (st.fase != LEGREF_LENDO) break;
+      usleep(1000);
+    }
+    assert(st.fase == LEGREF_CANCELADO && st.motivo == LEGREF_PARADO);
+    legref_destruir(r);
+    legenda_pre_reiniciar();
+    legenda_carregar("ext://20/ext_mais2500.srt");
+    legenda_carregar("ext://20/ext_mais2500.srt");
+    usleep(100000);
+    assert(downloads == 2); /* New session refetches; concurrent consumers share it. */
+    legenda_pre_reiniciar();
+    puts("PASS: session URL cache, duplicate pick, HTTP 206 and cancellation reason");
+    return 0;
+  }
   legsync_teste_leitor(lerMkv, NULL);
   if (getenv("AUTOSYNC_PGS")) {
     const char *pgs = "local:/pgs.mkv";

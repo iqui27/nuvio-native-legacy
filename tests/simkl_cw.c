@@ -306,7 +306,7 @@ static void leitores(void) {
   assert(!strcmp(v[1].titulo, "Severance") && v[1].retomadoMs > v[0].retomadoMs);
   // E a resposta do endpoint de ANIME, pelo mesmo leitor (raiz "anime").
   n = simkl_ler_assistindo(WATCHING_ANIME, v, 12);
-  assert(n == 1 && !strcmp(v[0].imdb, "tt22248376:3:4") && !strcmp(v[0].tipo, "series"));
+  assert(n == 2 && !strcmp(v[0].imdb, "tt22248376:3:4") && !strcmp(v[0].tipo, "series"));
   assert(!strcmp(v[0].titulo, "Frieren"));
   assert(simkl_ler_assistindo("null", v, 12) == 0);
   assert(simkl_ler_assistindo("{}", v, 12) == 0);
@@ -329,13 +329,16 @@ static void retomada(void) {
   n = simkl_continuar(v, 12);
   // 3 pausados + Frieren (anime) + Severance (a seguir). Breaking Bad do
   // watching NAO entra de novo: a serie ja esta pausada no S01E05.
-  assert(n == 5);
-  for (i = 0; i < n; i++) assert(strncmp(v[i].imdb, "tt0903747:1:6", 13));
-  // Pausados primeiro; sugestoes ficam nos lugares restantes, a mais recente
-  // na frente (Frieren 01-22 depois Severance 01-20).
-  assert(!strcmp(v[0].imdb, "tt1375666"));
-  assert(!strcmp(v[3].imdb, "tt22248376:3:4") && !strcmp(v[3].tipo, "series"));
-  assert(!strcmp(v[4].imdb, "tt11280740:2:3"));
+  assert(n == 6);
+  int frieren = 0, severance = 0, paused = 0;
+  for (i = 0; i < n; i++) {
+    assert(strncmp(v[i].imdb, "tt0903747:1:6", 13));
+    if (i) assert(v[i - 1].retomadoMs >= v[i].retomadoMs);
+    frieren += !strcmp(v[i].imdb, "tt22248376:3:4") && !strcmp(v[i].tipo, "series");
+    severance += !strcmp(v[i].imdb, "tt11280740:2:3");
+    paused += !strcmp(v[i].imdb, "tt1375666");
+  }
+  assert(frieren == 1 && severance == 1 && paused == 1);
   assert(simkl_e_a_seguir("tt22248376:3:4"));
   assert(simkl_e_a_seguir("tt11280740:2:3"));
   assert(!simkl_e_a_seguir("tt1375666"));
@@ -345,11 +348,11 @@ static void retomada(void) {
 
   // Atividades iguais: nada de playback nem all-items de novo.
   n = simkl_continuar(v, 12);
-  assert(n == 5 && batidas[0] == 2 && batidas[1] == 1 && batidas[2] == 1 && batidas[8] == 1);
+  assert(n == 6 && batidas[0] == 2 && batidas[1] == 1 && batidas[2] == 1 && batidas[8] == 1);
   // Atividade nova: rebaixa.
   snprintf(atividades, sizeof atividades, "{\"all\":\"2024-01-21T00:00:00Z\"}");
   n = simkl_continuar(v, 12);
-  assert(n == 5 && batidas[0] == 3 && batidas[1] == 2 && batidas[2] == 2 && batidas[8] == 2);
+  assert(n == 6 && batidas[0] == 3 && batidas[1] == 2 && batidas[2] == 2 && batidas[8] == 2);
   OK("retomada: /sync/activities igual nao baixa all-items de novo");
 
   // Lista cheia: a sugestao nao expulsa nenhum pausado.

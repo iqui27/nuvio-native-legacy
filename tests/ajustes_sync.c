@@ -98,6 +98,7 @@ int main(int argc, char **argv) {
     valor[AJ_LEG_LINGUA] = 3; valor[AJ_LEG2_COR] = 2;
     valor[AJ_FONTE_UI] = 1; valor[AJ_RESOLUCAO] = RES_4K;
     dados_gravar("debrid.txt", "realdebrid=SECRET-DEBRID\n");
+    dados_gravar("musicas-p1.txt", "tt1160419:0\tDune OST\tHans Zimmer\n");
     dados_gravar("fanart.txt", "SECRET-FANART");
     dados_gravar("posteres.txt", "SECRET-POSTER");
     fontefalha_definir_provedores(1);
@@ -126,6 +127,7 @@ int main(int argc, char **argv) {
       free(cloud); cloud = updated;
     }
     char *saved = strdup(cloud);
+    dados_gravar("musicas-p1.txt", "");
     sessao_sair(); sync_esquecer_usuario();
     memcpy(valor, valorPadrao, sizeof valor);
     valor[AJ_TEMA] = 0; // Restore onto a fixed theme, without a local accent.
@@ -146,6 +148,9 @@ int main(int argc, char **argv) {
       expected[AJ_TEMA] = 8; expected[AJ_HERO] = 0;
     }
     login(); cycle();
+    char *music = dados_ler("musicas-p1.txt");
+    check(music && !strcmp(music, "tt1160419:0\tDune OST\tHans Zimmer\n"), "saved music restored from profile settings");
+    free(music);
     for (int i = 0; i < AJ_N; i++) if (ajustePortavel(i) && !ajLegendaPrincipal(i))
       check(valor[i] == expected[i], CHAVE[i]);
     check(valor[AJ_TEMA] == expected[AJ_TEMA] && valor[AJ_HOME_LAYOUT] == expected[AJ_HOME_LAYOUT] && valor[AJ_IDIOMA] == 4, "appearance/layout/language restored");

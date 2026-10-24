@@ -1,6 +1,7 @@
 // #421: a escolha real mantem a TV durante a colheita; ASS nao muda.
 #include "../src/faixas.c"
 #include <assert.h>
+int xtream_url_limitada(const char *url) { (void)url; return 0; }
 static VideoFaixa faixa;
 static int nativa, ordinal;
 const VideoFaixa *video_legenda(int i) { assert(i == 2); return &faixa; }

@@ -15,7 +15,11 @@
 // `gravar` e estatico EM AMBOS (central.c e ajustes.c): renomeia o da Central
 // enquanto os dois moram nesta unidade de traducao.
 #define gravar centralGravarTeste
+#define dicas centralDicasTeste
+#define botao centralBotaoTeste
 #include "../src/central.c"
+#undef botao
+#undef dicas
 #undef gravar
 #include "../src/episodios.c"
 #include "nvtmp.h"

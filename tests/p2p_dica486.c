@@ -10,6 +10,7 @@
 // E no .wgt (compilado segunda vez com -D__EMSCRIPTEN__) o P2P fica oculto
 // nos Ajustes: "ligue o P2P" seria uma dica impossivel de seguir.
 #include <assert.h>
+int fontefalha_addon_ao_vivo(const char *key) { (void)key; return 0; }
 #include "../src/streams.c"
 #include "stub_player_source_actions.h"
 

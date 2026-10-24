@@ -19,6 +19,9 @@ static int reportedDesktop(int display, SDL_DisplayMode *mode) {
 #include <unistd.h>
 
 int main(void) {
+  for (int i = 0; i < AJ_N; i++)
+    for (int j = i + 1; CHAVE[i][0] != '-' && j < AJ_N; j++)
+      assert(strcmp(CHAVE[i], CHAVE[j]));
   // Fresh settings and Restore default must select Automatic on every platform.
   const int automatic[] = { AJ_AMPLIACAO_ALGO, AJ_AMPLIAR_UI, AJ_RESOLUCAO,
     AJ_GPU_EFEITOS, AJ_ANIM, AJ_VIDRO, AJ_VIDRO_FOSCO, AJ_VIDRO_QUALIDADE };
@@ -92,6 +95,16 @@ int main(void) {
   valor[AJ_HERO_SINOPSE_TAM] = 1;
   assert(ajustes_hero_sinopse_grande());
   valor[AJ_HERO_SINOPSE_TAM] = 0;
+  assert(!strcmp(CHAVE[AJ_HERO_TAMANHO], "heroSizeLocal") && somenteDesteAparelho(AJ_HERO_TAMANHO));
+  assert(OPCOES[AJ_HERO_TAMANHO].n == 3 && ajustes_hero_tamanho() == 0);
+  assert(ajustes_hero_escala_logo() == 1.0f && ajustes_hero_escala_info() == 1.0f);
+  valor[AJ_HERO_TAMANHO] = 1;
+  assert(ajustes_hero_escala_logo() == 1.25f && ajustes_hero_escala_info() == 1.15f && ajustes_hero_sinopse_grande());
+  valor[AJ_HERO_TAMANHO] = 2;
+  assert(ajustes_hero_escala_logo() == 1.5f && ajustes_hero_escala_info() == 1.3f);
+  valor[AJ_HERO_TAMANHO] = 9;
+  assert(ajustes_hero_tamanho() == 0 && !ajustes_hero_sinopse_grande());
+  valor[AJ_HERO_TAMANHO] = 0;
   // Home: layout e arte do destaque.
   assert(valor[AJ_HERO_FUNDO] == 0);          // Automatico
   assert(valor[AJ_HERO_ARTE_DIF] == 1);       // Desligado: mesma foto do card
@@ -264,6 +277,16 @@ int main(void) {
   AJ_LOG_REDE == AJ_DV7 + 1 && AJ_N > AJ_LOG_REDE);
   assert(valor[AJ_LOG_REDE] == 1 && valorPadrao[AJ_LOG_REDE] == 1 &&
          uxValorPadrao(AJ_LOG_REDE) == 1 && !ajustes_log_rede()); // V_LIGA: 1 = Off
+  // Comentarios do Trakt no painel de pausa: ligado de fabrica; fora do blob do web (como reacaoCreditosLocal).
+  assert(valor[AJ_PAUSA_COMENTARIOS] == 0 && valorPadrao[AJ_PAUSA_COMENTARIOS] == 0 && ajustes_pausa_comentarios());
+  assert(!strcmp(CHAVE[AJ_PAUSA_COMENTARIOS], "pausaComentariosLocal") && somenteDesteAparelho(AJ_PAUSA_COMENTARIOS) && !dePerfil(AJ_PAUSA_COMENTARIOS));
+  // Cada opcao nova confere a SUA posicao (depois das ja existentes), sem fixar
+  // o fim da lista: duas opcoes acrescentadas em PRs diferentes nao se quebram.
+  assert(AJ_PAUSA_COMENTARIOS > AJ_LOG_REDE && AJ_PAUSA_NOTAS == AJ_PAUSA_COMENTARIOS + 1 && AJ_PAUSA_ELENCO == AJ_PAUSA_NOTAS + 1 && AJ_N > AJ_PAUSA_ELENCO);
+  assert(valor[AJ_PAUSA_ELENCO] == 1 && valorPadrao[AJ_PAUSA_ELENCO] == 1 && !ajustes_pausa_elenco());   // V_LIGA: 1 = Off
+  assert(!strcmp(CHAVE[AJ_PAUSA_ELENCO], "pausaElencoLocal") && somenteDesteAparelho(AJ_PAUSA_ELENCO) && !dePerfil(AJ_PAUSA_ELENCO));
+  assert(valor[AJ_PAUSA_NOTAS] == 0 && valorPadrao[AJ_PAUSA_NOTAS] == 0 && ajustes_pausa_notas());
+  assert(!strcmp(CHAVE[AJ_PAUSA_NOTAS], "pausaNotasLocal") && somenteDesteAparelho(AJ_PAUSA_NOTAS) && !dePerfil(AJ_PAUSA_NOTAS));
   // #492: retomada morna e o prazo do video pronto
   assert(valor[AJ_RETOMADA_MORNA] == 0 && ajustes_retomada_morna());   // V_LIGA: 0 = Ligado
   assert(!strcmp(CHAVE[AJ_RETOMADA_MORNA], "retomadaMornaLocal") && somenteDesteAparelho(AJ_RETOMADA_MORNA) && !dePerfil(AJ_RETOMADA_MORNA));
@@ -422,11 +445,12 @@ int main(void) {
   perfilSeguro = 1; assert(!ajustes_ampliar_app()); perfilSeguro = 0;
   // Exercise real settings through every automatic ladder step.
   gpun_preferencia(0);
+  gpun_relatar(60, 40, 16.667, 1, 1); // Discard the initial scene window.
   for (int level = 0; level <= 4; level++) {
     valor[AJ_ANIM] = valor[AJ_VIDRO] = valor[AJ_VIDRO_FOSCO] = 2;
     valor[AJ_VIDRO_CONTORNO] = valor[AJ_VIDRO_QUALIDADE] = 0;
     if (level) for (int r = 0; r < 3; r++) gpun_relatar(30, 40, 16.667, 1, 1);
-    if (level) gpun_relatar(34, 40, 16.667, 1, 1);
+    if (level) for (int r = 0; r < 3; r++) gpun_relatar(34, 40, 16.667, 1, 1);
     assert(gpun_degrau() == level);
     assert(ajustes_animacoes_reduzidas() == (level >= 3));
     assert(ajustes_vidro() == (level < 4));
@@ -447,12 +471,24 @@ int main(void) {
   assert(gpun_fosco_vetado());
   assert(definirValorDireto(AJ_VIDRO_FOSCO, 2));
   assert(!gpun_fosco_vetado());
-  // Formato do player: Original de fabrica; local (o web nao tem).
-  assert(AJ_PLR_FORMATO > AJ_LOG_REDE && AJ_N > AJ_PLR_FORMATO);
-  assert(valor[AJ_PLR_FORMATO] == PLR_FMT_ORIGINAL && ajustes_plr_formato() == PLR_FMT_ORIGINAL);
+  // Formato do player: de fabrica, o que o OSD sempre foi (marcas no canto de cima); local (o web nao tem).
+  assert(AJ_PLR_FORMATO > AJ_LOG_REDE && AJ_PAUSA_COMENTARIOS == AJ_PLR_FORMATO + 1 && AJ_PLR_FORMATO_POS == AJ_PAUSA_ELENCO + 1 && AJ_N > AJ_PLR_FORMATO_POS);
+  assert(valor[AJ_PLR_FORMATO_POS] == PLR_POS_CANTO && ajustes_plr_formato_pos() == PLR_POS_CANTO);
+  assert(!strcmp(CHAVE[AJ_PLR_FORMATO_POS], "plrFormatoPosLocal") && somenteDesteAparelho(AJ_PLR_FORMATO_POS));
+  valor[AJ_PLR_FORMATO_POS] = 99; assert(ajustes_plr_formato_pos() == PLR_POS_CANTO);   // fora da lista: o canto
+  valor[AJ_PLR_FORMATO] = PLR_FMT_OFF; assert(inativa(AJ_PLR_FORMATO_POS));
+  valor[AJ_PLR_FORMATO] = PLR_FMT_MARCAS; assert(!inativa(AJ_PLR_FORMATO_POS));
+  valor[AJ_PLR_FORMATO_POS] = PLR_POS_CANTO;
+  assert(valor[AJ_PLR_FORMATO] == PLR_FMT_MARCAS && ajustes_plr_formato() == PLR_FMT_MARCAS);
   assert(!strcmp(CHAVE[AJ_PLR_FORMATO], "plrFormatoLocal") && somenteDesteAparelho(AJ_PLR_FORMATO));
-  valor[AJ_PLR_FORMATO] = 99; assert(ajustes_plr_formato() == PLR_FMT_ORIGINAL);   // valor fora da lista: o original
-  valor[AJ_PLR_FORMATO] = PLR_FMT_ORIGINAL;
+  valor[AJ_PLR_FORMATO] = 99; assert(ajustes_plr_formato() == PLR_FMT_MARCAS);   // valor fora da lista: as marcas
+  valor[AJ_PLR_FORMATO] = PLR_FMT_MARCAS;
+  // O codec do audio aparece de fabrica; a linha apaga com a fileira desligada.
+  assert(AJ_PLR_CODEC == AJ_PLR_FORMATO_POS + 1 && AJ_N > AJ_PLR_CODEC);
+  assert(valor[AJ_PLR_CODEC] == 0 && valorPadrao[AJ_PLR_CODEC] == 0 && ajustes_plr_codec());
+  assert(!strcmp(CHAVE[AJ_PLR_CODEC], "plrCodecLocal") && somenteDesteAparelho(AJ_PLR_CODEC));
+  valor[AJ_PLR_FORMATO] = PLR_FMT_OFF; assert(inativa(AJ_PLR_CODEC));
+  valor[AJ_PLR_FORMATO] = PLR_FMT_MARCAS; assert(!inativa(AJ_PLR_CODEC));
   unlink(path);
   puts("ajustes_padroes: ok");
   return 0;

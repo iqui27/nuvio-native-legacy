@@ -60,7 +60,7 @@ int main(void) {
     foco = 0;
     quadroDt = 0.016f;
     rolaBotoes = 0;
-    for (i = 0; i < 12; i++) {
+    for (i = 0; i <= botoes(NULL, NULL); i++) {
       int frame;
       central_evento(&e);
       for (frame = 0; frame < 60; frame++) {
@@ -70,9 +70,12 @@ int main(void) {
         assert(top + 104 - rolaBotoes <= h + 0.01f);
       }
     }
+    assert(foco / CC_COLS == botoes(NULL, NULL) / CC_COLS);
+    e.key.keysym.sym = SDLK_RIGHT;
+    for (i = 0; i < CC_COLS; i++) central_evento(&e);
     assert(foco == botoes(NULL, NULL));
     e.key.keysym.sym = SDLK_UP;
-    for (i = 0; i < 12; i++) {
+    for (i = 0; i <= botoes(NULL, NULL); i++) {
       float top;
       central_evento(&e);
       top = (foco / 3) * 114.0f;

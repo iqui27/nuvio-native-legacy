@@ -31,6 +31,9 @@ char *rede_baixar_trecho64_final(const char *u,const char *h,int64_t s,int64_t e
 }
 /* 2.0.6 also links the Samsung streaming reader; the webOS DV fixture
  * must continue to use authenticated ranges, never the Samsung ring path. */
+char *rede_range_headers(const char *raw,int public_only) {
+  (void)public_only;return strdup(raw?raw:"");
+}
 int rede_fluxo64(const char *url,const char *headers,int64_t start,
                  int (*sink)(void *,const char *,size_t),void *opaque,
                  int64_t *total,int *status,volatile int *cancel,

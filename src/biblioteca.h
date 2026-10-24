@@ -16,6 +16,8 @@ void biblioteca_desenhar(Uint32 agora);
 int  biblioteca_quer_sair(void);   // 1 quando o Back deve fechar a tela
 int  biblioteca_pediu_relogio(void);
 void biblioteca_encerrar(void);
+// Headless navigation checks: actual row/column and selected action.
+void biblioteca_teste_foco(int *fileira, int *coluna, int *acao);
 
 // OK pressionado sobre um poster: consome o pedido e devolve 1, escrevendo em
 // *indiceCatalogo o indice do item NO CATALOGO (nao a posicao na grade — a

@@ -208,6 +208,8 @@ void player_atualizar(float dt, Uint32 agora);
 void player_desenhar(Uint32 agora);
 int  player_quer_sair(void);  // 1 assim que o Back foi apertado
 void player_encerrar(void);
+// Manual source replacement saves resume position without marking watched.
+void player_encerrar_fonte(void);
 // VOD na ilha: pausa antecipada durante a saida, conserva somente com ack,
 // depois retoma o mesmo IMDb/episodio sem reabrir fonte ou buscar posicao.
 void player_preparar_retencao(void);
@@ -312,6 +314,9 @@ void player_leg_estilo_carregar(void);
 void player_leg_estilo_mudou(void);
 // Settings commits a complete draft only after confirmation. A failed write
 // leaves both the playing style and its authored-ASS override flags intact.
+int player_leg_fonte_definir(int familia);
+int player_leg_fonte_local_definir(int indice);
+int player_leg_estilo_restaurar(void);
 int player_leg_estilo_definir(const VideoLegendaEstilo *estilo, int tocou);
 const VideoLegendaEstilo *player_leg_estilo_padrao(void);
 

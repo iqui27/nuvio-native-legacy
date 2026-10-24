@@ -1340,6 +1340,7 @@ object NvPlayer {
                             !it.equals("If-None-Match", true) && !it.equals("If-Modified-Since", true)
                         }),
                     report = { Log.i(TAG, it) },
+                    liveTsUri = Uri.parse(url).takeIf { LivePlaylistDataSource.isLiveTs(it) },
                 ))
             if (construir) construirPlayer(act, r)
             Log.i(TAG, "[player] buffer preset=$preset min=${minMs / 1000}s max=${maxMs / 1000}s teto=${bytes shr 20}MB preparo=$preparando")

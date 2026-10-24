@@ -59,7 +59,7 @@ static void aplicar(int n, const char *motivo);
 static unsigned efeitos, semGanho;
 static int testePasso, testeAntes;
 static double testeFps, medidaMs, medidaRuim;
-static int medidaN;
+static int medidaN, medidaTransiente, testeGanhos;
 
 int gpun_efeito_ativo(int passo) { return !!(efeitos & (1u << (passo - 1))); }
 static void aplicarEscada(void) {
@@ -73,7 +73,7 @@ static void reiniciarMedida(void) {
   degrau = foscoVetado = recuperacaoEspera = 0;
   relatoTentativa = -1;
   efeitos = semGanho = 0; testePasso = 0;
-  medidaMs = medidaRuim = 0; medidaN = 0;
+  medidaMs = medidaRuim = 0; medidaN = medidaTransiente = testeGanhos = 0;
   memset(fpsNivel, 0, sizeof fpsNivel);
 }
 
@@ -641,6 +641,8 @@ const char *gpun_teste_upscale(int sw, int sh, int iw, int ih, int app) {
 void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) {
   double alvo = periodo > 0 ? 1000.0 / periodo : 60.0;
   int automaticos = ajustes_efeitos_automaticos();
+  if (medidaTransiente) cheia = 0;
+  medidaTransiente = 0;
   if (medidaN) {
     if (medidaRuim > (medidaMs + medidaRuim) * 0.2 || medidaN < 10) cheia = 0;
     if (medidaMs > 0) fps = medidaN * 1000.0 / medidaMs;
@@ -649,7 +651,7 @@ void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) 
   if (!adaptativo || nivel > GPUN_NIVEL_AUTO_MAX) return;
   if (alvo > 60.0) alvo = 60.0;
   if (cena != relatoCena) {
-    if (testePasso && cena) {
+    if (testePasso) {
       efeitos &= ~(1u << (testePasso - 1)); degrau = testeAntes;
       printf("[gpu-escada] step %d -> %d fps %.1f/%.1f, reverted, scene changed\n",
              testeAntes, testePasso, testeFps, fps);
@@ -657,9 +659,14 @@ void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) 
     }
     relatoCena = cena;
     relatosLentos = relatosRapidos = relatosValidos = 0;
+    return; // Discard the first window after a scene/player transition.
   }
   if (!cena || !cheia || !(fps > 0) || pior > 1000.0) {
     relatosLentos = relatosRapidos = 0;
+    if (testePasso) {
+      efeitos &= ~(1u << (testePasso - 1)); degrau = testeAntes;
+      testePasso = testeGanhos = 0; aplicarEscada();
+    }
     if (pior > 1000.0)
       printf("[gpu-nivel] report ignored: fps=%.1f worst=%.1fms (stall)\n", fps, pior);
     return;
@@ -667,6 +674,8 @@ void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) 
   if (testePasso) {
     int passo = testePasso;
     int ganho = fps >= testeFps * 1.10 && fps >= testeFps + 3.0;
+    if (ganho && ++testeGanhos < 3) return;
+    testeGanhos = 0;
     if (!ganho) {
       efeitos &= ~(1u << (passo - 1)); semGanho |= 1u << (passo - 1);
       degrau = testeAntes; aplicarEscada();
@@ -684,12 +693,9 @@ void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) 
   if (recuperacaoEspera > 0) recuperacaoEspera--;
   int proximo = degrau;
   if (relatosLentos >= 3) {
-    for (int s = degrau + 1; s <= 4; s++) {
-      if (!(automaticos & (1 << (s - 1))) || (semGanho & (1 << (s - 1))) ||
-          (s == 2 && foscoVetado)) continue;
-      proximo = s;
-      break;
-    }
+    // Visit every rung, including forced/vetoed effects, in separate windows.
+    // A disabled effect never makes the next effect an immediate jump.
+    if (degrau < 4) proximo = degrau + 1;
     if (proximo != degrau && relatoTentativa >= 0) {
       // Retry after five minutes of eligible reports, never a permanent floor.
       recuperacaoEspera = 100;
@@ -703,8 +709,13 @@ void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) 
   }
   if (proximo != degrau) {
     if (proximo > degrau) {
-      testeAntes = degrau; testePasso = proximo; testeFps = fps;
-      efeitos |= 1u << (proximo - 1);
+      unsigned bit = 1u << (proximo - 1);
+      if ((automaticos & bit) && !(semGanho & bit) &&
+          !(proximo == 2 && foscoVetado)) {
+        testeAntes = degrau; testePasso = proximo; testeFps = fps;
+        testeGanhos = 0;
+        efeitos |= bit;
+      }
     } else {
       efeitos &= ~(1u << (degrau - 1));
       printf("[gpu-escada] step %d -> %d fps %.1f/%.1f, kept, recovery trial\n",
@@ -727,7 +738,8 @@ void gpun_relatar(double fps, double pior, double periodo, int cena, int cheia) 
 
 void gpun_medir(double dtms, double espera, double cpu, int cena, int cheia) {
   (void)espera;
-  if (!cena || !cheia || dtms <= 0) return;
+  if (!cena || !cheia) { medidaTransiente = 1; return; }
+  if (dtms <= 0) return;
   // Reject decode/upload, event/list work and isolated scroll-start stalls.
   if (cpu > 8.0 || dtms > 100.0) medidaRuim += dtms;
   else { medidaMs += dtms; medidaN++; }

@@ -32,7 +32,7 @@ static int calls, response = 200;
 static const char *expected;
 static int nv_http_fluxo(const char *u, unsigned p, unsigned t, int cb,
                          void *v, int *s, unsigned *n) { abort(); }
-static char *pedir(const char *method, const char *url, const char *const *headers,
+static char *pedir(const char *method, const char *url, int seconds, const char *const *headers,
                   const char *extra, const char *body, long *size, int *status) {
   assert(!strcmp(method, "PATCH"));
   assert(!strcmp(url, "https://account.example/rest/v1/addons?user_id=eq.owner&profile_id=eq.1&url=eq.addon"));

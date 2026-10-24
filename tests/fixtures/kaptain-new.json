@@ -1,0 +1,502 @@
+{
+  "collections": [
+    {
+      "id": "collection-UGED6TEZ",
+      "title": "Trending / New",
+      "folders": [
+        {
+          "id": "folder-9D1C5A0D",
+          "title": "New Movies",
+          "sources": [
+            {
+              "title": "New Action Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "28",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Adventure Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "12",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Animation Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "16",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Comedy Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "35",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Crime Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "80",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Documentary Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "99",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Drama Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "18",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Family Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "10751",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Fantasy Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "14",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New History Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "36",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Horror Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "27",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Music Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "10402",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Mystery Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "9648",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Romance Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "10749",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Sci-Fi Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "878",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Thriller Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "53",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New War Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "10752",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Western Movies",
+              "sortBy": "primary_release_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "37",
+                "voteCountGte": 50,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "MOVIE",
+              "tmdbSourceType": "DISCOVER"
+            }
+          ]
+        },
+        {
+          "id": "folder-F5BC0453",
+          "title": "New Series",
+          "sources": [
+            {
+              "title": "New Action & Adventure Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "10759",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Animation Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "16",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Comedy Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "35",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Crime Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "80",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Documentary Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "99",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Drama Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "18",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Family Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "10751",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Kids Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "10762",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Mystery Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "9648",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New News Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "10763",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Reality Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "10764",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Sci-Fi & Fantasy Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "10765",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Soap Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "10766",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Talk Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "10767",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New War & Politics Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "10768",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            },
+            {
+              "title": "New Western Series",
+              "sortBy": "first_air_date.desc",
+              "tmdbId": null,
+              "filters": {
+                "year": 2026,
+                "withGenres": "37",
+                "voteCountGte": 25,
+                "withOriginalLanguage": "en"
+              },
+              "provider": "tmdb",
+              "mediaType": "TV",
+              "tmdbSourceType": "DISCOVER"
+            }
+          ]
+        }
+      ],
+      "pinToTop": true,
+      "viewMode": "FOLLOW_LAYOUT",
+      "showAllTab": true,
+      "focusGlowEnabled": true
+    }
+  ]
+}

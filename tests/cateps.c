@@ -58,6 +58,9 @@ int   ajustes_cw_proximo(void) { return 1; }
 const char *i18n(const char *s)         { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
 const char *dados_dir(void)             { return ""; }
+char *dados_caminho(char *dst, unsigned size, const char *name) {
+  (void)dst; (void)size; (void)name; return NULL;
+}
 const char *sessao_usuario(void)        { return ""; }
 static int perfilTeste = 1;
 int         perfis_ativo(void)          { return perfilTeste; }

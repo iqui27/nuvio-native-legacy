@@ -17,6 +17,7 @@ for scenario in tmdb-tv episode-id movie-control known-series-control uncertain-
   tmdb-series-alias tmdb-show-alias cached-opposite-movie cached-opposite-series \
   cached-uncertain cached-channel cached-show-control opposite-response-type \
   different-response-id missing-series-no-movie context-reset malformed-episode-control \
+  untyped-collision tmdb-only-enrichment \
   seed-opposite-movie seed-opposite-series seed-matching-show-control \
   seed-current-session seed-stale-session seed-cached-stale-session \
   native-tmdb-canonical-alias native-tmdb-wrong-id native-tmdb-wrong-type; do

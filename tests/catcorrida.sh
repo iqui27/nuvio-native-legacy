@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 flags=()
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc ${flags[@]+"${flags[@]}"} -DNV_CAT_TEST_ANTES_TRAVA=nv_cat_teste_antes_trava \
-  src/catalogo.c tests/catcorrida.c \
+  src/catalogo.c tests/catcorrida.c tests/catalogo_boundary_stub.c \
   -Isrc -o ${TMPDIR:-/tmp}/nuvio-catcorrida-tests -O1 -g \
   -Wall -Wno-deprecated-declarations -Wno-macro-redefined
 ${TMPDIR:-/tmp}/nuvio-catcorrida-tests

@@ -141,6 +141,7 @@ int  guia_fonte_do_canal(const char *id, char *chave, size_t n);
 // O diagnostico grava formato/modo/proxy na fonte do canal testado (M8), e o
 // player le o modo da fonte ao abrir o canal (padrao = o dos Ajustes).
 void guia_fonte_gravar_diag(const char *id, int formato, int modo, int proxy);
+int  guia_proxy_do_canal(const char *id, int padrao);
 int  guia_modo_do_canal(const char *id, int padrao);   // VERDE no guia completo
 int  guia_item_do_canal(const char *id, const char *nome, const char *base, CatItem *it);
 

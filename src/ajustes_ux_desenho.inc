@@ -821,7 +821,7 @@ static const char *ajSelo(int op) {
   if (op == AJ_LEG_SYNC_AUDIO) return "Android";
   if (uxAvancada(op)) return "Avançado";
   if (!uxTemPadrao(op)) return NULL;
-  return !strcmp(uxEscopo(op), "Conta/perfil") ? "Este perfil" : "Esta TV";
+  return escopoDe(op) == ESC_TV ? "Esta TV" : "Este perfil";
 }
 static float ajLinhaH(int i) {
   int op = TELA[i].op;
@@ -1354,8 +1354,8 @@ static void ajDesenharLinha(int item, float y, float f, float a) {
     }
     { const char *selo = ajSelo(op);
       if (selo) {
-        float w = ajCaps(TXT_V3_SELO, selo, 2.2f, -1, 0, 0);
-        if (rx + 18 + w < tx + maxW) ajCaps(TXT_V3_SELO, selo, 2.2f, rx + 18, tyc - 11, 0.42f * aT);
+        float w = ajCaps(TXT_G22M, selo, 1.0f, -1, 0, 0);
+        if (rx + 18 + w < tx + maxW) ajCaps(TXT_G22M, selo, 1.0f, rx + 18, tyc - 11, 0.42f * aT);
       } }
   }
   // 2.0.3: o que falta para a linha valer, na propria linha (ambar).

@@ -172,13 +172,18 @@ static const char *ajVisualIcone(int op) {
     case AJ_DV_MKV: return "aj_monitor-play";
     case AJ_ATMOS: return "aj_monitor-play";
     case AJ_PAUSA_OVERLAY: return "aj_circle-play";
+    case AJ_PAUSA_COMENTARIOS: return "aj_message-square";
+    case AJ_PAUSA_NOTAS: return "aj_star";
+    case AJ_PAUSA_ELENCO: return "aj_users";
     case AJ_PLR_CLASSIF: return "aj_shield";
     case AJ_TELA_ABERTURA: return "aj_clapperboard";
     case AJ_ABERTURA_ADDON: return "aj_clapperboard";
     case AJ_PLR_FORMATO: return "aj_monitor-play";
+    case AJ_PLR_FORMATO_POS: return "aj_panel-top";
+    case AJ_PLR_CODEC: return "aj_audio-lines";
     case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: return "aj_clapperboard";
     case AJ_EP_TAMANHO: return "aj_layout-dashboard";
-    case AJ_HERO_SINOPSE_TAM: return "aj_layout-dashboard";
+    case AJ_HERO_SINOPSE_TAM: case AJ_HERO_TAMANHO: return "aj_layout-dashboard";
     case AJ_ESTAT_TAMANHO: return "aj_gauge";
     case AJ_ESTAT_LADO: return "aj_gauge";
     case AJ_REACAO_CREDITOS: return "aj_circle-play";
@@ -229,7 +234,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_RELOGIO: case AJ_RELOGIO_12H: return "aj_clock";
     case AJ_VIDRO_CONTORNO: case AJ_FOCO_ACENTO: return "aj_layers";
     case AJ_VIDRO_OPAC: return "aj_layers";
-    case AJ_VIDRO_FOSCO: case AJ_VIDRO_QUALIDADE: return "aj_layers";
+    case AJ_SUAVIZAR_DEGRADES: case AJ_VIDRO_FOSCO: case AJ_VIDRO_QUALIDADE: return "aj_layers";
     case AJ_XTREAM_SERVIDOR: return "aj_server";
     case AJ_XTREAM_USUARIO: return "aj_server";
     case AJ_XTREAM_SENHA: return "aj_server";
@@ -260,6 +265,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_PLUGINS: return "aj_puzzle";
     case AJ_ADDONS_PRINCIPAL: return "aj_user-round";
     case AJ_PERFIL_PESQ: return "aj_user-round";
+    case AJ_PERFIL_INFANTIL: return "aj_shield-check";
     case AJ_PERFIL_EDITAR: return "aj_user-round";
     case AJ_SAIR: return "aj_log-out";
     case AJ_TRAKT: return "aj_plug";
@@ -552,7 +558,7 @@ static float ajVisualCena(int sec, int op, float x, float y, float w) {
       gfx_rect(RR(26, 50, 320, 290), 0, GFX_SOMBRA, 1, 0, 0, 0.5f, 0, 0, 0, 0.4f);
       VID(36, 44, 300, 272, 26);
       TXT("Aa", 64, 1, 60, 62, 1);
-      uxValorTexto(AJ_FONTE_UI, valor[AJ_FONTE_UI], fam, sizeof fam);
+      uxValorTexto(AJ_FONTE_UI, ajFonteAtual(AJ_FONTE_UI), fam, sizeof fam);
       TXT(fam, 14, 0, 62, 150, 0.6f);
       for (i = 0; i < 6; i++) {
         unsigned c = TEMA_ACENTO[1 + i].fill;

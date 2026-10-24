@@ -16,6 +16,10 @@ int addons_n(void) { return 1; }
 int addons_base_desligada(const char *b) { (void)b; return 0; }   // 203-desligados
 const char *addons_base(int i) { (void)i; return "https://fixture.example"; }
 const char *addons_id_manifesto(int i) { (void)i; return "addon.demo"; }
+void addons_catalogo_chave(const char *id, const char *base, const char *type,
+                           const char *catalog, char *dst, unsigned size) {
+  (void)base; snprintf(dst, size, "%s_%s_%s", id, type, catalog);
+}
 // This fixture's installed addon is static. Authoritative list publication
 // is covered by fileiras_removidas; any borrowed scope here must be exact.
 static pthread_mutex_t addonListLock = PTHREAD_MUTEX_INITIALIZER;

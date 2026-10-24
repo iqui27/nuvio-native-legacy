@@ -26,7 +26,7 @@ saida=$(${TMPDIR:-/tmp}/nuvio-addonslista-tests) || { echo "$saida"; exit 1; }
 echo "$saida" | grep -v '^\[addons\]' || true
 echo "$saida" | grep -q 'addonslista: ok'
 # resposta curta sem fonte vai para o log com o texto (os 75 bytes do id 1504)
-echo "$saida" | grep -qF '[addons] Formato antigo: resposta sem fonte: {"err":"Invalid debrid key"}' \
+echo "$saida" | grep -qF '[addons] Formato antigo: stream parse error (missing streams array, HTTP 200)' \
   || { echo "FALHOU: amostra da resposta sem fonte fora do log"; exit 1; }
 echo "$saida" | grep -qF '[addons] Fonte e catalogo: resposta sem fonte: {"streams":[]}' \
   || { echo "FALHOU: amostra de {\"streams\":[]} fora do log"; exit 1; }

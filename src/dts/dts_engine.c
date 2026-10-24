@@ -2,6 +2,7 @@
 #include "dv7.h"
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <stdio.h>
 #include <math.h>
 #include <time.h>
@@ -28,6 +29,10 @@ void dts_engine_rings(DtsEngineRings *out, int reset_peak) {
 }
 #ifndef NV_DTS_FFMPEG
 struct DtsEngine { DtsMediaInfo info; };
+void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) { (void)e; if(b) memset(b,0,sizeof *b); }
+DtsEngine *dts_engine_source_create(const char *u,const char *h,int m) { (void)u;(void)h;(void)m;return NULL; }
+int dts_engine_source_read(DtsEngine *e,int64_t o,unsigned char *d,int n,int fd) { (void)e;(void)o;(void)d;(void)n;(void)fd;return -1; }
+int64_t dts_engine_source_total(DtsEngine *e) { (void)e;return -1; }
 DtsEngine *dts_engine_create(void) { return calloc(1, sizeof(DtsEngine)); }
 int dts_engine_available(void) { return 0; }
 void dts_engine_dv(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
@@ -52,6 +57,7 @@ void dts_engine_interrupt(DtsEngine *e,int on) { (void)e; (void)on; }
 #include "../rede.h"
 #include <limits.h>
 #include <errno.h>
+#include <poll.h>
 #include <pthread.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
@@ -89,6 +95,7 @@ static const AVRational NS = {1,1000000000};
 struct DtsEngine {
   DtsMediaInfo info;
   char error[160], *url, *headers, *cache;
+  char *source_public_headers;
   int64_t pos, total, cache_start;
   long cache_size;
   volatile int cancelled;
@@ -101,6 +108,8 @@ struct DtsEngine {
   int64_t range_next;
   long range_bytes;
   int dv, passthrough, range_slots, final_cross, opening;
+  int source_stream; /* Native HTTP cache; conversion readers retain their behavior. */
+  volatile int source_cancel;
   /* Samsung remux (dts_engine_open_demux): container only, large ranges and
    * the final address reused, like the Dolby Vision path, because the whole
    * video also flows through this reader. Never set on webOS. */
@@ -373,6 +382,7 @@ static uint64_t fx_now_ms(void) { return clock_ns(CLOCK_MONOTONIC)/1000000u; }
  * started, at least 2 MiB. A probe that only needs the header and the Cues
  * then costs a few MiB, not a full ring, at each jump. */
 static int64_t fx_ahead(DtsEngine *e) {
+  if(e->source_stream) return FX_CAP-FX_HIST;
   int64_t used=e->pos>e->fx_from?e->pos-e->fx_from:0, a=2*used;
   if(a<2*1024*1024) a=2*1024*1024;
   if(a>FX_CAP-FX_HIST) a=FX_CAP-FX_HIST;
@@ -424,15 +434,17 @@ static void *fx_worker(void *opaque) {
     direct=e->final_url[0]!=0;
     snprintf(target,sizeof target,"%s",direct?e->final_url:e->url);
     int strip=direct&&e->final_cross;
+    if(e->source_stream)__atomic_store_n(&e->source_cancel,0,__ATOMIC_RELAXED);
     pthread_mutex_unlock(&e->range_lock);
     uint64_t t0=fx_now_ms();
-    int r=rede_fluxo64(target,strip?"":e->headers,at,fx_sink,e,&total,&status,&e->cancelled,fin,&cross,FX_STALL_MS,&got);
+    int r=rede_fluxo64(target,strip?(e->source_stream && e->final_cross!=2?e->source_public_headers:""):e->headers,at,fx_sink,e,&total,&status,
+      e->source_stream?&e->source_cancel:&e->cancelled,fin,&cross,FX_STALL_MS,&got);
     uint64_t ms=fx_now_ms()-t0;
     pthread_mutex_lock(&e->range_lock);
     e->metrics.range_requests++;
     if(total>=0) e->total=total;
     if(!direct && got>0 && fin[0]) { snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; }
-    if(r==1 || e->fx_stop || cancelled(e)) continue;          /* restart asked, or closing */
+    if(r==1 || e->fx_stop || cancelled(e) || (e->source_stream && e->fx_req>=0)) continue; /* seek/closing */
     if(r==0) {                                                /* body ended */
       e->fx_attempts=0;
       if(status==200) { e->total=e->fx_hi; e->fx_eof=1; continue; }   /* whole file, no Range */
@@ -471,19 +483,21 @@ static void *fx_worker(void *opaque) {
   pthread_mutex_unlock(&e->range_lock);
   return NULL;
 }
-static int read_fluxo(void *opaque,uint8_t *dst,int n) {
+static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   DtsEngine *e=opaque;
   uint64_t wait_started=0;
   pthread_mutex_lock(&e->range_lock);
   if(!e->fx_thread_ok && !e->fx_stop) {
-    if(!e->fx_buf) { e->fx_cap=(int64_t)g_fx_cap_mib*1024*1024; e->fx_buf=malloc((size_t)e->fx_cap); if(e->fx_buf) rings_add(e->fx_cap); }
+    if(!e->fx_buf) { if(!e->source_stream)e->fx_cap=(int64_t)g_fx_cap_mib*1024*1024; e->fx_buf=malloc((size_t)e->fx_cap); if(e->fx_buf) rings_add(e->fx_cap); }
     if(!e->fx_buf) { pthread_mutex_unlock(&e->range_lock); return AVERROR(ENOMEM); }
     e->fx_req=e->pos;
     if(pthread_create(&e->fx_thread,NULL,fx_worker,e)) { pthread_mutex_unlock(&e->range_lock); return AVERROR(ENOMEM); }
     e->fx_thread_ok=1;
   }
   for(;;) {
-    if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
+    struct pollfd pending={pending_fd,POLLIN,0};
+    if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED) ||
+       (pending_fd>=0 && poll(&pending,1,0)>0)) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
     if(e->total>=0 && e->pos>=e->total) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
     if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<e->fx_hi) {
       int64_t k=e->fx_hi-e->pos; if(k>n) k=n;
@@ -497,11 +511,23 @@ static int read_fluxo(void *opaque,uint8_t *dst,int n) {
     if(e->fx_req<0 && e->fx_eof && e->pos>=e->fx_hi) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
     if(e->fx_req<0 && e->fx_err) { pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO); }
     /* Outside what the stream has or will soon have: start over there. */
-    if(e->fx_req<0 && (e->pos<e->fx_lo || e->pos>e->fx_hi+FX_SKIP)) { e->fx_req=e->pos; pthread_cond_broadcast(&e->range_wake); }
+    if(e->fx_req<0 && (e->pos<e->fx_lo || e->pos>e->fx_hi+(e->source_stream?0:FX_SKIP))) {
+      e->fx_req=e->pos;
+      if(e->source_stream)__atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
+      pthread_cond_broadcast(&e->range_wake);
+    }
     if(!wait_started) wait_started=clock_ns(CLOCK_MONOTONIC);
-    struct timespec ts; clock_gettime(CLOCK_REALTIME,&ts); ts.tv_sec+=1;
+    struct timespec ts; clock_gettime(CLOCK_REALTIME,&ts);
+    if(pending_fd<0) ts.tv_sec+=1;
+    else {
+      ts.tv_nsec+=100000000;
+      if(ts.tv_nsec>=1000000000) { ts.tv_sec++;ts.tv_nsec-=1000000000; }
+    }
     pthread_cond_timedwait(&e->range_wake,&e->range_lock,&ts);
   }
+}
+static int read_fluxo(void *opaque,uint8_t *dst,int n) {
+  return read_fluxo_pending(opaque,dst,n,-1);
 }
 static int64_t seek_fluxo(void *opaque,int64_t offset,int whence) {
   DtsEngine *e=opaque;
@@ -512,6 +538,11 @@ static int64_t seek_fluxo(void *opaque,int64_t offset,int whence) {
   int64_t base=whence==SEEK_SET?0:whence==SEEK_CUR?e->pos:whence==SEEK_END?e->total:-1;
   if (base<0 || (offset>0 && base>INT64_MAX-offset) || (offset<0 && offset<-base)) { pthread_mutex_unlock(&e->range_lock); return AVERROR(EINVAL); }
   e->pos=base+offset;
+  if(e->source_stream && e->fx_thread_ok &&
+     (e->pos<e->fx_lo || e->pos>e->fx_hi)) {
+    e->fx_req=e->pos;
+    __atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
+  }
   pthread_cond_broadcast(&e->range_wake);
   pthread_mutex_unlock(&e->range_lock);
   return e->pos;
@@ -519,6 +550,7 @@ static int64_t seek_fluxo(void *opaque,int64_t offset,int whence) {
 static void fx_close(DtsEngine *e) {
   pthread_mutex_lock(&e->range_lock);
   e->fx_stop=1; pthread_cond_broadcast(&e->range_wake);
+  if(e->source_stream)__atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
   pthread_mutex_unlock(&e->range_lock);
   if(e->fx_thread_ok) pthread_join(e->fx_thread,NULL);
   e->fx_thread_ok=0; e->fx_stop=0; e->fx_req=-1; e->fx_eof=e->fx_err=0; e->fx_lo=e->fx_hi=0;
@@ -670,11 +702,83 @@ static void close_media(DtsEngine *e) {
   if (e->io) { av_freep(&e->io->buffer); avio_context_free(&e->io); }
   free(e->cache); e->cache=NULL; free(e->url); e->url=NULL;
   free(e->headers); e->headers=NULL;
+  free(e->source_public_headers); e->source_public_headers=NULL;
 }
 DtsEngine *dts_engine_create(void) {
   DtsEngine *e=calloc(1,sizeof(*e));
   if(e) { e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
   return e;
+}
+void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
+  if(!b)return;
+  memset(b,0,sizeof *b);
+  if(!e)return;
+  pthread_mutex_lock(&e->range_lock);
+  if(e->source_stream) {
+    b->position=e->pos;b->total=e->total;b->capacity_bytes=e->fx_buf?e->fx_cap:0;
+    if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<=e->fx_hi)b->ready_bytes=e->fx_hi-e->pos;
+    b->contiguous_bytes=b->ready_bytes;
+  } else if(!e->remux && e->range_threads && !cancelled(e)) {
+    // Called only by the conversion worker: it owns pos/cache. Completed
+    // speculative ranges belong to the network workers and need range_lock.
+    b->position=e->pos; b->total=e->total;
+    b->capacity_bytes=(int64_t)(e->range_slots+1)*e->range_bytes;
+    if(e->cache && e->pos>=e->cache_start && e->pos-e->cache_start<e->cache_size)
+      b->ready_bytes=e->cache_size-(e->pos-e->cache_start);
+    b->contiguous_bytes=b->ready_bytes;
+    for(int i=0;i<e->range_slots;i++) {
+      DtsRangeJob *j=&e->ranges[i];
+      if(j->state==3 && j->data && j->count>0 && j->start>=e->pos)
+        b->ready_bytes+=j->count;
+    }
+    int64_t next=e->pos+b->contiguous_bytes;
+    for(int k=0;k<e->range_slots;k++) {
+      DtsRangeJob *found=NULL;
+      for(int i=0;i<e->range_slots;i++) {
+        DtsRangeJob *j=&e->ranges[i];
+        if(j->state==3 && j->data && j->count>0 && j->start==next) { found=j;break; }
+      }
+      if(!found)break;
+      b->contiguous_bytes+=found->count;next+=found->count;
+      if(found->count<found->end-found->start+1)break;
+    }
+  }
+  pthread_mutex_unlock(&e->range_lock);
+}
+static int buffer_mib(int v) { return v == 128 || v == 256 ? v : 64; }
+DtsEngine *dts_engine_source_create(const char *url,const char *headers,int mib) {
+  DtsEngine *e=dts_engine_create();
+  if (!e) return NULL;
+  e->url=strdup(url); e->headers=strdup(headers?headers:"");
+  e->source_public_headers=rede_range_headers(headers,1);
+  e->source_stream=1;
+  e->fx_cap=(int64_t)buffer_mib(mib)*1024*1024; e->fx_req=-1;
+  if(!e->url || !e->headers || !e->source_public_headers) { dts_engine_destroy(e); return NULL; }
+  return e;
+}
+int dts_engine_source_read(DtsEngine *e,int64_t offset,unsigned char *data,int n,int pending_fd) {
+  if (!e || offset<0 || !data || n<1) return -1;
+  /* One bounded probe discovers the finite file size before the loopback
+   * response is sent. It finishes before the single streaming lane starts.
+   * Do not start the old speculative four-lane queue just to inspect a header. */
+  if(e->total<0 && !e->fx_thread_ok) {
+    long got=0; int status=0,cross=0; int64_t total=-1; char fin[8192];
+    char *probe=rede_baixar_trecho64_final(e->url,e->headers,0,255,
+      &got,&total,&status,&e->cancelled,fin,&cross);
+    if(!probe || total<=0) { free(probe); return -1; }
+    free(probe);
+    pthread_mutex_lock(&e->range_lock);
+    e->total=total;
+    if(fin[0]) { snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; }
+    pthread_mutex_unlock(&e->range_lock);
+  }
+  if(seek_fluxo(e,offset,SEEK_SET)<0) return -1;
+  return read_fluxo_pending(e,data,n,pending_fd);
+}
+int64_t dts_engine_source_total(DtsEngine *e) {
+  if(!e)return -1;
+  pthread_mutex_lock(&e->range_lock); int64_t total=e->total; pthread_mutex_unlock(&e->range_lock);
+  return total;
 }
 void dts_engine_dv(DtsEngine *e, int enabled) { if (e) e->dv = !!enabled; }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { if (e) e->allow_p7 = !!enabled; }
@@ -694,6 +798,7 @@ void dts_engine_cancel(DtsEngine *e) {
   if(!e) return;
   __atomic_store_n(&e->cancelled,1,__ATOMIC_RELAXED);
   pthread_mutex_lock(&e->range_lock);
+  __atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
   for(int i=0;i<RANGE_SLOTS_MAX;i++) __atomic_store_n(&e->ranges[i].cancel,1,__ATOMIC_RELAXED);
   pthread_cond_broadcast(&e->range_wake); pthread_mutex_unlock(&e->range_lock);
 }

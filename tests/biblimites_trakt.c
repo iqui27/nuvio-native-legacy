@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include "stub_perfisessao.h"
 #include "../src/trakt.c"
 #ifndef TRAKT_LISTA_MAX   /* codigo antigo (prova de que o teste falha antes) */
 #define TRAKT_LISTA_MAX 400
@@ -65,6 +66,14 @@ char *rede_baixar_com(const char *url, int segundos, const char *const *cab) {
   return itens(ini, q, serie);
 }
 
+char *rede_baixar_st_retry(const char *url, int seconds, const char *const *headers, int *status, int *retry) {
+  char *body = rede_baixar_com(url, seconds, headers);
+  *status = body ? 200 : 0; *retry = 0; return body;
+}
+int rede_pedir(const RedePedido *request, RedeResposta *response) {
+  (void)request; response->erro = REDE_INDISPONIVEL; return 0;
+}
+void rede_resposta_limpar(RedeResposta *response) { free(response->corpo); free(response->cabecalhos); }
 const char *i18n(const char *s) { return s; }
 
 // Captura o que trakt_lista imprime em stdout.

@@ -354,7 +354,7 @@ int main(int argc, char **argv) {
   // Escolhe a aba `n` da barra (0 = Salvos, 1 = Coleção, 2 = Listas): a seta so
   // move o foco, o OK escolhe.
   #define MODO(n) do { int _k; AO_TOPO(); \
-    for (_k = 0; _k < 3; _k++) tecla(SDLK_LEFT); \
+    for (_k = 0; _k < 8; _k++) tecla(SDLK_LEFT); \
     for (_k = 0; _k < (n); _k++) tecla(SDLK_RIGHT); \
     tecla(SDLK_RETURN); solta(SDLK_RETURN); } while (0)
 
@@ -505,6 +505,34 @@ int main(int argc, char **argv) {
   captura(nome);
   tecla(SDLK_RETURN);      // acao 1: adicionar a Home
   snprintf(nome, sizeof nome, "%s-lista-home.bmp", saida);
+  captura(nome);
+  // Type switching must retain both the visible and logical chip focus.
+  tecla(SDLK_RIGHT);
+  { int row, column, action;
+    biblioteca_teste_foco(&row, &column, &action);
+    assert(row == 0 && column == 2 && action == 2);
+  }
+  for (int toggle = 0; toggle < 2; toggle++) {
+    int row, column, action;
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    quadros(4);
+    biblioteca_teste_foco(&row, &column, &action);
+    printf("type toggle: row=%d column=%d action=%d\n", row, column, action);
+    assert(row == 0 && column == 2 && action == 2);
+    tecla(SDLK_RIGHT); // End of row stays on the type chip.
+    biblioteca_teste_foco(&row, &column, &action);
+    assert(row == 0 && column == 2 && action == 2);
+    tecla(SDLK_LEFT);
+    biblioteca_teste_foco(&row, &column, &action);
+    assert(row == 0 && column == 1 && action == 1);
+    tecla(SDLK_LEFT);
+    biblioteca_teste_foco(&row, &column, &action);
+    assert(row == 0 && column == 0 && action == 0);
+    tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);
+    biblioteca_teste_foco(&row, &column, &action);
+    assert(row == 0 && column == 2 && action == 2);
+  }
+  snprintf(nome, sizeof nome, "%s-lista-tipo-foco.bmp", saida);
   captura(nome);
   tecla(SDLK_ESCAPE);      // volta para a lista de listas
 

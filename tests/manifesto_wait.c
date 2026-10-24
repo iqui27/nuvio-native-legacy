@@ -6,6 +6,10 @@ int ajustes_busca_nuvio(void) { return 0; }   // #311: Primeiro (padrao)
 int ajustes_ocultar_filmes_vistos(void) { return 0; }    // #366: descoberta.c le o ajuste
 #include "../src/descoberta.c"
 #include <assert.h>
+#include "stub_perfisessao.h"
+int addons_identidade_recebida(const char *base, unsigned version, uint64_t session, const char *body) {
+  (void)base; (void)version; (void)session; (void)body; return 1;
+}
 #include <stdatomic.h>
 #include <unistd.h>
 // maniObter polls with SDL_Delay (3ab30f46); this test links no SDL, so sleep for real.
@@ -33,6 +37,7 @@ const char *addons_base(int i) {
 int main(void) {
   const char *url = "https://fixture.invalid/manifest.json";
   maniN = 1; maniGeracao = 1;
+  maniVersao = addons_versao(); maniSessao = descSessao();
   snprintf(mani[0].url, sizeof mani[0].url, "%s", url);
   mani[0].pronto = 0;
   assert(maniObter(url, 0) == NULL && requests == 0); // disabled, still pending

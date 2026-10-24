@@ -465,9 +465,17 @@ static int acharAnexo(const char *corpo, char *dst, size_t tam, char *hash, size
 #endif
 
 #ifdef NV_ANDROID
-// Contrato do anexo: "Nuvio-<versao>-android.apk". "-android-debug.apk" e
-// "-android-preview.N.apk" NAO terminam em "-android.apk", entao nao casam.
+// Match the installed variant exactly. Pointer width follows the running
+// process, including 32-bit Fire OS on 64-bit hardware.
+#ifdef NV_APK_LITE
+#if UINTPTR_MAX == UINT32_MAX
+#define AT_APK_SUFIXO "-android-lite-armv7.apk"
+#else
+#define AT_APK_SUFIXO "-android-lite-arm64.apk"
+#endif
+#else
 #define AT_APK_SUFIXO "-android.apk"
+#endif
 static int acharApk(const char *corpo, char *dst, size_t tam, char *hash, size_t tamHash) {
   return acharAnexo(corpo, dst, tam, hash, tamHash, AT_APK_SUFIXO);
 }

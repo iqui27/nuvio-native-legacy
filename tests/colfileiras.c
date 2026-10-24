@@ -73,6 +73,17 @@ const char *addons_base_por_id(const char *id) {
   return id && !strcmp(id, AID) ? BASE : "";
 }
 void addons_manifesto_lido(int i, const char *corpo) { (void)i; (void)corpo; sondaLeu = 1; }
+void addons_lista_travar(void) {}
+void addons_lista_destravar(void) {}
+void addons_catalogo_chave(const char *id, const char *base, const char *type, const char *catalog, char *dst, unsigned size) {
+  (void)base; snprintf(dst, size, "%s_%s_%s", id, type, catalog);
+}
+int addons_identidade_recebida(const char *base, unsigned version, uint64_t session, const char *body) {
+  (void)base; (void)version; (void)session; addons_manifesto_lido(0, body); return 1;
+}
+int addons_manifesto_recebido(const char *base, unsigned version, uint64_t session, const char *body) {
+  return addons_identidade_recebida(base, version, session, body);
+}
 
 // ------------------------------------------------------------------ a rede
 char *rede_baixar_st(const char *url, int timeout, const char *const *headers, int *status) {
@@ -152,6 +163,15 @@ int cat_gravar_cache_se_identidade(const char *d, const char *u, int p) {
 // Integracao TMDB ligada por padrao, como no app de verdade — o portao
 // desc_chave_tmdb consulta estes stubs pelo caminho inteiro.
 int   ajustes_tmdb_ligado(void)            { return 1; }
+int ajustes_tmdb_elenco(void) { return 0; }
+int ajustes_fonte_biblioteca(void) { return 0; }
+char *dados_caminho(char *dst, unsigned size, const char *name) {
+  (void)dst; (void)size; (void)name; return NULL;
+}
+int cat_indice_por_imdb_tipo(const char *id, const char *type) { (void)id; (void)type; return -1; }
+int cat_gravar_cache_se_sessao(const char *dir, const char *user, int profile, uint64_t session) {
+  (void)session; return cat_gravar_cache_se_identidade(dir, user, profile);
+}
 int   ajustes_meta_externo(void)           { return 0; }
 int   ajustes_meta_so_cinemeta(void)        { return 0; }
 int   addons_aceita_id(int i, const char *t, const char *id) { (void)i; (void)t; (void)id; return -1; }

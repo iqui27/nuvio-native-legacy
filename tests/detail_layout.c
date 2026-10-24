@@ -206,7 +206,8 @@ int main(void) {
     cat_definir_tudo(&m, 1, NULL, 0); idx = 0;
     carro = 0; saindo = 0; nivel = 0; pessoaAberta = 0; maisAcoes = 1;
     assert(temExplorar() && temMais());
-    assert(nBotoesTodos() == 5 && acaoEm(nBotoesTodos() - 1) == ACAO_MAIS);
+    assert(nBotoesTodos() == 5 + temInicio() + temLembrar());
+    assert(acaoEm(nBotoesTodos() - 1) == ACAO_MAIS);
     for (i = 0; i < nBotoesTodos(); i++) {
       int ac = acaoEm(i);
       assert(ac != ACAO_TRAILER && ac != ACAO_EXPLORAR && ac != ACAO_ARTE && ac != ACAO_RECOMENDAR);

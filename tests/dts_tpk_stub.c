@@ -28,3 +28,6 @@ int dts_tpk_sem_indice(void) { return 0; }
 int dts_tpk_e_url(const char *u) { (void)u; return 0; }
 // video.c (o selo do DTS no player) nao entra nesses testes.
 int video_faixa_dts(const VideoFaixa *f) { (void)f; return 0; }
+// video_tpk.c passes audio offset to remuxer (convAbrirSessao).
+int  ajustes_audio_offset_ms(void) { return 0; }
+void dts_remux_set_audio_offset_ms(int ms) { (void)ms; }

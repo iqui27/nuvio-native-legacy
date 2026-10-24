@@ -3,7 +3,13 @@
 #define main simkl_existing_main
 #define trakt_enfeitar_lote fixture_enfeitar_lote
 #define trakt_enfeitar_lote_sessao fixture_enfeitar_lote_sessao
+#define rede_baixar_st_retry previous_retry
+#define rede_pedir previous_request
+#define rede_resposta_limpar previous_response_clear
 #include "simkl_cw.c"
+#undef rede_baixar_st_retry
+#undef rede_pedir
+#undef rede_resposta_limpar
 #undef main
 #undef trakt_enfeitar_lote
 #undef trakt_enfeitar_lote_sessao

@@ -19,6 +19,10 @@
 #include "ajustes.h"
 #include "estatvivoui.h"
 #include <assert.h>
+int video_quadro_visto(void) { return video_pronto(); }
+int extplayer_tentar(const char *url, const char *title, int anime, void (*internal)(const char *), void (*exit_player)(void)) {
+  (void)url; (void)title; (void)anime; (void)internal; (void)exit_player; return 0;
+}
 #include <math.h>
 #include <stdio.h>
 #include <string.h>

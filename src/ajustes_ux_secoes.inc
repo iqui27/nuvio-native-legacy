@@ -177,7 +177,7 @@ static int ajCenaSecao(int op) {
   switch (op) {
     case AJ_LANDSCAPE: case AJ_HERO: case AJ_HERO_CHEIO: case AJ_FUNDO_DIN: case AJ_FUNDO_DIN_COR: case AJ_HERO_CATALOGOS: case AJ_HERO_TRANSICAO: case AJ_HERO_GENERO:
     case AJ_HERO_SINOPSE: case AJ_HERO_NOTAS: case AJ_HERO_ANO: case AJ_HERO_DURACAO:
-    case AJ_HERO_SINOPSE_TAM:
+    case AJ_HERO_SINOPSE_TAM: case AJ_HERO_TAMANHO:
       return AJC_HOME_ESTILO;
     case AJ_FIL_ORDEM: case AJ_FIL_LIMITE: case AJ_ITENS_FILEIRA: case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS: case AJ_OCULTAR_NLANC: case AJ_NOTAS_HOME:
     case AJ_ROTULOS: case AJ_NOME_ADDON: case AJ_SUFIXO_TIPO: case AJ_SELO_VISTO: case AJ_ABAS_ESTILO:
@@ -228,8 +228,9 @@ static int ajCenaSecao(int op) {
     // 2.0.3: HDR e Dolby Vision mora em Imagem e som.
     case AJ_FONTE_HDR:
     case AJ_AUDIO_OFFSET: case AJ_QUALIDADE: case AJ_DV: case AJ_DV_MKV: case AJ_DV7: case AJ_ATMOS: case AJ_DTS_AC3: case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: return AJC_REP_IMAGEM;
+    case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO:
     case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: case AJ_ESTAT_TAMANHO: case AJ_ESTAT_LADO: case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: case AJ_REACAO_CREDITOS: case AJ_SAIDA_PLAYER: case AJ_MANTER_VIDEO: case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_PROPORCAO_PADRAO: return AJC_REP_DURANTE;
-    case AJ_PLR_FORMATO: return AJC_REP_DURANTE;
+    case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC: return AJC_REP_DURANTE;
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_CHAVE: case AJ_SEEKR_TESTAR: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE:
       return AJC_REP_SEEKR;
     case AJ_IDIOMA: case AJ_TMDB_IDIOMA: return AJC_IDI_INTERFACE;
@@ -248,7 +249,7 @@ static int ajCenaSecao(int op) {
     case AJ_LIVETV_SUGERIR:
       return AJC_TV_PROVEDOR;
     case AJ_PERFIL_ATIVO: case AJ_SYNC:
-    case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_SAIR:
+    case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
       return AJC_CON_PERFIS;
     case AJ_ADDONS: case AJ_PLUGINS: case AJ_ADDONS_PRINCIPAL: return AJC_FON_ADDONS;
     case AJ_ENQUETES: return AJC_CON_AVISOS;
@@ -872,8 +873,10 @@ static void ajcRepDurante(int A) {
     if (ajLogo(ajArte(AJA_LOGO, A), CX(36), CY(40), 200 * ajc.s, 60 * ajc.s, 1) <= 0) ajcTxt(ajTituloN(A), 22, 1, 36, 58, 260, 1);
     ajcTxt(ajMetaTitulo(A), 11, 0, 36, 112, 260, 0.7f);
     CBAR(36, 136, 240, 0.55f); CBAR(36, 152, 220, 0.55f); CBAR(36, 168, 150, 0.55f);
+    if (lig(AJ_PAUSA_COMENTARIOS)) CICON("aj_message-square", 240, 178, 18, 0.9f);
   }
   ajcFoco(AJ_PAUSA_OVERLAY, 28, 32, 270, 150, 12);
+  ajcFoco(AJ_PAUSA_COMENTARIOS, 232, 170, 34, 34, 10);
   CVID(372, 194, 240, 112, 20);
   CIMG(ajArte(AJA_FUNDO, A + 1), 384, 206, 104, 58, 8, 1);
   gfx_anel(CR(500, 214, 40, 40), 0.5f, 3 * ajc.s, ajc.ar, ajc.ag, ajc.ab, 1);

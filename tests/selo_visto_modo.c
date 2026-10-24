@@ -5,6 +5,9 @@
 #include <string.h>
 #include "../src/badges.c"
 
+void gfx_vidro_ou_solido(GfxRect r, float radius, float density, float alpha, float red, float green, float blue, float solid) {
+  (void)r; (void)radius; (void)density; (void)alpha; (void)red; (void)green; (void)blue; (void)solid;
+}
 static int modo, textos, discos, checks;
 static char ultimo[64];
 int ajustes_selo_visto_modo(void) { return modo; }

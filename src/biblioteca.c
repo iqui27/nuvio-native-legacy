@@ -308,6 +308,7 @@ static LstLista aberta;          // lista aberta (EST_ITENS)
 static int  temAberta;
 static char abertaMidia[8] = "MOVIE";
 static int  acaoSel = 0;
+
 static char recado[160];         // resposta de uma acao ("Fixada", o porque do nao)
 static float recadoAte;
 
@@ -321,6 +322,12 @@ static int totalModo = 0;
 // do seletor segmentado. Refeito em reconstruir(), nunca por quadro.
 static int contaModo[2];
 static Foco foco;
+
+void biblioteca_teste_foco(int *fileira, int *coluna, int *acao) {
+  *fileira = foco.fileira;
+  *coluna = foco.coluna;
+  *acao = acaoSel;
+}
 static float animModo[BIB_N_MODOS];
 static float animPick[3];
 static float animFoco[BIB_MAX_LINHAS][BIB_COLUNAS_MAX];
@@ -958,6 +965,7 @@ static void executarAcao(int a) {
            strcasecmp(abertaMidia, "TV") ? "TV" : "MOVIE");
   lst_abrir(&aberta, abertaMidia);
   remapear(0);
+  foco.coluna = acaoSel;
 }
 
 // ---------------------------------------------------------------- eventos

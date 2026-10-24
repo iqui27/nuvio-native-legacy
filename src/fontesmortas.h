@@ -10,4 +10,6 @@ void fontesmortas_definir_escopo(const char *conta, int perfil);
 long fontesmortas_idade(const Stream *s);
 void fontesmortas_marcar(const Stream *s);
 void fontesmortas_limpar(const Stream *s);
+// Changes on mutations, profile changes, and expiry; independent of source count.
+unsigned fontesmortas_versao(void);
 #endif

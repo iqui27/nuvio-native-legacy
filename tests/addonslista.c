@@ -61,10 +61,20 @@ static _Thread_local Uint32 sportTicks;
 // timeout do AIOStreams frio); as seguintes respondem com uma fonte.
 static int pedidosDesligado, pedidosLigado;
 static int falhasLento, chamadasLento, prazoLento[2], prazoCanal;
+// anime.test e o ARM falso: cada pedido, na ordem ("ids?source=kitsu&id=7442,...").
+static char pedidosAnime[512];
+static pthread_mutex_t pedidosAnimeTrava = PTHREAD_MUTEX_INITIALIZER;   // fios em paralelo
 // legenda.test imita o OpenSubtitles v3 vindo da conta (TCL do dono, 09/10):
 // instalado sem capacidades (nasce "fonte"), o manifesto diz so "subtitles" e
 // /stream/ responde 404.
 static int pedidosLegendaStream, pedidosLegendaManifesto, idxLegenda = -1;
+char *rede_baixar(const char *url, int seconds);
+char *rede_baixar_st(const char *url, int seconds, const char *const *headers, int *status) {
+  (void)headers;
+  char *body = rede_baixar(url, seconds);
+  if (status) *status = body ? 200 : 0;
+  return body;
+}
 const char *rede_ultimo_erro(void) { return ""; }
 char *rede_baixar(const char *url, int s) {
   const char *r;
@@ -122,16 +132,78 @@ char *rede_baixar(const char *url, int s) {
     r = tv ? respCanalTv : respCanalChannel;
     return r ? strdup(r) : NULL;
   }
+  // Anime (armids.h): o ARM e um addon que declara "tt" e "kitsu" no /stream.
+  if (strstr(url, "arm.haglund.dev")) {
+    pthread_mutex_lock(&pedidosAnimeTrava);
+    strncat(pedidosAnime, strstr(url, "/api/v2/") + 8, sizeof pedidosAnime - strlen(pedidosAnime) - 2);
+    strcat(pedidosAnime, ",");
+    pthread_mutex_unlock(&pedidosAnimeTrava);
+    if (strstr(url, "ids?source=kitsu&id=7442"))
+      return strdup("{\"kitsu\":7442,\"myanimelist\":16498,\"imdb\":\"tt2560140\","
+                    "\"themoviedb-season\":1,\"thetvdb-season\":1,\"media\":\"TV\"}");
+    if (strstr(url, "ids?source=kitsu&id=13569"))   // T3 parte I: a T3 tem duas entradas
+      return strdup("{\"kitsu\":13569,\"imdb\":\"tt2560140\",\"themoviedb-season\":3,"
+                    "\"thetvdb-season\":3,\"media\":\"TV\"}");
+    if (strstr(url, "imdb?id=tt2560140"))
+      return strdup("[{\"kitsu\":7442,\"myanimelist\":16498,\"themoviedb-season\":1,\"thetvdb-season\":1,\"media\":\"TV\"},"
+                    "{\"kitsu\":13569,\"themoviedb-season\":3,\"thetvdb-season\":3,\"media\":\"TV\"},"
+                    "{\"kitsu\":41982,\"themoviedb-season\":3,\"thetvdb-season\":3,\"media\":\"TV\"}]");
+    return strdup("[]");
+  }
+  if (strstr(url, "aio.test")) {
+    // URL de playback diferente por pedido, o mesmo arquivo: entra uma vez.
+    const char *p = strstr(url, "/stream/");
+    if (!p) return NULL;
+    pthread_mutex_lock(&pedidosAnimeTrava);
+    strncat(pedidosAnime, p + 8, sizeof pedidosAnime - strlen(pedidosAnime) - 2);
+    strcat(pedidosAnime, ",");
+    pthread_mutex_unlock(&pedidosAnimeTrava);
+    if (strstr(p, "kitsu:7442:5"))
+      return strdup("{\"streams\":[{\"url\":\"https://aio/play/k1\",\"behaviorHints\":{\"filename\":\"[SubsPlease] AoT - 05.mkv\",\"videoSize\":1000}},"
+                    "{\"url\":\"https://aio/play/k2\",\"behaviorHints\":{\"filename\":\"AoT.S01E05.mkv\",\"videoSize\":2000}}]}");
+    if (strstr(p, "tt2560140:1:5"))
+      return strdup("{\"streams\":[{\"url\":\"https://aio/play/t1\",\"behaviorHints\":{\"filename\":\"AoT.S01E05.mkv\",\"videoSize\":2000}},"
+                    "{\"url\":\"https://aio/play/t2\",\"behaviorHints\":{\"filename\":\"AoT.S01E05.1080p.mkv\",\"videoSize\":3000}}]}");
+    return strdup("{\"streams\":[]}");
+  }
+  if (strstr(url, "anime.test")) {
+    const char *p = strstr(url, "/stream/");
+    if (!p) return NULL;
+    pthread_mutex_lock(&pedidosAnimeTrava);
+    strncat(pedidosAnime, p + 8, sizeof pedidosAnime - strlen(pedidosAnime) - 2);
+    strcat(pedidosAnime, ",");
+    pthread_mutex_unlock(&pedidosAnimeTrava);
+    if (strstr(p, "kitsu%3A7442%3A5") || strstr(p, "kitsu:7442:5"))
+      return strdup("{\"streams\":[{\"url\":\"https://x/abs-05.mkv\"},{\"url\":\"https://x/comum.mkv\"}]}");
+    if (strstr(p, "tt2560140%3A1%3A5") || strstr(p, "tt2560140:1:5"))
+      return strdup("{\"streams\":[{\"url\":\"https://x/comum.mkv\"},{\"url\":\"https://x/s01e05.mkv\"}]}");
+    return strdup("{\"streams\":[]}");
+  }
   r = strstr(url, "exemplo.test") ? resp[0]
     : strstr(url, "antigo.test")  ? resp[1] : NULL;
   return r ? strdup(r) : NULL;
 }
-// conta um "url" por fonte; o bastante para distinguir lista vazia de cheia
+// um Stream por "url", com a URL (a soma de listas do mesmo addon deduplica por ela)
 int stream_extrair(const char *json, const char *prov, Stream **saida) {
-  int n = 0; const char *p = json;
+  int n = 0, i = 0; const char *p = json;
   (void)prov;
   while ((p = strstr(p, "\"url\"")) != NULL) { n++; p += 5; }
   *saida = n ? calloc((size_t)n, sizeof(Stream)) : NULL;
+  for (p = json; n && (p = strstr(p, "\"url\":\"")) != NULL && i < n; i++) {
+    const char *f;
+    p += 7;
+    f = strchr(p, '"');
+    if (!f) break;
+    snprintf((*saida)[i].url, sizeof (*saida)[i].url, "%.*s", (int)(f - p), p);
+    // behaviorHints.filename/videoSize, ate a proxima fonte (a deduplicacao do
+    // AIOStreams, cuja URL de playback muda com o id do pedido)
+    { const char *prox = strstr(f, "\"url\""), *fn = strstr(f, "\"filename\":\""), *vs = strstr(f, "\"videoSize\":");
+      if (fn && (!prox || fn < prox)) {
+        const char *ff = strchr(fn + 12, '"');
+        if (ff) snprintf((*saida)[i].arquivo, sizeof (*saida)[i].arquivo, "%.*s", (int)(ff - fn - 12), fn + 12);
+      }
+      if (vs && (!prox || vs < prox)) (*saida)[i].tamanhoBytes = strtoull(vs + 12, NULL, 10); }
+  }
   return n;
 }
 // F11: Jellyfin targets are routed away from addons; not exercised here.
@@ -306,10 +378,10 @@ int main(void) {
   // 4) so um consultado, e ele nao responde
   addons_alternar(1);                       // "Fonte e catalogo" desligado
   conferirTexto("um mudo", buscarMotivo("tt0000004"), "Formato antigo não respondeu");
-  // 5) so um, e responde vazio
+  // Malformed resource responses are failures, not empty stream arrays.
   resp[1] = "{\"err\":\"Invalid debrid key\"}";
-  conferirTexto("um vazio", buscarMotivo("tt0000005"),
-                "Formato antigo respondeu: não tem este título");
+  conferirTexto("invalid resource", buscarMotivo("tt0000005"),
+                "Formato antigo não respondeu");
   // 6) D5: os de fonte desligados
   addons_alternar(2);
   conferirTexto("desligados", buscarMotivo("tt0000006"),
@@ -657,6 +729,63 @@ int main(void) {
   conferirTexto("plugins with disabled Stremio sources", buscarMotivo("tt2050003"), "(sem causa)");
   pluginsEnabled = 0;
   conferirTexto("all providers disabled", buscarMotivo("tt2050004"), "Os add-ons de fontes estão desligados");
+
+  // ---- ANIME: o mesmo episodio pelos dois ids que o /stream declara (armids.h).
+  conferir("addon de anime entrou", addons_adicionar("Anime TT Kitsu", "https://anime.test/manifest.json"), 1);
+  addons_manifesto_lido(addons_n() - 1,
+    "{\"id\":\"org.anime.tk\",\"name\":\"Anime TT Kitsu\",\"types\":[\"movie\",\"series\"],"
+    "\"resources\":[\"stream\"],\"idPrefixes\":[\"tt\",\"kitsu\"]}");
+  { Stream *l = NULL; int n, k, abs = 0, s01 = 0, comum = 0;
+    // kitsu:7442:5 (AoT T1, uma entrada so na T1) -> tambem tt2560140:1:5; a
+    // fonte que vem pelos dois entra uma vez.
+    pedidosAnime[0] = 0;
+    n = addons_consultar("kitsu:7442:5", "series", "https://anime.test", 1, NULL, NULL, &l);
+    for (k = 0; k < n; k++) {
+      abs += !strcmp(l[k].url, "https://x/abs-05.mkv");
+      s01 += !strcmp(l[k].url, "https://x/s01e05.mkv");
+      comum += !strcmp(l[k].url, "https://x/comum.mkv");
+    }
+    conferir("kitsu + tt: tres fontes distintas", n, 3);
+    conferir("kitsu + tt: a fonte comum uma vez", comum, 1);
+    conferir("kitsu + tt: as de cada id", abs + s01, 2);
+    conferir("kitsu + tt: perguntou o tt", strstr(pedidosAnime, "tt2560140") != NULL, 1);
+    free(l); l = NULL;
+    // O caminho de volta: tt2560140:1:5 -> kitsu:7442:5.
+    pedidosAnime[0] = 0;
+    n = addons_consultar("tt2560140:1:5", "series", "https://anime.test", 1, NULL, NULL, &l);
+    conferir("tt + kitsu: tres fontes distintas", n, 3);
+    conferir("tt + kitsu: perguntou o kitsu", strstr(pedidosAnime, "kitsu%3A7442%3A5") != NULL ||
+                                               strstr(pedidosAnime, "kitsu:7442:5") != NULL, 1);
+    free(l); l = NULL;
+    // T3 em duas entradas (parte I e II): o desfase do episodio nao se sabe,
+    // entao nem kitsu -> tt nem tt -> kitsu.
+    pedidosAnime[0] = 0;
+    addons_consultar("kitsu:13569:5", "series", "https://anime.test", 1, NULL, NULL, &l);
+    conferir("T3 partida: nada de tt", strstr(pedidosAnime, "series/tt2560140") != NULL, 0);
+    free(l); l = NULL;
+    pedidosAnime[0] = 0;
+    addons_consultar("tt2560140:3:5", "series", "https://anime.test", 1, NULL, NULL, &l);
+    conferir("T3 partida: nada de kitsu", strstr(pedidosAnime, "series/kitsu") != NULL, 0);
+    free(l); l = NULL;
+    // Um tt que nao e anime: o ARM responde [] e so o tt vai ao addon.
+    pedidosAnime[0] = 0;
+    addons_consultar("tt0111161", "movie", "https://anime.test", 1, NULL, NULL, &l);
+    conferir("filme comum: so o proprio id", strstr(pedidosAnime, "movie/kitsu") != NULL, 0);
+    free(l); }
+  // AIOStreams declara os ids no resource "stream" (manifesto real da 2.36.0) e
+  // so repassa a cada scraper o id que ele declara: pelos dois, acha mais.
+  conferir("AIOStreams entrou", addons_adicionar("AIOStreams", "https://aio.test/manifest.json"), 1);
+  addons_manifesto_lido(addons_n() - 1,
+    "{\"id\":\"com.aiostreams.viren070.x\",\"name\":\"AIOStreams\",\"resources\":["
+    "{\"name\":\"stream\",\"types\":[\"movie\",\"series\",\"anime\"],"
+    "\"idPrefixes\":[\"tt\",\"kitsu\",\"anilist\",\"mal\",\"anidb\",\"kitsu:\",\"mal:\",\"tmdb:\"]}],"
+    "\"types\":[\"movie\",\"series\",\"anime\"]}");
+  { Stream *l = NULL; int n;
+    pedidosAnime[0] = 0;
+    n = addons_consultar("kitsu:7442:5", "series", "https://aio.test", 1, NULL, NULL, &l);
+    conferir("AIOStreams: kitsu + tt, tres arquivos (o repetido uma vez)", n, 3);
+    conferir("AIOStreams: queries declared MAL namespace", strstr(pedidosAnime, "series/mal") != NULL, 1);
+    free(l); }
 
   remove(caminho);
   rmdir(dir);

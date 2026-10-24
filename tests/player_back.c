@@ -131,8 +131,8 @@ int main(int argc, char **argv) {
     assert(saindo && pediuSair);
 
     reset();
-    pausao_atualizar(.1f, 1, 1, -1, "", "");
-    pausao_atualizar(.1f, 10001, 1, -1, "", "");
+    pausao_atualizar(.1f, 1, 1, -1, "", 0, 0, "", "");
+    pausao_atualizar(.1f, 10001, 1, -1, "", 0, 0, "", "");
     assert(pausao_visivel());
     app_evento(&e);
     assert(!pausao_visivel() && visivel && !saindo && !pediuSair);

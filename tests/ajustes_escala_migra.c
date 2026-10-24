@@ -54,7 +54,10 @@ int main(void) {
   char *merged = NULL;
   const char *blob = "{\"escalaTextoLocal\":4,\"escala_texto_local\":5}";
   ajustes_aplicar_blob(blob); assert(ajustes_escala_texto() == 1.f);
-  assert(ajustes_mesclar_blob(blob, &merged) == 0 && !merged);
+  assert(ajustes_mesclar_blob(blob, &merged) > 0 && merged);
+  assert(strstr(merged, "c_settings_v1") && strstr(merged, "c_devices_v1"));
+  assert(ajustes_escala_texto() == 1.f);
+  free(merged);
   escreve(dir, ""); ajustes_dir(dir);
   assert(ajustes_escala_texto() == .85f);                      // absent key resets stale state
   char path[1200]; snprintf(path, sizeof path, "%s/ajustes.txt", dir);

@@ -2,7 +2,7 @@
 <widget xmlns="http://www.w3.org/ns/widgets"
         xmlns:tizen="http://tizen.org/ns/widgets"
         id="http://nuvio.tv/tizen3lite"
-        version="2.0.7"
+        version="2.0.8"
         viewmodes="maximized">
 
   <!-- Experimental asm.js package for the 2017 Tizen 3.0 web engine (M47).

@@ -95,6 +95,7 @@ teste("Samsung Return and media reach SDL", () => {
     [19, 19], [413, 27], [412, 37], [417, 39]]) {
     m.recebidas.length = 0;
     m.tecla("canvas", key);
+    if (key === 10009) m.tecla("canvas", key, "keyup");
     assert.deepStrictEqual(m.recebidas, [["keydown", translated], ["keyup", translated]]);
   }
 });
@@ -193,6 +194,7 @@ teste("atalhos, log e aliases intactos fora do IME (tambem sem Tizen)", () => {
     function par(k, traduzida, key) {
       m.recebidas.length = 0;
       m.tecla("canvas", k, "keydown", key);
+      if (k === 10009) m.tecla("canvas", k, "keyup", key);
       assert.deepStrictEqual(m.recebidas, [["keydown", traduzida], ["keyup", traduzida]]);
     }
     par(10009, 27); par(403, 120); par(112, 120, "F1");

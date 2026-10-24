@@ -8,6 +8,7 @@
 #include "stub_player_source_actions.h"
 #include <errno.h>
 #include <assert.h>
+int xtream_url_limitada(const char *url) { (void)url; return 0; }
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

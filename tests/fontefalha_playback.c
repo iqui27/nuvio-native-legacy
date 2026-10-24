@@ -12,6 +12,7 @@ static int fake_join(pthread_t, void **);
 #undef pthread_create
 #undef pthread_join
 #include <assert.h>
+int xtream_url_limitada(const char *url) { (void)url; return 0; }
 
 long memlog_livre_mb(void) { return 1024; }
 int memlog_pode_reabrir(long (*livre)(void), void (*aliviar)(void)) { (void)livre; (void)aliviar; return 1; }

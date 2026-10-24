@@ -21,11 +21,13 @@ static int busca_teclado_gap(void) {
   for (int i = 0; i < 3; i++) {
     float x, y, w, h, gap;
     gfx_escala_txt_definir(escalas[i]);
+    TXT_INI();
     pilula_falsa(&x, &y, &w, &h);
     gap = buTopoEsq() - (y + h) / gfx_escala_txt();
     printf("%s gap pilula->campo %.0f%%: %.1f px (min %.0f)\n", gap >= GAP_MIN ? "PASS" : "FAIL",
            escalas[i] * 100, gap, GAP_MIN);
     bad |= gap < GAP_MIN;
+    TXT_FIM();
   }
   gfx_escala_txt_definir(1.0f);
   return bad;

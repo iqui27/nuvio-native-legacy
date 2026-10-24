@@ -47,6 +47,12 @@ static int indice(const char *chave) {
 }
 static int filAba, filLista[FIL_MAX + 1], filListaN, filSep, filFoco;
 static int filForaAgrupada = 1;
+static int fileirasBusca;
+void sync_proteger_ajustes_locais(void) {}
+void addons_catalogo_chave(const char *id, const char *base, const char *type,
+                           const char *catalog, char *dst, unsigned size) {
+  (void)base; snprintf(dst, size, "%s_%s_%s", id, type, catalog);
+}
 #define AJ_FIL_DESTAQUE (-2)
 static int refreshes, remounts;
 static const char *loaded[] = { "continue_watching", "social_activity", "vivo_movie_a", "vivo_movie_b" };
@@ -350,7 +356,7 @@ int main(int argc, char **argv) {
     assert(qi >= fil_limite() && state == FIL_NA_HOME);
     assert(fil_escolhida("vivo_movie_quota") == 2);
     fileirasReagir();
-    assert(remounts == 1 && refreshes == 1);
+    assert(remounts == 1 && refreshes == 0 && fileirasBusca == 1);
   }
   puts("ok  explicit Add refreshes beyond fixed rows");
   puts("fileiras_removidas: tudo ok"); return 0;

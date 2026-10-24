@@ -4,7 +4,11 @@
 // Android com o low-memory killer ativo. A resposta e baixar o teto por um
 // tempo e despejar arte FRIA — nunca a que esta na tela. Nenhuma tela mostra "o
 // aviso foi ouvido"; a regra so se prova aqui, sem contexto GL (tex fica 0).
+#include <SDL2/SDL.h>
+static Uint32 testTicks;
+#define SDL_GetTicks() testTicks
 #include "../src/tex_cache.c"
+#include <unistd.h>
 #include <assert.h>
 #include <stdio.h>
 
@@ -12,7 +16,8 @@ static void limpar(void) {
   memset(itens, 0, sizeof itens);
   nMax = 8; quadroAtual = 100; bytesUsados = 0;
   tex_despejos = 0; tex_despejos_quentes = 0;
-  pressaoPct = 100; pressaoAte = 0; pressaoPlay = 100;
+  pressaoPct = 100; pressaoLivrePct = 100; pressaoAte = 0; pressaoPlay = 100;
+  pressaoPlayLigada = 0;
   orcMemTotal = 0;
 #ifndef NV_ANDROID
   pressaoPlayMin = 100;
@@ -43,6 +48,57 @@ int main(void) {
   assert(tex_pressao_pct(20) == 50 && tex_pressao_pct(40) == 50);
   assert(tex_pressao_pct(60) == 25 && tex_pressao_pct(80) == 25);
   puts("ok  tabela de niveis");
+
+  // Small webOS TV: five minutes of reports must not expire/re-arm pressure.
+  limpar();
+  orcMemTotal = 1222;
+  orcamento = 160L * 1024 * 1024;
+  pronto(0, 1, quadroAtual);
+  bytesUsados = 40L * 1024 * 1024;
+  itens[0].w = 1024; itens[0].h = 10240; // 40 MiB, no mip pyramid
+  FILE *logs = tmpfile();
+  assert(logs);
+  fflush(stdout);
+  int saved = dup(STDOUT_FILENO);
+  assert(saved >= 0 && dup2(fileno(logs), STDOUT_FILENO) >= 0);
+  for (i = 0; i <= 100; i++) {
+    testTicks = (Uint32)i * 3000;
+    itens[0].ultimoQuadro = quadroAtual;
+    tex_memoria_livre(140);
+    tex_novo_quadro();
+    assert(limiteBytes() >= 40L * 1024 * 1024);
+    assert(tex_despejos_quentes == 0 && itens[0].estado == PRONTO);
+    assert(!pressaoSevera());
+  }
+  fflush(stdout);
+  rewind(logs);
+  int lines = 0, ch;
+  while ((ch = fgetc(logs)) != EOF) if (ch == '\n') lines++;
+  assert(dup2(saved, STDOUT_FILENO) >= 0);
+  close(saved); fclose(logs);
+  assert(lines <= 1);
+  // Force severe pressure below the visible working set (32 vs 40 MiB).
+  orcamento = 128L * 1024 * 1024;
+  tex_memoria_livre(40);
+  assert(limiteBytes() >= bytesUsados);
+  tex_memoria_livre(100); // above entry, below severe recovery threshold
+  assert(pressaoSevera());
+  tex_memoria_livre(140);
+  assert(!pressaoSevera());
+  tex_memoria_livre(190); // below moderate recovery threshold
+  assert(pressaoAtiva());
+  tex_memoria_livre(230);
+  assert(!pressaoAtiva() && limiteBytes() == orcamento);
+  // G4 #415: cold Home art still leaves room for 4K playback at 92 MiB.
+  limpar();
+  orcMemTotal = 1965; orcamento = um * 10;
+  for (i = 0; i < 8; i++) pronto(i, (unsigned long)i + 1, 50);
+  tex_memoria_livre(250);
+  tex_pressao_reproducao(1);
+  tex_memoria_livre(92);
+  tex_novo_quadro();
+  assert(pressaoPlay == 20 && bytesUsados <= um * 2);
+  puts("ok  webOS steady pressure, visible floor, hysteresis and G4 playback");
 
   // 2. Sem aviso, nada muda: cache cheio no teto continua no teto.
   limpar();
@@ -86,9 +142,12 @@ int main(void) {
   orcamento = um * 10;
   tex_pressao_memoria(15);
   pressaoAte = SDL_GetTicks() - 1;           // prazo vencido
+  assert(pressaoAtiva() && pressaoPct == 75);
+  assert(limiteBytes() == orcamento / 100 * 75);
+  testTicks += 5001;
   assert(!pressaoAtiva() && pressaoPct == 100);
   assert(limiteBytes() == orcamento);
-  puts("ok  teto volta ao normal sozinho");
+  puts("ok  timed trim recovers gradually before returning to full budget");
 
   // 7. Nivel sem efeito (< 5) nao liga nada.
   limpar();
@@ -144,7 +203,7 @@ int main(void) {
   tex_novo_quadro();
   assert(tex_despejos == 0);
   tex_memoria_livre(-1);                     // sem /proc: nada muda
-  assert(pressaoPlay == 100 && pressaoPct == 100);
+  assert(pressaoPlay == 100 && pressaoLivrePct == 100);
   tex_memoria_livre(250);                    // apertou com o player aberto
   assert(pressaoPlayMin == 20 && pressaoPlay == 20);
   tex_novo_quadro();
@@ -165,7 +224,7 @@ int main(void) {
   itens[0].estado = DECODIFICADO;
   itens[0].sup = SDL_CreateRGBSurfaceWithFormat(0, 64, 64, 32, SDL_PIXELFORMAT_ABGR8888);
   assert(itens[0].sup);
-  assert(pressaoPct == 50);                  // o aviso de 250 MB esta ativo
+  assert(pressaoLivrePct == 50);             // sampled pressure stays active
   tex_novo_quadro();
   assert(itens[0].sup && itens[0].estado == DECODIFICADO);
   tex_pressao_memoria(80);                   // aviso DURO de verdade
@@ -191,7 +250,7 @@ int main(void) {
   for (i = 0; i < 8; i++) pronto(i, (unsigned long)i + 1, 50);
   tex_memoria_livre(250);
   tex_pressao_reproducao(1);                 // avisarCascaAberto(1)
-  assert(pressaoPlay == 20 && pressaoPct == 50);
+  assert(pressaoPlay == 20 && pressaoLivrePct == 50);
   tex_novo_quadro();
   assert(bytesUsados <= um * 2 && tex_despejos == 6);
   tex_memoria_livre(600);                    // folga momentanea
@@ -205,7 +264,7 @@ int main(void) {
   orcamento = um * 10;
   for (i = 0; i < 8; i++) pronto(i, (unsigned long)i + 1, 50);
   tex_memoria_livre(92);
-  assert(pressaoPct == 25 && pressaoPlayMin == 20 && pressaoPlay == 20);
+  assert(pressaoLivrePct == 25 && pressaoPlayMin == 20 && pressaoPlay == 100);
   tex_novo_quadro();
   assert(bytesUsados <= um * 2 + um / 2 && tex_despejos == 6);
   puts("ok  aviso de memoria despeja arte fria");

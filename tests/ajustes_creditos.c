@@ -26,76 +26,10 @@ static int replaceFile(const char *from, const char *to) {
 }
 #endif
 
-static void dataPath(char *out, size_t size, const char *name) {
-  int n = snprintf(out, size, "%s/%s", dirAjustes, name);
-  assert(n >= 0 && (size_t)n < size);
-}
-char *dados_ler(const char *name) {
-  char path[640];
-  dataPath(path, sizeof path, name);
-  FILE *f = fopen(path, "rb");
-  if (!f) return NULL;
-  assert(!fseek(f, 0, SEEK_END));
-  long size = ftell(f);
-  assert(size >= 0 && !fseek(f, 0, SEEK_SET));
-  char *out = malloc((size_t)size + 1);
-  assert(out && fread(out, 1, (size_t)size, f) == (size_t)size);
-  out[size] = 0;
-  assert(!fclose(f));
-  return out;
-}
-int dados_gravar(const char *name, const char *text) {
-  char path[640];
-  dataPath(path, sizeof path, name);
-  FILE *f = fopen(path, "wb");
-  if (!f) return 0;
-  size_t n = strlen(text);
-  int ok = fwrite(text, 1, n, f) == n;
-  int closeError = fclose(f);
-  return ok && !closeError;
-}
-int dados_apagar(const char *name) {
-  char path[640];
-  dataPath(path, sizeof path, name);
-  return !remove(path) || errno == ENOENT;
-}
-void dados_marcar_sujo(int light) { (void)light; }
-Uint32 SDL_GetTicks(void) { return 0; }
-void ajlog_mudou(const char *key, int old, int value, AjlogOrigem origin, unsigned now) {
-  (void)key; (void)old; (void)value; (void)origin; (void)now;
-}
-
-void fonteregra_perfil_guardar(int profile) { (void)profile; }
-int fonteregra_perfil_restaurar(int profile) { (void)profile; return 0; }
-void fonteregra_perfil_esquecer(void) {}
-int fonteregra_do_blob(const char *json) { (void)json; return 0; }
-int fonteregra_mesclar(const char *base, char **out) { (void)base; *out = NULL; return 0; }
-void selospacote_conta_do_blob(const char *json) { (void)json; }
-int selospacote_n(void) { return 0; }
-static PosterProvCfg poster;
-const PosterProvCfg *posterprov_cfg(void) { return &poster; }
-void posterprov_configurar(const PosterProvCfg *cfg) { poster = *cfg; }
-const char *ling_opcao_codigo(int i) { (void)i; return ""; }
-void ling_local_legenda(const char *code) { (void)code; }
-void ling_local_legenda2(const char *code) { (void)code; }
-void ling_local_audio(const char *code) { (void)code; }
-void ling_conta_legenda(const char *code) { (void)code; }
-void ling_conta_legenda2(const char *code) { (void)code; }
-void ling_conta_audio(const char *code) { (void)code; }
-const char *ling_legenda(void) { return ""; }
-const char *ling_audio(void) { return ""; }
-const char *ling_conta_audio_valor(void) { return ""; }
-const char *ling_audio2(void) { return ""; }
-const char *ling_conta_audio2_valor(void) { return ""; }
-void ling_conta_audio2(const char *code) { (void)code; }
-void ling_local_audio2(const char *code) { (void)code; }
-int perfis_ativo(void) { return 1; }
-void legenda2_atualizar_offset_manual(int ms) { (void)ms; }
-const char *ling_conta_legenda_valor(void) { return ""; }
-const char *ling_conta_legenda2_valor(void) { return ""; }
-
 int main(int argc, char **argv) {
   assert(argc == 2 && strlen(argv[1]) < sizeof dirAjustes);
+  setenv("NUVIO_DADOS", argv[1], 1);
+  dados_iniciar(argv[1]);
   snprintf(dirAjustes, sizeof dirAjustes, "%s", argv[1]);
   assert(!ajustes_pular_creditos() && valorPadrao[AJ_PULAR_CREDITOS] == 1);
   assert(somenteDesteAparelho(AJ_PULAR_CREDITOS) && !dePerfil(AJ_PULAR_CREDITOS));
@@ -132,7 +66,9 @@ int main(int argc, char **argv) {
   assert(ajustes_pular_creditos());
   char *merged = NULL;
   assert(ajustes_mesclar_blob("{\"pauseOverlayEnabled\":false}", &merged) > 0);
-  assert(merged && !strstr(merged, "pularCreditos") && !strstr(merged, "autoCreditos"));
+  assert(merged && strstr(merged, "c_devices_v1") && !strstr(merged, "autoCreditos"));
+  assert(somenteDesteAparelho(AJ_PULAR_CREDITOS));
+  assert(strstr(merged, "c_settings_v1")); // Versioned C preferences now back up portable settings.
   free(merged);
 
   ajustes_perfil_esquecer();

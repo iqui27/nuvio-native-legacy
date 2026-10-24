@@ -1025,6 +1025,30 @@ int simkl_lista_tipo(const char *imdb, const char *tipo, int adicionar) {
   else { listaFioVivo = 0; __atomic_store_n(&listaEstado, SMK_OP_FALHA, __ATOMIC_RELEASE); free(a); }
   pedidoDestravar(); return ok;
 }
+// NOTA (/sync/ratings): mesmo corpo do Trakt, um fio solto por resposta.
+typedef struct { char id[24], tipo[8]; int nota; SmkPedido pedido; } SmkNota;
+static void *fioNota(void *u) {
+  SmkNota *a = u; char corpo[200], *r; int st = 0;
+  snprintf(corpo, sizeof corpo, "{\"%s\":[{\"rating\":%d,\"ids\":{\"imdb\":\"%s\"}}]}",
+           !strcmp(a->tipo, "series") ? "shows" : "movies", a->nota, a->id);
+  r = pedir(a->pedido, 'P', a->nota ? "/sync/ratings" : "/sync/ratings/remove", NULL, corpo, &st);
+  printf("[simkl] nota %d %s (%s) -> HTTP %d\n", a->nota, a->id, a->tipo, st);
+  fflush(stdout); free(r); memset(a, 0, sizeof *a); free(a);
+  return NULL;
+}
+int simkl_avaliar(const char *imdb, const char *tipo, int nota) {
+  pthread_t t;
+  if (!imdbValido(imdb) || strchr(imdb, ':') || nota < 0 || nota > 10) return 0;
+  SmkNota *a = calloc(1, sizeof *a); if (!a) return 0;
+  a->pedido = pedidoCapturar();
+  if (!a->pedido.aut[0]) { free(a); return 0; }
+  { size_t k = strcspn(imdb, ":"); if (k >= sizeof a->id) k = sizeof a->id - 1;
+    memcpy(a->id, imdb, k); a->id[k] = 0; }
+  snprintf(a->tipo, sizeof a->tipo, "%s", tipo && !strcmp(tipo, "series") ? "series" : "movie");
+  a->nota = nota;
+  if (pthread_create(&t, NULL, fioNota, a) != 0) { free(a); return 0; }
+  pthread_detach(t); return 1;
+}
 int simkl_lista_estado(void) { return __atomic_load_n(&listaEstado, __ATOMIC_ACQUIRE); }
 
 // POST do historico, SINCRONO (quem chama ja esta num fio: visto.c). 2xx

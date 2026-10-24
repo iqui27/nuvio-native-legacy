@@ -11,5 +11,5 @@ if command -v pkg-config >/dev/null && pkg-config --exists sdl2; then
   flags+=("${sdk_flags[@]}")
 fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
-cc "${flags[@]}" tests/addons_proveniencia.c src/js.c src/jsw.c src/watchstate.c src/addonstats.c src/fontefalha.c -o "$work/test"
+cc "${flags[@]}" tests/addons_proveniencia.c src/js.c src/jsw.c src/watchstate.c src/addonstats.c src/fontefalha.c src/idcanal.c -o "$work/test"
 "$work/test"

@@ -38,10 +38,10 @@ static int pluginFixture(const char *id, const char *tipo, int (*cancelado)(void
   strcpy(l[1].bingeGroup, "nuvio-plugin|scraper-a|2160");
   strcpy(l[2].bingeGroup, "nuvio-plugin|scraper-b|720");
   for (int i = 0; i < 3; i++) strcpy(l[i].provedor, "Same display name");
-  aviso(avisoU, 7, "Same display name", 1, NULL, 0);
-  aviso(avisoU, 3, "Same display name", 1, NULL, 0);
-  aviso(avisoU, 7, "Same display name", 2, l, 2);
-  aviso(avisoU, 3, "Same display name", 2, l + 2, 1);
+  aviso(avisoU, 7, "Same display name", "scraper-a", 1, NULL, 0);
+  aviso(avisoU, 3, "Same display name", "scraper-b", 1, NULL, 0);
+  aviso(avisoU, 7, "Same display name", "scraper-a", 2, l, 2);
+  aviso(avisoU, 3, "Same display name", "scraper-b", 2, l + 2, 1);
   *(Stream **)saida = l;
   return 3;
 }
@@ -49,7 +49,7 @@ static int pluginFixture(const char *id, const char *tipo, int (*cancelado)(void
 int main(void) {
   char esperado[2][FONTEFALHA_CHAVE], plugin[2][FONTEFALHA_CHAVE];
   BaldeFonte baldes[2] = {{.idx = 0}, {.idx = 1}};
-  Consulta c = { .id = "tt1", .tipo = "movie", .tipoAlt = "", .timeout = 1,
+  Consulta c = { .id = "tt1", .tipo = "movie", .timeout = 1,
                  .baldes = baldes, .nBaldes = 2, .progresso = 1, .rodada = 1 };
   nAddon = 2; memset(addon, 0, sizeof addon);
   for (int i = 0; i < 2; i++) {
@@ -96,7 +96,7 @@ int main(void) {
   respCanalTv = "{\"streams\":[]}";
   respCanalChannel = "{\"streams\":[{\"url\":\"https://x/channel.m3u8\"}]}";
   memset(&c, 0, sizeof c); memset(baldes, 0, sizeof baldes);
-  c.id = "channel1"; c.tipo = "tv"; c.tipoAlt = "channel";
+  c.id = "channel1"; c.tipo = "tv";
   c.timeout = 1; c.baldes = baldes; c.nBaldes = 1;
   pthread_mutex_init(&c.trava, NULL);
   c.sessao = perfis_sessao_geracao();
@@ -114,7 +114,11 @@ int main(void) {
   UmaOrigem o = { .pai = &p, .f = pluginFixture, .indice = 1 };
   fontefalha_addon_chave("plugin:scraper-a", plugin[0], sizeof plugin[0]);
   fontefalha_addon_chave("plugin:scraper-b", plugin[1], sizeof plugin[1]);
+  // A revisao de abas sobe a cada estado (anuncio e fim): a folha reavalia
+  // mesmo quando a parte terminou sem fontes ou falhou (#205).
+  unsigned rev0 = addons_parcial_rev();
   fioUmaOrigem(&o);
+  assert(addons_parcial_rev() > rev0);
   assert(o.n == 3 && !p.pendentes);
   assert(!strcmp(o.l[0].addonChave, plugin[0]) && !strcmp(o.l[1].addonChave, plugin[0]));
   assert(!strcmp(o.l[2].addonChave, plugin[1]) && strcmp(plugin[0], plugin[1]));
@@ -125,6 +129,19 @@ int main(void) {
   for (int i = 0; i < 3; i++) {
     assert(!strcmp(publicadas[i].addonChave, o.l[i].addonChave));
     assert(publicadas[i].addonOrdem == o.l[i].addonOrdem);
+  }
+  // Cada scraper tem UMA aba, chaveada pelo id dele (plugin:<id>): as fontes
+  // que ele entregou casam com ela e nao abrem uma segunda aba (#205).
+  { AddonAba abas[4];
+    fioVivo = 1; progLigado = 1; atomic_store(&estado, ADD_BUSCANDO);
+    int nab = addons_parcial_abas(abas, 4);
+    assert(nab == 2);
+    for (int i = 0; i < nab; i++) {
+      assert(!strcmp(abas[i].nome, "Same display name"));
+      assert(abas[i].estado == ADDON_ABA_PRONTO);
+      assert(!strcmp(abas[i].chave, abas[i].ordem == ADD_MAX + 7 ? plugin[0] : plugin[1]));
+    }
+    fioVivo = 0; atomic_store(&estado, ADD_PARADO);
   }
   free(o.l); progLimpar();
   Stream desconhecida = { .bingeGroup = "plex|Direct Play", .provedor = "AIOStreams" };

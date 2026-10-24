@@ -6,6 +6,7 @@
 #include "servidores.h"
 #include "idbase.h"
 #include <assert.h>
+#include "stub_perfisessao.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -177,7 +178,8 @@ static void testarProtocolo(void) {
     assert(jf_ler_autenticacao(&a, corpo, strlen(corpo)) == JF_ERR_FORMATO); }
 
   // --- libraries, items (numeric ids), namespace em:
-  assert(jf_ler_bibliotecas(VIEWS, strlen(VIEWS), bib, 8) == 2);
+  assert(jf_ler_bibliotecas(VIEWS, strlen(VIEWS), bib, 8) == 3);
+  assert(!strcmp(bib[2].id, "44") && !strcmp(bib[2].tipo, "movie"));
   assert(!strcmp(bib[0].id, "11") && !strcmp(bib[0].tipo, "movie") && !strcmp(bib[1].tipo, "series"));
   n = jf_ler_itens(&c, ITENS, strlen(ITENS), it, 8, &total);
   assert(n == 2 && total == 120);                                // Audio and the path-traversal id are skipped

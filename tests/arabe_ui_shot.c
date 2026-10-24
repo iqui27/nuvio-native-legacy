@@ -1,5 +1,8 @@
 // Offline native rendering proof, using only packaged fallback fonts.
 #include "ajustes.h"
+#include "addons.h"
+#include "catalogo.h"
+#include "home.h"
 #include "idioma.h"
 #include "idiomaauto.h"
 #include "linguas.h"
@@ -28,6 +31,8 @@ static void capture(SDL_Window *window, const char *directory, const char *name,
       ajustes_atualizar(1.0f / 60, now);
       ajustes_desenhar(now);
     } else {
+      home_atualizar(1.0f / 60, now);
+      home_desenhar(now);
       menu_atualizar(1.0f / 60, now);
       menu_desenhar(now);
     }
@@ -106,8 +111,24 @@ int main(int argc, char **argv) {
   txt_novo_quadro();
   assert(txt_tracking(TXT_AJ_CAPS13, "الإعدادات", 255, 255, 255, -1, 0, 1, 2.1f) ==
          txt_largura(TXT_AJ_CAPS13, "الإعدادات"));
+  assert(home_iniciar("deploy/app/art"));
+  AddonRemoto addon = { .nome = "Fixture", .url = "http://127.0.0.1:1/manifest.json", .ativo = 1 };
+  assert(addons_definir_lista(&addon, 1));
+  static CatItem items[6];
+  CatFileira row = { .chave = "arabic_movies", .titulo = "أفلام مشهورة", .tipo = "movie", .n = 6 };
+  for (int i = 0; i < 6; i++) {
+    snprintf(items[i].titulo, sizeof items[i].titulo, "رحلة إلى عالم السينما");
+    snprintf(items[i].tipo, sizeof items[i].tipo, "movie");
+    snprintf(items[i].imdb, sizeof items[i].imdb, "tt900000%d", i);
+    snprintf(items[i].meta, sizeof items[i].meta, "2026 · دراما");
+    snprintf(items[i].sinopse, sizeof items[i].sinopse,
+             "رحلة جديدة تجمع الأصدقاء في مغامرة مليئة بالأمل والمفاجآت.");
+    snprintf(items[i].backdrop, sizeof items[i].backdrop, "deploy/app/art/%02d.jpg", i);
+    snprintf(items[i].poster, sizeof items[i].poster, "deploy/app/art/poster/%02d.jpg", i);
+  }
+  cat_definir_tudo(items, 6, &row, 1);
   menu_iniciar(); menu_abrir();
-  capture(window, argv[1], "sidebar", 0);
+  capture(window, argv[1], "home", 0);
   assert(ajustes_teste_focar_opcao(ajustes_teste_op_por_chave("idioma")));
   capture(window, argv[1], "settings", 1);
   assert(ajustes_teste_focar_opcao(ajustes_teste_op_por_chave("tmdb_language")));

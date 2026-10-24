@@ -33,6 +33,13 @@ void wsenvio_podar_addon(const char *base) { (void)base; }
 // ---------------------------------------------------------------- duble
 static char pedido[16384];      // a ultima URL que chegou a rede
 static int  nPedidos, nPedidosGrande;
+char *rede_baixar(const char *url, int seconds);
+char *rede_baixar_st(const char *url, int seconds, const char *const *headers, int *status) {
+  (void)headers;
+  char *body = rede_baixar(url, seconds);
+  if (status) *status = body ? 200 : 0;
+  return body;
+}
 const char *rede_ultimo_erro(void) { return ""; }
 int dados_gravar_leve(const char *n, const char *c) { (void)n; (void)c; return 1; }
 char *rede_baixar(const char *url, int s) {

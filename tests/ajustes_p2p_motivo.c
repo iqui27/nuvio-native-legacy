@@ -8,6 +8,11 @@ static int tst_usb(void) { return ajustes_p2p_ligado() && tUsb; }
 #define p2pmotor_usb_presente tst_usb
 #ifdef P2PM_ANDROID_VISIVEL
 #define NV_ANDROID 1   // only for ajustes.c: the other sources stay desktop
+void android_limpar_cache(void) {}
+void extplayer_atualizar_apps(void) {}
+int extplayer_n_apps(void) { return 0; }
+const char *extplayer_app_pkg(int i) { (void)i; return ""; }
+const char *extplayer_app_nome(int i) { (void)i; return ""; }
 void android_baixar_registro(const char *a, const char *b, const char *c) { (void)a; (void)b; (void)c; }
 #endif
 #include "../src/ajustes.c"
@@ -42,7 +47,12 @@ int main(void) {
   tUsb = 1;
   assert(!inativa(AJ_P2P_DESTINO));
   assert(!inativa(AJ_P2P_LIMITE));
-  assert(!foraDestaPlataforma(AJ_P2P_DESTINO));   // #205: visible on Android too
+#if defined(NV_ANDROID) && !defined(NV_P2P_MOTOR)
+  assert(foraDestaPlataforma(AJ_P2P_DESTINO));
+  assert(foraDestaPlataforma(AJ_P2P_LIMITE));
+#else
+  assert(!foraDestaPlataforma(AJ_P2P_DESTINO));
+#endif
   puts("ajustes_p2p_motivo: ok");
   return 0;
 }

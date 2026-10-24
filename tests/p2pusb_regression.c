@@ -143,7 +143,7 @@ int main(int argc, char **argv) {
     char root[600], parent[600], marker[900], sentinel[900], old[900];
     assert(mkdir(mounted, 0755) == 0);
     assert(chmod(base, 0555) == 0);
-    assert(pastas(root, sizeof root, parent, sizeof parent));
+    assert(pastas(root, sizeof root, parent, sizeof parent, NULL));
     assert(!strcmp(root, cache));
     snprintf(old, sizeof old, "%s/old-volume", argv[1]);
     assert(chmod(base, 0755) == 0);
@@ -160,7 +160,7 @@ int main(int argc, char **argv) {
     snprintf(marker, sizeof marker, "%s/.nuvio", cache);
     assert(unlink(marker) == 0);
     // The same writable pathname now belongs to another, unmarked drive.
-    assert(pastas(root, sizeof root, parent, sizeof parent));
+    assert(pastas(root, sizeof root, parent, sizeof parent, NULL));
     assert(strcmp(root, cache));
     assert(subir(&OPS, atomic_load(&geracao)) == P2P_ERR_MOTOR);
     assert(internalAttempt);

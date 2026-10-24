@@ -129,6 +129,9 @@ enum { SMK_OP_NENHUMA = 0, SMK_OP_PENDENTE, SMK_OP_CONFIRMADA, SMK_OP_FALHA };
 int simkl_lista_tipo(const char *imdb, const char *tipo, int adicionar);
 int simkl_lista_estado(void);
 
+// POST /sync/ratings (1 a 10), num fio. 0 sem vinculo ou imdb/nota invalidos.
+int simkl_avaliar(const char *imdb, const char *tipo, int nota);
+
 // DELETE /sync/playback/<id> do item da fileira, num fio. `imdb` e a chave
 // composta da fileira ("tt:S:E" ou "tt"). 0 quando nao ha id conhecido — o
 // item nao veio do Simkl.

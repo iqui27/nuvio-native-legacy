@@ -114,6 +114,10 @@ list(FILTER NUVIO_SRC EXCLUDE REGEX "/(video_tizen|video_tpk|tpk)\\.c$")
 add_library(main SHARED ${NUVIO_SRC})
 target_include_directories(main PRIVATE "${NUVIO_RAIZ}/src" "${CMAKE_BINARY_DIR}/inc")
 target_compile_definitions(main PRIVATE NV_ANDROID NV_TOUCH_UI)
+option(NV_APK_LITE "Build Lite APK updater identity" OFF)
+if(NV_APK_LITE)
+  target_compile_definitions(main PRIVATE NV_APK_LITE)
+endif()
 if(ANDROID_ABI STREQUAL "arm64-v8a" OR ANDROID_ABI STREQUAL "x86_64")
   # Both modes ship in one APK; NDK r27 needs a 16KB-aligned RELRO end.
   foreach(t main SDL2)
@@ -135,7 +139,7 @@ foreach(k ${NV_KEYS})
   target_compile_definitions(main PRIVATE "${k}=\"${${k}}\"")
 endforeach()
 
-target_link_libraries(main PRIVATE SDL2::SDL2 SDL2_image SDL2_ttf webpdemux webp GLESv2 EGL log android z m dl)
+target_link_libraries(main PRIVATE SDL2::SDL2 SDL2_image SDL2_ttf webpdemux webp GLESv2 EGL log android jnigraphics z m dl)
 # Todo pthread_create do nucleo passa por __wrap_pthread_create (src/android.c):
 # sem atributo de pilha, o fio nasce com 8 MB como no glibc da LG/Tizen, e nao
 # com o ~1 MB do bionic. O nucleo tem vetores grandes na pilha dos fios.

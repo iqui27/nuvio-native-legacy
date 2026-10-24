@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 rc=0
-output=$(BIBFONTE_REV=integracao/2.0.5 bash tests/bibfonte.sh 2>&1) || rc=$?
+output=$(BIBFONTE_REV=1d3ac4e60^ bash tests/bibfonte.sh 2>&1) || rc=$?
 printf '%s\n' "$output"
 [ "$rc" -eq 1 ]
 rg -q '^FAIL: detail/context save getters follow fallback$' <<<"$output"

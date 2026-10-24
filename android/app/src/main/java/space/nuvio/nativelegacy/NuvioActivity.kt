@@ -67,6 +67,30 @@ class NuvioActivity : SDLActivity() {
     // SDL2 e compartilhada; SDL2_image e SDL2_ttf entram estaticas na libmain.
     override fun getLibraries(): Array<String> = arrayOf("SDL2", "main")
 
+    // Bounds pass allocates no pixels; subsampling happens inside the codec.
+    fun decodeArtwork(bytes: ByteArray, width: Int, original: IntArray): android.graphics.Bitmap? {
+        val options = android.graphics.BitmapFactory.Options()
+        options.inJustDecodeBounds = true
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        if (options.outWidth <= 0 || options.outHeight <= 0 || width <= 0) return null
+        original[0] = options.outWidth
+        original[1] = options.outHeight
+        var sample = 1
+        while (options.outWidth / (sample * 2) >= width) sample *= 2
+        // Reject pathological aspect ratios before allocating codec pixels.
+        val pixels = ((options.outWidth.toLong() + sample - 1) / sample) *
+            ((options.outHeight.toLong() + sample - 1) / sample)
+        if (pixels > 2L * 1024 * 1024) return null
+        options.inSampleSize = sample
+        options.inJustDecodeBounds = false
+        options.inScaled = false
+        options.inPremultiplied = false
+        options.inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+        return try {
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        } catch (_: OutOfMemoryError) { null }
+    }
+
     private var camadaVideo: FrameLayout? = null
     private var touchInsetLeft = 0
     private var touchInsetTop = 0
@@ -140,6 +164,9 @@ class NuvioActivity : SDLActivity() {
     }
 
     private val registroDownload by lazy { RegistroDownload(this) }
+    private val fontImport by lazy { FontImport(this) }
+    fun importarFonte(): Boolean = fontImport.abrir()
+    fun proximaFonteImportada(): String? = fontImport.proximo()
 
     // Chamado pelo fio SDL, sem ler arquivos nem abrir a tela naquele fio.
     fun baixarRegistro(arquivo: String, sucesso: String, falha: String) {
@@ -156,11 +183,13 @@ class NuvioActivity : SDLActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         registroDownload.salvar(outState)
+        fontImport.salvar(outState)
         super.onSaveInstanceState(outState)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         registroDownload.restaurar(savedInstanceState)
+        fontImport.restaurar(savedInstanceState)
         // SEGUNDO onCreate NO MESMO PROCESSO = SEGUNDO main() DO C (o
         // SDLActivity.initialize() zera mSDLThread e o SDL sobe outro fio de
         // main). O nucleo C guarda estado global (mutex, fios, caches) que nao
@@ -311,6 +340,11 @@ class NuvioActivity : SDLActivity() {
     // onLowMemory (o aviso mais forte), nao estes degraus.
     private external fun nativeTrimMemoria(nivel: Int)
     private var trimResumida = false
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        try { nativeTrimMemoria(80) } catch (_: UnsatisfiedLinkError) { }
+    }
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
@@ -689,7 +723,7 @@ class NuvioActivity : SDLActivity() {
         // Instalador ou tela de voz por cima NAO e sair do app: trocar o icone
         // ali fecharia a tarefa embaixo deles (ver aplicarIconePendente).
         if (!instalando && !esperandoTela && !isChangingConfigurations &&
-            !registroDownload.escolhendoArquivo) aplicarIconePendente()
+            !registroDownload.escolhendoArquivo && !fontImport.escolhendoArquivo) aplicarIconePendente()
         super.onStop()
         Log.i("nuvio", "[android] parada: ${SystemClock.elapsedRealtime() - ini} ms no fio da interface")
     }
@@ -723,6 +757,7 @@ class NuvioActivity : SDLActivity() {
 
     override fun onDestroy() {
         registroDownload.fechar()
+        fontImport.fechar()
         vigia?.parar()
         fecharRede()
         NvPlayer.encerrar()
@@ -1263,6 +1298,7 @@ class NuvioActivity : SDLActivity() {
     @Deprecated("startActivityForResult e o que o SDLActivity (Activity) oferece")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (registroDownload.resultado(requestCode, resultCode, data)) return
+        if (fontImport.resultado(requestCode, resultCode, data)) return
         if (requestCode == PEDIDO_DITADO) esperandoTela = false
         if (requestCode == PEDIDO_DITADO) {
             val t = if (resultCode == RESULT_OK)

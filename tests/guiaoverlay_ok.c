@@ -131,7 +131,7 @@ int main(int argc, char **argv) {
   snprintf(settings, sizeof settings, "%s/ajustes.txt", getenv("NUVIO_DADOS"));
   FILE *f = fopen(settings, "w");
   assert(f);
-  fprintf(f, "idioma %d\n", IDIOMA_EN);
+  fprintf(f, "performanceAutoVersaoLocal 1\nvidroLocal 1\nidioma %d\n", IDIOMA_EN);
   fclose(f);
   ajustes_dir(getenv("NUVIO_DADOS"));
   assert(ajustes_idioma() == IDIOMA_EN);

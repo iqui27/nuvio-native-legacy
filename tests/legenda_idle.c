@@ -3,6 +3,7 @@
 #include "legenda.h"
 #include "esmaecer.h"
 #include <assert.h>
+const char *i18n(const char *text) { return text; }
 #include <stdio.h>
 #include <string.h>
 

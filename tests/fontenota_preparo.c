@@ -42,15 +42,15 @@ static void memory(void) {
   PreparoQualidade p = {sources, order, group, excluded, 2, 1, 0};
   configure(0, 1);
   language(1);
-  CHECK(!preparoGrupoSemPerda(0, &p), "P2: prepared memory rejects weaker WEB-DL");
-  CHECK(preparoGrupoSemPerda(1, &p), "prepared winner remains eligible");
+  CHECK(!preparoGrupoSemPerda(0, 0, &p), "P2: prepared memory rejects weaker WEB-DL");
+  CHECK(preparoGrupoSemPerda(1, 0, &p), "prepared winner remains eligible");
   sources[0] = sources[1];
-  CHECK(preparoGrupoSemPerda(0, &p), "equal evidence preserves memory");
+  CHECK(preparoGrupoSemPerda(0, 0, &p), "equal evidence preserves memory");
   strcpy(sources[0].rotulo, "1080p WEB-DL AAC");
   configure(0, 2);
-  CHECK(preparoGrupoSemPerda(0, &p), "start fast preserves memory");
+  CHECK(preparoGrupoSemPerda(0, 0, &p), "start fast preserves memory");
   configure(1, 1);
-  CHECK(preparoGrupoSemPerda(0, &p), "first in list preserves memory");
+  CHECK(preparoGrupoSemPerda(0, 0, &p), "first in list preserves memory");
 }
 
 static void fingerprint(void) {

@@ -78,6 +78,9 @@ static TituloTempo detalheTempo;
 #include "seriefrases.h"
 #include "fundo.h"
 #include "notasui.h"
+#include "musica.h"
+#include "musicaui.h"
+#include "qrtex.h"
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -149,6 +152,11 @@ static GfxRect heroAcaoRect(float *x, float *cy, float w, float h) {
 #define COL_CARD_H   300.0f
 #define COL_CARD_RAIO 24.0f
 #define COL_CARD_PAD  36.0f
+// MUSICAS: um painel de vidro so (capa, trilha, QR para o celular, Guardar).
+#define MUS_W         1140.0f
+#define MUS_H         340.0f
+#define MUS_CAPA      228.0f
+#define MUS_QR        190.0f
 // Cartazes em escada no lado direito do card: o da frente e o primeiro da
 // saga, os de tras menores e deslocados para a esquerda.
 #define COL_CAPA_H   (228.0f * gfx_poster_k())
@@ -200,7 +208,7 @@ static GfxRect colecaoListaRect(void) {
 #define FR_COL_W    1040.0f
 #define FR_COL_GAP    96.0f
 
-#define N_SECOES    17
+#define N_SECOES    18
 // Trilho do segmentado de temporadas (.seg): 5 px de folga em volta dos itens.
 #define DET_SEG_PAD   5.0f
 #define N_ELENCO    6
@@ -564,6 +572,9 @@ static int temporada = 0;            // temporada ESCOLHIDA (nao a focada)
 // antes a troca de temporada arrastava o FOCO para o episodio, e com isso o
 // D-pad saia da fileira de abas: nao dava para passar da segunda temporada.
 static int    epAncora = 0;
+static int    epEscolhido;
+static int episodioPadrao(int *temp, int *epis, int *origem);
+static void sincronizarEpisodioPadrao(void);
 static RevelaVarre epVarre = {.alvo=-1};
 static float epSheen;
 // Comentarios: 0 = da SERIE, 1 = do EPISODIO. E o seletor que a referencia poe
@@ -667,7 +678,9 @@ typedef enum { SEC_TEMPORADAS, SEC_EPISODIOS, SEC_ABAS_INFO, SEC_ELENCO, SEC_REL
                SEC_ESTUDIOS, SEC_FRASES, SEC_DETALHES,
                // SEU PROGRESSO (grafico de temporadas, temporadas_grafico.h):
                // so na serie, entre os episodios e as Notas.
-               SEC_PROGTEMP } TipoSecao;
+               SEC_PROGTEMP,
+               // MUSICAS: trilha sonora original (musica.h), so com dado.
+               SEC_MUSICAS } TipoSecao;
 // A ORDEM DO FILME no Glass UI (mockup "Detalhe", 03/10): Trailers e extras,
 // Elenco, Notas, O que estao dizendo, Mais como este, Colecao, Frases, Ficha
 // tecnica e Producao. Ela NAO e a ordem do enum, porque o enum tambem e a
@@ -681,7 +694,7 @@ typedef enum { SEC_TEMPORADAS, SEC_EPISODIOS, SEC_ABAS_INFO, SEC_ELENCO, SEC_REL
 static const int ORDEM_FILME[] = {
   SEC_NOTAS, SEC_TEMPORADAS, SEC_EPISODIOS, SEC_ABAS_INFO, SEC_ELENCO, SEC_RELACIONADOS,
   SEC_AUD_ARCO, SEC_AUD_RADAR, SEC_AUD_DIGITAL, SEC_NOTAS_EP,
-  SEC_TRAILERS, SEC_COLECAO, SEC_COMENTARIOS,
+  SEC_TRAILERS, SEC_COLECAO, SEC_MUSICAS, SEC_COMENTARIOS,
   SEC_ESTUDIOS, SEC_FRASES, SEC_DETALHES, SEC_PROGTEMP };
 // NUMEROS DA TEMPORADA (Glass UI 1.8, mockup "Notas e graficos"): os tres
 // graficos da serie viraram UM bloco logo depois das Notas. Ele usa a fileira
@@ -689,7 +702,7 @@ static const int ORDEM_FILME[] = {
 static const int ORDEM_SERIE[] = {
   SEC_TEMPORADAS, SEC_EPISODIOS, SEC_PROGTEMP, SEC_NOTAS, SEC_AUD_ARCO, SEC_ABAS_INFO, SEC_ELENCO,
   SEC_RELACIONADOS, SEC_AUD_RADAR, SEC_AUD_DIGITAL, SEC_NOTAS_EP,
-  SEC_TRAILERS, SEC_COLECAO, SEC_COMENTARIOS,
+  SEC_TRAILERS, SEC_COLECAO, SEC_MUSICAS, SEC_COMENTARIOS,
   SEC_ESTUDIOS, SEC_FRASES, SEC_DETALHES };
 #define N_ORDEM ((int)(sizeof ORDEM_FILME / sizeof ORDEM_FILME[0]))
 #define SEC_NUMEROS SEC_AUD_ARCO
@@ -814,6 +827,7 @@ static const char *cabecalhoDe(int r) {
   if (r == SEC_NOTAS_EP) return "Notas por episódio";
   if (r == SEC_RELACIONADOS) return "Recomendações";
   if (r == SEC_ELENCO && nAbasInfo() <= 1) return "Elenco";
+  if (r == SEC_MUSICAS) return "Músicas";
   if (ehSerie()) {
     if (r == SEC_TRAILERS) return "Trailers";
     if (r == SEC_ESTUDIOS) return "Redes e estúdios";
@@ -1045,7 +1059,7 @@ static float vaoAntes(int r) {
     case SEC_NOTAS:        return 60.0f;
     case SEC_COMENTARIOS:  return 44.0f;
     case SEC_RELACIONADOS: return 83.0f;
-    case SEC_COLECAO: case SEC_FRASES:    return 52.0f;
+    case SEC_COLECAO: case SEC_FRASES: case SEC_MUSICAS: return 52.0f;
     case SEC_DETALHES: case SEC_ESTUDIOS: return 73.0f;
     default:               return NV_DETF_SEC_GAP;
   }
@@ -1129,6 +1143,15 @@ static void recalcularLayout(void) {
     if (secaoN(SEC_TRAILERS) > 0) {
       conteudoSec[SEC_TRAILERS] = y + NV_DETF_CAB_H + NV_DETF_CAB_GAP;
       y = conteudoSec[SEC_TRAILERS] + alturaSecao(SEC_TRAILERS) + NV_DETF_SEC_GAP;
+      { float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
+        if (fim > docFim) docFim = fim; }
+    }
+    // MUSICAS NA SERIE: o album da temporada escolhida, com cabecalho, entre os
+    // trailers e os comentarios (a ordem do D-pad).
+    topoSec[SEC_MUSICAS] = conteudoSec[SEC_MUSICAS] = y;
+    if (secaoN(SEC_MUSICAS) > 0) {
+      conteudoSec[SEC_MUSICAS] = y + NV_DETF_CAB_H + NV_DETF_CAB_GAP;
+      y = conteudoSec[SEC_MUSICAS] + alturaSecao(SEC_MUSICAS) + NV_DETF_SEC_GAP;
       { float fim = y + NV_DETF_PAD_FIM - NV_DETF_SEC_GAP;
         if (fim > docFim) docFim = fim; }
     }
@@ -1224,6 +1247,7 @@ static const NotasSecao *notasDados(void) {
   int i;
   for (i = 0; i < EX_NFONTES; i++) s.cru[i] = extras_nota(i);
   if (!s.cru[EX_IMDB] && ajustes_mdblist_fonte(EX_IMDB)) s.cru[EX_IMDB] = notaDe(idx);
+  s.notaPessoal = reacao_nota(cat_item(idx)->imdb);
   s.nTemp = ehSerie() ? extras_n_temporadas() : 0;
   s.tempNum = extras_temporada_numero;
   s.nEps = extras_n_eps;
@@ -1276,6 +1300,21 @@ static int nAbasInfo(void) {
   int n = 0;
   for (int id = 0; id < ABA_NFIXAS; id++) if (abaDisponivel(id)) n++;
   return n;
+}
+
+// MUSICAS: filme = trilha do filme; serie = album da temporada escolhida
+// (Especiais nao tem). Sem IMDb id nao ha o que perguntar.
+static int musTemp(void) { return ehSerie() ? temporadaEm(temporada) : 0; }
+static MusEstado musEstadoAtual(MusAlbum *out) {
+  const CatItem *ci = cat_item(idx);
+  if (!ci || !ci->imdb[0] || (ehSerie() && musTemp() <= 0)) return MUS_NADA;
+  return mus_estado(ci->imdb, musTemp(), out);
+}
+static void musAbrir(void);
+static void musPedir(void) {
+  const CatItem *ci = cat_item(idx);
+  if (!ci || !ci->imdb[0] || (ehSerie() && musTemp() <= 0)) return;
+  mus_pedir(ci->imdb, ci->titulo, atoi(ci->meta), musTemp());
 }
 
 
@@ -1333,7 +1372,8 @@ static int  arteFixaPoster;
 static GfxRect morphLogo;   // o logo do hero no ultimo quadro (player_morph_de)
 static const char *logoDe(int i) {
   const CatItem *c = cat_item(i);
-  if (i == idx && logoFixo[0]) return logoFixo;
+  if (i == idx && logoFixo[0] && !tex_falhou(logoFixo)) return logoFixo;
+  if (i == idx) logoFixo[0] = 0;
   if (i == idx) {
     const char *u = artehero_logo_sessao(c);
     if (u) {
@@ -1512,6 +1552,7 @@ static void auditoriaEpisodios(void) {
 }
 
 static void abrirInterno(const HomeItem *it) {
+  musicaui_fechar();
   pediuRelogio = 0;
   sinopse_fechar();
   pediuMenu = 0;
@@ -1637,18 +1678,13 @@ static void abrirInterno(const HomeItem *it) {
   // respondeu neste instante.
   temporada = 0;
   epAncora = 0;
+  epEscolhido = 0;
   comentEp = 0;  // Every title opens on show comments, never a previous episode.
   comEpT = comEpE = 0;
   comPicando = 0;
   { const CatItem *ci0 = cat_item(idx);
     int t = 0, e = 0, achou = 0;
-    if (ci0 && ci0->progresso > 0 && ci0->progresso < ajustes_cw_concluido() &&
-        ci0->temporada >= 0 && ci0->episodio > 0) {
-      t = ci0->temporada; e = ci0->episodio; achou = 1;
-    } else {
-      const CatEp *e0 = primeiroEpRegular();
-      if (e0) { t = e0->temporada; e = e0->episodio; achou = 1; }
-    }
+    achou = episodioPadrao(&t, &e, NULL);
     if (achou && ci0) {
       int k, n = cat_n_episodios(idx), i, col = 0, achouCol = -1;
       for (k = 0; k < ci0->nTemporadas; k++)
@@ -1677,6 +1713,7 @@ static void abrirInterno(const HomeItem *it) {
 }
 
 void detail_fechar(void) {
+  musicaui_fechar();
   pessoaBuscaCancelar();
   pediuRelogio = 0;
   sinopse_fechar();
@@ -1689,6 +1726,7 @@ void detail_fechar(void) {
 // SECO: o proximo detail_atualizar ja a encerra (o mesmo fim da mola de
 // saida, com o logo restaurado), sem a pagina recolher por cima da home.
 void detail_fechar_seco(void) {
+  musicaui_fechar();
   pessoaBuscaCancelar();
   pediuRelogio = 0;
   sinopse_fechar();
@@ -1891,14 +1929,14 @@ const char *detail_transicao(void) {
   if (!aberto || (fabsf(pg - pgAlvo) <= 0.02f && fabsf(velY) < 5.0f)) return "-";
   return pgAlvo < pg || velY < 0.0f ? "sobe" : "desce";
 }
-int detail_relogio_oculto(void) { return aberto && carro && !carCheia && nivel == 0; }
+int detail_relogio_oculto(void) { return musicaui_aberta() || (aberto && carro && !carCheia && nivel == 0); }
 // #407: detail_pediu_social saiu (CIMA no topo nao abre mais o painel); a
 // accessor fica para o linkage e diz 0, para o caminho de app.c nao crescer
 // um #ifdef a mais por causa de um atalho que nao existe mais.
 int detail_pediu_social(void) { return 0; }
 int detail_pediu_relogio(void) { int p = pediuRelogio; pediuRelogio = 0; return p; }
 int detail_relogio_navegavel(void) {
-  return aberto && !saindo && !sinopse_aberta() && !corpoSobArte() &&
+  return aberto && !musicaui_aberta() && !saindo && !sinopse_aberta() && !corpoSobArte() &&
          !trailer_cheia() && !trocaarte_aberto() && !reacao_aberta() &&
          !amtui_aberta() && !detmais_aberto() && !episodios_menu_aberto() &&
          !trailerCinema.oculta;
@@ -1936,21 +1974,10 @@ float detail_progresso(void) { return aberto && !carro ? suave(t) : 0.0f; }
 // dono relatou.
 //
 // `origem` (opcional) devolve 1 = foco, 2 = retomar, 3 = proximo, 0 = primeiro.
-static int episodioAlvo(int *temp, int *epis, int *origem) {
+static int episodioPadrao(int *temp, int *epis, int *origem) {
   const CatItem *ci = cat_item(idx);
-  const CatEp *ep = NULL;
+  const CatEp *ep;
   if (origem) *origem = 0;
-
-  if (foco.fileira == SEC_EPISODIOS) ep = cat_episodio(idx, epAbsoluto(foco.coluna));
-  if (ep) {
-    if (temp) *temp = ep->temporada;
-    if (epis) *epis = ep->episodio;
-    // O episodio em foco E o que esta em andamento: e o "Retomar" (com o
-    // "Assistir do começo" ao lado), como o mockup "detalhe-retomar".
-    if (origem) *origem = (ci && ci->progresso > 0 && ci->progresso < ajustes_cw_concluido() &&
-                           ci->temporada == ep->temporada && ci->episodio == ep->episodio) ? 2 : 1;
-    return 1;
-  }
   // Em andamento: o item do "Continuar assistindo" traz temporada e episodio.
   if (ci && ci->progresso > 0 && ci->progresso < ajustes_cw_concluido() && ci->temporada >= 0 && ci->episodio > 0 &&
       !extras_ep_visto(ci->temporada, ci->episodio)) {
@@ -1959,10 +1986,10 @@ static int episodioAlvo(int *temp, int *epis, int *origem) {
     if (origem) *origem = 2;
     return 1;
   }
-  // Primeiro nao assistido. So vale quando o Trakt ja respondeu; sem dado
-  // nenhum extras_n_temporadas() e 0 e cai no primeiro episodio, como antes.
+  // Local history works before the asynchronous progress response arrives.
   { int t, e;
-    if (extras_proximo_episodio(&t, &e)) {
+    if ((ci && vistoep_primeiro_nao_visto(ci->imdb, &t, &e)) ||
+        extras_proximo_episodio(&t, &e)) {
       if (temp) *temp = t;
       if (epis) *epis = e;
       if (origem) *origem = 3;
@@ -1982,14 +2009,45 @@ static int episodioAlvo(int *temp, int *epis, int *origem) {
         }
       }
     } }
-  // O PRIMEIRO DA TEMPORADA EM EXIBICAO, que e o que a nota acima promete —
-  // com a lista emendada isto era o primeiro episodio da SERIE, qualquer que
-  // fosse a aba aberta.
-  ep = cat_episodio(idx, epAbsoluto(0));
+  // No history or everything watched: start from the first regular episode.
+  ep = primeiroEpRegular();
   if (!ep) return 0;
   if (temp) *temp = ep->temporada;
   if (epis) *epis = ep->episodio;
   return 1;
+}
+
+static int episodioAlvo(int *temp, int *epis, int *origem) {
+  const CatItem *ci = cat_item(idx);
+  const CatEp *ep = foco.fileira == SEC_EPISODIOS && nivel > 0
+                    ? cat_episodio(idx, epAbsoluto(foco.coluna)) : NULL;
+  if (!ep) return episodioPadrao(temp, epis, origem);
+  if (temp) *temp = ep->temporada;
+  if (epis) *epis = ep->episodio;
+  if (origem) *origem = (ci && ci->progresso > 0 && ci->progresso < ajustes_cw_concluido() &&
+                         ci->temporada == ep->temporada && ci->episodio == ep->episodio) ? 2 : 1;
+  return 1;
+}
+
+// Seed again when history or episodes arrive, until the user browses the rows.
+static void sincronizarEpisodioPadrao(void) {
+  const CatItem *ci = cat_item(idx);
+  int t, e, k, c;
+  if (epEscolhido || !ehSerie() || !ci) return;
+  if (nivel > 0) { epEscolhido = 1; return; }
+  if (!episodioPadrao(&t, &e, NULL)) return;
+  for (k = 0; k < ci->nTemporadas; k++) if (ci->temporadas[k] == t) break;
+  if (k >= ci->nTemporadas) return;
+  temporada = k;
+  foco.colunaLembrada[SEC_TEMPORADAS] = colTemp(k);
+  for (c = 0; c < epVisiveis(); c++) {
+    const CatEp *ep = cat_episodio(idx, epAbsoluto(c));
+    if (ep && ep->episodio == e) {
+      epAncora = c;
+      foco.colunaLembrada[SEC_EPISODIOS] = c;
+      break;
+    }
+  }
 }
 
 // Episodio que os COMENTARIOS seguem: o ultimo pisado pelo foco; antes de o
@@ -2269,6 +2327,7 @@ static float alturaSecao(int r) {
     case SEC_NOTAS:     return notasui_fontes_altura(notasDados());
     case SEC_NOTAS_EP:  return 0.0f;
     case SEC_PROGTEMP:  return tgraf_altura_dados(tgraf_dados(idx));
+    case SEC_MUSICAS:   return MUS_H;
   }
   return 0.0f;
 }
@@ -2364,6 +2423,9 @@ static int secaoN(int r) {
     // colecao inclui o proprio filme, e uma parte so seria ele mesmo.
     case SEC_COLECAO:
       return (!ehSerie() && extras_n_colecao() > 1) ? 1 : 0;
+    // MUSICAS: uma coluna (o painel inteiro), so quando a trilha chegou.
+    case SEC_MUSICAS:
+      return musEstadoAtual(NULL) == MUS_PRONTO ? 1 : 0;
     // Comentario nao se escolhe um a um: UMA coluna, so para o foco pousar e a
     // pagina rolar ate os cartoes.
     // COMENTARIOS EXISTEM NOS DOIS. Na referencia a secao do Trakt fica
@@ -2800,6 +2862,7 @@ static void executarMais(int dm) {
 }
 
 static void detail_evento_(const SDL_Event *e) {
+  if (musicaui_aberta()) { musicaui_evento(e); return; }
   pediuRelogio = 0;
   if (sinopse_aberta()) {
     if (!episodios_menu_aberto() && sinopse_comentario_aberto() && e->type == SDL_KEYDOWN &&
@@ -3086,6 +3149,8 @@ static void detail_evento_(const SDL_Event *e) {
                                                   extras_relacionado_ano(foco.coluna),
                                                   extras_relacionado_poster(foco.coluna));
       }
+    } else if (foco.fileira == SEC_MUSICAS) {
+      musAbrir();
     } else if (foco.fileira == SEC_COLECAO) {
       // O mini card abre a LISTA da saga; e la que se escolhe a parte.
       abrirListaColecao();
@@ -3247,8 +3312,7 @@ static void detail_evento_(const SDL_Event *e) {
     return;
   }
   if (nivel == 0) {
-    // CIMA na linha de botoes nao fazia nada; com uma reacao pendente ele abre
-    // a pergunta (reacao.h). Sem pendencia, continua sem fazer nada.
+    // Up opens the existing rating card; rated titles can edit their stars.
     // CIMA na ilha de amigos volta ao botao em que estava; BAIXO entra nas secoes;
     // ESQUERDA pede o menu lateral como o primeiro botao.
     if (focoAmigos) {
@@ -3266,6 +3330,8 @@ static void detail_evento_(const SDL_Event *e) {
     // CARROSSEL: a primeira seta para baixo so estica o cartao (ver carCheia).
     if (k == SDLK_DOWN && carro && !carCheia) { carCheia = 1; return; }
     if (k == SDLK_DOWN) {
+      sincronizarEpisodioPadrao();
+      epEscolhido = 1;
       // Descer do hero cai na primeira fileira FOCAVEL. Num filme nao ha
       // temporadas nem episodios, e parar numa fileira vazia deixava o D-pad
       // sem resposta. Tem de ser secaoColunas e nao secaoN: os trailers sao
@@ -3421,6 +3487,7 @@ static float larguraItem(int r, int c) {
     case SEC_PROGTEMP:
     case SEC_FRASES:      return NV_TELA_W - ANC(NV_DETP_X) * 2;
     case SEC_COLECAO:     return COL_CARD_W;
+    case SEC_MUSICAS:     return MUS_W;
     default:              return NV_DETP_EL_W;
   }
 }
@@ -3616,6 +3683,7 @@ static void toquePessoaFocar(int i, int b) { (void)b; pessoaFoco = i; }
 static float blocoAnt[3] = { -1.0f, -1.0f, -1.0f };   // Notas / Numeros / Progresso no quadro anterior
 
 static void detail_atualizar_(float dt, Uint32 agora) {
+  if (musicaui_aberta()) { musicaui_atualizar(agora); return; }
   if (aberto) revalidarIdx();
   pessoaBuscaAtualizar();
 #ifdef NV_TOUCH_UI
@@ -3770,6 +3838,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
         desc_episodios(idx, ci ? ci->temporada : 0);
       }
     } }
+  sincronizarEpisodioPadrao();
   sincronizarColunas();
   // Solta o pedido de episodios que ficou guardado por ter chegado com outro
   // carregamento em voo.
@@ -3907,6 +3976,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
       if (t >= 0) { ratTemp = t; ratSinc = 1; }
     }
   }
+  musPedir();   // idempotente e barato: so sai pedido na primeira vez
   // No filme a linha Colecao | Frases aparece com a pagina rolando ate ela:
   // a consulta sai quando o foco chega a "Mais como este" ou abaixo.
   if (nivel >= 1 && (foco.fileira == SEC_FRASES ||
@@ -4689,9 +4759,10 @@ static void heroWeb(float a, float desloc) {
     hSinInit = 1;
     hSin = hSinVis; }
   const char *arqLogo = logoDe(idx);
-  const char *nome = mostrarNomeLogo(ci, arqLogo && tex_falhou(arqLogo) ? NULL : arqLogo,
-                                    0, desc_tmdb_idioma()) ? tituloDe(idx) : NULL;
-  int nomeAbaixo = nome && arqLogo && !tex_falhou(arqLogo);
+  GLuint texLogo = arqLogo ? tex_obter_logo_larg_qualquer(arqLogo, larguraLogoHero()) : 0;
+  const char *nome = mostrarNomeLogo(ci, texLogo ? arqLogo : NULL,
+                                    texLogo != 0, desc_tmdb_idioma()) ? tituloDe(idx) : NULL;
+  int nomeAbaixo = nome && texLogo;
   float hNome = nome ? txt_bloco(TXT_DET_META2, nome, 255, 255, 255,
                                 -1, 0, larguraLogoHero(), 34, 0, 0) : 0;
   float hCaption = nomeAbaixo ? hNome + 16.0f : 0;
@@ -4741,7 +4812,6 @@ static void heroWeb(float a, float desloc) {
   // textura menor enquanto reprocessa se ela tiver ao menos metade do
   // pedido. Pedindo o teto, o logo sumia por um instante ao abrir o titulo;
   // pedindo a largura real, aparece na hora e troca pela nitida em seguida.
-  GLuint texLogo = arqLogo ? tex_obter_logo_larg_qualquer(arqLogo, larguraLogoHero()) : 0;
   titulo_tempo_logo(&detalheTempo, "detalhe", arqLogo, texLogo, 0);
   if (a > 0.05f) titulo_tempo_info(&detalheTempo, "detalhe", ci, 0);
   float baseLogo = ((temRetom > 0.0f || agLinha[0]) ? yEstado : yAcoes)
@@ -5190,7 +5260,7 @@ static void heroWeb(float a, float desloc) {
     { NotasPlano plano;
       float pontoW = NV_DETW2_SEP * 2 + NV_DETW2_PONTO_D;
       notasui_planejar(&plano, notasDados()->cru,
-                       NV_DETW2_X + larguraTextoHero() - x,
+                       NV_DETW2_X + larguraTextoHero() - x - 205,
                        algo ? pontoW : 0.0f, NULL);
       if (plano.n > 0) {
         if (algo) { desenhaPonto(x + NV_DETW2_SEP, yc, 0.502f, a);
@@ -5198,6 +5268,17 @@ static void heroWeb(float a, float desloc) {
         x = notasui_desenhar_linha(&plano, x, yc, a);
         algo = 1;
       }
+    }
+    { char mine[96], value[24];
+      int n = reacao_nota(cat_item(idx)->imdb);
+      if (n) { snprintf(value, sizeof value, "%d.%d", n / 2, n % 2 * 5); plrui_decimal(value); }
+      else snprintf(value, sizeof value, "—");
+      snprintf(mine, sizeof mine, "%s  %s", i18n("Sua nota"), value);
+      float ar, ag, ab;
+      ajustes_acento(&ar, &ag, &ab);
+      x += 24;
+      gfx_icone((GfxRect){x, yc - 10, 20, 20}, "pl_star", ar, ag, ab, a);
+      plrui_kicker(mine, x + 28, yc - 9, 208, 195, 181, a);
     }
     // QUANTO DA SERIE VOCE JA VIU, no fim da linha de meta.
     //
@@ -5557,6 +5638,29 @@ static void desenhaAssistidoEpisodio(GfxRect th, float a) {
                      selo.y + (h - texto.h) * .5f, a);
 }
 
+// A NOTA DO USUARIO NO EPISODIO (reacao.h): estrela + "4,5", embaixo do selo
+// "Assistido", no mesmo canto da miniatura.
+static void desenhaMinhaNotaEpisodio(GfxRect th, const char *imdb, int temp, int epi, float a) {
+  char id[40], tx[16];
+  int n;
+  TxtLinha l;
+  float w, x, y;
+  snprintf(id, sizeof id, "%s:%d:%d", imdb, temp, epi);
+  n = reacao_nota(id);
+  if (n <= 0) return;
+  snprintf(tx, sizeof tx, "%d.%d", n / 2, (n % 2) * 5);
+  plrui_decimal(tx);
+  l = txt_linha(TXT_G18M, tx, 243, 242, 239, 255);
+  w = 14 + 20 + 8 + (float)l.w + 14;
+  x = th.x + th.w - w - 18;
+  y = th.y + NV_DETP_EP_VISTO_Y + NV_DETP_EP_VISTO_H + 10;
+  float ar, ag, ab;
+  ajustes_acento(&ar, &ag, &ab);
+  gfx_cor((GfxRect){x, y, w, 40}, .5f, .071f, .075f, .086f, .96f * a);
+  gfx_icone((GfxRect){x + 14, y + 10, 20, 20}, "pl_star-f", ar, ag, ab, a);
+  txt_desenhar_alpha(l, x + 42, y + (40 - (float)l.h) * .5f, a);
+}
+
 static void desenhaEpisodioCorpo(GfxRect r, int c, float f, float a, Uint32 agora);
 static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
   float ft=anim_clamp(f,0,1);
@@ -5641,6 +5745,7 @@ static void desenhaEpisodioCorpo(GfxRect r, int c, float f, float a, Uint32 agor
     if (!mergedVeil) gfx_cor(th, raioTh, 0, 0, 0, .12f * a);
     desenhaAssistidoEpisodio(th, a);
   }
+  desenhaMinhaNotaEpisodio(th, serie->imdb, ep->temporada, ep->episodio, a);
 
   // NADA DE RESERVA INVENTADA. Aqui as quatro linhas caiam numa tabela de
   // demonstracao (nome, duracao, data e sinopse de "Shrinking"), entao um
@@ -6545,6 +6650,33 @@ static void cartazColecao(GfxRect r, const char *po, float a) {
 // o nome em 40/800, a meta a 60%, a pilula "Ver coleção" e dois cartazes de
 // 130x195 em leque a direita. Foco: a pilula vira o botao no acento (o OK
 // abre a lista da saga) e o bloco sobe um degrau, sem anel.
+// Music section opens the approved full-screen album page.
+static void musAbrir(void) {
+  static MusAlbum al;
+  const CatItem *ci = cat_item(idx);
+  if (!ci || musEstadoAtual(&al) != MUS_PRONTO) return;
+  musicaui_abrir(&al, ci->imdb, ci->titulo, atoi(ci->meta), musTemp());
+}
+
+static void desenhaMusicas(float x, float y, float f, float a) {
+  static MusAlbum al;
+  if (musEstadoAtual(&al) != MUS_PRONTO) return;
+  GfxRect r = {x,y,MUS_W,MUS_H};
+  cartaoVidro(r, 0, a);
+  cartazColecao((GfxRect){x+32,y+32,MUS_CAPA,MUS_CAPA},al.capa,a);
+  float tx = x+MUS_CAPA+68, tw = MUS_W-MUS_CAPA-104;
+  TxtLinha l = txt_linha_corta(TXT_G22M,i18n("Trilha sonora original"),205,210,220,255,tw);
+  txt_desenhar_alpha(l,tx,y+40,a);
+  txt_bloco_corta(TXT_TITULO3,al.titulo,243,242,239,tx,y+85,tw,52,a,2);
+  l = txt_linha_corta(TXT_G22M,al.artista,205,210,220,255,tw);
+  txt_desenhar_alpha(l,tx,y+205,a);
+  l = txt_linha(TXT_G22M,i18n("Abrir álbum"),243,242,239,255);
+  GfxRect pil = {tx,y+MUS_H-92,l.w+64,56};
+  float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
+  gfx_cor(pil,.5f,ar,ag,ab,(.15f+.85f*f)*a);
+  txt_desenhar_alpha(l,tx+32,pil.y+(pil.h-l.h)*.5f,a);
+}
+
 static void desenhaColecao(float x, float y, float f, float a) {
   GfxRect r = { x, y, COL_CARD_W, COL_CARD_H };
   float raio = COL_CARD_RAIO / COL_CARD_H;
@@ -7196,6 +7328,7 @@ static float alturaAlvo(int r) {
     case SEC_ESTUDIOS:   return EST_CARD_H;
     case SEC_RELACIONADOS: return REL_CARD_H + 72.0f;
     case SEC_COLECAO:    return COL_CARD_H;
+    case SEC_MUSICAS:    return MUS_H;
     case SEC_ELENCO:     return NV_DETP_EL_AVATAR + 90.0f;
     default:             return 0.0f;
   }
@@ -7335,6 +7468,7 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     case SEC_NOTAS_EP:
     case SEC_PROGTEMP:
     case SEC_TRAILERS:
+    case SEC_MUSICAS:
     case SEC_RELACIONADOS:
     case SEC_FRASES:
     case SEC_COMENTARIOS:
@@ -7458,6 +7592,9 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
         break;
       case SEC_ESTUDIOS:
         desenhaEstudio(x, y, c, f, a);
+        break;
+      case SEC_MUSICAS:
+        if (c == 0) desenhaMusicas(x, y, f, a);
         break;
       case SEC_DETALHES: desenhaDetalhes(x, y, f, a); break;
       default: desenhaElenco(x, y, c, f, a); break;
@@ -7925,6 +8062,7 @@ static void maisDesenhar(void) {
 }
 
 static void detail_desenhar_(Uint32 agora) {
+  if (musicaui_aberta()) { musicaui_desenhar(agora); return; }
 #ifdef NV_TOUCH_UI
   toqueDetalheSincronizarModo();
 #endif

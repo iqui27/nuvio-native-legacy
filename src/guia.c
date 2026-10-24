@@ -160,14 +160,8 @@ static float gPreviewLargura(void);
 #define G_CAT_ROW   60.0f
 #define G_CAT_TOPO 150.0f
 #define G_CAT_BASE (NV_TELA_H - 96.0f)
-// Tempos do modo salta-categoria: segurar ~600 ms entra, 2 s parado sai.
-// 450 ms e a folga entre repeticoes de KEYDOWN do firmware (ele manda uma
-// tecla segurada como varios KEYDOWN com repeat=0).
-// 1100 e nao 600, e G_CAT_PASSO_MS: com 600 ms segurar "um pouco" ja saltava
-// de secao, e uma vez no modo cada repeticao do firmware (~130 ms) pulava
-// outra — dez secoes num piscar. Pedido do dono em 18/09: mais lerdo para
-// entrar e mais lerdo para andar.
-#define G_HOLD_MS    1100
+// webOS may send held keys as separate KEYDOWNs with repeat=0.
+// Reuse the 450 ms gap to distinguish those repeats from fresh presses.
 #define G_CAT_PASSO_MS 550
 #define G_REP_MS     450
 
@@ -2650,7 +2644,7 @@ static int    catAberto, catFoco;
 static Uint32 catUlt;
 static float  catAnim, catRol, catVelRol;
 static int    dirSeg;                 // SDLK_UP/DOWN segurado, 0 = solto
-static Uint32 dirDesde, dirTick, ultNavCat;
+static Uint32 dirTick, ultNavCat;
 
 // OK longo = favorito.
 static Uint32 okDesde; static int okLongo;
@@ -2935,6 +2929,12 @@ void guia_fonte_gravar_diag(const char *id, int formato, int modo, int proxy) {
   ltv_pref_gravar();
   printf("[ltv] fonte=%s diagnostico gravado: formato=%d modo=%d proxy=%d\n", ch, formato, modo, proxy);
   fflush(stdout);
+}
+int guia_proxy_do_canal(const char *id, int padrao) {
+  char ch[LTV_CHAVE];
+  LtvPref *p;
+  if (!guia_fonte_do_canal(id, ch, sizeof ch) || !(p = ltv_pref(ch, 0)) || p->proxy < 0) return padrao;
+  return p->proxy;
 }
 int guia_modo_do_canal(const char *id, int padrao) {
   char ch[LTV_CHAVE];
@@ -4291,24 +4291,16 @@ void guia_evento(const SDL_Event *e) {
 
   if (k == SDLK_UP || k == SDLK_DOWN) {
     int dir = (k == SDLK_DOWN) ? 1 : -1;
-    int fresco = !(dirSeg == k && agora - dirTick < G_REP_MS);
-    // CIMA na primeira linha sobe ao cabecalho — so num toque FRESCO: quem
-    // esta segurando CIMA quer o modo salta-categoria, nao o controle.
+    int fresco = !e->key.repeat && !(dirSeg == k && agora - dirTick < G_REP_MS);
+    // Only a fresh Up at the first channel may leave the channel list.
     if (dir < 0 && fresco && focoLin == 0 && (!modoLista || focoCol == 0)) {
       focoTopo = 1; focoFontes = 0;
       topoCol = modoLista ? G_TOPO_LISTA : G_TOPO_CARTOES;
       dirSeg = 0;
       return;
     }
-    // Ainda segurando a mesma direcao? O firmware repete o KEYDOWN a cada
-    // ~130 ms; o relogio e quem distingue "toque" de "segurado".
-    if (!fresco) {
-      if (agora - dirDesde >= G_HOLD_MS) {
-        catAbrir(1, dir);
-        ultNavCat = agora; dirTick = agora;
-        return;
-      }
-    } else { dirSeg = k; dirDesde = agora; }
+    // Held Up/Down keep scrolling; the movement helpers clamp at the edges.
+    dirSeg = k;
     dirTick = agora;
     if (modoLista) moverLista(dir); else moverVertical(dir);
     return;
@@ -7864,7 +7856,7 @@ void guia_abrir_sessao(void) {
   focoFontes = fontesCol = fopAberto = gpAberto = limparConfirm = 0; perfilPrefs = -999;
   opcoesAberto = opcoesFoco = 0;
   catAberto = catFoco = dirSeg = okLongo = 0;
-  catUlt = dirDesde = dirTick = ultNavCat = okDesde = 0;
+  catUlt = dirTick = ultNavCat = okDesde = 0;
   catAnim = catRol = catVelRol = 0.0f;
   previewPreso = pedPreview = pedPararPreview = pedRestaurar = pedGuiaCheio = 0;
   previewUltLin = previewUltCol = -1; previewFocoMudou = 0;

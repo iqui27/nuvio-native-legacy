@@ -16,6 +16,7 @@ static char arquivo[80] = ARQUIVO;
 typedef struct { uint64_t chave; time_t quando; } Morta;
 static Morta mortas[MAX_MORTAS];
 static int n, carregado;
+static unsigned versao;
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
 
 static uint64_t bytes(uint64_t h, const char *s) {
@@ -114,6 +115,7 @@ static void carregarSemTrava(void) {
 void fontesmortas_iniciar(void) {
   pthread_mutex_lock(&trava);
   carregarSemTrava();
+  versao++;
   pthread_mutex_unlock(&trava);
 }
 void fontesmortas_definir_escopo(const char *conta, int perfil) {
@@ -124,11 +126,26 @@ void fontesmortas_definir_escopo(const char *conta, int perfil) {
   pthread_mutex_lock(&trava);
   if (strcmp(novo, arquivo)) {
     snprintf(arquivo, sizeof arquivo, "%s", novo);
-    memset(mortas, 0, sizeof mortas); n = carregado = 0;
+    memset(mortas, 0, sizeof mortas); n = carregado = 0; versao++;
   }
   pthread_mutex_unlock(&trava);
 }
 static void garantirSemTrava(void) { if (!carregado) carregarSemTrava(); }
+unsigned fontesmortas_versao(void) {
+  static time_t ultima;
+  time_t agora = time(NULL);
+  pthread_mutex_lock(&trava);
+  garantirSemTrava();
+  if (agora != ultima) {
+    int antes = n;
+    podar(agora);
+    if (n != antes) versao++;
+    ultima = agora;
+  }
+  unsigned v = versao;
+  pthread_mutex_unlock(&trava);
+  return v;
+}
 long fontesmortas_idade(const Stream *s) {
   uint64_t chave = identidade(s);
   long idade = -1;
@@ -156,6 +173,7 @@ void fontesmortas_marcar(const Stream *s) {
     for (int j = 1; j < n; j++) if (mortas[j].quando < mortas[i].quando) i = j;
   } else if (i == n) n++;
   mortas[i] = (Morta){chave, agora};
+  versao++;
   gravar();
   pthread_mutex_unlock(&trava);
 }
@@ -166,6 +184,7 @@ void fontesmortas_limpar(const Stream *s) {
   garantirSemTrava();
   for (int i = 0; i < n; i++) if (mortas[i].chave == chave) {
     memmove(mortas + i, mortas + i + 1, (size_t)(--n - i) * sizeof *mortas);
+    versao++;
     gravar(); break;
   }
   pthread_mutex_unlock(&trava);

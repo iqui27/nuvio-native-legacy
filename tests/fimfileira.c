@@ -75,11 +75,6 @@ void vertudo_abrir(const char *b, const char *t, const char *c, const char *ti) 
 void vertudo_colecao(const ColFolder *f) { (void)f; nVerTudoCol++; }
 const char *i18n(const char *s) { return s; }
 const char *idioma_mes_data(int mes, const char *nomePt) { (void)mes; return nomePt; }
-// src/homevazio.c nao entra na lista curta de fontes deste teste: sem addons
-// configurados a home vazia tomaria a tela. Aqui sempre ha catalogo.
-int  homevazio_ativo(int fileiras) { (void)fileiras; return 0; }
-int  homevazio_evento(const SDL_Event *e) { (void)e; return 0; }
-void desc_ocultar_vistos_atualizar(void) {}
 
 static Uint32 relogio = 1000;
 Uint32 SDL_GetTicks(void) { return relogio; }

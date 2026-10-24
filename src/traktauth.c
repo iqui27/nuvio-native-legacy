@@ -59,6 +59,7 @@ static unsigned pollMs = TRA_POLL_PADRAO;
 static unsigned proximoPoll, comecouMs, limiteMs;
 static unsigned esperaMs, retomarEm, recuoMs = TRA_POLL_PADRAO;
 static int esperaArmada;
+static unsigned pollsPendentes;
 // Prazo em RELOGIO DE PAREDE, nao em ticks: o pedido tem de sobreviver a um
 // reinicio do app, e SDL_GetTicks zera junto com o processo.
 static long expiraEm;
@@ -116,6 +117,13 @@ static void esperar429(int segundos) {
   if (recuoMs < 60000u) recuoMs *= 2;
   if (recuoMs > 60000u) recuoMs = 60000u;
   esperaMs = ms > recuoMs ? ms : recuoMs;
+  if (estado == TRA_AGUARDANDO && expiraEm) {
+    long restante = expiraEm - (long)time(NULL);
+    unsigned teto = restante > 0 ? (unsigned)restante * 1000u : 1u;
+    if (esperaMs > teto) esperaMs = teto;
+  }
+  printf("[trakt] HTTP 429; espera %u ms\n", esperaMs);
+  fflush(stdout);
 }
 
 static char *postar(const char *caminho, const char *corpo, int *status, int *retry) {
@@ -375,6 +383,7 @@ static void *fioPedir(void *u) {
     pthread_mutex_lock(&trava);
     if (fioAtual() && mesmaConta(usuarioFio)) {
       snprintf(erro, sizeof erro, "pacote sem as chaves do Trakt");
+      printf("[trakt] erro: pacote sem chaves\n"); fflush(stdout);
       estado = TRA_ERRO;
     }
     pthread_mutex_unlock(&trava);
@@ -400,6 +409,9 @@ static void *fioPedir(void *u) {
     if (intervalo >= 1.0 && intervalo <= 60.0) novoPoll = (unsigned)(intervalo * 1000.0);
     if (expira > 30.0 && expira < 3600.0) novoLimite = (unsigned)(expira * 1000.0);
   }
+  printf("[trakt] pedido de codigo HTTP %d; intervalo %u ms; validade %u ms\n",
+         st, novoPoll ? novoPoll : TRA_POLL_PADRAO, novoLimite);
+  fflush(stdout);
   pthread_mutex_lock(&trava);
   // Pedido de um perfil que ja nao esta na tela: o codigo nao e mostrado a
   // ninguem, entao nao ha o que guardar.
@@ -419,6 +431,7 @@ static void *fioPedir(void *u) {
     if (st == 429) { esperar429(retry); estado = TRA_PEDINDO; }
     else {
       snprintf(erro, sizeof erro, i18n("nao consegui pedir o codigo ao Trakt (HTTP %d)"), st);
+      printf("[trakt] erro ao pedir codigo HTTP %d\n", st); fflush(stdout);
       estado = TRA_ERRO;
     }
   } else {
@@ -478,6 +491,9 @@ static void *fioPoll(void *u) {
     fioPronto = 1;
     return NULL;
   }
+  if (st != 400 || pollsPendentes++ % 10u == 0) {
+    printf("[trakt] poll HTTP %d\n", st); fflush(stdout);
+  }
   if (r && st >= 200 && st < 300) {
     char t[300];
     if (js_texto(r, r + strlen(r), "access_token", t, sizeof t)) {
@@ -493,6 +509,7 @@ static void *fioPoll(void *u) {
       expiraSeg = (long)js_num(r, r + strlen(r), "expires_in", 86400);
       tokenNovo = 1;
       esquecerFluxo();
+      printf("[trakt] autorizado\n"); fflush(stdout);
       estado = TRA_LIGADO;
     } else {
       snprintf(erro, sizeof erro, "o Trakt respondeu sem token");
@@ -518,6 +535,9 @@ static void *fioPoll(void *u) {
   } else if (st) {
     snprintf(erro, sizeof erro, i18n("falha ao trocar o codigo (HTTP %d)"), st);
     estado = TRA_ERRO;
+  }
+  if (estado == TRA_ERRO) {
+    printf("[trakt] erro no poll HTTP %d: %s\n", st, erro); fflush(stdout);
   }
   pthread_mutex_unlock(&trava);
   free(r);
@@ -640,7 +660,11 @@ static void soltar(void *(*rotina)(void *)) {
   snprintf(refreshFio, sizeof refreshFio, "%s", refresh);
   snprintf(deviceCodeFio, sizeof deviceCodeFio, "%s", deviceCode);
   if (pthread_create(&fio, NULL, rotina, NULL) == 0) { pthread_detach(fio); fioVivo = 1; }
-  else { snprintf(erro, sizeof erro, "sem fio para falar com o Trakt"); estado = TRA_ERRO; }
+  else {
+    snprintf(erro, sizeof erro, "sem fio para falar com o Trakt");
+    printf("[trakt] erro: sem fio\n"); fflush(stdout);
+    estado = TRA_ERRO;
+  }
 }
 
 void traktauth_comecar(void) {
@@ -649,6 +673,7 @@ void traktauth_comecar(void) {
   erro[0] = 0;
   comecouMs = 0;
   pollMs = TRA_POLL_PADRAO;
+  pollsPendentes = 0;
   estado = TRA_PEDINDO;
   if (!esperaMs && !esperaArmada) soltar(fioPedir);
 }
@@ -666,6 +691,14 @@ void traktauth_passo(unsigned agoraMs) {
     } }
   if (fioVivo && fioPronto) { fioVivo = 0; fioPronto = 0; }
   if (fioVivo) return;
+  if (estado == TRA_AGUARDANDO && expiraEm && (long)time(NULL) >= expiraEm) {
+    snprintf(erro, sizeof erro, "o código expirou");
+    printf("[trakt] erro: codigo expirou\n"); fflush(stdout);
+    esquecerFluxo();
+    esperaMs = 0; esperaArmada = 0;
+    estado = TRA_ERRO;
+    return;
+  }
   if (esperaMs) {
     retomarEm = agoraMs + esperaMs;
     esperaMs = 0; esperaArmada = 1;
@@ -732,12 +765,6 @@ void traktauth_passo(unsigned agoraMs) {
 
   if (estado != TRA_AGUARDANDO) return;
   if (!comecouMs) comecouMs = agoraMs;
-  if (expiraEm && (long)time(NULL) >= expiraEm) {
-    snprintf(erro, sizeof erro, "o código expirou");
-    esquecerFluxo();
-    estado = TRA_ERRO;
-    return;
-  }
   if (agoraMs >= proximoPoll) {
     proximoPoll = agoraMs + pollMs;
     soltar(fioPoll);
@@ -753,4 +780,4 @@ TraEstado   traktauth_estado(void) { return estado; }
 const char *traktauth_codigo(void) { return userCode; }
 const char *traktauth_url(void)    { return url; }
 int traktauth_aguardando(void) { return esperaMs || esperaArmada; }
-const char *traktauth_erro(void)   { return traktauth_aguardando() ? i18n("Não foi possível agora. Tente novamente.") : erro; }
+const char *traktauth_erro(void)   { return traktauth_aguardando() ? i18n("Trakt limitou os pedidos; tentando de novo…") : erro; }
