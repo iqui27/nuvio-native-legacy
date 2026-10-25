@@ -97,6 +97,7 @@
 #include "telefoneui.h"
 #include "ponteiro.h"
 #include "sync.h"
+#include "descoberta.h"
 #include "addons.h"
 #include "servidores.h"
 
@@ -413,7 +414,7 @@ void biblioteca_teste_foco(int *fileira, int *coluna, int *acao) {
 }
 static float animModo[BIB_N_MODOS];
 static float animPick[8];
-static float animOrigem[64], animTela, animVista = 1, animListaTab, animListaEd;
+static float animOrigem[64], animTela, animVista = 1, animListaTab, animListaEd, animModoPos;
 // Retain only rendered cells, not a second catalog, during tab crossfades.
 #define BIB_TRANSITION_CELLS 32
 typedef struct {
@@ -1762,6 +1763,9 @@ static void biblioteca_atualizar_(float dt, Uint32 agora) {
   animVista = anim_rampa(animVista, 1, dt, 160);
   animEstado = anim_mola(animEstado, estadoFoco && estadoFalhou(), dt, NV_MOLA_FOCO);
   animListaTab = anim_mola(animListaTab, listaTab, dt, NV_MOLA_FOCO);
+  // The tab focus pill slides from tab to tab; off the row it rests on the chosen one.
+  animModoPos = anim_mola(animModoPos, !focoOrigem && foco.fileira == BIB_FIL_MODO && estado() != EST_ITENS
+                                       ? (float)foco.coluna : (float)modo, dt, NV_MOLA_FOCO);
   animListaEd = anim_mola(animListaEd, !focoOrigem && foco.fileira == BIB_FIL_MODO, dt, NV_MOLA_FOCO);
   for (int i = 0; i < 64; i++)
     animOrigem[i] = anim_mola(animOrigem[i], focoOrigem && origemSel == i, dt, NV_MOLA_FOCO);
@@ -2040,8 +2044,24 @@ static void textoModo(int a, char *num, size_t n) {
   num[0] = 0;
   if (a != MODO_LISTAS || v > 0) snprintf(num, n, "%d", v);
 }
+// Contagem de cada aba para o plrui_seg (-1 = sem numero).
+static int contagemModo(int a) {
+  char num[16];
+  textoModo(a, num, sizeof num);
+  return num[0] ? atoi(num) : -1;
+}
 static float larguraModo(int a) {
   char num[16];
+  if (!bibRetrato()) {
+    // A mesma medida do plrui_seg: rotulo + 40, contagem + 9.
+    float w = (float)txt_linha(TXT_ILHA_SEG, ROT_MODO[a], 243, 243, 243, 255).w + 40.0f;
+    int n = contagemModo(a);
+    if (n >= 0) {
+      snprintf(num, sizeof num, "%d", n);
+      w += 9.0f + (float)txt_linha(TXT_ILHA_NUM, num, 243, 243, 243, 255).w;
+    }
+    return w;
+  }
   float w = (float)txt_linha(TXT_ROW_TITULO, ROT_MODO[a], 140, 140, 140, 255).w * BIB_ESC_MODO;
   textoModo(a, num, sizeof num);
   if (num[0]) w += 9.0f + (float)txt_linha(TXT_CAPTION2, num, 93, 93, 93, 255).w * BIB_ESC_N;
@@ -2099,6 +2119,21 @@ static void desenhaModos(void) {
       float w = txt_linha(TXT_ILHA_SEG, ROT_LISTA_TAB[i], 243, 243, 243, 255).w + 40;
       ponteiro_alvo(x, BIB_FAIXA_Y + 5, w, 44, ponteiroModo, NULL, i, 0);
       x += w + 4;
+    }
+    return;
+  }
+  if (!bibRetrato()) {
+    // The shared segmented control (LINGUAGEM 2): chosen tab = .sel, the
+    // accent pill follows the focus.
+    int cont[BIB_N_MODOS];
+    float x = hdrX() + BIB_SEG_PAD;
+    for (int a = 0; a < BIB_N_MODOS; a++) cont[a] = contagemModo(a);
+    plrui_seg_ex(ROT_MODO, cont, BIB_N_MODOS, modo, animModoPos, animListaEd,
+                 hdrX(), BIB_FAIXA_Y, 1, 1);
+    for (int a = 0; a < BIB_N_MODOS; a++) {
+      float w = larguraModo(a);
+      ponteiro_alvo(x, BIB_FAIXA_Y + BIB_SEG_PAD, w, 44, ponteiroModo, NULL, a, 0);
+      x += w + BIB_SEG_ITEM_GAP;
     }
     return;
   }
@@ -2165,13 +2200,18 @@ static void pickerTexto(int p, const char **rot, const char **val) {
 // O CHIP DE FILTRO (.vid do mockup, raio 24, 12/20 de recuo): o rotulo em
 // cinza e o valor em branco 600, separados por um espaco — o "·" que existia
 // aqui saiu com o mockup. A largura sai do texto.
+// Grade/lista: um .seg so de dois itens (pad 5, vao 4, item 64 x 44).
+#define BIB_VIS_W  64.0f
+#define BIB_VIS_TW (BIB_VIS_W * 2.0f + 4.0f + 10.0f)
+// "Esconder assistidos" ligado: o ponto (7) e o vao (10) antes do rotulo.
+static int pickerPonto(int p) { return modo != MODO_LISTAS && modo != MODO_ASSISTIDOS && p == 3 && esconderVistos; }
 static float pickerLarguraNat(int p) {
-  if (modo != MODO_LISTAS && p >= bibViewStart()) return 58.0f;
+  if (modo != MODO_LISTAS && p >= bibViewStart()) return BIB_VIS_W;
   const char *rot, *val;
   pickerTexto(p, &rot, &val);
   return (float)txt_linha(TXT_HERO_SEC, rot, 245, 245, 245, 255).w * BIB_ESC_VAL + 8.0f
        + (float)txt_linha(TXT_CAPTION2, val, 117, 117, 117, 255).w * BIB_ESC_ROT
-       + BIB_CHIP_PADX * 2.0f;
+       + BIB_CHIP_PADX * 2.0f + (pickerPonto(p) ? 17.0f : 0.0f);
 }
 
 // Folga a direita para o anel de foco (brilhoFoco passa da borda do chip).
@@ -2190,7 +2230,8 @@ static float pickerLargura(int p) {
 }
 
 static float pickerX(int p) {
-  if (modo != MODO_LISTAS && p >= bibViewStart()) return hdrDir() - 132 + (p - bibViewStart()) * 64;
+  if (modo != MODO_LISTAS && p >= bibViewStart())
+    return hdrDir() - BIB_VIS_TW + 5.0f + (float)(p - bibViewStart()) * (BIB_VIS_W + 4.0f);
   float x = hdrX() + (bibFaixaQuebra() ? 0.0f : larguraSeletor() + BIB_FAIXA_GAP * 2.0f + 1.0f);
   int i;
   for (i = 0; i < p; i++) x += pickerLargura(i) + BIB_FAIXA_GAP;
@@ -2202,38 +2243,49 @@ static void desenhaPicker(int p, float f) {
   float w = pickerLargura(p);
   GfxRect r = { pickerX(p), pickerY(), w, BIB_CHIP_H };
   float v = anim_clamp(f, 0.0f, 1.0f);
-  ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroPicker, NULL, p, 0);
-  // Rest uses the shared frosted sheet; solid mode keeps #15161a.
-  // Focus keeps the full accent fill, like every app button.
-  if (ajustes_vidro()) gfx_vidro_folha(r, 0.5f, 1.0f - v);
-  else gfx_cor(r, 0.5f, .082f, .086f, .102f, 1.0f - v);
-  if (v > 0.01f) {
-    float ar, ag, ab;
-    ajustes_acento(&ar, &ag, &ab);
-    if (ajustes_vidro()) gfx_vidro_pilula_cheia(r, 0.5f, v, 1.0f);
-    else { brilhoFoco(r, 0.9f, v, 1.0f); gfx_cor(r, 0.5f, ar, ag, ab, v); }
-  }
+  int vid = ajustes_vidro();
   if (modo != MODO_LISTAS && p >= bibViewStart()) {
+    // The mock's grid/list .seg: rimless track, chosen = .sel, focus = accent pill.
     int grid = p == bibViewStart();
-    int sel = (grid && !modoLinha()) || (!grid && modoLinha());
-    if (sel && v < .5f) gfx_cor(r, .5f, 1, 1, 1, .12f);
-    int cor = v > .5f ? ajustes_tinta_foco() : 230;
-    gfx_icone((GfxRect){ r.x + 18, r.y + 15, 22, 22 }, grid ? "aj_layout-dashboard" : "aj_layout-list",
+    int sel = grid != modoLinha();
+    r = (GfxRect){ r.x, pickerY() + (BIB_CHIP_H - 44.0f) * 0.5f, BIB_VIS_W, 44.0f };
+    ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroPicker, NULL, p, 0);
+    if (grid) {
+      GfxRect tr = { r.x - 5.0f, r.y - 5.0f, BIB_VIS_TW, 54.0f };
+      if (vid) gfx_cor(tr, .5f, 1, 1, 1, .06f);
+      else gfx_cor(tr, .5f, .110f, .114f, .133f, 1);        // #1c1d22
+    }
+    if (sel) {
+      if (vid) gfx_cor(r, .5f, 1, 1, 1, .14f * (1.0f - v));
+      else gfx_cor(r, .5f, .204f, .212f, .243f, 1.0f - v);
+    }
+    plrui_pilula_foco(r, v);
+    int cor = v > .5f ? ajustes_tinta_foco() : sel ? 255 : 140;
+    gfx_icone((GfxRect){ r.x + (r.w - 22) * 0.5f, r.y + 11, 22, 22 },
+              grid ? "aj_layout-dashboard" : "aj_layout-list",
               cor / 255.0f, cor / 255.0f, cor / 255.0f, 1);
     return;
   }
-  if (modo != MODO_LISTAS && p == 3 && esconderVistos) {
+  ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroPicker, NULL, p, 0);
+  // .chip of the mock: rimless light veil at rest, full accent pill on focus.
+  if (vid) gfx_cor(r, 0.5f, 1, 1, 1, .07f * (1.0f - v));
+  else gfx_cor(r, 0.5f, .110f, .114f, .133f, 1.0f - v);    // #1c1d22
+  plrui_pilula_foco(r, v);
+  float px = 0.0f;
+  if (pickerPonto(p)) {
     float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-    gfx_cor((GfxRect){r.x + 9, r.y + 23, 6, 6}, .5f, ar, ag, ab, 1);
+    if (v > .5f) ar = ag = ab = ajustes_tinta_foco() / 255.0f;
+    gfx_cor((GfxRect){r.x + BIB_CHIP_PADX, r.y + (r.h - 7) * 0.5f, 7, 7}, .5f, ar, ag, ab, 1);
+    px = 17.0f;
   }
   // Mockup: rotulo em negrito claro, valor apagado e normal.
   { int valor = v > 0.5f ? ajustes_tinta_foco2() : 125;
     int rotulo = v > 0.5f ? ajustes_tinta_foco() : 240;
     TxtLinha tr, tv;
-    float x = r.x + BIB_CHIP_PADX;
+    float x = r.x + BIB_CHIP_PADX + px;
     pickerTexto(p, &rot, &val);
     if (bibRetrato()) {
-      float util = r.w - BIB_CHIP_PADX * 2.0f;
+      float util = r.w - BIB_CHIP_PADX * 2.0f - px;
       tr = txt_linha_corta(TXT_HERO_SEC, rot, rotulo, rotulo, rotulo, 255, util * .55f / BIB_ESC_VAL);
       tv = txt_linha_corta(TXT_CAPTION2, val, valor, valor, valor, 255,
                            (util - (float)tr.w * BIB_ESC_VAL - 8.0f) / BIB_ESC_ROT);
@@ -3047,10 +3099,11 @@ static void desenhaOrigens(void) {
     return;
   }
   GfxRect painel = { paginaX(), 388.0f, 320.0f, fminf(700, 50 + nOrigens() * 76 + (serverRows ? 54 : 0) + 96) };
-  t21_ilha(painel, T21_R_SHEET, 1);
+  // .vid of the mock: island glass without the light rim.
+  gfx_vidro_sem_aro = 1; t21_ilha(painel, T21_R_SHEET, 1); gfx_vidro_sem_aro = 0;
   // Heading as in the mock: tracked caps, dim.
   txt_tracking(TXT_MINI, seloCaixaAlta("Origens"), 115, 117, 122, painel.x + 30, painel.y + 20, 1.0f, 2.2f);
-  const char *sub[] = { "sem repetir títulos", "Para ver", "Para ver", "salvos neste perfil" };
+  const char *sub[] = { "sem repetir títulos", "watchlist", "plano para ver", "salvos neste perfil" };
   float footerY = 0;
   const char *letra[] = { "", "T", "S", "N" };
   int vis = (int)((painel.h - 50 - 96) / 76), start = focoOrigem && origemSel > vis - 1 ? origemSel - (vis - 1) : 0;
@@ -3141,39 +3194,45 @@ static void desenhaCabecalho(void) {
   if (!temAberta) {
     float x = hdrDir();
     char status[96];
-    if (sync_estado() == SYNC_RODANDO) snprintf(status, sizeof status, "%s", "Sincronizando…");
-    else if (sync_estado() == SYNC_FALHOU) snprintf(status, sizeof status, "%s", "sem sincronizar");
-    else if (sync_estado() == SYNC_PRONTO) {
-      // "Sincronizado há 3 min" do mockup: o instante vem de sync_ultimo_ok.
-      // Sem instante (nunca terminou um ciclo nesta sessao) fica a palavra seca
-      // — escrever "há 0 min" e inventar relogio.
-      unsigned ok = sync_ultimo_ok();
-      unsigned t = SDL_GetTicks();
-      if (ok && t > ok) {
-        long long min = (t - ok) / 60000ull;
-        if (min < 1) min = 1;
-        snprintf(status, sizeof status, i18n("Sincronizado há %d min"), (int)min);
-      } else snprintf(status, sizeof status, "%s", "Sincronizada");
-    } else status[0] = 0;
-    int active[] = { trakt_ativo(), simkl_ativo(), contalib_tem_conta(), nAddonOrigens > 0 };
+    // "sincronizado ha 3 min" do mockup. Trakt/Simkl chegam pelo ciclo de
+    // descoberta, a conta pelo sync.c: vale o instante mais recente dos dois.
+    // Sem instante (nada terminou nesta sessao) nao ha linha: "ha 0 min"
+    // inventaria relogio.
+    unsigned ok = sync_ultimo_ok(), okDesc = desc_ultimo_ok(), t = SDL_GetTicks();
+    if (okDesc && (!ok || (int)(okDesc - ok) > 0)) ok = okDesc;
+    status[0] = 0;
+    if (sync_estado() == SYNC_RODANDO) snprintf(status, sizeof status, "%s", i18n("sincronizando…"));
+    else if (sync_estado() == SYNC_FALHOU) snprintf(status, sizeof status, "%s", i18n("sem sincronizar"));
+    else if (ok && t > ok) {
+      long long min = (t - ok) / 60000ull;
+      if (min < 1) min = 1;
+      snprintf(status, sizeof status, i18n("sincronizado há %d min"), (int)min);
+    }
+    // As origens remotas do mockup; a Conta Nuvio e local e fica so no painel.
+    int active[] = { trakt_ativo(), simkl_ativo(), nAddonOrigens > 0 };
+    const char *services[] = { "Trakt", "Simkl", nAddonOrigens > 0 ? addonOrigens[0].nome : "" };
 #ifdef NV_J1_SHOT
     // Capture hook: pretend every source is connected and synced N minutes ago.
     { const char *fake = getenv("NUVIO_SHOT_SYNC_MIN");
       if (fake && fake[0]) {
-        for (int i = 0; i < 4; i++) active[i] = 1;
-        snprintf(status, sizeof status, i18n("Sincronizado há %d min"), atoi(fake)); } }
+        for (int i = 0; i < 3; i++) active[i] = 1;
+        if (!nAddonOrigens) services[2] = "AIOMetadata";
+        snprintf(status, sizeof status, i18n("sincronizado há %d min"), atoi(fake)); } }
 #endif
     // Same baseline as the subtitle on the left, so the two read as one row.
     float lineY = BIB_TOPO + (float)txt_linha(TXT_TITULO2, "Hg", 255, 255, 255, 255).h + 2.0f;
-    TxtLinha st = txt_linha(TXT_MINI, status, 98, 100, 106, 255);
+    TxtLinha st = txt_linha(TXT_ILHA_APOIO, status, 105, 105, 105, 255);
     float y = lineY + (float)(txt_linha(TXT_CAPTION2, "Hg", 255, 255, 255, 255).h - st.h) * 0.5f;
-    x -= st.w; txt_desenhar(st, x, y);
-    const char *services[] = { "Trakt", "Simkl", "Conta Nuvio", "AIOMetadata" };
-    for (int i = 3; i >= 0; i--) if (active[i]) {
-      TxtLinha name = txt_linha(TXT_MINI, services[i], 120, 122, 128, 255);
-      x -= name.w + (status[0] ? 42 : 30); txt_desenhar(name, x, y);
-      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      gfx_icone((GfxRect){x - 24, y + (name.h - 17) * 0.5f, 17, 17}, "aj_check", ar, ag, ab, 1);
+    float ar, ag, ab;
+    ajustes_acento(&ar, &ag, &ab);
+    // .sinc: 18 entre itens, 6 entre o check (18) e o nome.
+    if (st.w) { x -= st.w; txt_desenhar(st, x, y); x -= 18; }
+    for (int i = 2; i >= 0; i--) if (active[i] && services[i][0]) {
+      TxtLinha name = txt_linha(TXT_ILHA_APOIO, services[i], 146, 146, 146, 255);
+      x -= name.w; txt_desenhar(name, x, y);
+      x -= 6 + 18;
+      gfx_icone((GfxRect){x, y + (name.h - 18) * 0.5f, 18, 18}, "aj_check", ar, ag, ab, 1);
+      x -= 18;
     }
     return;
   }
@@ -3240,21 +3299,19 @@ static void desenhaResumo(void) {
     snprintf(resumo, sizeof resumo, "%d %s", nCelulas,
              i18n(nCelulas == 1 ? "lista" : "listas"));
   } else {
-    // AS PARTES passam por i18n, e nao a frase pronta: a chave da tabela e o
-    // portugues INTEIRO de uma string, e "0 títulos   ·   Sua lista para
-    // assistir" nunca vai existir como chave. Era este o defeito visto na
-    // biblioteca com a interface em inglês (issue #3).
-    snprintf(resumo, sizeof resumo, "%d %s   ·   %s", nFiltro,
-             i18n(nFiltro == 1 ? "título" : "títulos"),
-             i18n(modo == MODO_PARAVER ? "Sua lista para assistir"
-                  : modo == MODO_ANDAMENTO ? "Retome de onde parou"
-                  : modo == MODO_ASSISTIDOS ? "Seu histórico"
-                  : "Sua coleção no Trakt"));
+    // "48 títulos para ver" do mockup: um formato por aba, inteiro na tabela
+    // (a chave e o portugues da string toda; ver issue #3).
+    int um = nFiltro == 1;
+    snprintf(resumo, sizeof resumo, i18n(
+      modo == MODO_PARAVER    ? (um ? "%d título para ver" : "%d títulos para ver")
+    : modo == MODO_ANDAMENTO  ? (um ? "%d título em andamento" : "%d títulos em andamento")
+    : modo == MODO_ASSISTIDOS ? (um ? "%d título assistido" : "%d títulos assistidos")
+    :                           (um ? "%d título nas coleções" : "%d títulos nas coleções")), nFiltro);
     // "· perfil Marina" do mockup: de quem e esta lista.
     { const ContaPerfil *pf = perfis_item_ativo();
       if (pf && pf->nome[0]) {
         size_t k = strlen(resumo);
-        snprintf(resumo + k, sizeof resumo - k, "   ·   %s %s", i18n("perfil"), pf->nome); } }
+        snprintf(resumo + k, sizeof resumo - k, " · %s %s", i18n("perfil"), pf->nome); } }
   }
   // O TETO DA GRADE NUNCA E CALADO. Com a exibicao de lista (uma coluna) a
   // grade para em BIB_MAX_LINHAS titulos; o contador acima continua dizendo

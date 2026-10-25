@@ -106,14 +106,14 @@ static void medir(const char *rotulo) {
 #ifdef NV_J1_SHOT
 static void j1_movimento(const char *nome) {
   const int times[] = {0, 50, 80, 100, 150, 160, 250, 320, 400};
-  const char *names[] = {"focus", "entry", "exit", "reverse", "tabs"};
+  const char *names[] = {"focus", "entry", "exit", "reverse", "tabs", "tabfocus", "chips"};
   float savedFocus[BIB_MAX_LINHAS][BIB_COLUNAS_MAX];
   memcpy(savedFocus, animFoco, sizeof savedFocus);
   Foco saved = foco;
   float savedScroll = scrollY, savedVelocity = velY;
-  int savedExit = sair, savedOrigin = focoOrigem, savedMode = modo, savedView = exibicao;
+  int savedExit = sair, savedOrigin = focoOrigem, savedMode = modo, savedView = exibicao, savedPick = pickSel;
   int oldCount = nVistaAnterior;
-  for (int sequence = 0; sequence < 5; sequence++) {
+  for (int sequence = 0; sequence < 7; sequence++) {
     Uint32 base = SDL_GetTicks();
     if (!sequence) {
       focoOrigem = 0; foco.fileira = gradeIni(); foco.coluna = 0;
@@ -125,6 +125,15 @@ static void j1_movimento(const char *nome) {
       sair = 1;
       for (int i = 0; i < 8; i++) biblioteca_atualizar(.01f, base);
       sair = 0;
+    }
+    else if (sequence >= 5) {
+      // Focus slides along the tabs (no choice) / across the filter chips.
+      if (temAberta || modo == MODO_LISTAS) continue;
+      focoOrigem = 0; foco.fileira = sequence == 5 ? BIB_FIL_MODO : BIB_FIL_PICK; foco.coluna = 0;
+      if (sequence == 6) pickSel = 0;
+      for (int warm = 0; warm < 60; warm++) biblioteca_atualizar(1.0f / 60, base);
+      tecla(SDLK_RIGHT);
+      assert(foco.coluna == 1);
     }
     else {
       if (temAberta || modo == MODO_LISTAS || !nVistaAtual) continue;
@@ -153,7 +162,7 @@ static void j1_movimento(const char *nome) {
     }
     foco = saved; scrollY = savedScroll; velY = savedVelocity;
     memcpy(animFoco, savedFocus, sizeof savedFocus);
-    animTela = animVista = 1; ondaEm = 0; sair = savedExit; focoOrigem = savedOrigin;
+    animTela = animVista = 1; ondaEm = 0; sair = savedExit; focoOrigem = savedOrigin; pickSel = savedPick;
     if (sequence == 4) {
       modo = savedMode; exibicao = savedView; reconstruir(); foco = saved;
       scrollY = savedScroll; velY = savedVelocity; focoOrigem = savedOrigin;
@@ -471,6 +480,10 @@ int main(int argc, char **argv) {
     return 0;
   }
   if (argc > 2 && !strcmp(argv[2], "mock")) {
+#ifdef NV_J1_SHOT
+    // Mock state: "Esconder assistidos" on and the user's lists loaded (Listas 14).
+    injetarListas(); esconderVistos = 1; reconstruir();
+#endif
     tecla(SDLK_DOWN); tecla(SDLK_DOWN); // source panel
     tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); // first row, second poster
     snprintf(nome, sizeof nome, "%s-grid.bmp", saida); captura(nome);

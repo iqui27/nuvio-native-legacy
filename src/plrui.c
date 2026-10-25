@@ -221,6 +221,10 @@ static GfxRect segPilulaRect(const float *w, int n, float sel, float x, float y)
 }
 float plrui_seg(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
                 float x, float y, float a) {
+  return plrui_seg_ex(rotulos, contagem, n, -1, sel, ed, x, y, a, 0);
+}
+float plrui_seg_ex(const char *const *rotulos, const int *contagem, int n, int escolhido,
+                   float sel, float ed, float x, float y, float a, int leve) {
   float w[8], tot = SEG_PAD * 2.0f, xx;
   TxtLinha t[8], c[8];
   int i, vid = ajustes_vidro(), tinta = plrui_tinta();
@@ -229,9 +233,12 @@ float plrui_seg(const char *const *rotulos, const int *contagem, int n, float se
   // continuam desenhando exatamente como antes.
   float pos = sel, fEd = anim_clamp(ed, 0.0f, 1.0f);
   int selI = pos < 0.0f ? -1 : (int)(pos + 0.5f);
+  // `escolhido` >= 0: the chosen item is not the focused one (Library tabs:
+  // arrows move focus, OK chooses). -1 = the same item, as the player sheets.
+  int ch = escolhido >= 0 ? escolhido : selI;
   if (n > 8) n = 8;
   for (i = 0; i < n; i++) {
-    int s = i == selI, f = s && fEd > 0.5f;
+    int s = i == ch, f = i == selI && fEd > 0.5f;
     int cor = f ? tinta : 243;
     t[i] = txt_linha(TXT_ILHA_SEG, rotulos[i], cor, cor, cor, f || s ? 255 : 140);
     memset(&c[i], 0, sizeof c[i]);
@@ -247,14 +254,19 @@ float plrui_seg(const char *const *rotulos, const int *contagem, int n, float se
   }
   if (x < 0.0f) return tot;
   { GfxRect tr = { x, y, tot, SEG_IH + SEG_PAD * 2.0f };
-    if (vid) gfx_vidro_folha(tr, 0.5f, a);
+    // `leve`: the rimless .seg track of the 2.1 mocks (white .06 over glass).
+    if (vid && leve) gfx_cor(tr, 0.5f, 1, 1, 1, 0.06f * a);
+    else if (vid) gfx_vidro_folha(tr, 0.5f, a);
     else gfx_cor(tr, 0.5f, 0.114f, 0.118f, 0.137f, a); }
   xx = x + SEG_PAD;
   for (i = 0; i < n; i++) {
     GfxRect ir = { xx, y + SEG_PAD, w[i], SEG_IH };
     // A pilula de foco desliza entre os chips (posicao fracionaria) e esmaece
     // ao entrar/sair do segmentado; o realce de SELECAO fica no chip inteiro.
-    if (i == selI) {
+    if (i == ch && ch != selI) {
+      if (vid) gfx_cor(ir, 0.5f, 1, 1, 1, 0.14f * a);
+      else gfx_cor(ir, 0.5f, 0.204f, 0.212f, 0.243f, a);
+    } else if (i == selI) {
       if (fEd < 0.5f) {
         if (vid) gfx_cor(ir, 0.5f, 1, 1, 1, 0.14f * a);
         else gfx_cor(ir, 0.5f, 0.204f, 0.212f, 0.243f, a);

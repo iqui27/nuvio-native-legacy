@@ -66,6 +66,10 @@ float plrui_dicas_video(const char *const *teclas, const char *const *rotulos, i
 // desliza entre os chips (sel) e esmaece ao entrar/sair do segmentado (ed).
 float plrui_seg(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
                 float x, float y, float a);
+// plrui_seg with the chosen item apart from the focus pill (`escolhido`, -1 =
+// same as `sel`) and `leve` = rimless track for the 2.1 mock surfaces.
+float plrui_seg_ex(const char *const *rotulos, const int *contagem, int n, int escolhido,
+                   float sel, float ed, float x, float y, float a, int leve);
 
 // A BARRA DE PROGRESSO, a mesma em todo lugar (OSD, pausa, ao vivo, trailer):
 // trilho branco 20% com cantos redondos, o buffer a 30%, o andado no acento.

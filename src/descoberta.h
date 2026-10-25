@@ -86,6 +86,8 @@ void desc_refazer_continuar(void);
 // uma pedida para o fim dela) ou o "Continuar assistindo" sendo refeito. E o
 // que a troca de perfil espera antes de mostrar a home (app.c).
 int  desc_montando(void);
+// Last cycle that brought rows from the network (SDL_GetTicks); 0 if none yet.
+unsigned desc_ultimo_ok(void);
 // `ativo` aqui e so a volta VISIVEL (arranque ou pedida pela pessoa): o que
 // acende o alerta da ilha. O Continuar refeito e as voltas silenciosas nao.
 typedef struct { int ativo, fase, fileiras, falhas, addonsProntos, addonsTotal; unsigned ms; } DescHomeCarga;
