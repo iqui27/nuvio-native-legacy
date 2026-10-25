@@ -3544,6 +3544,19 @@ static void biblioteca_desenhar_(Uint32 agora) {
   }
   tex_pedido_fora(0);
   gfx_sem_recorte();
+  if (serverRows && !temAberta) {
+    const char *keys[] = { "OK", "Voltar" };
+    char open[160];
+    snprintf(open, sizeof open, "%s · %s", i18n("Abrir título"), i18n("Segure OK para opções"));
+    const char *labels[] = { open, i18n("Voltar") };
+    float y = NV_TELA_H - 38.0f;
+    plrui_dicas(keys, labels, 2, paginaX(), y, 0, 1);
+    const ContaPerfil *perfil = perfis_item_ativo();
+    char status[128];
+    snprintf(status, sizeof status, "%s · %s", perfil && perfil->nome[0] ? perfil->nome : i18n("Perfil"), i18n("Só nesta TV"));
+    TxtLinha t = txt_linha(TXT_ILHA_APOIO, status, 128, 128, 126, 255);
+    txt_desenhar(t, bibDireita() - t.w, y - t.h * .5f);
+  }
   desenhaCompartilhar();
   if (teclado_aberto()) teclado_desenhar(agora);
   gfx_borda_foco_atual = 1.0f;
