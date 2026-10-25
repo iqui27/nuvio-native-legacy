@@ -34,6 +34,7 @@ int main(void) {
   assert(modo == MODO_LISTAS && fonte == FONTE_TRAKT);
   key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
   assert(fonte == FONTE_TRAKT);
+  listaTab = 1;   // 6D "Minhas listas" has no Source chip; Seguindo keeps it
   const char *rot, *val;
   pickerTexto(0, &rot, &val);
   assert(!strcmp(val, "Trakt"));

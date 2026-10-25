@@ -370,6 +370,34 @@ static void injetarListas(void) {
   quadros(4);
 }
 
+#ifdef NV_J1_SHOT
+// Mock 6D: the profile's own Trakt lists (bare /users/me/lists JSON), the first
+// one public, described and edited four days ago.
+static void injetarMinhas(void) {
+  static const struct { const char *nome, *desc, *priv; int n; } L[] = {
+    { "Filmes para domingo cedo", "Curtos, claros, sem violência. O que eu boto quando a casa ainda está dormindo.", "public", 18 },
+    { "Para ver com o pai", "", "private", 9 },
+    { "Melhores de 2025", "", "public", 25 },
+    { "Maratona de irmãs", "", "public", 12 },
+    { "Plano para ver", "", "private", 37 },
+  };
+  char json[4000], quando[64];
+  time_t t = time(NULL) - 4 * 86400;
+  strftime(quando, sizeof quando, "\"updated_at\":\"%Y-%m-%dT08:30:00.000Z\",", gmtime(&t));
+  size_t k = (size_t)snprintf(json, sizeof json, "[");
+  for (int i = 0; i < 5; i++)
+    k += (size_t)snprintf(json + k, sizeof json - k,
+        "%s{\"name\":\"%s\",\"description\":\"%s\",\"privacy\":\"%s\",\"item_count\":%d,%s"
+        "\"ids\":{\"trakt\":%d,\"slug\":\"l%d\"},\"user\":{\"username\":\"marina\",\"ids\":{\"slug\":\"marina\"}}}",
+        i ? "," : "", L[i].nome, L[i].desc, L[i].priv, L[i].n,
+        i ? "" : quando, 1049900 + i, i);
+  snprintf(json + k, sizeof json - k, "]");
+  quadros(40);
+  lst_ler_trakt(json, 0);
+  quadros(4);
+}
+#endif
+
 int main(int argc, char **argv) {
   const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-biblioteca");
   // "lista" no segundo argumento COMECA em exibicao de lista, sem ter desenhado
@@ -526,14 +554,38 @@ int main(int argc, char **argv) {
     snprintf(nome, sizeof nome, "%s-watched.bmp", saida); captura(nome);
     biblioteca_iniciar();
     for (int i = 0; i < 4; i++) tecla(SDLK_RIGHT);
-    tecla(SDLK_RETURN); injetarListas();
+    tecla(SDLK_RETURN);
+#ifdef NV_J1_SHOT
+    // 6D: own lists as rows, the panel of the focused one on the right.
+    injetarMinhas();
+    { static const int viu[] = { 11, 3, 25, 5, -1 };
+      for (int i = 0; i < lst_n(); i++) {
+        CatItem posters[4];
+        for (int j = 0; j < 4; j++) posters[j] = *cat_item((i * 3 + j + 5) % cat_n());
+        LstLista l = *lst_lista(i); lst_previa_registrar(&l, posters, 4);
+        lst_previa_resumo(&l, i ? "" : "Começa com café na mesa. Funciona toda vez.", viu[i]);
+      } }
+    tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT);
+    ASSERTA(!focoOrigem && celulaEmFoco() == 0, "D-pad reaches the first own list row");
+    snprintf(nome, sizeof nome, "%s-lists.bmp", saida); captura(nome);
+    tecla(SDLK_RIGHT);
+    ASSERTA(focoPainel, "Right moves from the rows into the list panel");
+    tecla(SDLK_LEFT);
+    ASSERTA(!focoPainel && celulaEmFoco() == 0, "Left returns from the panel to the row");
+    tecla(SDLK_UP); tecla(SDLK_UP);   // 6B below opens a public list of someone else
+#endif
+    injetarListas();
     for (int i = 0; i < lst_n(); i++) {
       CatItem posters[4];
       for (int j = 0; j < 4; j++) posters[j] = *cat_item((i * 3 + j) % cat_n());
       LstLista l = *lst_lista(i); lst_previa_registrar(&l, posters, 4);
     }
+#ifdef NV_J1_SHOT
+    focoOrigem = 0; foco.fileira = gradeIni(); foco.coluna = 0; quadros(10);
+#else
     tecla(SDLK_DOWN); tecla(SDLK_RIGHT); tecla(SDLK_DOWN);
     snprintf(nome, sizeof nome, "%s-lists.bmp", saida); captura(nome);
+#endif
     CatItem trail[8]; DescItemLista notes[8] = {0};
     for (int i = 0; i < 8; i++) {
       trail[i] = *cat_item(i);
@@ -552,6 +604,12 @@ int main(int argc, char **argv) {
       tecla(SDLK_LEFT);
       biblioteca_teste_estado(&ed, &action, &grabbed, &sharing, &row);
       ASSERTA(row == 0, "Left returns from items to actions");
+#ifdef NV_J1_SHOT
+      tecla(SDLK_UP);
+      ASSERTA(focoCont && pagProximo >= 0, "Up from the actions reaches Continuar");
+      tecla(SDLK_DOWN);
+      ASSERTA(!focoCont && foco.fileira == 0, "Down returns from Continuar to the actions");
+#endif
     }
     snprintf(nome, sizeof nome, "%s-list-page.bmp", saida); captura(nome);
     for (int i = 0; i < 7; i++) tecla(SDLK_RIGHT);

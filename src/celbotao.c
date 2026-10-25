@@ -199,6 +199,14 @@ static void qrDesenhar(const char *u, float x, float y, float a) {
 // lista), sem servidor nem token.
 float celb_qr_lado(void) { return CB_QR + 2 * CB_MOLDURA; }
 void  celb_qr_desenhar(const char *url, float x, float y, float a) { qrDesenhar(url, x, y, a); }
+void celb_qr_desenhar_lado(const char *url, float x, float y, float lado, float a) {
+  float m = lado * CB_MOLDURA / celb_qr_lado();
+  qrTextura(url);
+  if (!texQr) return;
+  gfx_cor((GfxRect){ x, y, lado, lado }, 0.06f, 1.0f, 1.0f, 1.0f, a);
+  gfx_tex_aspect_atual = 0.0f;
+  gfx_rect((GfxRect){ x + m, y + m, lado - 2 * m, lado - 2 * m }, texQr, GFX_SNAP, 0, 0.0f, 0.0f, 0.0f, 0, 0, 0, a);
+}
 void celb_desenhar_qr_em(int d, GfxRect r, float alpha) {
   if (!celb_embutido(d)) return;
   const char *u = celular_url();
