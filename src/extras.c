@@ -1243,10 +1243,8 @@ static void *buscar(void *arg) {
             js_texto(c, js_fim(c), "name", livro, sizeof livro);
             if (livro[0]) idLivro = (long)js_num(c, js_fim(c), "id", 0.0);
           }
-          pthread_mutex_lock(&trava);
-          if (!strcmp(id, idPedido) && sessaoDoFioAtual())
-            snprintf(livroAutor, sizeof livroAutor, "%s", livro);
-          pthread_mutex_unlock(&trava);
+          // The enclosing TMDB publication already holds trava and checks id/session.
+          snprintf(livroAutor, sizeof livroAutor, "%s", livro);
         }
 
         // Movie alert eligibility uses dates already present in this response.
