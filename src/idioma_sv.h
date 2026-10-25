@@ -717,6 +717,7 @@
   T("Adicionada à Home", "Tillagd på Hem"),
   T("Adicionado a %s", "Tillagd i %s"),
   T("Adicionado pelo código", "Tillagd med kod"),
+  T("Adicionados por último", "Senast tillagda"),
   T("Adicionando ao seu TorBox…", "Lägger till i ditt TorBox…"),
   T("Adicionando à biblioteca...", "Lägger till i biblioteket..."),
   T("Adicionar", "Lägg till"),

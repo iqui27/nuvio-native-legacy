@@ -717,6 +717,7 @@
   T("Adicionada à Home", "Dodano do ekranu głównego"),
   T("Adicionado a %s", "Dodano do %s"),
   T("Adicionado pelo código", "Dodano kodem"),
+  T("Adicionados por último", "Ostatnio dodane"),
   T("Adicionando ao seu TorBox…", "Dodawanie do Twojego TorBox…"),
   T("Adicionando à biblioteca...", "Dodawanie do biblioteki..."),
   T("Adicionar", "Dodaj"),

@@ -716,6 +716,7 @@
   { "Adicionada à Home", "Added to Home" },
   { "Adicionado a %s", "Added to %s" },
   { "Adicionado pelo código", "Added by code" },
+  { "Adicionados por último", "Added last" },
   { "Adicionando ao seu TorBox…", "Adding it to your TorBox…" },
   { "Adicionando à biblioteca...", "Adding to library..." },
   { "Adicionar", "Add" },

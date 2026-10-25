@@ -716,6 +716,7 @@
   T("Adicionada à Home", "Добавлено на главную"),
   T("Adicionado a %s", "Добавлено в %s"),
   T("Adicionado pelo código", "Добавлено по коду"),
+  T("Adicionados por último", "Добавленные последними"),
   T("Adicionando ao seu TorBox…", "Добавляем в ваш TorBox…"),
   T("Adicionando à biblioteca...", "Добавление в библиотеку..."),
   T("Adicionar", "Добавить"),

@@ -717,6 +717,7 @@
   T("Adicionada à Home", "ホームに追加しました"),
   T("Adicionado a %s", "%s に追加しました"),
   T("Adicionado pelo código", "コードで追加"),
+  T("Adicionados por último", "最近追加した順"),
   T("Adicionando ao seu TorBox…", "TorBox に追加しています…"),
   T("Adicionando à biblioteca...", "ライブラリに追加しています..."),
   T("Adicionar", "追加"),

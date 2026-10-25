@@ -717,6 +717,7 @@
   T("Adicionada à Home", "Ana ekrana eklendi"),
   T("Adicionado a %s", "%s listesine eklendi"),
   T("Adicionado pelo código", "Kodla eklendi"),
+  T("Adicionados por último", "Son eklenenler"),
   T("Adicionando ao seu TorBox…", "TorBox'ınıza ekleniyor…"),
   T("Adicionando à biblioteca...", "Kitaplığa ekleniyor..."),
   T("Adicionar", "Ekle"),

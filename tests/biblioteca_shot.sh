@@ -46,7 +46,7 @@ if [ "${NV_J1_SHOT:-}" = 1 ]; then
   cp "$tmp/shot" "$saida/capture"
   for scale in ${NV_J1_SCALES:-1 .85 .9 1.1 1.2 1.3}; do
     for glass in 1 0; do
-      for mode in mock servers; do
+      for mode in ${NV_J1_MODES:-mock servers}; do
         mkdir -p "$saida/$scale-$glass/$mode"
         NUVIO_RAIL="${NUVIO_RAIL:-moderna}" NUVIO_SHOT_RELOGIO=1 NUVIO_SHOT_PT=1 \
         NUVIO_SHOT_ESCALA_TEXTO="$scale" NUVIO_SHOT_VIDRO="$glass" \

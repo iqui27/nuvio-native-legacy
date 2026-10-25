@@ -716,6 +716,7 @@
   T("Adicionada à Home", "Adăugat pe Acasă"),
   T("Adicionado a %s", "Adăugat în %s"),
   T("Adicionado pelo código", "Adăugat prin cod"),
+  T("Adicionados por último", "Adăugate recent"),
   T("Adicionando ao seu TorBox…", "Se adaugă în TorBox…"),
   T("Adicionando à biblioteca...", "Se adaugă în bibliotecă..."),
   T("Adicionar", "Adaugă"),

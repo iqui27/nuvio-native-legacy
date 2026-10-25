@@ -717,6 +717,7 @@
   T("Adicionada à Home", "Προστέθηκε στην Αρχική"),
   T("Adicionado a %s", "Προστέθηκε στη λίστα %s"),
   T("Adicionado pelo código", "Προστέθηκε με κωδικό"),
+  T("Adicionados por último", "Προστέθηκαν τελευταία"),
   T("Adicionando ao seu TorBox…", "Προσθήκη στο TorBox σας…"),
   T("Adicionando à biblioteca...", "Προσθήκη στη βιβλιοθήκη..."),
   T("Adicionar", "Προσθήκη"),

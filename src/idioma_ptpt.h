@@ -717,6 +717,7 @@
   T("Adicionada à Home", "Adicionada ao Início"),
   T("Adicionado a %s", "Adicionado a %s"),
   T("Adicionado pelo código", "Adicionado pelo código"),
+  T("Adicionados por último", "Adicionados por último"),
   T("Adicionando ao seu TorBox…", "A adicionar ao seu TorBox…"),
   T("Adicionando à biblioteca...", "A adicionar à biblioteca..."),
   T("Adicionar", "Adicionar"),

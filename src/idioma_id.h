@@ -717,6 +717,7 @@
   T("Adicionada à Home", "Ditambahkan ke Beranda"),
   T("Adicionado a %s", "Ditambahkan ke %s"),
   T("Adicionado pelo código", "Ditambahkan dengan kode"),
+  T("Adicionados por último", "Terakhir ditambahkan"),
   T("Adicionando ao seu TorBox…", "Menambahkan ke TorBox Anda…"),
   T("Adicionando à biblioteca...", "Menambahkan ke pustaka..."),
   T("Adicionar", "Tambah"),

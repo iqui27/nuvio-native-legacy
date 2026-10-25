@@ -717,6 +717,7 @@
   T("Adicionada à Home", "أُضيف إلى الرئيسية"),
   T("Adicionado a %s", "Added to %s"),
   T("Adicionado pelo código", "أُضيف بالرمز"),
+  T("Adicionados por último", "أُضيف آخر مرة"),
   T("Adicionando ao seu TorBox…", "جارٍ إضافته إلى TorBox…"),
   T("Adicionando à biblioteca...", "جارٍ الإضافة إلى المكتبة..."),
   T("Adicionar", "إضافة"),

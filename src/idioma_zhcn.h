@@ -717,6 +717,7 @@
   T("Adicionada à Home", "已添加到主页"),
   T("Adicionado a %s", "已添加到 %s"),
   T("Adicionado pelo código", "通过代码添加"),
+  T("Adicionados por último", "最近添加"),
   T("Adicionando ao seu TorBox…", "正在添加到您的 TorBox…"),
   T("Adicionando à biblioteca...", "正在添加到媒体库..."),
   T("Adicionar", "添加"),

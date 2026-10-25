@@ -256,8 +256,8 @@ static int bibTinta2(void) { return 205; }
 // Corpos calibrados pela LARGURA medida na captura do mockup (ver a mesma nota
 // em agendaui.c, escTitulo): a Inter variavel do navegador e ~9% mais larga
 // abaixo de 24 px que a Inter estatica daqui.
-#define BIB_TOPO         124.0f
-#define BIB_FAIXA_Y      232.0f
+#define BIB_TOPO         (124.0f / bibHS())
+#define BIB_FAIXA_Y      (232.0f / bibHS())
 #define BIB_SEG_H         NV_CTRL_H   // .seg: 5 + (23 + 2 x 11) + 5
 #define BIB_SEG_PAD        5.0f
 #define BIB_SEG_ITEM_PADX 20.0f
@@ -583,7 +583,7 @@ static float bibControleMax(void) { return (hdrW() - BIB_FAIXA_GAP * 2.0f) / (fl
 // paisagem, quando abas + chips nao cabem na largura (ver bibFaixaQuebra).
 static int bibFaixaQuebra(void);
 static float pickerY(void) {
-  return 312.0f;
+  return 312.0f / bibHS();
 }
 // Cartazes: o cartaz fica nos 268 medidos e sai uma coluna (6 -> 5 com a rail
 // fixa: 5 x 268 + 4 x 24 = 1436 nos 1584). Encolher o cartaz para manter seis
@@ -658,7 +658,7 @@ static float gradeY(void) {
   // (mockup: etiqueta em ~395, primeira linha em ~433).
   if (modoLinha() && estado() == EST_TITULOS) return BIB_GRADE_Y_TITULOS + BIB_TL_CAB;
   float y = estado() == EST_ITENS ? BIB_GRADE_Y_ABERTA : BIB_GRADE_Y_TITULOS;
-  y *= bibRel();
+  y = !temAberta && modo != MODO_LISTAS ? ANC(y) : y * bibRel();
   if (modo == MODO_ASSISTIDOS && modoLinha()) y += 44;
   return paginaLista() && !trilha ? 124.0f : y;
 }
@@ -2193,7 +2193,7 @@ static void pickerTexto(int p, const char **rot, const char **val) {
   } else {
     *rot = p == 0 ? "Tipo" : p == 1 ? "Gênero" : p == 2 ? "Ordem" : p == 3 ? "Esconder assistidos" : "";
     *val = p == 0 ? (tipo == TIPO_TODOS ? "Filmes e séries" : ROT_TIPO[tipo])
-         : p == 1 ? generos[generoSel] : p == 2 ? ROT_ORD[ordem] : "";
+         : p == 1 ? generos[generoSel] : p == 2 ? (ordem == ORD_ADICIONADOS ? "Adicionados por último" : ROT_ORD[ordem]) : "";
   }
 }
 
@@ -2209,8 +2209,8 @@ static float pickerLarguraNat(int p) {
   if (modo != MODO_LISTAS && p >= bibViewStart()) return BIB_VIS_W;
   const char *rot, *val;
   pickerTexto(p, &rot, &val);
-  return (float)txt_linha(TXT_HERO_SEC, rot, 245, 245, 245, 255).w * BIB_ESC_VAL + 8.0f
-       + (float)txt_linha(TXT_CAPTION2, val, 117, 117, 117, 255).w * BIB_ESC_ROT
+  return (float)txt_linha(TXT_HERO_SEC, rot, 245, 245, 245, 255).w + 8.0f
+       + (float)txt_linha(TXT_ILHA_SUB, val, 117, 117, 117, 255).w
        + BIB_CHIP_PADX * 2.0f + (pickerPonto(p) ? 17.0f : 0.0f);
 }
 
@@ -2286,16 +2286,16 @@ static void desenhaPicker(int p, float f) {
     pickerTexto(p, &rot, &val);
     if (bibRetrato()) {
       float util = r.w - BIB_CHIP_PADX * 2.0f - px;
-      tr = txt_linha_corta(TXT_HERO_SEC, rot, rotulo, rotulo, rotulo, 255, util * .55f / BIB_ESC_VAL);
-      tv = txt_linha_corta(TXT_CAPTION2, val, valor, valor, valor, 255,
-                           (util - (float)tr.w * BIB_ESC_VAL - 8.0f) / BIB_ESC_ROT);
+      tr = txt_linha_corta(TXT_HERO_SEC, rot, rotulo, rotulo, rotulo, 255, util * .55f);
+      tv = txt_linha_corta(TXT_ILHA_SUB, val, valor, valor, valor, 255,
+                           util - (float)tr.w - 8.0f);
     } else {
       tr = txt_linha(TXT_HERO_SEC, rot, rotulo, rotulo, rotulo, 255);
-      tv = txt_linha(TXT_CAPTION2, val, valor, valor, valor, 255);
+      tv = txt_linha(TXT_ILHA_SUB, val, valor, valor, valor, 255);
     }
-    txtEsc(tr, x, r.y + (r.h - (float)tr.h * BIB_ESC_VAL) * 0.5f, BIB_ESC_VAL, 1.0f);
-    x += (float)tr.w * BIB_ESC_VAL + 8.0f;
-    txtEsc(tv, x, r.y + (r.h - (float)tv.h * BIB_ESC_ROT) * 0.5f, BIB_ESC_ROT, 1.0f); }
+    txt_desenhar(tr, x, r.y + (r.h - (float)tr.h) * 0.5f);
+    x += (float)tr.w + 8.0f;
+    txt_desenhar(tv, x, r.y + (r.h - (float)tv.h) * 0.5f); }
 }
 
 // Barra de acoes de uma lista aberta: fixar, levar para a Home e trocar o tipo
@@ -3098,25 +3098,25 @@ static void desenhaOrigens(void) {
     }
     return;
   }
-  GfxRect painel = { paginaX(), 388.0f, 320.0f, fminf(700, 50 + nOrigens() * 76 + (serverRows ? 54 : 0) + 96) };
+  GfxRect painel = { paginaX(), ANC(388.0f), 320.0f, fminf(700, 50 + nOrigens() * 76 + (serverRows ? 54 : 0) + 96) };
   // .vid of the mock: island glass without the light rim.
   gfx_vidro_sem_aro = 1; t21_ilha(painel, T21_R_SHEET, 1); gfx_vidro_sem_aro = 0;
   // Heading as in the mock: tracked caps, dim.
-  txt_tracking(TXT_MINI, seloCaixaAlta("Origens"), 115, 117, 122, painel.x + 30, painel.y + 20, 1.0f, 2.2f);
-  const char *sub[] = { "sem repetir títulos", "watchlist", "plano para ver", "salvos neste perfil" };
+  txt_tracking(TXT_MINI, seloCaixaAlta(i18n("Origens")), 115, 117, 122, painel.x + 30, painel.y + 20, 1.0f, 2.2f);
+  const char *sub[] = { i18n("sem repetir títulos"), i18n("watchlist"), i18n("plano para ver"), i18n("salvos neste perfil") };
   float footerY = 0;
   const char *letra[] = { "", "T", "S", "N" };
   int vis = (int)((painel.h - 50 - 96) / 76), start = focoOrigem && origemSel > vis - 1 ? origemSel - (vis - 1) : 0;
   for (int i = start; i < nOrigens() && i < start + vis; i++) {
     const char *name = rotuloOrigem(i, 0);
-    const char *description = i < BIB_N_ORIG ? sub[i] : "lista do add-on";
+    const char *description = i < BIB_N_ORIG ? sub[i] : i18n("lista do add-on");
     int count = i < BIB_N_ORIG ? contaOrigem[i] : 0;
     if (i >= BIB_N_ORIG && i < BIB_N_ORIG + nAddonOrigens) {
       count = addonOrigens[i - BIB_N_ORIG].count;
     } else if (i >= BIB_N_ORIG + nAddonOrigens) {
       const char *serverSub = NULL;
       if (!serverRows || !serverRows(i - BIB_N_ORIG - nAddonOrigens, &name, &serverSub, &count)) continue;
-      description = serverSub ? serverSub : "Biblioteca";
+      description = serverSub ? serverSub : i18n("Biblioteca");
     }
     GfxRect row = { painel.x + 12, painel.y + 50 + (i - start) * 76, 296, 76 };
     ponteiro_alvo(row.x, row.y, row.w, row.h, ponteiroOrigem, NULL, i, 0);
@@ -3137,8 +3137,8 @@ static void desenhaOrigens(void) {
       gfx_cor((GfxRect){tx, row.y + 29, 7, 7}, .5f, ar, ag, ab, 1);
       tx += 16;
     }
-    txt_desenhar(txt_linha_corta(TXT_ILHA_NOME, name, 243, 242, 239, 255, row.x + row.w - tx - 48), tx, row.y + 14);
-    txt_desenhar(txt_linha(TXT_MINI, description, 98, 100, 106, 255), tx, row.y + 44);
+    txt_desenhar(txt_linha_corta(TXT_AJ_SEG, name, 243, 242, 239, 255, row.x + row.w - tx - 48), tx, row.y + 14);
+    txt_desenhar(txt_linha(TXT_ILHA_HORA, i18n(description), 98, 100, 106, 255), tx, row.y + 44);
     char num[16]; snprintf(num, sizeof num, "%d", count);
     TxtLinha ct = txt_linha(TXT_HERO_META, num, 140, 142, 148, 255);
     txt_desenhar(ct, row.x + row.w - 18 - ct.w, row.y + 26);
@@ -3147,14 +3147,14 @@ static void desenhaOrigens(void) {
   if (serverRows && footerY && footerY + 52 < painel.y + painel.h - 90) {
     // The approved Library mock keeps server actions under the origins list:
     // one connect entry and one manage entry, both opening the same setup.
-    txt_desenhar(txt_linha_corta(TXT_MINI, "+ Conectar servidor", 150, 153, 162, 255, 280), painel.x + 18, footerY + 8);
-    txt_desenhar(txt_linha_corta(TXT_MINI, "Gerenciar conexões", 150, 153, 162, 255, 280), painel.x + 18, footerY + 30);
+    txt_desenhar(txt_linha_corta(TXT_MINI, i18n("+ Conectar servidor"), 150, 153, 162, 255, 280), painel.x + 18, footerY + 8);
+    txt_desenhar(txt_linha_corta(TXT_MINI, i18n("Gerenciar conexões"), 150, 153, 162, 255, 280), painel.x + 18, footerY + 30);
   }
   // Footer note of the mock: divider, then two muted lines.
   { float ny = painel.y + painel.h - 84;
     gfx_cor((GfxRect){painel.x + 18, ny, painel.w - 36, 1}, 0, 1, 1, 1, .07f);
-    txt_desenhar(txt_linha_corta(TXT_MINI, "O + salva em Trakt e Simkl.", 98, 100, 106, 255, 280), painel.x + 18, ny + 14);
-    txt_desenhar(txt_linha_corta(TXT_MINI, "Muda em Ajustes › Contas.", 98, 100, 106, 255, 280), painel.x + 18, ny + 38); }
+    txt_desenhar(txt_linha_corta(TXT_ILHA_HORA, i18n("O + salva em Trakt e Simkl."), 98, 100, 106, 255, 280), painel.x + 18, ny + 14);
+    txt_desenhar(txt_linha_corta(TXT_ILHA_HORA, i18n("Muda em Ajustes › Contas."), 98, 100, 106, 255, 280), painel.x + 18, ny + 38); }
   // Provider rows share this page's focus and title filters.
 }
 

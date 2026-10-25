@@ -717,6 +717,7 @@
   T("Adicionada à Home", "Hozzáadva a főoldalhoz"),
   T("Adicionado a %s", "Hozzáadva: %s"),
   T("Adicionado pelo código", "Kóddal hozzáadva"),
+  T("Adicionados por último", "Legutóbb hozzáadott"),
   T("Adicionando ao seu TorBox…", "Hozzáadás a TorBoxodhoz…"),
   T("Adicionando à biblioteca...", "Hozzáadás a könyvtárhoz..."),
   T("Adicionar", "Hozzáadás"),

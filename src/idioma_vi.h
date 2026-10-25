@@ -717,6 +717,7 @@
   T("Adicionada à Home", "Đã thêm vào Trang chủ"),
   T("Adicionado a %s", "Đã thêm vào %s"),
   T("Adicionado pelo código", "Đã thêm bằng mã"),
+  T("Adicionados por último", "Được thêm gần nhất"),
   T("Adicionando ao seu TorBox…", "Đang thêm vào TorBox của bạn…"),
   T("Adicionando à biblioteca...", "Đang thêm vào thư viện..."),
   T("Adicionar", "Thêm"),

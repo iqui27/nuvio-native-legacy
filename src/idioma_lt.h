@@ -717,6 +717,7 @@
   T("Adicionada à Home", "Pridėta į Pradžią"),
   T("Adicionado a %s", "Pridėta į %s"),
   T("Adicionado pelo código", "Pridėta kodu"),
+  T("Adicionados por último", "Paskiausiai pridėti"),
   T("Adicionando ao seu TorBox…", "Pridedama į jūsų TorBox…"),
   T("Adicionando à biblioteca...", "Pridedama į biblioteką..."),
   T("Adicionar", "Pridėti"),

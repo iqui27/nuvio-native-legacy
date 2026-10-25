@@ -717,6 +717,7 @@
   T("Adicionada à Home", "Přidáno na úvodní obrazovku"),
   T("Adicionado a %s", "Přidáno do %s"),
   T("Adicionado pelo código", "Přidáno kódem"),
+  T("Adicionados por último", "Naposledy přidané"),
   T("Adicionando ao seu TorBox…", "Přidávám do vašeho TorBoxu…"),
   T("Adicionando à biblioteca...", "Přidávání do knihovny..."),
   T("Adicionar", "Přidat"),

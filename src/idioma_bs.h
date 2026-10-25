@@ -717,6 +717,7 @@
   T("Adicionada à Home", "Dodano na Početnu"),
   T("Adicionado a %s", "Dodano na %s"),
   T("Adicionado pelo código", "Dodano kodom"),
+  T("Adicionados por último", "Posljednje dodano"),
   T("Adicionando ao seu TorBox…", "Dodajem u vaš TorBox…"),
   T("Adicionando à biblioteca...", "Dodavanje u biblioteku..."),
   T("Adicionar", "Dodaj"),

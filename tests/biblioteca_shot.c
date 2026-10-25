@@ -114,6 +114,7 @@ static void j1_movimento(const char *nome) {
   int savedExit = sair, savedOrigin = focoOrigem, savedMode = modo, savedView = exibicao, savedPick = pickSel;
   int oldCount = nVistaAnterior;
   for (int sequence = 0; sequence < 7; sequence++) {
+    if (getenv("NV_J1_MENU") && sequence != 1 && sequence != 5 && sequence != 6) continue;
     Uint32 base = SDL_GetTicks();
     if (!sequence) {
       focoOrigem = 0; foco.fileira = gradeIni(); foco.coluna = 0;
@@ -158,7 +159,11 @@ static void j1_movimento(const char *nome) {
       glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
       for (int y = 0; y < 1080; y++) memcpy((char *)surface->pixels + y * surface->pitch, pixels + (1079-y)*1920*4, 1920*4);
       char path[1024]; snprintf(path, sizeof path, "%s-%s-%03d.png", nome, names[sequence], times[frame]);
-      assert(!IMG_SavePNG(surface, path)); SDL_FreeSurface(surface); free(pixels);
+      if (getenv("NV_J1_MENU")) {
+        snprintf(path, sizeof path, "%s-%s-%03d.bmp", nome, names[sequence], times[frame]);
+        assert(!SDL_SaveBMP(surface, path));
+      } else assert(!IMG_SavePNG(surface, path));
+      SDL_FreeSurface(surface); free(pixels);
     }
     foco = saved; scrollY = savedScroll; velY = savedVelocity;
     memcpy(animFoco, savedFocus, sizeof savedFocus);
@@ -210,7 +215,7 @@ static void captura(const char *nome) {
   assert(s);
   for (y = 0; y < 1080; y++)
     memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
-  if (getenv("NV_J1_SHOT")) assert(IMG_SavePNG(s, nome) == 0);
+  if (getenv("NV_J1_SHOT") && !getenv("NV_J1_MENU")) assert(IMG_SavePNG(s, nome) == 0);
   else assert(SDL_SaveBMP(s, nome) == 0);
   SDL_FreeSurface(s);
   free(pix);
@@ -479,14 +484,25 @@ int main(int argc, char **argv) {
     snprintf(nome, sizeof nome, "%s-listas-servidor.bmp", saida); captura(nome);
     return 0;
   }
-  if (argc > 2 && !strcmp(argv[2], "mock")) {
+  if (argc > 2 && (!strcmp(argv[2], "mock") || !strcmp(argv[2], "menu"))) {
 #ifdef NV_J1_SHOT
     // Mock state: "Esconder assistidos" on and the user's lists loaded (Listas 14).
-    injetarListas(); esconderVistos = 1; reconstruir();
+    if (!strcmp(argv[2], "menu")) {
+      char json[5000];
+      size_t used = (size_t)snprintf(json, sizeof json, "[");
+      for (int i = 0; i < 14; i++)
+        used += (size_t)snprintf(json + used, sizeof json - used,
+          "%s{\"name\":\"Library list %d\",\"ids\":{\"trakt\":%d}}", i ? "," : "", i + 1, 800000 + i);
+      snprintf(json + used, sizeof json - used, "]");
+      lst_ler_trakt(json, 0);
+      assert(lst_n() == 14);
+    } else injetarListas();
+    esconderVistos = 1; reconstruir();
 #endif
     tecla(SDLK_DOWN); tecla(SDLK_DOWN); // source panel
     tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); // first row, second poster
     snprintf(nome, sizeof nome, "%s-grid.bmp", saida); captura(nome);
+    if (!strcmp(argv[2], "menu")) return falhasTela ? 1 : 0;
 #ifdef NV_J1_SHOT
     ASSERTA(nVistaAtual > 0, "Library retains rendered outgoing cells");
     remapear(0);

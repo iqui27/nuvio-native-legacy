@@ -717,6 +717,7 @@
   T("Adicionada à Home", "Toegevoegd aan Start"),
   T("Adicionado a %s", "Toegevoegd aan %s"),
   T("Adicionado pelo código", "Toegevoegd met code"),
+  T("Adicionados por último", "Laatst toegevoegd"),
   T("Adicionando ao seu TorBox…", "Toevoegen aan je TorBox…"),
   T("Adicionando à biblioteca...", "Toevoegen aan bibliotheek..."),
   T("Adicionar", "Toevoegen"),
