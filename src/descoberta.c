@@ -4046,6 +4046,8 @@ static void publicarMontagem(const CatItem *lote, int n, const CatFileira *fils,
 // publicar antes da remocao (e ser corrigida por ela). Os DELETE remotos sao
 // de quem chama. Devolve quantos cards sairam.
 // Dispatcher state uses its short mutex; no network wait is held here.
+static unsigned descUltimoOk;
+unsigned desc_ultimo_ok(void) { return descUltimoOk; }
 int desc_montando(void) {
   int pendente;
   pthread_mutex_lock(&listaTrava);
@@ -5563,6 +5565,9 @@ static void *montar(void *u) {
   }
 #undef GARANTE
 
+  // Trakt/Simkl lists arrive in this cycle, not in sync.c: the Library's
+  // "sincronizado ha N min" reads this instant.
+  if (n || nFilsLote > 0) descUltimoOk = SDL_GetTicks() | 1u;
   if (n || nFilsLote > 0) {
     // SO PUBLICA SE MUDOU. A mesma home montada de novo (ciclo de 5 min, sync
     // sem novidade) tem a mesma assinatura que a da tela; republicar seria

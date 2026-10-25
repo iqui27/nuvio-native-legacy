@@ -69,9 +69,11 @@ typedef struct {
 
 // Small per-profile session previews, populated only when a list is opened.
 // No extra HTTP request per card; URLs only, no retained CatItem/GL texture.
-typedef struct { int n; char poster[4][512]; } LstPrevia;
+// `titulo`/`nota`: the first item and its curator note; `vistos` -1 = unknown.
+typedef struct { int n; char poster[4][512]; char titulo[128], nota[160]; int vistos; } LstPrevia;
 int lst_previa(const LstLista *l, LstPrevia *out);
 void lst_previa_registrar(const LstLista *l, const CatItem *itens, int n);
+void lst_previa_resumo(const LstLista *l, const char *nota, int vistos);
 void lst_previa_limpar(void);
 
 // --- ciclo de vida -----------------------------------------------------------

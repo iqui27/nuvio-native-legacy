@@ -37,7 +37,6 @@ int main(void) {
     short_ok();
     assert(home_pediu_tocar() == 1);
     assert(!home_pediu_abrir());
-    assert(!glance_aberto());
     assert(!home_pediu_tocar());
   }
   for (unsigned i = 0; i < sizeof types / sizeof *types; i++) {
@@ -46,13 +45,12 @@ int main(void) {
     short_ok();
     assert(home_pediu_abrir() == 1);
     assert(!home_pediu_tocar());
-    assert(!glance_aberto());
   }
   fileiras[0].tipo = FILEIRA_NORMAL;
   strcpy(fileiras[0].chave, "catalog");
   short_ok();
-  assert(glance_aberto());
-  assert(!home_pediu_tocar() && !home_pediu_abrir());
+  assert(home_pediu_abrir() == 1);
+  assert(!home_pediu_tocar());
   puts("cw_ok_home: PASS");
   return 0;
 }

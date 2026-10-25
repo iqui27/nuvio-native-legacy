@@ -18,7 +18,6 @@
 #include "teclado.h"
 #include "ponteiro.h"
 #include "app.h"
-#include "glance.h"
 #include "travarede.h"
 #include "travaui.h"
 #include "teclavoltar.h"
@@ -1061,7 +1060,6 @@ static int cacaDoPerfil;
 
 static void trocarTela(Tela nova) {
   if (nova == tela) return;
-  glance_fechar();
   if (nova != TELA_SOCIAL) socialDoPerfil = 0;
   if (nova != TELA_CACA) cacaDoPerfil = 0;
   if (tela == TELA_AJUSTES) ajustes_encerrar();
@@ -4418,11 +4416,6 @@ void app_evento(const SDL_Event *e) {
   // tela, e o que ele escolhe so e feito depois de ele fechar.
   if (spot_aberto()) { spot_evento(e); spotAtender(); return; }
 
-  if (glance_aberto()) {
-    if (ctx_aberto()) ctx_evento(e); else glance_evento(e);
-    return;
-  }
-
   // ALTERNA O PAINEL DE SALVOS, COM REPOUSO — e o repouso e o conserto.
   //
   // A TECLA AZUL MUDOU DE DONO. Ate esta versao ela abria o painel "Sua
@@ -4802,7 +4795,7 @@ static void trocaDeTituloSeSolicitada(void) {
     // O caminho do titulo que JA esta no catalogo (posplay_pediu_titulo)
     // encerra o player antes; este faz o mesmo.
     // Pedido de um MENU (segurar OK numa lista): o titulo chegou, abre o menu.
-    if (novo >= 0 && (glance_tomar_acao(novo) || ctxlista_tomar(novo))) novo = -1;
+    if (novo >= 0 && ctxlista_tomar(novo)) novo = -1;
     if (novo >= 0) {
       if (player_aberto() || player_retido()) player_encerrar();
       detail_volta_notar(novo);
@@ -4857,7 +4850,6 @@ static const char *homeTrailerBloqueio(void) {
   if (player_aberto() || player_retido() || player_mini_ativo()) return "player";
   if (detail_aberto()) return "detail";
   if (spainel_aberto()) return "saved-panel";
-  if (glance_aberto()) return "glance";
   if (menu_aberto() || ctx_aberto()) return "menu";
   if (vertudo_aberta()) return "see-all";
   if (avisos_aberto() || avisos_cartao_aberto()) return "notices";
@@ -7110,8 +7102,6 @@ void app_atualizar(float dt, Uint32 agora) {
     home_trailer_topo_motivo(porque);
     home_trailer_passo(porque == NULL, dt, agora); }
   trailer_atualizar(agora);
-  glance_atualizar(dt, agora);
-  if (detail_aberto() && glance_pediu_tocar(cat_item(detail_indice()))) detail_pedir_reproduzir();
   perfil_atualizar(dt, agora);
   // A Caca anda em toda tela: o aviso de conquista sai sem player (depois
   // dos creditos, na volta a Home), nunca durante o filme.
@@ -7250,9 +7240,6 @@ static void desenharAtrasDoPainel(void *ctx) {
     CAMADA_SE(1);
     ctx_desenhar(agora);
   }
-  CAMADA_SE(glance_aberto());
-  glance_desenhar(agora);
-  if (glance_aberto() && ctx_aberto()) { CAMADA_SE(1); ctx_desenhar(agora); }
   // A rail NAO existe na tela de detalhe do app web: ela e full-bleed e a
   // coluna de conteudo comeca em x=72, ou seja, DENTRO do que a rail ocuparia.
   // Com a rail por cima, o logo, o botao "Reproduzir" e a linha de duracao

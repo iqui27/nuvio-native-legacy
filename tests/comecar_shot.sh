@@ -7,7 +7,9 @@
 # Sem rede: traktauth_comecar parte só com a chave de rede, e aqui ele falha
 # limpo — a regra testada é a de UI.
 #
-#   bash tests/comecar_shot.sh tests/out/comecar
+# Default: all steps at 80/85/100/115/130%, with control and painted bounds checks.
+# Set NUVIO_SHOT_ESCALA_TEXTO to capture a single scale instead.
+#   bash tests/comecar_shot.sh /tmp/start
 set -eu
 cd "$(dirname "$0")/.."
 NUVIO_DADOS=$(mktemp -d /tmp/nuvio-comecar-shot.XXXXXX)
@@ -15,7 +17,7 @@ export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 sources=()
 for source in src/*.c src/dts/*.c; do
-  case "$source" in */main.c) continue;; esac
+  case "$source" in */main.c|*/comecar.c) continue;; esac
   sources+=("$source")
 done
 BIN="${NUVIO_SHOT_BIN:-/tmp/nuvio-comecar-shot}"

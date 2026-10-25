@@ -31,6 +31,8 @@ static int fonteBib = AJ_SALVOS_LOCAL, extraLocal;
 int ajustes_fonte_biblioteca(void) { return fonteBib; }
 float gfx_escala_tela_txt(void) { return 1.0f; }
 float gfx_escala_txt(void) { return 1.0f; }
+float gfx_escala_txt_entrar(void) { return 1.0f; }
+void gfx_escala_sair(float previous) { (void)previous; }
 float gfx_poster_k(void) { return 1.0f; }
 int lst_n(void) { return 0; }
 int lst_itens_n(void) { return 0; }
@@ -109,8 +111,8 @@ int main(void) {
   tipo = TIPO_SERIE; confere(118);
   tipo = TIPO_TODOS;
 
-  assert(hdrX() == 200.0f);
-  assert(bibX() == 564.0f && bibW() == 1260.0f);
+  assert(hdrX() == NV_CONTENT_PAD);
+  assert(bibX() == 468.0f && bibW() == 1348.0f);
   assert(colunasCartaz() == 5);
   // A tabela em exibicao de lista comeca mais baixo para caber o cabecalho
   // de colunas (mockup "biblioteca-lista-servidor"); a grade de cartazes

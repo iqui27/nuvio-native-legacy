@@ -39,6 +39,9 @@ int layout_modo_mobile(void);
 // layouts — e `collapseSidebar` em layoutPreferences.js, que o perfil do dono
 // tem em true. Com ela recolhida a home comeca em 104.
 #define NV_CONTENT_PAD          104.0f
+// 2.1 screens include tela21.h for the shared safe area, materials, type and
+// motion tokens. Keep this header as their source; never center a scaled
+// fixed-1920 page. t21_inicio returns real-pixel anchors in text-layer units.
 // O MENU DOS LAYOUTS CLASSICOS com a rail fixa (menu.c, mockup Glass UI
 // "ilha"): a borda direita da pilula de icones, em px da tela REAL (o menu
 // desenha em escala fixa, nao segue o Tamanho da interface), e o vao ate o

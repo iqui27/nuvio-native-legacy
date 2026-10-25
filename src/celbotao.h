@@ -86,6 +86,7 @@ void  celb_desenhar_qr_em(int dono, GfxRect r, float alpha);
 // da moldura e celb_qr_lado(). Sem servidor: so o desenho.
 float celb_qr_lado(void);
 void  celb_qr_desenhar(const char *url, float x, float y, float a);
+void  celb_qr_desenhar_lado(const char *url, float x, float y, float lado, float a);
 
 // --- testes ---
 // Onde o cartao (ou o bloco hospedado) ficou no ultimo desenho (0 se fechado).

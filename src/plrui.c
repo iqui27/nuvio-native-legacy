@@ -221,7 +221,13 @@ static GfxRect segPilulaRect(const float *w, int n, float sel, float x, float y)
 }
 float plrui_seg(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
                 float x, float y, float a) {
+  return plrui_seg_ex(rotulos, contagem, n, -1, sel, ed, x, y, a, 0);
+}
+float plrui_seg_ex(const char *const *rotulos, const int *contagem, int n, int escolhido,
+                   float sel, float ed, float x, float y, float a, int leve) {
   float w[8], tot = SEG_PAD * 2.0f, xx;
+  float pad = leve ? 22.0f : 20.0f, gap = leve ? 10.0f : 9.0f;
+  float ih = leve ? 48.0f : SEG_IH;
   TxtLinha t[8], c[8];
   int i, vid = ajustes_vidro(), tinta = plrui_tinta();
   // `sel` e `ed` podem ser FRACIONARIOS: quem chama anima (mola) e a pilula
@@ -229,32 +235,40 @@ float plrui_seg(const char *const *rotulos, const int *contagem, int n, float se
   // continuam desenhando exatamente como antes.
   float pos = sel, fEd = anim_clamp(ed, 0.0f, 1.0f);
   int selI = pos < 0.0f ? -1 : (int)(pos + 0.5f);
+  // `escolhido` >= 0: the chosen item is not the focused one (Library tabs:
+  // arrows move focus, OK chooses). -1 = the same item, as the player sheets.
+  int ch = escolhido >= 0 ? escolhido : selI;
   if (n > 8) n = 8;
   for (i = 0; i < n; i++) {
-    int s = i == selI, f = s && fEd > 0.5f;
+    int s = i == ch, f = i == selI && fEd > 0.5f;
     int cor = f ? tinta : 243;
-    t[i] = txt_linha(TXT_ILHA_SEG, rotulos[i], cor, cor, cor, f || s ? 255 : 140);
+    t[i] = txt_linha(leve ? TXT_AJ_SEG : TXT_ILHA_SEG, rotulos[i], cor, cor, cor, f || s ? 255 : 140);
     memset(&c[i], 0, sizeof c[i]);
-    w[i] = (float)t[i].w + 40.0f;
+    w[i] = (float)t[i].w + pad * 2.0f;
     if (contagem && contagem[i] >= 0) {
       char b[16];
       int cc = f ? tinta : 243;
       snprintf(b, sizeof b, "%d", contagem[i]);
       c[i] = txt_linha(TXT_ILHA_NUM, b, cc, cc, cc, f ? 150 : 89);
-      w[i] += 9.0f + (float)c[i].w;
+      w[i] += gap + (float)c[i].w;
     }
     tot += w[i] + (i ? SEG_VAO : 0.0f);
   }
   if (x < 0.0f) return tot;
-  { GfxRect tr = { x, y, tot, SEG_IH + SEG_PAD * 2.0f };
-    if (vid) gfx_vidro_folha(tr, 0.5f, a);
+  { GfxRect tr = { x, y, tot, ih + SEG_PAD * 2.0f };
+    // `leve`: the rimless .seg track of the 2.1 mocks (white .06 over glass).
+    if (vid && leve) gfx_cor(tr, 0.5f, 1, 1, 1, 0.06f * a);
+    else if (vid) gfx_vidro_folha(tr, 0.5f, a);
     else gfx_cor(tr, 0.5f, 0.114f, 0.118f, 0.137f, a); }
   xx = x + SEG_PAD;
   for (i = 0; i < n; i++) {
-    GfxRect ir = { xx, y + SEG_PAD, w[i], SEG_IH };
+    GfxRect ir = { xx, y + SEG_PAD, w[i], ih };
     // A pilula de foco desliza entre os chips (posicao fracionaria) e esmaece
     // ao entrar/sair do segmentado; o realce de SELECAO fica no chip inteiro.
-    if (i == selI) {
+    if (i == ch && ch != selI) {
+      if (vid) gfx_cor(ir, 0.5f, 1, 1, 1, 0.14f * a);
+      else gfx_cor(ir, 0.5f, 0.204f, 0.212f, 0.243f, a);
+    } else if (i == selI) {
       if (fEd < 0.5f) {
         if (vid) gfx_cor(ir, 0.5f, 1, 1, 1, 0.14f * a);
         else gfx_cor(ir, 0.5f, 0.204f, 0.212f, 0.243f, a);
@@ -266,13 +280,16 @@ float plrui_seg(const char *const *rotulos, const int *contagem, int n, float se
     xx += w[i] + SEG_VAO;
   }
   // Pilula antes do texto: o acento nao pode cobrir os rotulos durante a mola.
-  if (fEd > 0.005f && selI >= 0)
-    plrui_pilula_foco(segPilulaRect(w, n, pos, x, y), a * fEd);
+  if (fEd > 0.005f && selI >= 0) {
+    GfxRect pill = segPilulaRect(w, n, pos, x, y);
+    pill.h = ih;
+    plrui_pilula_foco(pill, a * fEd);
+  }
   xx = x + SEG_PAD;
   for (i = 0; i < n; i++) {
-    float yb = y + SEG_PAD + (SEG_IH - (float)t[i].h) * 0.5f;
-    txt_desenhar_alpha(t[i], xx + 20.0f, yb, a);
-    if (c[i].w) txt_desenhar_alpha(c[i], xx + 20.0f + (float)t[i].w + 9.0f,
+    float yb = y + SEG_PAD + (ih - (float)t[i].h) * 0.5f;
+    txt_desenhar_alpha(t[i], xx + pad, yb, a);
+    if (c[i].w) txt_desenhar_alpha(c[i], xx + pad + (float)t[i].w + gap,
                                    yb + (float)t[i].h - (float)c[i].h - 1.0f, a);
     xx += w[i] + SEG_VAO;
   }

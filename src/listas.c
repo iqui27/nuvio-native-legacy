@@ -994,9 +994,18 @@ void lst_previa_registrar(const LstLista *l, const CatItem *v, int n) {
   if (slot < 0) slot = previaVez++ % 24;
   previas[slot].fonte = l->fonte; previas[slot].id = l->traktId;
   snprintf(previas[slot].chave, sizeof previas[slot].chave, "%s", previaChave(l));
-  LstPrevia *p = &previas[slot].arte; p->n = 0;
+  LstPrevia *p = &previas[slot].arte; p->n = 0; p->vistos = -1; p->nota[0] = 0;
+  snprintf(p->titulo, sizeof p->titulo, "%s", v[0].titulo);
   for (int i = 0; i < n && p->n < 4; i++) if (v[i].poster[0])
     snprintf(p->poster[p->n++], sizeof p->poster[0], "%s", v[i].poster);
+}
+void lst_previa_resumo(const LstLista *l, const char *nota, int vistos) {
+  for (int i = 0; l && i < 24; i++)
+    if (previas[i].arte.n && previas[i].fonte == l->fonte && previas[i].id == l->traktId &&
+        !strcmp(previas[i].chave, previaChave(l))) {
+      snprintf(previas[i].arte.nota, sizeof previas[i].arte.nota, "%s", nota ? nota : "");
+      previas[i].arte.vistos = vistos;
+    }
 }
 
 #endif

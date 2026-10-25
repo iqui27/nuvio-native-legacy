@@ -5,12 +5,12 @@
 //      outra tecla cancela, soltar sem armar nao e clique, celula que nao
 //      aceita o menu segue o caminho de antes;
 //   2. "Ver tudo" de um catalogo (vertudo.c, grade vinda de um addon falso
-//      local): toque abre a previa, segurar abre o menu no limiar com o dedo
+//      local): toque abre a pagina, segurar abre o menu no limiar com o dedo
 //      ainda no botao, Voltar fecha e o FOCO fica no mesmo cartao;
 //   3. pagina de colecao (vertudo_colecao): o mesmo;
 //   4. resultados da Busca (busca.c incluido: o painel de resultados e estatico).
 //
-// O menu nao tem "Ver detalhes" (a previa oferece essa acao): no lugar, a
+// O menu nao tem "Ver detalhes" (o toque ja abre o titulo): no lugar, a
 // EXTENSAO de informacoes ao lado (ctxinfo.h) — cobrada aqui com dado (notas,
 // sinopse) e do lado certo do cartaz.
 //
@@ -22,7 +22,6 @@
 #include "catalogo.h"
 #include "colecoes.h"
 #include "ctxlista.h"
-#include "glance.h"
 #include "ctxmenu.h"
 #include "ctxinfo.h"
 #include "extras.h"
@@ -82,8 +81,7 @@ static void quadro(void) {
   Uint32 agora = SDL_GetTicks();
   while (SDL_PollEvent(&e)) {
     // O roteador de app.c: o menu e modal e vem antes de qualquer tela.
-    if (glance_aberto()) glance_evento(&e);
-    else if (ctx_aberto()) ctx_evento(&e);
+    if (ctx_aberto()) ctx_evento(&e);
     else if (t_tela == 0) vertudo_evento(&e);
     else busca_evento(&e);
   }
@@ -96,8 +94,6 @@ static void quadro(void) {
   txt_novo_quadro();
   if (t_tela == 0) { vertudo_atualizar(1.0f / 60.0f, agora); vertudo_desenhar(agora); }
   else { busca_atualizar(1.0f / 60.0f, agora); busca_desenhar(agora); }
-  glance_atualizar(1.0f / 60.0f, agora);
-  glance_desenhar(agora);
   ctx_atualizar(1.0f / 60.0f, agora);
   ctx_desenhar(agora);
 }
@@ -309,13 +305,7 @@ int main(int argc, char **argv) {
   confere("KEYDOWN sozinho nao abre nada", !ctx_aberto() && vertudo_pediu_abrir() < 0);
   empurrar(SDL_KEYUP, SDLK_RETURN); quadros(w, 2);
   idx = vertudo_pediu_abrir();
-  confere("toque curto abre a previa (na soltura)", glance_aberto() && idx < 0 && !ctx_aberto());
-  toque(w, SDLK_DOWN); toque(w, SDLK_RETURN);
-  confere("Detalhes da previa abre a pagina do titulo", !glance_aberto() && vertudo_pediu_abrir() >= 0);
-  empurrar(SDL_KEYDOWN, SDLK_RETURN); quadros(w, 2);
-  empurrar(SDL_KEYUP, SDLK_RETURN); quadros(w, 2);
-  toque(w, SDLK_ESCAPE);
-  confere("Voltar fecha a previa sem abrir o titulo", !glance_aberto() && vertudo_pediu_abrir() < 0);
+  confere("toque curto abre a pagina do titulo (na soltura)", idx >= 0 && !ctx_aberto());
   segurarEConferir(w, "catalogo", "lista-catalogo-menu.png", vtAberta, vtFoco);
   confere("depois do menu a soltura nao vira clique", vertudo_pediu_abrir() < 0);
   vertudo_fechar_seco();
@@ -355,9 +345,7 @@ int main(int argc, char **argv) {
   confere("a Busca nao pediu o titulo", busca_pediu_abrir(NULL) == 0);
   empurrar(SDL_KEYDOWN, SDLK_RETURN); quadros(w, 2);
   empurrar(SDL_KEYUP, SDLK_RETURN); quadros(w, 2);
-  confere("toque curto num resultado abre a previa", glance_aberto() && !busca_pediu_abrir(&idx) && !ctx_aberto());
-  toque(w, SDLK_DOWN); toque(w, SDLK_RETURN);
-  confere("Detalhes do resultado abre o titulo", !glance_aberto() && busca_pediu_abrir(&idx) && idx >= 0);
+  confere("toque curto num resultado ainda abre o titulo", busca_pediu_abrir(&idx) && idx >= 0 && !ctx_aberto());
 
   printf("\n%s\n", t_falhas ? "FALHOU" : "PASSOU");
   return t_falhas ? 1 : 0;

@@ -112,6 +112,15 @@ static inline float anim_rampa(float p, float alvo, float dt, float ms) {
   return p;
 }
 
+// Entry clock in seconds, delay/duration in ms. Only the first eight items
+// stagger; later items share the eighth delay. Reduced motion skips the clock.
+static inline float anim_atraso(float segundos, int item, float atrasoMs, float ms) {
+  if (anim_politica_reduzida) return 1.0f;
+  int i = item < 0 ? 0 : item > 7 ? 7 : item;
+  float dt = fmaxf(0.0f, segundos - i * atrasoMs / 1000.0f);
+  return ms > 0 ? anim_rampa(0, 1, dt, ms) : 1.0f;
+}
+
 // PILULA QUE ABRE: dois canais ORDENADOS, largura e rotulo. ABRINDO, a
 // largura vai primeiro e o rotulo so entra com ela pronta; FECHANDO, o
 // rotulo sai primeiro e a largura encolhe depois. O rotulo e desenhado

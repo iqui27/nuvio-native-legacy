@@ -3996,6 +3996,9 @@ GLuint gfx_vidro_fonte_fixa(GLuint tex) {
   vidroFonteFixa = tex;
   return anterior;
 }
+// 1 = the next glass draws carry no light rim (2.1 mock surfaces: "sem aro").
+// Callers set it around one draw and clear it.
+int gfx_vidro_sem_aro;
 void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a) {
   GfxRect t = r;
   float d = dens, tela[4];
@@ -4003,7 +4006,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   if (r.w <= 0.0f || r.h <= 0.0f || a <= 0.001f) return;
   if (!vidroPronto()) {
     gfx_cor(r, raio, 0x1a / 255.0f, 0x1c / 255.0f, 0x21 / 255.0f, 0.94f * a);
-    gfx_anel(r, raio, 1.0f, 1.0f, 1.0f, 1.0f, 0.22f * a);
+    if (!gfx_vidro_sem_aro) gfx_anel(r, raio, 1.0f, 1.0f, 1.0f, 1.0f, 0.22f * a);
     return;
   }
   GFX_TR_RECT(t.x, t.y, t.w, t.h);
@@ -4072,7 +4075,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   vidPend.dens[0] = 0.125f; vidPend.dens[1] = 0.72f; vidPend.dens[2] = 0.82f; vidPend.dens[3] = 1.0f;
   // A27 chrome: the same solve, scaled by "Opacidade do vidro" (gfx_chrome_dens).
   if (tipo == GFX_VIDRO_BARRA) gfx_chrome_dens(vidPend.dens);
-  vidPend.aro = 0.14f + (contorno ? 0.0f : video ? 0.04f : 0.0f);
+  vidPend.aro = gfx_vidro_sem_aro ? 0.0f : 0.14f + (contorno ? 0.0f : video ? 0.04f : 0.0f);
   vidPend.aroLuz = 0.28f;
   gfx_vidro_com_fonte += vidPend.fonte != 0;
   gfx_vidro_chapados += vidPend.fonte == 0;
