@@ -637,7 +637,7 @@ static void desenharFolha(void) {
   texto(TXT_ILHA_CORPO, nAmigos ? i18n("Quem vai assistir com você") : i18n("Nenhum amigo ainda. Quem tiver o código entra pedindo."),
         r.x + 48, y, 190, 1, r.w - 96);
   y += 48;
-  gfx_recorte(r.x, y, r.w, r.y + r.h - 32 - y);
+  GfxRecorteAnt fora = gfx_recorte_dentro(r.x, y, r.w, r.y + r.h - 32 - y);
   y -= folhaScroll;
   for (i = 0; i < folhaLinhas(); i++) {
     GfxRect l = { r.x + 32, y, r.w - 64, 64 };
@@ -660,7 +660,7 @@ static void desenharFolha(void) {
     y += 76;
     if (i == nAmigos) y += 12;
   }
-  gfx_sem_recorte();
+  gfx_recorte_voltar(fora);
 }
 
 static void desenharCodigo(void) {
@@ -748,10 +748,13 @@ static void desenharLugar(int i, const JsMembro *p, int vazio, float f, float a)
   float s = (.8f + .2f * lugarAnim[i]) * (1 + .06f * f);
   a *= e;
   gfx_transformar(cx, c.y + LUGAR_H / 2, s, origemX, origemY - NV_FOCO_LIFT * f + (1 - e) * NV_ENTRA_DY);
-  t21_ilha(c, T21_R_SHEET, a);
+  // Mock: borderless dark seat cards over the hero art in both materials.
+  t21_ilha_solida(c, T21_R_SHEET, a);
   plrui_linha_foco(c, T21_R_SHEET, f * a);
   if (vazio) {
-    botao_disco(av, "aj_user-plus", f, a);
+    float ink = anim_mistura(1, ajustes_tinta_foco() / 255.0f, f);
+    gfx_cor(av, .5f, 1, 1, 1, (.10f + .82f * f) * a);
+    gfx_icone((GfxRect){ av.x + 26, av.y + 26, 26, 26 }, "aj_user-plus", ink, ink, ink, a);
     textoCentro(TXT_ILHA_NOME, i18n("Mais um lugar"), cx, c.y + 122, 245, a, LUGAR_W - 20);
     textoCentro(TXT_CAPTION, i18n("Convide um amigo"), cx, c.y + 158, 190, a, LUGAR_W - 20);
   } else {
@@ -865,7 +868,7 @@ static void desenharFontes(void) {
     texto(TXT_ILHA_META, sala, 80, 640, 205, a, 340);
   }
 
-  gfx_recorte(484, 288, corpoBase.w - 48, corpoBase.h - 310);
+  GfxRecorteAnt fora = gfx_recorte_dentro(484, 288, corpoBase.w - 48, corpoBase.h - 310);
   y -= folhaScroll;
   for (i = 0; i < n; i++) {
     const JsMembro *p = &m->sala.m[i];
@@ -892,7 +895,7 @@ static void desenharFontes(void) {
     if (fonteExp[i] > 0.01f) botao_pilula((GfxRect){ 580, y + 82, botao_largura(i18n("Trocar fonte"), "aj_monitor-cog", 0), BOTAO_H_SECUNDARIO }, i18n("Trocar fonte"), "aj_monitor-cog", focoDe(i + 1) * alvo, 0, 0, a * fonteExp[i]);
     y += h + 2;
   }
-  gfx_sem_recorte();
+  gfx_recorte_voltar(fora);
   botao_pilula((GfxRect){ 500, corpoBase.y + corpoBase.h - 104, botao_largura(i18n("Voltar à sala"), "aj_users", 1), BOTAO_H_PRIMARIO },
                i18n("Voltar à sala"), "aj_users", focoDe(0), 1, 0, a);
 }

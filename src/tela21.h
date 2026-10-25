@@ -74,15 +74,20 @@ static inline void t21_inicio(float *x, float *w) {
   TXT_FIM();
 }
 
-static inline void t21_ilha(GfxRect r, float raioPx, float a) {
+// Opaque, rimless card (seat cards over artwork); t21_ilha's solid branch.
+static inline void t21_ilha_solida(GfxRect r, float raioPx, float a) {
   if (r.w <= 0 || r.h <= 0 || a <= .002f) return;
   float raio = raioPx / fminf(r.w, r.h);
-  if (ajustes_vidro()) { plrui_material(r, raioPx, 0, a); return; }
   gfx_sombra_sob((GfxRect){r.x - 16, r.y - 4, r.w + 32, r.h + 30},
                 1, 0, .5f, 0, 0, 0, .36f * a, r, raioPx, a);
   gfx_cor(r, raio, .071f, .075f, .086f, .98f * a);
   gfx_luz_canto(r, raio, r.w * .22f, -r.h * .40f, fmaxf(r.w, r.h) * .62f,
                 1, 1, 1, .04f * a);
+}
+
+static inline void t21_ilha(GfxRect r, float raioPx, float a) {
+  if (ajustes_vidro() && r.w > 0 && r.h > 0 && a > .002f) { plrui_material(r, raioPx, 0, a); return; }
+  t21_ilha_solida(r, raioPx, a);
 }
 
 // Caller owns progress; anim_suave(progress) drives alpha and

@@ -419,6 +419,11 @@ void gfx_recorte(float x, float y, float w, float h);
 void gfx_icones_dir(const char *dirArte);
 void gfx_icone(GfxRect r, const char *nome, float cr, float cg, float cb, float ca);
 void gfx_sem_recorte(void);
+// Recorte aninhado: cruza o pedido com a tesoura ativa (o corpo de uma ilha
+// que ainda cresce) em vez de troca-la, e gfx_recorte_voltar devolve a de fora.
+typedef struct { int ativo, box[4]; } GfxRecorteAnt;
+GfxRecorteAnt gfx_recorte_dentro(float x, float y, float w, float h);
+void gfx_recorte_voltar(GfxRecorteAnt ant);
 
 int  gfx_snap_iniciar(int w, int h);
 
