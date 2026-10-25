@@ -286,6 +286,7 @@
   T("%s terminou a série", "%s befejezte a sorozatot"),
   T("%s travada com %s", "%s zárolva vele: %s"),
   T("%s vai ver sua resposta", "%s látni fogja a válaszod"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s a pályafutás legtöbbet értékelt alkotása lesz (%d szavazat a TMDB-n)."),
   T("%s viu", "%s látta"),
   T("%s viu %d episódios de %s", "%s %d részt nézett meg ebből: %s"),
   T("%s viu até o E%d", "%s az E%d részig látta"),

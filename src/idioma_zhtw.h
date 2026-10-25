@@ -286,6 +286,7 @@
   T("%s terminou a série", "%s看完了這部劇"),
   T("%s travada com %s", "%s已與%s鎖定"),
   T("%s vai ver sua resposta", "%s 會看到你的回答"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s成為其職業生涯中獲評最多的作品（TMDB上有%d票）。"),
   T("%s viu", "%s 看過"),
   T("%s viu %d episódios de %s", "%s 看了 %d 集：%s"),
   T("%s viu até o E%d", "%s 看到 E%d"),

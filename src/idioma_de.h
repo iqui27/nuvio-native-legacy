@@ -285,6 +285,7 @@
   T("%s terminou a série", "%s hat die Serie beendet"),
   T("%s travada com %s", "%s mit %s gesperrt"),
   T("%s vai ver sua resposta", "%s sieht deine Antwort"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s wird das meistbewertete Werk der Karriere (%d Stimmen auf TMDB)."),
   T("%s viu", "%s hat gesehen"),
   T("%s viu %d episódios de %s", "%s hat %d Folgen von %s gesehen"),
   T("%s viu até o E%d", "%s hat bis E%d gesehen"),

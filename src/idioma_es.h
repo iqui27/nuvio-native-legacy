@@ -285,6 +285,7 @@
   T("%s terminou a série", "%s terminó la serie"),
   T("%s travada com %s", "%s bloqueada con %s"),
   T("%s vai ver sua resposta", "%s verá tu respuesta"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s se convierte en la obra más votada de su carrera (%d votos en TMDB)."),
   T("%s viu", "%s vio"),
   T("%s viu %d episódios de %s", "%s vio %d episodios de %s"),
   T("%s viu até o E%d", "%s vio hasta el E%d"),

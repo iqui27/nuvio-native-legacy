@@ -286,6 +286,7 @@
   T("%s terminou a série", "%s diziyi bitirdi"),
   T("%s travada com %s", "%s, %s ile kilitlendi"),
   T("%s vai ver sua resposta", "%s cevabını görecek"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s kariyerinin en çok oy alan yapımı oluyor (TMDB üzerinde %d oy)."),
   T("%s viu", "%s izledi"),
   T("%s viu %d episódios de %s", "%s, %d bölüm izledi: %s"),
   T("%s viu até o E%d", "%s E%d bölümüne kadar izledi"),

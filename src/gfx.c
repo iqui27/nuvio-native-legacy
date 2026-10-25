@@ -3932,7 +3932,7 @@ static GLuint vidroFonte(GfxRect r) {
 // Os parametros do proximo GFX_VIDRO, postos por gfx_vidro e enviados por
 // gfx_rect (vidroAplicar) com o retangulo ja em layout de tela.
 static struct {
-  int tipo;
+  int tipo, semAro;
   GLuint fonte;   // the blurred backdrop, 0 = chapado
   float raio, scrT[4], scrB[4], aro, aroLuz, dens[4];
 } vidPend;
@@ -3943,7 +3943,7 @@ static void vidroAplicar(Programa *P, GfxRect r) {
   float hw = r.w * sx * 0.5f, hh = r.h * sy * 0.5f, rp = vidPend.raio * r.h * sy;
   int barra = vidPend.tipo == GFX_VIDRO_BARRA;
   // Standing (barras) e Bevelled (paineis), os dois perfis do fs_glass deles.
-  float bevel = (barra ? 12.0f : 28.0f) * sy, lente = (barra ? 24.0f : 38.0f) * sy;
+  float bevel = (barra ? 12.0f : 28.0f) * sy, lente = vidPend.semAro ? 0 : (barra ? 24.0f : 38.0f) * sy;
   if (rp > hw) rp = hw;
   if (rp > hh) rp = hh;
   if (bevel > hh) bevel = hh;
@@ -3954,9 +3954,9 @@ static void vidroAplicar(Programa *P, GfxRect r) {
   glUniform4fv(u[VID_SCRB], 1, vidPend.scrB);
   glUniform4f(u[VID_ARO], 1.0f, 1.0f, 1.0f, vidPend.aro);
   glUniform4f(u[VID_AROLUZ], 1.0f, 1.0f, 1.0f, vidPend.aroLuz);
-  glUniform4f(u[VID_LUZBORDA], 1.0f, 1.0f, 1.0f, 0.14f);
+  glUniform4f(u[VID_LUZBORDA], 1.0f, 1.0f, 1.0f, vidPend.semAro ? 0 : 0.14f);
   glUniform3f(u[VID_LUZDIR], -0.35f, -0.94f, 0.0f);
-  if (barra) glUniform4f(u[VID_ESPEC], 0.0f, 0.0f, 1.0f, 0.0f);
+  if (barra || vidPend.semAro) glUniform4f(u[VID_ESPEC], 0.0f, 0.0f, 1.0f, 0.0f);
   else glUniform4f(u[VID_ESPEC], -0.7071f, -0.7071f, 3.0f, 0.80f);
   glUniform4fv(u[VID_DENS], 1, vidPend.dens);
   glUniform4f(u[VID_AMOSTRA], (r.x + r.w * 0.5f) / NV_TELA_W, 1.0f - (r.y + r.h * 0.5f) / NV_TELA_H,
@@ -3996,6 +3996,12 @@ GLuint gfx_vidro_fonte_fixa(GLuint tex) {
   vidroFonteFixa = tex;
   return anterior;
 }
+static int vidroSemAro;
+void gfx_vidro_painel_sem_aro(GfxRect r, float raio, float fundo, float a) {
+  vidroSemAro = 1;
+  gfx_vidro_painel(r, raio, fundo, a);
+  vidroSemAro = 0;
+}
 void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a) {
   GfxRect t = r;
   float d = dens, tela[4];
@@ -4003,6 +4009,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   if (r.w <= 0.0f || r.h <= 0.0f || a <= 0.001f) return;
   if (!vidroPronto()) {
     gfx_cor(r, raio, 0x1a / 255.0f, 0x1c / 255.0f, 0x21 / 255.0f, 0.94f * a);
+    if (vidroSemAro) return;
     gfx_anel(r, raio, 1.0f, 1.0f, 1.0f, 1.0f, 0.22f * a);
     return;
   }
@@ -4028,7 +4035,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   if (fumaca) chapado = 1;
   if (vidroNVidros < VID_N) memcpy(vidroVidros[vidroNVidros++], tela, sizeof tela);
   memset(&vidPend, 0, sizeof vidPend);
-  vidPend.tipo = tipo; vidPend.raio = raio;
+  vidPend.tipo = tipo; vidPend.raio = raio; vidPend.semAro = vidroSemAro;
   vidRuidoPreparar();   // o dither vale tambem no chapado
   if (vidroFonteFixa) vidPend.fonte = vidroFonteFixa;
   else if (!chapado) {
@@ -4072,8 +4079,8 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   vidPend.dens[0] = 0.125f; vidPend.dens[1] = 0.72f; vidPend.dens[2] = 0.82f; vidPend.dens[3] = 1.0f;
   // A27 chrome: the same solve, scaled by "Opacidade do vidro" (gfx_chrome_dens).
   if (tipo == GFX_VIDRO_BARRA) gfx_chrome_dens(vidPend.dens);
-  vidPend.aro = 0.14f + (contorno ? 0.0f : video ? 0.04f : 0.0f);
-  vidPend.aroLuz = 0.28f;
+  vidPend.aro = vidroSemAro ? 0 : 0.14f + (contorno ? 0.0f : video ? 0.04f : 0.0f);
+  vidPend.aroLuz = vidroSemAro ? 0 : 0.28f;
   gfx_vidro_com_fonte += vidPend.fonte != 0;
   gfx_vidro_chapados += vidPend.fonte == 0;
   gfx_vidro_area += (int)(r.w * r.h);

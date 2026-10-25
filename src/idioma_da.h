@@ -286,6 +286,7 @@
   T("%s terminou a série", "%s har set serien færdig"),
   T("%s travada com %s", "%s låst med %s"),
   T("%s vai ver sua resposta", "%s kan se dit svar"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s bliver karrierens mest bedømte værk (%d stemmer på TMDB)."),
   T("%s viu", "%s har set"),
   T("%s viu %d episódios de %s", "%s så %d afsnit af %s"),
   T("%s viu até o E%d", "%s har set til og med E%d"),

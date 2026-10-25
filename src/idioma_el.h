@@ -286,6 +286,7 @@
   T("%s terminou a série", "%s τελείωσε τη σειρά"),
   T("%s travada com %s", "%s κλειδώθηκε με %s"),
   T("%s vai ver sua resposta", "%s θα δει την απάντησή σας"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s γίνεται το έργο με τις περισσότερες ψήφους στην καριέρα (%d ψήφοι στο TMDB)."),
   T("%s viu", "%s το είδε"),
   T("%s viu %d episódios de %s", "%s είδε %d επεισόδια από %s"),
   T("%s viu até o E%d", "%s είδε έως το E%d"),

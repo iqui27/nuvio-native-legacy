@@ -286,6 +286,7 @@
   T("%s terminou a série", "أنهى %s المسلسل"),
   T("%s travada com %s", "%s locked with %s"),
   T("%s vai ver sua resposta", "سيرى %s إجابتك"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s يصبح العمل الأكثر تصويتًا في المسيرة (%d صوتًا على TMDB)."),
   T("%s viu", "شاهده %s"),
   T("%s viu %d episódios de %s", "شاهد %s %d حلقات من %s"),
   T("%s viu até o E%d", "شاهد %s حتى الحلقة %d"),

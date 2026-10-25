@@ -43,7 +43,8 @@ static float gradePasso(void);
 static float anoPasso(void);
 static float alpha, entrada, tempo, scroll, scrollV, anoScroll, anoV, abaSel, abaFoco;
 static int folhaAtiva;
-static int saindo, ultimaAba = -1, ultimoAno, folhaAnterior;
+static int saindo, ultimaAba = -1, folhaAnterior;
+static float anosAlpha[FM_MAX];
 static long pessoaLembrada = -1;
 static float focoBtns[6][FM_MAX], focoCred[FM_MAX], focoAnos[FM_MAX];
 static int drawZona, drawItem;
@@ -56,6 +57,8 @@ static float compactoT;
 #define HERO_ABAS 372
 #define CONTEUDO_Y 448
 #define ANO_S 78.0f
+#define HIST_POSTER_W 184.0f
+#define HIST_POSTER_H 276.0f
 #define FOLHA_Y 222
 #define FOLHA_P 86
 static float aberto, tAba, anoSel = -1, anoFoco;
@@ -68,7 +71,13 @@ static int atualizar(float dt) {
   int red = ajustes_animacoes_reduzidas();
   entrada = red ? !saindo : anim_mola(entrada, !saindo, dt, NV_MOLA_TELA);
   if (camada) folhaAnterior = camada;
-  if (ultimaAba != aba || ultimoAno != ano) { tempo = 0; ultimaAba = aba; ultimoAno = ano; }
+  if (ultimaAba != aba) {
+    tempo = 0; ultimaAba = aba;
+    for (int i = 0; i < na; i++) anosAlpha[i] = anos[i] == ano;
+  }
+  // Retarget every visible year without discarding outgoing text or artwork.
+  for (int i = 0; i < na; i++)
+    anosAlpha[i] = red ? anos[i] == ano : anim_mola(anosAlpha[i], anos[i] == ano, dt, NV_MOLA_PAGINA);
   if (abaVista != aba) { tAba = 0; abaVista = aba; }
   tempo += dt; tAba += dt; aberto += dt;
   scroll = anim_mola2_reduzida(&scrollV, scroll, topo * gradePasso(), dt, NV_MOLA2_SCROLL, red);
@@ -100,7 +109,7 @@ static float colunaK(void) { return paginaW() / 1788.0f; }
 static float linhaK(void) { return fminf(1, (ANC(T21_SAFE_B) - 60) / 970.0f); }
 static float px(float x) { return 72 + (x - 72) * colunaK(); }
 static float anoPasso(void) { return na>1&&na<=21?1590.0f/(na-1):ANO_S; }
-static float py(float y) { return 60 + (y - 60) * linhaK(); }
+static float py(float y) { return aba==0 ? ANC(y) : 60+(y-60)*linhaK(); }
 static float compacta(float full,float small){return full+(small-full)*compactoT;}
 static GfxRect area(GfxRect r) { return (GfxRect){px(r.x), py(r.y), r.w * colunaK(), r.h * linhaK()}; }
 static void material(GfxRect r,float radius,int modal,float a) { plrui_material(area(r),radius,modal,a); }
@@ -111,13 +120,18 @@ static int gradeLinhas(void) { return aba==1 && zona==4 && ANC(T21_SAFE_B) > 330
 static const char *abas[]={"História","Filmografia","Sobre","Conquistas"};
 static void texto(const char *s,float x,float y,float w,TxtEstilo font,int cor){TxtLinha l=txt_linha_corta(font,i18n(s),cor,cor,cor,255,w*colunaK());txt_desenhar_alpha(l,px(x),py(y),alpha);}
 static void bloco(const char *s,float x,float y,float w,int n){txt_bloco(TXT_ILHA_SUB,i18n(s),190,195,205,px(x),py(y),w*colunaK(),29,alpha,n);}
+// Shared borderless glass, with the same accent focus spring as other pills.
+static void repouso(GfxRect r, float a) {
+  if (ajustes_vidro()) gfx_vidro_painel_sem_aro(r, .5f, .55f, a);
+  else plrui_botao_repouso(r, a);
+}
 // Chip at NV_CTRL_H; w <= 0 measures the label. Returns the authored width.
 static float botao(const char *s,float x,float y,float w,int foco) {
   (void)foco;
   float f = focoBtns[drawZona][drawItem++];
   if (w <= 0) w = botao_largura(i18n(s), NULL, 0) / colunaK();
   GfxRect r = {px(x), py(y), w * colunaK(), T21_CTRL_H};
-  plrui_botao_repouso(r, alpha);
+  repouso(r, alpha);
   plrui_pilula_foco(r, alpha * f);
   TxtLinha l = txt_linha_corta(TXT_DET_BOTAO, i18n(s), f >= .5f ? plrui_tinta() : 230,
     f >= .5f ? plrui_tinta() : 230, f >= .5f ? plrui_tinta() : 230, 255, r.w - 2 * BOTAO_PAD_X2 + 2);
@@ -130,7 +144,7 @@ static float chip(const char *v,const char *s,int on,float x,float y,int dir){
   TxtLinha lv={0},ls=txt_linha(TXT_ILHA_SEG,s,ink,ink,ink,255);if(v)lv=txt_linha(TXT_ILHA_SUB,v,ink,ink,ink,fo?190:150);
   float w=2*BOTAO_PAD_X2+(on?17:0)+(lv.w?lv.w+10:0)+ls.w;
   GfxRect r={px(x)-(dir?w:0),py(y),w,T21_CTRL_H};
-  plrui_botao_repouso(r,alpha);plrui_pilula_foco(r,alpha*f);
+  repouso(r,alpha);plrui_pilula_foco(r,alpha*f);
   float xx=r.x+BOTAO_PAD_X2,yc=r.y+r.h/2;
   if(on){if(fo)ar=ag=ab=ink/255.f;else ajustes_acento(&ar,&ag,&ab);gfx_cor((GfxRect){xx,yc-3.5f,7,7},.5f,ar,ag,ab,alpha);xx+=17;}
   if(lv.w){txt_desenhar_alpha(lv,xx,yc-lv.h/2,alpha);xx+=lv.w+10;}
@@ -140,7 +154,7 @@ static float chip(const char *v,const char *s,int on,float x,float y,int dir){
 // Sheet action: the official primary pill, labels aligned like the poster menu.
 static void acao(const char *s,const char *icone,float x,float y,float w) {
   float f = focoBtns[drawZona][drawItem++];
-  botao_pilula((GfxRect){px(x), py(y), w * colunaK(), BOTAO_H_PRIMARIO}, i18n(s), icone, f, 1, 1, alpha);
+  botao_pilula_sem_aro((GfxRect){px(x), py(y), w * colunaK(), BOTAO_H_PRIMARIO}, i18n(s), icone, f, 1, 1, alpha);
 }
 static float sobe(float t,int k){return ajustes_animacoes_reduzidas()?1:revela_entra(1,revela_onda_atraso(0,k),1+(Uint32)(t*1000));}
 static void preparar(void){fd_atualizar();const FdFicha *d=fd_ficha();na=0;for(int i=0;i<d->n;i++){const FmCredito *c=d->c+i;if((!ruido&&c->ruido)||!c->ano)continue;int j=0;while(j<na&&anos[j]!=c->ano)j++;if(j==na)anos[na++]=c->ano;}for(int i=1;i<na;i++){int a=anos[i],j=i;while(j&&anos[j-1]>a){anos[j]=anos[j-1];j--;}anos[j]=a;}if(na&&(!ano||ano<anos[0]))ano=anos[0];
@@ -149,10 +163,10 @@ static void preparar(void){fd_atualizar();const FdFicha *d=fd_ficha();na=0;for(i
 void filmo_abrir(void) {
   if (pessoaLembrada != pessoa_id()) {
     aba=col=cap=ano=ruido=topo=bioPagina=0; zona=3;
-    memset(&filtro,0,sizeof filtro); pessoaLembrada=pessoa_id(); anoSel=-1;
+    memset(&filtro,0,sizeof filtro); pessoaLembrada=pessoa_id(); anoSel=-1; selecionado=-1;
   }
   if(folhaAtiva && saindo) { saindo=0; return; }
-  camada=0; selecionado=pedido=-1; saindo=0; entrada=tempo=aberto=0; abaVista=-1;
+  camada=0; pedido=-1; saindo=0; entrada=tempo=aberto=0; abaVista=ultimaAba=-1;
   folhaAtiva=1;
   memset(focoBtns,0,sizeof focoBtns); memset(focoCred,0,sizeof focoCred);
   compactoT=aba==1&&zona==4;
@@ -196,9 +210,9 @@ static void cartaz(int idx,float x,float y,float w,float h,int foco) {
   const FdFicha *d=fd_ficha(); const FmCredito *c=d->c+idx; const FmEstado *s=d->st+idx;
   int pos=0; while(pos<ni && indices[pos]!=idx) pos++;
   int cols=aba==0?5:gradeCols();
-  float e=ajustes_animacoes_reduzidas()?1:revela_entra(1,
+  float e=aba==0?sobe(tAba,2):ajustes_animacoes_reduzidas()?1:revela_entra(1,
     revela_onda_atraso(pos%cols,pos/cols-topo),1+(Uint32)(tempo*1000));
-  w=(aba==0?212:220)*gfx_poster_k(); h=(aba==0?322:330)*gfx_poster_k();
+  w=(aba==0?HIST_POSTER_W:220)*gfx_poster_k(); h=(aba==0?HIST_POSTER_H:330)*gfx_poster_k();
   GfxRect r=area((GfxRect){x,y+(1-e)*NV_ENTRA_DY,w,h});
   r.w=w; r.h=h;
   CatItem ci={0}; snprintf(ci.titulo,sizeof ci.titulo,"%s",c->titulo);
@@ -218,11 +232,13 @@ static void cartaz(int idx,float x,float y,float w,float h,int foco) {
   char b[100];
   if(s->estado==FM_EM_BREVE)texto("Em breve",x+12,y+15,w-24,TXT_ILHA_SUB,220);
   else if(s->estado==FM_ANDA)trilho((GfxRect){x+8,y+h-12,w-16,5},s->pct/100.f,-1,-1,-1,alpha);
+  float legenda=28;
   TxtLinha label=txt_linha_corta(TXT_ILHA_NOME,c->titulo,235,235,235,255,r.w);
-  txt_desenhar_alpha(label,r.x,r.y+r.h+12,alpha*e);
+  if(aba==0)legenda=txt_bloco(TXT_ILHA_NOME,c->titulo,235,235,235,r.x,r.y+r.h+12,r.w,28,alpha*e,2);
+  else txt_desenhar_alpha(label,r.x,r.y+r.h+12,alpha*e);
   fm_rotulo(c,b,sizeof b,i18n);
   label=txt_linha_corta(TXT_ILHA_SUB,b,150,150,150,255,r.w);
-  txt_desenhar_alpha(label,r.x,r.y+r.h+42,alpha*e);
+  txt_desenhar_alpha(label,r.x,r.y+r.h+14+legenda,alpha*e);
 }
 // Full-width hero light tinted by the portrait palette (theme accent until it decodes).
 static void heroi(float a){
@@ -242,15 +258,16 @@ static float continuar(float x,float y,int next,const FdFicha *d,float f){
   float prog=st->estado==FM_VISTO?1:c->tv&&c->eps?st->epsVistos/(float)c->eps:st->pct/100.f;
   if(c->tv&&c->eps)snprintf(b,sizeof b,i18n("%d de %d"),st->epsVistos,c->eps);else snprintf(b,sizeof b,"%d%%",st->pct);
   snprintf(s,sizeof s,"%s · %s",i18n(st->estado==FM_ANDA?"Continuar":"Próximo a ver"),b);
-  TxtLinha t=txt_linha(TXT_DET_BOTAO,c->titulo,235,235,235,255),u=txt_linha(TXT_DET_META2,s,235,235,235,255);
+  TxtLinha t=txt_linha(TXT_DET_BOTAO,c->titulo,235,235,235,255),u=txt_linha(TXT_ILHA_SUB,s,235,235,235,255);
   float w=BOTAO_PAD_X2+BOTAO_ICONE+BOTAO_ICONE_GAP+36+16+t.w+12+u.w+BOTAO_PAD_X;
-  GfxRect r={x,y,w,BOTAO_H_PRIMARIO};int ink=botao_superficie(r,f,alpha);float k=ink/255.f,xx=x+BOTAO_PAD_X2;
+  GfxRect r={x,y,w,BOTAO_H_PRIMARIO};repouso(r,alpha);plrui_pilula_foco(r,alpha*f);
+  int ink=f>=.5f?plrui_tinta():235;float k=ink/255.f,xx=x+BOTAO_PAD_X2;
   gfx_icone((GfxRect){xx,y+(r.h-BOTAO_ICONE)/2,BOTAO_ICONE,BOTAO_ICONE},"play",k,k,k,alpha);xx+=BOTAO_ICONE+BOTAO_ICONE_GAP;
   GfxRect pr={xx,y+6,36,54};GLuint tx=c->poster[0]?tex_obter_larg(c->poster,36):0;
   if(tx){gfx_tex_aspect_atual=tex_aspecto(c->poster);gfx_rect(pr,tx,GFX_CARD,0,0,0,.12f,0,0,0,alpha);gfx_tex_aspect_atual=0;}
   plrui_trilho((GfxRect){pr.x,pr.y+pr.h+3,pr.w,4},prog,-1,-1,-1,alpha);xx+=36+16;
   t=txt_linha(TXT_DET_BOTAO,c->titulo,ink,ink,ink,255);txt_desenhar_alpha(t,xx,y+(r.h-t.h)/2,alpha);xx+=t.w+12;
-  u=txt_linha(TXT_DET_META2,s,ink,ink,ink,150);txt_desenhar_alpha(u,xx,y+(r.h-u.h)/2,alpha);
+  u=txt_linha(TXT_ILHA_SUB,s,ink,ink,ink,150);txt_desenhar_alpha(u,xx,y+(r.h-u.h)/2,alpha);
   return w;
 }
 static void header(const FdFicha *d){drawZona=0;drawItem=0;FmResumo r;fm_resumo(d->c,d->st,d->n,&r);float c=compactoT,pa=alpha,fade=pa*(1-c),e;char s[320],t[160];
@@ -289,20 +306,20 @@ static void header(const FdFicha *d){drawZona=0;drawItem=0;FmResumo r;fm_resumo(
     e=sobe(aberto,3);alpha=fade*e;float y=py(HERO_ACOES+(1-e)*NV_ENTRA_DY),x=px(72);
     FmConquista cq[4];int reason,level,nc=fm_conquistas(d->pessoa,pessoa_nome(),d->c,d->st,d->n,cq);int next=fm_proximo(d->c,d->st,d->n,FM_ATUA,cq,nc,&reason,&level);
     float w=next>=0?continuar(x,y,next,d,focoBtns[0][0]):botao_largura(i18n("Ver todos"),NULL,1);
-    if(next<0)botao_pilula((GfxRect){x,y,w,BOTAO_H_PRIMARIO},i18n("Ver todos"),NULL,focoBtns[0][0],1,0,alpha);
+    if(next<0)botao_pilula_sem_aro((GfxRect){x,y,w,BOTAO_H_PRIMARIO},i18n("Ver todos"),NULL,focoBtns[0][0],1,0,alpha);
     acoesR[0]=(GfxRect){x,y,w,BOTAO_H_PRIMARIO};x+=w+BOTAO_GAP;
     const char *seg=i18n(d->seguindo?"Seguindo":"Seguir"),*ic=d->seguindo?"visto":"mais";w=botao_largura(seg,ic,1);
-    botao_pilula((GfxRect){x,y,w,BOTAO_H_PRIMARIO},seg,ic,focoBtns[0][1],1,0,alpha);acoesR[1]=(GfxRect){x,y,w,BOTAO_H_PRIMARIO};x+=w+BOTAO_GAP;
+    botao_pilula_sem_aro((GfxRect){x,y,w,BOTAO_H_PRIMARIO},seg,ic,focoBtns[0][1],1,0,alpha);acoesR[1]=(GfxRect){x,y,w,BOTAO_H_PRIMARIO};x+=w+BOTAO_GAP;
     const char *cac=i18n(caca_achar(!strcmp(pessoa_area(),"Direção")?CACA_DIRECAO:CACA_ATUACAO,d->pessoa,"")>=0?"Na caçada":"Caçar");w=botao_largura(cac,"aj_crosshair",1);
-    botao_pilula((GfxRect){x,y,w,BOTAO_H_PRIMARIO},cac,"aj_crosshair",focoBtns[0][2],1,0,alpha);acoesR[2]=(GfxRect){x,y,w,BOTAO_H_PRIMARIO};x+=w+32;
+    botao_pilula_sem_aro((GfxRect){x,y,w,BOTAO_H_PRIMARIO},cac,"aj_crosshair",focoBtns[0][2],1,0,alpha);acoesR[2]=(GfxRect){x,y,w,BOTAO_H_PRIMARIO};x+=w+32;
     // Watched progress beside the actions.
     float yc=y+BOTAO_H_PRIMARIO/2;plrui_trilho((GfxRect){x,yc-2,170,4},r.total?r.visto/(float)r.total:0,-1,-1,-1,alpha);x+=190;
-    snprintf(s,sizeof s,i18n("Você já viu %d de %d"),r.visto,r.total);TxtLinha l=txt_linha(TXT_DET_META,s,240,240,245,255);
+    snprintf(s,sizeof s,i18n("Você já viu %d de %d"),r.visto,r.total);TxtLinha l=txt_linha(TXT_ILHA_SUB,s,240,240,245,255);
     snprintf(t,sizeof t,i18n("Atuação %d/%d · Direção %d/%d · Roteiro %d/%d"),r.papelVisto[0],r.papelTotal[0],r.papelVisto[1],r.papelTotal[1],r.papelVisto[2],r.papelTotal[2]);
-    float fim=px(72)+paginaW();TxtLinha l2=txt_linha(TXT_DET_META2,t,165,165,175,255);
+    float fim=px(72)+paginaW();TxtLinha l2=txt_linha(TXT_ILHA_APOIO,t,165,165,175,255);
     // The mock's single line when it fits; at large text the breakdown stacks under the count, never cut.
     if(x+l.w+18+l2.w<=fim){txt_desenhar_alpha(l,x,yc-l.h/2,alpha);txt_desenhar_alpha(l2,x+l.w+18,yc-l2.h/2,alpha);}
-    else{float y0=yc-(l.h+l2.h+2)/2;txt_desenhar_alpha(l,x,y0,alpha);l2=txt_linha_corta(TXT_DET_META2,t,165,165,175,255,fim-x);txt_desenhar_alpha(l2,x,y0+l.h+2,alpha);}
+    else{float y0=yc-(l.h+l2.h+2)/2;txt_desenhar_alpha(l,x,y0,alpha);l2=txt_linha_corta(TXT_ILHA_APOIO,t,165,165,175,255,fim-x);txt_desenhar_alpha(l2,x,y0+l.h+2,alpha);}
   }
   alpha=pa*sobe(aberto,4);
   const char *labels[4]; for(int i=0;i<4;i++) labels[i]=i18n(abas[i]);
@@ -332,8 +349,35 @@ static void regua(const FdFicha *d,const FmMarco *m,int nm,float a){
   char v[48];snprintf(v,sizeof v,i18n("%d títulos"),volume);snprintf(b,sizeof b,"%d",ano);
   int ink=anoFoco>=.5f?plrui_tinta():245;TxtLinha ly=txt_linha(TXT_ILHA_NOME,b,ink,ink,ink,255),lv=txt_linha(TXT_ILHA_SUB,v,ink,ink,ink,190);
   float w=ly.w+10+lv.w+44,cx=px(170+anoSel*anoPasso()-anoScroll);GfxRect r={cx-w/2,yc-26,w,52};
-  plrui_botao_repouso(r,a);plrui_pilula_foco(r,a*anoFoco);
+  repouso(r,a);plrui_pilula_foco(r,a*anoFoco);
   txt_desenhar_alpha(ly,r.x+22,yc-ly.h/2,a);txt_desenhar_alpha(lv,r.x+22+ly.w+10,yc-lv.h/2+1,a);
+}
+static void capitulo(const FdFicha *d,const FmMarco *m,int nm,const FmCap *caps,int nc,int anoCap){
+  char b[900],k[160];int ci=0,lista[FM_MAX],n=0;
+  for(int i=0;i<nc;i++)if(caps[i].de<=anoCap&&anoCap<=caps[i].ate)ci=i;
+  for(int i=0;i<d->n;i++)if((ruido||!d->c[i].ruido)&&d->c[i].ano==anoCap)lista[n++]=i;
+  float pa=alpha,e=sobe(tAba,2);alpha*=e;float dy=(1-e)*NV_ENTRA_DY;
+  if(nc){snprintf(k,sizeof k,i18n("Capítulo %d de %d"),ci+1,nc);snprintf(b,sizeof b,"%s · %s",k,i18n(fm_capitulo_nome(caps[ci].tipo)));plrui_kicker(b,px(72),py(626+dy),190,190,200,alpha);}
+  snprintf(b,sizeof b,"%d",anoCap);texto(b,72,644+dy,500,TXT_LOG_COD,245);
+  b[0]=0;
+  for(int i=0;i<nm;i++)if(m[i].ano==anoCap){
+    const FmCredito *c=d->c+m[i].idx;size_t off=strlen(b);
+    if(m[i].tipo==FM_M_MAIS_VOTADO)snprintf(b+off,sizeof b-off,i18n("%s vira o trabalho mais votado da carreira (%d votos no TMDB)."),c->titulo,c->votos);
+    else snprintf(b+off,sizeof b-off,"%s%s: %s%s%s. ",off?" ":"",i18n(fm_marco_nome(m[i].tipo)),c->titulo,c->personagem[0]?" · ":"",c->personagem);
+  }
+  if(!b[0]&&n){const FmCredito *c=d->c+lista[0];snprintf(b,sizeof b,"%s%s%s.",c->titulo,c->personagem[0]?" · ":"",c->personagem);}
+  for(int i=0;i<d->np;i++)if(d->premios[i].ano==anoCap)snprintf(b+strlen(b),sizeof b-strlen(b)," %s: %s.",d->premios[i].rel[0]?d->premios[i].rel:i18n("Prêmios"),d->premios[i].nome);
+  float h=txt_bloco(TXT_BODY,b,225,225,232,px(72),py(742+dy),560*colunaK(),30,alpha,4);
+  float tx=px(72),ty=py(742+dy)+h+14;int tags=0;
+  for(int i=0;i<nm;i++)if(m[i].ano==anoCap){char up[80];idioma_maiusc(up,sizeof up,i18n(fm_marco_nome(m[i].tipo)));TxtLinha tl=txt_linha(TXT_V2_KICK,up,235,235,240,255);float tw=tl.w+28;
+    GfxRect tr={tx,ty,tw,tl.h+12};repouso(tr,alpha);txt_desenhar_alpha(tl,tx+14,ty+6,alpha);tx+=tw+10;tags=1;}
+  for(int i=0;i<d->np;i++)if(d->premios[i].ano==anoCap){const char *label=d->premios[i].rel[0]?d->premios[i].rel:i18n("Prêmios");tx+=badge_desenhar(tx,ty,label,BADGE_NEUTRO,alpha)+BADGE_GAP;tags=1;}
+  int vistos=0,no=0;
+  if(nc){for(int i=0;i<d->n;i++){if((!ruido&&d->c[i].ruido)||d->c[i].ano<caps[ci].de||d->c[i].ano>caps[ci].ate)continue;no++;vistos+=d->st[i].estado==FM_VISTO;}snprintf(b,sizeof b,i18n("Neste capítulo você viu %d de %d."),vistos,no);}
+  else{for(int i=0;i<n;i++)vistos+=d->st[lista[i]].estado==FM_VISTO;snprintf(b,sizeof b,i18n("%d de %d vistos"),vistos,n);}
+  {TxtLinha l=txt_linha(TXT_DET_META2,b,160,160,170,255);txt_desenhar_alpha(l,px(72),ty+(tags?54:0),alpha);}
+  alpha=pa;
+  for(int i=0;i<n&&i<5;i++)cartaz(lista[i],676+i*(HIST_POSTER_W*gfx_poster_k()+24)/colunaK(),622,HIST_POSTER_W,HIST_POSTER_H,zona==4&&col==i);
 }
 static void historia(const FdFicha *d){drawZona=2;drawItem=0;FmMarco m[10];FmCap caps[6];int nm=fm_marcos(d->c,d->n,m,10),nc=fm_capitulos(d->c,d->n,m,nm,caps,6),nr=ruidoN(d);float pa=alpha,e;
   char b[260],k[120];int ci=0;for(int i=0;i<nc;i++)if(caps[i].de<=ano&&ano<=caps[i].ate)ci=i;
@@ -343,26 +387,7 @@ static void historia(const FdFicha *d){drawZona=2;drawItem=0;FmMarco m[10];FmCap
     chipX[i]=x;chipW[i]=chip(i==ci?k:NULL,i18n(fm_capitulo_nome(caps[i].tipo)),i==ci,x,cy,0);x+=chipW[i]+12/colunaK();}
   if(nr){snprintf(b,sizeof b,i18n(ruido?"Visíveis · %d":"Ocultas · %d"),nr);chipW[nc]=chip(i18n("Participações e entrevistas"),b,0,1800,cy,1);chipX[nc]=1800-chipW[nc];}
   alpha=pa*sobe(tAba,1);regua(d,m,nm,alpha);
-  // Chapter block for the selected year.
-  e=sobe(tempo,2);alpha=pa*e;float dy=(1-e)*NV_ENTRA_DY;
-  if(nc){snprintf(k,sizeof k,i18n("Capítulo %d de %d"),ci+1,nc);snprintf(b,sizeof b,"%s · %s",k,i18n(fm_capitulo_nome(caps[ci].tipo)));plrui_kicker(b,px(72),py(626+dy),190,190,200,alpha);}
-  snprintf(b,sizeof b,"%d",ano);texto(b,72,644+dy,500,TXT_LOG_COD,245);
-  const char *frase="Trabalhos deste ano";for(int i=0;i<nm;i++)if(m[i].ano==ano)frase=fm_marco_nome(m[i].tipo);
-  int top=-1;for(int i=0;i<ni;i++)if(top<0||d->c[indices[i]].votos>d->c[top].votos)top=indices[i];
-  b[0]=0;if(strcmp(frase,"Mais votado"))snprintf(b,sizeof b,"%s.",i18n(frase));
-  if(top>=0){snprintf(k,sizeof k,i18n("%d votos"),d->c[top].votos);snprintf(b+strlen(b),sizeof b-strlen(b),"%s%s: %s · %s",b[0]?" ":"",i18n("Mais votado"),d->c[top].titulo,k);}
-  for(int i=0;i<d->np;i++)if(d->premios[i].ano==ano)snprintf(b+strlen(b),sizeof b-strlen(b),". %s: %s",i18n("Prêmios"),d->premios[i].nome);
-  float h=txt_bloco(TXT_BODY,b,225,225,232,px(72),py(742+dy),560*colunaK(),30,alpha,4);
-  // Milestone tags of this year.
-  float tx=px(72),ty=py(742+dy)+h+14;int tags=0;
-  for(int i=0;i<nm;i++)if(m[i].ano==ano){char up[80];idioma_maiusc(up,sizeof up,i18n(fm_marco_nome(m[i].tipo)));TxtLinha tl=txt_linha(TXT_V2_KICK,up,235,235,240,255);float tw=tl.w+28;
-    GfxRect tr={tx,ty,tw,tl.h+12};plrui_botao_repouso(tr,alpha);txt_desenhar_alpha(tl,tx+14,ty+6,alpha);tx+=tw+10;tags=1;}
-  for(int i=0;i<d->np;i++)if(d->premios[i].ano==ano){const char *label=d->premios[i].rel[0]?d->premios[i].rel:i18n("Prêmios");tx+=badge_desenhar(tx,ty,label,BADGE_NEUTRO,alpha)+BADGE_GAP;tags=1;}
-  int vistos=0,no=0;
-  if(nc){for(int i=0;i<d->n;i++){if((!ruido&&d->c[i].ruido)||d->c[i].ano<caps[ci].de||d->c[i].ano>caps[ci].ate)continue;no++;vistos+=d->st[i].estado==FM_VISTO;}snprintf(b,sizeof b,i18n("Neste capítulo você viu %d de %d."),vistos,no);}
-  else{for(int i=0;i<ni;i++)vistos+=d->st[indices[i]].estado==FM_VISTO;snprintf(b,sizeof b,i18n("%d de %d vistos"),vistos,ni);}
-  { TxtLinha l=txt_linha(TXT_DET_META2,b,160,160,170,255);txt_desenhar_alpha(l,px(72),ty+(tags?54:0),alpha); }
-  for(int i=0;i<ni&&i<5;i++)cartaz(indices[i],716+i*(212*gfx_poster_k()+24)/colunaK(),622,212,322,zona==4&&col==i);
+  for(int i=0;i<na;i++)if(anosAlpha[i]>.002f){alpha=pa*anosAlpha[i];capitulo(d,m,nm,caps,nc,anos[i]);}
   alpha=pa;if(ni>5)botao("Ver todos",1640,970,0,zona==4&&col>=5);
 }
 static void grade(const FdFicha *d) {
@@ -410,6 +435,7 @@ static void alvosFolha(int c,float dx,float dy){
 }
 static void corpoFilmo(GfxRect r,float a,void *u) {
   (void)u;
+  if(folhaAnterior!=5&&(selecionado<0||selecionado>=fd_ficha()->n))return;
   GfxRect fim=area((GfxRect){1090,50,770,980}),g=ilha_corpo_rect();
   float dx=r.x+r.w-(fim.x+fim.w),dy=r.y-fim.y;
   /* content appears only once the growing island holds it whole */
@@ -426,5 +452,5 @@ static void toqueFoco(int z,int c){if(z==5){op=c;return;}zona=z;col=c;if(z==1&&a
 static float gesto;
 static int toqueRolar(const PonteiroRolagem *e){if(camada==5){if(e->fase==PONT_ROL_MOVER&&e->delta){bioPagina+=e->delta<0?1:-1;if(bioPagina<0)bioPagina=0;}return 1;}if(camada||!(aba==0||aba==1))return 0;if(e->fase==PONT_ROL_INICIO){gesto=0;return e->eixoY==(aba==1)&&e->y>=550;}if(e->fase==PONT_ROL_MOVER||e->fase==PONT_ROL_INERCIA){gesto-=e->delta;int step=(int)(gesto/(aba==1?350:-81));if(step){gesto-=step*(aba==1?350:81);if(aba==1){int max=(ni+gradeCols()-1)/gradeCols()-gradeLinhas();if(max<0)max=0;topo+=step;if(topo<0)topo=0;if(topo>max)topo=max;zona=4;col=topo*gradeCols();}else{int j=0;while(j<na&&anos[j]!=ano)j++;j+=step;if(j<0)j=0;if(j>=na)j=na-1;if(j>=0)ano=anos[j];}}return 1;}return 1;}
 static void alvoToque(float x,float y,float w,float h,int z,int c){GfxRect r=area((GfxRect){x,y,w,h});if(h==60)r.h=60;ponteiro_alvo(r.x+paginaX(),r.y,r.w,r.h,toqueFoco,NULL,z,c);}
-static void registrarToque(void){if(camada){ponteiro_camada();return;}float c=compactoT;if(c<.5f)for(int i=0;i<3;i++)ponteiro_alvo(acoesR[i].x+paginaX(),acoesR[i].y,acoesR[i].w,acoesR[i].h,toqueFoco,NULL,0,i);float tabX=72;for(int i=0;i<4;i++){float tw=txt_largura(TXT_ILHA_SEG,i18n(abas[i]))+40;if(contTxt[i][0])tw+=9+txt_largura(TXT_ILHA_NUM,contTxt[i]);alvoToque(tabX,compacta(HERO_ABAS,130),tw/colunaK(),54/linhaK(),1,i);tabX+=(tw+4)/colunaK();}if(aba==0){FmMarco m[10];FmCap caps[6];const FdFicha *d=fd_ficha();int nm=fm_marcos(d->c,d->n,m,10),nc=fm_capitulos(d->c,d->n,m,nm,caps,6)+(ruidoN(d)>0);for(int i=0;i<nc;i++)alvoToque(chipX[i],CONTEUDO_Y,chipW[i],60,2,i);int start=(int)(anoScroll/anoPasso()+.5f);for(int i=start;i<na&&i<start+21;i++)alvoToque(170+i*anoPasso()-anoScroll-38,500,76,80,3,anos[i]);for(int i=0;i<ni&&i<5;i++)alvoToque(716+i*(212*gfx_poster_k()+24)/colunaK(),622,212*gfx_poster_k()/colunaK(),322*gfx_poster_k()/linhaK(),4,i);if(ni>5)alvoToque(1640,970,botao_largura(i18n("Ver todos"),NULL,0)/colunaK(),60,4,5);ponteiro_rolagem(toqueRolar);}else if(aba==1){float y=compacta(CONTEUDO_Y,230);for(int i=0;i<5;i++)alvoToque(72+i*345,y,325,60,2,i);for(int i=topo*gradeCols();i<ni&&i<(topo+gradeLinhas())*gradeCols();i++)alvoToque(72+(i%gradeCols())*(220*gfx_poster_k()+24)/colunaK(),60+(py(y)+100+(i/gradeCols())*gradePasso()-scroll-60)/linhaK(),220*gfx_poster_k()/colunaK(),330*gfx_poster_k()/linhaK(),4,i);ponteiro_rolagem(toqueRolar);}else if(aba==2)alvoToque(100,775,580,60,2,0);}
+static void registrarToque(void){if(camada){ponteiro_camada();return;}float c=compactoT;if(c<.5f)for(int i=0;i<3;i++)ponteiro_alvo(acoesR[i].x+paginaX(),acoesR[i].y,acoesR[i].w,acoesR[i].h,toqueFoco,NULL,0,i);float tabX=72;for(int i=0;i<4;i++){float tw=txt_largura(TXT_ILHA_SEG,i18n(abas[i]))+40;if(contTxt[i][0])tw+=9+txt_largura(TXT_ILHA_NUM,contTxt[i]);alvoToque(tabX,compacta(HERO_ABAS,130),tw/colunaK(),54/linhaK(),1,i);tabX+=(tw+4)/colunaK();}if(aba==0){FmMarco m[10];FmCap caps[6];const FdFicha *d=fd_ficha();int nm=fm_marcos(d->c,d->n,m,10),nc=fm_capitulos(d->c,d->n,m,nm,caps,6)+(ruidoN(d)>0);for(int i=0;i<nc;i++)alvoToque(chipX[i],CONTEUDO_Y,chipW[i],60,2,i);int start=(int)(anoScroll/anoPasso()+.5f);for(int i=start;i<na&&i<start+21;i++)alvoToque(170+i*anoPasso()-anoScroll-38,500,76,80,3,anos[i]);for(int i=0;i<ni&&i<5;i++)alvoToque(676+i*(HIST_POSTER_W*gfx_poster_k()+24)/colunaK(),622,HIST_POSTER_W*gfx_poster_k()/colunaK(),HIST_POSTER_H*gfx_poster_k()/linhaK(),4,i);if(ni>5)alvoToque(1640,970,botao_largura(i18n("Ver todos"),NULL,0)/colunaK(),60,4,5);ponteiro_rolagem(toqueRolar);}else if(aba==1){float y=compacta(CONTEUDO_Y,230);for(int i=0;i<5;i++)alvoToque(72+i*345,y,325,60,2,i);for(int i=topo*gradeCols();i<ni&&i<(topo+gradeLinhas())*gradeCols();i++)alvoToque(72+(i%gradeCols())*(220*gfx_poster_k()+24)/colunaK(),60+(py(y)+100+(i/gradeCols())*gradePasso()-scroll-60)/linhaK(),220*gfx_poster_k()/colunaK(),330*gfx_poster_k()/linhaK(),4,i);ponteiro_rolagem(toqueRolar);}else if(aba==2)alvoToque(100,775,580,60,2,0);}
 void filmo_desenhar(float a){TXT_INI();alpha=a*entrada;preparar();const FdFicha *d=fd_ficha();gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.047f,.055f,alpha);heroi(alpha);gfx_transformar(0,0,1,paginaX(),0);header(d);if(!d->pronto)t21_estado(area((GfxRect){72,465,1750,430}),d->erro?T21_ERROR:T21_LOADING,"aj_user",i18n(d->erro?"Serviço indisponível":"Carregando…"),NULL,NULL,tempo,alpha);else if(aba==0)historia(d);else if(aba==1)grade(d);else if(aba==2)sobre(d);else conquistas(d);if(camada){ESCALA_INI();GfxRect sheet=area((GfxRect){1090,50,770,980});ESCALA_FIM();ilha_corpo(sheet.w,sheet.h,corpoFilmo,NULL);}{TxtLinha l=txt_linha_corta(TXT_ILHA_SUB,i18n(fd_aviso()),180,180,180,255,1150*colunaK());txt_desenhar_alpha(l,px(72),ANC(T21_SAFE_B)-l.h/2,alpha);}const char *keys[]={"← →","PgUp PgDn","OK","Voltar"},*labels[]={i18n("Ano"),i18n("Capítulos"),i18n("Abrir opções"),i18n("Voltar")};plrui_dicas(keys,labels,4,px(72),ANC(T21_SAFE_B),0,alpha);gfx_sem_transformar();registrarToque();TXT_FIM();conquistas_aviso_desenhar();}

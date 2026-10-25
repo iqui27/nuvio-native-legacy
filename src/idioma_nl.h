@@ -286,6 +286,7 @@
   T("%s terminou a série", "%s heeft de serie uitgekeken"),
   T("%s travada com %s", "%s vergrendeld met %s"),
   T("%s vai ver sua resposta", "%s ziet je antwoord"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s wordt het meest beoordeelde werk van de carrière (%d stemmen op TMDB)."),
   T("%s viu", "%s heeft gezien"),
   T("%s viu %d episódios de %s", "%s keek %d afleveringen van %s"),
   T("%s viu até o E%d", "%s zag tot en met E%d"),

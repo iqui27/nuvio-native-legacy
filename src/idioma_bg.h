@@ -286,6 +286,7 @@
   T("%s terminou a série", "%s завърши сериала"),
   T("%s travada com %s", "%s е заключен с %s"),
   T("%s vai ver sua resposta", "%s ще види отговора ви"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s става най-оценяваната творба в кариерата (%d гласа в TMDB)."),
   T("%s viu", "%s е гледал(а)"),
   T("%s viu %d episódios de %s", "%s изгледа %d епизода от %s"),
   T("%s viu até o E%d", "%s е гледал(а) до E%d"),

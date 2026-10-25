@@ -285,6 +285,7 @@
   T("%s terminou a série", "%s досмотрел(а) сериал"),
   T("%s travada com %s", "%s заблокирован с %s"),
   T("%s vai ver sua resposta", "%s увидит ваш ответ"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s становится самой популярной работой в карьере (%d голосов на TMDB)."),
   T("%s viu", "%s посмотрел(а)"),
   T("%s viu %d episódios de %s", "%s посмотрел(а) %d серий: %s"),
   T("%s viu até o E%d", "%s посмотрел(а) до E%d"),

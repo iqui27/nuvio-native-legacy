@@ -286,6 +286,7 @@
   T("%s terminou a série", "%s baigė serialą"),
   T("%s travada com %s", "%s užrakinta su %s"),
   T("%s vai ver sua resposta", "%s matys jūsų atsakymą"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s tampa daugiausia įvertintu karjeros darbu (%d balsų TMDB)."),
   T("%s viu", "%s matė"),
   T("%s viu %d episódios de %s", "%s pažiūrėjo %d serijas: %s"),
   T("%s viu até o E%d", "%s matė iki E%d"),

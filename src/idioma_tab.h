@@ -285,6 +285,7 @@
   { "%s terminou a série", "%s finished the series" },
   { "%s travada com %s", "%s locked with %s" },
   { "%s vai ver sua resposta", "%s will see your answer" },
+  { "%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s becomes the most voted work of their career (%d votes on TMDB)." },
   { "%s viu", "%s watched" },
   { "%s viu %d episódios de %s", "%s watched %d episodes of %s" },
   { "%s viu até o E%d", "%s watched up to E%d" },

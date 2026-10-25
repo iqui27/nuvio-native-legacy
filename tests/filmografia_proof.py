@@ -2,14 +2,16 @@
 from pathlib import Path
 import json
 import subprocess
+import sys
 
-ROOT = Path('/Volumes/ExternalSSD/tmp/rev/diretor21/21-j4/final2')
+ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else '/Volumes/ExternalSSD/tmp/rev/diretor21/21-j4/final2')
+STATES = ('historia', 'folha') if len(sys.argv) > 2 and sys.argv[2] == 'history' else ('historia', 'filtros', 'grade', 'folha')
 FONT = Path('deploy/app/fonts/InterDisplay-Regular.ttf').resolve()
 MOCK = Path('docs/prototypes/filmografia/preview.png')
-REF = ROOT / 'reference-208.png'
-# Recover the unchanged middle 1080p frame retained in the previous proof.
+REF = ROOT / 'reference-208.jpg'
+# Recover the unchanged reference frame retained in the previous proof.
 subprocess.run(['magick', '/Volumes/ExternalSSD/tmp/rev/diretor21/21-j4/final3/filmography-100-g0-historia-tri.png',
-                '-crop', '1920x1080+1920+64', '+repage', str(REF)], check=True)
+                '-crop', '1920x1080+1920+64', '+repage', str(REF)], check=True, timeout=45)
 
 def magick(*args):
     subprocess.run(['magick', *map(str, args)], check=True, timeout=45)
@@ -27,7 +29,7 @@ manifest = []
 for scale in (85, 100):
     for glass in (0, 1):
         prefix = ROOT / f'filmography-{scale}-g{glass}'
-        for state in ('historia', 'filtros', 'grade', 'folha'):
+        for state in STATES:
             source = Path(f'{prefix}-{state}.png')
             target = Path(f'{prefix}-{state}-tri.png')
             labels = ('Mock · História', 'Referência 2.0.8 · componente oficial',
@@ -35,7 +37,10 @@ for scale in (85, 100):
             command = []
             for path, label in zip((MOCK, REF, source), labels):
                 # Label strip sits outside each unchanged 1920x1080 frame.
-                command += ['(', str(path), '-resize', '1920x1080!', '-background', '#0d0d0d',
+                command += ['(', str(path)]
+                if path == MOCK:
+                    command += ['-crop', '1842x1036+39+44', '+repage']
+                command += ['-resize', '1920x1080!', '-background', '#0d0d0d',
                             '-gravity', 'north', '-splice', '0x64', '-gravity', 'northwest',
                             '-font', str(FONT), '-pointsize', '28', '-fill', 'white',
                             '-annotate', '+24+18', label, ')']

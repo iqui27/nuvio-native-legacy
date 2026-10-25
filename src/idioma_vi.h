@@ -286,6 +286,7 @@
   T("%s terminou a série", "%s đã xem hết loạt phim"),
   T("%s travada com %s", "Đã khóa %s cùng %s"),
   T("%s vai ver sua resposta", "%s sẽ thấy câu trả lời của bạn"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s trở thành tác phẩm được bình chọn nhiều nhất trong sự nghiệp (%d phiếu trên TMDB)."),
   T("%s viu", "%s đã xem"),
   T("%s viu %d episódios de %s", "%s đã xem %d tập của %s"),
   T("%s viu até o E%d", "%s đã xem đến E%d"),

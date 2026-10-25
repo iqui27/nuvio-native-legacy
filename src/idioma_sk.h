@@ -286,6 +286,7 @@
   T("%s terminou a série", "%s dopozeral(a) seriál"),
   T("%s travada com %s", "%s zamknuté s %s"),
   T("%s vai ver sua resposta", "%s uvidí vašu odpoveď"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s sa stáva najviac hodnoteným dielom kariéry (%d hlasov na TMDB)."),
   T("%s viu", "%s videl(a)"),
   T("%s viu %d episódios de %s", "%s videl(a) %d dielov: %s"),
   T("%s viu até o E%d", "%s videl(a) do E%d"),

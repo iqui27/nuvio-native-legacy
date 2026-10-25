@@ -286,6 +286,7 @@
   T("%s terminou a série", "%s sudah menamatkan serinya"),
   T("%s travada com %s", "%s dikunci bersama %s"),
   T("%s vai ver sua resposta", "%s akan melihat jawabanmu"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s menjadi karya dengan suara terbanyak dalam kariernya (%d suara di TMDB)."),
   T("%s viu", "%s sudah menonton"),
   T("%s viu %d episódios de %s", "%s menonton %d episode %s"),
   T("%s viu até o E%d", "%s menonton sampai E%d"),

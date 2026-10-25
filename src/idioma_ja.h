@@ -286,6 +286,7 @@
   T("%s terminou a série", "%sがシリーズを見終えた"),
   T("%s travada com %s", "%sを%sとロックしました"),
   T("%s vai ver sua resposta", "%sさんがあなたの回答を見られます"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%sはキャリアで最も多く評価された作品になります（TMDBで%d票）。"),
   T("%s viu", "%sが視聴済み"),
   T("%s viu %d episódios de %s", "%sが%d話視聴：%s"),
   T("%s viu até o E%d", "%sがE%dまで視聴"),

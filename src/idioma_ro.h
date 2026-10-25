@@ -285,6 +285,7 @@
   T("%s terminou a série", "%s a terminat serialul"),
   T("%s travada com %s", "%s blocat cu %s"),
   T("%s vai ver sua resposta", "%s va vedea răspunsul tău"),
+  T("%s vira o trabalho mais votado da carreira (%d votos no TMDB).", "%s devine cea mai votată operă a carierei (%d voturi pe TMDB)."),
   T("%s viu", "%s a văzut"),
   T("%s viu %d episódios de %s", "%s a văzut %d episoade din %s"),
   T("%s viu até o E%d", "%s a văzut până la E%d"),
