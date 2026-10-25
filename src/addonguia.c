@@ -489,7 +489,13 @@ static const char *falhaCorpo(int t) {
     default:return i18n("Abra Fontes para escolher outra opção.");
   }
 }
+static void lista_(int f);
 void addonguia_lista(int f) {
+  int semAro=gfx_vidro_sem_aro; gfx_vidro_sem_aro=1;
+  lista_(f);
+  gfx_vidro_sem_aro=semAro;
+}
+static void lista_(int f) {
   listaFoco=f;
   if(tela<0) relogioMovimento();
   nAlvos=0;
@@ -545,7 +551,7 @@ static void corpoDesenhar(void) {
   if(tela<0)return;
   nAlvos=0;
   if(tela==AG_MODO){moldura(1);modoDesenhar();return;}
-  if(tela==AG_LISTA){addonguia_lista(foco);return;}
+  if(tela==AG_LISTA){lista_(foco);return;}
   if(!desenhandoFolha) moldura(0);
   if(tela==AG_CONECTAR) {
     painel((GfxRect){380,244,1180,640},32);
@@ -691,7 +697,13 @@ static void folhaCorpo(GfxRect r,float a,void *u) {
   tela=destino;
   gfx_opacidade_grupo=alpha; gfx_escala_sair(escalaAnterior);
 }
+static void desenhar_(void);
 void addonguia_desenhar(void) {
+  int semAro=gfx_vidro_sem_aro; gfx_vidro_sem_aro=1;
+  desenhar_();
+  gfx_vidro_sem_aro=semAro;
+}
+static void desenhar_(void) {
   relogioMovimento();
   if(tela<0)return;
   float alpha=gfx_opacidade_grupo;

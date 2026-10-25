@@ -2128,7 +2128,7 @@ static float vidroDesde[4];   // caixa do que foi pintado na tela desde a ultima
 static float vidroVidros[VID_N][4], vidroFuros[VID_NFUROS][4];
 static unsigned char vidroIlhas[VID_N];
 int gfx_vidro_capturas, gfx_vidro_passadas;
-int gfx_vidro_camada;
+int gfx_vidro_camada, gfx_vidro_sem_aro;
 double gfx_vidro_fill, gfx_vidro_copia;
 // BACKDROP-ONLY SOURCE (docs/fosco-nova.md): the glasses read a blurred copy
 // of the backdrop layer alone (art, light, veils: every draw before the
@@ -4034,7 +4034,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   // Desempenho, or once the governor dropped the tier.
   fumaca = video || ajustes_vidro_qualidade() == 1 || (vidroDegradou && ajustes_vidro_qualidade() == 0);
   if (fumaca) chapado = 1;
-  semAro = tipo == GFX_VIDRO_ILHA || vidroNaIlha(tela);
+  semAro = tipo == GFX_VIDRO_ILHA || gfx_vidro_sem_aro || vidroNaIlha(tela);
   if (vidroNVidros < VID_N) {
     vidroIlhas[vidroNVidros] = tipo == GFX_VIDRO_ILHA;
     memcpy(vidroVidros[vidroNVidros++], tela, sizeof tela);
@@ -4278,7 +4278,7 @@ void gfx_vidro_chip(GfxRect r, float raio, float fundo, float a) {
   tela[0] = t.x; tela[1] = t.y; tela[2] = t.x + t.w; tela[3] = t.y + t.h;
   if (vidroSobreVideo(tela)) d = vidroVideoAlfa();   // over video: light tint
   gfx_cor(r, raio, c, c, c, (d > 1.0f ? 1.0f : d) * a);
-  if (!vidroNaIlha(tela)) gfx_vidro_aro(r, raio, 1.0f, 1, 1, 1, 0.14f * a);
+  if (!gfx_vidro_sem_aro && !vidroNaIlha(tela)) gfx_vidro_aro(r, raio, 1.0f, 1, 1, 1, 0.14f * a);
   gfx_vidro_luz(r, raio, a);
 }
 // A27 tint: the existing "Opacidade do vidro" (60..92 %) is the clear->tinted

@@ -978,7 +978,13 @@ static void addonClick(int i,int b) {
   addonPointer(i,b); SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RETURN; addonsui_evento(&e);
 }
 static void addonsPainel(float x,float y,float w,float h) { painel(x,y,w,h); }
+static void addonsDesenhar(int f);
 void aioui_addons_desenhar(int f) {
+  int semAro=gfx_vidro_sem_aro; gfx_vidro_sem_aro=1;
+  addonsDesenhar(f);
+  gfx_vidro_sem_aro=semAro;
+}
+static void addonsDesenhar(int f) {
   Uint32 now=SDL_GetTicks(); float dt=addonsTick?fminf((now-addonsTick)/1000.f,.05f):0;
   addonsTick=now;
   for(int i=0;i<168;i++) addonsFoco[i]=anim_mola(addonsFoco[i],i==f,dt,NV_MOLA_FOCO);
@@ -1015,7 +1021,13 @@ void aioui_addons_desenhar(int f) {
   ponteiro_alvo(r.x,r.y,r.w,r.h,addonPointer,addonClick,n+2,0);
   texto(TXT_ILHA_SUB,i18n("Setas: navegar    OK: abrir    Voltar: retornar"),92,1020,1450,160);
 }
+static void desenhar(Uint32 agora);
 void aioui_desenhar(Uint32 agora) {
+  int semAro=gfx_vidro_sem_aro; gfx_vidro_sem_aro=1;
+  desenhar(agora);
+  gfx_vidro_sem_aro=semAro;
+}
+static void desenhar(Uint32 agora) {
   if(!aberto) return;
   float alpha=gfx_opacidade_grupo;
   float entry=anim_suave(abertura);

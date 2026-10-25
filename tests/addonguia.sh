@@ -12,5 +12,8 @@ grep -q 'assert(ajustes_vidro_fosco())' tests/addonguia_shot.c tests/aiostreams_
 # Island glass captures the backdrop before its body tint is painted (r4 P1-1).
 awk '/gfx_vidro\(r, raio, GFX_VIDRO_ILHA/{v=NR} /gfx_cor\(r, raio, .055f, .059f, .071f, .91f/{c=NR} END{exit !(v && c > v)}' src/tela21.h
 # Glass pills/chips inside an island draw no rim (r4 P1-2).
-grep -q 'semAro = tipo == GFX_VIDRO_ILHA || vidroNaIlha(tela)' src/gfx.c
-grep -q 'if (!vidroNaIlha(tela)) gfx_vidro_aro' src/gfx.c
+grep -q 'semAro = tipo == GFX_VIDRO_ILHA || gfx_vidro_sem_aro || vidroNaIlha(tela)' src/gfx.c
+grep -q 'if (!gfx_vidro_sem_aro && !vidroNaIlha(tela)) gfx_vidro_aro' src/gfx.c
+# Page-level pills/chips of the guide (Meus addons, modo) are borderless too.
+[ "$(grep -c 'gfx_vidro_sem_aro=1' src/addonguia.c)" = 2 ]
+[ "$(grep -c 'gfx_vidro_sem_aro=1' src/aiostreamsui.c)" = 2 ]

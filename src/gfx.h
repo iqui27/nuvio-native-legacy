@@ -664,6 +664,8 @@ void gfx_vidro_material(GfxRect r, float raio, float dens, float a);
 // 1 while drawing a glass LAYER above the screen (sidebar): earlier glasses it
 // covers no longer force it flat (set/cleared by the caller around the draw).
 extern int gfx_vidro_camada;
+// 1 while drawing a borderless 2.1 screen: its pills and chips draw no rim.
+extern int gfx_vidro_sem_aro;
 // O mesmo com "Interface de vidro" desligada: a cor lisa (sr,sg,sb) a `sa`.
 void gfx_vidro_ou_solido(GfxRect r, float raio, float dens, float a,
                          float sr, float sg, float sb, float sa);
