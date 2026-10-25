@@ -14,7 +14,9 @@ static int reviewErrors;
 #define REVIEW(condition, name) do { if (!(condition)) { fprintf(stderr,"FAIL: %s\n",name); reviewErrors++; } } while (0)
 static void reviewDraw(void) {
   reviewText[0]=0; entry=page=1; pageSeconds=2;
-  txt_novo_quadro(); gfx_novo_quadro(); ponteiro_camada(); srvsetup_desenhar(shotTime); ponteiro_desenhar();
+  txt_novo_quadro(); gfx_novo_quadro();
+  glBindFramebuffer(GL_FRAMEBUFFER,target); glViewport(0,0,1920,1080); glClear(GL_COLOR_BUFFER_BIT);
+  ponteiro_camada(); srvsetup_desenhar(shotTime); ponteiro_desenhar();
 }
 static void reviewClick(float x, float y) {
   const PonteiroAlvo *v; int n=ponteiro_teste_lista(&v);
@@ -24,6 +26,42 @@ static void reviewClick(float x, float y) {
     return;
   }
   REVIEW(0,"missing keyboard hit target");
+}
+static void reviewPixel(int id, unsigned char pixel[4]) {
+  reviewDraw();
+  const PonteiroAlvo *v; int n=ponteiro_teste_lista(&v);
+  for (int i=0;i<n;i++) if(v[i].a==id) {
+    glFinish();
+    glReadPixels((int)(v[i].x+10),1079-(int)(v[i].y+8),1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+    return;
+  }
+  REVIEW(0,"missing focus sample target");
+}
+static void reviewFocus(void) {
+  const int ids[]={KEY_FIRST,KEY_FIRST+1,KEY_SHIFT,KEY_DELETE,KEY_DONE};
+  profile=perfis_ativo(); provider=1; shotLoginPending=1;
+  for(int reduced=0;reduced<2;reduced++) {
+    dados_gravar("ajustes.txt",reduced?"idioma 0\nperformanceAutoVersaoLocal 1\nanimacoes 1\n":"idioma 0\nperformanceAutoVersaoLocal 1\nanimacoes 0\n"); ajustes_dir(dados_dir());
+    REVIEW(ajustes_animacoes_reduzidas()==reduced,"focus motion preference");
+    for(int glass=0;glass<2;glass++) for(int secret=0;secret<2;secret++) {
+      ajustes_definir_vidro(glass); opened=1; screen=secret?PASSWORD:ADDRESS;
+      selected=KEY_DONE; worker.alive=0; field=0;
+      for(int f=0;f<90;f++) { shotTime+=16; srvsetup_atualizar(shotTime); }
+      for(unsigned i=0;i<sizeof ids/sizeof *ids;i++) {
+        unsigned char rest[4],start[4],middle[4],end[4];
+        reviewPixel(ids[i],rest);
+        selected=ids[i]; reviewPixel(ids[i],start);
+        shotTime+=80; srvsetup_atualizar(shotTime); reviewPixel(ids[i],middle);
+        for(int f=0;f<90;f++) { shotTime+=16; srvsetup_atualizar(shotTime); }
+        reviewPixel(ids[i],end);
+        int ok=memcmp(rest,end,3)!=0 && (reduced ? !memcmp(middle,end,3) :
+          !memcmp(rest,start,3) && memcmp(middle,rest,3) && memcmp(middle,end,3));
+        char name[128]; snprintf(name,sizeof name,"%s %s focus id %d, %s, %s",
+          secret?"password":"address",i<2?"key":"footer",ids[i],glass?"glass":"solid",reduced?"reduced":"animated");
+        REVIEW(ok,name);
+      }
+    }
+  }
 }
 static int reviewP1(void) {
   ponteiro_teste_toque(1); opened=1; provider=2; screen=CONNECT_PASSWORD;
@@ -60,6 +98,7 @@ static int reviewP1(void) {
   memset(addressText,'a',sizeof addressText-1); addressText[sizeof addressText-1]=0;
   selected=KEY_FIRST; key(SDLK_RETURN); selected=KEY_SHIFT; key(SDLK_RETURN);
   REVIEW(strlen(addressText)==sizeof addressText-1,"inline keys preserve buffer bounds");
+  reviewFocus();
   printf("P1 scenarios: %s (%d failures)\n",reviewErrors?"FAIL":"PASS",reviewErrors);
   return reviewErrors?1:0;
 }

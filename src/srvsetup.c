@@ -685,11 +685,11 @@ static void inlineKeyboard(int passwordField) {
   const char *keys=inlineKeys(passwordField);
   for(int i=0;keys[i];i++) {
     GfxRect r={px(1052+(i%10)*75),sy(456+(i/10)*62),pw(67),54};
-    int focus=selected==KEY_FIRST+i;
+    float focus=focusValue(KEY_FIRST+i);
     float cr,cg,cb; ajustes_acento(&cr,&cg,&cb);
-    gfx_cor(r,12/fminf(r.w,r.h),focus?cr:1,focus?cg:1,focus?cb:1,focus?1:.05f);
+    gfx_cor(r,12/fminf(r.w,r.h),anim_mistura(1,cr,focus),anim_mistura(1,cg,focus),anim_mistura(1,cb,focus),anim_mistura(.05f,1,focus));
     char key[2]={keys[i],0}; if(keyboardUpper && key[0]>='a' && key[0]<='z')key[0]-='a'-'A';
-    int ink=focus?ajustes_tinta_foco():225;
+    int ink=(int)anim_mistura(225,ajustes_tinta_foco(),focus);
     TxtLinha line=txt_linha(TXT_ILHA_TEXTO,key,ink,ink,ink,255);
     txt_desenhar(line,r.x+(r.w-line.w)/2,r.y+(r.h-line.h)/2);
     pointerTarget(r,KEY_FIRST+i);
@@ -697,12 +697,12 @@ static void inlineKeyboard(int passwordField) {
   const char *labels[]={passwordField?"⇧ Maiúsculas":"https://","⌫ Apagar","Concluir"};
   float x=px(1052);
   for(int i=0;i<3;i++) {
-    TxtLinha line=txt_linha(TXT_G18M,i18n(labels[i]),225,225,225,255);
+    float focus=focusValue(KEY_SHIFT+i),cr,cg,cb;
+    int ink=(int)anim_mistura(225,ajustes_tinta_foco(),focus);
+    TxtLinha line=txt_linha(TXT_G18M,i18n(labels[i]),ink,ink,ink,255);
     GfxRect r={x,sy(722),line.w+40,52};
-    if(selected==KEY_SHIFT+i) {
-      float cr,cg,cb; ajustes_acento(&cr,&cg,&cb); gfx_cor(r,.5f,cr,cg,cb,1);
-      int ink=ajustes_tinta_foco(); line=txt_linha(TXT_G18M,i18n(labels[i]),ink,ink,ink,255);
-    } else gfx_cor(r,.5f,1,1,1,.07f);
+    ajustes_acento(&cr,&cg,&cb);
+    gfx_cor(r,.5f,anim_mistura(1,cr,focus),anim_mistura(1,cg,focus),anim_mistura(1,cb,focus),anim_mistura(.07f,1,focus));
     txt_desenhar(line,r.x+20,r.y+(r.h-line.h)/2);
     pointerTarget(r,KEY_SHIFT+i); x+=r.w+12;
   }
