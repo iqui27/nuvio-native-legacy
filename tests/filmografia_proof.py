@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else '/Volumes/ExternalSSD/tmp/rev/diretor21/21-j4/final2')
-STATES = ('historia', 'folha') if len(sys.argv) > 2 and sys.argv[2] == 'history' else ('historia', 'filtros', 'grade', 'folha')
+STATES = ('historia',) if len(sys.argv) > 2 and sys.argv[2] == 'history' else ('historia', 'filtros', 'grade', 'folha')
 FONT = Path('deploy/app/fonts/InterDisplay-Regular.ttf').resolve()
 MOCK = Path('docs/prototypes/filmografia/preview.png')
 REF = ROOT / 'reference-208.jpg'

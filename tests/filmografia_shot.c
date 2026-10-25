@@ -107,6 +107,30 @@ static void motion_strip(const char *prefix,const char *mode) {
   puts(path);free(before);free(px);SDL_FreeSurface(s);
 }
 static void shot(const char *prefix,const char *suffix){for(int i=0;i<150;i++){j4_frame(.01f,proof_step,proof_draw);}j4_art_ready();txt_novo_quadro();tex_novo_quadro();gfx_novo_quadro();glClear(GL_COLOR_BUFFER_BIT);proof_draw();unsigned char *px=malloc(1920*1080*4);assert(px);glReadPixels(0,0,1920,1080,GL_RGBA,GL_UNSIGNED_BYTE,px);SDL_Surface *s=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);assert(s);for(int y=0;y<1080;y++)memcpy((char*)s->pixels+y*s->pitch,px+(1079-y)*1920*4,1920*4);char path[600];snprintf(path,sizeof path,"%s-%s.png",prefix,suffix);assert(IMG_SavePNG(s,path)==0);puts(path);SDL_FreeSurface(s);free(px);}
+static void caption_check(const char *prefix) {
+  float scale=gfx_escala_txt();
+  int x=724,y=622+(int)((276+14+18)*scale),w=(int)(36*scale),h=(int)(24*scale);
+  unsigned char actual[36*24*4],expected[36*24*4];
+  glReadPixels(x,1080-y-h,w,h,GL_RGBA,GL_UNSIGNED_BYTE,actual);
+  glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);
+  txt_novo_quadro();
+  float previous=gfx_escala_txt_entrar();
+  TxtLinha line=txt_linha(TXT_ILHA_HORA,"2024 · Protagonista",150,150,150,255);
+  gfx_transformar(0,0,1,120/scale-72,0);
+  txt_desenhar_alpha(line,72+(676-72)/scale,622/scale+276+14+18,1);
+  gfx_sem_transformar();gfx_escala_sair(previous);
+  glReadPixels(x,1080-y-h,w,h,GL_RGBA,GL_UNSIGNED_BYTE,expected);
+  // Allow subpixel snapping at 85%; compare glyph coverage away from the title.
+  int ink=0,matched=0;
+  for(int yy=1;yy<h-4;yy++)for(int xx=1;xx<w-1;xx++)if(expected[(yy*w+xx)*4]>65){
+    int found=0;ink++;
+    for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)found|=actual[((yy+dy)*w+xx+dx)*4]>65;
+    matched+=found;
+  }
+  char path[700];snprintf(path,sizeof path,"%s-caption.txt",prefix);FILE *f=fopen(path,"w");assert(f);
+  fprintf(f,"%s\n",ink>20&&matched>=ink*.95f?"PASS":"FAIL");fclose(f);
+  printf("caption %s: %d/%d glyph pixels\n",prefix,matched,ink);
+}
 int main(int argc,char **argv){assert(argc==2||argc==3);dados_iniciar(NULL);assert(!strcmp(dados_dir(),getenv("NUVIO_DADOS")));assert(dados_gravar("ajustes.txt","idioma 0\nselected_theme 2\n"));ajustes_dir(dados_dir());SDL_SetHint("SDL_MAC_BACKGROUND_APP","1");assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));IMG_Init(IMG_INIT_PNG);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);SDL_Window *win=SDL_CreateWindow("filmo",0,0,64,64,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);assert(win);assert(SDL_GL_CreateContext(win));GLuint tex,fbo;glGenTextures(1,&tex);glBindTexture(GL_TEXTURE_2D,tex);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,1920,1080,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);glGenFramebuffers(1,&fbo);glBindFramebuffer(GL_FRAMEBUFFER,fbo);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,tex,0);assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(256);char *art=realpath("deploy/app/art",NULL);assert(art);gfx_icones_dir(art);free(art);
  load_fixture();fixture_art();assert(pessoa_n_creditos()==46);assert(strstr(pessoa_outros(),"Mara Lindquist"));filmo_abrir();assert(filmo_foco()==3000);
  if(argc==3&&!strcmp(argv[2],"history")){
@@ -115,7 +139,7 @@ int main(int argc,char **argv){assert(argc==2||argc==3);dados_iniciar(NULL);asse
      key(SDLK_ESCAPE);while(filmo_aba()!=0)key(SDLK_LEFT);key(SDLK_DOWN);key(SDLK_DOWN);filmo_abrir();
      for(int yr=0;yr<30;yr++)key(SDLK_LEFT);for(int yr=2011;yr<2024;yr++)key(SDLK_RIGHT);
      char pfx[600];snprintf(pfx,sizeof pfx,"%s-%d-g%d",argv[1],sc,g);
-     shot(pfx,"historia");key(SDLK_RIGHT);motion_strip(pfx,"focus");key(SDLK_LEFT);
+     shot(pfx,"historia");caption_check(pfx);j4_frame(0,proof_step,proof_draw);key(SDLK_RIGHT);motion_strip(pfx,"focus");key(SDLK_LEFT);
      for(int i=0;i<150;i++)j4_frame(.01f,proof_step,proof_draw);
      key(SDLK_DOWN);key(SDLK_RETURN);assert(filmo_camada()==1);shot(pfx,"folha");key(SDLK_ESCAPE);
    }

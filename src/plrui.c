@@ -259,7 +259,7 @@ float plrui_seg_txt(const char *const *rotulos, const char *const *contagem, int
   }
   if (x < 0.0f) return tot;
   { GfxRect tr = { x, y, tot, SEG_IH + SEG_PAD * 2.0f };
-    if (vid) gfx_vidro_folha(tr, 0.5f, a);
+    if (vid) gfx_vidro_painel_sem_aro(tr, 0.5f, GFX_VIDRO_DENS, a);
     else gfx_cor(tr, 0.5f, 0.114f, 0.118f, 0.137f, a); }
   xx = x + SEG_PAD;
   for (i = 0; i < n; i++) {
