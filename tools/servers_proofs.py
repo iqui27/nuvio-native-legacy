@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Compare fresh server captures with the retained mock and 2.0.8 columns."""
+import argparse
 import json
 import subprocess
 from pathlib import Path
 
-root = Path('/Volumes/ExternalSSD/tmp/rev/servers-j5s')
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('output', nargs='?', default='/Volumes/ExternalSSD/tmp/rev/servers-j5s')
+parser.add_argument('--detail-only', action='store_true')
+args = parser.parse_args()
+root = Path(args.output)
 reference = Path('/Volumes/ExternalSSD/tmp/rev/diretor21/21-j5/r3')
 font = '/System/Library/Fonts/Helvetica.ttc'
 outputs = []
@@ -18,6 +23,8 @@ for screen, directory, prefix in (
     ('servers-overview', 'overview', 'overview'),
     ('servers-detail', 'detail', 'server'),
 ):
+    if args.detail_only and screen != 'servers-detail':
+        continue
     original = reference / f'{screen}-tri.png'
     for scale in (100, 85):
         for material in ('glass', 'solid'):

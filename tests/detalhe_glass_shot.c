@@ -90,10 +90,29 @@ size_t trakt_token_tam(const char *);
 #define txt_largura trakt_largura
 #define txt_token_tam trakt_token_tam
 #include "gfx.h"
+#include "botoes.h"
+#include "plrui.h"
 static int cardMaterial, cardFrost, captionSolid, commentMaterial;
 // Record actual draw arguments, so missing hero offsets fail the PNG proof.
 static GfxRect serverRects[7];
 static int serverRectCount;
+static int serverRims;
+static GfxRect serverPrimary;
+void server_panel(GfxRect r, float radius, float density, float a) {
+  if (getenv("NUVIO_SERVER_CHECK") && a > .01f && !gfx_vidro_sem_aro) serverRims++;
+  gfx_vidro_painel(r, radius, density, a);
+}
+static void server_primary(GfxRect r, const char *label, const char *icon, float focus, int primary, int align, float a) {
+  serverPrimary = r;
+  botao_pilula(r, label, icon, focus, primary, align, a);
+}
+static float server_compact(float x, float y, const char *label, const char *icon, float focus, float a) {
+  float w = plrui_botao(x, y, label, icon, focus, a);
+  serverPrimary = (GfxRect){x, y, w, 60};
+  return w;
+}
+#define botao_pilula server_primary
+#define plrui_botao server_compact
 static void server_rect(GfxRect r) {
   if (getenv("NUVIO_SHOT_SERVIDORES") && serverRectCount < 7)
     serverRects[serverRectCount++] = r;
@@ -109,7 +128,7 @@ static void server_vai(const VaiTocar *vt, float x, float y, float w, float a) {
   vtui_desenhar(vt, x, y, w, a);
 }
 static void server_plano(GfxRect r, float radius, float a) {
-  if (r.h == 76.0f || r.h == 132.0f) server_rect(r);
+  if (r.h == 76.0f || r.h == 132.0f || (r.w == 180 && r.h == 48)) server_rect(r);
   plrui_material_plano(r, radius, a);
 }
 static void server_button(GfxRect r, float a) {
@@ -432,6 +451,7 @@ static void quadros(int n) {
     glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     serverRectCount = 0;
+    serverRims = 0;
     detail_desenhar(SDL_GetTicks());
     // NUVIO_SHOT_RELOGIO=1: the clock island over the page, as app.c draws it.
     if (getenv("NUVIO_SHOT_RELOGIO")) {
@@ -681,6 +701,7 @@ int main(int argc, char **argv) {
   }
   if (quer(argc, argv, "filme-topo")) { abrir(1, 0, 0, 0); gravar("filme-topo"); }
   if (quer(argc, argv, "detalhe-chip")) {
+    assert(ajustes_rapido_cor_definir(11));
     assert(dados_gravar("perfis.txt", "1\t0\t1\t0\t#7655D6\tMarina\t\t\n"));
     perfis_carregar_ativo();
     // Confirmed foreign logo, friends feed, and a real candidate stream.
@@ -692,6 +713,29 @@ int main(int argc, char **argv) {
     candidate.altura = 2160;
     stream_definir_alvo(IMDB_FILME); stream_definir_lista(&candidate, 1);
     abrir(1,0,0,0);
+    if (getenv("NUVIO_SERVER_CHECK")) {
+      int failures = 0;
+      const float scales[] = {1, .85f};
+      for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
+        gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
+        quadros(160);
+        float red, green, blue; ajustes_acento(&red, &green, &blue);
+        unsigned char pixel[4];
+        glReadPixels((int)((serverPrimary.x + serverPrimary.w * .5f) * gfx_escala_txt()),
+                     1080 - (int)((serverPrimary.y + 8) * gfx_escala_txt()), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+        int compact = serverPrimary.w <= 180 && serverPrimary.h <= 64;
+        int accent = fabsf(pixel[0] / 255.f - red) < .08f &&
+                     fabsf(pixel[1] / 255.f - green) < .08f && fabsf(pixel[2] / 255.f - blue) < .08f;
+        printf("%s: P1 primary %d%% %s width=%.1f height=%.1f accent=%d\n",
+               compact && accent ? "PASS" : "FAIL", scale ? 85 : 100, glass ? "glass" : "solid",
+               serverPrimary.w, serverPrimary.h, accent);
+        failures += !compact || !accent;
+        printf("%s: P1 rimless controls %d%% %s outlines=%d\n", serverRims ? "FAIL" : "PASS",
+               scale ? 85 : 100, glass ? "glass" : "solid", serverRims);
+        failures += serverRims != 0;
+      }
+      return failures ? 1 : 0;
+    }
     const float scales[] = {1, .85f};
     for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
       char name[80]; gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);

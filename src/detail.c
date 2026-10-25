@@ -5164,13 +5164,27 @@ static void heroWeb(float a, float desloc) {
   }
 
   if (heroServidor()) {
+    const char *label = !strcmp(rot, i18n("Reproduzir")) ? i18n("Assistir") : rot;
     float x = NV_DETW2_X;
     for (int i = 0; i < 3; i++) {
-      GfxRect r = {x, yAcoes, i ? NV_DETW2_CIRC : botao_largura(rot, "play", 1), NV_DETW2_BTN_H};
+      float h = i ? NV_DETW2_CIRC : 60;
+      GfxRect r = {x, yAcoes + (NV_DETW2_BTN_H - h) * .5f,
+                   i ? NV_DETW2_CIRC : plrui_botao_largura(label, "play"), h};
       float grow = 1 + .06f * serverActionFocus[i];
       GfxRect focused = {r.x - r.w * (grow - 1) * .5f, r.y - r.h * (grow - 1) * .5f, r.w * grow, r.h * grow};
-      if (i) botao_disco(focused, i == 1 ? (biblioteca_na_lista(idx) ? "check" : "mais") : "aj_ellipsis", serverActionFocus[i], a);
-      else { botao_pilula(focused, rot, "play", serverActionFocus[i], 1, 0, a); player_morph_de(morphLogo, r); }
+      if (i) {
+        plrui_material_plano(focused, focused.h * .5f, a);
+        plrui_pilula_foco(focused, serverActionFocus[i] * a);
+        float ink = serverActionFocus[i] > .5f ? plrui_tinta() / 255.f : 1;
+        float g = focused.w * .333f;
+        gfx_icone((GfxRect){focused.x + (focused.w - g) * .5f, focused.y + (focused.h - g) * .5f, g, g},
+                  i == 1 ? (biblioteca_na_lista(idx) ? "check" : "mais") : "aj_ellipsis", ink, ink, ink, a);
+      } else {
+        gfx_transformar(r.x + r.w * .5f, r.y + r.h * .5f, grow, 0, 0);
+        plrui_botao(r.x, r.y, label, "play", 1, a);
+        gfx_sem_transformar();
+        player_morph_de(morphLogo, r);
+      }
       if (i == 2) maisAncora = r;
       if (a > .3f) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroDetalhe, NULL, -1, i);
       x += r.w + NV_DETW2_BTN_GAP;
@@ -5419,7 +5433,7 @@ static void heroWeb(float a, float desloc) {
     float x = NV_DETW2_X, y = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + 12;
     for (int p = 0; p < 3; p++) if (servidoresDisponiveis & (1 << p)) {
       GfxRect chip = {x,y,180,48}; int sel = nivel == 0 && focoServidor == p;
-      plrui_botao_repouso(chip, a);
+      plrui_material_plano(chip, chip.h * .5f, a);
       plrui_pilula_foco(chip, serverChipFocus[p] * a);
       int ink = sel ? ajustes_tinta_foco() : 243;
       GLuint mark = tex_obter_larg(logos[p],28);
@@ -5630,7 +5644,9 @@ static void heroWeb(float a, float desloc) {
       else gfx_icone((GfxRect){card.x + 20, card.y + 76, 28, 28}, "pl_star", 1, 1, 1, a);
     }
     const char *keys[] = {"OK", "↓", "Voltar"};
-    const char *labelsFooter[] = {i18n("Assistir"), i18n("Elenco"), i18n("Voltar")};
+    char destination[160];
+    snprintf(destination, sizeof destination, "%s · %s", i18n("Trailers"), i18n("Elenco"));
+    const char *labelsFooter[] = {i18n("Assistir"), destination, i18n("Voltar")};
     plrui_dicas(keys, labelsFooter, 3, NV_DETW2_X, NV_TELA_H - ANC(40), 0, a);
   }
   if (detalheRetrato()) gfx_sem_recorte();
