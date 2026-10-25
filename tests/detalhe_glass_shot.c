@@ -634,6 +634,8 @@ int main(int argc, char **argv) {
     // Ajustes > Aparencia > Fundo: 0 Arte, 1 Arte borrada, 2 Frost.
     // NUVIO_SHOT_FONTE=3: Montserrat, the interface font of the owner's TV.
     if (getenv("NUVIO_SHOT_FONTE")) fprintf(f, "fonteInterface %d\n", atoi(getenv("NUVIO_SHOT_FONTE")));
+    // NUVIO_SHOT_ESCALA=<0..5>: text/component scale (0 = 85%, 2 = 100%).
+    if (getenv("NUVIO_SHOT_ESCALA")) fprintf(f, "escalaTextoVersaoLocal 1\nescalaTextoLocal %d\n", atoi(getenv("NUVIO_SHOT_ESCALA")));
     if (getenv("NUVIO_SHOT_FUNDO")) fprintf(f, "fundoLocal %d\n", atoi(getenv("NUVIO_SHOT_FUNDO")));
     // NUVIO_SHOT_BORDA=1: "Borda no cartaz em foco" off (focus grows instead of a ring).
     if (getenv("NUVIO_SHOT_BORDA")) fprintf(f, "bordaFocoCartaz %d\n", atoi(getenv("NUVIO_SHOT_BORDA")));
@@ -720,6 +722,39 @@ int main(int argc, char **argv) {
       frasesAberta=1; seriefrases_abrir(itens[shots[j].movie].imdb);
       quadros(50); gravar(shots[j].name);
     }
+  }
+
+  // anim: enter, focus moves (ratings row to Friends, cast) and exit, as frames.
+  if (argc > 2 && quer(argc,argv,"anim")) {
+    SDL_Event e;
+    char name[100];
+    memset(&e, 0, sizeof e); e.type = SDL_KEYDOWN;
+    tex_encerrar(); assert(tex_iniciar(30));
+    abrir(1,0,0,0); quadros(1);
+    // Art first, so the enter frames show the page and not empty slots.
+    { Uint32 dl = SDL_GetTicks() + 15000; int pend = 1;
+      while (pend && (Sint32)(dl - SDL_GetTicks()) > 0) {
+        tex_estatisticas(NULL,&pend,NULL,NULL,NULL); SDL_Delay(16); tex_bombear(3); } }
+    detail_fechar_seco();
+    for (int k=0;k<60 && detail_aberto();k++) quadros(1);
+    printf("anim enter from closed=%d\n", !detail_aberto());
+    { HomeItem hi; memset(&hi, 0, sizeof hi);   // raw open: abrir() settles 160 frames
+      hi.indice = 1; hi.rect.w = NV_TELA_W; hi.rect.h = NV_TELA_H;
+      hi.titulo = itens[1].titulo; hi.genero = itens[1].genero; hi.meta = itens[1].meta;
+      detail_abrir(&hi); }
+    for (int k=0;k<6;k++) { quadros(k ? 3 : 1); printf("anim t=%.3f a2=%.3f\n", t, fase2()); snprintf(name,sizeof name,"anim-enter-%d",k); gravar(name); }
+    quadros(40); SDL_Delay(400); quadros(8);
+    abrir(1,1,SEC_NOTAS,0); quadros(60); SDL_Delay(400); quadros(8);
+    gravar("anim-notas-0");
+    for (int c=1;c<nNotasTiles();c++) { e.key.keysym.sym = SDLK_RIGHT; detail_evento(&e); quadros(3); }
+    for (int k=0;k<4;k++) { quadros(k ? 5 : 1); snprintf(name,sizeof name,"anim-notas-fim-%d",k); gravar(name); }
+    quadros(40); gravar("anim-notas-amigos");
+    abrir(1,1,SEC_ELENCO,0); quadros(60); SDL_Delay(400); quadros(8);
+    printf("anim focus row=%d col=%d\n", foco.fileira, foco.coluna);
+    e.key.keysym.sym = SDLK_RIGHT; detail_evento(&e);
+    for (int k=0;k<4;k++) { quadros(k ? 4 : 1); snprintf(name,sizeof name,"anim-elenco-%d",k); gravar(name); }
+    detail_fechar();
+    for (int k=0;k<5;k++) { quadros(k ? 4 : 1); snprintf(name,sizeof name,"anim-exit-%d",k); gravar(name); }
   }
 
   if (quer(argc,argv,"full")) {
