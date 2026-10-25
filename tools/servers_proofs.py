@@ -57,7 +57,7 @@ for screen, directory, prefix in (
     'pngs': [str(p) for p in outputs],
     'captured_worktree': str(Path.cwd()),
     'reference': str(reference),
-    'limit': 'Overlay differences include distinct fixture artwork and inherited Detail hero layout.',
+    'limit': 'Overlay differences include distinct fixture artwork and live catalog metadata.',
 }, indent=2) + '\n')
 for path in outputs:
     print(path)

@@ -76,7 +76,7 @@ static void rail_shot_aplicar(void) {
 static void rail_shot_relogio(void) {   // NUVIO_SHOT_RELOGIO=1: the clock island, as app.c draws it
   if (getenv("NUVIO_SHOT_RELOGIO")) {
     ilha_relogio_visivel(1);
-    ilha_posicionar(1);
+    ilha_posicionar(menu_destino() == MENU_BIBLIOTECA ? 2 : 1);
     ilha_desenhar(SDL_GetTicks());
   }
 }

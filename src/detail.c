@@ -115,7 +115,9 @@ static int detalheRetrato(void) {
   return 0;
 #endif
 }
+static int heroServidor(void);
 static float larguraTextoHero(void) {
+  if (heroServidor()) return 700.0f;
   return detalheRetrato() ? fminf(NV_DETW2_TEXTO_W, NV_TELA_W - 192.0f) : NV_DETW2_TEXTO_W;
 }
 static float larguraLogoHero(void) {
@@ -320,6 +322,7 @@ static GfxRect maisAncora;  // onde o "..." foi desenhado (ilha detmais.h)
 static int  focoAmigos = 0;
 static int focoServidor = -1, fonteServidorPedida = -1;
 static unsigned char servidoresDisponiveis;
+static float serverActionFocus[3], serverChipFocus[3];
 static int srvAvailabilityIndex = -1;
 static unsigned srvAvailabilityVersion;
 static void ponteiroServidor(int p, int unused) { (void)unused; nivel = 0; focoAmigos = 0; focoServidor = p; }
@@ -1723,6 +1726,8 @@ static void abrirInterno(const HomeItem *it) {
   foco.colunaLembrada[SEC_TEMPORADAS] = colTemp(temporada);
   foco.colunaLembrada[SEC_EPISODIOS]  = epAncora;
   memset(animFoco, 0, sizeof animFoco);
+  memset(serverActionFocus, 0, sizeof serverActionFocus);
+  memset(serverChipFocus, 0, sizeof serverChipFocus);
   memset(scrollSec, 0, sizeof scrollSec); memset(velSec, 0, sizeof velSec);
   memset(revEp, 0, sizeof revEp); memset(revRel, 0, sizeof revRel);
 }
@@ -2683,13 +2688,17 @@ static int nBotoesTodos(void) {
          + (temMais() ? 1 : 0) + (temJuntos() ? 1 : 0) + (temTravar() ? 1 : 0);
 }
 
+static int heroServidor(void) {
+  return servidoresDisponiveis && !detalheRetrato() && !carro;
+}
 static int acoesAgrupadas(void) {
-  if (detalheRetrato()) return 0;
+  if (detalheRetrato() || heroServidor()) return 0;
   return carro || ajustes_home_layout() == HOME_LAYOUT_DINAMICA ||
          ajustes_home_layout() == HOME_LAYOUT_MODERNA;
 }
 
 static int nBotoes(void) {
+  if (heroServidor()) return 3;
   return acoesAgrupadas() && !maisAcoes ? 2 + (temInicio() ? 1 : 0) : nBotoesTodos();
 }
 
@@ -2706,6 +2715,7 @@ enum { ACAO_PRIMARIO = 0, ACAO_LISTA = 1, ACAO_ASSISTIDO = 2, ACAO_FONTES = 3,
        ACAO_INICIO = 4, ACAO_RECOMENDAR = 5, ACAO_LEMBRAR = 6, ACAO_ARTE = 7,
        ACAO_TRAILER = 8, ACAO_EXPLORAR = 9, ACAO_MAIS = 10, ACAO_JUNTOS = 11, ACAO_TRAVAR = 12 };
 static int acaoEm(int n) {
+  if (heroServidor()) return n == 0 ? ACAO_PRIMARIO : n == 1 ? ACAO_LISTA : ACAO_MAIS;
   if (n == 0) return ACAO_PRIMARIO;
   if (temInicio()) {
     if (n == 1) return ACAO_INICIO;
@@ -3804,7 +3814,17 @@ static float blocoAnt[3] = { -1.0f, -1.0f, -1.0f };   // Notas / Numeros / Progr
 
 static void detail_atualizar_(float dt, Uint32 agora) {
   if (musicaui_aberta()) { musicaui_atualizar(agora); return; }
-  if (aberto) revalidarIdx();
+  if (aberto) {
+    revalidarIdx();
+    unsigned version = servidores_fileiras_versao();
+    if (srvAvailabilityIndex != idx || srvAvailabilityVersion != version) {
+      const CatItem *item = cat_item(idx);
+      servidoresDisponiveis = 0;
+      for (int p = 0; item && p < 3; p++)
+        if (servidores_contem_item(item, p)) servidoresDisponiveis |= 1 << p;
+      srvAvailabilityIndex = idx; srvAvailabilityVersion = version;
+    }
+  }
   pessoaBuscaAtualizar();
 #ifdef NV_TOUCH_UI
   toqueDetalheSincronizarModo();
@@ -4203,6 +4223,14 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     okDesceEm = 0;
   }
 
+  for (int i = 0; i < 3; i++) {
+    float action = nivel == 0 && focoServidor < 0 && !focoAmigos && botao == i ? 1 : 0;
+    float chip = nivel == 0 && focoServidor == i ? 1 : 0;
+    serverActionFocus[i] = anim_mola(serverActionFocus[i], action, dt,
+        action > serverActionFocus[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+    serverChipFocus[i] = anim_mola(serverChipFocus[i], chip, dt,
+        chip > serverChipFocus[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+  }
   epSheen=revela_varre(&epVarre,nivel>=1 && foco.fileira==SEC_EPISODIOS ? foco.coluna : -1,agora);
   for (int r = 0; r < N_SECOES; r++)
     for (int c = 0; c < secaoN(r) && c < N_ITENS; c++) {
@@ -4913,7 +4941,7 @@ static void heroWeb(float a, float desloc) {
   GLuint texLogo = arqLogo ? tex_obter_logo_larg_qualquer(arqLogo, larguraLogoHero()) : 0;
   const char *nome = mostrarNomeLogo(ci, texLogo ? arqLogo : NULL,
                                     texLogo != 0, desc_tmdb_idioma()) ? tituloDe(idx) : NULL;
-  int nomeAbaixo = nome && texLogo;
+  int nomeAbaixo = nome && texLogo && !heroServidor();
   float hNome = nome ? txt_bloco(TXT_DET_META2, nome, 255, 255, 255,
                                 -1, 0, larguraLogoHero(), 34, 0, 0) : 0;
   float hCaption = nomeAbaixo ? hNome + 16.0f : 0;
@@ -4950,14 +4978,9 @@ static void heroWeb(float a, float desloc) {
         if (fabsf(alvo - hVaiVis) < 0.5f) hVaiVis = alvo;
       }
       hVai = hVaiVis; } }
-  unsigned srvCurrentVersion = servidores_fileiras_versao();
-  if (srvAvailabilityIndex != idx || srvAvailabilityVersion != srvCurrentVersion) {
-    servidoresDisponiveis = 0;
-    for (int p = 0; ci && p < 3; p++) if (servidores_contem_item(ci, p)) servidoresDisponiveis |= 1 << p;
-    srvAvailabilityIndex = idx; srvAvailabilityVersion = srvCurrentVersion;
-  }
   float srvH = servidoresDisponiveis ? 64.0f : 0.0f;
   float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai - srvH;
+  if (heroServidor()) { yAcoes = 500; ySin = 670; yMeta1 = 444; }
   // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
   // botoes. Sao duas, e a ordem tem razao: a retomada explica o BOTAO e fica
   // colada nele; a agenda ("Próximo episódio T2E5 · em 3 dias") explica o
@@ -5011,6 +5034,7 @@ static void heroWeb(float a, float desloc) {
   if (a > 0.05f) titulo_tempo_info(&detalheTempo, "detalhe", ci, 0);
   float baseLogo = ((temRetom > 0.0f || agLinha[0] || srvLinha[0]) ? yEstado : yAcoes)
                    - NV_DETW_LOGO_GAP;
+  if (heroServidor()) baseLogo = 410 + sobe;
   float espacoLogo = baseLogo - 110.0f - (!nomeAbaixo ? hNome : 0);
   if (espacoLogo < 0) espacoLogo = 0;
   static char  logoVisto[600];
@@ -5025,7 +5049,10 @@ static void heroWeb(float a, float desloc) {
       if (f < 1.0f) aLogo *= f < 0.0f ? 0.0f : f; }
   } else logoVisto[0] = 0;
   morphLogo.w = 0.0f;
-  if (texLogo) {
+  if (heroServidor()) {
+    txt_bloco_corta(TXT_TITULO1, tituloDe(idx), 243, 242, 239, NV_DETW2_X,
+                    282 + sobe, 620, 76, a, 2);
+  } else if (texLogo) {
     float asp = tex_aspecto(arqLogo);
     if (asp <= 0.0f) asp = 2.5f;
     // ALTURA ASSENTA SUAVE: o espaco do logo depende do que esta empilhado
@@ -5136,6 +5163,19 @@ static void heroWeb(float a, float desloc) {
     }
   }
 
+  if (heroServidor()) {
+    float x = NV_DETW2_X;
+    for (int i = 0; i < 3; i++) {
+      GfxRect r = {x, yAcoes, i ? NV_DETW2_CIRC : botao_largura(rot, "play", 1), NV_DETW2_BTN_H};
+      float grow = 1 + .06f * serverActionFocus[i];
+      GfxRect focused = {r.x - r.w * (grow - 1) * .5f, r.y - r.h * (grow - 1) * .5f, r.w * grow, r.h * grow};
+      if (i) botao_disco(focused, i == 1 ? (biblioteca_na_lista(idx) ? "check" : "mais") : "aj_ellipsis", serverActionFocus[i], a);
+      else { botao_pilula(focused, rot, "play", serverActionFocus[i], 1, 0, a); player_morph_de(morphLogo, r); }
+      if (i == 2) maisAncora = r;
+      if (a > .3f) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroDetalhe, NULL, -1, i);
+      x += r.w + NV_DETW2_BTN_GAP;
+    }
+  } else {
   { float cyBtn = yAcoes + NV_DETW2_BTN_H * 0.5f;
     if (acoesAgrupadas()) {
       int grupo = 1 + (temInicio() ? 1 : 0);
@@ -5277,6 +5317,7 @@ static void heroWeb(float a, float desloc) {
   }
 
   // --- ILHA DE AMIGOS, logo abaixo dos botoes ----------------------------------
+  }
   if (temAmg) {
     static const float ANEL[3] = { 0.075f, 0.08f, 0.095f };
     float y0 = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + srvH + hCaption + NV_DETW_AMIGOS_GAP;
@@ -5295,7 +5336,8 @@ static void heroWeb(float a, float desloc) {
     t2 = txt_linha_corta(TXT_HERO_META, l2, c2, c2, c2, 255, larguraTextoHero() - 200.0f);
     pw = d + d * 0.71f * (float)(nr - 1);
     larg = pad + pw + 18.0f + (t1.w > t2.w ? t1.w : t2.w) + 30.0f;
-    { GfxRect ilha = { NV_DETW2_X, y0, larg, NV_DETW_AMIGOS_H };
+    { GfxRect ilha = { heroServidor() ? ANC(1000) : NV_DETW2_X, heroServidor() ? 780 + sobe : y0, larg, NV_DETW_AMIGOS_H };
+      y0 = ilha.y;
       if (foc) plrui_pilula_foco(ilha, a);
       else plrui_material_plano(ilha, NV_DETW_AMIGOS_H * 0.5f, a);
       svd_amigos_pilha(ilha.x + pad, y0 + pad, d, &amg, nr, 1, ANEL, a);
@@ -5311,7 +5353,9 @@ static void heroWeb(float a, float desloc) {
     float yV = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + srvH + hCaption + hAmg + DET_VAI_GAP;
     float wV = larguraTextoHero() < 1000.0f ? larguraTextoHero() : 1000.0f;
     float fV = hVai / alvoH;
-    vtui_desenhar(&vaiTocar, NV_DETW2_X - 24.0f, yV, wV, a * (fV > 1.0f ? 1.0f : fV));
+    vtui_desenhar(&vaiTocar, heroServidor() ? ANC(1000) : NV_DETW2_X - 24.0f,
+                 heroServidor() ? 880 + sobe : yV, heroServidor() ? fminf(wV, NV_TELA_W - ANC(1000) - 64) : wV,
+                 a * (fV > 1.0f ? 1.0f : fV));
   }
 
   // --- linha da AGENDA ------------------------------------------------------
@@ -5375,7 +5419,8 @@ static void heroWeb(float a, float desloc) {
     float x = NV_DETW2_X, y = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + 12;
     for (int p = 0; p < 3; p++) if (servidoresDisponiveis & (1 << p)) {
       GfxRect chip = {x,y,180,48}; int sel = nivel == 0 && focoServidor == p;
-      if (sel) gfx_vidro_pilula_cheia(chip,.5f,1,a); else gfx_cor(chip,.5f,1,1,1,.08f*a);
+      plrui_botao_repouso(chip, a);
+      plrui_pilula_foco(chip, serverChipFocus[p] * a);
       int ink = sel ? ajustes_tinta_foco() : 243;
       GLuint mark = tex_obter_larg(logos[p],28);
       if (mark) gfx_rect((GfxRect){x+16,y+10,28,28},mark,GFX_MARCA,0,0,0,0,ink/255.f,ink/255.f,ink/255.f,a);
@@ -5390,23 +5435,25 @@ static void heroWeb(float a, float desloc) {
   // in the artwork slot, without truncating it.
   if (nomeAbaixo)
     txt_bloco(TXT_DET_META2, nome, 255, 255, 255, NV_DETW2_X,
-               yAcoes + NV_DETW2_BTN_H + hAcoesExtra + srvH + 16.0f, larguraLogoHero(), 34, a, 0);
+               heroServidor() ? 412 + sobe : yAcoes + NV_DETW2_BTN_H + hAcoesExtra + srvH + 16.0f, larguraLogoHero(), 34, a, 0);
 
   // --- sinopse --------------------------------------------------------------
   { float f = 1.0f;
+    TxtEstilo style = heroServidor() ? TXT_CAPTION : TXT_DET_SIN;
+    float leading = heroServidor() ? 34 : NV_DETW2_LD_SIN;
     if (sinTrocaDesde) {
       f = (float)(Uint32)(agoraH - sinTrocaDesde) / DET_TROCA_MS;
       if (f >= 1.0f) { f = 1.0f; sinTrocaDesde = 0; }
       else f = revela_saida(f);
     }
     if (f < 1.0f) {   // o que saiu esvanece por baixo do que entra
-      if (sinAnt[0]) sinopse_bloco_corta(TXT_DET_SIN, sinAnt, 255, 255, 255, NV_DETW2_X, ySin,
-                               larguraTextoHero(), NV_DETW2_LD_SIN, a * (1.0f - f),
+      if (sinAnt[0]) sinopse_bloco_corta(style, sinAnt, 255, 255, 255, NV_DETW2_X, ySin,
+                               larguraTextoHero(), leading, a * (1.0f - f),
                                NV_DETW2_SIN_LINHAS);
       else esqueletoSinopse(NV_DETW2_X, ySin, a * (1.0f - f));
     }
-    if (sin) sinopse_bloco_corta(TXT_DET_SIN, sin, 255, 255, 255, NV_DETW2_X, ySin,
-                       larguraTextoHero(), NV_DETW2_LD_SIN, a * f,
+    if (sin) sinopse_bloco_corta(style, sin, 255, 255, 255, NV_DETW2_X, ySin,
+                       larguraTextoHero(), leading, a * f,
                        NV_DETW2_SIN_LINHAS);
     else if (esqSin) esqueletoSinopse(NV_DETW2_X, ySin, a * f); }
 
@@ -5441,7 +5488,7 @@ static void heroWeb(float a, float desloc) {
       esqueletoTexto(NV_DETW2_X, yb, 230.0f, 22.0f, aHero * (1.0f - fMeta));
       esqueletoTexto(NV_DETW2_X + 254.0f, yb, 96.0f, 22.0f, aHero * (1.0f - fMeta));
     } }
-  {
+  if (!heroServidor()) {
     float a = aHero * fMeta;   // o texto de meta entra esvanecendo quando chega
     float x = NV_DETW2_X, yc = yMeta1 + NV_DETW2_M1_H * 0.5f;
     const CatItem *badgeItem=cat_item(idx);
@@ -5556,6 +5603,36 @@ static void heroWeb(float a, float desloc) {
     }
   }
 
+  if (heroServidor()) {
+    char heading[180];
+    snprintf(heading, sizeof heading, "%s · %s · %s", ano, generoDe(idx), dur);
+    plrui_kicker(heading, NV_DETW2_X, 244 + sobe, 163, 167, 175, a);
+    float mx = NV_DETW2_X, my = yMeta1;
+    if (ci && ci->nota > 0) mx += badge_imdb(mx, my, ci->nota, 0, a) + 24;
+    if (ci && ci->classificacao[0]) {
+      TxtLinha age = txt_linha(TXT_CAPTION2, ci->classificacao, 179, 182, 188, 255);
+      txt_desenhar_alpha(age, mx, my, a); mx += age.w + 24;
+    }
+    if (vaiTocar.tem && !strcmp(vaiTocar.res, "4K")) marca_formato(FMT_4K, mx, my, 24, 1, 1, 1, a);
+    const char *labels[] = {"IMDb", "Rotten Tomatoes", i18n("Sua nota")};
+    for (int i = 0; i < 3; i++) {
+      GfxRect card = {NV_DETW2_X + i * 164, 780 + sobe, 150, 132};
+      plrui_material_plano(card, 20, a);
+      txt_bloco_corta(TXT_ILHA_APOIO, labels[i], 163, 167, 175,
+                      card.x + 20, card.y + 18, card.w - 40, 21, a, 2);
+      char value[32] = "";
+      int rating = i == 0 ? extras_nota(EX_IMDB) : i == 1 ? extras_nota(EX_TOMATOES) : ci ? reacao_nota(ci->imdb) : 0;
+      if (!i && !rating && ci) rating = ci->nota;
+      if (i < 2 && rating) nf_texto(i ? EX_TOMATOES : EX_IMDB, rating, 0, 0, value, sizeof value);
+      else if (i == 2 && rating) snprintf(value, sizeof value, "%d.%d", rating / 2, rating % 2 * 5);
+      plrui_decimal(value);
+      if (value[0]) txt_desenhar_alpha(txt_linha(TXT_HEADLINE, value, 243, 242, 239, 255), card.x + 20, card.y + 68, a);
+      else gfx_icone((GfxRect){card.x + 20, card.y + 76, 28, 28}, "pl_star", 1, 1, 1, a);
+    }
+    const char *keys[] = {"OK", "↓", "Voltar"};
+    const char *labelsFooter[] = {i18n("Assistir"), i18n("Elenco"), i18n("Voltar")};
+    plrui_dicas(keys, labelsFooter, 3, NV_DETW2_X, NV_TELA_H - ANC(40), 0, a);
+  }
   if (detalheRetrato()) gfx_sem_recorte();
 }
 #pragma pop_macro("NV_DETW2_X")
@@ -8328,6 +8405,11 @@ static void detail_desenhar_(Uint32 agora) {
   { float d = fabsf(pg - pgAlvo);
     if (d > 0.002f) gfx_vidro_fundo_passo(d > 0.02f ? (int)(pg * 4.0f) : 4); }
   detalheFundo(s);
+  if (heroServidor()) {
+    // Full-screen reading scrim follows the page reveal and scroll.
+    gfx_cor((GfxRect){0, 0, NV_TELA_W, NV_TELA_H}, 0,
+            .025f, .031f, .038f, .44f * s * (1 - pg));
+  }
   // O veu de leitura do heroi: fora do fundo, para valer sobre qualquer fundo
   // (arte nitida, borrada ou frost). Sai com a rolagem, com o modo cinema do
   // trailer e no cartao do carrossel (que tem o veu proprio).
@@ -8423,6 +8505,7 @@ static void ultimoEpisodio(int *t, int *e) {
 }
 
 int detail_indice(void) { return idx; }
+int detail_tem_servidores(void) { return aberto && servidoresDisponiveis; }
 int detail_pediu_reproduzir(void) { int v = pedReproduzir; pedReproduzir = 0; return v; }
 // Pedido de reproducao vindo de FORA da tela (OK no card de "Continuar
 // assistindo", issue #93): o quadro seguinte cai no mesmo ramo de

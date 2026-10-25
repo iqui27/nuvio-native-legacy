@@ -40,6 +40,8 @@ typedef enum {
 // estado inicial ja e valido sem chamar (destino = MENU_INICIO, barra fora).
 int  menu_iniciar(void);
 void menu_servidores(int conectado);
+// Shared active-profile avatar, in the caller's coordinate layer.
+void menu_avatar(float x, float y, float size, float alpha);
 
 // Desliza a barra para dentro E entrega o foco a ela. Chamar com o menu ja
 // aberto nao faz nada, entao e seguro ligar direto no ESQUERDA da home.

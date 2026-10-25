@@ -248,6 +248,10 @@ static MenuGeo geoEm(float e, float entrada) {
     g.x = NV_MENU_X;
     g.y = (NV_TELA_H - g.h) * 0.5f;
   }
+  if (destino == MENU_BIBLIOTECA && !sobre) {
+    g.y = 112.0f / NV_MENU_ESCALA;
+    g.h = anim_mistura(itensFim() + NV_MENU_PAD, alturaEm(1), ec);
+  }
   g.fioM = anim_mistura(NV_MENU_FIO_RAIL, NV_MENU_FIO_ABRE, ec);
   g.fioY = g.y + itensFim() + NV_MENU_ITEM_VAO + g.fioM;
   g.rodY = g.fioY + MK(1.0f) + g.fioM + NV_MENU_ITEM_VAO;
@@ -416,10 +420,12 @@ static void desenhaBarra(float e, float a, int focos, float entrada) {
   }
   // O fio do rodape: na rail um traco de 40 centrado no icone (a 10 %);
   // aberto vai de 14 a 14 da pilula da linha (a 8 %).
+  if (destino != MENU_BIBLIOTECA || e > .01f) {
   { float fw = anim_mistura(MK(40.0f), g.w - 2.0f * (NV_MENU_PAD + MK(14.0f)), ec);
     float fx = anim_mistura(icx - MK(20.0f), g.x + NV_MENU_PAD + MK(14.0f), ec);
     gfx_cor((GfxRect){ fx, g.fioY, fw, MK(1.0f) }, 0, 1, 1, 1, anim_mistura(.10f, .08f, ec) * a); }
   desenhaRodape(&g, e, a, focos ? animFoco[MENU_RODAPE] : 0.0f, aRot);
+  }
   gfx_sem_recorte();
 }
 
@@ -1166,6 +1172,10 @@ static void tvAvatar(GfxRect av, float alfa) {
     { TxtLinha l = txt_linha(TXT_CAPTION2, ini, 255, 255, 255, 255);
       txt_desenhar_alpha(l, av.x + (av.w - l.w) * 0.5f, av.y + (av.h - l.h) * 0.5f, alfa); }
   }
+}
+
+void menu_avatar(float x, float y, float size, float alpha) {
+  tvAvatar((GfxRect){x, y, size, size}, alpha);
 }
 
 // Escurece SO o lado esquerdo: faixas verticais de cor chapada com o alfa

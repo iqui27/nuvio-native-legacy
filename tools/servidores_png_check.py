@@ -19,7 +19,7 @@ for app in files:
     if app.name == 'detalhe-chip-app.png':
         proof = json.loads((root / 'detalhe-chip-rects.json').read_text())
         rects = proof['rects']
-        assert len(rects) == 5, f'Expected friends, Vai tocar, two servers and caption: {rects}'
+        assert len(rects) == 7, f'Expected friends, Vai tocar, two servers and three ratings: {rects}'
         overlaps = []
         for a, b in itertools.combinations(rects, 2):
             if (max(a[0], b[0]) < min(a[0]+a[2], b[0]+b[2]) and
@@ -29,7 +29,7 @@ for app in files:
         assert all(w > 0 and h > 0 and x >= 0 and y >= 0 and
                    x+w <= 1920 and y+h <= 1080 for x, y, w, h in rects)
         assert proof['navigation_ok'], 'D-pad must follow actions, servers, friends, sections in both directions'
-        print('PASS: five detail rectangles do not overlap; D-pad follows visual order')
+        print('PASS: seven detail rectangles do not overlap; D-pad follows visual order')
     ref = mock / app.name.replace('-app.png', '.png')
     if ref.exists():
         out = root / app.name.replace('-app.png', '-side-by-side.png')

@@ -22,6 +22,7 @@
 #include "extras.h"
 #include "catalogo.h"
 #include "dados.h"
+#include "perfis.h"
 #include "gfx.h"
 #include "text.h"
 #include "teclado.h"
@@ -48,7 +49,8 @@ static int serverQualityShot(const CatItem *it, int *altura, int *hdr) {
   if (it->progresso > 0 && it->progresso < 100) return 0;
   *altura = 2160; *hdr = 1; return 1;
 }
-static void serverSelectShot(int i) { if (i < 3) biblioteca_servidor_filtrar(i); }
+static int serverSelected = -1;
+static void serverSelectShot(int i) { serverSelected = i; if (i < 3) biblioteca_servidor_filtrar(i); }
 // NV_MODO=servers builds biblioteca.c with these names (biblioteca_shot.sh):
 // Trakt and Simkl linked and synced, as in the approved Library mock.
 SyncEstado shot_sync_estado(void) { return SYNC_PRONTO; }
@@ -379,6 +381,8 @@ int main(int argc, char **argv) {
   biblioteca_iniciar();
   rail_shot_aplicar();
   if (argc > 2 && !strcmp(argv[2], "servers")) {
+    assert(dados_gravar("perfis.txt", "1\t0\t1\t0\t#7655D6\tMarina\t\t\n"));
+    perfis_carregar_ativo();
     biblioteca_servidores_contem(serverContainsShot);
     biblioteca_servidores_qualidade(serverQualityShot);
     biblioteca_origens_servidores(serverRowsShot, serverSelectShot);
@@ -395,14 +399,20 @@ int main(int argc, char **argv) {
     for (int m = 0; m < 2; m++) {
       const Uint32 tempos[] = { 0, 80, 160, 320 };
       biblioteca_iniciar();
-      if (m) { tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); assenta(); }
+      if (m) { tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+        for (int k = 0; k < 7; k++) tecla(SDLK_DOWN);
+        assenta();
+      }
       Uint32 t0 = SDL_GetTicks();
-      if (m) tecla(SDLK_RIGHT);
+      if (m) tecla(SDLK_DOWN);
+      quadros(1);
       for (int i = 0; i < 4; i++) {
         while (SDL_GetTicks() - t0 < tempos[i]) quadros(1);
         snprintf(nome, sizeof nome, "%s-overview-%s-%03u.bmp", saida, m ? "focus" : "entry", (unsigned)tempos[i]); grava(nome);
       }
     }
+    tecla(SDLK_RETURN); solta(SDLK_RETURN);
+    assert(serverSelected == 3);  // The strip ends on the manage footer.
     unsetenv("NUVIO_SHOT_ESCALA_TEXTO"); unsetenv("NUVIO_SHOT_VIDRO"); rail_shot_aplicar();
     biblioteca_iniciar(); tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT);
     snprintf(nome, sizeof nome, "%s-biblioteca-servidores.bmp", saida); captura(nome);

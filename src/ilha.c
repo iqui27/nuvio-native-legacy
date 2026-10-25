@@ -689,12 +689,13 @@ void ilha_ancorar(float x, float y, int daDireita) {
   ancDef = 1; ancX = x; ancY = y; ancDir = daDireita;
 }
 
-// O relogio fica SEMPRE no canto de cima a DIREITA, em toda tela e estado (dono,
-// 03/10: ele mudava de lado conforme o que acontecia, e a opcao de lado saiu de
-// Ajustes). `guia` ficou so por compatibilidade com quem chama.
+// Server Library and Detail use the mock's left clock/profile island.
+// Other pages keep the existing right clock.
+static int clockProfile;
 void ilha_posicionar(int guia) {
-  (void)guia;
-  ilha_ancorar(NV_TELA_W - NV_ILHA_MARGEM_D / gfx_escala_txt(), NV_ILHA_Y / gfx_escala_txt(), 1);
+  clockProfile = guia == 2;
+  if (clockProfile) ilha_ancorar(48.0f / gfx_escala_txt(), 36.0f / gfx_escala_txt(), 0);
+  else ilha_ancorar(NV_TELA_W - NV_ILHA_MARGEM_D / gfx_escala_txt(), NV_ILHA_Y / gfx_escala_txt(), 1);
 }
 
 // COM SINAL: quem renova a atividade chama SDL_GetTicks DEPOIS de o quadro ter
@@ -1032,7 +1033,7 @@ static float larguraConteudo(int m, TxtLinha *t1, TxtLinha *t2) {
   t1->w = t1->h = 0; t2->w = t2->h = 0;
   if (m == M_RELOGIO) {
     *t1 = txt_linha(TXT_PG_RELOGIO, hora, 244, 245, 248, 255);
-    return (float)t1->w + (pontoEnquete ? 12.0f + PONTO_ENQ : 0.0f);
+    return (float)t1->w + (pontoEnquete ? 12.0f + PONTO_ENQ : 0.0f) + (clockProfile ? 54.0f : 0);
   }
   if (atvV2) {
     // v2: recuo de 30 dos dois lados (a diferenca para PAD_E/PAD_D entra aqui).
@@ -1084,6 +1085,7 @@ static void desenharConteudo(int m, GfxRect r, float a, Uint32 agora) {
       gfx_cor((GfxRect){ x + (float)t1.w + 12.0f, yc - PONTO_ENQ * 0.5f, PONTO_ENQ, PONTO_ENQ }, 0.5f, cr, cg, cb, a);
     }
     desempenho_linha(dsMostra, x + (float)t1.w + (pontoEnquete ? 12.0f + PONTO_ENQ : 0.0f), yc, a);
+    if (clockProfile) menu_avatar(x + cw - 36, yc - 18, 36, a);
     if (bh > 0.0f) desempenho_corpo(dsMostra, (GfxRect){ r.x, r.y + NV_ILHA_H, r.w, r.h - NV_ILHA_H }, a);
     return;
   }

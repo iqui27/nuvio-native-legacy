@@ -319,6 +319,7 @@ static int tipo = TIPO_TODOS;
 static int ordem = ORD_ADICIONADOS;
 static int origem = ORIG_TODAS;
 static int focoOrigem, origemSel;
+static float animOrigem[32];
 static int contaOrigem[BIB_N_ORIG];
 static struct { char id[96], nome[96]; int count; } addonOrigens[8];
 static int nAddonOrigens;
@@ -517,7 +518,7 @@ static int gradeIni(void) { return estado() == EST_ITENS ? 1 : BIB_FIL_GRADE; }
 static float paginaX(void) {
   float x;
   t21_inicio(&x, NULL);
-  return x;
+  return serverRows ? 200.0f / gfx_escala_txt() : x;
 }
 static int temOrigens(void) { return estado() != EST_ITENS && modo != MODO_ASSISTIDOS; }
 static float bibX(void) {
@@ -1074,6 +1075,7 @@ int biblioteca_iniciar(void) {
   ordemMudou = 0; compartilha = 0;
   memset(animModo, 0, sizeof animModo);
   memset(animPick, 0, sizeof animPick);
+  memset(animOrigem, 0, sizeof animOrigem);
   sair = 0; pedido = -1; pediuRelogio = 0;
   reconstruir();
   // O foco nasce na barra de modos: quem entra ainda esta escolhendo o recorte.
@@ -1764,6 +1766,11 @@ static void biblioteca_atualizar_(float dt, Uint32 agora) {
                   && foco.coluna == p) ? 1.0f : 0.0f;
     animPick[p] = anim_mola(animPick[p], alvo, dt,
                             alvo > animPick[p] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+  }
+  for (int i = 0; i < 32; i++) {
+    float target = focoOrigem && origemSel == i ? 1.0f : 0.0f;
+    animOrigem[i] = anim_mola(animOrigem[i], target, dt,
+        target > animOrigem[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
   }
   linhas = nLinhas();
   if (linhas > BIB_MAX_LINHAS) linhas = BIB_MAX_LINHAS;
@@ -3013,9 +3020,9 @@ static void desenhaOrigens(void) {
     if (!s) gerir = BIB_N_ORIG + nAddonOrigens + i;
   }
   int linhas = nOrigens() - (gerir >= 0);
-  GfxRect painel = { paginaX(), 388.0f, 320.0f, fminf(700, 66 + linhas * 58 + (serverRows ? 70 : 0)) };
-  if (ajustes_vidro()) gfx_cor(painel, 26.0f / painel.h, .047f, .051f, .059f, .92f);
-  else gfx_cor(painel, 26.0f / painel.h, .047f, .051f, .059f, 1);
+  GfxRect painel = { paginaX(), 388.0f, 320.0f, serverRows
+    ? NV_TELA_H - 388.0f - 68.0f / gfx_escala_txt() : fminf(700, 66 + linhas * 58) };
+  plrui_material_plano(painel, 26, 1);
   txt_desenhar(txt_linha(TXT_CAPTION2, "Origens", 115, 117, 122, 255), painel.x + 30, painel.y + 20);
   const char *sub[] = { "sem repetir títulos", "Para ver", "Para ver", "salvos neste perfil" };
   float footerY = 0;
@@ -3034,7 +3041,7 @@ static void desenhaOrigens(void) {
     }
     GfxRect row = { painel.x + 12, painel.y + 56 + (i - start) * 58, 296, 56 };
     ponteiro_alvo(row.x, row.y, row.w, row.h, ponteiroOrigem, NULL, i, 0);
-    if (focoOrigem && origemSel == i) gfx_cor(row, 18.0f / row.h, 1, 1, 1, .13f);
+    plrui_linha_foco(row, 18, animOrigem[i < 32 ? i : 31]);
     float tx = row.x + 18;
     if (i) {
       gfx_cor((GfxRect){tx, row.y + 10, 34, 34}, 10.0f / 34, 1, 1, 1, .08f);
@@ -3065,7 +3072,7 @@ static void desenhaOrigens(void) {
     gfx_cor((GfxRect){ painel.x + 12, footerY + 4, 296, 1 }, 0, 1, 1, 1, .08f);
     if (gerir >= 0) {
       ponteiro_alvo(pe.x, pe.y, pe.w, pe.h, ponteiroOrigem, NULL, gerir, 0);
-      if (focoOrigem && origemSel == gerir) gfx_cor(pe, 18.0f / pe.h, 1, 1, 1, .13f);
+      plrui_linha_foco(pe, 18, animOrigem[gerir < 32 ? gerir : 31]);
     }
     txt_desenhar(txt_linha_corta(TXT_MINI, "+ Conectar servidor", 150, 153, 162, 255, 280), painel.x + 18, pe.y + 6);
     txt_desenhar(txt_linha_corta(TXT_MINI, "Gerenciar conexões", 150, 153, 162, 255, 280), painel.x + 18, pe.y + 30);
@@ -3402,6 +3409,12 @@ static void biblioteca_desenhar_(Uint32 agora) {
   // fora por quadro — e o custo dominante nesta GPU e fill rate (gfx.c registra
   // que DUAS camadas de tela cheia derrubavam a Mali-G71 para ~40fps).
 
+  if (serverRows && !temAberta) {
+    GfxRect background = {0, 0, NV_TELA_W, NV_TELA_H};
+    gfx_cor(background, 0, .035f, .043f, .052f, 1);
+    gfx_luz_canto(background, 0, NV_TELA_W * .66f, -120, NV_TELA_W * .9f,
+                  .13f, .16f, .19f, .9f);
+  }
   { ESCALA_MIN_INI(BIB_TOPO_ESCALA_MIN);   // Header coordinates compensate the text layer.
     desenhaCabecalho();
     if (temAberta) desenhaAcoes();

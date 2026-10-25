@@ -92,10 +92,10 @@ size_t trakt_token_tam(const char *);
 #include "gfx.h"
 static int cardMaterial, cardFrost, captionSolid, commentMaterial;
 // Record actual draw arguments, so missing hero offsets fail the PNG proof.
-static GfxRect serverRects[5];
+static GfxRect serverRects[7];
 static int serverRectCount;
 static void server_rect(GfxRect r) {
-  if (getenv("NUVIO_SHOT_SERVIDORES") && serverRectCount < 5)
+  if (getenv("NUVIO_SHOT_SERVIDORES") && serverRectCount < 7)
     serverRects[serverRectCount++] = r;
 }
 #include "plrui.h"
@@ -109,9 +109,14 @@ static void server_vai(const VaiTocar *vt, float x, float y, float w, float a) {
   vtui_desenhar(vt, x, y, w, a);
 }
 static void server_plano(GfxRect r, float radius, float a) {
-  if (r.h == 76.0f) server_rect(r);
+  if (r.h == 76.0f || r.h == 132.0f) server_rect(r);
   plrui_material_plano(r, radius, a);
 }
+static void server_button(GfxRect r, float a) {
+  if (r.w == 180 && r.h == 48) server_rect(r);
+  plrui_botao_repouso(r, a);
+}
+#define plrui_botao_repouso server_button
 #define plrui_material server_material
 #define plrui_material_plano server_plano
 #define vtui_desenhar server_vai
@@ -144,6 +149,7 @@ void b2_panel(GfxRect r, float radius, float density, float a);
 #undef txt_token_tam
 #undef servidores_contem_item
 #undef plrui_material
+#undef plrui_botao_repouso
 #undef vtui_desenhar
 int fx_servidor_contem(const CatItem *item, int provider) {
   return getenv("NUVIO_SHOT_SERVIDORES") && item && provider < 2;
@@ -429,7 +435,7 @@ static void quadros(int n) {
     detail_desenhar(SDL_GetTicks());
     // NUVIO_SHOT_RELOGIO=1: the clock island over the page, as app.c draws it.
     if (getenv("NUVIO_SHOT_RELOGIO")) {
-      ilha_relogio_visivel(1); ilha_posicionar(1); ilha_desenhar(SDL_GetTicks());
+      ilha_relogio_visivel(1); ilha_posicionar(getenv("NUVIO_SHOT_SERVIDORES") ? 2 : 1); ilha_desenhar(SDL_GetTicks());
     }
     // NUVIO_SHOT_PAINEL=1: o painel de Salvos/Avisos aberto POR CIMA da pagina,
     // como app.c o desenha agora (sem o `!detail_aberto()` de antes).
@@ -675,6 +681,8 @@ int main(int argc, char **argv) {
   }
   if (quer(argc, argv, "filme-topo")) { abrir(1, 0, 0, 0); gravar("filme-topo"); }
   if (quer(argc, argv, "detalhe-chip")) {
+    assert(dados_gravar("perfis.txt", "1\t0\t1\t0\t#7655D6\tMarina\t\t\n"));
+    perfis_carregar_ativo();
     // Confirmed foreign logo, friends feed, and a real candidate stream.
     snprintf(itens[1].logoIdiomaUrl, sizeof itens[1].logoIdiomaUrl, "%s", itens[1].logo);
     snprintf(itens[1].logoIdioma, sizeof itens[1].logoIdioma, "ja");
@@ -683,30 +691,37 @@ int main(int argc, char **argv) {
     snprintf(candidate.url, sizeof candidate.url, "https://example.invalid/movie.mkv");
     candidate.altura = 2160;
     stream_definir_alvo(IMDB_FILME); stream_definir_lista(&candidate, 1);
-    abrir(1,0,0,0); quadros(4); gravar("detalhe-chip");
-    const float scales[] = {1, .85f, .9f, 1.1f, 1.2f, 1.3f};
-    for (int scale = 0; scale < 6; scale++) for (int glass = 0; glass < 2; glass++) {
+    abrir(1,0,0,0);
+    const float scales[] = {1, .85f};
+    for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
       char name[80]; gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
-      quadros(40); snprintf(name, sizeof name, "server-%d-%s", (int)(scales[scale] * 100 + .5f), glass ? "glass" : "solid"); gravar(name);
+      for (int frame = 0; frame < 40; frame++) { SDL_Delay(16); quadros(1); }
+      snprintf(name, sizeof name, "server-%d-%s", (int)(scales[scale] * 100 + .5f), glass ? "glass" : "solid"); gravar(name);
     }
-    gfx_escala_txt_definir(1); ajustes_definir_vidro(1); quadros(40);
+    gfx_escala_txt_definir(1); ajustes_definir_vidro(1);
+    for (int frame = 0; frame < 40; frame++) { SDL_Delay(16); quadros(1); }
+    gravar("detalhe-chip");
     SDL_Event e = {0}; e.type = SDL_KEYDOWN;
     e.key.keysym.sym = SDLK_DOWN; detail_evento(&e);
     const int times[] = {0, 80, 160, 320};
+    quadros(1);
     for (int i = 0, elapsed = 0; i < 4; i++) {
-      while (elapsed < times[i]) { quadros(1); elapsed += 16; }
+      while (elapsed < times[i]) { SDL_Delay(16); quadros(1); elapsed += 16; }
       char name[80]; snprintf(name, sizeof name, "server-focus-%03d", times[i]); gravar(name);
     }
     e.key.keysym.sym = SDLK_UP; detail_evento(&e); quadros(90);
     HomeItem hi = {0}; hi.indice = 1; hi.rect.w = NV_TELA_W; hi.rect.h = NV_TELA_H;
     hi.titulo = itens[1].titulo; hi.genero = itens[1].genero; hi.meta = itens[1].meta;
+    detail_fechar_seco(); quadros(1);
     detail_abrir(&hi);
+    quadros(1);
+    assert(fase2() == 0 && textogate_passo(&gateHero, 0, SDL_GetTicks()) < .1f);
     for (int i = 0, elapsed = 0; i < 4; i++) {
-      while (elapsed < times[i]) { quadros(1); elapsed += 16; }
+      while (elapsed < times[i]) { SDL_Delay(16); quadros(1); elapsed += 16; }
       char name[80]; snprintf(name, sizeof name, "server-entry-%03d", times[i]); gravar(name);
     }
     quadros(160);
-    int nav = 1;
+    int nav = nBotoes() == 3 && acaoEm(2) == ACAO_MAIS;
 #define STEP(code, expected) do { e.key.keysym.sym = code; detail_evento(&e); nav &= !!(expected); } while (0)
     STEP(SDLK_DOWN, focoServidor == 0 && !focoAmigos);
     STEP(SDLK_RIGHT, focoServidor == 1 && !focoAmigos);

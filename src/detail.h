@@ -17,6 +17,7 @@ void detail_abrir(const HomeItem *item);
 // nao faz nada; Voltar fecha o painel e deixa a pagina do titulo.
 void detail_mostrar_pessoa(long tmdb, const char *nome, const char *foto);
 int  detail_aberto(void);
+int  detail_tem_servidores(void);
 const char *detail_transicao(void);   // "sobe", "desce" ou "-" ([quadro])
 // Ano solto do campo `meta` ("2025 · 1 h 54 min" -> "2025" e "1 h 54 min").
 void partirMeta(const char *meta, char *ano, size_t na, char *resto, size_t nr);
