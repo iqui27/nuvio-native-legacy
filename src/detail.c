@@ -629,6 +629,8 @@ static int epOculto(const CatEp *ep) {
   const CatItem *ci = cat_item(idx);
   return ep && ci && ajustes_desfocar_nao_assistidos() &&
          !(ep->temporada == epRevelaT && ep->episodio == epRevelaE) &&
+         // The episode being resumed was already seen in part (mock: T1:E3 shown).
+         !(ci->progresso > 0 && ci->temporada == ep->temporada && ci->episodio == ep->episodio) &&
          vistoep_estado(ci->imdb, ep->temporada, ep->episodio) != 1;
 }
 static int    epAncora = 0;
@@ -5020,9 +5022,9 @@ static void topoEstadoTexto(char *dst, size_t n, int durMin, int pessoal) {
   if (pessoal) {
     int st = 0, ep = 0, de = 0;
     if (ehSerie() && episodioAlvo(&st, &ep, &de) && ci->progresso > 0)
-      snprintf(dst, n, i18n("Parou em T%dE%d"), st, ep);
+      snprintf(dst, n, i18n("Parou em T%d:E%d"), st, ep);
     else if (ehSerie() && episodioAlvo(&st, &ep, &de) && de == 2)
-      snprintf(dst, n, i18n("%s T%dE%d"), i18n("Retomar"), st, ep);
+      snprintf(dst, n, i18n("%s T%d:E%d"), i18n("Retomar"), st, ep);
     else if (ci->progresso > 0 && ci->progresso < ajustes_cw_concluido())
       snprintf(dst, n, "%s", i18n("Retomar"));
     else if (cat_visto(ci)) snprintf(dst, n, "%s", i18n("Assistido"));
@@ -5416,7 +5418,7 @@ static void heroWeb(float a, float desloc) {
       // (ver idioma.h), entao traduzir so no desenho deixava "Retomar T1E1" em
       // portugues com a interface em ingles — o issue #12. O T/E tambem muda:
       // em ingles a abreviacao e S/E.
-      { snprintf(rot, sizeof rot, i18n("%s T%dE%d"),
+      { snprintf(rot, sizeof rot, i18n("%s T%d:E%d"),
                  i18n(de == 2 ? "Retomar" : "Próximo"), t, e);
         retomando = de == 2; }
     else { snprintf(rot, sizeof rot, "%s",
@@ -5426,7 +5428,7 @@ static void heroWeb(float a, float desloc) {
     if (ehSerie()) {
       int st=0, ep=0;
       episodioAlvo(&st,&ep,NULL);
-      snprintf(rot,sizeof rot,i18n("%s T%dE%d"),i18n(retomando ? "Continuar" : "Assistir"),st,ep);
+      snprintf(rot,sizeof rot,i18n("%s T%d:E%d"),i18n(retomando ? "Continuar" : "Assistir"),st,ep);
     } else snprintf(rot,sizeof rot,"%s",i18n(retomando && ci && ci->progresso>0 ? "Continuar" : "Assistir"));
   }
   notaX=96+larguraPrimario(rot)+24+120*(topoVersao() ? 2 : 1);
@@ -6453,13 +6455,26 @@ static void desenhaEpisodio(GfxRect r, int c, float f, float a, Uint32 agora) {
     }
     float x=96, yy=r.y+268;
     char title[240],meta[240];
-    snprintf(title,sizeof title,"%d. %s",epNum,epNome ? epNome : i18n("Episódio"));
+    snprintf(title,sizeof title,"%d · %s",epNum,epNome ? epNome : i18n("Episódio"));
     txt_desenhar_alpha(txt_linha(TXT_G30M,title,243,242,239,255),x,yy,a);
     snprintf(meta,sizeof meta,"%s%s%s",epDur ? epDur : "",epData ? " · " : "",epData ? epData : "");
+    // Resumed episode, as the mock: "52 min · faltam 18 min · termina às 20:29".
+    if (ep && serie && serie->temporada==ep->temporada && serie->episodio==ep->episodio &&
+        serie->progresso>0 && serie->restanteMin>0) {
+      char h[16]; struct tm lf; time_t t2=time(NULL)+(time_t)serie->restanteMin*60;
+      localtime_r(&t2,&lf); hora_tela(h,sizeof h,&lf);
+      size_t k=strlen(meta);
+      k+=snprintf(meta+k,sizeof meta-k,"%s",epDur ? " · " : "");
+      k+=snprintf(meta+k,sizeof meta-k,i18n("faltam %d min"),serie->restanteMin);
+      if (k<sizeof meta) { snprintf(meta+k,sizeof meta-k," · "); k=strlen(meta);
+                           snprintf(meta+k,sizeof meta-k,i18n("termina \xc3\xa0s %s"),h); }
+    }
     txt_desenhar_alpha(txt_linha(TXT_G22M,meta,243,242,239,140),x,yy+46,a);
     if (epSin) txt_bloco_corta(TXT_DET_META2,epSin,243,242,239,x,yy+84,1100,36,a*.84f,3);
     if (vaiTocar.tem) {
       char source[200]; snprintf(source,sizeof source,"%s · %s · %s",vaiTocar.res,vaiTocar.hdr,vaiTocar.audio);
+      float cr,cg,cb; ajustes_acento(&cr,&cg,&cb);   // mock: accent dot like the hero chip
+      gfx_cor((GfxRect){x+11,r.y+464+8,10,10},.5f,cr,cg,cb,a);
       txt_desenhar_alpha(txt_linha(TXT_G22M,source,243,242,239,220),x+40,r.y+464,a);
     }
     return;
@@ -8261,7 +8276,9 @@ static void desenhaGradeProgresso(float x, float y, float a) {
         gfx_cor((GfxRect){cell.x+14,cell.y+38,cell.w-28,3},.5f,cr,cg,cb,a);
     }
   }
-  char pos[48]; snprintf(pos,sizeof pos,i18n("T%dE%d"),ep->temporada,ep->episodio);
+  char pos[200]; snprintf(pos,sizeof pos,i18n("T%d:E%d"),ep->temporada,ep->episodio);
+  // Mock panel title: "T1:E3 · Uma estrada lamacenta" unless spoilers hide it.
+  if (!epOculto(ep) && ep->nome[0]) { size_t k=strlen(pos); snprintf(pos+k,sizeof pos-k," · %s",ep->nome); }
   txt_desenhar_alpha(txt_linha(TXT_G28B,pos,243,242,239,255),x+944,y+4,a);
   char detail[160];
   snprintf(detail,sizeof detail,"IMDb %d.%d · %s",ep->nota/10,ep->nota%10,i18n(epOculto(ep) ? "Sem spoilers" : "Episódios"));
@@ -8291,7 +8308,7 @@ static void desenhaGradeProgresso(float x, float y, float a) {
       yl+=40;
     }
     if (nota>0) {
-      char melhor[160]; snprintf(melhor,sizeof melhor,i18n("Melhor episódio T%dE%d · %.1f · não visto"),bt,be,nota/10.0);
+      char melhor[160]; snprintf(melhor,sizeof melhor,i18n("Melhor episódio T%d:E%d · %.1f · não visto"),bt,be,nota/10.0);
       idioma_decimal_texto(melhor,ajustes_idioma());
       txt_desenhar_alpha(txt_linha_corta(TXT_G22M,melhor,189,189,189,255,760),x+944,yl,a);
       yl+=40;
@@ -8440,7 +8457,8 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     const char *dica = dicaSecao(r);
     if (dica) {
       TxtLinha l = txt_linha(TXT_G20M,i18n(dica),243,242,239,140);
-      txt_desenhar_alpha(l,NV_TELA_W-96-l.w,y-46,a*.85f);
+      // Comments draw their own kicker at y (cards below it): same baseline here.
+      txt_desenhar_alpha(l,NV_TELA_W-96-l.w,y-(r == SEC_COMENTARIOS ? -2 : 46),a*.85f);
     } }
   { float alt = alturaSecao(r);
     if (y > NV_TELA_H || y + alt < -40.0f) return; }

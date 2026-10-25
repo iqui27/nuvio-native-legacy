@@ -343,6 +343,8 @@ const char *fx_trailer_nome(int i) { return (ehSerieDeEnsaio() ? TR_NOME_S : TR_
 const char *fx_trailer_miniatura(int i) {
   const char *ref=getenv("NUVIO_SHOT_REFERENCE");
   static char path[1024];
+  // NUVIO_SHOT_TRAILERS=<dir>: per-card crops like the mock (<phm|fargo>-<i>.jpg).
+  if (getenv("NUVIO_SHOT_TRAILERS")) { snprintf(path,sizeof path,"%s/%s-%d.jpg",getenv("NUVIO_SHOT_TRAILERS"),ehSerieDeEnsaio() ? "fargo" : "phm",i); return path; }
   if (ref) { snprintf(path,sizeof path,"%s/%s-arte.jpg",ref,ehSerieDeEnsaio() ? "fargo" : "phm"); return path; }
   return TR_MINI[i];
 }
@@ -634,7 +636,9 @@ static void abrir(int i, int nv, int sec, int col) {
   // (260 ms, SDL_GetTicks) ainda nao terminou. Espera e assenta.
   SDL_Delay(400);
   heroDesde = SDL_GetTicks() - 10000;   // stills show the settled hero enter wave
-  quadros(4);
+  // Springs and crossfades step by real ms: sub-ms frames give dt 0, so pace
+  // the last frames like the TV (16 ms) until focus fills settle.
+  for (int k = 0; k < 16; k++) { SDL_Delay(16); quadros(1); }
 }
 
 #include "traktcoment_checks.h"
@@ -781,7 +785,7 @@ int main(int argc, char **argv) {
       {"elenco",1,SEC_ELENCO,1},{"autor",1,SEC_COLECAO,1},
       {"similares",1,SEC_RELACIONADOS,0},{"comentarios",1,SEC_COMENTARIOS,0},
       {"ficha",1,SEC_DETALHES,0},{"serie-hero",0,-1,0},
-      {"episodios",0,SEC_EPISODIOS,3},{"progresso",0,SEC_PROGTEMP,18},
+      {"episodios",0,SEC_EPISODIOS,2},{"progresso",0,SEC_PROGTEMP,2},
       {"universo",0,SEC_COLECAO,1}
     };
     for (int j=0;j<(int)(sizeof shots/sizeof *shots);j++) {
