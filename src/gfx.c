@@ -4020,7 +4020,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   // Wholly off the screen (detail hero buttons scrolled away) paints nothing:
   // no capture for it.
   chapado = !ajustes_vidro_fosco() || efeitosMinimos || snapAtivo || miniAtiva || giroOn ||
-            gfx_opacidade_grupo < 0.999f ||
+            (gfx_opacidade_grupo < 0.999f && tipo != GFX_VIDRO_ILHA) ||
             t.x >= NV_TELA_W || t.y >= NV_TELA_H || t.x + t.w <= 0.0f || t.y + t.h <= 0.0f;
   // A layer over the page (sidebar) frosts even where page glass (pills, cards)
   // sits under it: it reads the blurred backdrop, not those glasses.

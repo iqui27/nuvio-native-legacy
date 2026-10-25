@@ -54,9 +54,13 @@ int main(int argc,char **argv) {
   s.addon[s.addons++]=(AioItem){.nome="SubDL",.ativo=1,.legenda=1};
   const char *names[]={"sem-config","setup-instancia","setup-importar","setup-servicos","setup-pronto","painel","catalogos","fontes","links","legendas","filtros","saude","titulo-debug"};
   const int scales[]={100,85,90,110,120,130};
+  int de=0,ate=11;if(getenv("AIO_SHOT_PASSES"))sscanf(getenv("AIO_SHOT_PASSES"),"%d-%d",&de,&ate);
+  int primeira=0,ultima=12;if(getenv("AIO_SHOT_ROUTES"))sscanf(getenv("AIO_SHOT_ROUTES"),"%d-%d",&primeira,&ultima);
   for(int scale=0;scale<6;scale++) for(int glass=0;glass<2;glass++) {
+    if(scale*2+glass<de||scale*2+glass>ate)continue;
     gfx_escala_txt_definir(scales[scale]/100.f); ajustes_definir_vidro(glass);
     for(int p=0;p<13;p++) {
+      if(p<primeira||p>ultima)continue;
       aioui_shot(p,&s);
       for(int f=0;f<=80;f++) {
         frame(f?10:0); SDL_Delay(2);

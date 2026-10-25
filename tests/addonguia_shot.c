@@ -75,7 +75,11 @@ int main(int argc,char **argv) {
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
   SDL_FreeSurface(backdrop);
   const int scales[]={100,85,90,110,120,130};
+  // AG_SHOT_PASSES="a-b": only scale/material passes a..b (scale*2+glass) so long runs split.
+  int de=0,ate=11;if(getenv("AG_SHOT_PASSES"))sscanf(getenv("AG_SHOT_PASSES"),"%d-%d",&de,&ate);
+  int primeira=0,ultima=13;if(getenv("AG_SHOT_ROUTES"))sscanf(getenv("AG_SHOT_ROUTES"),"%d-%d",&primeira,&ultima);
   for(int scale=0;scale<6;scale++)for(int glass=0;glass<2;glass++)for(int i=0;i<14;i++) {
+    if(scale*2+glass<de||scale*2+glass>ate||i<primeira||i>ultima)continue;
     gfx_escala_txt_definir(scales[scale]/100.f);ajustes_definir_vidro(glass);
     addonmodo_resposta(id,200,1,0,2);
     addonmodo_resposta(addonmodo_id(addons_base(2)),200,1,2,0);
