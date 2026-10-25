@@ -728,9 +728,12 @@ static float entradaItem(int i) {
   return revela_entra(1, revela_onda_atraso(i, 0), 1 + (Uint32)(tempoEntrada * 1000));
 }
 
-static void textoCentro(TxtEstilo es, const char *s, float cx, float y, int c, float a, float maxW) {
-  TxtLinha l = txt_linha_corta(es, s, c, c, c, 255, maxW);
-  txt_desenhar_alpha(l, cx - l.w / 2.0f, y, a);
+static float textoCentro(TxtEstilo es, const char *s, float cx, float y, int c, float a, float maxW) {
+  TxtLinha l = txt_linha(es, s, c, c, c, 255);
+  if (l.w > maxW)
+    return txt_bloco_corta(es, s, c, c, c, cx - maxW / 2, y, maxW, l.h + 2, a, 3);
+  if (a > 0) txt_desenhar_alpha(l, cx - l.w / 2.0f, y, a);
+  return l.h;
 }
 
 // The mock's 85% geometry stays physical; text and controls retain user scaling.
@@ -745,15 +748,32 @@ static float lugarY(int i) {
   return salaY(530.0f + (i - 2) * (i - 2) * 8.0f);
 }
 
-static void desenharLugar(int i, const JsMembro *p, int vazio, float f, float a) {
+static float desenharLugar(int i, const JsMembro *p, int vazio, float f, float a) {
   GfxRect c = { lugarX(i), lugarY(i), LUGAR_W, LUGAR_H };
   float k = .85f / gfx_escala();
   GfxRect av = { c.x + (LUGAR_W - 78 * k) / 2, c.y + 30 * k, 78 * k, 78 * k };
   float cx = c.x + LUGAR_W / 2;
   float e = ajustes_animacoes_reduzidas_usuario() ? 1 : entradaItem(i);
   float s = (.8f + .2f * lugarAnim[i]) * (1 + .06f * f);
+  char nome[160], st[120];
+  const JsMotor *m = juntos_motor();
+  int pronto = !vazio && (!strcmp(p->st, "pronto") || !strcmp(p->st, "tocando"));
+  if (vazio) {
+    snprintf(nome, sizeof nome, "%s", i18n("Mais um lugar"));
+    snprintf(st, sizeof st, "%s", i18n("Convide um amigo"));
+  } else {
+    if (m && !strcmp(p->id, m->eu)) snprintf(nome, sizeof nome, "%s%s%s", i18n("Você"), p->anf ? " · " : "", p->anf ? i18n("anfitrião") : "");
+    else snprintf(nome, sizeof nome, "%s", p->nome);
+    if (!strcmp(p->st, "carregando") && p->pct > 0) snprintf(st, sizeof st, "%s %d%%", estadoTexto(p), p->pct);
+    else snprintf(st, sizeof st, "%s", pronto ? i18n("pronto") : estadoTexto(p));
+  }
+  float nomeY = c.y + 122 * k, maxW = LUGAR_W - 12 * k;
+  float nomeH = textoCentro(TXT_ILHA_NOME, nome, cx, nomeY, 245, 0, maxW);
+  float estadoY = fmaxf(c.y + 160 * k, nomeY + nomeH + 4 * k);
+  float estadoH = textoCentro(TXT_CAPTION, st, cx, estadoY, 170, 0, maxW);
+  c.h = fmaxf(c.h, estadoY - c.y + estadoH + 12 * k);
   a *= e;
-  gfx_transformar(cx, c.y + LUGAR_H / 2, s, origemX, origemY - NV_FOCO_LIFT * f + (1 - e) * NV_ENTRA_DY);
+  gfx_transformar(cx, c.y + c.h / 2, s, origemX, origemY - NV_FOCO_LIFT * f + (1 - e) * NV_ENTRA_DY);
   // Mock: borderless dark seat cards over the hero art in both materials.
   t21_ilha_solida(c, T21_R_SHEET * k, a);
   plrui_linha_foco(c, T21_R_SHEET * k, f * a);
@@ -762,27 +782,19 @@ static void desenharLugar(int i, const JsMembro *p, int vazio, float f, float a)
     plrui_material_plano(av, av.h / 2, a);
     plrui_pilula_foco(av, f * a);
     gfx_icone((GfxRect){ av.x + 26 * k, av.y + 26 * k, 26 * k, 26 * k }, "aj_user-plus", ink, ink, ink, a);
-    textoCentro(TXT_ILHA_NOME, i18n("Mais um lugar"), cx, c.y + 122 * k, 245, a, LUGAR_W - 12 * k);
-    textoCentro(TXT_CAPTION, i18n("Convide um amigo"), cx, c.y + 158 * k, 190, a, LUGAR_W - 12 * k);
+    textoCentro(TXT_ILHA_NOME, nome, cx, nomeY, 245, a, maxW);
+    textoCentro(TXT_CAPTION, st, cx, estadoY, 190, a, maxW);
   } else {
-    const JsMembro *m0 = p;
-    int pronto = !strcmp(m0->st, "pronto") || !strcmp(m0->st, "tocando");
-    char st[120];
-    const JsMotor *m = juntos_motor();
-    rec_avatar(av, m0->av, m0->nome, m0->id, m0->on ? a : 0.4f * a);
-    char nome[160];
-    if (m && !strcmp(m0->id, m->eu)) snprintf(nome, sizeof nome, "%s%s%s", i18n("Você"), m0->anf ? " · " : "", m0->anf ? i18n("anfitrião") : "");
-    else snprintf(nome, sizeof nome, "%s", m0->nome);
-    textoCentro(TXT_ILHA_NOME, nome, cx, c.y + 122 * k, 245, a, LUGAR_W - 12 * k);
-    if (!strcmp(m0->st, "carregando") && m0->pct > 0) snprintf(st, sizeof st, "%s %d%%", estadoTexto(m0), m0->pct);
-    else snprintf(st, sizeof st, "%s", pronto ? i18n("pronto") : estadoTexto(m0));
+    rec_avatar(av, p->av, p->nome, p->id, p->on ? a : 0.4f * a);
+    textoCentro(TXT_ILHA_NOME, nome, cx, nomeY, 245, a, maxW);
     if (pronto) {
       float w = largura(TXT_CAPTION, st);
-      gfx_icone((GfxRect){ cx - (w + 30 * k) / 2, c.y + 160 * k, 24 * k, 24 * k }, "aj_check", 0.55f, 0.92f, 0.65f, a);
-      texto(TXT_CAPTION, st, cx - (w + 30 * k) / 2 + 30 * k, c.y + 160 * k, 200, a, 0);
-    } else textoCentro(TXT_CAPTION, st, cx, c.y + 160 * k, 170, a, LUGAR_W - 12 * k);
+      gfx_icone((GfxRect){ cx - (w + 30 * k) / 2, estadoY, 24 * k, 24 * k }, "aj_check", 0.55f, 0.92f, 0.65f, a);
+      texto(TXT_CAPTION, st, cx - (w + 30 * k) / 2 + 30 * k, estadoY, 200, a, 0);
+    } else textoCentro(TXT_CAPTION, st, cx, estadoY, 170, a, maxW);
   }
   gfx_transformar(960, 540, 1, origemX, origemY);
+  return c.y + c.h;
 }
 
 static int todosProntos(const JsMotor *m) {
@@ -912,7 +924,8 @@ static void desenharSala(void) {
   float k = .85f / gfx_escala();
   float esquerda = salaX(160), direita = salaX(1760);
   GfxRect tela = { salaX(360), salaY(144), 1200 * k, 456 * k };
-  float textoX = esquerda, total = 0, fimAcoes = salaY(905);
+  float textoX = esquerda, total = 0, fimAcoes = salaY(905), statusY = salaY(806);
+  float larguras[BT_N], altura = BOTAO_H_PRIMARIO * k;
   float textoY = tela.y;
   float a = 1;
   int i, b[BT_N], n = botoesSala(b), nm, vazio;
@@ -940,58 +953,67 @@ static void desenharSala(void) {
     }
   }
   for (i = 0; i < 5; i++) {
-    if (i < nm) desenharLugar(i, &m->sala.m[i], 0, 0, a);
-    else if (i == nm) desenharLugar(i, NULL, 1, focoDe(-1), a);
+    float fim = 0;
+    if (i < nm) fim = desenharLugar(i, &m->sala.m[i], 0, 0, a);
+    else if (i == nm) fim = desenharLugar(i, NULL, 1, focoDe(-1), a);
+    statusY = fmaxf(statusY, fim + 12 * k);
   }
   {
     int pr = !mostrarQr && todosProntos(m);
     const char *s = mostrarQr ? i18n("Escaneie com o celular para mandar mensagens e controlar a sessão.")
         : pr ? i18n("Todos prontos. O filme está preparado em cada TV.") : i18n("Esperando os outros ficarem prontos");
     float w = largura(TXT_ILHA_NOME, s) + (pr ? 48 : 0), x = 960 - w / 2;
-    float y = salaY(806);
+    float y = statusY;
     if (pr) gfx_icone((GfxRect){ x, y, 36, 36 }, "aj_circle-check", 0.55f, 0.92f, 0.65f, a);
     texto(TXT_ILHA_NOME, s, x + (pr ? 48 : 0), y, 235, a, NV_VTELA_W - 160);
   }
-  for (i = 0; i < n; i++) total += botao_largura(rotuloBotao(b[i]), iconeBotao(b[i]), b[i] == BT_COMECAR) + (i ? BOTAO_GAP : 0);
+  for (i = 0; i < n; i++) {
+    // Keep the mock row with scaled labels and compact physical padding.
+    larguras[i] = largura(TXT_DET_BOTAO, rotuloBotao(b[i])) + BOTAO_ICONE + BOTAO_ICONE_GAP + 24 * k;
+    total += larguras[i] + (i ? BOTAO_GAP : 0);
+  }
+#ifdef NV_SHOT_HOOKS
+  if (gfx_escala_txt() <= 1 && !strcmp(i18n("Você"), "Você")) assert(total <= direita - esquerda);
+#endif
   if (total > direita - esquerda) {
-    float x = esquerda, y = salaY(806) + 32 + BOTAO_GAP / 2;
+    float x = esquerda, y = statusY + 32 + BOTAO_GAP / 2;
 #ifdef NV_SHOT_HOOKS
     TxtLinha status = txt_linha(TXT_ILHA_NOME, i18n("Esperando os outros ficarem prontos"), 235, 235, 235, 255);
-    assert(y >= salaY(806) + status.h + BOTAO_GAP / 2);
+    assert(y >= statusY + status.h + BOTAO_GAP / 2);
 #endif
     for (i = 0; i < n; i++) {
       int prim = b[i] == BT_COMECAR;
-      float w = botao_largura(rotuloBotao(b[i]), iconeBotao(b[i]), prim);
-      float h = prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
-      if (x + w > direita) { x = esquerda; y += BOTAO_H_PRIMARIO + BOTAO_GAP / 2; }
-      botao_pilula((GfxRect){ x, y + (BOTAO_H_PRIMARIO - h) / 2, w, h }, rotuloBotao(b[i]), iconeBotao(b[i]),
+      float w = larguras[i];
+      float h = (prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO) * k;
+      if (x + w > direita) { x = esquerda; y += altura + BOTAO_GAP / 2; }
+      botao_pilula((GfxRect){ x, y + (altura - h) / 2, w, h }, rotuloBotao(b[i]), iconeBotao(b[i]),
                    focoDe(i), prim, 0, a * entradaItem(i));
-      fimAcoes = fmaxf(fimAcoes, y + BOTAO_H_PRIMARIO);
+      fimAcoes = fmaxf(fimAcoes, y + altura);
       x += w + BOTAO_GAP;
     }
   } else {
     float xe = esquerda, xd = direita;
-    fimAcoes += BOTAO_H_PRIMARIO;
+    fimAcoes += altura;
     for (i = 0; i < n; i++) {
       int prim = b[i] == BT_COMECAR, esq = b[i] <= BT_FONTES;
       if (!esq) continue;
-      float w = botao_largura(rotuloBotao(b[i]), iconeBotao(b[i]), prim), h = prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
-      botao_pilula((GfxRect){ xe, salaY(905) + (BOTAO_H_PRIMARIO - h) / 2, w, h }, rotuloBotao(b[i]), iconeBotao(b[i]),
+      float w = larguras[i], h = (prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO) * k;
+      botao_pilula((GfxRect){ xe, salaY(905) + (altura - h) / 2, w, h }, rotuloBotao(b[i]), iconeBotao(b[i]),
                    focoDe(i), prim, 0, a * entradaItem(i));
       xe += w + BOTAO_GAP;
     }
     for (i = n - 1; i >= 0; i--) {
       float w;
       if (b[i] <= BT_FONTES) continue;
-      w = botao_largura(rotuloBotao(b[i]), iconeBotao(b[i]), 0);
+      w = larguras[i];
       xd -= w;
-      botao_pilula((GfxRect){ xd, salaY(905) + (BOTAO_H_PRIMARIO - BOTAO_H_SECUNDARIO) / 2, w, BOTAO_H_SECUNDARIO },
+      botao_pilula((GfxRect){ xd, salaY(905) + (altura - BOTAO_H_SECUNDARIO * k) / 2, w, BOTAO_H_SECUNDARIO * k },
                    rotuloBotao(b[i]), iconeBotao(b[i]), focoDe(i), 0, 0, a * entradaItem(i));
       xd -= BOTAO_GAP;
     }
   }
   const char *dicas = i18n("Setas para mover · OK para escolher · Voltar para retornar");
-  float dicasY = fmaxf(salaY(1010), fimAcoes + BOTAO_GAP);
+  float dicasY = fmaxf(salaY(1010), fimAcoes + BOTAO_GAP / 2);
 #ifdef NV_SHOT_HOOKS
   TxtLinha rodape = txt_linha(TXT_CAPTION, dicas, 170, 170, 170, 255);
   assert((dicasY + origemY + rodape.h) * gfx_escala() <= NV_LAYOUT_REAL_H);

@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 LOBBY = '--lobby' in sys.argv
-ROOT = Path('/Volumes/ExternalSSD/tmp/rev/diretor21/21-j5') / ('r6-lobby' if LOBBY else 'r5-together')
+ROOT = Path('/Volumes/ExternalSSD/tmp/rev/diretor21/21-j5') / ('r7-lobby' if LOBBY else 'r5-together')
 NATIVE = ROOT / 'native'
 MOCK = ROOT.parent / 'r3/together-layer-1-85-glass-tri.png'
 REFERENCE = Path('/Volumes/ExternalSSD/tmp/rev/linguagem/ref/sheet-open-strip.png')

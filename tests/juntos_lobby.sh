@@ -2,7 +2,7 @@
 # Capture and verify only the Watch Together lobby against its mock.
 set -eu
 cd "$(dirname "$0")/.."
-review=/Volumes/ExternalSSD/tmp/rev/diretor21/21-j5/r6-lobby
+review=/Volumes/ExternalSSD/tmp/rev/diretor21/21-j5/r7-lobby
 mkdir -p "$review/native"
 bash tests/juntos_shot.sh "$review/native/n" --lobby
 for frame in "$review"/native/n-*.bmp; do
