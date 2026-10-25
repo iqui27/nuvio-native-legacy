@@ -89,7 +89,7 @@ for layer in range(1, 8):
         for material in ('glass', 'solid'):
             target = OUT / f'together-layer-{layer}-{scale}-{material}-tri.png'
             magick(OUT / 'together-reference.png',
-                   native(OUT / 'together-verified' / f'matrix-{layer}-{scale}-{material}.png'), '+append', target)
+                   native(OUT / 'together-verified' / f'matrix-{3 if layer == 1 else layer}-{scale}-{material}.png'), '+append', target)  # mock is the lobby: layer 1 trio shows the lobby
             pngs.append(str(target))
             rows = []
             for mode in ('entry', 'focus', 'exit', 'reverse'):

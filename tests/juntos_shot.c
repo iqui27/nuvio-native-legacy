@@ -264,6 +264,8 @@ fontes:
   captura("08-reactions", 1080);
   // Native scale/material matrix; logical focus remains independent of springs.
   juntosui_shot_player(0);
+  motor.sala.n = 4;      // lobby as in the mock: 4 seats + invite card, no QR
+  juntosui_sala_fechou();
   const float scales[] = {1, .85f, .9f, 1.1f, 1.2f, 1.3f};
   for (int scale = 0; scale < 6; scale++) for (int glass = 0; glass < 2; glass++) {
     ajustes_shot_valor("selected_theme", glass ? 2 : 0);
