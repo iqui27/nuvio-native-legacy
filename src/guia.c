@@ -67,6 +67,8 @@
 #include "backupcategories.h"
 #define NV_GUIA_BACKUP_CATEGORIAS 1
 #endif
+#include "guiav5ui.h"
+#include "sessao.h"
 #include "guiacorte.h"   /* tetos e o aviso "Mostrando N de M" */
 #include "livecat.h"   /* secao sugerida pelo Jev para canal sem categoria */
 #include "xtepg.h"     /* grade curta por canal do Xtream (#158) */
@@ -324,6 +326,10 @@ typedef struct {
 // Publicados (so o fio de desenho le).
 static GCanal *canais;   static int nCanais, capCanais;
 static GCat   *cats;     static int nCats, capCats;
+// Guide v5 parental/provider rules (guiav5ui.c).
+static int gLiberado(const GCanal *c) {
+  return g5ui_channel_allowed(c->id, c->nome, c->cat >= 0 ? cats[c->cat].nome : "", c->base);
+}
 static int    *catIni, *catN;
 static GFonteLtv ltvF[G_MAX_LTV]; static int nLtvF;
 static LtvArena arena;
@@ -364,6 +370,8 @@ enum { G_PARADO, G_BAIXANDO, G_PRONTO, G_FALHOU };
 static int estado = G_PARADO;
 static int fioVivo;
 static int recarregarPend;
+// Guide v5 M3U channels: copied on the UI thread, added as a source by the load thread.
+static G5Item *cargaG5; static int nCargaG5;
 static GuiaCorte sCorte;       // staging: o que a carga deixou de fora
 static GuiaCorte corte;        // publicado: o que o cabecalho mostra
 static int sOk;                 // staging: a carga achou canal (antes de pendPronto)
@@ -2103,6 +2111,17 @@ static void *fioGuia(void *u) {
     if (m3uCarregar(&urls[i], NULL, NULL) > 0) ok = 1;
     else fonteVaziaRecupera(LTV_M3U, urls[i].url, urls[i].nome, "");
   }
+  if (nCargaG5 > 0 && cargaAtual()) {
+    int fl = sFonteChave("g5m3u", LTV_M3U, i18n("Lista do Guia TV"), "");
+    for (i = 0; fl >= 0 && i < nCargaG5; i++) {
+      char id[96];
+      G5Item *g = &cargaG5[i];
+      snprintf(id, sizeof id, "g5live:%s", g->id);
+      GCru c = { id, g->name, g->poster, "", g->epg, "", "", "", "", g->group, "tv", i + 1, 0 };
+      if (sCanalAdd(fl, &c)) ok = 1;
+    }
+  }
+  free(cargaG5); cargaG5 = NULL; nCargaG5 = 0;
   if (cargaAtual()) sugerirSecoes();
   for (i = 0; i < sNLtvF; i++) if (sLtvF[i].nCanais > 0) ok = 1;
   // FONTE ACHADA E NENHUMA PAGINA RESPONDEU tambem e "nao respondeu".
@@ -2208,7 +2227,8 @@ static void empacotar(void) {
   for (i = 0, w = 0; i < nCanais; i++)
     if (fonteAtiva(canais[i].fonte) && (!canais[i].base[0] || (baseLigada(canais[i].base) && !baseOculta(canais[i].base))) &&
         !guiafiltro_canal_oculto_fonte(&fltLive, ltvF[canais[i].fonte].chave, canais[i].id) &&
-        !(canais[i].cat >= 0 && guiafiltro_cat_oculta(&fltLive, cats[canais[i].cat].nome)))
+        !(canais[i].cat >= 0 && guiafiltro_cat_oculta(&fltLive, cats[canais[i].cat].nome)) &&
+        !g5ui_channel_hidden(canais[i].id, canais[i].nome, canais[i].cat >= 0 ? cats[canais[i].cat].nome : "", canais[i].base))
       canais[w++] = canais[i];
   nCanais = w;
   for (i = 0; i < nLtvF; i++) {
@@ -2443,7 +2463,7 @@ static void epgExtrasMontar(void) {
     const char *url = NULL;
     int i0 = ni, n0 = nn;
     unsigned contaId=0;
-    if (ltvF[f].tipo == LTV_XTREAM && fonteConta(&ltvF[f], &contaId) && xtream_fonte_xmltv(contaId, urlsContas[f], sizeof urlsContas[f])) url = urlsContas[f];
+    if (ltvF[f].tipo == LTV_XTREAM && g5ui_provider_epg() && fonteConta(&ltvF[f], &contaId) && xtream_fonte_xmltv(contaId, urlsContas[f], sizeof urlsContas[f])) url = urlsContas[f];
     else if (ltvF[f].tipo == LTV_M3U && ltvF[f].urlTvg[0]) url = ltvF[f].urlTvg;
     if (!url) continue;
     for (i = 0; i < nCanais; i++) {
@@ -2478,6 +2498,24 @@ static void epgExtrasMontar(void) {
       x[nx].chave = chaves[i]; x[nx].url = us[i].url;
       x[nx].ids = todosIds; x[nx].nIds = nti; x[nx].nomes = todosNomes; x[nx].nNomes = ntn;
       nx++;
+    }
+    if (g5ui_xmltv()[0] && nx < EPG_MAX_EXTRAS) {
+      static char g5url[1100];
+      snprintf(g5url, sizeof g5url, "%s", g5ui_xmltv());
+      if (!todosIds) {
+        todosIds = malloc(sizeof(char *) * (size_t)(nCanais + 1));
+        todosNomes = malloc(sizeof(char *) * (size_t)(nCanais + 1));
+        for (f = 0; todosIds && todosNomes && f < nCanais; f++) {
+          if (canais[f].epgId[0]) todosIds[nti++] = canais[f].epgId;
+          todosNomes[ntn++] = canais[f].nome;
+        }
+      }
+      if (todosIds && todosNomes) {
+        memset(&x[nx], 0, sizeof x[nx]);
+        x[nx].chave = "g5xmltv"; x[nx].url = g5url;
+        x[nx].ids = todosIds; x[nx].nIds = nti; x[nx].nomes = todosNomes; x[nx].nNomes = ntn;
+        nx++;
+      }
     }
     epg_extras_definir(x, nx);
     free(todosIds); free(todosNomes); }
@@ -2568,10 +2606,13 @@ static void iniciarCarga(void) {
   sNFontes = 0;
   for (int i = 0; i < nFontes && sNFontes < G_MAX_FONTE; i++)
     if (cargaBaseLigada(fontes[i].base)) sFontes[sNFontes++] = fontes[i];
+  cargaG5 = calloc(768, sizeof *cargaG5);
+  nCargaG5 = cargaG5 ? g5ui_m3u_channels(cargaG5, 768) : 0;
   fioVivo = 1;
   estado = G_BAIXANDO;
   if (pthread_create(&t, NULL, fioGuia, NULL) != 0) {
     free(addonsCarga); addonsCarga = NULL; nAddonsCarga = 0;
+    free(cargaG5); cargaG5 = NULL; nCargaG5 = 0;
     fioVivo = 0; estado = G_FALHOU;
   }
   else pthread_detach(t);
@@ -2841,7 +2882,7 @@ int guia_variantes(const char *id, GuiaVariante *out, int max) {
   GCanal *c = canalPorId(id);
   char base[160], outra[160];
   int i, j, k, n = 0;
-  if (!c || max < 1 || !xtream_e_id(c->id)) return 0;
+  if (!c || max < 1 || !xtream_e_id(c->id) || !gLiberado(c)) return 0;
   nv_nome_base(c->nome, base, sizeof base);
   snprintf(out[n].id, sizeof out[n].id, "%s", c->id);
   snprintf(out[n].nome, sizeof out[n].nome, "%s", c->nome);
@@ -2949,7 +2990,7 @@ static int previewFocoEh(const char *id) {
 }
 
 static void previewPedir(GCanal *c) {
-  if (!c || !c->id[0]) return;
+  if (!c || !c->id[0] || !gLiberado(c)) return;
   canalParaItem(c, &pedPreviewItem);
   snprintf(pedidoBase, sizeof pedidoBase, "%s", c->base);
   snprintf(pedidoTipo, sizeof pedidoTipo, "%s", c->tipo);
@@ -3001,12 +3042,16 @@ void guia_abrir(void) {
 #endif
   guia_carregar();
   if (!previewLido) previewLer();
+  g5ui_close();
   aberta = 1; querSair = 0; entrada = 0.0f;
   focoTopo = 0; painel = 0; opcoesAberto = 0;
   previewPreso = 0; previewId[0] = 0;
   previewUltLin = previewUltCol = -1; previewFocoMudou = SDL_GetTicks();
   focoValido();
   dicaTalvez();
+  /* GUIA TV v5: a tela principal e o layout do mock aprovado (guiav5ui.c).
+   * O guia de antes continua aqui: dados, zap, overlay e preview. */
+  g5ui_open("grade");
 }
 
 // O CANAL NO AR VEM PARA O GUIA. O app ja mandou o player encolher para o
@@ -3031,6 +3076,7 @@ int guia_pediu_guia_cheio(void)    { int v = pedGuiaCheio; pedGuiaCheio = 0; ret
 void guia_preview_rect(float *x, float *y, float *w, float *h) {
   gTopoMedir();
   *x = G_PREVIEW_X; *y = G_PREVIEW_Y; *w = G_PREVIEW_W; *h = G_PREVIEW_H;
+  if(g5ui_active())g5ui_multiview_rect(x,y,w,h);
 }
 
 // A FAIXA ("mini guia") por cima do video em tela cheia. Some sozinha depois
@@ -3213,6 +3259,9 @@ static int gAgora(GCanal *c, time_t t, EpgProg *p);   // ver a definicao (#158)
 static int gProximo(GCanal *c, time_t t, int k, EpgProg *p);
 static int gFaixa(GCanal *c, time_t de, time_t ate, EpgProg *out, int cap);
 static void pedirCanal(GCanal *c);
+static void previewPedir(GCanal *c);
+static void sair(void);
+static int  gProximo(GCanal *c, time_t t, int k, EpgProg *p);
 static void buscaAbrir(void);
 static int buscaEvento(const SDL_Event *e);
 static void buscaAtualizar(float dt, Uint32 agora);
@@ -3271,6 +3320,8 @@ int guia_item_do_canal(const char *id, const char *nome, const char *base, CatIt
 
 static void pedirCanal(GCanal *c) {
   if (!c || pediuCanal) return;
+  CatItem check;canalParaItem(c,&check);
+  if(!g5ui_check_channel(&check))return;
   // OK NO CANAL QUE JA TOCA (no preview, ou atras da faixa): tela cheia com o
   // MESMO fluxo, sem recarregar nada. Qualquer outro canal abre pelo caminho
   // de sempre — o player_abrir da sessao nova solta o preview.
@@ -3314,6 +3365,11 @@ static int zapAlvo(const char *idAtual, int dir, CatItem *saida, int aplicar) {
   // toques) e 0 devolve o proprio canal (recarregar a fonte).
   alvo = aovivo_ordem(n, alvo, dir);
   idx = inteira ? alvo : zapL[alvo];
+  for (i = 0; i < n && !gLiberado(&canais[idx]); i++) {   // Guide v5 locks: skip
+    alvo = aovivo_ordem(n, alvo, dir < 0 ? -1 : 1);
+    idx = inteira ? alvo : zapL[alvo];
+  }
+  if (i >= n) return 0;
   canalParaItem(&canais[idx], saida);
   // A origem so muda quando o zap VAI tocar; o banner do zapping so espia.
   if (aplicar) { snprintf(pedidoBase, sizeof pedidoBase, "%s", canais[idx].base);
@@ -3420,6 +3476,41 @@ int guia_programa_agora(const char *id, time_t t, EpgProg *p) {
   GCanal *c = canalPorId(id);
   return c && p && gAgora(c, t, p);
 }
+// Faixa para as telas v5: o que esta no ar agora e os proximos `max`-1.
+int guia_programas(const char *id, time_t t, EpgProg *out, int max) {
+  GCanal *c = canalPorId(id);
+  EpgProg p;
+  int n = 0;
+  if (!c || !out || max < 1) return 0;
+  if (gAgora(c, t, &p)) out[n++] = p;
+  for (int k = 0; n < max && gProximo(c, t, k, &p); k++) out[n++] = p;
+  return n;
+}
+// As telas v5 do guia principal pedem por id, nao por ponteiro interno.
+int guia_pedir_canal_id(const char *id) {
+  GCanal *c = canalPorId(id);
+  if (!c) return 0;
+  pedirCanal(c);
+  return pediuCanal;
+}
+int guia_pedir_preview_id(const char *id) {
+  GCanal *c = canalPorId(id);
+  if (!c) return 0;
+  previewPedir(c);
+  return 1;
+}
+void guia_fechar(void) {
+  aberta = 1;   // sair() usa o ramo de tela cheia
+  overlay = 0;
+  sair();
+}
+int guia_preview_no_ar(void) {
+  return aberta && !overlay && player_mini_no_guia_ativo() && video_pronto()
+         && !player_carregando();
+}
+const char *guia_preview_id(void) { return previewId; }
+int guia_preview_ligado(void) { if (!previewLido) previewLer(); return previewLigado; }
+void guia_definir_preview(int ligado) { previewLigado = ligado; previewGravar(); }
 
 // A faixa de programas do canal pela MESMA cascata e o MESMO fuso do guia (M6).
 int guia_programa_faixa(const char *id, time_t de, time_t ate, EpgProg *out, int cap) {
@@ -4113,6 +4204,7 @@ static void topoAcionar(int item) {
 
 void guia_evento(const SDL_Event *e) {
   if (!guia_visivel()) return;
+  if (!overlay && g5ui_event(e)) return;
 #ifdef NV_TOUCH_UI
   if (toquerol_navegacao(e)) toqueGuiaRetomar();
 #endif
@@ -4814,6 +4906,11 @@ void guia_atualizar(float dt, Uint32 agora) {
 #ifdef NV_TOUCH_UI
   if (!telefoneui_ativo()) toqueLimpar();
 #endif
+  g5ui_update();
+  if (g5ui_changed()) {
+    assinaturaPublicada = 0; empacotar(); focoValido();
+    if (fioVivo) recarregarPend=1; else { estado=G_PARADO; iniciarCarga(); }
+  }
   if (guia_visivel()) gTopoMedir();
   entrada = anim_mola(entrada, guia_visivel() ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
   int prontoPend = atomic_load_explicit(&pendPronto, memory_order_acquire);
@@ -4839,7 +4936,7 @@ void guia_atualizar(float dt, Uint32 agora) {
   // Com o preview LIGADO o descanso do foco troca o que toca, inclusive com
   // canal adotado no ar (conta limitada: o app fecha a sessao antes de abrir
   // a nova — uma conexao so). Preview desligado: o canal no ar fica.
-  if (aberta && !overlay && previewLigado && !player_aberto() &&
+  if (aberta && !overlay && !g5ui_active() && previewLigado && !player_aberto() &&
       nCanais > 0 && (estado == G_PRONTO || estado == G_BAIXANDO) &&
       (focoLin != previewUltLin || focoCol != previewUltCol) &&
       agora - previewFocoMudou >= G_PREVIEW_ESPERA_MS) {
@@ -5140,6 +5237,11 @@ static void desenharLogo(const GCanal *c, GfxRect cx, float lado, float tom,
 
 static void desenharCard(GCanal *c, float x, float y, float foco, float a,
                          time_t agoraT) {
+  if(c&&!gLiberado(c)){
+    GfxRect lock={x,y,G_CARD_W,G_CARD_H};plrui_linha_foco(lock,22,a);
+    gfx_icone((GfxRect){x+28,y+32,48,48},"aj_lock",.8,.8,.8,a);
+    TxtLinha t=txt_linha(TXT_ILHA_NOME,i18n("Conteúdo bloqueado"),220,220,220,255);txt_desenhar_alpha(t,x+24,y+120,a);return;
+  }
   GfxRect r = { x, y, G_CARD_W, G_CARD_H };
   float lum = anim_mistura(0.075f, 0.16f, foco);
   EpgProg ag, px;
@@ -5365,6 +5467,10 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
   int epg, tem = 0, noAr = 0;
   EpgProg p;
   if (!c) return;
+  if(!gLiberado(c)){
+    gfx_cor(pv,.06,.08,.09,.10,a);gfx_icone((GfxRect){pv.x+pv.w/2-32,pv.y+pv.h/2-32,64,64},"aj_lock",.8,.8,.8,a);
+    TxtLinha t=txt_linha(TXT_HEADLINE,i18n("Conteúdo bloqueado"),230,230,230,255);txt_desenhar_alpha(t,x,y,a);return;
+  }
   ajustes_acento(&ar, &ag, &ab);
   tem = gAgora(c, tFoco, &p);
   epg = gEstadoGrade(c);
@@ -6322,9 +6428,10 @@ static float desenharTopo(float a) {
       if (i == G_TOPO_PREVIEW) {
         // Ponto de estado: verde ligado, cinza desligado. O texto ja diz,
         // o ponto e o que se le de relance.
+        int ligado = previewLigado;
         GfxRect d = { r.x + G_CHIP_PAD, r.y + (r.h - 10.0f) * 0.5f, 10.0f, 10.0f };
         if (f > 0.5f) { float k = (float)ct / 255.0f; gfx_cor(d, 0.5f, k, k, k, a); }
-        else if (previewLigado) gfx_cor(d, 0.5f, 0.30f, 0.84f, 0.46f, a);
+        else if (ligado) gfx_cor(d, 0.5f, 0.30f, 0.84f, 0.46f, a);
         else               gfx_cor(d, 0.5f, 0.42f, 0.43f, 0.47f, a);
         tx = d.x + 20.0f;
       } else if (i == G_TOPO_BUSCAR) {
@@ -6431,6 +6538,9 @@ static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
                                time_t agoraT, time_t ini, time_t tFoco,
                                int passo, float agoraX, GfxRect *alvo) {
   float h = gCel;
+  if(c&&!gLiberado(c)){
+    if(passo==1){TxtLinha t=txt_linha(TXT_ILHA_SUB,i18n("Conteúdo bloqueado"),180,180,180,255);txt_desenhar_alpha(t,G_AREA_X+24,y+18,a);}return;
+  }
 #ifdef NV_TOUCH_UI
   if (telefoneui_ativo() && !overlay) h = G_L_CEL;
 #endif
@@ -7112,7 +7222,7 @@ static void buscaFazer(const char *q) {
   for (p = agulha; *p; p++) if (*p < '0' || *p > '9') soDigito = 0;
   if (soDigito) numero = atoi(agulha);
   for (i = 0; i < nCanais && buscaNC < G_BUSCA_CANAIS; i++)
-    if (fonteVisivel(canais[i].fonte) && !categoriaOculta(canais[i].cat) &&
+    if (fonteVisivel(canais[i].fonte) && !categoriaOculta(canais[i].cat) && gLiberado(&canais[i]) &&
         ((numero && canais[i].numero == numero) || nv_contem_dobrado(canais[i].nome, agulha)))
       buscaCanal[buscaNC++] = i;
   buscaPendente.ativa = nCanais > 0 && (!soDigito || strlen(agulha) > 3);
@@ -7445,6 +7555,7 @@ void guia_desenhar(Uint32 agora) {
   int l, i, temLinhas;
   if (a < 0.01f || !guia_visivel()) return;
   if (overlay) { desenharBanda(a, agora); return; }
+  if (g5ui_draw()) return;
   gTopoMedir();
   temLinhas = (estado == G_PRONTO || estado == G_BAIXANDO) && nLinhas() > 0;
 #ifdef NV_TOUCH_UI
@@ -7806,7 +7917,7 @@ int guia_buscar_canais(const char *alvoNorm, int *indices, int max) {
   if (nCanais < 1) return 0;
   for (i = 0; i < nCanais && n < max; i++) {
     busca_normalizar(canais[i].nome, nome, sizeof nome);
-    if (strstr(nome, alvoNorm)) indices[n++] = i;
+    if (gLiberado(&canais[i]) && strstr(nome, alvoNorm)) indices[n++] = i;
   }
   return n;
 }
@@ -7814,6 +7925,12 @@ int guia_buscar_canais(const char *alvoNorm, int *indices, int max) {
 int guia_canal_campos(int i, const char **id, const char **nome, const char **logo,
                       const char **cat, const char **base) {
   if (i < 0 || i >= nCanais) return 0;
+  if(!gLiberado(&canais[i]))return 0;
+  return guia_canal_regra_campos(i,id,nome,logo,cat,base);
+}
+/* Only the PIN-authenticated parental editor may use the unfiltered inventory. */
+int guia_canal_regra_campos(int i,const char **id,const char **nome,const char **logo,const char **cat,const char **base){
+  if(i<0||i>=nCanais)return 0;
   if (id) *id = canais[i].id;
   if (nome) *nome = canais[i].nome;
   if (logo) { const char *l = logoDe(&canais[i]); *logo = l ? l : ""; }

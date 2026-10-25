@@ -173,6 +173,7 @@
 #include "stalker.h"
 #include "xtream.h"
 #include "m3u.h"
+#include "guiav5ui.h"
 #include "rede.h"
 #include "ts_sonda.h"
 #include <unistd.h>
@@ -3508,7 +3509,7 @@ static char ultCanalId[80], ultCanalNome[140], ultCanalBase[600];
 static char atualCanalBase[600];
 static void tocarCanal(const CatItem *it) {
   int ni;
-  if (!it || !it->imdb[0]) return;
+  if (!it || !it->imdb[0] || !g5ui_check_channel(it)) return;
   if (player_aberto() && player_id_canal()[0] && strcmp(player_id_canal(), it->imdb)) {
     snprintf(ultCanalId, sizeof ultCanalId, "%s", player_id_canal());
     snprintf(ultCanalNome, sizeof ultCanalNome, "%s", player_titulo_canal());
@@ -3533,7 +3534,7 @@ static void tocarCanal(const CatItem *it) {
   stalkerRenovando = 0;            // resposta de renovacao antiga sera descartada
   // Canal de portal nao esta em addon nenhum: perguntar seria esperar o prazo
   // de todos eles para receber lista vazia, com a pessoa olhando "carregando".
-  if (!stalker_e_id(it->imdb) && !xtream_e_id(it->imdb) && !guia_e_m3u(it->imdb) && !m3u_e_id(it->imdb)) {
+  if (!stalker_e_id(it->imdb) && !xtream_e_id(it->imdb) && !guia_e_m3u(it->imdb) && !m3u_e_id(it->imdb) && strncmp(it->imdb, "g5live:", 7)) {
     // So o addon que publicou o canal responde por ele; ver alvoBase em
     // addons.c e o que o FrostView fora do ar custava.
     addons_definir_origem(guia_canal_origem());
@@ -6243,7 +6244,10 @@ void app_atualizar(float dt, Uint32 agora) {
       // Nenhuma viva NAO e motivo para desistir: pode ter sido lentidao de
       // rede, e a primeira da lista com o watchdog de sempre e melhor que uma
       // tela de erro. Por isso o fallback.
-      if (xtream_e_id(player_id_canal())) {
+      if(!strncmp(player_id_canal(),"g5live:",7)){
+        char url[4096];fonteEscolhida=g5ui_live(player_id_canal(),url,sizeof url)?montarCanalStalker(player_id_canal(),url):-1;
+        canalFontePrazo=CANAL_FONTE_PRAZO_MS;
+      } else if (xtream_e_id(player_id_canal())) {
         fonteEscolhida = resolverCanalXtream();
         canalFontePrazo = CANAL_FONTE_PRAZO_MS;
       } else if (guia_e_m3u(player_id_canal())) {
@@ -6799,6 +6803,19 @@ void app_atualizar(float dt, Uint32 agora) {
     nomeParaFolha(); stream_folha_abrir();
   }
 
+  { CatItem item;char url[4096];
+    if(aguardandoFonte!=2&&g5ui_play(&item,url,sizeof url)){
+      int index=cat_indice_por_imdb(item.imdb);if(index<0)index=cat_acrescentar(&item);
+      if(index>=0&&!travaui_abrir_espera(index,0,0)){
+        if(player_aberto()||player_retido())player_encerrar();
+        novaGeracaoFonte();limparFontePendente();limparFonteVOD();
+        player_abrir(index,NULL);player_definir_fonte(url);
+      }
+    }
+  }
+  {CatItem it;if(aguardandoFonte!=2&&g5ui_multiview_channel(&it)){
+    float x,y,w,h;g5ui_multiview_rect(&x,&y,&w,&h);player_mini_no_guia(x,y,w,h);player_manter_mini();tocarCanal(&it);
+  }}
   // CANAL ESCOLHIDO NO GUIA — tela cheia ou faixa, mesma acao: toca direto.
   { CatItem it;
     if (aguardandoFonte != 2 && guia_pediu_canal(&it)) {

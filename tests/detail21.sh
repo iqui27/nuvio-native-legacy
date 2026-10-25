@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eu
 cd "$(dirname "$0")/.."
-OBJ=/tmp/nv21-resto-shot-obj
+OBJ=/tmp/nv21-obj-$(basename "$PWD")
 mkdir -p "$OBJ"
 flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wno-deprecated-declarations -Wno-macro-redefined)
 objs=()

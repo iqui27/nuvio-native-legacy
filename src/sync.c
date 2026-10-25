@@ -2457,6 +2457,7 @@ void sync_esquecer_usuario(void) {
   stalker_fontes_invalidar(); m3u_fontes_invalidar(); xtream_fontes_invalidar();
   /* Credentials and caches of every native account/profile were removed. */   // mesma razao: usuario e senha sao a assinatura de quem saiu
   guia_fonte_esquecer("st"); guia_fonte_esquecer("xt");
+  extern void g5ui_forget(void);g5ui_forget();
   servidores_esquecer_todos();   // personal-server tokens of every profile on this TV
   trakt_esquecer();
   // Os ajustes por perfil guardados nesta TV (e as pendencias deles) sao da

@@ -336,6 +336,10 @@ int   ajustes_pediu_livetv_diag(void);
 int   ajustes_livetv_modo(void);
 int   ajustes_livetv_proxy(void);
 int   ajustes_livetv_sugerir(void);   // Jev sugere categoria so para canal sem categoria (livecat.h)
+// Guia TV v5: previa grande no heroi (800x450, como hoje) ou o cartao pequeno
+// do mock (560x315). Por perfil; padrao desligado.
+int   ajustes_guia_previa_grande(void);
+void  ajustes_definir_guia_previa_grande(int ligado);
 void  ajustes_livetv_aplicar_proxy(int ligado);   // proxy de TS da Live TV (proxyts.c)
 void  ajustes_livetv_aplicar_modo(int modo);
 

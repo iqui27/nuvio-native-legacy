@@ -77,6 +77,19 @@ void guia_alternar_favorito(const char *id);
 int  guia_programa_faixa(const char *id, time_t de, time_t ate, EpgProg *out, int cap);
 int  guia_programa_proximo(const char *id, time_t t, int k, EpgProg *p);
 int  guia_programa_agora(const char *id, time_t t, EpgProg *p);
+// Faixa de programas de um canal (agora + futuros), para as telas v5.
+int  guia_programas(const char *id, time_t t, EpgProg *out, int max);
+/* Hooks of the v5 main-guide screens (guiav5ui.c): ask the app to play,
+ * preview or leave, reusing the pedido pipeline the app already polls. */
+int  guia_pedir_canal_id(const char *id);
+int  guia_pedir_preview_id(const char *id);
+void guia_fechar(void);
+// TRUE while the live preview session is running with a frame.
+int  guia_preview_no_ar(void);
+int  guia_preview_ligado(void);
+void guia_definir_preview(int ligado);
+// The id of the channel playing in the guide preview, or "".
+const char *guia_preview_id(void);
 
 void guia_evento(const SDL_Event *e);
 // 1 enquanto a recarga pedida pelo painel de addons de canais ainda corre com
@@ -171,5 +184,7 @@ int  guia_buscar_canais(const char *alvoNorm, int *indices, int max);
 void guia_preparar_busca(void);
 int  guia_canal_campos(int i, const char **id, const char **nome, const char **logo,
                        const char **cat, const char **base);
+/* Unfiltered metadata for the authenticated parental rule editor only. */
+int guia_canal_regra_campos(int i,const char **id,const char **nome,const char **logo,const char **cat,const char **base);
 
 #endif
