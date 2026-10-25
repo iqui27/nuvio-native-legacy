@@ -8281,7 +8281,12 @@ static void desenhaGradeProgresso(float x, float y, float a) {
   if (!epOculto(ep) && ep->nome[0]) { size_t k=strlen(pos); snprintf(pos+k,sizeof pos-k," · %s",ep->nome); }
   txt_desenhar_alpha(txt_linha(TXT_G28B,pos,243,242,239,255),x+944,y+4,a);
   char detail[160];
-  snprintf(detail,sizeof detail,"IMDb %d.%d · %s",ep->nota/10,ep->nota%10,i18n(epOculto(ep) ? "Sem spoilers" : "Episódios"));
+  snprintf(detail,sizeof detail,"IMDb %d.%d",ep->nota/10,ep->nota%10);
+  { const CatItem *si=cat_item(idx); size_t k=strlen(detail);
+    if (epOculto(ep)) snprintf(detail+k,sizeof detail-k," · %s",i18n("Sem spoilers"));
+    else if (si && si->progresso>0 && si->restanteMin>0 && si->temporada==ep->temporada && si->episodio==ep->episodio) {
+      snprintf(detail+k,sizeof detail-k," · "); k=strlen(detail);
+      snprintf(detail+k,sizeof detail-k,i18n("faltam %d min"),si->restanteMin); } }
   idioma_decimal_texto(detail,ajustes_idioma());
   txt_desenhar_alpha(txt_linha(TXT_G22M,detail,189,189,189,255),x+944,y+48,a);
   int bt=0,be=0,nota=progMelhorNaoVisto(&bt,&be);
