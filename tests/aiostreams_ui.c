@@ -69,6 +69,15 @@ int main(void) {
   regraSelecionada=6; AioRegra order={.grupo=5}; assert(regraPertence(&order));
   regraSelecionada=7; AioRegra format={.grupo=6}; assert(regraPertence(&format));
   regraSelecionada=-1;
+  // The six cards lead directly to footer actions; summaries are display-only.
+  pagina=FILTROS; lateral=0; foco=5;
+  SDL_Event down={0}; down.type=SDL_KEYDOWN; down.key.keysym.sym=SDLK_DOWN;
+  aioui_evento(&down); acao();
+  assert(pagina==SERVICOS && regraSelecionada==-1);
+  pagina=FILTROS; foco=5; aioui_evento(&down); aioui_evento(&down); acao();
+  assert(regraSelecionada==8);
+  down.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&down);
+  assert(regraSelecionada==-1 && foco==7);
   pagina=CATALOGOS; foco=nLinhas()-1; pendente=0; acao();
   assert(pagina==CATALOGOS && pendente==1);
   pendente=0; foco=nLinhas()-2; acao(); assert(pagina==SERVICOS);

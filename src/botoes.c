@@ -112,7 +112,7 @@ void botao_pilula(GfxRect r, const char *rotulo, const char *icone,
     gfx_cor(r, raio, anim_mistura(BT_REP_R, fr, foco),
             anim_mistura(BT_REP_G, fg, foco), anim_mistura(BT_REP_B, fb, foco),
             (0.82f + 0.18f * foco) * a);
-    if (foco < 0.99f)
+    if (!gfx_vidro_sem_aro && foco < 0.99f)
       gfx_anel(r, raio, 1.5f, 1, 1, 1, 0.22f * (1.0f - foco) * a);
   }
 

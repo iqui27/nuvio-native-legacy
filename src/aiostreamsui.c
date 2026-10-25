@@ -269,7 +269,7 @@ static int nConteudo(void) {
   if(pagina==LINKS) return snap.links+3;
   if(pagina==FILTROS) {
     if(regraSelecionada>=0) { int n=1; for(int i=0;i<snap.detalhes;i++) if(regraPertence(&snap.detalhe[i])) n++; return n; }
-    return 10;
+    return 8;
   }
   if(pagina==TITULO) return (evidenciaSelecionada?snap.evidencias:snap.resultados)+3;
   return 2;
@@ -332,7 +332,7 @@ static void acao(void) {
     else if(foco==n+2) campo(2);
     else mudar(SERVICOS);
   } else if(pagina==FILTROS) {
-    if(regraSelecionada<0 && (foco<8 || foco==9)) { regraSelecionada=foco==9?8:foco; foco=0; }
+    if(regraSelecionada<0 && (foco<6 || foco==7)) { regraSelecionada=foco==7?8:foco; foco=0; }
     else mudar(SERVICOS);
   } else if(pagina==LINKS) {
     if(foco<snap.links) {
@@ -367,7 +367,7 @@ void aioui_evento(const SDL_Event *e) {
   SDL_Keycode k=e->key.keysym.sym;
   if(nv_tecla_voltar(e)) {
     if(entrada==3 || linkSelecionado>=0) { celular_fechar(); entrada=0; linkSelecionado=-1; return; }
-    if(pagina==FILTROS && regraSelecionada>=0) { foco=regraSelecionada==8?9:regraSelecionada; regraSelecionada=-1; return; }
+    if(pagina==FILTROS && regraSelecionada>=0) { foco=regraSelecionada==8?7:regraSelecionada; regraSelecionada=-1; return; }
     if(pagina==SEM || pagina==PAINEL) fechar();
     else mudar(snap.valida?PAINEL:SEM);
     return;
@@ -968,20 +968,20 @@ static void workspace(void) {
         gfx_cor((GfxRect){453,718,980,1},0,1,1,1,.08f);
         texto(TXT_ILHA_SECAO,i18n("Ordem e formatação"),453,739,980,220);
       }
-      plrui_linha_foco((GfxRect){x,y,w,h},22,focoDe(i,0));
       if(i<6) {
+        plrui_linha_foco((GfxRect){x,y,w,h},22,focoDe(i,0));
         texto(TXT_ILHA_NOME,names[i],x+12,y+20,w-66,239);
         bloco(sub,x+12,y+57,w-60,2);
         gfx_icone((GfxRect){x+w-38,y+40,20,20},"aj_lock",.6f,.65f,.68f,1);
+        ponteiro_alvo(x,y,w,h,pointer,click,i,0);
       } else {
         char resumo[320];snprintf(resumo,sizeof resumo,"%s: %s",names[i],sub);
         texto(TXT_ILHA_SUB,resumo,x+12,y+8,w-60,174);
       }
-      ponteiro_alvo(x,y,w,h,pointer,click,i,0);
       gfx_opacidade_grupo=alpha;
     }
-    botao(8,i18n("Editar no celular"),453,884,440);
-    botao(9,i18n("Proxy"),915,884,518);
+    botao(6,i18n("Editar no celular"),453,884,440);
+    botao(7,i18n("Proxy"),915,884,518);
   } else if(pagina==LEGENDAS) {
     texto(TXT_ILHA_SECAO,i18n("Addons"),453,285,650,220);
     listaPos=janela(2,nLegendas(),2,foco<=nLegendas()); int row=0, first=(int)listaPos;
