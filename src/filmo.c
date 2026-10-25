@@ -241,17 +241,15 @@ static void cartaz(int idx,float x,float y,float w,float h,int foco) {
   label=txt_linha_corta(aba==0?TXT_ILHA_HORA:TXT_ILHA_SUB,b,150,150,150,255,r.w);
   txt_desenhar_alpha(label,r.x,r.y+r.h+14+legenda,alpha*e);
 }
-// Full-width hero light tinted by the portrait palette (theme accent until it decodes).
+// Mock's layered hero, tinted by the portrait palette (theme accent until it decodes).
 static void heroi(float a){
   float r,g,b;ajustes_acento(&r,&g,&b);
   const char *f=pessoa_foto();CorvivaPaleta p;
   if(f[0]){tex_obter_larg(f,140);tex_publicar_paleta(f);if(corviva_paleta(f,&p)&&p.ok){r=p.acento[0];g=p.acento[1];b=p.acento[2];}}
   GfxRect h={0,0,NV_TELA_W,NV_TELA_H};
-  gfx_luz_canto(h,0,h.w*.74f,py(300),h.w*.62f,r,g,b,a);
-  gfx_luz_canto(h,0,h.w*.7f,py(240),h.w*.28f,r,g,b,.55f*a);
-  gfx_veu_css(h,2,0,1,.94f*a);
-  gfx_veu_css((GfxRect){0,py(240),NV_TELA_W,py(660)-py(240)},0,0,1,a);
-  gfx_cor((GfxRect){0,py(660),NV_TELA_W,NV_TELA_H-py(660)},0,0,0,0,a);
+  float hi=fmaxf(r,fmaxf(g,b)),lo=fminf(r,fminf(g,b)),delta=hi-lo,hue=0;
+  if(delta>.001f){hue=hi==r?(g-b)/delta:hi==g?2+(b-r)/delta:4+(r-g)/delta;hue/=6;if(hue<0)hue+=1;}
+  gfx_rect(h,0,GFX_FILMO_FUNDO,0,hue,0,0,r,g,b,a);
 }
 // Continue pill: play, poster with progress, title and state, on the primary surface.
 static float continuar(float x,float y,int next,const FdFicha *d,float f){
@@ -305,7 +303,14 @@ static void header(const FdFicha *d){drawZona=0;drawItem=0;FmResumo r;fm_resumo(
       FmConquista cq[FM_CQ_MAX];int n=fm_conquistas(d->pessoa,pessoa_nome(),d->c,d->st,d->n,cq),best=-1;
       for(int i=0;i<n;i++)if(cq[i].trilha&&cq[i].nivel&&(best<0||cq[i].nivel>cq[best].nivel))best=i;
       if(best>=0){const char *role=strstr(cq[best].nome," · ");snprintf(t,sizeof t,"%s · %s",i18n(fm_nivel_nome(cq[best].nivel)),role?role+4:cq[best].nome);
-        float bx=px(72)+l.w+24;if(bx+badge_largura(t)<px(72)+paginaW())badge_desenhar(bx,py(HERO_META),t,BADGE_REALCE,alpha);}
+        char up[320];idioma_maiusc(up,sizeof up,t);
+        float bx=px(72)+l.w+24,w=txt_tracking(TXT_AJ_CAPS13,up,207,148,61,-1,0,0,1.56f);
+        if(bx+15+w<px(72)+paginaW()){
+          TxtLinha label=txt_linha(TXT_AJ_CAPS13,up,207,148,61,255);
+          float yc=py(HERO_META+(1-e)*NV_ENTRA_DY)+l.h/2;
+          gfx_cor((GfxRect){bx,yc-3.5f,7,7},.5f,207/255.f,148/255.f,61/255.f,alpha);
+          txt_tracking(TXT_AJ_CAPS13,up,207,148,61,bx+15,yc-label.h/2,alpha,1.56f);
+        }}
     }
     e=sobe(aberto,3);alpha=fade*e;float y=py(HERO_ACOES+(1-e)*NV_ENTRA_DY),x=px(72);
     FmConquista cq[4];int reason,level,nc=fm_conquistas(d->pessoa,pessoa_nome(),d->c,d->st,d->n,cq);int next=fm_proximo(d->c,d->st,d->n,FM_ATUA,cq,nc,&reason,&level);

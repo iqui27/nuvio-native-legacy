@@ -17,6 +17,7 @@
 #include "j4_proof.h"
 #include "js.h"
 #include "idioma.h"
+#include "corviva.h"
 // Offline adapter: no enrichment, follow, or episode worker can mutate proof state.
 static FdFicha fixture;
 void fd_abrir(void) {}
@@ -135,7 +136,11 @@ int main(int argc,char **argv){assert(argc==2||argc==3);dados_iniciar(NULL);asse
  load_fixture();fixture_art();assert(pessoa_n_creditos()==46);assert(strstr(pessoa_outros(),"Mara Lindquist"));filmo_abrir();assert(filmo_foco()==3000);
  if(argc==3&&!strcmp(argv[2],"history")){
    for(int sc=85;sc<=100;sc+=15)for(int g=0;g<2;g++){
-     j4_settings(0,0,6,0);ajustes_definir_vidro(g);gfx_escala_txt_definir(sc/100.f);
+     j4_settings(0,0,12,0);ajustes_definir_vidro(g);gfx_escala_txt_definir(sc/100.f);
+     // Match the mock's selected title hue (315 degrees), through the real palette path.
+     CorvivaPaleta palette={.ok=1,.acento={.8f,.2f,.65f}};
+     corviva_anotar("history-mock",&palette);corviva_definir("history-mock",CORVIVA_DETALHE);
+     for(int i=0;i<100;i++)corviva_quadro(.01f,CORVIVA_SIMPLES,0,0);
      key(SDLK_ESCAPE);while(filmo_aba()!=0)key(SDLK_LEFT);key(SDLK_DOWN);key(SDLK_DOWN);filmo_abrir();
      for(int yr=0;yr<30;yr++)key(SDLK_LEFT);for(int yr=2011;yr<2024;yr++)key(SDLK_RIGHT);
      char pfx[600];snprintf(pfx,sizeof pfx,"%s-%d-g%d",argv[1],sc,g);

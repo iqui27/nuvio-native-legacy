@@ -293,7 +293,10 @@ typedef enum {
   GFX_COPIA_LANCZOS = 51,  // Lanczos3
   GFX_RCAS = 52,           // FSR 1 RCAS (sharpening after upscale)
   GFX_HDR_OUTPUT = 53,     // Final SDR UI to HDR conversion; preserves all color accuracy
-  GFX_NMODOS = 54
+  // Filmography mock's HSL stops, elliptical light and two reading veils.
+  // uPar.x = palette hue (0..1), uCor.a = screen entry/exit alpha.
+  GFX_FILMO_FUNDO = 54,
+  GFX_NMODOS = 55
 } GfxModo;
 
 typedef struct {
