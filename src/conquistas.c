@@ -575,7 +575,7 @@ static void desenha_card(GfxRect r, const CqEntrada *e, float foc, float a) {
   if (raridade_txt(e->chave, b, sizeof b)) texto_dir(TXT_V2_18, b, r.x + CARD_W - 20.0f, r.y + 170.0f, 200.0f, mudo, a);
 }
 
-static void painel(GfxRect r, float a) { t21_ilha(r, T21_R_SHEET, a); }
+static void painel(GfxRect r, float a) { Tinta p, s; superficie(r, T21_R_SHEET, 0, a, &p, &s); }
 
 static void botao_breve(GfxRect r, const char *s, const char *ic, float foc, float a) {
   pilula(r, s, ic, foc, 0, !foc, a);
@@ -625,10 +625,10 @@ static void desenha_retomar(float a) {
           p.x + 24.0f, p.y + 66.0f * k, COL_W - 48.0f, 32.0f, a, 5);
     return;
   }
-  emblema_e(p.x + 24.0f, p.y + 60.0f * k, 96.0f, &st.e[c], a);
-  bloco(TXT_ILHA_NOME, st.e[c].nome, PRI, p.x + 136.0f, p.y + 62.0f * k, COL_W - 160.0f, 28.0f, a, 2);
+  emblema_e(p.x + 16.0f, p.y + 44.0f * k, 150.0f, &st.e[c], a);
+  bloco(TXT_ILHA_NOME, st.e[c].nome, PRI, p.x + 180.0f, p.y + 62.0f * k, COL_W - 204.0f, 28.0f, a, 2);
   snprintf(b, sizeof b, i18n("%d de %d filmes"), st.e[c].vistos, st.e[c].total);
-  texto(TXT_V2_18, b, p.x + 136.0f, p.y + 128.0f * k, COL_W - 160.0f, SEC, a);
+  texto(TXT_V2_18, b, p.x + 180.0f, p.y + 128.0f * k, COL_W - 204.0f, SEC, a);
   botao_breve(r_retomar_btn(), "Continuar a trilha", "aj_play", foco == B_RETOMAR && retomar_ligado(), a);
 }
 
