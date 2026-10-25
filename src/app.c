@@ -7394,7 +7394,9 @@ static void desenharTelas(Uint32 agora) {
 #ifdef NV_TOUCH_UI
     if (telefoneui_ativo()) { CAMADA_SE(central_aberta()); }
 #endif
-    central_desenhar(agora); plrilha_desenhar(agora);
+    central_desenhar(agora);
+    if (!registro_aberto() && addonguia_aberto()) { ponteiro_camada(); addonguia_desenhar(); }
+    plrilha_desenhar(agora);
     if (episodios_aberto() && sinopse_aberta()) sinopse_desenhar();
   }
   gfx_osd_mult = 1.0f;
@@ -7489,7 +7491,7 @@ static int miniToquePermitido(void) {
 #endif
 
 void app_desenhar(Uint32 agora) {
-  if (aioui_aberto() && !registro_aberto() && !player_aberto()) {
+  if (aioui_opaco() && !registro_aberto() && !player_aberto()) {
     // Opaque dashboard: avoid rendering Settings, title and sources underneath.
     gfx_sem_recorte(); ponteiro_camada(); aioui_desenhar(agora); celb_desenhar();
     return;
@@ -7680,7 +7682,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades201_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades202_desenhar(agora);
   if (!registro_aberto()) resolver_desenhar(agora);        // so o esmaecer de saida
-  if (!registro_aberto()) { CAMADA_SE(addonguia_aberto()); addonguia_desenhar(); }
+  if (!registro_aberto() && !player_aberto()) { CAMADA_SE(addonguia_aberto()); addonguia_desenhar(); }
   if (!registro_aberto()) novcartao_desenhar(agora);      // so o esmaecer de saida
   CAMADA_SE(telemetria_aberto());
   if (!registro_aberto()) telemetria_desenhar(agora);
