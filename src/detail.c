@@ -5512,14 +5512,15 @@ static void heroWeb(float a, float desloc) {
     }
     { char mine[96], value[24];
       int n = reacao_nota(cat_item(idx)->imdb);
-      if (n) { snprintf(value, sizeof value, "%d.%d", n / 2, n % 2 * 5); plrui_decimal(value); }
-      else snprintf(value, sizeof value, "—");
-      snprintf(mine, sizeof mine, "%s  %s", i18n("Sua nota"), value);
-      float ar, ag, ab;
-      ajustes_acento(&ar, &ag, &ab);
-      x += 24;
-      gfx_icone((GfxRect){x, yc - 10, 20, 20}, "pl_star", ar, ag, ab, a);
-      plrui_kicker(mine, x + 28, yc - 9, 208, 195, 181, a);
+      if (n) {  // hide the entry until the user has rated
+        snprintf(value, sizeof value, "%d.%d", n / 2, n % 2 * 5); plrui_decimal(value);
+        snprintf(mine, sizeof mine, "%s  %s", i18n("Sua nota"), value);
+        float ar, ag, ab;
+        ajustes_acento(&ar, &ag, &ab);
+        x += 24;
+        gfx_icone((GfxRect){x, yc - 10, 20, 20}, "pl_star", ar, ag, ab, a);
+        plrui_kicker(mine, x + 28, yc - 9, 208, 195, 181, a);
+      }
     }
     // QUANTO DA SERIE VOCE JA VIU, no fim da linha de meta.
     //

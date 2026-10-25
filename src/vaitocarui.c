@@ -5,6 +5,7 @@
 #include "idiomacod.h"
 #include "plrui.h"
 #include "text.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -62,7 +63,7 @@ void vtui_desenhar(const VaiTocar *vt, float x, float y, float larg, float a) {
   char buf[200];
   if (h <= 0.0f || a <= 0.002f) return;
   cartao = (GfxRect){ x, y, larg, h };
-  plrui_material(cartao, VAI_RAIO, 0, a);
+  gfx_cor(cartao, VAI_RAIO / fminf(cartao.w, cartao.h), 1, 1, 1, 0.07f * a);  // flat chip fill, no outline
   cx = x + VAI_PAD_X;
   yc = y + VAI_PAD_Y + VAI_L1_H * 0.5f;
 
