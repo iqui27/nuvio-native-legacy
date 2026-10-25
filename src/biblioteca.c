@@ -260,7 +260,7 @@ static int bibTinta2(void) { return 205; }
 #define BIB_FAIXA_Y      (232.0f / bibHS())
 #define BIB_SEG_H         NV_CTRL_H   // .seg: 5 + (23 + 2 x 11) + 5
 #define BIB_SEG_PAD        5.0f
-#define BIB_SEG_ITEM_PADX 20.0f
+#define BIB_SEG_ITEM_PADX 22.0f
 #define BIB_SEG_ITEM_GAP   4.0f
 #define BIB_CHIP_H        NV_CTRL_H   // .vid dos filtros: 12 + 21 + 12
 #define BIB_CHIP_PADX     20.0f
@@ -554,7 +554,7 @@ static float paginaX(void) {
 static int temOrigens(void) { return estado() != EST_ITENS && modo != MODO_ASSISTIDOS; }
 static float bibX(void) {
   if (temAberta && aberta.fonte == LST_TRAKT && !trilha) return paginaX() + 560;
-  return paginaX() + (temOrigens() ? 364.0f : 0.0f);
+  return paginaX() + (temOrigens() ? (modo == MODO_LISTAS ? 364.0f : ANC(364.0f)) : 0.0f);
 }
 // Right edge in text-layer units. NV_TELA_W changes with the active layer (the
 // header runs at another scale than the grid), so the edge is derived from the
@@ -585,7 +585,7 @@ static int bibRetrato(void) {
   return 0;
 #endif
 }
-static float bibHS(void) { return escala_min(BIB_TOPO_ESCALA_MIN); }
+static float bibHS(void) { return fmaxf(1.0f, escala_min(BIB_TOPO_ESCALA_MIN)); }
 static float bibRel(void) { return bibHS() / gfx_escala_txt(); }
 static float hdrX(void) { return paginaX() / bibRel(); }
 static float hdrDir(void) { return bibDireita() / bibRel(); }
@@ -2127,12 +2127,12 @@ static int contagemModo(int a) {
 static float larguraModo(int a) {
   char num[16];
   if (!bibRetrato()) {
-    // A mesma medida do plrui_seg: rotulo + 40, contagem + 9.
-    float w = (float)txt_linha(TXT_ILHA_SEG, ROT_MODO[a], 243, 243, 243, 255).w + 40.0f;
+    // Match the shared rimless track's label, padding and count gap.
+    float w = (float)txt_linha(TXT_AJ_SEG, ROT_MODO[a], 243, 243, 243, 255).w + 44.0f;
     int n = contagemModo(a);
     if (n >= 0) {
       snprintf(num, sizeof num, "%d", n);
-      w += 9.0f + (float)txt_linha(TXT_ILHA_NUM, num, 243, 243, 243, 255).w;
+      w += 10.0f + (float)txt_linha(TXT_ILHA_NUM, num, 243, 243, 243, 255).w;
     }
     return w;
   }
@@ -2194,8 +2194,8 @@ static void desenhaModos(void) {
     plrui_seg_ex(ROT_LISTA_TAB, cont, 4, listaTab, animListaTab, animListaEd, hdrX(), BIB_FAIXA_Y, 1, 1);
     float x = hdrX() + 5;
     for (int i = 0; i < 4; i++) {
-      float w = txt_linha(TXT_ILHA_SEG, ROT_LISTA_TAB[i], 243, 243, 243, 255).w + 40;
-      ponteiro_alvo(x, BIB_FAIXA_Y + 5, w, 44, ponteiroModo, NULL, i, 0);
+      float w = txt_linha(TXT_AJ_SEG, ROT_LISTA_TAB[i], 243, 243, 243, 255).w + 44;
+      ponteiro_alvo(x, BIB_FAIXA_Y + 5, w, 48, ponteiroModo, NULL, i, 0);
       x += w + 4;
     }
     return;
@@ -2210,7 +2210,7 @@ static void desenhaModos(void) {
                  hdrX(), BIB_FAIXA_Y, 1, 1);
     for (int a = 0; a < BIB_N_MODOS; a++) {
       float w = larguraModo(a);
-      ponteiro_alvo(x, BIB_FAIXA_Y + BIB_SEG_PAD, w, 44, ponteiroModo, NULL, a, 0);
+      ponteiro_alvo(x, BIB_FAIXA_Y + BIB_SEG_PAD, w, 48, ponteiroModo, NULL, a, 0);
       x += w + BIB_SEG_ITEM_GAP;
     }
     return;
@@ -3357,7 +3357,10 @@ static void desenhaOrigens(void) {
     }
     return;
   }
-  GfxRect painel = { paginaX(), ANC(388.0f), 320.0f, fminf(700, 50 + nOrigens() * 76 + (serverRows ? 54 : 0) + 96) };
+  // The mock's island and row rhythm stay in physical pixels at 85–100%.
+  float panelX = paginaX() * gfx_escala_txt();
+  ESCALA_REAL_INI();
+  GfxRect painel = { panelX, 388.0f, 320.0f, fminf(700, 46 + nOrigens() * 78 + (serverRows ? 54 : 0) + 86) };
   // .vid of the mock: island glass without the light rim.
   gfx_vidro_sem_aro = 1; t21_ilha(painel, T21_R_SHEET, 1); gfx_vidro_sem_aro = 0;
   // Heading as in the mock: tracked caps, dim.
@@ -3365,7 +3368,7 @@ static void desenhaOrigens(void) {
   const char *sub[] = { i18n("sem repetir títulos"), i18n("watchlist"), i18n("plano para ver"), i18n("salvos neste perfil") };
   float footerY = 0;
   const char *letra[] = { "", "T", "S", "N" };
-  int vis = (int)((painel.h - 50 - 96) / 76), start = focoOrigem && origemSel > vis - 1 ? origemSel - (vis - 1) : 0;
+  int vis = (int)((painel.h - 46 - 86) / 78), start = focoOrigem && origemSel > vis - 1 ? origemSel - (vis - 1) : 0;
   for (int i = start; i < nOrigens() && i < start + vis; i++) {
     const char *name = rotuloOrigem(i, 0);
     const char *description = i < BIB_N_ORIG ? sub[i] : i18n("lista do add-on");
@@ -3377,7 +3380,7 @@ static void desenhaOrigens(void) {
       if (!serverRows || !serverRows(i - BIB_N_ORIG - nAddonOrigens, &name, &serverSub, &count)) continue;
       description = serverSub ? serverSub : i18n("Biblioteca");
     }
-    GfxRect row = { painel.x + 12, painel.y + 50 + (i - start) * 76, 296, 76 };
+    GfxRect row = { painel.x + 12, painel.y + 46 + (i - start) * 78, 296, 78 };
     ponteiro_alvo(row.x, row.y, row.w, row.h, ponteiroOrigem, NULL, i, 0);
     plrui_linha_foco(row, T21_R_ROW, i < 64 ? animOrigem[i] : 0);
     float tx = row.x + 18;
@@ -3410,10 +3413,11 @@ static void desenhaOrigens(void) {
     txt_desenhar(txt_linha_corta(TXT_MINI, i18n("Gerenciar conexões"), 150, 153, 162, 255, 280), painel.x + 18, footerY + 30);
   }
   // Footer note of the mock: divider, then two muted lines.
-  { float ny = painel.y + painel.h - 84;
-    gfx_cor((GfxRect){painel.x + 18, ny, painel.w - 36, 1}, 0, 1, 1, 1, .07f);
-    txt_desenhar(txt_linha_corta(TXT_ILHA_HORA, i18n("O + salva em Trakt e Simkl."), 98, 100, 106, 255, 280), painel.x + 18, ny + 14);
-    txt_desenhar(txt_linha_corta(TXT_ILHA_HORA, i18n("Muda em Ajustes › Contas."), 98, 100, 106, 255, 280), painel.x + 18, ny + 38); }
+  { float ny = painel.y + painel.h - 79;
+    gfx_cor((GfxRect){painel.x + 12, ny, painel.w - 24, 1}, 0, 1, 1, 1, .07f);
+    txt_desenhar(txt_linha_corta(TXT_ILHA_HORA, i18n("O + salva em Trakt e Simkl."), 98, 100, 106, 255, 260), painel.x + 30, ny + 14);
+    txt_desenhar(txt_linha_corta(TXT_ILHA_HORA, i18n("Muda em Ajustes › Contas."), 98, 100, 106, 255, 260), painel.x + 30, ny + 36); }
+  ESCALA_REAL_FIM();
   // Provider rows share this page's focus and title filters.
 }
 
@@ -3461,7 +3465,7 @@ static void desenhaCabecalho(void) {
         txt_tracking(TXT_MINI, k, 115, 117, 122, hdrX(), BIB_TOPO, 1.0f, 2.2f);
         ty += 22.0f;
       }
-      txt_desenhar(t, hdrX(), ty);
+      txt_desenhar(t, hdrX(), ty - (modo == MODO_LISTAS ? 0.0f : 6.0f));
     } }
 
   if (listasMinhas()) return;   // 6D: the list panel owns the right side
@@ -3494,7 +3498,7 @@ static void desenhaCabecalho(void) {
         snprintf(status, sizeof status, i18n("sincronizado há %d min"), atoi(fake)); } }
 #endif
     // Same baseline as the subtitle on the left, so the two read as one row.
-    float lineY = BIB_TOPO + (float)txt_linha(TXT_TITULO2, "Hg", 255, 255, 255, 255).h + 2.0f;
+    float lineY = BIB_TOPO + (float)txt_linha(TXT_TITULO2, "Hg", 255, 255, 255, 255).h - 2.0f;
     TxtLinha st = txt_linha(TXT_ILHA_APOIO, status, 105, 105, 105, 255);
     float y = lineY + (float)(txt_linha(TXT_CAPTION2, "Hg", 255, 255, 255, 255).h - st.h) * 0.5f;
     float ar, ag, ab;
@@ -3612,7 +3616,7 @@ static void desenhaResumo(void) {
   { TxtLinha t = txt_linha(TXT_TITULO2, "Hg", 255, 255, 255, 255);
     TxtLinha info = txt_linha_corta(TXT_CAPTION2, txt, 140, 140, 140, 255,
                                     hdrW() - 280.0f);
-    txt_desenhar(info, hdrX(), BIB_TOPO + (float)t.h + 2.0f); }
+    txt_desenhar(info, hdrX(), BIB_TOPO + (float)t.h - 2.0f); }
 }
 
 // "2024-03-01T10:00:00.000Z" -> "01/03/2024". "" quando o Trakt nao mandou.
@@ -3850,7 +3854,8 @@ static void biblioteca_desenhar_(Uint32 agora) {
   // fora por quadro — e o custo dominante nesta GPU e fill rate (gfx.c registra
   // que DUAS camadas de tela cheia derrubavam a Mali-G71 para ~40fps).
 
-  { ESCALA_MIN_INI(BIB_TOPO_ESCALA_MIN);   // Header coordinates compensate the text layer.
+  { float headerScale = gfx_escala();
+    gfx_escala_sair(bibHS());
     desenhaCabecalho();
     if (temAberta) desenhaAcoes();
     else {
@@ -3858,7 +3863,7 @@ static void biblioteca_desenhar_(Uint32 agora) {
       for (int p = 0; p < bibNPicks(); p++)  desenhaPicker(p, animPick[p]);
     }
     desenhaResumo();
-    ESCALA_MIN_FIM(); }
+    gfx_escala_sair(headerScale); }
   if (temOrigens()) desenhaOrigens();
   desenhaVistaAnterior(agora);
   nVistaAtual = 0; vistaModo = modo; vistaExibicao = exibicao;
