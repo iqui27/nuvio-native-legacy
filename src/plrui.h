@@ -73,6 +73,9 @@ float plrui_seg(const char *const *rotulos, const int *contagem, int n, float se
 // same as `sel`) and `leve` = rimless track for the 2.1 mock surfaces.
 float plrui_seg_ex(const char *const *rotulos, const int *contagem, int n, int escolhido,
                    float sel, float ed, float x, float y, float a, int leve);
+// Same, with text counts ("3/4"); NULL or "" = no count.
+float plrui_seg_txt(const char *const *rotulos, const char *const *contagem, int n, float sel,
+                    float ed, float x, float y, float a);
 
 // A BARRA DE PROGRESSO, a mesma em todo lugar (OSD, pausa, ao vivo, trailer):
 // trilho branco 20% com cantos redondos, o buffer a 30%, o andado no acento.

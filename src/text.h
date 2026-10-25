@@ -203,6 +203,7 @@ typedef enum {
   TXT_MUS_TIT, TXT_MUS_ART, TXT_MUS_TRACK, TXT_MUS_KICK, TXT_MUS_17, TXT_MUS_16,
   TXT_HERO_META_G,  // hero info Grande, 24/500
   TXT_HERO_META_GG, // hero info Muito grande, 27/500
+  TXT_FILMO_ANO, // History chapter display, 84/700
   TXT_NFONTES
 } TxtEstilo;
 

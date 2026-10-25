@@ -27,6 +27,7 @@ static void proof_reset(void) {
 }
 static void proof_focus(void) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;pessoas_evento(&e); }
 static void proof_close(void) { aberto=0; }
+static void proof_reopen(void) { aberto=1; }
 static void proof_step(float dt) { pessoas_atualizar(dt,SDL_GetTicks()); }
 static void proof_draw(void) { shot_arte_desenhar(.35f);pessoas_desenhar(SDL_GetTicks()); }
 
@@ -365,6 +366,7 @@ int main(int argc, char **argv) {
   shot("meu-perfil");
 
   semearBusca();j4_art_ready();
+  j4_reopen=proof_reopen;
   j4_proof("friends",proof_reset,proof_focus,proof_step,proof_draw,proof_close);
   printf("pronto\n");
   return 0;

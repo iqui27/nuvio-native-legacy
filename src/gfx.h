@@ -293,7 +293,10 @@ typedef enum {
   GFX_COPIA_LANCZOS = 51,  // Lanczos3
   GFX_RCAS = 52,           // FSR 1 RCAS (sharpening after upscale)
   GFX_HDR_OUTPUT = 53,     // Final SDR UI to HDR conversion; preserves all color accuracy
-  GFX_NMODOS = 54
+  // Filmography mock's HSL stops, elliptical light and two reading veils.
+  // uPar.x = palette hue (0..1), uCor.a = screen entry/exit alpha.
+  GFX_FILMO_FUNDO = 54,
+  GFX_NMODOS = 55
 } GfxModo;
 
 typedef struct {
@@ -806,6 +809,8 @@ void gfx_vidro_superficie(GfxRect r, float raio, float a);
 // o anel de FOCO (gfx_vidro_foco) nunca passa por aqui.
 void gfx_vidro_aro(GfxRect r, float raio, float esp, float cr, float cg, float cb, float ca);
 void gfx_vidro_painel(GfxRect r, float raio, float fundo, float a);
+// Same glass material, without perimeter highlights, for approved flat controls.
+void gfx_vidro_painel_sem_aro(GfxRect r, float raio, float fundo, float a);
 // FOCO de uma pilula/linha JA desenhada com gfx_vidro_painel: o miolo clareia
 // (branco a 9 %) e o contorno de 2 px em branco acende com a mola `foco`.
 void gfx_vidro_foco(GfxRect r, float raio, float foco, float a);

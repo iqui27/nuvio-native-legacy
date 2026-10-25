@@ -2,6 +2,15 @@
 #include "ajustes.h"
 #include "anim.h"
 #include "text.h"
+#include "plrui.h"
+
+static int semAro;
+void botao_pilula_sem_aro(GfxRect r, const char *rotulo, const char *icone,
+                         float foco, int primario, int alinhar, float a) {
+  semAro = 1;
+  botao_pilula(r, rotulo, icone, foco, primario, alinhar, a);
+  semAro = 0;
+}
 
 // Superficie de repouso do primario: o cinza do painel flutuante (0.055/0.058/
 // 0.068) um degrau acima, tingido para o azul do mesmo jeito. Nunca #000 nem
@@ -89,7 +98,12 @@ void botao_pilula(GfxRect r, const char *rotulo, const char *icone,
   float temIcone = (icone && icone[0]) ? 1.0f : 0.0f;
   float grupo, x0, padx = primario ? BOTAO_PAD_X : BOTAO_PAD_X2;
 
-  if (vidro) {
+  if (semAro) {
+    if (vidro) gfx_vidro_painel_sem_aro(r, raio, 0.55f, a);
+    else gfx_cor(r, raio, BT_REP_R, BT_REP_G, BT_REP_B, a);
+    plrui_pilula_foco(r, foco * a);
+    c = emFoco ? plrui_tinta() : BT_TEXTO_REP;
+  } else if (vidro) {
     // O mesmo vidro nos dois tamanhos: a hierarquia continua sendo a altura
     // (72 x 56) e a lavagem do realce so vai no primario. O foco e a pilula
     // cheia no realce (branca no tema padrao) com a tinta que contrasta.
