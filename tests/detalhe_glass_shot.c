@@ -108,7 +108,12 @@ static void server_vai(const VaiTocar *vt, float x, float y, float w, float a) {
   server_rect((GfxRect){x, y, w, vtui_altura(vt)});
   vtui_desenhar(vt, x, y, w, a);
 }
+static void server_plano(GfxRect r, float radius, float a) {
+  if (r.h == 76.0f) server_rect(r);
+  plrui_material_plano(r, radius, a);
+}
 #define plrui_material server_material
+#define plrui_material_plano server_plano
 #define vtui_desenhar server_vai
 static void card_material(GfxRect r, float radius, float density, float alpha) {
   int before = gfx_vidro_com_fonte;
