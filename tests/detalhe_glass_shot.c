@@ -583,6 +583,7 @@ static void abrir(int i, int nv, int sec, int col) {
   // Os quadros daqui sao muito mais rapidos que os da TV: o esvanecer do logo
   // (260 ms, SDL_GetTicks) ainda nao terminou. Espera e assenta.
   SDL_Delay(400);
+  heroDesde = SDL_GetTicks() - 10000;   // stills show the settled hero enter wave
   quadros(4);
 }
 
@@ -759,8 +760,18 @@ int main(int argc, char **argv) {
       hi.indice = 1; hi.rect.w = NV_TELA_W; hi.rect.h = NV_TELA_H;
       hi.titulo = itens[1].titulo; hi.genero = itens[1].genero; hi.meta = itens[1].meta;
       detail_abrir(&hi); }
-    for (int k=0;k<6;k++) { quadros(k ? 3 : 1); printf("anim t=%.3f a2=%.3f\n", t, fase2()); snprintf(name,sizeof name,"anim-enter-%d",k); gravar(name); }
+    // 5 frames (83 ms) of page time per capture: the hero wave clock is pinned
+    // to the same simulated time, since each capture takes longer than that.
+    for (int k=0;k<12;k++) {
+      int ms = k * 5 * 1000 / 60;
+      quadros(k ? 4 : 0); heroDesde = SDL_GetTicks() - (Uint32)ms; quadros(1);
+      printf("anim t=%.3f a2=%.3f ms=%d\n", t, fase2(), ms);
+      snprintf(name,sizeof name,"anim-enter-%d",k); gravar(name); }
     quadros(40); SDL_Delay(400); quadros(8);
+    // Hero focus Play -> +: fill, ink and scale ease (draw dt is capped at 50 ms).
+    e.key.keysym.sym = SDLK_RIGHT; detail_evento(&e);
+    for (int k=0;k<4;k++) { quadros(1); snprintf(name,sizeof name,"anim-botao-%d",k); gravar(name); }
+    e.key.keysym.sym = SDLK_LEFT; detail_evento(&e); quadros(30);
     abrir(1,1,SEC_NOTAS,0); quadros(60); SDL_Delay(400); quadros(8);
     gravar("anim-notas-0");
     for (int c=1;c<nNotasTiles();c++) { e.key.keysym.sym = SDLK_RIGHT; detail_evento(&e); quadros(3); }

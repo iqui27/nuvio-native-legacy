@@ -4582,7 +4582,8 @@ static void desenhaDicaBotao(GfxRect rc, const char *texto, float a) {
   txt_desenhar_alpha(label, pill.x + 14.0f, pill.y + (h - label.h) * .5f, a);
 }
 
-static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, float a) {
+// focado: 0..1 focus spring (hero row), 1 = focused; portrait keeps its boolean look.
+static void desenhaBotao(GfxRect r, const char *rot, int icone, float focado, float a) {
   // FOCO E TAMANHO, NAO ANEL.
   //
   // Aqui havia duas marcas de foco empilhadas e as duas falhavam no botao
@@ -4595,9 +4596,9 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
   // fatores estao em NV_DETW2_FOCO_*, e nao ha anel nenhum em captura alguma.
   // No circular a escala vem acompanhada da inversao de cor, que ja existia.
   int circular = (rot == NULL);
-  if (focado) {
-    float sx = detalheRetrato() ? (circular ? NV_DETW2_FOCO_SY : NV_DETW2_FOCO_SX) : 1.04f;
-    float sy = detalheRetrato() ? NV_DETW2_FOCO_SY : 1.04f;
+  if (detalheRetrato() ? focado > 0.5f : focado > 0.0f) {
+    float sx = detalheRetrato() ? (circular ? NV_DETW2_FOCO_SY : NV_DETW2_FOCO_SX) : 1.0f + 0.04f * focado;
+    float sy = detalheRetrato() ? NV_DETW2_FOCO_SY : 1.0f + 0.04f * focado;
     float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
     r.w *= sx; r.h *= sy;
     r.x = cx - r.w * 0.5f; r.y = cy - r.h * 0.5f;
@@ -4609,15 +4610,15 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
     // nao #222, foco realce + tinta + luz. O tamanho (escala no foco) e o
     // glifo continuam daqui.
     if (!detalheRetrato()) {
-      gfx_cor(r,.5f,1,1,1,(focado ? .96f : .12f)*a);
-      ic=focado ? .067f : .953f;
+      gfx_cor(r,.5f,1,1,1,(.12f + .84f * focado)*a);
+      ic=.953f - .886f * focado;
     } else if (ajustes_vidro()) {
       // Vidro: o mesmo disco de botao_disco (branco cheio em foco, glifo escuro).
       gfx_vidro_painel(r, NV_RAIO_PILL, 0.55f, a);
-      gfx_vidro_pilula_cheia(r, NV_RAIO_PILL, focado ? 1.0f : 0.0f, a);
-      ic = focado ? (float)gfx_vidro_tinta(1.0f) / 255.0f : 1.0f;
+      gfx_vidro_pilula_cheia(r, NV_RAIO_PILL, focado > 0.5f ? 1.0f : 0.0f, a);
+      ic = focado > 0.5f ? (float)gfx_vidro_tinta(1.0f) / 255.0f : 1.0f;
     } else
-    if (focado) { float fr, fg, fb; ic = focoAcento(&fr, &fg, &fb);
+    if (focado > 0.5f) { float fr, fg, fb; ic = focoAcento(&fr, &fg, &fb);
                   luzFoco(r, a);
                   gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a); }
     else { ic = 1.0f; gfx_cor(r, NV_RAIO_PILL, 0.14f, 0.15f, 0.17f, a); }
@@ -4693,16 +4694,16 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, int focado, floa
   // o mesmo botao em dois tamanhos, e o Play brigava com o botao em foco.
   { float tinta = 235.0f / 255.0f, fr = 0.14f, fg = 0.15f, fb = 0.17f;
     if (!detalheRetrato()) {
-      gfx_cor(r,.5f,1,1,1,(focado ? .96f : .12f)*a);
-      tinta=focado ? .067f : .953f;
+      gfx_cor(r,.5f,1,1,1,(.12f + .84f * focado)*a);
+      tinta=.953f - .886f * focado;
     } else if (ajustes_vidro()) {
       // Play: vidro com lavagem e aro do realce em repouso; em foco, a pilula
       // cheia na cor do realce (branca no tema padrao).
       gfx_vidro_painel_acento(r, NV_RAIO_PILL, 0.55f, a);
-      gfx_vidro_pilula_cheia(r, NV_RAIO_PILL, focado ? 1.0f : 0.0f, a);
-      tinta = focado ? (float)gfx_vidro_tinta(1.0f) / 255.0f : tinta;
+      gfx_vidro_pilula_cheia(r, NV_RAIO_PILL, focado > 0.5f ? 1.0f : 0.0f, a);
+      tinta = focado > 0.5f ? (float)gfx_vidro_tinta(1.0f) / 255.0f : tinta;
     } else {
-    if (focado) { tinta = focoAcento(&fr, &fg, &fb); luzFoco(r, a); }
+    if (focado > 0.5f) { tinta = focoAcento(&fr, &fg, &fb); luzFoco(r, a); }
     gfx_cor(r, NV_RAIO_PILL, fr, fg, fb, a); }
     tintaBotao = tinta; }
 
@@ -4955,6 +4956,30 @@ static float  hVaiVis;
 static Uint32 hVaiTick;
 static int    metaEsqVisto;       // o esqueleto da linha de meta foi mostrado
 static Uint32 metaChegouEm;
+static Uint32 heroDesde;          // page open: start of the hero enter wave
+
+// 2.1 mock enter (detalhe21/v2 heroRender): meta, Play, circles, version chip
+// and synopsis each fade in (460 ms ease-in-out) and rise 24 px (700 ms
+// expo-out), 45 ms apart, from 200 ms after open. Back keeps the block motion.
+static float heroOnda(float i, float *dy) {
+  float ms = (float)(Uint32)(SDL_GetTicks() - heroDesde) - 200.0f - 45.0f * i;
+  if (saindo || anim_politica_reduzida) { *dy = 0.0f; return 1.0f; }
+  float k = anim_clamp(ms / 460.0f, 0.0f, 1.0f);
+  *dy = 24.0f * exp2f(-10.0f * anim_clamp(ms / 700.0f, 0.0f, 1.0f));
+  return k < 0.5f ? 2.0f * k * k : 1.0f - 2.0f * (1.0f - k) * (1.0f - k);
+}
+// Hero action focus as a spring (fill, ink and 1.04 scale ease), not a jump.
+static float focoBotao(int i, int alvo) {
+  static float v[16];
+  static Uint32 tick[16];
+  if (i < 0 || i >= 16) return (float)alvo;
+  Uint32 ag = SDL_GetTicks();
+  float dt = tick[i] ? (float)(Uint32)(ag - tick[i]) * 0.001f : 0.0f;
+  tick[i] = ag;
+  v[i] = anim_politica_reduzida ? (float)alvo :
+         anim_mola(v[i], (float)alvo, dt > 0.05f ? 0.05f : dt, alvo ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+  return v[i];
+}
 
 static void topoEstadoTexto(char *dst, size_t n, int durMin, int pessoal) {
   // A linha da PESSOA no mockup v2: "Nunca visto · 2h36 · termina às 22:47"
@@ -5021,6 +5046,7 @@ static void heroReiniciar(void) {
   memset(&vaiTocar, 0, sizeof vaiTocar); vaiTocarEm = 0; vaiTocarIdx = -1;
   hVaiVis = 0.0f; hVaiTick = 0;
   metaEsqVisto = 0; metaChegouEm = 0;
+  heroDesde = SDL_GetTicks();
 }
 
 #define DET_SIN_ESQ_LINHAS   3      // linhas que o esqueleto da sinopse reserva
@@ -5247,8 +5273,10 @@ static void heroWeb(float a, float desloc) {
 
   // Sobe alguns pixels enquanto entra: continua o movimento da arte em vez de
   // aparecer pronto no lugar. `desloc` e a rolagem do documento.
-  float sobe = (1.0f - a) * 26.0f + desloc;
-  yMeta1 += sobe; ySin += sobe;
+  float sobe = (saindo ? (1.0f - a) * 26.0f : 0.0f) + desloc;
+  float dyM, kM = heroOnda(0, &dyM), dyP, kP = heroOnda(1, &dyP);
+  float dyV, kV = heroOnda(2, &dyV), dyS, kS = heroOnda(3, &dyS);
+  yMeta1 += sobe + dyM; ySin += sobe + dyS;
   yRetom += sobe; yAgenda += sobe; yAcoes += sobe; yEstado += sobe;
 
   // --- logo -----------------------------------------------------------------
@@ -5319,7 +5347,15 @@ static void heroWeb(float a, float desloc) {
     // nao mexer na arte e o certo enquanto nao se sabe.
     { GfxModo m = tex_marca_escura(arqLogo) ? GFX_MARCA : GFX_TEXTO;
       if (r.w > 0 && r.h > 0) {
+        // Mock enter: logo fades in 500 ms and settles from 1.04 at its base-left.
+        float ms = (float)(Uint32)(SDL_GetTicks() - heroDesde), sL = 1.0f;
+        int zoom = !saindo && !anim_politica_reduzida && !gfx_transformado();
+        if (zoom) { float k = anim_clamp(ms / 500.0f, 0.0f, 1.0f);
+                    aLogo *= k < 0.5f ? 2.0f * k * k : 1.0f - 2.0f * (1.0f - k) * (1.0f - k);
+                    sL = 1.0f + 0.04f * exp2f(-10.0f * anim_clamp(ms / 900.0f, 0.0f, 1.0f));
+                    gfx_transformar(r.x, r.y + r.h, sL, 0, 0); }
         gfx_rect(r, texLogo, m, 0, 0, 0, 0.0f, 1, 1, 1, aLogo);
+        if (zoom) gfx_sem_transformar();
         titulo_tempo_logo(&detalheTempo, "detalhe", arqLogo, texLogo, aLogo > 0.05f);
       } }
   } else if (nome && !nomeAbaixo) {
@@ -5409,7 +5445,9 @@ static void heroWeb(float a, float desloc) {
     if (botao >= n) botao = n - 1;
     float bx = NV_DETW2_X;
     GfxRect rp = heroAcaoRect(&bx, &cyBtn, larguraPrimario(rot), NV_DETW2_BTN_H);
-    desenhaBotao(rp, rot, 0, nivel == 0 && botao == nb, a);
+    rp.y += dyP;
+    desenhaBotao(rp, rot, 0, focoBotao(nb, nivel == 0 && botao == nb), a * kP);
+    rp.y -= dyP;
     primarioPct = -1;   // os outros botoes nao tem trilho
     if (a > 0.3f) ponteiro_alvo(rp.x, rp.y, rp.w, rp.h, ponteiroDetalhe, NULL, -1, nb);
     bx += rp.w + NV_DETW2_BTN_GAP; nb++;
@@ -5497,7 +5535,9 @@ static void heroWeb(float a, float desloc) {
       GfxRect rc = { bx, cyBtn - NV_DETW2_CIRC * 0.5f,
                      NV_DETW2_CIRC, NV_DETW2_CIRC };
       if (detalheRetrato()) rc = heroAcaoRect(&bx, &cyBtn, rc.w, rc.h);
-      desenhaBotao(rc, NULL, acaoEm(nb), nivel == 0 && botao == nb, a);
+      { float dyC, kC = heroOnda(2.0f + (nb - 1) * 0.5f, &dyC);   // mock: circles at 2 + i*.5
+        GfxRect rw = { rc.x, rc.y + dyC, rc.w, rc.h };
+        desenhaBotao(rw, NULL, acaoEm(nb), focoBotao(nb, nivel == 0 && botao == nb), a * kC); }
       if (nivel == 0 && botao == nb && acaoEm(nb) == ACAO_TRAVAR) {
         const CatItem *cT = cat_item(idx);
         desenhaDicaBotao(rc, i18n(cT && travaui_tem_trava(cT->imdb) ? "Gerenciar trava" : "Travar série"), a);
@@ -5548,12 +5588,12 @@ static void heroWeb(float a, float desloc) {
              vaiTocar.audio[0] ? " · " : "", vaiTocar.audio,
              vaiTocar.idiomas[0] ? " · " : "", vaiTocar.idiomas);
     TxtLinha l = txt_linha_corta(TXT_DET_META2, texto, 225, 227, 232, 255, larguraTextoHero() - 48);
-    float yV = 716.0f + sobe;
+    float yV = 716.0f + sobe + dyV, aV = a * kV;
     versaoRect = (GfxRect){NV_DETW2_X-12, yV, l.w + 64, 48};
-    if (focoVersao) gfx_cor(versaoRect, .5f, .17f, .18f, .20f, a);
+    if (focoVersao) gfx_cor(versaoRect, .5f, .17f, .18f, .20f, aV);
     float cr, cg, cb; ajustes_acento(&cr, &cg, &cb);
-    gfx_cor((GfxRect){NV_DETW2_X + 11, yV + 19, 10, 10}, .5f, cr, cg, cb, a);
-    txt_desenhar_alpha(l, NV_DETW2_X + 40, yV + (48 - l.h) * .5f, a);
+    gfx_cor((GfxRect){NV_DETW2_X + 11, yV + 19, 10, 10}, .5f, cr, cg, cb, aV);
+    txt_desenhar_alpha(l, NV_DETW2_X + 40, yV + (48 - l.h) * .5f, aV);
   }
   if (pessoal[0]) {
     // A LINHA DA PESSOA do mockup v2: ponto do acento, primeiro pedaco em
@@ -5667,7 +5707,7 @@ static void heroWeb(float a, float desloc) {
                yAcoes + NV_DETW2_BTN_H + hAcoesExtra + srvH + 16.0f, larguraLogoHero(), 34, a, 0);
 
   // --- sinopse --------------------------------------------------------------
-  { float f = 1.0f;
+  { float f = 1.0f, aS = a * kS;
     if (sinTrocaDesde) {
       f = (float)(Uint32)(agoraH - sinTrocaDesde) / DET_TROCA_MS;
       if (f >= 1.0f) { f = 1.0f; sinTrocaDesde = 0; }
@@ -5675,14 +5715,14 @@ static void heroWeb(float a, float desloc) {
     }
     if (f < 1.0f) {   // o que saiu esvanece por baixo do que entra
       if (sinAnt[0]) txt_bloco_corta(TXT_DET_SIN, sinAnt, 255, 255, 255, NV_DETW2_X, ySin,
-                               larguraTextoHero(), NV_DETW2_LD_SIN, a * (1.0f - f),
+                               larguraTextoHero(), NV_DETW2_LD_SIN, aS * (1.0f - f),
                                NV_DETW2_SIN_LINHAS);
-      else esqueletoSinopse(NV_DETW2_X, ySin, a * (1.0f - f));
+      else esqueletoSinopse(NV_DETW2_X, ySin, aS * (1.0f - f));
     }
     if (sin) txt_bloco_corta(detalheRetrato() ? TXT_DET_SIN : TXT_SINOPSE_26, sin, 243, 242, 239, NV_DETW2_X, ySin,
-                       larguraTextoHero(), NV_DETW2_LD_SIN, a * f * .84f,
+                       larguraTextoHero(), NV_DETW2_LD_SIN, aS * f * .84f,
                        NV_DETW2_SIN_LINHAS);
-    else if (esqSin) esqueletoSinopse(NV_DETW2_X, ySin, a * f); }
+    else if (esqSin) esqueletoSinopse(NV_DETW2_X, ySin, aS * f); }
 
   // --- meta linha 1: generos • generos  ·  ano  ·  [IMDb] nota ---------------
   //
@@ -5706,18 +5746,26 @@ static void heroWeb(float a, float desloc) {
       if (temps > 0) snprintf(col,sizeof col,i18n(temps==1 ? "%d temporada" : "%d temporadas"),temps);
       snprintf(meta,sizeof meta,"%s%s%s%s%s%s%s",ano,g && *g ? " · " : "",g ? g : "",
                (temps ? col : dur)[0] ? " · " : "",temps ? col : dur,
-               !topoPessoal() && !temps && fim[0] ? " · " : "",!topoPessoal() && !temps ? fim : ""); }
+               "","");
+      if (topoPessoal() || temps) fim[0] = 0; }
+    float aM = a * kM;
     TxtLinha lm=txt_linha(TXT_DET_META2,meta,189,189,189,255);
-    txt_desenhar_alpha(lm,NV_DETW2_X,yMeta1,a);
-    desenhaSeloImdb(NV_DETW2_X+lm.w+12,yMeta1+15,notaDe(idx),a);
+    txt_desenhar_alpha(lm,NV_DETW2_X,yMeta1,aM);
+    // Mock: "termina às 22:47" in 500 weight and the brighter ink.
+    if (fim[0]) { TxtLinha ld=txt_linha(TXT_DET_META2,"·",189,189,189,255);
+                  TxtLinha lf=txt_linha(TXT_HERO_META_G,fim,233,231,226,255);
+                  txt_desenhar_alpha(ld,NV_DETW2_X+lm.w+7,yMeta1,aM);
+                  txt_desenhar_alpha(lf,NV_DETW2_X+lm.w+14+ld.w,yMeta1+(lm.h-lf.h)*.5f,aM);
+                  lm.w+=14+ld.w+lf.w; }
+    desenhaSeloImdb(NV_DETW2_X+lm.w+12,yMeta1+15,notaDe(idx),aM);
     int minha=notaMinha();
     if (topoPessoal() && minha) {
       char score[32]; snprintf(score,sizeof score,i18n("Você %d"),minha);
       float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
       TxtLinha l=txt_linha(TXT_G20M,score,(int)(ar*255),(int)(ag*255),(int)(ab*255),255);
       GfxRect chip={NV_DETW2_X+lm.w+150,yMeta1,l.w+16,30};
-      gfx_anel(chip,6.0f/30,1.5f,ar,ag,ab,a);
-      txt_desenhar_alpha(l,chip.x+8,chip.y+2,a);
+      gfx_anel(chip,6.0f/30,1.5f,ar,ag,ab,aM);
+      txt_desenhar_alpha(l,chip.x+8,chip.y+2,aM);
     }
     return;
   }
@@ -8691,12 +8739,11 @@ static void carFundo(void) {
 // "O QUE ACHOU?" AINDA SEM RESPOSTA (reacao.h): uma linha discreta no canto
 // inferior direito, so no topo da pagina e sem nada aberto por cima. CIMA na
 // linha de botoes abre o cartao (detail_evento); aberto, ele desenha aqui.
+// 2.1: the corner hint sat on the first section header (Classificação, season
+// summary); the mock's "Sua nota" tile is the prompt, so only the open card draws.
 static void reacaoPendente(float s) {
-  int livre = nivel == 0 && scrollY < 1.0f && !pessoaAberta && !colListaAberta && !amtui_aberta() &&
-              !detmais_aberto() &&
-              !episodios_menu_aberto() && trocaarte_visivel() < 0.005f;
-  if (!livre && !reacao_aberta()) return;
-  reacao_detalhe_dica(cat_item(idx), livre ? s : 0.0f);
+  (void)s;
+  if (reacao_aberta()) reacao_detalhe_dica(cat_item(idx), 0.0f);
 }
 
 // O FUNDO DA PAGINA DO TITULO, inteiro, numa funcao so.
@@ -8873,7 +8920,7 @@ static void detail_desenhar_(Uint32 agora) {
           dyCar = -CAR_TEXTO_SOBE * carTxt;
           aCar = anim_clamp(1.0f - fabsf(carOff - (float)carAplicado) * 4.0f, 0.0f, 1.0f);
         }
-        heroWeb(a2 * k * f * aCar, -scrollY + (1.0f - a2) * NV_TELA_H * 0.05f + c * NV_CINEMA_DESCE + dyCar);
+        heroWeb(a2 * k * f * aCar, -scrollY + (saindo ? (1.0f - a2) * NV_TELA_H * 0.05f : 0.0f) + c * NV_CINEMA_DESCE + dyCar);
         heroDx = 0.0f;
       } else {
         heroWeb(NV_TXTGATE_AQUECER, -scrollY + NV_TELA_H * 0.05f);
@@ -9033,7 +9080,9 @@ void detail_sob_menu(int sim) {
 int detail_sob_menu_ativo(void) { return sobMenu; }
 
 // ESCALA DE TEXTO E COMPONENTES (escala.h): as entradas publicas ligam a camada
-// de texto; o corpo mede NV_TELA_W/H na tela virtual dela.
-void detail_evento(const SDL_Event *e) { TXT_INI(); detail_evento_(e); TXT_FIM(); }
-void detail_atualizar(float dt, Uint32 agora) { TXT_INI(); detail_atualizar_(dt, agora); TXT_FIM(); }
-void detail_desenhar(Uint32 agora) { TXT_INI(); detail_desenhar_(agora); TXT_FIM(); }
+// de texto; o corpo mede NV_TELA_W/H na tela virtual dela. The approved 2.1 mock
+// is 1080p px: 85-100% keep its sizes, larger scales still grow (as Library).
+#define DET_INI() float txtAnt_ = gfx_escala(); gfx_escala_sair(fmaxf(1.0f, gfx_escala_txt()))
+void detail_evento(const SDL_Event *e) { DET_INI(); detail_evento_(e); TXT_FIM(); }
+void detail_atualizar(float dt, Uint32 agora) { DET_INI(); detail_atualizar_(dt, agora); TXT_FIM(); }
+void detail_desenhar(Uint32 agora) { DET_INI(); detail_desenhar_(agora); TXT_FIM(); }
