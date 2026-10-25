@@ -3838,6 +3838,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "Samsung televizoriuose vis dar pasitaiko strigimų, kurie matomi tik programos žurnale. Jei leisite, programa pati įkels tą žurnalą: ankstesnės sesijos – ją atidarius, o šios – kas minutę. Slaptažodžiai ir raktai neįkeliami – tik tai, ką programa darė ir kiek tai užtruko. Išjungti galite bet kada Nustatymuose › Apie › Siųsti žurnalus automatiškai."),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "Serialuose: kiekvienos sezono serijos įvertinimas kreive ir kiek žmonių žiūri toliau po pirmos serijos."),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "Serialuose: kiekvienos serijos įvertinimas kreive, kiek žiūri toliau po pirmos serijos ir sezono eiga su tuo, kur draugai nuėjo."),
+  T("Nascimento: %s · %d anos", "Gimė: %s · %d metų"),
   T("Nativo na Samsung", "Natyviai Samsung televizoriuose"),
   T("Navegar", "Naršyti"),
   T("Navegar rápido", "Greita navigacija"),

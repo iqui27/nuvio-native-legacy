@@ -3837,6 +3837,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "На телевизорах Samsung до сих пор бывают зависания, которые видны только в журнале приложения. Если вы разрешите, приложение само будет отправлять этот журнал: предыдущего сеанса — при открытии, а текущего — каждую минуту. Пароли и ключи не передаются — только то, что делало приложение и сколько это длилось. Отключить можно в любой момент в Настройки › О приложении › Отправлять журналы автоматически."),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "Для сериалов: оценка каждой серии сезона в виде кривой и сколько людей продолжают смотреть после первой серии."),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "В сериалах: оценка каждой серии кривой, сколько людей смотрят после первой серии, и прогресс сезона с тем, докуда дошли друзья."),
+  T("Nascimento: %s · %d anos", "Рождение: %s · %d лет"),
   T("Nativo na Samsung", "Нативно на Samsung"),
   T("Navegar", "Навигация"),
   T("Navegar rápido", "Быстрая навигация"),

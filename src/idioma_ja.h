@@ -3838,6 +3838,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "Samsung のテレビでは、アプリのログにしか現れない固まりが今も発生しています。許可していただければ、アプリがそのログを自動でアップロードします。起動時に前回のセッション分、その後は 1 分ごとに今回のセッション分です。パスワードやキーは含まれず、アプリが何をどれくらいの時間で行ったかだけが送られます。設定 › アプリについて › ログを自動で送信 からいつでもオフにできます。"),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "シリーズで: シーズンの各エピソードの評価をカーブで表示し、第 1 話のあと何人が見続けているかを示します。"),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "シリーズでは、各エピソードの評価のカーブ、第1話以降も見続ける人数、友達がどこまで見たかを含むシーズンの進み具合。"),
+  T("Nascimento: %s · %d anos", "生年月日: %s · %d歳"),
   T("Nativo na Samsung", "Samsung でネイティブ動作"),
   T("Navegar", "移動"),
   T("Navegar rápido", "高速ナビゲーション"),

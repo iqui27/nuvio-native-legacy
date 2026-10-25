@@ -3838,6 +3838,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "Na televizích Samsung stále dochází k zamrzání, které je vidět jen v logu aplikace. Pokud to povolíte, aplikace ten log nahraje sama: předchozí relace při otevření a tuto každou minutu. Neodesílají se hesla ani klíče — jen to, co aplikace dělala a jak dlouho to trvalo. Vypnout můžete kdykoli v Nastavení › O aplikaci › Odesílat logy automaticky."),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "U seriálů: hodnocení každého dílu řady jako křivka a kolik lidí pokračuje po prvním dílu."),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "U seriálů: hodnocení každého dílu v křivce, kolik lidí pokračuje po prvním dílu a průběh řady i s tím, kam došli přátelé."),
+  T("Nascimento: %s · %d anos", "Narození: %s · %d let"),
   T("Nativo na Samsung", "Nativně na Samsungu"),
   T("Navegar", "Procházet"),
   T("Navegar rápido", "Rychlá navigace"),

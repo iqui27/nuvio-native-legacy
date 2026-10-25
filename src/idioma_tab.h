@@ -3837,6 +3837,7 @@
   { "Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "On Samsung TVs there are still freezes that only show up in the app's log. If you allow it, the app uploads that log by itself: the previous session's when it opens, and this one's every minute. No passwords or keys go — only what the app did and how long it took. You can turn it off any time in Settings › About › Send logs automatically." },
   { "Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "For series: each episode's rating across the season as a curve, and how many people keep watching after the first episode." },
   { "Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "On series: each episode's rating as a curve, how many people keep watching after episode one, and season progress, with how far your friends got." },
+  { "Nascimento: %s · %d anos", "Born: %s · %d years old" },
   { "Nativo na Samsung", "Native on Samsung" },
   { "Navegar", "Navigate" },
   { "Navegar rápido", "Fast navigation" },

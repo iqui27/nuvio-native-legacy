@@ -3838,6 +3838,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "Sulle TV Samsung ci sono ancora blocchi che compaiono solo nel log dell'app. Se lo permetti, l'app carica quel log da sola: quello della sessione precedente all'apertura e quello di questa ogni minuto. Non partono password né chiavi — solo cosa ha fatto l'app e quanto ci ha messo. Puoi disattivarlo quando vuoi in Impostazioni › Info › Invia i log automaticamente."),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "Nelle serie: il voto di ogni episodio della stagione in una curva, e quante persone continuano a guardare dopo il primo episodio."),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "Nelle serie: il voto di ogni episodio in curva, quanti continuano dopo il primo episodio e l’avanzamento della stagione, con dove sono arrivati gli amici."),
+  T("Nascimento: %s · %d anos", "Nascita: %s · %d anni"),
   T("Nativo na Samsung", "Nativo su Samsung"),
   T("Navegar", "Naviga"),
   T("Navegar rápido", "Navigazione rapida"),

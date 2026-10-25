@@ -3838,6 +3838,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "Di TV Samsung masih ada pembekuan yang hanya terlihat di log aplikasi. Jika kamu mengizinkan, aplikasi mengunggah log itu sendiri: sesi sebelumnya saat dibuka, dan sesi ini setiap menit. Tidak ada kata sandi atau kunci yang dikirim — hanya apa yang dilakukan aplikasi dan berapa lama waktunya. Kamu bisa mematikannya kapan saja di Pengaturan › Tentang › Kirim log secara otomatis."),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "Untuk serial: rating setiap episode dalam musim sebagai kurva, dan berapa orang yang lanjut menonton setelah episode pertama."),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "Pada serial: rating tiap episode sebagai kurva, berapa orang lanjut setelah episode pertama, dan progres musim beserta posisi teman Anda."),
+  T("Nascimento: %s · %d anos", "Lahir: %s · %d tahun"),
   T("Nativo na Samsung", "Native di Samsung"),
   T("Navegar", "Navigasi"),
   T("Navegar rápido", "Navigasi cepat"),

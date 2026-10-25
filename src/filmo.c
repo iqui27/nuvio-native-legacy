@@ -25,10 +25,12 @@
 #include "corviva.h"
 #include "descoberta.h"
 #include "idiomacod.h"
+#include "badges.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <time.h>
 // Approved prototype: header, four tabs, chapters/year rail, nine-column grid.
 static int aba,zona,col,cap,ano,ruido,topo,camada,op,selecionado=-1,pedido=-1,bioPagina;
 static int indices[FM_MAX],ni,anos[FM_MAX],na;
@@ -38,6 +40,7 @@ static int como;
 static void preparar(void);
 static int gradeCols(void);
 static float gradePasso(void);
+static float anoPasso(void);
 static float alpha, entrada, tempo, scroll, scrollV, anoScroll, anoV, abaSel, abaFoco;
 static int folhaAtiva;
 static int saindo, ultimaAba = -1, ultimoAno, folhaAnterior;
@@ -49,9 +52,9 @@ static float compactoT;
 #define HERO_KICK 92
 #define HERO_NOME 112
 #define HERO_META 214
-#define HERO_ACOES 258
-#define HERO_ABAS 356
-#define CONTEUDO_Y 432
+#define HERO_ACOES 274
+#define HERO_ABAS 372
+#define CONTEUDO_Y 448
 #define ANO_S 78.0f
 #define FOLHA_Y 222
 #define FOLHA_P 86
@@ -72,7 +75,7 @@ static int atualizar(float dt) {
   int ai = 0; while (ai < na && anos[ai] != ano) ai++;
   int start = ai - 10; if (start < 0) start = 0;
   if (start > na - 21) start = na > 21 ? na - 21 : 0;
-  anoScroll = anim_mola2_reduzida(&anoV, anoScroll, start * ANO_S, dt, NV_MOLA2_SCROLL, red);
+  anoScroll = anim_mola2_reduzida(&anoV, anoScroll, start * anoPasso(), dt, NV_MOLA2_SCROLL, red);
   anoSel = red || anoSel < 0 ? ai : anim_mola(anoSel, ai, dt, NV_MOLA_FOCO);
   anoFoco = red ? zona == 3 && !camada : anim_mola(anoFoco, zona == 3 && !camada, dt, NV_MOLA_FOCO);
   abaSel = red ? aba : anim_mola(abaSel, aba, dt, NV_MOLA_FOCO);
@@ -96,6 +99,7 @@ static float paginaW(void) { float w; t21_inicio(NULL, &w); return w; }
 static float colunaK(void) { return paginaW() / 1788.0f; }
 static float linhaK(void) { return fminf(1, (ANC(T21_SAFE_B) - 60) / 970.0f); }
 static float px(float x) { return 72 + (x - 72) * colunaK(); }
+static float anoPasso(void) { return na>1&&na<=21?1590.0f/(na-1):ANO_S; }
 static float py(float y) { return 60 + (y - 60) * linhaK(); }
 static float compacta(float full,float small){return full+(small-full)*compactoT;}
 static GfxRect area(GfxRect r) { return (GfxRect){px(r.x), py(r.y), r.w * colunaK(), r.h * linhaK()}; }
@@ -123,7 +127,7 @@ static float botao(const char *s,float x,float y,float w,int foco) {
 // Chip like the mock's .chip: accent dot when on, dim prefix before the label; dir = x is the right edge.
 static float chip(const char *v,const char *s,int on,float x,float y,int dir){
   float f=focoBtns[drawZona][drawItem++],ar,ag,ab;int fo=f>=.5f,ink=fo?plrui_tinta():on?255:230;
-  TxtLinha lv={0},ls=txt_linha(TXT_DET_BOTAO,s,ink,ink,ink,255);if(v)lv=txt_linha(TXT_DET_META,v,ink,ink,ink,fo?190:150);
+  TxtLinha lv={0},ls=txt_linha(TXT_ILHA_SEG,s,ink,ink,ink,255);if(v)lv=txt_linha(TXT_ILHA_SUB,v,ink,ink,ink,fo?190:150);
   float w=2*BOTAO_PAD_X2+(on?17:0)+(lv.w?lv.w+10:0)+ls.w;
   GfxRect r={px(x)-(dir?w:0),py(y),w,T21_CTRL_H};
   plrui_botao_repouso(r,alpha);plrui_pilula_foco(r,alpha*f);
@@ -152,7 +156,7 @@ void filmo_abrir(void) {
   folhaAtiva=1;
   memset(focoBtns,0,sizeof focoBtns); memset(focoCred,0,sizeof focoCred);
   compactoT=aba==1&&zona==4;
-  scroll=topo*gradePasso(); scrollV=anoV=0; fd_abrir();
+  scroll=topo*gradePasso(); scrollV=anoV=0; fd_abrir(); fd_sobre();
 }
 int filmo_titulo(void){int p=pedido;pedido=-1;return p;}
 int filmo_foco(void){return zona*1000+col;}
@@ -179,6 +183,7 @@ static int evento(const SDL_Event *e){if(e->type!=SDL_KEYDOWN||e->key.repeat)ret
   }
   if(k==SDLK_UP){if(zona==4){int cols=aba==0?5:gradeCols();if(col>=cols){col-=cols;topo=col/cols;}else{zona=aba==0?3:2;col=0;}}else if(zona>0){zona--;col=zona==1?aba:0;}return 0;}
   if(k==SDLK_DOWN){if(zona==0){zona=1;col=aba;}else if(zona==1){zona=2;col=0;}else if(aba==0&&zona==2){zona=3;col=0;}else if((aba==0||aba==1)&&zona<4){zona=4;col=0;}else if(zona==4){int cols=aba==0?5:gradeCols();if(col+cols<ni){col+=cols;if(col/cols>=topo+gradeLinhas())topo=col/cols-gradeLinhas()+1;}}return 0;}
+  if(aba==0&&(k==SDLK_PAGEUP||k==SDLK_PAGEDOWN)){FmCap caps[6];int n=capitulos(d,caps),i=0;while(i+1<n&&caps[i+1].de<=ano)i++;i+=k==SDLK_PAGEDOWN?1:-1;if(i>=0&&i<n){ano=caps[i].de;zona=3;col=0;}return 0;}
   if(k==SDLK_LEFT||k==SDLK_RIGHT){int step=k==SDLK_RIGHT?1:-1;if(zona==1){aba=(aba+4+step)%4;col=aba;topo=0;filtro.ano=0;if(aba==2)fd_sobre();}else if(zona==3&&aba==0){int j=0;while(j<na&&anos[j]!=ano)j++;if(j+step>=0&&j+step<na)ano=anos[j+step];}else{FmCap caps[6];int max=zona==0?3:zona==4?ni:aba==1?5:aba==0?capitulos(d,caps)+(ruidoN(d)>0):1;if(col+step>=0&&col+step<max)col+=step;}return 0;}
   if(ok){if(zona==0){if(col==1)fd_seguir();else if(col==2){int dir=!strcmp(pessoa_area(),"Direção"),i;caca_previa(dir?CACA_DIRECAO:CACA_ATUACAO,d->pessoa,pessoa_nome(),pessoa_foto());i=caca_previa_cacar();if(i>=0){CacaInfo c;if(caca_info(i,&c)){IlhaAcao ac;char frase[160];snprintf(frase,sizeof frase,i18n("Caçando %s"),c.nome);memset(&ac,0,sizeof ac);ac.icone="aj_crosshair";ac.frase=frase;ac.titulo=c.nome;ac.onde=i18n("Perfil · Caça");ac.thumb=c.foto;ac.voar=c.foto[0]!=0;ac.tipo=ILHA_ACENTO;ilhaacao_feita(&ac);}}}else{FmConquista cq[4];int reason,level,n=fm_conquistas(d->pessoa,pessoa_nome(),d->c,d->st,d->n,cq);int nx=fm_proximo(d->c,d->st,d->n,FM_ATUA,cq,n,&reason,&level);if(nx<0){aba=1;zona=4;col=topo=0;}else folha(nx);}}else if(zona==4&&ni){if(aba==0&&col>=5){aba=1;filtro.ano=ano;zona=2;col=0;}else folha(indices[col]);}else if(zona==2){if(aba==1){if(col<4)fm_girar(&filtro,col);else ruido=!ruido;topo=0;}else if(aba==0){FmCap caps[6];int nc=capitulos(d,caps);if(col<nc){cap=col;ano=caps[cap].de;zona=3;}else ruido=!ruido;}else if(aba==2){camada=5;bioPagina=0;}}}
   return 0;
@@ -208,6 +213,7 @@ static void cartaz(int idx,float x,float y,float w,float h,int foco) {
       (raio*menor+NV_ANEL_FOCO)/(menor+2*NV_ANEL_FOCO),ar,ag,ab,f*alpha*e);
   }
   home_vitrine_cartao(&ci,zoom,zoom,alpha*e,0,f);
+  if(s->estado==FM_VISTO)badges_check_cartao(zoom,0,alpha*e);
   r=zoom;
   char b[100];
   if(s->estado==FM_EM_BREVE)texto("Em breve",x+12,y+15,w-24,TXT_ILHA_SUB,220);
@@ -224,9 +230,11 @@ static void heroi(float a){
   const char *f=pessoa_foto();CorvivaPaleta p;
   if(f[0]){tex_obter_larg(f,140);tex_publicar_paleta(f);if(corviva_paleta(f,&p)&&p.ok){r=p.acento[0];g=p.acento[1];b=p.acento[2];}}
   GfxRect h={0,0,NV_TELA_W,NV_TELA_H};
-  gfx_luz_canto(h,0,h.w*.68f,py(300),h.w*.42f,r,g,b,.55f*a);
-  gfx_luz_canto(h,0,h.w*.2f,-py(160),h.w*.4f,r,g,b,.22f*a);
-  gfx_veu_css((GfxRect){0,py(520),NV_TELA_W,NV_TELA_H-py(520)},0,0,1,.9f*a);
+  gfx_luz_canto(h,0,h.w*.74f,py(300),h.w*.62f,r,g,b,a);
+  gfx_luz_canto(h,0,h.w*.7f,py(240),h.w*.28f,r,g,b,.55f*a);
+  gfx_veu_css(h,2,0,1,.94f*a);
+  gfx_veu_css((GfxRect){0,py(240),NV_TELA_W,py(660)-py(240)},0,0,1,a);
+  gfx_cor((GfxRect){0,py(660),NV_TELA_W,NV_TELA_H-py(660)},0,0,0,0,a);
 }
 // Continue pill: play, poster with progress, title and state, on the primary surface.
 static float continuar(float x,float y,int next,const FdFicha *d,float f){
@@ -247,22 +255,37 @@ static float continuar(float x,float y,int next,const FdFicha *d,float f){
 }
 static void header(const FdFicha *d){drawZona=0;drawItem=0;FmResumo r;fm_resumo(d->c,d->st,d->n,&r);float c=compactoT,pa=alpha,fade=pa*(1-c),e;char s[320],t[160];
   if(c<.999f){
-    e=sobe(aberto,0);alpha=fade*e;snprintf(t,sizeof t,i18n("%d títulos"),r.total);
-    snprintf(s,sizeof s,"%s%s%s · %s",i18n(pessoa_area()),pessoa_lugar()[0]?" · ":"",pessoa_lugar(),t);
+    e=sobe(aberto,0);alpha=fade*e;int core=0;for(int i=0;i<d->n;i++)core+=!d->c[i].ruido;snprintf(t,sizeof t,i18n("%d títulos"),core);
+    s[0]=0;const char *roles[]={"Atuação","Direção","Roteiro"};
+    for(int i=0;i<3;i++)if(r.papelTotal[i])snprintf(s+strlen(s),sizeof s-strlen(s),"%s%s",s[0]?" · ":"",i18n(roles[i]));
+    snprintf(s+strlen(s),sizeof s-strlen(s),"%s%s · %s",pessoa_lugar()[0]?" · ":"",pessoa_lugar(),t);
     if(na)snprintf(s+strlen(s),sizeof s-strlen(s),na>1?" · %d–%d":" · %d",anos[0],anos[na-1]);
     plrui_kicker(s,px(72),py(HERO_KICK+(1-e)*NV_ENTRA_DY),205,205,215,alpha);
   }
   e=sobe(aberto,1);alpha=pa*e;
-  { char up[200];idioma_maiusc(up,sizeof up,pessoa_nome());TxtLinha l=txt_linha_corta(TXT_TITULO1,up,245,245,245,255,1500*colunaK());
+  { char up[200];idioma_maiusc(up,sizeof up,pessoa_nome());TxtLinha l=txt_linha_corta(TXT_LOG_COD,up,245,245,245,255,1500*colunaK());
     txt_desenhar_alpha(l,px(72),py(compacta(HERO_NOME,40.0f-fmaxf(0,gfx_escala_txt()-1)*100.0f)+(1-e)*NV_ENTRA_DY),alpha); }
   if(c<.999f){
     e=sobe(aberto,2);alpha=fade*e;
     // Meta: birth (and death), place-free; most voted two titles.
     int top[2]={-1,-1};for(int i=0;i<d->n;i++){if(d->c[i].ruido)continue;if(top[0]<0||d->c[i].votos>d->c[top[0]].votos){top[1]=top[0];top[0]=i;}else if(top[1]<0||d->c[i].votos>d->c[top[1]].votos)top[1]=i;}
-    s[0]=0;if(pessoa_nascimento()[0])desc_data_extenso(pessoa_nascimento(),s,sizeof s);
+    s[0]=0;if(pessoa_nascimento()[0]){
+      int y=0,m=0,day=0,ey=0,em=0,ed=0;char born[80];time_t now=time(NULL);struct tm today;localtime_r(&now,&today);
+      ey=today.tm_year+1900;em=today.tm_mon+1;ed=today.tm_mday;
+      if(pessoa_morte()[0])sscanf(pessoa_morte(),"%d-%d-%d",&ey,&em,&ed);
+      desc_data_extenso(pessoa_nascimento(),born,sizeof born);
+      if(sscanf(pessoa_nascimento(),"%d-%d-%d",&y,&m,&day)==3)
+        snprintf(s,sizeof s,i18n("Nascimento: %s · %d anos"),born,ey-y-(em<m||(em==m&&ed<day)));
+      else snprintf(s,sizeof s,"%s",born);
+    }
     if(pessoa_morte()[0]){desc_data_extenso(pessoa_morte(),t,sizeof t);snprintf(s+strlen(s),sizeof s-strlen(s)," – %s",t);}
     if(top[0]>=0)snprintf(s+strlen(s),sizeof s-strlen(s),"%s%s: %s%s%s",s[0]?"   ·   ":"",i18n("Mais votados"),d->c[top[0]].titulo,top[1]>=0?", ":"",top[1]>=0?d->c[top[1]].titulo:"");
-    { TxtLinha l=txt_linha_corta(TXT_DET_META,s,215,215,222,255,1640*colunaK());txt_desenhar_alpha(l,px(72),py(HERO_META+(1-e)*NV_ENTRA_DY),alpha); }
+    { TxtLinha l=txt_linha_corta(TXT_DET_META,s,215,215,222,255,1640*colunaK());txt_desenhar_alpha(l,px(72),py(HERO_META+(1-e)*NV_ENTRA_DY),alpha);
+      FmConquista cq[FM_CQ_MAX];int n=fm_conquistas(d->pessoa,pessoa_nome(),d->c,d->st,d->n,cq),best=-1;
+      for(int i=0;i<n;i++)if(cq[i].trilha&&cq[i].nivel&&(best<0||cq[i].nivel>cq[best].nivel))best=i;
+      if(best>=0){const char *role=strstr(cq[best].nome," · ");snprintf(t,sizeof t,"%s · %s",i18n(fm_nivel_nome(cq[best].nivel)),role?role+4:cq[best].nome);
+        float bx=px(72)+l.w+24;if(bx+badge_largura(t)<px(72)+paginaW())badge_desenhar(bx,py(HERO_META),t,BADGE_REALCE,alpha);}
+    }
     e=sobe(aberto,3);alpha=fade*e;float y=py(HERO_ACOES+(1-e)*NV_ENTRA_DY),x=px(72);
     FmConquista cq[4];int reason,level,nc=fm_conquistas(d->pessoa,pessoa_nome(),d->c,d->st,d->n,cq);int next=fm_proximo(d->c,d->st,d->n,FM_ATUA,cq,nc,&reason,&level);
     float w=next>=0?continuar(x,y,next,d,focoBtns[0][0]):botao_largura(i18n("Ver todos"),NULL,1);
@@ -284,19 +307,20 @@ static void header(const FdFicha *d){drawZona=0;drawItem=0;FmResumo r;fm_resumo(
   alpha=pa*sobe(aberto,4);
   const char *labels[4]; for(int i=0;i<4;i++) labels[i]=i18n(abas[i]);
   { FmConquista cq[4];int nq=fm_conquistas(d->pessoa,pessoa_nome(),d->c,d->st,d->n,cq),lv=0;for(int i=0;i<nq;i++)lv+=cq[i].nivel>0;
-    snprintf(contTxt[1],sizeof contTxt[1],"%d",r.total);if(nq)snprintf(contTxt[3],sizeof contTxt[3],"%d/%d",lv,nq);else contTxt[3][0]=0; }
+    int core=0;for(int i=0;i<d->n;i++)core+=ruido||!d->c[i].ruido;
+    snprintf(contTxt[1],sizeof contTxt[1],"%d",core);if(nq)snprintf(contTxt[3],sizeof contTxt[3],"%d/%d",lv,nq);else contTxt[3][0]=0; }
   const char *cont[4]={NULL,contTxt[1],NULL,contTxt[3]};
   plrui_seg_txt(labels,cont,4,abaSel,abaFoco,px(72),py(compacta(HERO_ABAS,130)),alpha);
   alpha=pa;
 }
 // Year rail: one dot per year (white seen, grey unseen, halo milestone); selected year rides a sliding pill.
 static void regua(const FdFicha *d,const FmMarco *m,int nm,float a){
-  float yc=py(540);int start=(int)(anoScroll/ANO_S+.5f),fim=start+21<na?start+21:na;
+  float yc=py(556);int start=(int)(anoScroll/anoPasso()+.5f),fim=start+21<na?start+21:na;
   if(na<1)return;
-  float x0=px(170+start*ANO_S-anoScroll),x1=px(170+(fim-1)*ANO_S-anoScroll);
+  float x0=px(170+start*anoPasso()-anoScroll),x1=px(170+(fim-1)*anoPasso()-anoScroll);
   gfx_cor((GfxRect){x0,yc-1,x1-x0,2},.5f,1,1,1,.18f*a);
   for(int i=start;i<fim;i++){
-    float cx=px(170+i*ANO_S-anoScroll),f=focoAnos[i];int vistos=0,marco=0;
+    float cx=px(170+i*anoPasso()-anoScroll),f=focoAnos[i];int vistos=0,marco=0;
     for(int k=0;k<d->n;k++)if(d->c[k].ano==anos[i]&&!d->c[k].ruido)vistos+=d->st[k].estado==FM_VISTO;
     for(int k=0;k<nm;k++)marco|=m[k].ano==anos[i];
     if(marco)gfx_cor((GfxRect){cx-14,yc-14,28,28},.5f,1,1,1,.16f*a);
@@ -307,7 +331,7 @@ static void regua(const FdFicha *d,const FmMarco *m,int nm,float a){
   int volume=0;for(int k=0;k<d->n;k++)volume+=d->c[k].ano==ano&&!d->c[k].ruido;
   char v[48];snprintf(v,sizeof v,i18n("%d títulos"),volume);snprintf(b,sizeof b,"%d",ano);
   int ink=anoFoco>=.5f?plrui_tinta():245;TxtLinha ly=txt_linha(TXT_ILHA_NOME,b,ink,ink,ink,255),lv=txt_linha(TXT_ILHA_SUB,v,ink,ink,ink,190);
-  float w=ly.w+10+lv.w+44,cx=px(170+anoSel*ANO_S-anoScroll);GfxRect r={cx-w/2,yc-26,w,52};
+  float w=ly.w+10+lv.w+44,cx=px(170+anoSel*anoPasso()-anoScroll);GfxRect r={cx-w/2,yc-26,w,52};
   plrui_botao_repouso(r,a);plrui_pilula_foco(r,a*anoFoco);
   txt_desenhar_alpha(ly,r.x+22,yc-ly.h/2,a);txt_desenhar_alpha(lv,r.x+22+ly.w+10,yc-lv.h/2+1,a);
 }
@@ -321,22 +345,24 @@ static void historia(const FdFicha *d){drawZona=2;drawItem=0;FmMarco m[10];FmCap
   alpha=pa*sobe(tAba,1);regua(d,m,nm,alpha);
   // Chapter block for the selected year.
   e=sobe(tempo,2);alpha=pa*e;float dy=(1-e)*NV_ENTRA_DY;
-  if(nc){snprintf(k,sizeof k,i18n("Capítulo %d de %d"),ci+1,nc);snprintf(b,sizeof b,"%s · %s",k,i18n(fm_capitulo_nome(caps[ci].tipo)));plrui_kicker(b,px(72),py(600+dy),190,190,200,alpha);}
-  snprintf(b,sizeof b,"%d",ano);texto(b,72,618+dy,500,TXT_TITULO1,245);
+  if(nc){snprintf(k,sizeof k,i18n("Capítulo %d de %d"),ci+1,nc);snprintf(b,sizeof b,"%s · %s",k,i18n(fm_capitulo_nome(caps[ci].tipo)));plrui_kicker(b,px(72),py(626+dy),190,190,200,alpha);}
+  snprintf(b,sizeof b,"%d",ano);texto(b,72,644+dy,500,TXT_LOG_COD,245);
   const char *frase="Trabalhos deste ano";for(int i=0;i<nm;i++)if(m[i].ano==ano)frase=fm_marco_nome(m[i].tipo);
   int top=-1;for(int i=0;i<ni;i++)if(top<0||d->c[indices[i]].votos>d->c[top].votos)top=indices[i];
-  snprintf(b,sizeof b,"%s.",i18n(frase));
-  if(top>=0){snprintf(k,sizeof k,i18n("%d votos"),d->c[top].votos);snprintf(b+strlen(b),sizeof b-strlen(b)," %s: %s · %s",i18n("Mais votado"),d->c[top].titulo,k);}
-  float h=txt_bloco(TXT_DET_SIN,b,225,225,232,px(72),py(712+dy),540*colunaK(),36,alpha,3);
+  b[0]=0;if(strcmp(frase,"Mais votado"))snprintf(b,sizeof b,"%s.",i18n(frase));
+  if(top>=0){snprintf(k,sizeof k,i18n("%d votos"),d->c[top].votos);snprintf(b+strlen(b),sizeof b-strlen(b),"%s%s: %s · %s",b[0]?" ":"",i18n("Mais votado"),d->c[top].titulo,k);}
+  for(int i=0;i<d->np;i++)if(d->premios[i].ano==ano)snprintf(b+strlen(b),sizeof b-strlen(b),". %s: %s",i18n("Prêmios"),d->premios[i].nome);
+  float h=txt_bloco(TXT_BODY,b,225,225,232,px(72),py(742+dy),560*colunaK(),30,alpha,4);
   // Milestone tags of this year.
-  float tx=px(72),ty=py(712+dy)+h+14;int tags=0;
+  float tx=px(72),ty=py(742+dy)+h+14;int tags=0;
   for(int i=0;i<nm;i++)if(m[i].ano==ano){char up[80];idioma_maiusc(up,sizeof up,i18n(fm_marco_nome(m[i].tipo)));TxtLinha tl=txt_linha(TXT_V2_KICK,up,235,235,240,255);float tw=tl.w+28;
     GfxRect tr={tx,ty,tw,tl.h+12};plrui_botao_repouso(tr,alpha);txt_desenhar_alpha(tl,tx+14,ty+6,alpha);tx+=tw+10;tags=1;}
+  for(int i=0;i<d->np;i++)if(d->premios[i].ano==ano){const char *label=d->premios[i].rel[0]?d->premios[i].rel:i18n("Prêmios");tx+=badge_desenhar(tx,ty,label,BADGE_NEUTRO,alpha)+BADGE_GAP;tags=1;}
   int vistos=0,no=0;
   if(nc){for(int i=0;i<d->n;i++){if((!ruido&&d->c[i].ruido)||d->c[i].ano<caps[ci].de||d->c[i].ano>caps[ci].ate)continue;no++;vistos+=d->st[i].estado==FM_VISTO;}snprintf(b,sizeof b,i18n("Neste capítulo você viu %d de %d."),vistos,no);}
   else{for(int i=0;i<ni;i++)vistos+=d->st[indices[i]].estado==FM_VISTO;snprintf(b,sizeof b,i18n("%d de %d vistos"),vistos,ni);}
   { TxtLinha l=txt_linha(TXT_DET_META2,b,160,160,170,255);txt_desenhar_alpha(l,px(72),ty+(tags?54:0),alpha); }
-  for(int i=0;i<ni&&i<5;i++)cartaz(indices[i],648+i*(212*gfx_poster_k()+24)/colunaK(),596,212,322,zona==4&&col==i);
+  for(int i=0;i<ni&&i<5;i++)cartaz(indices[i],716+i*(212*gfx_poster_k()+24)/colunaK(),622,212,322,zona==4&&col==i);
   alpha=pa;if(ni>5)botao("Ver todos",1640,970,0,zona==4&&col>=5);
 }
 static void grade(const FdFicha *d) {
@@ -400,5 +426,5 @@ static void toqueFoco(int z,int c){if(z==5){op=c;return;}zona=z;col=c;if(z==1&&a
 static float gesto;
 static int toqueRolar(const PonteiroRolagem *e){if(camada==5){if(e->fase==PONT_ROL_MOVER&&e->delta){bioPagina+=e->delta<0?1:-1;if(bioPagina<0)bioPagina=0;}return 1;}if(camada||!(aba==0||aba==1))return 0;if(e->fase==PONT_ROL_INICIO){gesto=0;return e->eixoY==(aba==1)&&e->y>=550;}if(e->fase==PONT_ROL_MOVER||e->fase==PONT_ROL_INERCIA){gesto-=e->delta;int step=(int)(gesto/(aba==1?350:-81));if(step){gesto-=step*(aba==1?350:81);if(aba==1){int max=(ni+gradeCols()-1)/gradeCols()-gradeLinhas();if(max<0)max=0;topo+=step;if(topo<0)topo=0;if(topo>max)topo=max;zona=4;col=topo*gradeCols();}else{int j=0;while(j<na&&anos[j]!=ano)j++;j+=step;if(j<0)j=0;if(j>=na)j=na-1;if(j>=0)ano=anos[j];}}return 1;}return 1;}
 static void alvoToque(float x,float y,float w,float h,int z,int c){GfxRect r=area((GfxRect){x,y,w,h});if(h==60)r.h=60;ponteiro_alvo(r.x+paginaX(),r.y,r.w,r.h,toqueFoco,NULL,z,c);}
-static void registrarToque(void){if(camada){ponteiro_camada();return;}float c=compactoT;if(c<.5f)for(int i=0;i<3;i++)ponteiro_alvo(acoesR[i].x+paginaX(),acoesR[i].y,acoesR[i].w,acoesR[i].h,toqueFoco,NULL,0,i);float tabX=72;for(int i=0;i<4;i++){float tw=txt_largura(TXT_ILHA_SEG,i18n(abas[i]))+40;if(contTxt[i][0])tw+=9+txt_largura(TXT_ILHA_NUM,contTxt[i]);alvoToque(tabX,compacta(HERO_ABAS,130),tw/colunaK(),54/linhaK(),1,i);tabX+=(tw+4)/colunaK();}if(aba==0){FmMarco m[10];FmCap caps[6];const FdFicha *d=fd_ficha();int nm=fm_marcos(d->c,d->n,m,10),nc=fm_capitulos(d->c,d->n,m,nm,caps,6)+(ruidoN(d)>0);for(int i=0;i<nc;i++)alvoToque(chipX[i],CONTEUDO_Y,chipW[i],60,2,i);int start=(int)(anoScroll/ANO_S+.5f);for(int i=start;i<na&&i<start+21;i++)alvoToque(170+i*ANO_S-anoScroll-38,500,76,80,3,anos[i]);for(int i=0;i<ni&&i<5;i++)alvoToque(648+i*(212*gfx_poster_k()+24)/colunaK(),596,212*gfx_poster_k()/colunaK(),322*gfx_poster_k()/linhaK(),4,i);if(ni>5)alvoToque(1640,970,botao_largura(i18n("Ver todos"),NULL,0)/colunaK(),60,4,5);ponteiro_rolagem(toqueRolar);}else if(aba==1){float y=compacta(CONTEUDO_Y,230);for(int i=0;i<5;i++)alvoToque(72+i*345,y,325,60,2,i);for(int i=topo*gradeCols();i<ni&&i<(topo+gradeLinhas())*gradeCols();i++)alvoToque(72+(i%gradeCols())*(220*gfx_poster_k()+24)/colunaK(),60+(py(y)+100+(i/gradeCols())*gradePasso()-scroll-60)/linhaK(),220*gfx_poster_k()/colunaK(),330*gfx_poster_k()/linhaK(),4,i);ponteiro_rolagem(toqueRolar);}else if(aba==2)alvoToque(100,775,580,60,2,0);}
-void filmo_desenhar(float a){TXT_INI();alpha=a*entrada;preparar();const FdFicha *d=fd_ficha();gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.047f,.055f,alpha);heroi(alpha);gfx_transformar(0,0,1,paginaX(),0);header(d);if(!d->pronto)t21_estado(area((GfxRect){72,465,1750,430}),d->erro?T21_ERROR:T21_LOADING,"aj_user",i18n(d->erro?"Serviço indisponível":"Carregando…"),NULL,NULL,tempo,alpha);else if(aba==0)historia(d);else if(aba==1)grade(d);else if(aba==2)sobre(d);else conquistas(d);if(camada){ESCALA_INI();GfxRect sheet=area((GfxRect){1090,50,770,980});ESCALA_FIM();ilha_corpo(sheet.w,sheet.h,corpoFilmo,NULL);}{TxtLinha l=txt_linha_corta(TXT_ILHA_SUB,i18n(fd_aviso()),180,180,180,255,1150*colunaK());txt_desenhar_alpha(l,px(72),ANC(T21_SAFE_B)-l.h/2,alpha);}const char *keys[]={"OK","Voltar"},*labels[]={"Abrir opções","Voltar"};plrui_dicas(keys,labels,2,px(1830),ANC(T21_SAFE_B),1,alpha);gfx_sem_transformar();registrarToque();TXT_FIM();conquistas_aviso_desenhar();}
+static void registrarToque(void){if(camada){ponteiro_camada();return;}float c=compactoT;if(c<.5f)for(int i=0;i<3;i++)ponteiro_alvo(acoesR[i].x+paginaX(),acoesR[i].y,acoesR[i].w,acoesR[i].h,toqueFoco,NULL,0,i);float tabX=72;for(int i=0;i<4;i++){float tw=txt_largura(TXT_ILHA_SEG,i18n(abas[i]))+40;if(contTxt[i][0])tw+=9+txt_largura(TXT_ILHA_NUM,contTxt[i]);alvoToque(tabX,compacta(HERO_ABAS,130),tw/colunaK(),54/linhaK(),1,i);tabX+=(tw+4)/colunaK();}if(aba==0){FmMarco m[10];FmCap caps[6];const FdFicha *d=fd_ficha();int nm=fm_marcos(d->c,d->n,m,10),nc=fm_capitulos(d->c,d->n,m,nm,caps,6)+(ruidoN(d)>0);for(int i=0;i<nc;i++)alvoToque(chipX[i],CONTEUDO_Y,chipW[i],60,2,i);int start=(int)(anoScroll/anoPasso()+.5f);for(int i=start;i<na&&i<start+21;i++)alvoToque(170+i*anoPasso()-anoScroll-38,500,76,80,3,anos[i]);for(int i=0;i<ni&&i<5;i++)alvoToque(716+i*(212*gfx_poster_k()+24)/colunaK(),622,212*gfx_poster_k()/colunaK(),322*gfx_poster_k()/linhaK(),4,i);if(ni>5)alvoToque(1640,970,botao_largura(i18n("Ver todos"),NULL,0)/colunaK(),60,4,5);ponteiro_rolagem(toqueRolar);}else if(aba==1){float y=compacta(CONTEUDO_Y,230);for(int i=0;i<5;i++)alvoToque(72+i*345,y,325,60,2,i);for(int i=topo*gradeCols();i<ni&&i<(topo+gradeLinhas())*gradeCols();i++)alvoToque(72+(i%gradeCols())*(220*gfx_poster_k()+24)/colunaK(),60+(py(y)+100+(i/gradeCols())*gradePasso()-scroll-60)/linhaK(),220*gfx_poster_k()/colunaK(),330*gfx_poster_k()/linhaK(),4,i);ponteiro_rolagem(toqueRolar);}else if(aba==2)alvoToque(100,775,580,60,2,0);}
+void filmo_desenhar(float a){TXT_INI();alpha=a*entrada;preparar();const FdFicha *d=fd_ficha();gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.047f,.055f,alpha);heroi(alpha);gfx_transformar(0,0,1,paginaX(),0);header(d);if(!d->pronto)t21_estado(area((GfxRect){72,465,1750,430}),d->erro?T21_ERROR:T21_LOADING,"aj_user",i18n(d->erro?"Serviço indisponível":"Carregando…"),NULL,NULL,tempo,alpha);else if(aba==0)historia(d);else if(aba==1)grade(d);else if(aba==2)sobre(d);else conquistas(d);if(camada){ESCALA_INI();GfxRect sheet=area((GfxRect){1090,50,770,980});ESCALA_FIM();ilha_corpo(sheet.w,sheet.h,corpoFilmo,NULL);}{TxtLinha l=txt_linha_corta(TXT_ILHA_SUB,i18n(fd_aviso()),180,180,180,255,1150*colunaK());txt_desenhar_alpha(l,px(72),ANC(T21_SAFE_B)-l.h/2,alpha);}const char *keys[]={"← →","PgUp PgDn","OK","Voltar"},*labels[]={i18n("Ano"),i18n("Capítulos"),i18n("Abrir opções"),i18n("Voltar")};plrui_dicas(keys,labels,4,px(72),ANC(T21_SAFE_B),0,alpha);gfx_sem_transformar();registrarToque();TXT_FIM();conquistas_aviso_desenhar();}

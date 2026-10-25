@@ -3838,6 +3838,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "A Samsung TV-ken még mindig vannak fagyások, amelyek csak az app naplójában látszanak. Ha engedélyezed, az app magától feltölti a naplót: az előző munkamenetét induláskor, a jelenlegit percenként. Jelszavak és kulcsok nem mennek el — csak az, hogy az app mit csinált, és mennyi ideig tartott. Bármikor kikapcsolhatod a Beállítások › Névjegy › Naplók automatikus küldése alatt."),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "Sorozatoknál: az évad minden részének értékelése görbeként, és hányan nézik tovább az első rész után."),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "Sorozatoknál: minden rész értékelése görbén, hányan nézik tovább az első rész után, és az évad haladása azzal, hol tartanak a barátaid."),
+  T("Nascimento: %s · %d anos", "Született: %s · %d éves"),
   T("Nativo na Samsung", "Natívan Samsungon"),
   T("Navegar", "Navigálás"),
   T("Navegar rápido", "Gyors navigáció"),

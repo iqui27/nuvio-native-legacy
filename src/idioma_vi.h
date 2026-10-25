@@ -3838,6 +3838,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "Trên TV Samsung vẫn còn tình trạng đứng mà chỉ thấy trong nhật ký của ứng dụng. Nếu bạn cho phép, ứng dụng sẽ tự tải nhật ký đó lên: của phiên trước khi mở và của phiên này mỗi phút. Không gửi mật khẩu hay khóa — chỉ những gì ứng dụng đã làm và mất bao lâu. Bạn có thể tắt bất cứ lúc nào trong Cài đặt › Giới thiệu › Tự động gửi nhật ký."),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "Với series: điểm từng tập trong mùa dưới dạng đường cong, và bao nhiêu người xem tiếp sau tập đầu."),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "Với series: điểm từng tập dạng đường cong, bao nhiêu người xem tiếp sau tập một và tiến độ mùa, kèm bạn bè đã xem đến đâu."),
+  T("Nascimento: %s · %d anos", "Ngày sinh: %s · %d tuổi"),
   T("Nativo na Samsung", "Chạy gốc trên Samsung"),
   T("Navegar", "Di chuyển"),
   T("Navegar rápido", "Điều hướng nhanh"),

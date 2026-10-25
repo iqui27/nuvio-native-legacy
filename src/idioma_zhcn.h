@@ -3838,6 +3838,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "在三星电视上仍然存在只会出现在应用日志中的卡死问题。如果你允许，应用会自动上传该日志：打开时上传上一次会话的，之后每分钟上传本次会话的。不包含密码和密钥，只有应用做了什么以及耗时多久。你可以随时在 设置 › 关于 › 自动发送日志 中关闭。"),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "剧集：以曲线显示本季每集评分，以及看完第一集后继续观看的人数。"),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "剧集页：每集评分曲线、看完第一集后还有多少人继续，以及含好友进度的季度进度。"),
+  T("Nascimento: %s · %d anos", "出生日期：%s · %d岁"),
   T("Nativo na Samsung", "Samsung 原生版"),
   T("Navegar", "浏览"),
   T("Navegar rápido", "快速导航"),

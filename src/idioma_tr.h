@@ -3838,6 +3838,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "Samsung TV'lerde yalnızca uygulamanın günlüğünde görünen donmalar hâlâ var. İzin verirsen uygulama bu günlüğü kendisi yükler: önceki oturumunkini açılışta, bunu her dakika. Şifre veya anahtar gitmez — yalnızca uygulamanın ne yaptığı ve ne kadar sürdüğü. İstediğin zaman Ayarlar › Hakkında › Günlükleri otomatik gönder'den kapatabilirsin."),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "Dizilerde: sezonun her bölümünün puanı bir eğri olarak ve ilk bölümden sonra kaç kişinin izlemeye devam ettiği."),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "Dizilerde: her bölümün puanı eğri olarak, ilk bölümden sonra kaç kişinin devam ettiği ve arkadaşlarınızın nereye geldiğiyle sezon ilerlemesi."),
+  T("Nascimento: %s · %d anos", "Doğum: %s · %d yaş"),
   T("Nativo na Samsung", "Samsung'da yerel"),
   T("Navegar", "Gezin"),
   T("Navegar rápido", "Hızlı gezinme"),

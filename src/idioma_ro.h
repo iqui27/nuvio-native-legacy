@@ -3837,6 +3837,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "Pe televizoarele Samsung mai există blocaje care apar doar în jurnalul aplicației. Dacă permiți, aplicația trimite singură acel jurnal: pe cel al sesiunii anterioare la deschidere și pe cel curent în fiecare minut. Nu pleacă parole sau chei — doar ce a făcut aplicația și cât a durat. Îl poți dezactiva oricând în Setări › Despre › Trimite jurnalele automat."),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "La seriale: nota fiecărui episod al sezonului ca o curbă și câți oameni continuă după primul episod."),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "La seriale: nota fiecărui episod ca o curbă, câți continuă după primul episod și progresul sezonului, cu cât de departe au ajuns prietenii."),
+  T("Nascimento: %s · %d anos", "Născut: %s · %d ani"),
   T("Nativo na Samsung", "Nativ pe Samsung"),
   T("Navegar", "Navighează"),
   T("Navegar rápido", "Navigare rapidă"),

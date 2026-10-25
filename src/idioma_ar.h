@@ -3838,6 +3838,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "على أجهزة Samsung لا تزال هناك حالات تجمد لا تظهر إلا في سجل التطبيق. إذا سمحت، يرفع التطبيق ذلك السجل وحده: سجل الجلسة السابقة عند الفتح، وسجل هذه الجلسة كل دقيقة. لا تُرسل كلمات مرور أو مفاتيح — فقط ما فعله التطبيق وكم استغرق. يمكنك إيقافه في أي وقت من الإعدادات › حول › إرسال السجلات تلقائيًا."),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "للمسلسلات: تقييم كل حلقة على امتداد الموسم كمنحنى، وكم شخصًا يواصل المشاهدة بعد الحلقة الأولى."),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "في المسلسلات: تقييم كل حلقة كمنحنى، وكم شخصًا يواصل المشاهدة بعد الحلقة الأولى، وتقدم الموسم، مع المدى الذي وصل إليه أصدقاؤك."),
+  T("Nascimento: %s · %d anos", "الميلاد: %s · العمر %d سنة"),
   T("Nativo na Samsung", "أصلي على Samsung"),
   T("Navegar", "تنقّل"),
   T("Navegar rápido", "تنقل سريع"),

@@ -3838,6 +3838,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "Na Samsung TV-ima i dalje postoje zamrzavanja koja se vide samo u dnevniku aplikacije. Ako dozvolite, aplikacija sama šalje taj dnevnik: prethodne sesije pri otvaranju, a ove svake minute. Ne šalju se lozinke ni ključevi — samo šta je aplikacija radila i koliko je trajalo. Možete to isključiti bilo kada u Postavkama › O aplikaciji › Automatski šalji dnevnike."),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "Kod serija: ocjena svake epizode sezone kao kriva i koliko ljudi nastavlja gledati poslije prve epizode."),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "Kod serija: ocjena svake epizode u krivulji, koliko ljudi nastavlja poslije prve epizode i napredak sezone, s tim dokle su stigli prijatelji."),
+  T("Nascimento: %s · %d anos", "Rođenje: %s · %d godina"),
   T("Nativo na Samsung", "Nativno na Samsungu"),
   T("Navegar", "Kretanje"),
   T("Navegar rápido", "Brza navigacija"),

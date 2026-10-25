@@ -3838,6 +3838,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "Στις τηλεοράσεις Samsung υπάρχουν ακόμα παγώματα που φαίνονται μόνο στο αρχείο καταγραφής της εφαρμογής. Αν το επιτρέψεις, η εφαρμογή ανεβάζει μόνη της αυτό το αρχείο: της προηγούμενης συνεδρίας όταν ανοίγει και της τρέχουσας κάθε λεπτό. Δεν φεύγουν κωδικοί ή κλειδιά — μόνο τι έκανε η εφαρμογή και πόσο κράτησε. Μπορείς να το απενεργοποιήσεις όποτε θέλεις στις Ρυθμίσεις › Σχετικά › Αυτόματη αποστολή αρχείων καταγραφής."),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "Στις σειρές: η βαθμολογία κάθε επεισοδίου της σεζόν σαν καμπύλη και πόσοι συνεχίζουν μετά το πρώτο επεισόδιο."),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "Στις σειρές: η βαθμολογία κάθε επεισοδίου σε καμπύλη, πόσοι συνεχίζουν μετά το πρώτο επεισόδιο και η πρόοδος της σεζόν, με το πού έφτασαν οι φίλοι σας."),
+  T("Nascimento: %s · %d anos", "Γέννηση: %s · %d ετών"),
   T("Nativo na Samsung", "Εγγενώς στη Samsung"),
   T("Navegar", "Πλοήγηση"),
   T("Navegar rápido", "Πλοήγηση ταχύτητας"),

@@ -3838,6 +3838,7 @@
   T("Nas TVs Samsung ainda há travamentos que só aparecem no registro do app. Se você deixar, o app manda esse registro sozinho: o da sessão anterior ao abrir e o desta a cada minuto. Vai sem senhas nem chaves; tem só o que o app fez e quanto demorou. Dá para desligar a qualquer hora em Ajustes › Sobre › Enviar registros sozinho.", "På Samsung-TV-er forekommer det fortsatt hakk som bare vises i appens logg. Hvis du tillater det, sender appen loggen selv: den fra forrige økt når den åpnes og denne hvert minutt. Ingen passord eller nøkler følger med; bare hva appen gjorde og hvor lang tid det tok. Du kan slå det av når som helst i Innstillinger › Om › Send logger automatisk."),
   T("Nas séries: a nota de cada episódio da temporada em curva, e quantas pessoas seguem assistindo depois do primeiro episódio.", "For serier: vurderingen av hver episode i sesongen som en kurve, og hvor mange som fortsetter etter første episode."),
   T("Nas séries: a nota de cada episódio em curva, quantas pessoas seguem depois do primeiro episódio e o progresso da temporada, com até onde seus amigos foram.", "For serier: hver episodes vurdering som kurve, hvor mange som fortsetter etter første episode, og sesongens fremdrift med hvor langt vennene dine har kommet."),
+  T("Nascimento: %s · %d anos", "Født: %s · %d år"),
   T("Nativo na Samsung", "Nativ på Samsung"),
   T("Navegar", "Naviger"),
   T("Navegar rápido", "Rask navigasjon"),
