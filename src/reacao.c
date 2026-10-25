@@ -1130,7 +1130,9 @@ void reacao_detalhe_dica(const CatItem *ci, float a) {
     return;
   }
   if (!ci || strncmp(ci->imdb, "tt", 2)) return;
-  snprintf(perg, sizeof perg, "%s", i18n("↑ nota em estrelas"));
+  // The arrow is the icon below; the string keeps its "↑ " for other callers.
+  { const char *s = i18n("↑ nota em estrelas");
+    snprintf(perg, sizeof perg, "%s", strncmp(s, "↑ ", 4) ? s : s + 4); }
   // DISCRETA: texto pequeno e cinza, sem caixa de foco — ela nao e um botao,
   // e um lembrete de que CIMA abre a pergunta.
   l = txt_linha_corta(TXT_G18M, perg, 176, 180, 190, 255, 620.0f);

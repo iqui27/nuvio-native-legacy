@@ -5297,7 +5297,7 @@ static void heroWeb(float a, float desloc) {
     larg = pad + pw + 18.0f + (t1.w > t2.w ? t1.w : t2.w) + 30.0f;
     { GfxRect ilha = { NV_DETW2_X, y0, larg, NV_DETW_AMIGOS_H };
       if (foc) plrui_pilula_foco(ilha, a);
-      else plrui_material(ilha, NV_DETW_AMIGOS_H * 0.5f, 0, a);
+      else plrui_material_plano(ilha, NV_DETW_AMIGOS_H * 0.5f, a);
       svd_amigos_pilha(ilha.x + pad, y0 + pad, d, &amg, nr, 1, ANEL, a);
       { float tx = ilha.x + pad + pw + 18.0f;
         float bloco = t1.h + 2.0f + t2.h, ty = y0 + (NV_DETW_AMIGOS_H - bloco) * 0.5f;
