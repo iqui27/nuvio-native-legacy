@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Pasirinkite pradžios tašką. Vėliau patikslinkite detales."),
   T("Escolha um servidor compartilhado", "Pasirinkite bendrinamą serverį"),
   T("Escolha um servidor listado na documentação.", "Pasirinkite prieglobą, nurodytą dokumentuose."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Bibliotekoje pasirinkite kūrinį. Jo puslapyje atverkite Žiūrėti kartu."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Pasirinkite nustatymą ir peržiūrėkite pakeitimus prieš įsipareigodami."),
   T("Escolha uma cópia", "Pasirinkite kopiją"),
   T("Escolha uma instância", "Pasirinkite atvejį"),

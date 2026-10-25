@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Kies een startpunt. Verfijn de details later."),
   T("Escolha um servidor compartilhado", "Kies een gedeelde server"),
   T("Escolha um servidor listado na documentação.", "Kies een host die in de documentatie wordt vermeld."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Kies een titel in de Bibliotheek. Open Samen kijken op de titelpagina."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Kies een instelling en bekijk de wijzigingen voordat u deze vastlegt."),
   T("Escolha uma cópia", "Kies een kopie"),
   T("Escolha uma instância", "Kies een exemplaar"),

@@ -168,11 +168,13 @@ static void aj4Home(void) {
   }
   aj4Botao("Diferente do padrão","aj_rotate-ccw-clock",622,895,365,aj4Linha==5 && aj4Topo<0,0);
   aj4Botao("Ajuda desta TV","aj_info",1003,895,290,aj4Linha==6 && aj4Topo<0,0);
-  if(aj4UndoN)aj4Botao("Desfazer","aj_rotate-ccw-clock",1310,895,220,aj4Linha==7 && aj4Topo<0,0);
+  aj4Botao("O que o Nuvio faz?","aj_sparkles",1310,895,350,aj4Linha==7 && aj4Topo<0,0);
+  if(aj4UndoN)aj4Botao("Desfazer",NULL,1672,895,150,aj4Linha==8 && aj4Topo<0,0);
   aj4Alvo((GfxRect){100,806,320,58},1,4);
   aj4Alvo((GfxRect){622,895,365,58},1,5);
   aj4Alvo((GfxRect){1003,895,290,58},1,6);
-  if(aj4UndoN)aj4Alvo((GfxRect){1310,895,220,58},1,7);
+  aj4Alvo((GfxRect){1310,895,350,58},1,7);
+  if(aj4UndoN)aj4Alvo((GfxRect){1672,895,150,58},1,8);
 }
 static void aj4SecaoDesenhar(void) {
   int av=lig(AJ_AVANCADAS) || aj4Excecao>=0, sec=aj4Atual;

@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "選擇一個起點。稍後再微調細節。"),
   T("Escolha um servidor compartilhado", "選擇共用伺服器"),
   T("Escolha um servidor listado na documentação.", "選擇文檔中列出的主機。"),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "在媒體庫中選擇影片。在影片頁面開啟一起觀看。"),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "選擇一個設定並在提交之前檢查更改。"),
   T("Escolha uma cópia", "選擇一個副本"),
   T("Escolha uma instância", "選擇實例"),

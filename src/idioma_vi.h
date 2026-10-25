@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Chọn điểm bắt đầu. Tinh chỉnh các chi tiết sau."),
   T("Escolha um servidor compartilhado", "Chọn máy chủ dùng chung"),
   T("Escolha um servidor listado na documentação.", "Chọn một máy chủ được liệt kê trong tài liệu."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Chọn một phim trong Thư viện. Mở Xem cùng nhau trên trang phim."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Chọn một cài đặt và xem xét các thay đổi trước khi cam kết."),
   T("Escolha uma cópia", "Chọn một bản sao"),
   T("Escolha uma instância", "Chọn một phiên bản"),

@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Pilih titik awal. Sempurnakan detailnya nanti."),
   T("Escolha um servidor compartilhado", "Pilih server bersama"),
   T("Escolha um servidor listado na documentação.", "Pilih host yang tercantum dalam dokumentasi."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Pilih judul di Perpustakaan. Buka Tonton Bersama di halaman judul."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Pilih pengaturan dan tinjau perubahannya sebelum melakukan."),
   T("Escolha uma cópia", "Pilih salinan"),
   T("Escolha uma instância", "Pilih sebuah contoh"),

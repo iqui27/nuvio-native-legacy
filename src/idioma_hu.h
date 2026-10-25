@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Válasszon kiindulási pontot. Finomítsa a részleteket később."),
   T("Escolha um servidor compartilhado", "Válassz megosztott szervert"),
   T("Escolha um servidor listado na documentação.", "Válassza ki a dokumentációban felsorolt ​​gazdagépet."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Válassz egy címet a Könyvtárban. Nyisd meg a Közös nézés lehetőséget a cím oldalán."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Válasszon egy beállítást, és tekintse át a változtatásokat, mielőtt elkötelezi magát."),
   T("Escolha uma cópia", "Válassz egy példányt"),
   T("Escolha uma instância", "Válasszon egy példányt"),

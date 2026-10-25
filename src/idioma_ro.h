@@ -2426,6 +2426,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Alegeți un punct de plecare. Ajustați detaliile mai târziu."),
   T("Escolha um servidor compartilhado", "Alege un server partajat"),
   T("Escolha um servidor listado na documentação.", "Alegeți o gazdă listată în documentație."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Alege un titlu din Bibliotecă. Deschide Vizionare împreună pe pagina titlului."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Alegeți o setare și examinați modificările înainte de a le efectua."),
   T("Escolha uma cópia", "Alege o copie"),
   T("Escolha uma instância", "Alegeți o instanță"),

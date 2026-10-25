@@ -2426,6 +2426,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Wählen Sie einen Ausgangspunkt. Passen Sie die Details später an."),
   T("Escolha um servidor compartilhado", "Wähle einen geteilten Server"),
   T("Escolha um servidor listado na documentação.", "Wählen Sie einen in der Dokumentation aufgeführten Host."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Wähle einen Titel in der Bibliothek. Öffne Gemeinsam ansehen auf der Titelseite."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Wählen Sie eine Einstellung und überprüfen Sie die Änderungen, bevor Sie sie übernehmen."),
   T("Escolha uma cópia", "Kopie wählen"),
   T("Escolha uma instância", "Wählen Sie eine Instanz"),

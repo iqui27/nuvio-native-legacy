@@ -2426,6 +2426,7 @@
   { "Escolha um ponto de partida. Ajuste os detalhes depois.", "Choose a starting point. Fine-tune the details later." },
   { "Escolha um servidor compartilhado", "Choose a shared server" },
   { "Escolha um servidor listado na documentação.", "Choose a host listed in the documentation." },
+  { "Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Choose a title in the Library. Open Watch Together on the title page." },
   { "Escolha uma configuração e revise as mudanças antes de confirmar.", "Choose a setting and review the changes before committing." },
   { "Escolha uma cópia", "Choose a copy" },
   { "Escolha uma instância", "Choose an instance" },

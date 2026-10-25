@@ -2426,6 +2426,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Выберите отправную точку. Детали доработаем позже."),
   T("Escolha um servidor compartilhado", "Выберите общий сервер"),
   T("Escolha um servidor listado na documentação.", "Выберите хост, указанный в документации."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Выберите фильм или сериал в Библиотеке. Откройте Совместный просмотр на его странице."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Выберите настройку и просмотрите изменения перед фиксацией."),
   T("Escolha uma cópia", "Выберите копию"),
   T("Escolha uma instância", "Выберите экземпляр"),

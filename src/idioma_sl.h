@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Izberite izhodišče. Pozneje natančno prilagodite podrobnosti."),
   T("Escolha um servidor compartilhado", "Izberite deljen strežnik"),
   T("Escolha um servidor listado na documentação.", "Izberite gostitelja, navedenega v dokumentaciji."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Izberite naslov v Knjižnici. Na strani naslova odprite Skupni ogled."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Izberite nastavitev in preglejte spremembe, preden jih potrdite."),
   T("Escolha uma cópia", "Izberite kopijo"),
   T("Escolha uma instância", "Izberite primerek"),

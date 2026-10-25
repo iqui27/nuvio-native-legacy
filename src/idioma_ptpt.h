@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Escolha um ponto de partida. Ajuste os detalhes mais tarde."),
   T("Escolha um servidor compartilhado", "Escolha um servidor partilhado"),
   T("Escolha um servidor listado na documentação.", "Escolha um host listado na documentação."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Escolhe um título na Biblioteca. Abre Ver em conjunto na página do título."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Escolha uma configuração e revise as mudanças antes de confirmar."),
   T("Escolha uma cópia", "Escolha uma cópia"),
   T("Escolha uma instância", "Escolha uma instância"),

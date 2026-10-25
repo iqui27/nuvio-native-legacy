@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Επιλέξτε ένα σημείο εκκίνησης. Βελτιώστε τις λεπτομέρειες αργότερα."),
   T("Escolha um servidor compartilhado", "Επιλέξτε έναν κοινόχρηστο διακομιστή"),
   T("Escolha um servidor listado na documentação.", "Επιλέξτε έναν κεντρικό υπολογιστή που αναφέρεται στην τεκμηρίωση."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Επιλέξτε έναν τίτλο στη Βιβλιοθήκη. Ανοίξτε την Κοινή προβολή στη σελίδα του τίτλου."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Επιλέξτε μια ρύθμιση και ελέγξτε τις αλλαγές πριν από τη δέσμευση."),
   T("Escolha uma cópia", "Επιλέξτε αντίγραφο"),
   T("Escolha uma instância", "Επιλέξτε ένα παράδειγμα"),

@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "開始点を選択します。詳細は後で微調整してください。"),
   T("Escolha um servidor compartilhado", "共有サーバーを選択"),
   T("Escolha um servidor listado na documentação.", "ドキュメントに記載されているホストを選択します。"),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "ライブラリで作品を選びます。作品ページで「一緒に見る」を開きます。"),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "設定を選択し、コミットする前に変更を確認します。"),
   T("Escolha uma cópia", "コピーを選択"),
   T("Escolha uma instância", "インスタンスを選択してください"),

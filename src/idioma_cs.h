@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Vyberte výchozí bod. Podrobnosti dolaďte později."),
   T("Escolha um servidor compartilhado", "Vyberte sdílený server"),
   T("Escolha um servidor listado na documentação.", "Vyberte hostitele uvedeného v dokumentaci."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Vyberte titul v knihovně. Na stránce titulu otevřete Sledovat společně."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Před potvrzením vyberte nastavení a zkontrolujte změny."),
   T("Escolha uma cópia", "Vyberte kopii"),
   T("Escolha uma instância", "Vyberte instanci"),

@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "اختر نقطة البداية. قم بضبط التفاصيل لاحقًا."),
   T("Escolha um servidor compartilhado", "اختر خادما مشتركا"),
   T("Escolha um servidor listado na documentação.", "اختر خادما مدرجا في الوثائق."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "اختر عنوانًا في المكتبة. افتح المشاهدة معًا من صفحة العنوان."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "اختر إعدادًا وراجع التغييرات قبل الالتزام بها."),
   T("Escolha uma cópia", "اختر نسخة"),
   T("Escolha uma instância", "اختر نسخة"),

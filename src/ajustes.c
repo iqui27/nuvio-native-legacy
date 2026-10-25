@@ -11314,7 +11314,7 @@ int ajustes_teste_quadro(const char *id) {
   if (getenv("NUVIO_SHOT_LAYOUT") && *getenv("NUVIO_SHOT_LAYOUT")) valor[AJ_HOME_LAYOUT] = atoi(getenv("NUVIO_SHOT_LAYOUT"));
   // NUVIO_SHOT_AVANCADAS=1: opcoes avancadas a mostra (a pilula ligada no indice).
   if (getenv("NUVIO_SHOT_AVANCADAS")) valor[AJ_AVANCADAS] = 0;
-  uxCancelar(); uxAviso[0] = 0; uxRetornarOp = -1;
+  uxCancelar(); uxAviso[0] = 0; uxRetornarOp = -1; tourAberto = 0;
   memset(maisAberto, 0, sizeof maisAberto);
   scrollY = velY = 0; paginaA = 1;
   filAberta = 0; riscoFolha = 0; apoioAberto = 0;
@@ -11322,6 +11322,15 @@ int ajustes_teste_quadro(const char *id) {
   ajArteFundoN = 12; ajMemFixa = 0; ajQuadroAddons = 0; ajQuadroPlugins = 0; ajVinculoTeste = 0;
   if (teclado_aberto()) { SDL_Event e = { 0 }; e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_ESCAPE; teclado_evento(&e); }
   aj2PoseFixa = 0;
+  if (!strncmp(id, "tour", 4)) {
+    aj4Iniciar(); pfTela = 0; uxVeioBusca = 0;
+    tourAbrir(); tourInicio = (long)time(NULL);
+    if (!strcmp(id, "tour-more")) { tourFoco = 8; tourTopo = 2; tourRol = tourRolAlvo = 808; }
+    if (!strcmp(id, "tour-last")) { tourFoco = 16; tourTopo = 3; tourRol = tourRolAlvo = 1212; }
+    if (!strcmp(id, "tour-where")) { tourOnde(2); tourAtualizar(0); }
+    if (!strcmp(id, "tour-edit")) { tourLigar(2); tourAtualizar(0); }
+    return 1;
+  }
   if (!strncmp(id, "v4-", 3)) {
     static const char *const PF_V4[] = { "Henrique" };
     perfis_teste_definir(PF_V4, NULL, 1, 1);   // chip e escopo com nome, como o mockup

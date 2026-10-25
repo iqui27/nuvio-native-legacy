@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Välj en utgångspunkt. Finjustera detaljerna senare."),
   T("Escolha um servidor compartilhado", "Välj en delad server"),
   T("Escolha um servidor listado na documentação.", "Välj en värd som anges i dokumentationen."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Välj en titel i biblioteket. Öppna Titta tillsammans på titelns sida."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Välj en inställning och granska ändringarna innan du bestämmer dig."),
   T("Escolha uma cópia", "Välj en kopia"),
   T("Escolha uma instância", "Välj en instans"),

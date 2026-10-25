@@ -2427,6 +2427,7 @@
   T("Escolha um ponto de partida. Ajuste os detalhes depois.", "Bir başlangıç ​​noktası seçin. Ayrıntıları daha sonra ince ayar yapın."),
   T("Escolha um servidor compartilhado", "Paylaşılan bir sunucu seç"),
   T("Escolha um servidor listado na documentação.", "Belgelerde listelenen bir ana bilgisayarı seçin."),
+  T("Escolha um título na Biblioteca. Abra Assistir Juntos na página do título.", "Kütüphaneden bir yapım seçin. Yapım sayfasında Birlikte İzle'yi açın."),
   T("Escolha uma configuração e revise as mudanças antes de confirmar.", "Bir ayar seçin ve taahhütte bulunmadan önce değişiklikleri inceleyin."),
   T("Escolha uma cópia", "Bir kopya seçin"),
   T("Escolha uma instância", "Bir örnek seçin"),
