@@ -36,6 +36,8 @@
 #include "escala.h"
 #include "ponteiro.h"
 #include "rolagemtoque.h"
+#include "movimento.h"
+#include "revela.h"
 #include "telefoneui.h"
 #include <stdio.h>
 #include <string.h>
@@ -94,7 +96,7 @@ typedef struct {
 } Linha;
 
 static int   aberto, foco, coluna = 1;   // coluna 1 = a pilula de acao da linha
-static float anim, rolagem, rolagemAlvo;
+static float anim, rolagem, rolagemAlvo, rolagemV, entradaItens;
 #ifdef NV_TOUCH_UI
 static ToqueRolagem toque;
 static void toqueRetomar(void);
@@ -110,6 +112,7 @@ static float linhaY[PE_MAXL];            // topo de cada linha dentro da lista
 static float conteudoH;
 static int   nL;
 static float focoAnim[PE_MAXL], colAnim[PE_MAXL];
+static float formaV;
 static char  aviso[220];
 static int   avisoErro;
 static Uint32 avisoAte;
@@ -164,7 +167,7 @@ static void carregarRascunho(void) {
 static void irPara(int pg) {
   pagina = pg;
   foco = 0; coluna = 1;
-  rolagem = rolagemAlvo = 0.0f;
+  rolagem = rolagemAlvo = rolagemV = entradaItens = 0.0f;
 #ifdef NV_TOUCH_UI
   toquerol_limpar(&toque);
 #endif
@@ -848,7 +851,8 @@ void pessoas_atualizar(float dt, Uint32 agora) {
   if (!aberto && anim < 0.002f) { anim = 0.0f; return; }
   anim = ajustes_animacoes_reduzidas()
            ? (aberto ? 1.0f : 0.0f)
-           : anim_mola(anim, aberto ? 1.0f : 0.0f, dt, NV_MOLA_TELA);
+           : mov_mola_assenta(&formaV, anim, aberto ? 1.0f : 0.0f, dt, MOV_MODAL_W, MOV_MODAL_Z);
+  entradaItens += dt;
   teclado_atualizar(dt, agora);
   for (i = 0; i < PE_MAXL; i++) {
     float alvo = aberto && foco == i ? 1.0f : 0.0f;
@@ -930,7 +934,7 @@ void pessoas_atualizar(float dt, Uint32 agora) {
     }
     if (rolagemAlvo > conteudoH - jh) rolagemAlvo = conteudoH - jh;
     if (rolagemAlvo < 0.0f) rolagemAlvo = 0.0f;
-    rolagem = ajustes_animacoes_reduzidas() ? rolagemAlvo : anim_mola(rolagem, rolagemAlvo, dt, NV_MOLA_FOCO); }
+    rolagem = anim_mola2_reduzida(&rolagemV, rolagem, rolagemAlvo, dt, NV_MOLA2_SCROLL, ajustes_animacoes_reduzidas()); }
 }
 
 // --- desenho -------------------------------------------------------------------------------
@@ -981,7 +985,7 @@ static float pilulaPessoa(float xd, float yc, const RecPessoa *p, float fCol, Ui
     const char *rot = opAtual == A_ACEITAR ? "Aceitando…" : "Enviando…";
     float w = plrui_botao_largura(rot, "aj_loader");
     GfxRect r = { xd - w, yc - 30.0f, w, 60.0f };
-    TxtLinha l = txtI(TXT_G21B, rot, 400.0f);
+    TxtLinha l = txtI(TXT_ILHA_ITEM, rot, 400.0f);
     plrui_botao_repouso(r, a);
     plrui_anel(r.x + 28.0f + 11.0f, yc, 30.0f, 1, agora, a);
     txt_desenhar_alpha(l, r.x + 28.0f + 22.0f + 12.0f, yc - (float)l.h * 0.5f, a * 0.85f);
@@ -998,7 +1002,7 @@ static float pilulaPessoa(float xd, float yc, const RecPessoa *p, float fCol, Ui
     const char *rot = amigo ? "Amigos" : "Pedido enviado";
     const char *ic = amigo || feito ? "aj_circle-check" : "aj_clock";
     float ar, ag, ab, tr = 0.953f, tg = 0.949f, tb = 0.937f, ta = 0.62f;
-    TxtLinha l = txt_linha(TXT_G21B, rot, 255, 255, 255, 255);
+    TxtLinha l = txt_linha(TXT_ILHA_ITEM, rot, 255, 255, 255, 255);
     float w = 20.0f + 22.0f + 10.0f + (float)l.w + 22.0f;
     GfxRect r = { xd - w, yc - 24.0f, w, 48.0f };
     ajustes_acento(&ar, &ag, &ab);
@@ -1013,7 +1017,7 @@ static float pilulaPessoa(float xd, float yc, const RecPessoa *p, float fCol, Ui
       tomAcento(&tr, &tg, &tb); ta = 1.0f;
     }
     gfx_icone((GfxRect){ r.x + 20.0f, yc - 11.0f, 22.0f, 22.0f }, ic, tr, tg, tb, ta * a);
-    { TxtLinha c = txt_linha(TXT_G21B, rot, (int)(tr * 255.0f), (int)(tg * 255.0f), (int)(tb * 255.0f), 255);
+    { TxtLinha c = txt_linha(TXT_ILHA_ITEM, rot, (int)(tr * 255.0f), (int)(tg * 255.0f), (int)(tb * 255.0f), 255);
       txt_desenhar_alpha(c, r.x + 52.0f, yc - (float)c.h * 0.5f, ta * a); }
     return w;
   }
@@ -1376,10 +1380,11 @@ static void pessoas_desenharCorpo_(Uint32 agora) {
   cab = alturaCab(&c, temC);
   jh = janelaH(cab);
   alt = PE_PAD * 2.0f + cab + jh + PE_RODAPE;
-  x = (NV_TELA_W - PE_W) * 0.5f;
+  // This bounded modal remains centered; full pages use the rail anchor.
+  x = NV_TELA_W * 0.5f - PE_W * 0.5f;
   y = (NV_TELA_H - alt) * 0.5f + (1.0f - a) * 40.0f;
 
-  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, (ajustes_vidro() ? 0.55f : 0.66f) * anim);
+  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, (ajustes_vidro() ? 0.30f : 0.42f) * anim);
   gfx_vidro_cobrir();
   // A ILHA no material das outras do Glass UI (plrui_material): o mesmo miolo
   // da folha de Fontes e do player, vidro ou solido pelo ajuste.
@@ -1417,6 +1422,10 @@ static void pessoas_desenharCorpo_(Uint32 agora) {
       GfxRect r = retLinha(hx, ry, h);
       ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, pnTopo, pnBase, ponteiroLinha, NULL, i, 0);
     }
+    float itemA = ajustes_animacoes_reduzidas() ? 1 : revela_entra(1,
+      revela_onda_atraso(0, i), 1 + (Uint32)(entradaItens * 1000));
+    ry += (1 - itemA) * 22;
+    float salvoA = a; a *= itemA;
     switch (linhas[i].tipo) {
       case T_PESSOA: desenhaPessoa(hx, ry, i, agora, a); break;
       case T_BUSCA:  desenhaBusca(hx, ry, i, a); break;
@@ -1425,6 +1434,7 @@ static void pessoas_desenharCorpo_(Uint32 agora) {
       case T_ESQ:    desenhaEsq(hx, ry, a); break;
       default:       desenhaNav(hx, ry, i, a); break;
     }
+    a = salvoA;
   }
   gfx_sem_recorte();
   // Ha mais em cima/embaixo: o fio da borda da janela acende.

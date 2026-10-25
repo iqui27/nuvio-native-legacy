@@ -33,7 +33,17 @@
 #include <OpenGL/gl.h>
 #endif
 
+#include "j4_proof.h"
 static GLuint fbo, fboTex;
+static void proof_reset(void) {
+  conquistas_teste_esquecer(); conquistas_abrir();
+  SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_DOWN;
+  conquistas_evento(&e); assert(conquistas_foco() >= 100);
+}
+static void proof_focus(void) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_RIGHT;conquistas_evento(&e); }
+static void proof_close(void) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_ESCAPE;conquistas_evento(&e); }
+static void proof_step(float dt) { conquistas_atualizar(dt,SDL_GetTicks()); }
+static void proof_draw(void) { conquistas_desenhar(SDL_GetTicks()); }
 
 static void evento(int tipo, SDL_Keycode k) {
   SDL_Event e;
@@ -97,6 +107,12 @@ static void captura(const char *prefixo, const char *nome, int quadros) {
   gravar(caminho);
 }
 
+static void gravar_nome(const char *prefixo, const char *nome) {
+  char caminho[700];
+  snprintf(caminho, sizeof caminho, "%s-%s.png", prefixo, nome);
+  gravar(caminho);
+}
+
 // ---------------------------------------------------------------- estado
 static void semear(void) {
   CqEstado s;
@@ -133,7 +149,7 @@ static void conferir_layout(const char *onde) {
   assert(n > 0);
   for (i = 0; i < n; i++) {
     if (rs[i].x < 0 || rs[i].y < 0 || rs[i].x + rs[i].w > 1920.5f || rs[i].y + rs[i].h > 1080.5f ||
-        rs[i].w < 40 || rs[i].h < 40) {
+        rs[i].w < 40 || rs[i].h < ((ids[i] >= 10 && ids[i] < 15) ? 44 * ajustes_escala_texto() - .5f : 40)) {
       printf("FALHA (%s): alvo %d fora da tela ou pequeno (%.0f,%.0f %.0fx%.0f)\n", onde, ids[i], rs[i].x, rs[i].y, rs[i].w, rs[i].h);
       exit(1);
     }
@@ -338,10 +354,11 @@ int main(int argc, char **argv) {
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
   gfx_tex_esquecer(0);
-  gfx_icones_dir("deploy/app/art");
+  char *art=realpath("deploy/app/art",NULL);assert(art);gfx_icones_dir(art);conquistas_arte_dir(art);free(art);
 
   assert(ajustes_conquistas() && ajustes_conquistas_aviso());
   semear();
+  j4_proof("achievements",proof_reset,proof_focus,proof_step,proof_draw,proof_close);
 
   // ---- Hub: layout, varredura D-pad, captura.
   conquistas_teste_esquecer();
@@ -394,7 +411,43 @@ int main(int argc, char **argv) {
     conferir_layout("detalhe");
     captura(prefixo, "detalhe", 30);
     voltar();
-    assert(conquistas_vista() == CONQUISTAS_VISTA_HUB && conquistas_foco() == antes); }
+    assert(conquistas_vista() == CONQUISTAS_VISTA_HUB && conquistas_foco() == antes);
+    // Sheet-open motion strip: 0/50/100/150/250/400 ms after OK, glass on.
+    ajustes_definir_vidro(1);
+    adiantar(40);
+    tecla(SDLK_RETURN);
+    { static const int ms[] = { 0, 50, 100, 150, 250, 400 };
+      int i, t = 0;
+      for (i = 0; i < 6; i++) {
+        char nome[32];
+        int alvo = ms[i] * 60 / 1000;
+        adiantar(alvo - t); t = alvo;
+        snprintf(nome, sizeof nome, "abrir-%03d", ms[i]);
+        gravar_nome(prefixo, nome);
+      }
+      // Sheet-close strip: same instants after Voltar.
+      adiantar(40);
+      voltar();
+      for (i = 0, t = 0; i < 6; i++) {
+        char nome[32];
+        int alvo = ms[i] * 60 / 1000;
+        adiantar(alvo - t); t = alvo;
+        snprintf(nome, sizeof nome, "fechar-%03d", ms[i]);
+        gravar_nome(prefixo, nome);
+      } }
+    assert(conquistas_vista() == CONQUISTAS_VISTA_HUB);
+    // Sheet stills at 85 and 100 %, glass off and on.
+    { int sc, g;
+      for (sc = 85; sc <= 100; sc += 15) for (g = 0; g < 2; g++) {
+        char nome[32];
+        ajustes_definir_vidro(g); gfx_escala_txt_definir(sc / 100.0f);
+        tecla(SDLK_RETURN);
+        assert(conquistas_vista() == CONQUISTAS_VISTA_DETALHE);
+        snprintf(nome, sizeof nome, "detalhe-%d-g%d", sc, g);
+        captura(prefixo, nome, 40);
+        voltar(); adiantar(40);
+      }
+      ajustes_definir_vidro(0); gfx_escala_txt_definir(.85f); } }
   // Voltar no hub fecha a tela.
   voltar();
   assert(!conquistas_aberto());

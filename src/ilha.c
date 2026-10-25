@@ -2065,13 +2065,13 @@ static void ilha_desenharCorpo_(Uint32 agora) {
   { int quer = corpoPed;
     float alvoC = quer ? 1.0f : 0.0f;
     corpoPed = 0;
-    if (gfx_efeitos_minimos()) { corpoT = alvoC; corpoV = 0.0f; }
+    if (anim_politica_reduzida || ajustes_animacoes_reduzidas() || gfx_efeitos_minimos()) { corpoT = alvoC; corpoV = 0.0f; }
     else if (gfx_efeitos_leves()) corpoT = molaIlhaWZ(&corpoV, corpoT, alvoC, dt, MODAL_MOLA_W * 1.5f, 1.0f);
     else corpoT = molaIlhaWZ(&corpoV, corpoT, alvoC, dt, MODAL_MOLA_W, MODAL_MOLA_Z);
     if (!quer && corpoT < 0.01f) { corpoT = 0.0f; corpoV = 0.0f; }
     // O TAMANHO PEDIDO MUDA com o painel aberto (botao posto ou tirado, a
     // edicao): anda na mola da pilula em vez de saltar. Nascendo, ja e o alvo.
-    if (corpoT <= 0.0f || corpoWa <= 0.0f || gfx_efeitos_minimos()) {
+    if (corpoT <= 0.0f || corpoWa <= 0.0f || anim_politica_reduzida || ajustes_animacoes_reduzidas() || gfx_efeitos_minimos()) {
       corpoWa = corpoW; corpoHa = corpoH; corpoVw = corpoVh = 0.0f;
     } else {
       corpoWa = molaIlha(&corpoVw, corpoWa, corpoW, dt);

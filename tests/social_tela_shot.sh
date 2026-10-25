@@ -13,14 +13,6 @@ NUVIO_DADOS=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-social-tela.XXXXXX)
 export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 
-sources=()
-for source in src/*.c src/dts/*.c; do
-  case "$source" in src/main.c|src/social.c) continue;; esac
-  sources+=("$source")
-done
-cc "${sources[@]}" tests/social_tela_shot.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-social-tela-shot \
-  -O1 -g \
-  -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
-  -Wno-deprecated-declarations -Wno-macro-redefined
-${TMPDIR:-/tmp}/nuvio-social-tela-shot "$@"
+BIN="$TMPDIR/nuvio-social-tela-shot"
+bash tests/j4_compile.sh tests/social_tela_shot.c "$BIN"
+"$BIN" "$@"

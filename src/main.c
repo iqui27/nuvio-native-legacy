@@ -85,6 +85,7 @@
 #include "traktauth.h"
 #include "simklauth.h"
 #include "app.h"
+#include "conquistas.h"
 #include "registro.h"
 #include "desempenho.h"
 #include "atualizacao.h"
@@ -1633,6 +1634,7 @@ int main(int argc, char **argv) {
   // no lugar em que o splash do sistema a deixou.
   logoapp_iniciar(dirArte);
   abertura_iniciar(dirArte);
+  conquistas_arte_dir(dirArte);
   ajustes_texturas_dir(dirArte);   // materiais CC0 do tema Textura (recorte fraco)
 #ifdef __EMSCRIPTEN__
   // O ARRANQUE CEDE AO NAVEGADOR EM DOIS PONTOS (24/09/2026). Do topo do main
