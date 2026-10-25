@@ -860,6 +860,9 @@ const char *ajustes_rapido_rotulo(int op);
 const char *ajustes_rapido_valor(int op);
 int         ajustes_rapido_ligado(int op);
 int         ajustes_rapido_passo(int op, int dir);
+// Interface language as a list value ("Automático", "English"...) and its next/previous step.
+const char *ajustes_idioma_nome(void);
+int         ajustes_idioma_passo(int dir);
 // A COR DE DESTAQUE (seletor da central): os 18 acentos fixos na ordem da
 // regua de Ajustes (0-8 claros, 9-17 profundos). `cor` devolve a tinta que
 // contrasta com o preenchimento (como ajustes_acento_tinta); `atual` = -1 com
