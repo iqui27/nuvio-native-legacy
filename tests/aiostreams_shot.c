@@ -40,11 +40,11 @@ int main(int argc,char **argv) {
   glGenTextures(1,&color); glBindTexture(GL_TEXTURE_2D,color); glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,1920,1080,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
   glGenFramebuffers(1,&fbo); glBindFramebuffer(GL_FRAMEBUFFER,fbo); glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,color,0);
   assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
-  glViewport(0,0,1920,1080); gfx_tamanho_alvo(1920,1080); assert(gfx_iniciar()); assert(txt_iniciar("deploy/app",1)); assert(tex_iniciar(32)); gfx_icones_dir("deploy/app/art"); aioui_arte("deploy/app/art");
+  glViewport(0,0,1920,1080); gfx_tamanho_alvo(1920,1080); assert(gfx_iniciar()); assert(txt_iniciar("deploy/app",1)); assert(tex_iniciar(32)); char arte[1024];assert(realpath("deploy/app/art",arte)); gfx_icones_dir(arte); aioui_arte(arte);
   ajustes_dir(getenv("NUVIO_DADOS")); ajustes_iniciar(); setenv("NUVIO_SHOT_VIDRO_FOSCO","1",1); ajustes_teste_vidro_env(); assert(ajustes_vidro_fosco());
   static AioSnapshot s;
   aio_manifesto(&s,"{\"id\":\"aiostreams.test\",\"name\":\"AIOStreams\",\"version\":\"2.36.0\",\"resources\":[\"stream\",\"catalog\",\"subtitles\",\"meta\"],\"catalogs\":[{\"id\":\"trending\",\"name\":\"Filmes em alta\",\"type\":\"movie\"},{\"id\":\"popular\",\"name\":\"Séries populares\",\"type\":\"series\"},{\"id\":\"netflix\",\"name\":\"Filmes Netflix\",\"type\":\"movie\"},{\"id\":\"disney\",\"name\":\"Séries Disney+\",\"type\":\"series\"}]}");
-  aio_configuracao(&s,"{\"data\":{\"userData\":{\"services\":[{\"id\":\"TorBox\",\"enabled\":true}],\"presets\":[{\"type\":\"Torrentio\",\"enabled\":true},{\"type\":\"Comet\",\"enabled\":true},{\"type\":\"MediaFusion\",\"enabled\":true},{\"type\":\"WebStreamr\",\"enabled\":true}],\"excludedResolutions\":[\"720p\"],\"preferredLanguages\":[\"Portuguese\",\"English\"],\"excludeUncached\":false,\"sortCriteria\":{\"global\":[{\"key\":\"cached\"},{\"key\":\"resolution\"}]},\"formatter\":{\"id\":\"aiostreams\"}}}}");
+  aio_configuracao(&s,"{\"data\":{\"userData\":{\"services\":[{\"id\":\"TorBox\",\"enabled\":true}],\"presets\":[{\"type\":\"Torrentio\",\"enabled\":true},{\"type\":\"Comet\",\"enabled\":true},{\"type\":\"MediaFusion\",\"enabled\":true},{\"type\":\"WebStreamr\",\"enabled\":true}],\"requiredResolutions\":[\"2160p\",\"1080p\"],\"excludedResolutions\":[\"720p\"],\"requiredSeederRange\":[10,10000],\"preferredLanguages\":[\"Portuguese\",\"English\"],\"excludeCached\":false,\"excludeUncached\":false,\"sortCriteria\":{\"global\":[{\"key\":\"cached\"},{\"key\":\"resolution\"}]},\"formatter\":{\"id\":\"aiostreams\"}}}}");
   aio_status(&s,"{\"success\":true,\"data\":{\"version\":\"2.36.0\",\"channel\":\"stable\",\"settings\":{\"searchApiDisabled\":false}}}");
   aio_search(&s,"{\"success\":true,\"data\":{\"statistics\":[{\"title\":\"Torrentio\",\"description\":\"4 resultados\"},{\"title\":\"Comet\",\"description\":\"2 resultados\"}],\"errors\":[{\"title\":\"WebStreamr\",\"description\":\"tempo esgotado\"}],\"filtered\":3}}");
   aio_resultados(&s,"{\"streams\":[{\"name\":\"4K · Dolby Vision · MP4\",\"url\":\"https://example.invalid/video\",\"streamData\":{\"cached\":true,\"addon\":\"Torrentio\",\"parsedFile\":{\"resolution\":\"2160p\"}}},{\"name\":\"4K · HDR10 · REMUX\",\"url\":\"https://example.invalid/video\",\"streamData\":{\"cached\":true,\"addon\":\"Comet\"}},{\"name\":\"1080p · Dolby Vision · MP4\",\"url\":\"https://example.invalid/video\",\"streamData\":{\"cached\":true,\"addon\":\"MediaFusion\"}},{\"name\":\"1080p · Blu-ray · SDR\",\"url\":\"https://example.invalid/video\",\"streamData\":{\"cached\":true,\"addon\":\"Torrentio\"}},{\"name\":\"720p · WEB-DL · SDR\",\"url\":\"https://example.invalid/video\",\"streamData\":{\"cached\":true,\"addon\":\"Torrentio\"}},{\"name\":\"1080p · HTTP\",\"url\":\"https://example.invalid/video\",\"streamData\":{\"addon\":\"WebStreamr\"}},{\"name\":\"Resolução desconhecida · MKV\",\"externalUrl\":\"https://example.invalid/external\",\"streamData\":{\"cached\":true,\"addon\":\"Comet\"}},{\"name\":\"4K · HDR10 · MKV\",\"infoHash\":\"abcdef\",\"streamData\":{\"addon\":\"Torrentio\"}}]}");
@@ -64,13 +64,13 @@ int main(int argc,char **argv) {
       aioui_shot(p,&s);
       for(int f=0;f<=80;f++) {
         frame(f?10:0); SDL_Delay(2);
-        if(scale<2 && (f==0||f==5||f==8||f==10||f==15||f==16||f==25||f==32||f==40)) {
+        if(!getenv("AIO_SHOT_STILLS") && scale<2 && (f==0||f==5||f==8||f==10||f==15||f==16||f==25||f==32||f==40)) {
           char name[160]; snprintf(name,sizeof name,"%s-%d-%s-entry-%03d",names[p],scales[scale],glass?"glass":"solid",f*10);save(argv[1],name);
         }
       }
       char name[160]; snprintf(name,sizeof name,"%s-%d-%s",names[p],scales[scale],glass?"glass":"solid");
       save(argv[1],name);
-      if(scale<2) {
+      if(!getenv("AIO_SHOT_STILLS") && scale<2) {
         SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;aioui_evento(&e);
         for(int f=0;f<=40;f++) {
           frame(f?10:0);
@@ -88,6 +88,7 @@ int main(int argc,char **argv) {
       }
     }
   }
+  if(getenv("AIO_SHOT_STILLS")) return 0;
   // Back reverses from the current progress without destroying the origin.
   aioui_shot(0,&s); frame(160);
   SDL_Event reverse={0}; reverse.type=SDL_KEYDOWN; reverse.key.keysym.sym=SDLK_ESCAPE;

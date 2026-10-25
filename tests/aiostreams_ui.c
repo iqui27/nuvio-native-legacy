@@ -63,6 +63,12 @@ int main(void) {
   traceStream.foraCache=1; trace(); assert(snap.resultado[0].decisao==3);
   pagina=LINKS; lateral=0; foco=0; acao(); assert(linkSelecionado==1);
   pagina=FILTROS; regraSelecionada=-1; foco=2; acao(); assert(regraSelecionada==2);
+  AioRegra seed={.grupo=3,.nome="requiredSeederRange"}, cache={.grupo=3,.nome="excludeUncached"};
+  regraSelecionada=4; assert(regraPertence(&seed) && !regraPertence(&cache));
+  regraSelecionada=3; assert(!regraPertence(&seed) && regraPertence(&cache));
+  regraSelecionada=6; AioRegra order={.grupo=5}; assert(regraPertence(&order));
+  regraSelecionada=7; AioRegra format={.grupo=6}; assert(regraPertence(&format));
+  regraSelecionada=-1;
   pagina=CATALOGOS; foco=nLinhas()-1; pendente=0; acao();
   assert(pagina==CATALOGOS && pendente==1);
   pendente=0; foco=nLinhas()-2; acao(); assert(pagina==SERVICOS);

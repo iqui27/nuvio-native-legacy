@@ -89,6 +89,12 @@ void aioui_arte(const char *dir) {
 static char usuario[96], base[2048], host[256], alvo[128], tipo[32], mensagem[256];
 static char configure[320];
 static AioSnapshot snap;
+static int regraPertence(const AioRegra *r) {
+  static const int grupos[]={0,1,2,3,3,4,5,6,7};
+  int seed=strstr(r->nome,"Seeder")!=NULL || strstr(r->nome,"seeder")!=NULL;
+  return regraSelecionada>=0 && regraSelecionada<9 && r->grupo==grupos[regraSelecionada] &&
+    (r->grupo!=3 || seed==(regraSelecionada==4));
+}
 static int conectada(void) { return snap.configurada && !soManifesto; }
 // Footer actions below the rows keep the viewport (no snap back to the top).
 static float janelaCatalogos(void) { return janela(4,snap.catalogos,5,pagina==CATALOGOS); }
@@ -262,8 +268,8 @@ static int nConteudo(void) {
   if(pagina==LEGENDAS) return nLegendas()+snap.legendas+2;
   if(pagina==LINKS) return snap.links+3;
   if(pagina==FILTROS) {
-    if(regraSelecionada>=0) { int n=1; for(int i=0;i<snap.detalhes;i++) if(snap.detalhe[i].grupo==regraSelecionada) n++; return n; }
-    return 9;
+    if(regraSelecionada>=0) { int n=1; for(int i=0;i<snap.detalhes;i++) if(regraPertence(&snap.detalhe[i])) n++; return n; }
+    return 10;
   }
   if(pagina==TITULO) return (evidenciaSelecionada?snap.evidencias:snap.resultados)+3;
   return 2;
@@ -326,7 +332,7 @@ static void acao(void) {
     else if(foco==n+2) campo(2);
     else mudar(SERVICOS);
   } else if(pagina==FILTROS) {
-    if(regraSelecionada<0 && foco<8) { regraSelecionada=foco; foco=0; }
+    if(regraSelecionada<0 && (foco<8 || foco==9)) { regraSelecionada=foco==9?8:foco; foco=0; }
     else mudar(SERVICOS);
   } else if(pagina==LINKS) {
     if(foco<snap.links) {
@@ -361,7 +367,7 @@ void aioui_evento(const SDL_Event *e) {
   SDL_Keycode k=e->key.keysym.sym;
   if(nv_tecla_voltar(e)) {
     if(entrada==3 || linkSelecionado>=0) { celular_fechar(); entrada=0; linkSelecionado=-1; return; }
-    if(pagina==FILTROS && regraSelecionada>=0) { foco=regraSelecionada; regraSelecionada=-1; return; }
+    if(pagina==FILTROS && regraSelecionada>=0) { foco=regraSelecionada==8?9:regraSelecionada; regraSelecionada=-1; return; }
     if(pagina==SEM || pagina==PAINEL) fechar();
     else mudar(snap.valida?PAINEL:SEM);
     return;
@@ -928,30 +934,54 @@ static void workspace(void) {
     botao(n+2,i18n("Inspecionar título"),453,900,430); botao(n+3,i18n("Serviços no celular"),905,900,490);
   } else if(pagina==FILTROS && regraSelecionada>=0) {
     listaPos=janela(4,snap.detalhes,5,1); int row=0, first=(int)listaPos;
-    for(int i=0;i<snap.detalhes;i++) if(snap.detalhe[i].grupo==regraSelecionada) {
+    for(int i=0;i<snap.detalhes;i++) if(regraPertence(&snap.detalhe[i])) {
       if(row>=first && row<first+5) linha(row,"aj_lock",regraNome(&snap.detalhe[i]),valorRegra(snap.detalhe[i].valor),453,310+(row-listaPos)*104,980);
       row++;
     }
     if(!row) bloco(i18n("Não informado"),473,345,900,2);
     botao(row,i18n("Editar no celular"),453,866,440);
   } else if(pagina==FILTROS) {
-    const char *names[]={i18n("Resolução e qualidade"),i18n("Tamanho e bitrate"),i18n("Idiomas"),i18n("Cache e tipos de fonte"),i18n("Regex e palavras-chave"),i18n("Ordenação"),i18n("Formatador"),i18n("Proxy")};
+    const char *names[]={i18n("Resolução e qualidade"),i18n("Tamanho e bitrate"),i18n("Idiomas"),i18n("Cache e tipos de fonte"),i18n("Semeadores"),i18n("Regex e palavras-chave"),i18n("Ordenação"),i18n("Formatador")};
+    texto(TXT_ILHA_SECAO,i18n("Perfil"),453,286,600,220);
+    texto(TXT_ILHA_SUB,conectada()?i18n("Configuração conectada"):i18n("Somente manifesto"),1070,290,363,174);
+    plrui_material((GfxRect){1590,204,216,34},12,0,.45f);
+    gfx_icone((GfxRect){1600,212,18,18},"aj_lock",.8f,.85f,.87f,1);
+    texto(TXT_ILHA_HORA,i18n("Somente leitura"),1628,213,168,195);
     for(int i=0;i<8;i++) {
       char sub[128];
       if(!conectada()) snprintf(sub,sizeof sub,"%s",i18n("Conecte a configuração para ver esta regra"));
       else if(i==0) snprintf(sub,sizeof sub,i18n("Exigidas: %s · Excluídas: %s"),snap.resolucaoObrigatoria[0]?snap.resolucaoObrigatoria:i18n("Não informado"),snap.resolucaoExcluida[0]?snap.resolucaoExcluida:i18n("Não informado"));
       else if(i==3) snprintf(sub,sizeof sub,i18n("Excluir cache: %s · Excluir sem cache: %s"),snap.regraCache<0?i18n("Não informado"):snap.regraCache?i18n("Sim"):i18n("Não"),snap.regraUncached<0?i18n("Não informado"):snap.regraUncached?i18n("Sim"):i18n("Não"));
-      else if(snap.resumo[i][0]) snprintf(sub,sizeof sub,"%s",valorRegra(snap.resumo[i]));
-      else snprintf(sub,sizeof sub,i18n("%d campos informados · Somente leitura"),snap.regras[i]);
-      float x=453+(i%2)*504, y=330+(i/2)*124, alpha=itemInicio(i%2,i/2,&y);
-      plrui_linha_foco((GfxRect){x,y,478,100},22,focoDe(i,0));
-      texto(TXT_ILHA_NOME,names[i],x+12,y+20,412,239);
-      texto(TXT_ILHA_SUB,sub,x+12,y+57,418,174);
-      gfx_icone((GfxRect){x+440,y+38,20,20},"aj_lock",.6f,.65f,.68f,1);
-      ponteiro_alvo(x,y,478,100,pointer,click,i,0);
+      else if(i==4) {
+        snprintf(sub,sizeof sub,"%s",i18n("Não informado"));
+        for(int k=0;k<snap.detalhes;k++) if(strstr(snap.detalhe[k].nome,"Seeder") || strstr(snap.detalhe[k].nome,"seeder")) {
+          snprintf(sub,sizeof sub,"%s: %s",i18n("P2P"),valorRegra(snap.detalhe[k].valor));break;
+        }
+      } else {
+        int group=i>=5?i-1:i;
+        if(snap.resumo[group][0]) snprintf(sub,sizeof sub,"%s",valorRegra(snap.resumo[group]));
+        else snprintf(sub,sizeof sub,i18n("%d campos informados · Somente leitura"),snap.regras[group]);
+      }
+      float x=i<6?453+(i%2)*504:453, y=i<6?330+(i/2)*140:779+(i-6)*40;
+      float alpha=itemInicio(i<6?i%2:0,i<6?i/2:3,&y), w=i<6?478:980, h=i<6?100:40;
+      if(i==6) {
+        gfx_cor((GfxRect){453,718,980,1},0,1,1,1,.08f);
+        texto(TXT_ILHA_SECAO,i18n("Ordem e formatação"),453,739,980,220);
+      }
+      plrui_linha_foco((GfxRect){x,y,w,h},22,focoDe(i,0));
+      if(i<6) {
+        texto(TXT_ILHA_NOME,names[i],x+12,y+20,w-66,239);
+        bloco(sub,x+12,y+57,w-60,2);
+        gfx_icone((GfxRect){x+w-38,y+40,20,20},"aj_lock",.6f,.65f,.68f,1);
+      } else {
+        char resumo[320];snprintf(resumo,sizeof resumo,"%s: %s",names[i],sub);
+        texto(TXT_ILHA_SUB,resumo,x+12,y+8,w-60,174);
+      }
+      ponteiro_alvo(x,y,w,h,pointer,click,i,0);
       gfx_opacidade_grupo=alpha;
     }
-    botao(8,i18n("Editar no celular"),453,866,440);
+    botao(8,i18n("Editar no celular"),453,884,440);
+    botao(9,i18n("Proxy"),915,884,518);
   } else if(pagina==LEGENDAS) {
     texto(TXT_ILHA_SECAO,i18n("Addons"),453,285,650,220);
     listaPos=janela(2,nLegendas(),2,foco<=nLegendas()); int row=0, first=(int)listaPos;
