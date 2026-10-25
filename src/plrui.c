@@ -221,8 +221,20 @@ static GfxRect segPilulaRect(const float *w, int n, float sel, float x, float y)
 }
 float plrui_seg(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
                 float x, float y, float a) {
+  char b[8][16];
+  const char *c[8];
+  if (n > 8) n = 8;
+  for (int i = 0; i < n; i++) {
+    c[i] = contagem && contagem[i] >= 0 ? b[i] : NULL;
+    if (c[i]) snprintf(b[i], sizeof b[i], "%d", contagem[i]);
+  }
+  return plrui_seg_txt(rotulos, c, n, sel, ed, x, y, a);
+}
+float plrui_seg_txt(const char *const *rotulos, const char *const *contagem, int n, float sel,
+                    float ed, float x, float y, float a) {
   float w[8], tot = SEG_PAD * 2.0f, xx;
   TxtLinha t[8], c[8];
+  float ta[8];
   int i, vid = ajustes_vidro(), tinta = plrui_tinta();
   // `sel` e `ed` podem ser FRACIONARIOS: quem chama anima (mola) e a pilula
   // desliza/esmaece entre os chips em vez de saltar. Inteiros cravados
@@ -233,14 +245,14 @@ float plrui_seg(const char *const *rotulos, const int *contagem, int n, float se
   for (i = 0; i < n; i++) {
     int s = i == selI, f = s && fEd > 0.5f;
     int cor = f ? tinta : 243;
-    t[i] = txt_linha(TXT_ILHA_SEG, rotulos[i], cor, cor, cor, f || s ? 255 : 140);
+    // Dim by draw alpha, not texture alpha: the text cache key ignores alpha.
+    t[i] = txt_linha(TXT_ILHA_SEG, rotulos[i], cor, cor, cor, 255);
+    ta[i] = f || s ? 1.0f : 140 / 255.0f;
     memset(&c[i], 0, sizeof c[i]);
     w[i] = (float)t[i].w + 40.0f;
-    if (contagem && contagem[i] >= 0) {
-      char b[16];
+    if (contagem && contagem[i] && contagem[i][0]) {
       int cc = f ? tinta : 243;
-      snprintf(b, sizeof b, "%d", contagem[i]);
-      c[i] = txt_linha(TXT_ILHA_NUM, b, cc, cc, cc, f ? 150 : 89);
+      c[i] = txt_linha(TXT_ILHA_NUM, contagem[i], cc, cc, cc, 255);
       w[i] += 9.0f + (float)c[i].w;
     }
     tot += w[i] + (i ? SEG_VAO : 0.0f);
@@ -271,9 +283,10 @@ float plrui_seg(const char *const *rotulos, const int *contagem, int n, float se
   xx = x + SEG_PAD;
   for (i = 0; i < n; i++) {
     float yb = y + SEG_PAD + (SEG_IH - (float)t[i].h) * 0.5f;
-    txt_desenhar_alpha(t[i], xx + 20.0f, yb, a);
+    txt_desenhar_alpha(t[i], xx + 20.0f, yb, a * ta[i]);
     if (c[i].w) txt_desenhar_alpha(c[i], xx + 20.0f + (float)t[i].w + 9.0f,
-                                   yb + (float)t[i].h - (float)c[i].h - 1.0f, a);
+                                   yb + (float)t[i].h - (float)c[i].h - 1.0f,
+                                   a * (i == selI && fEd > 0.5f ? 150 : 89) / 255.0f);
     xx += w[i] + SEG_VAO;
   }
   return tot;

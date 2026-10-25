@@ -66,6 +66,9 @@ float plrui_dicas_video(const char *const *teclas, const char *const *rotulos, i
 // desliza entre os chips (sel) e esmaece ao entrar/sair do segmentado (ed).
 float plrui_seg(const char *const *rotulos, const int *contagem, int n, float sel, float ed,
                 float x, float y, float a);
+// Same, with text counts ("3/4"); NULL or "" = no count.
+float plrui_seg_txt(const char *const *rotulos, const char *const *contagem, int n, float sel,
+                    float ed, float x, float y, float a);
 
 // A BARRA DE PROGRESSO, a mesma em todo lugar (OSD, pausa, ao vivo, trailer):
 // trilho branco 20% com cantos redondos, o buffer a 30%, o andado no acento.
