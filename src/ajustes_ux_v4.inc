@@ -388,7 +388,7 @@ static int aj4Evento(SDL_Keycode k) {
     return 1;
   }
   if (uxVoltar(k) && uxRetornarOp >= 0) { int op=uxRetornarOp; uxRetornarOp=-1; focarOpcao(op); return 1; }
-  if (uxVoltar(k) || k == SDLK_LEFT) {
+  if (uxVoltar(k) || (k == SDLK_LEFT && !aj4Acao)) {
     if (!aj4Grupos && (lig(AJ_AVANCADAS) || aj4Excecao>=0)) aj4Grupos = 1;
     else { focoIndice = 1; aj4Linha = 0; aj4Excecao = -1; }
     return 1;
@@ -423,11 +423,33 @@ static int aj4Evento(SDL_Keycode k) {
     return 1;
   }
   int sec = aj4Atual, n = aj4Lista(sec, lig(AJ_AVANCADAS) || aj4Excecao >= 0 ? aj4Grupo : -1, aj4Opcoes);
-  if (k == SDLK_RIGHT && aj4Acao) { aj4Escopo = !aj4Escopo; return 1; }
+  int start=aj4Linha/4*4, acoes[4], na=0;
+  if(start)acoes[na++]=2;
+  if(start+4<n)acoes[na++]=3;
+  acoes[na++]=1;acoes[na++]=4;
+  if(aj4Acao && (k==SDLK_LEFT || k==SDLK_RIGHT)) {
+    for(int i=0;i<na;i++)if(acoes[i]==aj4Acao) {
+      int next=i+(k==SDLK_RIGHT?1:-1);
+      if(next>=0 && next<na)aj4Acao=acoes[next];
+      break;
+    }
+    return 1;
+  }
   if (k == SDLK_UP) { if (aj4Acao) aj4Acao = 0; else if (aj4Linha) aj4Linha--; else aj4Topo = 0; }
-  if (k == SDLK_DOWN) { if (aj4Linha + 1 < n && !aj4Acao) aj4Linha++; else aj4Acao = 1; }
+  if (k == SDLK_DOWN && !aj4Acao) {
+    if(aj4Linha+1<n && aj4Linha+1<start+4)aj4Linha++;
+    else aj4Acao=acoes[0];
+  }
   if (aj4Topo >= 0) return 1;
-  if (uxOk(k) && aj4Acao) { aj4PrepararReset(lig(AJ_AVANCADAS) || aj4Excecao>=0 ? sec : -sec-2, aj4Escopo); return 1; }
+  if (uxOk(k) && aj4Acao) {
+    if(aj4Acao==2 || aj4Acao==3) {
+      int next=start+(aj4Acao==2?-4:4);
+      if(next>=0 && next<n)aj4Linha=next;
+      aj4Acao=0;
+    } else if(aj4Acao==4)aj4Escopo=!aj4Escopo;
+    else aj4PrepararReset(lig(AJ_AVANCADAS) || aj4Excecao>=0 ? sec : -sec-2, aj4Escopo);
+    return 1;
+  }
   if (n) {
     int row = aj4Linha, ex = aj4Excecao, op = aj4Opcoes[row];
     focarOpcao(op); aj4Excecao = ex; aj4Atual = sec; aj4Linha = row;

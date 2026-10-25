@@ -176,11 +176,7 @@ static void ajIlhaMiolo(GfxRect r, float raioPx, float miolo) {
 static void ajFocoLinha(GfxRect r, float raioPx, float f, float a) {
   if (f <= 0.01f) return;
   if (ajVid()) {
-    float ar, ag, ab;
-    if (gfx_foco_placa(r, raioPx / r.h, f, a)) return;
     gfx_cor(r, raioPx / r.h, 1, 1, 1, 0.12f * f * a);
-    ajustes_acento(&ar, &ag, &ab);
-    gfx_vidro_aro(r, raioPx / r.h, 2.0f, ar, ag, ab, 0.96f * f * a);
   }
   else {
     gfx_rect((GfxRect){ r.x - 10, r.y + 2, r.w + 20, r.h + 26 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.30f * f * a);

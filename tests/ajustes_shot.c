@@ -340,6 +340,8 @@ int main(int argc, char **argv) {
     ix = fopen(nome, "w");
     assert(ix);
     for (n = 0; ajustes_teste_cena_item(n, &op, &sec, &chave, &rot); n++) {
+      // Capture one requested preview without generating the entire catalogue.
+      if (getenv("NUVIO_SHOT_CENA") && strcmp(getenv("NUVIO_SHOT_CENA"), chave ? chave : "")) continue;
       unsigned char *pix = malloc(960 * 540 * 4);
       SDL_Surface *s;
       int q, y;

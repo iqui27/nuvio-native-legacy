@@ -3960,7 +3960,7 @@ static GLuint vidroFonte(GfxRect r) {
 // Os parametros do proximo GFX_VIDRO, postos por gfx_vidro e enviados por
 // gfx_rect (vidroAplicar) com o retangulo ja em layout de tela.
 static struct {
-  int tipo, semAro;
+  int tipo;
   GLuint fonte;   // the blurred backdrop, 0 = chapado
   float raio, scrT[4], scrB[4], aro, aroLuz, dens[4];
 } vidPend;

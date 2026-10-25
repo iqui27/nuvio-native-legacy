@@ -93,7 +93,6 @@ static void ajcT_nota(int op, int fi) {
   else ajc_icone("aj_eye-off", x0 - 34, y0 + h * 0.5f, 30, 0.8f);
   // do close-up para a linha, no tamanho real
   ajc_icone("aj_arrow-down", 320, 196, 22, 0.35f + 0.5f * k * ajc_onda(1.6f));
-  ajcChaveCanto(k);
 }
 static void ajcT_notasTodas(int op) {
   float k = ajcLig(op), y = 112;
@@ -111,7 +110,6 @@ static void ajcT_notasTodas(int op) {
   ajcT_brilho(30, 100, 580, 120, k);
   ajc_foco(26, 100, 588, 128, 14, k * (0.4f + 0.6f * ajc_onda(2.4f)));
   ajc_ladrilho("aj_chart-column", 590, 40, 36, 1, 0.5f + 0.5f * ajc_onda(2.4f));
-  ajcChaveCanto(k);
 }
 static void ajcT_mdbChave(void) {
   static const int FI[6] = { 0, 1, 3, 5, 6, 10 };
@@ -119,8 +117,6 @@ static void ajcT_mdbChave(void) {
   ajc_cartaz(0, 0, 640, 360, 2, 0.3f);
   ajc_veu(0, 0, 640, 360, 0, 0.85f);
   ajc_ladrilho("aj_key-round", 90, 110, 64, 1, 1);
-  ajc_neutro(140, 90, 300, 40, 12, 1);
-  for (i = 0; i < 12; i++) ajc_bolinha(164 + i * 20, 110, 8, 1, 1, 1, i < n * 2 ? 0.9f : 0.18f);
   ajc_icone("aj_chevron-right", 470, 110, 26, 0.5f + 0.4f * ajc_onda(1.2f));
   ajc_ladrilho(n >= 6 ? "aj_circle-check" : "aj_loader", 540, 110, 48, n >= 6, 1);
   for (i = 0; i < 6; i++) {
@@ -140,7 +136,6 @@ static void ajcT_paginaMini(float veu, float x, float y, float escala, const cha
   if (data) ajcT_txtc(data, 40, 1, 34, 108, 243, 242, 239, 0.95f);
   else ajc_barra(34, 112, 150, 0.6f);
   ajc_barras(34, 176, 300, 3, 1);
-  ajc_acento_ret(34, 250, 112, 34, 17, 1);
   ajc_sub_fim();
 }
 static void ajcT_veu(void) {
@@ -154,9 +149,6 @@ static void ajcT_veu(void) {
   snprintf(b, sizeof b, "%d%%", v);
   ajcT_txtc(b, 22, 1, 430, 270, 243, 242, 239, 0.95f);
   ajc_foco(322, 70, 307, 172.6f, 8, 0.4f + 0.6f * p);
-  ajc_ret(70, 312, 500, 6, 3, 1, 1, 1, 0.16f);
-  ajc_acento_ret(70, 312, 5.0f * (float)v, 6, 3, 1);
-  ajc_bolinha(70 + 5.0f * v, 315, 16, 1, 1, 1, 0.95f);
 }
 static void ajcT_dataCheia(int op) {
   float k = ajcLig(op);
@@ -165,7 +157,6 @@ static void ajcT_dataCheia(int op) {
   ajcT_txtc("2024", 20, 1, 40, 296, 243, 242, 239, 0.9f - 0.5f * k);
   ajc_icone("aj_chevron-right", 130, 306, 20, 0.5f);
   ajcT_txtc("15.03.2024", 20, 1, 150, 296, 243, 242, 239, 0.3f + 0.65f * k);
-  ajcChaveCanto(k);
 }
 
 // --- TMDB: cada opcao acende a parte da pagina que ela preenche -------------------------
@@ -174,7 +165,6 @@ static float ajcT_quadro(int op) {
   ajc_cartaz(0, 0, 640, 360, 2, 0.30f);
   ajc_veu(0, 0, 640, 360, 0, 0.85f);
   ajcSelo("TMDB", 28, 22, 13, k, 1);
-  ajcChaveCanto(k);
   return k;
 }
 static void ajcT_cinza(float x, float y, float w, float h, float raio, float k) {
@@ -371,7 +361,6 @@ static void ajcT_metaExt(int op) {
   ajc_icone("aj_arrow-down", 160, 196, 24, 0.5f + 0.5f * p);
   ajc_vidro(60, 220, 520, 100, 16, 1);
   for (i = 0; i < 4; i++) ajc_barra(84, 238 + i * 17, (380 - 40 * i) * (0.5f + 0.5f * ajc_fase(2.0f)), i == 0 ? 0.7f : 0.4f);
-  ajcChaveCanto(k);
 }
 static void ajcT_soCinemeta(int op) {
   float k = ajcLig(op), p = ajc_onda(1.8f);
@@ -392,7 +381,6 @@ static void ajcT_soCinemeta(int op) {
   ajc_icone("aj_chevron-right", 505, 155, 28, 0.5f + 0.4f * p);
   ajc_vidro(530, 110, 90, 90, 14, 1);
   ajc_barras(542, 128, 66, 4, 1);
-  ajcChaveCanto(k);
 }
 
 // --- idiomas --------------------------------------------------------------------------
@@ -409,7 +397,7 @@ static void ajcT_idioma(void) {
   }
   ajc_foco(88, 112, 134, 30, 10, 1);
   ajc_icone("aj_languages", 320, 100, 44, 0.9f);
-  for (i = 0; i < 4; i++) ajcSeloVivo(L[i], 258 + i * 76, 150, 16, i == a ? t : 0, 1);
+  ajcTextoVivo(L[a], 28, 1, 300, 150, 1);
   ajc_cartaz(258, 200, 140, 100, 2, 1);
   ajc_barras(414, 210, 130, 5, 1);
 }
@@ -422,7 +410,7 @@ static void ajcT_tmdbIdioma(void) {
   ajcSelo("TMDB", 28, 22, 13, 1, 1);
   ajc_ret(70, 90, 160 + 80 * ((a & 1) ? t : 1 - t), 24, 7, 1, 1, 1, 0.9f);
   for (i = 0; i < 5; i++) ajc_barra(70, 140 + i * 24, (i == 4 ? 200 : 440) - 30 * ((i + a) % 3) * t, 0.55f);
-  for (i = 0; i < 3; i++) ajcSeloVivo(L[i], 440 + i * 56, 80, 14, i == a ? t : 0, 1);
+  ajcTextoVivo(L[a], 28, 1, 480, 80, 1);
   ajc_icone("aj_languages", 560, 30, 28, 0.8f);
   ajc_foco(60, 80, 400, 190, 14, 0.5f + 0.5f * ajc_onda(2.0f));
 }
@@ -431,15 +419,9 @@ static void ajcT_audioLingua(void) {
   static const char *C[3] = { "5.1", "2.0", "5.1" };
   int i, a = ajc_passo(1.8f, 3);
   ajcT_fundoVideo();
-  ajc_vidro(330, 40, 280, 230, 18, 1);
-  for (i = 0; i < 3; i++) {
-    float y = 60 + i * 66;
-    ajc_neutro(346, y, 248, 54, 12, i == a ? 0.9f : 0.5f);
-    ajc_icone(i == a ? "aj_audio-lines" : "aj_volume-2", 376, y + 27, 26, i == a ? 1.0f : 0.5f);
-    ajcSeloVivo(L[i], 412, y + 14, 14, i == a ? 1.0f : 0, 1);
-    ajcT_txtc(C[i], 16, 1, 520, y + 16, 243, 242, 239, 0.7f);
-    if (i == a) ajc_foco(346, y, 248, 54, 12, 1);
-  }
+  ajc_icone("aj_audio-lines", 376, 120, 44, 1);
+  ajcTextoVivo(L[a], 28, 1, 412, 106, 1);
+  ajcT_txtc(C[a], 28, 1, 520, 106, 243, 242, 239, 0.7f);
   for (i = 0; i < 9; i++) {
     float hh = 12 + 56 * fabsf(sinf(ajc_t() * 3 + i));
     ajc_ret(44 + i * 16, 170 - hh * 0.5f, 8, hh, 4, 1, 1, 1, 0.6f);
@@ -448,12 +430,11 @@ static void ajcT_audioLingua(void) {
 }
 static void ajcT_legendaLingua(void) {
   static const char *L[3] = { "PT", "EN", "ES" };
-  int i, a = ajc_passo(1.8f, 3);
+  int a = ajc_passo(1.8f, 3);
   ajcT_fundoVideo();
   ajc_legenda(320, 330, 1.0f, 0.45f, 1, 1, 1, 0, 1);
-  ajc_vidro(430, 30, 180, 60, 16, 1);
-  ajc_icone("aj_captions", 458, 60, 22, 0.9f);
-  for (i = 0; i < 3; i++) ajcSeloVivo(L[i], 482 + i * 42 - 20, 46, 12, i == a ? 1.0f : 0, 1);
+  ajc_icone("aj_captions", 458, 60, 28, 0.9f);
+  ajcTextoVivo(L[a], 28, 1, 482, 46, 1);
   ajc_icone("aj_chevron-right", 560, 190, 0.0f, 0.0f);
 }
 static void ajcT_forcada(int op) {
@@ -475,7 +456,6 @@ static void ajcT_forcada(int op) {
     }
   }
   ajc_ret(30 + 580 * f, 240, 3, 52, 1.5f, 1, 1, 1, 0.8f);
-  ajcChaveCanto(k);
 }
 static void ajcT_leg2(int op) {
   static const float COR[7][3] = { { 1, 1, 1 }, { 1, 1, 1 }, { 1, 0.9f, 0.2f }, { 0.4f, 0.9f, 0.4f },
@@ -503,11 +483,7 @@ static void ajcT_leg2(int op) {
     ajc_acento_ret(560, 40 + 220 * junto, 8, 40, 4, 1);
     ajc_ret(560, 40, 8, 260, 4, 1, 1, 1, 0.14f);
   }
-  if (op == AJ_LEG_LINGUA2) {
-    int a = ajc_passo(1.8f, 3);
-    for (i = 0; i < 3; i++) ajcSeloVivo(L[i], 130 + i * 140, 140, 28, i == a ? 1.0f : 0, 1);
-    ajc_icone("aj_languages", 70, 160, 44, 0.85f);
-  }
+  if (op == AJ_LEG_LINGUA2) ajc_icone("aj_languages", 70, 160, 44, 0.85f);
   if (op == AJ_LEG2_TAMANHO) tm = tam * (0.82f + 0.18f * ajc_onda(2.4f));
   if (op == AJ_LEG2_FUNDO) fundo = (vf == 0 ? 0.45f : FUN[vf]) * (0.35f + 0.65f * p);
   if (op == AJ_LEG2_BORDA) borda = vb >= 2 ? 1.0f : 0.0f;
@@ -520,24 +496,8 @@ static void ajcT_leg2(int op) {
     ajcT_txtc(rot, 70, 1, 320 - ajcLargura(rot, 70, 1) * 0.5f, 126, 243, 242, 239, 0.9f);
     ajc_icone("aj_type", 90, 160, 44, 0.85f);
   }
-  if (op == AJ_LEG2_COR) {
-    for (i = 1; i < 7; i++) {
-      float x = 130 + i * 70;
-      ajc_bolinha(x, 160, 52, COR[i][0], COR[i][1], COR[i][2], 1);
-      if (i == c || (c == 0 && i == 1)) ajc_foco(x - 30, 130, 60, 60, 30, 1);
-    }
-    ajc_icone("aj_palette", 66, 160, 40, 0.85f);
-  }
-  if (op == AJ_LEG2_FUNDO) {
-    for (i = 1; i < 6; i++) {
-      float x = 130 + i * 80;
-      ajc_ret(x - 34, 124, 68, 70, 10, 0, 0, 0, FUN[i]);
-      gfx_anel(ajc_r(x - 34, 124, 68, 70), 10.0f / 70.0f, 1.5f, 1, 1, 1, 0.25f * C.a);
-      ajcT_txtc(PCT[i], 18, 1, x - ajcLargura(PCT[i], 18, 1) * 0.5f, 206, 243, 242, 239, 0.85f);
-      if (i == vf) ajc_foco(x - 34, 124, 68, 70, 10, 1);
-    }
-    ajc_icone("aj_blend", 56, 160, 40, 0.85f);
-  }
+  if (op == AJ_LEG2_COR) ajc_icone("aj_palette", 66, 160, 40, 0.85f);
+  if (op == AJ_LEG2_FUNDO) ajc_icone("aj_blend", 56, 160, 40, 0.85f);
   if (op == AJ_LEG2_BORDA) {   // "Aa" em tres acabamentos: sem borda, contorno, sombra
     for (i = 1; i < 4; i++) {
       float x = 150 + (i - 1) * 150, y = 100;
@@ -638,7 +598,6 @@ static void ajcT_diagnostico(void) {
     if (i == n) ajc_foco(180, y, 330, 50, 12, 1);
   }
   ajc_ladrilho("aj_shield-check", 570, 290, 52, n >= 4, n >= 4 ? 1.0f : 0.5f);
-  ajc_ladrilho("aj_sliders-horizontal", 570, 190, 52, 0, n >= 4 ? 1.0f : 0.6f);
 }
 static void ajcT_velocidade(void) {
   float f = ajc_onda(3.2f);
@@ -800,7 +759,6 @@ static void ajcT_enviarLog(int op) {
     ajc_icone("aj_file-text", x, 190, 26, 0.3f + 0.5f * k);
   }
   if (k < 0.5f) ajc_icone("aj_x", 320, 110, 60, 0.85f);
-  ajcChaveCanto(k);
 }
 
 static int ajcNovaTitulo(int sec, int op) {

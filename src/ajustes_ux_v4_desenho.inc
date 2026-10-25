@@ -48,8 +48,9 @@ static void aj4Botao(const char *s, const char *ic, float x, float y, float w, i
   if (foco) ajPilulaAcento(r,29,1);
   else if(!segmento || ativo)ajNeutro(r,29,ativo ? 0.16f : 0.07f, ativo ? .20f : .14f, ativo ? .21f : .15f, ativo ? .24f : .17f,1);
   if (ic) { if (foco) ajIconeT(ic,x+22,y+15,28,1); else ajIcone(ic,x+22,y+15,28,.8f); }
-  TxtLinha t = foco ? txt_linha_corta(TXT_V2_26,s,ajTinta(),ajTinta(),ajTinta(),255,w-(ic?72:28)) : ajTxtC(TXT_V2_26,s,w-(ic?72:28));
-  txt_desenhar(t,x+(ic?64:20),y+(r.h-t.h)*.5f);
+  float textoW = w - (ic ? 72 : segmento ? 24 : 28);
+  TxtLinha t = foco ? txt_linha_corta(TXT_V2_26,s,ajTinta(),ajTinta(),ajTinta(),255,textoW) : ajTxtC(TXT_V2_26,s,textoW);
+  txt_desenhar(t,x+(ic?64:segmento?(w-t.w)*.5f:20),y+(r.h-t.h)*.5f);
   if(y<240) {
     if(x<182 && w<=64)aj4Alvo(r,5,0);
     else if(x>=1060 && x<1230)aj4Alvo(r,0,0);
@@ -66,7 +67,10 @@ static void aj4LinhaDesenhar(const char *rot, const char *sub, const char *val, 
   if (ic) ajIcone(ic,656,y+40,30,.72f);
   float vw = val && val[0] ? 260 : 0;
   aj4Texto(rot, foco ? TXT_G30B : TXT_G30M,tx,y+20,1750-tx-vw-(vw?24:0),1);
-  if (sub && sub[0]) aj4Texto(sub,TXT_V2_24,tx,y+65,1750-tx-vw-(vw?24:0),.72f);
+  if (sub && sub[0]) {
+    if(strchr(sub,'\n'))ajBloco(TXT_V2_24,sub,tx,y+54,1750-tx-vw-(vw?24:0),27,.72f,2);
+    else aj4Texto(sub,TXT_V2_24,tx,y+65,1750-tx-vw-(vw?24:0),.72f);
+  }
   if (vw) {
     TxtLinha t = ajTxtC(TXT_V2_24,val,260);
     txt_desenhar_alpha(t,1750-t.w,y+(marcado?42:24),.72f);
@@ -95,6 +99,10 @@ static void aj4Pagina(const char *titulo, const char *sub) {
   gfx_cor((GfxRect){0,0,NV_VTELA_W,NV_VTELA_H},0,.035f,.04f,.045f,.76f);
   aj4Texto("NUVIO",TXT_G30B,72,62,160,1);
   aj4Texto("Sinta-se em casa.",TXT_V2_24,224,71,600,.65f);
+  char hora[48];ajCenaHora(hora,sizeof hora);
+  TxtLinha relogio=ajTxt(TXT_V2_28,hora), sala=ajTxt(TXT_V2_24,"Sala");
+  txt_desenhar(relogio,1848-relogio.w,64);
+  txt_desenhar_alpha(sala,1824-relogio.w-sala.w,71,.65f);
   // Same island material, with no decorative rim on the settings surface.
   GfxRect island={56,132,1808,900};
   if(ajVid())gfx_vidro_miolo(island,30.0f/900,.055f,.059f,.071f,.94f,1);
@@ -127,7 +135,11 @@ static void aj4Lateral(const char *kick, const char *titulo, const char *corpo) 
   ajBloco(TXT_ILHA_PERGUNTA,titulo,100,372,470,44,1,2);
   ajBloco(TXT_V2_28,corpo,100,480,470,37,.65f,4);
   ajIcone("aj_info",100,898,28,.6f);
-  aj4Texto("Cada opção mostra onde se aplica.",TXT_V2_24,142,902,430,.65f);
+  char escopo[200];
+  if(focoIndice && !aj4Util && !uxEditor)
+    snprintf(escopo,sizeof escopo,i18n("Perfil ativo: %s"),pfNome(edPerfil?edPerfil:perfis_ativo()));
+  else snprintf(escopo,sizeof escopo,"%s",i18n("Cada opção mostra onde se aplica."));
+  aj4Texto(escopo,TXT_V2_24,142,902,428,.65f);
 }
 static void aj4Acento(const char *s,float x,float y,float w) {
   float r,g,b; ajustes_acento_marca(&r,&g,&b);
@@ -155,32 +167,41 @@ static void aj4Home(void) {
   aj4Acento(aj4Predef,100,670,470);
   ajBloco(TXT_V2_26,av?"Trocar de modo mantém suas escolhas salvas.":"Experimente uma configuração pronta para esta TV.",100,724,470,32,.65f,2);
   aj4Botao("Predefinições","aj_sparkles",100,806,320,aj4Linha==4 && aj4Topo<0,0);
+  char contexto[200];
   if (av) {
     aj4Botao("Assistir",NULL,622,323,180,0,!aj4Set);
     aj4Botao("Personalizar",NULL,806,323,220,0,aj4Set);
     aj4Texto("← →  Trocar grupo",TXT_V2_24,1480,343,340,.6f);
-  } else aj4Texto("O QUE VOCÊ QUER MUDAR?",TXT_V2_24,622,343,1000,.55f);
+  } else {
+    aj4Texto("O QUE VOCÊ QUER MUDAR?",TXT_V2_24,622,343,850,.55f);
+    const char *tarefas="4 tarefas do dia a dia";
+    float largura=txt_largura(TXT_V2_24,tarefas);
+    aj4Acento(tarefas,1820-largura,343,largura+1);
+  }
   for (int i=0;i<4;i++) {
     int s=av?aj4Set*4+i:i, ico=av?s:(i==2?5:i==3?6:i);
     const char *rot=av?AJ4_SECOES[s]:AJ4_TAREFAS[i];
     const char *sub=av?AJ4_SUB[s]:i==2?"Estilo da tela inicial, texto e movimento":i==3?"Perfis, addons e contas conectadas":AJ4_SUB[i];
     aj4LinhaDesenhar(rot,sub,"","",AJ4_IC[ico],387+i*123,aj4Linha==i && aj4Topo<0,0);
   }
-  aj4Botao("Diferente do padrão","aj_rotate-ccw-clock",622,895,365,aj4Linha==5 && aj4Topo<0,0);
-  aj4Botao("Ajuda desta TV","aj_info",1003,895,290,aj4Linha==6 && aj4Topo<0,0);
-  aj4Botao("O que o Nuvio faz?","aj_sparkles",1310,895,350,aj4Linha==7 && aj4Topo<0,0);
-  if(aj4UndoN)aj4Botao("Desfazer",NULL,1672,895,150,aj4Linha==8 && aj4Topo<0,0);
+  snprintf(contexto,sizeof contexto,i18n("Diferente do padrão · %d"),aj4Diferencas(aj4Opcoes));
+  aj4Botao(contexto,"aj_rotate-ccw-clock",622,895,410,aj4Linha==5 && aj4Topo<0,0);
+  aj4Botao("Ajuda desta TV","aj_info",1048,895,260,aj4Linha==6 && aj4Topo<0,0);
+  aj4Botao("O que o Nuvio faz?","aj_sparkles",1324,895,300,aj4Linha==7 && aj4Topo<0,0);
+  if(aj4UndoN)aj4Botao("Desfazer","aj_rotate-ccw-clock",1640,895,180,aj4Linha==8 && aj4Topo<0,0);
   aj4Alvo((GfxRect){100,806,320,58},1,4);
-  aj4Alvo((GfxRect){622,895,365,58},1,5);
-  aj4Alvo((GfxRect){1003,895,290,58},1,6);
-  aj4Alvo((GfxRect){1310,895,350,58},1,7);
-  if(aj4UndoN)aj4Alvo((GfxRect){1672,895,150,58},1,8);
+  aj4Alvo((GfxRect){622,895,410,58},1,5);
+  aj4Alvo((GfxRect){1048,895,260,58},1,6);
+  aj4Alvo((GfxRect){1324,895,300,58},1,7);
+  if(aj4UndoN)aj4Alvo((GfxRect){1640,895,180,58},1,8);
 }
 static void aj4SecaoDesenhar(void) {
   int av=lig(AJ_AVANCADAS) || aj4Excecao>=0, sec=aj4Atual;
   const char *titulo=av?AJ4_SECOES[sec]:AJ4_TAREFAS[sec];
   int fontes=av && !aj4Grupos && aj4Grupo==aj4GrupoDe(AJ_FONTE_MANUAL);
-  aj4Pagina(titulo,fontes?"Ajustes / Reprodução · Seleção de fontes":"Escolha um grupo e avance para seus ajustes.");
+  char caminho[256];
+  snprintf(caminho,sizeof caminho,i18n("Ajustes / %s · %s"),i18n(titulo),i18n(AJ4_GRUPOS[aj4Grupo]));
+  aj4Pagina(titulo,fontes?"Ajustes / Reprodução · Seleção de fontes":caminho);
   if(fontes) {
     aj4Texto("SELEÇÃO DE FONTES",TXT_V2_KICK,100,332,470,.55f);
     ajBloco(TXT_ILHA_PERGUNTA,"Aperte Assistir.\nO Nuvio faz o resto.",100,372,470,44,1,2);
@@ -217,8 +238,15 @@ static void aj4SecaoDesenhar(void) {
     }
     aj4Texto(AJ4_GRUPOS[aj4Grupo],TXT_V2_24,622,343,1000,.6f);
   } else {
-    aj4Lateral("ESCOLHAS DO DIA A DIA","Do seu jeito.","Escolha uma opção. OK abre a prévia; Voltar mantém o valor atual.");
-    aj4Texto("SEUS AJUSTES",TXT_V2_24,622,343,1000,.6f);
+    aj4Texto("NESTA SEÇÃO",TXT_V2_KICK,100,332,470,.55f);
+    aj4Texto("Um grupo por vez.",TXT_ILHA_PERGUNTA,100,372,470,1);
+    ajBloco(TXT_V2_26,"Escolha um grupo e avance para seus ajustes.",100,436,470,37,.65f,3);
+    gfx_cor((GfxRect){100,538,470,1},0,.22f,.23f,.26f,1);
+    ajBloco(TXT_V2_24,"Quatro escolhas do dia a dia.",100,604,470,32,.65f,2);
+    ajBloco(TXT_V2_24,"Mude para Avançado para ver o catálogo completo.",100,650,470,32,.65f,3);
+    ajIcone("aj_info",100,898,28,.6f);
+    aj4Texto("Cada opção mostra onde se aplica.",TXT_V2_24,142,902,428,.65f);
+    aj4Texto(AJ4_GRUPOS[aj4Grupo],TXT_V2_24,622,343,1000,.6f);
   }
   int n=aj4Lista(sec,av?aj4Grupo:-1,aj4Opcoes), start=aj4Linha/4*4;
   if(aj4Linha>=n)aj4Linha=n?n-1:0;
@@ -226,14 +254,35 @@ static void aj4SecaoDesenhar(void) {
     int op=aj4Opcoes[i]; char val[160];uxValorTexto(op,uxValorAtual(op),val,sizeof val);
     if(op==AJ_FONTE_MANUAL)snprintf(val,sizeof val,"%s",i18n(valor[op]==0?"Eu escolho":"Nuvio"));
     const char *selo=escopoDe(op)==ESC_TV?"Esta TV":escopoDe(op)>ESC_TV?"Este perfil":"";
-    aj4LinhaDesenhar(aj4Rotulo(op),aj4Ajuda(op),val,selo,NULL,387+(i-start)*123,
+    char dependencia[400];
+    const char *ajuda=aj4Ajuda(op);
+    if(inativa(op)) {
+      ajAvisoTexto(op,dependencia,sizeof dependencia);
+      char *acao=strstr(dependencia," — ");
+      if(acao) { size_t separador=strlen(" — "); memmove(acao+1,acao+separador,strlen(acao+separador)+1); *acao='\n'; }
+      ajuda=dependencia;
+    }
+    aj4LinhaDesenhar(aj4Rotulo(op),ajuda,val,selo,NULL,387+(i-start)*123,
                      !aj4Grupos && !aj4Acao && aj4Topo<0 && i==aj4Linha,0);
   }
   char b[80];snprintf(b,sizeof b,i18n("%d–%d de %d"),n?start+1:0,n<start+4?n:start+4,n);
   aj4Texto(b,TXT_V2_24,1620,343,200,.65f);
-  aj4Botao("Revisar restauração","aj_rotate-ccw-clock",622,895,365,aj4Acao && aj4Topo<0,0);
-  aj4Botao(aj4Escopo?"Esta TV":"Este perfil",NULL,1003,895,230,0,1);
-  aj4Texto("Cada opção mostra onde se aplica.",TXT_V2_24,100,902,470,.6f);
+  float bx=622;
+  const char *rotulos[]={"Itens anteriores","Próximos itens","Revisar restauração",aj4Escopo?"Esta TV":"Este perfil"};
+  const char *icones[]={"aj_arrow-up","aj_arrow-down","aj_rotate-ccw-clock",NULL};
+  const int acoes[]={2,3,1,4};
+  for(int i=0;i<4;i++) {
+    if((i==0 && !start) || (i==1 && start+4>=n))continue;
+    float w=txt_largura(TXT_V2_24,i18n(rotulos[i]))+(icones[i]?64:40);
+    GfxRect r={bx,895,w,58};int foco=aj4Acao==acoes[i] && aj4Topo<0;
+    if(foco)ajPilulaAcento(r,29,1);
+    else if(i==3)ajNeutro(r,29,.16f,.20f,.21f,.24f,1);
+    if(icones[i]) { if(foco)ajIconeT(icones[i],bx+16,910,26,1);else ajIcone(icones[i],bx+16,910,26,.65f); }
+    TxtLinha t=foco?txt_linha(TXT_V2_24,rotulos[i],ajTinta(),ajTinta(),ajTinta(),255):ajTxt(TXT_V2_24,rotulos[i]);
+    txt_desenhar_alpha(t,bx+(icones[i]?54:20),895+(58-t.h)*.5f,foco?1:.7f);
+    aj4Alvo(r,3,acoes[i]);bx+=w+12;
+  }
+  if(av)aj4Texto("Cada opção mostra onde se aplica.",TXT_V2_24,100,902,470,.6f);
 }
 static void aj4UtilDesenhar(void) {
   int review=aj4Review, preset=aj4Util==2;
