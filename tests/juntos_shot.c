@@ -34,7 +34,7 @@ float juntosui_shot_foco(int i);
 
 static SDL_Window *win;
 static const char *base;
-static int sourcesOnly, proofsOnly;
+static int sourcesOnly, proofsOnly, lobbyOnly;
 static GLuint fundoTex;
 
 static void carregarFundo(void) {
@@ -122,7 +122,8 @@ int main(int argc, char **argv) {
   base = argc > 1 ? argv[1] : "/tmp/nuvio-juntos";
   snprintf(aj, sizeof aj, "%s/ajustes.txt", dir);
   sourcesOnly = argc > 2 && !strcmp(argv[2], "--sources");
-  proofsOnly = argc > 2 && !strcmp(argv[2], "--proofs");
+  lobbyOnly = argc > 2 && !strcmp(argv[2], "--lobby");
+  proofsOnly = lobbyOnly || (argc > 2 && !strcmp(argv[2], "--proofs"));
   f = fopen(aj, "w"); fprintf(f, "idioma 0\nselected_theme 2\nescalaTextoLocal 2\n"); fclose(f);
   ajustes_dir(dir);
   dados_iniciar("deploy/app");
@@ -296,7 +297,7 @@ proofs:
     gfx_escala_txt_definir(scales[scale]);
     ajustes_definir_vidro(glass);
     for (int c = 1; c <= 7; c++) {
-      if (proofsOnly && c != 3 && scale > 1) continue;
+      if ((lobbyOnly && c != 3) || (proofsOnly && c != 3 && scale > 1)) continue;
       char name[96];
       juntosui_shot_camada(c, proofsOnly && c == 3 ? -1 : 0);
       if (c == 6) juntosui_shot_player(1);
@@ -335,6 +336,7 @@ proofs:
   assert(juntosui_shot_entrada() > 0 && juntosui_shot_entrada() < 1);
   juntosui_atualizar(now + 1380); juntosui_atualizar(now + 1430); juntosui_atualizar(now + 1480); juntosui_atualizar(now + 1530);
   assert(juntosui_shot_entrada() == 0);
+  if (lobbyOnly) { printf("juntos lobby: ok\n"); return 0; }
   motionNow = now + 1600;
   const int clockTimes[] = {0, 50, 100, 150, 250, 400};
   const char *only = getenv("JUNTOS_SHOT_ONLY");  // e.g. "85-solid": split the clock matrix across runs

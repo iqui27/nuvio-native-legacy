@@ -7,12 +7,13 @@ from pathlib import Path
 import subprocess
 import sys
 
-ROOT = Path('/Volumes/ExternalSSD/tmp/rev/diretor21/21-j5/r5-together')
+LOBBY = '--lobby' in sys.argv
+ROOT = Path('/Volumes/ExternalSSD/tmp/rev/diretor21/21-j5') / ('r6-lobby' if LOBBY else 'r5-together')
 NATIVE = ROOT / 'native'
 MOCK = ROOT.parent / 'r3/together-layer-1-85-glass-tri.png'
 REFERENCE = Path('/Volumes/ExternalSSD/tmp/rev/linguagem/ref/sheet-open-strip.png')
 TIMES = (0, 50, 100, 150, 250, 400)
-SHEETS = (1, 2, 4, 5, 6, 7)
+SHEETS = () if LOBBY else (1, 2, 4, 5, 6, 7)
 CONFIGS = ('100-glass', '100-solid', '85-glass', '85-solid')
 os.environ['MAGICK_THREAD_LIMIT'] = '1'
 os.environ['MAGICK_TEMPORARY_PATH'] = str(ROOT)
@@ -45,6 +46,8 @@ def expected():
 
 tracked = [Path(p) for p in ('src/juntosui.c', 'src/gfx.c', 'src/text.c', 'src/ilha.c',
                            'src/plrilha.c', 'src/tela21.h', 'tests/juntos_shot.c', __file__)]
+if LOBBY:
+    tracked.append(Path('tests/juntos_lobby.sh'))
 manifest_path = ROOT / 'proofs.json'
 if '--check' in sys.argv:
     manifest = json.loads(manifest_path.read_text())
@@ -56,6 +59,16 @@ if '--check' in sys.argv:
     assert all(p.stat().st_mtime_ns > code_time for p in expected())
     for config in CONFIGS:
         assert pixels(ROOT / f'lobby-{config}-tri.png', '1920x1080+3840+44') == pixels(NATIVE / f'matrix-3-{config}.bmp')
+    if LOBBY:
+        # These physical regions must not move or grow with reading size.
+        for scale in (85, 90, 100, 110, 120, 130):
+            frame = NATIVE / f'matrix-3-{scale}-solid.bmp'
+            for crop in ('300x250+1100+220', '20x20+390+590', '31x31+212+127'):
+                result = subprocess.run(['magick', 'compare', '-metric', 'RMSE',
+                    '(', str(NATIVE / 'matrix-3-85-solid.bmp'), '-crop', crop, '+repage', ')',
+                    '(', str(frame), '-crop', crop, '+repage', ')', 'null:'], capture_output=True, text=True)
+                assert result.returncode in (0, 1), result.stderr
+                assert float(result.stderr.split('(')[1].split(')')[0]) < .01, (scale, crop, result.stderr)
     print(f'PASS: {len(expected())} fresh native frames; four exact lobby columns; artifact/code hashes match')
     sys.exit(0)
 
@@ -74,7 +87,7 @@ for config in CONFIGS:
          NATIVE / f'matrix-3-{config}.bmp', '+append', '-background', '#121316',
          '-fill', 'white', '-font', '/System/Library/Fonts/Helvetica.ttc', '-pointsize', '26',
          '-gravity', 'northwest', '-splice', '0x44', '-annotate', '+20+8', 'Mock (pt-BR)',
-         '-annotate', '+1940+8', '2.0.8 reference', '-annotate', '+3860+8', 'App (pt-BR)')
+         '-annotate', '+1940+8', '2.0.8 reference', '-annotate', '+3860+8', f'App (pt-BR) | {config}')
     save(f'lobby-{config}-overlay-diff', '(', MOCK, '-crop', '1920x1080+0+0', '+repage', ')',
          NATIVE / f'matrix-3-{config}.bmp', '-compose', 'difference', '-composite')
 
