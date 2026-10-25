@@ -379,6 +379,17 @@ void desc_duracao_min(int min, char *dst, size_t tam) {
   else               snprintf(dst, tam, i18n("%dh"), min / 60);
 }
 
+// Minutos -> a forma COMPACTA da pagina do titulo do mockup v2: "2h36",
+// "6h50". Aparece na linha de meta do hero e na ficha; o resto do app segue
+// com a forma longa ("2h 36min"), que e a das outras telas.
+void desc_duracao_min_curta(int min, char *dst, size_t tam) {
+  if (!dst || !tam) return;
+  if (min <= 0) { dst[0] = 0; return; }
+  if (min < 60)      snprintf(dst, tam, i18n("%dmin"), min);
+  else if (min % 60) snprintf(dst, tam, i18n("%dh%02d"), min / 60, min % 60);
+  else               snprintf(dst, tam, i18n("%dh"), min / 60);
+}
+
 // Duracao em TEXTO ("142 min", "2h 22min", "1 h 54 min", "142") -> a mesma
 // forma acima. O Cinemeta escreve "min" em ingles, e em russo/ucraniano a
 // abreviacao e outra. Texto que nao e so numero+unidade sai como veio.

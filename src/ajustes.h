@@ -482,6 +482,10 @@ enum { AJ_CWF_AMBAS = 0, AJ_CWF_CONTA = 1, AJ_CWF_TRAKT = 2, AJ_CWF_SIMKL = 3 };
 // Envio automatico do registro (Sobre). 1 = ligado.
 int   ajustes_envio_auto(void);
 // Forca da vinheta do fundo do titulo, 0..1 (1 = a medida do web).
+// 0 ready version (default), 1 personal, 2 both; saved per profile.
+int ajustes_detalhe_topo(void);
+int ajustes_detalhe_elenco_visto(void);
+void ajustes_detalhe_alternar_spoilers(void);
 float ajustes_detalhe_veu(void);
 int   ajustes_trailer_auto(void);      // trailer mudo no fundo da pagina de titulo
 int   ajustes_trailer_hero(void);      // trailer no destaque da home

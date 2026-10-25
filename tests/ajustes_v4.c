@@ -43,7 +43,15 @@ int main(void) {
     assert(seen == 1);
   }
   // APS-9: invalid IDs, absent routes and corrupt compiled sections are bounded.
-  assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO && AJ_HERO_TAMANHO + 1 == AJ_N);
+  assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO);
+  assert(AJ_HERO_TAMANHO + 1 == AJ_DET_TOPO && AJ_DET_TOPO + 1 == AJ_DET_ELENCO_VISTO);
+  assert(AJ_DET_ELENCO_VISTO + 1 == AJ_N);
+  assert(!strcmp(CHAVE[AJ_AFR], "afrLocal") && !strcmp(CHAVE[AJ_HERO_TAMANHO], "heroSizeLocal"));
+  assert(!strcmp(CHAVE[AJ_DET_TOPO], "detalheTopoLocal"));
+  assert(!strcmp(CHAVE[AJ_DET_ELENCO_VISTO], "detalheElencoVistoLocal"));
+  assert(valorPadrao[AJ_DET_TOPO] == 0 && valorPadrao[AJ_DET_ELENCO_VISTO] == 0);
+  assert(aj4Secao(AJ_DET_TOPO) == 4 && aj4GrupoDe(AJ_DET_TOPO) == 20);
+  assert(aj4Secao(AJ_DET_ELENCO_VISTO) == 4 && aj4GrupoDe(AJ_DET_ELENCO_VISTO) == 20);
   assert(!aj4RTL() && aj4X(100, 470) == 100);
   assert(aj4Secao(-1) == -1 && aj4Secao(AJ_N) == -1);
   assert(aj4GrupoDe(-1) == -1 && aj4GrupoDe(AJ_N) == -1);

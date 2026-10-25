@@ -168,6 +168,7 @@ int         extras_n_estudios(void);
 // Sai do `original_language` do TMDB, no mesmo corpo que a ficha ja baixa.
 // Serve ao ajuste "Áudio: Original" — ver linguas.h.
 const char *extras_idioma_original(void);
+const char *extras_titulo_original(void);
 
 const char *extras_estudio_nome(int i);
 const char *extras_estudio_logo(int i);

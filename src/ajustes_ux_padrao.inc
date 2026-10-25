@@ -356,3 +356,5 @@
   0, /* gradient smoothing: Automatic */
   0, /* #641 display refresh-rate match (AFR): Off */
   0, /* hero logo and information size: Normal */
+  0, /* title hero: Ready version */
+  0, /* cast history: On */

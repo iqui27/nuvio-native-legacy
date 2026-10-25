@@ -739,6 +739,8 @@ typedef enum {
   AJ_AFR,
   // Hero logo and information size (0 Normal, 1 Grande, 2 Muito grande). LOCAL, append-only.
   AJ_HERO_TAMANHO,
+  AJ_DET_TOPO, // append-only; profile-local title hero mode
+  AJ_DET_ELENCO_VISTO,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -943,6 +945,7 @@ static const char *V_POSTER_PROV[] = { "Desligado", "SpatialPosters", "RPDB", "M
 // A terceira e so "Dinâmica" (dono, 13/10: "pode tirar o apple tv"). A chave
 // era a do antigo tema de cor, que desde 03/10 se chama "Da arte"; a traducao
 // dela agora e a do layout. O valor gravado continua HOME_LAYOUT_DINAMICA.
+static const char *V_DET_TOPO[] = { "Versão pronta", "Pessoal", "As duas" };
 static const char *V_HOME_LAYOUT[] = { "Moderna", "Padrão", "Dinâmica" };
 // "Fonte automatica" (issue #130). O INDICE e o gravado (fonteAutoLocal) e o
 // FONTEAUTO_* de fonteauto.h: 0 = a regra de pontuacao, 1 = a primeira da
@@ -1444,7 +1447,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Mostrar episódios não exibidos", V_LIGA, 2),// showUnairedNextUp
   ESC("Ordenação",                  V_CW_ORDEM, 3), // continueWatchingSortMode
 
-  ESC("Desfocar não assistidos",    V_LIGA, 2),   // blurUnwatchedEpisodes
+  ESC("Sem spoilers",               V_LIGA, 2),   // blurUnwatchedEpisodes
   ESC("Botão de trailer",           V_LIGA, 2),   // detailPageTrailerButtonEnabled
   ESC("Priorizar metadados externos", V_LIGA, 2), // preferExternalMetaAddonDetail
   ESC("Data de lançamento completa", V_LIGA, 2),  // showFullReleaseDate
@@ -1883,6 +1886,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Suavizar degradês", V_DEGRADES, 3),
   ESC("Taxa de atualização da tela", V_AFR, 2),
   ESC("Tamanho do destaque", V_HERO_TAMANHO, 3),       // local: heroSizeLocal
+  ESC("Topo da página", V_DET_TOPO, 3),
+  ESC("Onde você já viu o elenco", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2219,6 +2224,8 @@ static const char *CHAVE[] = {
   "suavizarDegradesLocal",
   "afrLocal",
   "heroSizeLocal",
+  "detalheTopoLocal",
+  "detalheElencoVistoLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3701,6 +3708,8 @@ void ajustes_definir_salvos_destino(int destino) {
   desc_repetir();   // o mesmo que a linha de Ajustes faz ao mudar
 }
 int ajustes_data_completa(void)       { return lig(AJ_DET_DATA_CHEIA); }
+int ajustes_detalhe_elenco_visto(void) { return lig(AJ_DET_ELENCO_VISTO); }
+int ajustes_detalhe_topo(void) { return valor[AJ_DET_TOPO] >= 0 && valor[AJ_DET_TOPO] < 3 ? valor[AJ_DET_TOPO] : 0; }
 float ajustes_detalhe_veu(void)       { int v = valor[AJ_DET_VEU]; return (v < 0 ? 0 : v > 100 ? 100 : v) / 100.0f; }
 int   ajustes_trailer_auto(void)      {
 #ifdef NV_TIZEN3_LITE
@@ -3896,6 +3905,7 @@ int ajustes_cw_concluido(void) {
 }
 
 int ajustes_desfocar_nao_assistidos(void) { return lig(AJ_DET_BLUR_NAO_VISTOS); }
+void ajustes_detalhe_alternar_spoilers(void) { valor[AJ_DET_BLUR_NAO_VISTOS]=!valor[AJ_DET_BLUR_NAO_VISTOS]; gravar(); }
 int ajustes_botao_trailer(void)       { return lig(AJ_DET_TRAILER); }
 int ajustes_meta_externo(void)        { return lig(AJ_DET_META_EXT); }
 int ajustes_meta_so_cinemeta(void)    { return lig(AJ_DET_SO_CINEMETA); }
@@ -6204,6 +6214,8 @@ static int somenteDesteAparelho(int op) {
     case AJ_FUNDO:          /* o desfoque custa GPU desta TV; o web nao tem */
     case AJ_VIDRO_OPAC: case AJ_VIDRO_FOSCO: /* teste do vidro: visual desta TV */
     case AJ_SUAVIZAR_DEGRADES: /* panel banding and grain preference, only this TV */
+    case AJ_DET_ELENCO_VISTO:
+    case AJ_DET_TOPO:
     case AJ_VIDRO_QUALIDADE: /* o custo do desfoque e da GPU desta TV */
     case AJ_SELO_VISTO:     /* o web nao tem a escolha */
     case AJ_OCULTAR_FILMES_VISTOS: /* por perfil desta TV; fora do blob da conta */
@@ -6375,6 +6387,7 @@ int ajustes_perfil_restaurar(int perfil) {
   memcpy(v, valor, sizeof v);
   int existe = perfilLerVetor(perfil, v, tem);
   if (!tem[AJ_MENU_TOPO]) { v[AJ_MENU_TOPO] = 0; tem[AJ_MENU_TOPO] = 1; }
+  if (!tem[AJ_DET_TOPO]) { v[AJ_DET_TOPO] = 0; tem[AJ_DET_TOPO] = 1; }
   if (!tem[AJ_ABAS_ESTILO]) { v[AJ_ABAS_ESTILO] = 0; tem[AJ_ABAS_ESTILO] = 1; }
   if (perfil != perfis_ativo()) tem[AJ_COLECAO_EXIBICAO] = 0;
   else if (!tem[AJ_COLECAO_EXIBICAO]) { v[AJ_COLECAO_EXIBICAO] = 0; tem[AJ_COLECAO_EXIBICAO] = 1; }
@@ -7950,6 +7963,8 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_ITENS_FILEIRA: return "Quantos títulos cada fileira da Home mostra antes do Ver tudo. Mais itens usam mais memória: em TV com 1 GB de memória a Home pode ficar mais lenta ou fechar. Se o app fechar depois de você aumentar, ele volta sozinho ao valor anterior. Aumentar vale na próxima vez que o app abrir.";
     case AJ_FIL_ORDEM: return "Abre a lista de fileiras para reordenar, ligar, desligar e escolher o card de cada uma. É lá que dá para ver de onde cada fileira vem.";
     case AJ_RAIL: return "A barra de navegação da esquerda fica sempre aberta, ou recolhida até você ir até ela.";
+    case AJ_DET_ELENCO_VISTO: return "Onde você já viu o elenco";
+    case AJ_DET_TOPO: return "Versão pronta · Pessoal · As duas";
     case AJ_ABAS_ESTILO: return "Chips: uma fileira de botões, como sempre. Menu suspenso: escolha Filmes ou Séries e depois o catálogo numa lista. Barra central: uma pílula de vidro no centro do alto da tela. Páginas: um catálogo por página; Esquerda e Direita trocam de página. Vale para este perfil.";
     case AJ_MENU_TOPO: return "Na lateral: o menu fica na esquerda, como sempre. No topo: o menu vira uma barra no alto da tela e o conteúdo usa a largura toda. Para cima no primeiro item da tela chega à barra e Para baixo volta. Vale para este perfil.";
     case AJ_RAIL_MODERNA: return "Troca a barra lateral pela versão nova, com ícones maiores. Ela ignora a escolha entre recolhida e fixa.";
@@ -10965,6 +10980,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_CW_FURTHEST: case AJ_CW_NAO_EXIBIDOS: case AJ_CW_ORDEM: case AJ_CW_RETIDO_TAMBEM:
       return AJPV_CONTINUAR;
     case AJ_EP_TAMANHO:
+    case AJ_DET_TOPO: case AJ_DET_ELENCO_VISTO:
     case AJ_DET_BLUR_NAO_VISTOS: case AJ_DET_TRAILER: case AJ_DET_META_EXT:
     case AJ_DET_SO_CINEMETA: case AJ_BUSCA_CINEMETA: case AJ_BUSCA_NUVIO: case AJ_BUSCA_ORIGEM:
     case AJ_DET_DATA_CHEIA: case AJ_DET_VEU: case AJ_DET_TRAILER_AUTO:

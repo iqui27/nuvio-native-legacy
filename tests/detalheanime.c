@@ -59,6 +59,16 @@ int addons_manifesto_recebido(const char *base, unsigned versao, uint64_t sessao
   abort();
 }
 
+// This metadata fixture has no active hunts or rewatch sessions.
+int caca_por_chave(const char *chave) { (void)chave; return -1; }
+int caca_itens(int i, int faltam, void *dst, int max) { (void)i; (void)faltam; (void)dst; (void)max; return 0; }
+int rewatch_n_ativas(void) { return 0; }
+int rewatch_ativa_n(int i, char *imdb, size_t tam) { (void)i; if (tam) imdb[0]=0; return 0; }
+int rewatch_parcial_de(const char *imdb, int *t, int *e, int *pct) { (void)imdb; (void)t; (void)e; (void)pct; return 0; }
+int rewatch_alvo(const char *imdb, const CatEp *eps, int n, int *t, int *e, int *pct) {
+  (void)imdb; (void)eps; (void)n; (void)t; (void)e; (void)pct; return 0;
+}
+
 // --- DUBLES: nenhum participa da regra, so fazem descoberta.c linkar ---------
 // (o conjunto e o de tests/colfileiras.c, menos os cat_* — que catalogo.c ja
 // traz — e mais os que este teste ja tinha)
