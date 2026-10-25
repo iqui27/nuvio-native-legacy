@@ -13,6 +13,7 @@
 #define NV_ADDONS_H
 #include "watchstate.h"
 #include "addonurl.h"
+#include "fontefalha.h"
 #include <stdint.h>
 
 // Um teto so para a lista e para os consumidores que precisam de TODOS os donos.
@@ -134,13 +135,18 @@ void addons_definir_origem(const char *base);
 // CADA PARTE DA ORIGEM EXTRA E MAIS UMA ORIGEM NA FOLHA (#221): `aviso` (pode
 // ser NULL) e chamado do fio da origem para a parte `k` (o scraper, na ordem do
 // manifesto) com estado 1 = vai rodar, 2 = terminou (com `n` fontes em
-// `fontes`, um Stream *; copiadas na hora), 3 = desistiu.
-typedef void (*OrigemAviso)(void *u, int k, const char *nome, int estado,
+// `fontes`, um Stream *; copiadas na hora), 3 = desistiu. `id` e o id estavel
+// da parte (o do scraper no manifesto; pode ser NULL quando nao existe).
+typedef void (*OrigemAviso)(void *u, int k, const char *nome, const char *id,
+                            int estado,
                             const void *fontes /* const Stream * */, int n);
 typedef int (*OrigemExtra)(const char *id, const char *tipo, int (*cancelado)(void *),
                            void *ctx, OrigemAviso aviso, void *avisoU,
                            void *saida /* Stream ** */);
 void addons_definir_origem_extra(OrigemExtra f, int (*ativa)(void));
+// k of the personal-server origin's notice (servidoresaddons.c): its sources
+// are published BEFORE every addon (D2: the server copy is always first).
+#define ORIGEM_SERVIDOR (-1)
 // Capturar na UI; consultar somente o estado proprio no worker. 0 e uma
 // resposta vazia valida; -1 e falha, cancelamento ou resposta incompleta.
 typedef struct Stream Stream;
@@ -158,6 +164,8 @@ void addons_buscar(const char *imdb, const char *tipo);
 // Recarregar explicito: descarta a resposta anterior e vai a rede, inclusive
 // quando a lista atual esta vazia ou foi filtrada por falta de debrid.
 void addons_buscar_renovar(const char *imdb, const char *tipo);
+// Retry the last source query; before any query, retry manifest discovery.
+void addons_tentar_de_novo(void);
 
 // --- busca em andamento, addon a addon (#221) --------------------------------
 // A busca real de filme/serie publica cada addon que responde, sem esperar os
@@ -167,6 +175,11 @@ void addons_buscar_renovar(const char *imdb, const char *tipo);
 void addons_drenar(void);
 // 1 enquanto a busca real de VOD esta no ar publicando por addon.
 int  addons_busca_parcial(void);
+// Sobe a cada mudanca de estado de addon/plugin (anuncio, fim, desistencia):
+// a folha inclui na chave do cache para a aba sair de "buscando" mesmo sem
+// fontes novas.
+unsigned addons_parcial_rev(void);
+int  addons_busca_incompleta(void); // Finished search still missing responses.
 // Milissegundos desde o disparo dessa busca; 0 fora dela.
 unsigned addons_busca_ms(void);
 // Quantos addons ainda nao responderam (contando quem espera a segunda chance)
@@ -193,6 +206,18 @@ int  addons_pendente_nome(const char *nome);
 // O menor grupo de auto-play (fonteregra.h, #202) que um pendente pode trazer;
 // `f` recebe o nome e se e plugin e devolve o grupo (-1 = nunca). 99 = nenhum.
 int  addons_pendente_grupo_min(int (*f)(const char *nome, int plugin, void *u), void *u);
+
+// Estado de um addon/plugin na busca parcial, para a folha de Fontes.
+enum { ADDON_ABA_PRONTO = 0, ADDON_ABA_BUSCANDO = 1, ADDON_ABA_FALHOU = 2 };
+typedef struct {
+  char nome[96];
+  char chave[FONTEFALHA_CHAVE];
+  int ordem;   // ordem de instalacao (addons) ou ADD_MAX + k (plugins)
+  int estado;  // ADDON_ABA_*
+} AddonAba;
+// Lista os addons/plugins desta busca, na ordem de exibicao, com quem ainda
+// nao respondeu ou falhou. Devolve quantos cabem em `out`.
+int addons_parcial_abas(AddonAba *out, int max);
 
 // A mesma consulta, SINCRONA E REENTRANTE, e addons_consultar — declarada em
 // fontecache.h, e nao aqui, porque a assinatura precisa de Stream (streams.h,

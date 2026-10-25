@@ -27,6 +27,7 @@
 void posplay_atualizar(float dt, Uint32 agora, double posSeg, double durSeg,
                        int ehSerie, int idxCatalogo, int janelaSerie);
 int  posplay_visivel(void);
+int  posplay_aguarda_escolha(void); // pending choice/Next; false after dismissal
 int  posplay_sobre_video(void);   // 1 = cartao de proximo episodio sobre o video cheio
 // A regra do FILME sozinha, sem estado: 1 quando os relacionados devem subir.
 // `creditosSeg` e o marcador (0 = nenhum). Nunca antes da metade da duracao;

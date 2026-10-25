@@ -27,6 +27,19 @@ void dts_engine_set_ring_mib(int mib);
 /* Range read-ahead of dts_engine_open for engines opened after the call, in
  * MiB (Settings > Buffer size): 0 = default (32 MiB), else 4 MiB ranges. */
 void dts_engine_set_ahead_mib(int mib);
+/* Measured payload for native HTTP and conversion read-ahead. Native capacity
+ * is the allocated ring; conversion capacity includes its active range plus
+ * the queued range budget. Conversion snapshots must be taken on the engine's
+ * owning worker; UI callers use dts_playback_status instead. */
+typedef struct {
+  int64_t ready_bytes, capacity_bytes, position, total;
+  int64_t contiguous_bytes; /* Ready bytes up to the first missing range. */
+} DtsBufferInfo;
+void dts_engine_buffer_info(DtsEngine *, DtsBufferInfo *);
+DtsEngine *dts_engine_source_create(const char *url, const char *headers, int mib);
+/* pending_fd: replacement listener, or -1 for a non-preemptible read. */
+int dts_engine_source_read(DtsEngine *, int64_t offset, unsigned char *data, int n, int pending_fd);
+int64_t dts_engine_source_total(DtsEngine *);
 DtsEngine *dts_engine_create(void);
 int dts_engine_available(void);
 /* Dolby Vision path, set before open: AC-3/E-AC-3 tracks are selectable and
@@ -34,6 +47,10 @@ int dts_engine_available(void);
 void dts_engine_dv(DtsEngine *, int enabled);
 /* Explicit opt-in before open: P7 conversion and webOS recovery. Default off. */
 void dts_engine_allow_p7(DtsEngine *, int enabled);
+/* Opt-in (#605): strip SMPTE ST 2094-40 (HDR10+) SEI from HEVC packets of
+ * the next open (raw BUFFERSTREAM feed), so TVs without HDR10+ decode it as
+ * plain HDR10. Static mastering display / content light SEI is kept. */
+void dts_engine_set_hdr10p_strip(int on);
 /* Open and seek return 0 on success, negative on error. */
 int dts_engine_open(DtsEngine *, const char *url, const char *headers,
                     int audio_stream, int core_only, double start_seconds);

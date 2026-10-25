@@ -23,8 +23,8 @@
 // telemetry or memory. That file is local storage, not a vault: on LG, Samsung
 // and Android without a keystore bridge it is as safe as the app's data dir.
 // The token goes in the Authorization header of API calls and, only because
-// the LG/Samsung pipelines cannot attach arbitrary headers, as api_key in
-// player URLs. Logs never print the token, the base path, the media path or
+// the LG/Samsung pipelines cannot attach arbitrary headers, in the query of
+// player URLs (ApiKey= on Jellyfin, api_key= on Emby: jf_anexar_apikey). Logs never print the token, the base path, the media path or
 // full titles: [jellyfin] lines carry operation, status and latency only.
 //
 // CONCURRENCY. Every request runs on a worker with a RedeJob from a group
@@ -42,6 +42,7 @@
 #include "catalogo.h"
 #include "jfid.h"
 #include "rede.h"
+#include "srvidx.h"
 #include "streams.h"
 
 // ---------------------------------------------------------------- results
@@ -69,6 +70,13 @@ typedef enum {
   JF_BACKEND_WGT        // Samsung web: unavailable (no strict HTTP)
 } JfBackend;
 JfBackend jellyfin_backend(void);
+// Tests only: pretend to be another backend (-1 = the real one).
+void jellyfin_backend_definir(int b);
+// What each pipeline is declared to open as is: comma lists of containers,
+// video and audio codecs (Jellyfin names; "ts" is MPEG-TS). 0 on WGT.
+// Shared by the Jellyfin/Emby DeviceProfile and the Plex direct-play filter.
+int jf_capacidades(JfBackend b, const char **cont, const char **vid, const char **aud);
+int jf_lista_tem(const char *lista, const char *item);   // case-insensitive, exact item
 const char *jellyfin_backend_nome(JfBackend b);
 
 enum { JF_TIPO_JELLYFIN = 0, JF_TIPO_EMBY = 1 };
@@ -83,6 +91,8 @@ typedef struct {
   char usuarioId[40];
   char usuarioNome[96];
   char token[80];          // never logged
+  char bibliotecas[256];   // selected library IDs, newline-delimited; empty means all
+  char connectUser[64], connectKey[128]; // Emby exchange credentials, never logged
   char dispositivoId[80];  // per device + profile (Jellyfin binds tokens to it)
   char dispositivoNome[48];
 } JfConta;
@@ -138,6 +148,15 @@ int jf_itens(const JfConta *c, RedeJob *job, const char *bibliotecaId,
 int jf_detalhe(const JfConta *c, RedeJob *job, const char *itemId, CatItem *out);
 int jf_episodios(const JfConta *c, RedeJob *job, const char *serieId,
                  CatEp *out, int max);
+// Matching index (srvidx.h). jf_indice: one page of movies+series with
+// ProviderIds; `desde` > 0 asks only for items saved since then (unix s);
+// returns items seen on the page, *total = TotalRecordCount. Limit 0 is the
+// cheap count check. jf_indice_episodios: every episode of one series.
+int jf_indice(const JfConta *c, RedeJob *job, int inicio, int limite, long long desde,
+              SrvIdx *x, int *total);
+int jf_indice_episodios(const JfConta *c, RedeJob *job, const char *serieId, SrvIdx *x);
+int jf_ler_indice(const char *corpo, size_t n, const char *serie, SrvIdx *x, int *total);
+void jf_ler_ids(const char *ini, const char *fim, char imdb[12], long *tmdb, long *tvdb);
 // Pure parsers over a response body already in memory (the request functions
 // above call them; tests feed fixtures). They never touch the network.
 int jf_ler_autenticacao(JfConta *c, char *corpo, size_t n);   // wipes corpo
@@ -148,6 +167,11 @@ int jf_ler_episodios(const JfConta *c, const char *corpo, size_t n, CatEp *out, 
 int jf_ler_playbackinfo(const JfConta *c, const char *itemLimpo, const char *corpo, size_t n,
                         JfPlayback *out);
 int jf_perfil_dispositivo(JfBackend b, char *json, size_t tam);
+// Token in player URLs: "ApiKey=" for Jellyfin 10.8+ and 12.x (12.0 refuses
+// the legacy "api_key=" in the query), "api_key=" for Emby and Jellyfin <10.8.
+// jf_anexar_apikey also renames a token the server already put in the URL.
+int  jf_apikey_moderna(const JfConta *c);
+void jf_anexar_apikey(const JfConta *c, char *url, size_t tam);
 int jf_playbackinfo(const JfConta *c, RedeJob *job, const char *itemId,
                     JfBackend b, JfPlayback *out);
 // evento: JF_REL_*; positions in seconds, converted to int64 ticks inside.
@@ -159,6 +183,9 @@ long long jf_ticks(double seg);
 double jf_seg(long long ticks);
 
 // ------------------------------------------------------- app integration
+// Onboarding worker snapshots; acceptance checks both profile and generation.
+unsigned jf_setup_conta(int emby, JfConta *out, int *perfil);
+int jf_setup_aceitar(int emby, const JfConta *c, int perfil, unsigned generation);
 int  jellyfin_disponivel(void);     // strict HTTP present on this backend
 void jellyfin_carregar(void);       // reads the active profile's connection
 void jellyfin_perfil_trocou(void);  // cancels in-flight work, reloads
@@ -189,6 +216,8 @@ int  jellyfin_ultimo_erro(void);            // JF_ERR_* behind JF_EST_ERRO
 // Non-blocking actions (queued on the control worker). 0 if refused.
 int  jellyfin_definir_servidor(const char *url);
 int  jellyfin_entrar_quick_connect(void);
+// "<base>/web/#/quickconnect" for the QR beside the code (display only).
+int  jellyfin_qc_url(char *dst, size_t tam);
 int  jellyfin_entrar_senha(const char *usuario, char *senha);  // wipes senha
 void jellyfin_cancelar_entrada(void);
 void jellyfin_recarregar_bibliotecas(void);
@@ -204,6 +233,9 @@ unsigned jellyfin_fileiras_versao(void);
 int  jellyfin_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils,
                               int maxFils, int *nItens);
 int  jellyfin_chave_fileira(const char *chave);   // "jellyfin_<lib>"
+// Blocking page for the existing View all worker; profile changes discard it.
+int  jellyfin_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total, int *raw);
+int  jellyfin_atividade(const char *modo, CatItem *out, int max);
 
 // Title page (BLOCKS; descoberta's episode thread). Fills cast/overview/
 // seasons and the episode list. -1 cancelled/other server/failed.
@@ -225,6 +257,25 @@ void jellyfin_reproducao_tick(const char *url, double posSeg, double durSeg, int
 void jellyfin_reproducao_fim(const char *url, double posSeg, double durSeg);
 // For tests: queued check-ins not yet sent.
 int  jellyfin_relatorios_pendentes(void);
+
+// MATCHED CATALOGUE TITLES (srvidx.h). The index is built after the Home
+// rows (incremental when one is on disk) and kept per profile and server.
+// jellyfin_tem: offline, 1 when the server has this "tt..."/"tmdb:..." title
+// (fills `info` when not NULL). jellyfin_consultar: BLOCKS (addons.c's
+// extra-source thread); sources for the title (the episode for a series id
+// "tt...:S:E", fetched on demand), check-in sessions registered like the
+// server's own items. `titulo`/`ano` feed the last match rule (title + year)
+// and may be NULL/0. Returns the number of sources, 0 none/not on the server,
+// -1 cancelled; the list is malloc'd for the caller.
+int  jellyfin_tem(const char *id, const char *tipo, SrvAchado *info);
+int  jellyfin_indice_n(void);
+// Per-episode user data of a series the server has (issue #617): watched flag
+// and instant, resume position in ticks. Offline when the episode index is
+// already in memory; otherwise one fetch feeds the index first. Returns
+// episodes filled, 0 none, -1 cancelled/failed.
+int  jellyfin_episodios(const char *id, SrvEp *out, int max);
+int  jellyfin_consultar(const char *id, const char *tipo, const char *titulo, int ano,
+                        int (*cancelado)(void *), void *ctx, Stream **saida);
 
 // ------------------------------------------------------------- Emby twin
 // The same integration API for the Emby instance (see the note at the top).
@@ -249,6 +300,8 @@ int  jellyfin_relatorios_pendentes(void);
   void P##_recarregar_bibliotecas(void);                                                 \
   unsigned P##_fileiras_versao(void);                                                    \
   int P##_chave_fileira(const char *chave);                                              \
+  int P##_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total, int *raw); \
+  int P##_atividade(const char *modo, CatItem *out, int max);                              \
   int P##_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int maxFils,   \
                           int *nItens);                                                  \
   int P##_ficha(CatItem *item, CatEp *eps, int maxEps);                                  \
@@ -256,7 +309,12 @@ int  jellyfin_relatorios_pendentes(void);
   int P##_fontes_colher(const char *alvo, Stream **lista, int *n);                       \
   void P##_reproducao_tick(const char *url, double posSeg, double durSeg, int tocando);  \
   void P##_reproducao_fim(const char *url, double posSeg, double durSeg);                \
-  int P##_relatorios_pendentes(void);
+  int P##_relatorios_pendentes(void);                                                    \
+  int P##_tem(const char *id, const char *tipo, SrvAchado *info);                        \
+  int P##_episodios(const char *id, SrvEp *out, int max);                                  \
+  int P##_indice_n(void);                                                                \
+  int P##_consultar(const char *id, const char *tipo, const char *titulo, int ano,       \
+                    int (*cancelado)(void *), void *ctx, Stream **saida);
 JF_EMBY_DECL(emby)
 
 #endif

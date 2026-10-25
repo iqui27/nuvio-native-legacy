@@ -42,6 +42,7 @@ typedef struct {
   GLint margem;  // uMargem do VS: 1 px de folga no quad dos modos de SDF
   GLint jan;     // uJan: janela do GFX_JANELA
   GLint peso;    // uPeso: GFX_TEXTO faux-bold scale/offsets in highp
+  GLint dither;  // uDither: amplitude, 0 disables colour and alpha noise
   GLint leve;    // uLeve: 1 = efeitos leves (sem dither), ver gfx_definir_efeitos_leves
   GLint sub;     // uSub do VS: o pedaco do rect desenhado (gfx_sombra_vazada)
   float subAtual[4];
@@ -49,6 +50,7 @@ typedef struct {
   GLint vid[VID_NU];   // os uniforms do GFX_VIDRO (VID_NOMES), postos por gfx_vidro
   GLint giro;    // uGiro do VS: rotacao de grupo (gfx_girar)
   float giroAtual[4];
+  float ditherAtual;
   float altAtual, margemAtual, leveAtual;  // o ultimo valor enviado: so chama o GL se mudar
   float telaAtual[2];       // o uTela enviado (muda so dentro de uma miniatura)
 } Programa;
@@ -361,7 +363,7 @@ static const char *FS_CABECA =
   // O ruido entra NA COR, dividido pelo alfa. Com o blend
   // SRC_ALPHA/ONE_MINUS_SRC_ALPHA o resultado e c*a + dst*(1-a): somar n/a em
   // c desloca o pixel final em exatamente n, sem saber o destino. Ruido no
-  // alfa nao serviria — o deslocamento seria n*|c-dst|, diferente por canal e
+  // alfa nao resolveria o RGB sobre GL — o deslocamento seria n*|c-dst|, diferente por canal e
   // quase nulo num veu sobre fundo escuro. O clamp limita o deslocamento ao
   // fisicamente possivel ([-c*a, (1-c)*a]): num veu preto o ruido so clareia,
   // o que ainda desfaz o contorno. Opaco (a = 1) e o ruido puro.
@@ -401,9 +403,15 @@ static const char *FS_CABECA =
   // ta com o degrade ruim na TCL". O desvio e uniforme para o desenho
   // inteiro, entao todo fragmento toma o mesmo lado.
   "uniform float uLeve;\n"
+  "uniform float uDither;\n"
   "vec4 nv_dither(vec3 c, float a){\n"
-  "  float n = ((uLeve > 0.5 ? nv_ruido_leve() : nv_ruido()) - 0.5) * (1.0 / 255.0);\n"
-  "  return vec4(clamp(c + n / max(a, 0.004), 0.0, 1.0), a);\n"
+  "  if (uDither == 0.0) return vec4(c, a);\n"
+  "  float n = ((uLeve > 0.5 ? nv_ruido_leve() : nv_ruido()) - 0.5) * (uDither / 255.0);\n"
+  // The TV mixes the video plane using framebuffer alpha. RGB noise alone
+  // cannot break its bands. Opaque/transparent endpoints must stay exact;
+  // over opaque GL content the separate alpha blend still yields one.
+  "  float ad = (a > 0.0 && a < 1.0) ? clamp(a + 2.0*n, 0.0, 1.0) : a;\n"
+  "  return vec4(clamp(c + n / max(a, 0.004), 0.0, 1.0), ad);\n"
   "}\n"
   // uAlt = altura do rect em PIXELS DO ALVO. O SDF mede em fracao da altura,
   // entao 1 px la e 1/uAlt; e o que deixa a rampa da borda com 1 px em
@@ -1806,6 +1814,7 @@ static int progMontar(int m) {
   progs[m].alfaB  = glGetUniformLocation(p, "uAlfaB");
   progs[m].alt    = glGetUniformLocation(p, "uAlt");
   progs[m].margem = glGetUniformLocation(p, "uMargem");
+  progs[m].dither = glGetUniformLocation(p, "uDither");
   progs[m].leve   = glGetUniformLocation(p, "uLeve");
   progs[m].jan    = glGetUniformLocation(p, "uJan");
   progs[m].sub    = glGetUniformLocation(p, "uSub");
@@ -1816,6 +1825,7 @@ static int progMontar(int m) {
   progs[m].telaAtual[0] = NV_TELA_W; progs[m].telaAtual[1] = NV_TELA_H;
   progs[m].margemAtual = 0.0f;   // o default de um uniform recem-linkado e 0
   progs[m].leveAtual = 0.0f;
+  progs[m].ditherAtual = -1.0f;
   glUseProgram(p);
   glUniform2f(progs[m].tela, NV_TELA_W, NV_TELA_H);
   // O default de um uniform recem-linkado e 0: o pedaco tem de nascer inteiro.
@@ -2770,6 +2780,13 @@ void gfx_rect(GfxRect r, GLuint tex, GfxModo modo, float foco,
   if (P->sub >= 0 && memcmp(P->subAtual, subAtual, sizeof subAtual)) {
     glUniform4f(P->sub, subAtual[0], subAtual[1], subAtual[2], subAtual[3]);
     memcpy(P->subAtual, subAtual, sizeof subAtual);
+  }
+  if (P->dither >= 0) {
+    float amplitude = ajustes_suavizar_degrades();
+    if (P->ditherAtual != amplitude) {
+      P->ditherAtual = amplitude;
+      glUniform1f(P->dither, amplitude);
+    }
   }
   if (P->leve >= 0 && (float)efeitosLeves != P->leveAtual) {
     P->leveAtual = (float)efeitosLeves;
@@ -4386,7 +4403,8 @@ int gfx_foco_placa(GfxRect r, float raio, float foco, float a) {
   gfx_cor(r, raio, 1, 1, 1, 0.05f * f * a);
   gfx_cor(r, raio, cr, cg, cb, gfx_foco_placa_alfa(cr, cg, cb) * f * a);
   if (!efeitosMinimos) gfx_brilho_topo(r, raio, 0.45f, 1.0f, 1.0f, 1.0f, 0.07f * f * a);
-  gfx_anel(r, raio, ajustes_vidro_contorno() ? 2.0f : 1.5f, cr, cg, cb, (ajustes_vidro_contorno() ? 0.90f : 0.62f) * f * a);
+  // The accent ring only exists with "Contorno do vidro" on (owner 21/10).
+  if (ajustes_vidro_contorno()) gfx_anel(r, raio, 2.0f, cr, cg, cb, 0.90f * f * a);
   return 1;
 }
 void gfx_vidro_cartao(GfxRect r, float raio, float foco, float a) {

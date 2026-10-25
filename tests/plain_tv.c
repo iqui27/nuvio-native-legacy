@@ -29,9 +29,10 @@ int main(void) {
   desc_tmdb(dirDados);
   homeestado_iniciar();
   desc_iniciar(); esperarQuieto();
-  assert(pedidosCatalogo == 0 && !temFileira("x"));
-  assert(tvListed == 1); // Before the fix: discarded before any management registration.
-  puts("PASS: plain TV catalog listed outside Home; no automatic Home row/request");
+  // Empty transport fixture produces no row, but the catalog remains a candidate.
+  assert(!temFileira("x"));
+  assert(tvListed == 0); // No longer forced into the outside-Home registry.
+  puts("PASS: plain TV catalog follows normal Home discovery");
   char command[PATH_MAX + 16];
   snprintf(command, sizeof command, "rm -rf '%s'", dirDados);
   assert(system(command) == 0);

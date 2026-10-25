@@ -4,6 +4,7 @@ void servidores_perfil_trocou(void);   // servidores.c: cancel in-flight work, l
 #include "nuvem.h"
 #include "dados.h"
 #include "fileiras.h"   /* fil_definir_perfil: a escolha de fileiras e por perfil */
+#include "homefil.h"
 // fontepref_definir_perfil DECLARADA A MAO, e nao por #include: fontepref.h
 // puxa streams.h, que puxa SDL, e tests/perfilsel.sh compila perfis.c SOZINHO
 // (com js.c e jsw.c) exatamente para provar que a regra de perfil nao depende
@@ -19,6 +20,7 @@ void arteesc_definir_perfil(int perfil);
 // Mesma razao: ajustes.h puxa SDL. O ajuste "Usar os addons do perfil
 // principal" (Ajustes > Conta), ver perfis_ativo_addons.
 int ajustes_addons_do_principal(void);
+#include "trava.h"
 #include "js.h"
 #include "jsw.h"
 #include <stdio.h>
@@ -427,6 +429,21 @@ int perfis_puxar(void) {
   return quantidade;
 }
 
+#ifdef AJUSTES_TESTE
+// Capturas de Ajustes: uma lista de perfis de mentira, sem conta nem rede.
+void perfis_teste_definir(const char *const *nomes, const int *pin, int quantos, int ativo_) {
+  int i;
+  n = quantos > CONTA_PERFIL_MAX ? CONTA_PERFIL_MAX : quantos;
+  memset(lista, 0, sizeof lista);
+  for (i = 0; i < n; i++) {
+    lista[i].indice = i + 1;
+    snprintf(lista[i].nome, sizeof lista[i].nome, "%s", nomes[i]);
+    lista[i].primario = i == 0;
+    lista[i].temPin = pin ? pin[i] : 0;
+  }
+  ativo = ativo_;
+}
+#endif
 int           perfis_n(void)         { return n; }
 const ContaPerfil *perfis_item(int i)     { return (i >= 0 && i < n) ? &lista[i] : NULL; }
 
@@ -437,6 +454,11 @@ const ContaPerfil *perfis_item_ativo(void) {
 }
 const char   *perfis_dono(void)      { return dono; }
 int           perfis_ativo(void)     { int p = atomic_load_explicit(&ativo, memory_order_acquire); return p > 0 ? p : 1; }
+int           perfis_principal(void) {
+  int i;
+  for (i = 0; i < n; i++) if (lista[i].primario) return lista[i].indice;
+  return 1;
+}
 
 // Addons NAO sao por perfil quando o perfil diz herdar os do primario.
 //
@@ -471,6 +493,8 @@ void perfis_carregar_ativo(void) {
   // A escolha de fileiras acompanha o perfil desde o arranque, senao a home
   // do perfil 1 e montada com o arquivo do perfil 2 ate a primeira troca.
   fil_definir_perfil(ativo);
+  cf_definir_perfil(ativo);
+  ov_definir_perfil(ativo);
   // A FONTE LEMBRADA ACOMPANHA O PERFIL desde o arranque, pela mesma razao das
   // fileiras: sem isto o perfil 2 retomaria na fonte dublada que o perfil 1
   // escolheu, ate a primeira troca.
@@ -487,6 +511,7 @@ void plugins_perfil_mudou(void);
 void perfis_definir_ativo(int indice) {
   char linha[32];
   if (indice <= 0) return;
+  if (ativo != indice) trava_invalidar_autorizacoes();
   if (sessaoAntes) sessaoAntes();
   pthread_once(&sessaoUmaVez, sessaoTravaIniciar);
   pthread_mutex_lock(&sessaoTrava);
@@ -494,6 +519,8 @@ void perfis_definir_ativo(int indice) {
   atomic_store_explicit(&ativo, indice, memory_order_release);
   pthread_mutex_unlock(&sessaoTrava);
   fil_definir_perfil(indice);
+  cf_definir_perfil(indice);
+  ov_definir_perfil(indice);
   fontepref_definir_perfil(indice);
   legmem_definir_perfil(indice);
   audiomem_definir_perfil(indice);
@@ -568,6 +595,7 @@ int perfis_verificar_pin(int indice, const char *pin) {
 }
 
 void perfis_esquecer(void) {
+  trava_invalidar_autorizacoes();
   pthread_once(&sessaoUmaVez, sessaoTravaIniciar);
   pthread_mutex_lock(&sessaoTrava);
   sessaoAvancar();

@@ -8,18 +8,25 @@
 //            GET  /api/v2/user                     -> display name
 //   server   GET  /identity, /library/sections, /library/sections/{k}/all,
 //            /library/metadata/{rk}[/allLeaves], /:/timeline,
-//            /video/:/transcode/universal/{start.m3u8,stop}
+//            /video/:/transcode/universal/{decision,start.m3u8,stop}
 // None of this was exercised against a real Plex Media Server here: the
 // shapes follow Plex's public API documentation and community-documented
 // behaviour, and are pinned by fixture tests (tests/plex.c).
 #include "plex.h"
+#include "srvprefs.h"
+#include "servidores.h"
 #include "dados.h"
 #include "js.h"
 #include "jsraiz.h"
 #include "jsw.h"
 #include "jellyfin.h"   // jellyfin_backend(): same backend naming everywhere
 #include "perfis.h"
+#include "srvidx.h"
 #include <ctype.h>
+
+// catalogue.c's watched history (issue #617); tests stub it.
+extern void cat_historico_definir_tempo(const char *imdb, const char *tipo,
+                                        int visto, long long ms);
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -48,7 +55,6 @@
 #define PX_SESSOES 16
 #define PX_FILA_CTL 8
 #define PX_FILA_REL 32
-#define PX_INDICE_MAX 20000
 #define PX_PAGINA_INDICE 200
 #define PX_TAXA_MAX 20000   // kbps ceiling asked of the universal transcoder
 
@@ -104,7 +110,9 @@ long long px_ms(double seg) {
   return (long long)(seg * 1000.0 + 0.5);
 }
 
-const char *px_metodo_nome(int m) { return m == PX_METODO_DIRETO ? "DirectPlay" : "Transcode"; }
+const char *px_metodo_nome(int m) {
+  return m == PX_METODO_DIRETO ? "DirectPlay" : m == PX_METODO_STREAM ? "DirectStream" : "Transcode";
+}
 
 static int soDigitos(const char *s, size_t max) {
   size_t n = 0;
@@ -335,10 +343,11 @@ static void imagem(const PxConta *c, const char *caminho, int w, int h, char *ds
            c->base, w, h, enc, c->token);
 }
 
-static void guidsDe(const char *ini, const char *fim, char imdb[16], long *tmdb) {
+static void guidsDe(const char *ini, const char *fim, char imdb[16], long *tmdb, long *tvdb) {
   const char *gi, *gf, *p;
   imdb[0] = 0;
   *tmdb = 0;
+  if (tvdb) *tvdb = 0;
   if (!blocoRaiz(ini, fim, "Guid", &gi, &gf)) return;
   p = gi + 1;
   while ((p = elemento(p, gf)) != NULL) {
@@ -346,14 +355,58 @@ static void guidsDe(const char *ini, const char *fim, char imdb[16], long *tmdb)
     char id[80] = "";
     if (!f) break;
     if (*p == '{' && txtRaiz(p, f, "id", id, sizeof id)) {
-      if (!strncmp(id, "imdb://tt", 9) && strlen(id + 7) < 16 && soDigitos(id + 9, 10)) copiar(imdb, 16, id + 7);
+      if (!strncmp(id, "imdb://tt", 9) && strlen(id + 7) < 12 && soDigitos(id + 9, 9)) copiar(imdb, 12, id + 7);
       else if (!strncmp(id, "tmdb://", 7) && soDigitos(id + 7, 9)) *tmdb = atol(id + 7);
+      else if (tvdb && !strncmp(id, "tvdb://", 7) && soDigitos(id + 7, 9)) *tvdb = atol(id + 7);
     }
     p = f;
   }
 }
 
-int px_ler_indice(const char *corpo, size_t n, PxIdx *idx, int *nIdx, int maxIdx, int *total) {
+// One index row from a listing item (movie, show or episode). Only ids, the
+// title hash, year, quality and the watched flag are kept.
+static int linhaIndice(const char *p, const char *f, const char *serieRk, SrvIdxItem *e) {
+  char tipo[16] = "", titulo[200] = "", res[16] = "";
+  const char *mi, *mf, *q;
+  double h = 0;
+  memset(e, 0, sizeof *e);
+  txtRaiz(p, f, "type", tipo, sizeof tipo);
+  if (!strcmp(tipo, "movie")) e->tipo = 'm';
+  else if (!strcmp(tipo, "show")) e->tipo = 's';
+  else if (!strcmp(tipo, "episode")) e->tipo = 'e';
+  else return 0;
+  if (!chaveTxt(p, f, "ratingKey", e->item, sizeof e->item)) return 0;
+  guidsDe(p, f, e->imdb, &e->tmdb, &e->tvdb);
+  txtRaiz(p, f, "title", titulo, sizeof titulo);
+  e->ano = (short)numRaiz(p, f, "year", 0);
+  e->atualizado = (long long)numRaiz(p, f, "updatedAt", 0);
+  e->visto = e->tipo == 's'
+    ? numRaiz(p, f, "leafCount", 0) > 0 &&
+      numRaiz(p, f, "viewedLeafCount", 0) >= numRaiz(p, f, "leafCount", 0)
+    : numRaiz(p, f, "viewCount", 0) > 0;
+  e->vistoMs = (long long)numRaiz(p, f, "lastViewedAt", 0) * 1000LL;
+  // Same clock unit as Jellyfin ticks: both are position * 10,000,000.
+  e->retomadoTicks = (long long)(numRaiz(p, f, "viewOffset", 0) * 10000.0 + 0.5);
+  e->duracaoTicks = (long long)(numRaiz(p, f, "duration", 0) * 10000.0 + 0.5);
+  if (blocoRaiz(p, f, "Media", &mi, &mf) && (q = elemento(mi + 1, mf)) != NULL && *q == '{') {
+    const char *qf = depoisElemento(q);
+    if (qf) {
+      h = numRaiz(q, qf, "height", 0);
+      txtRaiz(q, qf, "videoResolution", res, sizeof res);
+      if (h <= 0) h = !strcmp(res, "4k") ? 2160 : atoi(res);
+    }
+  }
+  e->altura = (unsigned short)(h >= 2000 ? 2160 : h >= 1000 ? 1080 : h >= 700 ? 720 : h > 0 ? 480 : 0);
+  if (e->tipo == 'e') {
+    double t = numRaiz(p, f, "parentIndex", -1), ix = numRaiz(p, f, "index", -1);
+    if (t < 0 || ix <= 0 || t > 999 || ix > 30000 || !serieRk || !*serieRk) return 0;
+    e->temporada = (short)t; e->episodio = (short)ix;
+    copiar(e->serie, sizeof e->serie, serieRk);
+  } else e->tituloHash = srvidx_titulo_hash(titulo);
+  return 1;
+}
+
+int px_ler_indice(const char *corpo, size_t n, const char *serieRk, SrvIdx *x, int *total) {
   const char *mi, *mf, *ai, *af, *p;
   int vistos = 0;
   if (total) *total = 0;
@@ -366,37 +419,36 @@ int px_ler_indice(const char *corpo, size_t n, PxIdx *idx, int *nIdx, int maxIdx
   p = ai + 1;
   while ((p = elemento(p, af)) != NULL) {
     const char *f = depoisElemento(p);
-    char tipo[16] = "";
+    SrvIdxItem e;
     if (!f) break;
     if (*p == '{') {
       vistos++;
-      txtRaiz(p, f, "type", tipo, sizeof tipo);
-      if ((!strcmp(tipo, "movie") || !strcmp(tipo, "show")) && *nIdx < maxIdx) {
-        PxIdx *e = &idx[*nIdx];
-        memset(e, 0, sizeof *e);
-        if (chaveTxt(p, f, "ratingKey", e->rk, sizeof e->rk)) {
-          guidsDe(p, f, e->imdb, &e->tmdb);
-          e->tipo = tipo[0] == 'm' ? 'm' : 's';
-          if (e->imdb[0] || e->tmdb) (*nIdx)++;
-        }
-      }
+      if (linhaIndice(p, f, serieRk, &e)) srvidx_por(x, &e);
     }
     p = f;
   }
   return vistos;
 }
 
-static int itemDe(const PxConta *c, const char *ini, const char *fim, CatItem *it) {
-  char rk[24] = "", tipo[16] = "", caminho[320] = "", cr[16] = "";
+// `canonico`: a Home row item with an IMDb/TMDB Guid IS that catalogue title
+// (see jellyfin.c itemDeEx); without one it keeps the opaque "px:" id.
+static int itemDeEx(const PxConta *c, const char *ini, const char *fim, CatItem *it, int canonico) {
+  char rk[24] = "", tipo[16] = "", caminho[320] = "", cr[16] = "", imdb[16];
   const char *bi, *bf;
   double ano, dur, r, off;
+  long tmdb;
   memset(it, 0, sizeof *it);
   if (!chaveTxt(ini, fim, "ratingKey", rk, sizeof rk)) return 0;
   txtRaiz(ini, fim, "type", tipo, sizeof tipo);
   if (!strcmp(tipo, "movie")) copiar(it->tipo, sizeof it->tipo, "movie");
-  else if (!strcmp(tipo, "show")) copiar(it->tipo, sizeof it->tipo, "series");
+  else if (!strcmp(tipo, "show") || !strcmp(tipo, "episode")) copiar(it->tipo, sizeof it->tipo, "series");
+  else if (!strcmp(tipo, "collection")) copiar(it->tipo, sizeof it->tipo, "group");
+  else if (!strcmp(tipo, "playlist")) copiar(it->tipo, sizeof it->tipo, "list");
   else return 0;
-  if (!jfid_montar_p(JFID_PREFIXO_PLEX, it->imdb, sizeof it->imdb, c->servidorId, rk)) return 0;
+  guidsDe(ini, fim, imdb, &tmdb, NULL);
+  if (canonico && it->tipo[0] != 'g' && it->tipo[0] != 'l' && imdb[0]) copiar(it->imdb, sizeof it->imdb, imdb);
+  else if (canonico && it->tipo[0] != 'g' && it->tipo[0] != 'l' && tmdb > 0) snprintf(it->imdb, sizeof it->imdb, "tmdb:%ld", tmdb);
+  else if (!jfid_montar_p(JFID_PREFIXO_PLEX, it->imdb, sizeof it->imdb, c->servidorId, rk)) return 0;
   txtRaiz(ini, fim, "title", it->titulo, sizeof it->titulo);
   txtRaiz(ini, fim, "summary", it->sinopse, sizeof it->sinopse);
   txtRaiz(ini, fim, "contentRating", cr, sizeof cr);
@@ -438,16 +490,29 @@ static int itemDe(const PxConta *c, const char *ini, const char *fim, CatItem *i
       p = f;
     }
   }
+  it->retomadoMs = (long long)numRaiz(ini, fim, "lastViewedAt", 0) * 1000LL;
   off = numRaiz(ini, fim, "viewOffset", 0);
   if (off > 0 && dur > off) {
     it->progresso = (int)(off * 100.0 / dur);
     it->restanteMin = (int)((dur - off) / 60000.0 + 0.5);
   }
+  if (!strcmp(tipo, "episode")) {
+    if (!chaveTxt(ini, fim, "grandparentRatingKey", rk, sizeof rk) ||
+        !jfid_montar_p(JFID_PREFIXO_PLEX, it->imdb, sizeof it->imdb, c->servidorId, rk)) return 0;
+    copiar(it->nomeEpisodio, sizeof it->nomeEpisodio, it->titulo);
+    txtRaiz(ini, fim, "grandparentTitle", it->titulo, sizeof it->titulo);
+    it->temporada = (int)numRaiz(ini, fim, "parentIndex", 0);
+    it->episodio = (int)numRaiz(ini, fim, "index", 0);
+  }
   copiar(it->origem, sizeof it->origem, "plex");
   return 1;
 }
+static int itemDe(const PxConta *c, const char *ini, const char *fim, CatItem *it) {
+  return itemDeEx(c, ini, fim, it, 0);
+}
 
-int px_ler_itens(const PxConta *c, const char *corpo, size_t n, CatItem *out, int max, int *total) {
+static int px_ler_itensEx(const PxConta *c, const char *corpo, size_t n, CatItem *out, int max, int *total, int *raw) {
+  if (raw) *raw = 0;
   const char *mi, *mf, *ai, *af, *p;
   int k = 0;
   if (total) *total = 0;
@@ -461,10 +526,15 @@ int px_ler_itens(const PxConta *c, const char *corpo, size_t n, CatItem *out, in
   while (k < max && (p = elemento(p, af)) != NULL) {
     const char *f = depoisElemento(p);
     if (!f) break;
-    if (*p == '{' && itemDe(c, p, f, &out[k])) k++;
+    if (raw) (*raw)++;
+    if (*p == '{' && itemDeEx(c, p, f, &out[k], 1)) k++;
     p = f;
   }
   return k;
+}
+
+int px_ler_itens(const PxConta *c, const char *corpo, size_t n, CatItem *out, int max, int *total) {
+  return px_ler_itensEx(c, corpo, n, out, max, total, NULL);
 }
 
 int px_ler_detalhe(const PxConta *c, const char *corpo, size_t n, CatItem *out) {
@@ -560,38 +630,119 @@ int px_ler_episodio_rk(const char *corpo, size_t n, int temp, int ep, char *rk, 
   return 0;
 }
 
-// "tt0111161", "tt0944947:2:5", "tmdb:278", "tmdb:1399:1:3".
+// "tt0111161", "tt0944947:2:5", "tmdb:278", "tmdb:1399:1:3" (srvidx.h).
 int px_id_titulo(const char *id, char imdb[16], long *tmdb, int *temp, int *ep) {
-  const char *p;
-  int a = 0, b = 0;
-  imdb[0] = 0;
-  *tmdb = 0;
-  if (temp) *temp = 0;
-  if (ep) *ep = 0;
-  if (!id) return 0;
-  if (id[0] == 't' && id[1] == 't' && isdigit((unsigned char)id[2])) {
-    size_t n = strspn(id + 2, "0123456789");
-    if (n == 0 || n > 10) return 0;
-    snprintf(imdb, 16, "%.*s", (int)(n + 2), id);
-    p = id + 2 + n;
-  } else if (!strncmp(id, "tmdb:", 5) && isdigit((unsigned char)id[5])) {
-    char *e;
-    *tmdb = strtol(id + 5, &e, 10);
-    if (*tmdb <= 0) return 0;
-    p = e;
-  } else return 0;
-  if (*p == ':' && sscanf(p, ":%d:%d", &a, &b) == 2) { if (temp) *temp = a; if (ep) *ep = b; }
-  else if (*p) return 0;
+  return srvidx_id_titulo(id, imdb, tmdb, temp, ep);
+}
+
+// --------------------------------------------------------- direct play gate
+// Plex containers are "mkv", "mp4", "mpegts"...; the capability lists of
+// jellyfin.c say "ts". DTS is "dca" (and "dca-ma") on Plex.
+static const char *contNome(const char *c) { return !strcasecmp(c, "mpegts") ? "ts" : c; }
+
+int px_ler_midias(const char *corpo, size_t n, PxMidiaInfo *out, int max) {
+  const char *ai, *af, *p, *mi, *mf;
+  int k = 0;
+  if (!arrayDe(corpo, n, "Metadata", &ai, &af)) return PX_ERR_FORMATO;
+  p = elemento(ai + 1, af);
+  if (!p || *p != '{') return PX_ERR_FORMATO;
+  af = depoisElemento(p);
+  if (!af || !blocoRaiz(p, af, "Media", &mi, &mf)) return PX_ERR_FORMATO;
+  p = mi + 1;
+  while (k < max && (p = elemento(p, mf)) != NULL) {
+    const char *f = depoisElemento(p), *pi, *pf, *q;
+    PxMidiaInfo *m = &out[k];
+    if (!f) break;
+    memset(m, 0, sizeof *m);
+    if (*p == '{') {
+      txtRaiz(p, f, "container", m->cont, sizeof m->cont);
+      txtRaiz(p, f, "videoCodec", m->vcod, sizeof m->vcod);
+      txtRaiz(p, f, "audioCodec", m->acod, sizeof m->acod);
+      // The SELECTED tracks decide: a file whose default audio is DTS but that
+      // also has an AC3 track still plays the DTS one unless told otherwise.
+      if (blocoRaiz(p, f, "Part", &pi, &pf) && (q = elemento(pi + 1, pf)) != NULL && *q == '{') {
+        const char *qf = depoisElemento(q), *si, *sf, *w;
+        if (qf && blocoRaiz(q, qf, "Stream", &si, &sf)) {
+          w = si + 1;
+          while ((w = elemento(w, sf)) != NULL) {
+            const char *wf = depoisElemento(w);
+            if (!wf) break;
+            if (*w == '{' && boolRaiz(w, wf, "selected", 0)) {
+              int t = (int)numRaiz(w, wf, "streamType", 0);
+              if (t == 2) txtRaiz(w, wf, "codec", m->acod, sizeof m->acod);
+              else if (t == 3) txtRaiz(w, wf, "codec", m->leg, sizeof m->leg);
+            }
+            w = wf;
+          }
+        }
+      }
+    }
+    k++;
+    p = f;
+  }
+  return k;
+}
+
+int px_video_suportado(JfBackend b, const char *vcod) {
+  const char *cont, *vid, *aud;
+  return jf_capacidades(b, &cont, &vid, &aud) && jf_lista_tem(vid, vcod);
+}
+
+// The TV's own table first: Plex is never asked to approve what this pipeline
+// is known not to open (DTS/TrueHD on every backend here, PGS/VobSub burned
+// subtitles, HEVC on the desktop build).
+int px_direto_suportado(JfBackend b, const PxMidiaInfo *m) {
+  const char *cont, *vid, *aud;
+  if (!m || !jf_capacidades(b, &cont, &vid, &aud)) return 0;
+  if (!jf_lista_tem(cont, contNome(m->cont)) || !jf_lista_tem(vid, m->vcod)) return 0;
+  if (m->acod[0] && !jf_lista_tem(aud, m->acod)) return 0;
+  if (m->leg[0] && (!strcasecmp(m->leg, "pgs") || !strcasecmp(m->leg, "vobsub") ||
+                    !strcasecmp(m->leg, "dvd_subtitle") || !strcasecmp(m->leg, "hdmv_pgs_subtitle")))
+    return 0;
   return 1;
 }
 
-int pxidx_achar(const PxIdx *v, int n, const char *imdb, long tmdb, char tipo) {
-  int i;
-  if (imdb && imdb[0])
-    for (i = 0; i < n; i++) if (v[i].tipo == tipo && v[i].imdb[0] && !strcmp(v[i].imdb, imdb)) return i;
-  if (tmdb > 0)
-    for (i = 0; i < n; i++) if (v[i].tipo == tipo && v[i].tmdb == tmdb) return i;
-  return -1;
+// X-Plex-Client-Profile-Extra with the same table, so the server's decision
+// is made against what this TV opens and not against a generic profile.
+int px_perfil_extra(JfBackend b, char *dst, size_t tam) {
+  const char *cont, *vid, *aud;
+  char c2[96];
+  size_t k = 0;
+  const char *p;
+  if (!jf_capacidades(b, &cont, &vid, &aud)) return 0;
+  for (p = cont; *p && k + 8 < sizeof c2;) {
+    size_t n = strcspn(p, ",");
+    if (n == 2 && !strncmp(p, "ts", 2)) k += (size_t)snprintf(c2 + k, sizeof c2 - k, "%smpegts", k ? "," : "");
+    else k += (size_t)snprintf(c2 + k, sizeof c2 - k, "%s%.*s", k ? "," : "", (int)n, p);
+    p += n;
+    if (*p == ',') p++;
+  }
+  return snprintf(dst, tam,
+                  "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts"
+                  "&videoCodec=h264&audioCodec=aac,ac3)"
+                  "+add-direct-play-profile(type=videoProfile&container=%s&videoCodec=%s&audioCodec=%s"
+                  "&subtitleCodec=srt,ass,ssa,webvtt)", c2, vid, aud) < (int)tam;
+}
+
+// /video/:/transcode/universal/decision. directPlayDecisionCode 1000 is "Direct
+// play OK"; any other code says no. Without the code, the first Part's
+// "decision" decides. Nothing readable: unknown (the caller keeps its own
+// table's verdict).
+int px_ler_decisao(const char *corpo, size_t n) {
+  const char *mi, *mf, *ai, *af, *p, *f, *bi, *bf, *q;
+  double cod;
+  char dec[24] = "";
+  if (!corpo || !blocoRaiz(corpo, corpo + n, "MediaContainer", &mi, &mf)) return PX_DEC_DESCONHECIDO;
+  cod = numRaiz(mi, mf, "directPlayDecisionCode", -1);
+  if (cod >= 0) return cod == 1000 ? PX_DEC_DIRETO : PX_DEC_NAO;
+  if (!blocoRaiz(mi, mf, "Metadata", &ai, &af) || !(p = elemento(ai + 1, af)) || *p != '{' ||
+      !(f = depoisElemento(p)) || !blocoRaiz(p, f, "Media", &bi, &bf) || !(q = elemento(bi + 1, bf)) || *q != '{')
+    return PX_DEC_DESCONHECIDO;
+  f = depoisElemento(q);
+  if (!f || !blocoRaiz(q, f, "Part", &bi, &bf) || !(q = elemento(bi + 1, bf)) || *q != '{' ||
+      !(f = depoisElemento(q)) || !txtRaiz(q, f, "decision", dec, sizeof dec) || !dec[0])
+    return PX_DEC_DESCONHECIDO;
+  return !strcmp(dec, "directplay") ? PX_DEC_DIRETO : PX_DEC_NAO;
 }
 
 // --------------------------------------------------------- playback sources
@@ -639,7 +790,8 @@ static void descreverMidia(const char *mi, const char *mf, Stream *s, int metodo
     for (u = cont; *u; u++) *u = (char)toupper((unsigned char)*u);
   }
   {
-    const char *m = metodo == PX_METODO_DIRETO ? "Direct play" : "Transcode (HLS)";
+    const char *m = metodo == PX_METODO_DIRETO ? "Direct play" :
+                    metodo == PX_METODO_STREAM ? "Direct stream (HLS)" : "Transcode (HLS)";
     if (s->altura) snprintf(s->rotulo, sizeof s->rotulo, "%dp · %s", s->altura, m);
     else copiar(s->rotulo, sizeof s->rotulo, m);
   }
@@ -667,11 +819,17 @@ static void novoSessao(char *dst, size_t tam) {
   snprintf(dst, tam, "nuvio%02x%02x%02x%02x%02x%02x", b[0], b[1], b[2], b[3], b[4], b[5]);
 }
 
-int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n, PxPlayback *out) {
+int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n,
+                  const signed char *direto, PxPlayback *out) {
   const char *ai, *af, *p, *mi, *mf;
   double durItem;
-  int idx = 0;
+  int idx = 0, nInfo;
+  PxMidiaInfo info[PX_FONTES_MAX];
+  JfBackend b = jellyfin_backend();
   memset(out, 0, sizeof *out);
+  memset(info, 0, sizeof info);
+  nInfo = px_ler_midias(corpo, n, info, PX_FONTES_MAX);
+  if (nInfo < 0) nInfo = 0;
   if (!arrayDe(corpo, n, "Metadata", &ai, &af)) return PX_ERR_FORMATO;
   p = elemento(ai + 1, af);
   if (!p || *p != '{') return PX_ERR_FORMATO;
@@ -700,8 +858,19 @@ int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n,
     for (k = 0; k < 2 && out->n < PX_FONTES_MAX; k++) {
       PxSessaoPlay *sp = &out->sessao[out->n];
       Stream *s = &out->fonte[out->n];
-      int metodo = k == 0 ? PX_METODO_DIRETO : PX_METODO_TRANSCODE;
-      if (k == 1 && idx != 0) continue;     // one transcode alternative, for the first version
+      int metodo, pode;
+      // DIRECT PLAY ONLY WHEN IT CAN WORK: this TV's table says so AND the
+      // server's decision did not refuse it (direto[idx]: 1 yes, 0 no, -1 the
+      // server could not tell). Before this every Part was "Direct play", and
+      // a DTS/TrueHD/PGS file gave a black screen or no sound.
+      pode = idx < nInfo && px_direto_suportado(b, &info[idx]) && (!direto || direto[idx] != PX_DEC_NAO);
+      if (k == 0 && !pode) continue;
+      // The HLS alternative: always for the first version, and for any version
+      // that cannot play directly. With a video codec this TV opens the server
+      // copies the video and converts only what it must (direct stream).
+      if (k == 1 && idx != 0 && pode) continue;
+      metodo = k == 0 ? PX_METODO_DIRETO
+             : idx < nInfo && px_video_suportado(b, info[idx].vcod) ? PX_METODO_STREAM : PX_METODO_TRANSCODE;
       memset(sp, 0, sizeof *sp);
       memset(s, 0, sizeof *s);
       copiar(sp->ratingKey, sizeof sp->ratingKey, rk);
@@ -750,10 +919,19 @@ static int preparoInterrompido(void *u);
 
 // One request. Logs operation/status/latency only: never the URL (the host can
 // be a private address, the query can carry a token).
+static int pedirEx(const PxConta *c, const char *url, const char *token, const char *metodo,
+                   const char *operacao, unsigned prazo, RedeJob *job, RedeResposta *r,
+                   const char *extra);
 static int pedir(const PxConta *c, const char *url, const char *token, const char *metodo,
                  const char *operacao, unsigned prazo, RedeJob *job, RedeResposta *r) {
+  return pedirEx(c, url, token, metodo, operacao, prazo, job, r, NULL);
+}
+// `extra`: one more complete header line ("Name: value"), or NULL.
+static int pedirEx(const PxConta *c, const char *url, const char *token, const char *metodo,
+                   const char *operacao, unsigned prazo, RedeJob *job, RedeResposta *r,
+                   const char *extra) {
   char tok[120], did[96], dev[64], cab[8][200];
-  const char *cabs[10];
+  const char *cabs[11];
   int k = 0, i;
   RedePedido p;
   memset(r, 0, sizeof *r);
@@ -774,6 +952,7 @@ static int pedir(const PxConta *c, const char *url, const char *token, const cha
     snprintf(cab[6], sizeof cab[6], "X-Plex-Token: %.150s", tok);
     cabs[k++] = cab[6];
   }
+  if (extra && *extra) cabs[k++] = extra;
   cabs[k] = NULL;
   memset(&p, 0, sizeof p);
   p.metodo = metodo;
@@ -782,6 +961,7 @@ static int pedir(const PxConta *c, const char *url, const char *token, const cha
   p.prazo_ms = prazo ? prazo : PX_PRAZO_MS;
   p.max_bytes = PX_CORPO_MAX;
   p.seguir = 1;
+  p.mesmo_host = 1;   // a redirect never takes this request to another machine
   p.job = job;
   pthread_once(&preparoUma, preparoIniciar);
   PxPreparoCancelamento *preparoCancel = preparoChaveCriada ? pthread_getspecific(preparoChave) : NULL;
@@ -904,8 +1084,14 @@ static void caminhoSecao(char *dst, size_t tam, const char *secao, int inicio, i
            "&X-Plex-Container-Start=%d&X-Plex-Container-Size=%d", secao, extra, inicio, limite);
 }
 
+static int px_itensEx(const PxConta *c, RedeJob *job, const char *secao, int inicio, int limite,
+             CatItem *out, int max, int *total, int *raw);
 int px_itens(const PxConta *c, RedeJob *job, const char *secao, int inicio, int limite,
              CatItem *out, int max, int *total) {
+  return px_itensEx(c, job, secao, inicio, limite, out, max, total, NULL);
+}
+static int px_itensEx(const PxConta *c, RedeJob *job, const char *secao, int inicio, int limite,
+             CatItem *out, int max, int *total, int *raw) {
   RedeResposta r;
   char caminho[256];
   int e, n;
@@ -915,22 +1101,39 @@ int px_itens(const PxConta *c, RedeJob *job, const char *secao, int inicio, int 
   caminhoSecao(caminho, sizeof caminho, secao, inicio, limite, "");
   e = pedirServidor(c, caminho, "GET", "library items", PX_PRAZO_LISTA_MS, job, &r);
   if (e) return e;
-  n = px_ler_itens(c, r.corpo, r.n_corpo, out, max, total);
+  n = px_ler_itensEx(c, r.corpo, r.n_corpo, out, max, total, raw);
   rede_resposta_limpar(&r);
   return n;
 }
 
+// `desde` > 0: only items updated after it (Plex filter "updatedAt>>=",
+// strictly greater). limite 0 is the cheap count check (totalSize only).
 int px_indice(const PxConta *c, RedeJob *job, const char *secao, int inicio, int limite,
-              PxIdx *idx, int *nIdx, int maxIdx, int *total) {
+              long long desde, SrvIdx *x, int *total) {
   RedeResposta r;
-  char caminho[256];
+  char caminho[320], extra[48] = "";
   int e, n;
   if (total) *total = 0;
-  if (!soDigitos(secao, 12) || inicio < 0 || limite <= 0) return PX_ERR_ENTRADA;
-  caminhoSecao(caminho, sizeof caminho, secao, inicio, limite, "");
+  if (!soDigitos(secao, 12) || inicio < 0 || limite < 0 || limite > 500) return PX_ERR_ENTRADA;
+  if (desde > 0) snprintf(extra, sizeof extra, "&updatedAt%%3E%%3E=%lld", desde - 1);
+  caminhoSecao(caminho, sizeof caminho, secao, inicio, limite, extra);
   e = pedirServidor(c, caminho, "GET", "library index", PX_PRAZO_LISTA_MS, job, &r);
   if (e) return e;
-  n = px_ler_indice(r.corpo, r.n_corpo, idx, nIdx, maxIdx, total);
+  n = px_ler_indice(r.corpo, r.n_corpo, NULL, x, total);
+  rede_resposta_limpar(&r);
+  return n;
+}
+
+int px_indice_episodios(const PxConta *c, RedeJob *job, const char *serieRk, SrvIdx *x) {
+  RedeResposta r;
+  char caminho[160];
+  int e, n;
+  if (!soDigitos(serieRk, 20)) return PX_ERR_ENTRADA;
+  snprintf(caminho, sizeof caminho, "/library/metadata/%s/allLeaves?includeGuids=1"
+           "&X-Plex-Container-Start=0&X-Plex-Container-Size=2000", serieRk);
+  e = pedirServidor(c, caminho, "GET", "episode index", PX_PRAZO_LISTA_MS, job, &r);
+  if (e) return e;
+  n = px_ler_indice(r.corpo, r.n_corpo, serieRk, x, NULL);
   rede_resposta_limpar(&r);
   return n;
 }
@@ -976,16 +1179,57 @@ int px_achar_episodio(const PxConta *c, RedeJob *job, const char *serieRk, int t
   return e;
 }
 
+// Asks the server whether version `midia` of item `rk` can play directly on
+// this backend. PX_DEC_* or PX_ERR_CANCELADO. A server without the route
+// (old PMS) or any other failure is PX_DEC_DESCONHECIDO: the TV's own table
+// still decides, the source list is never lost to a decision request.
+int px_decisao(const PxConta *c, RedeJob *job, const char *rk, int midia, JfBackend b) {
+  RedeResposta r;
+  char url[1400], perfil[600], cab[640], sessao[24];
+  int e;
+  if (!soDigitos(rk, 20) || midia < 0 || midia > 99 || !c->base[0]) return PX_ERR_ENTRADA;
+  if (!px_perfil_extra(b, perfil, sizeof perfil)) return PX_DEC_DESCONHECIDO;
+  snprintf(cab, sizeof cab, "X-Plex-Client-Profile-Extra: %s", perfil);
+  novoSessao(sessao, sizeof sessao);
+  if (snprintf(url, sizeof url,
+               "%s/video/:/transcode/universal/decision?path=%%2Flibrary%%2Fmetadata%%2F%s&mediaIndex=%d"
+               "&partIndex=0&protocol=hls&directPlay=1&directStream=1&directStreamAudio=1&fastSeek=1&hasMDE=1"
+               "&maxVideoBitrate=%d&X-Plex-Client-Profile-Name=Generic&X-Plex-Session-Identifier=%s",
+               c->base, rk, midia, PX_TAXA_MAX, sessao) >= (int)sizeof url)
+    return PX_ERR_ENTRADA;
+  e = pedirEx(c, url, c->token, "GET", "playback decision", PX_PRAZO_SONDA_MS * 2, job, &r, cab);
+  if (e == PX_ERR_CANCELADO) return e;
+  if (e) return PX_DEC_DESCONHECIDO;
+  e = px_ler_decisao(r.corpo, r.n_corpo);
+  rede_resposta_limpar(&r);
+  return e;
+}
+
 int px_fontes(const PxConta *c, RedeJob *job, const char *rk, PxPlayback *out) {
   RedeResposta r;
   char caminho[160];
-  int e;
+  signed char dir[PX_FONTES_MAX];
+  PxMidiaInfo info[PX_FONTES_MAX];
+  JfBackend b = jellyfin_backend();
+  int e, nm, i;
   memset(out, 0, sizeof *out);
   if (!soDigitos(rk, 20)) return PX_ERR_ENTRADA;
   snprintf(caminho, sizeof caminho, "/library/metadata/%s", rk);
   e = pedirServidor(c, caminho, "GET", "playback info", 0, job, &r);
   if (e) return e;
-  e = px_ler_fontes(c, rk, r.corpo, r.n_corpo, out);
+  nm = px_ler_midias(r.corpo, r.n_corpo, info, PX_FONTES_MAX);
+  for (i = 0; i < PX_FONTES_MAX; i++) dir[i] = PX_DEC_NAO;
+  // One decision per version this TV could open as is; a version the table
+  // already refuses costs no request.
+  for (i = 0; i < nm; i++) {
+    if (!px_direto_suportado(b, &info[i])) continue;
+    e = px_decisao(c, job, rk, i, b);
+    if (e == PX_ERR_CANCELADO) { rede_resposta_limpar(&r); return e; }
+    dir[i] = (signed char)(e == PX_DEC_NAO ? PX_DEC_NAO : e == PX_DEC_DIRETO ? PX_DEC_DIRETO : PX_DEC_DESCONHECIDO);
+    printf("[plex] version %d: %s\n", i + 1, dir[i] == PX_DEC_DIRETO ? "direct play approved"
+           : dir[i] == PX_DEC_NAO ? "direct play refused by the server" : "server decision unknown");
+  }
+  e = px_ler_fontes(c, rk, r.corpo, r.n_corpo, dir, out);
   rede_resposta_limpar(&r);
   return e;
 }
@@ -1007,7 +1251,7 @@ int px_reportar(const PxConta *c, RedeJob *job, int evento, const PxSessaoPlay *
                     evento == PX_REL_INICIO ? "playback start" : evento == PX_REL_FIM ? "playback stopped" : "playback progress",
                     8000, job, &r);
   if (!e) rede_resposta_limpar(&r);
-  if (!e && evento == PX_REL_FIM && s->metodo == PX_METODO_TRANSCODE && s->sessaoId[0]) {
+  if (!e && evento == PX_REL_FIM && s->metodo != PX_METODO_DIRETO && s->sessaoId[0]) {
     char cam[200];
     snprintf(cam, sizeof cam, "/video/:/transcode/universal/stop?session=%s", s->sessaoId);
     if (!pedirServidor(c, cam, "GET", "release transcode", 5000, job, &r)) rede_resposta_limpar(&r);
@@ -1065,8 +1309,13 @@ static CatItem *snapItens;
 static CatFileira snapFils[PX_FIL_MAX];
 static int nSnapFils, nSnapItens;
 static unsigned snapVersao;
-static PxIdx *indice;
-static int nIndice;
+// Matching index (srvidx.h) of the connected server, this profile only.
+static SrvIdx idx;
+static char idxTag[JFID_TAG + 1];
+#define PX_EPS_BUSCADOS 16
+#define PX_EPS_VALIDADE_MS (30u * 60u * 1000u)
+static struct { char serie[SRVIDX_ITEM]; unsigned long long ms; } epsBuscados[PX_EPS_BUSCADOS];
+static int nEpsBuscados;
 static unsigned indiceVersao = 1;
 
 static char fontesAlvo[JFID_MAX];
@@ -1119,6 +1368,9 @@ static int gravarConta(const PxConta *c, int perfil) {
   linha(txt, sizeof txt, &k, "dev", c->dispositivoId);
   linha(txt, sizeof txt, &k, "tokc", c->tokenConta);
   linha(txt, sizeof txt, &k, "toks", c->token);
+  char selection[256]; copiar(selection, sizeof selection, c->bibliotecas);
+  for (char *p = selection; *p; p++) if (*p == '\n') *p = ',';
+  linha(txt, sizeof txt, &k, "libs", selection);
   if (k >= sizeof txt) { apagarSegredo(txt, sizeof txt); return 0; }
   snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
   dados_fs_travar();
@@ -1163,6 +1415,24 @@ static void novoDispositivo(char *dst, size_t tam) {
            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], perfis_ativo());
 }
 
+// Under trava. The index always belongs to the connected server (8 hex of
+// its machineIdentifier); another server or none drops it and loads that
+// server's file, if any.
+static void idxConferirLocked(void) {
+  char tag[JFID_TAG + 1];
+  int i;
+  snprintf(tag, sizeof tag, "%.8s", conta.servidorId);
+  for (i = 0; tag[i]; i++) if (tag[i] >= 'A' && tag[i] <= 'F') tag[i] = (char)(tag[i] + 32);
+  if (!strcmp(tag, idxTag)) return;
+  indiceVersao++; srvidx_limpar(&idx);
+  nEpsBuscados = 0;
+  copiar(idxTag, sizeof idxTag, tag);
+  if (tag[0] && perfilLido >= 0) {
+    int n = srvidx_ler(&idx, perfilLido, "px", tag);
+    if (n > 0) printf("[plex] index from disk: %d row(s)\n", n);
+  }
+}
+
 static void carregarLocked(void) {
   char nome[40], *txt;
   int p = perfis_ativo();
@@ -1180,6 +1450,8 @@ static void carregarLocked(void) {
     lerCampo(txt, "dev", conta.dispositivoId, sizeof conta.dispositivoId);
     lerCampo(txt, "tokc", conta.tokenConta, sizeof conta.tokenConta);
     lerCampo(txt, "toks", conta.token, sizeof conta.token);
+    lerCampo(txt, "libs", conta.bibliotecas, sizeof conta.bibliotecas);
+    for (char *p = conta.bibliotecas; *p; p++) if (*p == ',') *p = '\n';
     apagarSegredo(txt, strlen(txt));
     free(txt);
   }
@@ -1188,13 +1460,16 @@ static void carregarLocked(void) {
   if (conta.tokenConta[0] && conta.token[0] && conta.base[0] && conta.servidorId[0]) estado = PX_EST_CONECTADO;
   else estado = PX_EST_SEM_CONTA;
   detalhe[0] = 0;
+  indiceVersao++; srvidx_limpar(&idx);
+  idxTag[0] = 0;
+  nEpsBuscados = 0;
+  idxConferirLocked();
 }
 
 static void soltarSnapshotLocked(void) {
   int i;
   nSnapFils = nSnapItens = 0;
   snapVersao++;
-  free(indice); indice = NULL; nIndice = 0;
   indiceVersao++;
   free(fontesLista); fontesLista = NULL; nFontes = 0;
   fontesAlvo[0] = 0; fontesEstado = PX_FONTES_NADA;
@@ -1275,6 +1550,7 @@ void plex_esquecer(void) {
   cancelEntrada++;
   arquivo(nome, sizeof nome, perfis_ativo());
   dados_apagar(nome);
+  srvidx_apagar(perfis_ativo(), "px"); servidores_cache_apagar(perfis_ativo(), 0);
   apagarSegredo(&conta, sizeof conta);
   carregarLocked();
   pthread_mutex_unlock(&trava);
@@ -1292,6 +1568,7 @@ void plex_esquecer_todos(void) {
   relatoriosDescartarLocked();
   cancelEntrada++;
   for (i = 1; i <= 32; i++) { arquivo(nome, sizeof nome, i); dados_apagar(nome); }
+  for (i = 0; i <= 32; i++) { srvidx_apagar(i, "px"); servidores_cache_apagar(i, 0); }
   apagarSegredo(&conta, sizeof conta);
   carregarLocked();
   pthread_mutex_unlock(&trava);
@@ -1316,6 +1593,8 @@ void plex_encerrar(void) {
   if (grupo) { rede_grupo_cancelar(grupo); rede_grupo_soltar(grupo); grupo = NULL; }
   if (grupoRel) { rede_grupo_cancelar(grupoRel); rede_grupo_soltar(grupoRel); grupoRel = NULL; }
   apagarSegredo(&conta, sizeof conta);
+  indiceVersao++; srvidx_limpar(&idx);
+  idxTag[0] = 0;
   pthread_mutex_unlock(&trava);
 }
 
@@ -1414,6 +1693,23 @@ void plex_cancelar_entrada(void) {
   pthread_mutex_unlock(&trava);
 }
 
+unsigned px_setup_conta(PxConta *out, int *perfil) {
+  garantir(); pthread_mutex_lock(&trava); conferirPerfilLocked();
+  *out = conta; *perfil = perfilLido; unsigned g = geracao;
+  pthread_mutex_unlock(&trava); return g;
+}
+int px_setup_aceitar(const PxConta *c, int perfil, unsigned generation) {
+  int ok = 0; pthread_mutex_lock(&trava);
+  if (perfil == perfis_ativo() && perfil == perfilLido && generation == geracao && c->token[0] && c->servidorId[0]) {
+    int selectionChanged = strcmp(conta.bibliotecas, c->bibliotecas) != 0;
+    avancarLocked(); conta = *c; gravarConta(c, perfil);
+    if (selectionChanged) { srvidx_limpar(&idx); idxTag[0] = 0; srvidx_apagar(perfil, "px"); }
+    idxConferirLocked();
+    definirEstadoLocked(PX_EST_CONECTADO, c->servidorNome); enfileirarLocked(T_BIBLIOTECAS, ""); ok = 1;
+  }
+  pthread_mutex_unlock(&trava); return ok;
+}
+
 int plex_proximo_servidor(void) {
   int ok = 0;
   garantir();
@@ -1447,7 +1743,7 @@ int plex_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int max
   for (r = 0; r < nSnapFils && nf < maxFils; r++) {
     const CatFileira *f = &snapFils[r];
     if (ni + f->n > maxItens) break;
-    memcpy(itens + ni, snapItens + f->ini, sizeof(CatItem) * (size_t)f->n);
+    if (itens) memcpy(itens + ni, snapItens + f->ini, sizeof(CatItem) * (size_t)f->n);
     fils[nf] = *f;
     fils[nf].ini = ni;
     ni += f->n;
@@ -1458,17 +1754,124 @@ int plex_fileiras_copiar(CatItem *itens, int maxItens, CatFileira *fils, int max
   return nf;
 }
 
+int plex_pagina(const char *chave, int inicio, int limite, CatItem *out, int max, int *total, int *raw) {
+  if (raw) *raw = 0;
+  PxConta c;
+  unsigned g;
+  int n;
+  if (total) *total = 0;
+  if (!plex_chave_fileira(chave) || !out || max <= 0 || inicio < 0 || limite <= 0) return -1;
+  if (limite > 100) limite = 100;
+  if (!strcmp(chave + 5, "nextup")) {
+    if (total) *total = 0;
+    if (inicio) return 0;
+    n = plex_atividade("nextup", out, max);
+    if (total && n > 0) *total = n;
+    if (raw && n > 0) *raw = n;
+    return n;
+  }
+  pthread_mutex_lock(&trava);
+  conferirPerfilLocked();
+  if (estado != PX_EST_CONECTADO) { pthread_mutex_unlock(&trava); return -1; }
+  c = conta; g = geracao;
+  pthread_mutex_unlock(&trava);
+  { const char *id = chave + 5;
+    if (!strcmp(id, "collections") || !strcmp(id, "playlists") || !strncmp(id, "group_", 6) || !strncmp(id, "list_", 5)) {
+      RedeResposta r;
+      char rota[256];
+      int e;
+      if (!strncmp(id, "group_", 6) || !strncmp(id, "list_", 5)) {
+        const char *rk = id + (id[0] == 'g' ? 6 : 5);
+        if (!soDigitos(rk, 20)) { apagarSegredo(&c, sizeof c); return -1; }
+        snprintf(rota, sizeof rota, "%s/%s/%s?includeGuids=1&X-Plex-Container-Start=%d&X-Plex-Container-Size=%d",
+          id[0] == 'g' ? "/library/collections" : "/playlists", rk, id[0] == 'g' ? "children" : "items", inicio, limite);
+      } else snprintf(rota, sizeof rota, "%sincludeGuids=1&X-Plex-Container-Start=%d&X-Plex-Container-Size=%d",
+          !strcmp(id, "collections") ? "/library/all?type=18&" : "/playlists?", inicio, limite);
+      e = pedirServidor(&c, rota, "GET", "collection items", PX_PRAZO_LISTA_MS, NULL, &r);
+      n = e ? e : px_ler_itensEx(&c, r.corpo, r.n_corpo, out, max, total, raw);
+      rede_resposta_limpar(&r);
+    } else {
+      n = px_itensEx(&c, NULL, id, inicio, limite, out, max, total, raw);
+    }
+  }
+  apagarSegredo(&c, sizeof c);
+  pthread_mutex_lock(&trava);
+  conferirPerfilLocked();
+  if (g != geracao) n = -1;
+  pthread_mutex_unlock(&trava);
+  return n;
+}
+
+int plex_atividade(const char *modo, CatItem *out, int max) {
+  PxConta c;
+  RedeResposta r;
+  char caminho[200];
+  unsigned g;
+  int n, e;
+  if (strcmp(modo, "resume") && strcmp(modo, "nextup")) return -1;
+  pthread_mutex_lock(&trava);
+  conferirPerfilLocked();
+  if (estado != PX_EST_CONECTADO) { pthread_mutex_unlock(&trava); return 0; }
+  c = conta; g = geracao;
+  pthread_mutex_unlock(&trava);
+  snprintf(caminho, sizeof caminho, "%s?includeGuids=1&X-Plex-Container-Start=0&X-Plex-Container-Size=%d",
+           !strcmp(modo, "resume") ? "/hubs/home/continueWatching" : "/library/onDeck", max);
+  e = pedirServidor(&c, caminho, "GET", "activity", PX_PRAZO_LISTA_MS, NULL, &r);
+  n = e;
+  if (!e) {
+    const char *ai, *af, *p;
+    n = 0;
+    if (arrayDe(r.corpo, r.n_corpo, "Metadata", &ai, &af)) {
+      p = ai + 1;
+      while (n < max && (p = elemento(p, af)) != NULL) {
+        const char *f = depoisElemento(p);
+        char tipo[24] = "", serie[40] = "";
+        CatItem *it = &out[n];
+        if (!f) break;
+        txtRaiz(p, f, "type", tipo, sizeof tipo);
+        if (!strcmp(tipo, "episode") && chaveTxt(p, f, "grandparentRatingKey", serie, sizeof serie)) {
+          SrvIdxItem s = {0};
+          pthread_mutex_lock(&trava);
+          for (int k = 0; k < idx.n; k++)
+            if (idx.v[k].tipo == 's' && !strcmp(idx.v[k].item, serie)) { s = idx.v[k]; break; }
+          pthread_mutex_unlock(&trava);
+          if (px_detalhe(&c, NULL, serie, it) == PX_OK) {
+            double dur = numRaiz(p, f, "duration", 0), pos = numRaiz(p, f, "viewOffset", 0);
+            if (s.imdb[0]) copiar(it->imdb, sizeof it->imdb, s.imdb);
+            else if (s.tmdb > 0) snprintf(it->imdb, sizeof it->imdb, "tmdb:%ld", s.tmdb);
+            it->temporada = (int)numRaiz(p, f, "parentIndex", 0);
+            it->episodio = (int)numRaiz(p, f, "index", 0);
+            txtRaiz(p, f, "title", it->nomeEpisodio, sizeof it->nomeEpisodio);
+            it->retomadoMs = (long long)numRaiz(p, f, "lastViewedAt", 0) * 1000LL;
+            it->progresso = dur > pos && pos > 0 ? (int)(pos * 100.0 / dur) : 0;
+            it->restanteMin = dur > pos ? (int)((dur - pos) / 60000.0) : 0;
+            n++;
+          }
+        } else if (itemDeEx(&c, p, f, it, 1)) n++;
+        p = f;
+      }
+    }
+  }
+  rede_resposta_limpar(&r);
+  apagarSegredo(&c, sizeof c);
+  pthread_mutex_lock(&trava);
+  conferirPerfilLocked();
+  if (g != geracao) n = -1;
+  pthread_mutex_unlock(&trava);
+  return n;
+}
+
 int plex_casamento_ativo(void) {
   int ok;
   pthread_mutex_lock(&trava);
-  ok = estado == PX_EST_CONECTADO && conta.token[0] && nIndice > 0;
+  ok = estado == PX_EST_CONECTADO && conta.token[0] && idx.n > 0;
   pthread_mutex_unlock(&trava);
   return ok;
 }
 int plex_indice_n(void) {
   int n;
   pthread_mutex_lock(&trava);
-  n = nIndice;
+  n = idx.n;
   pthread_mutex_unlock(&trava);
   return n;
 }
@@ -1513,6 +1916,7 @@ static void publicarConta(const Tarefa *t, RedeJob *j, PxConta *c, int nServidor
     nServ = nServidores;
     reresolveu = 0;
     gravarConta(&conta, perfilLido);
+    idxConferirLocked();
     definirEstadoLocked(PX_EST_CONECTADO, conta.servidorNome);
     enfileirarLocked(T_BIBLIOTECAS, "");
   }
@@ -1521,6 +1925,18 @@ static void publicarConta(const Tarefa *t, RedeJob *j, PxConta *c, int nServidor
 
 // Finds the server on the account and a reachable connection. `ciclar`: take
 // the server after the current one instead of the current/default one.
+int px_setup_manual(PxConta *c, const char *url, RedeJob *job) {
+  char base[512];
+  if (!url || strchr(url, '@') || jf_url_normalizar(url, base, sizeof base) != JF_OK || strlen(base) >= sizeof c->base) return PX_ERR_ENTRADA;
+  PxServidor s[PX_SERVIDORES_MAX]; int n = px_recursos(c, job, s, PX_SERVIDORES_MAX), e = PX_ERR_SEM_SERVIDOR;
+  for (int i = 0; i < n; i++) {
+    s[i].nCon = 1; memset(s[i].con, 0, sizeof s[i].con);
+    copiar(s[i].con[0].uri, sizeof s[i].con[0].uri, base);
+    e = px_escolher(c, job, &s[i]); if (e == PX_OK) break;
+  }
+  apagarSegredo(s, sizeof s); return n < 0 ? n : e;
+}
+
 static int resolverServidor(PxConta *c, RedeJob *j, int ciclar, int *nServidores) {
   PxServidor *srv = malloc(sizeof *srv * PX_SERVIDORES_MAX);
   int n, i, atual = -1, ini, e = PX_ERR_SEM_SERVIDOR, tentativas;
@@ -1642,20 +2058,97 @@ static void tarefaResolver(const Tarefa *t) {
   fecharTarefa(j);
 }
 
+// THE MATCHING INDEX PASS (same policy as jellyfin.c): incremental from the
+// newest updatedAt when an index exists, then a count check per library that
+// pays for one full rebuild only when the totals disagree (deletions).
+// Episodes (fetched on demand) survive a rebuild.
+static void indexar(const Tarefa *t, RedeJob *j, const PxConta *c, const PxBiblioteca *libs, int nl) {
+  SrvIdx novo;
+  char tag[JFID_TAG + 1], *txt = NULL;
+  long long marca;
+  int nAtual, totalTodos, e = PX_OK, incremental, passada, i, perfil = -1;
+  pthread_mutex_lock(&trava);
+  if (!aindaVale(t, j)) { pthread_mutex_unlock(&trava); return; }
+  idxConferirLocked();
+  marca = idx.marca;
+  nAtual = srvidx_n_tipo(&idx, 'm') + srvidx_n_tipo(&idx, 's');
+  copiar(tag, sizeof tag, idxTag);
+  pthread_mutex_unlock(&trava);
+  if (!tag[0]) return;
+  incremental = marca > 0 && nAtual > 0;
+  for (passada = 0; passada < 2; passada++) {
+    srvidx_iniciar(&novo);
+    totalTodos = 0;
+    for (i = 0; i < nl && e == PX_OK; i++) {
+      if (!srv_biblioteca_selecionada(c->bibliotecas, libs[i].id)) continue;
+      int inicio = 0, total = 0, vistos;
+      if (incremental) {
+        e = px_indice(c, j, libs[i].id, 0, 0, 0, &novo, &total);   // the count, nothing else
+        if (e < 0) break;
+        e = PX_OK;
+        totalTodos += total;
+      }
+      do {
+        pthread_mutex_lock(&trava);
+        if (!aindaVale(t, j)) e = PX_ERR_CANCELADO;
+        pthread_mutex_unlock(&trava);
+        if (e != PX_OK) break;
+        vistos = px_indice(c, j, libs[i].id, inicio, PX_PAGINA_INDICE, incremental ? marca : 0, &novo, &total);
+        if (vistos < 0) { e = vistos; break; }
+        if (!vistos) break;
+        inicio += vistos;
+      } while (inicio < total && novo.n < SRVIDX_MAX);
+    }
+    if (e != PX_OK) break;
+    pthread_mutex_lock(&trava);
+    if (!aindaVale(t, j) || strcmp(tag, idxTag)) e = PX_ERR_CANCELADO;
+    else if (incremental) { srvidx_juntar(&idx, &novo); indiceVersao++; }
+    else {
+      int k;
+      for (k = 0; k < idx.n; k++) if (idx.v[k].tipo == 'e') srvidx_por(&novo, &idx.v[k]);
+      indiceVersao++; srvidx_limpar(&idx);
+      idx = novo;
+      srvidx_iniciar(&novo);
+    }
+    nAtual = srvidx_n_tipo(&idx, 'm') + srvidx_n_tipo(&idx, 's');
+    // WATCHED STATE BACK (#617), as in jellyfin.c's indexar.
+    { int i;
+      for (i = 0; i < idx.n; i++)
+        if (idx.v[i].visto && (idx.v[i].tipo == 'm' || idx.v[i].tipo == 's') &&
+            idx.v[i].imdb[0])
+          cat_historico_definir_tempo(idx.v[i].imdb, idx.v[i].tipo == 's' ? "series" : "movie",
+                                    // Watched without a date: keep any newer known mark (ms 0 = "now").
+                                    1, idx.v[i].vistoMs > 0 ? idx.v[i].vistoMs : 1); }
+    pthread_mutex_unlock(&trava);
+    srvidx_limpar(&novo);
+    if (e != PX_OK) break;
+    printf("[plex] index: %d title(s), %s pass\n", nAtual, incremental ? "incremental" : "full");
+    if (!incremental || totalTodos == nAtual) break;
+    incremental = 0;
+  }
+  srvidx_limpar(&novo);
+  if (e != PX_OK) return;
+  pthread_mutex_lock(&trava);
+  if (aindaVale(t, j) && !strcmp(tag, idxTag)) { txt = srvidx_serializar(&idx, tag); perfil = perfilLido; }
+  pthread_mutex_unlock(&trava);
+  if (txt && perfil >= 0) srvidx_gravar_texto(perfil, "px", txt);
+  free(txt);
+}
+
 static void tarefaBibliotecas(const Tarefa *t) {
   PxConta c;
   RedeJob *j = abrirTarefa(t, &c);
   PxBiblioteca libs[PX_FIL_MAX];
   CatItem *itens;
   CatFileira fils[PX_FIL_MAX];
-  PxIdx *idx = NULL;
-  int nl, nf = 0, ni = 0, e = PX_OK, i, nIdx = 0;
+  int nl, nf = 0, ni = 0, e = PX_OK, i;
   if (!j) return;
   itens = calloc((size_t)PX_FIL_MAX * PX_POR_FILEIRA, sizeof *itens);
   if (!itens) { fecharTarefa(j); return; }
   nl = px_bibliotecas(&c, j, libs, PX_FIL_MAX);
   if (nl < 0) e = nl;
   for (i = 0; i < nl && e == PX_OK; i++) {
+    if (!srv_biblioteca_selecionada(c.bibliotecas, libs[i].id)) continue;
     int total, n = px_itens(&c, j, libs[i].id, 0, PX_POR_FILEIRA, itens + ni, PX_POR_FILEIRA, &total);
     if (n < 0) { e = n; break; }
     if (!n) continue;
@@ -1666,14 +2159,33 @@ static void tarefaBibliotecas(const Tarefa *t) {
     fils[nf].ini = ni; fils[nf].n = n;
     ni += n; nf++;
   }
+  if (e == PX_OK) indexar(t, j, &c, libs, nl);
+  if (e == PX_OK && nf < PX_FIL_MAX) {
+    int n = plex_atividade("nextup", itens + ni, PX_POR_FILEIRA);
+    if (n > 0) {
+      memset(&fils[nf], 0, sizeof fils[nf]);
+      copiar(fils[nf].chave, sizeof fils[nf].chave, "plex_nextup");
+      copiar(fils[nf].titulo, sizeof fils[nf].titulo, c.servidorNome);
+      copiar(fils[nf].tipo, sizeof fils[nf].tipo, "series");
+      fils[nf].ini = ni; fils[nf].n = n;
+      ni += n; nf++;
+    }
+  }
   pthread_mutex_lock(&trava);
   if (aindaVale(t, j)) {
     if (e == PX_OK) {
+      // The periodic refresh usually brings the same rows: rebuild the Home
+      // only when something a row shows changed.
+      int igual = nf == nSnapFils && ni == nSnapItens && snapItens, q;
+      for (q = 0; igual && q < nf; q++) igual = !strcmp(fils[q].chave, snapFils[q].chave) && fils[q].n == snapFils[q].n;
+      for (q = 0; igual && q < ni; q++)
+        igual = !strcmp(itens[q].imdb, snapItens[q].imdb) && itens[q].progresso == snapItens[q].progresso &&
+                !strcmp(itens[q].poster, snapItens[q].poster);
       free(snapItens);
       snapItens = itens; itens = NULL;
       memcpy(snapFils, fils, sizeof(CatFileira) * (size_t)nf);
       nSnapFils = nf; nSnapItens = ni;
-      snapVersao++;
+      if (!igual) snapVersao++;
       reresolveu = 0;
     } else if ((e == PX_ERR_REDE || e == PX_ERR_AUTH) && !reresolveu) {
       // The saved connection may be stale (new IP, relay, rotated server
@@ -1684,35 +2196,7 @@ static void tarefaBibliotecas(const Tarefa *t) {
   }
   pthread_mutex_unlock(&trava);
   free(itens);
-  // Second pass, after the rows are on screen: the external-id index.
-  if (e == PX_OK) {
-    idx = malloc(sizeof *idx * PX_INDICE_MAX);
-    for (i = 0; idx && i < nl; i++) {
-      int inicio = 0, total = 0, vistos;
-      do {
-        pthread_mutex_lock(&trava);
-        e = aindaVale(t, j) ? PX_OK : PX_ERR_CANCELADO;
-        pthread_mutex_unlock(&trava);
-        if (e != PX_OK) break;
-        vistos = px_indice(&c, j, libs[i].id, inicio, PX_PAGINA_INDICE, idx, &nIdx, PX_INDICE_MAX, &total);
-        if (vistos <= 0) break;
-        inicio += vistos;
-      } while (inicio < total && nIdx < PX_INDICE_MAX);
-      if (e != PX_OK) break;
-    }
-    pthread_mutex_lock(&trava);
-    if (idx && e == PX_OK && aindaVale(t, j)) {
-      free(indice);
-      indice = idx; idx = NULL;
-      nIndice = nIdx;
-      indiceVersao++;
-      printf("[plex] external-id index: %d title(s)\n", nIdx);
-    }
-    pthread_mutex_unlock(&trava);
-    free(idx);
-  }
-  apagarSegredo(&c, sizeof c);
-  fecharTarefa(j);
+
 }
 
 // Registers check-in sessions for freshly listed sources (under trava).
@@ -1956,6 +2440,121 @@ int plex_fontes_colher(const char *alvo, Stream **lista, int *n) {
   return e;
 }
 
+// Under trava: the index row of a catalogue title, -1 none (srvidx.h rules).
+static int idxAcharLocked(const char *id, const char *tipo, const char *titulo, int ano, int *temp, int *ep) {
+  char imdb[16];
+  long tmdb;
+  int k, serie;
+  if (estado != PX_EST_CONECTADO || !idxTag[0] || strncasecmp(idxTag, conta.servidorId, JFID_TAG)) return -1;
+  if (!srvidx_id_titulo(id, imdb, &tmdb, temp, ep)) return -1;
+  serie = tipo && (!strcmp(tipo, "series") || !strcmp(tipo, "tv"));
+  k = srvidx_achar(&idx, imdb, tmdb, 0, serie ? 's' : 'm');
+  if (k < 0 && titulo && *titulo) k = srvidx_achar_titulo(&idx, srvidx_titulo_hash(titulo), ano, serie ? 's' : 'm');
+  return k >= 0 ? k : -1;
+}
+
+int plex_tem(const char *id, const char *tipo, SrvAchado *info) {
+  int k;
+  garantir();
+  pthread_mutex_lock(&trava);
+  conferirPerfilLocked();
+  k = idxAcharLocked(id, tipo, NULL, 0, NULL, NULL);
+  if (k < 0) {
+    char tag[JFID_TAG + 1], item[JFID_ITEM + 1];
+    if (jfid_partes_p(JFID_PREFIXO_PLEX, id, tag, item) && !strncmp(tag, conta.servidorId, JFID_TAG))
+      for (int i = 0; i < idx.n; i++)
+        if (!strcmp(idx.v[i].item, item)) { k = i; break; }
+  }
+  if (k >= 0 && info) {
+    memset(info, 0, sizeof *info);
+    copiar(info->servidor, sizeof info->servidor, conta.servidorNome[0] ? conta.servidorNome : "Plex");
+    copiar(info->tipoSrv, sizeof info->tipoSrv, "Plex");
+    info->altura = idx.v[k].altura;
+    info->hdr = idx.v[k].hdr;
+    info->visto = idx.v[k].visto;
+    info->local = srvidx_host_local(conta.base);
+  }
+  pthread_mutex_unlock(&trava);
+  return k >= 0;
+}
+
+static int epsRecentesLocked(const char *serie) {
+  int i;
+  for (i = 0; i < nEpsBuscados; i++)
+    if (!strcmp(epsBuscados[i].serie, serie)) return agoraMs() - epsBuscados[i].ms < PX_EPS_VALIDADE_MS;
+  return 0;
+}
+static void epsMarcarLocked(const char *serie) {
+  int i, alvo = -1;
+  for (i = 0; i < nEpsBuscados; i++) if (!strcmp(epsBuscados[i].serie, serie)) alvo = i;
+  if (alvo < 0) {
+    if (nEpsBuscados < PX_EPS_BUSCADOS) alvo = nEpsBuscados++;
+    else { memmove(epsBuscados, epsBuscados + 1, sizeof epsBuscados[0] * (PX_EPS_BUSCADOS - 1)); alvo = PX_EPS_BUSCADOS - 1; }
+  }
+  copiar(epsBuscados[alvo].serie, sizeof epsBuscados[alvo].serie, serie);
+  epsBuscados[alvo].ms = agoraMs();
+}
+
+// Per-episode user data (issue #617). Offline when the index already has the
+// episodes; otherwise one /library/metadata/<rk>/allLeaves request feeds the
+// index and the answer. Returns episodes filled, 0 none, -1 failed.
+int plex_episodios(const char *id, SrvEp *out, int max) {
+  char rk[SRVIDX_ITEM], tag[JFID_TAG + 1];
+  PxConta c;
+  RedeJob *j = NULL;
+  SrvIdx eps;
+  unsigned g = 0;
+  int k, n = 0, buscar = 0, temSerie = 0;
+  if (!id || !out || max <= 0) return 0;
+  garantir();
+  pthread_mutex_lock(&trava);
+  conferirPerfilLocked();
+  k = grupo ? idxAcharLocked(id, "series", NULL, 0, NULL, NULL) : -1;
+  if (k >= 0) {
+    copiar(rk, sizeof rk, idx.v[k].item);
+    temSerie = 1;
+    buscar = !epsRecentesLocked(rk);        // #617: expiry refreshes, not only an empty cache
+    c = conta; g = geracao;
+    copiar(tag, sizeof tag, idxTag);
+    if (buscar) j = rede_job_criar(grupo);
+  }
+  pthread_mutex_unlock(&trava);
+  if (!temSerie) return 0;
+  if (buscar) {
+    char *txt = NULL;
+    int perfil = -1, e;
+    if (!j) return 0;
+    srvidx_iniciar(&eps);
+    e = px_indice_episodios(&c, j, rk, &eps);
+    pthread_mutex_lock(&trava);
+    if (g == geracao && rede_job_estado(j) == REDE_OK && !strcmp(tag, idxTag) && e >= 0) {
+      srvidx_juntar(&idx, &eps); indiceVersao++;
+      epsMarcarLocked(rk);
+      txt = srvidx_serializar(&idx, tag); perfil = perfilLido;
+    }
+    pthread_mutex_unlock(&trava);
+    srvidx_limpar(&eps);
+    if (txt && perfil >= 0) srvidx_gravar_texto(perfil, "px", txt);
+    free(txt);
+    rede_job_soltar(j);
+    if (e < 0) return -1;
+  }
+  pthread_mutex_lock(&trava);
+  for (k = 0; k < idx.n && n < max; k++) {
+    const SrvIdxItem *e = &idx.v[k];
+    if (e->tipo != 'e' || strcmp(e->serie, rk)) continue;
+    out[n].temporada = e->temporada;
+    out[n].episodio = e->episodio;
+    out[n].visto = e->visto;
+    out[n].vistoMs = e->vistoMs;
+    out[n].retomadoTicks = e->retomadoTicks;
+    out[n].duracaoTicks = e->duracaoTicks;
+    n++;
+  }
+  pthread_mutex_unlock(&trava);
+  return n;
+}
+
 // Optional profile-epoch linkage keeps isolated Plex fixtures usable while
 // complete apps reject every old opening, including A -> B -> A.
 #if defined(__APPLE__) && (defined(__GNUC__) || defined(__clang__))
@@ -2000,7 +2599,7 @@ static void preparoPerfilDestravar(void) {
 
 struct PlexPreparo {
   PxConta conta;
-  PxIdx *indice;
+  SrvIdx indice;
   int nIndice, perfil, conectado;
   unsigned geracao, indiceVersao;
   uint64_t sessaoPerfil;
@@ -2011,7 +2610,7 @@ struct PlexPreparo {
 static int preparoValeLocked(const PlexPreparo *p) {
   return p && !parar && p->perfil == perfilLido && p->perfil == perfis_ativo() &&
          preparoPerfilAtual(p->sessaoPerfil) && p->geracao == geracao &&
-         p->indiceVersao == indiceVersao && p->nIndice == nIndice &&
+         p->indiceVersao == indiceVersao && p->nIndice == idx.n &&
          p->conectado == (estado == PX_EST_CONECTADO) &&
          !memcmp(&p->conta, &conta, sizeof conta) &&
          (!p->job || rede_job_estado(p->job) == REDE_OK);
@@ -2031,13 +2630,13 @@ PlexPreparo *plex_preparo_capturar(void) {
   conferirPerfilLocked();
   p->conta = conta; p->perfil = perfilLido; p->geracao = geracao;
   p->indiceVersao = indiceVersao; p->conectado = estado == PX_EST_CONECTADO;
-  p->nIndice = nIndice;
+  p->nIndice = idx.n;
   if (p->nIndice > 0) {
-    p->indice = malloc(sizeof *p->indice * (size_t)p->nIndice);
-    if (p->indice) memcpy(p->indice, indice, sizeof *p->indice * (size_t)p->nIndice);
+    p->indice.v = malloc(sizeof *p->indice.v * (size_t)p->nIndice);
+    if (p->indice.v) { memcpy(p->indice.v, idx.v, sizeof *p->indice.v * (size_t)p->nIndice); p->indice.n = p->indice.cap = p->nIndice; }
   }
   if (grupo) p->job = rede_job_criar(grupo);
-  int ok = preparoValeLocked(p) && (!p->nIndice || p->indice) && (!p->conectado || p->job);
+  int ok = preparoValeLocked(p) && (!p->nIndice || p->indice.v) && (!p->conectado || p->job);
   pthread_mutex_unlock(&trava);
   preparoPerfilDestravar();
   if (!ok) { plex_preparo_liberar(p); return NULL; }
@@ -2046,7 +2645,7 @@ PlexPreparo *plex_preparo_capturar(void) {
 void plex_preparo_liberar(PlexPreparo *p) {
   if (!p) return;
   if (p->job) { rede_job_cancelar(p->job); rede_job_soltar(p->job); }
-  free(p->indice);
+  srvidx_limpar(&p->indice);
   apagarSegredo(p, sizeof *p); free(p);
 }
 static int preparoInterrompido(void *u) {
@@ -2096,9 +2695,9 @@ int plex_preparo_consultar(const PlexPreparo *p, const char *id, const char *tip
   // them to an addon or reinterpret them as a public catalogue title.
   if (!px_id_titulo(id, imdb, &tmdb, &temp, &ep) || !p->conectado || !p->nIndice) return 0;
   serie = tipo && (!strcmp(tipo, "series") || !strcmp(tipo, "tv"));
-  i = pxidx_achar(p->indice, p->nIndice, imdb, tmdb, serie ? 's' : 'm');
+  i = srvidx_achar(&p->indice, imdb, tmdb, 0, serie ? 's' : 'm');
   if (i < 0) return 0;
-  copiar(rk, sizeof rk, p->indice[i].rk);
+  copiar(rk, sizeof rk, p->indice.v[i].item);
   if (!p->job) return -1;
   pthread_once(&preparoUma, preparoIniciar);
   if (!preparoChaveCriada) return -1;
@@ -2140,53 +2739,84 @@ fim:
 
 // A regular catalogue title ("tt...", "tmdb:...") the server has. Runs on the
 // extra-source thread of addons.c, so it may block; every wait is a RedeJob of
-// the current generation.
-int plex_consultar(const char *id, const char *tipo, int (*cancelado)(void *), void *ctx, Stream **saida) {
-  char imdb[16], rk[24] = "", epRk[24] = "";
-  long tmdb;
-  int temp, ep, serie, i, e;
+// the current generation. No index hit: no request at all.
+int plex_consultar(const char *id, const char *tipo, const char *titulo, int ano,
+                   int (*cancelado)(void *), void *ctx, Stream **saida) {
+  char rk[SRVIDX_ITEM] = "", serieRk[SRVIDX_ITEM] = "", tag[JFID_TAG + 1];
+  int temp = 0, ep = 0, serie, k, e = PX_OK, buscar = 0, n = 0;
   PxConta c;
   RedeJob *j = NULL;
-  unsigned g;
-  PxPlayback *pb;
+  unsigned g = 0;
+  PxPlayback *pb = NULL;
   *saida = NULL;
   garantir();
-  if (!px_id_titulo(id, imdb, &tmdb, &temp, &ep)) return 0;
   serie = tipo && (!strcmp(tipo, "series") || !strcmp(tipo, "tv"));
   pthread_mutex_lock(&trava);
   conferirPerfilLocked();
-  g = geracao;
-  i = estado == PX_EST_CONECTADO && grupo && nIndice > 0 ? pxidx_achar(indice, nIndice, imdb, tmdb, serie ? 's' : 'm') : -1;
-  if (i >= 0) { copiar(rk, sizeof rk, indice[i].rk); c = conta; j = rede_job_criar(grupo); }
+  k = grupo ? idxAcharLocked(id, tipo, titulo, ano, &temp, &ep) : -1;
+  if (k >= 0) {
+    copiar(rk, sizeof rk, idx.v[k].item);
+    if (serie) {
+      int ke;
+      // A series without an episode in the id means "the first one", as in addons.c.
+      if (temp < 0 || ep <= 0) { temp = temp > 0 ? temp : 1; ep = ep > 0 ? ep : 1; }
+      copiar(serieRk, sizeof serieRk, rk);
+      ke = srvidx_achar_ep(&idx, serieRk, temp, ep);
+      if (ke >= 0) copiar(rk, sizeof rk, idx.v[ke].item);
+      else if (epsRecentesLocked(serieRk)) rk[0] = 0;
+      else buscar = 1;
+    }
+    if (rk[0]) { c = conta; g = geracao; j = rede_job_criar(grupo); copiar(tag, sizeof tag, idxTag); }
+  }
   pthread_mutex_unlock(&trava);
   if (!j) return 0;
-  pb = malloc(sizeof *pb);
-  if (!pb) { rede_job_soltar(j); apagarSegredo(&c, sizeof c); return 0; }
-  e = PX_OK;
-  if (serie) {
-    // A series without an episode in the id means "the first one", as in addons.c.
-    if (temp < 0 || ep <= 0) { temp = temp > 0 ? temp : 1; ep = ep > 0 ? ep : 1; }
-    e = px_achar_episodio(&c, j, rk, temp, ep, epRk, sizeof epRk);
-    // 1 found, 0 no such episode on the server, negative = failure.
-    if (e == 1) { copiar(rk, sizeof rk, epRk); e = PX_OK; }
-    else if (e == 0) e = PX_ERR_HTTP;
+  if (buscar) {
+    // Episodes on demand, once per show per half hour, into the index (and disk).
+    SrvIdx eps;
+    char *txt = NULL;
+    int perfil = -1;
+    srvidx_iniciar(&eps);
+    e = px_indice_episodios(&c, j, serieRk, &eps);
+    rk[0] = 0;
+    pthread_mutex_lock(&trava);
+    if (g == geracao && rede_job_estado(j) == REDE_OK && !strcmp(tag, idxTag) && e >= 0) {
+      int ke;
+      srvidx_juntar(&idx, &eps); indiceVersao++;
+      epsMarcarLocked(serieRk);
+      ke = srvidx_achar_ep(&idx, serieRk, temp, ep);
+      if (ke >= 0) copiar(rk, sizeof rk, idx.v[ke].item);
+      if (eps.n) { txt = srvidx_serializar(&idx, tag); perfil = perfilLido; }
+    }
+    pthread_mutex_unlock(&trava);
+    srvidx_limpar(&eps);
+    if (txt && perfil >= 0) srvidx_gravar_texto(perfil, "px", txt);
+    free(txt);
+    e = rk[0] ? PX_OK : PX_ERR_HTTP;
   }
   if (e == PX_OK && cancelado && cancelado(ctx)) e = PX_ERR_CANCELADO;
-  if (e == PX_OK) e = px_fontes(&c, j, rk, pb);
+  if (e == PX_OK) {
+    pb = malloc(sizeof *pb);
+    e = pb ? px_fontes(&c, j, rk, pb) : PX_ERR_REDE;
+  }
   pthread_mutex_lock(&trava);
   if (g != geracao || rede_job_estado(j) != REDE_OK) e = PX_ERR_CANCELADO;
   else if (e == PX_OK && pb->n) registrarSessoesLocked(pb);
   pthread_mutex_unlock(&trava);
   if (e == PX_OK && pb->n) {
     Stream *l = malloc(sizeof(Stream) * (size_t)pb->n);
-    if (l) { memcpy(l, pb->fonte, sizeof(Stream) * (size_t)pb->n); *saida = l; e = pb->n; }
-    else e = 0;
-  } else e = e == PX_ERR_CANCELADO ? -1 : 0;
-  apagarSegredo(pb, sizeof *pb);
-  free(pb);
+    if (l) {
+      int i;
+      memcpy(l, pb->fonte, sizeof(Stream) * (size_t)pb->n);
+      // The server's own name: the facade turns it into "Local · <name>".
+      for (i = 0; i < pb->n; i++) copiar(l[i].provedor, sizeof l[i].provedor, c.servidorNome[0] ? c.servidorNome : "Plex");
+      *saida = l;
+      n = pb->n;
+    }
+  } else n = e == PX_ERR_CANCELADO ? -1 : 0;
+  if (pb) { apagarSegredo(pb, sizeof *pb); free(pb); }
   apagarSegredo(&c, sizeof c);
   rede_job_soltar(j);
-  return e;
+  return n;
 }
 
 // ---------------------------------------------------------- title page
@@ -2232,6 +2862,9 @@ int plex_ficha(CatItem *item, CatEp *eps, int maxEps) {
       if (!ja && novo->nTemporadas < CAT_TEMP_MAX) novo->temporadas[novo->nTemporadas++] = t;
     }
   }
+  novo->temporada = item->temporada;
+  novo->episodio = item->episodio;
+  copiar(novo->nomeEpisodio, sizeof novo->nomeEpisodio, item->nomeEpisodio);
   novo->naLista = item->naLista;
   novo->listaFontes = item->listaFontes;
   novo->naColecao = item->naColecao;

@@ -138,6 +138,18 @@ int main(void) {
     ok(mkvfix_ler_inicio(f, n, &c) == 1 && mkvfix_tracks_pos(f, n, &c) == tpos,
        "tracks position: found walking the top-level elements"); }
 
+  // #648: headers the Tizen player cannot send -> relay through the server.
+  { ok(mkvfix_cab_fora_da_tv(NULL) == 0, "headers: none -> direct");
+    ok(mkvfix_cab_fora_da_tv("") == 0, "headers: empty -> direct");
+    ok(mkvfix_cab_fora_da_tv("User-Agent: Stremio\nCookie: a=b") == 0,
+       "headers: UA+Cookie the TV sends -> direct");
+    ok(mkvfix_cab_fora_da_tv("user-agent: x\ncookie: y") == 0,
+       "headers: names are case-insensitive");
+    ok(mkvfix_cab_fora_da_tv("Referer: https://cdn.example/") == 1,
+       "headers: Referer -> relay");
+    ok(mkvfix_cab_fora_da_tv("User-Agent: x\nOrigin: https://a.b\nCookie: c") == 1,
+       "headers: one unsupported among supported -> relay"); }
+
   printf(falhas ? "mkvfix: %d FAIL(S)\n" : "mkvfix: ok\n", falhas);
   return falhas != 0;
 }

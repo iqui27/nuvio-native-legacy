@@ -142,9 +142,12 @@ int main(void) {
   orcamento = um * 10;
   tex_pressao_memoria(15);
   pressaoAte = SDL_GetTicks() - 1;           // prazo vencido
+  assert(pressaoAtiva() && pressaoPct == 75);
+  assert(limiteBytes() == orcamento / 100 * 75);
+  testTicks += 5001;
   assert(!pressaoAtiva() && pressaoPct == 100);
   assert(limiteBytes() == orcamento);
-  puts("ok  teto volta ao normal sozinho");
+  puts("ok  timed trim recovers gradually before returning to full budget");
 
   // 7. Nivel sem efeito (< 5) nao liga nada.
   limpar();

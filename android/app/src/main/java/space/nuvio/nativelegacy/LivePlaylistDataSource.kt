@@ -30,6 +30,7 @@ internal class LivePlaylistDataSource private constructor(
         private val revalidation: DataSource.Factory,
         private val clock: () -> Long = { SystemClock.elapsedRealtime() },
         private val report: (String) -> Unit = {},
+        internal val liveTsUri: Uri? = null,
     ) : DataSource.Factory {
         private data class Seen(var snapshot: Snapshot, var progressAt: Long, var retryAt: Long = -60_000L)
         private val seen = LinkedHashMap<String, Seen>()
@@ -105,6 +106,15 @@ internal class LivePlaylistDataSource private constructor(
         }
     }
 
+    private var tsPacket = ByteArray(188)
+    private val queuedPackets = ArrayDeque<ByteArray>()
+    private val pesHeaders = mutableMapOf<Int, MutableList<Pair<ByteArray, Int>>>()
+    private var packetPosition = 188
+    private var timestampOffset = 0L
+    private var lastTimestamp = -1L
+    private var reconnectTimestamp = false
+    private var liveTsSpec: DataSpec? = null
+    private var connectionHasData = false
     private var prefix: ByteArrayInputStream? = null
     private var upstreamOpen = false
     private var resolvedUri: Uri? = null
@@ -116,8 +126,22 @@ internal class LivePlaylistDataSource private constructor(
     override fun open(dataSpec: DataSpec): Long {
         upstreamOpen = true
         val length = upstream.open(dataSpec)
+        liveTsSpec = dataSpec.takeIf {
+            it.uri == factory.liveTsUri && it.httpMethod == DataSpec.HTTP_METHOD_GET &&
+                it.position == 0L && it.length == C.LENGTH_UNSET.toLong()
+        }
+        connectionHasData = false
+        packetPosition = 188
+        queuedPackets.clear()
+        pesHeaders.clear()
+        timestampOffset = 0L
+        lastTimestamp = -1L
+        reconnectTimestamp = false
         resolvedUri = upstream.uri
         headers = upstream.responseHeaders
+        // A live TS connection is one portion of an endless stream, even when
+        // the server advertises Content-Length. Keep the extractor loading.
+        if (liveTsSpec != null) return C.LENGTH_UNSET.toLong()
         val http = dataSpec.uri.scheme.equals("http", true) || dataSpec.uri.scheme.equals("https", true)
         val manifest = dataSpec.uri.path?.endsWith(".m3u8", true) == true || headers.any { (key, values) ->
             key.equals("Content-Type", true) && values.any {
@@ -146,17 +170,149 @@ internal class LivePlaylistDataSource private constructor(
             if (read >= 0) return read
             prefix = null
         }
-        return if (upstreamOpen) upstream.read(buffer, offset, length) else C.RESULT_END_OF_INPUT
+        if (!upstreamOpen) return C.RESULT_END_OF_INPUT
+        if (liveTsSpec == null) return upstream.read(buffer, offset, length)
+        if (packetPosition == 188) {
+            if (queuedPackets.isEmpty()) {
+                do {
+                    val packet = ByteArray(188)
+                    var size = 0
+                    while (size < 188) {
+                        val count = readLiveTs(packet, size, 188 - size)
+                        if (count <= 0) throw IOException("Incomplete live TS packet")
+                        size += count
+                    }
+                    queuedPackets.addLast(packet)
+                    rebaseTimestamps(packet)
+                    if (queuedPackets.size > 8192) throw IOException("Live TS PES header stalled")
+                } while (pesHeaders.isNotEmpty())
+            }
+            tsPacket = queuedPackets.removeFirst()
+            packetPosition = 0
+        }
+        val count = minOf(length, 188 - packetPosition)
+        tsPacket.copyInto(buffer, offset, packetPosition, packetPosition + count)
+        packetPosition += count
+        return count
+    }
+
+    private fun readLiveTs(buffer: ByteArray, offset: Int, length: Int): Int {
+        var count = upstream.read(buffer, offset, length)
+        val spec = liveTsSpec
+        if (count == C.RESULT_END_OF_INPUT && spec != null) {
+            if (!connectionHasData) throw IOException("Empty live TS connection")
+            upstreamOpen = false
+            upstream.close()
+            upstreamOpen = true
+            // Reconnect the signed origin, not the expiring redirect or a byte
+            // range into the old broadcast. Preserve headers and request context.
+            upstream.open(spec)
+            resolvedUri = upstream.uri
+            headers = upstream.responseHeaders
+            connectionHasData = false
+            reconnectTimestamp = true
+            pesHeaders.clear()
+            // An HTTP response may end mid-packet; never splice two sessions' packets.
+            if (offset != 0) throw IOException("Truncated live TS packet")
+            count = upstream.read(buffer, offset, length)
+            if (count == C.RESULT_END_OF_INPUT) throw IOException("Empty live TS reconnect")
+        }
+        if (count > 0) connectionHasData = true
+        return count
+    }
+
+    // Keep PCR, PTS and DTS on the same clock across independent HTTP sessions.
+    // Hold packets until each PES timestamp is complete, including interleaved PIDs.
+    private fun rebaseTimestamps(b: ByteArray) {
+        if (b[0] != 0x47.toByte()) throw IOException("Invalid live TS sync byte")
+        val mask = 0x1ffffffffL
+        fun adjusted(raw: Long): Long {
+            var value = raw + timestampOffset
+            // Unwrap the 33-bit clock relative to the previous sample.
+            if (lastTimestamp >= 0) {
+                while (value < lastTimestamp - (1L shl 32)) value += 1L shl 33
+                while (value > lastTimestamp + (1L shl 32)) value -= 1L shl 33
+            }
+            if (reconnectTimestamp) {
+                if (lastTimestamp >= 0 && value <= lastTimestamp) {
+                    timestampOffset += lastTimestamp + 1 - value
+                    value = lastTimestamp + 1
+                }
+                reconnectTimestamp = false
+            }
+            lastTimestamp = maxOf(lastTimestamp, value)
+            return value and mask
+        }
+        val control = (b[3].toInt() ushr 4) and 3
+        var payload = 4
+        if (control and 2 != 0) {
+            val size = b[4].toInt() and 255
+            payload = 5 + size
+            if (payload > 188) throw IOException("Invalid live TS adaptation field")
+            if (size >= 7 && b[5].toInt() and 0x10 != 0) {
+                var raw = 0L
+                repeat(4) { raw = (raw shl 8) or (b[6 + it].toLong() and 255) }
+                raw = (raw shl 1) or ((b[10].toLong() and 128) shr 7)
+                val value = adjusted(raw)
+                repeat(4) { b[6 + it] = (value shr (25 - it * 8)).toByte() }
+                b[10] = ((b[10].toInt() and 127) or ((value.toInt() and 1) shl 7)).toByte()
+            }
+        }
+        if (control and 1 == 0 || payload >= 188) return
+        val pid = ((b[1].toInt() and 31) shl 8) or (b[2].toInt() and 255)
+        if (b[1].toInt() and 0x40 != 0) pesHeaders[pid] = mutableListOf()
+        val parts = pesHeaders[pid] ?: return
+        for (at in payload until 188) {
+            parts.add(b to at)
+            val header = ByteArray(parts.size) { i -> parts[i].first[parts[i].second] }
+            if (header.size == 3 && !header.contentEquals(byteArrayOf(0, 0, 1))) {
+                pesHeaders.remove(pid)
+                return
+            }
+            if (header.size < 9) continue
+            val flags = header[7].toInt() and 0xc0
+            if (flags != 0x80 && flags != 0xc0) {
+                pesHeaders.remove(pid)
+                return
+            }
+            if (header.size < if (flags == 0xc0) 19 else 14) continue
+            rewritePesTimestamp(header, 9, ::adjusted)
+            if (flags == 0xc0) rewritePesTimestamp(header, 14, ::adjusted)
+            parts.forEachIndexed { i, (packet, index) -> packet[index] = header[i] }
+            pesHeaders.remove(pid)
+            return
+        }
+    }
+
+    private fun rewritePesTimestamp(b: ByteArray, at: Int, adjusted: (Long) -> Long) {
+            val raw = ((b[at].toLong() and 14) shl 29) or ((b[at + 1].toLong() and 255) shl 22) or
+                ((b[at + 2].toLong() and 254) shl 14) or ((b[at + 3].toLong() and 255) shl 7) or
+                ((b[at + 4].toLong() and 254) shr 1)
+            val value = adjusted(raw)
+            b[at] = ((b[at].toInt() and 0xf1) or (((value shr 30).toInt() and 7) shl 1)).toByte()
+            b[at + 1] = (value shr 22).toByte()
+            b[at + 2] = ((((value shr 15).toInt() and 127) shl 1) or 1).toByte()
+            b[at + 3] = (value shr 7).toByte()
+            b[at + 4] = (((value.toInt() and 127) shl 1) or 1).toByte()
     }
 
     override fun close() {
         prefix = null
+        liveTsSpec = null
+        queuedPackets.clear()
+        pesHeaders.clear()
+        connectionHasData = false
         resolvedUri = null
         headers = emptyMap()
         if (upstreamOpen) { upstreamOpen = false; upstream.close() }
     }
 
     companion object {
+        // Only the Xtream continuous live endpoint; never VOD or HLS segments.
+        internal fun isLiveTs(uri: Uri): Boolean =
+            (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) &&
+                uri.path?.matches(Regex("/live/[^/]+/[^/]+/[^/]+\\.ts", RegexOption.IGNORE_CASE)) == true
+
         private const val MAX_MANIFEST_BYTES = 256 * 1024
         private fun readBounded(source: DataSource, check: () -> Unit = {}): ByteArray {
             val out = ByteArrayOutputStream()

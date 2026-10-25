@@ -68,7 +68,7 @@ ESCRITA = {
 FONTES = RAIZ / "deploy" / "app" / "fonts"
 FONTE_CJK = "DroidSansFallback-Subset.ttf"
 # A fonte arabe embarcada (tools/fonte-arabe.py): a unica no WASM da Samsung.
-FONTE_ARABE = "NotoNaskhArabic-Subset.ttf"
+FONTE_ARABE = "NotoSansArabic-Regular-Subset.ttf"
 
 LIT = r'"((?:[^"\\]|\\.)*)"'
 LINHA_MESTRA = re.compile(r'^\s*\{\s*' + LIT + r'\s*,\s*' + LIT + r'\s*\},?\s*$')
@@ -179,7 +179,7 @@ def ler_irma(cod):
 def conferir():
     erros = []
     def erro(msg):
-        if len(erros) < 60: erros.append(msg)
+        erros.append(msg)
     mestra = ler_mestra()
     # 2. ordem da mestra, pelos bytes decodificados
     ant = None

@@ -26,7 +26,7 @@ void contapend_reenviar_com(int (*f)(const char *, const char *, const VistoPar 
 #include <time.h>
 
 // Mesmo prototipo que contalib.c e app.c usam; mora em catalogo.c.
-extern void cat_historico_definir_id(const char *imdb, const char *tipo, int visto);
+extern void cat_historico_definir_tempo(const char *imdb, const char *tipo, int visto, long long ms);
 
 // Lote por RPC de vistos. O web manda ate 5000 num corpo so; 200 deixa o corpo
 // abaixo de ~30 KB e uma falha custa pouco para repetir.
@@ -284,8 +284,13 @@ static int registrar(char sup, int perfil, const char *id, const char *tipo,
 
 int contapend_episodios(const char *imdb, const char *tipo,
                         const VistoPar *pares, int n, int visto) {
+  return contapend_episodios_perfil(perfis_ativo(), imdb, tipo, pares, n, visto);
+}
+
+int contapend_episodios_perfil(int perfil, const char *imdb, const char *tipo,
+                               const VistoPar *pares, int n, int visto) {
   char id[24];
-  int i, k = 0, perfil = perfis_ativo();
+  int i, k = 0;
   long long ms = contapend_agora_ms();
   idVisto(imdb, id, sizeof id);
   if (!id[0] || !pares || n < 1 || perfil < 1 || !sessao_logada()) return 0;
@@ -1053,8 +1058,8 @@ int contapend_aplicar_local(void) {
         printf("[visto] marcado por conta-jornal-importacao pos=0 dur=0 assistido=0s id=%s\n", copia[i].id);
         fflush(stdout);
       }
-      cat_historico_definir_id(copia[i].id, copia[i].tipo,
-                               contapend_estado(copia[i].id, copia[i].tipo, 0, 0, copia[i].ms, copia[i].op == '+'));
+      cat_historico_definir_tempo(copia[i].id, copia[i].tipo,
+        contapend_estado(copia[i].id, copia[i].tipo, 0, 0, copia[i].ms, copia[i].op == '+'), copia[i].ms);
     }
     k++;
   }

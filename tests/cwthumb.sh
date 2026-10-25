@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-cwthumb.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 cc src/catalogo.c src/progresso.c src/focus.c src/ajustes.c src/ajlog.c src/posterprov.c \
-  src/redeurl.c src/colecoes.c src/js.c src/metaprov.c src/catordem.c src/fileiras.c \
+  src/redeurl.c src/colecoes.c src/js.c src/metaprov.c src/catordem.c src/fileiras.c src/homefil.c \
   src/artehero.c src/cwordem.c src/cwretido.c src/fonteregra.c src/regexjs.c \
   tests/cwthumb_home.c tests/amigosfil_stub.c \
   -Isrc -o "$work/test" -O1 -g -ffunction-sections -fdata-sections \

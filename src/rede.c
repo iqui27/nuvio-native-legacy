@@ -870,20 +870,15 @@ char *rede_apagar(const char *url, int segundos, const char *const *cab,
   return r;
 }
 
-char *rede_postar_st(const char *url, int segundos, const char *const *cab,
-                     const char *corpo, int *status) {
-  return rede_postar_st_retry(url, segundos, cab, corpo, status, NULL);
-}
-
-char *rede_postar_st_retry(const char *url, int segundos, const char *const *cab,
-                           const char *corpo, int *status, int *retryAfter) {
+static char *escrever_st(const char *metodo, const char *url, int segundos,
+                         const char *const *cab, const char *corpo, int *status, int *retryAfter) {
   int temCt = 0, k;
   char *r;
   // JSON e o padrao (Supabase, Trakt); quem manda o proprio Content-Type
   // (Real-Debrid quer form-urlencoded) nao recebe um segundo.
   for (k = 0; cab && cab[k]; k++)
     if (!strncasecmp(cab[k], "Content-Type:", 13)) temCt = 1;
-  r = pedir2("POST", url, segundos, cab, temCt ? NULL : "Content-Type: application/json",
+  r = pedir2(metodo, url, segundos, cab, temCt ? NULL : "Content-Type: application/json",
              corpo ? corpo : "", NULL, status, NULL, 0, retryAfter);
   // Falha de TRANSPORTE continua sendo NULL; corpo de 4xx e devolvido. Um POST
   // que respondeu com corpo vazio devolve "" e nao NULL, como no outro caminho.
@@ -891,10 +886,30 @@ char *rede_postar_st_retry(const char *url, int segundos, const char *const *cab
   return r;
 }
 
+char *rede_postar_st(const char *url, int segundos, const char *const *cab,
+                     const char *corpo, int *status) {
+  return escrever_st("POST", url, segundos, cab, corpo, status, NULL);
+}
+char *rede_putar_st(const char *url, int segundos, const char *const *cab,
+                    const char *corpo, int *status) {
+  return escrever_st("PUT", url, segundos, cab, corpo, status, NULL);
+}
+char *rede_postar_st_retry(const char *url, int segundos, const char *const *cab, const char *corpo, int *status, int *retryAfter) {
+  return escrever_st("POST", url, segundos, cab, corpo, status, retryAfter);
+}
 // Account row updates use the same WGT bridge as authenticated POST/DELETE.
 char *rede_patch_st(const char *url, int segundos, const char *const *cab,
                     const char *corpo, int *status) {
-  char *r = pedir("PATCH", url, segundos, cab, NULL, corpo, NULL, status);
+  char *r = pedir2("PATCH", url, segundos, cab, "Content-Type: application/json", corpo, NULL, status, NULL, 0, NULL);
+  if (!r && status && *status > 0) return strdup("");
+  return r;
+}
+
+// PUT de JSON pela mesma ponte (o TorBox edita um item so por PUT).
+char *rede_colocar_st(const char *url, int segundos, const char *const *cab,
+                      const char *corpo, int *status) {
+  char *r = pedir2("PUT", url, segundos, cab, "Content-Type: application/json",
+                   corpo ? corpo : "", NULL, status, NULL, 0, NULL);
   if (!r && status && *status > 0) return strdup("");
   return r;
 }
@@ -2720,7 +2735,8 @@ void rede_discord_ca(const char *caminho) {
 #define OPT_CAINFO 10065
 
 static char *postarNativo(const char *url, int segundos, const char *const *cab,
-                          const char *corpo, int *status, int seguro, int *retryAfter) {
+                          const char *corpo, int *status, int seguro, int *retryAfter,
+                          const char *verbo) {
   Balde b = {0};
   CacaCab respostaCab = { NULL, 0, retryAfter };
   if (retryAfter) *retryAfter = 0;
@@ -2749,6 +2765,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
   }
   curl_setopt(c, OPT_POST, (long)1);
   curl_setopt(c, OPT_POSTFIELDS, corpo ? corpo : "");
+  if (verbo) curl_setopt(c, OPT_CUSTOMREQUEST, verbo);
   if (slist_append) {
     int k;
     // JSON e o padrao (Supabase, Trakt); quem manda o proprio Content-Type
@@ -2783,35 +2800,49 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
   return rede_postar_st_retry(url, segundos, cab, corpo, status, NULL);
 }
 
-char *rede_postar_st_retry(const char *url, int segundos, const char *const *cab,
-                           const char *corpo, int *status, int *retryAfter) {
+// POST e PUT de JSON: a mesma rota (Android: libcurl primeiro, HttpURLConnection
+// se ela nao respondeu). `verbo` NULL = POST.
+static char *enviarNativo(const char *verbo, const char *url, int segundos, const char *const *cab,
+                          const char *corpo, int *status, int *retryAfter) {
 #ifdef NV_ANDROID
+  const char *v = verbo ? verbo : "POST";
   char *r;
   int st = 0;
   if (retryAfter) *retryAfter = 0;
   if (!url || !*url) { if (status) *status = 0; return NULL; }
   if (androidPrimeiro()) {   // st local: com status NULL o 4xx tambem volta com corpo, como no curl
-    r = viaAndroid("POST", url, segundos, cab, corpo ? corpo : "", &st, NULL, retryAfter, "libcurl fora");
+    r = viaAndroid(v, url, segundos, cab, corpo ? corpo : "", &st, NULL, retryAfter, "libcurl fora");
     if (status) *status = st;
     return r;
   }
-  r = postarNativo(url, segundos, cab, corpo, &st, 0, retryAfter);
+  r = postarNativo(url, segundos, cab, corpo, &st, 0, retryAfter, verbo);
   if (status) *status = st;
   if (!r && st == 0) {
-    r = androidDepois("POST", url, segundos, cab, corpo ? corpo : "", &st, retryAfter);
+    r = androidDepois(v, url, segundos, cab, corpo ? corpo : "", &st, retryAfter);
     if (status) *status = st;
   }
   return r;
 #else
-  return postarNativo(url, segundos, cab, corpo, status, 0, retryAfter);
+  return postarNativo(url, segundos, cab, corpo, status, 0, retryAfter, verbo);
 #endif
+}
+
+char *rede_postar_st_retry(const char *url, int segundos, const char *const *cab,
+                           const char *corpo, int *status, int *retryAfter) {
+  return enviarNativo(NULL, url, segundos, cab, corpo, status, retryAfter);
+}
+
+// PUT de JSON. Existe para o TorBox, que edita um item (airlocked) so por PUT.
+char *rede_colocar_st(const char *url, int segundos, const char *const *cab,
+                      const char *corpo, int *status) {
+  return enviarNativo("PUT", url, segundos, cab, corpo, status, NULL);
 }
 
 char *rede_postar_seguro_st(const char *url, int segundos, const char *const *cab,
                             const char *corpo, int *status) {
   if (status) *status = 0;
   if (!url || strncmp(url, "https://", 8)) return NULL;
-  return postarNativo(url, segundos, cab, corpo, status, 1, NULL);
+  return postarNativo(url, segundos, cab, corpo, status, 1, NULL, NULL);
 }
 
 // ------------------------------------------------------------ VAZAO (curl)
@@ -3243,12 +3274,14 @@ static int dtsRangeProgress(void *user, long long dt, long long dn,
   }
   return 0;
 }
-static void *dtsRangeHeaders(const char *raw, int public_only) {
+char *rede_range_headers(const char *raw, int public_only) {
   char *copy, *line, *ctx = NULL;
-  void *list = NULL;
-  if (!raw || !*raw || !slist_append) return NULL;
+  size_t used = 0;
+  if (!raw) raw = "";
+  char *out = malloc(strlen(raw) + 2);
+  if (!out) return NULL;
   copy = strdup(raw);
-  if (!copy) return NULL;
+  if (!copy) { free(out); return NULL; }
   for (line = strtok_r(copy, "\n", &ctx); line; line = strtok_r(NULL, "\n", &ctx)) {
     char *colon = strchr(line, ':');
     size_t n = strlen(line), key;
@@ -3260,8 +3293,18 @@ static void *dtsRangeHeaders(const char *raw, int public_only) {
     if (public_only && !((key == 7 && !strncasecmp(line, "referer", key)) ||
                         (key == 10 && !strncasecmp(line, "user-agent", key)) ||
                         (key == 6 && !strncasecmp(line, "origin", key)))) continue;
-    list = slist_append(list, line);
+    memcpy(out + used, line, n); used += n; out[used++] = '\n';
   }
+  out[used] = 0;
+  free(copy);
+  return out;
+}
+static void *dtsRangeHeaders(const char *raw, int public_only) {
+  void *list = NULL;
+  char *copy = rede_range_headers(raw, public_only), *ctx = NULL;
+  if (!copy) return NULL;
+  if (slist_append) for (char *line = strtok_r(copy, "\n", &ctx); line; line = strtok_r(NULL, "\n", &ctx))
+    list = slist_append(list, line);
   free(copy);
   return list;
 }
@@ -3356,7 +3399,7 @@ char *rede_baixar_trecho64_vigiado(const char *url, const char *headers,
       if (size) *size = (long)r.body.n;
       if (total) *total = r.total;
       if (final && hop > 0) snprintf(final, 8192, "%s", current);
-      if (cross) *cross = public_only;
+      if (cross) *cross = downgraded ? 2 : public_only;
       return baldeFinal(&r.body);
     }
     /* Numeric only: identify failed interval, response validation and discarded
@@ -3503,7 +3546,7 @@ int rede_fluxo64(const char *url, const char *headers, int64_t start,
     }
     if (f.accepted) {
       if (final && hop > 0) snprintf(final, 8192, "%s", current);
-      if (cross) *cross = public_only;
+      if (cross) *cross = downgraded ? 2 : public_only;
     }
     if (f.stopped) return 1;                 /* the sink asked to stop */
     if (!result && f.accepted) return 0;     /* body ended (EOF or a capped range) */

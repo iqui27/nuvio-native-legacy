@@ -353,6 +353,9 @@ static volatile int conflito, semDecoderAudio;
 // 02/10); um evento 2 (tocando) no meio desfaz a confirmacao.
 static volatile int pausaPedida, pausaVista;
 static volatile int durMs, bufferando, posMs, posNativoMs;
+static pthread_mutex_t travaAmostra = PTHREAD_MUTEX_INITIALIZER;
+static int posAmostraMs;
+static Uint64 posAmostraEm;
 // VELOCIDADE (#202, video.h): o ExoPlayer novo de cada abertura nasce em 1x
 // (velEnviada = 100 no abrirSessao) e o video_bombear reaplica o pedido assim
 // que ele esta pronto. setPlaybackSpeed aceita qualquer valor positivo; com o
@@ -530,6 +533,9 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativePos(JNIEnv *
     /* Media3 TIME_UNSET is not a playback position. */
     int conhecida = ms > (jlong)(INT64_MIN + 1);
     posMs = posNativoMs = !conhecida || ms < 0 ? 0 : ms > INT_MAX ? INT_MAX : (int)ms;
+    pthread_mutex_lock(&travaAmostra);
+    posAmostraMs = posMs; posAmostraEm = SDL_GetTicks64();
+    pthread_mutex_unlock(&travaAmostra);
     liveProgressoValido = live && conhecida;
     livePosMs = conhecida ? ms : 0;
     liveBufferValido = liveProgressoValido && fimMs > (jlong)(INT64_MIN + 1) && fimMs >= ms;
@@ -706,6 +712,12 @@ JNIEXPORT jboolean JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeTunnelin
   return ajustes_tunneling();
 }
 
+// #641: 1 = match the panel refresh rate to the video frame rate.
+JNIEXPORT jint JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeAfr(JNIEnv *env, jclass cls) {
+  (void)env; (void)cls;
+  return ajustes_afr();
+}
+
 JNIEXPORT jint JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeLimitedStatus(JNIEnv *env, jclass cls) {
   XtreamConta c;
   (void)env; (void)cls;
@@ -793,6 +805,9 @@ static int abrirSessao(int inicioMs, int fracao) {
   ativo = 1; superficieEstavel = 0; prontoLoad = primeiroQuadro = falhou = terminou = tocando = 0;
   velEnviada = 100;
   largura = altura = durMs = posMs = posNativoMs = 0; bufferando = 1; bufferDesde = SDL_GetTicks();
+  pthread_mutex_lock(&travaAmostra);
+  posAmostraMs = 0; posAmostraEm = SDL_GetTicks64();
+  pthread_mutex_unlock(&travaAmostra);
   tocandoDesde = 0; semDecoderAudio = 0; erroTxt[0] = 0; reconErroVideo = 0;
   pausaPedida = pausaVista = 0;
   hdrAtual = "none"; dvAtual = atmosAtual = 0;
@@ -975,6 +990,7 @@ int  video_reconectando(void) {
 
 void video_bombear(void) {
   double pos = video_pos();
+  int rate = video_taxa_efetiva();
   int eraRecarga = recarregarPausa >= 0;
   if (recarregarPausa >= 0) {
     if (falhou || terminou || !ativo) recarregarPausa = -1;
@@ -987,8 +1003,8 @@ void video_bombear(void) {
       recarregarPausa = -1;
     }
   }
-  if (mVelocidade && ativo && prontoLoad && velEnviada != velPedida) {
-    velEnviada = velPedida;
+  if (mVelocidade && ativo && prontoLoad && velEnviada != rate) {
+    velEnviada = rate;
     kInt(mVelocidade, velEnviada);
     // So "enviado": o setPlaybackSpeed nao recusa nada, e quem prova que andou
     // e o medidor do player (VelMedidor), pela posicao contra o relogio.
@@ -1169,6 +1185,14 @@ double video_pos(void) {
   // resume point to the source-renewal worker during that interval.
   return recon.tentativa && (!prontoLoad || reconBuscarMs >= 0 || recon.esgotou)
          ? recon.alvo : prontoLoad ? posMs / 1000.0 : 0;
+}
+double video_pos_amostra(Uint64 *t) {
+  double p;
+  pthread_mutex_lock(&travaAmostra);
+  p = prontoLoad ? posAmostraMs / 1000.0 : 0;
+  if (t) *t = posAmostraEm;
+  pthread_mutex_unlock(&travaAmostra);
+  return p;
 }
 double video_duracao(void) { return durMs / 1000.0; }
 // Capitulos do MKV lidos por um fio lateral (capmkv.c, 203-capitulos).

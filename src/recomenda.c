@@ -14,6 +14,7 @@
 // O QUE ELE NAO GUARDA: token. A identidade e montada a cada ciclo a partir de
 // trakt.c ou de sessao.c e vai so no cabecalho do pedido.
 #include "recomenda.h"
+#include "travarede.h"
 #include "atividade.h"
 #include "dados.h"
 #include "rede.h"
@@ -134,7 +135,7 @@ static void recApagar(const char *nome) {
 static int recFalhas;
 static void recMarcarRede(int st) {
   if (recSessaoFio() && !perfis_sessao_travar(recSessaoFio())) return;
-  if (st >= 200 && st < 500) recFalhas = 0;
+  if (st >= 200 && st < 500 && st != 401) recFalhas = 0;
   else if (recFalhas < REC_RECUO_MAX) recFalhas++;
   if (recSessaoFio()) perfis_sessao_destravar();
 }
@@ -1531,7 +1532,7 @@ static int perfilCab(char *dst, size_t tam, int viaNuvio) {
 static int bearerSessao(char *dst, size_t n) {
   char t[3000];
   int ok = sessao_token_copiar(t, sizeof t);
-  if (ok) snprintf(dst, n, "Authorization: Bearer %s", t);
+  if (ok) ok = snprintf(dst, n, "Authorization: Bearer %s", t) < (int)n;
   memset(t, 0, sizeof t);
   return ok;
 }
@@ -1547,7 +1548,7 @@ static void recAtualizarToken(void) {
 static int bearerSessaoLocal(char *dst, size_t n) {
   char usuario[80], t[3000];
   int ok = sessao_identidade_local_copiar(usuario, sizeof usuario, t, sizeof t);
-  if (ok) snprintf(dst, n, "Authorization: Bearer %s", t);
+  if (ok) ok = snprintf(dst, n, "Authorization: Bearer %s", t) < (int)n;
   memset(t, 0, sizeof t);
   return ok;
 }
@@ -1570,6 +1571,7 @@ static char *recBaixarEtag(const char *url, int tempo, const char **cab, int *st
 }
 
 static int identidade(const char **cab) {
+  if (perfis_precisa_escolher()) return 0;
   const char *tcab[4];
   char chave[160];
   if (trakt_ativo() && trakt_cabecalhos(tcab, fioAut, sizeof fioAut,
@@ -2096,6 +2098,9 @@ static int lerRecs(const char **cab) {
     free(r); r = NULL;
     return st != 0;
   }
+  // TRAVA DE SERIE: a revisao das travas pega carona nesta sondagem
+  // (migracao 012). Servidor antigo nao manda; nada acontece.
+  if (js_tem(r, NULL, "travaRev")) travarede_rev((long long)js_num(r, NULL, "travaRev", 0.0));
   p = js_array(r, NULL, "itens");
   while (p && *p == '{') {
     const char *f = js_fim(p);
@@ -2953,6 +2958,7 @@ static void tratarSocial(const char **cab) {
 // Identidade em buffers do CHAMADOR. identidade() usa os estaticos do fio de
 // rede; esta e chamada pela descoberta, em outro fio, e nao pode pisar neles.
 static int identidadeEm(const char **cab, char *aut, size_t na, char *via, size_t nv) {
+  if (perfis_precisa_escolher()) return 0;
   const char *tcab[4];
   char chave[160];
   if (trakt_ativo() && trakt_cabecalhos(tcab, aut, na, chave, sizeof chave)) {
@@ -3170,6 +3176,7 @@ static int acaoDeEv(const char *ev) {
   if (!strcmp(ev, "abandono")) return REC_ACAO_ABANDONO;
   if (!strcmp(ev, "reacao"))   return REC_ACAO_REACAO;
   if (!strcmp(ev, "salvo"))    return REC_ACAO_SALVO;
+  if (!strcmp(ev, "junto"))    return REC_ACAO_JUNTO;
   return 0;
 }
 
@@ -3194,6 +3201,16 @@ static int lerEvento(const char *p, const char *f, RecEvento *e) {
   e->pct = (int)js_num(p, f, "pct", 0.0);
   e->reacao = (int)js_num(p, f, "reacao", 0.0);
   e->quando = (long long)js_num(p, f, "criado", 0.0);
+  // "com" do Watch Together: [{"de","nome"}...], ja filtrado pelo alcance.
+  { const char *c = js_array(p, f, "com");
+    size_t k = 0;
+    while (c && *c == '{' && k + 2 < sizeof e->com) {
+      const char *cf = js_fim(c);
+      char n[64] = "";
+      js_texto(c, cf, "nome", n, sizeof n);
+      if (n[0]) k += (size_t)snprintf(e->com + k, sizeof e->com - k, "%s%s", k ? ", " : "", n);
+      c = js_prox(cf);
+    } }
   // O servidor agrupado (06/10/2026): episodios contados e a reacao junto do
   // "terminou". Servidor antigo nao manda: 0 e "nenhuma".
   e->eps = (int)js_num(p, f, "eps", 0.0);
@@ -3201,7 +3218,7 @@ static int lerEvento(const char *p, const char *f, RecEvento *e) {
   e->reacFim = (int)js_num(p, f, "reac", -2.0);
   e->temReacFim = e->reacFim >= -1 && e->reacFim <= 1;
   if (!e->temReacFim) e->reacFim = 0;
-  semTab(nome); semTab(e->titulo); semTab(e->via);
+  semTab(nome); semTab(e->titulo); semTab(e->via); semTab(e->com);
   e->acao = acaoDeEv(ev);
   if (!e->acao || strncmp(e->imdb, "tt", 2) || !e->pessoa[0]) return 0;
   if (strcmp(e->midia, "series")) snprintf(e->midia, sizeof e->midia, "movie");
@@ -3458,7 +3475,7 @@ int recomenda_cabecalhos(const char **cab, char *aut, size_t na, char *via, size
                          char *perfil, size_t np) {
   const char *tcab[4];
   char chave[160];
-  if (!recomenda_ativo() || !cab || !aut || !via || !perfil) return 0;
+  if (!recomenda_ativo() || perfis_precisa_escolher() || !cab || !aut || !via || !perfil) return 0;
   if (trakt_ativo() && trakt_cabecalhos(tcab, aut, na, chave, sizeof chave)) {
     snprintf(via, nv, "X-Nuvio-Auth: trakt");
   } else if (bearerSessao(aut, na)) {
@@ -3469,7 +3486,33 @@ int recomenda_cabecalhos(const char **cab, char *aut, size_t na, char *via, size
   return 1;
 }
 
+// Capture locally under the same gate as account/profile changes. No refresh
+// or HTTP while holding the gate; queued callers retain these exact headers.
+int recomenda_cabecalhos_local(const char **cab, char *aut, size_t na, char *via, size_t nv,
+                               char *perfil, size_t np) {
+  uint64_t sessao = perfis_sessao_geracao();
+  const char *tcab[4];
+  char chave[160];
+  int ok = 0;
+  if (!recomenda_ativo() || !perfis_sessao_travar(sessao)) return 0;
+  perfil[0] = 0;
+  if (!perfis_precisa_escolher()) {
+    if (trakt_ativo() && trakt_cabecalhos(tcab, aut, na, chave, sizeof chave)) {
+      snprintf(via, nv, "X-Nuvio-Auth: trakt"); ok = 1;
+    } else if (bearerSessaoLocal(aut, na)) {
+      snprintf(via, nv, "X-Nuvio-Auth: nuvio"); ok = 1;
+    }
+    if (ok) {
+      cab[0] = aut; cab[1] = via; cab[2] = NULL; cab[3] = NULL;
+      if (perfilCab(perfil, np, !strcmp(via, "X-Nuvio-Auth: nuvio"))) cab[2] = perfil;
+    }
+  }
+  perfis_sessao_destravar();
+  return ok;
+}
+
 const char *recomenda_meu_nome(void) { return meuNome; }
+const char *recomenda_meu_id(void) { return meuId; }
 const char *recomenda_minha_exibicao(void) { return minhaExib; }
 
 static void acordar(void) {

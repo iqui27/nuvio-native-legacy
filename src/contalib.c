@@ -352,6 +352,7 @@ static void montarItem(CatItem *d, const ContaLibItem *s) {
   snprintf(d->meta, sizeof d->meta, "%s", s->meta);
   d->nota = s->nota;
   d->naLista = 1;
+  d->fontes = CAT_FONTE_NUVIO;
   d->listaFontes = 1u << AJ_SALVOS_LOCAL;
   if (s->poster[0]) snprintf(d->poster, sizeof d->poster, "%s", s->poster);
   if (s->backdrop[0]) snprintf(d->backdrop, sizeof d->backdrop, "%s", s->backdrop);
@@ -397,7 +398,7 @@ int contalib_aplicar_catalogo(void) {
     // remota nao re-marca. Sem isto o titulo voltava no ciclo seguinte.
     if (listaOculta && listaOculta(itens[i].id, itens[i].addedMs)) continue;
     k = cat_indice_por_imdb(itens[i].id);
-    if (k >= 0) { cat_definir_na_lista(k, 1); marcados++; ultimo = k; }
+    if (k >= 0) { cat_marcar_fonte(k, CAT_FONTE_NUVIO); marcados++; ultimo = k; }
     else { faltam[i] = 1; nFaltam++; }
   }
 
@@ -442,7 +443,8 @@ void contalib_reconciliar(void) {
   // os acrescentados ficam no fim do vetor.
   if (marcaIdx < 0 || marcaIdx >= cat_n()) return;
   c = cat_item(marcaIdx);
-  if (c && !strcmp(c->imdb, marcaId) && (c->listaFontes & (1u << AJ_SALVOS_LOCAL))) return;
+  if (c && !strcmp(c->imdb, marcaId) && c->naLista &&
+      (c->fontes & CAT_FONTE_NUVIO) && (c->listaFontes & (1u << AJ_SALVOS_LOCAL))) return;
   contalib_aplicar_catalogo();
 }
 

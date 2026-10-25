@@ -1,6 +1,6 @@
 // Library grid must fill the usable width at every text scale and UI size, and
-// the source badge must sit on the right edge (owner: other scales leave rows
-// half empty). Includes the .c to read the static layout helpers.
+// the source badge must sit on the right edge. The approved source panel
+// reserves space on the left. Includes the .c to read static layout helpers.
 #include "../src/biblioteca.c"
 #include <assert.h>
 
@@ -22,7 +22,8 @@ int main(void) {
         { ESCALA_MIN_INI(BIB_TOPO_ESCALA_MIN);
           float selo = hdrDir() * gfx_escala();                         // badge right edge, real px
           int ok = vazio >= 0.0f && vazio < BIB_CARD_W && fabsf(selo - bibDireita() * txt) < 0.5f
-                   && fabsf(margemReal - margemEsq) < 0.5f;
+                   && fabsf(margemReal - (realW - NV_BIB_DIR) * txt) < 0.5f
+                   && fabsf(bibX() - paginaX() - 364.0f) < 0.5f;
           printf("txt=%.2f ui=%.2f cols=%d vazio=%.1f selo=%.1f dir=%.1f margem=%.1f/%.1f %s\n",
                  txt, UI[u], n, vazio, selo, bibDireita() * txt, margemEsq, margemReal, ok ? "ok" : "FAIL");
           fails += !ok;

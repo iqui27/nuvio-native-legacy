@@ -22,6 +22,8 @@
 // tecla nem abre no KEYDOWN; assim o toque curto continua abrindo o detalhe e
 // o modal recebe apenas o foco D-pad depois de estar visivel.
 void ctx_abrir(int indice);
+// Quick glance uses the same Save/Watched actions and their existing flows.
+void ctx_acao_rapida(const CatItem *titulo, int visto);
 // Fecha a UI e descarta copias/pedidos do perfil anterior. Escritas ja
 // despachadas continuam nos seus proprios workers, com o dono original.
 void ctx_abrir_sessao(void);
@@ -105,6 +107,12 @@ void ctx_dispensar_retomar(int on);
 // fechada do ranking): abre direto no menu de estilo, ao lado da fileira (a
 // propria fileira e a previa). Nao abre nada se a chave nao aceita forma.
 void ctx_abrir_fileira(const char *chave, const char *titulo);
+// MENU DA FILEIRA da Home 2.1 (segurar OK numa colecao ou numa fileira fixada):
+// fixar/tirar a colecao da Home (`pastaId` vazio = nao e colecao), mover,
+// ocultar, "vistos ocultos" (`comVistos`) e o estilo. Tudo pela `chave`.
+void ctx_abrir_filmenu(const char *chave, const char *titulo, const char *pastaId, int comVistos);
+// 1 UMA vez quando o menu mudou fixacao/ordem/visibilidade: a Home se refaz.
+int  ctx_fil_alterou(void);
 // O retangulo (tela virtual) do menu de estilo aberto; 0 com ele fechado.
 int ctx_estilo_rect(GfxRect *out);
 // O MESMO MENU, aberto pela BIBLIOTECA (biblioteca.c) segurando OK num cartaz.

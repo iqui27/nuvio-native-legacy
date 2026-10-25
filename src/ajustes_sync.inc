@@ -1,6 +1,7 @@
 // Portable C preferences have their own versioned section. Web keys keep
 // their original types; unknown web features survive the textual merge.
 static int ajustePortavel(int op) {
+  if (somenteDesteAparelho(op)) return 0;
   if (OPCOES[op].tipo != OP_ESCOLHA && OPCOES[op].tipo != OP_NUMERO) return 0;
   if (ajLegendaPrincipal(op)) return 1;
   if (!CHAVE[op] || CHAVE[op][0] == '-') return 0;
@@ -35,7 +36,9 @@ static int ajustePortavel(int op) {
 static void ajustesArquivoSync(int k, char *nome, size_t tam) {
   if (k == 0) snprintf(nome, tam, "fonteregra.txt");
   else if (k == 1) snprintf(nome, tam, "fileirasui-p%d.txt", perfis_ativo());
-  else ajustes_provedores_arquivo(nome, (unsigned)tam, "fontefalha");
+  else if (k == 2) ajustes_provedores_arquivo(nome, (unsigned)tam, "fontefalha");
+  else if (perfis_ativo() <= 0) snprintf(nome, tam, "musicas.txt");
+  else snprintf(nome, tam, "musicas-p%d.txt", perfis_ativo());
 }
 
 // Detect local edits without hex encoding, JSON serialization or merging.
@@ -53,10 +56,10 @@ unsigned long long ajustes_sync_hash(void) {
   ajustesHashBytes(&h, notaFontes, sizeof notaFontes);
   int extra[] = {memoriaEscolhida, bibliotecaFonteEscolhida, idiomaFonteGravada};
   ajustesHashBytes(&h, extra, sizeof extra);
-  for (int k = 0; k < 3 + AJ_DEVICE_FILES; k++) {
+  for (int k = 0; k < 4 + AJ_DEVICE_FILES; k++) {
     char name[128] = "";
-    if (k < 3) ajustesArquivoSync(k, name, sizeof name);
-    else ajusteDeviceFile(k - 3, name, sizeof name);
+    if (k < 4) ajustesArquivoSync(k, name, sizeof name);
+    else ajusteDeviceFile(k - 4, name, sizeof name);
     char *s = *name ? dados_ler(name) : NULL;
     int present = s != NULL;
     ajustesHashBytes(&h, &present, sizeof present);
@@ -76,7 +79,7 @@ static char *ajustesExtras(void) {
   jsw_obj_fim(&w);
   // These stores contain preferences only, never credentials. Filter legacy
   // row IDs derived from addon URLs: those can contain embedded tokens.
-  for (int k = 0; k < 3; k++) {
+  for (int k = 0; k < 4; k++) {
     char nome[128] = "", key[24];
     ajustesArquivoSync(k, nome, sizeof nome);
     char *t = nome[0] ? dados_ler(nome) : NULL;
@@ -136,7 +139,7 @@ static int ajustesExtrasAplicar(const char *json, const char *web) {
     if (ajLegendaPrincipal(i)) { if (novo != ajLegendaValor(i)) mudou += ajLegendaDefinir(i, novo); }
     else if (valor[i] != novo) { valor[i] = novo; mudou++; }
   }
-  for (int k = 0; k < 3; k++) {
+  for (int k = 0; k < 4; k++) {
     char key[24], nome[128] = "";
     snprintf(key, sizeof key, "store%d", k);
     if (!acharValor(a, b, key, &v, &f) || *v != '"') continue;
@@ -155,7 +158,7 @@ static int ajustesExtrasAplicar(const char *json, const char *web) {
       if (nome[0] && changed && dados_gravar(nome, t)) {
         if (k == 0) fonteregra_carregar();
         else if (k == 1) fil_recarregar();
-        else fontefalha_config_ler();
+        else if (k == 2) fontefalha_config_ler();
         mudou++;
       }
     }

@@ -44,6 +44,8 @@
 #include "intro.h"
 #include "perfis.h"
 #include "descoberta.h"
+#include "conquistas.h"
+#include "conquistasdados.h"
 
 // Episode metadata stays under host-test control, without background HTTP.
 static int carregando;
@@ -217,6 +219,21 @@ static void testarRestartReload(void) {
 int main(void) {
   assert(SDL_Init(SDL_INIT_TIMER) == 0); dados_iniciar(""); ling_local_legenda("none");
 
+  // Feed real: historico e progresso locais, sem cqregra_registrar no teste.
+  cat_historico_definir_id("tt0018578", "movie", 1);
+  assert(prog_gravar_local("tt0019729", 0, 0, 1000, 1000, 1));
+  assert(prog_gravar_local("tt0020629", 0, 0, 1000, 1000, 0)); // seek nao conta
+  assert(prog_gravar_local("tt0021746", 1, 1, 1000, 1000, 1)); // episodio nao e filme
+  assert(prog_gravar_local("tt0022958", 0, 0, 1000, 1000, 1));
+  cat_historico_definir_id("tt0022958", "movie", 0); // desmarcado vence progresso
+  conquistas_abrir();
+  {
+    CqEstado s; cqd_carregar(&s);
+    const CqEntrada *e = cqregra_buscar(&s, "trilha:oscar-melhor-filme");
+    assert(e && e->vistos == 2 && e->total == 98 && e->nivel == 1);
+  }
+  conquistas_teste_esquecer();
+
   // A REGRA (#205): chegou = tocado+3 >= 90% do trecho base->saida; visto =
   // fim, chegou e base+tocado >= 120 s.
   { int chegou;
@@ -274,6 +291,17 @@ int main(void) {
   assert(vistoep_estado("tt22687794", 1, 1) == 1);
   assert(cat_item(0)->progresso == 100);
 
+  // Conclusao anterior nao arma aviso ao cancelar o proximo antes da fonte.
+  player_abrir(0, NULL);
+  assert(!player_saiu_visto());
+  player_encerrar();
+  assert(!player_saiu_visto());
+  abrir(1, "tt90000210", NULL, NULL, 180, 180);
+  assert(player_saiu_visto() && !player_saiu_visto());
+  abrir(1, "tt90000211", NULL, NULL, 180, 180);
+  player_encerrar(); // segundo fechamento invalido tambem limpa a conclusao
+  assert(!player_saiu_visto());
+
   // (6) CONTROLE: filme real abandonado no comeco — progresso REAL gravado,
   // scrobble de progresso (pause) enviado, nada marcado como visto.
   abrir(1, "tt22687795", "1 h 46 min", NULL, 6357.0, 200.0);
@@ -304,11 +332,12 @@ int main(void) {
   strcpy(semMeta.imdb, "tt90000005"); cat_definir(&semMeta, 1); dur = 2580;
   player_abrir(0, fonte); quadro();
   for (int i = 0; i < 2400; i++) { agoraMono += 1; pos += 1; quadro(); }
+  int progressoAntesTrailer = cat_item(0)->progresso;
   trailer_abrir(fonte, (GfxRect){0,0,100,100}, 0, 0);
   dur = pos = 180; terminou = 1;
   trailer_atualizar(SDL_GetTicks()); assert(!trailer_aberto());
   quadro(); player_encerrar();
-  assert(nTrakt == 0 && nVisto == 0 && cat_item(0)->progresso == 0);
+  assert(nTrakt == 0 && nVisto == 0 && cat_item(0)->progresso == progressoAntesTrailer);
 
   // Pausa e buffer nao contam.
   strcpy(semMeta.imdb, "tt90000004"); cat_definir(&semMeta, 1); dur = 2580;
@@ -533,6 +562,25 @@ int main(void) {
   assert(!player_quer_sair());
   player_encerrar(); trailer_fechar();
 
+  // Conclusao via player atualiza e persiste, mesmo sem abrir Conquistas.
+  abrir(1, "tt0020629", NULL, NULL, 180, 180);
+  {
+    CqEstado s; cqd_carregar(&s);
+    const CqEntrada *e = cqregra_buscar(&s, "trilha:oscar-melhor-filme");
+    assert(e && e->vistos == 3 && e->nivel == 1);
+    prog_invalidar(); cqd_carregar(&s);
+    assert(cqregra_buscar(&s, "trilha:oscar-melhor-filme")->vistos == 3);
+  }
+  abrir(1, "tt0020629", NULL, NULL, 180, 20);
+  assert(!player_saiu_visto());
+  conquistas_abrir();
+  {
+    CqEstado s; cqd_carregar(&s);
+    assert(cqregra_buscar(&s, "trilha:oscar-melhor-filme")->vistos == 3);
+  }
+  conquistas_teste_esquecer();
+
+  puts("PASS: trailer, seek, pausa e buffer nao marcam; reproducao real grava progresso e visto");
   // CONTINUAR ASSISTINDO DURANTE A SESSAO (o relato: ~16% assistidos, seek
   // ate ~94%). Antes o ponto so ia para o registro na SAIDA; agora vai ~0,7 s
   // depois de soltar o seek (scheduleProgressSyncAfterSeek do oficial) e ao

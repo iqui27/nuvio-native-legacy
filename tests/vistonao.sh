@@ -14,7 +14,7 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-vistonao-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 extra=()
 if [ -f src/vistonao.c ]; then extra=(-DTEM_VISTONAO src/vistonao.c); fi
-cc -O1 -g -Wall -Wextra -Isrc -Wno-deprecated-declarations -Wno-macro-redefined \
+cc -O1 -g -Wall -Wextra -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wno-deprecated-declarations -Wno-macro-redefined \
   ${extra[@]+"${extra[@]}"} src/vistoep.c src/contapend.c src/contalib.c \
   src/js.c src/jsw.c tests/vistonao.c -o "$tmp/vistonao" -lpthread
 # Diagnostico separado: falhas conhecidas de reconciliacao, sem fingir que

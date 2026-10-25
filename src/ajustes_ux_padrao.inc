@@ -274,6 +274,7 @@
   2, /* interface mode: Auto; saved TV=0 and Mobile=1 retain their meaning */
   0, /* Mic button in search (.tpk): Automatico, local */
   0, /* menu position (#461): Na lateral, the rail as always */
+  0, 0, 0, /* achievements (2.1): master, notice after credits, secret hints: all On */
   0, /* collection tabs style (#205): Chips, as always */
   0, /* Android keyboard: Automatico, the IME opens by itself as always */
   0, /* subtitle outline colour (#475): Preto, as always */
@@ -342,5 +343,16 @@
   0, /* clear cache action */
   0, /* tunneled playback: Off */
   1, /* experimental P7 conversion: Off until explicitly enabled */
+  1, /* #605: strip HDR10+ dynamic metadata: Desligado (V_LIGA 1) */
   1, /* log page on the local network (logrede.h): Desligado */
-  4, /* player format style: Original (V_PLR_FORMATO 4) */
+  2, /* player format style: Marks (V_PLR_FORMATO 2), the look the OSD always had */
+  1, /* kids profile: Desligado (V_LIGA: 1); the state lives in perfilinfantil.c */
+  1, /* save diary to account: mirror of diarionuvem.c, Desligado until the person says yes */
+  0, /* Trakt comments on the pause panel: On (V_LIGA 0) */
+  0, /* ratings on the pause panel: On (V_LIGA 0) */
+  1, /* cast on the pause panel: Off (V_LIGA 1) */
+  1, /* player format position: Original, the top corner (V_PLR_FORMATO_POS 1) */
+  0, /* show the audio codec in the format row: On (V_LIGA 0) */
+  0, /* gradient smoothing: Automatic */
+  0, /* #641 display refresh-rate match (AFR): Off */
+  0, /* hero logo and information size: Normal */

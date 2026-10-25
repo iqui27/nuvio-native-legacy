@@ -2,11 +2,14 @@
 #define NV_DTS_PLAYBACK_H
 #include "dts_media.h"
 #include "dts_subtitles.h"
+#include "dts_engine.h"
 typedef struct DtsPlayback DtsPlayback;
 typedef struct {
   int prepared, failed, eof, revision, native_loaded;
   DtsMediaInfo info;
   char media_id[64], error[160];
+  DtsBufferInfo buffer;
+  double buffered_until;
 } DtsPlaybackStatus;
 /* All expensive work and native Feed calls are serialized on one worker.
  * Callers own a session; close joins it before freeing callback context. */

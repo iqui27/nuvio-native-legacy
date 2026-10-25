@@ -22,6 +22,8 @@ void player_abrir(int indiceCatalogo, const char *url);
 // depois parte deles (o logo vai ao centro, o Play vira o anel).
 void player_morph_de(GfxRect logo, GfxRect play);
 void player_definir_episodio(int temporada, int episodio);
+int player_reassistindo(void);
+void player_rewatch(int sim); // 0: retomada normal mesmo com reprise ativa
 void player_do_inicio(void);
 // 1 depois de player_do_inicio nesta abertura ("Do inicio"): sem ponto salvo.
 int  player_sem_retomada(void);
@@ -204,10 +206,19 @@ const char *player_tipo_canal(void);
 // guia, que e quem sabe o que pediu para tocar.
 void player_marcar_canal(const CatItem *item);
 void player_evento(const SDL_Event *e);
+// Watch Together (juntos.c): o relogio da sala pausa/solta e busca por aqui.
+void player_juntos_pausar(int pausado);
+void player_juntos_buscar(double seg);
+// "Sair da sessao" confirmado: fecha o player como o VOLTAR.
+void player_sair(void);
 void player_atualizar(float dt, Uint32 agora);
 void player_desenhar(Uint32 agora);
 int  player_quer_sair(void);  // 1 assim que o Back foi apertado
 void player_encerrar(void);
+// 1 uma vez se a ultima saida marcou o titulo como visto (aviso das Conquistas).
+int player_saiu_visto(void);
+// Manual source replacement saves resume position without marking watched.
+void player_encerrar_fonte(void);
 // VOD na ilha: pausa antecipada durante a saida, conserva somente com ack,
 // depois retoma o mesmo IMDb/episodio sem reabrir fonte ou buscar posicao.
 void player_preparar_retencao(void);
@@ -312,6 +323,9 @@ void player_leg_estilo_carregar(void);
 void player_leg_estilo_mudou(void);
 // Settings commits a complete draft only after confirmation. A failed write
 // leaves both the playing style and its authored-ASS override flags intact.
+int player_leg_fonte_definir(int familia);
+int player_leg_fonte_local_definir(int indice);
+int player_leg_estilo_restaurar(void);
 int player_leg_estilo_definir(const VideoLegendaEstilo *estilo, int tocou);
 const VideoLegendaEstilo *player_leg_estilo_padrao(void);
 

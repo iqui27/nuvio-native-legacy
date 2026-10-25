@@ -1,4 +1,5 @@
 #include "fileiras.h"
+#include "ajustes.h"   // PALCO_* (#659)
 #include "dados.h"
 #include "addons.h"
 #include "addonurl.h"
@@ -41,6 +42,7 @@ typedef struct {
   // "o addon declarou hoje e entrou no fim ligado". Vai para o arquivo como
   // quinto numero, ANTES do titulo; o leitor aceita a linha sem ele.
   int  fila;
+  int servidorOrdem, servidorOcultarVistos;
   // SO EM MEMORIA — nao entram no arquivo. Ver o cabecalho de fil_registrar em
   // fileiras.h: o formato gravado tem o titulo no fim da linha e acrescentar
   // campos faria o arquivo de quem ja usa o app ser descartado inteiro.
@@ -73,6 +75,9 @@ typedef struct {
   // formato posicional da linha `linha` nao muda e o arquivo de quem ja usa
   // o app continua valendo byte a byte.
   int  ordem;
+  // FUNDO DO PALCO desta fileira (#659): modo+1 (0 = herda o global de
+  // Ajustes), gravado como linha opcional "palco <chave> <modo>".
+  int  palco;
 } Linha;
 
 static Linha linhas[FIL_MAX];
@@ -189,13 +194,16 @@ int fil_origem_de(const char *chave) {
   if (!strcmp(chave, "continue_watching") ||
       !strcmp(chave, "social_activity") ||
       !strcmp(chave, "last_session")) return FIL_ORIGEM_APP;
-  if (!strncmp(chave, "collection_", 11)) return FIL_ORIGEM_COLECAO;
+  if (!strncmp(chave, "jellyfin_", 9) || !strncmp(chave, "emby_", 5) ||
+      !strncmp(chave, "plex_", 5) || !strncmp(chave, "srv:", 4)) return FIL_ORIGEM_SERVIDOR;
+  if (!strncmp(chave, "collection_", 11) ||
+      !strncmp(chave, "colpin_", 7)) return FIL_ORIGEM_COLECAO;
   return FIL_ORIGEM_CATALOGO;
 }
 
 // Rotulos CURTOS: o selo e lido de relance, a 3 m, ao lado do nome da fileira.
 // A frase inteira mora em fil_origem_ajuda e vai para a area de ajuda.
-static const char *ORIGEM_ROT[FIL_ORIGEM_N] = { "Do app", "Coleção", "Catálogo" };
+static const char *ORIGEM_ROT[FIL_ORIGEM_N] = { "Do app", "Coleção", "Catálogo", "Servidores pessoais" };
 // Icones REAIS (SVG rasterizado em art/icones), nunca forma desenhada a mao no
 // shader — ver a nota de gfx_icone em gfx.h. So a folha de fileiras dos Ajustes
 // usa este selo, entao ele e do mesmo Lucide (aj_*, tools/icones-lucide.sh) que
@@ -204,12 +212,14 @@ static const char *ORIGEM_ROT[FIL_ORIGEM_N] = { "Do app", "Coleção", "Catálog
 static const char *ORIGEM_ICONE[FIL_ORIGEM_N] = {
   "aj_house",      // fileira montada pelo proprio app
   "aj_folders",    // grupo de colecoes (uma pasta de atalhos)
-  "aj_puzzle"      // catalogo de addon (o encaixe de quebra-cabeca)
+  "aj_puzzle",     // catalogo de addon (o encaixe de quebra-cabeca)
+  "aj_server"
 };
 static const char *ORIGEM_AJUDA[FIL_ORIGEM_N] = {
   "Fileira montada pelo próprio app com o que você já assistiu ou salvou. Não vem de addon nenhum.",
   "Grupo de coleções: uma pasta de atalhos para catálogos, montada na sua conta.",
-  "Catálogo de um addon. Cada fileira destas é um pedido pela rede quando a Home monta."
+  "Catálogo de um addon. Cada fileira destas é um pedido pela rede quando a Home monta.",
+  "Servidores pessoais"
 };
 
 const char *fil_origem_rotulo(int o) {
@@ -285,8 +295,7 @@ static const FilEstiloLinha LINHAS_CAT[] = {
 static int tipoValido(const char *chave, int t) {
   int o = fil_origem_de(chave);
   if (t == FIL_TIPO_AUTO) return 1;
-  if (o != FIL_ORIGEM_CATALOGO && o != FIL_ORIGEM_COLECAO) return 0;
-  return t > 0 && t < FIL_TIPO_N;
+  return (o == FIL_ORIGEM_CATALOGO || o == FIL_ORIGEM_COLECAO || o == FIL_ORIGEM_SERVIDOR) && t > 0 && t < FIL_TIPO_N;
 }
 
 static int limita(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -311,7 +320,7 @@ static void gravar(void) {
   // 64 linhas de ate ~310 bytes (chave 192 + titulo 96 + quatro numeros), mais
   // o cabecalho. Alocado e nao na pilha: sao ~20 KB e esta funcao roda no fio
   // do desenho.
-  size_t cap = 128 + 64 + (size_t)FIL_MAX * (2 * FIL_CHAVE + FIL_TITULO + 56);
+  size_t cap = 128 + 64 + (size_t)FIL_MAX * (3 * FIL_CHAVE + FIL_TITULO + 80);
   char *txt = malloc(cap);
   size_t k;
   int i;
@@ -348,6 +357,10 @@ static void gravar(void) {
   for (i = 0; i < nLinhas && k < cap; i++)
     if (linhas[i].nova)
       k += (size_t)snprintf(txt + k, cap - k, "nova %s\n", linhas[i].chave);
+  for (i = 0; i < nLinhas && k < cap; i++)
+    if (linhas[i].servidorOrdem || linhas[i].servidorOcultarVistos)
+      k += (size_t)snprintf(txt + k, cap - k, "servidor %d %d %s\n", linhas[i].servidorOrdem, linhas[i].servidorOcultarVistos, linhas[i].chave);
+
   // ORDEM DOS ITENS da fileira de colecao (2.0.5): linha propria e opcional
   // como "visibilidade" — versao anterior nao a conhece (ignora) e arquivo
   // antigo, sem ela, volta ao padrao FIL_ORD_LISTA.
@@ -355,6 +368,15 @@ static void gravar(void) {
     if (linhas[i].ordem > 0 && linhas[i].ordem < FIL_ORD_N)
       k += (size_t)snprintf(txt + k, cap - k, "ordemfileira %s %d\n",
                             linhas[i].chave, linhas[i].ordem);
+  // FUNDO DO PALCO por fileira (#659): linha opcional como "ordemfileira";
+  // arquivo sem ela volta a PALCO_PADRAO (o ajuste global manda em todas).
+  // Sem PALCO_* aqui: fileiras.h nao inclui ajustes.h; a faixa valida (0..6)
+  // e conferida por assert no quem grava/le.
+  for (i = 0; i < nLinhas && k < cap; i++)
+    if (linhas[i].palco > 0)
+      k += (size_t)snprintf(txt + k, cap - k, "palco %s %d\n",
+                            linhas[i].chave, linhas[i].palco - 1);
+
   if (k < cap) dados_gravar(arquivoDoPerfil(), txt);
   free(txt);
   revisao++;
@@ -418,12 +440,29 @@ static void carregar(void) {
           for (int i = 0; i < nLinhas; i++)
             if (!strcmp(linhas[i].chave, buf + 13)) linhas[i].ordem = o;
       }
+    } else if (!strncmp(buf, "palco ", 6)) {
+      // "palco <chave> <modo>": a chave termina no primeiro espaco, como em
+      // "ordemfileira"; modo fora da faixa volta a PALCO_PADRAO na leitura.
+      char *esp = strchr(buf + 6, ' ');
+      if (esp) {
+        *esp = 0;
+        int m = atoi(esp + 1);
+        if (m >= 0 && m < PALCO_N)
+          for (int i = 0; i < nLinhas; i++)
+            if (!strcmp(linhas[i].chave, buf + 6)) linhas[i].palco = m + 1;
+      }
     } else if (!strncmp(buf, "visibilidade ", 13)) {
       for (int i = 0; i < nLinhas; i++)
         if (!strcmp(linhas[i].chave, buf + 13)) linhas[i].visPessoal = 1;
     } else if (!strncmp(buf, "addvence ", 9)) {
       for (int i = 0; i < nLinhas; i++)
         if (!strcmp(linhas[i].chave, buf + 9)) linhas[i].addVenceConta = 1;
+    } else if (!strncmp(buf, "servidor ", 9)) {
+      int order, hide; char key[FIL_CHAVE];
+      if (sscanf(buf + 9, "%d %d %191s", &order, &hide, key) == 3)
+        for (int i = 0; i < nLinhas; i++) if (!strcmp(linhas[i].chave, key)) {
+          linhas[i].servidorOrdem = order == 1; linhas[i].servidorOcultarVistos = hide == 1;
+        }
     } else if (!strncmp(buf, "linha ", 6) && nLinhas < FIL_MAX) {
       char *p = buf + 6, *campo[4];
       int c;
@@ -1468,7 +1507,7 @@ void fil_colecoes_reconciliar(const char *const *chaves,
   garantir();
   for (int i = 0; i < nLinhas; i++) {
     int viva = 1;
-    if (autoritativo && fil_origem_de(linhas[i].chave) == FIL_ORIGEM_COLECAO) {
+    if (autoritativo && !strncmp(linhas[i].chave, "collection_", 11)) {
       viva = 0;
       for (int j = 0; j < n && !viva; j++)
         viva = chaves[j] && !strcmp(linhas[i].chave, chaves[j]);
@@ -1758,6 +1797,37 @@ int fil_definir_ordem(const char *chave, int o) {
   return ok;
 }
 
+// O FUNDO DO PALCO desta fileira (#659): PALCO_PADRAO quando a fileira nunca
+// ganhou um proprio — a leitura devolve o ajuste global. So fileira com forma
+// escolhivel (catalogo, colecao, servidor) pode ter fundo proprio; as fixas
+// do app nao viram PALCO de forma nenhuma.
+int fil_palco(const char *chave) {
+  int i, v = PALCO_PADRAO;
+  if (!chave || !chave[0]) return v;
+  pthread_mutex_lock(&trava);
+  garantir();
+  i = achar(chave);
+  if (i >= 0 && linhas[i].palco > 0 && linhas[i].palco <= PALCO_N)
+    v = linhas[i].palco - 1;
+  pthread_mutex_unlock(&trava);
+  return v;
+}
+
+int fil_definir_palco(const char *chave, int modo) {
+  int i, ok = 0;
+  if (!chave || !chave[0] || modo < PALCO_PADRAO || modo >= PALCO_N ||
+      formaFixa(chave)) return 0;
+  pthread_mutex_lock(&trava);
+  garantir();
+  i = achar(chave);
+  if (i >= 0) {
+    ok = 1;
+    if (linhas[i].palco != modo + 1) { linhas[i].palco = modo + 1; gravar(); }
+  }
+  pthread_mutex_unlock(&trava);
+  return ok;
+}
+
 int fil_definir_tipo(const char *chave, int t) {
   int i, ok = 0;
   if (!chave || !chave[0] || formaFixa(chave) || !tipoValido(chave, t)) return 0;
@@ -1773,6 +1843,22 @@ int fil_definir_tipo(const char *chave, int t) {
   return ok;
 }
 
+int fil_definir_servidor(const char *chave, int ordem, int ocultarVistos) {
+  if (!chave || ordem < 0 || ordem > 1 || fil_origem_de(chave) != FIL_ORIGEM_SERVIDOR) return 0;
+  pthread_mutex_lock(&trava); garantir(); int i = achar(chave);
+  if (i >= 0 && (linhas[i].servidorOrdem != ordem || linhas[i].servidorOcultarVistos != !!ocultarVistos)) {
+    linhas[i].servidorOrdem = ordem; linhas[i].servidorOcultarVistos = !!ocultarVistos; gravar();
+  }
+  pthread_mutex_unlock(&trava); return i >= 0;
+}
+int fil_servidor_ordem(const char *chave) {
+  pthread_mutex_lock(&trava); garantir(); int i = chave ? achar(chave) : -1;
+  int r = i >= 0 ? linhas[i].servidorOrdem : 0; pthread_mutex_unlock(&trava); return r;
+}
+int fil_servidor_ocultar_vistos(const char *chave) {
+  pthread_mutex_lock(&trava); garantir(); int i = chave ? achar(chave) : -1;
+  int r = i >= 0 ? linhas[i].servidorOcultarVistos : 0; pthread_mutex_unlock(&trava); return r;
+}
 void fil_ciclar_tam(int i) {
   pthread_mutex_lock(&trava);
   if (i >= 0 && i < nLinhas) {

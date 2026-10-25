@@ -18,6 +18,21 @@ TMPDIR="${TMPDIR%/}"
 # pelo caminho que o app usa (i18n), varrendo as chaves nos 29 idiomas.
 set -eu
 cd "$(dirname "$0")/.."
+# Every diagnostic must survive batches larger than the former 60-error cap.
+python3 - <<'PY'
+import sys
+sys.path.insert(0, "tools")
+import idiomas
+
+rows = [(i + 1, "key %03d" % i, "English") for i in range(61)]
+idiomas.IDIOMAS = ("ar",)
+idiomas.ler_mestra = lambda: rows
+idiomas.ler_irma = lambda cod: [(n, key, "") for n, key, _ in rows]
+_, errors = idiomas.conferir()
+assert len(errors) == 61, "Expected all 61 diagnostics, got %d" % len(errors)
+assert errors[-1] == "idioma_ar.h:61: traducao arabe vazia", errors[-1]
+print("i18n: all 61 diagnostics retained")
+PY
 cc tests/idioma.c src/idioma.c -Isrc -I/opt/homebrew/include \
    -I/opt/homebrew/include/SDL2 -o ${TMPDIR:-/tmp}/nuvio-idioma-tests \
    -Wno-macro-redefined -Wno-deprecated-declarations

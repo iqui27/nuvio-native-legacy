@@ -1,10 +1,14 @@
 void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's token
 #include "sync.h"
+#include "idioma.h"
+#include "diario.h"
+#include "trava.h"
 #include <time.h>
 #include "sessao.h"
 #include "nuvem.h"
 #include "perfis.h"
 #include "perfisessao.h"
+#include "perfilinfantil.h"
 #include "agenda.h"
 #include "lembrete.h"
 #include "dados.h"
@@ -32,6 +36,7 @@ void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's to
 #include "traktauth.h"
 #include "catalogo.h"
 #include "vistoep.h"
+#include "rewatch.h"
 #include "progresso.h"
 #include "perfilcont.h"
 #include "psparede.h"
@@ -45,6 +50,7 @@ void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's to
 #include "descoberta.h"
 #include "simkl.h"
 #include "homeestado.h"
+#include "homefil.h"
 #include "cachearte.h"
 #include "extras.h"
 #include "arteescolha.h"
@@ -111,7 +117,7 @@ static void resumoFixo(const char *frase) {
   resumoPublicar(&r);
 }
 static unsigned ultimoOk;
-static int sujoProgresso, sujoAjustes;
+static int sujoProgresso, sujoAjustes, rewatchPendente;
 static int addonsPerfilCiclo;
 #define SY_ADD_PREFIXO "conta-addons-pend-"
 
@@ -572,7 +578,7 @@ static void addonsRestaurar(void) {
   int perfil = perfis_ativo_addons();
   char *c;
   if (addonsRestauradosPerfil == perfil && !strcmp(addonsRestauradosUsuario, sessao_usuario())) return;
-  c = contacache_ler(CC_ADDONS_APLICADOS, perfil, sessao_usuario(), NULL);
+  c = contacache_ler(CC_ADDONS_APLICADOS, perfil, sessao_usuario()[0]?sessao_usuario():"@local", NULL);
   if (c) {
     static AddonRemoto local[SY_ADD_MAX], guardados[SY_ADD_MAX];
     static char url[SY_URL_LEITURA]; // drawing-thread cache restoration
@@ -1057,6 +1063,8 @@ static int puxarAjustesPerfil(const char *corpo) {
               ajustesBlobPerfil = perfilDoCiclo;
               temAjustesBlob = aplicarAjustes;
               ok = 1;
+              rewatch_blob_ler(novo);
+              rewatch_sujar();
               nv_perfil_sessao_destravar();
               printf("[sync] blob de ajustes: %d bytes\n", (int)n);
             } else free(novo);
@@ -1119,8 +1127,11 @@ static void empurrarAjustes(void) {
   char *mesclado = NULL, *r;
   Jsw w;
   int st = 0;
-  if (!sujoAjustes || !temAjustesPerfil || temAjustesBlob ||
+  if (rewatch_sujo()) rewatchPendente = 1;
+  if (!sujoAjustes && !rewatchPendente) return;
+  if ((!sujoAjustes && !rewatchPendente) || !temAjustesPerfil || temAjustesBlob ||
       __atomic_load_n(&ajustesRestaurando, __ATOMIC_ACQUIRE)) return;
+  if (ajustes_edicao_perfil()) return;
   if (jaAusente("sync_push_profile_settings_blob")) return;
   if (!nv_perfil_sessao_travar(sessaoDoCiclo)) return;
   if (!ajustesBlob) {
@@ -1128,14 +1139,22 @@ static void empurrarAjustes(void) {
     printf("[sync] ajustes locais pendentes, mas sem blob da conta para costurar: nada enviado\n");
     return;
   }
-  if (ajustes_mesclar_blob(ajustesBlob, &mesclado) <= 0 || !mesclado) {
-    // Nothing differs from the freshly pulled account blob: skip the upload.
+  if (sujoAjustes && (ajustes_mesclar_blob(ajustesBlob, &mesclado) <= 0 || !mesclado)) {
+    // Nada diferente do que a conta ja tem: pendencia resolvida sem viagem.
     free(mesclado);
+    mesclado = NULL;
     sujoAjustes = 0;
-    nv_perfil_sessao_destravar();
-    return;
+  }
+  if (rewatchPendente) {
+    // As sessoes de reassistir entram como UMA chave nova do blob (rewatch.h),
+    // sobre a base ja costurada. Igual ao que a conta tem: sem viagem.
+    const char *base = mesclado ? mesclado : ajustesBlob;
+    char *com = rewatch_blob_costurar(base);
+    if (com && strcmp(com, base)) { free(mesclado); mesclado = com; }
+    else { free(com); rewatchPendente = 0; }
   }
   nv_perfil_sessao_destravar();
+  if (!mesclado) return;
   jsw_iniciar(&w);
   jsw_obj_ini(&w);
   jsw_ci(&w, "p_profile_id", perfilDoCiclo);
@@ -1148,6 +1167,7 @@ static void empurrarAjustes(void) {
   if (!nv_perfil_sessao_travar(sessaoDoCiclo)) { free(r); free(mesclado); return; }
   if (ok2xx(r, st)) {
     sujoAjustes = 0;
+    rewatchPendente = 0;
     free(ajustesBlob);
     ajustesBlob = mesclado;
     ajustesBlobGeracao++;
@@ -1508,7 +1528,7 @@ void sync_iniciar(void) {
   // #360: pendencias de addons da versao anterior somem na primeira execucao,
   // com ou sem login — elas nunca mais seriam lidas nem enviadas.
   addonsEsquecer();
-  if (!sessao_logada()) return;
+  if (!sessao_logada()) { addonsRestaurar(); return; }
   // Cached sources are private to this session and do not touch the worker's
   // staging buffers. Restore them even while an old sync drains or backs off.
   addonsRestaurar();
@@ -1867,7 +1887,7 @@ void sync_passo(unsigned agoraMs) {
   else if (soFileiras) desc_remontar_fileiras();
   spMarcar(SP_REMONTAR); }
   int blobAplicado = 0, ajustesMudaram = 0;
-  if (temAjustesBlob && ajustesBlob) {
+  if (temAjustesBlob && ajustesBlob && !ajustes_edicao_perfil()) {
     ajustesMudaram = ajustes_aplicar_blob(ajustesBlob);
     blobAplicado = 1;
     // O BLOB NAO E LIBERADO AQUI (mudou em #85): ele e a base da costura que
@@ -2219,12 +2239,25 @@ static void nomeLocaisPerfil(char *dst, size_t tam, int perfil) {
   snprintf(dst, tam, "ajustes-locais-p%d.txt", perfil);
 }
 
+// 2.1: uma copia de ajustes feita por outro perfil (admin) deixa a pendencia
+// escrita no perfil de destino. Nunca sobe agora: so quando ele for o ativo
+// (sync_trocar_perfil) e a costura tiver o blob dele.
+void sync_marcar_ajustes_pendentes_perfil(int perfil) {
+  char nome[40];
+  if (perfil <= 0) return;
+  if (perfil == perfis_ativo()) { sync_proteger_ajustes_locais(); return; }
+  nomeLocaisPerfil(nome, sizeof nome, perfil);
+  dados_gravar(nome, "1\n");
+}
+
 
 void sync_trocar_perfil(int antes) {
   int depois = perfis_ativo();
   char nome[40], *t;
   int pendente;
+  ajustes_edicao_encerrar();   // 2.1: nunca trocar de perfil com a edicao de outro em curso
   if (antes <= 0 || antes == depois) { sync_reaplicar_ajustes(); return; }
+  ajustes_migrar_escopo();   // 2.1: no-op depois da primeira vez; antes de guardar o que sai
   // 1. O QUE SAI. Os valores na memoria ainda sao os dele: a troca acabou de
   //    acontecer e nada foi aplicado desde entao.
   ajustes_perfil_guardar(antes);
@@ -2335,6 +2368,8 @@ void sync_esquecer_usuario(void) {
   copiaQuando = 0;
   pedidoComFioVivo = 0;
   homeestado_esquecer();
+  cf_esquecer();
+  ov_esquecer();
   cachearte_limpar_referencias();
   // O CACHE DO CATALOGO TAMBEM. Ele guarda o catalogo montado da conta que
   // saiu — watchlist, continuar assistindo, feed de amigos com nome e avatar —
@@ -2349,6 +2384,12 @@ void sync_esquecer_usuario(void) {
   desc_loc_apagar();
   // O mapa de episodios vistos e da conta que saiu, como todo o resto.
   vistoep_esquecer();
+  // O Diario: grava o que falta e solta a memoria; os arquivos ficam marcados
+  // com a conta e outra conta nao os le (diario_dono).
+  diario_esquecer();
+  diario_dono("");
+  trava_esquecer();
+  trava_definir_conta("");
   // O jornal da conta sai da MEMORIA; o arquivo (por usuario, so ids) fica
   // para quando ESTA pessoa voltar — e o que ainda nao subiu nao se perde.
   contapend_esquecer();
@@ -2425,6 +2466,7 @@ void sync_esquecer_usuario(void) {
     for (i = 1; i <= 32; i++) { nomeLocaisPerfil(nome, sizeof nome, i); dados_apagar(nome); } }
   perfilAplicado = 0;
   perfis_esquecer();
+  perfil_infantil_esquecer();   // tambem apaga as marcas de ajustes travados
   prog_esquecer_tudo();
   perfilcont_esquecer();
   psparede_esquecer();   // a parede de cada perfil (fundo "Filmes") e da conta que saiu
@@ -2445,7 +2487,8 @@ void sync_esquecer_usuario(void) {
   temAjustesPerfil = temCatHome = 0;
   estado = SYNC_PARADO;
   ultimoOk = 0;
-  sujoProgresso = 0; sujoAjustes = 0;
+  sujoProgresso = 0; sujoAjustes = 0; rewatchPendente = 0;
+  rewatch_esquecer();
   // Um pedido do botao de addons (#360) no ar e da conta que saiu.
   manualPedido = manualRodando = manualResultado = 0;
   addonsEsquecer();

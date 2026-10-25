@@ -1,5 +1,4 @@
 static int aj2GrupoDe(int s);   // ajustes_ux_v2.inc: o grupo (coluna da grade) da categoria
-static void guiaIrCapitulo(const char *icone);   // ajustes_ux_guia.inc
 // #339: AJ2_T_LAYOUT e o segmentado "Painel | Lista" no fim da fileira das pilulas.
 enum { AJ2_T_BUSCA = 0, AJ2_T_AV, AJ2_T_PERFIL, AJ2_T_DIF, AJ2_T_LAYOUT, AJ2_T_TOUR, AJ2_T_RESOLVER, AJ2_T_N };
 static int aj2TopoVisivel(int t) { return t >= 0 && t < AJ2_T_N && (t != AJ2_T_LAYOUT || ajLayoutSelecionavel()); }
@@ -45,7 +44,14 @@ static void uxListarDiferencas(void) {
   if (uxDifFoco >= uxNDifs) uxDifFoco = uxNDifs ? uxNDifs - 1 : 0;
 }
 static int uxRequisito(int op) {
+  if (ajustes_fonte_prioridade() == 3 &&
+      (op == AJ_FONTE_AUTO || op == AJ_FONTE_GRUPO || op == AJ_FONTE_GRUPO_SESSOES || op == AJ_LINK_REUSAR || op == AJ_LINK_PRAZO))
+    return AJ_FONTE_PRIORIDADE;
   switch (op) {
+    case AJ_MANTER_PRAZO: return AJ_MANTER_VIDEO;
+    case AJ_DESCANSO_ESTILO: return AJ_ESMAECER;
+    case AJ_DESCANSO_FONTE: return valor[AJ_ESMAECER] == 0 ? AJ_ESMAECER : AJ_DESCANSO_ESTILO;
+    case AJ_EP_TAMANHO: return AJ_HOME_LAYOUT;
     case AJ_PROXIMO_CONTAGEM: return AJ_PROXIMO_AUTO;
     case AJ_FONTE_GRUPO_SESSOES: return AJ_FONTE_GRUPO;
     case AJ_LINK_PRAZO: return AJ_LINK_REUSAR;
@@ -308,6 +314,11 @@ static void uxCategoriaAlternar(int i) {
   if(i>=0 && i<uxNCategorias)uxCategorias[i].oculta=!uxCategorias[i].oculta;
 }
 static int uxEvento(SDL_Keycode k) {
+  if (aj4RTL()) {
+    if (k == SDLK_LEFT) k = SDLK_RIGHT;
+    else if (k == SDLK_RIGHT) k = SDLK_LEFT;
+  }
+  if (!uxEditor) return aj4Evento(k);
   int layoutOculto = !ajLayoutSelecionavel() && (uxCabLayout || uxTopo == AJ2_T_LAYOUT ||
                        (uxEditor && uxOp == AJ_LAYOUT_AJUSTES));
   uxLayoutDisponibilidade();
@@ -441,15 +452,13 @@ static int uxEvento(SDL_Keycode k) {
           else uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");
           return 1;
         }
-        if (t == AJ2_T_PERFIL) { focarOpcao(AJ_PERFIL_ATIVO); return 1; }
+        if (t == AJ2_T_PERFIL) { pfAbrir(); return 1; }
         // Diferentes do padrao: abre a lista (degrau 1); Voltar devolve a pilula (uxTopo fica nela).
         if (t == AJ2_T_DIF) { uxListarDiferencas(); uxDifFoco = 0; uxIndice = 1; focoIndice = 0; return 1; }
         if (t == AJ2_T_LAYOUT) return uxAlternarLayout();   // o foco fica na pilula
-        // "O que o Nuvio faz?" abre o tour (2.1); o do problema abre o Guia de uso
-        // ja no capitulo "Problemas comuns". Voltar devolve a este cartao.
         if (t == AJ2_T_TOUR) { tourAbrir(); return 1; }
+        if (t == AJ2_T_RESOLVER) { resolver_abrir(); return 1; }
         guiaAbrir(0); guiaDoIndice = 1;
-        guiaIrCapitulo("aj_life-buoy");
         return 1;
       }
       if (k == SDLK_LEFT) {

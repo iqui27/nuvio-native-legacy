@@ -50,6 +50,7 @@ static uint64_t livreSubida;   // livre medido quando o motor subiu (#297)
 static uint64_t tamArquivo;    // tamanho do arquivo do pedido atual (#334); 0 = nao sei
 static int limpando;           // p2pmotor_limpar_sobra apagando a pasta (#334)
 static P2pmEstado estado;
+static _Atomic int inicioBuffer = -1;
 static _Atomic unsigned geracao;
 static _Atomic int motivoParada;
 static _Atomic unsigned descartados;
@@ -1036,6 +1037,7 @@ void p2pmotor_estado(P2pmEstado *e) {
   pthread_mutex_lock(&trava);
   *e = estado;
   e->ativo = motor != NULL;
+  e->buffer_pct = atomic_load(&inicioBuffer);
   pthread_mutex_unlock(&trava);
 }
 
@@ -1616,6 +1618,7 @@ int p2pmotor_resolver(const char *hash, int fileIdx, const char *fontes,
   pthread_mutex_lock(&trava);
   if (resolvendo) { pthread_mutex_unlock(&trava); return P2P_ERR_OCUPADO; }
   resolvendo = 1;
+  atomic_store(&inicioBuffer, -1);
   // Uma parada em curso (destroy de segundos) ou a vigia lendo eventos: espera
   // no sinal (a trava fica solta), acordando com cancelamento.
   fimEspera = agora() + 15;
@@ -1658,7 +1661,13 @@ int p2pmotor_resolver(const char *hash, int fileIdx, const char *fontes,
 // ------------------------------------------------------------------ sonda real
 // GET com Range dos primeiros 64 KB pelo N01 (rede_pedir): prazo unico,
 // descarte em streaming (nada do video e alocado) e cancelamento por `parar`.
+static void inicioIntervalo(const RedeIntervalo *i, void *u) {
+  uint64_t *bytes = u;
+  *bytes += i->bytes;
+  atomic_store(&inicioBuffer, *bytes >= 65536 ? 100 : (int)(*bytes * 100 / 65536));
+}
 static int sondaReal(const char *url, int (*parar)(void *), void *u) {
+  uint64_t bytes = 0;
   static const char *const cab[] = { "Range: bytes=0-65535", NULL };
   RedePedido q;
   RedeResposta r;
@@ -1670,6 +1679,9 @@ static int sondaReal(const char *url, int (*parar)(void *), void *u) {
   q.prazo_ms = P2P_PRAZO_BYTES * 1000u;
   q.janela_corpo_ms = P2P_PRAZO_BYTES * 1000u;
   q.max_descartado = 65536;
+  q.intervalo = inicioIntervalo;
+  q.intervalo_usuario = &bytes;
+  atomic_store(&inicioBuffer, 0);
   q.parar = parar;
   q.parar_usuario = u;
   rede_pedir(&q, &r);

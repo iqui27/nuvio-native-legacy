@@ -97,7 +97,7 @@ int main(void) {
   fil_definir_limite(FIL_LIMITE_MAX);
   // A fileira de retomada vem LIGADA do perfil; sem arquivo de ajustes o
   // padrao deste binario a desliga, e a home nem a montaria.
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":true}");
+  assert(ajustes_shot_valor("continueWatchingEnabled", 0));
   for (i = 0; i < 5; i++) {
     snprintf(it[i].imdb, sizeof it[i].imdb, "tt%d", i);
     snprintf(it[i].titulo, sizeof it[i].titulo, "T%d", i);

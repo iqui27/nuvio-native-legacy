@@ -65,6 +65,17 @@ static void soHost(const char *url, char *h, unsigned tam) {
   memcpy(h, p, n); h[n] = 0;
 }
 
+void fontesonda_recusa(const char *url, const char *erroTexto, int sincrona) {
+  char host[128]; int http = 0;
+  int causa = fontesonda_causa(erroTexto, &http);
+  const char *motivos[] = {"backend rejected source (no classified error)",
+                          "HTTP refusal", "network/TLS/timeout", "format/decoder"};
+  soHost(url, host, sizeof host);
+  printf("[fonte] playback failure: reason=%s synchronous=%d http=%d host=%s\n",
+         motivos[causa], sincrona, http, host[0] ? host : "-");
+  fflush(stdout);
+}
+
 const char *fontesonda_linha(char *dst, unsigned tam, const char *url, int status,
                              int redir, const char *mime, unsigned ms) {
   char host[128], tipo[64], red[16];

@@ -527,6 +527,19 @@ int main(int argc, char **argv) {
     goto fim_capturas;
   }
 
+  // NUVIO_SHOT_PERFIL=1 (2.1): so as capturas de ajustes por perfil. Use com
+  // NUVIO_SHOT_DADOS=<pasta vazia> para as marcas de perfil infantil gravarem.
+  if (getenv("NUVIO_SHOT_PERFIL")) {
+    static const char *const nomes[] = { "chip", "selos", "menu", "copiar", "pin-admin", "bloqueio", "editando" };
+    static const int ordem[7] = { 0, 1, 2, 3, 5, 6, 4 };   /* o PIN por ultimo: o teclado fica aberto */
+    for (i = 0; i < 7; i++) {
+      ajustes_teste_ux_captura(30 + ordem[i]);
+      snprintf(nome, sizeof nome, "%s-perfil-%s.png", saida, nomes[ordem[i]]);
+      captura(nome, w);
+    }
+    goto fim_capturas;
+  }
+
   // Cenários do novo contrato: categoria, seleção, cancelamento,
   // dependência e restauração. Só fixtures em memória, sem dados pessoais.
   static const char *const cenarios[] = {

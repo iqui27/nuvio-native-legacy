@@ -177,7 +177,7 @@ static int ajCenaSecao(int op) {
   switch (op) {
     case AJ_LANDSCAPE: case AJ_HERO: case AJ_HERO_CHEIO: case AJ_FUNDO_DIN: case AJ_FUNDO_DIN_COR: case AJ_HERO_CATALOGOS: case AJ_HERO_TRANSICAO: case AJ_HERO_GENERO:
     case AJ_HERO_SINOPSE: case AJ_HERO_NOTAS: case AJ_HERO_ANO: case AJ_HERO_DURACAO:
-    case AJ_HERO_SINOPSE_TAM:
+    case AJ_HERO_SINOPSE_TAM: case AJ_HERO_TAMANHO:
       return AJC_HOME_ESTILO;
     case AJ_FIL_ORDEM: case AJ_FIL_LIMITE: case AJ_ITENS_FILEIRA: case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS: case AJ_OCULTAR_NLANC: case AJ_NOTAS_HOME:
     case AJ_ROTULOS: case AJ_NOME_ADDON: case AJ_SUFIXO_TIPO: case AJ_SELO_VISTO: case AJ_ABAS_ESTILO:
@@ -227,9 +227,10 @@ static int ajCenaSecao(int op) {
       return AJC_REP_FONTE;
     // 2.0.3: HDR e Dolby Vision mora em Imagem e som.
     case AJ_FONTE_HDR:
-    case AJ_AUDIO_OFFSET: case AJ_QUALIDADE: case AJ_DV: case AJ_DV_MKV: case AJ_DV7: case AJ_ATMOS: case AJ_DTS_AC3: case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: return AJC_REP_IMAGEM;
+    case AJ_AUDIO_OFFSET: case AJ_QUALIDADE: case AJ_DV: case AJ_DV_MKV: case AJ_DV7: case AJ_HDR10P_STRIP: case AJ_ATMOS: case AJ_DTS_AC3: case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_AFR: return AJC_REP_IMAGEM;
+    case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO:
     case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: case AJ_ESTAT_TAMANHO: case AJ_ESTAT_LADO: case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: case AJ_REACAO_CREDITOS: case AJ_SAIDA_PLAYER: case AJ_MANTER_VIDEO: case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_PROPORCAO_PADRAO: return AJC_REP_DURANTE;
-    case AJ_PLR_FORMATO: return AJC_REP_DURANTE;
+    case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC: return AJC_REP_DURANTE;
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_CHAVE: case AJ_SEEKR_TESTAR: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE:
       return AJC_REP_SEEKR;
     case AJ_IDIOMA: case AJ_TMDB_IDIOMA: return AJC_IDI_INTERFACE;
@@ -248,11 +249,11 @@ static int ajCenaSecao(int op) {
     case AJ_LIVETV_SUGERIR:
       return AJC_TV_PROVEDOR;
     case AJ_PERFIL_ATIVO: case AJ_SYNC:
-    case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_SAIR:
+    case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
       return AJC_CON_PERFIS;
     case AJ_ADDONS: case AJ_PLUGINS: case AJ_ADDONS_PRINCIPAL: return AJC_FON_ADDONS;
     case AJ_ENQUETES: return AJC_CON_AVISOS;
-    case AJ_DISCORD: case AJ_SALVOS_DEST: case AJ_CW_FONTE: case AJ_CW_PROXIMO: case AJ_HIST_CONTA: case AJ_SOCIAL: return AJC_CON_SOCIAL;
+    case AJ_DISCORD: case AJ_SALVOS_DEST: case AJ_CW_FONTE: case AJ_CW_PROXIMO: case AJ_HIST_CONTA: case AJ_SOCIAL: case AJ_DIARIO_NUVEM: return AJC_CON_SOCIAL;
     case AJ_PROVEDORES_ESCOPO: case AJ_DEBRID_RD: case AJ_DEBRID_TB: case AJ_DEBRID_PM: case AJ_DEBRID_AD: case AJ_DEBRID_AD_TESTAR:
     case AJ_DEBRID_RD_TESTAR: case AJ_DEBRID_TB_TESTAR: case AJ_DEBRID_PM_TESTAR:
       return AJC_CON_CHAVES;
@@ -872,8 +873,10 @@ static void ajcRepDurante(int A) {
     if (ajLogo(ajArte(AJA_LOGO, A), CX(36), CY(40), 200 * ajc.s, 60 * ajc.s, 1) <= 0) ajcTxt(ajTituloN(A), 22, 1, 36, 58, 260, 1);
     ajcTxt(ajMetaTitulo(A), 11, 0, 36, 112, 260, 0.7f);
     CBAR(36, 136, 240, 0.55f); CBAR(36, 152, 220, 0.55f); CBAR(36, 168, 150, 0.55f);
+    if (lig(AJ_PAUSA_COMENTARIOS)) CICON("aj_message-square", 240, 178, 18, 0.9f);
   }
   ajcFoco(AJ_PAUSA_OVERLAY, 28, 32, 270, 150, 12);
+  ajcFoco(AJ_PAUSA_COMENTARIOS, 232, 170, 34, 34, 10);
   CVID(372, 194, 240, 112, 20);
   CIMG(ajArte(AJA_FUNDO, A + 1), 384, 206, 104, 58, 8, 1);
   gfx_anel(CR(500, 214, 40, 40), 0.5f, 3 * ajc.s, ajc.ar, ajc.ag, ajc.ab, 1);
@@ -1142,26 +1145,37 @@ static void ajcConAvisos(int A) {
 static void ajcConSocial(int A) {
   char marca[1200];
   ajCenaArte(ajArte(AJA_FUNDO, A), (GfxRect){ ajc.x, ajc.y, 640 * ajc.s, ajc.h }, 22, 0.64f);
-  CVID(36, 30, 568, 120, 22);
+  CVID(36, 30, 568, 110, 22);
   gfx_cor(CR(56, 50, 36, 36), 0.5f, 0.345f, 0.396f, 0.949f, 1);
   CICON("aj_message-square", 64, 58, 20, 0.95f);
   ajcTxt("Discord", 13, 1, 104, 56, 200, 1); ajcTxt(textoValor(AJ_DISCORD), 11, 0, 104, 76, 200, 0.6f);
-  CIMG(ajArte(AJA_POSTER, A), 380, 44, 60, 90, 8, ajEstadoLigado(AJ_DISCORD) ? 1.0f : 0.5f);
+  CIMG(ajArte(AJA_POSTER, A), 380, 40, 60, 90, 8, ajEstadoLigado(AJ_DISCORD) ? 1.0f : 0.5f);
   ajcTxt("Assistindo", 11, 0, 452, 56, 140, 0.6f); ajcTxt(ajTituloN(A), 13, 1, 452, 74, 140, 1);
   gfx_cor(CR(452, 104, 130, 4), 0.5f, 1, 1, 1, 0.2f); gfx_cor(CR(452, 104, 60, 4), 0.5f, 0.345f, 0.396f, 0.949f, 1);
-  ajcFoco(AJ_DISCORD, 36, 30, 568, 120, 22);
-  CVID(36, 168, 276, 164, 22);
-  CICON("aj_bookmark", 56, 188, 26, 0.9f);
-  ajcTxt(rotuloOpcao(AJ_SALVOS_DEST), 11, 0, 56, 230, 236, 0.6f);
-  ajcTxt(textoValor(AJ_SALVOS_DEST), 15, 1, 56, 250, 236, 1);
-  ajcFoco(AJ_SALVOS_DEST, 36, 168, 276, 164, 22);
-  CVID(328, 168, 276, 164, 22);
-  CICON("aj_rotate-ccw-clock", 348, 188, 26, 0.9f);
+  ajcFoco(AJ_DISCORD, 36, 30, 568, 110, 22);
+  CVID(36, 152, 276, 120, 22);
+  CICON("aj_bookmark", 56, 170, 26, 0.9f);
+  ajcTxt(rotuloOpcao(AJ_SALVOS_DEST), 11, 0, 56, 212, 236, 0.6f);
+  ajcTxt(textoValor(AJ_SALVOS_DEST), 15, 1, 56, 232, 236, 1);
+  ajcFoco(AJ_SALVOS_DEST, 36, 152, 276, 120, 22);
+  CVID(328, 152, 276, 120, 22);
+  CICON("aj_rotate-ccw-clock", 348, 170, 26, 0.9f);
   snprintf(marca, sizeof marca, "%s/marcas/trakt_wordmark.png", uxDirArte);
-  ajLogo(marca, CX(500), CY(190), 84 * ajc.s, 24 * ajc.s, 0.9f);
-  ajcTxt(rotuloOpcao(AJ_CW_FONTE), 11, 0, 348, 230, 236, 0.6f);
-  ajcTxt(textoValor(AJ_CW_FONTE), 15, 1, 348, 250, 236, 1);
-  ajcFoco(AJ_CW_FONTE, 328, 168, 276, 164, 22);
+  ajLogo(marca, CX(500), CY(172), 84 * ajc.s, 24 * ajc.s, 0.9f);
+  ajcTxt(rotuloOpcao(AJ_CW_FONTE), 11, 0, 348, 212, 236, 0.6f);
+  ajcTxt(textoValor(AJ_CW_FONTE), 15, 1, 348, 232, 236, 1);
+  ajcFoco(AJ_CW_FONTE, 328, 152, 276, 120, 22);
+  // Guardar o Diario na conta: so existe com o servico no pacote e sessao.
+  if (diarionuvem_disponivel()) {
+    float al = ON(AJ_DIARIO_NUVEM);
+    CVID(36, 286, 568, 46, 18);
+    CICON("aj_cloud", 54, 297, 24, 0.9f * al + 0.1f);
+    ajcTxt(rotuloOpcao(AJ_DIARIO_NUVEM), 13, 1, 94, 295, 330, 1);
+    ajcTxt(textoValor(AJ_DIARIO_NUVEM), 11, 0, 94, 313, 330, 0.6f);
+    gfx_cor(CR(530, 301, 54, 16), 0.5f, 1, 1, 1, 0.12f);
+    CACC(lig(AJ_DIARIO_NUVEM) ? 560 : 534, 303, 20, 12, lig(AJ_DIARIO_NUVEM) ? 1.0f : 0.5f);
+    ajcFoco(AJ_DIARIO_NUVEM, 36, 286, 568, 46, 18);
+  }
 }
 // Debrid: o cofre, uma linha por servico com o estado da chave. As chaves do
 // MDBList e do Fanart moram junto do que elas liberam (Notas, De onde vem a arte).

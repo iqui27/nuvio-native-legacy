@@ -28,6 +28,8 @@ typedef struct Stream {
   // 0 = URL do addon; servico nativo + 1 quando resolvida pelo failover.
   int debridServico;
   int urlP2P; // provenance da resolucao manual; nao e servico de debrid
+  uint64_t addonIdentidade; /* Installation identity; survives cache and list reorder. */
+  int appResolvido; /* URL obtained by the app; never confused with an addon HTTP link. */
   // 1024 e nao 512. MEDIDO: os links de reproducao do AIOStreams tem 525 a 547
   // caracteres (dois segmentos assinados), e com 512 TODOS eram cortados em
   // silencio. O servidor entao respondia com um MP4 de aviso de 120s que TOCA
@@ -123,6 +125,7 @@ typedef struct Stream {
   // naovideo.h): linha de aviso do addon. A folha a mostra apagada ("Nao e
   // video") e o automatico a pula. Marcada na verificacao, nunca no parser.
   int  naoVideo;
+  int  tsContinuo;     // Confirmed by the bounded live-source probe.
   int  notWebReady;     // behaviorHints: sem URL direta, so oferecer com P2P ativo
   // PACOTE DE SELOS ATIVO (selospacote.h): os filtros que casaram com esta
   // fonte, calculados UMA vez (quando a lista chega, ou quando o pacote muda;
@@ -231,6 +234,11 @@ int stream_filme_consultar(const struct AddonsConsulta *consulta, const char *id
 int stream_filme_fontes(const char *id);
 int  stream_n(void);
 const Stream *stream_item(int i);
+// Leituras de texto da fonte para a faixa "Vai tocar" (vaitocar.c): o idioma
+// como a folha o mostra ("Dublado", "Dual áudio", "Legendado", NULL = nao
+// sei) e a pergunta "o addon cita esta palavra?" (nome, descricao, arquivo).
+const char *stream_idioma(const Stream *s);
+int  stream_texto_tem(const Stream *s, const char *palavra);
 // Fileira de selos do pacote ativo (ver selospacote.h) para fora da folha, como
 // o cartao "Abrindo fonte" do player: padrao em cinza `tom`, colorido em pecas.
 // `stream_selos_ha` diz se ha o que desenhar (a resolucao entra); 0 de largura
@@ -245,6 +253,8 @@ float stream_selos_medidos(const char *texto, float x, float y, float maxW, floa
 
 // Indice do stream que o modo automatico escolhe, ou -1 se a lista esta vazia.
 int  stream_automatico(void);
+// Primeira candidata da MESMA fila usada pelo Play, sem conferir URLs.
+int  stream_play_candidata(void);
 // A candidata que o automatico usaria se `atual` falhar (e nao esta excluida)
 // existe e NAO e pior que ela: mesma resolucao ou maior, Dolby Vision igual ou
 // melhor. 0 = nao ha proxima, ou a proxima baixaria a qualidade (#202).
@@ -252,6 +262,7 @@ int  stream_proxima_sem_perda(int atual);
 // Primeira VOD nao tentada na ordem do addon, inclusive antes da atual.
 // Pula a atual e as ja falhadas; leitura protegida contra troca de lista.
 int  stream_proxima_vod(int atual);
+int  stream_incompativel(int indice);
 // Confere a proxima da ordem do addon fora do fio de desenho; -1 se acabou.
 // Devolve tambem quantas candidatas consumiram o orcamento (se nao NULL).
 int  stream_verificar_proxima_vod(int atual, int tentativas, int *conferidas);
@@ -318,6 +329,7 @@ void stream_vod_falhou(int indice);
 void stream_vod_tocou(int indice);
 long stream_vod_falhou_ha(int indice);
 int  stream_automatico_excluir(int indice);
+int  stream_automatico_excluida(int indice); // Current-list retry exclusion.
 // Exclui tambem as IRMAS da candidata (mesmo addon e mesmo rotulo), mas so
 // quando sobra outra candidata: quando o player nao conectou numa, as outras
 // costumam falhar igual.
@@ -443,6 +455,7 @@ int  stream_canal_prazo_longo(int idx);
 
 // --- folha de fontes (a lista que sobe por cima do player/detalhe) ---
 void stream_folha_abrir(void);
+void stream_folha_servidor(int provider); // -1 all, 0 Plex, 1 Jellyfin, 2 Emby
 // Root feeds an actual movie/episode metadata runtime or measured media
 // duration for this exact target. Never supply PLR_DUR_PADRAO, a season's
 // total runtime or a guessed "45 minutes". 0/unknown clears provenance.
@@ -476,6 +489,12 @@ int  stream_detalhe_tecla_abre(const SDL_Event *e);
 // nada. tests/fontes_lista.sh prende isso; abrir a folha escreve a contagem no
 // log ("[fonte] folha: N de M na lista"), para o proximo relato dizer onde caiu.
 int  stream_folha_n(void);
+// Current sheet positions: 0 hidden, positive visible. No playback.
+void stream_inspecao_ordem(int *ranks,int capacidade);
+#ifdef NV_SHOT_HOOKS
+void stream_shot_folha(float *cartao, int *linhas, int *dobradas);   // capturas
+void stream_shot_foco(int *indice, int *dobrada);   // capturas
+#endif
 void stream_folha_evento(const SDL_Event *e);
 void stream_folha_atualizar(float dt, Uint32 agora);
 void stream_folha_desenhar(Uint32 agora);

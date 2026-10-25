@@ -183,6 +183,9 @@ int  sync_home_fontes_prontas(void);
 // Limpa-se em sync_reaplicar_ajustes (login / troca de perfil / "Atualizar"),
 // que tambem descarta a pendencia de subida — ela e do perfil anterior.
 void sync_proteger_ajustes_locais(void);
+// 2.1: marca ajustes pendentes de OUTRO perfil (copia/edicao do administrador).
+// So escreve a marca local; o push acontece quando aquele perfil for o ativo.
+void sync_marcar_ajustes_pendentes_perfil(int perfil);
 
 // Manda uma credencial de servico para a CONTA, para os outros aparelhos da
 // pessoa herdarem o vinculo. `credJson` e o objeto pronto (o servidor guarda o

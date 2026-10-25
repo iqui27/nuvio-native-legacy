@@ -154,6 +154,9 @@ static int lancar(Envio *e) {
   return 1;
 }
 
+static VistoOuvinte ouvinte;
+void visto_ao_marcar(VistoOuvinte fn) { ouvinte = fn; }
+
 static void capturarDestinos(Envio *e) { // caller holds the profile opening gate
   if ((e->destinos & VISTO_TRAKT) && trakt_destino_capturar && !trakt_destino_capturar(&e->trakt)) e->destinos &= ~VISTO_TRAKT;
   if ((e->destinos & VISTO_SIMKL) && simkl_destino_capturar && !simkl_destino_capturar(&e->simkl)) e->destinos &= ~VISTO_SIMKL;
@@ -161,6 +164,10 @@ static void capturarDestinos(Envio *e) { // caller holds the profile opening gat
 int visto_episodios(const char *imdb, const char *tipo, const VistoPar *pares,
                     int n, int visto, int destinos) {
   if (!imdb || !imdb[0] || !pares || n < 1) return 0;
+  // O GESTO, antes de qualquer destino (inclusive sem nenhum): a trava de
+  // serie anda a posicao do perfil e, no modo Juntos, marca para os outros.
+  if (ouvinte) ouvinte(imdb, pares, n, visto);
+  if (!destinos) return 1;   // so local: nao ha o que mandar
   if (n > VT_LOTE) n = VT_LOTE;
   NvPerfilSessao sessao = nv_perfil_sessao_ler();
   if (!nv_perfil_sessao_travar(sessao)) return 0;

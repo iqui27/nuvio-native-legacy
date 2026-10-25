@@ -3,6 +3,7 @@
 #include "rede.h"
 #include "gfx.h"
 #include "jpegrapido.h"
+#include "horafmt.h"
 #include <SDL2/SDL.h>
 #ifndef __EMSCRIPTEN__
 #include <SDL2/SDL_image.h>
@@ -101,10 +102,16 @@ const char *seekr_estado_rotulo(int est) {
 int seekr_horario_local(long long utc, char *saida, size_t tamanho) {
   struct tm local;
   time_t instante = (time_t)utc;
+  char h[16];
   if (!saida || !tamanho) return 0;
   saida[0] = 0;
   if (utc <= 0 || (long long)instante != utc || !localtime_r(&instante, &local)) return 0;
-  return strftime(saida, tamanho, "%d/%m %H:%M", &local) != 0;
+  // HORA DE TELA (horafmt.h): segue Ajustes > Formato do relogio, como o
+  // relogio de cima. O strftime "%d/%m %H:%M" ignorava o relogio de 12 h e a
+  // linha do OSD ("Renova em ...", "Tente apos ...") saia em 24 h.
+  hora_tela(h, sizeof h, &local);
+  snprintf(saida, tamanho, "%02d/%02d %s", local.tm_mday, local.tm_mon + 1, h);
+  return saida[0] != 0;
 }
 void seekr_uso(SeekrUso *uso) {
   if (!uso) return;

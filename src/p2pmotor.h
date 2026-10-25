@@ -161,6 +161,7 @@ typedef struct {
   uint64_t ram_teto, ram_duro, ram_usada;
   uint64_t baixando_bps;
   unsigned pares;
+  int buffer_pct; /* First contiguous 64 KiB probe, -1 before body telemetry. */
 } P2pmEstado;
 void p2pmotor_estado(P2pmEstado *e);
 

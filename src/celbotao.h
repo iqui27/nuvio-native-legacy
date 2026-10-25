@@ -33,7 +33,7 @@
 #include "gfx.h"
 #include "ponteiro.h"
 
-enum { CELB_NENHUM = 0, CELB_SPOT, CELB_BUSCA, CELB_TECLADO, CELB_AMIGO, CELB_N };
+enum { CELB_NENHUM = 0, CELB_SPOT, CELB_BUSCA, CELB_TECLADO, CELB_AMIGO, CELB_ADDON, CELB_IMPORTAR, CELB_N };
 
 int  celb_disponivel(void);
 // Desenha o botao em `r` (quadrado) e registra o alvo do ponteiro: passar por
@@ -81,6 +81,11 @@ float celb_embutido_altura(int dono, float w, float hMax);
 void  celb_desenhar_em(int dono, GfxRect r, float alpha);
 // Compact QR for the friends invitation; uses the same hosted token.
 void  celb_desenhar_qr_em(int dono, GfxRect r, float alpha);
+
+// QR de um endereco publico na moldura branca, canto de cima em (x, y); o lado
+// da moldura e celb_qr_lado(). Sem servidor: so o desenho.
+float celb_qr_lado(void);
+void  celb_qr_desenhar(const char *url, float x, float y, float a);
 
 // --- testes ---
 // Onde o cartao (ou o bloco hospedado) ficou no ultimo desenho (0 se fechado).

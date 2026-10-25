@@ -65,6 +65,9 @@ static const char *COLECAO_DA_CONTA =
 
 int   addons_n(void)              { return addonAtivo; }
 const char *addons_base(int i)    { (void)i; return BASE; }
+void ws_destino(const char *b, const char *u, int p, char out[20]) {
+  (void)b; (void)u; (void)p; strcpy(out, "fixture");
+}
 const char *addons_id_manifesto(int i) { (void)i; return ""; }
 const char *addons_nome(int i)              { (void)i; return "addon"; }
 unsigned addons_versao(void)        { return 1; }   // estatico no teste: sem troca de lista
@@ -73,6 +76,9 @@ const char *addons_base_por_id(const char *id) {
   return id && !strcmp(id, AID) ? BASE : "";
 }
 void addons_manifesto_lido(int i, const char *corpo) { (void)i; (void)corpo; sondaLeu = 1; }
+void addons_manifesto_lido_base(int i, const char *b, const char *d, unsigned v, const char *c) {
+  (void)b; (void)d; (void)v; addons_manifesto_lido(i, c);
+}
 void addons_lista_travar(void) {}
 void addons_lista_destravar(void) {}
 void addons_catalogo_chave(const char *id, const char *base, const char *type, const char *catalog, char *dst, unsigned size) {

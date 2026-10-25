@@ -102,7 +102,8 @@ static void gravar(const char *bmp) {
   }
   for (y = 0; y < 1080; y++)
     memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
-  assert(SDL_SaveBMP(s, bmp) == 0);
+  if (getenv("NV_HERO_FOCUS")) assert(IMG_SavePNG(s, bmp) == 0);
+  else assert(SDL_SaveBMP(s, bmp) == 0);
   SDL_FreeSurface(s);
   free(pix);
 }
@@ -194,6 +195,9 @@ static void ajusta(int layout, int vidro) {
   if (getenv("NV_AJ")) fprintf(a, "%s\n", getenv("NV_AJ"));   // ex.: "heroSectionEnabled 1"
   fclose(a);
   ajustes_dir(dirDados);
+  // Migrations may override vidroLocal; screenshots use the real settings action.
+  ajustes_definir_vidro(vidro);
+  assert(ajustes_vidro() == vidro);
   gfx_escala_txt_definir(getenv("NV_STAGE_SCALE") ? (float)atof(getenv("NV_STAGE_SCALE")) : ajustes_escala_texto());
   ajustes_teste_vidro_env();   // NUVIO_SHOT_VIDRO_OPAC / _FOSCO
   // O roteamento de app.c (app_atualizar), que este teste nao roda.
@@ -447,6 +451,23 @@ int main(int argc, char **argv) {
   return rc;
 #endif
 
+  // Focused Moderna hero only: let real navigation settle before capturing.
+  if (getenv("NV_HERO_FOCUS")) {
+    for (int glass = 0; glass < 2; glass++) {
+      ajusta(HOME_LAYOUT_MODERNA, glass);
+      assert(ajustes_home_layout() == HOME_LAYOUT_MODERNA);
+      for (int r = 0; r < 14; r++) tecla(SDLK_UP);
+      quadros(120, NULL);
+      assert(strcmp(home_rastro_foco(), "hero") == 0);
+      snprintf(bmp, sizeof bmp, "%s-glass-%s-focused.png", saida, glass ? "on" : "off");
+      quadros(1, bmp);
+      printf("[hero-focus] glass=%d focus=%s PNG=%s\n", ajustes_vidro(), home_rastro_foco(), bmp);
+    }
+    tex_encerrar(); txt_encerrar();
+    SDL_GL_DeleteContext(gl); SDL_DestroyWindow(janela); SDL_Quit();
+    return 0;
+  }
+
   // Focused Stage/Split comparison, using the production renderer and local art.
   if (getenv("NV_DINPALCO")) {
     const char *l;
@@ -605,6 +626,57 @@ int main(int argc, char **argv) {
     }
     SDL_Quit();
     return mal ? 1 : 0;
+  }
+
+  // Round collections must use the same circular crop and ring as catalog cards.
+  if (getenv("NV_COL_ROUND")) {
+#ifdef NV_DINPALCO_AUDIT
+    for (int glass = 0; glass < 2; glass++) {
+      ajusta(0, glass);
+      quadros(2, NULL);
+      int collection = -1, normal = -1;
+      for (int r = 0; r < nFileiras; r++) {
+        if (fileiras[r].tipo == FILEIRA_CATALOGOS) collection = r;
+        if (!strcmp(fileiras[r].chave, "trend_series")) normal = r;
+      }
+      assert(collection >= 0 && normal >= 0);
+      assert(fil_definir_tipo(fileiras[collection].chave, FIL_TIPO_REDONDA));
+      assert(fil_definir_tipo(fileiras[normal].chave, FIL_TIPO_REDONDA));
+      quadros(2, NULL);
+      for (int row = 0; row < 2; row++) {
+        focoHero = 0; foco.fileira = row ? collection : normal;
+        foco.coluna = foco.colunaLembrada[foco.fileira] = 0;
+        quadros(120, NULL);
+        snprintf(bmp, sizeof bmp, "%s-g%d-%s.bmp", saida, glass,
+                 row ? "collection-round" : "catalog-round");
+        quadros(1, bmp);
+      }
+      assert(ajustes_borda_foco());
+      assert(fileiras[collection].estiloCol == FILEIRA_REDONDA);
+      assert(fabsf(larguraFil(collection) - alturaFil(collection)) < .01f);
+      gfx_novo_quadro();
+      desenhaAtalhos(collection, 200);
+      // A rectangular image or placeholder leaks into the circle's corners.
+      assert(gfx_fill_modo[GFX_AVATAR] > 0 && "collection image must use circular cover");
+      assert(gfx_fill_modo[GFX_DISCO] > 0 && "collection placeholder and focus must be circular");
+      assert(gfx_fill_modo[GFX_CARD] == 0 && "collection must not draw rectangular art");
+      assert(gfx_fill_modo[GFX_COR] == 0 && "collection must not draw a rectangular ring");
+      float w, h, step, caption;
+      home_vitrine_medida(&w, &h, &step, &caption, 1);
+      assert(w == h && caption > 0);
+      gfx_novo_quadro();
+      GfxRect card = {100, 200, w, h};
+      home_vitrine_cartao(&itens[fils[2].ini], card, card, 1, 1, 1);
+      assert(gfx_fill_modo[GFX_AVATAR] > 0 && "showcase image must use circular cover");
+      assert(gfx_fill_modo[GFX_DISCO] > 0 && gfx_fill_modo[GFX_CARD] == 0);
+    }
+    tex_encerrar(); txt_encerrar();
+    SDL_GL_DeleteContext(gl); SDL_DestroyWindow(janela); SDL_Quit();
+    puts("round collection crop and focus: ok (solid + glass)");
+    return 0;
+#else
+    assert(0 && "round collection test requires NV_DINPALCO_AUDIT");
+#endif
   }
 
   // NV_SO_CTX=1: pula a volta pelos layouts e vai direto ao menu do cartaz

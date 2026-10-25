@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import { rotaCaca } from './src/conquista.js';
+let following=0;
+const env={TMDB_KEY:'test',DB:{prepare(sql){return {bind(...args){return {first:async()=>({seguindo:following}),run:async()=>{following=args[2];}};}};}}};
+const h={json:b=>Response.json(b),erro:(s,n)=>new Response(s,{status:n})};
+const quem={id:'account:profile2'};
+const calls=[];
+const get=async(path,method='GET',body=null)=>rotaCaca(path.split('?')[0],method,env,quem,body,new URL('https://test'+path),h,async(url,opts)=>{calls.push({url,opts});return Response.json(url.includes('external_ids')?{wikidata_id:'Q1'}:{entities:{Q1:{claims:{P26:[{mainsnak:{datavalue:{value:{id:'Q2'}}}}],P166:[{mainsnak:{datavalue:{value:{id:'Q3'}}}}]}},Q2:{labels:{en:{value:'Partner'}}},Q3:{labels:{en:{value:'Award'}}}}});});
+const follow=await get('/v1/filmografia/seguir','POST',{pessoa:1,seguir:1});assert.equal(follow?.status,200);
+const person=await get('/v1/filmografia/pessoa?id=1');assert.equal(person?.status,200);const p=await person.json();assert.equal(p.seguindo,1);assert.equal(p.familia[0].nome,'Partner');assert.equal(p.premios[0].nome,'Award');
+// Wikidata exige User-Agent: sem ele responde 403 e a rota nao pode virar 502.
+const wd=calls.filter(c=>c.url.includes('wikidata.org'));assert.ok(wd.length>=1,'wikidata fetch sem headers');for(const c of wd){assert.ok(c.opts?.headers?.['user-agent'],'wikidata sem user-agent: '+c.url);assert.equal(c.opts.headers.accept,'application/json');}
+const proibido=await rotaCaca('/v1/filmografia/pessoa','GET',env,quem,null,new URL('https://test/v1/filmografia/pessoa?id=1'),h,async(url,opts)=>url.includes('external_ids')?Response.json({wikidata_id:'Q1'}):new Response('forbidden',{status:403}));assert.equal(proibido?.status,200);const proibidoJson=await proibido.json();assert.equal(proibidoJson.seguindo,1);assert.deepEqual(proibidoJson.familia,[]);assert.deepEqual(proibidoJson.premios,[]);
+const quiz=await get('/v1/filmografia/quiz?tmdb=1&tipo=movie');assert.equal(quiz?.status,200);assert.ok(Array.isArray((await quiz.json()).blocked));
+assert.equal((await get('/v1/filmografia/seguir','POST',{pessoa:-1,seguir:1})).status,400);
+console.log('filmography routes: PASS');

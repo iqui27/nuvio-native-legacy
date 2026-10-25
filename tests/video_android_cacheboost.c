@@ -32,6 +32,7 @@ static int semEnv;
 void *SDL_AndroidGetJNIEnv(void) { return semEnv ? NULL : &env; }
 void *SDL_AndroidGetActivity(void) { return NULL; }
 Uint32 SDL_GetTicks(void) { return relogio; }
+Uint64 SDL_GetTicks64(void) { return relogio; }
 SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex *)(uintptr_t)1; }
 void marco(const char *s) { (void)s; }
 const char *ling_audio(void) { return ""; }
@@ -215,6 +216,19 @@ int main(void) {
   assert(!strcmp(registro, "V150"));
   assert(video_velocidade_atual() == 150);
   registro[0] = 0;
+  video_taxa_sync(950); video_bombear();
+  assert(!strcmp(registro, "V143") && video_velocidade_atual() == 150);
+  registro[0] = 0;
+  video_taxa_sync(1000); video_bombear();
+  assert(!strcmp(registro, "V150"));
+  Uint64 stamp;
+  relogio = 1000;
+  Java_space_nuvio_nativelegacy_NvPlayer_nativePos(&env, NULL, 12500, 15000, 0, 0, sessao);
+  relogio = 1200;
+  assert(video_pos_amostra(&stamp) == 12.5 && stamp == 1000);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativePos(&env, NULL, 12500, 15000, 0, 0, sessao);
+  assert(video_pos_amostra(&stamp) == 12.5 && stamp == 1200);
+  registro[0] = 0;
   assert(abrirSessao(0, 0));                     // reconnection / same playback
   Java_space_nuvio_nativelegacy_NvPlayer_nativeEvento(&env, NULL, 1, 60000, 0);
   video_bombear();
@@ -229,9 +243,9 @@ int main(void) {
   video_bombear();
   assert(!strcmp(registro, "A"));            // the trailer is never sped up
 
-  // Passthrough (TCL 06/10): the row is blocked with a reason; PCM frees it.
+  // Personal speed remains available: Kotlin switches passthrough to PCM.
   Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioEstado(&env, NULL, 2);
-  assert(video_velocidade_bloqueada());
+  assert(!video_velocidade_bloqueada());
   Java_space_nuvio_nativelegacy_NvPlayer_nativeAudioEstado(&env, NULL, 1);
   assert(!video_velocidade_bloqueada());
   // The player MEASURED 1x after "ok": refused -> back to 1x in the pipeline,

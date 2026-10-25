@@ -54,8 +54,29 @@ static char fixtureUrl[NV_ADDON_PEDIDO_MAX];
 static pthread_mutex_t fakeLock=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t fakeCond=PTHREAD_COND_INITIALIZER;
 static int slowStarted,releaseSlow;
+static int slowTmdb;
+static const char *tmdbFilters =
+  "\"withGenres\":\"18\",\"withoutGenres\":null,\"releaseDateGte\":null,"
+  "\"releaseDateLte\":null,\"voteAverageGte\":null,\"voteAverageLte\":null,"
+  "\"voteCountGte\":null,\"withOriginalLanguage\":\"ko\",\"withOriginCountry\":\"KR\","
+  "\"withKeywords\":null,\"withoutKeywords\":null,\"withCompanies\":null,"
+  "\"withoutCompanies\":null,\"withNetworks\":null,\"year\":null,"
+  "\"watchRegion\":\"BR\",\"withWatchProviders\":\"8\",\"withoutWatchProviders\":null";
 char *rede_baixar(const char *url,int timeout) {
   (void)timeout;calls++;
+  if (strstr(url, "/discover/tv?")) {
+    int korean = strstr(url, "with_origin_country=KR") != NULL;
+    if (korean && slowTmdb) {
+      pthread_mutex_lock(&fakeLock);
+      slowStarted = 1; pthread_cond_broadcast(&fakeCond);
+      while (!releaseSlow) pthread_cond_wait(&fakeCond, &fakeLock);
+      pthread_mutex_unlock(&fakeLock);
+    }
+    const char *id = korean ? "101" : strstr(url, "with_origin_country=TR") ? "202" : "999";
+    char body[512];
+    snprintf(body, sizeof body, "{\"results\":[{\"id\":900,\"title\":\"Wrong movie\",\"media_type\":\"movie\",\"poster_path\":\"/movie.jpg\"},{\"id\":%s,\"name\":\"Country %s\",\"media_type\":\"tv\",\"poster_path\":\"/fixture.jpg\"}],\"page\":1,\"total_pages\":1}", id, id);
+    return strdup(body);
+  }
   if (strstr(url, "https://collection.invalid/")) {
     snprintf(fixtureUrl, sizeof fixtureUrl, "%s", url);
     fixtureStatus = 404;
@@ -82,6 +103,17 @@ char *rede_baixar(const char *url,int timeout) {
     while(!releaseSlow)pthread_cond_wait(&fakeCond,&fakeLock);
     pthread_mutex_unlock(&fakeLock);
     return strdup("{\"metas\":[{\"id\":\"ttold\",\"name\":\"OLD\",\"poster\":\"old.jpg\"}]}");
+  }
+  if (strstr(url, "/catalog/movie/top10") || strstr(url, "/catalog/series/mixed")) {
+    char body[3000] = "{\"metas\":[";
+    for (int j = 0; j < 20; j++) {
+      char item[140];
+      snprintf(item, sizeof item, "%s{\"id\":\"ttrank%02d\",\"name\":\"Rank %d\",\"type\":\"%s\",\"poster\":\"p.jpg\"}",
+               j ? "," : "", j, j, strstr(url, "/mixed") && j % 2 ? "series" : "movie");
+      strcat(body, item);
+    }
+    strcat(body, "]}");
+    return strdup(body);
   }
   if(strstr(url,"/error/"))return NULL;
   if(strstr(url,"/empty/"))return strdup("{\"metas\":[]}");
@@ -148,5 +180,71 @@ int main(void) {
   snprintf(target.id, sizeof target.id, "%s", folder->sources[1].catId);
   assert(consultarAlvo(&target, "new & fresh", &i, 1) == 1);
   assert(!strcmp(fixtureUrl, "https://collection.invalid/addon/catalog/series/new%2Fseries%20%231%3Ffresh%25/search=new%20%26%20fresh.json?config=fixture"));
+  // The web account serializes every filter, including null defaults (>384 bytes).
+  char account[2400];
+  snprintf(account, sizeof account,
+    "{\"collections\":[{\"id\":\"countries\",\"title\":\"Netflix\",\"folders\":[{"
+    "\"id\":\"dramas\",\"title\":\"Dramas\",\"sources\":["
+    "{\"provider\":\"tmdb\",\"title\":\"Korean\",\"mediaType\":\"TV\",\"filters\":{%s}},"
+    "{\"provider\":\"tmdb\",\"title\":\"Turkish\",\"mediaType\":\"TV\",\"filters\":{%s}}]}]}]}",
+    tmdbFilters, tmdbFilters);
+  char *turkish = strstr(strstr(account, "Turkish"), "\"ko\"");
+  assert(turkish); memcpy(turkish + 1, "tr", 2);
+  turkish = strstr(turkish, "\"KR\""); assert(turkish); memcpy(turkish + 1, "TR", 2);
+  assert(col_definir_json(account) == 1);
+  folder = col_folder(0); assert(folder && folder->nSources == 2);
+  assert(strlen(tmdbFilters) > 384);
+  snprintf(tmdbChave, sizeof tmdbChave, "offline-fixture");
+  for (int tab = 0; tab < 2; tab++) {
+    desc_vertudo_fonte(&folder->sources[tab]); waitDone();
+    assert(!desc_vertudo_erro() && desc_vertudo_n() == 1);
+    assert(desc_vertudo_item(0, &i) && !strcmp(i.imdb, tab ? "tmdb:202" : "tmdb:101"));
+  }
+  pthread_mutex_lock(&fakeLock);
+  slowTmdb = 1; slowStarted = releaseSlow = 0;
+  pthread_mutex_unlock(&fakeLock);
+  desc_vertudo_fonte(&folder->sources[0]);
+  pthread_mutex_lock(&fakeLock);
+  while (!slowStarted) pthread_cond_wait(&fakeCond, &fakeLock);
+  pthread_mutex_unlock(&fakeLock);
+  desc_vertudo_fonte(&folder->sources[1]);
+  assert(desc_vertudo_n() == 0);
+  pthread_mutex_lock(&fakeLock);
+  releaseSlow = 1; pthread_cond_broadcast(&fakeCond);
+  pthread_mutex_unlock(&fakeLock);
+  waitDone();
+  assert(desc_vertudo_n() == 1 && desc_vertudo_item(0, &i) && !strcmp(i.imdb, "tmdb:202"));
+  // The independent Vitrine reader must preserve the same filters.
+  CatItem initial[1]; DescColecaoResultado result;
+  assert(desc_colecao_inicial(&folder->sources[0], "", nv_perfil_sessao_ler(), initial, 1, &result));
+  assert(result.n == 1 && !strcmp(initial[0].imdb, "tmdb:101"));
+  // #666: collection tabs preserve declared type, rank order and Top 10 cap.
+  ColSource ranked = {0};
+  snprintf(ranked.base, sizeof ranked.base, "https://example.invalid");
+  snprintf(ranked.type, sizeof ranked.type, "movie");
+  snprintf(ranked.catId, sizeof ranked.catId, "top10");
+  CatItem ranks[40];
+  assert(desc_colecao_inicial(&ranked, ranked.base, nv_perfil_sessao_ler(), ranks, 20, &result));
+  fprintf(stderr, "Top 10 initial count: %d (expected 10)\n", result.n);
+  assert(result.n == 10 && !result.mais);
+  desc_vertudo_abrir(ranked.base, ranked.type, ranked.catId); waitDone();
+  assert(desc_vertudo_n() == 10 && desc_vertudo_fim());
+  for (int j = 0; j < 10; j++) {
+    char id[32]; snprintf(id, sizeof id, "ttrank%02d", j);
+    assert(!strcmp(ranks[j].imdb, id));
+    assert(desc_vertudo_item(j, &i) && !strcmp(i.imdb, id));
+  }
+  before = calls; desc_vertudo_mais(); waitDone(); assert(calls == before);
+  snprintf(ranked.type, sizeof ranked.type, "series");
+  snprintf(ranked.catId, sizeof ranked.catId, "mixed");
+  assert(desc_colecao_inicial(&ranked, ranked.base, nv_perfil_sessao_ler(), ranks, 20, &result));
+  assert(result.n == 10);
+  desc_vertudo_abrir(ranked.base, ranked.type, ranked.catId); waitDone();
+  assert(desc_vertudo_n() == 10);
+  for (int j = 0; j < 10; j++) {
+    char id[32]; snprintf(id, sizeof id, "ttrank%02d", j * 2 + 1);
+    assert(!strcmp(ranks[j].tipo, "series") && !strcmp(ranks[j].imdb, id));
+    assert(desc_vertudo_item(j, &i) && !strcmp(i.tipo, "series") && !strcmp(i.imdb, id));
+  }
   puts("collections data: PASS (retry, empty, stale tabs, encoded folder/Home/search/Vitrine catalogs, raw skip, types, addon identity)");
 }

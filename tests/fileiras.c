@@ -9,6 +9,7 @@
 // no primeiro fil_mover a ordem local vira autoridade e a home inteira salta
 // para a ordem de registro, derrubando as fixas para o fim.
 #include "fileiras.h"
+#include "ajustes.h"   // PALCO_* (#659)
 #include "nvtmp.h"
 #include <assert.h>
 #include <stdio.h>
@@ -140,6 +141,18 @@ int main(void) {
   assert(fil_origem_de("social_activity")   == FIL_ORIGEM_APP);
   assert(fil_origem_de("last_session")      == FIL_ORIGEM_APP);
   assert(fil_origem_de("collection_a24")    == FIL_ORIGEM_COLECAO);
+  assert(fil_origem_de("colpin_a24")        == FIL_ORIGEM_COLECAO);
+  // A sincronizacao dos grupos da conta nao apaga a ordem da pasta fixada.
+  fil_registrar("colpin_a24", "Pinned", "", "", 3);
+  fil_colecoes_reconciliar(NULL, NULL, NULL, 0, 1);
+  { int achou = 0;
+    for (int k = 0; k < fil_n(); k++) if (!strcmp(fil_chave(k), "colpin_a24")) achou = 1;
+    assert(achou); }
+  assert(fil_origem_de("jellyfin_abc") == FIL_ORIGEM_SERVIDOR);
+  assert(fil_origem_de("emby_11") == FIL_ORIGEM_SERVIDOR);
+  assert(fil_origem_de("plex_1") == FIL_ORIGEM_SERVIDOR);
+  assert(fil_origem_de("srv:01234567:lib:11") == FIL_ORIGEM_SERVIDOR);
+  assert(!strcmp(fil_origem_icone(FIL_ORIGEM_SERVIDOR), "aj_server"));
   // Chave que so COMECA parecida nao e colecao: o prefixo tem de ser exato.
   assert(fil_origem_de("collections_movie_x") == FIL_ORIGEM_CATALOGO);
   assert(fil_origem_de("com.linvo.cinemeta_movie_top") == FIL_ORIGEM_CATALOGO);
@@ -1522,6 +1535,35 @@ int main(void) {
       usaArquivo = 0;
     } }
   puts("ok  #204: catalogo que nenhum addon declara sai antes de recusar o novo; escolha explicita fica");
+
+  fil_esquecer();
+  usaArquivo = 1;
+  fil_registrar("plex_1", "Films", "Plex", "movie", 3);
+  assert(fil_definir_servidor("plex_1", 1, 1));
+  assert(fil_servidor_ordem("plex_1") == 1 && fil_servidor_ocultar_vistos("plex_1"));
+  fil_teste_recarregar();
+  assert(fil_servidor_ordem("plex_1") == 1 && fil_servidor_ocultar_vistos("plex_1"));
+  assert(!fil_servidor_ordem("emby_1") && !fil_servidor_ocultar_vistos("emby_1"));
+  assert(!fil_definir_servidor("plex_1", 2, 0));
+  remove("/tmp/fileirasui.txt"); usaArquivo = 0;
+  puts("ok server row order and hide-watched survive reload, isolated by key");
+  // #659: fundo do Palco por fileira — herda o global, grava e relê do arquivo.
+  fil_registrar("palco_cat", "Popular", "Cinemeta", "movie", 6);
+  assert(fil_palco("palco_cat") == PALCO_PADRAO);
+  assert(fil_definir_palco("palco_cat", PALCO_AURA) && fil_palco("palco_cat") == PALCO_AURA);
+  assert(!fil_definir_palco("continue_watching", PALCO_PRETO));
+  assert(fil_definir_palco("palco_cat", PALCO_PADRAO) && fil_palco("palco_cat") == PALCO_PADRAO);
+  usaArquivo = 1;
+  fil_definir_perfil(1);
+  assert(fil_definir_palco("palco_cat", PALCO_TRIPTICO));
+  fil_teste_recarregar();
+  fil_definir_perfil(1);
+  assert(fil_palco("palco_cat") == PALCO_TRIPTICO);
+  remove(nvt("/fileirasui-p1.txt"));
+  fil_definir_perfil(0);
+  usaArquivo = 0;
+  puts("ok  #659: fundo do Palco por fileira persiste e respeita fileira fixa do app");
+
 
   puts("fileiras: tudo ok");
   return 0;

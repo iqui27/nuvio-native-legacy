@@ -78,6 +78,8 @@ void stream_filtro_tipo(const char *tipo) { (void)tipo; }
 // F11: Jellyfin targets are routed away from addons; not exercised here.
 #include "jellyfin.h"
 int servidores_fontes_pedir(const char *alvo) { (void)alvo; return 0; }
+int servidores_tem(const char *id, const char *tipo) { (void)id; (void)tipo; return 0; }
+void servidores_rotular(Stream *l, int n) { (void)l; (void)n; }
 int servidores_fontes_colher(const char *alvo, Stream **l, int *n) {
   (void)alvo; if (l) *l = NULL; if (n) *n = 0; return JF_FONTES_FALHOU; }
 uint64_t badges_detectar(const char *m) { (void)m; return 0; }

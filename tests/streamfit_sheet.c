@@ -22,6 +22,9 @@ void partes_pedir_cedo(const Stream *s,const char *t) { (void)s;(void)t; }
 void partes_pedir_item(const Stream *s,int i) { (void)s;(void)i; }
 int partes_resultado(PartesLista *l) { (void)l;return PARTES_VAZIO; }
 void partes_aquecer(void) {}
+int partes_airlock_estado(int *l,char *d,unsigned n) { (void)l;(void)d;(void)n;return -2; }
+void partes_airlock_pedir(int u,int i,int l) { (void)u;(void)i;(void)l; }
+int debrid_tb_disponivel(void) { return 0; }
 void partes_cancelar(void) {}
 void ctxhold_cancelar(CtxHold *h) { memset(h,0,sizeof *h); }
 int ctxhold_passo(CtxHold *h,Uint32 t,int f) { (void)h;(void)t;(void)f;return 0; }
@@ -62,6 +65,11 @@ int ajustes_dv_mkv(void) { return 0; }
 int ajustes_fonte_escopo(void) { return 0; }
 int ajustes_fonte_hdr(void) { return 0; }
 int ajustes_fonte_manual(void) { return 0; }
+int fonteregra_no_escopo(const FonteRegraCfg *c, int plugin)
+  { (void)c; (void)plugin; return 1; }
+// This sheet fixture has no persisted source preference.
+int fontepref_escolher(const char *id) { (void)id; return -1; }
+int fontepref_escolher_manual(const char *id) { (void)id; return -1; }
 int ajustes_fonte_ordem_addon(void) { return 0; }
 int ajustes_fonte_prioridade(void) { return prioridadeTeste; }
 int ajustes_fonte_regex_modo(void) { return 0; }
@@ -118,7 +126,7 @@ static Stream source(int id,long mb,uint64_t exact,int h) {
 }
 static uint64_t sizeAt(int kbps) { return (uint64_t)kbps*1000*7200/8; }
 static void expect(const int *expected,int count) {
-  assert(nOrdem==count);for(int i=0;i<count;i++) assert(ordem[i]==expected[i]);
+  assert(nOrdem==count);for(int i=0;i<count;i++) { if(ordem[i]!=expected[i]) fprintf(stderr,"order mismatch slot %d actual %d expected %d now %llu\n",i,ordem[i],expected[i],(unsigned long long)fakeNow); assert(ordem[i]==expected[i]); }
 }
 static void sourceKey(Uint32 type, SDL_Keycode key, int repeat) {
   SDL_Event event = {0};
@@ -294,17 +302,17 @@ int main(void) {
   // #205: uma carta "fora do cache" fica no FIM do proprio grupo de qualidade,
   // nao despejada depois de todos os grupos. E a carta em foco que acaba de
   // virar fora-do-cache leva o foco junto (foraCacheFoco, como verificarUma faz).
-  lista[2].foraCache=1;
+  lista[2].foraCache=1; atomic_fetch_add(&folhaRevisao,1);
   { const int regra[]={3,1,0,5,2,4};montar(automaticaDaFolha());expect(regra,6); }
   // O foco segue a carta: a virada chega como chega de verdade — o fio marca
   // foraCache e o indice, sem montar no meio — e a atualizacao prende o foco
   // pelo indice com o Y do layout de ANTES.
-  lista[2].foraCache=0;montar(automaticaDaFolha());expect(incremental,6);
-  lista[2].foraCache=1;
+  lista[2].foraCache=0; atomic_fetch_add(&folhaRevisao,1);montar(automaticaDaFolha());expect(incremental,6);
+  lista[2].foraCache=1; atomic_fetch_add(&folhaRevisao,1);
   atomic_store(&foraCacheFoco,2);
   stream_folha_atualizar(.016f,0);
   assert(filtrado(foco)==2); // o foco seguiu a carta para o lugar novo
-  lista[2].foraCache=0;montar(automaticaDaFolha());expect(incremental,6);
+  lista[2].foraCache=0; atomic_fetch_add(&folhaRevisao,1);montar(automaticaDaFolha());expect(incremental,6);
   foco=linhaDe(2); // a secao seguinte parte do foco na carta 2, como antes
   stream_atualizar_lista(sources,5);assert(filtrado(foco)==focused);
   { const int reaberta[]={3,1,2,0,4};expect(reaberta,5); } // o melhor (3) volta como primeira linha
@@ -353,8 +361,8 @@ int main(void) {
   { int seen0=linhaDe(0),seen1=linhaDe(1),seen2=linhaDe(2); assert(seen0>=0 && seen2>=0 && seen1>seen0 && seen1>seen2); }
   // The focused row opens the connection line even when there is no file name.
   { int r=linhaDe(2); lista[2].arquivo[0]=0; assert(!arquivoDa(&lista[2])[0]);
-    foco=r; grupo=1; abreFoco=1; nOrdem=r; float h=alturaLinha(2,-1);
-    assert(h>=FOLHA_LINHA_H+FOLHA_FIT_H-.01f); nOrdem=r+1; float o=alturaLinha(2,-1);
+    foco=r; grupo=1; abreFoco=1; nOrdem=r; float h=alturaLinha(2,-1,1.0f);
+    assert(h>=FOLHA_LINHA_H+FOLHA_FIT_H-.01f); nOrdem=r+1; float o=alturaLinha(2,-1,0.0f);
     assert(o<FOLHA_LINHA_H+FOLHA_MARCA_H+.01f); montar(automaticaDaFolha()); }
   stream_fit_duracao("tt3",0,SF_DUR_DESCONHECIDA);stream_folha_abrir();
   assert(fitTexto(0,txt,sizeof txt)==SF_DESCONHECIDA && !strcmp(txt,"Conexão: duração do título desconhecida"));
@@ -374,3 +382,5 @@ int main(void) {
   stream_definir_lista(NULL,0);free(ordem);free(linhaY);free(linhaH);free(grupoTmp);free(grupoFitTmp);free(fitResultados);free(fitClasses);
   puts("streamfit sheet: PASS (stable groups, raw identities, freeze, incremental/focus, OndeVer, first-source)");return 0;
 }
+
+unsigned fontesmortas_versao(void) { return 0; }

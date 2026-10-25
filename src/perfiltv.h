@@ -48,6 +48,12 @@ int  ptv_gpu_utgard_atual(void);
 // Orcamento automatico pela RAM (MemTotal na LG, deviceMemory no Tizen). 0 =
 // RAM desconhecida.
 int ptv_tex_auto_mb(PtvPlataforma p, long memMB);
+// Artwork pipeline budgets, MiB unless named otherwise. See docs/cache-capas.md.
+typedef struct {
+  int fileiras, decodeMb, reservaDecodeMb, corpoMb, discoMb;
+  int uploadKiB, uploadMs;
+} PtvCache;
+PtvCache ptv_cache(PtvPlataforma p, long memMB);
 // O MAXIMO que a RAM permite (Ajustes, NV_TEX_MB_FIXO e o otimizador). No
 // Tizen e o proprio automatico: medido, teto maior decodifica mais devagar.
 int ptv_tex_teto_mb(PtvPlataforma p, long memMB);

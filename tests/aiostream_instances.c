@@ -8,6 +8,7 @@ int dados_gravar_leve(const char *name, const char *data) { (void)name; (void)da
 static const char *resp[1];
 char *rede_baixar(const char *url, int seconds) {
   (void)seconds;
+  if (strstr(url, "manifest.json")) return NULL;   // re-sonda de manifesto: sem fixture
   assert(strstr(url, "https://exemplo.test/config"));
   assert(strstr(url, "/stream/movie/tt1.json"));
   return strdup(resp[0]);
@@ -20,6 +21,14 @@ char *rede_baixar_st(const char *url, int seconds, const char *const *headers, i
   return body;
 }
 const char *rede_ultimo_erro(void) { return ""; }
+static RedeMedida medidaFalsa;
+char *rede_baixar_medido(const char *url, int segundos, const char *const *cabecalhos, RedeMedida *m) {
+  (void)segundos; (void)cabecalhos; if (m) *m = medidaFalsa;
+  return strstr(url, "exemplo.test") ? rede_baixar(url, 10) : NULL;   // sondas fora do fixture falham caladas
+}
+char *rede_baixar_medido_controle(const char *url, int segundos, const char *const *cabecalhos, const RedeControle *c, RedeMedida *m) {
+  (void)c; return rede_baixar_medido(url, segundos, cabecalhos, m);
+}
 const char *rede_url_publica(const char *url, char *dst, unsigned n) {
   (void)url; snprintf(dst, n, "fixture"); return dst;
 }

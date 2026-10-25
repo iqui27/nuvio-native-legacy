@@ -1,0 +1,118 @@
+// Offline fixtures, production setup renderer and keyboard navigation.
+#define SRVSETUP_SHOT 1
+// Fixture server names for manage/discovery shots; without them connected()
+// is false and every row reads "Não configurado".
+char shotServerNames[3][96];
+#define plex_conectado shotPlexConectado
+#define jellyfin_conectado shotJfConectado
+#define emby_conectado shotEmbyConectado
+#define plex_servidor_nome shotPlexNome
+#define jellyfin_servidor_curto shotJfCurto
+#define emby_servidor_curto shotEmbyCurto
+static int shotPlexConectado(void) { return shotServerNames[0][0] != 0; }
+static int shotJfConectado(void) { return shotServerNames[1][0] != 0; }
+static int shotEmbyConectado(void) { return shotServerNames[2][0] != 0; }
+static const char *shotPlexNome(void) { return shotServerNames[0]; }
+static const char *shotJfCurto(void) { return shotServerNames[1]; }
+static const char *shotEmbyCurto(void) { return shotServerNames[2]; }
+#include "../src/srvsetup.c"
+#include "rail_shot.h"
+#include "home.h"
+#include <SDL2/SDL_image.h>
+#include <assert.h>
+static GLuint target;
+static int homeShot;
+static void capture(const char *dir, const char *name) {
+  for (int i=0;i<45;i++) {
+    SDL_Delay(10);
+    SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); gfx_novo_quadro();
+    glBindFramebuffer(GL_FRAMEBUFFER,target);glViewport(0,0,1920,1080);glClear(GL_COLOR_BUFFER_BIT);
+    if(homeShot) { home_atualizar(1.0f/60,codeSince+28000+i*16);home_desenhar(codeSince+28000+i*16); }
+    else { srvsetup_atualizar(codeSince+28000+i*16); srvsetup_desenhar(codeSince+28000); }
+    rail_shot_desenhar(homeShot?MENU_INICIO:MENU_BIBLIOTECA);glFinish();
+  }
+  unsigned char *pixels=malloc(1920*1080*4); assert(pixels);
+  glReadPixels(0,0,1920,1080,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+  SDL_Surface *surface=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);assert(surface);
+  for(int y=0;y<1080;y++)memcpy((char*)surface->pixels+y*surface->pitch,pixels+(1079-y)*1920*4,1920*4);
+  char path[900];snprintf(path,sizeof path,"%s/%s-app.png",dir,name);assert(!IMG_SavePNG(surface,path));puts(path);
+  free(pixels);SDL_FreeSurface(surface);
+}
+static void key(SDL_Keycode k){SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;srvsetup_evento(&e);}
+int main(int argc,char **argv){
+  assert(argc==2);SDL_SetHint("SDL_MAC_BACKGROUND_APP","1");assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));IMG_Init(IMG_INIT_PNG|IMG_INIT_JPG);
+  dados_iniciar(getenv("NUVIO_DADOS"));dados_gravar("ajustes.txt","idioma 0\njellyfinLocal 0\nbordaFocoCartaz 1\n");ajustes_dir(dados_dir());
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
+  SDL_Window *w=SDL_CreateWindow("Personal servers proof",0,0,64,64,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);assert(w);assert(SDL_GL_CreateContext(w));
+  GLuint texture;glGenTextures(1,&texture);glBindTexture(GL_TEXTURE_2D,texture);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,1920,1080,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+  glGenFramebuffers(1,&target);glBindFramebuffer(GL_FRAMEBUFFER,target);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,texture,0);assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
+  gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(64);gfx_icones_dir("deploy/app/art");rail_shot_aplicar();
+  opened=1;profile=perfis_ativo();provider=0;codeSince=1000;change(CHOOSE);capture(argv[1],"setup-escolher");
+  key(SDLK_RIGHT);assert(selected==1);key(SDLK_LEFT);assert(selected==0);key(SDLK_ESCAPE);assert(!opened);
+  struct {int state,p;const char *name;} scenes[]={
+    {CODE,0,"setup-plex-pin"},{CODE,1,"setup-jellyfin-quickconnect"},{CONNECT_CODE,2,"setup-emby-connect"},
+    {DISCOVER,0,"setup-plex-descoberta"},{DISCOVER,1,"setup-jellyfin-descoberta"},{DISCOVER,2,"setup-emby-descoberta"},
+    {ADDRESS,0,"setup-plex-manual"},{ADDRESS,1,"setup-manual"},{ADDRESS,2,"setup-emby-manual"},
+    {USERS,1,"setup-jellyfin-usuario"},{USERS,2,"setup-emby-usuario"},
+    {PASSWORD,1,"setup-jellyfin-senha"},{PASSWORD,2,"setup-emby-senha"},{CONNECT_PASSWORD,2,"setup-emby-credentials"},
+    {LIBRARIES,0,"setup-plex-bibliotecas"},{LIBRARIES,1,"setup-bibliotecas"},{LIBRARIES,2,"setup-emby-bibliotecas"},
+    {READY,0,"setup-plex-pronto"},{READY,1,"setup-pronto"},{READY,2,"setup-emby-pronto"},
+    {MANAGE,0,"servidores-gerenciar"},{REMOVE,0,"servidor-remover"},{ERROR_SCREEN,2,"servidor-offline"},
+    {ERROR_SCREEN,1,"setup-credencial-expirada"},{ROWS,0,"fileira-adicionar-servidor"},
+    {PLEX_SERVERS,0,"setup-plex-servidor"},{LOGIN,2,"setup-emby"},
+    {DISCOVER,1,"setup-buscando"},{DISCOVER,1,"setup-nenhum-servidor"}};
+  for(unsigned i=0;i<sizeof scenes/sizeof *scenes;i++){
+    opened=1;provider=scenes[i].p;change(scenes[i].state);worker.n=2;
+    strcpy(code,provider==0?"H7KM":"482916");makeQR(provider==0?"https://plex.tv/link":provider==1?"http://jellyfin.example.test/web/#/quickconnect":"https://emby.media/pin");
+    recoveryAuth=screen==ERROR_SCREEN&&provider==1;
+    // Setup shots must show real connected names, never "Não configurado".
+    for(int p=0;p<3;p++) lastSync[p]=time(NULL)-180*(p+1);
+    if(screen==MANAGE||screen==REMOVE) { libraryProviderCounts[0]=346; libraryProviderCounts[1]=114; libraryProviderCounts[2]=9; }
+    { const char *snames[]={"Casa","Sala","Estúdio"};
+      // Manage and offline shots need all three rows live; discovery shows the
+      // chosen provider only, as the approved fixture does.
+      int live = screen==MANAGE||screen==REMOVE||screen==ERROR_SCREEN;
+      for(int p=0;p<3;p++) if(live || p==scenes[i].p || screen==CHOOSE) snprintf(shotServerNames[p],96,"%s",snames[p]); }
+    for(int j=0;j<2;j++){
+      const char *name=j?"Cinema":"Home";
+      snprintf(worker.servers[j].nome,96,"%s",name);snprintf(worker.plex[j].nome,96,"%s",name);
+      snprintf(worker.users[j].nome,96,"%s",j?"Diego":"Marina");
+      snprintf(worker.users[j].imagem,640,"/Volumes/ExternalSSD/tmp/servidores-polish/assets/%s.jpg",j?"diego":"marina");
+    }
+    nLibraries=3;memset(libraries,0,sizeof libraries);
+    const char *titles[]={"Filmes","Séries","Concertos"};
+    for(int j=0;j<3;j++){
+      snprintf(libraries[j].titulo,sizeof libraries[j].titulo,"%s",titles[j]);
+      snprintf(libraries[j].chave,sizeof libraries[j].chave,"%s%d",prefix[provider],j+1);
+      snprintf(libraries[j].tipo,sizeof libraries[j].tipo,"%s",j==1?"series":"movie");checked[j]=j<2;
+    }
+    rowChoice=rowStyle=0;
+    if(screen==ROWS){nLibraries=4;snprintf(libraries[3].chave,sizeof libraries[3].chave,"plex_recent_1");snprintf(libraries[3].titulo,sizeof libraries[3].titulo,"Mais recentes");snprintf(libraries[3].tipo,sizeof libraries[3].tipo,"movie");snprintf(libraries[1].titulo,sizeof libraries[1].titulo,"Coleção espacial");snprintf(libraries[1].tipo,sizeof libraries[1].tipo,"group");snprintf(libraries[1].chave,sizeof libraries[1].chave,"plex_group_42");snprintf(libraries[2].titulo,sizeof libraries[2].titulo,"Fila do fim de semana");snprintf(libraries[2].tipo,sizeof libraries[2].tipo,"list");snprintf(libraries[2].chave,sizeof libraries[2].chave,"plex_list_43");rowChoice=selected=1;}
+    if(!strcmp(scenes[i].name,"setup-nenhum-servidor"))worker.n=0;
+    if(!strcmp(scenes[i].name,"setup-buscando"))worker.alive=1;
+    strcpy(username,"Marina");strcpy(password,"fixture");strcpy(addressText,"http://media.example.test:8096");
+    capture(argv[1],scenes[i].name);worker.alive=0;
+  }
+  static CatItem items[5];CatFileira ready={0};
+  for(int i=0;i<5;i++){
+    snprintf(items[i].imdb,sizeof items[i].imdb,"tt%d",100+i);strcpy(items[i].tipo,"movie");
+    snprintf(items[i].titulo,sizeof items[i].titulo,"Filme %d",i+1);
+    snprintf(items[i].poster,sizeof items[i].poster,"/Volumes/ExternalSSD/tmp/servidores-polish/assets/p%02d.jpg",i+2);
+  }
+  strcpy(ready.chave,"plex_group_42");strcpy(ready.titulo,"Coleção espacial");strcpy(ready.tipo,"movie");ready.n=5;
+  assert(home_iniciar("deploy/app/art"));cat_definir_tudo(items,5,&ready,1);home_ir_topo();home_focar_titulo(0);homeShot=1;capture(argv[1],"fileira-servidor-pronta");homeShot=0;
+  opened=1;screen=ROWS;provider=0;nLibraries=1;rowChoice=0;strcpy(libraries[0].chave,"plex_1");
+  selected=2;key(SDLK_RETURN);assert(fil_servidor_ordem("plex_1")==1);
+  selected=3;key(SDLK_RETURN);assert(fil_servidor_ocultar_vistos("plex_1"));
+  selected=5;key(SDLK_RETURN);assert(screen==READY);
+  screen=ERROR_SCREEN;recoveryAuth=0;selected=3;key(SDLK_RETURN);assert(screen==MANAGE);
+  screen=ERROR_SCREEN;recoveryAuth=1;selected=2;key(SDLK_RETURN);assert(!opened);
+  opened=1;screen=REMOVE;selected=0;key(SDLK_RETURN);assert(screen==MANAGE);
+  screen=LIBRARIES;nLibraries=2;selected=0;key(SDLK_RETURN);assert(!checked[0]);
+  screen=LIBRARIES;key(SDLK_ESCAPE);assert(screen==MANAGE);
+  screen=LOGIN;key(SDLK_ESCAPE);assert(screen==CHOOSE);
+  screen=ROWS;key(SDLK_ESCAPE);assert(screen==READY);
+  { screen=ADDRESS; provider=1; keyboard(1); capture(argv[1],"setup-manual-teclado"); field=0; teclado_esquecer(); }
+  puts("Setup D-pad: bounded focus, Back, safe removal default, library toggle: PASS");
+  return 0;
+}

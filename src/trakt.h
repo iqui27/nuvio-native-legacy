@@ -109,6 +109,10 @@ int trakt_playback_remover(const char *imdb);
 // SINCRONO: quem chamar do fio de desenho tem de mandar para um fio proprio.
 int trakt_episodios_marcar(const char *imdb, const VistoPar *pares, int qtd,
                            int visto);
+// O mesmo lote com o token de OUTRO perfil (trava de serie, modo Juntos). Nao
+// toca na credencial em uso. SINCRONO.
+int trakt_episodios_marcar_token(const char *tok, const char *imdb,
+                                 const VistoPar *pares, int qtd, int visto);
 int  trakt_continuar(CatItem *saida, int max);
 // 1 quando a ULTIMA trakt_continuar nao teve resposta (rede, HTTP 5xx): o 0
 // que ela devolveu e "nao sei", e nao "nada em andamento" (#151).
@@ -178,4 +182,6 @@ int trakt_ler_filmes_vistos(const char *corpo);
 // Nota de 1 a 10 em /sync/ratings (a reacao dos creditos, reacao.c). Nao
 // bloqueia; 0 quando o Trakt esta desligado ou o id nao e IMDb.
 int trakt_avaliar(const char *imdb, const char *tipo, int nota);
+// Pure payload builder: title or series IMDb:season:episode; zero removes.
+int trakt_nota_corpo(char *dst, size_t tam, const char *imdb, const char *tipo, int nota);
 #endif

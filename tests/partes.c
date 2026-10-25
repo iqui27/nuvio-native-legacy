@@ -14,6 +14,7 @@ int debrid_tb_disponivel(void) { return 0; }
 char *debrid_tb_mylist(int u, int id, int p, int f, int *st) { (void)u; (void)id; (void)p; (void)f; if (st) *st = 0; return NULL; }
 int debrid_tb_link(int u, int id, int a, char *url, unsigned n) { (void)u; (void)id; (void)a; (void)url; (void)n; return 0; }
 int debrid_tb_adicionar(const char *h) { (void)h; return 0; }
+int debrid_tb_airlock(int u, int id, int l, char *det, unsigned n) { (void)u; (void)id; (void)l; (void)det; (void)n; return 0; }
 char *rede_baixar_trecho64_final(const char *url, const char *h, int64_t a, int64_t b, long *s,
                                  int64_t *t, int *st, volatile int *c, char *f, int *x) {
   (void)url; (void)h; (void)a; (void)b; (void)s; (void)t; (void)st; (void)c; (void)f; (void)x;
@@ -45,6 +46,19 @@ int main(void) {
   partes_lista_limpar(&l);
   ok(partes_achar(corpo, 0, hs, 1, 1, "", 0, &l) == 1 && l.item == 7, "hash finds the source's item");
   ok(l.n == 4, "all four videos listed");
+  ok(l.airlock == 0, "item without \"airlocked\" is not in the Airlock");
+  { static const char *air = "{\"id\":7,\"airlocked\":true,\"files\":[{\"id\":10,\"name\":\"K/Kaguya-sama First Kiss - 03.mkv\",\"size\":300000000}]}";
+    static const char *nao = "{\"id\":7,\"airlocked\":false,\"files\":[{\"id\":10,\"name\":\"K/Kaguya-sama First Kiss - 03.mkv\",\"size\":300000000}]}";
+    PartesLista a = {0};
+    ok(partes_ler_item(air, NULL, 0, &a) && a.airlock == 1, "\"airlocked\":true reads as Airlock on");
+    ok(partes_ler_item(nao, NULL, 0, &a) && a.airlock == 0, "\"airlocked\":false reads as Airlock off");
+    const char *flags[] = {"1", "\"true\"", "0", "\"false\"", "10"};
+    for (int i = 0; i < 5; i++) {
+      char item[160];
+      snprintf(item, sizeof item, "{\"id\":7,\"airlocked\":%s,\"files\":[{\"id\":10,\"name\":\"part.mkv\",\"size\":300000000}]}", flags[i]);
+      ok(partes_ler_item(item, NULL, 0, &a) && a.airlock == (i < 2), "Airlock accepts numeric/string flags without treating 10 as true");
+    }
+    partes_lista_limpar(&a); }
   ok(l.n == 4 && strstr(l.arq[0].nome, "01") && strstr(l.arq[1].nome, "02") && strstr(l.arq[2].nome, "03"),
      "parts in natural order (01, 02, 03)");
   ok(l.n == 4 && l.arq[3].extra && strstr(l.arq[3].nome, "NCOP"), "NCOP is an extra, after the parts");

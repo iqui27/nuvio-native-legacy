@@ -20,6 +20,9 @@ char *rede_baixar_trecho64_final(const char *u,const char *h,int64_t s,int64_t e
   if(f) *f=0; if(cross) *cross=0;
   return rede_baixar_trecho64_cab(u,h,s,end,n,t,st,c);
 }
+char *rede_range_headers(const char *raw,int public_only) {
+  (void)public_only;return strdup(raw?raw:"");
+}
 int rede_fluxo64(const char *u,const char *h,int64_t s,int (*sink)(void *,const char *,size_t),void *o,
     int64_t *t,int *st,volatile int *c,char *f,int *cross,long ms,int64_t *got) {
   (void)u;(void)h;(void)s;(void)sink;(void)o;(void)t;(void)st;(void)c;(void)f;(void)cross;(void)ms;(void)got;

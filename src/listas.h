@@ -30,6 +30,7 @@
 #define NV_LISTAS_H
 #include "catalogo.h"
 #include "colecoes.h"
+#include "descoberta.h"
 
 // Quantas listas a tela mostra de uma fonte (ou de uma busca). O Trakt devolve
 // ate 30 por pagina e nao ha paginacao na tela: rolar 60 cartoes de lista num
@@ -41,7 +42,7 @@
 // Context-menu batch size. Simkl list storage grows with its full response.
 #define LST_ITENS_MAX 120
 
-typedef enum { LST_TRAKT = 0, LST_SIMKL, LST_NUVIO, LST_FONTE_N } LstFonte;
+typedef enum { LST_TRAKT = 0, LST_SIMKL, LST_NUVIO, LST_SERVIDOR, LST_FONTE_N } LstFonte;
 
 typedef struct {
   int  fonte;             // LstFonte
@@ -54,7 +55,24 @@ typedef struct {
   char midia[8];          // "MOVIE" | "TV" — ver a nota sobre tipo em listas.c
   int  itens;             // -1 quando a fonte nao informa
   int  curtidas;          // so o Trakt informa; -1 caso contrario
+  // Cabecalho da PAGINA da lista (design/2.1/listas.html 6B). So o Trakt informa;
+  // "" / -1 nas outras fontes e quando a resposta nao trouxe o campo.
+  char slug[96];          // ids.slug da lista
+  char autorSlug[64];     // user.ids.slug, para montar a URL publica
+  char autorNome[64];     // user.name ("Henrique"); autor continua sendo o username
+  char criada[32];        // created_at, ISO 8601 como o Trakt devolve
+  char atualizada[32];    // updated_at
+  int  comentarios;       // comment_count, -1 = nao informado
+  int  privada;           // 1 = privacy diferente de "public"
+  int  propria;           // veio de /users/me/lists
 } LstLista;
+
+// Small per-profile session previews, populated only when a list is opened.
+// No extra HTTP request per card; URLs only, no retained CatItem/GL texture.
+typedef struct { int n; char poster[4][512]; } LstPrevia;
+int lst_previa(const LstLista *l, LstPrevia *out);
+void lst_previa_registrar(const LstLista *l, const CatItem *itens, int n);
+void lst_previa_limpar(void);
 
 // --- ciclo de vida -----------------------------------------------------------
 // Le as fixadas do perfil ATIVO (perfis_ativo()) e reaplica as que vao para a
@@ -88,14 +106,27 @@ void lst_esquecer_conta(void);
 // fazer e volta na hora. Repetir a mesma fonte com resultado em maos nao
 // refaz o pedido.
 void lst_pedir(int fonte);
+void lst_pedir_servidores(int provider, int collections);
+int lst_servidor_chave(const CatItem *item, char *out, size_t n);
+int lst_servidor_entrar(const CatItem *item);
 // Procura nas listas PUBLICAS do Trakt. `termo` vazio pede /lists/trending.
 void lst_buscar(const char *termo);
 // As FIXADAS do perfil, no lugar de uma fonte. Nao tem rede.
 void lst_pedir_fixadas(void);
 
+// AS LISTAS PROPRIAS DO TRAKT, numa tabela a parte (menu "Adicionar a uma lista"):
+// pedir nao mexe em lst_n/lst_lista. lst_minha copia; 0 = indice fora.
+void lst_minhas_pedir(void);
+int  lst_minhas_carregando(void);
+int  lst_minhas_n(void);
+int  lst_minha(int i, LstLista *dst);
+void lst_minhas_teste(const char *json);   // teste: injeta o JSON de /users/me/lists
+
 int  lst_carregando(void);
 int  lst_n(void);
 const LstLista *lst_lista(int i);
+// Espelha uma descricao confirmada pelo Trakt nas tabelas em memoria.
+void lst_descricao_atualizar(long traktId, const char *descricao);
 // Motivo de a lista ter vindo vazia, ja em portugues e pronto para i18n: "" =
 // nao ha motivo a mostrar (veio cheia, ou ainda esta carregando).
 const char *lst_aviso(void);
@@ -130,8 +161,24 @@ void lst_abrir(const LstLista *l, const char *midia);
 int  lst_itens_n(void);
 int  lst_item(int i, CatItem *dst);
 int  lst_itens_carregando(void);
+// O que a lista diz do item `i` alem do titulo: posicao, quando entrou, nota do
+// curador (ver DescItemLista). 0 quando o indice nao existe ou a fonte nao e o
+// Trakt (Simkl/Nuvio devolvem 1 com tudo vazio).
+int  lst_item_extra(int i, DescItemLista *dst);
+// REORDENAR (so o Trakt de quem e dono): move o item da posicao `de` para `para`
+// so na tela; lst_item/lst_item_extra passam a devolver na ordem nova. lst_abrir
+// volta a ordem do servidor. 1 = moveu.
+int  lst_ordem_mover(int de, int para);
+// Os ids das ENTRADAS (DescItemLista.itemId) na ordem que a tela mostra, para
+// lstesc_ordenar. 0 quando algum item nao tem id ou nao cabe em `max`.
+int  lst_ordem_ids(long *ids, int max);
+// https://trakt.tv/users/<autor>/lists/<slug>; 0 quando a lista e privada, nao e
+// do Trakt ou faltam os slugs.
+int  lst_url_publica(const LstLista *l, char *dst, size_t n);
 // So para testes e capturas: itens de mentira na lista aberta; ver listas.c.
 void lst_teste_itens(const CatItem *v, int n);
+// O par de lst_teste_itens para rank/listed_at/nota; chamar depois dele.
+void lst_teste_extras(const DescItemLista *v, int n);
 // Pede a proxima pagina, quando a fonte pagina. Sem efeito no Simkl (uma volta
 // so) e quando a anterior veio curta.
 void lst_itens_mais(void);
@@ -144,7 +191,7 @@ enum { LST_JS_MINHAS = 0,   // /users/me/lists -> [ {lista} ]
 // Substitui a tabela pelo que houver em `json`. Devolve quantas entraram.
 int lst_ler_trakt(const char *json, int envelope);
 // Itens de /sync/all-items/<tipo>/<estado> do Simkl para `dst`. `serie` = 0 le
-// o vetor "movies"; 1 le "shows" e "anime" (o terceiro tipo do Simkl). Devolve quantos.
+// "movies" + anime movies; 1 reads "shows" + non-movie anime. Returns count.
 int lst_ler_simkl_itens(const char *json, int serie, CatItem *dst, int max);
 
 // Nome do arquivo de fixadas do perfil ativo. Exposto para o teste provar ONDE

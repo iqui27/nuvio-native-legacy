@@ -28,6 +28,7 @@ int  ajustes_interface_mobile(void);
 void ajustes_dir(const char *dir);
 void ajustes_evento(const SDL_Event *e);
 void ajustes_atualizar(float dt, Uint32 agora);
+void ajustes_fontes_atualizar(void);
 void ajustes_desenhar(Uint32 agora);
 int  ajustes_quer_sair(void);
 // 1 quando a linha "Addons" foi acionada. Lido e zerado na chamada.
@@ -63,6 +64,7 @@ int  ajustes_gpu_efeitos(void);
 void ajustes_abrir_na_cor(void);
 // Atalho do cartão de novidades para a tipografia da interface.
 void ajustes_abrir_na_fonte(void);
+void ajustes_abrir_fileiras(void);
 // Atalhos do cartao da 1.6.0: Ajustes › Layout na linha "Layout da home", e
 // Ajustes › Aparência na linha "Interface de vidro". Mesma regra da cor.
 void ajustes_abrir_no_layout(void);
@@ -85,6 +87,7 @@ int  ajustes_guia_aberto(void);
 // Perfil e Stats" do guia: 1..5 na ordem, lido e zerado pelo app.c.
 enum { AJ_TELA_GUIA_TV = 1, AJ_TELA_BIBLIOTECA, AJ_TELA_AGENDA, AJ_TELA_EXPLORAR, AJ_TELA_PERFIL };
 int  ajustes_pediu_tela(void);
+int  ajustes_pediu_trocar_perfil(void);
 // O guia para o Spotlight no modo guia (spot_abrir_guia): as entradas que
 // casam com `consulta` (titulo antes de texto), os textos de cada uma e a
 // imagem dela; ajustes_guia_ir abre o guia na entrada.
@@ -114,11 +117,13 @@ void ajustes_encerrar(void);
 // e um ajuste de acessibilidade, nao um gosto, e uma tela que o ignora nao
 // serve para quem o ligou.
 int ajustes_animacoes_reduzidas(void);
+int ajustes_animacoes_reduzidas_usuario(void);
 // Protecao de OLED (esmaecer.h): indice de V_ESMAECER (padrao 2 = 5 min) e de
 // V_BRILHO_PLAYER (padrao 1 = 80%).
 int ajustes_esmaecer(void);
 int ajustes_brilho_player(void);
 int ajustes_tunneling(void); // Android-only tunneled playback; default off.
+int ajustes_afr(void);       // #641 Android-only display refresh-rate match; default off.
 int ajustes_hdr_interface(void); // Experimental Android HDR output; default off.
 int ajustes_hdr_ui(void);   // #205: 1 = Automatico (padrao), 0 = Desligado
 // #202: -1 = ultimo modo usado (padrao); 0..7 = PlrAspecto aplicado ao abrir o video.
@@ -130,13 +135,26 @@ int ajustes_dolby_atmos(void);
 // pauseOverlayEnabled: o painel de ficha que sobe alguns segundos depois de
 // pausar o video. Ver pausao.h.
 int ajustes_pausa_overlay(void);
+// Comentarios do Trakt no painel de pausa (pausacom.h). Ligado de fabrica. A
+// funcao so le o ajuste: quem mostra confere ajustes_pausa_overlay() tambem.
+int ajustes_pausa_comentarios(void);
+// Notas do titulo (ou do episodio) no painel de pausa. Ligado de fabrica.
+int ajustes_pausa_notas(void);
+// Elenco (fotos, nomes, papeis) no painel de pausa. Desligado de fabrica.
+int ajustes_pausa_elenco(void);
 int ajustes_classif_player(void);   // 1 = mostra a classificacao/guia parental no player (padrao)
 // "O que achou?" nos creditos (reacao.h). Ligado de fabrica.
 int ajustes_reacao_creditos(void);
 // Formato do player (4K, HDR, Atmos, idioma do audio). Estilo: PLR_FMT_*; padrao
-// Original (as marcas do canto de cima); Pilula = fileira embaixo do titulo.
-enum { PLR_FMT_TEXTO = 0, PLR_FMT_PILULA, PLR_FMT_MARCAS, PLR_FMT_SELOS, PLR_FMT_ORIGINAL, PLR_FMT_OFF, PLR_FMT_N };
+// Pilula; a posicao e outro ajuste (PLR_POS_*).
+enum { PLR_FMT_TEXTO = 0, PLR_FMT_PILULA, PLR_FMT_MARCAS, PLR_FMT_SELOS, PLR_FMT_OFF, PLR_FMT_N };
+// Posicao: embaixo do titulo (padrao) ou no canto de cima da tela, onde ficava
+// antes (o oposto ao da ilha da hora): "Original".
+enum { PLR_POS_ABAIXO = 0, PLR_POS_CANTO, PLR_POS_N };
 int ajustes_plr_formato(void);
+int ajustes_plr_formato_pos(void);
+// Mostra o codec do audio (E-AC-3, DTS-HD MA...) na fileira de formato. Ligado de fabrica.
+int ajustes_plr_codec(void);
 // #329: pula abertura/resumo sozinho quando ha marcador (desligado de fabrica).
 int ajustes_pular_abertura(void);
 int ajustes_pular_resumo(void);
@@ -258,9 +276,11 @@ int  ajustes_addons_do_principal(void);
 void ajustes_definir_vidro(int ligado);
 // P2P EXPERIMENTAL (p2p.h). Desligado de fabrica. O endereco (o servidor de
 // streaming do Stremio na rede local) e por aparelho, em p2p.txt.
+void ajustes_definir_servidores(int ligado);
 int  ajustes_jellyfin_ligado(void);   // F11: personal servers on AND strict HTTP here
 int  ajustes_p2p_ligado(void);
 void ajustes_definir_p2p_ligado(int ligado);
+int ajustes_debrid_celular(const char *servico, const char *chave);
 // Endereco ja normalizado ("http://192.168.1.5:11470"); "" quando nao ha.
 const char *ajustes_p2p_url(void);
 // Normaliza e grava; texto vazio esquece. 0 se o texto nao e um endereco (nada
@@ -335,6 +355,9 @@ int   ajustes_hero_notas(void);        // heroNotasLocal: nota do IMDb no destaq
 int   ajustes_hero_ano(void);          // heroAnoLocal: ano no destaque
 int   ajustes_hero_duracao(void);      // heroDuracaoLocal: duracao no destaque
 int   ajustes_hero_sinopse_grande(void); // Normal (22/30) ou Grande (24/32)
+int   ajustes_hero_tamanho(void);       // heroSizeLocal: 0 Normal, 1 Grande, 2 Muito grande (logo + informacoes)
+float ajustes_hero_escala_logo(void);   // hero logo scale for ajustes_hero_tamanho: 1, 1.25, 1.5
+float ajustes_hero_escala_info(void);   // hero info line scale: 1, 1.15, 1.3
 int   ajustes_hero_cheio(void);         // modernHeroFullScreenBackdropEnabled
 // LAYOUT DA HOME (local): a estrutura da tela inicial. Moderna e o desenho de
 // sempre; Padrao contem o destaque num banner; Dinamica e o estilo Apple TV.
@@ -490,6 +513,10 @@ void  ajustes_definir_envio_auto(int ligado);
 // N3: "Receber enquetes" (padrao ligado). O espelho local do opt-out da conta:
 // enquete.c grava aqui o que o servidor disse, sem refazer o pedido.
 int   ajustes_enquetes(void);
+// 2.1 Conquistas (Ajustes › Conta e serviços): chave geral, aviso depois dos creditos e dicas das secretas.
+int   ajustes_conquistas(void);
+int   ajustes_conquistas_aviso(void);   // chave geral E aviso
+int   ajustes_conquistas_dicas(void);
 void  ajustes_espelhar_enquetes(int ligado);
 // Fonte do destaque (ARTEHERO_*) e "Destaque com outra arte", gravados na hora.
 void  ajustes_definir_destaque(int fonte, int diferente);
@@ -551,8 +578,12 @@ int   ajustes_abertura_addon(void);
 int   ajustes_abertura_fundo(void);
 // Modern/Dynamic Stage background. Stored 0 was Black: it now means Cortina, so old
 // defaults move to the new default with no migration.
-enum { PALCO_CORTINA, PALCO_ATUAL, PALCO_ARTE, PALCO_PRETO, PALCO_AURA, PALCO_TRIPTICO, PALCO_MONUMENTO };
+enum { PALCO_CORTINA, PALCO_ATUAL, PALCO_ARTE, PALCO_PRETO, PALCO_AURA, PALCO_TRIPTICO, PALCO_MONUMENTO, PALCO_N };
+// #659: per-row Stage background (fileiras.c). -1 = inherit the global setting.
+#define PALCO_PADRAO (-1)
 int   ajustes_palco_fundo(void);
+// pt label of a PALCO_* mode (the V_PALCO_FUNDO table); i18n at draw time.
+const char *ajustes_palco_fundo_rotulo(int modo);
 int   ajustes_titulo_fil(void);        // 0 Classico, 1 Ilha, 2 Editorial, 3 Acento
 int   ajustes_abertura_estilo(void);   // 0 Centro (A3), 1 Canto (B3)
 int   ajustes_fundo_din(void);         // #205: fundo da Dinamica, 0 Cinza (padrao), 1 Cor, 2 Imersivo, 3 Cinza escuro
@@ -573,6 +604,7 @@ int   ajustes_leg2_borda(void);
 void  ajustes_leg_contorno_rgb(int *r, int *g, int *b);   // #475: cor do contorno/sombra da legenda (0..255)
 unsigned ajustes_leg_borda_rgb(int corBorda);   // corBorda >= 0: explicit colour; -1: legacy #475 colour
 // Independent secondary overrides; absent fields inherit the main style.
+int ajustes_leg2_fonte_principal(void);
 void ajustes_leg2_estilo(const VideoLegendaEstilo *principal, VideoLegendaEstilo *out);
 int ajustes_leg2_posicao(void); // -1 keeps the existing Top/Stacked placement
 int ajustes_leg2_atraso(void);
@@ -600,6 +632,7 @@ float ajustes_vidro_opacidade(void);   // 0,60..0,92; 0,78 = o vidro de sempre
 int   ajustes_vidro_fosco(void);
 // Raw Automatic preferences: quality/frost/animations/glass, bits 0..3.
 int   ajustes_efeitos_automaticos(void);
+float ajustes_suavizar_degrades(void); // Noise amplitude: Automatic 1, Strong 2, Off 0.
 int   ajustes_vidro_qualidade(void);   // 0 Automatica (frost + governor), 1 Desempenho (smoked glass, no blur), 2 Alta (frost)
 void  ajustes_teste_vidro_env(void);   // so capturas        // 1 = arte borrada atras do vidro
 int   ajustes_icone_app(void);
@@ -649,8 +682,10 @@ int   ajustes_ps_continuar(void);        // #303: 0 = sem o cartao "continuar" n
 int   ajustes_hist_conta(void);          // 1 = this profile's history goes to the Nuvio account (per profile, default on)
 int   ajustes_amigos_estilo(void); // 0 Feed, 1 Live, 2 Stories, 3 Presence, 4 Poster, 5 Classic
 int   ajustes_social(void);              // 1 = friends/social features on (per profile, default on)
+int   ajustes_social_perfil(int perfil); // mesmo ajuste lido de OUTRO perfil (#643)
 int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our demux (webOS, local, default off)
 int   ajustes_dv7(void);
+int   ajustes_hdr10p_strip(void);
 int   ajustes_cw_retido_tambem(void);   // 1 = o titulo da ilha/Retomar tambem fica em Continuar assistindo
 // Percentual (70-98, padrao 90) a partir do qual o episodio conta como
 // assistido: sai do Continuar assistindo e o card passa ao proximo. Local.
@@ -773,6 +808,27 @@ void ajustes_idiomas_da_conta(const char *json);
 void ajustes_perfil_guardar(int perfil);
 int  ajustes_perfil_restaurar(int perfil);
 void ajustes_perfil_esquecer(void);
+// 2.1: escopo de cada opcao: 0 nenhum (acao/leitura/estado em outro arquivo),
+// 1 desta TV, 2 do perfil e da conta (blob), 3 do perfil so nesta TV.
+int  ajustes_escopo(int op);
+// Migracao unica para o escopo por perfil (ver ajustes.c). Devolve 1 quando rodou.
+int  ajustes_migrar_escopo(void);
+int  ajustes_migrar_escopo_para(const int *perfis, int n, int ativo);
+// 2.1: copia dos ajustes DO PERFIL (escopos 2 e 3; nunca os da TV) de `origem`
+// para `destino`. Devolve quantas opcoes mudaram no destino, ou -1 se falhou.
+// Nunca toca em credencial; a parte da conta fica como PENDENTE do destino e so
+// sobe quando ele for o perfil ativo.
+int  ajustes_copiar_perfil(int origem, int destino);
+// Volta o perfil ao padrao de fabrica (so o que e do perfil). Devolve quantas mudaram.
+int  ajustes_restaurar_padrao_perfil(int perfil);
+// Sessao de EDICAO dos ajustes de outro perfil: valor[] passa a ser o dele ate
+// ajustes_edicao_encerrar. 0 = nenhuma; senao o profile_index em edicao.
+int  ajustes_edicao_perfil(void);
+int  ajustes_edicao_iniciar(int perfil);
+void ajustes_edicao_encerrar(void);
+// Padroes seguros de perfil infantil aplicados aos ajustes do perfil (sem
+// enquetes/Seekr, sem notas de terceiros, classificacao no player ligada).
+void ajustes_padroes_infantis(int perfil);
 
 // O CAMINHO DE VOLTA (#85): devolve em *saida uma copia do blob `base` (o mesmo
 // objeto `settings_json` que ajustes_aplicar_blob le) com os valores DESTA TV

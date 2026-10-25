@@ -68,6 +68,7 @@ static void fluxo_anel(GfxRect r, float raio, float esp, float cr, float cg, flo
 #undef desc_vertudo_n_bruto
 #undef desc_vertudo_item_bruto
 #include <assert.h>
+#include "ponteiro.h"
 #include "perfis.h"
 
 void shot_background(int mode, GfxRect area, float radius, const char *url, float a) {
@@ -144,6 +145,8 @@ int shot_collection(const ColSource *source, const char *base, NvPerfilSessao ep
   while (!shotSources[r].liberada) pthread_cond_wait(&shotCond, &shotMutex);
   int n = shotSources[r].n < limit ? shotSources[r].n : limit;
   memcpy(out, shotSources[r].itens, sizeof(CatItem) * (size_t)n);
+  if (!strncmp(source->catId, "catalog", 7) && n)
+    snprintf(out[0].imdb, sizeof out[0].imdb, "tt%d", 8000000 + atoi(source->catId + 7));
   *result = (DescColecaoResultado){.n=n, .pagina=shotSources[r].pagina,
                                   .mais=shotSources[r].mais};
   pthread_mutex_unlock(&shotMutex);
@@ -360,6 +363,40 @@ static void vitrineVerTudo(void) {
   puts("See all: Back, collection replacement/removal and profile switch pass");
 }
 
+static void vitrineTvPonteiro(void) {
+  const PonteiroAlvo *alvos = NULL;
+  int nAlvos, k, ok = 0;
+  float w, h, passo, rot, x0 = 100.0f, topo = vitTopo();
+  pasta.nSources = 2;
+  lay = VT_LAY_VITRINE; layEscolha = VT_LAY_VITRINE; tabFocus = 0;
+  vitIniciar();
+  vitLin[0].n = 5; vitLin[0].brutoN = 5; vitLin[0].estado = VIT_PRONTA;
+  for (int i = 0; i < 5; i++) { vitBuf[i] = semente[i]; vitVis[0][i] = (short)i; }
+  home_vitrine_medida(&w, &h, &passo, &rot, vitRedonda());
+  ponteiro_teste_toque(1);
+  ponteiro_quadro(2000);
+  for (int c = 0; c < vitColunas(0); c++) {
+    float cx = x0 + c * passo - vitSx[0];
+    GfxRect base = { cx, topo + VIT_TITULO_H, w, h };
+    float left = fmaxf(base.x, x0), right = fminf(base.x + base.w, NV_TELA_W);
+    vitRegistraAlvoTv(0, c, left, right, base.y, base.y + base.h, topo - 8.0f);
+  }
+  ponteiro_desenhar();
+  nAlvos = ponteiro_teste_lista(&alvos);
+  assert(alvos && nAlvos > 0);
+  for (k = 0; k < nAlvos; k++)
+    if (alvos[k].a / VIT_ITENS == 0 && alvos[k].a % VIT_ITENS == 2 && alvos[k].focar) {
+      vitFR = 1; vitFC = 0; tabFocus = 1;
+      alvos[k].focar(alvos[k].a, alvos[k].b);
+      assert(vitFR == 0 && vitFC == 2 && !tabFocus);
+      ok = 1;
+    }
+  assert(ok);
+  ponteiro_teste_toque(0);
+  puts("vitrine_tv_ponteiro: ok");
+}
+
+static void vitrineAllCatalogs(void);
 int main(int argc, char **argv) {
   int L, i, j;
   char dir[600];
@@ -375,6 +412,9 @@ int main(int argc, char **argv) {
   snprintf(fontes[0].title, sizeof fontes[0].title, "Star Wars");
   collection = &pasta;
   aberta = 1;
+
+  if (argc > 1 && !strcmp(argv[1], "catalogs")) { vitrineAllCatalogs(); return 0; }
+  if (argc > 1 && !strcmp(argv[1], "tvptr")) { vitrineTvPonteiro(); return 0; }
 
   // 1. AUTOMATICO = exatamente o que a 2.0.3 mostra: Grade para tudo, so o
   // Diretor na Linha do tempo (a 2.0.3 ja fazia). Ranking, Saga, Decadas, Mural
@@ -931,4 +971,53 @@ int main(int argc, char **argv) {
   vitrineVerTudo();
   printf("colecao_exibicao: ok\n");
   return 0;
+}
+
+static void vitrineAllCatalogs(void) {
+  // #661: every catalog remains reachable; scrolling recycles the row cache.
+  {
+    static ColSource many[52];
+    static ColFolder big;
+    for (int r = 0; r < 52; r++) {
+      snprintf(many[r].catId, sizeof many[r].catId, "catalog%d", r);
+      snprintf(many[r].title, sizeof many[r].title, "Catalog %d", r);
+      strcpy(many[r].type, "movie");
+      strcpy(many[r].base, "https://example.invalid");
+    }
+    big.sources = many; big.nSources = 52;
+    collection = &big; lay = VT_LAY_VITRINE; aberta = 1;
+    vitIniciar();
+    assert(vitN == 52);
+    shot_prepare(0); shot_release(0);
+    hideWatched = allWatched = 0; tabFocus = 0;
+    for (int r = 0; r < 52; r++) {
+      Uint32 end = SDL_GetTicks() + 3000;
+      while (!vitLin[r].n) {
+        vitCarregar(shotNow += 16); vitProjetar();
+        assert((Sint32)(end - SDL_GetTicks()) > 0); usleep(1000);
+      }
+      assert(vitFR == r && vitItem(r, 0));
+      char id[32]; snprintf(id, sizeof id, "tt%d", 8000000 + r);
+      assert(!strcmp(vitItem(r, 0)->imdb, id));
+      assert(strstr(vitLin[r].nome, "Catalog"));
+      int cached = 0;
+      for (int j = 0; j < vitN; j++) cached += vitLin[j].brutoN > 0;
+      assert(cached <= 12);
+      if (r < 51) vitEvento(SDLK_DOWN);
+    }
+    for (int r = 50; r >= 0; r--) {
+      vitEvento(SDLK_UP);
+      assert(vitFR == r);
+      Uint32 end = SDL_GetTicks() + 3000;
+      while (!vitLin[r].n) {
+        vitCarregar(shotNow += 16); vitProjetar();
+        assert((Sint32)(end - SDL_GetTicks()) > 0); usleep(1000);
+      }
+      assert(vitItem(r, 0));
+      char id[32]; snprintf(id, sizeof id, "tt%d", 8000000 + r);
+      assert(!strcmp(vitItem(r, 0)->imdb, id));
+    }
+    vitCancelar();
+  }
+  printf("showcase: 52 catalogs reachable in both directions\n");
 }

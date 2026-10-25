@@ -52,6 +52,8 @@ int dts_remux_available(void);
 void dts_remux_set_queue_budget_mib(int mib);
 /* Device offset, snapshotted by each new source. Positive delays audio only. */
 void dts_remux_set_audio_offset_ms(int ms);
+/* #605: strip HDR10+ dynamic SEI from HEVC video packets of the next open. */
+void dts_remux_set_hdr10p_strip(int on);
 
 /* Opens the source and reads its keyframe index (one seek: Matroska parses
  * Cues lazily). audio_ordinal: which audio track to convert, counted among the
