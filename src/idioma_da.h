@@ -3568,6 +3568,7 @@
   T("Lista de canais M3U por URL, salva neste perfil.", "URL til M3U-kanallisten, gemt i denne profil."),
   T("Lista de fontes", "Skrifttypeliste"),
   T("Lista de prêmios configurada pelo usuário", "Prisliste konfigureret af brugeren"),
+  T("Lista do Guia TV", "TV Guide list"),
   T("Lista do Nuvio", "Nuvio-liste"),
   T("Lista inacessível", "Playlist unreachable"),
   T("Lista mantida à mão. Não é ranking: não existe medição pública de popularidade de addons Stremio.", "En håndholdt liste. Ikke en rangliste: der findes ingen offentlig måling af Stremio-add-ons' popularitet."),

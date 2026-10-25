@@ -3568,6 +3568,7 @@
   T("Lista de canais M3U por URL, salva neste perfil.", "保存在此个人资料中的 M3U 频道列表 URL。"),
   T("Lista de fontes", "字体列表"),
   T("Lista de prêmios configurada pelo usuário", "用户自行配置的获奖列表"),
+  T("Lista do Guia TV", "TV Guide list"),
   T("Lista do Nuvio", "Nuvio 列表"),
   T("Lista inacessível", "Playlist unreachable"),
   T("Lista mantida à mão. Não é ranking: não existe medição pública de popularidade de addons Stremio.", "手工维护的列表，并非排名：Stremio 附加组件的受欢迎程度没有公开的统计数据。"),

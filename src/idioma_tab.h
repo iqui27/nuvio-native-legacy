@@ -3567,6 +3567,7 @@
   { "Lista de canais M3U por URL, salva neste perfil.", "M3U channel playlist URL, saved in this profile." },
   { "Lista de fontes", "Font list" },
   { "Lista de prêmios configurada pelo usuário", "Awards list configured by the user" },
+  { "Lista do Guia TV", "TV Guide list" },
   { "Lista do Nuvio", "Nuvio list" },
   { "Lista inacessível", "Playlist unreachable" },
   { "Lista mantida à mão. Não é ranking: não existe medição pública de popularidade de addons Stremio.", "A hand-kept list. Not a ranking: there is no public measure of Stremio add-on popularity." },

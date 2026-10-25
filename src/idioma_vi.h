@@ -3568,6 +3568,7 @@
   T("Lista de canais M3U por URL, salva neste perfil.", "URL danh sách kênh M3U được lưu trong hồ sơ này."),
   T("Lista de fontes", "Danh sách phông chữ"),
   T("Lista de prêmios configurada pelo usuário", "Danh sách giải thưởng do người dùng thiết lập"),
+  T("Lista do Guia TV", "TV Guide list"),
   T("Lista do Nuvio", "Danh sách Nuvio"),
   T("Lista inacessível", "Playlist unreachable"),
   T("Lista mantida à mão. Não é ranking: não existe medição pública de popularidade de addons Stremio.", "Danh sách được tuyển chọn thủ công. Không phải bảng xếp hạng: không có thước đo công khai về độ phổ biến của tiện ích Stremio."),

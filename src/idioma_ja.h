@@ -3568,6 +3568,7 @@
   T("Lista de canais M3U por URL, salva neste perfil.", "このプロフィールに保存するM3UチャンネルリストのURL。"),
   T("Lista de fontes", "フォント一覧"),
   T("Lista de prêmios configurada pelo usuário", "ユーザーが設定した受賞リスト"),
+  T("Lista do Guia TV", "TV Guide list"),
   T("Lista do Nuvio", "Nuvio のリスト"),
   T("Lista inacessível", "Playlist unreachable"),
   T("Lista mantida à mão. Não é ranking: não existe medição pública de popularidade de addons Stremio.", "手作業で管理しているリストです。ランキングではありません。Stremio アドオンの人気を示す公開データは存在しません。"),

@@ -3567,6 +3567,7 @@
   T("Lista de canais M3U por URL, salva neste perfil.", "URL-ul listei de canale M3U, salvat în acest profil."),
   T("Lista de fontes", "Lista de fonturi"),
   T("Lista de prêmios configurada pelo usuário", "Listă de premii configurată de utilizator"),
+  T("Lista do Guia TV", "TV Guide list"),
   T("Lista do Nuvio", "Lista Nuvio"),
   T("Lista inacessível", "Playlist unreachable"),
   T("Lista mantida à mão. Não é ranking: não existe medição pública de popularidade de addons Stremio.", "Listă ținută manual. Nu este un clasament: nu există o măsurare publică a popularității addon-urilor Stremio."),

@@ -3568,6 +3568,7 @@
   T("Lista de canais M3U por URL, salva neste perfil.", "URL daftar saluran M3U, disimpan di profil ini."),
   T("Lista de fontes", "Daftar font"),
   T("Lista de prêmios configurada pelo usuário", "Daftar penghargaan yang dikonfigurasi pengguna"),
+  T("Lista do Guia TV", "TV Guide list"),
   T("Lista do Nuvio", "Daftar Nuvio"),
   T("Lista inacessível", "Playlist unreachable"),
   T("Lista mantida à mão. Não é ranking: não existe medição pública de popularidade de addons Stremio.", "Daftar yang disusun manual. Bukan peringkat: tidak ada ukuran publik untuk popularitas addon Stremio."),

@@ -3568,6 +3568,7 @@
   T("Lista de canais M3U por URL, salva neste perfil.", "URL M3U liste kanala, sačuvan u ovom profilu."),
   T("Lista de fontes", "Lista fontova"),
   T("Lista de prêmios configurada pelo usuário", "Lista nagrada koju je podesio korisnik"),
+  T("Lista do Guia TV", "TV Guide list"),
   T("Lista do Nuvio", "Nuvio lista"),
   T("Lista inacessível", "Playlist unreachable"),
   T("Lista mantida à mão. Não é ranking: não existe medição pública de popularidade de addons Stremio.", "Ručno vođena lista. Nije rang-lista: ne postoji javna mjera popularnosti Stremio dodataka."),

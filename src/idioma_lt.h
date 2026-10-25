@@ -3568,6 +3568,7 @@
   T("Lista de canais M3U por URL, salva neste perfil.", "Šiame profilyje išsaugotas M3U kanalų sąrašo URL."),
   T("Lista de fontes", "Šriftų sąrašas"),
   T("Lista de prêmios configurada pelo usuário", "Naudotojo sukonfigūruotas apdovanojimų sąrašas"),
+  T("Lista do Guia TV", "TV Guide list"),
   T("Lista do Nuvio", "Nuvio sąrašas"),
   T("Lista inacessível", "Playlist unreachable"),
   T("Lista mantida à mão. Não é ranking: não existe medição pública de popularidade de addons Stremio.", "Rankiniu būdu tvarkomas sąrašas. Tai ne reitingas: viešo Stremio papildinių populiarumo matavimo nėra."),
