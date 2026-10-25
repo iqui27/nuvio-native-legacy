@@ -13,8 +13,13 @@ root = Path(__file__).resolve().parents[1]
 source = (root / 'android/app/src/main/java/space/nuvio/nativelegacy/NvPlayer.kt').read_text()
 
 def bloco(inicio):
-    start = source.index(inicio)
-    brace = source.index('{', start)
+    start = source.index(inicio, source.index('    private fun ouvinte(')) if inicio.strip().startswith('override fun onPlayerError') else source.index(inicio)
+    paren = source.index('(', start)
+    depth, cursor = 1, paren + 1
+    while depth:
+        depth += (source[cursor] == '(') - (source[cursor] == ')')
+        cursor += 1
+    brace = source.index('{', cursor)
     depth, end = 1, brace + 1
     while depth:
         depth += (source[end] == '{') - (source[end] == '}')
@@ -24,13 +29,26 @@ def bloco(inicio):
 abrir = bloco('    private fun abrirMain(')
 # Mantem espera, inicializacao do ganho e publicacao do player reais;
 # substitui somente a construcao Android/Media3 pelos doubles abaixo.
-abrir = (abrir.split('        novaSuperficie(act)')[0]
-         + abrir[abrir.index('            // F07: VOLUME BOOST.'):abrir.index('            // ON (')]
+prefixo = abrir.split('        novaSuperficie(act)')[0]
+prefixo = prefixo.replace('preparada?.recursos?.let { soltarRecursosPreparo(it) }', '')
+prefixo = prefixo.replace('preparada: Preparo? = null', 'preparada: Any? = null')
+prefixo = prefixo.replace('limitedNext || limitedSession || preparada?.proximo == true || (semRecriar && preparada == null)', 'semRecriar')
+prefixo = prefixo.replace('(limitedNext || limitedSession || ms < 3000)', 'ms < 3000')
+prefixo = prefixo.replace('        limitedSession = limitedNext\n', '')
+abrir = (prefixo
+         + '        urlAtual = url; cabAtual = cabecalhos; inicioAtualMs = inicioMs\n'
+         + '        geracaoNative = geracao; fracaoAtual = fracao; abriuEm = SystemClock.elapsedRealtime()\n'
+         + '        if (!reabrindo) retentou = false\n'
          + '        val p = ExoPlayer(emptyList())\n'
-         + abrir[abrir.index('            player = p'):abrir.index('            // Release anterior')]
-         + '        ' + abrir[abrir.index('            p.playWhenReady ='):abrir.index('            p.prepare()')].strip() + '\n'
+         + '        player = p; processador = GanhoAudioProcessor(); aplicarGanho()\n'
+         + '        ' + abrir[abrir.index('                p.playWhenReady ='):abrir.index('                p.prepare()')].strip() + '\n'
          + '        criados.add(url)\n    }')
 erro = bloco('        override fun onPlayerError(')
+# Recovery/limited-live branches have separate fixtures; retain decoder retry here.
+a = erro.index('            val status =')
+b = erro.index('            val tipo =', a)
+erro = erro[:a] + erro[b:]
+liberar = bloco('    private fun liberarEmFundo(').replace('Handler(p.applicationLooper).post(corpo)', 'Thread(corpo).start()')
 fixture = r'''
 import space.nuvio.nativelegacy.GanhoMath
 import androidx.media3.datasource.DataSourceException
@@ -255,7 +273,7 @@ fun main(args: Array<String>) {
     'APLICAR_GANHO', bloco('    private fun aplicarGanho(')).replace(
     '    GANHO\n', bloco('    @JvmStatic fun ganho(') + '\n').replace(
     '    PAUSAR\n', bloco('    @JvmStatic fun pausar(') + '\n').replace(
-    '    LIBERAR_EM_FUNDO\n', bloco('    private fun liberarEmFundo(') + '\n')
+    '    LIBERAR_EM_FUNDO\n', liberar + '\n')
 cache = Path.home() / '.gradle/caches/modules-2/files-2.1'
 def jar(group, artifact, version):
     return str(next((cache / group / artifact / version).glob('*/*.jar')))

@@ -255,6 +255,8 @@ int64_t mkvfix_tracks_pos(const unsigned char *b, long n, const MkvfixCab *c) {
 // ---- servidor ----------------------------------------------------------------
 #if defined(__EMSCRIPTEN__) || defined(NV_ANDROID) || defined(NV_MKVFIX_SEM_REDE)   // tests: no network
 void mkvfix_sondar(const char *u, const char *c, const char *o) { (void)u; (void)c; (void)o; }
+void mkvfix_sondar_relay(const char *u, const char *c, const char *o) { mkvfix_sondar(u, c, o); }
+int  mkvfix_relay(void) { return 0; }
 void mkvfix_sondar_arquivo(const char *u, const char *c, int usenet, int item, int file) {
   (void)usenet; (void)item; (void)file; mkvfix_sondar(u, c, NULL);
 }
@@ -295,6 +297,7 @@ typedef struct {
   char *orig, *cab;              // o que o player tocava e os cabecalhos dele
   char *origem;                  // de onde pedir link novo (pode ser NULL)
   int usenet, item, file;        // selected TorBox file, owned by this session
+  int relay;                     // #648: repasse puro de bytes (cabecalhos que a TV nao manda)
   pthread_mutex_t m;
   char up[8192];                 // o link de verdade (final, depois de redirect), sob m
   int upSemCab;                  // o final e de outra origem: sem cabecalhos
@@ -340,7 +343,7 @@ static Sess *sessPegarAtual(void) {
 // TrackEntry de legenda escondidas (mkvfix.h).
 static int servivel(Sess *s) {
   int e = atomic_load(&s->estado);
-  return s->total > 0 && (e == MKVFIX_PRECISA || (e != MKVFIX_SONDANDO && s->nOculta > 0));
+  return s->total > 0 && (e == MKVFIX_PRECISA || s->relay || (e != MKVFIX_SONDANDO && s->nOculta > 0));
 }
 
 static const char *nomeId(uint32_t id) {
@@ -438,7 +441,7 @@ static void *fioSonda(void *u) {
     char x[96]; snprintf(x, sizeof x, "header not readable (HTTP %d, %ld bytes)", st, n);
     definirEstado(s, MKVFIX_FALHOU, x); goto fim;
   }
-  if (!mkvfix_ler_inicio(b, n, &c)) { definirEstado(s, MKVFIX_NORMAL, "not a Matroska file: nothing to do"); goto fim; }
+  if (!mkvfix_ler_inicio(b, n, &c)) { if (s->relay) s->total = total; definirEstado(s, MKVFIX_NORMAL, "not a Matroska file: nothing to do"); goto fim; }
   // Daqui em diante o indice (abaixo) e as legendas (sondaLegendas) sao
   // independentes: o estado so e publicado no fim, com as duas respostas.
   if (c.regiao < 0) { snprintf(msg, sizeof msg, "no SeekHead at the start of the Segment: left to the player"); goto legendas; }
@@ -511,7 +514,7 @@ fim:
 }
 
 static void sondar(const char *url, const char *cabecalhos, const char *origem,
-                   int usenet, int item, int file) {
+                   int usenet, int item, int file, int relay) {
   Sess *s, *velho;
   pthread_t t;
   if (!url || (strncmp(url, "http://", 7) && strncmp(url, "https://", 8))) return;
@@ -521,7 +524,7 @@ static void sondar(const char *url, const char *cabecalhos, const char *origem,
   s->orig = strdup(url); s->cab = strdup(cabecalhos ? cabecalhos : "");
   s->origem = origem && *origem && strcmp(origem, url) ? strdup(origem) : NULL;
   snprintf(s->up, sizeof s->up, "%s", url);
-  s->usenet = usenet; s->item = item; s->file = file;
+  s->usenet = usenet; s->item = item; s->file = file; s->relay = relay;
   s->total = -1; s->regiao = -1;
   atomic_store(&s->estado, MKVFIX_SONDANDO);
   atomic_store(&s->refs, 2);   // a sessao atual + o fio da sonda
@@ -541,10 +544,13 @@ static void sondar(const char *url, const char *cabecalhos, const char *origem,
 }
 
 void mkvfix_sondar(const char *url, const char *cabecalhos, const char *origem) {
-  sondar(url, cabecalhos, origem, 0, 0, 0);
+  sondar(url, cabecalhos, origem, 0, 0, 0, 0);
+}
+void mkvfix_sondar_relay(const char *url, const char *cabecalhos, const char *origem) {
+  sondar(url, cabecalhos, origem, 0, 0, 0, 1);
 }
 void mkvfix_sondar_arquivo(const char *url, const char *cabecalhos, int usenet, int item, int file) {
-  sondar(url, cabecalhos, NULL, usenet, item, file);
+  sondar(url, cabecalhos, NULL, usenet, item, file, 0);
 }
 
 int mkvfix_estado(void) {
@@ -561,6 +567,14 @@ int mkvfix_ocultas(void) {
   if (atual && atomic_load(&atual->estado) != MKVFIX_SONDANDO) k = atual->nOculta;
   pthread_mutex_unlock(&G);
   return k;
+}
+
+int mkvfix_relay(void) {
+  int ok = 0;
+  pthread_mutex_lock(&G);
+  ok = atual && atual->relay && servivel(atual);
+  pthread_mutex_unlock(&G);
+  return ok;
 }
 
 void mkvfix_parar(void) {
@@ -611,13 +625,14 @@ typedef struct {
 static int enviarCab(Envio *e) {
   char c[512];
   int64_t len = e->fim - e->ini + 1;
+  const char *tipo = e->s->relay ? "application/octet-stream" : "video/x-matroska";
   if (e->parcial)
-    snprintf(c, sizeof c, "HTTP/1.1 206 Partial Content\r\nContent-Type: video/x-matroska\r\nAccept-Ranges: bytes\r\n"
+    snprintf(c, sizeof c, "HTTP/1.1 206 Partial Content\r\nContent-Type: %s\r\nAccept-Ranges: bytes\r\n"
              "Content-Range: bytes %lld-%lld/%lld\r\nContent-Length: %lld\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
-             (long long)e->ini, (long long)e->fim, (long long)e->s->total, (long long)len);
+             tipo, (long long)e->ini, (long long)e->fim, (long long)e->s->total, (long long)len);
   else
-    snprintf(c, sizeof c, "HTTP/1.1 200 OK\r\nContent-Type: video/x-matroska\r\nAccept-Ranges: bytes\r\n"
-             "Content-Length: %lld\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n", (long long)len);
+    snprintf(c, sizeof c, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nAccept-Ranges: bytes\r\n"
+             "Content-Length: %lld\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n", tipo, (long long)len);
   e->cabFeito = 1;
   return enviar(e->sock, c, strlen(c), e->s);
 }

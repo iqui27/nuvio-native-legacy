@@ -10,6 +10,7 @@
 // tendencia.c define a de verdade e vence esta.
 __attribute__((weak)) void tend_registrar(const CatFileira *f, const CatItem *itens) { (void)f; (void)itens; }
 __attribute__((weak)) int arte_reserva_registrar(const char *url, const char *imdb, int poster) { (void)url; (void)imdb; (void)poster; return 1; }
+__attribute__((weak)) int servidores_visto(const char *id, const char *tipo) { (void)id; (void)tipo; return 0; }
 #include "idioma.h"
 #include "descoberta.h"
 #include "progresso.h"
@@ -284,6 +285,7 @@ typedef struct {
   char tipo[8];
   int conhecido;
   int visto;
+  long long ms;
 } CatHistorico;
 
 // TETO PROPRIO, e nao CAT_MAX (#212). A tabela agora recebe o mapa INTEIRO de
@@ -376,6 +378,7 @@ static int historico_pos(const char *imdb, const char *tipo, int criar) {
   snprintf(historico[nHistorico].tipo, sizeof historico[nHistorico].tipo, "%s", tb);
   historico[nHistorico].conhecido = 0;
   historico[nHistorico].visto = 0;
+  historico[nHistorico].ms = 0;
   histBalde[b] = nHistorico + 1;
   return nHistorico++;
 }
@@ -398,29 +401,48 @@ int cat_historico_estado_item(int indice) {
 // O hash e consultado sob uma trava curta: nenhum ponteiro da tabela escapa,
 // e reset de perfil e insercao de outro fio nunca deixam chave pela metade.
 int cat_historico_estado_id(const char *imdb, const char *tipo) {
+  return cat_historico_estado_tempo(imdb, tipo, NULL);
+}
+
+int cat_historico_estado_tempo(const char *imdb, const char *tipo, long long *ms) {
   int p, estado;
+  if (ms) *ms = 0;
   if (!imdb || !imdb[0]) return -1;
   pthread_mutex_lock(&histTrava);
   p = historico_pos(imdb, tipo ? tipo : "movie", 0);
   estado = p >= 0 && historico[p].conhecido ? historico[p].visto : -1;
+  if (ms && estado >= 0) *ms = historico[p].ms;
   pthread_mutex_unlock(&histTrava);
   return contapend_estado ? contapend_estado(imdb, tipo, 0, 0, 0, estado) : estado;
 }
 
 // Sob histTrava. Ausencia num snapshot Trakt nao apaga uma marca que veio
 // da conta ou de acao local: cada fonte continua acrescentando suas provas.
-static void historico_definir(const char *imdb, const char *tipo, int visto) {
+static void historico_definir(const char *imdb, const char *tipo, int visto, long long ms) {
   int p = historico_pos(imdb, tipo, 1);
   if (p < 0) return;
-  if (historico[p].conhecido && historico[p].visto == (visto ? 1 : 0)) return;
+  if (ms > 0 && historico[p].ms > ms) return;
+  if (!ms) {
+    // Snapshot repetido conserva a data; um jornal fornece a data original.
+    if (historico[p].conhecido && historico[p].visto == (visto ? 1 : 0)) return;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ms = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+  }
+  if (historico[p].conhecido && historico[p].visto == (visto ? 1 : 0) && historico[p].ms == ms) return;
+  historico[p].ms = ms;
   historico[p].visto = visto ? 1 : 0;
   historico[p].conhecido = 1;
   mudou();
 }
 
 void cat_historico_definir_id(const char *imdb, const char *tipo, int visto) {
+  cat_historico_definir_tempo(imdb, tipo, visto, 0);
+}
+
+void cat_historico_definir_tempo(const char *imdb, const char *tipo, int visto, long long ms) {
   pthread_mutex_lock(&histTrava);
-  historico_definir(imdb, tipo, visto);
+  historico_definir(imdb, tipo, visto, ms);
   pthread_mutex_unlock(&histTrava);
 }
 
@@ -429,7 +451,7 @@ int cat_historico_definir_se_geracao(const char *imdb, const char *tipo,
   int atual;
   pthread_mutex_lock(&histTrava);
   atual = geracao == histGeracao;
-  if (atual) historico_definir(imdb, tipo, visto);
+  if (atual) historico_definir(imdb, tipo, visto, 0);
   pthread_mutex_unlock(&histTrava);
   return atual;
 }
@@ -452,7 +474,10 @@ int cat_visto(const CatItem *c) {
   // SERIE sem historico: nao visto. O progresso de um item de serie e de UM
   // episodio, nao da serie; quem decide a serie inteira e o historico, que
   // extras.c escreve com os contadores de /shows/<id>/progress/watched.
-  if (!strcmp(tipo_base(c->tipo), "series")) return 0;
+  if (!strcmp(tipo_base(c->tipo), "series")) {
+    if (c->imdb[0] && !strchr(c->imdb, ':') && servidores_visto(c->imdb, c->tipo)) return 1;
+    return 0;
+  }
   // Posicao alcancada por seek (#205) nao e visto: o registro local diz.
   return c->progresso >= 90 && prog_tocou(c->imdb) != 0;
 }
@@ -794,10 +819,14 @@ static const char *cacheMetadataLanguage(void) {
 // VERSAO 7: novo campo CatItem.posCreditos (cena pós-créditos, TMDB
 // 179430/179431). O sizeof recusaria o arquivo sozinho; a versao sobe mesmo
 // assim para o motivo da recusa ser o campo novo.
+// VERSAO 8: CatItem.fontes ocupou o padding antes de `imdb`. sizeof(CatItem)
+// nao mudou (17816), mas `imdb` e `tipo` deslocaram 4 bytes: um arquivo da 7
+// passaria no sizeof e leria "tt1234567" como "34567". So a versao recusa. A 5
+// deixou de ser aceita no perfil 1 pelo mesmo motivo (layout sem `fontes`).
 // Version 8 adds per-source Saved membership, including builds where padding
 // keeps sizeof(CatItem) unchanged. Old shared marks cannot identify a source.
 // Version 9 records metadata language: cached poster URLs are localized too.
-#define CACHE_VERSAO 9
+#define CACHE_VERSAO 10
 // Mesmo cabecalho, itens CODIFICADOS (zeros em corrida). Um CatItem tem ~16 KB
 // e quase tudo e zero (buffers de URL dimensionados para o pior caso): 1600
 // titulos eram 25,6 MB gravados na MEMFS dentro da trava do sistema de arquivos
@@ -1550,6 +1579,13 @@ static void aplicarUmEm(CatItem *v, int i, double posSeg, double durSeg, int tem
 // A COPIA QUE A PESSOA TIROU NAO E FONTE. Isto rodava DEPOIS de
 // podarContinuar(removidoVence) e o card tirado ja nao estava no vetor; agora
 // roda antes da publicacao (e da poda), entao a mesma regra entra aqui.
+// A Next Up seed shares the watched episode's timestamp, but points ahead.
+// Replaying that episode's progress must not turn the seed back into it.
+static int aSeguirAdiante(const CatItem *item, int t, int e, long long ms) {
+  return !strcmp(item->tipo, "series") && item->progresso == 0 &&
+         item->retomadoMs > 0 && item->retomadoMs >= ms && e > 0 &&
+         (item->temporada > t || (item->temporada == t && item->episodio > e));
+}
 static void espalharEm(CatItem *v, int m) {
   int i, j, k, nf = 0, *fontes;
   for (i = 0; i < m; i++) if (v[i].progresso > 0 && v[i].imdb[0]) nf++;
@@ -1563,6 +1599,7 @@ static void espalharEm(CatItem *v, int m) {
     for (k = 0; k < nf; k++) {
       i = fontes[k];
       if (!mesmaCopiaEm(v, i, j)) continue;
+      if (aSeguirAdiante(&v[j], v[i].temporada, v[i].episodio, v[i].retomadoMs)) continue;
       if (v[j].progresso > 0 && v[i].retomadoMs <= v[j].retomadoMs) continue;
       if (melhor < 0 || v[i].retomadoMs > v[melhor].retomadoMs) melhor = i;
     }
@@ -1605,7 +1642,8 @@ static int aplicarProgressoEm(CatItem *v, int m, const ProgRegistro *regs, int k
           v[j].retomadoMs > 0 && v[j].retomadoMs > regs[i].lastWatchedMs) maisNova = 1;
     for (j = 0; j < m; j++) {
       if (tocado[j] || !v[j].imdb[0] || !mesmoTitulo(v[j].imdb, regs[i].contentId)) continue;
-      if (maisNova) { tocado[j] = 1; continue; }
+      if (maisNova || aSeguirAdiante(&v[j], regs[i].temporada, regs[i].episodio,
+                                   regs[i].lastWatchedMs)) { tocado[j] = 1; continue; }
       // O ITEM QUE JA E MAIS NOVO QUE O DISCO NAO VOLTA NO TEMPO. O item do
       // Trakt (pausado ou "a seguir", issue #66) traz o instante em
       // retomadoMs; um registro local mais velho — o S1E1 a 3% de 8/9 quando
@@ -1858,7 +1896,7 @@ int cat_id_stream(int indiceItem, int t, int e, char *dst, unsigned tam) {
   if (!c || !c->imdb[0]) return 0;
   idbase_copiar(c->imdb, base, sizeof base);
   if (t < 0 || e <= 0) { snprintf(dst, tam, "%s", c->imdb); return 1; }
-  if (!idbase_e_imdb(c->imdb) || t == 0) {
+  { // The provider's published video ID is authoritative for every series.
     n = cat_n_episodios(indiceItem);
     for (i = 0; i < n; i++) {
       const CatEp *ep = cat_episodio(indiceItem, i);
@@ -1960,9 +1998,51 @@ static void definir_na_lista(int i, int naLista) {
   unsigned fontes = naLista ? itens[i].listaFontes | bit : itens[i].listaFontes & ~(bit | 1u);
   int marcada = fontes != 0;
   if (itens[i].naLista == marcada && itens[i].listaFontes == fontes) return;
+  itens[i].fontes = ((fontes & 1u) ? CAT_FONTE_NUVIO : 0) |
+                    ((fontes & 2u) ? CAT_FONTE_TRAKT : 0) |
+                    ((fontes & 4u) ? CAT_FONTE_SIMKL : 0);
   itens[i].listaFontes = fontes;
   itens[i].naLista = marcada;
   mudou();
+}
+
+void cat_marcar_fonte(int i, int fonte) {
+  CAT_TESTE_ANTES_TRAVA();
+  catTravar();
+  if (itens && n > 0 && i >= 0 && i < n &&
+      (!itens[i].naLista || (itens[i].fontes & fonte) != fonte)) {
+    itens[i].naLista = 1;
+    itens[i].fontes |= fonte;
+    itens[i].listaFontes |= ((fonte & CAT_FONTE_NUVIO) ? 1u : 0u) |
+                           ((fonte & CAT_FONTE_TRAKT) ? 2u : 0u) |
+                           ((fonte & CAT_FONTE_SIMKL) ? 4u : 0u);
+    mudou();
+  }
+  pthread_mutex_unlock(&pubTrava);
+}
+
+// Por titulo, como cat_definir_na_lista_imdb: o servico confirmou o salvo e
+// todas as copias passam a aparecer no filtro de Origem dele na hora.
+int cat_marcar_fonte_imdb(const char *imdb, int fonte) {
+  int i, k = 0;
+  char id[64];
+  if (!imdb || !imdb[0]) return 0;
+  snprintf(id, sizeof id, "%s", imdb);
+  CAT_TESTE_ANTES_TRAVA();
+  catTravar();
+  for (i = 0; itens && i < n; i++)
+    if (!strcmp(itens[i].imdb, id) &&
+        (!itens[i].naLista || (itens[i].fontes & fonte) != fonte)) {
+      itens[i].naLista = 1;
+      itens[i].fontes |= fonte;
+    itens[i].listaFontes |= ((fonte & CAT_FONTE_NUVIO) ? 1u : 0u) |
+                           ((fonte & CAT_FONTE_TRAKT) ? 2u : 0u) |
+                           ((fonte & CAT_FONTE_SIMKL) ? 4u : 0u);
+      mudou();
+      k++;
+    }
+  pthread_mutex_unlock(&pubTrava);
+  return k;
 }
 
 void cat_definir_na_lista(int i, int naLista) {
@@ -2233,6 +2313,7 @@ int cat_mesclar_listas(const CatItem *v, int qtd) {
       for (i = 0; i < n && !achou; i++)
         if (!strcmp(itens[i].imdb, v[k].imdb) &&
             (!v[k].naLista || itens[i].naLista) &&
+            (v[k].fontes & ~itens[i].fontes) == 0 &&
             (itens[i].listaFontes & v[k].listaFontes) == v[k].listaFontes &&
             (!v[k].naColecao || itens[i].naColecao)) achou = 1;
       if (!achou) falta = 1;
@@ -2248,6 +2329,7 @@ int cat_mesclar_listas(const CatItem *v, int qtd) {
     for (i = 0; i < m; i++) {
       if (strcmp(novo[i].imdb, v[k].imdb)) continue;
       if (v[k].naLista)   novo[i].naLista = 1;
+      novo[i].fontes |= v[k].fontes;
       novo[i].listaFontes |= v[k].listaFontes;
       if (v[k].naColecao) novo[i].naColecao = 1;
       achou = 1;

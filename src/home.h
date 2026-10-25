@@ -62,6 +62,10 @@ int  home_n_artes(void);                   // acervo de backdrops, usado pelo de
 // Ha fileira montada? Serve para o app saber que o catalogo CHEGOU depois do
 // arranque, e nao so que existia na hora de abrir.
 int  home_tem_fileiras(void);
+const char *home_fileira_focada(void);   // chave sob o foco, "" no destaque
+int  home_fileiras_n(void);                // fileiras na tela, na ordem
+const char *home_fileira_chave(int i);     // chave da i-esima, "" fora da faixa
+int  home_fileira_n(const char *chave);    // cartoes da fileira na tela; -1 se nao existe
 const char *home_arte(int i);
 const char *home_backdrop(int i);   // arte do titulo i do catalogo
 void home_evento(const SDL_Event *e);
@@ -137,15 +141,19 @@ int home_pediu_pessoa_social(CatItem *saida);
 // recebe o id para o guia ja abrir focado nele). `id` pode ser NULL.
 int  home_pediu_guia(char *id, int tam);
 
+// OK no "Ver tudo" da fileira da Biblioteca (#672): o roteador troca para
+// TELA_BIBLIOTECA.
+int  home_pediu_biblioteca(void);
+
 // VITRINE DAS COLECOES (vertudo.c): destaque e cartaz da Home para um CatItem
 // que nao esta no catalogo global. Ver home.c.
-void home_vitrine_medida(float *w, float *h, float *passo, float *rotH);
+void home_vitrine_medida(float *w, float *h, float *passo, float *rotH, int redonda);
 int  home_vitrine_arte_pronta(const CatItem *ci);
 int  home_vitrine_arte(const CatItem *ci, float alfa);
 int  home_vitrine_layout(void);
 float home_vitrine_topo(float filH);
 float home_vitrine_texto(const CatItem *ci, float topo, float teto, float alfa);
-void home_vitrine_cartao(const CatItem *ci, GfxRect base, GfxRect card, float alfa);
+void home_vitrine_cartao(const CatItem *ci, GfxRect base, GfxRect card, float alfa, int redonda, float foco);
 #endif
 const char *home_rastro_foco(void);
 // CARROSSEL DA DINAMICA: titulos (indices do catalogo) da fileira em foco e a

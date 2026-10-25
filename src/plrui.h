@@ -53,6 +53,7 @@ float plrui_kicker(const char *s, float x, float y, int r, int g, int b, float a
 // DICAS DE TECLA (kbd + rotulo), lado a lado com vao de 22. `teclas` e
 // `rotulos` ja traduzidos pelo chamador? Nao: os dois passam por i18n aqui.
 // `alinhaDir` = 1 faz x ser a borda DIREITA. Devolve a largura total.
+// x < 0 measures only, using the same translated text and spacing.
 float plrui_dicas(const char *const *teclas, const char *const *rotulos, int n,
                   float x, float yc, int alinhaDir, float a);
 float plrui_dicas_video(const char *const *teclas, const char *const *rotulos, int n,

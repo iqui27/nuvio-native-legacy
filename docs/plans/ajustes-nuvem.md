@@ -196,6 +196,7 @@ Requirement: every configured preference returns after logout/login or reinstall
 | `AJ_SEEKR_AJUSTE` | `seekrAjusteLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |
 | `AJ_SAIDA_PLAYER` | `saidaPlayerLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |
 | `AJ_REACAO_CREDITOS` | `reacaoCreditosLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |
+| `AJ_PAUSA_COMENTARIOS` | `pausaComentariosLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported (same as `reacaoCreditosLocal`) |
 | `AJ_FONTE_PRAZO` | `fonteEsperaLocal` | (a) uploaded + restored | c_settings_v1.values; existing web fields also merged when supported |
 | `AJ_VER_REGISTRO` | `-verRegistro` | (d) external store or action | See inventory below; action/status rows have no persistent value |
 | `AJ_MEDIDOR` | `medidorFormaLocal` | (c) LOCAL, never backed up | ajustes.txt; excluded by ajustePortavel |

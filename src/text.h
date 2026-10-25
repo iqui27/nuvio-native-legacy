@@ -200,6 +200,9 @@ typedef enum {
   TXT_SINOPSE_28, TXT_SINOPSE_29, TXT_SINOPSE_30, TXT_SINOPSE_31,
   TXT_SINOPSE_33, TXT_SINOPSE_34, TXT_SINOPSE_35, TXT_SINOPSE_39,
   TXT_SINOPSE_20, // 125% de 16px; append-only, preserva os estilos anteriores
+  TXT_MUS_TIT, TXT_MUS_ART, TXT_MUS_TRACK, TXT_MUS_KICK, TXT_MUS_17, TXT_MUS_16,
+  TXT_HERO_META_G,  // hero info Grande, 24/500
+  TXT_HERO_META_GG, // hero info Muito grande, 27/500
   TXT_NFONTES
 } TxtEstilo;
 
@@ -223,7 +226,9 @@ typedef enum {
   TXT_FAMILIA_ROBOTO,
   TXT_FAMILIA_ATKINSON,
   TXT_FAMILIA_JETBRAINS,
-  TXT_FAMILIA_N
+  TXT_FAMILIA_N,
+  // Imported identities; never persisted as bundled family IDs.
+  TXT_FAMILIA_IMPORTADA1 = 100, TXT_FAMILIA_IMPORTADA2, TXT_FAMILIA_IMPORTADA_UI
 } TxtFamilia;
 
 extern const char *const TXT_FAMILIAS_PT[TXT_FAMILIA_N];
@@ -269,6 +274,7 @@ extern int    txt_pendentes;
 // Largura em unidades de layout que txt_linha() daria, SEM rasterizar nem
 // gastar orcamento. Para medir/quebrar texto; nao desenha nada.
 int  txt_largura(TxtEstilo estilo, const char *s);
+int  txt_largura_familia(TxtEstilo estilo, const char *s, TxtFamilia familia);
 
 // `dirRecursos` e a pasta que contem fonts/. No aparelho e a pasta do app; no
 // Mac, a pasta do pacote — sem esse parametro a fonte so era procurada ao lado

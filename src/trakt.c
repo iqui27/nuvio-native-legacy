@@ -1050,8 +1050,8 @@ int trakt_progresso_ocultar(const char *imdb, int ocultar) {
 // O lote chega ORDENADO por temporada, mas nao se assume isso: o laco agrupa
 // procurando cada temporada uma vez, que para os poucos episodios de um gesto
 // custa menos que ordenar.
-int trakt_episodios_marcar_destino(const TraktDestino *destino, const char *imdb, const VistoPar *pares, int qtd,
-                           int visto) {
+int trakt_episodios_marcar_destino(const TraktDestino *destino, const char *imdb,
+                                  const VistoPar *pares, int qtd, int visto) {
   const char *cab[4];
   char aut[200], chaveCab[140], id[24], url[64];
   Jsw w;
@@ -1116,6 +1116,15 @@ int trakt_episodios_marcar_destino(const TraktDestino *destino, const char *imdb
   free(r);
   fflush(stdout);
   return ok;
+}
+
+int trakt_episodios_marcar_token(const char *tok, const char *imdb, const VistoPar *pares, int qtd, int visto) {
+  TraktDestino d = {0};
+  const char *cli = cliente[0] ? cliente : nuvem_trakt_cliente();
+  if (!tok || !*tok || !cli || !*cli) return 0;
+  snprintf(d.aut, sizeof d.aut, "Authorization: Bearer %s", tok);
+  snprintf(d.chave, sizeof d.chave, "trakt-api-key: %s", cli);
+  return trakt_episodios_marcar_destino(&d, imdb, pares, qtd, visto);
 }
 
 int trakt_titulo_marcar_destino(const TraktDestino *d, const char *imdb, const char *tipo, int visto) {
@@ -2222,7 +2231,7 @@ static int listaNucleo(const char *qual, CatItem **pv, int *cap, int cresce,
             snprintf(d->titulo, sizeof d->titulo, "%s", titulo);
             snprintf(d->imdb, sizeof d->imdb, "%s", imdb);
             snprintf(d->tipo, sizeof d->tipo, "%s", passo ? "series" : "movie");
-            if (paginavel) { d->naLista = 1; d->listaFontes = 1u << AJ_SALVOS_TRAKT; }
+            if (paginavel) { d->naLista = 1; d->fontes = CAT_FONTE_TRAKT; d->listaFontes = 1u << AJ_SALVOS_TRAKT; }
             else           d->naColecao = 1;
             // Arte SEM consultar: metahub deterministico pelo IMDb (ver
             // artemetahub.h). Uma consulta por item limitava a lista a dez.
@@ -2516,18 +2525,32 @@ void trakt_watchlist(const char *imdb, int adicionar) {
 // decisao do dono. Um pedido por resposta, num fio proprio e destacado; o
 // alvo viaja num bloco alocado, entao duas respostas seguidas nao disputam um
 // buffer global (a reacao e rara: no maximo uma por titulo).
-typedef struct { char id[24]; char tipo[8]; int nota; HistoricoPedido pedido; } AlvoNota;
+typedef struct { char id[40]; char tipo[8]; int nota; HistoricoPedido pedido; } AlvoNota;
+
+int trakt_nota_corpo(char *dst, size_t tam, const char *imdb, const char *tipo, int nota) {
+  char id[24], extra; int t, e, n;
+  if (!dst || !tam || !imdb || strncmp(imdb, "tt", 2) || nota < 0 || nota > 10) return 0;
+  size_t k = strcspn(imdb, ":");
+  if (k < 3 || k >= sizeof id) return 0;
+  for (size_t i = 2; i < k; i++) if (imdb[i] < '0' || imdb[i] > '9') return 0;
+  memcpy(id, imdb, k); id[k] = 0;
+  if (imdb[k]) {
+    if (sscanf(imdb + k, ":%d:%d%c", &t, &e, &extra) != 2 || t < 0 || e < 1) return 0;
+    n = snprintf(dst, tam, "{\"shows\":[{\"ids\":{\"imdb\":\"%s\"},\"seasons\":[{\"number\":%d,\"episodes\":[{\"number\":%d,\"rating\":%d}]}]}]}", id, t, e, nota);
+  } else n = snprintf(dst, tam, "{\"%s\":[{\"rating\":%d,\"ids\":{\"imdb\":\"%s\"}}]}",
+                       tipo && !strcmp(tipo, "series") ? "shows" : "movies", nota, id);
+  return n > 0 && (size_t)n < tam;
+}
 
 static void *enviarNota(void *u) {
   AlvoNota *a = (AlvoNota *)u;
   const char *cab[4];
-  char aut[200], chave[140], corpo[200];
+  char aut[200], chave[140], corpo[300];
   char *resp;
   int status = 0;
   if (!cabecalhosCongelados(a->pedido, cab, aut, sizeof aut, chave, sizeof chave)) { free(a); return NULL; }
-  snprintf(corpo, sizeof corpo, "{\"%s\":[{\"rating\":%d,\"ids\":{\"imdb\":\"%s\"}}]}",
-           !strcmp(a->tipo, "series") ? "shows" : "movies", a->nota, a->id);
-  resp = rede_postar_st("https://api.trakt.tv/sync/ratings", 20, cab, corpo, &status);
+  if (!trakt_nota_corpo(corpo, sizeof corpo, a->id, a->tipo, a->nota)) { free(a); return NULL; }
+  resp = rede_postar_st(a->nota ? "https://api.trakt.tv/sync/ratings" : "https://api.trakt.tv/sync/ratings/remove", 20, cab, corpo, &status);
   printf("[trakt] nota %d %s (%s) -> HTTP %d\n", a->nota, a->id, a->tipo, status);
   fflush(stdout);
   free(resp);
@@ -2538,14 +2561,11 @@ static void *enviarNota(void *u) {
 int trakt_avaliar(const char *imdb, const char *tipo, int nota) {
   AlvoNota *a;
   pthread_t f;
-  const char *dp;
-  if (!ligado || !imdb || imdb[0] != 't' || nota < 1 || nota > 10) return 0;
+  char corpo[300];
+  if (!ligado || !trakt_nota_corpo(corpo, sizeof corpo, imdb, tipo, nota)) return 0;
   a = (AlvoNota *)calloc(1, sizeof *a);
   if (!a) return 0;
-  dp = strchr(imdb, ':');
-  { size_t k = dp ? (size_t)(dp - imdb) : strlen(imdb);
-    if (k >= sizeof a->id) k = sizeof a->id - 1;
-    memcpy(a->id, imdb, k); a->id[k] = 0; }
+  snprintf(a->id, sizeof a->id, "%s", imdb);
   snprintf(a->tipo, sizeof a->tipo, "%s", tipo_item(tipo, imdb));
   a->nota = nota; a->pedido = historicoPedido();
   if (!a->pedido.aut[0]) { free(a); return 0; }

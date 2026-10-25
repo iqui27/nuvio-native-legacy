@@ -21,6 +21,8 @@
 #include "audioescolha.h"
 #include "cdnlink.h"
 
+int ajustes_audio_offset_ms(void) { return 0; }
+void dts_remux_set_audio_offset_ms(int ms) { (void)ms; }
 const char *i18n(const char *s) { return s; }
 const char *ling_nome(const char *c) { return c; }
 int ling_casa(const char *c, const char *p) { return c && p && !strcmp(c, p); }

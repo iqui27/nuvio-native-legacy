@@ -402,6 +402,34 @@ int android_volumes_externos(char *dst, size_t n) {
   return r;
 }
 
+int android_importar_fonte(int slot) {
+  (void)slot; /* selection ownership stays in the native UI */
+  return chamaBool("importarFonte", "()Z", NULL, 0, 0);
+}
+
+int android_fonte_evento(char *dst, size_t n) {
+  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
+  jobject act = (jobject)SDL_AndroidGetActivity();
+  jclass cls;
+  jmethodID m;
+  jstring js = NULL;
+  int r = 0;
+  if (n) dst[0] = 0;
+  if (!env || !act) return 0;
+  cls = (*env)->GetObjectClass(env, act);
+  m = cls ? (*env)->GetMethodID(env, cls, "proximaFonteImportada", "()Ljava/lang/String;") : NULL;
+  if (m) js = (jstring)(*env)->CallObjectMethod(env, act, m);
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); js = NULL; }
+  if (js) {
+    const char *c = (*env)->GetStringUTFChars(env, js, NULL);
+    if (c) { snprintf(dst, n, "%s", c); r = 1; (*env)->ReleaseStringUTFChars(env, js, c); }
+    (*env)->DeleteLocalRef(env, js);
+  }
+  if (cls) (*env)->DeleteLocalRef(env, cls);
+  (*env)->DeleteLocalRef(env, act);
+  return r;
+}
+
 // Metodo da Activity com ate dois textos; devolve o jobject/valor pelo tipo.
 static jmethodID metodo(JNIEnv *env, jobject act, jclass *cls, const char *nome, const char *assin) {
   *cls = (*env)->GetObjectClass(env, act);

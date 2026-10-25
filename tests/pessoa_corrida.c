@@ -24,7 +24,7 @@ char *rede_baixar(const char *u, int t) {
       return strdup("{\"results\":[{\"id\":99,\"name\":\"Ator B\"},{\"id\":8,\"name\":\"ATOR B\"}]}");
     if (strstr(u, "/person/")) {
       perfis++;
-      return strdup("{\"name\":\"Ator B\",\"combined_credits\":{\"cast\":[{\"title\":\"Wrong film\"}]}}");
+      return strdup("{\"name\":\"Ator B\",\"biography\":\"Bio\",\"combined_credits\":{\"cast\":[{\"id\":103,\"media_type\":\"movie\",\"title\":\"Wrong film\"}]}}");
     }
     return NULL;
   }
@@ -34,12 +34,12 @@ char *rede_baixar(const char *u, int t) {
     pthread_cond_signal(&sinal);
     while (!aberto) pthread_cond_wait(&sinal, &portao);
     pthread_mutex_unlock(&portao);
-    return strdup("{\"name\":\"Ator A\",\"combined_credits\":{\"cast\":[{\"title\":\"Filme A\"}]}}");
+    return strdup("{\"name\":\"Ator A\",\"combined_credits\":{\"cast\":[{\"id\":101,\"media_type\":\"movie\",\"title\":\"Filme A\"}]}}");
   }
   if (strstr(u, "/search/person") && strstr(u, "Ator+B"))
     return strdup("{\"results\":[{\"id\":8,\"name\":\"Ator B\"}]}");
   if (strstr(u, "/person/8") && !falhar)
-    return strdup("{\"name\":\"Ator B\",\"combined_credits\":{\"cast\":[{\"title\":\"Filme B\"}]}}");
+    return strdup("{\"name\":\"Ator B\",\"combined_credits\":{\"cast\":[{\"id\":102,\"media_type\":\"movie\",\"title\":\"Filme B\"}]}}");
   return NULL;
 }
 char *rede_baixar_com(const char *u, int t, const char *const *c) {
@@ -99,9 +99,13 @@ int main(void) {
     assert(perfis == 0);
   }
   puts("ok #205: ambiguous missing-ID cast rejected after title lookup or credits failure");
+  cenario = 3;
   pessoa_pedir(0, "Ator B", "b.jpg");
   esperar();
+
   assert(pessoa_pronta() && !pessoa_falhou() && idPedido == 8 && perfis == 1);
   puts("ok #205: title credits confirm cast identity despite ambiguous name search");
   return 0;
 }
+
+const char *i18n(const char *s) { return s; }

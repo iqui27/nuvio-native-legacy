@@ -174,7 +174,7 @@ static float dicas(const char *const *teclas, const char *const *rotulos, int n,
       TxtLinha l = txt_linha(TXT_ILHA_APOIO, rotulos[i], 128, 128, 126, 255);
       float kw = (float)k.w + 18.0f;
       if (kw < 34.0f) kw = 34.0f;
-      if (pass == 1) {
+      if (pass == 1 && x >= 0.0f) {
         GfxRect kr = { xx, yc - KBD_H * 0.5f, kw, KBD_H };
         if (ajustes_vidro()) gfx_cor(kr, 0.5f, 1, 1, 1, 0.09f * a);
         else if (video) gfx_cor(kr, 0.5f, 0.082f, 0.086f, 0.102f,

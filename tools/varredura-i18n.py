@@ -125,6 +125,7 @@ def eh_frase(s):
     # nem "luna://com.webos.media/%s", e depois que a regra de formato passou a
     # deixar frases com "%" entrarem, os quatro viraram ruido fixo.
     if "://" in s: return False
+    if s == "perfil:%d": return False  # Internal avatar identity, never displayed.
     if re.search(r"/[A-Za-z0-9._-]+\.[A-Za-z]{2,4}$", s): return False
     # FORMATO PURO x FRASE QUE CONTEM FORMATO, e a diferenca custou tres
     # frases em portugues na v1.0.35. A regra antiga descartava todo literal
@@ -263,10 +264,28 @@ def contexto(txt, i):
 # "nao sei o que e": sem esta lista a ferramenta nao pode virar teste, e sem
 # virar teste ela nao impede a proxima regressao.
 IGNORAR = {
+    # Verified non-UI literals on the 2.1 feature branch:
+    # fundo.c diagnostics; faixas/player/video_android speed and subtitle logs.
+    # Verified diagnostics, protocol/file identifiers, and genre/token match data.
+    # Verified non-UI literals: diagnostic messages, parser vocabulary, JSON
+    # enum values, persistent filenames and app_tela_nome telemetry ids.
+    " (sem quadro pequeno)", "desenho direto (sem quadro pequeno)",
+    "sem a copia desfocada da arte ainda (arte nao decodificada?): fundo liso",
+    "codec nao e de texto (ASS/SRT/WebVTT): a TV desenha",
+    "confirmada pelo relogio do pipeline", "enviado ao ExoPlayer",
+    # mapa.c canonical genre aliases and legauto.c filename stopwords.
+    "acción", "ação", "ciencia ficción", "com", "comédia", "fantasía",
+    # Remote schema enum, persistence names and trailer diagnostic gate.
+    '"POSTER"', "conta-pend-%s.txt", "perfil-infantil.txt", "escolha-perfil",
+    # Room protocol values and notice IDs; UI resolves these to translated text.
+    "juntos:erro", "juntos:fonte", "nenhuma", "todos", ',"fonte":{"tipo":"%s"}',
+    # filmography provider hostname and spoiler-matching stem, never UI labels.
+    "simkl.com", "traiç",
     "catalogo-*.bin",                # androidcache.c: cache filename pattern, never UI text
     "ltv-fontes.txt", "ltv-fontes-p%d.txt",  # ltv.c: preference filenames, never UI labels
     "daqui em diante",  # episodios.c nomeModo: so no log [visto] menu, nunca rotulo
     "fechar",  # main.c: nome do evento de janela so no log "[ciclo] janela="
+    "ime-sem-osk",  # entrada_texto.c #642: motivo de terminar(), so no log [texto]
     # PR #567: motivos so de log ([fonte] lembrada / auto / link guardado).
     "lancamento sem grupo", "todos os add-ons permitidos responderam", "relogio para tras",
     # video_tpk.c: motivos de cartaoModo()/cartaoEncaixar(), so no log "[video] tpk cartao".
@@ -291,6 +310,12 @@ IGNORAR = {
     "compara nivel salvo com efeitos completos",
     "nao desce de novo nesta TV",
     "sem ganho significativo",
+    '"POSTER"', "conta-pend-%s.txt", "escolha-perfil", "com",
+    "acción", "ação", "comédia", "fantasía", "ciencia ficción",
+    "%s/v1/diario?desde=%lld&limite=500",
+    "%d addons · %d progressos · %d vistos · %d na lista · %d coleções%s%s",
+    "ação", "acción", "comédia", "fantasía", "ciencia ficción", "com", "das",
+    '"POSTER"', "conta-pend-%s.txt", "escolha-perfil",
     # RC 1.8 triage, each checked in the source:
     # - sync.c NOME[] are the labels of the "[sync] etapas" LOG line; "ver" is a
     #   field name in the jellyfin conta file; "forcé" is a pattern legref.c
@@ -384,6 +409,7 @@ IGNORAR = {
     "%s/poster/%02d.jpg",           # caminho da arte dos dados de exemplo (socialvis.c, so teste)
     "biblioteca.h", "catalogo.h", "fileiras.h", "perfil.h", "legenda.h",
     "perfil.txt",                   # #include e nome de arquivo
+    "perfil-infantil.txt", "perfil-ajustes-travados.txt",  # profile state filenames, never UI
     "com.webos.media.client.nuvio", # id do cliente LS2
     "abrir", "buscar", "erro",      # nomes de operacao do bridge JS (video_tizen.c)
     "fontes", "legenda", "mais", "nao", "poster",  # chaves internas, nao rotulo

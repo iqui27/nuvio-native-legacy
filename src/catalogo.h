@@ -31,6 +31,9 @@
 #else
 #define CAT_MAX 2000
 #endif
+#define CAT_FONTE_TRAKT 1
+#define CAT_FONTE_SIMKL 2
+#define CAT_FONTE_NUVIO 4
 #define CAT_TEMP_MAX 64
 // Elenco guardado por titulo. O Cinemeta traz 3-5 nomes no `cast` do meta e era
 // isso que a tela mostrava (issue #94); quem completa a fileira e o TMDB, que
@@ -92,6 +95,7 @@ typedef struct {
   // Quanto do titulo o dono ja assistiu, 0..100. Vem do app web (chave
   // watchProgressItems), quarta coluna de extra.txt. 0 = nao comecou.
   int  progresso;
+  int  rewatch; // cartao da sessao, distinto da retomada normal da mesma obra
   // Legenda do card em "Continue Assistindo". Serie mostra "T1, E8 · 16 min";
   // filme mostra so o tempo que falta. Temporada/episodio ficam em 0 no filme,
   // e e isso que separa os dois casos no desenho.
@@ -115,6 +119,10 @@ typedef struct {
   // reconstruido da rede — uma tabela por indice apontaria para outro titulo
   // depois da primeira atualizacao.
   int  naLista, naColecao;
+  // De onde vem a marca naLista, em bits CAT_FONTE_*: o painel Origens da
+  // Biblioteca filtra por ele. 0 com naLista=1 e o salvo local (+ nesta TV),
+  // que a Biblioteca agrupa em Conta Nuvio.
+  int  fontes;
   unsigned listaFontes; // AJ_SALVOS_* bits; naLista remains shared with Agenda.
   // 64 E NAO 16. O campo nasceu para "tt11280740", e 16 bastava. O id de um
   // addon de canal e "cs:channel:globo-tv-integracao-ituiutaba" — 16 bytes
@@ -339,6 +347,10 @@ int cat_mesclar_listas(const CatItem *v, int qtd);
 // Update effective-source membership on every copy of the indexed title.
 // Keep unrelated remote sources; items without an ID update only this index.
 void cat_definir_na_lista(int i, int naLista);
+// naLista=1 e acende o bit `fonte` (CAT_FONTE_*) do item i.
+void cat_marcar_fonte(int i, int fonte);
+// Idem em todas as copias do titulo; devolve quantas mudaram.
+int  cat_marcar_fonte_imdb(const char *imdb, int fonte);
 // Por TITULO, em todas as copias do catalogo (ver catalogo.c).
 int  cat_definir_na_lista_imdb(const char *imdb, int naLista);
 int  cat_imdb_na_lista(const char *imdb);   // alguma copia do titulo esta salva
@@ -372,6 +384,10 @@ int cat_visto(const CatItem *c);
 void cat_historico_contexto(const char *usuario, int perfil);
 unsigned long long cat_historico_geracao(void);
 int cat_historico_estado_id(const char *imdb, const char *tipo);
+// Estado e instante sob a mesma trava. Snapshot sem data conserva a primeira
+// observacao; fontes com data (jornal) devem fornecer o instante original.
+int cat_historico_estado_tempo(const char *imdb, const char *tipo, long long *ms);
+void cat_historico_definir_tempo(const char *imdb, const char *tipo, int visto, long long ms);
 int cat_historico_estado_item(int indice);
 void cat_historico_definir_id(const char *imdb, const char *tipo, int visto);
 // Worker captura geracao ANTES da rede. A resposta so pertence ao mapa se a

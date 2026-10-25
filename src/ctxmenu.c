@@ -25,8 +25,12 @@
 #include "ilhaacao.h"
 #include "ilha.h"
 #include "recomenda.h"
+#include "listasescrita.h"
+#include "homefil.h"
 #include "atividade.h"
 #include "recenviar.h"
+#include "travaui.h"
+#include "perfis.h"
 #include "botoes.h"
 #include "badges.h"
 #include "idioma.h"
@@ -35,6 +39,8 @@
 #include "listas.h"
 #include "home.h"
 #include "ctxinfo.h"
+#include "rewatch.h"
+#include "rewatchui.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,8 +97,12 @@ enum { CTX_PENDENTE = 1, CTX_CONFIRMADA = 2, CTX_FALHA = 3 };
 // copia do CatItem nao tem a marca — so a da watchlist tem. Pergunta a todas as
 // fontes que sabem: a copia do cartao, a lista local, qualquer outra copia do
 // catalogo (watchlist do Trakt) e o Plan to Watch do Simkl.
+static int doPainel, doSocial;
 static int tituloSalvo(const CatItem *ci) {
   if (!ci) return 0;
+  // Owner 21/10: a title opened from the Saved panel IS saved, so its card
+  // offers "Remover" (never "Salvar"), whatever source the card copy knows.
+  if (doPainel && !doSocial) return 1;
   int fonte = ajustes_fonte_biblioteca();
   if (ci->naLista && (ci->listaFontes & (1u << fonte))) return 1;
   if (!ci->imdb[0]) return 0;
@@ -108,6 +118,11 @@ static int   aberto, idx = -1, foco;
 // deve ser refeito a cada quadro a partir do cartaz focado da HOME.
 static int       doLista, cartazFixo, listaPedida, listaAlterou;
 static LstLista  lista;
+// MODO FILEIRA (segurar OK numa colecao ou fileira fixada da Home): corre sobre
+// o modo lista (doLista=1 junto), que ja exclui titulo/estilo/painel. As
+// opcoes agem pela CHAVE da fileira (homefil.h), nunca por indice.
+static int       doFil, filAlterou, filVistos;
+static char      filPastaId[96];
 static float anim, animV;
 // Abertura da pagina de estilos: exponencial de saida, sem repique (~200 ms).
 static float estPag;
@@ -239,13 +254,15 @@ static int observarHold(void *u, SDL_Event *e) {
 // juntava contava UMA linha para o contrato e escrevia sete — e o teto de sete
 // era exatamente o que deixava o Destaque 4:3 e a faixa com titulo de fora do
 // menu. Agora elas moram em estLin[FIL_TIPO_N], do tamanho do enum.
-#define CTX_MAX 9
+#define CTX_MAX 10
 static struct { const char *rot; int acao; } ops[CTX_MAX];
 static int nOps;
 static float focoAnim[CTX_MAX];
 static int holdObservador;
 enum { OP_LISTA = 1, OP_ASSISTIDO, OP_TIRAR_CONTINUAR, OP_RECOMENDAR, OP_DISPENSAR,
        OP_ESTILO, OP_CATEGORIA, OP_DETALHES, OP_L_ABRIR, OP_L_FIXAR, OP_L_HOME,
+       OP_F_MENU, OP_F_FIXAR, OP_F_SUBIR, OP_F_DESCER, OP_F_OCULTAR, OP_F_VISTOS,
+       OP_ADD_LISTA, OP_REWATCH, OP_TRAVA, OP_PICK_LISTA = 50,   // OP_PICK_LISTA + k = a k-esima lista da pessoa
        OP_EXTRA = 100 };   // OP_EXTRA + k = extras[k] (modo social)
 // "Mover para categoria" pedido no modo painel: o IMDb do titulo, consumido
 // uma vez pelo painel (ctx_pediu_categoria), que abre a escolha dele.
@@ -269,6 +286,12 @@ static char filChave[192], filTitulo[96];
 // o menu aberto (op).
 static int dispensarPend, dispensarOp;
 static int  pagina, soFileira;
+// PAGINA 3: "ADICIONAR A UMA LISTA" (Trakt). As linhas sao as listas da pessoa
+// (lst_minha), no mesmo ops[]; o rotulo e o titulo, que mora aqui porque ops[].rot
+// so guarda o ponteiro. Sete linhas visiveis; cima/baixo rolam a janela.
+#define CTX_PICK_MAX 7
+static char pickRot[CTX_PICK_MAX][96];
+static int  pickN, pickTotal, pickIni, pickCarregando;
 // PAGINA 2: A CONFIRMACAO de "Tirar de Continuar assistindo" (dono, 02/10:
 // modal de ilha do mockup "ilha" tela 7). Tirar apaga o ponto de retomada
 // aqui e nas contas ligadas — nao se desfaz com um Voltar —, entao a acao so
@@ -300,6 +323,12 @@ static float estAnim[FIL_TIPO_N];
 // a ordem do addon, e prometer outra seria botao que nao faz nada.
 static int   ordemLinha, ordemSel;
 static float ordemAnim;
+// FUNDO DO PALCO da fileira (#659): linha extra do modal, depois da ordem.
+// Esquerda/direita ciclam "Padrão" + os PALCO_*; cada passo vale na hora
+// (a home ve o modo novo por fil_palco). So fileira que aceita forma tem a
+// linha — catalogo, colecao, servidor; as fixas do app nao viram Palco.
+static int   palcoLinha, palcoSel, palcoOrig;
+static float palcoAnim;
 // O MENU NAO TEM PREVIA PROPRIA (dono, 14/10): a fileira na Home e a previa.
 // Cada passo grava a forma na hora (estAoVivo) e a Home remonta por baixo; o
 // que valia ao abrir fica em estOrig*/estVivo para o Voltar devolver.
@@ -413,6 +442,18 @@ static void montar(void) {
   int i = indiceAtual();
   const CatItem *ci = itemAtual();
   nOps = 0;
+  if (doLista && doFil) {
+    if (filPastaId[0])
+      juntar(cf_fixada(filPastaId) ? "Tirar da Home" : "Fixar na Home", OP_F_FIXAR);
+    juntar("Mover para cima", OP_F_SUBIR);
+    juntar("Mover para baixo", OP_F_DESCER);
+    if (filVistos) juntar(ov_ativa(filChave) ? "Mostrar vistos" : "Ocultar vistos", OP_F_VISTOS);
+    if (fil_estilos(filChave, NULL, NULL, FIL_TIPO_N) >= 1) juntar("Estilo da fileira", OP_ESTILO);
+    juntar("Ocultar fileira", OP_F_OCULTAR);
+    if (foco >= nOps) foco = nOps - 1;
+    if (foco < 0) foco = 0;
+    return;
+  }
   if (doLista) {
     const char *porque;
     juntar("Abrir lista", OP_L_ABRIR);
@@ -422,6 +463,27 @@ static void montar(void) {
     if (lst_aceita_home(&lista, &porque))
       juntar(lst_na_home(&lista) ? "Tirar da Home" : "Adicionar à Home", OP_L_HOME);
     if (foco >= nOps) foco = nOps - 1;
+    if (foco < 0) foco = 0;
+    return;
+  }
+  if (pagina == 3) {
+    int k;
+    pickTotal = lst_minhas_n();
+    pickCarregando = lst_minhas_carregando();
+    if (pickIni >= pickTotal) pickIni = pickTotal > 0 ? pickTotal - 1 : 0;
+    pickN = pickTotal - pickIni;
+    if (pickN > CTX_PICK_MAX) pickN = CTX_PICK_MAX;
+    for (k = 0; k < pickN; k++) {
+      LstLista l;
+      pickRot[k][0] = 0;
+      if (lst_minha(pickIni + k, &l)) snprintf(pickRot[k], sizeof pickRot[k], "%s", l.titulo);
+      juntar(pickRot[k], OP_PICK_LISTA + k);
+    }
+    // Sem listas (ainda): uma linha so de aviso, sem acao (aplicar() a ignora).
+    if (pickN == 0)
+      juntar(pickCarregando ? "Carregando listas"
+                            : "Você ainda não criou listas no Trakt", 0);
+    if (foco >= nOps) foco = nOps > 0 ? nOps - 1 : 0;
     if (foco < 0) foco = 0;
     return;
   }
@@ -467,6 +529,10 @@ static void montar(void) {
              ? (intencao ? "Salvando..." : "Removendo dos Salvos...")
              : (tituloSalvo(ci) ? "Remover dos Salvos" : "Salvar"),
            OP_LISTA);
+    // Listas do Trakt: so com conta e so onde a lista aceita o tipo (filme/serie).
+    if (!doPainel && !doSocial && trakt_ativo() &&
+        (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series")))
+      juntar("Adicionar a uma lista", OP_ADD_LISTA);
   }
   // AS CATEGORIAS DA PESSOA (salvosorg.h) so existem no painel de Salvos: e
   // la que o titulo esta salvo e e la que a escolha abre.
@@ -491,6 +557,8 @@ static void montar(void) {
     juntar(estadoOperacao == CTX_PENDENTE && operacao == CTX_OP_HISTORICO
              ? "Marcando como assistido..." : extras[k].rot, OP_EXTRA + k);
   }
+  if (!doPainel && !strcmp(ci->tipo,"series") && ci->imdb[0])
+    juntar(rewatch_ativa(ci->imdb) ? "Encerrar reassistida" : "Reassistir do início", OP_REWATCH);
   // TIRAR DE "CONTINUAR ASSISTINDO".
   //
   // So aparece em item que TEM progresso — e o unico caso em que a acao quer
@@ -506,7 +574,7 @@ static void montar(void) {
   // assistido): esta e a de baixo sao acoes do cartaz da home.
   // "A SEGUIR" TAMBEM (#203): o proximo episodio tem progresso 0 e a condicao
   // antiga nunca o oferecia; sem a opcao ele nao saia da fileira.
-  if (!doPainel && (ci->progresso > 0 || itemASeguir(ci)) && ci->imdb[0]) {
+  if (!doPainel && !ci->rewatch && (ci->progresso > 0 || itemASeguir(ci)) && ci->imdb[0]) {
     juntar("Tirar de Continuar assistindo", OP_TIRAR_CONTINUAR);
   }
   // SO EXISTE SE O PACOTE TEM O SERVICO. Sem NUVIO_REC_URL compilada,
@@ -516,11 +584,16 @@ static void montar(void) {
       (!strcmp(ci->tipo, "movie") || !strcmp(ci->tipo, "series"))) {
     juntar("Recomendar a um amigo", OP_RECOMENDAR);
   }
+  // Trava de serie na mesma TV: so serie com IMDb e conta com 2+ perfis.
+  if (!doPainel && ci->imdb[0] && !strcmp(ci->tipo, "series") && perfis_n() >= 2)
+    juntar("Travar série", OP_TRAVA);
   // Por ULTIMO: e da fileira, nao do titulo. So quando a home disse qual e a
   // fileira e ela tem forma para escolher (Continuar assistindo, Top 10 e o
   // destaque ficam com o visual deles — a home nem passa a chave).
   if (!doPainel && filChave[0] && fil_estilos(filChave, NULL, NULL, FIL_TIPO_N) > 0)
     juntar("Estilo da fileira", OP_ESTILO);
+  // Mover/ocultar/"vistos ocultos": fileira que a Home registrou (Ajustes a religa).
+  if (!doPainel && filChave[0] && homefil_indice(filChave) >= 0) juntar("Opções da fileira", OP_F_MENU);
   // Cartao "Retomar agora": soltar o titulo da faixa, sem apagar progresso.
   if (!doPainel && dispensarOp) juntar("Dispensar", OP_DISPENSAR);
   // As acoes da linha social por ULTIMO: sao dela, nao do titulo.
@@ -636,6 +709,7 @@ void ctx_abrir_lista(const LstLista *l) {
   doPainel = 0; soFileira = 0; doSocial = 0;
   lista = *l;
   doLista = 1;
+  doFil = 0;
   abrirComum(-1);
   // Baixa os itens para o resumo ter capas e a mistura. Os da lista aberta de
   // antes (se havia) nao servem: lst_abrir comeca do zero.
@@ -651,6 +725,18 @@ void ctx_fileira(const char *chave, const char *titulo) {
   snprintf(filTitulo, sizeof filTitulo, "%s", titulo ? titulo : "");
 }
 
+void ctx_abrir_filmenu(const char *chave, const char *titulo, const char *pastaId, int comVistos) {
+  if (holdCancelado) { holdCancelado = 0; holdPronto = 0; return; }
+  if (!chave || !chave[0]) return;
+  ctx_fileira(chave, titulo);
+  snprintf(filPastaId, sizeof filPastaId, "%s", pastaId ? pastaId : "");
+  filVistos = comVistos ? 1 : 0;
+  doPainel = 0; doSocial = 0; soFileira = 0;
+  doLista = 1; doFil = 1;
+  abrirComum(-1);
+}
+int ctx_fil_alterou(void) { int v = filAlterou; filAlterou = 0; return v; }
+
 void ctx_abrir_fileira(const char *chave, const char *titulo) {
   if (holdCancelado) {
     holdCancelado = 0;
@@ -662,7 +748,7 @@ void ctx_abrir_fileira(const char *chave, const char *titulo) {
   doPainel = 0;
   doSocial = 0;
   soFileira = 1;
-  doLista = 0;
+  doLista = 0; doFil = 0;
   abrirComum(-1);
 }
 
@@ -682,6 +768,8 @@ static void abrirComum(int indice) {
   estFoco = -1;               // montar() poe o foco na forma atual
   ordemLinha = fil_origem_de(filChave) == FIL_ORIGEM_COLECAO;
   ordemSel = fil_ordem(filChave);
+  palcoLinha = fil_origem_de(filChave) != FIL_ORIGEM_APP;
+  palcoSel = palcoOrig = fil_palco(filChave);
   memset(estAnim, 0, sizeof estAnim);
   temAncora = 0; estVivo = 0;
   fecharAoConfirmar = 0;
@@ -856,6 +944,7 @@ static void estAoVivo(void) {
   sync_proteger_ajustes_locais();
   if (estSel >= 0 && estSel < nEstilos) fil_definir_tipo(filChave, estTipo(estSel));
   if (ordemLinha && ordemSel != fil_ordem(filChave)) fil_definir_ordem(filChave, ordemSel);
+  if (palcoLinha && palcoSel != fil_palco(filChave)) fil_definir_palco(filChave, palcoSel);
   estVivo = 1;
 }
 // Voltar / clique fora / menu fechado por outro caminho: o que valia ao abrir.
@@ -864,6 +953,7 @@ static void estRestaurar(void) {
   estVivo = 0;
   fil_definir_tipo(filChave, estOrigTipo);
   if (ordemLinha) fil_definir_ordem(filChave, estOrigOrdem);
+  if (palcoLinha) fil_definir_palco(filChave, palcoOrig);
 }
 // OK: o que esta na fileira fica.
 static void aplicarEstilo(void) {
@@ -910,6 +1000,33 @@ static void aplicar(void) {
   int acao;
   if (foco < 0 || foco >= nOps) return;
   acao = ops[foco].acao;
+  if (doLista && doFil) {
+    if (acao == OP_ESTILO) {
+      // "Estilo da fileira": segue para a pagina de formas, no mesmo modal.
+      doLista = 0; doFil = 0; soFileira = 1;
+      pagina = 1; estFoco = -1;
+      memset(estAnim, 0, sizeof estAnim);
+      montar(); return;
+    }
+    if (acao == OP_F_FIXAR) {
+      const ColFolder *pf = NULL;
+      int k, n = col_n();
+      for (k = 0; k < n; k++) { const ColFolder *f = col_folder(k); if (f && !strcmp(f->id, filPastaId)) pf = f; }
+      if (pf) cf_alternar(pf);
+      filAlterou = 1;
+      // Tirar da Home some com a fileira fixada; nada mais a fazer aqui.
+      if (!cf_fixada(filPastaId)) { aberto = 0; return; }
+      montar();
+    } else if (acao == OP_F_SUBIR || acao == OP_F_DESCER) {
+      if (homefil_mover(filChave, acao == OP_F_SUBIR ? -1 : 1)) filAlterou = 1;
+    } else if (acao == OP_F_VISTOS) {
+      ov_alternar(filChave); filAlterou = 1; montar();
+    } else if (acao == OP_F_OCULTAR) {
+      if (homefil_ocultar(filChave)) filAlterou = 1;
+      aberto = 0;
+    }
+    return;
+  }
   if (doLista) {
     if (acao == OP_L_ABRIR) { listaPedida = 1; aberto = 0; }
     else if (acao == OP_L_FIXAR) { lst_alternar_fixada(&lista); listaAlterou = 1; montar(); }
@@ -923,7 +1040,25 @@ static void aplicar(void) {
     estAncorar(0.0f);
     return;
   }
+  if (acao == OP_F_MENU) {
+    char ch[sizeof filChave], ti[sizeof filTitulo];
+    snprintf(ch, sizeof ch, "%s", filChave); snprintf(ti, sizeof ti, "%s", filTitulo);
+    ctx_abrir_filmenu(ch, ti, "", 1);
+    return;
+  }
   if (!ci) return;
+  if (acao == OP_ADD_LISTA) {
+    pagina = 3; foco = 0; pickIni = 0; lst_minhas_pedir();
+    montar(); return;
+  }
+  if (acao >= OP_PICK_LISTA && acao < OP_PICK_LISTA + CTX_PICK_MAX) {
+    LstLista l;
+    if (lst_minha(pickIni + acao - OP_PICK_LISTA, &l) && lstesc_adicionar_titulo(ci, &l)) {
+      aberto = 0; pagina = 0;
+    }
+    return;
+  }
+  if (acao == 0) return;
   if (acao >= OP_EXTRA && acao < OP_EXTRA + nExtras) {
     int k = acao - OP_EXTRA;
     if (extras[k].juntaAssistido && assistidoPossivel(ci, indiceAtual()) &&
@@ -1024,6 +1159,10 @@ static void aplicar(void) {
       }
       montar();
       break;
+    case OP_REWATCH:
+      rewatchui_abrir(ci,RW_ORIGEM_CONTINUAR,0,0);
+      aberto=0;
+      break;
     case OP_ASSISTIDO:
       iniciarAssistido(atual, ci, 0);
       montar();
@@ -1043,6 +1182,9 @@ static void aplicar(void) {
       home_pedir_abrir();
       aberto = 0;
       pagina = 0;
+      break;
+    case OP_TRAVA:
+      if (travaui_abrir(ci, atual)) aberto = 0;
       break;
     case OP_DISPENSAR:
       home_retomar_dispensar();
@@ -1107,6 +1249,20 @@ static void aplicar(void) {
   }
 }
 
+void ctx_acao_rapida(const CatItem *titulo, int visto) {
+  if (aberto || estadoOperacao == CTX_PENDENTE || !titulo) return;
+  ctx_abrir_salvo(titulo);
+  if (!aberto) return;
+  esperandoSoltura = 0;
+  for (foco = 0; foco < nOps; foco++)
+    if (ops[foco].acao == (visto ? OP_ASSISTIDO : OP_LISTA)) break;
+  if (foco >= nOps) { aberto = 0; return; }
+  aplicar();
+  // Pending writes/errors stay in the existing menu, so their outcome and
+  // retry remain visible. Immediate actions leave the preview in place.
+  if (estadoOperacao == CTX_CONFIRMADA && pagina == 0) aberto = 0;
+}
+
 void ctx_evento(const SDL_Event *e) {
   int k;
   if (!aberto) return;
@@ -1130,6 +1286,13 @@ void ctx_evento(const SDL_Event *e) {
     // Voltar CANCELA: devolve a forma e a ordem de quando abriu.
     if (pagina == 1) estRestaurar();
     if (pagina == 2) { pagina = 0; confExtra = -1; return; }   // Voltar = Cancelar
+    // Da escolha de lista, Voltar volta ao menu, com o foco na entrada de onde veio.
+    if (pagina == 3) {
+      pagina = 0; montar();
+      for (foco = 0; foco < nOps && ops[foco].acao != OP_ADD_LISTA; foco++) {}
+      if (foco >= nOps) foco = 0;
+      return;
+    }
     if (pagina == 1 && !soFileira) {
       pagina = 0; montar(); estSaindo = 1;
       for (foco = 0; foco < nOps && ops[foco].acao != OP_ESTILO; foco++) {}
@@ -1149,14 +1312,20 @@ void ctx_evento(const SDL_Event *e) {
     return;
   }
   // Pagina de estilos: cima/baixo trocam a forma, esquerda/direita o tamanho
-  // (so nas linhas que tem tamanhos) e, na linha da ordem de uma colecao, a
-  // ordem dos itens. Cada passo ja vale na fileira; OK fica, Voltar desfaz.
+  // (so nas linhas que tem tamanhos) e, nas linhas extras (ordem da colecao,
+  // fundo do Palco), o valor delas. Cada passo ja vale na fileira; OK fica,
+  // Voltar desfaz.
   if (pagina == 1) {
+    int extras = (ordemLinha ? 1 : 0) + (palcoLinha ? 1 : 0);
     if (k == SDLK_UP)   { if (estFoco > 0) estFoco--; if (estFoco < nEstilos) estSel = estFoco; estAoVivo(); return; }
-    if (k == SDLK_DOWN) { if (estFoco + 1 < nEstilos + (ordemLinha ? 1 : 0)) estFoco++; if (estFoco < nEstilos) estSel = estFoco; estAoVivo(); return; }
+    if (k == SDLK_DOWN) { if (estFoco + 1 < nEstilos + extras) estFoco++; if (estFoco < nEstilos) estSel = estFoco; estAoVivo(); return; }
     if (ordemLinha && estFoco == nEstilos) {
       if (k == SDLK_LEFT)  { if (ordemSel > 0) ordemSel--; estAoVivo(); return; }
       if (k == SDLK_RIGHT) { if (ordemSel + 1 < FIL_ORD_N) ordemSel++; estAoVivo(); return; }
+    }
+    if (palcoLinha && estFoco == nEstilos + (ordemLinha ? 1 : 0)) {
+      if (k == SDLK_LEFT)  { if (palcoSel > PALCO_PADRAO) palcoSel--; estAoVivo(); return; }
+      if (k == SDLK_RIGHT) { if (palcoSel + 1 < PALCO_N) palcoSel++; estAoVivo(); return; }
     }
     if (estFoco >= 0 && estFoco < nEstilos && estLin[estFoco].n > 1) {
       if (k == SDLK_LEFT)  { if (estTam[estFoco] > 0) estTam[estFoco]--; estAoVivo(); return; }
@@ -1175,8 +1344,16 @@ void ctx_evento(const SDL_Event *e) {
   if (operacao != CTX_OP_NENHUMA && estadoOperacao == CTX_PENDENTE) return;
   if (modoInline() && k == SDLK_LEFT)  { if (foco > 0) foco--; return; }
   if (modoInline() && k == SDLK_RIGHT) { if (foco + 1 < nOps) foco++; return; }
-  if (k == SDLK_UP)   { if (foco > 0) foco--; return; }
-  if (k == SDLK_DOWN) { if (foco + 1 < nOps) foco++; return; }
+  if (k == SDLK_UP) {
+    if (foco > 0) foco--;
+    else if (pagina == 3 && pickIni > 0) { pickIni--; montar(); }
+    return;
+  }
+  if (k == SDLK_DOWN) {
+    if (foco + 1 < nOps) foco++;
+    else if (pagina == 3 && pickIni + pickN < pickTotal) { pickIni++; montar(); }
+    return;
+  }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) { aplicar(); return; }
 }
 
@@ -1230,10 +1407,19 @@ void ctx_atualizar(float dt, Uint32 agora) {
       ? (ordemLinha && estFoco == nEstilos ? 1.0f : 0.0f)
       : anim_mola(ordemAnim, ordemLinha && estFoco == nEstilos ? 1.0f : 0.0f,
                   dt, NV_MOLA_FOCO);
+    palcoAnim = ajustes_animacoes_reduzidas()
+      ? (palcoLinha && estFoco == nEstilos + (ordemLinha ? 1 : 0) ? 1.0f : 0.0f)
+      : anim_mola(palcoAnim, palcoLinha && estFoco == nEstilos + (ordemLinha ? 1 : 0) ? 1.0f : 0.0f,
+                  dt, NV_MOLA_FOCO);
   } else if (estVivo) estRestaurar();
 
   atual = indiceAtual();
   if (aberto && !soFileira && !doLista && !itemAtual()) { aberto = 0; return; }
+  // As listas chegam depois do OK: remonta quando o que a pagina 3 mostra mudou.
+  if (aberto && pagina == 3 &&
+      (lst_minhas_carregando() != pickCarregando ||
+       lst_minhas_n() != pickTotal))
+    montar();
 
   if (operacao != CTX_OP_NENHUMA && estadoOperacao == CTX_PENDENTE) {
     int novo = opSimkl ? simkl_lista_estado() : trakt_operacao_estado(operacao);
@@ -1249,6 +1435,9 @@ void ctx_atualizar(float dt, Uint32 agora) {
           if (operacao == CTX_OP_LISTA) {
             cat_definir_na_lista(atual, intencao);
             cat_definir_na_lista_imdb(operacaoImdb, intencao);
+            // O servico confirmou: o titulo ja entra no filtro dele.
+            if (intencao)
+              cat_marcar_fonte_imdb(operacaoImdb, opSimkl ? CAT_FONTE_SIMKL : CAT_FONTE_TRAKT);
           } else {
             espelharAssistido(atual, ci, intencao);
             anunciarAssistido(intencao);
@@ -1290,7 +1479,7 @@ static void ponteiroConfOk(int i, int b) {
 static void ponteiroCtxFora(int a, int b) { (void)a; (void)b; aberto = 0; }
 // `b` > 0 e o segmento de tamanho b-1 da linha (o alvo menor, por cima dela).
 static void ponteiroEstFoco(int i, int b) {
-  if (i < 0 || i >= nEstilos + (ordemLinha ? 1 : 0)) return;
+  if (i < 0 || i >= nEstilos + (ordemLinha ? 1 : 0) + (palcoLinha ? 1 : 0)) return;
   estFoco = i;
   if (i < nEstilos) estSel = i;
   if (i < nEstilos && b > 0 && b - 1 < estLin[i].n) estTam[i] = b - 1;
@@ -1298,7 +1487,7 @@ static void ponteiroEstFoco(int i, int b) {
 }
 static void ponteiroEstFora(int a, int b) { (void)a; (void)b; estRestaurar(); aberto = 0; }
 static void ponteiroEstOk(int i, int b) {
-  if (i < 0 || i >= nEstilos + (ordemLinha ? 1 : 0)) return;
+  if (i < 0 || i >= nEstilos + (ordemLinha ? 1 : 0) + (palcoLinha ? 1 : 0)) return;
   ponteiroEstFoco(i, b);
   aplicarEstilo();
 }
@@ -1315,6 +1504,15 @@ static void ponteiroOrdemToque(int i, int b) {
 // O mesmo ciclar do toque serve o clique no MESA na linha Ordem: ali o mouse e
 // o Magic Remote nao tem esquerda/direita. Aplicar continua na forma/Fechar.
 #define ponteiroOrdemAtivar ponteiroOrdemToque
+// O ciclar da linha do Palco (#659): cada toque anda UM modo (Padrão ->
+// Cortina -> ... -> Padrão); a linha mostra o que ficou.
+static void ponteiroPalcoAtivar(int i, int b) {
+  (void)i; (void)b;
+  if (!palcoLinha) return;
+  estFoco = nEstilos + (ordemLinha ? 1 : 0);
+  palcoSel = palcoSel + 1 >= PALCO_N ? PALCO_PADRAO : palcoSel + 1;
+  estAoVivo();
+}
 
 // GLASS UI (dono, 02/10, mockup "ilha" tela 7): TODO MODAL E UMA ILHA — o
 // material da folha de Fontes e da ilha do relogio. Sombra curta, miolo de
@@ -1556,7 +1754,7 @@ int ctx_estilo_rect(GfxRect *out) {
 
 static void desenhaEstilos(float a) {
   a *= estPag;
-  int i, n = nEstilos + (ordemLinha ? 1 : 0);
+  int i, n = nEstilos + (ordemLinha ? 1 : 0) + (palcoLinha ? 1 : 0);
   float disp = NV_TELA_H - 2.0f * CTX_BORDA - 2.0f * EST_PAD;
   float lin = EST_LINHA;
   GfxRect m;
@@ -1583,7 +1781,7 @@ static void desenhaEstilos(float a) {
         ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstFoco, ponteiroEstOk, i, 0);
       linhaEstilo(r, estLin[i].rotulo, estTipo(i), estAnim[i], a);
       if (estLin[i].n > 1 && estAnim[i] > 0.5f) desenhaTamanhos(r, i, a);
-    } else {
+    } else if (ordemLinha && i == nEstilos) {
       // A ORDEM dos itens da colecao: o valor que esquerda/direita escolhem; o
       // clique cicla (mouse e Magic Remote nao tem esquerda/direita).
       char rot[96];
@@ -1591,6 +1789,16 @@ static void desenhaEstilos(float a) {
       if (aberto && pagina == 1 && a > 0.5f)
         ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstFoco, ponteiroOrdemAtivar, nEstilos, 0);
       linhaEstilo(r, rot, -1, ordemAnim, a);
+    } else {
+      // O FUNDO DO PALCO desta fileira (#659): "Padrão" herda o ajuste
+      // global; os outros são os PALCO_*, aplicados na hora pela home.
+      char rot[96];
+      snprintf(rot, sizeof rot, i18n("Fundo do Palco: %s"),
+               palcoSel < 0 ? i18n("Padrão") : i18n(ajustes_palco_fundo_rotulo(palcoSel)));
+      if (aberto && pagina == 1 && a > 0.5f)
+        ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroEstFoco, ponteiroPalcoAtivar,
+                      nEstilos + (ordemLinha ? 1 : 0), 0);
+      linhaEstilo(r, rot, -1, palcoAnim, a);
     }
   }
 }
@@ -1723,6 +1931,45 @@ static void misturaDaLista(const LstLista *l, char *dst, size_t n) {
   { int q = nf ? nf : ns;
     snprintf(dst, n, "%d %s", q, nf ? i18n(q == 1 ? "filme" : "filmes")
                                     : i18n(q == 1 ? "série" : "séries")); }
+}
+
+static void desenhaFil(float a) {
+  const float pad = CTX_ILHA_PAD;
+  const float larg = 560.0f;
+  char kick[96];
+  TxtLinha n;
+  float x, y, alt, hx, hy;
+  int i;
+  snprintf(kick, sizeof kick, "%s", i18n(filPastaId[0] ? "Coleção" : "Fileira"));
+  n = txt_linha_corta(TXT_ILHA_NOME, filTitulo, 243, 242, 239, 255, larg - 2.0f * (pad + 20.0f));
+  alt = pad * 2.0f + 12.0f + 22.0f + n.h + 18.0f + (float)nOps * (CTX_LINHA + CTX_GAP);
+  x = (NV_TELA_W - larg) * 0.5f;
+  y = (NV_TELA_H - alt) * 0.5f;
+  if (y < CTX_BORDA) y = CTX_BORDA;
+  { GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
+    gfx_cor(tela, 0.0f, 0, 0, 0, 0.55f * a); }
+  if (aberto && a > 0.5f && ponteiro_ativo()) {
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroCtxFora, 0, 0);
+    ponteiro_alvo(x, y, larg, alt, NULL, NULL, 0, 0);
+  }
+  y += (1.0f - a) * 16.0f;
+  ilhaCtx((GfxRect){ x, y, larg, alt }, CTX_ILHA_RAIO, a);
+  hx = x + pad + 20.0f;
+  hy = y + pad + 12.0f;
+  kickerCtx(kick, hx, hy, a);
+  hy += 22.0f;
+  txt_desenhar_alpha(n, hx, hy, a);
+  hy += n.h + 18.0f;
+  for (i = 0; i < nOps; i++) {
+    float by = hy + CTX_GAP + (float)i * (CTX_LINHA + CTX_GAP) - CTX_GAP;
+    GfxRect r = { x + pad, by, larg - pad * 2.0f, CTX_LINHA };
+    int ac = ops[i].acao;
+    const char *icone = ac == OP_F_FIXAR ? "aj_folders" : ac == OP_ESTILO ? "aj_rows-3"
+                      : ac == OP_F_OCULTAR ? "aj_eye-off" : ac == OP_F_VISTOS ? "aj_eye" : "aj_rows-3";
+    if (aberto && a > 0.5f)
+      ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroCtxOpcao, NULL, i, 0);
+    linhaCtx(r, ops[i].rot, icone, focoAnim[i], a);
+  }
 }
 
 static void desenhaLista(float a) {
@@ -2008,7 +2255,7 @@ static void ctx_desenharCorpo_(Uint32 agora) {
   if (a < 0.01f) return;
   if (modoInline() && pagina == 0) return;   // a linha do painel se abre sozinha (salvospainel.c)
   if (pagina == 1) { desenhaEstilos(a); return; }
-  if (doLista) { desenhaLista(a); return; }
+  if (doLista) { if (doFil) desenhaFil(a); else desenhaLista(a); return; }
   ci = itemAtual();
   if (!ci) return;
   if (pagina == 2) { desenhaConfirmar(ci, a); return; }
@@ -2223,10 +2470,15 @@ static void ctx_desenharCorpo_(Uint32 agora) {
       case OP_TIRAR_CONTINUAR: icone = "aj_x"; break;
       case OP_DISPENSAR:  icone = "aj_x"; break;
       case OP_RECOMENDAR: icone = "aj_users"; break;
+      case OP_REWATCH: icone = "aj_rotate-ccw-clock"; break;
       case OP_DETALHES:   icone = "aj_info"; break;
+      case OP_TRAVA:      icone = "aj_link"; break;
       case OP_ESTILO:     icone = "aj_rows-3"; break;
+      case OP_F_MENU:     icone = "aj_rows-3"; break;
       case OP_CATEGORIA:  icone = "aj_folders"; break;
+      case OP_ADD_LISTA:  icone = "aj_rows-3"; break;
       default:
+        if (pagina == 3) { icone = ops[i].acao ? "aj_rows-3" : "aj_info"; break; }
         if (ops[i].acao >= OP_EXTRA && ops[i].acao < OP_EXTRA + nExtras &&
             extras[ops[i].acao - OP_EXTRA].icone)
           icone = extras[ops[i].acao - OP_EXTRA].icone;

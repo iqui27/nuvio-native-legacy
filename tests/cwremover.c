@@ -43,6 +43,7 @@ Uint32 SDL_GetTicks(void) { return 0; }
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
+#define NV_TEST_SERVIDORES_APENAS
 #include "jellyfin_stub.inc"
 
 // --- DUBLES: so fazem descoberta.c linkar (o conjunto de tests/cateps.c) -----

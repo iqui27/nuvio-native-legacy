@@ -8,15 +8,19 @@
 #include <time.h>
 
 static CatItem catalogoTeste[127];
-static int ocultar;
+static int ocultar, watched = -1;
+float gfx_escala_ui(void) { return 1.0f; }
+float gfx_escala_ui_base(void) { return 1.0f; }
+const char *i18n(const char *s) { return s; }
+const char *addons_nome_por_id(const char *s) { return s; }
 int cat_n(void) { return 127; }
-int cat_visto(const CatItem *item) { (void)item; return 0; }
 const CatItem *cat_item(int i) { return i >= 0 && i < 127 ? &catalogoTeste[i] : NULL; }
 int cat_indice_por_imdb(const char *id) {
   for (int i = 0; i < 127; i++)
     if (salvos_mesmo_titulo(id, catalogoTeste[i].imdb)) return i;
   return -1;
 }
+int cat_visto(const CatItem *c) { return watched >= 0 && c == &catalogoTeste[watched]; }
 int ajustes_ocultar_nao_lancados(void) { return ocultar; }
 void ajustes_area_conteudo(float e, float d, float *x, float *w) {
   if (x) *x = e;
@@ -30,6 +34,7 @@ float gfx_escala_txt(void) { return 1.0f; }
 float gfx_poster_k(void) { return 1.0f; }
 int lst_n(void) { return 0; }
 int lst_itens_n(void) { return 0; }
+int lst_item(int i, CatItem *dst) { (void)i; (void)dst; return 0; }
 char *dados_ler(const char *nome) {
   char b[2048] = "";
   if (strcmp(nome, "salvos-p1.txt")) return NULL;
@@ -53,16 +58,16 @@ static void confere(int esperado) {
   reconstruir();
   int esperadoSalvos = fonteBib == AJ_SALVOS_LOCAL ? 129 + extraLocal
                         : (tipo == TIPO_FILME ? 8 : tipo == TIPO_SERIE ? 118 : 126);
-  int total = modo == MODO_SALVOS ? esperadoSalvos
+  int total = modo == MODO_PARAVER ? esperadoSalvos
                                   : (tipo == TIPO_FILME ? 8 : tipo == TIPO_SERIE ? 118 : 126);
-  assert(contaModo[MODO_SALVOS] == esperadoSalvos);
-  assert(contaModo[MODO_NUVEM] == 126);
+  assert(contaModo[MODO_PARAVER] == esperadoSalvos);
+  assert(contaModo[MODO_COLECOES] == 126);
   assert(totalModo == total && nFiltro == esperado && nCelulas == esperado);
   int navegaveis = 0;
   for (int r = BIB_FIL_GRADE; r < foco.nFileiras; r++) navegaveis += foco.nColunas[r];
   assert(navegaveis == esperado);
   char num[16], esperadoNum[16];
-  textoModo(MODO_SALVOS, num, sizeof num);
+  textoModo(MODO_PARAVER, num, sizeof num);
   snprintf(esperadoNum, sizeof esperadoNum, "%d", esperadoSalvos);
   assert(!strcmp(num, esperadoNum));
   printf("fixture: Salvos=%s grade=%d navegaveis=%d ocultar=%d tipo=%d exibicao=%d\n",
@@ -83,7 +88,7 @@ int main(void) {
   catalogoTeste[126] = catalogoTeste[125];
   strcat(catalogoTeste[126].imdb, ":1:2");
   salvos_iniciar();
-  modo = MODO_SALVOS; tipo = TIPO_TODOS;
+  modo = MODO_PARAVER; tipo = TIPO_TODOS;
 
   // P1: so a fonte LOCAL/NUVIO recebe os salvos locais. Com Trakt/Simkl
   // efetivos eles nao entram na aba nem contam, nem no painel de Salvos.
@@ -104,6 +109,17 @@ int main(void) {
   tipo = TIPO_SERIE; confere(118);
   tipo = TIPO_TODOS;
 
+  assert(hdrX() == 200.0f);
+  assert(bibX() == 564.0f && bibW() == 1260.0f);
+  assert(colunasCartaz() == 5);
+  // A tabela em exibicao de lista comeca mais baixo para caber o cabecalho
+  // de colunas (mockup "biblioteca-lista-servidor"); a grade de cartazes
+  // continua em 388.
+  assert(gradeY() == 388.0f + 42.0f && pickerY() == 312.0f);
+  exibicao = VIS_CARTAZ;
+  assert(gradeY() == 388.0f);
+  exibicao = VIS_LISTA;
+
   // Mesmo criterio da Home: desconhecido/passado/ano atual ficam; futuro sai.
   time_t agora = time(NULL);
   struct tm tmv;
@@ -122,18 +138,66 @@ int main(void) {
     assert(salvos_definir(&local, 1));
     extraLocal = 1;
     for (exibicao = VIS_CARTAZ; exibicao <= VIS_LISTA; exibicao++) {
-      modo = MODO_SALVOS;
+      modo = MODO_PARAVER;
       ocultar = 1; confere(i == 5 ? 127 + extraLocal : 129 + extraLocal);
       ocultar = 0; confere(129 + extraLocal);
-      modo = MODO_NUVEM;
+      modo = MODO_COLECOES;
       ocultar = 1; confere(i == 5 ? 125 : 126);
       ocultar = 0; confere(126);
     }
   }
-  modo = MODO_SALVOS; exibicao = VIS_LISTA;
+  modo = MODO_PARAVER; exibicao = VIS_LISTA;
   ocultar = 0; confere(130);
   tipo = TIPO_FILME; confere(12);
   tipo = TIPO_SERIE; confere(118);
+  // Origem: 0-9 Trakt, 10-14 Trakt+Simkl, 15-19 Simkl, o resto sem fonte
+  // (Conta Nuvio, junto com os 3 salvos locais fora do catalogo).
+  for (int i = 0; i < 20; i++)
+    catalogoTeste[i].fontes = i < 10 ? CAT_FONTE_TRAKT
+                            : i < 15 ? CAT_FONTE_TRAKT | CAT_FONTE_SIMKL : CAT_FONTE_SIMKL;
+  tipo = TIPO_TODOS; ocultar = 0; modo = MODO_PARAVER;
+  origem = ORIG_TODAS; reconstruir(); assert(nFiltro == 130);
+  origem = ORIG_TRAKT; reconstruir(); assert(nFiltro == 15);
+  origem = ORIG_SIMKL; reconstruir(); assert(nFiltro == 10);
+  origem = ORIG_NUVIO; reconstruir(); assert(nFiltro == 109 + extraLocal);
+  assert(bibNPicks() == 6);
+  assert(contaOrigem[ORIG_TODAS] == 129 + extraLocal);
+  assert(contaOrigem[ORIG_TRAKT] == 15 && contaOrigem[ORIG_SIMKL] == 10);
+  modo = MODO_ASSISTIDOS; assert(bibNPicks() == 5);
+  origem = ORIG_TODAS; modo = MODO_PARAVER; tipo = TIPO_TODOS;
+  generoSel = 1;
+  strcpy(catalogoTeste[0].genero, "Movie · Drama");
+  reconstruir(); assert(nFiltro == 1);
+  strcpy(catalogoTeste[0].genero, "Movie · Comedy");
+  generoSel = 2; reconstruir(); assert(nFiltro == 1);
+  generoSel = 0; watched = 0; esconderVistos = 1;
+  reconstruir(); assert(nFiltro == 128 + extraLocal);
+  modo = MODO_ASSISTIDOS; reconstruir(); assert(nFiltro == 1);
+  esconderVistos = 0; watched = -1; modo = MODO_PARAVER;
+  strcpy(catalogoTeste[0].origem, "org.example.list");
+  reconstruir(); assert(nAddonOrigens == 1 && addonOrigens[0].count == 1);
+  origem = BIB_N_ORIG; reconstruir(); assert(nFiltro == 1);
+  // Preserve an add-on selection when switching to Watched: label stays valid.
+  modo = MODO_ASSISTIDOS; watched = 0;
+  reconstruir();
+  const char *rot, *val;
+  pickerTexto(0, &rot, &val);
+  assert(!strcmp(rot, "Origem") && !strcmp(val, "org.example.list"));
+  // A vanished add-on must also have a safe label.
+  origem = BIB_N_ORIG + 7;
+  pickerTexto(0, &rot, &val);
+  assert(!strcmp(val, "Todas"));
+  origem = ORIG_TODAS; generoSel = 1;
+  reconstruir(); assert(nFiltro == 1); // hidden genre cannot filter Watched
+  generoSel = 0; watched = -1; modo = MODO_PARAVER;
+  strcpy(catalogoTeste[125].origem, "addon.a");
+  strcpy(catalogoTeste[126].origem, "addon.b");
+  reconstruir();
+  origem = BIB_N_ORIG + 2;
+  reconstruir();
+  assert(addonOrigens[2].count == 1 && nFiltro == 1 && filtro[0] == 126);
+  assert(contaOrigem[ORIG_TODAS] == 129 + extraLocal);
+  origem = ORIG_TODAS;
   puts("biblioteca filtro: PASS (regressao sintetica; sem prova da TV)");
   return 0;
 }

@@ -162,6 +162,11 @@ int main(int argc, char **argv) {
   printf("primeiras fontes aos %u ms; faltam %d: %s\n", tPrimeira, falta, nomes);
   assert(tPrimeira < 1200);
   assert(falta >= 2 && strstr(nomes, "Lento") && strstr(nomes, "Tardio"));
+  { AddonAba abas[8]; int nab = addons_parcial_abas(abas, 8), buscando = 0;
+    assert(nab >= 3);
+    for (i = 0; i < nab; i++) if (abas[i].estado == ADDON_ABA_BUSCANDO) buscando++;
+    assert(buscando >= 2);
+    puts("ok  abas parciais: quem ainda nao respondeu aparece buscando"); }
   iA0 = indiceDe("Rapido", 0); iA1 = indiceDe("Rapido", 1);
   assert(iA0 == 0 && iA1 == 1);
 
@@ -180,7 +185,13 @@ int main(int argc, char **argv) {
   focado = iA0;
   tecla(SDLK_DOWN);
   ESPERA(0, 50);
-  if (shots) captura(shots, "2-rapido-chegou");
+  if (shots) {
+    stream_folha_evento(&(SDL_Event){ .type = SDL_KEYDOWN, .key.keysym.sym = SDLK_RIGHT });
+    captura(shots, "2-rapido-chegou");
+    stream_folha_evento(&(SDL_Event){ .type = SDL_KEYDOWN, .key.keysym.sym = SDLK_RIGHT });
+    captura(shots, "2b-lento-buscando");
+    stream_folha_evento(&(SDL_Event){ .type = SDL_KEYDOWN, .key.keysym.sym = SDLK_LEFT });
+  }
 
   // ---- 2. o Lento chega: entra em cima, ninguem muda de indice -----------
   ESPERA(stream_n() >= 3, 4000);

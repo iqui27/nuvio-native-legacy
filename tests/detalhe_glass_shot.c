@@ -91,6 +91,25 @@ size_t trakt_token_tam(const char *);
 #define txt_token_tam trakt_token_tam
 #include "gfx.h"
 static int cardMaterial, cardFrost, captionSolid, commentMaterial;
+// Record actual draw arguments, so missing hero offsets fail the PNG proof.
+static GfxRect serverRects[5];
+static int serverRectCount;
+static void server_rect(GfxRect r) {
+  if (getenv("NUVIO_SHOT_SERVIDORES") && serverRectCount < 5)
+    serverRects[serverRectCount++] = r;
+}
+#include "plrui.h"
+#include "vaitocarui.h"
+static void server_material(GfxRect r, float radius, int modal, float a) {
+  if (r.h == 76.0f) server_rect(r);
+  plrui_material(r, radius, modal, a);
+}
+static void server_vai(const VaiTocar *vt, float x, float y, float w, float a) {
+  server_rect((GfxRect){x, y, w, vtui_altura(vt)});
+  vtui_desenhar(vt, x, y, w, a);
+}
+#define plrui_material server_material
+#define vtui_desenhar server_vai
 static void card_material(GfxRect r, float radius, float density, float alpha) {
   int before = gfx_vidro_com_fonte;
   gfx_vidro_material(r, radius, density, alpha);
@@ -99,6 +118,7 @@ static void card_material(GfxRect r, float radius, float density, float alpha) {
   cardFrost += gfx_vidro_com_fonte > before;
 }
 static void card_color(GfxRect r, float radius, float cr, float cg, float cb, float a) {
+  if (r.w == 180 && r.h == 48) server_rect(r);
   if (cr == .19f && cg == .21f && cb == .23f && a > .5f) captionSolid++;
   gfx_cor(r, radius, cr, cg, cb, a);
 }
@@ -109,6 +129,7 @@ void b2_panel(GfxRect r, float radius, float density, float a);
 #ifndef NV_DETAIL_SOURCE
 #define NV_DETAIL_SOURCE "../src/detail.c"
 #endif
+#define servidores_contem_item fx_servidor_contem
 #include NV_DETAIL_SOURCE
 #undef gfx_vidro_material
 #undef gfx_vidro_painel
@@ -116,11 +137,20 @@ void b2_panel(GfxRect r, float radius, float density, float a);
 #undef txt_bloco
 #undef txt_largura
 #undef txt_token_tam
+#undef servidores_contem_item
+#undef plrui_material
+#undef vtui_desenhar
+int fx_servidor_contem(const CatItem *item, int provider) {
+  return getenv("NUVIO_SHOT_SERVIDORES") && item && provider < 2;
+}
 
 float trakt_bloco(TxtEstilo e, const char *s, int r, int g, int b,
                    float x, float y, float w, float lead, float a, int max) {
   traktLayoutCalls++;
-  return txt_bloco(e, s, r, g, b, x, y, w, lead, a, max);
+  float h = txt_bloco(e, s, r, g, b, x, y, w, lead, a, max);
+  if (e == TXT_DET_META2 && x >= 0 && s && !strcmp(s, tituloDe(idx)))
+    server_rect((GfxRect){x, y, w, h});
+  return h;
 }
 int trakt_largura(TxtEstilo e, const char *s) {
   traktLayoutCalls++;
@@ -390,6 +420,7 @@ static void quadros(int n) {
     gfx_novo_quadro();
     glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
+    serverRectCount = 0;
     detail_desenhar(SDL_GetTicks());
     // NUVIO_SHOT_RELOGIO=1: the clock island over the page, as app.c draws it.
     if (getenv("NUVIO_SHOT_RELOGIO")) {
@@ -638,6 +669,43 @@ int main(int argc, char **argv) {
     return 0;
   }
   if (quer(argc, argv, "filme-topo")) { abrir(1, 0, 0, 0); gravar("filme-topo"); }
+  if (quer(argc, argv, "detalhe-chip")) {
+    // Confirmed foreign logo, friends feed, and a real candidate stream.
+    snprintf(itens[1].logoIdiomaUrl, sizeof itens[1].logoIdiomaUrl, "%s", itens[1].logo);
+    snprintf(itens[1].logoIdioma, sizeof itens[1].logoIdioma, "ja");
+    cat_definir_tudo(itens, 2, NULL, 0);
+    static Stream candidate;
+    snprintf(candidate.url, sizeof candidate.url, "https://example.invalid/movie.mkv");
+    candidate.altura = 2160;
+    stream_definir_alvo(IMDB_FILME); stream_definir_lista(&candidate, 1);
+    abrir(1,0,0,0); quadros(4); gravar("detalhe-chip");
+    SDL_Event e = {0}; e.type = SDL_KEYDOWN;
+    int nav = 1;
+#define STEP(code, expected) do { e.key.keysym.sym = code; detail_evento(&e); nav &= !!(expected); } while (0)
+    STEP(SDLK_DOWN, focoServidor == 0 && !focoAmigos);
+    STEP(SDLK_RIGHT, focoServidor == 1 && !focoAmigos);
+    STEP(SDLK_UP, focoServidor == -1 && !focoAmigos);
+    STEP(SDLK_DOWN, focoServidor == 0 && !focoAmigos);
+    STEP(SDLK_DOWN, focoServidor == -1 && focoAmigos);
+    STEP(SDLK_UP, focoServidor == 0 && !focoAmigos);
+    STEP(SDLK_UP, focoServidor == -1 && !focoAmigos);
+    STEP(SDLK_DOWN, focoServidor == 0 && !focoAmigos);
+    STEP(SDLK_DOWN, focoServidor == -1 && focoAmigos);
+    STEP(SDLK_DOWN, nivel == 1 && !focoAmigos && focoServidor == -1);
+#undef STEP
+    char path[700]; snprintf(path, sizeof path, "%s/detalhe-chip-rects.json", saida);
+    FILE *proof = fopen(path, "w"); assert(proof);
+    fprintf(proof, "{\"navigation_ok\":%d,\"rects\":[", nav);
+    for (int i = 0; i < serverRectCount; i++) {
+      GfxRect r = serverRects[i];
+      fprintf(proof, "%s[%.2f,%.2f,%.2f,%.2f]", i ? "," : "", r.x, r.y, r.w, r.h);
+    }
+    fputs("]}\n", proof); fclose(proof);
+    nivel = 0; focoAmigos = 0; focoServidor = 0;
+    e.key.keysym.sym = SDLK_RETURN; detail_evento(&e);
+    e.type = SDL_KEYUP; detail_evento(&e);
+    assert(detail_pediu_fontes() && detail_fonte_servidor() == 0);
+  }
   // O ULTIMO circular da linha aberta em foco: hoje o "..." (Mais opcoes).
   if (quer(argc, argv, "filme-explorar")) {
     abrir(1, 0, 0, 0);

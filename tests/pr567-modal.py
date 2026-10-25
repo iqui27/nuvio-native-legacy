@@ -19,7 +19,9 @@ static int ptNLinhas, ptAba, ptCopias, ptNAbas, ptAbaTipos[3], ptCapLinhas;
 static int ptFoco, ptFocoPosto, builds, copies, published = PARTES_PRONTO;
 static float ptRolAlvo;
 #define PT_LINHA_H 84.0f
-enum { PR_ESCOLHER, PR_TEMPORADA, PR_ARQ, PR_COPIA };
+enum { PR_ESCOLHER, PR_TEMPORADA, PR_ARQ, PR_COPIA, PR_AIRLOCK };
+static int ptAirOcupado, ptAirItem, ptAirUsenet;
+static char ptAirMsg[160];
 typedef struct { int tipo, idx; float y,h; } PtLinha;
 static PtLinha *ptLinhas;
 #define main partes_existing_tests
@@ -34,7 +36,7 @@ typedef struct { char imdb[64]; } CatItem;
 static CatItem catalog={"tt-special"};
 static const CatItem *cat_item(int i) { (void)i; return &catalog; }
 static int cat_id_stream(int i,int t,int e,char *a,unsigned n) { (void)i;snprintf(a,n,"tt-special:%d:%d",t,e);return 1; }
-''' + source[source.index('static int ptTocando('):source.index('static int ptSelecionavel(')] + r'''
+''' + '\n#define debrid_tb_disponivel() 1\n' + source[source.index('static int ptAirlockVisivel('):source.index('static int linhaAceitaPartes(')] + source[source.index('static int ptTocando('):source.index('static int ptSelecionavel(')] + r'''
 
 #define partes_resultado modalResult
 int modalResult(PartesLista *l) {
@@ -47,7 +49,7 @@ int modalResult(PartesLista *l) {
   }
   return published;
 }
-''' + rows + '\nstatic void frame(void) {\n' + update + r'''
+''' + rows + '\nstatic int back(void) {\n' + source[source.index('    if (ptCopias && ptL.estado == PARTES_PRONTO)'):source.index('    if (ptSemCopias)', source.index('static int partesEvento('))] + '\nreturn 0;\n}\nstatic void frame(void) {\n' + update + r'''
 }
 int main(void) {
   ptL.estado = PARTES_BUSCANDO;
@@ -84,6 +86,13 @@ int main(void) {
   partes_arquivo_limpar(); assert(ptTocando()==0);
   playing=0; assert(ptTocando()==-1);
   puts("PASS standalone special marker/focus use recorded item/file identity");
+  ptCopias=1; ptL.exato=0;
+  assert(back() && ptLinhas[ptFoco].tipo == PR_ESCOLHER);
+  puts("PASS Back from copies restores the choose-copy row");
+  ptAirOcupado=1; ptAirItem=8; ptAirUsenet=1;
+  frame();
+  assert(!ptAirOcupado && !ptAirMsg[0]);
+  puts("PASS Airlock completion clears busy state across items");
   free(ptL.arq); free(ptLinhas);
   puts("PASS 10,000-file idle pack: no copies or row rebuilds; tab/result changes refresh");
 }

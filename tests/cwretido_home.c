@@ -114,7 +114,7 @@ int main(void) {
   static CatFileira fs[2];
   const Fileira *lista;
   fil_definir_limite(FIL_LIMITE_MAX);
-  ajustes_aplicar_blob("{\"continueWatchingEnabled\":true}");
+  assert(ajustes_shot_valor("continueWatchingEnabled", 0));
   item(&it[0], "tt100", "movie", 0, 0, 40);
   item(&it[1], "tt200:2:3", "series", 2, 3, 30);
   item(&it[2], "tt300", "movie", 0, 0, 20);

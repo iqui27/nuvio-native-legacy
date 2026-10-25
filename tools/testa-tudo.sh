@@ -26,6 +26,7 @@ falhou=0
 passaram=0
 pulados=0
 semProva=0
+# cache_contrato.sh is a required gate: never add it to the exclusions below.
 for f in tests/*.sh; do
   n=$(basename "$f")
   case "$n" in

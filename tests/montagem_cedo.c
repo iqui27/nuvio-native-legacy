@@ -131,8 +131,9 @@ static const char *baseAtual(void)     { return versaoAtual() > 1 ? BASE_NOVA : 
 int   addons_n(void)                   { return 1; }
 const char *addons_base(int i)         { (void)i; return baseAtual(); }
 int   addons_ativo(int i)              { (void)i; return 1; }
-int   addons_fornece(int i, int oque)     { (void)i; (void)oque; return 0; }
-int   addons_sondado(int i)              { (void)i; return 0; }
+static int fixtureMeta;
+int   addons_fornece(int i, int oque)     { (void)i; return fixtureMeta && oque == ADD_META; }
+int   addons_sondado(int i)              { (void)i; return fixtureMeta; }
 const char *addons_id_manifesto(int i) { (void)i; return AID; }
 const char *addons_nome(int i)         { (void)i; return "Addon"; }
 unsigned addons_versao(void)           { return versaoAtual(); }
@@ -144,6 +145,12 @@ int addons_travar_lista(unsigned versao, int perfil) { (void)versao; (void)perfi
 void addons_destravar_lista(void) {}
 const char *addons_base_por_id(const char *id) { return id && !strcmp(id, AID) ? baseAtual() : ""; }
 void  addons_manifesto_lido(int i, const char *c) { (void)i; (void)c; }
+void ws_destino(const char *b, const char *u, int p, char out[20]) {
+  (void)b; (void)u; (void)p; strcpy(out, "fixture");
+}
+void addons_manifesto_lido_base(int i, const char *b, const char *d, unsigned v, const char *c) {
+  (void)b; (void)d; (void)v; addons_manifesto_lido(i, c);
+}
 int addons_identidade_recebida(const char *base, unsigned versao, NvPerfilSessao sessao,
                               const char *corpo) {
   (void)corpo;
@@ -190,7 +197,9 @@ static int imdbNaTela(const char *imdb, int (*campo)(const CatItem *)) {
 }
 static int ehNaLista(const CatItem *c) { return c->naLista; }
 
+static char *(*fixtureRede)(const char *url);
 char *rede_baixar(const char *url, int t) {
+  if (fixtureRede) return fixtureRede(url);
   assert(!fixtureAddonListDepth); // snapshots must release before transport
   char buf[600];
   const char *p;

@@ -10,6 +10,10 @@ int fil_oculta(const char *k) { (void)k; return 0; }
 int fil_adicionada_na_tv(const char *k) { (void)k; return 0; }
 int fil_escolhida(const char *k) { (void)k; return -1; }
 int catordem_oculta(const char *k, const char *d) { (void)k; (void)d; return 0; }
+void addons_catalogo_chave(const char *id, const char *base, const char *type,
+                           const char *catalog, char *dst, unsigned size) {
+  (void)base; snprintf(dst, size, "%s_%s_%s", id, type, catalog);
+}
 int catordem_n(void) { return 0; }
 const char *catordem_chave(int i) { (void)i; return ""; }
 
@@ -42,6 +46,42 @@ int main(void) {
     count++;
   }
   assert(count == 3);
-  puts("PASS: TOP X catalog identities survive nested extras and numbered names");
+  // Synthetic personalized catalog: no account URL or network involved.
+  const char *personal = "{\"extraRequired\":[\"genre\",\"skip\"],\"extra\":["
+    "{\"name\":\"genre\",\"options\":[\"For you & me\",\"Other\"]},"
+    "{\"name\":\"skip\"}]}";
+  const char *base = "https://fixture.example/user/config?key=fixture";
+  registrarNomeCatalogo(base, "movie", "ai", "AI for you");
+  registrarExtrasCatalogo(base, "movie", "ai", personal, js_fim(personal));
+  char url[1024];
+  assert(catalogoUrl(url, sizeof url, base, "movie", "ai", "") > 0);
+  assert(!strcmp(url, "https://fixture.example/user/config/catalog/movie/ai/genre=For%20you%20%26%20me&skip=0.json?key=fixture"));
+  assert(catalogoUrl(url, sizeof url, base, "movie", "ai", "genre=Other&skip=24") > 0);
+  assert(!strcmp(url, "https://fixture.example/user/config/catalog/movie/ai/genre=Other&skip=24.json?key=fixture"));
+  const char *modern = "{\"extra\":[{\"name\":\"genre\",\"isRequired\":true,\"options\":[\"Drama\"]},"
+    "{\"name\":\"search\"}]}";
+  registrarNomeCatalogo(base, "series", "ai", "AI for you");
+  registrarExtrasCatalogo(base, "series", "ai", modern, js_fim(modern));
+  assert(catalogoUrl(url, sizeof url, base, "series", "ai", "") > 0);
+  assert(strstr(url, "/genre=Drama.json?key=fixture"));
+  const char *optional = "{\"extra\":[{\"name\":\"genre\",\"options\":[\"Drama\"]}]}";
+  registrarNomeCatalogo(base, "series", "ai", "AI for you");
+  registrarExtrasCatalogo(base, "series", "ai", optional, js_fim(optional));
+  registrarGenerosCatalogo(base, "series", "ai", optional, js_fim(optional));
+  assert(catalogoUrl(url, sizeof url, base, "series", "ai", "") > 0);
+  assert(strstr(url, "/ai.json?key=fixture"));
+  { char ops[4][128]; int n = desc_genero_opcoes(base, "series", "ai", ops, 4);
+    assert(n == 1 && !strcmp(ops[0], "Drama"));
+    assert(!desc_genero_obrigatorio(base, "series", "ai"));
+    registrarGenerosCatalogo(base, "movie", "ai", personal, js_fim(personal));
+    assert(desc_genero_obrigatorio(base, "movie", "ai"));
+    n = desc_genero_opcoes(base, "movie", "ai", ops, 4);
+    assert(n == 2 && !strcmp(ops[0], "For you & me") && !strcmp(ops[1], "Other"));
+    assert(!desc_genero_opcoes("https://other.example", "movie", "ai", ops, 4));
+    registrarGenerosCatalogo(base, "movie", "ai", "{}", NULL);
+    assert(!desc_genero_opcoes(base, "movie", "ai", ops, 4)); }
+  const char *search = "{\"extraRequired\":[\"search\"]}";
+  assert(exigeBusca(search, js_fim(search)));
+  puts("PASS: catalog identity, quota, required defaults, overrides and config paths");
   return 0;
 }

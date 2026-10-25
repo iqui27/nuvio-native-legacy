@@ -100,6 +100,7 @@ typedef struct {
   char hash[41];           // o hash do item no TorBox (minusculas), para lembrar a copia
   int nCopias;
   ParteCopia copias[PARTES_COPIAS];   // as copias do titulo, melhor primeiro
+  int airlock;             // 1 = o item esta no Airlock do TorBox (campo `airlocked` do mylist; ausente = 0)
 } PartesLista;
 
 // Lists must be zero-initialized; clear before discarding, copy instead of assignment.
@@ -174,6 +175,15 @@ void partes_link_pedir(int usenet, int item, int arquivo, int comLista);
 // -2 nada pedido. Quem le o 1 ou o -1 consome o resultado.
 int  partes_link_estado(char *url, unsigned n, PartesLista *l);
 void partes_link_cancelar(void);
+
+// ---- Airlock do item (fio proprio) ----------------------------------------
+// Liga (1) ou desliga (0) o Airlock do item `item` (torrent ou usenet). Um
+// pedido por vez; durante um em curso, o novo e ignorado.
+void partes_airlock_pedir(int usenet, int item, int ligar);
+// 0 esperando, 1 feito (*ligado = o estado agora), -1 recusado (`detalhe` = a
+// frase do TorBox, vazia se nao houve resposta), -2 nada pedido. Quem le o 1
+// ou o -1 consome o resultado.
+int  partes_airlock_estado(int *ligado, char *detalhe, unsigned n);
 
 // ---- sessao de partes (fio do desenho) ------------------------------------
 void partes_sessao_iniciar(const char *alvo, const PartesLista *l, int k);

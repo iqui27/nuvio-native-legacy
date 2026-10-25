@@ -24,7 +24,7 @@ cc "${flags[@]}" "${renomes[@]}" -c src/video.c -o "$dir/video.o"
 cc "${flags[@]}" -Dsessao_usuario=nv_test_usuario \
   -Ddesc_episodios_garantir=nv_identity_desc_garantir \
   -Ddesc_episodios=nv_identity_desc_episodios \
-  -Dintro_pedir_ids=nv_identity_intro_pedir -Dtrakt_marcar=nv_identity_trakt_marcar \
+  -Dintro_pedir_ids=nv_identity_intro_pedir -Dintro_pedir_ids_mapeados=nv_identity_intro_mapeado -Dtrakt_marcar=nv_identity_trakt_marcar -Dtrakt_scrobble_alvo=nv_identity_scrobble_alvo \
   -Dparental_pedir=nv_identity_parental_pedir -Ddesc_refazer_continuar=nv_identity_refazer_continuar \
   -Drecomenda_atividade_passo=nv_identity_recomenda_passo \
   -c src/player.c -o "$dir/player.o"
@@ -37,6 +37,7 @@ cc "${flags[@]}" "${sources[@]}" tests/player_identity524_guards.c "$dir/player.
   -o "$dir/test" "${libs[@]}"
 failed=0
 for scenario in still-unknown other-title profile-change profile-aba conflicting-copies \
+  colliding-movie-only \
   known-movie-conflict pending-before-meta reordered-series series-without-request \
   bare-source-series fresh-episode-source; do
   mkdir "$dir/$scenario"

@@ -29,7 +29,22 @@ Uint32 SDL_GetTicks(void) { return 0; }
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
+#define ajustes_jellyfin_ligado srv_ligado_stub
+#define servidores_conectado srv_conectado_stub
+#define servidores_continuar srv_continuar_stub
+#define NV_TEST_SERVIDORES_APENAS
 #include "jellyfin_stub.inc"
+#undef ajustes_jellyfin_ligado
+#undef servidores_conectado
+#undef servidores_continuar
+static int srvTeste;
+static CatItem srvCw;
+int ajustes_jellyfin_ligado(void) { return srvTeste; }
+int servidores_conectado(void) { return srvTeste; }
+int servidores_continuar(CatItem *out, int max) {
+  if (!srvTeste || max < 1) return 0;
+  out[0] = srvCw; return 1;
+}
 
 // --- DUBLES: so fazem descoberta.c linkar (o conjunto de tests/cateps.c) -----
 int         ajustes_idioma_ingles(void) { return 0; }
@@ -365,7 +380,7 @@ int main(void) {
         r.temporada = 1; r.episodio = 4;
       } else snprintf(r.contentId, sizeof r.contentId, "tt70000%02d", k);
       r.posSeg = 1200; r.durSeg = 3000;       // 40%
-      r.lastWatchedMs = 800000 - k * 100;
+      r.lastWatchedMs = k == 0 ? 900850 : 800000 - k * 100;
       assert(prog_aplicar_remoto(&r));
     }
     naoExibidosTeste = 1;
@@ -375,6 +390,7 @@ int main(void) {
       int nc;
       modoTeste = CWO_PADRAO;
       nc = montarContinuar(lote, CONT_MAX);
+
       assert(nc == 21 && !strcmp(lote[0].imdb, "tt6773088:1:4"));
       assert(!cwo_e_futuro("tt6773088:1:6"));
       puts("ok  brothers padrao: S1E4 pausado fica; com teto 40 cabem os 9 remotos"); }
@@ -391,6 +407,7 @@ int main(void) {
       puts("ok  brothers separar: S1E4 preservado, S1E6 ainda fora (mesma obra)");
       modoTeste = CWO_STREAMING;
       nc = montarContinuar(lote, CONT_MAX);
+
       assert(nc == 21 && !strcmp(lote[0].imdb, "tt6773088:1:4"));
       puts("ok  brothers streaming: S1E4 preservado"); }
 
@@ -413,6 +430,7 @@ int main(void) {
       semDataPrimeiro = 1;
       nc = montarContinuar(lote, CONT_MAX);
       semDataPrimeiro = 0;
+
       assert(nc == 21 && !strcmp(lote[0].imdb, "tt6773088:1:4"));
       assert(!cwo_e_futuro("tt6773088:1:6"));
       puts("ok  brothers sem data: pausado preservado"); }
@@ -481,9 +499,10 @@ int main(void) {
     modoTeste = CWO_PADRAO;
     nc = montarContinuar(lote, CONT_MAX);
     assert(nc == 2);
-    assert(!strcmp(lote[1].imdb, "ttP:1:5") && lote[1].temporada == 1 &&
-           lote[1].episodio == 5 && lote[1].progresso == 100);
-    assert(!strcmp(lote[0].imdb, "ttQ:2:1") && lote[0].progresso == 30);
+
+    assert(!strcmp(lote[0].imdb, "ttP:1:5") && lote[0].temporada == 1 &&
+           lote[0].episodio == 5 && lote[0].progresso == 100);
+    assert(!strcmp(lote[1].imdb, "ttQ:2:1") && lote[1].progresso == 30);
     puts("ok  trakt velho: S1E3 nao volta por cima do S1E5 visto aqui; o adiante fica");
     fonteTeste = 0; nTabela = 0; }
 
@@ -520,7 +539,7 @@ int main(void) {
     consultadas = 0;
     nc = montarContinuar(lote, CONT_MAX);
     assert(nc == 14);
-    for (k = 0; k < 12; k++) assert(lote[k].progresso == 40);
+    { int pausados = 0; for (k = 0; k < nc; k++) pausados += lote[k].progresso == 40; assert(pausados == 12); }
     // A semente da serie ja pausada nem vai ao Cinemeta; a que acabou vai e sai.
     assert(consultadas == 3);
     for (k = 0; k < nc; k++)
@@ -533,14 +552,15 @@ int main(void) {
     modoTeste = CWO_SEPARAR;
     nc = montarContinuar(lote, CONT_MAX);
     assert(nc == 14 && cwo_e_futuro("ttT:4:10"));
-    for (k = 0; k < 12; k++) assert(lote[k].progresso == 40);
+    { int pausados = 0; for (k = 0; k < nc; k++) pausados += lote[k].progresso == 40; assert(pausados == 12); }
     puts("ok  #199 conta separar: 12 pausados preservados, sementes no fim");
 
     // "Mostrar nao exibidos" desligado: o futuro sai, o que ja foi ao ar fica.
     naoExibidosTeste = 0;
     modoTeste = CWO_PADRAO;
     nc = montarContinuar(lote, CONT_MAX);
-    assert(nc == 13 && lote[0].progresso == 40);
+    assert(nc == 13);
+    { int pausados = 0; for (k = 0; k < nc; k++) pausados += lote[k].progresso == 40; assert(pausados == 12); }
     for (k = 0; k < nc; k++) assert(strncmp(lote[k].imdb, "ttT", 3));
     puts("ok  #199 conta nao exibidos desligado: so o nao lancado sai");
     naoExibidosTeste = 1;
@@ -592,13 +612,36 @@ int main(void) {
     // Com lugares livres, sementes da conta entram apos os pausados.
     prog_remover("tt7000010"); prog_remover("tt7000011");
     nc = montarContinuar(lote, CONT_MAX);
-    assert(nc == 12 && !strcmp(lote[10].imdb, "ttT:4:10") &&
-           !strcmp(lote[11].imdb, "ttM:1:4"));
-    for (k = 0; k < 10; k++) assert(lote[k].progresso == 40);
+    assert(nc == 12);
+    { int t = 0, m = 0; for (k = 0; k < nc; k++) { t += !strcmp(lote[k].imdb,"ttT:4:10"); m += !strcmp(lote[k].imdb,"ttM:1:4"); } assert(t == 1 && m == 1); }
+    { int pausados = 0; for (k = 0; k < nc; k++) pausados += lote[k].progresso == 40; assert(pausados == 10); }
     puts("ok conta: sugestoes preenchem somente os dois lugares livres");
     contaBaseMs = 0;
     contaSementesTeste = 0;
     fonteTeste = 0; }
+  { CatItem lote[CONT_MAX];
+    int nc, count;
+    nTabela = 0; modoTeste = CWO_PADRAO;
+    memset(&srvCw, 0, sizeof srvCw);
+    snprintf(srvCw.imdb, sizeof srvCw.imdb, "tt7000001");
+    snprintf(srvCw.tipo, sizeof srvCw.tipo, "series");
+    snprintf(srvCw.titulo, sizeof srvCw.titulo, "Server episode");
+    srvCw.temporada = 2; srvCw.episodio = 4; srvCw.progresso = 42;
+    srvCw.retomadoMs = 900000000;
+    srvTeste = 1;
+    for (fonteTeste = 0; fonteTeste <= 3; fonteTeste++) {
+      nc = montarContinuar(lote, CONT_MAX); count = 0;
+      for (int k = 0; k < nc; k++) if (!strncmp(lote[k].imdb, "tt7000001", 9)) {
+        count++; assert(lote[k].temporada == 2 && lote[k].episodio == 4 && lote[k].progresso == 42);
+      }
+      assert(count == 1);
+    }
+    srvCw.progresso = 95;
+    nc = montarContinuar(lote, CONT_MAX);
+    for (int k = 0; k < nc; k++) assert(strcmp(lote[k].titulo, "Server episode"));
+    srvTeste = 0;
+    puts("ok  server CW: every source mode, newest episode wins, completed excluded");
+  }
 
   // #205: teto nativo 40 — lista de 30 itens de progresso entrega 30 cards.
   { static Falso CHEIA[30];

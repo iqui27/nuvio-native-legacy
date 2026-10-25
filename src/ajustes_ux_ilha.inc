@@ -127,6 +127,7 @@ static void ajDesenharInspetor(void) {
   int naMais = !focoIndice && focoOp < 0 && TELA[focoItem].tipo == IT_MAIS;
   int categoria = focoIndice || focoOp < 0;
   int op = categoria ? -1 : focoOp;
+  int rtl = ajustes_idioma() == IDIOMA_AR;
   if (!aj2TemInsp()) return;
   if (ajRetrato()) {
     float pw = fminf(w, 560.0f), px = x + (w - pw) * 0.5f;
@@ -192,8 +193,11 @@ static void ajDesenharInspetor(void) {
       char resumo[400];
       maisContar(secAtual, resumo, sizeof resumo);
       y += ajBloco(TXT_V3_INSP, resumo, x, y, w, 37.0f, 0.70f, maxL);
-    } else
-    y += ajBloco(TXT_V3_INSP, categoria ? SECAO_AJUDA[secAtual] : uxResumo(op), x, y, w, 37.0f, 0.70f, maxL);
+    } else if (rtl)
+      y += txt_bloco_dir(TXT_V3_INSP, categoria ? SECAO_AJUDA[secAtual] : uxResumo(op),
+                        243, 242, 239, x + w, y, w, 37.0f, 0.70f, maxL);
+    else
+      y += ajBloco(TXT_V3_INSP, categoria ? SECAO_AJUDA[secAtual] : uxResumo(op), x, y, w, 37.0f, 0.70f, maxL);
     if (op == AJ_TEMA) {   // a cor PENDENTE, como a previa
       int salvo = valor[AJ_TEMA];
       if (ajEditandoLinha(AJ_TEMA)) valor[AJ_TEMA] = uxPendente;
@@ -216,7 +220,9 @@ static void ajDesenharInspetor(void) {
         size_t u = 0, ult = 0;
         float livre = w - lp.w - 10.0f;
         y += 4.0f;
-        txt_desenhar_alpha(lp, x, y + (37.0f - lp.h) * 0.5f, 0.95f);
+        // Arabic surfaces include tall font padding: match paragraph tops.
+        txt_desenhar_alpha(lp, rtl ? x + w - lp.w : x,
+                           y + (rtl ? 0 : (37.0f - lp.h) * 0.5f), 0.95f);
         while (t[u]) {
           size_t v = u;
           size_t tok;
@@ -231,10 +237,18 @@ static void ajDesenharInspetor(void) {
           if (!t[u]) break;
         }
         memcpy(l1, t, ult); l1[ult] = 0;
-        if (ult) { TxtLinha r1 = ajTxt(TXT_V3_INSP, l1); txt_desenhar_alpha(r1, x + lp.w + 10.0f, y + (37.0f - r1.h) * 0.5f, 0.70f); }
+        if (ult) {
+          TxtLinha r1 = ajTxt(TXT_V3_INSP, l1);
+          txt_desenhar_alpha(r1, rtl ? x + w - lp.w - 10.0f - r1.w : x + lp.w + 10.0f,
+                             y + (rtl ? 0 : (37.0f - r1.h) * 0.5f), 0.70f);
+        }
         y += 37.0f;
         while (t[ult] == ' ') ult++;
-        if (t[ult]) y += ajBloco(TXT_V3_INSP, t + ult, x, y, w, 37.0f, 0.70f, 3);
+        if (t[ult]) {
+          if (rtl) y += txt_bloco_dir(TXT_V3_INSP, t + ult, 243, 242, 239,
+                                     x + w, y, w, 37.0f, 0.70f, 3);
+          else y += ajBloco(TXT_V3_INSP, t + ult, x, y, w, 37.0f, 0.70f, 3);
+        }
       }
     }
     if (uxTemPadrao(op) && op != AJ_TEMA && y + 18.0f + 2 * 57.0f <= fim) {
@@ -746,7 +760,9 @@ static void ajDesenharModais(void) {
                     de, para, "Continuar", "Cancelar", uxConfirmar, ajPontConfirmar);
     } else {
       snprintf(texto, sizeof texto, i18n("O valor voltará para “%s”. %s"), padrao,
-        !strcmp(uxEscopoValor(uxOp, uxValorPadrao(uxOp)), "Conta/perfil") ? i18n("Esta preferência participa dos ajustes do perfil. Nenhum serviço será desconectado.") : i18n("A mudança vale só nesta TV. Nenhum serviço será desconectado."));
+        !strcmp(uxEscopoValor(uxOp, uxValorPadrao(uxOp)), "Conta/perfil") ? i18n("Esta preferência participa dos ajustes do perfil. Nenhum serviço será desconectado.")
+          : !strcmp(uxEscopoValor(uxOp, uxValorPadrao(uxOp)), "Só este perfil, nesta TV") ? i18n("A mudança vale só para este perfil, nesta TV. Nenhum serviço será desconectado.")
+          : i18n("A mudança vale para todos os perfis desta TV. Nenhum serviço será desconectado."));
       uxValorTexto(uxOp, uxValorAtual(uxOp), de, sizeof de);
       ajConfirmacao(rotuloOpcao(uxOp), 0, "Restaurar este ajuste?", texto, de, padrao, "Restaurar", "Cancelar", uxConfirmar, ajPontConfirmar);
     }
@@ -1338,7 +1354,7 @@ static void aj2InspetorDiferencas(void) {
 // --- A TELA ---------------------------------------------------------------------
 static int ajModalAberto(void) {
   return (uxEditor && (uxRestaurar || uxAvisoRisco || uxEditor == 2)) || riscoFolha || frAberta || hcAberta || ajVinculoAtivo() ||
-         teclado_aberto() || registro_envio_aberto() || apoioAberto;
+         pfTela || teclado_aberto() || registro_envio_aberto() || apoioAberto;
 }
 #ifdef NV_TOUCH_UI
 // Inline pointer editing (Confirm/Cancel footer, Mobile hit targets) is Mobile only.
@@ -1615,7 +1631,7 @@ static const char *ajSyncAddonsApoio(void) {
   return "Busca agora os addons da sua conta, sem esperar a volta automática.";
 }
 static void ajDesenharAddons(int foco) {
-  static AjSubLinha L[130];
+  static AjSubLinha L[131];
   int n = addons_n(), i, lig = 0, live = addonsui_ao_vivo();
   char sub[96], val[64], k[160];
   montarTela();
@@ -1625,7 +1641,7 @@ static void ajDesenharAddons(int foco) {
   snprintf(val, sizeof val, i18n("%d de %d"), lig, n);
   snprintf(sub, sizeof sub, "%s", n ? i18n(live ? "TV ao vivo" : "Ligados nesta TV") : i18n("Nenhum addon nesta conta."));
   ajSubCabecalho("aj_puzzle", "Fontes e addons", live ? "TV ao vivo" : "Addons", n ? val : "", sub);
-  if (foco > (live ? n - 1 : n + 1)) foco = live ? n - 1 : n + 1;
+  if (foco > (live ? n - 1 : n + 2)) foco = live ? n - 1 : n + 2;
   if (foco < 0) foco = 0;
   { static char apoio[128][96];
     for (i = 0; i < n; i++) {
@@ -1634,10 +1650,12 @@ static void ajDesenharAddons(int foco) {
     } }
   L[n] = (AjSubLinha){ "Sincronizar addons", ajSyncAddonsApoio(), "aj_rotate-cw", -1, 0, 1 };
   L[n + 1] = (AjSubLinha){ "TV ao vivo", "Os addons selecionados ignoram os filtros de fontes.", "aj_tv-minimal-play", -1, 0, 1 };
+  L[n + 2] = (AjSubLinha){ "AIOStreams", "Conectar ou importar sua configuração", "aj_layers", -1, 1, 1 };
   { AjDica d[3] = { { "OK", !live && foco == n ? "Sincronizar addons" : "Mudar" }, { "↑ ↓", "Navegar" }, { "Voltar", "Fontes e addons" } };
-    ajSubLista(L, live ? n : n + 2, foco, d, 3, NULL, addonsui_ponteiro); }
+    ajSubLista(L, live ? n : n + 3, foco, d, 3, NULL, addonsui_ponteiro); }
   snprintf(k, sizeof k, "%s · %s", i18n("Fontes e addons"), i18n("Addons"));
   if (live) ajSubInspetor(AJ_ADDONS, k, n ? addons_nome(foco) : "TV ao vivo", i18n("Os addons selecionados ignoram os filtros de fontes."));
+  else if (foco == n + 2) ajSubInspetor(AJ_ADDONS, k, "AIOStreams", i18n("Conectar ou importar sua configuração"));
   else if (foco == n + 1) ajSubInspetor(AJ_ADDONS, k, "TV ao vivo", i18n("Os addons selecionados ignoram os filtros de fontes."));
   else if (foco == n) ajSubInspetor(AJ_ADDONS, k, "Sincronizar addons", i18n(ajSyncAddonsApoio()));
   else if (n > 0) {

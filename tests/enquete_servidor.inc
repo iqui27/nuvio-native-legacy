@@ -10,8 +10,12 @@ static struct {
   int nGet, nVoto, nOptout; char id[48];
 } S;
 
+static int semIdentidade, getStatus;
+
 int teste_cabecalhos(const char **cab, char *aut, size_t na, char *via, size_t nv, char *pf, size_t np) {
   (void)pf; (void)np;
+  if (semIdentidade) return 0;
+  assert(na >= 3022); /* A full Nuvio bearer must fit without truncation. */
   snprintf(aut, na, "Authorization: Bearer x"); snprintf(via, nv, "X-Nuvio-Auth: nuvio");
   cab[0] = aut; cab[1] = via; cab[2] = NULL; cab[3] = NULL;
   return 1;
@@ -44,7 +48,7 @@ char *teste_get(const char *url, int s, const char *const *cab, int *st) {
   assert(strstr(url, "/v1/enquete"));
   S.nGet++;
   if (S.delayMs) usleep((useconds_t)S.delayMs * 1000);
-  *st = 200;
+  *st = getStatus ? getStatus : 200;
   return corpoEnquete();
 }
 char *teste_post(const char *url, int s, const char *const *cab, const char *corpo, int *st) {

@@ -54,6 +54,11 @@ int main(void) {
       }
     }
   }
+  // A confirmed continuous TS uses the same direct URL as a manual pick.
+  proxyAtivo = 1;
+  s[0].tsContinuo = 1;
+  assert(!strcmp(urlCanal(&s[0], url, sizeof url), s[0].url));
+  assert(!strcmp(videoCabs, s[0].cabecalhos));
   // Native M3U uses its own resolver worker, then arms the same video headers.
   FonteJob *job=calloc(1,sizeof *job);assert(job);
   strcpy(job->id,"nvm3u:0123456789abcdef");job->sessaoPerfil=nv_perfil_sessao_ler();job->renovando=1;

@@ -113,6 +113,15 @@ int main(void) {
     }
   }
   puts("ok  limite do cartaz: 2047 inteiro, 2048/2200 descartados");
+  // Pictorium addon/meta picks use the same extensionless endpoint as templates.
+  { const char *js =
+      "{\"meta\":{\"id\":\"tt0903747\",\"name\":\"BB\","
+      "\"_providerArt\":{\"poster\":\"https://image.tmdb.org/t/p/w500/default.jpg\"},"
+      "\"poster\":\"https://pictorium.elfhosted.com/api/poster/series/1396?u=test-space&live=1\"}}";
+    assert(deMeta(strstr(js, "\"meta\""), NULL, "series", &d));
+    assert(!strcmp(d.poster,
+      "https://pictorium.elfhosted.com/api/poster/series/1396?u=test-space&live=1")); }
+  puts("ok  Pictorium per-title addon poster: root extensionless URL preserved");
   puts("posteraddon: tudo ok");
   return 0;
 }

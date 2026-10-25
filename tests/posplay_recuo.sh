@@ -6,7 +6,7 @@ trap 'rm -rf "$dir"' EXIT
 mkdir "$dir/dados"
 sources=()
 for source in src/*.c src/dts/*.c; do
-  case "$source" in src/main.c) continue;; esac
+  case "$source" in src/main.c|src/posplay.c) continue;; esac
   sources+=("$source")
 done
 cc -DNV_SHOT_HOOKS "${sources[@]}" tests/posplay_recuo.c -Isrc -o "$dir/test" \

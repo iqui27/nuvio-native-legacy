@@ -47,7 +47,16 @@
 // perfis_ativo() no momento do gesto. Devolve quantas entradas mudaram.
 int  contapend_episodios(const char *imdb, const char *tipo,
                          const VistoPar *pares, int n, int visto);
+// O MESMO, num perfil que nao e o ativo: a trava de serie no modo Juntos marca
+// o episodio para os outros perfis-membro que estavam no sofa (trava.h). A
+// conta aceita `p_profile_id` de qualquer perfil da mesma conta (o token e da
+// CONTA; o PIN e so uma porta no cliente) — ver STATUS-trava.md secao 1.
+int  contapend_episodios_perfil(int perfil, const char *imdb, const char *tipo,
+                                const VistoPar *pares, int n, int visto);
 int  contapend_titulo(const char *imdb, const char *tipo, int visto);
+// O mesmo, para OUTRO perfil da conta (Trava em modo Juntos).
+int  contapend_episodios_perfil(int perfil, const char *imdb, const char *tipo,
+                                const VistoPar *pares, int n, int visto);
 // "+" / tirar da lista. `nome`/`poster` so servem ao item novo na conta.
 int  contapend_lista(const char *imdb, const char *tipo, const char *nome,
                      const char *poster, int salvo);

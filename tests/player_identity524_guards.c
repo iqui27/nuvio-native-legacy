@@ -5,6 +5,7 @@
 #undef main
 #include "dados.h"
 #include "progresso.h"
+#include "traktscrobble.h"
 
 static CatItem observed;
 static int observations;
@@ -19,6 +20,9 @@ void nv_identity_desc_episodios(int ix, int season) {
 }
 void nv_identity_intro_pedir(const char *id, long tmdb, int t, int e, double a, double p) {
   (void)id; (void)tmdb; (void)t; (void)e; (void)a; (void)p;
+}
+void nv_identity_intro_mapeado(const char *id, long tmdb, int t, int e, int it, int ie, double a, double p) {
+  (void)it; (void)ie; nv_identity_intro_pedir(id, tmdb, t, e, a, p);
 }
 void nv_identity_trakt_marcar(const char *id, double p, double d, double a, int fim) {
   (void)p; (void)d; (void)a; (void)fim; trackerCalls++;
@@ -51,7 +55,10 @@ int main(int argc, char **argv) {
   int bare = !strcmp(mode, "bare-source-series");
   int fresh = !strcmp(mode, "fresh-episode-source");
   int promote = !strcmp(mode, "pending-before-meta") || !strcmp(mode, "reordered-series") || fresh;
-  int expectedT = promote ? 1 : 0, expectedE = promote ? 2 : 0;
+  // An uncertain title keeps a requested episode. A confirmed movie and a
+  // source opened on the bare id still drop it.
+  int keepEpisode = !movie && !noPair && !bare;
+  int expectedT = (promote || keepEpisode) ? 1 : 0, expectedE = (promote || keepEpisode) ? 2 : 0;
   CatItem c = {0}, published[3] = {{0}};
   int t, e, failed = 0;
   setvbuf(stdout, NULL, _IONBF, 0);
@@ -95,6 +102,10 @@ int main(int argc, char **argv) {
     published[1] = published[0];
     snprintf(published[0].imdb, sizeof published[0].imdb, "tt0111161");
     cat_definir(published, 2);
+  } else if (!strcmp(mode, "colliding-movie-only")) {
+    snprintf(published[0].tipo, sizeof published[0].tipo, "movie");
+    snprintf(published[0].titulo, sizeof published[0].titulo, "Chasing Mavericks");
+    cat_definir(published, 1);
   } else if (promote || movie || noPair || bare) cat_definir(published, 1);
   else { fprintf(stderr, "unknown scenario %s\n", mode); return 2; }
   // A confirmed source has its own episode metadata. Without it the real

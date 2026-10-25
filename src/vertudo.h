@@ -27,6 +27,7 @@ void vertudo_colecao(const ColFolder *folder);
 // Abre com o catalogo de uma fileira da home.
 void vertudo_abrir(const char *base, const char *tipo, const char *catId,
                    const char *titulo);
+void vertudo_servidores(const char *chave);
 int  vertudo_aberta(void);
 const char *vertudo_perf_tag(void);
 // Perf-only navigation: first collection, then cycle without saving preferences.

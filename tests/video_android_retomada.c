@@ -33,6 +33,7 @@ static unsigned relogio = 100;
 void *SDL_AndroidGetJNIEnv(void) { return &env; }
 void *SDL_AndroidGetActivity(void) { return NULL; }
 Uint32 SDL_GetTicks(void) { return relogio; }
+Uint64 SDL_GetTicks64(void) { return relogio; }
 SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex *)(uintptr_t)1; }
 const char *ling_audio(void) { return ""; }
 void marco(const char *s) { (void)s; }

@@ -70,6 +70,7 @@ int dados_apagar(const char *n) { (void)n; free(disco); disco = NULL; return 1; 
 char *contacache_ler(const char *s, int p, const char *u, long *q) {
   (void)s; (void)p; (void)u; (void)q; return NULL; }
 void cat_historico_definir_id(const char *i, const char *t, int v) { (void)i; (void)t; (void)v; }
+void cat_historico_definir_tempo(const char *i, const char *t, int v, long long ms) { (void)ms; cat_historico_definir_id(i, t, v); }
 static long long relogio(void) { return 1759000000000LL; }
 
 static char subiu[4096];

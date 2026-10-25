@@ -97,6 +97,10 @@ void teclado_aceitar_utf8(int liga);
 void teclado_contexto(const char *kicker);
 int  teclado_mascarado(void);
 int  teclado_aberto(void);
+// Modo de apresentacao da PROXIMA abertura: 0 = modal central; 1 = folha
+// fixa na direita, com o campo e a grade na MESMA ilha (o teclado embutido do
+// mock de servidores). O modo volta a 0 depois de abrir.
+void teclado_apresentacao(int modo);
 // Para testes: foco na coluna da esquerda (0 na grade; 1 campo, 2 Falar,
 // 3 Digitar pelo celular, 4 o segmento Teclado da TV).
 int  teclado_foco_campo(void);

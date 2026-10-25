@@ -1562,3 +1562,36 @@ int debrid_tb_adicionar(const char *hash) {
   free(r);
   return tid;
 }
+
+// AIRLOCK (api.torbox.app/openapi.json, EditTorrent/EditUsenetDownload): o item
+// fica de fora da purga de 30 dias sem download. E o mesmo PUT de edicao dos
+// dois tipos, com `airlocked` e so o id — nome/tags/hashes ficam como estao
+// (campos ausentes, nao null). Cota por plano (Free 0 GB): quando passa, o
+// TorBox recusa e a frase dele vai em `detalhe`.
+int debrid_tb_airlock(int usenet, int item, int ligar, char *detalhe, unsigned n) {
+  char url[300], auth[260], corpo[96], k[200], ok_[16];
+  const char *cab[2];
+  char *r; int st = 0, ok;
+  if (detalhe && n) detalhe[0] = 0;
+  if (item <= 0 || !tbChave(k, sizeof k)) return 0;
+  snprintf(url, sizeof url, TB "/%s", usenet ? "usenet/editusenetdownload" : "torrents/edittorrent");
+  snprintf(auth, sizeof auth, "Authorization: Bearer %s", k);
+  cab[0] = auth; cab[1] = NULL;
+  snprintf(corpo, sizeof corpo, "{\"%s\":%d,\"airlocked\":%s}",
+           usenet ? "usenet_download_id" : "torrent_id", item, ligar ? "true" : "false");
+  r = rede_colocar_st(url, 15, cab, corpo, &st);
+  // `success` false com 2xx tambem e recusa: o TorBox responde assim a varios erros de conta.
+  ok = ok2xx(r, st) && !(js_bruto(r, NULL, "success", ok_, sizeof ok_) && strncmp(ok_, "true", 4));
+  if (!ok) {
+    char erro[96] = "", det[160] = "";
+    if (r) { js_texto_raiz(r, "error", erro, sizeof erro); js_texto_raiz(r, "detail", det, sizeof det); }
+    printf("[partes] TorBox airlock %s (%s): HTTP %d%s%s%s%s\n", ligar ? "on" : "off",
+           usenet ? "usenet" : "torrent", st, erro[0] ? ", error=" : "", erro, det[0] ? ", detail=" : "", det);
+    if (detalhe && n) snprintf(detalhe, n, "%s", det[0] ? det : erro);
+  } else {
+    printf("[partes] TorBox airlock %s (%s): ok\n", ligar ? "on" : "off", usenet ? "usenet" : "torrent");
+  }
+  fflush(stdout);
+  free(r);
+  return ok;
+}

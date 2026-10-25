@@ -202,6 +202,12 @@ const char *desc_busca_alvo_addon(int alvo);    // "Cinemeta", "Xperience"
 // "" enquanto o manifesto nao passou pela descoberta. Para a aba da colecao
 // quando a conta manda a fonte sem titulo (#76).
 const char *desc_nome_catalogo(const char *base, const char *tipo, const char *id);
+// OS GENEROS que o catalogo oferece para escolha manual (issue #656): os
+// `options` do extra `genre` do manifesto. Devolve quantos entram em `out`
+// (ate `max` de 128 colunas). 0 sem opcoes — o filtro da conta segue valendo.
+int desc_genero_obrigatorio(const char *base, const char *tipo, const char *id);
+int desc_genero_opcoes(const char *base, const char *tipo, const char *id,
+                       char (*out)[128], int max);
 int  desc_busca_alvo_n(int alvo, const char *termo);
 int  desc_busca_alvo_item(int alvo, int i, CatItem *dst);
 // Sobe a cada termo novo. Quem guarda posicao de foco entre quadros deve
@@ -257,6 +263,8 @@ void desc_vertudo_filtro(const char *base, const char *tipo, const char *catId, 
 // "trakt" vindo do site. Os itens sao pedidos direto a esses servicos —
 // nao passa por catalogo de addon.
 void desc_vertudo_fonte(const ColSource *s);
+// Escrita 2xx: descarta a fonte desta lista e busca novamente, inclusive em voo.
+void desc_vertudo_invalidar_lista(long id);
 // Resume a Vitrine source after its saved bounded batch.
 void desc_vertudo_fonte_desde(const ColSource *s, int pagina);
 void desc_vertudo_filtro_desde(const char *base, const char *tipo, const char *catId, const char *genre, int pagina);
@@ -277,6 +285,21 @@ int desc_vertudo_erro(void);
 void desc_vertudo_mais(void);
 int  desc_vertudo_n(void);
 int  desc_vertudo_item(int i, CatItem *dst);
+// O QUE A LISTA DO TRAKT DIZ SOBRE O ITEM, alem do titulo: a posicao (rank), o
+// instante em que entrou (listed_at) e a nota de quem montou a lista (notes).
+// Mora numa tabela paralela a vtItens e NAO no CatItem: o CatItem vai inteiro
+// para o cache em disco, e mudar o tamanho dele invalidaria o catalogo de quem
+// nunca abriu uma lista. Vazio/0 = a fonte nao disse (addon, TMDB, Simkl).
+typedef struct {
+  int       rank;        // posicao na lista, 0 = nao informada
+  long long entrouMs;    // listed_at em ms desde a epoca, 0 = nao informado
+  char      nota[320];   // "" = sem nota do curador
+  long      itemId;      // id da ENTRADA na lista (reordenar), 0 = nao informado
+} DescItemLista;
+int  desc_vertudo_extra(int i, DescItemLista *dst);
+// Le rank/listed_at/notes de UMA entrada de /lists/<id>/items ({rank, listed_at,
+// notes, type, movie:{...}}). Exposto para o teste de fixture.
+void desc_trakt_extra_ler(const char *p, const char *f, DescItemLista *d);
 // Catalogo recebido, antes do filtro de vistos (#366). Para caches derivados
 // da Vitrine conservarem filmes que devem voltar ao desligar o ajuste.
 int  desc_vertudo_n_bruto(void);

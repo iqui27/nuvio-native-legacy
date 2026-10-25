@@ -1,0 +1,169 @@
+// Exercise the production preview state machine without network or a window.
+#include "../src/glance.c"
+#include <assert.h>
+static Uint32 clockNow = 100;
+static int opened, playing, failed, opens, actions, busy, requests;
+static int catalogIndex = -1, episodeBusy, episodeRequests;
+static int miniActive, retained;
+int player_mini_ativo(void) { return miniActive; }
+int player_retido(void) { return retained; }
+void desc_episodios(int idx, int season) { assert(idx == 0 && season == 0); episodeBusy = 1; episodeRequests++; }
+int desc_episodios_carregando(int idx) { assert(idx == 0); return episodeBusy; }
+static CatItem item, result;
+static char requestedType[16], lastUrl[32];
+Uint32 SDL_GetTicks(void) { return clockNow; }
+unsigned cat_revisao(void) { return 1; }
+int cat_copiar_item(int i, CatItem *out) { if (i != 0) return 0; *out = result; return 1; }
+int ctxlista_indice(const char *id, long tmdb) { (void)id; (void)tmdb; return catalogIndex; }
+int ctx_aberto(void) { return 0; }
+void ctx_acao_rapida(const CatItem *ci, int visto) { (void)ci; (void)visto; actions++; }
+int desc_titulo_buscando(void) { return busy; }
+void desc_pedir_titulo_semente(const char *id, long tmdb, const char *type, const char *title, const char *year, const char *poster) {
+  (void)id; (void)tmdb; (void)title; (void)year; (void)poster;
+  requests++; busy = 1; snprintf(requestedType, sizeof requestedType, "%s", type);
+}
+int ajustes_animacoes_reduzidas(void) { return 1; }
+int ajustes_trailer_fonte(void) { return 0; }
+int trailer_suportado(void) { return 1; }
+int trailer_aberto(void) { return opened; }
+int trailer_tocando(void) { return playing; }
+int trailer_falhou(void) { return failed; }
+void trailer_fechar(void) { opened = playing = failed = 0; }
+void trailer_abrir(const char *url, GfxRect r, int som, int cheia) {
+  (void)r; (void)som; (void)cheia; opened = 1; opens++; snprintf(lastUrl, sizeof lastUrl, "%s", url);
+}
+void trailerapple_pedir(const char *id, const char *title, const char *meta, int series) { (void)id; (void)title; (void)meta; (void)series; }
+const char *trailerapple_url(const char *id) { (void)id; return "apple"; }
+int trailerapple_respondeu(const char *id) { (void)id; return 1; }
+void trailerimdb_pedir(const char *id) { (void)id; }
+const char *trailerimdb_url(const char *id, const char **name) { (void)id; (void)name; return "imdb"; }
+int trailerimdb_respondeu(const char *id) { (void)id; return 1; }
+void extras_hero_trailer_pedir(const char *id, int series, long tmdb) { (void)id; (void)series; (void)tmdb; }
+int extras_hero_trailer_obter(const char *id, char *dst, unsigned cap) { (void)id; (void)dst; (void)cap; return 0; }
+static int total(void) { return 2; }
+static int getItem(int i, CatItem *out) {
+  if (i < 0 || i > 1) return 0;
+  *out = item;
+  if (i) snprintf(out->imdb, sizeof out->imdb, "ttneighbor");
+  return 1;
+}
+static const GlanceFonte source = { total, getItem, NULL, NULL };
+static void key(int k) { SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = k; glance_evento(&e); }
+// Run the production router so canceled results cannot fall through to Details.
+static int ready = -1, navigations, stopped;
+static struct { long tmdb; char nome[128], arte[512]; } spotPessoaDepois;
+static Uint32 spotPessoaDesde;
+#define SPOT_PESSOA_PRAZO_MS 20000
+int detail_pediu_abrir(void) { return -1; }
+void detail_volta_notar(int i) { (void)i; }
+static void abrirPorIndice(int i) { (void)i; navigations++; }
+int desc_titulo_pronto(void) { int i = ready; ready = -1; return i; }
+int ctxlista_tomar(int i) { (void)i; return 0; }
+int player_aberto(void) { return miniActive; }
+void player_encerrar(void) { stopped++; miniActive = retained = 0; }
+void detail_mostrar_pessoa(long id, const char *name, const char *art) { (void)id; (void)name; (void)art; }
+#include "router.h"
+static void canceledResult(void) {
+  ready = 0; miniActive = retained = 1;
+  trocaDeTituloSeSolicitada();
+  assert(navigations == 0 && stopped == 0 && miniActive && retained);
+  miniActive = retained = 0;
+}
+int main(void) {
+  snprintf(item.imdb, sizeof item.imdb, "tt123"); snprintf(item.tipo, sizeof item.tipo, "movie");
+  miniActive = 1;
+  glance_abrir(&source, 0); glance_atualizar(.016f, clockNow);
+  glance_fechar();
+  assert(opens == 0 && miniActive);
+  miniActive = 0; retained = 1;
+  glance_abrir(&source, 0); glance_atualizar(.016f, clockNow);
+  glance_fechar();
+  assert(opens == 0 && retained);
+  retained = 0;
+  glance_abrir(&source, 0); glance_atualizar(.016f, clockNow);
+  assert(opens == 1 && !strcmp(lastUrl, "apple"));
+  playing = 1;
+  for (int i = 0; i < 5; i++) glance_atualizar(.016f, ++clockNow);
+  assert(opens == 1);
+  playing = 0; failed = 1; glance_atualizar(.016f, ++clockNow);
+  assert(opens == 2 && !strcmp(lastUrl, "imdb"));
+  playing = 1;
+  for (int i = 0; i < 5; i++) glance_atualizar(.016f, ++clockNow);
+  assert(opens == 2 && !strcmp(lastUrl, "imdb"));
+  playing = 0; failed = 1; glance_atualizar(.016f, ++clockNow);
+  assert(opens == 2 && !opened);
+  snprintf(item.imdb, sizeof item.imdb, "tmdb:42"); item.tmdb = 42;
+  snprintf(item.tipo, sizeof item.tipo, "series");
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  assert(requests == 1 && !strcmp(requestedType, "tv"));
+  result = item; snprintf(result.imdb, sizeof result.imdb, "ttresolved");
+  snprintf(result.tipo, sizeof result.tipo, "movie");
+  assert(!glance_tomar_acao(0) && actions == 0);
+  snprintf(result.tipo, sizeof result.tipo, "series"); result.tmdb = 43;
+  assert(!glance_tomar_acao(0) && actions == 0);
+  result.tmdb = 42;
+  assert(glance_tomar_acao(0) && actions == 1);
+  busy = 0;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  glance_fechar();
+  canceledResult(); assert(actions == 1);
+  busy = 0;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  clockNow += 20001;
+  canceledResult(); assert(actions == 1);
+  busy = 0;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  busy = 0; // Resolution failed without publishing a title.
+  glance_atualizar(.016f, ++clockNow);
+  canceledResult(); assert(actions == 1);
+  busy = 0;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  key(SDLK_RIGHT);
+  canceledResult(); assert(actions == 1);
+  busy = 0;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  glance_abrir(&source, 0); // A new session for the same title.
+  canceledResult(); assert(actions == 1);
+  busy = 0; catalogIndex = 0;
+  snprintf(item.imdb, sizeof item.imdb, "ttseries"); item.tmdb = 0; result = item;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  assert(episodeRequests == 1 && actions == 1);
+  glance_atualizar(.016f, ++clockNow); assert(actions == 1);
+  result.nTemporadas = 2; result.temporadas[0] = 1; result.temporadas[1] = 2; episodeBusy = 0;
+  glance_atualizar(.016f, ++clockNow); assert(actions == 2);
+  glance_atualizar(.016f, ++clockNow); assert(actions == 2);
+  result.nTemporadas = 0;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  episodeBusy = 0;
+  glance_atualizar(.016f, ++clockNow); assert(actions == 2); // No local success on fetch failure.
+  // Movie and TV TMDB IDs can share a number. Save must resolve the TV title.
+  busy = 0; catalogIndex = 0;
+  snprintf(item.imdb, sizeof item.imdb, "tmdb:42"); item.tmdb = 42;
+  snprintf(item.tipo, sizeof item.tipo, "series");
+  result = item; snprintf(result.imdb, sizeof result.imdb, "ttmovie");
+  snprintf(result.tipo, sizeof result.tipo, "movie");
+  int previousRequests = requests, previousActions = actions;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  assert(actions == previousActions && requests == previousRequests + 1);
+  assert(!strcmp(requestedType, "tv") && !glance_tomar_acao(0));
+  result = item; snprintf(result.imdb, sizeof result.imdb, "ttseries");
+  assert(glance_tomar_acao(0) && actions == previousActions + 1);
+  // A canceled title resolution must not steal a newer episode-only action.
+  busy = 0; catalogIndex = -1;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  CatItem canceled = item;
+  glance_fechar();
+  catalogIndex = 0;
+  snprintf(item.imdb, sizeof item.imdb, "ttotherSeries"); item.tmdb = 99;
+  result = item;
+  glance_abrir(&source, 0); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN);
+  previousActions = actions;
+  result = canceled; snprintf(result.imdb, sizeof result.imdb, "ttresolved");
+  canceledResult();
+  assert(glance_aberto() && actions == previousActions);
+  result = item; result.nTemporadas = 1; episodeBusy = 0;
+  glance_atualizar(.016f, ++clockNow);
+  assert(actions == previousActions + 1);
+  puts("glance-state: ok");
+  return 0;
+}
