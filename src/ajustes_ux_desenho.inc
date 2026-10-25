@@ -1504,5 +1504,6 @@ static float ajEf(const char *icone, const char *s, float x, float y, float w, f
 #include "ajustes_ux_ilha.inc"
 #include "ajustes_ux_fileiras.inc"
 #include "ajustes_ux_guia.inc"
+#include "ajustes_ux_tour.inc"     // "O que o Nuvio faz?" (2.1)
 #include "ajustes_ux_apoio.inc"
 #include "ajustes_ux_secoes.inc"

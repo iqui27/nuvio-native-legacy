@@ -556,6 +556,12 @@ int main(int argc, char **argv) {
     snprintf(nome, sizeof nome, "%s-%s.png", saida, n[i - 21]);
     captura(nome, w);
   }
+  for (i = 25; i <= 27; i++) {
+    static const char *const n[] = { "tour", "tour-onde", "tour-fileira2" };
+    ajustes_teste_ux_captura(i);
+    snprintf(nome, sizeof nome, "%s-%s.png", saida, n[i - 25]);
+    captura(nome, w);
+  }
   if (!getenv("NUVIO_AJUSTES_UX")) {
     for (i = 0; i < 11; i++) {
       ajustes_teste_ux_captura(10 + i);

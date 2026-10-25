@@ -375,13 +375,14 @@ static int aj4Evento(SDL_Keycode k) {
   if (focoIndice) {
     if (uxVoltar(k)) { sair = 1; return 1; }
     if (k == SDLK_UP) { if (aj4Linha) aj4Linha--; else aj4Topo = 0; }
-    if (k == SDLK_DOWN && aj4Linha < (aj4UndoN?7:6)) aj4Linha++;
+    if (k == SDLK_DOWN && aj4Linha < (aj4UndoN?8:7)) aj4Linha++;
     if (k == SDLK_LEFT && lig(AJ_AVANCADAS)) { aj4Set = 0; aj4Linha = 0; }
     if (k == SDLK_RIGHT && lig(AJ_AVANCADAS)) { aj4Set = 1; aj4Linha = 0; }
     if (uxOk(k)) {
       if (aj4Linha < 4) aj4Entrar(lig(AJ_AVANCADAS) ? aj4Set * 4 + aj4Linha : aj4Linha);
       else if (aj4Linha == 4 || aj4Linha == 5) { aj4Util = aj4Linha == 4 ? 2 : 1; aj4Linha = 0; aj4Acao = 0; focoIndice = 0; }
       else if (aj4Linha == 6) { aj4Entrar(7); aj4Excecao = AJ_GUIA; aj4Atual = 7; aj4Grupo = aj4GrupoDe(AJ_GUIA); aj4Grupos = 1; }
+      else if (aj4Linha == 7) tourAbrir();
       else { aj4Desfazer(); }
     }
     return 1;
