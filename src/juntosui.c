@@ -752,8 +752,9 @@ static void desenharLugar(int i, const JsMembro *p, int vazio, float f, float a)
   t21_ilha_solida(c, T21_R_SHEET, a);
   plrui_linha_foco(c, T21_R_SHEET, f * a);
   if (vazio) {
-    float ink = anim_mistura(1, ajustes_tinta_foco() / 255.0f, f);
-    gfx_cor(av, .5f, 1, 1, 1, (.10f + .82f * f) * a);
+    float ink = f >= .5f ? ajustes_tinta_foco() / 255.0f : 1;
+    plrui_material_plano(av, av.h / 2, a);
+    plrui_pilula_foco(av, f * a);
     gfx_icone((GfxRect){ av.x + 26, av.y + 26, 26, 26 }, "aj_user-plus", ink, ink, ink, a);
     textoCentro(TXT_ILHA_NOME, i18n("Mais um lugar"), cx, c.y + 122, 245, a, LUGAR_W - 20);
     textoCentro(TXT_CAPTION, i18n("Convide um amigo"), cx, c.y + 158, 190, a, LUGAR_W - 20);

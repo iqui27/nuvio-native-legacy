@@ -34,7 +34,7 @@ float juntosui_shot_foco(int i);
 
 static SDL_Window *win;
 static const char *base;
-static int sourcesOnly;
+static int sourcesOnly, proofsOnly;
 static GLuint fundoTex;
 
 static void carregarFundo(void) {
@@ -61,8 +61,8 @@ static void captura(const char *nome, int h) {
   glReadPixels(0, 1080 - h, 1920, h, GL_RGBA, GL_UNSIGNED_BYTE, pix);
   s = SDL_CreateRGBSurfaceWithFormat(0, 1920, h, 32, SDL_PIXELFORMAT_RGBA32);
   for (y = 0; y < h; y++) memcpy((char *)s->pixels + y * s->pitch, pix + (size_t)(h - 1 - y) * 1920 * 4, 1920 * 4);
-  snprintf(cam, sizeof cam, base[strlen(base) - 1] == '/' ? "%s%s.png" : "%s-%s.png", base, nome);
-  assert(IMG_SavePNG(s, cam) == 0);
+  snprintf(cam, sizeof cam, base[strlen(base) - 1] == '/' ? "%s%s.%s" : "%s-%s.%s", base, nome, proofsOnly ? "bmp" : "png");
+  assert((proofsOnly ? SDL_SaveBMP(s, cam) : IMG_SavePNG(s, cam)) == 0);
   SDL_FreeSurface(s);
   free(pix);
   printf("captura: %s\n", cam);
@@ -122,6 +122,7 @@ int main(int argc, char **argv) {
   base = argc > 1 ? argv[1] : "/tmp/nuvio-juntos";
   snprintf(aj, sizeof aj, "%s/ajustes.txt", dir);
   sourcesOnly = argc > 2 && !strcmp(argv[2], "--sources");
+  proofsOnly = argc > 2 && !strcmp(argv[2], "--proofs");
   f = fopen(aj, "w"); fprintf(f, "idioma 0\nselected_theme 2\nescalaTextoLocal 2\n"); fclose(f);
   ajustes_dir(dir);
   dados_iniciar("deploy/app");
@@ -135,6 +136,19 @@ int main(int argc, char **argv) {
   gfx_tamanho_alvo(1920, 1080);
   assert(gfx_iniciar());
   gfx_snap_iniciar(1920, 1080);
+  // A scrolling sheet must intersect, then restore, its island's outer clip.
+  gfx_recorte(100, 100, 200, 200);
+  GLint outer[4], inner[4], restored[4];
+  glGetIntegerv(GL_SCISSOR_BOX, outer);
+  GfxRecorteAnt clip = gfx_recorte_dentro(200, 200, 300, 300);
+  glGetIntegerv(GL_SCISSOR_BOX, inner);
+  assert(inner[0] >= outer[0] && inner[1] >= outer[1]);
+  assert(inner[0] + inner[2] <= outer[0] + outer[2]);
+  assert(inner[1] + inner[3] <= outer[1] + outer[3]);
+  gfx_recorte_voltar(clip);
+  glGetIntegerv(GL_SCISSOR_BOX, restored);
+  assert(!memcmp(outer, restored, sizeof outer));
+  gfx_sem_recorte();
   assert(txt_iniciar("deploy/app", 1));
   txt_definir_fonte_interface(TXT_FAMILIA_INTER);
   badges_carregar("deploy/app/art");
@@ -144,7 +158,7 @@ int main(int argc, char **argv) {
   carregarFundo();
   quadros(30);
 
-  if (!sourcesOnly) {
+  if (!sourcesOnly && !proofsOnly) {
   // 1. Convite na ilha.
   { JuntosConvite c; memset(&c, 0, sizeof c);
     snprintf(c.id, sizeof c.id, "%s", "0123456789abcdef0123456789abcdef");
@@ -196,6 +210,11 @@ int main(int argc, char **argv) {
     motor.sala.n = 5;
     ajustes_definir_vidro(1);
     goto fontes;
+  }
+  if (proofsOnly) {
+    SDL_Surface *art = IMG_Load("deploy/app/art/00.jpg");
+    assert(art); SDL_FreeSurface(art);
+    goto proofs;
   }
   juntosui_shot_camada(3, -1);
   quadros(20);
@@ -262,9 +281,14 @@ fontes:
   juntosui_shot_camada(6, 2);
   quadros(20);
   captura("08-reactions", 1080);
+proofs:
   // Native scale/material matrix; logical focus remains independent of springs.
   juntosui_shot_player(0);
   motor.sala.n = 4;      // lobby as in the mock: 4 seats + invite card, no QR
+  JsEvento request = { .tipo = JSV_PEDIDO };
+  snprintf(request.quem, sizeof request.quem, "nuvio:ana");
+  snprintf(request.nome, sizeof request.nome, "Ana");
+  juntosui_evento(&request);
   juntosui_sala_fechou();
   const float scales[] = {1, .85f, .9f, 1.1f, 1.2f, 1.3f};
   for (int scale = 0; scale < 6; scale++) for (int glass = 0; glass < 2; glass++) {
@@ -272,8 +296,9 @@ fontes:
     gfx_escala_txt_definir(scales[scale]);
     ajustes_definir_vidro(glass);
     for (int c = 1; c <= 7; c++) {
+      if (proofsOnly && c != 3 && scale > 1) continue;
       char name[96];
-      juntosui_shot_camada(c, 0);
+      juntosui_shot_camada(c, proofsOnly && c == 3 ? -1 : 0);
       if (c == 6) juntosui_shot_player(1);
       quadros(45);
       snprintf(name, sizeof name, "matrix-%d-%d-%s", c, (int)lroundf(scales[scale] * 100), glass ? "glass" : "solid");
@@ -328,6 +353,7 @@ fontes:
     if (only) { char key[16]; snprintf(key, sizeof key, "%d-%s", scale ? 85 : 100, glass ? "glass" : "solid"); if (strcmp(only, key)) continue; }
     gfx_escala_txt_definir(scale ? .85f : 1); ajustes_definir_vidro(glass);
     for (int layer = 1; layer <= 7; layer++) {
+      if (proofsOnly && layer == 3) continue;
       juntosui_shot_player(layer == 6);
       juntosui_shot_camada(0, 0); motionFrame(1400);
       for (int mode = 0; mode < 4; mode++) {
@@ -352,6 +378,7 @@ fontes:
       }
     }
   }
+  if (proofsOnly) { printf("juntos proofs: ok\n"); return 0; }
   juntosui_shot_player(0);
   gfx_escala_txt_definir(1.3f);
   juntosui_shot_camada(1, 10); motionFrame(1400); captura("friends-scroll-end", 1080);
