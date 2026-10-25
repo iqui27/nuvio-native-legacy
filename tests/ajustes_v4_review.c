@@ -1,10 +1,13 @@
 // Render the reviewed states with real fonts; reject missing or clipped guidance.
 #include "../src/text.h"
 static TxtLinha checked_line(TxtEstilo, const char *, int, int, int, int, float);
+static TxtLinha checked_full(TxtEstilo, const char *, int, int, int, int);
 static float checked_block(TxtEstilo, const char *, int, int, int, float, float, float, float, float, int);
+#define txt_linha checked_full
 #define txt_linha_corta checked_line
 #define txt_bloco checked_block
 #include "../src/ajustes.c"
+#undef txt_linha
 #undef txt_linha_corta
 #undef txt_bloco
 #include "nvtmp.h"
@@ -18,6 +21,9 @@ static void observe(TxtEstilo style, const char *s, float width, int lines) {
     seen[i]++;
     if(txt_largura(style,s)>width*lines) clipped[i]++;
   }
+}
+static TxtLinha checked_full(TxtEstilo e,const char *s,int r,int g,int b,int a) {
+  observe(e,s,1920,1);return txt_linha(e,s,r,g,b,a);
 }
 static TxtLinha checked_line(TxtEstilo e,const char *s,int r,int g,int b,int a,float w) {
   observe(e,s,w,1); return txt_linha_corta(e,s,r,g,b,a,w);
@@ -79,13 +85,39 @@ int main(int argc,char **argv) {
   watch("Imagem e som","Mais grupos",NULL,NULL);frame(win,output,"groups");
   expect(seen[0]&&seen[1],"More groups proof keeps matching Image and sound state");
   assert(ajustes_teste_quadro("v4-inicio-simples"));
-  aj4Entrar(1);watch("Áudio preferido","Legenda preferida",NULL,NULL);
-  frame(win,output,"languages");expect(seen[0]&&seen[1],"language proof shows actual language section");
+  aj4Entrar(1);aj4Linha=1;
+  watch("Ajustes / Áudio e legendas · Idiomas","NESTA SEÇÃO","Quatro escolhas do dia a dia.","Mude para Avançado para ver o catálogo completo.");
+  frame(win,output,"languages");
+  expect(seen[0]&&seen[1]&&seen[2]&&!clipped[2]&&seen[3]&&!clipped[3],"Simple languages restores breadcrumb, sidebar and Advanced guidance");
+  char hour[48];ajCenaHora(hour,sizeof hour);
+  watch("Sala",hour,NULL,NULL);frame(win,NULL,NULL);
+  expect(seen[0]&&seen[1]&&!clipped[0]&&!clipped[1],"shared header shows room context and current formatted clock");
   valor[AJ_CW_LIGADO]=0;valor[AJ_CW_THUMB]=1;valor[AJ_CW_BLUR_PROX]=1;
   focarOpcao(AJ_CW_BLUR_PROX);
   watch("Precisa ligar \"Miniatura do episódio\"","OK liga as duas",NULL,NULL);
   frame(win,output,"episode-dependency");
   expect(seen[0]&&!clipped[0]&&seen[1]&&!clipped[1],"episode dependency and OK action fit completely");
+  int pageRow=aj4Linha;
+  watch("Itens anteriores","Próximos itens",NULL,NULL);frame(win,NULL,NULL);
+  expect(seen[0]&&seen[1]&&!clipped[0]&&!clipped[1],"middle page visibly offers previous and next items");
+  if(seen[0]&&seen[1]) {
+    aj4Acao=0;aj4Linha=7;aj4Evento(SDLK_DOWN);
+    expect(aj4Acao==2,"Down from last visible row focuses Previous items");
+    aj4PontAtivar(3,2);
+    expect(aj4Linha==0 && !aj4Acao && !aj4Review,"pointer Previous items opens first page without reset");
+    watch("Itens anteriores","Próximos itens",NULL,NULL);frame(win,NULL,NULL);
+    expect(!seen[0]&&seen[1],"first page only offers next items");
+    aj4PontAtivar(3,3);
+    expect(aj4Linha==4 && !aj4Acao && !aj4Review,"pointer Next items opens middle page without reset");
+    aj4Linha=7;aj4Evento(SDLK_DOWN);aj4Evento(SDLK_RIGHT);aj4Evento(SDLK_RETURN);
+    expect(aj4Linha==8 && !aj4Acao && !aj4Review,"D-pad Next items opens final partial page");
+    watch("Itens anteriores","Próximos itens",NULL,NULL);frame(win,NULL,NULL);
+    expect(seen[0]&&!seen[1],"final partial page only offers previous items");
+    aj4PontAtivar(3,4);
+    expect(aj4Escopo==1 && !aj4Review,"scope chip toggles reset scope without resetting");
+    aj4Escopo=0;aj4Acao=0;
+  }
+  aj4Linha=pageRow;aj4Acao=aj4Review=0;
   valor[AJ_SEEKR_LIGADO]=1;valor[AJ_SEEKR_FITA]=1;
   snprintf(seekrChave,sizeof seekrChave,"offline-test-key");focarOpcao(AJ_SEEKR_FITA);
   watch("Precisa ligar \"Miniaturas na barra de tempo\"","OK liga as duas",NULL,NULL);
