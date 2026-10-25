@@ -81,8 +81,8 @@ static inline void t21_ilha(GfxRect r, float raioPx, float a) {
                 1, 0, .5f, 0, 0, 0, .36f * a, r, raioPx, a);
   if (ajustes_vidro()) {
     // Modal density plus a dark base, as the 2.0.7 sheet: art behind never beats the text.
-    gfx_cor(r, raio, .071f, .075f, .086f, .55f * a);
-    gfx_vidro_material(r, raio, GFX_VIDRO_DENS_MODAL, a);
+    gfx_cor(r, raio, .071f, .075f, .086f, .72f * a);
+    gfx_vidro(r, raio, GFX_VIDRO_ILHA, .06f, GFX_VIDRO_DENS_MODAL * gfx_vidro_opacidade(), a);
     return;
   }
   gfx_cor(r, raio, .071f, .075f, .086f, .98f * a);

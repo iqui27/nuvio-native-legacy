@@ -43,7 +43,7 @@ int main(int argc,char **argv) {
   assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
   glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);
   assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(128);
-  gfx_tex_esquecer(0);gfx_icones_dir("deploy/app/art");ajustes_definir_vidro(1);
+  gfx_tex_esquecer(0);gfx_icones_dir("deploy/app/art");ajustes_definir_vidro(1);setenv("NUVIO_SHOT_VIDRO_FOSCO","1",1);ajustes_teste_vidro_env();assert(ajustes_vidro_fosco());
   for(int c=0;c<ajustes_rapido_cor_n();c++)if(!strcmp(ajustes_rapido_cor_nome(c),"Rosa"))ajustes_rapido_cor_definir(c);
   AddonRemoto a[4]={{"Torrentio","https://torrentio.strem.fun/manifest.json",1},{"Xperience","https://xperience.invalid/manifest.json",1},{"Torrentio · Real-Debrid","https://torrentio.strem.fun/direct/manifest.json",1},{"AIOStreams","https://aio.invalid/manifest.json",1}};
   assert(addons_definir_lista(a,4));

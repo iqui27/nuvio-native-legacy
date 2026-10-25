@@ -41,7 +41,7 @@ int main(int argc,char **argv) {
   glGenFramebuffers(1,&fbo); glBindFramebuffer(GL_FRAMEBUFFER,fbo); glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,color,0);
   assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
   glViewport(0,0,1920,1080); gfx_tamanho_alvo(1920,1080); assert(gfx_iniciar()); assert(txt_iniciar("deploy/app",1)); assert(tex_iniciar(32)); gfx_icones_dir("deploy/app/art"); aioui_arte("deploy/app/art");
-  ajustes_dir(getenv("NUVIO_DADOS")); ajustes_iniciar();
+  ajustes_dir(getenv("NUVIO_DADOS")); ajustes_iniciar(); setenv("NUVIO_SHOT_VIDRO_FOSCO","1",1); ajustes_teste_vidro_env(); assert(ajustes_vidro_fosco());
   static AioSnapshot s;
   aio_manifesto(&s,"{\"id\":\"aiostreams.test\",\"name\":\"AIOStreams\",\"version\":\"2.36.0\",\"resources\":[\"stream\",\"catalog\",\"subtitles\",\"meta\"],\"catalogs\":[{\"id\":\"trending\",\"name\":\"Filmes em alta\",\"type\":\"movie\"},{\"id\":\"popular\",\"name\":\"Séries populares\",\"type\":\"series\"},{\"id\":\"netflix\",\"name\":\"Filmes Netflix\",\"type\":\"movie\"},{\"id\":\"disney\",\"name\":\"Séries Disney+\",\"type\":\"series\"}]}");
   aio_configuracao(&s,"{\"data\":{\"userData\":{\"services\":[{\"id\":\"TorBox\",\"enabled\":true}],\"presets\":[{\"type\":\"Torrentio\",\"enabled\":true},{\"type\":\"Comet\",\"enabled\":true},{\"type\":\"MediaFusion\",\"enabled\":true},{\"type\":\"WebStreamr\",\"enabled\":true}],\"excludedResolutions\":[\"720p\"],\"preferredLanguages\":[\"Portuguese\",\"English\"],\"excludeUncached\":false,\"sortCriteria\":{\"global\":[{\"key\":\"cached\"},{\"key\":\"resolution\"}]},\"formatter\":{\"id\":\"aiostreams\"}}}}");
