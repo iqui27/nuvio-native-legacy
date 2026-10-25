@@ -20,6 +20,8 @@
 //      conferido medindo o scrollTop nos quatro grupos.
 //   4. Ao rolar, a arte de fundo NAO desfoca: ela vai a 15% de opacidade em
 //      0.8s. O desfoque gaussiano era do app da Apple TV.
+#define NV_TXT_TELA   // NV_TELA_W/H = tela virtual da escala de texto (escala.h)
+#include "escala.h"
 #include "detail.h"
 #include "focoprof.h"
 #include "posterprov.h"
@@ -3009,7 +3011,7 @@ static void executarMais(int dm) {
   }
 }
 
-void detail_evento(const SDL_Event *e) {
+static void detail_evento_(const SDL_Event *e) {
   if (musicaui_aberta()) { musicaui_evento(e); return; }
   pediuRelogio = 0;
   if (sinopse_aberta()) { sinopse_evento(e); return; }
@@ -3937,7 +3939,7 @@ static void toquePessoaFocar(int i, int b) { (void)b; pessoaFoco = i; }
 
 static float blocoAnt[3] = { -1.0f, -1.0f, -1.0f };   // Notas / Numeros / Progresso no quadro anterior
 
-void detail_atualizar(float dt, Uint32 agora) {
+static void detail_atualizar_(float dt, Uint32 agora) {
   if (musicaui_aberta()) { musicaui_atualizar(agora); return; }
   if (aberto) revalidarIdx();
   pessoaBuscaAtualizar();
@@ -4380,7 +4382,8 @@ void detail_atualizar(float dt, Uint32 agora) {
         // posicao DENTRO de um desenho de largura fixa, nao um item que possa
         // sair da tela. Sem esta linha a regra geral abaixo empurrava a secao
         // inteira 24 px para a esquerda assim que o foco saia da coluna 0.
-        else if (EH_AUD(r) || r == SEC_FRASES || r == SEC_NOTAS || r == SEC_NOTAS_EP ||
+        // NOTAS is a row of tiles (2.1) and rolls like the other rows.
+        else if (EH_AUD(r) || r == SEC_FRASES || r == SEC_NOTAS_EP ||
                  r == SEC_PROGTEMP) alvo = 0.0f;
         else if (foco.coluna == 0) alvo = 0.0f;
         else if (x + w > alvo + vista - 24.0f) alvo = x + w - vista + 24.0f;
@@ -8338,7 +8341,9 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
         if (c == 0) frasesAlt = desenhaFrases(NV_DETP_X, y, a);
         break;
       case SEC_NOTAS:
-        if (c == 0) desenhaNotasTiles(NV_DETP_X, y, a);
+        // x carries the row's horizontal scroll: at 100% the tiles bleed past
+        // the right edge and focus has to bring Friends into view.
+        if (c == 0) desenhaNotasTiles(x, y, a);
         break;
       case SEC_ESTUDIOS:
         desenhaEstudio(x, y, c, f, a);
@@ -8744,7 +8749,7 @@ static void maisDesenhar(void) {
   detmais_desenhar(maisAncora, 1.0f - trocaarte_visivel());
 }
 
-void detail_desenhar(Uint32 agora) {
+static void detail_desenhar_(Uint32 agora) {
   if (musicaui_aberta()) { musicaui_desenhar(agora); return; }
 #ifdef NV_TOUCH_UI
   toqueDetalheSincronizarModo();
@@ -8970,3 +8975,9 @@ void detail_sob_menu(int sim) {
   }
 }
 int detail_sob_menu_ativo(void) { return sobMenu; }
+
+// ESCALA DE TEXTO E COMPONENTES (escala.h): as entradas publicas ligam a camada
+// de texto; o corpo mede NV_TELA_W/H na tela virtual dela.
+void detail_evento(const SDL_Event *e) { TXT_INI(); detail_evento_(e); TXT_FIM(); }
+void detail_atualizar(float dt, Uint32 agora) { TXT_INI(); detail_atualizar_(dt, agora); TXT_FIM(); }
+void detail_desenhar(Uint32 agora) { TXT_INI(); detail_desenhar_(agora); TXT_FIM(); }
