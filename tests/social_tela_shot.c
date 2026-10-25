@@ -17,6 +17,7 @@ static GLuint fbo, fboTex;
 static void proof_reset(void) { entrada=tempo=rolagem=velocidade=0;sair=0;selecionado=0;memset(focoAnim,0,sizeof focoAnim); }
 static void proof_focus(void) { selecionado=1; }
 static void proof_close(void) { sair=1; }
+static void proof_reopen(void) { sair=0; }
 static void proof_step(float dt) { social_atualizar(dt,SDL_GetTicks()); }
 static void proof_draw(void) { social_desenhar(SDL_GetTicks()); }
 
@@ -117,6 +118,7 @@ int main(int argc, char **argv) {
   }
   snprintf(dados.pessoa.socialAvatar,sizeof dados.pessoa.socialAvatar,"deploy/app/art/elenco/09_0.jpg");
   tex_obter(dados.pessoa.socialAvatar);j4_art_ready();
+  j4_reopen=proof_reopen;
   j4_proof("social",proof_reset,proof_focus,proof_step,proof_draw,proof_close);
   selecionado = 1;
   snprintf(nome, sizeof nome, "%s-pronto.bmp", saida);

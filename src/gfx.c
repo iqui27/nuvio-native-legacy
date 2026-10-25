@@ -1708,6 +1708,25 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   [GFX_COPIA_EASU] = NV_EASU_SHADER,
   [GFX_COPIA_LANCZOS] = NV_LANCZOS_SHADER,
   [GFX_RCAS] = NV_RCAS_SHADER,
+  // Filmography .arte + .veu: retain every CSS stop in one dithered pass.
+  [GFX_FILMO_FUNDO] =
+  "vec3 filmoHsl(float h,float s,float l){\n"
+  "  vec3 p=clamp(abs(fract(h+vec3(0.0,2.0/3.0,1.0/3.0))*6.0-3.0)-1.0,0.0,1.0);\n"
+  "  return l+s*(p-0.5)*(1.0-abs(2.0*l-1.0));\n"
+  "}\n"
+  "void main(){\n"
+  "  float h=uPar.x,y=vUv.y;\n"
+  "  vec3 top=filmoHsl(h,0.42,0.22),mid=filmoHsl(h+35.0/360.0,0.48,0.38);\n"
+  "  vec3 low=filmoHsl(h+35.0/360.0,0.40,0.11);\n"
+  "  vec3 c=y<0.58?mix(top,mid,y/0.58):y<0.60?mix(mid,low,(y-0.58)/0.02):mix(low,vec3(12.0,10.0,12.0)/255.0,(y-0.60)/0.40);\n"
+  "  float light=clamp(1.0-length((vUv-vec2(0.74,0.28))/vec2(0.38,0.30))/0.70,0.0,1.0);\n"
+  "  c=mix(c,filmoHsl(h,0.72,0.70),light);\n"
+  "  float bottom=clamp((y-0.28)/0.38,0.0,1.0);\n"
+  "  c=mix(c,vec3(13.0/255.0),bottom);\n"
+  "  float shade=vUv.x<0.36?mix(0.94,0.74,vUv.x/0.36):mix(0.74,0.12,clamp((vUv.x-0.36)/0.34,0.0,1.0));\n"
+  "  c=mix(c,vec3(8.0,8.0,10.0)/255.0,shade);\n"
+  "  gl_FragColor=nv_dither(c,uCor.a);\n"
+  "}\n",
 };
 
 // Cada corpo declara o que usa; montar so o necessario mantem o shader enxuto.
@@ -1752,7 +1771,8 @@ static const struct { int sdf, cover; } PRECISA[GFX_NMODOS] = {
   {0,0},   /* GFX_PALCO_ARTE — own anchored cover */
   {0,0},   /* GFX_COPIA_NITIDA */
   {0,0}, {0,0}, {0,0},   /* GFX_COPIA_EASU, GFX_COPIA_LANCZOS, GFX_RCAS */
-  {0,0}    /* GFX_HDR_OUTPUT */
+  {0,0},   /* GFX_HDR_OUTPUT */
+  {0,0}    /* GFX_FILMO_FUNDO */
 };
 
 static GLuint compila(GLenum tipo, const char *src) {
@@ -4014,6 +4034,12 @@ GLuint gfx_vidro_fonte_fixa(GLuint tex) {
 // 1 = the next glass draws carry no light rim (2.1 mock surfaces: "sem aro").
 // Callers set it around one draw and clear it.
 int gfx_vidro_sem_aro;
+void gfx_vidro_painel_sem_aro(GfxRect r, float raio, float fundo, float a) {
+  int previous = gfx_vidro_sem_aro;
+  gfx_vidro_sem_aro = 1;
+  gfx_vidro_painel(r, raio, fundo, a);
+  gfx_vidro_sem_aro = previous;
+}
 void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a) {
   GfxRect t = r;
   float d = dens, tela[4];
@@ -4044,7 +4070,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   // Desempenho, or once the governor dropped the tier.
   fumaca = video || ajustes_vidro_qualidade() == 1 || (vidroDegradou && ajustes_vidro_qualidade() == 0);
   if (fumaca) chapado = 1;
-  semAro = tipo == GFX_VIDRO_ILHA || vidroNaIlha(tela);
+  semAro = tipo == GFX_VIDRO_ILHA || vidroNaIlha(tela) || gfx_vidro_sem_aro;
   if (vidroNVidros < VID_N) {
     vidroIlhas[vidroNVidros] = tipo == GFX_VIDRO_ILHA;
     memcpy(vidroVidros[vidroNVidros++], tela, sizeof tela);

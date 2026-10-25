@@ -10,6 +10,7 @@
 #include "home.h"
 
 void detail_abrir(const HomeItem *item);
+int  detail_tem_servidores(void);
 int  detail_arte_titulo(const CatItem *titulo, char *saida, size_t tam, int *poster);
 void partirMeta(const char *meta, char *ano, size_t na, char *resto, size_t nr);
 // Abre a FILMOGRAFIA de uma pessoa por cima da pagina ja aberta (o mesmo painel

@@ -25,7 +25,6 @@ trap 'rm -rf "$NUVIO_DADOS"' EXIT
 FL="-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined"
 if [ -n "${NUVIO_C9_CACHE:-}" ]; then FL="$FL -DNV_SHOT_HOOKS"; fi
 objs=()
-pids=()
 for s in src/*.c src/dts/*.c; do
   case "$s" in src/main.c|src/detail.c) continue;; esac
   extra=""
@@ -52,13 +51,15 @@ for s in src/*.c src/dts/*.c; do
     s="$NUVIO_DETMAIS_SOURCE"
     o="$OBJ/detmais-before.o"
   fi
+  if [ -n "${NUVIO_SERVER_CHECK:-}" ] && { [ "$s" = src/botoes.c ] || [ "$s" = src/plrui.c ]; }; then
+    o="$OBJ/$(basename "$s" .c)-server.o"
+    extra="-Dgfx_vidro_painel=server_panel"
+  fi
   objs+=("$o")
   if [ ! -f "$o" ] || [ "$s" -nt "$o" ] || [ -n "$(find src -name '*.h' -newer "$o" -print -quit)" ]; then
-    cc $FL $extra -c "$s" -o "$o" & pids+=($!)
-    if [ ${#pids[@]} -ge 8 ]; then wait "${pids[0]}"; pids=("${pids[@]:1}"); fi
+    cc $FL $extra -c "$s" -o "$o"
   fi
 done
-wait
 shot_extra=()
 if [ -n "${NUVIO_DETAIL_SOURCE:-}" ]; then
   shot_extra+=("-DNV_DETAIL_SOURCE=\"$NUVIO_DETAIL_SOURCE\"")

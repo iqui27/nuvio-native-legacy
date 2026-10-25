@@ -340,6 +340,8 @@ int main(int argc, char **argv) {
     ix = fopen(nome, "w");
     assert(ix);
     for (n = 0; ajustes_teste_cena_item(n, &op, &sec, &chave, &rot); n++) {
+      // Capture one requested preview without generating the entire catalogue.
+      if (getenv("NUVIO_SHOT_CENA") && strcmp(getenv("NUVIO_SHOT_CENA"), chave ? chave : "")) continue;
       unsigned char *pix = malloc(960 * 540 * 4);
       SDL_Surface *s;
       int q, y;
@@ -554,6 +556,12 @@ int main(int argc, char **argv) {
     static const char *const n[] = { "trailers", "trailer-seletor", "ampliacao", "ampliacao-seletor" };
     ajustes_teste_ux_captura(i);
     snprintf(nome, sizeof nome, "%s-%s.png", saida, n[i - 21]);
+    captura(nome, w);
+  }
+  for (i = 25; i <= 27; i++) {
+    static const char *const n[] = { "tour", "tour-onde", "tour-fileira2" };
+    ajustes_teste_ux_captura(i);
+    snprintf(nome, sizeof nome, "%s-%s.png", saida, n[i - 25]);
     captura(nome, w);
   }
   if (!getenv("NUVIO_AJUSTES_UX")) {

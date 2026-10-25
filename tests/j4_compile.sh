@@ -14,7 +14,7 @@ pids=()
 for source in src/*.c src/dts/*.c "$source_test"; do
   case "$source" in src/main.c) continue;; esac
   case "$source_test:$source" in
-    tests/pessoas_shot.c:src/pessoas.c|tests/pessoas_shot.c:src/recomenda.c|tests/social_tela_shot.c:src/social.c) continue;;
+    tests/pessoas_shot.c:src/pessoas.c|tests/pessoas_shot.c:src/recomenda.c|tests/social_tela_shot.c:src/social.c|tests/filmografia_shot.c:src/filmodados.c) continue;;
   esac
   object="$work/$(basename "$source" .c).o"
   "${compiler[@]}" -c "$source" -o "$object" -DAJUSTES_TESTE -O1 -g -Isrc \

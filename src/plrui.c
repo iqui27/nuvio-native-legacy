@@ -19,8 +19,10 @@ void plrui_material(GfxRect r, float raioPx, int modal, float a) {
 }
 
 void plrui_material_plano(GfxRect r, float raioPx, float a) {
-  if (!ajustes_vidro()) { plrui_material(r, raioPx, 0, a); return; }
-  if (r.w > 0.0f && r.h > 0.0f) gfx_cor(r, raioDe(r, raioPx), 1, 1, 1, 0.08f * a);
+  int previous = gfx_vidro_sem_aro;
+  gfx_vidro_sem_aro = 1;
+  plrui_material(r, raioPx, 0, a);
+  gfx_vidro_sem_aro = previous;
 }
 
 void plrui_material_s(GfxRect r, float raioPx, int modal, float a, int semSombra) {
@@ -228,12 +230,30 @@ float plrui_seg(const char *const *rotulos, const int *contagem, int n, float se
                 float x, float y, float a) {
   return plrui_seg_ex(rotulos, contagem, n, -1, sel, ed, x, y, a, 0);
 }
+static float segTexto(const char *const *rotulos, const char *const *contagem, int n, int escolhido,
+                      float sel, float ed, float x, float y, float a, int leve);
 float plrui_seg_ex(const char *const *rotulos, const int *contagem, int n, int escolhido,
                    float sel, float ed, float x, float y, float a, int leve) {
+  char b[8][16];
+  const char *c[8];
+  if (n > 8) n = 8;
+  for (int i = 0; i < n; i++) {
+    c[i] = contagem && contagem[i] >= 0 ? b[i] : NULL;
+    if (c[i]) snprintf(b[i], sizeof b[i], "%d", contagem[i]);
+  }
+  return segTexto(rotulos, c, n, escolhido, sel, ed, x, y, a, leve);
+}
+float plrui_seg_txt(const char *const *rotulos, const char *const *contagem, int n, float sel,
+                    float ed, float x, float y, float a) {
+  return segTexto(rotulos, contagem, n, -1, sel, ed, x, y, a, 0);
+}
+static float segTexto(const char *const *rotulos, const char *const *contagem, int n, int escolhido,
+                      float sel, float ed, float x, float y, float a, int leve) {
   float w[8], tot = SEG_PAD * 2.0f, xx;
   float pad = leve ? 22.0f : 20.0f, gap = leve ? 10.0f : 9.0f;
   float ih = leve ? 48.0f : SEG_IH;
   TxtLinha t[8], c[8];
+  float ta[8];
   int i, vid = ajustes_vidro(), tinta = plrui_tinta();
   // `sel` e `ed` podem ser FRACIONARIOS: quem chama anima (mola) e a pilula
   // desliza/esmaece entre os chips em vez de saltar. Inteiros cravados
@@ -247,14 +267,14 @@ float plrui_seg_ex(const char *const *rotulos, const int *contagem, int n, int e
   for (i = 0; i < n; i++) {
     int s = i == ch, f = i == selI && fEd > 0.5f;
     int cor = f ? tinta : 243;
-    t[i] = txt_linha(leve ? TXT_AJ_SEG : TXT_ILHA_SEG, rotulos[i], cor, cor, cor, f || s ? 255 : 140);
+    // Dim by draw alpha: the text cache key ignores alpha.
+    t[i] = txt_linha(leve ? TXT_AJ_SEG : TXT_ILHA_SEG, rotulos[i], cor, cor, cor, 255);
+    ta[i] = f || s ? 1.0f : 140 / 255.0f;
     memset(&c[i], 0, sizeof c[i]);
     w[i] = (float)t[i].w + pad * 2.0f;
-    if (contagem && contagem[i] >= 0) {
-      char b[16];
+    if (contagem && contagem[i] && contagem[i][0]) {
       int cc = f ? tinta : 243;
-      snprintf(b, sizeof b, "%d", contagem[i]);
-      c[i] = txt_linha(TXT_ILHA_NUM, b, cc, cc, cc, f ? 150 : 89);
+      c[i] = txt_linha(TXT_ILHA_NUM, contagem[i], cc, cc, cc, 255);
       w[i] += gap + (float)c[i].w;
     }
     tot += w[i] + (i ? SEG_VAO : 0.0f);
@@ -263,7 +283,7 @@ float plrui_seg_ex(const char *const *rotulos, const int *contagem, int n, int e
   { GfxRect tr = { x, y, tot, ih + SEG_PAD * 2.0f };
     // `leve`: the rimless .seg track of the 2.1 mocks (white .06 over glass).
     if (vid && leve) gfx_cor(tr, 0.5f, 1, 1, 1, 0.06f * a);
-    else if (vid) gfx_vidro_folha(tr, 0.5f, a);
+    else if (vid) gfx_vidro_painel_sem_aro(tr, 0.5f, GFX_VIDRO_DENS, a);
     else gfx_cor(tr, 0.5f, 0.114f, 0.118f, 0.137f, a); }
   xx = x + SEG_PAD;
   for (i = 0; i < n; i++) {
@@ -293,9 +313,10 @@ float plrui_seg_ex(const char *const *rotulos, const int *contagem, int n, int e
   xx = x + SEG_PAD;
   for (i = 0; i < n; i++) {
     float yb = y + SEG_PAD + (ih - (float)t[i].h) * 0.5f;
-    txt_desenhar_alpha(t[i], xx + pad, yb, a);
+    txt_desenhar_alpha(t[i], xx + pad, yb, a * ta[i]);
     if (c[i].w) txt_desenhar_alpha(c[i], xx + pad + (float)t[i].w + gap,
-                                   yb + (float)t[i].h - (float)c[i].h - 1.0f, a);
+                                   yb + (float)t[i].h - (float)c[i].h - 1.0f,
+                                   a * (i == selI && fEd > 0.5f ? 150 : 89) / 255.0f);
     xx += w[i] + SEG_VAO;
   }
   return tot;

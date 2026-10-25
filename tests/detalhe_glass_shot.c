@@ -96,12 +96,40 @@ size_t trakt_token_tam(const char *);
 #define txt_largura trakt_largura
 #define txt_token_tam trakt_token_tam
 #include "gfx.h"
+#include "botoes.h"
+#include "catalogo.h"
+#include "reacao.h"
+#include "plrui.h"
 static int cardMaterial, cardFrost, captionSolid, commentMaterial;
 // Record actual draw arguments, so missing hero offsets fail the PNG proof.
-static GfxRect serverRects[5];
+static GfxRect serverRects[7];
 static int serverRectCount;
+static int serverRims;
+static GfxRect serverPrimary;
+static int serverHints;
+static float server_hints(const char *const *keys, const char *const *labels, int n,
+                          float x, float y, int right, float a) {
+  if (a > .01f) serverHints++;
+  return plrui_dicas(keys, labels, n, x, y, right, a);
+}
+static void server_rating_hint(const CatItem *item, float a);
+void server_panel(GfxRect r, float radius, float density, float a) {
+  if (getenv("NUVIO_SERVER_CHECK") && a > .01f && !gfx_vidro_sem_aro) serverRims++;
+  gfx_vidro_painel(r, radius, density, a);
+}
+static void server_primary(GfxRect r, const char *label, const char *icon, float focus, int primary, int align, float a) {
+  serverPrimary = r;
+  botao_pilula(r, label, icon, focus, primary, align, a);
+}
+static float server_compact(float x, float y, const char *label, const char *icon, float focus, float a) {
+  float w = plrui_botao(x, y, label, icon, focus, a);
+  serverPrimary = (GfxRect){x, y, w, 60};
+  return w;
+}
+#define botao_pilula server_primary
+#define plrui_botao server_compact
 static void server_rect(GfxRect r) {
-  if (getenv("NUVIO_SHOT_SERVIDORES") && serverRectCount < 5)
+  if (getenv("NUVIO_SHOT_SERVIDORES") && serverRectCount < 7)
     serverRects[serverRectCount++] = r;
 }
 #include "plrui.h"
@@ -114,7 +142,17 @@ static void server_vai(const VaiTocar *vt, float x, float y, float w, float a) {
   server_rect((GfxRect){x, y, w, vtui_altura(vt)});
   vtui_desenhar(vt, x, y, w, a);
 }
+static void server_plano(GfxRect r, float radius, float a) {
+  if (r.h == 76.0f || r.h == 132.0f || (r.w == 180 && r.h == 48)) server_rect(r);
+  plrui_material_plano(r, radius, a);
+}
+static void server_button(GfxRect r, float a) {
+  if (r.w == 180 && r.h == 48) server_rect(r);
+  plrui_botao_repouso(r, a);
+}
+#define plrui_botao_repouso server_button
 #define plrui_material server_material
+#define plrui_material_plano server_plano
 #define vtui_desenhar server_vai
 static void card_material(GfxRect r, float radius, float density, float alpha) {
   int before = gfx_vidro_com_fonte;
@@ -144,8 +182,17 @@ static time_t detailShotTime(time_t *result) {
 }
 #define time detailShotTime
 #define servidores_contem_item fx_servidor_contem
+#define plrui_dicas server_hints
+#define reacao_detalhe_dica server_rating_hint
 #include NV_DETAIL_SOURCE
 #undef time
+#undef plrui_dicas
+#undef reacao_detalhe_dica
+static void server_rating_hint(const CatItem *item, float a) {
+  if (a > .01f) serverHints++;
+  reacao_detalhe_dica(item, a);
+}
+#undef plrui_material_plano
 #undef gfx_vidro_material
 #undef gfx_vidro_painel
 #undef gfx_cor
@@ -154,6 +201,7 @@ static time_t detailShotTime(time_t *result) {
 #undef txt_token_tam
 #undef servidores_contem_item
 #undef plrui_material
+#undef plrui_botao_repouso
 #undef vtui_desenhar
 int fx_servidor_contem(const CatItem *item, int provider) {
   return getenv("NUVIO_SHOT_SERVIDORES") && item && provider < 2;
@@ -518,10 +566,12 @@ static void quadros(int n) {
     glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     serverRectCount = 0;
+    serverRims = 0;
+    serverHints = 0;
     detail_desenhar(SDL_GetTicks());
     // NUVIO_SHOT_RELOGIO=1: the clock island over the page, as app.c draws it.
     if (getenv("NUVIO_SHOT_RELOGIO")) {
-      ilha_relogio_visivel(1); ilha_posicionar(1); ilha_desenhar(SDL_GetTicks());
+      ilha_relogio_visivel(1); ilha_posicionar(getenv("NUVIO_SHOT_SERVIDORES") ? 2 : 1); ilha_desenhar(SDL_GetTicks());
     }
     // NUVIO_SHOT_PAINEL=1: o painel de Salvos/Avisos aberto POR CIMA da pagina,
     // como app.c o desenha agora (sem o `!detail_aberto()` de antes).
@@ -911,6 +961,9 @@ int main(int argc, char **argv) {
   }
   if (quer(argc, argv, "filme-topo")) { abrir(1, 0, 0, 0); gravar("filme-topo"); }
   if (quer(argc, argv, "detalhe-chip")) {
+    assert(ajustes_rapido_cor_definir(11));
+    assert(dados_gravar("perfis.txt", "1\t0\t1\t0\t#7655D6\tMarina\t\t\n"));
+    perfis_carregar_ativo();
     // Confirmed foreign logo, friends feed, and a real candidate stream.
     snprintf(itens[1].logoIdiomaUrl, sizeof itens[1].logoIdiomaUrl, "%s", itens[1].logo);
     snprintf(itens[1].logoIdioma, sizeof itens[1].logoIdioma, "ja");
@@ -919,9 +972,72 @@ int main(int argc, char **argv) {
     snprintf(candidate.url, sizeof candidate.url, "https://example.invalid/movie.mkv");
     candidate.altura = 2160;
     stream_definir_alvo(IMDB_FILME); stream_definir_lista(&candidate, 1);
-    abrir(1,0,0,0); quadros(4); gravar("detalhe-chip");
+    abrir(1,0,0,0);
+    if (getenv("NUVIO_SERVER_CHECK")) {
+      int failures = 0;
+      const float scales[] = {1, .85f};
+      for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
+        gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
+        quadros(160);
+        float red, green, blue; ajustes_acento(&red, &green, &blue);
+        unsigned char pixel[4];
+        glReadPixels((int)((serverPrimary.x + serverPrimary.w * .5f) * gfx_escala_txt()),
+                     1080 - (int)((serverPrimary.y + 8) * gfx_escala_txt()), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+        int compact = serverPrimary.w <= 180 && serverPrimary.h <= 64;
+        int accent = fabsf(pixel[0] / 255.f - red) < .08f &&
+                     fabsf(pixel[1] / 255.f - green) < .08f && fabsf(pixel[2] / 255.f - blue) < .08f;
+        printf("%s: P1 primary %d%% %s width=%.1f height=%.1f accent=%d\n",
+               compact && accent ? "PASS" : "FAIL", scale ? 85 : 100, glass ? "glass" : "solid",
+               serverPrimary.w, serverPrimary.h, accent);
+        failures += !compact || !accent;
+        printf("%s: P1 rimless controls %d%% %s outlines=%d\n", serverRims ? "FAIL" : "PASS",
+               scale ? 85 : 100, glass ? "glass" : "solid", serverRims);
+        failures += serverRims != 0;
+        assert(serverRectCount == 4 && serverHints == 0);
+        GfxRect friends = serverRects[0], next = serverRects[1];
+        assert(fabsf(friends.y + hSinVis + NV_DETW2_GAP_SIN + NV_DETW2_M1_H -
+                      1048 / gfx_escala_txt()) < 1);
+        for (int p = 2; p < 4; p++) {
+          GfxRect source = serverRects[p];
+          assert(next.x + next.w < source.x);
+          assert(fabsf(next.y + next.h * .5f - source.y - source.h * .5f) < 1);
+          assert(source.y + source.h < friends.y);
+        }
+        assert(friends.x >= serverRects[3].x);
+        printf("PASS: bottom anchor, source row, recommendation, no ratings or hints\n");
+      }
+      return failures ? 1 : 0;
+    }
+    const float scales[] = {1, .85f};
+    for (int scale = 0; scale < 2; scale++) for (int glass = 0; glass < 2; glass++) {
+      char name[80]; gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
+      for (int frame = 0; frame < 40; frame++) { SDL_Delay(16); quadros(1); }
+      snprintf(name, sizeof name, "server-%d-%s", (int)(scales[scale] * 100 + .5f), glass ? "glass" : "solid"); gravar(name);
+    }
+    gfx_escala_txt_definir(1); ajustes_definir_vidro(1);
+    for (int frame = 0; frame < 40; frame++) { SDL_Delay(16); quadros(1); }
+    gravar("detalhe-chip");
     SDL_Event e = {0}; e.type = SDL_KEYDOWN;
-    int nav = 1;
+    e.key.keysym.sym = SDLK_DOWN; detail_evento(&e);
+    const int times[] = {0, 80, 160, 320};
+    quadros(1);
+    for (int i = 0, elapsed = 0; i < 4; i++) {
+      while (elapsed < times[i]) { SDL_Delay(16); quadros(1); elapsed += 16; }
+      char name[80]; snprintf(name, sizeof name, "server-focus-%03d", times[i]); gravar(name);
+    }
+    e.key.keysym.sym = SDLK_UP; detail_evento(&e); quadros(90);
+    HomeItem hi = {0}; hi.indice = 1; hi.rect.w = NV_TELA_W; hi.rect.h = NV_TELA_H;
+    hi.titulo = itens[1].titulo; hi.genero = itens[1].genero; hi.meta = itens[1].meta;
+    detail_fechar_seco(); quadros(1);
+    detail_abrir(&hi);
+    quadros(1);
+    assert(fase2() == 0 && textogate_passo(&gateHero, 0, SDL_GetTicks()) < .1f);
+    for (int i = 0, elapsed = 0; i < 4; i++) {
+      while (elapsed < times[i]) { SDL_Delay(16); quadros(1); elapsed += 16; }
+      char name[80]; snprintf(name, sizeof name, "server-entry-%03d", times[i]); gravar(name);
+    }
+    quadros(160);
+    int nav = nBotoes() == 3 && acaoEm(2) == ACAO_MAIS;
 #define STEP(code, expected) do { e.key.keysym.sym = code; detail_evento(&e); nav &= !!(expected); } while (0)
     STEP(SDLK_DOWN, focoServidor == 0 && !focoAmigos);
     STEP(SDLK_RIGHT, focoServidor == 1 && !focoAmigos);

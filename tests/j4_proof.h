@@ -39,6 +39,8 @@ static void j4_sequence(const char *screen,const char *mode,void (*step)(float),
     snprintf(path,sizeof path,"%s/%s-%s-%03d.png",dir,screen,mode,times[i]);j4_save(path);
   }
 }
+/* Optional: reopen without wiping animation state, so reverse strips show the interrupted trajectory. */
+static void (*j4_reopen)(void);
 static void j4_proof(const char *screen, void (*reset)(void), void (*focus)(void),
                      void (*step)(float), void (*draw)(void), void (*close)(void)) {
   const char *dir=getenv("J4_PROOF_DIR"); if(!dir)return;
@@ -55,6 +57,8 @@ static void j4_proof(const char *screen, void (*reset)(void), void (*focus)(void
       reset();
       if(mode==1){for(int i=0;i<100;i++)j4_frame(.01f,step,draw);focus();}
       if(mode>=2){for(int i=0;i<(mode==2?100:8);i++)j4_frame(.01f,step,draw);close();}
+      // Reverse: reopen mid-exit so the strip shows the interrupted trajectory.
+      if(mode==3){for(int i=0;i<6;i++)j4_frame(.01f,step,draw);(j4_reopen?j4_reopen:reset)();}
       char name[100];snprintf(name,sizeof name,"%s-%d-g%d",screen,scale,glass);
       j4_sequence(name,(const char *[]){"entry","focus","exit","reverse"}[mode],step,draw);
     }
