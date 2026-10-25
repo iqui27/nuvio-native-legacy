@@ -3,17 +3,17 @@ typedef struct { int op; const char *tit, *txt; int novo; } TourCartao;
 #define TOUR_NOVO_DIAS 30
 static const TourCartao TOUR[] = {
 #ifdef NV_ANDROID
-  { AJ_LEG_SYNC_AUDIO, "Acertar a legenda", "O Nuvio compara as falas com a legenda e corrige o atraso. Vale só nesta TV.", 0 },
+  { AJ_LEG_SYNC_AUDIO, "Legendas que se acertam sozinhas", "Baixa e sincroniza a legenda pelo áudio, sem mexer no atraso.", 0 },
 #else
-  { AJ_LEG_SYNC_AUTO, "Sincronia automática da legenda", "Ajusta a legenda automaticamente. Desligue para manter a escolhida. Vale só nesta TV.", 0 },
+  { AJ_LEG_SYNC_AUTO, "Legendas que se acertam sozinhas", "Baixa e sincroniza a legenda pelo áudio, sem mexer no atraso.", 0 },
 #endif
-  { AJ_LEG_LINGUA2, "Segunda legenda", "Mostre duas legendas ao mesmo tempo, no alto da tela. Ótimo para estudar um idioma.", 0 },
-  { AJ_SEEKR_LIGADO, "Miniatura ao avançar", "Ao avançar ou voltar, uma miniatura mostra a cena. Precisa da sua chave gratuita do Seekr.", 0 },
-  { AJ_RELOGIO, "Avisos no relógio", "O episódio pela metade e a estreia nova ficam no relógio. AZUL ou CH+ abre, → leva aos Salvos.", 0 },
-  { AJ_FONTE_PRIORIDADE, "Escolha da fonte", "Decida o que vem primeiro: equilíbrio, qualidade ou começar rápido. O Nuvio escolhe sozinho.", 0 },
-  { AJ_DTS_AC3, "Converter DTS para a TV ouvir", "Para TVs que não tocam DTS: o som é convertido na hora.", 0 },
-  { AJ_PERFIL_ATIVO, "Perfis", "Cada perfil tem o próprio Continuar, as próprias listas e os próprios Ajustes. Dá para criar outros depois.", 1 },
-  { AJ_XTREAM_SERVIDOR, "Canais de TV ao vivo", "Coloque o servidor que o provedor mandou. Os canais entram no Guia de TV com tudo preenchido.", 0 },
+  { AJ_LEG_LINGUA2, "Duas legendas ao mesmo tempo", "Para aprender idioma ou assistir com quem lê outra língua.", 1 },
+  { AJ_SEEKR_LIGADO, "Miniatura ao avançar", "Veja a cena antes de soltar o botão. Precisa de uma chave grátis do Seekr.", 0 },
+  { AJ_RELOGIO, "Avisos e Salvos no CH+ ou AZUL", "A pílula do canto guarda o episódio pela metade, estreias e enquetes.", 0 },
+  { AJ_FONTE_PRIORIDADE, "Fonte escolhida do seu jeito", "Só os add-ons que você quer e um limite de tamanho para poupar internet.", 0 },
+  { AJ_DTS_AC3, "Dolby Vision e DTS nesta TV", "Na LG: MKV em Dolby Vision e DTS convertido para 5.1. Na Samsung, veja o que dá.", 1 },
+  { AJ_PERFIL_ATIVO, "Cada pessoa com o seu Nuvio", "Perfis com ajustes próprios, perfil infantil com trava e cópia de ajustes.", 0 },
+  { AJ_XTREAM_SERVIDOR, "TV ao vivo com guia", "Canais do provedor, grade de programação e zapping com CH+ e CH−.", 1 },
   { AJ_PERFIL_PESQ, "Meu perfil público", "Amigos do Nuvio além do Trakt. Perfil público só se você ligar.", 0 },
   { AJ_TAM_MAX, "Economizar dados", "Fontes maiores que o limite vão para o fim da fila. Bom para quem tem internet com franquia.", 0 },
   { AJ_ESMAECER, "Tela de descanso", "Vitrine do seu catálogo, Relógio com a próxima estreia, ou só escurecer. Nunca entra com algo tocando.", 0 },
@@ -186,7 +186,12 @@ static void tourPrevia(int op, GfxRect r, int foco) {
       ajc_barra(320, 150, 200, .8f); ajc_barra(320, 185, 240, .4f);
       break;
     case AJ_DTS_AC3: case AJ_DV_MKV:
-      ajcTexto(op == AJ_DV_MKV ? "Dolby Vision" : "DTS / 5.1", 38, 1, 100, 95, 1);
+      ajc_neutro(33, 98, 200, 44, 9, .18f);
+      ajcTexto("Dolby Vision", 28, 1, 48, 101, 1);
+      if (op == AJ_DTS_AC3) {
+        ajc_neutro(245, 98, 155, 44, 9, .18f);
+        ajcTexto("DTS → 5.1", 28, 1, 260, 101, 1);
+      }
       ajc_barra(45, 175, 320, .6f); ajc_barra(45, 210, 190, .3f);
       break;
     case AJ_PERFIL_ATIVO: case AJ_PERFIL_PESQ:
@@ -239,10 +244,10 @@ static void tourPrevia(int op, GfxRect r, int foco) {
   }
   ajc_fim();
 }
-static void tourBotao(const char *rot, GfxRect r, int foco, int cartaoFoco, int ativo) {
-  int tinta = cartaoFoco ? (foco ? 243 : 22) : (foco ? 22 : 243);
-  float bg = cartaoFoco ? (foco ? .08f : .86f) : (foco ? .95f : .16f);
-  TxtLinha t = txt_linha_corta(TXT_G22M, i18n(rot), tinta, tinta, tinta, 255, r.w - 20);
+static void tourBotao(const char *rot, GfxRect r, int foco, int cartaoFoco, int primario, int ativo) {
+  int tinta = cartaoFoco ? (foco ? 243 : 22) : (foco || primario ? 22 : 243);
+  float bg = cartaoFoco ? (foco ? .08f : .86f) : (foco || primario ? .95f : .16f);
+  TxtLinha t = txt_linha_corta(TXT_G20M, i18n(rot), tinta, tinta, tinta, 255, r.w - 20);
   gfx_cor(r, .5f, bg, bg, bg, ativo ? 1 : .4f);
   txt_desenhar_alpha(t, r.x + (r.w - t.w) * .5f, r.y + (r.h - t.h) * .5f, ativo ? 1 : .4f);
 }
@@ -254,17 +259,20 @@ static void tourCartao(int i, float x, float y, int foco) {
   tourPrevia(TOUR[i].op, pl, foco);
   gfx_recorte(0, TOUR_Y0, NV_VTELA_W, 2 * TOUR_CH + TOUR_GAP);
   if (tourNovo(i)) {
-    TxtLinha n = ajTxt(TXT_V2_24, "Novo");
-    gfx_cor((GfxRect){ x + 14, y + 14, n.w + 20, 30 }, .25f, .75f, .12f, .2f, 1);
-    txt_desenhar(n, x + 24, y + 14);
+    TxtLinha n = ajTxt(TXT_G16B, "NOVO");
+    gfx_cor((GfxRect){ x + 14, y + 14, n.w + 18, 26 }, 7.0f / 26, 213 / 255.0f, 59 / 255.0f, 69 / 255.0f, 1);
+    txt_desenhar(n, x + 23, y + 14 + (26 - n.h) * .5f);
   }
-  txt_bloco_corta(TXT_V2_LN_B, tourTitulo(i), tinta, tinta, tinta, x + 22, y + 190, TOUR_CW - 44, 28, 1, 2);
-  txt_bloco_corta(TXT_SINOPSE_22, tourFrase(i), tinta, tinta, tinta, x + 22, y + 248, TOUR_CW - 44, 22, foco ? .75f : .65f, 4);
-  { float bw = (TOUR_CW - 44 - 12) * .5f;
-    GfxRect b0 = { x + 22, y + 340, bw, 32 }, b1 = { x + 34 + bw, y + 340, bw, 32 };
-    const char *rot = TOUR[i].op < 0 ? "Escolher" : TOUR[i].op == AJ_PERFIL_ATIVO ? "Configurar" : "Ligar agora";
-    tourBotao(rot, b0, foco && tourBtn == 0, foco, ativo);
-    tourBotao("Ver onde fica", b1, foco && tourBtn == 1, foco, ativo);
+  txt_bloco_corta(TXT_W20_24B, tourTitulo(i), tinta, tinta, tinta, x + 22, y + 190, TOUR_CW - 44, 28, 1, 2);
+  txt_bloco_corta(TXT_SINOPSE_20, tourFrase(i), tinta, tinta, tinta, x + 22, y + 248, TOUR_CW - 44, 22, foco ? .75f : .65f, 3);
+  { const char *rot = TOUR[i].op < 0 ? "Escolher" : TOUR[i].op == AJ_PERFIL_ATIVO ? "Criar perfil" :
+      TOUR[i].op == AJ_XTREAM_SERVIDOR ? "Conectar" : TOUR[i].op == AJ_FONTE_PRIORIDADE ? "Configurar" :
+      TOUR[i].op == AJ_RELOGIO ? "Ver como" : "Ligar agora";
+    float bw = fminf(txt_largura(TXT_G20M, i18n(rot)) + 36, (TOUR_CW - 56) * .5f);
+    float bw1 = fminf(txt_largura(TXT_G20M, i18n("Onde fica")) + 36, TOUR_CW - 56 - bw);
+    GfxRect b0 = { x + 22, y + 320, bw, 44 }, b1 = { x + 34 + bw, y + 320, bw1, 44 };
+    tourBotao(rot, b0, foco && tourBtn == 0, foco, 1, ativo);
+    tourBotao("Onde fica", b1, foco && tourBtn == 1, foco, 0, ativo);
     if (ativo) {
       ponteiro_alvo(b0.x, b0.y, b0.w, b0.h, tourPontFoco, tourPontAcao, i, 0);
       ponteiro_alvo(b1.x, b1.y, b1.w, b1.h, tourPontFoco, tourPontAcao, i, 1);
@@ -274,8 +282,9 @@ static void tourCartao(int i, float x, float y, int foco) {
 static void tourDesenhar(void) {
   GfxRect h = { 48, 112, 1824, 92 };
   TxtLinha t = ajTxt(TXT_ILHA_TITULO, "O que o Nuvio faz?");
-  AjDica d[3] = { { "OK", "Escolher" }, { "↑ ↓ ← →", "Navegar" }, { "Voltar", "Ajustes" } };
-  char q[96];
+  char q[96], mais[96];
+  snprintf(mais, sizeof mais, i18n("Mais %d funções"), TOUR_N > 2 * TOUR_COLS ? TOUR_N - 2 * TOUR_COLS : 0);
+  AjDica d[3] = { { "OK", "Ligar agora" }, { "→", mais }, { "Voltar", "Ajustes" } };
   int novos = 0;
   ajFundo();
   ajIlha(h, 26, 1, 0);
@@ -284,9 +293,9 @@ static void tourDesenhar(void) {
   txt_desenhar_alpha(ajTxt(TXT_V2_24, "AJUSTES"), h.x + 106, h.y + 10, .55f);
   txt_desenhar(t, h.x + 106, h.y + 32);
   for (int i = 0; i < TOUR_N; i++) novos += tourNovo(i);
-  snprintf(q, sizeof q, i18n("%d de %d ligados nesta TV"), tourLigadas(), TOUR_N);
+  snprintf(q, sizeof q, i18n("%d de %d funções ligadas"), tourLigadas(), TOUR_N);
   { TxtLinha c = ajTxt(TXT_V2_24, q); txt_desenhar_alpha(c, h.x + h.w - 30 - c.w, h.y + 22, .9f); }
-  snprintf(q, sizeof q, i18n("%d novas"), novos);
+  snprintf(q, sizeof q, i18n("%d novas na 2.0.2"), novos);
   { TxtLinha c = ajTxt(TXT_V2_24, q); txt_desenhar_alpha(c, h.x + h.w - 30 - c.w, h.y + 56, .55f); }
   gfx_recorte(0, TOUR_Y0 - 2, NV_VTELA_W, 2 * TOUR_CH + TOUR_GAP + 4);
   for (int i = 0; i < TOUR_N; i++) {
@@ -295,5 +304,5 @@ static void tourDesenhar(void) {
     tourCartao(i, TOUR_X0 + (i % TOUR_COLS) * (TOUR_CW + TOUR_GAP), y, i == tourFoco);
   }
   gfx_sem_recorte();
-  ajDicasLinha(d, 3, 1120, 1030, 1);
+  ajDicasLinha(d, 3, NV_VTELA_W - 48 - ajDicasLargura(d, 3), 1030, 1);
 }
