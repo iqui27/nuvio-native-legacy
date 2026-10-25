@@ -70,6 +70,7 @@
 #define extras_relacionado_titulo fx_relacionado_titulo
 #define extras_relacionado_ano    fx_relacionado_ano
 #define extras_relacionado_poster fx_relacionado_poster
+#define desc_pedir_titulo_tmdb fx_collection_open
 #define extras_n_colecao        fx_n_colecao
 #define extras_colecao_nome     fx_colecao_nome
 #define extras_colecao_titulo   fx_colecao_titulo
@@ -204,6 +205,10 @@ const char *fx_relacionado_ano(int i) { return REL_ANO[i % 3]; }
 const char *fx_relacionado_poster(int i) { return REL_PO[i % 3]; }
 // COLECAO DE ENSAIO (#194): so a captura 18 liga. Tres partes, o proprio
 // filme entre elas, como o TMDB devolve.
+static long collectionTarget;
+void fx_collection_open(long id, const char *type) {
+  assert(!strcmp(type,"movie")); collectionTarget = id;
+}
 static int colecaoLigada;
 static const char *const COL_TIT[] = { "The Matrix", "The Matrix Reloaded", "The Matrix Revolutions" };
 static const char *const COL_ANO[] = { "1999", "2003", "2003" };
@@ -841,27 +846,23 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-18-filme-colecao.png", saida);
   gravar(nome);
 
-  // --- 19. A TELA DE LISTA: OK no card, depois um BAIXO — a 2a parte em foco
-  //         e a 1a (o titulo aberto) com "Você está aqui".
-  { SDL_Event ev; memset(&ev, 0, sizeof ev);
-    // O OK da pagina age no SOLTAR (desce + sobe), como na TV.
-    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_RETURN;
-    detail_evento(&ev);
-    ev.type = SDL_KEYUP;
-    detail_evento(&ev);
-    quadros(5);
-    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_DOWN;
-    detail_evento(&ev); }
+  // Approved collection row opens parts directly, without the retired list.
+  assert(secaoN(SEC_COLECAO) == 3);
+  { SDL_Event ev = {0};
+    foco.coluna = parteAtualColecao();
+    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_RETURN; detail_evento(&ev);
+    ev.type = SDL_KEYUP; detail_evento(&ev);
+    assert(!colListaAberta && aberto && foco.fileira == SEC_COLECAO);
+    foco.coluna = 1;
+    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_RETURN; detail_evento(&ev);
+    ev.type = SDL_KEYUP; detail_evento(&ev);
+    assert(!colListaAberta && collectionTarget == fx_colecao_tmdb(1));
+  }
   quadros(90);
-  assert(colListaAberta && colListaFoco == 1);
   snprintf(nome, sizeof nome, "%s-19-filme-colecao-lista.png", saida);
   gravar(nome);
 
-  // --- 20. VOLTAR fecha a lista e devolve a pagina no mesmo card; e a
-  //         reserva SEM backdrop (so a escada sobre a superficie neutra).
-  { SDL_Event ev; memset(&ev, 0, sizeof ev);
-    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_ESCAPE;
-    detail_evento(&ev); }
+  // Preserve collection focus and capture the missing-backdrop fallback.
   assert(!colListaAberta && aberto && foco.fileira == SEC_COLECAO);
   colecaoSemFundo = 1;
   quadros(60);

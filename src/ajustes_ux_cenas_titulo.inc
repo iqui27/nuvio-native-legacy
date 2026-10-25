@@ -819,6 +819,19 @@ static int ajcNovaTitulo(int sec, int op) {
     case AJ_NT_SCORE: ajcT_nota(op, 10); return 1;
     case AJ_MDB_LIGADO: ajcT_notasTodas(op); return 1;
     case AJ_MDB_CHAVE: ajcT_mdbChave(); return 1;
+    case AJ_DET_TOPO: {
+      ajcT_fundoVideo();
+      for (int i = 0; i < 3; i++) {
+        float x = 12 + i * 210;
+        ajc_cartaz(x, 50, 196, 220, 2, 0.8f);
+        ajc_ret(x + 12, 190, 90, 30, 15, 1, 1, 1, .18f);
+        if (i != 1) ajcT_txtc("4K · Dolby Vision", 10, 0, x + 12, 231, 238, 240, 244, 1);
+        if (i != 0) ajcT_txtAcento("8", 16, x + 120, 195, 1);
+        ajcT_txtc(V_DET_TOPO[i], 12, 1, x + 12, 290, 238, 240, 244, 1);
+        if (i == valor[op]) ajc_ret(x + 12, 322, 8, 8, 4, 1, 1, 1, 1);
+      }
+      return 1;
+    }
     case AJ_DET_VEU: ajcT_veu(); return 1;
     case AJ_DET_DATA_CHEIA: ajcT_dataCheia(op); return 1;
     case AJ_TMDB_LIGADO: ajcT_tmdbTudo(ajcT_quadro(op)); return 1;

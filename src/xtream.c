@@ -305,20 +305,15 @@ static pthread_mutex_t travaRede = PTHREAD_MUTEX_INITIALIZER;
 // Retry-After do ultimo pedido ao painel (s; 0 = nao veio). xtepg.c le depois
 // de um 429.
 
-static char *chamarSt(const char *acao, int prazo, int *status, NvPerfilSessao sessao) {
-  char srv[256], u[300], s[300], url[1100];
+static char *consultar(const char *srv, const char *user, const char *password,
+                       const char *acao, int prazo, int *status, NvPerfilSessao sessao) {
+  char u[300], s[300], url[1100];
   char *r;
   int st = 0;
   if (status) *status = 0;
-  pthread_mutex_lock(&trava);
-  if (!nv_perfil_sessao_travar(sessao)) { pthread_mutex_unlock(&trava); return NULL; }
-  carregarTravado();
-  snprintf(srv, sizeof srv, "%s", servidor);
-  urlenc(usuario, u, sizeof u);
-  urlenc(senha, s, sizeof s);
-  nv_perfil_sessao_destravar();
-  pthread_mutex_unlock(&trava);
-  if (!srv[0] || !u[0] || !s[0]) return NULL;
+  urlenc(user, u, sizeof u);
+  urlenc(password, s, sizeof s);
+  if (!srv || !srv[0] || !u[0] || !s[0]) return NULL;
   if (acao && acao[0])
     snprintf(url, sizeof url, "%s/player_api.php?username=%s&password=%s&action=%s",
              srv, u, s, acao);
@@ -355,6 +350,46 @@ static char *chamarSt(const char *acao, int prazo, int *status, NvPerfilSessao s
   if (!nv_perfil_sessao_atual(sessao)) { free(r); return NULL; }
   if (status) *status = st;
   return r;
+}
+// Draft account (setup wizard): never persisted, same serialized transport.
+char *xtream_consultar(const char *srv, const char *user, const char *password,
+                       const char *acao, int prazo, int *status) {
+  return consultar(srv, user, password, acao, prazo, status, nv_perfil_sessao_ler());
+}
+static char *chamarSt(const char *acao, int prazo, int *status, NvPerfilSessao sessao) {
+  char srv[256], user[96], password[96];
+  char *r;
+  if (status) *status = 0;
+  pthread_mutex_lock(&trava);
+  if (!nv_perfil_sessao_travar(sessao)) { pthread_mutex_unlock(&trava); return NULL; }
+  carregarTravado();
+  snprintf(srv, sizeof srv, "%s", servidor);
+  snprintf(user, sizeof user, "%s", usuario);
+  snprintf(password, sizeof password, "%s", senha);
+  nv_perfil_sessao_destravar();
+  pthread_mutex_unlock(&trava);
+  r = consultar(srv, user, password, acao, prazo, status, sessao);
+  memset(password, 0, sizeof password);
+  return r;
+}
+void xtream_dados_copiar(char *server,unsigned ns,char *user,unsigned nu,char *password,unsigned np){
+  pthread_mutex_lock(&trava);carregarTravado();
+  snprintf(server,ns,"%s",servidor);snprintf(user,nu,"%s",usuario);snprintf(password,np,"%s",senha);
+  pthread_mutex_unlock(&trava);
+}
+char *xtream_consultar_salvo(const char *action,int seconds,int *status){return chamarSt(action,seconds,status,nv_perfil_sessao_ler());}
+int xtream_vod_url(const char *id,const char *ext,int episode,char *out,unsigned cap) {
+  char user[300],password[300];
+  if(!id || !*id || !ext || !*ext)return 0;
+  for(const char *p=id;*p;p++)if(*p<'0'||*p>'9')return 0;
+  for(const char *p=ext;*p;p++)if(!((*p>='a'&&*p<='z')||(*p>='0'&&*p<='9')))return 0;
+  pthread_mutex_lock(&trava);carregarTravado();
+  urlenc(usuario,user,sizeof user);urlenc(senha,password,sizeof password);
+  int n=snprintf(out,cap,"%s/%s/%s/%s/%s.%s",servidor,episode?"series":"movie",user,password,id,ext);
+  int ok=servidor[0]&&user[0]&&password[0]&&n>0&&(unsigned)n<cap;
+  pthread_mutex_unlock(&trava);memset(password,0,sizeof password);
+  if(!ok && cap)out[0]=0;
+  return ok;
 }
 #define retryCanal (fonteFio()->retry)
 int xtream_ultimo_retry_after(void) { return retryCanal; }

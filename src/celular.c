@@ -7,6 +7,9 @@
 int  celular_disponivel(void) { return 0; }
 int  celular_abrir(const char *t) { (void)t; return 0; }
 int  celular_abrir_link(const char *t,const char *d) { (void)t;(void)d;return 0; }
+int celular_abrir_pagina(const char *t,const char *h,const char *e){(void)t;(void)h;(void)e;return 0;}
+int  celular_abrir_sessao(const char *t,const char *h){(void)t;(void)h;return 0;}
+void celular_status(const char *s){(void)s;}
 void celular_fechar(void) {}
 int  celular_estado(void) { return CEL_PARADO; }
 const char *celular_url(void) { return ""; }
@@ -28,6 +31,7 @@ int ajustes_idioma(void);   // ajustes.h puxa SDL; so o idioma interessa aqui
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 #include <strings.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -51,7 +55,13 @@ static char recebido[CEL_CORPO_MAX + 1];
 static int  temRecebido;
 static time_t expira;
 // Montadas na abertura (thread do app, por causa do i18n); o fio so le.
-static char pagina[12288], pagEnviado[8192], pagUsado[8192];
+static char pagina[24576], pagEnviado[8192], pagUsado[8192];
+static const char *proximaPagina, *proximaEnviado;
+/* Session mode (guided setup): server survives POSTs; statusTxt is the short
+ * public status the page polls (counts and state only, never credentials). */
+static atomic_int sessao;
+static int proximaSessao;
+static char statusTxt[16384];
 
 int celular_disponivel(void) { return 1; }
 int celular_estado(void) { return estado; }
@@ -284,7 +294,7 @@ static void responder(int c, int cod, const char *corpo) {
     "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: same-origin\r\n"
     "X-Frame-Options: DENY\r\n"
     "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; "
-    "script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'\r\n"
+    "script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'\r\n"
     "%sConnection: close\r\n\r\n", cod, txt, n, cod == 405 ? "Allow: GET, POST\r\n" : "");
   enviarTudo(c, cab, (size_t)k);
   if (n) enviarTudo(c, corpo, n);
@@ -390,6 +400,19 @@ static int atender(int c, int *erros) {
     }
   }
   { char *q = strchr(caminho, '?'); if (q) *q = 0; }
+  if (sessao) {
+    char cam[CEL_TOKEN_N + 4];
+    snprintf(cam, sizeof cam, "/%s/s", token);
+    if (!strcmp(caminho, cam)) {
+      char s[sizeof statusTxt];
+      if (strcmp(metodo, "GET") && strcmp(metodo, "HEAD")) { responder(c, 405, NULL); return 0; }
+      pthread_mutex_lock(&trava);
+      snprintf(s, sizeof s, "%s", statusTxt);
+      pthread_mutex_unlock(&trava);
+      responder(c, 200, metodo[0] == 'G' ? s : NULL);
+      return 0;
+    }
+  }
   if (caminho[0] != '/' || strcmp(caminho + 1, token)) {
     // O favicon que todo navegador pede nao e tentativa de adivinhar o token.
     if (strcmp(caminho, "/favicon.ico")) (*erros)++;
@@ -423,6 +446,10 @@ static int atender(int c, int *erros) {
   }
   corpo[temCorpo] = 0;
   pthread_mutex_lock(&trava);
+  if(temRecebido){
+    pthread_mutex_unlock(&trava);memset(corpo,0,temCorpo);
+    responder(c,409,NULL);return 0;
+  }
   campoT(corpo, recebido, sizeof recebido);
   aparar(recebido);
   r = recebido[0] != 0;
@@ -439,7 +466,7 @@ static int atender(int c, int *erros) {
 static void *servir(void *arg) {
   int erros = 0;
   (void)arg;
-  while (estado == CEL_ESPERANDO) {
+  while (estado == CEL_ESPERANDO || (sessao && estado == CEL_RECEBIDO)) {
     struct pollfd p[2];
     int r;
     if (time(NULL) >= expira) { estado = CEL_EXPIROU; puts("[celular] expirou"); break; }
@@ -454,7 +481,7 @@ static void *servir(void *arg) {
 #ifdef SO_NOSIGPIPE
       { int um = 1; setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &um, sizeof um); }
 #endif
-      if (atender(c, &erros)) { close(c); break; }
+      if (atender(c, &erros) && !sessao) { close(c); break; }
       close(c);
       if (erros >= CEL_ERROS_MAX) {
         estado = CEL_FALHOU;
@@ -477,11 +504,34 @@ void celular_fechar(void) {
   pthread_mutex_lock(&trava);
   memset(recebido, 0, sizeof recebido);
   temRecebido = 0;
+  statusTxt[0] = 0;
   pthread_mutex_unlock(&trava);
+  sessao = 0;
   memset(token, 0, sizeof token);
   url[0] = 0;
   porta = 0;
   estado = CEL_PARADO;
+}
+
+int celular_abrir_pagina(const char *titulo,const char *html,const char *enviado) {
+  celular_fechar();
+  proximaPagina=html;proximaEnviado=enviado;
+  int ok=celular_abrir(titulo);
+  proximaPagina=proximaEnviado=NULL;
+  return ok;
+}
+
+int celular_abrir_sessao(const char *titulo,const char *html) {
+  proximaSessao=1;
+  int ok=celular_abrir_pagina(titulo,html,"ok");
+  proximaSessao=0;
+  return ok;
+}
+
+void celular_status(const char *s) {
+  pthread_mutex_lock(&trava);
+  snprintf(statusTxt,sizeof statusTxt,"%s",s&&strlen(s)<sizeof statusTxt?s:"{\"s\":\"err\"}");
+  pthread_mutex_unlock(&trava);
 }
 
 static int abrir(const char *titulo,const char *destino) {
@@ -517,8 +567,12 @@ static int abrir(const char *titulo,const char *destino) {
     escapar(label,sizeof label,i18n("Abrir no celular"));
     snprintf(pagina,sizeof pagina,"<!doctype html><html>" CEL_ESTILO "<main><h1>%s</h1><a rel=\"noreferrer noopener\" href=\"%s\">%s</a></main></html>",title,escaped,label);
   }
+  if(proximaPagina)snprintf(pagina,sizeof pagina,"%s",proximaPagina);
+  if(proximaEnviado)snprintf(pagEnviado,sizeof pagEnviado,"%s",proximaEnviado);
+  proximaPagina=proximaEnviado=NULL;
   expira = time(NULL) + CEL_VALIDADE_S;
   estado = CEL_ESPERANDO;
+  sessao=proximaSessao;
   if (pthread_create(&fio, NULL, servir, NULL)) { celular_fechar(); return 0; }
   fioVivo = 1;
   // Sem IP nem token no log: so que subiu.

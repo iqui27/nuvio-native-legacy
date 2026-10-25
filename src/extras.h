@@ -142,6 +142,10 @@ int  extras_ep_nota(int t, int i);
 // credito de um ator (desc_pedir_titulo_tmdb).
 #define EX_COL_MAX 12
 const char *extras_colecao_nome(void);
+// Book author (TMDB crew Novel/Book/Author), "" when unknown; and whether the
+// collection row lists that author's adaptations (colecao_nome = the author).
+const char *extras_livro_autor(void);
+int  extras_colecao_do_autor(void);
 int  extras_n_colecao(void);
 const char *extras_colecao_titulo(int i);
 const char *extras_colecao_ano(int i);
@@ -168,6 +172,7 @@ int         extras_n_estudios(void);
 // Sai do `original_language` do TMDB, no mesmo corpo que a ficha ja baixa.
 // Serve ao ajuste "Áudio: Original" — ver linguas.h.
 const char *extras_idioma_original(void);
+const char *extras_titulo_original(void);
 
 const char *extras_estudio_nome(int i);
 const char *extras_estudio_logo(int i);

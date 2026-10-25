@@ -20,7 +20,14 @@ cc -fsyntax-only src/detail.c \
 
 # Ninguem le a fileira com a coluna crua. As duas formas abaixo sao exatamente
 # as que existiam antes do conserto.
-if rg -q 'cat_episodio\(idx, foco\.coluna\)' src/detail.c; then
+if python3 - <<'PY'
+from pathlib import Path
+s = Path('src/detail.c').read_text()
+# The progress grid deliberately uses absolute columns across all seasons.
+s = s.split('static void desenhaEpisodio(', 1)[1].split('// Abas de informacao:', 1)[0]
+raise SystemExit(0 if 'cat_episodio(idx, foco.coluna)' in s else 1)
+PY
+then
   echo 'detail: cat_episodio(idx, foco.coluna) e indice RELATIVO em vetor ABSOLUTO' >&2
   exit 1
 fi
@@ -45,7 +52,7 @@ rg -q 'const CatEp \*ep = cat_episodio\(idx, epAbsoluto\(c\)\);' src/detail.c
 # da temporada em PROGRESSO (S2E2 numa serie de 4 temporadas, por exemplo), e
 # nao a do primeiro episodio da serie (S1E1). Sem isto detail_abrir escolhia
 # sempre a temporada de cat_episodio(idx, 0) e ignorava ci->temporada.
-if ! rg -q 'ci0->progresso > 0 && ci0->progresso < ajustes_cw_concluido\(\) &&' src/detail.c; then
+if ! rg -q 'achou = episodioPadrao\(&t, &e, NULL\);' src/detail.c; then
   echo 'detail: temporada inicial ignora o progresso de Continuar assistindo' >&2
   exit 1
 fi

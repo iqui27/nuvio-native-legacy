@@ -1,11 +1,11 @@
-"""Execute approved Modern C panel across focus and page fades."""
+"""Execute the approved portrait focus panel across focus and page fades."""
 from pathlib import Path
 import subprocess
 import tempfile
 
 source = Path('src/detail.c').read_text()
-start = source.index('  if (epModerna() && ft > .005f)', source.index('static void desenhaEpisodio('))
-tile = source[start:source.index('  // DESFOCAR NAO ASSISTIDOS', start)]
+start = source.index('    if (f > .005f) {', source.index('static void desenhaEpisodio('))
+tile = source[start:source.index('    float metaY', start)]
 program = r'''
 #include <assert.h>
 #include <math.h>
@@ -13,19 +13,18 @@ program = r'''
 typedef struct { float x,y,w,h; } GfxRect;
 static int modern, draws, lights;
 static float alpha, red, green, blue;
-static int epModerna(void) { return modern; }
+static int ajustes_borda_foco(void) { return modern; }
+static void gfx_anel(GfxRect r,float radius,float width,float cr,float cg,float cb,float a) {
+  (void)r; (void)radius; (void)width; (void)cr; (void)cg; (void)cb;
+  assert(a>=0 && a<=.18f); lights++;
+}
 static void gfx_cor(GfxRect r,float radius,float cr,float cg,float cb,float a) {
   (void)r; (void)radius;
   draws++; alpha=a; red=cr; green=cg; blue=cb;
 }
-static void gfx_luz_canto(GfxRect r,float radius,float x,float y,float w,
-                          float cr,float cg,float cb,float a) {
-  (void)r; (void)radius; (void)x; (void)y; (void)w;
-  assert(cr==.72f && cg==.77f && cb==.86f && a>=0 && a<=.04f);
-  lights++;
-}
 static void draw(float ft,float a) {
-  GfxRect epTile={0,328,640,296};
+  float f=ft;
+  GfxRect info={0,254,420,276}, th={0,0,420,236};
 ''' + tile + r'''
 }
 int main(void) {
@@ -35,12 +34,12 @@ int main(void) {
         float a=fade*.5f; draws=lights=0; alpha=0;
         float ft=focus/100.0f;
         draw(ft,a);
-        int shown=modern && focus>0;
-        assert(draws==shown && lights==shown);
-        assert(fabsf(alpha-(shown?.65f*ft*a:0))<.00001f);
-        if (shown) assert(red==.071f && green==.075f && blue==.086f);
+        int shown=focus>0;
+        assert(draws==shown && lights==(shown && modern));
+        assert(fabsf(alpha-(shown?.64f*ft*a:0))<.00001f);
+        if (shown) assert(red==.19f && green==.21f && blue==.23f);
       }
-  puts("PASS: Modern C panel absent at rest, translucent on focus across fades");
+  puts("PASS: portrait panel absent at rest, translucent on focus across fades");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='episode-tint-') as tmp:

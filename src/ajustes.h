@@ -336,6 +336,10 @@ int   ajustes_pediu_livetv_diag(void);
 int   ajustes_livetv_modo(void);
 int   ajustes_livetv_proxy(void);
 int   ajustes_livetv_sugerir(void);   // Jev sugere categoria so para canal sem categoria (livecat.h)
+// Guia TV v5: previa grande no heroi (800x450, como hoje) ou o cartao pequeno
+// do mock (560x315). Por perfil; padrao desligado.
+int   ajustes_guia_previa_grande(void);
+void  ajustes_definir_guia_previa_grande(int ligado);
 void  ajustes_livetv_aplicar_proxy(int ligado);   // proxy de TS da Live TV (proxyts.c)
 void  ajustes_livetv_aplicar_modo(int modo);
 
@@ -482,6 +486,10 @@ enum { AJ_CWF_AMBAS = 0, AJ_CWF_CONTA = 1, AJ_CWF_TRAKT = 2, AJ_CWF_SIMKL = 3 };
 // Envio automatico do registro (Sobre). 1 = ligado.
 int   ajustes_envio_auto(void);
 // Forca da vinheta do fundo do titulo, 0..1 (1 = a medida do web).
+// 0 ready version (default), 1 personal, 2 both; saved per profile.
+int ajustes_detalhe_topo(void);
+int ajustes_detalhe_elenco_visto(void);
+void ajustes_detalhe_alternar_spoilers(void);
 float ajustes_detalhe_veu(void);
 int   ajustes_trailer_auto(void);      // trailer mudo no fundo da pagina de titulo
 int   ajustes_trailer_hero(void);      // trailer no destaque da home

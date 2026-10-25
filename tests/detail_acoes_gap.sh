@@ -12,11 +12,11 @@ out = [line for line in constants if line.startswith('#define NV_DETW2_') and an
 # Keep the exact production focus transform; intercept only the drawing boundary.
 start = s.index('static void desenhaBotao(')
 end = s.index('  if (circular) {', start)
-out.append(s[start:end] + '  record(r, icone);\n}\n')
+out.append(s[start:end] + '  record(r, icone, focado ? det_foco_extra(r.w/1.04f,1.04f) : 0);\n}\n')
 b = pathlib.Path('src/botoes.c').read_text()
 start = b.index('void botao_pilula(')
 end = b.index('  if (vidro) {', start)
-out.append(b[start:end] + '  record(r, -1);\n}\n')
+out.append(b[start:end] + '  record(r, -1, 0);\n}\n')
 start = s.index('  { float cyBtn = yAcoes +')
 end = s.index('  // --- ILHA DE AMIGOS', start)
 out.append('static void row(void) { float a = 1;\n' + s[start:end] + '\n}\n')
