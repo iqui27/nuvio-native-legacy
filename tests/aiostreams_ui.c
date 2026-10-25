@@ -49,7 +49,9 @@ int main(void) {
   foco=1; acao(); assert(pagina==INSTANCIA && entrada==1);
   keyboardText="https://self.test"; keyboardResult=TECLADO_PRONTO;
   aioui_atualizar(0,100); assert(pagina==SERVICOS && !strcmp(host,"https://self.test"));
-  foco=0; acao(); assert(pagina==IMPORTAR);
+  foco=5; acao(); assert(pagina==PRONTO && !snap.valida && !pendente);
+  foco=1; acao(); assert(pagina==SERVICOS);
+  foco=4; acao(); assert(pagina==IMPORTAR);
   foco=1; acao(); assert(entrada==3 && keyboardMasked);
   keyboardText="https://self.test/manifest.json/evil"; keyboardResult=TECLADO_PRONTO;
   aioui_atualizar(0,100); assert(!pendente && mensagem[0]);

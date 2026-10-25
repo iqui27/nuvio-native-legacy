@@ -253,7 +253,7 @@ static const char *serviceAtivo(void) {
 static int nConteudo(void) {
   if(pagina==SEM) return 3;
   if(pagina==INSTANCIA) return 11;
-  if(pagina==SERVICOS) return 2;
+  if(pagina==SERVICOS) return 6;
   if(pagina==IMPORTAR) return 2;
   if(pagina==PRONTO) return 2;
   if(pagina==PAINEL) return 11;
@@ -291,13 +291,16 @@ static void acao(void) {
     else if(foco==7) campo(1); else if(foco==8) mudar(IMPORTAR);
     else if(foco==10) { maisHosts=!maisHosts; foco=maisHosts?4:0; }
     else mudar(SERVICOS);
-  } else if(pagina==SERVICOS) { if(foco==0) mudar(IMPORTAR); else mudar(INSTANCIA); }
+  } else if(pagina==SERVICOS) {
+    if(foco<4) snprintf(mensagem,sizeof mensagem,"%s",i18n("Abra a configuração oficial, salve e copie o link de instalação. Envie pelo pareamento já usado pelo Nuvio."));
+    else mudar(foco==4?IMPORTAR:PRONTO);
+  }
   else if(pagina==IMPORTAR) {
     if(foco==0) {
       if(celular_disponivel() && celular_abrir(i18n("Link de instalação"))) entrada=3;
       else campo(3);
     } else campo(3);
-  } else if(pagina==PRONTO) mudar(foco?CATALOGOS:PAINEL);
+  } else if(pagina==PRONTO) mudar(snap.valida?(foco?CATALOGOS:PAINEL):(foco?SERVICOS:IMPORTAR));
   else if(pagina==PAINEL) {
     if(foco<6) mudar(CATALOGOS+foco);
     else if(foco==6) campo(2);
@@ -573,7 +576,7 @@ static void setup(void) {
     else { char number[8]; snprintf(number,sizeof number,"%d",i+1); texto(TXT_ILHA_NUM,number,134,806+i*49,20,200); }
     texto(TXT_ILHA_SUB,steps[i],169,800+i*49,450,195);
   }
-  if(pagina!=PRONTO) texto(TXT_ILHA_PERGUNTA,pagina==SEM?i18n("Como deseja conectar?"):i18n(titulos[pagina]),716,204,1080,240);
+  if(pagina!=PRONTO) texto(TXT_ILHA_PERGUNTA,pagina==SEM?i18n("Como deseja conectar?"):pagina==SERVICOS?i18n("Etapas da configuração"):i18n(titulos[pagina]),716,204,pagina==SERVICOS?810:1080,240);
   if(pagina==SEM) {
     linha(0,"aj_globe",i18n("Usar uma instância pública"),i18n("Escolha um servidor listado na documentação."),716,263,1078);
     linha(1,"aj_server",i18n("Conectar meu servidor"),i18n("Informe a origem do seu AIOStreams."),716,421,1078);
@@ -603,15 +606,27 @@ static void setup(void) {
     const char *check[]={i18n("Serviços"),i18n("Addons"),i18n("Filtros e ordenação"),i18n("Formatador")};
     const char *sub[]={i18n("1. Serviços: debrid ou Usenet, opcionais"),i18n("2. Addons: escolha suas fontes e catálogos"),i18n("3. Filtros e ordenação: revise suas regras"),i18n("4. Formatador: nomes e descrições das fontes")};
     const char *ico[]={"aj_cloud","aj_puzzle","aj_sliders-horizontal","aj_file-text"};
+    plrui_material((GfxRect){1668,205,126,34},12,0,.45f);
+    gfx_icone((GfxRect){1678,213,18,18},"aj_smartphone",.8f,.85f,.87f,1);
+    texto(TXT_ILHA_HORA,i18n("No celular"),1702,214,84,195);
     for(int i=0;i<4;i++) {
-      float y=263+i*88;
-      gfx_cor((GfxRect){738,y+16,52,52},.3f,.21f,.225f,.24f,.45f);
-      gfx_icone((GfxRect){738,y+26,28,28},ico[i],.8f,.85f,.87f,1);
-      texto(TXT_ILHA_NOME,check[i],810,y+13,920,238);
-      texto(TXT_ILHA_SUB,sub[i],810,y+49,920,174);
+      float y=263+i*88, alpha=itemInicio(0,i,&y);
+      plrui_linha_foco((GfxRect){716,y,1078,84},22,focoDe(i,0));
+      plrui_material((GfxRect){738,y+16,52,52},16,0,.45f);
+      gfx_icone((GfxRect){750,y+28,28,28},ico[i],.8f,.85f,.87f,1);
+      char numero[160];snprintf(numero,sizeof numero,"%d. %s",i+1,check[i]);
+      texto(TXT_ILHA_NOME,numero,810,y+13,920,238);
+      const char *descricao=strchr(sub[i],':');
+      texto(TXT_ILHA_SUB,descricao?descricao+2:sub[i],810,y+49,920,174);
+      gfx_icone((GfxRect){1750,y+31,22,22},"aj_chevron-right",.68f,.73f,.76f,1);
+      ponteiro_alvo(716,y,1078,84,pointer,click,i,0);
+      gfx_opacidade_grupo=alpha;
     }
-    qrDesenhar(configure,716,640,141); bloco(i18n("Salvar e instalar no AIOStreams. Depois copie o link do manifesto."),882,666,820,4);
-    botao(0,i18n("Tenho meu link de instalação"),716,808,480); botao(1,i18n("Instância"),1216,808,300);
+    qrDesenhar(configure,716,640,141);
+    texto(TXT_ILHA_NOME,i18n("Salvar e instalar no AIOStreams"),882,660,900,238);
+    bloco(i18n("Guarde seu UUID e senha. Depois volte com o link do manifesto."),882,700,620,2);
+    float x=716+botaoW(4,i18n("Tenho meu link de instalação"),"aj_arrow-right",716,808)+16;
+    botaoW(5,i18n("Ver exemplo de conclusão"),"aj_check",x,808);
   } else if(pagina==IMPORTAR) {
     if(entrada!=3) qrDesenhar(configure,716,287,206);
     bloco(i18n("Abra a configuração oficial, salve e copie o link de instalação. Envie pelo pareamento já usado pelo Nuvio."),970,314,790,5);
@@ -625,6 +640,15 @@ static void setup(void) {
     ponteiro_alvo(716,655,1078,66,pointer,click,1,0);
     botao(0,i18n("Enviar pelo celular"),716,842,380); botao(1,i18n("Colar link"),1116,842,350);
   } else {
+    if(!snap.valida) {
+      texto(TXT_ILHA_PERGUNTA,i18n("Ver exemplo de conclusão"),716,307,1040,240);
+      texto(TXT_ILHA_SUB,i18n("Exemplo"),716,365,1040,174);
+      bloco(i18n("Abra a configuração oficial, salve e copie o link de instalação. Envie pelo pareamento já usado pelo Nuvio."),716,420,1040,3);
+      bloco(i18n("Manifesto reconhecido. A validação não garante a reprodução de cada fonte."),716,555,1040,2);
+      botao(0,i18n("Tenho meu link de instalação"),716,728,550);
+      botao(1,i18n("Voltar"),1286,728,300);
+      return;
+    }
     gfx_cor((GfxRect){716,195,84,84},.5f,.25f,.32f,.34f,.55f);
     gfx_icone((GfxRect){736,215,44,44},"aj_check",.65f,.84f,.83f,1);
     texto(TXT_ILHA_PERGUNTA,i18n("AIOStreams adicionado"),716,307,1040,240);
@@ -1078,6 +1102,9 @@ static void desenhar(Uint32 agora) {
   const char *keys[]={"↑ ↓", "OK", "Voltar"};
   const char *labels[]={i18n("Navegar"),i18n("Abrir"),i18n("Voltar")};
   plrui_dicas(keys,labels,3,92,1020,0,.7f);
+  const char *rodape=i18n(pagina<=PRONTO?"Configuração no celular":"Credenciais ocultas");
+  TxtLinha fim=t21_texto_linha(TXT_ILHA_SUB,rodape,243,242,239,255,1000);
+  t21_texto_desenhar(fim,1828-fim.w,1020,.46f);
   if(mensagem[0]) texto(TXT_ILHA_SUB,mensagem,453,934,1340,215);
   gfx_opacidade_grupo=alpha;
   if(teclado_aberto()) teclado_desenhar(agora);
