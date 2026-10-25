@@ -16,6 +16,7 @@
 #define extras_trailer_yt                f_trailer_yt
 #define extras_trailer_idioma_preferido  f_idioma_preferido
 #define extras_carregando                f_carregando
+#define ajustes_trailer_som              f_som
 #define trailer_suportado                f_suportado
 #define trailer_abrir                    f_abrir
 #define trailer_aberto                   f_aberto
@@ -38,11 +39,12 @@ const char *f_trailer_yt(int k) { (void)k; return "ytDUB"; }
 int f_idioma_preferido(int k) { (void)k; return 1; }
 int f_carregando(void) { return 0; }
 
-static int aberto, cheia, falhou, aberturas;
+static int aberto, cheia, falhou, aberturas, somPedido;
+int f_som(void) { return 0; }
 static char fonte[64];
 int f_suportado(void) { return 1; }
 void f_abrir(const char *u, GfxRect r, int som, int c) {
-  (void)r; (void)som;
+  (void)r; somPedido = som;
   snprintf(fonte, sizeof fonte, "%s", u);
   aberto = 1; cheia = c; falhou = 0; aberturas++;
 }
@@ -66,6 +68,7 @@ int main(void) {
 
   tocarTrailerCheio(0);
   check("Watch trailer opens dubbed YouTube fullscreen", !strcmp(fonte, "ytDUB") && cheia);
+  check("fullscreen respects disabled sound setting", somPedido == 0);
 
   // YouTube error 153 (trailer_atualizar closed it and marked falhou), page scrolled.
   aberto = 0; falhou = 1;
@@ -78,6 +81,7 @@ int main(void) {
   check("no fallback before the deadline", aberturas == 2);
   trailerEscada(t + NV_TRAILER_PREPARA_MS, 0);
   check("stall falls back to IMDb, fullscreen", aberturas == 3 && !strcmp(fonte, "imdb.mp4") && cheia);
+  check("fallback respects disabled sound setting", somPedido == 0);
 
   // Back closes fullscreen (no failure): the ladder stops.
   aberto = 0;

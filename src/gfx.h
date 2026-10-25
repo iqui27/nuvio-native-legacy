@@ -293,7 +293,10 @@ typedef enum {
   GFX_COPIA_LANCZOS = 51,  // Lanczos3
   GFX_RCAS = 52,           // FSR 1 RCAS (sharpening after upscale)
   GFX_HDR_OUTPUT = 53,     // Final SDR UI to HDR conversion; preserves all color accuracy
-  GFX_NMODOS = 54
+  // Filmography mock's HSL stops, elliptical light and two reading veils.
+  // uPar.x = palette hue (0..1), uCor.a = screen entry/exit alpha.
+  GFX_FILMO_FUNDO = 54,
+  GFX_NMODOS = 55
 } GfxModo;
 
 typedef struct {
@@ -419,6 +422,11 @@ void gfx_recorte(float x, float y, float w, float h);
 void gfx_icones_dir(const char *dirArte);
 void gfx_icone(GfxRect r, const char *nome, float cr, float cg, float cb, float ca);
 void gfx_sem_recorte(void);
+// Recorte aninhado: cruza o pedido com a tesoura ativa (o corpo de uma ilha
+// que ainda cresce) em vez de troca-la, e gfx_recorte_voltar devolve a de fora.
+typedef struct { int ativo, box[4]; } GfxRecorteAnt;
+GfxRecorteAnt gfx_recorte_dentro(float x, float y, float w, float h);
+void gfx_recorte_voltar(GfxRecorteAnt ant);
 
 int  gfx_snap_iniciar(int w, int h);
 
@@ -643,7 +651,7 @@ void gfx_ambiente_preparar(void);
 // scrim (R = G = B); `dens` = alfa dele no painel (a barra usa o perfil
 // proprio, escalado pela "Opacidade do vidro"). Chapado (so o scrim) com "Vidro
 // fosco" desligado, efeitos minimos, video por baixo, ou sobre outro vidro.
-enum { GFX_VIDRO_PAINEL = 0, GFX_VIDRO_BARRA = 1 };
+enum { GFX_VIDRO_PAINEL = 0, GFX_VIDRO_BARRA = 1, GFX_VIDRO_ILHA = 2 };
 void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a);
 // A27 TOP CHROME (avatar chip, top bar, clock island): one material, one tint.
 // gfx_chrome_tinta = scrim alpha from "Opacidade do vidro", >= the floor;
@@ -661,6 +669,7 @@ void gfx_chrome_dens(float out[3]);
 #define GFX_VIDRO_DENS       0.80f
 #define GFX_VIDRO_DENS_MODAL 0.86f
 void gfx_vidro_material(GfxRect r, float raio, float dens, float a);
+extern int gfx_vidro_sem_aro;   // set around one glass draw: no light rim
 // 1 while drawing a glass LAYER above the screen (sidebar): earlier glasses it
 // covers no longer force it flat (set/cleared by the caller around the draw).
 extern int gfx_vidro_camada;
@@ -800,6 +809,8 @@ void gfx_vidro_superficie(GfxRect r, float raio, float a);
 // o anel de FOCO (gfx_vidro_foco) nunca passa por aqui.
 void gfx_vidro_aro(GfxRect r, float raio, float esp, float cr, float cg, float cb, float ca);
 void gfx_vidro_painel(GfxRect r, float raio, float fundo, float a);
+// Same glass material, without perimeter highlights, for approved flat controls.
+void gfx_vidro_painel_sem_aro(GfxRect r, float raio, float fundo, float a);
 // FOCO de uma pilula/linha JA desenhada com gfx_vidro_painel: o miolo clareia
 // (branco a 9 %) e o contorno de 2 px em branco acende com a mola `foco`.
 void gfx_vidro_foco(GfxRect r, float raio, float foco, float a);

@@ -18,7 +18,6 @@
 #include "teclado.h"
 #include "ponteiro.h"
 #include "app.h"
-#include "glance.h"
 #include "travarede.h"
 #include "travaui.h"
 #include "teclavoltar.h"
@@ -173,6 +172,7 @@
 #include "stalker.h"
 #include "xtream.h"
 #include "m3u.h"
+#include "guiav5ui.h"
 #include "rede.h"
 #include "ts_sonda.h"
 #include <unistd.h>
@@ -1067,7 +1067,6 @@ static void trocarTela(Tela nova) {
     glem_aviso_curto(i18n("Perfil infantil: sem TV ao vivo"));
     return;
   }
-  glance_fechar();
   if (nova != TELA_SOCIAL) socialDoPerfil = 0;
   if (nova != TELA_CACA) cacaDoPerfil = 0;
   if (tela == TELA_AJUSTES) ajustes_encerrar();
@@ -3514,7 +3513,7 @@ static char ultCanalId[80], ultCanalNome[140], ultCanalBase[600];
 static char atualCanalBase[600];
 static void tocarCanal(const CatItem *it) {
   int ni;
-  if (!it || !it->imdb[0]) return;
+  if (!it || !it->imdb[0] || !g5ui_check_channel(it)) return;
   if (player_aberto() && player_id_canal()[0] && strcmp(player_id_canal(), it->imdb)) {
     snprintf(ultCanalId, sizeof ultCanalId, "%s", player_id_canal());
     snprintf(ultCanalNome, sizeof ultCanalNome, "%s", player_titulo_canal());
@@ -3539,7 +3538,7 @@ static void tocarCanal(const CatItem *it) {
   stalkerRenovando = 0;            // resposta de renovacao antiga sera descartada
   // Canal de portal nao esta em addon nenhum: perguntar seria esperar o prazo
   // de todos eles para receber lista vazia, com a pessoa olhando "carregando".
-  if (!stalker_e_id(it->imdb) && !xtream_e_id(it->imdb) && !guia_e_m3u(it->imdb) && !m3u_e_id(it->imdb)) {
+  if (!stalker_e_id(it->imdb) && !xtream_e_id(it->imdb) && !guia_e_m3u(it->imdb) && !m3u_e_id(it->imdb) && strncmp(it->imdb, "g5live:", 7)) {
     // So o addon que publicou o canal responde por ele; ver alvoBase em
     // addons.c e o que o FrostView fora do ar custava.
     addons_definir_origem(guia_canal_origem());
@@ -4424,11 +4423,6 @@ void app_evento(const SDL_Event *e) {
   // tela, e o que ele escolhe so e feito depois de ele fechar.
   if (spot_aberto()) { spot_evento(e); spotAtender(); return; }
 
-  if (glance_aberto()) {
-    if (ctx_aberto()) ctx_evento(e); else glance_evento(e);
-    return;
-  }
-
   // ALTERNA O PAINEL DE SALVOS, COM REPOUSO — e o repouso e o conserto.
   //
   // A TECLA AZUL MUDOU DE DONO. Ate esta versao ela abria o painel "Sua
@@ -4808,7 +4802,7 @@ static void trocaDeTituloSeSolicitada(void) {
     // O caminho do titulo que JA esta no catalogo (posplay_pediu_titulo)
     // encerra o player antes; este faz o mesmo.
     // Pedido de um MENU (segurar OK numa lista): o titulo chegou, abre o menu.
-    if (novo >= 0 && (glance_tomar_acao(novo) || ctxlista_tomar(novo))) novo = -1;
+    if (novo >= 0 && ctxlista_tomar(novo)) novo = -1;
     if (novo >= 0) {
       if (player_aberto() || player_retido()) player_encerrar();
       detail_volta_notar(novo);
@@ -4863,7 +4857,6 @@ static const char *homeTrailerBloqueio(void) {
   if (player_aberto() || player_retido() || player_mini_ativo()) return "player";
   if (detail_aberto()) return "detail";
   if (spainel_aberto()) return "saved-panel";
-  if (glance_aberto()) return "glance";
   if (menu_aberto() || ctx_aberto()) return "menu";
   if (vertudo_aberta()) return "see-all";
   if (avisos_aberto() || avisos_cartao_aberto()) return "notices";
@@ -6259,7 +6252,10 @@ void app_atualizar(float dt, Uint32 agora) {
       // Nenhuma viva NAO e motivo para desistir: pode ter sido lentidao de
       // rede, e a primeira da lista com o watchdog de sempre e melhor que uma
       // tela de erro. Por isso o fallback.
-      if (xtream_e_id(player_id_canal())) {
+      if(!strncmp(player_id_canal(),"g5live:",7)){
+        char url[4096];fonteEscolhida=g5ui_live(player_id_canal(),url,sizeof url)?montarCanalStalker(player_id_canal(),url):-1;
+        canalFontePrazo=CANAL_FONTE_PRAZO_MS;
+      } else if (xtream_e_id(player_id_canal())) {
         fonteEscolhida = resolverCanalXtream();
         canalFontePrazo = CANAL_FONTE_PRAZO_MS;
       } else if (guia_e_m3u(player_id_canal())) {
@@ -6815,6 +6811,19 @@ void app_atualizar(float dt, Uint32 agora) {
     nomeParaFolha(); stream_folha_abrir();
   }
 
+  { CatItem item;char url[4096];
+    if(aguardandoFonte!=2&&g5ui_play(&item,url,sizeof url)){
+      int index=cat_indice_por_imdb(item.imdb);if(index<0)index=cat_acrescentar(&item);
+      if(index>=0&&!travaui_abrir_espera(index,0,0)){
+        if(player_aberto()||player_retido())player_encerrar();
+        novaGeracaoFonte();limparFontePendente();limparFonteVOD();
+        player_abrir(index,NULL);player_definir_fonte(url);
+      }
+    }
+  }
+  {CatItem it;if(aguardandoFonte!=2&&g5ui_multiview_channel(&it)){
+    float x,y,w,h;g5ui_multiview_rect(&x,&y,&w,&h);player_mini_no_guia(x,y,w,h);player_manter_mini();tocarCanal(&it);
+  }}
   // CANAL ESCOLHIDO NO GUIA — tela cheia ou faixa, mesma acao: toca direto.
   { CatItem it;
     if (aguardandoFonte != 2 && guia_pediu_canal(&it)) {
@@ -7126,8 +7135,6 @@ void app_atualizar(float dt, Uint32 agora) {
     home_trailer_topo_motivo(porque);
     home_trailer_passo(porque == NULL, dt, agora); }
   trailer_atualizar(agora);
-  glance_atualizar(dt, agora);
-  if (detail_aberto() && glance_pediu_tocar(cat_item(detail_indice()))) detail_pedir_reproduzir();
   perfil_atualizar(dt, agora);
   // A Caca anda em toda tela: o aviso de conquista sai sem player (depois
   // dos creditos, na volta a Home), nunca durante o filme.
@@ -7266,9 +7273,6 @@ static void desenharAtrasDoPainel(void *ctx) {
     CAMADA_SE(1);
     ctx_desenhar(agora);
   }
-  CAMADA_SE(glance_aberto());
-  glance_desenhar(agora);
-  if (glance_aberto() && ctx_aberto()) { CAMADA_SE(1); ctx_desenhar(agora); }
   // A rail NAO existe na tela de detalhe do app web: ela e full-bleed e a
   // coluna de conteudo comeca em x=72, ou seja, DENTRO do que a rail ocuparia.
   // Com a rail por cima, o logo, o botao "Reproduzir" e a linha de duracao
@@ -7406,7 +7410,9 @@ static void desenharTelas(Uint32 agora) {
 #ifdef NV_TOUCH_UI
     if (telefoneui_ativo()) { CAMADA_SE(central_aberta()); }
 #endif
-    central_desenhar(agora); plrilha_desenhar(agora);
+    central_desenhar(agora);
+    if (!registro_aberto() && addonguia_aberto()) { ponteiro_camada(); addonguia_desenhar(); }
+    plrilha_desenhar(agora);
     if (episodios_aberto() && sinopse_aberta()) sinopse_desenhar();
   }
   gfx_osd_mult = 1.0f;
@@ -7501,7 +7507,7 @@ static int miniToquePermitido(void) {
 #endif
 
 void app_desenhar(Uint32 agora) {
-  if (aioui_aberto() && !registro_aberto() && !player_aberto()) {
+  if (aioui_opaco() && !registro_aberto() && !player_aberto()) {
     // Opaque dashboard: avoid rendering Settings, title and sources underneath.
     gfx_sem_recorte(); ponteiro_camada(); aioui_desenhar(agora); celb_desenhar();
     return;
@@ -7692,7 +7698,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades201_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades202_desenhar(agora);
   if (!registro_aberto()) resolver_desenhar(agora);        // so o esmaecer de saida
-  if (!registro_aberto()) { CAMADA_SE(addonguia_aberto()); addonguia_desenhar(); }
+  if (!registro_aberto() && !player_aberto()) { CAMADA_SE(addonguia_aberto()); addonguia_desenhar(); }
   if (!registro_aberto()) novcartao_desenhar(agora);      // so o esmaecer de saida
   CAMADA_SE(telemetria_aberto());
   if (!registro_aberto()) telemetria_desenhar(agora);
@@ -7757,7 +7763,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto() && !player_aberto() && sessao_logada() &&
       tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL) {
     ilha_relogio_visivel(relogioCabe() && ajustes_relogio_ligado());
-    ilha_posicionar(1);
+    ilha_posicionar(detail_tem_servidores() ? 2 : 1);
     // O painel de Salvos que nasceu da pilula recolhe para ela (o retangulo
     // do quadro anterior) e, enquanto esta na tela, a cobre.
     { float ix = 0, iy = 0, iw = 0, ih = 0;

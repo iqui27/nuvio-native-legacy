@@ -739,6 +739,14 @@ typedef enum {
   AJ_AFR,
   // Hero logo and information size (0 Normal, 1 Grande, 2 Muito grande). LOCAL, append-only.
   AJ_HERO_TAMANHO,
+  AJ_DET_TOPO, // append-only; profile-local title hero mode
+  AJ_DET_ELENCO_VISTO,
+  // PREVIA GRANDE NO GUIA TV (pedido do dono sobre o mock v5: "deixar o
+  // preview que nem da hoje"). Desligado = o layout do mock (cartao 560x315 a
+  // direita do heroi); ligado = o preview grande 800x450 do guia atual. So o
+  // tamanho/posicao do preview muda; a ficha reflui a esquerda. Por perfil,
+  // como as outras opcoes do guia. No fim: valor[]/CHAVE[] posicionais.
+  AJ_GUIA_PREVIA_GRANDE,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -943,6 +951,7 @@ static const char *V_POSTER_PROV[] = { "Desligado", "SpatialPosters", "RPDB", "M
 // A terceira e so "Dinâmica" (dono, 13/10: "pode tirar o apple tv"). A chave
 // era a do antigo tema de cor, que desde 03/10 se chama "Da arte"; a traducao
 // dela agora e a do layout. O valor gravado continua HOME_LAYOUT_DINAMICA.
+static const char *V_DET_TOPO[] = { "Versão pronta", "Pessoal", "As duas" };
 static const char *V_HOME_LAYOUT[] = { "Moderna", "Padrão", "Dinâmica" };
 // "Fonte automatica" (issue #130). O INDICE e o gravado (fonteAutoLocal) e o
 // FONTEAUTO_* de fonteauto.h: 0 = a regra de pontuacao, 1 = a primeira da
@@ -1444,7 +1453,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Mostrar episódios não exibidos", V_LIGA, 2),// showUnairedNextUp
   ESC("Ordenação",                  V_CW_ORDEM, 3), // continueWatchingSortMode
 
-  ESC("Desfocar não assistidos",    V_LIGA, 2),   // blurUnwatchedEpisodes
+  ESC("Sem spoilers",               V_LIGA, 2),   // blurUnwatchedEpisodes
   ESC("Botão de trailer",           V_LIGA, 2),   // detailPageTrailerButtonEnabled
   ESC("Priorizar metadados externos", V_LIGA, 2), // preferExternalMetaAddonDetail
   ESC("Data de lançamento completa", V_LIGA, 2),  // showFullReleaseDate
@@ -1883,6 +1892,9 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Suavizar degradês", V_DEGRADES, 3),
   ESC("Taxa de atualização da tela", V_AFR, 2),
   ESC("Tamanho do destaque", V_HERO_TAMANHO, 3),       // local: heroSizeLocal
+  ESC("Topo da página", V_DET_TOPO, 3),
+  ESC("Onde você já viu o elenco", V_LIGA, 2),
+  ESC("Prévia grande no Guia TV",       V_LIGA, 2),          // local: guiaPreviaGrandeLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2219,6 +2231,9 @@ static const char *CHAVE[] = {
   "suavizarDegradesLocal",
   "afrLocal",
   "heroSizeLocal",
+  "detalheTopoLocal",
+  "detalheElencoVistoLocal",
+  "guiaPreviaGrandeLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2674,6 +2689,12 @@ static void guiaEvento(const SDL_Event *e);
 static void guiaDesenhar(void);
 static void guiaAtualizar(float dt);
 static int guiaAberto;
+// O tour "O que o Nuvio faz?" (ajustes_ux_tour.inc), tambem por cima das ilhas.
+static int tourAberto;
+static void tourAbrir(void);
+static void tourEvento(const SDL_Event *e);
+static void tourDesenhar(void);
+static void tourAtualizar(float dt);
 static int apoioAberto;   // painel com os QRs de "Apoiar o projeto" (ajustes_ux_apoio.inc)
 static void apoioAbrir(void);
 static void apoioEvento(const SDL_Event *e);
@@ -3701,6 +3722,8 @@ void ajustes_definir_salvos_destino(int destino) {
   desc_repetir();   // o mesmo que a linha de Ajustes faz ao mudar
 }
 int ajustes_data_completa(void)       { return lig(AJ_DET_DATA_CHEIA); }
+int ajustes_detalhe_elenco_visto(void) { return lig(AJ_DET_ELENCO_VISTO); }
+int ajustes_detalhe_topo(void) { return valor[AJ_DET_TOPO] >= 0 && valor[AJ_DET_TOPO] < 3 ? valor[AJ_DET_TOPO] : 0; }
 float ajustes_detalhe_veu(void)       { int v = valor[AJ_DET_VEU]; return (v < 0 ? 0 : v > 100 ? 100 : v) / 100.0f; }
 int   ajustes_trailer_auto(void)      {
 #ifdef NV_TIZEN3_LITE
@@ -3745,6 +3768,8 @@ int   ajustes_livetv_formato(void)    { return valor[AJ_LIVETV_FORMATO]; }
 int   ajustes_livetv_modo(void)       { return valor[AJ_LIVETV_MODO]; }
 int   ajustes_livetv_proxy(void)      { return lig(AJ_LIVETV_PROXY); }
 int   ajustes_livetv_sugerir(void)    { return lig(AJ_LIVETV_SUGERIR); }
+int   ajustes_guia_previa_grande(void) { return valor[AJ_GUIA_PREVIA_GRANDE] == 0; }
+void  ajustes_definir_guia_previa_grande(int l) { valor[AJ_GUIA_PREVIA_GRANDE] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 void  ajustes_livetv_aplicar_proxy(int l) { valor[AJ_LIVETV_PROXY] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 void  ajustes_livetv_aplicar_modo(int m) { if (m >= 0 && m < 3) { valor[AJ_LIVETV_MODO] = m; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); } }
 unsigned ajustes_livetv_espera_ms(void) {
@@ -3896,6 +3921,7 @@ int ajustes_cw_concluido(void) {
 }
 
 int ajustes_desfocar_nao_assistidos(void) { return lig(AJ_DET_BLUR_NAO_VISTOS); }
+void ajustes_detalhe_alternar_spoilers(void) { valor[AJ_DET_BLUR_NAO_VISTOS]=!valor[AJ_DET_BLUR_NAO_VISTOS]; gravar(); }
 int ajustes_botao_trailer(void)       { return lig(AJ_DET_TRAILER); }
 int ajustes_meta_externo(void)        { return lig(AJ_DET_META_EXT); }
 int ajustes_meta_so_cinemeta(void)    { return lig(AJ_DET_SO_CINEMETA); }
@@ -6118,6 +6144,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LIVETV_RES: case AJ_LIVETV_FORMATO: case AJ_LIVETV_ESPERA:
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY: /* rede e provedor desta casa: o web nao tem */
     case AJ_LIVETV_SUGERIR:
+    case AJ_GUIA_PREVIA_GRANDE: /* tamanho do preview do guia: so este port tem */
     case AJ_HOME_LAYOUT:    /* a Dinamica nao tem par na conta (selected_layout) */
     case AJ_PERFIL_PESQ:    /* estado em recomenda.c, por conta: nunca no blob */
     case AJ_PERFIL_EDITAR:
@@ -6204,6 +6231,8 @@ static int somenteDesteAparelho(int op) {
     case AJ_FUNDO:          /* o desfoque custa GPU desta TV; o web nao tem */
     case AJ_VIDRO_OPAC: case AJ_VIDRO_FOSCO: /* teste do vidro: visual desta TV */
     case AJ_SUAVIZAR_DEGRADES: /* panel banding and grain preference, only this TV */
+    case AJ_DET_ELENCO_VISTO:
+    case AJ_DET_TOPO:
     case AJ_VIDRO_QUALIDADE: /* o custo do desfoque e da GPU desta TV */
     case AJ_SELO_VISTO:     /* o web nao tem a escolha */
     case AJ_OCULTAR_FILMES_VISTOS: /* por perfil desta TV; fora do blob da conta */
@@ -6375,6 +6404,7 @@ int ajustes_perfil_restaurar(int perfil) {
   memcpy(v, valor, sizeof v);
   int existe = perfilLerVetor(perfil, v, tem);
   if (!tem[AJ_MENU_TOPO]) { v[AJ_MENU_TOPO] = 0; tem[AJ_MENU_TOPO] = 1; }
+  if (!tem[AJ_DET_TOPO]) { v[AJ_DET_TOPO] = 0; tem[AJ_DET_TOPO] = 1; }
   if (!tem[AJ_ABAS_ESTILO]) { v[AJ_ABAS_ESTILO] = 0; tem[AJ_ABAS_ESTILO] = 1; }
   if (perfil != perfis_ativo()) tem[AJ_COLECAO_EXIBICAO] = 0;
   else if (!tem[AJ_COLECAO_EXIBICAO]) { v[AJ_COLECAO_EXIBICAO] = 0; tem[AJ_COLECAO_EXIBICAO] = 1; }
@@ -6827,13 +6857,20 @@ static int foraDestaPlataforma(int op) {
 #endif
 #if defined(NV_TPK) || defined(NV_ANDROID)
   if (op == AJ_DV_MKV) return 1;
+#endif
+#if defined(NV_TPK) || defined(NV_ANDROID) || !defined(NV_DV7_CONVERSION)
   if (op == AJ_DV7) return 1;
 #endif
-#if defined(NV_TPK) || defined(NV_WEBOS)
+  // Legacy depth keys remain positional, but only switch/intensity are shown.
+  if (op == AJ_PROF_BORDA || (op >= AJ_PROF_COBERTURA && op <= AJ_PROF_TRAILERS)) return 1;
+#if !defined(NV_TPK) && !defined(NV_WEBOS)
   if (op == AJ_HDR10P_STRIP) return 1;
 #endif
 #ifndef NV_ANDROID
-  if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_TUNNELING || op == AJ_AFR) return 1;
+  if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_LIMPAR_CACHE) return 1;
+#ifndef AJUSTES_TESTE
+  if (op == AJ_TUNNELING || op == AJ_AFR) return 1;
+#endif
 #endif
 #if defined(NV_ANDROID) && !defined(NV_P2P_MOTOR)
   if (op == AJ_P2P_LIMITE || op == AJ_P2P_DESTINO) return 1;
@@ -7001,6 +7038,15 @@ int ajustes_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return
 // guia; nada no disco ou na conta depende do rotulo.
 static const char *rotuloNovo(int op) {
   switch (op) {
+    case AJ_PULAR_CREDITOS: return "Pular os créditos sozinho";
+    case AJ_PROXIMO_AUTO: return "Tocar o próximo episódio sozinho";
+    case AJ_REACAO_CREDITOS: return "Perguntar o que achou no fim";
+    case AJ_ADDONS_PRINCIPAL: return "Addons do perfil principal";
+    case AJ_BUSCA_NUVIO: return "Catálogo do Nuvio na busca";
+    case AJ_BUSCA_ORIGEM: return "Fonte nos resultados da busca";
+    case AJ_JF_LIGADO: return "Servidores pessoais (beta)";
+    case AJ_NT_ORDEM: return "Ordem das notas no título";
+    case AJ_HIST_CONTA: return "Histórico na conta Nuvio";
     case AJ_FONTE_HDR: return "Dolby Vision e HDR";
     case AJ_ATMOS: return "Preferir som Dolby Atmos";
     case AJ_FONTE_MANUAL: return "Escolher a fonte você mesmo";
@@ -7008,14 +7054,14 @@ static const char *rotuloNovo(int op) {
     case AJ_FONTE_PRAZO: return "Quanto espera pelos add-ons";
     case AJ_TAM_MAX: return "Tamanho máximo do arquivo";
     case AJ_TAM_MIN: return "Tamanho mínimo do arquivo";
-    case AJ_PLR_CLASSIF: return "Classificação indicativa no player";
+    case AJ_PLR_CLASSIF: return "Classificação no player";
     case AJ_SAIDA_PLAYER: return "Ao sair no meio do filme";
-    case AJ_FONTE_REGEX: return "Filtrar fontes pelo nome (regex)";
+    case AJ_FONTE_REGEX: return "Filtrar fontes pelo nome";
     case AJ_FONTE_REGEX_PADRAO: return "Padrão do filtro";
     case AJ_FONTE_REGEX_MODELO: return "Modelo pronto do filtro";
     case AJ_DTS_AC3: return "Converter DTS para a TV ouvir";
     case AJ_CACHE_SEEK: return "Guardar o trecho baixado no disco";
-    case AJ_LEG_FORCADA: return "Só os letreiros quando o áudio já é no seu idioma";
+    case AJ_LEG_FORCADA: return "Legenda forçada automática";
     case AJ_TMDB_IDIOMA: return "Idioma dos dados do título";
     case AJ_HERO_FUNDO: return "Imagem de fundo do destaque";
     case AJ_GRAD_CLASSICO: return "Realce antigo no cartaz em foco";
@@ -7449,7 +7495,8 @@ static const char *textoLeitura(int op) {
   if (op == AJ_ADDONS) {
     int i, lig = 0, n = addons_n();
     for (i = 0; i < n; i++) if (addons_ativo(i)) lig++;
-    snprintf(buf, sizeof buf, i18n("%d de %d"), lig, n);
+    if (n) snprintf(buf, sizeof buf, i18n("%d de %d"), lig, n);
+    else snprintf(buf, sizeof buf, "%s", i18n("Nenhum addon nesta conta."));
     return buf;
   }
   // Armada pelo primeiro OK, a linha diz o que o segundo faz. Em repouso nao
@@ -7742,6 +7789,9 @@ static const char *ajudaOpcaoBase(int op) {
     return "Aparência só da segunda legenda. \"Igual à principal\" segue o estilo da principal, definido no player.";
   if (op == AJ_ICONE_APP) return "Escolha uma marca alternativa para o Nuvio nesta TV. Um agradecimento a quem apoia o projeto.";
   if (inativa(op)) {
+    if (ajustes_fonte_prioridade() == 3 &&
+        (op == AJ_FONTE_AUTO || op == AJ_FONTE_GRUPO || op == AJ_FONTE_GRUPO_SESSOES || op == AJ_LINK_REUSAR || op == AJ_LINK_PRAZO))
+      return "Só vale quando O que o Nuvio prioriza não está em Do addon.";
     if (op == AJ_VIDRO_CONTORNO) return "Ative a interface de vidro para ajustar o contorno.";
     if (op == AJ_FOCO_ACENTO) return "Ative a interface de vidro para pintar o foco com a cor de destaque.";
     if (op == AJ_VIDRO_OPAC || op == AJ_VIDRO_FOSCO || op == AJ_VIDRO_QUALIDADE) return "Ative a interface de vidro para ajustar o vidro.";
@@ -7809,6 +7859,13 @@ static const char *ajudaOpcaoBase(int op) {
         op == AJ_PROF_POSTERS || op == AJ_PROF_CW || op == AJ_PROF_EPS ||
         op == AJ_PROF_ELENCO || op == AJ_PROF_TRAILERS)
       return "Ative Efeito de profundidade para personalizar este detalhe.";
+    if (op == AJ_FONTE_GRUPO_SESSOES) return "Ative Preferir o mesmo grupo de fonte para usar isto.";
+    if (op == AJ_LINK_PRAZO) return "Ative Reusar o último link para escolher o prazo.";
+    if (op == AJ_EP_TAMANHO) return "Só vale no layout Moderna.";
+    if (op == AJ_MANTER_PRAZO) return "Ative Manter o vídeo pronto ao sair para escolher por quanto tempo.";
+    if (op == AJ_DESCANSO_ESTILO || (op == AJ_DESCANSO_FONTE && valor[AJ_ESMAECER] == 0))
+      return "Ative a Tela de descanso para escolher como ela fica.";
+    if (op == AJ_DESCANSO_FONTE) return "Só vale no estilo Vitrine.";
     return "Indisponível com os ajustes atuais.";
   }
   switch (op) {
@@ -7950,6 +8007,8 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_ITENS_FILEIRA: return "Quantos títulos cada fileira da Home mostra antes do Ver tudo. Mais itens usam mais memória: em TV com 1 GB de memória a Home pode ficar mais lenta ou fechar. Se o app fechar depois de você aumentar, ele volta sozinho ao valor anterior. Aumentar vale na próxima vez que o app abrir.";
     case AJ_FIL_ORDEM: return "Abre a lista de fileiras para reordenar, ligar, desligar e escolher o card de cada uma. É lá que dá para ver de onde cada fileira vem.";
     case AJ_RAIL: return "A barra de navegação da esquerda fica sempre aberta, ou recolhida até você ir até ela.";
+    case AJ_DET_ELENCO_VISTO: return "Onde você já viu o elenco";
+    case AJ_DET_TOPO: return "Versão pronta · Pessoal · As duas";
     case AJ_ABAS_ESTILO: return "Chips: uma fileira de botões, como sempre. Menu suspenso: escolha Filmes ou Séries e depois o catálogo numa lista. Barra central: uma pílula de vidro no centro do alto da tela. Páginas: um catálogo por página; Esquerda e Direita trocam de página. Vale para este perfil.";
     case AJ_MENU_TOPO: return "Na lateral: o menu fica na esquerda, como sempre. No topo: o menu vira uma barra no alto da tela e o conteúdo usa a largura toda. Para cima no primeiro item da tela chega à barra e Para baixo volta. Vale para este perfil.";
     case AJ_RAIL_MODERNA: return "Troca a barra lateral pela versão nova, com ícones maiores. Ela ignora a escolha entre recolhida e fixa.";
@@ -8301,12 +8360,8 @@ static const char *ajudaOpcao(int op) {
   return base;
 }
 
-// O QUE MUDA NA PRATICA quando esta opcao muda. NULL quando nao ha nada
-// honesto a dizer — inventar uma consequencia para cada linha encheria a tela
-// de texto e ensinaria a pessoa a nao ler nenhum.
-//
-// So entram as consequencias que a pessoa NAO adivinha olhando a linha: custo
-// de rede, escopo (esta TV x a conta), e dependencia entre opcoes.
+// Practical consequences when known; otherwise reuse the option's detail.
+// Blocked options explain the condition that prevents their effect.
 static const char *efeitoOpcao(int op) {
   if (inativa(op)) return NULL;
   // A RESPOSTA DE "Procurar atualização", por extenso (a linha so tem espaco
@@ -8387,7 +8442,7 @@ static const char *efeitoOpcao(int op) {
     case AJ_MIC_BUSCA:
       return "Para digitar, continua o teclado do Nuvio: o da Samsung só abre por este botão.";
 #endif
-    default: return NULL;
+    default: return ajudaOpcaoBase(op);
   }
 }
 
@@ -8397,6 +8452,37 @@ static const char *efeitoOpcao(int op) {
 // valores ("Equilibrio: ...") ou e longa demais, a frase e propria.
 static const char *beneficioProprio(int op) {
   switch (op) {
+    case AJ_FONTE_IDIOMA_AUDIO: return "Fontes com o seu idioma de áudio, ou áudio duplo, passam na frente.";
+    case AJ_FONTE_GRUPO: return "No próximo episódio, tenta primeiro a mesma fonte do anterior.";
+    case AJ_LINK_REUSAR: return "Ao abrir de novo o mesmo título, toca direto o link que funcionou.";
+    case AJ_PULAR_RESUMO: return "Pula o resumo do episódio anterior quando ele está marcado.";
+    case AJ_PULAR_CREDITOS: return "Pula os créditos quando o marcador diz onde começam e acabam.";
+    case AJ_REACAO_CREDITOS: return "Nos créditos, um cartão pequeno pergunta o que você achou.";
+    case AJ_PLUGINS: return "Plugins do Nuvio entram como mais uma fonte, ao lado dos add-ons.";
+    case AJ_FALHA_PROVEDORES: return "Se o vídeo não abrir, tenta os outros provedores Debrid, na ordem.";
+    case AJ_FALHA_ADDONS: return "Se o vídeo não abrir, tenta os outros add-ons, na ordem escolhida.";
+    case AJ_XTREAM_SERVIDOR: return "O endereço e a porta que o provedor mandou.";
+    case AJ_LIVETV_SUGERIR: return "Canais sem categoria ganham uma sugestão de grupo pelo nome.";
+    case AJ_LIVETV_ESPERA: return "Quanto tempo o canal tem para mostrar imagem antes de tentar outra fonte.";
+    case AJ_HERO_CATALOGOS: return "De onde vêm os títulos do destaque no alto da Home.";
+    case AJ_CW_LIGADO: return "A fileira com o que você parou no meio e o próximo episódio.";
+    case AJ_CW_RETIDO_TAMBEM: return "O título na ilha também aparece em Continuar assistindo.";
+    case AJ_RELOGIO_12H: return "A hora em 24 horas (18:30) ou em 12 horas (6:30 PM).";
+    case AJ_DESCANSO_ESTILO: return "O que a tela de descanso mostra: títulos, um relógio ou quase nada.";
+    case AJ_DESCANSO_FONTE: return "De onde a vitrine tira os títulos: o catálogo ou a sua lista.";
+    case AJ_MENU_CARTAZ: return "O menu do cartaz mostra a arte grande, as notas e a sinopse.";
+    case AJ_POSTER_PROV: return "Cartazes prontos de um serviço externo, com notas e selos.";
+    case AJ_DET_TRAILER_AUTO: return "Na página do título, o trailer toca no lugar da arte de fundo.";
+    case AJ_HERO_TRAILER_SOM: return "Os trailers que tocam sozinhos saem com som.";
+    case AJ_SYNC: return "Como foi a última troca de dados com a sua conta.";
+    case AJ_MEDIDOR: return "Quadros por segundo e memória na ilha do relógio.";
+    case AJ_DIAGNOSTICO: return "Testa addons, fontes e artes e sugere um perfil seguro.";
+    case AJ_VELOCIDADE: return "Mede a sua internet e diz quantos GB tocam sem travar.";
+    case AJ_APOIAR: return "Códigos para apoiar quem faz o Nuvio, pelo celular.";
+    case AJ_VER_REGISTRO: return "Abre o registro do app ao vivo, por cima desta tela.";
+    case AJ_ENVIAR_LOG: return "Manda o registro desta sessão, sem senhas, para quem faz o app.";
+    case AJ_ENVIO_AUTO: return "O app manda o registro sozinho, sem você pedir.";
+    case AJ_LOG_REDE: return "Mostra o registro numa página da sua rede, no celular ou no PC.";
     case AJ_QUALIDADE: return "O teto de resolução das fontes que o Nuvio escolhe.";
     case AJ_FONTE_HDR: return "Se fontes com HDR ou Dolby Vision passam na frente das outras.";
     case AJ_DV: return "Deixa tocar fontes em Dolby Vision quando a TV aceita.";
@@ -8415,7 +8501,7 @@ static const char *beneficioProprio(int op) {
     case AJ_BUSCA_CINEMETA: return "A busca também consulta o Cinemeta se o catálogo do Nuvio falhar.";
     case AJ_HOME_LAYOUT: return "Como a Home se organiza: Moderna, Padrão ou Dinâmica.";
     case AJ_MENU_TOPO: return "Onde fica o menu: na esquerda ou no alto da tela.";
-    case AJ_ABAS_ESTILO: return "Como as abas de uma coleção de streaming aparecem: chips, menu suspenso, barra central ou páginas.";
+    case AJ_ABAS_ESTILO: return "Como as abas de uma coleção aparecem: chips, menu, barra ou páginas.";
     case AJ_HERO_FUNDO: return "De onde vem a arte grande do destaque e da página do título.";
     case AJ_HERO_GENERO: return "Mostra ou esconde o gênero sob o logo do destaque e dos pôsteres grandes.";
     case AJ_HERO_SINOPSE: return "Mostra ou esconde a sinopse do destaque.";
@@ -9899,6 +9985,7 @@ void ajustes_evento(const SDL_Event *e) {
 #endif
   AJ_ESCALA_INI();
   if (guiaAberto) { guiaEvento(e); AJ_ESCALA_FIM(); return; }
+  if (tourAberto) { tourEvento(e); AJ_ESCALA_FIM(); return; }
   if (apoioAberto) { apoioEvento(e); AJ_ESCALA_FIM(); return; }
   eventoTela(e);
   // FIM DA EDICAO DO LIMITE (issue #197): qualquer tecla que solte a linha
@@ -10224,6 +10311,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   ajLegendaEspelhar(); ajIptvEspelhar();
   AJ_ESCALA_INI();
   guiaAtualizar(dt);
+  tourAtualizar(dt);
   if (uxAviso[0] && SDL_TICKS_PASSED(agora, uxAvisoAte)) uxAviso[0] = 0;
   montarTela();
   valor[AJ_PERFIL_PESQ] = recomenda_pesquisavel() ? 0 : 1;   // V_LIGA: 0 = Ligado
@@ -10965,6 +11053,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_CW_FURTHEST: case AJ_CW_NAO_EXIBIDOS: case AJ_CW_ORDEM: case AJ_CW_RETIDO_TAMBEM:
       return AJPV_CONTINUAR;
     case AJ_EP_TAMANHO:
+    case AJ_DET_TOPO: case AJ_DET_ELENCO_VISTO:
     case AJ_DET_BLUR_NAO_VISTOS: case AJ_DET_TRAILER: case AJ_DET_META_EXT:
     case AJ_DET_SO_CINEMETA: case AJ_BUSCA_CINEMETA: case AJ_BUSCA_NUVIO: case AJ_BUSCA_ORIGEM:
     case AJ_DET_DATA_CHEIA: case AJ_DET_VEU: case AJ_DET_TRAILER_AUTO:
@@ -11071,6 +11160,7 @@ static void ajDesenharTudo(Uint32 agora) {
 #endif
   montarTela();
   if (guiaAberto) { ponteiro_camada(); guiaDesenhar(); return; }
+  if (tourAberto) { ponteiro_camada(); tourDesenhar(); return; }
   aj4Desenhar();
 
   // A folha de fileiras cobre a lista; o vinculo cobre as duas, porque ele e a
@@ -11136,7 +11226,7 @@ int ajustes_relogio_cabe(void) {
 int ajustes_relogio_navegavel(void) {
   DisEstado da = discord_estado();
   return ajustes_relogio_cabe() && !filAberta && !frAberta && !uxEditor &&
-         !guiaAberto && !apoioAberto && !riscoFolha &&
+         !guiaAberto && !tourAberto && !apoioAberto && !riscoFolha &&
          da != DIS_PEDINDO && da != DIS_AGUARDANDO && da != DIS_ERRO;
 }
 
@@ -11189,7 +11279,7 @@ void ajustes_teste_ux_captura(int cenario) {
     ajustes_teste_tema(getenv("NUVIO_SHOT_TEMA") ? atoi(getenv("NUVIO_SHOT_TEMA")) : -1,
                        getenv("NUVIO_SHOT_VIDRO") && atoi(getenv("NUVIO_SHOT_VIDRO")));
   valor[AJ_IDIOMA] = IDIOMA_PT + 1;
-  uxCancelar(); uxAviso[0] = 0; uxRetornarOp = -1;
+  uxCancelar(); uxAviso[0] = 0; uxRetornarOp = -1; tourAberto = 0;
   scrollY = velY = 0; paginaA = 1;
   focarSecao(0); focoIndice = 1;
   if (cenario == 1 || cenario == 2) focarOpcao(AJ_HOME_LAYOUT);
@@ -11228,6 +11318,8 @@ void ajustes_teste_ux_captura(int cenario) {
   if (cenario == 22) { focarOpcao(AJ_FOCO_TRAILER); uxAbrirEditor(AJ_FOCO_TRAILER); }
   // Upscaling algorithm row (needs NUVIO_PANEL_SIZE=3840x2160): FSR 1 shows Sharpness.
   if (cenario == 23 || cenario == 24) { valor[AJ_AMPLIACAO_ALGO] = 3; focarOpcao(AJ_AMPLIACAO_ALGO); }
+  // O tour "O que o Nuvio faz?": 25 abre, 26 com o foco em "Ver onde fica", 27 na segunda fileira.
+  if (cenario >= 25 && cenario <= 27) { tourAbrir(); if (cenario == 26) { tourFoco = 1; tourBtn = 1; } if (cenario == 27) tourFoco = 6; }
   if (cenario == 24) uxAbrirEditor(AJ_AMPLIACAO_ALGO);
   // NUVIO_SHOT_TRAILER_VETO=1: captura da linha Ligada que nao vale (veto de
   // GPU): a ajuda tem de dizer por que, em vez de a linha parecer obedecida.
@@ -11305,7 +11397,7 @@ int ajustes_teste_quadro(const char *id) {
   if (getenv("NUVIO_SHOT_LAYOUT") && *getenv("NUVIO_SHOT_LAYOUT")) valor[AJ_HOME_LAYOUT] = atoi(getenv("NUVIO_SHOT_LAYOUT"));
   // NUVIO_SHOT_AVANCADAS=1: opcoes avancadas a mostra (a pilula ligada no indice).
   if (getenv("NUVIO_SHOT_AVANCADAS")) valor[AJ_AVANCADAS] = 0;
-  uxCancelar(); uxAviso[0] = 0; uxRetornarOp = -1;
+  uxCancelar(); uxAviso[0] = 0; uxRetornarOp = -1; tourAberto = 0;
   memset(maisAberto, 0, sizeof maisAberto);
   scrollY = velY = 0; paginaA = 1;
   filAberta = 0; riscoFolha = 0; apoioAberto = 0;
@@ -11313,6 +11405,15 @@ int ajustes_teste_quadro(const char *id) {
   ajArteFundoN = 12; ajMemFixa = 0; ajQuadroAddons = 0; ajQuadroPlugins = 0; ajVinculoTeste = 0;
   if (teclado_aberto()) { SDL_Event e = { 0 }; e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_ESCAPE; teclado_evento(&e); }
   aj2PoseFixa = 0;
+  if (!strncmp(id, "tour", 4)) {
+    aj4Iniciar(); pfTela = 0; uxVeioBusca = 0;
+    tourAbrir(); tourInicio = (long)time(NULL);
+    if (!strcmp(id, "tour-more")) { tourFoco = 8; tourTopo = 2; tourRol = tourRolAlvo = 808; }
+    if (!strcmp(id, "tour-last")) { tourFoco = 16; tourTopo = 3; tourRol = tourRolAlvo = 1212; }
+    if (!strcmp(id, "tour-where")) { tourOnde(2); tourAtualizar(0); }
+    if (!strcmp(id, "tour-edit")) { tourLigar(2); tourAtualizar(0); }
+    return 1;
+  }
   if (!strncmp(id, "v4-", 3)) {
     static const char *const PF_V4[] = { "Henrique" };
     perfis_teste_definir(PF_V4, NULL, 1, 1);   // chip e escopo com nome, como o mockup

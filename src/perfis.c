@@ -429,7 +429,7 @@ int perfis_puxar(void) {
   return quantidade;
 }
 
-#ifdef AJUSTES_TESTE
+#if defined(AJUSTES_TESTE) || defined(NV_J1_SHOT)
 // Capturas de Ajustes: uma lista de perfis de mentira, sem conta nem rede.
 void perfis_teste_definir(const char *const *nomes, const int *pin, int quantos, int ativo_) {
   int i;

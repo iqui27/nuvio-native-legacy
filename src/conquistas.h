@@ -35,6 +35,8 @@ void conquistas_desenhar(Uint32 agora);
 // Ligacao com a Biblioteca (trilhas). Devolve 1 se levou a pessoa a trilha.
 // Hoje nao faz nada e devolve 0; os botoes que dependem dela ficam apagados.
 int  conquistas_abrir_trilha(const char *chave);
+// Pasta de arte do pacote (main.c passa o dirArte): onde ficam os objetos 3D em art/conquistas.
+void conquistas_arte_dir(const char *d);
 
 // ---- O aviso depois dos creditos. Nao toma o foco: so o Voltar e dele, e
 // so enquanto estiver na tela.

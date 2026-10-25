@@ -47,6 +47,7 @@
 #define T21_POSTER_SHADOW_DY 16.0f
 #define T21_POSTER_SHADOW_A .30f
 #define T21_VEIL (ajustes_vidro() ? .30f : .42f)
+#define T21_VEIL_BLUR .72f   // scrim over the blurred backdrop behind a sheet
 #define T21_CHIP_REST .08f
 #define T21_SEG_TRACK .05f
 #define T21_SEG_SELECTED .14f
@@ -74,15 +75,53 @@ static inline void t21_inicio(float *x, float *w) {
   TXT_FIM();
 }
 
-static inline void t21_ilha(GfxRect r, float raioPx, float a) {
+// Opaque, rimless card (seat cards over artwork); t21_ilha's solid branch.
+static inline void t21_ilha_solida(GfxRect r, float raioPx, float a) {
   if (r.w <= 0 || r.h <= 0 || a <= .002f) return;
   float raio = raioPx / fminf(r.w, r.h);
-  if (ajustes_vidro()) { plrui_material(r, raioPx, 0, a); return; }
   gfx_sombra_sob((GfxRect){r.x - 16, r.y - 4, r.w + 32, r.h + 30},
                 1, 0, .5f, 0, 0, 0, .36f * a, r, raioPx, a);
   gfx_cor(r, raio, .071f, .075f, .086f, .98f * a);
   gfx_luz_canto(r, raio, r.w * .22f, -r.h * .40f, fmaxf(r.w, r.h) * .62f,
                 1, 1, 1, .04f * a);
+}
+
+static inline void t21_ilha(GfxRect r, float raioPx, float a) {
+  if (ajustes_vidro() && r.w > 0 && r.h > 0 && a > .002f) { plrui_material(r, raioPx, 0, a); return; }
+  t21_ilha_solida(r, raioPx, a);
+}
+
+static inline void t21_ilha_folha(GfxRect r, float raioPx, float a) {
+  if (r.w <= 0 || r.h <= 0 || a <= .002f) return;
+  float raio = raioPx / r.h;
+  gfx_sombra_sob((GfxRect){r.x - 16, r.y - 4, r.w + 32, r.h + 30},
+                1, 0, .5f, 0, 0, 0, .36f * a, r, raioPx, a);
+  if (ajustes_vidro()) {
+    // Glass first, so it blurs the real backdrop; then the mock body
+    // (--glass rgba(14,15,18,.91)) over it: art behind never beats the text.
+    gfx_vidro(r, raio, GFX_VIDRO_ILHA, .06f, GFX_VIDRO_DENS_MODAL * gfx_vidro_opacidade(), a);
+    gfx_cor(r, raio, .055f, .059f, .071f, .91f * a);
+  } else gfx_cor(r, raio, .071f, .075f, .086f, .98f * a);
+  gfx_luz_canto(r, raio, r.w * .22f, -r.h * .40f, fmaxf(r.w, r.h) * .62f,
+                1, 1, 1, .04f * a);
+}
+
+// Text in approved fixed panel geometry still follows the user's text scale.
+static inline TxtLinha t21_texto_linha(TxtEstilo estilo, const char *s,
+                                      int r, int g, int b, int a, float max) {
+  float scale = gfx_escala_txt();
+  TXT_INI();
+  TxtLinha l = txt_linha_corta(estilo, s, r, g, b, a, max / scale);
+  TXT_FIM();
+  l.w *= scale; l.h *= scale;
+  return l;
+}
+static inline void t21_texto_desenhar(TxtLinha l, float x, float y, float a) {
+  float scale = gfx_escala_txt();
+  l.w /= scale; l.h /= scale;
+  TXT_INI();
+  txt_desenhar_alpha(l, x / scale, y / scale, a);
+  TXT_FIM();
 }
 
 // Caller owns progress; anim_suave(progress) drives alpha and

@@ -65,11 +65,6 @@ static float ajcSeloVivo(const char *t, float x, float y, float px, float ativo,
   else ajcTextoVivo(t, px, 1, x + px * 0.7f, y + (h - px * 1.25f) * 0.5f, 0.9f * a);
   return w;
 }
-// O que o interruptor faz, no canto de baixo: a chave sincronizada com o efeito.
-static void ajcChaveCanto(float liga) {
-  ajc_painel(574, 318, 52, 30, 15, 0.85f);
-  ajc_chave(580, 322, liga, 1);
-}
 
 // O bloco (titulo ROT) da opcao na TELA: as faixas do enum nao seguem os
 // blocos, entao "esta no bloco X" e por nome.
@@ -104,7 +99,6 @@ static void ajcHome(const AjcHome *o) {
       ajc_veu(HX(0), HY(hh * 0.45f), 640 * k, hh * 0.55f * k, 0, 0.8f * o->hero);
       ajc_ret(HX(cx + 18), HY(70), 150 * k, 16 * k, 4 * k, 1, 1, 1, 0.9f * o->hero);
       ajc_barras(HX(cx + 18), HY(98), 200 * k, 2, o->hero);
-      ajc_acento_ret(HX(cx + 18), HY(134), 74 * k, 22 * k, 11 * k, o->hero);
     }
     fy = 214 - 74 * (1 - o->hero);
   } else if (o->layout == 1) {   // Padrao: um banner no alto
@@ -241,16 +235,12 @@ static void ajcCenaHome(int op) {
         ajc_bolinha(px + (o.paisagem > 0.5f ? 88 : 46), py + 12, 18, ar, ag, ab, k);
         ajc_icone_tinta("aj_check", px + (o.paisagem > 0.5f ? 88 : 46), py + 12, 11, k); }
     }
-    ajcChaveCanto(k);
   }
   if (op == AJ_OCULTAR_NLANC) {   // o cartaz ainda nao lancado some da fileira
     float k = ajcLig(op) * ajc_onda(3.0f);
     ajc_ret(80 + 2 * 70, 230 - 74 + 16 - 4, 58, 94, 8, 0.075f, 0.082f, 0.102f, k);
     ajc_icone("aj_calendar", 80 + 2 * 70 + 29, 156 + 43, 22, 0.6f * (1 - k) + 0.2f);
-    ajcChaveCanto(ajcLig(op));
   }
-  if (op == AJ_HERO || op == AJ_LANDSCAPE || op == AJ_RAIL_BLUR || op == AJ_CW_LIGADO || op == AJ_RAIL_MODERNA)
-    ajcChaveCanto(ajcLig(op));
 }
 // A tela de escolha de perfil: os rostos em circulo, o do meio em foco.
 static void ajcCenaPerfis(int op) {
@@ -265,7 +255,6 @@ static void ajcCenaPerfis(int op) {
     if (i == f) ajc_foco(cx - d * 0.5f, cy - d * 0.5f, d, d, d * 0.5f, 1);
     ajc_barra(cx - 30, cy + 64, 60, i == f ? 0.8f : 0.35f);
   }
-  if (op == AJ_PS_FUNDO || op == AJ_PS_CONTINUAR) ajcChaveCanto(ajcLig(op));
 }
 // Pagina do titulo: o fundo, o "logo", meta, notas e botoes.
 static void ajcCenaTitulo(int op) {
@@ -291,17 +280,12 @@ static void ajcCenaTitulo(int op) {
     }
     if (ajcNoBloco(op, "Notas") && marca < 0) ajc_foco(28, 128, 352, 30, 10, 0.4f + 0.6f * ajc_onda(2.4f)); }
   ajc_barras(34, 176, 300, 3, 1);
-  ajc_acento_ret(34, 232, 112, 34, 17, 1);
-  ajc_icone_tinta("aj_play", 54, 249, 14, 1);
-  ajc_ret(70, 245, 60, 7, 3.5f, ajTinta() / 255.0f, ajTinta() / 255.0f, ajTinta() / 255.0f, 0.9f);
-  ajc_vidro(156, 232, 34, 34, 17, 1); ajc_icone("aj_bookmark", 173, 249, 14, 0.9f);
   if (op == AJ_DET_BLUR_NAO_VISTOS) {   // episodios nao vistos borrados
     float k = ajcLig(op);
     for (i = 0; i < 3; i++) {
       ajc_cartaz(34 + i * 130, 286, 118, 66, 5 + i, 1);
       if (i > 0) ajc_ret(34 + i * 130, 286, 118, 66, 8, 0.3f, 0.32f, 0.38f, 0.85f * k);
     }
-    ajcChaveCanto(k);
   } else if (ajcNoBloco(op, "Dados do título")) {   // dados do titulo: a ficha a direita
     ajc_vidro(420, 40, 196, 280, 16, 1);
     for (i = 0; i < 6; i++) { ajc_barra(438, 64 + i * 40, 70, 0.4f); ajc_barra(438, 78 + i * 40, 140 - (i % 3) * 20, 0.75f); }
@@ -349,7 +333,6 @@ static void ajcCenaCartazes(int op) {
     ajc_ladrilho("aj_download", 560, 60, 48, 1, 1);
     ajc_bolinha(560 - (560 - (x0 + w + gap + w * 0.5f)) * k, 60 + (y0 + 40 - 60) * k, 10, 1, 1, 1, 1 - k * 0.6f);
   }
-  if (op == AJ_EXPANDIR || op == AJ_BORDA_FOCO || op == AJ_PROF || op == AJ_GRAD_CLASSICO) ajcChaveCanto(ajcLig(op));
 }
 // Trailers: o destaque (ou o cartaz) onde o play vira video.
 static void ajcCenaTrailer(int op) {
@@ -369,7 +352,6 @@ static void ajcCenaTrailer(int op) {
       for (i = 0; i < 5; i++) ajc_cartaz(30 + i * 118, 120, 100, 150, i, 1 - vid);
       if (vid > 0.01f) ajc_video(0, 0, 640, 360, 0, vid);
       ajc_play(198, 195, 34, 1 - vid);
-      ajcChaveCanto(1.0f);
       return;
     }
     // No card (e Desligado): o video no cartaz em foco, deitado.
@@ -379,7 +361,6 @@ static void ajcCenaTrailer(int op) {
     if (vid > 0.01f) ajc_video(148, 120, 168, 150, 9, vid);
     ajc_play(232, 195, 34, 1 - vid);
     ajc_foco(148, 120, 168, 150, 9, 1);
-    ajcChaveCanto(ligado ? 1.0f : 0.0f);
     return;
   }
   ajc_cartaz(0, 0, 640, 360, 1, 1);
@@ -408,12 +389,9 @@ static void ajcCenaTrailer(int op) {
   if (op == AJ_HERO_TRAILER_ESPERA) ajc_anel(320, 150, 48, ajc_fase(5.0f) / 0.3f > 1 ? 1 : ajc_fase(5.0f) / 0.3f, 1);
   if (op == AJ_TRAILER_QUAL) {
     static const char *R[3] = { "480p", "720p", "1080p" };
-    int i, a = ajc_passo(1.6f, 3);
-    for (i = 0; i < 3; i++) ajcSeloVivo(R[i], 400 + i * 74, 300, 13, i == a ? 1.0f : 0.0f, 1);
+    ajcSeloVivo(R[ajc_passo(1.6f, 3)], 474, 300, 13, 1.0f, 1);   // a etiqueta no video, nao um seletor
   }
   if (op == AJ_TRAILER_FONTE) ajc_ladrilho("aj_film", 586, 56, 52, 1, 1);
-  if (op == AJ_HERO_TRAILER || op == AJ_DET_TRAILER_AUTO || op == AJ_DET_TRAILER || op == AJ_LOGO_TRAILER
-      || op == AJ_HERO_TRAILER_SOM || op == AJ_DET_TRAILER_SOM) ajcChaveCanto(ajcLig(op));
 }
 // Cor de destaque: o foco de uma fileira e um botao, recoloridos; embaixo a
 // paleta com a cor atual marcada.
@@ -424,19 +402,7 @@ static void ajcCenaCor(int op) {
   for (i = 0; i < 5; i++) ajc_cartaz(40 + i * 116, 60, 100, 150, i + 2, 1);
   ajc_foco(40 + f * 116, 60, 100, 150, 9, 1);
   ajc_luz(40 + f * 116 - 30, 40, 160, 190, 20, 80, 95, 110, ar, ag, ab, 0.25f);
-  ajc_acento_ret(40, 244, 120, 34, 17, 1); ajc_icone_tinta("aj_play", 62, 261, 14, 1);
-  ajc_ret(78, 258, 60, 7, 3.5f, ajTinta() / 255.0f, ajTinta() / 255.0f, ajTinta() / 255.0f, 0.9f);
-  ajc_chave(180, 250, 1, 1);
-  ajc_progresso(240, 259, 180, 0.62f, 1);
-  if (op == AJ_COR_LOGO) { ajc_ladrilho("aj_sparkles", 560, 261, 44, ajcLig(op) > 0.5f, 1); ajcChaveCanto(ajcLig(op)); return; }
-  for (i = 0; i < 9; i++) {
-    float r, g, b;
-    int t = (i + 1) % AJ_N_TEMAS_OPC;
-    r = ((TEMA_ACENTO[t].fill >> 16) & 255) / 255.0f; g = ((TEMA_ACENTO[t].fill >> 8) & 255) / 255.0f; b = (TEMA_ACENTO[t].fill & 255) / 255.0f;
-    ajc_bolinha(52 + i * 30, 320, 20, r, g, b, 0.9f);
-  }
-  ajc_bolinha(52 + 9 * 30 + 20, 320, 26, ar, ag, ab, 1);
-  ajc_foco(52 + 9 * 30 + 7, 307, 26, 26, 13, 1);
+  if (op == AJ_COR_LOGO) { ajc_ladrilho("aj_sparkles", 560, 261, 44, ajcLig(op) > 0.5f, 1); return; }
 }
 // Uma tela com o fundo `modo` (0 Arte, 1 Borrada, 2 Frost) e uma ilha por cima.
 static void ajcFundoTela(int i, float x, float y, float w, float h) {
@@ -484,7 +450,6 @@ static void ajcCenaVidro(int op) {
   }
   ajc_barra(150, 140, 200, 0.85f); ajc_barras(150, 162, 300, 3, 1);
   ajc_acento_ret(150, 210, 100, 26, 13, 1);
-  if (op != AJ_VIDRO_OPAC) ajcChaveCanto(op == AJ_VIDRO ? k : ajcLig(op));
 }
 // Foco na cor de destaque: tres linhas, a do meio em foco; o cinza de sempre
 // cede ao vidro tingido com o realce.
@@ -503,7 +468,6 @@ static void ajcCenaFocoAcento(int op) {
     ajc_ret(158, y + 13, 24, 24, 12, 1, 1, 1, 0.55f);
     ajc_barra(196, y + 16, i == 1 ? 190 : 140, i == 1 ? 0.9f : 0.5f);
   }
-  ajcChaveCanto(k);
 }
 // Logo, abertura e icone do app.
 static void ajcCenaMarca(int op) {
@@ -602,7 +566,6 @@ static void ajcCenaMovimento(int op) {
     ajcHome(&o);
     ajc_vidro(500, 16, 120, 40, 20, ajcLig(AJ_RELOGIO) > 0.5f || op == AJ_RELOGIO_12H ? 1 : 0.2f);
     ajcTexto(op == AJ_RELOGIO_12H && ajcLig(op) > 0.5f ? "8:30 PM" : "20:30", 18, 1, 520, 25, ajcLig(AJ_RELOGIO) > 0.5f ? 1 : 0.2f);
-    ajcChaveCanto(ajcLig(op));
     return;
   }
   { // descanso: a tela vai escurecendo e a arte lenta passa
@@ -790,7 +753,6 @@ static void ajcPausaPainel(int op) {
   ajc_barra(60, 124, 270, 0.5f);
   if (ajcLig(op) < 0.5f) ajc_ladrilho("aj_pause", 380, 150, 60, 0, 0.9f);   // desligado: so o pause
   else ajc_play(380, 150, 56, 0.75f + 0.25f * ajc_onda(4.0f));
-  ajcChaveCanto(ajcLig(op));
 }
 // Player: o video com a barra de tempo; cada opcao acende a sua peca.
 static void ajcCenaPlayer(int op) {
@@ -799,8 +761,6 @@ static void ajcCenaPlayer(int op) {
   ajc_video(0, 0, 640, 360, 0, 1);
   if (op == AJ_BRILHO_PLAYER) ajc_ret(0, 0, 640, 360, 0, 0, 0, 0, 0.55f * ajc_onda(3.0f));
   ajc_veu(0, 220, 640, 140, 0, 0.75f);
-  ajc_progresso(40, 318, 560, op == AJ_CW_CONCLUIDO ? 0.6f + 0.35f * ajc_onda(4.0f) : 0.35f + 0.1f * f, 1);
-  ajc_bolinha(40 + 560 * (op == AJ_CW_CONCLUIDO ? 0.6f + 0.35f * ajc_onda(4.0f) : 0.35f + 0.1f * f), 320.5f, 14, 1, 1, 1, 1);
   ajc_barra(40, 296, 120, 0.7f);
   switch (op) {
     case AJ_PAUSA_OVERLAY: {   // pausado: o painel com o resumo sobe
@@ -811,7 +771,7 @@ static void ajcCenaPlayer(int op) {
       ajc_barras(60, 136 - 20 * (1 - k), 250, 4, k);
       if (ajcLig(op) < 0.5f) ajc_ladrilho("aj_pause", 320, 150, 60, 0, 0.9f);   // desligado: so o pause, sem painel
       else ajc_play(320, 150, 50, 1 - k * 0.4f);
-      ajcChaveCanto(ajcLig(op)); break; }
+      break; }
     case AJ_PAUSA_COMENTARIOS: {   // pausado com o painel: um comentario do Trakt; as bolinhas giram
       float k = ajcLig(op), s = ajc_onda(4.0f), a = k * (0.85f + 0.15f * s), y = 128 + (1 - s) * 3.0f;
       int at = ajc_passo(2.0f, 3), j;
@@ -863,14 +823,13 @@ static void ajcCenaPlayer(int op) {
       for (i = 0; i < 6; i++) ajc_barra(250, 60 + i * 24 - 30 * f, 140, 0.25f);
       ajc_vidro(380, 200, 220, 70, 16, k);
       for (i = 0; i < 3; i++) ajc_ladrilho(i == 0 ? "aj_thumbs-up" : i == 1 ? "pl_thumbs-down" : "aj_heart", 420 + i * 70, 235, 40, i == 0, k);
-      ajcChaveCanto(ajcLig(op)); break; }
+      break; }
     case AJ_CACHE_SEEK: case AJ_SEEKR_LIGADO: case AJ_SEEKR_FITA: case AJ_SEEKR_AJUSTE: case AJ_SEEKR_CHAVE: case AJ_SEEKR_TESTAR: {
       // a fita de miniaturas sobre a barra; o cursor anda nela
       float c = ajc_onda(4.0f);
       for (i = 0; i < 6; i++) ajc_cartaz(40 + i * 94, 210, 84, 48, i, op == AJ_CACHE_SEEK ? 0.5f : 1);
       ajc_foco(40 + c * 5 * 94, 210, 84, 48, 6, 1);
       if (op == AJ_CACHE_SEEK) for (i = 0; i < 8; i++) ajc_ret(40 + i * 70, 316, 60, 9, 4, 1, 1, 1, i < (int)(c * 8) + 1 ? 0.5f : 0.08f);
-      if (op == AJ_SEEKR_LIGADO || op == AJ_SEEKR_FITA) ajcChaveCanto(ajcLig(op));
       break; }
     case AJ_SAIDA_PLAYER: case AJ_MANTER_VIDEO: {   // ao sair: o video encolhe para a ilha no canto
       float k = ajc_onda(4.0f);
@@ -881,7 +840,6 @@ static void ajcCenaPlayer(int op) {
         gfx_opacidade_grupo = g * k; ajcHome(&o); gfx_opacidade_grupo = g; }
       ajc_video(640 - (640 - 440) * k, 360 - (360 - 250) * k, 640 - 460 * k, 360 - 260 * k, 14 * k, 1);
       if (k > 0.3f) ajc_foco(640 - (640 - 440) * k, 360 - (360 - 250) * k, 640 - 460 * k, 360 - 260 * k, 14, k);
-      if (op == AJ_MANTER_VIDEO) ajcChaveCanto(ajcLig(op));
       break; }
     case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC: ajcCenaFormato(op); break;
     case AJ_CW_CONCLUIDO: {
@@ -904,7 +862,6 @@ static void ajcCenaQualidade(int op) {
     if (op == AJ_ATMOS) { int i; for (i = 0; i < 5; i++) ajc_ret(300 + i * 12, 150 - 30 * k * fabsf(sinf(ajc_t() * 3 + i)), 6,
                           10 + 60 * k * fabsf(sinf(ajc_t() * 3 + i)), 3, 1, 1, 1, 0.8f); }
     ajcSelo(op == AJ_ATMOS ? "ATMOS" : op == AJ_DV ? "DOLBY VISION" : "HDR", 140, 300, 14, k, 1);
-    if (op != AJ_FONTE_HDR) ajcChaveCanto(k);
     return;
   }
   { static const char *R[3] = { "720p", "1080p", "4K" };
@@ -947,7 +904,6 @@ static void ajcCenaFontes(int op) {
   }
   if (op == AJ_FONTE_MANUAL) {   // perguntar: a lista abre e o foco desce
     ajc_foco(40, 40 + esc * 56, 560, 46, 12, 1);
-    ajcChaveCanto(ajcLig(op));
   }
   if (op == AJ_FONTE_REPOR) {   // outra fonte se falhar: a primeira fica vermelha, o foco pula
     float f = ajc_fase(3.0f);
@@ -955,7 +911,7 @@ static void ajcCenaFontes(int op) {
     ajc_foco(40, f > 0.55f ? 96 : 40, 560, 46, 12, 1);
   }
 }
-// Addons e plugins: pecas de quebra-cabeca com interruptores.
+// Addons e plugins: pecas de quebra-cabeca; a desligada some do catalogo.
 static void ajcCenaAddons(int op) {
   int i, sel = ajc_passo(1.8f, 4);
   for (i = 0; i < 4; i++) {
@@ -963,12 +919,11 @@ static void ajcCenaAddons(int op) {
     ajc_neutro(60, y, 360, 54, 14, 1);
     ajc_ladrilho(op == AJ_PLUGINS ? "aj_plug" : "aj_puzzle", 92, y + 27, 34, 0, 1);
     ajc_barra(120, y + 18, 150, 0.75f); ajc_barra(120, y + 32, 90, 0.35f);
-    ajc_chave(364, y + 16, i == 2 ? (sel == 2 ? 1 - ajc_passo_t(1.8f) : 0) : 1, 1);
+    ajc_marca(364, y + 16, i == 2 ? (sel == 2 ? 1 - ajc_passo_t(1.8f) : 0) : 1, 1);
     if (i == sel) ajc_foco(60, y, 360, 54, 14, 1);
   }
   // o catalogo que eles alimentam
   for (i = 0; i < 3; i++) ajc_cartaz(450 + (i % 2) * 70, 60 + (i / 2) * 110, 60, 90, i + 3, i == 2 && sel == 2 ? 1 - ajc_passo_t(1.8f) : 1);
-  if (op == AJ_ADDONS_PRINCIPAL || op == AJ_BUSCA_CINEMETA) ajcChaveCanto(ajcLig(op));
 }
 // Debrid, P2P, servidores, TV ao vivo: a TV ligada a um servico, com o pulso.
 static void ajcCenaServico(int op, const char *icone) {
@@ -1013,10 +968,9 @@ static void ajcCenaLegenda(int op) {
   }
   if (op == AJ_LEG_LINGUA || op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2 || op == AJ_LEG_SYNC_AUTO || op == AJ_LEG_SYNC_AUDIO) {
     static const char *L[3] = { "PT", "EN", "ES" };
-    int i, a = ajc_passo(1.6f, 3);
-    ajc_vidro(430, 30, 180, 60, 16, 1);
-    ajc_icone(op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2 ? "aj_audio-lines" : "aj_captions", 458, 60, 22, 0.9f);
-    for (i = 0; i < 3; i++) ajcSeloVivo(L[i], 482 + i * 42, 46, 12, i == a ? 1.0f : 0, 1);
+    int a = ajc_passo(1.6f, 3);
+    ajc_icone(op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2 ? "aj_audio-lines" : "aj_captions", 458, 60, 28, 0.9f);
+    ajcTextoVivo(L[a], 28, 1, 482, 46, 1);
   }
 }
 // Idioma do app / metadados: o mesmo menu trocando de lingua (barras que
@@ -1033,7 +987,7 @@ static void ajcCenaIdioma(int op) {
     ajc_barra(100, 84 + i * 40, w1 + (w0 - w1) * t, i == 1 ? 0.9f : 0.45f);
     if (i == 1) ajc_foco(88, 72 + i * 40, 134, 30, 10, 1);
   }
-  for (i = 0; i < 4; i++) ajcSeloVivo(L[i], 270 + i * 70, 70, 16, i == a ? t : 0, 1);
+  ajcTextoVivo(L[a], 28, 1, 300, 70, 1);
   ajc_cartaz(270, 130, 140, 170, 2, 1);
   ajc_barras(424, 140, 130, 5, 1);
   (void)op;
@@ -1083,7 +1037,6 @@ static void ajcCenaConta(int op) {
     ajc_vidro(380, 20 + 20 * (1 - k), 236, 70, 16, k);
     ajc_ladrilho(op == AJ_DISCORD ? "aj_message-square" : "aj_bell", 414, 55 + 20 * (1 - k), 38, 1, k);
     ajc_barra(444, 46 + 20 * (1 - k), 140, 0.8f * k); ajc_barra(444, 62 + 20 * (1 - k), 100, 0.4f * k);
-    ajcChaveCanto(ajcLig(op));
     return;
   }
   ajcCenaPerfis(op);
@@ -1097,7 +1050,6 @@ static void ajcCenaDesempenho(int op) {
     float p = ajc_fase(2.0f) * 6.0f;
     for (i = 0; i < 8; i++) ajc_cartaz(30 + i * 80 - p * 20, 110, 70, 105, i, 1);
     ajc_foco(190, 110, 70, 105, 7, 1);
-    ajcChaveCanto(ajcLig(op));
     return;
   }
   if (op == AJ_ESPACO || op == AJ_TEX_MB) {   // o espaco: a barra enchendo de blocos coloridos

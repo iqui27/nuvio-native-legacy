@@ -34,6 +34,7 @@ int celular_abrir(const char *t) { (void)t;return 0; }
 void celular_fechar(void) { }
 int celular_pegar(char *d,size_t n) { (void)d;(void)n;return 0; }
 int ajustes_p2p_ligado(void) { return p2p; }
+int ajustes_animacoes_reduzidas_usuario(void) { return 0; }
 void ajustes_definir_p2p_ligado(int v) { p2p=v; }
 int fil_n(void) { return 0; }
 const char *fil_chave(int i) { (void)i;return ""; }
@@ -48,7 +49,9 @@ int main(void) {
   foco=1; acao(); assert(pagina==INSTANCIA && entrada==1);
   keyboardText="https://self.test"; keyboardResult=TECLADO_PRONTO;
   aioui_atualizar(0,100); assert(pagina==SERVICOS && !strcmp(host,"https://self.test"));
-  foco=0; acao(); assert(pagina==IMPORTAR);
+  foco=5; acao(); assert(pagina==PRONTO && !snap.valida && !pendente);
+  foco=1; acao(); assert(pagina==SERVICOS);
+  foco=4; acao(); assert(pagina==IMPORTAR);
   foco=1; acao(); assert(entrada==3 && keyboardMasked);
   keyboardText="https://self.test/manifest.json/evil"; keyboardResult=TECLADO_PRONTO;
   aioui_atualizar(0,100); assert(!pendente && mensagem[0]);
@@ -60,6 +63,21 @@ int main(void) {
   traceStream.foraCache=1; trace(); assert(snap.resultado[0].decisao==3);
   pagina=LINKS; lateral=0; foco=0; acao(); assert(linkSelecionado==1);
   pagina=FILTROS; regraSelecionada=-1; foco=2; acao(); assert(regraSelecionada==2);
+  AioRegra seed={.grupo=3,.nome="requiredSeederRange"}, cache={.grupo=3,.nome="excludeUncached"};
+  regraSelecionada=4; assert(regraPertence(&seed) && !regraPertence(&cache));
+  regraSelecionada=3; assert(!regraPertence(&seed) && regraPertence(&cache));
+  regraSelecionada=6; AioRegra order={.grupo=5}; assert(regraPertence(&order));
+  regraSelecionada=7; AioRegra format={.grupo=6}; assert(regraPertence(&format));
+  regraSelecionada=-1;
+  // The six cards lead directly to footer actions; summaries are display-only.
+  pagina=FILTROS; lateral=0; foco=5;
+  SDL_Event down={0}; down.type=SDL_KEYDOWN; down.key.keysym.sym=SDLK_DOWN;
+  aioui_evento(&down); acao();
+  assert(pagina==SERVICOS && regraSelecionada==-1);
+  pagina=FILTROS; foco=5; aioui_evento(&down); aioui_evento(&down); acao();
+  assert(regraSelecionada==8);
+  down.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&down);
+  assert(regraSelecionada==-1 && foco==7);
   pagina=CATALOGOS; foco=nLinhas()-1; pendente=0; acao();
   assert(pagina==CATALOGOS && pendente==1);
   pendente=0; foco=nLinhas()-2; acao(); assert(pagina==SERVICOS);
@@ -68,7 +86,27 @@ int main(void) {
   foco=1; acao(); assert(pagina==SERVICOS);
   pagina=TITULO; evidenciaSelecionada=0; foco=nLinhas()-1; acao(); assert(evidenciaSelecionada);
   foco=nLinhas()-1; acao(); assert(!evidenciaSelecionada);
-  activeProfile=2; aioui_atualizar(0,100); assert(!aioui_aberto() && !base[0]);
+  // Content swaps retain the old page until its text has faded.
+  pagina=PAINEL; paginaAnterior=-1;
+  for(int i=0;i<20;i++)movimento(.01f);
+  mudar(CATALOGOS); movimento(.02f);
+  assert(paginaAnterior==PAINEL && corpo>0 && corpo<1);
+  for(int i=0;i<20;i++)movimento(.01f);
+  assert(paginaAnterior==CATALOGOS && corpo==1);
+  foco=3; movimento(.02f);
+  assert(focoDe(3,0)>0 && focoDe(3,0)<1);
+  float old=scrollFoco;
+  foco=1; movimento(.01f);
+  assert(scrollFoco>old && scrollVel>0);
+  // Footer focus keeps the scrolled viewport instead of resetting it.
+  pagina=CATALOGOS; snap.catalogos=8; scrollFoco=11;
+  assert(janelaCatalogos()==3);
+  // Link/subtitle windows follow the fractional spring, rows fade across one slot (no integer jump).
+  scrollFoco=3.5f; float w=janela(2,8,3,1);
+  assert(w>1.4f && w<1.6f && (int)w==1);
+  assert(rolaAlfa(-.5f,3)>.45f && rolaAlfa(-.5f,3)<.55f && rolaAlfa(1,3)==1 && rolaAlfa(3,3)==0 && rolaAlfa(-1,3)==0);
+  activeProfile=2; aioui_atualizar(0,100); assert(aioui_aberto());
+  aioui_atualizar(.2f,300); assert(!aioui_aberto() && !base[0]);
   puts("aiostreams UI: setup, masked import, P2P, navigation and profile isolation passed");
   return 0;
 }

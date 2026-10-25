@@ -797,6 +797,13 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   "  float a = 1.0 - smoothstep(0.0, 0.82, x);\n"
   "  float ab = smoothstep(0.70, 1.0, vUv.y) * 0.92;\n"
   "  a = 1.0 - (1.0 - a) * (1.0 - ab);\n"
+  // Approved detail v2 CSS stops, fused into the existing dithered pass.
+  "  if (uPar.y > 0.5) {\n"
+  "    float ax = x < 0.45 ? mix(0.8,0.35,x/0.45) : mix(0.35,0.0,clamp((x-0.45)/0.25,0.0,1.0));\n"
+  "    float ay = vUv.y < 0.25 ? 0.0 : vUv.y < 0.55 ? mix(0.0,0.55,(vUv.y-0.25)/0.30) : mix(0.55,0.92,(vUv.y-0.55)/0.45);\n"
+  "    a = 1.0-(1.0-ax)*(1.0-ay); bg=vec3(0.0);\n"
+  "    gl_FragColor=nv_dither(mix(c,bg,a*uFoco),uCor.a); return;\n"
+  "  }\n"
   // uFoco = FORCA da vinheta: 1 no topo, 0 com a pagina rolada. No web a
   // vinheta e uma CAMADA IRMA do backdrop e tem opacidade propria — ao rolar,
   // `.detail-scrolled` leva a arte a 0.15 E a vinheta a 0 (components.css:17348).
@@ -1701,6 +1708,25 @@ static const char *FS_CORPO[GFX_NMODOS] = {
   [GFX_COPIA_EASU] = NV_EASU_SHADER,
   [GFX_COPIA_LANCZOS] = NV_LANCZOS_SHADER,
   [GFX_RCAS] = NV_RCAS_SHADER,
+  // Filmography .arte + .veu: retain every CSS stop in one dithered pass.
+  [GFX_FILMO_FUNDO] =
+  "vec3 filmoHsl(float h,float s,float l){\n"
+  "  vec3 p=clamp(abs(fract(h+vec3(0.0,2.0/3.0,1.0/3.0))*6.0-3.0)-1.0,0.0,1.0);\n"
+  "  return l+s*(p-0.5)*(1.0-abs(2.0*l-1.0));\n"
+  "}\n"
+  "void main(){\n"
+  "  float h=uPar.x,y=vUv.y;\n"
+  "  vec3 top=filmoHsl(h,0.42,0.22),mid=filmoHsl(h+35.0/360.0,0.48,0.38);\n"
+  "  vec3 low=filmoHsl(h+35.0/360.0,0.40,0.11);\n"
+  "  vec3 c=y<0.58?mix(top,mid,y/0.58):y<0.60?mix(mid,low,(y-0.58)/0.02):mix(low,vec3(12.0,10.0,12.0)/255.0,(y-0.60)/0.40);\n"
+  "  float light=clamp(1.0-length((vUv-vec2(0.74,0.28))/vec2(0.38,0.30))/0.70,0.0,1.0);\n"
+  "  c=mix(c,filmoHsl(h,0.72,0.70),light);\n"
+  "  float bottom=clamp((y-0.28)/0.38,0.0,1.0);\n"
+  "  c=mix(c,vec3(13.0/255.0),bottom);\n"
+  "  float shade=vUv.x<0.36?mix(0.94,0.74,vUv.x/0.36):mix(0.74,0.12,clamp((vUv.x-0.36)/0.34,0.0,1.0));\n"
+  "  c=mix(c,vec3(8.0,8.0,10.0)/255.0,shade);\n"
+  "  gl_FragColor=nv_dither(c,uCor.a);\n"
+  "}\n",
 };
 
 // Cada corpo declara o que usa; montar so o necessario mantem o shader enxuto.
@@ -1745,7 +1771,8 @@ static const struct { int sdf, cover; } PRECISA[GFX_NMODOS] = {
   {0,0},   /* GFX_PALCO_ARTE — own anchored cover */
   {0,0},   /* GFX_COPIA_NITIDA */
   {0,0}, {0,0}, {0,0},   /* GFX_COPIA_EASU, GFX_COPIA_LANCZOS, GFX_RCAS */
-  {0,0}    /* GFX_HDR_OUTPUT */
+  {0,0},   /* GFX_HDR_OUTPUT */
+  {0,0}    /* GFX_FILMO_FUNDO */
 };
 
 static GLuint compila(GLenum tipo, const char *src) {
@@ -2126,6 +2153,7 @@ static float vidroRegAnt[VID_NREG][4], vidroRegCur[VID_NREG][4];
 static int vidroNRegAnt, vidroNRegCur;
 static float vidroDesde[4];   // caixa do que foi pintado na tela desde a ultima captura
 static float vidroVidros[VID_N][4], vidroFuros[VID_NFUROS][4];
+static unsigned char vidroIlhas[VID_N];
 int gfx_vidro_capturas, gfx_vidro_passadas;
 int gfx_vidro_camada;
 double gfx_vidro_fill, gfx_vidro_copia;
@@ -3943,7 +3971,8 @@ static void vidroAplicar(Programa *P, GfxRect r) {
   float hw = r.w * sx * 0.5f, hh = r.h * sy * 0.5f, rp = vidPend.raio * r.h * sy;
   int barra = vidPend.tipo == GFX_VIDRO_BARRA;
   // Standing (barras) e Bevelled (paineis), os dois perfis do fs_glass deles.
-  float bevel = (barra ? 12.0f : 28.0f) * sy, lente = (barra ? 24.0f : 38.0f) * sy;
+  int ilha = vidPend.tipo == GFX_VIDRO_ILHA;
+  float bevel = (barra ? 12.0f : 28.0f) * sy, lente = ilha ? 0 : (barra ? 24.0f : 38.0f) * sy;
   if (rp > hw) rp = hw;
   if (rp > hh) rp = hh;
   if (bevel > hh) bevel = hh;
@@ -3954,9 +3983,9 @@ static void vidroAplicar(Programa *P, GfxRect r) {
   glUniform4fv(u[VID_SCRB], 1, vidPend.scrB);
   glUniform4f(u[VID_ARO], 1.0f, 1.0f, 1.0f, vidPend.aro);
   glUniform4f(u[VID_AROLUZ], 1.0f, 1.0f, 1.0f, vidPend.aroLuz);
-  glUniform4f(u[VID_LUZBORDA], 1.0f, 1.0f, 1.0f, 0.14f);
+  glUniform4f(u[VID_LUZBORDA], 1.0f, 1.0f, 1.0f, ilha ? 0 : 0.14f);
   glUniform3f(u[VID_LUZDIR], -0.35f, -0.94f, 0.0f);
-  if (barra) glUniform4f(u[VID_ESPEC], 0.0f, 0.0f, 1.0f, 0.0f);
+  if (barra || ilha) glUniform4f(u[VID_ESPEC], 0.0f, 0.0f, 1.0f, 0.0f);
   else glUniform4f(u[VID_ESPEC], -0.7071f, -0.7071f, 3.0f, 0.80f);
   glUniform4fv(u[VID_DENS], 1, vidPend.dens);
   glUniform4f(u[VID_AMOSTRA], (r.x + r.w * 0.5f) / NV_TELA_W, 1.0f - (r.y + r.h * 0.5f) / NV_TELA_H,
@@ -3974,6 +4003,12 @@ static float vidroVideoAlfa(void) {
   float t = ajustes_vidro_opacidade();
   float d = 0.30f + t * 0.45f;   // 65 % at the default 78 %
   return d;}
+// Glass inside a 2.1 island (pill, chip, card) carries no rim: islands are borderless.
+static int vidroNaIlha(const float tela[4]) {
+  int i;
+  for (i = 0; i < vidroNVidros; i++) if (vidroIlhas[i] && vidroCruza(vidroVidros[i], tela)) return 1;
+  return 0;
+}
 static int vidroSobreVideo(const float tela[4]) {
   int i, video = foscoBloq;
   for (i = 0; !video && i < vidroNFuros; i++) video = vidroCruza(vidroFuros[i], tela);
@@ -3996,14 +4031,23 @@ GLuint gfx_vidro_fonte_fixa(GLuint tex) {
   vidroFonteFixa = tex;
   return anterior;
 }
+// 1 = the next glass draws carry no light rim (2.1 mock surfaces: "sem aro").
+// Callers set it around one draw and clear it.
+int gfx_vidro_sem_aro;
+void gfx_vidro_painel_sem_aro(GfxRect r, float raio, float fundo, float a) {
+  int previous = gfx_vidro_sem_aro;
+  gfx_vidro_sem_aro = 1;
+  gfx_vidro_painel(r, raio, fundo, a);
+  gfx_vidro_sem_aro = previous;
+}
 void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a) {
   GfxRect t = r;
   float d = dens, tela[4];
-  int chapado, video, fumaca, i, contorno = ajustes_vidro_contorno();
+  int chapado, video, fumaca, i, semAro, contorno = ajustes_vidro_contorno();
   if (r.w <= 0.0f || r.h <= 0.0f || a <= 0.001f) return;
   if (!vidroPronto()) {
     gfx_cor(r, raio, 0x1a / 255.0f, 0x1c / 255.0f, 0x21 / 255.0f, 0.94f * a);
-    gfx_anel(r, raio, 1.0f, 1.0f, 1.0f, 1.0f, 0.22f * a);
+    if (!gfx_vidro_sem_aro && tipo != GFX_VIDRO_ILHA) gfx_anel(r, raio, 1.0f, 1.0f, 1.0f, 1.0f, 0.22f * a);
     return;
   }
   GFX_TR_RECT(t.x, t.y, t.w, t.h);
@@ -4012,7 +4056,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   // Wholly off the screen (detail hero buttons scrolled away) paints nothing:
   // no capture for it.
   chapado = !ajustes_vidro_fosco() || efeitosMinimos || snapAtivo || miniAtiva || giroOn ||
-            gfx_opacidade_grupo < 0.999f ||
+            (gfx_opacidade_grupo < 0.999f && tipo != GFX_VIDRO_ILHA) ||
             t.x >= NV_TELA_W || t.y >= NV_TELA_H || t.x + t.w <= 0.0f || t.y + t.h <= 0.0f;
   // A layer over the page (sidebar) frosts even where page glass (pills, cards)
   // sits under it: it reads the blurred backdrop, not those glasses.
@@ -4026,9 +4070,14 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   // Desempenho, or once the governor dropped the tier.
   fumaca = video || ajustes_vidro_qualidade() == 1 || (vidroDegradou && ajustes_vidro_qualidade() == 0);
   if (fumaca) chapado = 1;
-  if (vidroNVidros < VID_N) memcpy(vidroVidros[vidroNVidros++], tela, sizeof tela);
+  semAro = tipo == GFX_VIDRO_ILHA || vidroNaIlha(tela) || gfx_vidro_sem_aro;
+  if (vidroNVidros < VID_N) {
+    vidroIlhas[vidroNVidros] = tipo == GFX_VIDRO_ILHA;
+    memcpy(vidroVidros[vidroNVidros++], tela, sizeof tela);
+  }
   memset(&vidPend, 0, sizeof vidPend);
-  vidPend.tipo = tipo; vidPend.raio = raio;
+  // Borderless glass takes the island profile: no lens, bevel light or specular.
+  vidPend.tipo = semAro && tipo == GFX_VIDRO_PAINEL ? GFX_VIDRO_ILHA : tipo; vidPend.raio = raio;
   vidRuidoPreparar();   // o dither vale tambem no chapado
   if (vidroFonteFixa) vidPend.fonte = vidroFonteFixa;
   else if (!chapado) {
@@ -4072,14 +4121,15 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   vidPend.dens[0] = 0.125f; vidPend.dens[1] = 0.72f; vidPend.dens[2] = 0.82f; vidPend.dens[3] = 1.0f;
   // A27 chrome: the same solve, scaled by "Opacidade do vidro" (gfx_chrome_dens).
   if (tipo == GFX_VIDRO_BARRA) gfx_chrome_dens(vidPend.dens);
-  vidPend.aro = 0.14f + (contorno ? 0.0f : video ? 0.04f : 0.0f);
-  vidPend.aroLuz = 0.28f;
+  vidPend.aro = semAro || gfx_vidro_sem_aro ? 0 : 0.14f + (contorno ? 0.0f : video ? 0.04f : 0.0f);
+  vidPend.aroLuz = semAro ? 0 : 0.28f;
   gfx_vidro_com_fonte += vidPend.fonte != 0;
   gfx_vidro_chapados += vidPend.fonte == 0;
   gfx_vidro_area += (int)(r.w * r.h);
   gfx_rect(r, vidPend.fonte, GFX_VIDRO, 0, 0, 0, raio, 1, 1, 1, a);
   gfx_vidro_matiz(r, raio, a);
-  if (tipo == GFX_VIDRO_PAINEL) gfx_vidro_luz(r, raio, a);
+  // ILHA: t21_ilha lays its own body tint and corner light over the glass.
+  if (tipo == GFX_VIDRO_PAINEL && !semAro) gfx_vidro_luz(r, raio, a);
 }
 
 // OS CANAIS DE FUNDO DA LUZ ASSADA (fundo.c: "Arte borrada" e "Frost" de tela
@@ -4265,7 +4315,7 @@ void gfx_vidro_chip(GfxRect r, float raio, float fundo, float a) {
   tela[0] = t.x; tela[1] = t.y; tela[2] = t.x + t.w; tela[3] = t.y + t.h;
   if (vidroSobreVideo(tela)) d = vidroVideoAlfa();   // over video: light tint
   gfx_cor(r, raio, c, c, c, (d > 1.0f ? 1.0f : d) * a);
-  gfx_vidro_aro(r, raio, 1.0f, 1, 1, 1, 0.14f * a);
+  if (!gfx_vidro_sem_aro && !vidroNaIlha(tela)) gfx_vidro_aro(r, raio, 1.0f, 1, 1, 1, 0.14f * a);
   gfx_vidro_luz(r, raio, a);
 }
 // A27 tint: the existing "Opacidade do vidro" (60..92 %) is the clear->tinted
@@ -4812,6 +4862,25 @@ void gfx_recorte(float x, float y, float w, float h) {
   GFX_OUTRO_FIM();
 }
 void gfx_sem_recorte(void) { glDisable(GL_SCISSOR_TEST); recorteAtivo = 0; }
+GfxRecorteAnt gfx_recorte_dentro(float x, float y, float w, float h) {
+  GfxRecorteAnt ant = { recorteAtivo, { recorteBox[0], recorteBox[1], recorteBox[2], recorteBox[3] } };
+  gfx_recorte(x, y, w, h);
+  if (!ant.ativo) return ant;
+  int x0 = recorteBox[0] > ant.box[0] ? recorteBox[0] : ant.box[0];
+  int y0 = recorteBox[1] > ant.box[1] ? recorteBox[1] : ant.box[1];
+  int x1 = recorteBox[0] + recorteBox[2] < ant.box[0] + ant.box[2] ? recorteBox[0] + recorteBox[2] : ant.box[0] + ant.box[2];
+  int y1 = recorteBox[1] + recorteBox[3] < ant.box[1] + ant.box[3] ? recorteBox[1] + recorteBox[3] : ant.box[1] + ant.box[3];
+  recorteBox[0] = x0; recorteBox[1] = y0;
+  recorteBox[2] = x1 > x0 ? x1 - x0 : 0; recorteBox[3] = y1 > y0 ? y1 - y0 : 0;
+  glScissor(recorteBox[0], recorteBox[1], recorteBox[2], recorteBox[3]);
+  return ant;
+}
+void gfx_recorte_voltar(GfxRecorteAnt ant) {
+  if (!ant.ativo) { gfx_sem_recorte(); return; }
+  memcpy(recorteBox, ant.box, sizeof recorteBox);
+  glEnable(GL_SCISSOR_TEST); recorteAtivo = 1;
+  glScissor(recorteBox[0], recorteBox[1], recorteBox[2], recorteBox[3]);
+}
 
 static int criaAlvo(int i, int w, int h) {
   glGenTextures(1, &borTex[i]);

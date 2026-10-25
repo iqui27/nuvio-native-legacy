@@ -457,6 +457,7 @@ static const struct { int corpo, peso; } ESTILOS[TXT_NFONTES] = {
   { 16, PESO_BOLD }, { 17, PESO_REGULAR }, { 16, PESO_REGULAR },
   { 24, PESO_MEDIUM },  // TXT_HERO_META_G
   { 27, PESO_MEDIUM },  // TXT_HERO_META_GG
+  { 84, PESO_BOLD },    // TXT_FILMO_ANO
 };
 
 // CORPO E PESO de um estilo, para teste e diagnostico (o desenho nao usa:
@@ -2142,7 +2143,9 @@ float txt_tracking(TxtEstilo estilo, const char *s, int r, int g, int b,
     l = txt_linha(estilo, s, r, g, b, 255);
     larg = (float)txt_largura(estilo, s);
   } else l = linhaCache(estilo, s, r, g, b, 255, fonteInterface, 0, &tracking, &larg);
-  if (x >= 0.0f) txt_desenhar_alpha(l, x, y, alpha);
+  // Only the documented x = -1 probe skips drawing: 2.1 screens draw at
+  // negative virtual x when the large-text canvas is centred on the TV.
+  if (x != -1.0f) txt_desenhar_alpha(l, x, y, alpha);
   return larg;
 }
 

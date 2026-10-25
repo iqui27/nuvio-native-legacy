@@ -3,7 +3,6 @@
 // hero no topo, rail fixa à esquerda e fileiras horizontais de posters. A
 // infraestrutura nativa cuida de cache assíncrono, foco e transições.
 #include "home.h"
-#include "glance.h"
 #include "memlog.h"
 #include "perfis.h"
 #include "botoes.h"
@@ -2530,30 +2529,6 @@ int home_iniciar(const char *dirArte) {
   return 1;
 }
 
-static int glanceHomeLinha, glanceHomeHero;
-static HomeItem glanceHomeAlvo;
-static int glanceHomeTotal(void) {
-  return glanceHomeHero ? 1 : (glanceHomeLinha >= 0 && glanceHomeLinha < nFileiras ? fileiras[glanceHomeLinha].n : 0);
-}
-static int glanceHomeItem(int i, CatItem *out) {
-  return cat_copiar_item(glanceHomeHero ? glanceHomeAlvo.indice : fileiraItemIndice(&fileiras[glanceHomeLinha], i), out);
-}
-static void glanceHomeFoco(int i) {
-  if (!glanceHomeHero) { foco.fileira = glanceHomeLinha; foco.coluna = i; foco.colunaLembrada[glanceHomeLinha] = i; }
-}
-static void glanceHomeDetalhes(int i) {
-  glanceHomeFoco(i);
-  if (glanceHomeHero) { itemFoco = glanceHomeAlvo; temItemFoco = 1; }
-  pedidoAbrir = 1;
-}
-static void previaHome(void) {
-  static const GlanceFonte f = {glanceHomeTotal, glanceHomeItem, glanceHomeFoco, glanceHomeDetalhes};
-  glanceHomeHero = focoHero; glanceHomeLinha = foco.fileira;
-  if (glanceHomeHero) { glanceHomeAlvo = itemFoco; glanceHomeAlvo.indice = heroAtual; }
-  glance_abrir(&f, focoHero ? 0 : foco.coluna);
-}
-
-
 // DESCER/SUBIR DE FILEIRA NA MESMA POSICAO DA TELA (issue #205: "quando
 // desce de uma fileira pra outra nao ir pro inicio da fileira, descer na
 // mesma posicao"). O focus_mover pousa na COLUNA LEMBRADA da fileira nova
@@ -2651,7 +2626,7 @@ static void home_evento_(const SDL_Event *e) {
       if (focoHero) {
         okDesde = 0; okPressionando = 0; okLongDisparado = 0; okHold = 0.0f;
         if (dur >= NV_HOLD_MS) abrirMenuCartaz();
-        else previaHome();
+        else pedidoAbrir = 1;
         return;
       }
       int noVerTudo = (foco.fileira >= 0 && foco.fileira < nFileiras &&
@@ -2698,7 +2673,7 @@ static void home_evento_(const SDL_Event *e) {
           pedidoTocar = 1;
         else pedidoAbrir = 1;
       } else {
-        previaHome();
+        pedidoAbrir = 1;
       }
       return;
     } }
@@ -6212,7 +6187,6 @@ static void shotTrailerPasso(int topo, float dt, Uint32 agora, int heroSetting, 
 #endif
 
 static void home_trailer_passo_(int topo, float dt, Uint32 agora) {
-  if (glance_aberto()) return;
   const CatItem *ci = NULL;
   int pronto;
   Uint32 decorrido;

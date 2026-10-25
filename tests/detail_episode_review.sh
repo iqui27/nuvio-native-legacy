@@ -11,21 +11,21 @@ def block(s, start, end):
 txt = block(g, '// GFX_TEXTO', '// GFX_FUNDO')
 bold = block(txt, 'if (uPar.x < 0.0)', 'return;')
 card = block(g, 'if (uVeu.x < 0.0) {', '// GFX_SOMBRA')
-furos = block(d, 'static int epFuros(GfxRect *holes) {', '\n}\n')
+episode = block(d, 'static void desenhaEpisodio(', '// Abas de informacao:')
 fails = []
 if not re.search(r'uniform NV_HP vec3 uPeso;', g): fails.append('uPeso not highp')
 if re.search(r'(^|[^P] )vec2 (uv|p) =', bold) or 'uPar.y' in bold or 'uRaio' in bold:
     fails.append('faux-bold coords/offsets not highp')
 if 'nv_dither(cor' not in card: fails.append('merged episode veil not dithered')
-if 'gfx_opacidade_grupo' not in furos: fails.append('epFuros ignores row/group alpha')
+if 'epFuros' in d: fails.append('obsolete backdrop occlusion returned')
 rf = block(g, 'void gfx_rect_furos(', '\nvoid gfx_rect(')
 if 'fillGpuArea(r,' in rf or 'GFX_TR_RECT' not in rf or 'escAtiva' not in rf:
     fails.append('rect_furos visibility check uses unscaled coordinates')
-if 'if (epModerna() && ft > .005f)' not in d:
-    fails.append('Modern C focus panel missing')
+if 'if (f > .005f)' not in episode or '.64f*f*a' not in episode:
+    fails.append('episode focus panel ignores focus/page alpha')
 if 'NUVIO_EP_MATERIAL' in d: fails.append('temporary material switch remains')
-if 'GfxRect th = {x, epRowY()-scrollY, epCardW(), epThumbH()};' not in furos:
-    fails.append('translucent panel wrongly culls backdrop')
+if 'th = thLayout;' not in episode:
+    fails.append('focus moves episode text')
 for f in fails: print('FAIL:', f)
 print('OK' if not fails else ''); sys.exit(1 if fails else 0)
 EOF

@@ -68,6 +68,22 @@ int main(void) {
   cat_definir_tudo(&c, 1, NULL, 0);
   cat_definir_episodios(0, eps, 20);
   abrir(); alvo(2, 10); ancora(2, 10);
-  puts("PASS #674: local/late history, hero target, manual focus, all watched, resume");
+  // A rewatch session wins over the title's old in-progress episode.
+  assert(rewatch_iniciar(c.imdb, RW_ORIGEM_TITULO));
+  abrir(); alvo(1, 1); ancora(1, 1);
+  rewatch_parcial(c.imdb, 1, 4, 35);
+  abrir(); alvo(1, 4); ancora(1, 4);
+  rewatch_encerrar(c.imdb);
+
+  // Each personal-server namespace preserves an explicit unwatched episode.
+  const char *serverIds[] = {"jf:12345678.1", "em:12345678.1", "px:12345678.1"};
+  for (int i = 0; i < 3; i++) {
+    strcpy(c.imdb, serverIds[i]); c.progresso = 0;
+    c.temporada = 2; c.episodio = 6;
+    cat_definir_tudo(&c, 1, NULL, 0);
+    cat_definir_episodios(0, eps, 20);
+    abrir(); alvo(2, 6); ancora(2, 6);
+  }
+  puts("PASS #674: history, hero target, manual focus, resume, rewatch, servers");
   return 0;
 }

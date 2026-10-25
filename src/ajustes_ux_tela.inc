@@ -131,7 +131,7 @@ static const Item TELA[] = {
     ROT("Guia de TV"),
       OPC(AJ_GUIA_ORDEM), OPC(AJ_GUIA_FONTE), OPC(AJ_GUIA_RECARREGAR), OPC(AJ_EPG_PAIS), OPC(AJ_EPG_MEMORIA), OPC(AJ_GUIA_CATEGORIAS),
       OPC(AJ_URL_LISTA), OPC(AJ_URL_M3U_ADD), OPC(AJ_URL_XMLTV_ADD), OPC(AJ_URL_REM),
-      OPC(AJ_LIVETV_SUGERIR),
+      OPC(AJ_LIVETV_SUGERIR), OPC(AJ_GUIA_PREVIA_GRANDE),
     ROT("Se o canal não abre"),
       OPC(AJ_LIVETV_DIAG), OPC(AJ_LIVETV_RES), OPC(AJ_LIVETV_ESPERA),
     MAIS(),
@@ -197,7 +197,7 @@ static const Item TELA[] = {
   // conta: ligar uma nota liga o par dela e o MDBList por baixo (notaLigarPar).
   SEC("Página do título", "O que aparece, notas e dados do título", "aj_file-text"),
     ROT("O que aparece"),
-      OPC(AJ_DET_VEU), OPC(AJ_DET_DATA_CHEIA), OPC(AJ_DET_BLUR_NAO_VISTOS), OPC(AJ_EP_TAMANHO),
+      OPC(AJ_DET_VEU), OPC(AJ_DET_DATA_CHEIA), OPC(AJ_DET_BLUR_NAO_VISTOS), OPC(AJ_EP_TAMANHO), OPC(AJ_DET_TOPO), OPC(AJ_DET_ELENCO_VISTO),
     ROT("Notas"),
       OPC(AJ_NT_IMDB), OPC(AJ_NT_TOMATES), OPC(AJ_NT_AUDIENCIA), OPC(AJ_NT_META),
       OPC(AJ_NT_METAUSER), OPC(AJ_NT_TRAKT), OPC(AJ_NT_TMDB), OPC(AJ_NT_LETTER),
@@ -281,7 +281,7 @@ OPC(AJ_RESOLUCAO), OPC(AJ_GPU_EFEITOS), OPC(AJ_AMPLIAR_UI), OPC(AJ_AMPLIACAO_ALG
 
 // Texto exibido no painel ao selecionar uma categoria. Mesma ordem dos SECs.
 static const char *SECAO_AJUDA[] = {
-  "Qualidade máxima, Dolby Vision e Atmos, e o que acontece durante e depois do vídeo.",
+  "Qualidade, Dolby Vision, Atmos e a escolha da fonte.",
   "Idioma da interface, preferências de áudio e legenda e idioma dos metadados.",
   "Addons e plugins, debrid e servidores pessoais.",
   "Conexão dos provedores e diagnóstico de reprodução de canais ao vivo.",

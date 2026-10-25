@@ -51,6 +51,15 @@ int  celular_disponivel(void);
 int  celular_abrir(const char *titulo);
 // Share one HTTP(S) destination through the same expiring LAN token.
 int  celular_abrir_link(const char *titulo, const char *destino);
+/* Optional HTML for the next pairing only; same token/Host/Origin/expiry and
+ * single-use POST. Form action must remain empty (the current token URL). */
+int celular_abrir_pagina(const char *titulo, const char *html, const char *enviado);
+/* Guided setup session: same token/Host/Origin/expiry pairing, but the server
+ * stays up after each POST so the page can poll GET /<token>/s (a short app-set
+ * status, never credentials) and send the next step. Ends on celular_fechar()
+ * or the same expiry. */
+int  celular_abrir_sessao(const char *titulo, const char *html);
+void celular_status(const char *s);
 void celular_fechar(void);
 int  celular_estado(void);
 // http://<ip>:<porta>/<token>, ou "" fora do ar.

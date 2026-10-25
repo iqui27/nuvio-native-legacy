@@ -51,6 +51,10 @@ const char *detmais_rotulo(int acao) {
     case DMAIS_REWATCH: return "Reassistir do início";
     case DMAIS_REWATCH_FIM: return "Encerrar reassistida";
     case DMAIS_SINOPSE:    return "Ler sinopse";
+    case DMAIS_INICIO:     return "Assistir do começo";
+    case DMAIS_LEMBRAR:    return "Lembrar-me";
+    case DMAIS_JUNTOS:     return "Assistir Juntos";
+    case DMAIS_TRAVAR:     return "Travar série";
   }
   return "";
 }
@@ -65,6 +69,10 @@ const char *detmais_icone(int acao) {
     case DMAIS_REWATCH: return "aj_rotate-ccw-clock";
     case DMAIS_REWATCH_FIM: return "aj_x";
     case DMAIS_SINOPSE:    return "aj_file-text";
+    case DMAIS_INICIO:     return "aj_rotate-ccw-clock";
+    case DMAIS_LEMBRAR:    return "aj_bell";
+    case DMAIS_JUNTOS:     return "aj_users";
+    case DMAIS_TRAVAR:     return "aj_lock";
   }
   return "";
 }
@@ -99,6 +107,7 @@ GfxRect detmais_caixa(GfxRect anc) {
   // (filme com as quatro acoes) sobe e cobre o logo, que nao e lido agora.
   r.y = anc.y + anc.h + DM_VAO;
   if (r.y + r.h > NV_TELA_H - DM_BORDA) r.y = anc.y - DM_VAO - r.h;
+  if (r.y < DM_BORDA) r.y = DM_BORDA;
   return r;
 }
 

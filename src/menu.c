@@ -695,10 +695,16 @@ static void desenhaRodape(const MenuGeo *g, float e, float alpha, float foco, fl
       gfx_tex_aspect_atual = tex_aspecto(p->avatarUrl);
       gfx_rect(av, tex, GFX_AVATAR, 0, 0, 0, 0.5f, 0, 0, 0, alpha);
       gfx_tex_aspect_atual = 0.0f;
+    } else if (!p || !p->nome[0]) {
+      // Sem perfil carregado nao ha inicial: o glifo de pessoa, em vez do "?"
+      // azul do padrao do web.
+      gfx_cor(av, 0.5f, 1, 1, 1, alpha * 0.10f);
+      gfx_icone((GfxRect){av.x + av.w * 0.25f, av.y + av.h * 0.25f, av.w * 0.5f, av.h * 0.5f},
+                "mt_perfil", 0.85f, 0.85f, 0.87f, alpha);
     } else {
-      corAvatar(p ? p->corHex : NULL, &cr, &cg, &cb);
+      corAvatar(p->corHex, &cr, &cg, &cb);
       gfx_cor(av, 0.5f, cr, cg, cb, alpha);
-      inicialDe(p ? p->nome : NULL, ini, sizeof ini);
+      inicialDe(p->nome, ini, sizeof ini);
       { TxtLinha l = txt_linha(TXT_V2_KBD18, ini, 255, 255, 255, 255);
         txt_desenhar_alpha(l, av.x + (av.w - l.w) * 0.5f,
                            av.y + (av.h - l.h) * 0.5f, alpha); } } }
@@ -1166,6 +1172,10 @@ static void tvAvatar(GfxRect av, float alfa) {
     { TxtLinha l = txt_linha(TXT_CAPTION2, ini, 255, 255, 255, 255);
       txt_desenhar_alpha(l, av.x + (av.w - l.w) * 0.5f, av.y + (av.h - l.h) * 0.5f, alfa); }
   }
+}
+
+void menu_avatar(float x, float y, float size, float alpha) {
+  tvAvatar((GfxRect){x, y, size, size}, alpha);
 }
 
 // Escurece SO o lado esquerdo: faixas verticais de cor chapada com o alfa

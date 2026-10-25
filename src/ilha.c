@@ -123,6 +123,7 @@ static int corpoPed, corpoSemSombra;
 static float corpoW, corpoH, corpoT, corpoV;
 static float corpoWa, corpoHa, corpoVw, corpoVh;   // o tamanho na mola (o pedido muda)
 static IlhaCorpo corpoFn;
+static GfxRect corpoR;   // the animated island rect the body is drawn into
 static void *corpoU;
 static Uint32 modalDesde;
 static int pedido, pedidoQual;
@@ -689,12 +690,13 @@ void ilha_ancorar(float x, float y, int daDireita) {
   ancDef = 1; ancX = x; ancY = y; ancDir = daDireita;
 }
 
-// O relogio fica SEMPRE no canto de cima a DIREITA, em toda tela e estado (dono,
-// 03/10: ele mudava de lado conforme o que acontecia, e a opcao de lado saiu de
-// Ajustes). `guia` ficou so por compatibilidade com quem chama.
+// Server Library and Detail use the mock's left clock/profile island.
+// Other pages keep the existing right clock.
+static int clockProfile;
 void ilha_posicionar(int guia) {
-  (void)guia;
-  ilha_ancorar(NV_TELA_W - NV_ILHA_MARGEM_D / gfx_escala_txt(), NV_ILHA_Y / gfx_escala_txt(), 1);
+  clockProfile = guia == 2;
+  if (clockProfile) ilha_ancorar(48.0f / gfx_escala_txt(), 36.0f / gfx_escala_txt(), 0);
+  else ilha_ancorar(NV_TELA_W - NV_ILHA_MARGEM_D / gfx_escala_txt(), NV_ILHA_Y / gfx_escala_txt(), 1);
 }
 
 // COM SINAL: quem renova a atividade chama SDL_GetTicks DEPOIS de o quadro ter
@@ -1032,7 +1034,7 @@ static float larguraConteudo(int m, TxtLinha *t1, TxtLinha *t2) {
   t1->w = t1->h = 0; t2->w = t2->h = 0;
   if (m == M_RELOGIO) {
     *t1 = txt_linha(TXT_PG_RELOGIO, hora, 244, 245, 248, 255);
-    return (float)t1->w + (pontoEnquete ? 12.0f + PONTO_ENQ : 0.0f);
+    return (float)t1->w + (pontoEnquete ? 12.0f + PONTO_ENQ : 0.0f) + (clockProfile ? 54.0f : 0);
   }
   if (atvV2) {
     // v2: recuo de 30 dos dois lados (a diferenca para PAD_E/PAD_D entra aqui).
@@ -1084,6 +1086,7 @@ static void desenharConteudo(int m, GfxRect r, float a, Uint32 agora) {
       gfx_cor((GfxRect){ x + (float)t1.w + 12.0f, yc - PONTO_ENQ * 0.5f, PONTO_ENQ, PONTO_ENQ }, 0.5f, cr, cg, cb, a);
     }
     desempenho_linha(dsMostra, x + (float)t1.w + (pontoEnquete ? 12.0f + PONTO_ENQ : 0.0f), yc, a);
+    if (clockProfile) menu_avatar(x + cw - 36, yc - 18, 36, a);
     if (bh > 0.0f) desempenho_corpo(dsMostra, (GfxRect){ r.x, r.y + NV_ILHA_H, r.w, r.h - NV_ILHA_H }, a);
     return;
   }
@@ -2003,6 +2006,7 @@ void ilha_corpo(float w, float h, IlhaCorpo corpo, void *u) {
   if (modalAberto) ilha_modal_fechar(1);
 }
 float ilha_corpo_t(void) { return corpoT; }
+GfxRect ilha_corpo_rect(void) { return corpoR; }
 void ilha_corpo_sem_sombra(void) { corpoSemSombra = 1; }
 
 // A hora da pilula em repouso, no lugar exato dela: com o corpo aberto e a
@@ -2065,13 +2069,13 @@ static void ilha_desenharCorpo_(Uint32 agora) {
   { int quer = corpoPed;
     float alvoC = quer ? 1.0f : 0.0f;
     corpoPed = 0;
-    if (gfx_efeitos_minimos()) { corpoT = alvoC; corpoV = 0.0f; }
+    if (anim_politica_reduzida || ajustes_animacoes_reduzidas() || gfx_efeitos_minimos()) { corpoT = alvoC; corpoV = 0.0f; }
     else if (gfx_efeitos_leves()) corpoT = molaIlhaWZ(&corpoV, corpoT, alvoC, dt, MODAL_MOLA_W * 1.5f, 1.0f);
     else corpoT = molaIlhaWZ(&corpoV, corpoT, alvoC, dt, MODAL_MOLA_W, MODAL_MOLA_Z);
     if (!quer && corpoT < 0.01f) { corpoT = 0.0f; corpoV = 0.0f; }
     // O TAMANHO PEDIDO MUDA com o painel aberto (botao posto ou tirado, a
     // edicao): anda na mola da pilula em vez de saltar. Nascendo, ja e o alvo.
-    if (corpoT <= 0.0f || corpoWa <= 0.0f || gfx_efeitos_minimos()) {
+    if (corpoT <= 0.0f || corpoWa <= 0.0f || anim_politica_reduzida || ajustes_animacoes_reduzidas() || gfx_efeitos_minimos()) {
       corpoWa = corpoW; corpoHa = corpoH; corpoVw = corpoVh = 0.0f;
     } else {
       corpoWa = molaIlha(&corpoVw, corpoWa, corpoW, dt);
@@ -2214,9 +2218,9 @@ static void ilha_desenharCorpo_(Uint32 agora) {
       aPil = soHora ? 0.0f : 1.0f - corpoT * 10.0f;
       if (aPil < 0.0f) aPil = 0.0f;
       aHora = soHora && conteudoA > k3 ? conteudoA : k3;
-      // O painel e muito maior que o modal: o conteudo so entra com a forma
-      // quase assentada, senao ele aparece cortado pela borda que ainda cresce.
-      aMod = (corpoT - 0.78f) / 0.20f; aMod = aMod < 0.0f ? 0.0f : aMod > 1.0f ? 1.0f : aMod;
+      // O corpo entra junto com a forma (a ilha o recorta enquanto cresce):
+      // fade curto a partir de 30%, sem esperar a mola assentar.
+      aMod = (corpoT - 0.30f) / 0.35f; aMod = aMod < 0.0f ? 0.0f : aMod > 1.0f ? 1.0f : aMod;
       if (anim_politica_reduzida || ajustes_animacoes_reduzidas() || gfx_efeitos_minimos())
         aMod = corpoT >= 0.5f ? 1.0f : 0.0f;
     }
@@ -2292,6 +2296,7 @@ static void ilha_desenharCorpo_(Uint32 agora) {
     if (aMod > 0.0f && modalT > 0.0f) desenharModal(modalAlvo(r, dir), A * aMod);
     if (corpoT > 0.0f && corpoFn && modalT <= 0.0f) {
       horaNoLugar(x, dir, y, A * aHora);
+      corpoR = R;
       if (aMod > 0.0f) corpoFn((GfxRect){ dir ? x - corpoWa : x, y, corpoWa, corpoHa }, A * aMod, corpoU);
     }
     gfx_sem_recorte();

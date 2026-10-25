@@ -2,6 +2,8 @@
 #define NV_FILMO_H
 #include <SDL2/SDL.h>
 void filmo_abrir(void);
+// Returns true only after the reversed exit animation settles.
+int filmo_atualizar(float dt);
 // 1 requests closing the person screen; title requests use filmo_titulo().
 int filmo_evento(const SDL_Event *e);
 void filmo_desenhar(float a);

@@ -456,9 +456,7 @@ static int uxEvento(SDL_Keycode k) {
         // Diferentes do padrao: abre a lista (degrau 1); Voltar devolve a pilula (uxTopo fica nela).
         if (t == AJ2_T_DIF) { uxListarDiferencas(); uxDifFoco = 0; uxIndice = 1; focoIndice = 0; return 1; }
         if (t == AJ2_T_LAYOUT) return uxAlternarLayout();   // o foco fica na pilula
-        // "Resolver um problema" e a tela inteira da 2.1 (resolver.h); Voltar
-        // nela devolve a este cartao. Os demais abrem o Guia de uso (o tour
-        // completo, com "Ligar agora" por funcao, e da 2.1).
+        if (t == AJ2_T_TOUR) { tourAbrir(); return 1; }
         if (t == AJ2_T_RESOLVER) { resolver_abrir(); return 1; }
         guiaAbrir(0); guiaDoIndice = 1;
         return 1;

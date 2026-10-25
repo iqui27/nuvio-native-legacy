@@ -213,6 +213,16 @@ int main(void) {
   assert(AJ_MIC_BUSCA == AJ_INTERFACE_MODO + 1);
   assert(AJ_MENU_TOPO == AJ_MIC_BUSCA + 1);
   assert(AJ_N > AJ_CONQ_DICAS && AJ_CONQ_LIGADO == AJ_MENU_TOPO + 1);
+  assert(AJ_GUIA_PREVIA_GRANDE == AJ_DET_ELENCO_VISTO + 1 && AJ_N == AJ_GUIA_PREVIA_GRANDE + 1);
+  // Guia TV v5: previa grande desligada de fabrica (vale o cartao do mock),
+  // por perfil neste aparelho (ESC_PERFIL_LOCAL), chave propria.
+  assert(valor[AJ_GUIA_PREVIA_GRANDE] == 1 && !ajustes_guia_previa_grande());
+  assert(!strcmp(CHAVE[AJ_GUIA_PREVIA_GRANDE], "guiaPreviaGrandeLocal"));
+  assert(somenteDesteAparelho(AJ_GUIA_PREVIA_GRANDE) && escopoDe(AJ_GUIA_PREVIA_GRANDE) == ESC_PERFIL_LOCAL);
+  ajustes_definir_guia_previa_grande(1);
+  assert(ajustes_guia_previa_grande());
+  ajustes_definir_guia_previa_grande(0);
+  assert(!ajustes_guia_previa_grande());
   assert(ajustes_conquistas() && ajustes_conquistas_aviso() && ajustes_conquistas_dicas());
   assert(AJ_MENU_TOPO == AJ_MIC_BUSCA + 1 && AJ_ABAS_ESTILO == AJ_CONQ_DICAS + 1 && AJ_TECLADO_ANDROID == AJ_ABAS_ESTILO + 1 && AJ_LEG_CONTORNO_COR == AJ_TECLADO_ANDROID + 1);
   assert(AJ_FALHA_PROVEDORES == AJ_LEG_CONTORNO_COR + 1 && AJ_RETOMADA_MORNA == AJ_FALHA_ADDON_LIMITE + 1 && AJ_MANTER_PRAZO == AJ_RETOMADA_MORNA + 1 && AJ_ESTAT_TAMANHO == AJ_MANTER_PRAZO + 1 && AJ_OCULTAR_FILMES_VISTOS == AJ_ESTAT_TAMANHO + 1 && AJ_ESTAT_LADO == AJ_OCULTAR_FILMES_VISTOS + 1 && AJ_DICASCONTROLE == AJ_ESTAT_LADO + 1 && AJ_HERO_GENERO == AJ_DICASCONTROLE + 1 && AJ_ABERTURA_ADDON == AJ_HERO_GENERO + 1 && AJ_HERO_SINOPSE == AJ_ABERTURA_ADDON + 1 && AJ_HERO_NOTAS == AJ_HERO_SINOPSE + 1 && AJ_HERO_ANO == AJ_HERO_NOTAS + 1 && AJ_HERO_DURACAO == AJ_HERO_ANO + 1 && AJ_CURADORIA_URL == AJ_HERO_DURACAO + 1 && AJ_ABERTURA_FUNDO == AJ_CURADORIA_URL + 1 && AJ_HERO_SINOPSE_TAM == AJ_ABERTURA_FUNDO + 1 && AJ_EP_TAMANHO == AJ_HERO_SINOPSE_TAM + 1 && AJ_AMIGOS_ESTILO == AJ_MURAL_TITULOS + 1 && AJ_FONTE_IDIOMA_AUDIO == AJ_AMIGOS_ESTILO + 1 &&

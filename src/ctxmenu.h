@@ -22,8 +22,6 @@
 // tecla nem abre no KEYDOWN; assim o toque curto continua abrindo o detalhe e
 // o modal recebe apenas o foco D-pad depois de estar visivel.
 void ctx_abrir(int indice);
-// Quick glance uses the same Save/Watched actions and their existing flows.
-void ctx_acao_rapida(const CatItem *titulo, int visto);
 // Fecha a UI e descarta copias/pedidos do perfil anterior. Escritas ja
 // despachadas continuam nos seus proprios workers, com o dono original.
 void ctx_abrir_sessao(void);
