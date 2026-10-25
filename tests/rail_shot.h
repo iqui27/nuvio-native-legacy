@@ -70,6 +70,8 @@ static void rail_shot_aplicar(void) {
   // Settings reload must not erase the capture's requested text scale.
   { const char *scale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
     if (scale && *scale) gfx_escala_txt_definir((float)atof(scale)); }
+  { const char *glass = getenv("NUVIO_SHOT_VIDRO");
+    if (glass && *glass) ajustes_definir_vidro(*glass != '0'); }
 }
 
 // Pinta a rail por cima do quadro ja desenhado, com `destino` aceso.

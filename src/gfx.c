@@ -4822,6 +4822,25 @@ void gfx_recorte(float x, float y, float w, float h) {
   GFX_OUTRO_FIM();
 }
 void gfx_sem_recorte(void) { glDisable(GL_SCISSOR_TEST); recorteAtivo = 0; }
+GfxRecorteAnt gfx_recorte_dentro(float x, float y, float w, float h) {
+  GfxRecorteAnt ant = { recorteAtivo, { recorteBox[0], recorteBox[1], recorteBox[2], recorteBox[3] } };
+  gfx_recorte(x, y, w, h);
+  if (!ant.ativo) return ant;
+  int x0 = recorteBox[0] > ant.box[0] ? recorteBox[0] : ant.box[0];
+  int y0 = recorteBox[1] > ant.box[1] ? recorteBox[1] : ant.box[1];
+  int x1 = recorteBox[0] + recorteBox[2] < ant.box[0] + ant.box[2] ? recorteBox[0] + recorteBox[2] : ant.box[0] + ant.box[2];
+  int y1 = recorteBox[1] + recorteBox[3] < ant.box[1] + ant.box[3] ? recorteBox[1] + recorteBox[3] : ant.box[1] + ant.box[3];
+  recorteBox[0] = x0; recorteBox[1] = y0;
+  recorteBox[2] = x1 > x0 ? x1 - x0 : 0; recorteBox[3] = y1 > y0 ? y1 - y0 : 0;
+  glScissor(recorteBox[0], recorteBox[1], recorteBox[2], recorteBox[3]);
+  return ant;
+}
+void gfx_recorte_voltar(GfxRecorteAnt ant) {
+  if (!ant.ativo) { gfx_sem_recorte(); return; }
+  memcpy(recorteBox, ant.box, sizeof recorteBox);
+  glEnable(GL_SCISSOR_TEST); recorteAtivo = 1;
+  glScissor(recorteBox[0], recorteBox[1], recorteBox[2], recorteBox[3]);
+}
 
 static int criaAlvo(int i, int w, int h) {
   glGenTextures(1, &borTex[i]);

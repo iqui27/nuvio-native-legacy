@@ -18,6 +18,11 @@ void plrui_material(GfxRect r, float raioPx, int modal, float a) {
   plrui_material_s(r, raioPx, modal, a, 0);
 }
 
+void plrui_material_plano(GfxRect r, float raioPx, float a) {
+  if (!ajustes_vidro()) { plrui_material(r, raioPx, 0, a); return; }
+  if (r.w > 0.0f && r.h > 0.0f) gfx_cor(r, raioDe(r, raioPx), 1, 1, 1, 0.08f * a);
+}
+
 void plrui_material_s(GfxRect r, float raioPx, int modal, float a, int semSombra) {
   float raio = raioDe(r, raioPx);
   if (r.w <= 0.0f || r.h <= 0.0f || a <= 0.002f) return;
@@ -158,7 +163,7 @@ float plrui_botao_video(float x, float y, const char *rotulo, const char *icone,
 float plrui_kicker(const char *s, float x, float y, int r, int g, int b, float a) {
   char up[200];
   idioma_maiusc(up, sizeof up, i18n(s));
-  if (x < 0.0f) return txt_tracking(TXT_MINI, up, r, g, b, -10000.0f, y, 0.0f, 2.1f);
+  if (x < 0.0f) return txt_tracking(TXT_MINI, up, r, g, b, -1.0f, y, 0.0f, 2.1f);
   return txt_tracking(TXT_MINI, up, r, g, b, x, y, a, 2.1f);
 }
 
