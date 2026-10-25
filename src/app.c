@@ -883,6 +883,8 @@ static int iniciarPoliticaFonte(int preferida, int manual) {
 #include "srvidx.h"
 #include "partes.h"
 #include "logrede.h"
+#include "extras.h"
+#include "perfilinfantil.h"
 #include <stdio.h>
 
 static Tela tela = TELA_HOME;
@@ -1061,6 +1063,10 @@ static int cacaDoPerfil;
 
 static void trocarTela(Tela nova) {
   if (nova == tela) return;
+  if (nova == TELA_GUIA && perfil_infantil_ativo()) {   // perfilinfantil.h: sem TV ao vivo
+    glem_aviso_curto(i18n("Perfil infantil: sem TV ao vivo"));
+    return;
+  }
   glance_fechar();
   if (nova != TELA_SOCIAL) socialDoPerfil = 0;
   if (nova != TELA_CACA) cacaDoPerfil = 0;
@@ -6070,6 +6076,16 @@ void app_atualizar(float dt, Uint32 agora) {
     // TRAVA DE SERIE: o episodio alvo alem do limite (quem esta a frente
     // espera) nao toca: abre a folha de espera, que tem "Assistir mesmo assim".
     if (querTocar && aguardandoFonte != 2 && travaui_segurar_detalhe()) querTocar = 0;
+    // PERFIL INFANTIL (perfilinfantil.h): so classificacao livre ou ate 10 anos.
+    if (querTocar && perfil_infantil_ativo()) {
+      const CatItem *ki = cat_item(detail_indice());
+      const char *cert = extras_ficha_classificacao();
+      if (!cert || !*cert) cert = ki ? ki->classificacao : NULL;
+      if (!perfil_infantil_classif_ok(cert)) {
+        glem_aviso_curto(i18n("Perfil infantil: só classificação livre e 10 anos"));
+        querTocar = 0;
+      }
+    }
     if (querTocar && aguardandoFonte != 2) {
       marco("abrir: reproduzir pedido");
       // A tela abre JA, no estado "abrindo fonte", e a escolha acontece depois.

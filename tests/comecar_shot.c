@@ -278,6 +278,7 @@ static void motion_proof(const char *prefix, int step) {
   char path[900];
   for (int kind = 0; kind < 5; kind++) {
     previa("estado=nenhum\nnome=Marina\ncor=0\n");
+    traktauth_cancelar();   // the offline import press above fails late: show the idle Trakt card
     ir_passo(step);
     if (kind) {
       adiantar(60);
@@ -416,10 +417,10 @@ int main(int argc, char **argv) {
   // Passo 3 (Acompanhar): the default chips step the real settings in place.
   assert(comecar_foco() == 0);   // I_TRAKT
   tecla(SDLK_DOWN); assert(comecar_foco() >= I_CH_CW && comecar_foco() <= I_CH_HIST);
+  // "Importar o que ja foi visto" is an action, not a setting: no tracker here,
+  // so OK starts the Trakt code and the step stays put.
   ir_para(I_CH_HIST);
-  { int h = ajustes_rapido_ligado(op_chip(I_CH_HIST));
-    tecla(SDLK_RETURN); assert(ajustes_rapido_ligado(op_chip(I_CH_HIST)) == !h);
-    tecla(SDLK_RETURN); assert(ajustes_rapido_ligado(op_chip(I_CH_HIST)) == h); }
+  tecla(SDLK_RETURN); assert(comecar_passo() == 2);
   ir_para(I_CH_CW);
   { char v[64]; snprintf(v, sizeof v, "%s", ajustes_rapido_valor(op_chip(I_CH_CW)));
     tecla(SDLK_RETURN); assert(strcmp(v, ajustes_rapido_valor(op_chip(I_CH_CW))));
@@ -605,11 +606,17 @@ int main(int argc, char **argv) {
       snprintf(cw[i].imdb, sizeof cw[i].imdb, "tt000000%d", i);
       cw[i].temporada = atoi(ARTE[i][2]); cw[i].episodio = cw[i].temporada ? 8 : 0;
       cw[i].restanteMin = atoi(ARTE[i][3]);
+      snprintf(cw[i].tipo, sizeof cw[i].tipo, "%s", cw[i].temporada ? "series" : "movie");
     }
     snprintf(f.chave, sizeof f.chave, "continue_watching");
     snprintf(f.titulo, sizeof f.titulo, "Continuar assistindo");
     f.n = 4;
     cat_definir_tudo(cw, 4, &f, 1);
+    // Step 4 library line reads real state: two saved, two watched.
+    for (int i = 0; i < 4; i++) {
+      if (i % 2) cat_historico_definir_id(cw[i].imdb, cw[i].tipo, 1);
+      else salvos_definir(&cw[i], 1);
+    }
     AddonRemoto ad[3] = {{"Cinemeta","https://v3-cinemeta.strem.io/manifest.json",1},
                          {"Torrentio","https://torrentio.strem.fun/manifest.json",1},
                          {"OpenSubtitles","https://opensubtitles-v3.strem.io/manifest.json",1}};
@@ -672,8 +679,19 @@ int main(int argc, char **argv) {
 
   tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
   assert(comecar_passo() == 3);
+  shotContas = 1;   // mock 3D: tracker linked, collections on Home, skip intro on
+  if (!col_n()) assert(col_definir_json("[{\"id\":\"c1\",\"title\":\"Casa\",\"folders\":["
+    "{\"id\":\"f1\",\"title\":\"Cl\xc3\xa1ssicos\",\"sources\":[{\"provider\":\"addon\",\"addonBaseUrl\":\"https://x.test\",\"type\":\"movie\",\"catalogId\":\"top\"}]}]},"
+    "{\"id\":\"c2\",\"title\":\"Anime\",\"folders\":["
+    "{\"id\":\"f2\",\"title\":\"Temporada\",\"sources\":[{\"provider\":\"addon\",\"addonBaseUrl\":\"https://x.test\",\"type\":\"series\",\"catalogId\":\"top\"}]}]}]") > 0);
+  if (!ajustes_pular_abertura()) ajustes_rapido_passo(ajustes_rapido_op("pularAberturaLocal"), 1);
+  assert(col_n() > 1 && ajustes_pular_abertura());
   snprintf(nome, sizeof nome, "%s-4-pronto.png", prefix);
-  captura(nome, 160);   // Continue watching art decodes at this scale's width first
+  // Continue watching art decodes at this scale's width first: settle until none pending.
+  adiantar(160);
+  for (int k = 0, pend = 1; pend && k < 600; k++) { tex_estatisticas(NULL, &pend, NULL, NULL, NULL); adiantar(1); }
+  captura(nome, 20);
+  shotContas = 0;
 
   checkBounds = 0;
   if (!getenv("NUVIO_SHOT_QUICK") && (scale == 1 || scale == .85f)) for (int step = 0; step < 4; step++) motion_proof(prefix, step);
