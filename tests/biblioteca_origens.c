@@ -24,6 +24,19 @@ int main(void) {
   }
   cat_definir(items, 2);
   biblioteca_iniciar();
+  // Header and source column retain the mock's physical geometry below 100%.
+  const float scales[] = {.85f, 1.0f, 1.3f};
+  for (unsigned i = 0; i < sizeof scales / sizeof scales[0]; i++) {
+    gfx_escala_txt_definir(scales[i]);
+    TXT_INI();
+    assert(fabsf(bibHS() - fmaxf(1.0f, scales[i])) < .001f);
+    assert(fabsf(BIB_TOPO * bibHS() - 124.0f) < .001f);
+    assert(fabsf(BIB_FAIXA_Y * bibHS() - 232.0f) < .001f);
+    assert(fabsf(hdrX() * bibHS() - paginaX() * scales[i]) < .001f);
+    assert(fabsf((bibX() - paginaX()) * scales[i] - 364.0f) < .001f);
+    TXT_FIM();
+  }
+  gfx_escala_txt_definir(1.0f);
   key(SDLK_DOWN); key(SDLK_DOWN);
   for (int i = 0; i < BIB_N_ORIG + 1; i++) key(SDLK_DOWN);
   key(SDLK_RETURN);
