@@ -19,8 +19,10 @@ void plrui_material(GfxRect r, float raioPx, int modal, float a) {
 }
 
 void plrui_material_plano(GfxRect r, float raioPx, float a) {
-  if (!ajustes_vidro()) { plrui_material(r, raioPx, 0, a); return; }
-  if (r.w > 0.0f && r.h > 0.0f) gfx_cor(r, raioDe(r, raioPx), 1, 1, 1, 0.08f * a);
+  int previous = gfx_vidro_sem_aro;
+  gfx_vidro_sem_aro = 1;
+  plrui_material(r, raioPx, 0, a);
+  gfx_vidro_sem_aro = previous;
 }
 
 void plrui_material_s(GfxRect r, float raioPx, int modal, float a, int semSombra) {
