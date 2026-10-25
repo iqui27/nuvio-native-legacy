@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 
 BASE = Path('/Volumes/ExternalSSD/tmp/rev/diretor21/21-j5')
-OUT = BASE / 'r3'
+OUT = BASE.parent / 'redesign' / 'j5'
 os.environ['MAGICK_TEMPORARY_PATH'] = os.environ.get('TMPDIR', '/Volumes/ExternalSSD/tmp')
 os.environ['MAGICK_THREAD_LIMIT'] = '1'
 TIMES = (0, 80, 160, 320)
@@ -59,10 +59,12 @@ for screen, directory, prefix, still in (
     ('home21', 'home21', 'home21', 'home21-{scale}-{material}'),
     ('servers-detail', 'servers-detail', 'server', 'server-{scale}-{material}'),
     ('servers-sources', 'servers-sources', 'native', 'native-{scale}-{material}'),
-    ('servers-overview', 'servers-overview', 'overview', 'overview-{scale}-{material}'),
+    ('servers-overview', 'servers-overview', 'native-overview', 'native-overview-{scale}-{material}'),
     ('together', 'together-verified', '', 'matrix-3-{scale}-{material}'),
 ):
     frames = OUT / directory
+    if not frames.exists():  # screen untouched this round: no recapture, no trio
+        continue
     for scale in (100, 85):
         for material in ('glass', 'solid'):
             target = OUT / f'{screen}-{scale}-{material}-tri.png'
@@ -72,19 +74,17 @@ for screen, directory, prefix, still in (
             after = native(frames / (still.format(scale=scale, material=material) + '.png'))
             magick(reference, after, '+append', target)
             pngs.append(str(target))
-            shutil.copy2(target, BASE / target.name)
             if scale == 100 and material == 'glass':
                 shutil.copy2(target, OUT / f'{screen}-tri.png')
-                shutil.copy2(target, BASE / f'{screen}-tri.png')
-    for mode in ('entry', 'focus'):
+    modes = ('entry', 'focus') + (('footer',) if screen == 'servers-overview' else ())
+    for mode in modes:
         paths = [frames / f'{prefix + "-" if prefix else ""}{mode}-{t:03}.png' for t in TIMES]
         strip(paths, OUT / f'{screen}-{mode}-anim.png')
     target = OUT / f'{screen}-anim.png'
-    magick(OUT / f'{screen}-entry-anim.png', OUT / f'{screen}-focus-anim.png', '-append', target)
+    magick(*(OUT / f'{screen}-{mode}-anim.png' for mode in modes), '-append', target)
     pngs.append(str(target))
-    shutil.copy2(target, BASE / target.name)
 
-for layer in range(1, 8):
+for layer in range(1, 8) if (OUT / 'together-verified').exists() else ():
     for scale in (100, 85):
         for material in ('glass', 'solid'):
             target = OUT / f'together-layer-{layer}-{scale}-{material}-tri.png'

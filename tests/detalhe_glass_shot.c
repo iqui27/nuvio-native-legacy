@@ -171,6 +171,7 @@ size_t trakt_token_tam(const char *s) {
 #include "agendaviso.h"
 #include "fontepref.h"
 #include "streams.h"
+#include "badges.h"
 #include "ilha.h"
 #include "menu.h"
 #include "salvospainel.h"
@@ -731,6 +732,52 @@ int main(int argc, char **argv) {
     e.key.keysym.sym = SDLK_RETURN; detail_evento(&e);
     e.type = SDL_KEYUP; detail_evento(&e);
     assert(detail_pediu_fontes() && detail_fonte_servidor() == 0);
+  }
+  // Sources sheet opened from a server-backed Detail (mock: title backdrop and
+  // Detail context behind it, server copies first, priority footer).
+  if (quer(argc, argv, "fontes-servidor")) {
+    static Stream v[6];
+    static const struct { const char *prov, *desc, *grupo; int alt, mp4, dv; } F[6] = {
+      { "Plex · Casa", "Direct Play · Local · 62.4 GB", "plex|fixture", 2160, 1, 1 },
+      { "Jellyfin · Sala", "Transcode · AAC · 28.1 GB", "jellyfin|fixture", 2160, 0, 0 },
+      { "AIOStreams | ElfHosted", "Movie.2160p.HDR.HEVC.mkv\n10.2 GB", "", 2160, 0, 0 },
+      { "MediaFusion", "Movie.1080p.WEB-DL.mkv\n4.1 GB", "", 1080, 0, 0 },
+      { "Torrentio", "Movie.1080p.x265.mkv\n2.3 GB", "", 1080, 0, 0 },
+      { "Comet", "Movie.720p.mp4\n1.2 GB", "", 720, 1, 0 } };
+    for (int i = 0; i < 6; i++) {
+      snprintf(v[i].provedor, sizeof v[i].provedor, "%s", F[i].prov);
+      snprintf(v[i].rotulo, sizeof v[i].rotulo, "%s", F[i].prov);
+      snprintf(v[i].descricao, sizeof v[i].descricao, "%s", F[i].desc);
+      snprintf(v[i].bingeGroup, sizeof v[i].bingeGroup, "%s", F[i].grupo);
+      snprintf(v[i].url, sizeof v[i].url, "https://example.invalid/%d.%s", i, F[i].mp4 ? "mp4" : "mkv");
+      v[i].altura = F[i].alt; v[i].mp4 = F[i].mp4; v[i].dolbyVision = F[i].dv; v[i].fileIdx = -1;
+      v[i].tamanhoMB = F[i].alt >= 2160 ? 11264 : 2048;
+      char t[3200]; snprintf(t, sizeof t, "%s %s", F[i].prov, F[i].desc); v[i].badges = badges_detectar(t);
+    }
+    cat_definir_tudo(itens, 2, NULL, 0);
+    stream_definir_alvo(IMDB_FILME); stream_definir_lista(v, 6);
+    abrir(1, 0, 0, 0);
+    stream_folha_nome(itens[1].titulo);
+    stream_folha_abrir(); quadros(60);
+    gravar("fontes-servidor-app");
+    const float scales[] = {1, .85f, .9f, 1.1f, 1.2f, 1.3f};
+    for (int scale = 0; scale < 6; scale++) for (int glass = 0; glass < 2; glass++) {
+      char name[80]; gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
+      quadros(40); snprintf(name, sizeof name, "native-%d-%s", (int)(scales[scale] * 100 + .5f), glass ? "glass" : "solid"); gravar(name);
+    }
+    gfx_escala_txt_definir(1); ajustes_definir_vidro(1);
+    SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_ESCAPE;
+    stream_folha_evento(&e); quadros(90); stream_folha_abrir();
+    const int times[] = {0, 80, 160, 320};
+    for (int i = 0, elapsed = 0; i < 4; i++) {
+      while (elapsed < times[i]) { quadros(1); SDL_Delay(16); elapsed += 16; }
+      char name[80]; snprintf(name, sizeof name, "native-entry-%03d", times[i]); gravar(name);
+    }
+    quadros(90); e.key.keysym.sym = SDLK_DOWN; stream_folha_evento(&e);
+    for (int i = 0, elapsed = 0; i < 4; i++) {
+      while (elapsed < times[i]) { quadros(1); SDL_Delay(16); elapsed += 16; }
+      char name[80]; snprintf(name, sizeof name, "native-focus-%03d", times[i]); gravar(name);
+    }
   }
   // O ULTIMO circular da linha aberta em foco: hoje o "..." (Mais opcoes).
   if (quer(argc, argv, "filme-explorar")) {

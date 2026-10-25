@@ -434,7 +434,8 @@ int main(int argc, char **argv) {
   const float scales[] = {1, .85f, .9f, 1.1f, 1.2f, 1.3f};
   for (int scale = 0; scale < 6; scale++) for (int glass = 0; glass < 2; glass++) {
     gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
-    assert(focarFileira("pop_movie"));
+    // Mock state: Continue (landscape, progress) focused, Next episodes below.
+    assert(focarFileira("continue_watching"));
     snprintf(bmp, sizeof bmp, "%s-%d-%s.bmp", saida, (int)(scales[scale] * 100 + .5f), glass ? "glass" : "solid");
     quadros(45, bmp);
   }

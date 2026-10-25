@@ -392,15 +392,22 @@ int main(int argc, char **argv) {
     }
     setenv("NUVIO_SHOT_ESCALA_TEXTO", "1", 1); setenv("NUVIO_SHOT_VIDRO", "1", 1);
     rail_shot_aplicar();
-    for (int m = 0; m < 2; m++) {
+    for (int m = 0; m < 3; m++) {
       const Uint32 tempos[] = { 0, 80, 160, 320 };
+      const char *modo[] = { "entry", "focus", "footer" };
       biblioteca_iniciar();
-      if (m) { tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); assenta(); }
+      if (m == 1) { tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); assenta(); }
+      // Last server row -> "Conectar servidor / Gerenciar conexões" footer.
+      if (m == 2) {
+        tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_LEFT);
+        for (int i = 0; i < 20; i++) tecla(SDLK_DOWN);
+        tecla(SDLK_UP); assenta();
+      }
       Uint32 t0 = SDL_GetTicks();
-      if (m) tecla(SDLK_RIGHT);
+      if (m) tecla(m == 1 ? SDLK_RIGHT : SDLK_DOWN);
       for (int i = 0; i < 4; i++) {
         while (SDL_GetTicks() - t0 < tempos[i]) quadros(1);
-        snprintf(nome, sizeof nome, "%s-overview-%s-%03u.bmp", saida, m ? "focus" : "entry", (unsigned)tempos[i]); grava(nome);
+        snprintf(nome, sizeof nome, "%s-overview-%s-%03u.bmp", saida, modo[m], (unsigned)tempos[i]); grava(nome);
       }
     }
     unsetenv("NUVIO_SHOT_ESCALA_TEXTO"); unsetenv("NUVIO_SHOT_VIDRO"); rail_shot_aplicar();

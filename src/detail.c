@@ -4754,6 +4754,10 @@ static Uint32 hSinTick;
 // a cada 250 ms (ou ao mudar o alvo do botao primario) e a altura reservada
 // assenta suave, para a chegada da lista de fontes nao dar salto no hero.
 #define DET_VAI_GAP 18.0f
+#define DET_NOTA_CARD_W 156.0f
+#define DET_NOTA_CARD_H 136.0f
+#define DET_NOTA_CARD_GAP 24.0f
+#define DET_NOTA_DICAS_H 56.0f
 static VaiTocar vaiTocar;
 static Uint32 vaiTocarEm;
 static int    vaiTocarIdx = -1, vaiTocarT, vaiTocarE;
@@ -4920,7 +4924,16 @@ static void heroWeb(float a, float desloc) {
   // UMA LINHA DE META SO (dono, 12/10/2026): a de baixo (selo de
   // classificacao/status, pais, direcao) saiu e a duracao do filme subiu para
   // a linha dos generos. O bloco inteiro desce o que ela ocupava.
-  float yMeta1 = ANC(NV_DETW2_BASE) - NV_DETW2_M1_H;
+  unsigned srvCurrentVersion = servidores_fileiras_versao();
+  if (srvAvailabilityIndex != idx || srvAvailabilityVersion != srvCurrentVersion) {
+    servidoresDisponiveis = 0;
+    for (int p = 0; ci && p < 3; p++) if (servidores_contem_item(ci, p)) servidoresDisponiveis |= 1 << p;
+    srvAvailabilityIndex = idx; srvAvailabilityVersion = srvCurrentVersion;
+  }
+  // Server-backed title (mock): IMDb / Rotten Tomatoes / Sua nota cards
+  // under the meta line; the hero stack rises by their height.
+  float hNotas = servidoresDisponiveis ? DET_NOTA_CARD_H + DET_NOTA_CARD_GAP + DET_NOTA_DICAS_H : 0.0f;
+  float yMeta1 = ANC(NV_DETW2_BASE) - NV_DETW2_M1_H - hNotas;
   float ySin   = yMeta1 - NV_DETW2_GAP_SIN - hSin;
   AmigosTitulo amg;
   int temAmg = amigosDoTitulo(&amg);
@@ -4950,12 +4963,6 @@ static void heroWeb(float a, float desloc) {
         if (fabsf(alvo - hVaiVis) < 0.5f) hVaiVis = alvo;
       }
       hVai = hVaiVis; } }
-  unsigned srvCurrentVersion = servidores_fileiras_versao();
-  if (srvAvailabilityIndex != idx || srvAvailabilityVersion != srvCurrentVersion) {
-    servidoresDisponiveis = 0;
-    for (int p = 0; ci && p < 3; p++) if (servidores_contem_item(ci, p)) servidoresDisponiveis |= 1 << p;
-    srvAvailabilityIndex = idx; srvAvailabilityVersion = srvCurrentVersion;
-  }
   float srvH = servidoresDisponiveis ? 64.0f : 0.0f;
   float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai - srvH;
   // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
@@ -5231,7 +5238,9 @@ static void heroWeb(float a, float desloc) {
       // Draw outgoing circles behind Add, then keep the anchor in front.
       for (int j=nBotoesTodos()-1; j>first; j--) {
         float stagger = anim_clamp((progress-(j-first-1)*.045f)/.78f,0,1);
-        if (stagger < .005f) continue;
+        // Mock: "+" and "..." rest side by side; the rest slide in between.
+        int rest = acaoEm(j) == ACAO_MAIS;
+        if (stagger < .005f && !rest) continue;
         // A focused circle grows around its center: its left half is inside
         // the stagger distance; every circle at or past it shifts right —
         // the focused one by one half, the ones beyond by two — so the gaps
@@ -5240,8 +5249,10 @@ static void heroWeb(float a, float desloc) {
           ? det_foco_extra(NV_DETW2_CIRC, NV_DETW2_FOCO_SY) * (1.0f + (botao < j)) *
             anim_clamp((progress-(botao-first-1)*.045f)/.78f,0,1) : 0.0f;
         int selected = nivel == 0 && botao == j;
-        GfxRect rc = {bx+((j-first)*(NV_DETW2_CIRC+NV_DETW2_BTN_GAP)+ext)*stagger+jext,
+        float slot = rest ? 1 + (j-first-1)*stagger : (j-first)*stagger;
+        GfxRect rc = {bx+slot*(NV_DETW2_CIRC+NV_DETW2_BTN_GAP)+ext*(rest ? 1 : stagger)+jext,
           anchor.y,NV_DETW2_CIRC,NV_DETW2_CIRC};
+        if (rest) stagger = 1;
         int action = acaoEm(j);
         if (action == ACAO_LEMBRAR)
           desenhaLembrete(rc,ci && agenda_lembrete(ci->imdb),selected,a*stagger);
@@ -5512,7 +5523,7 @@ static void heroWeb(float a, float desloc) {
     }
     { char mine[96], value[24];
       int n = reacao_nota(cat_item(idx)->imdb);
-      if (n) {  // hide the entry until the user has rated
+      if (n && !servidoresDisponiveis) {  // hide until rated; server titles show the card
         snprintf(value, sizeof value, "%d.%d", n / 2, n % 2 * 5); plrui_decimal(value);
         snprintf(mine, sizeof mine, "%s  %s", i18n("Sua nota"), value);
         float ar, ag, ab;
@@ -5554,6 +5565,30 @@ static void heroWeb(float a, float desloc) {
           } }
       }
     }
+  }
+
+  // Rating cards (server mock): IMDb, Rotten Tomatoes, Sua nota (star until rated).
+  if (servidoresDisponiveis) {
+    const int fontes[] = { EX_IMDB, EX_TOMATOES, -1 };
+    float x = NV_DETW2_X, y = yMeta1 + NV_DETW2_M1_H + DET_NOTA_CARD_GAP;
+    for (int k = 0; k < 3; k++) {
+      char v[24] = "";
+      int sua = fontes[k] < 0, n = sua ? reacao_nota(cat_item(idx)->imdb) : 0;
+      if (sua && n) { snprintf(v, sizeof v, "%d.%d", n / 2, n % 2 * 5); plrui_decimal(v); }
+      else if (!sua) nf_texto(fontes[k], notasDados()->cru[fontes[k]], !ajustes_idioma_ingles(), 0, v, sizeof v);
+      if (!sua && !v[0]) continue;
+      GfxRect c = { x, y, DET_NOTA_CARD_W, DET_NOTA_CARD_H };
+      plrui_material_plano(c, 20.0f, aHero);
+      float hl = txt_bloco(TXT_ILHA_SUB, sua ? i18n("Sua nota") : nf_nome(fontes[k]), 179, 179, 179,
+                           c.x + 22, c.y + 20, c.w - 44, 23, aHero, 2);
+      if (v[0]) {
+        TxtLinha lv = txt_linha(TXT_ILHA_TITULO, v, 243, 242, 239, 255);
+        txt_desenhar_alpha(lv, c.x + 22, c.y + 20 + hl + 6, aHero);
+      } else gfx_icone((GfxRect){ c.x + 22, c.y + 20 + hl + 10, 32, 32 }, "pl_star", .953f, .949f, .937f, aHero);
+      x += DET_NOTA_CARD_W + 14.0f;
+    }
+    const char *k[2] = { "OK", "Voltar" }, *r[2] = { i18n("Assistir · ↓ para trailers e elenco"), i18n("Voltar") };
+    plrui_dicas(k, r, 2, NV_DETW2_X, y + DET_NOTA_CARD_H + DET_NOTA_DICAS_H - 10, 0, aHero);
   }
 
   if (detalheRetrato()) gfx_sem_recorte();

@@ -412,6 +412,8 @@ void biblioteca_teste_foco(int *fileira, int *coluna, int *acao) {
 }
 static float animModo[BIB_N_MODOS];
 static float animPick[8];
+// Origins rows (and the manage footer) share one focus spring per entry.
+static float animOrigem[BIB_N_ORIG + 8 + 4];
 static float animFoco[BIB_MAX_LINHAS][BIB_COLUNAS_MAX];
 // Arte chegando, a mesma da home (revela.h): um registro por celula da grade.
 static RevelaArte revArte[BIB_MAX_LINHAS][BIB_COLUNAS_MAX];
@@ -1759,6 +1761,11 @@ static void biblioteca_atualizar_(float dt, Uint32 agora) {
     animModo[a] = anim_mola(animModo[a], alvo, dt,
                             alvo > animModo[a] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
   }
+  for (int o = 0; o < (int)(sizeof animOrigem / sizeof *animOrigem); o++) {
+    float alvo = focoOrigem && origemSel == o ? 1.0f : 0.0f;
+    animOrigem[o] = anim_mola(animOrigem[o], alvo, dt,
+                              alvo > animOrigem[o] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+  }
   for (int p = 0; p < 8; p++) {
     float alvo = (foco.fileira == (estado() == EST_ITENS ? 0 : BIB_FIL_PICK)
                   && foco.coluna == p) ? 1.0f : 0.0f;
@@ -3034,7 +3041,7 @@ static void desenhaOrigens(void) {
     }
     GfxRect row = { painel.x + 12, painel.y + 56 + (i - start) * 58, 296, 56 };
     ponteiro_alvo(row.x, row.y, row.w, row.h, ponteiroOrigem, NULL, i, 0);
-    if (focoOrigem && origemSel == i) gfx_cor(row, 18.0f / row.h, 1, 1, 1, .13f);
+    if (animOrigem[i] > .01f) gfx_cor(row, 18.0f / row.h, 1, 1, 1, .13f * animOrigem[i]);
     float tx = row.x + 18;
     if (i) {
       gfx_cor((GfxRect){tx, row.y + 10, 34, 34}, 10.0f / 34, 1, 1, 1, .08f);
@@ -3065,7 +3072,7 @@ static void desenhaOrigens(void) {
     gfx_cor((GfxRect){ painel.x + 12, footerY + 4, 296, 1 }, 0, 1, 1, 1, .08f);
     if (gerir >= 0) {
       ponteiro_alvo(pe.x, pe.y, pe.w, pe.h, ponteiroOrigem, NULL, gerir, 0);
-      if (focoOrigem && origemSel == gerir) gfx_cor(pe, 18.0f / pe.h, 1, 1, 1, .13f);
+      if (animOrigem[gerir] > .01f) gfx_cor(pe, 18.0f / pe.h, 1, 1, 1, .13f * animOrigem[gerir]);
     }
     txt_desenhar(txt_linha_corta(TXT_MINI, "+ Conectar servidor", 150, 153, 162, 255, 280), painel.x + 18, pe.y + 6);
     txt_desenhar(txt_linha_corta(TXT_MINI, "Gerenciar conexões", 150, 153, 162, 255, 280), painel.x + 18, pe.y + 30);

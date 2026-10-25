@@ -104,6 +104,7 @@ static int folhaRelogio; // Latched at opening, retained through closing.
 #define FOLHA_ABA_H     44.0f  // a pilula de cada aba, dentro da faixa
 #define FOLHA_TOPO     (FOLHA_ABAS_Y + FOLHA_ABAS_H + 24.0f + folhaOY + folhaDica)
 static void medirCabecalho(void);
+#define FOLHA_SRV_PE    84.0f  // server-copy footer: priority line + key hints
 #define FOLHA_LINHA_H  112.0f  // linha sem marca e sem arquivo
 #define FOLHA_MARCA_H   30.0f  // "SUA ESCOLHA ANTERIOR" / "REPRODUZINDO AGORA"
 #define FOLHA_ARQ_H     34.0f  // nome do arquivo, so na linha em foco
@@ -4705,6 +4706,7 @@ static void folhaGeometria(void) {
     folhaOY = 0.0f;
     folhaBase = NV_TELA_H - FOLHA_MARGEM - 16.0f;
   }
+  if (temServidor()) folhaBase -= FOLHA_SRV_PE;   // server footer (mock)
   const char *dica = fraseDicaChips();
   folhaDica = dica ? 18.0f + txt_bloco(TXT_HERO_META, dica, 255,255,255, 0,0,
       FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D+4.0f-48.0f, 28.0f, 0, 0) : 0.0f;
@@ -6668,6 +6670,13 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   // Na ilha, de volta ao recorte dela (plrilha corta a forma inteira).
   if (ilha) gfx_recorte(ilhaR.x,ilhaR.y,ilhaR.w,ilhaR.h);
   else gfx_sem_recorte();
+  if (temServidor()) {   // mock footer: why the home copy leads, and the keys
+    const char *k[2] = { "OK", "↓" }, *r[2] = { i18n("Assistir"), i18n("Detalhes do arquivo") };
+    gfx_cor((GfxRect){tx,folhaBase+8,tr-tx,1},0,1,1,1,.08f*anim);
+    txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,i18n("A cópia disponível no servidor tem prioridade."),150,153,162,255,tr-tx),
+                       tx,folhaBase+20,anim);
+    plrui_dicas(k,r,2,tx,folhaBase+70,0,anim);
+  }
   if (detAnim > .01f) {
     desenhaDetalhe(x,w,ptr);
     if (ilha) gfx_recorte(ilhaR.x,ilhaR.y,ilhaR.w,ilhaR.h);
