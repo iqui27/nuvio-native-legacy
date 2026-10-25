@@ -191,12 +191,18 @@ static void rotas(float x,float y,float w) {
     gfx_cor(r,20/r.h,1,1,1,addonmodo_get(identidade)==i+1?27/255.f:9/255.f);   // mock .route / .route.active
     plrui_linha_foco(r,20,fmaxf(focoDe(10+i),addonmodo_get(identidade)==i+1?.35f:0));
     icone(ICONES[i],r.x+18,r.y+20,21,0.9f);
-    texto(TXT_ILHA_ITEM,i18n(i==0&&ajustes_p2p_url()[0]?"Servidor P2P":MODOS[i]),r.x+48,r.y+16,cw-58,1);
-    texto(TXT_ILHA_SUB,i18n(DESCR[i]),r.x+18,r.y+50,cw-30,0.64f);
+    float badge=0;   // mock .route .on: short accent badge with its own lane beside the title
     if(addonmodo_get(identidade)==i+1) {
-      TxtLinha ativo=t21_texto_linha(TXT_ILHA_APOIO,i18n("Em uso nesta TV"),243,242,239,255,cw);
-      acentoTexto(i18n("Em uso nesta TV"),TXT_ILHA_APOIO,r.x+cw-ativo.w-18,r.y+20);
+      char up[64];idioma_maiusc_em(ajustes_idioma(),up,sizeof up,i18n("Em uso"));
+      TxtLinha ativo=t21_texto_linha(TXT_ILHA_APOIO,up,243,242,239,255,cw);
+      badge=ativo.w+12;
+      acentoTexto(up,TXT_ILHA_APOIO,r.x+cw-ativo.w-18,r.y+20);
     }
+    texto(TXT_ILHA_ITEM,i18n(i==0&&ajustes_p2p_url()[0]?"Servidor P2P":MODOS[i]),r.x+48,r.y+16,cw-58-badge,1);
+    float scale=gfx_escala_txt();
+    TXT_INI();
+    txt_bloco_corta(TXT_ILHA_SUB,i18n(DESCR[i]),243,242,239,(r.x+18)/scale,(r.y+50)/scale,(cw-30)/scale,24.0f,0.64f,r.h>100?2:1);
+    TXT_FIM();
     alvo(r,10+i);
     gfx_opacidade_grupo=alpha;
   }

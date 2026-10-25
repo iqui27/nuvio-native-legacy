@@ -79,6 +79,7 @@ static void movimento(float dt) {
 
 static unsigned versao, geracao;
 static int catalogoSelecionado, linkSelecionado=-1, maisHosts;
+static int soManifesto;   // overview preview of manifest-only mode (mock toggle-access)
 static void trace(void);
 static char arteFundo[700], arteLogo[700];
 void aioui_arte(const char *dir) {
@@ -88,6 +89,7 @@ void aioui_arte(const char *dir) {
 static char usuario[96], base[2048], host[256], alvo[128], tipo[32], mensagem[256];
 static char configure[320];
 static AioSnapshot snap;
+static int conectada(void) { return snap.configurada && !soManifesto; }
 // Footer actions below the rows keep the viewport (no snap back to the top).
 static float janelaCatalogos(void) { return janela(4,snap.catalogos,5,pagina==CATALOGOS); }
 static pthread_mutex_t trava = PTHREAD_MUTEX_INITIALIZER;
@@ -212,7 +214,7 @@ static void encerrar(void) {
 void aioui_abrir(int i) {
   abertura=0; saindo=0; paginaAnterior=-1;
   aberto=1; geracao++; foco=0; lateral=0; entrada=pendente=0; indice=i; alvo[0]=0; proximaConsulta=0;
-  regraSelecionada=linkSelecionado=-1; evidenciaSelecionada=0;
+  regraSelecionada=linkSelecionado=-1; evidenciaSelecionada=0; soManifesto=0;
   memset(&snap,0,sizeof snap); mensagem[0]=0;
   perfil=perfis_ativo(); versao=addons_versao(); snprintf(usuario,sizeof usuario,"%s",sessao_usuario());
   snprintf(host,sizeof host,"%s",hosts[hostIdx]); base[0]=0;
@@ -254,7 +256,7 @@ static int nConteudo(void) {
   if(pagina==SERVICOS) return 2;
   if(pagina==IMPORTAR) return 2;
   if(pagina==PRONTO) return 2;
-  if(pagina==PAINEL) return 9;
+  if(pagina==PAINEL) return 11;
   if(pagina==CATALOGOS) return snap.catalogos+4;
   if(pagina==FONTES) return snap.addons-nLegendas()+snap.servicos+4;
   if(pagina==LEGENDAS) return nLegendas()+snap.legendas+2;
@@ -298,9 +300,11 @@ static void acao(void) {
   } else if(pagina==PRONTO) mudar(foco?CATALOGOS:PAINEL);
   else if(pagina==PAINEL) {
     if(foco<6) mudar(CATALOGOS+foco);
-    else if(foco==6) { campo(2); }
-    else if(foco==7) { geracao++; atualizarRede(0); }
-    else mudar(IMPORTAR);
+    else if(foco==6) campo(2);
+    else if(foco==7) mudar(FONTES);
+    else if(foco==8) fechar();   // back to Complementos, where this screen opens from
+    else if(foco==9) { if(snap.configurada) soManifesto=!soManifesto; else mudar(IMPORTAR); }
+    else { geracao++; atualizarRede(0); }
   } else if(pagina==CATALOGOS) {
     if(foco<snap.catalogos) {
       catalogoSelecionado=foco;
@@ -364,15 +368,15 @@ void aioui_evento(const SDL_Event *e) {
     if(f>=0) { fil_mover(f,k==SDLK_PAGEUP?-1:1); desc_remontar_fileiras(); }
     return;
   }
-  if(pagina==PAINEL && !lateral && foco<6 && (k==SDLK_UP || k==SDLK_DOWN)) {
-    if(k==SDLK_UP && foco>=2) foco-=2;
-    else if(k==SDLK_DOWN) foco=foco<4?foco+2:6;
-    return;
-  }
-  if(pagina==PAINEL && !lateral && foco<6 && (k==SDLK_LEFT || k==SDLK_RIGHT)) {
-    if(k==SDLK_RIGHT && !(foco%2)) foco++;
-    else if(k==SDLK_LEFT && foco%2) foco--;
-    else if(k==SDLK_LEFT) { lateral=1; foco=0; }
+  // Overview grid: 0-5 cards, 6 inspect, 7-9 shortcut row, 10 header refresh.
+  if(pagina==PAINEL && !lateral && (k==SDLK_UP || k==SDLK_DOWN || k==SDLK_LEFT || k==SDLK_RIGHT)) {
+    int up=k==SDLK_UP, dn=k==SDLK_DOWN, lf=k==SDLK_LEFT, rt=k==SDLK_RIGHT;
+    if(foco<6) {
+      if(up) foco=foco>=2?foco-2:10; else if(dn) foco=foco<4?foco+2:6;
+      else if(rt && !(foco%2)) foco++; else if(lf && foco%2) foco--; else if(lf) { lateral=1; foco=0; }
+    } else if(foco==6) { if(up) foco=4; else if(dn) foco=7; else if(lf) { lateral=1; foco=0; } }
+    else if(foco<10) { if(up) foco=6; else if(rt && foco<9) foco++; else if(lf && foco>7) foco--; else if(lf) { lateral=1; foco=0; } }
+    else if(dn) foco=1; else if(lf) { lateral=1; foco=0; }
     return;
   }
   if(pagina==INSTANCIA && (k==SDLK_UP || k==SDLK_DOWN)) {
@@ -517,13 +521,17 @@ static void linha(int i,const char *icon,const char *nome,const char *sub,float 
   ponteiro_alvo(x,y,w,h,pointer,click,i,0);
   gfx_opacidade_grupo=alpha;
 }
-static void botao(int i,const char *nome,float x,float y,float w) {
+static void botaoIc(int i,const char *nome,const char *ic,float x,float y,float w) {
   float scale=gfx_escala_txt();
-  GfxRect r={x/scale,y/scale,fmaxf(w/scale,botao_largura(nome,NULL,0)),T21_CTRL_H};
+  GfxRect r={x/scale,y/scale,fmaxf(w/scale,botao_largura(nome,ic,0)),T21_CTRL_H};
   TXT_INI();
-  botao_pilula(r,nome,NULL,focoDe(i,0),0,0,1);
+  botao_pilula(r,nome,ic,focoDe(i,0),0,0,1);
   TXT_FIM();
   ponteiro_alvo(x,y,r.w*scale,r.h*scale,pointer,click,i,0);
+}
+static void botao(int i,const char *nome,float x,float y,float w) { botaoIc(i,nome,NULL,x,y,w); }
+static float botaoW(int i,const char *nome,const char *ic,float x,float y) {
+  botaoIc(i,nome,ic,x,y,0); return botao_largura(nome,ic,0)*gfx_escala_txt();
 }
 static void qrDesenhar(const char *url,float x,float y,float size) {
   // Shared QR texture: one draw instead of hundreds of modules each frame.
@@ -621,7 +629,7 @@ static void setup(void) {
     gfx_icone((GfxRect){736,215,44,44},"aj_check",.65f,.84f,.83f,1);
     texto(TXT_ILHA_PERGUNTA,i18n("AIOStreams adicionado"),716,307,1040,240);
     texto(TXT_ILHA_SUB,snap.nome[0]?snap.nome:"AIOStreams",716,361,1040,174);
-    const char *checks[]={i18n("Manifesto"),snap.configurada?i18n("Configuração conectada"):i18n("Somente manifesto"),i18n("Credenciais ocultas")};
+    const char *checks[]={i18n("Manifesto"),conectada()?i18n("Configuração conectada"):i18n("Somente manifesto"),i18n("Credenciais ocultas")};
     for(int i=0;i<3;i++) {
       gfx_icone((GfxRect){716,411+i*43,24,24},"aj_check",.65f,.84f,.83f,1);
       texto(TXT_ILHA_SUB,checks[i],756,411+i*43,1000,220);
@@ -756,7 +764,7 @@ static void workspace(void) {
   }
   gfx_cor((GfxRect){91,830,277,1},0,1,1,1,.08f);
   gfx_cor((GfxRect){108,850,254,34},.2f,.25f,.32f,.34f,.55f);
-  texto(TXT_ILHA_HORA,snap.configurada?i18n("Configuração conectada"):i18n("Somente manifesto"),118,860,234,192);
+  texto(TXT_ILHA_HORA,conectada()?i18n("Configuração conectada"):i18n("Somente manifesto"),118,860,234,192);
   texto(TXT_ILHA_SUB,snap.nome[0]?snap.nome:"AIOStreams",108,891,252,174);
   texto(TXT_ILHA_TITULO,i18n(titulos[pagina]),453,184,1290,243);
   const char *intro=pagina==CATALOGOS?"CH+ / CH-: mover na Home":pagina==FONTES?"Addons, serviços, cache e P2P":pagina==LINKS?"Destinos externos e instalação":pagina==LEGENDAS?"Separadas das faixas dentro do vídeo":pagina==FILTROS?"Resumo somente leitura · Edite pelo celular":pagina==SAUDE?"Instância, latência e erros observados":"Sua configuração, com cada recurso no seu lugar.";
@@ -767,7 +775,7 @@ static void workspace(void) {
     for(int i=0;i<7;i++) if(!strcmp(host,hosts[i])) displayHost=nomes[i];
     texto(TXT_ILHA_NOME,displayHost,518,306,1160,236);
     gfx_cor((GfxRect){453,374,1353,1},0,.8f,.84f,.88f,.08f);
-    texto(TXT_ILHA_SUB,snap.configurada?i18n("Configuração conectada"):i18n("Somente manifesto"),518,350,1100,170);
+    texto(TXT_ILHA_SUB,conectada()?i18n("Configuração conectada"):i18n("Somente manifesto"),518,350,1100,170);
     if(snap.valida) {
       gfx_cor((GfxRect){1690,313,116,34},.2f,.25f,.32f,.34f,.55f);
       gfx_icone((GfxRect){1700,322,16,16},"aj_check",.7f,.84f,.86f,1);
@@ -778,7 +786,7 @@ static void workspace(void) {
     for(int i=0;i<snap.catalogos;i++) { int f=fileira(i); if(f>=0&&!fil_linha_oculta(f)) noInicio++; }
     char card[6][256];
     snprintf(card[0],sizeof card[0],i18n("%d disponíveis · %d no Início"),snap.catalogos,noInicio);
-    const char *serv=serviceAtivo();
+    const char *serv=conectada()?serviceAtivo():NULL;
     if(snap.addons-nLegendas()>0&&serv) snprintf(card[1],sizeof card[1],i18n("%d complementos · %s conectado"),snap.addons-nLegendas(),serv);
     else snprintf(card[1],sizeof card[1],"%s",i18n("Addons, serviços, cache e P2P"));
     snprintf(card[2],sizeof card[2],"%s",i18n("Destinos externos e instalação"));
@@ -790,12 +798,18 @@ static void workspace(void) {
     for(int i=0;i<6;i++) {
       float x=453+(i%2)*727, w=i%2?626:702, y=389+(i/2)*112;
       linha(i,icons[i+1],nav[i+1],sub[i],x,y,w);
-      texto(TXT_ILHA_NUM,snap.configurada?i18n("Configuração conectada"):i18n("Somente manifesto"),x+w-240,y+22,190,158);
     }
     gfx_cor((GfxRect){453,741,1353,1},0,.8f,.84f,.88f,.08f);
     texto(TXT_ILHA_NOME,i18n("Inspeção do título"),453,770,900,238);
     texto(TXT_ILHA_SUB,i18n("Todos os resultados recebidos, na ordem do AIOStreams."),453,804,980,174);
-    botao(6,i18n("Inspecionar título"),1446,767,360); botao(7,i18n("Atualizar"),453,842,300); botao(8,i18n("Reconectar"),775,842,350);
+    // Mock .overviewfoot + .inlineactions; refresh lives in the heading (mock B('Refresh')).
+    botaoIc(6,i18n("Inspecionar título"),"aj_funnel",1446,767,360);
+    float bx=453;
+    bx+=botaoW(7,i18n("Painel de Fontes"),"aj_layers",bx,842)+12;
+    bx+=botaoW(8,i18n("Ajustes de complementos"),"aj_puzzle",bx,842)+12;
+    botaoW(9,!snap.configurada?i18n("Reconectar"):soManifesto?i18n("Ver configuração conectada"):i18n("Ver modo só com manifesto"),"aj_eye",bx,842);
+    float scale=gfx_escala_txt(), rw=botao_largura(i18n("Atualizar"),"aj_rotate-cw",0)*scale;
+    botaoIc(10,i18n("Atualizar"),"aj_rotate-cw",1806-rw,193,0);
     return;
   }
   if(pagina!=TITULO) aside();
@@ -803,9 +817,13 @@ static void workspace(void) {
 
   if(pagina==CATALOGOS) {
     texto(TXT_ILHA_SECAO,i18n("Catálogos publicados pelo manifesto"),453,285,690,220);
-    texto(TXT_ILHA_HORA,i18n("Na Home"),1285,343,140,160);
-    texto(TXT_ILHA_HORA,i18n("Catálogos"),520,343,690,160);
-    texto(TXT_ILHA_HORA,i18n("Ativado"),1188,343,90,160);
+    // State column sized to its longest label so "Desligado" never truncates at 85%.
+    float lw=fmaxf(t21_texto_linha(TXT_ILHA_NUM,i18n("Ligado"),180,180,180,255,400).w,
+                   t21_texto_linha(TXT_ILHA_NUM,i18n("Desligado"),180,180,180,255,400).w);
+    float sx=fminf(1354,1420-lw), tx=sx-49, px=tx-117;
+    texto(TXT_ILHA_HORA,i18n("Na Home"),tx-20,343,1433-tx+20,160);
+    texto(TXT_ILHA_HORA,i18n("Catálogos"),520,343,px-530,160);
+    texto(TXT_ILHA_HORA,i18n("Ativado"),px,343,90,160);
     gfx_cor((GfxRect){453,321,980,1},0,1,1,1,.08f);
     for(int i=start;i<snap.catalogos && i<start+5;i++) {
       int f=fileira(i); char sub[192];
@@ -813,14 +831,14 @@ static void workspace(void) {
       float y=370+(i-listaPos)*88, alpha=itemInicio(0,i-start,&y);
       plrui_linha_foco((GfxRect){453,y,980,86},22,focoDe(i,0));
       char rank[16]; snprintf(rank,sizeof rank,"%d",i+1); texto(TXT_ILHA_ITEM,rank,470,y+30,40,150);
-      texto(TXT_ILHA_NOME,snap.catalogo[i].nome,520,y+16,640,239);
-      texto(TXT_ILHA_SUB,sub,520,y+49,640,174);
-      gfx_cor((GfxRect){1188,y+26,100,34},.2f,.3f,.39f,.41f,.55f);
-      texto(TXT_ILHA_NUM,i18n("Ativado"),1199,y+36,80,200);
+      texto(TXT_ILHA_NOME,snap.catalogo[i].nome,520,y+16,fminf(640,px-540),239);
+      texto(TXT_ILHA_SUB,sub,520,y+49,fminf(640,px-540),174);
+      gfx_cor((GfxRect){px,y+26,100,34},.2f,.3f,.39f,.41f,.55f);
+      texto(TXT_ILHA_NUM,i18n("Ativado"),px+11,y+36,80,200);
       int on=f>=0&&!fil_linha_oculta(f); float r,g,b; ajustes_acento(&r,&g,&b);
-      gfx_cor((GfxRect){1305,y+30,40,24},.5f,.25f,.27f,.29f,1);
-      gfx_cor((GfxRect){1308+(on?15:0),y+33,18,18},.5f,on?r:.67f,on?g:.7f,on?b:.71f,1);
-      texto(TXT_ILHA_NUM,on?i18n("Ligado"):i18n("Desligado"),1354,y+33,78,180);
+      gfx_cor((GfxRect){tx,y+30,40,24},.5f,.25f,.27f,.29f,1);
+      gfx_cor((GfxRect){tx+3+(on?15:0),y+33,18,18},.5f,on?r:.67f,on?g:.7f,on?b:.71f,1);
+      texto(TXT_ILHA_NUM,on?i18n("Ligado"):i18n("Desligado"),sx,y+33,lw+2,180);
       ponteiro_alvo(453,y,980,86,pointer,click,i,0);
       gfx_opacidade_grupo=alpha;
     }
@@ -896,7 +914,7 @@ static void workspace(void) {
     const char *names[]={i18n("Resolução e qualidade"),i18n("Tamanho e bitrate"),i18n("Idiomas"),i18n("Cache e tipos de fonte"),i18n("Regex e palavras-chave"),i18n("Ordenação"),i18n("Formatador"),i18n("Proxy")};
     for(int i=0;i<8;i++) {
       char sub[128];
-      if(!snap.configurada) snprintf(sub,sizeof sub,"%s",i18n("Conecte a configuração para ver esta regra"));
+      if(!conectada()) snprintf(sub,sizeof sub,"%s",i18n("Conecte a configuração para ver esta regra"));
       else if(i==0) snprintf(sub,sizeof sub,i18n("Exigidas: %s · Excluídas: %s"),snap.resolucaoObrigatoria[0]?snap.resolucaoObrigatoria:i18n("Não informado"),snap.resolucaoExcluida[0]?snap.resolucaoExcluida:i18n("Não informado"));
       else if(i==3) snprintf(sub,sizeof sub,i18n("Excluir cache: %s · Excluir sem cache: %s"),snap.regraCache<0?i18n("Não informado"):snap.regraCache?i18n("Sim"):i18n("Não"),snap.regraUncached<0?i18n("Não informado"):snap.regraUncached?i18n("Sim"):i18n("Não"));
       else if(snap.resumo[i][0]) snprintf(sub,sizeof sub,"%s",valorRegra(snap.resumo[i]));
