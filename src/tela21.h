@@ -47,6 +47,7 @@
 #define T21_POSTER_SHADOW_DY 16.0f
 #define T21_POSTER_SHADOW_A .30f
 #define T21_VEIL (ajustes_vidro() ? .30f : .42f)
+#define T21_VEIL_BLUR .72f   // scrim over the blurred backdrop behind a sheet
 #define T21_CHIP_REST .08f
 #define T21_SEG_TRACK .05f
 #define T21_SEG_SELECTED .14f

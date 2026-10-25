@@ -803,11 +803,17 @@ static void desenha_detalhe(float a) {
   pr = anim_clamp(detP, 0.0f, 1.0f);
   a *= anim_clamp(pr * 2.5f, 0.0f, 1.0f);   // shape shows from the first frames like the 2.0.8 sheet
   cA = anim_clamp((detP - 0.15f) / 0.45f, 0.0f, 1.0f) * a;   // body arrives right after the island shape
-  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0, 0, 0, T21_VEIL * a);
+  // Mock: the hub blurs behind the sheet. Bleeds past the edges so the rim stays off-screen.
+  // Glass UI on or off: the flat fallback (Vidro fosco off, minimum effects) is the plain scrim.
+  gfx_vidro_camada = 1;   // a layer over the hub: its pills/cards don't force it flat
+  gfx_vidro((GfxRect){ -8, -8, NV_TELA_W + 16, NV_TELA_H + 16 }, 0.0f, GFX_VIDRO_PAINEL, 0.0f, T21_VEIL_BLUR, a);
+  gfx_vidro_camada = 0;
   gfx_vidro_cobrir();
   x0 = (NV_TELA_W - W) * 0.5f; y0 = (NV_TELA_H - H) * 0.5f;
   f = anim_mistura(T21_SHEET_SCALE, 1.0f, pr);
   s = (GfxRect){ x0 + W * (1 - f) * .5f, y0 + H * (1 - f) * .5f, W * f, H * f };
+  // Glass samples a solid base: the hub must not read through the sheet body (mock: opaque sheet).
+  if (ajustes_vidro()) gfx_cor(s, fminf(T21_R_SHEET / s.h, .5f), 0.082f, 0.086f, 0.102f, a);
   plrui_material(s, T21_R_SHEET, 1, a);
   x0 = s.x; y0 = s.y; W = s.w; H = s.h;   // content rides the scaled sheet
   // Left column: kicker, object, level dots.

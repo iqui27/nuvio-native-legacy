@@ -412,7 +412,8 @@ int main(int argc, char **argv) {
     captura(prefixo, "detalhe", 30);
     voltar();
     assert(conquistas_vista() == CONQUISTAS_VISTA_HUB && conquistas_foco() == antes);
-    // Sheet-open motion strip: 0/50/100/150/250/400 ms after OK.
+    // Sheet-open motion strip: 0/50/100/150/250/400 ms after OK, glass on.
+    ajustes_definir_vidro(1);
     adiantar(40);
     tecla(SDLK_RETURN);
     { static const int ms[] = { 0, 50, 100, 150, 250, 400 };
@@ -423,8 +424,30 @@ int main(int argc, char **argv) {
         adiantar(alvo - t); t = alvo;
         snprintf(nome, sizeof nome, "abrir-%03d", ms[i]);
         gravar_nome(prefixo, nome);
+      }
+      // Sheet-close strip: same instants after Voltar.
+      adiantar(40);
+      voltar();
+      for (i = 0, t = 0; i < 6; i++) {
+        char nome[32];
+        int alvo = ms[i] * 60 / 1000;
+        adiantar(alvo - t); t = alvo;
+        snprintf(nome, sizeof nome, "fechar-%03d", ms[i]);
+        gravar_nome(prefixo, nome);
       } }
-    voltar(); }
+    assert(conquistas_vista() == CONQUISTAS_VISTA_HUB);
+    // Sheet stills at 85 and 100 %, glass off and on.
+    { int sc, g;
+      for (sc = 85; sc <= 100; sc += 15) for (g = 0; g < 2; g++) {
+        char nome[32];
+        ajustes_definir_vidro(g); gfx_escala_txt_definir(sc / 100.0f);
+        tecla(SDLK_RETURN);
+        assert(conquistas_vista() == CONQUISTAS_VISTA_DETALHE);
+        snprintf(nome, sizeof nome, "detalhe-%d-g%d", sc, g);
+        captura(prefixo, nome, 40);
+        voltar(); adiantar(40);
+      }
+      ajustes_definir_vidro(0); gfx_escala_txt_definir(.85f); } }
   // Voltar no hub fecha a tela.
   voltar();
   assert(!conquistas_aberto());
