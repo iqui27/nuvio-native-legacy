@@ -3587,6 +3587,7 @@
   T("Lituânia", "リトアニア"),
   T("Live TV", "Live TV"),
   T("Livre", "空き"),
+  T("Livro", "原作"),
   T("Local", "ローカル"),
   T("Local do Descobrir", "「見つける」の場所"),
   T("Login por PIN", "PINログイン"),

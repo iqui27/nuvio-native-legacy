@@ -3587,6 +3587,7 @@
   T("Lituânia", "ليتوانيا"),
   T("Live TV", "التلفاز المباشر"),
   T("Livre", "مجاني"),
+  T("Livro", "كتاب"),
   T("Local", "Local"),
   T("Local do Descobrir", "اكتشف الموقع"),
   T("Login por PIN", "تسجيل الدخول برمز PIN"),

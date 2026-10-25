@@ -3587,6 +3587,7 @@
   T("Lituânia", "Litvánia"),
   T("Live TV", "Live TV"),
   T("Livre", "Szabad"),
+  T("Livro", "Könyv"),
   T("Local", "Helyi"),
   T("Local do Descobrir", "Felfedezés helye"),
   T("Login por PIN", "PIN-es bejelentkezés"),

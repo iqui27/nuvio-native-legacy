@@ -3586,6 +3586,7 @@
   T("Lituânia", "Литва"),
   T("Live TV", "Live TV"),
   T("Livre", "Вільно"),
+  T("Livro", "Книга"),
   T("Local", "Локально"),
   T("Local do Descobrir", "Розташування «Огляду»"),
   T("Login por PIN", "Вхід за PIN"),

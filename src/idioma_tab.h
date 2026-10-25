@@ -3586,6 +3586,7 @@
   { "Lituânia", "Lithuania" },
   { "Live TV", "Live TV" },
   { "Livre", "Free" },
+  { "Livro", "Book" },
   { "Local", "Local" },
   { "Local do Descobrir", "Discover location" },
   { "Login por PIN", "PIN login" },

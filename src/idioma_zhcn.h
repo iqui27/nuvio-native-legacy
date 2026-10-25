@@ -3587,6 +3587,7 @@
   T("Lituânia", "立陶宛"),
   T("Live TV", "Live TV"),
   T("Livre", "空闲"),
+  T("Livro", "原著"),
   T("Local", "本地"),
   T("Local do Descobrir", "“发现”的位置"),
   T("Login por PIN", "PIN 登录"),

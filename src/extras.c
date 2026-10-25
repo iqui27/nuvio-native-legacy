@@ -247,6 +247,13 @@ static struct { int numero; int nEps; struct { int ep, nota; } eps[EX_EP_MAX]; }
             temps[EX_TEMP_MAX];
 static int  nTemps;
 static char colNome[80];
+// Book author from the TMDB crew (Novel/Book/Author) and whether `col` lists
+// that author's adaptations instead of the TMDB collection (Detail 2.1).
+static char livroAutor[80];
+static int  colDoAutor;
+static int livroTrabalho(const char *job) {
+  return !strcmp(job, "Novel") || !strcmp(job, "Book") || !strcmp(job, "Author");
+}
 // Arte propria da colecao (poster w342 e backdrop w780, URL absoluta) e a
 // sinopse dela: o mini card da pagina e a tela de lista da saga.
 static char colCapa[160], colFundo[160], colSinopse[600];
@@ -471,7 +478,8 @@ static void urlFicha(char *dst, size_t cap, int serie, long idT,
   if (mais) snprintf(append + strlen(append), sizeof append - strlen(append), "%srecommendations", append[0] ? "," : "");
   // keywords junto da ficha: o sinal de cena pos-creditos vem no MESMO corpo
   // (TMDB 179430/179431), sem viagem nova.
-  if (!serie) snprintf(append + strlen(append), sizeof append - strlen(append), "%skeywords", append[0] ? "," : "");
+  // credits: the book author (crew Novel/Book/Author) for Detail 2.1.
+  if (!serie) snprintf(append + strlen(append), sizeof append - strlen(append), "%skeywords,credits", append[0] ? "," : "");
   snprintf(dst, cap, "%s/%s/%ld?api_key=%s&language=%s%s%s%s",
            "https://api.themoviedb.org/3", serie ? "tv" : "movie", idT,
            chave, idioma, append[0] ? "&append_to_response=" : "", append, extra);
@@ -1090,8 +1098,8 @@ static void *buscar(void *arg) {
   // content_ratings, e ainda nao ha onde mostra-la — o Detalhes e so de filme).
   if (parte != 0) {
     const char *chave = desc_chave_tmdb();
-    long idCol = 0, idT = tmdbId;
-    char nome[80] = "";
+    long idCol = 0, idT = tmdbId, idLivro = 0;
+    char nome[80] = "", livro[80] = "";
     int tNums[EX_TEMP_MAX], nTNum = 0;
     int ultTemp = 0;   // > 0: recuo do trailer para esta temporada
     // O id do TMDB so fica no catalogo DEPOIS do enriquecimento do elenco; na
@@ -1225,6 +1233,20 @@ static void *buscar(void *arg) {
                      idCol = (long)js_num(o, of, "id", 0.0);
                      js_texto(o, of, "name", nome, sizeof nome); }
           }
+          b = strstr(corpo, "\"credits\"");
+          b = b ? strchr(b, '{') : NULL;
+          for (const char *c = b ? js_array(b, js_fim(b), "crew") : NULL;
+               c && !idLivro; c = js_prox(js_fim(c))) {
+            char job[24] = "";
+            js_texto(c, js_fim(c), "job", job, sizeof job);
+            if (!livroTrabalho(job)) continue;
+            js_texto(c, js_fim(c), "name", livro, sizeof livro);
+            if (livro[0]) idLivro = (long)js_num(c, js_fim(c), "id", 0.0);
+          }
+          pthread_mutex_lock(&trava);
+          if (!strcmp(id, idPedido) && sessaoDoFioAtual())
+            snprintf(livroAutor, sizeof livroAutor, "%s", livro);
+          pthread_mutex_unlock(&trava);
         }
 
         // Movie alert eligibility uses dates already present in this response.
@@ -1523,16 +1545,21 @@ static void *buscar(void *arg) {
         }
       }
     }
-    if (!serie && ajustes_tmdb_col() && idCol > 0) {
-      snprintf(url, sizeof url, "%s/collection/%ld?api_key=%s&language=%s",
-               "https://api.themoviedb.org/3", idCol, chave, desc_tmdb_idioma());
+    // "Do mesmo autor": the book author's adaptations (TMDB person crew);
+    // without an author, or with only this one film, the TMDB collection.
+    for (int doAutor = idLivro > 0; !serie && ajustes_tmdb_col() && doAutor >= 0; doAutor--) {
+      if (doAutor) snprintf(url, sizeof url, "%s/person/%ld/movie_credits?api_key=%s&language=%s",
+                            "https://api.themoviedb.org/3", idLivro, chave, desc_tmdb_idioma());
+      else if (idCol > 0) snprintf(url, sizeof url, "%s/collection/%ld?api_key=%s&language=%s",
+                                   "https://api.themoviedb.org/3", idCol, chave, desc_tmdb_idioma());
+      else break;
       corpo = rede_baixar(url, 15);
       if (corpo) {
         struct ColAch { char t[120], a[8], d[16], po[160], sin[420]; long id; int nota; }
             ach[EX_COL_MAX];
         char capa[160] = "", fundo[160] = "", sinC[600] = "", cam[96];
         int nc = 0;
-        const char *p = js_array(corpo, NULL, "parts");
+        const char *p = js_array(corpo, NULL, doAutor ? "crew" : "parts");
         // Chaves da RAIZ: "poster_path" e "overview" tambem existem dentro de
         // cada parte, e js_texto pegaria a da primeira parte.
         if (js_texto_raiz(corpo, "poster_path", cam, sizeof cam) && cam[0] == '/')
@@ -1542,6 +1569,12 @@ static void *buscar(void *arg) {
         js_texto_raiz(corpo, "overview", sinC, sizeof sinC);
         while (p && nc < EX_COL_MAX) {
           const char *f = js_fim(p);
+          if (doAutor) {
+            char job[24] = ""; long idp = (long)js_num(p, f, "id", 0.0); int k;
+            js_texto(p, f, "job", job, sizeof job);
+            for (k = 0; k < nc && ach[k].id != idp; k++) {}
+            if (!livroTrabalho(job) || k < nc) { p = js_prox(f); continue; }
+          }
           ach[nc].t[0] = ach[nc].a[0] = ach[nc].d[0] = 0;
           ach[nc].po[0] = ach[nc].sin[0] = 0;
           js_texto(p, f, "title", ach[nc].t, sizeof ach[nc].t);
@@ -1558,6 +1591,7 @@ static void *buscar(void *arg) {
           p = js_prox(f);
         }
         free(corpo);
+        if (doAutor && nc < 2) continue;
         // ORDEM DA SAGA = data de lancamento. O TMDB devolve `parts` na ordem
         // em que as partes foram cadastradas, que nem sempre e a cronologica;
         // parte sem data (anunciada) vai para o fim. Insercao estavel: sao 12.
@@ -1575,7 +1609,8 @@ static void *buscar(void *arg) {
         pthread_mutex_lock(&trava);
         if (!strcmp(id, idPedido) && sessaoDoFioAtual()) {
           int k;
-          snprintf(colNome, sizeof colNome, "%s", nome);
+          snprintf(colNome, sizeof colNome, "%s", doAutor ? livro : nome);
+          colDoAutor = doAutor;
           snprintf(colCapa, sizeof colCapa, "%s", capa);
           snprintf(colFundo, sizeof colFundo, "%s", fundo);
           snprintf(colSinopse, sizeof colSinopse, "%s", sinC);
@@ -1590,6 +1625,7 @@ static void *buscar(void *arg) {
           nCol = nc;
         }
         pthread_mutex_unlock(&trava);
+        break;
       }
     }
   }
@@ -1735,7 +1771,8 @@ static void *lacoParte(void *arg) {
 static void zerarPublicado(void) {
   comentariosLimpar(coment);
   notaTrakt = votosTrakt = nComent = nRel = nTemps = nCol = 0;
-  colNome[0] = colCapa[0] = colFundo[0] = colSinopse[0] = 0;
+  colNome[0] = colCapa[0] = colFundo[0] = colSinopse[0] = livroAutor[0] = 0;
+  colDoAutor = 0;
   nTrailer = fichaDur = nEstudio = 0;
   fichaStatus[0] = fichaPaises[0] = fichaCert[0] = fichaLanc[0] = fichaDigital[0] = 0;
   fichaIdiomaOrig[0] = fichaTituloOrig[0] = 0;
@@ -2365,6 +2402,8 @@ void extras_trailer_abrir(int i) {
 }
 
 const char *extras_colecao_nome(void) { return colNome; }
+const char *extras_livro_autor(void) { return livroAutor; }
+int extras_colecao_do_autor(void) { return colDoAutor; }
 int extras_n_colecao(void) { return nCol; }
 const char *extras_colecao_titulo(int i) {
   return (i >= 0 && i < nCol) ? col[i].titulo : "";
