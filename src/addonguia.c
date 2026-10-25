@@ -188,6 +188,7 @@ static void rotas(float x,float y,float w) {
     float alpha=gfx_opacidade_grupo, entry=entradaDe(i);
     gfx_opacidade_grupo=alpha*entry;
     GfxRect r={x+i*(cw+12),y+60+(1-entry)*NV_ENTRA_DY,cw,w>1200?92:108};
+    gfx_cor(r,20/r.h,1,1,1,addonmodo_get(identidade)==i+1?27/255.f:9/255.f);   // mock .route / .route.active
     plrui_linha_foco(r,20,fmaxf(focoDe(10+i),addonmodo_get(identidade)==i+1?.35f:0));
     icone(ICONES[i],r.x+18,r.y+20,21,0.9f);
     texto(TXT_ILHA_ITEM,i18n(i==0&&ajustes_p2p_url()[0]?"Servidor P2P":MODOS[i]),r.x+48,r.y+16,cw-58,1);

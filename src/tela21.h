@@ -80,12 +80,11 @@ static inline void t21_ilha(GfxRect r, float raioPx, float a) {
   gfx_sombra_sob((GfxRect){r.x - 16, r.y - 4, r.w + 32, r.h + 30},
                 1, 0, .5f, 0, 0, 0, .36f * a, r, raioPx, a);
   if (ajustes_vidro()) {
-    // Modal density plus a dark base, as the 2.0.7 sheet: art behind never beats the text.
-    gfx_cor(r, raio, .071f, .075f, .086f, .72f * a);
+    // Glass first, so it blurs the real backdrop; then the mock body
+    // (--glass rgba(14,15,18,.91)) over it: art behind never beats the text.
     gfx_vidro(r, raio, GFX_VIDRO_ILHA, .06f, GFX_VIDRO_DENS_MODAL * gfx_vidro_opacidade(), a);
-    return;
-  }
-  gfx_cor(r, raio, .071f, .075f, .086f, .98f * a);
+    gfx_cor(r, raio, .055f, .059f, .071f, .91f * a);
+  } else gfx_cor(r, raio, .071f, .075f, .086f, .98f * a);
   gfx_luz_canto(r, raio, r.w * .22f, -r.h * .40f, fmaxf(r.w, r.h) * .62f,
                 1, 1, 1, .04f * a);
 }

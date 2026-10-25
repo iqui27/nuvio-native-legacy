@@ -9,4 +9,8 @@ grep -q 'botaoEm(i18n(acao),f==addons_n()?"aj_rotate-cw":NULL,228,820,50+f' src/
 grep -q 'gfx_vidro(r, raio, GFX_VIDRO_ILHA' src/tela21.h
 ! grep -q 'gfx_vidro_material' src/tela21.h
 grep -q 'assert(ajustes_vidro_fosco())' tests/addonguia_shot.c tests/aiostreams_shot.c
-! grep -q "gfx_cor(r, raio, .071f, .075f, .086f, .55f" src/tela21.h
+# Island glass captures the backdrop before its body tint is painted (r4 P1-1).
+awk '/gfx_vidro\(r, raio, GFX_VIDRO_ILHA/{v=NR} /gfx_cor\(r, raio, .055f, .059f, .071f, .91f/{c=NR} END{exit !(v && c > v)}' src/tela21.h
+# Glass pills/chips inside an island draw no rim (r4 P1-2).
+grep -q 'semAro = tipo == GFX_VIDRO_ILHA || vidroNaIlha(tela)' src/gfx.c
+grep -q 'if (!vidroNaIlha(tela)) gfx_vidro_aro' src/gfx.c

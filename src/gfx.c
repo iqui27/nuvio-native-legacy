@@ -2126,6 +2126,7 @@ static float vidroRegAnt[VID_NREG][4], vidroRegCur[VID_NREG][4];
 static int vidroNRegAnt, vidroNRegCur;
 static float vidroDesde[4];   // caixa do que foi pintado na tela desde a ultima captura
 static float vidroVidros[VID_N][4], vidroFuros[VID_NFUROS][4];
+static unsigned char vidroIlhas[VID_N];
 int gfx_vidro_capturas, gfx_vidro_passadas;
 int gfx_vidro_camada;
 double gfx_vidro_fill, gfx_vidro_copia;
@@ -3975,6 +3976,12 @@ static float vidroVideoAlfa(void) {
   float t = ajustes_vidro_opacidade();
   float d = 0.30f + t * 0.45f;   // 65 % at the default 78 %
   return d;}
+// Glass inside a 2.1 island (pill, chip, card) carries no rim: islands are borderless.
+static int vidroNaIlha(const float tela[4]) {
+  int i;
+  for (i = 0; i < vidroNVidros; i++) if (vidroIlhas[i] && vidroCruza(vidroVidros[i], tela)) return 1;
+  return 0;
+}
 static int vidroSobreVideo(const float tela[4]) {
   int i, video = foscoBloq;
   for (i = 0; !video && i < vidroNFuros; i++) video = vidroCruza(vidroFuros[i], tela);
@@ -4000,7 +4007,7 @@ GLuint gfx_vidro_fonte_fixa(GLuint tex) {
 void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a) {
   GfxRect t = r;
   float d = dens, tela[4];
-  int chapado, video, fumaca, i, contorno = ajustes_vidro_contorno();
+  int chapado, video, fumaca, i, semAro, contorno = ajustes_vidro_contorno();
   if (r.w <= 0.0f || r.h <= 0.0f || a <= 0.001f) return;
   if (!vidroPronto()) {
     gfx_cor(r, raio, 0x1a / 255.0f, 0x1c / 255.0f, 0x21 / 255.0f, 0.94f * a);
@@ -4027,7 +4034,11 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   // Desempenho, or once the governor dropped the tier.
   fumaca = video || ajustes_vidro_qualidade() == 1 || (vidroDegradou && ajustes_vidro_qualidade() == 0);
   if (fumaca) chapado = 1;
-  if (vidroNVidros < VID_N) memcpy(vidroVidros[vidroNVidros++], tela, sizeof tela);
+  semAro = tipo == GFX_VIDRO_ILHA || vidroNaIlha(tela);
+  if (vidroNVidros < VID_N) {
+    vidroIlhas[vidroNVidros] = tipo == GFX_VIDRO_ILHA;
+    memcpy(vidroVidros[vidroNVidros++], tela, sizeof tela);
+  }
   memset(&vidPend, 0, sizeof vidPend);
   vidPend.tipo = tipo; vidPend.raio = raio;
   vidRuidoPreparar();   // o dither vale tambem no chapado
@@ -4073,16 +4084,15 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   vidPend.dens[0] = 0.125f; vidPend.dens[1] = 0.72f; vidPend.dens[2] = 0.82f; vidPend.dens[3] = 1.0f;
   // A27 chrome: the same solve, scaled by "Opacidade do vidro" (gfx_chrome_dens).
   if (tipo == GFX_VIDRO_BARRA) gfx_chrome_dens(vidPend.dens);
-  vidPend.aro = tipo == GFX_VIDRO_ILHA ? 0 : 0.14f + (contorno ? 0.0f : video ? 0.04f : 0.0f);
-  vidPend.aroLuz = tipo == GFX_VIDRO_ILHA ? 0 : 0.28f;
+  vidPend.aro = semAro ? 0 : 0.14f + (contorno ? 0.0f : video ? 0.04f : 0.0f);
+  vidPend.aroLuz = semAro ? 0 : 0.28f;
   gfx_vidro_com_fonte += vidPend.fonte != 0;
   gfx_vidro_chapados += vidPend.fonte == 0;
   gfx_vidro_area += (int)(r.w * r.h);
   gfx_rect(r, vidPend.fonte, GFX_VIDRO, 0, 0, 0, raio, 1, 1, 1, a);
   gfx_vidro_matiz(r, raio, a);
-  if (tipo == GFX_VIDRO_ILHA)
-    gfx_luz_canto(r, raio, r.w * .22f, -r.h * .40f, fmaxf(r.w, r.h) * .62f, 1, 1, 1, .05f * a);
-  else if (tipo == GFX_VIDRO_PAINEL) gfx_vidro_luz(r, raio, a);
+  // ILHA: t21_ilha lays its own body tint and corner light over the glass.
+  if (tipo == GFX_VIDRO_PAINEL) gfx_vidro_luz(r, raio, a);
 }
 
 // OS CANAIS DE FUNDO DA LUZ ASSADA (fundo.c: "Arte borrada" e "Frost" de tela
@@ -4268,7 +4278,7 @@ void gfx_vidro_chip(GfxRect r, float raio, float fundo, float a) {
   tela[0] = t.x; tela[1] = t.y; tela[2] = t.x + t.w; tela[3] = t.y + t.h;
   if (vidroSobreVideo(tela)) d = vidroVideoAlfa();   // over video: light tint
   gfx_cor(r, raio, c, c, c, (d > 1.0f ? 1.0f : d) * a);
-  gfx_vidro_aro(r, raio, 1.0f, 1, 1, 1, 0.14f * a);
+  if (!vidroNaIlha(tela)) gfx_vidro_aro(r, raio, 1.0f, 1, 1, 1, 0.14f * a);
   gfx_vidro_luz(r, raio, a);
 }
 // A27 tint: the existing "Opacidade do vidro" (60..92 %) is the clear->tinted
