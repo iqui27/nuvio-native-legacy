@@ -4044,7 +4044,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   // Desempenho, or once the governor dropped the tier.
   fumaca = video || ajustes_vidro_qualidade() == 1 || (vidroDegradou && ajustes_vidro_qualidade() == 0);
   if (fumaca) chapado = 1;
-  semAro = tipo == GFX_VIDRO_ILHA || vidroNaIlha(tela);
+  semAro = tipo == GFX_VIDRO_ILHA || vidroNaIlha(tela) || gfx_vidro_sem_aro;
   if (vidroNVidros < VID_N) {
     vidroIlhas[vidroNVidros] = tipo == GFX_VIDRO_ILHA;
     memcpy(vidroVidros[vidroNVidros++], tela, sizeof tela);

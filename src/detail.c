@@ -1201,7 +1201,7 @@ static void recalcularLayout(void) {
   }
   if (!changed) return;
   ready=1; lastSeries=ehSerie();
-  float y=1000;
+  float y=heroServidor() ? NV_TELA_H + 60 : 1000;
   const int *order=ordemSecoes();
   for (int r=0;r<N_SECOES;r++) {
     topoSec[r]=conteudoSec[r]=y; dxSec[r]=0; wSec[r]=1728;
@@ -5430,9 +5430,9 @@ static void heroWeb(float a, float desloc) {
     const char *label = !strcmp(rot, i18n("Reproduzir")) ? i18n("Assistir") : rot;
     float x = NV_DETW2_X;
     for (int i = 0; i < 3; i++) {
-      float h = i ? NV_DETW2_CIRC : 60;
+      float h = 60;
       GfxRect r = {x, yAcoes + (NV_DETW2_BTN_H - h) * .5f,
-                   i ? NV_DETW2_CIRC : plrui_botao_largura(label, "play"), h};
+                   i ? 60 : plrui_botao_largura(label, "play"), h};
       float grow = 1 + .06f * serverActionFocus[i];
       GfxRect focused = {r.x - r.w * (grow - 1) * .5f, r.y - r.h * (grow - 1) * .5f, r.w * grow, r.h * grow};
       if (i) {
@@ -5601,7 +5601,10 @@ static void heroWeb(float a, float desloc) {
   // Same target and source description as Play; no extra resolver or decoder.
   versaoRect = (GfxRect){0};
   if (heroServidor() && vaiTocar.tem) {
+    int previous = gfx_vidro_sem_aro;
+    gfx_vidro_sem_aro = 1;
     vtui_desenhar(&vaiTocar, NV_DETW2_X, yAcoes + NV_DETW2_BTN_H + 12, 420, a);
+    gfx_vidro_sem_aro = previous;
   } else if (topoVersao() && vaiTocar.tem && hVai > 1.0f) {
     char texto[240];
     snprintf(texto, sizeof texto, "%s%s%s%s%s%s%s", vaiTocar.res,
@@ -8818,7 +8821,7 @@ static void detalheFundo(float s) {
   backdropRect(&alvo, &aEntrada);
   const char *arte = arteDe(idx);
   if (carDesenhaFundo()) { carFundo(); return; }
-  if (!detalheRetrato()) {
+  if (!detalheRetrato() && !heroServidor()) {
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.043f,.047f,s);
     float fade=anim_clamp(1-scrollY/1800.0f,0,1);
     GLuint tex=arte && fade>.005f ? tex_obter_hero(arte) : 0;
