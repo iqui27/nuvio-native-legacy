@@ -17,3 +17,4 @@ grep -q 'if (!gfx_vidro_sem_aro && !vidroNaIlha(tela)) gfx_vidro_aro' src/gfx.c
 # Page-level pills/chips of the guide (Meus addons, modo) are borderless too.
 [ "$(grep -c 'gfx_vidro_sem_aro=1' src/addonguia.c)" = 2 ]
 [ "$(grep -c 'gfx_vidro_sem_aro=1' src/aiostreamsui.c)" = 2 ]
+grep -q 'semAro && tipo == GFX_VIDRO_PAINEL ? GFX_VIDRO_ILHA' src/gfx.c

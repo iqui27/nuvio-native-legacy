@@ -4040,7 +4040,8 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
     memcpy(vidroVidros[vidroNVidros++], tela, sizeof tela);
   }
   memset(&vidPend, 0, sizeof vidPend);
-  vidPend.tipo = tipo; vidPend.raio = raio;
+  // Borderless glass takes the island profile: no lens, bevel light or specular.
+  vidPend.tipo = semAro && tipo == GFX_VIDRO_PAINEL ? GFX_VIDRO_ILHA : tipo; vidPend.raio = raio;
   vidRuidoPreparar();   // o dither vale tambem no chapado
   if (vidroFonteFixa) vidPend.fonte = vidroFonteFixa;
   else if (!chapado) {
@@ -4092,7 +4093,7 @@ void gfx_vidro(GfxRect r, float raio, int tipo, float cinza, float dens, float a
   gfx_rect(r, vidPend.fonte, GFX_VIDRO, 0, 0, 0, raio, 1, 1, 1, a);
   gfx_vidro_matiz(r, raio, a);
   // ILHA: t21_ilha lays its own body tint and corner light over the glass.
-  if (tipo == GFX_VIDRO_PAINEL) gfx_vidro_luz(r, raio, a);
+  if (tipo == GFX_VIDRO_PAINEL && !semAro) gfx_vidro_luz(r, raio, a);
 }
 
 // OS CANAIS DE FUNDO DA LUZ ASSADA (fundo.c: "Arte borrada" e "Frost" de tela
