@@ -19,7 +19,7 @@ for app in files:
     if app.name == 'detalhe-chip-app.png':
         proof = json.loads((root / 'detalhe-chip-rects.json').read_text())
         rects = proof['rects']
-        assert len(rects) == 5, f'Expected friends, Vai tocar, two servers and caption: {rects}'
+        assert len(rects) == 4, f'Expected friends, Vai tocar and two servers, without ratings: {rects}'
         overlaps = []
         for a, b in itertools.combinations(rects, 2):
             if (max(a[0], b[0]) < min(a[0]+a[2], b[0]+b[2]) and
@@ -29,7 +29,12 @@ for app in files:
         assert all(w > 0 and h > 0 and x >= 0 and y >= 0 and
                    x+w <= 1920 and y+h <= 1080 for x, y, w, h in rects)
         assert proof['navigation_ok'], 'D-pad must follow actions, servers, friends, sections in both directions'
-        print('PASS: five detail rectangles do not overlap; D-pad follows visual order')
+        friends, next_play, plex, jellyfin = rects
+        assert next_play[0] + next_play[2] < plex[0] < jellyfin[0]
+        assert all(abs(next_play[1] + next_play[3]/2 - p[1] - p[3]/2) < 1
+                   for p in (plex, jellyfin)), 'Playback chip must align with sources'
+        assert friends[1] > plex[1] + plex[3], 'Recommendation must follow source row'
+        print('PASS: four detail rectangles do not overlap; source row and D-pad follow visual order')
     ref = mock / app.name.replace('-app.png', '.png')
     if ref.exists():
         out = root / app.name.replace('-app.png', '-side-by-side.png')

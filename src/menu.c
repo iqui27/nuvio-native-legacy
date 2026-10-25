@@ -1174,6 +1174,10 @@ static void tvAvatar(GfxRect av, float alfa) {
   }
 }
 
+void menu_avatar(float x, float y, float size, float alpha) {
+  tvAvatar((GfxRect){x, y, size, size}, alpha);
+}
+
 // Escurece SO o lado esquerdo: faixas verticais de cor chapada com o alfa
 // caindo em degraus pequenos ate sumir em x ~ 900. Cada pixel e pintado UMA
 // vez e pelo shader mais barato (GFX_COR). MEDIDO na C9 (01/10): com uma
