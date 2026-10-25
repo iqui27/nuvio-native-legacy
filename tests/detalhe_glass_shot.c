@@ -58,6 +58,8 @@
 #define extras_colecao_poster   fx_colecao_poster
 #define extras_colecao_sinopse_parte fx_colecao_sinopse_parte
 #define extras_colecao_nota     fx_colecao_nota
+#define extras_livro_autor      fx_livro_autor
+#define extras_colecao_do_autor fx_colecao_do_autor
 #define extras_n_estudios       fx_n_estudios
 #define extras_estudio_nome     fx_estudio_nome
 #define extras_estudio_logo     fx_estudio_logo
@@ -246,19 +248,34 @@ const char *fx_relacionado_titulo(int i) { return REL_TIT[i]; }
 const char *fx_relacionado_ano(int i) { return REL_ANO[i]; }
 const char *fx_relacionado_poster(int i) { return REL_PO[i]; }
 
-int fx_n_colecao(void)        { return ehSerieDeEnsaio() ? 6 : 2; }
-const char *fx_colecao_nome(void) { return ehSerieDeEnsaio() ? "Fargo" : "O Diabo Veste Prada"; }
+// Reference movie (Project Hail Mary): the row is the book author's adaptations,
+// as the mock (Andy Weir: The Martian, this film, the announced Artemis).
+#define REF_FILME (getenv("NUVIO_SHOT_REFERENCE") && !ehSerieDeEnsaio())
+const char *fx_livro_autor(void) { return REF_FILME ? "Andy Weir" : ""; }
+int fx_colecao_do_autor(void) { return REF_FILME; }
+int fx_n_colecao(void)        { return ehSerieDeEnsaio() ? 6 : REF_FILME ? 3 : 2; }
+const char *fx_colecao_nome(void) { return ehSerieDeEnsaio() ? "Fargo" : REF_FILME ? "Andy Weir" : "O Diabo Veste Prada"; }
 static const char *const COL_TIT_F[] = { "The Devil Wears Prada", "The Devil Wears Prada 2" };
 static const char *const COL_ANO_F[] = { "2006", "2026" };
+static const char *const COL_TIT_R[] = { "Perdido em Marte", "Project Hail Mary", "Artemis" };
+static const char *const COL_ANO_R[] = { "2015", "2026", "" };
 static const char *const COL_TIT_S[] = { "Filme", "T1", "T2", "T3", "T4", "T5" };
 static const char *const COL_ANO_S[] = { "1996", "2014", "2015", "2017", "2020", "2023" };
-const char *fx_colecao_titulo(int i) { return (ehSerieDeEnsaio() ? COL_TIT_S : COL_TIT_F)[i]; }
-const char *fx_colecao_ano(int i) { return (ehSerieDeEnsaio() ? COL_ANO_S : COL_ANO_F)[i]; }
+const char *fx_colecao_titulo(int i) { return (ehSerieDeEnsaio() ? COL_TIT_S : REF_FILME ? COL_TIT_R : COL_TIT_F)[i]; }
+const char *fx_colecao_ano(int i) { return (ehSerieDeEnsaio() ? COL_ANO_S : REF_FILME ? COL_ANO_R : COL_ANO_F)[i]; }
 long fx_colecao_tmdb(int i) { return 350 + i; }
 const char *fx_colecao_capa(void) { return A "poster/07.jpg"; }
 const char *fx_colecao_fundo(void) { return A "07.jpg"; }
 const char *fx_colecao_sinopse(void) { return "Dois filmes sobre a Runway."; }
-const char *fx_colecao_poster(int i) { return i ? A "poster/07.jpg" : A "poster/02.jpg"; }
+const char *fx_colecao_poster(int i) {
+  static char ref[2][400];
+  if (REF_FILME && i < 3) {
+    if (i == 2) return "";   // Artemis: announced, no art
+    snprintf(ref[i], sizeof ref[i], "%s/%s.jpg", getenv("NUVIO_SHOT_REFERENCE"), i ? "phm-arte" : "martian");
+    return ref[i];
+  }
+  return i ? A "poster/07.jpg" : A "poster/02.jpg";
+}
 const char *fx_colecao_sinopse_parte(int i) { (void)i; return "Sinopse da parte."; }
 int fx_colecao_nota(int i) { return 70 + i * 5; }
 
@@ -749,6 +766,24 @@ int main(int argc, char **argv) {
     for (int c=1;c<nNotasTiles();c++) { e.key.keysym.sym = SDLK_RIGHT; detail_evento(&e); quadros(3); }
     for (int k=0;k<4;k++) { quadros(k ? 5 : 1); snprintf(name,sizeof name,"anim-notas-fim-%d",k); gravar(name); }
     quadros(40); gravar("anim-notas-amigos");
+    // Section reveal (forgotten once, as when it scrolls in) and the row dim
+    // easing from the ratings row down to trailers.
+    // Each saved frame takes longer than the 300 ms reveal, so the start of
+    // every section is pinned to 90 ms more of reveal per frame.
+    memset(secVisto, 0, sizeof secVisto);
+    quadros(1);
+    { Uint32 t0 = SDL_GetTicks(), atraso[N_SECOES];
+      for (int r=0;r<N_SECOES;r++) atraso[r] = secVisto[r] ? secVisto[r] - t0 : 0;
+      for (int k=0;k<5;k++) {
+        Uint32 ag = SDL_GetTicks();
+        for (int r=0;r<N_SECOES;r++) if (atraso[r]) secVisto[r] = (ag + atraso[r] - k*90) | 1u;
+        quadros(1); snprintf(name,sizeof name,"anim-revela-%d",k); gravar(name);
+      } }
+    quadros(40); SDL_Delay(600); quadros(8);
+    e.key.keysym.sym = SDLK_DOWN; detail_evento(&e);
+    for (int k=0;k<4;k++) { quadros(k ? 2 : 1); snprintf(name,sizeof name,"anim-dim-%d",k); gravar(name); }
+    // Footer card focused: its text scales with the card.
+    abrir(1,1,SEC_DETALHES,0); quadros(60); SDL_Delay(400); quadros(8); gravar("anim-rodape");
     abrir(1,1,SEC_ELENCO,0); quadros(60); SDL_Delay(400); quadros(8);
     printf("anim focus row=%d col=%d\n", foco.fileira, foco.coluna);
     e.key.keysym.sym = SDLK_RIGHT; detail_evento(&e);
