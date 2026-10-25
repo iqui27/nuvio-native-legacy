@@ -374,6 +374,9 @@ int main(void) {
   playbackActions();
   addonOrder();
   threeSourceExample();
+  /* Opening normal movie Sources resets the independent channel chooser. */
+  stream_folha_canais_abrir("Sports event");assert(canaisFolha && fontescanais_estado()->ativo);
+  stream_folha_abrir();assert(!canaisFolha && !fontescanais_estado()->ativo);
   stream_definir_lista(NULL,0);free(ordem);free(linhaY);free(linhaH);free(grupoTmp);free(grupoFitTmp);free(fitResultados);free(fitClasses);
   puts("streamfit sheet: PASS (stable groups, raw identities, freeze, incremental/focus, OndeVer, first-source)");return 0;
 }
