@@ -560,12 +560,18 @@ static void corpoDesenhar(void) {
   if(tela==AG_LISTA){lista_(foco);return;}
   if(!desenhandoFolha) moldura(0);
   if(tela==AG_CONECTAR) {
-    painel((GfxRect){380,244,1180,640},32);
-    kicker(i18n("Fontes e addons"),432,286);
-    texto(TXT_ILHA_TITULO,i18n("Conecte seu serviço pelo celular"),432,396,1076,1);
-    bloco(i18n("Use sua conta do serviço para preparar o vídeo fora da TV."),432,460,1076,0.64f,2);
+    painel((GfxRect){380,244,1180,detalhes?770:640},32);
+    char caminho[240];snprintf(caminho,sizeof caminho,"%s › %s › %s",i18n("Ajustes"),i18n("Fontes e addons"),i18n("Contas de debrid"));
+    kicker(caminho,432,286);
+    plrui_material((GfxRect){432,314,58,58},18,0,.45f);
+    icone("aj_cloud",447,329,28,.8f);
+    texto(TXT_ILHA_TEXTO,i18n("Uma conta para abrir fontes torrent"),508,331,1000,.64f);
+    texto(TXT_ILHA_TITULO,i18n("Conecte seu serviço pelo celular"),432,390,1076,1);
+    texto(TXT_ILHA_CORPO,i18n("Use sua conta do serviço para preparar o vídeo fora da TV."),432,452,1076,.64f);
+    texto(TXT_ILHA_CORPO,i18n("Quando o arquivo já está pronto, ele costuma abrir mais rápido."),432,487,1076,.64f);
     float x=432;
-    for(int i=0;i<(celb_disponivel()?4:3);i++)x+=botao(SERVICOS[i],NULL,x,542,i)+12;
+    for(int i=0;i<4;i++)x+=botao(SERVICOS[i],"aj_cloud",x,542,i)+12;
+    separador(432,618,1076);
     if(celb_embutido(CELB_ADDON))celb_desenhar_em(CELB_ADDON,(GfxRect){432,612,1076,170},1);
     else if(!celb_disponivel()&&nuvem_base_login()[0]) {
       const char *base=nuvem_base_login(),*p=strstr(base,"://");
@@ -574,8 +580,13 @@ static void corpoDesenhar(void) {
       bloco(i18n("Conecte seu serviço pelo celular"),590,642,918,0.64f,2);
       texto(TXT_ILHA_SUB,i18n("Sincronizar addons"),590,712,918,0.64f);
     }
-    else bloco(i18n(semCel?"Sem rede local. Conecte a TV ao Wi-Fi e aperte OK.":"Escolha seu serviço. Você não precisa digitar chaves nesta TV."),432,632,1076,0.64f,2);
-    botao(i18n("Voltar à escolha"),"aj_arrow-left",432,790,4);return;
+    else {
+      icone("aj_smartphone",432,650,26,.64f);
+      texto(TXT_ILHA_SUB,i18n(semCel?"Sem rede local. Conecte a TV ao Wi-Fi e aperte OK.":"Escolha seu serviço. Você não precisa digitar chaves nesta TV."),476,646,1032,.64f);
+      texto(TXT_ILHA_TEXTO,i18n("Você não precisa digitar chaves nesta tela."),476,678,1032,.9f);
+    }
+    botao(i18n("Voltar à escolha"),"aj_arrow-left",432,750,4);
+    detalhe(432,836,1076);return;
   }
   if(tela==AG_INICIANDO) {
     painel((GfxRect){380,130,1180,850},32);
@@ -690,7 +701,7 @@ static GfxRect folhaDestino(int t) {
   if(t==AG_NOVO_CATALOGO)h=636;
   if(t==AG_NOVO_DIRETO)h=650;
   if(t==AG_INICIANDO){y=130;h=850;}
-  if(t==AG_CONECTAR){y=244;h=640;}
+  if(t==AG_CONECTAR){y=244;h=detalhes?770:640;}
   return (GfxRect){380,y,1180,h};
 }
 static void folhaCorpo(GfxRect r,float a,void *u) {
@@ -725,6 +736,15 @@ static void desenhar_(void) {
         .w=folhaRect.w/scale,.h=folhaRect.h/scale,
         .destino={folhaRect.x/scale,folhaRect.y/scale,folhaRect.w/scale,folhaRect.h/scale}};
       plrilha_pedir(&p);
+    }
+    if(visivel==AG_CONECTAR) {
+      gfx_opacidade_grupo=alpha*entry;
+      icone("aj_arrow-left",200,1014,20,.46f);
+      texto(TXT_ILHA_SUB,i18n("Voltar"),230,1011,300,.46f);
+      const char *rodape=i18n("Ajuda no lugar certo. Você continua no controle.");
+      TxtLinha l=t21_texto_linha(TXT_ILHA_SUB,rodape,243,242,239,255,1400);
+      t21_texto_desenhar(l,1804-l.w,1011,.46f);
+      gfx_opacidade_grupo=alpha;
     }
     // The player owns its island pass; standalone guidance owns this pass.
     if(!player_aberto()) plrilha_desenhar(1+(Uint32)(folhaTempo*1000));

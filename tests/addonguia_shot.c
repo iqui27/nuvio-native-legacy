@@ -95,7 +95,7 @@ int main(int argc,char **argv) {
       gfx_textura((GfxRect){0,0,1920,1080},bg);
       gfx_veu_css((GfxRect){0,0,1920,1080},0,1,1,0.5f);
       addonguia_desenhar();SDL_Delay(6);
-      if(scale<2 && (f==0||f==5||f==8||f==10||f==15||f==16||f==25||f==32||f==40)) {
+      if(!getenv("AG_SHOT_STILLS") && scale<2 && (f==0||f==5||f==8||f==10||f==15||f==16||f==25||f==32||f==40)) {
         char name[160];snprintf(name,sizeof name,"%s-%d-%s-entry-%03d",shots[i].nome,scales[scale],glass?"glass":"solid",f*10);save(argv[1],name);
       }
     }
@@ -106,7 +106,7 @@ int main(int argc,char **argv) {
     char path[1024];snprintf(path,sizeof path,"%s/%s-%d-%s-app.png",argv[1],shots[i].nome,scales[scale],glass?"glass":"solid");
     int erro=IMG_SavePNG(s,path);assert(!erro&&"savepng");
     SDL_FreeSurface(s);free(pixels);printf("PNG %s\n",path);
-    if(scale<2) {
+    if(!getenv("AG_SHOT_STILLS") && scale<2) {
       tecla(SDLK_RIGHT);
       for(int f=0;f<=40;f++) {
         if(f)addonguia_shot_passo(.01f);
@@ -127,6 +127,7 @@ int main(int argc,char **argv) {
       }
     }
   }
+  if(getenv("AG_SHOT_STILLS")) return 0;
   addonguia_shot(AG_P2P); addonguia_shot_passo(.05f); tecla(SDLK_ESCAPE);
   addonguia_shot_passo(.02f); assert(addonguia_aberto());
   tecla(SDLK_ESCAPE); settle(); assert(addonguia_aberto());
