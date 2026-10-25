@@ -40,6 +40,36 @@ static float tourRol, tourRolV, tourRolAlvo;
 static long tourInicio;
 
 int tourN(void) { return TOUR_N; }
+int tourDisponivel(int i);
+static int tourLigada(int i) {
+  int op = TOUR[i].op;
+  if (!tourDisponivel(i)) return 0;
+  switch (op) {
+    case AJ_LEG_LINGUA2: return ling_legenda2()[0] && strcmp(ling_legenda2(), "none") != 0;
+    case AJ_ESMAECER: case AJ_TAM_MAX: return uxValorAtual(op) > 0;
+    case AJ_DTS_AC3:
+#ifdef NV_TPK
+      return ajustes_dts_tpk_modo() != DTSTPK_DESLIGADO;
+#else
+      return ajustes_dts_ac3();
+#endif
+    case AJ_PERFIL_ATIVO: return perfis_n() > 1;
+    case AJ_PERFIL_PESQ: return recomenda_pesquisavel();
+    case AJ_XTREAM_SERVIDOR: {
+      IptvConta contas[IPTV_MAX_CONTAS];
+      int n = iptv_contas(contas, IPTV_MAX_CONTAS);
+      for (int j = 0; j < n; j++) if (contas[j].tipo == IPTV_XTREAM && contas[j].ativa) return 1;
+      return 0;
+    }
+    case AJ_FONTE_PRIORIDADE: return ajustes_fonte_prioridade() != 3;
+    default: return op < 0 || OPCOES[op].valores != V_LIGA || lig(op);
+  }
+}
+static int tourLigadas(void) {
+  int n = 0;
+  for (int i = 0; i < TOUR_N; i++) n += tourLigada(i);
+  return n;
+}
 int tourOp(int i) { return TOUR[i].op; }
 const char *tourTitulo(int i) { return i18n(TOUR[i].tit); }
 const char *tourFrase(int i) { return i18n(TOUR[i].txt); }
@@ -119,6 +149,14 @@ static void tourPontAcao(int i, int b) {
   if (b == 0) tourLigar(i); else tourOnde(i);
 }
 
+static void tourLegenda(const char *s, float y, int secundaria) {
+  float px = secundaria ? 27 : 30;
+  float w = fminf(ajcLargura(s, px, 1), 580);
+  if (!secundaria) ajc_ret(320 - w * .5f - 24, y - 8, w + 48, 54, 10, 0, 0, 0, .85f);
+  ajTextoMini(s, ajc_px(px), 1, ajc_x(320 - w * .5f), ajc_y(y),
+              243, secundaria ? 216 : 242, secundaria ? 121 : 239, 1);
+}
+
 // The same generated-scene kit, without switches or simulated setting controls.
 // Only the focused illustration moves; the other seven remain still.
 static void tourPrevia(int op, GfxRect r, int foco) {
@@ -128,14 +166,17 @@ static void tourPrevia(int op, GfxRect r, int foco) {
   if (!foco) { C.red = 1; C.t = 0; }
   switch (op) {
     case AJ_LEG_SYNC_AUTO: case AJ_LEG_SYNC_AUDIO: case AJ_LEG_LINGUA2:
-      ajc_video(0, 0, 640, 260, 0, 1);
-      ajc_legenda(320, 225, 1.5f, .5f, 1, 1, 1, 0, 1);
-      if (op == AJ_LEG_LINGUA2) ajc_legenda(320, 90, 1.3f, 0, 1, .85f, .4f, 0, 1);
-      else ajc_progresso(50, 95, 540, .4f + .15f * ajc_onda(3), 1);
+      tourLegenda(i18n(op == AJ_LEG_LINGUA2 ? "Eu disse que ia voltar." : "Legenda no tempo certo"), 190, 0);
+      if (op == AJ_LEG_LINGUA2) tourLegenda("I told you I'd come back.", 120, 1);
+      else {
+        ajc_barra(33, 33, 163, .4f);
+        ajc_progresso(33, 136, 574, .4f + .15f * ajc_onda(3), 1);
+      }
       break;
     case AJ_SEEKR_LIGADO:
-      ajc_video(200, 30, 240, 150, 12, 1);
-      ajc_progresso(40, 220, 560, .4f + .15f * ajc_onda(3), 1);
+      ajc_ret(207, 42, 222, 124, 15, .95f, .95f, .93f, 1);
+      ajc_video(211, 46, 214, 116, 11, 1);
+      ajc_progresso(33, 199, 574, .4f + .15f * ajc_onda(3), 1);
       break;
     case AJ_RELOGIO:
       ajc_vidro(420, 20, 190, 65, 30, 1);
@@ -243,7 +284,7 @@ static void tourDesenhar(void) {
   txt_desenhar_alpha(ajTxt(TXT_V2_24, "AJUSTES"), h.x + 106, h.y + 10, .55f);
   txt_desenhar(t, h.x + 106, h.y + 32);
   for (int i = 0; i < TOUR_N; i++) novos += tourNovo(i);
-  snprintf(q, sizeof q, i18n("%d funções"), TOUR_N);
+  snprintf(q, sizeof q, i18n("%d de %d ligados nesta TV"), tourLigadas(), TOUR_N);
   { TxtLinha c = ajTxt(TXT_V2_24, q); txt_desenhar_alpha(c, h.x + h.w - 30 - c.w, h.y + 22, .9f); }
   snprintf(q, sizeof q, i18n("%d novas"), novos);
   { TxtLinha c = ajTxt(TXT_V2_24, q); txt_desenhar_alpha(c, h.x + h.w - 30 - c.w, h.y + 56, .55f); }

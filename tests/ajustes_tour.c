@@ -1,6 +1,40 @@
 /* "O que o Nuvio faz?": tabela de cartoes do tour. Sem UI, rede ou sync. */
-#include "../src/ajustes.c"
+#include "../src/gfx.h"
+#include "../src/text.h"
 #include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+static int subtitleText, secondaryText, seekProgress, seekFrame, squareVideo;
+static void previewCor(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
+  (void)ca;
+  if (r.w > 145 && r.w < 155 && r.h > 80 && r.h < 90 && cr > .9f && cg > .9f && cb > .9f) seekFrame++;
+  if (r.x == 0 && r.y == 0 && r.w == 432 && raio == 0) squareVideo++;
+  if (r.y > 130 && r.y < 152 && r.h < 5 && r.w > 100 && r.w < 300) seekProgress++;
+}
+static void previewLuz(GfxRect r, float raio, float cx, float cy, float alcance,
+                       float cr, float cg, float cb, float ca) {
+  (void)cx; (void)cy; (void)alcance;
+  previewCor(r, raio, cr, cg, cb, ca);
+}
+static TxtLinha previewTexto(TxtEstilo e, const char *s, int r, int g, int b, int a) {
+  (void)e; (void)r; (void)g; (void)b; (void)a;
+  if (!strcmp(s, "Legenda no tempo certo") || !strcmp(s, "Eu disse que ia voltar.")) subtitleText++;
+  if (!strcmp(s, "I told you I'd come back.")) secondaryText++;
+  return (TxtLinha){ .w = 200, .h = 20 };
+}
+static int previewLargura(TxtEstilo e, const char *s) { (void)e; return (int)strlen(s) * 10; }
+static void previewDesenhar(TxtLinha l, float x, float y, float a) { (void)l; (void)x; (void)y; (void)a; }
+static void previewRecorte(float x, float y, float w, float h) { (void)x; (void)y; (void)w; (void)h; }
+static void previewFim(void) {}
+#define gfx_cor previewCor
+#define gfx_luz_canto previewLuz
+#define txt_linha previewTexto
+#define txt_largura previewLargura
+#define txt_desenhar_alpha previewDesenhar
+#define gfx_recorte previewRecorte
+#define gfx_sem_recorte previewFim
+#include "../src/ajustes.c"
 
 static int naTela(int op) {
   for (int i = 0; i < AJ_N_TELA; i++) if (TELA[i].tipo == IT_OPC && TELA[i].op == op) return 1;
@@ -64,6 +98,51 @@ int main(void) {
   assert(!tourNovoJanela(0, 1000));
   assert(tourNovoJanela(1000, 1000 + 29 * 86400));
   assert(!tourNovoJanela(1000, 1000 + 31 * 86400));
+  int failures = 0;
+  valor[AJ_IDIOMA] = IDIOMA_PT + 1;
+  tourPrevia(AJ_LEG_SYNC_AUTO, (GfxRect){0, 0, 432, 176}, 0);
+  tourPrevia(AJ_LEG_LINGUA2, (GfxRect){0, 0, 432, 176}, 0);
+  tourPrevia(AJ_SEEKR_LIGADO, (GfxRect){0, 0, 432, 176}, 0);
+  if (subtitleText != 2 || secondaryText != 1 || !seekProgress || !seekFrame || squareVideo) {
+    fprintf(stderr, "FAIL: approved previews: subtitles=%d secondary=%d seek=%d frame=%d square=%d\n",
+            subtitleText, secondaryText, seekProgress, seekFrame, squareVideo);
+    failures++;
+  }
+  {
+    valor[AJ_RELOGIO] = 1;
+    int off = tourLigadas();
+    valor[AJ_RELOGIO] = 0;
+    if (tourLigadas() != off + 1) {
+      fputs("FAIL: enabled/total counter does not respond to toggles\n", stderr);
+      failures++;
+    }
+    if (failures) return 1;
+    valor[AJ_ESMAECER] = 0;
+    off = tourLigadas();
+    valor[AJ_ESMAECER] = 3;
+    assert(tourLigadas() == off + 1);
+    ling_local_legenda2("none");
+    off = tourLigadas();
+    ling_local_legenda2("pt-BR");
+    assert(tourLigadas() == off + 1);
+    ling_local_legenda2("none");
+    valor[AJ_DTS_AC3] = 0;
+    off = tourLigadas();
+    valor[AJ_DTS_AC3] = 1;
+    assert(tourLigadas() == off + 1);
+    valor[AJ_TAM_MAX] = 0;
+    off = tourLigadas();
+    valor[AJ_TAM_MAX] = 2;
+    assert(tourLigadas() == off + 1);
+    valor[AJ_SEEKR_LIGADO] = 0; seekrChave[0] = 0;
+    off = tourLigadas();
+    strcpy(seekrChave, "fixture");
+    assert(tourLigadas() == off + 1);
+    assert(tourLigadas() >= 0 && tourLigadas() <= tourN());
+    puts("PASS: enabled/total counter responds to settings and Seekr key");
+  }
+  if (failures) return 1;
+  puts("PASS: approved subtitle text, Seekr progress and rounded previews");
   puts("ok");
   return 0;
 }
