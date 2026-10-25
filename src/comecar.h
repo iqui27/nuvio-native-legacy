@@ -8,9 +8,9 @@
 // comecar.txt. O QUE AINDA NAO: nome e cor so valem para a saudacao do resumo —
 // nao criam nem renomeiam o perfil da conta. Conta Stremio (link de
 // autenticacao) e AIOManager (link digitado no celular) importam via
-// importarfluxo.h. Nao ha "perfil infantil": o app nao tem
-// filtro de classificacao, e a tela nao promete o que nao cumpre (NOTAS.md,
-// pergunta 11).
+// importarfluxo.h. O "Perfil infantil" do passo 1 e a marca de
+// perfilinfantil.h, que barra o guia de TV ao vivo e o Reproduzir acima de 10
+// anos (app.c).
 //
 // SAIDAS: Voltar no passo 1 pula o fluxo todo (grava feito, mais nada); Voltar
 // nos passos 2-4 volta um passo; Voltar segurado ou "Pular tudo" pulam de

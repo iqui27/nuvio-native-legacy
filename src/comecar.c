@@ -19,6 +19,7 @@
 #include "layout.h"
 #include "catalogo.h"
 #include "colecoes.h"
+#include "descoberta.h"
 #include "addons.h"
 #include "idiomacod.h"
 #include "linguas.h"
@@ -27,6 +28,7 @@
 #include "plrui.h"
 #include "tex_cache.h"
 #include "ponteiro.h"
+#include "salvos.h"
 #include "simkl.h"
 #include "simklauth.h"
 #include "teclado.h"
@@ -198,9 +200,11 @@ static const char *botao_icone(int id) {
   return id == B_PRINC ? "aj_house" : "aj_sparkles";
 }
 
-// Defaults filled for the person (mock 3C): each chip steps the real setting.
+// Defaults filled for the person (mock 3C): the first two chips step the real
+// setting; "Importar o que já foi visto" is on while a tracker is linked (its
+// watched history feeds the catalogue) and OK pulls it again right now.
 static int op_chip(int id) {
-  return ajustes_rapido_op(id == I_CH_CW ? "cwFonteLocal" : id == I_CH_SALVA ? "salvosDestino" : "histContaLocal");
+  return ajustes_rapido_op(id == I_CH_CW ? "cwFonteLocal" : "salvosDestino");
 }
 
 // ------------------------------------------------------------------- layout
@@ -368,6 +372,7 @@ static void ok(void) {
     if (foco == I_TRAKT && !trakt_ativo()) traktauth_comecar();
     else if (foco == I_SIMKL && !simkl_ativo()) simklauth_comecar();
     else if (foco == I_TV) ir_passo(3);
+    else if (foco == I_CH_HIST) { if (trakt_ativo() || simkl_ativo()) desc_refazer_continuar(); else traktauth_comecar(); }
     else if (foco >= I_CH_CW) ajustes_rapido_passo(op_chip(foco), 1);
   }
 }
@@ -615,7 +620,7 @@ static void desenha_passo0(float a) {
     } else if (id == I_INFANTIL) {
       linha_opcao(r, f, NULL, "aj_lock", i18n("Perfil infantil"),
                   i18n(infantil_travado() ? "Este perfil tem PIN: mude em Ajustes › Interface e conta"
-                                          : "Marca este perfil como infantil, só nesta TV"), a);
+                                          : "Só classificação livre e 10 anos; sem TV ao vivo"), a);
       interruptor(r.x + r.w - 28.0f - 64.0f, r.y + (r.h - 36.0f) * .5f, perfil_infantil_ativo(), a);
       alvo(r, id);
     } else if (id == I_IDIOMA) {
@@ -749,7 +754,7 @@ static void desenha_passo1(float a) {
 }
 
 static const char *rotulo_chip(int id, char *buf, size_t tam) {
-  if (id == I_CH_HIST) return i18n("Enviar o que você assiste à conta Nuvio");
+  if (id == I_CH_HIST) return i18n("Importar o que já foi visto");
   snprintf(buf, tam, "%s %s", i18n(id == I_CH_CW ? "Continuar assistindo vem de" : "O + salva em"),
            i18n(ajustes_rapido_valor(op_chip(id))));
   return buf;
@@ -765,7 +770,7 @@ static void chip(GfxRect r, int id, float f, float a) {
   plrui_botao_repouso(r, a);
   plrui_pilula_foco(r, f * a);
   if (id == I_CH_HIST) {
-    int on = ajustes_rapido_ligado(op_chip(id)) == 1;
+    int on = trakt_ativo() || simkl_ativo();
     float ar, ag, ab;
     ajustes_acento(&ar, &ag, &ab);
     if (on) gfx_cor((GfxRect){ x, r.y + r.h * .5f - 4, 8, 8 }, .5f,
@@ -901,29 +906,31 @@ static void mini_home(float x, float y, float w, float a) {
 
 static void desenha_passo3(float a) {
   char t[200], d[200];
+  static int vistos;
+  static Uint32 contado;
   int tr = trakt_ativo(), sk = simkl_ativo(), na = addons_n(), nc = col_n(), i = 0;
   float x = ox + MARGEM, y = corpo_y() - 54.0f, w = coluna;
   float h = fminf(96.0f, (rodape_topo() - T21_GAP_CARD - y) / 5.0f);
+  if (!contado || SDL_GetTicks() - contado > 1000) {   // the import keeps landing: recount each second
+    contado = SDL_GetTicks() | 1; vistos = 0;
+    for (int k = 0; k < cat_n(); k++) vistos += cat_visto(cat_item(k)) != 0;
+  }
   snprintf(t, sizeof t, i18n("Pronto, %s."), nome_exibido());
   titulo(t, i18n("Arrumamos isto enquanto você lia:"), 860.0f, a);
-  snprintf(t, sizeof t, i18n("Perfil: %s"), nome_exibido());
-  y += resumo_feito(x, y, w, h, t, i18n(perfil_infantil_ativo() ? "Perfil infantil, nome e cor guardados nesta TV."
-                                                               : "Nome e cor guardados nesta TV."), 0, i++, a);
+  // Mock 3D: five independent outcomes, each from live state.
   snprintf(t, sizeof t, i18n("%d add-ons ativos"), na);
   y += resumo_feito(x, y, w, h, t, i18n(na ? "Na ordem em que chegaram. Mude em Ajustes › Fontes e addons."
                                            : "Nenhum ainda. Junte em Ajustes › Fontes e addons."), 0, i++, a);
-  snprintf(t, sizeof t, "%s", tr && sk ? i18n("Trakt e Simkl ligados") : tr ? i18n("Trakt ligado")
-                               : sk ? i18n("Simkl ligado") : i18n("Só nesta TV"));
-  y += resumo_feito(x, y, w, h, t, i18n(tr || sk ? "Dá para mudar em Ajustes › Contas." : "Você liga o Trakt ou o Simkl depois, em Ajustes › Contas."), 0, i++, a);
-  if (nc > 0) {
-    snprintf(t, sizeof t, i18n("%d coleções viraram fileiras na Home"), nc);
-    snprintf(d, sizeof d, "%s", i18n("Fixe, mova ou esconda segurando OK."));
-  } else {
-    snprintf(t, sizeof t, "%s", i18n("Fonte automática ajustada a esta TV"));
-    snprintf(d, sizeof d, "%s%s%s", ajustes_4k() ? "4K · " : "", ajustes_dolby_vision() ? "Dolby Vision · " : "",
-             i18n(ajustes_dts_ac3() ? "DTS vira 5.1 compatível." : "Áudio no formato que a TV aceita."));
-  }
-  y += resumo_feito(x, y, w, h, t, d, 0, i++, a);
+  snprintf(t, sizeof t, i18n("Biblioteca: %d para ver, %d assistidos"), salvos_n(), vistos);
+  y += resumo_feito(x, y, w, h, t, i18n(tr && sk ? "Trakt e Simkl juntos, sem repetir título."
+                                        : tr || sk ? "Dá para mudar em Ajustes › Contas."
+                                        : "Você liga o Trakt ou o Simkl depois, em Ajustes › Contas."), 0, i++, a);
+  if (nc > 0) snprintf(t, sizeof t, i18n("%d coleções viraram fileiras na Home"), nc);
+  else snprintf(t, sizeof t, "%s", i18n("Nenhuma coleção na Home ainda"));
+  y += resumo_feito(x, y, w, h, t, i18n("Fixe, mova ou esconda segurando OK."), 0, i++, a);
+  snprintf(d, sizeof d, "%s%s%s", ajustes_4k() ? "4K · " : "", ajustes_dolby_vision() ? "Dolby Vision · " : "",
+           i18n(ajustes_dts_ac3() ? "DTS vira 5.1 compatível." : "Áudio no formato que a TV aceita."));
+  y += resumo_feito(x, y, w, h, i18n("Fonte automática ajustada a esta TV"), d, 0, i++, a);
   resumo_feito(x, y, w, h, i18n("Pular abertura e créditos"),
                i18n(ajustes_pular_abertura() ? "Ligado. As marcas chegam junto com cada título."
                                              : "Desligado. Ligue em Ajustes › Reprodução."), 0, i++, a);
