@@ -12,6 +12,7 @@ char shotServerNames[3][96];
 #define emby_servidor_curto shotEmbyCurto
 #define plex_estado shotPlexEstado
 #define jellyfin_estado shotJellyfinEstado
+#define emby_estado shotEmbyEstado
 #define plex_entrar shotPlexEntrar
 #define plex_cancelar shotPlexCancelar
 #define jellyfin_cancelar shotJellyfinCancelar
@@ -19,8 +20,9 @@ char shotServerNames[3][96];
 #define jellyfin_definir_servidor shotJellyfinServidor
 #define emby_definir_servidor shotEmbyServidor
 static int shotPlexConectado(void) { return shotServerNames[0][0] != 0; }
-static int shotJfConectado(void) { return shotServerNames[1][0] != 0; }
-static int shotEmbyConectado(void) { return shotServerNames[2][0] != 0; }
+static int shotLoginPending;
+static int shotJfConectado(void) { return !shotLoginPending && shotServerNames[1][0] != 0; }
+static int shotEmbyConectado(void) { return !shotLoginPending && shotServerNames[2][0] != 0; }
 static const char *shotPlexNome(void) { return shotServerNames[0]; }
 static const char *shotJfCurto(void) { return shotServerNames[1]; }
 static const char *shotEmbyCurto(void) { return shotServerNames[2]; }
@@ -50,6 +52,7 @@ static void shotIsland(GfxRect r, float radius, float alpha) {
 }
 PxEstado shotPlexEstado(char *out, size_t n) { if(out && n) snprintf(out,n,"H7KM"); return PX_EST_CODIGO; }
 JfEstado shotJellyfinEstado(char *out, size_t n) { if(out && n) snprintf(out,n,"482916"); return JF_EST_QC_CODIGO; }
+JfEstado shotEmbyEstado(char *out, size_t n) { if(out && n) *out=0; return JF_EST_SERVIDOR_OK; }
 int shotPlexEntrar(void) { return 1; }
 void shotPlexCancelar(void) {}
 void shotJellyfinCancelar(void) {}
@@ -86,8 +89,8 @@ static void motionExtra(const char *dir) {
 }
 static void capture(const char *dir, const char *name) {
   if (!motionCapture && !homeShot) for (int i=0;i<90;i++) { shotTime+=16; srvsetup_atualizar(shotTime); }
-  for (int i=0;i<(motionCapture ? 1 : homeShot ? 45 : 3);i++) {
-    if (!motionCapture) SDL_Delay(2);
+  for (int i=0;i<(motionCapture ? 1 : homeShot ? 45 : 30);i++) {
+    if (!motionCapture) SDL_Delay(10);
     SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8); gfx_novo_quadro();
     glBindFramebuffer(GL_FRAMEBUFFER,target);glViewport(0,0,1920,1080);glClear(GL_COLOR_BUFFER_BIT);
     if(homeShot) { home_atualizar(1.0f/60,codeSince+28000+i*16);home_desenhar(codeSince+28000+i*16); }
@@ -116,7 +119,9 @@ int main(int argc,char **argv){
   rail_shot_aplicar();
   const char *scale=getenv("NUVIO_SHOT_ESCALA_TEXTO");gfx_escala_txt_definir(scale?atof(scale):1);
   ajustes_definir_vidro(getenv("NUVIO_SHOT_VIDRO")?atoi(getenv("NUVIO_SHOT_VIDRO")):0);
-  opened=1;profile=perfis_ativo();provider=0;codeSince=1000;change(CHOOSE);capture(argv[1],"setup-escolher");
+  if(getenv("NUVIO_SHOT_WIZARD")) ajustes_rapido_cor_definir(11);
+  const char *filter=getenv("NUVIO_SHOT_SCREEN");
+  opened=1;profile=perfis_ativo();provider=0;codeSince=1000;change(CHOOSE);if(!filter) capture(argv[1],"setup-escolher");
   key(SDLK_RIGHT);assert(selected==1);key(SDLK_LEFT);assert(selected==0);key(SDLK_ESCAPE);assert(!opened);
   struct {int state,p;const char *name;} scenes[]={
     {CODE,0,"setup-plex-pin"},{CODE,1,"setup-jellyfin-quickconnect"},{CONNECT_CODE,2,"setup-emby-connect"},
@@ -131,8 +136,12 @@ int main(int argc,char **argv){
     {PLEX_SERVERS,0,"setup-plex-servidor"},{LOGIN,2,"setup-emby"},
     {DISCOVER,1,"setup-buscando"},{DISCOVER,1,"setup-nenhum-servidor"}};
   for(unsigned i=0;i<sizeof scenes/sizeof *scenes;i++){
+    if(filter && !strstr(scenes[i].name,filter)) continue;
+    if(getenv("NUVIO_SHOT_WIZARD") && strncmp(scenes[i].name,"setup-",6)) continue;
+    shotLoginPending=scenes[i].state==PASSWORD||scenes[i].state==LOGIN;
     opened=1;provider=scenes[i].p;change(scenes[i].state);worker.n=2;
-    strcpy(code,provider==0?"H7KM":"482916");makeQR(provider==0?"https://plex.tv/link":provider==1?"http://jellyfin.example.test/web/#/quickconnect":"https://emby.media/pin");
+    worker.kind=JOB_USERS;worker.done=worker.result=0;worker.profile=profile;
+    strcpy(code,provider==0?"H7KM":provider==1?"482916":"729413");makeQR(provider==0?"https://plex.tv/link":provider==1?"http://jellyfin.example.test/web/#/quickconnect":"https://emby.media/pin");
     recoveryAuth=screen==ERROR_SCREEN&&provider==1;
     // Setup shots must show real connected names, never "Não configurado".
     for(int p=0;p<3;p++) lastSync[p]=time(NULL)-180*(p+1);
@@ -142,27 +151,31 @@ int main(int argc,char **argv){
       // chosen provider only, as the approved fixture does.
       int live = screen==MANAGE||screen==REMOVE||screen==ERROR_SCREEN;
       memset(shotServerNames,0,sizeof shotServerNames);
-      if(screen!=CODE && screen!=CONNECT_CODE && screen!=PASSWORD && screen!=LOGIN)
+      if(screen!=CODE && screen!=CONNECT_CODE)
         for(int p=0;p<3;p++) if(live || p==scenes[i].p || screen==CHOOSE) snprintf(shotServerNames[p],96,"%s",snames[p]); }
+    if(screen==LIBRARIES) selected=3;
     for(int j=0;j<2;j++){
-      const char *name=j?"Cinema":"Home";
+      const char *name=j?"Sala de cinema":provider==0?"Início":provider==1?"Sala":"Estúdio";
       snprintf(worker.servers[j].nome,96,"%s",name);snprintf(worker.plex[j].nome,96,"%s",name);
-      snprintf(worker.users[j].nome,96,"%s",j?"Diego":"Marina");
+      snprintf(worker.users[j].nome,96,"%s",j?"Diego":"Marina");worker.users[j].senha=1;
       snprintf(worker.users[j].imagem,640,"/Volumes/ExternalSSD/tmp/servidores-polish/assets/%s.jpg",j?"diego":"marina");
     }
     nLibraries=3;memset(libraries,0,sizeof libraries);
-    const char *titles[]={"Filmes","Séries","Concertos"};
+    const char *titles[]={"Filmes","Séries","Shows"};
     for(int j=0;j<3;j++){
       snprintf(libraries[j].titulo,sizeof libraries[j].titulo,"%s",titles[j]);
       snprintf(libraries[j].chave,sizeof libraries[j].chave,"%s%d",prefix[provider],j+1);
-      snprintf(libraries[j].tipo,sizeof libraries[j].tipo,"%s",j==1?"series":"movie");checked[j]=j<2;
+      snprintf(libraries[j].tipo,sizeof libraries[j].tipo,"%s",j==1?"series":j==2?"musicvideo":"movie");checked[j]=j<2;
+      libraries[j].n=j==0?284:j==1?62:18;
     }
     rowChoice=rowStyle=0;
     if(screen==ROWS){nLibraries=4;snprintf(libraries[3].chave,sizeof libraries[3].chave,"plex_recent_1");snprintf(libraries[3].titulo,sizeof libraries[3].titulo,"Mais recentes");snprintf(libraries[3].tipo,sizeof libraries[3].tipo,"movie");snprintf(libraries[1].titulo,sizeof libraries[1].titulo,"Coleção espacial");snprintf(libraries[1].tipo,sizeof libraries[1].tipo,"group");snprintf(libraries[1].chave,sizeof libraries[1].chave,"plex_group_42");snprintf(libraries[2].titulo,sizeof libraries[2].titulo,"Fila do fim de semana");snprintf(libraries[2].tipo,sizeof libraries[2].tipo,"list");snprintf(libraries[2].chave,sizeof libraries[2].chave,"plex_list_43");rowChoice=selected=1;}
     if(!strcmp(scenes[i].name,"setup-nenhum-servidor"))worker.n=0;
     if(!strcmp(scenes[i].name,"setup-buscando"))worker.alive=1;
     strcpy(username,"Marina");strcpy(password,"fixture");strcpy(addressText,"http://media.example.test:8096");
+    int expectedScreen=screen;
     capture(argv[1],scenes[i].name);worker.alive=0;
+    assert(screen==expectedScreen);
     if (gfx_escala_txt() > 1) {
       selected = targets() - 1;
       if (selected < 0) selected = 0;
@@ -182,6 +195,16 @@ int main(int argc,char **argv){
       }
       motionCapture=0;
     }
+  }
+  if(getenv("NUVIO_SHOT_WIZARD")) {
+    screen=READY;selected=0;opened=1;key(SDLK_RETURN);assert(!opened);
+    screen=DISCOVER;provider=1;worker.alive=0;worker.n=0;opened=1;selected=2;key(SDLK_RETURN);assert(!opened);
+    assert(targets()==3);
+    screen=LIBRARIES;nLibraries=8;selected=7;opened=1;
+    for(int f=0;f<120;f++){shotTime+=16;srvsetup_atualizar(shotTime);}
+    assert(fabsf(scroll-5)<.02f);
+    key(SDLK_ESCAPE);assert(screen==MANAGE);
+    return 0;
   }
   static CatItem items[5];CatFileira ready={0};
   for(int i=0;i<5;i++){

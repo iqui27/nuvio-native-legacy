@@ -227,6 +227,7 @@ static void change(int next) {
     gfx_mini_terminar();
   }
   screen = next; selected = 0; message[0] = 0;
+  if(next==LOGIN && !worker.alive) { worker.kind=0;worker.n=0; }
   bodyScroll = bodyVelocity = bodyTarget = userScroll = userVelocity = userTarget = 0;
   page = pageSeconds = scroll = scrollVelocity = 0;
   memset(focusAnim, 0, sizeof focusAnim);
@@ -288,6 +289,11 @@ void srvsetup_abrir(int p) {
 static void discover(void) { cancelLogin(); change(DISCOVER); worker.n = 0; startWorker(JOB_DISCOVER); }
 static void userLogin(void) { cancelLogin(); change(USERS); worker.n = 0; startWorker(JOB_USERS); }
 static void activate(void) {
+  if (worker.alive && screen == DISCOVER) {
+    if (selected==1) { stopWorker();change(ADDRESS);keyboard(1); }
+    else if (selected==(provider==2?3:2)) srvsetup_fechar();
+    return;
+  }
   if (worker.alive && screen != CODE && screen != CONNECT_CODE) return;
   if (worker.alive && screen == CONNECT_CODE && selected == 0) {
     snprintf(message, sizeof message, "%s", i18n("Carregando…")); return;
@@ -309,10 +315,11 @@ static void activate(void) {
         snprintf(addressText, sizeof addressText, "%s", worker.servers[selected].url);
         if (!provider) { change(ADDRESS); }
         else { int ok = provider == 1 ? jellyfin_definir_servidor(addressText) : emby_definir_servidor(addressText); if (ok) change(LOGIN); }
-      } else if (selected == (worker.n > 0 ? worker.n : 0)) { change(ADDRESS); keyboard(1); }
+      } else if (selected == (worker.n > 0 ? worker.n : 0)) discover();
+      else if (selected == (worker.n > 0 ? worker.n : 0)+1) { change(ADDRESS); keyboard(1); }
       else if (provider == 2 && selected == (worker.n > 0 ? worker.n : 0) + 2) {
         change(CONNECT_CODE); codeSince = SDL_GetTicks(); makeQR("https://emby.media/pin"); startWorker(JOB_CONNECT_PIN);
-      } else discover(); break;
+      } else srvsetup_fechar(); break;
     case ADDRESS:
       if (!selected) keyboard(1);
       else if (selected == 1) {
@@ -321,8 +328,10 @@ static void activate(void) {
         else if (provider == 1 ? jellyfin_definir_servidor(addressText) : emby_definir_servidor(addressText)) change(LOGIN);
       } else discover(); break;
     case LOGIN:
-      if (selected == 1 && provider == 2) { change(CONNECT_CODE); codeSince = SDL_GetTicks(); makeQR("https://emby.media/pin"); startWorker(JOB_CONNECT_PIN); }
-      else if (selected == 2 && provider == 1) enterCode();
+      if(selected>=5 && selected-5<worker.n) { snprintf(username,sizeof username,"%s",worker.users[selected-5].nome);change(PASSWORD);keyboard(3); }
+      else if (selected == 1 && provider == 2) { change(CONNECT_CODE); codeSince = SDL_GetTicks(); makeQR("https://emby.media/pin"); startWorker(JOB_CONNECT_PIN); }
+      else if (selected == 2) discover();
+      else if (selected == 3) { change(ADDRESS);keyboard(1); }
       else userLogin(); break;
     case USERS:
       if (selected < worker.n && worker.n > 0) { snprintf(username, sizeof username, "%s", worker.users[selected].nome); change(PASSWORD); keyboard(3); }
@@ -414,15 +423,17 @@ static void activate(void) {
   }
 }
 static int targets(void) {
+  if (worker.alive && screen == DISCOVER) return provider==2?4:3;
   if (worker.alive && screen != CODE && screen != CONNECT_CODE) return 0;
   switch (screen) {
     case CHOOSE: return 3;
     case MANAGE: return 7;
-    case DISCOVER: return (worker.n > 0 ? worker.n : 0) + (provider == 2 ? 3 : 2);
+    case DISCOVER: return (worker.n > 0 ? worker.n : 0) + (provider == 2 ? 4 : 3);
     case USERS: return (worker.n > 0 ? worker.n : 0) + 2;
-    case ADDRESS: case LOGIN: return 3;
+    case ADDRESS: return 3;
+    case LOGIN: return 5+(worker.n>3?3:worker.n>0?worker.n:0);
     case ERROR_SCREEN: return recoveryAuth ? 3 : 4;
-    case CODE: return 3;
+    case CODE: return provider ? 3 : 4;
     case PASSWORD: case CONNECT_PASSWORD: return 4;
     case CONNECT_CODE: return 3;
     case PLEX_SERVERS: return (worker.n > 0 ? worker.n : 0) + 2;
@@ -469,9 +480,10 @@ void srvsetup_atualizar(Uint32 now) {
   }
   float targetScroll = 0;
   int total = screen == LIBRARIES || screen == ROWS ? nLibraries : worker.n;
-  if ((screen == DISCOVER || screen == PLEX_SERVERS || screen == CONNECT_SERVERS || screen == LIBRARIES || screen == ROWS) && total > 4) {
+  int visibleRows = screen==LIBRARIES?3:4;
+  if ((screen == DISCOVER || screen == PLEX_SERVERS || screen == CONNECT_SERVERS || screen == LIBRARIES || screen == ROWS) && total > visibleRows) {
     int choice = selected < total ? selected : total - 1;
-    targetScroll = fminf(fmaxf(choice - 3, 0), total - 4);
+    targetScroll = fminf(fmaxf(choice-visibleRows+1,0),total-visibleRows);
   }
   scroll = anim_mola2_reduzida(&scrollVelocity, scroll, targetScroll, dt, NV_MOLA2_SCROLL, reduced);
   if (opened && profile != perfis_ativo()) srvsetup_fechar();
@@ -557,6 +569,7 @@ void srvsetup_atualizar(Uint32 now) {
     if (state == JF_EST_ERRO) snprintf(message, sizeof message, "%s", i18n("Usuário ou senha incorretos"));
   }
   if (screen == LOGIN) {
+    if(!worker.alive && worker.kind!=JOB_USERS) { worker.n=0;startWorker(JOB_USERS); }
     int state = provider == 1 ? jellyfin_estado(NULL, 0) : emby_estado(NULL, 0);
     if (state == JF_EST_VERIFICANDO) snprintf(message, sizeof message, "%s", i18n("Conferindo o servidor…"));
     else if (state == JF_EST_ERRO) failed(providerError());
@@ -568,7 +581,7 @@ static void text(int style, const char *s, float x, float y, int tone, float wid
   txt_desenhar(txt_linha_corta(style, i18n(s), tone, tone, tone, 255, pw(width)), px(x), sy(y));
 }
 static void paragraph(const char *s, float x, float y, float width) {
-  txt_bloco(TXT_ILHA_CORPO, i18n(s), 186, 192, 204, px(x), sy(y), pw(width), 32, 1, 3);
+  txt_bloco(TXT_ILHA_SUB_L, i18n(s), 155, 155, 155, px(x), sy(y), pw(width), 32, 1, 3);
 }
 static void pointFocus(int i, int unused) { (void)unused; selected = i; }
 static void pointActivate(int i, int unused) { (void)unused; selected = i; activate(); }
@@ -589,7 +602,12 @@ static void pointerTarget(GfxRect r, int id) {
 }
 static void panel(float x, float y, float w, float h, int id) {
   GfxRect r = {px(x), sy(y), pw(w), bodyDrawing ? h : ANC(h)};
-  if (id < 0) t21_ilha(r, T21_R_SHEET, 1);
+  if (id < 0) {
+    // Setup sheets use the approved quiet island, without the player's rim.
+    gfx_sombra_sob((GfxRect){r.x-16,r.y-4,r.w+32,r.h+30},1,0,.5f,0,0,0,.25f,r,30,1);
+    gfx_cor(r,30/fminf(r.w,r.h),.055f,.059f,.071f,ajustes_vidro()?.88f:.98f);
+    gfx_luz_canto(r,30/fminf(r.w,r.h),r.w*.2f,-r.h*.4f,r.w*.65f,1,1,1,.035f);
+  }
   else { plrui_linha_foco(r, T21_R_ROW, focusValue(id)); pointerTarget(r, id); }
 }
 static void logo(int p, float x, float y, float size) {
@@ -605,14 +623,41 @@ static void button(int i, const char *label, float x, float y, float w) {
   GfxRect r = {bx, by, fmaxf(width, fminf(pw(w), contentX + contentW - bx)), 60};
   float reveal = ajustes_animacoes_reduzidas() ? 1 :
     revela_entra(1, revela_onda_atraso(i < 8 ? i : 7, 0), 1 + (Uint32)(pageSeconds * 1000));
-  plrui_botao(r.x, r.y + (1 - reveal) * NV_ENTRA_DY, localized, NULL, focusValue(i), reveal);
+  float buttonY=r.y+(1-reveal)*NV_ENTRA_DY, focus=focusValue(i);
+  if(focus>.005f) plrui_botao(r.x,buttonY,localized,NULL,focus,reveal);
+  else {
+    gfx_cor((GfxRect){r.x,buttonY,width,60},.5f,1,1,1,.07f*reveal);
+    TxtLinha label=txt_linha(TXT_G21B,localized,243,243,243,255);
+    txt_desenhar_alpha(label,r.x+28,buttonY+(60-label.h)/2,reveal);
+  }
   pointerTarget((GfxRect){r.x, r.y + (1 - reveal) * NV_ENTRA_DY, width, r.h}, i);
-  lastButtonY = by; nextButtonX = bx + r.w + 12;
+  lastButtonY = by; nextButtonX = bx + width + 12;
   if (selected == i && bodyDrawing) {
     float low = ANC(386), high = ANC(966);
     if (r.y < low) bodyTarget = fmaxf(0, bodyScroll + r.y - low);
     else if (r.y + r.h > high) bodyTarget = bodyScroll + r.y + r.h - high;
   }
+}
+static void input(int i, const char *label, const char *value, float y) {
+  GfxRect r={px(232),sy(y),pw(686),90};
+  gfx_cor(r,16/fminf(r.w,r.h),1,1,1,.045f+.025f*focusValue(i));
+  pointerTarget(r,i);
+  text(TXT_ILHA_APOIO,label,254,y+12,145,642);
+  text(TXT_ILHA_TEXTO,value,254,y+44,243,642);
+}
+static void keyboardPreview(int passwordField) {
+  plrui_kicker(passwordField?"Senha · Teclado da TV":"Endereço · Teclado da TV",px(1052),sy(422),130,130,130,1);
+  const char *keys=passwordField?"1234567890qwertyuiopasdfghjkl@zxcvbnm._-":"1234567890qwertyuiopasdfghjkl:zxcvbnm./-";
+  for(int i=0;keys[i];i++) {
+    GfxRect r={px(1052+(i%10)*75),sy(456+(i/10)*62),pw(67),54};
+    gfx_cor(r,12/fminf(r.w,r.h),1,1,1,.05f);
+    char key[2]={keys[i],0};TxtLinha line=txt_linha(TXT_ILHA_TEXTO,key,225,225,225,255);
+    txt_desenhar(line,r.x+(r.w-line.w)/2,r.y+(r.h-line.h)/2);
+    pointerTarget(r,passwordField?1:0);
+  }
+  text(TXT_ILHA_SUB,passwordField?"⇧ Maiúsculas":"https://",1052,736,225,230);
+  text(TXT_ILHA_SUB,"⌫ Apagar",1280,736,225,200);
+  text(TXT_ILHA_SUB,"Concluir",1460,736,225,200);
 }
 static void row(int i, const char *title, const char *sub, float y, int p) {
   float group = gfx_opacidade_grupo;
@@ -654,53 +699,69 @@ void srvsetup_desenhar(Uint32 now) {
   lastButtonY = -1000; nextButtonX = 0;
   float group = gfx_opacidade_grupo;
   gfx_opacidade_grupo *= anim_suave(entry);
-  gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.035f,.038f,.044f,1);
+  GfxRect background = {0,0,NV_TELA_W,NV_TELA_H};
+  gfx_cor(background,0,.051f,.051f,.051f,1);
+  gfx_luz_canto(background,0,NV_TELA_W*.85f,NV_TELA_H*.25f,NV_TELA_W*.7f,.16f,.23f,.25f,.75f);
+  gfx_luz_canto(background,0,NV_TELA_W*.3f,NV_TELA_H*.05f,NV_TELA_W*.5f,.21f,.17f,.23f,.55f);
   if (!previousPage.tex) gfx_opacidade_grupo *= anim_saida(page);
   gfx_transformar(0, 0, 1, 0, (1 - anim_suave(entry)) * NV_ENTRA_DY);
   const char *srv = serverName(provider)[0] ? serverName(provider) : providers[provider];
   char title[192];
-  if (screen == CHOOSE) snprintf(title, sizeof title, "%s", i18n("Sua mídia, na sua Biblioteca"));
+  if (screen == CHOOSE) snprintf(title, sizeof title, "%s", i18n("Sua mídia na Biblioteca"));
   else if (screen == MANAGE) snprintf(title, sizeof title, "%s", i18n("Gerenciar servidores"));
-  else if (screen == DISCOVER) snprintf(title, sizeof title, "%s", i18n(worker.alive ? "Procurando servidores" : worker.n ? "Escolha seu servidor" : "Nenhum servidor encontrado"));
-  else if (screen == ADDRESS) snprintf(title, sizeof title, "%s", i18n("Digite o endereço do servidor"));
+  else if (screen == DISCOVER) snprintf(title, sizeof title, "%s", i18n(worker.alive ? "Buscando servidores" : worker.n ? "Escolher servidor" : "Nenhum servidor encontrado"));
+  else if (screen == ADDRESS) snprintf(title, sizeof title, "%s", i18n("Informar endereço do servidor"));
   else if (screen == LOGIN) snprintf(title, sizeof title, "%s", provider == 2 ? i18n("Conectar ao Emby") : i18n("Seus servidores"));
   else if (screen == USERS) snprintf(title, sizeof title, "%s", i18n("Quem está assistindo?"));
   else if (screen == PASSWORD) snprintf(title, sizeof title, i18n("Entrar em %s"), srv);
-  else if (screen == CONNECT_PASSWORD) snprintf(title, sizeof title, "%s", i18n("Entrar com o Emby Connect"));
-  else if (screen == CODE) snprintf(title, sizeof title, "%s", provider ? i18n("Aprove esta TV") : i18n("Vincule sua conta Plex"));
-  else if (screen == CONNECT_CODE) snprintf(title, sizeof title, "%s", i18n("Vincular o Emby Connect"));
-  else if (screen == PLEX_SERVERS) snprintf(title, sizeof title, "%s", i18n("Escolha seu servidor Plex"));
+  else if (screen == CONNECT_PASSWORD) snprintf(title, sizeof title, "%s", i18n("Entrar com Emby Connect"));
+  else if (screen == CODE) snprintf(title, sizeof title, "%s", provider ? i18n("Autorizar esta TV") : i18n("Vincular conta Plex"));
+  else if (screen == CONNECT_CODE) snprintf(title, sizeof title, "%s", i18n("Vincular Emby Connect"));
+  else if (screen == PLEX_SERVERS) snprintf(title, sizeof title, "%s", i18n("Escolher servidor Plex"));
   else if (screen == CONNECT_SERVERS) snprintf(title, sizeof title, "%s", i18n("Escolha um servidor compartilhado"));
-  else if (screen == LIBRARIES) snprintf(title, sizeof title, "%s", i18n("Escolha suas bibliotecas"));
-  else if (screen == READY) snprintf(title, sizeof title, i18n("%s conectado"), srv);
+  else if (screen == LIBRARIES) snprintf(title, sizeof title, "%s", i18n("Escolher bibliotecas"));
+  else if (screen == READY) snprintf(title, sizeof title, i18n(provider == 2 ? "%s conectado" : "%s conectada"), srv);
   else if (screen == REMOVE) snprintf(title, sizeof title, i18n("Remover %s deste perfil?"), srv);
-  else if (screen == ERROR_SCREEN) { if (recoveryAuth) snprintf(title, sizeof title, "%s", i18n("Entrar de novo")); else snprintf(title, sizeof title, i18n("%s está offline"), srv); }
+  else if (screen == ERROR_SCREEN) { if (recoveryAuth) snprintf(title, sizeof title, "%s", i18n("Entrar novamente")); else snprintf(title, sizeof title, i18n("%s está offline"), srv); }
   else snprintf(title, sizeof title, "%s", i18n("Seus servidores"));
   if(screen!=ROWS) {
     char context[160];
     if (screen == CHOOSE) snprintf(context, sizeof context, "%s › %s", i18n("Biblioteca"), i18n("Adicionar origem"));
     else if (screen == MANAGE) snprintf(context, sizeof context, "%s › %s", i18n("Biblioteca"), i18n("Origens"));
     else snprintf(context, sizeof context, "%s › %s %s", i18n("Biblioteca"), i18n("Conectar"), providers[provider]);
-    if (screen != CHOOSE && screen != MANAGE) { logo(provider,200,124,34); text(TXT_ILHA_APOIO,context,252,132,130,1500); }
-    else text(TXT_V2_KICK,context,200,132,130,1500);
+    if (screen != CHOOSE && screen != MANAGE) logo(provider,200,124,34);
+    plrui_kicker(context,px(screen == CHOOSE || screen == MANAGE ? 200 : 252),ANC(132),130,130,130,1);
     text(TXT_NOV_TITULO,title,200,180,243,1600);
     char intro[192];
-    if (screen == CHOOSE) snprintf(intro, sizeof intro, "%s", i18n("Conecte um serviço. Seus filmes e séries entram na mesma Biblioteca, listas e fontes."));
+    if (screen == CHOOSE) snprintf(intro, sizeof intro, "%s", i18n("Conecte um serviço. Seus filmes e séries ficam na mesma Biblioteca, listas e fontes."));
     else if (screen == MANAGE) snprintf(intro, sizeof intro, "%s", i18n("Conexões salvas só nesta TV"));
     else if (screen == USERS) snprintf(intro, sizeof intro, i18n("%s · Escolha um usuário visível ou entre com outro nome."), srv);
-    else if (screen == ADDRESS) snprintf(intro, sizeof intro, "%s", i18n("Use o endereço completo, com porta ou caminho, se o servidor precisar."));
-    else if (screen == PASSWORD || screen == CONNECT_PASSWORD) snprintf(intro, sizeof intro, "%s", screen == CONNECT_PASSWORD ? i18n("Use sua conta Emby Connect para achar os servidores compartilhados com você.") : i18n("Use sua conta do servidor. Sua senha fica oculta nesta tela."));
-    else if (screen == CODE || screen == CONNECT_CODE) snprintf(intro, sizeof intro, "%s", screen == CODE && provider ? i18n("Quick Connect") : i18n("Use o celular ou o computador para aprovar esta TV."));
-    else if (screen == DISCOVER || screen == PLEX_SERVERS || screen == CONNECT_SERVERS) snprintf(intro, sizeof intro, "%s", screen == PLEX_SERVERS ? i18n("Conta vinculada · Escolha um servidor disponível ou busque na sua rede.") : i18n("Conecte a um servidor da sua rede ou digite o endereço."));
-    else if (screen == LIBRARIES) snprintf(intro, sizeof intro, i18n("%s · Conectado como %s. Escolha o que aparece no Nuvio."), srv, username[0] ? username : "Marina");
-    else if (screen == READY) { int k=0; for(int i2=0;i2<nLibraries;i2++) k+=checked[i2]; snprintf(intro, sizeof intro, i18n("%d bibliotecas selecionadas · Pronto para a sua próxima sessão."), k); }
+    else if (screen == ADDRESS) snprintf(intro, sizeof intro, "%s", i18n("Use o endereço completo, com porta ou caminho se necessário."));
+    else if (screen == PASSWORD || screen == CONNECT_PASSWORD) snprintf(intro, sizeof intro, "%s", screen == CONNECT_PASSWORD ? i18n("Use sua conta Emby Connect para buscar servidores compartilhados.") : i18n("Use sua conta do servidor. Sua senha fica oculta nesta tela."));
+    else if (screen == CODE && provider) snprintf(intro,sizeof intro,"%s · Quick Connect",srv);
+    else if (screen == CODE || screen == CONNECT_CODE) snprintf(intro, sizeof intro, "%s", i18n("Use celular ou computador para autorizar esta TV."));
+    else if (screen == LOGIN) snprintf(intro,sizeof intro,"%s",i18n("Escolha o servidor e use Emby Connect ou uma conta local."));
+    else if (screen == DISCOVER || screen == PLEX_SERVERS || screen == CONNECT_SERVERS) snprintf(intro, sizeof intro, "%s", screen == PLEX_SERVERS ? i18n("Conta vinculada · Escolha um servidor ou busque na rede.") : i18n("Conecte um servidor da rede local ou informe o endereço."));
+    else if (screen == LIBRARIES) snprintf(intro, sizeof intro, i18n("%s · Acesso como %s. Escolha o que aparece no Nuvio."), srv, username[0] ? username : "Marina");
+    else if (screen == READY) { int k=0; for(int i2=0;i2<nLibraries;i2++) k+=checked[i2]; snprintf(intro, sizeof intro, i18n("%d bibliotecas selecionadas · Tudo pronto para assistir."), k); }
     else if (screen == REMOVE) snprintf(intro, sizeof intro, i18n("Isso desconecta o %s · %s desta TV."), providers[provider], srv);
     else if (screen == ERROR_SCREEN) { char stamp[96]; syncLabel(provider, stamp, sizeof stamp); if (recoveryAuth) snprintf(intro, sizeof intro, i18n("%s não aceita mais o login desta TV."), srv); else snprintf(intro, sizeof intro, i18n("Última conexão %s. O catálogo salvo continua disponível."), stamp); }
     else snprintf(intro, sizeof intro, "%s", i18n("Seus servidores"));
-    paragraph(intro,200,250,1540);
-    const char *steps[] = {i18n("Serviço"),i18n("Conectar"),i18n("Entrar"),i18n("Biblioteca"),i18n("Pronto")};
-    int step=screen==CHOOSE?0:screen==LIBRARIES?3:screen==READY?4:screen==DISCOVER||screen==ADDRESS?1:2;
-    if (screen != MANAGE) t21_passos((GfxRect){px(200), ANC(320), pw(1624), 5}, 5, step, steps, 1);
+    paragraph(intro,200,250,screen==CHOOSE?740:1540);
+    const char *steps[] = {i18n("Escolher serviço"),i18n("Conectar"),i18n("Entrar"),i18n("Bibliotecas"),i18n("Pronto")};
+    int step=screen==CHOOSE?0:screen==LIBRARIES?3:screen==READY?4:screen==DISCOVER||screen==ADDRESS||screen==LOGIN||screen==PLEX_SERVERS?1:2;
+    if (screen != MANAGE) {
+      float x = px(200);
+      for (int i=0;i<5;i++) {
+        int tone=i==step?243:i<step?165:105;
+        char label[128];
+        if (i<step) snprintf(label,sizeof label,"✓  %s",steps[i]);
+        else snprintf(label,sizeof label,"%d  %s",i+1,steps[i]);
+        TxtLinha line=txt_linha(TXT_ILHA_APOIO,label,tone,tone,tone,255);
+        txt_desenhar(line,x,ANC(screen==CHOOSE?347:328)); x+=line.w+24;
+        if(i<4) { line=txt_linha(TXT_ILHA_APOIO,"›",105,105,105,255);txt_desenhar(line,x,ANC(screen==CHOOSE?347:328));x+=line.w+24; }
+      }
+    }
   }
   bodyDrawing = screen != ROWS;
   if (bodyDrawing) gfx_recorte(contentX, ANC(386), contentW, ANC(592));
@@ -710,34 +771,41 @@ void srvsetup_desenhar(Uint32 now) {
     gfx_transformar(0, 0, 1, 0, -bodyScroll + (1 - anim_suave(entry)) * NV_ENTRA_DY);
   }
   if (screen == CHOOSE) {
-    const char *desc[] = {"Vincule sua conta com um código. Escolha um servidor da sua conta ou da sua rede.","Encontre seu servidor. Use o Quick Connect ou entre com seu usuário do servidor.","Encontre seu servidor. Use o Emby Connect ou entre diretamente."};
+    const char *desc[] = {"Vincule sua conta com um código. Escolha um servidor da conta ou rede.","Busque o servidor. Use Quick Connect ou entre com seu usuário.","Busque o servidor. Use Emby Connect ou entre diretamente."};
     for(int i=0;i<3;i++) {
       float reveal = ajustes_animacoes_reduzidas() ? 1 : revela_entra(1, revela_onda_atraso(i, 0), 1 + (Uint32)(pageSeconds * 1000));
       float old = gfx_opacidade_grupo, x=200+i*550;
       gfx_opacidade_grupo *= reveal;
-      t21_ilha((GfxRect){px(x), sy(405) + (1-reveal)*NV_ENTRA_DY, pw(523), 274}, T21_R_SHEET, 1);
-      panel(x,405,523,274,i); logo(i,x+34,428,66);
+      panel(x,405,523,274,-1);
+      gfx_cor((GfxRect){px(x),sy(405)+(1-reveal)*NV_ENTRA_DY,pw(523),274},26/274.f,1,1,1,.14f*focusValue(i));
+      pointerTarget((GfxRect){px(x),sy(405),pw(523),274},i);
+      logo(i,x+34,428,66);
       text(TXT_V2_GRUPO,providers[i],x+34,520,243,450); paragraph(desc[i],x+34,568,455);
       gfx_opacidade_grupo = old;
     }
-    paragraph("Seu servidor continua seu. O Nuvio conecta esta TV e este perfil a ele.",200,714,1500);
+    paragraph("Seu servidor continua seu. O Nuvio conecta esta TV e perfil a ele.",200,714,1500);
   } else if (screen == CODE || screen == CONNECT_CODE) {
-    panel(200,386,750,456,-1); panel(1020,386,804,456,-1);
+    panel(200,386,750,410,-1); panel(1020,386,804,410,-1);
     const char *url = screen==CONNECT_CODE?"emby.media/pin":provider?"Quick Connect":"plex.tv/link";
-    char eyebrow[160]; snprintf(eyebrow,sizeof eyebrow,i18n("Vá em %s e digite"),url);
-    text(TXT_ILHA_SUB,eyebrow,232,422,150,680);
-    text(TXT_LOG_COD,code[0]?code:"…",232,470,243,680);
+    char eyebrow[160]; snprintf(eyebrow,sizeof eyebrow,i18n("Acesse %s e digite"),url);
+    plrui_kicker(provider==1?"No app Jellyfin conectado, abra Quick Connect":eyebrow,px(232),sy(422),130,130,130,1);
+    char displayCode[32];
+    if(strlen(code)==6) snprintf(displayCode,sizeof displayCode,"%.3s %.3s",code,code+3);
+    else snprintf(displayCode,sizeof displayCode,"%s",code);
+    txt_tracking(TXT_LOG_COD,displayCode,243,243,243,px(232),sy(470),1,6);
     unsigned elapsed=(now-codeSince)/1000, left=elapsed<300?300-elapsed:0; char remaining[128];
     if (screen==CONNECT_CODE) snprintf(remaining,sizeof remaining,"%s",i18n("Aguardando aprovação · Mantenha esta tela aberta."));
     else if (provider) snprintf(remaining,sizeof remaining,i18n("Aguardando aprovação · restam %02d:%02d"),left/60,left%60);
     else snprintf(remaining,sizeof remaining,i18n("Aguardando aprovação · O código expira em %02d:%02d"),left/60,left%60);
-    text(TXT_ILHA_TEXTO,remaining,232,580,155,690);
-    button(0,screen==CONNECT_CODE||provider?"Já aprovei esta TV":"Já vinculei esta TV",232,630,300); button(1,"Novo código",544,630,200);
-    button(2,screen==CONNECT_CODE||provider?"Usuário e senha":"Buscar na rede",232,716,330);
-    text(TXT_ILHA_APOIO,screen==CONNECT_CODE||provider?"Digite este código para aprovar o Nuvio.":"Não compartilhe este código.",232,798,155,690);
-    drawQR(); text(TXT_V2_GRUPO,provider==1?"Abra seu servidor":screen==CONNECT_CODE?"Abra o Emby Connect":"Escaneie para abrir o Plex",1332,494,243,450);
+    if(provider==1) text(TXT_ILHA_TEXTO,"Digite este código para autorizar o Nuvio.",232,568,155,690);
+    text(TXT_ILHA_TEXTO,remaining,232,provider==1?600:580,155,690);
+    button(0,screen==CONNECT_CODE||provider?"Já autorizei esta TV":"Já vinculei esta TV",232,provider==1?658:630,260); button(1,"Novo código",504,provider==1?658:630,200);
+    if(provider) button(2,screen==CONNECT_CODE?"Usar usuário e senha do Emby Connect":"Entrar com usuário e senha",232,provider==1?732:704,330);
+    else { button(2,"Buscar na minha rede",1052,704,230);button(3,"Informar endereço do servidor",1294,704,330); }
+    if(!provider) text(TXT_ILHA_APOIO,"Não compartilhe este código.",232,720,155,690);
+    drawQR(); text(TXT_V2_GRUPO,provider==1?"Abrir seu servidor":screen==CONNECT_CODE?"Abrir Emby Connect":"Leia para abrir o Plex",1332,494,243,450);
     paragraph(screen==CONNECT_CODE?"Entre e digite o código desta TV.":provider==1?"Entre e digite o código no Quick Connect.":"Entre no Plex e digite o código mostrado nesta TV.",1332,548,430);
-    text(TXT_ILHA_SUB,provider==1?"Se o Quick Connect estiver desativado, use usuário e senha.":screen==CONNECT_CODE?"Depois: escolha um servidor compartilhado e suas bibliotecas.":"Buscar na minha rede · Digitar endereço",1332,650,155,430);
+    if(provider) text(TXT_ILHA_APOIO,provider==1?"Se Quick Connect estiver desativado, use usuário e senha.":"Depois, escolha um servidor compartilhado e as bibliotecas.",1052,690,155,740);
   } else if (screen == MANAGE) {
     panel(200,386,1624,470,-1);
     for(int i=0;i<3;i++) { char label[192],stamp[96],sub[160]; snprintf(label,sizeof label,"%s · %s",providers[i],serverName(i)[0]?serverName(i):providers[i]); syncLabel(i,stamp,sizeof stamp);
@@ -763,29 +831,34 @@ void srvsetup_desenhar(Uint32 now) {
       if(avatar)gfx_rect((GfxRect){px(x+25),sy(458),100,100},avatar,GFX_AVATAR,0,0,0,.5f,1,1,1,1);
       else { gfx_cor((GfxRect){px(x+25),sy(458),100,100},.5f,1,1,1,.08f); gfx_icone((GfxRect){px(x+53),sy(486),44,44},"aj_user-round",.6f,.6f,.6f,1); }
       text(TXT_ILHA_NOME,worker.users[i].nome,x+10,582,243,130);
+      if(worker.users[i].senha) text(TXT_ILHA_APOIO,"Exige senha",x+10,616,145,130);
     }
     targetX0=-1e9f;targetX1=1e9f;
     gfx_recorte(contentX, ANC(386), contentW, ANC(592));
-    button(total,"Trocar de usuário",232,674,270);
-    button(total+1,provider==1?"Quick Connect":"Emby Connect",514,674,300);
-    text(TXT_V2_GRUPO,"Perfil",1020,412,243,680);
-    paragraph("Cada perfil tem sua própria lista e seu progresso.",1020,470,680);
-    paragraph("Este perfil nesta TV",1020,566,680);
+    button(total,"Outro usuário",232,674,200);
+    button(total+1,provider==1?"Usar Quick Connect":"Usar Emby Connect",444,674,300);
+    text(TXT_V2_GRUPO,"Seu perfil no servidor",1020,412,243,780);
+    paragraph("Só usuários visíveis são exibidos. Usuários ocultos podem digitar seu nome.",1020,470,780);
+    text(TXT_ILHA_APOIO,"Esta conexão pertence ao perfil Nuvio atual.",1020,526,145,780);
   } else if (screen == DISCOVER || screen == PLEX_SERVERS || screen == CONNECT_SERVERS) {
-    panel(200,386,750,500,-1);
     int total=!worker.alive && worker.n>0?worker.n:0, n=total>4?4:total;
+    panel(200,386,750,n?210+n*112:410,-1);
+    plrui_kicker(screen==PLEX_SERVERS?"Da sua conta Plex":"Sua rede",px(232),sy(422),130,130,130,1);
     int start=(int)floorf(scroll); if(start+n>total)start=total-n; if(start<0)start=0;
     float scrollPart=scroll-start;
-    if(worker.alive) paragraph(screen==DISCOVER?"Procurando na sua rede… Isso pode levar alguns segundos.":"Carregando…",232,420,680);
-    else if(!n) { char vazio[160]; snprintf(vazio,sizeof vazio,i18n("Nenhum servidor %s por perto"),providers[provider]); gfx_icone((GfxRect){px(232),ANC(414),44,44},"aj_search",.4f,.4f,.4f,1); text(TXT_ILHA_NOME,vazio,232,472,243,680); paragraph("Confira se o servidor está ligado e na mesma rede desta TV.",232,520,680); }
-    gfx_recorte(px(220), fmaxf(ANC(386), sy(400)), pw(710), fminf(370, ANC(978) - fmaxf(ANC(386), sy(400))));
+    if(worker.alive) {
+      gfx_icone((GfxRect){px(232),sy(474),64,64},"aj_loader",.55f,.55f,.55f,1);
+      text(TXT_V2_GRUPO,"Buscando na sua rede…",232,582,243,680);
+      paragraph("Isso pode levar alguns segundos.",232,640,680);
+    } else if(!n) { char vazio[160]; snprintf(vazio,sizeof vazio,i18n("Nenhum servidor %s na rede"),providers[provider]); gfx_icone((GfxRect){px(232),sy(474),44,44},"aj_search",.55f,.55f,.55f,1); text(TXT_V2_GRUPO,vazio,232,566,243,680); paragraph("Confira se o servidor está ligado e na mesma rede desta TV.",232,624,680); }
+    if(total) gfx_recorte(px(220), fmaxf(ANC(386), sy(456)), pw(710), fminf(448, ANC(978) - fmaxf(ANC(386), sy(456))));
     int visible = total - start; if (visible > 5) visible = 5;
     for(int j=0;j<visible;j++) {
       int i=start+j;
       const char *name=screen==DISCOVER?worker.servers[i].nome:screen==USERS?worker.users[i].nome:screen==PLEX_SERVERS?worker.plex[i].nome:worker.connect[i].nome;
       char sub[160]; snprintf(sub,sizeof sub,"%s · %s · %s",providers[provider],i18n("Online"),i18n("Rede local"));
       int usuarios = screen == USERS;
-      row(i,name,usuarios?i18n("Senha necessária"):screen==DISCOVER?sub:screen==CONNECT_SERVERS?i18n("Compartilhado com você · Emby Connect"):screen==PLEX_SERVERS?i18n("Da sua conta Plex"):i18n("Servidor"),410+(j-scrollPart)*88,usuarios?-1:provider);
+      row(i,name,usuarios?i18n("Senha necessária"):screen==DISCOVER?sub:screen==CONNECT_SERVERS?i18n("Compartilhado com você · Emby Connect"):screen==PLEX_SERVERS?i18n("Da sua conta Plex"):i18n("Servidor"),456+(j-scrollPart)*112,usuarios?-1:provider);
       if (usuarios) {
         GLuint avatar = worker.users[i].imagem[0] ? tex_obter_larg(worker.users[i].imagem, 64) : 0;
         if (avatar) gfx_rect((GfxRect){px(242),sy(421+j*88),64,64},avatar,GFX_AVATAR,0,0,0,.5f,1,1,1,1);
@@ -793,30 +866,42 @@ void srvsetup_desenhar(Uint32 now) {
       }
     }
     gfx_recorte(contentX, ANC(386), contentW, ANC(592));
-    float y= n?430+n*88:600;
-    button(total,screen==USERS?"Outro usuário":screen==CONNECT_SERVERS?"Usuário e senha":screen==PLEX_SERVERS?"Buscar na rede local":n?"Digitar endereço":"Buscar de novo",232,y,330);
-    if(screen!=CONNECT_SERVERS) button(total+1,screen==USERS?(provider==1?"Usar Quick Connect":"Usar Emby Connect"):"Digitar endereço",574,y,330);
-    text(TXT_V2_GRUPO,"Tudo no mesmo lugar",1020,412,243,750);
-    paragraph("Filmes, séries e progresso do seu servidor entram na sua Biblioteca.",1020,470,680);
-    paragraph("Servidor remoto? Use o endereço completo. Você pode incluir porta ou caminho.",1020,580,680);
-    if (screen == DISCOVER && provider == 2) button(total+2,"Emby Connect",1020,700,330);
+    float y= n?474+n*112:worker.alive?700:682;
+    button(total,screen==CONNECT_SERVERS?"Usuário e senha":screen==PLEX_SERVERS?"Buscar na rede local":"Buscar novamente",232,y,250);
+    if(screen!=CONNECT_SERVERS) button(total+1,"Informar endereço",494,y,250);
+    if(screen==PLEX_SERVERS) {
+      text(TXT_V2_GRUPO,total?worker.plex[selected<total?selected:0].nome:providers[provider],1020,412,243,750);
+      paragraph("Seus filmes e séries usam a rede local quando disponível.",1020,470,780);
+      text(TXT_ILHA_APOIO,"Bibliotecas privadas ainda exigem acesso pela conta.",1020,530,145,780);
+      text(TXT_ILHA_APOIO,"A reprodução remota segue o acesso da sua conta Plex.",1020,556,145,780);
+    } else {
+      text(TXT_V2_GRUPO,"Tudo em um só lugar",1020,412,243,750);
+      paragraph("Filmes, séries e progresso do servidor entram na sua Biblioteca.",1020,470,780);
+      text(TXT_ILHA_APOIO,"Servidor remoto? Use o endereço completo.",1020,530,145,780);
+      text(TXT_ILHA_APOIO,"Você pode incluir uma porta ou caminho.",1020,556,145,780);
+    }
+    if(screen==DISCOVER) button(total+(provider==2?3:2),"Cancelar configuração",1020,584,250);
+    if (screen == DISCOVER && provider == 2) button(total+2,"Usar Emby Connect",232,y+78,300);
   } else if (screen == ADDRESS || screen == PASSWORD || screen == CONNECT_PASSWORD) {
     panel(200,386,750,430,-1); panel(1020,386,804,430,-1);
     if(screen==ADDRESS) {
-      text(TXT_ILHA_APOIO,"Endereço do servidor",232,428,155,680);
-      button(0,addressText[0]?addressText:"http://…",232,456,680); button(1,"Conectar",232,580,260); button(2,"Buscar na rede",510,580,300);
+      input(0,"Endereço do servidor",addressText,430);
+      button(1,"Conectar",232,548,155); button(2,"Buscar na rede",399,548,230);
       char exemplo[192]; snprintf(exemplo,sizeof exemplo,i18n("Por exemplo: https://media.example.test/%s"),provider==1?"jellyfin":provider==2?"emby":"");
-      text(TXT_ILHA_APOIO,exemplo,232,652,155,680);
+      text(TXT_ILHA_APOIO,exemplo,232,630,155,680);
+      text(TXT_ILHA_APOIO,"Após conectar, entre neste servidor.",232,686,145,680);
     } else {
-      text(TXT_ILHA_APOIO,screen==CONNECT_PASSWORD?"Usuário ou e-mail do Emby Connect":"Usuário",232,408,155,680);
-      button(0,username[0]?username:"",232,436,680);
-      text(TXT_ILHA_APOIO,"Senha",232,514,155,680);
-      button(1,password[0]?"••••••••":"",232,542,680);
-      if(password[0]) text(TXT_ILHA_APOIO,"Oculta",830,560,155,90);
-      button(2,"Entrar",232,660,260); button(3,screen==CONNECT_PASSWORD?"Usar conta do servidor":provider==1?"Quick Connect":"Emby Connect",510,660,330);
+      input(0,screen==CONNECT_PASSWORD?"Usuário ou e-mail do Emby Connect":"Usuário",username,430);
+      input(1,"Senha",password[0]?"••••••••":"",532);
+      if(password[0]) text(TXT_ILHA_SUB,"Oculto",830,578,155,90);
+      button(2,"Entrar",232,650,125); button(3,screen==CONNECT_PASSWORD?"Usar conta do servidor":provider==1?"Quick Connect":"Emby Connect",369,650,300);
+      if(screen==PASSWORD) text(TXT_ILHA_SUB,"Senha incorreta? Tente novamente ou escolha outro usuário.",232,732,155,680);
     }
-    text(TXT_V2_GRUPO,"Teclado",1052,420,243,680);
-    paragraph("No campo, OK abre o teclado da TV; o celular também mostra um QR. Você digita e o texto chega na TV.",1052,480,680);
+    if(screen==CONNECT_PASSWORD) {
+      text(TXT_V2_GRUPO,"Escolher servidor compartilhado",1052,420,243,740);
+      paragraph("Após entrar, escolha um servidor da sua conta.",1052,600,740);
+      text(TXT_ILHA_APOIO,"Emby Connect encontra o servidor; a TV se conecta diretamente a ele.",1052,654,145,740);
+    } else keyboardPreview(screen==PASSWORD);
   } else if(screen==ROWS) {
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,T21_VEIL);
     text(TXT_ILHA_SUB,"Home",200,570,150,510);
@@ -863,40 +948,68 @@ void srvsetup_desenhar(Uint32 now) {
     text(TXT_ILHA_APOIO,"Só filmes e séries encontrados no catálogo aparecem na Home.",820,982,145,1010);
     if(message[0])text(TXT_ILHA_SUB,message,820,1000,215,1000);
   } else if(screen==LIBRARIES) {
-    panel(200,386,750,500,-1);
-    text(TXT_V2_GRUPO,"Biblioteca",232,416,243,680);
+    panel(200,386,750,540,-1);
+    text(TXT_V2_GRUPO,"Bibliotecas",232,420,243,680);
     if(!nLibraries) paragraph(worker.alive?"Carregando…":"Não configurado",232,460,680);
-    int shown=nLibraries>4?4:nLibraries;
+    int shown=nLibraries>3?3:nLibraries;
     int start=(int)floorf(scroll); if(start+shown>nLibraries)start=nLibraries-shown; if(start<0)start=0;
-    gfx_recorte(px(220), fmaxf(ANC(386), sy(448)), pw(710), fminf(364, ANC(978) - fmaxf(ANC(386), sy(448))));
-    int visible=nLibraries-start;if(visible>5)visible=5;
-    for(int j=0;j<visible;j++){int i=start+j; char sub[96]; snprintf(sub,sizeof sub,i18n("%d títulos"),libraries[i].n); row(i,libraries[i].titulo,sub,452+(i-scroll)*88,provider); if(checked[i]) gfx_icone((GfxRect){px(880),sy(482+(i-scroll)*88),28,28},"aj_check",.9f,.9f,.9f,1); else gfx_cor((GfxRect){px(880),sy(482+(i-scroll)*88),28,28},10.0f/28,1,1,1,.10f);}
+    gfx_recorte(px(220), fmaxf(ANC(386), sy(484)), pw(710), fminf(336, ANC(978) - fmaxf(ANC(386), sy(484))));
+    int visible=nLibraries-start;if(visible>4)visible=4;
+    for(int j=0;j<visible;j++) {
+      int i=start+j;float y=484+(i-scroll)*112;
+      panel(232,y,686,104,i);
+      GfxRect check={px(254),sy(y+28),34,34};
+      gfx_cor(check,10.0f/34,1,1,1,checked[i]?.14f:.07f);
+      if(checked[i]) gfx_icone(check,"aj_check",.9f,.9f,.9f,1);
+      text(TXT_ILHA_NOME,libraries[i].titulo,308,y+12,243,590);
+      char sub[128];snprintf(sub,sizeof sub,i18n("%d títulos · %s"),libraries[i].n,i18n(!strcmp(libraries[i].tipo,"series")?"TV":!strcmp(libraries[i].tipo,"musicvideo")?"Videoclipes":"Filmes"));
+      text(TXT_ILHA_SUB,sub,308,y+50,155,590);
+    }
     gfx_recorte(contentX, ANC(386), contentW, ANC(592));
-    button(nLibraries,"Continuar",232,822,240); button(nLibraries+1,"Voltar",486,822,200);
+    button(nLibraries,"Continuar",232,832,160); button(nLibraries+1,"Voltar",404,832,120);
     text(TXT_V2_GRUPO,"Parte da sua Biblioteca",1020,412,243,700);
-    paragraph("As bibliotecas escolhidas aparecem junto de Trakt, Simkl e dos seus títulos salvos.",1020,470,680);
-    text(TXT_ILHA_NOME,"Continuar assistindo",1020,566,243,680);
-    paragraph("Une o progresso dos títulos encontrados",1020,606,680);
-    text(TXT_ILHA_NOME,"Marcas de visto",1020,654,243,680);
-    paragraph("Sincroniza nos dois sentidos",1020,694,680);
-    paragraph("Coleções e playlists aparecem em Listas. As fileiras da Home são adicionadas no editor de fileiras.",1020,742,680);
+    paragraph("As bibliotecas aparecem junto ao Trakt, Simkl e seus títulos salvos.",1020,470,780);
+    text(TXT_ILHA_NOME,"Continuar assistindo",1040,544,243,620);
+    text(TXT_ILHA_SUB,"Unir progresso dos títulos identificados",1040,584,155,620);
+    text(TXT_ILHA_APOIO,"Ativado",1740,562,155,100);
+    text(TXT_ILHA_NOME,"Estado de assistido",1040,658,243,620);
+    text(TXT_ILHA_SUB,"Sincronizar nos dois sentidos",1040,698,155,620);
+    text(TXT_ILHA_APOIO,"Ativado",1740,676,155,100);
+    text(TXT_ILHA_APOIO,"Coleções e playlists aparecem em Listas.",1020,762,145,780);
+    text(TXT_ILHA_APOIO,"Adicione fileiras no editor de fileiras.",1020,788,145,780);
   } else if(screen==LOGIN) {
-    panel(200,386,750,400,-1); panel(1020,386,804,400,-1);
-    text(TXT_ILHA_APOIO,"Na sua rede",232,416,155,680);
-    button(0,worker.n?worker.servers[0].nome:providers[provider],232,444,680);
-    button(1,provider==2?"Usar o Emby Connect":"Usuário e senha",232,566,330);
-    text(TXT_V2_GRUPO,"Entrar neste servidor",1020,412,243,680);
-    paragraph("Só aparecem os usuários compartilhados pelo servidor. Usuários ocultos entram com o nome.",1020,470,680);
+    panel(200,386,750,470,-1); panel(1020,386,804,470,-1);
+    plrui_kicker("Na sua rede",px(232),sy(422),130,130,130,1);
+    row(0,srv,i18n("Rede local · Conectado"),456,provider);
+    button(2,"Buscar novamente",232,588,250);button(3,"Informar endereço",494,588,250);
+    button(1,provider==2?"Usar Emby Connect":"Usuário e senha",232,674,330);
+    text(TXT_V2_GRUPO,"Entrar neste servidor",1052,420,243,740);
+    for(int i=0;!worker.alive&&i<worker.n&&i<3;i++) {
+      float x=1084+i*182;GLuint avatar=tex_obter_larg(worker.users[i].imagem,100);
+      if(avatar) gfx_rect((GfxRect){px(x),sy(498),100,100},avatar,GFX_AVATAR,0,0,0,.5f,1,1,1,1);
+      text(TXT_ILHA_NOME,worker.users[i].nome,x,616,243,150);
+      if(worker.users[i].senha) text(TXT_ILHA_APOIO,"Exige senha",x,650,145,150);
+      pointerTarget((GfxRect){px(x),sy(498),150,184},5+i);
+    }
+    button(4,"Usuário e senha",1052,710,260);
+    text(TXT_ILHA_APOIO,"Só usuários visíveis são exibidos. Usuários ocultos podem digitar seu nome.",1052,796,145,740);
   } else if(screen==READY) {
-    panel(200,386,750,430,-1); text(TXT_V2_GRUPO,"Tudo no seu lugar",232,420,243,680);
+    panel(200,386,750,492,-1); text(TXT_V2_GRUPO,"Tudo em seu lugar",232,420,243,680);
     const char *labels[]={"Biblioteca","Continuar assistindo","Fontes"};
-    const char *descs[]={"Filmes, séries, coleções e playlists, com o servidor como origem.","O progresso do servidor se junta aos títulos encontrados.","A cópia do seu servidor aparece primeiro quando disponível."};
-    for(int i=0;i<3;i++){ text(TXT_ILHA_APOIO,labels[i],250,486+i*85,145,650); text(TXT_ILHA_NOME,descs[i],250,514+i*85,243,650); }
-    button(0,"Abrir a Biblioteca",232,730,300); button(1,"Adicionar à Home",544,730,300);
-    text(TXT_V2_GRUPO,"Deixe a Home com a sua cara",1020,440,243,680);
-    paragraph("Adicione uma biblioteca, coleção, playlist ou os Mais recentes pelo editor de fileiras.",1020,498,680);
-    paragraph("Títulos sem correspondência no catálogo ficam na Biblioteca filtrada pelo servidor. A Home mostra filmes e séries encontrados.",1020,610,680);
-    paragraph("Sincronia de vistos: nos dois sentidos. Gerencie esta conexão em Biblioteca › Origens.",1020,730,680);
+    char origin[192]; snprintf(origin,sizeof origin,i18n("Filmes, séries, coleções e playlists com origem no %s."),providers[provider]);
+    const char *descs[]={origin,i18n("Progresso do servidor unido aos títulos identificados."),i18n("A cópia do servidor aparece primeiro, quando disponível.")};
+    for(int i=0;i<3;i++) {
+      char number[8];snprintf(number,sizeof number,"%02d",i+1);
+      txt_desenhar(txt_linha(TXT_ILHA_TEXTO,number,145,145,145,255),px(232),sy(486+i*99));
+      text(TXT_ILHA_NOME_L,labels[i],280,486+i*99,243,620);
+      txt_bloco(TXT_ILHA_SUB,descs[i],155,155,155,px(280),sy(530+i*99),pw(638),27,1,2);
+    }
+    button(0,"Abrir Biblioteca",232,782,215); button(1,"Adicionar fileira ao Início",459,782,300);
+    text(TXT_V2_GRUPO,"Personalize seu Início",1020,406,243,680);
+    paragraph("Adicione biblioteca, coleção, playlist ou Adicionados recentemente pelo editor.",1020,470,780);
+    txt_bloco(TXT_ILHA_SUB,i18n("Títulos não identificados ficam na Biblioteca do servidor. O Início mostra filmes e séries identificados."),155,155,155,px(1020),sy(562),pw(780),28,1,3);
+    text(TXT_ILHA_APOIO,"Assistidos: sincronização nos dois sentidos.",1020,640,145,780);
+    text(TXT_ILHA_APOIO,"Gerencie esta conexão em Biblioteca › Origens.",1020,666,145,780);
   } else if(screen==REMOVE) {
     panel(200,386,750,430,-1); text(TXT_V2_GRUPO,"O que muda",232,420,243,680);
     paragraph("A conexão e o catálogo salvos deste servidor saem deste perfil. As fileiras da Home deixam de carregar.",232,474,680);
@@ -905,16 +1018,18 @@ void srvsetup_desenhar(Uint32 now) {
     text(TXT_V2_GRUPO,"Sua Biblioteca continua sua",1020,420,243,680);
     paragraph("Títulos salvos via Trakt, Simkl ou conta Nuvio ficam na Biblioteca.",1020,478,680);
   } else {
-    panel(200,386,750,430,-1);
+    panel(200,386,750,recoveryAuth?274:430,-1);
+    if(recoveryAuth) panel(1020,386,804,274,-1);
     text(TXT_V2_GRUPO,recoveryAuth?"Sua conexão precisa de aprovação":"Verifique o servidor",232,420,243,680);
-    paragraph(recoveryAuth?"Suas escolhas de servidor e bibliotecas estão salvas. Entre de novo para voltar a sincronizar e reproduzir.":"Ligue o servidor e confira a conexão de rede, depois tente de novo.",232,474,680);
-    button(0,recoveryAuth?provider==0?"Entrar no Plex":provider==1?"Usar Quick Connect":"Entrar com o Emby Connect":"Tentar de novo",232,590,330);
-    button(1,recoveryAuth?"Usuário e senha":"Trocar endereço",574,590,330);
-    paragraph(recoveryAuth?"As outras fontes disponíveis continuam na lista de fontes do título.":"O catálogo salvo continua disponível na Biblioteca filtrada.",232,660,680);
-    text(TXT_V2_GRUPO,"Continuar navegando",1020,412,243,680);
-    button(2,"Abrir a Biblioteca",1020,470,380);
+    paragraph(recoveryAuth?"Suas escolhas estão salvas. Entre novamente para sincronizar e assistir.":"Ligue o servidor e confira a conexão de rede, depois tente de novo.",232,474,680);
+    button(0,recoveryAuth?provider==0?"Entrar no Plex":provider==1?"Usar Quick Connect":"Entrar com Emby Connect":"Tentar de novo",232,recoveryAuth?536:590,260);
+    button(1,recoveryAuth?"Usuário e senha":"Trocar endereço",504,recoveryAuth?536:590,260);
+    if(!recoveryAuth) paragraph("O catálogo salvo continua disponível na Biblioteca filtrada.",232,660,680);
+    text(TXT_V2_GRUPO,recoveryAuth?"Continuar no Nuvio":"Continuar navegando",recoveryAuth?1052:1020,420,243,740);
+    if(recoveryAuth) paragraph("Títulos salvos continuam na Biblioteca. Fontes de complementos continuam disponíveis.",1052,478,740);
+    button(2,recoveryAuth?"Voltar à Biblioteca":"Abrir a Biblioteca",recoveryAuth?1052:1020,recoveryAuth?566:470,260);
     if(!recoveryAuth) button(3,"Seus servidores",1020,548,380);
-    else { char stamp2[96];syncLabel(provider,stamp2,sizeof stamp2);text(TXT_ILHA_APOIO,stamp2,1020,548,155,680); }
+
   }
   if(message[0] && screen!=ERROR_SCREEN && screen!=ROWS) text(TXT_ILHA_TEXTO,message,200,920,215,1624);
   if (bodyDrawing) gfx_sem_recorte();
