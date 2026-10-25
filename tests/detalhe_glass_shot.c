@@ -91,6 +91,8 @@ size_t trakt_token_tam(const char *);
 #define txt_token_tam trakt_token_tam
 #include "gfx.h"
 #include "botoes.h"
+#include "catalogo.h"
+#include "reacao.h"
 #include "plrui.h"
 static int cardMaterial, cardFrost, captionSolid, commentMaterial;
 // Record actual draw arguments, so missing hero offsets fail the PNG proof.
@@ -98,6 +100,13 @@ static GfxRect serverRects[7];
 static int serverRectCount;
 static int serverRims;
 static GfxRect serverPrimary;
+static int serverHints;
+static float server_hints(const char *const *keys, const char *const *labels, int n,
+                          float x, float y, int right, float a) {
+  if (a > .01f) serverHints++;
+  return plrui_dicas(keys, labels, n, x, y, right, a);
+}
+static void server_rating_hint(const CatItem *item, float a);
 void server_panel(GfxRect r, float radius, float density, float a) {
   if (getenv("NUVIO_SERVER_CHECK") && a > .01f && !gfx_vidro_sem_aro) serverRims++;
   gfx_vidro_painel(r, radius, density, a);
@@ -159,7 +168,15 @@ void b2_panel(GfxRect r, float radius, float density, float a);
 #define NV_DETAIL_SOURCE "../src/detail.c"
 #endif
 #define servidores_contem_item fx_servidor_contem
+#define plrui_dicas server_hints
+#define reacao_detalhe_dica server_rating_hint
 #include NV_DETAIL_SOURCE
+#undef plrui_dicas
+#undef reacao_detalhe_dica
+static void server_rating_hint(const CatItem *item, float a) {
+  if (a > .01f) serverHints++;
+  reacao_detalhe_dica(item, a);
+}
 #undef gfx_vidro_material
 #undef gfx_vidro_painel
 #undef gfx_cor
@@ -452,6 +469,7 @@ static void quadros(int n) {
     glClear(GL_COLOR_BUFFER_BIT);
     serverRectCount = 0;
     serverRims = 0;
+    serverHints = 0;
     detail_desenhar(SDL_GetTicks());
     // NUVIO_SHOT_RELOGIO=1: the clock island over the page, as app.c draws it.
     if (getenv("NUVIO_SHOT_RELOGIO")) {
@@ -733,6 +751,18 @@ int main(int argc, char **argv) {
         printf("%s: P1 rimless controls %d%% %s outlines=%d\n", serverRims ? "FAIL" : "PASS",
                scale ? 85 : 100, glass ? "glass" : "solid", serverRims);
         failures += serverRims != 0;
+        assert(serverRectCount == 4 && serverHints == 0);
+        GfxRect friends = serverRects[0], next = serverRects[1];
+        assert(fabsf(friends.y + hSinVis + NV_DETW2_GAP_SIN + NV_DETW2_M1_H -
+                      1048 / gfx_escala_txt()) < 1);
+        for (int p = 2; p < 4; p++) {
+          GfxRect source = serverRects[p];
+          assert(next.x + next.w < source.x);
+          assert(fabsf(next.y + next.h * .5f - source.y - source.h * .5f) < 1);
+          assert(source.y + source.h < friends.y);
+        }
+        assert(friends.x >= serverRects[3].x);
+        printf("PASS: bottom anchor, source row, recommendation, no ratings or hints\n");
       }
       return failures ? 1 : 0;
     }

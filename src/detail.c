@@ -4899,8 +4899,8 @@ static void heroWeb(float a, float desloc) {
   // o progresso agora e uma barra dentro do proprio botao de retomar.
   float temRetom = 0.0f;
   float hSin = 0.0f;
-  if (sin) hSin = sinopse_bloco_corta(TXT_DET_SIN, sin, 255, 255, 255, -1.0f, 0.0f,
-                            larguraTextoHero(), NV_DETW2_LD_SIN, 0.0f,
+  if (sin) hSin = sinopse_bloco_corta(heroServidor() ? TXT_CAPTION : TXT_DET_SIN, sin, 255, 255, 255, -1.0f, 0.0f,
+                            larguraTextoHero(), heroServidor() ? 34 : NV_DETW2_LD_SIN, 0.0f,
                             NV_DETW2_SIN_LINHAS);
   // DADO A CAMINHO: sinopse e meta chegam da rede depois que a pagina abre.
   // Enquanto o pedido esta em voo desenha-se o ESQUELETO do texto no lugar e
@@ -4980,7 +4980,9 @@ static void heroWeb(float a, float desloc) {
       hVai = hVaiVis; } }
   float srvH = servidoresDisponiveis ? 64.0f : 0.0f;
   float yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H - hAcoesExtra - hCaption - hAmg - hVai - srvH;
-  if (heroServidor()) { yAcoes = 500; ySin = 670; yMeta1 = 444; }
+  if (heroServidor())
+    yAcoes = ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H -
+             fmaxf(vaiTocar.tem ? vtui_altura(&vaiTocar) : 0, 48) - 24;
   // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
   // botoes. Sao duas, e a ordem tem razao: a retomada explica o BOTAO e fica
   // colada nele; a agenda ("Próximo episódio T2E5 · em 3 dias") explica o
@@ -5051,7 +5053,7 @@ static void heroWeb(float a, float desloc) {
   morphLogo.w = 0.0f;
   if (heroServidor()) {
     txt_bloco_corta(TXT_TITULO1, tituloDe(idx), 243, 242, 239, NV_DETW2_X,
-                    282 + sobe, 620, 76, a, 2);
+                    yAcoes - 218, 620, 76, a, 2);
   } else if (texLogo) {
     float asp = tex_aspecto(arqLogo);
     if (asp <= 0.0f) asp = 2.5f;
@@ -5350,7 +5352,7 @@ static void heroWeb(float a, float desloc) {
     t2 = txt_linha_corta(TXT_HERO_META, l2, c2, c2, c2, 255, larguraTextoHero() - 200.0f);
     pw = d + d * 0.71f * (float)(nr - 1);
     larg = pad + pw + 18.0f + (t1.w > t2.w ? t1.w : t2.w) + 30.0f;
-    { GfxRect ilha = { heroServidor() ? ANC(1000) : NV_DETW2_X, heroServidor() ? 780 + sobe : y0, larg, NV_DETW_AMIGOS_H };
+    { GfxRect ilha = { heroServidor() ? ANC(1000) : NV_DETW2_X, heroServidor() ? ySin : y0, larg, NV_DETW_AMIGOS_H };
       y0 = ilha.y;
       if (foc) plrui_pilula_foco(ilha, a);
       else plrui_material_plano(ilha, NV_DETW_AMIGOS_H * 0.5f, a);
@@ -5367,8 +5369,8 @@ static void heroWeb(float a, float desloc) {
     float yV = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + srvH + hCaption + hAmg + DET_VAI_GAP;
     float wV = larguraTextoHero() < 1000.0f ? larguraTextoHero() : 1000.0f;
     float fV = hVai / alvoH;
-    vtui_desenhar(&vaiTocar, heroServidor() ? ANC(1000) : NV_DETW2_X - 24.0f,
-                 heroServidor() ? 880 + sobe : yV, heroServidor() ? fminf(wV, NV_TELA_W - ANC(1000) - 64) : wV,
+    vtui_desenhar(&vaiTocar, heroServidor() ? NV_DETW2_X : NV_DETW2_X - 24.0f,
+                 heroServidor() ? yAcoes + NV_DETW2_BTN_H + 12 : yV, heroServidor() ? 420 : wV,
                  a * (fV > 1.0f ? 1.0f : fV));
   }
 
@@ -5431,6 +5433,10 @@ static void heroWeb(float a, float desloc) {
     const char *names[] = {"Plex","Jellyfin","Emby"};
     const char *logos[] = {"deploy/app/art/marcas/plex.png","deploy/app/art/marcas/jellyfin.png","deploy/app/art/marcas/emby.png"};
     float x = NV_DETW2_X, y = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + 12;
+    if (heroServidor() && vaiTocar.tem) {
+      x += 432;
+      y += (vtui_altura(&vaiTocar) - 48) * .5f;
+    }
     for (int p = 0; p < 3; p++) if (servidoresDisponiveis & (1 << p)) {
       GfxRect chip = {x,y,180,48}; int sel = nivel == 0 && focoServidor == p;
       plrui_material_plano(chip, chip.h * .5f, a);
@@ -5620,34 +5626,13 @@ static void heroWeb(float a, float desloc) {
   if (heroServidor()) {
     char heading[180];
     snprintf(heading, sizeof heading, "%s · %s · %s", ano, generoDe(idx), dur);
-    plrui_kicker(heading, NV_DETW2_X, 244 + sobe, 163, 167, 175, a);
+    plrui_kicker(heading, NV_DETW2_X, yAcoes - 256, 163, 167, 175, a);
     float mx = NV_DETW2_X, my = yMeta1;
-    if (ci && ci->nota > 0) mx += badge_imdb(mx, my, ci->nota, 0, a) + 24;
     if (ci && ci->classificacao[0]) {
       TxtLinha age = txt_linha(TXT_CAPTION2, ci->classificacao, 179, 182, 188, 255);
       txt_desenhar_alpha(age, mx, my, a); mx += age.w + 24;
     }
     if (vaiTocar.tem && !strcmp(vaiTocar.res, "4K")) marca_formato(FMT_4K, mx, my, 24, 1, 1, 1, a);
-    const char *labels[] = {"IMDb", "Rotten Tomatoes", i18n("Sua nota")};
-    for (int i = 0; i < 3; i++) {
-      GfxRect card = {NV_DETW2_X + i * 164, 780 + sobe, 150, 132};
-      plrui_material_plano(card, 20, a);
-      txt_bloco_corta(TXT_ILHA_APOIO, labels[i], 163, 167, 175,
-                      card.x + 20, card.y + 18, card.w - 40, 21, a, 2);
-      char value[32] = "";
-      int rating = i == 0 ? extras_nota(EX_IMDB) : i == 1 ? extras_nota(EX_TOMATOES) : ci ? reacao_nota(ci->imdb) : 0;
-      if (!i && !rating && ci) rating = ci->nota;
-      if (i < 2 && rating) nf_texto(i ? EX_TOMATOES : EX_IMDB, rating, 0, 0, value, sizeof value);
-      else if (i == 2 && rating) snprintf(value, sizeof value, "%d.%d", rating / 2, rating % 2 * 5);
-      plrui_decimal(value);
-      if (value[0]) txt_desenhar_alpha(txt_linha(TXT_HEADLINE, value, 243, 242, 239, 255), card.x + 20, card.y + 68, a);
-      else gfx_icone((GfxRect){card.x + 20, card.y + 76, 28, 28}, "pl_star", 1, 1, 1, a);
-    }
-    const char *keys[] = {"OK", "↓", "Voltar"};
-    char destination[160];
-    snprintf(destination, sizeof destination, "%s · %s", i18n("Trailers"), i18n("Elenco"));
-    const char *labelsFooter[] = {i18n("Assistir"), destination, i18n("Voltar")};
-    plrui_dicas(keys, labelsFooter, 3, NV_DETW2_X, NV_TELA_H - ANC(40), 0, a);
   }
   if (detalheRetrato()) gfx_sem_recorte();
 }
@@ -8244,6 +8229,7 @@ static void carFundo(void) {
 // inferior direito, so no topo da pagina e sem nada aberto por cima. CIMA na
 // linha de botoes abre o cartao (detail_evento); aberto, ele desenha aqui.
 static void reacaoPendente(float s) {
+  if (heroServidor()) return;
   int livre = nivel == 0 && scrollY < 1.0f && !pessoaAberta && !colListaAberta && !amtui_aberta() &&
               !detmais_aberto() &&
               !episodios_menu_aberto() && trocaarte_visivel() < 0.005f;
