@@ -24,7 +24,7 @@ run_capture() {
   local capture_data
   capture_data=$(mktemp -d "$work/data.XXXXXX")
   NUVIO_DADOS="$capture_data" NUVIO_RAIL="${NUVIO_RAIL:-moderna}" NUVIO_SHOT_PT=1 NUVIO_SHOT_RELOGIO=1 sandbox-exec -p '(version 1) (allow default) (deny network*)' "$binary" "$1"
-  python3 tools/servidores_png_check.py "$1"
+  if [ "${NUVIO_REVIEW_P1:-0}" != 1 ]; then python3 tools/servidores_png_check.py "$1"; fi
 }
 if [ "${NUVIO_J2_MATRIX:-0}" = 1 ]; then
   for scale in .85 1 .9 1.1 1.2 1.3; do

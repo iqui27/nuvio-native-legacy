@@ -33,7 +33,13 @@ static float shotButton(float x, float y, const char *label, const char *icon, f
 static GfxRect focusedButton;
 #define plrui_botao shotButton
 #define t21_ilha shotIsland
+static TxtLinha reviewLine(TxtEstilo style, const char *s, int r, int g, int b, int a);
+static TxtLinha reviewCut(TxtEstilo style, const char *s, int r, int g, int b, int a, float width);
+#define txt_linha reviewLine
+#define txt_linha_corta reviewCut
 #include "../src/srvsetup.c"
+#undef txt_linha
+#undef txt_linha_corta
 #undef t21_ilha
 #undef plrui_botao
 static float shotButton(float x, float y, const char *label, const char *icon, float focus, float alpha) {
@@ -107,6 +113,7 @@ static void capture(const char *dir, const char *name) {
   free(pixels);SDL_FreeSurface(surface);
 }
 static void key(SDL_Keycode k){SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;srvsetup_evento(&e);}
+#include "servidores_review.inc"
 int main(int argc,char **argv){
   assert(argc==2);SDL_SetHint("SDL_MAC_BACKGROUND_APP","1");assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));IMG_Init(IMG_INIT_PNG|IMG_INIT_JPG);
   dados_iniciar(getenv("NUVIO_DADOS"));dados_gravar("ajustes.txt","idioma 0\njellyfinLocal 0\nbordaFocoCartaz 1\n");ajustes_dir(dados_dir());
@@ -120,6 +127,7 @@ int main(int argc,char **argv){
   const char *scale=getenv("NUVIO_SHOT_ESCALA_TEXTO");gfx_escala_txt_definir(scale?atof(scale):1);
   ajustes_definir_vidro(getenv("NUVIO_SHOT_VIDRO")?atoi(getenv("NUVIO_SHOT_VIDRO")):0);
   if(getenv("NUVIO_SHOT_WIZARD")) ajustes_rapido_cor_definir(11);
+  if (getenv("NUVIO_REVIEW_P1")) return reviewP1();
   const char *filter=getenv("NUVIO_SHOT_SCREEN");
   opened=1;profile=perfis_ativo();provider=0;codeSince=1000;change(CHOOSE);if(!filter) capture(argv[1],"setup-escolher");
   key(SDLK_RIGHT);assert(selected==1);key(SDLK_LEFT);assert(selected==0);key(SDLK_ESCAPE);assert(!opened);
@@ -136,7 +144,7 @@ int main(int argc,char **argv){
     {PLEX_SERVERS,0,"setup-plex-servidor"},{LOGIN,2,"setup-emby"},
     {DISCOVER,1,"setup-buscando"},{DISCOVER,1,"setup-nenhum-servidor"}};
   for(unsigned i=0;i<sizeof scenes/sizeof *scenes;i++){
-    if(filter && !strstr(scenes[i].name,filter)) continue;
+    if(filter && !strstr(scenes[i].name,filter) && !strstr(filter,scenes[i].name)) continue;
     if(getenv("NUVIO_SHOT_WIZARD") && strncmp(scenes[i].name,"setup-",6)) continue;
     shotLoginPending=scenes[i].state==PASSWORD||scenes[i].state==LOGIN;
     opened=1;provider=scenes[i].p;change(scenes[i].state);worker.n=2;
@@ -154,11 +162,26 @@ int main(int argc,char **argv){
       if(screen!=CODE && screen!=CONNECT_CODE)
         for(int p=0;p<3;p++) if(live || p==scenes[i].p || screen==CHOOSE) snprintf(shotServerNames[p],96,"%s",snames[p]); }
     if(screen==LIBRARIES) selected=3;
+    if(screen==ADDRESS) selected=1;
+    if(screen==PASSWORD || screen==CONNECT_PASSWORD) selected=2;
     for(int j=0;j<2;j++){
       const char *name=j?"Sala de cinema":provider==0?"Início":provider==1?"Sala":"Estúdio";
       snprintf(worker.servers[j].nome,96,"%s",name);snprintf(worker.plex[j].nome,96,"%s",name);
       snprintf(worker.users[j].nome,96,"%s",j?"Diego":"Marina");worker.users[j].senha=1;
       snprintf(worker.users[j].imagem,640,"/Volumes/ExternalSSD/tmp/servidores-polish/assets/%s.jpg",j?"diego":"marina");
+    }
+    if(screen==PLEX_SERVERS) {
+      worker.n=3; memset(worker.plex,0,sizeof worker.plex);
+      const char *names[]={"Início","Cinema da família","Arquivo"};
+      for(int j=0;j<3;j++) {
+        snprintf(worker.plex[j].nome,sizeof worker.plex[j].nome,"%s",names[j]);
+        worker.plex[j].presente=j<2; worker.plex[j].dono=j==0;
+        worker.plex[j].nCon=j<2; worker.plex[j].con[0].local=j==0;
+      }
+      worker.plex[2].visto=time(NULL)-86400;
+    }
+    if(screen==CONNECT_PASSWORD) {
+      worker.n=1; strcpy(worker.connect[0].nome,"Estúdio");
     }
     nLibraries=3;memset(libraries,0,sizeof libraries);
     const char *titles[]={"Filmes","Séries","Shows"};
@@ -172,7 +195,7 @@ int main(int argc,char **argv){
     if(screen==ROWS){nLibraries=4;snprintf(libraries[3].chave,sizeof libraries[3].chave,"plex_recent_1");snprintf(libraries[3].titulo,sizeof libraries[3].titulo,"Mais recentes");snprintf(libraries[3].tipo,sizeof libraries[3].tipo,"movie");snprintf(libraries[1].titulo,sizeof libraries[1].titulo,"Coleção espacial");snprintf(libraries[1].tipo,sizeof libraries[1].tipo,"group");snprintf(libraries[1].chave,sizeof libraries[1].chave,"plex_group_42");snprintf(libraries[2].titulo,sizeof libraries[2].titulo,"Fila do fim de semana");snprintf(libraries[2].tipo,sizeof libraries[2].tipo,"list");snprintf(libraries[2].chave,sizeof libraries[2].chave,"plex_list_43");rowChoice=selected=1;}
     if(!strcmp(scenes[i].name,"setup-nenhum-servidor"))worker.n=0;
     if(!strcmp(scenes[i].name,"setup-buscando"))worker.alive=1;
-    strcpy(username,"Marina");strcpy(password,"fixture");strcpy(addressText,"http://media.example.test:8096");
+    strcpy(username,screen==CONNECT_PASSWORD?"marina@example.test":"Marina");strcpy(password,"fixture");strcpy(addressText,"http://media.example.test:8096");
     int expectedScreen=screen;
     capture(argv[1],scenes[i].name);worker.alive=0;
     assert(screen==expectedScreen);

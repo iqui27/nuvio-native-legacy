@@ -52,12 +52,32 @@ static float sy(float y) {
 static float px(float x) { return contentX + (x - 200) * contentW / 1624; }
 static float pw(float w) { return w * contentW / 1624; }
 static float focusValue(int i) { return i >= 0 && i < SRV_VISAO_MAX + 8 ? focusAnim[i] : 0; }
-static int rowChoice, rowStyle, recoveryAuth;
+static char username[128], password[256], addressText[512], message[192], code[24], qrUrl[640];
+static int rowChoice, rowStyle, recoveryAuth, keyboardUpper;
+enum { KEY_FIRST = 4, KEY_SHIFT = 44, KEY_DELETE, KEY_DONE };
+static const char *inlineKeys(int secret) {
+  return secret ? "1234567890qwertyuiopasdfghjkl@zxcvbnm._-" : "1234567890qwertyuiopasdfghjkl:zxcvbnm./-";
+}
+static void inlineKey(int id) {
+  int secret = screen == PASSWORD, index = id - KEY_FIRST;
+  char *value = secret ? password : addressText;
+  size_t size = secret ? sizeof password : sizeof addressText, n = strlen(value);
+  if (id == KEY_DONE) { selected = secret ? 2 : 1; return; }
+  if (id == KEY_DELETE) {
+    if (n) { do { n--; } while(n && ((unsigned char)value[n]&0xc0)==0x80); value[n]=0; }
+  } else if (id == KEY_SHIFT) {
+    if (secret) keyboardUpper = !keyboardUpper;
+    else if (n + 8 < size) memcpy(value+n,"https://",9);
+  } else if (index >= 0 && index < 40 && n + 1 < size) {
+    char c=inlineKeys(secret)[index];
+    if (keyboardUpper && c>='a' && c<='z') c -= 'a'-'A';
+    value[n]=c; value[n+1]=0;
+  }
+}
 static long long lastSync[3];
 static int libraryProfile = -999;
 static unsigned libraryCatalogRevision;
 static int libraryProviderCounts[3];
-static char username[128], password[256], addressText[512], message[192], code[24], qrUrl[640];
 static Uint32 codeSince;
 static Qr qr;
 static CatFileira libraries[SRV_VISAO_MAX];
@@ -226,7 +246,7 @@ static void change(int next) {
     srvsetup_desenhar(SDL_GetTicks());
     gfx_mini_terminar();
   }
-  screen = next; selected = 0; message[0] = 0;
+  screen = next; selected = 0; keyboardUpper = 0; message[0] = 0;
   if(next==LOGIN && !worker.alive) { worker.kind=0;worker.n=0; }
   bodyScroll = bodyVelocity = bodyTarget = userScroll = userVelocity = userTarget = 0;
   page = pageSeconds = scroll = scrollVelocity = 0;
@@ -289,6 +309,7 @@ void srvsetup_abrir(int p) {
 static void discover(void) { cancelLogin(); change(DISCOVER); worker.n = 0; startWorker(JOB_DISCOVER); }
 static void userLogin(void) { cancelLogin(); change(USERS); worker.n = 0; startWorker(JOB_USERS); }
 static void activate(void) {
+  if ((screen == ADDRESS || screen == PASSWORD) && selected >= KEY_FIRST) { inlineKey(selected); return; }
   if (worker.alive && screen == DISCOVER) {
     if (selected==1) { stopWorker();change(ADDRESS);keyboard(1); }
     else if (selected==(provider==2?3:2)) srvsetup_fechar();
@@ -357,7 +378,10 @@ static void activate(void) {
       else if (selected == 2) { stopWorker(); change(CONNECT_PASSWORD); }
       break;
     case PLEX_SERVERS:
-      if (selected < worker.n && worker.n > 0) { worker.n = selected; startWorker(JOB_PLEX_CHOOSE); }
+      if (selected < worker.n && worker.n > 0) {
+        if (!worker.plex[selected].presente) { failed(PX_ERR_REDE); break; }
+        worker.n = selected; startWorker(JOB_PLEX_CHOOSE);
+      }
       else if (selected == (worker.n > 0 ? worker.n : 0)) discover(); else { change(ADDRESS); keyboard(1); } break;
     case CONNECT_SERVERS:
       if (selected < worker.n && worker.n > 0) { worker.n = selected; startWorker(JOB_CONNECT_EXCHANGE); }
@@ -430,11 +454,12 @@ static int targets(void) {
     case MANAGE: return 7;
     case DISCOVER: return (worker.n > 0 ? worker.n : 0) + (provider == 2 ? 4 : 3);
     case USERS: return (worker.n > 0 ? worker.n : 0) + 2;
-    case ADDRESS: return 3;
+    case ADDRESS: return KEY_DONE + 1;
     case LOGIN: return 5+(worker.n>3?3:worker.n>0?worker.n:0);
     case ERROR_SCREEN: return recoveryAuth ? 3 : 4;
     case CODE: return provider ? 3 : 4;
-    case PASSWORD: case CONNECT_PASSWORD: return 4;
+    case PASSWORD: return KEY_DONE + 1;
+    case CONNECT_PASSWORD: return 4;
     case CONNECT_CODE: return 3;
     case PLEX_SERVERS: return (worker.n > 0 ? worker.n : 0) + 2;
     case CONNECT_SERVERS: return (worker.n > 0 ? worker.n : 0) + 1;
@@ -458,8 +483,18 @@ void srvsetup_evento(const SDL_Event *e) {
     else if (screen == ADDRESS || screen == DISCOVER || screen == CODE) change(CHOOSE);
     else if (screen == LOGIN) change(CHOOSE);
     else change(LOGIN);
-  } else if (k == SDLK_LEFT || k == SDLK_UP) { if (selected > 0) selected--; }
-  else if (k == SDLK_RIGHT || k == SDLK_DOWN) { if (selected + 1 < targets()) selected++; }
+  } else if ((screen == ADDRESS || screen == PASSWORD) && selected >= KEY_FIRST &&
+      (k == SDLK_UP || k == SDLK_DOWN)) {
+    if (k == SDLK_UP) selected = selected >= KEY_SHIFT ? KEY_FIRST+30+(selected-KEY_SHIFT)*3 : selected >= KEY_FIRST+10 ? selected-10 : screen==ADDRESS?0:1;
+    else selected = selected < KEY_FIRST+30 ? selected+10 : selected < KEY_SHIFT ? KEY_SHIFT+(selected-KEY_FIRST-30)*3/10 : selected;
+  } else if (k == SDLK_LEFT || k == SDLK_UP) {
+    if(screen==ADDRESS && selected==KEY_FIRST) selected=2;
+    else if (selected > 0) selected--;
+  }
+  else if (k == SDLK_RIGHT || k == SDLK_DOWN) {
+    if (screen==ADDRESS && selected==2) selected=KEY_FIRST;
+    else if (selected + 1 < targets()) selected++;
+  }
   else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) activate();
 }
 void srvsetup_atualizar(Uint32 now) {
@@ -645,19 +680,32 @@ static void input(int i, const char *label, const char *value, float y) {
   text(TXT_ILHA_APOIO,label,254,y+12,145,642);
   text(TXT_ILHA_TEXTO,value,254,y+44,243,642);
 }
-static void keyboardPreview(int passwordField) {
+static void inlineKeyboard(int passwordField) {
   plrui_kicker(passwordField?"Senha · Teclado da TV":"Endereço · Teclado da TV",px(1052),sy(422),130,130,130,1);
-  const char *keys=passwordField?"1234567890qwertyuiopasdfghjkl@zxcvbnm._-":"1234567890qwertyuiopasdfghjkl:zxcvbnm./-";
+  const char *keys=inlineKeys(passwordField);
   for(int i=0;keys[i];i++) {
     GfxRect r={px(1052+(i%10)*75),sy(456+(i/10)*62),pw(67),54};
-    gfx_cor(r,12/fminf(r.w,r.h),1,1,1,.05f);
-    char key[2]={keys[i],0};TxtLinha line=txt_linha(TXT_ILHA_TEXTO,key,225,225,225,255);
+    int focus=selected==KEY_FIRST+i;
+    float cr,cg,cb; ajustes_acento(&cr,&cg,&cb);
+    gfx_cor(r,12/fminf(r.w,r.h),focus?cr:1,focus?cg:1,focus?cb:1,focus?1:.05f);
+    char key[2]={keys[i],0}; if(keyboardUpper && key[0]>='a' && key[0]<='z')key[0]-='a'-'A';
+    int ink=focus?ajustes_tinta_foco():225;
+    TxtLinha line=txt_linha(TXT_ILHA_TEXTO,key,ink,ink,ink,255);
     txt_desenhar(line,r.x+(r.w-line.w)/2,r.y+(r.h-line.h)/2);
-    pointerTarget(r,passwordField?1:0);
+    pointerTarget(r,KEY_FIRST+i);
   }
-  text(TXT_ILHA_SUB,passwordField?"⇧ Maiúsculas":"https://",1052,736,225,230);
-  text(TXT_ILHA_SUB,"⌫ Apagar",1280,736,225,200);
-  text(TXT_ILHA_SUB,"Concluir",1460,736,225,200);
+  const char *labels[]={passwordField?"⇧ Maiúsculas":"https://","⌫ Apagar","Concluir"};
+  float x=px(1052);
+  for(int i=0;i<3;i++) {
+    TxtLinha line=txt_linha(TXT_G18M,i18n(labels[i]),225,225,225,255);
+    GfxRect r={x,sy(722),line.w+40,52};
+    if(selected==KEY_SHIFT+i) {
+      float cr,cg,cb; ajustes_acento(&cr,&cg,&cb); gfx_cor(r,.5f,cr,cg,cb,1);
+      int ink=ajustes_tinta_foco(); line=txt_linha(TXT_G18M,i18n(labels[i]),ink,ink,ink,255);
+    } else gfx_cor(r,.5f,1,1,1,.07f);
+    txt_desenhar(line,r.x+20,r.y+(r.h-line.h)/2);
+    pointerTarget(r,KEY_SHIFT+i); x+=r.w+12;
+  }
 }
 static void row(int i, const char *title, const char *sub, float y, int p) {
   float group = gfx_opacidade_grupo;
@@ -674,6 +722,24 @@ static void row(int i, const char *title, const char *sub, float y, int p) {
   text(TXT_ILHA_NOME,title,p>=0?304:248,y+12,243,580);
   text(TXT_ILHA_SUB,sub,p>=0?304:248,y+48,186,580);
   gfx_opacidade_grupo = group;
+}
+static void plexRow(int i, float y) {
+  const PxServidor *s=&worker.plex[i];
+  char sub[192];
+  if(s->presente) {
+    int local=0; for(int j=0;j<s->nCon;j++) if(s->con[j].local && !s->con[j].relay) local=1;
+    snprintf(sub,sizeof sub,"%s · %s",i18n(s->dono?"Seu servidor":"Compartilhado"),i18n(local?"Conexão local":"Conexão remota"));
+  } else if(s->visto) {
+    time_t stamp=(time_t)s->visto; struct tm tm; char date[40];
+    localtime_r(&stamp,&tm); strftime(date,sizeof date,"%d/%m %H:%M",&tm);
+    snprintf(sub,sizeof sub,i18n("Visto por último %s"),time(NULL)/86400-s->visto/86400==1?i18n("ontem"):date);
+  } else snprintf(sub,sizeof sub,"%s",i18n("Offline"));
+  panel(232,y,686,104,i); logo(0,254,y+32,34);
+  TxtLinha state=txt_linha(TXT_ILHA_SUB,i18n(s->presente?"Conectado":"Desconectado"),155,155,155,255);
+  float right=px(896), width=right-state.w-px(308)-24;
+  txt_desenhar(state,right-state.w,sy(y+40));
+  txt_desenhar(txt_linha_corta(TXT_ILHA_NOME,s->nome,243,243,243,255,width),px(308),sy(y+20));
+  txt_desenhar(txt_linha_corta(TXT_ILHA_SUB,sub,155,155,155,255,width),px(308),sy(y+60));
 }
 static float dicaChip(const char *key, const char *label, float x, float y) {
   const char *localized = i18n(label);
@@ -842,7 +908,7 @@ void srvsetup_desenhar(Uint32 now) {
     text(TXT_ILHA_APOIO,"Esta conexão pertence ao perfil Nuvio atual.",1020,526,145,780);
   } else if (screen == DISCOVER || screen == PLEX_SERVERS || screen == CONNECT_SERVERS) {
     int total=!worker.alive && worker.n>0?worker.n:0, n=total>4?4:total;
-    panel(200,386,750,n?210+n*112:410,-1);
+    panel(200,386,750,n?(screen==PLEX_SERVERS?182:210)+n*112:410,-1);
     plrui_kicker(screen==PLEX_SERVERS?"Da sua conta Plex":"Sua rede",px(232),sy(422),130,130,130,1);
     int start=(int)floorf(scroll); if(start+n>total)start=total-n; if(start<0)start=0;
     float scrollPart=scroll-start;
@@ -858,7 +924,8 @@ void srvsetup_desenhar(Uint32 now) {
       const char *name=screen==DISCOVER?worker.servers[i].nome:screen==USERS?worker.users[i].nome:screen==PLEX_SERVERS?worker.plex[i].nome:worker.connect[i].nome;
       char sub[160]; snprintf(sub,sizeof sub,"%s · %s · %s",providers[provider],i18n("Online"),i18n("Rede local"));
       int usuarios = screen == USERS;
-      row(i,name,usuarios?i18n("Senha necessária"):screen==DISCOVER?sub:screen==CONNECT_SERVERS?i18n("Compartilhado com você · Emby Connect"):screen==PLEX_SERVERS?i18n("Da sua conta Plex"):i18n("Servidor"),456+(j-scrollPart)*112,usuarios?-1:provider);
+      if(screen==PLEX_SERVERS) plexRow(i,456+(j-scrollPart)*112);
+      else row(i,name,usuarios?i18n("Senha necessária"):screen==DISCOVER?sub:screen==CONNECT_SERVERS?i18n("Compartilhado com você · Emby Connect"):i18n("Servidor"),456+(j-scrollPart)*112,usuarios?-1:provider);
       if (usuarios) {
         GLuint avatar = worker.users[i].imagem[0] ? tex_obter_larg(worker.users[i].imagem, 64) : 0;
         if (avatar) gfx_rect((GfxRect){px(242),sy(421+j*88),64,64},avatar,GFX_AVATAR,0,0,0,.5f,1,1,1,1);
@@ -899,9 +966,13 @@ void srvsetup_desenhar(Uint32 now) {
     }
     if(screen==CONNECT_PASSWORD) {
       text(TXT_V2_GRUPO,"Escolher servidor compartilhado",1052,420,243,740);
+      logo(2,1074,512,34);
+      text(TXT_ILHA_NOME,worker.n>0&&worker.connect[0].nome[0]?worker.connect[0].nome:serverName(2)[0]?serverName(2):"Emby",1128,498,243,570);
+      text(TXT_ILHA_SUB,"Compartilhado com você · Emby Connect",1128,538,155,570);
+      text(TXT_ILHA_SUB,"›",1764,518,155,28);
       paragraph("Após entrar, escolha um servidor da sua conta.",1052,600,740);
       text(TXT_ILHA_APOIO,"Emby Connect encontra o servidor; a TV se conecta diretamente a ele.",1052,654,145,740);
-    } else keyboardPreview(screen==PASSWORD);
+    } else inlineKeyboard(screen==PASSWORD);
   } else if(screen==ROWS) {
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,T21_VEIL);
     text(TXT_ILHA_SUB,"Home",200,570,150,510);
