@@ -26,7 +26,12 @@ fi
 objects=()
 for source in "${sources[@]}" tests/biblioteca_shot.c; do
   object="$tmp/$(basename "$source" .c).o"
-  "${compiler[@]}" -c "$source" -Isrc -o "$object" \
+  extra=()
+  if [ "${NV_MODO:-}" = servers ] && [ "$source" = src/biblioteca.c ]; then
+    # Account/sync state of the mock's sync line comes from the shot fixture.
+    for f in sync_estado sync_ultimo_ok trakt_ativo simkl_ativo contalib_tem_conta; do extra+=("-D$f=shot_$f"); done
+  fi
+  "${compiler[@]}" -c "$source" -Isrc -o "$object" ${extra[@]+"${extra[@]}"} \
     -DNV_TRAKT_CLIENT_ID='"chave-de-teste"' \
     -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
     -Wno-deprecated-declarations -Wno-macro-redefined

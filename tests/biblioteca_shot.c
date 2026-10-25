@@ -26,6 +26,7 @@
 #include "text.h"
 #include "teclado.h"
 #include "tex_cache.h"
+#include "sync.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -48,6 +49,13 @@ static int serverQualityShot(const CatItem *it, int *altura, int *hdr) {
   *altura = 2160; *hdr = 1; return 1;
 }
 static void serverSelectShot(int i) { if (i < 3) biblioteca_servidor_filtrar(i); }
+// NV_MODO=servers builds biblioteca.c with these names (biblioteca_shot.sh):
+// Trakt and Simkl linked and synced, as in the approved Library mock.
+SyncEstado shot_sync_estado(void) { return SYNC_PRONTO; }
+unsigned shot_sync_ultimo_ok(void) { return 1; }
+int shot_trakt_ativo(void) { return 1; }
+int shot_simkl_ativo(void) { return 1; }
+int shot_contalib_tem_conta(void) { return 0; }
 
 static void tecla(SDL_Keycode k) {
   SDL_Event e = { 0 };
@@ -100,16 +108,20 @@ static void medir(const char *rotulo) {
   fflush(stdout);
 }
 
-static void captura(const char *nome) {
-  unsigned char *pix;
-  SDL_Surface *s;
-  int y;
+static void assenta(void) {
   rail_shot_aplicar();
   // 50 quadros E pelo menos 0,9 s: a onda da grade (revela.h) dura ~0,6 s de
   // relogio, e sem o piso a foto saia com a segunda fileira ainda entrando.
   { Uint32 t0 = SDL_GetTicks();
     quadros(50);
     while (SDL_GetTicks() - t0 < 900u) quadros(1); }
+}
+
+// Grava o quadro do instante atual, sem assentar (quadros de movimento).
+static void grava(const char *nome) {
+  unsigned char *pix;
+  SDL_Surface *s;
+  int y;
   SDL_PumpEvents();
   txt_novo_quadro();
   tex_novo_quadro();
@@ -134,6 +146,8 @@ static void captura(const char *nome) {
   SDL_GL_SwapWindow(win);
   printf("captura: %s\n", nome);
 }
+
+static void captura(const char *nome) { assenta(); grava(nome); }
 
 // TITULOS DE MENTIRA, escolhidos para cobrir OS CASOS DA LINHA, e nao para
 // encher a grade. Cada um existe por um motivo:
@@ -368,6 +382,28 @@ int main(int argc, char **argv) {
     biblioteca_servidores_contem(serverContainsShot);
     biblioteca_servidores_qualidade(serverQualityShot);
     biblioteca_origens_servidores(serverRowsShot, serverSelectShot);
+    // J5 overview proof: the mock state (origins panel, second poster focused)
+    // at 100/85 % in both materials, then entry and focus motion at 0-320 ms.
+    for (int e = 0; e < 2; e++) for (int v = 1; v >= 0; v--) {
+      setenv("NUVIO_SHOT_ESCALA_TEXTO", e ? ".85" : "1", 1); setenv("NUVIO_SHOT_VIDRO", v ? "1" : "0", 1);
+      rail_shot_aplicar();
+      biblioteca_iniciar(); tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);
+      snprintf(nome, sizeof nome, "%s-overview-%d-%s.bmp", saida, e ? 85 : 100, v ? "glass" : "solid"); captura(nome);
+    }
+    setenv("NUVIO_SHOT_ESCALA_TEXTO", "1", 1); setenv("NUVIO_SHOT_VIDRO", "1", 1);
+    rail_shot_aplicar();
+    for (int m = 0; m < 2; m++) {
+      const Uint32 tempos[] = { 0, 80, 160, 320 };
+      biblioteca_iniciar();
+      if (m) { tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); assenta(); }
+      Uint32 t0 = SDL_GetTicks();
+      if (m) tecla(SDLK_RIGHT);
+      for (int i = 0; i < 4; i++) {
+        while (SDL_GetTicks() - t0 < tempos[i]) quadros(1);
+        snprintf(nome, sizeof nome, "%s-overview-%s-%03u.bmp", saida, m ? "focus" : "entry", (unsigned)tempos[i]); grava(nome);
+      }
+    }
+    unsetenv("NUVIO_SHOT_ESCALA_TEXTO"); unsetenv("NUVIO_SHOT_VIDRO"); rail_shot_aplicar();
     biblioteca_iniciar(); tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RIGHT);
     snprintf(nome, sizeof nome, "%s-biblioteca-servidores.bmp", saida); captura(nome);
     biblioteca_servidor_filtrar(0);

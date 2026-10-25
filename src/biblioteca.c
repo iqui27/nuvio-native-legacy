@@ -3004,7 +3004,16 @@ static void desenhaOrigens(void) {
     }
     return;
   }
-  GfxRect painel = { paginaX(), 388.0f, 320.0f, fminf(700, 66 + nOrigens() * 58 + (serverRows ? 54 : 0)) };
+  // A server row without subtitle is the manage entry: it is drawn as the
+  // footer (mock: "+ Conectar servidor / Gerenciar conexões"), not as a row.
+  int gerir = -1;
+  for (int i = 0; serverRows && i < 4; i++) {
+    const char *n, *s = NULL; int c;
+    if (!serverRows(i, &n, &s, &c)) break;
+    if (!s) gerir = BIB_N_ORIG + nAddonOrigens + i;
+  }
+  int linhas = nOrigens() - (gerir >= 0);
+  GfxRect painel = { paginaX(), 388.0f, 320.0f, fminf(700, 66 + linhas * 58 + (serverRows ? 70 : 0)) };
   if (ajustes_vidro()) gfx_cor(painel, 26.0f / painel.h, .047f, .051f, .059f, .92f);
   else gfx_cor(painel, 26.0f / painel.h, .047f, .051f, .059f, 1);
   txt_desenhar(txt_linha(TXT_CAPTION2, "Origens", 115, 117, 122, 255), painel.x + 30, painel.y + 20);
@@ -3020,7 +3029,7 @@ static void desenhaOrigens(void) {
       count = addonOrigens[i - BIB_N_ORIG].count;
     } else if (i >= BIB_N_ORIG + nAddonOrigens) {
       const char *serverSub = NULL;
-      if (!serverRows || !serverRows(i - BIB_N_ORIG - nAddonOrigens, &name, &serverSub, &count)) continue;
+      if (!serverRows || !serverRows(i - BIB_N_ORIG - nAddonOrigens, &name, &serverSub, &count) || i == gerir) continue;
       description = serverSub ? serverSub : "Biblioteca";
     }
     GfxRect row = { painel.x + 12, painel.y + 56 + (i - start) * 58, 296, 56 };
@@ -3049,11 +3058,17 @@ static void desenhaOrigens(void) {
     txt_desenhar(ct, row.x + row.w - 18 - ct.w, row.y + 16);
     footerY = row.y + row.h;
   }
-  if (serverRows && footerY && footerY + 52 < painel.y + painel.h - 8) {
+  if (serverRows && footerY && footerY + 66 <= painel.y + painel.h - 4) {
     // The approved Library mock keeps server actions under the origins list:
     // one connect entry and one manage entry, both opening the same setup.
-    txt_desenhar(txt_linha_corta(TXT_MINI, "+ Conectar servidor", 150, 153, 162, 255, 280), painel.x + 18, footerY + 8);
-    txt_desenhar(txt_linha_corta(TXT_MINI, "Gerenciar conexões", 150, 153, 162, 255, 280), painel.x + 18, footerY + 30);
+    GfxRect pe = { painel.x + 12, footerY + 10, 296, 56 };
+    gfx_cor((GfxRect){ painel.x + 12, footerY + 4, 296, 1 }, 0, 1, 1, 1, .08f);
+    if (gerir >= 0) {
+      ponteiro_alvo(pe.x, pe.y, pe.w, pe.h, ponteiroOrigem, NULL, gerir, 0);
+      if (focoOrigem && origemSel == gerir) gfx_cor(pe, 18.0f / pe.h, 1, 1, 1, .13f);
+    }
+    txt_desenhar(txt_linha_corta(TXT_MINI, "+ Conectar servidor", 150, 153, 162, 255, 280), painel.x + 18, pe.y + 6);
+    txt_desenhar(txt_linha_corta(TXT_MINI, "Gerenciar conexões", 150, 153, 162, 255, 280), painel.x + 18, pe.y + 30);
   }
   // Provider rows share this page's focus and title filters.
 }

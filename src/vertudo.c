@@ -4063,6 +4063,8 @@ void vertudo_desenhar(Uint32 agora) {
   if (collection) botaoExibicao(a, cabCy);
   generoDesenhar(a, x0);
 
-  if (n > 0 && !vtTelefone()) { if (lay == VT_LAY_FLUXO) fluxoInfo(a, x0); else painel(a); }
+  // Server page follows the Library mock: no info column (its title floated
+  // beside the grid); the focused title opens in Quick Glance.
+  if (n > 0 && !vtTelefone()) { if (lay == VT_LAY_FLUXO) fluxoInfo(a, x0); else if (!servidorAtivo) painel(a); }
   gfx_escala_sair(escalaAnterior);
 }
