@@ -5463,6 +5463,7 @@
   T("UMA PONTE ENTRE HISTÓRIAS", "HÍD A TÖRTÉNETEK KÖZÖTT"),
   T("URL da lista M3U", "M3U-lista URL-je"),
   T("URL da programação XMLTV", "XMLTV-műsor URL-je"),
+  T("URL direta de uma fonte TTF ou OTF (https://…). Até 32 MB.", "Közvetlen URL egy TTF vagy OTF betűtípushoz (https://…). Legfeljebb 32 MB."),
   T("Ucraniano", "Ukrán"),
   T("Ucrânia", "Ukrajna"),
   T("Ultra HD · HDR", "Ultra HD · HDR"),

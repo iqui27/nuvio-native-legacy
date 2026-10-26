@@ -5463,6 +5463,7 @@
   T("UMA PONTE ENTRE HISTÓRIAS", "MOST MED ZGODBAMI"),
   T("URL da lista M3U", "URL seznama M3U"),
   T("URL da programação XMLTV", "URL sporeda XMLTV"),
+  T("URL direta de uma fonte TTF ou OTF (https://…). Até 32 MB.", "Neposredni URL do pisave TTF ali OTF (https://…). Do 32 MB."),
   T("Ucraniano", "Ukrajinščina"),
   T("Ucrânia", "Ukrajina"),
   T("Ultra HD · HDR", "Ultra HD · HDR"),

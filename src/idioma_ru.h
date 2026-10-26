@@ -5462,6 +5462,7 @@
   T("UMA PONTE ENTRE HISTÓRIAS", "МОСТ МЕЖДУ ИСТОРИЯМИ"),
   T("URL da lista M3U", "URL списка M3U"),
   T("URL da programação XMLTV", "URL телепрограммы XMLTV"),
+  T("URL direta de uma fonte TTF ou OTF (https://…). Até 32 MB.", "Прямая ссылка на шрифт TTF или OTF (https://…). До 32 МБ."),
   T("Ucraniano", "Украинский"),
   T("Ucrânia", "Украина"),
   T("Ultra HD · HDR", "Ultra HD · HDR"),

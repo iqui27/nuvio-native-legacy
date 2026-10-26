@@ -11,7 +11,8 @@ fi
 [ -f "$font" ] || { echo 'legfontes: set NV_TEST_FONT to a real TTF/OTF' >&2; exit 1; }
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-legfontes.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-flags=(-std=c11 -D_DEFAULT_SOURCE -DNV_ANDROID -Isrc -g -Wall -Wextra)
+flags=(-std=c11 -D_DEFAULT_SOURCE -Isrc -g -Wall -Wextra)
+if [ "${FONT_URL_TEST:-0}" != 1 ]; then flags+=(-DNV_ANDROID);fi
 if [ "${SANITIZE:-0}" = 1 ]; then
   flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer)
   if [ "$(uname -s)" = Linux ]; then flags+=(-fno-pie -no-pie); fi

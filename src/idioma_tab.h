@@ -5462,6 +5462,7 @@
   { "UMA PONTE ENTRE HISTÓRIAS", "A BRIDGE BETWEEN STORIES" },
   { "URL da lista M3U", "M3U playlist URL" },
   { "URL da programação XMLTV", "XMLTV guide URL" },
+  { "URL direta de uma fonte TTF ou OTF (https://…). Até 32 MB.", "Direct URL to a TTF or OTF font (https://…). Up to 32 MB." },
   { "Ucraniano", "Ukrainian" },
   { "Ucrânia", "Ukraine" },
   { "Ultra HD · HDR", "Ultra HD · HDR" },

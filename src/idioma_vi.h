@@ -5463,6 +5463,7 @@
   T("UMA PONTE ENTRE HISTÓRIAS", "MỘT CÂY CẦU GIỮA CÁC CÂU CHUYỆN"),
   T("URL da lista M3U", "URL danh sách M3U"),
   T("URL da programação XMLTV", "URL lịch XMLTV"),
+  T("URL direta de uma fonte TTF ou OTF (https://…). Até 32 MB.", "URL trực tiếp đến phông chữ TTF hoặc OTF (https://…). Tối đa 32 MB."),
   T("Ucraniano", "Tiếng Ukraina"),
   T("Ucrânia", "Ukraina"),
   T("Ultra HD · HDR", "Ultra HD · HDR"),

@@ -67,10 +67,30 @@ int main(int argc, char **argv) {
   }
   // A screen uses many styles at once. Returning to it must hit cached faces
   // and textures, rather than opening a new face for every label each frame.
+  // The production raster budget may defer a cold line to the next frame on
+  // software GL or a busy host. Warm every line, accepting only that explicit
+  // deferral, before checking that steady frames require no new textures.
+  const float scales[] = {1.0f, 1.2f, 1.5f};
+  const TxtEstilo styles[] = {TXT_BODY, TXT_CAPTION, TXT_TITULO1};
+  const char *labels[] = {"Home", "Sources", "A title"};
+  int ready = 0;
+  for (int frame = 0; frame < 10 && !ready; frame++) {
+    txt_novo_quadro(); ready = 1;
+    for (unsigned i = 0; i < sizeof scales / sizeof *scales; i++) {
+      float old = gfx_escala(); gfx_escala_sair(scales[i]);
+      for (unsigned j = 0; j < sizeof styles / sizeof *styles; j++) {
+        int pending = txt_pendentes;
+        if (!txt_linha(styles[j], labels[j], 255, 255, 255, 255).tex) {
+          assert(txt_pendentes > pending); ready = 0;
+        }
+      }
+      gfx_escala_sair(old);
+    }
+  }
+  assert(ready);
   for (int frame = 0; frame < 3; frame++) {
     txt_novo_quadro();
     int before = txt_rasterizadas;
-    const float scales[] = {1.0f, 1.2f, 1.5f};
     for (unsigned i = 0; i < sizeof scales / sizeof *scales; i++) {
       float old = gfx_escala(); gfx_escala_sair(scales[i]);
       assert(txt_linha(TXT_BODY, "Home", 255, 255, 255, 255).tex);
