@@ -4707,7 +4707,7 @@ void app_evento(const SDL_Event *e) {
     saiuPorCima = (e->key.keysym.sym == SDLK_UP);
   }
   if (spotAtalho(e) && spotPode()) { spotAbrir(e->key.keysym.sym == SPOT_TECLA_VOZ); return; }
-  if (player_aberto()) { player_evento(e); return; }
+  if (player_visivel()) { player_evento(e); return; }
   if (srvsetup_aberto()) { srvsetup_evento(e); return; }
   // A BARRA LATERAL POR CIMA DA PAGINA DO TITULO (dono, 03/10: "pode abrir por
   // cima"): ESQUERDA no comeco de uma fileira pede a barra e a pagina fica
@@ -5032,7 +5032,10 @@ static void juntosAbrirEFonte(Uint32 agora) {
   int t, e;
   if (juntosui_pediu_fechar_player()) player_sair();
   if (juntosui_pediu_reproduzir()) detail_pedir_reproduzir();
-  if (juntosui_pediu_escolher_filme()) trocarTela(TELA_BUSCA);
+  if (juntosui_pediu_escolher_filme()) {
+    detail_fechar_seco();
+    trocarTela(TELA_BUSCA);
+  }
   if (juntos_pediu_abrir(imdb, sizeof imdb, &t, &e, titulo, sizeof titulo, poster, sizeof poster)) {
     int idx = cat_indice_por_imdb(imdb);
     if (idx < 0) {
@@ -5877,7 +5880,9 @@ void app_atualizar(float dt, Uint32 agora) {
       // ESQUERDA na borda abre a barra SOBRE a tela atual. Voltar continua
       // sendo a saída normal para a Home; assim o foco da tela não é perdido
       // só para alcançar a navegação principal.
-      if ((saiuPorEsquerda || saiuPorCima) && sidebar_permitida()) {
+      if (!saiuPorEsquerda && !saiuPorCima && juntosui_voltar_filme()) {
+        menu_fechar();
+      } else if ((saiuPorEsquerda || saiuPorCima) && sidebar_permitida()) {
         menu_abrir();
       } else if (tela == TELA_CACA && cacaDoPerfil) {
         trocarTela(TELA_PERFIL);
@@ -5947,7 +5952,7 @@ void app_atualizar(float dt, Uint32 agora) {
     }
   }
   // Pedidos de abrir um titulo, vindos de qualquer tela.
-  if (!detail_aberto() && !player_aberto()) {
+  if (!detail_aberto() && !player_visivel()) {
     int idx = -1;
     HomeItem it;
     SpotPedido pedPessoa;
@@ -6098,7 +6103,7 @@ void app_atualizar(float dt, Uint32 agora) {
           if (strcmp(pendAlvo, alvo)) { snprintf(pendAlvo, sizeof pendAlvo, "%s", alvo); pendDesde = SDL_GetTicks(); }
           esperaFoco = SDL_GetTicks() - pendDesde < 1200u;
         } }
-      if (!player_aberto() && aguardandoFonte != 2 && ci && ci->imdb[0] && !esperaFoco &&
+      if (!player_visivel() && aguardandoFonte != 2 && ci && ci->imdb[0] && !esperaFoco &&
           (strcmp(alvo, ultimoAlvo) || (detail_aberto() && ultimaVersao != addons_versao()))) {
         if (!strcmp(alvo, ultimoAlvo)) printf("[addons] lista mudou: refazendo a busca de fontes de %s\n", alvo);
         snprintf(ultimoAlvo, sizeof ultimoAlvo, "%s", alvo);
@@ -6131,11 +6136,13 @@ void app_atualizar(float dt, Uint32 agora) {
     int querTocar = detail_pediu_reproduzir() || doInicio;
     const JsMotor *salaJ = juntos_motor();
     const CatItem *tituloJ = cat_item(detail_indice());
-    if (querTocar && salaJ && salaJ->temSala && tituloJ &&
-        strncmp(salaJ->sala.ep, tituloJ->imdb, strlen(tituloJ->imdb))) {
+    if (querTocar && salaJ && salaJ->temSala && tituloJ) {
+      char alvoJ[64];
       int tJ = 0, eJ = 0;
       detail_ep_foco(&tJ, &eJ);
-      juntos_escolher_titulo(tituloJ->imdb, tJ, eJ, tituloJ->titulo, tituloJ->poster);
+      idDoAlvo(tituloJ, alvoJ, sizeof alvoJ);
+      if (strcmp(salaJ->sala.ep, alvoJ))
+        juntos_escolher_titulo(tituloJ->imdb, tJ, eJ, tituloJ->titulo, tituloJ->poster);
       juntosui_sala_abriu();
       querTocar = 0;
     }
@@ -7408,7 +7415,7 @@ static void desenharTelas(Uint32 agora) {
   // — a mesma conta que ja valia para o cartao de detalhe esticado.
   // ...exceto enquanto o video do preview do guia CRESCE para a tela cheia: ai
   // o guia continua em volta do furo que anda (player_desenhar).
-  if (!player_aberto() || player_janela_animando(NULL, NULL, NULL, NULL)) {
+  if (!player_visivel() || player_janela_animando(NULL, NULL, NULL, NULL)) {
     // O FUNDO PARADO DO PAINEL DE SALVOS: com o painel inteiro na tela, tudo
     // que fica atras dele e pintado UMA vez num FBO, ja com o veu, e os quadros
     // seguintes desenham so a copia e o painel. Ver spainel_fundo em
@@ -7432,11 +7439,11 @@ static void desenharTelas(Uint32 agora) {
   }
   // BRILHO DA INTERFACE DO PLAYER (esmaecer.h): tudo daqui ate a ilha do player
   // multiplica a cor pelo fator (a legenda se isenta em player.c).
-  if (player_aberto()) gfx_osd_mult = player_osd_brilho();
+  if (player_visivel()) gfx_osd_mult = player_osd_brilho();
   // UI EM HDR (esmaecer.h): branco a 80% e veus mais densos com o video em
   // HDR/DV, legenda e tela do DV inclusive. Volta a 1 depois da tela do DV.
-  if (player_aberto()) gfx_hdr_ui = player_ui_hdr();
-  CAMADA_SE(player_aberto());
+  if (player_visivel()) gfx_hdr_ui = player_ui_hdr();
+  CAMADA_SE(player_visivel());
   player_desenhar(agora);
   // O overlay do guia vai POR CIMA do player — o video continua atras do fundo
   // a 94%, que e o que diz "a TV nao parou" enquanto se troca de canal.

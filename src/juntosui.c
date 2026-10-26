@@ -46,7 +46,7 @@ static void iconeReacao(char *dst, size_t n, const char *k) { snprintf(dst, n, "
 
 typedef enum { CAMADA_NADA = 0, CAMADA_FOLHA, CAMADA_CODIGO, CAMADA_SALA, CAMADA_SAIR, CAMADA_PEDIDO, CAMADA_REACOES, CAMADA_FONTES } Camada;
 static Camada camada;
-static int foco, linhaReacao;
+static int foco, linhaReacao, focoSala;
 static Camada camadaVisual;
 static GfxRect corpoBase;
 static int corpoDesenhando;
@@ -121,6 +121,8 @@ void juntosui_shot_bolhas(void) {
 void juntosui_shot_camada(int c, int f) { camada = (Camada)c; foco = f; linhaReacao = 0; corpoAlfaAtual = 0; }
 float juntosui_shot_entrada(void) { return entrada; }
 float juntosui_shot_foco(int i) { return focoDe(i); }
+int juntosui_shot_foco_atual(void) { return foco; }
+int juntosui_shot_camada_atual(void) { return camada; }
 void juntosui_shot_arte(const char *caminho) { snprintf(shotArte, sizeof shotArte, "%s", caminho); }
 void juntosui_shot_contagem(int n) { shotContagem = n; }
 static int noPlayer(void) { return player_aberto() || shotPlayer; }
@@ -292,7 +294,9 @@ void juntosui_erro(const char *k) {
 }
 
 void juntosui_sala_abriu(void) {
-  camada = CAMADA_SALA; foco = 0;
+  if (escolhendoFilme || camada == CAMADA_CODIGO) { foco = focoSala; escolhendoFilme = 0; }
+  else if (camada != CAMADA_SALA) foco = 0;
+  camada = CAMADA_SALA;
   lobbyAberto = 1;
   qrPendente = mostrarQr && !juntos_url_celular()[0];
   if (!qrPendente) mostrarQr = 0;
@@ -314,7 +318,16 @@ void juntosui_fonte_diferente(int v, int pal) {
   if (t) aviso("juntos:fonte", t, "aj_triangle-alert", NULL, 7000u);
 }
 
-void juntosui_perguntar_sair(void) { camada = CAMADA_SAIR; foco = 1; }
+void juntosui_perguntar_sair(void) {
+  if (camada == CAMADA_SALA) focoSala = foco;
+  camada = CAMADA_SAIR; foco = 1;
+}
+int juntosui_escolhendo_filme(void) { return escolhendoFilme; }
+int juntosui_voltar_filme(void) {
+  if (!escolhendoFilme) return 0;
+  juntosui_sala_abriu();
+  return 1;
+}
 
 // --- folha do anfitriao --------------------------------------------------------------------------
 void juntosui_abrir_folha(int idx, int t, int e) {
@@ -326,7 +339,6 @@ void juntosui_abrir_folha(int idx, int t, int e) {
   if (juntos_ativo()) {
     const CatItem *ci = cat_item(idx);
     if (escolhendoFilme && ci) juntos_escolher_titulo(ci->imdb, t, e, ci->titulo, ci->poster);
-    escolhendoFilme = 0;
     juntosui_sala_abriu(); return;
   }
   folhaIdx = idx; folhaT = t; folhaE = e;
@@ -366,7 +378,7 @@ int juntosui_pediu_fontes(void) { int p = pediuFontes; pediuFontes = 0; return p
 int juntosui_aberta(void) { return camada != CAMADA_NADA || okSegurando; }
 
 // --- botoes do cartao da sala ------------------------------------------------------------------
-enum { BT_COMECAR, BT_CELULAR, BT_FILME, BT_FONTES, BT_TRAVA, BT_SAIR, BT_N };
+enum { BT_COMECAR, BT_CELULAR, BT_FILME, BT_FONTES, BT_TRAVA, BT_SAIR, BT_CODIGO, BT_N };
 static int botoesSala(int *b) {
   const JsMotor *m = juntos_motor();
   int n = 0;
@@ -376,6 +388,7 @@ static int botoesSala(int *b) {
   if (m) b[n++] = BT_FONTES;
   if (juntos_sou_anfitriao()) b[n++] = BT_TRAVA;
   b[n++] = BT_SAIR;
+  b[n++] = BT_CODIGO;
   return n;
 }
 static const char *rotuloBotao(int b) {
@@ -383,6 +396,7 @@ static const char *rotuloBotao(int b) {
   switch (b) {
     case BT_COMECAR: return m && todosProntos(m) ? i18n("Começar juntos") : i18n("Começar agora");
     case BT_CELULAR: return i18n("Convidar");
+    case BT_CODIGO: return i18n("Entrar com código");
     case BT_FILME: return i18n("Escolher um filme");
     case BT_FONTES: return i18n("Fontes");
     case BT_TRAVA: return m && m->sala.controleAnf ? i18n("Só eu controlo") : i18n("Todos controlam");
@@ -393,6 +407,7 @@ static const char *iconeBotao(int b) {
   switch (b) {
     case BT_COMECAR: return "aj_play";
     case BT_CELULAR: return "aj_user-plus";
+    case BT_CODIGO: return "aj_users";
     case BT_FILME: return "aj_film";
     case BT_FONTES: return "aj_circle-check";
     case BT_TRAVA: return "aj_users";
@@ -409,8 +424,9 @@ static void apertarSala(int b) {
       qrPendente = mostrarQr && (!m || !m->conectado);
       if (mostrarQr && !qrPendente) juntos_pedir_celular();
       break;
-    case BT_FILME: mostrarQr = 0; escolhendoFilme = 1; camada = CAMADA_NADA; pediuEscolherFilme = 1; break;
-    case BT_FONTES: mostrarQr = 0; camada = CAMADA_FONTES; foco = 0; break;
+    case BT_FILME: focoSala = foco; mostrarQr = 0; escolhendoFilme = 1; camada = CAMADA_NADA; pediuEscolherFilme = 1; break;
+    case BT_CODIGO: focoSala = foco; mostrarQr = 0; camada = CAMADA_CODIGO; codPos = 0; break;
+    case BT_FONTES: focoSala = foco; mostrarQr = 0; camada = CAMADA_FONTES; foco = 0; break;
     case BT_TRAVA: if (m) juntos_controle_anfitriao(!m->sala.controleAnf); break;
     case BT_SAIR:
       pediuFecharPlayer = juntos_precarregando();
@@ -466,7 +482,7 @@ int juntosui_evento_sdl(const SDL_Event *e) {
     case CAMADA_CODIGO: {
       const char *p = strchr(COD_ALFA, cod[codPos]);
       int i = p ? (int)(p - COD_ALFA) : 0;
-      if (ehVoltar(k)) camada = CAMADA_FOLHA;
+      if (ehVoltar(k)) { if (lobbyAberto) juntosui_sala_abriu(); else camada = CAMADA_FOLHA; }
       else if (k == SDLK_LEFT && codPos > 0) codPos--;
       else if (k == SDLK_RIGHT && codPos < 5) codPos++;
       else if (k == SDLK_UP) cod[codPos] = COD_ALFA[(i + 1) % 32];
@@ -483,9 +499,9 @@ int juntosui_evento_sdl(const SDL_Event *e) {
       const JsMotor *mo = juntos_motor();
       int temVazio = mo && mo->sala.n < 5;
       if (foco >= n) foco = n - 1;
-      if (ehVoltar(k)) { mostrarQr = 0; juntosui_perguntar_sair(); }
-      else if (k == SDLK_UP && temVazio) foco = -1;
-      else if (k == SDLK_DOWN && foco < 0) foco = 0;
+      if (ehVoltar(k)) { if (mostrarQr) mostrarQr = qrPendente = 0; else juntosui_perguntar_sair(); }
+      else if (k == SDLK_UP) foco = foco == -1 || !temVazio ? n - 1 : -1;
+      else if (k == SDLK_DOWN && (foco < 0 || b[foco] == BT_CODIGO)) foco = 0;
       else if (foco < 0) { if (ehOk(k)) apertarSala(BT_CELULAR); }
       else if (k == SDLK_LEFT && foco > 0) foco--;
       else if (k == SDLK_RIGHT && foco < n - 1) foco++;
@@ -496,7 +512,7 @@ int juntosui_evento_sdl(const SDL_Event *e) {
       const JsMotor *m = juntos_motor();
       int n = m ? (m->sala.n < 5 ? m->sala.n : 5) : 0;
       if (foco > n) foco = n;
-      if (ehVoltar(k) || (ehOk(k) && foco == 0)) { camada = CAMADA_SALA; foco = 0; }
+      if (ehVoltar(k) || (ehOk(k) && foco == 0)) { camada = CAMADA_SALA; foco = focoSala; }
       else if (k == SDLK_DOWN && foco < n) foco++;
       else if (k == SDLK_UP && foco > 0) foco--;
       else if (ehOk(k) && m && foco > 0 && !strcmp(m->sala.m[foco - 1].id, m->eu)
@@ -506,7 +522,7 @@ int juntosui_evento_sdl(const SDL_Event *e) {
       return 1;
     }
     case CAMADA_SAIR:
-      if (ehVoltar(k)) camada = lobbyAberto ? CAMADA_SALA : CAMADA_NADA;
+      if (ehVoltar(k)) { camada = lobbyAberto ? CAMADA_SALA : CAMADA_NADA; foco = focoSala; }
       else if (k == SDLK_LEFT) foco = 0;
       else if (k == SDLK_RIGHT) foco = 1;
       else if (ehOk(k)) {
@@ -515,7 +531,7 @@ int juntosui_evento_sdl(const SDL_Event *e) {
           if (juntos_sou_anfitriao()) { const JsMotor *m = juntos_motor(); if (m && m->sala.n <= 1) juntos_encerrar(); }
           juntos_sair();
           pediuFecharPlayer = 1;
-        }
+        } else foco = focoSala;
       }
       return 1;
     case CAMADA_PEDIDO:
@@ -983,7 +999,7 @@ static void desenharSala(void) {
   float larguras[BT_N], altura = BOTAO_H_PRIMARIO * k;
   float textoY = tela.y;
   float a = 1;
-  int i, b[BT_N], n = botoesSala(b), nm, vazio;
+  int i, b[BT_N], n = botoesSala(b) - 1, nm, vazio;
   char linha[200];
   if (!m) return;
   nm = m->sala.n < 5 ? m->sala.n : 5;
@@ -991,6 +1007,9 @@ static void desenharSala(void) {
   gfx_cor(telaReal(), 0, 0.06f, 0.055f, 0.08f, a);
   telaCinema(tela, 0.7f, a);
   cabecalhoSala(a);
+  float codigoW = botao_largura(rotuloBotao(BT_CODIGO), iconeBotao(BT_CODIGO), 0);
+  botao_pilula((GfxRect){ direita - codigoW, salaY(104), codigoW, BOTAO_H_SECUNDARIO * k },
+               rotuloBotao(BT_CODIGO), iconeBotao(BT_CODIGO), focoDe(n), 0, 0, a);
   snprintf(linha, sizeof linha, i18n("Sua sessão privada · %d de %d lugares"), nm, 5);
   texto(TXT_CAPTION, linha, textoX, textoY + 56 * k, 235, a, tela.w - 96 * k);
   txt_bloco_corta(TXT_ILHA_TITULO, i18n("Os melhores lugares são juntos"), 250, 250, 250, textoX, textoY + 92 * k, 460, 52, a, 2);

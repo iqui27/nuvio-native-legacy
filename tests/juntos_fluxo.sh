@@ -2,6 +2,7 @@
 # Lobby entry contract and host + two guests through the production sync engine.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+python3 tests/juntos_fluxo_review.py
 python3 - <<'PY'
 from pathlib import Path
 ui = Path('src/juntosui.c').read_text()

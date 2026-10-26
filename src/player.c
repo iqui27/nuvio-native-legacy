@@ -30,6 +30,7 @@
 #include "player.h"
 #include "addonguia.h"
 #include "juntos.h"
+#include "juntosui.h"
 #include "conquistasdados.h"
 #include "legfontes.h"
 #include "memlog.h"
@@ -2050,6 +2051,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
 }
 
 int player_aberto(void)    { return aberto; }
+int player_visivel(void)   { return aberto && !juntosui_escolhendo_filme(); }
 int player_quer_sair(void) { return pediuSair; }
 void player_sair(void) { if (aberto) { saindo = 1; pediuSair = 1; } }
 
@@ -6477,7 +6479,7 @@ static void capaReabertura(GfxRect furo, const CatItem *c, Uint32 agora) {
 #endif
 
 void player_desenhar(Uint32 agora) {
-  if (!aberto) return;
+  if (!player_visivel()) return;
   const CatItem *c = item();
   // COR VIVA: o titulo que TOCA manda na cor (abrindo, OSD, pausa, pos-play),
   // acima de tudo. A chave e a arte da tela de abertura logo abaixo; se ela

@@ -31,6 +31,8 @@ void juntosui_shot_contagem(int n);
 float juntosui_shot_entrada(void);
 float juntosui_shot_corpo_alfa(void);
 float juntosui_shot_foco(int i);
+int juntosui_shot_foco_atual(void);
+int juntosui_shot_camada_atual(void);
 
 static SDL_Window *win;
 static const char *base;
@@ -210,12 +212,47 @@ int main(int argc, char **argv) {
     motor.sala.m[0].pct = 42;
     juntosui_sala_abriu();
     quadros(35); captura("01-preload", 1080);
+    SDL_Event key = {0}; key.type = SDL_KEYDOWN;
+    key.key.keysym.sym = SDLK_RIGHT;
+    for (int i = 0; i < 6; i++) assert(juntosui_evento_sdl(&key));
+    quadros(20); captura("07-join-action", 1080);
+    key.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&key));
+    assert(juntosui_shot_camada_atual() == 2);
+    quadros(45); captura("07-join-code", 1080);
+    key.key.keysym.sym = SDLK_ESCAPE; assert(juntosui_evento_sdl(&key));
+    assert(juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 6);
+    // A real open player must stop owning input/presentation while browsing.
+    CatItem film = {0};
+    snprintf(film.imdb, sizeof film.imdb, "tt15239678");
+    snprintf(film.tipo, sizeof film.tipo, "movie");
+    int filmIdx = cat_acrescentar(&film);
+    player_abrir(filmIdx, NULL);
+    assert(player_aberto());
+    juntosui_shot_camada(3, 2);
+    key.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&key));
+    assert(juntosui_pediu_escolher_filme() && player_aberto() && !player_visivel());
+    assert(juntosui_escolhendo_filme());
+    assert(juntosui_voltar_filme() && player_visivel());
+    assert(juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 2);
+    player_encerrar();
+    // Sources and exit confirmation return to the invoking control.
+    for (int focus = 3; focus <= 4; focus++) {
+      juntosui_shot_camada(3, focus);
+      key.key.keysym.sym = focus == 3 ? SDLK_RETURN : SDLK_ESCAPE;
+      assert(juntosui_evento_sdl(&key));
+      key.key.keysym.sym = SDLK_ESCAPE; assert(juntosui_evento_sdl(&key));
+      assert(juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == focus);
+    }
+    quadros(20); captura("08-restored-focus", 1080);
+    juntosui_shot_camada(3, 0);
     SDL_Event invite = {0}; invite.type = SDL_KEYDOWN; invite.key.keysym.sym = SDLK_RIGHT;
     assert(juntosui_evento_sdl(&invite));
     invite.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&invite));
     snprintf(urlCelular, sizeof urlCelular, "https://nuvio-juntos.example/j/0123456789abcdef0123456789abcdefK7M2QXA9");
     quadros(20); captura("01-invite", 1080);
-    assert(juntosui_evento_sdl(&invite));
+    invite.key.keysym.sym = SDLK_ESCAPE; assert(juntosui_evento_sdl(&invite));
+    assert(juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 1);
+    quadros(20); captura("08-qr-back", 1080);
     invite.key.keysym.sym = SDLK_LEFT; assert(juntosui_evento_sdl(&invite));
     snprintf(motor.sala.m[0].st, sizeof motor.sala.m[0].st, "pronto");
     motor.sala.n = 2;
