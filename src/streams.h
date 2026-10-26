@@ -175,6 +175,10 @@ void stream_canal_enriquecer(Stream *s);
 int stream_folha_recarregar(void);
 // Abertura animada da folha (0..1): o player apaga o OSD por baixo dela.
 float stream_folha_anim(void);
+// Watch Together: a strip with each TV's ready state under the tabs. Set by
+// juntosui; height 0 hides it.
+extern float (*stream_folha_sala_h)(void);
+extern void (*stream_folha_sala_desenhar)(float x, float y, float w, float a);
 
 // Substitui a lista do titulo corrente. Chamar quando os addons responderem.
 void stream_definir_lista(const Stream *lista, int n);

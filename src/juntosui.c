@@ -54,7 +54,8 @@ static GfxRect corpoBase;
 static int corpoDesenhando;
 static float entrada, tempoEntrada, focoAnim[8][16], lugarAnim[5], fonteExp[5];
 static Uint32 ultimoQuadro;
-static float contagemAnim, prontoAnim[5], prontoPulso[5];
+static float contagemAnim, prontoAnim[5], prontinhaAnim;
+static char prontinha[200];   // readiness line under the seats, fades in on change
 static char lugarId[5][JSP_ID];
 static int lobbyAberto, escolhendoFilme;
 static void abrirSala(void);
@@ -96,6 +97,8 @@ static void poeBolha(const char *quem, const char *icone, const char *txt, unsig
 static const Stream *fonteLocal(const JsMotor *m);
 static int contagemRestante(void);
 static void pedirCorpo(void);
+static float salaFolhaH(void);
+static void salaFolhaDesenhar(float x, float y, float w, float a);
 static float corpoAltura(float h) {
   return fminf(h, (NV_LAYOUT_REAL_H - NV_ILHA_Y - 24) / gfx_escala_ui() - NV_ILHA_H_ABERTA);
 }
@@ -643,18 +646,18 @@ void juntosui_atualizar(Uint32 agora) {
     const char *id = p ? p->id : "";
     if (strcmp(lugarId[i], id)) {
       snprintf(lugarId[i], sizeof lugarId[i], "%s", id);
-      lugarAnim[i] = prontoAnim[i] = prontoPulso[i] = 0;
+      lugarAnim[i] = prontoAnim[i] = 0;
     }
     int presente = m && i <= m->sala.n;
-    lugarAnim[i] = anim_mola(lugarAnim[i], presente, dt, NV_MOLA_FOCO);
+    lugarAnim[i] = anim_mola(lugarAnim[i], presente, dt, NV_MOLA_TELA);
     int pronto = p && p->on && (!strcmp(p->st, "pronto") || !strcmp(p->st, "tocando"));
-    if (pronto && prontoAnim[i] == 0) prontoPulso[i] = 1;
-    prontoAnim[i] = anim_mola(prontoAnim[i], pronto, dt, NV_MOLA_FOCO);
-    prontoPulso[i] = anim_mola(prontoPulso[i], 0, dt, NV_MOLA_TELA);
+    prontoAnim[i] = anim_mola(prontoAnim[i], pronto, dt, NV_MOLA_TELA);
     int local = m && i < m->sala.n && !strcmp(m->sala.m[i].id, m->eu) && fonteLocal(m);
     fonteExp[i] = anim_mola(fonteExp[i], camada == CAMADA_FONTES && foco == i + 1 && local, dt, NV_MOLA_TELA);
     anelAnim[i] = anim_mola(anelAnim[i], p && !pronto ? p->pct / 100.0f : pronto, dt, NV_MOLA_TELA);
   }
+  prontinhaAnim = anim_mola(prontinhaAnim, 1, dt, NV_MOLA_TELA);
+  stream_folha_sala_h = salaFolhaH; stream_folha_sala_desenhar = salaFolhaDesenhar;
   convAnim = anim_mola(convAnim, camada == CAMADA_SALA && mostrarQr, dt, NV_MOLA_TELA);
   for (int i = 0; i < FOLHA_AMIGOS; i++) convFoco[i] = anim_mola(convFoco[i], mostrarQr && focoConv == i, dt, NV_MOLA_FOCO);
   if (ultimaContagem != contagemRestante()) { ultimaContagem = contagemRestante(); contagemAnim = 0; }
@@ -863,19 +866,49 @@ static float lugarW = 248;   // shrinks only when five seats would not fit
 #define LUGAR_GAP 24.0f
 #define LUGAR_AV 88.0f
 
+// Seat state as in the mockup: icon + word; green once that TV is ready,
+// amber when it needs attention.
+static const char *estadoIcone(const JsMembro *p, int pronto, float *r, float *g, float *b) {
+  *r = .84f; *g = .82f; *b = .85f;
+  if (pronto) { *r = 0.55f; *g = 0.92f; *b = 0.65f; return "aj_check"; }
+  if (!p->on) return "aj_wifi-off";
+  if (!strcmp(p->st, "semfonte") || !strcmp(p->st, "erro")) { *r = 0.96f; *g = 0.78f; *b = 0.42f; return "aj_triangle-alert"; }
+  if (!strcmp(p->st, "pausado")) return "aj_clock";
+  return "aj_loader";
+}
+static int membroPronto(const JsMembro *p) {
+  return p->on && (!strcmp(p->st, "pronto") || !strcmp(p->st, "tocando"));
+}
+static void estadoLinha(const JsMembro *p, float x, float y, int centro, float a, float maxW) {
+  float r, g, b;
+  int pronto = membroPronto(p);
+  const char *ic = estadoIcone(p, pronto, &r, &g, &b);
+  char st[120];
+  if (!strcmp(p->st, "carregando") && p->pct > 0) snprintf(st, sizeof st, "%s %d%%", estadoTexto(p), p->pct);
+  else snprintf(st, sizeof st, "%s", pronto ? i18n("pronto") : estadoTexto(p));
+  if (st[0] >= 'a' && st[0] <= 'z') st[0] -= 32;
+  TxtLinha l = txt_linha_corta(TXT_CAPTION, st, r * 255, g * 255, b * 255, 255, maxW - 34);
+  if (centro == 1) x -= (l.w + 34) / 2.0f;
+  else if (centro == 2) x -= l.w + 34;
+  gfx_icone((GfxRect){ x, y + (l.h - 24) / 2.0f, 24, 24 }, ic, r, g, b, a);
+  txt_desenhar_alpha(l, x + 34, y, a);
+}
+
 static void desenharLugar(int i, const JsMembro *p, int vazio, float f, float x, float y, float a) {
-  GfxRect c = { x, y, LUGAR_W, LUGAR_H };
-  GfxRect av = { x + (LUGAR_W - LUGAR_AV) / 2, y + 26, LUGAR_AV, LUGAR_AV };
-  float cx = x + LUGAR_W / 2, maxW = LUGAR_W - 24, ty = y + 134;
   float e = ajustes_animacoes_reduzidas_usuario() ? 1 : entradaItem(i);
-  float chega = lugarAnim[i];   // arrival: rises and grows into the row
-  float s = (.86f + .14f * chega) * (1 + .05f * f + .04f * prontoPulso[i]);
-  char nome[160], st[120];
+  float chega = lugarAnim[i], luz = chega * chega;   // sits down from above, then its light comes up
+  float s = 1 + .05f * f, avW = LUGAR_AV * (.9f + .1f * luz);
+  GfxRect c = { x, y, LUGAR_W, LUGAR_H };
+  GfxRect av = { x + (LUGAR_W - avW) / 2, y + 26 + (LUGAR_AV - avW) / 2, avW, avW };
+  float cx = x + LUGAR_W / 2, maxW = LUGAR_W - 24, ty = y + 134;
+  char nome[160];
   const JsMotor *m = juntos_motor();
-  int pronto = !vazio && p->on && (!strcmp(p->st, "pronto") || !strcmp(p->st, "tocando"));
+  int pronto = !vazio && membroPronto(p);
   a *= e * chega;
   if (a <= 0.01f) return;
-  gfx_transformar(cx, y + LUGAR_H / 2, s, origemX, origemY - NV_FOCO_LIFT * f + (1 - e) * NV_ENTRA_DY + (1 - chega) * 48);
+  gfx_transformar(cx, y + LUGAR_H / 2, s, origemX, origemY - NV_FOCO_LIFT * f + (1 - e) * NV_ENTRA_DY - (1 - chega) * 20);
+  // The seat cushion under the backrest, a little wider than it.
+  gfx_cor((GfxRect){ x - 9, y + LUGAR_H - 23, LUGAR_W + 18, 36 }, .45f, 1, 1, 1, .07f * a);
   t21_ilha_solida(c, T21_R_SHEET, a);
   plrui_linha_foco(c, T21_R_SHEET, f * a);
   if (vazio) {
@@ -890,12 +923,12 @@ static void desenharLugar(int i, const JsMembro *p, int vazio, float f, float x,
   }
   const char *url, *quem;
   rostoMembro(p, &url, &quem);
-  rec_avatar(av, url, quem, p->id, p->on ? a : 0.4f * a);
+  rec_avatar(av, url, quem, p->id, (p->on ? 1 : 0.4f) * (.3f + .7f * luz) * a);
   GfxRect anel = { av.x - 8, av.y - 8, av.w + 16, av.h + 16 };
   if (pronto) {
-    // Ready: a green ring settles in, one pulse leaves it, and a check badge.
+    // Ready: green ring, a still soft glow and a check badge (no pulse).
+    gfx_anel_fora(anel, .5f, 0, 12, 0.55f, 0.92f, 0.65f, .16f * prontoAnim[i] * luz * a);
     gfx_anel(anel, .5f, 3, 0.55f, 0.92f, 0.65f, prontoAnim[i] * a);
-    gfx_anel_fora(anel, .5f, 4 + 26 * (1 - prontoPulso[i]), 3, 0.55f, 0.92f, 0.65f, prontoPulso[i] * a);
     GfxRect selo = { av.x + av.w - 22, av.y + av.h - 22, 30, 30 };
     gfx_cor(selo, .5f, 0.30f, 0.72f, 0.45f, prontoAnim[i] * a);
     gfx_icone((GfxRect){ selo.x + 6, selo.y + 6, 18, 18 }, "aj_check", 1, 1, 1, prontoAnim[i] * a);
@@ -907,13 +940,11 @@ static void desenharLugar(int i, const JsMembro *p, int vazio, float f, float x,
   }
   if (m && !strcmp(p->id, m->eu)) snprintf(nome, sizeof nome, "%s%s%s", i18n("Você"), p->anf ? " · " : "", p->anf ? i18n("anfitrião") : "");
   else snprintf(nome, sizeof nome, "%s", quem);
-  if (!strcmp(p->st, "carregando") && p->pct > 0) snprintf(st, sizeof st, "%s %d%%", estadoTexto(p), p->pct);
-  else snprintf(st, sizeof st, "%s", pronto ? i18n("pronto") : estadoTexto(p));
   linhaCentro(TXT_ILHA_NOME, nome, cx, ty, 245, a, maxW);
-  linhaCentro(TXT_CAPTION, st, cx, ty + 36, pronto ? 215 : 190, a, maxW);
+  estadoLinha(p, cx, ty + 36, 1, a, maxW);
   // Sync stats only once measured; source verdict only once known.
   char linha[128];
-  float ly = ty + 66;
+  float ly = ty + 70;
   if (p->on && p->stats) {
     snprintf(linha, sizeof linha, "RTT %.0f ms · Δ %+.0f ms", p->rtt, p->offset);
     ly += linhaCentro(TXT_ILHA_META, linha, cx, ly, 175, a, maxW) + 2;
@@ -928,9 +959,19 @@ static void desenharLugar(int i, const JsMembro *p, int vazio, float f, float x,
 
 static int todosProntos(const JsMotor *m) {
   int i;
-  for (i = 0; i < m->sala.n; i++)
-    if (!m->sala.m[i].on || (strcmp(m->sala.m[i].st, "pronto") && strcmp(m->sala.m[i].st, "tocando"))) return 0;
+  for (i = 0; i < m->sala.n; i++) if (!membroPronto(&m->sala.m[i])) return 0;
   return m->sala.n > 0;
+}
+
+// The first TV still getting ready, said the way the mockup does.
+static const char *fraseEspera(const JsMembro *p) {
+  if (!p->on) return i18n("%s está ausente.");
+  if (!strcmp(p->st, "procurando")) return i18n("%s está procurando uma fonte.");
+  if (!strcmp(p->st, "carregando")) return i18n("%s está carregando o filme.");
+  if (!strcmp(p->st, "entrando")) return i18n("%s está entrando.");
+  if (!strcmp(p->st, "semfonte")) return i18n("%s está sem fonte.");
+  if (!strcmp(p->st, "erro")) return i18n("%s teve um erro.");
+  return i18n("%s está se preparando.");
 }
 
 static void cabecalhoSala(float esquerda, float direita, float y, float a) {
@@ -1048,6 +1089,39 @@ static void desenharFontes(void) {
                i18n("Voltar à sala"), "aj_users", focoDe(0), 1, 0, a);
 }
 
+// Sources sheet opened in a room: one row per TV with its ready state and
+// source verdict, so picking a source here still shows who is ready.
+#define SALA_FOLHA_LINHA 60.0f
+static int salaFolhaN(void) {
+  const JsMotor *m = juntos_motor();
+  if (!juntos_ativo() || !m) return 0;
+  return m->sala.n < 5 ? m->sala.n : 5;
+}
+static float salaFolhaH(void) {
+  int n = salaFolhaN();
+  return n ? n * SALA_FOLHA_LINHA + 28 : 0;
+}
+static void salaFolhaDesenhar(float x, float y, float w, float a) {
+  const JsMotor *m = juntos_motor();
+  int n = salaFolhaN();
+  float h = n * SALA_FOLHA_LINHA + 12;
+  char linha[160];
+  gfx_cor((GfxRect){ x, y, w, h }, 22 / h, 1, 1, 1, .05f * a);
+  for (int i = 0; i < n; i++) {
+    const JsMembro *p = &m->sala.m[i];
+    const char *url, *quem;
+    float ry = y + 6 + i * SALA_FOLHA_LINHA, colW = w * .5f - 40;
+    rostoMembro(p, &url, &quem);
+    rec_avatar((GfxRect){ x + 16, ry + 8, 44, 44 }, url, quem, p->id, p->on ? a : .45f * a);
+    if (!strcmp(p->id, m->eu)) quem = i18n("Você");
+    texto(TXT_ILHA_NOME, quem, x + 76, ry + 2, 245, a, colW);
+    if (p->on && p->fonte[0]) snprintf(linha, sizeof linha, p->altura ? "%s · %dp" : "%s", fonteTexto(p->fonte), p->altura);
+    else snprintf(linha, sizeof linha, "%s", plataformaFonte(p));
+    texto(TXT_ILHA_META, linha, x + 76, ry + 32, 175, a, colW);
+    estadoLinha(p, x + w - 20, ry + 14, 2, a, w * .5f - 20);
+  }
+}
+
 // Invite panel, sliding in from the right over the dimmed lobby: room code,
 // QR for the phone (or progress while the room opens) and the friends list.
 static void desenharConvite(float R, float topo, float fim, float a) {
@@ -1102,12 +1176,15 @@ static void desenharSala(void) {
   const JsMotor *m = juntos_motor();
   GfxRect tela = telaReal();
   float L = tela.x + SALA_MARGEM, R = tela.x + tela.w - SALA_MARGEM, T = tela.y, B = tela.y + tela.h;
-  float acoesY = B - 150, statusY = acoesY - 66, lugarY = statusY - 30 - LUGAR_H;
   float larguras[BT_N], total = 0, a = 1, convFundo = 1 - .35f * anim_suave(convAnim);
-  int i, b[BT_N], n = botoesSala(b) - 1, nm;
+  int i, b[BT_N], n = botoesSala(b) - 1, nm, k;
   char linha[200];
   if (!m) return;
   nm = m->sala.n < 5 ? m->sala.n : 5;
+  // One curved row like the mockup: centred, end seats sit lower.
+  k = nm < 5 ? nm + 1 : 5;
+  float meio = (k - 1) / 2.0f, queda = 7 * meio * meio;
+  float acoesY = B - 150, statusY = acoesY - 66, lugarY = statusY - 40 - queda - LUGAR_H;
   lugarW = fminf(248, (R - L - 4 * LUGAR_GAP) / 5);
   telaCinema(tela, a);
   a *= convFundo;
@@ -1124,21 +1201,33 @@ static void desenharSala(void) {
     const char *tit = m->sala.titulo[0] ? m->sala.titulo : juntos_titulo();
     logotitulo_desenhar(itemSala(), tit, TXT_TITULO1, L, logoY + dy, 620, logoH, 1000, a * e);
   }
-  for (i = 0; i < 5; i++) {
-    float x = L + i * (LUGAR_W + LUGAR_GAP);
-    if (i < nm) desenharLugar(i, &m->sala.m[i], 0, 0, x, lugarY, a);
-    else if (i == nm) desenharLugar(i, NULL, 1, focoDe(-1), x, lugarY, a);
+  float x0 = (L + R) / 2 - (k * LUGAR_W + (k - 1) * LUGAR_GAP) / 2;
+  for (i = 0; i < k; i++) {
+    float x = x0 + i * (LUGAR_W + LUGAR_GAP), d = i - meio;
+    if (i < nm) desenharLugar(i, &m->sala.m[i], 0, 0, x, lugarY + 7 * d * d, a);
+    else desenharLugar(i, NULL, 1, focoDe(-1), x, lugarY + 7 * d * d, a);
   }
   {
-    int pr = todosProntos(m), prontos = 0;
-    for (int j = 0; j < m->sala.n; j++) if (m->sala.m[j].on &&
-        (!strcmp(m->sala.m[j].st, "pronto") || !strcmp(m->sala.m[j].st, "tocando"))) prontos++;
-    snprintf(linha, sizeof linha, "%s · %d/%d", pr ? i18n("Todos prontos. O filme está preparado em cada TV.")
-             : i18n("Esperando os outros ficarem prontos"), prontos, m->sala.n);
-    GfxRect ic = { L, statusY, 32, 32 };
-    if (pr) gfx_icone(ic, "aj_circle-check", 0.55f, 0.92f, 0.65f, a);
-    else { gfx_anel(ic, .5f, 3, 1, 1, 1, 0.15f * a); gfx_arco(ic, 3, fmodf(agoraUlt / 1100.0f, 1), .25f, 0.62f, 0.78f, 1, a); }
-    texto(TXT_ILHA_NOME, linha, L + 48, statusY, 235, a * entradaItem(2), R - L - 48);
+    // Readiness, centred under the seats: who is still getting ready, green when all are.
+    int pr = todosProntos(m), prontos = 0, falta = -1;
+    for (int j = 0; j < m->sala.n; j++) if (membroPronto(&m->sala.m[j])) prontos++; else if (falta < 0) falta = j;
+    if (pr) snprintf(linha, sizeof linha, "%s", i18n("Todos prontos. O filme está preparado em cada TV."));
+    else if (falta >= 0) {
+      const char *url, *quem;
+      char frase[160];
+      rostoMembro(&m->sala.m[falta], &url, &quem);
+      snprintf(frase, sizeof frase, fraseEspera(&m->sala.m[falta]), quem);
+      snprintf(linha, sizeof linha, i18n("%d de %d prontos. %s"), prontos, m->sala.n, frase);
+    } else snprintf(linha, sizeof linha, "%s", i18n("Esperando os outros ficarem prontos"));
+    if (strcmp(linha, prontinha)) { snprintf(prontinha, sizeof prontinha, "%s", linha); prontinhaAnim = 0; }
+    float v = ajustes_animacoes_reduzidas_usuario() ? 1 : anim_suave(prontinhaAnim);
+    float r = pr ? 0.55f : .92f, g = pr ? 0.92f : .92f, bl = pr ? 0.65f : .92f, ya = statusY + (1 - v) * 12;
+    TxtLinha l = txt_linha_corta(TXT_ILHA_NOME, linha, r * 255, g * 255, bl * 255, 255, R - L - 48);
+    float lx = (L + R) / 2 - (l.w + 48) / 2, la = a * entradaItem(2) * (.2f + .8f * v);
+    GfxRect ic = { lx, ya, 32, 32 };
+    if (pr) gfx_icone(ic, "aj_circle-check", r, g, bl, la);
+    else { gfx_anel(ic, .5f, 3, 1, 1, 1, 0.15f * la); gfx_arco(ic, 3, fmodf(agoraUlt / 1100.0f, 1), .25f, 0.62f, 0.78f, 1, la); }
+    txt_desenhar_alpha(l, lx + 48, ya, la);
   }
   for (i = 0; i < n; i++) {
     larguras[i] = botao_largura(rotuloBotao(b[i]), iconeBotao(b[i]), b[i] == BT_COMECAR && todosProntos(m));
