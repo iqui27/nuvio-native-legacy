@@ -10,6 +10,8 @@
 #include "plrilha.h"
 #include "juntos.h"
 #include "juntosfonte.h"
+#include "logotitulo.h"
+#include "perfis.h"
 #include "player.h"
 #include "qr.h"
 #include "recomenda.h"
@@ -83,10 +85,12 @@ static Uint32 okDesceEm, agoraUlt;
 static SDL_Event okEvento;
 static int okSegurando;
 static struct { char quem[96], nome[64], av[256], icone[32], txt[220]; Uint32 ate, desde; } bolha[BOLHAS];
-// QR
+// QR and the invite panel (code + QR + friends), over the lobby
 static GLuint texQr;
 static char texQrDe[200];
-static int mostrarQr;
+static int mostrarQr, focoConv;
+static float convAnim, convFoco[FOLHA_AMIGOS], anelAnim[5];
+static int focoAcao;   // last action-row focus, restored coming down from seats
 
 static void poeBolha(const char *quem, const char *icone, const char *txt, unsigned ms);
 static const Stream *fonteLocal(const JsMotor *m);
@@ -295,7 +299,8 @@ void juntosui_erro(const char *k) {
 
 void juntosui_sala_abriu(void) {
   if (escolhendoFilme || camada == CAMADA_CODIGO) { foco = focoSala; escolhendoFilme = 0; }
-  else if (camada != CAMADA_SALA) foco = 0;
+  else if (camada != CAMADA_SALA) foco = focoAcao = 0;
+  if (camada != CAMADA_SALA) printf("[juntos] lobby: shown (focus %d)\n", foco);
   camada = CAMADA_SALA;
   lobbyAberto = 1;
   qrPendente = mostrarQr && !juntos_url_celular()[0];
@@ -415,20 +420,39 @@ static const char *iconeBotao(int b) {
   }
 }
 
+static const char *NOME_BT[BT_N] = { "start", "invite", "choose-film", "sources", "control", "leave", "join-code" };
+
+// The invite panel: the room may still be preparing (no server room, no socket),
+// so the code/QR arrive later; until then the panel shows progress, never a blank box.
+static void abrirConvite(void) {
+  const JsMotor *m = juntos_motor();
+  mostrarQr = 1; focoConv = 0;
+  memset(convFoco, 0, sizeof convFoco);
+  qrPendente = !m || !m->conectado;
+  if (!qrPendente && !juntos_url_celular()[0]) juntos_pedir_celular();
+  printf("[juntos] lobby: invite panel open (%s, %d friend(s))\n", qrPendente ? "room preparing" : "room ready", nAmigos);
+}
+
+static void convidarAmigo(int i) {
+  const char *id = amigoId[i];
+  if (i < 0 || i >= nAmigos || marcado[i]) return;
+  marcado[i] = 1;
+  juntos_convidar(&id, 1);
+  printf("[juntos] lobby: invited %s\n", amigoNome[i]);
+}
+
 static void apertarSala(int b) {
   const JsMotor *m = juntos_motor();
+  printf("[juntos] lobby: OK on %s\n", NOME_BT[b]);
   switch (b) {
     case BT_COMECAR: juntos_comecar(); break;
-    case BT_CELULAR:
-      mostrarQr = !mostrarQr;
-      qrPendente = mostrarQr && (!m || !m->conectado);
-      if (mostrarQr && !qrPendente) juntos_pedir_celular();
-      break;
+    case BT_CELULAR: abrirConvite(); break;
     case BT_FILME:
       if (!m || !m->temSala) break;
       focoSala = foco; mostrarQr = 0; escolhendoFilme = 1; camada = CAMADA_NADA; pediuEscolherFilme = 1; break;
     case BT_CODIGO: focoSala = foco; mostrarQr = 0; camada = CAMADA_CODIGO; codPos = 0; break;
-    case BT_FONTES: focoSala = foco; mostrarQr = 0; camada = CAMADA_FONTES; foco = 0; break;
+    // The shared 2.0.8 Sources sheet (app.c); the lobby keeps focus on this button.
+    case BT_FONTES: focoSala = foco; mostrarQr = 0; pediuFontes = 1; break;
     case BT_TRAVA: if (m) juntos_controle_anfitriao(!m->sala.controleAnf); break;
     case BT_SAIR:
       pediuFecharPlayer = juntos_precarregando();
@@ -501,15 +525,25 @@ int juntosui_evento_sdl(const SDL_Event *e) {
     case CAMADA_SALA: {
       int b[BT_N], n = botoesSala(b);
       const JsMotor *mo = juntos_motor();
-      int temVazio = mo && mo->sala.n < 5;
+      int temVazio = mo && mo->sala.n < 5, codigo = n - 1;
       if (foco >= n) foco = n - 1;
-      if (ehVoltar(k)) { if (mostrarQr) mostrarQr = qrPendente = 0; else juntosui_perguntar_sair(); }
-      else if (k == SDLK_UP) foco = foco == -1 || !temVazio ? n - 1 : -1;
-      else if (k == SDLK_DOWN && (foco < 0 || b[foco] == BT_CODIGO)) foco = 0;
-      else if (foco < 0) { if (ehOk(k)) apertarSala(BT_CELULAR); }
+      if (mostrarQr) {   // invite panel: friends list; Back returns to the control that opened it
+        if (ehVoltar(k)) { mostrarQr = qrPendente = 0; printf("[juntos] lobby: invite panel closed\n"); }
+        else if (k == SDLK_UP && focoConv > 0) focoConv--;
+        else if (k == SDLK_DOWN && focoConv < nAmigos - 1) focoConv++;
+        else if (ehOk(k)) convidarAmigo(focoConv);
+        return 1;
+      }
+      // Three rows: "Join with a code" (top right), the open seat, the actions.
+      if (ehVoltar(k)) juntosui_perguntar_sair();
+      else if (k == SDLK_UP) { if (foco >= 0 && foco < codigo && temVazio) foco = -1; else if (foco != codigo) foco = codigo; }
+      else if (k == SDLK_DOWN) { if (foco == codigo && temVazio) foco = -1; else if (foco == codigo || foco < 0) foco = focoAcao < codigo ? focoAcao : 0; }
+      else if (foco < 0) { if (ehOk(k)) { printf("[juntos] lobby: OK on open seat\n"); abrirConvite(); } }
+      else if (foco == codigo) { if (ehOk(k)) apertarSala(b[foco]); }
       else if (k == SDLK_LEFT && foco > 0) foco--;
-      else if (k == SDLK_RIGHT && foco < n - 1) foco++;
+      else if (k == SDLK_RIGHT && foco < codigo - 1) foco++;
       else if (ehOk(k)) apertarSala(b[foco]);
+      if (foco >= 0 && foco < codigo) focoAcao = foco;
       return 1;
     }
     case CAMADA_FONTES: {
@@ -620,7 +654,10 @@ void juntosui_atualizar(Uint32 agora) {
     prontoPulso[i] = anim_mola(prontoPulso[i], 0, dt, NV_MOLA_TELA);
     int local = m && i < m->sala.n && !strcmp(m->sala.m[i].id, m->eu) && fonteLocal(m);
     fonteExp[i] = anim_mola(fonteExp[i], camada == CAMADA_FONTES && foco == i + 1 && local, dt, NV_MOLA_TELA);
+    anelAnim[i] = anim_mola(anelAnim[i], p && !pronto ? p->pct / 100.0f : pronto, dt, NV_MOLA_TELA);
   }
+  convAnim = anim_mola(convAnim, camada == CAMADA_SALA && mostrarQr, dt, NV_MOLA_TELA);
+  for (int i = 0; i < FOLHA_AMIGOS; i++) convFoco[i] = anim_mola(convFoco[i], mostrarQr && focoConv == i, dt, NV_MOLA_FOCO);
   if (ultimaContagem != contagemRestante()) { ultimaContagem = contagemRestante(); contagemAnim = 0; }
   contagemAnim = anim_mola(contagemAnim, 1, dt, NV_MOLA_FOCO);
   pedirCorpo();
@@ -739,45 +776,53 @@ static void desenharCodigo(void) {
   botao_pilula((GfxRect){ r.x + 48, r.y + 360, r.w - 96, BOTAO_H_SECUNDARIO }, i18n("Entrar"), "aj_users", 0, 1, 0, 1);
 }
 
-// --- lobby: o cinema (Velvet Cinema v2) ----------------------------------------------------
-// Tela com a arte do filme acesa, fileira de poltronas curva e botoes. Sem vidro:
-// tudo e cor solida e a arte, entao fica certo com o vidro desligado de fabrica.
-static const char *arteSala(void) {
+// --- lobby: full-bleed screening room ------------------------------------------------------------
+// The film's backdrop fills the screen under the app scrim (Detail hero), the
+// title block and seats sit on the left gutter, actions anchor at the bottom.
+// Solid colour + art only, so it holds with the glass off (factory default).
+static const CatItem *itemSala(void) {
   static char poster[NV_ARTE_URL_MAX];
   static int idx = -1;
   const JsMotor *m = juntos_motor();
-  const CatItem *ci;
   int i, n;
-#ifdef NV_SHOT_HOOKS
-  if (shotArte[0]) return shotArte;
-#endif
-  if (!m || !m->temSala || !m->sala.poster[0]) return NULL;
+  if (!m || !m->sala.poster[0]) return NULL;
   if (strcmp(poster, m->sala.poster)) {
     snprintf(poster, sizeof poster, "%s", m->sala.poster);
     idx = -1;
     for (i = 0, n = cat_n(); i < n; i++) {
-      ci = cat_item(i);
+      const CatItem *ci = cat_item(i);
       if (ci && !strcmp(ci->poster, poster)) { idx = i; break; }
     }
   }
-  ci = idx >= 0 ? cat_item(idx) : NULL;
+  return idx >= 0 ? cat_item(idx) : NULL;
+}
+
+static const char *arteSala(void) {
+  const CatItem *ci = itemSala();
+#ifdef NV_SHOT_HOOKS
+  if (shotArte[0]) return shotArte;
+#endif
   return ci && ci->backdrop[0] ? ci->backdrop : NULL;
 }
 
-// A tela do cinema: arte em cover, canto vivo, veu que sobe da base.
-static void telaCinema(GfxRect r, float luz, float a) {
+// Backdrop in cover with a slow push-in, then the Detail scrims: left for the
+// text, base for seats and actions.
+static void telaCinema(GfxRect r, float a) {
   const char *arte = arteSala();
   GLuint t = arte ? tex_obter_hero(arte) : 0;
+  float z = ajustes_animacoes_reduzidas_usuario() ? 0 : .04f * (1 - expf(-tempoEntrada / 9));
+  GfxRect zr = { r.x - r.w * z / 2, r.y - r.h * z / 2, r.w * (1 + z), r.h * (1 + z) };
+  gfx_cor(r, 0, 0.06f, 0.055f, 0.08f, a);
   if (t) {
     gfx_tex_aspect_atual = tex_aspecto(arte);
     gfx_card_forcar_cover_atual = 1.0f;
-    gfx_rect(r, t, GFX_CARD, 1, 0, 0, 0.0f, luz, luz, luz, a);
+    gfx_rect(zr, t, GFX_CARD, 1, 0, 0, 0.0f, 1, 1, 1, a);
     gfx_card_forcar_cover_atual = 0.0f;
     gfx_tex_aspect_atual = 0.0f;
   } else gfx_cor(r, 0, 0.14f, 0.11f, 0.18f, a);
-  gfx_veu_base(r, 0, 0.7f, 0.9f * a);
-  gfx_cor(r, 0, 0.05f, 0.045f, 0.07f, 0.18f * a);
-  gfx_veu_css(r, 2, 1.0f, 1.0f, 0.6f * a);   // sombra a esquerda: o texto da tela le sobre qualquer arte
+  gfx_veu_base(r, 0, 0.78f, 0.95f * a);
+  gfx_veu_css(r, 2, 1.0f, 1.0f, 0.75f * a);
+  gfx_cor(r, 0, 0.03f, 0.03f, 0.05f, 0.22f * a);
 }
 
 static float entradaItem(int i) {
@@ -792,84 +837,94 @@ static float textoCentro(TxtEstilo es, const char *s, float cx, float y, int c, 
   return l.h;
 }
 
-// The mock's 85% geometry stays physical; text and controls retain user scaling.
-static float salaX(float x) { return (144 + .85f * x) / gfx_escala() - origemX; }
-static float salaY(float y) { return (81 + .85f * y) / gfx_escala() - origemY; }
-#define LUGAR_W (234.0f * .85f / gfx_escala())
-#define LUGAR_H (214.0f * .85f / gfx_escala())
-static float lugarX(int i) {
-  return salaX(960.0f + (i - 2) * 286.0f - 117);
-}
-static float lugarY(int i) {
-  return salaY(530.0f + (i - 2) * (i - 2) * 8.0f);
+// One centred line, cut to the seat width (never wraps out of the card).
+static float linhaCentro(TxtEstilo es, const char *s, float cx, float y, int c, float a, float maxW) {
+  TxtLinha l = txt_linha_corta(es, s, c, c, c, 255, maxW);
+  txt_desenhar_alpha(l, cx - l.w / 2.0f, y, a);
+  return l.h;
 }
 
-static float desenharLugar(int i, const JsMembro *p, int vazio, float f, float a) {
-  GfxRect c = { lugarX(i), lugarY(i), LUGAR_W, LUGAR_H };
-  float k = .85f / gfx_escala();
-  GfxRect av = { c.x + (LUGAR_W - 78 * k) / 2, c.y + 30 * k, 78 * k, 78 * k };
-  float cx = c.x + LUGAR_W / 2;
+// The seat's face: the profile avatar for this TV, the friend's avatar for others.
+static void rostoMembro(const JsMembro *p, const char **url, const char **nome) {
+  const JsMotor *m = juntos_motor();
+  *url = p->av; *nome = p->nome;
+  if (m && !strcmp(p->id, m->eu)) {
+    const ContaPerfil *c = perfis_item_ativo();
+    if (c && !p->av[0]) *url = c->avatarUrl;
+    if (c && !p->nome[0]) *nome = c->nome;
+  } else if (!p->av[0])
+    for (int i = 0; i < nAmigos; i++) if (!strcmp(amigoId[i], p->id)) *url = amigoAv[i];
+}
+
+// Lobby frame: the whole virtual screen minus the Detail gutter.
+#define SALA_MARGEM 96.0f
+static float lugarW = 248;   // shrinks only when five seats would not fit
+#define LUGAR_W lugarW
+#define LUGAR_H 262.0f
+#define LUGAR_GAP 24.0f
+#define LUGAR_AV 88.0f
+
+static void desenharLugar(int i, const JsMembro *p, int vazio, float f, float x, float y, float a) {
+  GfxRect c = { x, y, LUGAR_W, LUGAR_H };
+  GfxRect av = { x + (LUGAR_W - LUGAR_AV) / 2, y + 26, LUGAR_AV, LUGAR_AV };
+  float cx = x + LUGAR_W / 2, maxW = LUGAR_W - 24, ty = y + 134;
   float e = ajustes_animacoes_reduzidas_usuario() ? 1 : entradaItem(i);
-  float s = (.8f + .2f * lugarAnim[i]) * (1 + .06f * f + .035f * prontoPulso[i]);
+  float chega = lugarAnim[i];   // arrival: rises and grows into the row
+  float s = (.86f + .14f * chega) * (1 + .05f * f + .04f * prontoPulso[i]);
   char nome[160], st[120];
   const JsMotor *m = juntos_motor();
   int pronto = !vazio && p->on && (!strcmp(p->st, "pronto") || !strcmp(p->st, "tocando"));
-  if (vazio) {
-    snprintf(nome, sizeof nome, "%s", i18n("Mais um lugar"));
-    snprintf(st, sizeof st, "%s", i18n("Convide um amigo"));
-  } else {
-    if (m && !strcmp(p->id, m->eu)) snprintf(nome, sizeof nome, "%s%s%s", i18n("Você"), p->anf ? " · " : "", p->anf ? i18n("anfitrião") : "");
-    else snprintf(nome, sizeof nome, "%s", p->nome);
-    if (!strcmp(p->st, "carregando") && p->pct > 0) snprintf(st, sizeof st, "%s %d%%", estadoTexto(p), p->pct);
-    else snprintf(st, sizeof st, "%s", pronto ? i18n("pronto") : estadoTexto(p));
-  }
-  float nomeY = c.y + 122 * k, maxW = LUGAR_W - 12 * k;
-  float nomeH = textoCentro(TXT_ILHA_NOME, nome, cx, nomeY, 245, 0, maxW);
-  float estadoY = fmaxf(c.y + 160 * k, nomeY + nomeH + 4 * k);
-  float estadoH = textoCentro(TXT_CAPTION, st, cx, estadoY, 170, 0, maxW);
-  float statsY = estadoY + estadoH + 4 * k;
-  if (!vazio && p->on) {
-    char stats[128];
-    snprintf(stats, sizeof stats, p->stats ? "RTT %.0f ms · Δ %+.0f ms" : "RTT — · Δ —", p->rtt, p->offset);
-    float statsH = textoCentro(TXT_ILHA_META, stats, cx, statsY, 170, 0, maxW);
-    statsY += statsH + 3 * k;
-    const char *fonte = p->fonte[0] ? fonteTexto(p->fonte) : estadoTexto(p);
-    snprintf(stats, sizeof stats, p->altura ? "%s · %dp" : "%s", fonte, p->altura);
-    statsY += textoCentro(TXT_ILHA_META, stats, cx, statsY, 170, 0, maxW);
-  }
-  c.h = fmaxf(c.h, statsY - c.y + 12 * k);
-  a *= e * lugarAnim[i];
-  gfx_transformar(cx, c.y + c.h / 2, s, origemX, origemY - NV_FOCO_LIFT * f + (1 - e) * NV_ENTRA_DY);
-  // Mock: borderless dark seat cards over the hero art in both materials.
-  t21_ilha_solida(c, T21_R_SHEET * k, a);
-  plrui_linha_foco(c, T21_R_SHEET * k, f * a);
+  a *= e * chega;
+  if (a <= 0.01f) return;
+  gfx_transformar(cx, y + LUGAR_H / 2, s, origemX, origemY - NV_FOCO_LIFT * f + (1 - e) * NV_ENTRA_DY + (1 - chega) * 48);
+  t21_ilha_solida(c, T21_R_SHEET, a);
+  plrui_linha_foco(c, T21_R_SHEET, f * a);
   if (vazio) {
     float ink = f >= .5f ? ajustes_tinta_foco() / 255.0f : 1;
     plrui_material_plano(av, av.h / 2, a);
     plrui_pilula_foco(av, f * a);
-    gfx_icone((GfxRect){ av.x + 26 * k, av.y + 26 * k, 26 * k, 26 * k }, "aj_user-plus", ink, ink, ink, a);
-    textoCentro(TXT_ILHA_NOME, nome, cx, nomeY, 245, a, maxW);
-    textoCentro(TXT_CAPTION, st, cx, estadoY, 190, a, maxW);
-  } else {
-    rec_avatar(av, p->av, p->nome, p->id, p->on ? a : 0.4f * a);
-    textoCentro(TXT_ILHA_NOME, nome, cx, nomeY, 245, a, maxW);
-    if (pronto) {
-      float w = largura(TXT_CAPTION, st);
-      gfx_icone((GfxRect){ cx - (w + 30 * k) / 2, estadoY, 24 * k, 24 * k }, "aj_check", 0.55f, 0.92f, 0.65f, a);
-      texto(TXT_CAPTION, st, cx - (w + 30 * k) / 2 + 30 * k, estadoY, 200, a, 0);
-    } else textoCentro(TXT_CAPTION, st, cx, estadoY, 170, a, maxW);
+    gfx_icone((GfxRect){ av.x + 28, av.y + 28, 32, 32 }, "aj_user-plus", ink, ink, ink, a);
+    linhaCentro(TXT_ILHA_NOME, i18n("Mais um lugar"), cx, ty, 245, a, maxW);
+    linhaCentro(TXT_CAPTION, i18n("Convide um amigo"), cx, ty + 36, 190, a, maxW);
+    gfx_transformar(960, 540, 1, origemX, origemY);
+    return;
   }
-  if (!vazio && p->on) {
-    char stats[128];
-    float y = estadoY + estadoH + 4 * k;
-    snprintf(stats, sizeof stats, p->stats ? "RTT %.0f ms · Δ %+.0f ms" : "RTT — · Δ —", p->rtt, p->offset);
-    y += textoCentro(TXT_ILHA_META, stats, cx, y, 170, a, maxW) + 3 * k;
-    const char *fonte = p->fonte[0] ? fonteTexto(p->fonte) : estadoTexto(p);
-    snprintf(stats, sizeof stats, p->altura ? "%s · %dp" : "%s", fonte, p->altura);
-    textoCentro(TXT_ILHA_META, stats, cx, y, 170, a, maxW);
+  const char *url, *quem;
+  rostoMembro(p, &url, &quem);
+  rec_avatar(av, url, quem, p->id, p->on ? a : 0.4f * a);
+  GfxRect anel = { av.x - 8, av.y - 8, av.w + 16, av.h + 16 };
+  if (pronto) {
+    // Ready: a green ring settles in, one pulse leaves it, and a check badge.
+    gfx_anel(anel, .5f, 3, 0.55f, 0.92f, 0.65f, prontoAnim[i] * a);
+    gfx_anel_fora(anel, .5f, 4 + 26 * (1 - prontoPulso[i]), 3, 0.55f, 0.92f, 0.65f, prontoPulso[i] * a);
+    GfxRect selo = { av.x + av.w - 22, av.y + av.h - 22, 30, 30 };
+    gfx_cor(selo, .5f, 0.30f, 0.72f, 0.45f, prontoAnim[i] * a);
+    gfx_icone((GfxRect){ selo.x + 6, selo.y + 6, 18, 18 }, "aj_check", 1, 1, 1, prontoAnim[i] * a);
+  } else if (p->on) {
+    // Loading: progress ring from the buffer, a turning arc until it reports.
+    gfx_anel(anel, .5f, 3, 1, 1, 1, 0.12f * a);
+    if (p->pct > 0) gfx_arco(anel, 3, 0, fmaxf(.02f, anelAnim[i]), 0.62f, 0.78f, 1, a);
+    else gfx_arco(anel, 3, fmodf(agoraUlt / 1100.0f, 1), .22f, 0.62f, 0.78f, 1, a);
+  }
+  if (m && !strcmp(p->id, m->eu)) snprintf(nome, sizeof nome, "%s%s%s", i18n("Você"), p->anf ? " · " : "", p->anf ? i18n("anfitrião") : "");
+  else snprintf(nome, sizeof nome, "%s", quem);
+  if (!strcmp(p->st, "carregando") && p->pct > 0) snprintf(st, sizeof st, "%s %d%%", estadoTexto(p), p->pct);
+  else snprintf(st, sizeof st, "%s", pronto ? i18n("pronto") : estadoTexto(p));
+  linhaCentro(TXT_ILHA_NOME, nome, cx, ty, 245, a, maxW);
+  linhaCentro(TXT_CAPTION, st, cx, ty + 36, pronto ? 215 : 190, a, maxW);
+  // Sync stats only once measured; source verdict only once known.
+  char linha[128];
+  float ly = ty + 66;
+  if (p->on && p->stats) {
+    snprintf(linha, sizeof linha, "RTT %.0f ms · Δ %+.0f ms", p->rtt, p->offset);
+    ly += linhaCentro(TXT_ILHA_META, linha, cx, ly, 175, a, maxW) + 2;
+  }
+  if (p->on && p->fonte[0]) {
+    snprintf(linha, sizeof linha, p->altura ? "%s · %dp" : "%s", fonteTexto(p->fonte), p->altura);
+    if (largura(TXT_ILHA_META, linha) > maxW) snprintf(linha, sizeof linha, "%s", fonteTexto(p->fonte));
+    linhaCentro(TXT_ILHA_META, linha, cx, ly, 175, a, maxW);
   }
   gfx_transformar(960, 540, 1, origemX, origemY);
-  return c.y + c.h;
 }
 
 static int todosProntos(const JsMotor *m) {
@@ -879,15 +934,15 @@ static int todosProntos(const JsMotor *m) {
   return m->sala.n > 0;
 }
 
-static void cabecalhoSala(float a) {
-  char c[96];
-  float esquerda = salaX(80), direita = salaX(1840), y = salaY(54);
-  float k = .85f / gfx_escala();
-  gfx_icone((GfxRect){ esquerda, y, 36 * k, 36 * k }, "aj_users", 0.92f, 0.92f, 0.9f, a);
-  txt_tracking(TXT_V2_KICK, i18n("Assistir Juntos"), 245, 245, 245, esquerda + 56 * k, y + 6 * k, a, 2.5f);
-  snprintf(c, sizeof c, "%s", i18n("Velvet Cinema · Sala privada"));
-  gfx_cor((GfxRect){ direita - largura(TXT_ILHA_NOME, c) - 24, y + 14, 8, 8 }, 0.5f, 0.85f, 0.85f, 0.85f, a);
-  texto(TXT_ILHA_NOME, c, direita - largura(TXT_ILHA_NOME, c), y, 225, a, 0);
+static void cabecalhoSala(float esquerda, float direita, float y, float a) {
+  const char *c = i18n("Velvet Cinema · Sala privada");
+  float w = largura(TXT_ILHA_NOME, c);
+  gfx_icone((GfxRect){ esquerda, y, 36, 36 }, "aj_users", 0.92f, 0.92f, 0.9f, a);
+  txt_tracking(TXT_V2_KICK, i18n("Assistir Juntos"), 245, 245, 245, esquerda + 56, y + 6, a, 2.5f);
+  // Live dot: breathes while the room is open.
+  float viva = ajustes_animacoes_reduzidas_usuario() ? 1 : .55f + .45f * sinf(agoraUlt / 420.0f);
+  gfx_cor((GfxRect){ direita - w - 24, y + 12, 10, 10 }, 0.5f, 0.45f, 0.9f, 0.6f, viva * a);
+  texto(TXT_ILHA_NOME, c, direita - w, y, 225, a, 0);
 }
 
 // Remote members expose a verdict, not their private stream metadata.
@@ -994,115 +1049,129 @@ static void desenharFontes(void) {
                i18n("Voltar à sala"), "aj_users", focoDe(0), 1, 0, a);
 }
 
+// Invite panel, sliding in from the right over the dimmed lobby: room code,
+// QR for the phone (or progress while the room opens) and the friends list.
+static void desenharConvite(float R, float topo, float fim, float a) {
+  const JsMotor *m = juntos_motor();
+  float w = 600, x = R - w + (1 - anim_suave(convAnim)) * 80, y = topo, h = fim - topo;
+  float rx = x + 292, rw = w - 292 - 40, lado = 200;
+  char c[64];
+  a *= anim_suave(convAnim);
+  if (a <= 0.01f) return;
+  gfx_cor(telaReal(), 0, 0.02f, 0.02f, 0.03f, 0.45f * a);
+  t21_ilha_solida((GfxRect){ x, y, w, h }, T21_R_SHEET, a);
+  texto(TXT_CAPTION, i18n("Convidar"), x + 40, y + 32, 200, a, w - 80);
+  GfxRect q = { x + 54, y + 94, lado, lado };
+  GLuint t = qrTextura(juntos_url_celular());
+  if (t) {
+    gfx_cor((GfxRect){ q.x - 14, q.y - 14, q.w + 28, q.h + 28 }, 0.06f, 1, 1, 1, a);
+    gfx_rect(q, t, GFX_SNAP, 0, 0, 0, 0, 1, 1, 1, a);
+  } else {
+    // Room still opening (source preparing) or code on its way: say so.
+    GfxRect anel = { q.x + lado / 2 - 36, q.y + lado / 2 - 36, 72, 72 };
+    gfx_cor((GfxRect){ q.x - 14, q.y - 14, q.w + 28, q.h + 28 }, 0.06f, 1, 1, 1, 0.06f * a);
+    gfx_anel(anel, .5f, 4, 1, 1, 1, 0.12f * a);
+    gfx_arco(anel, 4, fmodf(agoraUlt / 1100.0f, 1), .25f, 0.62f, 0.78f, 1, a);
+  }
+  texto(TXT_CAPTION, i18n("Código da sala"), rx, y + 96, 190, a, rw);
+  if (juntos_codigo()[0]) {
+    snprintf(c, sizeof c, "%.3s-%s", juntos_codigo(), juntos_codigo() + 3);
+    texto(TXT_ILHA_TITULO, c, rx, y + 128, 250, a, rw);
+  } else texto(TXT_ILHA_NOME, i18n("Preparando o código…"), rx, y + 134, 215, a, rw);
+  txt_bloco_corta(TXT_ILHA_META, i18n("Escaneie com o celular para mandar mensagens e controlar a sessão."),
+                  185, 185, 185, rx, y + 196, rw, 26, a, 4);
+  float ly = y + 340;
+  texto(TXT_ILHA_CORPO, nAmigos ? i18n("Quem vai assistir com você") : i18n("Nenhum amigo ainda. Quem tiver o código entra pedindo."),
+        x + 40, ly, 190, a, w - 80);
+  ly += 46;
+  GfxRecorteAnt fora = gfx_recorte_dentro(x, ly - 8, w, y + h - 16 - (ly - 8));
+  ly -= fmaxf(0, focoConv - 2) * 72;
+  for (int i = 0; i < nAmigos; i++, ly += 72) {
+    GfxRect l = { x + 24, ly, w - 48, 64 };
+    int dentro = 0;
+    for (int j = 0; m && j < m->sala.n; j++) dentro |= !strcmp(m->sala.m[j].id, amigoId[i]);
+    plrui_linha_foco(l, T21_R_ROW, convFoco[i] * a);
+    rec_avatar((GfxRect){ l.x + 16, l.y + 10, 44, 44 }, amigoAv[i], amigoNome[i], amigoId[i], a);
+    texto(TXT_ILHA_NOME, amigoNome[i], l.x + 76, l.y + 16, 245, a, l.w - 150);
+    gfx_icone((GfxRect){ l.x + l.w - 52, l.y + 16, 32, 32 }, dentro || marcado[i] ? "aj_circle-check" : "aj_user-plus",
+              dentro ? 0.55f : 1, dentro ? 0.92f : 1, dentro ? 0.65f : 1, marcado[i] || dentro ? a : .6f * a);
+  }
+  gfx_recorte_voltar(fora);
+}
+
 static void desenharSala(void) {
   const JsMotor *m = juntos_motor();
-  float k = .85f / gfx_escala();
-  float esquerda = salaX(160), direita = salaX(1760);
-  GfxRect tela = { salaX(360), salaY(144), 1200 * k, 456 * k };
-  float textoX = esquerda, total = 0, fimAcoes = salaY(905), statusY = salaY(806);
-  float larguras[BT_N], altura = BOTAO_H_PRIMARIO * k;
-  float textoY = tela.y;
-  float a = 1;
-  int i, b[BT_N], n = botoesSala(b) - 1, nm, vazio;
+  GfxRect tela = telaReal();
+  float L = tela.x + SALA_MARGEM, R = tela.x + tela.w - SALA_MARGEM, T = tela.y, B = tela.y + tela.h;
+  float acoesY = B - 150, statusY = acoesY - 66, lugarY = statusY - 30 - LUGAR_H;
+  float larguras[BT_N], total = 0, a = 1, convFundo = 1 - .35f * anim_suave(convAnim);
+  int i, b[BT_N], n = botoesSala(b) - 1, nm;
   char linha[200];
   if (!m) return;
   nm = m->sala.n < 5 ? m->sala.n : 5;
-  vazio = nm < 5;
-  gfx_cor(telaReal(), 0, 0.06f, 0.055f, 0.08f, a);
-  telaCinema(tela, 0.7f, a);
-  cabecalhoSala(a);
+  lugarW = fminf(248, (R - L - 4 * LUGAR_GAP) / 5);
+  telaCinema(tela, a);
+  a *= convFundo;
+  cabecalhoSala(L, R, T + 54, a * entradaItem(0));
   float codigoW = botao_largura(rotuloBotao(BT_CODIGO), iconeBotao(BT_CODIGO), 0);
-  botao_pilula((GfxRect){ direita - codigoW, salaY(104), codigoW, BOTAO_H_SECUNDARIO * k },
-               rotuloBotao(BT_CODIGO), iconeBotao(BT_CODIGO), focoDe(n), 0, 0, a);
-  snprintf(linha, sizeof linha, i18n("Sua sessão privada · %d de %d lugares"), nm, 5);
-  texto(TXT_CAPTION, linha, textoX, textoY + 56 * k, 235, a, tela.w - 96 * k);
-  txt_bloco_corta(TXT_ILHA_TITULO, i18n("Os melhores lugares são juntos"), 250, 250, 250, textoX, textoY + 92 * k, 460, 52, a, 2);
-  texto(TXT_ILHA_NOME, m->temSala && m->sala.titulo[0] ? m->sala.titulo : juntos_titulo(), textoX, textoY + fmaxf(214 * k, 92 * k + 104 + 16), 235, a, 900 * k);
-  if (mostrarQr) {
-    float lado = 220 * k;
-    GfxRect q = { fminf(tela.x + tela.w - 48, direita) - lado, textoY + 56, lado, lado };
-    GLuint t = qrTextura(juntos_url_celular());
-    gfx_cor((GfxRect){ q.x - 12, q.y - 12, q.w + 24, q.h + 24 }, 0.06f, 1, 1, 1, a);
-    if (t) gfx_rect(q, t, GFX_SNAP, 0, 0, 0, 0, 1, 1, 1, a);
-    if (juntos_codigo()[0]) {
-      char c[64];
-      snprintf(c, sizeof c, i18n("Código %.3s-%s"), juntos_codigo(), juntos_codigo() + 3);
-      texto(TXT_ILHA_NOME, c, q.x + (q.w - largura(TXT_ILHA_NOME, c)) / 2, q.y + q.h + 24, 245, a, 0);
-    }
+  botao_pilula((GfxRect){ R - codigoW, T + 104, codigoW, BOTAO_H_SECUNDARIO },
+               rotuloBotao(BT_CODIGO), iconeBotao(BT_CODIGO), focoDe(n), 0, 0, a * entradaItem(1));
+  // Hero block like Detail: kicker, headline, then the film's logo (or title).
+  {
+    float e = entradaItem(1), dy = (1 - e) * NV_ENTRA_DY, logoH = 150, logoY = lugarY - 56 - logoH;
+    snprintf(linha, sizeof linha, i18n("Sua sessão privada · %d de %d lugares"), nm, 5);
+    texto(TXT_CAPTION, linha, L, logoY - 112 + dy, 225, a * e, 900);
+    texto(TXT_ILHA_TITULO, i18n("Os melhores lugares são juntos"), L, logoY - 76 + dy, 250, a * e, 1000);
+    const char *tit = m->sala.titulo[0] ? m->sala.titulo : juntos_titulo();
+    logotitulo_desenhar(itemSala(), tit, TXT_TITULO1, L, logoY + dy, 620, logoH, 1000, a * e);
   }
   for (i = 0; i < 5; i++) {
-    float fim = 0;
-    if (i < nm) fim = desenharLugar(i, &m->sala.m[i], 0, 0, a);
-    else if (i == nm) fim = desenharLugar(i, NULL, 1, focoDe(-1), a);
-    statusY = fmaxf(statusY, fim + 12 * k);
+    float x = L + i * (LUGAR_W + LUGAR_GAP);
+    if (i < nm) desenharLugar(i, &m->sala.m[i], 0, 0, x, lugarY, a);
+    else if (i == nm) desenharLugar(i, NULL, 1, focoDe(-1), x, lugarY, a);
   }
   {
-    int pr = !mostrarQr && todosProntos(m);
-    const char *s = mostrarQr ? i18n("Escaneie com o celular para mandar mensagens e controlar a sessão.")
-        : pr ? i18n("Todos prontos. O filme está preparado em cada TV.") : i18n("Esperando os outros ficarem prontos");
-    char resumo[300];
-    int prontos = 0;
+    int pr = todosProntos(m), prontos = 0;
     for (int j = 0; j < m->sala.n; j++) if (m->sala.m[j].on &&
         (!strcmp(m->sala.m[j].st, "pronto") || !strcmp(m->sala.m[j].st, "tocando"))) prontos++;
-    snprintf(resumo, sizeof resumo, "%s · %d/%d", s, prontos, m->sala.n);
-    s = resumo;
-    float w = largura(TXT_ILHA_NOME, s) + (pr ? 48 : 0), x = 960 - w / 2;
-    float y = statusY;
-    if (pr) gfx_icone((GfxRect){ x, y, 36, 36 }, "aj_circle-check", 0.55f, 0.92f, 0.65f, a);
-    texto(TXT_ILHA_NOME, s, x + (pr ? 48 : 0), y, 235, a, NV_VTELA_W - 160);
+    snprintf(linha, sizeof linha, "%s · %d/%d", pr ? i18n("Todos prontos. O filme está preparado em cada TV.")
+             : i18n("Esperando os outros ficarem prontos"), prontos, m->sala.n);
+    GfxRect ic = { L, statusY, 32, 32 };
+    if (pr) gfx_icone(ic, "aj_circle-check", 0.55f, 0.92f, 0.65f, a);
+    else { gfx_anel(ic, .5f, 3, 1, 1, 1, 0.15f * a); gfx_arco(ic, 3, fmodf(agoraUlt / 1100.0f, 1), .25f, 0.62f, 0.78f, 1, a); }
+    texto(TXT_ILHA_NOME, linha, L + 48, statusY, 235, a * entradaItem(2), R - L - 48);
   }
   for (i = 0; i < n; i++) {
-    // Keep the mock row with scaled labels and compact physical padding.
-    larguras[i] = largura(TXT_DET_BOTAO, rotuloBotao(b[i])) + BOTAO_ICONE + BOTAO_ICONE_GAP + 24 * k;
+    larguras[i] = botao_largura(rotuloBotao(b[i]), iconeBotao(b[i]), b[i] == BT_COMECAR && todosProntos(m));
     total += larguras[i] + (i ? BOTAO_GAP : 0);
   }
-#ifdef NV_SHOT_HOOKS
-  if (gfx_escala_txt() <= 1 && !strcmp(i18n("Você"), "Você")) assert(total <= direita - esquerda);
-#endif
-  if (total > direita - esquerda) {
-    float x = esquerda, y = statusY + 32 + BOTAO_GAP / 2;
-#ifdef NV_SHOT_HOOKS
-    TxtLinha status = txt_linha(TXT_ILHA_NOME, i18n("Esperando os outros ficarem prontos"), 235, 235, 235, 255);
-    assert(y >= statusY + status.h + BOTAO_GAP / 2);
-#endif
+  // Actions row, anchored like Detail's: main group left, session group right.
+  {
+    float xe = L, xd = R, y = acoesY;
+    int quebra = total > R - L;
     for (i = 0; i < n; i++) {
-      int prim = b[i] == BT_COMECAR && todosProntos(m);
-      float w = larguras[i];
-      float h = (prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO) * k;
-      if (x + w > direita) { x = esquerda; y += altura + BOTAO_GAP / 2; }
-      botao_pilula((GfxRect){ x, y + (altura - h) / 2, w, h }, rotuloBotao(b[i]), iconeBotao(b[i]),
-                   focoDe(i), prim, 0, a * entradaItem(i) * (b[i] == BT_FILME && !m->temSala ? .4f : 1));
-      fimAcoes = fmaxf(fimAcoes, y + altura);
-      x += w + BOTAO_GAP;
-    }
-  } else {
-    float xe = esquerda, xd = direita;
-    fimAcoes += altura;
-    for (i = 0; i < n; i++) {
-      int prim = b[i] == BT_COMECAR && todosProntos(m), esq = b[i] <= BT_FONTES;
+      int prim = b[i] == BT_COMECAR && todosProntos(m), esq = quebra || b[i] <= BT_FONTES;
       if (!esq) continue;
-      float w = larguras[i], h = (prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO) * k;
-      botao_pilula((GfxRect){ xe, salaY(905) + (altura - h) / 2, w, h }, rotuloBotao(b[i]), iconeBotao(b[i]),
-                   focoDe(i), prim, 0, a * entradaItem(i) * (b[i] == BT_FILME && !m->temSala ? .4f : 1));
-      xe += w + BOTAO_GAP;
+      float h = prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
+      if (xe + larguras[i] > R) { xe = L; y += BOTAO_H_PRIMARIO + BOTAO_GAP / 2; }
+      GfxRect r = { xe, y + (BOTAO_H_PRIMARIO - h) / 2, larguras[i], h };
+      // All ready: the start button breathes until pressed.
+      if (prim && !ajustes_animacoes_reduzidas_usuario())
+        gfx_anel_fora(r, .5f, 4 + 6 * (.5f + .5f * sinf(agoraUlt / 380.0f)), 2, 0.55f, 0.92f, 0.65f, .45f * a);
+      botao_pilula(r, rotuloBotao(b[i]), iconeBotao(b[i]), focoDe(i), prim, 0,
+                   a * entradaItem(i + 2) * (b[i] == BT_FILME && !m->temSala ? .4f : 1));
+      xe += larguras[i] + BOTAO_GAP;
     }
-    for (i = n - 1; i >= 0; i--) {
-      float w;
+    for (i = n - 1; !quebra && i >= 0; i--) {
       if (b[i] <= BT_FONTES) continue;
-      w = larguras[i];
-      xd -= w;
-      botao_pilula((GfxRect){ xd, salaY(905) + (altura - BOTAO_H_SECUNDARIO * k) / 2, w, BOTAO_H_SECUNDARIO * k },
-                   rotuloBotao(b[i]), iconeBotao(b[i]), focoDe(i), 0, 0, a * entradaItem(i));
+      xd -= larguras[i];
+      botao_pilula((GfxRect){ xd, acoesY + (BOTAO_H_PRIMARIO - BOTAO_H_SECUNDARIO) / 2, larguras[i], BOTAO_H_SECUNDARIO },
+                   rotuloBotao(b[i]), iconeBotao(b[i]), focoDe(i), 0, 0, a * entradaItem(i + 2));
       xd -= BOTAO_GAP;
     }
   }
-  const char *dicas = i18n("Setas para mover · OK para escolher · Voltar para retornar");
-  float dicasY = fmaxf(salaY(1010), fimAcoes + BOTAO_GAP / 2);
-#ifdef NV_SHOT_HOOKS
-  TxtLinha rodape = txt_linha(TXT_CAPTION, dicas, 170, 170, 170, 255);
-  assert((dicasY + origemY + rodape.h) * gfx_escala() <= NV_LAYOUT_REAL_H);
-#endif
-  texto(TXT_CAPTION, dicas, salaX(80), dicasY, 170, a, salaX(1840) - salaX(80));
+  texto(TXT_CAPTION, i18n("Setas para mover · OK para escolher · Voltar para retornar"), L, B - 64, 170, a, R - L);
+  desenharConvite(R, T + 180, acoesY - 24, 1);
 }
 
 static void desenharPergunta(const char *titulo, const char *corpo, const char *rostoUrl, const char *rostoNome,
@@ -1207,15 +1276,13 @@ static int contagemRestante(void) {
 
 static void desenharContagem(int num) {
   const JsMotor *m = juntos_motor();
-  GfxRect tela = { 220, 110, 1480, 820 };
   char n[8];
   int i, nm;
   float x0;
   if (!m) return;
   nm = m->sala.n < 5 ? m->sala.n : 5;
-  gfx_cor(telaReal(), 0, 0.04f, 0.035f, 0.06f, 0.72f);
-  (void)tela;
-  gfx_cor(tela, 0, 0.04f, 0.035f, 0.06f, 0.45f);
+  telaCinema(telaReal(), 1);   // lights out: only the film behind the count
+  gfx_cor(telaReal(), 0, 0.03f, 0.03f, 0.05f, 0.55f);
   textoCentro(TXT_CAPTION, i18n("Começando juntos"), 960, 190, 235, 1, 1200);
   textoCentro(TXT_ILHA_TITULO, i18n("As luzes se apagam. Juntos."), 960, 236, 250, 1, 1300);
   snprintf(n, sizeof n, "%d", num);
@@ -1225,12 +1292,14 @@ static void desenharContagem(int num) {
   x0 = 960 - nm * 92.0f / 2;
   for (i = 0; i < nm; i++) {
     const JsMembro *p = &m->sala.m[i];
-    GfxRect av = { x0 + i * 92.0f + 7, 610, 78, 78 };
-    rec_avatar(av, p->av, p->nome, p->id, 1);
+    const char *url, *quem;
+    GfxRect av = { x0 + i * 92.0f + 7, 640, 78, 78 };
+    rostoMembro(p, &url, &quem);
+    rec_avatar(av, url, quem, p->id, 1);
+    // The ring closes with the count: 3, 2, 1, lights out.
+    gfx_arco((GfxRect){ av.x - 6, av.y - 6, av.w + 12, av.h + 12 }, 3, 0, (4 - num - 1 + contagemAnim) / 3.0f, 0.55f, 0.92f, 0.65f, 1);
   }
-  textoCentro(TXT_ILHA_NOME, i18n("Começando juntos"), 960, 730,
-              230, 1, 1200);
-  textoCentro(TXT_CAPTION, m->temSala && m->sala.titulo[0] ? m->sala.titulo : juntos_titulo(), 960, 776, 190, 1, 1200);
+  textoCentro(TXT_ILHA_NOME, m->sala.titulo[0] ? m->sala.titulo : juntos_titulo(), 960, 760, 230, 1, 1200);
 }
 
 static int camadaCorpo(Camada c) {
@@ -1310,10 +1379,11 @@ void juntosui_desenhar(Uint32 agora) {
   gfx_opacidade_grupo *= anim_suave(entrada);
   int folha = camadaVisual != CAMADA_SALA && camadaVisual != CAMADA_FONTES && camadaVisual != CAMADA_REACOES;
   if (folha) gfx_transformar(960, 540, T21_SHEET_SCALE + (1 - T21_SHEET_SCALE) * anim_suave(entrada), origemX, origemY);
-  if (camadaVisual == CAMADA_SALA) desenharSala();
+  int contagem = juntos_ativo() ? contagemRestante() : 0;
+  if (camadaVisual == CAMADA_SALA && !contagem) desenharSala();
   gfx_transformar(960, 540, 1, origemX, origemY);
   gfx_opacidade_grupo = opacidade;
-  { int c = juntos_ativo() ? contagemRestante() : 0; if (c) desenharContagem(c); }
+  if (contagem) desenharContagem(contagem);
   gfx_sem_transformar();
   gfx_escala_sair(esc);
 }
