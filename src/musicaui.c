@@ -22,6 +22,8 @@ static struct {
   char imdb[16], titulo[128], qrUrl[512];
   int aberta, temp, ano, foco, guardado, suporta, pendente, som, erro, volumePronto;
   Uint32 entrada, mudou, toast, agora;
+  unsigned previaPedido;
+  int atualizada, retentou, indisponivel[MUS_FAIXAS_MAX];
   GLuint qr;
   float focoLinha[MUS_POR_PAGINA];
 } ui;
@@ -46,7 +48,7 @@ static int suporta(void) {
 static int ocupado(void) { return player_aberto() || player_retido() || player_mini_ativo(); }
 static void parar(void) {
   if (ui.p.ativa && !ui.pendente && !ocupado()) { video_parar(); video_volume(ui.som ? 100 : 0); }
-  mus_previa_parar(&ui.p); ui.pendente = 0;
+  mus_previa_parar(&ui.p); ui.pendente = 0; ui.previaPedido = 0;
   if (ui.foco == 4) ui.foco = ui.suporta ? 1 : 3;
 }
 void musicaui_fechar(void) {
@@ -79,7 +81,7 @@ static void tocar(int faixa, int shuffle) {
   if (ocupado() || (!trailer_aberto() && video_ativo())) { ui.erro = 1; ui.toast = SDL_GetTicks(); return; }
   if (trailer_aberto()) { ui.som = trailer_com_som(); trailer_fechar(); }
   int k = mus_previa_iniciar(&ui.p, &ui.a, faixa, shuffle, SDL_GetTicks(), SDL_GetTicks(), 0);
-  if (k >= 0) { ui.pendente = 1; ui.mudou = SDL_GetTicks(); ui.foco = 5 + k; }
+  if (k >= 0) { ui.atualizada = ui.retentou = 0; ui.indisponivel[k] = 0; ui.pendente = 1; ui.mudou = SDL_GetTicks(); ui.foco = 5 + k; }
 }
 void musicaui_evento(const SDL_Event *e) {
   if (!ui.aberta || e->type != SDL_KEYDOWN) return;
@@ -133,9 +135,23 @@ void musicaui_atualizar(Uint32 agora) {
         if (agora - ui.p.desde > 2000u) parar();
         return;
       }
-      video_definir_cabecalhos("");
+      // Deezer album metadata can outlive signed CDN URLs by weeks.
+      if (strstr(ui.a.faixa[ui.p.faixa].previa, ".dzcdn.net/") && !ui.atualizada) {
+        if (!ui.previaPedido) ui.previaPedido = mus_previa_pedir(&ui.a, ui.p.faixa);
+        char url[768];
+        int estado = ui.previaPedido ? mus_previa_resultado(ui.previaPedido, url, sizeof url) : -1;
+        if (estado == 1 && ui.retentou && !strcmp(url, ui.a.faixa[ui.p.faixa].previa)) estado = -1;
+        if (!estado) return;
+        ui.previaPedido = 0;
+        if (estado < 0) { ui.indisponivel[ui.p.faixa] = 1; parar(); return; }
+        snprintf(ui.a.faixa[ui.p.faixa].previa, sizeof ui.a.faixa[0].previa, "%s", url);
+        ui.atualizada = 1;
+      }
+      video_definir_cabecalhos(strstr(ui.a.faixa[ui.p.faixa].previa, ".dzcdn.net/") ?
+          "User-Agent: Mozilla/5.0\nReferer: https://www.deezer.com/" : "");
       video_definir_mp4(1); video_definir_modo_live(2);
       if (!video_tocar(ui.a.faixa[ui.p.faixa].previa)) {
+        ui.indisponivel[ui.p.faixa] = 1;
         video_parar(); video_volume(ui.som ? 100 : 0); parar(); return;
       }
       video_volume(100); ui.volumePronto = 0; ui.pendente = 0; ui.p.desde = agora;
@@ -145,11 +161,18 @@ void musicaui_atualizar(Uint32 agora) {
         video_volume(100); ui.volumePronto = 1;
       }
       int old = ui.p.faixa;
+      if (video_falhou()) {
+        if (!ui.retentou && strstr(ui.a.faixa[old].previa, ".dzcdn.net/")) {
+          video_parar(); ui.retentou = 1; ui.atualizada = 0;
+          ui.pendente = 1; ui.p.desde = agora; return;
+        }
+        ui.indisponivel[old] = 1;
+      }
       int next = mus_previa_passo(&ui.p, agora, video_pos(), video_tocando() || video_pronto() || video_pos() > 0,
                                   video_falhou() ? MUS_PREV_ERRO : video_terminou() ? MUS_PREV_FIM : MUS_PREV_CONTINUA);
       if (next != old) {
         video_parar(); video_volume(ui.som ? 100 : 0);
-        if (next >= 0) { ui.pendente = 1; ui.foco = 5 + next; ui.mudou = agora; }
+        if (next >= 0) { ui.atualizada = ui.retentou = 0; ui.pendente = 1; ui.foco = 5 + next; ui.mudou = agora; }
         else if (ui.foco == 4) ui.foco = ui.suporta ? 1 : 3;
       }
     }
@@ -318,7 +341,7 @@ void musicaui_desenhar(Uint32 agora) {
     int acc = playing && f < .5f;
     txt_desenhar_tom(title,x+82,y+1,acc?ar:tom,acc?ag:tom,acc?ab:tom,header);
     rotulo(TXT_G18R,ui.a.faixa[k].artista,x+82,y+33,w-322,tom,.8f*header,0);
-    const char *tag = ui.suporta && ui.a.faixa[k].previa[0] ? "30 s" : i18n("Indisponível");
+    const char *tag = ui.suporta && ui.a.faixa[k].previa[0] && !ui.indisponivel[k] ? "30 s" : i18n("Indisponível");
     rotulo(TXT_G18R,tag,R-94,y+19,200,tom,.8f,1);
     snprintf(buf,sizeof buf,"%d:%02d",ui.a.faixa[k].dur/60,ui.a.faixa[k].dur%60);
     rotulo(TXT_G20M,buf,R-20,y+18,80,tom,.9f,1);
