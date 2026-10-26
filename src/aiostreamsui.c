@@ -43,7 +43,7 @@ static int aberto, pagina, foco, lateral, hostIdx, indice = -1, entrada, pendent
 static Uint32 proximaConsulta;
 static int saindo, paginaAnterior=-1, regraVisivel=-1, evidenciaVisivel;
 static float abertura, corpo=1, entradaTempo, scrollFoco, scrollVel;
-static float focoAnim[2][AIO_MAX+40];
+static float focoAnim[2][AIO_DETAIL_MAX+40];
 static float listaPos, deslocamento, addonsFoco[168], addonsScroll, addonsVel;
 static Uint32 addonsTick;
 static float janela(int manter,int total,int visiveis,int ativo) {
@@ -52,7 +52,7 @@ static float janela(int manter,int total,int visiveis,int ativo) {
 // Row at r slots from the window top fades in/out across one slot, so a fractional offset never pops.
 static float rolaAlfa(float r,int vis) { return anim_clamp(r+1,0,1)*anim_clamp(vis-r,0,1); }
 static float focoDe(int i,int nav) {
-  return i>=0 && i<AIO_MAX+40 ? focoAnim[nav!=0][i] : 0;
+  return i>=0 && i<AIO_DETAIL_MAX+40 ? focoAnim[nav!=0][i] : 0;
 }
 static int regraSelecionada=-1, evidenciaSelecionada;
 static void movimento(float dt) {
@@ -70,7 +70,7 @@ static void movimento(float dt) {
   }
   entradaTempo+=dt;
   scrollFoco=anim_mola2(&scrollVel,scrollFoco,lateral?0:foco,dt,NV_MOLA2_SCROLL);
-  for(int nav=0;nav<2;nav++) for(int i=0;i<AIO_MAX+40;i++) {
+  for(int nav=0;nav<2;nav++) for(int i=0;i<AIO_DETAIL_MAX+40;i++) {
     float target=!saindo && lateral==nav && foco==i;
     focoAnim[nav][i]=anim_mola(focoAnim[nav][i],target,dt,
       target>focoAnim[nav][i]?NV_MOLA_FOCO:NV_MOLA_DESFOCO);
@@ -89,10 +89,11 @@ void aioui_arte(const char *dir) {
 static char usuario[96], base[2048], host[256], alvo[128], tipo[32], mensagem[256];
 static char configure[320];
 static AioSnapshot snap;
+static const char *const gruposNome[]={"Resolução e qualidade","Tamanho e bitrate","Idiomas","Cache e tipos de fonte","Semeadores","Regex e palavras-chave","Ordenação","Formatador","Proxy","Serviços e preferências"};
 static int regraPertence(const AioRegra *r) {
-  static const int grupos[]={0,1,2,3,3,4,5,6,7};
+  static const int grupos[]={0,1,2,3,3,4,5,6,7,8};
   int seed=strstr(r->nome,"Seeder")!=NULL || strstr(r->nome,"seeder")!=NULL;
-  return regraSelecionada>=0 && regraSelecionada<9 && r->grupo==grupos[regraSelecionada] &&
+  return regraSelecionada>=0 && regraSelecionada<10 && r->grupo==grupos[regraSelecionada] &&
     (r->grupo!=3 || seed==(regraSelecionada==4));
 }
 static int conectada(void) { return snap.configurada && !soManifesto; }
@@ -116,7 +117,7 @@ static void qrAtual(void) {
   snprintf(configure,sizeof configure,"%s/stremio/configure",host);
 }
 static void buscar(AioSnapshot *s, const char *u, const char *auth, int k, char **corpo) {
-  RedeResposta r = {0}; const char *h[] = {"User-Agent: AIO-NuvioLegacy",auth,NULL};
+  RedeResposta r = {0}; const char *h[] = {"User-Agent: AIO-NuvioLegacy","Cache-Control: no-cache, no-store",auth,NULL};
   RedePedido p = {.url=u,.cabecalhos=h,.prazo_ms=12000,.max_bytes=1024*1024,.seguir=0};
   rede_pedir(&p,&r); s->http[k]=r.status; s->ms[k]=(int)r.ms; s->retry[k]=r.retry_after_s;
   if(r.erro==REDE_OK && r.status>=200 && r.status<300) { *corpo=r.corpo; r.corpo=NULL; }
@@ -269,7 +270,7 @@ static int nConteudo(void) {
   if(pagina==LINKS) return snap.links+3;
   if(pagina==FILTROS) {
     if(regraSelecionada>=0) { int n=1; for(int i=0;i<snap.detalhes;i++) if(regraPertence(&snap.detalhe[i])) n++; return n; }
-    return 8;
+    return 10;
   }
   if(pagina==TITULO) return (evidenciaSelecionada?snap.evidencias:snap.resultados)+3;
   return 2;
@@ -332,8 +333,8 @@ static void acao(void) {
     else if(foco==n+2) campo(2);
     else mudar(SERVICOS);
   } else if(pagina==FILTROS) {
-    if(regraSelecionada<0 && (foco<6 || foco==7)) { regraSelecionada=foco==7?8:foco; foco=0; }
-    else mudar(SERVICOS);
+    if(regraSelecionada<0 && foco<10) { regraSelecionada=foco; foco=0; }
+    else if(foco==nConteudo()-1) mudar(SERVICOS);
   } else if(pagina==LINKS) {
     if(foco<snap.links) {
       int k=0;
@@ -367,7 +368,7 @@ void aioui_evento(const SDL_Event *e) {
   SDL_Keycode k=e->key.keysym.sym;
   if(nv_tecla_voltar(e)) {
     if(entrada==3 || linkSelecionado>=0) { celular_fechar(); entrada=0; linkSelecionado=-1; return; }
-    if(pagina==FILTROS && regraSelecionada>=0) { foco=regraSelecionada==8?7:regraSelecionada; regraSelecionada=-1; return; }
+    if(pagina==FILTROS && regraSelecionada>=0) { foco=regraSelecionada; regraSelecionada=-1; return; }
     if(pagina==SEM || pagina==PAINEL) fechar();
     else mudar(snap.valida?PAINEL:SEM);
     return;
@@ -386,6 +387,18 @@ void aioui_evento(const SDL_Event *e) {
     } else if(foco==6) { if(up) foco=4; else if(dn) foco=7; else if(lf) { lateral=1; foco=0; } }
     else if(foco<10) { if(up) foco=6; else if(rt && foco<9) foco++; else if(lf && foco>7) foco--; else if(lf) { lateral=1; foco=0; } }
     else if(dn) foco=1; else if(lf) { lateral=1; foco=0; }
+    return;
+  }
+  if(pagina==FILTROS && regraSelecionada<0 && !lateral &&
+      (k==SDLK_UP || k==SDLK_DOWN || k==SDLK_LEFT || k==SDLK_RIGHT)) {
+    if(foco<10) {
+      if(k==SDLK_UP && foco>=2) foco-=2;
+      else if(k==SDLK_DOWN) foco=foco<8?foco+2:10;
+      else if(k==SDLK_RIGHT) { if(!(foco%2)) foco++; }
+      else if(k==SDLK_LEFT) { if(foco%2) foco--; else { lateral=1; foco=5; } }
+    } else if(k==SDLK_UP) foco=8;
+    else if(k==SDLK_RIGHT) foco=11;
+    else if(k==SDLK_LEFT) { if(foco==11) foco=10; else { lateral=1; foco=5; } }
     return;
   }
   if(pagina==INSTANCIA && (k==SDLK_UP || k==SDLK_DOWN)) {
@@ -676,22 +689,24 @@ static void setup(void) {
   }
 }
 static const char *valorRegra(const char *value) {
-  static char result[768]; result[0]=0;
-  char copy[256]; snprintf(copy,sizeof copy,"%s",value);
-  char *save=NULL;
-  for(char *p=strtok_r(copy,",",&save);p;p=strtok_r(NULL,",",&save)) {
-    while(*p==' ') p++;
-    const char *label=!strcmp(p,"true")?i18n("Sim"):!strcmp(p,"false")?i18n("Não"):!strcmp(p,"Portuguese")?i18n("Português"):!strcmp(p,"English")?i18n("Inglês"):!strcmp(p,"cached")?i18n("Em cache"):!strcmp(p,"uncached")?i18n("Fora do cache"):!strcmp(p,"resolution")?i18n("Resolução"):!strcmp(p,"size")?i18n("Tamanho"):!strcmp(p,"language")?i18n("Idiomas"):p;
-    size_t n=strlen(result); snprintf(result+n,sizeof result-n,"%s%s",n?", ":"",label);
-  }
-  return result;
+  // Translate complete values only: splitting regexes/keywords on commas changes their meaning.
+  if(!strcmp(value,"true")) return i18n("Sim");
+  if(!strcmp(value,"false")) return i18n("Não");
+  if(!strcmp(value,"Portuguese")) return i18n("Português");
+  if(!strcmp(value,"English")) return i18n("Inglês");
+  if(!strcmp(value,"cached")) return i18n("Em cache");
+  if(!strcmp(value,"uncached")) return i18n("Fora do cache");
+  if(!strcmp(value,"resolution")) return i18n("Resolução");
+  if(!strcmp(value,"size")) return i18n("Tamanho");
+  if(!strcmp(value,"language")) return i18n("Idiomas");
+  return value;
 }
 static const char *regraNome(const AioRegra *r) {
   static char name[192]; const char *s=r->nome, *mode="";
   const char *prefix[]={"required","included","excluded","preferred"};
   const char *labels[]={"Obrigatório","Incluído","Excluído","Preferido"};
   for(int i=0;i<4;i++) if(!strncmp(s,prefix[i],strlen(prefix[i]))) { mode=i18n(labels[i]); s+=strlen(prefix[i]); break; }
-  const char *label=strstr(s,"resultLimits")?i18n("Resultados"):strstr(s,"Encodes")?i18n("Codec · HDR"):strstr(s,"AudioChannels")?i18n("Áudio"):strstr(s,"ReleaseGroups")?i18n("Grupo"):strstr(s,"Resolutions")?i18n("Resolução e qualidade"):strstr(s,"Languages")||strstr(s,"Subtitles")?i18n("Idiomas"):strstr(s,"Qualities")||strstr(s,"Tags")?i18n("Qualidade"):strstr(s,"StreamTypes")?i18n("Cache e tipos de fonte"):strstr(s,"Seeder")||strstr(s,"seeder")?i18n("Semeadores"):strstr(s,"size")?i18n("Tamanho"):strstr(s,"bitrate")?i18n("Bitrate"):strstr(s,"sort.")?i18n("Ordenação"):strstr(s,"proxy.")?i18n("Proxy"):strstr(s,"template.")?i18n("Modelo"):strstr(s,"formatter.")?i18n("Formatador"):r->grupo==4?i18n("Regex e palavras-chave"):i18n("Cache e tipos de fonte");
+  const char *label=strstr(s,"resultLimits")?i18n("Resultados"):strstr(s,"Encodes")?i18n("Codec · HDR"):strstr(s,"AudioChannels")?i18n("Áudio"):strstr(s,"ReleaseGroups")?i18n("Grupo"):strstr(s,"Resolutions")?i18n("Resolução e qualidade"):strstr(s,"Languages")||strstr(s,"Subtitles")?i18n("Idiomas"):strstr(s,"Qualities")||strstr(s,"Tags")?i18n("Qualidade"):strstr(s,"StreamTypes")?i18n("Cache e tipos de fonte"):strstr(s,"Seeder")||strstr(s,"seeder")?i18n("Semeadores"):strstr(s,"size")?i18n("Tamanho"):strstr(s,"bitrate")?i18n("Bitrate"):strstr(s,"sortCriteria.")?i18n("Ordenação"):strstr(s,"proxy.")?i18n("Proxy"):strstr(s,"template.")?i18n("Modelo"):strstr(s,"formatter.")?i18n("Formatador"):r->grupo==4?i18n("Regex e palavras-chave"):r->grupo==2?i18n("Idiomas"):r->grupo==8?i18n("Serviços e preferências"):i18n("Cache e tipos de fonte");
   const char *media=strstr(s,"movies")?i18n("Filmes"):strstr(s,"series")?i18n("Séries"):strstr(s,"anime")?"Anime":"";
   const char *scope=strstr(s,".cached")?i18n("Em cache"):strstr(s,".uncached")?i18n("Fora do cache"):strstr(s,".version")?i18n("Versão"):strstr(s,".enabled")?i18n("Ativado"):strstr(s,".custom")?i18n("Modelo próprio"):strstr(s,".proxiedServices")?i18n("Serviços"):strstr(s,".proxiedAddons")?i18n("Addons"):"";
   snprintf(name,sizeof name,"%s%s%s%s%s%s%s",label,mode[0]?" · ":"",mode,media[0]?" · ":"",media,scope[0]?" · ":"",scope);
@@ -826,7 +841,7 @@ static void workspace(void) {
     snprintf(card[5],sizeof card[5],"%s",i18n("Instância, latência e erros de fontes"));
     const char *sub[]={card[0],card[1],card[2],card[3],card[4],card[5]};
     for(int i=0;i<6;i++) {
-      float x=453+(i%2)*727, w=i%2?626:702, y=389+(i/2)*112;
+      float x=453+(i%2)*688.5f, w=664.5f, y=389+(i/2)*112;
       linha(i,icons[i+1],nav[i+1],sub[i],x,y,w);
     }
     gfx_cor((GfxRect){453,741,1353,1},0,.8f,.84f,.88f,.08f);
@@ -842,7 +857,7 @@ static void workspace(void) {
     botaoIc(10,i18n("Atualizar"),"aj_rotate-cw",1806-rw,193,0);
     return;
   }
-  if(pagina!=TITULO) aside();
+  if(pagina!=TITULO && !(pagina==FILTROS && regraSelecionada<0)) aside();
   listaPos=janelaCatalogos(); int start=(int)listaPos;
 
   if(pagina==CATALOGOS) {
@@ -933,55 +948,60 @@ static void workspace(void) {
     texto(TXT_ILHA_NUM,i18n("Debrid por torrent usa HTTPS. A regra local não altera restrições da instância."),473,870,930,150);
     botao(n+2,i18n("Inspecionar título"),453,900,430); botao(n+3,i18n("Serviços no celular"),905,900,490);
   } else if(pagina==FILTROS && regraSelecionada>=0) {
-    listaPos=janela(4,snap.detalhes,5,1); int row=0, first=(int)listaPos;
+    int total=nConteudo()-1;
+    listaPos=janela(3,total,4,1); int row=0, first=(int)(listaPos+.001f);
+    texto(TXT_ILHA_SECAO,i18n(gruposNome[regraSelecionada]),473,285,900,230);
+    GfxRecorteAnt clip=gfx_recorte_dentro(453,330,980,496);
     for(int i=0;i<snap.detalhes;i++) if(regraPertence(&snap.detalhe[i])) {
-      if(row>=first && row<first+5) linha(row,"aj_lock",regraNome(&snap.detalhe[i]),valorRegra(snap.detalhe[i].valor),453,310+(row-listaPos)*104,980);
+      if(row>=first && row<first+5) {
+        float y=330+(row-listaPos)*124, alpha=gfx_opacidade_grupo;
+        gfx_opacidade_grupo=alpha*rolaAlfa(row-listaPos,4);
+        plrui_linha_foco((GfxRect){453,y,980,120},T21_R_ROW,focoDe(row,0));
+        const AioRegra *r=&snap.detalhe[i];
+        texto(TXT_ILHA_SUB,regraNome(r),473,y+12,934,190);
+        char path[97]; snprintf(path,sizeof path,"%s",r->nome);
+        size_t split=strlen(path); if(split>48) { split=48; while(split && ((unsigned char)path[split]&0xc0)==0x80) split--; }
+        texto(TXT_ILHA_SUB,path+split,473,y+96,934,135);
+        path[split]=0; texto(TXT_ILHA_SUB,path,473,y+75,934,135);
+        texto(TXT_ILHA_CORPO,!strcmp(r->valor,"hidden")?i18n("Oculto"):valorRegra(r->valor),473,y+39,934,240);
+        ponteiro_alvo(453,y,980,120,pointer,click,row,0);
+        gfx_opacidade_grupo=alpha;
+      }
       row++;
     }
+    gfx_recorte_voltar(clip);
     if(!row) bloco(i18n("Não informado"),473,345,900,2);
+    char count[64]; snprintf(count,sizeof count,"%d–%d / %d",total?first+1:0,total<first+4?total:first+4,total);
+    texto(TXT_ILHA_SUB,count,1200,866,230,180);
     botao(row,i18n("Editar no celular"),453,866,440);
+    if(snap.detalhesOmitidos) {
+      snprintf(count,sizeof count,i18n("Ocultos · %d"),snap.detalhesOmitidos);
+      texto(TXT_ILHA_SUB,count,940,934,490,190);
+    }
   } else if(pagina==FILTROS) {
-    const char *names[]={i18n("Resolução e qualidade"),i18n("Tamanho e bitrate"),i18n("Idiomas"),i18n("Cache e tipos de fonte"),i18n("Semeadores"),i18n("Regex e palavras-chave"),i18n("Ordenação"),i18n("Formatador")};
-    texto(TXT_ILHA_SECAO,i18n("Perfil"),453,286,600,220);
-    texto(TXT_ILHA_SUB,conectada()?i18n("Configuração conectada"):i18n("Somente manifesto"),1070,290,363,174);
-    plrui_material((GfxRect){1590,204,216,34},12,0,.45f);
-    gfx_icone((GfxRect){1600,212,18,18},"aj_lock",.8f,.85f,.87f,1);
-    texto(TXT_ILHA_HORA,i18n("Somente leitura"),1628,213,168,195);
-    for(int i=0;i<8;i++) {
+    for(int i=0;i<10;i++) {
+      int saved=regraSelecionada,count=0; regraSelecionada=i;
+      for(int k=0;k<snap.detalhes;k++) if(regraPertence(&snap.detalhe[k])) count++;
+      regraSelecionada=saved;
       char sub[128];
-      if(!conectada()) snprintf(sub,sizeof sub,"%s",i18n("Conecte a configuração para ver esta regra"));
-      else if(i==0) snprintf(sub,sizeof sub,i18n("Exigidas: %s · Excluídas: %s"),snap.resolucaoObrigatoria[0]?snap.resolucaoObrigatoria:i18n("Não informado"),snap.resolucaoExcluida[0]?snap.resolucaoExcluida:i18n("Não informado"));
-      else if(i==3) snprintf(sub,sizeof sub,i18n("Excluir cache: %s · Excluir sem cache: %s"),snap.regraCache<0?i18n("Não informado"):snap.regraCache?i18n("Sim"):i18n("Não"),snap.regraUncached<0?i18n("Não informado"):snap.regraUncached?i18n("Sim"):i18n("Não"));
-      else if(i==4) {
-        snprintf(sub,sizeof sub,"%s",i18n("Não informado"));
-        for(int k=0;k<snap.detalhes;k++) if(strstr(snap.detalhe[k].nome,"Seeder") || strstr(snap.detalhe[k].nome,"seeder")) {
-          snprintf(sub,sizeof sub,"%s: %s",i18n("P2P"),valorRegra(snap.detalhe[k].valor));break;
-        }
-      } else {
-        int group=i>=5?i-1:i;
-        if(snap.resumo[group][0]) snprintf(sub,sizeof sub,"%s",valorRegra(snap.resumo[group]));
-        else snprintf(sub,sizeof sub,i18n("%d campos informados · Somente leitura"),snap.regras[group]);
-      }
-      float x=i<6?453+(i%2)*504:453, y=i<6?330+(i/2)*140:779+(i-6)*40;
-      float alpha=itemInicio(i<6?i%2:0,i<6?i/2:3,&y), w=i<6?478:980, h=i<6?100:40;
-      if(i==6) {
-        gfx_cor((GfxRect){453,718,980,1},0,1,1,1,.08f);
-        texto(TXT_ILHA_SECAO,i18n("Ordem e formatação"),453,739,980,220);
-      }
-      if(i<6) {
-        plrui_linha_foco((GfxRect){x,y,w,h},22,focoDe(i,0));
-        texto(TXT_ILHA_NOME,names[i],x+12,y+20,w-66,239);
-        bloco(sub,x+12,y+57,w-60,2);
-        gfx_icone((GfxRect){x+w-38,y+40,20,20},"aj_lock",.6f,.65f,.68f,1);
-        ponteiro_alvo(x,y,w,h,pointer,click,i,0);
-      } else {
-        char resumo[320];snprintf(resumo,sizeof resumo,"%s: %s",names[i],sub);
-        texto(TXT_ILHA_SUB,resumo,x+12,y+8,w-60,174);
-      }
+      snprintf(sub,sizeof sub,i18n("%d campos informados · Somente leitura"),count);
+      float x=453+(i%2)*688.5f, y=300+(i/2)*108;
+      float alpha=itemInicio(i%2,i/2,&y);
+      plrui_linha_foco((GfxRect){x,y,664.5f,96},T21_R_ROW,focoDe(i,0));
+      texto(TXT_ILHA_NOME,i18n(gruposNome[i]),x+20,y+17,594,240);
+      texto(TXT_ILHA_SUB,conectada()?sub:i18n("Conecte a configuração para ver esta regra"),x+20,y+55,594,174);
+      gfx_icone((GfxRect){x+624,y+38,20,20},"aj_chevron-right",.68f,.73f,.76f,1);
+      ponteiro_alvo(x,y,664.5f,96,pointer,click,i,0);
       gfx_opacidade_grupo=alpha;
     }
-    botao(6,i18n("Editar no celular"),453,884,440);
-    botao(7,i18n("Proxy"),915,884,518);
+    gfx_cor((GfxRect){453,850,1353,1},0,.8f,.84f,.88f,.08f);
+    botao(10,i18n("Configuração no celular"),453,877,460);
+    float scale=gfx_escala_txt(), rw=botao_largura(i18n("Atualizar"),"aj_rotate-cw",0)*scale;
+    botaoIc(11,i18n("Atualizar"),"aj_rotate-cw",1806-rw,877,0);
+    if(snap.detalhesOmitidos) {
+      char count[64]; snprintf(count,sizeof count,i18n("Ocultos · %d"),snap.detalhesOmitidos);
+      texto(TXT_ILHA_SUB,count,940,891,490,190);
+    }
   } else if(pagina==LEGENDAS) {
     texto(TXT_ILHA_SECAO,i18n("Addons"),453,285,650,220);
     listaPos=janela(2,nLegendas(),2,foco<=nLegendas()); int row=0, first=(int)listaPos;
