@@ -681,22 +681,28 @@ static float tileFonte(GfxRect r, float a) {
 }
 
 static float tileServidor(GfxRect r, float a) {
-  char n[16], t[64];
+  char n[16], t[256];
   float x = r.x + EVU_TILE_PAD, y = r.y + 96, w = r.w - 2 * EVU_TILE_PAD;
   if (vis.servOrigem == EVO_MEDIDO) {
     const char *p[2];
     ladrilho(r, "aj_server", i18n("Conexões e servidor"), EVO_MEDIDO, a);
-    snprintf(n, sizeof n, "%d", vis.conexoes);
-    numero(n, i18n(vis.conexoes == 1 ? "conexão" : "conexões"), x, y, a, 0, w);
-    float hh = texto(EVU_SUB, vis.host[0] ? vis.host : "—", 180, 180, 182, x, r.y + 164, w, 2, 0, 1, a);
+    snprintf(n, sizeof n, "%d", vis.poolConexoes);
+    numero(n, i18n(vis.poolConexoes == 1 ? "conexão" : "conexões"), x, y, a, 0, w);
+    if (vis.poolConexoes == 1)
+      snprintf(t, sizeof t, "%s", i18n("conexão única: servidor sem Range"));
+    else if (vis.conexoes == 0 && vis.bufAlvo > 0 && vis.bufSeg >= 0 && vis.bufSeg >= vis.bufAlvo - 5)
+      snprintf(t, sizeof t, "%s", i18n("em espera: buffer cheio"));
+    else snprintf(t, sizeof t, i18n("%d baixando agora"), vis.conexoes);
+    float hh = texto(EVU_SUB, t, 180, 180, 182, x, r.y + 154, w, 2, 0, 0, a);
+    hh += 4 + texto(EVU_SUB, vis.host[0] ? vis.host : "—", 180, 180, 182, x, r.y + 158 + hh, w, 1, 0, 1, a);
     if (vis.primeiroByteMs >= 0) {
-      float yy = fmaxf(r.y + (r.h < 284 ? 212 : 224), r.y + 168 + hh);
+      float yy = r.y + 162 + hh;
       snprintf(t, sizeof t, "%d ms", vis.primeiroByteMs);
       p[0] = i18n("Resposta do 1º byte"); p[1] = t;
       apoio(p, 2, x, yy, w, a);
       return yy - r.y + 26;
     }
-    return 164 + hh;
+    return 154 + hh;
   } else if (vis.servOrigem == EVO_LINK) {
     ladrilho(r, "aj_server", i18n("Servidor"), EVO_LINK, a);
     // A host is one long word: it shrinks, then ends in an ellipsis.
