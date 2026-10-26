@@ -28,6 +28,7 @@ run() {
     sandbox-exec -p '(version 1) (allow default) (deny network*)' "$binary" "${1:-$output}"
 }
 NUVIO_SHOT_FLOW=1 run
+if [ "${NUVIO_SHOT_FLOW_ONLY:-0}" = 1 ]; then exit 0; fi
 for scale in .85 1; do
   for glass in 0 1; do
     mkdir -p "$output/$scale-$glass"

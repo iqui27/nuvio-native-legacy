@@ -19,6 +19,8 @@ char shotServerNames[3][96];
 #define jellyfin_entrar_quick_connect shotJellyfinEntrar
 #define jellyfin_definir_servidor shotJellyfinServidor
 #define emby_definir_servidor shotEmbyServidor
+#define jf_bibliotecas shotJfBibliotecas
+#define px_bibliotecas shotPxBibliotecas
 static int shotPlexConectado(void) { return shotServerNames[0][0] != 0; }
 static int shotLoginPending;
 static int shotJfConectado(void) { return !shotLoginPending && shotServerNames[1][0] != 0; }
@@ -66,6 +68,17 @@ void shotJellyfinCancelar(void) {}
 int shotJellyfinEntrar(void) { return 1; }
 int shotJellyfinServidor(const char *url) { (void)url; return 1; }
 int shotEmbyServidor(const char *url) { (void)url; return 1; }
+static int shotLibraryResult;
+int shotJfBibliotecas(const JfConta *c, RedeJob *job, JfBiblioteca *out, int max) {
+  (void)c; (void)job; (void)max;
+  if (shotLibraryResult > 0) { memset(out, 0, sizeof *out); strcpy(out->id, "1"); strcpy(out->nome, "Filmes"); strcpy(out->tipo, "movie"); }
+  return shotLibraryResult;
+}
+int shotPxBibliotecas(const PxConta *c, RedeJob *job, PxBiblioteca *out, int max) {
+  (void)c; (void)job; (void)max;
+  if (shotLibraryResult > 0) { memset(out, 0, sizeof *out); strcpy(out->id, "1"); strcpy(out->nome, "Filmes"); strcpy(out->tipo, "movie"); }
+  return shotLibraryResult;
+}
 #include "rail_shot.h"
 #include "home.h"
 #include <SDL2/SDL_image.h>
@@ -126,7 +139,94 @@ static void back_(void) { key(SDLK_ESCAPE); if (opened) settle(); }
 static void ok_(void) { key(SDLK_RETURN); if (opened) settle(); }
 // Every provider: forward through the steps, Back returns one step at a time,
 // focus lands on the next action, failures stay on their step.
-static int flowProof(void) {
+static void navigationProof(void) {
+  const int screens[] = {CHOOSE, DISCOVER, ADDRESS, LOGIN, USERS, PASSWORD, CODE,
+    CONNECT_CODE, CONNECT_PASSWORD, CONNECT_SERVERS, PLEX_SERVERS, LIBRARIES, READY, MANAGE, REMOVE, ERROR_SCREEN, ROWS};
+  const SDL_Keycode arrows[] = {SDLK_UP, SDLK_DOWN, SDLK_LEFT, SDLK_RIGHT};
+  ponteiro_teste_toque(1); shotLoginPending = 1;
+  for (unsigned s = 0; s < sizeof screens / sizeof *screens; s++) {
+    opened = 1; provider = 2; replaceScreen(screens[s]);
+    worker.alive = 0; worker.kind = JOB_USERS; worker.n = 2; nLibraries = 3;
+    int count = targets(), seen[SRV_VISAO_MAX + 8] = {0}, queue[SRV_VISAO_MAX + 8], n = 1;
+    FLOW(count > 0 && count <= SRV_VISAO_MAX + 8);
+    queue[0] = selected; seen[selected] = 1;
+    for (int i = 0; i < n; i++) for (unsigned a = 0; a < sizeof arrows / sizeof *arrows; a++) {
+      selected = queue[i]; key(arrows[a]); FLOW(selected >= 0 && selected < count);
+      if (!seen[selected]) { seen[selected] = 1; queue[n++] = selected; }
+    }
+    for (int id = 0; id < count; id++) if (seen[id]) {
+      selected = id;
+      for (int f = 0; f < 100; f++) { shotTime += 16; srvsetup_atualizar(shotTime); reviewDraw(); }
+      const PonteiroAlvo *v; int total = ponteiro_teste_lista(&v);
+      for (int t = 0; t < total; t++) if (v[t].focar == pointFocus) {
+        FLOW(v[t].a >= 0 && v[t].a < count && seen[v[t].a]);
+        if (v[t].a == selected) FLOW(v[t].w > 0 && v[t].h > 0 && v[t].x >= 0 &&
+          v[t].x + v[t].w <= 1921 && v[t].y >= 385 && v[t].y + v[t].h <= 979);
+      }
+    }
+  }
+  opened = 1; replaceScreen(CHOOSE); selected = 2;
+  for (int f = 0; f < 90; f++) { shotTime += 16; srvsetup_atualizar(shotTime); }
+  change(DISCOVER); FLOW(previousPage.tex && page == 0 && pageDir == 1);
+  shotTime += 50; srvsetup_atualizar(shotTime); FLOW(page > 0 && page < 1);
+  back(); FLOW(screen == CHOOSE && selected == 2 && pageDir == -1 && page == 0);
+  settle(); srvsetup_fechar(); settle(); shotLoginPending = 0; ponteiro_teste_toque(0);
+  puts("nav21: D-pad reachability, focused geometry, Back focus and transitions: PASS");
+}
+static int flowRegressions(const char *dir) {
+  reviewErrors = 0;
+  memset(shotServerNames, 0, sizeof shotServerNames);
+  for (int p = 0; p < 3; p++) {
+    srvsetup_abrir(-1); settle();
+    for (int i = 0; i < p; i++) key(SDLK_RIGHT);
+    ok_(); back_();
+    REVIEW(screen == CHOOSE && selected == p, "Back restores originating provider focus");
+    srvsetup_fechar(); settle();
+  }
+  // Both the public-user page and inline sign-in users restore the chosen user.
+  for (int s = 0; s < 2; s++) {
+    srvsetup_abrir(-1); settle(); provider = 1; shotLoginPending = 1;
+    change(s ? LOGIN : USERS); worker.kind = JOB_USERS; worker.n = 3;
+    for (int i = 0; i < 3; i++) snprintf(worker.users[i].nome, 96, "User%d", i);
+    selected = s ? 7 : 2; key(SDLK_RETURN);
+    FLOW(screen == PASSWORD);
+    key(SDLK_ESCAPE);
+    REVIEW(screen == (s ? LOGIN : USERS) && selected == (s ? 7 : 2), "Back restores originating user focus");
+    settle(); srvsetup_fechar(); settle();
+  }
+  shotLoginPending = 0;
+  const int errors[] = {JF_ERR_REDE, JF_ERR_AUTH, JF_ERR_EXPIRADO};
+  for (int p = 0; p < 3; p++) for (unsigned e = 0; e < sizeof errors / sizeof *errors; e++) {
+    memset(shotServerNames, 0, sizeof shotServerNames);
+    srvsetup_abrir(-1); settle(); provider = p;
+    selected = p; snprintf(shotServerNames[p], 96, "Sala");
+    connectedScreen(LIBRARIES); nLibraries = 0; shotLibraryResult = errors[e];
+    FLOW(startWorker(JOB_LIBRARIES));
+    for (int i = 0; i < 400 && worker.alive; i++) { SDL_Delay(5); shotTime += 16; srvsetup_atualizar(shotTime); }
+    FLOW(!worker.alive);
+    REVIEW(screen == LIBRARIES && selected == nLibraries &&
+      !strcmp(message, i18n(e == 1 ? "Usuário ou senha incorretos" : e == 2 ? "o código expirou — OK pede outro" : "O servidor não respondeu dentro do prazo.")),
+      "Fresh library failure stays on Libraries with its reason");
+    if (screen == LIBRARIES) {
+      if (getenv("NUVIO_SHOT_FLOW_PNG") && p == 1 && !e) capture(dir, "setup-library-retry");
+      shotLibraryResult = 1; key(SDLK_RETURN);
+      REVIEW(worker.alive && screen == LIBRARIES, "Libraries Retry starts another request");
+      for (int i = 0; i < 400 && worker.alive; i++) { SDL_Delay(5); shotTime += 16; srvsetup_atualizar(shotTime); }
+      REVIEW(!worker.alive && screen == LIBRARIES && nLibraries == 1 && !message[0], "Libraries Retry succeeds on the same step");
+    }
+    srvsetup_fechar(); settle();
+    shotLibraryResult = errors[e]; srvsetup_abrir(p);
+    for (int i = 0; i < 400 && worker.alive; i++) { SDL_Delay(5); shotTime += 16; srvsetup_atualizar(shotTime); }
+    REVIEW(screen == ERROR_SCREEN && recoveryAuth == (e != 0), "Saved connection retains offline/auth recovery");
+    srvsetup_fechar(); settle();
+  }
+  shotLibraryResult = 0;
+  memset(shotServerNames, 0, sizeof shotServerNames);
+  return reviewErrors ? 1 : 0;
+}
+static int flowProof(const char *dir) {
+  if (flowRegressions(dir)) return 1;
+  navigationProof();
   memset(shotServerNames, 0, sizeof shotServerNames); shotLoginPending = 0;
   // Jellyfin: service > find > sign in > password; Back walks it back.
   srvsetup_abrir(-1); settle(); FLOW(screen == CHOOSE && nHistory == 0);
@@ -135,7 +235,7 @@ static int flowProof(void) {
   selected = 0; ok_(); FLOW(screen == LOGIN && nHistory == 2);
   worker.n = 2; snprintf(worker.users[0].nome, 96, "Marina");
   selected = 5; ok_(); FLOW(screen == PASSWORD && selected == KEY_FIRST && !teclado_aberto());
-  back_(); FLOW(screen == LOGIN);
+  back_(); FLOW(screen == LOGIN && selected == 5);
   selected = 1; ok_(); FLOW(screen == CODE);                       // Quick Connect, not a duplicate "user and password"
   back_(); FLOW(screen == LOGIN);
   back_(); FLOW(screen == DISCOVER);
@@ -152,7 +252,7 @@ static int flowProof(void) {
   // Signed in: the login steps are spent, Back returns to where setup began.
   selected = 1; ok_(); FLOW(screen == LOGIN);
   snprintf(shotServerNames[1], 96, "Sala"); shotTime += 16; srvsetup_atualizar(shotTime);
-  FLOW(screen == LIBRARIES && nHistory == 1 && history[0] == CHOOSE);
+  FLOW(screen == LIBRARIES && nHistory == 1 && history[0].screen == CHOOSE);
   settle(); back_(); FLOW(screen == CHOOSE);
   srvsetup_fechar(); settle();
   // Opened from Settings on a connected server: Back returns to Settings.
@@ -275,7 +375,7 @@ int main(int argc,char **argv){
   ajustes_definir_vidro(getenv("NUVIO_SHOT_VIDRO")?atoi(getenv("NUVIO_SHOT_VIDRO")):0);
   if(getenv("NUVIO_SHOT_WIZARD")) ajustes_rapido_cor_definir(11);
   if (getenv("NUVIO_REVIEW_P1")) return reviewP1();
-  if (getenv("NUVIO_SHOT_FLOW")) return flowProof();
+  if (getenv("NUVIO_SHOT_FLOW")) return flowProof(argv[1]);
   if (getenv("NUVIO_SHOT_BEHIND")) { profile=perfis_ativo(); behindProof(argv[1]); stepMotion(argv[1]); return 0; }
   const char *filter=getenv("NUVIO_SHOT_SCREEN");
   opened=1;profile=perfis_ativo();provider=0;codeSince=1000;change(CHOOSE);if(!filter) capture(argv[1],"setup-escolher");
@@ -372,7 +472,7 @@ int main(int argc,char **argv){
     screen=READY;selected=0;opened=1;key(SDLK_RETURN);assert(!opened);
     screen=DISCOVER;provider=1;worker.alive=0;worker.n=0;opened=1;selected=2;key(SDLK_RETURN);assert(!opened);
     assert(targets()==3);
-    screen=LIBRARIES;nLibraries=8;selected=7;opened=1;nHistory=1;history[0]=MANAGE;
+    screen=LIBRARIES;nLibraries=8;selected=7;opened=1;nHistory=1;history[0].screen=MANAGE;
     for(int f=0;f<120;f++){shotTime+=16;srvsetup_atualizar(shotTime);}
     assert(fabsf(scroll-5)<.02f);
     key(SDLK_ESCAPE);assert(screen==MANAGE);
@@ -394,9 +494,9 @@ int main(int argc,char **argv){
   screen=ERROR_SCREEN;recoveryAuth=1;selected=2;key(SDLK_RETURN);assert(!opened);
   opened=1;screen=REMOVE;selected=0;key(SDLK_RETURN);assert(screen==MANAGE);
   screen=LIBRARIES;nLibraries=2;selected=0;key(SDLK_RETURN);assert(!checked[0]);
-  screen=LIBRARIES;nHistory=1;history[0]=MANAGE;key(SDLK_ESCAPE);assert(screen==MANAGE);
-  screen=LOGIN;nHistory=1;history[0]=CHOOSE;key(SDLK_ESCAPE);assert(screen==CHOOSE);
-  screen=ROWS;nHistory=1;history[0]=READY;key(SDLK_ESCAPE);assert(screen==READY);
+  screen=LIBRARIES;nHistory=1;history[0].screen=MANAGE;key(SDLK_ESCAPE);assert(screen==MANAGE);
+  screen=LOGIN;nHistory=1;history[0].screen=CHOOSE;key(SDLK_ESCAPE);assert(screen==CHOOSE);
+  screen=ROWS;nHistory=1;history[0].screen=READY;key(SDLK_ESCAPE);assert(screen==READY);
   { screen=ADDRESS; provider=1; keyboard(1); capture(argv[1],"setup-manual-teclado"); key(SDLK_ESCAPE); field=0; teclado_esquecer(); }
   teclado_esquecer();field=0;
   static const int times[]={0,50,80,100,150,160,250,320,400};

@@ -41,7 +41,8 @@ static int opened, screen, provider, selected, profile, field, restartPin, enter
 // Steps the user walked through; Back reopens the top one. Automatic hops
 // (code approved, login done) replace instead of pushing, so Back never lands
 // on a step that would bounce forward again.
-static int history[16], nHistory, keepHistory, backward, pageDir = 1;
+static struct { int screen, selected; } history[16];
+static int nHistory, keepHistory, backward, pageDir = 1, freshSetup, libraryRetry;
 static unsigned libraryVersion;
 static float entry, page, pageSeconds, focusAnim[SRV_VISAO_MAX + 8], scroll, scrollVelocity, stepAnim = -1;
 static Uint32 motionTime;
@@ -250,17 +251,20 @@ static void change(int next) {
     srvsetup_desenhar(SDL_GetTicks());
     gfx_mini_terminar();
   }
+  int restore = -1;
   if (next != screen && !keepHistory) {
     int i = 0;
-    while (i < nHistory && history[i] != next) i++;
-    if (i < nHistory) nHistory = i;
-    else if (screen != ERROR_SCREEN && nHistory < 16) history[nHistory++] = screen;
+    while (i < nHistory && history[i].screen != next) i++;
+    if (i < nHistory) { restore = history[i].selected; nHistory = i; }
+    else if (screen != ERROR_SCREEN && nHistory < 16) {
+      history[nHistory].screen = screen; history[nHistory++].selected = selected;
+    }
   }
   pageDir = backward ? -1 : 1;
-  screen = next; keyboardUpper = 0; message[0] = 0;
+  screen = next; keyboardUpper = 0; message[0] = 0; libraryRetry = 0;
   // Focus the obvious next action: Connect for a known address, the inline
   // keys for a password whose user is already chosen.
-  selected = next == ADDRESS ? (addressText[0] ? 1 : KEY_FIRST) : next == PASSWORD && username[0] ? KEY_FIRST : 0;
+  selected = restore >= 0 ? restore : next == ADDRESS ? (addressText[0] ? 1 : KEY_FIRST) : next == PASSWORD && username[0] ? KEY_FIRST : 0;
   if(next==LOGIN && !worker.alive) { worker.kind=0;worker.n=0; }
   bodyScroll = bodyVelocity = bodyTarget = userScroll = userVelocity = userTarget = 0;
   page = pageSeconds = scroll = scrollVelocity = 0;
@@ -268,7 +272,7 @@ static void change(int next) {
 }
 static void replaceScreen(int next) { keepHistory = 1; change(next); keepHistory = 0; }
 // Signed in: the login steps are spent, Back goes to where setup began.
-static void connectedScreen(int next) { if (nHistory > 1) nHistory = 1; replaceScreen(next); }
+static void connectedScreen(int next) { freshSetup = 1; if (nHistory > 1) nHistory = 1; replaceScreen(next); }
 static void failed(int error) { recoveryAuth = error == JF_ERR_AUTH || error == JF_ERR_EXPIRADO; replaceScreen(ERROR_SCREEN); }
 // A setup step that fails stays put and says why; only a saved connection
 // that stops answering opens the offline/sign-in-again page.
@@ -322,7 +326,7 @@ void srvsetup_abrir(int p) {
   if (opened) srvsetup_fechar();
   ajustes_definir_servidores(1);
   profile = perfis_ativo(); provider = p >= 0 && p < 3 ? p : 0;
-  syncTimes(); recoveryAuth = 0;
+  syncTimes(); recoveryAuth = freshSetup = 0;
   gfx_mini_liberar(&previousPage);
   entry = page = pageSeconds = 0; motionTime = 0; stepAnim = -1; nHistory = 0;
   opened = 1; rowChoice = rowStyle = 0; restartPin = enterManual = 0; username[0] = password[0] = addressText[0] = code[0] = qrUrl[0] = 0; qr.lado = 0;
@@ -342,7 +346,9 @@ static void enterScreen(int s) {
 static void back(void) {
   cancelLogin(); stopWorker(); wipe(password, sizeof password);
   if (!nHistory) { srvsetup_fechar(); return; }
-  keepHistory = backward = 1; enterScreen(history[--nHistory]); keepHistory = backward = 0;
+  int previous = --nHistory, focus = history[previous].selected;
+  keepHistory = backward = 1; enterScreen(history[previous].screen); keepHistory = backward = 0;
+  selected = focus;
 }
 static void activate(void) {
   if ((screen == ADDRESS || screen == PASSWORD) && selected >= KEY_FIRST) { inlineKey(selected); return; }
@@ -361,10 +367,10 @@ static void activate(void) {
   if (screen == LOGIN && (provider == 1 ? jellyfin_estado(NULL, 0) : emby_estado(NULL, 0)) == JF_EST_VERIFICANDO) return;
   switch (screen) {
     case CHOOSE:
-      provider = selected; if (connected(provider)) { change(LIBRARIES); librariesLoad(); }
+      provider = selected; if (connected(provider)) { freshSetup = 0; change(LIBRARIES); librariesLoad(); }
       else if (!provider) enterCode(); else discover(); break;
     case MANAGE:
-      if (selected < 3) { provider = selected; change(connected(provider) ? LIBRARIES : provider ? DISCOVER : CODE); if (screen == LIBRARIES) librariesLoad(); else if (screen == DISCOVER) startWorker(JOB_DISCOVER); else enterCode(); }
+      if (selected < 3) { provider = selected; freshSetup = 0; change(connected(provider) ? LIBRARIES : provider ? DISCOVER : CODE); if (screen == LIBRARIES) librariesLoad(); else if (screen == DISCOVER) startWorker(JOB_DISCOVER); else enterCode(); }
       else if (selected == 3) change(CHOOSE);
       else { provider = selected - 4; change(REMOVE); } break;
     case DISCOVER:
@@ -425,7 +431,10 @@ static void activate(void) {
       if (selected < worker.n && worker.n > 0) { worker.n = selected; startWorker(JOB_CONNECT_EXCHANGE); }
       else change(CONNECT_PASSWORD); break;
     case LIBRARIES:
-      if (selected < nLibraries) checked[selected] = !checked[selected];
+      if (libraryRetry && selected == nLibraries) {
+        if (startWorker(JOB_LIBRARIES)) { libraryRetry = 0; message[0] = 0; }
+      }
+      else if (selected < nLibraries) checked[selected] = !checked[selected];
       else if (selected == nLibraries) {
         int n = 0; for (int i = 0; i < nLibraries; i++) n += checked[i];
         if (!n) { snprintf(message, sizeof message, "%s", i18n("Escolha suas bibliotecas")); break; }
@@ -588,7 +597,8 @@ void srvsetup_atualizar(Uint32 now) {
       }
       else if (worker.result < 0) {
         const char *why = worker.result == JF_ERR_AUTH ? "Usuário ou senha incorretos" : worker.result == JF_ERR_EXPIRADO ? "o código expirou — OK pede outro" : "O servidor não respondeu dentro do prazo.";
-        if (worker.kind == JOB_LIBRARIES || worker.kind == JOB_ROW_CONTENT) failed(worker.result);
+        if (worker.kind == JOB_LIBRARIES && freshSetup) { libraryRetry = 1; stepError(why, nLibraries); }
+        else if (worker.kind == JOB_LIBRARIES || worker.kind == JOB_ROW_CONTENT) failed(worker.result);
         else if (worker.kind == JOB_CONNECT_PIN) stepError(why, 1);
         else stepError(why, selected);
       }
@@ -597,6 +607,7 @@ void srvsetup_atualizar(Uint32 now) {
       }
       else if (worker.kind == JOB_USERS && screen == LOGIN && !selected) selected = worker.n > 0 ? 5 : 4;
       else if (worker.kind == JOB_LIBRARIES) {
+        libraryRetry = 0; message[0] = 0;
         if (selected >= nLibraries) selected = worker.n;
         nLibraries = worker.n; memcpy(libraries, worker.libraries, sizeof *libraries * nLibraries);
         const char *selection = provider ? worker.jf.bibliotecas : worker.px.bibliotecas;
@@ -637,7 +648,7 @@ void srvsetup_atualizar(Uint32 now) {
     } else if ((!provider && (state == PX_EST_ERRO || state == PX_EST_EXPIROU)) || (provider && (state == JF_EST_ERRO || state == JF_EST_EXPIROU))) stepError(state==(provider?JF_EST_EXPIROU:PX_EST_EXPIROU)?"o código expirou — OK pede outro":"O servidor não respondeu dentro do prazo.", 1);
   }
   if ((screen == PASSWORD || screen == LOGIN) && connected(provider)) { connectedScreen(LIBRARIES); librariesLoad(); }
-  if (screen == LIBRARIES && !nLibraries && !worker.alive) {
+  if (screen == LIBRARIES && !nLibraries && !worker.alive && !message[0]) {
     snprintf(message, sizeof message, "%s", i18n("Não configurado"));
   }
   if (screen == PASSWORD) {
@@ -1086,7 +1097,7 @@ void srvsetup_desenhar(Uint32 now) {
       text(TXT_ILHA_SUB_L,sub,308,y+50,155,590);
     }
     gfx_recorte(contentX, ANC(386), contentW, ANC(592));
-    button(nLibraries,"Continuar",232,832,160); button(nLibraries+1,"Voltar",404,832,120);
+    button(nLibraries,libraryRetry?"Tentar novamente":"Continuar",232,832,160); button(nLibraries+1,"Voltar",404,832,120);
     text(TXT_V2_GRUPO,"Parte da sua Biblioteca",1020,412,243,700);
     paragraph("As bibliotecas aparecem junto ao Trakt, Simkl e seus títulos salvos.",1020,470,780);
     text(TXT_ILHA_NOME,"Continuar assistindo",1040,544,243,620);
