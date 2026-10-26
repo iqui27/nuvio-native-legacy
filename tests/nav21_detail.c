@@ -25,9 +25,22 @@ static int focusFixture(void){return nivel?(foco.fileira+1)*1000+foco.coluna:bot
 static void selectFixture(int id){ponteiroDetalhe(id/1000-1,id%1000);}
 static float transitionFixture(void){return t;}
 static int pageFixture(void){return detail_aberto();}
+static void serverRegression(void){
+  fixture=-1;openFixture();for(int i=0;i<90;i++)stepFixture(1.f/60);
+  servidoresDisponiveis=2;drawFixture();
+  int registered=0;for(int i=0;i<navigationCount;i++)if(navigation[i].row==-2&&navigation[i].col==1)registered=1;
+  nav21_expect("Detail/server chips","Visible Jellyfin chip registered",registered,1);
+  SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;detail_evento(&e);
+  nav21_expect("Detail/server chips","Play, Down: Jellyfin chip",focoServidor,1);
+  nav21_expect("Detail/server chips","Play, Down: stays in hero",nivel,0);
+  drawFixture();e.key.keysym.sym=SDLK_UP;detail_evento(&e);
+  nav21_expect("Detail/server chips","Play, Down, Up: leaves Jellyfin chip",focoServidor,-1);
+  nav21_expect("Detail/server chips","Play, Down, Up: previous button",botao,0);
+}
 void nav21_detail(void){
   memset(&fixtureItem,0,sizeof fixtureItem);snprintf(fixtureItem.titulo,sizeof fixtureItem.titulo,"Offline series");snprintf(fixtureItem.imdb,sizeof fixtureItem.imdb,"tt0000001");snprintf(fixtureItem.tipo,sizeof fixtureItem.tipo,"series");snprintf(fixtureItem.meta,sizeof fixtureItem.meta,"2020");snprintf(fixtureItem.sinopse,sizeof fixtureItem.sinopse,"Offline fixture synopsis");fixtureItem.nElenco=6;fixtureItem.nTemporadas=2;fixtureItem.temporadas[0]=1;fixtureItem.temporadas[1]=2;for(int i=0;i<6;i++)snprintf(fixtureItem.elenco[i].nome,sizeof fixtureItem.elenco[i].nome,"Actor %d",i);
   cat_definir(&fixtureItem,1);CatEp episodes[24]={0};for(int i=0;i<24;i++){episodes[i].temporada=i/12+1;episodes[i].episodio=i%12+1;snprintf(episodes[i].nome,sizeof episodes[i].nome,"Episode %d",i);}cat_definir_episodios(0,episodes,24);
+  serverRegression();
   for(fixture=-1;fixture<N_SECOES;fixture++){
     openFixture();for(int i=0;i<90;i++)stepFixture(1.f/60);if(fixture>=0&&!secaoColunas(fixture))continue;
     char name[80];snprintf(name,sizeof name,"Detail/section-%d",fixture);

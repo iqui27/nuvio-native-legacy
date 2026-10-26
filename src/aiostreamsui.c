@@ -60,7 +60,9 @@ static float focoAnim[2][AIO_MAX+40];
 static float listaPos, deslocamento, addonsFoco[168], addonsScroll, addonsVel;
 static Uint32 addonsTick;
 static float janela(int manter,int total,int visiveis,int ativo) {
-  return ativo ? anim_clamp(scrollFoco-manter,0,fmaxf(0,total-visiveis)) : 0;
+  float pos=ativo ? anim_clamp(scrollFoco-manter,0,fmaxf(0,total-visiveis)) : 0;
+  // The spring can settle just below an integer; truncation would hide the focused last row.
+  return fabsf(pos-roundf(pos))<.001f ? roundf(pos) : pos;
 }
 // Row at r slots from the window top fades in/out across one slot, so a fractional offset never pops.
 static float rolaAlfa(float r,int vis) { return anim_clamp(r+1,0,1)*anim_clamp(vis-r,0,1); }
@@ -393,6 +395,17 @@ void aioui_evento(const SDL_Event *e) {
     return;
   }
   if(k==SDLK_UP || k==SDLK_DOWN || k==SDLK_LEFT || k==SDLK_RIGHT) {
+    int first=0,total=0,step=(k==SDLK_DOWN)-(k==SDLK_UP);
+    if(pagina==CATALOGOS) total=snap.catalogos;
+    else if(pagina==TITULO) { first=2;total=evidenciaSelecionada?snap.evidencias:snap.resultados; }
+    else if(pagina==FONTES) total=snap.addons-nLegendas()+snap.servicos;
+    else if(pagina==LINKS) total=snap.links;
+    else if(pagina==FILTROS && regraSelecionada>=0) total=nConteudo()-1;
+    else if(pagina==LEGENDAS) total=nConteudo()-2;
+    int adjacent=foco+step,visible=0;
+    for(int i=0;i<navigationCount;i++) if(navigationIds[i]==adjacent) visible=1;
+    // Reveal an adjacent hidden row before geometry can select a footer.
+    if(!lateral && step && foco>=first && foco<first+total && adjacent>=first && adjacent<first+total && !visible) { foco=adjacent;return; }
     int current=-1;
     for(int i=0;i<navigationCount;i++) if(navigationIds[i]==foco+1000*lateral) current=i;
     int next=focus_rect_nearest(navigationRects,navigationCount,current,

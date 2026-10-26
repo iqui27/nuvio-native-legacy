@@ -36,8 +36,12 @@ void nav21_sources(void);
 void nav21_juntos(void);
 void nav21_home(void);
 void nav21_offline(void);
+void nav21_island(void);
+void nav21_rating(void);
+void nav21_player(void);
 static const SDL_Keycode keys[]={SDLK_UP,SDLK_DOWN,SDLK_LEFT,SDLK_RIGHT};
 static const char *names[]={"Up","Down","Left","Right"};
+void nav21_targets_reset(void){count=0;}
 void nav21_target(int id,GfxRect r) {
   if(count==NAV21_MAX) { fprintf(stderr,"target overflow\n"); exit(2); }
   targets[count++]=(Nav21Target){id,r};
@@ -152,7 +156,7 @@ int main(int argc,char **argv) {
   nav21_motion(hardCut,fakeAction,"Hard cut plus unrelated animation must fail");
   int rejected=failures==savedFailures+1;failures=savedFailures;fclose(logfile);logfile=savedLog;
   nav21_expect("Motion/negative-control","Hard cut plus unrelated animation rejected",rejected,1);
-  nav21_router();nav21_servers();nav21_achievements();nav21_start();nav21_aio();nav21_filmo();nav21_addonguide();nav21_detail();nav21_social();nav21_settings();nav21_sources();nav21_juntos();nav21_home();
+  nav21_router();nav21_servers();nav21_achievements();nav21_start();nav21_aio();nav21_filmo();nav21_addonguide();nav21_detail();nav21_social();nav21_settings();nav21_sources();nav21_island();nav21_rating();nav21_player();nav21_juntos();nav21_home();
   fprintf(logfile,"\n%d checks, %d violations.\n",checks,failures);fclose(logfile);fclose(registry);
   printf("nav21: %d checks, %d violations\n",checks,failures);return failures?1:0;
 }

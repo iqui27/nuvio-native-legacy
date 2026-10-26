@@ -8053,6 +8053,7 @@ static float desenhaFrases(float x, float y, float a) {
 // c (nivel 1) — as mesmas variaveis que as setas mexem em detail_evento.
 static void ponteiroDetalhe(int r, int c) {
   if (corpoSobArte()) return;
+  if (r == -2) { ponteiroServidor(c,0); return; }
   if (r < 0 && c == DET_PTR_AMIGOS) { nivel = 0; focoAmigos = 1; return; }
   if (r < 0) {
     focoAmigos = 0; focoServidor = -1;
@@ -8070,9 +8071,9 @@ static struct {GfxRect rect;int row,col;} navigation[512];
 static int navigationCount;
 #undef ponteiro_alvo
 static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int row,int col){
-  if(fn==ponteiroDetalhe&&navigationCount<512&&x<NV_TELA_W&&y<NV_TELA_H&&x+w>0&&y+h>0){
+  if((fn==ponteiroDetalhe||fn==ponteiroServidor)&&navigationCount<512&&x<NV_TELA_W&&y<NV_TELA_H&&x+w>0&&y+h>0){
     float left=fmaxf(0,x),top=fmaxf(0,y);
-    navigation[navigationCount].rect=(GfxRect){left,top,fminf(x+w,NV_TELA_W)-left,fminf(y+h,NV_TELA_H)-top};navigation[navigationCount].row=row;navigation[navigationCount++].col=col;
+    navigation[navigationCount].rect=(GfxRect){left,top,fminf(x+w,NV_TELA_W)-left,fminf(y+h,NV_TELA_H)-top};navigation[navigationCount].row=fn==ponteiroServidor?-2:row;navigation[navigationCount++].col=fn==ponteiroServidor?row:col;
   }
   ponteiro_alvo(x,y,w,h,fn,activate,row,col);
 }
@@ -8080,7 +8081,7 @@ static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,Ponte
 static int navigationMove(SDL_Keycode key){
   if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
   GfxRect rects[512];int current=-1;
-  for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].row==(nivel?foco.fileira:-1)&&navigation[i].col==(nivel?foco.coluna:botao))current=i;}
+  for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].row==(nivel?foco.fileira:focoServidor>=0?-2:-1)&&navigation[i].col==(nivel?foco.coluna:focoServidor>=0?focoServidor:botao))current=i;}
   int next=focus_rect_nearest(rects,navigationCount,current,(key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
   if(next<0||next==current)return 0;
   ponteiroDetalhe(navigation[next].row,navigation[next].col);return 1;

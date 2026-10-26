@@ -1,5 +1,28 @@
 # Navigation P1 follow-up
 
+## AIO paging, Detail server chips, and shared components
+
+The expanded gate fails with production fixes removed (rc 1, 3,359 checks, 65 violations) and passes with the fixes restored (rc 0, 3,359 checks, zero violations). Both runs use identical fixtures.
+
+| Regression | Before | After | Exact path |
+|---|---:|---:|---|
+| AIO results, 12 items | 28 | 0 | Title, Down through all 12 results, Up through all results; focused row must render |
+| AIO evidence, 9 items | 25 | 0 | Evidence, Down through all 9 rows, Up through all rows; focused row must render |
+| AIO catalogs, 6 items | 7 | 0 | Catalog 1, Down through catalog 6 without a footer detour, Up to catalog 1 |
+| Detail server chips | 3 | 0 | Series with seasons and Jellyfin availability: Play, Down to Jellyfin, Up to Play; chip rectangle registered |
+| Rating island / Detail | 1 | 0 | Open, Back: rendered transition lasts at least 150 ms |
+| Player OSD | 1 | 0 | Open, Back: rendered transition lasts at least 150 ms |
+| Sources from clock island | 0 | 0 | Real clock opening with `folhaRelogio=1`, 12 controls, geometry/reachability, open/Back motion, source-detail Back retains sheet/focus |
+| Clock island modal | 0 | 0 | Three rendered buttons, geometry/reachability, open/Back motion; Back retains clock and emits no route request |
+
+AIO reveals hidden adjacent rows before geometry can select a footer, preserving visible-target navigation. Scroll-window offsets within 0.001 of an integer are rounded because a settled spring can otherwise leave the focused last row outside the rendered window. Detail includes server chips in its rectangle registry and dispatches their focus through the existing callback. OSD Back retains its existing fade; Detail ratings keep drawing while the existing spring closes.
+
+Dedicated fixtures compile the real clock-island, rating and player implementations. OSD transport buttons use geometry/reachability checks; seek-bar Up/Down behavior has explicit assertions because Left/Right seek rather than move focus. Rating tests also check star-row navigation and dismissal without persisting a rating. Sources renders through `ilha_desenhar` and checks `ilha_corpo_t`, rather than forcing the clock path off.
+
+Final validation: `bash tests/nav21.sh`, `bash tools/build-local.sh`, `python3 tools/varredura-i18n.py`, and `git diff --check`, all rc 0. Build has only the existing `ATOMIC_VAR_INIT` warning; i18n has zero findings. Gate remains included in `tools/testa-tudo.sh`.
+
+Evidence: `/Volumes/ExternalSSD/tmp/rev/navteste/p1-shared-before.log`, `p1-shared-before.md`, `p1-shared-final.log`, `p1-shared-build.log`, `p1-shared-i18n.log`, and `violations.md`. No push, deployment, or TV validation. Exhaustive acceptance of every original screen/subpage variant remains unestablished.
+
 ## Profile return and picker pagination follow-up
 
 Both remaining P1s are fixed. `bash tests/nav21.sh` now passes **3,128 checks, zero violations**. The expanded baseline failed with 112 violations (rc 1); the final run passes (rc 0).
