@@ -14,7 +14,7 @@
 
 #include "j4_proof.h"
 static GLuint fbo, fboTex;
-static void proof_reset(void) { entrada=tempo=rolagem=velocidade=0;sair=0;selecionado=0;memset(focoAnim,0,sizeof focoAnim); }
+static void proof_reset(void) { entrada=tempo=rolagem=velocidade=segSel=segFoco=revT=0;sair=0;selecionado=0;filtro=0;zona=1;memset(focoAnim,0,sizeof focoAnim); }
 static void proof_focus(void) { selecionado=1; }
 static void proof_close(void) { sair=1; }
 static void proof_reopen(void) { sair=0; }
@@ -60,11 +60,12 @@ static void captura(const char *nome, SDL_Window *win) {
 int main(int argc, char **argv) {
   const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-social-tela");
   const char *dir = getenv("NUVIO_DADOS");
-  static const char *const PESSOAS[5] = { "Marina", "Rafa", "Joana", "Pedro", "Lu" };
-  static const char *const ACOES[5] = { "assistiu", "assistiu", "avaliou 9", "assistiu", "começou" };
-  static const char *const TITULOS[5] = {
-    "Assassinos da Lua das Flores e um Título Longo Demais para Caber",
-    "Duna: Parte Dois", "Aftersun", "Tudo em Todo o Lugar ao Mesmo Tempo", "O Brutalista" };
+  // Real bundled art (deploy/app/art/catalogo.txt): poster + backdrop per title.
+  static const char *const ACOES[6] = { "assistindo agora", "assistiu", "avaliou", "assistiu", "assistiu", "avaliou" };
+  static const char *const TITULOS[6] = { "Fallout", "Widow's Bay", "The Prestige", "One Battle After Another", "From", "Frequency" };
+  static const char *const DETALHES[6] = { "T2E5 · The Wrangler", "T1E3", "Filme", "Filme", "T3E7", "Filme" };
+  static const int ART[6] = { 0, 1, 2, 3, 4, 5 };
+  static const int HA[6] = { 120, 15 * 60, 26 * 3600, 3 * 86400, 5 * 86400, 12 * 86400 };
   char nome[600];
   SDL_Window *w;
   SDL_GLContext gl;
@@ -97,7 +98,7 @@ int main(int argc, char **argv) {
   assert(gfx_iniciar());
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
-  char *art=realpath("deploy/app/art",NULL);assert(art);gfx_icones_dir(art);free(art);
+  char *art=realpath("deploy/app/art",NULL),ico[700];assert(art);gfx_icones_dir(art);snprintf(ico,sizeof ico,"%s/icones/aj_users.png",art);tex_obter_larg(ico,32);free(art);
 
   memset(&dados, 0, sizeof dados);
   snprintf(dados.pessoa.socialNome, sizeof dados.pessoa.socialNome, "Marina Albuquerque");
@@ -105,16 +106,20 @@ int main(int argc, char **argv) {
   snprintf(dados.local, sizeof dados.local, "Recife, PE");
   snprintf(dados.bio, sizeof dados.bio, "Cinema de autor, séries britânicas e tudo que tenha trilha do Jonny Greenwood.");
   dados.estado = SOCIAL_PRONTO;
-  dados.n = 5;
-  for (i = 0; i < 5; i++) {
+  dados.n = 6;
+  for (i = 0; i < 6; i++) {
     Atividade *a = &dados.atividades[i];
-    snprintf(a->pessoa, sizeof a->pessoa, "%s", PESSOAS[i]);
-    snprintf(a->acao, sizeof a->acao, "%s", ACOES[i]);
+    snprintf(a->pessoa, sizeof a->pessoa, "Marina Albuquerque");
+    snprintf(a->acao, sizeof a->acao, "%s", i18n(ACOES[i]));
     snprintf(a->titulo, sizeof a->titulo, "%s", TITULOS[i]);
-    snprintf(a->detalhe, sizeof a->detalhe, "Filme · 2024 · Drama");
-    snprintf(a->horario, sizeof a->horario, "2%d/09/2026 · 21:%02d", i, 10 + i);
-    snprintf(a->poster,sizeof a->poster,"deploy/app/art/poster/%02d.jpg",i);
-    tex_obter(a->poster);
+    snprintf(a->detalhe, sizeof a->detalhe, "%s", DETALHES[i]);
+    snprintf(a->horario, sizeof a->horario, "%02d/09/2026 · 21:%02d", 10 + i, 10 + i);
+    snprintf(a->imdb, sizeof a->imdb, "tt%07d", i + 1);
+    a->quando = time(NULL) - HA[i];
+    a->avaliacao = !strcmp(ACOES[i], "avaliou");
+    snprintf(a->poster,sizeof a->poster,"deploy/app/art/poster/%02d.jpg",ART[i]);
+    snprintf(a->fundo,sizeof a->fundo,"deploy/app/art/%02d.jpg",ART[i]);
+    tex_obter(a->poster); tex_obter_hero(a->fundo);
   }
   snprintf(dados.pessoa.socialAvatar,sizeof dados.pessoa.socialAvatar,"deploy/app/art/elenco/09_0.jpg");
   tex_obter(dados.pessoa.socialAvatar);j4_art_ready();
@@ -123,6 +128,10 @@ int main(int argc, char **argv) {
   selecionado = 1;
   snprintf(nome, sizeof nome, "%s-pronto.bmp", saida);
   captura(nome, w);
+  zona = 0; filtro = 2; selecionado = 0;
+  snprintf(nome, sizeof nome, "%s-avaliacoes.bmp", saida);
+  captura(nome, w);
+  zona = 1; filtro = 0;
   dados.estado = SOCIAL_CARREGANDO;
   snprintf(nome, sizeof nome, "%s-carregando.bmp", saida);
   captura(nome, w);
