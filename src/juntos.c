@@ -321,7 +321,14 @@ void juntos_preparar(const char *imdb, int t, int e, const char *titulo, const c
 void juntos_convidar(const char *const *conv, int n) {
   char corpo[1600], e[200];
   int i, k;
+  // Lobby still preparing: the room does not exist yet, criarSala sends them.
+  if (!salaId[0] && fase == JF_PREPARADO) {
+    for (i = 0; i < n && prep.n < JUNTOS_CONVIDADOS_MAX; i++) snprintf(prep.conv[prep.n++], sizeof prep.conv[0], "%s", conv[i]);
+    printf("[juntos] lobby: %d invite(s) queued until the room opens\n", n);
+    return;
+  }
   if (!salaId[0] || !n) return;
+  printf("[juntos] lobby: inviting %d friend(s)\n", n);
   k = snprintf(corpo, sizeof corpo, "{\"id\":\"%s\",\"convidados\":[", salaId);
   for (i = 0; i < n && i < JUNTOS_CONVIDADOS_MAX && (size_t)k < sizeof corpo - 200; i++)
     k += snprintf(corpo + k, sizeof corpo - (size_t)k, "%s\"%s\"", i ? "," : "", jsp_esc(e, sizeof e, conv[i]));
