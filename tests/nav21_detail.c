@@ -10,6 +10,10 @@ static Uint32 clockFixture;
 #define SDL_GetTicks() clockFixture
 static void offlineExtras(const char *id,int series,long tmdb){(void)id;(void)series;(void)tmdb;}
 #define extras_pedir offlineExtras
+#include "amigostitulo.h"
+static int friendsFixture;
+static int offlineFriends(const char *imdb,AmigosTitulo *out){(void)imdb;if(friendsFixture&&out){memset(out,0,sizeof *out);out->n=out->total=out->nViu=1;snprintf(out->a[0].nome,sizeof out->a[0].nome,"Offline friend");out->a[0].viu=1;}return friendsFixture;}
+#define amigostitulo_obter offlineFriends
 #include "../src/detail.c"
 void nav21_extras(void);
 #undef ponteiro_alvo
@@ -45,6 +49,18 @@ static void serverRegression(void){
   nav21_expect("Detail/server chips","Play, Down, Down: leaves Jellyfin chip",focoServidor,-1);
   nav21_expect("Detail/server chips","Play, Down, Down: enters sections",nivel,1);
   nav21_expect("Detail/server chips","Play, Down, Down: seasons or episodes",foco.fileira==SEC_TEMPORADAS||foco.fileira==SEC_EPISODIOS,1);
+  // Friends card under the chips: Play -> Jellyfin -> friends -> sections, never back to the chip.
+  fixture=-1;openFixture();for(int i=0;i<90;i++)stepFixture(1.f/60);
+  servidoresDisponiveis=2;friendsFixture=1;e.key.keysym.sym=SDLK_DOWN;
+  drawFixture();detail_evento(&e);
+  nav21_expect("Detail/friends","Play, Down: Jellyfin chip",focoServidor,1);
+  drawFixture();detail_evento(&e);
+  nav21_expect("Detail/friends","Play, Down, Down: friends card",focoAmigos,1);
+  drawFixture();detail_evento(&e);
+  nav21_expect("Detail/friends","Friends, Down: not back to Jellyfin chip",focoServidor,-1);
+  nav21_expect("Detail/friends","Friends, Down: enters sections",nivel,1);
+  nav21_expect("Detail/friends","Friends, Down: seasons or episodes",foco.fileira==SEC_TEMPORADAS||foco.fileira==SEC_EPISODIOS,1);
+  friendsFixture=0;
 }
 static void carouselRegression(void){
   fixture=-1;openFixture();for(int i=0;i<90;i++)stepFixture(1.f/60);
