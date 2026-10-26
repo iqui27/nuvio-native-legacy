@@ -13,7 +13,10 @@
 // fixar uma lista GRAVA, e um teste deste repositorio ja sobrescreveu os dados
 // reais do dono.
 #ifdef NV_J1_SHOT
-#include "../src/biblioteca.c"
+#ifndef BIB_FONTE
+#define BIB_FONTE "../src/biblioteca.c"
+#endif
+#include BIB_FONTE
 #endif
 #include "biblioteca.h"
 #include "nvtmp.h"
@@ -179,6 +182,37 @@ static void j1_movimento(const char *nome) {
   nVistaAnterior = oldCount;
 }
 #endif
+#ifdef NV_J1_SHOT
+// Frames of the Origens island closing into its chip (or opening out of it):
+// <nome>-<ms>.png at fixed clock steps, the rail drawn like captura().
+#ifndef NV_BIB_BEFORE
+static void origens_quadros(const char *nome) {
+  const int times[] = {0, 60, 120, 180, 260, 360, 500, 1000};
+  SDL_Surface *strip = SDL_CreateRGBSurfaceWithFormat(0, 1920, 540, 32, SDL_PIXELFORMAT_RGBA32);
+  assert(strip);
+  Uint32 base = SDL_GetTicks();
+  int elapsed = 0;
+  for (int frame = 0; frame < (int)(sizeof times / sizeof *times); frame++) {
+    while (elapsed < times[frame]) { elapsed += 10; biblioteca_atualizar(.01f, base + elapsed); }
+    txt_novo_quadro(); tex_novo_quadro(); tex_bombear(6);
+    glClear(GL_COLOR_BUFFER_BIT);
+    biblioteca_desenhar(base + elapsed);
+    rail_shot_desenhar(MENU_BIBLIOTECA);
+    unsigned char *pixels = malloc(1920 * 1080 * 4);
+    SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
+    assert(pixels && surface);
+    glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    for (int y = 0; y < 1080; y++) memcpy((char *)surface->pixels + y * surface->pitch, pixels + (1079-y)*1920*4, 1920*4);
+    SDL_Rect cell = { (frame % 4) * 480, (frame / 4) * 270, 480, 270 };
+    assert(!SDL_BlitScaled(surface, NULL, strip, &cell));
+    SDL_FreeSurface(surface); free(pixels);
+  }
+  char path[1024]; snprintf(path, sizeof path, "%s.png", nome);
+  assert(!IMG_SavePNG(strip, path));
+  SDL_FreeSurface(strip);
+}
+#endif
+#endif
 static void captura(const char *nome) {
   unsigned char *pix;
   SDL_Surface *s;
@@ -215,7 +249,11 @@ static void captura(const char *nome) {
   assert(s);
   for (y = 0; y < 1080; y++)
     memcpy((char *)s->pixels + y * s->pitch, pix + (1079 - y) * 1920 * 4, 1920 * 4);
-  if (getenv("NV_J1_SHOT") && !getenv("NV_J1_MENU")) assert(IMG_SavePNG(s, nome) == 0);
+  if (getenv("NV_J1_SHOT") && !getenv("NV_J1_MENU")) {
+    char png[1024]; snprintf(png, sizeof png, "%s", nome);
+    char *ext = strrchr(png, '.'); if (ext) strcpy(ext, ".png");
+    assert(IMG_SavePNG(s, png) == 0);
+  }
   else assert(SDL_SaveBMP(s, nome) == 0);
   SDL_FreeSurface(s);
   free(pix);
@@ -530,7 +568,22 @@ int main(int argc, char **argv) {
     tecla(SDLK_DOWN); tecla(SDLK_DOWN); // source panel
     tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); // first row, second poster
     snprintf(nome, sizeof nome, "%s-grid.bmp", saida); captura(nome);
-    if (!strcmp(argv[2], "menu")) return falhasTela ? 1 : 0;
+#if defined(NV_J1_SHOT) && !defined(NV_BIB_BEFORE)
+    if (getenv("NV_BIB_ORIGENS")) {
+      // Owner 25/10: the "Origens" chip closes the panel and the grid widens.
+      int abertas = colunas();
+      tecla(SDLK_UP); tecla(SDLK_LEFT);
+      ASSERTA(focoBotaoOrig, "Left of Type lands on the Origens chip");
+      tecla(SDLK_RETURN);
+      ASSERTA(!origensAbertas && colunas() > abertas, "OK closes Origens, %d -> %d columns", abertas, colunas());
+      snprintf(nome, sizeof nome, "%s-fechar", saida); origens_quadros(nome);
+      snprintf(nome, sizeof nome, "%s-grid-fechado.bmp", saida); captura(nome);
+      tecla(SDLK_RETURN);
+      ASSERTA(origensAbertas && colunas() == abertas, "OK opens Origens again");
+      snprintf(nome, sizeof nome, "%s-abrir", saida); origens_quadros(nome);
+    }
+#endif
+    if (!strcmp(argv[2], "menu") || getenv("NV_BIB_SO_GRADE")) return falhasTela ? 1 : 0;
 #ifdef NV_J1_SHOT
     ASSERTA(nVistaAtual > 0, "Library retains rendered outgoing cells");
     remapear(0);
