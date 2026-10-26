@@ -73,6 +73,19 @@ int main(int argc,char **argv){
    picker_count=pc;
    want_pin(0);focus=3;KEY(SDLK_UP);assert(nav==-1);KEY(SDLK_TAB);assert(nav==-1);
    go("fontes-gerenciar");focus=0;KEY(SDLK_UP);assert(nav==0);KEY(SDLK_DOWN);assert(nav==-1);
+   /* Back walks setup, sources and parental one level, focus on the opener. */
+   go("grade");go("fontes-gerenciar");focus=0;go("setup-tipo");focus=1;go("setup-credenciais");focus=3;go("setup-teste");
+   focus=0;go("setup-importar");focus=4;go("setup-categorias");
+   e.type=SDL_KEYDOWN;
+   KEY(SDLK_ESCAPE);assert(!strcmp(screen,"setup-importar")&&focus==4);
+   KEY(SDLK_ESCAPE);assert(!strcmp(screen,"setup-teste")&&focus==0);
+   KEY(SDLK_ESCAPE);assert(!strcmp(screen,"setup-credenciais")&&focus==3);
+   KEY(SDLK_ESCAPE);assert(!strcmp(screen,"setup-tipo")&&focus==1);
+   KEY(SDLK_ESCAPE);assert(!strcmp(screen,"fontes-gerenciar")&&focus==0);
+   go("parental-ajustes");focus=2;activate(2);assert(!strcmp(screen,"parental-lista"));
+   KEY(SDLK_ESCAPE);assert(!strcmp(screen,"parental-ajustes")&&focus==2);
+   KEY(SDLK_ESCAPE);assert(!strcmp(screen,"fontes-gerenciar"));
+   focus=4;want_pin(1);go("parental-ajustes");KEY(SDLK_ESCAPE);assert(!strcmp(screen,"fontes-gerenciar")&&focus==4);
 #undef KEY
   }
   const char *only=getenv("NUVIO_SHOT_SO");   /* iterate on one state */

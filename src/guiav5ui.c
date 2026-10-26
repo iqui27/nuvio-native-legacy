@@ -212,15 +212,32 @@ static int modal_tela(const char *s);
 static int foco_pagina;   /* page focus kept while a modal is open */
 static int sem_foco;      /* page under a modal or a closing modal: no focus, no D-pad */
 static int gv_zone;       /* guide focus zone (defined with the guide below) */
+/* Setup, sources and parental pages keep a Back history: each page remembers
+ * the one that opened it and its focus; going to a page already in the
+ * history returns there instead of stacking it again. */
+typedef struct{char nome[48];int foco;}PgNivel;
+static PgNivel pg_pilha[10];static int pg_n;
+static char pg_sob[48];   /* page under the open modal */
+static int pg_nivel(const char *s){return !strncmp(s,"setup-",6)||!strncmp(s,"fontes-",7)||!strncmp(s,"parental-",9);}
 static void go(const char *name){
-  int de=modal_tela(screen),para=modal_tela(name);
-  if(!de&&para)foco_pagina=focus;
-  snprintf(screen,sizeof screen,"%s",name);focus=de&&!para?foco_pagina:para?-1:0;nav=-1;message[0]=0;
+  int de=modal_tela(screen),para=modal_tela(name),volta=0,vfoco=0;
+  if(!de&&para){foco_pagina=focus;snprintf(pg_sob,sizeof pg_sob,"%s",screen);}
+  const char *dp=de?pg_sob:screen;
+  if(!para){
+    if(pg_nivel(dp)&&pg_nivel(name)&&strcmp(dp,name)){
+      int i=pg_n;while(i>0&&strcmp(pg_pilha[i-1].nome,name))i--;
+      if(i){pg_n=i-1;volta=1;vfoco=pg_pilha[pg_n].foco;}
+      else if(pg_n<10){snprintf(pg_pilha[pg_n].nome,sizeof pg_pilha[0].nome,"%s",dp);pg_pilha[pg_n++].foco=de?foco_pagina:focus;}
+    }else if(!pg_nivel(dp)||!pg_nivel(name))pg_n=0;
+  }
+  int mesma=de&&!para&&!strcmp(pg_sob,name);
+  snprintf(screen,sizeof screen,"%s",name);focus=volta?vfoco:mesma?foco_pagina:para?-1:0;nav=-1;message[0]=0;
 }
+static void gv_voltar(void);
+static void pg_voltar(void){if(pg_n)go(pg_pilha[pg_n-1].nome);else gv_voltar();}
 /* The guide page under every v5 screen: leaving a sub-screen returns there
  * instead of exposing the legacy guide drawn when screen[] is empty. */
 static char gv_pagina[24]="grade";
-static void gv_voltar(void);
 static void gv_tecla_solta(SDL_Keycode k);
 static int gv_is(const char *s);
 static int gv_overlay_nome(const char *s);
@@ -857,7 +874,7 @@ static void activate(int id){
     gv_voltar();if(n>=4)gv_go(n==4?"busca":"ajustes");else{gv_zone=5;focus=id;}return;}
   if(atomic_load(&busy)){snprintf(message,sizeof message,"%s",i18n("Aguarde…"));return;}
   if(!strcmp(screen,"setup-tipo")){
-    if(id==4){gv_voltar();return;}if(id==2){go("setup-arquivo");return;}if(id==3){phone();return;}
+    if(id==4){pg_voltar();return;}if(id==2){go("setup-arquivo");return;}if(id==3){phone();return;}
     use_saved=0;draft.type=id;draft.live=draft.movies=draft.series=draft.epg=1;go("setup-credenciais");return;
   }
   if(!strcmp(screen,"setup-arquivo")){if(id==0)phone();else{draft.type=1;go("setup-credenciais");}return;}
@@ -894,7 +911,7 @@ static void activate(int id){
     return;
   }
   if(!strcmp(screen,"setup-epg")){if(id==0)draft.epg=!draft.epg;else if(id==1)input(4,"URL XMLTV",draft.xmltv,1);else{persist();if(save_failed)snprintf(message,sizeof message,"%s",i18n("Não foi possível salvar a lista"));else go("setup-pronto");}return;}
-  if(!strcmp(screen,"setup-pronto")){if(id==0)gv_voltar();else go(id==1?"vod-filmes":"fontes-gerenciar");return;}
+  if(!strcmp(screen,"setup-pronto")){if(id==0)gv_voltar();else if(id==1)go("vod-filmes");else{pg_n=0;go("fontes-gerenciar");}return;}
   if(!strcmp(screen,"fontes-gerenciar")){
     if(id==0)go("setup-tipo");else if(id==1){use_saved=1;action[0]=0;start(2);}else if(id==2)go("setup-credenciais");
     else if(id==3){if(!remove_confirm){remove_confirm=1;return;}xtream_esquecer();draft.playlist[0]=draft.xmltv[0]=0;char file[64];filename(file,sizeof file,"source");dados_apagar(file);clear_catalog();dirty=1;committed=0;remove_confirm=0;}
@@ -977,14 +994,15 @@ int g5ui_event(const SDL_Event *e){
   SDL_Keycode k=e->key.keysym.sym;
   if(gv_is(screen))return gv_event(k,e->key.repeat);
   if(k==SDLK_ESCAPE||k==SDLK_AC_BACK||k==SDLK_BACKSPACE){
-    if(!strcmp(screen,"setup-celular-tv")){celular_fechar();go("setup-tipo");}
+    if(!strcmp(screen,"setup-celular-tv"))celular_fechar();
+    /* modals and detail pages close to the page under them, like their buttons */
+    if(!strcmp(screen,"multiview-escolher")||!strcmp(screen,"multiview-limite"))go(mode==4?"multiview-4":mode==3?"multiview-3":"multiview-2");
+    else if(!strcmp(screen,"parental-desbloqueio"))go("parental-ajustes");
+    else if(!strcmp(screen,"parental-pin"))activate(1);
+    else if(pg_n&&pg_nivel(screen))pg_voltar();   /* one level up, focus on the opener */
     else if(!strncmp(screen,"setup-",6)&&strcmp(screen,"setup-tipo"))go("setup-tipo");
     else if(!strcmp(screen,"parental-lista"))go("parental-ajustes");
     else if(episodes_mode&&series_catalog){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;selected=parent_series;episodes_mode=0;go("vod-serie-temporadas");}
-    /* modals and detail pages close to the page under them, like their buttons */
-    else if(!strcmp(screen,"multiview-escolher")||!strcmp(screen,"multiview-limite"))go(mode==4?"multiview-4":mode==3?"multiview-3":"multiview-2");
-    else if(!strcmp(screen,"parental-desbloqueio"))go("parental-ajustes");
-    else if(!strcmp(screen,"parental-pin"))activate(1);
     else if(!strcmp(screen,"vod-titulo")||!strcmp(screen,"vod-serie-temporadas"))activate(2);
     else gv_voltar();return 1;
   }
@@ -1345,6 +1363,9 @@ typedef struct{char nome[24];int foco;}GVNivel;
 static GVNivel gv_pilha[6];static int gv_npilha,gv_pfoco=-1,gv_saida_foco;
 static char gv_sai[24];static float gv_sai_t,gv_veu_t;   /* closing sheet, veil */
 static void gv_registra(int id,float x,float y,float w,float h){if(gv_reg)reg_focus(id,x,y,w,h);}
+/* Focus on sheet and Sports controls glides on one spring, like the pages. */
+static GVGlide gv_gfolha;static int gv_gfolha_visto;
+static GfxRect gv_foco_folha(GfxRect r){if(!gv_reg)return r;gv_gfolha_visto=1;return gv_glide(&gv_gfolha,r);}
 static int gv_btn_foc(int id){
   if(!gv_is(screen))return nav>=0&&nav==id-1100;
   if(focus!=id)return 0;
@@ -1365,7 +1386,7 @@ static void gv_tinta(int foc,int sel,float *cr,float *cg,float *cb){
   else{*cr=.953f;*cg=.949f;*cb=.937f;}
 }
 static void gv_fundo_ctrl(GfxRect r,int foc,int sel){
-  if(foc){plrui_pilula_foco(r,1);return;}
+  if(foc){plrui_pilula_foco(gv_foco_folha(r),1);return;}
   if(sel){float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);gfx_cor(r,.5f,ar,ag,ab,.22f);return;}
   if(ajustes_vidro())gfx_cor(r,.5f,1,1,1,T21_CHIP_REST);else gfx_cor(r,.5f,.141f,.149f,.173f,1);
 }
@@ -1379,6 +1400,7 @@ static void gv_chip(float x,float y,float w,const char *text,const char *icon,in
   TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_CORPO,text,(int)(cr*255),(int)(cg*255),(int)(cb*255),255,x+w-tx-18);
   txt_desenhar(l,tx,y+(GV_CHIP_H-(float)l.h)/2);
   ponteiro_alvo(x,y,w,GV_CHIP_H,point_focus,point_activate,id,0);
+  if(id)gv_registra(id,x,y,w,GV_CHIP_H);
 }
 static void gv_button(int id,const char *text,const char *icon,float x,float y,float w,int lit,int small){
   float h=small?50.0f:56.0f;GfxRect r={x,y,w,h};float cr,cg,cb;
@@ -1419,14 +1441,15 @@ static void gv_topbar(void){
   x+=4;
   for(int i=0;i<4;i++){
     GfxRect r={x,GV_TOP_Y+4,ws[i],GV_TOP_H-8};
-    int on=i==ativa,f=g?gv_zone==5&&focus==1100+i&&!gv_overlay():nav==i;
-    if(f)plrui_pilula_foco(r,1);
+    int on=i==ativa,f=g?gv_btn_foc(1100+i)&&!gv_overlay():nav==i;
+    if(f)plrui_pilula_foco(gv_foco_folha(r),1);
     else if(on){if(ajustes_vidro())gfx_cor(r,.5f,1,1,1,T21_SEG_SELECTED);else gfx_cor(r,.5f,.204f,.212f,.243f,1);}
     float c=f?ajustes_tinta_foco()/255.0f:on?.953f:.62f;
     gfx_icone((GfxRect){x+18,GV_TOP_Y+14,28,28},icons[i],c,c,c,1);
     {TxtLinha l=txt_linha_corta(TXT_ILHA_CORPO,names[i],(int)(c*255),(int)(c*255),(int)(c*255),255,ws[i]-66);
      txt_desenhar(l,x+54,GV_TOP_Y+(GV_TOP_H-(float)l.h)/2);}
     ponteiro_alvo(r.x,r.y,r.w,r.h,point_focus,point_activate,1100+i,0);
+    gv_registra(1100+i,r.x,r.y,r.w,r.h);
     x+=ws[i]+4;
   }
   gv_button(1104,i18n("Buscar"),"aj_search",1420,GV_TOP_Y,180,0,0);
@@ -1439,6 +1462,8 @@ static const char *gv_fonte_nome(void){
   return draft.name[0]?draft.name:committed?(draft.type==0?"Xtream":draft.type==1?"Lista por URL":"Arquivo M3U"):NULL;
 }
 static int gv_chip_tem(int i){return i>=0&&i<6&&(i!=2||gv_fonte_nome());}
+/* In Sports the D-pad walks registered controls: focus is the id itself. */
+static int gv_chip_foc(int i){return gv_sports()&&gv_reg?focus==1200+i:gv_zone==4&&!gv_overlay()&&gv_chipi==i;}
 static void gv_chips_row(void){
   char txt[96];float x=GV_X;
   int foc=gv_zone==4&&!gv_overlay();
@@ -1449,21 +1474,21 @@ static void gv_chips_row(void){
   }
   snprintf(txt,sizeof txt,"%s  %d",i18n("Todos ao vivo"),gv_total_n);
   float w=(float)txt_linha_bruta(TXT_ILHA_CORPO,txt,243,242,239,255).w+40;
-  gv_chip(x,GV_CHIP_Y,w,txt,NULL,!gv_grupo[0]&&!gv_past(),foc&&gv_chipi==0,0,1200);x+=w+10;
+  gv_chip(x,GV_CHIP_Y,w,txt,NULL,!gv_grupo[0]&&!gv_past(),gv_chip_foc(0),0,1200);x+=w+10;
   w=(float)txt_linha(TXT_ILHA_CORPO,"Esportes",243,242,239,255).w+76;
-  gv_chip(x,GV_CHIP_Y,w,i18n("Esportes"),"aj_activity",!strcmp(gv_grupo,"Esportes"),foc&&gv_chipi==1,0,1201);x+=w+10;
+  gv_chip(x,GV_CHIP_Y,w,i18n("Esportes"),"aj_activity",!strcmp(gv_grupo,"Esportes"),gv_chip_foc(1),0,1201);x+=w+10;
   const char *snome=gv_fonte_nome();
   if(snome){
     snprintf(txt,sizeof txt,"%s  %d",snome,gv_total_n);
     w=(float)txt_linha_bruta(TXT_ILHA_CORPO,txt,243,242,239,255).w+62;
-    gv_chip(x,GV_CHIP_Y,w,txt,NULL,0,foc&&gv_chipi==2,source_loaded?1:3,1202);x+=w+10;
+    gv_chip(x,GV_CHIP_Y,w,txt,NULL,0,gv_chip_foc(2),source_loaded?1:3,1202);x+=w+10;
   }
   w=(float)txt_linha(TXT_ILHA_CORPO,"Rever",243,242,239,255).w+76;
-  gv_chip(x,GV_CHIP_Y,w,i18n("Rever"),"aj_rotate-ccw-clock",gv_past(),foc&&gv_chipi==3,0,1203);x+=w+10;
+  gv_chip(x,GV_CHIP_Y,w,i18n("Rever"),"aj_rotate-ccw-clock",gv_past(),gv_chip_foc(3),0,1203);x+=w+10;
   w=(float)txt_linha(TXT_ILHA_CORPO,"Adicionar fonte",243,242,239,255).w+76;
-  gv_chip(x,GV_CHIP_Y,w,i18n("Adicionar fonte"),"aj_plus",0,foc&&gv_chipi==4,0,1204);x+=w+10;
+  gv_chip(x,GV_CHIP_Y,w,i18n("Adicionar fonte"),"aj_plus",0,gv_chip_foc(4),0,1204);x+=w+10;
   w=(float)txt_linha_bruta(TXT_ILHA_CORPO,"EPG",243,242,239,255).w+76;
-  gv_chip(x,GV_CHIP_Y,w,"EPG","aj_calendar",0,foc&&gv_chipi==5,0,1205);
+  gv_chip(x,GV_CHIP_Y,w,"EPG","aj_calendar",0,gv_chip_foc(5),0,1205);
 }
 
 /* --- barra lateral: Biblioteca e Categorias ------------------------------ */
@@ -1491,9 +1516,13 @@ static const char *gv_cat_icone(const char *n){
   if(strstr(n,"Adult")||strstr(n,"adult")||strstr(n,"XXX"))return "aj_eye-off";
   return "aj_tv-minimal-play";
 }
+static int gv_sb_foc(void){
+  if(gv_sports()&&gv_reg)return focus>=1302&&focus<1305?focus-1300:focus>=1320&&focus<1320+gv_cats?focus-1314:-1;
+  return gv_zone==3&&!gv_overlay()?gv_sb:-1;
+}
 static void gv_side_row(int idx,const char *icon,const char *name,const char *count,int id,float base){
   GfxRect r=gv_sb_rect(idx,base);float y=r.y,h=r.h;
-  int f=idx==gv_sb&&gv_zone==3&&!gv_overlay(),on=gv_sb_ativo(idx);
+  int f=idx==gv_sb_foc(),on=gv_sb_ativo(idx);
   if(on&&!f){if(ajustes_vidro())gfx_cor(r,18.0f/h,1,1,1,.06f);else gfx_cor(r,18.0f/h,.141f,.149f,.173f,1);}
   float c=f||on?.953f:.72f;
   gfx_icone((GfxRect){GV_X+28,y+(h-24)/2,24,24},icon,c,c,c,1);
@@ -1502,6 +1531,7 @@ static void gv_side_row(int idx,const char *icon,const char *name,const char *co
   if(count){TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_CORPO,count,154,156,158,255,64);
    txt_desenhar(l,GV_X+GV_SB_W-28-(float)l.w,y+(h-(float)l.h)/2);}
   ponteiro_alvo(r.x,r.y,r.w,r.h,point_focus,point_activate,id,0);
+  gv_registra(id,r.x,r.y,r.w,r.h);
 }
 static void gv_sidebar(float base){
   panel(GV_X,base,GV_SB_W,1000-base);
@@ -1512,7 +1542,8 @@ static void gv_sidebar(float base){
     return;
   }
   /* Foco de linha (DESIGN 3): superficie um degrau mais clara, deslizando. */
-  if(gv_zone==3&&!gv_overlay())plrui_linha_foco(gv_glide(&gv_gside,gv_sb_rect(gv_sb,base)),18,1);
+  int si=gv_sb_foc();
+  if(si>=0)plrui_linha_foco(gv_glide(&gv_gside,gv_sb_rect(si,base)),18,1);
   else gv_gside.ok=0;
   char nb[24];
   gv_label(TXT_ILHA_NOME,i18n("Biblioteca"),GV_X+26,base+20,300,0);
@@ -1956,7 +1987,7 @@ static void gv_sheet_head(float x,float y,const char *title,const char *sub){
 static void gv_opt(int id,const char *icon,const char *name,const char *sub,float x,float y,float w,int h){
   GfxRect r={x,y,w,h};float rr=20.0f/h;
   int f=gv_btn_foc(id);
-  if(f)plrui_linha_foco(r,20,1);
+  if(f)plrui_linha_foco(gv_foco_folha(r),20,1);
   else if(ajustes_vidro())gfx_cor(r,rr,1,1,1,.05f);else gfx_cor(r,rr,.114f,.118f,.137f,1);
   gfx_icone((GfxRect){x+20,y+(h-25)/2,25,25},icon,.953f,.949f,.937f,1);
   if(sub){gv_label(TXT_ILHA_NOME,name,x+60,y+(h-54)/2,w-80,0);gv_label(TXT_ILHA_SUB,sub,x+60,y+(h-54)/2+30,w-80,1);}
@@ -1970,7 +2001,7 @@ static void gv_busca_sheet(void){
   gv_dim(0,.42f);
   float x=gv_sheet_base(340,100,1240,700);
   GfxRect f={x,132,1176,64};int ff=gv_btn_foc(1799);
-  if(ff)plrui_linha_foco(f,20,1);else gfx_cor(f,20.0f/64,.141f,.149f,.173f,1);
+  if(ff)plrui_linha_foco(gv_foco_folha(f),20,1);else gfx_cor(f,20.0f/64,.141f,.149f,.173f,1);
   gfx_icone((GfxRect){x+20,150,28,28},"aj_search",.8f,.8f,.8f,1);
   gv_label(TXT_ILHA_NOME,query[0]?query:i18n("Buscar canais, filmes e séries"),x+60,150,760,!query[0]);
   {TxtLinha l=txt_linha(TXT_ILHA_SUB,"Canais e programas",154,156,158,255);txt_desenhar(l,x+1150-(float)l.w,154);}
@@ -2256,7 +2287,7 @@ static void gv_sports_vazio(float y,const char *t,const char *d){
 static void gv_canal_card(int id,GVCh *c,float x,float y){
   GfxRect r={x,y,348,210};float rr=24.0f/210;
   if(ajustes_vidro())gfx_cor(r,rr,1,1,1,.05f);else gfx_cor(r,rr,.098f,.114f,.133f,1);
-  if(gv_btn_foc(id))plrui_linha_foco(r,24,1);
+  if(gv_btn_foc(id))plrui_linha_foco(gv_foco_folha(r),24,1);
   ponteiro_alvo(r.x,r.y,r.w,r.h,point_focus,point_activate,id,0);
   gv_registra(id,r.x,r.y,r.w,r.h);
   int k=id>=2300?id-2300+4:id-2100;if(k>=0&&k<8)snprintf(gv_esp_ids[k],sizeof gv_esp_ids[0],"%s",c->id);
@@ -2271,7 +2302,7 @@ static void gv_match_card(int id,GVMatch *m,float x,float y){
   GfxRect r={x,y,466,244};float rr=24.0f/244;
   if(id>=2200&&id<2230)snprintf(gv_jogos[id-2200],sizeof gv_jogos[0],"%s",m->titulo);
   gfx_cor(r,rr,.094f,.11f,.129f,1);
-  if(gv_btn_foc(id))plrui_linha_foco(r,24,1);
+  if(gv_btn_foc(id))plrui_linha_foco(gv_foco_folha(r),24,1);
   ponteiro_alvo(r.x,r.y,r.w,r.h,point_focus,point_activate,id,0);
   gv_registra(id,r.x,r.y,r.w,r.h);
   gv_label(TXT_ILHA_SUB,m->liga,r.x+24,r.y+20,240,1);
@@ -2418,9 +2449,12 @@ static void gv_screen(void){
   int sai_sob=sai&&ov&&gv_npilha&&!strcmp(gv_pilha[gv_npilha-1].nome,gv_sai);
   /* Foco na lateral: heroi compacto e mais canais na grade (mock categorias). */
   gv_hh=anim_mola2(&gv_hh_v,gv_hh,gv_zone==3&&!ov?208:GV_HERO_H,gv_dt,T21_SCROLL);
-  gv_reg=0;
+  int topo=gv_sports()&&!ov;   /* Sports: top controls join the D-pad */
+  gv_gfolha_visto=0;
+  gv_reg=topo;
   gv_topbar();
   gv_chips_row();
+  gv_reg=0;
   /* Troca de pagina: o conteudo entra subindo, nunca aparece de estalo. */
   float pa=anim_suave(gv_pag_t);
   gfx_opacidade_grupo=og*pa;
@@ -2430,7 +2464,7 @@ static void gv_screen(void){
     gfx_sem_transformar();gfx_opacidade_grupo=og;
     gv_sidebar(base);
   }else{
-    gv_sidebar(base);
+    gv_reg=topo;gv_sidebar(base);gv_reg=0;
     int esp=!strncmp(ov?gv_pagina:screen,"esportes-",9);
     if(esp){
       gfx_sem_transformar();gfx_opacidade_grupo=og;
@@ -2455,7 +2489,9 @@ static void gv_screen(void){
     /* error strip above the veil, after the sheet: the sheet takes first focus */
     if(err){gv_reg=1;gv_strip();gv_reg=0;}
   }
-  if(gv_lista()&&num_focus){int ok=0;for(int i=0;i<num_focus;i++)if(next_focus[i]==focus)ok=1;if(!ok)focus=next_focus[0];}
+  if(gv_lista()&&num_focus){int ok=0;for(int i=0;i<num_focus;i++)if(next_focus[i]==focus)ok=1;
+    if(!ok){focus=next_focus[0];if(topo)for(int i=0;i<num_focus;i++)if(next_focus[i]>=2000){focus=next_focus[i];break;}}}
+  if(!gv_gfolha_visto)gv_gfolha.ok=0;
   gv_footer();
 }
 /* --- eventos da tela principal -------------------------------------------- */
@@ -2567,7 +2603,12 @@ static int gv_activate(void){
     else if(focus==1711)gv_go("erros");
     else gv_voltar();return 1;}
   if(!strcmp(screen,"vazio")||!gv_total_n){g5ui_open("setup-tipo");return 1;}
-  if(gv_sports()){
+  int topo=gv_sports()&&((focus>=1100&&focus<1106)||(focus>=1200&&focus<1206)||(focus>=1302&&focus<1305)||(focus>=1320&&focus<1320+gv_cats));
+  if(topo){
+    if(focus<1106)gv_zone=5;else if(focus<1206){gv_zone=4;gv_chipi=focus-1200;}
+    else{gv_zone=3;gv_sb=focus<1305?focus-1300:focus-1314;}
+  }
+  if(gv_sports()&&!topo){
     if(focus==2040){gv_voltar();return 1;}
     if(focus>=2050&&focus<2053){gv_assistir(gv_onde_ids[focus-2050]);return 1;}
     if(focus==2002){gv_go("esportes-ajustes");return 1;}

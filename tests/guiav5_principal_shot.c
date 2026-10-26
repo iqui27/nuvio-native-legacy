@@ -17,6 +17,9 @@
 #include <assert.h>
 
 static int shot_zap;   /* zapping band (guia.c overlay) instead of the v5 screen */
+static void quadro(void) {
+  SDL_PumpEvents(); txt_novo_quadro(); tex_novo_quadro(); gfx_novo_quadro(); g5ui_draw();
+}
 static void capture(SDL_Window *window, const char *dir, const char *name) {
   char path[1024];
   snprintf(path, sizeof path, "%s/%s-app.png", dir, name);
@@ -171,6 +174,14 @@ int main(int argc, char **argv) {
   gv_voltar();assert(!strcmp(screen,"grade")&&focus==1105);
   focus=1103;g5ui_open("vod-filmes");gv_voltar();assert(!strcmp(screen,"grade")&&focus==1103);
   gv_sai_t=0;gv_zone=0;
+  /* Sports: Up from the first row reaches the tabs and chips; OK on a tab works. */
+  g5ui_open("grade");gv_zone=5;focus=1102;gv_go("esportes-ligas");quadro();
+  focus=2000;gv_event(SDLK_UP,0);assert((focus>=1100&&focus<1106)||(focus>=1200&&focus<1206));
+  focus=1100;quadro();gv_event(SDLK_RETURN,0);assert(!strcmp(screen,"grade"));
+  /* Sheet focus glides between rows instead of jumping. */
+  snprintf(query,sizeof query,"fla");gv_zone=5;focus=1104;gv_go("busca");focus=1799;quadro();SDL_Delay(20);quadro();
+  {float y0=gv_gfolha.y;focus=1800;SDL_Delay(20);quadro();assert(gv_gfolha.ok&&gv_gfolha.y>y0+1&&gv_gfolha.y<347);}
+  gv_voltar();query[0]=0;gv_sai_t=0;gv_zone=0;
   const char *names[] = {
     "grade", "cartoes", "preview", "preview-grade", "preview-foco", "preview-hero-cheio",
     "preview-troca", "dock", "catchup", "categorias", "pastas", "busca", "canal-opcoes",
