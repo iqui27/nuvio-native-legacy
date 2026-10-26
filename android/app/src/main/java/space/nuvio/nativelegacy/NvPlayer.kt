@@ -1341,7 +1341,7 @@ object NvPlayer {
                 // ParaleloDataSource faz as tres tentativas de transporte;
                 // nao empilhar outra rodada invisivel do Loader antes da
                 // maquina de reconexao 3/10/25 s do nucleo.
-                .setLoadErrorHandlingPolicy(PoliticaErroParalelo())
+                .setLoadErrorHandlingPolicy(PoliticaErroParalelo(ParaleloDataSource.previa(Uri.parse(url))))
                 .setDataSourceFactory(if (limited) DefaultDataSource.Factory(act, r.origem) else LivePlaylistDataSource.Factory(
                     DefaultDataSource.Factory(act, r.origem),
                     DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
@@ -2194,6 +2194,12 @@ object NvPlayer {
                 live.cancel()
                 ev(EV_ERRO, status ?: 0, C.TRACK_TYPE_UNKNOWN)
                 try { nativeErroTexto("HTTP $status") } catch (_: Throwable) {}
+                return
+            }
+            // Music owns its single refresh and quiet per-track failure.
+            if (ParaleloDataSource.previa(Uri.parse(urlAtual))) {
+                live.cancel()
+                ev(EV_ERRO, status ?: error.errorCode, C.TRACK_TYPE_UNKNOWN)
                 return
             }
             val recoveryTimeout = LiveWindowRecovery.timeoutForSegment(liveSegmentMs)
