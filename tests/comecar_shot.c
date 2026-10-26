@@ -88,19 +88,19 @@ static void check_controls(void) {
   for (int i = 0; i < n; i++) {
     GfxRect r = items[i].r;
     check_rect(r);
-    assert(r.x * gfx_escala() >= T21_SAFE_L - .01f);
-    assert((r.x + r.w) * gfx_escala() <= 1816.01f);
+    assert(r.x * gfx_escala() >= 119.99f);   // mock: 120 px margins
+    assert((r.x + r.w) * gfx_escala() <= 1800.01f);
     assert(r.y * gfx_escala() >= 59.99f);
     assert((r.y + r.h) * gfx_escala() <= 1020.01f);
-    if (items[i].id == B_PRINC)
-      assert(fabsf((r.y + r.h) * gfx_escala() - 1020) < .01f);
+    if (items[i].id == B_PRINC)   // mock .rodape: 64 px row ending 72 px above the bottom
+      assert(fabsf((r.y + r.h * .5f) * gfx_escala() - (1008 - 32 * gfx_escala())) < .01f);
     for (int j = 0; j < i; j++) {
       GfxRect q = items[j].r;
       assert(r.x >= q.x + q.w - .01f || q.x >= r.x + r.w - .01f ||
              r.y >= q.y + q.h - .01f || q.y >= r.y + r.h - .01f);
     }
   }
-  assert(fabsf(items[0].r.x * gfx_escala() - T21_SAFE_L) < .01f);
+  assert(fabsf(items[0].r.x * gfx_escala() - 120) < .01f);
   TXT_FIM();
 }
 
