@@ -4,6 +4,7 @@
 #include "botoes.h"
 #include "badges.h"
 #include "catalogo.h"
+#include "central.h"
 #include "gfx.h"
 #include "idioma.h"
 #include "ilha.h"
@@ -677,6 +678,9 @@ void juntosui_atualizar(Uint32 agora) {
   if (!juntos_ativo() && (camada == CAMADA_SALA || camada == CAMADA_REACOES || camada == CAMADA_SAIR || camada == CAMADA_PEDIDO || camada == CAMADA_FONTES || camada == CAMADA_PAINEL))
     camada = CAMADA_NADA;
   if (!noPlayer() && (camada == CAMADA_REACOES || camada == CAMADA_PAINEL)) camada = CAMADA_NADA;
+  // CH+ held opens the Control Center on the island: the sidebar yields, or it
+  // would stay on screen while the hidden island's controls take the keys.
+  if (camada == CAMADA_PAINEL && central_aberta()) camada = CAMADA_NADA;
   const JsMotor *sala = juntos_motor();
   if (qrPendente && sala && sala->conectado) { qrPendente = 0; juntos_pedir_celular(); }
   // Cinema start (owner 26/10): at t0 the lobby does not vanish. Its art fades
@@ -733,7 +737,7 @@ void juntosui_atualizar(Uint32 agora) {
   pedirCorpo();
   // The session on the clock island while the film's controls are up.
   ilhaTexto[0] = 0;
-  if (camadaVisual == CAMADA_PAINEL) plrilha_esconder();
+  if (camadaVisual == CAMADA_PAINEL && !central_aberta()) plrilha_esconder();
   else if (noPlayer() && juntos_ativo() && !lobbyAberto && camada == CAMADA_NADA && sala && sala->temSala && osdVisivel()) {
     PlrIlhaPedido p = {0};
     int n = sala->sala.n;

@@ -16,6 +16,7 @@
 #include "ilha.h"
 #include "plrilha.h"
 #include "ilhasinais.h"
+#include "central.h"
 #include "juntosui.h"
 #include "detail.h"
 #include "tex_cache.h"
@@ -323,6 +324,12 @@ int main(int argc, char **argv) {
     key.key.keysym.sym = SDLK_ESCAPE; juntosui_evento_sdl(&key); quadros(40);
     int fechou = !juntosui_aberta();
     printf("%s: Back closes the sidebar\n", fechou ? "PASS" : "FAIL"); failed += !fechou;
+    // 4. CH+ held opens the Control Center over the sidebar: the sidebar yields.
+    key.key.keysym.sym = SDLK_PAGEUP; juntosui_evento_sdl(&key); quadros(20);
+    central_abrir(); quadros(40);
+    int cedeu = juntosui_shot_camada_atual() != 8 && !juntosui_aberta();
+    printf("%s: Control Center closes the session sidebar\n", cedeu ? "PASS" : "FAIL"); failed += !cedeu;
+    central_fechar();
     assert(!failed);
     printf("juntos cinema: start, island, sidebar: ok\n");
     return 0;
