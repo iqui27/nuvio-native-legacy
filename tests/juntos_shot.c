@@ -546,7 +546,7 @@ proofs:
   gfx_escala_txt_definir(1);
   ajustes_definir_vidro(1);
   juntosui_shot_camada(0, 0); quadros(30);
-  juntosui_shot_camada(3, 0);
+  juntosui_sala_abriu(); juntosui_shot_camada(3, 0);
   Uint32 now = SDL_GetTicks();
   juntosui_atualizar(now);
   const int times[] = {0, 80, 160, 320};
@@ -566,8 +566,11 @@ proofs:
     char name[80]; snprintf(name, sizeof name, "focus-%03d", times[i]); captura(name, 1080);
     if (i == 1) assert(juntosui_shot_foco(1) > .5f && juntosui_shot_foco(1) < 1);
   }
+  // Back goes one level (leave confirmation), Back again restores the focus.
   event.key.keysym.sym = SDLK_ESCAPE;
-  assert(juntosui_evento_sdl(&event));
+  assert(juntosui_evento_sdl(&event) && juntosui_shot_camada_atual() == 4);
+  assert(juntosui_evento_sdl(&event) && juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 1);
+  juntosui_shot_camada(0, 0);   // leaving: the lobby fades out
   juntosui_atualizar(now + 1330);
   assert(juntosui_shot_entrada() > 0 && juntosui_shot_entrada() < 1);
   juntosui_atualizar(now + 1380); juntosui_atualizar(now + 1430); juntosui_atualizar(now + 1480); juntosui_atualizar(now + 1530);
