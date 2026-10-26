@@ -58,6 +58,7 @@ enum { B_VOLTAR = 100, B_PRINC, B_SEC, B_PULAR };
 typedef struct { int id; GfxRect r; } Item;
 
 static int   aberto, passo, foco = B_PRINC, pedido, esperaTeclado, decidido, temDados;
+static int focoAnterior[PASSOS];
 static Uint32 backDesde, backUltimo;   // relogio proprio: main.c zera o evento LG
 static int backPressionado, backVisto;
 static float entrada, pagina, tempoPasso, focoAnim[B_PULAR + 1];
@@ -134,9 +135,11 @@ static void ir_passo(int p) {
     comecar_desenhar(SDL_GetTicks());
     gfx_mini_terminar();
   }
+  int voltando = p < passo;
+  focoAnterior[passo] = foco;
   if (p != passo) importarfluxo_cancelar();
   passo = p < 0 ? 0 : p >= PASSOS ? PASSOS - 1 : p;
-  foco = foco_padrao();
+  foco = voltando ? focoAnterior[passo] : foco_padrao();
   pagina = tempoPasso = 0;
   memset(focoAnim, 0, sizeof focoAnim);
 }
@@ -925,7 +928,7 @@ static void desenha_passo3(float a) {
   static Uint32 contado;
   int tr = trakt_ativo(), sk = simkl_ativo(), na = addons_n(), nc = col_n(), i = 0;
   float x = ox + MARGEM, y = corpo_y(), w = coluna;
-  float h = fminf(84.0f, (rodape_topo() - T21_GAP_CARD - y) / 5.0f);
+  float h = fminf(ANC(84.0f), (rodape_topo() - T21_GAP_CARD - y) / 5.0f);
   if (!contado || SDL_GetTicks() - contado > 1000) {   // the import keeps landing: recount each second
     contado = SDL_GetTicks() | 1; vistos = 0;
     for (int k = 0; k < cat_n(); k++) vistos += cat_visto(cat_item(k)) != 0;
@@ -949,7 +952,7 @@ static void desenha_passo3(float a) {
   resumo_feito(x, y, w, h, i18n("Pular abertura e créditos"),
                i18n(ajustes_pular_abertura() ? "Ligado. As marcas chegam junto com cada título."
                                              : "Desligado. Ligue em Ajustes › Reprodução."), 0, i++, a);
-  mini_home(dir_x(fminf(760.0f, lateral)), titulo_y() + 10.0f, fminf(760.0f, lateral), a);   // mock: 760 at the right margin, top 210
+  mini_home(dir_x(fminf(ANC(760.0f), lateral)), ANC(210.0f), fminf(ANC(760.0f), lateral), a);   // mock: 760 real px at the right margin, top 210
 }
 
 static void desenha_rodape(float a) {

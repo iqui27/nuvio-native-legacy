@@ -3513,6 +3513,10 @@ static char ultCanalId[80], ultCanalNome[140], ultCanalBase[600];
 static char atualCanalBase[600];
 static void tocarCanal(const CatItem *it) {
   int ni;
+  if (perfil_infantil_ativo()) {
+    glem_aviso_curto(i18n("Perfil infantil: sem TV ao vivo"));
+    return;
+  }
   if (!it || !it->imdb[0] || !g5ui_check_channel(it)) return;
   if (player_aberto() && player_id_canal()[0] && strcmp(player_id_canal(), it->imdb)) {
     snprintf(ultCanalId, sizeof ultCanalId, "%s", player_id_canal());
