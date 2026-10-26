@@ -77,7 +77,7 @@ static int fioLaco(void *u) {
                      : rede_postar_st(url, PRAZO_S, cab, op.corpo ? op.corpo : "{}", &r.status);
     }
     printf("[juntos] http: op=%d status=%d transport=%s\n", op.tipo, r.status,
-           r.status ? "ok" : rede_ultimo_erro());
+           r.status ? "ok" : "failed");
     free(op.corpo);
     SDL_LockMutex(mtx);
     if (nCaixa < FILA) caixa[nCaixa++] = r;
@@ -123,12 +123,13 @@ static void pedir(OpTipo tipo, const char *rota, const char *corpo, int get) {
   }
   SDL_CondSignal(cond);
   SDL_UnlockMutex(mtx);
+  printf("[juntos] room: request queued op=%d\n", tipo);
 }
 
 // ---- estado do fio principal ----------------------------------------------------------
 static JuntosFase fase;
 static JsMotor motor;
-static int temMotor;
+static int temMotor, salaFalhou;
 static DiscordWs *ws;
 static char salaId[40], codigo[12], wsBase[256], webBase[256], bilhete[1600], tituloSala[160];
 static Uint32 caiuEm, proxConexao, atrasoConexao;
@@ -211,7 +212,10 @@ static void iniciarMotor(void) {
 }
 
 static void fecharWs(void) {
-  if (ws) { dws_fechar(ws); ws = NULL; }
+  if (ws) {
+    printf("[juntos] websocket: close code=%d\n", dws_codigo_fechamento(ws));
+    dws_fechar(ws); ws = NULL;
+  }
   if (temMotor) jsm_caiu(&motor);
 }
 
@@ -234,7 +238,7 @@ static void zerar(void) {
   fecharWs();
   gen++;
   fase = JF_OCIOSO;
-  temMotor = 0;
+  temMotor = salaFalhou = 0;
   salaId[0] = codigo[0] = bilhete[0] = tituloSala[0] = urlCelular[0] = 0;
   pedindoBilhete = 0;
   escolhendo = 0; abrirPedido = 0; fonteEscolhida = -1; salaDurConferida = 0; fonteVista = -1;
@@ -273,7 +277,10 @@ static void criarSala(void) {
   int i, k = 0;
   const Stream *s = stream_item(stream_atual());
   JsImpressao ii;
-  if (!s) return;
+  // Saved links and saved parts can play without an item in the current list.
+  // Duration is still useful; unknown release metadata must not block a room.
+  Stream desconhecida = {0};
+  if (!s) { desconhecida.fileIdx = -1; s = &desconhecida; }
   jsf_impressao(s, video_duracao(), &ii);
   impSala = ii;
   jsp_impressao(imp, sizeof imp, &ii);
@@ -389,8 +396,19 @@ int juntos_precarregando(void) {
 }
 
 int juntos_comecar(void) {
-  if (!temMotor || !motor.temSala || !jsm_sou_anfitriao(&motor) ||
-      motor.sala.rel.estado != JSE_LOBBY || !pPronto(NULL)) return -1;
+  if (!temMotor || !jsm_sou_anfitriao(&motor) ||
+      motor.sala.rel.estado != JSE_LOBBY) return -1;
+  if (!pPronto(NULL)) {
+    printf("[juntos] start: waiting for paused source readiness\n");
+    return -1;
+  }
+  if (salaFalhou || !motor.temSala || !motor.conectado) {
+    printf("[juntos] start: room unavailable, starting alone\n");
+    if (!salaFalhou) juntosui_erro("rede");
+    juntos_sair(); // invalidates in-flight room replies before releasing playback
+    player_juntos_pausar(0);
+    return 1;
+  }
   printf("[juntos] start: source ready, sending cinema countdown\n");
   return jsm_cmd(&motor, "comecar", -1, NULL, agoraLocal());
 }
@@ -481,7 +499,8 @@ static void resposta(Resp *r) {
       if (!ok) {
         printf("[juntos] criar sala falhou (%d)\n", r->status);
         juntosui_erro(r->status == 429 ? "limite" : "rede");
-        zerar();
+        salaFalhou = 1; // keep the paused host lobby and its Start action
+        fase = JF_PREPARADO;
         break;
       }
       js_texto(r->txt, NULL, "id", salaId, sizeof salaId);
@@ -494,7 +513,7 @@ static void resposta(Resp *r) {
         juntos_convidar(mais, prep.n - prep.enviados);
         prep.enviados = prep.n;
       }
-      iniciarMotor();
+      // Keep the prepared host until the first WebSocket room snapshot.
       jsm_fonte(&motor, "mesma");
       jsm_estado_app(&motor, "carregando", 0);
       conectar();
@@ -607,7 +626,7 @@ static void websocket(Uint32 agora) {
     if (!entrouEm) entrouEm = agora ? agora : 1;
     caiuEm = 0;
     atrasoConexao = 0;
-    printf("[juntos] conectado a sala\n");
+    printf("[juntos] websocket: open\n");
   }
   while ((m = dws_receber(ws))) {
     jsm_receber(&motor, m, agoraLocal());
@@ -659,7 +678,7 @@ void juntos_passo(Uint32 agora) {
     }
   }
   // Host creates the room once the paused preparation has a duration.
-  if (fase == JF_PREPARADO && player_juntos_preparado() && video_duracao() > 0 && stream_atual() >= 0)
+  if (fase == JF_PREPARADO && !salaFalhou && !abrirPedido && pPronto(NULL))
     criarSala();
   // Convites: so fora de sala, depois de o app assentar.
   if (!juntos_ativo() && juntos_disponivel() && !buscandoConvites && agora - iniciouEm > CONVITES_ESPERA &&
