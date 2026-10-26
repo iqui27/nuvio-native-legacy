@@ -99,6 +99,16 @@ int main(void) {
     if(strstr(s.detalhe[i].nome,".lock")) { assert(!strcmp(s.detalhe[i].valor,"hidden")); locks++; }
   }
   assert(locks==2);
+  // Variant scripts are opaque payloads and can embed credentials in arbitrary code.
+  aio_configuracao(&s,"{\"data\":{\"userData\":{\"variants\":[{\"name\":\"Cinema\",\"enabled\":true,\"script\":\"set jellyfin.primary.lock = \\\"7391\\\"\"}]}}}");
+  int scripts=0;
+  for(int i=0;i<s.detalhes;i++) {
+    assert(!strstr(s.detalhe[i].valor,"7391") && !strstr(s.detalhe[i].valor,"set jellyfin"));
+    if(!strcmp(s.detalhe[i].nome,"variants[1].script")) {
+      assert(!strcmp(s.detalhe[i].valor,"hidden")); scripts++;
+    }
+  }
+  assert(scripts==1 && s.detalhes==3);
   aio_configuracao(&s,"{\"success\":false,\"data\":{\"userData\":{\"preferredLanguages\":[\"stale\"]}}}");
   assert(!s.configurada && !s.detalhes && !s.resumo[2][0]);
   // Capacity ceiling must be explicit, never silently lose late fields.
