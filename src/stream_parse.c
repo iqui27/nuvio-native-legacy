@@ -186,6 +186,8 @@ static uint64_t bytesTextoFiltro(const char *texto) {
   return 0;
 }
 
+static void audioRotulosTexto(const char *texto,char *dst,unsigned tam);
+
 static void metadadosFiltro(const char *obj, const char *fim, const char *nome,
                              const char *descricao, const char *titulo, Stream *s) {
   const char *cr = objetoRaiz(obj, fim, "clientResolve");
@@ -225,6 +227,14 @@ static void metadadosFiltro(const char *obj, const char *fim, const char *nome,
       !(raw && textoRaiz(raw, js_fim(raw), "filename", nomeCompleto, sizeof nomeCompleto)) && raw)
     textoRaiz(raw, js_fim(raw), "torrentName", nomeCompleto, sizeof nomeCompleto);
   snprintf(s->arquivo, sizeof s->arquivo, "%.*s", (int)sizeof s->arquivo - 1, nomeCompleto);
+  if(!s->audioIdiomas[0]) {
+    // Parse whole bounded fields once, before display truncation or provider
+    // fallback. Never inspect URL paths, headers or another stream's object.
+    if(strlen(nome)<1023)audioRotulosTexto(nome,s->audioRotulos,sizeof s->audioRotulos);
+    if(strlen(descricao)<2047)audioRotulosTexto(descricao,s->audioRotulos,sizeof s->audioRotulos);
+    if(strlen(titulo)<2047)audioRotulosTexto(titulo,s->audioRotulos,sizeof s->audioRotulos);
+    if(strlen(nomeCompleto)<sizeof nomeCompleto-1)audioRotulosTexto(nomeCompleto,s->audioRotulos,sizeof s->audioRotulos);
+  }
   // Mantem title e description mesmo quando ambos existem; nao usa URL,
   // cabecalhos ou nome do provedor como evidencia de formato/idioma/grupo.
   snprintf(texto, sizeof texto, "%s\n%s\n%s", nome, descricao, titulo);
@@ -779,6 +789,8 @@ static void metadadosFaixas(const char *obj, const char *fim, Stream *s) {
   faixasCampoTexto(obj, fim, "description", s);
   faixasCampoTexto(obj, fim, "title", s);
 }
+
+#include "stream_audio_rotulos.inc"
 
 // Decimal integers only, parsed without double rounding. Numeric strings
 // are accepted for compatibility, but fractions/exponents/overflow are
