@@ -3710,6 +3710,10 @@ static void sincronizarFileiras(void) {
       cols[k] = fileiras[k].n + (fileiras[k].verTudo ? 1 : 0);
     focus_iniciar(&foco, nFileiras, cols);
     posAplicarTabela(posViva, nPosViva, posVivaFoco, posVivaCol);
+    // Rebase saved IDs on the restored columns. Otherwise navigation back
+    // onto an old column can resurrect its previous ID on the next rebuild.
+    nPosViva = 0;
+    posCapturar();
   }
   // Diz TAMBEM o limite e quantas vinham do catalogo. Com um numero so, uma
   // home de 5 fileiras nao distinguia "o limite e 5" de "so 5 catalogos

@@ -257,6 +257,38 @@ int main(void) {
   reabrir();
   for (int i = 0; i < 6; i++) ontem[i].n = 8;
   montar(itens, ontem, 6);
+  // Rebuild at column 5, then Right must select column 6's next item.
+  alvo = idx("pos_3");
+  foco.fileira = alvo; foco.coluna = 5;
+  posCapturar();
+  filsAplicadas = -1;
+  sincronizarFileiras();
+  assert(focus_mover(&foco, 1, 0));
+  assert(foco.coluna == 6);
+  assert(!strcmp(cat_item(fileiraItemIndice(&fileiras[alvo], 6))->imdb,
+                 "tt-item-18"));
+
+  // Reordering moves the selected ID from 5 to 4. Right returns to 5,
+  // which must not resurrect the old snapshot's ID on the next rebuild.
+  foco.coluna = 5;
+  posCapturar();
+  { CatItem t = itens[16]; itens[16] = itens[17]; itens[17] = t; }
+  cat_definir_tudo(itens, 48, ontem, 6);
+  sincronizarFileiras();
+  assert(foco.coluna == 4);
+  assert(focus_mover(&foco, 1, 0));
+  assert(foco.coluna == 5);
+  posCapturar();
+  filsAplicadas = -1;
+  sincronizarFileiras();
+  assert(focus_mover(&foco, 1, 0));
+  assert(foco.coluna == 6);
+  assert(!strcmp(cat_item(fileiraItemIndice(&fileiras[alvo], foco.coluna))->imdb,
+                 "tt-item-18"));
+  { CatItem t = itens[16]; itens[16] = itens[17]; itens[17] = t; }
+  cat_definir_tudo(itens, 48, ontem, 6);
+  sincronizarFileiras();
+
   for (int ranked = 0; ranked < 2; ranked++) {
     alvo = idx("pos_3");
     if (ranked) fil_definir_tipo("pos_3", FIL_TIPO_RANKING);
