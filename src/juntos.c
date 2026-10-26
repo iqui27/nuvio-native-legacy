@@ -451,7 +451,7 @@ static void pedirAbrir(const char *ep, const char *titulo, const char *poster) {
   snprintf(abrirPoster, sizeof abrirPoster, "%s", poster ? poster : "");
   abrirPedido = 1;
   escolhendo = 1;
-  fonteEscolhida = -1;
+  fonteEscolhida = fonteVista = -1;
   salaDurConferida = 0;
 }
 
@@ -524,6 +524,7 @@ static void eventos(void) {
     switch (e.tipo) {
       case JSV_EPISODIO: {
         snprintf(tituloSala, sizeof tituloSala, "%s", motor.sala.titulo);
+        impSala = motor.sala.imp;
         juntosui_sala_abriu();
         // A different movie can also have episode 0/0: compare room identity,
         // already checked by the motor, rather than just season/episode.

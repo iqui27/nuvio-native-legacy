@@ -424,7 +424,9 @@ static void apertarSala(int b) {
       qrPendente = mostrarQr && (!m || !m->conectado);
       if (mostrarQr && !qrPendente) juntos_pedir_celular();
       break;
-    case BT_FILME: focoSala = foco; mostrarQr = 0; escolhendoFilme = 1; camada = CAMADA_NADA; pediuEscolherFilme = 1; break;
+    case BT_FILME:
+      if (!m || !m->temSala) break;
+      focoSala = foco; mostrarQr = 0; escolhendoFilme = 1; camada = CAMADA_NADA; pediuEscolherFilme = 1; break;
     case BT_CODIGO: focoSala = foco; mostrarQr = 0; camada = CAMADA_CODIGO; codPos = 0; break;
     case BT_FONTES: focoSala = foco; mostrarQr = 0; camada = CAMADA_FONTES; foco = 0; break;
     case BT_TRAVA: if (m) juntos_controle_anfitriao(!m->sala.controleAnf); break;
@@ -448,6 +450,7 @@ static int ehVoltar(SDL_Keycode k) {
 int juntosui_evento_sdl(const SDL_Event *e) {
   SDL_Keycode k;
   if (e->type != SDL_KEYDOWN && e->type != SDL_KEYUP) return 0;
+  if (stream_folha_aberta()) return 0;
   k = e->key.keysym.sym;
   // SEGURAR OK no player com o OSD escondido: a regua de reacoes. O toque curto
   // continua sendo o play/pausa: ele e entregue ao player quando a tecla SOBE.
@@ -576,7 +579,7 @@ void juntosui_atualizar(Uint32 agora) {
   if (!noPlayer() && camada == CAMADA_REACOES) camada = CAMADA_NADA;
   const JsMotor *sala = juntos_motor();
   if (qrPendente && sala && sala->conectado) { qrPendente = 0; juntos_pedir_celular(); }
-  if (lobbyAberto && sala && sala->temSala && sala->sala.rel.estado == JSE_TOCANDO &&
+  if (lobbyAberto && !stream_folha_aberta() && sala && sala->temSala && sala->sala.rel.estado == JSE_TOCANDO &&
       jsr_servidor(&sala->rel, (double)SDL_GetTicks64()) >= sala->sala.rel.t0 &&
       sala->prontoAnterior && !sala->playArmado) {
     lobbyAberto = 0;
@@ -1067,7 +1070,7 @@ static void desenharSala(void) {
       float h = (prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO) * k;
       if (x + w > direita) { x = esquerda; y += altura + BOTAO_GAP / 2; }
       botao_pilula((GfxRect){ x, y + (altura - h) / 2, w, h }, rotuloBotao(b[i]), iconeBotao(b[i]),
-                   focoDe(i), prim, 0, a * entradaItem(i));
+                   focoDe(i), prim, 0, a * entradaItem(i) * (b[i] == BT_FILME && !m->temSala ? .4f : 1));
       fimAcoes = fmaxf(fimAcoes, y + altura);
       x += w + BOTAO_GAP;
     }
@@ -1079,7 +1082,7 @@ static void desenharSala(void) {
       if (!esq) continue;
       float w = larguras[i], h = (prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO) * k;
       botao_pilula((GfxRect){ xe, salaY(905) + (altura - h) / 2, w, h }, rotuloBotao(b[i]), iconeBotao(b[i]),
-                   focoDe(i), prim, 0, a * entradaItem(i));
+                   focoDe(i), prim, 0, a * entradaItem(i) * (b[i] == BT_FILME && !m->temSala ? .4f : 1));
       xe += w + BOTAO_GAP;
     }
     for (i = n - 1; i >= 0; i--) {
@@ -1296,6 +1299,7 @@ static void pedirCorpo(void) {
 }
 
 void juntosui_desenhar(Uint32 agora) {
+  if (stream_folha_aberta()) return;
   float esc = gfx_escala_entrar();
   origemX = (NV_VTELA_W - 1920) / 2;
   origemY = (NV_VTELA_H - 1080) / 2;

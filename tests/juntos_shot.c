@@ -17,6 +17,7 @@
 #include "plrilha.h"
 #include "ilhasinais.h"
 #include "juntosui.h"
+#include "detail.h"
 #include "tex_cache.h"
 #include "text.h"
 #include <SDL2/SDL.h>
@@ -36,7 +37,9 @@ int juntosui_shot_camada_atual(void);
 
 static SDL_Window *win;
 static const char *base;
-static int sourcesOnly, proofsOnly, lobbyOnly, flowOnly;
+static int sourcesOnly, proofsOnly, lobbyOnly, flowOnly, transitionsOnly;
+void app_shot_escolher_fonte(int fonte);
+void app_shot_juntos_abrir(Uint32 agora);
 static GLuint fundoTex;
 
 static void carregarFundo(void) {
@@ -85,6 +88,10 @@ static void quadros(int n) {
     ilha_desenhar(agora);
     plrilha_desenhar(agora);
     juntosui_desenhar(agora);
+    if (transitionsOnly) {
+      stream_folha_atualizar(.016f, agora);
+      stream_folha_desenhar(agora);
+    }
     SDL_GL_SwapWindow(win);
     SDL_Delay(16);
   }
@@ -123,7 +130,8 @@ int main(int argc, char **argv) {
   FILE *f;
   base = argc > 1 ? argv[1] : "/tmp/nuvio-juntos";
   snprintf(aj, sizeof aj, "%s/ajustes.txt", dir);
-  flowOnly = argc > 2 && !strcmp(argv[2], "--flow");
+  transitionsOnly = argc > 2 && !strcmp(argv[2], "--transitions");
+  flowOnly = transitionsOnly || (argc > 2 && !strcmp(argv[2], "--flow"));
   sourcesOnly = argc > 2 && !strcmp(argv[2], "--sources");
   lobbyOnly = argc > 2 && !strcmp(argv[2], "--lobby");
   proofsOnly = lobbyOnly || (argc > 2 && !strcmp(argv[2], "--proofs"));
@@ -197,6 +205,64 @@ int main(int argc, char **argv) {
     s.n = 4;
     motor.sala = s; motor.temSala = 1; temMotor = 1; fase = JF_DENTRO;
     snprintf(codigo, sizeof codigo, "K7M2QX"); }
+  if (transitionsOnly) {
+    int failed = 0;
+    SDL_Event key = {0}; key.type = SDL_KEYDOWN; key.key.keysym.sym = SDLK_RETURN;
+    motor.temSala = 0;
+    motor.sala.n = 1;
+    snprintf(tituloSala, sizeof tituloSala, "Duna: Parte 2");
+    snprintf(motor.sala.m[0].st, sizeof motor.sala.m[0].st, "carregando");
+    motor.sala.m[0].pct = 42;
+    juntosui_sala_abriu(); juntosui_shot_camada(3, 2);
+    assert(juntosui_evento_sdl(&key));
+    int blocked = !juntosui_pediu_escolher_filme() && !juntosui_escolhendo_filme();
+    printf("%s: P1 browsing blocked before room creation\n", blocked ? "PASS" : "FAIL"); failed += !blocked;
+    juntosui_sala_abriu(); quadros(35); captura("preload-gated", 1080);
+    motor.temSala = 1;
+    juntosui_sala_abriu();
+    Stream stream = {0};
+    snprintf(stream.url, sizeof stream.url, "http://fixture.invalid/movie-b.mp4");
+    VideoSimulacao simulation = { .aceita = 1 }; video_simular(&simulation);
+    snprintf(stream.rotulo, sizeof stream.rotulo, "Movie B 1080p");
+    stream.altura = 1080;
+    stream_definir_alvo("tt2"); stream_definir_lista(&stream, 1);
+    stream_folha_abrir();
+    key.key.keysym.sym = SDLK_DOWN;
+    int picker = !juntosui_evento_sdl(&key);
+    if (picker) stream_folha_evento(&key);
+    printf("%s: P1 lobby yields input to manual source picker\n", picker ? "PASS" : "FAIL"); failed += !picker;
+    quadros(35); captura("manual-picker", 1080);
+    key.key.keysym.sym = SDLK_ESCAPE; stream_folha_evento(&key);
+    assert(juntosui_aberta());
+    CatItem film = {0};
+    snprintf(film.imdb, sizeof film.imdb, "tt1"); snprintf(film.tipo, sizeof film.tipo, "movie");
+    cat_definir(&film, 1);
+    int a = 0;
+    snprintf(film.imdb, sizeof film.imdb, "tt2"); snprintf(film.titulo, sizeof film.titulo, "Movie B");
+    int b = cat_acrescentar(&film); assert(b >= 0);
+    player_abrir(a, NULL);
+    HomeItem home = { .indice = b, .arte = "", .titulo = "Movie B", .genero = "", .meta = "" };
+    detail_abrir(&home);
+    juntosui_shot_camada(3, 2); key.key.keysym.sym = SDLK_RETURN;
+    assert(juntosui_evento_sdl(&key)); juntosui_pediu_escolher_filme();
+    stream_definir_alvo("tt2"); stream_definir_lista(&stream, 1);
+    app_shot_escolher_fonte(0);
+    int waits = player_indice() == a && strcmp(motor.sala.ep, "tt2") && juntosui_aberta();
+    printf("%s: P1 source pick waits for authoritative movie update\n", waits ? "PASS" : "FAIL"); failed += !waits;
+    snprintf(impSala.hash, sizeof impSala.hash, "%040d", 1); impSala.durMs = 7200000;
+    fonteVista = 0; salaDurConferida = 1;
+    motor.evN = 0;
+    jsm_receber(&motor, "{\"t\":\"sala\",\"seq\":4,\"rel\":{\"estado\":\"lobby\",\"ep\":\"tt2\"},\"cfg\":{\"ep\":\"tt2\",\"titulo\":\"Movie B\",\"imp\":{\"durMs\":5400000,\"altura\":1080}},\"membros\":[{\"id\":\"nuvio:h\",\"nome\":\"Henrique\",\"anf\":true,\"on\":true,\"st\":\"carregando\"}]}", 1);
+    eventos();
+    int fresh = !impSala.hash[0] && impSala.durMs == 5400000 && fonteVista == -1 && !salaDurConferida;
+    printf("%s: P1 new movie replaces source fingerprint and duration verdict\n", fresh ? "PASS" : "FAIL"); failed += !fresh;
+    app_shot_juntos_abrir(SDL_GetTicks());
+    int selected = player_indice() == b && stream_atual() == 0 && juntosui_aberta();
+    printf("%s: P1 acknowledged movie keeps explicit source selection\n", selected ? "PASS" : "FAIL"); failed += !selected;
+    assert(!failed);
+    quadros(35); captura("movie-b-lobby", 1080);
+    return 0;
+  }
   if (flowOnly) {
     ajustes_definir_vidro(1);
     gfx_escala_txt_definir(1);

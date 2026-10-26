@@ -1467,7 +1467,7 @@ static void idBaseDoTitulo(char *dst, size_t tam) {
   const CatItem *c;
   if (tam) dst[0] = 0;
   if (player_id_canal()[0]) return;
-  c = cat_item(player_aberto() ? player_indice() : detail_indice());
+  c = cat_item(player_aberto() && !juntosui_escolhendo_filme() ? player_indice() : detail_indice());
   if (!c || !c->imdb[0]) return;
   fontepref_id_base(c->imdb, dst, (unsigned)tam);
 }
@@ -1477,10 +1477,10 @@ static void idBaseDoTitulo(char *dst, size_t tam) {
 // e a folha cai no addon.
 static void nomeParaFolha(void) {
   const CatItem *c = player_id_canal()[0] ? NULL
-                   : cat_item(player_aberto() ? player_indice() : detail_indice());
+                   : cat_item(player_aberto() && !juntosui_escolhendo_filme() ? player_indice() : detail_indice());
   stream_folha_nome(c ? c->titulo : "");
   stream_folha_canal(player_id_canal()[0] != 0 || (c && nv_tipo_canal(c->tipo)));
-  stream_folha_item(c ? (player_aberto() ? player_indice() : detail_indice()) : -1);
+  stream_folha_item(c ? (player_aberto() && !juntosui_escolhendo_filme() ? player_indice() : detail_indice()) : -1);
 }
 
 static void episodioDoDetalhe(void) {
@@ -4940,11 +4940,34 @@ static const char *homeTrailerBloqueio(void) {
   return NULL;
 }
 
+static int juntosFontePendente = -1;
+static unsigned juntosFonteGeracao;
+static char juntosFonteAlvo[64];
+
 static void tocarFonteEscolhida(int fonte, int manual) {
-  int alvo = player_aberto() ? player_indice() : detail_indice(), t = 0, e = 0;
-  if (player_aberto()) player_episodio_atual(&t, &e);
+  int navegando = juntosui_escolhendo_filme();
+  int alvo = player_aberto() && !navegando ? player_indice() : detail_indice(), t = 0, e = 0;
+  if (player_aberto() && !navegando) player_episodio_atual(&t, &e);
   else detail_ep_foco(&t, &e);
   if (manual) consumirFolhaTocar(&t, &e);
+  if (navegando) {
+    const JsMotor *m = juntos_motor();
+    const CatItem *c = cat_item(alvo);
+    char ep[64];
+    if (!m || !m->temSala || !c) { juntosui_sala_abriu(); return; }
+    if (t > 0 && e > 0) snprintf(ep, sizeof ep, "%s:%d:%d", c->imdb, t, e);
+    else snprintf(ep, sizeof ep, "%s", c->imdb);
+    if (strcmp(ep, m->sala.ep)) {
+      if (stream_item(fonte) && stream_lista_do_alvo(ep)) {
+        juntosFontePendente = fonte;
+        juntosFonteGeracao = stream_lista_geracao();
+        snprintf(juntosFonteAlvo, sizeof juntosFonteAlvo, "%s", ep);
+        juntos_escolher_titulo(c->imdb, t, e, c->titulo, c->poster);
+      }
+      juntosui_sala_abriu();
+      return;
+    }
+  }
   if (travaui_abrir_espera(alvo, t, e)) { aguardandoFonte = 0; folhaParaTocar = 0; return; }
   {
     const Stream *s = stream_item(fonte);
@@ -5030,6 +5053,7 @@ static Uint32 juntosListaDesde;
 static void juntosAbrirEFonte(Uint32 agora) {
   char imdb[24], titulo[160], poster[512], alvo[64];
   int t, e;
+  if (!juntos_ativo()) juntosFontePendente = -1;
   if (juntosui_pediu_fechar_player()) player_sair();
   if (juntosui_pediu_reproduzir()) detail_pedir_reproduzir();
   if (juntosui_pediu_escolher_filme()) {
@@ -5057,7 +5081,16 @@ static void juntosAbrirEFonte(Uint32 agora) {
       if (juntos_fase() != JF_PREPARADO) player_do_inicio(); // guests follow room time
       renovarListaDoPlayer();
       juntosListaDesde = 0;
-      if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
+      alvoPlayer(alvo, sizeof alvo);
+      if (juntosFontePendente >= 0 && !strcmp(alvo, juntosFonteAlvo) &&
+          juntosFonteGeracao == stream_lista_geracao() && stream_lista_do_alvo(alvo)) {
+        int fonte = juntosFontePendente;
+        juntosFontePendente = -1;
+        tocarFonteEscolhida(fonte, 1);
+      } else {
+        juntosFontePendente = -1;
+        if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
+      }
       printf("[juntos] abrindo o titulo da sala\n");
     }
   }
@@ -5076,6 +5109,11 @@ static void juntosAbrirEFonte(Uint32 agora) {
     }
   }
 }
+
+#ifdef NV_SHOT_HOOKS
+void app_shot_escolher_fonte(int fonte) { tocarFonteEscolhida(fonte, 1); }
+void app_shot_juntos_abrir(Uint32 agora) { juntosAbrirEFonte(agora); }
+#endif
 
 static void atualizarFolha(float dt, Uint32 agora) {
   stream_folha_atualizar(dt, agora);
@@ -6136,12 +6174,12 @@ void app_atualizar(float dt, Uint32 agora) {
     int querTocar = detail_pediu_reproduzir() || doInicio;
     const JsMotor *salaJ = juntos_motor();
     const CatItem *tituloJ = cat_item(detail_indice());
-    if (querTocar && salaJ && salaJ->temSala && tituloJ) {
+    if (querTocar && juntos_ativo() && tituloJ) {
       char alvoJ[64];
       int tJ = 0, eJ = 0;
       detail_ep_foco(&tJ, &eJ);
       idDoAlvo(tituloJ, alvoJ, sizeof alvoJ);
-      if (strcmp(salaJ->sala.ep, alvoJ))
+      if (salaJ && salaJ->temSala && strcmp(salaJ->sala.ep, alvoJ))
         juntos_escolher_titulo(tituloJ->imdb, tJ, eJ, tituloJ->titulo, tituloJ->poster);
       juntosui_sala_abriu();
       querTocar = 0;
