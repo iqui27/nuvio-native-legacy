@@ -401,6 +401,8 @@ static void select_item(int i){if(i<0||i>=count)return;selected=i;locked_item=in
   go(inventory[i].kind==G5_SERIES?"vod-serie-temporadas":"vod-titulo");
 }
 static void want_pin(int settings){if(gv_is(screen))gv_deixa();pin_settings=settings;erase(pin_value,sizeof pin_value);if(strcmp(screen,"parental-canal-bloqueado")&&strcmp(screen,"parental-pin"))snprintf(previous,sizeof previous,"%s",screen);go("parental-pin");focus=20;}
+/* Back from the episode list: the series page, focus on Load episodes. */
+static void leave_episodes(void){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;selected=parent_series;episodes_mode=0;go("vod-serie-temporadas");focus=1;}
 static int control_count;
 static void activate(int id);
 static void point_focus(int id,int unused){(void)unused;focus=id;nav=-1;}
@@ -924,7 +926,7 @@ static void activate(int id){
     if(id>=20&&id<=31){if(id==29)erase(pin_value,sizeof pin_value);else if(id==31){if(n)pin_value[n-1]=0;}else if(n<4){pin_value[n]=(char)('0'+(id==30?0:id-19));pin_value[n+1]=0;}return;}
     if(id==0){if(n==4)start(3);return;}
     if(id==1){erase(pin_value,sizeof pin_value);   /* up one level: the screen that asked */
-      if(previous[0]&&!gv_is(previous))go(previous);else gv_voltar();return;}
+      if(pg_n)pg_voltar();else if(previous[0]&&!gv_is(previous))go(previous);else gv_voltar();return;}
     if(id==3)lease_seconds=lease_seconds==3600?7200:lease_seconds==7200?14400:3600;return;
   }
   if(!strcmp(screen,"parental-canal-bloqueado")){
@@ -964,6 +966,7 @@ static void activate(int id){
   }
   if(!strcmp(screen,"vod-serie-temporadas")){
     if(id>=100&&id<100+count&&episodes_mode){selected=id-100;if(!restricted(&inventory[selected]))playing=1;return;}
+    if(id==2&&episodes_mode&&series_catalog){leave_episodes();return;}   /* episodes are one level */
     if(id==800||id==801||id==2){if(episodes_mode&&series_catalog){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;episodes_mode=0;}if(id==2&&pg_n)pg_voltar();else go(id==800?"vod-filmes":"vod-series");return;}
     if(id==0){selected_season=selected_season>=30?1:selected_season+1;return;}
     if(id==2){go("vod-series");return;}
@@ -999,7 +1002,7 @@ int g5ui_event(const SDL_Event *e){
     if(!strcmp(screen,"setup-celular-tv"))celular_fechar();
     /* modals and detail pages close to the page under them, like their buttons */
     if(!strcmp(screen,"parental-pin"))activate(1);
-    else if(episodes_mode&&series_catalog&&!strncmp(screen,"vod-",4)){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;selected=parent_series;episodes_mode=0;go("vod-serie-temporadas");}
+    else if(episodes_mode&&series_catalog&&!strncmp(screen,"vod-",4))leave_episodes();
     else if(pg_n&&pg_nivel(screen))pg_voltar();   /* one level up, focus on the opener */
     else if(!strcmp(screen,"multiview-escolher")||!strcmp(screen,"multiview-limite"))go(mode==4?"multiview-4":mode==3?"multiview-3":"multiview-2");
     else if(!strcmp(screen,"parental-desbloqueio"))go("parental-ajustes");

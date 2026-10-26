@@ -91,6 +91,25 @@ int main(int argc,char **argv){
    KEY(SDLK_ESCAPE);assert(!strcmp(screen,"vod-busca")&&focus==3);
    focus=3;select_item(3);activate(2);assert(!strcmp(screen,"vod-busca")&&focus==3);
    KEY(SDLK_ESCAPE);assert(!strcmp(screen,"vod-filmes")&&focus==802);
+   /* PIN over a blocked title closes to the blocked page, then search. */
+   {int ip=-1;for(int i=0;i<count&&ip<0;i++)if(inventory[i].kind==G5_LIVE)ip=i;assert(ip>=0);
+    int kids=rules.kids;rules.kids=1;assert(restricted(&inventory[ip]));
+    for(int pass=0;pass<2;pass++){
+     go("grade");go("vod-filmes");focus=802;go("vod-busca");focus=3;select_item(ip);assert(!strcmp(screen,"parental-canal-bloqueado"));
+     focus=0;activate(0);assert(!strcmp(screen,"parental-pin"));
+     if(pass)KEY(SDLK_ESCAPE);else activate(1);
+     assert(!strcmp(screen,"parental-canal-bloqueado")&&focus==0);
+     KEY(SDLK_ESCAPE);assert(!strcmp(screen,"vod-busca")&&focus==3);}
+    rules.kids=kids;}
+   /* Series: Back leaves the episode list first, on Load episodes. */
+   {int is=-1;for(int i=0;i<count&&is<0;i++)if(inventory[i].kind==G5_SERIES)is=i;assert(is>=0);
+    for(int pass=0;pass<2;pass++){
+     go("grade");go("vod-series");focus=is;go("vod-serie-temporadas");selected=is;
+     series_catalog=inventory;series_count=count;parent_series=is;inventory=calloc(1,sizeof *inventory);count=1;episodes_mode=1;selected=0;
+     if(pass)KEY(SDLK_ESCAPE);else activate(2);
+     assert(!strcmp(screen,"vod-serie-temporadas")&&!episodes_mode&&selected==is&&focus==1);
+     if(pass)KEY(SDLK_ESCAPE);else activate(2);
+     assert(!strcmp(screen,"vod-series")&&focus==is);}}
    /* Multiview: limits over the picker go back to the picker and its pick,
     * then to the layout and Add channel; a pick closes to the layout. */
    {int mc=mv_count,pc2=picker_count,md=mode;mode=4;picker_count=10;
