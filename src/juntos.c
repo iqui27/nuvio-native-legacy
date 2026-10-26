@@ -513,7 +513,7 @@ static void resposta(Resp *r) {
         juntos_convidar(mais, prep.n - prep.enviados);
         prep.enviados = prep.n;
       }
-      iniciarMotor();
+      // Keep the prepared host until the first WebSocket room snapshot.
       jsm_fonte(&motor, "mesma");
       jsm_estado_app(&motor, "carregando", 0);
       conectar();

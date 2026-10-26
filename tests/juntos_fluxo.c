@@ -4,7 +4,7 @@
 #include <assert.h>
 
 static int playing, prepared, pauses, starts, lobby, failedVideo, roomErrors;
-static int selectedStream = 0;
+static int selectedStream = 0, socketPending;
 int video_falhou(void) { return failedVideo; }
 int player_tem_video(void) { return prepared; }
 int video_velocidade_atual(void) { return 100; }
@@ -46,7 +46,7 @@ void juntosui_sala_fechou(void) {}
 void juntosui_erro(const char *k) { (void)k; roomErrors++; }
 void juntosui_convite(const JuntosConvite *c) { (void)c; }
 void atividade_junto(const char *a, const char *b, const char *c, const char *d, int t, int e, int s) { (void)a; (void)b; (void)c; (void)d; (void)t; (void)e; (void)s; }
-DiscordWs *dws_abrir(const char *u) { (void)u; return NULL; }
+DiscordWs *dws_abrir(const char *u) { (void)u; return socketPending ? (DiscordWs *)&socketPending : NULL; }
 void dws_fechar(DiscordWs *w) { (void)w; }
 int perfil_infantil_ativo(void) { return 0; }
 const char *rede_ultimo_erro(void) { return "fixture"; }
@@ -163,15 +163,27 @@ int main(void) {
   assert(nFila == 0); // no repeated failing requests
   assert(juntos_comecar() == 1);
   assert(playing && starts == startsBefore + 1 && !juntos_ativo());
-  // A pending request/socket must not trap Start either; late replies expire.
-  playing = 0;
-  juntos_preparar("tt62", 0, 0, "Saved film", "", NULL, 0, 0);
-  abrirPedido = 0;
-  fase = JF_CONECTANDO;
-  unsigned pendingGen = gen;
-  assert(juntos_comecar() == 1 && playing && gen != pendingGen);
-  assert(roomErrors == errorsBefore + 2);
-  puts("PASS: ready=1 open=0 without stream index; HTTP 401 then solo Start; pending socket solo Start");
+  // HTTP success must retain the host before any WebSocket snapshot arrives.
+  for (socketPending = 0; socketPending <= 1; socketPending++) {
+    playing = 0;
+    juntos_preparar("tt62", 0, 0, "Saved film", "", NULL, 0, 0);
+    abrirPedido = 0;
+    juntos_passo(30000 + socketPending);
+    assert(fase == JF_CRIANDO && nFila == 1 && fila[0].tipo == OP_CRIAR);
+    free(fila[0].corpo); nFila = 0;
+    char success[] = "{\"id\":\"0123456789abcdef0123456789abcdef\",\"codigo\":\"K7M2\",\"bilhete\":\"fixture\",\"ws\":\"ws://fixture.invalid\"}";
+    Resp accepted = { .tipo = OP_CRIAR, .status = 200, .txt = success };
+    resposta(&accepted);
+    assert(fase == JF_CONECTANDO && !motor.temSala && !motor.conectado);
+    assert(juntos_sou_anfitriao() && motor.sala.rel.estado == JSE_LOBBY);
+    unsigned pendingGen = gen;
+    assert(juntos_comecar() == 1 && playing && gen != pendingGen);
+    assert(roomErrors == errorsBefore + 2 + socketPending);
+    assert(!juntos_ativo() && !ws);
+    for (int i = 0; i < nFila; i++) free(fila[i].corpo);
+    nFila = 0;
+  }
+  puts("PASS: ready=1 open=0 without stream index; HTTP 401 then solo Start; HTTP 200 with failed/pending socket then solo Start");
 #endif
   puts("PASS: lobby preload gate; host + two guests; live stats; lobby-only start; shared countdown; invite during room creation");
 }
