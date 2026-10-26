@@ -15,7 +15,7 @@ int mus_pagina(int atual, int faixas, int direcao);
 typedef enum { MUS_NADA = 0, MUS_CARREGANDO, MUS_PRONTO, MUS_VAZIO, MUS_ERRO } MusEstado;
 
 typedef struct {
-  char titulo[128], artista[96], capa[256], apple[256];
+  char titulo[128], artista[96], capa[256], apple[256], deezer[256];
   int  n, ano;
   struct { int n; char titulo[96], artista[64], previa[768]; int dur; } faixa[MUS_FAIXAS_MAX];
 } MusAlbum;
@@ -31,6 +31,9 @@ int mus_previa_iniciar(MusPrevia *p, const MusAlbum *a, int faixa, int shuffle,
                        unsigned seed, unsigned agora, int ocupado);
 int mus_previa_passo(MusPrevia *p, unsigned agora, double segundos, int pronta, int evento);
 void mus_previa_parar(MusPrevia *p);
+// Resolve Deezer outside the render thread; tokens discard superseded results.
+unsigned mus_previa_pedir(const MusAlbum *a, int faixa);
+int mus_previa_resultado(unsigned token, char *url, unsigned tam);
 // Static spatial cover colors, RGBA32 input/output; caller owns 32x18x4 bytes.
 void mus_cores(const unsigned char *px, int w, int h, int pitch, unsigned char *out);
 

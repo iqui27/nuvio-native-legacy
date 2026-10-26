@@ -3,8 +3,22 @@
 #include "../src/juntos.c"
 #include <assert.h>
 
-static int playing, prepared, pauses, starts, lobby;
+static int playing, prepared, pauses, starts, lobby, failedVideo;
+int video_falhou(void) { return failedVideo; }
+int player_tem_video(void) { return prepared; }
+int video_velocidade_atual(void) { return 100; }
+void video_velocidade(int v) { (void)v; }
+void video_estatisticas(VideoStats *s) { memset(s, 0, sizeof *s); }
+int dws_estado(DiscordWs *w) { (void)w; return DWS_CONECTANDO; }
+int dws_codigo_fechamento(DiscordWs *w) { (void)w; return 0; }
+char *dws_receber(DiscordWs *w) { (void)w; return NULL; }
+void juntosui_evento(const JsEvento *e) { (void)e; }
+void juntosui_fonte_diferente(int v, int pal) { (void)v; (void)pal; }
+static Stream testStream;
+const Stream *stream_item(int i) { return i == 0 ? &testStream : NULL; }
+int stream_atual(void) { return prepared ? 0 : -1; }
 static double position, now = 10000;
+double video_pos(void) { return position; }
 static char sent[1024];
 int dws_enviar(DiscordWs *w, const char *j) { (void)w; (void)j; return 0; }
 const char *i18n(const char *s) { return s; }
@@ -17,7 +31,7 @@ const char *recomenda_vinculo_nome(void) { return "Host"; }
 int player_aberto(void) { return 1; }
 int player_pausado(void) { return !playing; }
 int video_pronto(void) { return prepared; }
-int player_juntos_preparado(void) { return prepared; }
+int player_juntos_preparado(void) { return prepared && !failedVideo; }
 int video_tocando(void) { return playing; }
 double video_duracao(void) { return 7200; }
 unsigned video_bufferando_ms(void) { return 0; }
@@ -26,6 +40,18 @@ void player_juntos_pausar(int p) { playing = !p; if (p) pauses++; else starts++;
 void player_juntos_buscar(double p) { position = p; }
 void video_taxa_sync(int v) { (void)v; }
 void juntosui_sala_abriu(void) { lobby++; }
+// Network/socket edges of the room replies: never reached (worker held, no ticket).
+void juntosui_sala_fechou(void) {}
+void juntosui_erro(const char *k) { (void)k; }
+void juntosui_convite(const JuntosConvite *c) { (void)c; }
+void atividade_junto(const char *a, const char *b, const char *c, const char *d, int t, int e, int s) { (void)a; (void)b; (void)c; (void)d; (void)t; (void)e; (void)s; }
+DiscordWs *dws_abrir(const char *u) { (void)u; return NULL; }
+void dws_fechar(DiscordWs *w) { (void)w; }
+int perfil_infantil_ativo(void) { return 0; }
+const char *rede_ultimo_erro(void) { return "fixture"; }
+int recomenda_cabecalhos(const char **c, char *a, size_t na, char *v, size_t nv, char *p, size_t np) { (void)c; (void)a; (void)na; (void)v; (void)nv; (void)p; (void)np; return 0; }
+char *rede_postar_st(const char *u, int s, const char *const *c, const char *b, int *st) { (void)u; (void)s; (void)c; (void)b; (void)st; return NULL; }
+char *rede_baixar_st(const char *u, int s, const char *const *c, int *st) { (void)u; (void)s; (void)c; (void)st; return NULL; }
 static int send(void *u, const char *json) { (void)u; snprintf(sent, sizeof sent, "%s", json); return 0; }
 
 static void snapshot(JsMotor *m, int n, int seq, const char *state, double t0) {
@@ -45,7 +71,27 @@ int main(void) {
   assert(motor.sala.n == 1 && !strcmp(motor.sala.m[0].st, "carregando"));
   assert(abrirPedido && !strcmp(abrirImdb, "tt1") && !escolhendo);
   assert(juntos_ao_alternar(0) == 1 && starts == 0);
+#ifdef JUNTOS_TCL
+  // Previous ExoPlayer failure survives exit; no source belongs to this player yet.
+  failedVideo = 1;
+  juntos_passo(10001);
+  assert(fase == JF_PREPARADO && abrirPedido && temMotor);
+  char imdb[24], title[160], poster[512]; int season, episode;
+  assert(juntos_pediu_abrir(imdb, sizeof imdb, &season, &episode,
+                            title, sizeof title, poster, sizeof poster));
+  juntos_passo(10002); // player opened, still waiting for the new source
+  assert(fase == JF_PREPARADO && temMotor);
+  failedVideo = 0;
+#endif
   prepared = 1;
+#ifdef JUNTOS_TCL
+  // Duration + paused readiness must now reach room creation (worker held).
+  fioVivo = 1;
+  snprintf(testStream.rotulo, sizeof testStream.rotulo, "Android fixture");
+  juntos_passo(10003);
+  assert(fase == JF_CRIANDO && nFila == 1 && fila[0].tipo == OP_CRIAR);
+  free(fila[0].corpo); nFila = 0; fioVivo = 0;
+#endif
   motor.enviar = send; motor.conectado = 1;
   snapshot(&motor, 1, 1, "lobby", now);
   assert(pauses > 0 && !playing);
@@ -81,5 +127,20 @@ int main(void) {
   for (int i = 0; i < 3; i++) jsm_passo(i ? &guests[i - 1] : &motor, now);
   assert(starts == 3 && playing);
   assert(!juntos_precarregando());
-  puts("PASS: lobby preload gate; host + two guests; live stats; lobby-only start; shared countdown");
+  // Invite while POST /v1/sala is in flight: queued, then sent once the room id arrives.
+  assert(!fioVivo); fioVivo = 1;   // keep requests in the queue, no worker thread
+  fase = JF_CRIANDO; salaId[0] = 0; prep.n = 0;
+  const char *friend1 = "friend1";
+  juntos_convidar(&friend1, 1);
+  assert(prep.n == 1 && nFila == 0);
+  char reply[] = "{\"id\":\"0123456789abcdef0123456789abcdef\",\"codigo\":\"K7M2\"}";
+  Resp created = { .tipo = OP_CRIAR, .status = 200, .txt = reply };
+  resposta(&created);
+  assert(nFila == 1 && fila[0].tipo == OP_CONVIDAR && strstr(fila[0].corpo, "\"friend1\""));
+#ifdef JUNTOS_TCL
+  fase = JF_PREPARADO; abrirPedido = 0; failedVideo = 1;
+  juntos_passo(10004);
+  assert(fase == JF_OCIOSO && !temMotor); // a failure of our own source still exits
+#endif
+  puts("PASS: lobby preload gate; host + two guests; live stats; lobby-only start; shared countdown; invite during room creation");
 }

@@ -77,8 +77,9 @@ class DestinosAddon(private val agora: () -> Long = { android.os.SystemClock.ela
 }
 
 /** Nao repete no Loader o ciclo de tentativas que este DataSource ja esgotou. */
-internal class PoliticaErroParalelo : DefaultLoadErrorHandlingPolicy() {
+internal class PoliticaErroParalelo(private val previa: Boolean = false) : DefaultLoadErrorHandlingPolicy() {
     override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+        if (previa) return C.TIME_UNSET
         var causa: Throwable? = loadErrorInfo.exception
         repeat(16) {
             if (causa is FalhaDownloadParalelo) return C.TIME_UNSET
@@ -133,7 +134,12 @@ class ParaleloDataSource(
         private const val PEDACO_CAUDA_MIN = 128 shl 10
 
         // Manifesto e segmento de streaming adaptativo: conexao unica.
+        fun previa(uri: Uri): Boolean = uri.host?.lowercase()?.let {
+            it == "dzcdn.net" || it.endsWith(".dzcdn.net")
+        } == true
+
         fun serve(uri: Uri): Boolean {
+            if (previa(uri)) return false
             val s = uri.scheme ?: return false
             if (!s.equals("http", true) && !s.equals("https", true)) return false
             val p = (uri.path ?: "").lowercase()

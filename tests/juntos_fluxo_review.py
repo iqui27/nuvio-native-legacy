@@ -26,7 +26,8 @@ checks = {
         'juntosui_voltar_filme()' in app and
         'detail_fechar_seco();\n    trocarTela(TELA_BUSCA);' in app,
     'P2: QR Back closes only QR; Sources and exit restore invoking focus':
-        'if (mostrarQr) mostrarQr = qrPendente = 0;' in ui and
+        'if (ehVoltar(k)) { mostrarQr = qrPendente = 0;' in ui and
+        'case BT_FONTES: focoSala = foco; mostrarQr = 0; pediuFontes = 1;' in ui and
         'camada = CAMADA_SALA; foco = focoSala;' in ui and
         '} else foco = focoSala;' in ui,
     'P2: Play compares full room movie/episode identity':

@@ -373,6 +373,24 @@ int main(int argc, char **argv) {
   tecla(SDLK_DOWN);   // do primeiro filtro ao primeiro cartao
   assert(conquistas_foco() >= 100);
   captura(prefixo, "hub", 60);
+  // Hub cards on the shared material, glass off and on, then the neutral focus
+  // spring moving one card right (0/50/100/150/250 ms, factory glass).
+  { static const int ms[] = { 0, 50, 100, 150, 250 };
+    int g, vidro = ajustes_vidro(), t = 0;
+    char nome[32];
+    for (g = 0; g < 2; g++) {
+      ajustes_definir_vidro(g);
+      snprintf(nome, sizeof nome, "hub-g%d", g);
+      captura(prefixo, nome, 20);
+    }
+    ajustes_definir_vidro(vidro);
+    adiantar(20);
+    tecla(SDLK_RIGHT);
+    for (i = 0; i < 5; i++) {
+      adiantar(ms[i] * 60 / 1000 - t); t = ms[i] * 60 / 1000;
+      snprintf(nome, sizeof nome, "foco-%03d", ms[i]);
+      gravar_nome(prefixo, nome);
+    } }
 
   // ---- Aba "Em andamento" (so o que ainda falta).
   conquistas_teste_esquecer();

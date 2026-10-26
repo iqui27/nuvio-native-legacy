@@ -69,11 +69,15 @@ static int fioLaco(void *u) {
     SDL_UnlockMutex(mtx);
     memset(&r, 0, sizeof r);
     r.tipo = op.tipo; r.gen = op.gen;
+    printf("[juntos] http: op=%d requesting auth\n", op.tipo);
     if (recomenda_cabecalhos(cab, aut, sizeof aut, via, sizeof via, pf, sizeof pf)) {
+      printf("[juntos] http: op=%d auth ready, request started\n", op.tipo);
       snprintf(url, sizeof url, "%s%s", NV_REC_URL, op.rota);
       r.txt = op.get ? rede_baixar_st(url, PRAZO_S, cab, &r.status)
                      : rede_postar_st(url, PRAZO_S, cab, op.corpo ? op.corpo : "{}", &r.status);
     }
+    printf("[juntos] http: op=%d status=%d transport=%s\n", op.tipo, r.status,
+           r.status ? "ok" : rede_ultimo_erro());
     free(op.corpo);
     SDL_LockMutex(mtx);
     if (nCaixa < FILA) caixa[nCaixa++] = r;
@@ -85,9 +89,9 @@ static int fioLaco(void *u) {
 
 static void pedir(OpTipo tipo, const char *rota, const char *corpo, int get) {
   Op op;
-  if (!NV_REC_URL[0]) return;
+  if (!NV_REC_URL[0]) { printf("[juntos] http: service not configured\n"); return; }
   if (!mtx) { mtx = SDL_CreateMutex(); cond = SDL_CreateCond(); }
-  if (!mtx || !cond) return;
+  if (!mtx || !cond) { printf("[juntos] http: queue initialization failed\n"); return; }
   memset(&op, 0, sizeof op);
   op.tipo = tipo; op.gen = gen; op.get = get;
   snprintf(op.rota, sizeof op.rota, "%s", rota);
@@ -110,11 +114,12 @@ static void pedir(OpTipo tipo, const char *rota, const char *corpo, int get) {
     }
   }
   SDL_LockMutex(mtx);
-  if (nFila == FILA) { SDL_UnlockMutex(mtx); free(op.corpo); return; }
+  if (nFila == FILA) { SDL_UnlockMutex(mtx); free(op.corpo); printf("[juntos] http: queue full\n"); return; }
   fila[nFila++] = op;
   if (!fioVivo) {
     SDL_Thread *t = SDL_CreateThread(fioLaco, "nv-juntos", NULL);
     if (t) { SDL_DetachThread(t); fioVivo = 1; }
+    else printf("[juntos] http: worker creation failed\n");
   }
   SDL_CondSignal(cond);
   SDL_UnlockMutex(mtx);
@@ -131,7 +136,7 @@ static int pedindoBilhete;
 // anfitriao preparado
 static struct {
   char imdb[24], titulo[160], poster[512];
-  int t, e, soAnf, n;
+  int t, e, soAnf, n, enviados;   // enviados: already in the POST /v1/sala body
   char conv[JUNTOS_CONVIDADOS_MAX][96];
 } prep;
 // abrir o titulo (convidado / proximo episodio)
@@ -241,10 +246,12 @@ static void zerar(void) {
 // ---- rotas ---------------------------------------------------------------------------------
 static void conectar(void) {
   char url[2048];
+  printf("[juntos] websocket: endpoint=%d ticket=%d\n", !!wsBase[0], !!bilhete[0]);
   if (!wsBase[0] || !bilhete[0]) return;
   snprintf(url, sizeof url, "%s?b=%s", wsBase, bilhete);
   bilhete[0] = 0;   // uso unico
   ws = dws_abrir(url);
+  printf("[juntos] websocket: handshake %s\n", ws ? "pending" : "allocation failed");
   if (fase != JF_AGUARDANDO) fase = fase == JF_DENTRO || fase == JF_RECONECTANDO ? JF_RECONECTANDO : JF_CONECTANDO;
 }
 
@@ -285,6 +292,7 @@ static void criarSala(void) {
            ep, tit, pos, imp, prep.soAnf ? "anfitriao" : "todos", video_pos(), conv);
   snprintf(tituloSala, sizeof tituloSala, "%s", prep.titulo);
   fase = JF_CRIANDO;
+  prep.enviados = prep.n;
   pedir(OP_CRIAR, "/v1/sala", corpo, 0);
   printf("[juntos] criando sala (%d convidado(s), fonte %s)\n", prep.n, ii.rotulo);
 }
@@ -318,15 +326,25 @@ void juntos_preparar(const char *imdb, int t, int e, const char *titulo, const c
   printf("[juntos] lobby open: preparing paused source\n");
 }
 
-void juntos_convidar(const char *const *conv, int n) {
+int juntos_convidar(const char *const *conv, int n) {
   char corpo[1600], e[200];
   int i, k;
-  if (!salaId[0] || !n) return;
+  // No server room yet (preparing, or POST /v1/sala in flight): queue; criarSala
+  // or the OP_CRIAR reply sends them.
+  if (!salaId[0] && (fase == JF_PREPARADO || fase == JF_CRIANDO)) {
+    if (prep.n + n > JUNTOS_CONVIDADOS_MAX) return 0;
+    for (i = 0; i < n; i++) snprintf(prep.conv[prep.n++], sizeof prep.conv[0], "%s", conv[i]);
+    printf("[juntos] lobby: %d invite(s) queued until the room opens\n", n);
+    return 1;
+  }
+  if (!salaId[0] || !n) return 0;
+  printf("[juntos] lobby: inviting %d friend(s)\n", n);
   k = snprintf(corpo, sizeof corpo, "{\"id\":\"%s\",\"convidados\":[", salaId);
   for (i = 0; i < n && i < JUNTOS_CONVIDADOS_MAX && (size_t)k < sizeof corpo - 200; i++)
     k += snprintf(corpo + k, sizeof corpo - (size_t)k, "%s\"%s\"", i ? "," : "", jsp_esc(e, sizeof e, conv[i]));
   snprintf(corpo + k, sizeof corpo - (size_t)k, "]}");
   pedir(OP_CONVIDAR, "/v1/sala/convidar", corpo, 0);
+  return 1;
 }
 
 void juntos_entrar_id(const char *id) {
@@ -373,6 +391,7 @@ int juntos_precarregando(void) {
 int juntos_comecar(void) {
   if (!temMotor || !motor.temSala || !jsm_sou_anfitriao(&motor) ||
       motor.sala.rel.estado != JSE_LOBBY || !pPronto(NULL)) return -1;
+  printf("[juntos] start: source ready, sending cinema countdown\n");
   return jsm_cmd(&motor, "comecar", -1, NULL, agoraLocal());
 }
 int juntos_encerrar(void) {
@@ -469,12 +488,18 @@ static void resposta(Resp *r) {
       js_texto(r->txt, NULL, "codigo", codigo, sizeof codigo);
       js_texto(r->txt, NULL, "bilhete", bilhete, sizeof bilhete);
       lerEnderecos(r->txt);
+      if (prep.n > prep.enviados) {   // invited while the room was being created
+        const char *mais[JUNTOS_CONVIDADOS_MAX];
+        for (int i = prep.enviados; i < prep.n; i++) mais[i - prep.enviados] = prep.conv[i];
+        juntos_convidar(mais, prep.n - prep.enviados);
+        prep.enviados = prep.n;
+      }
       iniciarMotor();
       jsm_fonte(&motor, "mesma");
       jsm_estado_app(&motor, "carregando", 0);
       conectar();
       juntosui_sala_abriu();
-      printf("[juntos] sala aberta, codigo %s\n", codigo);
+      printf("[juntos] room: created, invite code ready\n");
       break;
     case OP_ENTRAR: {
       pedindoBilhete = 0;
@@ -509,6 +534,9 @@ static void resposta(Resp *r) {
       conectar();
       break;
     }
+    case OP_CONVIDAR:
+      printf("[juntos] invite: request completed status=%d\n", r->status);
+      break;
     case OP_CONVITES:
       buscandoConvites = 0;
       if (ok && !juntos_ativo()) lerConvites(r->txt);
@@ -621,6 +649,15 @@ void juntos_passo(Uint32 agora) {
       free(lote[i].txt);
     }
   }
+  if (fase == JF_PREPARADO) {
+    static Uint32 ultimoPreparo;
+    if (agora - ultimoPreparo >= 5000u) {
+      ultimoPreparo = agora;
+      printf("[juntos] source: waiting open=%d player=%d source=%d ready=%d duration=%d error=%d\n",
+             abrirPedido, player_aberto(), player_tem_video(), player_juntos_preparado(),
+             video_duracao() > 0, video_falhou());
+    }
+  }
   // Host creates the room once the paused preparation has a duration.
   if (fase == JF_PREPARADO && player_juntos_preparado() && video_duracao() > 0 && stream_atual() >= 0)
     criarSala();
@@ -661,7 +698,10 @@ void juntos_passo(Uint32 agora) {
     jsm_estado_app(&motor, video_falhou() ? "erro" : "carregando", pct > 0 ? pct : 0);
     if (!motor.temSala && motor.sala.n) motor.sala.m[0].pct = pct > 0 ? pct : 0;
   }
-  if (fase == JF_PREPARADO && video_falhou()) {
+  // The backend retains the previous playback error until a new source loads.
+  // Island updates run before app.c consumes abrirPedido: that error is not ours.
+  if (fase == JF_PREPARADO && !abrirPedido && player_tem_video() && video_falhou()) {
+    printf("[juntos] source: paused preparation failed\n");
     juntosui_erro("rede");
     zerar();
     return;
@@ -675,6 +715,7 @@ void juntos_passo(Uint32 agora) {
 int juntos_pediu_abrir(char *imdb, size_t ni, int *t, int *e, char *titulo, size_t nt, char *poster, size_t np) {
   if (!abrirPedido) return 0;
   abrirPedido = 0;
+  printf("[juntos] source: open request handed to player\n");
   snprintf(imdb, ni, "%s", abrirImdb);
   *t = abrirT; *e = abrirE;
   snprintf(titulo, nt, "%s", abrirTitulo);

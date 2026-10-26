@@ -2005,11 +2005,20 @@ static void ffPont(int i, int categoria) {
 static void ffPontVoltar(int a, int b) { (void)a; (void)b; ffVoltar(); }
 static void desenhaFolhaFiltros(void) {
   GfxRect m = {460.0f, 90.0f, 1000.0f, 900.0f};
-  float topo, base, alvo, y;
+  float topo, base, alvo, y, g0 = gfx_opacidade_grupo;
+  float forma = ffForma < 0.0f ? 0.0f : ffForma > 1.0f ? 1.0f : ffForma;
+  float cat = anim_suave(ffCatA);
   int n = ffCategoria >= 0 ? fontefiltro_opcoes_n(ffCategoria) : 9;
   int foco = ffCategoria >= 0 ? ffValorFoco : ffFoco;
+  int vivo = frAberta == 6, escala = ffForma != 1.0f, ptr;
   FonteFiltroConfig cfg; fontefalha_filtro(&cfg);
-  ponteiro_camada(); ajVeuModal(); ajCentraModal(&m); ajIlha(m, 36.0f, 1.0f, 1.0f);
+  if (forma <= 0.005f) return;
+  if (vivo) ponteiro_camada();
+  gfx_opacidade_grupo = g0 * forma;
+  ajVeuModal(); ajCentraModal(&m);
+  if (escala) gfx_transformar(m.x + m.w * 0.5f, m.y + m.h * 0.5f, anim_mistura(0.96f, 1.0f, ffForma), 0, 0);
+  ptr = vivo && !escala;
+  ajIlha(m, 36.0f, 1.0f, 1.0f);
   topo = ajCabecalhoFolha(m, ffCategoria >= 0 ? "Filtros das fontes" : "Fontes e addons",
                          ffCategoria >= 0 ? fontefiltro_rotulo(ffCategoria) : "Filtros das fontes",
                          i18n(ffCategoria >= 0
@@ -2021,22 +2030,28 @@ static void desenhaFolhaFiltros(void) {
   if (alvo > n * 84.0f - (base - topo)) alvo = n * 84.0f - (base - topo);
   if (alvo < 0.0f) alvo = 0.0f;
 #ifdef NV_TOUCH_UI
-  ajToqueCamada();
-  alvo = ajToqueRegistrar(AJT_FONTES, (GfxRect){m.x, topo, m.w, base - topo}, &ajToqueOffset[AJT_FONTES],
-                          n * 84.0f - (base - topo), alvo, 600 + ffCategoria);
+  if (vivo) {
+    ajToqueCamada();
+    alvo = ajToqueRegistrar(AJT_FONTES, (GfxRect){m.x, topo, m.w, base - topo}, &ajToqueOffset[AJT_FONTES],
+                            n * 84.0f - (base - topo), alvo, 600 + ffCategoria);
+    if (ajToqueLivre[AJT_FONTES]) ffRolPronto = 0;
+  }
 #endif
-  gfx_recorte(m.x, topo, m.w, base - topo); y = topo - alvo;
+  if (vivo) ffRolAlvo = alvo;
+  if (!ffRolPronto) { ffRol = alvo; ffRolV = 0.0f; ffRolPronto = 1; }
+  gfx_recorte(m.x, topo, m.w, base - topo); y = topo - ffRol + (1.0f - cat) * 24.0f;
+  gfx_opacidade_grupo = g0 * forma * cat;
   for (int i = 0; i < n; i++, y += 84.0f) {
     GfxRect r = {m.x + 18.0f, y, m.w - 36.0f, 80.0f};
     if (y + r.h < topo || y > base) continue;
-    int f = i == foco;
-    ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, ffPont, NULL, i, ffCategoria);
-    if (f) ajFocoLinha(r, 22.0f, 1.0f, 1.0f);
+    float f = i < 64 ? ffFocoA[i] : (float)(i == foco);
+    if (ptr) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, ffPont, NULL, i, ffCategoria);
+    ajFocoLinha(r, 22.0f, f, 1.0f);
     if (ffCategoria >= 0) {
       int excluido = (cfg.excluir[ffCategoria] & fontefiltro_bit(ffCategoria, i)) != 0;
       GfxRect caixa = {r.x + r.w - 66.0f, y + 20.0f, 40.0f, 40.0f};
       TxtLinha nome = ajTxtC(TXT_AJ_ROTULO, fontefiltro_opcao(ffCategoria, i), r.w - 122.0f);
-      txt_desenhar_alpha(nome, r.x + 36.0f, y + (r.h - nome.h) * 0.5f, f ? 1.0f : 0.86f);
+      txt_desenhar_alpha(nome, r.x + 36.0f, y + (r.h - nome.h) * 0.5f, 0.86f + 0.14f * f);
       if (excluido) {
         ajPilulaAcento(caixa, 12.0f, 1.0f);
         ajIconeT("aj_check", caixa.x + 8.0f, caixa.y + 8.0f, 24.0f, 1.0f);
@@ -2046,21 +2061,24 @@ static void desenhaFolhaFiltros(void) {
       // Values are already translated, and user-entered release groups remain literal.
       TxtLinha valorFiltro = txt_linha_corta(TXT_ILHA_GENERO, ffValor(i), AJ_TX, r.w - 100.0f);
       float ty = y + (r.h - nome.h - 4.0f - valorFiltro.h) * 0.5f;
-      txt_desenhar_alpha(nome, r.x + 36.0f, ty, f ? 1.0f : 0.86f);
+      txt_desenhar_alpha(nome, r.x + 36.0f, ty, 0.86f + 0.14f * f);
       txt_desenhar_alpha(valorFiltro, r.x + 36.0f, ty + nome.h + 4.0f, 0.52f);
-      ajIcone("aj_chevron-right", r.x + r.w - 54.0f, y + 28.0f, 24.0f, f ? 1.0f : 0.65f);
+      ajIcone("aj_chevron-right", r.x + r.w - 54.0f, y + 28.0f, 24.0f, 0.65f + 0.35f * f);
     }
   }
   gfx_sem_recorte();
+  gfx_opacidade_grupo = g0 * forma;
   TxtLinha fechar = ajTxt(TXT_V2_SEG, ffCategoria >= 0 ? "Voltar" : "Fechar");
   GfxRect botao = {m.x + m.w - fechar.w - 84.0f, m.y + m.h - 76.0f, fechar.w + 40.0f, 48.0f};
   ajNeutro(botao, 24.0f, 0.10f, AJ_CHIP_SOL, 1.0f);
   txt_desenhar_alpha(fechar, botao.x + 20.0f, botao.y + (botao.h - fechar.h) * 0.5f, 0.9f);
-  ponteiro_alvo(botao.x, botao.y, botao.w, botao.h, NULL, ffPontVoltar, 0, 0);
+  if (ptr) ponteiro_alvo(botao.x, botao.y, botao.w, botao.h, NULL, ffPontVoltar, 0, 0);
   if (!ajTelaCheia()) {
     AjDica d[2] = {{"OK", ffCategoria >= 0 ? "Filtrar" : "Editar"}, {"Voltar", ffCategoria >= 0 ? "Voltar" : "Fechar"}};
     ajDicasLinha(d, 2, m.x + 44.0f, m.y + m.h - 66.0f, 1.0f);
   }
+  if (escala) gfx_sem_transformar();
+  gfx_opacidade_grupo = g0;
   if (uxAviso[0]) {
     TxtLinha aviso = ajTxtC(TXT_AJ_SUB, uxAviso, NV_VTELA_W - 80.0f);
     txt_desenhar_alpha(aviso, (NV_VTELA_W - aviso.w) * 0.5f, NV_VTELA_H - 50.0f, 0.8f);

@@ -853,7 +853,7 @@ static int iniciarFonteJob(int tipo, unsigned geracao, const char *id, int renov
 }
 static int pedirFonteJob(int tipo, unsigned geracao, const char *id, int renovando) {
   // Toda escolha de VOD abre uma rodada nova da fonte aberta antes do veredito.
-  if (tipo == FJOB_ADDON || tipo == FJOB_PREPARO) fa_nova_rodada();
+  if (tipo == FJOB_ADDON || tipo == FJOB_PREPARO || tipo == FJOB_PROXIMA_VOD) fa_nova_rodada();
   int r = iniciarFonteJob(tipo, geracao, id, renovando);
   if (r == 1) {
     fontePendenteTipo = tipo;
@@ -886,6 +886,8 @@ static int iniciarPoliticaFonte(int preferida, int manual) {
 #include "srvidx.h"
 #include "partes.h"
 #include "logrede.h"
+#include "extras.h"
+#include "perfilinfantil.h"
 #include <stdio.h>
 
 static Tela tela = TELA_HOME;
@@ -1064,6 +1066,10 @@ static int cacaDoPerfil;
 
 static void trocarTela(Tela nova) {
   if (nova == tela) return;
+  if (nova == TELA_GUIA && perfil_infantil_ativo()) {   // perfilinfantil.h: sem TV ao vivo
+    glem_aviso_curto(i18n("Perfil infantil: sem TV ao vivo"));
+    return;
+  }
   if (nova != TELA_SOCIAL) socialDoPerfil = 0;
   if (nova != TELA_CACA) cacaDoPerfil = 0;
   if (tela == TELA_AJUSTES) ajustes_encerrar();
@@ -3549,6 +3555,9 @@ static void tentarProximaFonteVOD(void) {
       player_erro_fonte_motivo(i18n(motivo == 2 ? "A fonte não respondeu a tempo." : "A fonte respondeu, mas não entregou dados suficientes."),
           i18n("Confira Ajustes > Esta TV > Teste de velocidade e veja se o arquivo é menor que o tamanho recomendado antes de relatar um problema de travamento."));
     else player_erro_fonte();
+    folhaParaTocar = 1;
+    nomeParaFolha(); stream_folha_abrir();
+    stream_folha_contexto(i18n("Abra Fontes para escolher outra opção ou recarregar."));
     return;
   }
   player_voltar_a_esperar();
@@ -5038,7 +5047,10 @@ static void tocarFonteEscolhida(int fonte, int manual) {
         if (s->foraCache)
           player_toast_ex(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 9000, "aj_download", 0);
       }
-      if (juntos_precarregando()) juntosui_sala_abriu();
+      if (juntos_precarregando()) {
+        printf("[juntos] source: selected source delivered to player\n");
+        juntosui_sala_abriu();
+      }
       // Escolha manual num canal tambem entra no watchdog: fonte viva escolhida
       // a dedo pode morrer igual.
       if (player_id_canal()[0]) { canalFonteIdx = fonte; canalFonteDesde = SDL_GetTicks(); canalViaProxy = 0; }
@@ -5072,7 +5084,11 @@ static void juntosAbrirEFonte(Uint32 agora) {
       idx = cat_acrescentar(&novo);
     }
     if (idx >= 0) {
-      if (travaui_abrir_espera(idx, t, e)) return;
+      if (travaui_abrir_espera(idx, t, e)) {
+        printf("[juntos] source: blocked by series lock\n");
+        return;
+      }
+      printf("[juntos] source: opening paused player\n");
       limparFonteVOD();
       if (player_aberto() || player_retido()) player_encerrar();
       diagnostico_cancelar_vazao();
@@ -6187,6 +6203,16 @@ void app_atualizar(float dt, Uint32 agora) {
     // TRAVA DE SERIE: o episodio alvo alem do limite (quem esta a frente
     // espera) nao toca: abre a folha de espera, que tem "Assistir mesmo assim".
     if (querTocar && aguardandoFonte != 2 && travaui_segurar_detalhe()) querTocar = 0;
+    // PERFIL INFANTIL (perfilinfantil.h): so classificacao livre ou ate 10 anos.
+    if (querTocar && perfil_infantil_ativo()) {
+      const CatItem *ki = cat_item(detail_indice());
+      const char *cert = extras_ficha_classificacao();
+      if (!cert || !*cert) cert = ki ? ki->classificacao : NULL;
+      if (!perfil_infantil_classif_ok(cert)) {
+        glem_aviso_curto(i18n("Perfil infantil: só classificação livre e 10 anos"));
+        querTocar = 0;
+      }
+    }
     if (querTocar && aguardandoFonte != 2) {
       marco("abrir: reproduzir pedido");
       // A tela abre JA, no estado "abrindo fonte", e a escolha acontece depois.
@@ -6508,6 +6534,7 @@ void app_atualizar(float dt, Uint32 agora) {
                  (unsigned)(SDL_GetTicks() - fonteVODDesde));
           fflush(stdout);
         } else definirFonteVOD(s->url);
+        if (juntos_precarregando()) printf("[juntos] source: verified source delivered to player\n");
         // Tocou por outra fonte, mas um servico de debrid ficou de fora por
         // conta sem plano: diz uma vez por sessao, sem bloquear nada.
         { int novo = debrid_sem_plano_novo();
@@ -6553,7 +6580,14 @@ void app_atualizar(float dt, Uint32 agora) {
         folhaParaTocar = 1;
         nomeParaFolha(); stream_folha_abrir();
       }
-      else { limparFonteVOD(); erroSemFonte(); }
+      else {
+        limparFonteVOD(); erroSemFonte();
+        if (!player_id_canal()[0]) {
+          folhaParaTocar = 1;
+          nomeParaFolha(); stream_folha_abrir();
+          stream_folha_contexto(i18n("Abra Fontes para escolher outra opção ou recarregar."));
+        }
+      }
     }
     }
   }
@@ -7342,7 +7376,7 @@ static void desenharAtrasDoPainel(void *ctx) {
       default:              home_desenhar(agora);       break;
     }
   }
-  if (srvsetup_aberto()) srvsetup_desenhar(agora);
+  if (srvsetup_aberto()) { ponteiro_camada(); srvsetup_desenhar(agora); }
   CAMADA_SE(vertudo_aberta());
 #ifdef NV_TOUCH_UI
   if (!detail_cobre_tela()) sidebarToqueRegistrar(2);
@@ -7453,7 +7487,7 @@ static void desenharTelas(Uint32 agora) {
   // — a mesma conta que ja valia para o cartao de detalhe esticado.
   // ...exceto enquanto o video do preview do guia CRESCE para a tela cheia: ai
   // o guia continua em volta do furo que anda (player_desenhar).
-  if (!player_visivel() || player_janela_animando(NULL, NULL, NULL, NULL)) {
+  if (!juntosui_cobre_tela() && (!player_visivel() || player_janela_animando(NULL, NULL, NULL, NULL))) {
     // O FUNDO PARADO DO PAINEL DE SALVOS: com o painel inteiro na tela, tudo
     // que fica atras dele e pintado UMA vez num FBO, ja com o veu, e os quadros
     // seguintes desenham so a copia e o painel. Ver spainel_fundo em
@@ -7482,12 +7516,20 @@ static void desenharTelas(Uint32 agora) {
   // HDR/DV, legenda e tela do DV inclusive. Volta a 1 depois da tela do DV.
   if (player_visivel()) gfx_hdr_ui = player_ui_hdr();
   CAMADA_SE(player_visivel());
-  player_desenhar(agora);
+  if (!juntosui_cobre_tela()) player_desenhar(agora);
   // O overlay do guia vai POR CIMA do player — o video continua atras do fundo
   // a 94%, que e o que diz "a TV nao parou" enquanto se troca de canal.
   if (guia_overlay_aberta()) { ponteiro_camada(); guia_desenhar(agora); }
   CAMADA_SE(episodios_aberto());
   episodios_desenhar();
+  // Watch Together lobby stays UNDER the shared Sources sheet while it opens
+  // and closes (the island draws later); otherwise it draws near the end.
+  if (!registro_aberto() && stream_folha_anim() > .005f) {
+    float osd = gfx_osd_mult, hdr = gfx_hdr_ui;
+    gfx_osd_mult = gfx_hdr_ui = 1.0f;
+    juntosui_desenhar(agora);
+    gfx_osd_mult = osd; gfx_hdr_ui = hdr;
+  }
   CAMADA_SE(stream_folha_aberta());
   stream_folha_desenhar(agora);
   CAMADA_SE(faixas_aberta());
@@ -7785,7 +7827,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades180_desenhar(agora);
   // O esmaecer de saida do guia da 2.0, por cima do app que ja voltou.
   if (!registro_aberto() && novidades20_visivel()) novidades20_desenhar(agora);
-  if (!registro_aberto()) comecar_desenhar(agora);        // so o esmaecer de saida
+  if (!registro_aberto() && comecar_visivel()) comecar_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades201_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades202_desenhar(agora);
   if (!registro_aberto()) resolver_desenhar(agora);        // so o esmaecer de saida
@@ -7905,7 +7947,7 @@ void app_desenhar(Uint32 agora) {
   // O MEDIDOR DE DESEMPENHO (Ajustes > Desempenho desta TV) nao e mais camada
   // propria: e conteudo da ilha do relogio (ilha.c, plrilha.c; desempenho.h).
   // Watch Together: rostos e reacoes no player, folha e cartao da sala.
-  if (!registro_aberto()) juntosui_desenhar(agora);
+  if (!registro_aberto() && stream_folha_anim() <= .005f) juntosui_desenhar(agora);
   CAMADA_SE(registro_aberto());
   registro_desenhar();
   // A ilha do relogio fica acima do painel de registro, no canto de sempre.

@@ -14,7 +14,7 @@ RAIZ = pathlib.Path(__file__).resolve().parent.parent
 SRC = RAIZ / "src"
 IDIOMAS = ("ro", "uk", "ru", "fr", "de", "es", "it", "nl", "pl", "tr", "ptpt", "sv",
            "da", "no", "cs", "sk", "sl", "hu", "lt", "bs", "sr", "bg", "el", "id",
-           "vi", "ja", "zhcn", "zhtw")
+           "vi", "ja", "zhcn", "zhtw", "ar")
 
 def dec(s):
     return s.replace('\\"', '"').replace("\\n", "\n").replace("\\\\", "\\").encode("utf-8")

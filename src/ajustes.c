@@ -53,6 +53,7 @@
 #include "tex_cache.h"
 #include "badges.h"
 #include "anim.h"
+#include "movimento.h"
 #include "layout.h"
 #include "sessao.h"
 #include "contalib.h"
@@ -9324,6 +9325,11 @@ static const char *faResumo(int provedores) {
 // as OK/tap toggles one; size uses the existing explicit-confirmation editor.
 // Every edit reads the saved config first, so another field is never lost.
 static int ffCategoria = -1, ffFoco, ffValorFoco;
+// Centered modal lifecycle (clock/player sheets): the shape springs in and out
+// with the last body retained while closing, a category list eases in, row
+// focus and scroll follow the shared springs.
+static float ffForma, ffFormaV, ffCatA = 1.0f, ffFocoA[64], ffRol, ffRolV, ffRolAlvo;
+static int ffFechando, ffCatVista = -1, ffRolPronto;
 static const int FF_CATEGORIA[9] = {
   FONTEFILTRO_RESOLUCAO, FONTEFILTRO_QUALIDADE, -1,
   FONTEFILTRO_VISUAL, FONTEFILTRO_AUDIO, FONTEFILTRO_CANAIS,
@@ -9369,7 +9375,27 @@ static const char *ffResumo(void) {
 static void ffAbrir(void) {
   if (!ajOpcaoDisponivel(AJ_FILTROS_FONTES)) return;
   uxCancelar(); faRetornarFolha = 0; frAberta = 6;
-  ffCategoria = -1; ffFoco = ffValorFoco = 0;
+  ffCategoria = ffCatVista = -1; ffFoco = ffValorFoco = 0;
+  ffForma = ffFormaV = 0.0f; ffFechando = ffRolPronto = 0; ffCatA = 1.0f;
+  memset(ffFocoA, 0, sizeof ffFocoA); ffFocoA[0] = 1.0f;
+}
+static void ffAtualizar(float dt) {
+  int red = ajustes_animacoes_reduzidas(), aberta = frAberta == 6;
+  int foco = ffCategoria >= 0 ? ffValorFoco : ffFoco;
+  if (!aberta && (frAberta || !ffFechando)) { ffForma = ffFormaV = 0.0f; ffFechando = 0; return; }
+  ffForma = mov_mola_assenta(&ffFormaV, ffForma, aberta ? 1.0f : 0.0f, dt, MOV_MODAL_W, MOV_MODAL_Z);
+  if (!aberta) { if (ffForma <= 0.0f) ffFechando = 0; return; }
+  if (ffCategoria != ffCatVista) {
+    ffCatVista = ffCategoria; ffCatA = 0.0f; ffRolPronto = 0;
+    memset(ffFocoA, 0, sizeof ffFocoA);
+    if (foco >= 0 && foco < 64) ffFocoA[foco] = 1.0f;
+  }
+  ffCatA = red ? 1.0f : anim_rampa(ffCatA, 1.0f, dt, 220.0f);
+  for (int i = 0; i < 64; i++) {
+    float alvo = i == foco ? 1.0f : 0.0f;
+    ffFocoA[i] = red ? alvo : anim_mola(ffFocoA[i], alvo, dt, alvo > ffFocoA[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+  }
+  ffRol = anim_mola2_reduzida(&ffRolV, ffRol, ffRolAlvo, dt, NV_MOLA2_SCROLL, red);
 }
 static void ffGruposDefinir(const char *texto) {
   FonteFiltroConfig cfg; fontefalha_filtro(&cfg);
@@ -9413,7 +9439,7 @@ static void ffEscolher(void) {
 static void ffVoltar(void) {
   if (frAberta != 6 || teclado_aberto()) return;
   if (ffCategoria >= 0) ffCategoria = -1;
-  else frAberta = 0;
+  else { frAberta = 0; ffFechando = 1; }
 }
 static void ffEvento(SDL_Keycode k) {
   int *foco = ffCategoria >= 0 ? &ffValorFoco : &ffFoco;
@@ -10320,6 +10346,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   AJ_ESCALA_INI();
   guiaAtualizar(dt);
   tourAtualizar(dt);
+  ffAtualizar(dt);
   if (uxAviso[0] && SDL_TICKS_PASSED(agora, uxAvisoAte)) uxAviso[0] = 0;
   montarTela();
   valor[AJ_PERFIL_PESQ] = recomenda_pesquisavel() ? 0 : 1;   // V_LIGA: 0 = Ligado
@@ -11190,7 +11217,7 @@ static void ajDesenharTudo(Uint32 agora) {
   if (pfTela) pfDesenhar();
   else pfFaixaEdicao();
   if (frAberta == 7) desenhaFolhaOrdem();
-  else if (frAberta == 6) desenhaFolhaFiltros();
+  else if (frAberta == 6 || (!frAberta && ffFechando)) desenhaFolhaFiltros();
   else if (frAberta >= 4) desenhaFolhaFalha();
   else if (frAberta == 3) desenhaFolhaOrdem();
   else if (frAberta) desenhaFolhaPermitidos();
@@ -11659,6 +11686,10 @@ int ajustes_rapido_passo(int op, int dir) {
   if (op < 0 || op >= AJ_N) return 0;
   { int r; ajOrigemDireto = AJLOG_CENTRAL; r = definirValorDireto(op, passoAdiante(op, dir < 0 ? -1 : 1)); ajOrigemDireto = AJLOG_AJUSTES; return r; }
 }
+
+// Interface language row outside Settings (onboarding): same write path as the OK there.
+const char *ajustes_idioma_nome(void) { return textoValor(AJ_IDIOMA); }
+int ajustes_idioma_passo(int dir) { return definirValorDireto(AJ_IDIOMA, passoAdiante(AJ_IDIOMA, dir < 0 ? -1 : 1)); }
 
 // A COR DE DESTAQUE NA CENTRAL. O seletor da central mostra so os dezoito
 // acentos fixos (a regua de Ajustes: nove claros, nove profundos); os

@@ -81,7 +81,9 @@
 // Sources grows from the clock island: plrilha in the player, ilha_corpo on
 // browsing pages. Without a visible clock, keep the right-edge sheet.
 // folhaOY places content below the clock header; folhaBase ends the list.
-static float folhaOY, folhaBase, folhaDica;
+static float folhaOY, folhaBase, folhaDica, folhaSala;
+float (*stream_folha_sala_h)(void);
+void (*stream_folha_sala_desenhar)(float x, float y, float w, float a);
 // Tab change (add-on / filter tabs): the focus pill slides to the new tab and
 // the list slides in with a fade, 200 ms ease-out. Time based, no extra pass.
 #define FOLHA_TROCA_MS 200.0f
@@ -102,7 +104,7 @@ static int folhaRelogio; // Latched at opening, retained through closing.
 #define FOLHA_ABAS_Y   168.0f  // topo da faixa das abas
 #define FOLHA_ABAS_H    56.0f
 #define FOLHA_ABA_H     44.0f  // a pilula de cada aba, dentro da faixa
-#define FOLHA_TOPO     (FOLHA_ABAS_Y + FOLHA_ABAS_H + 24.0f + folhaOY + folhaDica)
+#define FOLHA_TOPO     (FOLHA_ABAS_Y + FOLHA_ABAS_H + 24.0f + folhaOY + folhaDica + folhaSala)
 static void medirCabecalho(void);
 #define FOLHA_SRV_PE    84.0f
 #define FOLHA_LINHA_H  112.0f  // linha sem marca e sem arquivo
@@ -4696,6 +4698,7 @@ static void folhaGeometria(void) {
   const char *dica = fraseDicaChips();
   folhaDica = dica ? 18.0f + txt_bloco(TXT_HERO_META, dica, 255,255,255, 0,0,
       FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D+4.0f-48.0f, 28.0f, 0, 0) : 0.0f;
+  folhaSala = stream_folha_sala_h ? stream_folha_sala_h() : 0.0f;
 }
 static float areaLista(void) { return folhaBase - FOLHA_TOPO; }
 // A linha em foco no meio da area; a primeira de um grupo leva o cabecalho
@@ -6163,6 +6166,8 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       txt_bloco(TXT_HERO_META, dica, grupo==2?c:ai, grupo==2?c:(int)(ag*255),
                 grupo==2?c:(int)(ab*255), r.x+24.0f, r.y+6.0f, r.w-48.0f, 28.0f, anim, 0);
     } }
+  if (folhaSala > 0.0f)
+    stream_folha_sala_desenhar(lx-2.0f, FOLHA_ABAS_Y+oy+FOLHA_ABAS_H+6.0f+folhaDica, rw+4.0f, anim);
   // The list comes in from the side the new tab is on, fading up.
   const float animLista=anim, dxLista=trocaDir*28.0f*(1-trocaEase(agora));
   { float e=trocaEase(agora); anim*=.3f+.7f*e; lx+=dxLista; tx+=dxLista; tr+=dxLista; }

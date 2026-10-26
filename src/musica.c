@@ -66,6 +66,7 @@ int mus_interpretar(const char *json, MusAlbum *out) {
   js_texto(a, fim, "artista", out->artista, sizeof out->artista);
   js_texto(a, fim, "capa", out->capa, sizeof out->capa);
   js_texto(a, fim, "apple", out->apple, sizeof out->apple);
+  js_texto(a, fim, "deezer", out->deezer, sizeof out->deezer);
   out->ano = (int)js_num(a, fim, "ano", 0);
   if (!out->titulo[0]) return 0;
   for (p = js_array(json, NULL, "faixas"); p && out->n < MUS_FAIXAS_MAX; p = js_prox(js_fim(p))) {
@@ -81,6 +82,70 @@ int mus_interpretar(const char *json, MusAlbum *out) {
     if (out->faixa[k].titulo[0]) out->n++;
   }
   return out->n > 0;
+}
+
+static unsigned previaToken;
+static int previaEstado;
+static char previaUrl[768];
+typedef struct { unsigned token; char album[32], titulo[96]; } PreviaPedido;
+
+static void *buscarPrevia(void *arg) {
+  PreviaPedido pd = *(PreviaPedido *)arg;
+  char endpoint[128], url[768] = "";
+  free(arg);
+  snprintf(endpoint, sizeof endpoint, "https://api.deezer.com/album/%s", pd.album);
+  char *json = rede_baixar(endpoint, 10);
+  const char *tracks = json ? strstr(json, "\"tracks\"") : NULL;
+  for (const char *p = tracks ? js_array(tracks, NULL, "data") : NULL; p; p = js_prox(js_fim(p))) {
+    const char *fim = js_fim(p);
+    char titulo[96];
+    if (!fim) break;
+    js_texto(p, fim, "title", titulo, sizeof titulo);
+    if (!strcmp(titulo, pd.titulo)) {
+      js_texto(p, fim, "preview", url, sizeof url); break;
+    }
+  }
+  free(json);
+  pthread_mutex_lock(&mtx);
+  if (pd.token == previaToken) {
+    snprintf(previaUrl, sizeof previaUrl, "%s", url);
+    previaEstado = !strncmp(url, "https://", 8) ? 1 : -1;
+  }
+  pthread_mutex_unlock(&mtx);
+  return NULL;
+}
+
+unsigned mus_previa_pedir(const MusAlbum *a, int faixa) {
+  PreviaPedido *pd = calloc(1, sizeof *pd);
+  if (!pd) return 0;
+  const char *id = NULL;
+  if (!strncmp(a->deezer, "https://www.deezer.com/album/", 29)) id = a->deezer + 29;
+  else if (!strncmp(a->deezer, "https://www.deezer.com/", 23)) {
+    const char *p = strstr(a->deezer + 23, "/album/");
+    if (p) id = p + 7;
+  }
+  // Older cached metadata has album identity but no per-track provider ID.
+  if (!id || !*id || strspn(id, "0123456789") != strlen(id) || strlen(id) >= sizeof pd->album) {
+    free(pd); return 0;
+  }
+  snprintf(pd->album, sizeof pd->album, "%s", id);
+  snprintf(pd->titulo, sizeof pd->titulo, "%s", a->faixa[faixa].titulo);
+  pthread_mutex_lock(&mtx);
+  pd->token = ++previaToken; previaEstado = 0;
+  unsigned token = pd->token;
+  pthread_mutex_unlock(&mtx);
+  pthread_t thread;
+  if (pthread_create(&thread, NULL, buscarPrevia, pd)) { free(pd); return 0; }
+  pthread_detach(thread);
+  return token;
+}
+
+int mus_previa_resultado(unsigned token, char *url, unsigned tam) {
+  pthread_mutex_lock(&mtx);
+  int estado = token == previaToken ? previaEstado : -1;
+  if (estado == 1) snprintf(url, tam, "%s", previaUrl);
+  pthread_mutex_unlock(&mtx);
+  return estado;
 }
 
 void mus_previa_parar(MusPrevia *p) {

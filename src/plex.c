@@ -218,6 +218,8 @@ int px_ler_recursos(const char *corpo, size_t n, PxServidor *out, int max) {
         txtRaiz(p, f, "productVersion", s->versao, sizeof s->versao);
         txtRaiz(p, f, "accessToken", s->token, sizeof s->token);
         s->dono = boolRaiz(p, f, "owned", 0);
+        s->presente = boolRaiz(p, f, "presence", (int)numRaiz(p, f, "presence", 1));
+        s->visto = (long long)numRaiz(p, f, "lastSeenAt", 0);
         if (hexLimpo(s->id, 47) && blocoRaiz(p, f, "connections", &ci, &cf)) {
           q = ci + 1;
           while (s->nCon < PX_CON_MAX && (q = elemento(q, cf)) != NULL) {
@@ -239,7 +241,7 @@ int px_ler_recursos(const char *corpo, size_t n, PxServidor *out, int max) {
             q = g;
           }
         }
-        if (s->id[0] && s->nCon > 0) ns++;
+        if (hexLimpo(s->id, 47) && (s->nCon > 0 || !s->presente)) ns++;
       }
     }
     p = f;

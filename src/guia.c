@@ -7928,6 +7928,17 @@ int guia_buscar_canais(const char *alvoNorm, int *indices, int max) {
   return n;
 }
 
+// Provider number (tvg-chno / Xtream num, or the position in the source): the
+// number the player OSD shows (decisao 7). 0 outside the list.
+int guia_canal_numero(int i) { return i >= 0 && i < nCanais ? canais[i].numero : 0; }
+int guia_fonte_saude(int i, GuiaFonteSaude *o) {
+  if (i < 0 || i >= nLtvF || !o) return 0;
+  const GFonteLtv *F = &ltvF[i];
+  o->nome = F->nome[0] ? F->nome : ltv_tipo_nome(F->tipo);
+  o->saude = F->saude; o->canais = F->nCanais; o->comGuia = F->epgCom;
+  o->deCache = F->deCache; o->atualizada = F->atualizada;
+  return 1;
+}
 int guia_canal_campos(int i, const char **id, const char **nome, const char **logo,
                       const char **cat, const char **base) {
   if (i < 0 || i >= nCanais) return 0;
