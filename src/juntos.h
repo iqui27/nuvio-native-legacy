@@ -45,6 +45,7 @@ void juntos_preparar(const char *imdb, int temporada, int episodio, const char *
 // Convidar mais gente para a sala aberta (anfitriao).
 int  juntos_convidar(const char *const *convidados, int n);   // 1 = sent or queued
 int  juntos_controle_anfitriao(int soAnfitriao);   // a trava "So eu controlo"
+int juntos_precisa_auth(void);
 const char *juntos_codigo(void);                   // "K7M2QX" da sala aberta ("" sem)
 
 // --- convidado ------------------------------------------------------------------------

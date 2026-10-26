@@ -5,6 +5,9 @@
 
 static int playing, prepared, pauses, starts, lobby, failedVideo, roomErrors;
 static int selectedStream = 0, socketPending;
+#ifdef JUNTOS_AUTH
+static int authAvailable, authCalls;
+#endif
 int video_falhou(void) { return failedVideo; }
 int player_tem_video(void) { return prepared; }
 int video_velocidade_atual(void) { return 100; }
@@ -43,15 +46,30 @@ void video_taxa_sync(int v) { (void)v; }
 void juntosui_sala_abriu(void) { lobby++; }
 // Network/socket edges of the room replies: never reached (worker held, no ticket).
 void juntosui_sala_fechou(void) {}
-void juntosui_erro(const char *k) { (void)k; roomErrors++; }
+static char lastRoomError[32];
+void juntosui_erro(const char *k) { snprintf(lastRoomError, sizeof lastRoomError, "%s", k); roomErrors++; }
 void juntosui_convite(const JuntosConvite *c) { (void)c; }
 void atividade_junto(const char *a, const char *b, const char *c, const char *d, int t, int e, int s) { (void)a; (void)b; (void)c; (void)d; (void)t; (void)e; (void)s; }
 DiscordWs *dws_abrir(const char *u) { (void)u; return socketPending ? (DiscordWs *)&socketPending : NULL; }
 void dws_fechar(DiscordWs *w) { (void)w; }
 int perfil_infantil_ativo(void) { return 0; }
 const char *rede_ultimo_erro(void) { return "fixture"; }
-int recomenda_cabecalhos(const char **c, char *a, size_t na, char *v, size_t nv, char *p, size_t np) { (void)c; (void)a; (void)na; (void)v; (void)nv; (void)p; (void)np; return 0; }
-char *rede_postar_st(const char *u, int s, const char *const *c, const char *b, int *st) { (void)u; (void)s; (void)c; (void)b; (void)st; return NULL; }
+int recomenda_cabecalhos(const char **c, char *a, size_t na, char *v, size_t nv, char *p, size_t np) { (void)c; (void)a; (void)na; (void)v; (void)nv; (void)p; (void)np;
+#ifdef JUNTOS_AUTH
+  authCalls++;
+  if (!authAvailable) return 0;
+  assert(na >= 3200); // The social JWT can exceed the old 400-byte buffer.
+  memset(a, 'x', 900); a[900] = 0; c[0] = a; c[1] = NULL;
+  return 1;
+#endif
+  return 0; }
+char *rede_postar_st(const char *u, int s, const char *const *c, const char *b, int *st) { (void)u; (void)s; (void)c; (void)b; (void)st;
+#ifdef JUNTOS_AUTH
+  assert(strlen(c[0]) == 900);
+  *st = 200;
+  return strdup("{\"id\":\"fixture-room\",\"codigo\":\"K7M2\"}");
+#endif
+  return NULL; }
 char *rede_baixar_st(const char *u, int s, const char *const *c, int *st) { (void)u; (void)s; (void)c; (void)st; return NULL; }
 static int send(void *u, const char *json) { (void)u; snprintf(sent, sizeof sent, "%s", json); return 0; }
 
@@ -184,6 +202,42 @@ int main(void) {
     nFila = 0;
   }
   puts("PASS: ready=1 open=0 without stream index; HTTP 401 then solo Start; HTTP 200 with failed/pending socket then solo Start");
+#endif
+#ifdef JUNTOS_AUTH
+  zerar();
+  prepared = 1; failedVideo = 0; playing = 0; fioVivo = 1;
+  for (int i = 0; i < nFila; i++) free(fila[i].corpo);
+  nFila = 0;
+  juntos_preparar("ttauth", 0, 0, "Auth film", "", NULL, 0, 0);
+  abrirPedido = 0;
+  juntos_passo(40000);
+  free(fila[0].corpo); nFila = 0;
+  Resp missing = { .tipo = OP_CRIAR, .status = 401 };
+  resposta(&missing);
+  assert(!strcmp(lastRoomError, "auth"));
+  juntos_passo(40001);
+  assert(motor.sala.m[0].pct == 0 && strcmp(motor.sala.m[0].st, "carregando"));
+  juntos_passo(51000);
+  assert(fase == JF_CRIANDO && nFila == 1);
+  // Exercise the real worker with a JWT larger than 400 bytes.
+  authAvailable = 1;
+  SDL_Thread *worker = SDL_CreateThread(fioLaco, "auth-fixture", NULL);
+  assert(worker);
+  SDL_DetachThread(worker);
+  for (int i = 0; i < 100; i++) {
+    SDL_LockMutex(mtx);
+    int done = nCaixa > 0;
+    SDL_UnlockMutex(mtx);
+    if (done) break;
+    SDL_Delay(10);
+  }
+  SDL_LockMutex(mtx);
+  assert(nCaixa == 1 && caixa[0].status == 200);
+  Resp recovered = caixa[0]; nCaixa = 0;
+  SDL_UnlockMutex(mtx);
+  resposta(&recovered); free(recovered.txt);
+  assert(authCalls > 0 && !salaFalhou && !strcmp(juntos_codigo(), "K7M2"));
+  puts("PASS: missing auth shown, loading cleared, room retried, social-sized JWT creates room");
 #endif
   puts("PASS: lobby preload gate; host + two guests; live stats; lobby-only start; shared countdown; invite during room creation");
 }

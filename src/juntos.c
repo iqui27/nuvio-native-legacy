@@ -61,7 +61,7 @@ static int fioLaco(void *u) {
     Op op;
     Resp r;
     const char *cab[4];
-    char aut[400], via[40], pf[40], url[400];
+    char aut[3200], via[40], pf[40], url[400];
     SDL_LockMutex(mtx);
     while (!nFila) SDL_CondWait(cond, mtx);
     op = fila[0];
@@ -75,9 +75,12 @@ static int fioLaco(void *u) {
       snprintf(url, sizeof url, "%s%s", NV_REC_URL, op.rota);
       r.txt = op.get ? rede_baixar_st(url, PRAZO_S, cab, &r.status)
                      : rede_postar_st(url, PRAZO_S, cab, op.corpo ? op.corpo : "{}", &r.status);
+    } else {
+      r.status = -1; // Local auth failure, not an HTTP response.
+      printf("[juntos] http: op=%d auth unavailable (request not sent)\n", op.tipo);
     }
     printf("[juntos] http: op=%d status=%d transport=%s\n", op.tipo, r.status,
-           r.status ? "ok" : "failed");
+           r.status < 0 ? "auth unavailable" : r.status ? "ok" : "failed");
     free(op.corpo);
     SDL_LockMutex(mtx);
     if (nCaixa < FILA) caixa[nCaixa++] = r;
@@ -130,6 +133,7 @@ static void pedir(OpTipo tipo, const char *rota, const char *corpo, int get) {
 static JuntosFase fase;
 static JsMotor motor;
 static int temMotor, salaFalhou;
+static Uint32 repetirSalaEm, agoraPasso;
 static DiscordWs *ws;
 static char salaId[40], codigo[12], wsBase[256], webBase[256], bilhete[1600], tituloSala[160];
 static Uint32 caiuEm, proxConexao, atrasoConexao;
@@ -162,6 +166,7 @@ JuntosFase juntos_fase(void) { return fase; }
 const JsMotor *juntos_motor(void) { return temMotor ? &motor : NULL; }
 const char *juntos_titulo(void) { return tituloSala; }
 const char *juntos_codigo(void) { return codigo; }
+int juntos_precisa_auth(void) { return salaFalhou == 2; }
 const char *juntos_url_celular(void) { return urlCelular; }
 int juntos_sou_anfitriao(void) { return temMotor && jsm_sou_anfitriao(&motor); }
 int juntos_pode_controlar(void) { return !temMotor || jsm_pode_controlar(&motor); }
@@ -239,6 +244,7 @@ static void zerar(void) {
   gen++;
   fase = JF_OCIOSO;
   temMotor = salaFalhou = 0;
+  repetirSalaEm = 0;
   salaId[0] = codigo[0] = bilhete[0] = tituloSala[0] = urlCelular[0] = 0;
   pedindoBilhete = 0;
   escolhendo = 0; abrirPedido = 0; fonteEscolhida = -1; salaDurConferida = 0; fonteVista = -1;
@@ -498,12 +504,14 @@ static void resposta(Resp *r) {
     case OP_CRIAR:
       if (!ok) {
         printf("[juntos] criar sala falhou (%d)\n", r->status);
-        juntosui_erro(r->status == 429 ? "limite" : "rede");
-        salaFalhou = 1; // keep the paused host lobby and its Start action
+        salaFalhou = r->status == -1 || r->status == 401 || r->status == 403 ? 2 : 1;
+        juntosui_erro(salaFalhou == 2 ? "auth" : r->status == 429 ? "limite" : "rede");
+        repetirSalaEm = agoraPasso + 10000u; // Retain solo Start while auth/network recovers.
         fase = JF_PREPARADO;
         break;
       }
       js_texto(r->txt, NULL, "id", salaId, sizeof salaId);
+      salaFalhou = 0;
       js_texto(r->txt, NULL, "codigo", codigo, sizeof codigo);
       js_texto(r->txt, NULL, "bilhete", bilhete, sizeof bilhete);
       lerEnderecos(r->txt);
@@ -525,7 +533,7 @@ static void resposta(Resp *r) {
       if (!ok) {
         printf("[juntos] entrar falhou (%d)\n", r->status);
         if (fase == JF_ENTRANDO) {
-          juntosui_erro(r->status == 404 ? "sem_sala" : r->status == 403 ? "recusado" : r->status == 429 ? "limite" : "rede");
+          juntosui_erro(r->status == -1 || r->status == 401 ? "auth" : r->status == 404 ? "sem_sala" : r->status == 403 ? "recusado" : r->status == 429 ? "limite" : "rede");
           zerar();
         }
         break;
@@ -653,6 +661,7 @@ static void websocket(Uint32 agora) {
 
 void juntos_passo(Uint32 agora) {
   if (!NV_REC_URL[0]) return;
+  agoraPasso = agora;
   if (!iniciouEm) iniciouEm = agora ? agora : 1;
   if (mtx) {
     Resp lote[FILA];
@@ -677,8 +686,11 @@ void juntos_passo(Uint32 agora) {
              video_duracao() > 0, video_falhou());
     }
   }
+  // Retry through the worker: Nuvio refresh can block; Trakt refresh is
+  // applied by traktauth_passo on the main loop, as for the social worker.
   // Host creates the room once the paused preparation has a duration.
-  if (fase == JF_PREPARADO && !salaFalhou && !abrirPedido && pPronto(NULL))
+  if (fase == JF_PREPARADO && (!salaFalhou || (int)(agora - repetirSalaEm) >= 0) &&
+      !abrirPedido && pPronto(NULL))
     criarSala();
   // Convites: so fora de sala, depois de o app assentar.
   if (!juntos_ativo() && juntos_disponivel() && !buscandoConvites && agora - iniciouEm > CONVITES_ESPERA &&
@@ -714,8 +726,12 @@ void juntos_passo(Uint32 agora) {
     int pct = stats.bufferPct;
     if (pct < 0 && stats.bufferSeg >= 0 && stats.bufferAlvoSeg > 0)
       pct = (int)fmin(100, 100 * stats.bufferSeg / stats.bufferAlvoSeg);
-    jsm_estado_app(&motor, video_falhou() ? "erro" : "carregando", pct > 0 ? pct : 0);
-    if (!motor.temSala && motor.sala.n) motor.sala.m[0].pct = pct > 0 ? pct : 0;
+    if (salaFalhou) pct = 0;
+    jsm_estado_app(&motor, salaFalhou || video_falhou() ? "erro" : "carregando", pct > 0 ? pct : 0);
+    if (!motor.temSala && motor.sala.n) {
+      motor.sala.m[0].pct = pct > 0 ? pct : 0;
+      snprintf(motor.sala.m[0].st, sizeof motor.sala.m[0].st, "%s", salaFalhou ? "erro" : "carregando");
+    }
   }
   // The backend retains the previous playback error until a new source loads.
   // Island updates run before app.c consumes abrirPedido: that error is not ours.

@@ -349,6 +349,7 @@ void juntosui_erro(const char *k) {
   else if (!strcmp(k, "caiu")) t = i18n("A conexão com a sessão caiu");
   else if (!strcmp(k, "fim")) t = i18n("A sessão terminou");
   else if (!strcmp(k, "rede")) t = i18n("Sem conexão com o serviço de sessões");
+  else if (!strcmp(k, "auth")) t = i18n("Entre na sua conta para enviar");
   if (noPlayer()) player_toast_ex(t, 5000, "aj_triangle-alert", 1);
   else ilha_avisar("juntos:erro", ILHA_ERRO, "aj_triangle-alert", t, 6000u, 0);
 }
@@ -1322,7 +1323,7 @@ static void desenharConvite(float R, float topo, float fim, float a) {
   if (juntos_codigo()[0]) {
     snprintf(c, sizeof c, "%.3s-%s", juntos_codigo(), juntos_codigo() + 3);
     texto(TXT_ILHA_TITULO, c, rx, y + 128, 250, a, rw);
-  } else texto(TXT_ILHA_NOME, i18n("Preparando o código…"), rx, y + 134, 215, a, rw);
+  } else texto(TXT_ILHA_NOME, juntos_precisa_auth() ? i18n("Entre na sua conta para enviar") : i18n("Preparando o código…"), rx, y + 134, 215, a, rw);
   txt_bloco_corta(TXT_ILHA_META, i18n("Escaneie com o celular para mandar mensagens e controlar a sessão."),
                   185, 185, 185, rx, y + 196, rw, 26, a, 4);
   float ly = y + 340;
@@ -1481,7 +1482,7 @@ static void corpoPainel(GfxRect A, float a, void *u) {
   GfxRecorteAnt fora = gfx_recorte_dentro(A.x - 48, A.y, A.w + 96, A.h);
   y += spainel_lateral_secao(A, y, i18n("Sessão"), a, 1);
   if (juntos_codigo()[0]) snprintf(c, sizeof c, "%.3s-%s", juntos_codigo(), juntos_codigo() + 3);
-  else snprintf(c, sizeof c, "%s", i18n("Preparando o código…"));
+  else snprintf(c, sizeof c, "%s", juntos_precisa_auth() ? i18n("Entre na sua conta para enviar") : i18n("Preparando o código…"));
   texto(TXT_ILHA_META, i18n("Código da sala"), x, y + 6, 185, a, A.w);
   texto(TXT_ILHA_TITULO, c, x, y + 34, 250, a, A.w);
   texto(TXT_ILHA_CORPO, rotuloBotao(BT_TRAVA), x, y + 94, 215, a, A.w);
