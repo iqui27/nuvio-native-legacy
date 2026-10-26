@@ -90,7 +90,9 @@ int detmais_evento(const SDL_Event *e) {
   if (e->type == SDL_KEYUP && (k == SDLK_RETURN || k == SDLK_KP_ENTER)) {
     // So o OK descido AQUI conta: o KEYUP do OK que abriu a ilha nao escolhe.
     if (!okArmado) return -1;
-    okArmado = 0; aberto = 0;
+    okArmado = 0;
+    // Rate opens a child island; retain this menu and its focused row.
+    if (detmais_acao(foco) != DMAIS_NOTA) aberto = 0;
     return detmais_acao(foco);
   }
   if (e->type != SDL_KEYDOWN) return -1;

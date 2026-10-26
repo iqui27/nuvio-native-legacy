@@ -368,15 +368,12 @@ static Uint32 secVisto[N_SECOES];
 static float secaoAlvo(int r) { return nivel>=1 && foco.fileira!=r ? .42f : 1.f; }
 static float scrollSec[N_SECOES];    // rolagem HORIZONTAL de cada fileira
 static float scrollY = 0.0f;         // rolagem VERTICAL do documento
-static int notaAberta, notaEscolhida=5;
-static float notaX=460;
-static float notaAnim;
 static int notaMinha(void) {
   const CatItem *ci=cat_item(idx); DiarioTitulo d;
   return ci && diario_titulo(0,ci->imdb,&d) ? d.nota10 : 0;
 }
 static void notaAbrir(void) {
-  int n=notaMinha(); notaEscolhida=n ? n : 5; notaAberta=1;
+  reacao_detalhe_abrir(cat_item(idx));
 }
 
 
@@ -1804,7 +1801,7 @@ static void abrirInterno(const HomeItem *it) {
   memset(animFoco, 0, sizeof animFoco);
   memset(serverActionFocus, 0, sizeof serverActionFocus);
   memset(serverChipFocus, 0, sizeof serverChipFocus);
-  notaAberta=0; notaAnim=0; versaoFoco=0;
+  versaoFoco=0;
   colListaEntrada=comEntrada=0; comMostrado=-1;
   memset(alvoScrollSec,0,sizeof alvoScrollSec);
   memset(scrollSec, 0, sizeof scrollSec); memset(velSec, 0, sizeof velSec);
@@ -3014,25 +3011,12 @@ static void detail_evento_(const SDL_Event *e) {
   }
 #endif
   if (saindo) return;
-  // O CARTAO "O QUE ACHOU?" aberto pela pagina e modal: a tecla e dele.
-  if (notaAberta) {
-    if (e->type==SDL_KEYDOWN) {
-      SDL_Keycode key=e->key.keysym.sym;
-      if (key==SDLK_LEFT && notaEscolhida>1) notaEscolhida--;
-      else if (key==SDLK_RIGHT && notaEscolhida<10) notaEscolhida++;
-      else if (key==SDLK_ESCAPE || key==SDLK_BACKSPACE || key==SDLK_AC_BACK ||
-               key==SDLK_DELETE || e->key.keysym.scancode==NV_SCANCODE_BACK) notaAberta=0;
-    } else if (e->type==SDL_KEYUP && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) {
-      const CatItem *ci=cat_item(idx);
-      if (ci && diario_avaliar(0,ci->imdb,ehSerie() ? DIARIO_SERIE : DIARIO_FILME,notaEscolhida)) {
-        reacao_nota_definir(ci->imdb, notaEscolhida);
-        diario_avaliar(0,ci->imdb,ehSerie() ? DIARIO_SERIE : DIARIO_FILME,notaEscolhida);
-        notaAberta=0;
-      }
-    }
+  // The shared rating island owns every event until it closes.
+  if (reacao_aberta()) {
+    if (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_DELETE) reacao_fechar();
+    else reacao_evento(e, 1);
     return;
   }
-  if (reacao_aberta() && reacao_evento(e, 1)) return;
   if (comInteiro>=0) {
     if (e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_LEFT || e->key.keysym.sym==SDLK_RIGHT)) {
       comAbrir(comInteiro+(e->key.keysym.sym==SDLK_RIGHT ? 1 : -1));
@@ -4254,7 +4238,6 @@ static void detail_atualizar_(float dt, Uint32 agora) {
   // contagem do quadro anterior deixaria o layout um quadro atrasado — visivel
   // como um tranco quando o elenco ou os trailers chegam.
   recalcularLayout();
-  notaAnim=anim_rampa(notaAnim,notaAberta ? 1 : 0,dt,450);
   t  = anim_mola(t,  saindo ? 0.0f : 1.0f, dt, NV_MOLA_TELA);
   // Rigidez propria: o web leva 0.8s para apagar o backdrop (cubic-bezier
   // .4,0,.2,1), e a mola de NV_MOLA_TELA assenta em ~330ms.
@@ -5397,7 +5380,6 @@ static void heroWeb(float a, float desloc) {
       snprintf(rot,sizeof rot,i18n("%s T%d:E%d"),i18n(retomando ? "Continuar" : "Assistir"),st,ep);
     } else snprintf(rot,sizeof rot,"%s",i18n(retomando && ci && ci->progresso>0 ? "Continuar" : "Assistir"));
   }
-  notaX=96+larguraPrimario(rot)+24+120*(topoVersao() ? 2 : 1);
   // REASSISTIDA (rewatch.h): serie concluida com reassistida ativa muda o
   // primario para o episodio da rodada; toda vista, vira "Reassistir do início".
   if (ci && ehSerie() && rewatch_ativa(ci->imdb)) {
@@ -8163,22 +8145,6 @@ static void desenhaGradeProgresso(float x, float y, float a) {
   }
 }
 
-static void desenhaNota(float a) {
-  if (notaAnim<=0) return;
-  float k=detalheExpo(notaAnim),x=96,y=599-scrollY;
-  if (nivel>=1) { x=NV_TELA_W*.5f-310; y=NV_TELA_H*.5f-48; }
-  else x=notaX;
-  GfxRect pill={x,y,96+524*k,96};
-  gfx_cor(pill,.5f,.96f,.96f,.96f,a);
-  if (k<.8f) return;
-  txt_desenhar_alpha(txt_linha(TXT_G20M,"Sua nota",90,90,90,255),x+40,y+34,a);
-  float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
-  for (int i=0;i<10;i++) gfx_cor((GfxRect){x+160+i*34,y+44,26,8},.5f,
-    i<notaEscolhida ? ar : .82f,i<notaEscolhida ? ag : .82f,i<notaEscolhida ? ab : .82f,a);
-  char score[8]; snprintf(score,sizeof score,"%d",notaEscolhida);
-  txt_desenhar_alpha(txt_linha(TXT_LOG_N44,score,17,17,17,255),x+530,y+22,a);
-}
-
 static float secaoAlpha(int r) { return secA[r]; }
 // Shared reveal (revela.h): alpha plus the NV_ENTRA_DY lift, 70 ms per screen
 // row, so the sections on screen at the open arrive as a wave and the ones
@@ -8678,14 +8644,11 @@ static void carFundo(void) {
   gfx_janela_atual[2] = gfx_janela_atual[3] = 1.0f;
 }
 
-// "O QUE ACHOU?" AINDA SEM RESPOSTA (reacao.h): uma linha discreta no canto
-// inferior direito, so no topo da pagina e sem nada aberto por cima. CIMA na
-// linha de botoes abre o cartao (detail_evento); aberto, ele desenha aqui.
+// The shared rating island opens through OK on Rate or Your rating.
 // 2.1: the corner hint sat on the first section header (Classificação, season
 // summary); the mock's "Sua nota" tile is the prompt, so only the open card draws.
 static void reacaoPendente(float s) {
   (void)s;
-  if (heroServidor()) return;
   if (reacao_aberta()) reacao_detalhe_dica(cat_item(idx), 0.0f);
 }
 
@@ -8886,8 +8849,8 @@ static void detail_desenhar_(Uint32 agora) {
     if (pessoaAberta) { ponteiro_camada(); desenhaPessoa(s); }
     if (colListaAberta) { ponteiro_camada(); desenhaListaColecao(s); }
     if (episodios_menu_aberto()) ponteiro_camada();
-    reacaoPendente(s);
     maisDesenhar();
+    reacaoPendente(s);
     if (amtui_aberta()) { ponteiro_camada(); amtui_desenhar(agora); }
     if (sinopse_aberta()) sinopse_desenhar();
     return;
@@ -8933,10 +8896,9 @@ static void detail_desenhar_(Uint32 agora) {
     txt_bloco(TXT_DET_META2,texto,220,224,232,folha.x+48,folha.y+110,folha.w-96,36,s,12);
     gfx_opacidade_grupo=previousAlpha; gfx_sem_transformar();
   }
-  desenhaNota(a2);
-  reacaoPendente(s);
   menuDeVisto(agora);
   maisDesenhar();
+  reacaoPendente(s);
   if (amtui_aberta()) { ponteiro_camada(); amtui_desenhar(agora); }
   if (sinopse_aberta()) sinopse_desenhar();
 }

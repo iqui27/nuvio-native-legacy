@@ -1000,6 +1000,34 @@ int main(int argc, char **argv) {
     assert(!strcmp(aviso.imdb, IMDB_FILME)); assert(!agenda_lembrete(IMDB_FILME));
     return 0;
   }
+#ifndef NV_LEGACY_PROOF
+  if (quer(argc,argv,"rating-navigation")) {
+    for (int scale=0; scale<2; scale++) for (int glass=0; glass<2; glass++) {
+      char name[80];
+      gfx_escala_txt_definir(scale ? 1.f : .85f); ajustes_definir_vidro(glass);
+      abrir(1,0,0,2);
+      SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RETURN;
+      detail_evento(&e); e.type=SDL_KEYUP; detail_evento(&e);
+      assert(detmais_aberto());
+      e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_DOWN;
+      while (detmais_acao(detmais_foco())!=DMAIS_NOTA) detail_evento(&e);
+      int row=detmais_foco();
+      e.key.keysym.sym=SDLK_RETURN; detail_evento(&e);
+      e.type=SDL_KEYUP; detail_evento(&e);
+      assert(reacao_aberta() && detmais_aberto());
+      for (int k=0;k<30;k++) { SDL_Delay(16); quadros(1); }
+      snprintf(name,sizeof name,"rating-%d-%s",scale ? 100 : 85,glass ? "glass" : "solid"); gravar(name);
+      e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_ESCAPE; detail_evento(&e);
+      assert(!reacao_aberta() && detmais_aberto() && detmais_foco()==row && botao==2);
+      quadros(30);
+      snprintf(name,sizeof name,"rating-back-%d-%s",scale ? 100 : 85,glass ? "glass" : "solid"); gravar(name);
+      detail_evento(&e);
+      assert(!detmais_aberto() && nivel==0 && botao==2 && !saindo);
+    }
+    puts("PASS: shared rating island, Back restores focused Rate, second Back restores More button");
+    tex_encerrar(); SDL_Quit(); return 0;
+  }
+#endif
   if (quer(argc,argv,"legacy-proof")) {
     const float scales[]={.85f,1};
     for (int scale=0;scale<2;scale++) for (int glass=0;glass<2;glass++) {
