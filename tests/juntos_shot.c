@@ -298,6 +298,10 @@ int main(int argc, char **argv) {
     key.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&key));
     assert(juntosui_pediu_escolher_filme() && player_aberto() && !player_visivel());
     assert(juntosui_escolhendo_filme());
+    // Hidden player must not steal OK from Search/Detail while browsing.
+    player_shot_esconder(); assert(!player_controles_visiveis());
+    assert(!juntosui_evento_sdl(&key));
+    key.type = SDL_KEYUP; assert(!juntosui_evento_sdl(&key)); key.type = SDL_KEYDOWN;
     assert(juntosui_voltar_filme() && player_visivel());
     assert(juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 2);
     player_encerrar();

@@ -454,7 +454,8 @@ int juntosui_evento_sdl(const SDL_Event *e) {
   k = e->key.keysym.sym;
   // SEGURAR OK no player com o OSD escondido: a regua de reacoes. O toque curto
   // continua sendo o play/pausa: ele e entregue ao player quando a tecla SOBE.
-  if (camada == CAMADA_NADA && juntos_ativo() && noPlayer() && !player_controles_visiveis() && ehOk(k)) {
+  // Escolhendo filme o player fica aberto mas escondido: o OK e da Busca/Detalhe.
+  if (camada == CAMADA_NADA && juntos_ativo() && noPlayer() && !escolhendoFilme && !player_controles_visiveis() && ehOk(k)) {
     if (e->type == SDL_KEYDOWN) {
       if (!e->key.repeat && !okSegurando) { okSegurando = 1; okDesceEm = SDL_GetTicks(); okEvento = *e; }
       return 1;
