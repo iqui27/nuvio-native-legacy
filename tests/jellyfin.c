@@ -136,12 +136,16 @@ static void testarProtocolo(void) {
   assert(jf_autenticar_senha(&c, NULL, "ana", senha) == JF_OK);
   for (k = 0; k < (int)sizeof senha; k++) assert(senha[k] == 0);
   assert(!strcmp(c.usuarioId, "aa11bb22cc33dd44ee55ff6677889900"));
-  // Libraries: music and playlists filtered out; every catalog view of a
-  // many-library server is listed (was capped at 6 and movies/tvshows only, #468).
+  // Libraries: music, playlists, boxsets, mixed and untyped are skipped.
+  // Movies + Shows + 24 catalogs (past the old cap of 16, #468).
   n = jf_bibliotecas(&c, NULL, libs, JF_FIL_MAX);
-  assert(n == 11 && !strcmp(libs[0].tipo, "movie") && !strcmp(libs[1].tipo, "series"));
-  assert(!strcmp(libs[10].nome, "Catalog 8") && !strcmp(libs[4].tipo, "movie"));
-  assert(jf_por_fileira(n) == JF_ITENS_MAX / 11 && jf_por_fileira(2) == JF_POR_FILEIRA);
+  assert(n == 26 && !strcmp(libs[0].tipo, "movie") && !strcmp(libs[1].tipo, "series"));
+  assert(!strcmp(libs[25].nome, "Catalog 23") && !strcmp(libs[2].tipo, "movie"));
+  assert(jf_por_fileira(n) == JF_ITENS_MAX / 26 && jf_por_fileira(2) == JF_POR_FILEIRA);
+  for (k = 0; k < n; k++)
+    assert(strcmp(libs[k].nome, "Music") && strcmp(libs[k].nome, "Boxsets") &&
+           strcmp(libs[k].nome, "Mixed") && strcmp(libs[k].nome, "Untyped") &&
+           strcmp(libs[k].nome, "Playlists"));
   // Paging: 60 movies, two pages, prefixed ids, root-level fields.
   n = jf_itens(&c, NULL, libs[0].id, 0, 24, itens, 100, &total);
   assert(n == 24 && total == 60);
@@ -228,10 +232,10 @@ static void testarIntegracao(void) {
   fim = ms() + 5000;
   while (jellyfin_fileiras_versao() == v0 && ms() < fim) dormir(20);
   n = jellyfin_fileiras_copiar(itens, JF_ITENS_MAX, fils, JF_FIL_MAX, &ni);
-  assert(n == 2 && ni == jf_por_fileira(11) + 1);
+  assert(n == 2 && ni == jf_por_fileira(26) + 1);
   assert(jellyfin_chave_fileira(fils[0].chave) && !fils[0].base[0] && strstr(fils[0].titulo, "Jellyfin"));
   // Title page through the profile's connection.
-  det = itens[jf_por_fileira(11)];                 // the series
+  det = itens[jf_por_fileira(26)];                 // the series
   r = jellyfin_ficha(&det, eps, 16);
   assert(r == 6 && det.nTemporadas == 2 && det.temporadas[1] == 2);
   // Sources: request, poll, ready.
