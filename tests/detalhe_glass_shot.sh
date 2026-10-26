@@ -24,6 +24,7 @@ export NUVIO_DADOS
 trap 'rm -rf "$NUVIO_DADOS"' EXIT
 FL="-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined"
 if [ -n "${NUVIO_C9_CACHE:-}" ]; then FL="$FL -DNV_SHOT_HOOKS"; fi
+if [ -n "${NUVIO_DETAIL_HEADER:-}" ]; then FL="$FL -include $NUVIO_DETAIL_HEADER"; fi
 objs=()
 for s in src/*.c src/dts/*.c; do
   case "$s" in src/main.c|src/detail.c) continue;; esac
@@ -34,6 +35,10 @@ for s in src/*.c src/dts/*.c; do
     o="$OBJ/agendaui-trakt.o"
     extra="-Dtxt_largura=trakt_largura -Dtxt_token_tam=trakt_token_tam"
   fi
+  if [ "$s" = src/notasui.c ] && [ -n "${NUVIO_LEGACY_NOTAS:-}" ]; then
+    s="$NUVIO_LEGACY_NOTAS"
+    o="$OBJ/notasui-legacy.o"
+  fi
   if [ "$s" = src/notasui.c ] && [ "${NUVIO_DETAIL_CHECK:-}" = b2 ]; then
     o="$OBJ/notasui-b2.o"
     extra="-Dgfx_vidro_painel=b2_panel -Dgfx_luz_canto=b2_tint -Dgfx_cor=b2_color -Dtxt_desenhar_alpha=b2_text -Dtxt_bloco_corta=b2_block"
@@ -41,6 +46,10 @@ for s in src/*.c src/dts/*.c; do
       s="$NUVIO_NOTAS_SOURCE"
       o="$OBJ/notasui-b2-before.o"
     fi
+  fi
+  if [ "$s" = src/musicaui.c ] && [ -n "${NUVIO_LEGACY_MUSIC:-}" ]; then
+    s="$NUVIO_LEGACY_MUSIC"
+    o="$OBJ/musicaui-legacy.o"
   fi
   # NUVIO_DETAIL_CHECK=mais: spy on the glass density plrui hands to gfx.
   if [ "$s" = src/plrui.c ] && [ "${NUVIO_DETAIL_CHECK:-}" = mais ]; then
@@ -61,6 +70,8 @@ for s in src/*.c src/dts/*.c; do
   fi
 done
 shot_extra=()
+if [ -n "${NUVIO_DETAIL21_PROOF:-}" ]; then shot_extra+=(-DNV_DETAIL21_PROOF); fi
+if [ -n "${NUVIO_LEGACY_PROOF:-}" ]; then shot_extra+=(-DNV_LEGACY_PROOF); fi
 if [ -n "${NUVIO_DETAIL_SOURCE:-}" ]; then
   shot_extra+=("-DNV_DETAIL_SOURCE=\"$NUVIO_DETAIL_SOURCE\"")
 fi

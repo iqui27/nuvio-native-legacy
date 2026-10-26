@@ -563,6 +563,20 @@ static void desenhaBloco(const NotasSecao *s, int fonte, int norm, const NfResum
             0, 1, 1, 1, 0.72f * a);
 }
 
+float notasui_cartao_largura(int resumo) { return resumo ? SCORE_W : TILE_W; }
+float notasui_cartao_altura(const NotasSecao *s) {
+  Medidas m; medir(s, &m);
+  return fmaxf(TILE_H, m.nFontes ? fmaxf(SCORE_MIN_H, desenhaCartao(&m, 0, 0, 0, 0, 0)) : 0);
+}
+void notasui_cartao(const NotasSecao *s, int fonte, float x, float y, float f, float a) {
+  Medidas m; NfResumo r; medir(s, &m);
+  if (fonte < 0) desenhaCartao(&m, x, y, notasui_cartao_altura(s), f, a);
+  else {
+    nf_resumo(m.fontes, m.norm, m.nFontes, &r);
+    desenhaBloco(s, fonte, nf_norm100(fonte, s->cru[fonte]), &r, x, y, f, a);
+  }
+}
+
 // Portao do texto (textogate.h) de um bloco: aparece INTEIRO ou nao aparece.
 // Enquanto o rasterizador ainda deve linhas, desenha com opacidade quase nula —
 // e isso que as rasteriza — e revela tudo junto num esvanecimento so. Fora da

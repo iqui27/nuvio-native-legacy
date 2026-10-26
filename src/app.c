@@ -4290,7 +4290,7 @@ static int relogioPedidoPagina(void) {
 }
 
 void app_evento(const SDL_Event *e) {
-  if (musicaui_aberta()) {
+  if (musicaui_visivel()) {
     if (e->type == SDL_APP_WILLENTERBACKGROUND || e->type == SDL_APP_TERMINATING || e->type == SDL_QUIT)
       musicaui_fechar();
     else if (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) {
