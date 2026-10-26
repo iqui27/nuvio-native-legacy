@@ -86,6 +86,20 @@ int main(int argc,char **argv){
    KEY(SDLK_ESCAPE);assert(!strcmp(screen,"parental-ajustes")&&focus==2);
    KEY(SDLK_ESCAPE);assert(!strcmp(screen,"fontes-gerenciar"));
    focus=4;want_pin(1);go("parental-ajustes");KEY(SDLK_ESCAPE);assert(!strcmp(screen,"fontes-gerenciar")&&focus==4);
+   /* VOD: a title opened from search goes back to search and that result. */
+   go("grade");go("vod-filmes");focus=802;go("vod-busca");focus=3;select_item(3);assert(strncmp(screen,"vod-busca",9));
+   KEY(SDLK_ESCAPE);assert(!strcmp(screen,"vod-busca")&&focus==3);
+   focus=3;select_item(3);activate(2);assert(!strcmp(screen,"vod-busca")&&focus==3);
+   KEY(SDLK_ESCAPE);assert(!strcmp(screen,"vod-filmes")&&focus==802);
+   /* Multiview: limits over the picker go back to the picker and its pick,
+    * then to the layout and Add channel; a pick closes to the layout. */
+   {int mc=mv_count,pc2=picker_count,md=mode;mode=4;picker_count=10;
+    go("grade");go("multiview-4");focus=803;go("multiview-escolher");mv_count=4;focus=905;activate(905);assert(!strcmp(screen,"multiview-limite"));
+    KEY(SDLK_ESCAPE);assert(!strcmp(screen,"multiview-escolher")&&focus==905);
+    KEY(SDLK_ESCAPE);assert(!strcmp(screen,"multiview-4")&&focus==803);
+    focus=803;go("multiview-escolher");mv_count=3;focus=901;activate(901);assert(!strcmp(screen,"multiview-4")&&focus==803);
+    focus=801;activate(801);assert(!strcmp(screen,"multiview-3"));KEY(SDLK_ESCAPE);assert(gv_is(screen));
+    mv_count=mc;picker_count=pc2;mode=md;}
 #undef KEY
   }
   const char *only=getenv("NUVIO_SHOT_SO");   /* iterate on one state */

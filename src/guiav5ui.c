@@ -209,29 +209,31 @@ static void load_saved_credentials(void){
 }
 static void want_pin(int settings);
 static int modal_tela(const char *s);
-static int foco_pagina;   /* page focus kept while a modal is open */
 static int sem_foco;      /* page under a modal or a closing modal: no focus, no D-pad */
 static int gv_zone;       /* guide focus zone (defined with the guide below) */
-/* Setup, sources and parental pages keep a Back history: each page remembers
- * the one that opened it and its focus; going to a page already in the
- * history returns there instead of stacking it again. */
+static int gv_is(const char *s);
+/* One Back history for every v5 page and modal outside the guide: each open
+ * remembers the screen under it and its focus; going to a screen already in
+ * the history returns there instead of stacking it again. A modal closed
+ * forward leaves no level behind. */
 typedef struct{char nome[48];int foco;}PgNivel;
-static PgNivel pg_pilha[10];static int pg_n;
-static char pg_sob[48];   /* page under the open modal */
-static int pg_nivel(const char *s){return !strncmp(s,"setup-",6)||!strncmp(s,"fontes-",7)||!strncmp(s,"parental-",9);}
+static PgNivel pg_pilha[16];static int pg_n;
+static int pg_nivel(const char *s){return s[0]&&!gv_is(s);}
+/* multiview-2/3/4 are one page: the layout is state, not a level */
+static int pg_igual(const char *a,const char *b){
+  return !strcmp(a,b)||(!strncmp(a,"multiview-",10)&&!strncmp(b,"multiview-",10)&&!modal_tela(a)&&!modal_tela(b));
+}
 static void go(const char *name){
-  int de=modal_tela(screen),para=modal_tela(name),volta=0,vfoco=0;
-  if(!de&&para){foco_pagina=focus;snprintf(pg_sob,sizeof pg_sob,"%s",screen);}
-  const char *dp=de?pg_sob:screen;
-  if(!para){
-    if(pg_nivel(dp)&&pg_nivel(name)&&strcmp(dp,name)){
-      int i=pg_n;while(i>0&&strcmp(pg_pilha[i-1].nome,name))i--;
-      if(i){pg_n=i-1;volta=1;vfoco=pg_pilha[pg_n].foco;}
-      else if(pg_n<10){snprintf(pg_pilha[pg_n].nome,sizeof pg_pilha[0].nome,"%s",dp);pg_pilha[pg_n++].foco=de?foco_pagina:focus;}
-    }else if(!pg_nivel(dp)||!pg_nivel(name))pg_n=0;
+  int volta=0,vfoco=0;
+  if(!pg_nivel(screen)||!pg_nivel(name))pg_n=0;
+  else if(!pg_igual(screen,name)){
+    int fecha=modal_tela(screen)&&!modal_tela(name);
+    if(fecha)while(pg_n&&modal_tela(pg_pilha[pg_n-1].nome))pg_n--;
+    int i=pg_n;while(i>0&&!pg_igual(pg_pilha[i-1].nome,name))i--;
+    if(i){pg_n=i-1;volta=1;vfoco=pg_pilha[pg_n].foco;}
+    else if(!fecha&&pg_n<16){snprintf(pg_pilha[pg_n].nome,sizeof pg_pilha[0].nome,"%s",screen);pg_pilha[pg_n++].foco=focus;}
   }
-  int mesma=de&&!para&&!strcmp(pg_sob,name);
-  snprintf(screen,sizeof screen,"%s",name);focus=volta?vfoco:mesma?foco_pagina:para?-1:0;nav=-1;message[0]=0;
+  snprintf(screen,sizeof screen,"%s",name);focus=volta?vfoco:modal_tela(name)?-1:0;nav=-1;message[0]=0;
 }
 static void gv_voltar(void);
 static void pg_voltar(void){if(pg_n)go(pg_pilha[pg_n-1].nome);else gv_voltar();}
@@ -958,11 +960,11 @@ static void activate(int id){
   }
   if(!strcmp(screen,"parental-perfil-infantil")){if(id==800)want_pin(1);else if(id>=0&&id<nindices)select_item(indices[id]);return;}
   if(!strcmp(screen,"vod-titulo")){
-    if(id==0&&selected<count&&!restricted(&inventory[selected]))playing=1;else if(id==2)go("vod-filmes");return;
+    if(id==0&&selected<count&&!restricted(&inventory[selected]))playing=1;else if(id==2){if(pg_n)pg_voltar();else go("vod-filmes");}return;
   }
   if(!strcmp(screen,"vod-serie-temporadas")){
     if(id>=100&&id<100+count&&episodes_mode){selected=id-100;if(!restricted(&inventory[selected]))playing=1;return;}
-    if(id==800||id==801||id==2){if(episodes_mode&&series_catalog){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;episodes_mode=0;}go(id==800?"vod-filmes":"vod-series");return;}
+    if(id==800||id==801||id==2){if(episodes_mode&&series_catalog){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;episodes_mode=0;}if(id==2&&pg_n)pg_voltar();else go(id==800?"vod-filmes":"vod-series");return;}
     if(id==0){selected_season=selected_season>=30?1:selected_season+1;return;}
     if(id==2){go("vod-series");return;}
     if(episodes_mode&&series_catalog){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;selected=parent_series;episodes_mode=0;}
@@ -996,13 +998,13 @@ int g5ui_event(const SDL_Event *e){
   if(k==SDLK_ESCAPE||k==SDLK_AC_BACK||k==SDLK_BACKSPACE){
     if(!strcmp(screen,"setup-celular-tv"))celular_fechar();
     /* modals and detail pages close to the page under them, like their buttons */
-    if(!strcmp(screen,"multiview-escolher")||!strcmp(screen,"multiview-limite"))go(mode==4?"multiview-4":mode==3?"multiview-3":"multiview-2");
-    else if(!strcmp(screen,"parental-desbloqueio"))go("parental-ajustes");
-    else if(!strcmp(screen,"parental-pin"))activate(1);
+    if(!strcmp(screen,"parental-pin"))activate(1);
+    else if(episodes_mode&&series_catalog&&!strncmp(screen,"vod-",4)){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;selected=parent_series;episodes_mode=0;go("vod-serie-temporadas");}
     else if(pg_n&&pg_nivel(screen))pg_voltar();   /* one level up, focus on the opener */
+    else if(!strcmp(screen,"multiview-escolher")||!strcmp(screen,"multiview-limite"))go(mode==4?"multiview-4":mode==3?"multiview-3":"multiview-2");
+    else if(!strcmp(screen,"parental-desbloqueio"))go("parental-ajustes");
     else if(!strncmp(screen,"setup-",6)&&strcmp(screen,"setup-tipo"))go("setup-tipo");
     else if(!strcmp(screen,"parental-lista"))go("parental-ajustes");
-    else if(episodes_mode&&series_catalog){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;selected=parent_series;episodes_mode=0;go("vod-serie-temporadas");}
     else if(!strcmp(screen,"vod-titulo")||!strcmp(screen,"vod-serie-temporadas"))activate(2);
     else gv_voltar();return 1;
   }
