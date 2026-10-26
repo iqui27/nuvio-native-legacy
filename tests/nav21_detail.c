@@ -40,6 +40,11 @@ static void serverRegression(void){
   drawFixture();e.key.keysym.sym=SDLK_UP;detail_evento(&e);
   nav21_expect("Detail/server chips","Play, Down, Up: leaves Jellyfin chip",focoServidor,-1);
   nav21_expect("Detail/server chips","Play, Down, Up: previous button",botao,0);
+  drawFixture();e.key.keysym.sym=SDLK_DOWN;detail_evento(&e);
+  drawFixture();detail_evento(&e);
+  nav21_expect("Detail/server chips","Play, Down, Down: leaves Jellyfin chip",focoServidor,-1);
+  nav21_expect("Detail/server chips","Play, Down, Down: enters sections",nivel,1);
+  nav21_expect("Detail/server chips","Play, Down, Down: seasons or episodes",foco.fileira==SEC_TEMPORADAS||foco.fileira==SEC_EPISODIOS,1);
 }
 static void carouselRegression(void){
   fixture=-1;openFixture();for(int i=0;i<90;i++)stepFixture(1.f/60);

@@ -3557,6 +3557,7 @@ static void detail_evento_(const SDL_Event *e) {
     if (k == SDLK_DOWN && !heroServidor() && botao==0 && topoVersao() && topoFonteDisponivel() && !(carro && !carCheia)) {
       focoVersao = 1; return;
     }
+    int desceuServidor = focoServidor >= 0 && k == SDLK_DOWN;
     if (focoServidor >= 0) {
       if (k == SDLK_UP) { focoServidor = -1; return; }
       if (k == SDLK_LEFT || k == SDLK_RIGHT) {
@@ -3594,7 +3595,8 @@ static void detail_evento_(const SDL_Event *e) {
     if (k == SDLK_UP && !e->key.repeat && detail_relogio_navegavel()) { pediuRelogio = 1; return; }
     // CARROSSEL: a primeira seta para baixo so estica o cartao (ver carCheia).
     if (k == SDLK_DOWN && carro && !carCheia) { carCheia = 1; return; }
-    if (!(carro && !carCheia) && navigationMove(k)) return;
+    // After leaving a server chip, enter sections without resolving from Play.
+    if (!desceuServidor && !(carro && !carCheia) && navigationMove(k)) return;
     if (k == SDLK_DOWN) {
       sincronizarEpisodioPadrao();
       epEscolhido = 1;
