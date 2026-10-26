@@ -86,6 +86,14 @@ int main(int argc,char **argv){
    KEY(SDLK_ESCAPE);assert(!strcmp(screen,"parental-ajustes")&&focus==2);
    KEY(SDLK_ESCAPE);assert(!strcmp(screen,"fontes-gerenciar"));
    focus=4;want_pin(1);go("parental-ajustes");KEY(SDLK_ESCAPE);assert(!strcmp(screen,"fontes-gerenciar")&&focus==4);
+   /* On-screen Back buttons pop the same history as the remote. */
+   go("grade");go("setup-tipo");focus=2;activate(2);assert(!strcmp(screen,"setup-arquivo"));
+   focus=1;activate(1);assert(!strcmp(screen,"setup-credenciais"));activate(5);assert(!strcmp(screen,"setup-arquivo")&&focus==1);
+   go("grade");go("fontes-gerenciar");focus=2;activate(2);assert(!strcmp(screen,"setup-credenciais"));
+   activate(5);assert(!strcmp(screen,"fontes-gerenciar")&&focus==2);
+   focus=0;activate(0);assert(!strcmp(screen,"setup-tipo"));activate(4);assert(!strcmp(screen,"fontes-gerenciar")&&focus==0);
+   go("parental-ajustes");focus=2;activate(2);assert(!strcmp(screen,"parental-lista"));
+   activate(900);assert(!strcmp(screen,"parental-ajustes")&&focus==2);
    /* VOD: a title opened from search goes back to search and that result. */
    go("grade");go("vod-filmes");focus=802;go("vod-busca");focus=3;select_item(3);assert(strncmp(screen,"vod-busca",9));
    KEY(SDLK_ESCAPE);assert(!strcmp(screen,"vod-busca")&&focus==3);
@@ -100,6 +108,8 @@ int main(int argc,char **argv){
      if(pass)KEY(SDLK_ESCAPE);else activate(1);
      assert(!strcmp(screen,"parental-canal-bloqueado")&&focus==0);
      KEY(SDLK_ESCAPE);assert(!strcmp(screen,"vod-busca")&&focus==3);}
+    go("grade");go("vod-filmes");focus=802;go("vod-busca");focus=3;select_item(ip);assert(!strcmp(screen,"parental-canal-bloqueado"));
+    activate(1);assert(!strcmp(screen,"vod-busca")&&focus==3);
     rules.kids=kids;}
    /* Series: Back leaves the episode list first, on Load episodes. */
    {int is=-1;for(int i=0;i<count&&is<0;i++)if(inventory[i].kind==G5_SERIES)is=i;assert(is>=0);

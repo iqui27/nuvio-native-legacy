@@ -237,6 +237,15 @@ static void go(const char *name){
 }
 static void gv_voltar(void);
 static void pg_voltar(void){if(pg_n)go(pg_pilha[pg_n-1].nome);else gv_voltar();}
+/* Remote Back and every on-screen Back button: one level up, focus on the
+ * opener; without history, the page's fixed parent. */
+static void pg_tras(void){
+  if(pg_n&&pg_nivel(screen))pg_voltar();
+  else if(!strcmp(screen,"multiview-escolher")||!strcmp(screen,"multiview-limite"))go(mode==4?"multiview-4":mode==3?"multiview-3":"multiview-2");
+  else if(!strcmp(screen,"parental-desbloqueio")||!strcmp(screen,"parental-lista"))go("parental-ajustes");
+  else if(!strncmp(screen,"setup-",6)&&strcmp(screen,"setup-tipo"))go("setup-tipo");
+  else gv_voltar();
+}
 /* The guide page under every v5 screen: leaving a sub-screen returns there
  * instead of exposing the legacy guide drawn when screen[] is empty. */
 static char gv_pagina[24]="grade";
@@ -878,7 +887,7 @@ static void activate(int id){
     gv_voltar();if(n>=4)gv_go(n==4?"busca":"ajustes");else{gv_zone=5;focus=id;}return;}
   if(atomic_load(&busy)){snprintf(message,sizeof message,"%s",i18n("Aguarde…"));return;}
   if(!strcmp(screen,"setup-tipo")){
-    if(id==4){pg_voltar();return;}if(id==2){go("setup-arquivo");return;}if(id==3){phone();return;}
+    if(id==4){pg_tras();return;}if(id==2){go("setup-arquivo");return;}if(id==3){phone();return;}
     use_saved=0;draft.type=id;draft.live=draft.movies=draft.series=draft.epg=1;go("setup-credenciais");return;
   }
   if(!strcmp(screen,"setup-arquivo")){if(id==0)phone();else{draft.type=1;go("setup-credenciais");}return;}
@@ -890,7 +899,7 @@ static void activate(int id){
       size_t n=strlen(value);const char *keys="ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890.:/-@";
       if(id==141){if(n)value[n-1]=0;}else if(n+1<cap){value[n]=keys[id-100];value[n+1]=0;}use_saved=0;return;
     }
-    if(id==5){go("setup-tipo");return;}
+    if(id==5){pg_tras();return;}
     if(id==6){credential_field=6;input(6,"Nome",draft.name,0);return;}
     if(id==4){phone();return;}if(id==3){
       if(draft.type==0&&!g5_http_url(draft.server)){snprintf(message,sizeof message,"%s",i18n("Endereço inválido"));return;}
@@ -930,13 +939,13 @@ static void activate(int id){
     if(id==3)lease_seconds=lease_seconds==3600?7200:lease_seconds==7200?14400:3600;return;
   }
   if(!strcmp(screen,"parental-canal-bloqueado")){
-    if(id==0)want_pin(0);else if(id==1)gv_voltar();else if(id==3)lease_seconds=lease_seconds==3600?7200:lease_seconds==7200?14400:3600;else want_pin(1);return;
+    if(id==0)want_pin(0);else if(id==1)pg_tras();else if(id==3)lease_seconds=lease_seconds==3600?7200:lease_seconds==7200?14400:3600;else want_pin(1);return;
   }
   if(!strcmp(screen,"parental-desbloqueio")){
     if(id==10)lease_seconds=lease_seconds==3600?7200:lease_seconds==7200?14400:3600;else if(id==11)want_pin(0);return;
   }
   if(!strcmp(screen,"parental-lista")){
-    if(id==900){go("parental-ajustes");return;}
+    if(id==900){pg_tras();return;}
     if(rules_mode){const char *channel_id,*name,*logo,*group,*base;
       if(!guia_canal_regra_campos(id,&channel_id,&name,&logo,&group,&base))return;
       int i;for(i=0;i<rules.channel_count;i++)if(!strcmp(rules.blocked_channels[i],channel_id))break;
@@ -1003,13 +1012,8 @@ int g5ui_event(const SDL_Event *e){
     /* modals and detail pages close to the page under them, like their buttons */
     if(!strcmp(screen,"parental-pin"))activate(1);
     else if(episodes_mode&&series_catalog&&!strncmp(screen,"vod-",4))leave_episodes();
-    else if(pg_n&&pg_nivel(screen))pg_voltar();   /* one level up, focus on the opener */
-    else if(!strcmp(screen,"multiview-escolher")||!strcmp(screen,"multiview-limite"))go(mode==4?"multiview-4":mode==3?"multiview-3":"multiview-2");
-    else if(!strcmp(screen,"parental-desbloqueio"))go("parental-ajustes");
-    else if(!strncmp(screen,"setup-",6)&&strcmp(screen,"setup-tipo"))go("setup-tipo");
-    else if(!strcmp(screen,"parental-lista"))go("parental-ajustes");
-    else if(!strcmp(screen,"vod-titulo")||!strcmp(screen,"vod-serie-temporadas"))activate(2);
-    else gv_voltar();return 1;
+    else if(!(pg_n&&pg_nivel(screen))&&(!strcmp(screen,"vod-titulo")||!strcmp(screen,"vod-serie-temporadas")))activate(2);
+    else pg_tras();return 1;
   }
   if(!strcmp(screen,"parental-pin")&&k>=SDLK_0&&k<=SDLK_9){activate(k==SDLK_0?30:19+(int)(k-SDLK_0));return 1;}
   int md=modal_tela(screen);   /* a modal keeps the D-pad inside it */
