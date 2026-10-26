@@ -11,7 +11,7 @@ static Uint32 clockFixture;
 static void openFixture(void) {
   opened=1;closing=0;historyCount=0;transitionAt=clockFixture=SDL_GetTicks();screen=fixture;provider=1;selected=0;profile=perfis_ativo();
   worker.n=2;worker.alive=0;nLibraries=3;rowChoice=0;recoveryAuth=0;codeSince=SDL_GetTicks();
-  for(int i=0;i<3;i++) {snprintf(libraries[i].titulo,sizeof libraries[i].titulo,"Library %d",i);snprintf(libraries[i].chave,sizeof libraries[i].chave,"jellyfin_fixture%d",i);}
+  for(int i=0;i<9;i++) {snprintf(libraries[i].titulo,sizeof libraries[i].titulo,"Library %d",i);snprintf(libraries[i].chave,sizeof libraries[i].chave,"jellyfin_fixture%d",i);}
 }
 static void internalNext(void){change((screen+1)%(ROWS+1));}
 static void internalBack(void){SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_ESCAPE;srvsetup_evento(&e);clockFixture=SDL_GetTicks();}
@@ -44,6 +44,29 @@ void nav21_servers(void) {
     nav21_expect(names[authPages[i]],"Authenticated, Next, Back, 750ms: previous auth page",screen,authPages[i]);
     nav21_expect(names[authPages[i]],"Authenticated, Next, Back, 750ms: previous focus",selected,1);
     authenticated=0;
+  }
+  // Traverse beyond each rendered window with real keys, then reverse.
+  const int paged[]={USERS,DISCOVER,PLEX_SERVERS,CONNECT_SERVERS,LIBRARIES,ROWS};
+  const int sizes[]={4,5,9};
+  for(int p=0;p<6;p++)for(int n=0;n<3;n++){
+    openFixture();screen=paged[p];worker.n=nLibraries=sizes[n];
+    SDL_Event key={0};key.type=SDL_KEYDOWN;
+    for(int direction=0;direction<2;direction++){
+      int step=direction?-1:1;
+      for(int i=direction?sizes[n]-1:0;direction?i>0:i<sizes[n]-1;i+=step){
+        srvsetup_desenhar(clockFixture);
+        key.key.keysym.sym=screen==USERS?(direction?SDLK_LEFT:SDLK_RIGHT):(direction?SDLK_UP:SDLK_DOWN);
+        srvsetup_evento(&key);
+        char path[160];snprintf(path,sizeof path,"%d items, from %d, %s: adjacent item",sizes[n],i,SDL_GetKeyName(key.key.keysym.sym));
+        nav21_expect(names[screen],path,selected,i+step);
+        srvsetup_desenhar(clockFixture);
+        int visible=0;for(int j=0;j<navigationCount;j++)if(navigationIds[j]==selected)visible=1;
+        nav21_expect(names[screen],"Paged focus is rendered",visible,1);
+      }
+    }
+    selected=sizes[n]-1;srvsetup_desenhar(clockFixture);
+    key.key.keysym.sym=SDLK_DOWN;srvsetup_evento(&key);
+    nav21_expect(names[screen],"Last item, Down: footer reachable",selected>=sizes[n],1);
   }
   openFixture();screen=MANAGE;selected=3;
   SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_RETURN;srvsetup_evento(&e);

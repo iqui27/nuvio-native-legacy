@@ -441,6 +441,13 @@ void srvsetup_evento(const SDL_Event *e) {
       transitionAt = SDL_GetTicks(); navigationCount = 0;
     } else srvsetup_fechar();
   } else if (k == SDLK_LEFT || k == SDLK_UP || k == SDLK_RIGHT || k == SDLK_DOWN) {
+    int total = screen==USERS || screen==DISCOVER || screen==PLEX_SERVERS || screen==CONNECT_SERVERS ? (!worker.alive && worker.n>0 ? worker.n : 0) :
+      screen==LIBRARIES || screen==ROWS ? nLibraries : 0;
+    int step = screen==USERS ? (k==SDLK_RIGHT)-(k==SDLK_LEFT) : (k==SDLK_DOWN)-(k==SDLK_UP);
+    int adjacent = selected + step, visible = 0;
+    for (int i=0;i<navigationCount;i++) if (navigationIds[i]==adjacent) visible=1;
+    // Reveal the next item before geometry can skip it for a visible footer.
+    if (step && selected<total && adjacent>=0 && adjacent<total && !visible) { selected=adjacent; return; }
     int current = -1;
     for (int i=0;i<navigationCount;i++) if (navigationIds[i]==selected) current=i;
     int next = focus_rect_nearest(navigationRects,navigationCount,current,

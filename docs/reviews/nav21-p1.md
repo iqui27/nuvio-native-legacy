@@ -1,5 +1,29 @@
 # Navigation P1 follow-up
 
+## Profile return and picker pagination follow-up
+
+Both remaining P1s are fixed. `bash tests/nav21.sh` now passes **3,128 checks, zero violations**. The expanded baseline failed with 112 violations (rc 1); the final run passes (rc 0).
+
+| Regression screen | Before | After |
+|---|---:|---:|
+| Router / Profile | 6 | 0 |
+| Servers / users | 21 | 0 |
+| Servers / discover | 18 | 0 |
+| Servers / Plex servers | 18 | 0 |
+| Servers / Connect servers | 18 | 0 |
+| Servers / libraries | 18 | 0 |
+| Servers / rows | 13 | 0 |
+
+Profile regression: Up to Achievements, Spotlight Settings result, SDL Back through `app_evento`, advance `app_atualizar` for 1,500 ms. Assert Profile remains open with its previous focus and sidebar destination, accepts OK, and the next Back reaches Home. The offline router fixture supplies authenticated session/discovery state. Settings Back now honors the saved parent instead of reopening Settings search. Profile suspends without resetting focus or leaving an exit request; Back resumes it. As a separate negative control, reverting only Profile suspension/resumption reproduces the reported Home bounce and five failed assertions (rc 1); restoring it passes.
+
+Picker regression: 4, 5 and 9 items on Users, Discover, Plex servers, Connect servers, Libraries and Rows. Traverse every item forward and backward using SDL arrows, assert focused items render, then assert Down from the last item reaches a footer. Paging reveals an adjacent hidden item before rectangle navigation can select a footer; visible targets retain geometry navigation.
+
+Final checks: `bash tests/nav21.sh`, `bash tools/build-local.sh`, `python3 tools/varredura-i18n.py`, and `git diff --check` all rc 0. The build retains the existing `ATOMIC_VAR_INIT` warning; i18n reports zero findings.
+
+Evidence: `/Volumes/ExternalSSD/tmp/rev/navteste/p1-return-paging-before.log`, `p1-return-paging-before.md`, `p1-profile-lifecycle-before.log`, `p1-profile-lifecycle-before.md`, `p1-return-paging-final.log`, `p1-return-paging-build.log`, and `p1-return-paging-i18n.log`. No push, deployment, or TV validation. Exhaustive coverage of every original owner-request transition remains unestablished.
+
+## Earlier follow-up
+
 The review regressions fail before the fixes and pass afterward under `bash tests/nav21.sh`. Final run: **2,741 checks, zero violations**. Existing geometry and reachability checks remain enabled.
 
 | Review regression | Before | After | Exercised path |

@@ -1071,11 +1071,8 @@ static void trocarTela(Tela nova) {
   if (nova != TELA_CACA) cacaDoPerfil = 0;
   if (tela == TELA_AJUSTES) { if(routeOpening)ajustes_suspender();else ajustes_encerrar(); }
   if (tela == TELA_LIVETV_DIAG) livetvdiag_encerrar();
-  // ESQUERDA na borda do Perfil so pede a barra e deixa a pagina aberta (#371).
-  // Se o roteador vai para OUTRA tela (barra proibida no PiP, ou um destino da
-  // barra), o Perfil fecha aqui: senao perfil_atualizar/socialvis_atualizar
-  // seguiam rodando todo quadro. Voltar ao Perfil passa por perfil_abrir.
-  if (tela == TELA_PERFIL) perfil_fechar();
+  // Stop Profile updates while away; child routes retain focus for Back.
+  if (tela == TELA_PERFIL) { if(routeOpening)perfil_suspender();else perfil_fechar(); }
   // #318: a tela piscava e congelava logo depois de uma troca de tela
   // (Android). A linha fica para o proximo relato, com teto: as 120 primeiras
   // trocas e depois no maximo uma a cada 10 s.
@@ -1110,10 +1107,12 @@ static void abrirTelaFilha(Tela nova) {
 static void voltarTela(void) {
   if(routeCount && routeHistory[routeCount-1].profile==perfis_ativo()){
     if(tela==TELA_AJUSTES)ajustes_encerrar();
+    if(tela==TELA_PERFIL)perfil_fechar();
     routeCount--;tela=routeHistory[routeCount].page;
     menu_definir_destino(routeHistory[routeCount].menu);
     if(tela==TELA_AJUSTES)ajustes_retomar();
     else if(tela==TELA_BIBLIOTECA)biblioteca_retomar();
+    else if(tela==TELA_PERFIL)perfil_retomar();
     return;
   }
   routeCount=0;trocarTela(TELA_HOME);menu_definir_destino(MENU_INICIO);
@@ -5814,7 +5813,8 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   if (tela == TELA_AJUSTES) {
     int buscaAjustes = ajustes_pediu_busca();
-    if (buscaAjustes == 2) spot_reabrir_ajustes();
+    if (buscaAjustes == 2 && routeCount) voltarTela();
+    else if (buscaAjustes == 2) spot_reabrir_ajustes();
     else if (buscaAjustes == 1) spot_abrir_ajustes(0);
   }
   // "Voltar às novidades" no Guia de uso aberto pelo cartao da 1.8.0: a home
