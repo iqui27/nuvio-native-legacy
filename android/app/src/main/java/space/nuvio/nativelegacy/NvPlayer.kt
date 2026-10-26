@@ -135,6 +135,7 @@ object NvPlayer {
     private var cabAtual = ""
     private var abriuEm = 0L
     private var retentou = false
+    private var preferirFfmpegAudio = false
     private var recuperacaoLive: LiveWindowRecovery? = null
     private var pronto = false
     private var duracaoEnviada = -1
@@ -1326,7 +1327,7 @@ object NvPlayer {
             val origemPreparo = r.cache?.fabrica(serialHttp) ?: serialHttp
             val token = if (preparando) 0L else medidor.sessao(geracao).also { medidorToken = it }
             r.origem = OrigemPlayer(if (preparando) origemPreparo else r.rede(token), r.carga)
-            // ON: platform decoder/passthrough first, FFmpeg only as fallback.
+            // Prefer FFmpeg only on the single retry after an audio decoder failure.
             // F06 tap is at the sink input; F07 gain stays in its processors.
             r.renderizadores = object : androidx.media3.exoplayer.DefaultRenderersFactory(act) {
                 override fun buildAudioSink(context: Context, enableFloatOutput: Boolean,
@@ -1335,7 +1336,9 @@ object NvPlayer {
                     AudioSyncSink(DefaultAudioSink.Builder(context).setEnableFloatOutput(false)
                         .setEnableAudioTrackPlaybackParams(false)
                         .setAudioProcessors(arrayOf(r.proc)).build(), r.tap, { r.velocidadePcm })
-            }.setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            }.setExtensionRendererMode(if (!preparando && preferirFfmpegAudio)
+                androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+                else androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
                 .setEnableDecoderFallback(true)
             r.fabricaMidia = DefaultMediaSourceFactory(act)
                 // ParaleloDataSource faz as tres tentativas de transporte;
@@ -1433,7 +1436,7 @@ object NvPlayer {
         fracaoAtual = if (inicioMs > 0) 0 else fracao
         fracaoPendente = 0
         abriuEm = SystemClock.elapsedRealtime()
-        if (!reabrindo) retentou = false
+        if (!reabrindo) { retentou = false; preferirFfmpegAudio = false }
         try {
             ParaleloDataSource.Estat.zerar()
             quadrosPerdidos = 0L; statsTiques = 0
@@ -2247,8 +2250,10 @@ object NvPlayer {
             val cedo = SystemClock.elapsedRealtime() - abriuEm < RETRY_DECODER_MS
             val decoder = error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
                 error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED
-            if (decoder && cedo && !retentou) {
+            val audioFallback = decoder && tipo == C.TRACK_TYPE_AUDIO && !preferirFfmpegAudio
+            if (audioFallback || (decoder && cedo && !retentou && !preferirFfmpegAudio)) {
                 retentou = true
+                if (audioFallback) preferirFfmpegAudio = true
                 val u = urlAtual
                 val c = cabAtual
                 val inicio = player?.currentPosition?.takeIf { it > 0 }?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt()

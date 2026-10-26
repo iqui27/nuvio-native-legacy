@@ -853,7 +853,7 @@ static int iniciarFonteJob(int tipo, unsigned geracao, const char *id, int renov
 }
 static int pedirFonteJob(int tipo, unsigned geracao, const char *id, int renovando) {
   // Toda escolha de VOD abre uma rodada nova da fonte aberta antes do veredito.
-  if (tipo == FJOB_ADDON || tipo == FJOB_PREPARO) fa_nova_rodada();
+  if (tipo == FJOB_ADDON || tipo == FJOB_PREPARO || tipo == FJOB_PROXIMA_VOD) fa_nova_rodada();
   int r = iniciarFonteJob(tipo, geracao, id, renovando);
   if (r == 1) {
     fontePendenteTipo = tipo;
@@ -3555,6 +3555,9 @@ static void tentarProximaFonteVOD(void) {
       player_erro_fonte_motivo(i18n(motivo == 2 ? "A fonte não respondeu a tempo." : "A fonte respondeu, mas não entregou dados suficientes."),
           i18n("Confira Ajustes > Esta TV > Teste de velocidade e veja se o arquivo é menor que o tamanho recomendado antes de relatar um problema de travamento."));
     else player_erro_fonte();
+    folhaParaTocar = 1;
+    nomeParaFolha(); stream_folha_abrir();
+    stream_folha_contexto(i18n("Abra Fontes para escolher outra opção ou recarregar."));
     return;
   }
   player_voltar_a_esperar();
@@ -6577,7 +6580,14 @@ void app_atualizar(float dt, Uint32 agora) {
         folhaParaTocar = 1;
         nomeParaFolha(); stream_folha_abrir();
       }
-      else { limparFonteVOD(); erroSemFonte(); }
+      else {
+        limparFonteVOD(); erroSemFonte();
+        if (!player_id_canal()[0]) {
+          folhaParaTocar = 1;
+          nomeParaFolha(); stream_folha_abrir();
+          stream_folha_contexto(i18n("Abra Fontes para escolher outra opção ou recarregar."));
+        }
+      }
     }
     }
   }
