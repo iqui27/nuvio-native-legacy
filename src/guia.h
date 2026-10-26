@@ -183,6 +183,7 @@ int  guia_buscar_canais(const char *alvoNorm, int *indices, int max);
 // Le a lista do cache do guia (a ultima publicada) se a sessao ainda nao tem
 // lista. Nao vai a rede. O Spotlight chama ao abrir.
 void guia_preparar_busca(void);
+int  guia_canal_numero(int i);   /* provider number of channel i, 0 outside */
 int  guia_canal_campos(int i, const char **id, const char **nome, const char **logo,
                        const char **cat, const char **base);
 /* Unfiltered metadata for the authenticated parental rule editor only. */
