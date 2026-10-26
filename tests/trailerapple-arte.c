@@ -7,6 +7,7 @@
 
 char *dados_caminho(char *dst, unsigned tam, const char *nome) { (void)nome; if (tam) dst[0] = 0; return NULL; }
 void dados_marcar_sujo(int leve) { (void)leve; }
+void extras_trailer_audio_idioma(char *dst, unsigned cap) { snprintf(dst, cap, "en-US"); }
 int ajustes_trailer_qualidade(void) { return 0; }
 static const char *resposta;
 static int pedidos, falhas;

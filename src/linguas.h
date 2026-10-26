@@ -70,6 +70,8 @@ int ling_afinidade(const char *cod, const char *pref);
 const char *ling_legenda(void);
 const char *ling_legenda2(void);
 const char *ling_audio(void);
+// Raw primary preference: preserves All/Original for per-title resolvers.
+const char *ling_audio_preferencia(void);
 // Segundo idioma de audio (audioescolha.h): ling_legenda2, a mesma regra.
 const char *ling_audio2(void);
 

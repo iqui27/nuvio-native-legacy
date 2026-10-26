@@ -509,6 +509,7 @@ static const char *trailerFonte(int k, int *qual, int cheia) {
   if (qual) *qual = 0;
   if (ci && ci->imdb[0]) {
     c.apple = trailerapple_url(ci->imdb);
+    c.appleIdiomaPreferido = trailerapple_idioma_preferido(ci->imdb);
     c.appleRespondeu = trailerapple_respondeu(ci->imdb);
     // IMDb tambem na Samsung quando a build tem por onde perguntar (#136):
     // MP4 direto no <video> do app, antes do iframe do YouTube.
