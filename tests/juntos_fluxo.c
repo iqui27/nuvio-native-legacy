@@ -3,7 +3,8 @@
 #include "../src/juntos.c"
 #include <assert.h>
 
-static int playing, prepared, pauses, starts, lobby, failedVideo;
+static int playing, prepared, pauses, starts, lobby, failedVideo, roomErrors;
+static int selectedStream = 0;
 int video_falhou(void) { return failedVideo; }
 int player_tem_video(void) { return prepared; }
 int video_velocidade_atual(void) { return 100; }
@@ -16,7 +17,7 @@ void juntosui_evento(const JsEvento *e) { (void)e; }
 void juntosui_fonte_diferente(int v, int pal) { (void)v; (void)pal; }
 static Stream testStream;
 const Stream *stream_item(int i) { return i == 0 ? &testStream : NULL; }
-int stream_atual(void) { return prepared ? 0 : -1; }
+int stream_atual(void) { return prepared ? selectedStream : -1; }
 static double position, now = 10000;
 double video_pos(void) { return position; }
 static char sent[1024];
@@ -42,7 +43,7 @@ void video_taxa_sync(int v) { (void)v; }
 void juntosui_sala_abriu(void) { lobby++; }
 // Network/socket edges of the room replies: never reached (worker held, no ticket).
 void juntosui_sala_fechou(void) {}
-void juntosui_erro(const char *k) { (void)k; }
+void juntosui_erro(const char *k) { (void)k; roomErrors++; }
 void juntosui_convite(const JuntosConvite *c) { (void)c; }
 void atividade_junto(const char *a, const char *b, const char *c, const char *d, int t, int e, int s) { (void)a; (void)b; (void)c; (void)d; (void)t; (void)e; (void)s; }
 DiscordWs *dws_abrir(const char *u) { (void)u; return NULL; }
@@ -141,6 +142,36 @@ int main(void) {
   fase = JF_PREPARADO; abrirPedido = 0; failedVideo = 1;
   juntos_passo(10004);
   assert(fase == JF_OCIOSO && !temMotor); // a failure of our own source still exits
+#endif
+#ifdef JUNTOS_62
+  // Saved-source playback deliberately has no selected list item (app.c).
+  failedVideo = 0; prepared = 1; selectedStream = -1; playing = 0;
+  fioVivo = 1;
+  for (int i = 0; i < nFila; i++) free(fila[i].corpo);
+  nFila = 0;
+  juntos_preparar("tt62", 0, 0, "Saved film", "", NULL, 0, 0);
+  abrirPedido = 0; // app consumed the request: open=0, ready=1
+  juntos_passo(20000);
+  assert(fase == JF_CRIANDO && nFila == 1 && fila[0].tipo == OP_CRIAR);
+  assert(strstr(fila[0].corpo, "7200000"));
+  free(fila[0].corpo); nFila = 0;
+  int errorsBefore = roomErrors, startsBefore = starts;
+  Resp denied = { .tipo = OP_CRIAR, .status = 401 };
+  resposta(&denied);
+  assert(roomErrors == errorsBefore + 1 && temMotor && juntos_precarregando());
+  juntos_passo(25000);
+  assert(nFila == 0); // no repeated failing requests
+  assert(juntos_comecar() == 1);
+  assert(playing && starts == startsBefore + 1 && !juntos_ativo());
+  // A pending request/socket must not trap Start either; late replies expire.
+  playing = 0;
+  juntos_preparar("tt62", 0, 0, "Saved film", "", NULL, 0, 0);
+  abrirPedido = 0;
+  fase = JF_CONECTANDO;
+  unsigned pendingGen = gen;
+  assert(juntos_comecar() == 1 && playing && gen != pendingGen);
+  assert(roomErrors == errorsBefore + 2);
+  puts("PASS: ready=1 open=0 without stream index; HTTP 401 then solo Start; pending socket solo Start");
 #endif
   puts("PASS: lobby preload gate; host + two guests; live stats; lobby-only start; shared countdown; invite during room creation");
 }
