@@ -1558,11 +1558,14 @@ static void vigiarFonteGuardada(void) {
 #endif
     g.conferencia = fontevolta_conferencia();
     g.desdeMs = desde = SDL_GetTicks() - voltaDesde;
+    // A saved link has no stream-list index. Keep its recovery watcher
+    // after opening so later failures return to normal provider/add-on selection.
+    if (voltaAtiva == 2 && !g.falhou) return;
     d = fontevolta_decidir(&g, &motivo);
     if (d == FV_ABRIU) {
       printf("[voltafonte] abriu em %u ms sem busca\n", (unsigned)desde);
       fflush(stdout);
-      voltaAtiva = 0;
+      voltaAtiva = fontefalha_ativa() ? 2 : 0;
       return;
     } }
   if (!motivo) return;
@@ -1581,6 +1584,7 @@ static void vigiarFonteGuardada(void) {
   }
   { char alvo[64]; alvoPlayer(alvo, sizeof alvo);
     fontevolta_esquecer_alvo(alvo, sessao_usuario(), perfis_ativo(), motivo); }
+  if (fonteFalhaPos > 0.0) player_definir_retomada_fonte(fonteFalhaPos);
   player_voltar_a_esperar();
   limparFonteVOD();
   renovarListaDoPlayer();
