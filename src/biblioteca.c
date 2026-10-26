@@ -76,6 +76,7 @@
 #include "listas.h"
 #include "listasescrita.h"
 #include "celbotao.h"
+#include "ilha.h"
 #include "teclado.h"
 #include "trakt.h"
 #include "simkl.h"
@@ -403,6 +404,7 @@ static int  ordemPega = -1;      // posicao do titulo pego, -1 = solto
 static int  ordemMudou;
 static int  escrevendo;          // 1 = uma escrita DESTA tela esta em voo
 static int  compartilha;         // 1 = o QR do link da lista esta na tela
+static float compartA, compartForma, compartFormaV;  // mola da folha sem relogio
 static char urlLista[200];
 static char descNova[192];       // a descricao enviada, para espelhar no OK
 static long notaItemId;
@@ -1925,6 +1927,8 @@ static void biblioteca_atualizar_(float dt, Uint32 agora) {
   animVista = anim_rampa(animVista, 1, dt, 160);
   animEstado = anim_mola(animEstado, estadoFoco && estadoFalhou(), dt, NV_MOLA_FOCO);
   animListaTab = anim_mola(animListaTab, listaTab, dt, NV_MOLA_FOCO);
+  compartA = anim_mola(compartA, compartilha, dt, NV_MOLA_TELA);
+  compartForma = mov_mola_assenta(&compartFormaV, compartForma, compartilha, dt, MOV_MODAL_W, MOV_MODAL_Z);
   // The tab focus pill slides from tab to tab; off the row it rests on the chosen one.
   animModoPos = anim_mola(animModoPos, !focoOrigem && foco.fileira == BIB_FIL_MODO && estado() != EST_ITENS
                                        ? (float)foco.coluna : (float)modo, dt, NV_MOLA_FOCO);
@@ -3212,8 +3216,10 @@ static void desenhaCartaoLista(const LstLista *l, GfxRect r, float f, float a) {
         bibTitleCard(&blank, tile, a);
       }
     }
-    gfx_cor((GfxRect){r.x + 12, r.y + 12, 76, 28}, 8.0f / 28, .03f, .03f, .04f, .85f * a);
-    txt_desenhar_alpha(txt_linha(TXT_MINI, rotuloFonte(l->fonte), 235, 235, 235, 255), r.x + 20, r.y + 18, a);
+    { TxtLinha origem = txt_linha_corta(TXT_ILHA_HORA, rotuloFonte(l->fonte), 235, 235, 235, 255, r.w - 64);
+      GfxRect selo = { r.x + 12, r.y + 12, origem.w + 24.0f, 30.0f };
+      plrui_botao_repouso(selo, a);
+      txt_desenhar_alpha(origem, selo.x + 12, selo.y + (selo.h - origem.h) * .5f, a); }
     TxtLinha title = txt_linha_corta(TXT_CALLOUT, l->titulo, 243, 242, 239, 255, r.w - 40);
     txt_desenhar_alpha(title, r.x + 20, r.y + 166, a);
     char sub[220]; subtituloLista(l, sub, sizeof sub);
@@ -3945,22 +3951,53 @@ static void barraHold(GfxRect r, float a) {
       txt_desenhar_alpha(dica, bx, trilho.y - 8.0f - (float)dica.h, 0.92f * a); } }
 }
 
-// COMPARTILHAR: o link publico da lista como QR (celbotao.c), sobre um veu. Sem
-// servidor e sem token: so o endereco que o Trakt ja mostra para qualquer um.
+// COMPARTILHAR: o link publico da lista como QR (celbotao.c). Sem servidor e
+// sem token: so o endereco que o Trakt ja mostra para qualquer um. Com o
+// relogio na tela e a ilha que estica ate o corpo (folha de Fontes); sem ele,
+// a mesma ilha centrada, na mola de entrada e saida.
+#define COMP_W 900.0f
+#define COMP_H(topo) ((topo) + 214.0f + celb_qr_lado() + 96.0f)
+static void fechaCompartilhar(int a, int b) { (void)a; (void)b; compartilha = 0; }
+static void corpoCompartilhar(GfxRect r, float a, void *u) {
+  float dy = u ? NV_ILHA_H : 0, lado = celb_qr_lado(), y;
+  if (a < .01f) return;
+  float opacity = gfx_opacidade_grupo;
+  gfx_opacidade_grupo *= a;
+  if (compartilha && a > .5f) {
+    ponteiro_camada();
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, fechaCompartilhar, 0, 0);
+    ponteiro_alvo(r.x, r.y, r.w, r.h, NULL, NULL, 0, 0);
+  }
+  plrui_kicker(i18n("Compartilhar"), r.x + 48, r.y + dy + 36, 243, 242, 239, .55f);
+  { TxtLinha t = txt_linha_corta(TXT_ILHA_TITULO, i18n("Aponte a câmera para abrir a lista"),
+                                 243, 242, 239, 255, r.w - 96);
+    txt_desenhar(t, r.x + 48, r.y + dy + 76); }
+  y = r.y + dy + 152;
+  celb_qr_desenhar(urlLista, r.x + (r.w - lado) * .5f, y, 1.0f);
+  { TxtLinha url = txt_linha_corta(TXT_ILHA_SUB, urlLista, 243, 242, 239, 255, r.w - 96);
+    txt_desenhar_alpha(url, r.x + (r.w - url.w) * .5f, y + lado + 20, .62f); }
+  { const char *k[] = { "OK" }, *l[] = { i18n("Fechar") };
+    plrui_dicas(k, l, 1, r.x + 48, r.y + r.h - 44, 0, 1); }
+  gfx_opacidade_grupo = opacity;
+}
 static void desenhaCompartilhar(void) {
-  float lado, x, y;
-  TxtLinha t, u;
-  if (!compartilha) return;
+  float ix, iy, iw, ih;
+  if (ajustes_relogio_ligado() && ilha_rect(&ix, &iy, &iw, &ih)) {
+    // The shared island owns shape, dim and exit; it replays the last body.
+    if (compartilha) ilha_corpo(COMP_W, COMP_H(NV_ILHA_H), corpoCompartilhar, urlLista);
+    return;
+  }
+  if (compartA < .005f) return;
+  GfxRect r = { (NV_TELA_W - COMP_W) * .5f, (NV_TELA_H - COMP_H(0)) * .5f, COMP_W, COMP_H(0) };
   gfx_sem_recorte();
-  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0.0f, 0.0f, 0.0f, 0.0f, 0.82f);
-  lado = celb_qr_lado();
-  x = (NV_TELA_W - lado) * 0.5f;
-  y = (NV_TELA_H - lado) * 0.5f - 40.0f;
-  celb_qr_desenhar(urlLista, x, y, 1.0f);
-  t = txt_linha(TXT_TITULO2, "Aponte a câmera para abrir a lista", 255, 255, 255, 255);
-  txt_desenhar(t, (NV_TELA_W - t.w) * 0.5f, y - t.h - 28.0f);
-  u = txt_linha_corta(TXT_CAPTION2, urlLista, 150, 153, 162, 255, NV_TELA_W - 200.0f);
-  txt_desenhar(u, (NV_TELA_W - u.w) * 0.5f, y + lado + 24.0f);
+  gfx_cor((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0, 0, 0, 0, T21_VEIL * compartA);
+  float opacity = gfx_opacidade_grupo;
+  gfx_opacidade_grupo *= compartA;
+  gfx_transformar(r.x + r.w * .5f, r.y + r.h * .5f, anim_mistura(T21_SHEET_SCALE, 1, compartForma), 0, 0);
+  t21_ilha(r, T21_R_MODAL, 1);
+  gfx_opacidade_grupo = opacity;
+  corpoCompartilhar(r, compartA, NULL);
+  gfx_sem_transformar();
 }
 
 static void desenhaVistaAnterior(Uint32 agora) {
@@ -4081,7 +4118,6 @@ static void biblioteca_desenhar_(Uint32 agora) {
   if (ondaArmada && nCelulas) { ondaEm = agora ? agora : 1u; ondaArmada = 0; }
   if (paginaLista() && trilha && nCelulas) {
     desenhaTrilha(agora);
-    desenhaCompartilhar();
     if (teclado_aberto()) teclado_desenhar(agora);
     gfx_borda_foco_atual = 1;
     return;
@@ -4090,7 +4126,6 @@ static void biblioteca_desenhar_(Uint32 agora) {
 
   if (nCelulas == 0) {
     desenhaVazio();
-    desenhaCompartilhar();
     if (teclado_aberto()) teclado_desenhar(agora);
     gfx_borda_foco_atual = 1.0f;
     return;
@@ -4231,7 +4266,6 @@ static void biblioteca_desenhar_(Uint32 agora) {
   tex_pedido_fora(0);
   gfx_sem_recorte();
   if (listasMinhas()) desenhaPainelLista();
-  desenhaCompartilhar();
   if (teclado_aberto()) teclado_desenhar(agora);
   gfx_borda_foco_atual = 1.0f;
 
@@ -4300,5 +4334,6 @@ void biblioteca_desenhar(Uint32 agora) {
   biblioteca_desenhar_(agora);
   gfx_sem_transformar();
   gfx_opacidade_grupo = opacity;
+  desenhaCompartilhar();
   TXT_FIM();
 }

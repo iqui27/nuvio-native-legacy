@@ -53,6 +53,7 @@
 #include "tex_cache.h"
 #include "badges.h"
 #include "anim.h"
+#include "movimento.h"
 #include "layout.h"
 #include "sessao.h"
 #include "contalib.h"
@@ -76,6 +77,7 @@
 #include "registro.h"
 #include "seguro.h"
 #include "botoes.h"
+#include "plrui.h"
 #include "ponteiro.h"
 #include "focus.h"
 #include "teclavoltar.h"
@@ -2699,7 +2701,7 @@ static void guiaDesenhar(void);
 static void guiaAtualizar(float dt);
 static int guiaAberto;
 // O tour "O que o Nuvio faz?" (ajustes_ux_tour.inc), tambem por cima das ilhas.
-static int tourAberto;
+static int tourAberto, tourPend;
 static void tourAbrir(void);
 static void tourEvento(const SDL_Event *e);
 static int tourSeta(SDL_Keycode k);
@@ -9340,6 +9342,11 @@ static const char *faResumo(int provedores) {
 // as OK/tap toggles one; size uses the existing explicit-confirmation editor.
 // Every edit reads the saved config first, so another field is never lost.
 static int ffCategoria = -1, ffFoco, ffValorFoco;
+// Centered modal lifecycle (clock/player sheets): the shape springs in and out
+// with the last body retained while closing, a category list eases in, row
+// focus and scroll follow the shared springs.
+static float ffForma, ffFormaV, ffCatA = 1.0f, ffFocoA[64], ffRol, ffRolV, ffRolAlvo;
+static int ffFechando, ffCatVista = -1, ffRolPronto;
 static const int FF_CATEGORIA[9] = {
   FONTEFILTRO_RESOLUCAO, FONTEFILTRO_QUALIDADE, -1,
   FONTEFILTRO_VISUAL, FONTEFILTRO_AUDIO, FONTEFILTRO_CANAIS,
@@ -9385,7 +9392,27 @@ static const char *ffResumo(void) {
 static void ffAbrir(void) {
   if (!ajOpcaoDisponivel(AJ_FILTROS_FONTES)) return;
   uxCancelar(); faRetornarFolha = 0; frAberta = 6;
-  ffCategoria = -1; ffFoco = ffValorFoco = 0;
+  ffCategoria = ffCatVista = -1; ffFoco = ffValorFoco = 0;
+  ffForma = ffFormaV = 0.0f; ffFechando = ffRolPronto = 0; ffCatA = 1.0f;
+  memset(ffFocoA, 0, sizeof ffFocoA); ffFocoA[0] = 1.0f;
+}
+static void ffAtualizar(float dt) {
+  int red = ajustes_animacoes_reduzidas(), aberta = frAberta == 6;
+  int foco = ffCategoria >= 0 ? ffValorFoco : ffFoco;
+  if (!aberta && (frAberta || !ffFechando)) { ffForma = ffFormaV = 0.0f; ffFechando = 0; return; }
+  ffForma = mov_mola_assenta(&ffFormaV, ffForma, aberta ? 1.0f : 0.0f, dt, MOV_MODAL_W, MOV_MODAL_Z);
+  if (!aberta) { if (ffForma <= 0.0f) ffFechando = 0; return; }
+  if (ffCategoria != ffCatVista) {
+    ffCatVista = ffCategoria; ffCatA = 0.0f; ffRolPronto = 0;
+    memset(ffFocoA, 0, sizeof ffFocoA);
+    if (foco >= 0 && foco < 64) ffFocoA[foco] = 1.0f;
+  }
+  ffCatA = red ? 1.0f : anim_rampa(ffCatA, 1.0f, dt, 220.0f);
+  for (int i = 0; i < 64; i++) {
+    float alvo = i == foco ? 1.0f : 0.0f;
+    ffFocoA[i] = red ? alvo : anim_mola(ffFocoA[i], alvo, dt, alvo > ffFocoA[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+  }
+  ffRol = anim_mola2_reduzida(&ffRolV, ffRol, ffRolAlvo, dt, NV_MOLA2_SCROLL, red);
 }
 static void ffGruposDefinir(const char *texto) {
   FonteFiltroConfig cfg; fontefalha_filtro(&cfg);
@@ -9429,7 +9456,7 @@ static void ffEscolher(void) {
 static void ffVoltar(void) {
   if (frAberta != 6 || teclado_aberto()) return;
   if (ffCategoria >= 0) ffCategoria = -1;
-  else frAberta = 0;
+  else { frAberta = 0; ffFechando = 1; }
 }
 static void ffEvento(SDL_Keycode k) {
   int *foco = ffCategoria >= 0 ? &ffValorFoco : &ffFoco;
@@ -10017,6 +10044,8 @@ void ajustes_evento(const SDL_Event *e) {
   }
   if (e->type==SDL_KEYDOWN && navigationMove(e->key.keysym.sym)) { AJ_ESCALA_FIM(); return; }
   if (tourAberto) { tourEvento(e); AJ_ESCALA_FIM(); return; }
+  // Resolve the tour destination before another key can reach the old page.
+  if (tourPend) tourAtualizar(0);
   if (apoioAberto) { apoioEvento(e); AJ_ESCALA_FIM(); return; }
   eventoTela(e);
   // FIM DA EDICAO DO LIMITE (issue #197): qualquer tecla que solte a linha
@@ -10346,6 +10375,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   screenReveal=ajustes_animacoes_reduzidas()?!sair:anim_mola(screenReveal,!sair,dt,NV_MOLA_TELA);
   guiaAtualizar(dt);
   tourAtualizar(dt);
+  ffAtualizar(dt);
   if (uxAviso[0] && SDL_TICKS_PASSED(agora, uxAvisoAte)) uxAviso[0] = 0;
   montarTela();
   valor[AJ_PERFIL_PESQ] = recomenda_pesquisavel() ? 0 : 1;   // V_LIGA: 0 = Ligado
@@ -11197,8 +11227,10 @@ static void ajDesenharTudo(Uint32 agora) {
 #endif
   montarTela();
   if (guiaAberto) { ponteiro_camada(); guiaDesenhar(); return; }
-  if (tourAberto) { ponteiro_camada(); tourDesenhar(); return; }
+  if (tourAberto && tourVis > .99f) { ponteiro_camada(); tourDesenhar(); return; }
   aj4Desenhar();
+  // Tour enter/exit: the page fades and rises over v4 instead of cutting.
+  if (tourVis > .01f) { if (tourAberto) ponteiro_camada(); tourDesenhar(); }
 
   // A folha de fileiras cobre a lista; o vinculo cobre as duas, porque ele e a
   // unica coisa aqui com prazo (o codigo do dispositivo expira).
@@ -11217,7 +11249,7 @@ static void ajDesenharTudo(Uint32 agora) {
   if (pfTela) pfDesenhar();
   else pfFaixaEdicao();
   if (frAberta == 7) desenhaFolhaOrdem();
-  else if (frAberta == 6) desenhaFolhaFiltros();
+  else if (frAberta == 6 || (!frAberta && ffFechando)) desenhaFolhaFiltros();
   else if (frAberta >= 4) desenhaFolhaFalha();
   else if (frAberta == 3) desenhaFolhaOrdem();
   else if (frAberta) desenhaFolhaPermitidos();
@@ -11447,8 +11479,8 @@ int ajustes_teste_quadro(const char *id) {
     tourAbrir(); tourInicio = (long)time(NULL);
     if (!strcmp(id, "tour-more")) { tourFoco = 8; tourTopo = 2; tourRol = tourRolAlvo = 808; }
     if (!strcmp(id, "tour-last")) { tourFoco = 16; tourTopo = 3; tourRol = tourRolAlvo = 1212; }
-    if (!strcmp(id, "tour-where")) { tourOnde(2); tourAtualizar(0); }
-    if (!strcmp(id, "tour-edit")) { tourLigar(2); tourAtualizar(0); }
+    if (!strcmp(id, "tour-where")) { tourVis = 1; tourOnde(2); tourAtualizar(0); }   // exit from a settled page
+    if (!strcmp(id, "tour-edit")) { tourVis = 1; tourLigar(2); tourAtualizar(0); }
     return 1;
   }
   if (!strncmp(id, "v4-", 3)) {

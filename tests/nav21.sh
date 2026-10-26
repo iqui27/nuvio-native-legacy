@@ -2,6 +2,7 @@
 # Foreground-only offline native D-pad gate; isolated data, no TV or accounts.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+export TMPDIR="${TMPDIR:-/Volumes/ExternalSSD/tmp}"
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-nav21.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 out=${NAV21_OUT:-/Volumes/ExternalSSD/tmp/rev/navteste}
@@ -18,5 +19,6 @@ timeout 240 cc -DAJUSTES_TESTE -DNV_SHOT_HOOKS "${sources[@]}" tests/nav21.c tes
   -Wno-deprecated-declarations -o "$work/nav21"
 export NUVIO_DADOS="$work/data"
 timeout 240 "$work/nav21" "$out/violations.md"
-# Also preserve the setup gate for real authentication and recovery flows.
+# Also preserve the tour and setup gates for real actions and recovery flows.
+bash tests/ajustes_tour.sh
 NUVIO_SHOT_FLOW_ONLY=1 bash tests/servidores_setup_fluxo.sh "$@"

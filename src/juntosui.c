@@ -114,8 +114,39 @@ static float corpoAlfaAtual;
 // Cinema start: the lobby recedes over the playing film until "Enter session".
 static int cinema;
 static float cinemaAnim;
+static GfxMini cinemaVeu;
+static GfxRect cinemaVeuRect;
+static int cinemaVeuHdr;
 static char ilhaTexto[160];   // the session line on the clock island this frame
 static float painelAlvo;      // sidebar scroll target
+
+// Submission timings normally; opt-in GPU fences only for isolated profiling.
+static struct { double ms[6]; unsigned frames; Uint64 last; int sync, cinema; } custo;
+static const char *custoNome[] = { "background", "header", "seats", "actions", "cinema", "overlay" };
+static void custoInicio(void) {
+  static int iniciou;
+  if (!iniciou) {
+    const char *v = getenv("NUVIO_JUNTOS_CUSTO");
+    custo.sync = v && !strcmp(v, "sync"); iniciou = 1;
+  }
+  if (custo.cinema != cinema) {
+    memset(custo.ms, 0, sizeof custo.ms); custo.frames = 0; custo.cinema = cinema;
+  }
+  if (custo.sync) glFinish();
+  custo.last = SDL_GetPerformanceCounter();
+}
+static void custoCamada(int i) {
+  if (custo.sync) glFinish();
+  Uint64 now = SDL_GetPerformanceCounter();
+  custo.ms[i] += (now - custo.last) * 1000.0 / SDL_GetPerformanceFrequency();
+  custo.last = now;
+}
+static void custoFim(void) {
+  if (++custo.frames < 120) return;
+  printf("[juntos-custo] %s %s frames=%u", custo.sync ? "gpu-fenced" : "submit", cinema ? "cinema" : "lobby", custo.frames);
+  for (int i = 0; i < 6; i++) { printf(" %s=%.3fms", custoNome[i], custo.ms[i] / custo.frames); custo.ms[i] = 0; }
+  printf("\n"); custo.frames = 0;
+}
 #ifdef NV_SHOT_HOOKS
 static int shotOsd;
 void juntosui_shot_osd(int sim) { shotOsd = sim; }
@@ -338,6 +369,7 @@ void juntosui_sala_fechou(void) {
   memset(bolha, 0, sizeof bolha);
   lobbyAberto = escolhendoFilme = qrPendente = cinema = 0;
   mostrarQr = 0;
+  gfx_mini_liberar(&cinemaVeu);
 }
 
 void juntosui_fonte_diferente(int v, int pal) {
@@ -412,6 +444,10 @@ int juntosui_pediu_escolher_filme(void) { int p = pediuEscolherFilme; pediuEscol
 int juntosui_pediu_fechar_player(void) { int p = pediuFecharPlayer; pediuFecharPlayer = 0; return p; }
 int juntosui_pediu_fontes(void) { int p = pediuFontes; pediuFontes = 0; return p; }
 int juntosui_aberta(void) { return camada != CAMADA_NADA || okSegurando; }
+int juntosui_cobre_tela(void) {
+  return camadaVisual == CAMADA_SALA && !escolhendoFilme &&
+         !cinema && anim_suave(entrada) >= .9999f;
+}
 
 // --- botoes do cartao da sala ------------------------------------------------------------------
 enum { BT_COMECAR, BT_CELULAR, BT_FILME, BT_FONTES, BT_TRAVA, BT_SAIR, BT_CODIGO, BT_N };
@@ -908,22 +944,57 @@ static const char *arteSala(void) {
 
 // Backdrop in cover with a slow push-in, then the Detail scrims: left for the
 // text, base for seats and actions.
+static void veusCinema(GfxRect r, float a) {
+  gfx_veu_base(r, 0, 0.78f, 0.95f * a);
+  gfx_veu_css(r, 2, 1.0f, 1.0f, 0.75f * a);
+  gfx_cor(r, 0, 0.03f, 0.03f, 0.05f, 0.22f * a);
+}
+
 static void telaCinema(GfxRect r, float a) {
+  if (a <= .001f) return;
   const char *arte = arteSala();
   GLuint t = arte ? tex_obter_hero(arte) : 0;
   float z = ajustes_animacoes_reduzidas_usuario() ? 0 : .04f * (1 - expf(-tempoEntrada / 9));
   GfxRect zr = { r.x - r.w * z / 2, r.y - r.h * z / 2, r.w * (1 + z), r.h * (1 + z) };
-  gfx_cor(r, 0, 0.06f, 0.055f, 0.08f, a);
+  // Cover art is opaque: retain its underpaint only during fades.
+  int underpaint = a < 1 || gfx_opacidade_grupo < 1;
+#ifdef NV_SHOT_HOOKS
+  underpaint |= getenv("NUVIO_JUNTOS_UNCACHED") != NULL;
+#endif
+  if (t && underpaint) gfx_cor(r, 0, 0.06f, 0.055f, 0.08f, a);
   if (t) {
     gfx_tex_aspect_atual = tex_aspecto(arte);
     gfx_card_forcar_cover_atual = 1.0f;
     gfx_rect(zr, t, GFX_CARD, 1, 0, 0, 0.0f, 1, 1, 1, a);
     gfx_card_forcar_cover_atual = 0.0f;
     gfx_tex_aspect_atual = 0.0f;
-  } else gfx_cor(r, 0, 0.14f, 0.11f, 0.18f, a);
-  gfx_veu_base(r, 0, 0.78f, 0.95f * a);
-  gfx_veu_css(r, 2, 1.0f, 1.0f, 0.75f * a);
-  gfx_cor(r, 0, 0.03f, 0.03f, 0.05f, 0.22f * a);
+  } else {
+    gfx_cor(r, 0, 0.06f, 0.055f, 0.08f, a);
+    gfx_cor(r, 0, 0.14f, 0.11f, 0.18f, a);
+  }
+  // Only the veils are stationary; the approved art push-in keeps running.
+  // During fades retain the separate alphas, which do not commute with baking.
+  int cache = a == 1 && gfx_opacidade_grupo == 1 && !gfx_mini_ativo();
+#ifdef NV_SHOT_HOOKS
+  if (getenv("NUVIO_JUNTOS_UNCACHED")) cache = 0;
+#endif
+  float px = gfx_px_por_unidade();
+  int w = (int)(r.w * px + .5f), h = (int)(r.h * px + .5f);
+  if (cache && w > 0 && h > 0) {
+    int refazer = !cinemaVeu.tex || cinemaVeu.w != w || cinemaVeu.h != h ||
+                  memcmp(&cinemaVeuRect, &r, sizeof r) || cinemaVeuHdr != (gfx_hdr_ui != 1);
+    if (gfx_mini_alvo(&cinemaVeu, w, h)) {
+      if (refazer) {
+        gfx_mini_comecar(&cinemaVeu, 0, 0, px);
+        veusCinema((GfxRect){0, 0, r.w, r.h}, 1);
+        gfx_mini_terminar();
+        cinemaVeuRect = r; cinemaVeuHdr = gfx_hdr_ui != 1;
+      }
+      gfx_mini_desenhar(&cinemaVeu, r, 0, 1);
+      return;
+    }
+  }
+  veusCinema(r, a);
 }
 
 static float entradaItem(int i) {
@@ -1307,8 +1378,9 @@ static void desenharSala(void) {
   float meio = (k - 1) / 2.0f, queda = 7 * meio * meio;
   float acoesY = B - 150, statusY = acoesY - 66, lugarY = statusY - 40 - queda - LUGAR_H;
   lugarW = fminf(248, (R - L - 4 * LUGAR_GAP) / 5);
-  if (cinema) { desenharCinema(tela, L, B, anim_suave(cinemaAnim)); return; }
+  if (cinema) { desenharCinema(tela, L, B, anim_suave(cinemaAnim)); custoCamada(4); return; }
   telaCinema(tela, a);
+  custoCamada(0);
   a *= convFundo;
   cabecalhoSala(L, R, T + 54, a * entradaItem(0));
   float codigoW = botao_largura(rotuloBotao(BT_CODIGO), iconeBotao(BT_CODIGO), 0);
@@ -1324,12 +1396,14 @@ static void desenharSala(void) {
     const char *tit = m->sala.titulo[0] ? m->sala.titulo : juntos_titulo();
     logotitulo_desenhar(itemSala(), tit, TXT_TITULO1, L, logoY + dy, 620, logoH, 1000, a * e);
   }
+  custoCamada(1);
   float x0 = (L + R) / 2 - (k * LUGAR_W + (k - 1) * LUGAR_GAP) / 2;
   for (i = 0; i < k; i++) {
     float x = x0 + i * (LUGAR_W + LUGAR_GAP), d = i - meio;
     if (i < nm) desenharLugar(i, &m->sala.m[i], 0, 0, x, lugarY + 7 * d * d, a);
     else desenharLugar(i, NULL, 1, focoDe(-1), x, lugarY + 7 * d * d, a);
   }
+  custoCamada(2);
   {
     // Readiness, centred under the seats: who is still getting ready, green when all are.
     int pr = todosProntos(m), prontos = 0, falta = -1;
@@ -1385,6 +1459,7 @@ static void desenharSala(void) {
   }
   texto(TXT_CAPTION, i18n("Setas para mover · OK para escolher · Voltar para retornar"), L, B - 64, 170, a, R - L);
   desenharConvite(R, T + 180, acoesY - 24, 1);
+  custoCamada(3);
 }
 
 // The session sidebar (CH+ in the film): the Saved sidebar shell with only the
@@ -1643,6 +1718,8 @@ static void pedirCorpo(void) {
 
 void juntosui_desenhar(Uint32 agora) {
   navigationCount=0;
+  int medir = camadaVisual == CAMADA_SALA && entrada > .005f;
+  if (medir) custoInicio();
   float esc = gfx_escala_entrar();
   origemX = (NV_VTELA_W - 1920) / 2;
   origemY = (NV_VTELA_H - 1080) / 2;
@@ -1663,4 +1740,5 @@ void juntosui_desenhar(Uint32 agora) {
     const JsMotor *m = juntos_motor();
     spainel_lateral(entrada, m && m->sala.titulo[0] ? m->sala.titulo : juntos_titulo(), i18n("Assistir Juntos"), corpoPainel, NULL);
   }
+  if (medir) { custoCamada(5); custoFim(); }
 }

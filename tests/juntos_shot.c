@@ -287,15 +287,31 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 3; i++) snprintf(motor.sala.m[i].st, sizeof motor.sala.m[i].st, "pronto");
     motor.sala.n = 3;
     juntosui_shot_camada(0, 0); juntosui_sala_abriu(); quadros(40);
+    assert(juntosui_cobre_tela() && juntosui_shot_cinema() < 0);
+    if (getenv("NUVIO_JUNTOS_CUSTO")) {
+      // Identical settled lobby workload before/after; all motion remains active.
+      quadros(240);
+      // Same frame, clock and art texture: isolate compositing differences.
+      int uncached = getenv("NUVIO_JUNTOS_UNCACHED") != NULL;
+      setenv("NUVIO_JUNTOS_UNCACHED", "1", 1);
+      glClear(GL_COLOR_BUFFER_BIT);
+      if (fundoTex) gfx_rect((GfxRect){0, 0, 1920, 1080}, fundoTex, GFX_SNAP, 0, 0, 0, 0, 1, 1, 1, 1);
+      juntosui_desenhar(SDL_GetTicks()); glFinish(); captura("0-lobby-reference", 1080);
+      if (!uncached) unsetenv("NUVIO_JUNTOS_UNCACHED");
+      glClear(GL_COLOR_BUFFER_BIT);
+      if (fundoTex) gfx_rect((GfxRect){0, 0, 1920, 1080}, fundoTex, GFX_SNAP, 0, 0, 0, 0, 1, 1, 1, 1);
+      juntosui_desenhar(SDL_GetTicks()); glFinish(); captura("0-lobby-cost", 1080);
+    }
     // 1. t0 passes with the lobby up: it recedes over the film, it does not vanish.
     motor.sala.rel.estado = JSE_TOCANDO;
     motor.sala.rel.t0 = jsr_servidor(&motor.rel, (double)SDL_GetTicks64()) - 10;
     motor.prontoAnterior = 1; motor.playArmado = 0;
     quadros(1);
     int cinema = juntosui_aberta() && juntosui_shot_camada_atual() == 3 && juntosui_shot_cinema() >= 0;
+    assert(!juntosui_cobre_tela());
     printf("%s: cinema start keeps the lobby over the film (no jump cut)\n", cinema ? "PASS" : "FAIL"); failed += !cinema;
     quadros(14); captura("1-cinema-start", 1080);
-    quadros(70); captura("2-cinema-open", 1080);
+    quadros(getenv("NUVIO_JUNTOS_CUSTO") ? 130 : 70); captura("2-cinema-open", 1080);
     int aberto = juntosui_shot_cinema() > .95f;
     printf("%s: cinema settles with Enter session / Pause\n", aberto ? "PASS" : "FAIL"); failed += !aberto;
     key.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&key));

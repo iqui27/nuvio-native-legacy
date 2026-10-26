@@ -41,6 +41,90 @@ static int naTela(int op) {
   return 0;
 }
 
+static void key(SDL_Keycode k) {
+  SDL_Event e = {0};
+  e.type = SDL_KEYDOWN; e.key.keysym.sym = k;
+  ajustes_evento(&e);
+}
+
+static void tourNavigation(void) {
+  const float dt = 1.0f / 60;
+  anim_politica_reduzida = 0;
+  aj4Iniciar(); focoIndice = 1; aj4Linha = 7; sair = 0;
+  key(SDLK_RETURN);
+  assert(tourAberto && tourVis == 0);
+  tourAtualizar(dt);
+  assert(tourVis > 0 && tourVis < 1 && tourFocoA[0] > 0 && tourFocoA[0] < 1);
+  for (int frame = 0; frame < 60; frame++) tourAtualizar(dt);
+  assert(tourVis > .99f);
+
+  // Every card and both actions remain reachable, including unavailable cards.
+  for (int i = 0; i < TOUR_N; i++) {
+    for (int b = 0; b < 2; b++) {
+      assert(tourFoco == i && tourBtn == b);
+      for (int frame = 0; frame < 90; frame++) tourAtualizar(dt);
+      float x = TOUR_X0 + (i % TOUR_COLS) * (TOUR_CW + TOUR_GAP);
+      float y = TOUR_Y0 + (i / TOUR_COLS) * (TOUR_CH + TOUR_GAP) - tourRol;
+      assert(x >= 0 && x + TOUR_CW <= NV_VTELA_W);
+      assert(y >= TOUR_Y0 - .01f && y + TOUR_CH <= TOUR_Y0 + 2 * TOUR_CH + TOUR_GAP + .01f);
+      assert(y + TOUR_CH <= NV_VTELA_H);
+      if (i + TOUR_COLS < TOUR_N) {
+        key(SDLK_DOWN); assert(tourFoco == i + TOUR_COLS && tourBtn == b);
+        key(SDLK_UP); assert(tourFoco == i && tourBtn == b);
+      }
+      if (i != TOUR_N - 1 || b != 1) key(SDLK_RIGHT);
+    }
+  }
+  key(SDLK_RIGHT); key(SDLK_DOWN);
+  assert(tourFoco == TOUR_N - 1 && tourBtn == 1);
+  for (int i = TOUR_N * 2 - 1; i > 0; i--) key(SDLK_LEFT);
+  key(SDLK_LEFT); key(SDLK_UP);
+  assert(tourFoco == 0 && tourBtn == 0);
+  tourAtualizar(dt);
+  assert(tourBtnA > 0 && tourBtnA < 1);
+  key(SDLK_ESCAPE);
+  assert(!tourAberto && focoIndice && aj4Linha == 7 && !sair);
+  float previous = tourVis;
+  tourAtualizar(dt);
+  assert(tourVis > 0 && tourVis < previous);
+  for (int frame = 0; frame < 60; frame++) tourAtualizar(dt);
+  assert(tourVis == 0);
+
+  // Back during Where-it-is exit must not escape Settings or lose its route.
+  for (int nextFrame = 0; nextFrame < 2; nextFrame++) {
+    aj4Iniciar(); focoIndice = 1; aj4Linha = 7; sair = 0;
+    key(SDLK_RETURN);
+    for (int frame = 0; frame < 60; frame++) tourAtualizar(dt);
+    key(SDLK_RIGHT); key(SDLK_RIGHT); key(SDLK_RIGHT); key(SDLK_RIGHT);
+    assert(tourFoco == 2 && tourBtn == 0 && tourDisponivel(2));
+    key(SDLK_RIGHT); key(SDLK_RETURN);
+    assert(!tourAberto && tourPend && tourVis > .99f);
+    if (nextFrame) tourAtualizar(dt);
+    key(SDLK_ESCAPE);
+    tourAtualizar(dt);
+    assert(!sair && !tourPend && !tourAberto && !uxEditor && !focoIndice);
+    assert(aj4Atual == aj4Secao(AJ_SEEKR_LIGADO) && aj4Grupo == aj4GrupoDe(AJ_SEEKR_LIGADO));
+    assert(aj4Grupos && tourVis > 0 && tourVis < 1);
+    key(SDLK_ESCAPE);
+    assert(focoIndice && !sair);
+  }
+
+  // Editor Back restores the exact destination row while the tour fades out.
+  aj4Iniciar(); focoIndice = 1; aj4Linha = 7;
+  key(SDLK_RETURN);
+  for (int frame = 0; frame < 60; frame++) tourAtualizar(dt);
+  tourLigar(2); tourAtualizar(dt);
+  assert(uxEditor && uxOp == AJ_SEEKR_LIGADO);
+  int row = aj4Linha;
+  key(SDLK_ESCAPE);
+  assert(!uxEditor && !focoIndice && aj4Linha == row && aj4Opcoes[row] == AJ_SEEKR_LIGADO);
+  anim_politica_reduzida = 1;
+  tourAbrir(); tourAtualizar(dt); assert(tourVis == 1);
+  key(SDLK_ESCAPE); tourAtualizar(dt); assert(tourVis == 0);
+  anim_politica_reduzida = 0;
+  puts("PASS: tour D-pad geometry/reachability, Back/focus, enter/exit/focus/scroll and reduced motion");
+}
+
 int main(void) {
   int n = tourN();
   const int required[] = { AJ_LEG_SYNC_AUTO, AJ_LEG_LINGUA2, AJ_SEEKR_LIGADO, AJ_RELOGIO,
@@ -100,9 +184,9 @@ int main(void) {
   assert(!tourNovoJanela(1000, 1000 + 31 * 86400));
   int failures = 0;
   valor[AJ_IDIOMA] = IDIOMA_PT + 1;
-  tourPrevia(AJ_LEG_SYNC_AUTO, (GfxRect){0, 0, 432, 176}, 0);
-  tourPrevia(AJ_LEG_LINGUA2, (GfxRect){0, 0, 432, 176}, 0);
-  tourPrevia(AJ_SEEKR_LIGADO, (GfxRect){0, 0, 432, 176}, 0);
+  tourPrevia(AJ_LEG_SYNC_AUTO, (GfxRect){0, 0, 432, 176}, 0, 1.0f);
+  tourPrevia(AJ_LEG_LINGUA2, (GfxRect){0, 0, 432, 176}, 0, 1.0f);
+  tourPrevia(AJ_SEEKR_LIGADO, (GfxRect){0, 0, 432, 176}, 0, 1.0f);
   if (subtitleText != 2 || secondaryText != 1 || !seekProgress || !seekFrame || squareVideo) {
     fprintf(stderr, "FAIL: approved previews: subtitles=%d secondary=%d seek=%d frame=%d square=%d\n",
             subtitleText, secondaryText, seekProgress, seekFrame, squareVideo);
@@ -143,6 +227,7 @@ int main(void) {
   }
   if (failures) return 1;
   puts("PASS: approved subtitle text, Seekr progress and rounded previews");
+  tourNavigation();
   puts("ok");
   return 0;
 }

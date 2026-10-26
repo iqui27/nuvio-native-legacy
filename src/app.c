@@ -853,7 +853,7 @@ static int iniciarFonteJob(int tipo, unsigned geracao, const char *id, int renov
 }
 static int pedirFonteJob(int tipo, unsigned geracao, const char *id, int renovando) {
   // Toda escolha de VOD abre uma rodada nova da fonte aberta antes do veredito.
-  if (tipo == FJOB_ADDON || tipo == FJOB_PREPARO) fa_nova_rodada();
+  if (tipo == FJOB_ADDON || tipo == FJOB_PREPARO || tipo == FJOB_PROXIMA_VOD) fa_nova_rodada();
   int r = iniciarFonteJob(tipo, geracao, id, renovando);
   if (r == 1) {
     fontePendenteTipo = tipo;
@@ -3576,6 +3576,9 @@ static void tentarProximaFonteVOD(void) {
       player_erro_fonte_motivo(i18n(motivo == 2 ? "A fonte não respondeu a tempo." : "A fonte respondeu, mas não entregou dados suficientes."),
           i18n("Confira Ajustes > Esta TV > Teste de velocidade e veja se o arquivo é menor que o tamanho recomendado antes de relatar um problema de travamento."));
     else player_erro_fonte();
+    folhaParaTocar = 1;
+    nomeParaFolha(); stream_folha_abrir();
+    stream_folha_contexto(i18n("Abra Fontes para escolher outra opção ou recarregar."));
     return;
   }
   player_voltar_a_esperar();
@@ -6604,7 +6607,14 @@ void app_atualizar(float dt, Uint32 agora) {
         folhaParaTocar = 1;
         nomeParaFolha(); stream_folha_abrir();
       }
-      else { limparFonteVOD(); erroSemFonte(); }
+      else {
+        limparFonteVOD(); erroSemFonte();
+        if (!player_id_canal()[0]) {
+          folhaParaTocar = 1;
+          nomeParaFolha(); stream_folha_abrir();
+          stream_folha_contexto(i18n("Abra Fontes para escolher outra opção ou recarregar."));
+        }
+      }
     }
     }
   }
@@ -7504,7 +7514,7 @@ static void desenharTelas(Uint32 agora) {
   // — a mesma conta que ja valia para o cartao de detalhe esticado.
   // ...exceto enquanto o video do preview do guia CRESCE para a tela cheia: ai
   // o guia continua em volta do furo que anda (player_desenhar).
-  if (!player_visivel() || player_janela_animando(NULL, NULL, NULL, NULL)) {
+  if (!juntosui_cobre_tela() && (!player_visivel() || player_janela_animando(NULL, NULL, NULL, NULL))) {
     // O FUNDO PARADO DO PAINEL DE SALVOS: com o painel inteiro na tela, tudo
     // que fica atras dele e pintado UMA vez num FBO, ja com o veu, e os quadros
     // seguintes desenham so a copia e o painel. Ver spainel_fundo em
@@ -7533,7 +7543,7 @@ static void desenharTelas(Uint32 agora) {
   // HDR/DV, legenda e tela do DV inclusive. Volta a 1 depois da tela do DV.
   if (player_visivel()) gfx_hdr_ui = player_ui_hdr();
   CAMADA_SE(player_visivel());
-  player_desenhar(agora);
+  if (!juntosui_cobre_tela()) player_desenhar(agora);
   // O overlay do guia vai POR CIMA do player — o video continua atras do fundo
   // a 94%, que e o que diz "a TV nao parou" enquanto se troca de canal.
   if (guia_overlay_aberta()) { ponteiro_camada(); guia_desenhar(agora); }
