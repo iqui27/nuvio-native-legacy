@@ -16,6 +16,7 @@
 #include "ilha.h"
 #include "plrilha.h"
 #include "ilhasinais.h"
+#include "central.h"
 #include "juntosui.h"
 #include "detail.h"
 #include "tex_cache.h"
@@ -34,10 +35,13 @@ float juntosui_shot_corpo_alfa(void);
 float juntosui_shot_foco(int i);
 int juntosui_shot_foco_atual(void);
 int juntosui_shot_camada_atual(void);
+void juntosui_shot_osd(int sim);
+float juntosui_shot_cinema(void);
+const char *juntosui_shot_ilha(void);
 
 static SDL_Window *win;
 static const char *base;
-static int sourcesOnly, proofsOnly, lobbyOnly, flowOnly, transitionsOnly, lobbyNovo;
+static int sourcesOnly, proofsOnly, lobbyOnly, flowOnly, transitionsOnly, lobbyNovo, cinemaOnly;
 void app_shot_escolher_fonte(int fonte);
 void app_shot_juntos_abrir(Uint32 agora);
 static GLuint fundoTex;
@@ -138,7 +142,8 @@ int main(int argc, char **argv) {
   sourcesOnly = argc > 2 && !strcmp(argv[2], "--sources");
   lobbyOnly = argc > 2 && !strcmp(argv[2], "--lobby");
   lobbyNovo = argc > 2 && !strcmp(argv[2], "--lobby21");
-  flowOnly = flowOnly || lobbyNovo;
+  cinemaOnly = argc > 2 && !strcmp(argv[2], "--cinema");
+  flowOnly = flowOnly || lobbyNovo || cinemaOnly;
   proofsOnly = lobbyOnly || (argc > 2 && !strcmp(argv[2], "--proofs"));
   f = fopen(aj, "w"); fprintf(f, "idioma 0\nselected_theme 2\nescalaTextoLocal 2\n"); fclose(f);
   ajustes_dir(dir);
@@ -266,6 +271,67 @@ int main(int argc, char **argv) {
     printf("%s: P1 acknowledged movie keeps explicit source selection\n", selected ? "PASS" : "FAIL"); failed += !selected;
     assert(!failed);
     quadros(35); captura("movie-b-lobby", 1080);
+    return 0;
+  }
+  if (cinemaOnly) {
+    // Owner 26/10: the film starts in front like a cinema (no jump cut), the
+    // island carries the session during the film, CH+ opens the session sidebar.
+    const char *assetDir = getenv("NUVIO_JUNTOS_ART");
+    const char *friends[] = { "Rafa", "Fabi", "Gustavo", "Ana" };
+    char arte[700];
+    int failed = 0;
+    SDL_Event key = {0}; key.type = SDL_KEYDOWN;
+    if (assetDir) { snprintf(arte, sizeof arte, "%s/duna-backdrop.jpg", assetDir); juntosui_shot_arte(arte); }
+    ajustes_definir_vidro(1); ajustes_shot_valor("selected_theme", 2);
+    juntosui_shot_folha(0, friends, 4);
+    for (int i = 0; i < 3; i++) snprintf(motor.sala.m[i].st, sizeof motor.sala.m[i].st, "pronto");
+    motor.sala.n = 3;
+    juntosui_shot_camada(0, 0); juntosui_sala_abriu(); quadros(40);
+    // 1. t0 passes with the lobby up: it recedes over the film, it does not vanish.
+    motor.sala.rel.estado = JSE_TOCANDO;
+    motor.sala.rel.t0 = jsr_servidor(&motor.rel, (double)SDL_GetTicks64()) - 10;
+    motor.prontoAnterior = 1; motor.playArmado = 0;
+    quadros(1);
+    int cinema = juntosui_aberta() && juntosui_shot_camada_atual() == 3 && juntosui_shot_cinema() >= 0;
+    printf("%s: cinema start keeps the lobby over the film (no jump cut)\n", cinema ? "PASS" : "FAIL"); failed += !cinema;
+    quadros(14); captura("1-cinema-start", 1080);
+    quadros(70); captura("2-cinema-open", 1080);
+    int aberto = juntosui_shot_cinema() > .95f;
+    printf("%s: cinema settles with Enter session / Pause\n", aberto ? "PASS" : "FAIL"); failed += !aberto;
+    key.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&key));
+    quadros(40);
+    int dentro = !juntosui_aberta();
+    printf("%s: Enter session hands the screen to the film\n", dentro ? "PASS" : "FAIL"); failed += !dentro;
+    // 2. Island during the film: session code and people on the pill.
+    juntosui_shot_player(1); juntosui_shot_osd(1); quadros(40);
+    int ilha = strstr(juntosui_shot_ilha(), "K7M2QX") && strstr(juntosui_shot_ilha(), "3");
+    printf("%s: island shows the session during the film (%s)\n", ilha ? "PASS" : "FAIL", juntosui_shot_ilha()); failed += !ilha;
+    captura("3-island-movie", 1080);
+    // 3. CH+ opens the session sidebar; invite reuses the lobby invite; Back closes.
+    juntosui_shot_osd(0);
+    key.key.keysym.sym = SDLK_PAGEUP;
+    int painel = juntosui_evento_sdl(&key) && juntosui_shot_camada_atual() == 8;
+    printf("%s: CH+ opens the session sidebar\n", painel ? "PASS" : "FAIL"); failed += !painel;
+    quadros(50); captura("4-sidebar", 1080);
+    JuntosFase fase0 = fase; fase = JF_CRIANDO; salaId[0] = 0; prep.n = prep.enviados = 0;
+    int antes = prep.n;
+    for (int i = 0; i < 2; i++) { key.key.keysym.sym = SDLK_DOWN; juntosui_evento_sdl(&key); }
+    key.key.keysym.sym = SDLK_RETURN; juntosui_evento_sdl(&key);
+    int convidou = prep.n == antes + 1;
+    printf("%s: sidebar invite row sends through the lobby invite\n", convidou ? "PASS" : "FAIL"); failed += !convidou;
+    fase = fase0;
+    quadros(20); captura("5-sidebar-invited", 1080);
+    key.key.keysym.sym = SDLK_ESCAPE; juntosui_evento_sdl(&key); quadros(40);
+    int fechou = !juntosui_aberta();
+    printf("%s: Back closes the sidebar\n", fechou ? "PASS" : "FAIL"); failed += !fechou;
+    // 4. CH+ held opens the Control Center over the sidebar: the sidebar yields.
+    key.key.keysym.sym = SDLK_PAGEUP; juntosui_evento_sdl(&key); quadros(20);
+    central_abrir(); quadros(40);
+    int cedeu = juntosui_shot_camada_atual() != 8 && !juntosui_aberta();
+    printf("%s: Control Center closes the session sidebar\n", cedeu ? "PASS" : "FAIL"); failed += !cedeu;
+    central_fechar();
+    assert(!failed);
+    printf("juntos cinema: start, island, sidebar: ok\n");
     return 0;
   }
   if (lobbyNovo) {

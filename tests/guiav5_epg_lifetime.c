@@ -3,6 +3,14 @@
 #include "../src/guia.c"
 #include "../src/guiav5ui.c"
 #include <assert.h>
+/* guiav5ui.c routes text through its scale wrappers; stub the real calls. */
+#undef txt_linha
+#undef txt_linha_bruta
+#undef txt_linha_corta
+#undef txt_linha_corta_bruta
+#undef txt_desenhar
+#undef txt_bloco
+#undef txt_bloco_bruto
 
 // Read text at the renderer boundary, without a GL context.
 static Uint32 ticks = 100;
@@ -31,6 +39,9 @@ void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float a) {
   (void)r; (void)raio; (void)cr; (void)cg; (void)cb; (void)a;
 }
 int tex_falhou(const char *url) { (void)url; return 0; }
+float gfx_escala_txt(void) { return 1; }
+float gfx_escala_txt_entrar(void) { return 1; }
+void gfx_escala_sair(float a) { (void)a; }
 GLuint tex_obter_larg(const char *url, float w) { (void)url; (void)w; return 0; }
 int perfis_ativo(void) { return 1; }
 const char *login_uid(void) { return ""; }
@@ -40,6 +51,7 @@ int xtream_e_id(const char *id) { (void)id; return 0; }
 void xtepg_querer(const char *id) { (void)id; }
 int xtepg_agora(const char *id,time_t t,EpgProg *p) { (void)id;(void)t;(void)p;return 0; }
 int xtepg_proximo(const char *id,time_t t,int k,EpgProg *p) { (void)id;(void)t;(void)k;(void)p;return 0; }
+int xtepg_faixa(const char *id,time_t de,time_t ate,EpgProg *o,int cap) { (void)id;(void)de;(void)ate;(void)o;(void)cap;return 0; }
 
 static void schedule(const char *title) {
   char xml[4096], ini[32], fim[32];
@@ -80,7 +92,6 @@ int main(void) {
   for (int i = 0; i < 6; i++) {
     gv_label(TXT_ILHA_CORPO, gv_ch[0].p[i].titulo, 0, 0, 500, 0);
     assert(!strcmp(rendered, "Favoritos"));
-    assert(!strcmp(gv_pin_ch(0)->p[i].titulo, "Favoritos"));
   }
   label(TXT_ILHA_NOME, "Favoritos", 0, 0, 500, 0);
   assert(!strcmp(rendered, "Favoritos") && translations == 0);

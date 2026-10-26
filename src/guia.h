@@ -183,6 +183,11 @@ int  guia_buscar_canais(const char *alvoNorm, int *indices, int max);
 // Le a lista do cache do guia (a ultima publicada) se a sessao ainda nao tem
 // lista. Nao vai a rede. O Spotlight chama ao abrir.
 void guia_preparar_busca(void);
+int  guia_canal_numero(int i);   /* provider number of channel i, 0 outside */
+/* Source i for the guide's health sheets: name, LTV_SAUDE_* state, channels,
+ * channels with EPG, cached list and list time. 0 past the last source. */
+typedef struct { const char *nome; int saude, canais, comGuia, deCache; long long atualizada; } GuiaFonteSaude;
+int  guia_fonte_saude(int i, GuiaFonteSaude *o);
 int  guia_canal_campos(int i, const char **id, const char **nome, const char **logo,
                        const char **cat, const char **base);
 /* Unfiltered metadata for the authenticated parental rule editor only. */

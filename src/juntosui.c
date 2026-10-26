@@ -4,6 +4,7 @@
 #include "botoes.h"
 #include "badges.h"
 #include "catalogo.h"
+#include "central.h"
 #include "gfx.h"
 #include "idioma.h"
 #include "ilha.h"
@@ -20,6 +21,8 @@
 #include "text.h"
 #include "tela21.h"
 #include "revela.h"
+#include "salvospainel.h"
+#include "layout.h"
 #include "teclavoltar.h"
 #ifdef NV_SHOT_HOOKS
 #include <assert.h>
@@ -46,14 +49,14 @@ static const char *frase(const char *k) {
 }
 static void iconeReacao(char *dst, size_t n, const char *k) { snprintf(dst, n, "jt_%s", k); }
 
-typedef enum { CAMADA_NADA = 0, CAMADA_FOLHA, CAMADA_CODIGO, CAMADA_SALA, CAMADA_SAIR, CAMADA_PEDIDO, CAMADA_REACOES, CAMADA_FONTES } Camada;
+typedef enum { CAMADA_NADA = 0, CAMADA_FOLHA, CAMADA_CODIGO, CAMADA_SALA, CAMADA_SAIR, CAMADA_PEDIDO, CAMADA_REACOES, CAMADA_FONTES, CAMADA_PAINEL } Camada;
 static Camada camada;
 static int foco, linhaReacao, focoSala;
 static Camada camadaVisual;
 static GfxRect corpoBase;
 static int corpoDesenhando;
 #define LUGAR_MS 860.0f   // seat clock: 600 ms arrival, light 160 + 700 ms
-static float entrada, tempoEntrada, focoAnim[8][16], lugarAnim[5], fonteExp[5];
+static float entrada, tempoEntrada, focoAnim[9][16], lugarAnim[5], fonteExp[5];
 static Uint32 ultimoQuadro;
 static float contagemAnim, prontoAnim[5], prontinhaAnim;
 static char prontinha[200];   // readiness line under the seats, fades in on change
@@ -104,6 +107,20 @@ static float corpoAltura(float h) {
   return fminf(h, (NV_LAYOUT_REAL_H - NV_ILHA_Y - 24) / gfx_escala_ui() - NV_ILHA_H_ABERTA);
 }
 static float corpoAlfaAtual;
+// Cinema start: the lobby recedes over the playing film until "Enter session".
+static int cinema;
+static float cinemaAnim;
+static char ilhaTexto[160];   // the session line on the clock island this frame
+static float painelAlvo;      // sidebar scroll target
+#ifdef NV_SHOT_HOOKS
+static int shotOsd;
+void juntosui_shot_osd(int sim) { shotOsd = sim; }
+float juntosui_shot_cinema(void) { return cinema ? cinemaAnim : -1; }
+const char *juntosui_shot_ilha(void) { return ilhaTexto; }
+static int osdVisivel(void) { return player_controles_visiveis() || shotOsd; }
+#else
+static int osdVisivel(void) { return player_controles_visiveis(); }
+#endif
 #ifdef NV_SHOT_HOOKS
 static int shotPlayer, shotContagem;
 static char shotArte[512];
@@ -315,7 +332,7 @@ void juntosui_sala_fechou(void) {
   if (camada == CAMADA_SALA || camada == CAMADA_SAIR || camada == CAMADA_PEDIDO || camada == CAMADA_REACOES || camada == CAMADA_FONTES)
     camada = CAMADA_NADA;
   memset(bolha, 0, sizeof bolha);
-  lobbyAberto = escolhendoFilme = qrPendente = 0;
+  lobbyAberto = escolhendoFilme = qrPendente = cinema = 0;
   mostrarQr = 0;
 }
 
@@ -339,8 +356,8 @@ int juntosui_voltar_filme(void) {
 }
 
 // --- folha do anfitriao --------------------------------------------------------------------------
+static void carregarAmigos(void);
 void juntosui_abrir_folha(int idx, int t, int e) {
-  int i, n = socialvis_n_amigos();
   if (!juntos_disponivel()) {
     ilha_avisar("juntos:erro", ILHA_INFO, "aj_users", i18n("Ligue a conta Nuvio e o Social para assistir junto"), 5000u, 0);
     return;
@@ -352,6 +369,13 @@ void juntosui_abrir_folha(int idx, int t, int e) {
   }
   folhaIdx = idx; folhaT = t; folhaE = e;
   { const CatItem *ci = cat_item(idx); snprintf(folhaTitulo, sizeof folhaTitulo, "%s", ci ? ci->titulo : ""); }
+  carregarAmigos();
+  abrirSala();
+}
+
+// Friends for the sheet, the lobby invite and the sidebar invite rows.
+static void carregarAmigos(void) {
+  int i, n = socialvis_n_amigos();
   nAmigos = 0;
   for (i = 0; i < n && nAmigos < FOLHA_AMIGOS; i++) {
     const SvAmigo *a = socialvis_amigo(i);
@@ -362,7 +386,6 @@ void juntosui_abrir_folha(int idx, int t, int e) {
     marcado[nAmigos] = 0;
     nAmigos++;
   }
-  abrirSala();
 }
 
 // Linhas da folha: amigos, o alternador, Abrir sala, Entrar com codigo.
@@ -467,6 +490,29 @@ static void apertarSala(int b) {
   }
 }
 
+// --- the session sidebar (CH+ during the film) -------------------------------------------------
+// Rows with focus: the friends to invite (the lobby invite), "Only I control"
+// (host), "Leave session" (the existing leave question).
+static int painelLinhas(void) { return nAmigos + juntos_sou_anfitriao() + 1; }
+static void abrirPainel(void) {
+  if (!nAmigos) carregarAmigos();
+  camada = CAMADA_PAINEL; foco = 0;
+  printf("[juntos] sidebar: open (%d friend(s))\n", nAmigos);
+}
+static void apertarPainel(int i) {
+  const JsMotor *m = juntos_motor();
+  if (i < nAmigos) convidarAmigo(i);
+  else if (juntos_sou_anfitriao() && i == nAmigos) { if (m) juntos_controle_anfitriao(!m->sala.controleAnf); }
+  else juntosui_perguntar_sair();
+}
+static int ehCanal(const SDL_Event *e, int mais) {
+  SDL_Keycode k = e->key.keysym.sym;
+  int sc = e->key.keysym.scancode;
+  // Off LG, CH+ arrives as BLUE/"s" (main.c, remapCanal), like for Saved.
+  return mais ? k == SDLK_PAGEUP || sc == NV_SCANCODE_CH_UP || k == SDLK_s || sc == NV_SCANCODE_BLUE
+              : k == SDLK_PAGEDOWN || sc == NV_SCANCODE_CH_DOWN;
+}
+
 // --- teclas -----------------------------------------------------------------------------------------
 static int ehOk(SDL_Keycode k) { return k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE; }
 static int ehVoltar(SDL_Keycode k) {
@@ -494,6 +540,9 @@ int juntosui_evento_sdl(const SDL_Event *e) {
     }
     return 0;
   }
+  // CH+ in a Watch Together film: the session sidebar, not Saved.
+  if (camada == CAMADA_NADA && e->type == SDL_KEYDOWN && !e->key.repeat && juntos_ativo() && noPlayer() &&
+      !escolhendoFilme && !lobbyAberto && ehCanal(e, 1)) { abrirPainel(); return 1; }
   if (camada == CAMADA_NADA) return 0;
   if (e->type == SDL_KEYUP) return 1;
   switch (camada) {
@@ -529,6 +578,15 @@ int juntosui_evento_sdl(const SDL_Event *e) {
       int b[BT_N], n = botoesSala(b);
       const JsMotor *mo = juntos_motor();
       int temVazio = mo && mo->sala.n < 5, codigo = n - 1;
+      if (cinema) {   // the film started: Enter session (OK/Back) or Pause/Continue
+        int nb = juntos_pode_controlar() ? 2 : 1;
+        if (foco < 0 || foco >= nb) foco = 0;
+        if (k == SDLK_LEFT && foco > 0) foco--;
+        else if (k == SDLK_RIGHT && foco < nb - 1) foco++;
+        else if (ehOk(k) && foco == 1) juntos_ao_alternar(mo && mo->sala.rel.estado == JSE_TOCANDO);
+        else if (ehOk(k) || ehVoltar(k)) { lobbyAberto = 0; camada = CAMADA_NADA; printf("[juntos] cinema: entered the session\n"); }
+        return 1;
+      }
       if (foco >= n) foco = n - 1;
       if (mostrarQr) {   // invite panel: friends list; Back returns to the control that opened it
         if (ehVoltar(k)) { mostrarQr = qrPendente = 0; printf("[juntos] lobby: invite panel closed\n"); }
@@ -547,6 +605,15 @@ int juntosui_evento_sdl(const SDL_Event *e) {
       else if (k == SDLK_RIGHT && foco < codigo - 1) foco++;
       else if (ehOk(k)) apertarSala(b[foco]);
       if (foco >= 0 && foco < codigo) focoAcao = foco;
+      return 1;
+    }
+    case CAMADA_PAINEL: {
+      int n = painelLinhas();
+      if (foco >= n) foco = n - 1;
+      if (ehVoltar(k) || ehCanal(e, 1) || ehCanal(e, 0)) camada = CAMADA_NADA;
+      else if (k == SDLK_UP && foco > 0) foco--;
+      else if (k == SDLK_DOWN && foco < n - 1) foco++;
+      else if (ehOk(k)) apertarPainel(foco);
       return 1;
     }
     case CAMADA_FONTES: {
@@ -612,17 +679,25 @@ void juntosui_atualizar(Uint32 agora) {
     okSegurando = 0;
     camada = CAMADA_REACOES; linhaReacao = 0; foco = 0;
   }
-  if (!juntos_ativo() && (camada == CAMADA_SALA || camada == CAMADA_REACOES || camada == CAMADA_SAIR || camada == CAMADA_PEDIDO || camada == CAMADA_FONTES))
+  if (!juntos_ativo() && (camada == CAMADA_SALA || camada == CAMADA_REACOES || camada == CAMADA_SAIR || camada == CAMADA_PEDIDO || camada == CAMADA_FONTES || camada == CAMADA_PAINEL))
     camada = CAMADA_NADA;
-  if (!noPlayer() && camada == CAMADA_REACOES) camada = CAMADA_NADA;
+  if (!noPlayer() && (camada == CAMADA_REACOES || camada == CAMADA_PAINEL)) camada = CAMADA_NADA;
+  // CH+ held opens the Control Center on the island: the sidebar yields, or it
+  // would stay on screen while the hidden island's controls take the keys.
+  if (camada == CAMADA_PAINEL && central_aberta()) camada = CAMADA_NADA;
   const JsMotor *sala = juntos_motor();
   if (qrPendente && sala && sala->conectado) { qrPendente = 0; juntos_pedir_celular(); }
-  if (lobbyAberto && !stream_folha_aberta() && sala && sala->temSala && sala->sala.rel.estado == JSE_TOCANDO &&
+  // Cinema start (owner 26/10): at t0 the lobby does not vanish. Its art fades
+  // and the film comes forward under it; the person pauses or enters the session.
+  if (lobbyAberto && !cinema && !stream_folha_aberta() && sala && sala->temSala && sala->sala.rel.estado == JSE_TOCANDO &&
       jsr_servidor(&sala->rel, (double)SDL_GetTicks64()) >= sala->sala.rel.t0 &&
       sala->prontoAnterior && !sala->playArmado) {
-    lobbyAberto = 0;
-    camada = CAMADA_NADA;
+    cinema = 1; cinemaAnim = 0; foco = 0; mostrarQr = qrPendente = 0;
+    if (camada != CAMADA_SAIR) camada = CAMADA_SALA;
+    printf("[juntos] cinema: film started under the lobby\n");
   }
+  if (!sala || !sala->temSala || sala->sala.rel.estado == JSE_LOBBY) cinema = 0;
+  cinemaAnim = ajustes_animacoes_reduzidas_usuario() ? cinema : anim_mola(cinemaAnim, cinema, dt, NV_MOLA_TELA * .5f);
   if (camada != CAMADA_NADA && camada != camadaVisual) {
     camadaVisual = camada;
     entrada = tempoEntrada = 0;
@@ -631,12 +706,12 @@ void juntosui_atualizar(Uint32 agora) {
     folhaScroll = folhaVel = 0;
   }
   entrada = t21_entrada(entrada, dt, camada != CAMADA_NADA);
-  float alvoScroll = camada == CAMADA_FONTES ? fmaxf(0, foco - 2) * 112 :
+  float alvoScroll = camada == CAMADA_FONTES ? fmaxf(0, foco - 2) * 112 : camada == CAMADA_PAINEL ? painelAlvo :
     fmaxf(0, 48 + 40 + 72 + 48 + (foco + 1) * 76.0f + 24 - corpoAltura(948));
   folhaScroll = anim_mola2(&folhaVel, folhaScroll, alvoScroll, dt, NV_MOLA2_SCROLL);
   if (camada != CAMADA_NADA) tempoEntrada += dt;
-  else if (entrada <= 0) camadaVisual = CAMADA_NADA;
-  for (int c = 1; c < 8; c++) for (int i = 0; i < 16; i++) {
+  else if (entrada <= 0) { camadaVisual = CAMADA_NADA; if (!lobbyAberto) cinema = 0; }
+  for (int c = 1; c < 9; c++) for (int i = 0; i < 16; i++) {
     int alvo = camada == c && (camada == CAMADA_CODIGO ? codPos + 1 :
                camada == CAMADA_REACOES ? foco + 1 + linhaReacao * 6 : foco + 1) == i;
     focoAnim[c][i] = anim_mola(focoAnim[c][i], alvo, dt, NV_MOLA_FOCO);
@@ -664,6 +739,17 @@ void juntosui_atualizar(Uint32 agora) {
   if (ultimaContagem != contagemRestante()) { ultimaContagem = contagemRestante(); contagemAnim = 0; }
   contagemAnim = anim_mola(contagemAnim, 1, dt, NV_MOLA_FOCO);
   pedirCorpo();
+  // The session on the clock island while the film's controls are up.
+  ilhaTexto[0] = 0;
+  if (camadaVisual == CAMADA_PAINEL && !central_aberta()) plrilha_esconder();
+  else if (noPlayer() && juntos_ativo() && !lobbyAberto && camada == CAMADA_NADA && sala && sala->temSala && osdVisivel()) {
+    PlrIlhaPedido p = {0};
+    int n = sala->sala.n;
+    snprintf(ilhaTexto, sizeof ilhaTexto, "%s%s%s · %d %s", i18n("Assistir Juntos"), juntos_codigo()[0] ? " · " : "",
+             juntos_codigo(), n, i18n(n == 1 ? "pessoa" : "pessoas"));
+    p.icone = "aj_users"; p.texto = ilhaTexto; p.baixa = 1; p.video = 1;
+    plrilha_pedir(&p);
+  }
 }
 
 // --- desenho ---------------------------------------------------------------------------------------
@@ -1174,6 +1260,26 @@ static void desenharConvite(float R, float topo, float fim, float a) {
   gfx_recorte_voltar(fora);
 }
 
+// Cinema start: the lobby art lifts off the live film (the countdown's dark
+// going with it); a base scrim keeps the title and the two buttons legible.
+static void desenharCinema(GfxRect tela, float L, float B, float e) {
+  const JsMotor *m = juntos_motor();
+  float y = B - 150, x = L;
+  int i, nb = juntos_pode_controlar() ? 2 : 1, pausado = m->sala.rel.estado == JSE_PAUSADO;
+  telaCinema(tela, 1 - e);
+  gfx_cor(tela, 0, 0.03f, 0.03f, 0.05f, 0.55f * (1 - e));
+  gfx_veu_base(tela, 0, 0.78f, 0.9f * e);
+  texto(TXT_CAPTION, m->sala.titulo[0] ? m->sala.titulo : juntos_titulo(), L, y - 112, 225, e, 900);
+  texto(TXT_ILHA_TITULO, i18n("O filme começou"), L, y - 76, 250, e, 1000);
+  for (i = 0; i < nb; i++) {
+    const char *rot = i == 0 ? i18n("Entrar na sessão") : pausado ? i18n("Continuar") : i18n("Pausar");
+    const char *ic = i == 0 ? "aj_clapperboard" : pausado ? "aj_play" : "aj_pause";
+    float w = botao_largura(rot, ic, i == 0), h = i == 0 ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
+    botao_pilula((GfxRect){ x, y + (BOTAO_H_PRIMARIO - h) / 2, w, h }, rot, ic, focoDe(i), i == 0, 0, e * entradaItem(i + 1));
+    x += w + BOTAO_GAP;
+  }
+}
+
 static void desenharSala(void) {
   const JsMotor *m = juntos_motor();
   GfxRect tela = telaReal();
@@ -1188,6 +1294,7 @@ static void desenharSala(void) {
   float meio = (k - 1) / 2.0f, queda = 7 * meio * meio;
   float acoesY = B - 150, statusY = acoesY - 66, lugarY = statusY - 40 - queda - LUGAR_H;
   lugarW = fminf(248, (R - L - 4 * LUGAR_GAP) / 5);
+  if (cinema) { desenharCinema(tela, L, B, anim_suave(cinemaAnim)); return; }
   telaCinema(tela, a);
   a *= convFundo;
   cabecalhoSala(L, R, T + 54, a * entradaItem(0));
@@ -1262,6 +1369,66 @@ static void desenharSala(void) {
   }
   texto(TXT_CAPTION, i18n("Setas para mover · OK para escolher · Voltar para retornar"), L, B - 64, 170, a, R - L);
   desenharConvite(R, T + 180, acoesY - 24, 1);
+}
+
+// The session sidebar (CH+ in the film): the Saved sidebar shell with only the
+// session, the people, inviting more (the lobby invite) and the settings.
+static float painelFocoY, painelFocoH;   // the focused row in content space
+static float painelLinha(GfxRect A, float y, float h, int f, float a) {
+  if (f == foco) { painelFocoY = y + folhaScroll - A.y; painelFocoH = h; }
+  spainel_lateral_linha(A, y, h, focoDe(f), a);
+  return h;
+}
+static void corpoPainel(GfxRect A, float a, void *u) {
+  const JsMotor *m = juntos_motor();
+  float y = A.y - folhaScroll, x = A.x;
+  int i, f = 0, nm;
+  char c[64];
+  (void)u;
+  if (!m) return;
+  nm = m->sala.n < 5 ? m->sala.n : 5;
+  GfxRecorteAnt fora = gfx_recorte_dentro(A.x - 48, A.y, A.w + 96, A.h);
+  y += spainel_lateral_secao(A, y, i18n("Sessão"), a, 1);
+  if (juntos_codigo()[0]) snprintf(c, sizeof c, "%.3s-%s", juntos_codigo(), juntos_codigo() + 3);
+  else snprintf(c, sizeof c, "%s", i18n("Preparando o código…"));
+  texto(TXT_ILHA_META, i18n("Código da sala"), x, y + 6, 185, a, A.w);
+  texto(TXT_ILHA_TITULO, c, x, y + 34, 250, a, A.w);
+  texto(TXT_ILHA_CORPO, rotuloBotao(BT_TRAVA), x, y + 94, 215, a, A.w);
+  y += 150;
+  y += spainel_lateral_secao(A, y, i18n("Pessoas"), a, 0);
+  for (i = 0; i < nm; i++, y += 76) {
+    const JsMembro *p = &m->sala.m[i];
+    const char *url, *nome;
+    rostoMembro(p, &url, &nome);
+    rec_avatar((GfxRect){ x, y + 12, 52, 52 }, url, nome, p->id, p->on ? a : .45f * a);
+    texto(TXT_ILHA_NOME, nome, x + 70, y + 10, 245, a, A.w - 70);
+    texto(TXT_ILHA_META, p->anf ? i18n("anfitrião") : estadoTexto(p), x + 70, y + 42, 170, a, A.w - 70);
+  }
+  y += spainel_lateral_secao(A, y, i18n("Convidar"), a, 0);
+  if (!nAmigos) {
+    txt_bloco_corta(TXT_ILHA_META, i18n("Nenhum amigo ainda. Quem tiver o código entra pedindo."),
+                    185, 185, 185, x, y + 8, A.w, 26, a, 3);
+    y += 96;
+  }
+  for (i = 0; i < nAmigos; i++, f++) {
+    int dentro = 0;
+    for (int j = 0; j < m->sala.n; j++) dentro |= !strcmp(m->sala.m[j].id, amigoId[i]);
+    float h = painelLinha(A, y, 72, f, a);
+    rec_avatar((GfxRect){ x, y + 14, 44, 44 }, amigoAv[i], amigoNome[i], amigoId[i], a);
+    texto(TXT_ILHA_NOME, amigoNome[i], x + 62, y + 20, 245, a, A.w - 120);
+    gfx_icone((GfxRect){ x + A.w - 32, y + 20, 32, 32 }, dentro || marcado[i] ? "aj_circle-check" : "aj_user-plus",
+              dentro ? 0.55f : 1, dentro ? 0.92f : 1, dentro ? 0.65f : 1, marcado[i] || dentro ? a : .6f * a);
+    y += h;
+  }
+  y += spainel_lateral_secao(A, y, i18n("Ajustes"), a, 0);
+  for (int b = juntos_sou_anfitriao() ? BT_TRAVA : BT_SAIR; b <= BT_SAIR; b++, f++) {
+    float h = painelLinha(A, y, 72, f, a);
+    gfx_icone((GfxRect){ x, y + 20, 32, 32 }, b == BT_TRAVA ? "aj_lock" : "aj_log-out", 1, 1, 1, .8f * a);
+    texto(TXT_ILHA_NOME, rotuloBotao(b), x + 52, y + 20, 245, a, A.w - 52);
+    y += h;
+  }
+  gfx_recorte_voltar(fora);
+  painelAlvo = fmaxf(0, painelFocoY + painelFocoH + 24 - A.h);   // scroll the focused row into view
 }
 
 static void desenharPergunta(const char *titulo, const char *corpo, const char *rostoUrl, const char *rostoNome,
@@ -1393,7 +1560,7 @@ static void desenharContagem(int num) {
 }
 
 static int camadaCorpo(Camada c) {
-  return c != CAMADA_NADA && c != CAMADA_SALA;
+  return c != CAMADA_NADA && c != CAMADA_SALA && c != CAMADA_PAINEL;
 }
 
 float juntosui_shot_corpo_alfa(void) { return corpoAlfaAtual; }
@@ -1463,10 +1630,10 @@ void juntosui_desenhar(Uint32 agora) {
   origemX = (NV_VTELA_W - 1920) / 2;
   origemY = (NV_VTELA_H - 1080) / 2;
   gfx_transformar(960, 540, 1, origemX, origemY);
-  if (noPlayer() && juntos_ativo() && !lobbyAberto) { desenharRostos(); desenharBolhas(agora); }
+  if (noPlayer() && juntos_ativo() && !lobbyAberto && camadaVisual != CAMADA_PAINEL) { desenharRostos(); desenharBolhas(agora); }
   float opacidade = gfx_opacidade_grupo;
   gfx_opacidade_grupo *= anim_suave(entrada);
-  int folha = camadaVisual != CAMADA_SALA && camadaVisual != CAMADA_FONTES && camadaVisual != CAMADA_REACOES;
+  int folha = camadaVisual != CAMADA_SALA && camadaVisual != CAMADA_FONTES && camadaVisual != CAMADA_REACOES && camadaVisual != CAMADA_PAINEL;
   if (folha) gfx_transformar(960, 540, T21_SHEET_SCALE + (1 - T21_SHEET_SCALE) * anim_suave(entrada), origemX, origemY);
   int contagem = juntos_ativo() ? contagemRestante() : 0;
   if (camadaVisual == CAMADA_SALA && !contagem) desenharSala();
@@ -1475,4 +1642,8 @@ void juntosui_desenhar(Uint32 agora) {
   if (contagem) desenharContagem(contagem);
   gfx_sem_transformar();
   gfx_escala_sair(esc);
+  if (camadaVisual == CAMADA_PAINEL) {
+    const JsMotor *m = juntos_motor();
+    spainel_lateral(entrada, m && m->sala.titulo[0] ? m->sala.titulo : juntos_titulo(), i18n("Assistir Juntos"), corpoPainel, NULL);
+  }
 }
