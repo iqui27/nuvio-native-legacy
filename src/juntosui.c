@@ -19,6 +19,10 @@
 #include "tela21.h"
 #include "revela.h"
 #include "teclavoltar.h"
+#include "focus.h"
+static GfxRect navigationRects[16];
+static int navigationIds[16], navigationCount;
+static void navigationTarget(int id,GfxRect r){if(navigationCount<16){navigationIds[navigationCount]=id;navigationRects[navigationCount++]=r;}}
 #ifdef NV_SHOT_HOOKS
 #include <assert.h>
 #endif
@@ -431,6 +435,11 @@ int juntosui_evento_sdl(const SDL_Event *e) {
     return 0;
   }
   if (camada == CAMADA_NADA) return 0;
+  if(camada==CAMADA_SALA&&e->type==SDL_KEYDOWN&&(k==SDLK_UP||k==SDLK_DOWN||k==SDLK_LEFT||k==SDLK_RIGHT)){
+    int current=-1;for(int i=0;i<navigationCount;i++)if(navigationIds[i]==foco)current=i;
+    int next=focus_rect_nearest(navigationRects,navigationCount,current,(k==SDLK_RIGHT)-(k==SDLK_LEFT),(k==SDLK_DOWN)-(k==SDLK_UP));
+    if(next>=0){foco=navigationIds[next];return 1;}
+  }
   if (e->type == SDL_KEYUP) return 1;
   switch (camada) {
     case CAMADA_FOLHA: {
@@ -758,6 +767,7 @@ static float desenharLugar(int i, const JsMembro *p, int vazio, float f, float a
   char nome[160], st[120];
   const JsMotor *m = juntos_motor();
   int pronto = !vazio && (!strcmp(p->st, "pronto") || !strcmp(p->st, "tocando"));
+  if(vazio)navigationTarget(-1,c);
   if (vazio) {
     snprintf(nome, sizeof nome, "%s", i18n("Mais um lugar"));
     snprintf(st, sizeof st, "%s", i18n("Convide um amigo"));
@@ -986,6 +996,7 @@ static void desenharSala(void) {
       float w = larguras[i];
       float h = (prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO) * k;
       if (x + w > direita) { x = esquerda; y += altura + BOTAO_GAP / 2; }
+      navigationTarget(i,(GfxRect){x,y+(altura-h)/2,w,h});
       botao_pilula((GfxRect){ x, y + (altura - h) / 2, w, h }, rotuloBotao(b[i]), iconeBotao(b[i]),
                    focoDe(i), prim, 0, a * entradaItem(i));
       fimAcoes = fmaxf(fimAcoes, y + altura);
@@ -998,6 +1009,7 @@ static void desenharSala(void) {
       int prim = b[i] == BT_COMECAR, esq = b[i] <= BT_FONTES;
       if (!esq) continue;
       float w = larguras[i], h = (prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO) * k;
+      navigationTarget(i,(GfxRect){xe,salaY(905)+(altura-h)/2,w,h});
       botao_pilula((GfxRect){ xe, salaY(905) + (altura - h) / 2, w, h }, rotuloBotao(b[i]), iconeBotao(b[i]),
                    focoDe(i), prim, 0, a * entradaItem(i));
       xe += w + BOTAO_GAP;
@@ -1007,6 +1019,7 @@ static void desenharSala(void) {
       if (b[i] <= BT_FONTES) continue;
       w = larguras[i];
       xd -= w;
+      navigationTarget(i,(GfxRect){xd,salaY(905)+(altura-BOTAO_H_SECUNDARIO*k)/2,w,BOTAO_H_SECUNDARIO*k});
       botao_pilula((GfxRect){ xd, salaY(905) + (altura - BOTAO_H_SECUNDARIO * k) / 2, w, BOTAO_H_SECUNDARIO * k },
                    rotuloBotao(b[i]), iconeBotao(b[i]), focoDe(i), 0, 0, a * entradaItem(i));
       xd -= BOTAO_GAP;
@@ -1210,6 +1223,7 @@ static void pedirCorpo(void) {
 }
 
 void juntosui_desenhar(Uint32 agora) {
+  navigationCount=0;
   float esc = gfx_escala_entrar();
   origemX = (NV_VTELA_W - 1920) / 2;
   origemY = (NV_VTELA_H - 1080) / 2;

@@ -77,6 +77,15 @@
 #include "seguro.h"
 #include "botoes.h"
 #include "ponteiro.h"
+#include "focus.h"
+#include "teclavoltar.h"
+static void navigationTarget(float,float,float,float,PonteiroFn,PonteiroFn,int,int);
+static int navigationMove(SDL_Keycode);
+static void navigationLayer(void);
+static void navigationRange(float,float,float,float,float,float,PonteiroFn,PonteiroFn,int,int);
+#define ponteiro_camada navigationLayer
+#define ponteiro_alvo_faixa navigationRange
+#define ponteiro_alvo navigationTarget
 #include "addonsui.h"
 #include "pluginsui.h"
 #include <math.h>
@@ -2802,6 +2811,8 @@ static float ajToqueRegistrar(int id, GfxRect r, float *offset, float maximo, fl
   return *offset;
 }
 #endif
+static float screenReveal, screenRoute=-1;
+static int navigationBackFocus;
 static float paginaA = 1.0f;   // entrada da pagina da categoria (0..1)
 static int sair = 0;
 static int pediuRelogio;
@@ -6942,7 +6953,7 @@ int ajustes_iniciar(void) {
 #endif
   ppReconciliar();
   pfEntrada();
-  ajMovReiniciar();
+  ajMovReiniciar();screenReveal=0;screenRoute=-1;navigationBackFocus=0;
   faRetornarFolha = 0; faAddonEditar[0] = 0; ajFalhaEspelhar(); ajLegendaEspelhar(); ajIptvEspelhar();
   uxVeioBusca = uxAbrirOp >= 0;
   montarTela();
@@ -7022,7 +7033,7 @@ void ajustes_encerrar(void) {
   if (fileirasBusca) { fileirasBusca = 0; desc_repetir(); }
   pediuRelogio = 0; faRetornarFolha = 0; pfSaida(); uxCancelar(); uxRetornarOp = -1; guiaFechar(); ajlog_vazar_tudo();
 }
-int ajustes_quer_sair(void) { return sair; }
+int ajustes_quer_sair(void) { return sair && screenReveal<.002f; }
 int ajustes_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return v; }
 
 // Valor das linhas so de leitura. O espaco em disco NAO e um numero inventado:
@@ -9989,7 +10000,12 @@ void ajustes_evento(const SDL_Event *e) {
   if (e->type == SDL_KEYDOWN) ajToqueLimpar();
 #endif
   AJ_ESCALA_INI();
+  if(navigationBackFocus&&nv_tecla_voltar(e))navigationBackFocus=0;
+  if(navigationBackFocus&&e->type==SDL_KEYDOWN&&(e->key.keysym.sym==SDLK_RETURN||e->key.keysym.sym==SDLK_KP_ENTER)){
+    navigationBackFocus=0;SDL_Event back=*e;back.key.keysym.sym=SDLK_ESCAPE;eventoTela(&back);AJ_ESCALA_FIM();return;
+  }
   if (guiaAberto) { guiaEvento(e); AJ_ESCALA_FIM(); return; }
+  if (e->type==SDL_KEYDOWN && navigationMove(e->key.keysym.sym)) { AJ_ESCALA_FIM(); return; }
   if (tourAberto) { tourEvento(e); AJ_ESCALA_FIM(); return; }
   if (apoioAberto) { apoioEvento(e); AJ_ESCALA_FIM(); return; }
   eventoTela(e);
@@ -10315,6 +10331,9 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   if(iptvForm.tipo && !nv_perfil_sessao_atual(iptvForm.sessao)) { ajIptvLimparForm();uxCancelar();stCampo=0;teclado_esquecer(); }
   ajLegendaEspelhar(); ajIptvEspelhar();
   AJ_ESCALA_INI();
+  int route=tourAberto*1000+frAberta*10+ffCategoria+aj4Util*100+focoIndice*10000+uxEditor*100000;
+  if(screenRoute!=route){screenRoute=route;screenReveal=0;}
+  screenReveal=ajustes_animacoes_reduzidas()?!sair:anim_mola(screenReveal,!sair,dt,NV_MOLA_TELA);
   guiaAtualizar(dt);
   tourAtualizar(dt);
   if (uxAviso[0] && SDL_TICKS_PASSED(agora, uxAvisoAte)) uxAviso[0] = 0;
@@ -11148,12 +11167,15 @@ static int ajQuadroPlugins;  // captura: a de plugins (foco + 1)
 #endif
 static void ajDesenharTudo(Uint32 agora);
 // Own Settings scale: the virtual canvas and the active drawing factor agree.
+static int navigationCount;
 void ajustes_desenhar(Uint32 agora) {
+  navigationCount=0;
 #ifdef NV_TOUCH_UI
   ajToqueCamada();
 #endif
   AJ_ESCALA_INI();
-  ajDesenharTudo(agora);
+  float opacity=gfx_opacidade_grupo;gfx_opacidade_grupo*=screenReveal;
+  ajDesenharTudo(agora);gfx_opacidade_grupo=opacity;
   AJ_ESCALA_FIM();
 }
 static void ajDesenharTudo(Uint32 agora) {
@@ -11615,6 +11637,49 @@ int ajustes_shot_valor(const char *chave, int v) {
   return 0;
 }
 #endif
+
+static struct { GfxRect rect; PonteiroFn focus; int a,b,id; } navigation[512];
+static int navigationFocus(void) {
+  if(tourAberto)return 100000+tourFoco*2+tourBtn;
+  if(frAberta==6)return 200000+(ffCategoria>=0?ffValorFoco:ffFoco);
+  if(navigationBackFocus)return 50000;
+  if(aj4Topo>=0)return aj4Topo;
+  if(aj4Grupos&&!focoIndice&&!aj4Util&&!uxEditor)return 20000+(aj4Mais?999:aj4GrupoFoco);
+  if(uxEditor)return 40000+uxPendente;
+  if(aj4Acao)return 30000+aj4Acao;
+  return 10000+aj4Linha;
+}
+#undef ponteiro_alvo
+static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int a,int b) {
+  int id=-1;
+  if(fn==aj4PontFoco)id=a*10000+b;
+  else if(fn==tourPontFoco)id=100000+a*2+b;
+  else if(fn==ffPont)id=200000+a;
+  if(id>=0&&navigationCount<512&&w>0&&h>0){
+    // The two mode labels share one remote focus target.
+    int duplicate=-1;for(int i=0;i<navigationCount;i++)if(navigation[i].id==id)duplicate=i;
+    if(duplicate>=0){GfxRect *r=&navigation[duplicate].rect;r->w=fmaxf(r->x+r->w,x+w)-r->x;}
+    else {navigation[navigationCount].rect=(GfxRect){x,y,w,h};navigation[navigationCount].focus=fn;navigation[navigationCount].a=a;navigation[navigationCount].b=b;navigation[navigationCount++].id=id;}
+  }
+  ponteiro_alvo(x,y,w,h,fn,activate,a,b);
+}
+#undef ponteiro_camada
+static void navigationLayer(void){navigationCount=0;ponteiro_camada();}
+#undef ponteiro_alvo_faixa
+static void navigationRange(float x,float y,float w,float h,float top,float bottom,PonteiroFn fn,PonteiroFn activate,int a,int b){
+  float low=fmaxf(y,top),high=fminf(y+h,bottom);
+  if(high>low)navigationTarget(x,low,w,high-low,fn,activate,a,b);
+}
+static int navigationMove(SDL_Keycode key) {
+  if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
+  if(teclado_aberto()||guiaAberto||apoioAberto||pfTela)return 0;
+  GfxRect rects[512];int current=-1;
+  for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].id==navigationFocus())current=i;}
+  int next=focus_rect_nearest(rects,navigationCount,current,(key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
+  if(next<0)return 0;
+  if(next==current)return 0;
+  navigation[next].focus(navigation[next].a,navigation[next].b);if(tourAberto)tourMirar();return 1;
+}
 
 // --- CENTRAL DE CONTROLE (central.h) -----------------------------------------
 // A porta da central para trocar uma opcao sem abrir esta tela. A opcao e

@@ -53,6 +53,10 @@
 #include "video.h"
 #include "botoes.h"
 #include "ponteiro.h"
+#include "focus.h"
+static void navigationTarget(float,float,float,float,PonteiroFn,PonteiroFn,int,int);
+static int navigationMove(SDL_Keycode);
+#define ponteiro_alvo navigationTarget
 #include "rolagemtoque.h"
 #include "player.h"
 #include "plrilha.h"
@@ -5257,6 +5261,7 @@ void stream_folha_evento(const SDL_Event *e) {
     if(i>=0) detalheAbrir(&lista[i]);
     return;
   }
+  if(navigationMove(k))return;
   // ORDEM DO FOCO, de cima: fileira de botoes (grupo -1) -> abas de addon
   // (grupo 0) -> lista (grupo 1). CIMA na primeira linha vai as abas; CIMA
   // nas abas vai ao ultimo botao (Fechar, o mais perto do canto); BAIXO desce
@@ -5439,6 +5444,18 @@ int stream_folha_escolheu(int *out) {
   if(out) *out=escolha;
   escolha=-1;return 1;
 }
+static struct {GfxRect rect; int group,id;} navigation[512];
+static int navigationCount;
+static int navigationMove(SDL_Keycode key){
+  if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
+  GfxRect rects[512];int current=-1;
+  for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].group==grupo&&navigation[i].id==(grupo==0?filtro:foco))current=i;}
+  int next=focus_rect_nearest(rects,navigationCount,current,(key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
+  if(next<0||next==current)return 0;
+  grupo=navigation[next].group;
+  if(grupo==0)filtro=navigation[next].id;else foco=navigation[next].id;
+  return 1;
+}
 // PONTEIRO (#99): as mesmas variaveis das setas (grupo, foco, filtro). O
 // provedor so troca no CLIQUE — trocar ao passar por cima mudaria a lista
 // debaixo da mao. Clicar fora do painel fecha, como o Voltar.
@@ -5453,6 +5470,13 @@ static void ponteiroFolhaFiltro(int i, int b) {
   if (i < -1 || i >= nProvedores) return;
   filtroServidor = -1; filtro = i; foco = 0; rolagem = 0; grupo = 1;
 }
+#undef ponteiro_alvo
+static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int a,int b){
+  int group=fn==ponteiroFolhaBotao?-1:fn==ponteiroFolhaLinha?1:fn==ponteiroFolhaDica?2:activate==ponteiroFolhaFiltro?0:-99;
+  if(group!=-99&&navigationCount<512){navigation[navigationCount].rect=(GfxRect){x,y,w,h};navigation[navigationCount].group=group;navigation[navigationCount++].id=a;}
+  ponteiro_alvo(x,y,w,h,fn,activate,a,b);
+}
+#define ponteiro_alvo navigationTarget
 static void ponteiroFolhaFora(int a, int b) { (void)a; (void)b; aberta = 0; }
 
 // Availability lives in its own tab so asynchronous responses cannot shift
@@ -6040,6 +6064,7 @@ static void desenhaPartes(float x, float w, int ptr, Uint32 agora) {
 }
 // Camada ampliada (escala.h): o corpo desenha na tela virtual.
 void stream_folha_desenhar(Uint32 agora) {
+  navigationCount=0;
   ESCALA_INI();
   stream_folha_desenharCorpo_(agora);
   ESCALA_FIM();
@@ -6176,7 +6201,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   ai=(int)(ar*255.0f+.5f);
   if (folhaRelogio) ilhaR = (GfxRect){x, NV_ILHA_Y, w, folhaBase + 16.0f - NV_ILHA_Y};
   else if (ilha) plrilha_rect(&ilhaR);
-  int ptr = aberta && anim > .5f && ponteiro_ativo();
+  int ptr = aberta && anim > .5f;
 #ifdef NV_TOUCH_UI
   toquerol_vincular(&toqueFontes, (GfxRect){x, FOLHA_TOPO, w, areaLista()},
                    gfx_escala(), 0, alturaTotal - areaLista() + 40, 1, &rolagem);

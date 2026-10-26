@@ -291,14 +291,15 @@ static void aj4Buscar(void) {
 }
 static void ajPontEdValor(int i,int b);
 static void aj4PontFoco(int zona,int row) {
+  navigationBackFocus=zona==5;
   if(zona==0)aj4Topo=row;
-  else if(zona==1) { aj4Topo=-1; aj4Linha=row; aj4Acao=0; }
+  else if(zona==1) { aj4Grupos=0; aj4Topo=-1; aj4Linha=row; aj4Acao=0; }
   else if(zona==2) { aj4Topo=-1; if(row==999)aj4Mais=1; else { aj4Mais=0; aj4GrupoFoco=row; } aj4Grupos=1; }
-  else if(zona==3) { aj4Topo=-1; aj4Acao=row; }
+  else if(zona==3) { aj4Grupos=0; aj4Topo=-1; aj4Acao=row; }
   else if(zona==4 && uxEditor==1)ajPontEdValor(row,0);
   else if(zona==6) { aj4Topo=-1; aj4Escopo=row; aj4Linha=0; aj4Acao=0; }
   if(zona==7) { aj4Topo=-1; aj4Acao=row; }
-  if(zona==5) { focoIndice=1; aj4Util=0; aj4Linha=aj4FocoModo[lig(AJ_AVANCADAS)]; }
+  if(zona==5)aj4Topo=-1;
 }
 static int aj4Evento(SDL_Keycode k) {
   if (uxEditor) return -1; // Existing draft editor owns its keys and guards.

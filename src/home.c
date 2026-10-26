@@ -101,6 +101,9 @@ int video_registro_negado(void); /* video.h: motivo do trailer bloqueado */
 #include "trailerapple.h"
 #include "trailerfonte.h"
 #include "ponteiro.h"
+static void navigationTarget(float,float,float,float,PonteiroFn,PonteiroFn,int,int);
+static int navigationMove(SDL_Keycode);
+#define ponteiro_alvo navigationTarget
 #include "amigosfil.h"
 #include "socialvis.h"
 #include "anos.h"
@@ -2556,6 +2559,7 @@ static int focoVertical(int dy) {
 static void home_evento_(const SDL_Event *e) {
   pedidoRelogio = 0;
   if (e->type == SDL_QUIT) { sair = 1; return; }
+  if(e->type==SDL_KEYDOWN&&navigationMove(e->key.keysym.sym))return;
   if (homevazio_ativo(nFileiras)) {
     if (homevazio_evento(e)) return;
     if (e->type == SDL_KEYDOWN) {
@@ -5859,7 +5863,6 @@ static void alvoCard(float x, float y, float w, float h, int r, int c) {
     ancoraFoco = (GfxRect){ x, y, w, h };
     temAncoraFoco = 1;
   }
-  if (!ponteiro_ativo()) return;
   if (y < topo) { h -= topo - y; y = topo; }
   if (homeRetratoTelefone()) {
     float dir = fminf(x + w, homeConteudoDireita());
@@ -5867,6 +5870,22 @@ static void alvoCard(float x, float y, float w, float h, int r, int c) {
     if (w <= 0.0f || h <= 0.0f) return;
   }
   ponteiro_alvo(x, y, w, h, ponteiroCard, NULL, r, c);
+}
+static struct {GfxRect rect;int row,col;} navigation[512];
+static int navigationCount;
+#undef ponteiro_alvo
+static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int r,int c){
+  if((fn==ponteiroCard||fn==ponteiroHero)&&w>0&&h>0&&navigationCount<512){navigation[navigationCount].rect=(GfxRect){x,y,w,h};navigation[navigationCount].row=fn==ponteiroHero?-1:r;navigation[navigationCount++].col=c;}
+  ponteiro_alvo(x,y,w,h,fn,activate,r,c);
+}
+#define ponteiro_alvo navigationTarget
+static int navigationMove(SDL_Keycode key){
+  if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
+  GfxRect rects[512];int current=-1;
+  for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].row==(focoHero?-1:foco.fileira)&&navigation[i].col==(focoHero?0:foco.coluna))current=i;}
+  int next=focus_rect_nearest(rects,navigationCount,current,(key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
+  if(next<0||next==current)return 0;
+  if(navigation[next].row<0)ponteiroHero(0,0);else ponteiroCard(navigation[next].row,navigation[next].col);return 1;
 }
 
 static void desenhaRedonda(const CatItem *ci, GLuint t, const char *caminho,
@@ -7898,6 +7917,7 @@ static void homeResidencia(void) {
 }
 
 static void home_desenhar_(Uint32 agora) {
+  navigationCount=0;
   homeResidencia();
   // Nao conservar ponteiros para o catalogo de outro quadro/perfil quando
   // nenhuma tela de titulo publica um item (pasta, social ou estado vazio).
