@@ -27,6 +27,7 @@ void player_rewatch(int sim); // 0: retomada normal mesmo com reprise ativa
 void player_do_inicio(void);
 // 1 depois de player_do_inicio nesta abertura ("Do inicio"): sem ponto salvo.
 int  player_sem_retomada(void);
+int  player_juntos_preparado(void); // first frame and resume applied
 // O arquivo tocando e bem mais curto que o titulo (o aviso de duracao viu):
 // pode ser uma parte de um filme em partes (partes.h).
 int  player_parece_parte(void);

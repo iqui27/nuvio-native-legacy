@@ -5015,6 +5015,7 @@ static void tocarFonteEscolhida(int fonte, int manual) {
         if (s->foraCache)
           player_toast_ex(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 9000, "aj_download", 0);
       }
+      if (juntos_precarregando()) juntosui_sala_abriu();
       // Escolha manual num canal tambem entra no watchdog: fonte viva escolhida
       // a dedo pode morrer igual.
       if (player_id_canal()[0]) { canalFonteIdx = fonte; canalFonteDesde = SDL_GetTicks(); canalViaProxy = 0; }
@@ -5050,7 +5051,7 @@ static void juntosAbrirEFonte(Uint32 agora) {
       diagnostico_cancelar_vazao();
       player_abrir(idx, NULL);
       if (t > 0 && e > 0) player_definir_episodio(t, e);
-      player_do_inicio();          // a posicao e a da sala, nao a retomada
+      if (juntos_fase() != JF_PREPARADO) player_do_inicio(); // guests follow room time
       renovarListaDoPlayer();
       juntosListaDesde = 0;
       if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
@@ -6128,6 +6129,16 @@ void app_atualizar(float dt, Uint32 agora) {
     // player_definir_episodio.
     int doInicio = detail_pediu_do_inicio();
     int querTocar = detail_pediu_reproduzir() || doInicio;
+    const JsMotor *salaJ = juntos_motor();
+    const CatItem *tituloJ = cat_item(detail_indice());
+    if (querTocar && salaJ && salaJ->temSala && tituloJ &&
+        strncmp(salaJ->sala.ep, tituloJ->imdb, strlen(tituloJ->imdb))) {
+      int tJ = 0, eJ = 0;
+      detail_ep_foco(&tJ, &eJ);
+      juntos_escolher_titulo(tituloJ->imdb, tJ, eJ, tituloJ->titulo, tituloJ->poster);
+      juntosui_sala_abriu();
+      querTocar = 0;
+    }
     // TRAVA DE SERIE: o episodio alvo alem do limite (quem esta a frente
     // espera) nao toca: abre a folha de espera, que tem "Assistir mesmo assim".
     if (querTocar && aguardandoFonte != 2 && travaui_segurar_detalhe()) querTocar = 0;
@@ -6366,7 +6377,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // vivo, e la a escolha ja e feita pela playlist que responde.
       //
       // #667: a remembered source sets the sheet's focus, never consent to play.
-      if (ajustes_fonte_manual() && stream_n() > 0) {
+      if (ajustes_fonte_manual() && juntos_fase() != JF_PREPARADO && stream_n() > 0) {
         aguardandoFonte = 0;
         folhaParaTocar = 1;
         nomeParaFolha(); stream_folha_abrir();

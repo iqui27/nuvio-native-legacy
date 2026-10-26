@@ -2241,6 +2241,7 @@ static void tocarFonteInterno(const char *url) {
     comVideo = video_tocar(proxyts_resolver(url, px, sizeof px));
 #endif
   }
+  if (comVideo && juntos_precarregando()) player_juntos_pausar(1);
   zerarAssistido();
   mkvass_video_aberto(comVideo);
   aspArmar();
@@ -2261,7 +2262,7 @@ static void sairParaExterno(void) { saindo = 1; pediuSair = 1; }
 static void tocarFonte(const char *url) {
 #ifdef NV_ANDROID
   const CatItem *c = item();   // #501: Interno / Externo / Perguntar sempre
-  if (extplayer_tentar(url, c ? c->titulo : "", c && artehero_eh_anime(c), tocarFonteInterno, sairParaExterno)) return;
+  if (!juntos_ativo() && extplayer_tentar(url, c ? c->titulo : "", c && artehero_eh_anime(c), tocarFonteInterno, sairParaExterno)) return;
 #endif
   tocarFonteInterno(url);
 }
@@ -4311,6 +4312,9 @@ static int ativarBotao(int i, int repetiu) {
 
 // Watch Together: o motor da sala manda no player por aqui, para o estado que
 // o OSD mostra (tocando, posSeg) andar junto com o video.
+int player_juntos_preparado(void) {
+  return aberto && comVideo && video_pronto() && retomadaAplicada && !erroFonte;
+}
 void player_juntos_pausar(int pausado) {
   if (!aberto || !comVideo) return;
   tocando = !pausado;
@@ -4657,6 +4661,7 @@ void player_atualizar(float dt, Uint32 agora) {
   playerTelaAtualizar();
 #endif
   if (retido) { player_validar_retido(agora); return; }
+  if (comVideo && juntos_precarregando() && video_tocando()) player_juntos_pausar(1);
   if (aberto || mini) atualizarIdentidade();
 #ifdef NV_TPK
   // A TV recusou um seek e o arquivo nao tem indice nenhum (mkvfix.h): diz,
@@ -4912,6 +4917,8 @@ void player_atualizar(float dt, Uint32 agora) {
 #endif
     }
     tocando = video_tocando();
+    // Keep asynchronous platform opens paused until the room's scheduled start.
+    if (juntos_precarregando() && tocando) player_juntos_pausar(1);
     if (tocando && retomadaAplicada && medirAbertura && !tocouMedido && !ehCanal()) {
       tocouMedido = 1;
       printf("[player] tocando em %u ms desde a abertura (retomada %d%%)\n",

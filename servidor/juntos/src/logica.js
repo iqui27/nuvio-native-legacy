@@ -109,6 +109,8 @@ export class SalaLogica {
     const o = { id: m.id, nome: m.nome, av: m.av, st: m.on ? m.st : "ausente", anf: m.id === this.s.anf,
       on: m.on };
     if (m.pct) o.pct = m.pct;
+    if (m.stats) Object.assign(o, { stats: 1, rtt: m.rtt, offset: m.offset, drift: m.drift });
+    if (m.altura) o.altura = m.altura;
     if (m.nivel) o.nivel = m.nivel;
     if (m.plat) o.plat = m.plat;
     if (m.fonte) o.fonte = m.fonte;
@@ -415,6 +417,10 @@ export class SalaLogica {
     if (m.fonte && FONTE_TIPOS.has(m.fonte.tipo)) eu.fonte = m.fonte.tipo;
     if (Number.isFinite(m.rtt)) eu.rtt = num(m.rtt, 0, 5000, eu.rtt);
     if (Number.isFinite(m.prep)) eu.prep = num(m.prep, 0, 2500, 0);
+    eu.stats = m.stats === 1;
+    eu.offset = num(m.offset, -1e12, 1e12, 0);
+    eu.drift = num(m.drift, -86400000, 86400000, 0);
+    eu.altura = num(m.altura, 0, 8640, 0);
     if (st === "carregando") {
       if (eu.alc) eu.alcAte = 0;
       else if (s.rel.estado === "tocando" && !eu.carregDesde) eu.carregDesde = t;
@@ -423,7 +429,7 @@ export class SalaLogica {
       if (st === "tocando" && eu.alc && !eu.alcAte) eu.alcAte = t + LIMITES.estavelMs;
       if (st === "pronto" || st === "tocando") this.tirarDaEspera(eu.id, out, "pronto");
     }
-    if (antes !== st || st === "carregando") out.envios.push({ para: "*", msg: { t: "membro", ...this.membroPub(eu) } });
+    if (antes !== st || st === "carregando" || eu.stats) out.envios.push({ para: "*", msg: { t: "membro", ...this.membroPub(eu) } });
     // Lobby com mini-barreira (proximo episodio): todos prontos = comeca ja.
     if (s.rel.estado === "lobby" && s.rel.auto && this.todosProntos()) this.comecar(s.anf, "auto", out);
   }
@@ -453,7 +459,7 @@ export class SalaLogica {
       // Quem ainda nao esta pronto entra depois, alcancando (5.3).
       if (m.on && m.st !== "pronto" && m.st !== "tocando") { m.alc = true; m.alcAte = 0; }
     }
-    this.mudarRel({ estado: "tocando", t0: this.agora() + this.lead(), auto: 0 }, autor, op);
+    this.mudarRel({ estado: "tocando", t0: this.agora() + Math.max(3000, this.lead()), auto: 0 }, autor, op);
     out.envios.push({ para: "*", msg: this.snapshot() });
   }
 
@@ -479,12 +485,12 @@ export class SalaLogica {
     const autor = eu.id;
     switch (op) {
       case "comecar":
-        if (r.estado !== "lobby") return;
+        if (r.estado !== "lobby" || !ehAnf) return;
         if (Number.isFinite(m.pos)) r.pos0 = num(m.pos, 0, 86400, r.pos0);
         this.comecar(autor, "comecar", out);
         return;
       case "play":
-        if (r.estado === "lobby") { this.comecar(autor, "comecar", out); return; }
+        if (r.estado === "lobby") return;
         if (r.estado !== "pausado" && r.estado !== "esperando") return;
         s.espera = { quem: [], ate: 0 };
         this.mudarRel({ estado: "tocando", t0: t + this.lead() }, autor, "play");
@@ -512,7 +518,13 @@ export class SalaLogica {
         if (!ep || ep === r.ep) return;
         s.espera = { quem: [], ate: 0 };
         for (const x of Object.values(s.membros)) { x.alc = false; x.alcAte = 0; x.carregDesde = 0; if (x.on) x.st = "procurando"; }
-        this.mudarRel({ ep, estado: "lobby", pos0: 0, t0: t, auto: t + LIMITES.autoProximoMs }, autor, "proximo");
+        if (m.titulo) {
+          s.cfg.titulo = txt(m.titulo, 120);
+          s.cfg.poster = txt(m.poster, 512);
+          s.cfg.imp = {};
+        }
+        this.mudarRel({ ep, estado: "lobby", pos0: 0, t0: t,
+          auto: 0 }, autor, "proximo");
         break;
       }
       case "encerrar":

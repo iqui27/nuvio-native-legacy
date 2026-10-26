@@ -34,7 +34,7 @@ float juntosui_shot_foco(int i);
 
 static SDL_Window *win;
 static const char *base;
-static int sourcesOnly, proofsOnly, lobbyOnly;
+static int sourcesOnly, proofsOnly, lobbyOnly, flowOnly;
 static GLuint fundoTex;
 
 static void carregarFundo(void) {
@@ -121,6 +121,7 @@ int main(int argc, char **argv) {
   FILE *f;
   base = argc > 1 ? argv[1] : "/tmp/nuvio-juntos";
   snprintf(aj, sizeof aj, "%s/ajustes.txt", dir);
+  flowOnly = argc > 2 && !strcmp(argv[2], "--flow");
   sourcesOnly = argc > 2 && !strcmp(argv[2], "--sources");
   lobbyOnly = argc > 2 && !strcmp(argv[2], "--lobby");
   proofsOnly = lobbyOnly || (argc > 2 && !strcmp(argv[2], "--proofs"));
@@ -159,7 +160,7 @@ int main(int argc, char **argv) {
   carregarFundo();
   quadros(30);
 
-  if (!sourcesOnly && !proofsOnly) {
+  if (!sourcesOnly && !proofsOnly && !flowOnly) {
   // 1. Convite na ilha.
   { JuntosConvite c; memset(&c, 0, sizeof c);
     snprintf(c.id, sizeof c.id, "%s", "0123456789abcdef0123456789abcdef");
@@ -194,6 +195,53 @@ int main(int argc, char **argv) {
     s.n = 4;
     motor.sala = s; motor.temSala = 1; temMotor = 1; fase = JF_DENTRO;
     snprintf(codigo, sizeof codigo, "K7M2QX"); }
+  if (flowOnly) {
+    ajustes_definir_vidro(1);
+    gfx_escala_txt_definir(1);
+    ajustes_shot_valor("animacoes", 0);
+    for (int i = 0; i < 3; i++) {
+      motor.sala.m[i].stats = 1;
+      motor.sala.m[i].rtt = 24 + i * 17;
+      motor.sala.m[i].offset = -12 + i * 7;
+      motor.sala.m[i].altura = i == 2 ? 1080 : 2160;
+    }
+    motor.sala.n = 1;
+    snprintf(motor.sala.m[0].st, sizeof motor.sala.m[0].st, "carregando");
+    motor.sala.m[0].pct = 42;
+    juntosui_sala_abriu();
+    quadros(35); captura("01-preload", 1080);
+    SDL_Event invite = {0}; invite.type = SDL_KEYDOWN; invite.key.keysym.sym = SDLK_RIGHT;
+    assert(juntosui_evento_sdl(&invite));
+    invite.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&invite));
+    snprintf(urlCelular, sizeof urlCelular, "https://nuvio-juntos.example/j/0123456789abcdef0123456789abcdefK7M2QXA9");
+    quadros(20); captura("01-invite", 1080);
+    assert(juntosui_evento_sdl(&invite));
+    invite.key.keysym.sym = SDLK_LEFT; assert(juntosui_evento_sdl(&invite));
+    snprintf(motor.sala.m[0].st, sizeof motor.sala.m[0].st, "pronto");
+    motor.sala.n = 2;
+    quadros(1); captura("02-arrival-000", 1080);
+    quadros(5); captura("02-arrival-080", 1080);
+    quadros(15); captura("02-arrival-320", 1080);
+    motor.sala.n = 3;
+    quadros(25); captura("03-loading", 1080);
+    snprintf(motor.sala.m[2].st, sizeof motor.sala.m[2].st, "pronto");
+    quadros(25); captura("04-ready", 1080);
+    motor.sala.m[1].on = 0;
+    quadros(15); captura("04-offline", 1080);
+    motor.sala.m[1].on = 1;
+    quadros(15);
+    juntosui_shot_contagem(3); quadros(12); captura("05-countdown-3", 1080);
+    juntosui_shot_contagem(2); quadros(12); captura("05-countdown-2", 1080);
+    juntosui_shot_contagem(1); quadros(12); captura("05-countdown-1", 1080);
+    juntosui_shot_contagem(0);
+    motor.sala.rel.estado = JSE_TOCANDO;
+    motor.prontoAnterior = 1;
+    motor.sala.rel.t0 = (double)SDL_GetTicks64() - 12000;
+    juntosui_shot_player(1);
+    quadros(35); captura("06-player-chip", 1080);
+    printf("flow captures: pt-BR preload, arrival, ready, countdown, player chip OK\n");
+    return 0;
+  }
   if (sourcesOnly) {
     Stream s = { 0 };
     const char *assetDir = getenv("NUVIO_JUNTOS_ART");
