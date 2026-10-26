@@ -46,21 +46,21 @@ test("impressao: so os campos permitidos, nada de URL", () => {
   assert.deepEqual(i, { hash: "a".repeat(40), idx: 2, bytes: 123, binge: "torrentio|1080p", durMs: 5000 });
 });
 
-test("comecar: play agendado no futuro com lead = max(2xRTT, 600 ms) e seq sobe", () => {
+test("comecar: host schedules the three-second lobby countdown and increments seq", () => {
   const x = tres();
   x.l.mensagem(tv("r"), { t: "ola", plat: "wgt", nivel: "B", rtt: 450 });
   const seq0 = x.l.s.rel.seq;
-  const out = x.l.mensagem(tv("f"), { t: "cmd", op: "comecar", seqBase: seq0 });
+  const out = x.l.mensagem(tv("h"), { t: "cmd", op: "comecar", seqBase: seq0 });
   const s = ultimaSala(out);
   assert.equal(s.rel.estado, "tocando");
-  assert.equal(s.rel.t0, x.rel.t + 900);
+  assert.equal(s.rel.t0, x.rel.t + 3000);
   // a TV que demora 1,4 s de um seek ate tocar empurra a folga
   x.l.mensagem(tv("h"), { t: "estado", st: "tocando", prep: 1400 });
   assert.equal(x.l.lead(), 1550);
   assert.equal(s.seq, seq0 + 1);
-  assert.equal(s.rel.autor, "f");
+  assert.equal(s.rel.autor, "h");
   // Quem entra no meio extrapola pelo mesmo par (o bug #8579 do Jellyfin).
-  x.andar(900 + 61_500);
+  x.andar(3000 + 61_500);
   assert.equal(x.l.posAlvo(), 61.5);
   const e = x.l.conectar(bil("d"));
   const sd = ultimaSala(e);
@@ -71,7 +71,7 @@ test("comecar: play agendado no futuro com lead = max(2xRTT, 600 ms) e seq sobe"
 test("pausa cai no quadro de quem apertou (se perto) e o seqBase velho e descartado", () => {
   const x = tres();
   x.l.mensagem(tv("h"), { t: "cmd", op: "comecar" });
-  x.andar(10_600);
+  x.andar(13_000);
   const p = ultimaSala(x.l.mensagem(tv("r"), { t: "cmd", op: "pausa", pos: 9.8, seqBase: x.l.s.rel.seq }));
   assert.equal(p.rel.estado, "pausado");
   assert.equal(p.rel.pos0, 9.8);
@@ -98,7 +98,7 @@ test("pausa cai no quadro de quem apertou (se perto) e o seqBase velho e descart
 test("seek tocando reagenda t0 e informa o delta (aviso 'voltou 30 s')", () => {
   const x = tres();
   x.l.mensagem(tv("h"), { t: "cmd", op: "comecar" });
-  x.andar(60_600);
+  x.andar(63_000);
   const s = ultimaSala(x.l.mensagem(tv("f"), { t: "cmd", op: "seek", pos: 30 }));
   assert.equal(s.rel.pos0, 30);
   assert.equal(s.rel.delta, -30);
@@ -123,7 +123,7 @@ test("trava do anfitriao: convidado recebe so_anfitriao; pedir pausa chega ao an
 test("carregando > 3 s vira esperando (todos param no mesmo quadro); voltar a pronto retoma agendado", () => {
   const x = tres();
   x.l.mensagem(tv("h"), { t: "cmd", op: "comecar" });
-  x.andar(20_600);
+  x.andar(23_000);
   x.l.mensagem(tv("f"), { t: "estado", st: "carregando", pct: 40 });
   x.andar(2000);
   assert.equal(x.l.alarme().envios.length, 0, "travada curta nao para ninguem");
@@ -252,24 +252,27 @@ test("reacoes: so chaves conhecidas, 1 a cada 2 s; chat so do celular e so se li
   assert.equal(x.l.conectar(bil("q", "celular")).codigo, 4403);
 });
 
-test("proximo episodio: lobby com mini-barreira de 15 s; todos prontos comeca antes", () => {
+test("next episode: readiness and timeout never bypass the host lobby start", () => {
   const x = tres();
   x.l.mensagem(tv("h"), { t: "cmd", op: "comecar" });
   x.andar(5000);
   const p = ultimaSala(x.l.mensagem(tv("r"), { t: "cmd", op: "proximo", ep: "tt1:1:2" }));
   assert.equal(p.rel.estado, "lobby");
   assert.equal(p.rel.ep, "tt1:1:2");
-  assert.equal(p.rel.auto, x.rel.t + 15_000);
+  assert.equal(p.rel.auto, undefined);
   for (const q of ["h", "r"]) x.l.mensagem(tv(q), { t: "estado", st: "pronto" });
   assert.equal(x.l.s.rel.estado, "lobby");
-  const ult = x.l.mensagem(tv("f"), { t: "estado", st: "pronto" });
-  assert.equal(ultimaSala(ult).rel.estado, "tocando");
-  // e sem todos prontos, o prazo comeca sozinho
+  x.l.mensagem(tv("f"), { t: "estado", st: "pronto" });
+  assert.equal(x.l.s.rel.estado, "lobby");
+  x.l.mensagem(tv("h"), { t: "cmd", op: "comecar" });
+  assert.equal(x.l.s.rel.estado, "tocando");
+  // Another episode also waits for explicit host consent.
   x.l.mensagem(tv("r"), { t: "cmd", op: "proximo", ep: "tt1:1:3" });
   x.l.mensagem(tv("h"), { t: "estado", st: "pronto" });
   x.andar(15_000);
   x.l.alarme();
-  assert.equal(x.l.s.rel.estado, "tocando");
+  assert.equal(x.l.s.rel.estado, "lobby");
+  x.l.mensagem(tv("h"), { t: "cmd", op: "comecar" });
   assert.ok(x.l.s.membros.f.alc);
 });
 

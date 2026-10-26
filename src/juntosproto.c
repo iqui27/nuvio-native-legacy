@@ -68,6 +68,11 @@ static void lerMembro(const char *o, const char *f, JsMembro *m) {
   js_texto(o, f, "av", m->av, sizeof m->av);
   js_texto(o, f, "st", m->st, sizeof m->st);
   m->pct = (int)js_num(o, f, "pct", 0);
+  m->stats = (int)js_num(o, f, "stats", 0);
+  m->rtt = js_num(o, f, "rtt", 0);
+  m->offset = js_num(o, f, "offset", 0);
+  m->drift = js_num(o, f, "drift", 0);
+  m->altura = (int)js_num(o, f, "altura", 0);
   js_texto(o, f, "nivel", nv, sizeof nv);
   m->nivel = nv[0] == 'A' || nv[0] == 'B' ? nv[0] : 0;
   js_texto(o, f, "plat", m->plat, sizeof m->plat);

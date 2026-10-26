@@ -46,6 +46,8 @@ int  juntosui_pediu_fechar_player(void);
 // "Abrir sala" na folha: 1 uma vez, e o app reproduz o titulo como o
 // Reproduzir do detalhe (a sala nasce quando a fonte tocar).
 int  juntosui_pediu_reproduzir(void);
+int  juntosui_escolhendo_filme(void);             // Browse without player presentation/input.
+int  juntosui_voltar_filme(void);                 // Restore lobby when browsing exits.
 int  juntosui_pediu_escolher_filme(void);          // "Escolher um filme" no cinema: abrir a busca
 int  juntosui_pediu_fontes(void);                 // Local source picker, consumed by app.c.
 

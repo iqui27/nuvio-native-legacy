@@ -1666,7 +1666,7 @@ static int aoCarregar(LSHandle *h, LSMessage *m, void *u) {
   // before sourceInfo can stall TS startup on webOS 24 (#625); a successful
   // load only allocates the pipeline, so request play without selecting tracks.
   snprintf(b, sizeof b, "{\"mediaId\":\"%s\"}", midia);
-  chamar("play", b, soLog);
+  chamar(pausaPedida ? "pause" : "play", b, soLog);
   return 1;
 }
 
@@ -3277,10 +3277,10 @@ void video_pausar(int pausado) {
     dts_playback_pause(dtsSessao, pausado); return;
   }
 
-  if (!ligado || !midia[0]) return;
-  snprintf(b, sizeof b, "{\"mediaId\":\"%s\"}", midia);
   pausaConfirmada = 0;
   pausaPedida = pausado;
+  if (!ligado || !midia[0]) return;
+  snprintf(b, sizeof b, "{\"mediaId\":\"%s\"}", midia);
   if (recarregarPausa >= 0) recarregarPausa = !!pausado;
   chamar(pausado ? "pause" : "play", b, soLog);
   tocando = !pausado;
