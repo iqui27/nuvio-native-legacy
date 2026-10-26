@@ -3,7 +3,7 @@ typedef struct { int op; const char *title,*help,*icon; int toggle; } AjPenRow;
 typedef struct { const char *title; int x,w,n; AjPenRow rows[7]; } AjPenColumn;
 typedef struct { const char *title,*section; int part,total; AjPenColumn cols[2]; } AjPenPage;
 #include "ajustes_pen_avancados.inc"
-static int ajPenPage=-1,ajPenRow,ajPenReturn=-1;
+#include "ajustes_pen_principais.inc"
 static const AjPenPage AJ_PEN_AUDIO[] = {
   {"Áudio e legendas","AJUSTES",2,3,{
     {"IDIOMAS",200,800,6,{
@@ -39,6 +39,7 @@ static const AjPenPage AJ_PEN_AUDIO[] = {
 static const AjPenPage *ajPenCurrent(void) {
   if(ajPenPage>=0 && ajPenPage<27)return &AJ_PEN_ADV[ajPenPage];
   if(ajPenPage>=27 && ajPenPage<29)return &AJ_PEN_AUDIO[ajPenPage-27];
+  if(ajPenPage>=29 && ajPenPage<46)return &AJ_PEN_MAIN[ajPenPage-29];
   return NULL;
 }
 static void ajPenOpen(int page) {
@@ -46,21 +47,23 @@ static void ajPenOpen(int page) {
 }
 static int ajPenEvent(SDL_Keycode key) {
   const AjPenPage *page=ajPenCurrent();
-  if(!page || uxEditor || aj4Util || focoIndice)return -1;
+  if(!page || uxEditor || aj4Util || focoIndice || aj4Topo>=0)return -1;
   if(uxVoltar(key)) { ajPenPage=-1;focoIndice=1;aj4Linha=0;return 1; }
   int n=page->cols[0].n+page->cols[1].n;
   if(key==SDLK_DOWN && ajPenRow<n-1)ajPenRow++;
-  if(key==SDLK_UP && ajPenRow>0)ajPenRow--;
+  if(key==SDLK_UP) { if(ajPenRow>0)ajPenRow--;else aj4Topo=1; }
   if(key==SDLK_RIGHT) {
     if(ajPenRow<page->cols[0].n && page->cols[1].n)ajPenRow=page->cols[0].n;
     else if(ajPenPage<26)ajPenOpen(ajPenPage+1);
     else if(ajPenPage==27)ajPenOpen(28);
+    else if(ajPenPage>=29 && ajPenPage<45)ajPenOpen(ajPenPage+1);
     return 1;
   }
   if(key==SDLK_LEFT) {
     if(ajPenRow>=page->cols[0].n)ajPenRow=0;
     else if(ajPenPage>0 && ajPenPage<27)ajPenOpen(ajPenPage-1);
     else if(ajPenPage==28)ajPenOpen(27);
+    else if(ajPenPage>29)ajPenOpen(ajPenPage-1);
     else { ajPenPage=-1;focoIndice=1; }
     return 1;
   }
@@ -68,13 +71,15 @@ static int ajPenEvent(SDL_Keycode key) {
     int col=ajPenRow>=page->cols[0].n;
     const AjPenRow *row=&page->cols[col].rows[ajPenRow-(col?page->cols[0].n:0)];
     int op=row->op;
-    if(!ajOpcaoDisponivel(op))return 1;
+    if(op<0 || !ajOpcaoDisponivel(op))return 1;
+    if(OPCOES[op].tipo==OP_LEITURA)return 1;
     if(inativa(op)) {
       int req=uxRequisito(op);
       if(uxLigarRequisitos(op,1))return 1;
       if(req>=0) { focarOpcao(req);uxAbrirEditor(req);return 1; }
     }
     focarOpcao(op);
+    if(focoOp!=op) { focoOp=op;focoIndice=0; }
     if(OPCOES[op].tipo==OP_ACAO) { ajPenReturn=ajPenPage;return 0; }
     uxAbrirEditor(op);return 1;
   }

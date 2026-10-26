@@ -5,13 +5,14 @@ static int aj4Topo = -1, aj4Set, aj4Linha, aj4Util, aj4Escopo, aj4Review, aj4Aca
 static int aj4Opcoes[AJ_N], aj4Ops[AJ_N], aj4Antes[AJ_N], aj4Depois[AJ_N], aj4N;
 static int aj4UndoOps[AJ_N], aj4UndoAntes[AJ_N], aj4UndoDepois[AJ_N], aj4UndoN, aj4UndoPerfil;
 static int aj4FocoModo[2], aj4Excecao = -1;
+static int ajPenPage=-1,ajPenRow,ajPenReturn=-1;
 static char aj4Consulta[128];
 static int aj4BuscaTeclado, aj4BuscaRetorno, aj4BuscaFoco, aj4TrocarPerfil, aj4PerfilRetorno;
 int ajustes_pediu_trocar_perfil(void) { int v=aj4TrocarPerfil; aj4TrocarPerfil=0; return v; }
 static AjusteBuscaResultado aj4Resultados[AJ_N];
 static void aj4Iniciar(void) {
   aj4Topo = -1; aj4Util = aj4Review = aj4Acao = aj4Linha = 0; aj4Excecao = -1;
-  aj4Mais = 0;
+  aj4Mais = 0;ajPenPage=-1;ajPenReturn=-1;
   aj4BuscaTeclado=aj4BuscaRetorno=aj4TrocarPerfil=aj4PerfilRetorno=0;
 }
 static const char *const AJ4_SECOES[] = {
@@ -377,7 +378,12 @@ static int aj4Evento(SDL_Keycode k) {
   }
   if (focoIndice) {
     if (uxVoltar(k)) { sair = 1; return 1; }
-    if (k == SDLK_UP) { if (aj4Linha) aj4Linha--; else aj4Topo = 0; }
+    if (k == SDLK_UP) {
+      if(aj4Linha<4)aj4Topo=0;
+      else if(aj4Linha==9 || aj4Linha==10)aj4Linha=0;
+      else if(aj4Linha==11 || aj4Linha==12)aj4Linha-=2;
+      else aj4Linha=11;
+    }
     if (k == SDLK_DOWN) {
       if(aj4Linha<4)aj4Linha=9;
       else if(aj4Linha==9 || aj4Linha==10)aj4Linha+=2;
@@ -391,14 +397,16 @@ static int aj4Evento(SDL_Keycode k) {
     }
     if (uxOk(k)) {
       if (aj4Linha == 1) ajPenOpen(27);
-      else if (aj4Linha < 4) aj4Entrar(lig(AJ_AVANCADAS) ? aj4Set * 4 + aj4Linha : aj4Linha);
+      else if(aj4Linha==0)ajPenOpen(29);
+      else if(aj4Linha==2)ajPenOpen(33);
+      else if(aj4Linha==3)ajPenOpen(37);
       else if (aj4Linha == 4 || aj4Linha == 5) { aj4Util = aj4Linha == 4 ? 2 : 1; aj4Linha = 0; aj4Acao = 0; focoIndice = 0; }
       else if (aj4Linha == 6) { aj4Entrar(7); aj4Excecao = AJ_GUIA; aj4Atual = 7; aj4Grupo = aj4GrupoDe(AJ_GUIA); aj4Grupos = 1; }
       else if (aj4Linha == 7) tourAbrir();
-      else if(aj4Linha==9) { aj4Entrar(3);aj4Excecao=AJ_IPTV_CONTA; }
+      else if(aj4Linha==9)ajPenOpen(41);
       else if(aj4Linha==10) { focarOpcao(AJ_PERFIL_INFANTIL);uxAbrirEditor(AJ_PERFIL_INFANTIL); }
-      else if(aj4Linha==11) { aj4Entrar(7);aj4Excecao=AJ_GPU_EFEITOS;aj4Grupo=aj4GrupoDe(AJ_GPU_EFEITOS); }
-      else if(aj4Linha==12) { aj4Entrar(7);aj4Excecao=AJ_GUIA;aj4Grupo=aj4GrupoDe(AJ_GUIA); }
+      else if(aj4Linha==11)ajPenOpen(43);
+      else if(aj4Linha==12)ajPenOpen(44);
       else if(aj4Linha==13) { ajPenOpen(0); }
       else { aj4Desfazer(); }
     }

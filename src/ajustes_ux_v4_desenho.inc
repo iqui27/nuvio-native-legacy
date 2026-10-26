@@ -30,7 +30,8 @@ static float aj4Bloco(TxtEstilo e,const char *s,float x,float y,float w,float lh
 #define ajBloco aj4Bloco
 static void aj4PontAtivar(int zona,int row) {
   if(zona==5) { uxEvento(SDLK_ESCAPE); return; }
-  if(zona==8) { ajPenRow=row;int handled=ajPenEvent(SDLK_RETURN);if(!handled)uxEvento(SDLK_RETURN);return; }
+  if(zona==8) { ajPenRow=row;int handled=ajPenEvent(SDLK_RETURN);if(!handled) { SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.keysym.sym=SDLK_RETURN;eventoTela(&event); } return; }
+  if(zona==9) { if(row==1) { uxRodape=1;uxEvento(SDLK_RETURN); }else if(row==2)uxNotificar("Salvar como preset ainda não está disponível.");return; }
   aj4PontFoco(zona,row);
   if(zona==4)uxAplicar();
   else if(zona==7) { snprintf(aj4Consulta,sizeof aj4Consulta,"%s",i18n(row==2?"Áudio":"Fontes")); aj4Acao=aj4Linha=0; }
@@ -464,10 +465,11 @@ static void aj4PerfilDesenhar(void) {
   aj4Botao("Gerenciar perfis","aj_user-round",622,895,365,aj4Acao,0);aj4Alvo((GfxRect){622,895,365,58},3,1);
 }
 #include "ajustes_pen_desenho.inc"
+#include "ajustes_pen_editor.inc"
 static void aj4Desenhar(void) {
   ponteiro_camada();
   aj4SeloAviso=0;
-  if(uxEditor)aj4Editor();
+  if(uxEditor)ajPenEditor();
   else if(aj4Util==4)aj4PerfilDesenhar();
   else if(aj4Util==3)aj4BuscaDesenhar();
   else if(aj4Review || aj4Util)aj4UtilDesenhar();

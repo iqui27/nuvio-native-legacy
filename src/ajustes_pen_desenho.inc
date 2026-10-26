@@ -17,8 +17,11 @@ static void ajPenChip(const char *s,const char *ic,float x,float y,float w,int f
 }
 static void ajPenRailFoco(int row,int unused) { (void)unused;menu_abrir();(void)row; }
 static void ajPenBase(void) {
-  ajFundo();
-  gfx_veu_css((GfxRect){0,0,1920,1080},2,.65f,1,.85f);
+  GfxRect screen={0,0,1920,1080};
+  gfx_cor(screen,0,.035f,.035f,.043f,1);
+  gfx_luz_canto(screen,0,1250,330,1550,.23f,.22f,.37f,.82f);
+  gfx_luz_canto(screen,0,1920,640,1150,.18f,.19f,.34f,.65f);
+  gfx_veu_css(screen,2,.65f,1,.82f);
   ajPenPanel(48,112,88,522,0);
   static const char *const icons[]={"aj_house","aj_compass","aj_tv-minimal-play","aj_search","aj_book-open","aj_calendar","aj_user-round","aj_sliders-horizontal"};
   for(int i=0;i<8;i++) {
@@ -63,7 +66,7 @@ static void ajPenRows(void) {
     aj4Texto(sub,TXT_G20M,200,291,1520,.58f);
   } else {
     ajPenModo(118);
-    aj4Texto(ajPenPage==27?"Vale para quase todo título. Se um filme não tiver a faixa escolhida, tocamos a original e avisamos.":"Tamanho, fonte, cor e borda da legenda principal.",TXT_G20M,200,291,1520,.58f);
+    aj4Texto(ajPenPage>=29?aj4Ajuda(page->cols[0].rows[0].op):ajPenPage==27?"Vale para quase todo título. Se um filme não tiver a faixa escolhida, tocamos a original e avisamos.":"Tamanho, fonte, cor e borda da legenda principal.",TXT_G20M,200,291,1520,.58f);
   }
   int index=0;
   for(int col=0;col<2;col++) {
@@ -91,7 +94,7 @@ static void ajPenRows(void) {
       aj4Alvo((GfxRect){x,y,w,74},8,index);
     }
   }
-  ajPenRodape(ajPenPage<27?page->title:"Áudio e legendas",page->part,page->total);
+  ajPenRodape(ajPenPage<27?page->title:page->section,page->part,page->total);
 }
 static void ajPenHome(void) {
   static const char *const names[]={"Reproduzir","Áudio e legendas","Minha tela","Perfil e serviços"};

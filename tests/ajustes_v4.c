@@ -45,7 +45,7 @@ int main(void) {
   // APS-9: invalid IDs, absent routes and corrupt compiled sections are bounded.
   assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO);
   assert(AJ_HERO_TAMANHO + 1 == AJ_DET_TOPO && AJ_DET_TOPO + 1 == AJ_DET_ELENCO_VISTO);
-  assert(AJ_DET_ELENCO_VISTO + 1 == AJ_N);
+  assert(AJ_DET_ELENCO_VISTO + 1 == AJ_GUIA_PREVIA_GRANDE && AJ_GUIA_PREVIA_GRANDE + 1 == AJ_N);
   assert(!strcmp(CHAVE[AJ_AFR], "afrLocal") && !strcmp(CHAVE[AJ_HERO_TAMANHO], "heroSizeLocal"));
   assert(!strcmp(CHAVE[AJ_DET_TOPO], "detalheTopoLocal"));
   assert(!strcmp(CHAVE[AJ_DET_ELENCO_VISTO], "detalheElencoVistoLocal"));
@@ -104,7 +104,7 @@ int main(void) {
     int gs[AJ4_N_GRUPOS], ng;
     valor[AJ_AVANCADAS] = 0; focoIndice = 1; aj4Linha = 0; aj4Topo = -1; // advanced
     aj4Review = 0; aj4Util = 0; aj4Acao = 0; // clear the failed-save review state
-    key(SDLK_RETURN);
+    ajPenPage=-1;aj4Entrar(0);
     assert(aj4Grupos && aj4Atual == 0);
     ng = aj4GruposLista(aj4Atual, gs);
     assert(ng > 4);
@@ -185,35 +185,30 @@ int main(void) {
     key(right); assert(aj4Topo==2);
     key(left); key(left); assert(aj4Topo==0);
     key(SDLK_DOWN); assert(aj4Topo==-1 && focoIndice);
-    // Every advanced section opens, enters its first group and returns to Home.
-    for (int sec=0;sec<8;sec++) {
-      aj4Set=sec/4; aj4Linha=sec%4; key(SDLK_RETURN);
-      assert(!focoIndice && aj4Atual==sec && aj4Grupos);
-      key(right); assert(!aj4Grupos);
-      key(left); assert(aj4Grupos);
-      key(left); assert(focoIndice);
+    // Pencil rows remain reachable in both reading directions; browsing never writes.
+    memcpy(before,valor,sizeof before);
+    for(int page=0;page<46;page++) {
+      ajPenOpen(page);const AjPenPage *p=ajPenCurrent();assert(p);
+      int count=p->cols[0].n+p->cols[1].n;assert(count>0 && count<=14);
+      for(int i=0;i<count+1;i++)key(SDLK_DOWN);
+      assert(ajPenRow==count-1);
+      key(SDLK_ESCAPE);assert(focoIndice && ajPenPage==-1);
     }
-    // Group-set boundaries, vertical boundaries, help and differences remain reachable.
-    aj4Linha=2; key(right); assert(aj4Set==1 && aj4Linha==0);
-    key(right); assert(aj4Set==1); key(left); assert(aj4Set==0);
-    key(SDLK_UP); assert(aj4Topo==0); key(SDLK_DOWN);
-    aj4UndoN=0;
-    for(int i=0;i<10;i++)key(SDLK_DOWN);
-    assert(aj4Linha==6); key(SDLK_RETURN); assert(!focoIndice && aj4Atual==7);
-    key(SDLK_ESCAPE); assert(focoIndice);
+    assert(!memcmp(before,valor,sizeof before));
+    aj4Linha=2;key(right);assert(aj4Linha==3);key(left);assert(aj4Linha==2);
+    key(SDLK_UP);assert(aj4Topo==0);key(SDLK_DOWN);
+    key(SDLK_DOWN);assert(aj4Linha==9);
+    key(right);assert(aj4Linha==10);key(SDLK_DOWN);assert(aj4Linha==12);
+    key(SDLK_RETURN);assert(ajPenPage==44 && !focoIndice);
+    key(SDLK_ESCAPE);assert(focoIndice);
     aj4Linha=5; key(SDLK_RETURN); assert(aj4Util==1 && !focoIndice);
     key(SDLK_ESCAPE); assert(!aj4Util && focoIndice);
-    // Simple mode exposes each task, stops at both ends and returns to Home.
+    // Both modes open the same four tasks, preserving settings.
     valor[AJ_AVANCADAS]=1;
-    for (int sec=0;sec<4;sec++) {
-      aj4Linha=sec; key(SDLK_RETURN);
-      assert(!focoIndice && aj4Atual==sec && !aj4Grupos);
-      n=aj4Lista(sec,-1,ops); assert(n>0 && n<=4);
-      for(int i=0;i<n+1;i++)key(SDLK_DOWN);
-      assert(aj4Linha==n-1 && aj4Acao);
-      key(SDLK_UP); assert(!aj4Acao);
-      for(int i=0;i<n;i++)key(SDLK_UP);
-      assert(aj4Topo==0); key(SDLK_DOWN); key(left); assert(focoIndice);
+    const int taskPages[]={29,27,33,37};
+    for(int task=0;task<4;task++) {
+      aj4Linha=task;key(SDLK_RETURN);assert(!focoIndice && ajPenPage==taskPages[task]);
+      key(SDLK_ESCAPE);assert(focoIndice);
     }
     // Editor directions follow the mirror; cancellation preserves saved values.
     focarOpcao(AJ_QUALIDADE); int quality=valor[AJ_QUALIDADE];
