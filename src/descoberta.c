@@ -7885,7 +7885,7 @@ static void temporadasDosEps(const CatEp *eps, int n, TempsPub *tp) {
 static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
                                        const char *titulo, const char *sobre,
                                        int modo, TempsPub *tp, int cedo,
-                                       int substituir) {
+                                       int substituir, int pendente) {
   CatEp *eps = malloc(sizeof(CatEp) * VIDEOS_MAX);
   int n = 0;
   if (!eps) return 0;
@@ -7905,8 +7905,15 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
     CatItem atual;
     int parcial = !cedo && cat_copiar_item(alvoItem, &atual) && atual.epsParciais;
     int trocarTopologia = !cedo && (parcial || substituir);
+    int provisorio = cedo || pendente;
     CatEp *estavel = antigos > 0 && epPedidoAtual() && !trocarTopologia
                    ? malloc(sizeof(CatEp) * VIDEOS_MAX) : NULL;
+    // The flag goes up before the list: CW and the player must never see
+    // provisional video IDs as final, not even between two writes.
+    if (provisorio && cat_copiar_item(alvoItem, &atual) && !atual.epsParciais) {
+      atual.epsParciais = 1;
+      descCatAtualizar(cat_atualizar_item, alvoItem, &atual);
+    }
     if (trocarTopologia) {
       // A provisional list, or a complete list that lost source selection,
       // must not contribute extra topology to the selected final list:
@@ -7915,7 +7922,7 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
       descCatEpisodios(alvoItem, eps, n);
       if (tp) temporadasDosEps(eps, n, tp);
       if (cat_copiar_item(alvoItem, &atual)) {
-        atual.epsParciais = 0;
+        atual.epsParciais = provisorio;
         if (tp) {
           atual.nTemporadas = tp->n;
           memcpy(atual.temporadas, tp->t, sizeof(int) * (size_t)tp->n);
@@ -7976,7 +7983,7 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
 static int publicarEpisodiosEx(const char *corpo, int alvoItem, const char *titulo,
                                const char *sobre, int modo, TempsPub *tp, int cedo) {
   return publicarEpisodiosEscolhidos(corpo, alvoItem, titulo, sobre, modo, tp,
-                                     cedo, 0);
+                                     cedo, 0, 0);
 }
 
 static int publicarEpisodios(const char *corpo, int alvoItem, const char *titulo,
@@ -7991,7 +7998,15 @@ static int publicarEpisodiosSubstituir(const char *corpo, int alvoItem,
                                        const char *titulo, const char *sobre,
                                        int modo, TempsPub *tp) {
   return publicarEpisodiosEscolhidos(corpo, alvoItem, titulo, sobre, modo, tp,
-                                     0, 1);
+                                     0, 1, 0);
+}
+
+// Cinemeta before the episode addons answer: visible, but not final until the
+// addon selection ends (cleared with the basic meta below).
+static int publicarEpisodiosPendentes(const char *corpo, int alvoItem,
+                                      const char *titulo, TempsPub *tp) {
+  return publicarEpisodiosEscolhidos(corpo, alvoItem, titulo, NULL, 0, tp,
+                                     0, 0, 1);
 }
 
 // O Cinemeta as vezes conhece MENOS episodios que o addon de metadados do
@@ -8795,7 +8810,7 @@ static void *buscarEps(void *u) {
   if (!ehFilme && viaCatalogo)
     epsDoAddon = episodiosDoCatalogo(alvoItem, it->titulo, serie, &mf, &tp);
   else if (!ehFilme) {
-    int nCine = publicarEpisodios(corpo, alvoItem, it->titulo, NULL, 0, &tp);
+    int nCine = publicarEpisodiosPendentes(corpo, alvoItem, it->titulo, &tp);
     // Temporada e data de cada episodio para a reserva do still: quando o
     // TMDB divide a serie em outras temporadas (One Piece), e por elas que o
     // still do TMDB e achado (artereserva.h).

@@ -24,3 +24,16 @@ pathlib.Path(sys.argv[1]).write_text(
 PY
 cc "${flags[@]}" -I"$work" tests/cw_addon_cold.c src/catalogo.c -o "$work/cold"
 "$work/cold"
+# Compile the actual episode publication and the Cinemeta-first call.
+python3 - "$work/publish.inc" "${DESC_SRC:-src/descoberta.c}" <<'PY'
+import pathlib, sys
+s = pathlib.Path(sys.argv[2]).read_text()
+a = s.index('typedef struct { int n, t[CAT_TEMP_MAX]; } TempsPub;')
+b = s.index('\n// O Cinemeta as vezes conhece MENOS', a)
+call = next(l for l in s.splitlines() if 'int nCine = publicarEpisodios' in l)
+pathlib.Path(sys.argv[1]).write_text(
+    s[a:b] + '\nstatic int cine_publicar(const char *corpo, int alvoItem, CatItem *it) {\n'
+    '  TempsPub tp = {0};\n' + call + '\n  return nCine;\n}\n')
+PY
+cc "${flags[@]}" -I"$work" tests/cw_addon_publish.c src/catalogo.c -o "$work/publish"
+"$work/publish"
