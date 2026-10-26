@@ -750,6 +750,8 @@ static void menu_desenharCorpo_(Uint32 agora);
 // Camada ampliada no fator fixo do menu (NV_MENU_ESCALA): o corpo desenha na
 // tela virtual dele.
 void menu_desenhar(Uint32 agora) {
+  /* Settings owns the Pencil rail; the expanded menu keeps its normal shell. */
+  if(destino==MENU_AJUSTES && !aberto && desliza<.002f && expande<=.004f)return;
   float ant = gfx_escala();
   gfx_escala_sair(NV_MENU_ESCALA);   // fator FIXO, nao o do Tamanho da interface
   menu_desenharCorpo_(agora);

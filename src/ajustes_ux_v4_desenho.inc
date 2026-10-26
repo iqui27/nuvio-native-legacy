@@ -462,6 +462,7 @@ static void aj4PerfilDesenhar(void) {
   for(int i=0;i<4;i++)aj4LinhaDesenhar(nomes[i],desc[i],i==0?nome:i==1?audio:i==2?"Ver estado":"Ajustes do aparelho",i==0?"":i==3?"Esta TV":"Este perfil",ic[i],387+i*123,i==aj4Linha && !aj4Acao && aj4Topo<0,0);
   aj4Botao("Gerenciar perfis","aj_user-round",622,895,365,aj4Acao,0);aj4Alvo((GfxRect){622,895,365,58},3,1);
 }
+#include "ajustes_pen_desenho.inc"
 static void aj4Desenhar(void) {
   ponteiro_camada();
   aj4SeloAviso=0;
@@ -469,7 +470,7 @@ static void aj4Desenhar(void) {
   else if(aj4Util==4)aj4PerfilDesenhar();
   else if(aj4Util==3)aj4BuscaDesenhar();
   else if(aj4Review || aj4Util)aj4UtilDesenhar();
-  else if(focoIndice)aj4Home();
+  else if(focoIndice)ajPenHome();
   else aj4SecaoDesenhar();
 }
 #undef txt_desenhar

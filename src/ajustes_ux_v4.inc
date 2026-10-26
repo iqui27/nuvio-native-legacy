@@ -375,14 +375,27 @@ static int aj4Evento(SDL_Keycode k) {
   if (focoIndice) {
     if (uxVoltar(k)) { sair = 1; return 1; }
     if (k == SDLK_UP) { if (aj4Linha) aj4Linha--; else aj4Topo = 0; }
-    if (k == SDLK_DOWN && aj4Linha < (aj4UndoN?8:7)) aj4Linha++;
-    if (k == SDLK_LEFT && lig(AJ_AVANCADAS)) { aj4Set = 0; aj4Linha = 0; }
-    if (k == SDLK_RIGHT && lig(AJ_AVANCADAS)) { aj4Set = 1; aj4Linha = 0; }
+    if (k == SDLK_DOWN) {
+      if(aj4Linha<4)aj4Linha=9;
+      else if(aj4Linha==9 || aj4Linha==10)aj4Linha+=2;
+      else if(aj4Linha>=11 && aj4Linha<=12)aj4Linha=7;
+    }
+    if(k==SDLK_LEFT || k==SDLK_RIGHT) {
+      int step=k==SDLK_RIGHT?1:-1;
+      if(aj4Linha<4)aj4Linha=(aj4Linha+step+4)%4;
+      else if(aj4Linha>=9 && aj4Linha<=12)aj4Linha=9+(aj4Linha-9+step+4)%4;
+      else { static const int strip[]={7,4,5,6,13};for(int i=0;i<(lig(AJ_AVANCADAS)?5:4);i++)if(strip[i]==aj4Linha) { aj4Linha=strip[(i+step+(lig(AJ_AVANCADAS)?5:4))%(lig(AJ_AVANCADAS)?5:4)];break; } }
+    }
     if (uxOk(k)) {
       if (aj4Linha < 4) aj4Entrar(lig(AJ_AVANCADAS) ? aj4Set * 4 + aj4Linha : aj4Linha);
       else if (aj4Linha == 4 || aj4Linha == 5) { aj4Util = aj4Linha == 4 ? 2 : 1; aj4Linha = 0; aj4Acao = 0; focoIndice = 0; }
       else if (aj4Linha == 6) { aj4Entrar(7); aj4Excecao = AJ_GUIA; aj4Atual = 7; aj4Grupo = aj4GrupoDe(AJ_GUIA); aj4Grupos = 1; }
       else if (aj4Linha == 7) tourAbrir();
+      else if(aj4Linha==9) { aj4Entrar(3);aj4Excecao=AJ_IPTV_CONTA; }
+      else if(aj4Linha==10) { focarOpcao(AJ_PERFIL_INFANTIL);uxAbrirEditor(AJ_PERFIL_INFANTIL); }
+      else if(aj4Linha==11) { aj4Entrar(7);aj4Excecao=AJ_GPU_EFEITOS;aj4Grupo=aj4GrupoDe(AJ_GPU_EFEITOS); }
+      else if(aj4Linha==12) { aj4Entrar(7);aj4Excecao=AJ_GUIA;aj4Grupo=aj4GrupoDe(AJ_GUIA); }
+      else if(aj4Linha==13) { aj4Entrar(0); }
       else { aj4Desfazer(); }
     }
     return 1;
