@@ -143,6 +143,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
       pl: null,          // referencia ao webapis.avplay
       aberto: 0,         // open() foi aceito
       tocando: 0,
+      pausaPedida: 0,
       pronto: 0,         // prepareAsync terminou
       posMs: 0,
       // #147: relogios das leituras sincronas do "estado" (ver la).
@@ -275,7 +276,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     // "abrir -> sair -> abrir" que o caminho da LG ja tinha.
     if (S.aberto && !encerrar()) return 0;
     var geracao = ++S.geracao;
-    S.aberto = 0; S.tocando = 0; S.pronto = 0; S.posMs = 0;
+    S.aberto = 0; S.tocando = 0; S.pronto = 0; S.posMs = 0; S.pausaPedida = 0;
     S.durMs = 0; S.tDur = 0; S.tEvento = 0; S.tSeek = 0; S.tPos = 0;
     S.erro = ""; S.fim = 0; S.bufPct = 0; S.larg = 0; S.alt = 0;
     S.trilhas = null;   // titulo novo: a lista de faixas do titulo anterior nao vale
@@ -311,7 +312,8 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
         // READY permite getTotalTrackInfo apenas com prepare SINCRONO.
         // Aqui usamos prepareAsync: entrar em PLAYING antes de ler metadados.
         var tPlay = avAgora();
-        try { p.play(); S.tocando = 1; S.pronto = 1; }
+        try { p.play(); S.tocando = 1; S.pronto = 1;
+              if (S.pausaPedida) { p.pause(); S.tocando = 0; } }
         catch (e) {
           S.pronto = 0; S.tocando = 0; S.aberto = 0;
           S.trilhas = null; S.erro = "play: " + e;
@@ -382,8 +384,10 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   }
 
   if (op === "pausar") {
+    S.pausaPedida = a ? 1 : 0;
     var p3 = pl();
     if (!p3 || !S.aberto) return 0;
+    if (!S.pronto) return 1;
     try {
       if (a) { p3.pause(); S.tocando = 0; }
       else   { p3.play();  S.tocando = 1; }

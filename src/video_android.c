@@ -558,7 +558,7 @@ static RedeFit redeFit;
 static int statsValido, redeMinMs = -1, redeMaxMs = -1, redeMaxMb = -1;
 static double redeMbps = -1;
 JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeStats(JNIEnv *env, jclass cls,
-    jlong bytes, jint bufferMs, jint alvoMs, jint conexoes, jint primeiroByteMs,
+    jlong bytes, jint bufferMs, jint alvoMs, jint conexoes, jint poolConexoes, jint primeiroByteMs,
     jlong perdidos, jlong quadros, jstring host, jint minMs, jint alvoMb, jint carregando) {
   char h[96];
   double mbps = -1;
@@ -575,6 +575,7 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeStats(JNIEnv
   statsAndroid.bufferSeg = bufferMs >= 0 ? bufferMs / 1000.0 : -1.0;
   statsAndroid.bufferAlvoSeg = alvoMs > 0 ? alvoMs / 1000.0 : 0.0;
   statsAndroid.conexoes = conexoes;
+  statsAndroid.poolConexoes = poolConexoes;
   statsAndroid.primeiroByteMs = primeiroByteMs;
   statsAndroid.quadrosPerdidos = perdidos;
   statsAndroid.quadros = quadros;

@@ -77,6 +77,27 @@ static void focusProof(void) {
   atomic_fetch_add(&folhaRevisao, 1);
   stream_preferir(-1);
 }
+static void layoutProof(void) {
+  AddonRemoto addon = {.nome="AIOStreams", .url="https://example.invalid/stremio/test/test/manifest.json", .ativo=1};
+  addons_definir_lista(&addon, 1);
+  settings(getenv("NUVIO_DADOS"), 0);
+  stream_preferir(-1);
+  stream_folha_abrir();
+  check(temAio() && fabsf(FOLHA_W - 820) < 1, "AIO keeps the approved 820px sheet");
+  check(nOrdem == n && linhaY[0] == 0, "all sources stay visible; no extra automatic-choice card");
+  check(secN[2] + secN[3] > 0, "native resolution and HDR/SDR groups remain");
+  medirCabecalho();
+  float total = 0;
+  int inspect = 0, dashboard = 0;
+  for (int i = 0; i < nBotoes(); i++) {
+    total += bwCab[i] + (i ? gapCab : 0);
+    inspect += botaoDe(i) == BT_AIO; dashboard += botaoDe(i) == BT_AIO_GERENCIAR;
+  }
+  check(inspect == 1 && dashboard == 1 &&
+        total + titMaxCab + FOLHA_TXT + 24 <= FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D,
+        "Inspect and dashboard use bounded native header chips");
+  addons_definir_lista(NULL, 0);
+}
 static void cacheProof(void) {
   stream_folha_abrir();
   int best = stream_play_candidata();
@@ -138,6 +159,7 @@ int main(void) {
   }
   stream_definir_lista(sources, 3000); free(sources);
   focusProof();
+  layoutProof();
   cacheProof();
   // Restore exactly 3000 sources after the append invalidation check.
   Stream *copy = malloc(3000 * sizeof *copy); assert(copy);

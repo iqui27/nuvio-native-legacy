@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import { SalaLogica } from '../servidor/juntos/src/logica.js';
+let now = 100000, nonce = 0;
+const room = new SalaLogica({ agora: () => now });
+const ticket = (id, host = false) => ({ v: 1, sala: 'a'.repeat(32), pessoa: id, nome: id, av: '', papel: host ? 'anfitriao' : 'convidado', exp: 9e9, n: String(++nonce), ...(host ? { cfg: { ep: 'tt1', titulo: 'Film', codigo: 'AAAAAA' } } : {}) });
+const tv = pessoa => ({ pessoa, papel: 'tv' });
+room.conectar(ticket('host', true));
+for (const id of ['guest1', 'guest2']) room.conectar(ticket(id));
+assert.equal(room.snapshot().membros.length, 3);
+for (const id of ['host', 'guest1', 'guest2']) {
+  const out = room.mensagem(tv(id), { t: 'estado', st: 'carregando', pct: 42, stats: 1, rtt: 26, offset: -11, drift: 6, altura: 2160 });
+  const m = out.envios.find(e => e.msg.t === 'membro').msg;
+  assert.equal(m.rtt, 26); assert.equal(m.offset, -11); assert.equal(m.pct, 42); assert.equal(m.altura, 2160);
+  room.mensagem(tv(id), { t: 'estado', st: 'pronto', stats: 1, rtt: 20, offset: -8, drift: 1 });
+}
+assert(room.todosProntos());
+room.mensagem(tv('host'), { t: 'cmd', op: 'play' });
+room.mensagem(tv('guest1'), { t: 'cmd', op: 'comecar' });
+assert.equal(room.snapshot().rel.estado, 'lobby');
+room.mensagem(tv('host'), { t: 'cmd', op: 'comecar' });
+assert.equal(room.snapshot().rel.t0, now + 3000);
+now += 15000;
+room.conectar(ticket('late'));
+assert(room.snapshot().membros.find(m => m.id === 'late').alc);
+room.desconectar(tv('guest1'));
+assert.equal(room.snapshot().membros.find(m => m.id === 'guest1').on, false);
+room.desconectar(tv('host'));
+now += 120000;
+room.alarme();
+assert.notEqual(room.s.anf, 'host');
+console.log('PASS: production room telemetry, host authority, 3s start, late join, offline, host succession');

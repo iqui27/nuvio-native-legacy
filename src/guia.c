@@ -1072,10 +1072,10 @@ static const char *linhaNome(int l) {
   if (linhaEhFav(l)) return i18n("Favoritos");
   c = linhaCatDe(l);
   if (filtro == G_FILTRO_TODAS && nLtvF > 1 && cats[c].fonte >= 0 && cats[c].fonte < nLtvF) {
-    snprintf(buf, sizeof buf, "%s  \xc2\xb7  %s", i18n(cats[c].nome), ltvF[cats[c].fonte].nome);
+    snprintf(buf, sizeof buf, "%s  \xc2\xb7  %s", cats[c].nome, ltvF[cats[c].fonte].nome);
     return buf;
   }
-  return i18n(cats[c].nome);
+  return cats[c].nome;
 }
 static GCanal *linhaItem(int l, int c) {
   if (c < 0 || c >= linhaN(l)) return NULL;
@@ -1167,7 +1167,7 @@ static void descobrirFontes(void) {
 // palpite fraco. A ORDEM DA TABELA IMPORTA: "BandSports" tem de cair em
 // Esportes antes de "Band" cair em Abertos, "TNT Sports" antes de "TNT".
 //
-// As secoes sao chaves de idioma_tab.h — linhaNome passa cats[] por i18n().
+// Group names may come from providers; render them verbatim.
 static int contemSemCaixa(const char *texto, const char *chave) {
   size_t n = strlen(chave);
   for (; *texto; texto++)
@@ -5192,8 +5192,8 @@ void guia_logo_desenhar(const char *logo, const char *nome, GfxRect cx,
     if (claro) gfx_cor(az, 0.22f, 0.0f, 0.0f, 0.0f, 0.10f * a);
     else       gfx_cor(az, 0.22f, 1.0f, 1.0f, 1.0f, 0.075f * a);
     if (ini[0]) {
-      l = claro ? txt_linha_corta(lado >= 80.0f ? TXT_HEADLINE : TXT_PG_ROTULO, ini, 70, 72, 80, 255, lado - 8.0f)
-                : txt_linha_corta(lado >= 80.0f ? TXT_HEADLINE : TXT_PG_ROTULO, ini, 150, 153, 162, 255, lado - 8.0f);
+      l = claro ? txt_linha_corta_bruta(lado >= 80.0f ? TXT_HEADLINE : TXT_PG_ROTULO, ini, 70, 72, 80, 255, lado - 8.0f)
+                : txt_linha_corta_bruta(lado >= 80.0f ? TXT_HEADLINE : TXT_PG_ROTULO, ini, 150, 153, 162, 255, lado - 8.0f);
       txt_desenhar_alpha(l, az.x + (az.w - (float)l.w) * 0.5f, az.y + (az.h - (float)l.h) * 0.5f, a);
     }
     return;
@@ -5285,10 +5285,10 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
 
   // Nome ao lado do logo, favorito marcado com a estrela que a fonte ja tem.
   { float tx = x + 120.0f, tw = r.w - 120.0f - 14.0f;
-    if (escuro) txt_bloco(TXT_PAINEL_ITEM, c->nome, 20, 21, 25, tx, y + 16.0f, tw, 30.0f, a, 2);
-    else        txt_bloco(TXT_PAINEL_ITEM, c->nome, 240, 241, 245, tx, y + 16.0f, tw, 30.0f, a, 2);
+    if (escuro) txt_bloco_bruto(TXT_PAINEL_ITEM, c->nome, 20, 21, 25, tx, y + 16.0f, tw, 30.0f, a, 2);
+    else        txt_bloco_bruto(TXT_PAINEL_ITEM, c->nome, 240, 241, 245, tx, y + 16.0f, tw, 30.0f, a, 2);
     if (c->fav) {
-      TxtLinha s = txt_linha(TXT_CAPTION, "\xe2\x98\x85", 255, 214, 90, 255);
+      TxtLinha s = txt_linha_bruta(TXT_CAPTION, "\xe2\x98\x85", 255, 214, 90, 255);
       txt_desenhar_alpha(s, x + r.w - s.w - 14.0f, y + 14.0f, a);
     } }
 
@@ -5298,11 +5298,11 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
       char h1[12], h2[12], faixa[40];
       fmtHora(ag.ini, h1, sizeof h1); fmtHora(ag.fim, h2, sizeof h2);
       snprintf(faixa, sizeof faixa, "%s %s\xe2\x80\x93%s", i18n("AGORA"), h1, h2);
-      { TxtLinha l = escuro ? txt_linha_corta(TXT_MINI, faixa, 30, 50, 90, 255, r.w - 28.0f)
-                            : txt_linha_corta(TXT_MINI, faixa, 148, 200, 255, 255, r.w - 28.0f);
+      { TxtLinha l = escuro ? txt_linha_corta_bruta(TXT_MINI, faixa, 30, 50, 90, 255, r.w - 28.0f)
+                            : txt_linha_corta_bruta(TXT_MINI, faixa, 148, 200, 255, 255, r.w - 28.0f);
         txt_desenhar_alpha(l, x + 14.0f, ly, a); ly += l.h + 2.0f; }
       { int ct = escuro ? 20 : 236;
-        TxtLinha l = txt_linha_corta(TXT_CAPTION, ag.titulo, ct, ct + 1, ct + 6, 255,
+        TxtLinha l = txt_linha_corta_bruta(TXT_CAPTION, ag.titulo, ct, ct + 1, ct + 6, 255,
                                    r.w - 28.0f);
         txt_desenhar_alpha(l, x + 14.0f, ly, a); }
       // Barra do programa: quanto ja passou dentro da janela dele.
@@ -5321,7 +5321,7 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
       txt_desenhar_alpha(l, x + 14.0f, ly, a);
       ly += l.h + 2.0f;
       { int ct = escuro ? 20 : 236;
-        TxtLinha t = txt_linha_corta(TXT_CAPTION, c->nome, ct, ct + 1, ct + 6, 255,
+        TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION, c->nome, ct, ct + 1, ct + 6, 255,
                                    r.w - 28.0f);
         txt_desenhar_alpha(t, x + 14.0f, ly, a); }
       { GfxRect tr = { x + 14.0f, y + G_CARD_H - 52.0f, r.w - 28.0f, 4.0f };
@@ -5344,7 +5344,7 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
                           : i18n("Carregando programação…"));
     }
     { int ct = escuro ? 60 : 160;
-      TxtLinha l = txt_linha_corta(TXT_MINI, linha, ct, ct + 2, ct + 10, 255,
+      TxtLinha l = txt_linha_corta_bruta(TXT_MINI, linha, ct, ct + 2, ct + 10, 255,
                                  r.w - 28.0f);
       txt_desenhar_alpha(l, x + 14.0f, y + G_CARD_H - 36.0f, a); } }
 }
@@ -5368,7 +5368,7 @@ float guia_etiqueta(const char *s, float x, float y, float maxW, float a) {
   TxtLinha t;
   GfxRect r;
   if (!s || !s[0]) return 0.0f;
-  t = txt_linha_corta(TXT_DET_META2, s, 196, 198, 206, 255, maxW - 24.0f);
+  t = txt_linha_corta_bruta(TXT_DET_META2, s, 196, 198, 206, 255, maxW - 24.0f);
   r = (GfxRect){ x, y, (float)t.w + 24.0f, 34.0f };
   gfx_cor(r, 0.5f, 1.0f, 1.0f, 1.0f, 0.085f * a);
   txt_desenhar_alpha(t, r.x + 12.0f, r.y + (r.h - (float)t.h) * 0.5f, a);
@@ -5530,7 +5530,7 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
     // dizer "carregando" seria mentir para sempre.
     if ((sessao && player_carregando()) || (aberta && !overlay && pedPreview)) {
       TxtLinha t = gRetrato()
-        ? txt_linha_corta(TXT_DET_META2, i18n("carregando canal…"), 160, 163, 172, 255, pv.w - 40.0f)
+        ? txt_linha_corta_bruta(TXT_DET_META2, i18n("carregando canal…"), 160, 163, 172, 255, pv.w - 40.0f)
         : txt_linha(TXT_DET_META2, i18n("carregando canal…"), 160, 163, 172, 255);
       txt_desenhar_alpha(t, pv.x + (pv.w - (float)t.w) * 0.5f, pv.y + pv.h - 60.0f, a);
     }
@@ -5550,16 +5550,16 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
     logoNaCaixa(c, (GfxRect){tx, y - 4.0f, 48.0f, 40.0f}, 48, 40, G_LOGO_CLARO, ha);
     tx += 60.0f;
     snprintf(num, sizeof num, "%d", c->numero);
-    TxtLinha n = txt_linha(TXT_DET_META2, num, 150, 153, 162, 255);
+    TxtLinha n = txt_linha_bruta(TXT_DET_META2, num, 150, 153, 162, 255);
     txt_desenhar_alpha(n, tx, y + (32.0f - n.h) * 0.5f, ha);
     tx += n.w + 16.0f;
     tx += guia_selo_ao_vivo(tx, y, ha) + 16.0f;
-    guia_etiqueta(c->cat >= 0 ? i18n(cats[c->cat].nome) : "", tx, y,
+    guia_etiqueta(c->cat >= 0 ? cats[c->cat].nome : "", tx, y,
                   fmaxf(0, x + w - tx), ha);
   }
   y += 56.0f;
   if (tem) {
-    TxtLinha n = txt_linha_corta(TXT_CW_TITULO, c->nome, 196, 198, 206, 255, w);
+    TxtLinha n = txt_linha_corta_bruta(TXT_CW_TITULO, c->nome, 196, 198, 206, 255, w);
     txt_desenhar_alpha(n, x, y, ha);
     y += n.h + 12.0f;
   }
@@ -5567,7 +5567,7 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
   // TITULO: o programa, ou o canal quando nao ha programa. 56 px em ate duas
   // linhas — o degrau acima do nome do canal (28) e de 2x, e o de baixo, ate
   // a linha de meta (25), de 2,2x: a ficha le em tres niveis de relance.
-  y += txt_bloco(TXT_TITULO2, tem ? p.titulo : c->nome, 246, 247, 250,
+  y += txt_bloco_bruto(TXT_TITULO2, tem ? p.titulo : c->nome, 246, 247, 250,
                  x, y - 4.0f, w, 66.0f, ha, 1) + 10.0f;
 
   // META: selo + faixa de horario + quanto falta, e a barra de progresso.
@@ -5593,7 +5593,7 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
       snprintf(meta, sizeof meta, "%s", i18n("Sem grade de programação"));
     }
     if (meta[0]) {
-      TxtLinha t = txt_linha_corta(TXT_DET_META, meta, 196, 198, 206, 255, x + w - mx);
+      TxtLinha t = txt_linha_corta_bruta(TXT_DET_META, meta, 196, 198, 206, 255, x + w - mx);
       txt_desenhar_alpha(t, mx, y + (32.0f - (float)t.h) * 0.5f, ha);
     }
     y += 32.0f + 18.0f;
@@ -5653,7 +5653,7 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
         TxtLinha t;
         if (d.fontes == 1) snprintf(f, sizeof f, "%s", i18n("1 fonte"));
         else snprintf(f, sizeof f, i18n("%d fontes"), d.fontes);
-        t = txt_linha(TXT_DET_META2, f, 150, 153, 162, 255);
+        t = txt_linha_bruta(TXT_DET_META2, f, 150, 153, 162, 255);
         txt_desenhar_alpha(t, bx + (d.nq ? 8.0f : 0.0f), y + (30.0f - (float)t.h) * 0.5f, ha);
       }
       y += 30.0f + 20.0f;
@@ -5663,7 +5663,7 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
       int linhas = (int)((descFim - 22.0f - y) / 34.0f);
       if (linhas > 3) linhas = 3;
       if (linhas > 0)
-        txt_bloco(TXT_DET_SIN, txt, 172, 175, 184, x, y, w, 34.0f, ha * 0.95f, linhas);
+        txt_bloco_bruto(TXT_DET_SIN, txt, 172, 175, 184, x, y, w, 34.0f, ha * 0.95f, linhas);
     }
   } }
 
@@ -5678,10 +5678,10 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
       gfx_cor((GfxRect){ x, proxY - 18.0f, w, 1.0f }, 0.0f, 1, 1, 1, 0.08f * a);
       txt_desenhar_alpha(l, lx, proxY + (30.0f - (float)l.h) * 0.5f, ha);
       lx += (float)l.w + 20.0f;
-      hr = txt_linha(TXT_BODY, hh, 180, 183, 192, 255);
+      hr = txt_linha_bruta(TXT_BODY, hh, 180, 183, 192, 255);
       txt_desenhar_alpha(hr, lx, proxY + (30.0f - (float)hr.h) * 0.5f, ha);
       lx += (float)hr.w + 14.0f;
-      tt = txt_linha_corta(TXT_BODY, q.titulo, 230, 231, 236, 255, x + w - lx);
+      tt = txt_linha_corta_bruta(TXT_BODY, q.titulo, 230, 231, 236, 255, x + w - lx);
       txt_desenhar_alpha(tt, lx, proxY + (30.0f - (float)tt.h) * 0.5f, ha);
     } else {
       // SEM "A SEGUIR", a base do heroi diz o que o OK faz: a acao principal
@@ -5797,17 +5797,17 @@ static void desenharPainelCategorias(float a) {
     if (atual && !foc)
       gfx_cor((GfxRect){ r.x + 10.0f, r.y + (r.h - 22.0f) * 0.5f, 4.0f, 22.0f }, 2.0f / 22.0f,
               ar, ag, ab, la);
-    tc = foc ? txt_linha(TXT_DET_META2, n, tf, tf, tf, 255)
-             : txt_linha(TXT_DET_META2, n, 140, 143, 152, 255);
+    tc = foc ? txt_linha_bruta(TXT_DET_META2, n, tf, tf, tf, 255)
+             : txt_linha_bruta(TXT_DET_META2, n, 140, 143, 152, 255);
     txt_desenhar_alpha(tc, r.x + r.w - 16.0f - (float)tc.w, r.y + (r.h - (float)tc.h) * 0.5f, la);
     { float nw = r.w - 24.0f - 16.0f - (float)tc.w - 16.0f;
       int cn = atual ? 245 : 205;
-      tn = foc ? txt_linha_corta(TXT_BODY, linhaNome(i), tf, tf, tf, 255, nw)
-               : txt_linha_corta(TXT_BODY, linhaNome(i), cn, cn + 1, cn + 5 > 255 ? 255 : cn + 5, 255, nw);
+      tn = foc ? txt_linha_corta_bruta(TXT_BODY, linhaNome(i), tf, tf, tf, 255, nw)
+               : txt_linha_corta_bruta(TXT_BODY, linhaNome(i), cn, cn + 1, cn + 5 > 255 ? 255 : cn + 5, 255, nw);
       txt_desenhar_alpha(tn, r.x + 24.0f, r.y + (r.h - (float)tn.h) * 0.5f, la); }
   }
   gfx_sem_recorte();
-  { TxtLinha t = txt_linha_corta(TXT_CAPTION, i18n("OK entra  ·  Voltar fecha"),
+  { TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION, i18n("OK entra  ·  Voltar fecha"),
                                  128, 130, 138, 255, G_CAT_W - 96.0f);
     txt_desenhar_alpha(t, x0 + 56.0f, NV_TELA_H - 60.0f, ea); }
 }
@@ -5856,10 +5856,10 @@ static void desenharDuasPortas(float x, float y, float a) {
        uteis no titulo maior e saia "Channel…". As duas linhas ficam a 56 px
        uma da outra — TITULO2 a 52 encostava a descida do "g" na linha de
        baixo. */
-    { TxtLinha t = txt_linha_corta(TXT_HEADLINE, tit, 240, 242, 248, 255,
+    { TxtLinha t = txt_linha_corta_bruta(TXT_HEADLINE, tit, 240, 242, 248, 255,
                                    CW - 136.0f);
       txt_desenhar_alpha(t, c.x + 122.0f, c.y + 38.0f, a); }
-    { TxtLinha t = txt_linha_corta(TXT_CAPTION, sub, 150, 153, 162, 255,
+    { TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION, sub, 150, 153, 162, 255,
                                    CW - 136.0f);
       txt_desenhar_alpha(t, c.x + 122.0f, c.y + 94.0f, a * 0.95f); }
 
@@ -5885,7 +5885,7 @@ static void desenharDuasPortas(float x, float y, float a) {
       gfx_icone(gi, "menu_guide", ac_r, ac_g, ac_b, a); }
     { TxtLinha t = txt_linha(TXT_HEADLINE, i18n("Guia de TV"), 240, 242, 248, 255);
       txt_desenhar_alpha(t, d.x + (d.w - t.w) * 0.5f, y + dh * 0.5f + 6.0f, a); }
-    { TxtLinha t = txt_linha_corta(TXT_CAPTION,
+    { TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION,
           i18n("As duas enchem a mesma grade"), 150, 153, 162, 255, d.w - 36.0f);
       txt_desenhar_alpha(t, d.x + (d.w - t.w) * 0.5f, y + dh * 0.5f + 56.0f,
                          a * 0.95f); } }
@@ -5912,7 +5912,7 @@ static void desenharFontes(float a) {
     if (i == 0) snprintf(rot[i], sizeof rot[i], "\xe2\x98\x85 %s", i18n("Favoritos"));
     else if (i == 1) snprintf(rot[i], sizeof rot[i], "%s", i18n("Todas"));
     else snprintf(rot[i], sizeof rot[i], "%s  %d", ltvF[i - 2].nome, ltvF[i - 2].nCanais);
-    ws[i] = (float)txt_linha(TXT_PG_ROTULO, rot[i], 255, 255, 255, 255).w + 2.0f * G_CHIP_PAD + (i >= 2 ? 18.0f : 0.0f);
+    ws[i] = (float)txt_linha_bruta(TXT_PG_ROTULO, rot[i], 255, 255, 255, 255).w + 2.0f * G_CHIP_PAD + (i >= 2 ? 18.0f : 0.0f);
   }
   for (i = 0, x = 0.0f; i < n; i++) { xs[i] = x; x += ws[i] + 10.0f; }
   // A barra rola para o chip em foco (ou o escolhido) ficar a vista.
@@ -5941,7 +5941,7 @@ static void desenharFontes(float a) {
       else gfx_cor(d, 0.5f, 0.30f, 0.84f, 0.46f, a);
       tx += 18.0f;
     }
-    { TxtLinha t = txt_linha(TXT_PG_ROTULO, rot[i], ct, ct < 255 ? ct + 1 : 255, ct + 5 > 255 ? 255 : ct + 5, 255);
+    { TxtLinha t = txt_linha_bruta(TXT_PG_ROTULO, rot[i], ct, ct < 255 ? ct + 1 : 255, ct + 5 > 255 ? 255 : ct + 5, 255);
       txt_desenhar_alpha(t, tx, r.y + (h - (float)t.h) * 0.5f, a); }
   }
   gfx_sem_recorte();
@@ -5963,7 +5963,7 @@ static void desenharFontes(float a) {
       if (grade[0]) u += (size_t)snprintf(linha + u, sizeof linha - u, " \xc2\xb7 %s", grade);
       snprintf(linha + u, sizeof linha - u, " \xc2\xb7 %s", F->deCache ? i18n("lista guardada") : quando);
     }
-    { TxtLinha t = txt_linha_corta(TXT_CAPTION, linha, 196, 198, 206, 255, G_INFO_W);
+    { TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION, linha, 196, 198, 206, 255, G_INFO_W);
       GfxRect p = { x0, y - 44.0f, (float)t.w + 28.0f, 36.0f };
       gfx_cor(p, 0.5f, 0.08f, 0.085f, 0.10f, 0.94f * a);
       txt_desenhar_alpha(t, p.x + 14.0f, p.y + (p.h - (float)t.h) * 0.5f, a); }
@@ -5987,14 +5987,14 @@ static void desenharFontes(float a) {
     }
     materialPainelGuia(c, 22.0f, a);
     gfx_cor(c, 22.0f / c.h, 0.071f, 0.075f, 0.086f, 0.92f * a);   // o heroi nao vaza pelo vidro
-    { TxtLinha t = txt_linha_corta(TXT_PG_ROTULO, tit, 150, 153, 162, 255, c.w - 40.0f);
+    { TxtLinha t = txt_linha_corta_bruta(TXT_PG_ROTULO, tit, 150, 153, 162, 255, c.w - 40.0f);
       txt_desenhar_alpha(t, c.x + 24.0f, c.y + 18.0f, a); }
     for (k = 0; k < nIt; k++) {
       GfxRect r = { c.x + 12.0f, c.y + 52.0f + (float)k * 58.0f, c.w - 24.0f, 50.0f };
       int foc = k == fopFoco, cc = foc ? tf2 : 225;
       TxtLinha t;
       if (foc) plrui_linha_foco(r, 18.0f, a);
-      t = txt_linha_corta(TXT_BODY, it[k], cc, cc, cc, 255, r.w - 28.0f);
+      t = txt_linha_corta_bruta(TXT_BODY, it[k], cc, cc, cc, 255, r.w - 28.0f);
       txt_desenhar_alpha(t, r.x + 14.0f, r.y + (r.h - (float)t.h) * 0.5f, a);
     }
   }
@@ -6017,14 +6017,14 @@ static void desenharFontes(float a) {
     (void)wf;
     materialPainelGuia(c, 22.0f, a);
     gfx_cor(c, 22.0f / c.h, 0.071f, 0.075f, 0.086f, 0.92f * a);   // o heroi nao vaza pelo vidro
-    { TxtLinha t = txt_linha_corta(TXT_PG_ROTULO, F->nome, 150, 153, 162, 255, c.w - 40.0f);
+    { TxtLinha t = txt_linha_corta_bruta(TXT_PG_ROTULO, F->nome, 150, 153, 162, 255, c.w - 40.0f);
       txt_desenhar_alpha(t, c.x + 24.0f, c.y + 16.0f, a); }
     for (k = 0; k < FOP_N; k++) {
       GfxRect r = { c.x + 12.0f, c.y + 48.0f + (float)k * 58.0f, c.w - 24.0f, 50.0f };
       int foc = k == fopFoco, cc = foc ? tf : 225;
       TxtLinha t;
       if (foc) plrui_linha_foco(r, 18.0f, a);
-      t = txt_linha_corta(TXT_BODY, it[k], cc, cc, cc, 255, r.w - 28.0f);
+      t = txt_linha_corta_bruta(TXT_BODY, it[k], cc, cc, cc, 255, r.w - 28.0f);
       txt_desenhar_alpha(t, r.x + 14.0f, r.y + (r.h - (float)t.h) * 0.5f, a);
     }
   }
@@ -6085,11 +6085,11 @@ static void desenharGrupos(float a) {
   // Cabecalho: titulo, fonte e o contador.
   { TxtLinha t = txt_linha(TXT_CALLOUT, i18n("Escolher grupos"), 240, 241, 246, 255);
     txt_desenhar_alpha(t, c.x + 36.0f, c.y + 26.0f, a); }
-  { TxtLinha t = txt_linha_corta(TXT_CAPTION, F->nome, 150, 153, 162, 255, W * 0.4f);
+  { TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION, F->nome, 150, 153, 162, 255, W * 0.4f);
     txt_desenhar_alpha(t, c.x + 36.0f, c.y + 70.0f, a); }
   { int estoura = conta > cota;
     snprintf(tmp, sizeof tmp, i18n("%d de %d"), conta, cota);
-    { TxtLinha t = txt_linha(TXT_BODY, tmp, estoura ? 240 : 236, estoura ? 110 : 237, estoura ? 100 : 242, 255);
+    { TxtLinha t = txt_linha_bruta(TXT_BODY, tmp, estoura ? 240 : 236, estoura ? 110 : 237, estoura ? 100 : 242, 255);
       GfxRect pl = { c.x + c.w - 36.0f - (float)t.w - 32.0f, c.y + 30.0f, (float)t.w + 32.0f, 44.0f };
       gfx_cor(pl, 0.5f, 1, 1, 1, 0.08f * a);
       txt_desenhar_alpha(t, pl.x + 16.0f, pl.y + (pl.h - (float)t.h) * 0.5f, a); }
@@ -6113,10 +6113,10 @@ static void desenharGrupos(float a) {
     if (r.y + r.h < listaY - 4.0f || r.y > listaY + listaH + 4.0f) continue;
     if (foc) plrui_linha_foco(r, 18.0f, a);
     if (i == 0) {
-      t = txt_linha_corta(TXT_BODY, i18n("Aplicar e recarregar"), cc, cc, cc, 255, r.w - 40.0f);
+      t = txt_linha_corta_bruta(TXT_BODY, i18n("Aplicar e recarregar"), cc, cc, cc, 255, r.w - 40.0f);
       txt_desenhar_alpha(t, tx, r.y + (r.h - (float)t.h) * 0.5f, a);
     } else if (i == 1) {
-      t = txt_linha_corta(TXT_BODY, i18n("Automático (ordem do provedor)"), cc, cc, cc, 255, r.w - 40.0f);
+      t = txt_linha_corta_bruta(TXT_BODY, i18n("Automático (ordem do provedor)"), cc, cc, cc, 255, r.w - 40.0f);
       txt_desenhar_alpha(t, tx, r.y + (r.h - (float)t.h) * 0.5f, a);
     } else {
       int g = i - 2, m = gpMarca[g];
@@ -6128,16 +6128,16 @@ static void desenharGrupos(float a) {
       }
       if (m) gfx_cor((GfxRect){ b.x + 7.0f, b.y + 7.0f, 12.0f, 12.0f }, 0.2f, foc ? 1.0f : 0.07f, foc ? 1.0f : 0.07f, foc ? 1.0f : 0.08f, a);
       snprintf(tmp, sizeof tmp, "%d", F->gi[g].n);
-      { TxtLinha q = txt_linha(TXT_CAPTION, tmp, foc ? cc : 150, foc ? cc : 153, foc ? cc : 162, 255);
+      { TxtLinha q = txt_linha_bruta(TXT_CAPTION, tmp, foc ? cc : 150, foc ? cc : 153, foc ? cc : 162, 255);
         txt_desenhar_alpha(q, r.x + r.w - 18.0f - (float)q.w, r.y + (r.h - (float)q.h) * 0.5f, a);
-        t = txt_linha_corta(TXT_BODY, F->gi[g].nome, cc, cc, cc, 255, r.w - 130.0f - (float)q.w);
+        t = txt_linha_corta_bruta(TXT_BODY, F->gi[g].nome, cc, cc, cc, 255, r.w - 130.0f - (float)q.w);
         txt_desenhar_alpha(t, tx + 44.0f, r.y + (r.h - (float)t.h) * 0.5f, a); }
     }
   }
   gfx_sem_recorte();
   // Rodape: dica, ou o aviso de que nao cabe.
   { int aviso = gpAviso && SDL_GetTicks() - gpAvisoEm < 2500u;
-    TxtLinha t = txt_linha_corta(TXT_CAPTION,
+    TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION,
         aviso ? i18n("Esse grupo não cabe nesta TV. Desmarque outro antes.")
               : i18n("OK marca  ·  Voltar descarta"),
         aviso ? 240 : 128, aviso ? 130 : 130, aviso ? 110 : 138, 255, c.w - 72.0f);
@@ -6355,7 +6355,7 @@ static void desenharOpcoes(float a) {
     GfxRect row = {x + 12, y + 12 + (i - G_TOPO_ADDONS) * 56.0f, mw - 24, 56};
     int foco = i == opcoesFoco;
     if (foco) plrui_linha_foco(row, 20.0f, a);
-    TxtLinha t = txt_linha_corta(G_CHIP_TEXTO, rot[i], foco ? 243 : 196,
+    TxtLinha t = txt_linha_corta_bruta(G_CHIP_TEXTO, rot[i], foco ? 243 : 196,
                                 foco ? 242 : 198, foco ? 239 : 206, 255, row.w - 32);
     txt_desenhar_alpha(t, row.x + 16, row.y + (row.h - t.h) * .5f, a);
     if (a > .99f) ponteiro_alvo(row.x, row.y, row.w, row.h, ponteiroOpcao, NULL, i, 0);
@@ -6374,7 +6374,7 @@ static float desenharTopo(float a) {
   { time_t tt = time(NULL); struct tm lt; char hora[12];
     TxtLinha t;
     localtime_r(&tt, &lt); hora_tela(hora, sizeof hora, &lt);
-    t = txt_linha(TXT_CALLOUT, hora, 236, 237, 242, 255);
+    t = txt_linha_bruta(TXT_CALLOUT, hora, 236, 237, 242, 255);
     x = G_AREA_DIR - (float)t.w;
     txt_desenhar_alpha(t, x, G_TOPO_Y + (G_TOPO_H - (float)t.h) * 0.5f, a);
     x -= 36.0f; }
@@ -6428,7 +6428,7 @@ static float desenharTopo(float a) {
     { // ct+1 estourava 255 -> 0 no canal verde (tinta branca = magenta no foco).
       float iconeW = i == G_TOPO_PREVIEW ? 20.0f
                    : (i == G_TOPO_CATEGORIAS || i == G_TOPO_BUSCAR) ? 26.0f : 0.0f;
-      TxtLinha t = txt_linha_corta(G_CHIP_TEXTO, rot[i], ct, ct < 255 ? ct + 1 : 255,
+      TxtLinha t = txt_linha_corta_bruta(G_CHIP_TEXTO, rot[i], ct, ct < 255 ? ct + 1 : 255,
                           ct + 5 > 255 ? 255 : ct + 5, 255, r.w - 2.0f * G_CHIP_PAD - iconeW);
       float tx = r.x + (r.w - (float)t.w) * 0.5f;
       if (i == G_TOPO_PREVIEW) {
@@ -6501,7 +6501,7 @@ static void desenharReguaEm(float a, time_t ini, float yR) {
 #else
     fmtHora(ini + (time_t)i * G_L_PASSO_MIN * 60, h, sizeof h);
 #endif
-    t = txt_linha(TXT_DET_META2, h, 160, 163, 172, 255);
+    t = txt_linha_bruta(TXT_DET_META2, h, 160, 163, 172, 255);
     // Rotulo logo a direita do tique, como nas grades de referencia: o tique
     // marca o instante, o rotulo le junto dele.
 #ifdef NV_TOUCH_UI
@@ -6574,18 +6574,18 @@ static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
     char num[16];
     TxtLinha n;
     snprintf(num, sizeof num, "%d", c->numero);
-    n = txt_linha(textoRetrato ? TXT_DET_META2 : TXT_ILHA_HORA, num, 115, 114, 113, 255);
+    n = txt_linha_bruta(textoRetrato ? TXT_DET_META2 : TXT_ILHA_HORA, num, 115, 114, 113, 255);
     { GfxRect cx = { G_AREA_X + 14.0f, y + (h - 44.0f) * 0.5f, 84.0f, 44.0f };
       logoNaCaixa(c, cx, 76.0f, 36.0f, G_LOGO_CLARO, a); }
     { float nx = G_AREA_X + 120.0f;
       float tw = G_L_COL - 120.0f - 16.0f - (c->fav ? 30.0f : 0.0f);
       int ct = focada ? 255 : 222;
-      TxtLinha t = txt_linha_corta(textoRetrato ? TXT_V2_ROT : TXT_ILHA_NOME, c->nome, ct, ct, ct - 4, 255, tw);
+      TxtLinha t = txt_linha_corta_bruta(textoRetrato ? TXT_V2_ROT : TXT_ILHA_NOME, c->nome, ct, ct, ct - 4, 255, tw);
       float bloco = (float)t.h + (float)n.h - 2.0f;
       txt_desenhar_alpha(t, nx, y + (h - bloco) * 0.5f, a);
       txt_desenhar_alpha(n, nx, y + (h - bloco) * 0.5f + (float)t.h - 2.0f, a);
       if (c->fav) {
-        TxtLinha st = txt_linha(TXT_DET_META2, "\xe2\x98\x85", 255, 214, 90, 255);
+        TxtLinha st = txt_linha_bruta(TXT_DET_META2, "\xe2\x98\x85", 255, 214, 90, 255);
         txt_desenhar_alpha(st, G_AREA_X + G_L_COL - 16.0f - (float)st.w,
                            y + (h - (float)st.h) * 0.5f, a);
       } }
@@ -6639,7 +6639,7 @@ static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
         // horario do programa leva o lembrete junto (ver lembrete.h).
         int li = ps[k].ini > agoraT ? lembrete_achar(c->id, ps[k].ini, ps[k].titulo) : -1;
         float sinoW = li >= 0 && b.w > 64.0f ? 30.0f : 0.0f;
-        TxtLinha t = txt_linha_corta(textoRetrato ? TXT_V2_ROT : TXT_CW_TITULO, ps[k].titulo, ct, ct, ct, 255,
+        TxtLinha t = txt_linha_corta_bruta(textoRetrato ? TXT_V2_ROT : TXT_CW_TITULO, ps[k].titulo, ct, ct, ct, 255,
                                      b.x + b.w - 14.0f - tx - sinoW);
         if (li >= 0) {
           float ar2, ag2, ab2;
@@ -6662,7 +6662,7 @@ static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
           fmtHora(ps[k].ini, h1, sizeof h1); fmtHora(ps[k].fim, h2, sizeof h2);
           snprintf(faixa, sizeof faixa, "%s \xe2\x80\x93 %s", h1, h2);
           // Horario pela metade ("00:54 –…") nao informa: inteiro ou nada.
-          m = txt_linha(gRetrato() ? TXT_V2_28 : TXT_DET_META2, faixa, cm, cm + 2, cm + 8, 255);
+          m = txt_linha_bruta(gRetrato() ? TXT_V2_28 : TXT_DET_META2, faixa, cm, cm + 2, cm + 8, 255);
           if ((float)m.w <= b.x + b.w - 14.0f - tx)
             txt_desenhar_alpha(m, tx, y + (gRetrato() ? 58.0f : 41.0f), a);
         }
@@ -6689,7 +6689,7 @@ static void desenharLinhaLista(GCanal *c, float y, int focada, float a,
                : epg == -2 ? i18n("Sem grade de programação")
                                 : i18n("Sem próximos programas");
       float tx = agoraX > b.x + 20.0f ? agoraX + 18.0f : b.x + 20.0f;
-      TxtLinha t = txt_linha_corta(TXT_DET_META, m, ct, ct + 2, ct + 8, 255,
+      TxtLinha t = txt_linha_corta_bruta(TXT_DET_META, m, ct, ct + 2, ct + 8, 255,
                                    b.x + b.w - 20.0f - tx);
       txt_desenhar_alpha(t, tx, y + (h - (float)t.h) * 0.5f, a);
     } }
@@ -6776,11 +6776,11 @@ static void desenharPainelAddons(float a) {
 #endif
       float txtW = pill.x - 24.0f - (x + 24.0f);
       {
-        TxtLinha t = f ? txt_linha_corta(TXT_BODY, addons_nome(ai), tf, tf, tf, 255, txtW)
-                       : txt_linha_corta(TXT_BODY, addons_nome(ai), 240, 241, 245, 255, txtW);
+        TxtLinha t = f ? txt_linha_corta_bruta(TXT_BODY, addons_nome(ai), tf, tf, tf, 255, txtW)
+                       : txt_linha_corta_bruta(TXT_BODY, addons_nome(ai), 240, 241, 245, 255, txtW);
         txt_desenhar_alpha(t, x + 24.0f, yi + 12.0f, a); }
-      { TxtLinha t = f ? txt_linha_corta(TXT_CAPTION, sub, 190, 192, 200, 255, txtW)
-                       : txt_linha_corta(TXT_CAPTION, sub, 150, 153, 162, 255, txtW);
+      { TxtLinha t = f ? txt_linha_corta_bruta(TXT_CAPTION, sub, 190, 192, 200, 255, txtW)
+                       : txt_linha_corta_bruta(TXT_CAPTION, sub, 150, 153, 162, 255, txtW);
         txt_desenhar_alpha(t, x + 24.0f, yi + 48.0f, a); }
       // LIGADO = pilula preenchida; DESLIGADO = so o anel. Preenchimento e o
       // que o app usa para "e este", e o anel e o que sobra para "poderia
@@ -6803,7 +6803,7 @@ static void desenharPainelAddons(float a) {
         GfxRect local = {x + 24, yi + 80, w - 48, 56};
         gfx_cor(local, .5f, .14f, .15f, .17f, a);
         gfx_icone((GfxRect){local.x + 12, local.y + 18, 20, 20}, oculto ? "oculto" : "check", .82f, .84f, .88f, a);
-        TxtLinha t = txt_linha_corta(TXT_CAPTION2, i18n(oculto ? "Oculto no guia" : "No guia"), 218, 222, 228, 255, local.w - 56);
+        TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION2, i18n(oculto ? "Oculto no guia" : "No guia"), 218, 222, 228, 255, local.w - 56);
         txt_desenhar_alpha(t, local.x + 44, local.y + (local.h - t.h) * .5f, a);
         if (a > .99f) ponteiro_alvo_faixa(local.x, local.y, local.w, local.h, y0 - 8, NV_TELA_H - 80,
                                          NULL, ponteiroAddonGuia, ai, i);
@@ -6826,8 +6826,8 @@ static void desenharPainelAddons(float a) {
       TxtLinha selo = txt_linha(TXT_CAPTION2, i18n("Destaque"), 20, 21, 25, 255);
       float seloW = destaque ? selo.w + 20.0f : 0.0f;
       { float nomeW = txtW - (destaque ? seloW + 12.0f : 0.0f);
-        TxtLinha t = f ? txt_linha_corta(TXT_BODY, rc->nome, tf, tf, tf, 255, nomeW)
-                       : txt_linha_corta(TXT_BODY, rc->nome, 240, 241, 245, 255, nomeW);
+        TxtLinha t = f ? txt_linha_corta_bruta(TXT_BODY, rc->nome, tf, tf, tf, 255, nomeW)
+                       : txt_linha_corta_bruta(TXT_BODY, rc->nome, 240, 241, 245, 255, nomeW);
         txt_desenhar_alpha(t, x + 24.0f, yi + 12.0f, a);
         if (destaque) {
           GfxRect d = { x + 24.0f + t.w + 12.0f, yi + 12.0f + (t.h - 26.0f) * 0.5f, seloW, 26.0f };
@@ -6839,14 +6839,14 @@ static void desenharPainelAddons(float a) {
       if (paErro == i) {
         const char *m = paErroCheio ? i18n("Não coube: a conta já tem o máximo de addons")
                                     : i18n("Não foi possível instalar");
-        TxtLinha t = txt_linha_corta(TXT_CAPTION, m, 237, 77, 77, 255, txtW);
+        TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION, m, 237, 77, 77, 255, txtW);
         txt_desenhar_alpha(t, x + 24.0f, yi + 48.0f, a);
       } else if (rc->desc[0]) {
         // Em ingles usa a quarta coluna se existir; senao a portuguesa, que e
         // melhor que linha vazia.
         const char *desc = (ajustes_idioma() != IDIOMA_PT && ajustes_idioma() != IDIOMA_PTPT && rc->descEn[0]) ? rc->descEn : rc->desc;
-        if (f) txt_bloco(TXT_CAPTION, desc, 190, 192, 200,     x + 24.0f, yi + 46.0f, txtW, 27.0f, a, 2);
-        else   txt_bloco(TXT_CAPTION, desc, 150, 153, 162,  x + 24.0f, yi + 46.0f, txtW, 27.0f, a, 2);
+        if (f) txt_bloco_bruto(TXT_CAPTION, desc, 190, 192, 200,     x + 24.0f, yi + 46.0f, txtW, 27.0f, a, 2);
+        else   txt_bloco_bruto(TXT_CAPTION, desc, 150, 153, 162,  x + 24.0f, yi + 46.0f, txtW, 27.0f, a, 2);
       }
       if (inst) {
         TxtLinha t = f ? txt_linha(TXT_CAPTION, i18n("Instalado"), 190, 192, 200, 255)
@@ -6873,7 +6873,7 @@ static void desenharPainelAddons(float a) {
   }
   gfx_sem_recorte();
 
-  { TxtLinha t = txt_linha_corta(TXT_CAPTION,
+  { TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION,
         i18n("OK liga ou desliga no app todo  ·  ← → mostra ou esconde só no guia  ·  Voltar volta ao guia"),
         140, 142, 150, 255, w);
     txt_desenhar_alpha(t, x, NV_TELA_H - 54.0f, a); }
@@ -6913,7 +6913,7 @@ static void desenharPainelFiltros(float a) {
 
   gfx_recorte(G_PA_X, y0 - 8.0f, G_PA_W, NV_TELA_H - 80.0f - y0 + 8.0f);
   if (fNivel) {
-    TxtLinha t = txt_linha_corta(TXT_CAPTION, fCatNome, 148, 200, 255, 255, w);
+    TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION, fCatNome, 148, 200, 255, 255, w);
     txt_desenhar_alpha(t, x, y0 - paRol, a);
     if (!fN) {
       TxtLinha vazio = txt_linha(TXT_CAPTION, i18n("Nenhum canal disponível"), 150, 153, 162, 255);
@@ -6944,7 +6944,7 @@ static void desenharPainelFiltros(float a) {
       GfxRect abrir = { pill.x - 68.0f, row.y, 64.0f, row.h };
       ponteiro_alvo_faixa(abrir.x, abrir.y, abrir.w, abrir.h, y0 - 8.0f, NV_TELA_H - 80.0f,
                           NULL, ponteiroFiltroCanais, i, 0);
-      TxtLinha t = txt_linha(TXT_BODY, ">", 190, 192, 200, 255);
+      TxtLinha t = txt_linha_bruta(TXT_BODY, ">", 190, 192, 200, 255);
       txt_desenhar_alpha(t, abrir.x + 20.0f, row.y + 22.0f, a);
       txtW -= 68.0f;
     }
@@ -6957,22 +6957,22 @@ static void desenharPainelFiltros(float a) {
       if (!fNivel && it->n > 0) { snprintf(cnt, sizeof cnt, i18n("Canais · %d"), it->n); sub = cnt; }
       pillTxt = ligado ? i18n("Ligado") : i18n("Desligado");
     }
-    { TxtLinha t = f ? txt_linha_corta(TXT_BODY, nome, 243, 243, 243, 255, txtW)
-                     : txt_linha_corta(TXT_BODY, nome, 240, 241, 245, 255, txtW);
+    { TxtLinha t = f ? txt_linha_corta_bruta(TXT_BODY, nome, 243, 243, 243, 255, txtW)
+                     : txt_linha_corta_bruta(TXT_BODY, nome, 240, 241, 245, 255, txtW);
       txt_desenhar_alpha(t, x + 24.0f, sub ? yi + 12.0f : yi + (row.h - t.h) * 0.5f, a); }
-    if (sub) txt_bloco(TXT_CAPTION, sub, f ? 190 : 150, f ? 192 : 153, f ? 200 : 162,
+    if (sub) txt_bloco_bruto(TXT_CAPTION, sub, f ? 190 : 150, f ? 192 : 153, f ? 200 : 162,
                         x + 24.0f, yi + 40.0f, txtW, 24.0f, a, 2);
     // Como no painel de addons: preenchida = "e este", anel = "poderia ser".
     if (ligado) {
       if (f) gfx_cor(pill, 0.5f, 0.11f, 0.115f, 0.13f, a);
       else   gfx_cor(pill, 0.5f, 0.86f, 0.865f, 0.88f, a);
-      if (pillTxt[0]) { TxtLinha t = f ? txt_linha(TXT_CAPTION, pillTxt, 240, 241, 245, 255)
-                                       : txt_linha(TXT_CAPTION, pillTxt, 20, 21, 25, 255);
+      if (pillTxt[0]) { TxtLinha t = f ? txt_linha_bruta(TXT_CAPTION, pillTxt, 240, 241, 245, 255)
+                                       : txt_linha_bruta(TXT_CAPTION, pillTxt, 20, 21, 25, 255);
         txt_desenhar_alpha(t, pill.x + (pill.w - t.w) * 0.5f, pill.y + (pill.h - t.h) * 0.5f, a); }
     } else {
       float c = 0.72f;
       gfx_rect(pill, 0, GFX_ANEL, 0, 0.05f, 0, 0.5f, c, c, c + 0.02f, 0.9f * a);
-      if (pillTxt[0]) { TxtLinha t = txt_linha(TXT_CAPTION, pillTxt, 190, 192, 200, 255);
+      if (pillTxt[0]) { TxtLinha t = txt_linha_bruta(TXT_CAPTION, pillTxt, 190, 192, 200, 255);
         txt_desenhar_alpha(t, pill.x + (pill.w - t.w) * 0.5f, pill.y + (pill.h - t.h) * 0.5f, a); }
     }
   }
@@ -7126,7 +7126,7 @@ static void desenharBanda(float a, Uint32 agora) {
     TxtLinha t;
     GfxRect pl;
     fmtHora(agoraT, hora, sizeof hora);
-    t = txt_linha(TXT_PG_ROTULO, hora, tf, tf, tf, 255);
+    t = txt_linha_bruta(TXT_PG_ROTULO, hora, tf, tf, tf, 255);
     pl = (GfxRect){ agoraX - ((float)t.w + 20.0f) * 0.5f, yR + 1.0f, (float)t.w + 20.0f, 30.0f };
     gfx_cor(pl, 0.5f, ar, ag, ab, a);
     txt_desenhar_alpha(t, pl.x + 10.0f, pl.y + (pl.h - (float)t.h) * 0.5f, a);
@@ -7367,7 +7367,7 @@ static void buscaDesenhar(Uint32 agora) {
     gfx_vidro_ou_solido(p, 28.0f / p.h, GFX_VIDRO_DENS_MODAL, ea, 0.070f, 0.072f, 0.080f, 1.0f);
     if (!ajustes_vidro()) gfx_luz_canto(p, 28.0f / p.h, p.w * 0.30f, -p.w * 0.25f, p.w * 1.45f, ar, ag, ab, 0.06f * ea); }
   snprintf(b, sizeof b, i18n("Busca: “%s”"), buscaTexto);
-  txt_desenhar_alpha(txt_linha_corta(TXT_HEADLINE, b, 242, 243, 247, 255, G_BUSCA_W), x0, 72.0f, ea);
+  txt_desenhar_alpha(txt_linha_corta_bruta(TXT_HEADLINE, b, 242, 243, 247, 255, G_BUSCA_W), x0, 72.0f, ea);
   gfx_recorte(x0 - 20.0f, 130.0f, G_BUSCA_W + 40.0f, NV_TELA_H - 230.0f);
   y = 140.0f - buscaRol;
   // "Nova busca": foco -1.
@@ -7386,12 +7386,12 @@ static void buscaDesenhar(Uint32 agora) {
     GfxRect r;
     if (i == 0 && buscaNC) {
       snprintf(b, sizeof b, i18n("Canais · %d"), buscaNC);
-      txt_desenhar_alpha(txt_linha(TXT_CAPTION, b, 150, 154, 164, 255), x0, y + 20.0f, ea);
+      txt_desenhar_alpha(txt_linha_bruta(TXT_CAPTION, b, 150, 154, 164, 255), x0, y + 20.0f, ea);
       y += 56.0f;
     }
     if (i == buscaNC && buscaNP) {
       snprintf(b, sizeof b, i18n("Programas · %d"), buscaNP);
-      txt_desenhar_alpha(txt_linha(TXT_CAPTION, b, 150, 154, 164, 255), x0, y + 20.0f, ea);
+      txt_desenhar_alpha(txt_linha_bruta(TXT_CAPTION, b, 150, 154, 164, 255), x0, y + 20.0f, ea);
       y += 56.0f;
     }
     r = (GfxRect){ x0, y, G_BUSCA_W, G_BUSCA_ROW - 10.0f };
@@ -7406,9 +7406,9 @@ static void buscaDesenhar(Uint32 agora) {
       guia_logo_desenhar(logoDe(c), c->nome, (GfxRect){ r.x + 14.0f, r.y + 6.0f, 92.0f, r.h - 12.0f },
                          92.0f, r.h - 16.0f, 0.965f, ea);
       snprintf(n, sizeof n, "%d", buscaCanal[i] + 1);
-      txt_desenhar_alpha(txt_linha(TXT_CAPTION, n, foc ? 30 : 150, foc ? 32 : 153, foc ? 38 : 162, 255),
+      txt_desenhar_alpha(txt_linha_bruta(TXT_CAPTION, n, foc ? 30 : 150, foc ? 32 : 153, foc ? 38 : 162, 255),
                          r.x + 124.0f, r.y + 22.0f, ea);
-      txt_desenhar_alpha(txt_linha_corta(gRetrato() ? TXT_V2_ROT : TXT_BODY, c->nome, foc ? 16 : 236, foc ? 18 : 238, foc ? 22 : 244, 255,
+      txt_desenhar_alpha(txt_linha_corta_bruta(gRetrato() ? TXT_V2_ROT : TXT_BODY, c->nome, foc ? 16 : 236, foc ? 18 : 238, foc ? 22 : 244, 255,
                                          G_BUSCA_W - 260.0f), r.x + 190.0f, r.y + 16.0f, ea);
     } else {
       int k = i - buscaNC, vivo = buscaProg[k].ini <= agoraT;
@@ -7423,20 +7423,20 @@ static void buscaDesenhar(Uint32 agora) {
         if (m < 60) snprintf(quando, sizeof quando, i18n("daqui a %ld min"), m);
         else snprintf(quando, sizeof quando, i18n("daqui a %ld h %02ld"), m / 60, m % 60);
       }
-      txt_desenhar_alpha(txt_linha_corta(gRetrato() ? TXT_V2_ROT : TXT_BODY, buscaProg[k].titulo, foc ? 16 : 236, foc ? 18 : 238,
+      txt_desenhar_alpha(txt_linha_corta_bruta(gRetrato() ? TXT_V2_ROT : TXT_BODY, buscaProg[k].titulo, foc ? 16 : 236, foc ? 18 : 238,
                                          foc ? 22 : 244, 255, G_BUSCA_W - 360.0f), r.x + 24.0f, r.y + 8.0f, ea);
       snprintf(b, sizeof b, "%s · %s–%s", c->nome, h1, h2);
-      txt_desenhar_alpha(txt_linha_corta(gRetrato() ? TXT_V2_28 : TXT_CAPTION, b, foc ? 40 : 150, foc ? 42 : 154, foc ? 48 : 164, 255,
+      txt_desenhar_alpha(txt_linha_corta_bruta(gRetrato() ? TXT_V2_28 : TXT_CAPTION, b, foc ? 40 : 150, foc ? 42 : 154, foc ? 48 : 164, 255,
                                          G_BUSCA_W - 360.0f), r.x + 24.0f, r.y + (gRetrato() ? 58.0f : 40.0f), ea);
-      { TxtLinha q = vivo ? txt_linha(TXT_CAPTION, quando, 200, 30, 40, 255)
-                          : txt_linha(TXT_CAPTION, quando, foc ? 30 : 190, foc ? 32 : 196, foc ? 38 : 206, 255);
+      { TxtLinha q = vivo ? txt_linha_bruta(TXT_CAPTION, quando, 200, 30, 40, 255)
+                          : txt_linha_bruta(TXT_CAPTION, quando, foc ? 30 : 190, foc ? 32 : 196, foc ? 38 : 206, 255);
         if (vivo && !foc) guia_selo_ao_vivo(r.x + r.w - 24.0f - 120.0f, r.y + (r.h - 32.0f) * 0.5f, ea);
         else txt_desenhar_alpha(q, r.x + r.w - 24.0f - (float)q.w, r.y + (r.h - (float)q.h) * 0.5f, ea); }
     }
     y += G_BUSCA_ROW;
   }
   if (!buscaPendente.ativa && !buscaN())
-    txt_desenhar_alpha(txt_linha_corta(TXT_BODY,
+    txt_desenhar_alpha(txt_linha_corta_bruta(TXT_BODY,
         i18n("Nada encontrado nos canais nem na grade das próximas horas."),
         180, 184, 194, 255, G_BUSCA_W), x0, y + 20.0f, ea);
   gfx_sem_recorte();
@@ -7639,7 +7639,7 @@ void guia_desenhar(Uint32 agora) {
       snprintf(sub, sizeof sub, i18n("%d canais · %d categorias · segure %s para pular seção"),
                nCanais, nCats, "\xe2\x86\x91\xe2\x86\x93");
     { float subX = G_AREA_X;
-      TxtLinha st = txt_linha_corta(gRetrato() ? TXT_DET_META2 : TXT_ILHA_HORA, sub, 150, 153, 162, 255,
+      TxtLinha st = txt_linha_corta_bruta(gRetrato() ? TXT_DET_META2 : TXT_ILHA_HORA, sub, 150, 153, 162, 255,
                                     gRetrato() ? G_AREA_W : G_INFO_W);
       float subY = (gRetrato() ? gTopoFim : G_CHIPS_Y + G_TOPO_H) + 12.0f;
       (void)chipsX; (void)sx;
@@ -7681,7 +7681,7 @@ void guia_desenhar(Uint32 agora) {
           int at = 0;
           TxtLinha t;
           snprintf(cab, sizeof cab, "%s  \xc2\xb7  %d", linhaNome(l), n);
-          t = txt_linha_corta(TXT_PG_ROTULO, cab, at ? 255 : 150, at ? 255 : 153,
+          t = txt_linha_corta_bruta(TXT_PG_ROTULO, cab, at ? 255 : 150, at ? 255 : 153,
                               at ? 255 : 162, 255, G_L_COL);
           txt_desenhar_alpha(t, G_AREA_X + 4.0f, y + G_L_HEAD - 12.0f - (float)t.h, a * dim);
         }
@@ -7731,7 +7731,7 @@ void guia_desenhar(Uint32 agora) {
       gfx_cor((GfxRect){ agoraX - 1.0f, G_TOPO + 30.0f, 2.0f, G_L_TOPO - 8.0f - G_TOPO - 30.0f },
               0.0f, ar, ag, ab, 0.85f * a);
       fmtHora(agoraT, hora, sizeof hora);
-      t = txt_linha(TXT_PG_ROTULO, hora, tf, tf, tf, 255);
+      t = txt_linha_bruta(TXT_PG_ROTULO, hora, tf, tf, tf, 255);
       pl = (GfxRect){ agoraX - ((float)t.w + 20.0f) * 0.5f, G_TOPO + 1.0f,
                       (float)t.w + 20.0f, 30.0f };
       gfx_cor(pl, 0.5f, ar, ag, ab, a);
@@ -7757,7 +7757,7 @@ void guia_desenhar(Uint32 agora) {
 #endif
       { char cab[140];
         snprintf(cab, sizeof cab, "%s  \xc2\xb7  %d", linhaNome(l), n);
-        TxtLinha t = txt_linha_corta(TXT_ROW_TITULO, cab,
+        TxtLinha t = txt_linha_corta_bruta(TXT_ROW_TITULO, cab,
                                    220, 221, 224, 255,
                                    G_AREA_W);
         txt_desenhar_alpha(t, G_AREA_X, y, a * dim); }
@@ -7824,7 +7824,7 @@ void guia_desenhar(Uint32 agora) {
         desenharDuasPortas(G_AREA_X, 196.0f, a);
         msgY = 560.0f;
       }
-      TxtLinha t = txt_linha_corta(TXT_BODY, msg, 200, 202, 210, 255,
+      TxtLinha t = txt_linha_corta_bruta(TXT_BODY, msg, 200, 202, 210, 255,
                                    NV_TELA_W - 2 * NV_MARGEM_X);
       txt_desenhar_alpha(t, G_AREA_X, msgY, a);
     }
@@ -7862,7 +7862,7 @@ void guia_desenhar(Uint32 agora) {
          : i18n("OK assiste  ·  segure OK = opções  ·  \xe2\x86\x91 fontes  ·  segure \xe2\x86\x91\xe2\x86\x93 pula seção  ·  Voltar sai"));
     if (dicaDesde && SDL_GetTicks() - dicaDesde < G_DICA_MS)
       dica = i18n("← no primeiro canal: opções do guia");
-    TxtLinha t = txt_linha_corta(TXT_CAPTION, dica, 128, 130, 138, 255,
+    TxtLinha t = txt_linha_corta_bruta(TXT_CAPTION, dica, 128, 130, 138, 255,
                                  G_AREA_W);
     txt_desenhar_alpha(t, G_AREA_X, NV_TELA_H - 48.0f, a);
     // O VERDE do diagnostico da Live TV, na ponta direita quando cabe — so na
@@ -7880,7 +7880,7 @@ void guia_desenhar(Uint32 agora) {
   if ((estado == G_PRONTO || estado == G_BAIXANDO) && nLtvF > 0) {
     desenharFontes(a);
     if (filtro == G_FILTRO_FAV && !nFavOrd) {
-      TxtLinha t = txt_linha_corta(TXT_BODY, i18n("Nenhum favorito ainda. Segure OK num canal para marcar."),
+      TxtLinha t = txt_linha_corta_bruta(TXT_BODY, i18n("Nenhum favorito ainda. Segure OK num canal para marcar."),
                                    200, 202, 210, 255, G_INFO_W);
       txt_desenhar_alpha(t, G_INFO_X, G_HERO_Y + G_FONTES_H + 80.0f, a);
     }
@@ -7928,6 +7928,17 @@ int guia_buscar_canais(const char *alvoNorm, int *indices, int max) {
   return n;
 }
 
+// Provider number (tvg-chno / Xtream num, or the position in the source): the
+// number the player OSD shows (decisao 7). 0 outside the list.
+int guia_canal_numero(int i) { return i >= 0 && i < nCanais ? canais[i].numero : 0; }
+int guia_fonte_saude(int i, GuiaFonteSaude *o) {
+  if (i < 0 || i >= nLtvF || !o) return 0;
+  const GFonteLtv *F = &ltvF[i];
+  o->nome = F->nome[0] ? F->nome : ltv_tipo_nome(F->tipo);
+  o->saude = F->saude; o->canais = F->nCanais; o->comGuia = F->epgCom;
+  o->deCache = F->deCache; o->atualizada = F->atualizada;
+  return 1;
+}
 int guia_canal_campos(int i, const char **id, const char **nome, const char **logo,
                       const char **cat, const char **base) {
   if (i < 0 || i >= nCanais) return 0;
