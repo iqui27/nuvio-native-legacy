@@ -14,6 +14,7 @@
 static char urlDoPlayer[128];
 static int chamadasFonte, playerAbertoFlag, playerIndiceFlag, epTFlag, epEFlag;
 
+#define fontevolta_conferir teste_conferir
 #define player_definir_fonte teste_definir_fonte
 #define player_aberto teste_player_aberto
 #define player_indice teste_player_indice
@@ -21,12 +22,19 @@ static int chamadasFonte, playerAbertoFlag, playerIndiceFlag, epTFlag, epEFlag;
 #define sessao_usuario teste_sessao_usuario
 #define perfis_ativo teste_perfis_ativo
 #include "../src/app.c"
+#undef fontevolta_conferir
 #undef player_definir_fonte
 #undef player_aberto
 #undef player_indice
 #undef player_episodio_atual
 #undef sessao_usuario
 #undef perfis_ativo
+
+void teste_conferir(const char *url, const char *cab) {
+  (void)url; (void)cab;
+  // Even scheduling network verification must follow the local player open.
+  assert(chamadasFonte == 1);
+}
 
 void teste_definir_fonte(const char *u) {
   chamadasFonte++;
@@ -98,6 +106,23 @@ int main(void) {
   assert(app_teste_tocar_guardada());
   assert(chamadasFonte == 1 && !strcmp(urlDoPlayer, g.url));
   puts("ok auto: resume still plays the saved source");
+
+  fontefalha_dir(dir);
+  assert(fontefalha_definir_provedores(1));
+  assert(fontefalha_definir_addons(1));
+  assert(fontefalha_ativa());
+  urlDoPlayer[0] = 0; chamadasFonte = 0;
+  Uint32 started = SDL_GetTicks();
+  preparoEspera = 1;
+  assert(app_teste_tocar_guardada());
+  assert(!preparoEspera);
+  assert(chamadasFonte == 1 && !strcmp(urlDoPlayer, g.url));
+  assert(SDL_GetTicks() - started < 100u);
+  puts("ok failover: local resume opens within 100 ms before network verification");
+  gravar("escolherFonteManual 0\n");
+  chamadasFonte = 0;
+  assert(!app_teste_tocar_guardada() && chamadasFonte == 0);
+  gravar("escolherFonteManual 1\n");
 
   // Wrong target in the player: another episode's saved source does not
   // leak into this one.

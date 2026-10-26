@@ -1495,6 +1495,7 @@ static int retentarCanal(void) {
 static int tocarFonteGuardada(void) {
   Stream s;
   char alvo[64];
+  Uint32 started = SDL_GetTicks();
   // #618: a fresh automatic choice must use the add-on's current order.
   // Keep the saved link intact for the other selection modes.
   if (ajustes_fonte_prioridade() == 3) return 0;
@@ -1502,7 +1503,7 @@ static int tocarFonteGuardada(void) {
   // sozinha. A folha e quem escolhe (detail_pediu_fontes, e o #62 quando a
   // lista chega). O Retomar do Continuar assistindo pede reproducao e cai
   // aqui tambem — com o ajuste ligado ele espera a folha, como o Play.
-  if (!fontevolta_toca_guardada(ajustes_fonte_manual(), fontefalha_ativa(),
+  if (!fontevolta_toca_guardada(ajustes_fonte_manual(),
                                 player_id_canal()[0], player_aberto()))
     return 0;
   alvoPlayer(alvo, sizeof alvo);
@@ -1520,8 +1521,12 @@ static int tocarFonteGuardada(void) {
   video_definir_dv(s.dolbyVision);
   video_definir_cabecalhos(s.cabecalhos);
   video_definir_mp4(stream_e_mp4(&s));
-  fontevolta_conferir(s.url, s.cabecalhos);
   definirFonteVOD(s.url);
+  printf("[t] CW local source opened in %u ms; verification async\n",
+         (unsigned)(SDL_GetTicks() - started));
+  fflush(stdout);
+  fontevolta_conferir(s.url, s.cabecalhos);
+  preparoEspera = 0; // A late preflight result must not replace local resume.
   voltaAtiva = 1;
   voltaDesde = SDL_GetTicks();
   return 1;
@@ -6546,7 +6551,7 @@ void app_atualizar(float dt, Uint32 agora) {
       } else {
         if (usouPreparo) limparFonteVOD();
         renovarListaDoPlayer();
-        if (!preparoEspera && (tocarParteGuardada() || tocarFonteGuardada())) { /* parte ou fonte guardada abriu */ }
+        if (tocarParteGuardada() || tocarFonteGuardada()) { preparoEspera = 0; }
         else aguardandoFonte = 1;
       }
     }
