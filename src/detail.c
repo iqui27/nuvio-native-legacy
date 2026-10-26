@@ -3534,7 +3534,6 @@ static void detail_evento_(const SDL_Event *e) {
 
   if (e->type != SDL_KEYDOWN) return;
   SDL_Keycode k = e->key.keysym.sym;
-  if(navigationMove(k))return;
 
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE) {
@@ -3595,6 +3594,7 @@ static void detail_evento_(const SDL_Event *e) {
     if (k == SDLK_UP && !e->key.repeat && detail_relogio_navegavel()) { pediuRelogio = 1; return; }
     // CARROSSEL: a primeira seta para baixo so estica o cartao (ver carCheia).
     if (k == SDLK_DOWN && carro && !carCheia) { carCheia = 1; return; }
+    if (!(carro && !carCheia) && navigationMove(k)) return;
     if (k == SDLK_DOWN) {
       sincronizarEpisodioPadrao();
       epEscolhido = 1;
@@ -3670,6 +3670,8 @@ static void detail_evento_(const SDL_Event *e) {
       musPagina = mus_pagina(musPagina, al.n, k == SDLK_RIGHT ? 1 : -1);
     return;
   }
+  // Section paging and carousel gestures precede rectangle navigation.
+  if (navigationMove(k)) return;
   if (k == SDLK_RIGHT) {
     if (!focus_mover(&foco, 1, 0) && parDir(foco.fileira) >= 0 &&
         foco.nColunas[parDir(foco.fileira)] > 0) {

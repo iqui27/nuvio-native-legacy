@@ -90,3 +90,13 @@ Geometry yields to a picked title and to Origins Left; arrows without a geometry
 Validation: `bash tests/nav21.sh` rc 0, 3,555 checks, zero violations; `bash tools/build-local.sh` rc 0; `python3 tools/varredura-i18n.py` rc 0; `git diff --check` rc 0. Build retains the existing `ATOMIC_VAR_INIT` deprecation warning.
 
 Evidence under `/Volumes/ExternalSSD/tmp/rev/navteste/`: `p1-library-before.log`, `p1-library-before.md`, `p1-library-final.log`, `p1-library-build.log`, `library.png`, `settings.png`. Exhaustive original screen variants and physical-TV validation remain unestablished. No push or deployment performed.
+
+## Screen handlers before geometry
+
+Home geometry previously consumed Right before the hero handler: the added regression records focus `1003` instead of `0` and carousel intent `0` instead of `1`. The baseline fails four explicit hero checks. Home now handles the hero, cinema wake-up, friends row and horizontal row scrolling before geometry. Right requests the next hero title while retaining hero focus; Left returns to the previous title and requests the sidebar at the first title.
+
+Ordering audit covered every geometry screen changed by this branch: Home, Detail, Library/Lists, Filmography/History, Settings, Sources, AIOStreams, server wizard, Juntos lobby, Achievements, Start and add-on guide. Detail now prioritizes server/version/friends controls, carousel expansion/title changes, episode season edges, progress notes and soundtrack paging. Filmography tabs/year scrolling, Sources provider switching and Settings tour traversal/editor keys also retain priority. Library reorder/sidebar guards, AIO/server paging and Achievements scrolling already precede geometry. Juntos geometry is restricted to the lobby; its other layers retain their handlers. Start and add-on guide have no competing carousel/scroll handlers.
+
+Nav21 distinguishes semantic arrows from geometric focus edges. Explicit assertions cover Home carousel/row boundaries, Detail carousel, Filmography tab changes/year boundary, Sources provider switching and Settings tour row crossing. Filmography's static per-page graph cannot replay paths across page-changing tabs; its geometry edge checks remain, while static reachability replay is omitted for those pages. Exhaustive cross-page Filmography reachability is not established.
+
+Final validation: `bash tests/nav21.sh` rc 0 (3,391 checks, zero violations), `bash tools/build-local.sh` rc 0 and `git diff --check` rc 0. One local build; existing `ATOMIC_VAR_INIT` warning only. Logs: `/Volumes/ExternalSSD/tmp/rev/navteste/p1-hero-before.log`, `p1-hero-final.log`, `p1-hero-build.log`; PNGs: `library.png`, `settings.png`. No push, deployment or physical-TV validation.

@@ -128,6 +128,11 @@ static void tourMirar(void) {
   else if (r > tourTopo + 1) tourTopo = r - 1;
   tourRolAlvo = tourTopo * (TOUR_CH + TOUR_GAP);
 }
+static int tourSeta(SDL_Keycode k) {
+  return k==SDLK_LEFT || k==SDLK_RIGHT ||
+    (k==SDLK_DOWN && tourFoco+TOUR_COLS<TOUR_N) ||
+    (k==SDLK_UP && tourFoco>=TOUR_COLS);
+}
 static void tourEvento(const SDL_Event *e) {
   SDL_Keycode k;
   if (!e || e->type != SDL_KEYDOWN) return;

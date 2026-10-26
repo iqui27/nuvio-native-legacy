@@ -5261,7 +5261,8 @@ void stream_folha_evento(const SDL_Event *e) {
     if(i>=0) detalheAbrir(&lista[i]);
     return;
   }
-  if(navigationMove(k))return;
+  // Left/Right switches providers even when a header target lies to the side.
+  if(k!=SDLK_LEFT && k!=SDLK_RIGHT && navigationMove(k))return;
   // ORDEM DO FOCO, de cima: fileira de botoes (grupo -1) -> abas de addon
   // (grupo 0) -> lista (grupo 1). CIMA na primeira linha vai as abas; CIMA
   // nas abas vai ao ultimo botao (Fechar, o mais perto do canto); BAIXO desce

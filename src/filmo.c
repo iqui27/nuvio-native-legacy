@@ -199,7 +199,8 @@ static int evento(const SDL_Event *e){if(e->type!=SDL_KEYDOWN||e->key.repeat)ret
     else if(camada==4){if(op==0){como=FM_COMO_DIRETO;camada=3;op=0;}else if(op==1&&fd_tentativas(selecionado)&&fd_quiz(selecionado,&quiz)){camada=2;op=0;}else camada=0;}
     return 0;
   }
-  if(navigationMove(k))return 0;
+  // Tabs change pages and the year rail scrolls before geometry can leave them.
+  if(!((k==SDLK_LEFT||k==SDLK_RIGHT)&&(zona==1||(zona==3&&aba==0))) && navigationMove(k))return 0;
   if(ok&&zona==1){aba=col;topo=0;filtro.ano=0;if(aba==2)fd_sobre();return 0;}
   if(k==SDLK_UP){if(zona==4){int cols=aba==0?5:gradeCols();if(col>=cols){col-=cols;topo=col/cols;}else{zona=aba==0?3:2;col=0;}}else if(zona>0){zona--;col=zona==1?aba:0;}return 0;}
   if(k==SDLK_DOWN){if(zona==0){zona=1;col=aba;}else if(zona==1){zona=2;col=0;}else if(aba==0&&zona==2){zona=3;col=0;}else if((aba==0||aba==1)&&zona<4){zona=4;col=0;}else if(zona==4){int cols=aba==0?5:gradeCols();if(col+cols<ni){col+=cols;if(col/cols>=topo+gradeLinhas())topo=col/cols-gradeLinhas()+1;}}return 0;}

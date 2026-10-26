@@ -2559,7 +2559,6 @@ static int focoVertical(int dy) {
 static void home_evento_(const SDL_Event *e) {
   pedidoRelogio = 0;
   if (e->type == SDL_QUIT) { sair = 1; return; }
-  if(e->type==SDL_KEYDOWN&&navigationMove(e->key.keysym.sym))return;
   if (homevazio_ativo(nFileiras)) {
     if (homevazio_evento(e)) return;
     if (e->type == SDL_KEYDOWN) {
@@ -2772,6 +2771,8 @@ static void home_evento_(const SDL_Event *e) {
       return;
     }
   }
+  // Hero, friends and horizontal row scrolling own their arrows.
+  if (k != SDLK_LEFT && k != SDLK_RIGHT && navigationMove(k)) return;
   if (k == SDLK_RIGHT) {
     // O `&&` aqui era um curto-circuito com efeito colateral: escrito como
     // `if (fileira == 0 && !focus_mover(...))`, o focus_mover so era chamado

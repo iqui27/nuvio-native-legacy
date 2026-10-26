@@ -15,6 +15,7 @@ typedef struct {
   int (*page)(void);
   int primary;
   float (*transition)(void); // Progress of the page/sheet itself, excluding focus/content.
+  int (*ownsArrow)(SDL_Keycode); // Semantic gestures use explicit behavior checks.
 } Nav21Screen;
 void nav21_target(int id, GfxRect rect);
 void nav21_targets_reset(void);

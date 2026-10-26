@@ -2702,6 +2702,7 @@ static int guiaAberto;
 static int tourAberto;
 static void tourAbrir(void);
 static void tourEvento(const SDL_Event *e);
+static int tourSeta(SDL_Keycode k);
 static void tourDesenhar(void);
 static void tourAtualizar(float dt);
 static int apoioAberto;   // painel com os QRs de "Apoiar o projeto" (ajustes_ux_apoio.inc)
@@ -10010,6 +10011,10 @@ void ajustes_evento(const SDL_Event *e) {
     navigationBackFocus=0;SDL_Event back=*e;back.key.keysym.sym=SDLK_ESCAPE;eventoTela(&back);AJ_ESCALA_FIM();return;
   }
   if (guiaAberto) { guiaEvento(e); AJ_ESCALA_FIM(); return; }
+  // The tour owns horizontal card/button traversal and scrolling between rows.
+  if (tourAberto && e->type==SDL_KEYDOWN && tourSeta(e->key.keysym.sym)) {
+    tourEvento(e); AJ_ESCALA_FIM(); return;
+  }
   if (e->type==SDL_KEYDOWN && navigationMove(e->key.keysym.sym)) { AJ_ESCALA_FIM(); return; }
   if (tourAberto) { tourEvento(e); AJ_ESCALA_FIM(); return; }
   if (apoioAberto) { apoioEvento(e); AJ_ESCALA_FIM(); return; }
@@ -11677,7 +11682,7 @@ static void navigationRange(float x,float y,float w,float h,float top,float bott
 }
 static int navigationMove(SDL_Keycode key) {
   if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
-  if(teclado_aberto()||guiaAberto||apoioAberto||pfTela)return 0;
+  if(teclado_aberto()||guiaAberto||apoioAberto||pfTela||uxEditor)return 0;
   GfxRect rects[512];int current=-1;
   for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].id==navigationFocus())current=i;}
   int next=focus_rect_nearest(rects,navigationCount,current,(key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
