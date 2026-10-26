@@ -82,6 +82,7 @@
 #if defined(__EMSCRIPTEN__) && !defined(NV_VIDAA)
 
 #include "video.h"
+#include "mediaurl.h"
 #include "avroi.h"
 #include "video_reconexao.h"
 #include "linguas.h"
@@ -802,6 +803,7 @@ static void logarErro(const char *onde);
 static double avChamar(const char *cmd, const char *txt,
                        double a, double b, double c, double d,
                        char *dst, int dstTam) {
+  if (!strcmp(cmd, "abrir")) txt = nv_media_url(txt);
   Pedido p;
   p.cmd = cmd; p.txt = txt;
   p.a = a; p.b = b; p.c = c; p.d = d;
@@ -858,7 +860,7 @@ static int    vidW, vidH;
 static int    houveErro;
 static char   erroTexto[96];   // ver logarErro e video_erro_texto
 
-static char   urlAtual[1024];
+static char   urlAtual[NV_MEDIA_URL_MAX];
 static int    fonteMp4;
 static int    dvPedido;      // afirmacao do addon; sem uso no AVPlay (ver hdr)
 
@@ -1225,7 +1227,7 @@ static void lerFaixas(void) {
 static void *lerMkv(void *arg) {
   MkvFaixa fx[MKV_MAX_FAIXAS];
   MkvCap   caps[MKV_MAX_CAPS];
-  char url[1024];
+  char url[NV_MEDIA_URL_MAX];
   int n, nCaps = 0;
   (void)arg;
   snprintf(url, sizeof url, "%s", urlAtual);

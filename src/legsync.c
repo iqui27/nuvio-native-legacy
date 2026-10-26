@@ -271,8 +271,8 @@ void legsync_primaria_externa(const char *url, const char *idioma, const char *o
   } else { free(m); m = NULL; }
   pthread_mutex_unlock(&M);
   legenda_documento_liberar(velho);
-  if (m) legenda_carregar_com(url, aoBaixar, m);
-  else legenda_carregar(url);
+  if (m) legenda_carregar_idioma(url, idioma, aoBaixar, m);
+  else legenda_carregar_idioma(url, idioma, NULL, NULL);
 }
 
 void legsync_primaria_outra(int embutida) {

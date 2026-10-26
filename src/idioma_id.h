@@ -6237,6 +6237,7 @@ T("Perfis com ajustes próprios, perfil infantil com trava e cópia de ajustes."
   T("Sem a fileira de cores? Ajustes › Sobre e ajuda ›", "Tidak ada baris warna? Pengaturan › About and help ›"),
   T("Sem add-on de fontes o Nuvio não tem o que tocar. Instale um em Ajustes › Fontes e addons.", "Without a sources add-on Nuvio has nothing to play. Install one under Settings › Sources and add-ons."),
   T("Sem agrupar", "Tanpa pengelompokan"),
+  T("Sem ampliação ativa nesta sessão. Escolha 720p ou 1080p abaixo da saída da TV e reinicie o app. O vídeo não muda.", "Tidak ada peningkatan resolusi aktif dalam sesi ini. Pilih 720p atau 1080p di bawah keluaran TV dan mulai ulang aplikasi. Video tidak berubah."),
   T("Sem arte", "Tanpa gambar"),
   T("Sem artes para comparar: nada foi aplicado", "Tidak ada gambar untuk dibandingkan: tidak ada yang diterapkan"),
   T("Sem atividade neste período", "Tidak ada aktivitas pada periode ini"),

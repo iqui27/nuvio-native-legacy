@@ -6237,6 +6237,7 @@ T("Perfis com ajustes próprios, perfil infantil com trava e cópia de ajustes."
   T("Sem a fileira de cores? Ajustes › Sobre e ajuda ›", "沒有彩色按鈕列？設定 › About and help ›"),
   T("Sem add-on de fontes o Nuvio não tem o que tocar. Instale um em Ajustes › Fontes e addons.", "Without a sources add-on Nuvio has nothing to play. Install one under Settings › Sources and add-ons."),
   T("Sem agrupar", "不分組"),
+  T("Sem ampliação ativa nesta sessão. Escolha 720p ou 1080p abaixo da saída da TV e reinicie o app. O vídeo não muda.", "本次工作階段未啟用放大。請選擇低於電視輸出的720p或1080p，然後重新啟動應用程式。影片不受影響。"),
   T("Sem arte", "無圖片"),
   T("Sem artes para comparar: nada foi aplicado", "沒有可比較的圖片：未套用任何變更"),
   T("Sem atividade neste período", "這段期間沒有活動"),

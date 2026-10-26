@@ -2,6 +2,7 @@
 #include "aiostreamsui.h"
 #include "addonmodo.h"
 #include "vaitocar.h"
+#include "mediaurl.h"
 #include "plrui.h"
 #include "ondever.h"
 #include "naovideo.h"
@@ -505,6 +506,33 @@ static int mesmoAddon(const Stream *a, const Stream *b) {
   if (a->addonChave[0] || b->addonChave[0])
     return !strcmp(a->addonChave, b->addonChave);
   return !strcmp(a->provedor, b->provedor);
+}
+// Native routes identify the service explicitly; add-on labels identify
+// their own debrid routes. Unknown labels stay scoped to that add-on.
+static int debridDaFonte(const Stream *s) {
+  if (s->debridServico > 0) return s->debridServico - 1;
+  const char *tags[] = {"[RD", "[TB", "[PM", "[AD"};
+  const char *names[] = {"Real-Debrid", "TorBox", "Premiumize", "AllDebrid"};
+  for (int i = 0; i < DEBRID_N; i++)
+    if (nv_res_tem(s->rotulo, tags[i]) || nv_res_tem(s->rotulo, names[i])) return i;
+  return -1;
+}
+int stream_automatico_excluir_aviso(int indice) {
+  int k = 0;
+  pthread_mutex_lock(&verTrava);
+  if (indice >= 0 && indice < n) {
+    const Stream *s = &lista[indice];
+    int servico = debridDaFonte(s);
+    for (int i = 0; i < n; i++) {
+      const Stream *outra = &lista[i];
+      int mesma = s->debridServico > 0
+          ? outra->debridServico == s->debridServico
+          : !outra->debridServico && mesmoAddon(s, outra) && debridDaFonte(outra) == servico;
+      if (mesma) k += stream_automatico_excluir(i);
+    }
+  }
+  pthread_mutex_unlock(&verTrava);
+  return k;
 }
 static int irma(int i, int indice) {
   return i != indice && mesmoAddon(&lista[i], &lista[indice]) &&
@@ -1562,6 +1590,7 @@ int  stream_addon_no_escopo(const char *nome) {
 // arquivo ainda nao esta em cache no Real-Debrid. Os dois sao MP4 validos de
 // ~120s que TOCAM NORMALMENTE — nao ha erro para detectar, so o endereco.
 static int enderecoDeAviso(const char *u) {
+  u = nv_media_url(u);
   return strstr(u, "downloading.mp4") || strstr(u, "/slate") ||
          strstr(u, "slate.mp4") || strstr(u, "slate.m3u8") ? 1 : 0;
 }
@@ -1610,6 +1639,7 @@ static int playlistVazia(const char *url, const char *cabecalhos) {
   char copia[512];
   long n = 0;
   int vazia, status = 0, nc = 0;
+  url = nv_media_url(url);
   if (!strstr(url, ".m3u8") && !strstr(url, "m3u8")) return 0;
   // Os cabecalhos que o addon exigiu (behaviorHints.proxyHeaders). Sem eles um
   // CDN que confere Referer devolve 403 — medido: 403 sem, 200 com.
@@ -1738,7 +1768,7 @@ static int resolverUrl(const char *url, const char *cabecalhos, int segundos,
 void (*stream_cdn_lembrar)(const char *orig, const char *final, const char *cabecalhos, uint64_t sessao);
 
 static int verificarUma(int i, Conferencia *c) {
-  char fim[4096], url[4096], cab[512], mime[96], addon[sizeof lista->provedor];
+  char fim[NV_MEDIA_URL_MAX], url[NV_MEDIA_URL_MAX], cab[512], mime[96], addon[sizeof lista->provedor];
   int fileIdx, ok = 0;
   AddonModo modo;
   long corpo = -1;
@@ -1842,7 +1872,7 @@ static int verificarUma(int i, Conferencia *c) {
 // tocando a URL em paralelo e so quer saber cedo se ela morreu.
 int stream_url_serve(const char *url, const char *cabecalhos) {
   uint64_t sessao = nv_perfil_sessao_ler();
-  char fim[4096], mime[96];
+  char fim[NV_MEDIA_URL_MAX], mime[96];
   long corpo = -1;
   if (!url || !*url) return 0;
   if (!resolverUrl(url, cabecalhos, 5, fim, sizeof fim, mime, sizeof mime, &corpo)) return 0;
@@ -2288,7 +2318,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
                        &c, &fontes, &nc)) return FONTEFALHA_FIM;
   for (;;) {
     FonteFalhaRota r;
-    char resolvida[4096] = "", fim[4096], mime[96] = "";
+    char resolvida[NV_MEDIA_URL_MAX] = "", fim[NV_MEDIA_URL_MAX], mime[96] = "";
     long corpo = -1;
     int ok = 0, fora = 0;
     if (falhaCancelada(geracao, cancelado, ctx)) break;
@@ -2378,7 +2408,7 @@ int stream_vod_renovada_aplicar(int indice, unsigned geracao, const Stream *font
 int stream_falha_renovar(int indice, unsigned geracao, int servico,
                          int (*cancelado)(void *), void *ctx, char *url, unsigned tam) {
   Stream s;
-  char resolvida[4096] = "";
+  char resolvida[NV_MEDIA_URL_MAX] = "";
   int fora = 0, ok;
   if (!url || !tam || falhaCancelada(geracao, cancelado, ctx)) return 0;
   url[0] = 0;
@@ -2595,7 +2625,7 @@ int stream_preparo_resolver(StreamPreparo *p, int (*cancelado)(void *), void *ct
     FonteFalhaRota r;
     if (fontefalha_proxima(p->politica, p->candidatas, p->nc, 1, &r) != FONTEFALHA_PROXIMA) break;
     const Stream *s = &p->fontes[r.indice];
-    char url[4096] = "", fim[4096], mime[96] = "";
+    char url[NV_MEDIA_URL_MAX] = "", fim[NV_MEDIA_URL_MAX], mime[96] = "";
     long corpo = -1; int fora = 0, ok = 0;
     if (!fontefalha_tentar(p->politica, &p->candidatas[r.candidata], r.servico)) break;
     if (!nv_perfil_sessao_atual(p->sessaoPerfil) || (cancelado && cancelado(ctx))) { resultado = -1; break; }
@@ -2628,7 +2658,7 @@ int stream_preparo_renovar(StreamPreparo *p, int indice, int (*cancelado)(void *
       !nv_perfil_sessao_atual(p->sessaoPerfil) || (cancelado && cancelado(ctx))) return 0;
   const Stream *s = &p->fontes[indice];
   if (!fontefiltro_permite(&p->filtro, &s->filtro)) return 0;
-  char url[4096] = "", fim[4096], mime[96] = "";
+  char url[NV_MEDIA_URL_MAX] = "", fim[NV_MEDIA_URL_MAX], mime[96] = "";
   int ok = 0, fora = 0;
   long corpo = -1;
   debrid_contexto_entrar(&p->debrid);
@@ -3060,7 +3090,7 @@ int stream_n_candidatas(void) {
 // tempo que a pessoa fica olhando para a tela preta quando o canal esta fora.
 #define CANAL_PRAZO_S 3
 typedef struct {
-  char url[4096], cabecalhos[512];
+  char url[NV_MEDIA_URL_MAX], cabecalhos[512];
   int altura, cabe, preferida, tsContinuo;
 } CanalCandidata;
 typedef struct CanalConferencia {
@@ -5933,7 +5963,7 @@ static void desenhaPartes(float x, float w, int ptr, Uint32 agora) {
         continue;
       }
       GfxRect rr = {ix - 14, ry, iw + 28, ln->h - 6};
-      if (sel) {
+      if (sel && !gfx_foco_placa(rr, FOLHA_RAIO / rr.h, 1, a)) {
         if (ajustes_vidro()) gfx_cor(rr, FOLHA_RAIO / rr.h, 1, 1, 1, .12f * a);
         else gfx_cor(rr, FOLHA_RAIO / rr.h, .17f, .176f, .204f, a);
       }
@@ -6360,8 +6390,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       OndeVer o;
       if (ptr) ponteiro_alvo(r.x,r.y,r.w,r.h,ponteiroFolhaLinha,NULL,row,0);
       if (sel) {
-        if (ajustes_vidro()) gfx_cor(r,FOLHA_RAIO/h,1,1,1,.12f*anim);
-        else gfx_cor(r,FOLHA_RAIO/h,.17f,.176f,.204f,anim);
+        if (!gfx_foco_placa(r,FOLHA_RAIO/h,1,anim)) {
+          if (ajustes_vidro()) gfx_cor(r,FOLHA_RAIO/h,1,1,1,.12f*anim);
+          else gfx_cor(r,FOLHA_RAIO/h,.17f,.176f,.204f,anim);
+        }
       }
       if (ondever_item(alvoPedido,-i-2,&o)) desenharOnde(r,tx,tr,&o,sel,anim);
       continue;
@@ -6376,8 +6408,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     if(sel){
       // Foco so pela superficie clara: o contorno saiu a pedido do dono (02/10).
       // No solido a superficie e um cinza opaco um degrau acima do miolo.
-      if (ajustes_vidro()) gfx_cor(r,FOLHA_RAIO/h,1,1,1,.12f*anim);
-      else gfx_cor(r,FOLHA_RAIO/h,.17f,.176f,.204f,anim);
+      if (!gfx_foco_placa(r,FOLHA_RAIO/h,1,anim)) {
+        if (ajustes_vidro()) gfx_cor(r,FOLHA_RAIO/h,1,1,1,.12f*anim);
+        else gfx_cor(r,FOLHA_RAIO/h,.17f,.176f,.204f,anim);
+      }
     }
     // COLUNA DA DIREITA: tamanho grande, addon embaixo. Medida primeiro: o
     // titulo e a fileira de logos param antes dela.

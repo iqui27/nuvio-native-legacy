@@ -2,6 +2,8 @@
 
 Changes since `v2.0.8`, from local commit and branch snapshots. Integration does not confirm installation on a TV. English follows the owner’s current language override.
 
+Tracking refreshed against the supplied snapshot through `c14d11f36`; all listed non-merge commits remain covered. Android build and installation succeeded at `cb7ece972`; C9 installation failed, leaving the installed TV revision unconfirmed. See the keeper state report for subsequent merges.
+
 
 ## Highlights
 
@@ -28,13 +30,37 @@ Changes since `v2.0.8`, from local commit and branch snapshots. Integration does
 - **Guest stars in this episode**: Open the player episode panel to see guest stars supplied by TMDB. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: owner request, `26f616d6d`, `5f0913815`.
 
 
-- **Quick episode chips and saved polish**: Jump episodes with quick chips on a 3x2 paged grid, see a compact rating on saved cards and sweep fill, remote-style keycaps on hints, localized island copy, a Remove action on the panel card, and glass-outline focus accents. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: owner request, `agente/205-avaliar-ilha`, `agente/205-porta-perdidos`, `755a4aaf0`, `dc2f11f32`, `601ceec5b`, `e4d901a1f`, `f933eaa3d`, `22c77e099`.
+- **Quick episode chips and saved polish**: Jump episodes with quick chips on a 3x2 paged grid, see a compact rating on saved cards and sweep fill, remote-style keycaps on hints, localized island copy, a Remove action on the panel card, and glass-outline focus accents. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: owner request, `agente/205-avaliar-ilha`, `agente/205-porta-perdidos`, `755a4aaf0`, `dc2f11f32`, `601ceec5b`, `f933eaa3d`, `22c77e099`.
 
 - **See all in the Library row**: Open the full Library from a See all card at the end of the Home row. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: #672, `d316b4dbd`.
 
 ## Fixes
 
-- **Episode progress survives source changes**: Switch playback sources without losing episode identity or watched state. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: #570, `ee42d28cc`, merge `37fdc3ea0`.
+- **Skip uncached warning clips safely**: Automatic playback stops provider warning clips and tries eligible alternatives, while manually selected or explicitly accepted short sources remain playable. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: owner request, `agente/205-foracache`, `185f12732`, `4ee2b095d`, merge `287694ce4`.
+
+- **Long signed source URLs remain playable**: Preserve complete signed media URLs up to 8191 bytes across playback and saved sources, release their storage with source lists, and skip oversized entries without discarding playable alternatives. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: owner request, `agente/205-urllonga`, `26ddf22d7`, `01d39cbb2`, merge `0152ed9bf`.
+
+- **Focus accents recover consistently**: Restore accent focus independently of the Glass setting. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: owner request, `agente/205-amigosacento`, `790abb451`, merge `93c397353`.
+
+- **Reach the clock with Up**: Navigate from Home rows to the clock and resume island using Up. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: PR #547, @ghbarker, merge `f895747c5`.
+
+- **Consistent alternate episode numbering**: Keep watched state, playback and scrobbling tied to the canonical episode while preserving the chosen episode order and retry identity. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: PR #576, `e2d98f5f0`, `aa4095866`, merge `940288b03`.
+
+- **Subtitle filename fallbacks**: Recover subtitle requests when an add-on supplies an alternative filename. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: #606, `c9ae2eb50`, merge `610487f8a`.
+
+- **Library navigation to the top menu**: Press Up to reach the Library top menu without losing navigation. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: owner request, `add7912d2`.
+
+- **Accurate upscaling availability**: See whether upscaling is available in the current session and why it is disabled. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: owner request, `85b0ac386`, merge `4355ba714`.
+
+- **Retryable episode metadata**: Missing or invalid Cinemeta metadata remains retryable, while confirmed absence is cached for 24 hours to avoid repeated requests. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: #356, `5058b9870`, `aab25a275`, `a6b791713`, `a4fec2800`, `19ef559f3`.
+
+- **Samsung startup pause recovery**: Recover from an unexpected pause during startup after the firmware finishes hiding the windows, with one bounded retry before interaction. Platforms: Samsung .tpk. Refs: #684, `3f27a741a`, `133cbf6c2`, merge `7102f722e`; physical TV confirmation pending.
+
+- **Buffered live TV recovery**: Retry buffered webOS live sources through the transport-stream proxy when native playback fails. Platforms: webOS. Refs: #625, `1b84d0a2f`, merge `9a7d40f3e`.
+
+- **Fewer false offline states**: Require failures on different hosts before Android declares the connection unavailable. Platforms: Android. Refs: owner request, `a0efe5bee`, merge `3a1dbb575`.
+
+- **Episode progress survives source changes**: Switch playback sources without losing episode identity or watched state. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: #570, `ee42d28cc`, `63ff7c56f`, merge `37fdc3ea0`.
 
 - **Older Samsung package compatibility**: Rebuild the rate-limited artwork sources correctly so the Tizen 4/5 package can link. Platforms: Samsung .tpk. Refs: PR #688, `00192c3fd`.
 
@@ -135,6 +161,8 @@ Changes since `v2.0.8`, from local commit and branch snapshots. Integration does
 
 ## Community
 
+- **Navigation contribution from @ghbarker**: Reach the clock and resume island through the contributed remote navigation changes. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: @ghbarker, PR #547, merge `f895747c5`.
+
 - **Samsung playback and artwork contributions**: Keep subtitle selection across seeks and restore artwork and older-TV package compatibility with contributions from @KeijoMika. Platforms: Samsung .tpk. Refs: @KeijoMika, PR #685, PR #686, PR #688, `089f694b9`, `fa3c6a936`, `00192c3fd`.
 
 - **Series identity contribution**: Enjoy corrected series metadata from @Vidhin05, with integration follow-up limiting repairs to episode evidence. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: @Vidhin05, PR #654, `42b9719c7`, `63ff7c56f`.
@@ -147,9 +175,15 @@ Changes since `v2.0.8`, from local commit and branch snapshots. Integration does
 
 ## Internal
 
+- **Latest tracking snapshot**: Keep issue tracking aligned with the integration snapshot. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: `c14d11f36`, `97c62989a`, `5404c634b`, `f6a6c3934`, `70e3ed2d3`, `279078d58`.
+
+- **Episode and playback regression coverage**: Validate alternate numbering, topology replacement, retries, canonical scrobbles and isolated Home refresh fixtures. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: `6537b2a36`, `be51fbfd0`, `587b8774b`, `f3ccc5b23`.
+
+- **Accurate playback diagnostics**: Exclude suspended time from frame measurements and record each VOD stall once so diagnostic reports retain useful evidence. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: #681, `97314076a`, `3ce9e80d2`.
+
 - **Samsung graphics and packaging regression checks**: Check active-context texture uploads and Tizen 4 rate-limit object selection. Platforms: Samsung .tpk. Refs: `1b805d013`, `7790e8b4f`.
 
-- **Tracking refresh**: Keep issue states and release coverage aligned with integration. Additional refs: `76f31a538`, `5d9c3422e`, `fb80ad4e3`. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: `a4412a42a`, `c3ff78fe5`, `5eac48ad4`, `23121f28b`, `72cf607d6`, `0ce56918b`, `094b8f842`, `03932481c`, `6d0dee52d`, `584747b9b`.
+- **Tracking refresh**: Additional refs: `6b86b60fe`, `cf141198f`, `be73960db`, `02bf3bf7e`, `ac3ca1e3a`, `2f7c7928c`, `f755a7aab`. Keep issue states and release coverage aligned with integration. Additional refs: `8fa52c05e`, `8ae0dc15f`. Additional ref: `95328a039`. Additional ref: `4465c41ed`. Additional ref: `43df4cdc9`. Additional ref: `f02196028`. Additional ref: `56dfcfdf6`. Additional ref: `19b0bf6b7`. Additional ref: `9780dd357`. Additional refs: `f07f0e64a`, `bf7c14f3b`, `bf890d535`. Additional refs: `683dc0b0c`. Additional refs: `7417183a8`, `21693a20c`. Additional refs: `83f87edfb`, `a99d9c0c9`. Additional refs: `dc8592948`, `31c4e71a3`, `76f31a538`, `5d9c3422e`, `fb80ad4e3`, `55cd43a20`. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: `a4412a42a`, `c3ff78fe5`, `5eac48ad4`, `23121f28b`, `72cf607d6`, `0ce56918b`, `094b8f842`, `03932481c`, `6d0dee52d`, `584747b9b`.
 
 - **Stream prefix regression snapshots**: Preserve integration stream-prefix fixtures for subsequent validation. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: `1b5766690`.
 
@@ -159,7 +193,7 @@ Changes since `v2.0.8`, from local commit and branch snapshots. Integration does
 
 - **Scoped review validation**: Record collection and scraper review validation without expanding the approved fix scope. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: `1b1cb55c2`, `969b0614f`.
 
-- **Release tracking**: Keep issue states, review follow-ups and release coverage aligned with the local integration snapshot. Additional refs: `518e4afe2`. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: `edd72dff1`, `05d582211`, `1137c9f39`, `9cc5a41aa`, `103c96e62`, `e06c70bc8`, `8a9dd2dc0`, `27c5d4e19`, `65a3fa795`, `25189dea6`, `795af84b4`, `0e3b2c9b6`, `4fc14fb74`.
+- **Release tracking**: Keep issue states, review follow-ups and release coverage aligned with the local integration snapshot. Additional refs: `4d9d33519`, `618e7114c`. Additional refs: `40f0a2ecb`. Additional refs: `518e4afe2`, `676873f5e`, `68cce52fe`. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: `edd72dff1`, `05d582211`, `1137c9f39`, `9cc5a41aa`, `103c96e62`, `e06c70bc8`, `8a9dd2dc0`, `27c5d4e19`, `65a3fa795`, `25189dea6`, `795af84b4`, `0e3b2c9b6`, `4fc14fb74`.
 
 - **Soundtrack regression coverage**: Verify soundtrack panel sizing and paging through remote keys, and record the Portuguese mockup and native preview proof with device validation limits. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: `dd8c54a6a`, `2eb4fecc0`, `4654bdb0f`, `8fb90ad5f`.
 
@@ -167,7 +201,7 @@ Changes since `v2.0.8`, from local commit and branch snapshots. Integration does
 
 ## Pending (not integrated yet)
 
-
+- **Glass focus on hero buttons**: Focused Home hero buttons use a glass pill when Glass is enabled. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: owner request, `agente/205-heroglassfoco`, `e4d901a1f`.
 
 - **Hero size setting**: Choose how large the Home hero appears, and the reserved layout scales with your choice. Platforms: webOS, Android, Samsung .tpk, WASM. Refs: owner request, `agente/205-herotamanho`, `agente/205-porta-perdidos`, `4bada8211`.
 

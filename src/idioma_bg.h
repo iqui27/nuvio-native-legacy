@@ -6237,6 +6237,7 @@ T("Perfis com ajustes próprios, perfil infantil com trava e cópia de ajustes."
   T("Sem a fileira de cores? Ajustes › Sobre e ajuda ›", "Няма ред с цветове? Настройки › About and help ›"),
   T("Sem add-on de fontes o Nuvio não tem o que tocar. Instale um em Ajustes › Fontes e addons.", "Without a sources add-on Nuvio has nothing to play. Install one under Settings › Sources and add-ons."),
   T("Sem agrupar", "Без групиране"),
+  T("Sem ampliação ativa nesta sessão. Escolha 720p ou 1080p abaixo da saída da TV e reinicie o app. O vídeo não muda.", "Няма активно мащабиране в тази сесия. Изберете 720p или 1080p под изходната резолюция на телевизора и рестартирайте приложението. Видеото не се променя."),
   T("Sem arte", "Без изображения"),
   T("Sem artes para comparar: nada foi aplicado", "Няма изображения за сравнение: нищо не беше приложено"),
   T("Sem atividade neste período", "През този период няма активност"),

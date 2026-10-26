@@ -6237,6 +6237,7 @@ T("Perfis com ajustes próprios, perfil infantil com trava e cópia de ajustes."
   T("Sem a fileira de cores? Ajustes › Sobre e ajuda ›", "Không có hàng nút màu? Cài đặt › About and help ›"),
   T("Sem add-on de fontes o Nuvio não tem o que tocar. Instale um em Ajustes › Fontes e addons.", "Without a sources add-on Nuvio has nothing to play. Install one under Settings › Sources and add-ons."),
   T("Sem agrupar", "Không nhóm"),
+  T("Sem ampliação ativa nesta sessão. Escolha 720p ou 1080p abaixo da saída da TV e reinicie o app. O vídeo não muda.", "Không có nâng độ phân giải trong phiên này. Chọn 720p hoặc 1080p thấp hơn đầu ra TV rồi khởi động lại ứng dụng. Video không thay đổi."),
   T("Sem arte", "Không có hình ảnh"),
   T("Sem artes para comparar: nada foi aplicado", "Không có hình ảnh để so sánh: không có gì được áp dụng"),
   T("Sem atividade neste período", "Không có hoạt động trong khoảng thời gian này"),

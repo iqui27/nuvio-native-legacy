@@ -1,4 +1,5 @@
 #include "naovideo.h"
+#include "mediaurl.h"
 #include <ctype.h>
 #include <string.h>
 #include <strings.h>
@@ -22,7 +23,7 @@ int naovideo_mime(const char *mime, const char *url, long corpo) {
     "text/json", "text/javascript", "application/javascript" };
   char m[96];
   size_t k = 0;
-  int manifesto = urlDeManifesto(url);
+  int manifesto = urlDeManifesto(nv_media_url(url));
   if (mime) for (; *mime && *mime != ';' && k + 1 < sizeof m; mime++)
     if (*mime != ' ') m[k++] = (char)tolower((unsigned char)*mime);
   m[k] = 0;

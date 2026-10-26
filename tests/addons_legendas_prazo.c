@@ -22,7 +22,6 @@ int mkvass_estado(void) { return 0; }
 int mkvass_varredura(void) { return 0; }
 void mkvass_parar(void) {}
 void mkvass_iniciar_ordinal(const char *u, int o) { (void)u; (void)o; }
-void legenda_desligar(void) {}
 void video_sondar_mkv_agora(void) {}
 int faixasmkv_overlay(const char *c, int t) { (void)c; (void)t; return 0; }
 int player_aberto(void) { return 1; }

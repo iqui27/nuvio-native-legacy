@@ -6237,6 +6237,7 @@ T("Perfis com ajustes próprios, perfil infantil com trava e cópia de ajustes."
   T("Sem a fileira de cores? Ajustes › Sobre e ajuda ›", "Χωρίς τη σειρά χρωμάτων; Ρυθμίσεις › About and help ›"),
   T("Sem add-on de fontes o Nuvio não tem o que tocar. Instale um em Ajustes › Fontes e addons.", "Without a sources add-on Nuvio has nothing to play. Install one under Settings › Sources and add-ons."),
   T("Sem agrupar", "Χωρίς ομαδοποίηση"),
+  T("Sem ampliação ativa nesta sessão. Escolha 720p ou 1080p abaixo da saída da TV e reinicie o app. O vídeo não muda.", "Δεν υπάρχει ενεργή αναβάθμιση ανάλυσης σε αυτή τη συνεδρία. Επιλέξτε 720p ή 1080p κάτω από την έξοδο της TV και επανεκκινήστε την εφαρμογή. Το βίντεο δεν αλλάζει."),
   T("Sem arte", "Χωρίς εικαστικά"),
   T("Sem artes para comparar: nada foi aplicado", "Δεν υπάρχουν εικαστικά για σύγκριση: δεν εφαρμόστηκε τίποτα"),
   T("Sem atividade neste período", "Καμία δραστηριότητα σε αυτή την περίοδο"),

@@ -1992,7 +1992,8 @@ static void painelFlutuante(GfxRect r, float ar, float ag, float ab, float a) {
 static void pilulaFoco(GfxRect lr, float ar, float ag, float ab, float a) {
   (void)ar; (void)ag; (void)ab;
   float rf = 0.5f > 22.0f / lr.h ? 22.0f / lr.h : 0.5f;
-  if (ajustes_vidro()) { if (!gfx_foco_placa(lr, rf, 1.0f, a)) gfx_cor(lr, rf, 1, 1, 1, .12f * a); }
+  if (gfx_foco_placa(lr, rf, 1.0f, a)) return;
+  if (ajustes_vidro()) gfx_cor(lr, rf, 1, 1, 1, .12f * a);
   else gfx_cor(lr, rf, .17f, .176f, .204f, a);
 }
 // Tinta do texto sobre a linha em foco: clara, a superficie nao e realce.

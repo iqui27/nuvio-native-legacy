@@ -1504,7 +1504,7 @@ static void eventoAberta(SDL_Keycode k) {
   }
   if (foco.fileira == 0 && focoCont) {
     if (k == SDLK_DOWN) focoCont = 0;
-    else if (k == SDLK_UP) pediuRelogio = 1;
+    else if (k == SDLK_UP) { if (ajustes_menu_topo()) sair = 1; else pediuRelogio = 1; }
     else if (k == SDLK_LEFT) sair = 1;
     else if (k == SDLK_RIGHT && nCelulas) { focoCont = 0; foco.fileira = 1; foco.coluna = 0; }
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) abrirItemDaLista(pagProximo);
@@ -1515,12 +1515,11 @@ static void eventoAberta(SDL_Keycode k) {
     if (paginaLista() && !trilha && k == SDLK_RIGHT && acaoSel == nAcoes() - 1 && nCelulas) {
       foco.fileira = 1; foco.coluna = 0; return;
     }
-    if (k == SDLK_UP) { pediuRelogio = 1; return; }
+    if (k == SDLK_UP) { if (ajustes_menu_topo()) sair = 1; else pediuRelogio = 1; return; }
     if (k == SDLK_RIGHT && acaoSel < nAcoes() - 1) { acaoSel++; foco.coluna = acaoSel; return; }
     if (k == SDLK_LEFT  && acaoSel > 0) { acaoSel--; foco.coluna = acaoSel; return; }
     if (k == SDLK_LEFT) { sair = 1; return; }   // comeco da fileira: o app abre a barra
     if (k == SDLK_DOWN) { if (nCelulas) { foco.fileira = 1; foco.coluna = 0; } return; }
-    if (k == SDLK_UP && ajustes_menu_topo()) { sair = 1; return; }
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) executarAcao(acaoSel);
     return;
   }
@@ -1646,6 +1645,7 @@ static void biblioteca_evento_(const SDL_Event *e) {
   // a partir de "Salvos" era preciso atravessar "Coleção" e "Listas", trocando
   // de aba (e pedindo a rede, nas listas) a cada passo.
   if (modo == MODO_LISTAS && foco.fileira == BIB_FIL_MODO) {
+    if (k == SDLK_UP) { if (ajustes_menu_topo()) sair = 1; else pediuRelogio = 1; return; }
     if (k == SDLK_LEFT && foco.coluna > 0) foco.coluna--;
     else if (k == SDLK_LEFT) { modo = MODO_PARAVER; reconstruir(); }
     else if (k == SDLK_RIGHT && foco.coluna < 3) foco.coluna++;
@@ -1658,12 +1658,11 @@ static void biblioteca_evento_(const SDL_Event *e) {
     return;
   }
   if (foco.fileira == BIB_FIL_MODO) {
-    if (k == SDLK_UP) { pediuRelogio = 1; return; }
+    if (k == SDLK_UP) { if (ajustes_menu_topo()) sair = 1; else pediuRelogio = 1; return; }
     if (k == SDLK_LEFT  && foco.coluna > 0) { foco.coluna--; return; }
     if (k == SDLK_LEFT) { sair = 1; return; }   // 1a aba: o app abre a barra
     if (k == SDLK_RIGHT && foco.coluna < BIB_N_MODOS - 1) { foco.coluna++; return; }
     if (k == SDLK_RIGHT) return;
-    if (k == SDLK_UP && ajustes_menu_topo()) { sair = 1; return; }
     if (k == SDLK_DOWN) { foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel; return; }
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
       int novo = foco.coluna;

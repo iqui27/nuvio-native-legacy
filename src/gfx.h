@@ -817,9 +817,8 @@ void gfx_vidro_foco(GfxRect r, float raio, float foco, float a);
 // FOCO de um cartaz/cartao de arte: contorno na cor do realce (branco no padrao) de 3 px POR FORA, com 2 px
 // de vao — limpo, sem brilho colorido nem sombra.
 void gfx_vidro_cartao(GfxRect r, float raio, float foco, float a);
-// "Foco na cor de destaque": vidro tingido com o realce no lugar da barra cinza
-// de uma linha/pilula/aba. Devolve 1 se desenhou; 0 (nada desenhado) com o
-// ajuste desligado ou sem vidro — o chamador entao desenha o cinza de sempre.
+// Accent focus plate: tinted glass or solid tint, using the caller's geometry.
+// Returns 0 without drawing when disabled; the caller keeps its legacy gray.
 int gfx_foco_placa(GfxRect r, float raio, float foco, float a);
 // Alpha of the accent tint in that plate (lower for light accents, for text contrast).
 float gfx_foco_placa_alfa(float cr, float cg, float cb);

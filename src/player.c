@@ -25,6 +25,7 @@
 //      esta pausado. Pausado sem controles o usuario fica olhando um quadro
 //      congelado sem saber o que houve.
 #include "resolverregra.h"
+#include "mediaurl.h"
 #include "horafmt.h"
 #include "player.h"
 #include "addonguia.h"
@@ -91,6 +92,13 @@ static void avisarCascaAberto(int v) { (void)v; tex_pressao_reproducao(v); }
 #include "trakt.h"
 #include "simkl.h"
 #include "traktscrobble.h"
+#include "perfisessao.h"
+extern int cat_episodios_finais(int, const char *) NV_PERFIL_OPCIONAL;
+extern int cat_episodio_tvdb(int, const char *, int, int) NV_PERFIL_OPCIONAL;
+extern int cat_episodio_tvdb_qualquer(int, const char *, int, int) NV_PERFIL_OPCIONAL;
+extern int cat_episodio_existe_final(int, const char *, int, int) NV_PERFIL_OPCIONAL;
+extern int trakt_scrobble_alvo(int, const TraktScrobbleAlvo *, double, double,
+                              double, int) NV_PERFIL_OPCIONAL;
 #include "watchstate_envio.h"
 #include "perfisessao.h"
 #include "sync.h"
@@ -333,7 +341,7 @@ static int quadroCapturado;
 // teto, segue sem reter (fechamento normal).
 #define PLR_SAIDA_ILHA_TETO_MS 220u
 static Uint32 saidaIlhaDesde;
-static char retidoConta[96], retidoUrl[4096];
+static char retidoConta[96], retidoUrl[NV_MEDIA_URL_MAX];
 // Botao em foco na fileira de transporte. Comeca no PLAY porque e a resposta
 // que nove de cada dez aberturas quer: o dedo para no centro e o OK decide.
 static int   botao = PLR_PLAY;
@@ -410,7 +418,7 @@ static struct {
   MkvassPreparo *mkv;
   Uint32 desde;
   double segundos, pct;
-  char url[4096], cab[2048], idioma[16], audio[16];
+  char url[NV_MEDIA_URL_MAX], cab[2048], idioma[16], audio[16];
 } preTitulo;
 static _Atomic unsigned preTituloTokens;
 #endif
@@ -428,7 +436,7 @@ static double monoSeg(void) {
   return (double)ts.tv_sec + ts.tv_nsec / 1e9;
 }
 // Prova de reproducao da fonte principal, independente de posicao/seek.
-static char fonteSessao[4096];
+static char fonteSessao[NV_MEDIA_URL_MAX];
 static double assistidoSeg, assistidoMono, assistidoPos;
 static double eofDesde = -1.0;
 static int assistidoAmostra;
@@ -808,6 +816,12 @@ static void medirAssistido(void) {
 // Dentro de player_abrir: o episodio ainda e o do progresso, nao o que vai
 // tocar. Ver a nota la — segura a invalidacao da lista de fontes (#101).
 static int abrindoSessao;
+// Identidade Trakt escolhida uma vez por abertura. O par exibido continua a
+// servir ao addon/Simkl/estado local; TVDB serve apenas ao Trakt quando a lista
+// final de episodios provou a correspondencia.
+static TraktScrobbleAlvo scrobbleAlvo;
+static int scrobbleAlvoPronto;
+static int scrobbleTvdbCapturado;
 static int pedGuia, pedZap, pedGuiaCheio;   // pedidos de canal: overlay do guia / CH+/-
 // OSD PROPRIO DO CANAL AO VIVO (aovivo.h). O zapping acumula toques e so pede a
 // troca depois do debounce; `pedZap` passa a ser um DESLOCAMENTO (pode ser 3 ou
@@ -953,7 +967,7 @@ static int modalToquePode(void) { return !modalToqueGuarda || modalToqueGuarda()
 #endif
 // "Fonte 2 de 3": a tentativa do automatico VOD (app.c, tentarProximaFonteVOD).
 static int tentativaN, tentativaM;
-static int durFonteAvisada, durFontePulou, pedProximaFonte;
+static int durFonteAvisada, durFontePulou, pedProximaFonte, durFonteForaCache;
 // O arquivo e bem MAIS CURTO que o titulo (metade ou menos): pode ser uma
 // parte de um filme em partes (partes.h). app.c procura as outras.
 static int durFonteCurta;
@@ -1104,14 +1118,26 @@ void player_definir_episodio(int t, int e) {
   if (t >= 0 && e > 0) { epPedidoT = t; epPedidoE = e; }
   atualizarTipoItem();
   const CatItem *c = item();
-  if (t != epT || e != epE) retomarFonteSeg = -1.0;
+  if (t != epT || e != epE) {
+    retomarFonteSeg = -1.0;
+    memset(&scrobbleAlvo, 0, sizeof scrobbleAlvo); scrobbleAlvoPronto = 0;
+    scrobbleTvdbCapturado = 0;
+  }
   epT = t; epE = e; linhaEp[0] = 0;
+  // Capture exact identity while the pair still belongs to the provisional
+  // list. A later final list may renumber this same episode and remove the old
+  // pair; TVDB is the bridge that remains valid across that replacement.
+  if (!scrobbleTvdbCapturado && c && !strcmp(c->tipo, "series") && t >= 0 && e > 0 &&
+      cat_episodio_tvdb_qualquer)
+    scrobbleTvdbCapturado = cat_episodio_tvdb_qualquer(idxAtual(), c->imdb, t, e);
   audioTitulo();
   retomarPct = 0;
   // !canalSessao: canal nao tem retomada, e se o indice ja foi remapeado o
   // "progresso" lido ali seria de outro titulo qualquer.
   if (c && !canalSessao && !semRetomada && c->progresso > 0 && c->progresso < ajustes_cw_concluido() &&
-      (strcmp(c->tipo,"series") || (t==c->temporada && e==c->episodio))) retomarPct=c->progresso;
+      (strcmp(c->tipo,"series") || (t==c->temporada && e==c->episodio) ||
+       (c->tvdbEp > 0 && cat_episodio_tvdb &&
+        cat_episodio_tvdb(idxAtual(), c->imdb, t, e) == c->tvdbEp))) retomarPct=c->progresso;
   if (sessaoRewatch && c && !semRetomada) {
     int rt=0,re=0,rp=0;
     retomarPct = rewatch_parcial_de(c->imdb,&rt,&re,&rp) && rt==t && re==e ? rp : 0;
@@ -1866,6 +1892,8 @@ void player_abrir(int indiceCatalogo, const char *url) {
 #endif
   retomamorna_cancelar();
   creditosauto_zerar(&creditosAuto);
+  memset(&scrobbleAlvo, 0, sizeof scrobbleAlvo); scrobbleAlvoPronto = 0;
+  scrobbleTvdbCapturado = 0;
   quadroCapturado = 0;
   player_descartar_retido();
   // O trailer usa o mesmo plano de video (LG) — solta antes de o player
@@ -1938,7 +1966,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
     if (canalSessao) { guia_carregar(); epg_iniciar(); } }
   tocando = 1; pausaPessoa = 0; retomandoSalto = 0; visivel = 1; anim = 0.0f; entrada = 0.0f; soBarra = 0; cheio = 1.0f; fileira = 1.0f;
   pedFontes = erroFonte = pedFaixas = pedProxT = pedProxE = trocaEpisodio = 0; inicioImagem = 0;
-  durFonteAvisada = durFontePulou = pedProximaFonte = durFonteCurta = 0;
+  durFonteAvisada = durFontePulou = pedProximaFonte = durFonteCurta = durFonteForaCache = 0;
   durFonteAcaoAte = 0; durFonteSkipEm = 0; durFonteManter = 0;
   abrindoExp = 0; abrindoT = 0.0f; abrindoDesde = 0;
   memset(&cine, 0, sizeof cine);
@@ -2322,7 +2350,7 @@ void player_definir_fonte(const char *url) {
   fonteAcaoInvalidar();
   // A primeira fonte ainda pode aproveitar a legenda antecipada na espera.
   if (comVideo) legenda_pre_descartar(i18n("troca de fonte"));
-  durFonteAvisada = pedProximaFonte = durFonteCurta = 0;
+  durFonteAvisada = pedProximaFonte = durFonteCurta = durFonteForaCache = 0;
   durFonteSkipEm = 0; durFonteManter = 0;
   // Fonte nova: a duracao esperada conhecida nao vale mais (mesmo titulo,
   // episodio outro, catalogo pode ter andado).
@@ -2406,6 +2434,47 @@ static void idTrakt(const CatItem *ci, char *dst, size_t n) {
   size_t l = idbase_len(base);   // "tmdb:t123", "kitsu:41370" guardam o ':' do prefixo
   if (epT >= 0 && epE > 0) snprintf(dst, n, "%.*s:%d:%d", (int)l, base, epT, epE);
   else snprintf(dst, n, "%s", base);
+}
+
+static const TraktScrobbleAlvo *alvoTrakt(const CatItem *ci) {
+  char id[64];
+  int tvdb = scrobbleTvdbCapturado, final, parFinal = 0;
+  if (!ci || !ci->imdb[0] || (strcmp(ci->tipo, "movie") && strcmp(ci->tipo, "series")) ||
+      (!strcmp(ci->tipo, "series") && (epT < 0 || epE <= 0))) return NULL;
+  idTrakt(ci, id, sizeof id);
+  // `ci` is the immutable snapshot captured when the player opened. Consult
+  // the live catalog so a playback opened from a provisional episode list can
+  // begin scrobbling once the canonical list replaces it.
+  final = strcmp(ci->tipo, "series") ||
+          (cat_episodios_finais ? cat_episodios_finais(idxAtual(), ci->imdb)
+                                : !ci->epsParciais);
+  if (!strcmp(ci->tipo, "series")) {
+    if (!tvdb && final && cat_episodio_tvdb)
+      tvdb = cat_episodio_tvdb(idxAtual(), ci->imdb, epT, epE);
+    if (final && cat_episodio_existe_final)
+      parFinal = cat_episodio_existe_final(idxAtual(), ci->imdb, epT, epE);
+    // Without the helper, retain the old behavior for optional-link builds.
+    else if (final && !cat_episodio_existe_final) parFinal = 1;
+  } else parFinal = final;
+  // An exact id captured before topology replacement is safe immediately. A
+  // numeric pair is safe only while that pair still exists in the final list.
+  if (!scrobble_alvo_congelar(&scrobbleAlvo, &scrobbleAlvoPronto, id,
+                              final, parFinal, tvdb))
+    return NULL;
+  return &scrobbleAlvo;
+}
+
+static int scrobbleTrakt(int evento, const CatItem *ci, double pos, double dur,
+                         double assistido, int fim) {
+  const TraktScrobbleAlvo *alvo = alvoTrakt(ci);
+  if (!alvo) return SCR_NADA;
+  if (trakt_scrobble_alvo)
+    return trakt_scrobble_alvo(evento, alvo, pos, dur, assistido, fim);
+  if (evento == SCR_EV_SAIU) {
+    trakt_marcar(alvo->id, pos, dur, assistido, fim);
+    return SCR_NADA;
+  }
+  return trakt_scrobble(evento, alvo->id, pos, dur, assistido, fim);
 }
 
 // WATCH_STATE v2 (#466): o player avisa os addons que declaram o resource
@@ -2751,7 +2820,9 @@ static void fecharSessao(int manter, int trocaFonte) {
       int simklScr;
       idTrakt(ci, id, sizeof id);
       // Trakt also completes by percentage, so an invalid duration cannot be sent.
-      if (!trocaFonte && !duracaoContradita) trakt_marcar(id, pos, durG, assistidoSeg, assistiu);
+      if (!trocaFonte && !duracaoContradita) {
+        scrobbleTrakt(SCR_EV_SAIU, ci, pos, durG, assistidoSeg, assistiu);
+      }
       // Simkl (#459): mesmo scrobble, independente de o Trakt estar ligado.
       // Sem vinculo, id fora do IMDb ou guarda recusando: SCR_NADA.
       simklScr = trocaFonte ? SCR_NADA : simkl_scrobble(SCR_EV_SAIU, id, pos, durG, assistidoSeg, assistiu);
@@ -2962,7 +3033,7 @@ static void gravarProgressoParcial(int conta, const char *porque) {
     else snprintf(id, sizeof id, "%s", ci->imdb);
     double sp = posSeg, sd = duracaoSeg;
     partesVirt(&sp, &sd, NULL);
-    trakt_scrobble(SCR_EV_PONTO, id, sp, sd, assistidoSeg, 0);
+    scrobbleTrakt(SCR_EV_PONTO, ci, sp, sd, assistidoSeg, 0);
     simkl_scrobble(SCR_EV_PONTO, id, sp, sd, assistidoSeg, 0);
     parcialConta = 0;
   }
@@ -3538,6 +3609,7 @@ void player_confirmar_partes(void) {
   durFonteAcaoAte = 0;
 }
 int player_parece_parte(void) { return durFonteCurta && !ehCanal(); }
+int player_fonte_fora_cache(void) { return durFonteForaCache; }
 int player_aviso_duracao_ativo(void) {
   return durFonteAcaoAte && (int)(SDL_GetTicks() - durFonteAcaoAte) < 0;
 }
@@ -3599,6 +3671,19 @@ static void durFonteAtualizar(double real, Uint32 agora) {
   if (duracaook_tem(sessao_usuario(), perfis_ativo(), durFonteTitulo())) {
     printf("[fonte] duracao incompatível: real=%.0fs esperada=%.0fs; kept: this title keeps sources of another length (OK earlier)\n",
            real, esperada);
+    fflush(stdout);
+    return;
+  }
+  // Only auto-play rejects short clips; manual choices retain the duration warning.
+  if (tentativaN > 0 && real <= 120 && real < esperada * .5) {
+    durFonteForaCache = 1;
+    durFonteCurta = 0;
+    durFonteSkipEm = durFonteAcaoAte = toastAte = 0;
+    durFonteManter = 0;
+    video_parar(); comVideo = 0;
+    player_erro_fonte_motivo(i18n("Fora do cache"),
+        i18n("O link levou a um vídeo de aviso: expirado ou fora de cache."));
+    printf("[fonte] warning clip: real=%.0fs expected=%.0fs; stopped, not cached\n", real, esperada);
     fflush(stdout);
     return;
   }
@@ -4724,13 +4809,20 @@ void player_atualizar(float dt, Uint32 agora) {
   if (scrubbing && agora - scrubUltimo > salto_fim_ms(ajustes_seekr_ligado())) terminarSalto();
 
   medirAssistido();
-    { static Uint32 vodPosEm; static double vodPos; static int vodBuf;
+    { static Uint32 vodPosEm; static double vodPos; static int vodLogado;
       unsigned agora = SDL_GetTicks(), buf = video_bufferando_ms();
       double pos = video_pos();
-      if (!comVideo || !video_pronto() || ehCanal()) { vodPos = pos; vodPosEm = agora; vodBuf = 0; }
-      else if (pos > vodPos + 0.05) { vodPos = pos; vodPosEm = agora; vodBuf = buf > 0; }
-      else if (vodPosEm && (unsigned)(agora - vodPosEm) >= 8000u && (!vodBuf || buf == 0)) {
-        vodBuf = 1;
+      if (!comVideo || !video_pronto() || ehCanal()) { vodPos = pos; vodPosEm = agora; vodLogado = 0; }
+      else if (pos > vodPos + 0.05) { vodPos = pos; vodPosEm = agora; vodLogado = 0; }
+      // UMA linha por PARADA, nao por quadro: a condicao antiga tinha
+      // `|| buf == 0`, e `buf` e o buffering AGORA — que continua 0 enquanto o
+      // pipeline nao entrega nada. A propria linha reincidia no frame seguinte
+      // (1362 linhas num registro, 1300 em 30 s no harness) e a evidencia do
+      // #681 era cortada do log. Agora `vodLogado` e a unica garantia, e ele so
+      // volta a zero quando a posicao anda de novo. Pausa DA PESSOA nao e
+      // parada: nao conta.
+      else if (vodPosEm && (unsigned)(agora - vodPosEm) >= 8000u && !vodLogado && !pausaPessoa) {
+        vodLogado = 1;
         { int itens = 0; long bytes = 0; char mem[96] = "";
           tex_estatisticas(&itens, NULL, &bytes, NULL, NULL);
           memlog_amostra(mem, sizeof mem);
@@ -4768,6 +4860,7 @@ void player_atualizar(float dt, Uint32 agora) {
     if (d > 1.0) {
       duracaoSeg = (float)d; duracaoReal = 1;
       durFonteAtualizar(d, agora);
+      if (durFonteForaCache) return;
     }
     durFonteContagem(agora);
     // MINIATURAS DO SEEKR: so com a duracao REAL (o servico escolhe a versao
@@ -4930,7 +5023,7 @@ void player_atualizar(float dt, Uint32 agora) {
       if (tocouS >= PLR_SCR_TOCOU_S) {
         { double sp = posSeg, sd = duracaoSeg;
           partesVirt(&sp, &sd, NULL);
-          trakt_scrobble(SCR_EV_TOCANDO, id, sp, sd, assistidoSeg, 0);
+          scrobbleTrakt(SCR_EV_TOCANDO, cs, sp, sd, assistidoSeg, 0);
           simkl_scrobble(SCR_EV_TOCANDO, id, sp, sd, assistidoSeg, 0); }
         wsTocando();
       }
@@ -4952,7 +5045,7 @@ void player_atualizar(float dt, Uint32 agora) {
         else snprintf(id, sizeof id, "%s", cs->imdb);
         { double sp = posSeg, sd = duracaoSeg;
           partesVirt(&sp, &sd, NULL);
-          trakt_scrobble(SCR_EV_PAUSOU, id, sp, sd, assistidoSeg, 0);
+          scrobbleTrakt(SCR_EV_PAUSOU, cs, sp, sd, assistidoSeg, 0);
           simkl_scrobble(SCR_EV_PAUSOU, id, sp, sd, assistidoSeg, 0); }
         if (!saindo) wsPausou();
         parcialPausa = 1;

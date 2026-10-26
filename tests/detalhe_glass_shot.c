@@ -343,6 +343,9 @@ const char *fx_trailer_nome(int i) { return (ehSerieDeEnsaio() ? TR_NOME_S : TR_
 const char *fx_trailer_miniatura(int i) {
   const char *ref=getenv("NUVIO_SHOT_REFERENCE");
   static char path[1024];
+  // Match the per-card artwork used in the approved 2.1 captures.
+  const char *trailers = getenv("NUVIO_SHOT_TRAILERS");
+  if (trailers) { snprintf(path,sizeof path,"%s/%s-%d.jpg",trailers,ehSerieDeEnsaio() ? "fargo" : "phm",i); return path; }
   if (ref) { snprintf(path,sizeof path,"%s/%s-arte.jpg",ref,ehSerieDeEnsaio() ? "fargo" : "phm"); return path; }
   return TR_MINI[i];
 }

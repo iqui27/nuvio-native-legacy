@@ -124,6 +124,7 @@ void player_definir_tentativa(int n, int max);
 // 1 quando a fonte atual falhou. O app usa no watchdog de canal: stream de TV
 // ao vivo que nao abre troca sozinho para o proximo da lista.
 int  player_fonte_falhou(void);
+int  player_fonte_fora_cache(void); // Current source is a short warning clip.
 int  player_tem_video(void);   // esta sessao abriu um video (nao o trailer)
 
 // 1 quando ha video de verdade por tras desta sessao. O desenho usa isto para

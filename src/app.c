@@ -11,6 +11,7 @@
 //   2. detalhe — camada sobre a tela corrente
 //   3. menu    — camada sobre a tela corrente
 //   4. a tela corrente (home, busca, biblioteca ou ajustes)
+#include "mediaurl.h"
 #include "arranque.h"
 #include "celbotao.h"
 #include "central.h"
@@ -72,6 +73,7 @@
 #include "guia.h"
 #include "livetvdiag.h"
 #include "proxyts.h"
+#include "webosver.h"
 #include "livetv_regras.h"
 #include "livestall.h"
 #include "bufavanco.h"
@@ -415,7 +417,7 @@ typedef struct {
   FontePreparoContexto contexto;
   int lembrada, catalogo, temporada, episodio, renovar;
   char id[80];
-  char url[4096];
+  char url[NV_MEDIA_URL_MAX];
   AddonsConsulta *consulta;
   Stream renovada;
   char tipoVod[16];
@@ -471,6 +473,7 @@ static NvLiveStall liveStall;             // vigia de trava do canal (livestall.
 // canalFonteIdx foi entregue ao player por proxyts; se ela morrer, a MESMA
 // fonte e tentada direto antes de passar para a proxima.
 static int    canalViaProxy;
+static int    canalDiretoTentado;
 static Uint32 canalFonteDesde;            // quando a fonte atual foi pedida
 // So o automatico usa o fallback. Uma escolha manual e uma decisao explicita
 // do dono e nao pode ser trocada por outra fonte por tras da tela.
@@ -722,7 +725,7 @@ static void *escolherFonteCanal(void *u) {
 }
 static void *escolherFonteStalker(void *u) {
   FonteJob *job = u;
-  char url[4096];
+  char url[NV_MEDIA_URL_MAX];
   int ok = perfis_sessao_atual(job->sessaoPerfil) && (m3u_e_id(job->id)
     ? m3u_resolver_sessao(job->id, url, sizeof url, job->sessaoPerfil, job->renovando)
     : stalker_resolver_sessao(job->id, url, sizeof url, job->sessaoPerfil));
@@ -1282,22 +1285,34 @@ static void renovarListaDoPlayer(void) {
 // que ja tocava nao muda. Desligado em Ajustes > Live TV, como no Xtream.
 static const char *urlCanal(const Stream *s, char *buf, size_t n) {
   const char *id = player_id_canal();
-  canalViaProxy = 0;
+  canalViaProxy = canalDiretoTentado = 0;
   if (s && xtream_url_limitada(s->url)) return s->url;
   if (!s) return "";
   // Toda troca de fonte do guia passa aqui, inclusive a do watchdog.
   video_definir_cabecalhos(s->cabecalhos);
+  int salvoProxy = guia_proxy_do_canal(id, -1);
+  int usarProxy = salvoProxy < 0 ? ajustes_livetv_proxy() : salvoProxy;
+  // A source-specific diagnostic overrides the direct continuous-TS shortcut.
+  if (salvoProxy == 1 && proxyts_disponivel() &&
+      proxyts_candidata(s->url, s->mp4) &&
+      strlen(s->url) + strlen(PROXYTS_PREFIXO) < n) {
+    proxyts_definir_cabecalhos(s->cabecalhos);
+    snprintf(buf, n, "%s%s", PROXYTS_PREFIXO, s->url);
+    canalViaProxy = 1;
+    return buf;
+  }
   // Confirmed TS already plays directly; avoid another probe and a local 302.
   if (s->tsContinuo) {
     proxyts_definir_cabecalhos("");
     return s->url;
   }
   if (!strncmp(s->url, PROXYTS_PREFIXO, strlen(PROXYTS_PREFIXO))) {
-    // Xtream: a lista ja vem marcada, e sem cabecalho de addon.
+    // Xtream: the list already selected the proxy route.
+    canalViaProxy = 1;
     proxyts_definir_cabecalhos(s->cabecalhos);
     return s->url;
   }
-  if (id[0] && !xtream_e_id(id) && !stalker_e_id(id) && ajustes_livetv_proxy() &&
+  if (id[0] && !xtream_e_id(id) && !stalker_e_id(id) && usarProxy &&
       proxyts_disponivel() && proxyts_candidata(s->url, s->mp4) &&
       strlen(s->url) + strlen(PROXYTS_PREFIXO) < n) {
     proxyts_definir_cabecalhos(s->cabecalhos);
@@ -1310,6 +1325,43 @@ static const char *urlCanal(const Stream *s, char *buf, size_t n) {
   }
   proxyts_definir_cabecalhos("");
   return s->url;
+}
+
+// Return whether the current guide source was retried before advancing.
+static int retentarCanal(void) {
+  const Stream *mesma = stream_item(canalFonteIdx);
+  if (canalViaProxy) {
+    if (canalDiretoTentado) return 0;
+    int redir = proxyts_redirecionou();
+    canalViaProxy = 0;
+    if (mesma && !redir) {
+      proxyts_definir_cabecalhos("");
+      canalFonteDesde = SDL_GetTicks();
+      canalDiretoTentado = 1;
+      const char *url = mesma->url;
+      if (!strncmp(url, PROXYTS_PREFIXO, strlen(PROXYTS_PREFIXO)))
+        url += strlen(PROXYTS_PREFIXO);
+      printf("[canal] source %d: proxy failed, retrying direct\n", canalFonteIdx);
+      player_definir_fonte(url);
+      return 1;
+    }
+    canalDiretoTentado = 1;
+  }
+  if (!canalDiretoTentado && mesma && nv_webos_major() > 0 &&
+      video_buffer_fim() > 0 && !video_decoder_anunciou() &&
+      proxyts_disponivel() && proxyts_candidata(mesma->url, mesma->mp4)) {
+    static char url[NV_MEDIA_URL_MAX + 128];
+    if (strlen(mesma->url) + strlen(PROXYTS_PREFIXO) >= sizeof url) return 0;
+    canalDiretoTentado = canalViaProxy = 1;
+    video_definir_cabecalhos(mesma->cabecalhos);
+    proxyts_definir_cabecalhos(mesma->cabecalhos);
+    snprintf(url, sizeof url, "%s%s", PROXYTS_PREFIXO, mesma->url);
+    canalFonteDesde = SDL_GetTicks();
+    printf("[canal] source %d: buffered without decoder, retrying proxy-ts\n", canalFonteIdx);
+    player_definir_fonte(url);
+    return 1;
+  }
+  return 0;
 }
 
 static int tocarFonteGuardada(void) {
@@ -1491,14 +1543,14 @@ static int resolverCanalXtream(void) {
   for (j = 0; j < nv; j++) if (!nv_res_preferida(v[j].altura, alvo)) ord[no++] = v[j];
   for (j = 0; j < no; j++)
     for (i = 0; i < k && n < (int)(sizeof s / sizeof *s); i++) {
-      char url[4096];
+      char url[NV_MEDIA_URL_MAX];
       const char *f = !strcmp(ext[i], "ts") ? "TS" : "HLS";
       if (!xtream_url_formato(ord[j].id, ext[i], url, sizeof url)) continue;
       // PROXY DE TS (#158, proxyts.h): a primeira fonte de cada variante vai
       // pelo proxy local — HLS (ou .ts que o painel responde com playlist) vira
       // TS continuo; o que ja e TS continuo o proxy redireciona direto. As
       // fontes diretas ficam atras, de reserva.
-      if (!i && !xtream_conexoes_limitadas() && ajustes_livetv_proxy() && proxyts_disponivel() && n < (int)(sizeof s / sizeof *s) - 1) {
+      if (!i && !xtream_conexoes_limitadas() && guia_proxy_do_canal(player_id_canal(), ajustes_livetv_proxy()) && proxyts_disponivel() && n < (int)(sizeof s / sizeof *s) - 1) {
         snprintf(s[n].url, sizeof s[n].url, "%s%s", PROXYTS_PREFIXO, url);
         if (strcmp(ord[j].id, player_id_canal()) && ord[j].nome[0])
           snprintf(s[n].rotulo, sizeof s[n].rotulo, "Xtream (%s, proxy) · %s", f, ord[j].nome);
@@ -1599,7 +1651,7 @@ static void erroCanalXtream(void) {
 // nada aqui decide reproducao. Uma vez por canal; o pipeline fecha antes porque
 // a conta tem 1 tela so (telas=0/1) e uma segunda conexao seria recusada.
 static void *sondarCanalXtreamFio(void *u) {
-  char *id = u, url[4096], fin[4096], r[600];
+  char *id = u, url[NV_MEDIA_URL_MAX], fin[NV_MEDIA_URL_MAX], r[600];
   long n = 0;
   int st = 0, er = 0;
   char *b;
@@ -1672,7 +1724,7 @@ static void processarFonteJob(void) {
   int tipo, renovando, resultado, estado, mesmoId = 1;
   Uint32 prazo;
   unsigned geracao;
-  char id[80], url[4096];
+  char id[80], url[NV_MEDIA_URL_MAX];
   int aplicar;
   if (!fioFonteVivo ||
       atomic_load_explicit(&job->estado, memory_order_acquire) != FJOB_DONE)
@@ -1916,7 +1968,7 @@ typedef struct {
   unsigned geracaoLista, sessao;
   uint64_t sessaoPerfil;
   DebridContexto debrid;
-  char url[4096], servico[32];
+  char url[NV_MEDIA_URL_MAX], servico[32];
 } TorrentJob;
 static TorrentJob torrentJob;
 static pthread_t fioTorrent;
@@ -2642,11 +2694,11 @@ static void registrarFonteVODTocando(void) {
 // recusou a URL no preparo (erro de conexao): repete o pedido pelo nosso
 // cliente, FORA do fio de quadro, e escreve uma linha so, sem caminho nem query.
 // Uma vez por URL.
-typedef struct { char url[4096]; char cab[512]; } SondaRecusa;
+typedef struct { char url[NV_MEDIA_URL_MAX]; char cab[512]; } SondaRecusa;
 static void *sondarRecusaFio(void *u) {
   SondaRecusa *p = u;
   const char *vetor[8];
-  char *l, *ctx = NULL, fim[4096], mime[96], linha[400];
+  char *l, *ctx = NULL, fim[NV_MEDIA_URL_MAX], mime[96], linha[400];
   int nc = 0, http = 0, ok;
   long corpo = -1;
   Uint32 t0 = SDL_GetTicks();
@@ -2666,7 +2718,7 @@ static void *sondarRecusaFio(void *u) {
 }
 static void sondarAposRecusa(void) {
 #ifndef __EMSCRIPTEN__
-  static char ultima[4096];
+  static char ultima[NV_MEDIA_URL_MAX];
   const char *url = video_url_atual();
   const Stream *s;
   SondaRecusa *p;
@@ -2700,7 +2752,7 @@ static int parteFase;
 static int parteRetomada;           // o arquivo aberto veio do ponto guardado
 static double partePos = -1;        // onde abrir dentro do arquivo (-1 = do inicio)
 static Uint32 parteDesde, parteGuardouEm;
-static char parteUrl[4096];
+static char parteUrl[NV_MEDIA_URL_MAX];
 static int parteMp4, parteRenovou;   // .mp4; links novos pedidos depois de tocar
 static PartesLista parteArqLista;    // o item do arquivo tocando (sessao ou nao)
 static int parteArqK = -1;
@@ -2708,11 +2760,11 @@ static int parteArqK = -1;
 // de duracao, player_parece_parte): pergunta ao TorBox pelos outros arquivos
 // do item, uma vez por link. Com 2 partes ou mais, a sessao liga sem reabrir
 // nada (o link do addon continua tocando) e a parte seguinte entra no fim.
-static char parteAutoUrl[4096];
+static char parteAutoUrl[NV_MEDIA_URL_MAX];
 static int parteAutoEsperando;
 static int parteProx = -1, parteProxFase;   // 0 nada, 1 pedido, 2 pronto, 3 falhou, 4 ultima tentativa
 static Uint32 parteProxDesde;
-static char parteProxUrl[4096];
+static char parteProxUrl[NV_MEDIA_URL_MAX];
 
 static void parteAviso(int k) {
   const PartesLista *l = partes_sessao_lista();
@@ -2863,7 +2915,7 @@ static void parteFalhou(const char *porque) {
 }
 static void vigiarPartes(void) {
   char alvo[64];
-  static char url[4096];
+  static char url[NV_MEDIA_URL_MAX];
   static PartesLista l;   // ~13 KB: fora da pilha, como as listas de partes.c
   int r;
   if (parteFase == PF_NADA) {
@@ -3049,7 +3101,7 @@ static void vigiarPartes(void) {
     printf("[partes] part %d ended: playing part %d of %d\n", partes_numero(sl, k),
            partes_numero(sl, prox), partes_principais(sl));
     fflush(stdout);
-    { char u[4096];
+    { char u[NV_MEDIA_URL_MAX];
       PartesPonto pt = { sl->usenet, sl->item, sl->arq[prox].id, 0 };
       snprintf(u, sizeof u, "%s", parteProxUrl);
       partes_sessao_ir(prox);
@@ -3368,6 +3420,22 @@ static void tentarProximaFonteVOD(void) {
   int atual, motivo = 0;
   if (!fonteVODAutomatica || player_id_canal()[0] || !player_aberto() ||
       player_quer_sair() || aguardandoFonte != 0 || !fonteVODDesde) return;
+  // Warning clips already stopped their pipeline: never reconnect or retry
+  // that provider. Preserve the not-cached card when no alternative remains.
+  if (player_fonte_fora_cache()) {
+    atual = stream_atual();
+    const Stream *s = stream_item(atual);
+    stream_automatico_excluir_aviso(atual);
+    if (fonteFalha && s && s->debridServico > 0)
+      fontefalha_provedor_recusado(fonteFalha, s->debridServico - 1);
+    int tem = fonteFalha ? stream_falha_tem_proxima(fonteFalha, fonteFalhaLista)
+                        : fonteVODTentativas < VOD_FONTE_MAX_TENTATIVAS && stream_proxima_vod(atual) >= 0;
+    if (!tem) { fonteVODAutomatica = 0; return; }
+    player_voltar_a_esperar();
+    player_toast(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 7000);
+    (void)pedirProximaFonteVOD(atual);
+    return;
+  }
   // Rede caiu com o video andando: a mesma fonte esta sendo recarregada
   // (video_reconexao.h). So vira troca de fonte quando ela desistir (falhou).
   if (video_reconectando()) return;
@@ -4817,7 +4885,7 @@ static void trocaDeTituloSeSolicitada(void) {
 // defeito de antes so naquele caminho. Esperar o video (player_com_video)
 // tambem poupa a busca das candidatas que o automatico testa e descarta.
 static void legendasDaFonte(void) {
-  static char ultimo[4096 + 64];
+  static char ultimo[NV_MEDIA_URL_MAX + 64];
   char chave[sizeof ultimo], alvo[64];
   const Stream *s;
   const CatItem *c;
@@ -6377,7 +6445,7 @@ void app_atualizar(float dt, Uint32 agora) {
       stream_definir_atual(fonteEscolhida);
       if (s) {
         if (player_id_canal()[0]) {
-          static char viaProxy[4200];
+          static char viaProxy[NV_MEDIA_URL_MAX + 128];
           player_definir_fonte(urlCanal(s, viaProxy, sizeof viaProxy));
         } else if (jaTocando) {
           printf("[fonte] conferencia confirmou a fonte que ja tocava (%u ms)\n",
@@ -6561,7 +6629,7 @@ void app_atualizar(float dt, Uint32 agora) {
       } else if (ls == NV_LS_REABRIR) {
         const Stream *mesma = stream_item(canalFonteIdx);
         if (mesma) {
-          static char viaProxy[4200];
+          static char viaProxy[NV_MEDIA_URL_MAX + 128];
 #ifdef NV_TPK
           if (video_terminou() && !liveStall.pendente)
             printf("[canal] tpk EOF de live: reabrindo a fonte %d imediatamente (sem tentativa)\n", canalFonteIdx);
@@ -6600,26 +6668,9 @@ void app_atualizar(float dt, Uint32 agora) {
       fflush(stdout);
       int prox = stream_canal_proxima(canalFonteIdx);
       const Stream *s;
-      // PELO PROXY NAO ABRIU: a MESMA fonte direto, antes da proxima (#283).
-      // Cobre o HLS que o proxy nao converte (cifrado, fMP4, audio a parte) e
-      // a TV em que o motor HLS do uMS toca melhor que o TS continuo. Se o
-      // proxy so redirecionou, a tentativa direta ja foi esta.
-      if (canalViaProxy) {
-        const Stream *mesma = stream_item(canalFonteIdx);
-        int redir = proxyts_redirecionou();
-        canalViaProxy = 0;
-        if (mesma && !redir) {
-          printf("[canal] fonte %d pelo proxy nao abriu (%s); tentando direto\n", canalFonteIdx,
-                 video_falhou() ? video_erro_texto()
-                                : semDecoder ? "dado sem decoder" : "sem dado no prazo");
-          fflush(stdout);
-          marco("canal: proxy falhou, fonte direto");
-          proxyts_definir_cabecalhos("");
-          canalFonteDesde = SDL_GetTicks();
-          player_definir_fonte(mesma->url);
-          return;
-        }
-      }
+      // Try the other route once before advancing: proxy -> direct (#283),
+      // or webOS direct -> proxy when bytes arrived without a decoder (#625).
+      if (retentarCanal()) return;
       // PORTAL STALKER: nao existe "proxima fonte" — cada canal tem uma so, e
       // o que morre nao e o canal, e o LINK, que vale minutos. Avancar o indice
       // aqui cairia direto no ramo de desistir, entao o conserto e pedir um
@@ -6673,7 +6724,7 @@ void app_atualizar(float dt, Uint32 agora) {
         // com todas mudas o curto matava a 4K que abre em 11,8 s (25/09).
         canalFontePrazo = stream_canal_prazo_longo(prox)
                             ? CANAL_FONTE_PRAZO_MS : CANAL_FONTE_PRAZO_MUDA_MS;
-        { static char viaProxy[4200];
+        { static char viaProxy[NV_MEDIA_URL_MAX + 128];
           player_definir_fonte(urlCanal(s, viaProxy, sizeof viaProxy)); }
       } else {
         canalFonteIdx = -1;

@@ -2806,8 +2806,9 @@ static float focoTexto(float f) { (void)f; return 0.0f; }
 static void superficieItem(GfxRect r, float raio, float f, float a) {
   float v = focoVisual(f);
   if (v <= .001f || a <= .001f) return;
+  if (gfx_foco_placa(r, raio, v, a)) return;
   if (ajustes_vidro()) {
-    if (!gfx_foco_placa(r, raio, v, a)) gfx_cor(r, raio, 1, 1, 1, .12f * v * a);
+    gfx_cor(r, raio, 1, 1, 1, .12f * v * a);
     return;
   }
   // NO SOLIDO A LINHA FOCADA SOBE: #2b2d34 com a sombra curta do mockup

@@ -6237,6 +6237,7 @@ T("Perfis com ajustes próprios, perfil infantil com trava e cópia de ajustes."
   T("Sem a fileira de cores? Ajustes › Sobre e ajuda ›", "Ingen farverække? Indstillinger › About and help ›"),
   T("Sem add-on de fontes o Nuvio não tem o que tocar. Instale um em Ajustes › Fontes e addons.", "Without a sources add-on Nuvio has nothing to play. Install one under Settings › Sources and add-ons."),
   T("Sem agrupar", "Ingen gruppering"),
+  T("Sem ampliação ativa nesta sessão. Escolha 720p ou 1080p abaixo da saída da TV e reinicie o app. O vídeo não muda.", "Ingen aktiv opskalering i denne session. Vælg 720p eller 1080p under tv-udgangen, og genstart appen. Videoen ændres ikke."),
   T("Sem arte", "Intet billede"),
   T("Sem artes para comparar: nada foi aplicado", "Ingen billeder at sammenligne: intet blev anvendt"),
   T("Sem atividade neste período", "Ingen aktivitet i denne periode"),

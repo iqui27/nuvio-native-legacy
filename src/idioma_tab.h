@@ -6236,6 +6236,7 @@
   { "Sem a fileira de cores? Ajustes › Sobre e ajuda ›", "No color row? Settings › About and help ›" },
   { "Sem add-on de fontes o Nuvio não tem o que tocar. Instale um em Ajustes › Fontes e addons.", "Without a sources add-on Nuvio has nothing to play. Install one under Settings › Sources and add-ons." },
   { "Sem agrupar", "No grouping" },
+  { "Sem ampliação ativa nesta sessão. Escolha 720p ou 1080p abaixo da saída da TV e reinicie o app. O vídeo não muda.", "No active upscaling this session. Choose 720p or 1080p below the TV output and restart the app. Video is unchanged." },
   { "Sem arte", "No artwork" },
   { "Sem artes para comparar: nada foi aplicado", "No artwork to compare: nothing was applied" },
   { "Sem atividade neste período", "No activity in this period" },

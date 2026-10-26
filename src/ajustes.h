@@ -267,7 +267,7 @@ int  ajustes_cor_logo(void);
 int  ajustes_vidro(void);
 // "Contorno do vidro": 1 = o fio fino dos cartoes/linhas em repouso aparece.
 int  ajustes_vidro_contorno(void);
-// "Foco na cor de destaque": 1 = o foco usa um vidro tingido com o realce em vez do cinza (so com vidro).
+// Accent focus is independent of glass: tinted glass or a solid tinted plate.
 int  ajustes_foco_acento(void);
 // Ajustes > Conta, "Usar os addons do perfil principal" (padrao ligado): o
 // perfil que nao e o principal le os addons do principal. Ver perfis_ativo_addons.

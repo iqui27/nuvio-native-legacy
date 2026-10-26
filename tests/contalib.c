@@ -31,7 +31,7 @@ int contapend_estado(const char *i, const char *tipo, int t, int e, long long ms
   (void)v;(void)tipo; return 1;
 }
 int contapend_reenviar(void) { return 0; }
-void contapend_reenviar_com(int (*f)(const char *, const char *, const VistoPar *, int, int, int, const int *, int)) { (void)f; }
+void contapend_reenviar_com(int (*f)(const char *, const char *, const VistoPar *, int, int, int, const int *, int, const int *)) { (void)f; }
 
 int ajustes_fonte_biblioteca(void) { return 0; }   // AJ_SALVOS_LOCAL: a conta e a fonte
 

@@ -2971,6 +2971,12 @@ void guia_fonte_gravar_diag(const char *id, int formato, int modo, int proxy) {
   printf("[ltv] fonte=%s diagnostico gravado: formato=%d modo=%d proxy=%d\n", ch, formato, modo, proxy);
   fflush(stdout);
 }
+int guia_proxy_do_canal(const char *id, int padrao) {
+  char ch[LTV_CHAVE];
+  LtvPref *p;
+  if (!guia_fonte_do_canal(id, ch, sizeof ch) || !(p = ltv_pref(ch, 0)) || p->proxy < 0) return padrao;
+  return p->proxy;
+}
 int guia_modo_do_canal(const char *id, int padrao) {
   char ch[LTV_CHAVE];
   LtvPref *p;
