@@ -886,6 +886,14 @@ static int iniciarPoliticaFonte(int preferida, int manual) {
 #include <stdio.h>
 
 static Tela tela = TELA_HOME;
+static int tituloDoPainel;
+static void voltarAoPainel(void) {
+  if (tituloDoPainel && detail_aberto()) tituloDoPainel = 2;
+  else if (tituloDoPainel == 2 && !player_aberto()) {
+    tituloDoPainel = 0;
+    spainel_voltar_titulo();
+  }
+}
 #ifdef NV_LINUX_DESKTOP
 static int uiPreview;
 #endif
@@ -1032,6 +1040,17 @@ static void abrirPorIndice(int i) {
   it.genero = c->genero;
   it.meta = c->meta;
   abrirTitulo(&it, 1, 1);
+}
+
+// Consume the panel request through the same title route as other screens.
+static void abrirTituloDoPainel(void) {
+  if (player_aberto()) return;
+  const char *alvo = spainel_pediu_abrir();
+  if (!alvo || !alvo[0]) return;
+  tituloDoPainel = 1;
+  int k = cat_indice_por_imdb(alvo);
+  if (detail_aberto()) detail_fechar_seco();
+  if (k >= 0) abrirPorIndice(k); else desc_pedir_titulo(alvo);
 }
 
 // Monta o id que os addons esperam. Para serie e "tt1234567:temporada:episodio";
@@ -3644,6 +3663,7 @@ static void perfilEncerrarSessao(void) {
   canalViaProxy = stalkerTentativas = stalkerRenovando = 0;
   memset(&liveStall, 0, sizeof liveStall);
   abrirTeste[0] = 0;
+  tituloDoPainel = 0;
   cwTocarT = cwTocarE = cwEspera = 0;
   cwEsperaDesde = 0;
   memset(&cwEsperaItem, 0, sizeof cwEsperaItem);
@@ -5612,17 +5632,9 @@ void app_atualizar(float dt, Uint32 agora) {
         !desc_titulo_buscando() && deeplink_pegar(&dl)) deeplinkAbrir(&dl); }
   // Da pagina do titulo, um titulo escolhido no painel de Salvos/avisos TROCA a
   // pagina (a de baixo fecha seca). So esse pedido: os demais seguem de fora.
-  if (detail_aberto() && !player_aberto()) {
-    const char *alvo = spainel_pediu_abrir();
-    if (alvo && alvo[0]) {
-      int k = cat_indice_por_imdb(alvo);
-      detail_fechar_seco();
-      if (k >= 0) abrirPorIndice(k); else desc_pedir_titulo(alvo);
-    }
-  }
+  abrirTituloDoPainel();
   if (!detail_aberto() && !player_aberto()) {
-    const char *alvo = spainel_pediu_abrir();
-    if (!alvo) alvo = recomenda_pediu_abrir();   // mesmo contrato, outra origem
+    const char *alvo = recomenda_pediu_abrir();   // mesmo contrato, outra origem
     if (!alvo) alvo = avisos_pediu_abrir();
     { static char afImdb[24];
       if (!alvo && amigosfil_pediu_titulo(afImdb, sizeof afImdb)) alvo = afImdb; }
@@ -7044,6 +7056,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // app_evento, no mesmo evento da ESQUERDA, e abre por cima dela.
   detail_sob_menu(detail_aberto() && menu_aberto());
   detail_atualizar(dt, agora);
+  voltarAoPainel();
   menu_atualizar(dt, agora);
   // PÓS-REPRODUÇÃO. O proximo episodio reabre a busca de fonte com o id novo;
   // o titulo relacionado sai do player e abre o detalhe, que e onde o dono

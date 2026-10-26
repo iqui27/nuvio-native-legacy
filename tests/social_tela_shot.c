@@ -15,8 +15,11 @@
 #include "j4_proof.h"
 static GLuint fbo, fboTex;
 static void proof_reset(void) { entrada=tempo=rolagem=velocidade=segSel=segFoco=revT=0;sair=0;selecionado=0;filtro=0;zona=1;memset(focoAnim,0,sizeof focoAnim); }
-static void proof_focus(void) { selecionado=1; }
-static void proof_close(void) { sair=1; }
+static void proof_key(SDL_Keycode key) {
+  SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = key; social_evento(&e);
+}
+static void proof_focus(void) { proof_key(SDLK_DOWN); }
+static void proof_close(void) { proof_key(SDLK_ESCAPE); }
 static void proof_reopen(void) { sair=0; }
 static void proof_step(float dt) { social_atualizar(dt,SDL_GetTicks()); }
 static void proof_draw(void) { social_desenhar(SDL_GetTicks()); }

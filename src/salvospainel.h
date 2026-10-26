@@ -18,6 +18,8 @@
 
 void spainel_abrir(void);
 void spainel_fechar(void);
+// Restore the same tab, row and scroll after closing a title opened here.
+void spainel_voltar_titulo(void);
 // NASCER DA ILHA (ilha.h, com o relogio na tela): o painel abre crescendo do
 // retangulo (x, y, w, h) — a pilula, ou o modal dela — ate a forma dele, em vez
 // de deslizar da borda. `spainel_recolher_para` e chamado por quadro com o

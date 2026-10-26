@@ -282,7 +282,8 @@ void social_desenhar(Uint32 agora) {
     if(strncmp(dados.pessoa.socialSlug,"nuvio:",6))textoA(TXT_ILHA_APOIO,"Trakt · perfil público",lx,ay+164+by,bw,.45f);
     {static const char *const T[2]={"OK","Voltar"},*const R[2]={"Abrir título","Fechar"};int lista=nv&&zona&&(dados.estado==SOCIAL_PRONTO||dados.estado==SOCIAL_ATUALIZANDO||dados.estado==SOCIAL_STALE);plrui_dicas(T+!lista,R+!lista,2-!lista,lx,ANC(1000),0,1);}}
   // A ilha.
-  t21_ilha_folha(il,SO_RAIO,1);
+  if (ajustes_vidro()) gfx_vidro_folha(il,SO_RAIO/il.h,1);
+  else t21_ilha_solida(il,SO_RAIO,1);
   plrui_kicker("Entre amigos",il.x+48,il.y+40,115,115,115,1);
   textoA(TXT_ILHA_TITULO,"Atividade recente",il.x+48,fmaxf(il.y+58,il.y+40+txt_linha(TXT_MINI,"AG",255,255,255,255).h),il.w-96,1);
   {int c[3]={0,0,0};for(int i=0;i<dados.n;i++){c[0]++;c[dados.atividades[i].avaliacao?2:1]++;}
