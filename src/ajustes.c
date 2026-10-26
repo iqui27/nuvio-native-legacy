@@ -76,6 +76,7 @@
 #include "registro.h"
 #include "seguro.h"
 #include "botoes.h"
+#include "plrui.h"
 #include "ponteiro.h"
 #include "addonsui.h"
 #include "pluginsui.h"
@@ -2690,7 +2691,7 @@ static void guiaDesenhar(void);
 static void guiaAtualizar(float dt);
 static int guiaAberto;
 // O tour "O que o Nuvio faz?" (ajustes_ux_tour.inc), tambem por cima das ilhas.
-static int tourAberto;
+static int tourAberto, tourPend;
 static void tourAbrir(void);
 static void tourEvento(const SDL_Event *e);
 static void tourDesenhar(void);
@@ -9991,6 +9992,8 @@ void ajustes_evento(const SDL_Event *e) {
   AJ_ESCALA_INI();
   if (guiaAberto) { guiaEvento(e); AJ_ESCALA_FIM(); return; }
   if (tourAberto) { tourEvento(e); AJ_ESCALA_FIM(); return; }
+  // Resolve the tour destination before another key can reach the old page.
+  if (tourPend) tourAtualizar(0);
   if (apoioAberto) { apoioEvento(e); AJ_ESCALA_FIM(); return; }
   eventoTela(e);
   // FIM DA EDICAO DO LIMITE (issue #197): qualquer tecla que solte a linha
@@ -11165,8 +11168,10 @@ static void ajDesenharTudo(Uint32 agora) {
 #endif
   montarTela();
   if (guiaAberto) { ponteiro_camada(); guiaDesenhar(); return; }
-  if (tourAberto) { ponteiro_camada(); tourDesenhar(); return; }
+  if (tourAberto && tourVis > .99f) { ponteiro_camada(); tourDesenhar(); return; }
   aj4Desenhar();
+  // Tour enter/exit: the page fades and rises over v4 instead of cutting.
+  if (tourVis > .01f) { if (tourAberto) ponteiro_camada(); tourDesenhar(); }
 
   // A folha de fileiras cobre a lista; o vinculo cobre as duas, porque ele e a
   // unica coisa aqui com prazo (o codigo do dispositivo expira).
@@ -11415,8 +11420,8 @@ int ajustes_teste_quadro(const char *id) {
     tourAbrir(); tourInicio = (long)time(NULL);
     if (!strcmp(id, "tour-more")) { tourFoco = 8; tourTopo = 2; tourRol = tourRolAlvo = 808; }
     if (!strcmp(id, "tour-last")) { tourFoco = 16; tourTopo = 3; tourRol = tourRolAlvo = 1212; }
-    if (!strcmp(id, "tour-where")) { tourOnde(2); tourAtualizar(0); }
-    if (!strcmp(id, "tour-edit")) { tourLigar(2); tourAtualizar(0); }
+    if (!strcmp(id, "tour-where")) { tourVis = 1; tourOnde(2); tourAtualizar(0); }   // exit from a settled page
+    if (!strcmp(id, "tour-edit")) { tourVis = 1; tourLigar(2); tourAtualizar(0); }
     return 1;
   }
   if (!strncmp(id, "v4-", 3)) {
