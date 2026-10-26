@@ -37,7 +37,7 @@ int juntosui_shot_camada_atual(void);
 
 static SDL_Window *win;
 static const char *base;
-static int sourcesOnly, proofsOnly, lobbyOnly, flowOnly, transitionsOnly;
+static int sourcesOnly, proofsOnly, lobbyOnly, flowOnly, transitionsOnly, lobbyNovo;
 void app_shot_escolher_fonte(int fonte);
 void app_shot_juntos_abrir(Uint32 agora);
 static GLuint fundoTex;
@@ -85,10 +85,13 @@ static void quadros(int n) {
     ilha_ancorar((1920 - 64) / gfx_escala_ui(), 36 / gfx_escala_ui(), 1);
     anim_politica_reduzida = ajustes_animacoes_reduzidas_usuario();
     juntosui_atualizar(agora);
+    // app.c order: the lobby goes under the shared Sources sheet while it is up.
+    int sob = stream_folha_anim() > .005f;
+    if (sob) juntosui_desenhar(agora);
     ilha_desenhar(agora);
     plrilha_desenhar(agora);
-    juntosui_desenhar(agora);
-    if (transitionsOnly) {
+    if (!sob) juntosui_desenhar(agora);
+    if (transitionsOnly || lobbyNovo) {
       stream_folha_atualizar(.016f, agora);
       stream_folha_desenhar(agora);
     }
@@ -134,6 +137,8 @@ int main(int argc, char **argv) {
   flowOnly = transitionsOnly || (argc > 2 && !strcmp(argv[2], "--flow"));
   sourcesOnly = argc > 2 && !strcmp(argv[2], "--sources");
   lobbyOnly = argc > 2 && !strcmp(argv[2], "--lobby");
+  lobbyNovo = argc > 2 && !strcmp(argv[2], "--lobby21");
+  flowOnly = flowOnly || lobbyNovo;
   proofsOnly = lobbyOnly || (argc > 2 && !strcmp(argv[2], "--proofs"));
   f = fopen(aj, "w"); fprintf(f, "idioma 0\nselected_theme 2\nescalaTextoLocal 2\n"); fclose(f);
   ajustes_dir(dir);
@@ -263,6 +268,87 @@ int main(int argc, char **argv) {
     quadros(35); captura("movie-b-lobby", 1080);
     return 0;
   }
+  if (lobbyNovo) {
+    // Owner round 26/10: full-bleed lobby states at 100% glass and 85% solid.
+    const char *assetDir = getenv("NUVIO_JUNTOS_ART");
+    char arte[700];
+    const char *friends[] = { "Rafa", "Fabi", "Gustavo", "Ana" };
+    SDL_Event key = {0}; key.type = SDL_KEYDOWN;
+    if (assetDir) { snprintf(arte, sizeof arte, "%s/duna-backdrop.jpg", assetDir); juntosui_shot_arte(arte); }
+    for (int i = 0; i < 5; i++) {
+      motor.sala.m[i].stats = 1; motor.sala.m[i].rtt = 24 + i * 17; motor.sala.m[i].offset = -12 + i * 7;
+      motor.sala.m[i].altura = i == 2 ? 1080 : 2160;
+    }
+    Stream fontes[3] = {0};
+    for (int i = 0; i < 3; i++) {
+      snprintf(fontes[i].url, sizeof fontes[i].url, "https://fixture.invalid/%d", i);
+      snprintf(fontes[i].rotulo, sizeof fontes[i].rotulo, "%s", (const char *[]){"Duna: Parte 2 2160p", "Duna: Parte 2 1080p", "Duna: Parte 2 720p"}[i]);
+      snprintf(fontes[i].provedor, sizeof fontes[i].provedor, "AIOStreams");
+      fontes[i].altura = (int[]){2160, 1080, 720}[i];
+    }
+    for (int v = 0; v < 2; v++) {
+      const char *tag = v ? "85-solid" : "100-glass";
+      char nome[96];
+      #define CAP(s) (snprintf(nome, sizeof nome, "%s-%s", tag, s), captura(nome, 1080))
+      gfx_escala_txt_definir(v ? .85f : 1); ajustes_definir_vidro(!v); ajustes_shot_valor("selected_theme", v ? 0 : 2);
+      juntosui_shot_folha(0, friends, 4);
+      motor.temSala = 0; motor.sala.n = 1;
+      snprintf(motor.sala.m[0].st, sizeof motor.sala.m[0].st, "carregando"); motor.sala.m[0].pct = 62; motor.sala.m[0].stats = 0;
+      juntosui_shot_camada(0, 0); quadros(30);
+      juntosui_sala_abriu();
+      quadros(2); CAP("m1-entry-030"); quadros(6); CAP("m2-entry-130"); quadros(10); CAP("m3-entry-300");
+      quadros(40); CAP("1-empty");
+      motor.temSala = 1; motor.sala.m[0].stats = 1;
+      snprintf(motor.sala.m[1].st, sizeof motor.sala.m[1].st, "pronto");
+      snprintf(motor.sala.m[2].st, sizeof motor.sala.m[2].st, "carregando"); motor.sala.m[2].pct = 42;
+      motor.sala.n = 2; quadros(2); CAP("m4-arrive-030"); quadros(6); CAP("m5-arrive-130");
+      motor.sala.n = 3; quadros(40); CAP("2-arriving");
+      snprintf(motor.sala.m[0].st, sizeof motor.sala.m[0].st, "pronto");
+      snprintf(motor.sala.m[2].st, sizeof motor.sala.m[2].st, "pronto");
+      snprintf(motor.sala.m[3].st, sizeof motor.sala.m[3].st, "pronto");
+      motor.sala.n = 4; quadros(3); CAP("m6-ready-050"); quadros(8); CAP("m7-ready-180");
+      quadros(40); CAP("3-ready");
+      juntosui_shot_contagem(3); quadros(3); CAP("m8-count-050"); quadros(12); CAP("4-countdown"); juntosui_shot_contagem(0);
+      // Invite: OK on Invite opens the panel; preparing first, then code + QR.
+      juntosui_shot_camada(3, 1); quadros(10);
+      key.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&key));
+      char cod0[12]; snprintf(cod0, sizeof cod0, "%s", codigo); codigo[0] = 0; urlCelular[0] = 0;
+      quadros(4); CAP("m9-invite-060"); quadros(30); CAP("5a-invite-preparing");
+      snprintf(codigo, sizeof codigo, "%s", cod0);
+      snprintf(urlCelular, sizeof urlCelular, "https://nuvio-juntos.henriquef29.workers.dev/j/0123456789abcdef0123456789abcdefK7M2QXA9");
+      // Invite while POST /v1/sala is in flight: queued, friend marked, sent on reply.
+      JuntosFase fase0 = fase; char sala0[40]; snprintf(sala0, sizeof sala0, "%s", salaId);
+      fase = JF_CRIANDO; salaId[0] = 0; prep.enviados = prep.n;
+      key.key.keysym.sym = SDLK_DOWN; assert(juntosui_evento_sdl(&key));
+      key.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&key));
+      assert(prep.n == prep.enviados + 1);
+      quadros(30); CAP("5-invite");
+      fase = fase0; snprintf(salaId, sizeof salaId, "%s", sala0);
+      key.key.keysym.sym = SDLK_ESCAPE; assert(juntosui_evento_sdl(&key));
+      assert(juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 1);
+      // Sources: OK hands off to the shared sheet; Back lands on Sources again.
+      key.key.keysym.sym = SDLK_RIGHT; assert(juntosui_evento_sdl(&key)); assert(juntosui_evento_sdl(&key));
+      key.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&key));
+      assert(juntosui_pediu_fontes());
+      stream_definir_alvo(motor.sala.ep); stream_definir_lista(fontes, 3); stream_definir_atual(0);
+      stream_folha_abrir();
+      quadros(4); CAP("6a-sources-opening"); quadros(36); CAP("6-sources");
+      key.key.keysym.sym = SDLK_ESCAPE; assert(!juntosui_evento_sdl(&key)); stream_folha_evento(&key);
+      quadros(4); CAP("6b-sources-closing"); quadros(36);
+      assert(juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 3);
+      CAP("7-sources-back");
+      // D-pad: actions -> open seat -> join code -> back down to the same action.
+      key.key.keysym.sym = SDLK_UP; assert(juntosui_evento_sdl(&key)); assert(juntosui_shot_foco_atual() == -1);
+      quadros(20); CAP("8-seat-focus");
+      assert(juntosui_evento_sdl(&key)); assert(juntosui_shot_foco_atual() == 6);
+      key.key.keysym.sym = SDLK_DOWN; assert(juntosui_evento_sdl(&key)); assert(juntosui_evento_sdl(&key));
+      assert(juntosui_shot_foco_atual() == 3);
+      #undef CAP
+    }
+    gfx_escala_txt_definir(1);
+    printf("juntos lobby21: states, invite, sources sheet, d-pad: ok\n");
+    return 0;
+  }
   if (flowOnly) {
     ajustes_definir_vidro(1);
     gfx_escala_txt_definir(1);
@@ -279,8 +365,9 @@ int main(int argc, char **argv) {
     juntosui_sala_abriu();
     quadros(35); captura("01-preload", 1080);
     SDL_Event key = {0}; key.type = SDL_KEYDOWN;
-    key.key.keysym.sym = SDLK_RIGHT;
-    for (int i = 0; i < 6; i++) assert(juntosui_evento_sdl(&key));
+    key.key.keysym.sym = SDLK_UP;
+    assert(juntosui_evento_sdl(&key) && juntosui_shot_foco_atual() == -1);
+    assert(juntosui_evento_sdl(&key) && juntosui_shot_foco_atual() == 6);
     quadros(20); captura("07-join-action", 1080);
     key.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&key));
     assert(juntosui_shot_camada_atual() == 2);
@@ -306,13 +393,15 @@ int main(int argc, char **argv) {
     assert(juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 2);
     player_encerrar();
     // Sources and exit confirmation return to the invoking control.
-    for (int focus = 3; focus <= 4; focus++) {
-      juntosui_shot_camada(3, focus);
-      key.key.keysym.sym = focus == 3 ? SDLK_RETURN : SDLK_ESCAPE;
-      assert(juntosui_evento_sdl(&key));
-      key.key.keysym.sym = SDLK_ESCAPE; assert(juntosui_evento_sdl(&key));
-      assert(juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == focus);
-    }
+    // Sources hands off to the shared 2.0.8 sheet and keeps focus on the button.
+    juntosui_shot_camada(3, 3);
+    key.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&key));
+    assert(juntosui_pediu_fontes() && juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 3);
+    juntosui_shot_camada(3, 4);
+    key.key.keysym.sym = SDLK_ESCAPE; assert(juntosui_evento_sdl(&key));
+    assert(juntosui_shot_camada_atual() == 4);
+    assert(juntosui_evento_sdl(&key));
+    assert(juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 4);
     quadros(20); captura("08-restored-focus", 1080);
     juntosui_shot_camada(3, 0);
     SDL_Event invite = {0}; invite.type = SDL_KEYDOWN; invite.key.keysym.sym = SDLK_RIGHT;
@@ -465,7 +554,7 @@ proofs:
   gfx_escala_txt_definir(1);
   ajustes_definir_vidro(1);
   juntosui_shot_camada(0, 0); quadros(30);
-  juntosui_shot_camada(3, 0);
+  juntosui_sala_abriu(); juntosui_shot_camada(3, 0);
   Uint32 now = SDL_GetTicks();
   juntosui_atualizar(now);
   const int times[] = {0, 80, 160, 320};
@@ -485,8 +574,11 @@ proofs:
     char name[80]; snprintf(name, sizeof name, "focus-%03d", times[i]); captura(name, 1080);
     if (i == 1) assert(juntosui_shot_foco(1) > .5f && juntosui_shot_foco(1) < 1);
   }
+  // Back goes one level (leave confirmation), Back again restores the focus.
   event.key.keysym.sym = SDLK_ESCAPE;
-  assert(juntosui_evento_sdl(&event));
+  assert(juntosui_evento_sdl(&event) && juntosui_shot_camada_atual() == 4);
+  assert(juntosui_evento_sdl(&event) && juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 1);
+  juntosui_shot_camada(0, 0);   // leaving: the lobby fades out
   juntosui_atualizar(now + 1330);
   assert(juntosui_shot_entrada() > 0 && juntosui_shot_entrada() < 1);
   juntosui_atualizar(now + 1380); juntosui_atualizar(now + 1430); juntosui_atualizar(now + 1480); juntosui_atualizar(now + 1530);

@@ -7488,6 +7488,14 @@ static void desenharTelas(Uint32 agora) {
   if (guia_overlay_aberta()) { ponteiro_camada(); guia_desenhar(agora); }
   CAMADA_SE(episodios_aberto());
   episodios_desenhar();
+  // Watch Together lobby stays UNDER the shared Sources sheet while it opens
+  // and closes (the island draws later); otherwise it draws near the end.
+  if (!registro_aberto() && stream_folha_anim() > .005f) {
+    float osd = gfx_osd_mult, hdr = gfx_hdr_ui;
+    gfx_osd_mult = gfx_hdr_ui = 1.0f;
+    juntosui_desenhar(agora);
+    gfx_osd_mult = osd; gfx_hdr_ui = hdr;
+  }
   CAMADA_SE(stream_folha_aberta());
   stream_folha_desenhar(agora);
   CAMADA_SE(faixas_aberta());
@@ -7905,7 +7913,7 @@ void app_desenhar(Uint32 agora) {
   // O MEDIDOR DE DESEMPENHO (Ajustes > Desempenho desta TV) nao e mais camada
   // propria: e conteudo da ilha do relogio (ilha.c, plrilha.c; desempenho.h).
   // Watch Together: rostos e reacoes no player, folha e cartao da sala.
-  if (!registro_aberto()) juntosui_desenhar(agora);
+  if (!registro_aberto() && stream_folha_anim() <= .005f) juntosui_desenhar(agora);
   CAMADA_SE(registro_aberto());
   registro_desenhar();
   // A ilha do relogio fica acima do painel de registro, no canto de sempre.
