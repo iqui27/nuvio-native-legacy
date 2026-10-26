@@ -3353,12 +3353,16 @@ static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,Ponte
   navigationTarget(x,fmaxf(y,top),w,fminf((y)+(h),bottom)-fmaxf(y,top),fn,activate,a,b)
 static int navigationMove(SDL_Keycode key) {
   if(key!=SDLK_UP && key!=SDLK_DOWN && key!=SDLK_LEFT && key!=SDLK_RIGHT)return 0;
+  // Origins' left edge belongs to the sidebar, even with header chips above it.
+  if(focoOrigem && key==SDLK_LEFT)return 0;
+  // A picked title owns arrows until released, including at list boundaries.
+  if(estado()==EST_ITENS && edModo==ED_ORDEM && ordemPega>=0 && foco.fileira>=gradeIni())return 0;
   GfxRect rects[512];int current=-1;
   for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].id==navigationFocus())current=i;}
   int next=focus_rect_nearest(rects,navigationCount,current,
     (key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
-  if(next<0)return 0;
-  if(next==current)return foco.fileira < gradeIni() || focoOrigem || focoPainel;
+  // Leave edge arrows to the clock/sidebar and scrolling fallbacks.
+  if(next<0 || next==current)return 0;
   focoOrigem=focoPainel=focoCont=estadoFoco=0;
   navigation[next].focus(navigation[next].a,navigation[next].b);
   return 1;

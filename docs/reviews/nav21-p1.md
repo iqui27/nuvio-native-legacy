@@ -74,3 +74,19 @@ Validation from the worktree root:
 Artifacts: `/Volumes/ExternalSSD/tmp/rev/navteste/p1-before.log`, `p1-final.log`, `p1-build.log`, `p1-i18n.log`, `violations.md`, `targets.tsv`, `library.png`, `settings.png`.
 
 This follow-up addresses the listed P1 review findings. It does not establish exhaustive acceptance of the original all-screen owner task or TV performance. P2 findings and target-device validation remain outside this follow-up. No push or deployment performed.
+
+## Library D-pad follow-up
+
+The same final fixtures fail against the original Library dispatcher (rc 1) and pass with the fix (rc 0):
+
+| Screen/state | Before | After | Exact key path |
+|---|---:|---:|---|
+| Library / clock and sidebar requests | 3 | 0 | To watch, Up; To watch, Down, Down to Origins, Left, advance exit animation |
+| Owned list / reorder | 3 | 0 | Open list with OK, Down, Right to Order, OK, title OK, Down; Up, Up, Left, Right at first title |
+| Open list / directional controls, notes and Back | 0 | 0 | Every rendered control and arrow; Down, Right, Right to Notes, OK, Down, title OK, Back, Back, Back |
+
+Geometry yields to a picked title and to Origins Left; arrows without a geometry neighbour reach existing clock/sidebar/scroll handlers. The generic gate treats Origins Left as a route outside its page registry, while explicit request assertions verify that route. Open-list fixtures now use the real OK handler to establish ownership, editing state and saved browser focus, with offline item/entry fixtures instead of manually setting `temAberta`.
+
+Validation: `bash tests/nav21.sh` rc 0, 3,555 checks, zero violations; `bash tools/build-local.sh` rc 0; `python3 tools/varredura-i18n.py` rc 0; `git diff --check` rc 0. Build retains the existing `ATOMIC_VAR_INIT` deprecation warning.
+
+Evidence under `/Volumes/ExternalSSD/tmp/rev/navteste/`: `p1-library-before.log`, `p1-library-before.md`, `p1-library-final.log`, `p1-library-build.log`, `library.png`, `settings.png`. Exhaustive original screen variants and physical-TV validation remain unestablished. No push or deployment performed.

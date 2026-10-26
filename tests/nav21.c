@@ -119,6 +119,9 @@ void nav21_check(Nav21Screen s) {
     int from=-1;for(int j=0;j<count;j++)if(targets[j].id==base[i].id)from=j;
     if(from<0) { nav21_expect(s.name,"focus absent from rendered targets",base[i].id,-1);continue; }
     int expected=targets[nearest(targets,count,from,d)].id;
+    // Origins' Left opens the sidebar outside this page's rectangle registry.
+    if((!strcmp(s.name,"Library + Origins") || !strcmp(s.name,"Lists")) &&
+       base[i].id>=10000 && base[i].id<20000 && keys[d]==SDLK_LEFT)expected=base[i].id;
     key(s,keys[d]); int actual=s.focus();
     actualEdges[i][d]=actual;
     if(expected!=base[i].id)expectedEdges[i][d]=expected;
