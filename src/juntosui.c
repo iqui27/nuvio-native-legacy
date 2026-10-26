@@ -52,6 +52,7 @@ static int foco, linhaReacao, focoSala;
 static Camada camadaVisual;
 static GfxRect corpoBase;
 static int corpoDesenhando;
+#define LUGAR_MS 860.0f   // seat clock: 600 ms arrival, light 160 + 700 ms
 static float entrada, tempoEntrada, focoAnim[8][16], lugarAnim[5], fonteExp[5];
 static Uint32 ultimoQuadro;
 static float contagemAnim, prontoAnim[5], prontinhaAnim;
@@ -649,7 +650,7 @@ void juntosui_atualizar(Uint32 agora) {
       lugarAnim[i] = prontoAnim[i] = 0;
     }
     int presente = m && i <= m->sala.n;
-    lugarAnim[i] = anim_mola(lugarAnim[i], presente, dt, NV_MOLA_TELA);
+    lugarAnim[i] = anim_rampa(lugarAnim[i], presente, dt, LUGAR_MS);   // own clock: arrival then light
     int pronto = p && p->on && (!strcmp(p->st, "pronto") || !strcmp(p->st, "tocando"));
     prontoAnim[i] = anim_mola(prontoAnim[i], pronto, dt, NV_MOLA_TELA);
     int local = m && i < m->sala.n && !strcmp(m->sala.m[i].id, m->eu) && fonteLocal(m);
@@ -896,7 +897,8 @@ static void estadoLinha(const JsMembro *p, float x, float y, int centro, float a
 
 static void desenharLugar(int i, const JsMembro *p, int vazio, float f, float x, float y, float a) {
   float e = ajustes_animacoes_reduzidas_usuario() ? 1 : entradaItem(i);
-  float chega = lugarAnim[i], luz = chega * chega;   // sits down from above, then its light comes up
+  // Mockup: 600 ms arrival from above, then the light comes up over 700 ms, 160 ms in.
+  float ms = lugarAnim[i] * LUGAR_MS, chega = anim_saida(ms / 600), luz = anim_suave((ms - 160) / 700);
   float s = 1 + .05f * f, avW = LUGAR_AV * (.9f + .1f * luz);
   GfxRect c = { x, y, LUGAR_W, LUGAR_H };
   GfxRect av = { x + (LUGAR_W - avW) / 2, y + 26 + (LUGAR_AV - avW) / 2, avW, avW };

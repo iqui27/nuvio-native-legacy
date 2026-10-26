@@ -13,6 +13,8 @@ seat = ui[ui.index('static void desenharLugar('):ui.index('static int todosPront
 assert 'estadoLinha(p, cx' in seat, 'seat state must be icon + word (green when ready)'
 assert 'prontoPulso' not in ui, 'ready glow is still in the mockup, no pulse'
 assert '- (1 - chega) * 20' in seat, 'seat arrival comes down 20 px like the mockup'
+assert 'anim_rampa(lugarAnim[i], presente, dt, LUGAR_MS)' in ui and '#define LUGAR_MS 860.0f' in ui, 'seat runs on its own timed clock (reduced motion snaps)'
+assert 'chega = anim_saida(ms / 600)' in seat and 'luz = anim_suave((ms - 160) / 700)' in seat, '600 ms arrival, then 700 ms light 160 ms in'
 assert 'fraseEspera(&m->sala.m[falta])' in ui, 'readiness line names who is still getting ready'
 assert 'stream_folha_sala_h = salaFolhaH' in ui, 'Sources sheet must show the room statuses'
 st = Path('src/streams.c').read_text()
