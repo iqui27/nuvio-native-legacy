@@ -64,6 +64,15 @@ int   st_abre_sozinho(void);
 int   st_teclado_modo(void);
 // 1 = "Do app" fora do Android: o teclado da TV (LG/Samsung) nunca abre.
 int   st_teclado_do_app(void);
+// .tpk com "Teclado: Do sistema" valido: a grade do app some de todas as buscas e
+// do teclado modal, e o botao de microfone do app tambem (st_voz_disponivel = 0).
+// Sempre 0 fora do .tpk, e 0 se o teclado da Samsung nao subiu nesta sessao.
+int   st_teclado_so_sistema(void);
+// Cursor do campo do teclado do sistema (so o .tpk). st_cursor_chars: posicao em
+// caracteres, ou -1 (no fim / nao e deste dono). st_cursor_prefixo: copia para
+// `dst` o texto antes do cursor e devolve 1; 0 se o cursor esta no fim.
+int   st_cursor_chars(int dono);
+int   st_cursor_prefixo(int dono, const char *texto, char *dst, size_t n);
 // Abre o teclado do sistema com `inicial` no campo (max em bytes). 1 = abriu.
 int   st_ime_abrir(int dono, const char *inicial, int max);
 // Tipo do PROXIMO st_ime_abrir (consumido nele): o Android abre o teclado de

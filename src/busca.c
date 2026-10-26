@@ -107,6 +107,8 @@ static int buTecladoNativo(void) {
   return st_ime_disponivel() && st_teclado_modo() != 1 &&
          (buTelefone() || st_abre_sozinho());
 }
+// .tpk com "Teclado: Do sistema": a grade do app some e o foco fica no campo.
+static int buSoSistema(void) { return st_teclado_so_sistema(); }
 static int buResultadosPagina(void);
 static int buUmaColuna(void) { return layout_desktop_ativo() || buRetrato() || buTecladoNativo(); }
 static float buCampoH(void) { return BU_DESKTOP ? 52.0f : buTecladoNativo() ? 104.0f : buTelefone() ? 76.0f : 88.0f; }
@@ -1192,7 +1194,7 @@ static void busca_evento_(const SDL_Event *e) {
     okPress = 0; okLongo = 0; okDesde = 0;
   }
   if (e->type != SDL_KEYDOWN) return;
-  if (buTecladoNativo() && painel == 0 && !campoFoco) campoFoco = 1;
+  if ((buTecladoNativo() || buSoSistema()) && painel == 0 && !campoFoco) campoFoco = 1;
 
   if (k == SDLK_BACKSPACE && painel == 0) {
     if (nConsulta > 0) { campoApagar(); refiltrar(); }
@@ -1242,7 +1244,7 @@ static void busca_evento_(const SDL_Event *e) {
   if (painel == 0 && campoFoco) {
     switch (k) {
       case SDLK_DOWN:
-        if (buTecladoNativo()) {
+        if (buTecladoNativo() || buSoSistema()) {
           if (nFil > 0 && !sugestao) { registrarConsulta(); painel = 1; }
           else if (recentesVisiveis()) recentesEntrar();
           else if (nFil > 0) painel = 1;
@@ -1353,6 +1355,7 @@ static void busca_evento_(const SDL_Event *e) {
         }
         recentesAjustarFoco();
       } else if (!moveu && buTecladoNativo()) voltarCampo();
+      else if (!moveu && buSoSistema()) { painel = 0; campoFoco = 1; }
       else if (!moveu) { if (ajustes_menu_topo()) sair = 1; else pediuRelogio = 1; }
       break;
     }
@@ -1605,6 +1608,8 @@ static void toqueBuscaRetomarFoco(void) {
 
 static void busca_atualizar_(float dt, Uint32 agora) {
   buInterfaceAtualizar();
+  // Sem a grade do app (.tpk, Teclado "Do sistema"), o foco do teclado e o campo.
+  if (buSoSistema() && painel == 0 && !campoFoco) campoFoco = 1;
   // TECLADO/VOZ DO SISTEMA (sistexto.h): o texto vem inteiro e substitui o campo.
   { char t[BU_MAX_CONSULTA * 2];
     int voz = vozBusca();
@@ -2058,10 +2063,18 @@ static void desenhaCampo(Uint32 agora) {
       float maxW = fim - tx - 14.0f;
       if (buUmaColuna()) gfx_recorte(tx - 8.0f, c.y + 4.0f, fim - tx, c.h - 8.0f);
       const char *av = st_dono() == ST_BUSCA ? st_aviso() : "";
+      float cursorMeio = -1.0f;   // x do cursor quando a pessoa o moveu para dentro do texto
       if (nConsulta && !av[0]) {
         TxtLinha l = txt_linha_corta(estilo, consulta, BU_TX, maxW);
+        float lw = buUmaColuna() ? fminf((float)l.w, maxW) : (float)l.w;
+        char antes[BU_MAX_CONSULTA * 2];
         txt_desenhar(l, tx, c.y + (c.h - l.h) * 0.5f);
-        tx += (buUmaColuna() ? fminf((float)l.w, maxW) : (float)l.w) + 2.0f;
+        // Cursor no MEIO do texto (Esquerda/Direita no teclado do sistema, .tpk).
+        if (st_cursor_prefixo(ST_BUSCA, consulta, antes, sizeof antes)) {
+          TxtLinha p = txt_linha_corta(estilo, antes, BU_TX, maxW);
+          cursorMeio = tx + fminf((float)p.w, lw) + 2.0f;
+        }
+        tx += lw + 2.0f;
       } else {
         const char *ph = vozBusca() ? i18n("Ouvindo…") : av[0] ? i18n(av) : "Títulos, pessoas";
         TxtLinha l = txt_linha_corta(estilo, ph, 255, av[0] && !vozBusca() ? 200 : 243,
@@ -2069,7 +2082,8 @@ static void desenhaCampo(Uint32 agora) {
         txt_desenhar_alpha(l, tx, c.y + (c.h - l.h) * 0.5f, av[0] ? 0.9f : 0.42f);
       }
       if (painel == 0 && (nConsulta > 0 || campoFoco == 1) && (agora / 500) % 2 == 0)
-        gfx_cor((GfxRect){ nConsulta ? tx + 2.0f : tx - 6.0f, c.y + (c.h - 30.0f) * 0.5f, 2.0f, 30.0f }, 0.5f, ar, ag, ab, 1.0f);
+        gfx_cor((GfxRect){ cursorMeio >= 0.0f ? cursorMeio + 2.0f : nConsulta ? tx + 2.0f : tx - 6.0f,
+                           c.y + (c.h - 30.0f) * 0.5f, 2.0f, 30.0f }, 0.5f, ar, ag, ab, 1.0f);
       if (buUmaColuna()) gfx_sem_recorte();
     }
   }
@@ -2077,7 +2091,7 @@ static void desenhaCampo(Uint32 agora) {
 
 // Ilha do teclado: teclas de 62 (raio 18), a focada na pilula do acento.
 static void desenhaTeclado(void) {
-  if (buTecladoNativo()) return;
+  if (buTecladoNativo() || buSoSistema()) return;
   char rotulo[8];
   int linhas = kbFil + 1;
   GfxRect ilha = { BU_KB_X, BU_KB_Y, BU_COL_W,
