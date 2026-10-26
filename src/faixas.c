@@ -460,7 +460,7 @@ static int legendaAtiva(void) {
 static int modo;
 // Coluna dentro da folha de LEGENDA: 0 = lista, 1 = estilo.
 #define FX_COL_ESTILO 2
-#define FX_N_ESTILO   11
+#define FX_N_ESTILO   13
 static int ctl = -1;       // ESTILO: item cujo controle esta aberto (-1 = a grade)
 
 static int nLinhas(int col);
@@ -586,13 +586,12 @@ static int nLinhas(int col) {
 // Oito linhas "rotulo: valor". OK cicla o valor e aplica NA HORA — as
 // personalizacoes abaixo usam somente metodos presentes no firmware. A ultima
 // linha restaura o conjunto inteiro sem exigir dezenas de toques no controle.
-enum { EST_FONTE = 1, EST_COR = 2, EST_RESTAURAR = 9, EST_COR_BORDA = 10 };
+enum { EST_FONTE = 1, EST_COR = 2, EST_RESTAURAR = 9, EST_COR_BORDA = 10,
+       EST_ESPACO = 11, EST_FUNDO_OPAC = 12 };
 static const char *const EST_ROT[FX_N_ESTILO] = {
   "Tamanho", "Fonte OpenSubtitles", "Cor", "Opacidade", "Fundo", "Posição", "Borda", "Atraso",
-  "Negrito", "Restaurar padrão", "Cor da borda"
+  "Negrito", "Restaurar padrão", "Cor da borda", "Espaçamento", "Opacidade do fundo"
 };
-static const char *const EST_FUNDO[5] = { "Nenhum", "Escuro 25%", "Escuro 50%",
-                                          "Escuro 75%", "Escuro 100%" };
 static const char *const EST_BORDA[3] = { "Nenhuma", "Contorno", "Sombra" };
 static const char *const EST_OPAC[4]  = { "100%", "75%", "50%", "25%" };
 
@@ -606,6 +605,7 @@ static int estCampoAss(int linha) {
     case EST_FONTE: return PLR_LEG_FONTE;
     case EST_COR: return PLR_LEG_COR;
     case 4: return PLR_LEG_FUNDO;
+    case EST_FUNDO_OPAC: return PLR_LEG_FUNDO;
     case 5: return PLR_LEG_POSICAO;
     case 6: return PLR_LEG_BORDA;
     case 8: return PLR_LEG_NEGRITO;
@@ -634,7 +634,7 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
     case 1: snprintf(dst, tam, "%s", legfontes_selecionada(0) >= 0 ? legfontes_nome(legfontes_selecionada(0)) : TXT_FAMILIAS_PT[e->familia >= 0 && e->familia < TXT_FAMILIA_N ? e->familia : 0]); break;
     case 2: snprintf(dst, tam, "%s", VIDEO_LEG_CORES_PT[e->cor % VIDEO_LEG_NCORES]); break;
     case 3: snprintf(dst, tam, "%s", EST_OPAC[e->opacidade > 3 ? 3 : e->opacidade]); break;
-    case 4: snprintf(dst, tam, "%s", EST_FUNDO[e->fundo > 4 ? 4 : e->fundo]); break;
+    case 4: snprintf(dst, tam, "%s", i18n(e->fundo ? "Preto" : "Nenhum")); break;
     // O uMS aceita -3..4; a folha mostra 1..8 porque "posicao -3" nao diz nada
     // a quem esta olhando a tela.
     case 5: snprintf(dst, tam, i18n("%d de 8"), e->posicao + 1); break;
@@ -651,6 +651,8 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
       int c = e->corBorda >= 0 && e->corBorda < VIDEO_LEG_NCORES ? e->corBorda : 0;
       snprintf(dst, tam, "%s", VIDEO_LEG_CORES_PT[c ? c - 1 : VIDEO_LEG_NCORES - 1]);
       break; }
+    case EST_ESPACO: snprintf(dst, tam, "%d px", video_leg_espaco(e)); break;
+    case EST_FUNDO_OPAC: snprintf(dst, tam, "%d%%", video_leg_fundo_opacidade(e)); break;
     default: dst[0] = 0; break;   // "Restaurar padrao" e acao, nao valor
   }
 }
@@ -661,7 +663,7 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
 static void ciclarEstilo(int linha) {
   VideoLegendaEstilo *e = player_leg_estilo();
   switch (linha) {
-    case 4: e->fundo   = (e->fundo + 1) % 5; player_leg_estilo_tocou(PLR_LEG_FUNDO); break;
+    case 4: e->fundo   = e->fundo ? 0 : 1; player_leg_estilo_tocou(PLR_LEG_FUNDO); break;
     case 6: e->borda   = (e->borda + 1) % 3; player_leg_estilo_tocou(PLR_LEG_BORDA); break;
     case 8: e->negrito = !e->negrito; player_leg_estilo_tocou(PLR_LEG_NEGRITO); break;
     case EST_RESTAURAR:
@@ -686,6 +688,8 @@ static const EstSlider EST_SL[FX_N_ESTILO] = {
   [3] = { 0, 3, 1, 1, 1 },                                        // Opacidade: 25..100%
   [5] = { 0, 7, 1, 1, 1 },                                        // Posicao: 8 niveis
   [7] = { -LEGUI_ATRASO_MAX, LEGUI_ATRASO_MAX, 100, 500, 4 },     // Atraso: 0,1 s / 0,5 s
+  [EST_ESPACO] = { VIDEO_LEG_ESPACO_MIN, VIDEO_LEG_ESPACO_MAX, 1, 5, 4 },  // Espacamento: 1 px / 5 px
+  [EST_FUNDO_OPAC] = { 0, 100, 5, 10, 4 },                        // Opacidade do fundo: 5% / 10%
 };
 static int estSlider(int i) { return i >= 0 && i < FX_N_ESTILO && EST_SL[i].max > EST_SL[i].min; }
 // 0 = sem controle, 1 = slider, 2 = paleta, 3 = lista de fontes.
@@ -704,6 +708,8 @@ static int estLer(int i) {
     case 0: return e->tamanho;
     case 3: return 3 - (e->opacidade < 0 ? 0 : e->opacidade > 3 ? 3 : e->opacidade);
     case 5: return e->posicao;
+    case EST_ESPACO: return video_leg_espaco(e);
+    case EST_FUNDO_OPAC: return video_leg_fundo_opacidade(e);
     default: return e->atrasoMs;
   }
 }
@@ -715,6 +721,11 @@ static void estGravar(int i, int v) {
     case 0: e->tamanho = v; break;
     case 3: e->opacidade = 3 - v; break;
     case 5: if (e->posicao != v) player_leg_estilo_tocou(PLR_LEG_POSICAO); e->posicao = v; break;
+    case EST_ESPACO: e->espacamento = v; break;
+    case EST_FUNDO_OPAC:
+      if (e->fundoOpacidade != v) player_leg_estilo_tocou(PLR_LEG_FUNDO);
+      e->fundoOpacidade = v;
+      break;
     default: e->atrasoMs = v; break;
   }
   player_leg_estilo_mudou();
@@ -1958,6 +1969,7 @@ static void sliderCtl(int i, GfxRect r, float a, int ativo) {
   } else {
     char lo[24], hi[24];
     if (i == 7) { snprintf(lo, sizeof lo, "-%d s", LEGUI_ATRASO_MAX / 1000); snprintf(hi, sizeof hi, "+%d s", LEGUI_ATRASO_MAX / 1000); }
+    else if (i == EST_ESPACO) { snprintf(lo, sizeof lo, "%d px", EST_SL[i].min); snprintf(hi, sizeof hi, "%d px", EST_SL[i].max); }
     else { snprintf(lo, sizeof lo, "%d%%", i == 3 ? 25 : EST_SL[i].min); snprintf(hi, sizeof hi, "%d%%", i == 3 ? 100 : EST_SL[i].max); }
     { TxtLinha tl = txt_linha(TXT_G16B, lo, 243, 242, 239, 150), th = txt_linha(TXT_G16B, hi, 243, 242, 239, 150);
       txt_desenhar_alpha(tl, x1, cy - (float)tl.h * 0.5f, a);

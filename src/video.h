@@ -446,7 +446,34 @@ typedef struct {
   int familia;    // TxtFamilia; aplicada ao overlay externo (OpenSubtitles)
   int negrito;    // 1 = peso negrito no overlay (so o que o app desenha)
   int corBorda;   // -1 unset (legacy outline); 0 Black, 1 White, 2 Yellow, 3 Green, 4 Blue, 5 Red
+  // DISTANCIA ENTRE LINHAS da legenda que o app desenha, em pixels de 1080p.
+  // 5 era o valor fixo de antes (as caixas de fundo se sobrepunham por causa
+  // dele); agora a pessoa ajusta na folha de estilo (0..40, passo 1).
+  int espacamento;
+  // OPACIDADE DO FUNDO, 0..100%, separada da opacidade do TEXTO (opacidade).
+  // 75 e o padrao pedido pelo dono: fundo preto a 75%, texto a 100%.
+  int fundoOpacidade;
 } VideoLegendaEstilo;
+
+#define VIDEO_LEG_ESPACO_MIN     0
+#define VIDEO_LEG_ESPACO_MAX     40
+#define VIDEO_LEG_ESPACO_PADRAO  5
+#define VIDEO_LEG_FUNDO_OPAC_PADRAO 75
+
+// Valor efetivo do espacamento: arquivos antigos (sem a chave) e estilos
+// montados por outros alvos ficam no padrao de sempre.
+static inline int video_leg_espaco(const VideoLegendaEstilo *e) {
+  int v = e ? e->espacamento : VIDEO_LEG_ESPACO_PADRAO;
+  if (v < VIDEO_LEG_ESPACO_MIN) v = VIDEO_LEG_ESPACO_MIN;
+  if (v > VIDEO_LEG_ESPACO_MAX) v = VIDEO_LEG_ESPACO_MAX;
+  return v;
+}
+static inline int video_leg_fundo_opacidade(const VideoLegendaEstilo *e) {
+  int v = e ? e->fundoOpacidade : VIDEO_LEG_FUNDO_OPAC_PADRAO;
+  if (v < 0) v = 0;
+  if (v > 100) v = 100;
+  return v;
+}
 
 #define VIDEO_LEG_NCORES 6
 // A borda tem preto puro como padrao; as demais amostras usam a paleta do texto.

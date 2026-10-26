@@ -1361,7 +1361,7 @@ static const char *prefsArquivo(void) {
 // ajustes.txt, que espelha as chaves de layout do app web. Padrao: tamanho 2
 // (o do aparelho), branco, sem fundo, posicao central, contorno.
 // -1 preserves the legacy outline preference until a border colour is chosen.
-static VideoLegendaEstilo legEstilo = { 120, 0, 0, 3, 1, 0, 0, TXT_FAMILIA_INTER, 0, -1 };
+static VideoLegendaEstilo legEstilo = { 120, 0, 0, 3, 1, 0, 0, TXT_FAMILIA_INTER, 0, -1, VIDEO_LEG_ESPACO_PADRAO, VIDEO_LEG_FUNDO_OPAC_PADRAO };
 // Ver player_leg_estilo_tocou, em player.h: o que a pessoa mexeu vence o que o
 // arquivo ASS pede. Persistido junto com o resto — a preferencia nao pode
 // valer so ate desligar a TV.
@@ -1393,6 +1393,8 @@ static void prefsLer(void) {
     else if (!strcmp(chave, "leg_cor_borda") && v >= -1 && v < VIDEO_LEG_NCORES) legEstilo.corBorda = v;
     else if (!strcmp(chave, "leg_cor_borda_explicita") && v == 1) bordaExplicita = 1;
     else if (!strcmp(chave, "leg_opacidade") && v >= 0 && v <= 3) legEstilo.opacidade = v;
+    else if (!strcmp(chave, "leg_espaco") && v >= VIDEO_LEG_ESPACO_MIN && v <= VIDEO_LEG_ESPACO_MAX) legEstilo.espacamento = v;
+    else if (!strcmp(chave, "leg_fundo_opac") && v >= 0 && v <= 100) legEstilo.fundoOpacidade = v;
     else if (!strcmp(chave, "leg_familia") && v >= 0 && v < TXT_FAMILIA_N) legEstilo.familia = v;
     else if (!strcmp(chave, "leg_negrito") && (v == 0 || v == 1)) legEstilo.negrito = v;
     else if (!strcmp(chave, "leg_tocado")  && v >= 0) legTocado = v;
@@ -1422,6 +1424,8 @@ static int prefsGravar(void) {
   fprintf(f, "leg_atraso %d\n",  legEstilo.atrasoMs);
   fprintf(f, "leg_atraso_sinal 1\n");
   fprintf(f, "leg_opacidade %d\n", legEstilo.opacidade);
+  fprintf(f, "leg_espaco %d\n", video_leg_espaco(&legEstilo));
+  fprintf(f, "leg_fundo_opac %d\n", video_leg_fundo_opacidade(&legEstilo));
   fprintf(f, "leg_familia %d\n", legEstilo.familia);
   fprintf(f, "leg_negrito %d\n", legEstilo.negrito);
   fprintf(f, "leg_tocado %d\n", legTocado);
@@ -1442,7 +1446,7 @@ void player_leg_estilo_mudou(void) {
   if (prefsGravar()) sync_proteger_ajustes_locais();
 }
 const VideoLegendaEstilo *player_leg_estilo_padrao(void) {
-  static const VideoLegendaEstilo padrao = {120, 0, 0, 3, 1, 0, 0, TXT_FAMILIA_INTER, 0, 0};
+  static const VideoLegendaEstilo padrao = {120, 0, 0, 3, 1, 0, 0, TXT_FAMILIA_INTER, 0, 0, VIDEO_LEG_ESPACO_PADRAO, VIDEO_LEG_FUNDO_OPAC_PADRAO };
   return &padrao;
 }
 static int estiloPreparar(const VideoLegendaEstilo *estilo, int tocou) {
@@ -1452,6 +1456,8 @@ static int estiloPreparar(const VideoLegendaEstilo *estilo, int tocou) {
       estilo->familia < 0 || estilo->familia >= TXT_FAMILIA_N ||
       estilo->fundo < 0 || estilo->fundo > 4 || estilo->posicao < 0 || estilo->posicao > 7 ||
       estilo->borda < 0 || estilo->borda > 2 || estilo->opacidade < 0 || estilo->opacidade > 3 ||
+      estilo->espacamento < VIDEO_LEG_ESPACO_MIN || estilo->espacamento > VIDEO_LEG_ESPACO_MAX ||
+      estilo->fundoOpacidade < 0 || estilo->fundoOpacidade > 100 ||
       estilo->negrito < 0 || estilo->negrito > 1 ||
       estilo->atrasoMs < -LEG_ATRASO_MANUAL_MAX || estilo->atrasoMs > LEG_ATRASO_MANUAL_MAX) return 0;
   player_leg_estilo_carregar();
@@ -5382,6 +5388,7 @@ typedef struct { TxtLinha cor[PLR_LEG_LINHAS], borda[PLR_LEG_LINHAS]; int n; flo
 static void blocoLinha(LegBloco *bl, TxtEstilo est, const char *linha, int r, int g, int b,
                        TxtFamilia fam, int enf) {
   char visual[768];
+  int vao = video_leg_espaco(&legEstilo);
   if (bl->n >= PLR_LEG_LINHAS) return;
   // Arabic/Hebrew: shape + visual order of the ALREADY WRAPPED line (bidi.c).
   // Latin text comes back byte-identical.
@@ -5390,7 +5397,7 @@ static void blocoLinha(LegBloco *bl, TxtEstilo est, const char *linha, int r, in
   { unsigned cor = ajustes_leg_borda_rgb(legEstilo.corBorda);
     bl->borda[bl->n] = legEstilo.borda ? txt_linha_corta_enfase(est, linha, (cor >> 16) & 255, (cor >> 8) & 255, cor & 255, 255, PLR_LEG_LARG, fam, enf) : (TxtLinha){0}; }
   if (bl->cor[bl->n].w > bl->w) bl->w = bl->cor[bl->n].w;
-  bl->h += bl->cor[bl->n].h + (bl->n ? 5 : 0);
+  bl->h += bl->cor[bl->n].h + (bl->n ? (float)vao : 0);
   bl->n++;
 }
 
@@ -5426,16 +5433,38 @@ static void montarBloco(const LegendaCue *c, TxtEstilo est, int r, int g, int b,
   }
 }
 
-static void desenharBloco(const LegBloco *bl, float x0, float y, float alpha, int alinha) {
+static GfxRect caixaFundoBloco(const LegBloco *bl, float x0, float y, int alinha) {
   int i;
+  float bx0 = x0, bx1 = x0, xs[PLR_LEG_LINHAS];
+  for (i = 0; i < bl->n; i++) {
+    const TxtLinha *l = &bl->cor[i];
+    xs[i] = alinha == 0 ? x0 : alinha == 1 ? x0 - l->w * .5f : x0 - l->w;
+    if (i == 0 || xs[i] < bx0) bx0 = xs[i];
+    if (i == 0 || xs[i] + l->w > bx1) bx1 = xs[i] + l->w;
+  }
+  return (GfxRect){ bx0 - 18.0f, y - 6.0f, bx1 - bx0 + 36.0f, bl->h + 12.0f };
+}
+
+static void desenharBloco(const LegBloco *bl, float x0, float y, float alpha, float bgAlpha, int alinha) {
+  int i, vao = video_leg_espaco(&legEstilo);
+  float xs[PLR_LEG_LINHAS], topo = y;
+  // Caixa de fundo UNICA para o bloco inteiro. Antes cada linha desenhava a
+  // sua (altura + 12, passo + 5): as duas se sobrepunham 7 px e a faixa de
+  // encontro ficava mais escura que o resto — o defeito que o dono fotografou
+  // nas legendas de duas linhas. Uma caixa so nao tem emenda.
+  for (i = 0; i < bl->n; i++) {
+    const TxtLinha *l = &bl->cor[i];
+    xs[i] = alinha == 0 ? x0 : alinha == 1 ? x0 - l->w * .5f : x0 - l->w;
+  }
+  if (legEstilo.fundo && bgAlpha > 0.0f)
+    gfx_cor(caixaFundoBloco(bl, x0, topo, alinha), .16f, 0, 0, 0, bgAlpha);
   for (i = 0; i < bl->n; i++) {
     TxtLinha l = bl->cor[i];
     // alinha: 0 esquerda (x0 e a borda esquerda), 1 centro (x0 e o centro),
     // 2 direita (x0 e a borda direita).
-    float x = alinha == 0 ? x0 : alinha == 1 ? x0 - l.w * .5f : x0 - l.w;
-    if (legEstilo.fundo) { float fa = legEstilo.fundo * .16f * alpha; gfx_cor((GfxRect){x-18,y-6,l.w+36,l.h+12},.16f,0,0,0,fa); }
+    float x = xs[i];
     txt_desenhar_borda(bl->borda[i], x, y, legEstilo.borda, alpha);
-    txt_desenhar_alpha(l, x, y, alpha); y += l.h + 5;
+    txt_desenhar_alpha(l, x, y, alpha); y += l.h + (float)vao;
   }
 }
 
@@ -5620,7 +5649,8 @@ static void desenharLegendaPrincipal(float *topoPilha){
       snprintf(style.font, sizeof style.font, "%s", families[fam]);
       corLegenda(legEstilo.cor, &r, &g, &b);
       style.rgb = (r << 16) | (g << 8) | b;
-      style.background = legEstilo.fundo >= 0 && legEstilo.fundo <= 4 ? legEstilo.fundo : 0;
+      style.background = legEstilo.fundo >= 0 && legEstilo.fundo <= 4 ? (legEstilo.fundo ? 1 : 0) : 0;
+      style.bgOpacity = video_leg_fundo_opacidade(&legEstilo);
       style.border = legEstilo.borda; style.bold = legEstilo.negrito;
       style.outlineRgb = (int)ajustes_leg_borda_rgb(legEstilo.corBorda);
       style.overrides = legTocado;
@@ -5658,12 +5688,13 @@ static void desenharLegendaPrincipal(float *topoPilha){
     cues[0].ordem = 0;
     n = 1;
   }
-  // PREVIA DA BARRA DE ESTILO (faixas.c): sem fala neste instante, uma linha
-  // de exemplo com o estilo da pessoa, para tamanho, cor e posicao terem o que
-  // mostrar. So quando e o app que desenha (no ASS o lugar e do arquivo).
+  // PREVIA DA BARRA DE ESTILO (faixas.c): sem fala neste instante, DUAS
+  // linhas de exemplo com o estilo da pessoa, para tamanho, cor, posicao,
+  // espacamento e fundo terem o que mostrar ao vivo.
   if (n <= 0 && faixas_estilo_topo()) {
     memset(&cues[0], 0, sizeof cues[0]);
-    snprintf(cues[0].texto, sizeof cues[0].texto, "%s", i18n("Assim a legenda vai aparecer"));
+    snprintf(cues[0].texto, sizeof cues[0].texto, "%s\n%s",
+             i18n("Assim a legenda vai aparecer"), i18n("Assim a legenda vai aparecer"));
     cues[0].cor = -1; cues[0].posX = cues[0].posY = -1.f;
     n = 1;
   }
@@ -5671,6 +5702,10 @@ static void desenharLegendaPrincipal(float *topoPilha){
   int pct=legEstilo.tamanho;if(pct<TXT_LEG_PCT_MIN)pct=TXT_LEG_PCT_MIN;if(pct>TXT_LEG_PCT_MAX)pct=TXT_LEG_PCT_MAX;pct=(pct/10)*10;
   TxtEstilo est=(TxtEstilo)(TXT_LEG_50+(pct-50)/10);corLegenda(legEstilo.cor,&r,&g,&b);
   float alpha=(legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:legEstilo.opacidade==1?.75f:1.f)*entrada;
+  // A opacidade do FUNDO e independente da do texto: o pedido do dono e fundo
+  // preto a 75% com a letra a 100%. O fade do player (entrada) vale para os
+  // dois, mas a escolha de opacidade de um nao mexe no outro.
+  float bgAlpha = (float)video_leg_fundo_opacidade(&legEstilo) / 100.0f * entrada;
   // A pilha "normal" (sem \pos e sem \an, ou \an 2): empilha de baixo para
   // cima a partir da base da folha, como o SRT sempre fez.
   // Com a barra de estilo no topo a base e a da reproducao sem controles: a
@@ -5695,14 +5730,14 @@ static void desenharLegendaPrincipal(float *topoPilha){
       float x = c->posX * NV_TELA_W / c->resX, y = c->posY * NV_TELA_H / c->resY;
       float yTopo = fila == 0 ? y - bl.h : fila == 1 ? y - bl.h * .5f : y;
       if (yTopo < 0) yTopo = 0; if (yTopo + bl.h > NV_TELA_H) yTopo = NV_TELA_H - bl.h;
-      desenharBloco(&bl, x, yTopo, alpha, alinha);
+      desenharBloco(&bl, x, yTopo, alpha, bgAlpha, alinha);
       continue;
     }
     { float margem = 60.f;
       float x = alinha == 0 ? margem : alinha == 1 ? NV_TELA_W * .5f : NV_TELA_W - margem;
-      if (fila == 2)      { desenharBloco(&bl, x, baseTopo, alpha, alinha); baseTopo += bl.h + 10.f; }
-      else if (fila == 1) { desenharBloco(&bl, x, baseMeio - bl.h * .5f, alpha, alinha); baseMeio += bl.h + 10.f; }
-      else                { base -= bl.h; desenharBloco(&bl, x, base, alpha, alinha); *topoPilha = base; base -= 10.f; } }
+      if (fila == 2)      { desenharBloco(&bl, x, baseTopo, alpha, bgAlpha, alinha); baseTopo += bl.h + 10.f; }
+      else if (fila == 1) { desenharBloco(&bl, x, baseMeio - bl.h * .5f, alpha, bgAlpha, alinha); baseMeio += bl.h + 10.f; }
+      else                { base -= bl.h; desenharBloco(&bl, x, base, alpha, bgAlpha, alinha); *topoPilha = base; base -= 10.f; } }
   }
 }
 
