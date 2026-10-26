@@ -11453,10 +11453,13 @@ int ajustes_teste_quadro(const char *id) {
   }
   if(!strncmp(id,"pen-",4)) {
     static const char *const names[]={"Marina"};perfis_teste_definir(names,NULL,1,1);
-    aj4Iniciar();pfTela=0;uxVeioBusca=0;valor[AJ_AVANCADAS]=0;valor[AJ_TEMA]=3;
+    aj4Iniciar();pfTela=0;uxVeioBusca=0;valor[AJ_AVANCADAS]=0;valor[AJ_TEMA]=6;
     if(!strcmp(id,"pen-audio")) { ajPenOpen(27);ajPenRow=1; }
     else if(!strcmp(id,"pen-estilo"))ajPenOpen(28);
     else if(!strncmp(id,"pen-adv-",8))ajPenOpen(atoi(id+8));
+    else if(!strncmp(id,"pen-main-",9))ajPenOpen(29+atoi(id+9));
+    else if(!strcmp(id,"pen-audio-idioma")) { ajPenOpen(27);focarOpcao(AJ_AUD_LINGUA);uxAbrirEditor(AJ_AUD_LINGUA); }
+    else if(!strcmp(id,"pen-segunda")) { ajPenOpen(27);focarOpcao(AJ_LEG_LINGUA2);uxAbrirEditor(AJ_LEG_LINGUA2); }
     else return 0;
     return 1;
   }

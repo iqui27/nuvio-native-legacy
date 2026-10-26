@@ -61,7 +61,7 @@ static void ajPenRows(void) {
   ajPenChip("Ajustes","pl_chevron-left",200,112,124,0,5,0);
   ajKicker(ajPenPage<27?"AJUSTES AVANÇADOS":page->section,200,200,.45f);
   aj4Texto(page->title,TXT_TITULO2,200,218,1500,1);
-  if(ajPenPage<27) {
+  if(ajPenPage<27 || ajPenPage>=46) {
     char sub[240];snprintf(sub,sizeof sub,i18n("Opções de %s que o modo Simples esconde. Valor atual à direita."),i18n(page->section));
     aj4Texto(sub,TXT_G20M,200,291,1520,.58f);
   } else {
@@ -74,7 +74,7 @@ static void ajPenRows(void) {
     ajPenPanel(column->x,344,column->w,640,0);
     ajKicker(column->title,column->x+26,370,.45f);
     for(int i=0;i<column->n;i++,index++) {
-      const AjPenRow *row=&column->rows[i];float x=column->x+26,y=400+i*(ajPenPage<27?82:84),w=column->w-52;
+      const AjPenRow *row=&column->rows[i];float x=column->x+26,y=400+i*(ajPenPage<27 || ajPenPage>=46?82:84),w=column->w-52;
       int focus=index==ajPenRow && aj4Topo<0;
       if(focus)ajNeutro((GfxRect){x,y,w,74},20,.14f,.169f,.176f,.204f,1);
       ajIcone(row->icon,x+20,y+24,26,focus?1:.75f);

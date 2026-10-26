@@ -42,6 +42,19 @@ int main(void) {
     for (int j = 0; j < n; j++) seen += ops[j] == op;
     assert(seen == 1);
   }
+  // Every original setting is reachable through a designed page or the continuation.
+  {
+    unsigned char seen[AJ_N]={0};int missing[AJ_N],count=ajPenMissing(missing);
+    for(int p=0;p<46;p++) {
+      ajPenOpen(p);const AjPenPage *page=ajPenCurrent();assert(page);
+      for(int c=0;c<2;c++)for(int r=0;r<page->cols[c].n;r++) {
+        int op=page->cols[c].rows[r].op;assert(op>=0 && op<AJ_N);seen[op]=1;
+      }
+    }
+    for(int i=0;i<count;i++)seen[missing[i]]=1;
+    for(int op=0;op<AJ_N;op++)if(aj4Secao(op)>=0 && ajOpcaoDisponivel(op))assert(seen[op]);
+    ajPenPage=-1;focoIndice=1;
+  }
   // APS-9: invalid IDs, absent routes and corrupt compiled sections are bounded.
   assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO);
   assert(AJ_HERO_TAMANHO + 1 == AJ_DET_TOPO && AJ_DET_TOPO + 1 == AJ_DET_ELENCO_VISTO);

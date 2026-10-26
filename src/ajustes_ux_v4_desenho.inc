@@ -31,6 +31,7 @@ static float aj4Bloco(TxtEstilo e,const char *s,float x,float y,float w,float lh
 static void aj4PontAtivar(int zona,int row) {
   if(zona==5) { uxEvento(SDLK_ESCAPE); return; }
   if(zona==8) { ajPenRow=row;int handled=ajPenEvent(SDLK_RETURN);if(!handled) { SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.keysym.sym=SDLK_RETURN;eventoTela(&event); } return; }
+  if(zona==10) { aj4Buscar();return; }
   if(zona==9) { if(row==1) { uxRodape=1;uxEvento(SDLK_RETURN); }else if(row==2)uxNotificar("Salvar como preset ainda não está disponível.");return; }
   aj4PontFoco(zona,row);
   if(zona==4)uxAplicar();
@@ -466,12 +467,13 @@ static void aj4PerfilDesenhar(void) {
 }
 #include "ajustes_pen_desenho.inc"
 #include "ajustes_pen_editor.inc"
+#include "ajustes_pen_util.inc"
 static void aj4Desenhar(void) {
   ponteiro_camada();
   aj4SeloAviso=0;
   if(uxEditor)ajPenEditor();
   else if(aj4Util==4)aj4PerfilDesenhar();
-  else if(aj4Util==3)aj4BuscaDesenhar();
+  else if(aj4Util==3 || (aj4Util==1 && !aj4Review))ajPenUtility();
   else if(aj4Review || aj4Util)aj4UtilDesenhar();
   else if(!focoIndice && ajPenCurrent())ajPenRows();
   else if(focoIndice)ajPenHome();
