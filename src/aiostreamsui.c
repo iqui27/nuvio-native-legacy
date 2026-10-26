@@ -15,6 +15,7 @@
 #include "teclavoltar.h"
 #include "perfis.h"
 #include "ponteiro.h"
+#include "focus.h"
 #include "qr.h"
 #include "rede.h"
 #include "sessao.h"
@@ -41,6 +42,18 @@ static const char *const hosts[] = {"https://aiostreams.fortheweak.cloud","https
 static const char *const nomes[] = {"Yeb’s", "Midnight’s", "ElfHosted", "Viren’s", "Kuu’s", "ATBP Hosting", "Omni’s"};
 static int aberto, pagina, foco, lateral, hostIdx, indice = -1, entrada, pendente, perfil;
 static Uint32 proximaConsulta;
+static GfxRect navigationRects[256];
+static int navigationIds[256], navigationCount;
+static struct { int page, focus, side; } history[64];
+static int historyCount;
+static void navigationTarget(float x,float y,float w,float h,PonteiroFn focusFn,PonteiroFn activate,int a,int b) {
+  if (focusFn && navigationCount < 256) {
+    navigationRects[navigationCount]=(GfxRect){x,y,w,h};
+    navigationIds[navigationCount++]=a+1000*b;
+  }
+  ponteiro_alvo(x,y,w,h,focusFn,activate,a,b);
+}
+#define ponteiro_alvo navigationTarget
 static int saindo, paginaAnterior=-1, regraVisivel=-1, evidenciaVisivel;
 static float abertura, corpo=1, entradaTempo, scrollFoco, scrollVel;
 static float focoAnim[2][AIO_MAX+40];
@@ -218,7 +231,7 @@ static void encerrar(void) {
   memset(&snap,0,sizeof snap); memset(base,0,sizeof base); alvo[0]=mensagem[0]=0;
 }
 void aioui_abrir(int i) {
-  abertura=0; saindo=0; paginaAnterior=-1;
+  abertura=0; saindo=0; paginaAnterior=-1; historyCount=0; navigationCount=0;
   aberto=1; geracao++; foco=0; lateral=0; entrada=pendente=0; indice=i; alvo[0]=0; proximaConsulta=0;
   regraSelecionada=linkSelecionado=-1; evidenciaSelecionada=0; soManifesto=0;
   memset(&snap,0,sizeof snap); mensagem[0]=0;
@@ -240,7 +253,14 @@ void aioui_inspecionar(const char *id,const char *t) {
 }
 int aioui_aberto(void) { return aberto; }
 int aioui_opaco(void) { return aberto && abertura>=1 && !saindo; }
-static void mudar(int p) { pagina=p; foco=0; lateral=0; mensagem[0]=0; regraSelecionada=-1; linkSelecionado=-1; evidenciaSelecionada=0; celular_fechar(); }
+static void mudar(int p) {
+  if (p != pagina && historyCount < 64) {
+    history[historyCount].page=pagina; history[historyCount].focus=foco;
+    history[historyCount++].side=lateral;
+  }
+  pagina=p; foco=0; lateral=0; navigationCount=0; mensagem[0]=0;
+  regraSelecionada=-1; linkSelecionado=-1; evidenciaSelecionada=0; celular_fechar();
+}
 static void campo(int qual) {
   entrada=qual;
   teclado_abrir_com(qual==1?i18n("URL da instância"):qual==2?i18n("ID do título"):i18n("Link de instalação"),
@@ -358,18 +378,26 @@ static void acao(void) {
 }
 void aioui_evento(const SDL_Event *e) {
   if(!aberto) return;
-  if(saindo) {
-    if(nv_tecla_voltar(e)) saindo=0;
-    return;
-  }
+  if(saindo) return;
   if(teclado_aberto()) { teclado_evento(e); return; }
   if(e->type!=SDL_KEYDOWN) return;
   SDL_Keycode k=e->key.keysym.sym;
   if(nv_tecla_voltar(e)) {
     if(entrada==3 || linkSelecionado>=0) { celular_fechar(); entrada=0; linkSelecionado=-1; return; }
     if(pagina==FILTROS && regraSelecionada>=0) { foco=regraSelecionada==8?7:regraSelecionada; regraSelecionada=-1; return; }
-    if(pagina==SEM || pagina==PAINEL) fechar();
-    else mudar(snap.valida?PAINEL:SEM);
+    if(historyCount) {
+      historyCount--; pagina=history[historyCount].page;
+      foco=history[historyCount].focus; lateral=history[historyCount].side;
+      navigationCount=0; celular_fechar();
+    } else fechar();
+    return;
+  }
+  if(k==SDLK_UP || k==SDLK_DOWN || k==SDLK_LEFT || k==SDLK_RIGHT) {
+    int current=-1;
+    for(int i=0;i<navigationCount;i++) if(navigationIds[i]==foco+1000*lateral) current=i;
+    int next=focus_rect_nearest(navigationRects,navigationCount,current,
+      (k==SDLK_RIGHT)-(k==SDLK_LEFT),(k==SDLK_DOWN)-(k==SDLK_UP));
+    if(next>=0) { foco=navigationIds[next]%1000; lateral=navigationIds[next]/1000; }
     return;
   }
   if(pagina==CATALOGOS && !lateral && foco<snap.catalogos && (k==SDLK_PAGEUP || k==SDLK_PAGEDOWN)) {
@@ -643,7 +671,7 @@ static void setup(void) {
     texto(TXT_ILHA_ITEM,i18n("Link de instalação"),738,676,1034,220);
     bloco(i18n("Links pessoais permanecem ocultos. Exporte ou importe arquivos JSON pelo celular."),716,745,1040,2);
     if(entrada==3) qrDesenhar(celular_url(),716,305,210);
-    ponteiro_alvo(716,655,1078,66,pointer,click,1,0);
+    ponteiro_alvo(716,655,1078,66,pointer,click,2,0);
     botao(0,i18n("Enviar pelo celular"),716,842,380); botao(1,i18n("Colar link"),1116,842,350);
   } else {
     if(!snap.valida) {
@@ -1095,6 +1123,7 @@ static void addonsDesenhar(int f) {
 }
 static void desenhar(Uint32 agora);
 void aioui_desenhar(Uint32 agora) {
+  navigationCount=0;
   int semAro=gfx_vidro_sem_aro; gfx_vidro_sem_aro=1;
   desenhar(agora);
   gfx_vidro_sem_aro=semAro;
@@ -1141,7 +1170,7 @@ static void desenhar(Uint32 agora) {
 }
 #ifdef NV_SHOT_HOOKS
 void aioui_shot(int p,const AioSnapshot *s) {
-  abertura=0; saindo=0; paginaAnterior=-1;
+  abertura=0; saindo=0; paginaAnterior=-1; historyCount=0; navigationCount=0;
   perfil=perfis_ativo(); snprintf(usuario,sizeof usuario,"%s",sessao_usuario());
   indice=-1; pendente=0;
   aberto=1; pagina=p; snap=*s; foco=p==TITULO?2:0; lateral=0; regraSelecionada=linkSelecionado=-1; evidenciaSelecionada=0;

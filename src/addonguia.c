@@ -299,7 +299,7 @@ void addonguia_evento(const SDL_Event *e) {
     float dx=alvos[i].r.x+alvos[i].r.w/2-r.x-r.w/2,dy=alvos[i].r.y+alvos[i].r.h/2-r.y-r.h/2;
     if((k==SDLK_LEFT&&dx>=-1)||(k==SDLK_RIGHT&&dx<=1)||(k==SDLK_UP&&dy>=-1)||(k==SDLK_DOWN&&dy<=1))continue;
     if(k!=SDLK_LEFT&&k!=SDLK_RIGHT&&k!=SDLK_UP&&k!=SDLK_DOWN)continue;
-    float d=(k==SDLK_LEFT||k==SDLK_RIGHT)?dx*dx+dy*dy*6:dy*dy+dx*dx*6;
+    float d=(k==SDLK_LEFT||k==SDLK_RIGHT)?fabsf(dx)+3*fabsf(dy):fabsf(dy)+3*fabsf(dx);
     if(d<best){best=d;novo=alvos[i].id;}
   }
   foco=novo;
