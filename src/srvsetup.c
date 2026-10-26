@@ -17,6 +17,10 @@
 #include "dados.h"
 #include "descoberta.h"
 #include "fileiras.h"
+#include "focus.h"
+#include "ponteiro.h"
+#include "teclavoltar.h"
+#include <math.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +37,18 @@ static const char *prefix[] = { "plex_", "jellyfin_", "emby_" };
 static const char *alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,:;!?\"'()[]{}+-_=/*@&#%\\|~`$^<>";
 static int opened, screen, provider, selected, profile, field, restartPin, enterManual;
 static unsigned libraryVersion;
+static struct { int page, focus; } history[64];
+static int historyCount, closing;
+static Uint32 transitionAt;
+static GfxRect navigationRects[SRV_VISAO_MAX + 8];
+static int navigationIds[SRV_VISAO_MAX + 8], navigationCount;
+static void pointerFocus(int id, int unused) { (void)unused; selected = id; }
+static void navigationTarget(int id, GfxRect r) {
+  if (id < 0 || navigationCount >= SRV_VISAO_MAX + 8) return;
+  navigationIds[navigationCount] = id;
+  navigationRects[navigationCount++] = r;
+  ponteiro_alvo(r.x,r.y,r.w,r.h,pointerFocus,NULL,id,0);
+}
 static int rowChoice, rowStyle, recoveryAuth;
 static long long lastSync[3];
 static int libraryProfile = -999;
@@ -200,7 +216,16 @@ static int startWorker(int kind) {
   if (!worker.alive) { rede_job_soltar(worker.job); worker.job = NULL; }
   return worker.alive;
 }
-static void change(int next) { screen = next; selected = 0; message[0] = 0; }
+static void change(int next) {
+  if (next != screen) {
+    if (screen >= 0 && historyCount < 64) {
+      history[historyCount].page = screen;
+      history[historyCount++].focus = selected;
+    }
+    transitionAt = SDL_GetTicks();
+  }
+  screen = next; selected = 0; message[0] = 0; navigationCount = 0;
+}
 static void failed(int error) { recoveryAuth = error == JF_ERR_AUTH || error == JF_ERR_EXPIRADO; change(ERROR_SCREEN); }
 static int providerError(void) { return provider==0?plex_ultimo_erro():provider==1?jellyfin_ultimo_erro():emby_ultimo_erro(); }
 static void syncTimes(void) {
@@ -238,17 +263,17 @@ static void librariesLoad(void) {
   else if (!worker.alive && screen == ROWS) startWorker(JOB_ROW_CONTENT);
 }
 void srvsetup_fechar(void) {
-  if (opened) cancelLogin(); stopWorker(); opened = 0; field = 0;
+  if (opened) cancelLogin(); stopWorker(); opened = 0; closing = 1; transitionAt = SDL_GetTicks(); field = 0;
   wipe(password, sizeof password); teclado_esquecer();
   if (!worker.alive) { wipe(worker.token, sizeof worker.token); wipe(worker.user, sizeof worker.user); wipe(worker.connect, sizeof worker.connect); wipe(worker.plex, sizeof worker.plex); }
 }
-int srvsetup_aberto(void) { return opened; }
+int srvsetup_aberto(void) { return opened || closing; }
 void srvsetup_abrir(int p) {
   if (opened) srvsetup_fechar();
   ajustes_definir_servidores(1);
   profile = perfis_ativo(); provider = p >= 0 && p < 3 ? p : 0;
   syncTimes(); recoveryAuth = 0;
-  opened = 1; rowChoice = rowStyle = 0; restartPin = enterManual = 0; username[0] = password[0] = addressText[0] = code[0] = qrUrl[0] = 0; qr.lado = 0;
+  opened = 1; closing = 0; historyCount = 0; screen = -1; transitionAt = SDL_GetTicks(); rowChoice = rowStyle = 0; restartPin = enterManual = 0; username[0] = password[0] = addressText[0] = code[0] = qrUrl[0] = 0; qr.lado = 0;
   change(p == -2 ? MANAGE : p < 0 ? CHOOSE : connected(provider) ? LIBRARIES : provider ? DISCOVER : CODE);
   if (screen == DISCOVER) startWorker(JOB_DISCOVER);
   else if (screen == CODE) enterCode(); else if (screen == LIBRARIES) librariesLoad();
@@ -405,21 +430,25 @@ void srvsetup_evento(const SDL_Event *e) {
   if (teclado_aberto()) { teclado_evento(e); return; }
   if (e->type != SDL_KEYDOWN || e->key.repeat) return;
   SDL_Keycode k = e->key.keysym.sym;
-  if (k == SDLK_ESCAPE || k == SDLK_BACKSPACE) {
+  if (nv_tecla_voltar(e)) {
     cancelLogin(); stopWorker(); wipe(password, sizeof password);
-    if (screen == CHOOSE || screen == MANAGE) srvsetup_fechar();
-    else if (screen == REMOVE) change(MANAGE);
-    else if (screen == LIBRARIES) change(MANAGE);
-    else if (screen == READY) { change(LIBRARIES); librariesLoad(); }
-    else if (screen == ROWS) change(READY);
-    else if (screen == ADDRESS || screen == DISCOVER || screen == CODE) change(CHOOSE);
-    else if (screen == LOGIN) change(CHOOSE);
-    else change(LOGIN);
-  } else if (k == SDLK_LEFT || k == SDLK_UP) { if (selected > 0) selected--; }
-  else if (k == SDLK_RIGHT || k == SDLK_DOWN) { if (selected + 1 < targets()) selected++; }
+    if (historyCount) {
+      historyCount--;
+      screen = history[historyCount].page;
+      selected = history[historyCount].focus;
+      transitionAt = SDL_GetTicks(); navigationCount = 0;
+    } else srvsetup_fechar();
+  } else if (k == SDLK_LEFT || k == SDLK_UP || k == SDLK_RIGHT || k == SDLK_DOWN) {
+    int current = -1;
+    for (int i=0;i<navigationCount;i++) if (navigationIds[i]==selected) current=i;
+    int next = focus_rect_nearest(navigationRects,navigationCount,current,
+      (k==SDLK_RIGHT)-(k==SDLK_LEFT),(k==SDLK_DOWN)-(k==SDLK_UP));
+    if (next>=0) selected=navigationIds[next];
+  }
   else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) activate();
 }
 void srvsetup_atualizar(Uint32 now) {
+  if (closing && now - transitionAt >= 240) closing = 0;
   if (opened && profile != perfis_ativo()) srvsetup_fechar();
   if (worker.alive && worker.profile != perfis_ativo()) stopWorker();
   int done = __atomic_load_n(&worker.done, __ATOMIC_ACQUIRE);
@@ -527,12 +556,14 @@ static void logo(int p, float x, float y, float size) {
 }
 static void button(int i, const char *label, float x, float y, float w) {
   GfxRect r = {x,y,w,56};
+  navigationTarget(i,r);
   if (selected == i) gfx_vidro_pilula_cheia(r, .5f, 1, 1); else gfx_cor(r, .5f, 1, 1, 1, .08f);
   int cr = 243, cg = 242, cb = 239; if (selected == i) cr = cg = cb = ajustes_tinta_foco();
   TxtLinha t = txt_linha_corta(TXT_G21B, i18n(label), cr,cg,cb,255,w-30);
   txt_desenhar(t,x+(w-t.w)/2,y+(56-t.h)/2);
 }
 static void row(int i, const char *title, const char *sub, float y, int p) {
+  navigationTarget(i,(GfxRect){220,y,710,86});
   if (selected == i) panel(220,y,710,86,1);
   if (p >= 0) logo(p,242,y+21,40);
   text(TXT_ILHA_NOME,title,p>=0?304:248,y+12,243,580);
@@ -561,7 +592,12 @@ static void drawQR(void) {
     gfx_cor((GfxRect){x+(i+4)*unit,y+(j+4)*unit,unit+.1f,unit+.1f},0,0,0,0,1);
 }
 void srvsetup_desenhar(Uint32 now) {
-  if (!opened) return;
+  if (!opened && !closing) return;
+  navigationCount = 0;
+  float opacity = gfx_opacidade_grupo;
+  float progress = ajustes_animacoes_reduzidas() ? 1 : fminf(1,(now-transitionAt)/240.f);
+  progress = progress*progress*(3-2*progress);
+  gfx_opacidade_grupo *= closing ? 1-progress : progress;
   gfx_cor((GfxRect){160,0,1760,1080},0,.035f,.038f,.044f,1);
   gfx_luz_canto((GfxRect){160,0,1760,850},0,1400,0,1700,.17f,.32f,.34f,.35f);
   const char *srv = serverName(provider)[0] ? serverName(provider) : providers[provider];
@@ -621,7 +657,7 @@ void srvsetup_desenhar(Uint32 now) {
   }
   if (screen == CHOOSE) {
     const char *desc[] = {"Vincule sua conta com um código. Escolha um servidor da sua conta ou da sua rede.","Encontre seu servidor. Use o Quick Connect ou entre com seu usuário do servidor.","Encontre seu servidor. Use o Emby Connect ou entre diretamente."};
-    for(int i=0;i<3;i++) { float x=200+i*550; panel(x,405,523,274,selected==i); logo(i,x+34,438,66); text(TXT_G30B,providers[i],x+34,540,243,450); paragraph(desc[i],x+34,592,455); }
+    for(int i=0;i<3;i++) { float x=200+i*550; navigationTarget(i,(GfxRect){x,405,523,274}); panel(x,405,523,274,selected==i); logo(i,x+34,438,66); text(TXT_G30B,providers[i],x+34,540,243,450); paragraph(desc[i],x+34,592,455); }
     paragraph("Seu servidor continua seu. O Nuvio conecta esta TV e este perfil a ele.",200,714,1500);
   } else if (screen == CODE || screen == CONNECT_CODE) {
     panel(200,386,750,390,0); panel(1020,386,804,390,0);
@@ -654,7 +690,7 @@ void srvsetup_desenhar(Uint32 now) {
     int total=!worker.alive&&worker.n>0?worker.n:0,first=selected<total?(selected/3)*3:0;
     if(worker.alive)paragraph("Carregando…",232,440,680);
     for(int j=0;j<3 && first+j<total;j++) {
-      int i=first+j;float x=232+j*182;
+      int i=first+j;float x=232+j*182; navigationTarget(i,(GfxRect){x,442,150,202});
       if(selected==i)panel(x,442,150,202,1);
       GLuint avatar=worker.users[i].imagem[0]?tex_obter_larg(worker.users[i].imagem,100):0;
       if(avatar)gfx_rect((GfxRect){x+25,458,100,100},avatar,GFX_AVATAR,0,0,0,.5f,1,1,1,1);
@@ -733,7 +769,7 @@ void srvsetup_desenhar(Uint32 now) {
     if(first+shown>nLibraries)first=nLibraries-shown;
     if(first<0)first=0;
     for(int j=0;j<shown;j++) {
-      int i=first+j;float y=394+j*100;
+      int i=first+j;float y=394+j*100; navigationTarget(i,(GfxRect){820,y,1036,92});
       if(selected==i)panel(820,y,1036,92,1);
       logo(provider,844,y+25,34);text(TXT_ILHA_NOME,libraries[i].titulo,902,y+14,243,900);
       text(TXT_ILHA_SUB,!strcmp(libraries[i].tipo,"group")?"Coleções":!strcmp(libraries[i].tipo,"list")?"Listas":"Biblioteca",902,y+50,145,900);
@@ -807,6 +843,7 @@ void srvsetup_desenhar(Uint32 now) {
     txt_desenhar(nota,1824-nota.w,1018);
   }
   if(teclado_aberto()) teclado_desenhar(now);
+  gfx_opacidade_grupo = opacity;
 }
 
 static int originRows(int index, const char **name, const char **sub, int *count) {
