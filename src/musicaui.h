@@ -6,6 +6,7 @@
 void musicaui_abrir(const MusAlbum *a, const char *imdb, const char *titulo, int ano, int temp);
 void musicaui_fechar(void);
 void musicaui_origem(GfxRect origem);
+GLuint musicaui_ambiente(const char *capa);
 int musicaui_visivel(void);
 int musicaui_aberta(void);
 void musicaui_evento(const SDL_Event *e);

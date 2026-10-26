@@ -168,9 +168,9 @@ static GfxRect heroAcaoRect(float *x, float *cy, float w, float h) {
 #define COL_CARD_H   300.0f
 #define COL_CARD_RAIO 24.0f
 #define COL_CARD_PAD  36.0f
-#define MUS_W         1140.0f
-#define MUS_H         340.0f
-#define MUS_CAPA      228.0f
+#define MUS_W          960.0f
+#define MUS_H          292.0f
+#define MUS_CAPA       200.0f
 #define MUS_QR        190.0f
 // Cartazes em escada no lado direito do card: o da frente e o primeiro da
 // saga, os de tras menores e deslocados para a esquerda.
@@ -207,10 +207,10 @@ static GfxRect colecaoListaRect(void) {
 // 600x340 mantem a proporcao e as seis linhas de texto com leading de 30.
 // Glass UI (mockup "Detalhe", "O que estao dizendo"): tres blocos .gl de
 // 560x230 com vao de 24, padding 28, raio 26.
-#define COM_CARD_W   600.0f
-#define COM_CARD_H   340.0f
+#define COM_CARD_W   556.0f
+#define COM_CARD_H   212.0f
 #define COM_PAD       24.0f
-#define COM_CARD_GAP  (22.0f + 8.0f * NV_DETP_ESP)
+#define COM_CARD_GAP  24.0f
 // Altura da CHAMADA das duas secoes sob demanda: a linha do titulo (TXT_HEADLINE,
 // 38), a da procedencia e a do custo (TXT_DET_META2, 23), com os mesmos vaos
 // que o cabecalho dos proprios modulos usa. Constante e nao medida por txt_linha
@@ -294,8 +294,7 @@ static int  relFoco;
 // inteira em ordem, uma parte por linha. Mesmo papel da ficha da pessoa: outra
 // tela, que come os eventos enquanto esta aberta e sai inteira no Voltar.
 static int   colListaAberta, colListaFoco;
-static float colListaEntrada, comEntrada;
-static int comMostrado=-1;
+static float colListaEntrada;
 static float colListaScroll, colListaVel;
 static void abrirListaColecao(void);
 static void abrirParteColecao(void);
@@ -361,6 +360,9 @@ static float pg = 0.0f;              // 0..1: hero -> pagina rolada
 static float alvoPg = 0.0f;         // destino do pg (detail_transicao)
 static Foco foco;
 static float animFoco[N_SECOES][N_ITENS];
+static float comFocoTempo[N_ITENS], comFocoInicio[N_ITENS];
+static unsigned char comFocoAlvo[N_ITENS];
+static float comScrollInicio, comScrollAlvo, comScrollTempo;
 // C.13: section dim eases with the focus spring (1 focused row, .42 others) and
 // each section reveals once, the first time it is on screen after the open.
 static float secA[N_SECOES];
@@ -1802,7 +1804,11 @@ static void abrirInterno(const HomeItem *it) {
   memset(serverActionFocus, 0, sizeof serverActionFocus);
   memset(serverChipFocus, 0, sizeof serverChipFocus);
   versaoFoco=0;
-  colListaEntrada=comEntrada=0; comMostrado=-1;
+  colListaEntrada=0;
+  memset(comFocoAlvo,0,sizeof comFocoAlvo);
+  memset(comFocoTempo,0,sizeof comFocoTempo);
+  memset(comFocoInicio,0,sizeof comFocoInicio);
+  comScrollInicio=comScrollAlvo=scrollY; comScrollTempo=.7f;
   memset(alvoScrollSec,0,sizeof alvoScrollSec);
   memset(scrollSec, 0, sizeof scrollSec); memset(velSec, 0, sizeof velSec);
   memset(revEp, 0, sizeof revEp); memset(revRel, 0, sizeof revRel);
@@ -3907,8 +3913,6 @@ static float blocoAnt[3] = { -1.0f, -1.0f, -1.0f };   // Notas / Numeros / Progr
 static void detail_atualizar_(float dt, Uint32 agora) {
   if (musicaui_visivel()) { musicaui_atualizar(agora); return; }
   colListaEntrada=anim_mola(colListaEntrada,colListaAberta ? 1 : 0,dt,NV_MOLA_FOCO);
-  if (comInteiro>=0) comMostrado=comInteiro;
-  comEntrada=anim_mola(comEntrada,comInteiro>=0 ? 1 : 0,dt,NV_MOLA_FOCO);
   if (aberto) {
     revalidarIdx();
     unsigned version = servidores_fileiras_versao();
@@ -4343,7 +4347,14 @@ static void detail_atualizar_(float dt, Uint32 agora) {
   for (int r = 0; r < N_SECOES; r++)
     for (int c = 0; c < secaoN(r) && c < N_ITENS; c++) {
       float alvo = (nivel >= 1 && focus_indice(&foco, r, c)) ? 1.0f : 0.0f;
-      animFoco[r][c]=anim_politica_reduzida ? alvo : anim_mola(animFoco[r][c],alvo,dt,
+      if (r==SEC_COMENTARIOS) {
+        if (comFocoAlvo[c]!=(int)alvo) {
+          comFocoAlvo[c]=(int)alvo; comFocoInicio[c]=animFoco[r][c]; comFocoTempo[c]=0;
+        }
+        comFocoTempo[c]=fminf(.24f,comFocoTempo[c]+dt);
+        animFoco[r][c]=anim_politica_reduzida ? alvo :
+          anim_mistura(comFocoInicio[c],alvo,detalheExpo(comFocoTempo[c]/.24f));
+      } else animFoco[r][c]=anim_politica_reduzida ? alvo : anim_mola(animFoco[r][c],alvo,dt,
         alvo ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
     }
   for (int r = 0; r < N_SECOES; r++) {
@@ -4474,7 +4485,17 @@ static void detail_atualizar_(float dt, Uint32 agora) {
   else
 #endif
   {
-    scrollY=anim_mola2_reduzida(&velY,scrollY,alvoY,dt,NV_MOLA2_SCROLL,anim_politica_reduzida);
+    if (nivel>=1 && foco.fileira==SEC_COMENTARIOS) {
+      if (alvoY!=comScrollAlvo) { comScrollInicio=scrollY; comScrollAlvo=alvoY; comScrollTempo=0; }
+      comScrollTempo=fminf(.7f,comScrollTempo+dt);
+      float anterior=scrollY;
+      scrollY=anim_politica_reduzida ? alvoY :
+        anim_mistura(comScrollInicio,comScrollAlvo,detalheExpo(comScrollTempo/.7f));
+      velY=dt>0 ? (scrollY-anterior)/dt : 0;
+    } else {
+      scrollY=anim_mola2_reduzida(&velY,scrollY,alvoY,dt,NV_MOLA2_SCROLL,anim_politica_reduzida);
+      comScrollInicio=comScrollAlvo=scrollY; comScrollTempo=0;
+    }
   }
 }
 
@@ -7306,16 +7327,22 @@ static void desenhaMusicas(float x, float y, float f, float a) {
   if (musEstadoAtual(&al) != MUS_PRONTO) return;
   GfxRect r = {x,y,MUS_W,MUS_H};
   musicaOrigem=r;
-  cartaoVidro(r, 0, a);
-  cartazColecao((GfxRect){x+32,y+32,MUS_CAPA,MUS_CAPA},al.capa,a);
-  float tx = x+MUS_CAPA+68, tw = MUS_W-MUS_CAPA-104;
-  TxtLinha l = txt_linha_corta(TXT_G22M,i18n("Trilha sonora original"),205,210,220,255,tw);
-  txt_desenhar_alpha(l,tx,y+40,a);
-  txt_bloco_corta(TXT_TITULO3,al.titulo,243,242,239,tx,y+85,tw,52,a,2);
-  l = txt_linha_corta(TXT_G22M,al.artista,205,210,220,255,tw);
-  txt_desenhar_alpha(l,tx,y+205,a);
+  GLuint capa=tex_obter_larg(al.capa,MUS_CAPA);
+  GLuint ambiente=musicaui_ambiente(al.capa);
+  if (ajustes_vidro()) cartaoVidro(r,0,a);
+  gfx_cor(r,24.0f/MUS_H,.04f,.05f,.07f,a);
+  if (ambiente) gfx_rect(r,ambiente,GFX_ARTE,0,0,0,24.0f/MUS_H,0,0,0,a*(ajustes_vidro() ? .9f : 1));
+  gfx_anel(r,24.0f/MUS_H,1,1,1,1,.09f*a);
+  gfx_rect((GfxRect){x+19,y+40,MUS_CAPA+26,MUS_CAPA+26},0,GFX_SOMBRA,.3f,0,0,.08f,0,0,0,.65f*a);
+  if (capa) gfx_rect((GfxRect){x+28,y+46,MUS_CAPA,MUS_CAPA},capa,GFX_ARTE,0,0,0,12.0f/MUS_CAPA,0,0,0,a);
+  float tx = x+MUS_CAPA+60, tw = MUS_W-MUS_CAPA-92;
+  TxtLinha l = txt_linha_corta(TXT_G20M,i18n("Trilha sonora original"),220,224,232,255,tw);
+  txt_desenhar_alpha(l,tx,y+28,a);
+  txt_bloco_corta(TXT_TITULO3,al.titulo,243,242,239,tx,y+64,tw,46,a,2);
+  l = txt_linha_corta(TXT_G22M,al.artista,220,224,232,255,tw);
+  txt_desenhar_alpha(l,tx,y+164,a);
   l = txt_linha(TXT_G22M,i18n("Abrir álbum"),243,242,239,255);
-  GfxRect pil = {tx,y+MUS_H-92,l.w+64,56};
+  GfxRect pil = {tx,y+MUS_H-80,l.w+64,52};
   botao_pilula_sem_aro(pil,i18n("Abrir álbum"),NULL,f,0,0,a);
 }
 
@@ -7604,9 +7631,7 @@ static float baseDaAbaAtiva(void) {
   }
 }
 
-static float alturaCabComentarios(void) {
-  return NV_DETF_CAB_H+NV_DETF_CAB_GAP+(ehSerie() ? COM_PILL_H+28 : 0);
-}
+static float alturaCabComentarios(void) { return 48; }
 
 // Rotulos do seletor, em escopo de arquivo: a contagem de colunas e a largura
 // de item precisam deles fora do desenho.
@@ -7648,6 +7673,9 @@ static float larguraPilulaCom(const char *rot) {
 
 // Desenha o cabecalho e devolve o Y onde os CARTOES comecam.
 static float cabecalhoComentarios(float x, float y, float a) {
+  char caps[160]; idioma_maiusc_em(ajustes_idioma(),caps,sizeof caps,i18n("O que estão dizendo"));
+  txt_tracking(TXT_G20M,caps,243,242,239,x,y,a*.6f,3.6f);
+  return y+48;
   float yy = y;
   // O cabecalho .dh do mockup: "O que estão dizendo" em 34/700, o complemento
   // "avaliações no Trakt" a 45% e a contagem a direita a 40%. Era o wordmark
@@ -7750,11 +7778,6 @@ static float cabecalhoComentarios(float x, float y, float a) {
   return yy;
 }
 
-static void cartaoComentario(GfxRect card,float raio,float a) {
-  if (ajustes_vidro()) cartaoVidro(card,0,a);
-  else gfx_cor(card,raio,.082f,.094f,.118f,.92f*a);
-}
-
 static void desenhaComentarios(float x, float y, float a) {
   int daSerie = !(ehSerie() && comentEp);
   int n = daSerie ? extras_n_comentarios() : extras_n_comentarios_ep();
@@ -7793,12 +7816,18 @@ static void desenhaComentarios(float x, float y, float a) {
     // A troca e em DEGRAU e nao interpolada: `txt_linha` guarda a linha ja
     // rasterizada na cor pedida, entao uma cor que varia por quadro seria uma
     // entrada nova de cache por quadro.
-    cartaoComentario(card, 20.0f / COM_CARD_H, a);
+    float fc=i+nPilulasCom()<N_ITENS ? animFoco[SEC_COMENTARIOS][i+nPilulasCom()] : 0;
+    card=detalheEscala(card,fc,detalheFocoEscala(.03f));
+    if (fc>.005f && ajustes_borda_foco()) gfx_anel(card,20.0f/COM_CARD_H,3,1,1,1,fc*a);
+    gfx_cor(card,20.0f/COM_CARD_H,1,1,1,.06f*a);
     int tintaEsc = 1;   // tinta escura sobre o foco (realce claro); 0 = clara
-    // Shared translucent focus surface; glass text stays light.
+    // Vidro: o cartao em foco segue translucido (contorno no realce), entao o
+    // texto NAO inverte; `focCor` e o "foco cheio" das cores abaixo.
     const int focCor = 0;
-    float f=animFoco[SEC_COMENTARIOS][i+nPilulasCom()];
-    if (f>.005f) plrui_linha_foco(card,20.0f,f*a);
+    if (0) {  float fr, fg, fb; tintaEsc = ajustes_acento_tinta(&fr, &fg, &fb) < 0.5f;
+      gfx_cor(card, 20.0f / (COM_CARD_W < COM_CARD_H ? COM_CARD_W
+                                                     : COM_CARD_H),
+              fr, fg, fb, a); }
 
     // ETIQUETA DE IDIOMA ("EN") quando o comentario NAO esta no idioma da
     // interface: o texto e de uma pessoa e nao se traduz, mas a pessoa fica
@@ -7813,28 +7842,36 @@ static void desenhaComentarios(float x, float y, float a) {
         tag[q] = (char)((lingCom[q] >= 'a' && lingCom[q] <= 'z') ? lingCom[q] - 32 : lingCom[q]);
       tag[q] = 0;
       { TxtLinha lt = txt_linha(TXT_CAPTION2, tag,
-                                focCor ? (tintaEsc ? 88 : 215) : 132, focCor ? (tintaEsc ? 90 : 216) : 138,
-                                focCor ? (tintaEsc ? 96 : 222) : 150, 255);
+                                foc ? (tintaEsc ? 88 : 215) : 132, foc ? (tintaEsc ? 90 : 216) : 138,
+                                foc ? (tintaEsc ? 96 : 222) : 150, 255);
         txt_desenhar_alpha(lt, px + larg - lt.w, y + COM_PAD + 6.0f, a * 0.9f);
         larguraTag = lt.w + 14.0f; }
     }
-    { TxtLinha lu = txt_linha_corta(TXT_ROW_TITULO,
+    { TxtLinha lu = txt_linha_corta(TXT_G22M,
                                     daSerie ? extras_comentario_usuario(i)
                                             : extras_comentario_ep_usuario(i),
                                     focCor ? (tintaEsc ? 17 : 255) : 238, focCor ? (tintaEsc ? 17 : 255) : 241,
                                     focCor ? (tintaEsc ? 20 : 255) : 248, 255, larg - larguraTag);
-      txt_desenhar_alpha(lu, px, y + COM_PAD, a); }
+      txt_desenhar_alpha(lu,px+58,y+30,a);
+      int rating=daSerie ? extras_comentario_nota(i) : extras_comentario_ep_nota(i);
+      if (rating>0) { char score[24]; snprintf(score,sizeof score,"★ %d",rating);
+        TxtLinha ls=txt_linha(TXT_G18R,score,243,242,239,140);
+        txt_desenhar_alpha(ls,cx+COM_CARD_W-26-ls.w,y+32,a); }
+      GfxRect av={px,y+22,44,44}; gfx_cor(av,.5f,.62f,.83f,.78f,a);
+      const char *user=daSerie ? extras_comentario_usuario(i) : extras_comentario_ep_usuario(i);
+      char ini[12]; elencoMonograma(user,ini,sizeof ini);
+      TxtLinha initial=txt_linha(TXT_G18M,ini,17,17,17,255);
+      txt_desenhar_alpha(initial,av.x+(44-initial.w)*.5f,av.y+(44-initial.h)*.5f,a); }
 
     // O texto para ANTES do rodape: sem o teto de linhas ele passava por cima
     // das curtidas. 6 linhas de 30 terminam em 246; o rodape comeca em 288.
-    // Reuse Agenda's cached wrapping; focus colors do not change line breaks.
-    agendaui_sinopse(TXT_DET_META2, comOculto(i)
-                       ? i18n("Spoiler — OK para revelar")
-                       : daSerie ? extras_comentario_texto(i) : extras_comentario_ep_texto(i),
-                     px, y + COM_PAD + 42.0f, larg, 30.0f, 6,
-                     focCor ? (tintaEsc ? 45 : 235) : 190,
-                     focCor ? (tintaEsc ? 47 : 236) : 195,
-                     focCor ? (tintaEsc ? 52 : 240) : 205, a * 0.95f);
+    if (comOculto(i)) {
+      for (int k=0; k<3; k++) gfx_cor((GfxRect){px,y+96+k*30,larg-k*60,14},.5f,.25f,.27f,.29f,a);
+      txt_desenhar_alpha(txt_linha(TXT_CAPTION2,"Contém spoiler · OK para ler",200,203,210,255),px,y+176,a);
+    } else agendaui_sinopse(TXT_G22M, daSerie ? extras_comentario_texto(i)
+                                     : extras_comentario_ep_texto(i),
+              px,y+84,larg,33,3,
+              focCor ? (tintaEsc ? 45 : 235) : 190, focCor ? (tintaEsc ? 47 : 236) : 195, focCor ? (tintaEsc ? 52 : 240) : 205,a*.95f);
 
     { int nota = daSerie ? extras_comentario_nota(i)
                          : extras_comentario_ep_nota(i);
@@ -7845,12 +7882,11 @@ static void desenhaComentarios(float x, float y, float a) {
       else
         snprintf(rodape, sizeof rodape, i18n("%d curtidas"), cur);
       { TxtLinha lr = txt_linha(TXT_CAPTION2, rodape,
-                                focCor ? (tintaEsc ? 88 : 215) : 132, focCor ? (tintaEsc ? 90 : 216) : 138,
-                                focCor ? (tintaEsc ? 96 : 222) : 150, 255);
-        txt_desenhar_alpha(lr, px, y + COM_CARD_H - COM_PAD - lr.h, a * 0.9f); } }
+                                foc ? (tintaEsc ? 88 : 215) : 132, foc ? (tintaEsc ? 90 : 216) : 138,
+                                foc ? (tintaEsc ? 96 : 222) : 150, 255);
+        (void)lr; } }
   }
 }
-
 
 // --- AS DUAS SECOES SOB DEMANDA ---------------------------------------------
 //
@@ -8882,19 +8918,15 @@ static void detail_desenhar_(Uint32 agora) {
   }
   // E o menu de visto por cima da ficha tambem: ele e o ultimo a abrir.
   if (episodios_menu_aberto()) ponteiro_camada();
-  if (comEntrada>.005f && comMostrado>=0) {
-    float previousAlpha=gfx_opacidade_grupo;
-    gfx_transformar(NV_TELA_W*.5f,NV_TELA_H*.5f,.96f+.04f*comEntrada,0,24*(1-comEntrada));
-    gfx_opacidade_grupo*=comEntrada;
+  if (comInteiro>=0) {
     int ep=ehSerie() && comentEp;
     GfxRect folha={240,220,1440,640};
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,.42f*s);
     plrui_material(folha,30,0,s);
-    const char *nome=ep ? extras_comentario_ep_usuario(comMostrado) : extras_comentario_usuario(comMostrado);
-    const char *texto=ep ? extras_comentario_ep_texto(comMostrado) : extras_comentario_texto(comMostrado);
+    const char *nome=ep ? extras_comentario_ep_usuario(comInteiro) : extras_comentario_usuario(comInteiro);
+    const char *texto=ep ? extras_comentario_ep_texto(comInteiro) : extras_comentario_texto(comInteiro);
     txt_desenhar_alpha(txt_linha(TXT_HEADLINE,nome,240,242,246,255),folha.x+48,folha.y+40,s);
     txt_bloco(TXT_DET_META2,texto,220,224,232,folha.x+48,folha.y+110,folha.w-96,36,s,12);
-    gfx_opacidade_grupo=previousAlpha; gfx_sem_transformar();
   }
   menuDeVisto(agora);
   maisDesenhar();

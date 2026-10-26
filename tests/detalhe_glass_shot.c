@@ -1028,6 +1028,35 @@ int main(int argc, char **argv) {
     tex_encerrar(); SDL_Quit(); return 0;
   }
 #endif
+  if (quer(argc,argv,"reviews-proof")) {
+    const float scales[]={1,.85f};
+    for (int mode=0;mode<2;mode++) {
+      gfx_escala_txt_definir(scales[mode]); ajustes_definir_vidro(mode==0);
+      montarCatalogo(); abrir(1,1,SEC_COMENTARIOS,0);
+      for (int tick=0;tick<60;tick++) { SDL_Delay(16); quadros(1); }
+      for (int state=0;state<3;state++) {
+        if (state) {
+          SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_RIGHT;
+          detail_evento(&key); assert(foco.coluna==state);
+          for (int tick=0;tick<30;tick++) { SDL_Delay(16); quadros(1); }
+        }
+        // Isolate the section: adjacent round-4 components intentionally differ.
+        txt_novo_quadro(); gfx_novo_quadro();
+        glClearColor(.04f,.05f,.07f,1); glClear(GL_COLOR_BUFFER_BIT);
+        float scale=gfx_escala_txt_entrar();
+        desenhaComentarios(72,300,1);
+        gfx_escala_sair(scale);
+        char name[128]; snprintf(name,sizeof name,"%d-%s-reviews-%d",mode ? 85 : 100,mode ? "solid" : "glass",state);
+        gravar(name);
+      }
+      SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_RETURN;
+      detail_evento(&key); key.type=SDL_KEYUP; detail_evento(&key); assert(comInteiro==2);
+      key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_ESCAPE; detail_evento(&key);
+      assert(comInteiro<0 && nivel==1 && foco.fileira==SEC_COMENTARIOS && foco.coluna==2);
+    }
+    puts("PASS: review focus, navigation, open and Back");
+    tex_encerrar(); SDL_Quit(); return 0;
+  }
   if (quer(argc,argv,"legacy-proof")) {
     const float scales[]={.85f,1};
     for (int scale=0;scale<2;scale++) for (int glass=0;glass<2;glass++) {
@@ -1048,6 +1077,13 @@ int main(int argc, char **argv) {
         abrir(1,section>0,section>0 ? rows[section] : 0,0);
         for (int tick=0;tick<60;tick++) { SDL_Delay(16); quadros(1); }
         snprintf(name,sizeof name,"%d-%s-%s",scale ? 100 : 85,glass ? "glass" : "solid",names[section]); gravar(name);
+        if (section==3) {
+          shotScroll=scrollY; nivel=0;
+          for (int tick=0;tick<30;tick++) { SDL_Delay(16); quadros(1); }
+          snprintf(name,sizeof name,"%d-%s-music-unfocused",scale ? 100 : 85,glass ? "glass" : "solid"); gravar(name);
+          nivel=1; shotScroll=-1;
+          for (int tick=0;tick<30;tick++) { SDL_Delay(16); quadros(1); }
+        }
 #ifdef NV_DETAIL21_PROOF
         if (section==1) {
           SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_RIGHT;

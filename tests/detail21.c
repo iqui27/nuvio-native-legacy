@@ -259,7 +259,10 @@ int main(int argc, char **argv) {
   gfx_escala_sair(priorScale); gfx_escala_txt_definir(1);
   recalcularLayout();
   assert(NV_DET21_BTN_H==72 && NV_DET21_CIRC==72);
-  assert(COL_CARD_W==760 && COL_CARD_H==300 && COM_CARD_H==340);
+  assert(COL_CARD_W==760 && COL_CARD_H==300);
+  assert(COM_CARD_W==556 && COM_CARD_H==212 && COM_CARD_GAP==24);
+  assert(alturaCabComentarios()==48 && nPilulasCom()==0);
+  assert(MUS_W==960 && MUS_H==292 && MUS_CAPA==200);
   assert(secaoAlvo(SEC_NOTAS)==.42f);
   nivel=1; foco.fileira=SEC_NOTAS; assert(secaoAlvo(SEC_NOTAS)==1.f);
   nivel=0; assert(secaoAlvo(SEC_NOTAS)==1.f);

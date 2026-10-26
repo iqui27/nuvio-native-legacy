@@ -6,6 +6,7 @@
 #include "gfx.h"
 #include "text.h"
 #include "tex_cache.h"
+#include "corviva.h"
 #include "qrtex.h"
 #include "idioma.h"
 #include "ajustes.h"
@@ -21,8 +22,7 @@ static struct {
   char imdb[16], titulo[128], qrUrl[512];
   int aberta, temp, ano, foco, guardado, suporta, pendente, som, erro, volumePronto;
   Uint32 entrada, mudou, toast, agora;
-  GLuint qr, ambiente;
-  int coresProntas;
+  GLuint qr;
   float focoLinha[MUS_POR_PAGINA];
 } ui;
 
@@ -52,7 +52,6 @@ static void parar(void) {
 void musicaui_fechar(void) {
   parar(); ui.aberta = 0; abertura=aberturaVel=0; trailer_bloquear_musica(0);
   if (ui.qr) { gfx_tex_esquecer(ui.qr); glDeleteTextures(1, &ui.qr); ui.qr = 0; }
-  if (ui.ambiente) { gfx_tex_esquecer(ui.ambiente); glDeleteTextures(1, &ui.ambiente); ui.ambiente = 0; }
 }
 int musicaui_aberta(void) { return ui.aberta; }
 void musicaui_abrir(const MusAlbum *a, const char *imdb, const char *titulo, int ano, int temp) {
@@ -126,19 +125,6 @@ void musicaui_atualizar(Uint32 agora) {
   abertura=anim_mola2_reduzida(&aberturaVel,abertura,ui.aberta ? 1 : 0,dt,18,ajustes_animacoes_reduzidas());
   if (!ui.aberta && abertura<.001f) { musicaui_fechar(); return; }
   ui.agora = agora;
-  if (!ui.coresProntas) {
-    unsigned char px[16*16*4], ambient[32*18*4];
-    if (tex_cores(ui.a.capa, px)) {
-      mus_cores(px, 16, 16, 64, ambient);
-      glGenTextures(1, &ui.ambiente); glBindTexture(GL_TEXTURE_2D, ui.ambiente);
-      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 32, 18, 0, GL_RGBA, GL_UNSIGNED_BYTE, ambient);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-      ui.coresProntas = 1;
-    }
-  }
   if (ui.p.ativa) {
     if (ocupado() || trailer_aberto()) { parar(); return; }
     if (ui.pendente) {
@@ -192,6 +178,36 @@ static void botao(int foco, const char *label, const char *icon, float x, float 
   TxtLinha l = txt_linha(TXT_G22M, label, tinta,tinta,tinta,255);
   txt_desenhar_alpha(l,x+63,y+(60-l.h)*.5f,1);
 }
+// One cached cover gradient shared by the Detail card and album page.
+GLuint musicaui_ambiente(const char *capa) {
+  static char chave[512];
+  static GLuint textura;
+  if (strcmp(chave,capa)) {
+    if (textura) { gfx_tex_esquecer(textura); glDeleteTextures(1,&textura); textura=0; }
+    snprintf(chave,sizeof chave,"%s",capa);
+  }
+  if (!textura) {
+    unsigned char px[16*16*4], ambient[32*18*4];
+    if (!tex_cores(capa,px)) return 0;
+    mus_cores(px,16,16,64,ambient);
+    CorvivaPaleta paleta;
+    tex_publicar_paleta(capa);
+    if (corviva_paleta(capa,&paleta) && paleta.ok) {
+      for (int y=0;y<18;y++) for (int x=0;x<32;x++) {
+        float k=(x/31.0f+y/17.0f)*.5f;
+        for (int c=0;c<3;c++) ambient[(y*32+x)*4+c]=(unsigned char)
+          (255*.36f*(paleta.grad[0][c]*(1-k)+paleta.grad[2][c]*k));
+      }
+    }
+    glGenTextures(1,&textura); glBindTexture(GL_TEXTURE_2D,textura);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,32,18,0,GL_RGBA,GL_UNSIGNED_BYTE,ambient);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+  }
+  return textura;
+}
 static void ilha(GfxRect r) {
   gfx_cor(r, r.h > 60 ? 26.0f/r.h : .5f, .055f,.059f,.071f, ajustes_vidro() ? .9f : 1);
 }
@@ -211,7 +227,8 @@ void musicaui_desenhar(Uint32 agora) {
   gfx_sem_recorte();
   gfx_cor((GfxRect){0,0,1920,1080},0,.031f,.051f,.09f,1);
   GLuint capa = tex_obter_larg(ui.a.capa, 600);
-  if (ui.ambiente) gfx_rect((GfxRect){0,0,1920,1080},ui.ambiente,GFX_SNAP,0,1,0,0,0,0,0,1);
+  GLuint ambiente=musicaui_ambiente(ui.a.capa);
+  if (ambiente) gfx_rect((GfxRect){0,0,1920,1080},ambiente,GFX_SNAP,0,1,0,0,0,0,0,1);
   float ent = ajustes_animacoes_reduzidas() ? 1 : ease((agora-ui.entrada)/360.0f);
   float header = ajustes_animacoes_reduzidas() ? 1 : ease(((float)(agora-ui.entrada)-80)/300.0f);
   float cx = 108 - 28*(1-ent), cy = 185, hy = 16*(1-header);
