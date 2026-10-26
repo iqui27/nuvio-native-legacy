@@ -305,7 +305,8 @@ static void aj4PontFoco(int zona,int row) {
 }
 static int aj4Evento(SDL_Keycode k) {
   if (uxEditor) return -1;
-  int pen=ajPenEvent(k);if(pen>=0)return pen; // Existing draft editor owns its keys and guards.
+  if(aj4BuscaRetorno && uxVoltar(k)) { aj4BuscaRetorno=0;ajPenPage=-1;aj4Util=3;aj4Linha=aj4BuscaFoco;aj4Topo=-1;focoIndice=0;return 1; }
+  int pen=ajPenEvent(k);if(pen>=0)return pen;
   if (aj4PerfilRetorno && uxVoltar(k)) { aj4PerfilRetorno=0; aj4AbrirPerfil(); return 1; }
   if (aj4BuscaRetorno && uxVoltar(k)) {
     aj4BuscaRetorno=0; aj4Util=3; aj4Linha=aj4BuscaFoco; aj4Topo=-1; focoIndice=0; return 1;
@@ -323,7 +324,7 @@ static int aj4Evento(SDL_Keycode k) {
     return 1;
   }
   if (aj4Topo >= 0) {
-    if (uxVoltar(k)) { if (focoIndice) sair = 1; else { focoIndice = 1; aj4Util = 0; } aj4Topo = -1; return 1; }
+    if (uxVoltar(k)) { if (focoIndice) sair = 1; else { focoIndice = 1; aj4Util = 0;ajPenPage=-1; } aj4Topo = -1; return 1; }
     if (k == SDLK_LEFT && aj4Topo) aj4Topo--;
     if (k == SDLK_RIGHT && aj4Topo < 2) aj4Topo++;
     if (k == SDLK_DOWN) aj4Topo = -1;
@@ -366,7 +367,7 @@ static int aj4Evento(SDL_Keycode k) {
     if (uxOk(k)) {
       if(aj4Util==3) {
         if(aj4Acao || !n)aj4Buscar();
-        else { int row=aj4Linha; aj4Util=0; focarOpcao(aj4Resultados[row].op); aj4BuscaRetorno=1; aj4BuscaFoco=row; }
+        else { int row=aj4Linha; aj4Util=0; focarOpcao(aj4Resultados[row].op);ajPenFind(aj4Resultados[row].op); aj4BuscaRetorno=1; aj4BuscaFoco=row; }
         return 1;
       }
       if (aj4Acao && aj4UndoN) { aj4Desfazer(); aj4Acao = 0; }

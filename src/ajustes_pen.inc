@@ -70,6 +70,15 @@ static void ajPenOpen(int page) {
   ajPenPage=page;ajPenRow=0;ajPenReturn=-1;focoIndice=0;aj4Util=0;aj4Topo=-1;
   uxVeioBusca=0;aj4BuscaRetorno=0;aj4PerfilRetorno=0;
 }
+static void ajPenFind(int op) {
+  for(int p=0;p<46;p++) {
+    const AjPenPage *page=p<27?&AJ_PEN_ADV[p]:p<29?&AJ_PEN_AUDIO[p-27]:&AJ_PEN_MAIN[p-29];
+    int row=0;
+    for(int c=0;c<2;c++)for(int i=0;i<page->cols[c].n;i++,row++)if(page->cols[c].rows[i].op==op) { ajPenOpen(p);ajPenRow=row;return; }
+  }
+  int ops[AJ_N],n=ajPenMissing(ops);
+  for(int i=0;i<n;i++)if(ops[i]==op) { ajPenOpen(46+i/14);ajPenRow=i%14;return; }
+}
 static int ajPenEvent(SDL_Keycode key) {
   const AjPenPage *page=ajPenCurrent();
   if(!page || uxEditor || aj4Util || focoIndice || aj4Topo>=0)return -1;

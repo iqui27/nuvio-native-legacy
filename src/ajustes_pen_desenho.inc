@@ -1,10 +1,11 @@
 /* Pencil Settings, 1920 x 1080. Values and actions remain owned by ajustes.c. */
 #include "menu.h"
+#include "ajustes_pen_cabecalhos.inc"
 static void ajPenPanel(float x,float y,float w,float h,int focus) {
-  GfxRect r={x,y,w,h};
+  GfxRect r={x,y,w,h};float radius=w==88?44:28;
   if(focus) ajNeutro(r,28,.14f,.169f,.176f,.204f,1);
-  else if(ajVid()) gfx_vidro_miolo(r,28/h,.055f,.059f,.071f,.80f,1);
-  else gfx_cor(r,28/h,.055f,.059f,.071f,1);
+  else if(ajVid()) gfx_vidro_miolo(r,radius/h,.055f,.059f,.071f,.80f,1);
+  else gfx_cor(r,radius/h,.055f,.059f,.071f,1);
 }
 static void ajPenChip(const char *s,const char *ic,float x,float y,float w,int focus,int zone,int row) {
   GfxRect r={x,y,w,52};
@@ -59,20 +60,21 @@ static void ajPenRows(void) {
   if(!page)return;
   ajPenBase();
   ajPenChip("Ajustes","pl_chevron-left",200,112,124,0,5,0);
-  ajKicker(ajPenPage<27?"AJUSTES AVANÇADOS":page->section,200,200,.45f);
-  aj4Texto(page->title,TXT_TITULO2,200,218,1500,1);
+  ajKicker(ajPenPage<27?"AJUSTES AVANÇADOS":page->section,200,198,1);
+  aj4Texto(page->title,TXT_TITULO2,200,212,1500,1);
   if(ajPenPage<27 || ajPenPage>=46) {
     char sub[240];snprintf(sub,sizeof sub,i18n("Opções de %s que o modo Simples esconde. Valor atual à direita."),i18n(page->section));
     aj4Texto(sub,TXT_G20M,200,291,1520,.58f);
   } else {
     ajPenModo(118);
-    aj4Texto(ajPenPage>=29?aj4Ajuda(page->cols[0].rows[0].op):ajPenPage==27?"Vale para quase todo título. Se um filme não tiver a faixa escolhida, tocamos a original e avisamos.":"Tamanho, fonte, cor e borda da legenda principal.",TXT_G20M,200,291,1520,.58f);
+    aj4Texto(ajPenPage==27?"Avançado mostra saída de som e sincronia fina":ajPenPage==28?"Avançado mostra o deslize da sincronia":"Avançado mostra as opções técnicas de cada seção",TXT_AJ_MINI14,1450,190,374,.4f);
+    aj4Texto(ajPenPage>=29?AJ_PEN_SUB[ajPenPage-29]:ajPenPage==27?"Vale para quase todo título. Se um filme não tiver a faixa escolhida, tocamos a original e avisamos.":"Tamanho, fonte, cor e borda da legenda principal.",TXT_G20M,200,291,1520,.58f);
   }
   int index=0;
   for(int col=0;col<2;col++) {
     const AjPenColumn *column=&page->cols[col];if(!column->n)continue;
     ajPenPanel(column->x,344,column->w,640,0);
-    ajKicker(column->title,column->x+26,370,.45f);
+    ajKicker(column->title,column->x+26,366,1);
     for(int i=0;i<column->n;i++,index++) {
       const AjPenRow *row=&column->rows[i];float x=column->x+26,y=400+i*(ajPenPage<27 || ajPenPage>=46?82:84),w=column->w-52;
       int focus=index==ajPenRow && aj4Topo<0;
@@ -104,13 +106,13 @@ static void ajPenHome(void) {
   static const int valueOps[]={AJ_QUALIDADE,AJ_AUD_LINGUA,AJ_HOME_LAYOUT,AJ_PERFIL_ATIVO};
   int av=lig(AJ_AVANCADAS);
   ajPenBase();
-  ajKicker("NUVIO · TV DA SALA",200,122,.45f);
-  aj4Texto("Ajustes",TXT_TITULO2,200,146,1000,1);
+  ajKicker("NUVIO · TV DA SALA",200,120,1);
+  aj4Texto("Ajustes",TXT_TITULO2,200,140,1000,1);
   aj4Texto(av?"420 ajustes em 8 seções. O modo avançado mostra as opções técnicas de cada bloco.":"8 seções. Cada escolha mostra o valor atual antes de você abrir.",TXT_G20M,200,234,1360,.58f);
   ajPenChip("Buscar ajuste","aj_search",1642,152,187,aj4Topo==0,0,0);
   ajPenModo(216);
   aj4Texto(av?"Avançado mostra as opções técnicas de cada seção":"Avançado revela os ajustes técnicos",TXT_AJ_MINI14,av?1452:1574,289,av?372:250,.4f);
-  ajKicker("DO DIA A DIA",200,292,.45f);
+  ajKicker("DO DIA A DIA",200,290,1);
   for(int i=0;i<4;i++) {
     float x=200+i*412;int focus=aj4Linha==i && aj4Topo<0;
     ajPenPanel(x,322,388,250,focus);
@@ -121,10 +123,15 @@ static void ajPenHome(void) {
     ajCaps(TXT_AJ_MINI12,"AGORA",1.5f,x+26,530,.40f);
     char value[160];uxValorTexto(valueOps[i],uxValorAtual(valueOps[i]),value,sizeof value);
     if(i==3)snprintf(value,sizeof value,"%s",pfNome(perfis_ativo()));
-    aj4Texto(value,TXT_G18M,x+96,527,260,1);
+    int changed=0;for(int op=0;op<AJ_N;op++)if(aj4Simples(op)==i+1 && uxDiferente(op))changed++;
+    aj4Texto(value,TXT_G18M,x+96,527,changed?168:260,1);
+    if(changed) { char count[64];snprintf(count,sizeof count,i18n("%d alterados"),changed);float r,g,b;ajustes_acento(&r,&g,&b);
+      TxtLinha t=txt_linha_corta(TXT_G14B,count,r*255,g*255,b*255,255,100);
+      txt_desenhar(t,x+388-26-t.w,530);
+    }
     aj4Alvo((GfxRect){x,322,388,250},1,i);
   }
-  ajKicker("TAMBÉM AQUI",200,604,.45f);
+  ajKicker("TAMBÉM AQUI",200,602,1);
   ajPenPanel(200,634,1624,214,0);
   static const char *const other[]={"TV ao vivo e guia","Controle parental","Desempenho","Sobre e ajuda"};
   static const char *const help[]={"Canais, EPG e gravações","PIN e limites por perfil","Cache, decodificação e memória","Versão, suporte e código de log"};
@@ -133,7 +140,7 @@ static void ajPenHome(void) {
     float x=i%2?1254:226,y=i<2?660:752;int row=9+i;
     if(aj4Linha==row && aj4Topo<0)ajNeutro((GfxRect){x,y,544,78},20,.14f,.169f,.176f,.204f,1);
     ajIcone(ic[i],x+16,y+22,26,.8f);
-    aj4Texto(other[i],TXT_G22M,x+58,y+12,460,1);
+    aj4Texto(other[i],TXT_G21B,x+58,y+12,460,1);
     aj4Texto(help[i],TXT_AJ_MINI14,x+58,y+42,460,.4f);
     aj4Alvo((GfxRect){x,y,544,78},1,row);
   }
@@ -144,7 +151,7 @@ static void ajPenHome(void) {
   ajPenPanel(200,876,1624,124,0);
   ajNeutro((GfxRect){226,910,56,56},20,.09f,.18f,.19f,.21f,1);
   ajIcone("aj_sparkles",240,924,28,1);
-  aj4Texto("O que o Nuvio faz?",TXT_G22M,298,916,340,1);
+  aj4Texto("O que o Nuvio faz?",TXT_G21B,298,916,340,1);
   aj4Texto("A visita guiada: recursos prontos para ligar.",TXT_AJ_MINI14,298,946,340,.4f);
   ajPenChip("Abrir",NULL,641,912,84,aj4Linha==7 && aj4Topo<0,1,7);
   gfx_cor((GfxRect){960,906,1,64},0,1,1,1,.12f);

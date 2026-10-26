@@ -1,0 +1,20 @@
+/* Approved main-page descriptions. */
+static const char *const AJ_PEN_SUB[] = {
+  "Qualidade, som e a escolha do que toca na TV.",
+  "O que o player faz enquanto o vídeo roda e o que acontece quando ele acaba.",
+  "O que a lista de fontes mostra e o que o automático pode usar.",
+  "O que a sua TV sabe tocar e como o Nuvio adapta o arquivo.",
+  "Como a tela inicial se comporta no seu sofa: layout, fileiras e barra.",
+  "A cor de destaque, o vidro da interface e o quanto a tela se mexe.",
+  "O cartaz em foco, de onde vem a arte e o que toca antes do episódio.",
+  "O que aparece na página de cada filme: dados, notas e sem spoilers.",
+  "Contas conectadas, add-ons, debrid e servidores de midia.",
+  "O que está instalado e o que acontece quando a fonte falha.",
+  "As chaves que dão link premium de verdade.",
+  "Jellyfin, Emby e Plex: as suas bibliotecas dentro do Nuvio.",
+  "Contas de canal, a grade de programação e as gravações.",
+  "Resolução, formato e espera: o que mexer quando o canal trava.",
+  "Cache, decodificação e memória desta TV.",
+  "Versão, atualização, guia de uso e o registro para quem faz o app.",
+  "A fileira que continua o que você parou, e como ela é montada.",
+};

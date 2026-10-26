@@ -6,13 +6,13 @@ static void ajPenEditor(void) {
   int op=uxOp;
   ajPenBase();
   ajPenChip(ajPenPage==27 || ajPenPage==28?"Áudio e legendas":"Ajustes","pl_chevron-left",200,112,208,0,5,0);
-  ajKicker(ajPenPage==27 || ajPenPage==28?"ÁUDIO E LEGENDAS":"AJUSTES",200,200,.45f);
+  ajKicker(ajPenPage==27 || ajPenPage==28?"ÁUDIO E LEGENDAS":"AJUSTES",200,198,1);
   const char *title=op==AJ_AUD_LINGUA?"Idioma do áudio":op==AJ_LEG_LINGUA2?"Segunda legenda":aj4Rotulo(op);
-  aj4Texto(title,TXT_TITULO2,200,218,1500,1);
+  aj4Texto(title,TXT_TITULO2,200,212,1500,1);
   aj4Texto(op==AJ_AUD_LINGUA?"Escolha a faixa que você prefere. A original continua na lista — nada é escondido.":aj4Ajuda(op),TXT_G20M,200,291,1520,.58f);
   ajPenChip(escopoDe(op)==ESC_TV?"Só esta TV":"Este perfil",NULL,1600,118,174,0,9,0);
   ajPenPanel(200,344,520,640,0);ajPenPanel(744,344,1080,640,0);
-  ajKicker("PREFERÊNCIA",226,370,.45f);
+  ajKicker("PREFERÊNCIA",226,366,1);
   char original[160];uxValorTexto(op,uxOriginal,original,sizeof original);
   const char *heads[]={"Valor atual","Faixa de reserva","Onde isso vale"};
   const char *body[]={original,op==AJ_AUD_LINGUA?"Se a escolhida não existir no título, tocamos a original.":aj4Ajuda(op),escopoDe(op)==ESC_TV?"Nesta TV e no app da sala. O celular segue a conta, não a TV.":"A escolha acompanha este perfil."};
@@ -24,7 +24,7 @@ static void ajPenEditor(void) {
   }
   ajPenChip("Voltar ao padrão","aj_rotate-ccw-clock",226,902,206,uxRodape,9,1);
   ajPenChip("Salvar como preset","aj_check",444,902,230,0,9,2);
-  ajKicker(op==AJ_AUD_LINGUA?"FAIXAS DISPONÍVEIS":"ESCOLHA UM VALOR",770,370,.45f);
+  ajKicker(op==AJ_AUD_LINGUA?"FAIXAS DISPONÍVEIS":"ESCOLHA UM VALOR",770,366,1);
   if(OPCOES[op].tipo==OP_NUMERO) {
     char value[160];uxValorTexto(op,uxPendente,value,sizeof value);
     aj4Texto(value,TXT_TITULO2,800,480,900,1);
