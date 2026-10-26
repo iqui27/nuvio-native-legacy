@@ -4882,8 +4882,19 @@ static const char *homeTrailerBloqueio(void) {
   return NULL;
 }
 
+static int perfilPermiteReproduzir(int indice) {
+  if (!perfil_infantil_ativo()) return 1;
+  const CatItem *ci = cat_item(indice);
+  const char *cert = indice == detail_indice() ? extras_ficha_classificacao() : NULL;
+  if (!cert || !*cert) cert = ci ? ci->classificacao : NULL;
+  if (perfil_infantil_classif_ok(cert)) return 1;
+  glem_aviso_curto(i18n("Perfil infantil: só classificação livre e 10 anos"));
+  return 0;
+}
+
 static void tocarFonteEscolhida(int fonte, int manual) {
   int alvo = player_aberto() ? player_indice() : detail_indice(), t = 0, e = 0;
+  if (!perfilPermiteReproduzir(alvo)) { aguardandoFonte = 0; folhaParaTocar = 0; return; }
   if (player_aberto()) player_episodio_atual(&t, &e);
   else detail_ep_foco(&t, &e);
   if (manual) consumirFolhaTocar(&t, &e);
@@ -6074,15 +6085,7 @@ void app_atualizar(float dt, Uint32 agora) {
     // espera) nao toca: abre a folha de espera, que tem "Assistir mesmo assim".
     if (querTocar && aguardandoFonte != 2 && travaui_segurar_detalhe()) querTocar = 0;
     // PERFIL INFANTIL (perfilinfantil.h): so classificacao livre ou ate 10 anos.
-    if (querTocar && perfil_infantil_ativo()) {
-      const CatItem *ki = cat_item(detail_indice());
-      const char *cert = extras_ficha_classificacao();
-      if (!cert || !*cert) cert = ki ? ki->classificacao : NULL;
-      if (!perfil_infantil_classif_ok(cert)) {
-        glem_aviso_curto(i18n("Perfil infantil: só classificação livre e 10 anos"));
-        querTocar = 0;
-      }
-    }
+    if (querTocar && !perfilPermiteReproduzir(detail_indice())) querTocar = 0;
     if (querTocar && aguardandoFonte != 2) {
       marco("abrir: reproduzir pedido");
       // A tela abre JA, no estado "abrindo fonte", e a escolha acontece depois.
