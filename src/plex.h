@@ -103,6 +103,8 @@ typedef struct {
   char versao[24];
   char token[96];          // accessToken for THIS server
   int dono;                // owned by the signed-in account
+  int presente;            // availability reported by plex.tv
+  long long visto;         // lastSeenAt, Unix seconds
   int nCon;
   PxConexao con[PX_CON_MAX];
 } PxServidor;

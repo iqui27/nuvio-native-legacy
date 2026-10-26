@@ -26,6 +26,9 @@
 #include "text.h"
 #include "teclado.h"
 #include "tex_cache.h"
+#include "catalogo.h"
+#include "addons.h"
+#include "perfilinfantil.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -49,9 +52,31 @@ static void check_rect(GfxRect r) {
   }
 }
 static void checked_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca);
+static void offline_import(int source) {
+  importarfluxo_teste(source, IMPF_ESPERA, source == IMPF_STREMIO ? "K7QX2M" : "",
+                     source == IMPF_STREMIO ? "https://link.stremio.com/" : "", 0, 0);
+}
+#define importarfluxo_comecar offline_import
+// Mock 3C state for captures only: Trakt linked, Simkl waiting on a code.
+#include "trakt.h"
+#include "simklauth.h"
+static int shotContas;
+static int shot_trakt_ativo(void) { return shotContas || trakt_ativo(); }
+static SmkEstado shot_simkl_estado(void) { return shotContas ? SMK_AGUARDANDO : simklauth_estado(); }
+static const char *shot_simkl_codigo(void) { return shotContas ? "PX49TD" : simklauth_codigo(); }
+static const char *shot_simkl_url(void) { return shotContas ? "https://simkl.com/pin" : simklauth_url(); }
+#define trakt_ativo shot_trakt_ativo
+#define simklauth_estado shot_simkl_estado
+#define simklauth_codigo shot_simkl_codigo
+#define simklauth_url shot_simkl_url
 #define gfx_cor checked_cor
 #include "../src/comecar.c"
 #undef gfx_cor
+#undef importarfluxo_comecar
+#undef trakt_ativo
+#undef simklauth_estado
+#undef simklauth_codigo
+#undef simklauth_url
 static void checked_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
   if (checkBounds) check_rect(r);
   gfx_cor(r, raio, cr, cg, cb, ca);
@@ -111,16 +136,17 @@ static void quadro(float dt) {
   txt_novo_quadro();   // como o app: sem isto o teto de rasterizacao acaba
   glClearColor(0.06f, 0.08f, 0.10f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
-  gfx_cor((GfxRect){ 200, 300, 600, 400 }, 0.02f, 0.35f, 0.55f, 1.0f, 1.0f);
-  for (i = 0; i < 12; i++)
-    gfx_cor((GfxRect){ 960 + i * 70, 700, 60, 160 }, 0.04f, 0.12f + 0.06f * i, 0.2f, 0.8f, 0.9f);
+  // The app underneath: a real backdrop, so enter/exit frames show the fade over art.
+  { GLuint t = tex_obter("design/universo-2026/assets/01.jpg");
+    if (t) gfx_rect((GfxRect){ 0, 0, 1920, 1080 }, t, GFX_CARD, 0, 0, 0, 0, 0, 0, 0, 1);
+    for (i = 0; i < 4 && !t; i++) tex_bombear(8); }
   if (checkBounds) check_controls();
   comecar_desenhar(SDL_GetTicks());
 }
 
 static void adiantar(int quadros) {
   int i;
-  for (i = 0; i < quadros; i++) quadro(1000.0f / 60.0f);
+  for (i = 0; i < quadros; i++) { quadro(1.0f / 60.0f); SDL_Delay(2); tex_bombear(8); }
 }
 
 static void captura(const char *nome, int quadros) {
@@ -194,13 +220,21 @@ static void digitar(const char *txt) {
 
 // Leva o foco a um item pelo D-pad: sobe ao campo, ou desce ao rodape e anda de lado.
 static void ir_para(int id) {
-  int i;
-  for (i = 0; i < 16 && comecar_foco() != id; i++) {
-    int f = comecar_foco();
-    if (id < 100) tecla(SDLK_UP);
-    else if (f < 100) tecla(SDLK_DOWN);
-    else tecla(f < id ? SDLK_RIGHT : SDLK_LEFT);
+  static const SDL_Keycode keys[] = {SDLK_LEFT, SDLK_RIGHT, SDLK_UP, SDLK_DOWN};
+  int start = foco, queue[128], parent[128], via[128], head = 0, tail = 0;
+  for (int i = 0; i < 128; i++) parent[i] = -1;
+  queue[tail++] = start; parent[start] = start;
+  while (head < tail && parent[id] < 0) {
+    int current = queue[head++];
+    for (int d = 0; d < 4; d++) {
+      foco = current; mover(d == 1 ? 1 : d == 0 ? -1 : 0, d == 3 ? 1 : d == 2 ? -1 : 0);
+      if (parent[foco] < 0) { parent[foco] = current; via[foco] = d; queue[tail++] = foco; }
+    }
   }
+  foco = start; assert(parent[id] >= 0);
+  int path[128], n = 0;
+  for (int i = id; i != start; i = parent[i]) path[n++] = via[i];
+  while (n) tecla(keys[path[--n]]);
   assert(comecar_foco() == id);
 }
 
@@ -239,6 +273,41 @@ static void navegacao(int passoEsperado) {
   assert(andadas > 0);   // o D-pad mexeu alguma coisa em algum passo
 }
 
+static void motion_proof(const char *prefix, int step) {
+  static const int times[] = {0,50,80,100,150,160,250,320,400};
+  char path[900];
+  for (int kind = 0; kind < 5; kind++) {
+    previa("estado=nenhum\nnome=Marina\ncor=0\n");
+    traktauth_cancelar();   // the offline import press above fails late: show the idle Trakt card
+    ir_passo(step);
+    if (kind) {
+      adiantar(60);
+      if (kind == 1) {
+        int old = foco;
+        tecla(step == 0 ? SDLK_UP : step == 1 ? SDLK_DOWN : SDLK_RIGHT);
+        assert(foco != old);
+      } else if (kind == 2 || kind == 3) {
+        pular();
+        if (kind == 3) { quadro(.05f); aberto = 1; }
+      } else {
+        ir_passo((step + 1) % 4);
+        assert(paginaAnterior.tex);
+      }
+    }
+    int previous = 0;
+    const char *kinds[] = {"entry", "focus", "exit", "reversal", "page"};
+    for (unsigned i = 0; i < sizeof times / sizeof *times; i++) {
+      for (int t = previous; t < times[i]; t += 10) quadro(.01f);
+      if (!times[i]) quadro(0);
+      snprintf(path, sizeof path, "%s-step%d-%s-%03d.png", prefix, step + 1, kinds[kind], times[i]);
+      captura(path, 0); previous = times[i];
+    }
+    if (kind == 1) assert(focoAnim[foco] > .99f);
+    if (kind == 2) assert(entrada == 0);
+    if (kind == 3) assert(entrada == 1);
+  }
+}
+
 int main(int argc, char **argv) {
   const char *saida = argc > 1 ? argv[1] : "/tmp/nuvio-comecar";
   const char *dir = getenv("NUVIO_DADOS");
@@ -272,7 +341,10 @@ int main(int argc, char **argv) {
   assert(txt_iniciar("deploy/app", 1));
   tex_iniciar(64);
   gfx_tex_esquecer(0);
-  gfx_icones_dir("deploy/app/art");
+  char art[1024]; assert(realpath("deploy/app/art", art));
+  gfx_icones_dir(art);
+  dados_gravar("ajustes.txt", "idioma 0\n"); ajustes_dir(dir);
+  ajustes_definir_vidro(getenv("NUVIO_SHOT_VIDRO") ? atoi(getenv("NUVIO_SHOT_VIDRO")) : 0);
 
   // ---- Regras, por evento de tecla. (Ids: 0=campo, 1..6=cores, 100=Voltar,
   // 101=Continuar/principal, 102=secundario, 103=Pular tudo.)
@@ -288,18 +360,28 @@ int main(int argc, char **argv) {
   assert(comecar_foco() == 101);
   assert(!existe());             // o nome so vai ao disco no fim
   // Cancelar o teclado (Voltar nele) deixa o nome como estava e NAO pula o fluxo.
-  tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_RETURN);   // campo: reabre
+  ir_para(0); tecla(SDLK_RETURN);   // campo: reabre
   assert(teclado_aberto());
   tecla(SDLK_ESCAPE);
   quadro(0.016f);
   assert(!teclado_aberto() && comecar_passo() == 0 && comecar_aberto() && !existe());
-  // Nao ha perfil infantil: do campo, uma descida chega as cores e a seguinte
-  // ao rodape, sem linha no meio.
+  // Mock 3A order: field, colours, kids row, language row, then the footer.
   assert(comecar_foco() == 0);
   tecla(SDLK_DOWN);
   assert(comecar_foco() >= 1 && comecar_foco() <= 6);
   tecla(SDLK_DOWN);
+  assert(comecar_foco() == I_INFANTIL);
+  { int k = perfil_infantil_ativo();   // OK flips the real per-profile mark (no PIN here)
+    tecla(SDLK_RETURN); assert(perfil_infantil_ativo() == !k);
+    tecla(SDLK_RETURN); assert(perfil_infantil_ativo() == k); }
+  tecla(SDLK_DOWN);
+  assert(comecar_foco() == I_IDIOMA);
+  { char antes[64]; snprintf(antes, sizeof antes, "%s", ajustes_idioma_nome());
+    tecla(SDLK_RETURN); assert(strcmp(antes, ajustes_idioma_nome()));
+    dados_gravar("ajustes.txt", "idioma 0\n"); ajustes_dir(dir); }
+  tecla(SDLK_DOWN);
   assert(comecar_foco() >= 100);
+  assert(!existe());
   // Escolher cor nao grava; Continuar com o nome feito avanca.
   ir_para(0); tecla(SDLK_DOWN); tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_RETURN);   // cor 2
   assert(!existe());
@@ -332,8 +414,21 @@ int main(int argc, char **argv) {
   ir_para(101); tecla(SDLK_RETURN);
   assert(comecar_passo() == 2);
 
-  // Passo 3 (Acompanhar): "So nesta TV" avanca; Back volta um passo.
+  // Passo 3 (Acompanhar): the default chips step the real settings in place.
   assert(comecar_foco() == 0);   // I_TRAKT
+  tecla(SDLK_DOWN); assert(comecar_foco() >= I_CH_CW && comecar_foco() <= I_CH_HIST);
+  // "Importar o que ja foi visto" is an action, not a setting: no tracker here,
+  // so OK starts the Trakt code and the step stays put.
+  ir_para(I_CH_HIST);
+  tecla(SDLK_RETURN); assert(comecar_passo() == 2);
+  ir_para(I_CH_CW);
+  { char v[64]; snprintf(v, sizeof v, "%s", ajustes_rapido_valor(op_chip(I_CH_CW)));
+    tecla(SDLK_RETURN); assert(strcmp(v, ajustes_rapido_valor(op_chip(I_CH_CW))));
+    while (strcmp(v, ajustes_rapido_valor(op_chip(I_CH_CW)))) tecla(SDLK_RETURN); }
+  assert(comecar_passo() == 2);
+  contem("estado=nenhum");   // chips change settings, never comecar.txt
+  ir_para(I_TRAKT);
+  // "So nesta TV" avanca; Back volta um passo.
   tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
   assert(comecar_passo() == 3);
   tecla(SDLK_AC_BACK);
@@ -354,15 +449,22 @@ int main(int argc, char **argv) {
   previa("estado=nenhum\nnome=so\n");
   tecla(SDLK_RETURN); tecla(SDLK_RETURN);   // passo 3
   tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);   // passo 4
-  ir_para(102); tecla(SDLK_RETURN);   // secundario
+  ir_para(102);
+  for (int f = 0; f < 40; f++) comecar_atualizar(0.016f, SDL_GetTicks());
+  tecla(SDLK_RETURN);   // secundario
   assert(!comecar_aberto());
+  // Exit keeps painting (fade over the app) until it settles, not a cut.
+  assert(comecar_visivel());
+  comecar_atualizar(0.06f, SDL_GetTicks()); assert(comecar_visivel());
+  for (int f = 0; f < 40; f++) comecar_atualizar(0.016f, SDL_GetTicks());
+  assert(!comecar_visivel());
   assert(comecar_pedido() == COMECAR_PEDIU_TOUR);
   contem("estado=feito");
 
   // Escolhas e nome gravam JUNTOS, so no resumo: cor 2 + nome do teclado.
   apagar(); comecar_abrir();
   tecla(SDLK_RETURN); digitar("Lia");
-  tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_DOWN); tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_RETURN);
+  ir_para(0); tecla(SDLK_DOWN); tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_RETURN);
   assert(!existe());
   ir_para(101); tecla(SDLK_RETURN); tecla(SDLK_RETURN);   // passo 3
   assert(comecar_passo() == 2 && !existe());
@@ -489,14 +591,49 @@ int main(int argc, char **argv) {
 
   navegacao(0); navegacao(1); navegacao(2); navegacao(3);
 
+  // ---- Fixtures for the captures: real art in Continue watching, real add-on count.
+  { static const char *const ARTE[4][4] = {
+      { "Fallout", "design/universo-2026/assets/00.jpg", "1", "38" },
+      { "O Grande Truque", "design/universo-2026/assets/02.jpg", "0", "52" },
+      { "From", "design/universo-2026/assets/04.jpg", "3", "19" },
+      { "Os Suspeitos", "design/universo-2026/assets/09.jpg", "0", "71" } };
+    static CatItem cw[4];
+    CatFileira f; memset(&f, 0, sizeof f);
+    for (int i = 0; i < 4; i++) {
+      memset(&cw[i], 0, sizeof cw[i]);
+      snprintf(cw[i].titulo, sizeof cw[i].titulo, "%s", ARTE[i][0]);
+      snprintf(cw[i].backdrop, sizeof cw[i].backdrop, "%s", ARTE[i][1]);
+      snprintf(cw[i].imdb, sizeof cw[i].imdb, "tt000000%d", i);
+      cw[i].temporada = atoi(ARTE[i][2]); cw[i].episodio = cw[i].temporada ? 8 : 0;
+      cw[i].restanteMin = atoi(ARTE[i][3]);
+      snprintf(cw[i].tipo, sizeof cw[i].tipo, "%s", cw[i].temporada ? "series" : "movie");
+    }
+    snprintf(f.chave, sizeof f.chave, "continue_watching");
+    snprintf(f.titulo, sizeof f.titulo, "Continuar assistindo");
+    f.n = 4;
+    cat_definir_tudo(cw, 4, &f, 1);
+    // Step 4 library line reads real state: two saved, two watched.
+    for (int i = 0; i < 4; i++) {
+      if (i % 2) cat_historico_definir_id(cw[i].imdb, cw[i].tipo, 1);
+      else salvos_definir(&cw[i], 1);
+    }
+    AddonRemoto ad[3] = {{"Cinemeta","https://v3-cinemeta.strem.io/manifest.json",1},
+                         {"Torrentio","https://torrentio.strem.fun/manifest.json",1},
+                         {"OpenSubtitles","https://opensubtitles-v3.strem.io/manifest.json",1}};
+    assert(addons_definir_lista(ad, 3));
+    for (int c = 0; c < ajustes_rapido_cor_n(); c++)   // the mock's accent (user choice; DESIGN §3)
+      if (!strcmp(ajustes_rapido_cor_nome(c), "Rosa")) ajustes_rapido_cor_definir(c);
+    for (int i = 0; i < 40; i++) { tex_bombear(8); SDL_Delay(5); } }
+
   // ---- Captures at the requested text scale (rules above stay at 100%).
   // Match Library's pinned Modern rail when comparing real content anchors.
   if (getenv("NUVIO_RAIL") && !strcmp(getenv("NUVIO_RAIL"), "moderna")) {
     dados_gravar("ajustes.txt", "homeLayoutLocal 0\nmodernSidebar 0\ncollapseSidebar 1\n");
     ajustes_dir(dir);
   }
+  ajustes_definir_vidro(getenv("NUVIO_SHOT_VIDRO") ? atoi(getenv("NUVIO_SHOT_VIDRO")) : 0);
   const char *requestedScale = getenv("NUVIO_SHOT_ESCALA_TEXTO");
-  const float scales[] = { .8f, .85f, 1, 1.15f, 1.3f };
+  const float scales[] = { .8f, .85f, .9f, 1, 1.1f, 1.2f, 1.3f };
   for (unsigned scaleIndex = 0; scaleIndex < sizeof scales / sizeof *scales; scaleIndex++) {
   float scale = requestedScale ? (float)atof(requestedScale) : scales[scaleIndex];
   char prefix[700];
@@ -504,25 +641,27 @@ int main(int argc, char **argv) {
   if (!requestedScale) snprintf(prefix, sizeof prefix, "%s%.0f", saida, scale * 100);
   gfx_escala_txt_definir(scale);
   checkBounds = 1;
-  apagar(); comecar_abrir();
-  assert(comecar_passo() == 0);
+  previa("estado=nenhum\nnome=Marina\ncor=0\n");
+  assert(comecar_passo() == 0 && comecar_foco() == B_PRINC);
   snprintf(nome, sizeof nome, "%s-1-perfil.png", prefix);
   captura(nome, 40);
 
-  previa("estado=nenhum\nnome=so\ncor=1\n");
   tecla(SDLK_RETURN);
   assert(comecar_passo() == 1);
   snprintf(nome, sizeof nome, "%s-2-trazer.png", prefix);
-  captura(nome, 2);
+  captura(nome, 40);
 
   // Stremio e AIOManager: estados forcados (sem rede) so para a captura.
   tecla(SDLK_UP); tecla(SDLK_UP);
   importarfluxo_teste(IMPF_STREMIO, IMPF_ESPERA, "K7QX2M", "https://link.stremio.com/", 0, 0);
   snprintf(nome, sizeof nome, "%s-2b-stremio-codigo.png", prefix);
-  captura(nome, 2);
+  captura(nome, 40);
+  assert(!strcmp(ultimoCodigo, "K7QX2M") && ultimoLink[0]);
   importarfluxo_teste(IMPF_STREMIO, IMPF_OK, "", "", 7, 42);
+  assert(!strcmp(rotulo_botao(B_PRINC), i18n("Continuar")));
   snprintf(nome, sizeof nome, "%s-2c-stremio-ok.png", prefix);
-  captura(nome, 2);
+  captura(nome, 40);
+  assert(!strcmp(ultimoCodigo, "K7QX2M") && ultimoLink[0]);
   tecla(SDLK_DOWN);
   importarfluxo_teste(IMPF_AIOM, IMPF_ESPERA, "", "", 0, 0);
   celb_abrir_embutido(CELB_IMPORTAR, "Link do AIOManager");
@@ -533,15 +672,29 @@ int main(int argc, char **argv) {
   tecla(SDLK_DOWN);
   tecla(SDLK_RETURN);   // Conta Nuvio
   assert(comecar_passo() == 2);
+  shotContas = 1; foco = I_SIMKL;
   snprintf(nome, sizeof nome, "%s-3-acompanhar.png", prefix);
-  captura(nome, 2);
+  captura(nome, 40);
+  shotContas = 0; foco = I_TRAKT;
 
   tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
   assert(comecar_passo() == 3);
+  shotContas = 1;   // mock 3D: tracker linked, collections on Home, skip intro on
+  if (!col_n()) assert(col_definir_json("[{\"id\":\"c1\",\"title\":\"Casa\",\"folders\":["
+    "{\"id\":\"f1\",\"title\":\"Cl\xc3\xa1ssicos\",\"sources\":[{\"provider\":\"addon\",\"addonBaseUrl\":\"https://x.test\",\"type\":\"movie\",\"catalogId\":\"top\"}]}]},"
+    "{\"id\":\"c2\",\"title\":\"Anime\",\"folders\":["
+    "{\"id\":\"f2\",\"title\":\"Temporada\",\"sources\":[{\"provider\":\"addon\",\"addonBaseUrl\":\"https://x.test\",\"type\":\"series\",\"catalogId\":\"top\"}]}]}]") > 0);
+  if (!ajustes_pular_abertura()) ajustes_rapido_passo(ajustes_rapido_op("pularAberturaLocal"), 1);
+  assert(col_n() > 1 && ajustes_pular_abertura());
   snprintf(nome, sizeof nome, "%s-4-pronto.png", prefix);
-  captura(nome, 2);
+  // Continue watching art decodes at this scale's width first: settle until none pending.
+  adiantar(160);
+  for (int k = 0, pend = 1; pend && k < 600; k++) { tex_estatisticas(NULL, &pend, NULL, NULL, NULL); adiantar(1); }
+  captura(nome, 20);
+  shotContas = 0;
 
   checkBounds = 0;
+  if (!getenv("NUVIO_SHOT_QUICK") && (scale == 1 || scale == .85f)) for (int step = 0; step < 4; step++) motion_proof(prefix, step);
   if (requestedScale) break;
   }
 
@@ -553,6 +706,19 @@ int main(int argc, char **argv) {
   captura(nome, 40);
   tecla(SDLK_ESCAPE);
 
+  const char *modes[] = {"collapseSidebar 1\nmodernSidebar 1\nhomeLayoutLocal 0\n", "collapseSidebar 0\nmodernSidebar 1\nhomeLayoutLocal 0\n", "collapseSidebar 1\nmodernSidebar 1\nhomeLayoutLocal 2\n"};
+  gfx_escala_txt_definir(1);
+  for (int m = 0; m < 3; m++) for (int reduced = 0; reduced < 2; reduced++) {
+    char settings[256];
+    snprintf(settings, sizeof settings, "idioma 0\nperformanceAutoVersaoLocal 1\nselected_theme 6\nanimacoes %d\n%s", reduced, modes[m]);
+    dados_gravar("ajustes.txt", settings); ajustes_dir(dir);
+    ajustes_definir_vidro(getenv("NUVIO_SHOT_VIDRO") ? atoi(getenv("NUVIO_SHOT_VIDRO")) : 0);
+    previa("estado=nenhum\nnome=Ana\ncor=1\n");
+    ir_passo(1);
+    snprintf(nome, sizeof nome, "%s-rail%d-reduced%d.png", saida, m, reduced);
+    captura(nome, 40);
+    if (reduced) { assert(ajustes_animacoes_reduzidas()); assert(focoAnim[foco] == 1); }
+  }
   tex_encerrar();
   txt_encerrar();
   gfx_encerrar();

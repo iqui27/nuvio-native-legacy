@@ -886,6 +886,8 @@ static int iniciarPoliticaFonte(int preferida, int manual) {
 #include "srvidx.h"
 #include "partes.h"
 #include "logrede.h"
+#include "extras.h"
+#include "perfilinfantil.h"
 #include <stdio.h>
 
 static Tela tela = TELA_HOME;
@@ -1064,6 +1066,10 @@ static int cacaDoPerfil;
 
 static void trocarTela(Tela nova) {
   if (nova == tela) return;
+  if (nova == TELA_GUIA && perfil_infantil_ativo()) {   // perfilinfantil.h: sem TV ao vivo
+    glem_aviso_curto(i18n("Perfil infantil: sem TV ao vivo"));
+    return;
+  }
   if (nova != TELA_SOCIAL) socialDoPerfil = 0;
   if (nova != TELA_CACA) cacaDoPerfil = 0;
   if (tela == TELA_AJUSTES) ajustes_encerrar();
@@ -6187,6 +6193,16 @@ void app_atualizar(float dt, Uint32 agora) {
     // TRAVA DE SERIE: o episodio alvo alem do limite (quem esta a frente
     // espera) nao toca: abre a folha de espera, que tem "Assistir mesmo assim".
     if (querTocar && aguardandoFonte != 2 && travaui_segurar_detalhe()) querTocar = 0;
+    // PERFIL INFANTIL (perfilinfantil.h): so classificacao livre ou ate 10 anos.
+    if (querTocar && perfil_infantil_ativo()) {
+      const CatItem *ki = cat_item(detail_indice());
+      const char *cert = extras_ficha_classificacao();
+      if (!cert || !*cert) cert = ki ? ki->classificacao : NULL;
+      if (!perfil_infantil_classif_ok(cert)) {
+        glem_aviso_curto(i18n("Perfil infantil: só classificação livre e 10 anos"));
+        querTocar = 0;
+      }
+    }
     if (querTocar && aguardandoFonte != 2) {
       marco("abrir: reproduzir pedido");
       // A tela abre JA, no estado "abrindo fonte", e a escolha acontece depois.
@@ -7342,7 +7358,7 @@ static void desenharAtrasDoPainel(void *ctx) {
       default:              home_desenhar(agora);       break;
     }
   }
-  if (srvsetup_aberto()) srvsetup_desenhar(agora);
+  if (srvsetup_aberto()) { ponteiro_camada(); srvsetup_desenhar(agora); }
   CAMADA_SE(vertudo_aberta());
 #ifdef NV_TOUCH_UI
   if (!detail_cobre_tela()) sidebarToqueRegistrar(2);
@@ -7793,7 +7809,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades180_desenhar(agora);
   // O esmaecer de saida do guia da 2.0, por cima do app que ja voltou.
   if (!registro_aberto() && novidades20_visivel()) novidades20_desenhar(agora);
-  if (!registro_aberto()) comecar_desenhar(agora);        // so o esmaecer de saida
+  if (!registro_aberto() && comecar_visivel()) comecar_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades201_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades202_desenhar(agora);
   if (!registro_aberto()) resolver_desenhar(agora);        // so o esmaecer de saida
