@@ -136,10 +136,10 @@ void nav21_check(Nav21Screen s) {
     char path[4096]="Open";
     for(int j=depth-1;j>=0;j--){size_t used=strlen(path);snprintf(path+used,sizeof path-used,", %s",names[reverse[j]]);}
     // Filmography tab arrows change the page: its static per-page graph cannot
-    // replay paths across tabs. Exact page traversal is checked in its fixture.
+    // replay paths across tabs; reachability still holds on the per-edge graph.
     int pageTabs=!strcmp(s.name,"History") || !strncmp(s.name,"Filmography",11);
     if(!pageTabs && seen[i]){s.open();settle(s);for(int j=depth-1;j>=0;j--){key(s,keys[reverse[j]]);settle(s);}nav21_expect(s.name,path,s.focus(),base[i].id);}
-    else if(!pageTabs) {char missing[120];snprintf(missing,sizeof missing,"Open: no D-pad path to %d",base[i].id);nav21_expect(s.name,missing,0,1);}
+    else if(!seen[i]) {char missing[120];snprintf(missing,sizeof missing,"Open: no D-pad path to %d",base[i].id);nav21_expect(s.name,missing,0,1);}
     for(int d=0;d<4;d++)if(expectedEdges[i][d]>=0){char edge[4300];snprintf(edge,sizeof edge,"%s; from %d, %s: went to %d, expected %d",path,base[i].id,names[d],actualEdges[i][d],expectedEdges[i][d]);nav21_expect(s.name,edge,actualEdges[i][d],expectedEdges[i][d]);}
   }
   motion(s,0);if(strcmp(s.name,"Home 2.1"))motion(s,1);
