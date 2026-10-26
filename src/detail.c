@@ -97,6 +97,9 @@ static TituloTempo detalheTempo;
 #include <strings.h>
 #include <math.h>
 #include "ponteiro.h"
+static void navigationTarget(float,float,float,float,PonteiroFn,PonteiroFn,int,int);
+static int navigationMove(SDL_Keycode);
+#define ponteiro_alvo navigationTarget
 #include "rolagemtoque.h"
 #include "plrui.h"
 #include "avisodisp.h"
@@ -3531,6 +3534,7 @@ static void detail_evento_(const SDL_Event *e) {
 
   if (e->type != SDL_KEYDOWN) return;
   SDL_Keycode k = e->key.keysym.sym;
+  if(navigationMove(k))return;
 
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE ||
       k == SDLK_DELETE) {
@@ -3538,7 +3542,7 @@ static void detail_evento_(const SDL_Event *e) {
     if (comPicando) comentariosVoltar();
     else if (acoesAgrupadas() && maisAcoes && nivel == 0) { maisAcoes = 0; botao = temInicio() ? 1 : 0; }
     else if (focoVersao) { focoVersao = 0; botao = 0; }
-    else if (nivel > 0) { nivel = 0; botao = 0; focoAmigos = 0; }
+
     else if (carro && carCheia) carCheia = 0;   // tela cheia no topo -> cartao
     else if (nVolta > 0) { pedAbrir = voltaPilha[--nVolta]; voltando = 1; restaurarVolta=1; }   // volta ao titulo de onde veio
     else { saindo = 1; pediuMenu = 0; }   // Voltar nao abre um menu pedido antes
@@ -8062,6 +8066,22 @@ static void ponteiroDetalhe(int r, int c) {
 }
 // Altura da area clicavel de um item da secao; 0 = secao que o ponteiro nao
 // foca por item (desenho unico, lista interna com foco proprio).
+static struct {GfxRect rect;int row,col;} navigation[512];
+static int navigationCount;
+#undef ponteiro_alvo
+static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int row,int col){
+  if(fn==ponteiroDetalhe&&navigationCount<512){navigation[navigationCount].rect=(GfxRect){x,y,w,h};navigation[navigationCount].row=row;navigation[navigationCount++].col=col;}
+  ponteiro_alvo(x,y,w,h,fn,activate,row,col);
+}
+#define ponteiro_alvo navigationTarget
+static int navigationMove(SDL_Keycode key){
+  if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
+  GfxRect rects[512];int current=-1;
+  for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].row==(nivel?foco.fileira:-1)&&navigation[i].col==(nivel?foco.coluna:botao))current=i;}
+  int next=focus_rect_nearest(rects,navigationCount,current,(key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
+  if(next<0||next==current)return 0;
+  ponteiroDetalhe(navigation[next].row,navigation[next].col);return 1;
+}
 static float alturaAlvo(int r) {
   switch (r) {
     case SEC_TEMPORADAS: return NV_DETP_TEMP_H;
@@ -8072,6 +8092,9 @@ static float alturaAlvo(int r) {
     case SEC_RELACIONADOS: return REL_CARD_H + 72.0f;
     case SEC_COLECAO:    return ehSerie() ? 160 : COL_CARD_H;
     case SEC_ELENCO:     return NV_DETP_EL_AVATAR + 90.0f;
+    case SEC_NOTAS:      return 150;
+    case SEC_MUSICAS:    return alturaSecao(r);
+    case SEC_COMENTARIOS: return 80;
     default:             return 0.0f;
   }
 }
@@ -8288,6 +8311,7 @@ static void desenhaRodape(int r,float a) {
   if (y>1080 || y+300<0) return;
   GfxRect card={x,y,556,300};
   float f=animFoco[r][0];
+  if(a>.3f)navigationTarget(card.x,card.y,card.w,card.h,ponteiroDetalhe,NULL,r,0);
   // The text grows with the card: the whole tile is one group transform.
   int grupo=f>.005f && !gfx_transformado();
   if (grupo) gfx_transformar(x+278,y+150,1+detalheFocoEscala(.03f)*f,0,0);
@@ -8423,7 +8447,7 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     float x = xItem(r, c) - scrollSec[r];
     float w = larguraItem(r, c);
     if (x > NV_TELA_W || x + w < -w) continue;
-    if (ponteiro_ativo() && a > 0.3f && c < secaoColunas(r) && alturaAlvo(r) > 0.0f)
+    if (a > 0.3f && c < secaoColunas(r) && alturaAlvo(r) > 0.0f)
       ponteiro_alvo(x, y,
                     w, alturaAlvo(r), ponteiroDetalhe, NULL, r, c);
     switch (r) {
@@ -9125,4 +9149,4 @@ int detail_sob_menu_ativo(void) { return sobMenu; }
 // de texto; o corpo mede NV_TELA_W/H na tela virtual dela.
 void detail_evento(const SDL_Event *e) { TXT_INI(); detail_evento_(e); TXT_FIM(); }
 void detail_atualizar(float dt, Uint32 agora) { TXT_INI(); detail_atualizar_(dt, agora); TXT_FIM(); }
-void detail_desenhar(Uint32 agora) { TXT_INI(); detail_desenhar_(agora); TXT_FIM(); }
+void detail_desenhar(Uint32 agora) { navigationCount=0; TXT_INI(); detail_desenhar_(agora); TXT_FIM(); }

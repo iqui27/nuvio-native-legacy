@@ -17,6 +17,10 @@
 #include "catalogo.h"
 #include "trailer.h"
 #include "ponteiro.h"
+#include "focus.h"
+static void navigationTarget(float,float,float,float,PonteiroFn,PonteiroFn,int,int);
+static int navigationMove(SDL_Keycode);
+#define ponteiro_alvo navigationTarget
 #include "home.h"
 #include "revela.h"
 #include "svdesenho.h"
@@ -114,7 +118,7 @@ static float compacta(float full,float small){return full+(small-full)*compactoT
 static GfxRect area(GfxRect r) { return (GfxRect){px(r.x), py(r.y), r.w * colunaK(), r.h * linhaK()}; }
 static void material(GfxRect r,float radius,int modal,float a) { plrui_material(area(r),radius,modal,a); }
 static void trilho(GfxRect r,float v,float cr,float cg,float cb,float a) { plrui_trilho(area(r),v,cr,cg,cb,a); }
-static int gradeCols(void) { return (int)((paginaW() + 24) / (220 * gfx_poster_k() + 24)); }
+static int gradeCols(void) { return (int)((paginaW() + 24) / ((220 * gfx_poster_k() + 24) * gfx_escala_txt())); }
 static float gradePasso(void) { return 330 * gfx_poster_k() + 100; }
 static int gradeLinhas(void) { return aba==1 && zona==4 && ANC(T21_SAFE_B) > 330 + 2 * gradePasso() ? 2 : 1; }
 static const char *abas[]={"História","Filmografia","Sobre","Conquistas"};
@@ -162,7 +166,7 @@ static void preparar(void){fd_atualizar();const FdFicha *d=fd_ficha();na=0;for(i
 }
 void filmo_abrir(void) {
   if (pessoaLembrada != pessoa_id()) {
-    aba=col=cap=ano=ruido=topo=bioPagina=0; zona=3;
+    aba=col=cap=ano=ruido=topo=bioPagina=0; zona=0;
     memset(&filtro,0,sizeof filtro); pessoaLembrada=pessoa_id(); anoSel=-1; selecionado=-1;
   }
   if(folhaAtiva && saindo) { saindo=0; return; }
@@ -183,7 +187,7 @@ static int ruidoN(const FdFicha *d){int n=0;for(int i=0;i<d->n;i++)n+=d->c[i].ru
 static int opcoes(int *o){const FmEstado *s=fd_ficha()->st+selecionado;int n=0;o[n++]=0;if(s->estado!=FM_VISTO||(s->manual&&s->como==FM_COMO_DIRETO))o[n++]=1;o[n++]=2;if(s->manual)o[n++]=3;o[n++]=4;return n;}
 static int evento(const SDL_Event *e){if(e->type!=SDL_KEYDOWN||e->key.repeat)return 0;preparar();const FdFicha *d=fd_ficha();SDL_Keycode k=e->key.keysym.sym;int back=nv_tecla_voltar(e);int ok=k==SDLK_RETURN||k==SDLK_KP_ENTER;
   if(conquistas_aviso_evento(e))return 0;
-  if(back){if(camada){camada=0;op=0;trailer_fechar();return 0;}if(zona!=1){zona=1;col=aba;return 0;}saindo=1;return 0;}
+  if(back){if(camada){camada=0;op=0;trailer_fechar();return 0;}saindo=1;return 0;}
   if(camada){
     if(camada==5){if(k==SDLK_DOWN)bioPagina++;if(k==SDLK_UP&&bioPagina)bioPagina--;if(ok)camada=0;return 0;}
     int o[5],no=camada==1?opcoes(o):0,max=camada==1?no:camada==2?6:camada==3?3:3;
@@ -195,6 +199,8 @@ static int evento(const SDL_Event *e){if(e->type!=SDL_KEYDOWN||e->key.repeat)ret
     else if(camada==4){if(op==0){como=FM_COMO_DIRETO;camada=3;op=0;}else if(op==1&&fd_tentativas(selecionado)&&fd_quiz(selecionado,&quiz)){camada=2;op=0;}else camada=0;}
     return 0;
   }
+  if(navigationMove(k))return 0;
+  if(ok&&zona==1){aba=col;topo=0;filtro.ano=0;if(aba==2)fd_sobre();return 0;}
   if(k==SDLK_UP){if(zona==4){int cols=aba==0?5:gradeCols();if(col>=cols){col-=cols;topo=col/cols;}else{zona=aba==0?3:2;col=0;}}else if(zona>0){zona--;col=zona==1?aba:0;}return 0;}
   if(k==SDLK_DOWN){if(zona==0){zona=1;col=aba;}else if(zona==1){zona=2;col=0;}else if(aba==0&&zona==2){zona=3;col=0;}else if((aba==0||aba==1)&&zona<4){zona=4;col=0;}else if(zona==4){int cols=aba==0?5:gradeCols();if(col+cols<ni){col+=cols;if(col/cols>=topo+gradeLinhas())topo=col/cols-gradeLinhas()+1;}}return 0;}
   if(aba==0&&(k==SDLK_PAGEUP||k==SDLK_PAGEDOWN)){FmCap caps[6];int n=capitulos(d,caps),i=0;while(i+1<n&&caps[i+1].de<=ano)i++;i+=k==SDLK_PAGEDOWN?1:-1;if(i>=0&&i<n){ano=caps[i].de;zona=3;col=0;}return 0;}
@@ -457,9 +463,40 @@ static void corpoFilmo(GfxRect r,float a,void *u) {
   if(atual&&rev>.5f)alvosFolha(atual,dx,dy);
   camada=atual; alpha=pa;
 }
-static void toqueFoco(int z,int c){if(z==5){op=c;return;}zona=z;col=c;if(z==1&&aba!=c){aba=c;topo=0;if(aba==2)fd_sobre();}if(z==3)ano=c;}
+static void toqueFoco(int z,int c){if(z==5){op=c;return;}zona=z;col=c;if(z==3)ano=c;}
+static struct {GfxRect rect;int zone,col;} navigation[256];
+static int navigationCount;
+#undef ponteiro_alvo
+static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int z,int c){
+  if(fn==toqueFoco && navigationCount<256){navigation[navigationCount].rect=(GfxRect){x,y,w,h};navigation[navigationCount].zone=z;navigation[navigationCount++].col=c;}
+  ponteiro_alvo(x,y,w,h,fn,activate,z,c);
+}
+#define ponteiro_alvo navigationTarget
+static int navigationMove(SDL_Keycode key){
+
+  if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
+  GfxRect rects[256];int current=-1;
+  for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].zone==zona&&navigation[i].col==(zona==3?ano:col))current=i;}
+  int next=focus_rect_nearest(rects,navigationCount,current,(key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
+  if(next<0)return 0;
+  if(next==current&&zona==4&&aba==1&&key==SDLK_DOWN){
+    int row=col/gradeCols()+1;
+    if(row*gradeCols()<ni){col=fminf(col+gradeCols(),ni-1);topo=col/gradeCols();}
+    return 1;
+  }
+  if(zona==4&&aba==1&&key==SDLK_UP&&col>=gradeCols()){
+    int previous=col-gradeCols();
+    float y=compacta(CONTEUDO_Y,230);
+    GfxRect prior=area((GfxRect){72+(previous%gradeCols())*(220*gfx_poster_k()+24)/colunaK(),60+(py(y)+100+(previous/gradeCols())*gradePasso()-scroll-60)/linhaK(),220*gfx_poster_k()/colunaK(),330*gfx_poster_k()/linhaK()});
+    GfxRect from=rects[current], chosen=rects[next];
+    float pd=from.y+from.h/2-prior.y-prior.h/2;
+    float cd=from.y+from.h/2-chosen.y-chosen.h/2+3*fabsf(from.x+from.w/2-chosen.x-chosen.w/2);
+    if(pd>0 && (next==current||pd<cd)){col=previous;topo=col/gradeCols();return 1;}
+  }
+  toqueFoco(navigation[next].zone,navigation[next].col);return 1;
+}
 static float gesto;
 static int toqueRolar(const PonteiroRolagem *e){if(camada==5){if(e->fase==PONT_ROL_MOVER&&e->delta){bioPagina+=e->delta<0?1:-1;if(bioPagina<0)bioPagina=0;}return 1;}if(camada||!(aba==0||aba==1))return 0;if(e->fase==PONT_ROL_INICIO){gesto=0;return e->eixoY==(aba==1)&&e->y>=550;}if(e->fase==PONT_ROL_MOVER||e->fase==PONT_ROL_INERCIA){gesto-=e->delta;int step=(int)(gesto/(aba==1?350:-81));if(step){gesto-=step*(aba==1?350:81);if(aba==1){int max=(ni+gradeCols()-1)/gradeCols()-gradeLinhas();if(max<0)max=0;topo+=step;if(topo<0)topo=0;if(topo>max)topo=max;zona=4;col=topo*gradeCols();}else{int j=0;while(j<na&&anos[j]!=ano)j++;j+=step;if(j<0)j=0;if(j>=na)j=na-1;if(j>=0)ano=anos[j];}}return 1;}return 1;}
 static void alvoToque(float x,float y,float w,float h,int z,int c){GfxRect r=area((GfxRect){x,y,w,h});if(h==60)r.h=60;ponteiro_alvo(r.x+paginaX(),r.y,r.w,r.h,toqueFoco,NULL,z,c);}
 static void registrarToque(void){if(camada){ponteiro_camada();return;}float c=compactoT;if(c<.5f)for(int i=0;i<3;i++)ponteiro_alvo(acoesR[i].x+paginaX(),acoesR[i].y,acoesR[i].w,acoesR[i].h,toqueFoco,NULL,0,i);float tabX=72;for(int i=0;i<4;i++){float tw=txt_largura(TXT_ILHA_SEG,i18n(abas[i]))+40;if(contTxt[i][0])tw+=9+txt_largura(TXT_ILHA_NUM,contTxt[i]);alvoToque(tabX,compacta(HERO_ABAS,130),tw/colunaK(),54/linhaK(),1,i);tabX+=(tw+4)/colunaK();}if(aba==0){FmMarco m[10];FmCap caps[6];const FdFicha *d=fd_ficha();int nm=fm_marcos(d->c,d->n,m,10),nc=fm_capitulos(d->c,d->n,m,nm,caps,6)+(ruidoN(d)>0);for(int i=0;i<nc;i++)alvoToque(chipX[i],CONTEUDO_Y,chipW[i],60,2,i);int start=(int)(anoScroll/anoPasso()+.5f);for(int i=start;i<na&&i<start+21;i++)alvoToque(170+i*anoPasso()-anoScroll-38,500,76,80,3,anos[i]);for(int i=0;i<ni&&i<5;i++)alvoToque(676+i*(HIST_POSTER_W+24)*gfx_escala_txt(),622,HIST_POSTER_W/colunaK(),HIST_POSTER_H/linhaK(),4,i);if(ni>5)alvoToque(1640,970,botao_largura(i18n("Ver todos"),NULL,0)/colunaK(),60,4,5);ponteiro_rolagem(toqueRolar);}else if(aba==1){float y=compacta(CONTEUDO_Y,230);for(int i=0;i<5;i++)alvoToque(72+i*345,y,325,60,2,i);for(int i=topo*gradeCols();i<ni&&i<(topo+gradeLinhas())*gradeCols();i++)alvoToque(72+(i%gradeCols())*(220*gfx_poster_k()+24)/colunaK(),60+(py(y)+100+(i/gradeCols())*gradePasso()-scroll-60)/linhaK(),220*gfx_poster_k()/colunaK(),330*gfx_poster_k()/linhaK(),4,i);ponteiro_rolagem(toqueRolar);}else if(aba==2)alvoToque(100,775,580,60,2,0);}
-void filmo_desenhar(float a){TXT_INI();alpha=a*entrada;preparar();const FdFicha *d=fd_ficha();gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.047f,.055f,alpha);heroi(alpha);gfx_transformar(0,0,1,paginaX(),0);header(d);if(!d->pronto)t21_estado(area((GfxRect){72,465,1750,430}),d->erro?T21_ERROR:T21_LOADING,"aj_user",i18n(d->erro?"Serviço indisponível":"Carregando…"),NULL,NULL,tempo,alpha);else if(aba==0)historia(d);else if(aba==1)grade(d);else if(aba==2)sobre(d);else conquistas(d);if(camada){ESCALA_INI();GfxRect sheet=area((GfxRect){1090,50,770,980});ESCALA_FIM();ilha_corpo(sheet.w,sheet.h,corpoFilmo,NULL);}{TxtLinha l=txt_linha_corta(TXT_ILHA_SUB,i18n(fd_aviso()),180,180,180,255,1150*colunaK());txt_desenhar_alpha(l,px(72),ANC(T21_SAFE_B)-l.h/2,alpha);}const char *keys[]={"← →","PgUp PgDn","OK","Voltar"},*labels[]={i18n("Ano"),i18n("Capítulos"),i18n("Abrir opções"),i18n("Voltar")};plrui_dicas(keys,labels,4,px(72),ANC(T21_SAFE_B),0,alpha);gfx_sem_transformar();registrarToque();TXT_FIM();conquistas_aviso_desenhar();}
+void filmo_desenhar(float a){navigationCount=0;TXT_INI();alpha=a*entrada;preparar();const FdFicha *d=fd_ficha();gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,.043f,.047f,.055f,alpha);heroi(alpha);gfx_transformar(0,0,1,paginaX(),0);header(d);if(!d->pronto)t21_estado(area((GfxRect){72,465,1750,430}),d->erro?T21_ERROR:T21_LOADING,"aj_user",i18n(d->erro?"Serviço indisponível":"Carregando…"),NULL,NULL,tempo,alpha);else if(aba==0)historia(d);else if(aba==1)grade(d);else if(aba==2)sobre(d);else conquistas(d);if(camada){ESCALA_INI();GfxRect sheet=area((GfxRect){1090,50,770,980});ESCALA_FIM();ilha_corpo(sheet.w,sheet.h,corpoFilmo,NULL);}{TxtLinha l=txt_linha_corta(TXT_ILHA_SUB,i18n(fd_aviso()),180,180,180,255,1150*colunaK());txt_desenhar_alpha(l,px(72),ANC(T21_SAFE_B)-l.h/2,alpha);}const char *keys[]={"← →","PgUp PgDn","OK","Voltar"},*labels[]={i18n("Ano"),i18n("Capítulos"),i18n("Abrir opções"),i18n("Voltar")};plrui_dicas(keys,labels,4,px(72),ANC(T21_SAFE_B),0,alpha);gfx_sem_transformar();registrarToque();TXT_FIM();conquistas_aviso_desenhar();}
