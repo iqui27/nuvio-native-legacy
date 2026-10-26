@@ -368,7 +368,7 @@ void aioui_evento(const SDL_Event *e) {
   SDL_Keycode k=e->key.keysym.sym;
   if(nv_tecla_voltar(e)) {
     if(entrada==3 || linkSelecionado>=0) { celular_fechar(); entrada=0; linkSelecionado=-1; return; }
-    if(pagina==FILTROS && regraSelecionada>=0) { foco=regraSelecionada; regraSelecionada=-1; return; }
+    if(pagina==FILTROS && regraSelecionada>=0) { foco=regraSelecionada; lateral=0; regraSelecionada=-1; return; }
     if(pagina==SEM || pagina==PAINEL) fechar();
     else mudar(snap.valida?PAINEL:SEM);
     return;
@@ -393,10 +393,10 @@ void aioui_evento(const SDL_Event *e) {
       (k==SDLK_UP || k==SDLK_DOWN || k==SDLK_LEFT || k==SDLK_RIGHT)) {
     if(foco<10) {
       if(k==SDLK_UP && foco>=2) foco-=2;
-      else if(k==SDLK_DOWN) foco=foco<8?foco+2:10;
+      else if(k==SDLK_DOWN) foco+=2;
       else if(k==SDLK_RIGHT) { if(!(foco%2)) foco++; }
       else if(k==SDLK_LEFT) { if(foco%2) foco--; else { lateral=1; foco=5; } }
-    } else if(k==SDLK_UP) foco=8;
+    } else if(k==SDLK_UP) foco-=2;
     else if(k==SDLK_RIGHT) foco=11;
     else if(k==SDLK_LEFT) { if(foco==11) foco=10; else { lateral=1; foco=5; } }
     return;

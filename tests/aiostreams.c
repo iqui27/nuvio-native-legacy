@@ -91,6 +91,14 @@ int main(void) {
   assert(lastLanguage && regex && direction && !s.detalhesOmitidos);
   aio_configuracao(&s,"{\"success\":true,\"data\":{\"userData\":{\"uuid\":\"PRIVATE\",\"encryptedPassword\":\"PRIVATE\",\"services\":[{\"id\":\"torbox\",\"credentials\":{\"apiKey\":\"PRIVATE\"}}],\"presets\":[{\"type\":\"custom\",\"enabled\":true,\"options\":{\"arbitraryKey\":\"PRIVATE\",\"url\":\"PRIVATE\"}}],\"proxy\":{\"credentials\":\"PRIVATE\",\"publicUrl\":\"PRIVATE\"}}}}");
   for(int i=0;i<s.detalhes;i++) assert(!strstr(s.detalhe[i].valor,"PRIVATE"));
+  // Jellyfin locks can contain PINs or password hashes, including persona locks.
+  aio_configuracao(&s,"{\"data\":{\"userData\":{\"jellyfin\":{\"primary\":{\"lock\":\"7391\"},\"personas\":[{\"lock\":\"$2b$12$synthetic-hash\"}]}}}}");
+  int locks=0;
+  for(int i=0;i<s.detalhes;i++) {
+    assert(!strstr(s.detalhe[i].valor,"7391") && !strstr(s.detalhe[i].valor,"synthetic-hash"));
+    if(strstr(s.detalhe[i].nome,".lock")) { assert(!strcmp(s.detalhe[i].valor,"hidden")); locks++; }
+  }
+  assert(locks==2);
   aio_configuracao(&s,"{\"success\":false,\"data\":{\"userData\":{\"preferredLanguages\":[\"stale\"]}}}");
   assert(!s.configurada && !s.detalhes && !s.resumo[2][0]);
   // Capacity ceiling must be explicit, never silently lose late fields.

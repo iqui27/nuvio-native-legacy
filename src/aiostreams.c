@@ -185,6 +185,7 @@ static int private_field(const char *key) {
   char lower[128]; size_t n=strlen(key); if(n>=sizeof lower) return 1;
   if(!strcmp(key,"addonLogo") || !strcmp(key,"addonBackground")) return 1;
   for(size_t i=0;i<=n;i++) lower[i]=(char)tolower((unsigned char)key[i]);
+  if(!strcmp(lower,"lock")) return 1;
   for(size_t i=0;i<sizeof words/sizeof *words;i++)
     if(strstr(lower,words[i]) && (strcmp(words[i],"ip") || !strcmp(lower,"ip") || !strcmp(lower,"publicip"))) return 1;
   return 0;

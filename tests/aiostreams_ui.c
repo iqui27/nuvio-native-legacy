@@ -90,10 +90,27 @@ int main(void) {
     down.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&down);
     assert(regraSelecionada==-1 && foco==i);
   }
+  // Back from a detail entered from the sidebar must restore content focus.
+  // Services and preferences is filter group 9, not the setup page SERVICOS.
+  for(int i=9;i>=0;i--) {
+    mudar(FILTROS); foco=i; acao();
+    down.key.keysym.sym=SDLK_LEFT; aioui_evento(&down); assert(lateral);
+    down.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&down);
+    assert(pagina==FILTROS && regraSelecionada==-1 && foco==i && !lateral);
+    down.key.keysym.sym=SDLK_RETURN; aioui_evento(&down);
+    assert(pagina==FILTROS && regraSelecionada==i);
+  }
+  mudar(FILTROS);
   pagina=FILTROS; foco=5; down.key.keysym.sym=SDLK_DOWN;
   aioui_evento(&down); assert(foco==7); acao(); assert(regraSelecionada==7);
   regraSelecionada=-1; foco=8; aioui_evento(&down); assert(foco==10);
   foco=11; pendente=0; acao(); assert(pendente==1);
+  // Both footer buttons retain their column when entering/leaving the grid.
+  for(int col=0;col<2;col++) {
+    mudar(FILTROS); foco=8+col;
+    down.key.keysym.sym=SDLK_DOWN; aioui_evento(&down); assert(foco==10+col);
+    down.key.keysym.sym=SDLK_UP; aioui_evento(&down); assert(foco==8+col);
+  }
   pendente=0;
   pagina=CATALOGOS; foco=nLinhas()-1; pendente=0; acao();
   assert(pagina==CATALOGOS && pendente==1);
