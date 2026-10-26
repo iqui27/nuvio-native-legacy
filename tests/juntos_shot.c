@@ -85,9 +85,12 @@ static void quadros(int n) {
     ilha_ancorar((1920 - 64) / gfx_escala_ui(), 36 / gfx_escala_ui(), 1);
     anim_politica_reduzida = ajustes_animacoes_reduzidas_usuario();
     juntosui_atualizar(agora);
+    // app.c order: the lobby goes under the shared Sources sheet while it is up.
+    int sob = stream_folha_anim() > .005f;
+    if (sob) juntosui_desenhar(agora);
     ilha_desenhar(agora);
     plrilha_desenhar(agora);
-    juntosui_desenhar(agora);
+    if (!sob) juntosui_desenhar(agora);
     if (transitionsOnly || lobbyNovo) {
       stream_folha_atualizar(.016f, agora);
       stream_folha_desenhar(agora);
@@ -313,9 +316,14 @@ int main(int argc, char **argv) {
       quadros(4); CAP("m9-invite-060"); quadros(30); CAP("5a-invite-preparing");
       snprintf(codigo, sizeof codigo, "%s", cod0);
       snprintf(urlCelular, sizeof urlCelular, "https://nuvio-juntos.henriquef29.workers.dev/j/0123456789abcdef0123456789abcdefK7M2QXA9");
+      // Invite while POST /v1/sala is in flight: queued, friend marked, sent on reply.
+      JuntosFase fase0 = fase; char sala0[40]; snprintf(sala0, sizeof sala0, "%s", salaId);
+      fase = JF_CRIANDO; salaId[0] = 0; prep.enviados = prep.n;
       key.key.keysym.sym = SDLK_DOWN; assert(juntosui_evento_sdl(&key));
       key.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&key));
+      assert(prep.n == prep.enviados + 1);
       quadros(30); CAP("5-invite");
+      fase = fase0; snprintf(salaId, sizeof salaId, "%s", sala0);
       key.key.keysym.sym = SDLK_ESCAPE; assert(juntosui_evento_sdl(&key));
       assert(juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 1);
       // Sources: OK hands off to the shared sheet; Back lands on Sources again.
@@ -324,9 +332,9 @@ int main(int argc, char **argv) {
       assert(juntosui_pediu_fontes());
       stream_definir_alvo(motor.sala.ep); stream_definir_lista(fontes, 3); stream_definir_atual(0);
       stream_folha_abrir();
-      quadros(40); CAP("6-sources");
+      quadros(4); CAP("6a-sources-opening"); quadros(36); CAP("6-sources");
       key.key.keysym.sym = SDLK_ESCAPE; assert(!juntosui_evento_sdl(&key)); stream_folha_evento(&key);
-      quadros(40);
+      quadros(4); CAP("6b-sources-closing"); quadros(36);
       assert(juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 3);
       CAP("7-sources-back");
       // D-pad: actions -> open seat -> join code -> back down to the same action.

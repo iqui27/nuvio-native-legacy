@@ -26,6 +26,17 @@ void player_juntos_pausar(int p) { playing = !p; if (p) pauses++; else starts++;
 void player_juntos_buscar(double p) { position = p; }
 void video_taxa_sync(int v) { (void)v; }
 void juntosui_sala_abriu(void) { lobby++; }
+// Network/socket edges of the room replies: never reached (worker held, no ticket).
+void juntosui_sala_fechou(void) {}
+void juntosui_erro(const char *k) { (void)k; }
+void juntosui_convite(const JuntosConvite *c) { (void)c; }
+void atividade_junto(const char *a, const char *b, const char *c, const char *d, int t, int e, int s) { (void)a; (void)b; (void)c; (void)d; (void)t; (void)e; (void)s; }
+DiscordWs *dws_abrir(const char *u) { (void)u; return NULL; }
+void dws_fechar(DiscordWs *w) { (void)w; }
+int perfil_infantil_ativo(void) { return 0; }
+int recomenda_cabecalhos(const char **c, char *a, size_t na, char *v, size_t nv, char *p, size_t np) { (void)c; (void)a; (void)na; (void)v; (void)nv; (void)p; (void)np; return 0; }
+char *rede_postar_st(const char *u, int s, const char *const *c, const char *b, int *st) { (void)u; (void)s; (void)c; (void)b; (void)st; return NULL; }
+char *rede_baixar_st(const char *u, int s, const char *const *c, int *st) { (void)u; (void)s; (void)c; (void)st; return NULL; }
 static int send(void *u, const char *json) { (void)u; snprintf(sent, sizeof sent, "%s", json); return 0; }
 
 static void snapshot(JsMotor *m, int n, int seq, const char *state, double t0) {
@@ -81,5 +92,15 @@ int main(void) {
   for (int i = 0; i < 3; i++) jsm_passo(i ? &guests[i - 1] : &motor, now);
   assert(starts == 3 && playing);
   assert(!juntos_precarregando());
-  puts("PASS: lobby preload gate; host + two guests; live stats; lobby-only start; shared countdown");
+  // Invite while POST /v1/sala is in flight: queued, then sent once the room id arrives.
+  assert(!fioVivo); fioVivo = 1;   // keep requests in the queue, no worker thread
+  fase = JF_CRIANDO; salaId[0] = 0; prep.n = 0;
+  const char *friend1 = "friend1";
+  juntos_convidar(&friend1, 1);
+  assert(prep.n == 1 && nFila == 0);
+  char reply[] = "{\"id\":\"0123456789abcdef0123456789abcdef\",\"codigo\":\"K7M2\"}";
+  Resp created = { .tipo = OP_CRIAR, .status = 200, .txt = reply };
+  resposta(&created);
+  assert(nFila == 1 && fila[0].tipo == OP_CONVIDAR && strstr(fila[0].corpo, "\"friend1\""));
+  puts("PASS: lobby preload gate; host + two guests; live stats; lobby-only start; shared countdown; invite during room creation");
 }

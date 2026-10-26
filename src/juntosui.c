@@ -436,9 +436,8 @@ static void abrirConvite(void) {
 static void convidarAmigo(int i) {
   const char *id = amigoId[i];
   if (i < 0 || i >= nAmigos || marcado[i]) return;
-  marcado[i] = 1;
-  juntos_convidar(&id, 1);
-  printf("[juntos] lobby: invited %s\n", amigoNome[i]);
+  marcado[i] = juntos_convidar(&id, 1);
+  printf("[juntos] lobby: invite %s %s\n", amigoNome[i], marcado[i] ? "sent" : "not accepted");
 }
 
 static void apertarSala(int b) {
@@ -1369,7 +1368,6 @@ static void pedirCorpo(void) {
 }
 
 void juntosui_desenhar(Uint32 agora) {
-  if (stream_folha_aberta()) return;
   float esc = gfx_escala_entrar();
   origemX = (NV_VTELA_W - 1920) / 2;
   origemY = (NV_VTELA_H - 1080) / 2;

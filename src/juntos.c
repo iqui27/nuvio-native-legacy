@@ -131,7 +131,7 @@ static int pedindoBilhete;
 // anfitriao preparado
 static struct {
   char imdb[24], titulo[160], poster[512];
-  int t, e, soAnf, n;
+  int t, e, soAnf, n, enviados;   // enviados: already in the POST /v1/sala body
   char conv[JUNTOS_CONVIDADOS_MAX][96];
 } prep;
 // abrir o titulo (convidado / proximo episodio)
@@ -285,6 +285,7 @@ static void criarSala(void) {
            ep, tit, pos, imp, prep.soAnf ? "anfitriao" : "todos", video_pos(), conv);
   snprintf(tituloSala, sizeof tituloSala, "%s", prep.titulo);
   fase = JF_CRIANDO;
+  prep.enviados = prep.n;
   pedir(OP_CRIAR, "/v1/sala", corpo, 0);
   printf("[juntos] criando sala (%d convidado(s), fonte %s)\n", prep.n, ii.rotulo);
 }
@@ -318,22 +319,25 @@ void juntos_preparar(const char *imdb, int t, int e, const char *titulo, const c
   printf("[juntos] lobby open: preparing paused source\n");
 }
 
-void juntos_convidar(const char *const *conv, int n) {
+int juntos_convidar(const char *const *conv, int n) {
   char corpo[1600], e[200];
   int i, k;
-  // Lobby still preparing: the room does not exist yet, criarSala sends them.
-  if (!salaId[0] && fase == JF_PREPARADO) {
-    for (i = 0; i < n && prep.n < JUNTOS_CONVIDADOS_MAX; i++) snprintf(prep.conv[prep.n++], sizeof prep.conv[0], "%s", conv[i]);
+  // No server room yet (preparing, or POST /v1/sala in flight): queue; criarSala
+  // or the OP_CRIAR reply sends them.
+  if (!salaId[0] && (fase == JF_PREPARADO || fase == JF_CRIANDO)) {
+    if (prep.n + n > JUNTOS_CONVIDADOS_MAX) return 0;
+    for (i = 0; i < n; i++) snprintf(prep.conv[prep.n++], sizeof prep.conv[0], "%s", conv[i]);
     printf("[juntos] lobby: %d invite(s) queued until the room opens\n", n);
-    return;
+    return 1;
   }
-  if (!salaId[0] || !n) return;
+  if (!salaId[0] || !n) return 0;
   printf("[juntos] lobby: inviting %d friend(s)\n", n);
   k = snprintf(corpo, sizeof corpo, "{\"id\":\"%s\",\"convidados\":[", salaId);
   for (i = 0; i < n && i < JUNTOS_CONVIDADOS_MAX && (size_t)k < sizeof corpo - 200; i++)
     k += snprintf(corpo + k, sizeof corpo - (size_t)k, "%s\"%s\"", i ? "," : "", jsp_esc(e, sizeof e, conv[i]));
   snprintf(corpo + k, sizeof corpo - (size_t)k, "]}");
   pedir(OP_CONVIDAR, "/v1/sala/convidar", corpo, 0);
+  return 1;
 }
 
 void juntos_entrar_id(const char *id) {
@@ -476,6 +480,12 @@ static void resposta(Resp *r) {
       js_texto(r->txt, NULL, "codigo", codigo, sizeof codigo);
       js_texto(r->txt, NULL, "bilhete", bilhete, sizeof bilhete);
       lerEnderecos(r->txt);
+      if (prep.n > prep.enviados) {   // invited while the room was being created
+        const char *mais[JUNTOS_CONVIDADOS_MAX];
+        for (int i = prep.enviados; i < prep.n; i++) mais[i - prep.enviados] = prep.conv[i];
+        juntos_convidar(mais, prep.n - prep.enviados);
+        prep.enviados = prep.n;
+      }
       iniciarMotor();
       jsm_fonte(&motor, "mesma");
       jsm_estado_app(&motor, "carregando", 0);
