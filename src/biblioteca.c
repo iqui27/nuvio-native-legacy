@@ -577,8 +577,10 @@ static int bibRetrato(void);
 static int botaoOrigens(void) { return temOrigens() && modo != MODO_LISTAS && !bibRetrato(); }
 // The panel takes its column only while open (layout snaps; drawing animates).
 static int origensNaGrade(void) { return temOrigens() && (origensAbertas || !botaoOrigens()); }
+static int modoLinha(void);
 static float bibX(void) {
   if (temAberta && aberta.fonte == LST_TRAKT && !trilha) return paginaX() + 560;
+  if (botaoOrigens() && modoLinha()) return paginaX() + ANC(364.0f) * animOrig;
   return paginaX() + (origensNaGrade() ? (modo == MODO_LISTAS ? 364.0f : ANC(364.0f)) : 0.0f);
 }
 // Right edge in text-layer units. NV_TELA_W changes with the active layer (the
@@ -1762,7 +1764,7 @@ static void biblioteca_evento_(const SDL_Event *e) {
   if (foco.fileira == BIB_FIL_PICK && focoBotaoOrig) {
     int ok = k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE;
     if (k == SDLK_RIGHT) { focoBotaoOrig = 0; pickSel = 0; foco.coluna = 0; }
-    else if (k == SDLK_LEFT) { focoBotaoOrig = 0; foco.fileira = BIB_FIL_MODO; foco.coluna = BIB_N_MODOS - 1; }
+    else if (k == SDLK_LEFT) sair = 1;
     else if (k == SDLK_UP) { focoBotaoOrig = 0; foco.fileira = BIB_FIL_MODO; foco.coluna = modo; }
     else if (k == SDLK_DOWN && origensAbertas) { focoBotaoOrig = 0; focoOrigem = 1; origemSel = origem; }
     else if (k == SDLK_DOWN && nCelulas) { descerDaFaixa(); focoBotaoOrig = 0; }
@@ -2706,9 +2708,13 @@ static void desenhaCartaz(const CatItem *ci, GfxRect base, float f, float a,
   float esc = 1.0f + BIB_FOCO_ESCALA * f;
   float bw = base.w * esc, bh = base.h * esc;
   GfxRect card = { base.x - (bw - base.w) * 0.5f, base.y - (bh - base.h) * 0.5f, bw, bh };
+  if (card.y >= BIB_GRADE_BASE || base.y + alturaLinha() <= 0 ||
+      card.x >= NV_TELA_W || card.x + card.w <= 0) return;
   float raio = raioPx(14.0f * esc, card.w, card.h);
-  const char *arte;
-  GLuint tex = bibPoster(ci, BIB_CARD_W * (1.0f + BIB_FOCO_ESCALA), &arte);
+  const char *arte = NULL;
+  // Labels can remain visible after the artwork leaves the grid's clip.
+  GLuint tex = card.y + card.h > gradeY() - 18.0f * bibRel()
+    ? bibPoster(ci, BIB_CARD_W * (1.0f + BIB_FOCO_ESCALA), &arte) : 0;
   // Arte chegando esvanece sobre o esqueleto (revela.h), como na home.
   float aArte = rv ? revela_arte(rv, tex != 0, agora) : 1.0f;
   if (f > 0.01f)
@@ -4069,7 +4075,8 @@ static void biblioteca_desenhar_(Uint32 agora) {
     for (r = 0; r < linhas; r++) {
       float topo = gy + r * passoL - scrollY;
       float a;
-      if (!flip && (topo > NV_TELA_H || topo + alturaLinha() < -80.0f)) continue;
+      if (!flip && (topo - BIB_POSTER_H * BIB_FOCO_ESCALA * .5f >= BIB_GRADE_BASE ||
+                    topo + alturaLinha() <= gcy)) continue;
       // Fade only the final visible strip, not the entire row as its top
       // crosses the header. The clip above protects the header itself.
       a = anim_clamp((topo + alturaLinha() - gcy) / BIB_FADE, 0.0f, 1.0f);
@@ -4093,9 +4100,14 @@ static void biblioteca_desenhar_(Uint32 agora) {
           fy = flipOffset[i][1] * flipRestante;
           ar = anim_clamp((topo + fy + alturaLinha() - gcy) / BIB_FADE, 0.0f, 1.0f);
         }
+        // Reflow can move a poster across rows: cull its animated position,
+        // including the focus lift, before registering targets or requesting art.
         f = focoOrigem ? 0.0f : (r < BIB_MAX_LINHAS && c < BIB_COLUNAS_MAX) ? animFoco[r][c]
             : (float)focus_indice(&foco, gradeIni() + r, c);
-        tex_pedido_fora(fora && f <= 0.01f ? fora : 0);
+        float lift = modoLinha() ? 0 : BIB_POSTER_H * BIB_FOCO_ESCALA * f * .5f;
+        if (topo + fy - lift >= BIB_GRADE_BASE || topo + fy + alturaLinha() <= gcy || ar <= .005f) continue;
+        int foraAnimado = flip ? (topo + fy < gcy || topo + fy + alturaLinha() > BIB_GRADE_BASE) : fora;
+        tex_pedido_fora(foraAnimado && f <= 0.01f ? foraAnimado : 0);
         // O alvo e a celula em REPOUSO (sem a escala do foco nem a onda), uma
         // vez por celula, recortado a janela da grade.
         if (passe == 0) {
@@ -4103,7 +4115,7 @@ static void biblioteca_desenhar_(Uint32 agora) {
             ? (GfxRect){ bibX(), topo, bibW(), alturaLinha() }
             : estado() == EST_LISTAS
               ? (GfxRect){ bibX() + c * passoC, topo, larguraCartaoLista(), BIB_LC_H }
-              : (GfxRect){ bibX() + c * passoC, topo, BIB_CARD_W, BIB_POSTER_H };
+              : (GfxRect){ bibX() + c * passoC + fx, topo + fy, BIB_CARD_W, BIB_POSTER_H };
           ponteiro_alvo_faixa(ra.x, ra.y, ra.w, ra.h, gy, BIB_GRADE_BASE, ponteiroCelula, NULL, i, 0);
         }
         if ((passe == 0) == (f > 0.01f)) continue;
@@ -4171,7 +4183,8 @@ static void biblioteca_desenhar_(Uint32 agora) {
   gfx_borda_foco_atual = 1.0f;
 
   static TexLookahead adiante;
-  if (tex_lookahead_parado(&adiante, scrollY) && !ondaEm &&
+  if (tex_lookahead_parado(&adiante, scrollY) &&
+      (!botaoOrigens() || fabsf(origensFlipRestante()) <= .001f) && !ondaEm &&
       !teclado_aberto() && estado() != EST_LISTAS) {
     int primeira = -1, ultima = -1, pediu = 0;
     for (r = 0; r < linhas; r++) {

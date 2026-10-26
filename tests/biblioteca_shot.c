@@ -581,6 +581,14 @@ int main(int argc, char **argv) {
       tecla(SDLK_RETURN);
       ASSERTA(origensAbertas && colunas() == abertas, "OK opens Origens again");
       snprintf(nome, sizeof nome, "%s-abrir", saida); origens_quadros(nome);
+      // Reflow also keeps the list header, row position and width continuous.
+      exibicao = VIS_LISTA; remapear(0);
+      snprintf(nome, sizeof nome, "%s-lista.bmp", saida); captura(nome);
+      alternarOrigens();
+      snprintf(nome, sizeof nome, "%s-lista-fechar", saida); origens_quadros(nome);
+      snprintf(nome, sizeof nome, "%s-lista-fechada.bmp", saida); captura(nome);
+      alternarOrigens();
+      snprintf(nome, sizeof nome, "%s-lista-abrir", saida); origens_quadros(nome);
     }
 #endif
     if (!strcmp(argv[2], "menu") || getenv("NV_BIB_SO_GRADE")) return falhasTela ? 1 : 0;
