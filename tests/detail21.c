@@ -10,7 +10,11 @@
 #define travaui_abrir lockOpenFixture
 #include "../src/detail.c"
 static int eligible, roomT, roomE, lockIdx=-1;
-int ratingFixture(int f) { return f==EX_IMDB ? 80 : f==EX_TOMATOES ? 920 : 0; }
+static int richRatings;
+int ratingFixture(int f) {
+  if (richRatings && (f==EX_TMDB || f==EX_METACRITIC || f==EX_LETTERBOXD || f==EX_TRAKT)) return 70;
+  return f==EX_IMDB ? 80 : f==EX_TOMATOES ? 920 : 0;
+}
 int togetherAvailableFixture(void) { return eligible; }
 int lockAvailableFixture(void) { return eligible; }
 void togetherOpenFixture(int i,int t,int e) { (void)i; roomT=t; roomE=e; }
@@ -66,6 +70,36 @@ static int ratingNavigation(void) {
   return failures;
 }
 
+// Ratings block (a 0 in ajustes.txt means ON for these toggles): 3 cards per row, 217-high cards, D-pad steps between rows.
+static int ratingsGrid(void) {
+  int failures=0;
+  char path[1024];
+  snprintf(path,sizeof path,"%s/ajustes.txt",dados_dir());
+  FILE *f=fopen(path,"w"); assert(f);
+  fputs("notaTituloImdb 0\nnotaTituloTomates 0\nnotaTituloTmdb 0\nnotaTituloMeta 0\n"
+        "notaTituloLetter 0\nnotaTituloTrakt 0\n",f);
+  fclose(f); ajustes_dir(dados_dir());
+  richRatings=1; recalcularLayout(); sincronizarColunas();
+  int off=notaMedia()->n>0, cells=nNotasTiles()-off;
+  assert(off==1 && cells==7);   // 6 sources + Your rating
+  int perRow = xItem(SEC_NOTAS,off+0)<xItem(SEC_NOTAS,off+1) &&
+               xItem(SEC_NOTAS,off+1)<xItem(SEC_NOTAS,off+2) &&
+               xItem(SEC_NOTAS,off+3)==xItem(SEC_NOTAS,off+0);
+  printf("%s: R1 three cards per row\n",perRow ? "PASS" : "FAIL"); failures+=!perRow;
+  int tall = notasui_celula_altura()==217 && alturaSecao(SEC_NOTAS)>=3*217;
+  printf("%s: R2 cards 217 high, section holds three rows\n",tall ? "PASS" : "FAIL"); failures+=!tall;
+  nivel=1; botao=0; saindo=0; foco.fileira=SEC_NOTAS;
+  foco.coluna=off+0; press(SDLK_DOWN); int d1=foco.coluna==off+3;
+  press(SDLK_DOWN); int d2=foco.fileira==SEC_NOTAS && foco.coluna==off+6;
+  foco.coluna=off+5; press(SDLK_DOWN); int d3=foco.coluna==off+6;
+  press(SDLK_UP); int u1=foco.coluna==off+3;
+  foco.coluna=off+4; press(SDLK_UP); int u2=foco.coluna==off+1;
+  int nav=d1 && d2 && d3 && u1 && u2;
+  printf("%s: R3 DOWN/UP move between rows\n",nav ? "PASS" : "FAIL"); failures+=!nav;
+  richRatings=0;
+  return failures;
+}
+
 int main(int argc, char **argv) {
   assert(SDL_Init(SDL_INIT_TIMER) == 0);
   dados_iniciar("deploy/app/art");
@@ -106,7 +140,14 @@ int main(int argc, char **argv) {
   fputs("notaTituloImdb 0\nnotaTituloTomates 0\n",ratings); fclose(ratings); ajustes_dir(dados_dir());
   if (argc > 1) {
     SDL_Event key = {0}; key.type = SDL_KEYDOWN;
-    if (!strcmp(argv[1], "rating")) {
+    if (!strcmp(argv[1], "ratings-grid")) {
+      CatItem item = {0};
+      snprintf(item.tipo, sizeof item.tipo, "movie");
+      snprintf(item.imdb, sizeof item.imdb, "tt9000012");
+      cat_definir_tudo(&item, 1, NULL, 0); idx = 0;
+      int failures = ratingsGrid();
+      SDL_Quit(); return failures ? 1 : 0;
+    } else if (!strcmp(argv[1], "rating")) {
       int failures = ratingNavigation();
       SDL_Quit(); return failures ? 1 : 0;
     } else if (!strcmp(argv[1], "actions")) {

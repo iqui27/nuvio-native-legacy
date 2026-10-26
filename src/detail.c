@@ -1330,50 +1330,69 @@ static int nNotasTiles(void) {
   return (notaMedia()->n>0 ? 1 : 0)+n+1+(amigosDoTitulo(&am) ? 1 : 0);
 }
 // Reuse the 2.0.8 summary and source renderers, preserving per-card selection.
-#define NOTA_GAP 16.0f
 static const NotasSecao *notasVisiveis(void) {
   static NotasSecao s;
   s=*notasDados();
   for (int f=0;f<EX_NFONTES;f++) if (!ajustes_nota_titulo(f)) s.cru[f]=0;
   return &s;
 }
+static int notaResumo(void) { return notaMedia()->n>0; }
+static int notaCelulas(void) { return nNotasTiles()-notaResumo(); }
+static float notaAltura(void) {
+  return notasui_cartao_altura(notasVisiveis(),notaResumo(),notaCelulas());
+}
+// Cell `c` of the row: the summary column first, then the 3-per-row grid.
+static float notaX(int c) {
+  return notaResumo() && c==0 ? 0 : notasui_celula_x(notaResumo(),c-notaResumo());
+}
+static float notaY(int c) {
+  return notaResumo() && c==0 ? 0 : notasui_celula_y(notasVisiveis(),notaResumo(),c-notaResumo());
+}
 static float notaLargura(int c) {
-  int off=notaMedia()->n>0, nf=0;
+  int off=notaResumo(), nf=0;
   while (notaFonte(nf)>=0) nf++;
   return notasui_cartao_largura((off && c==0) || c-off>nf);
 }
+// UP/DOWN inside the grid: one row of cells; -1 leaves the section.
+static int notaVizinho(int c,int dir) {
+  int off=notaResumo(), j=c-off, n=notaCelulas(), cols=notasui_colunas();
+  if (j<0) return -1;
+  if (dir>0) return j/cols<(n-1)/cols ? (j+cols<n ? j+cols : n-1)+off : -1;
+  return j/cols>0 ? j-cols+off : -1;
+}
 static void desenhaNotasTiles(float x,float y,float a) {
-  int off=notaMedia()->n>0, nf=0;
+  int off=notaResumo(), nf=0;
+  float h=notaAltura();
   while (notaFonte(nf)>=0) nf++;
   for (int i=0;i<nNotasTiles();i++) {
     int c=i-off, fonte=c>=0 ? notaFonte(c) : -1;
-    float w=notaLargura(i), f=animFoco[SEC_NOTAS][i];
-    if (off && i==0) notasui_cartao(notasVisiveis(),-1,x,y,f,a);
-    else if (fonte>=0) notasui_cartao(notasVisiveis(),fonte,x,y,f,a);
+    float w=notaLargura(i), f=animFoco[SEC_NOTAS][i], tx=x+notaX(i), ty=y+notaY(i);
+    if (off && i==0) notasui_cartao(notasVisiveis(),-1,tx,ty,h,f,a);
+    else if (fonte>=0) notasui_cartao(notasVisiveis(),fonte,tx,ty,h,f,a);
     else {
-      GfxRect b=detalheFoco((GfxRect){x,y,w,217},24.0f/217,f,.03f,a);
+      float th=notasui_celula_altura();
+      GfxRect b=detalheFoco((GfxRect){tx,ty,w,th},24.0f/th,f,.03f,a);
       notasui_painel(b,24,a);
       if (f>.01f) plrui_linha_foco(b,24,f*a);
-      txt_desenhar_alpha(txt_linha(TXT_G22M,i18n(c==nf ? "Sua nota" : "Amigos"),243,242,239,190),x+24,y+24,a);
+      txt_desenhar_alpha(txt_linha(TXT_G22M,i18n(c==nf ? "Sua nota" : "Amigos"),243,242,239,190),tx+24,ty+24,a);
       if (c==nf) {
         float ar,ag,ab; char v[16]; ajustes_acento(&ar,&ag,&ab);
         int minha=notaMinha();
         snprintf(v,sizeof v,minha ? "%d" : "★",minha);
-        txt_desenhar_alpha(txt_linha(TXT_G52B,v,ar*255,ag*255,ab*255,255),x+24,y+68,a);
-        txt_desenhar_alpha(txt_linha(TXT_G18R,i18n("OK para avaliar"),243,242,239,160),x+24,y+166,a);
+        txt_desenhar_alpha(txt_linha(TXT_G52B,v,ar*255,ag*255,ab*255,255),tx+24,ty+68,a);
+        txt_desenhar_alpha(txt_linha(TXT_G18R,i18n("OK para avaliar"),243,242,239,160),tx+24,ty+166,a);
       } else {
         AmigosTitulo am;
         if (amigosDoTitulo(&am)) {
           static const float anel[3]={.075f,.08f,.095f};
           char l1[200],l2[220]; int ut,ue; ultimoEpisodio(&ut,&ue);
-          svd_amigos_pilha(x+24,y+66,48,&am,am.n<3 ? am.n : 3,1,anel,a);
+          svd_amigos_pilha(tx+24,ty+66,48,&am,am.n<3 ? am.n : 3,1,anel,a);
           amigostitulo_resumo(&am,ut,ue,(long long)time(NULL),l1,sizeof l1,l2,sizeof l2);
-          txt_desenhar_alpha(txt_linha_corta(TXT_G22M,l1,243,242,239,255,w-48),x+24,y+126,a);
-          txt_desenhar_alpha(txt_linha_corta(TXT_G18R,l2,243,242,239,160,w-48),x+24,y+164,a);
+          txt_desenhar_alpha(txt_linha_corta(TXT_G22M,l1,243,242,239,255,w-48),tx+24,ty+126,a);
+          txt_desenhar_alpha(txt_linha_corta(TXT_G18R,l2,243,242,239,160,w-48),tx+24,ty+164,a);
         }
       }
     }
-    x+=w+NOTA_GAP;
   }
 }
 
@@ -2430,7 +2449,7 @@ static float alturaSecao(int r) {
     case SEC_AUD_RADAR:
     case SEC_AUD_DIGITAL: return 0.0f;
     case SEC_FRASES:    return 300;
-    case SEC_NOTAS:     return notasui_cartao_altura(notasVisiveis());
+    case SEC_NOTAS:     return notaAltura();
     case SEC_NOTAS_EP:  return 0.0f;
     case SEC_PROGTEMP:  return progTemNotas() ? 292 : tgraf_altura_dados(tgraf_dados(idx));
     case SEC_MUSICAS:   return MUS_H;
@@ -3578,6 +3597,11 @@ static void detail_evento_(const SDL_Event *e) {
     if (acoesAgrupadas()) maisAcoes = nivel == 0 && botao >= 1 + (temInicio() ? 1 : 0);
     return;
   }
+  // Ratings grid: UP/DOWN step a row of cards before leaving the section.
+  if (foco.fileira == SEC_NOTAS && (k == SDLK_UP || k == SDLK_DOWN)) {
+    int c=notaVizinho(foco.coluna, k==SDLK_DOWN ? 1 : -1);
+    if (c>=0) { foco.coluna=c; return; }
+  }
   // A guarda que existia aqui bloqueava DESCER das abas sempre que a aba
   // escolhida nao fosse "Criador e elenco" — e com isso trancava o acesso a
   // "Mais como este", "Coleção" e "Comentários", cujo codigo de navegacao ja
@@ -3715,11 +3739,11 @@ static float larguraItem(int r, int c) {
 static float xItem(int r, int c) {
   if (r==SEC_TEMPORADAS && c>=colTemp(nTemporadasReais()) && !temporadaLembrete(c))
     return fmaxf(1624,NV_DETP_X+c*226);
+  if (r == SEC_NOTAS) return NV_DETP_X + notaX(c);
   float x = NV_DETP_X;
   for (int k = 0; k < c; k++) {
     if (r == SEC_EPISODIOS) { x += epCardPasso(); continue; }
     if (r == SEC_ELENCO)    { x += NV_DETP_EL_PASSO; continue; }
-    if (r == SEC_NOTAS) { x+=notaLargura(k)+NOTA_GAP; continue; }
     if (r == SEC_COLECAO) { x+=COL_CARD_W; continue; }
     if (r == SEC_TRAILERS)  { x += NV_DETF_TR_PASSO;  continue; }
     if (r == SEC_RELACIONADOS) { x += REL_CARD_W + REL_CARD_GAP; continue; }
@@ -4385,9 +4409,9 @@ static void detail_atualizar_(float dt, Uint32 agora) {
         // posicao DENTRO de um desenho de largura fixa, nao um item que possa
         // sair da tela. Sem esta linha a regra geral abaixo empurrava a secao
         // inteira 24 px para a esquerda assim que o foco saia da coluna 0.
-        // NOTAS is a row of tiles (2.1) and rolls like the other rows.
+        // NOTAS is a 3-per-row grid that always fits the width.
         else if (EH_AUD(r) || r == SEC_FRASES || r == SEC_NOTAS_EP ||
-                 r == SEC_PROGTEMP) alvo = 0.0f;
+                 r == SEC_PROGTEMP || r == SEC_NOTAS) alvo = 0.0f;
         else if (foco.coluna == 0) alvo = 0.0f;
         else if (x + w > alvo + vista - 24.0f) alvo = x + w - vista + 24.0f;
         else if (x < alvo + 24.0f)             alvo = x - 24.0f;
@@ -7987,7 +8011,7 @@ static float alturaAlvo(int r) {
     case SEC_ESTUDIOS:   return EST_CARD_H;
     case SEC_RELACIONADOS: return REL_CARD_H + 72.0f;
     case SEC_COLECAO:    return COL_CARD_H;
-    case SEC_NOTAS:      return notasui_cartao_altura(notasVisiveis());
+    case SEC_NOTAS:      return notaAltura();
     case SEC_MUSICAS:    return MUS_H;
     case SEC_ELENCO:     return NV_DETP_EL_AVATAR + 90.0f;
     default:             return 0.0f;
