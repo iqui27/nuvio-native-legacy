@@ -53,7 +53,8 @@ int main(void) {
   aio_legendas(&s,"{\"subtitles\":[{\"lang\":\"por\",\"forced\":true,\"sdh\":false},{\"lang\":\"eng\"}]}");
   assert(s.legendas==2 && s.legenda[0].forcada==1 && s.legenda[0].sdh==0 && s.legenda[1].forcada==-1);
   aio_configuracao(&s,"{\"data\":{\"userData\":{\"requiredResolutions\":[\"1080p\"],\"includedResolutions\":[\"2160p\"],\"excludedResolutions\":[\"720p\"],\"bitrate\":{\"global\":{\"series\":[0,20]}},\"proxy\":{\"enabled\":true,\"credentials\":\"SECRET\",\"url\":\"https://private.test/SECRET\"},\"appliedTemplates\":[{\"id\":\"cinema\",\"version\":\"1\"}]}}}");
-  assert(s.detalhes==7 && !strstr((char *)s.detalhe,"SECRET"));
+  assert(s.detalhes>=7);
+  for(int i=0;i<s.detalhes;i++) assert(!strstr(s.detalhe[i].valor,"SECRET"));
   aio_configuracao(&s,"{\"data\":{\"userData\":null}}");
   assert(!s.configurada && !s.detalhes);
   aio_resultados(&s,"{\"streams\":[{\"url\":\"https://media.test/v\",\"streamData\":{\"cached\":true,\"service\":{\"cached\":false}}}]}");
@@ -61,7 +62,60 @@ int main(void) {
   aio_legendas(&s,"{\"subtitles\":[{\"lang\":\"por\",\"label\":\"Portuguese SDH\",\"hearingImpaired\":true}]}");
   assert(s.legenda[0].sdh==1 && !strcmp(s.legenda[0].nome,"Portuguese SDH"));
   aio_configuracao(&s,"{\"data\":{\"userData\":{\"requiredEncodes\":[\"HEVC\"],\"resultLimits\":{\"global\":20,\"addon\":5},\"sortCriteria\":{\"global\":[{\"key\":\"size\",\"direction\":\"desc\"}]},\"formatter\":{\"id\":\"custom\",\"definitions\":{\"custom\":{\"name\":\"SECRET\"}}}}}}");
-  assert(s.detalhes==6 && strstr(s.resumo[5],"desc") && !strstr((char *)s.detalhe,"SECRET"));
+  assert(s.detalhes>=6 && strstr(s.resumo[5],"desc"));
+  for(int i=0;i<s.detalhes;i++) assert(!strstr(s.detalhe[i].valor,"SECRET"));
+  // Full public API envelope, synthetic values only. Exercise fields beyond the old 128-row cutoff.
+  FILE *fixture=fopen("tests/fixtures/aiostreams-full.json","rb"); assert(fixture);
+  char full[65536]; size_t bytes=fread(full,1,sizeof full-1,fixture); fclose(fixture); full[bytes]=0;
+  aio_configuracao(&s,full);
+  const char *sections[]={"requiredResolutions","includedQualities","excludedVisualTags","preferredAudioTags",
+    "preferredLanguages","requiredSubtitles","size.resolution.576p.movies","size.resolution.Unknown.series",
+    "bitrate.useMetadataRuntime","requiredSeederRange","excludeAgeRange","excludeCachedFromServices",
+    "preferredRegexPatterns","requiredKeywords","rankedStreamExpressions","sortCriteria.cachedAnime",
+    "services","presets","formatter.definitions.saved","resultLimits.mode","proxy.proxiedServices",
+    "appliedTemplates","digitalReleaseFilter","titleMatching","deduplicator","catalogModifications",
+    "autoPlay","failover","precacheSelector","linkedAccounts"};
+  for(size_t k=0;k<sizeof sections/sizeof *sections;k++) {
+    int found=0;
+    for(int i=0;i<s.detalhes;i++) if(!strncmp(s.detalhe[i].nome,sections[k],strlen(sections[k]))) found=1;
+    if(!found) fprintf(stderr,"missing section: %s\n",sections[k]);
+    assert(found);
+  }
+  assert(s.detalhes>128 && s.servicos==2 && s.addons==4);
+  int lastLanguage=0,regex=0,direction=0;
+  for(int i=0;i<s.detalhes;i++) {
+    if(strstr(s.detalhe[i].nome,"preferredLanguages") && strstr(s.detalhe[i].valor,"Czech")) lastLanguage=1;
+    if(strstr(s.detalhe[i].nome,"RegexPatterns") && strstr(s.detalhe[i].valor,"(?i)")) regex=1;
+    if(strstr(s.detalhe[i].nome,"sortCriteria") && strstr(s.detalhe[i].valor,"asc")) direction=1;
+  }
+  assert(lastLanguage && regex && direction && !s.detalhesOmitidos);
+  aio_configuracao(&s,"{\"success\":true,\"data\":{\"userData\":{\"uuid\":\"PRIVATE\",\"encryptedPassword\":\"PRIVATE\",\"services\":[{\"id\":\"torbox\",\"credentials\":{\"apiKey\":\"PRIVATE\"}}],\"presets\":[{\"type\":\"custom\",\"enabled\":true,\"options\":{\"arbitraryKey\":\"PRIVATE\",\"url\":\"PRIVATE\"}}],\"proxy\":{\"credentials\":\"PRIVATE\",\"publicUrl\":\"PRIVATE\"}}}}");
+  for(int i=0;i<s.detalhes;i++) assert(!strstr(s.detalhe[i].valor,"PRIVATE"));
+  // Jellyfin locks can contain PINs or password hashes, including persona locks.
+  aio_configuracao(&s,"{\"data\":{\"userData\":{\"jellyfin\":{\"primary\":{\"lock\":\"7391\"},\"personas\":[{\"lock\":\"$2b$12$synthetic-hash\"}]}}}}");
+  int locks=0;
+  for(int i=0;i<s.detalhes;i++) {
+    assert(!strstr(s.detalhe[i].valor,"7391") && !strstr(s.detalhe[i].valor,"synthetic-hash"));
+    if(strstr(s.detalhe[i].nome,".lock")) { assert(!strcmp(s.detalhe[i].valor,"hidden")); locks++; }
+  }
+  assert(locks==2);
+  // Variant scripts are opaque payloads and can embed credentials in arbitrary code.
+  aio_configuracao(&s,"{\"data\":{\"userData\":{\"variants\":[{\"name\":\"Cinema\",\"enabled\":true,\"script\":\"set jellyfin.primary.lock = \\\"7391\\\"\"}]}}}");
+  int scripts=0;
+  for(int i=0;i<s.detalhes;i++) {
+    assert(!strstr(s.detalhe[i].valor,"7391") && !strstr(s.detalhe[i].valor,"set jellyfin"));
+    if(!strcmp(s.detalhe[i].nome,"variants[1].script")) {
+      assert(!strcmp(s.detalhe[i].valor,"hidden")); scripts++;
+    }
+  }
+  assert(scripts==1 && s.detalhes==3);
+  aio_configuracao(&s,"{\"success\":false,\"data\":{\"userData\":{\"preferredLanguages\":[\"stale\"]}}}");
+  assert(!s.configurada && !s.detalhes && !s.resumo[2][0]);
+  // Capacity ceiling must be explicit, never silently lose late fields.
+  char many[65536]="{\"data\":{\"userData\":{\"requiredKeywords\":[";
+  for(int i=0;i<2200;i++) strcat(many,i?",\"sample\"":"\"sample\"");
+  strcat(many,"]}}}"); aio_configuracao(&s,many);
+  assert(s.detalhes==AIO_DETAIL_MAX && s.detalhesOmitidos==2200-AIO_DETAIL_MAX);
   Stream *playable=NULL;
   assert(stream_extrair("{\"streams\":[{\"externalUrl\":\"https://external.test/page\"},{\"url\":\"https://media.test/video.mp4\"}]}","AIOStreams",&playable)==1);
   free(playable);

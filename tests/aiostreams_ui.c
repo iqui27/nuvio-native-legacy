@@ -42,7 +42,19 @@ void fil_alternar(int i) { (void)i; }
 int fil_mover(int i,int d) { (void)i;(void)d;return 0; }
 void desc_remontar_fileiras(void) { }
 void desc_repetir(void) { }
-int rede_pedir(const RedePedido *p,RedeResposta *r) { (void)p; memset(r,0,sizeof *r); return 0; }
+static int configFetches, noCache;
+int rede_pedir(const RedePedido *p,RedeResposta *r) {
+  memset(r,0,sizeof *r); r->status=200; r->erro=REDE_OK;
+  for(int i=0;p->cabecalhos[i];i++) if(strstr(p->cabecalhos[i],"no-cache")) noCache++;
+  if(strstr(p->url,"/api/v1/user")) {
+    configFetches++;
+    r->corpo=strdup(configFetches==1?
+      "{\"success\":true,\"data\":{\"userData\":{\"requiredKeywords\":[\"first\"]}}}":
+      "{\"success\":true,\"data\":{\"userData\":{\"preferredLanguages\":[\"Portuguese\"]}}}");
+  } else if(strstr(p->url,"manifest.json")) r->corpo=strdup("{\"id\":\"aiostreams.test\",\"resources\":[]}");
+  else r->corpo=strdup("{}");
+  return 0;
+}
 void rede_resposta_limpar(RedeResposta *r) { (void)r; }
 int main(void) {
   aioui_abrir(-1); assert(pagina==SEM);
@@ -69,15 +81,37 @@ int main(void) {
   regraSelecionada=6; AioRegra order={.grupo=5}; assert(regraPertence(&order));
   regraSelecionada=7; AioRegra format={.grupo=6}; assert(regraPertence(&format));
   regraSelecionada=-1;
-  // The six cards lead directly to footer actions; summaries are display-only.
-  pagina=FILTROS; lateral=0; foco=5;
+  // Every section is reachable, including formerly display-only sort/formatter.
+  linkSelecionado=-1; entrada=0;
   SDL_Event down={0}; down.type=SDL_KEYDOWN; down.key.keysym.sym=SDLK_DOWN;
-  aioui_evento(&down); acao();
-  assert(pagina==SERVICOS && regraSelecionada==-1);
-  pagina=FILTROS; foco=5; aioui_evento(&down); aioui_evento(&down); acao();
-  assert(regraSelecionada==8);
-  down.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&down);
-  assert(regraSelecionada==-1 && foco==7);
+  for(int i=0;i<10;i++) {
+    pagina=FILTROS; lateral=0; regraSelecionada=-1; foco=i; acao();
+    assert(regraSelecionada==i);
+    down.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&down);
+    assert(regraSelecionada==-1 && foco==i);
+  }
+  // Back from a detail entered from the sidebar must restore content focus.
+  // Services and preferences is filter group 9, not the setup page SERVICOS.
+  for(int i=9;i>=0;i--) {
+    mudar(FILTROS); foco=i; acao();
+    down.key.keysym.sym=SDLK_LEFT; aioui_evento(&down); assert(lateral);
+    down.key.keysym.sym=SDLK_ESCAPE; aioui_evento(&down);
+    assert(pagina==FILTROS && regraSelecionada==-1 && foco==i && !lateral);
+    down.key.keysym.sym=SDLK_RETURN; aioui_evento(&down);
+    assert(pagina==FILTROS && regraSelecionada==i);
+  }
+  mudar(FILTROS);
+  pagina=FILTROS; foco=5; down.key.keysym.sym=SDLK_DOWN;
+  aioui_evento(&down); assert(foco==7); acao(); assert(regraSelecionada==7);
+  regraSelecionada=-1; foco=8; aioui_evento(&down); assert(foco==10);
+  foco=11; pendente=0; acao(); assert(pendente==1);
+  // Both footer buttons retain their column when entering/leaving the grid.
+  for(int col=0;col<2;col++) {
+    mudar(FILTROS); foco=8+col;
+    down.key.keysym.sym=SDLK_DOWN; aioui_evento(&down); assert(foco==10+col);
+    down.key.keysym.sym=SDLK_UP; aioui_evento(&down); assert(foco==8+col);
+  }
+  pendente=0;
   pagina=CATALOGOS; foco=nLinhas()-1; pendente=0; acao();
   assert(pagina==CATALOGOS && pendente==1);
   pendente=0; foco=nLinhas()-2; acao(); assert(pagina==SERVICOS);
@@ -105,6 +139,18 @@ int main(void) {
   scrollFoco=3.5f; float w=janela(2,8,3,1);
   assert(w>1.4f && w<1.6f && (int)w==1);
   assert(rolaAlfa(-.5f,3)>.45f && rolaAlfa(-.5f,3)<.55f && rolaAlfa(1,3)==1 && rolaAlfa(3,3)==0 && rolaAlfa(-1,3)==0);
+  // Real worker path, executed synchronously: each refresh fetches a new envelope.
+  // Synthetic auth only; no network or real account in this test.
+  for(int i=0;i<2;i++) {
+    Pedido *request=calloc(1,sizeof *request); assert(request);
+    strcpy(request->host,"https://example.invalid");
+    strcpy(request->base,"https://example.invalid/stremio/sample/sample/manifest.json");
+    worker(request);
+    assert(entrega.configurada && entrega.detalhes==1);
+    assert(strstr(entrega.detalhe[0].nome,i?"preferredLanguages":"requiredKeywords"));
+    entregue=0;
+  }
+  assert(configFetches==2 && noCache==6);
   activeProfile=2; aioui_atualizar(0,100); assert(aioui_aberto());
   aioui_atualizar(.2f,300); assert(!aioui_aberto() && !base[0]);
   puts("aiostreams UI: setup, masked import, P2P, navigation and profile isolation passed");
