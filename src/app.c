@@ -886,6 +886,8 @@ static int iniciarPoliticaFonte(int preferida, int manual) {
 #include "srvidx.h"
 #include "partes.h"
 #include "logrede.h"
+#include "extras.h"
+#include "perfilinfantil.h"
 #include <stdio.h>
 
 static Tela tela = TELA_HOME;
@@ -1066,6 +1068,10 @@ static struct { Tela page; int menu, profile; } routeHistory[32];
 static int routeCount, routeOpening;
 static void trocarTela(Tela nova) {
   if (nova == tela) return;
+  if (nova == TELA_GUIA && perfil_infantil_ativo()) {   // perfilinfantil.h: sem TV ao vivo
+    glem_aviso_curto(i18n("Perfil infantil: sem TV ao vivo"));
+    return;
+  }
   if(!routeOpening)routeCount=0;
   if (nova != TELA_SOCIAL) socialDoPerfil = 0;
   if (nova != TELA_CACA) cacaDoPerfil = 0;
@@ -1100,6 +1106,7 @@ static void trocarTela(Tela nova) {
 
 static void abrirTelaFilha(Tela nova) {
   if(nova==tela)return;
+  if(nova==TELA_GUIA && perfil_infantil_ativo()){trocarTela(nova);return;}
   if(routeCount<32){routeHistory[routeCount].page=tela;routeHistory[routeCount].menu=menu_destino();routeHistory[routeCount++].profile=perfis_ativo();}
   // Suspended pages retain their own focus and scroll until Back resumes them.
   routeOpening=1;trocarTela(nova);routeOpening=0;
@@ -5073,7 +5080,10 @@ static void tocarFonteEscolhida(int fonte, int manual) {
         if (s->foraCache)
           player_toast_ex(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 9000, "aj_download", 0);
       }
-      if (juntos_precarregando()) juntosui_sala_abriu();
+      if (juntos_precarregando()) {
+        printf("[juntos] source: selected source delivered to player\n");
+        juntosui_sala_abriu();
+      }
       // Escolha manual num canal tambem entra no watchdog: fonte viva escolhida
       // a dedo pode morrer igual.
       if (player_id_canal()[0]) { canalFonteIdx = fonte; canalFonteDesde = SDL_GetTicks(); canalViaProxy = 0; }
@@ -5107,7 +5117,11 @@ static void juntosAbrirEFonte(Uint32 agora) {
       idx = cat_acrescentar(&novo);
     }
     if (idx >= 0) {
-      if (travaui_abrir_espera(idx, t, e)) return;
+      if (travaui_abrir_espera(idx, t, e)) {
+        printf("[juntos] source: blocked by series lock\n");
+        return;
+      }
+      printf("[juntos] source: opening paused player\n");
       limparFonteVOD();
       if (player_aberto() || player_retido()) player_encerrar();
       diagnostico_cancelar_vazao();
@@ -6213,6 +6227,16 @@ void app_atualizar(float dt, Uint32 agora) {
     // TRAVA DE SERIE: o episodio alvo alem do limite (quem esta a frente
     // espera) nao toca: abre a folha de espera, que tem "Assistir mesmo assim".
     if (querTocar && aguardandoFonte != 2 && travaui_segurar_detalhe()) querTocar = 0;
+    // PERFIL INFANTIL (perfilinfantil.h): so classificacao livre ou ate 10 anos.
+    if (querTocar && perfil_infantil_ativo()) {
+      const CatItem *ki = cat_item(detail_indice());
+      const char *cert = extras_ficha_classificacao();
+      if (!cert || !*cert) cert = ki ? ki->classificacao : NULL;
+      if (!perfil_infantil_classif_ok(cert)) {
+        glem_aviso_curto(i18n("Perfil infantil: só classificação livre e 10 anos"));
+        querTocar = 0;
+      }
+    }
     if (querTocar && aguardandoFonte != 2) {
       marco("abrir: reproduzir pedido");
       // A tela abre JA, no estado "abrindo fonte", e a escolha acontece depois.
@@ -6534,6 +6558,7 @@ void app_atualizar(float dt, Uint32 agora) {
                  (unsigned)(SDL_GetTicks() - fonteVODDesde));
           fflush(stdout);
         } else definirFonteVOD(s->url);
+        if (juntos_precarregando()) printf("[juntos] source: verified source delivered to player\n");
         // Tocou por outra fonte, mas um servico de debrid ficou de fora por
         // conta sem plano: diz uma vez por sessao, sem bloquear nada.
         { int novo = debrid_sem_plano_novo();
@@ -7368,7 +7393,7 @@ static void desenharAtrasDoPainel(void *ctx) {
       default:              home_desenhar(agora);       break;
     }
   }
-  if (srvsetup_aberto()) srvsetup_desenhar(agora);
+  if (srvsetup_aberto()) { ponteiro_camada(); srvsetup_desenhar(agora); }
   CAMADA_SE(vertudo_aberta());
 #ifdef NV_TOUCH_UI
   if (!detail_cobre_tela()) sidebarToqueRegistrar(2);
@@ -7819,7 +7844,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto()) novidades180_desenhar(agora);
   // O esmaecer de saida do guia da 2.0, por cima do app que ja voltou.
   if (!registro_aberto() && novidades20_visivel()) novidades20_desenhar(agora);
-  if (!registro_aberto()) comecar_desenhar(agora);        // so o esmaecer de saida
+  if (!registro_aberto() && comecar_visivel()) comecar_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades201_desenhar(agora);   // so o esmaecer de saida
   if (!registro_aberto()) novidades202_desenhar(agora);
   if (!registro_aberto()) resolver_desenhar(agora);        // so o esmaecer de saida

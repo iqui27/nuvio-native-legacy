@@ -455,12 +455,11 @@ static void alvo(GfxRect r, int id) {
   if (aberto && (view != V_DET || id == B_FECHAR)) ponteiro_alvo(r.x, r.y, r.w, r.h, pt_foco, pt_ativar, id, 0);
 }
 
-// Cards retain light ink over the official neutral focus surface.
+// Shared island material (glass or solid, no rim: it read as an outline) plus
+// the player-row neutral focus driven by the focos[] spring. Light ink stays.
 static void superficie(GfxRect r, float raioPx, float f, float a, Tinta *pri, Tinta *sec) {
-  // Flat island surface for glass on or off: the glass rim and corner light read as an outline.
-  gfx_sombra_sob((GfxRect){r.x - 16, r.y - 4, r.w + 32, r.h + 30}, 1, 0, .5f, 0, 0, 0, .36f * a, r, raioPx, a);
-  gfx_cor(r, raioPx / fminf(r.w, r.h), .071f, .075f, .086f, .98f * a);
-  gfx_cor(r, raioPx / fminf(r.w, r.h), 1, 1, 1, .06f * f * a); // one step lighter, no outline
+  plrui_material_plano(r, raioPx, a);
+  plrui_linha_foco(r, raioPx, f * a);
   *pri = PRI; *sec = SEC;
 }
 
@@ -578,9 +577,7 @@ static void desenha_card(GfxRect r, const CqEntrada *e, float foc, float a) {
   superficie(r, T21_R_CARD, foc, a, &p, &s);
   mudo = MUDO;
   float lado = 176 * (1 + .06f * foc);
-  tinta_de(e, &fr, &fg, &fb);
-  // Focus surface tinted by the achievement accent (no outline, no glow).
-  gfx_cor(r, T21_R_CARD / fminf(r.w, r.h), fr, fg, fb, .12f * foc * a);
+  tinta_de(e, &fr, &fg, &fb);   // achievement tint: emblem, bar and level dots only
   emblema_e(r.x + 88 - lado / 2, r.y + 84 - lado / 2, lado, e, a); // breaks above the card top like the mock
   kicker_card(e, x, r.y + 24.0f, w, a);
   bloco(TXT_ILHA_NOME_L, e->nome, p, x, r.y + 48.0f, w, 30.0f, a, 2);   // long names wrap at 100 %

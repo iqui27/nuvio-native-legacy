@@ -11730,6 +11730,10 @@ int ajustes_rapido_passo(int op, int dir) {
   { int r; ajOrigemDireto = AJLOG_CENTRAL; r = definirValorDireto(op, passoAdiante(op, dir < 0 ? -1 : 1)); ajOrigemDireto = AJLOG_AJUSTES; return r; }
 }
 
+// Interface language row outside Settings (onboarding): same write path as the OK there.
+const char *ajustes_idioma_nome(void) { return textoValor(AJ_IDIOMA); }
+int ajustes_idioma_passo(int dir) { return definirValorDireto(AJ_IDIOMA, passoAdiante(AJ_IDIOMA, dir < 0 ? -1 : 1)); }
+
 // A COR DE DESTAQUE NA CENTRAL. O seletor da central mostra so os dezoito
 // acentos fixos (a regua de Ajustes: nove claros, nove profundos); os
 // dinamicos (Da arte, Textura...) pedem a tela de Ajustes. A troca passa por

@@ -5,7 +5,7 @@ static void openFixture(void){comecar_teste_esquecer();comecar_abrir();snprintf(
 static void stepFixture(float dt){comecar_atualizar(dt,SDL_GetTicks());}
 static void drawFixture(void){comecar_desenhar(SDL_GetTicks());Item items[MAX_ITENS];int n=montar(items);for(int i=0;i<n;i++)nav21_target(items[i].id,items[i].r);}
 static void selectFixture(int i){foco=i;}
-static float transitionFixture(void){return entrada;}
+static float transitionFixture(void){return aberto?fminf(entrada,pagina):entrada;}
 static int pageFixture(void){return aberto?passo:-1;}
 static void internalNext(void){ir_passo(passo+1);}
 static void internalBack(void){SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_ESCAPE;comecar_evento(&e);}

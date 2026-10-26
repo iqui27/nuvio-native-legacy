@@ -25,4 +25,14 @@ cc -DAJUSTES_TESTE "${sources[@]}" tests/comecar_shot.c -Isrc -o "$BIN" \
   -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
   -Wall -Wextra -Wno-deprecated-declarations -Wno-macro-redefined
-"$BIN" "${1:-/tmp/nuvio-comecar}"
+run_capture() {
+  sandbox-exec -p '(version 1) (allow default) (deny network*)' "$BIN" "$1"
+}
+if [ "${NUVIO_J2_MATRIX:-0}" = 1 ]; then
+  output=${1:-/tmp/nuvio-comecar}
+  for glass in 0 1; do
+    NUVIO_SHOT_VIDRO=$glass run_capture "$output/start-$glass-"
+  done
+else
+  run_capture "${1:-/tmp/nuvio-comecar}"
+fi

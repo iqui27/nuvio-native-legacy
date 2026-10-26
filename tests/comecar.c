@@ -1,5 +1,6 @@
 // Regra do Começar (src/comecarregra.c): quando aparece, o que fica gravado.
 #include "../src/comecarregra.h"
+#include "../src/perfilinfantil.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -60,6 +61,15 @@ int main(void) {
     in[70] = 0;
     n = comecarregra_nome_limpo(in, out, sizeof out);
     ok(n == COMECAR_NOME_MAX, "corta em COMECAR_NOME_MAX"); }
+
+  // Perfil infantil do passo 1 (mock 3A): so livre e ate 10 anos.
+  { const char *sim[] = { "L", "10", "0", "6", "G", "PG", "TV-Y7", "tv-g", "U", "AL" };
+    const char *nao[] = { "12", "14", "16", "18", "PG-13", "R", "NC-17", "TV-14", "TV-MA", "", NULL };
+    int a = 1, b = 1, i;
+    for (i = 0; i < (int)(sizeof sim / sizeof *sim); i++) a &= perfil_infantil_classif_ok(sim[i]);
+    for (i = 0; i < (int)(sizeof nao / sizeof *nao); i++) b &= !perfil_infantil_classif_ok(nao[i]);
+    ok(a, "infantil: livre e ate 10 anos tocam");
+    ok(b, "infantil: acima de 10 ou sem classificacao nao toca"); }
 
   if (falhas) { printf("comecar: %d falha(s)\n", falhas); return 1; }
   return 0;

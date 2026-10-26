@@ -9,23 +9,28 @@ static int fixtureConnected(void){return authenticated;}
 static int fixture;
 static Uint32 clockFixture;
 static void openFixture(void) {
-  opened=1;closing=0;historyCount=0;transitionAt=clockFixture=SDL_GetTicks();screen=fixture;provider=1;selected=0;profile=perfis_ativo();
-  worker.n=2;worker.alive=0;nLibraries=3;rowChoice=0;recoveryAuth=0;codeSince=SDL_GetTicks();
+  opened=1;nHistory=0;entry=page=pageSeconds=0;motionTime=0;stepAnim=-1;
+  gfx_mini_liberar(&previousPage);
+  clockFixture=SDL_GetTicks();screen=fixture;provider=1;selected=fixture==ADDRESS?KEY_FIRST:0;profile=perfis_ativo();
+  bodyScroll=bodyVelocity=bodyTarget=userScroll=userVelocity=userTarget=scroll=scrollVelocity=0;
+  navigationCount=authReturned=freshSetup=libraryRetry=0;
+  username[0]=password[0]=addressText[0]=message[0]=0;
+  worker.n=2;worker.alive=0;worker.kind=JOB_USERS;nLibraries=3;rowChoice=0;recoveryAuth=0;codeSince=SDL_GetTicks();
   for(int i=0;i<9;i++) {snprintf(libraries[i].titulo,sizeof libraries[i].titulo,"Library %d",i);snprintf(libraries[i].chave,sizeof libraries[i].chave,"jellyfin_fixture%d",i);}
 }
-static void internalNext(void){change((screen+1)%(ROWS+1));}
-static void internalBack(void){SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_ESCAPE;srvsetup_evento(&e);clockFixture=SDL_GetTicks();}
+static void internalNext(void){change((screen+2)%(ROWS+1));}
+static void internalBack(void){SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_ESCAPE;srvsetup_evento(&e);}
 static int focusFixture(void) {return selected;}
 static void selectFixture(int i) {selected=i;}
-static float transitionFixture(void){return closing?1-fminf(1,(clockFixture-transitionAt)/240.f):fminf(1,(clockFixture-transitionAt)/240.f);}
+static float transitionFixture(void){return opened?fminf(entry,page):entry;}
 static int pageFixture(void) {return opened?screen:-1;}
 static void stepFixture(float dt) {clockFixture+=(Uint32)(dt*1000);srvsetup_atualizar(clockFixture);}
-static void keyFixture(const SDL_Event *e) {clockFixture=SDL_GetTicks();srvsetup_evento(e);}
+static void keyFixture(const SDL_Event *e) {srvsetup_evento(e);}
 static void drawFixture(void) {srvsetup_desenhar(clockFixture);for(int i=0;i<navigationCount;i++)nav21_target(navigationIds[i],navigationRects[i]);}
 void nav21_servers(void) {
   const char *names[]={"Servers/choose","Servers/discover","Servers/address","Servers/login","Servers/users","Servers/password","Servers/code","Servers/connect-code","Servers/connect-password","Servers/connect-servers","Servers/plex-servers","Servers/libraries","Servers/ready","Servers/manage","Servers/remove","Servers/error","Servers/rows"};
   for(fixture=0;fixture<=ROWS;fixture++) {
-    Nav21Screen s={names[fixture],openFixture,keyFixture,stepFixture,drawFixture,focusFixture,selectFixture,pageFixture,0,transitionFixture};
+    Nav21Screen s={names[fixture],openFixture,keyFixture,stepFixture,drawFixture,focusFixture,selectFixture,pageFixture,fixture==ADDRESS?KEY_FIRST:0,transitionFixture};
     nav21_check(s);
   }
   for(int previous=CHOOSE;previous<=ROWS;previous++){
@@ -59,12 +64,15 @@ void nav21_servers(void) {
         srvsetup_evento(&key);
         char path[160];snprintf(path,sizeof path,"%d items, from %d, %s: adjacent item",sizes[n],i,SDL_GetKeyName(key.key.keysym.sym));
         nav21_expect(names[screen],path,selected,i+step);
+        for(int tick=0;tick<90;tick++)stepFixture(1.f/60);
         srvsetup_desenhar(clockFixture);
         int visible=0;for(int j=0;j<navigationCount;j++)if(navigationIds[j]==selected)visible=1;
         nav21_expect(names[screen],"Paged focus is rendered",visible,1);
       }
     }
-    selected=sizes[n]-1;srvsetup_desenhar(clockFixture);
+    selected=sizes[n]-1;
+    for(int tick=0;tick<90;tick++)stepFixture(1.f/60);
+    srvsetup_desenhar(clockFixture);
     key.key.keysym.sym=SDLK_DOWN;srvsetup_evento(&key);
     nav21_expect(names[screen],"Last item, Down: footer reachable",selected>=sizes[n],1);
   }

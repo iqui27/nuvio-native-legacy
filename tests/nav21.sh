@@ -18,3 +18,5 @@ timeout 240 cc -DAJUSTES_TESTE -DNV_SHOT_HOOKS "${sources[@]}" tests/nav21.c tes
   -Wno-deprecated-declarations -o "$work/nav21"
 export NUVIO_DADOS="$work/data"
 timeout 240 "$work/nav21" "$out/violations.md"
+# Also preserve the setup gate for real authentication and recovery flows.
+NUVIO_SHOT_FLOW_ONLY=1 bash tests/servidores_setup_fluxo.sh "$@"
