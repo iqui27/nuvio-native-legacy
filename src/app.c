@@ -6323,7 +6323,7 @@ void app_atualizar(float dt, Uint32 agora) {
             ProxSugestao prox;
             tocar = 0;
             cwTocarT = cwTocarE = 0;
-            if (k >= 0 && cat_n_episodios(k) > 0) {
+            if (cat_episodios_finais(k, cw->imdb)) {
               if (prox_seguinte(cw, cat_episodio(k, 0), cat_n_episodios(k),
                                 ajustes_cw_concluido(),
                                 (long long)time(NULL) * 1000LL, &prox)) {
@@ -6340,7 +6340,8 @@ void app_atualizar(float dt, Uint32 agora) {
           }
         }
         if (tocar && cw && !strcmp(cw->tipo, "series") &&
-            cat_n_episodios(cat_indice_titulo(cw->imdb, it.indice)) == 0) {
+            !cat_episodio_existe_final(cat_indice_titulo(cw->imdb, it.indice),
+                                      cw->imdb, cwTocarT, cwTocarE)) {
           cwEsperaItem = *cw;
           cwEsperaDesde = SDL_GetTicks();
           cwEspera = 2; // Resume the current episode once metadata publishes its video ID.
@@ -6397,7 +6398,9 @@ void app_atualizar(float dt, Uint32 agora) {
       cwEspera = 0; cwTocarT = cwTocarE = 0;
     } else {
       int k = cat_indice_titulo(cwEsperaItem.imdb, detail_indice());
-      if (k >= 0 && cat_n_episodios(k) > 0) {
+      if (cat_episodios_finais(k, cwEsperaItem.imdb) &&
+          (cwEspera != 2 || cat_episodio_existe_final(k, cwEsperaItem.imdb,
+                             cwEsperaItem.temporada, cwEsperaItem.episodio))) {
         ProxSugestao prox;
         int retomar = cwEspera == 2;
         cwEspera = 0; cwTocarT = cwTocarE = 0;
