@@ -34,6 +34,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int previousFocus;
 static int tela=-1, anterior=AG_MODO, indice, foco, pedido, detalhes, pct=-1, serv, acessoConfig, semCel;
 static int modoSelecionado, guiaMostrado;
 static int saindo, ultimaTela=-2, listaFoco;
@@ -241,7 +242,7 @@ static int escolher(int modo) {
   if(modo==AM_P2P)ajustes_definir_p2p_ligado(1);
   return 1;
 }
-static void conectar(void) {anterior=tela;tela=AG_CONECTAR;foco=0;}
+static void conectar(void) {anterior=tela;previousFocus=foco;tela=AG_CONECTAR;foco=0;}
 static void ativar(void) {
   if(foco==20){detalhes=!detalhes;return;}
   if(foco>=10 && foco<=12){tela=AG_MODO;modoSelecionado=foco-9;foco-=10;return;}
@@ -288,7 +289,7 @@ void addonguia_evento(const SDL_Event *e) {
   }
   SDL_Keycode k=e->key.keysym.sym;
   if(nv_tecla_voltar(e)){
-    if(tela==AG_CONECTAR){tela=anterior;foco=0;celb_fechar_dono(CELB_ADDON);}
+    if(tela==AG_CONECTAR){tela=anterior;foco=previousFocus;celb_fechar_dono(CELB_ADDON);}
     else sair();return;
   }
   if(k==SDLK_RETURN||k==SDLK_KP_ENTER){if(!e->key.repeat)ativar();return;}

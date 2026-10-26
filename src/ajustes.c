@@ -10331,7 +10331,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   if(iptvForm.tipo && !nv_perfil_sessao_atual(iptvForm.sessao)) { ajIptvLimparForm();uxCancelar();stCampo=0;teclado_esquecer(); }
   ajLegendaEspelhar(); ajIptvEspelhar();
   AJ_ESCALA_INI();
-  int route=tourAberto*1000+frAberta*10+ffCategoria+aj4Util*100+focoIndice*10000+uxEditor*100000;
+  int route=tourAberto*1000+frAberta*10+ffCategoria+aj4Util*100+focoIndice*10000+uxEditor*100000+aj4Grupos*1000000;
   if(screenRoute!=route){screenRoute=route;screenReveal=0;}
   screenReveal=ajustes_animacoes_reduzidas()?!sair:anim_mola(screenReveal,!sair,dt,NV_MOLA_TELA);
   guiaAtualizar(dt);

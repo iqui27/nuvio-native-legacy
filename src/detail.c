@@ -8070,7 +8070,10 @@ static struct {GfxRect rect;int row,col;} navigation[512];
 static int navigationCount;
 #undef ponteiro_alvo
 static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int row,int col){
-  if(fn==ponteiroDetalhe&&navigationCount<512){navigation[navigationCount].rect=(GfxRect){x,y,w,h};navigation[navigationCount].row=row;navigation[navigationCount++].col=col;}
+  if(fn==ponteiroDetalhe&&navigationCount<512&&x<NV_TELA_W&&y<NV_TELA_H&&x+w>0&&y+h>0){
+    float left=fmaxf(0,x),top=fmaxf(0,y);
+    navigation[navigationCount].rect=(GfxRect){left,top,fminf(x+w,NV_TELA_W)-left,fminf(y+h,NV_TELA_H)-top};navigation[navigationCount].row=row;navigation[navigationCount++].col=col;
+  }
   ponteiro_alvo(x,y,w,h,fn,activate,row,col);
 }
 #define ponteiro_alvo navigationTarget

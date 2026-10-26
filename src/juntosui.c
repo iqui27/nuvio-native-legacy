@@ -50,7 +50,7 @@ static void iconeReacao(char *dst, size_t n, const char *k) { snprintf(dst, n, "
 
 typedef enum { CAMADA_NADA = 0, CAMADA_FOLHA, CAMADA_CODIGO, CAMADA_SALA, CAMADA_SAIR, CAMADA_PEDIDO, CAMADA_REACOES, CAMADA_FONTES } Camada;
 static Camada camada;
-static int foco, linhaReacao;
+static int foco, linhaReacao, lobbyFocus;
 static Camada camadaVisual;
 static GfxRect corpoBase;
 static int corpoDesenhando;
@@ -398,7 +398,7 @@ static void apertarSala(int b) {
     case BT_COMECAR: juntos_comecar(); break;
     case BT_CELULAR: mostrarQr = !mostrarQr; if (mostrarQr) juntos_pedir_celular(); break;
     case BT_FILME: mostrarQr = 0; camada = CAMADA_NADA; pediuEscolherFilme = 1; break;
-    case BT_FONTES: mostrarQr = 0; camada = CAMADA_FONTES; foco = 0; break;
+    case BT_FONTES: lobbyFocus=foco; mostrarQr = 0; camada = CAMADA_FONTES; foco = 0; break;
     case BT_TRAVA: if (m) juntos_controle_anfitriao(!m->sala.controleAnf); break;
     case BT_SAIR:
       if (juntos_sou_anfitriao() && m && m->sala.n > 1) { juntos_sair(); }
@@ -488,7 +488,7 @@ int juntosui_evento_sdl(const SDL_Event *e) {
       const JsMotor *m = juntos_motor();
       int n = m ? (m->sala.n < 5 ? m->sala.n : 5) : 0;
       if (foco > n) foco = n;
-      if (ehVoltar(k) || (ehOk(k) && foco == 0)) { camada = CAMADA_SALA; foco = 0; }
+      if (ehVoltar(k) || (ehOk(k) && foco == 0)) { camada = CAMADA_SALA; foco = lobbyFocus; }
       else if (k == SDLK_DOWN && foco < n) foco++;
       else if (k == SDLK_UP && foco > 0) foco--;
       else if (ehOk(k) && m && foco > 0 && !strcmp(m->sala.m[foco - 1].id, m->eu)
