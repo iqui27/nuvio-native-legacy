@@ -121,7 +121,6 @@ class ParaleloDataSourceTest {
         val fonte = ParaleloDataSource(null, emptyMap())
         val entrada = ParaleloDataSource::class.java.getDeclaredField("unicaIn")
         entrada.isAccessible = true
-        ParaleloDataSource.Estat.conexoes.incrementAndGet()
         entrada.set(fonte, object : InputStream() {
             override fun read(): Int { fonte.close(); return 1 }
         })

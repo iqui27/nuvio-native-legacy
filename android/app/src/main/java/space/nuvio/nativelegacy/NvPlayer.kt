@@ -185,9 +185,9 @@ object NvPlayer {
     @JvmStatic external fun nativeAudioEstado(fmt: Int)
     // Estatisticas ao vivo (src/estatvivo.h), 1x/s pelo tique: bytes do socket
     // (-1 = esta abertura nao passou pelo ParaleloDataSource, ex. HLS), buffer
-    // a frente e o alvo do DefaultLoadControl em ms, conexoes abertas, 1o byte,
+    // a frente e o alvo do DefaultLoadControl em ms, downloads ativos e pool, 1o byte,
     // quadros perdidos (onDroppedVideoFrames) e entregues; host final.
-    @JvmStatic external fun nativeStats(bytes: Long, bufferMs: Int, alvoMs: Int, conexoes: Int,
+    @JvmStatic external fun nativeStats(bytes: Long, bufferMs: Int, alvoMs: Int, conexoes: Int, poolConexoes: Int,
                                         primeiroByteMs: Int, perdidos: Long, quadros: Long, host: String,
                                         minMs: Int, alvoMb: Int, carregando: Int)
 
@@ -1679,6 +1679,7 @@ object NvPlayer {
             nativeStats(if (e.usado) e.bytes.get() else -1L, buf,
                 bufferAlvoMs,
                 if (e.usado) e.conexoes.get().coerceAtLeast(0) else -1,
+                if (e.usado) e.poolConexoes else -1,
                 e.primeiroByteMs, perdidos, quadros, e.host,
                 bufferMinMs, bufferBytes shr 20, if (p.isLoading) 1 else 0)
         } catch (t: UnsatisfiedLinkError) { }

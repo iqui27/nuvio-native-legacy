@@ -109,10 +109,11 @@ class ParaleloDataSource(
     object Estat {
         val bytes = java.util.concurrent.atomic.AtomicLong()
         val conexoes = java.util.concurrent.atomic.AtomicInteger()
+        @Volatile var poolConexoes = -1
         @Volatile var usado = false
         @Volatile var primeiroByteMs = -1
         @Volatile var host = ""
-        fun zerar() { bytes.set(0); conexoes.set(0); usado = false; primeiroByteMs = -1; host = "" }
+        fun zerar() { bytes.set(0); conexoes.set(0); poolConexoes = -1; usado = false; primeiroByteMs = -1; host = "" }
         fun hostDe(u: URL) {
             val porta = if (u.port < 0 || u.port == u.defaultPort) "" else ":${u.port}"
             host = (u.host ?: "").lowercase() + porta
@@ -335,6 +336,7 @@ class ParaleloDataSource(
         // transferencia ativa (o tempo entra na cobertura do segundo).
         medidor?.inicio(token)
         Estat.usado = true
+        Estat.poolConexoes = conexoes
         Estat.conexoes.incrementAndGet()
         try { return abrir(dataSpec) }
         catch (e: IOException) { if (foiCancelado(e)) throw cancelado(e) else throw e }
@@ -390,7 +392,9 @@ class ParaleloDataSource(
         val cauda = !paralelo && code == 206 && total > 0 &&
             janela > PEDACO_CAUDA_MIN.toLong() * 2 && pos + janela >= total
         if (!paralelo && !cauda) {
-            Log.i(TAG, "conexao unica: HTTP $code, total=$total, pos=$pos (${dataSpec.uri.host})")
+            Estat.poolConexoes = 1
+            val motivo = if (code != 206) "sem Range" else if (total <= 0) "tamanho desconhecido" else "janela pequena"
+            Log.i(TAG, "conexao unica: $motivo, HTTP $code, total=$total, pos=$pos (${dataSpec.uri.host})")
             // Sem Range (ou pequeno demais para valer a pena): conexao unica.
             if (code == 206 || code == 200) {
                 // 206 so da sonda: reabre ate o fim da janela pedida (sem teto
@@ -411,7 +415,6 @@ class ParaleloDataSource(
                     throw erro
                 }
                 unicaIn = uc.inputStream
-                Estat.conexoes.incrementAndGet()
                 unicaOrigem = PassivoMedidor.origemDe(uc.url)
                 if (code == 200 && pos > 0) unicaIn!!.skip(pos)   // servidor ignorou Range
                 aberto = true
@@ -529,9 +532,10 @@ class ParaleloDataSource(
             // stall bloqueia aqui); o intervalo entre reads e o ExoPlayer
             // parado com o buffer cheio, e nao conta.
             medidor?.inicio(token)
+            Estat.conexoes.incrementAndGet()
             val n = try { inp.read(buffer, offset, length).also { conferirCancelamento() } }
                 catch (e: IOException) { if (foiCancelado(e)) throw cancelado(e) else throw e }
-                finally { medidor?.fim(token) }
+                finally { Estat.conexoes.decrementAndGet(); medidor?.fim(token) }
             if (n > 0) { medidor?.bytes(token, unicaOrigem, n); Estat.bytes.addAndGet(n.toLong()) }
             if (n < 0) return C.RESULT_END_OF_INPUT
             bytesTransferred(n)
@@ -570,7 +574,6 @@ class ParaleloDataSource(
         // Interrompe connect/read antigos imediatamente ao buscar outra posicao.
         for (c in ativas.toList()) desconectar(c)
         buf = null
-        if (unicaIn != null) Estat.conexoes.decrementAndGet()
         try { unicaIn?.close() } catch (_: IOException) {}
         unicaIn = null
         unicaOrigem = null

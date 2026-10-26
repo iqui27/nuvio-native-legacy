@@ -206,7 +206,7 @@ int main(void) {
   ev_zerar(&est);
   est.velOrigem = est.bufOrigem = est.servOrigem = est.quadrosOrigem = EVO_MEDIDO;
   est.kbps = 53100; est.mediaKbps = 62000; est.picoKbps = 113000;
-  est.bufSeg = 46; est.bufAlvo = 50; est.conexoes = 1;
+  est.bufSeg = 46; est.bufAlvo = 50; est.poolConexoes = 4; est.conexoes = 0;
   est.primeiroByteMs = 448; est.quadros = 589;
   snprintf(est.host, sizeof est.host, "20.download.real-debrid.com");
   estatvivo_teste(&est, &tela);
