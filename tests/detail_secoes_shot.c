@@ -644,14 +644,30 @@ int main(int argc, char **argv) {
     abrir(1, SEC_MUSICAS, 0);
     assert(musPedidos > 0);   // a pagina emite o pedido da trilha (imdb+temp)
     assert(secaoN(SEC_MUSICAS) == 1);
+    for (int q = 0; q < 90; q++) { SDL_Delay(16); quadros(1); }
+    snprintf(nome, sizeof nome, "%s-musicas-card.png", saida); gravar(nome);
+    int nivelAntes = nivel;
     ev.key.keysym.sym = SDLK_RETURN; detail_evento(&ev);
     ev.type = SDL_KEYUP; detail_evento(&ev);
     assert(musicaui_aberta());
-    quadros(90);
+    // OK opens a modal over this page: no level/page push, and the panel
+    // starts at the card and grows into an inset island.
+    assert(aberto && nivel == nivelAntes && foco.fileira == SEC_MUSICAS);
+    GfxRect card = musicaui_painel();
+    assert(card.w < 1100 && card.h < 400);
+    for (int i = 0; i < 600 && musicaui_painel().w < 1300; i++) { SDL_Delay(4); quadros(1); }
+    GfxRect meio = musicaui_painel();
+    assert(meio.w > card.w && meio.w < 1728);
+    snprintf(nome, sizeof nome, "%s-musicas-modal-mid.png", saida); gravar(nome);
+    for (int q = 0; q < 60; q++) { SDL_Delay(16); quadros(1); }
+    GfxRect m = musicaui_painel();
+    assert(m.x > 0 && m.y > 0 && m.w < 1920 && m.h < 1080 && m.w > 1600);
     snprintf(nome, sizeof nome, "%s-musicas-movie.png", saida); gravar(nome);
     ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_ESCAPE; detail_evento(&ev);
-    assert(!musicaui_aberta());
-    puts("PASS: Music section opens album; Back returns to detail");
+    assert(!musicaui_aberta() && musicaui_visivel());
+    for (int i = 0; i < 600 && musicaui_visivel(); i++) { SDL_Delay(4); quadros(1); }
+    assert(!musicaui_visivel() && foco.fileira == SEC_MUSICAS && nivel == nivelAntes);
+    puts("PASS: Music card opens animated modal; Back closes it back onto the card");
     SDL_GL_DeleteContext(gl); SDL_DestroyWindow(janela); SDL_Quit(); return 0;
   }
 

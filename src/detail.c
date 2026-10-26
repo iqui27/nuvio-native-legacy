@@ -7309,7 +7309,7 @@ static void cartazColecao(GfxRect r, const char *po, float a) {
 // o nome em 40/800, a meta a 60%, a pilula "Ver coleção" e dois cartazes de
 // 130x195 em leque a direita. Foco: a pilula vira o botao no acento (o OK
 // abre a lista da saga) e o bloco sobe um degrau, sem anel.
-// Music section opens the approved full-screen album page.
+// Music section opens the album as a modal that grows out of this card.
 static GfxRect musicaOrigem;
 static void musAbrir(void) {
   static MusAlbum al;
@@ -7336,14 +7336,16 @@ static void desenhaMusicas(float x, float y, float f, float a) {
   gfx_rect((GfxRect){x+19,y+40,MUS_CAPA+26,MUS_CAPA+26},0,GFX_SOMBRA,.3f,0,0,.08f,0,0,0,.65f*a);
   if (capa) gfx_rect((GfxRect){x+28,y+46,MUS_CAPA,MUS_CAPA},capa,GFX_ARTE,0,0,0,12.0f/MUS_CAPA,0,0,0,a);
   float tx = x+MUS_CAPA+60, tw = MUS_W-MUS_CAPA-92;
-  TxtLinha l = txt_linha_corta(TXT_G20M,i18n("Trilha sonora original"),220,224,232,255,tw);
+  char kick[128], faixas[48];
+  snprintf(faixas,sizeof faixas,i18n("%d faixas"),al.n);
+  snprintf(kick,sizeof kick,"%s · %s",i18n("Trilha sonora original"),faixas);
+  TxtLinha l = txt_linha_corta(TXT_G20M,kick,220,224,232,255,tw);
   txt_desenhar_alpha(l,tx,y+28,a);
   txt_bloco_corta(TXT_TITULO3,al.titulo,243,242,239,tx,y+64,tw,46,a,2);
   l = txt_linha_corta(TXT_G22M,al.artista,220,224,232,255,tw);
   txt_desenhar_alpha(l,tx,y+164,a);
-  l = txt_linha(TXT_G22M,i18n("Abrir álbum"),243,242,239,255);
-  GfxRect pil = {tx,y+MUS_H-80,l.w+64,52};
-  botao_pilula_sem_aro(pil,i18n("Abrir álbum"),NULL,f,0,0,a);
+  GfxRect pil = {tx,y+MUS_H-80,botao_largura(i18n("Abrir álbum"),"aj_audio-lines",0),52};
+  botao_pilula_sem_aro(pil,i18n("Abrir álbum"),"aj_audio-lines",f,0,0,a);
 }
 
 static void desenhaColecao(float x, float y, float f, float a) {

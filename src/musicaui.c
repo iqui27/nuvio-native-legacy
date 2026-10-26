@@ -211,41 +211,43 @@ GLuint musicaui_ambiente(const char *capa) {
 static void ilha(GfxRect r) {
   gfx_cor(r, r.h > 60 ? 26.0f/r.h : .5f, .055f,.059f,.071f, ajustes_vidro() ? .9f : 1);
 }
+// The album opens as a modal island (DESIGN.md modal radius 36) that grows
+// out of the Detail card: the approved album layout is scaled .9 into it and
+// the cover flies from the card as the shared element. Detail stays alive
+// behind a light veil, and closing runs the same spring backwards.
+static const GfxRect MODAL = {96,54,1728,972};
+static GfxRect misturar(GfxRect a, GfxRect b, float k) {
+  return (GfxRect){a.x+(b.x-a.x)*k,a.y+(b.y-a.y)*k,a.w+(b.w-a.w)*k,a.h+(b.h-a.h)*k};
+}
+GfxRect musicaui_painel(void) {
+  return misturar(origem.w>0 ? origem : (GfxRect){240,135,1440,810},MODAL,abertura);
+}
 void musicaui_desenhar(Uint32 agora) {
   if (!musicaui_visivel()) return;
   float previousScale=gfx_escala();
   gfx_escala_sair(1);
   float previousAlpha=gfx_opacidade_grupo;
   float k=abertura;
-  if (origem.w>0) {
-    float scale=origem.w/1920+(1-origem.w/1920)*k;
-    float dx=(origem.x+origem.w*.5f-960)*(1-k);
-    float dy=(origem.y+origem.h*.5f-540)*(1-k);
-    gfx_transformar(960,540,scale,dx,dy);
-  }
-  gfx_opacidade_grupo*=k;
+  GfxRect p=musicaui_painel();
+  float s=p.w/1920, raio=(24+12*k)/p.h;
   gfx_sem_recorte();
-  gfx_cor((GfxRect){0,0,1920,1080},0,.031f,.051f,.09f,1);
+  gfx_cor((GfxRect){0,0,1920,1080},0,0,0,0,(ajustes_vidro() ? .30f : .42f)*k);
+  gfx_rect((GfxRect){p.x-p.w*.03f,p.y+p.h*.02f,p.w*1.06f,p.h*1.08f},0,GFX_SOMBRA,.36f,0,0,36/p.w,0,0,0,k);
+  // Same material as the card, so the morph reads as one surface.
+  gfx_cor(p,raio,.04f,.05f,.07f,1);
   GLuint capa = tex_obter_larg(ui.a.capa, 600);
   GLuint ambiente=musicaui_ambiente(ui.a.capa);
-  if (ambiente) gfx_rect((GfxRect){0,0,1920,1080},ambiente,GFX_SNAP,0,1,0,0,0,0,0,1);
+  if (ambiente) gfx_rect(p,ambiente,GFX_ARTE,0,0,0,raio,0,0,0,ajustes_vidro() ? .9f : 1);
+  gfx_anel(p,raio,1,1,1,1,.09f);
+  GfxRecorteAnt corte=gfx_recorte_dentro(p.x,p.y,p.w,p.h);
+  gfx_transformar(960,540,s,p.x+p.w*.5f-960,p.y+p.h*.5f-540);
+  gfx_opacidade_grupo=previousAlpha*(ajustes_animacoes_reduzidas() ? k : ease((k-.4f)/.6f));
   float ent = ajustes_animacoes_reduzidas() ? 1 : ease((agora-ui.entrada)/360.0f);
   float header = ajustes_animacoes_reduzidas() ? 1 : ease(((float)(agora-ui.entrada)-80)/300.0f);
-  float cx = 108 - 28*(1-ent), cy = 185, hy = 16*(1-header);
-  ilha((GfxRect){72,48,56,56}); icone("mus_back",88,64,24,1);
+  float cx = 108, cy = 185, hy = 16*(1-header);
   char buf[512];
-  const char *crumbs[] = {i18n(ui.temp ? "Séries" : "Filmes"), ui.titulo, i18n("Música")};
-  float bx = 152;
-  for (int i = 0; i < 3; i++) {
-    if (i) { texto(TXT_G22M,"/",bx,64,20,.3f); bx += 34; }
-    TxtLinha l = txt_linha(TXT_G22M,crumbs[i],243,242,239,255);
-    txt_desenhar_alpha(l,bx,64,i==2?1:.66f); bx+=l.w+22;
-  }
-  time_t now = time(NULL); struct tm tm; localtime_r(&now,&tm); strftime(buf,sizeof buf,"%H:%M",&tm);
-  ilha((GfxRect){1740,48,108,56}); texto(TXT_G20M,buf,1764,65,80,1);
+  ilha((GfxRect){72,48,56,56}); icone("aj_x",88,64,24,1);
   if (ui.foco == 0) gfx_cor((GfxRect){72,48,56,56},.5f,1,1,1,.13f);
-  gfx_rect((GfxRect){cx-25,cy+10,500,520},0,GFX_SOMBRA,.36f,0,0,.052f,0,0,0,ent);
-  if (capa) gfx_rect((GfxRect){cx,cy,450,450},capa,GFX_ARTE,0,0,0,26.0f/450,0,0,0,ent);
   txt_tracking(TXT_MUS_KICK,i18n("A MÚSICA POR TRÁS DA HISTÓRIA"),243,242,239,cx,673,.66f*ent,2.24f);
   const char *note = i18n("Reviva a história, uma faixa de cada vez.");
   if (!strcmp(ui.imdb,"tt0468569")) note = i18n("Da primeira nota de tensão ao último acerto de contas em Gotham.");
@@ -342,7 +344,14 @@ void musicaui_desenhar(Uint32 agora) {
   gfx_cor((GfxRect){409,1010,50,28},.25f,1,1,1,.09f); texto(TXT_G14B,i18n("Voltar"),416,1017,50,1);
   texto(TXT_G18R,i18n("Voltar ao título"),468,1015,350,.66f);
   texto(TXT_MUS_16,i18n("Trilha original · Prévias de áudio"),1595,1017,290,.66f);
+  gfx_sem_transformar();
+  gfx_recorte_voltar(corte);
   gfx_opacidade_grupo=previousAlpha;
-  if (origem.w>0) gfx_sem_transformar();
+  GfxRect fim={p.x+p.w*.5f+(cx-960)*s,p.y+p.h*.5f+(cy-540)*s,450*s,450*s}, ini=fim;
+  float q=origem.w/960, ri=26*s;
+  if (origem.w>0) { ini=(GfxRect){origem.x+28*q,origem.y+46*q,200*q,200*q}; ri=12*q; }
+  GfxRect art=misturar(ini,fim,k);
+  gfx_rect((GfxRect){art.x-art.w*.055f,art.y+art.w*.022f,art.w*1.11f,art.w*1.155f},0,GFX_SOMBRA,.36f,0,0,.052f,0,0,0,k);
+  if (capa) gfx_rect(art,capa,GFX_ARTE,0,0,0,(ri+(26*s-ri)*k)/art.w,0,0,0,1);
   gfx_escala_sair(previousScale);
 }
