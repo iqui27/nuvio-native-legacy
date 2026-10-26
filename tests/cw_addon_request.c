@@ -15,10 +15,18 @@ void debrid_contexto_capturar(DebridContexto *c) { memset(c, 0, sizeof *c); }
 void debrid_contexto_entrar(const DebridContexto *c) { (void)c; }
 void debrid_contexto_sair(void) {}
 static char requests[4096];
+static int truncated;
+static pthread_mutex_t requestLock = PTHREAD_MUTEX_INITIALIZER;
 char *rede_baixar(const char *url, int seconds) {
   if (strstr(url, "arm.haglund.dev")) return fixture_legacy_download(url, seconds);
+  pthread_mutex_lock(&requestLock);
   assert(strlen(requests) + strlen(url) + 2 < sizeof requests);
   strcat(requests, url); strcat(requests, "\n");
+  pthread_mutex_unlock(&requestLock);
+  if (truncated) {
+    if (strstr(url, "/kitsu:")) return NULL;
+    return strdup("{\"streams\":[{\"url\":\"https://fixture.invalid/partial.mp4\"}");
+  }
   return strdup("{\"streams\":[{\"url\":\"https://fixture.invalid/video.mp4\"}]}");
 }
 char *rede_baixar_st(const char *url, int seconds, const char *const *h, int *status) {
@@ -55,6 +63,25 @@ int main(void) {
     assert(!strcmp(out[0].addonChave, key));
     free(out); out = NULL;
   }
+  addons_consulta_liberar(snapshot);
+  // An unrelated anime-only provider must not invalidate compatible sources.
+  strcpy(addon[1].streamTipos, "|series|");
+  strcpy(addon[1].streamPref[0], "kitsu:");
+  snapshot = addons_consulta_capturar(); assert(snapshot);
+  requests[0] = 0;
+  int count = addons_consulta_consultar(snapshot, "tt9999999:2:5", "series", 1, NULL, NULL, &out);
+  assert(count == 1 && out);
+  assert(!strstr(requests, "provider1"));
+  free(out); out = NULL;
+  addons_consulta_liberar(snapshot);
+  // Original namespace fails; the mapped namespace returns a truncated array.
+  strcpy(addon[0].streamPref[1], "kitsu:"); addon[0].nStreamPref = 2;
+  addon[1].ativo = 0;
+  snapshot = addons_consulta_capturar(); assert(snapshot);
+  truncated = 1; requests[0] = 0;
+  count = addons_consulta_consultar(snapshot, id, "series", 1, NULL, NULL, &out);
+  assert(count == -1 && !out);
+  assert(strstr(requests, "/tt2560140:1:5.json"));
   addons_consulta_liberar(snapshot);
   puts("PASS Detail, next episode and same-addon renewal request parity");
 }

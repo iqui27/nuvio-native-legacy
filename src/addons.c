@@ -2840,6 +2840,7 @@ typedef struct {
   Stream *l;
   int n, respondeu;
 } IdsExtras;
+static int arrayDeFontesCompleto(const char *corpo);
 static void *fioIdsExtras(void *u) {
   IdsExtras *x = u;
   char url[NV_ADDON_PEDIDO_MAX], idX[3 * IDCANAL_LONGO_MAX + 1];
@@ -2857,6 +2858,7 @@ static void *fioIdsExtras(void *u) {
                                  x->c->tipo, idX), sizeof url)
          ? baixarStream(x->a, x->c->tipo, url, restanteS, NULL, NULL) : NULL;
     if (!cx) continue;
+    if (x->c->congelada && !arrayDeFontesCompleto(cx)) { free(cx); continue; }
     x->respondeu = 1;
     nx = stream_extrair(cx, x->a->nome, &ax);
     free(cx);
@@ -2897,7 +2899,6 @@ static int idsExtrasJuntar(IdsExtras *x, Stream **l, int *n) {
   return novos;
 }
 
-static int arrayDeFontesCompleto(const char *corpo);
 static void *fioFontes(void *u) {
   Consulta *c = u;
   for (;;) {
@@ -2929,7 +2930,7 @@ static void *fioFontes(void *u) {
     if (vod) ac = streamAceita(origem, c->id);
     if (ac == 0) {
       nExtra = streamIdsExtras(c, origem, 0, extra);
-      if (!nExtra) continue;
+      if (!nExtra) { c->baldes[meu].respondeu = 1; continue; }
       primario = extra[0]; xi = 1;
     }
     IdsExtras ex;
@@ -3017,6 +3018,7 @@ static void *fioFontes(void *u) {
         if (exUsar) free(ex.l);
         free(alt); free(corpo); free(achados); return NULL;
       }
+      if (c->congelada && alt && !arrayDeFontesCompleto(alt)) { free(alt); alt = NULL; }
       if (alt) {
         Stream *a2 = NULL;
         int n2 = stream_extrair(alt, origem->nome, &a2);
