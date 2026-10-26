@@ -3,6 +3,14 @@
 #include "../src/guia.c"
 #include "../src/guiav5ui.c"
 #include <assert.h>
+/* guiav5ui.c routes text through its scale wrappers; stub the real calls. */
+#undef txt_linha
+#undef txt_linha_bruta
+#undef txt_linha_corta
+#undef txt_linha_corta_bruta
+#undef txt_desenhar
+#undef txt_bloco
+#undef txt_bloco_bruto
 
 // Read text at the renderer boundary, without a GL context.
 static Uint32 ticks = 100;
@@ -31,6 +39,9 @@ void gfx_cor(GfxRect r, float raio, float cr, float cg, float cb, float a) {
   (void)r; (void)raio; (void)cr; (void)cg; (void)cb; (void)a;
 }
 int tex_falhou(const char *url) { (void)url; return 0; }
+float gfx_escala_txt(void) { return 1; }
+float gfx_escala_txt_entrar(void) { return 1; }
+void gfx_escala_sair(float a) { (void)a; }
 GLuint tex_obter_larg(const char *url, float w) { (void)url; (void)w; return 0; }
 int perfis_ativo(void) { return 1; }
 const char *login_uid(void) { return ""; }

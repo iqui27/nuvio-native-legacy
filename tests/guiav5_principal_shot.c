@@ -162,6 +162,15 @@ int main(int argc, char **argv) {
   assert(ajustes_idioma() == 0);
   context();
   semear();
+  /* Back returns one level with focus restored; a closing sheet fades out. */
+  g5ui_open("grade");gv_zone=5;focus=1104;gv_go("busca");assert(!strcmp(screen,"busca"));
+  gv_voltar();assert(!strcmp(screen,"grade")&&focus==1104&&gv_sai_t==1&&!strcmp(gv_sai,"busca"));
+  focus=1105;gv_go("ajustes");focus=1949;gv_go("epg-saude");focus=1975;gv_go("epg-verificando");
+  gv_voltar();assert(!strcmp(screen,"epg-saude")&&focus==1975);
+  gv_voltar();assert(!strcmp(screen,"ajustes")&&focus==1949);
+  gv_voltar();assert(!strcmp(screen,"grade")&&focus==1105);
+  focus=1103;g5ui_open("vod-filmes");gv_voltar();assert(!strcmp(screen,"grade")&&focus==1103);
+  gv_sai_t=0;gv_zone=0;
   const char *names[] = {
     "grade", "cartoes", "preview", "preview-grade", "preview-foco", "preview-hero-cheio",
     "preview-troca", "dock", "catchup", "categorias", "pastas", "busca", "canal-opcoes",
@@ -203,8 +212,19 @@ int main(int argc, char **argv) {
     if (!strcmp(page, "cartoes") && gv_zone == 0) gv_zone = 6;
     if (!strcmp(names[n], "numero")) snprintf(gv_numero, sizeof gv_numero, "1");
     if (!strcmp(names[n], "busca")) snprintf(query, sizeof query, "fla");
-    if (!strcmp(names[n], "fontes-erro")) { falhas = 0; }
+    if (!strcmp(names[n], "fontes-erro")) {
+      falhas = 0; nLtvF = 1; snprintf(ltvF[0].nome, sizeof ltvF[0].nome, "FrostView");
+      ltvF[0].tipo = LTV_M3U; ltvF[0].saude = LTV_SAUDE_FORA; ltvF[0].nCanais = nCanais;
+      ltvF[0].atualizada = time(NULL) - 2 * 86400;
+    }
+    if (!strcmp(names[n], "epg-saude") || !strcmp(names[n], "epg-adicionado")) {
+      nLtvF = 1; snprintf(ltvF[0].nome, sizeof ltvF[0].nome, "FrostView");
+      ltvF[0].tipo = LTV_M3U; ltvF[0].saude = LTV_SAUDE_OK; ltvF[0].nCanais = nCanais; ltvF[0].epgCom = 5;
+    }
+    if (!strcmp(names[n], "esportes-onde-assistir"))
+      snprintf(gv_jogo, sizeof gv_jogo, "%s", "Brasileirão: Flamengo × Palmeiras");
     capture(window, dir, names[n]);
+    nLtvF = 0;
     if (!strcmp(names[n], "vazio")) semear();
   }
   puts("PASS: native v5 guide states captured");

@@ -60,6 +60,21 @@ int main(int argc,char **argv){
   for(int i=0;i<6;i++)activate(20+i);assert(strlen(pin_value)==4);
   activate(1);assert(!pin_value[0]&&!strcmp(screen,"grade"));
   go("setup-credenciais");credential_field=6;activate(100);assert(strchr(draft.name,'A'));draft.name[strlen(draft.name)-1]=0;
+  /* D-pad: paged lists reach every entry; modals keep the D-pad inside. */
+  {SDL_Event e={0};e.type=SDL_KEYDOWN;
+#define KEY(k) (e.key.keysym.sym=(k),g5ui_event(&e))
+   int gc=group_count;group_count=12;for(int i=0;i<12;i++)snprintf(groups[i],sizeof groups[i],"Grupo %d",i);
+   go("parental-lista");rules_mode=0;focus=7;KEY(SDLK_DOWN);assert(focus==8);KEY(SDLK_UP);assert(focus==7);
+   go("setup-categorias");query[0]=0;focus=2+9;KEY(SDLK_DOWN);assert(focus==2+11);focus=2+8;KEY(SDLK_DOWN);assert(focus==2+10);
+   group_count=gc;build_groups();
+   int pc=picker_count;picker_count=10;go("multiview-escolher");assert(focus==-1);
+   focus=906;KEY(SDLK_DOWN);assert(focus==907);focus=900;KEY(SDLK_UP);assert(focus==900&&nav==-1);
+   picker_count=0;G5Item first=mv_items[0];focus=-1;KEY(SDLK_RETURN);assert(!strcmp(screen,"multiview-escolher")&&!strcmp(mv_items[0].id,first.id));
+   picker_count=pc;
+   want_pin(0);focus=3;KEY(SDLK_UP);assert(nav==-1);KEY(SDLK_TAB);assert(nav==-1);
+   go("fontes-gerenciar");focus=0;KEY(SDLK_UP);assert(nav==0);KEY(SDLK_DOWN);assert(nav==-1);
+#undef KEY
+  }
   const char *only=getenv("NUVIO_SHOT_SO");   /* iterate on one state */
   for(unsigned n=0;n<sizeof names/sizeof *names;n++){
     if(only&&*only&&!strstr(only,names[n]))continue;
