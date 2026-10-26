@@ -5038,7 +5038,10 @@ static void tocarFonteEscolhida(int fonte, int manual) {
         if (s->foraCache)
           player_toast_ex(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 9000, "aj_download", 0);
       }
-      if (juntos_precarregando()) juntosui_sala_abriu();
+      if (juntos_precarregando()) {
+        printf("[juntos] source: selected source delivered to player\n");
+        juntosui_sala_abriu();
+      }
       // Escolha manual num canal tambem entra no watchdog: fonte viva escolhida
       // a dedo pode morrer igual.
       if (player_id_canal()[0]) { canalFonteIdx = fonte; canalFonteDesde = SDL_GetTicks(); canalViaProxy = 0; }
@@ -5072,7 +5075,11 @@ static void juntosAbrirEFonte(Uint32 agora) {
       idx = cat_acrescentar(&novo);
     }
     if (idx >= 0) {
-      if (travaui_abrir_espera(idx, t, e)) return;
+      if (travaui_abrir_espera(idx, t, e)) {
+        printf("[juntos] source: blocked by series lock\n");
+        return;
+      }
+      printf("[juntos] source: opening paused player\n");
       limparFonteVOD();
       if (player_aberto() || player_retido()) player_encerrar();
       diagnostico_cancelar_vazao();
@@ -6508,6 +6515,7 @@ void app_atualizar(float dt, Uint32 agora) {
                  (unsigned)(SDL_GetTicks() - fonteVODDesde));
           fflush(stdout);
         } else definirFonteVOD(s->url);
+        if (juntos_precarregando()) printf("[juntos] source: verified source delivered to player\n");
         // Tocou por outra fonte, mas um servico de debrid ficou de fora por
         // conta sem plano: diz uma vez por sessao, sem bloquear nada.
         { int novo = debrid_sem_plano_novo();
