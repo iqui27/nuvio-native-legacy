@@ -1,9 +1,12 @@
 // Exercise shared channel and source playback entries without network access.
 #include "catalogo.h"
+#include "streams.h"
 #include <assert.h>
-static int kids, warnings, checks, source_checks, opened, detail_index;
+static int kids, warnings, checks, source_checks, opened, detail_index, file_checks;
 static CatItem movie;
 static const char *rating;
+// Stop file requests at source lookup, before any playback state changes.
+static const Stream *file_source(int index) { (void)index; file_checks++; return NULL; }
 static int source_player_open(void) { return opened; }
 static int source_player_index(void) { return 7; }
 static int source_detail_index(void) { return detail_index; }
@@ -30,6 +33,7 @@ static int reject_channel(const CatItem *item) { (void)item; checks++; return 0;
 #define cat_item source_item
 #define extras_ficha_classificacao source_rating
 #define travaui_abrir_espera source_gate
+#define stream_item file_source
 #include "../src/app.c"
 #undef perfil_infantil_ativo
 #undef glem_aviso_curto
@@ -54,6 +58,17 @@ static int source_restriction_tests(void) {
           failures++;
         }
       }
+      for (unsigned i = 0; i < sizeof blocked / sizeof *blocked; i++) {
+        kids = 1; warnings = file_checks = 0;
+        rating = opened ? "L" : blocked[i];
+        snprintf(movie.classificacao, sizeof movie.classificacao, "%s", blocked[i] ? blocked[i] : "");
+        aguardandoFonte = folhaParaTocar = 1;
+        abrirParte(0, NULL, 0);
+        if (warnings != 1 || file_checks || aguardandoFonte || folhaParaTocar) {
+          puts("FAIL: restricted source file bypassed rating policy");
+          failures++;
+        }
+      }
       const char *allowed[] = { "L", "10" };
       for (unsigned i = 0; i < sizeof allowed / sizeof *allowed; i++) {
         for (int fallback = 0; fallback <= 1; fallback++) {
@@ -62,12 +77,18 @@ static int source_restriction_tests(void) {
           snprintf(movie.classificacao, sizeof movie.classificacao, "%s", allowed[i]);
           tocarFonteEscolhida(0, manual);
           assert(warnings == 0 && source_checks == 1);
+          file_checks = 0;
+          abrirParte(0, NULL, 0);
+          assert(warnings == 0 && file_checks == 1);
         }
       }
       kids = 0; warnings = source_checks = 0; rating = "18";
       snprintf(movie.classificacao, sizeof movie.classificacao, "18");
       tocarFonteEscolhida(0, manual);
       assert(warnings == 0 && source_checks == 1);
+      file_checks = 0;
+      abrirParte(0, NULL, 0);
+      assert(warnings == 0 && file_checks == 1);
     }
   }
   if (!failures) puts("PASS: shared source entry enforces kids ratings; safe and adult requests continue");

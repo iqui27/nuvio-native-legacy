@@ -2759,17 +2759,19 @@ static void parteTocar(const char *url, double pos) {
     partes_arquivo_definir(a, parteArqLista.usenet, parteArqLista.item, parteArqLista.arq[parteArqK].id);
   }
 }
+static int perfilPermiteReproduzir(int indice);
 static void abrirParte(int fonte, const PartesLista *l, int k) {
+  int titulo = player_aberto() ? player_indice() : detail_indice();
+  if (!perfilPermiteReproduzir(titulo)) { aguardandoFonte = 0; folhaParaTocar = 0; return; }
   const Stream *s = stream_item(fonte);
   Stream escolhida;
   char alvo[64], imdb[64];
-  int titulo, t = 0, e = 0, serie;
+  int t = 0, e = 0, serie;
   PartesPonto pt;
   if (!s || !l || k < 0 || k >= l->n) return;
   escolhida = *s; s = &escolhida;
   aguardandoFonte = 0;
   limparFonteVOD();
-  titulo = player_aberto() ? player_indice() : detail_indice();
   { const CatItem *ci = cat_item(titulo); serie = ci && !strcmp(ci->tipo, "series");
     snprintf(imdb, sizeof imdb, "%s", ci ? ci->imdb : ""); }
   // Save the old file's resume point without completing a manual source switch.
