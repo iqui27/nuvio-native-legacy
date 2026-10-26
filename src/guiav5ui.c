@@ -578,7 +578,7 @@ static void title_screen(void){
   panel(48,128,1824,848);GLuint t=it->poster[0]?tex_obter_larg(it->poster,350):0;
   if(t)gfx_rect((GfxRect){100,205,350,525},t,GFX_CARD,0,0,0,.04,1,1,1,1);
   label(TXT_ILHA_SUB,i18n("Do seu IPTV"),510,220,1250,1);label(TXT_TITULO2,it->name,510,278,1250,0);
-  txt_bloco(TXT_ILHA_CORPO,it->plot[0]?it->plot:i18n("Sem descrição"),180,182,190,510,380,1200,36,1,4);
+  txt_bloco_bruto(TXT_ILHA_CORPO,it->plot[0]?it->plot:i18n("Sem descrição"),180,182,190,510,380,1200,36,1,4);
   if(it->kind==G5_SERIES){
     button(0,i18n("Temporada"),"aj_tv-minimal-play",510,590,330,64,0);
     char season[32];snprintf(season,sizeof season,"%d",selected_season);label(TXT_HEADLINE,season,870,600,200,0);

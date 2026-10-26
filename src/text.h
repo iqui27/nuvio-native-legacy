@@ -368,6 +368,9 @@ size_t txt_token_tam(const char *s);
 // Com alpha = 0, os blocos so medem: mesma quebra, sem rasterizacao nem GL.
 float txt_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
                 float x, float y, float larg, float leading, float alpha, int maxLinhas);
+// Wrap provider content without translating the text or individual lines.
+float txt_bloco_bruto(TxtEstilo estilo, const char *s, int r, int g, int b,
+                      float x, float y, float larg, float leading, float alpha, int maxLinhas);
 
 // Igual a txt_bloco, mas indica com reticencias quando `maxLinhas` omite texto.
 // Uma palavra maior que a linha tambem e cortada com reticencias sem estourar

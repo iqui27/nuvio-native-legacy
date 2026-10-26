@@ -5285,8 +5285,8 @@ static void desenharCard(GCanal *c, float x, float y, float foco, float a,
 
   // Nome ao lado do logo, favorito marcado com a estrela que a fonte ja tem.
   { float tx = x + 120.0f, tw = r.w - 120.0f - 14.0f;
-    if (escuro) txt_bloco(TXT_PAINEL_ITEM, c->nome, 20, 21, 25, tx, y + 16.0f, tw, 30.0f, a, 2);
-    else        txt_bloco(TXT_PAINEL_ITEM, c->nome, 240, 241, 245, tx, y + 16.0f, tw, 30.0f, a, 2);
+    if (escuro) txt_bloco_bruto(TXT_PAINEL_ITEM, c->nome, 20, 21, 25, tx, y + 16.0f, tw, 30.0f, a, 2);
+    else        txt_bloco_bruto(TXT_PAINEL_ITEM, c->nome, 240, 241, 245, tx, y + 16.0f, tw, 30.0f, a, 2);
     if (c->fav) {
       TxtLinha s = txt_linha_bruta(TXT_CAPTION, "\xe2\x98\x85", 255, 214, 90, 255);
       txt_desenhar_alpha(s, x + r.w - s.w - 14.0f, y + 14.0f, a);
@@ -5567,7 +5567,7 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
   // TITULO: o programa, ou o canal quando nao ha programa. 56 px em ate duas
   // linhas — o degrau acima do nome do canal (28) e de 2x, e o de baixo, ate
   // a linha de meta (25), de 2,2x: a ficha le em tres niveis de relance.
-  y += txt_bloco(TXT_TITULO2, tem ? p.titulo : c->nome, 246, 247, 250,
+  y += txt_bloco_bruto(TXT_TITULO2, tem ? p.titulo : c->nome, 246, 247, 250,
                  x, y - 4.0f, w, 66.0f, ha, 1) + 10.0f;
 
   // META: selo + faixa de horario + quanto falta, e a barra de progresso.
@@ -5663,7 +5663,7 @@ static void desenharHero(float a, time_t agoraT, time_t tFoco) {
       int linhas = (int)((descFim - 22.0f - y) / 34.0f);
       if (linhas > 3) linhas = 3;
       if (linhas > 0)
-        txt_bloco(TXT_DET_SIN, txt, 172, 175, 184, x, y, w, 34.0f, ha * 0.95f, linhas);
+        txt_bloco_bruto(TXT_DET_SIN, txt, 172, 175, 184, x, y, w, 34.0f, ha * 0.95f, linhas);
     }
   } }
 
@@ -6845,8 +6845,8 @@ static void desenharPainelAddons(float a) {
         // Em ingles usa a quarta coluna se existir; senao a portuguesa, que e
         // melhor que linha vazia.
         const char *desc = (ajustes_idioma() != IDIOMA_PT && ajustes_idioma() != IDIOMA_PTPT && rc->descEn[0]) ? rc->descEn : rc->desc;
-        if (f) txt_bloco(TXT_CAPTION, desc, 190, 192, 200,     x + 24.0f, yi + 46.0f, txtW, 27.0f, a, 2);
-        else   txt_bloco(TXT_CAPTION, desc, 150, 153, 162,  x + 24.0f, yi + 46.0f, txtW, 27.0f, a, 2);
+        if (f) txt_bloco_bruto(TXT_CAPTION, desc, 190, 192, 200,     x + 24.0f, yi + 46.0f, txtW, 27.0f, a, 2);
+        else   txt_bloco_bruto(TXT_CAPTION, desc, 150, 153, 162,  x + 24.0f, yi + 46.0f, txtW, 27.0f, a, 2);
       }
       if (inst) {
         TxtLinha t = f ? txt_linha(TXT_CAPTION, i18n("Instalado"), 190, 192, 200, 255)
@@ -6960,7 +6960,7 @@ static void desenharPainelFiltros(float a) {
     { TxtLinha t = f ? txt_linha_corta_bruta(TXT_BODY, nome, 243, 243, 243, 255, txtW)
                      : txt_linha_corta_bruta(TXT_BODY, nome, 240, 241, 245, 255, txtW);
       txt_desenhar_alpha(t, x + 24.0f, sub ? yi + 12.0f : yi + (row.h - t.h) * 0.5f, a); }
-    if (sub) txt_bloco(TXT_CAPTION, sub, f ? 190 : 150, f ? 192 : 153, f ? 200 : 162,
+    if (sub) txt_bloco_bruto(TXT_CAPTION, sub, f ? 190 : 150, f ? 192 : 153, f ? 200 : 162,
                         x + 24.0f, yi + 40.0f, txtW, 24.0f, a, 2);
     // Como no painel de addons: preenchida = "e este", anel = "poderia ser".
     if (ligado) {
