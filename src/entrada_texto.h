@@ -67,6 +67,13 @@ void texto_sistema_mic_modo(int modo);
 // ainda nao ouve (a pessoa aperta o microfone do controle), e o teclado modal
 // (teclado.c) nao mostra "Falar".
 int  texto_sistema_voz_pelo_teclado(void);
+// .tpk de release: o host (Voz.cs) tambem abre o teclado da Samsung para DIGITAR
+// (registrou o abridor de texto e nao falhou nesta sessao). Quem decide usar e o
+// ajuste Teclado em "Do sistema" (sistexto.c). 0 em toda outra plataforma.
+int  texto_sistema_teclado_pelo_host(void);
+// Cursor do campo do host, em CARACTERES (nao bytes); -1 = no fim ou desconhecido.
+// So o .tpk informa; em toda outra plataforma e sempre -1.
+int  texto_sistema_cursor(void);
 // Tipo SDL dos avisos (SDL_RegisterEvents, uma vez). user.code = TS_EV_*;
 // em TS_EV_FIM, user.data1 != NULL quando a pessoa confirmou (OK/Concluido).
 Uint32 texto_sistema_evento(void);
@@ -83,4 +90,7 @@ void texto_sistema_quadro(void);
 void texto_sistema_ponte_valor(const char *valor);
 // 1 confirms, 0 cancels, -1 reports a keyboard startup failure.
 void texto_sistema_ponte_fim(int confirmou);
+// Cursor do campo do host em caracteres (a pessoa moveu com Esquerda/Direita ou
+// digitou). Lido em texto_sistema_quadro; vale so enquanto o campo esta aberto.
+void texto_sistema_ponte_cursor(int pos);
 #endif

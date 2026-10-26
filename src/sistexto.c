@@ -59,13 +59,32 @@ int st_teclado_do_app(void) { return !st_abre_sozinho() && st_teclado_modo() == 
 int st_ime_disponivel(void) {
 #ifdef NV_ANDROID
   return 1;
+#elif defined(NV_TPK)
+  // .tpk de release: o host (Voz.cs) so abre o teclado da Samsung para digitar
+  // quando o ajuste Teclado esta em "Do sistema". Em Automatico e "Do app" fica
+  // a grade do app, como sempre foi. O canario (Texto.cs) segue por TS_TECLADO.
+  return !st_teclado_do_app() &&
+         (teste() || (texto_sistema_disponivel() & TS_TECLADO) != 0 ||
+          (st_teclado_modo() == 2 && texto_sistema_teclado_pelo_host()));
 #else
   return !st_teclado_do_app() && (teste() || (texto_sistema_disponivel() & TS_TECLADO) != 0);
+#endif
+}
+// .tpk com "Teclado: Do sistema" valido: a grade do app some das buscas e o
+// microfone do app tambem (o teclado da Samsung tem o dele). Se o teclado nao
+// subir nesta sessao, st_ime_disponivel() cai para 0 e a grade volta.
+int st_teclado_so_sistema(void) {
+#ifdef NV_TPK
+  return st_teclado_modo() == 2 && st_ime_disponivel();
+#else
+  return 0;
 #endif
 }
 int st_voz_disponivel(void) {
 #ifdef NV_ANDROID
   return 1;
+#elif defined(NV_TPK)
+  return !st_teclado_so_sistema() && (teste() || (texto_sistema_disponivel() & TS_VOZ) != 0);
 #else
   return teste() || (texto_sistema_disponivel() & TS_VOZ) != 0;
 #endif
@@ -94,6 +113,36 @@ static int proximo(char *dst, size_t n);
 // O que sobrou de uma entrada anterior (a fala que terminou depois de a tela
 // fechar) nao pode cair no campo novo.
 static void descartar(void) { char ev[ST_EVENTO_MAX]; int k = 0; while (k++ < 64 && proximo(ev, sizeof ev)) {} }
+
+// CURSOR DO CAMPO (so o .tpk): o host diz onde a pessoa pos o cursor (Esquerda/
+// Direita ou digitando), em caracteres. -1 = no fim, ou nao e este dono.
+int st_cursor_chars(int d) {
+#ifdef NV_TPK
+  if (d != dono || estado != ST_DIGITANDO || micTeclado || !texto_sistema_aberto()) return -1;
+  return texto_sistema_cursor();
+#else
+  (void)d;
+  return -1;
+#endif
+}
+// O trecho de `texto` ANTES do cursor, para medir onde desenha-lo. 0 = cursor no
+// fim (ou desconhecido): quem desenha usa o fim do texto, como sempre.
+int st_cursor_prefixo(int d, const char *texto, char *dst, size_t n) {
+  int c = st_cursor_chars(d), k = 0;
+  const unsigned char *p = (const unsigned char *)texto;
+  size_t b = 0;
+  if (n) dst[0] = 0;
+  if (!texto || !n || c < 0) return 0;
+  while (p[b] && k < c) {
+    b++;
+    while ((p[b] & 0xC0) == 0x80) b++;
+    k++;
+  }
+  if (!p[b] || b >= n) return 0;
+  memcpy(dst, texto, b);
+  dst[b] = 0;
+  return 1;
+}
 
 static int proximoTipo;
 void st_ime_tipo(int tipo) { proximoTipo = tipo; }

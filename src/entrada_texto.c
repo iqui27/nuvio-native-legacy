@@ -171,6 +171,8 @@ static char lido[TS_MAX];           // o que texto_sistema_valor devolve
 static SDL_SpinLock trava;
 static char pendValor[TS_MAX];
 static int pendTemValor, pendFim = -1;
+// Cursor do campo do host (so o .tpk). -2 = nada novo; -1 = no fim / desconhecido.
+static int pendCursor = -2, cursorSis = -1;
 
 #ifdef NV_TPK
 typedef void (*FnTsAbrir)(const char *atual, int voz);
@@ -196,13 +198,30 @@ void nv_tpk_texto_fim(int confirmou) { texto_sistema_ponte_fim(confirmou); }
 typedef void (*FnVoz)(void);
 static FnVoz vIniciar, vParar;
 static int vMic = -1;
-static int abertoPeloMic;   // o que esta aberto veio do botao de microfone
+static int abertoPeloMic;   // o que esta aberto veio do host de release (microfone ou digitar)
 __attribute__((visibility("default")))
 void nv_tpk_voz_registrar(FnVoz iniciar, FnVoz parar, int microfone) {
   vIniciar = iniciar; vParar = parar; vMic = microfone;
   printf("[texto] host registrou o botao de microfone (microfone=%d)\n", microfone);
   fflush(stdout);
 }
+
+// TECLADO DO SISTEMA PARA DIGITAR (Voz.cs, build de release). O mesmo campo e o
+// mesmo teclado da Samsung do botao de microfone, abertos com o texto atual do
+// app. So e usado com o ajuste Teclado em "Do sistema" (sistexto.c). O texto e o
+// cursor voltam por nv_tpk_texto_valor / nv_tpk_texto_cursor / nv_tpk_texto_fim.
+typedef void (*FnVozTexto)(const char *atual);
+static FnVozTexto vAbrirTexto;
+static int abertoPeloHost;   // o que esta aberto e o teclado de digitar do host
+static int vTextoFalhou;     // o teclado nao subiu nesta sessao: a grade do app assume
+__attribute__((visibility("default")))
+void nv_tpk_voz_registrar_texto(FnVozTexto abrir) {
+  vAbrirTexto = abrir;
+  printf("[texto] host registrou o teclado do sistema para digitar (release)\n");
+  fflush(stdout);
+}
+__attribute__((visibility("default")))
+void nv_tpk_texto_cursor(int pos) { texto_sistema_ponte_cursor(pos); }
 #endif
 
 #if defined(NV_TPK) || defined(__EMSCRIPTEN__)
@@ -263,6 +282,16 @@ static void avisar(int codigo, int confirmou) {
 static void terminar(int confirmou, const char *porque) {
   if (!aberto) return;
   aberto = 0;
+  cursorSis = -1;
+#if defined(NV_TPK)
+  // O host nao conseguiu subir o teclado de digitar: o app nao insiste nesta
+  // sessao (a grade volta e o microfone tambem), para ninguem ficar sem teclado.
+  if (confirmou < 0 && abertoPeloHost) {
+    vTextoFalhou = 1;
+    printf("[texto] teclado do sistema nao subiu: a grade do app assume\n");
+  }
+  abertoPeloHost = 0;
+#endif
   printf("[texto] teclado do sistema fechou (%s%s)\n", porque, confirmou ? ", confirmou" : "");
   fflush(stdout);
   avisar(confirmou < 0 ? TS_EV_ERRO : TS_EV_FIM, confirmou > 0);
@@ -306,31 +335,48 @@ int texto_sistema_voz_pelo_teclado(void) {
 #endif
 }
 
+int texto_sistema_teclado_pelo_host(void) {
+#if defined(NV_TPK)
+  // Canario (Texto.cs, hAbrir) ja entrega o teclado por TS_TECLADO.
+  return !hAbrir && vAbrirTexto != NULL && !vTextoFalhou;
+#else
+  return 0;
+#endif
+}
+
+int texto_sistema_cursor(void) { return aberto ? cursorSis : -1; }
+
 const char *texto_sistema_valor(void) {
   memcpy(lido, valor, sizeof lido);
   return lido;
 }
 
 void texto_sistema_abrir(const char *atual, int voz) {
-  int tem = texto_sistema_disponivel(), peloMic = 0;
+  int tem = texto_sistema_disponivel(), peloMic = 0, peloHost = 0;
 #if defined(NV_TPK)
   // Botao de microfone (Voz.cs): a voz e o teclado da Samsung, sem o teclado
   // do sistema registrado para digitar.
   peloMic = voz && (tem & TS_VOZ) && !hAbrir;
+  // Digitar no teclado da Samsung pelo host de release (Voz.cs): so o teclado,
+  // sem ditado proprio (o microfone dele e o do teclado).
+  peloHost = !voz && texto_sistema_teclado_pelo_host();
 #elif defined(__EMSCRIPTEN__)
   peloMic = voz && (tem & TS_VOZ);
 #endif
-  if (!peloMic && !(tem & TS_TECLADO)) return;
+  if (!peloMic && !peloHost && !(tem & TS_TECLADO)) return;
   if (!(tem & TS_VOZ)) voz = 0;
   copiar(valor, atual);
-  SDL_AtomicLock(&trava); pendTemValor = 0; pendFim = -1; SDL_AtomicUnlock(&trava);
+  SDL_AtomicLock(&trava); pendTemValor = 0; pendFim = -1; pendCursor = -2; SDL_AtomicUnlock(&trava);
+  cursorSis = -1;
   aberto = 1; viuTeclado = 0; quadrosAberto = 0;
   printf("[texto] abrindo o teclado do sistema%s (%d bytes)\n",
-         peloMic ? " pelo botao de microfone" : voz ? " com ditado" : "", (int)strlen(valor));
+         peloMic ? " pelo botao de microfone" : peloHost ? " pelo host de release" : voz ? " com ditado" : "",
+         (int)strlen(valor));
   fflush(stdout);
 #if defined(NV_TPK)
-  abertoPeloMic = peloMic;
-  if (peloMic) vIniciar(); else hAbrir(valor, voz);
+  abertoPeloMic = peloMic || peloHost;
+  abertoPeloHost = peloHost;
+  if (peloMic) vIniciar(); else if (peloHost) vAbrirTexto(valor); else hAbrir(valor, voz);
 #elif defined(__EMSCRIPTEN__)
   EM_ASM({ try { window.nvTexto.abrir(UTF8ToString($0), $1); } catch (e) { console.warn("[texto] " + e); } }, valor, voz);
 #else
@@ -410,7 +456,7 @@ void texto_sistema_observar(const SDL_Event *e) {
 }
 
 void texto_sistema_quadro(void) {
-  int temValor, fim;
+  int temValor, fim, cur;
   char v[TS_MAX];
   if (!aberto) return;
   quadrosAberto++;
@@ -432,7 +478,9 @@ void texto_sistema_quadro(void) {
   temValor = pendTemValor; pendTemValor = 0;
   if (temValor) memcpy(v, pendValor, sizeof v);
   fim = pendFim; pendFim = -1;
+  cur = pendCursor; pendCursor = -2;
   SDL_AtomicUnlock(&trava);
+  if (cur != -2) cursorSis = cur;
   if (temValor && strcmp(v, valor)) {
     memcpy(valor, v, sizeof valor);
     printf("[texto] valor do sistema: %d bytes\n", (int)strlen(valor));
@@ -477,5 +525,11 @@ void texto_sistema_ponte_valor(const char *v) {
 void texto_sistema_ponte_fim(int confirmou) {
   SDL_AtomicLock(&trava);
   pendFim = confirmou < 0 ? 2 : confirmou ? 1 : 0;
+  SDL_AtomicUnlock(&trava);
+}
+
+void texto_sistema_ponte_cursor(int pos) {
+  SDL_AtomicLock(&trava);
+  pendCursor = pos < 0 ? -1 : pos;
   SDL_AtomicUnlock(&trava);
 }

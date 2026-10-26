@@ -672,8 +672,13 @@ static void entrarBarra(int alvo) {
   fileira = -1; coluna = alvo;
 }
 static int colunasDe(int f);
+// .tpk com "Teclado: Do sistema": a grade do app fica escondida e o foco nunca
+// entra nela. Excecao: texto que chegou do celular, que a pessoa confere e
+// conclui na tecla "Concluir".
+static int semGrade(void) { return st_teclado_so_sistema() && !celRecebido; }
 static void sairBarra(void) {
   int f = voltaF, c = voltaC;
+  if (semGrade()) { barraAntes = coluna; return; }
   barraAntes = coluna;
   if (f < 0 || f >= nFileiras || colunasDe(f) < 1) { f = 0; c = 0; }
   if (c >= colunasDe(f)) c = colunasDe(f) - 1;
@@ -681,7 +686,7 @@ static void sairBarra(void) {
 }
 static void focarBarra(int c, int b) { (void)b; if (aberto) entrarBarra(c); }
 static void focarTecla(int f, int c) {
-  if (!aberto || f < 0 || f >= nFileiras) return;
+  if (!aberto || f < 0 || f >= nFileiras || semGrade()) return;
   if (fileira < 0) barraAntes = coluna;
   else if (!ehChar(f) && ehChar(fileira)) colunaAntes = coluna;
   fileira = f; coluna = c;
@@ -897,6 +902,9 @@ static void teclado_atualizar_(float dt, Uint32 agora) {
       // a pessoa confere o que o reconhecedor entendeu antes de enviar.
       if (r == ST_FIM && !voz && (n > 0 || confirmarVazio)) fechar(TECLADO_PRONTO);
     }
+    // .tpk com "Teclado: Do sistema": Voltar no teclado da Samsung fecha a modal,
+    // em vez de mostrar a grade do app (que nesse ajuste fica desligada).
+    else if (r == ST_CANCELOU && !voz && st_teclado_so_sistema()) fechar(TECLADO_CANCELOU);
   }
   { float alvo = (aberto && celb_embutido(CELB_TECLADO)) ? 1.0f : 0.0f;
     animQr = ajustes_animacoes_reduzidas() ? alvo : anim_mola(animQr, alvo, dt, NV_MOLA_TELA); }
@@ -1422,12 +1430,26 @@ static void teDesenhar(Uint32 agora) {
           for (i2 = 0; i2 < n && i2 < TECLADO_LONGO; i2++) memcpy(pontos + i2 * 3, "\xE2\x80\xA2", 3);
           pontos[i2 * 3] = 0;
         }
+        float pw = -1.0f;   // largura do trecho ANTES do cursor, se ele esta no meio do texto
         t = txt_linha(TXT_AJ_INSP, mascarar ? pontos : texto, 243, 242, 239, 255);
+        // Cursor movido para dentro do texto (Esquerda/Direita no teclado do sistema, .tpk).
+        { char antes[TECLADO_LONGO * 3 + 1];
+          int meio = 0;
+          if (mascarar) {
+            int c = st_cursor_chars(ST_TECLADO);
+            if (c >= 0 && c < n && c < TECLADO_LONGO) { memcpy(antes, pontos, (size_t)c * 3); antes[c * 3] = 0; meio = 1; }
+          } else meio = st_cursor_prefixo(ST_TECLADO, texto, antes, sizeof antes);
+          if (meio) pw = (float)txt_linha(TXT_AJ_INSP, antes, 243, 242, 239, 255).w;
+        }
         ox = t.w > larg ? t.w - larg : 0.0f;
+        if (pw >= 0.0f) {   // o cursor fica a vista
+          if (pw - ox > larg) ox = pw - larg;
+          if (pw < ox) ox = pw;
+        }
         gfx_recorte(tx, campo.y, larg, campo.h);
         txt_desenhar_alpha(t, tx - ox, campo.y + (campo.h - t.h) * 0.5f, a);
         gfx_sem_recorte();
-        cursorX = tx + (t.w - ox);
+        cursorX = tx + ((pw >= 0.0f ? pw : (float)t.w) - ox);
       }
       { float op = ajustes_animacoes_reduzidas() ? 0.95f : (((agora / 500) % 2) ? 0.35f : 0.95f);
         gfx_cor((GfxRect){ cursorX + 3.0f, campo.y + 20.0f, 2.0f, 36.0f }, 0.5f, ar, ag, ab, op * a); }
@@ -1495,8 +1517,8 @@ static void teDesenhar(Uint32 agora) {
       teDicas(ks, ls, 3, x, by, ew, a);
     } }
 
-  // COLUNA DA DIREITA: a grade.
-  for (f = 0; f < nFileiras; f++) {
+  // COLUNA DA DIREITA: a grade (escondida com o teclado do sistema, ver semGrade).
+  for (f = 0; f < nFileiras && !semGrade(); f++) {
     for (c = 0; c < colunasDe(f); c++) {
       float k = focoAnim[f][c];
       GfxRect base = retangulo(f, c);

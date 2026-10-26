@@ -22,9 +22,25 @@
 // mode hides the button after a negative capability response; failed IME setup
 // cancels the request and leaves the app keyboard usable.
 //
+// TECLADO DO SISTEMA PARA DIGITAR: com o ajuste Teclado em "Do sistema", o app
+// abre este MESMO campo e o MESMO teclado da Samsung com o texto atual da busca
+// (Iniciar(atual)), para digitar em vez de ditar. O texto inteiro e o cursor
+// voltam a cada mudanca (nv_tpk_texto_valor / nv_tpk_texto_cursor). Concluido
+// ou o painel fechado pelo teclado confirma; Voltar cancela. Se o teclado nao
+// subir em 3 s o C desiste dele nesta sessao e a grade do app volta.
+//
+// ESQUERDA/DIREITA: o campo escondido move o cursor com as setas, tanto no
+// microfone quanto ao digitar, e as setas NAO seguem para o app embaixo. O
+// cursor e a propriedade "primaryCursorPosition" do DALi, lida e escrita pelo
+// NOME: o TextField.PrimaryCursorPosition do C# nao existe na API8 (NuvioTpk60).
+// O IMF recebe a mesma posicao, para o teclado da Samsung inserir ali. Ao
+// digitar, o cursor vai ao C para o app desenhar o dele no mesmo lugar. Firmware
+// sem a propriedade: as setas seguem como antes.
+//
 // Ponte (src/entrada_texto.c): C -> host iniciar()/parar() (fio do C; aqui vao
-// ao fio principal); host -> C nv_tpk_texto_valor(texto inteiro),
-// nv_tpk_texto_fim(1) com texto, nv_tpk_texto_fim(0) sem texto/Voltar.
+// ao fio principal) e abrirTexto(atual); host -> C nv_tpk_texto_valor(texto
+// inteiro), nv_tpk_texto_cursor(posicao), nv_tpk_texto_fim(1) com texto,
+// nv_tpk_texto_fim(0) sem texto/Voltar.
 //
 // NAO TESTADO NUMA TV. No 6.0/6.5 (GLWindow por cima) o IME pode nao subir; no
 // 8/9 (GLView na janela principal) o TextField esta na mesma janela. O log diz:
@@ -40,20 +56,29 @@ namespace NuvioTpk
     class Voz
     {
         [DllImport("libnuvio.so")] static extern void nv_tpk_voz_registrar(IntPtr iniciar, IntPtr parar, int microfone);
+        [DllImport("libnuvio.so")] static extern void nv_tpk_voz_registrar_texto(IntPtr abrir);
         [DllImport("libnuvio.so")] static extern void nv_tpk_texto_valor(string valor);
+        [DllImport("libnuvio.so")] static extern void nv_tpk_texto_cursor(int posicao);
         [DllImport("libnuvio.so")] static extern void nv_tpk_texto_fim(int confirmou);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnSemArgs();
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void FnAbrirTexto(IntPtr atual);
 
         readonly Action<string> log;
         // Referencias vivas: o C guarda os ponteiros.
         readonly FnSemArgs fIniciar, fParar;
+        readonly FnAbrirTexto fAbrirTexto;
 
         TextField campo;
         InputMethodContext imf;
         bool aberto, viuPainel;
-        Tizen.NUI.Timer prazo;
-        int sessao, aberturaPendente;
+        bool modoTexto;   // aberto para DIGITAR (teclado do sistema), nao para o microfone
+        Tizen.NUI.Timer prazo, relogioCursor;
+        int sessao, aberturaPendente, ultimoCursor = -2;
+        int indiceCursor = -2;   // propriedade do cursor no DALi; -2 = ainda nao procurada
+        bool cursorFalhou;
+        uint ultimoTempo;
+        string ultimoNome;
 
         public Voz(Action<Action> principal, Action<string> log)
         {
@@ -65,11 +90,39 @@ namespace NuvioTpk
                 principal(() => { if (minha == Volatile.Read(ref sessao)) Iniciar(); });
             };
             fParar = () => principal(Parar);
+            // Digitar no teclado da Samsung (ajuste Teclado "Do sistema"): o texto
+            // atual e copiado AGORA, no fio do C, antes do buffer dele mudar.
+            fAbrirTexto = p =>
+            {
+                string atual = PtrToUtf8(p);
+                int minha = Volatile.Read(ref sessao);
+                Interlocked.Exchange(ref aberturaPendente, 1);
+                principal(() => { if (minha == Volatile.Read(ref sessao)) Iniciar(atual); });
+            };
             // Native IME crashes/hangs cannot be caught by C#. Never touch it
             // before the user requests the optional microphone keyboard (#558).
             nv_tpk_voz_registrar(Marshal.GetFunctionPointerForDelegate(fIniciar),
                                  Marshal.GetFunctionPointerForDelegate(fParar), -1);
+            nv_tpk_voz_registrar_texto(Marshal.GetFunctionPointerForDelegate(fAbrirTexto));
             Log("microphone registered; Samsung IME deferred until requested");
+        }
+
+        static string PtrToUtf8(IntPtr p)
+        {
+            if (p == IntPtr.Zero) return "";
+            int n = 0;
+            while (Marshal.ReadByte(p, n) != 0) n++;
+            var b = new byte[n];
+            Marshal.Copy(p, b, 0, n);
+            return System.Text.Encoding.UTF8.GetString(b);
+        }
+
+        // Posicoes do cursor contam caracteres (codigos Unicode), nao unidades UTF-16.
+        static int Caracteres(string s)
+        {
+            int n = 0;
+            foreach (char c in s ?? "") if (!char.IsLowSurrogate(c)) n++;
+            return n;
         }
 
         void Log(string s) { try { log("[texto] host voz " + s); } catch { } }
@@ -104,10 +157,17 @@ namespace NuvioTpk
                     Focusable = false,
                     EnableSelection = false,
                 };
-                campo.TextChanged += (s, e) => { if (aberto) nv_tpk_texto_valor(campo.Text ?? ""); };
+                campo.TextChanged += (s, e) =>
+                {
+                    if (!aberto) return;
+                    nv_tpk_texto_valor(campo.Text ?? "");
+                    EnviarCursor();
+                };
                 campo.KeyEvent += (s, e) =>
                 {
-                    if (!aberto || e.Key.State != Key.StateType.Down) return false;
+                    if (!aberto) return false;
+                    if (Tecla(e.Key)) return true;   // Esquerda/Direita movem o cursor
+                    if (e.Key.State != Key.StateType.Down) return false;
                     string k = e.Key.KeyPressedName;
                     if (k == "Return" || k == "KP_Enter" || k == "Select") { Terminar(true); return true; }
                     if (k == "XF86Back" || k == "Escape") { Terminar(false); return true; }
@@ -134,21 +194,29 @@ namespace NuvioTpk
             }
         }
 
-        void Iniciar()
+        // atual == null: botao de microfone (campo limpo). Senao: digitar no teclado
+        // do sistema, com o texto que o campo do app ja tem.
+        void Iniciar(string atual = null)
         {
             Interlocked.Exchange(ref aberturaPendente, 0);
             if (aberto) return;
             if (imf == null)
             {
-                if (!MontarCampo()) { nv_tpk_texto_fim(0); return; }
+                // Ao digitar, falhar avisa o C (-1) para a grade do app voltar; no
+                // microfone segue como sempre (cancela em silencio).
+                if (!MontarCampo()) { nv_tpk_texto_fim(atual != null ? -1 : 0); return; }
                 int mic = Microfone();
                 nv_tpk_voz_registrar(Marshal.GetFunctionPointerForDelegate(fIniciar),
                                      Marshal.GetFunctionPointerForDelegate(fParar), mic);
             }
             try
             {
-                // Limpo ANTES de abrir: TextChanged nao apaga a busca do app.
-                campo.Text = "";
+                // Antes de abrir: TextChanged nao apaga a busca do app. No microfone o
+                // campo comeca limpo; ao digitar, comeca com o texto do app.
+                modoTexto = atual != null;
+                campo.Text = atual ?? "";   // o DALi poe o cursor no fim do texto
+                ultimoCursor = -2;
+                cursorFalhou = false;
                 aberto = true;
                 viuPainel = false;
                 campo.Focusable = true;
@@ -164,7 +232,8 @@ namespace NuvioTpk
                 prazo.Start();
                 imf.Activate();
                 imf.ShowInputPanel();
-                Log("teclado da Samsung pedido");
+                if (modoTexto) IniciarRelogioCursor();
+                Log("teclado da Samsung pedido" + (modoTexto ? " (digitar)" : " (microfone)"));
             }
             catch (Exception e)
             {
@@ -175,16 +244,117 @@ namespace NuvioTpk
             }
         }
 
-        // Concluido / painel fechado (confirmou) ou Voltar. So entrega com texto;
-        // o que ja veio pelo TextChanged fica no campo do app nos dois casos.
+        // Concluido / painel fechado (confirmou) ou Voltar. No microfone so entrega com
+        // texto; ao digitar, confirmar vale mesmo com o campo vazio (a pessoa pode
+        // ter apagado tudo) e o texto segue como esta, sem aparar. O que ja veio
+        // pelo TextChanged fica no campo do app nos dois casos.
         void Terminar(bool confirmou, bool falhou = false)
         {
             if (!aberto) return;
             aberto = false;
-            string t = (campo.Text ?? "").Trim();
-            if (confirmou && t.Length > 0) nv_tpk_texto_valor(t);
-            nv_tpk_texto_fim(falhou ? -1 : confirmou && t.Length > 0 ? 1 : 0);
+            string t = modoTexto ? (campo.Text ?? "") : (campo.Text ?? "").Trim();
+            bool entrega = confirmou && (t.Length > 0 || modoTexto);
+            if (entrega) nv_tpk_texto_valor(t);
+            nv_tpk_texto_fim(falhou ? -1 : entrega ? 1 : 0);
             Esconder();
+        }
+
+        // ESQUERDA / DIREITA movem o cursor do texto (microfone e digitar). Chega
+        // pelo campo e tambem pela janela (Program.Tecla): o mesmo toque conta uma
+        // vez so, e nunca segue para o app embaixo. true = a tecla foi daqui.
+        public bool Tecla(Key k)
+        {
+            if (!aberto || campo == null) return false;
+            string nome = k.KeyPressedName;
+            int d = nome == "Left" || nome == "KP_Left" ? -1 : nome == "Right" || nome == "KP_Right" ? 1 : 0;
+            if (d == 0 || IndiceCursor() < 0) return false;
+            // Time 0 (TV que nao informa) nunca e "o mesmo toque": cada repeticao anda.
+            if (k.State == Key.StateType.Down && !(k.Time != 0 && k.Time == ultimoTempo && nome == ultimoNome))
+            {
+                ultimoTempo = k.Time;
+                ultimoNome = nome;
+                MoverCursor(d);
+            }
+            return true;
+        }
+
+        // Indice da propriedade "primaryCursorPosition" no DALi, procurado uma vez; -1 = nao tem.
+        int IndiceCursor()
+        {
+            if (indiceCursor == -2)
+            {
+                try { indiceCursor = campo.GetPropertyIndex("primaryCursorPosition"); }
+                catch { indiceCursor = -1; }
+                if (indiceCursor < 0) { indiceCursor = -1; Log("cursor: primaryCursorPosition indisponivel"); }
+            }
+            return indiceCursor;
+        }
+
+        bool LerCursor(out int p)
+        {
+            p = 0;
+            int i = IndiceCursor();
+            if (i < 0) return false;
+            using (var v = campo.GetProperty(i)) return v != null && v.Get(out p);
+        }
+
+        void MoverCursor(int d)
+        {
+            try
+            {
+                int p, n = Caracteres(campo.Text);
+                if (!LerCursor(out p)) return;
+                int q = Math.Max(0, Math.Min(n, p + d));
+                if (q != p)
+                {
+                    using (var v = new PropertyValue(q)) campo.SetProperty(IndiceCursor(), v);
+                    imf.SetCursorPosition((uint)q);
+                    imf.NotifyCursorPosition();
+                }
+                Log("cursor " + p + " -> " + q + " de " + n);
+                EnviarCursor();
+            }
+            catch (Exception e) { Log("cursor: " + e.GetType().Name + ": " + e.Message); }
+        }
+
+        // Ao digitar, o C desenha o cursor do app onde esta o do teclado.
+        void EnviarCursor()
+        {
+            if (!modoTexto || campo == null || cursorFalhou) return;
+            try
+            {
+                int p;
+                if (!LerCursor(out p) || p == ultimoCursor) return;
+                ultimoCursor = p;
+                nv_tpk_texto_cursor(p);
+            }
+            catch (Exception e)
+            {
+                cursorFalhou = true;
+                Log("cursor: " + e.GetType().Name + ": " + e.Message);
+            }
+        }
+
+        // O teclado da Samsung tambem mexe no cursor por conta propria (sem
+        // TextChanged): um relogio leve confere enquanto o campo esta aberto.
+        void IniciarRelogioCursor()
+        {
+            PararRelogioCursor();
+            if (IndiceCursor() < 0) return;
+            relogioCursor = new Tizen.NUI.Timer(150);
+            relogioCursor.Tick += (s, e) =>
+            {
+                if (!aberto || !modoTexto || cursorFalhou) return false;
+                EnviarCursor();
+                return true;
+            };
+            relogioCursor.Start();
+        }
+
+        void PararRelogioCursor()
+        {
+            try { relogioCursor?.Stop(); } catch { }
+            relogioCursor = null;
         }
 
         // Pausa/fim da janela: cancela a sessao (e abertura enfileirada) antes de esconder.
@@ -213,6 +383,7 @@ namespace NuvioTpk
         void Esconder()
         {
             SoltarPrazo();
+            PararRelogioCursor();
             try { imf?.HideInputPanel(); imf?.Deactivate(); } catch { }
             try { FocusManager.Instance.ClearFocus(); } catch { }
             campo.Focusable = false;

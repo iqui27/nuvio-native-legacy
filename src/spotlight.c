@@ -1658,9 +1658,16 @@ static void desenhaCampo(float dy, float a, Uint32 agora) {
       xMax -= w + 30.0f;
     }
   }
+  float cursorMeio = -1.0f;   // x do cursor quando a pessoa o moveu para dentro do texto
   if (nConsulta) {
     TxtLinha l = txt_linha_corta(TXT_CALLOUT, consulta, SP_TINTA, 255, xMax - tx - 10.0f);
+    char antes[SP_MAX_TXT * 2];
     txt_desenhar_alpha(l, tx, ty - l.h * 0.5f, a);
+    // Cursor no MEIO do texto (Esquerda/Direita no teclado do sistema, .tpk).
+    if (st_cursor_prefixo(ST_SPOT, consulta, antes, sizeof antes)) {
+      TxtLinha p = txt_linha_corta(TXT_CALLOUT, antes, SP_TINTA, 255, xMax - tx - 10.0f);
+      cursorMeio = tx + fminf((float)p.w, (float)l.w) + 2.0f;
+    }
     tx += l.w + 2.0f;
   } else {
     const char *ph = ouve ? i18n(st_estado() == ST_PERMISSAO ? "Permita o microfone para falar…" : "Ouvindo…")
@@ -1677,7 +1684,7 @@ static void desenhaCampo(float dy, float a, Uint32 agora) {
   // teclado do sistema aberto para ele.
   if ((painel == P_CAMPO || painel == P_TECLADO || digitandoSis()) && (agora / 500) % 2 == 0 &&
       (nConsulta > 0 || digitandoSis()))
-    gfx_cor((GfxRect){ tx, ty - 15.0f, 2.0f, 30.0f }, 0.5f, ar, ag, ab, 0.95f * a);
+    gfx_cor((GfxRect){ cursorMeio >= 0.0f ? cursorMeio : tx, ty - 15.0f, 2.0f, 30.0f }, 0.5f, ar, ag, ab, 0.95f * a);
   // MICROFONE: botao focavel a direita, so onde ha voz (nao se promete o que a
   // TV nao faz). Ouvindo, acende na cor do tema e um anel cresce com o som.
   if (comMic) {
