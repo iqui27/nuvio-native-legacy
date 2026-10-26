@@ -29,7 +29,18 @@ int main(int argc,char **argv){
   assert(SDL_GL_CreateContext(window));SDL_GL_SetSwapInterval(0);glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);
   assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(64);gfx_icones_dir("deploy/app/art");
   dados_iniciar(getenv("NUVIO_DADOS"));
-  dados_gravar("ajustes.txt","idioma 0\nidiomaAutoLocal 0\nselected_theme 2\nvidroLocal 1\n");ajustes_dir(getenv("NUVIO_DADOS"));
+  /* NUVIO_SHOT_ESCALA=85|100 and NUVIO_SHOT_VIDRO=0|1 pick the text scale and
+   * material; default stays 100% glass. */
+  {
+    char aj[160];
+    const char *esc = getenv("NUVIO_SHOT_ESCALA");
+    snprintf(aj, sizeof aj, "idioma 0\nidiomaAutoLocal 0\nselected_theme 2\nescalaTextoLocal %d\nescalaTextoVersaoLocal 1\n",
+             esc && atoi(esc) == 85 ? 0 : 2);
+    dados_gravar("ajustes.txt", aj);
+  }
+  ajustes_dir(getenv("NUVIO_DADOS"));
+  gfx_escala_txt_definir(ajustes_escala_texto());
+  ajustes_definir_vidro(!getenv("NUVIO_SHOT_VIDRO") || atoi(getenv("NUVIO_SHOT_VIDRO")));
   assert(ajustes_idioma()==0);context();
   const char *names[]={"setup-tipo","setup-credenciais","setup-arquivo","setup-teste","setup-categorias","setup-epg","setup-importar","setup-pronto","setup-celular-tv","fontes-gerenciar","vod-filmes","vod-series","vod-serie-temporadas","vod-titulo","vod-busca","vod-carregando","vod-vazio","vod-sem-catalogo","parental-ajustes","parental-canal-bloqueado","parental-pin","parental-desbloqueio","parental-perfil-infantil","multiview-2","multiview-3","multiview-4","multiview-escolher","multiview-limite"};
   inventory=calloc(30,sizeof *inventory);assert(inventory);count=24;source_loaded=1;
@@ -47,9 +58,11 @@ int main(int argc,char **argv){
   want_pin(0);activate(20);activate(21);activate(30);assert(!strcmp(pin_value,"120"));
   activate(31);assert(!strcmp(pin_value,"12"));activate(29);assert(!pin_value[0]);
   for(int i=0;i<6;i++)activate(20+i);assert(strlen(pin_value)==4);
-  activate(1);assert(!pin_value[0]&&!g5ui_active());
+  activate(1);assert(!pin_value[0]&&!strcmp(screen,"grade"));
   go("setup-credenciais");credential_field=6;activate(100);assert(strchr(draft.name,'A'));draft.name[strlen(draft.name)-1]=0;
+  const char *only=getenv("NUVIO_SHOT_SO");   /* iterate on one state */
   for(unsigned n=0;n<sizeof names/sizeof *names;n++){
+    if(only&&*only&&!strstr(only,names[n]))continue;
     go(names[n]);draft.live=draft.movies=draft.series=draft.epg=1;focus=0;mode=strstr(names[n],"-4")?4:strstr(names[n],"-3")?3:2;
     if(!strcmp(names[n],"vod-serie-temporadas")){
       series_catalog=inventory;series_count=count;parent_series=6;inventory=calloc(4,sizeof *inventory);count=4;episodes_mode=1;selected=0;
