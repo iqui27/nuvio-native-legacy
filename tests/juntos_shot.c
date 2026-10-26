@@ -366,7 +366,7 @@ int main(int argc, char **argv) {
       quadros(40); CAP("1-empty");
       motor.temSala = 1; motor.sala.m[0].stats = 1;
       snprintf(motor.sala.m[1].st, sizeof motor.sala.m[1].st, "pronto");
-      snprintf(motor.sala.m[2].st, sizeof motor.sala.m[2].st, "carregando"); motor.sala.m[2].pct = 42;
+      snprintf(motor.sala.m[2].st, sizeof motor.sala.m[2].st, "procurando"); motor.sala.m[2].pct = 0;
       motor.sala.n = 2; quadros(2); CAP("m4-arrive-030"); quadros(6); CAP("m5-arrive-130");
       motor.sala.n = 3; quadros(40); CAP("2-arriving");
       snprintf(motor.sala.m[0].st, sizeof motor.sala.m[0].st, "pronto");
@@ -397,10 +397,14 @@ int main(int argc, char **argv) {
       key.key.keysym.sym = SDLK_RETURN; assert(juntosui_evento_sdl(&key));
       assert(juntosui_pediu_fontes());
       stream_definir_alvo(motor.sala.ep); stream_definir_lista(fontes, 3); stream_definir_atual(0);
+      // Room statuses stay visible inside the sheet (owner 26/10).
+      snprintf(motor.sala.m[2].st, sizeof motor.sala.m[2].st, "carregando"); motor.sala.m[2].pct = 42;
+      snprintf(motor.sala.m[3].st, sizeof motor.sala.m[3].st, "semfonte"); snprintf(motor.sala.m[3].fonte, sizeof motor.sala.m[3].fonte, "nenhuma");
       stream_folha_abrir();
       quadros(4); CAP("6a-sources-opening"); quadros(36); CAP("6-sources");
       key.key.keysym.sym = SDLK_ESCAPE; assert(!juntosui_evento_sdl(&key)); stream_folha_evento(&key);
       quadros(4); CAP("6b-sources-closing"); quadros(36);
+      snprintf(motor.sala.m[2].st, sizeof motor.sala.m[2].st, "pronto"); snprintf(motor.sala.m[3].st, sizeof motor.sala.m[3].st, "pronto");
       assert(juntosui_shot_camada_atual() == 3 && juntosui_shot_foco_atual() == 3);
       CAP("7-sources-back");
       // D-pad: actions -> open seat -> join code -> back down to the same action.
