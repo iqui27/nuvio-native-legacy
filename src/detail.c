@@ -1348,6 +1348,10 @@ static float notaX(int c) {
 static float notaY(int c) {
   return notaResumo() && c==0 ? 0 : notasui_celula_y(notasVisiveis(),notaResumo(),c-notaResumo());
 }
+// Pointer target height: the summary column spans the block, grid cells are one tile.
+static float notaAlturaCel(int c) {
+  return notaResumo() && c==0 ? notaAltura() : notasui_celula_altura();
+}
 static float notaLargura(int c) {
   int off=notaResumo(), nf=0;
   while (notaFonte(nf)>=0) nf++;
@@ -8360,8 +8364,8 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     float w = larguraItem(r, c);
     if (x > NV_TELA_W || x + w < -w) continue;
     if (ponteiro_ativo() && a > 0.3f && c < secaoColunas(r) && alturaAlvo(r) > 0.0f)
-      ponteiro_alvo(x, y,
-                    w, alturaAlvo(r), ponteiroDetalhe, NULL, r, c);
+      ponteiro_alvo(x, r==SEC_NOTAS ? y+notaY(c) : y,
+                    w, r==SEC_NOTAS ? notaAlturaCel(c) : alturaAlvo(r), ponteiroDetalhe, NULL, r, c);
     switch (r) {
       case SEC_TEMPORADAS: {
         GfxRect b = { x, y, w, NV_DETP_TEMP_H };

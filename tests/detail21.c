@@ -96,6 +96,12 @@ static int ratingsGrid(void) {
   foco.coluna=off+4; press(SDLK_UP); int u2=foco.coluna==off+1;
   int nav=d1 && d2 && d3 && u1 && u2;
   printf("%s: R3 DOWN/UP move between rows\n",nav ? "PASS" : "FAIL"); failures+=!nav;
+  // Pointer targets: same-column cards sit on their own row, no overlap.
+  int rows=notaY(off+0)<notaY(off+3) && notaY(off+3)<notaY(off+6) &&
+           notaY(off+0)+notaAlturaCel(off+0)<=notaY(off+3) &&
+           notaY(off+3)+notaAlturaCel(off+3)<=notaY(off+6) &&
+           notaAlturaCel(off+6)==notasui_celula_altura();
+  printf("%s: R4 pointer targets do not overlap across rows\n",rows ? "PASS" : "FAIL"); failures+=!rows;
   richRatings=0;
   return failures;
 }
