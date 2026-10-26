@@ -110,8 +110,25 @@ int main(void) {
   key(SDLK_RETURN); abrirTituloDoPainel();
   check("OK opens focused title through production route",
         detail_aberto() && detail_indice()==expected && !spainel_aberto());
-  step(100); key(SDLK_ESCAPE); step(100);
+  step(100);
+  menu_abrir_sobre(1); key(SDLK_ESCAPE); step(100);
+  check("canceling sidebar preserves title return ownership",detail_aberto() && !spainel_aberto());
+  key(SDLK_ESCAPE); step(100);
   check("Back restores panel tab and exact prior row",!detail_aberto() && spainel_aberto() && spainel_aba_atual()==1 && spainel_foco_indice()==focus);
+  const Tela destinations[] = {TELA_AJUSTES, TELA_HOME};
+  for (unsigned i=0;i<sizeof destinations/sizeof *destinations;i++) {
+    key(SDLK_RETURN); abrirTituloDoPainel(); step(100);
+    check("navigation starts from panel-owned Detail",detail_aberto() && tituloDoPainel==2);
+    // Sidebar and configured player exit both close Detail and route here.
+    detail_fechar_seco(); trocarTela(destinations[i]); step(100);
+    check(i ? "Home exit does not restore Social on the same screen"
+            : "Settings navigation does not restore Social",
+          tela==destinations[i] && !spainel_aberto() && tituloDoPainel==0);
+    trocarTela(TELA_HOME);
+    abrirPorIndice(expected); step(100); key(SDLK_ESCAPE); step(100);
+    check("later unrelated Detail cannot restore stale Social",!detail_aberto() && !spainel_aberto());
+    spainel_voltar_titulo(); step(100);
+  }
   for(int i=0;i<5;i++)key(SDLK_UP);
   key(SDLK_RIGHT);check("D-pad reaches Friends",spainel_aba_atual()==2);
   key(SDLK_RIGHT);check("D-pad reaches Notices",spainel_aba_atual()==3);

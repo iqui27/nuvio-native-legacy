@@ -1079,6 +1079,7 @@ static int socialDoPerfil;
 static int cacaDoPerfil;
 
 static void trocarTela(Tela nova) {
+  tituloDoPainel = 0;
   if (nova == tela) return;
   if (nova != TELA_SOCIAL) socialDoPerfil = 0;
   if (nova != TELA_CACA) cacaDoPerfil = 0;
@@ -5848,6 +5849,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // "Ver tudo" idem: a barra tambem abre por cima dela (coluna 0), e sem isto
   // a lista ficaria cobrindo a tela nova.
   if (menu_escolheu()) {
+    tituloDoPainel = 0;
     if (detail_aberto()) detail_fechar_seco();
     if (vertudo_aberta()) vertudo_fechar_seco();
   }

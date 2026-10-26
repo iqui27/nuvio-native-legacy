@@ -25,6 +25,8 @@ checks = {
     'P1 production: blue panel and friend profiles retain their live owners':
         'spainel_evento(e)' in app and 'spainel_desenhar(agora)' in app
         and 'amigoperfil_abrir(pid)' in app and 'spainel_voltar_titulo()' in app,
+    'P1 navigation: selecting the current sidebar destination clears panel ownership':
+        'tituloDoPainel = 0;' in app.split('if (menu_escolheu()) {', 1)[1].split('\n  }', 1)[0],
     'P1 input: capture transitions use SDL events':
         bool(source('tests/nav21.sh'))
         and 'app_evento(&e)' in source('tests/nav21.c')
