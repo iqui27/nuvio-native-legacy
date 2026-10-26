@@ -30,6 +30,7 @@ static float aj4Bloco(TxtEstilo e,const char *s,float x,float y,float w,float lh
 #define ajBloco aj4Bloco
 static void aj4PontAtivar(int zona,int row) {
   if(zona==5) { uxEvento(SDLK_ESCAPE); return; }
+  if(zona==8) { ajPenRow=row;int handled=ajPenEvent(SDLK_RETURN);if(!handled)uxEvento(SDLK_RETURN);return; }
   aj4PontFoco(zona,row);
   if(zona==4)uxAplicar();
   else if(zona==7) { snprintf(aj4Consulta,sizeof aj4Consulta,"%s",i18n(row==2?"Áudio":"Fontes")); aj4Acao=aj4Linha=0; }
@@ -470,6 +471,7 @@ static void aj4Desenhar(void) {
   else if(aj4Util==4)aj4PerfilDesenhar();
   else if(aj4Util==3)aj4BuscaDesenhar();
   else if(aj4Review || aj4Util)aj4UtilDesenhar();
+  else if(!focoIndice && ajPenCurrent())ajPenRows();
   else if(focoIndice)ajPenHome();
   else aj4SecaoDesenhar();
 }

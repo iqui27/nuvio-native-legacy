@@ -289,8 +289,10 @@ static void aj4Buscar(void) {
   aj4BuscaTeclado=1;
   teclado_abrir_com("Buscar ajuste","Pelo nome ou pelo que quer mudar",127,CUR_ALFA_URL,aj4Consulta);
 }
+#include "ajustes_pen.inc"
 static void ajPontEdValor(int i,int b);
 static void aj4PontFoco(int zona,int row) {
+  if(zona==8) { ajPenRow=row;aj4Topo=-1;return; }
   if(zona==0)aj4Topo=row;
   else if(zona==1) { aj4Topo=-1; aj4Linha=row; aj4Acao=0; }
   else if(zona==2) { aj4Topo=-1; if(row==999)aj4Mais=1; else { aj4Mais=0; aj4GrupoFoco=row; } aj4Grupos=1; }
@@ -301,7 +303,8 @@ static void aj4PontFoco(int zona,int row) {
   if(zona==5) { focoIndice=1; aj4Util=0; aj4Linha=aj4FocoModo[lig(AJ_AVANCADAS)]; }
 }
 static int aj4Evento(SDL_Keycode k) {
-  if (uxEditor) return -1; // Existing draft editor owns its keys and guards.
+  if (uxEditor) return -1;
+  int pen=ajPenEvent(k);if(pen>=0)return pen; // Existing draft editor owns its keys and guards.
   if (aj4PerfilRetorno && uxVoltar(k)) { aj4PerfilRetorno=0; aj4AbrirPerfil(); return 1; }
   if (aj4BuscaRetorno && uxVoltar(k)) {
     aj4BuscaRetorno=0; aj4Util=3; aj4Linha=aj4BuscaFoco; aj4Topo=-1; focoIndice=0; return 1;
@@ -387,7 +390,8 @@ static int aj4Evento(SDL_Keycode k) {
       else { static const int strip[]={7,4,5,6,13};for(int i=0;i<(lig(AJ_AVANCADAS)?5:4);i++)if(strip[i]==aj4Linha) { aj4Linha=strip[(i+step+(lig(AJ_AVANCADAS)?5:4))%(lig(AJ_AVANCADAS)?5:4)];break; } }
     }
     if (uxOk(k)) {
-      if (aj4Linha < 4) aj4Entrar(lig(AJ_AVANCADAS) ? aj4Set * 4 + aj4Linha : aj4Linha);
+      if (aj4Linha == 1) ajPenOpen(27);
+      else if (aj4Linha < 4) aj4Entrar(lig(AJ_AVANCADAS) ? aj4Set * 4 + aj4Linha : aj4Linha);
       else if (aj4Linha == 4 || aj4Linha == 5) { aj4Util = aj4Linha == 4 ? 2 : 1; aj4Linha = 0; aj4Acao = 0; focoIndice = 0; }
       else if (aj4Linha == 6) { aj4Entrar(7); aj4Excecao = AJ_GUIA; aj4Atual = 7; aj4Grupo = aj4GrupoDe(AJ_GUIA); aj4Grupos = 1; }
       else if (aj4Linha == 7) tourAbrir();
@@ -395,7 +399,7 @@ static int aj4Evento(SDL_Keycode k) {
       else if(aj4Linha==10) { focarOpcao(AJ_PERFIL_INFANTIL);uxAbrirEditor(AJ_PERFIL_INFANTIL); }
       else if(aj4Linha==11) { aj4Entrar(7);aj4Excecao=AJ_GPU_EFEITOS;aj4Grupo=aj4GrupoDe(AJ_GPU_EFEITOS); }
       else if(aj4Linha==12) { aj4Entrar(7);aj4Excecao=AJ_GUIA;aj4Grupo=aj4GrupoDe(AJ_GUIA); }
-      else if(aj4Linha==13) { aj4Entrar(0); }
+      else if(aj4Linha==13) { ajPenOpen(0); }
       else { aj4Desfazer(); }
     }
     return 1;

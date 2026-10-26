@@ -11451,6 +11451,15 @@ int ajustes_teste_quadro(const char *id) {
     if (!strcmp(id, "tour-edit")) { tourVis = 1; tourLigar(2); tourAtualizar(0); }
     return 1;
   }
+  if(!strncmp(id,"pen-",4)) {
+    static const char *const names[]={"Marina"};perfis_teste_definir(names,NULL,1,1);
+    aj4Iniciar();pfTela=0;uxVeioBusca=0;valor[AJ_AVANCADAS]=0;valor[AJ_TEMA]=3;
+    if(!strcmp(id,"pen-audio")) { ajPenOpen(27);ajPenRow=1; }
+    else if(!strcmp(id,"pen-estilo"))ajPenOpen(28);
+    else if(!strncmp(id,"pen-adv-",8))ajPenOpen(atoi(id+8));
+    else return 0;
+    return 1;
+  }
   if (!strncmp(id, "v4-", 3)) {
     static const char *const PF_V4[] = { "Henrique" };
     perfis_teste_definir(PF_V4, NULL, 1, 1);   // chip e escopo com nome, como o mockup
