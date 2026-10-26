@@ -139,7 +139,7 @@ MusEstado fx_mus_estado(const char *imdb, int temp, MusAlbum *out) {
     memset(out, 0, sizeof *out);
     snprintf(out->titulo, sizeof out->titulo, "Dune: Part Two (Original Motion Picture Soundtrack)");
     snprintf(out->artista, sizeof out->artista, "Hans Zimmer");
-    snprintf(out->capa, sizeof out->capa, "deploy/app/art/poster/07.jpg");
+    snprintf(out->capa, sizeof out->capa, "%s", getenv("NV_MUSICA_CAPA") ? getenv("NV_MUSICA_CAPA") : "deploy/app/art/poster/07.jpg");
     out->n = 3;
     out->faixa[0].n = 1; snprintf(out->faixa[0].titulo, sizeof out->faixa[0].titulo, "Dream of Arrakis"); out->faixa[0].dur = 65;
     out->faixa[1].n = 2; snprintf(out->faixa[1].titulo, sizeof out->faixa[1].titulo, "Ripples in the Sand"); out->faixa[1].dur = 190;
@@ -657,12 +657,16 @@ int main(int argc, char **argv) {
     assert(card.w < 1100 && card.h < 400);
     for (int i = 0; i < 600 && musicaui_painel().w < 1300; i++) { SDL_Delay(4); quadros(1); }
     GfxRect meio = musicaui_painel();
-    assert(meio.w > card.w && meio.w < 1728);
+    assert(meio.w > card.w && meio.w < 1600);
     snprintf(nome, sizeof nome, "%s-musicas-modal-mid.png", saida); gravar(nome);
     for (int q = 0; q < 60; q++) { SDL_Delay(16); quadros(1); }
     GfxRect m = musicaui_painel();
-    assert(m.x > 0 && m.y > 0 && m.w < 1920 && m.h < 1080 && m.w > 1600);
+    assert(m.x > 0 && m.y > 0 && m.w <= 1600 && m.h <= 900 && m.w > 1500);
     snprintf(nome, sizeof nome, "%s-musicas-movie.png", saida); gravar(nome);
+    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_DOWN; detail_evento(&ev);
+    ev.type = SDL_KEYUP; detail_evento(&ev);
+    for (int q = 0; q < 30; q++) { SDL_Delay(16); quadros(1); }
+    snprintf(nome, sizeof nome, "%s-musicas-foco.png", saida); gravar(nome);
     ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_ESCAPE; detail_evento(&ev);
     assert(!musicaui_aberta() && musicaui_visivel());
     for (int i = 0; i < 600 && musicaui_visivel(); i++) { SDL_Delay(4); quadros(1); }
