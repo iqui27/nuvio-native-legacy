@@ -73,6 +73,8 @@ static const SDL_Color CORES[COMECAR_CORES] = {
 };
 
 int comecar_aberto(void) { return aberto; }
+// Still painting: open or fading out over the app (T21_EXIT_MS).
+int comecar_visivel(void) { return aberto || entrada >= 0.002f; }
 int comecar_passo(void) { return passo; }
 int comecar_foco(void) { return foco; }
 void comecar_teste_esquecer(void) {

@@ -449,8 +449,15 @@ int main(int argc, char **argv) {
   previa("estado=nenhum\nnome=so\n");
   tecla(SDLK_RETURN); tecla(SDLK_RETURN);   // passo 3
   tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);   // passo 4
-  ir_para(102); tecla(SDLK_RETURN);   // secundario
+  ir_para(102);
+  for (int f = 0; f < 40; f++) comecar_atualizar(0.016f, SDL_GetTicks());
+  tecla(SDLK_RETURN);   // secundario
   assert(!comecar_aberto());
+  // Exit keeps painting (fade over the app) until it settles, not a cut.
+  assert(comecar_visivel());
+  comecar_atualizar(0.06f, SDL_GetTicks()); assert(comecar_visivel());
+  for (int f = 0; f < 40; f++) comecar_atualizar(0.016f, SDL_GetTicks());
+  assert(!comecar_visivel());
   assert(comecar_pedido() == COMECAR_PEDIU_TOUR);
   contem("estado=feito");
 
