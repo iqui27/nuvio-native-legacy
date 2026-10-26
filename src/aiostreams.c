@@ -44,7 +44,7 @@ static int boolean(const char *p, const char *key, int fallback) {
 }
 static void safe(char *s) {
   // Remote labels may themselves contain signed links. Never render them.
-  if (strstr(s, "://") || strstr(s, "Bearer ") || strstr(s, "apiKey")) s[0] = 0;
+  if (strstr(s, "://") || strstr(s, "Bearer ") || strstr(s, "apiKey") || strstr(s,"www.")) s[0] = 0;
   for (char *p = s; *p; p++) if ((unsigned char)*p < 32) *p = ' ';
 }
 int aio_url(const char *url, char *origem, size_t n) {
@@ -178,69 +178,125 @@ static void summarize(char *dst,size_t n,const char *p) {
     }
   } else if(*p=='"') { js_cadeia(p,dst,n); safe(dst); }
 }
-static void detail(AioSnapshot *s,int group,const char *name,const char *v) {
-  if(!v || s->detalhes>=AIO_MAX) return;
-  AioRegra *r=&s->detalhe[s->detalhes];
-  memset(r,0,sizeof *r); r->grupo=group;
-  snprintf(r->nome,sizeof r->nome,"%s",name);
-  if(*v=='[' || *v=='\"') summarize(r->valor,sizeof r->valor,v);
-  else if(!strncmp(v,"true",4)) strcpy(r->valor,"true");
-  else if(!strncmp(v,"false",5)) strcpy(r->valor,"false");
-  else if(isdigit((unsigned char)*v) || *v=='-') snprintf(r->valor,sizeof r->valor,"%g",strtod(v,NULL));
-  if(r->valor[0]) s->detalhes++;
+// Only known configuration sections enter the snapshot. Nested credential containers
+// and address fields never do; URL-valued fields show presence, never their content.
+static int private_field(const char *key) {
+  const char *words[]={"password","credential","apikey","token","secret","uuid","headers","ip","host","url","accesskey","identifier","instanceid"};
+  char lower[128]; size_t n=strlen(key); if(n>=sizeof lower) return 1;
+  if(!strcmp(key,"addonLogo") || !strcmp(key,"addonBackground")) return 1;
+  for(size_t i=0;i<=n;i++) lower[i]=(char)tolower((unsigned char)key[i]);
+  if(!strcmp(lower,"lock") || !strcmp(lower,"script")) return 1;
+  for(size_t i=0;i<sizeof words/sizeof *words;i++)
+    if(strstr(lower,words[i]) && (strcmp(words[i],"ip") || !strcmp(lower,"ip") || !strcmp(lower,"publicip"))) return 1;
+  return 0;
 }
-static int count_array(const char *a);
-static void config_details(AioSnapshot *s,const char *u) {
-  const char *prefix[]={"required","included","excluded","preferred"};
-  const char *suffix[]={"Resolutions","Qualities","VisualTags","AudioTags","Languages","Subtitles","StreamTypes","Encodes","AudioChannels","ReleaseGroups"};
-  char key[96];
-  for(int a=0;a<10;a++) for(int b=0;b<4;b++) {
-    snprintf(key,sizeof key,"%s%s",prefix[b],suffix[a]);
-    detail(s,a==4||a==5?2:a==6?3:a==9?4:0,key,member(u,key));
-  }
-  detail(s,3,"excludeCached",member(u,"excludeCached"));
-  detail(s,3,"excludeUncached",member(u,"excludeUncached"));
-  const char *range[]={"size","bitrate"}, *media[]={"movies","series","anime"};
-  const char *res[]={"2160p","1440p","1080p","720p","480p","360p","unknown"};
-  for(int a=0;a<2;a++) for(int b=-1;b<7;b++) for(int c=0;c<3;c++) {
-    const char *obj=member(u,range[a]);
-    obj=b<0?member(obj,"global"):member(member(obj,"resolution"),res[b]);
-    snprintf(key,sizeof key,"%s.%s.%s",range[a],b<0?"global":res[b],media[c]);
-    detail(s,1,key,member(obj,media[c]));
-  }
-  const char *sort[]={"global","cached","uncached","movies","series","anime","cachedMovies","uncachedMovies","cachedSeries","uncachedSeries","cachedAnime","uncachedAnime"};
-  for(int i=0;i<12;i++) { snprintf(key,sizeof key,"sort.%s",sort[i]); detail(s,5,key,member(member(u,"sortCriteria"),sort[i])); }
-  detail(s,6,"formatter.id",member(member(u,"formatter"),"id"));
-  detail(s,6,"formatter.selectedSaved",member(member(u,"formatter"),"selectedSaved"));
-  const char *customFormatter=member(member(member(u,"formatter"),"definitions"),"custom");
-  if(customFormatter) detail(s,6,"formatter.custom",member(customFormatter,"name")?"true":"false");
-  const char *limit[]={"global","service","addon","resolution","quality","streamType","indexer","releaseGroup","mode"};
-  for(int i=0;i<9;i++) { snprintf(key,sizeof key,"resultLimits.%s",limit[i]); detail(s,1,key,member(member(u,"resultLimits"),limit[i])); }
-  detail(s,7,"proxy.enabled",member(member(u,"proxy"),"enabled"));
-  detail(s,7,"proxy.id",member(member(u,"proxy"),"id"));
-  detail(s,7,"proxy.proxiedServices",member(member(u,"proxy"),"proxiedServices"));
-  detail(s,7,"proxy.proxiedAddons",member(member(u,"proxy"),"proxiedAddons"));
-  const char *custom[]={"excludedRegexPatterns","requiredRegexPatterns","includedRegexPatterns","preferredRegexPatterns","excludedKeywords","requiredKeywords","includedKeywords","preferredKeywords","excludedStreamExpressions","requiredStreamExpressions","includedStreamExpressions","preferredStreamExpressions"};
-  for(int i=0;i<12;i++) {
-    const char *v=member(u,custom[i]);
-    if(v && s->detalhes<AIO_MAX) {
-      char count[32]; snprintf(count,sizeof count,"%d",count_array(v)); detail(s,4,custom[i],count);
+static void detail_text(AioSnapshot *s,int group,const char *name,const char *text) {
+  if(s->detalhes>=AIO_DETAIL_MAX) { s->detalhesOmitidos++; return; }
+  if(strlen(name)>=sizeof s->detalhe[0].nome) { s->detalhesOmitidos++; return; }
+  AioRegra *r=&s->detalhe[s->detalhes++]; memset(r,0,sizeof *r);
+  r->grupo=group; snprintf(r->nome,sizeof r->nome,"%s",name);
+  snprintf(r->valor,sizeof r->valor,"%s",text);
+}
+static void config_value(AioSnapshot *s,int group,const char *name,const char *v,int depth) {
+  if(!v || depth>12) { if(v) s->detalhesOmitidos++; return; }
+  const char *end=value_end(v); if(!end || end<=v) return;
+  if(*v=='{' && !strncmp(name,"sortCriteria.",13)) {
+    char key[80]="",direction[16]="",value[104];
+    js_texto_raiz_em(v,end,"key",key,sizeof key);
+    js_texto_raiz_em(v,end,"direction",direction,sizeof direction); safe(key); safe(direction);
+    if(key[0]) {
+      snprintf(value,sizeof value,"%s (%s)",key,direction);
+      detail_text(s,group,name,value); return;
     }
   }
-  const char *seed[]={"excludeSeederRange","includeSeederRange","requiredSeederRange","seederRangeTypes"};
-  for(int i=0;i<4;i++) detail(s,3,seed[i],member(u,seed[i]));
-  const char *templates=member(u,"appliedTemplates"), *p=templates&&*templates=='['?templates+1:NULL;
-  while(p && s->detalhes<AIO_MAX) {
-    while(isspace((unsigned char)*p)||*p==',') p++;
-    if(*p!='{') break;
-    detail(s,6,"template.id",member(p,"id")); detail(s,6,"template.version",member(p,"version"));
-    const char *next=value_end(p); if(!next||next<=p) break; p=next;
+  if(*v=='{' || *v=='[') {
+    int object=*v=='{', index=0, fields=0; const char *p=v+1;
+    while(p<end-1) {
+      while(isspace((unsigned char)*p)||*p==',') p++;
+      if(p>=end-1) break;
+      char key[128],path[256]; fields++;
+      if(object) {
+        if(*p!='"' || !js_cadeia(p,key,sizeof key)) break;
+        p=value_end(p); if(!p) break;
+        while(isspace((unsigned char)*p)) p++;
+        if(*p++!=':') break;
+        while(isspace((unsigned char)*p)) p++;
+        safe(key);
+        if(!key[0]) strcpy(key,"hidden");
+        snprintf(path,sizeof path,"%s.%s",name,key);
+      } else { snprintf(key,sizeof key,"%d",++index); snprintf(path,sizeof path,"%s[%d]",name,index); }
+      const char *next=value_end(p); if(!next || next<=p) break;
+      int option=strstr(name,".options")!=NULL;
+      int safeOption=!strcmp(key,"resources") || !strcmp(key,"mediaTypes") || !strcmp(key,"timeout") ||
+        !strcmp(key,"enabled") || !strcmp(key,"formatPassthrough") || !strcmp(key,"resultPassthrough");
+      if(object && (private_field(key) || (option && !safeOption) ||
+          (strstr(name,"formatter.definitions") && (!strcmp(key,"name") || !strcmp(key,"description"))))) {
+        // Keep the configured section visible while discarding its sensitive payload.
+        detail_text(s,group,path,"hidden");
+      } else config_value(s,group,path,p,depth+1);
+      p=next;
+    }
+    if(!fields) detail_text(s,group,name,object?"{}":"[]");
+    return;
+  }
+  if(*v=='"') {
+    // Decode once outside rendering, then split on UTF-8 boundaries into readable rows.
+    // ponytail: 2048 rows bound TV memory; overflow is counted and shown with phone access.
+    size_t bytes=(size_t)(end-v)+1; char *text=malloc(bytes);
+    if(!text) { s->detalhesOmitidos++; return; }
+    js_cadeia(v,text,bytes); safe(text);
+    if(!text[0]) detail_text(s,group,name,"hidden");
+    for(size_t at=0;text[at];) {
+      size_t len=strlen(text+at); if(len>28) { len=28; while(len && ((unsigned char)text[at+len]&0xc0)==0x80) len--; }
+      char part[29]; memcpy(part,text+at,len); part[len]=0;
+      detail_text(s,group,name,part); at+=len;
+    }
+    memset(text,0,bytes); free(text);
+  } else if(!strncmp(v,"true",4)) detail_text(s,group,name,"true");
+  else if(!strncmp(v,"false",5)) detail_text(s,group,name,"false");
+  else if(!strncmp(v,"null",4)) detail_text(s,group,name,"null");
+  else if(isdigit((unsigned char)*v) || *v=='-') {
+    char number[64]; snprintf(number,sizeof number,"%g",strtod(v,NULL)); detail_text(s,group,name,number);
   }
 }
+static void config_details(AioSnapshot *s,const char *u) {
+  const char *prefix[]={"required","included","excluded","preferred"};
+  const char *suffix[]={"Resolutions","Qualities","VisualTags","AudioTags","Languages","Subtitles","StreamTypes","Encodes","AudioChannels","ReleaseGroups","RegexPatterns","Keywords","StreamExpressions"};
+  char key[96];
+  for(int a=0;a<13;a++) for(int b=0;b<4;b++) {
+    snprintf(key,sizeof key,"%s%s",prefix[b],suffix[a]);
+    config_value(s,a==4||a==5?2:a==6?3:a>=9?4:0,key,member(u,key),0);
+  }
+  static const char *const sections[AIO_GROUPS][32]={
+    {"enableSeadex","excludeSeasonPacks","digitalReleaseFilter"},
+    {"size","bitrate","resultLimits"},
+    {"languageInference"},
+    {"excludeCached","excludeUncached","excludeCachedFromAddons","excludeCachedFromServices","excludeCachedFromStreamTypes","excludeCachedMode","excludeUncachedFromAddons","excludeUncachedFromServices","excludeUncachedFromStreamTypes","excludeUncachedMode","excludeSeederRange","includeSeederRange","requiredSeederRange","seederRangeTypes","excludeAgeRange","includeAgeRange","requiredAgeRange","ageRangeTypes"},
+    {"rankedRegexPatterns","rankedStreamExpressions","regexOverrides","selOverrides","syncedPreferredRegexUrls","syncedExcludedRegexUrls","syncedIncludedRegexUrls","syncedRequiredRegexUrls","syncedRankedRegexUrls","syncedPreferredStreamExpressionUrls","syncedExcludedStreamExpressionUrls","syncedIncludedStreamExpressionUrls","syncedRequiredStreamExpressionUrls","syncedRankedStreamExpressionUrls"},
+    {"sortCriteria"},
+    {"formatter","appliedTemplates"},
+    {"proxy"},
+    {"services","presets","parentConfig","variants","healthChecks","activeVariants","autoVariants","healthResults","variantSelectorLocation","trusted","showChanges","manifestNotice","linkedAccounts","addonName","addonLogo","addonBackground","addonDescription","posterService","usePosterRedirectApi","usePosterServiceForMeta"}
+  };
+  for(int g=0;g<AIO_GROUPS;g++) for(int i=0;i<32 && sections[g][i];i++) {
+    const char *k=sections[g][i], *v=member(u,k);
+    if(private_field(k) && v) detail_text(s,g,k,"hidden");
+    else config_value(s,g,k,v,0);
+  }
+  const char *other[]={"hideErrors","hideErrorsForResources","statistics","yearMatching","titleMatching","seasonEpisodeMatching","episodeTitleMatching","deduplicator","autoPlay","areYouStillThere","precacheNextEpisode","alwaysPrecache","precacheCondition","precacheSelector","precacheSingleStream","preloadStreams","dynamicAddonFetching","groups","addonCategoryColors","catalogModifications","newCatalogsDisabled","upstreamCatalogOrder","mergedCatalogs","externalDownloads","cacheAndPlay","autoRemoveDownloads","checkOwned","failover","serviceWrap","jellyfin","remuxDb"};
+  for(size_t i=0;i<sizeof other/sizeof *other;i++) config_value(s,8,other[i],member(u,other[i]),0);
+}
+static int count_array(const char *a);
 void aio_configuracao(AioSnapshot *s, const char *json) {
   const char *u = member(member(json,"data"),"userData");
   s->configurada = s->servicos = s->addons = 0; memset(s->regras,0,sizeof s->regras);
-  s->detalhes=0;
+  s->detalhes=s->detalhesOmitidos=0;
+  memset(s->detalhe,0,sizeof s->detalhe);
+  memset(s->resumo,0,sizeof s->resumo);
+  s->regraCache=s->regraUncached=-1;
+  s->resolucaoObrigatoria[0]=s->resolucaoExcluida[0]=s->idiomaPreferido[0]=0;
+  const char *success=member(json,"success");
+  if (success && strncmp(success,"true",4)) return;
   if (!u || *u != '{' || !value_end(u) || value_end(u)[-1]!='}') return;
   s->configurada = 1;
   s->servicos = inventory(u,"services",s->servico,32);

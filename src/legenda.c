@@ -523,13 +523,8 @@ int legenda_extrair(const char *corpo, LegendaCue **saida) {
 // UTF-16 (com BOM) tem zeros no meio e nem chegava ao parser — rede_baixar
 // devolve texto e o strlen parava no primeiro zero.
 //
-// A ORDEM: BOM de UTF-16 -> converte; BOM de UTF-8 -> tira; UTF-8 valido ->
-// fica; o resto e um codepage de 8 bits. Entre os de 8 bits so da para
-// ADIVINHAR, e a adivinhacao aqui e uma so: texto cirilico (Windows-1251) e
-// feito de PALAVRAS inteiras de bytes altos, enquanto o latino tem o acento
-// solto entre letras ASCII. Mais da metade dos bytes altos com vizinho alto ->
-// 1251; senao 1252. Grego, turco etc. em codepage proprio NAO estao cobertos
-// (sairiam como letras latinas erradas, nao quadrados).
+// BOM and valid UTF-8 take precedence. Explicit Greek/Turkish declarations
+// select their codepage; undeclared bytes use the integration detector below.
 //
 // ARABE (Windows-1256, #247 #261) tambem e feito de palavras de bytes altos, e
 // se separa do cirilico pela FAIXA: no 1256 as letras ficam em 0xC1-0xDF mais
@@ -544,6 +539,21 @@ static const unsigned short CP1251_80[64] = {
   0x0452,0x2018,0x2019,0x201C,0x201D,0x2022,0x2013,0x2014,0xFFFD,0x2122,0x0459,0x203A,0x045A,0x045C,0x045B,0x045F,
   0x00A0,0x040E,0x045E,0x0408,0x00A4,0x0490,0x00A6,0x00A7,0x0401,0x00A9,0x0404,0x00AB,0x00AC,0x00AD,0x00AE,0x0407,
   0x00B0,0x00B1,0x0406,0x0456,0x0491,0x00B5,0x00B6,0x00B7,0x0451,0x2116,0x0454,0x00BB,0x0458,0x0405,0x0455,0x0457 };
+
+static const unsigned short CP1253_80[128] = {
+  0x20AC,0xFFFD,0x201A,0x0192,0x201E,0x2026,0x2020,0x2021,0xFFFD,0x2030,0xFFFD,0x2039,0xFFFD,0xFFFD,0xFFFD,0xFFFD,
+  0xFFFD,0x2018,0x2019,0x201C,0x201D,0x2022,0x2013,0x2014,0xFFFD,0x2122,0xFFFD,0x203A,0xFFFD,0xFFFD,0xFFFD,0xFFFD,
+  0x00A0,0x0385,0x0386,0x00A3,0x00A4,0x00A5,0x00A6,0x00A7,0x00A8,0x00A9,0xFFFD,0x00AB,0x00AC,0x00AD,0x00AE,0x2015,
+  0x00B0,0x00B1,0x00B2,0x00B3,0x0384,0x00B5,0x00B6,0x00B7,0x0388,0x0389,0x038A,0x00BB,0x038C,0x00BD,0x038E,0x038F,
+  0x0390,0x0391,0x0392,0x0393,0x0394,0x0395,0x0396,0x0397,0x0398,0x0399,0x039A,0x039B,0x039C,0x039D,0x039E,0x039F,
+  0x03A0,0x03A1,0xFFFD,0x03A3,0x03A4,0x03A5,0x03A6,0x03A7,0x03A8,0x03A9,0x03AA,0x03AB,0x03AC,0x03AD,0x03AE,0x03AF,
+  0x03B0,0x03B1,0x03B2,0x03B3,0x03B4,0x03B5,0x03B6,0x03B7,0x03B8,0x03B9,0x03BA,0x03BB,0x03BC,0x03BD,0x03BE,0x03BF,
+  0x03C0,0x03C1,0x03C2,0x03C3,0x03C4,0x03C5,0x03C6,0x03C7,0x03C8,0x03C9,0x03CA,0x03CB,0x03CC,0x03CD,0x03CE,0xFFFD };
+// 1254 differs from 1252 at six Latin letters (and four undefined slots).
+static const unsigned short CP1254_D0[48] = {
+  0x011E,0x00D1,0x00D2,0x00D3,0x00D4,0x00D5,0x00D6,0x00D7,0x00D8,0x00D9,0x00DA,0x00DB,0x00DC,0x0130,0x015E,0x00DF,
+  0x00E0,0x00E1,0x00E2,0x00E3,0x00E4,0x00E5,0x00E6,0x00E7,0x00E8,0x00E9,0x00EA,0x00EB,0x00EC,0x00ED,0x00EE,0x00EF,
+  0x011F,0x00F1,0x00F2,0x00F3,0x00F4,0x00F5,0x00F6,0x00F7,0x00F8,0x00F9,0x00FA,0x00FB,0x00FC,0x0131,0x015F,0x00FF };
 
 static const unsigned short CP1256_80[128] = {
   0x20AC,0x067E,0x201A,0x0192,0x201E,0x2026,0x2020,0x2021,0x02C6,0x2030,0x0679,0x2039,0x0152,0x0686,0x0698,0x0688,
@@ -576,7 +586,32 @@ static int utf8Valido(const unsigned char *p, long n) {
   return 1;
 }
 
+// Metadata wins over filename tags, including declarations of other languages.
+const char *legenda_idioma(const char *idioma, const char *arquivo) {
+  if (idioma && *idioma && strcasecmp(idioma, "und")) return idioma;
+  if (arquivo) {
+    const char *end = arquivo + strcspn(arquivo, "?#");
+    const char *start = arquivo;
+    for (const char *p = arquivo; p < end; p++) if (*p == '/') start = p + 1;
+    for (const char *p = start; p < end; p++) {
+      if (*p != '.') continue;
+      static const char *tags[] = {"el", "gre", "ell", "tr", "tur"};
+      for (size_t k = 0; k < sizeof tags / sizeof tags[0]; k++) {
+        size_t len = strlen(tags[k]);
+        if (end - p > (long)len + 1 && p[len + 1] == '.' &&
+            !strncasecmp(p + 1, tags[k], len)) return k < 3 ? "el" : "tr";
+      }
+    }
+  }
+  return "";
+}
+
 char *legenda_utf8(const char *bytes, long n, const char **origem) {
+  return legenda_utf8_idioma(bytes, n, NULL, NULL, origem);
+}
+
+char *legenda_utf8_idioma(const char *bytes, long n, const char *idioma,
+                         const char *arquivo, const char **origem) {
   const unsigned char *b = (const unsigned char *)bytes;
   const char *o = "utf-8";
   char *out, *d;
@@ -607,6 +642,9 @@ char *legenda_utf8(const char *bytes, long n, const char **origem) {
     } else {
       long altos = 0, colados = 0, soRusso = 0, soltasArabe = 0;
       int cir, ara;
+      const char *lang = legenda_idioma(idioma, arquivo);
+      int gre = !strcasecmp(lang, "el") || !strcasecmp(lang, "gre") || !strcasecmp(lang, "ell") || !strcasecmp(lang, "Greek");
+      int tur = !strcasecmp(lang, "tr") || !strcasecmp(lang, "tur") || !strcasecmp(lang, "Turkish");
       for (i = 0; i < n; i++)
         if (b[i] >= 0xC0) {
           unsigned c = b[i];
@@ -619,6 +657,10 @@ char *legenda_utf8(const char *bytes, long n, const char **origem) {
       ara = cir && soRusso * 10 < altos && soltasArabe * 10 >= altos;
       if (ara) cir = 0;
       o = ara ? "windows-1256" : cir ? "windows-1251" : "windows-1252";
+      if (gre || tur) {
+        ara = cir = 0;
+        o = gre ? "windows-1253" : "windows-1254";
+      }
       d = out = malloc((size_t)n * 3 + 1);
       if (!out) return NULL;
       for (i = 0; i < n; i++) {
@@ -626,6 +668,9 @@ char *legenda_utf8(const char *bytes, long n, const char **origem) {
         if (!c) continue;
         if (c < 0x80) cp = c;
         else if (ara) cp = CP1256_80[c - 0x80];
+        else if (gre) cp = CP1253_80[c - 0x80];
+        else if (tur && c >= 0xD0) cp = CP1254_D0[c - 0xD0];
+        else if (tur && (c == 0x8E || c == 0x9E)) cp = 0xFFFD;
         else if (cir) cp = c >= 0xC0 ? 0x0410 + (c - 0xC0) : CP1251_80[c - 0x80];
         else cp = c < 0xA0 ? CP1252_80[c - 0x80] : c;
         d += poeUtf8(d, cp);
@@ -685,7 +730,7 @@ void legenda_pre_reiniciar(void) {
   pthread_mutex_unlock(&trava);
 }
 
-typedef struct { char url[1400]; unsigned g; LegendaBaixada pronto; void *u; PreDownload *pre; } Pedido;
+typedef struct { char url[1400], idioma[24]; unsigned g; LegendaBaixada pronto; void *u; PreDownload *pre; } Pedido;
 
 /* So o host do link, para o log de tempo: caminho e query levam a chave do
  * addon/debrid e nunca saem daqui; "usuario:senha@" tambem cai fora. */
@@ -769,7 +814,7 @@ static void *baixar(void *u) {
     printf("[legenda] download: host=%s %ld bytes em %.0f ms%s\n",host,bruto?nb:0L,msAgora()-t0,bruto?"":" (falhou)");
     fflush(stdout);
   }
-  char *corpo=bruto?legenda_utf8(bruto,nb,&cs):NULL; LegendaCue *v=NULL;
+  char *corpo=bruto?legenda_utf8_idioma(bruto,nb,p->idioma,p->url,&cs):NULL; LegendaCue *v=NULL;
   free(bruto);
   if (corpo && strcmp(cs,"utf-8")) { printf("[legenda] texto em %s, convertido para UTF-8\n",cs); fflush(stdout); }
   int ass=corpo?legenda_eh_ass(corpo):0;
@@ -810,10 +855,14 @@ static void *baixar(void *u) {
 
 void legenda_carregar(const char *url) { legenda_carregar_com(url, NULL, NULL); }
 unsigned legenda_carregar_com(const char *url, LegendaBaixada pronto, void *u) {
+  return legenda_carregar_idioma(url, NULL, pronto, u);
+}
+unsigned legenda_carregar_idioma(const char *url, const char *idioma, LegendaBaixada pronto, void *u) {
   Pedido *p; pthread_t fio; unsigned g;
   if(!url||!*url){ if(pronto)pronto(NULL,0,0,u); return 0; }
   p=calloc(1,sizeof *p);if(!p){ if(pronto)pronto(NULL,0,0,u); return 0; }
   p->pronto=pronto;p->u=u;
+  snprintf(p->idioma, sizeof p->idioma, "%s", idioma ? idioma : "");
   pthread_mutex_lock(&trava);
   if (preDownload && !strcmp(preDownload->url, url)) {
     p->pre = preDownload; preDownload = NULL; // transfere a referencia ao pedido
@@ -1040,7 +1089,7 @@ LegendaDocumento *legenda_documento_criar(const char *corpo,
 LegendaDocumento *legenda_documento_bytes(const char *bytes,long n,
                                          const LegendaDocumentoInfo *info) {
   if(!bytes||n<=0||n>16L*1024L*1024L)return NULL;
-  char *corpo=legenda_utf8(bytes,n,NULL);
+  char *corpo=legenda_utf8_idioma(bytes,n,info ? info->idioma : NULL,NULL,NULL);
   LegendaDocumento *d=legenda_documento_criar(corpo,info);
   free(corpo);return d;
 }

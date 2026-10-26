@@ -276,7 +276,8 @@ static GfxRect linhaRect(const MenuGeo *g, float y, float h, float e) {
 // por baixo e a opaca 1 px abaixo deixam so o fio, seguindo o arredondado.
 static void focoLinha(GfxRect r, float f, float alpha) {
   if (f <= 0.01f || alpha <= 0.01f) return;
-  if (ajustes_vidro()) { if (!gfx_foco_placa(r, 0.5f, f, alpha)) gfx_cor(r, 0.5f, 1, 1, 1, .14f * f * alpha); return; }
+  if (gfx_foco_placa(r, 0.5f, f, alpha)) return;
+  if (ajustes_vidro()) { gfx_cor(r, 0.5f, 1, 1, 1, .14f * f * alpha); return; }
   { GfxRect s = { r.x - MK(30.0f), r.y + MK(10.0f - 30.0f), r.w + MK(60.0f), r.h + MK(60.0f) };
     gfx_rect(s, 0, GFX_SOMBRA, 1.0f, MK(42.0f) * gfx_escala(), 0, (r.h * 0.5f + MK(30.0f)) / s.h,
              0, 0, 0, .40f * f * alpha); }

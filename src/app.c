@@ -11,6 +11,7 @@
 //   2. detalhe — camada sobre a tela corrente
 //   3. menu    — camada sobre a tela corrente
 //   4. a tela corrente (home, busca, biblioteca ou ajustes)
+#include "mediaurl.h"
 #include "arranque.h"
 #include "celbotao.h"
 #include "central.h"
@@ -72,6 +73,7 @@
 #include "guia.h"
 #include "livetvdiag.h"
 #include "proxyts.h"
+#include "webosver.h"
 #include "livetv_regras.h"
 #include "livestall.h"
 #include "bufavanco.h"
@@ -415,7 +417,7 @@ typedef struct {
   FontePreparoContexto contexto;
   int lembrada, catalogo, temporada, episodio, renovar;
   char id[80];
-  char url[4096];
+  char url[NV_MEDIA_URL_MAX];
   AddonsConsulta *consulta;
   Stream renovada;
   char tipoVod[16];
@@ -471,6 +473,7 @@ static NvLiveStall liveStall;             // vigia de trava do canal (livestall.
 // canalFonteIdx foi entregue ao player por proxyts; se ela morrer, a MESMA
 // fonte e tentada direto antes de passar para a proxima.
 static int    canalViaProxy;
+static int    canalDiretoTentado;
 static Uint32 canalFonteDesde;            // quando a fonte atual foi pedida
 // So o automatico usa o fallback. Uma escolha manual e uma decisao explicita
 // do dono e nao pode ser trocada por outra fonte por tras da tela.
@@ -722,7 +725,7 @@ static void *escolherFonteCanal(void *u) {
 }
 static void *escolherFonteStalker(void *u) {
   FonteJob *job = u;
-  char url[4096];
+  char url[NV_MEDIA_URL_MAX];
   int ok = perfis_sessao_atual(job->sessaoPerfil) && (m3u_e_id(job->id)
     ? m3u_resolver_sessao(job->id, url, sizeof url, job->sessaoPerfil, job->renovando)
     : stalker_resolver_sessao(job->id, url, sizeof url, job->sessaoPerfil));
@@ -1282,22 +1285,34 @@ static void renovarListaDoPlayer(void) {
 // que ja tocava nao muda. Desligado em Ajustes > Live TV, como no Xtream.
 static const char *urlCanal(const Stream *s, char *buf, size_t n) {
   const char *id = player_id_canal();
-  canalViaProxy = 0;
+  canalViaProxy = canalDiretoTentado = 0;
   if (s && xtream_url_limitada(s->url)) return s->url;
   if (!s) return "";
   // Toda troca de fonte do guia passa aqui, inclusive a do watchdog.
   video_definir_cabecalhos(s->cabecalhos);
+  int salvoProxy = guia_proxy_do_canal(id, -1);
+  int usarProxy = salvoProxy < 0 ? ajustes_livetv_proxy() : salvoProxy;
+  // A source-specific diagnostic overrides the direct continuous-TS shortcut.
+  if (salvoProxy == 1 && proxyts_disponivel() &&
+      proxyts_candidata(s->url, s->mp4) &&
+      strlen(s->url) + strlen(PROXYTS_PREFIXO) < n) {
+    proxyts_definir_cabecalhos(s->cabecalhos);
+    snprintf(buf, n, "%s%s", PROXYTS_PREFIXO, s->url);
+    canalViaProxy = 1;
+    return buf;
+  }
   // Confirmed TS already plays directly; avoid another probe and a local 302.
   if (s->tsContinuo) {
     proxyts_definir_cabecalhos("");
     return s->url;
   }
   if (!strncmp(s->url, PROXYTS_PREFIXO, strlen(PROXYTS_PREFIXO))) {
-    // Xtream: a lista ja vem marcada, e sem cabecalho de addon.
+    // Xtream: the list already selected the proxy route.
+    canalViaProxy = 1;
     proxyts_definir_cabecalhos(s->cabecalhos);
     return s->url;
   }
-  if (id[0] && !xtream_e_id(id) && !stalker_e_id(id) && ajustes_livetv_proxy() &&
+  if (id[0] && !xtream_e_id(id) && !stalker_e_id(id) && usarProxy &&
       proxyts_disponivel() && proxyts_candidata(s->url, s->mp4) &&
       strlen(s->url) + strlen(PROXYTS_PREFIXO) < n) {
     proxyts_definir_cabecalhos(s->cabecalhos);
@@ -1310,6 +1325,43 @@ static const char *urlCanal(const Stream *s, char *buf, size_t n) {
   }
   proxyts_definir_cabecalhos("");
   return s->url;
+}
+
+// Return whether the current guide source was retried before advancing.
+static int retentarCanal(void) {
+  const Stream *mesma = stream_item(canalFonteIdx);
+  if (canalViaProxy) {
+    if (canalDiretoTentado) return 0;
+    int redir = proxyts_redirecionou();
+    canalViaProxy = 0;
+    if (mesma && !redir) {
+      proxyts_definir_cabecalhos("");
+      canalFonteDesde = SDL_GetTicks();
+      canalDiretoTentado = 1;
+      const char *url = mesma->url;
+      if (!strncmp(url, PROXYTS_PREFIXO, strlen(PROXYTS_PREFIXO)))
+        url += strlen(PROXYTS_PREFIXO);
+      printf("[canal] source %d: proxy failed, retrying direct\n", canalFonteIdx);
+      player_definir_fonte(url);
+      return 1;
+    }
+    canalDiretoTentado = 1;
+  }
+  if (!canalDiretoTentado && mesma && nv_webos_major() > 0 &&
+      video_buffer_fim() > 0 && !video_decoder_anunciou() &&
+      proxyts_disponivel() && proxyts_candidata(mesma->url, mesma->mp4)) {
+    static char url[NV_MEDIA_URL_MAX + 128];
+    if (strlen(mesma->url) + strlen(PROXYTS_PREFIXO) >= sizeof url) return 0;
+    canalDiretoTentado = canalViaProxy = 1;
+    video_definir_cabecalhos(mesma->cabecalhos);
+    proxyts_definir_cabecalhos(mesma->cabecalhos);
+    snprintf(url, sizeof url, "%s%s", PROXYTS_PREFIXO, mesma->url);
+    canalFonteDesde = SDL_GetTicks();
+    printf("[canal] source %d: buffered without decoder, retrying proxy-ts\n", canalFonteIdx);
+    player_definir_fonte(url);
+    return 1;
+  }
+  return 0;
 }
 
 static int tocarFonteGuardada(void) {
@@ -1415,7 +1467,7 @@ static void idBaseDoTitulo(char *dst, size_t tam) {
   const CatItem *c;
   if (tam) dst[0] = 0;
   if (player_id_canal()[0]) return;
-  c = cat_item(player_aberto() ? player_indice() : detail_indice());
+  c = cat_item(player_aberto() && !juntosui_escolhendo_filme() ? player_indice() : detail_indice());
   if (!c || !c->imdb[0]) return;
   fontepref_id_base(c->imdb, dst, (unsigned)tam);
 }
@@ -1425,10 +1477,10 @@ static void idBaseDoTitulo(char *dst, size_t tam) {
 // e a folha cai no addon.
 static void nomeParaFolha(void) {
   const CatItem *c = player_id_canal()[0] ? NULL
-                   : cat_item(player_aberto() ? player_indice() : detail_indice());
+                   : cat_item(player_aberto() && !juntosui_escolhendo_filme() ? player_indice() : detail_indice());
   stream_folha_nome(c ? c->titulo : "");
   stream_folha_canal(player_id_canal()[0] != 0 || (c && nv_tipo_canal(c->tipo)));
-  stream_folha_item(c ? (player_aberto() ? player_indice() : detail_indice()) : -1);
+  stream_folha_item(c ? (player_aberto() && !juntosui_escolhendo_filme() ? player_indice() : detail_indice()) : -1);
 }
 
 static void episodioDoDetalhe(void) {
@@ -1491,14 +1543,14 @@ static int resolverCanalXtream(void) {
   for (j = 0; j < nv; j++) if (!nv_res_preferida(v[j].altura, alvo)) ord[no++] = v[j];
   for (j = 0; j < no; j++)
     for (i = 0; i < k && n < (int)(sizeof s / sizeof *s); i++) {
-      char url[4096];
+      char url[NV_MEDIA_URL_MAX];
       const char *f = !strcmp(ext[i], "ts") ? "TS" : "HLS";
       if (!xtream_url_formato(ord[j].id, ext[i], url, sizeof url)) continue;
       // PROXY DE TS (#158, proxyts.h): a primeira fonte de cada variante vai
       // pelo proxy local — HLS (ou .ts que o painel responde com playlist) vira
       // TS continuo; o que ja e TS continuo o proxy redireciona direto. As
       // fontes diretas ficam atras, de reserva.
-      if (!i && !xtream_conexoes_limitadas() && ajustes_livetv_proxy() && proxyts_disponivel() && n < (int)(sizeof s / sizeof *s) - 1) {
+      if (!i && !xtream_conexoes_limitadas() && guia_proxy_do_canal(player_id_canal(), ajustes_livetv_proxy()) && proxyts_disponivel() && n < (int)(sizeof s / sizeof *s) - 1) {
         snprintf(s[n].url, sizeof s[n].url, "%s%s", PROXYTS_PREFIXO, url);
         if (strcmp(ord[j].id, player_id_canal()) && ord[j].nome[0])
           snprintf(s[n].rotulo, sizeof s[n].rotulo, "Xtream (%s, proxy) · %s", f, ord[j].nome);
@@ -1599,7 +1651,7 @@ static void erroCanalXtream(void) {
 // nada aqui decide reproducao. Uma vez por canal; o pipeline fecha antes porque
 // a conta tem 1 tela so (telas=0/1) e uma segunda conexao seria recusada.
 static void *sondarCanalXtreamFio(void *u) {
-  char *id = u, url[4096], fin[4096], r[600];
+  char *id = u, url[NV_MEDIA_URL_MAX], fin[NV_MEDIA_URL_MAX], r[600];
   long n = 0;
   int st = 0, er = 0;
   char *b;
@@ -1672,7 +1724,7 @@ static void processarFonteJob(void) {
   int tipo, renovando, resultado, estado, mesmoId = 1;
   Uint32 prazo;
   unsigned geracao;
-  char id[80], url[4096];
+  char id[80], url[NV_MEDIA_URL_MAX];
   int aplicar;
   if (!fioFonteVivo ||
       atomic_load_explicit(&job->estado, memory_order_acquire) != FJOB_DONE)
@@ -1916,7 +1968,7 @@ typedef struct {
   unsigned geracaoLista, sessao;
   uint64_t sessaoPerfil;
   DebridContexto debrid;
-  char url[4096], servico[32];
+  char url[NV_MEDIA_URL_MAX], servico[32];
 } TorrentJob;
 static TorrentJob torrentJob;
 static pthread_t fioTorrent;
@@ -2642,11 +2694,11 @@ static void registrarFonteVODTocando(void) {
 // recusou a URL no preparo (erro de conexao): repete o pedido pelo nosso
 // cliente, FORA do fio de quadro, e escreve uma linha so, sem caminho nem query.
 // Uma vez por URL.
-typedef struct { char url[4096]; char cab[512]; } SondaRecusa;
+typedef struct { char url[NV_MEDIA_URL_MAX]; char cab[512]; } SondaRecusa;
 static void *sondarRecusaFio(void *u) {
   SondaRecusa *p = u;
   const char *vetor[8];
-  char *l, *ctx = NULL, fim[4096], mime[96], linha[400];
+  char *l, *ctx = NULL, fim[NV_MEDIA_URL_MAX], mime[96], linha[400];
   int nc = 0, http = 0, ok;
   long corpo = -1;
   Uint32 t0 = SDL_GetTicks();
@@ -2666,7 +2718,7 @@ static void *sondarRecusaFio(void *u) {
 }
 static void sondarAposRecusa(void) {
 #ifndef __EMSCRIPTEN__
-  static char ultima[4096];
+  static char ultima[NV_MEDIA_URL_MAX];
   const char *url = video_url_atual();
   const Stream *s;
   SondaRecusa *p;
@@ -2700,7 +2752,7 @@ static int parteFase;
 static int parteRetomada;           // o arquivo aberto veio do ponto guardado
 static double partePos = -1;        // onde abrir dentro do arquivo (-1 = do inicio)
 static Uint32 parteDesde, parteGuardouEm;
-static char parteUrl[4096];
+static char parteUrl[NV_MEDIA_URL_MAX];
 static int parteMp4, parteRenovou;   // .mp4; links novos pedidos depois de tocar
 static PartesLista parteArqLista;    // o item do arquivo tocando (sessao ou nao)
 static int parteArqK = -1;
@@ -2708,11 +2760,11 @@ static int parteArqK = -1;
 // de duracao, player_parece_parte): pergunta ao TorBox pelos outros arquivos
 // do item, uma vez por link. Com 2 partes ou mais, a sessao liga sem reabrir
 // nada (o link do addon continua tocando) e a parte seguinte entra no fim.
-static char parteAutoUrl[4096];
+static char parteAutoUrl[NV_MEDIA_URL_MAX];
 static int parteAutoEsperando;
 static int parteProx = -1, parteProxFase;   // 0 nada, 1 pedido, 2 pronto, 3 falhou, 4 ultima tentativa
 static Uint32 parteProxDesde;
-static char parteProxUrl[4096];
+static char parteProxUrl[NV_MEDIA_URL_MAX];
 
 static void parteAviso(int k) {
   const PartesLista *l = partes_sessao_lista();
@@ -2863,7 +2915,7 @@ static void parteFalhou(const char *porque) {
 }
 static void vigiarPartes(void) {
   char alvo[64];
-  static char url[4096];
+  static char url[NV_MEDIA_URL_MAX];
   static PartesLista l;   // ~13 KB: fora da pilha, como as listas de partes.c
   int r;
   if (parteFase == PF_NADA) {
@@ -3049,7 +3101,7 @@ static void vigiarPartes(void) {
     printf("[partes] part %d ended: playing part %d of %d\n", partes_numero(sl, k),
            partes_numero(sl, prox), partes_principais(sl));
     fflush(stdout);
-    { char u[4096];
+    { char u[NV_MEDIA_URL_MAX];
       PartesPonto pt = { sl->usenet, sl->item, sl->arq[prox].id, 0 };
       snprintf(u, sizeof u, "%s", parteProxUrl);
       partes_sessao_ir(prox);
@@ -3368,6 +3420,22 @@ static void tentarProximaFonteVOD(void) {
   int atual, motivo = 0;
   if (!fonteVODAutomatica || player_id_canal()[0] || !player_aberto() ||
       player_quer_sair() || aguardandoFonte != 0 || !fonteVODDesde) return;
+  // Warning clips already stopped their pipeline: never reconnect or retry
+  // that provider. Preserve the not-cached card when no alternative remains.
+  if (player_fonte_fora_cache()) {
+    atual = stream_atual();
+    const Stream *s = stream_item(atual);
+    stream_automatico_excluir_aviso(atual);
+    if (fonteFalha && s && s->debridServico > 0)
+      fontefalha_provedor_recusado(fonteFalha, s->debridServico - 1);
+    int tem = fonteFalha ? stream_falha_tem_proxima(fonteFalha, fonteFalhaLista)
+                        : fonteVODTentativas < VOD_FONTE_MAX_TENTATIVAS && stream_proxima_vod(atual) >= 0;
+    if (!tem) { fonteVODAutomatica = 0; return; }
+    player_voltar_a_esperar();
+    player_toast(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 7000);
+    (void)pedirProximaFonteVOD(atual);
+    return;
+  }
   // Rede caiu com o video andando: a mesma fonte esta sendo recarregada
   // (video_reconexao.h). So vira troca de fonte quando ela desistir (falhou).
   if (video_reconectando()) return;
@@ -4639,7 +4707,7 @@ void app_evento(const SDL_Event *e) {
     saiuPorCima = (e->key.keysym.sym == SDLK_UP);
   }
   if (spotAtalho(e) && spotPode()) { spotAbrir(e->key.keysym.sym == SPOT_TECLA_VOZ); return; }
-  if (player_aberto()) { player_evento(e); return; }
+  if (player_visivel()) { player_evento(e); return; }
   if (srvsetup_aberto()) { srvsetup_evento(e); return; }
   // A BARRA LATERAL POR CIMA DA PAGINA DO TITULO (dono, 03/10: "pode abrir por
   // cima"): ESQUERDA no comeco de uma fileira pede a barra e a pagina fica
@@ -4817,7 +4885,7 @@ static void trocaDeTituloSeSolicitada(void) {
 // defeito de antes so naquele caminho. Esperar o video (player_com_video)
 // tambem poupa a busca das candidatas que o automatico testa e descarta.
 static void legendasDaFonte(void) {
-  static char ultimo[4096 + 64];
+  static char ultimo[NV_MEDIA_URL_MAX + 64];
   char chave[sizeof ultimo], alvo[64];
   const Stream *s;
   const CatItem *c;
@@ -4872,11 +4940,34 @@ static const char *homeTrailerBloqueio(void) {
   return NULL;
 }
 
+static int juntosFontePendente = -1;
+static unsigned juntosFonteGeracao;
+static char juntosFonteAlvo[64];
+
 static void tocarFonteEscolhida(int fonte, int manual) {
-  int alvo = player_aberto() ? player_indice() : detail_indice(), t = 0, e = 0;
-  if (player_aberto()) player_episodio_atual(&t, &e);
+  int navegando = juntosui_escolhendo_filme();
+  int alvo = player_aberto() && !navegando ? player_indice() : detail_indice(), t = 0, e = 0;
+  if (player_aberto() && !navegando) player_episodio_atual(&t, &e);
   else detail_ep_foco(&t, &e);
   if (manual) consumirFolhaTocar(&t, &e);
+  if (navegando) {
+    const JsMotor *m = juntos_motor();
+    const CatItem *c = cat_item(alvo);
+    char ep[64];
+    if (!m || !m->temSala || !c) { juntosui_sala_abriu(); return; }
+    if (t > 0 && e > 0) snprintf(ep, sizeof ep, "%s:%d:%d", c->imdb, t, e);
+    else snprintf(ep, sizeof ep, "%s", c->imdb);
+    if (strcmp(ep, m->sala.ep)) {
+      if (stream_item(fonte) && stream_lista_do_alvo(ep)) {
+        juntosFontePendente = fonte;
+        juntosFonteGeracao = stream_lista_geracao();
+        snprintf(juntosFonteAlvo, sizeof juntosFonteAlvo, "%s", ep);
+        juntos_escolher_titulo(c->imdb, t, e, c->titulo, c->poster);
+      }
+      juntosui_sala_abriu();
+      return;
+    }
+  }
   if (travaui_abrir_espera(alvo, t, e)) { aguardandoFonte = 0; folhaParaTocar = 0; return; }
   {
     const Stream *s = stream_item(fonte);
@@ -4947,6 +5038,7 @@ static void tocarFonteEscolhida(int fonte, int manual) {
         if (s->foraCache)
           player_toast_ex(i18n("Fonte fora do cache: o debrid começa a baixar. Se tocar um aviso curto, tente de novo em alguns minutos."), 9000, "aj_download", 0);
       }
+      if (juntos_precarregando()) juntosui_sala_abriu();
       // Escolha manual num canal tambem entra no watchdog: fonte viva escolhida
       // a dedo pode morrer igual.
       if (player_id_canal()[0]) { canalFonteIdx = fonte; canalFonteDesde = SDL_GetTicks(); canalViaProxy = 0; }
@@ -4961,9 +5053,13 @@ static Uint32 juntosListaDesde;
 static void juntosAbrirEFonte(Uint32 agora) {
   char imdb[24], titulo[160], poster[512], alvo[64];
   int t, e;
+  if (!juntos_ativo()) juntosFontePendente = -1;
   if (juntosui_pediu_fechar_player()) player_sair();
   if (juntosui_pediu_reproduzir()) detail_pedir_reproduzir();
-  if (juntosui_pediu_escolher_filme()) trocarTela(TELA_BUSCA);
+  if (juntosui_pediu_escolher_filme()) {
+    detail_fechar_seco();
+    trocarTela(TELA_BUSCA);
+  }
   if (juntos_pediu_abrir(imdb, sizeof imdb, &t, &e, titulo, sizeof titulo, poster, sizeof poster)) {
     int idx = cat_indice_por_imdb(imdb);
     if (idx < 0) {
@@ -4982,10 +5078,19 @@ static void juntosAbrirEFonte(Uint32 agora) {
       diagnostico_cancelar_vazao();
       player_abrir(idx, NULL);
       if (t > 0 && e > 0) player_definir_episodio(t, e);
-      player_do_inicio();          // a posicao e a da sala, nao a retomada
+      if (juntos_fase() != JF_PREPARADO) player_do_inicio(); // guests follow room time
       renovarListaDoPlayer();
       juntosListaDesde = 0;
-      if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
+      alvoPlayer(alvo, sizeof alvo);
+      if (juntosFontePendente >= 0 && !strcmp(alvo, juntosFonteAlvo) &&
+          juntosFonteGeracao == stream_lista_geracao() && stream_lista_do_alvo(alvo)) {
+        int fonte = juntosFontePendente;
+        juntosFontePendente = -1;
+        tocarFonteEscolhida(fonte, 1);
+      } else {
+        juntosFontePendente = -1;
+        if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
+      }
       printf("[juntos] abrindo o titulo da sala\n");
     }
   }
@@ -5004,6 +5109,11 @@ static void juntosAbrirEFonte(Uint32 agora) {
     }
   }
 }
+
+#ifdef NV_SHOT_HOOKS
+void app_shot_escolher_fonte(int fonte) { tocarFonteEscolhida(fonte, 1); }
+void app_shot_juntos_abrir(Uint32 agora) { juntosAbrirEFonte(agora); }
+#endif
 
 static void atualizarFolha(float dt, Uint32 agora) {
   stream_folha_atualizar(dt, agora);
@@ -5808,7 +5918,9 @@ void app_atualizar(float dt, Uint32 agora) {
       // ESQUERDA na borda abre a barra SOBRE a tela atual. Voltar continua
       // sendo a saída normal para a Home; assim o foco da tela não é perdido
       // só para alcançar a navegação principal.
-      if ((saiuPorEsquerda || saiuPorCima) && sidebar_permitida()) {
+      if (!saiuPorEsquerda && !saiuPorCima && juntosui_voltar_filme()) {
+        menu_fechar();
+      } else if ((saiuPorEsquerda || saiuPorCima) && sidebar_permitida()) {
         menu_abrir();
       } else if (tela == TELA_CACA && cacaDoPerfil) {
         trocarTela(TELA_PERFIL);
@@ -5878,7 +5990,7 @@ void app_atualizar(float dt, Uint32 agora) {
     }
   }
   // Pedidos de abrir um titulo, vindos de qualquer tela.
-  if (!detail_aberto() && !player_aberto()) {
+  if (!detail_aberto() && !player_visivel()) {
     int idx = -1;
     HomeItem it;
     SpotPedido pedPessoa;
@@ -6029,7 +6141,7 @@ void app_atualizar(float dt, Uint32 agora) {
           if (strcmp(pendAlvo, alvo)) { snprintf(pendAlvo, sizeof pendAlvo, "%s", alvo); pendDesde = SDL_GetTicks(); }
           esperaFoco = SDL_GetTicks() - pendDesde < 1200u;
         } }
-      if (!player_aberto() && aguardandoFonte != 2 && ci && ci->imdb[0] && !esperaFoco &&
+      if (!player_visivel() && aguardandoFonte != 2 && ci && ci->imdb[0] && !esperaFoco &&
           (strcmp(alvo, ultimoAlvo) || (detail_aberto() && ultimaVersao != addons_versao()))) {
         if (!strcmp(alvo, ultimoAlvo)) printf("[addons] lista mudou: refazendo a busca de fontes de %s\n", alvo);
         snprintf(ultimoAlvo, sizeof ultimoAlvo, "%s", alvo);
@@ -6060,6 +6172,18 @@ void app_atualizar(float dt, Uint32 agora) {
     // player_definir_episodio.
     int doInicio = detail_pediu_do_inicio();
     int querTocar = detail_pediu_reproduzir() || doInicio;
+    const JsMotor *salaJ = juntos_motor();
+    const CatItem *tituloJ = cat_item(detail_indice());
+    if (querTocar && juntos_ativo() && tituloJ) {
+      char alvoJ[64];
+      int tJ = 0, eJ = 0;
+      detail_ep_foco(&tJ, &eJ);
+      idDoAlvo(tituloJ, alvoJ, sizeof alvoJ);
+      if (salaJ && salaJ->temSala && strcmp(salaJ->sala.ep, alvoJ))
+        juntos_escolher_titulo(tituloJ->imdb, tJ, eJ, tituloJ->titulo, tituloJ->poster);
+      juntosui_sala_abriu();
+      querTocar = 0;
+    }
     // TRAVA DE SERIE: o episodio alvo alem do limite (quem esta a frente
     // espera) nao toca: abre a folha de espera, que tem "Assistir mesmo assim".
     if (querTocar && aguardandoFonte != 2 && travaui_segurar_detalhe()) querTocar = 0;
@@ -6298,7 +6422,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // vivo, e la a escolha ja e feita pela playlist que responde.
       //
       // #667: a remembered source sets the sheet's focus, never consent to play.
-      if (ajustes_fonte_manual() && stream_n() > 0) {
+      if (ajustes_fonte_manual() && juntos_fase() != JF_PREPARADO && stream_n() > 0) {
         aguardandoFonte = 0;
         folhaParaTocar = 1;
         nomeParaFolha(); stream_folha_abrir();
@@ -6377,7 +6501,7 @@ void app_atualizar(float dt, Uint32 agora) {
       stream_definir_atual(fonteEscolhida);
       if (s) {
         if (player_id_canal()[0]) {
-          static char viaProxy[4200];
+          static char viaProxy[NV_MEDIA_URL_MAX + 128];
           player_definir_fonte(urlCanal(s, viaProxy, sizeof viaProxy));
         } else if (jaTocando) {
           printf("[fonte] conferencia confirmou a fonte que ja tocava (%u ms)\n",
@@ -6561,7 +6685,7 @@ void app_atualizar(float dt, Uint32 agora) {
       } else if (ls == NV_LS_REABRIR) {
         const Stream *mesma = stream_item(canalFonteIdx);
         if (mesma) {
-          static char viaProxy[4200];
+          static char viaProxy[NV_MEDIA_URL_MAX + 128];
 #ifdef NV_TPK
           if (video_terminou() && !liveStall.pendente)
             printf("[canal] tpk EOF de live: reabrindo a fonte %d imediatamente (sem tentativa)\n", canalFonteIdx);
@@ -6600,26 +6724,9 @@ void app_atualizar(float dt, Uint32 agora) {
       fflush(stdout);
       int prox = stream_canal_proxima(canalFonteIdx);
       const Stream *s;
-      // PELO PROXY NAO ABRIU: a MESMA fonte direto, antes da proxima (#283).
-      // Cobre o HLS que o proxy nao converte (cifrado, fMP4, audio a parte) e
-      // a TV em que o motor HLS do uMS toca melhor que o TS continuo. Se o
-      // proxy so redirecionou, a tentativa direta ja foi esta.
-      if (canalViaProxy) {
-        const Stream *mesma = stream_item(canalFonteIdx);
-        int redir = proxyts_redirecionou();
-        canalViaProxy = 0;
-        if (mesma && !redir) {
-          printf("[canal] fonte %d pelo proxy nao abriu (%s); tentando direto\n", canalFonteIdx,
-                 video_falhou() ? video_erro_texto()
-                                : semDecoder ? "dado sem decoder" : "sem dado no prazo");
-          fflush(stdout);
-          marco("canal: proxy falhou, fonte direto");
-          proxyts_definir_cabecalhos("");
-          canalFonteDesde = SDL_GetTicks();
-          player_definir_fonte(mesma->url);
-          return;
-        }
-      }
+      // Try the other route once before advancing: proxy -> direct (#283),
+      // or webOS direct -> proxy when bytes arrived without a decoder (#625).
+      if (retentarCanal()) return;
       // PORTAL STALKER: nao existe "proxima fonte" — cada canal tem uma so, e
       // o que morre nao e o canal, e o LINK, que vale minutos. Avancar o indice
       // aqui cairia direto no ramo de desistir, entao o conserto e pedir um
@@ -6673,7 +6780,7 @@ void app_atualizar(float dt, Uint32 agora) {
         // com todas mudas o curto matava a 4K que abre em 11,8 s (25/09).
         canalFontePrazo = stream_canal_prazo_longo(prox)
                             ? CANAL_FONTE_PRAZO_MS : CANAL_FONTE_PRAZO_MUDA_MS;
-        { static char viaProxy[4200];
+        { static char viaProxy[NV_MEDIA_URL_MAX + 128];
           player_definir_fonte(urlCanal(s, viaProxy, sizeof viaProxy)); }
       } else {
         canalFonteIdx = -1;
@@ -7346,7 +7453,7 @@ static void desenharTelas(Uint32 agora) {
   // — a mesma conta que ja valia para o cartao de detalhe esticado.
   // ...exceto enquanto o video do preview do guia CRESCE para a tela cheia: ai
   // o guia continua em volta do furo que anda (player_desenhar).
-  if (!player_aberto() || player_janela_animando(NULL, NULL, NULL, NULL)) {
+  if (!player_visivel() || player_janela_animando(NULL, NULL, NULL, NULL)) {
     // O FUNDO PARADO DO PAINEL DE SALVOS: com o painel inteiro na tela, tudo
     // que fica atras dele e pintado UMA vez num FBO, ja com o veu, e os quadros
     // seguintes desenham so a copia e o painel. Ver spainel_fundo em
@@ -7370,11 +7477,11 @@ static void desenharTelas(Uint32 agora) {
   }
   // BRILHO DA INTERFACE DO PLAYER (esmaecer.h): tudo daqui ate a ilha do player
   // multiplica a cor pelo fator (a legenda se isenta em player.c).
-  if (player_aberto()) gfx_osd_mult = player_osd_brilho();
+  if (player_visivel()) gfx_osd_mult = player_osd_brilho();
   // UI EM HDR (esmaecer.h): branco a 80% e veus mais densos com o video em
   // HDR/DV, legenda e tela do DV inclusive. Volta a 1 depois da tela do DV.
-  if (player_aberto()) gfx_hdr_ui = player_ui_hdr();
-  CAMADA_SE(player_aberto());
+  if (player_visivel()) gfx_hdr_ui = player_ui_hdr();
+  CAMADA_SE(player_visivel());
   player_desenhar(agora);
   // O overlay do guia vai POR CIMA do player — o video continua atras do fundo
   // a 94%, que e o que diz "a TV nao parou" enquanto se troca de canal.

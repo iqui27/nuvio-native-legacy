@@ -19,7 +19,7 @@ void ev_zerar(EvEstado *e) {
   e->kbps = -1;
   e->bufSeg = e->bufMb = -1.0;
   e->bufPct = -1;
-  e->conexoes = e->primeiroByteMs = -1;
+  e->conexoes = e->poolConexoes = e->primeiroByteMs = -1;
   e->perdidos = e->quadros = -1;
 }
 
@@ -108,8 +108,9 @@ void ev_amostra(EvEstado *e, unsigned agoraMs, const EvEntrada *in, int hora, in
   // SERVIDOR
   snprintf(e->host, sizeof e->host, "%s", in->vs.host);
   e->conexoes = in->vs.conexoes;
+  e->poolConexoes = in->vs.poolConexoes;
   e->primeiroByteMs = in->vs.primeiroByteMs;
-  e->servOrigem = in->vs.conexoes >= 0 ? EVO_MEDIDO : in->vs.host[0] ? EVO_LINK : EVO_SEM;
+  e->servOrigem = in->vs.poolConexoes >= 0 ? EVO_MEDIDO : in->vs.host[0] ? EVO_LINK : EVO_SEM;
 
   // ERROS E RECONEXOES: cada SUBIDA conta uma vez.
   if (in->reconectando && !e->estavaRecon) { e->reconexoes++; e->reconHora = hora; e->reconMin = minuto; }

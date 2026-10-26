@@ -28,6 +28,10 @@ fi
 objects=()
 shot_flags=()
 if [ "${NV_J1_SHOT:-}" = 1 ]; then shot_flags+=(-DNV_J1_SHOT); fi
+if [ -n "${BIB_REV:-}" ]; then
+  git show "$BIB_REV:src/biblioteca.c" > "$tmp/biblioteca.c"
+  shot_flags+=("-DBIB_FONTE=\"$tmp/biblioteca.c\"" -DNV_BIB_BEFORE)
+fi
 for source in "${sources[@]}" tests/biblioteca_shot.c; do
   object="$tmp/$(basename "$source" .c).o"
   "${compiler[@]}" -c "$source" -Isrc -o "$object" \
@@ -44,11 +48,30 @@ fi
 if [ "${NV_J1_SHOT:-}" = 1 ]; then
   mkdir -p "$saida"
   cp "$tmp/shot" "$saida/capture"
+  # Compile once; the focused matrix covers the owner's layouts and languages.
+  if [ "${NV_BIB_MATRIX:-}" = 1 ]; then
+    export NV_J1_STILLS=1 NV_BIB_SO_GRADE=1 NUVIO_SHOT_RELOGIO=1 NUVIO_SHOT_SYNC_MIN=3
+    for lang in pt en; do
+      for rail in dinamica moderna; do
+        for scale in 1 .85; do
+          dest="$saida/$lang-$rail-$scale"
+          mkdir -p "$dest"
+          unset NUVIO_SHOT_PT NUVIO_SHOT_EN
+          if [ "$lang" = en ]; then export NUVIO_SHOT_EN=1; else export NUVIO_SHOT_PT=1; fi
+          NUVIO_RAIL="$rail" NUVIO_SHOT_ESCALA_TEXTO="$scale" NUVIO_SHOT_VIDRO=0 \
+          NUVIO_DADOS="$tmp/dados-$lang-$rail-$scale" "$tmp/shot" "$dest/native" menu
+        done
+      done
+    done
+    exit 0
+  fi
+  # NUVIO_SHOT_EN=1 captures the English UI; otherwise pt-BR.
+  if [ -z "${NUVIO_SHOT_EN:-}" ]; then export NUVIO_SHOT_PT=1; fi
   for scale in ${NV_J1_SCALES:-1 .85 .9 1.1 1.2 1.3}; do
-    for glass in 1 0; do
+    for glass in ${NV_J1_GLASS:-1 0}; do
       for mode in ${NV_J1_MODES:-mock servers}; do
         mkdir -p "$saida/$scale-$glass/$mode"
-        NUVIO_RAIL="${NUVIO_RAIL:-moderna}" NUVIO_SHOT_RELOGIO=1 NUVIO_SHOT_PT=1 \
+        NUVIO_RAIL="${NUVIO_RAIL:-moderna}" NUVIO_SHOT_RELOGIO=1 \
         NUVIO_SHOT_ESCALA_TEXTO="$scale" NUVIO_SHOT_VIDRO="$glass" \
         NUVIO_DADOS="$tmp/dados-$scale-$glass-$mode" "$tmp/shot" "$saida/$scale-$glass/$mode/native" "$mode"
       done

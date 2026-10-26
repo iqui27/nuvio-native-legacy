@@ -1,12 +1,6 @@
-// FOLHA DE FONTES 2.1 (tela 4 "Titulo e Fontes"): o cartao da escolha
-// automatica no topo da lista, as copias do mesmo arquivo de add-ons
-// diferentes dobradas numa linha ("N add-ons · mesmo arquivo", #457/#458) e a
-// navegacao do D-pad que nunca cai numa linha dobrada.
-//
-// Confere em 1920x1080: cartao presente na aba "Todos" e ausente na aba de um
-// add-on; lista + dobradas = fontes; foco nunca numa copia dobrada; alguma
-// copia realmente dobrou. Grava PNGs em <prefixo>-*.png (a suite usa
-// tests/out/titulo21). NAO ENTRA NA SUITE de unitarios: janela GL.
+// Sources restoration: every source copy stays visible in the approved list.
+// Checks no extra automatic-choice card, provider tabs and D-pad traversal.
+// Writes native PNGs; excluded from the headless unit suite.
 //   bash tests/titulo21_shot.sh tests/out/titulo21
 #include "catalogo.h"
 #include "player.h"
@@ -145,13 +139,11 @@ int main(int argc, char **argv) {
   stream_folha_abrir();
   quadros(60);
 
-  // 1. aba "Todos": cartao da escolha + copias dobradas.
+  // All sources retain separate rows in the restored sheet.
   stream_shot_folha(&cartao, &linhas, &dobradas);
   printf("todos: cartao %.0f px, %d linhas, %d dobradas, folha_n %d\n", cartao, linhas, dobradas, stream_folha_n());
-  assert(cartao > 40.0f);
-  assert(dobradas >= 2);                 // 4K (1 copia) + 1080p x265 (2 copias), menos as pinadas
-  assert(linhas + dobradas == stream_folha_n());
-  assert(linhas >= 3 && linhas <= 4);
+  assert(cartao == 0.0f && dobradas == 0);
+  assert(linhas == stream_folha_n() && linhas == 6);
   stream_shot_foco(&idx, &dob);
   assert(!dob);
   salvar("1-todos");
@@ -169,7 +161,7 @@ int main(int argc, char **argv) {
   quadros(20);
   salvar("3-foco-topo");
 
-  // 3. aba de add-on: o cartao some (so existe em "Todos").
+  // Provider tabs use the same restored list.
   for (int i = 0; i < 14; i++) tecla(SDLK_UP);
   tecla(SDLK_DOWN);    // fileira de abas
   tecla(SDLK_RIGHT);   // primeira aba de add-on
@@ -178,7 +170,7 @@ int main(int argc, char **argv) {
   printf("aba de add-on: cartao %.0f px, %d linhas, %d dobradas\n", cartao, linhas, dobradas);
   assert(cartao == 0.0f);
   salvar("4-aba-addon");
-  // Cartao aberto nao conserva o ranking 4K depois de lembrar o indice 2.
+  // Remembered source still wins playback selection.
   stream_preferir(2);
   stream_folha_abrir();
   quadros(4);

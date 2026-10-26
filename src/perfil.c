@@ -284,7 +284,8 @@ static void cartao(GfxRect r, float a) {
 // cinza opaco da regra 2 no solido. Sem aro e sem realce: o foco e superficie.
 static void linhaFoco(GfxRect r, float raio, float f, float a) {
   if (f <= 0.01f) return;
-  if (ajustes_vidro()) { if (!gfx_foco_placa(r, raio, f, a)) gfx_cor(r, raio, 1, 1, 1, .12f * f * a); }
+  if (gfx_foco_placa(r, raio, f, a)) return;
+  if (ajustes_vidro()) gfx_cor(r, raio, 1, 1, 1, .12f * f * a);
   else gfx_cor(r, raio, .169f, .176f, .204f, f * a);
 }
 static void numero(char *s, size_t n, int v) { snprintf(s, n, "%d", v < 0 ? 0 : v); }

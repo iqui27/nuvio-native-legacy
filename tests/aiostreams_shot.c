@@ -45,6 +45,9 @@ int main(int argc,char **argv) {
   static AioSnapshot s;
   aio_manifesto(&s,"{\"id\":\"aiostreams.test\",\"name\":\"AIOStreams\",\"version\":\"2.36.0\",\"resources\":[\"stream\",\"catalog\",\"subtitles\",\"meta\"],\"catalogs\":[{\"id\":\"trending\",\"name\":\"Filmes em alta\",\"type\":\"movie\"},{\"id\":\"popular\",\"name\":\"Séries populares\",\"type\":\"series\"},{\"id\":\"netflix\",\"name\":\"Filmes Netflix\",\"type\":\"movie\"},{\"id\":\"disney\",\"name\":\"Séries Disney+\",\"type\":\"series\"}]}");
   aio_configuracao(&s,"{\"data\":{\"userData\":{\"services\":[{\"id\":\"TorBox\",\"enabled\":true}],\"presets\":[{\"type\":\"Torrentio\",\"enabled\":true},{\"type\":\"Comet\",\"enabled\":true},{\"type\":\"MediaFusion\",\"enabled\":true},{\"type\":\"WebStreamr\",\"enabled\":true}],\"requiredResolutions\":[\"2160p\",\"1080p\"],\"excludedResolutions\":[\"720p\"],\"requiredSeederRange\":[10,10000],\"preferredLanguages\":[\"Portuguese\",\"English\"],\"excludeCached\":false,\"excludeUncached\":false,\"sortCriteria\":{\"global\":[{\"key\":\"cached\"},{\"key\":\"resolution\"}]},\"formatter\":{\"id\":\"aiostreams\"}}}}");
+  FILE *fixture=fopen("tests/fixtures/aiostreams-full.json","rb"); assert(fixture);
+  char full[65536]; size_t fullSize=fread(full,1,sizeof full-1,fixture); fclose(fixture); full[fullSize]=0;
+  aio_configuracao(&s,full);
   aio_status(&s,"{\"success\":true,\"data\":{\"version\":\"2.36.0\",\"channel\":\"stable\",\"settings\":{\"searchApiDisabled\":false}}}");
   aio_search(&s,"{\"success\":true,\"data\":{\"statistics\":[{\"title\":\"Torrentio\",\"description\":\"4 resultados\"},{\"title\":\"Comet\",\"description\":\"2 resultados\"}],\"errors\":[{\"title\":\"WebStreamr\",\"description\":\"tempo esgotado\"}],\"filtered\":3}}");
   aio_resultados(&s,"{\"streams\":[{\"name\":\"4K · Dolby Vision · MP4\",\"url\":\"https://example.invalid/video\",\"streamData\":{\"cached\":true,\"addon\":\"Torrentio\",\"parsedFile\":{\"resolution\":\"2160p\"}}},{\"name\":\"4K · HDR10 · REMUX\",\"url\":\"https://example.invalid/video\",\"streamData\":{\"cached\":true,\"addon\":\"Comet\"}},{\"name\":\"1080p · Dolby Vision · MP4\",\"url\":\"https://example.invalid/video\",\"streamData\":{\"cached\":true,\"addon\":\"MediaFusion\"}},{\"name\":\"1080p · Blu-ray · SDR\",\"url\":\"https://example.invalid/video\",\"streamData\":{\"cached\":true,\"addon\":\"Torrentio\"}},{\"name\":\"720p · WEB-DL · SDR\",\"url\":\"https://example.invalid/video\",\"streamData\":{\"cached\":true,\"addon\":\"Torrentio\"}},{\"name\":\"1080p · HTTP\",\"url\":\"https://example.invalid/video\",\"streamData\":{\"addon\":\"WebStreamr\"}},{\"name\":\"Resolução desconhecida · MKV\",\"externalUrl\":\"https://example.invalid/external\",\"streamData\":{\"cached\":true,\"addon\":\"Comet\"}},{\"name\":\"4K · HDR10 · MKV\",\"infoHash\":\"abcdef\",\"streamData\":{\"addon\":\"Torrentio\"}}]}");
@@ -61,6 +64,7 @@ int main(int argc,char **argv) {
     gfx_escala_txt_definir(scales[scale]/100.f); ajustes_definir_vidro(glass);
     for(int p=0;p<13;p++) {
       if(p<primeira||p>ultima)continue;
+      if(getenv("AIO_SHOT_DASHBOARD") && p!=5 && p!=10) continue;
       aioui_shot(p,&s);
       for(int f=0;f<=80;f++) {
         frame(f?10:0); SDL_Delay(2);
@@ -70,6 +74,20 @@ int main(int argc,char **argv) {
       }
       char name[160]; snprintf(name,sizeof name,"%s-%d-%s",names[p],scales[scale],glass?"glass":"solid");
       save(argv[1],name);
+      if(getenv("AIO_SHOT_DASHBOARD") && p==10 && getenv("AIO_SHOT_DETAILS")) {
+        const int groups[]={2,6,7};
+        const char *details[]={"languages-end","sort","formatter"};
+        for(int d=0;d<3;d++) {
+          aioui_shot(10,&s); frame(800);
+          SDL_Event key={0}; key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_DOWN;
+          for(int i=0;i<groups[d]/2;i++) aioui_evento(&key);
+          if(groups[d]%2) { key.key.keysym.sym=SDLK_RIGHT; aioui_evento(&key); }
+          key.key.keysym.sym=SDLK_RETURN; aioui_evento(&key); frame(800);
+          if(d==0) { key.key.keysym.sym=SDLK_DOWN; for(int i=0;i<81;i++) aioui_evento(&key); }
+          frame(800);
+          snprintf(name,sizeof name,"%s-%d-%s",details[d],scales[scale],glass?"glass":"solid"); save(argv[1],name);
+        }
+      }
       if(!getenv("AIO_SHOT_STILLS") && scale<2) {
         SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;aioui_evento(&e);
         for(int f=0;f<=40;f++) {

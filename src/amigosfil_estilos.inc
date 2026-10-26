@@ -162,6 +162,7 @@ static void afCartao(int i, GfxRect r, int foco, Uint32 agora) {
   afFocar(&r, raio, foco);
   if (s == 3) {
     svd_superficie(r, raio, 0, 1);
+    if (foco) gfx_foco_placa(r, raio, 1, 1);
     svd_rosto((GfxRect){r.x + (r.w - 40) * .5f, r.y + 6, 40, 40}, a, 0, 1, agora);
     TxtLinha t = txt_linha_corta(TXT_CAPTION2, a->nome, 240, 240, 245, 255, r.w - 16);
     txt_desenhar(t, r.x + (r.w - t.w) * .5f, r.y + r.h - t.h - 4);
@@ -169,7 +170,10 @@ static void afCartao(int i, GfxRect r, int foco, Uint32 agora) {
   }
   if (s == 1 && (!e || e->acao != SV_AGORA)) {
     char linha[256], ep[32];
-    if (foco) svd_superficie(r, raio, 0, 1);
+    if (foco) {
+      svd_superficie(r, raio, 0, 1);
+      gfx_foco_placa(r, raio, 1, 1);
+    }
     svd_rosto((GfxRect){r.x + 16, r.y + (r.h - 48) * .5f, 48, 48}, a, 0, 1, agora);
     snprintf(linha, sizeof linha, "%s%s%s", a->nome, e ? " " : "", e ? socialvis_verbo(e) : "");
     afTexto(linha, r.x + 82, r.y + 6, r.w - 96, TXT_CAPTION, 1);

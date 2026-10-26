@@ -56,8 +56,15 @@ char *metaprov_meta_com(const char *tipo, const char *id, int seg_cine,
 char *metaprov_meta(const char *tipo, const char *id, int seg_cine, int *prov);
 // So o Cinemeta (sem passar pelo catalogo do Nuvio); NULL se falhar ou vier
 // sem ficha valida. Para quem precisa conferir o que o Nuvio nao listou.
+typedef enum {
+  METAPROV_CINE_RETRY,
+  METAPROV_CINE_FOUND,
+  METAPROV_CINE_ABSENT
+} MetaprovCineResult;
+// Empty meta objects confirm absence; missing/null meta or errors stay retryable.
+// A found object still needs the caller's episode lookup.
 char *metaprov_meta_cinemeta_com(const char *tipo, const char *id, int seg,
-                                 MetaprovGet get, void *ctx);
+                                 MetaprovGet get, void *ctx, MetaprovCineResult *result);
 
 // Busca com reserva: Cinemeta so quando o Nuvio FALHA (rede/HTTP/JSON
 // invalido); resposta valida e vazia nao cai para o Cinemeta.

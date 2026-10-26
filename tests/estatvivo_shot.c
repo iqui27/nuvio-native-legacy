@@ -21,6 +21,21 @@
 
 static GLuint fbo, fboTex;
 static int claro;   // o quadro claro: o vidro contra um filme claro
+static int sawPool, sawIdle, sawActive, sawSingle;
+
+// Observe real UI text without adding production test hooks.
+TxtLinha estatconex_linha(TxtEstilo estilo, const char *s, int r, int g, int b, int a) {
+  if (!strcmp(s, "4")) sawPool = 1;
+  if (!strcmp(s, "em espera: buffer cheio")) sawIdle = 1;
+  if (!strcmp(s, "2 baixando agora")) sawActive = 1;
+  return txt_linha(estilo, s, r, g, b, a);
+}
+
+float estatconex_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
+                       float x, float y, float w, float leading, float a, int maxLinhas) {
+  if (!strcmp(s, "conexão única: servidor sem Range")) sawSingle = 1;
+  return txt_bloco(estilo, s, r, g, b, x, y, w, leading, a, maxLinhas);
+}
 
 static void salvar(const char *nome) {
   unsigned char *pix = malloc(1920 * 1080 * 4);
@@ -129,8 +144,8 @@ int main(int argc, char **argv) {
   // 1. ANDROID: tudo medido.
   e = base();
   e.velOrigem = EVO_MEDIDO;
-  e.bufSeg = 38; e.bufMb = 212; e.bufAlvo = 50; e.bufOrigem = EVO_MEDIDO;
-  e.conexoes = 4; e.primeiroByteMs = 212; e.servOrigem = EVO_MEDIDO;
+  e.bufSeg = 45; e.bufMb = 212; e.bufAlvo = 50; e.bufOrigem = EVO_MEDIDO;
+  e.poolConexoes = 4; e.conexoes = 0; e.primeiroByteMs = 212; e.servOrigem = EVO_MEDIDO;
   snprintf(e.host, sizeof e.host, "cdn-17.exemplo.net");
   e.perdidos = 3; e.quadros = 41280; e.quadrosOrigem = EVO_MEDIDO;
   snprintf(t.codecHdr, sizeof t.codecHdr, "HEVC · HDR10");
@@ -139,6 +154,24 @@ int main(int argc, char **argv) {
   estatvivo_abrir();
   snprintf(nome, sizeof nome, "%s-1-android.png", saida);
   captura(nome, 90);
+  assert(sawPool && "parallel pool must still show 4 while idle");
+  assert(sawIdle && "zero active downloads with a full buffer must show standby");
+  e.conexoes = 2;
+  estatvivo_teste(&e, &t);
+  snprintf(nome, sizeof nome, "%s-1-active.png", saida);
+  sawIdle = 0;
+  captura(nome, 90);
+  assert(sawActive && !sawIdle);
+  e.conexoes = 0; e.bufSeg = 44;
+  estatvivo_teste(&e, &t);
+  sawIdle = 0;
+  captura(nome, 1);
+  assert(!sawIdle && "a low buffer must not claim standby");
+  e.poolConexoes = 1;
+  estatvivo_teste(&e, &t);
+  snprintf(nome, sizeof nome, "%s-1-single.png", saida);
+  captura(nome, 90);
+  assert(sawSingle);
 
   // 2. LG: buffer em segundos medido, velocidade estimada, servidor do link.
   e = base();

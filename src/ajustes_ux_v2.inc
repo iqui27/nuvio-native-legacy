@@ -366,12 +366,14 @@ static void aj2DesenharMenu(const Aj2Pose *p) {
   // A superficie de foco (vidro 14%, solido #2B2D34 com sombra).
   if (f >= 2) {
     GfxRect r = { m.x + AJ2_MENU_PAD, topo + aj2SupY - aj2MRol, m.w - 2 * AJ2_MENU_PAD, aj2SupH };
-    if (ajVid()) gfx_cor(r, 38.0f / r.h, 1, 1, 1, 0.14f);
-    else {
-      gfx_rect((GfxRect){ r.x - 10, r.y + 2, r.w + 20, r.h + 26 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.30f);
-      gfx_cor(r, 38.0f / r.h, 0.169f, 0.176f, 0.204f, 1);
-    }
-    gfx_cor(r, 38.0f / r.h, ar, ag, ab, 0.14f);   // um toque leve do acento
+    if (!gfx_foco_placa(r, 38.0f / r.h, 1, 1)) {
+      if (ajVid()) gfx_cor(r, 38.0f / r.h, 1, 1, 1, 0.14f);
+      else {
+        gfx_rect((GfxRect){ r.x - 10, r.y + 2, r.w + 20, r.h + 26 }, 0, GFX_SOMBRA, 1.0f, 0, 0, 0.5f, 0, 0, 0, 0.30f);
+        gfx_cor(r, 38.0f / r.h, 0.169f, 0.176f, 0.204f, 1);
+      }
+      gfx_cor(r, 38.0f / r.h, ar, ag, ab, 0.14f);
+    }   // um toque leve do acento
   }
   // As tres pilulas do alto (aj2Chips). Recolhido (rotulos a 0) viram so o
   // icone, cada uma no comeco da sua fileira, para caberem na coluna de

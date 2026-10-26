@@ -2,6 +2,7 @@
 #include "app_id.h"
 #include "arranque.h"
 #include "swapint.h"
+#include "quadroc.h"
 #include "streams.h"
 #ifdef NV_DTS_DEBUG
 #include "dts/dts_engine.h"
@@ -436,6 +437,14 @@ static long tamanhoDe(const char *caminho) {
 // KEYUP adiado de uma tecla segurada.
 static Uint32 soltarEm = 0;
 static SDL_Keycode soltarTecla = 0;
+
+// RELOGIO DO QUADRO (row 30 do mapa): `pior=` e `swap=` mediam o tempo entre
+// dois quadros pelo relogio de alta resolucao. Quando o app suspende, o laco
+// para no meio e o relogio segue: o primeiro quadro de volta entregava a
+// SUSPENSAO inteira como se fosse um quadro (4191 s, 881 s, 54 s, 30 s em seis
+// registros), e a triagem passava a procurar jank que nunca existiu.
+// Quem suspende/volta marca aqui; o laco zera o relogio uma vez (quadroc.h).
+static QuadroRelogio quadroRel = { 0, 0, 0, 0.0 };
 
 // BUTTONUP adiado de um "clicar:x,y:hold".
 static Uint32 soltarMouseEm = 0;
@@ -1815,7 +1824,6 @@ int main(int argc, char **argv) {
   // devia — um quadro pesado de GPU aparece como swap grande, um quadro pesado
   // de CPU aparece na fase que o causou.
   double perFreq = (double)SDL_GetPerformanceFrequency();
-  Uint64 ultQuadro = SDL_GetPerformanceCounter();
   double fEv=0, fBomb=0, fUpd=0, fDes=0, fSwap=0, fAux=0, fClr=0;
   int fUplN=0, pUplN=0; long fUplB=0, pUplB=0;
   double pEv=0, pBomb=0, pUpd=0, pDes=0, pSwap=0, pAux=0, pClr=0;
@@ -1912,6 +1920,7 @@ int main(int argc, char **argv) {
         if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST || e.window.event == SDL_WINDOWEVENT_HIDDEN) {
           player_ciclo_evento(SDL_APP_WILLENTERBACKGROUND);
           ponteiro_evento(&e, app_evento);
+          quadroc_suspendeu(&quadroRel);   // suspendeu: o relogio para de valer
         }
 #ifdef NV_TOUCH_UI
         if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
@@ -1964,7 +1973,7 @@ int main(int argc, char **argv) {
         fflush(stdout);
       }
       player_ciclo_evento(e.type);
-      if (e.type == SDL_APP_DIDENTERFOREGROUND) atualizacao_retomou();
+      if (e.type == SDL_APP_DIDENTERFOREGROUND) { atualizacao_retomou(); quadroc_suspendeu(&quadroRel); }
       // PONTEIRO (Magic Remote, issue #99): mouse, rodinha e os avisos 484/485
       // de cursor do webOS ficam la; o que ele traduz em tecla chega a
       // app_evento como se viesse do D-pad.
@@ -2051,8 +2060,7 @@ int main(int argc, char **argv) {
     // varios segundos e uma animacao daria um salto. Piso nao existe mais —
     // quadro curto tem de ser um dt curto.
     Uint64 cQuadro = SDL_GetPerformanceCounter();
-    double dtms = (double)(cQuadro - ultQuadro) * 1000.0 / perFreq;
-    ultQuadro = cQuadro;
+    double dtms = quadroc_quadro(&quadroRel, cQuadro, perFreq, agora);
     if (dtms < 0.0) dtms = 0.0;
     perfTvFrame(agora, dtms);
     // FPS REGRESSION SCENES (fpscena.h), opt-in: a `fps-cena` file in the data
@@ -2243,6 +2251,8 @@ int main(int argc, char **argv) {
     video_tpk_zoom_roi_definir(ajustes_trailer_zoom_tpk());   // #241: Ajustes > Trailers
 #endif
     texto_sistema_mic_modo(ajustes_mic_busca());              // Ajustes > Tela inicial > Barra lateral
+    gpun_ampliar_app(resolucaoDaTv() && ajustes_ampliar_app() &&
+                     (ajustes_720p() || ajustes_1080p()));
     gpun_quadro_inicio();
     glClearColor(NV_COR_FUNDO_R, NV_COR_FUNDO_G, NV_COR_FUNDO_B, 1.0f);
     if (!nvPrimeiroQuadroFeito) arranque_etapa("primeiro glClear");
