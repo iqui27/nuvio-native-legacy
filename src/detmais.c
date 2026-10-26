@@ -44,6 +44,9 @@ int detmais_foco(void) { return foco; }
 
 const char *detmais_rotulo(int acao) {
   switch (acao) {
+    case DMAIS_VISTO:      return "Marcar como assistido";
+    case DMAIS_VISTO_SAI:  return "Desmarcar como assistido";
+    case DMAIS_NOTA:       return "Avaliar";
     case DMAIS_TRAILER:    return "Assistir trailer";
     case DMAIS_EXPLORAR:   return "Explorar a partir daqui";
     case DMAIS_ARTE:       return "Trocar arte";
@@ -62,6 +65,9 @@ const char *detmais_rotulo(int acao) {
 // trailer pela claquete o acha pela claquete.
 const char *detmais_icone(int acao) {
   switch (acao) {
+    case DMAIS_VISTO:      return "check";
+    case DMAIS_VISTO_SAI:  return "aj_x";
+    case DMAIS_NOTA:       return "pl_star";
     case DMAIS_TRAILER:    return "aj_clapperboard";
     case DMAIS_EXPLORAR:   return "aj_compass";
     case DMAIS_ARTE:       return "arte";

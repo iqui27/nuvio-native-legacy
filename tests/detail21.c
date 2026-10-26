@@ -1,3 +1,4 @@
+#define extras_nota ratingFixture
 #define seriefrases_n quoteCountFixture
 #define seriefrases_n_fatos factCountFixture
 #define extras_comentario_spoiler comSpoilerFixture
@@ -9,6 +10,7 @@
 #define travaui_abrir lockOpenFixture
 #include "../src/detail.c"
 static int eligible, roomT, roomE, lockIdx=-1;
+int ratingFixture(int f) { return f==EX_IMDB ? 80 : f==EX_TOMATOES ? 920 : 0; }
 int togetherAvailableFixture(void) { return eligible; }
 int lockAvailableFixture(void) { return eligible; }
 void togetherOpenFixture(int i,int t,int e) { (void)i; roomT=t; roomE=e; }
@@ -44,6 +46,24 @@ int main(int argc, char **argv) {
   snprintf(itemTeste.imdb, sizeof itemTeste.imdb, "tt9000011");
   itemTeste.temporadas[0] = 1; itemTeste.nTemporadas = 1;
   cat_definir_tudo(&itemTeste, 1, NULL, 0); idx = 0;
+  // TV retains legacy Play + Save, with other actions in More.
+  assert(nBotoes()==3 && acaoEm(0)==ACAO_PRIMARIO && acaoEm(1)==ACAO_LISTA && acaoEm(2)==ACAO_MAIS);
+  int available[DMAIS_N]; maisDisponiveis(available);
+  assert(available[DMAIS_VISTO] && !available[DMAIS_VISTO_SAI] && available[DMAIS_NOTA]);
+  executarMais(DMAIS_VISTO); assert(detail_pediu_assistido());
+  executarMais(DMAIS_NOTA); assert(notaAberta); notaAberta=0;
+  servidoresDisponiveis=1;
+  assert(nBotoes()==3 && acaoEm(1)==ACAO_LISTA);
+  maisDisponiveis(available); assert(available[DMAIS_NOTA]);
+  servidoresDisponiveis=0;
+  // Existing per-source settings govern both cards and their summary.
+  FILE *ratings=fopen(path,"w"); assert(ratings);
+  fputs("notaTituloImdb 1\nnotaTituloTomates 0\nmdblist_show_tomatoes 0\n",ratings); fclose(ratings);
+  ajustes_dir(dados_dir());
+  assert(notaFonte(0)==EX_TOMATOES && notaFonte(1)==-1);
+  assert(notaMedia()->n==1 && notaMedia()->media==92);
+  ratings=fopen(path,"w"); assert(ratings);
+  fputs("notaTituloImdb 0\nnotaTituloTomates 0\n",ratings); fclose(ratings); ajustes_dir(dados_dir());
   if (argc > 1) {
     SDL_Event key = {0}; key.type = SDL_KEYDOWN;
     if (!strcmp(argv[1], "actions")) {
@@ -186,6 +206,17 @@ int main(int argc, char **argv) {
   assert(progMelhorNaoVisto(&bestT,&bestE)==81 && bestT==1 && bestE==2);
   vaiTocar.tem=1; stream_invalidar("fixture target changed");
   assert(!topoFonteDisponivel()); // stale rendered source cannot take focus
+  nivel=0; focoVersao=1; pedFontes=0; botao=0;
+  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_DOWN; detail_evento(&e);
+  assert(!pedFontes && !focoVersao && nivel==1);
+  gfx_escala_txt_definir(.85f);
+  float priorScale=gfx_escala_txt_entrar();
+  recalcularLayout();
+  assert(fabsf(topoSec[SEC_TEMPORADAS]*.85f-(NV_DET21_FIM+56))<.01f);
+  gfx_escala_sair(priorScale); gfx_escala_txt_definir(1);
+  recalcularLayout();
+  assert(NV_DET21_BTN_H==72 && NV_DET21_CIRC==72);
+  assert(COL_CARD_W==760 && COL_CARD_H==300 && COM_CARD_H==340);
   assert(secaoAlvo(SEC_NOTAS)==.42f);
   nivel=1; foco.fileira=SEC_NOTAS; assert(secaoAlvo(SEC_NOTAS)==1.f);
   nivel=0; assert(secaoAlvo(SEC_NOTAS)==1.f);
@@ -235,6 +266,10 @@ int main(int argc, char **argv) {
   assert(!notaAberta && notaMinha()==6);
   notaAbrir(); e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_ESCAPE; detail_evento(&e);
   assert(!notaAberta && notaMinha()==6);
+  // Up focuses the nearest global control; it never opens a rating editor.
+  nivel=0; botao=0; focoVersao=0; aberto=1; pediuRelogio=0;
+  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_UP; detail_evento(&e);
+  assert(pediuRelogio && !reacao_aberta() && !notaAberta);
   puts("detail21: content, navigation, profile isolation and personal status OK");
   SDL_Quit();
   return 0;

@@ -59,6 +59,11 @@ float notasui_fontes_altura(const NotasSecao *s);
 float notasui_fontes_desenhar(const NotasSecao *s, float x, float y, float a,
                               const float *foco);
 
+// Individual legacy cards for the selectable horizontal Detail row.
+float notasui_cartao_largura(int resumo);
+float notasui_cartao_altura(const NotasSecao *s);
+void notasui_cartao(const NotasSecao *s, int fonte, float x, float y, float f, float a);
+
 // Cartao "Notas por episodio" do bloco "Numeros da temporada" (serie):
 // temporadas x episodios dentro de `card`; (selT, selI) e o episodio em foco
 // no bloco (indice da temporada em `s`, indice do episodio), -1 = nenhum.
