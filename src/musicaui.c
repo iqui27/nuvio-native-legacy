@@ -1,4 +1,5 @@
 #include "musicaui.h"
+#include "anim.h"
 #include "video.h"
 #include "player.h"
 #include "trailer.h"
@@ -25,6 +26,14 @@ static struct {
   float focoLinha[MUS_POR_PAGINA];
 } ui;
 
+static void parar(void);
+static GfxRect origem;
+static float abertura, aberturaVel;
+static Uint32 aberturaTick;
+void musicaui_origem(GfxRect r) { origem=r; }
+int musicaui_visivel(void) { return ui.aberta || abertura>.001f; }
+static void voltar(void) { parar(); ui.aberta=0; }
+
 static int suporta(void) {
 #if defined(NV_MUSICA_SHOT)
   return 1;
@@ -41,7 +50,7 @@ static void parar(void) {
   if (ui.foco == 4) ui.foco = ui.suporta ? 1 : 3;
 }
 void musicaui_fechar(void) {
-  parar(); ui.aberta = 0; trailer_bloquear_musica(0);
+  parar(); ui.aberta = 0; abertura=aberturaVel=0; trailer_bloquear_musica(0);
   if (ui.qr) { gfx_tex_esquecer(ui.qr); glDeleteTextures(1, &ui.qr); ui.qr = 0; }
   if (ui.ambiente) { gfx_tex_esquecer(ui.ambiente); glDeleteTextures(1, &ui.ambiente); ui.ambiente = 0; }
 }
@@ -56,7 +65,7 @@ void musicaui_abrir(const MusAlbum *a, const char *imdb, const char *titulo, int
   int tem = 0;
   for (int i = 0; i < a->n; i++) tem |= a->faixa[i].previa[0] != 0;
   ui.suporta &= tem; ui.foco = ui.suporta ? 1 : 3;
-  ui.entrada = ui.mudou = SDL_GetTicks();
+  ui.entrada = ui.mudou = SDL_GetTicks(); aberturaTick=ui.entrada;
   ui.som = trailer_aberto() ? trailer_com_som() : 1;
   // Retained main playback owns the backend; closing a trailer is safe only otherwise.
   if (!ocupado()) trailer_fechar();
@@ -77,12 +86,12 @@ void musicaui_evento(const SDL_Event *e) {
   if (!ui.aberta || e->type != SDL_KEYDOWN) return;
   SDL_Keycode k = e->key.keysym.sym;
   if (nv_tecla_voltar(e)) {
-    if (ui.p.ativa) parar(); else musicaui_fechar(); return;
+    if (ui.p.ativa) parar(); else voltar(); return;
   }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
     if (e->key.repeat) return;
     if (ui.p.ativa) { parar(); return; }
-    if (ui.foco == 0) musicaui_fechar();
+    if (ui.foco == 0) voltar();
     else if (ui.foco == 3) {
       ui.guardado = mus_alternar_guardado(ui.imdb, ui.temp, ui.a.titulo, ui.a.artista);
       ui.erro = 0; ui.toast = SDL_GetTicks();
@@ -111,7 +120,11 @@ static int pagina(void) {
          ui.p.ativa ? ui.p.faixa / MUS_POR_PAGINA : 0;
 }
 void musicaui_atualizar(Uint32 agora) {
-  if (!ui.aberta) return;
+  if (!musicaui_visivel()) return;
+  float dt=aberturaTick ? (agora-aberturaTick)*.001f : 0;
+  aberturaTick=agora;
+  abertura=anim_mola2_reduzida(&aberturaVel,abertura,ui.aberta ? 1 : 0,dt,18,ajustes_animacoes_reduzidas());
+  if (!ui.aberta && abertura<.001f) { musicaui_fechar(); return; }
   ui.agora = agora;
   if (!ui.coresProntas) {
     unsigned char px[16*16*4], ambient[32*18*4];
@@ -183,7 +196,18 @@ static void ilha(GfxRect r) {
   gfx_cor(r, r.h > 60 ? 26.0f/r.h : .5f, .055f,.059f,.071f, ajustes_vidro() ? .9f : 1);
 }
 void musicaui_desenhar(Uint32 agora) {
-  if (!ui.aberta) return;
+  if (!musicaui_visivel()) return;
+  float previousScale=gfx_escala();
+  gfx_escala_sair(1);
+  float previousAlpha=gfx_opacidade_grupo;
+  float k=abertura;
+  if (origem.w>0) {
+    float scale=origem.w/1920+(1-origem.w/1920)*k;
+    float dx=(origem.x+origem.w*.5f-960)*(1-k);
+    float dy=(origem.y+origem.h*.5f-540)*(1-k);
+    gfx_transformar(960,540,scale,dx,dy);
+  }
+  gfx_opacidade_grupo*=k;
   gfx_sem_recorte();
   gfx_cor((GfxRect){0,0,1920,1080},0,.031f,.051f,.09f,1);
   GLuint capa = tex_obter_larg(ui.a.capa, 600);
@@ -301,4 +325,7 @@ void musicaui_desenhar(Uint32 agora) {
   gfx_cor((GfxRect){409,1010,50,28},.25f,1,1,1,.09f); texto(TXT_G14B,i18n("Voltar"),416,1017,50,1);
   texto(TXT_G18R,i18n("Voltar ao título"),468,1015,350,.66f);
   texto(TXT_MUS_16,i18n("Trilha original · Prévias de áudio"),1595,1017,290,.66f);
+  gfx_opacidade_grupo=previousAlpha;
+  if (origem.w>0) gfx_sem_transformar();
+  gfx_escala_sair(previousScale);
 }
