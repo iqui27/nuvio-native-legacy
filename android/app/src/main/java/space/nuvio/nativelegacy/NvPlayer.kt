@@ -937,7 +937,7 @@ object NvPlayer {
     }
 
     @JvmOverloads @JvmStatic fun abrirPreparada(url: String, cabecalhos: String, inicioMs: Int, fracao: Int,
-                                 geracao: Int, token: Int, idiomaAudio: String = "") {
+                                 geracao: Int, token: Int, idiomaAudio: String = "", pausado: Boolean = false) {
         val pedido = pedidos.incrementAndGet()
         val preparoPedido = synchronized(travaPreparo) {
             val n = pedidosPreparo.incrementAndGet()
@@ -960,12 +960,18 @@ object NvPlayer {
                     s.ouvinte?.let { r.p.removeListener(it) }
                     s.analitico?.let { r.p.removeAnalyticsListener(it) }
                 }
-                abrirMain(url, cabecalhos, false, inicio, geracao, pedido, f, preparada = s)
+                abrirMain(url, cabecalhos, false, inicio, geracao, pedido, f, preparada = s, pausado = pausado)
             } else {
                 soltarPreparo()
-                abrirMain(url, cabecalhos, false, inicio, geracao, pedido, f)
+                abrirMain(url, cabecalhos, false, inicio, geracao, pedido, f, pausado = pausado)
             }
         }
+    }
+
+    // Pause belongs to this exact open, before prepare or warm adoption can play.
+    @JvmStatic fun abrirPausada(url: String, cabecalhos: String, inicioMs: Int, fracao: Int,
+                               geracao: Int, token: Int, idiomaAudio: String) {
+        abrirPreparada(url, cabecalhos, inicioMs, fracao, geracao, token, idiomaAudio, true)
     }
 
     // --- ciclo de vida (NuvioActivity) ---------------------------------------
@@ -1390,7 +1396,7 @@ object NvPlayer {
 
     private fun abrirMain(url: String, cabecalhos: String, reabrindo: Boolean,
                           inicioMs: Int, geracao: Int, pedido: Int, fracao: Int = 0, esperaInicio: Long = -1L,
-                          preparada: Preparo? = null) {
+                          preparada: Preparo? = null, pausado: Boolean = false) {
         if (pedido != pedidos.get()) {
             preparada?.recursos?.let { soltarRecursosPreparo(it) }
             return
@@ -1406,7 +1412,7 @@ object NvPlayer {
             liberar()
             // O C envia ganho/pausa depois de abrir; a espera nao pode apaga-los.
             ganhoPct = 100
-            if (!reabrindo) pausaPedida = false
+            if (!reabrindo) pausaPedida = pausado
         }
         // MStar/Amlogic: o overlay e o decoder antigos precisam sair antes do novo.
         // Poll no Handler deixa Back/parar funcionar enquanto o release corre em fundo.
@@ -1506,7 +1512,8 @@ object NvPlayer {
                 fracaoPendente = preparada.fracaoPendente
                 p.setMediaSource(r.fontePrecarregada!!, preparada.posicaoFonteMs)
                 if (fracaoPendente <= 0) confirmarRetomada(geracao, inicioMs > 0 || preparada.inicioAceito)
-                p.playWhenReady = true
+                p.playWhenReady = !pausaPedida
+                if (pausaPedida) ev(EV_PAUSADO)
                 p.prepare()
                 Log.i(TAG, "[preparo] proximo adotado token=${preparada.token} pos=${preparada.posicaoFonteMs}")
             } else {
@@ -1518,7 +1525,8 @@ object NvPlayer {
                 ouv.onTracksChanged(p.currentTracks)
                 ouv.onVideoSizeChanged(p.videoSize)
                 ouv.onPlaybackStateChanged(p.playbackState)
-                p.playWhenReady = true
+                p.playWhenReady = !pausaPedida
+                if (pausaPedida) ev(EV_PAUSADO)
                 Log.i(TAG, "[preparo] adotado token=${preparada.token} estado=${p.playbackState}")
             }
             principal.postDelayed(tique(minha), TIQUE_MS)

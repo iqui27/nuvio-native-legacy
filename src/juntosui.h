@@ -39,6 +39,7 @@ void juntosui_abrir_folha(int indiceCatalogo, int temporada, int episodio);
 int  juntosui_evento_sdl(const SDL_Event *e);   // 1 = consumiu
 void juntosui_atualizar(Uint32 agora);
 void juntosui_desenhar(Uint32 agora);
+int  juntosui_cobre_tela(void);                  // Settled opaque lobby hides page/player draws.
 int  juntosui_aberta(void);                      // alguma camada nossa com foco
 // "Sair da sessao" confirmado com o player aberto: 1 uma vez, e o app fecha o
 // player pelo caminho normal do VOLTAR.

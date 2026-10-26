@@ -7487,7 +7487,7 @@ static void desenharTelas(Uint32 agora) {
   // — a mesma conta que ja valia para o cartao de detalhe esticado.
   // ...exceto enquanto o video do preview do guia CRESCE para a tela cheia: ai
   // o guia continua em volta do furo que anda (player_desenhar).
-  if (!player_visivel() || player_janela_animando(NULL, NULL, NULL, NULL)) {
+  if (!juntosui_cobre_tela() && (!player_visivel() || player_janela_animando(NULL, NULL, NULL, NULL))) {
     // O FUNDO PARADO DO PAINEL DE SALVOS: com o painel inteiro na tela, tudo
     // que fica atras dele e pintado UMA vez num FBO, ja com o veu, e os quadros
     // seguintes desenham so a copia e o painel. Ver spainel_fundo em
@@ -7516,7 +7516,7 @@ static void desenharTelas(Uint32 agora) {
   // HDR/DV, legenda e tela do DV inclusive. Volta a 1 depois da tela do DV.
   if (player_visivel()) gfx_hdr_ui = player_ui_hdr();
   CAMADA_SE(player_visivel());
-  player_desenhar(agora);
+  if (!juntosui_cobre_tela()) player_desenhar(agora);
   // O overlay do guia vai POR CIMA do player — o video continua atras do fundo
   // a 94%, que e o que diz "a TV nao parou" enquanto se troca de canal.
   if (guia_overlay_aberta()) { ponteiro_camada(); guia_desenhar(agora); }

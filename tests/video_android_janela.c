@@ -18,6 +18,7 @@ void *SDL_AndroidGetActivity(void);
 int xtream_url_limitada(const char *u) { (void)u; return 0; }
 int xtream_conexoes_limitadas(void) { return 0; }
 int xtream_conta_ler(XtreamConta *c) { memset(c, 0, sizeof *c); return 0; }
+int juntos_precarregando(void) { return 0; }
 int stream_kbps_atual(void) { return 0; }
 static int cap4k[4];
 void stream_definir_decoder4k(int h, int a, int v, int av) {

@@ -3,7 +3,7 @@
 # the session on the clock island, CH+ session sidebar (Saved sidebar shell).
 set -eu
 cd "$(dirname "$0")/.."
-out=/Volumes/ExternalSSD/tmp/rev/juntoscinema
+out=${NUVIO_JUNTOS_OUT:-/Volumes/ExternalSSD/tmp/rev/juntoscinema}
 export NUVIO_JUNTOS_ART=/Volumes/ExternalSSD/tmp/rev/juntoscinema-nativo-png/v3/assets
 mkdir -p "$out"
 bash tests/juntos_shot.sh "$out/" --cinema

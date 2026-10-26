@@ -28,6 +28,7 @@
 #ifdef NV_ANDROID
 #include "marco.h"
 #include "streams.h"
+#include "juntos.h"
 #include "video.h"
 #include "mediaurl.h"
 #include "ajustes.h"
@@ -62,7 +63,7 @@ static jmethodID mAbrirPosicao, mJanelaPronta, mLimitedConnections;
 // 2.0.3 (opcional): abrirRetomada(url, cab, inicioMs, fracao, geracao). So o
 // percentual conhecido (retomada da conta, sem registro local): o Kotlin
 // aplica fracao/10000 da duracao do CONTAINER antes do primeiro quadro.
-static jmethodID mAbrirRetomada;
+static jmethodID mAbrirRetomada, mAbrirPausada;
 static jmethodID mPreparar, mPrepararProximo, mPrepararEstado, mCancelarPreparo, mAbrirPreparada;
 static jmethodID mPararMantendoPreparo;
 static unsigned preparoAdotar;
@@ -121,6 +122,8 @@ static int resolverMetodos(JNIEnv *env) {
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mCancelarPreparo = NULL; }
   mAbrirPreparada = (*env)->GetStaticMethodID(env, gCls, "abrirPreparada", "(Ljava/lang/String;Ljava/lang/String;IIIILjava/lang/String;)V");
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mAbrirPreparada = NULL; }
+  mAbrirPausada = (*env)->GetStaticMethodID(env, gCls, "abrirPausada", "(Ljava/lang/String;Ljava/lang/String;IIIILjava/lang/String;)V");
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mAbrirPausada = NULL; }
   mPararMantendoPreparo = (*env)->GetStaticMethodID(env, gCls, "pararMantendoPreparo", "(I)V");
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mPararMantendoPreparo = NULL; }
   return mAbrir && mParar && mPausar && mBuscar && mVolume && mJanela && mEscolher;
@@ -811,7 +814,8 @@ static int abrirSessao(int inicioMs, int fracao) {
   posAmostraMs = 0; posAmostraEm = SDL_GetTicks64();
   pthread_mutex_unlock(&travaAmostra);
   tocandoDesde = 0; semDecoderAudio = 0; erroTxt[0] = 0; reconErroVideo = 0;
-  pausaPedida = pausaVista = 0;
+  pausaVista = 0;
+  pausaPedida = juntos_precarregando();
   hdrAtual = "none"; dvAtual = atmosAtual = 0;
   pthread_mutex_lock(&travaStats); statsValido = 0;
   redeMbps = -1; redeMinMs = redeMaxMs = redeMaxMb = -1;
@@ -865,7 +869,21 @@ static int abrirSessao(int inicioMs, int fracao) {
     // abrirPosicao also when starting at 0: it is how the Kotlin side learns
     // this session's generation (StreamFit passive telemetry). At 0 the
     // resume state stays -1, exactly as the plain abrir path left it.
-    if (preparado && mAbrirPreparada) {
+    // New shells receive initial pause atomically with the URL. Older shells
+    // retain the existing queued pause fallback from player.c.
+    if (pausaPedida && mAbrirPausada) {
+      jstring a = paraJString(env, ling_audio());
+      if (!a) {
+        (*env)->DeleteLocalRef(env, u); (*env)->DeleteLocalRef(env, c);
+        fimChamada(env);
+        if (preparado) video_precarregar_cancelar(preparado);
+        falhou = 1; return 0;
+      }
+      if (inicioMs > 0 || fracao > 0) estadoRetomada(0);
+      (*env)->CallStaticVoidMethod(env, gCls, mAbrirPausada, u, c,
+          (jint)inicioMs, (jint)fracao, (jint)geracao, (jint)preparado, a);
+      (*env)->DeleteLocalRef(env, a);
+    } else if (preparado && mAbrirPreparada) {
       jstring a = paraJString(env, ling_audio());
       if (!a) {
         (*env)->DeleteLocalRef(env, u); (*env)->DeleteLocalRef(env, c);
