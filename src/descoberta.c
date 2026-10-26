@@ -7809,10 +7809,11 @@ static int publicarEpisodiosEscolhidos(const char *corpo, int alvoItem,
         memcpy(tp->t, atual.temporadas, sizeof tp->t);
       }
     }
-    if (cedo && tp) {
+    // Publish season tabs with every selected list, before optional metadata.
+    if (tp) {
       CatItem edit;
       if (cat_copiar_item(alvoItem, &edit)) {
-        edit.epsParciais = 1;
+        edit.epsParciais = cedo ? 1 : 0;
         edit.nTemporadas = tp->n;
         memcpy(edit.temporadas, tp->t, sizeof(int) * (size_t)tp->n);
         descCatAtualizar(cat_atualizar_item, alvoItem, &edit);
@@ -9688,7 +9689,8 @@ void desc_episodios(int indiceItem, int temporada) {
   // Uma lista antecipada continua visivel, mas precisa retomar a mescla.
   CatItem atual;
   if (!cat_copiar_item(indiceItem, &atual)) return;
-  if (cat_n_episodios(indiceItem) > 0 && !atual.epsParciais) return;
+  // A cached list without its season tabs is incomplete too.
+  if (cat_n_episodios(indiceItem) > 0 && !atual.epsParciais && atual.nTemporadas > 0) return;
   EpPedido *p = calloc(1, sizeof *p);
   if (!p) return;
   p->item = indiceItem;
@@ -9742,7 +9744,7 @@ int desc_episodios_precarregar(int indiceItem) {
   if (!ci || !ci->imdb[0]) return 0;
   if (!(!strcmp(ci->tipo, "series") || strcmp(ci->tipo, "movie") ||
         ci->nElenco == 0 || descElencoPrecisaPessoas(ci))) return 0;
-  if (cat_n_episodios(indiceItem) > 0 && !ci->epsParciais) return 0;
+  if (cat_n_episodios(indiceItem) > 0 && !ci->epsParciais && ci->nTemporadas > 0) return 0;
   if (fioEpVivo || pendItem >= 0) return -1;
   desc_episodios(indiceItem, 0);
   return fioEpVivo ? 1 : 0;
