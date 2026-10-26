@@ -98,6 +98,8 @@
 #include "escala.h"
 #include "telefoneui.h"
 #include "ponteiro.h"
+static void navigationTarget(float,float,float,float,PonteiroFn,PonteiroFn,int,int);
+#define ponteiro_alvo navigationTarget
 #include "sync.h"
 #include "descoberta.h"
 #include "addons.h"
@@ -329,6 +331,10 @@ static int tipo = TIPO_TODOS;
 static int ordem = ORD_ADICIONADOS;
 static int origem = ORIG_TODAS;
 static int focoOrigem, origemSel;
+static struct { GfxRect rect; PonteiroFn focus; int a,b,id; } navigation[512];
+static int navigationCount;
+static int navigationFocus(void);
+static int navigationMove(SDL_Keycode key);
 static int contaOrigem[BIB_N_ORIG];
 static struct { char id[96], nome[96]; int count; } addonOrigens[8];
 static int nAddonOrigens;
@@ -1197,6 +1203,8 @@ int biblioteca_iniciar(void) {
   return 1;
 }
 
+void biblioteca_retomar(void){sair=0;animTela=0;pediuRelogio=0;}
+
 void biblioteca_encerrar(void) { pediuRelogio = 0; }
 
 // So para o teste de tela conferir foco e modo sem ler pixel.
@@ -1676,7 +1684,7 @@ static void biblioteca_evento_(const SDL_Event *e) {
       k == SDLK_DELETE) {
     // Dentro de uma lista, o Back volta PARA A LISTA DE LISTAS antes de fechar
     // a tela — o movimento inverso do que levou ate la.
-    if (!temAberta && modo == MODO_LISTAS) { modo = MODO_PARAVER; focoOrigem = 0; reconstruir(); }
+    if (!temAberta && modo == MODO_LISTAS) { modo = MODO_PARAVER; focoOrigem = 0; reconstruir(); animTela = 0; }
     else if (!temAberta) sair = 1;
     else if (ordemPega >= 0) ordemPega = -1;       // solta; a edicao continua
     else if (edModo != ED_NADA) sairEdicao();
@@ -1684,6 +1692,7 @@ static void biblioteca_evento_(const SDL_Event *e) {
     return;
   }
 
+  if (navigationMove(k)) return;
   if (estado() == EST_ITENS) { eventoAberta(k); return; }
   if (focoPainel) {
     int ids[4], n = painelAcoes(lst_lista(painelIdx), ids);
@@ -3443,6 +3452,50 @@ static void ponteiroOrigem(int a, int b) {
   focoOrigem = 1; origemSel = a; focoBotaoOrig = 0;
 }
 
+static int navigationFocus(void) {
+  if(focoOrigem)return 10000+origemSel;
+  if(estadoFoco)return 20000;
+  if(focoPainel)return 30000+painelSel;
+  if(focoCont)return 40000;
+  return foco.fileira*1000+foco.coluna;
+}
+#undef ponteiro_alvo
+static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int a,int b) {
+  int id=-1;
+  if(fn==ponteiroModo)id=BIB_FIL_MODO*1000+a;
+  else if(fn==ponteiroPicker)id=BIB_FIL_PICK*1000+a;
+  else if(fn==ponteiroOrigem)id=10000+a;
+  else if(fn==ponteiroPainel)id=30000+a;
+  else if(fn==ponteiroRetry)id=20000;
+  else if(fn==ponteiroCont)id=40000;
+  else if(fn==ponteiroAcao)id=a;
+  else if(fn==ponteiroCelula)id=(gradeIni()+a/colunas())*1000+a%colunas();
+  if(id>=0 && h>0 && navigationCount<512) {
+    navigation[navigationCount].rect=(GfxRect){x,y,w,h};
+    navigation[navigationCount].focus=fn;navigation[navigationCount].a=a;
+    navigation[navigationCount].b=b;navigation[navigationCount++].id=id;
+  }
+  ponteiro_alvo(x,y,w,h,fn,activate,a,b);
+}
+#define ponteiro_alvo navigationTarget
+#define ponteiro_alvo_faixa(x,y,w,h,top,bottom,fn,activate,a,b) \
+  navigationTarget(x,fmaxf(y,top),w,fminf((y)+(h),bottom)-fmaxf(y,top),fn,activate,a,b)
+static int navigationMove(SDL_Keycode key) {
+  if(key!=SDLK_UP && key!=SDLK_DOWN && key!=SDLK_LEFT && key!=SDLK_RIGHT)return 0;
+  // Origins' left edge belongs to the sidebar, even with header chips above it.
+  if(focoOrigem && key==SDLK_LEFT)return 0;
+  // A picked title owns arrows until released, including at list boundaries.
+  if(estado()==EST_ITENS && edModo==ED_ORDEM && ordemPega>=0 && foco.fileira>=gradeIni())return 0;
+  GfxRect rects[512];int current=-1;
+  for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].id==navigationFocus())current=i;}
+  int next=focus_rect_nearest(rects,navigationCount,current,
+    (key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
+  // Leave edge arrows to the clock/sidebar and scrolling fallbacks.
+  if(next<0 || next==current)return 0;
+  focoOrigem=focoPainel=focoCont=estadoFoco=0;
+  navigation[next].focus(navigation[next].a,navigation[next].b);
+  return 1;
+}
 static void desenhaOrigens(void) {
   if (modo == MODO_LISTAS) {
     // Same panel as the Library Origens (mock 6D): tracked kicker, letter disc
@@ -4273,6 +4326,7 @@ static void biblioteca_desenhar_(Uint32 agora) {
 void biblioteca_evento(const SDL_Event *e) { TXT_INI(); biblioteca_evento_(e); TXT_FIM(); }
 void biblioteca_atualizar(float dt, Uint32 agora) { TXT_INI(); biblioteca_atualizar_(dt, agora); TXT_FIM(); }
 void biblioteca_desenhar(Uint32 agora) {
+  navigationCount=0;
   TXT_INI();
   float opacity = gfx_opacidade_grupo;
   gfx_opacidade_grupo *= animTela;

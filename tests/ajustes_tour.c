@@ -47,7 +47,7 @@ static void key(SDL_Keycode k) {
   ajustes_evento(&e);
 }
 
-static void navigation(void) {
+static void tourNavigation(void) {
   const float dt = 1.0f / 60;
   anim_politica_reduzida = 0;
   aj4Iniciar(); focoIndice = 1; aj4Linha = 7; sair = 0;
@@ -227,7 +227,7 @@ int main(void) {
   }
   if (failures) return 1;
   puts("PASS: approved subtitle text, Seekr progress and rounded previews");
-  navigation();
+  tourNavigation();
   puts("ok");
   return 0;
 }

@@ -23,6 +23,7 @@
 #include "revela.h"
 #include "teclavoltar.h"
 #include "ponteiro.h"
+#include "focus.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,6 +45,9 @@ static int opened, screen, provider, selected, profile, field, restartPin, enter
 static struct { int screen, selected; } history[16];
 static int nHistory, keepHistory, backward, pageDir = 1, freshSetup, libraryRetry;
 static unsigned libraryVersion;
+static int authReturned, navigationCount;
+static GfxRect navigationRects[SRV_VISAO_MAX + 8];
+static int navigationIds[SRV_VISAO_MAX + 8];
 static float entry, page, pageSeconds, focusAnim[SRV_VISAO_MAX + 8], scroll, scrollVelocity, stepAnim = -1;
 static Uint32 motionTime;
 static float contentX, contentW;
@@ -256,12 +260,13 @@ static void change(int next) {
     int i = 0;
     while (i < nHistory && history[i].screen != next) i++;
     if (i < nHistory) { restore = history[i].selected; nHistory = i; }
-    else if (screen != ERROR_SCREEN && nHistory < 16) {
+    else if (nHistory < 16) {
       history[nHistory].screen = screen; history[nHistory++].selected = selected;
     }
   }
   pageDir = backward ? -1 : 1;
   screen = next; keyboardUpper = 0; message[0] = 0; libraryRetry = 0;
+  authReturned = navigationCount = 0;
   // Focus the obvious next action: Connect for a known address, the inline
   // keys for a password whose user is already chosen.
   selected = restore >= 0 ? restore : next == ADDRESS ? (addressText[0] ? 1 : KEY_FIRST) : next == PASSWORD && username[0] ? KEY_FIRST : 0;
@@ -336,19 +341,12 @@ void srvsetup_abrir(int p) {
 }
 static void discover(void) { cancelLogin(); change(DISCOVER); worker.n = 0; startWorker(JOB_DISCOVER); }
 static void userLogin(void) { cancelLogin(); change(USERS); worker.n = 0; startWorker(JOB_USERS); }
-static void enterScreen(int s) {
-  if (s == DISCOVER) discover();
-  else if (s == CODE) enterCode();
-  else if (s == CONNECT_CODE) connectCode();
-  else if (s == USERS) userLogin();
-  else { change(s); if (s == LIBRARIES || s == ROWS) librariesLoad(); else if (s == PLEX_SERVERS) startWorker(JOB_PLEX_SERVERS); else if (s == CONNECT_SERVERS) startWorker(JOB_CONNECT_SERVERS); }
-}
 static void back(void) {
   cancelLogin(); stopWorker(); wipe(password, sizeof password);
   if (!nHistory) { srvsetup_fechar(); return; }
   int previous = --nHistory, focus = history[previous].selected;
-  keepHistory = backward = 1; enterScreen(history[previous].screen); keepHistory = backward = 0;
-  selected = focus;
+  keepHistory = backward = 1; change(history[previous].screen); keepHistory = backward = 0;
+  selected = focus; authReturned = 1; restartPin = 0;
 }
 static void activate(void) {
   if ((screen == ADDRESS || screen == PASSWORD) && selected >= KEY_FIRST) { inlineKey(selected); return; }
@@ -360,6 +358,10 @@ static void activate(void) {
   if (worker.alive && screen != CODE && screen != CONNECT_CODE) return;
   if (worker.alive && screen == CONNECT_CODE && selected == 0) {
     snprintf(message, sizeof message, "%s", i18n("Carregando…")); return;
+  }
+  if (authReturned && screen == CODE && selected == 0) {
+    if (!connected(provider)) enterCode(); else authReturned = 0;
+    return;
   }
   if (screen == CODE && selected == 0) {
     snprintf(message, sizeof message, "%s", i18n("Carregando…")); return;
@@ -409,7 +411,7 @@ static void activate(void) {
         if (screen == CONNECT_PASSWORD) {
           snprintf(worker.username, sizeof worker.username, "%s", username); snprintf(worker.password, sizeof worker.password, "%s", password);
           if (startWorker(JOB_CONNECT_PASSWORD)) wipe(password, sizeof password);
-        } else { int ok = provider == 1 ? jellyfin_entrar_senha(username, password) : emby_entrar_senha(username, password); if (!ok) snprintf(message, sizeof message, "%s", i18n("Falhou")); }
+        } else { authReturned=0;int ok = provider == 1 ? jellyfin_entrar_senha(username, password) : emby_entrar_senha(username, password); if (!ok) snprintf(message, sizeof message, "%s", i18n("Falhou")); }
       } else if (screen == CONNECT_PASSWORD) { change(LOGIN); }
       else if (provider == 1) enterCode();
       else connectCode(); break;
@@ -521,17 +523,19 @@ void srvsetup_evento(const SDL_Event *e) {
   if (e->type != SDL_KEYDOWN || e->key.repeat) return;
   SDL_Keycode k = e->key.keysym.sym;
   if (nv_tecla_voltar(e)) back();
-  else if ((screen == ADDRESS || screen == PASSWORD) && selected >= KEY_FIRST &&
-      (k == SDLK_UP || k == SDLK_DOWN)) {
-    if (k == SDLK_UP) selected = selected >= KEY_SHIFT ? KEY_FIRST+30+(selected-KEY_SHIFT)*3 : selected >= KEY_FIRST+10 ? selected-10 : screen==ADDRESS?0:1;
-    else selected = selected < KEY_FIRST+30 ? selected+10 : selected < KEY_SHIFT ? KEY_SHIFT+(selected-KEY_FIRST-30)*3/10 : selected;
-  } else if (k == SDLK_LEFT || k == SDLK_UP) {
-    if(screen==ADDRESS && selected==KEY_FIRST) selected=2;
-    else if (selected > 0) selected--;
-  }
-  else if (k == SDLK_RIGHT || k == SDLK_DOWN) {
-    if (screen==ADDRESS && selected==2) selected=KEY_FIRST;
-    else if (selected + 1 < targets()) selected++;
+  else if (k == SDLK_LEFT || k == SDLK_UP || k == SDLK_RIGHT || k == SDLK_DOWN) {
+    int total = screen==USERS || screen==DISCOVER || screen==PLEX_SERVERS || screen==CONNECT_SERVERS ? (!worker.alive && worker.n>0 ? worker.n : 0) :
+      screen==LIBRARIES || screen==ROWS ? nLibraries : 0;
+    int step = screen==USERS ? (k==SDLK_RIGHT)-(k==SDLK_LEFT) : (k==SDLK_DOWN)-(k==SDLK_UP);
+    int adjacent = selected + step, visible = 0;
+    for (int i=0;i<navigationCount;i++) if (navigationIds[i]==adjacent) visible=1;
+    // Reveal the next item before geometry can skip it for a visible footer.
+    if (step && selected<total && adjacent>=0 && adjacent<total && !visible) { selected=adjacent; return; }
+    int current = -1;
+    for (int i=0;i<navigationCount;i++) if (navigationIds[i]==selected) current=i;
+    int next = focus_rect_nearest(navigationRects,navigationCount,current,
+      (k==SDLK_RIGHT)-(k==SDLK_LEFT),(k==SDLK_DOWN)-(k==SDLK_UP));
+    if (next>=0) selected=navigationIds[next];
   }
   else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) activate();
 }
@@ -639,15 +643,15 @@ void srvsetup_atualizar(Uint32 now) {
     char detail[160] = "";
     int state = !provider ? plex_estado(detail, sizeof detail) : jellyfin_estado(detail, sizeof detail);
     if ((!provider && state == PX_EST_CODIGO) || (provider == 1 && state == JF_EST_QC_CODIGO)) snprintf(code, sizeof code, "%s", detail);
-    if (connected(provider)) {
+    if (connected(provider) && !authReturned) {
       if (!provider) {
         if (enterManual) { enterManual = 0; snprintf(worker.input, sizeof worker.input, "%s", addressText); connectedScreen(ADDRESS); startWorker(JOB_PLEX_MANUAL); }
         else { connectedScreen(PLEX_SERVERS); startWorker(JOB_PLEX_SERVERS); }
       }
       else { connectedScreen(LIBRARIES); librariesLoad(); }
-    } else if ((!provider && (state == PX_EST_ERRO || state == PX_EST_EXPIROU)) || (provider && (state == JF_EST_ERRO || state == JF_EST_EXPIROU))) stepError(state==(provider?JF_EST_EXPIROU:PX_EST_EXPIROU)?"o código expirou — OK pede outro":"O servidor não respondeu dentro do prazo.", 1);
+    } else if (!connected(provider) && ((!provider && (state == PX_EST_ERRO || state == PX_EST_EXPIROU)) || (provider && (state == JF_EST_ERRO || state == JF_EST_EXPIROU)))) stepError(state==(provider?JF_EST_EXPIROU:PX_EST_EXPIROU)?"o código expirou — OK pede outro":"O servidor não respondeu dentro do prazo.", 1);
   }
-  if ((screen == PASSWORD || screen == LOGIN) && connected(provider)) { connectedScreen(LIBRARIES); librariesLoad(); }
+  if (!authReturned && (screen == PASSWORD || screen == LOGIN) && connected(provider)) { connectedScreen(LIBRARIES); librariesLoad(); }
   if (screen == LIBRARIES && !nLibraries && !worker.alive && !message[0]) {
     snprintf(message, sizeof message, "%s", i18n("Não configurado"));
   }
@@ -655,7 +659,7 @@ void srvsetup_atualizar(Uint32 now) {
     int state = provider == 1 ? jellyfin_estado(NULL, 0) : emby_estado(NULL, 0);
     if (state == JF_EST_ERRO) snprintf(message, sizeof message, "%s", i18n("Usuário ou senha incorretos"));
   }
-  if (screen == LOGIN) {
+  if (screen == LOGIN && !authReturned) {
     if(!worker.alive && worker.kind!=JOB_USERS) { worker.n=0;startWorker(JOB_USERS); }
     int state = provider == 1 ? jellyfin_estado(NULL, 0) : emby_estado(NULL, 0);
     if (state == JF_EST_VERIFICANDO) snprintf(message, sizeof message, "%s", i18n("Conferindo o servidor…"));
@@ -681,6 +685,10 @@ static void pointerTarget(GfxRect r, int id) {
   if (x1 <= x0) return;
   r.x = x0; r.w = x1 - x0;
   r.y += (1 - anim_suave(entry)) * NV_ENTRA_DY;
+  if (id >= 0 && navigationCount < SRV_VISAO_MAX + 8) {
+    navigationIds[navigationCount] = id;
+    navigationRects[navigationCount++] = r;
+  }
   if (bodyDrawing) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, ANC(386), ANC(978), pointFocus, pointActivate, id, 0);
   else {
     if (gfx_escala_txt() > 1) r.y -= bodyScroll;
@@ -812,6 +820,7 @@ static void drawQR(void) {
 }
 void srvsetup_desenhar(Uint32 now) {
   if (!srvsetup_aberto()) return;
+  navigationCount = 0;
   TXT_INI();
   t21_inicio(&contentX, &contentW);
   lastButtonY = -1000; nextButtonX = 0;

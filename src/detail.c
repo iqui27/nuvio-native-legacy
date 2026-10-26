@@ -97,6 +97,9 @@ static TituloTempo detalheTempo;
 #include <strings.h>
 #include <math.h>
 #include "ponteiro.h"
+static void navigationTarget(float,float,float,float,PonteiroFn,PonteiroFn,int,int);
+static int navigationMove(SDL_Keycode);
+#define ponteiro_alvo navigationTarget
 #include "rolagemtoque.h"
 #include "plrui.h"
 #include "avisodisp.h"
@@ -3507,7 +3510,7 @@ static void detail_evento_(const SDL_Event *e) {
     if (comPicando) comentariosVoltar();
     else if (acoesAgrupadas() && maisAcoes && nivel == 0) { maisAcoes = 0; botao = temInicio() ? 1 : 0; }
     else if (focoVersao) { focoVersao = 0; botao = 0; }
-    else if (nivel > 0) { nivel = 0; botao = 0; focoAmigos = 0; }
+
     else if (carro && carCheia) carCheia = 0;   // tela cheia no topo -> cartao
     else if (nVolta > 0) { pedAbrir = voltaPilha[--nVolta]; voltando = 1; restaurarVolta=1; }   // volta ao titulo de onde veio
     else { saindo = 1; pediuMenu = 0; }   // Voltar nao abre um menu pedido antes
@@ -3525,6 +3528,7 @@ static void detail_evento_(const SDL_Event *e) {
     if (k == SDLK_DOWN && !estavaVersao && !heroServidor() && botao==0 && topoVersao() && topoFonteDisponivel() && !(carro && !carCheia)) {
       focoVersao = 1; return;
     }
+    int desceuServidor = (focoServidor >= 0 || focoAmigos) && k == SDLK_DOWN;
     if (focoServidor >= 0) {
       if (k == SDLK_UP) { focoServidor = -1; return; }
       if (k == SDLK_LEFT || k == SDLK_RIGHT) {
@@ -3560,6 +3564,8 @@ static void detail_evento_(const SDL_Event *e) {
     if (k == SDLK_UP && !e->key.repeat && detail_relogio_navegavel()) { pediuRelogio = 1; return; }
     // CARROSSEL: a primeira seta para baixo so estica o cartao (ver carCheia).
     if (k == SDLK_DOWN && carro && !carCheia) { carCheia = 1; return; }
+    // After leaving a server chip or the friends card, enter sections without resolving from Play.
+    if (!desceuServidor && !(carro && !carCheia) && navigationMove(k)) return;
     if (k == SDLK_DOWN) {
       sincronizarEpisodioPadrao();
       epEscolhido = 1;
@@ -3634,6 +3640,8 @@ static void detail_evento_(const SDL_Event *e) {
   // primeiro da T1 continua pedindo o menu lateral).
   if (ehSerie() && foco.fileira == SEC_EPISODIOS && (k == SDLK_LEFT || k == SDLK_RIGHT) &&
       detail_ep_borda(k == SDLK_RIGHT ? 1 : -1)) return;
+  // Section paging and carousel gestures precede rectangle navigation.
+  if (navigationMove(k)) return;
   if (k == SDLK_RIGHT) {
     if (!focus_mover(&foco, 1, 0) && parDir(foco.fileira) >= 0 &&
         foco.nColunas[parDir(foco.fileira)] > 0) {
@@ -7995,6 +8003,7 @@ static void ponteiroDetalhe(int r, int c) {
   if (corpoSobArte()) return;
   if (r==-4) { nivel=0; focoVersao=1; focoAmigos=0; focoServidor=-1; return; }
   focoVersao=0;
+  if (r == -2) { ponteiroServidor(c,0); return; }
   if (r < 0 && c == DET_PTR_AMIGOS) { nivel = 0; focoAmigos = 1; return; }
   if (r < 0) {
     focoAmigos = 0; focoServidor = -1;
@@ -8008,6 +8017,25 @@ static void ponteiroDetalhe(int r, int c) {
 }
 // Altura da area clicavel de um item da secao; 0 = secao que o ponteiro nao
 // foca por item (desenho unico, lista interna com foco proprio).
+static struct {GfxRect rect;int row,col;} navigation[512];
+static int navigationCount;
+#undef ponteiro_alvo
+static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int row,int col){
+  if((fn==ponteiroDetalhe||fn==ponteiroServidor)&&navigationCount<512&&x<NV_TELA_W&&y<NV_TELA_H&&x+w>0&&y+h>0){
+    float left=fmaxf(0,x),top=fmaxf(0,y);
+    navigation[navigationCount].rect=(GfxRect){left,top,fminf(x+w,NV_TELA_W)-left,fminf(y+h,NV_TELA_H)-top};navigation[navigationCount].row=fn==ponteiroServidor?-2:row;navigation[navigationCount++].col=fn==ponteiroServidor?row:col;
+  }
+  ponteiro_alvo(x,y,w,h,fn,activate,row,col);
+}
+#define ponteiro_alvo navigationTarget
+static int navigationMove(SDL_Keycode key){
+  if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
+  GfxRect rects[512];int current=-1;
+  for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].row==(nivel?foco.fileira:focoServidor>=0?-2:-1)&&navigation[i].col==(nivel?foco.coluna:focoServidor>=0?focoServidor:botao))current=i;}
+  int next=focus_rect_nearest(rects,navigationCount,current,(key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
+  if(next<0||next==current)return 0;
+  ponteiroDetalhe(navigation[next].row,navigation[next].col);return 1;
+}
 static float alturaAlvo(int r) {
   switch (r) {
     case SEC_TEMPORADAS: return NV_DETP_TEMP_H;
@@ -8020,6 +8048,7 @@ static float alturaAlvo(int r) {
     case SEC_NOTAS:      return notaAltura();
     case SEC_MUSICAS:    return MUS_H;
     case SEC_ELENCO:     return NV_DETP_EL_AVATAR + 90.0f;
+    case SEC_COMENTARIOS: return 80;
     default:             return 0.0f;
   }
 }
@@ -8227,6 +8256,7 @@ static void desenhaRodape(int r,float a) {
   if (y>1080 || y+300<0) return;
   GfxRect card={x,y,556,300};
   float f=animFoco[r][0];
+  if(a>.3f)navigationTarget(card.x,card.y,card.w,card.h,ponteiroDetalhe,NULL,r,0);
   // The text grows with the card: the whole tile is one group transform.
   int grupo=f>.005f && !gfx_transformado();
   if (grupo) gfx_transformar(x+278,y+150,1+detalheFocoEscala(.03f)*f,0,0);
@@ -8365,7 +8395,7 @@ static void desenhaSecao(int r, float a, Uint32 agora) {
     float x = xItem(r, c) - scrollSec[r];
     float w = larguraItem(r, c);
     if (x > NV_TELA_W || x + w < -w) continue;
-    if (ponteiro_ativo() && a > 0.3f && c < secaoColunas(r) && alturaAlvo(r) > 0.0f)
+    if (a > 0.3f && c < secaoColunas(r) && alturaAlvo(r) > 0.0f)
       ponteiro_alvo(x, r==SEC_NOTAS ? y+notaY(c) : y,
                     w, r==SEC_NOTAS ? notaAlturaCel(c) : alturaAlvo(r), ponteiroDetalhe, NULL, r, c);
     switch (r) {
@@ -9071,7 +9101,7 @@ int detail_sob_menu_ativo(void) { return sobMenu; }
 void detail_evento(const SDL_Event *e) { DET_INI(); detail_evento_(e); TXT_FIM(); }
 void detail_atualizar(float dt, Uint32 agora) { DET_INI(); detail_atualizar_(dt, agora); TXT_FIM(); }
 void detail_desenhar(Uint32 agora) {
-  DET_INI(); detail_desenhar_(agora);
+  navigationCount=0; DET_INI(); detail_desenhar_(agora);
   if (musicaui_visivel()) musicaui_desenhar(agora);
   TXT_FIM();
 }

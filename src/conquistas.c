@@ -268,8 +268,8 @@ static int montar(Item *it) {
   int n = 0, i;
   origem();
   filtrar();
+  if (view == V_DET) { poe(it, &n, B_FECHAR, r_voltar()); return n; }
   poe(it, &n, B_VOLTAR, r_voltar());
-  if (view == V_DET) return n;
   if (view == V_HUB) {
     if (!ajustes_conquistas()) return n;
     poe(it, &n, B_FAMS, r_fams());
@@ -329,30 +329,23 @@ static void mover_geo(int dx, int dy) {
 
 static void mover(int dx, int dy) {
   if (view == V_DET) return;
-  if (view == V_HUB) {
-    if (foco == B_VOLTAR && dx > 0) { foco = B_FAMS; return; }
-    if (foco == B_FAMS && dx < 0) { foco = B_VOLTAR; return; }
-    if (foco == B_FAMS && dy > 0) { foco = B_ORDEM; return; }
-    if (foco == B_ORDEM && dy < 0) { foco = B_FAMS; return; }
-  }
+
   if (view == V_HUB && foco >= C_CARD0) {
     int i = foco - C_CARD0, col = i % colunas, lin = i / colunas, ni;
     filtrar();
-    if (dx) {
+    if (dx && col + dx >= 0 && col + dx < colunas && i + dx < nvis) {
       ni = i + dx;
-      if (col + dx < 0) return;
-      if (col + dx >= colunas) { if (retomar_ligado()) foco = B_RETOMAR; return; }
       if (ni < nvis) foco = C_CARD0 + ni;
       return;
     }
-    if (dy > 0) {
+    if (dy > 0 && lin >= topo + LINHAS_VISIVEIS - 1) {
       ni = i + colunas;
       if (ni >= nvis) { if (lin < (nvis - 1) / colunas) ni = nvis - 1; else return; }
       foco = C_CARD0 + ni;
       garantir_visivel();
       return;
     }
-    if (lin > 0) { foco = C_CARD0 + i - colunas; garantir_visivel(); return; }
+    if (dy < 0 && lin > 0) { foco = C_CARD0 + i - colunas; garantir_visivel(); return; }
   }
   mover_geo(dx, dy);
   garantir_visivel();
@@ -398,7 +391,8 @@ void conquistas_abrir(void) {
   cqd_carregar(&st);
   aberto = 1; view = V_HUB; aba = A_TODAS; ordem = 0; famF = -1; topo = 0; detIdx = 0;
   backPressionado = backVisto = 0;
-  foco = ajustes_conquistas() ? T_ABA0 : B_VOLTAR;
+  filtrar();
+  foco = ajustes_conquistas() ? (nvis ? C_CARD0 : T_ABA0) : B_VOLTAR;
   if (ajustes_animacoes_reduzidas()) entrada = 1.0f;
 }
 
@@ -960,7 +954,7 @@ void conquistas_atualizar(float dt, Uint32 agora) {
     avAlfa = red ? 0.0f : anim_rampa(avAlfa, 0.0f, dt, AVISO_FADE_MS);
   }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
-  if (vistaAnim != (view == V_DET ? V_HUB : view)) { vistaAnim = view == V_DET ? V_HUB : view; tempo = 0; }
+  if (vistaAnim != (view == V_DET ? V_HUB : view)) { vistaAnim = view == V_DET ? V_HUB : view; tempo = 0; entrada = 0; }
   detP = red ? (view == V_DET) : mov_mola_assenta(&detV, detP, view == V_DET, dt, MOV_MODAL_W, MOV_MODAL_Z);
   tempo += dt;
   for (int i = 0; i < C_CARD0 + CQ_MAX; i++)

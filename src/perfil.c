@@ -329,6 +329,8 @@ void perfil_abrir(void) {
   tCena = tBarra = 0;
 }
 void perfil_fechar(void) { aberto = 0; sair = 1; pediuRelogio = 0; }
+void perfil_suspender(void) { aberto = sair = pediuRelogio = 0; }
+void perfil_retomar(void) { aberto = 1; sair = 0; }
 int perfil_aberto(void) { return aberto; }
 int perfil_quer_sair(void) { int q = sair; sair = 0; return q; }
 int perfil_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return v; }

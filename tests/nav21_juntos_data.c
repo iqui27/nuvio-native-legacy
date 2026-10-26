@@ -1,0 +1,2 @@
+#include "../src/juntos.c"
+void nav21_juntos_data(void){memset(&motor,0,sizeof motor);temMotor=1;fase=JF_DENTRO;motor.temSala=1;motor.sala.n=2;snprintf(motor.eu,sizeof motor.eu,"fixture");for(int i=0;i<2;i++){snprintf(motor.sala.m[i].id,sizeof motor.sala.m[i].id,"fixture%d",i);snprintf(motor.sala.m[i].nome,sizeof motor.sala.m[i].nome,"Friend %d",i);snprintf(motor.sala.m[i].st,sizeof motor.sala.m[i].st,"pronto");}snprintf(motor.sala.titulo,sizeof motor.sala.titulo,"Offline lobby");}

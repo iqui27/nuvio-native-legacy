@@ -167,7 +167,7 @@ void social_abrir(const CatItem *pessoa) { entrada=tempo=rolagem=velocidade=0; m
 int social_quer_sair(void){if(sair && entrada < .002f){sair=0;return 1;}return 0;}
 SocialEstado social_estado(void){return dados.estado;}
 void social_evento(const SDL_Event *e){SDL_Keycode k;if(!e||e->type!=SDL_KEYDOWN)return;k=e->key.keysym.sym;
-  if(nv_tecla_voltar(e)||k==SDLK_LEFT){sair=1;return;}if(k==SDLK_UP&&selecionado>0)selecionado--;if(k==SDLK_DOWN&&selecionado+1<dados.n)selecionado++;
+  if(nv_tecla_voltar(e)){sair=1;return;}if(k==SDLK_UP&&selecionado>0)selecionado--;if(k==SDLK_DOWN&&selecionado+1<dados.n)selecionado++;
   if(k==SDLK_r && dados.estado!=SOCIAL_CARREGANDO && dados.estado!=SOCIAL_ATUALIZANDO){abrirInterno(&dados.pessoa,1);return;}
   if(k==SDLK_RETURN||k==SDLK_KP_ENTER){if(dados.estado==SOCIAL_PRIVADO||dados.estado==SOCIAL_INDISPONIVEL||dados.estado==SOCIAL_DESCONECTADO||dados.estado==SOCIAL_STALE){abrirInterno(&dados.pessoa,1);return;}if((dados.estado==SOCIAL_PRONTO||dados.estado==SOCIAL_ATUALIZANDO)&&selecionado>=0&&selecionado<dados.n&&dados.atividades[selecionado].imdb[0])escolhido=selecionado;}
 }

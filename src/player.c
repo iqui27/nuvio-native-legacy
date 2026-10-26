@@ -4409,7 +4409,7 @@ void player_evento(const SDL_Event *e) {
       if (skipFoco) { skipFoco = 0; return; }
       if (visivel || anim > 0.004f) {
         if (scrubbing) terminarSalto();
-        esconderControles(); anim = 0.0f;
+        esconderControles();
         intro_botao_esconder(monoSeg());
         return;
       }

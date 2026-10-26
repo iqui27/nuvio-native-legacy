@@ -58,6 +58,7 @@ enum { B_VOLTAR = 100, B_PRINC, B_SEC, B_PULAR };
 typedef struct { int id; GfxRect r; } Item;
 
 static int   aberto, passo, foco = B_PRINC, pedido, esperaTeclado, decidido, temDados;
+static int previousFocus[PASSOS];
 static Uint32 backDesde, backUltimo;   // relogio proprio: main.c zera o evento LG
 static int backPressionado, backVisto;
 static float entrada, pagina, tempoPasso, focoAnim[B_PULAR + 1];
@@ -122,12 +123,12 @@ static void carregar(void) {
 // ------------------------------------------------------------------- estado
 static int foco_padrao(void) {
   if (passo == 0) return dados.nome[0] ? B_PRINC : I_NOME;
-  if (passo == 1) return I_NUVIO;
-  if (passo == 2) return I_TRAKT;
+  if (passo == 1 || passo == 2) return B_PRINC;
   return B_PRINC;
 }
 
 static void ir_passo(int p) {
+  int old = passo; previousFocus[old] = foco;
   if (p != passo && entrada > .99f && !gfx_mini_ativo() &&
       !ajustes_animacoes_reduzidas() && gfx_mini_alvo(&paginaAnterior, 1920, 1080)) {
     gfx_mini_comecar(&paginaAnterior, 0, 0, 1);
@@ -136,7 +137,7 @@ static void ir_passo(int p) {
   }
   if (p != passo) importarfluxo_cancelar();
   passo = p < 0 ? 0 : p >= PASSOS ? PASSOS - 1 : p;
-  foco = foco_padrao();
+  foco = passo < old ? previousFocus[passo] : foco_padrao();
   pagina = tempoPasso = 0;
   memset(focoAnim, 0, sizeof focoAnim);
 }
@@ -152,6 +153,7 @@ static void abrir(void) {
   backPressionado = backVisto = 0;
   antes = dados;
   passo = 0;
+  for(int i=0;i<PASSOS;i++)previousFocus[i]=B_PRINC;
   foco = foco_padrao();
 }
 

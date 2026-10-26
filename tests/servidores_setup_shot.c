@@ -126,8 +126,9 @@ static void capture(const char *dir, const char *name) {
   char path[900];snprintf(path,sizeof path,"%s/%s-app.png",dir,name);assert(!IMG_SavePNG(surface,path));puts(path);
   free(pixels);SDL_FreeSurface(surface);
 }
-static void key(SDL_Keycode k){SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;srvsetup_evento(&e);}
+static void key(SDL_Keycode k);
 #include "servidores_review.inc"
+static void key(SDL_Keycode k){reviewDraw();SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;srvsetup_evento(&e);}
 // Reap the worker a step started; the sandbox has no network, so it ends fast.
 static void settle(void) {
   for (int i = 0; i < 30; i++) { shotTime += 16; srvsetup_atualizar(shotTime); }

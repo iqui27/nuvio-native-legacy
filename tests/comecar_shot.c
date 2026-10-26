@@ -284,7 +284,7 @@ static void motion_proof(const char *prefix, int step) {
       adiantar(60);
       if (kind == 1) {
         int old = foco;
-        tecla(step == 0 ? SDLK_UP : step == 1 ? SDLK_DOWN : SDLK_RIGHT);
+        tecla(step < 3 ? SDLK_UP : SDLK_RIGHT);
         assert(foco != old);
       } else if (kind == 2 || kind == 3) {
         pular();
@@ -399,10 +399,10 @@ int main(int argc, char **argv) {
   previa("estado=nenhum\nnome=so\n");
   tecla(SDLK_RETURN);            // nome ja ha: Continuar
   assert(comecar_passo() == 1);
-  assert(comecar_foco() == 2);   // foco padrao: Conta Nuvio
-  tecla(SDLK_UP); tecla(SDLK_UP); tecla(SDLK_RETURN);   // Stremio: fica
+  assert(comecar_foco() == B_PRINC);
+  ir_para(I_STREMIO); tecla(SDLK_RETURN);   // Stremio stays on this step.
   assert(comecar_passo() == 1);
-  tecla(SDLK_DOWN); tecla(SDLK_RETURN);                 // AIOManager: fica
+  ir_para(I_AIO); tecla(SDLK_RETURN);                  // AIOManager stays on this step.
   assert(comecar_passo() == 1);
   importarfluxo_cancelar();
   // Voltar (botao) volta ao 1 sem perder o nome.
@@ -415,8 +415,8 @@ int main(int argc, char **argv) {
   assert(comecar_passo() == 2);
 
   // Passo 3 (Acompanhar): the default chips step the real settings in place.
-  assert(comecar_foco() == 0);   // I_TRAKT
-  tecla(SDLK_DOWN); assert(comecar_foco() >= I_CH_CW && comecar_foco() <= I_CH_HIST);
+  assert(comecar_foco() == B_PRINC);
+  ir_para(I_CH_CW); assert(comecar_foco() >= I_CH_CW && comecar_foco() <= I_CH_HIST);
   // "Importar o que ja foi visto" is an action, not a setting: no tracker here,
   // so OK starts the Trakt code and the step stays put.
   ir_para(I_CH_HIST);
@@ -429,11 +429,11 @@ int main(int argc, char **argv) {
   contem("estado=nenhum");   // chips change settings, never comecar.txt
   ir_para(I_TRAKT);
   // "So nesta TV" avanca; Back volta um passo.
-  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
+  ir_para(I_TV); tecla(SDLK_RETURN);
   assert(comecar_passo() == 3);
   tecla(SDLK_AC_BACK);
-  assert(comecar_passo() == 2 && comecar_aberto());
-  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
+  assert(comecar_passo() == 2 && comecar_aberto() && comecar_foco() == I_TV);
+  tecla(SDLK_RETURN);
   assert(comecar_passo() == 3);
 
   // Passo 4 (Pronto): OK no principal = Ir para a Home (NADA), grava feito.
@@ -448,7 +448,7 @@ int main(int argc, char **argv) {
   // O secundario (Fazer o tour) pede o tour e tambem grava feito.
   previa("estado=nenhum\nnome=so\n");
   tecla(SDLK_RETURN); tecla(SDLK_RETURN);   // passo 3
-  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);   // passo 4
+  ir_para(I_TV); tecla(SDLK_RETURN);   // Finish step.
   ir_para(102);
   for (int f = 0; f < 40; f++) comecar_atualizar(0.016f, SDL_GetTicks());
   tecla(SDLK_RETURN);   // secundario
@@ -468,7 +468,7 @@ int main(int argc, char **argv) {
   assert(!existe());
   ir_para(101); tecla(SDLK_RETURN); tecla(SDLK_RETURN);   // passo 3
   assert(comecar_passo() == 2 && !existe());
-  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);   // passo 4
+  ir_para(I_TV); tecla(SDLK_RETURN);   // Finish step.
   assert(comecar_passo() == 3 && !existe());
   // Fechar o app aqui (antes de confirmar) nao deixa rastro.
   comecar_teste_esquecer();
@@ -476,7 +476,7 @@ int main(int argc, char **argv) {
   comecar_abrir();
   tecla(SDLK_RETURN); digitar("Lia");
   ir_para(101); tecla(SDLK_RETURN); tecla(SDLK_RETURN);
-  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
+  ir_para(I_TV); tecla(SDLK_RETURN);
   tecla(SDLK_RETURN);            // Ir para a Home
   assert(!comecar_aberto());
   contem("estado=feito"); contem("nome=Lia");
@@ -652,7 +652,7 @@ int main(int argc, char **argv) {
   captura(nome, 40);
 
   // Stremio e AIOManager: estados forcados (sem rede) so para a captura.
-  tecla(SDLK_UP); tecla(SDLK_UP);
+  ir_para(I_STREMIO);
   importarfluxo_teste(IMPF_STREMIO, IMPF_ESPERA, "K7QX2M", "https://link.stremio.com/", 0, 0);
   snprintf(nome, sizeof nome, "%s-2b-stremio-codigo.png", prefix);
   captura(nome, 40);
@@ -662,14 +662,14 @@ int main(int argc, char **argv) {
   snprintf(nome, sizeof nome, "%s-2c-stremio-ok.png", prefix);
   captura(nome, 40);
   assert(!strcmp(ultimoCodigo, "K7QX2M") && ultimoLink[0]);
-  tecla(SDLK_DOWN);
+  ir_para(I_AIO);
   importarfluxo_teste(IMPF_AIOM, IMPF_ESPERA, "", "", 0, 0);
   celb_abrir_embutido(CELB_IMPORTAR, "Link do AIOManager");
   for (int i = 0; i < 90; i++) celb_atualizar(0.016f);   // a mola do cartao
   snprintf(nome, sizeof nome, "%s-2d-aiom-link.png", prefix);
   captura(nome, 40);
   importarfluxo_cancelar();
-  tecla(SDLK_DOWN);
+  ir_para(I_NUVIO);
   tecla(SDLK_RETURN);   // Conta Nuvio
   assert(comecar_passo() == 2);
   shotContas = 1; foco = I_SIMKL;
@@ -677,7 +677,7 @@ int main(int argc, char **argv) {
   captura(nome, 40);
   shotContas = 0; foco = I_TRAKT;
 
-  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RETURN);
+  ir_para(I_TV); tecla(SDLK_RETURN);
   assert(comecar_passo() == 3);
   shotContas = 1;   // mock 3D: tracker linked, collections on Home, skip intro on
   if (!col_n()) assert(col_definir_json("[{\"id\":\"c1\",\"title\":\"Casa\",\"folders\":["

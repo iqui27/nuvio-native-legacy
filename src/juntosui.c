@@ -24,6 +24,10 @@
 #include "salvospainel.h"
 #include "layout.h"
 #include "teclavoltar.h"
+#include "focus.h"
+static GfxRect navigationRects[16];
+static int navigationIds[16], navigationCount;
+static void navigationTarget(int id,GfxRect r){if(navigationCount<16){navigationIds[navigationCount]=id;navigationRects[navigationCount++]=r;}}
 #ifdef NV_SHOT_HOOKS
 #include <assert.h>
 #endif
@@ -580,6 +584,14 @@ int juntosui_evento_sdl(const SDL_Event *e) {
   if (camada == CAMADA_NADA && e->type == SDL_KEYDOWN && !e->key.repeat && juntos_ativo() && noPlayer() &&
       !escolhendoFilme && !lobbyAberto && ehCanal(e, 1)) { abrirPainel(); return 1; }
   if (camada == CAMADA_NADA) return 0;
+  if(camada==CAMADA_SALA&&!mostrarQr&&!cinema&&e->type==SDL_KEYDOWN&&(k==SDLK_UP||k==SDLK_DOWN||k==SDLK_LEFT||k==SDLK_RIGHT)){
+    int buttons[BT_N], codigo=botoesSala(buttons)-1;
+    if(k==SDLK_DOWN&&foco==codigo&&juntos_motor()&&juntos_motor()->sala.n<5){foco=-1;return 1;}
+    if(k==SDLK_DOWN&&(foco<0||foco==codigo)){foco=focoAcao<codigo?focoAcao:0;return 1;}
+    int current=-1;for(int i=0;i<navigationCount;i++)if(navigationIds[i]==foco)current=i;
+    int next=focus_rect_nearest(navigationRects,navigationCount,current,(k==SDLK_RIGHT)-(k==SDLK_LEFT),(k==SDLK_DOWN)-(k==SDLK_UP));
+    if(next>=0){foco=navigationIds[next];if(foco>=0&&foco<codigo)focoAcao=foco;return 1;}
+  }
   if (e->type == SDL_KEYUP) return 1;
   switch (camada) {
     case CAMADA_FOLHA: {
@@ -1063,6 +1075,7 @@ static void desenharLugar(int i, const JsMembro *p, int vazio, float f, float x,
   char nome[160];
   const JsMotor *m = juntos_motor();
   int pronto = !vazio && membroPronto(p);
+  if (vazio) navigationTarget(-1,c);
   a *= e * chega;
   if (a <= 0.01f) return;
   gfx_transformar(cx, y + LUGAR_H / 2, s, origemX, origemY - NV_FOCO_LIFT * f + (1 - e) * NV_ENTRA_DY - (1 - chega) * 20);
@@ -1371,6 +1384,7 @@ static void desenharSala(void) {
   a *= convFundo;
   cabecalhoSala(L, R, T + 54, a * entradaItem(0));
   float codigoW = botao_largura(rotuloBotao(BT_CODIGO), iconeBotao(BT_CODIGO), 0);
+  navigationTarget(n,(GfxRect){R-codigoW,T+104,codigoW,BOTAO_H_SECUNDARIO});
   botao_pilula((GfxRect){ R - codigoW, T + 104, codigoW, BOTAO_H_SECUNDARIO },
                rotuloBotao(BT_CODIGO), iconeBotao(BT_CODIGO), focoDe(n), 0, 0, a * entradaItem(1));
   // Hero block like Detail: kicker, headline, then the film's logo (or title).
@@ -1426,6 +1440,7 @@ static void desenharSala(void) {
       float h = prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
       if (xe + larguras[i] > R) { xe = L; y += BOTAO_H_PRIMARIO + BOTAO_GAP / 2; }
       GfxRect r = { xe, y + (BOTAO_H_PRIMARIO - h) / 2, larguras[i], h };
+      navigationTarget(i,r);
       // All ready: the start button breathes until pressed.
       if (prim && !ajustes_animacoes_reduzidas_usuario())
         gfx_anel_fora(r, .5f, 4 + 6 * (.5f + .5f * sinf(agoraUlt / 380.0f)), 2, 0.55f, 0.92f, 0.65f, .45f * a);
@@ -1436,6 +1451,7 @@ static void desenharSala(void) {
     for (i = n - 1; !quebra && i >= 0; i--) {
       if (b[i] <= BT_FONTES) continue;
       xd -= larguras[i];
+      navigationTarget(i,(GfxRect){xd,acoesY+(BOTAO_H_PRIMARIO-BOTAO_H_SECUNDARIO)/2,larguras[i],BOTAO_H_SECUNDARIO});
       botao_pilula((GfxRect){ xd, acoesY + (BOTAO_H_PRIMARIO - BOTAO_H_SECUNDARIO) / 2, larguras[i], BOTAO_H_SECUNDARIO },
                    rotuloBotao(b[i]), iconeBotao(b[i]), focoDe(i), 0, 0, a * entradaItem(i + 2));
       xd -= BOTAO_GAP;
@@ -1701,6 +1717,7 @@ static void pedirCorpo(void) {
 }
 
 void juntosui_desenhar(Uint32 agora) {
+  navigationCount=0;
   int medir = camadaVisual == CAMADA_SALA && entrada > .005f;
   if (medir) custoInicio();
   float esc = gfx_escala_entrar();

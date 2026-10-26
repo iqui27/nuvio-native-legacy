@@ -1064,21 +1064,21 @@ static int socialDoPerfil;
 // A Caca aberta pelo Perfil volta para o Perfil (como o perfil do amigo).
 static int cacaDoPerfil;
 
+static struct { Tela page; int menu, profile; } routeHistory[32];
+static int routeCount, routeOpening;
 static void trocarTela(Tela nova) {
   if (nova == tela) return;
   if (nova == TELA_GUIA && perfil_infantil_ativo()) {   // perfilinfantil.h: sem TV ao vivo
     glem_aviso_curto(i18n("Perfil infantil: sem TV ao vivo"));
     return;
   }
+  if(!routeOpening)routeCount=0;
   if (nova != TELA_SOCIAL) socialDoPerfil = 0;
   if (nova != TELA_CACA) cacaDoPerfil = 0;
-  if (tela == TELA_AJUSTES) ajustes_encerrar();
+  if (tela == TELA_AJUSTES) { if(routeOpening)ajustes_suspender();else ajustes_encerrar(); }
   if (tela == TELA_LIVETV_DIAG) livetvdiag_encerrar();
-  // ESQUERDA na borda do Perfil so pede a barra e deixa a pagina aberta (#371).
-  // Se o roteador vai para OUTRA tela (barra proibida no PiP, ou um destino da
-  // barra), o Perfil fecha aqui: senao perfil_atualizar/socialvis_atualizar
-  // seguiam rodando todo quadro. Voltar ao Perfil passa por perfil_abrir.
-  if (tela == TELA_PERFIL) perfil_fechar();
+  // Stop Profile updates while away; child routes retain focus for Back.
+  if (tela == TELA_PERFIL) { if(routeOpening)perfil_suspender();else perfil_fechar(); }
   // #318: a tela piscava e congelava logo depois de uma troca de tela
   // (Android). A linha fica para o proximo relato, com teto: as 120 primeiras
   // trocas e depois no maximo uma a cada 10 s.
@@ -1102,6 +1102,27 @@ static void trocarTela(Tela nova) {
     case TELA_LIVETV_DIAG: livetvdiag_iniciar(); break;
     default: break;
   }
+}
+
+static void abrirTelaFilha(Tela nova) {
+  if(nova==tela)return;
+  if(nova==TELA_GUIA && perfil_infantil_ativo()){trocarTela(nova);return;}
+  if(routeCount<32){routeHistory[routeCount].page=tela;routeHistory[routeCount].menu=menu_destino();routeHistory[routeCount++].profile=perfis_ativo();}
+  // Suspended pages retain their own focus and scroll until Back resumes them.
+  routeOpening=1;trocarTela(nova);routeOpening=0;
+}
+static void voltarTela(void) {
+  if(routeCount && routeHistory[routeCount-1].profile==perfis_ativo()){
+    if(tela==TELA_AJUSTES)ajustes_encerrar();
+    if(tela==TELA_PERFIL)perfil_fechar();
+    routeCount--;tela=routeHistory[routeCount].page;
+    menu_definir_destino(routeHistory[routeCount].menu);
+    if(tela==TELA_AJUSTES)ajustes_retomar();
+    else if(tela==TELA_BIBLIOTECA)biblioteca_retomar();
+    else if(tela==TELA_PERFIL)perfil_retomar();
+    return;
+  }
+  routeCount=0;trocarTela(TELA_HOME);menu_definir_destino(MENU_INICIO);
 }
 
 static int episodioNaSala(int titulo, int t, int e) {
@@ -4032,9 +4053,7 @@ static void abrirPessoa(const SpotPedido *pp) {
     } }
 }
 // O que a pessoa escolheu no Spotlight, ja com a caixa fechada.
-static void spotAtender(void) {
-  SpotPedido p;
-  if (!spot_pediu(&p)) return;
+static void spotAbrirPedido(SpotPedido p) {
   switch (p.tipo) {
     case SPOT_TITULO:
       abrirPorIndice(p.indice);
@@ -4056,14 +4075,14 @@ static void spotAtender(void) {
       trocarTela(TELA_ADDONS);
       break;
     case SPOT_GUIA:
-      if (tela != TELA_AJUSTES) { ajustes_abrir_no_guia(0); trocarTela(TELA_AJUSTES); menu_definir_destino(MENU_AJUSTES); }
+      if (tela != TELA_AJUSTES) { ajustes_abrir_no_guia(0); abrirTelaFilha(TELA_AJUSTES); menu_definir_destino(MENU_AJUSTES); }
       ajustes_guia_ir(p.indice);
       break;
     case SPOT_AJUSTE:
       detail_fechar();
       ajustes_abrir_opcao(p.indice);
       if (tela == TELA_AJUSTES) ajustes_iniciar();
-      else trocarTela(TELA_AJUSTES);
+      else abrirTelaFilha(TELA_AJUSTES);
       menu_definir_destino(MENU_AJUSTES);
       break;
     case SPOT_CANAL: {
@@ -4074,6 +4093,23 @@ static void spotAtender(void) {
   }
   printf("[spotlight] escolheu tipo=%d\n", p.tipo);
   fflush(stdout);
+}
+
+static void spotAtender(void) {
+  SpotPedido p;
+  if (spot_pediu(&p)) spotAbrirPedido(p);
+}
+
+static void guiaAtender(void) {
+  if (tela != TELA_AJUSTES) return;
+  switch (ajustes_pediu_tela()) {
+    case AJ_TELA_GUIA_TV: abrirTelaFilha(TELA_GUIA); menu_definir_destino(MENU_GUIA); break;
+    case AJ_TELA_BIBLIOTECA: abrirTelaFilha(TELA_BIBLIOTECA); menu_definir_destino(MENU_BIBLIOTECA); break;
+    case AJ_TELA_AGENDA: abrirTelaFilha(TELA_AGENDA); menu_definir_destino(MENU_AGENDA); break;
+    case AJ_TELA_EXPLORAR: abrirTelaFilha(TELA_EXPLORAR); menu_definir_destino(MENU_EXPLORAR); break;
+    case AJ_TELA_PERFIL: abrirTelaFilha(TELA_PERFIL); menu_definir_destino(MENU_PERFIL); break;
+    default: break;
+  }
 }
 
 int app_no_login(void) { return tela == TELA_LOGIN; }
@@ -5836,7 +5872,8 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   if (tela == TELA_AJUSTES) {
     int buscaAjustes = ajustes_pediu_busca();
-    if (buscaAjustes == 2) spot_reabrir_ajustes();
+    if (buscaAjustes == 2 && routeCount) voltarTela();
+    else if (buscaAjustes == 2) spot_reabrir_ajustes();
     else if (buscaAjustes == 1) spot_abrir_ajustes(0);
   }
   // "Voltar às novidades" no Guia de uso aberto pelo cartao da 1.8.0: a home
@@ -5852,16 +5889,7 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   // Os atalhos de tela do Guia de uso ("Abrir o Guia de TV" e cia.): a tela e
   // o item do menu, como se a pessoa tivesse ido pelo menu.
-  if (tela == TELA_AJUSTES) {
-    switch (ajustes_pediu_tela()) {
-      case AJ_TELA_GUIA_TV:    trocarTela(TELA_GUIA);       menu_definir_destino(MENU_GUIA);       break;
-      case AJ_TELA_BIBLIOTECA: trocarTela(TELA_BIBLIOTECA); menu_definir_destino(MENU_BIBLIOTECA); break;
-      case AJ_TELA_AGENDA:     trocarTela(TELA_AGENDA);     menu_definir_destino(MENU_AGENDA);     break;
-      case AJ_TELA_EXPLORAR:   trocarTela(TELA_EXPLORAR);   menu_definir_destino(MENU_EXPLORAR);   break;
-      case AJ_TELA_PERFIL:     trocarTela(TELA_PERFIL);     menu_definir_destino(MENU_PERFIL);     break;
-      default: break;
-    }
-  }
+  guiaAtender();
   if (tela == TELA_AJUSTES && ajustes_pediu_addons()) {
     addonsui_abrir();
     trocarTela(TELA_ADDONS);
@@ -5946,8 +5974,7 @@ void app_atualizar(float dt, Uint32 agora) {
         menu_definir_destino(MENU_PERFIL);
         perfil_voltar_ao_duelo();
       } else {
-        trocarTela(TELA_HOME);
-        menu_definir_destino(MENU_INICIO);
+        voltarTela();
       }
       saiuPorEsquerda = saiuPorCima = 0;
     }

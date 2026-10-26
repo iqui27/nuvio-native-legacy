@@ -8,7 +8,7 @@ cc tests/aiostreams.c src/aiostreams.c src/js.c src/stream_parse.c src/fontefilt
   -ffunction-sections -fdata-sections -Wl,-dead_strip \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
 "$work/test"
-cc tests/aiostreams_ui.c src/aiostreams.c src/js.c src/jsw.c src/qr.c -Isrc -o "$work/ui" -O1 -g \
+cc tests/aiostreams_ui.c src/aiostreams.c src/js.c src/jsw.c src/qr.c src/focus.c -Isrc -o "$work/ui" -O1 -g \
   -ffunction-sections -fdata-sections -Wl,-dead_strip \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -L/opt/homebrew/lib -lSDL2
 "$work/ui"
