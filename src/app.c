@@ -3550,12 +3550,10 @@ static void recarregarFonteVOD(void) {
   if (fonteVODAutomatica) fonteVODDesde = agora;
   else fonteManualDesde = agora;
 }
-// #415: ao lado das texturas saem tambem os buffers que tex_aliviar nao ve —
-// colheita/legenda do mkvass (parar grava o sidecar parcial e nao bloqueia) e
-// a grade de linhas rasterizadas. O texto se refaz sob demanda no quadro.
+// Release rendering caches without cancelling the active subtitle reader:
+// its bounded window must keep following playback after memory pressure.
 static void aliviarMemoria(void) {
   tex_aliviar();
-  mkvass_parar();
   txt_aliviar();
   assrender_aliviar();
   memlog_devolver();
