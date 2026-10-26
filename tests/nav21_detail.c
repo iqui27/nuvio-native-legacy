@@ -23,6 +23,7 @@ static void stepFixture(float dt){clockFixture+=(Uint32)(dt*1000);detail_atualiz
 static void drawFixture(void){detail_desenhar(SDL_GetTicks());for(int i=0;i<navigationCount;i++)nav21_target((navigation[i].row+1)*1000+navigation[i].col,navigation[i].rect);}
 static int focusFixture(void){return nivel?(foco.fileira+1)*1000+foco.coluna:botao;}
 static void selectFixture(int id){ponteiroDetalhe(id/1000-1,id%1000);}
+static float transitionFixture(void){return t;}
 static int pageFixture(void){return detail_aberto();}
 void nav21_detail(void){
   memset(&fixtureItem,0,sizeof fixtureItem);snprintf(fixtureItem.titulo,sizeof fixtureItem.titulo,"Offline series");snprintf(fixtureItem.imdb,sizeof fixtureItem.imdb,"tt0000001");snprintf(fixtureItem.tipo,sizeof fixtureItem.tipo,"series");snprintf(fixtureItem.meta,sizeof fixtureItem.meta,"2020");snprintf(fixtureItem.sinopse,sizeof fixtureItem.sinopse,"Offline fixture synopsis");fixtureItem.nElenco=6;fixtureItem.nTemporadas=2;fixtureItem.temporadas[0]=1;fixtureItem.temporadas[1]=2;for(int i=0;i<6;i++)snprintf(fixtureItem.elenco[i].nome,sizeof fixtureItem.elenco[i].nome,"Actor %d",i);
@@ -30,7 +31,7 @@ void nav21_detail(void){
   for(fixture=-1;fixture<N_SECOES;fixture++){
     openFixture();for(int i=0;i<90;i++)stepFixture(1.f/60);if(fixture>=0&&!secaoColunas(fixture))continue;
     char name[80];snprintf(name,sizeof name,"Detail/section-%d",fixture);
-    Nav21Screen s={name,openFixture,detail_evento,stepFixture,drawFixture,focusFixture,selectFixture,pageFixture,fixture<0?0:(fixture+1)*1000};nav21_check(s);
+    Nav21Screen s={name,openFixture,detail_evento,stepFixture,drawFixture,focusFixture,selectFixture,pageFixture,fixture<0?0:(fixture+1)*1000,transitionFixture};nav21_check(s);
     openFixture();SDL_Event back={0};back.type=SDL_KEYDOWN;back.key.keysym.sym=SDLK_ESCAPE;detail_evento(&back);
     nav21_expect(name,"Open, Back: exit requested in one level",saindo,1);
   }

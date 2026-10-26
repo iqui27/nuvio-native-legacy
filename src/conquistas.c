@@ -957,7 +957,7 @@ void conquistas_atualizar(float dt, Uint32 agora) {
     avAlfa = red ? 0.0f : anim_rampa(avAlfa, 0.0f, dt, AVISO_FADE_MS);
   }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
-  if (vistaAnim != (view == V_DET ? V_HUB : view)) { vistaAnim = view == V_DET ? V_HUB : view; tempo = 0; }
+  if (vistaAnim != (view == V_DET ? V_HUB : view)) { vistaAnim = view == V_DET ? V_HUB : view; tempo = 0; entrada = 0; }
   detP = red ? (view == V_DET) : mov_mola_assenta(&detV, detP, view == V_DET, dt, MOV_MODAL_W, MOV_MODAL_Z);
   tempo += dt;
   for (int i = 0; i < C_CARD0 + CQ_MAX; i++)

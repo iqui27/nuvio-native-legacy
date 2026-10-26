@@ -15,6 +15,16 @@ static int count, failures, checks;
 static const char *filter;
 static FILE *logfile, *registry;
 static const char *artifactDir;
+void nav21_library(void);
+void nav21_router(void);
+static int fakePhase;
+static void fakeAction(void){fakePhase=0;}
+static void fakeStep(float dt){(void)dt;fakePhase++;}
+static void fakeDraw(void){gfx_cor((GfxRect){0,0,1920,1080},0,(fakePhase%10)/10.f,0,0,1);}
+static float fakeTransition(void){return 1;}
+static int fakeValue(void){return 0;}
+static void fakeKey(const SDL_Event *e){(void)e;}
+static void fakeSelect(int id){(void)id;}
 void nav21_aio(void);
 void nav21_library(void);
 void nav21_filmo(void);
@@ -65,16 +75,23 @@ static unsigned long long hash(void) {
   for(size_t i=0;i<sizeof pixels;i+=16) h=(h^pixels[i])*1099511628211ULL;
   return h;
 }
-static void motion(Nav21Screen s,int closing) {
-  s.open(); settle(s);
-  if(closing) key(s,SDLK_ESCAPE); else s.open();
-  frame(s,0); unsigned long long first=hash(), last=first;
-  int changed=0, firstChange=-1, lastChange=-1;
-  for(int ms=25;ms<=600;ms+=25) {
-    SDL_Delay(25);frame(s,.025f); unsigned long long h=hash();
-    if(h!=last) {changed++;if(firstChange<0)firstChange=ms;lastChange=ms;} last=h;
+void nav21_motion(Nav21Screen s,void (*action)(void),const char *path) {
+  action();frame(s,0);unsigned long long last=hash();
+  float previous=s.transition?s.transition():1;
+  int firstChange=-1,lastChange=-1,changed=0;
+  for(int ms=25;ms<=600;ms+=25){
+    SDL_Delay(25);frame(s,.025f);unsigned long long h=hash();
+    float progress=s.transition?s.transition():1;
+    if(fabsf(progress-previous)>.0001f && h!=last){changed++;if(firstChange<0)firstChange=ms;lastChange=ms;}
+    previous=progress;last=h;
   }
-  nav21_expect(s.name,closing?"Back: exit frames change through >=150ms":"Open: entry frames change through >=150ms",changed>1&&lastChange-firstChange>=150,1);
+  nav21_expect(s.name,path,changed>1&&lastChange-firstChange>=150,1);
+}
+static Nav21Screen motionScreen;
+static void motionBack(void){key(motionScreen,SDLK_ESCAPE);}
+static void motion(Nav21Screen s,int closing){
+  s.open();settle(s);motionScreen=s;
+  nav21_motion(s,closing?motionBack:s.open,closing?"Back: transition and frames change through >=150ms":"Open: transition and frames change through >=150ms");
 }
 void nav21_check(Nav21Screen s) {
   if(filter && !strstr(s.name,filter))return;
@@ -115,7 +132,7 @@ void nav21_check(Nav21Screen s) {
     for(int d=0;d<4;d++)if(expectedEdges[i][d]>=0){char edge[4300];snprintf(edge,sizeof edge,"%s; from %d, %s: went to %d, expected %d",path,base[i].id,names[d],actualEdges[i][d],expectedEdges[i][d]);nav21_expect(s.name,edge,actualEdges[i][d],expectedEdges[i][d]);}
   }
   motion(s,0);if(strcmp(s.name,"Home 2.1"))motion(s,1);
-  if(strcmp(s.name,"Home 2.1")){s.open();settle(s);int previous=s.page();key(s,SDLK_ESCAPE);settle(s);nav21_expect(s.name,"Open, Back: exactly one page changes",s.page()!=previous,1);}
+  // Exact route/focus checks live beside each real internal navigation path and router fixture.
   printf("SCREEN %s targets=%d violations=%d\n",s.name,n,failures-before);fflush(stdout);
 }
 int main(int argc,char **argv) {
@@ -130,7 +147,12 @@ int main(int argc,char **argv) {
   GLuint t,f;glGenTextures(1,&t);glBindTexture(GL_TEXTURE_2D,t);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,1920,1080,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
   glGenFramebuffers(1,&f);glBindFramebuffer(GL_FRAMEBUFFER,f);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,t,0);assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
   glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(64);gfx_icones_dir("deploy/app/art");gfx_escala_txt_definir(1);
-  nav21_servers();nav21_achievements();nav21_start();nav21_aio();nav21_library();nav21_filmo();nav21_addonguide();nav21_detail();nav21_social();nav21_settings();nav21_sources();nav21_juntos();nav21_home();
+  Nav21Screen hardCut={"Motion/negative-control",fakeAction,fakeKey,fakeStep,fakeDraw,fakeValue,fakeSelect,fakeValue,0,fakeTransition};
+  int savedFailures=failures;FILE *savedLog=logfile;logfile=tmpfile();assert(logfile);
+  nav21_motion(hardCut,fakeAction,"Hard cut plus unrelated animation must fail");
+  int rejected=failures==savedFailures+1;failures=savedFailures;fclose(logfile);logfile=savedLog;
+  nav21_expect("Motion/negative-control","Hard cut plus unrelated animation rejected",rejected,1);
+  nav21_router();nav21_servers();nav21_achievements();nav21_start();nav21_aio();nav21_filmo();nav21_addonguide();nav21_detail();nav21_social();nav21_settings();nav21_sources();nav21_juntos();nav21_home();
   fprintf(logfile,"\n%d checks, %d violations.\n",checks,failures);fclose(logfile);fclose(registry);
   printf("nav21: %d checks, %d violations\n",checks,failures);return failures?1:0;
 }

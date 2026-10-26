@@ -14,9 +14,11 @@ typedef struct {
   void (*select)(int);
   int (*page)(void);
   int primary;
+  float (*transition)(void); // Progress of the page/sheet itself, excluding focus/content.
 } Nav21Screen;
 void nav21_target(int id, GfxRect rect);
 void nav21_check(Nav21Screen screen);
+void nav21_motion(Nav21Screen screen, void (*action)(void), const char *path);
 void nav21_expect(const char *screen, const char *path, int actual, int expected);
 void nav21_servers(void);
 void nav21_achievements(void);

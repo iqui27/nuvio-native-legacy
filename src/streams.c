@@ -5453,7 +5453,10 @@ static int navigationMove(SDL_Keycode key){
   int next=focus_rect_nearest(rects,navigationCount,current,(key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
   if(next<0||next==current)return 0;
   grupo=navigation[next].group;
-  if(grupo==0)filtro=navigation[next].id;else foco=navigation[next].id;
+  if(grupo==0){
+    if(filtro!=navigation[next].id){filtroServidor=-1;foco=0;rolagem=0;velRol=0;}
+    filtro=navigation[next].id;
+  }else foco=navigation[next].id;
   return 1;
 }
 // PONTEIRO (#99): as mesmas variaveis das setas (grupo, foco, filtro). O
@@ -5468,7 +5471,7 @@ static void ponteiroFolhaFiltro(int i, int b) {
 #endif
   (void)b;
   if (i < -1 || i >= nProvedores) return;
-  filtroServidor = -1; filtro = i; foco = 0; rolagem = 0; grupo = 1;
+  filtroServidor = -1; filtro = i; foco = 0; rolagem = 0; velRol = 0; grupo = 1;
 }
 #undef ponteiro_alvo
 static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int a,int b){

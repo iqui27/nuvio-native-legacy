@@ -38,7 +38,7 @@ static const char *alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW
 static int opened, screen, provider, selected, profile, field, restartPin, enterManual;
 static unsigned libraryVersion;
 static struct { int page, focus; } history[64];
-static int historyCount, closing;
+static int historyCount, closing, authReturned;
 static Uint32 transitionAt;
 static GfxRect navigationRects[SRV_VISAO_MAX + 8];
 static int navigationIds[SRV_VISAO_MAX + 8], navigationCount;
@@ -224,7 +224,7 @@ static void change(int next) {
     }
     transitionAt = SDL_GetTicks();
   }
-  screen = next; selected = 0; message[0] = 0; navigationCount = 0;
+  authReturned=0;screen = next; selected = 0; message[0] = 0; navigationCount = 0;
 }
 static void failed(int error) { recoveryAuth = error == JF_ERR_AUTH || error == JF_ERR_EXPIRADO; change(ERROR_SCREEN); }
 static int providerError(void) { return provider==0?plex_ultimo_erro():provider==1?jellyfin_ultimo_erro():emby_ultimo_erro(); }
@@ -285,6 +285,7 @@ static void activate(void) {
   if (worker.alive && screen == CONNECT_CODE && selected == 0) {
     snprintf(message, sizeof message, "%s", i18n("Carregando…")); return;
   }
+  if (authReturned && screen == CODE && selected == 0) { authReturned=0;return; }
   if (screen == CODE && selected == 0) {
     snprintf(message, sizeof message, "%s", i18n("Carregando…")); return;
   }
@@ -328,7 +329,7 @@ static void activate(void) {
         if (screen == CONNECT_PASSWORD) {
           snprintf(worker.username, sizeof worker.username, "%s", username); snprintf(worker.password, sizeof worker.password, "%s", password);
           if (startWorker(JOB_CONNECT_PASSWORD)) wipe(password, sizeof password);
-        } else { int ok = provider == 1 ? jellyfin_entrar_senha(username, password) : emby_entrar_senha(username, password); if (!ok) snprintf(message, sizeof message, "%s", i18n("Falhou")); }
+        } else { authReturned=0;int ok = provider == 1 ? jellyfin_entrar_senha(username, password) : emby_entrar_senha(username, password); if (!ok) snprintf(message, sizeof message, "%s", i18n("Falhou")); }
       } else if (screen == CONNECT_PASSWORD) { change(LOGIN); }
       else if (provider == 1) enterCode();
       else { change(CONNECT_CODE); codeSince = SDL_GetTicks(); makeQR("https://emby.media/pin"); startWorker(JOB_CONNECT_PIN); } break;
@@ -434,6 +435,7 @@ void srvsetup_evento(const SDL_Event *e) {
     cancelLogin(); stopWorker(); wipe(password, sizeof password);
     if (historyCount) {
       historyCount--;
+      authReturned=1;restartPin=0;
       screen = history[historyCount].page;
       selected = history[historyCount].focus;
       transitionAt = SDL_GetTicks(); navigationCount = 0;
@@ -511,7 +513,7 @@ void srvsetup_atualizar(Uint32 now) {
       }
     }
   }
-  if (screen == CODE) {
+  if (screen == CODE && !authReturned) {
     char detail[160] = "";
     int state = !provider ? plex_estado(detail, sizeof detail) : jellyfin_estado(detail, sizeof detail);
     if ((!provider && state == PX_EST_CODIGO) || (provider == 1 && state == JF_EST_QC_CODIGO)) snprintf(code, sizeof code, "%s", detail);
@@ -523,7 +525,7 @@ void srvsetup_atualizar(Uint32 now) {
       else { change(LIBRARIES); librariesLoad(); }
     } else if ((!provider && (state == PX_EST_ERRO || state == PX_EST_EXPIROU)) || (provider && (state == JF_EST_ERRO || state == JF_EST_EXPIROU))) failed(state==(provider?JF_EST_EXPIROU:PX_EST_EXPIROU)?JF_ERR_EXPIRADO:providerError());
   }
-  if ((screen == PASSWORD || screen == LOGIN) && connected(provider)) { change(LIBRARIES); librariesLoad(); }
+  if (!authReturned && (screen == PASSWORD || screen == LOGIN) && connected(provider)) { change(LIBRARIES); librariesLoad(); }
   if (screen == LIBRARIES && !nLibraries && !worker.alive) {
     snprintf(message, sizeof message, "%s", i18n("Não configurado"));
   }
@@ -531,7 +533,7 @@ void srvsetup_atualizar(Uint32 now) {
     int state = provider == 1 ? jellyfin_estado(NULL, 0) : emby_estado(NULL, 0);
     if (state == JF_EST_ERRO) snprintf(message, sizeof message, "%s", i18n("Usuário ou senha incorretos"));
   }
-  if (screen == LOGIN) {
+  if (screen == LOGIN && !authReturned) {
     int state = provider == 1 ? jellyfin_estado(NULL, 0) : emby_estado(NULL, 0);
     if (state == JF_EST_VERIFICANDO) snprintf(message, sizeof message, "%s", i18n("Conferindo o servidor…"));
     else if (state == JF_EST_ERRO) failed(providerError());

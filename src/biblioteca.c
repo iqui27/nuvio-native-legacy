@@ -1153,6 +1153,8 @@ int biblioteca_iniciar(void) {
   return 1;
 }
 
+void biblioteca_retomar(void){sair=0;animTela=0;pediuRelogio=0;}
+
 void biblioteca_encerrar(void) { pediuRelogio = 0; }
 
 // So para o teste de tela conferir foco e modo sem ler pixel.

@@ -32,10 +32,13 @@ static void drawFixture(void){
     if(!exists)nav21_target(id,(GfxRect){bibX()+i%colunas()*passoColuna(),gradeY()+(i/colunas())*passoLinha()-scrollY,BIB_CARD_W,BIB_POSTER_H});
   }
 }
+static float transitionFixture(void){return animTela;}
 static int pageFixture(void){return sair?-1:modo;}
+void nav21_route_library_open(void){fixture=0;openFixture();selectFixture(1001);}
+int nav21_route_library_focus(void){return focusFixture();}
 void nav21_library(void){
   CatItem items[12]={0};for(int i=0;i<12;i++){snprintf(items[i].titulo,sizeof items[i].titulo,"Fixture %d",i);snprintf(items[i].imdb,sizeof items[i].imdb,"tt%07d",i+1);snprintf(items[i].tipo,sizeof items[i].tipo,"movie");items[i].naLista=1;items[i].listaFontes=1u<<AJ_SALVOS_LOCAL;items[i].fontes=CAT_FONTE_NUVIO;snprintf(items[i].meta,sizeof items[i].meta,"2000");}cat_definir(items,12);
-  for(fixture=0;fixture<2;fixture++){Nav21Screen s={fixture?"Lists":"Library + Origins",openFixture,biblioteca_evento,stepFixture,drawFixture,focusFixture,selectFixture,pageFixture,0};nav21_check(s);}
+  for(fixture=0;fixture<2;fixture++){Nav21Screen s={fixture?"Lists":"Library + Origins",openFixture,biblioteca_evento,stepFixture,drawFixture,focusFixture,selectFixture,pageFixture,0,transitionFixture};nav21_check(s);}
   fixture=1;openFixture();foco.fileira=BIB_FIL_GRADE;foco.coluna=0;Foco saved=foco;
   focoListas=foco;temFocoListas=1;temAberta=1;
   SDL_Event back={0};back.type=SDL_KEYDOWN;back.key.keysym.sym=SDLK_ESCAPE;biblioteca_evento(&back);

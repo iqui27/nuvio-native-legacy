@@ -7033,6 +7033,11 @@ void ajustes_encerrar(void) {
   if (fileirasBusca) { fileirasBusca = 0; desc_repetir(); }
   pediuRelogio = 0; faRetornarFolha = 0; pfSaida(); uxCancelar(); uxRetornarOp = -1; guiaFechar(); ajlog_vazar_tudo();
 }
+void ajustes_suspender(void){
+  if(sessao_logada())sync_iniciar();
+  ajIptvLimparForm();teclado_esquecer();pfSaida();
+}
+void ajustes_retomar(void){sair=0;sairArmado=0;screenReveal=0;screenRoute=-1;pediuRelogio=0;}
 int ajustes_quer_sair(void) { return sair && screenReveal<.002f; }
 int ajustes_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return v; }
 

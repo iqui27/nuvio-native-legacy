@@ -21,6 +21,8 @@
 #endif
 
 int  ajustes_iniciar(void);
+void ajustes_suspender(void);
+void ajustes_retomar(void);
 // Per device: 0 = TV (default), 1 = Mobile. Applied before the initial viewport.
 int  ajustes_interface_mobile(void);
 

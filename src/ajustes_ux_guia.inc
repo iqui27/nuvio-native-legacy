@@ -1097,7 +1097,6 @@ static void guiaAgir(int b) {
   if (bs[b] == GB_EXEMPLO) { guiaExemplo = GUIA_ENT[e].exemplo; guiaExT = 0; return; }
   if (bs[b] == GB_AJUSTES) { int op = GUIA_ENT[e].alvo; guiaFechar(); focarOpcao(op); return; }
   pediuTela = GUIA_ENT[e].tela;
-  guiaFechar();
 }
 static int guiaVoltar(SDL_Keycode k, const SDL_Event *e) {
   return k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE || e->key.keysym.scancode == NV_SCANCODE_BACK;
