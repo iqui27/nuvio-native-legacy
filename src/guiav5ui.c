@@ -347,7 +347,7 @@ static void point_activate(int id,int unused){(void)unused;focus=id;activate(id)
 static void label(TxtEstilo style,const char *text,float x,float y,float width,int dim){
   if(style==TXT_TITULO2)style=TXT_V2_A3TIT;
   if(style==TXT_HEADLINE)style=TXT_V2_GRUPO;
-  TxtLinha l=txt_linha_corta(style,text,dim?170:243,dim?173:242,dim?181:239,255,width);txt_desenhar(l,x,y);
+  TxtLinha l=txt_linha_corta_bruta(style,text,dim?170:243,dim?173:242,dim?181:239,255,width);txt_desenhar(l,x,y);
 }
 static void panel(float x,float y,float w,float h){
   GfxRect r={x,y,w,h};if(ajustes_vidro())gfx_vidro_painel(r,28.0f/h,.82f,1);
@@ -360,7 +360,7 @@ static void button(int id,const char *text,const char *icon,float x,float y,floa
   else if(focused)plrui_pilula_foco(r,1);else plrui_botao_repouso(r,1);
   int c=focused&&!row&&h>54?ajustes_tinta_foco():240;float tint=c/255.0f;
   if(icon&&*icon)gfx_icone((GfxRect){x+24,y+(h-28)/2,28,28},icon,tint,tint,tint,1);
-  TxtLinha l=txt_linha_corta(TXT_ILHA_CORPO,text,c,c,c,255,w-(icon?84:48));txt_desenhar(l,x+(icon?68:24),y+(h-l.h)/2);
+  TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_CORPO,text,c,c,c,255,w-(icon?84:48));txt_desenhar(l,x+(icon?68:24),y+(h-l.h)/2);
   ponteiro_alvo(x,y,w,h,point_focus,point_activate,id,0);
   if(id>=control_count)control_count=id+1;
   if(num_focus<1024)next_focus[num_focus++]=id;
@@ -397,7 +397,7 @@ static void wizard(void){
     float y=222+i*76;if(step==i)gfx_cor((GfxRect){70,y,306,72},.28,1,1,1,.09);
     char n[8];snprintf(n,sizeof n,"%d",i+1);gfx_cor((GfxRect){84,y+18,36,36},.5,1,1,1,step==i?.9:.08);
     if(i<step)gfx_icone((GfxRect){91,y+25,22,22},"aj_check",.72,.79,.76,1);
-    else{TxtLinha number=txt_linha(TXT_ILHA_CORPO,n,step==i?18:170,step==i?19:173,step==i?22:181,255);txt_desenhar(number,94,y+21);}
+    else{TxtLinha number=txt_linha_bruta(TXT_ILHA_CORPO,n,step==i?18:170,step==i?19:173,step==i?22:181,255);txt_desenhar(number,94,y+21);}
     label(TXT_ILHA_CORPO,i18n(steps[i]),136,y+21,228,step!=i);
   }
   label(TXT_ILHA_SUB,i18n("Sua fonte. Suas escolhas."),84,888,270,1);
@@ -1006,6 +1006,8 @@ typedef struct {
   char id[80], nome[140], logo[480], grupo[64];
   int num, fav, np;
   EpgProg p[6];
+  /* Own titles across the two-second cache: EPG publication frees the arena. */
+  char titulo[6][240];
 } GVCh;
 static GVCh gv_ch[10]; static int gv_n, gv_total_n, gv_favs, gv_cats, gv_cats_total;
 static char gv_cat[4][64]; static int gv_cat_n[4];
@@ -1063,6 +1065,10 @@ static void gv_snapshot(void){
       snprintf(c->logo,sizeof c->logo,"%s",logo?logo:"");snprintf(c->grupo,sizeof c->grupo,"%s",cat?cat:"");
       c->num=i+1;c->fav=guia_e_favorito(id);
       c->np=guia_programas(id,time(NULL),c->p,6);
+      for(int k=0;k<c->np;k++){
+        if(c->p[k].titulo)snprintf(c->titulo[k],sizeof c->titulo[k],"%s",c->p[k].titulo);
+        c->p[k].titulo=c->titulo[k];
+      }
     }
   }
 }
@@ -1109,7 +1115,7 @@ static void gv_iniciais(const char *nome,char *dst,size_t n){
 static void gv_label(TxtEstilo st,const char *t,float x,float y,float w,int dim){
   if(st==TXT_TITULO2)st=TXT_V2_A3TIT;
   if(st==TXT_HEADLINE)st=TXT_V2_GRUPO;
-  TxtLinha l=txt_linha_corta(st,t,dim?154:243,dim?156:242,dim?158:239,255,w);txt_desenhar(l,x,y);
+  TxtLinha l=txt_linha_corta_bruta(st,t,dim?154:243,dim?156:242,dim?158:239,255,w);txt_desenhar(l,x,y);
 }
 static void gv_chip(float x,float y,float w,const char *text,const char *icon,int on,int dot,int id){
   GfxRect r={x,y,w,GV_CHIP_H};float rr=28.0f/GV_CHIP_H;
@@ -1122,7 +1128,7 @@ static void gv_chip(float x,float y,float w,const char *text,const char *icon,in
     int di=dot==2?1:dot==3?2:0;gfx_cor(d,12.0f/12,c[di][0],c[di][1],c[di][2],1);tx=x+42;}
   float cr=on?.051f:.604f,cg=on?.053f:.604f,cb=on?.066f:.596f;
   if(icon&&*icon){GfxRect i2={tx+16,y+14,28,28};gfx_icone(i2,icon,cr,cg,cb,1);tx+=32;}
-  if(on){TxtLinha l=txt_linha_corta(TXT_ILHA_CORPO,text,13,14,17,255,w-(tx-x)-24);
+  if(on){TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_CORPO,text,13,14,17,255,w-(tx-x)-24);
     txt_desenhar(l,tx+16,y+(GV_CHIP_H-(float)l.h)/2);}
   else gv_label(TXT_ILHA_CORPO,text,tx+16,y+15,w-(tx-x)-24,dim);
   ponteiro_alvo(x,y,w,GV_CHIP_H,point_focus,point_activate,id,0);
@@ -1134,12 +1140,12 @@ static void gv_button(int id,const char *text,const char *icon,float x,float y,f
   else gfx_cor(r,28.0f/h,.141f,.149f,.173f,1);
   float cr=lit||focused?.051f:.953f,cg=lit||focused?.053f:.949f,cb=lit||focused?.066f:.937f;
   if(icon&&*icon)gfx_icone((GfxRect){x+18,y+(h-25)/2,25,25},icon,cr,cg,cb,1);
-  {TxtLinha l=txt_linha_corta(TXT_ILHA_CORPO,text,(int)(cr*255),(int)(cg*255),(int)(cb*255),255,w-(icon?70:44));
+  {TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_CORPO,text,(int)(cr*255),(int)(cg*255),(int)(cb*255),255,w-(icon?70:44));
    txt_desenhar(l,x+(icon?50:24),y+(h-(float)l.h)/2);}
   ponteiro_alvo(x,y,w,h,point_focus,point_activate,id,0);
 }
 static void gv_kb(const char *k,float x,float y,float *w){
-  float kw=44.0f;TxtLinha t=txt_linha(TXT_W20_24B,k,243,242,239,255);
+  float kw=44.0f;TxtLinha t=txt_linha_bruta(TXT_W20_24B,k,243,242,239,255);
   if((float)t.w+24>kw)kw=(float)t.w+24;
   gfx_cor((GfxRect){x,y+8,kw,36},12.0f/36,.141f,.149f,.173f,1);
   txt_desenhar(t,x+12,y+14);if(w)*w=kw+10;
@@ -1197,7 +1203,7 @@ static void gv_chips_row(void){
     return;
   }
   snprintf(txt,sizeof txt,"%s  %d",i18n("Todos ao vivo"),gv_total_n);
-  float w=(float)txt_linha(TXT_ILHA_CORPO,txt,243,242,239,255).w+44;
+  float w=(float)txt_linha_bruta(TXT_ILHA_CORPO,txt,243,242,239,255).w+44;
   gv_chip(x,GV_CHIP_Y,w,txt,NULL,gv_chipi==0&&foc||gv_chipi==0&&0?gv_chipi==0:0,0,1200);
   x+=w+10;
   w=(float)txt_linha(TXT_ILHA_CORPO,i18n("Esportes"),243,242,239,255).w+70;
@@ -1206,14 +1212,14 @@ static void gv_chips_row(void){
   if(snome){
     int dot=source_loaded?1:3;
     snprintf(txt,sizeof txt,"%s  %d",snome,gv_total_n);
-    w=(float)txt_linha(TXT_ILHA_CORPO,txt,243,242,239,255).w+64;
+    w=(float)txt_linha_bruta(TXT_ILHA_CORPO,txt,243,242,239,255).w+64;
     gv_chip(x,GV_CHIP_Y,w,txt,NULL,foc&&gv_chipi==2,dot,1202);x+=w+10;
   }
   w=(float)txt_linha(TXT_ILHA_CORPO,i18n("Rever"),243,242,239,255).w+80;
   gv_chip(x,GV_CHIP_Y,w,i18n("Rever"),"aj_rotate-ccw-clock",foc&&gv_chipi==3,0,1203);x+=w+10;
   w=(float)txt_linha(TXT_ILHA_CORPO,i18n("Adicionar fonte"),243,242,239,255).w+80;
   gv_chip(x,GV_CHIP_Y,w,i18n("Adicionar fonte"),"aj_plus",foc&&gv_chipi==4,0,1204);x+=w+10;
-  w=(float)txt_linha(TXT_ILHA_CORPO,"EPG",243,242,239,255).w+80;
+  w=(float)txt_linha_bruta(TXT_ILHA_CORPO,"EPG",243,242,239,255).w+80;
   gv_chip(x,GV_CHIP_Y,w,"EPG","aj_calendar",foc&&gv_chipi==5,0,1205);
 }
 
@@ -1225,9 +1231,9 @@ static void gv_side_row(int idx,const char *icon,const char *name,const char *co
   else if(idx==-1)gfx_cor(r,rr,.168f,.176f,.204f,1);
   float cr=f?.051f:.604f,cg=f?.053f:.604f,cb=f?.066f:.596f;
   gfx_icone((GfxRect){GV_X+28,y+(h-24)/2,24,24},icon,cr,cg,cb,1);
-  {TxtLinha l=txt_linha_corta(TXT_ILHA_CORPO,i18n(name),f?13:243,f?14:242,f?17:239,255,GV_SB_W-190);
+  {TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_CORPO,name,f?13:243,f?14:242,f?17:239,255,GV_SB_W-190);
    txt_desenhar(l,GV_X+64,y+(h-(float)l.h)/2);}
-  if(count){TxtLinha l=txt_linha_corta(TXT_ILHA_CORPO,count,f?85:154,f?85:156,f?90:158,255,50);
+  if(count){TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_CORPO,count,f?85:154,f?85:156,f?90:158,255,50);
    txt_desenhar(l,GV_X+GV_SB_W-70,y+(h-(float)l.h)/2);}
   ponteiro_alvo(GV_X+12,y,GV_SB_W-24,h,point_focus,point_activate,id,0);
 }
@@ -1246,7 +1252,7 @@ static void gv_sidebar(float base){
   for(int i=0;i<5;i++){
     const char *cnt=i==2?(snprintf(nb,sizeof nb,"%d",gv_favs),nb):i==3?(snprintf(nb,sizeof nb,"%d",gv_total_n),nb):NULL;
     float y=base+58+i*54;
-    gv_side_row(i==3?-1:i,icons[i],nomes[i],cnt,1300+i,y,48);
+    gv_side_row(i==3?-1:i,icons[i],i18n(nomes[i]),cnt,1300+i,y,48);
   }
   float y=base+58+5*54+14;
   gfx_cor((GfxRect){GV_X+24,y,GV_SB_W-48,1},0,1,1,1,.16f);
@@ -1282,7 +1288,7 @@ static void gv_hsl(int h,float s,float l,float *r,float *g,float *b){
   float m=l-c/2;*r=t[0]+m;*g=t[1]+m;*b=t[2]+m;
 }
 static float gv_badge(const char *t,float x,float y){
-  float w=(float)txt_linha(TXT_ILHA_CORPO,t,243,242,239,255).w+24;
+  float w=(float)txt_linha_bruta(TXT_ILHA_CORPO,t,243,242,239,255).w+24;
   gfx_cor((GfxRect){x,y,w,44},12.0f/44,.168f,.176f,.204f,1);
   gv_label(TXT_ILHA_CORPO,t,x+12,y+9,w-20,0);
   return w+6;
@@ -1307,7 +1313,7 @@ static void gv_broadcast(GfxRect pv,GVCh *c,EpgProg *p,int full){
     float r,g,b;int hue=gv_hue(c->nome);gv_hsl(hue,.45f,.30f,&r,&g,&b);
     gfx_cor(pv,raio,r,g,b,1);
     char ini[8];gv_iniciais(c->nome,ini,sizeof ini);
-    TxtLinha t=txt_linha(full?TXT_V2_TIT:TXT_HEADLINE,ini,243,242,239,255);
+    TxtLinha t=txt_linha_bruta(full?TXT_V2_TIT:TXT_HEADLINE,ini,243,242,239,255);
     txt_desenhar(t,pv.x+(pv.w-(float)t.w)/2,pv.y+(pv.h-(float)t.h)/2-20);
     gfx_cor((GfxRect){pv.x,pv.y,pv.w,58},raio,.071f,.075f,.086f,.25f);
     gfx_cor((GfxRect){pv.x+12,pv.y+pv.h-58,pv.w-24,44},12.0f/44,.071f,.075f,.086f,.92f);
@@ -1320,19 +1326,19 @@ static void gv_broadcast(GfxRect pv,GVCh *c,EpgProg *p,int full){
   }
   /* selos sobre o video (GL por cima do furo) */
   if(live||!strcmp(screen,"preview")||!strcmp(screen,"preview-foco")||troca||full){
-    TxtLinha cb=txt_linha(TXT_ILHA_NOME,c->nome,25,33,44,255);
+    TxtLinha cb=txt_linha_bruta(TXT_ILHA_NOME,c->nome,25,33,44,255);
     GfxRect brand={pv.x+pv.w-(float)cb.w-48,pv.y+16,(float)cb.w+24,40};
     gfx_cor(brand,7.0f/40,.953f,.949f,.937f,1);
     txt_desenhar(cb,brand.x+12,brand.y+(40-(float)cb.h)/2);
     GfxRect pill={full?brand.x-140:pv.x+18,pv.y+18,130,36};
     gfx_cor(pill,10.0f/36,.91f,.208f,.353f,1);
     gfx_cor((GfxRect){pill.x+14,pill.y+13,10,10},0,1,1,1,1);
-    gv_label(TXT_ILHA_CORPO,"AO VIVO",pill.x+30,pv.y+25,90,0);
+    gv_label(TXT_ILHA_CORPO,i18n("AO VIVO"),pill.x+30,pv.y+25,90,0);
   }
   if(p&&live){
     char placar[96];
     if(gv_placar(p->titulo,placar,sizeof placar)){
-      TxtLinha s=txt_linha(TXT_ILHA_CORPO,placar,243,242,239,255);
+      TxtLinha s=txt_linha_bruta(TXT_ILHA_CORPO,placar,243,242,239,255);
       GfxRect sb={pv.x+18,pv.y+pv.h-118,(float)s.w+130,40};
       gfx_cor(sb,7.0f/40,.92f,.925f,.894f,1);
       gfx_cor((GfxRect){sb.x,sb.y,(float)s.w+26,40},7.0f/40,.118f,.298f,.263f,1);
@@ -1342,7 +1348,7 @@ static void gv_broadcast(GfxRect pv,GVCh *c,EpgProg *p,int full){
     float bx=pv.x+18,by=pv.y+pv.h-56;char hi[8],hf[8];
     gv_hora(p->ini,hi,8);gv_hora(p->fim,hf,8);
     gv_label(TXT_ILHA_CORPO,hi,bx,by,70,0);
-    float bw=pv.w-36-(float)txt_linha(TXT_ILHA_CORPO,hi,0,0,0,0).w*0;
+    float bw=pv.w-36-(float)txt_linha_bruta(TXT_ILHA_CORPO,hi,0,0,0,0).w*0;
     GfxRect bar={bx+56,by+18,pv.w-56-70-120-56,4};
     gfx_cor(bar,2.0f/4,.455f,.506f,.486f,1);
     float fr=p->ini<p->fim?(time(NULL)-p->ini)/(float)(p->fim-p->ini):0;
@@ -1416,7 +1422,7 @@ static void gv_hero_compact(float base){
   gv_hsl(gv_hue(c->nome),.45f,.30f,&r2,&g2,&b2);
   gfx_cor(art,20.0f/176,r2,g2,b2,1);
   char ini[8];gv_iniciais(c->nome,ini,sizeof ini);
-  {TxtLinha t=txt_linha(TXT_TITULO2,ini,243,242,239,255);
+  {TxtLinha t=txt_linha_bruta(TXT_TITULO2,ini,243,242,239,255);
    txt_desenhar(t,art.x+(art.w-(float)t.w)/2,art.y+20);}
   gfx_cor((GfxRect){art.x+12,art.y+art.h-58,art.w-24,44},12.0f/44,.071f,.075f,.086f,.92f);
   gv_label(TXT_ILHA_CORPO,i18n("Imagem do programa"),art.x+24,art.y+art.h-49,300,0);
@@ -1435,11 +1441,10 @@ static void gv_hero_compact(float base){
 }
 /* --- canais fixados ------------------------------------------------------- */
 static GVCh *gv_pin_ch(int i){
-  int k=0;static GVCh out[6];int n=0;
-  (void)k;
-  for(int j=0;j<gv_n&&n<=i;j++)if(gv_ch[j].fav)out[n++]=gv_ch[j];
-  for(int j=0;j<gv_n&&n<6;j++){int rep=0;for(int m=0;m<n;m++)if(!strcmp(out[m].id,gv_ch[j].id))rep=1;if(!rep)out[n++]=gv_ch[j];}
-  return i<n?&out[i]:NULL;
+  GVCh *out[6];int n=0;
+  for(int j=0;j<gv_n&&n<=i&&n<6;j++)if(gv_ch[j].fav)out[n++]=&gv_ch[j];
+  for(int j=0;j<gv_n&&n<6;j++){int rep=0;for(int m=0;m<n;m++)if(!strcmp(out[m]->id,gv_ch[j].id))rep=1;if(!rep)out[n++]=&gv_ch[j];}
+  return i>=0&&i<n?out[i]:NULL;
 }
 static void gv_dock(float base){
   float y=base+GV_HERO_H+20;
@@ -1493,12 +1498,12 @@ static void gv_row(float base,int i){
       else if(live)gfx_cor(pr,rr2/76.0f,.133f,.145f,.169f,1);
       else gfx_cor(pr,rr2/76.0f,.102f,.106f,.121f,1);}
     {int tr=f_?13:!f_?243:150,tg2=f_?13:!f_?242:153,tb2=f_?14:!f_?239:158;
-     TxtLinha l=txt_linha_corta(TXT_ILHA_CORPO,p->titulo,tr,tg2,tb2,255,pr.w-40);
+     TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_CORPO,p->titulo,tr,tg2,tb2,255,pr.w-40);
      txt_desenhar(l,pr.x+20,y+12);}
     char hi[8],hf[8];gv_hora(p->ini,hi,8);gv_hora(p->fim,hf,8);
     char q[32];snprintf(q,sizeof q,"%s–%s",hi,hf);
     {int tr=f_?13:!f_?170:243,tg2=f_?13:!f_?171:242,tb2=f_?14:!f_?173:239;
-     TxtLinha l=txt_linha_corta(TXT_ILHA_SUB,q,tr,tg2,tb2,255,pr.w-40);
+     TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_SUB,q,tr,tg2,tb2,255,pr.w-40);
      txt_desenhar(l,pr.x+20,y+42);}
     if(live){float fr=(now-p->ini)/(float)(p->fim-p->ini);
       gfx_cor((GfxRect){pr.x,pr.y+pr.h-5,pr.w*fminf(fmaxf(fr,0),1),5},0,.953f,.949f,.937f,.55f);}
@@ -1534,7 +1539,7 @@ static void gv_cards(float base){
     gfx_cor(tile,16.0f/56,r2,g2,b2,1);
     char ini[8];gv_iniciais(c->nome,ini,sizeof ini);
     gv_label(foc?TXT_W20_24B:TXT_W20_24B,ini,tile.x+(tile.w-40)/2,tile.y+10,40,0);
-    TxtLinha q=txt_linha(TXT_ILHA_SUB,gv_quali(c->nome),foc?85:243,foc?85:242,foc?90:239,255);
+    TxtLinha q=txt_linha_bruta(TXT_ILHA_SUB,gv_quali(c->nome),foc?85:243,foc?85:242,foc?90:239,255);
     gfx_cor((GfxRect){r.x+12,r.y+12,(float)q.w+24,34},16.0f/34,.051f,.051f,.051f,.85f);
     txt_desenhar(q,r.x+24,r.y+21);
     if(c->fav)gfx_icone((GfxRect){r.x+r.w-38,r.y+20,24,24},"aj_star",.949f,.765f,.282f,1);
@@ -1593,8 +1598,8 @@ static float gv_sheet_base(float x,float y,float w,float h){
   panel(x,y,w,h);return x+32;
 }
 static void gv_sheet_head(float x,float y,const char *title,const char *sub){
-  gv_label(TXT_TITULO2,i18n(title),x,y,900,0);
-  gv_label(TXT_ILHA_CORPO,i18n(sub),x,y+52,1200,1);
+  gv_label(TXT_TITULO2,title,x,y,900,0);
+  gv_label(TXT_ILHA_CORPO,sub,x,y+52,1200,1);
 }
 static void gv_opt(int id,const char *icon,const char *name,const char *sub,float x,float y,float w,int h){
   GfxRect r={x,y,w,h};float rr=20.0f/h;
@@ -1603,8 +1608,8 @@ static void gv_opt(int id,const char *icon,const char *name,const char *sub,floa
   else gfx_cor(r,rr,.114f,.118f,.137f,1);
   float cr=f?.051f:.953f,cg=f?.053f:.949f,cb=f?.066f:.937f;
   gfx_icone((GfxRect){x+20,y+(h-25)/2,25,25},icon,cr,cg,cb,1);
-  gv_label(TXT_ILHA_NOME,i18n(name),x+56,y+(h-30)/2,w-160,0);
-  if(sub)gv_label(TXT_ILHA_SUB,i18n(sub),x+56,y+(h-30)/2+28,w-160,f);
+  gv_label(TXT_ILHA_NOME,name,x+56,y+(h-30)/2,w-160,0);
+  if(sub)gv_label(TXT_ILHA_SUB,sub,x+56,y+(h-30)/2+28,w-160,f);
   ponteiro_alvo(x,y,w,h,point_focus,point_activate,id,0);
 }
 static void gv_busca_sheet(void){
@@ -1652,9 +1657,9 @@ static void gv_numero_sheet(void){
   gv_dim(0,.42f);
   float x=gv_sheet_base(520,230,880,560);
   gv_label(TXT_ILHA_NOME,i18n("IR PARA CANAL"),x,262,400,1);
-  {TxtLinha t=txt_linha(TXT_V2_TIT,gv_numero[0]?gv_numero:"_",243,242,239,255);
+  {TxtLinha t=txt_linha_bruta(TXT_V2_TIT,gv_numero[0]?gv_numero:"_",243,242,239,255);
    txt_desenhar(t,x,296);}
-  gfx_cor((GfxRect){x+(float)txt_linha(TXT_V2_TIT,gv_numero[0]?gv_numero:"_",243,242,239,255).w+20,300,6,90},0,.953f,.949f,.937f,.5f);
+  gfx_cor((GfxRect){x+(float)txt_linha_bruta(TXT_V2_TIT,gv_numero[0]?gv_numero:"_",243,242,239,255).w+20,300,6,90},0,.953f,.949f,.937f,.5f);
   int alvo=-1,nm2=0;
   for(int i=0;i<gv_n;i++){char nn[24];snprintf(nn,sizeof nn,"%d",gv_ch[i].num);
     if(!strncmp(nn,gv_numero,strlen(gv_numero))){if(alvo<0)alvo=i;nm2++;}}
@@ -1680,7 +1685,7 @@ static void gv_opcoes_sheet(void){
   {char tt[180];snprintf(tt,sizeof tt,"%d %s",c->num,c->nome);gv_label(TXT_TITULO2,tt,x+80,232,400,0);}
   char meta[96];snprintf(meta,sizeof meta,"%s · %s","IPTV",gv_quali(c->nome));
   gv_label(TXT_ILHA_SUB,meta,x+80,276,400,1);
-  gv_opt(1910,"aj_star",c->fav?"Remover dos favoritos":"Adicionar aos favoritos",NULL,x,320,536,76);
+  gv_opt(1910,"aj_star",i18n(c->fav?"Remover dos favoritos":"Adicionar aos favoritos"),NULL,x,320,536,76);
   {EpgProg *p=gv_prog(c);char sub[96];
    if(p)snprintf(sub,sizeof sub,"%s · %ld min",p->titulo,(long)(p->fim-time(NULL))/60);
    else snprintf(sub,sizeof sub,"%s",i18n("Sem programação"));
@@ -1696,7 +1701,7 @@ static void gv_canal_opcoes_sheet(void){
    gv_sheet_head(x,222,titulo,i18n("Segure OK num canal · opções do canal"));}
   const char *ops[]={"Adicionar aos favoritos","Ocultar canal","Editar nome do canal","Vincular canal EPG","Buscar logo do canal","Adicionar à pasta","Criar lembrete"};
   const char *oicons[]={"aj_star","aj_eye-off","aj_pencil","aj_calendar","aj_search","aj_folders","aj_bell"};
-  for(int i=0;i<7;i++)gv_opt(1920+i,oicons[i],ops[i],NULL,x,296+i*64,560,58);
+  for(int i=0;i<7;i++)gv_opt(1920+i,oicons[i],i18n(ops[i]),NULL,x,296+i*64,560,58);
   float rx=x+620;
   gv_label(TXT_TITULO2,i18n("Vincular guia manualmente"),rx,300,700,0);
   GfxRect f={rx,352,700,60};gfx_cor(f,20.0f/60,.114f,.118f,.137f,1);
@@ -1756,7 +1761,7 @@ static void gv_pastas_sheet(void){
   {float bx=rx,by=352;
   for(int i=0;i<4&&i<gv_cats;i++){
     char b[96];snprintf(b,sizeof b,"%s · %d",gv_cat[i],gv_cat_n[i]);
-    float w=(float)txt_linha(TXT_ILHA_CORPO,b,243,242,239,255).w+24;
+    float w=(float)txt_linha_bruta(TXT_ILHA_CORPO,b,243,242,239,255).w+24;
     if(bx+w>rx+700){bx=rx;by+=56;}
     gfx_cor((GfxRect){bx,by,w,44},12.0f/44,.168f,.176f,.204f,1);
     gv_label(TXT_ILHA_CORPO,b,bx+12,by+8,w-20,0);bx+=w+12;}
@@ -1971,7 +1976,7 @@ static void gv_sports_screen(void){
       float cx=x+(i%3)*328,cy=516+(i/3)*72;
       gfx_cor((GfxRect){cx,cy,312,60},16.0f/60,.114f,.118f,.137f,1);
       gfx_icone((GfxRect){cx+16,cy+18,24,24},"aj_play",.7f,.71f,.72f,1);
-      gv_label(TXT_ILHA_CORPO,sis[i],cx+52,cy+18,240,0);
+      gv_label(TXT_ILHA_CORPO,i18n(sis[i]),cx+52,cy+18,240,0);
     }
     gv_sports_bottom(660);
   }else if(!strcmp(screen,"esportes-onde-assistir")){

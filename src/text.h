@@ -292,6 +292,8 @@ void txt_encerrar(void);
 void txt_novo_quadro(void);
 
 TxtLinha txt_linha(TxtEstilo estilo, const char *s, int r, int g, int b, int a);
+// Render provider content verbatim; callers translate UI keys explicitly.
+TxtLinha txt_linha_bruta(TxtEstilo estilo, const char *s, int r, int g, int b, int a);
 
 // Igual a txt_linha, mas escolhe uma familia explicita. Usado pela legenda
 // para manter sua preferencia independente da interface. Familia indisponivel
@@ -317,6 +319,9 @@ TxtLinha txt_linha_corta_familia(TxtEstilo estilo, const char *s, int r, int g,
 TxtLinha txt_linha_corta_enfase(TxtEstilo estilo, const char *s, int r, int g,
                                 int b, int a, float maxW, TxtFamilia familia,
                                 int enfase);
+// Clip provider content verbatim, without treating it as a translation key.
+TxtLinha txt_linha_corta_bruta(TxtEstilo estilo, const char *s, int r, int g,
+                               int b, int a, float maxW);
 
 // Desenha no canto superior esquerdo (x,y).
 void txt_desenhar(TxtLinha l, float x, float y);

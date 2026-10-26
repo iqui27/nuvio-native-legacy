@@ -2041,6 +2041,10 @@ TxtLinha txt_linha(TxtEstilo estilo, const char *s, int r, int g, int b, int a) 
   return linhaFamilia(estilo, i18n(s), r, g, b, a, fonteInterface, 0);
 }
 
+TxtLinha txt_linha_bruta(TxtEstilo estilo, const char *s, int r, int g, int b, int a) {
+  return linhaFamilia(estilo, s, r, g, b, a, fonteInterface, 0);
+}
+
 TxtLinha txt_linha_familia(TxtEstilo estilo, const char *s, int r, int g,
                            int b, int a, TxtFamilia familia) {
   return linhaFamilia(estilo, i18n(s), r, g, b, a, familia, 0);
@@ -2200,10 +2204,7 @@ TxtLinha txt_linha_corta(TxtEstilo estilo, const char *s, int r, int g, int b,
 static TxtLinha cortaFamilia(TxtEstilo estilo, const char *s, int r, int g,
                              int b, int a, float maxW, TxtFamilia familia,
                              int enfase) {
-  // Traduzir ANTES de cortar: o corte mede a largura e insere as reticencias,
-  // e medir o portugues para desenhar o ingles poe as reticencias no lugar
-  // errado — ou corta um texto que caberia inteiro.
-  s = i18n(s);
+  // Callers translate UI keys before measuring; provider content stays verbatim.
   // Mede sem rasterizar: so a linha FINAL vira textura (ver larguraLinha).
   if (!s || !*s || (float)larguraLinha(estilo, s, familia, enfase) <= maxW)
     return linhaFamilia(estilo, s, r, g, b, a, familia, enfase);
@@ -2233,13 +2234,18 @@ static TxtLinha cortaFamilia(TxtEstilo estilo, const char *s, int r, int g,
 TxtLinha txt_linha_corta_familia(TxtEstilo estilo, const char *s, int r, int g,
                                  int b, int a, float maxW,
                                  TxtFamilia familia) {
-  return cortaFamilia(estilo, s, r, g, b, a, maxW, familia, 0);
+  return cortaFamilia(estilo, i18n(s), r, g, b, a, maxW, familia, 0);
 }
 
 TxtLinha txt_linha_corta_enfase(TxtEstilo estilo, const char *s, int r, int g,
                                 int b, int a, float maxW, TxtFamilia familia,
                                 int enfase) {
-  return cortaFamilia(estilo, s, r, g, b, a, maxW, familia, enfase);
+  return cortaFamilia(estilo, i18n(s), r, g, b, a, maxW, familia, enfase);
+}
+
+TxtLinha txt_linha_corta_bruta(TxtEstilo estilo, const char *s, int r, int g,
+                               int b, int a, float maxW) {
+  return cortaFamilia(estilo, s, r, g, b, a, maxW, fonteInterface, 0);
 }
 
 static void desenhaBlocoLinha(TxtEstilo estilo, const char *s, int r, int g, int b,
