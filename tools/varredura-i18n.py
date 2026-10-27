@@ -667,6 +667,7 @@ def varrer():
                                 "registro_ilha.inc", "registro_envio.inc") if (src / nome).exists()
     ]
     arquivos += sorted(src.glob("ajustes_pen*.inc"))
+    arquivos += [src / "ajustes_ux_v4.inc"]
     for arq in sorted(arquivos):
         if arq.name == "idioma.c":
             continue
