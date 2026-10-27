@@ -1483,8 +1483,9 @@ object NvPlayer {
                 p.setVideoSurfaceView(sv)
                 sv.holder.addCallback(depoisDoMedia3)
             }
-            temJanela = false
-            aplicarEncaixe()
+            // A guide window may arrive while this open waits for decoder release.
+            // liberar() cleared the previous session; calculate the new request now.
+            if (temJanela) calcularJanela() else aplicarEncaixe()
 
             if (preparada == null) {
                 val mediaItem = itemMidia(url)
@@ -1708,9 +1709,9 @@ object NvPlayer {
     private var pedEncaixa = true
 
     private fun definirJanela(x: Int, y: Int, w: Int, h: Int, encaixa: Boolean) {
-        if (player == null) return   // como o Video.cs: o C repete depois do videoInfo
         pedX = x; pedY = y; pedW = w; pedH = h; pedEncaixa = encaixa
         temJanela = true
+        if (player == null) return // Keep the request until the pending open attaches its surface.
         calcularJanela()
         Log.i(TAG, "[dvtrace] janela sessao=$sessao holder=${System.identityHashCode(superficie?.holder)} pedido=$x,$y ${w}x$h encaixa=$encaixa calculada=$jx,$jy ${jw}x$jh hdr=$ultHdr semRecriar=$semRecriar")
     }
