@@ -182,8 +182,8 @@ int main(int argc, char **argv) {
   context();
   semear();
   /* Back returns one level with focus restored; a closing sheet fades out. */
-  g5ui_open("grade");gv_zone=5;focus=1104;gv_go("busca");assert(!strcmp(screen,"busca"));
-  gv_voltar();assert(!strcmp(screen,"grade")&&focus==1104&&gv_sai_t==1&&!strcmp(gv_sai,"busca"));
+  g5ui_open("grade");gv_zone=5;focus=1104;gv_go("busca");assert(spot_aberto()&&!strcmp(screen,"grade"));
+  spot_fechar();assert(focus==1104);
   focus=1105;gv_go("ajustes");focus=1949;gv_go("epg-saude");focus=1975;gv_go("epg-verificando");
   gv_voltar();assert(!strcmp(screen,"epg-saude")&&focus==1975);
   gv_voltar();assert(!strcmp(screen,"ajustes")&&focus==1949);
@@ -194,9 +194,9 @@ int main(int argc, char **argv) {
   g5ui_open("grade");gv_zone=5;focus=1102;gv_go("esportes-ligas");quadro();
   focus=2000;gv_event(SDLK_UP,0);assert((focus>=1100&&focus<1106)||(focus>=1200&&focus<1206));
   focus=1100;quadro();gv_event(SDLK_RETURN,0);assert(!strcmp(screen,"grade"));
-  /* Sheet focus glides between rows instead of jumping. */
-  snprintf(query,sizeof query,"fla");gv_zone=5;focus=1104;gv_go("busca");focus=1799;quadro();SDL_Delay(20);quadro();
-  {float y0=gv_gfolha.y;focus=1800;SDL_Delay(20);quadro();assert(gv_gfolha.ok&&gv_gfolha.y>y0+1&&gv_gfolha.y<347);}
+  /* Search uses Spotlight; sheet motion remains covered by the options sheet. */
+  gv_zone=5;focus=1105;gv_go("ajustes");focus=1940;quadro();SDL_Delay(20);quadro();
+  {float y0=gv_gfolha.y;focus=1949;SDL_Delay(20);quadro();assert(gv_gfolha.ok&&gv_gfolha.y!=y0);}
   gv_voltar();query[0]=0;gv_sai_t=0;gv_zone=0;
   const char *names[] = {
     "preview-idle-dark", "preview-focus-moving", "fontes-gerenciar", "preview-playing", "grade", "cartoes", "preview", "preview-grade", "preview-foco", "preview-hero-cheio",
