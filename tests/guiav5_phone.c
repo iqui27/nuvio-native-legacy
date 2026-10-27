@@ -14,11 +14,15 @@ int main(void){
   /* Session mode: server survives POSTs and answers the status poll. */
   assert(celular_abrir_sessao("Guia TV","<html><h1>setup session</h1><form method=post><input name=t></form></html>"));
   token=strrchr(celular_url(),'/')+1;snprintf(local,sizeof local,"http://127.0.0.1:%d/%s",celular_porta(),token);
-  snprintf(args,sizeof args,"'%s'",local);assert(curl(args)==200&&strstr(saida,"setup session"));
+  assert(!celular_conectado());
+  snprintf(args,sizeof args,"'http://127.0.0.1:%d/wrong-token'",celular_porta());assert(curl(args)==404&&!celular_conectado());
+  snprintf(args,sizeof args,"-I '%s'",local);assert(curl(args)==200&&!celular_conectado());
+  snprintf(args,sizeof args,"'%s'",local);assert(curl(args)==200&&strstr(saida,"setup session")&&celular_conectado());
   celular_status("{\"s\":\"fetch\"}");
   snprintf(args,sizeof args,"'%s/s'",local);assert(curl(args)==200&&strstr(saida,"fetch"));
   snprintf(args,sizeof args,"--data-urlencode 't={\"step\":1}' '%s'",local);assert(curl(args)==200);
   assert(celular_pegar(value,sizeof value)&&strstr(value,"step"));
+  assert(celular_url()[0]); // QR survives a session POST.
   celular_status("{\"s\":\"ok\",\"live\":640}");
   snprintf(args,sizeof args,"'%s/s'",local);assert(curl(args)==200&&strstr(saida,"640"));
   snprintf(args,sizeof args,"--data-urlencode 't={\"step\":2}' '%s'",local);assert(curl(args)==200);
@@ -31,7 +35,7 @@ int main(void){
     snprintf(args,sizeof args,"'%s/s'",local);assert(curl(args)==200&&strstr(saida,"err")); }
   celular_status("{\"s\":\"done\"}");
   snprintf(args,sizeof args,"'%s/s'",local);assert(curl(args)==200&&strstr(saida,"done"));
-  celular_fechar();assert(celular_estado()==CEL_PARADO);
+  celular_fechar();assert(celular_estado()==CEL_PARADO&&!celular_conectado());
   assert(celular_abrir("Busca"));
   token=strrchr(celular_url(),'/')+1;snprintf(local,sizeof local,"http://127.0.0.1:%d/%s",celular_porta(),token);
   snprintf(args,sizeof args,"'%s'",local);assert(curl(args)==200&&strstr(saida,"<textarea")&&!strstr(saida,"source setup"));

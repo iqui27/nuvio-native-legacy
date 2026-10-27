@@ -62,6 +62,8 @@ int  celular_abrir_sessao(const char *titulo, const char *html);
 void celular_status(const char *s);
 void celular_fechar(void);
 int  celular_estado(void);
+// A valid session page or status request reached this TV; reset on close.
+int  celular_conectado(void);
 // http://<ip>:<porta>/<token>, ou "" fora do ar.
 const char *celular_url(void);
 // 1 UMA VEZ, quando o texto chegou (ja sem espacos nas pontas). `dst` recebe

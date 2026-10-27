@@ -12,6 +12,7 @@ int  celular_abrir_sessao(const char *t,const char *h){(void)t;(void)h;return 0;
 void celular_status(const char *s){(void)s;}
 void celular_fechar(void) {}
 int  celular_estado(void) { return CEL_PARADO; }
+int  celular_conectado(void) { return 0; }
 const char *celular_url(void) { return ""; }
 int  celular_pegar(char *d, size_t n) { (void)d; (void)n; return 0; }
 int  celular_porta(void) { return 0; }
@@ -59,14 +60,15 @@ static char pagina[24576], pagEnviado[8192], pagUsado[8192];
 static const char *proximaPagina, *proximaEnviado;
 /* Session mode (guided setup): server survives POSTs; statusTxt is the short
  * public status the page polls (counts and state only, never credentials). */
-static atomic_int sessao;
+static atomic_int sessao, conectado;
 static int proximaSessao;
 static char statusTxt[16384];
 
 int celular_disponivel(void) { return 1; }
 int celular_estado(void) { return estado; }
+int celular_conectado(void) { return atomic_load(&conectado); }
 int celular_porta(void) { return porta; }
-const char *celular_url(void) { return estado == CEL_ESPERANDO ? url : ""; }
+const char *celular_url(void) { return estado == CEL_ESPERANDO || (sessao && estado == CEL_RECEBIDO) ? url : ""; }
 
 int celular_pegar(char *dst, size_t n) {
   int r = 0;
@@ -406,6 +408,7 @@ static int atender(int c, int *erros) {
     if (!strcmp(caminho, cam)) {
       char s[sizeof statusTxt];
       if (strcmp(metodo, "GET") && strcmp(metodo, "HEAD")) { responder(c, 405, NULL); return 0; }
+      if (metodo[0] == 'G') atomic_store(&conectado, 1);
       pthread_mutex_lock(&trava);
       snprintf(s, sizeof s, "%s", statusTxt);
       pthread_mutex_unlock(&trava);
@@ -422,7 +425,7 @@ static int atender(int c, int *erros) {
   if (!strcmp(metodo, "GET") || !strcmp(metodo, "HEAD")) {
     // Sem IP de quem pediu: so que a pagina chegou ao celular. E esta linha
     // que diz, no log de uma LG/Samsung, se a rede da TV deixa entrar.
-    if (metodo[0] == 'G') puts("[celular] pagina aberta");
+    if (metodo[0] == 'G') { atomic_store(&conectado, 1); puts("[celular] pagina aberta"); }
     responder(c, 200, metodo[0] == 'G' ? pagina : NULL);
     return 0;
   }
@@ -507,6 +510,7 @@ void celular_fechar(void) {
   statusTxt[0] = 0;
   pthread_mutex_unlock(&trava);
   sessao = 0;
+  atomic_store(&conectado, 0);
   memset(token, 0, sizeof token);
   url[0] = 0;
   porta = 0;

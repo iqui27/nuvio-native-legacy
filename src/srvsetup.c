@@ -811,6 +811,23 @@ static void syncLabel(int p, char *out, size_t n) {
   localtime_r(&stamp,&local);strftime(date,sizeof date,"%d/%m %H:%M",&local);
   snprintf(out,n,i18n("Sincronizada: %s"),date);
 }
+static void setupDiagram(float x, float y, Uint32 now, int done) {
+  float r,g,b;ajustes_acento(&r,&g,&b);
+  const char *icons[]={"aj_smartphone","aj_server","aj_tv"};
+  for(int i=0;i<3;i++) {
+    gfx_icone((GfxRect){px(x+i*160),sy(y),44,44},done?"aj_check":icons[i],done?r:.72f,done?g:.73f,done?b:.75f,1);
+    if(i<2)gfx_icone((GfxRect){px(x+80+i*160),sy(y+10),24,24},"aj_chevron-right",r,g,b,
+      done||ajustes_animacoes_reduzidas()?.65f:.35f+.4f*(.5f+.5f*sinf(now/350.0f-i)));
+  }
+}
+static void librarySummary(float x,float y) {
+  int chosen=0,titles=0;for(int i=0;i<nLibraries;i++)if(checked[i]){chosen++;titles+=libraries[i].n;}
+  char value[32];snprintf(value,sizeof value,"%d / %d",chosen,nLibraries);
+  text(TXT_ILHA_TITULO,value,x,y,243,320);text(TXT_ILHA_SUB_L,"Bibliotecas",x,y+52,155,320);
+  snprintf(value,sizeof value,i18n("%d títulos"),titles);
+  text(TXT_ILHA_NOME,value,x+370,y+10,243,350);
+  text(TXT_ILHA_SUB_L,"Servidor",x+370,y+52,155,350);
+}
 static void drawQR(void) {
   if (!qr.lado) return;
   float x=px(1052),y=sy(418),side=fminf(246,pw(246)),unit=side/(qr.lado+8);
@@ -941,6 +958,9 @@ void srvsetup_desenhar(Uint32 now) {
     drawQR(); text(TXT_V2_GRUPO,provider==1?"Abrir seu servidor":screen==CONNECT_CODE?"Abrir Emby Connect":"Leia para abrir o Plex",1332,494,243,450);
     paragraph(screen==CONNECT_CODE?"Entre e digite o código desta TV.":provider==1?"Entre e digite o código no Quick Connect.":"Entre no Plex e digite o código mostrado nesta TV.",1332,548,430);
     if(provider) text(TXT_ILHA_SUB_L,provider==1?"Se Quick Connect estiver desativado, use usuário e senha.":"Depois, escolha um servidor compartilhado e as bibliotecas.",1052,690,155,740);
+    setupDiagram(1052,790,now,0);
+    text(TXT_ILHA_SUB_L,"Após entrar, escolha um servidor da sua conta.",1052,852,155,740);
+    text(TXT_ILHA_SUB_L,"Escolher bibliotecas",1052,886,145,740);
   } else if (screen == MANAGE) {
     panel(200,386,1624,470,-1);
     for(int i=0;i<3;i++) { char label[192],stamp[96],sub[160]; snprintf(label,sizeof label,"%s · %s",providers[i],serverName(i)[0]?serverName(i):providers[i]); syncLabel(i,stamp,sizeof stamp);
@@ -977,6 +997,8 @@ void srvsetup_desenhar(Uint32 now) {
     text(TXT_ILHA_SUB_L,"Esta conexão pertence ao perfil Nuvio atual.",1020,548,145,780);
   } else if (screen == DISCOVER || screen == PLEX_SERVERS || screen == CONNECT_SERVERS) {
     int total=!worker.alive && worker.n>0?worker.n:0, n=total>4?4:total;
+    char found[64];snprintf(found,sizeof found,"%s · %d",i18n("Seus servidores"),total);
+    text(TXT_ILHA_SUB_L,worker.alive?i18n("Carregando…"):found,1020,820,155,740);
     panel(200,386,750,n?(screen==PLEX_SERVERS?182:210)+n*112:410,-1);
     plrui_kicker(screen==PLEX_SERVERS?"Da sua conta Plex":"Sua rede",px(232),sy(422),130,130,130,1);
     int start=(int)floorf(scroll); if(start+n>total)start=total-n; if(start<0)start=0;
@@ -1117,6 +1139,7 @@ void srvsetup_desenhar(Uint32 now) {
     text(TXT_ILHA_SUB_L,"Ativado",1740,676,155,100);
     text(TXT_ILHA_SUB_L,"Coleções e playlists aparecem em Listas.",1020,762,145,780);
     text(TXT_ILHA_SUB_L,"Adicione fileiras no editor de fileiras.",1020,794,145,780);
+    librarySummary(1020,844);
   } else if(screen==LOGIN) {
     panel(200,386,750,470,-1); panel(1020,386,804,470,-1);
     plrui_kicker("Na sua rede",px(232),sy(422),130,130,130,1);
@@ -1150,6 +1173,8 @@ void srvsetup_desenhar(Uint32 now) {
     txt_bloco(TXT_ILHA_SUB_L,i18n("Títulos não identificados ficam na Biblioteca do servidor. O Início mostra filmes e séries identificados."),155,155,155,px(1020),sy(562),pw(780),28,1,3);
     text(TXT_ILHA_SUB_L,"Assistidos: sincronização nos dois sentidos.",1020,640,145,780);
     text(TXT_ILHA_SUB_L,"Gerencie esta conexão em Biblioteca › Origens.",1020,672,145,780);
+    librarySummary(1020,730);
+    setupDiagram(1020,846,now,1);
   } else if(screen==REMOVE) {
     panel(200,386,750,430,-1); text(TXT_V2_GRUPO,"O que muda",232,420,243,680);
     paragraph("A conexão e o catálogo salvos deste servidor saem deste perfil. As fileiras da Home deixam de carregar.",232,474,680);
