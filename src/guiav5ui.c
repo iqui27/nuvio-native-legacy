@@ -450,6 +450,7 @@ static int visible_item(int i,int kind){
   G5Item *it=&inventory[i];return item_source_on(it)&&(kind<0||it->kind==kind||(kind==G5_MOVIE&&it->kind==G5_EPISODE&&!episodes_mode))&&(!catalog_group[0]||!strcmp(catalog_group,it->group))&&group_allowed(it->group)&&match_query(it->name)&&(!(rules.hide_locked||rules.kids)||!restricted(it));
 }
 static int indices[G5_CAP], nindices;
+static int vod_item_focus(int id){return id>=VOD_ITEM&&id<VOD_ITEM+nindices?id:VOD_ITEM;}
 static void filter(int kind){nindices=0;for(int i=0;i<count;i++)if(visible_item(i,kind))indices[nindices++]=i;}
 static void select_item(int i){if(i<0||i>=count)return;selected=i;locked_item=inventory[i];
   if(restricted(&inventory[i])){snprintf(previous,sizeof previous,"%s",screen);go("parental-canal-bloqueado");return;}
@@ -842,7 +843,7 @@ static void catalog(void){
     label(TXT_HEADLINE,i18n(s),650,420,1100,0);label(TXT_ILHA_CORPO,i18n("Seu provedor define o conteúdo disponível."),650,490,1100,1);
     button(0,i18n(query[0]?"Limpar busca":"Adicionar fonte"),"aj_plus",650,620,500,64,0);return;
   }
-  int page_size=6;int start=focus>=VOD_ITEM&&focus<VOD_ITEM+nindices?((focus-VOD_ITEM)/page_size)*page_size:vod_sidebar?((vod_return_focus-VOD_ITEM)/page_size)*page_size:0;
+  int page_size=6;int start=focus>=VOD_ITEM&&focus<VOD_ITEM+nindices?((focus-VOD_ITEM)/page_size)*page_size:vod_sidebar?((vod_item_focus(vod_return_focus)-VOD_ITEM)/page_size)*page_size:0;
   for(int n=start;n<nindices&&n<start+page_size;n++){
     G5Item *it=&inventory[indices[n]];float x=left+((n-start)%6)*(cw+18),y=(search?304:596)+((n-start)/6)*324;
     GfxRect r={x,y,cw,270};int locked=restricted(it);GLuint tex=!locked&&it->poster[0]?tex_obter_larg(it->poster,230):0;
@@ -1214,7 +1215,7 @@ static int g5ui_event_inner(const SDL_Event *e){
   if(!strcmp(screen,"fontes-gerenciar")&&k==SDLK_LEFT){gv_side_enter();return 1;}
   int vod=!strncmp(screen,"vod-",4)&&strcmp(screen,"vod-titulo")&&strcmp(screen,"vod-serie-temporadas");
   if(vod&&vod_sidebar&&(k==SDLK_RIGHT||k==SDLK_ESCAPE||k==SDLK_AC_BACK||k==SDLK_BACKSPACE)){
-    vod_sidebar=0;focus=vod_return_focus;return 1;
+    vod_sidebar=0;focus=vod_item_focus(vod_return_focus);return 1;
   }
   if(vod&&vod_sidebar&&gv_arrow(k)){
     if(k==SDLK_UP||k==SDLK_DOWN){
@@ -1229,7 +1230,7 @@ static int g5ui_event_inner(const SDL_Event *e){
     }return 1;
   }
   if(vod&&k==SDLK_LEFT&&!vod_sidebar&&nav<0&&((focus>=VOD_ITEM&&focus<VOD_ITEM+nindices&&(focus-VOD_ITEM)%6==0)||!nindices)){
-    vod_return_focus=focus;vod_sidebar=1;focus=800;nav=-1;return 1;
+    vod_return_focus=vod_item_focus(focus);vod_sidebar=1;focus=800;nav=-1;return 1;
   }
   if(k==SDLK_ESCAPE||k==SDLK_AC_BACK||k==SDLK_BACKSPACE){
     if(!strcmp(screen,"setup-celular-tv"))celular_fechar();
@@ -1242,8 +1243,8 @@ static int g5ui_event_inner(const SDL_Event *e){
   if(!strcmp(screen,"parental-pin")&&k>=SDLK_0&&k<=SDLK_9){activate(k==SDLK_0?30:19+(int)(k-SDLK_0));return 1;}
   int md=modal_tela(screen);   /* a modal keeps the D-pad inside it */
   if(k==SDLK_TAB){if(!md)nav=nav<0?0:-1;return 1;}
-  if(nav>=0){if(vod&&k==SDLK_LEFT&&nav==0){vod_return_focus=focus;vod_sidebar=1;nav=-1;focus=800;return 1;}if(k==SDLK_LEFT&&nav>0)nav--;if(k==SDLK_RIGHT&&nav<5)nav++;
-    if(k==SDLK_DOWN){nav=-1;if(vod)focus=vod_return_focus>=VOD_ITEM&&vod_return_focus<VOD_ITEM+nindices?vod_return_focus:VOD_ITEM;}if((k==SDLK_RETURN||k==SDLK_KP_ENTER)&&!e->key.repeat)activate(1100+nav);return 1;}
+  if(nav>=0){if(vod&&k==SDLK_LEFT&&nav==0){vod_return_focus=vod_item_focus(focus);vod_sidebar=1;nav=-1;focus=800;return 1;}if(k==SDLK_LEFT&&nav>0)nav--;if(k==SDLK_RIGHT&&nav<5)nav++;
+    if(k==SDLK_DOWN){nav=-1;if(vod)focus=vod_item_focus(vod_return_focus);}if((k==SDLK_RETURN||k==SDLK_KP_ENTER)&&!e->key.repeat)activate(1100+nav);return 1;}
   if(k==SDLK_UP||k==SDLK_DOWN||k==SDLK_LEFT||k==SDLK_RIGHT){
     if(!strcmp(screen,"parental-pin")&&focus>=20&&focus<=31){
       int next=focus+(k==SDLK_UP?-3:k==SDLK_DOWN?3:k==SDLK_LEFT?-1:1);
