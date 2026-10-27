@@ -888,6 +888,7 @@ static int iniciarPoliticaFonte(int preferida, int manual) {
 #include "logrede.h"
 #include "extras.h"
 #include "perfilinfantil.h"
+#include "perfilregras.h"
 #include <stdio.h>
 
 static Tela tela = TELA_HOME;
@@ -5155,6 +5156,10 @@ static void recuperarErroFonte(void) {
 
 void app_atualizar(float dt, Uint32 agora) {
   aioui_atualizar(dt, agora);
+  if(perfil_regra_tempo(dt) && player_aberto()) {
+    player_sair();video_parar();
+    glem_aviso_curto(i18n("Tempo de tela esgotado para este perfil."));
+  }
   relogioFocoValidar();
   ajustes_fontes_atualizar();
   { static int morno = -1; int ligado = ajustes_retomada_morna();
@@ -6208,8 +6213,8 @@ void app_atualizar(float dt, Uint32 agora) {
       const CatItem *ki = cat_item(detail_indice());
       const char *cert = extras_ficha_classificacao();
       if (!cert || !*cert) cert = ki ? ki->classificacao : NULL;
-      if (!perfil_infantil_classif_ok(cert)) {
-        glem_aviso_curto(i18n("Perfil infantil: só classificação livre e 10 anos"));
+      if (!perfil_regra_classif(cert) || perfil_regra_tempo(0)) {
+        glem_aviso_curto(i18n("Este título ultrapassa os limites deste perfil."));
         querTocar = 0;
       }
     }

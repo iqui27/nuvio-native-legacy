@@ -93,13 +93,15 @@ static void ajPenRows(void) {
       aj4Texto(row->title,TXT_G21B,x+62,y+13,w-245,available?1:.45f);
       aj4Texto(row->help,TXT_AJ_MINI14,x+62,y+42,w-210,.4f);
       if(row->toggle && row->op!=-1) {
-        int on=row->op==-2?perfil_ajustes_travados(perfis_ativo()):uxValorAtual(row->op)==0;
+        int on=row->op<=-10 && row->op>=-13?perfil_regra(perfis_ativo(),-10-row->op):row->op==-2?perfil_ajustes_travados(perfis_ativo()):uxValorAtual(row->op)==0;
         if(ajPenPage==AJ_PEN_PARENTAL && row->op==AJ_ENQUETES)on=perfil_infantil_ativo() || !on;float r=.20f,g=.21f,b=.24f;
         if(on)ajustes_acento(&r,&g,&b);
         gfx_cor((GfxRect){x+w-90,y+19,64,36},.5f,r,g,b,1);
         gfx_cor((GfxRect){x+w-86+(on?28:0),y+23,28,28},.5f,1,1,1,1);
       } else {
         char val[160];snprintf(val,sizeof val,"%s",row->op>=0?textoValor(row->op):row->op==-3?i18n("Gerenciar perfis"):row->op==-4?i18n("Livre e até 10 anos"):i18n("Ainda não disponível."));
+        if(row->op<=-10 && row->op>=-13)ajPenParentText(-10-row->op,perfil_regra(perfis_ativo(),-10-row->op),val,sizeof val);
+        if(row->op==-4)ajPenParentText(PR_IDADE,perfil_regra(perfis_ativo(),PR_IDADE),val,sizeof val);
         TxtLinha t=ajTxtC(TXT_G18R,val,180);txt_desenhar_alpha(t,x+w-52-t.w,y+24,.58f);
         ajIcone("aj_chevron-right",x+w-44,y+28,18,.45f);
       }

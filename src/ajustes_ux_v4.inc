@@ -185,6 +185,7 @@ static int aj4Mutavel(int op) {
     op != AJ_PROVEDORES_ESCOPO && op != AJ_IPTV_ATIVA && op != AJ_IPTV_CONTA &&
     op != AJ_PERFIL_INFANTIL && op != AJ_AVANCADAS;
 }
+#include "ajustes_pen_saved.inc"
 static int aj4PrepararReset(int sec, int tv) {
   aj4N = 0;
   for (int i = 0; i < AJ_N; i++) if (aj4Secao(i) >= 0 && (sec < 0 || aj4Secao(i) == sec) &&
@@ -344,7 +345,8 @@ static int aj4Evento(SDL_Keycode k) {
   }
   if (aj4Util) {
     if (uxVoltar(k)) { aj4Util = 0; focoIndice = 1; aj4Linha = 0; aj4Acao = 0; return 1; }
-    int n = aj4Util == 1 ? aj4Diferencas(aj4Opcoes) : aj4Util==3 ? aj4BuscarResultados() : aj4Util==4 ? 4 : 3;
+    if(aj4Util==2)ajPenSavedLoad();
+    int n = aj4Util == 1 ? aj4Diferencas(aj4Opcoes) : aj4Util==3 ? aj4BuscarResultados() : aj4Util==4 ? 4 : 5+ajPenSavedCount;
     if(aj4Util==4 && uxOk(k)) {
       if(aj4Acao)pfAbrir();
       else if(!aj4Linha)aj4TrocarPerfil=1;
@@ -372,7 +374,11 @@ static int aj4Evento(SDL_Keycode k) {
       }
       if (aj4Acao && aj4UndoN) { aj4Desfazer(); aj4Acao = 0; }
       else if (aj4Acao && aj4Util == 1) aj4PrepararReset(-1, aj4Escopo);
-      else if (aj4Util == 2) aj4PrepararPreset(aj4Linha);
+      else if (aj4Util == 2) {
+        if(aj4Linha<4)ajPenPresetPrepare(aj4Linha);
+        else if(aj4Linha==4+ajPenSavedCount)ajPenSavedAsk();
+        else ajPenSavedPrepare(aj4Linha-4);
+      }
       else if (n) { int op = aj4Opcoes[aj4Linha]; focarOpcao(op); uxAbrirEditor(op); }
     }
     return 1;

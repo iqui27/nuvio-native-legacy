@@ -1,4 +1,19 @@
-/* Specialized Pencil pages keep existing actions and report unsupported controls. */
+static void ajPenParentChoice(void) {
+  int rule=ajPenParentEditor;ajPenBase();
+  ajPenChip("Controle parental","pl_chevron-left",200,112,230,0,5,0);
+  ajKicker("CONTROLE PARENTAL",200,198,1);aj4Texto(AJ_PEN_PARENT_LABEL[rule],TXT_TITULO2,200,212,1500,1);
+  ajPenPanel(200,344,1624,640,0);
+  const int *choices=rule==PR_TEMPO?AJ_PEN_TIME:AJ_PEN_AGE;
+  int n=rule==PR_TEMPO?7:rule==PR_IDADE?6:2;
+  for(int i=0;i<n;i++) {
+    int value=rule>=PR_BUSCA_LIVRE?i:choices[i];float y=380+i*76;char label[96];
+    ajPenParentText(rule,value,label,sizeof label);
+    if(value==ajPenParentDraft)ajPenPanel(226,y,1572,70,1);
+    aj4Texto(label,TXT_G21B,248,y+20,1500,1);
+  }
+  ajPenRodape("Controle parental",3,3);
+}
+/* Specialized Pencil pages use live subsystem state. */
 static void ajPenFeatures(void) {
   ajPenBase();ajPenChip("Ajustes","pl_chevron-left",200,112,124,0,5,0);
   ajKicker("AJUSTES",200,198,1);aj4Texto("O que o Nuvio faz?",TXT_TITULO2,200,212,1500,1);
@@ -11,10 +26,12 @@ static void ajPenFeatures(void) {
     ajIcone(r->icon,x+32,y+32,24,.9f);
     aj4Texto(r->title,TXT_G21B,x+22,y+80,344,1);
     ajBloco(TXT_AJ_MINI14,r->help,x+22,y+112,344,22,.58f,2);
-    if(r->toggle && uxValorAtual(r->op)==0) {
+    int show=i==0 || i==1 || i==2 || i==4;
+    int on=i==0?lig(AJ_CW_LIGADO):i==1?debrid_ativo():i==2?addons_n()>0:1;
+    if(show) {
       float red,green,blue;ajustes_acento(&red,&green,&blue);
-      gfx_cor((GfxRect){x+300,y+22,64,36},.5f,red,green,blue,1);
-      gfx_cor((GfxRect){x+332,y+26,28,28},.5f,1,1,1,1);
+      gfx_cor((GfxRect){x+300,y+22,64,36},.5f,on?red:.20f,on?green:.21f,on?blue:.24f,1);
+      gfx_cor((GfxRect){x+304+(on?28:0),y+26,28,28},.5f,1,1,1,1);
     }
     aj4Alvo((GfxRect){x,y,388,186},8,i);
   }
@@ -31,11 +48,15 @@ static void ajPenRules(void) {
     "Recortar a imagem","Trocar de fonte sozinho","Esconder a faixa original","Enviar seu histórico","Forçar efeito pesado","Ligar a voz sem avisar"};
   static const char *const help[]={"A TV desenha até 4K","HDR10 e HDR10+ são entregues como HDR10","Perfil 8, com DV se a TV pedir","Convertido em Dolby Digital ou estéreo","HEVC e AV1 por hardware","O teto de RAM do aparelho",
     "A TV decide o formato; o Nuvio avisa","Só quando você deixa o automático","O original é sempre a primeira opção","Só com o seu comando","Se a TV não aguenta, o efeito não vem","A busca por voz só liga com o botão"};
-  static const char *const icons[]={"aj_monitor","aj_sun","aj_sparkles","aj_volume-2","aj_cpu","aj_hard-drive","aj_scan","aj_refresh-cw","aj_eye-off","aj_history","aj_cpu","aj_mic"};
-  long ram=0;tex_orcamento_info(NULL,&ram,NULL,NULL);
+  static const char *const icons[]={"aj_monitor","aj_sun","aj_sparkles","aj_volume-2","aj_cpu","aj_hard-drive","aj_crop","aj_repeat","aj_eye-off","aj_history","aj_bug","aj_mic"};
+  long ram=tex_teto_ram_mb();
   char values[6][160];
-  const int ops[]={AJ_RESOLUCAO,AJ_HDR_UI,AJ_DV,AJ_DTS_AC3,AJ_GPU_EFEITOS};
-  for(int i=0;i<5;i++)snprintf(values[i],sizeof values[i],"%s",textoValor(ops[i]));
+  snprintf(values[0],sizeof values[0],"%dx%d",(int)NV_LAYOUT_REAL_W,(int)NV_LAYOUT_REAL_H);
+  /* Settings preferences are not hardware capability reports. */
+  for(int i=1;i<5;i++)snprintf(values[i],sizeof values[i],"%s",i18n("Desconhecida"));
+#ifdef NV_ANDROID
+  snprintf(values[4],sizeof values[4],"%s",i18n("Hardware"));
+#endif
   if(ram>0)snprintf(values[5],sizeof values[5],"%ld MB",ram);
   else snprintf(values[5],sizeof values[5],"%s",i18n("Desconhecida"));
   for(int c=0;c<2;c++) {

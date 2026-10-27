@@ -67,6 +67,31 @@ int main(void) {
   focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);int theme=valor[AJ_TEMA];
   key(SDLK_DOWN);assert(uxPendente==theme+1 || uxPendente==theme);
   key(SDLK_ESCAPE);assert(valor[AJ_TEMA]==theme);
+  // Pencil custom presets survive reload, exclude credentials, and roll back through review.
+  aj4Iniciar();focoIndice=1;
+  valor[AJ_QUALIDADE]=2;
+  assert(ajPenSavedSave("Friday movie"));
+  ajPenSavedProfile=0;ajPenSavedLoad();
+  assert(ajPenSavedCount==1 && !strcmp(ajPenSavedNames[0],"Friday movie"));
+  assert(ajPenSavedValues[0][AJ_DEBRID_RD]<0);
+  valor[AJ_QUALIDADE]=3;
+  assert(ajPenSavedPrepare(0)>0 && aj4Aplicar());
+  assert(valor[AJ_QUALIDADE]==2 && aj4Desfazer() && valor[AJ_QUALIDADE]==3);
+  for(int p=0;p<4;p++) { ajPenPresetPrepare(p);assert(aj4Review==2);aj4Review=0; }
+  ajPenOpen(28);key(SDLK_ESCAPE);assert(ajPenPage==27);
+  ajPenOpen(34);key(SDLK_ESCAPE);assert(ajPenPage==33);
+  // Parental policy is validated, persisted, enforced, and remains profile-local.
+  assert(perfil_regra_definir(1,PR_IDADE,12));
+  assert(!perfil_regra_definir(1,PR_IDADE,99));
+  assert(perfil_infantil_definir(1,1));
+  assert(perfil_regra_classif("12") && !perfil_regra_classif("16") && !perfil_regra_classif(NULL));
+  assert(!perfil_regra_busca("16") && perfil_regra_compras());
+  assert(perfil_regra_definir(1,PR_BUSCA_LIVRE,1) && perfil_regra_busca("16"));
+  assert(perfil_regra_definir(1,PR_TEMPO,1));
+  for(int i=0;i<61;i++)perfil_regra_tempo(1);
+  assert(perfil_regra_tempo(0));
+  assert(perfil_infantil_definir(1,0) && !perfil_regra_tempo(0));
+  perfil_regras_esquecer();aj4Iniciar();ajPenPage=-1;focoIndice=1;
   // APS-9: invalid IDs, absent routes and corrupt compiled sections are bounded.
   assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO);
   assert(AJ_HERO_TAMANHO + 1 == AJ_DET_TOPO && AJ_DET_TOPO + 1 == AJ_DET_ELENCO_VISTO);

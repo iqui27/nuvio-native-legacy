@@ -1,0 +1,34 @@
+#include "perfilregras.h"
+static int ajPenParentEditor=-1,ajPenParentDraft;
+static const int AJ_PEN_TIME[]={0,30,60,90,120,180,240};
+static const int AJ_PEN_AGE[]={0,10,12,14,16,18};
+static const char *const AJ_PEN_PARENT_LABEL[]={"Tempo de tela por perfil","Classificação máxima","Busca sem filtro","Compras bloqueadas"};
+static void ajPenParentText(int rule,int value,char *out,size_t n) {
+  if(rule==PR_TEMPO) {
+    if(!value)snprintf(out,n,"%s",i18n("Sem limite"));
+    else snprintf(out,n,i18n("%d min"),value);
+  } else if(rule==PR_IDADE) {
+    if(!value)snprintf(out,n,"%s",i18n("Livre"));
+    else snprintf(out,n,i18n("%d anos"),value);
+  } else snprintf(out,n,"%s",i18n(value?"Ligado":"Desligado"));
+}
+static void ajPenParentOpen(int rule) {
+  if(pfTravado() || perfil_infantil_ativo()) { uxNotificar("Indisponível em perfil infantil.");return; }
+  ajPenParentEditor=rule;ajPenParentDraft=perfil_regra(perfis_ativo(),rule);
+}
+static int ajPenParentEvent(SDL_Keycode key) {
+  if(ajPenParentEditor<0)return 0;
+  if(uxVoltar(key)) { ajPenParentEditor=-1;return 1; }
+  int rule=ajPenParentEditor;
+  if(uxOk(key)) {
+    if(perfil_regra_definir(perfis_ativo(),rule,ajPenParentDraft)) { ajPenParentEditor=-1;uxNotificar("Ajuste salvo nesta TV."); }
+    else uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");
+    return 1;
+  }
+  int direction=key==SDLK_DOWN || key==SDLK_RIGHT?1:key==SDLK_UP || key==SDLK_LEFT?-1:0;
+  const int *choices=rule==PR_TEMPO?AJ_PEN_TIME:AJ_PEN_AGE;
+  int count=rule==PR_TEMPO?7:rule==PR_IDADE?6:2;
+  if(rule>=PR_BUSCA_LIVRE) { if(direction)ajPenParentDraft=!ajPenParentDraft;return 1; }
+  for(int i=0;i<count;i++)if(choices[i]==ajPenParentDraft) { int next=i+direction;if(next>=0 && next<count)ajPenParentDraft=choices[next];break; }
+  return 1;
+}

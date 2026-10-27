@@ -43,6 +43,7 @@
 #include "segurar.h"
 #include "ajustes.h"
 #include "catalogo.h"
+#include "perfilregras.h"
 #include "descoberta.h"
 #include "buscasrec.h"
 #include "buscanorm.h"
@@ -401,7 +402,7 @@ static void montarSugestoes(void) {
         !strcmp(cf->tipo, "channels") || !strcmp(cf->tipo, "live") || !strcmp(cf->tipo, "iptv")) continue;
     for (i = 0; i < cf->n && achou < BU_MAX_POR_FIL; i++) {
       const CatItem *ci = cat_item(cf->ini + i);
-      if (!ci || !ci->titulo[0] || (!ci->poster[0] && !ci->backdrop[0])) continue;
+      if (!ci || !perfil_regra_busca(ci->classificacao) || !ci->titulo[0] || (!ci->poster[0] && !ci->backdrop[0])) continue;
       if (!strcmp(ci->tipo, "channel")) continue;
       fil[nFil].itens[achou++] = cf->ini + i;
     }
@@ -526,7 +527,7 @@ static void refiltrar(void) {
       for (i = 0; i < nRem && achou < BU_MAX_POR_FIL; i++) {
         CatItem it;
         int idx;
-        if (!desc_busca_alvo_item(alvoIdx, i, &it)) continue;
+        if (!desc_busca_alvo_item(alvoIdx, i, &it) || !perfil_regra_busca(it.classificacao)) continue;
         idx = it.imdb[0] ? cat_indice_por_imdb(it.imdb) : -1;
         if (idx < 0 && it.imdb[0]) {   // ja juntado por outro alvo neste refiltrar?
           for (k = 0; k < nNovos; k++)
@@ -597,7 +598,7 @@ static void refiltrar(void) {
     int achou = 0;
     for (int i = 0; i < cf->n && achou < BU_MAX_POR_FIL; i++) {
       const CatItem *ci = cat_item(cf->ini + i);
-      if (!ci) continue;
+      if (!ci || !perfil_regra_busca(ci->classificacao)) continue;
       char titulo[320];
       normalizar(ci->titulo, titulo, sizeof titulo);
       if (strstr(titulo, alvo)) fil[nFil].itens[achou++] = cf->ini + i;

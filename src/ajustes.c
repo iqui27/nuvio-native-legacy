@@ -10372,6 +10372,10 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   // resultado antes de ela ver (e o apelido digitado se perderia em silencio).
   if (!pessoas_aberto()) hcTecladoLer();
   { int r = pessoas_aberto() ? TECLADO_NADA : teclado_resultado();
+    if(ajPenSaveKeyboard && r!=TECLADO_NADA) {
+      if(r==TECLADO_PRONTO && ajPenSaveProfile==perfis_ativo())uxNotificar(ajPenSavedSave(teclado_texto())?"Preset salvo.":"Não foi possível salvar. O valor anterior foi mantido.");
+      ajPenSaveKeyboard=0;teclado_esquecer();r=TECLADO_NADA;
+    }
     if (aj4BuscaTeclado && r != TECLADO_NADA) {
       if(r==TECLADO_PRONTO)snprintf(aj4Consulta,sizeof aj4Consulta,"%s",teclado_texto());
       aj4BuscaTeclado=0; teclado_esquecer(); r=TECLADO_NADA;

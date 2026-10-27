@@ -33,7 +33,7 @@ static void aj4PontAtivar(int zona,int row) {
   if(zona==8) { ajPenRow=row;int handled=ajPenEvent(SDLK_RETURN);if(!handled) { SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.keysym.sym=SDLK_RETURN;eventoTela(&event); } return; }
   if(zona==10) { aj4Buscar();return; }
   if(zona==11 && uxEditor==1) { uxPendente=limita(uxOp,uxPendente+row);return; }
-  if(zona==9) { if(row==1) { uxRodape=1;uxEvento(SDLK_RETURN); }else if(row==2)uxNotificar("Salvar como preset ainda não está disponível.");return; }
+  if(zona==9) { if(row==1) { uxRodape=1;uxEvento(SDLK_RETURN); }else if(row==2)ajPenSavedAsk();return; }
   aj4PontFoco(zona,row);
   if(zona==4)uxAplicar();
   else if(zona==7) { snprintf(aj4Consulta,sizeof aj4Consulta,"%s",i18n(row==2?"Áudio":"Fontes")); aj4Acao=aj4Linha=0; }
@@ -474,7 +474,8 @@ static void aj4PerfilDesenhar(void) {
 static void aj4Desenhar(void) {
   ponteiro_camada();
   aj4SeloAviso=0;
-  if(uxEditor)ajPenEditor();
+  if(ajPenParentEditor>=0)ajPenParentChoice();
+  else if(uxEditor)ajPenEditor();
   else if(aj4Util==4)aj4PerfilDesenhar();
   else if(aj4Util==3 || (aj4Util==1 && !aj4Review))ajPenUtility();
   else if(aj4Util==2 && !aj4Review)ajPenPresets();

@@ -4,6 +4,7 @@ typedef struct { const char *title; int x,w,n; AjPenRow rows[7]; } AjPenColumn;
 typedef struct { const char *title,*section; int part,total; AjPenColumn cols[2]; } AjPenPage;
 #include "ajustes_pen_avancados.inc"
 #include "ajustes_pen_principais.inc"
+#include "ajustes_pen_parental.inc"
 #define AJ_PEN_PARENTAL 100
 #define AJ_PEN_RULES 101
 #define AJ_PEN_TOUR 102
@@ -31,10 +32,10 @@ static const AjPenPage AJ_PEN_PARENT = {"Controle parental","Controle parental",
     {AJ_PLR_CLASSIF,"Classificação no player","A etiqueta de idade no vídeo","aj_shield",0},
     {-4,"Filmes permitidos","O que o perfil pode abrir","aj_tv",0}}},
   {"LIMITES",1024,800,6,{
-    {-1,"Tempo de tela por perfil","Quanto tempo o perfil pode usar","aj_alarm-clock",0},
-    {-1,"Classificação máxima","A idade mínima do perfil","aj_film",0},
-    {-1,"Busca sem filtro","","aj_search",1},
-    {-1,"Compras bloqueadas","Não deixa comprar na loja","aj_shopping-bag",1},
+    {-10,"Tempo de tela por perfil","Quanto tempo o perfil pode usar","aj_alarm-clock",0},
+    {-11,"Classificação máxima","A idade mínima do perfil","aj_film",0},
+    {-12,"Busca sem filtro","","aj_search",1},
+    {-13,"Compras bloqueadas","Não deixa comprar na loja","aj_shopping-bag",1},
     {AJ_PROXIMO_AUTO,"Reprodução automática","","aj_play",1},
     {AJ_HERO_TRAILER,"Mostrar trailer","","aj_eye",1}}}}};
 static const AjPenPage AJ_PEN_AUDIO[] = {
@@ -116,6 +117,7 @@ static void ajPenFind(int op) {
   for(int i=0;i<n;i++)if(ops[i]==op) { ajPenOpen(46+i/14);ajPenRow=i%14;return; }
 }
 static int ajPenEvent(SDL_Keycode key) {
+  if(ajPenParentEvent(key))return 1;
   const AjPenPage *page=ajPenCurrent();
   if(ajPenPage==AJ_PEN_RULES && !uxEditor && !aj4Util && !focoIndice) {
     if(uxVoltar(key) || uxOk(key)) { ajPenPage=-1;focoIndice=1;aj4Linha=6; }
@@ -160,11 +162,21 @@ static int ajPenEvent(SDL_Keycode key) {
     const AjPenRow *row=&page->cols[col].rows[ajPenRow-(col?page->cols[0].n:0)];
     int op=row->op;
     if(op<0) {
-      if(op==-2)pfExigirAdmin(PA_INFANTIL,perfis_ativo());
+      if(op<=-10 && op>=-13)ajPenParentOpen(-10-op);
+      else if(op==-4)ajPenParentOpen(PR_IDADE);
+      else if(op==-2)pfExigirAdmin(PA_INFANTIL,perfis_ativo());
       else if(op==-3)pfAbrir();
       else if(op==-5) { ajPenPage=-1;tourAbrir(); }
       else uxNotificar(op==-4?"Perfil infantil: só classificação livre e até 10 anos.":"Ainda não disponível.");
       return 1;
+    }
+    if(ajPenPage==AJ_PEN_TOUR) {
+      if(ajPenRow==0) { definirValorDireto(AJ_CW_LIGADO,lig(AJ_CW_LIGADO)?1:0);return 1; }
+      if(ajPenRow==1) { ajPenOpen(39);return 1; }
+      if(ajPenRow==2) { ajPenOpen(38);return 1; }
+      if(ajPenRow==4) { ajPenOpen(28);return 1; }
+      if(ajPenRow==6) { ajPenOpen(AJ_PEN_PARENTAL);return 1; }
+      if(ajPenRow==7) { ajPenOpen(40);return 1; }
     }
     if(!ajOpcaoDisponivel(op))return 1;
     if(OPCOES[op].tipo==OP_LEITURA)return 1;
