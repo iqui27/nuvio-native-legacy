@@ -59,7 +59,7 @@ static const AjPenPage AJ_PEN_AUDIO[] = {
       {AJ_LEG2_TAMANHO,"Tamanho","O tamanho da segunda legenda","aj_type",0},
       {AJ_LEG2_COR,"Cor","A cor do texto da segunda","aj_palette",0},
       {AJ_LEG2_FUNDO,"Fundo","O fundo da segunda legenda","aj_square",0},
-      {AJ_LEG2_BORDA,"Borda","Contorno ou sombra","aj_scan",0}}}}},
+      {AJ_LEG2_BORDA,"Borda","Contorno ou sombra","aj_square-dashed",0}}}}},
   {"Estilo das legendas","ÁUDIO E LEGENDAS",3,3,{
     {"LEGENDA PRINCIPAL",200,800,6,{
       {AJ_LEG1_TAMANHO,"Tamanho","O tamanho da letra na tela","aj_type",0},
@@ -237,6 +237,7 @@ static int ajPenEvent(SDL_Keycode key) {
       else uxNotificar(op==-4?"Perfil infantil: só classificação livre e até 10 anos.":"Ainda não disponível.");
       return 1;
     }
+    if(ajPenPage==36 && op==AJ_DET_META_EXT) { ajPenOpen(17);return 1; }
     if(ajPenPage==29 && op==AJ_FONTE_MANUAL) { ajPenOpen(AJ_PEN_SOURCES);return 1; }
     if(ajPenPage==27 && op==AJ_LEG_LINGUA2) { ajPenOpen(AJ_PEN_SECONDARY);return 1; }
     if(ajPenPage==AJ_PEN_TOUR) {

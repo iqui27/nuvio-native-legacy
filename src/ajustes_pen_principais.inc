@@ -111,7 +111,7 @@ static const AjPenPage AJ_PEN_MAIN[] = {
     {"CARTAZ EM FOCO",200,800,6, {
       {AJ_EXPANDIR,"Expandir pôster ao focar","O cartaz cresce no foco","aj_maximize-2",1},
       {AJ_EXPANDIR_ATRASO,"Atraso da expansão","Quanto tempo até crescer","aj_timer",0},
-      {AJ_BORDA_FOCO,"Borda no cartaz em foco","Contorno no cartaz ampliado","aj_scan",1},
+      {AJ_BORDA_FOCO,"Borda no cartaz em foco","Contorno no cartaz ampliado","aj_square-dashed",1},
       {AJ_GRAD_CLASSICO,"Gradiente de foco clássico","Escurece o lado do cartaz","aj_layers",1},
       {AJ_HERO_FUNDO,"De onde vem a arte","O catálogo, o IMDb, o TMDB ou o Trakt","aj_image",0},
       {AJ_HERO_ARTE_DIF,"Destaque com outra arte","Usa outra arte no topo","aj_wand-sparkles",1},
@@ -140,13 +140,13 @@ static const AjPenPage AJ_PEN_MAIN[] = {
       {AJ_NT_METAUSER,"Metacritic (usuarios)","A nota dos usuários","aj_star",1},
       {AJ_NT_TRAKT,"Trakt","A sua nota do Trakt","aj_star",1},
       {AJ_NT_TMDB,"TMDB","Os dados que o TMDB traz","aj_film",1},
-      {AJ_DET_META_EXT,"Dados do título","Ficha, elenco, episódios e trailers","aj_database",1},
+      {AJ_DET_META_EXT,"Dados do título","Ficha, elenco, episódios e trailers","aj_database",0},
     }},
   }},
   {"Perfil e serviços","Perfil e serviços",1,4, {
     {"PERFIL",200,800,6, {
       {AJ_PERFIL_ATIVO,"Perfil","Quem está usando a TV agora","aj_user",0},
-      {AJ_SYNC,"Sincronização (LegaSync)","O que já subiu para a conta","aj_film",0},
+      {AJ_SYNC,"Sincronização (LegaSync)","O que já subiu para a conta","aj_refresh-cw",0},
       {AJ_PERFIL_PESQ,"Perfil pesquisável","Aparece na busca de perfis","aj_search",1},
       {AJ_PERFIL_EDITAR,"Meu perfil público","Como você aparece para os outros","aj_contact",0},
       {AJ_PERFIL_INFANTIL,"Perfil infantil","Marca o perfil em uso como infantil","aj_baby",1},

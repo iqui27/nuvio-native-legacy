@@ -116,6 +116,10 @@ static void ajPenRows(void) {
         gfx_cor((GfxRect){x+w-86+(on?28:0),y+23,28,28},.5f,1,1,1,1);
       } else {
         char val[160];snprintf(val,sizeof val,"%s",row->op>=0?textoValor(row->op):row->op==-3?i18n(admin_perfil_pin_definido(perfis_ativo())?"PIN definido":"Definir um PIN"):row->op==-4?i18n("Livre e até 10 anos"):i18n("Ainda não disponível."));
+        if(ajPenPage==36 && row->op==AJ_DET_META_EXT) {
+          int count=0;for(int op=AJ_TMDB_ARTE;op<=AJ_TMDB_CW;op++)if(lig(op))count++;
+          snprintf(val,sizeof val,i18n("%d ajustes"),count);
+        }
         if(row->op<=-10 && row->op>=-13)ajPenParentText(-10-row->op,perfil_regra(perfis_ativo(),-10-row->op),val,sizeof val);
         if(row->op==-4)ajPenParentText(PR_IDADE,perfil_regra(perfis_ativo(),PR_IDADE),val,sizeof val);
         TxtLinha t=ajTxtC(TXT_G18R,val,180);txt_desenhar_alpha(t,x+w-52-t.w,y+24,.58f);
