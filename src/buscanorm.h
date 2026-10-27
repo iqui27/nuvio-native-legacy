@@ -27,4 +27,18 @@ int busca_codepoints(const char *s);
 // deixar meia sequencia UTF-8 no campo. Devolve o novo tamanho em bytes.
 size_t busca_apagar_ultimo(char *s, size_t n);
 
+// CURSOR do campo (teclado do app no .tpk): posicao em CARACTERES, -1 = no fim
+// (o caso comum, e o que todo texto trocado inteiro volta a ser).
+// Byte em que o cursor `cur` cai em `s` (`cur` < 0 ou alem do fim: o fim).
+size_t busca_byte_cursor(const char *s, int cur);
+// Insere `t` no cursor se couber inteiro em `cap` (com o NUL); o cursor anda
+// junto. Devolve o novo tamanho em bytes (o mesmo, se nao coube).
+size_t busca_inserir(char *s, size_t n, size_t cap, int *cur, const char *t);
+// Tira o caractere ANTES do cursor (no fim, o ultimo); no comeco nao faz nada.
+// Devolve o novo tamanho em bytes.
+size_t busca_apagar_antes(char *s, size_t n, int *cur);
+// Esquerda (d < 0) / Direita: anda um caractere. 0 = ja estava na ponta, e quem
+// chama passa o foco adiante (Direita no fim vai ao microfone).
+int busca_cursor_mover(const char *s, int *cur, int d);
+
 #endif
