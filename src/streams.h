@@ -116,6 +116,7 @@ typedef struct Stream {
   // inferir cache de URL direta, nome do provedor ou ausencia de foraCache.
   // So serve ao indicador/filtro da folha, nao a politica de reproducao.
   int  emCache;
+  int conferencia;     // FA_*: actual probe result for this list, never inferred from a URL.
   // isCached:false tambem pode vir com URL direta ainda tocavel. A negativa
   // e visual: nao muda a elegibilidade operacional de foraCache. Uma consulta
   // nativa que confirme a disponibilidade limpa esta declaracao anterior.
@@ -378,6 +379,8 @@ int stream_primeira_boa_sessao(int tentativas, uint64_t sessao);
 // TOCAR ENQUANTO CONFERE (fonteantecipa.h): o indice da candidata que o player
 // ja pode abrir enquanto a conferencia dela roda, e o estado (FA_*). -1 = nada.
 int  stream_antecipada(int *estado);
+// Shared presentation state: checking overrides cache, a failed probe stays failed.
+int stream_fonte_estado(int indice);
 // Ate `max` URLs (256 bytes cada; so o host importa) das primeiras fontes que o
 // automatico tentaria, para aquecer.c abrir a conexao antes. Nunca resolve nada.
 int  stream_urls_para_aquecer(char dst[][256], int max);

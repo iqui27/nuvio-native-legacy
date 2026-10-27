@@ -31,6 +31,7 @@
 #include "posterprov.h"
 #include "episodios.h"
 #include "fontepref.h"
+#include "fonteantecipa.h"
 #include "idioma.h"
 #include "ctxmenu.h"
 #include "ctxlista.h"
@@ -3565,7 +3566,7 @@ static void detail_evento_(const SDL_Event *e) {
     // CARROSSEL: a primeira seta para baixo so estica o cartao (ver carCheia).
     if (k == SDLK_DOWN && carro && !carCheia) { carCheia = 1; return; }
     // After leaving a server chip or the friends card, enter sections without resolving from Play.
-    if (!desceuServidor && !(carro && !carCheia) && navigationMove(k)) return;
+    if (!estavaVersao && !desceuServidor && !(carro && !carCheia) && navigationMove(k)) return;
     if (k == SDLK_DOWN) {
       sincronizarEpisodioPadrao();
       epEscolhido = 1;
@@ -5656,16 +5657,12 @@ static void heroWeb(float a, float desloc) {
     gfx_vidro_sem_aro = previous;
   } else if (topoVersao() && vaiTocar.tem && hVai > 1.0f) {
     char texto[240];
-    snprintf(texto, sizeof texto, "%s%s%s%s%s%s%s", vaiTocar.res,
-             vaiTocar.hdr[0] ? " · " : "", vaiTocar.hdr,
-             vaiTocar.audio[0] ? " · " : "", vaiTocar.audio,
-             vaiTocar.idiomas[0] ? " · " : "", vaiTocar.idiomas);
+    vt_chip_texto(&vaiTocar, texto, sizeof texto);
     TxtLinha l = txt_linha_corta(TXT_DET_META2, texto, 225, 227, 232, 255, larguraTextoHero() - 48);
     float yV = yVers + sobe + dyV, aV = a * kV;
     versaoRect = (GfxRect){NV_DETW2_X, yV, l.w + 64, 48};
     botao_pilula_sem_aro(versaoRect,"",NULL,versaoFoco,0,0,aV);
-    float cr, cg, cb; ajustes_acento(&cr, &cg, &cb);
-    gfx_cor((GfxRect){NV_DETW2_X + 20, yV + 19, 10, 10}, .5f, cr, cg, cb, aV);
+    vtui_estado_ponto(vaiTocar.estado, NV_DETW2_X + 20, yV + 19, aV);
     int ink=versaoFoco>.5f ? ajustes_tinta_foco() : 225;
     l=txt_linha_corta(TXT_DET_META2,texto,ink,ink,ink,255,larguraTextoHero()-48);
     txt_desenhar_alpha(l, NV_DETW2_X + 40, yV + (48 - l.h) * .5f, aV);
