@@ -1,8 +1,5 @@
 /* Pencil choice page; edits use the existing draft and persistence path. */
 static void ajPenEditor(void) {
-  if(ajPaleta(uxOp) && uxOp!=AJ_TEMA) {
-    aj4Editor();return;
-  }
   if(uxEditor==2 || uxRestaurar || uxAvisoRisco) {
     ajPenBase();ajKicker(ajPenContext(),200,198,1);
     aj4Texto(aj4Rotulo(uxOp),TXT_TITULO2,200,212,1500,1);

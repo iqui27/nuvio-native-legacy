@@ -507,7 +507,8 @@ static void aj4Desenhar(void) {
   else if(aj4Util==4)aj4PerfilDesenhar();
   else if(aj4Util==3 || (aj4Util==1 && !aj4Review))ajPenUtility();
   else if(aj4Util==2 && !aj4Review)ajPenPresets();
-  else if(aj4Review || aj4Util)aj4UtilDesenhar();
+  else if(aj4Review)ajPenReview();
+  else if(aj4Util)aj4UtilDesenhar();
   else if(!focoIndice && ajPenPage==AJ_PEN_SOURCES)ajPenSources();
   else if(!focoIndice && ajPenPage==AJ_PEN_COMPONENTS)ajPenComponents();
   else if(!focoIndice && ajPenPage==AJ_PEN_SECONDARY)ajPenSecondary();

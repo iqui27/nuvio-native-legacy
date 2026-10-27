@@ -1,3 +1,24 @@
+static void ajPenReview(void) {
+  ajPenBase();ajPenChip(aj4Util==2?"Presets":"Diferente do padrão","pl_chevron-left",200,112,260,0,5,0);
+  ajKicker("AJUSTES",200,198,1);aj4Texto("PRÉVIA DA MUDANÇA",TXT_TITULO2,200,212,1500,1);
+  aj4Texto("As mudanças só são aplicadas após OK",TXT_G20M,200,291,1520,.58f);
+  ajPenPanel(200,344,1624,640,0);
+  int start=aj4Linha/5*5;
+  for(int i=start;i<aj4N && i<start+5;i++) {
+    int op=aj4Ops[i];float y=400+(i-start)*84;char before[160],after[160],text[350];
+    uxValorTexto(op,aj4Antes[i],before,sizeof before);uxValorTexto(op,aj4Depois[i],after,sizeof after);
+    if(i==aj4Linha && !aj4Acao)ajPenPanel(226,y,1572,74,1);
+    aj4Texto(aj4Rotulo(op),TXT_G21B,248,y+13,950,1);
+    aj4Texto(escopoDe(op)==ESC_TV?"Só esta TV":"A escolha acompanha este perfil.",TXT_AJ_MINI14,248,y+42,950,.4f);
+    snprintf(text,sizeof text,"%s → %s",before,after);TxtLinha value=ajTxtC(TXT_PEN_VALUE,text,540);
+    txt_desenhar_alpha(value,1776-value.w,y+24,.58f);
+    aj4Alvo((GfxRect){226,y,1572,74},1,i);
+  }
+  if(!aj4N)aj4Texto("Nenhuma alteração",TXT_G21B,248,430,1400,.58f);
+  ajPenChip("Aplicar mudanças","aj_check",226,902,260,aj4Acao==1,3,1);
+  ajPenChip("Manter ajustes",NULL,502,902,220,aj4Acao==2,3,2);
+  ajPenRodape(aj4Util==2?"Presets":"Diferente do padrão",3,3);
+}
 static void ajPenPresets(void) {
   ajPenSavedLoad();
   ajPenBase();ajPenChip("Ajustes","pl_chevron-left",200,112,124,0,5,0);

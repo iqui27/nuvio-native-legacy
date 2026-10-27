@@ -95,6 +95,9 @@ static int ajPenLanguageOrder(int *order) {
   return n;
 }
 static int ajPenLanguageMove(SDL_Keycode key) {
+  if(uxEditor==1 && ajPenPage>=0 && uxOp==AJ_FUNDO_DIN_COR && !uxRodape && (key==SDLK_UP || key==SDLK_DOWN)) {
+    uxPendente=limita(uxOp,uxPendente+(key==SDLK_DOWN?1:-1));return 1;
+  }
   if(uxEditor==1 && uxOp==AJ_LEG1_ATRASO && ajPenPage==28 && ajPenRow==11 && !uxRodape && (key==SDLK_LEFT || key==SDLK_RIGHT)) {
     uxPendente=limita(uxOp,uxPendente+(key==SDLK_RIGHT?1:-1));return 1;
   }
@@ -253,7 +256,7 @@ static int ajPenEvent(SDL_Keycode key) {
     if(uxVoltar(key) || uxOk(key)) { ajPenPage=-1;focoIndice=1;aj4Linha=6; }
     return 1;
   }
-  if(!page || uxEditor || aj4Util || focoIndice || aj4Topo>=0)return -1;
+  if(!page || uxEditor || aj4Util || aj4Review || focoIndice || aj4Topo>=0)return -1;
   if(uxVoltar(key)) {
     int parent=ajPenPage==AJ_PEN_SECONDARY || ajPenPage==28?27:ajPenPage>=30 && ajPenPage<=32?29:ajPenPage==34?33:ajPenPage>=38 && ajPenPage<=40?37:ajPenPage==42?41:-1;
     if(parent>=0)ajPenOpen(parent);else { ajPenPage=-1;focoIndice=1;aj4Linha=0; }

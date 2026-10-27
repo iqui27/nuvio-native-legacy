@@ -11496,7 +11496,8 @@ int ajustes_teste_quadro(const char *id) {
   if(!strncmp(id,"pen-",4)) {
     static const char *const names[]={"Marina"};perfis_teste_definir(names,NULL,1,1);
     aj4Iniciar();pfTela=0;uxVeioBusca=0;valor[AJ_AVANCADAS]=0;valor[AJ_TEMA]=6;
-    if(!strcmp(id,"pen-provider"))ajPenOpen(AJ_PEN_PROVIDER);
+    if(!strcmp(id,"pen-review")) { aj4Util=2;focoIndice=0;ajPenPresetPrepare(0); }
+    else if(!strcmp(id,"pen-provider"))ajPenOpen(AJ_PEN_PROVIDER);
     else if(!strcmp(id,"pen-iptv-provider"))ajPenOpen(AJ_PEN_IPTV_PROVIDER);
     else if(!strcmp(id,"pen-provider-failures"))ajPenOpen(AJ_PEN_PROVIDER_FAILURES);
     else if(!strcmp(id,"pen-addon-failures"))ajPenOpen(AJ_PEN_ADDON_FAILURES);
