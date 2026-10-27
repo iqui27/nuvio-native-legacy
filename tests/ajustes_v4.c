@@ -91,6 +91,14 @@ int main(void) {
   assert(admin_perfil_pin_conferir(1,"4826") && !admin_perfil_pin_conferir(1,"0000"));
   assert(perfis_acao(0)==PERFIL_ACAO_PIN);
   assert(perfis_verificar_pin(1,"4826")==1 && perfis_verificar_pin(1,"0000")==0);
+  ajPenPinAsk=1;ajPenPinRepeat=-1;ajPenPinProfile=1;
+  assert(!ajPenPinDigitado("0000") && !ajPenPinAsk);
+  ajPenPinAsk=1;ajPenPinRepeat=-1;ajPenPinProfile=1;
+  assert(ajPenPinDigitado("4826") && ajPenPinRepeat==0);
+  assert(ajPenPinDigitado("5937") && ajPenPinRepeat==1);
+  assert(!ajPenPinDigitado("5937") && admin_perfil_pin_conferir(1,"5937"));
+  assert(!admin_perfil_pin_conferir(1,"4826"));
+  { SDL_Event close={0};close.type=SDL_KEYDOWN;close.key.keysym.sym=SDLK_ESCAPE;teclado_evento(&close);teclado_resultado();teclado_esquecer(); }
   admin_pin_esquecer();
   // Parental policy is validated, persisted, enforced, and remains profile-local.
   assert(perfil_regra_definir(1,PR_IDADE,12));

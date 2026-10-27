@@ -19,13 +19,18 @@ static void ajPenParentOpen(int rule) {
   ajPenParentEditor=rule;ajPenParentDraft=perfil_regra(perfis_ativo(),rule);
 }
 static void ajPenPinOpen(void) {
-  if(!ajPenPinRepeat)ajPenPinProfile=perfis_ativo();
-  if(ajPenPinRepeat)teclado_abrir_com("Repita o PIN do perfil","Digite o mesmo PIN de novo.",8,"0123456789",NULL);
+  if(ajPenPinRepeat<=0)ajPenPinProfile=perfis_ativo();
+  if(ajPenPinRepeat<0)teclado_abrir_com("PIN do perfil","Use o mesmo PIN do perfil.",8,"0123456789",NULL);
+  else if(ajPenPinRepeat)teclado_abrir_com("Repita o PIN do perfil","Digite o mesmo PIN de novo.",8,"0123456789",NULL);
   else teclado_abrir_com("PIN do perfil","De 4 a 8 números. Protege os ajustes deste perfil nesta TV.",8,"0123456789",NULL);
   teclado_tipo(TECLADO_TIPO_SENHA);teclado_mascarar(1);
 }
 static int ajPenPinDigitado(const char *pin) {
   if(ajPenPinProfile!=perfis_ativo() || perfil_infantil_ativo() || pfTravado()) { memset(ajPenPinDraft,0,sizeof ajPenPinDraft);ajPenPinAsk=ajPenPinRepeat=0;return 0; }
+  if(ajPenPinRepeat<0) {
+    if(!admin_perfil_pin_conferir(perfis_ativo(),pin)) { ajPenPinAsk=ajPenPinRepeat=0;uxNotificar("PIN incorreto");return 0; }
+    ajPenPinRepeat=0;ajPenPinOpen();return 1;
+  }
   if(!ajPenPinRepeat) {
     size_t n=strlen(pin);int valid=n>=ADMIN_PIN_MIN && n<=ADMIN_PIN_MAX;
     for(size_t i=0;i<n;i++)if(pin[i]<'0' || pin[i]>'9')valid=0;
