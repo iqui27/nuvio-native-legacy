@@ -15,7 +15,7 @@ if [[ ${GUIAV5_BASELINE:-0} == 1 ]]; then
 else
   extra=()
 fi
-cc "${sources[@]}" tests/guiav5_bugs.c "${extra[@]}" -Isrc -o "$work/test" -O0 -g \
+cc "${sources[@]}" tests/guiav5_bugs.c ${extra[@]+"${extra[@]}"} -Isrc -o "$work/test" -O0 -g \
   -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -L/opt/homebrew/lib \
   -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL -Wno-deprecated-declarations
 "$work/test"

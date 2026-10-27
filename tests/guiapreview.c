@@ -78,6 +78,23 @@ int main(int argc,char **argv){
   gv_broadcast((GfxRect){100,200,600,300},&preview_channel,NULL,0);
   glReadPixels(360,1080-320,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
   CHECK(pixel[0]>100&&pixel[1]>100&&pixel[2]>100,"neutral preview still renders channel logo");
+  /* The exported Android window must match the painted preview, even in focus. */
+  const char *preview_views[]={"grade","cartoes"};
+  for(int view=0;view<2;view++)for(int side=0;side<2;side++)for(int big=0;big<2;big++){
+    g5ui_open(preview_views[view]);gv_snap_force=1;gv_snapshot();
+    gv_side=(float)side;gv_zone=2;gv_hbt=2;gv_dt=.05f;
+    ajustes_definir_guia_previa_grande(big);
+    float x,y,pw,ph;guia_preview_rect(&x,&y,&pw,&ph);
+    for(int frame=0;frame<40;frame++){
+      glClearColor(1,1,1,1);glClear(GL_COLOR_BUFFER_BIT);
+      if(view)gv_hero_compact(GV_BASE);else gv_hero(GV_BASE);
+    }
+    glReadPixels((int)(x+pw-4),1079-(int)(y-2),1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+    CHECK(pixel[0]>240&&pixel[1]>240&&pixel[2]>240,"preview stays inside exported Android rect");
+    glReadPixels((int)(x+pw-10),1079-(int)(y+ph/2),1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+    CHECK(pixel[0]<240&&pixel[1]<240&&pixel[2]<240,"exported Android rect contains visible preview");
+  }
+  ajustes_definir_guia_previa_grande(0);gv_side=0;g5ui_open("grade");quadro();
   CHECK(GV_MX<60&&GV_MW>1800,"hidden sidebar gives content full width");
   CHECK(gv_vis(GV_BASE)>=4,"grid uses space freed by hero and footer");
   key(SDLK_LEFT);CHECK(gv_zone==3,"grid Left opens sidebar");
@@ -118,11 +135,10 @@ int main(int argc,char **argv){
   char addon_key[LTV_CHAVE];ltv_chave_fonte(LTV_ADDON,"https://disabled.test",addon_key,sizeof addon_key);
   ltv_pref(addon_key,1)->desligada=1;CHECK(!guia_fonte_playback_permitida("https://disabled.test"),"disabled addon excluded from playback fallback");
   ltv_pref(addon_key,1)->desligada=0;
-  const char *views[]={"grade","cartoes","esportes-ligas","fontes-gerenciar","busca","ajustes"};
+  const char *views[]={"grade","cartoes","esportes-ligas","fontes-gerenciar","ajustes"};
   for(unsigned i=0;i<sizeof views/sizeof *views;i++){
     g5ui_open(views[i]);quadro();
     if(!strcmp(views[i],"esportes-ligas"))focus=2070;
-    if(!strcmp(views[i],"busca"))focus=1799;
     if(!strcmp(views[i],"ajustes"))focus=1949;
     int saved=focus;int zone=gv_zone;
     if(!strcmp(views[i],"grade"))gv_tfoc=0;

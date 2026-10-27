@@ -34,7 +34,7 @@ static void pick(const char *text){
   for(int i=0;i<48&&spot_linha_focada()!=target;i++)key(SDLK_DOWN);
   assert(spot_linha_focada()==target);key(SDLK_RETURN);assert(!spot_aberto());
 }
-static void open_search(void){g5ui_open("grade");gv_snap_force=1;gv_snapshot();gv_zone=5;focus=1104;gv_activate();assert(spot_aberto());settle();}
+static void open_search(void){g5ui_open("grade");gv_snap_force=1;gv_snapshot();gv_zone=5;focus=1104;key(SDLK_RETURN);assert(spot_aberto());settle();}
 int main(int argc,char **argv){
   const char *dir=argv[1];(void)argc;mkdir(dir,0755);
   assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));IMG_Init(IMG_INIT_PNG);
@@ -49,6 +49,7 @@ int main(int argc,char **argv){
     char name[80],id[40];snprintf(name,sizeof name,"Channel %d",i);snprintf(id,sizeof id,"tv%d",i);
     canais[i].id=strdup(id);canais[i].nome=strdup(i==2699?"SporTV":name);canais[i].base="";canais[i].tipo="channel";canais[i].logo=canais[i].desc="";canais[i].cat=i%2;canais[i].numero=101+i;canais[i].epg=-1;
   }
+  nLtvF=1;ltvF[0].tipo=LTV_M3U;ltvF[0].base="";strcpy(ltvF[0].chave,"fixture");
   estado=G_PRONTO;
   char xml[2000],a[32],b[32],c[32];time_t now=time(NULL);struct tm tm;
   gmtime_r(&now,&tm);strftime(a,sizeof a,"%Y%m%d%H%M%S +0000",&tm);
