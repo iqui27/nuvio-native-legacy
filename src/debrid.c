@@ -144,7 +144,7 @@ static int contextoAbrir(DebridContexto *c) {
   return 1;
 }
 static int contextoValeSemTrava(const DebridContexto *c) {
-  return c && c->sessao == sessaoAtual && c->busca == atomic_load(&geracao);
+  return atomic_load(&habilitado) && c && c->sessao == sessaoAtual && c->busca == atomic_load(&geracao);
 }
 static int contextoVale(void) {
   int vale;

@@ -362,7 +362,7 @@ static const AjPenPage AJ_PEN_ADV[] = {
 #ifdef NV_ANDROID
       {AJ_BAIXAR_REGISTRO,"Baixar registro","Baixa o registro para o aparelho","aj_download",0},
 #else
-      {AJ_VER_REGISTRO,"Ver registro","Abra o registro desta sessão","aj_download",0},
+      {AJ_VER_REGISTRO,"Baixar registro","Baixa o registro para o aparelho","aj_download",0},
 #endif
     }},
   }},

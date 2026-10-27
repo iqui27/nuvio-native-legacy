@@ -29,6 +29,7 @@ static float aj4Bloco(TxtEstilo e,const char *s,float x,float y,float w,float lh
 #define ajIconeT aj4IconeT
 #define ajBloco aj4Bloco
 static void aj4PontAtivar(int zona,int row) {
+  if(zona==16) { uxRodape=row;uxEvento(SDLK_RETURN);return; }
   if(zona==15) {
     if(row==0)definirValorDireto(AJ_FONTE_MANUAL,!valor[AJ_FONTE_MANUAL]);
     else { int op=row==1?AJ_FONTE_ORDEM_ADDON:AJ_FONTE_MANUAL;focarOpcao(op);uxAbrirEditor(op);if(row==2) { uxRodape=1;uxEvento(SDLK_RETURN); } }
@@ -55,7 +56,7 @@ static void aj4PontAtivar(int zona,int row) {
   if(zona==11 && uxEditor==1) { uxPendente=limita(uxOp,uxPendente+row);return; }
   if(zona==9) { if(row==1) { uxRodape=1;uxEvento(SDLK_RETURN); }else if(row==2)ajPenSavedAsk();return; }
   aj4PontFoco(zona,row);
-  if(zona==4)uxAplicar();
+  if(zona==4) { if(uxOp==AJ_GUIA_CATEGORIAS)uxCategoriaAlternar(row);else uxAplicar(); }
   else if(zona==7) { snprintf(aj4Consulta,sizeof aj4Consulta,"%s",i18n(row==2?"Áudio":"Fontes")); aj4Acao=aj4Linha=0; }
   else aj4Evento(SDLK_RETURN);
 }

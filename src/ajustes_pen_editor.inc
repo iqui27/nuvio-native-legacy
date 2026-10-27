@@ -1,7 +1,12 @@
 /* Pencil choice page; edits use the existing draft and persistence path. */
 static void ajPenEditor(void) {
-  if(uxEditor!=1 || ajIptvMenu(uxOp) || uxOp==AJ_GUIA_CATEGORIAS || (ajPaleta(uxOp) && uxOp!=AJ_TEMA) || uxRestaurar || uxAvisoRisco) {
+  if(ajPaleta(uxOp) && uxOp!=AJ_TEMA) {
     aj4Editor();return;
+  }
+  if(uxEditor==2 || uxRestaurar || uxAvisoRisco) {
+    ajPenBase();ajKicker(ajPenContext(),200,198,1);
+    aj4Texto(aj4Rotulo(uxOp),TXT_TITULO2,200,212,1500,1);
+    ajDesenharModais();return;
   }
   int op=uxOp;
   int audio=ajPenPage==27 || ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY;
@@ -60,8 +65,11 @@ static void ajPenEditor(void) {
       }
     }
   }
-  ajPenChip("Voltar ao padrão","aj_rotate-ccw",226,902,206,uxRodape==1 || uxRodape==4,9,1);
-  if(!screen)ajPenChip("Salvar como preset","aj_check",444,902,230,uxRodape==5,9,2);
+  if(op==AJ_GUIA_CATEGORIAS) {
+    ajPenChip("Aplicar",NULL,226,902,180,uxRodape==1,16,1);
+    ajPenChip("Cancelar",NULL,420,902,180,uxRodape==2,16,2);
+  } else ajPenChip("Voltar ao padrão","aj_rotate-ccw",226,902,206,uxRodape==1 || uxRodape==4,9,1);
+  if(!screen && op!=AJ_GUIA_CATEGORIAS)ajPenChip("Salvar como preset","aj_check",444,902,230,uxRodape==5,9,2);
   ajKicker(quality?"QUALIDADE":op==AJ_TEMA?"CORES":op==AJ_ESCALA_TEXTO?"ESCALA DO TEXTO":op==AJ_AUD_LINGUA?"FAIXAS DISPONÍVEIS":"ESCOLHA UM VALOR",770,366,1);
   if(OPCOES[op].tipo==OP_NUMERO) {
     char value[160];uxValorTexto(op,uxPendente,value,sizeof value);
@@ -71,11 +79,13 @@ static void ajPenEditor(void) {
     static const int colors[]={6,1,2,3,4,5,0,7,8,9,10,11};
     int n=nValores(op),selected=uxPendente,languageOrder[LING_MAX_OPC];
     if(op==AJ_AUD_LINGUA) { n=ajPenLanguageOrder(languageOrder);for(int i=0;i<n;i++)if(languageOrder[i]==uxPendente)selected=i; }
+    if(op==AJ_GUIA_CATEGORIAS && uxNCategorias>0)n=uxNCategorias;
     if(op==AJ_TEMA)for(int i=0;i<12;i++)if(colors[i]==uxPendente)selected=i;
     int start=selected/6*6;
     for(int pos=start;pos<n && pos<start+6;pos++) {
       int i=op==AJ_TEMA && pos<12?colors[pos]:op==AJ_AUD_LINGUA?languageOrder[pos]:pos;
       float y=400+(pos-start)*76;char value[160];uxValorTexto(op,i,value,sizeof value);
+      if(op==AJ_IPTV_ACOES || op==AJ_IPTV_EXCLUIR)snprintf(value,sizeof value,"%s",i18n(OPCOES[op].valores[i]));
       if(i==uxPendente && !uxRodape)ajPenPanel(770,y,1028,70,1);
       const char *languageNames[]={"Original","Português (Brasil)","English","Español","Français","日本語"};
       aj4Texto(op==AJ_AUD_LINGUA && pos<6?languageNames[pos]:value,TXT_G21B,770,y+5,800,1);
@@ -97,7 +107,8 @@ static void ajPenEditor(void) {
       static const char *const colorsHelp[]={"O padrão do Nuvio","Vermelho escuro","Azul do fundo do app","Roxo","Verde","Quente"};
       static const char *const languageHelp[]={"A faixa que veio no arquivo","Dublado","Original em inglês","Dublado em espanhol","Original em francês","Original em japonês"};
       aj4Texto(quality && i<4?qhelp[i]:op==AJ_ESCALA_TEXTO && i<6?shelp[i]:op==AJ_TEMA && pos<6?colorsHelp[pos]:op==AJ_AUD_LINGUA && pos<6?languageHelp[pos]:i==uxOriginal?"Valor atual":"OK para aplicar",TXT_AJ_MINI14,770,y+40,800,.4f);
-      if(i==uxOriginal) { float r,g,b;ajustes_acento(&r,&g,&b);gfx_cor((GfxRect){1766,y+30,12,12},.5f,r,g,b,1); }
+      if(op==AJ_GUIA_CATEGORIAS && i<uxNCategorias)ajPenToggle(1710,y+18,!uxCategorias[i].oculta);
+      else if(i==uxOriginal) { float r,g,b;ajustes_acento(&r,&g,&b);gfx_cor((GfxRect){1766,y+30,12,12},.5f,r,g,b,1); }
       aj4Alvo((GfxRect){770,y,1028,70},4,i);
     }
   }

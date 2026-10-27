@@ -2257,8 +2257,10 @@ static void ilha_desenharCorpo_(Uint32 agora) {
                1.0f, 0, 0, 0.5f, 0, 0, 0, (0.34f + 0.16f * k) * A); }
     // At rest (no modal, no body) the island is the A27 top chrome: the same
     // material and tint as the bar and the avatar chip (gfx_chrome).
-    if (repouso && clockSettings && !ajustes_vidro())gfx_cor(R,raio,.045f,.047f,.058f,.96f*A);
-    else if (repouso) gfx_chrome(R, raio, A);
+    if (repouso && clockSettings) {
+      if(ajustes_vidro())gfx_vidro_miolo(R,raio,.045f,.047f,.058f,.80f,A);
+      else gfx_cor(R,raio,.045f,.047f,.058f,.96f*A);
+    } else if (repouso) gfx_chrome(R, raio, A);
     else if (ajustes_vidro()) gfx_vidro_material(R, raio, fundo, A);
     else {
       // MATERIAL SOLIDO: a pilula em repouso tem de LER como pilula em paginas

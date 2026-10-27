@@ -11496,7 +11496,13 @@ int ajustes_teste_quadro(const char *id) {
   if(!strncmp(id,"pen-",4)) {
     static const char *const names[]={"Marina"};perfis_teste_definir(names,NULL,1,1);
     aj4Iniciar();pfTela=0;uxVeioBusca=0;valor[AJ_AVANCADAS]=0;valor[AJ_TEMA]=6;
-    if(!strcmp(id,"pen-components"))ajPenOpen(AJ_PEN_COMPONENTS);
+    if(!strcmp(id,"pen-provider"))ajPenOpen(AJ_PEN_PROVIDER);
+    else if(!strcmp(id,"pen-iptv-provider"))ajPenOpen(AJ_PEN_IPTV_PROVIDER);
+    else if(!strcmp(id,"pen-provider-failures"))ajPenOpen(AJ_PEN_PROVIDER_FAILURES);
+    else if(!strcmp(id,"pen-addon-failures"))ajPenOpen(AJ_PEN_ADDON_FAILURES);
+    else if(!strcmp(id,"pen-editor-number")) { ajPenOpen(28);focarOpcao(AJ_LEG1_TAMANHO);uxAbrirEditor(AJ_LEG1_TAMANHO); }
+    else if(!strcmp(id,"pen-editor-choice")) { ajPenOpen(33);focarOpcao(AJ_HOME_LAYOUT);uxAbrirEditor(AJ_HOME_LAYOUT); }
+    else if(!strcmp(id,"pen-components"))ajPenOpen(AJ_PEN_COMPONENTS);
     else if(!strcmp(id,"pen-parental"))ajPenOpen(AJ_PEN_PARENTAL);
     else if(!strcmp(id,"pen-rules"))ajPenOpen(AJ_PEN_RULES);
     else if(!strcmp(id,"pen-features"))ajPenOpen(AJ_PEN_TOUR);
