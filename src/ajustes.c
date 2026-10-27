@@ -2845,6 +2845,7 @@ static Uint32 uxAvisoAte;
 static const char *textoValor(int op);
 static int ajOpcaoDisponivel(int op);
 static int aj4Evento(SDL_Keycode k);
+static void ajPenSavedForget(void);
 static int aj4RTL(void);
 static const char *aj4Rotulo(int op);
 static int aj4Simples(int op);
@@ -6466,7 +6467,11 @@ void ajustes_perfil_esquecer(void) {
   int i;
   // Os indices de perfil da conta sao pequenos (CONTA_PERFIL_MAX perfis); 32
   // cobre com folga. Apagar arquivo que nao existe nao custa nada.
-  for (i = 1; i <= 32; i++) { nomePerfil(nome, sizeof nome, i); dados_apagar(nome); }
+  for (i = 1; i <= 32; i++) {
+    nomePerfil(nome, sizeof nome, i); dados_apagar(nome);
+    snprintf(nome,sizeof nome,"settings-presets-%d.txt",i);dados_apagar(nome);
+  }
+  ajPenSavedForget();
   fonteregra_perfil_esquecer();
   provedoresPrivadosEsquecer();
   if (valor[AJ_COLECAO_EXIBICAO] != 0) { valor[AJ_COLECAO_EXIBICAO] = 0; gravar(); }
@@ -10373,6 +10378,12 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   // resultado antes de ela ver (e o apelido digitado se perderia em silencio).
   if (!pessoas_aberto()) hcTecladoLer();
   { int r = pessoas_aberto() ? TECLADO_NADA : teclado_resultado();
+    if(ajPenPinAsk && r!=TECLADO_NADA) {
+      if(r==TECLADO_PRONTO) { if(ajPenPinDigitado(teclado_texto()))r=TECLADO_NADA;else teclado_esquecer(); }
+      else { ajPenPinAsk=ajPenPinRepeat=0;teclado_esquecer(); }
+      r=TECLADO_NADA;
+    }
+    if(ajPenPinAsk && r==TECLADO_CANCELOU)ajPenPinAsk=ajPenPinRepeat=0;
     if(ajPenSaveKeyboard && r!=TECLADO_NADA) {
       if(r==TECLADO_PRONTO && ajPenSaveProfile==perfis_ativo())uxNotificar(ajPenSavedSave(teclado_texto())?"Preset salvo.":"Não foi possível salvar. O valor anterior foi mantido.");
       ajPenSaveKeyboard=0;teclado_esquecer();r=TECLADO_NADA;

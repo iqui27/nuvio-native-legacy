@@ -1,5 +1,7 @@
 #include "perfilregras.h"
-static int ajPenParentEditor=-1,ajPenParentDraft;
+#include "admin.h"
+static int ajPenParentEditor=-1,ajPenParentDraft,ajPenPinAsk,ajPenPinRepeat;
+static char ajPenPinDraft[ADMIN_PIN_MAX + 2];
 static const int AJ_PEN_TIME[]={0,30,60,90,120,180,240};
 static const int AJ_PEN_AGE[]={0,10,12,14,16,18};
 static const char *const AJ_PEN_PARENT_LABEL[]={"Tempo de tela por perfil","Classificação máxima","Busca sem filtro","Compras bloqueadas"};
@@ -16,7 +18,20 @@ static void ajPenParentOpen(int rule) {
   if(pfTravado() || perfil_infantil_ativo()) { uxNotificar("Indisponível em perfil infantil.");return; }
   ajPenParentEditor=rule;ajPenParentDraft=perfil_regra(perfis_ativo(),rule);
 }
+static void ajPenPinOpen(void) {
+  if(ajPenPinRepeat)teclado_abrir_com("Repita o PIN do perfil","Digite o mesmo PIN de novo.",8,"0123456789",NULL);
+  else teclado_abrir_com("PIN do perfil","De 4 a 8 números. Protege os ajustes deste perfil nesta TV.",8,"0123456789",NULL);
+  teclado_tipo(TECLADO_TIPO_SENHA);teclado_mascarar(1);
+}
+static int ajPenPinDigitado(const char *pin) {
+  if(!ajPenPinRepeat) { snprintf(ajPenPinDraft,sizeof ajPenPinDraft,"%s",pin);ajPenPinRepeat=1;ajPenPinOpen();return 1; }
+  int equal=!strcmp(pin,ajPenPinDraft);
+  memset(ajPenPinDraft,0,sizeof ajPenPinDraft);ajPenPinAsk=ajPenPinRepeat=0;
+  if(!equal || !admin_perfil_pin_definir(perfis_ativo(),pin)) { uxNotificar("Não foi possível guardar o PIN.");return 0; }
+  uxNotificar("PIN do perfil criado.");return 0;
+}
 static int ajPenParentEvent(SDL_Keycode key) {
+  if(ajPenPinAsk) { if(uxVoltar(key))ajPenPinAsk=ajPenPinRepeat=0;return 1; }
   if(ajPenParentEditor<0)return 0;
   if(uxVoltar(key)) { ajPenParentEditor=-1;return 1; }
   int rule=ajPenParentEditor;

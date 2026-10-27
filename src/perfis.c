@@ -21,6 +21,7 @@ void arteesc_definir_perfil(int perfil);
 // principal" (Ajustes > Conta), ver perfis_ativo_addons.
 int ajustes_addons_do_principal(void);
 #include "trava.h"
+#include "admin.h"
 #include "js.h"
 #include "jsw.h"
 #include <stdio.h>
@@ -573,6 +574,7 @@ PerfilAcao perfis_acao(int i) {
 }
 
 int perfis_verificar_pin(int indice, const char *pin) {
+  if(admin_perfil_pin_conferir(indice,pin))return 1;   // local lock first, offline-capable
   Jsw w;
   char *r;
   int st = 0, ok = 0;

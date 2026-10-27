@@ -22,6 +22,10 @@ int  admin_pin_definir(const char *pin);
 int  admin_pin_conferir(const char *pin);
 // Apaga o PIN (sair da conta).
 void admin_pin_esquecer(void);
+// Per-profile local lock, same format and rules; gone when the account leaves.
+int  admin_perfil_pin_definido(int profile);
+int  admin_perfil_pin_definir(int profile,const char *pin);
+int  admin_perfil_pin_conferir(int profile,const char *pin);
 
 // SHA-256 hex (64 chars + NUL) de um buffer; exposto para o teste.
 void admin_sha256_hex(const unsigned char *buf, unsigned long n, char *hex65);

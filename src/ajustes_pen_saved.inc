@@ -3,6 +3,10 @@
 static int ajPenSaveKeyboard,ajPenSaveProfile;
 static char ajPenSavedNames[AJ_PEN_SAVED][64];
 static int ajPenSavedValues[AJ_PEN_SAVED][AJ_N],ajPenSavedCount,ajPenSavedProfile;
+static void ajPenSavedForget(void) {
+  ajPenSavedProfile=ajPenSavedCount=ajPenSaveKeyboard=0;
+  memset(ajPenSavedNames,0,sizeof ajPenSavedNames);memset(ajPenSavedValues,-1,sizeof ajPenSavedValues);
+}
 static void ajPenSavedLoad(void) {
   int profile=edPerfil?edPerfil:perfis_ativo();
   if(ajPenSavedProfile==profile)return;
