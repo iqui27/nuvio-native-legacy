@@ -492,9 +492,6 @@ static int fundoCartao(GfxRect r,int m,int selecionado) {
   gfx_cor(r,20/r.h,0,0,0,selecionado?.38f:.48f);
   return 1;
 }
-static void anelCartao(GfxRect r) {
-  plrui_linha_foco(r,20,1);
-}
 static int modalidadeEvento(const EspEvento *e) {
   for(int m=0;m<esportes_modalidades_n();m++)if(!strcmp(esportes_modalidade(m)->id,e->modalidade))return m;
   return -1;
@@ -509,7 +506,7 @@ static const char *logoLiga(const EspEvento *e,int m) {
 }
 static void linhaEvento(const EspEvento *e, GfxRect r, int selecionado) {
   plrui_cartao(r,20,1);if(selecionado)plrui_linha_foco(r,20,1);
-  int m=modalidadeEvento(e),arte=fundoCartao(r,m,selecionado);
+  int m=modalidadeEvento(e);fundoCartao(r,m,selecionado);
   float pad=22,x=r.x+pad,w=r.w-2*pad;
   char data[48],meta[400];horario(e->inicio,data,sizeof data);
   const char *estado=e->estado==1?i18n("Ao vivo"):e->estado==2?i18n("Encerrado"):e->estado==3?e->detalhe:data;
@@ -533,7 +530,6 @@ static void linhaEvento(const EspEvento *e, GfxRect r, int selecionado) {
     txt(TXT_BODY,e->nome,x+96,r.y+84,w-96,245);
   }
   txt(TXT_CAPTION2,e->local[0]?e->local:e->liga,x,r.y+r.h-38,w,220);
-  if(arte && selecionado)anelCartao(r);
 }
 void esportesui_cartao(const EspEvento *ev,GfxRect rect,int focused){linhaEvento(ev,rect,focused);}
 void esportesui_logo(const char *url,int sport,GfxRect rect){logo(url,sport,rect);}
@@ -633,10 +629,9 @@ static void desenharLigas(void) {
       GfxRect r={xLista+c*passo-*offset,y+42,cw,linhaH-58};
       if(r.x>=xLista+larguraLista || r.x+r.w<=xLista)continue;
       plrui_cartao(r,20,1);if(foco==codLinha(k,-1))plrui_linha_foco(r,20,1);
-      int arte=fundoCartao(r,m,foco==codLinha(k,-1));
+      fundoCartao(r,m,foco==codLinha(k,-1));
       logo(l->logo,m,(GfxRect){r.x+28,r.y+18,r.w-56,r.h-82});
       txt(TXT_BODY,l->nome,r.x+22,r.y+r.h-49,r.w-44,245);
-      if(arte && foco==codLinha(k,-1))anelCartao(r);
       float x=fmaxf(xLista,r.x),fim=fminf(xLista+larguraLista,r.x+r.w);
       ponteiro_alvo_faixa(x,r.y,fim-x,r.h,topoLista,topoLista+alturaLista,pointerFoco,pointerAtivar,codLinha(k,-1),0);
     }
