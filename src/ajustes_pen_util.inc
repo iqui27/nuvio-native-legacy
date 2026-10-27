@@ -35,7 +35,13 @@ static void ajPenUtility(void) {
     const char *path=search?aj4Resultados[i].caminho:op==AJ_QUALIDADE?"Reprodução › Imagem e som":op==AJ_AUD_LINGUA?"Áudio e legendas › Idiomas":op==AJ_TEMA?"Minha tela › Cor, vidro e movimento":uxCaminho(op);
     aj4Texto(path,TXT_AJ_MINI14,288,y+42,1010,.4f);
     char value[350],current[160],standard[160];uxValorTexto(op,uxValorAtual(op),current,sizeof current);
-    if(search)snprintf(value,sizeof value,"%s",group==1?textoValor(AJ_LEG1_TAMANHO):current);
+    if(search) {
+      const char *summary=current;
+      if(group==0 && !strcmp(ling_opcao_codigo(uxValorAtual(op)),"pt"))summary=i18n("Português (Brasil)");
+      if(group==1)summary=i18n(player_leg_estilo()->borda<=1 && player_leg_estilo()->fundo==0?"Leve":"Personalizada");
+      if(group==2 && (!ling_legenda2()[0] || !strcmp(ling_legenda2(),"none")))summary=i18n("Desligada");
+      snprintf(value,sizeof value,"%s",summary);
+    }
     else { uxValorTexto(op,uxValorPadrao(op),standard,sizeof standard);snprintf(value,sizeof value,"%s → %s",standard,current); }
     TxtLinha t;
     if(!search) { float r,g,b;ajustes_acento(&r,&g,&b);t=txt_linha_corta(TXT_PEN_VALUE,value,r*255,g*255,b*255,255,450); }

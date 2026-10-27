@@ -11498,8 +11498,8 @@ int ajustes_teste_quadro(const char *id) {
     else if(!strcmp(id,"pen-source")) {
       Stream fixture[5]={0};const char *labels[]={"Torrentio · 4K Dolby Vision","Real-Debrid · 1080p","Torrentio · 720p","Mediafusion + · 1080p","YTS · 720p"};
       const int heights[]={2160,1080,720,1080,720};
-      for(int i=0;i<5;i++) { snprintf(fixture[i].rotulo,sizeof fixture[i].rotulo,"%s",labels[i]);fixture[i].altura=heights[i];fixture[i].debridServico=i==1;snprintf(fixture[i].url,sizeof fixture[i].url,"https://example.invalid/source-%d.mp4",i); }
-      stream_definir_lista(fixture,5);ajPenOpen(AJ_PEN_SOURCES);
+      for(int i=0;i<5;i++) { snprintf(fixture[i].rotulo,sizeof fixture[i].rotulo,"%s",labels[i]);fixture[i].altura=heights[i];fixture[i].debridServico=i==1?DEBRID_RD+1:0;snprintf(fixture[i].url,sizeof fixture[i].url,"https://example.invalid/source-%d.mp4",i); }
+      stream_definir_lista(fixture,5);stream_definir_atual(1);ajPenOpen(AJ_PEN_SOURCES);ajPenRow=3;valor[AJ_FONTE_MANUAL]=0;
     }
     else if(!strcmp(id,"pen-scale")) { ajPenOpen(34);focarOpcao(AJ_ESCALA_TEXTO);uxAbrirEditor(AJ_ESCALA_TEXTO);uxPendente=2; }
     else if(!strcmp(id,"pen-color")) { ajPenOpen(34);focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);uxPendente=3; }
@@ -11516,7 +11516,7 @@ int ajustes_teste_quadro(const char *id) {
     return 1;
   }
   if (!strncmp(id, "v4-", 3)) {
-    static const char *const PF_V4[] = { "Henrique" };
+    static const char *const PF_V4[] = { "Marina" };
     perfis_teste_definir(PF_V4, NULL, 1, 1);   // chip e escopo com nome, como o mockup
     aj4Iniciar(); pfTela=0; uxVeioBusca=0;
     valor[AJ_TEMA]=2; valor[AJ_AVANCADAS]=1;
@@ -11545,7 +11545,8 @@ int ajustes_teste_quadro(const char *id) {
     }
     else if (!strcmp(id,"v4-perfil")) { aj4AbrirPerfil(); }
     else if (!strcmp(id,"v4-busca")) {
-      valor[AJ_TEMA]=6;valor[AJ_LEG_LINGUA]=2;valor[AJ_LEG_LINGUA2]=1;
+      valor[AJ_TEMA]=6;valor[AJ_LEG_LINGUA]=2;valor[AJ_LEG_LINGUA2]=0;valor[AJ_ESCALA_TEXTO]=2;
+      ling_local_legenda2("");ling_conta_legenda2("");
       snprintf(aj4Consulta,sizeof aj4Consulta,"legenda");aj4Util=3;focoIndice=0;
     }
     return 1;

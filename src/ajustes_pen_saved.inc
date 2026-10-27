@@ -39,7 +39,7 @@ static int ajPenSavedWrite(void) {
   snprintf(file,sizeof file,"settings-presets-%d.txt",ajPenSavedProfile);
   int ok=dados_gravar(file,data);free(data);return ok;
 }
-static int ajPenPresetStored(int op) { return aj4Mutavel(op) || op==AJ_LEG1_TAMANHO; }
+static int ajPenPresetStored(int op) { return aj4Mutavel(op) || ajLegendaPrincipal(op); }
 static int ajPenSavedSave(const char *name) {
   ajPenSavedLoad();
   if(pfTravado() || ajPenSavedCount>=AJ_PEN_SAVED || !name || !*name || strchr(name,'\n') || strchr(name,'\r'))return 0;

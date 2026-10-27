@@ -21,10 +21,12 @@ static void ajPenSources(void) {
     const Stream *source=stream_item(i);if(!source)continue;
     float y=400+(i-start)*76;
     if(i==ajPenRow)ajPenPanel(770,y,1028,70,1);
+    int privateSource=source->debridServico>0 && source->debridServico<=DEBRID_N;
     aj4Texto(source->rotulo,TXT_G21B,770,y+5,840,1);
-    aj4Texto(source->debridServico?"Debrid":"Addon",TXT_AJ_MINI14,770,y+40,840,.4f);
+    aj4Texto(privateSource?"Debrid":"Addon",TXT_AJ_MINI14,770,y+40,840,.4f);
+    if(i==stream_atual()) { float r,g,b;ajustes_acento(&r,&g,&b);gfx_cor((GfxRect){1766,y+30,12,12},.5f,r,g,b,1); }
     float badgeX=770+ajTxtC(TXT_G21B,source->rotulo,840).w+16;
-    if(source->debridServico) { ajNeutro((GfxRect){badgeX,y+5,95,24},6,.07f,.14f,.15f,.17f,1);aj4Texto("PRIVADO",TXT_AJ_MINI12,badgeX+10,y+11,80,.8f); }
+    if(privateSource) { ajNeutro((GfxRect){badgeX,y+5,95,24},6,.07f,.14f,.15f,.17f,1);aj4Texto("PRIVADO",TXT_AJ_MINI12,badgeX+10,y+11,80,.8f);badgeX+=107; }
     if(source->altura>=2160) { ajNeutro((GfxRect){badgeX,y+5,40,24},6,.07f,.24f,.09f,.16f,1);aj4Texto("4K",TXT_AJ_MINI12,badgeX+9,y+11,25,.9f); }
     char quality[40];if(source->altura>0)snprintf(quality,sizeof quality,"%dp",source->altura);else quality[0]=0;
     TxtLinha value=ajTxt(TXT_G18R,quality);txt_desenhar_alpha(value,1798-value.w,y+26,.58f);

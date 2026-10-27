@@ -244,10 +244,23 @@ static int aj4PrepararPreset(int preset) {
   aj4Review = 2; aj4Linha = 0; aj4Acao = 0; return aj4N;
 }
 static int ajPenStyleSize(int *ops,int *values,int n) {
-  for(int i=0;i<n;i++)if(ops[i]==AJ_LEG1_TAMANHO) {
-    VideoLegendaEstilo style=*player_leg_estilo();style.tamanho=values[i];return player_leg_estilo_definir(&style,-1);
+  VideoLegendaEstilo style=*player_leg_estilo();int changed=0;
+  for(int i=0;i<n;i++)if(ajLegendaPrincipal(ops[i])) {
+    changed=1;int v=values[i];
+    switch(ops[i]) {
+      case AJ_LEG1_TAMANHO:style.tamanho=v;break;
+      case AJ_LEG1_FONTE:style.familia=v;break;
+      case AJ_LEG1_COR:style.cor=v;break;
+      case AJ_LEG1_OPACIDADE:style.opacidade=v;break;
+      case AJ_LEG1_FUNDO:style.fundo=v;break;
+      case AJ_LEG1_POSICAO:style.posicao=v;break;
+      case AJ_LEG1_BORDA:style.borda=v;break;
+      case AJ_LEG1_ATRASO:style.atrasoMs=v;break;
+      case AJ_LEG1_NEGRITO:style.negrito=!v;break;
+      case AJ_LEG1_COR_BORDA:style.corBorda=v;break;
+    }
   }
-  return 1;
+  return !changed || player_leg_estilo_definir(&style,-1);
 }
 static int aj4Aplicar(void) {
   if (pfTravado()) return 0;

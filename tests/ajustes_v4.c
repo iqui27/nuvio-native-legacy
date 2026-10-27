@@ -76,6 +76,7 @@ int main(void) {
   ajPenSavedProfile=0;ajPenSavedLoad();
   assert(ajPenSavedCount==1 && !strcmp(ajPenSavedNames[0],"Friday movie"));
   assert(ajPenSavedValues[0][AJ_DEBRID_RD]<0);
+  assert(ajPenSavedValues[0][AJ_LEG1_COR]==ajLegendaValor(AJ_LEG1_COR));
   char *presetBlob=NULL;assert(ajustes_mesclar_blob("{}",&presetBlob)>0 && presetBlob);
   assert(strstr(presetBlob,"store4"));
   char presetFile[128];ajustesArquivoSync(4,presetFile,sizeof presetFile);
@@ -84,8 +85,12 @@ int main(void) {
   assert(ajustesExtrasAplicar(presetBlob,"{}")>0);free(presetBlob);
   ajPenSavedLoad();assert(ajPenSavedCount==1 && !strcmp(ajPenSavedNames[0],"Friday movie"));
   valor[AJ_QUALIDADE]=3;
+  int savedColor=ajPenSavedValues[0][AJ_LEG1_COR],changedColor=(savedColor+1)%6;
+  assert(ajLegendaDefinir(AJ_LEG1_COR,changedColor));
   assert(ajPenSavedPrepare(0)>0 && aj4Aplicar());
+  assert(ajLegendaValor(AJ_LEG1_COR)==savedColor);
   assert(valor[AJ_QUALIDADE]==2 && aj4Desfazer() && valor[AJ_QUALIDADE]==3);
+  assert(ajLegendaValor(AJ_LEG1_COR)==changedColor);
   int subtitleSize=ajLegendaValor(AJ_LEG1_TAMANHO);
   ajLegendaEspelhar();ajPenPresetPrepare(0);assert(aj4Aplicar());
   assert(ajLegendaValor(AJ_LEG1_TAMANHO)==140 && aj4Desfazer());
