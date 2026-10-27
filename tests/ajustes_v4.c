@@ -13,7 +13,7 @@ int main(void) {
   snprintf(dir, sizeof dir, "%s/nuvio-ajustes-v4-XXXXXX", nvt_dir());
   assert(mkdtemp(dir)); assert(SDL_Init(SDL_INIT_TIMER) == 0);
   assert(setenv("NUVIO_DADOS", dir, 1) == 0);
-  dados_iniciar(dir); snprintf(dirAjustes, sizeof dirAjustes, "%s", dir);
+  dados_iniciar(dir); snprintf(dirAjustes, sizeof dirAjustes, "%s", dir);player_dir(dir);
   ajustes_iniciar(); assert(gravar());
 #ifndef AJUSTES_V4
   assert(!"Settings v4 navigation is missing");
