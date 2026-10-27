@@ -21,6 +21,7 @@
 #include "plrui.h"
 #include "ponteiro.h"
 #include "buscanorm.h"
+#include "spotlight.h"
 #include "tela21.h"
 #include "lembrete.h"
 #include "guialembrete.h"
@@ -266,9 +267,13 @@ static int gv_is(const char *s);
 static int gv_overlay_nome(const char *s);
 static void gv_abrir(const char *name);
 static void gv_go(const char *name);
+static void gv_busca_abrir(void);
+static void gv_filtrar(const char *grupo,const char *pagina);
+static void gv_assistir(const char *id);
 static void gv_deixa(void);
 static char gv_saida[48];   /* guide screen left for a v5 page; Back returns to it */
 void g5ui_open(const char *name){context();if(gv_is(screen)&&!gv_is(name))gv_deixa();go(name);edit=-1;
+  if(!strcmp(name,"busca")){go(gv_pagina);gv_busca_abrir();return;}
   if(gv_is(name))gv_abrir(name);
   if(!strncmp(name,"setup-",6)&&strcmp(name,"setup-tipo")&&use_saved)load_saved_credentials();
   if(!strcmp(name,"parental-ajustes")){want_pin(1);return;}
@@ -1345,7 +1350,7 @@ static int gv_hue(const char *s){unsigned h=0;while(s&&*s)h=h*31u+(unsigned char
 /* Aparelho de estado: quais "screens" sao da tela principal do guia. */
 static int gv_is(const char *s){
   static const char *const ss[]={"grade","cartoes","preview","preview-grade","preview-foco",
-    "preview-hero-cheio","preview-troca","dock","catchup","categorias","busca","numero","opcoes",
+    "preview-hero-cheio","preview-troca","dock","catchup","categorias","numero","opcoes",
     "canal-opcoes","ajustes","pastas","epg-saude","epg-verificando","epg-adicionado","epg-falha",
     "erros","vazio","fontes-erro","esportes-ligas","esportes-liga","esportes-favoritos",
     "esportes-ajustes","esportes-onde-assistir","esportes-noticias","esportes-hoje",
@@ -1470,7 +1475,7 @@ static void gv_iniciais(const char *nome,char *dst,size_t n){
 /* --- pecas visuais do guia v5 -------------------------------------------- */
 /* Folhas e modais por cima da pagina: a pagina de baixo perde o foco. */
 static int gv_overlay_nome(const char *s){
-  return !strcmp(s,"busca")||!strcmp(s,"numero")||!strcmp(s,"opcoes")||!strcmp(s,"canal-opcoes")
+  return !strcmp(s,"numero")||!strcmp(s,"opcoes")||!strcmp(s,"canal-opcoes")
     ||!strcmp(s,"ajustes")||!strcmp(s,"pastas")||!strncmp(s,"epg-",4)||!strcmp(s,"erros")
     ||!strcmp(s,"fontes-erro")||!strcmp(s,"esportes-ajustes")||!strcmp(s,"esportes-onde-assistir");
 }
@@ -2135,48 +2140,6 @@ static void gv_opt(int id,const char *icon,const char *name,const char *sub,floa
   ponteiro_alvo(x,y,w,h,point_focus,point_activate,id,0);
   gv_registra(id,x,y,w,h);
 }
-/* Resultados da busca: ids guardados no desenho para o OK achar o canal. */
-static char gv_bres[8][80];
-static void gv_busca_sheet(void){
-  gv_dim(0,.42f);
-  float x=gv_sheet_base(340,100,1240,700);
-  GfxRect f={x,132,1176,64};int ff=gv_btn_foc(1799);
-  if(ff)plrui_linha_foco(gv_foco_folha(f),20,1);else gfx_cor(f,20.0f/64,.141f,.149f,.173f,1);
-  gfx_icone((GfxRect){x+20,150,28,28},"aj_search",.8f,.8f,.8f,1);
-  gv_label(TXT_ILHA_NOME,query[0]?query:i18n("Buscar canais, filmes e séries"),x+60,150,760,!query[0]);
-  {TxtLinha l=txt_linha(TXT_ILHA_SUB,"Canais e programas",154,156,158,255);txt_desenhar(l,x+1150-(float)l.w,154);}
-  ponteiro_alvo(f.x,f.y,f.w,f.h,point_focus,point_activate,1799,0);
-  gv_registra(1799,f.x,f.y,f.w,f.h);
-  char c[96];
-  snprintf(c,sizeof c,"%s  %d",i18n("Todas as fontes"),gv_total_n);
-  {float w=(float)txt_linha_bruta(TXT_ILHA_CORPO,c,243,242,239,255).w+40;gv_chip(x,216,w,c,NULL,1,0,0,0);}
-  int nm=0,np2=0;
-  char needle[140];busca_normalizar(query,needle,sizeof needle);
-  const char *id,*nome,*cat;
-  if(needle[0])for(int i=0;nm<4&&guia_canal_regra_campos(i,NULL,NULL,NULL,NULL,NULL);i++){
-    if(!guia_canal_campos(i,&id,&nome,NULL,&cat,NULL))continue;
-    char hay[256];busca_normalizar(nome,hay,sizeof hay);
-    if(!strstr(hay,needle))continue;
-    GVCh m={0};snprintf(m.nome,sizeof m.nome,"%s",nome);m.num=gv_num_de(i);
-    char meta[160],nq[48];gv_num_quali(&m,nq,sizeof nq);snprintf(meta,sizeof meta,"%s · %s",nq,cat&&cat[0]?cat:"IPTV");
-    snprintf(gv_bres[nm],sizeof gv_bres[nm],"%s",id);
-    gv_opt(1800+nm,"aj_tv-minimal-play",nome,meta,x,348+nm*70,1176,64);nm++;
-  }
-  snprintf(c,sizeof c,i18n("CANAIS · %d"),nm);
-  gv_label(TXT_ILHA_NOME,c,x,304,400,1);
-  float my=348+nm*70+18;
-  for(int i=0;i<gv_n&&np2<3;i++){
-    EpgProg *p=gv_prog(&gv_ch[i]);if(!p)continue;
-    char hay[256];busca_normalizar(p->titulo,hay,sizeof hay);
-    if(needle[0]&&!strstr(hay,needle))continue;
-    char meta[160];snprintf(meta,sizeof meta,"%s · %d",gv_ch[i].nome,gv_ch[i].num);
-    snprintf(gv_bres[4+np2],sizeof gv_bres[4+np2],"%s",gv_ch[i].id);
-    gv_opt(1810+np2,"aj_play",p->titulo,meta,x,my+44+np2*70,1176,64);np2++;
-  }
-  snprintf(c,sizeof c,i18n("PROGRAMAS · %d"),np2);
-  gv_label(TXT_ILHA_NOME,c,x,my,400,1);
-  {char fr[96];snprintf(fr,sizeof fr,i18n("%d resultados · use o teclado do controle ou o celular"),nm+np2);gv_label(TXT_ILHA_SUB,fr,x,752,1100,1);}
-}
 /* Ir para o numero: igual primeiro, senao o primeiro que comeca com os
  * digitos; a lista inteira, nao so a janela copiada. */
 static int gv_numero_alvo(const char **id_out,const char **nome_out){
@@ -2380,12 +2343,48 @@ static void gv_fontes_erro_modal(void){
 
 #include "guiav5_esportes.inc"
 
+/* TV search adapters: the scope itself lives in Spotlight. */
+static const G5Item *gv_busca_catalogo(int i,int *n){
+  *n=count;
+  if(i<0)return inventory;
+  return i<count&&group_allowed(inventory[i].group)&&!restricted(&inventory[i])?&inventory[i]:NULL;
+}
+static void gv_busca_resultado(const SpotTVResultado *r){
+  if(r->tipo==SPOT_TV_VOD){
+    if(r->indice>=0&&r->indice<count&&!strcmp(inventory[r->indice].id,r->id)&&group_allowed(inventory[r->indice].group)&&!restricted(&inventory[r->indice])){
+      gv_deixa();select_item(r->indice);
+    }return;
+  }
+  if(r->tipo==SPOT_TV_CATEGORIA){gv_filtrar(r->id,"grade");return;}
+  if(r->tipo==SPOT_TV_ESPORTE){
+    gv_go("esportes-hoje");gs_start();snprintf(query,sizeof query,"%s",r->nome);return;
+  }
+  gv_filtrar("","grade");
+  int pos=0;
+  for(int i=0;guia_canal_regra_campos(i,NULL,NULL,NULL,NULL,NULL);i++){
+    const char *id;
+    if(!guia_canal_campos(i,&id,NULL,NULL,NULL,NULL))continue;
+    if(!strcmp(id,r->id)){gv_lin=pos;break;}pos++;
+  }
+  gv_tfoc=r->tipo==SPOT_TV_PROGRAMA?r->inicio:0;
+  if(gv_tfoc>time(NULL))gv_tdesl=(int)((gv_tfoc-gv_tbase())/1800)*30;
+  gv_janela();gv_snap_force=1;gv_snapshot();gv_zone=0;
+  guia_focar_id(r->id);
+  if(r->tipo==SPOT_TV_CANAL)gv_assistir(r->id);
+}
+static void gv_busca_abrir(void){
+  if(!source_loaded&&!atomic_load(&busy)){
+    if(xtream_configurado()){use_saved=1;load_saved_credentials();draft.movies=draft.series=1;start(2);}
+    else if(draft.playlist[0])start(2);
+  }
+  spot_abrir_tv(gv_busca_catalogo,gv_busca_resultado);
+}
+
 /* --- dispatcher da tela principal ------------------------------------------ */
 static int gv_cartoes(void){return !strcmp(gv_pagina,"cartoes");}
 static void gv_footer(void){
   int ov=gv_overlay();
-  if(!strcmp(screen,"busca")){const char *k[]={"OK","Voltar"},*l[]={"Assistir / abrir programa","Fechar busca"};gv_hints(k,l,2);}
-  else if(!strcmp(screen,"numero")){const char *k[]={"0-9","OK","Voltar"},*l[]={"Digitar","Ir agora","Apagar / cancelar"};gv_hints(k,l,3);}
+  if(!strcmp(screen,"numero")){const char *k[]={"0-9","OK","Voltar"},*l[]={"Digitar","Ir agora","Apagar / cancelar"};gv_hints(k,l,3);}
   else if(!strcmp(screen,"opcoes")||!strcmp(screen,"canal-opcoes")||!strcmp(screen,"esportes-onde-assistir")){const char *k[]={"OK","Voltar"},*l[]={"Escolher","Fechar"};gv_hints(k,l,2);}
   else if(!strcmp(screen,"fontes-erro")){const char *k[]={"OK","↓","Voltar"},*l[]={"Editar campo","Botões","Fechar"};gv_hints(k,l,3);}
   else if(ov){const char *k[]={"↑↓","←→","OK","Voltar"},*l[]={"Mover","Escolher","Selecionar","Guia"};gv_hints(k,l,4);}
@@ -2399,8 +2398,7 @@ static void gv_footer(void){
   else{const char *k[]={"OK","Segure OK","↑","CH ±","←"},*l[]={"Assistir","Opções do canal","Canais fixados / prévia","Trocar canal","Categorias"};gv_hints(k,l,5);}
 }
 static void gv_draw_sheet(int err){
-  if(!strcmp(screen,"busca"))gv_busca_sheet();
-  else if(!strcmp(screen,"numero"))gv_numero_sheet();
+  if(!strcmp(screen,"numero"))gv_numero_sheet();
   else if(!strcmp(screen,"opcoes"))gv_opcoes_sheet();
   else if(!strcmp(screen,"canal-opcoes"))gv_canal_opcoes_sheet();
   else if(!strcmp(screen,"ajustes"))gv_ajustes_sheet();
@@ -2486,6 +2484,7 @@ static void gv_screen(void){
 }
 /* --- eventos da tela principal -------------------------------------------- */
 static void gv_go(const char *name){
+  if(!strcmp(name,"busca")){gv_busca_abrir();return;}
   snprintf(previous,sizeof previous,"%s",screen);
   int f0=focus;
   if(gv_overlay_nome(name)){
@@ -2558,11 +2557,6 @@ static void gv_assistir(const char *id){
 }
 static int gv_activate(void){
   GVCh *c;
-  if(!strcmp(screen,"busca")){
-    if(focus==1799){input(5,"Buscar",query,0);return 1;}
-    if(focus>=1800&&focus<1804)gv_assistir(gv_bres[focus-1800]);
-    else if(focus>=1810&&focus<1813)gv_assistir(gv_bres[4+focus-1810]);
-    return 1;}
   if(!strcmp(screen,"numero")){const char *id=NULL;if(gv_numero_alvo(&id,NULL)>=0){gv_numero[0]=0;gv_assistir(id);}return 1;}
   if(!strcmp(screen,"opcoes")||!strcmp(screen,"canal-opcoes")){
     c=gv_canal_focado_ou_primeiro();

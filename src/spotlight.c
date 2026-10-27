@@ -180,6 +180,7 @@ static int   modoAjustes;
 // MODO GUIA (spot_abrir_guia): o "Buscar no guia" do Guia de uso. E um modo
 // Ajustes (so local, sem historico) com os recursos do guia na frente.
 static int   modoGuia;
+static int   modoTV;
 static char  consultaRealce[SP_MAX_TXT * 2];   // o termo realcado no modo guia
 static int   retornoAjustesValido;
 static char  retornoAjustesConsulta[SP_MAX_TXT];
@@ -634,6 +635,8 @@ static void montarCanais(const char *alvo) {
   }
 }
 
+#include "spotlight_tv.inc"
+
 static void montarCatalogos(const char *alvo) {
   int r, achou = 0, i;
   char t[300];
@@ -889,7 +892,9 @@ static void remontar(void) {
   snprintf(montada, sizeof montada, "%s", consulta);
   nLin = 0;
   busca_normalizar(consulta, alvo, sizeof alvo);
-  if (modoGuia) {
+  if (modoTV) {
+    montarTV(alvo);
+  } else if (modoGuia) {
     montarGuia(consulta);
   } else if (modoAjustes) {
     montarAjustes(consulta);
@@ -947,10 +952,10 @@ static void remontar(void) {
     for (i = 0; i < nLin; i++) if (!strcmp(lin[i].chave, chaveFoco)) { focoL = i; break; }
   if (focoL < 0) for (i = 0; i < nLin; i++) if (focavel(lin[i].tipo)) { focoL = i; break; }
   if (focoL < 0 && painel == P_LISTA) painel = P_CAMPO;
-  ultimoRemoto = !modoAjustes && busca_codepoints(alvo) >= 2 ? remotoTotal() : -1;
-  ultimoBuscando = modoAjustes ? 0 : desc_buscando();
-  ultimaGeracao = modoAjustes ? 0 : desc_busca_geracao();
-  ultimaGerPessoa = modoAjustes ? 0 : spotpessoa_geracao();
+  ultimoRemoto = !modoTV && !modoAjustes && busca_codepoints(alvo) >= 2 ? remotoTotal() : -1;
+  ultimoBuscando = modoTV || modoAjustes ? 0 : desc_buscando();
+  ultimaGeracao = modoTV || modoAjustes ? 0 : desc_busca_geracao();
+  ultimaGerPessoa = modoTV || modoAjustes ? 0 : spotpessoa_geracao();
 }
 
 static int temResultados(void) {
@@ -963,7 +968,7 @@ static int temResultados(void) {
 // registrarConsulta) — abriu um resultado, fechou com resultado na tela, ou
 // o ditado trouxe o texto. Nunca por letra.
 static void registrar(void) {
-  if (modoAjustes) return;
+  if (modoAjustes || modoTV) return;
   if (nConsulta >= 2 && temResultados()) buscasrec_registrar(consulta);
 }
 
@@ -1048,6 +1053,7 @@ static void lerSistema(void) {
 
 // --- Ciclo de vida -------------------------------------------------------------------
 void spot_abrir(int voz) {
+  modoTV = 0;
   modoAjustes = 0;
   modoGuia = 0;
   retornoAjustesValido = 0;
@@ -1060,7 +1066,7 @@ static void spotAbrirBase(int voz, int tecladoAuto) {
   toquerol_limpar(&toqueTeclado); kbRol = 0.0f; toqueNoTeclado = 0;
 #endif
   kbMontar();
-  if (!modoAjustes) guia_preparar_busca();
+  if (!modoAjustes && !modoTV) guia_preparar_busca();
   aberto = 1;
   painel = P_CAMPO; kbF = 0; kbC = 0;
   kbAberto = 0; kbAnim = 0.0f; spBW = SP_BW_BASE;
@@ -1098,6 +1104,7 @@ static void spotAbrirBase(int voz, int tecladoAuto) {
 // demonstracao das Dicas do controle usa (dicascontrole.c), onde o IME do
 // Android tomaria o foco e cobriria a apresentacao.
 void spot_abrir_demo(void) {
+  modoTV = 0;
   modoAjustes = 0;
   modoGuia = 0;
   retornoAjustesValido = 0;
@@ -1105,13 +1112,25 @@ void spot_abrir_demo(void) {
 }
 
 void spot_abrir_guia(void) {
+  modoTV = 0;
   modoAjustes = 1;
   modoGuia = 1;
   retornoAjustesValido = 0;
   spotAbrirBase(0, 1);
 }
 
+void spot_abrir_tv(const G5Item *(*catalogo)(int, int *), void (*abrir)(const SpotTVResultado *)) {
+  modoTV = 1; modoAjustes = modoGuia = retornoAjustesValido = 0;
+  tvCatalogo = catalogo; tvAbrir = abrir;
+  esportes_abrir_sessao();
+  esportes_catalogo_iniciar(-1, 0);
+  esportes_pedir_favoritos(0);
+  tvLimpar();
+  spotAbrirBase(0, 1);
+}
+
 void spot_abrir_ajustes(int voz) {
+  modoTV = 0;
   modoAjustes = 1;
   modoGuia = 0;
   retornoAjustesValido = 0;
@@ -1122,6 +1141,7 @@ void spot_reabrir_ajustes(void) {
   int i;
   char chave[sizeof retornoAjustesChave];
   if (!retornoAjustesValido) return;
+  modoTV = 0;
   snprintf(chave, sizeof chave, "%s", retornoAjustesChave);
   modoAjustes = 1;
   spotAbrirBase(0, 0);
@@ -1175,6 +1195,17 @@ static void acionar(int i) {
   Linha *l;
   if (i < 0 || i >= nLin) return;
   l = &lin[i];
+  if (modoTV) {
+    if (!focavel(l->tipo) || l->ref < 0 || l->ref >= tvN) return;
+    const SpotTVItem *it = &tvItens[l->ref];
+    SpotTVResultado r = { .tipo = it->tipo, .indice = it->indice, .inicio = it->inicio };
+    snprintf(r.id, sizeof r.id, "%s", it->id);
+    snprintf(r.nome, sizeof r.nome, "%s", it->nome);
+    spot_fechar();
+    if (tvAbrir) tvAbrir(&r);
+    if (r.tipo == SPOT_TV_ESPORTE) tvAbrirEsporte(r.id);
+    return;
+  }
   memset(&pedido, 0, sizeof pedido);
   switch (l->tipo) {
     case L_RECENTE:
@@ -1488,10 +1519,11 @@ void spot_atualizar(float dt, Uint32 agora) {
   lerSistema();
   // A RESPOSTA DA REDE CHEGA DEPOIS DA TECLA: remonta quando a contagem do termo
   // corrente muda ou quando a busca termina (o aviso "Buscando..." sai).
-  if (!modoAjustes) spotpessoa_atualizar(agora);
-  if (strcmp(montada, consulta) ||
-      (!modoAjustes && cat_revisao_itens() != ultimaRevCatalogo)) remontar();
-  else if (!modoAjustes && nConsulta >= 2) {
+  if (!modoTV && !modoAjustes) spotpessoa_atualizar(agora);
+  int tvMudou = modoTV && tvPasso();
+  if (tvMudou || strcmp(montada, consulta) ||
+      (!modoTV && !modoAjustes && cat_revisao_itens() != ultimaRevCatalogo)) remontar();
+  else if (!modoTV && !modoAjustes && nConsulta >= 2) {
     int n = remotoTotal(), b = desc_buscando(), g = desc_busca_geracao();
     if (n != ultimoRemoto || b != ultimoBuscando || g != ultimaGeracao ||
         spotpessoa_geracao() != ultimaGerPessoa) remontar();
@@ -1665,6 +1697,7 @@ static void desenhaCampo(float dy, float a, Uint32 agora) {
   } else {
     const char *ph = ouve ? i18n(st_estado() == ST_PERMISSAO ? "Permita o microfone para falar…" : "Ouvindo…")
                    : av[0] ? i18n(av)
+                   : modoTV ? i18n("Buscar canais, filmes e séries")
                    : modoAjustes ? i18n(modoGuia ? "Buscar no guia" : "Buscar nos ajustes")
                    : i18n(comMic ? "Buscar ou falar: filmes, séries, pessoas, canais"
                                  : "Buscar filmes, séries, pessoas e canais");
