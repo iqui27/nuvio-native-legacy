@@ -1581,7 +1581,10 @@ static void eventoAberta(SDL_Keycode k) {
     }
   }
   if (trilha && (k == SDLK_UP || k == SDLK_DOWN) && foco.fileira >= 1) {
-    if (k == SDLK_UP) { foco.fileira = 0; foco.coluna = acaoSel; }
+    if (k == SDLK_UP) {
+      if (foco.fileira == 1) { foco.fileira = 0; foco.coluna = acaoSel; }
+      else focus_mover_grade(&foco, 0, -1);
+    }
     else {
       if (foco.fileira < foco.nFileiras - 1) focus_mover_grade(&foco, 0, 1);
       if (foco.fileira >= foco.nFileiras - 2) lst_itens_mais();
@@ -3482,6 +3485,9 @@ static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,Ponte
   navigationTarget(x,fmaxf(y,top),w,fminf((y)+(h),bottom)-fmaxf(y,top),fn,activate,a,b)
 static int navigationMove(SDL_Keycode key) {
   if(key!=SDLK_UP && key!=SDLK_DOWN && key!=SDLK_LEFT && key!=SDLK_RIGHT)return 0;
+  // Grid rows own vertical movement even when the previous row is clipped.
+  if((key==SDLK_UP || key==SDLK_DOWN) && !focoOrigem && !focoPainel &&
+     !focoCont && !estadoFoco && foco.fileira>=gradeIni())return 0;
   // Origins' left edge belongs to the sidebar, even with header chips above it.
   if(focoOrigem && key==SDLK_LEFT)return 0;
   // A picked title owns arrows until released, including at list boundaries.

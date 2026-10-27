@@ -78,11 +78,13 @@ static void openListFixture(const CatItem *items){
 }
 static float transitionFixture(void){return animTela;}
 static int pageFixture(void){return sair?-1:modo;}
+static int ownsArrow(SDL_Keycode k){return (k==SDLK_UP || k==SDLK_DOWN) &&
+  !focoOrigem && !focoPainel && !focoCont && !estadoFoco && foco.fileira>=gradeIni();}
 void nav21_route_library_open(void){fixture=0;openFixture();selectFixture(1001);}
 int nav21_route_library_focus(void){return focusFixture();}
 void nav21_library(void){
   CatItem items[12]={0};for(int i=0;i<12;i++){snprintf(items[i].titulo,sizeof items[i].titulo,"Fixture %d",i);snprintf(items[i].imdb,sizeof items[i].imdb,"tt%07d",i+1);snprintf(items[i].tipo,sizeof items[i].tipo,"movie");items[i].naLista=1;items[i].listaFontes=1u<<AJ_SALVOS_LOCAL;items[i].fontes=CAT_FONTE_NUVIO;snprintf(items[i].meta,sizeof items[i].meta,"2000");}cat_definir(items,12);
-  for(fixture=0;fixture<2;fixture++){Nav21Screen s={fixture?"Lists":"Library + Origins",openFixture,biblioteca_evento,stepFixture,drawFixture,focusFixture,selectFixture,pageFixture,0,transitionFixture};nav21_check(s);}
+  for(fixture=0;fixture<2;fixture++){Nav21Screen s={fixture?"Lists":"Library + Origins",openFixture,biblioteca_evento,stepFixture,drawFixture,focusFixture,selectFixture,pageFixture,0,transitionFixture,ownsArrow};nav21_check(s);}
   fixture=0;openFixture();drawFixture();
   keyFixture(SDLK_UP);
   nav21_expect("Library/edges","To watch, Up: request clock",biblioteca_pediu_relogio(),1);

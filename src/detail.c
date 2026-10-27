@@ -8026,6 +8026,8 @@ static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,Ponte
 }
 #define ponteiro_alvo navigationTarget
 static int navigationMove(SDL_Keycode key){
+  // Section order and saved columns must survive clipping and scroll motion.
+  if(nivel && (key==SDLK_UP || key==SDLK_DOWN || foco.fileira==SEC_TEMPORADAS))return 0;
   if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
   GfxRect rects[512];int current=-1;
   for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].row==(nivel?foco.fileira:focoServidor>=0?-2:-1)&&navigation[i].col==(nivel?foco.coluna:focoServidor>=0?focoServidor:botao))current=i;}
