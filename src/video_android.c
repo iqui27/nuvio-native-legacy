@@ -368,6 +368,7 @@ static Uint64 posAmostraEm;
 static volatile int velPedida = 100, velEnviada = 100, velRecusada;
 static volatile Uint32 bufferDesde, tocandoDesde;
 static Uint32 liveRequestDesde;
+static int liveRequestIniciado;
 extern int player_eh_canal(void);
 
 static volatile const char *hdrAtual = "none";
@@ -405,14 +406,15 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeLiveRequest(
   (void)env; (void)cls;
   pthread_mutex_lock(&travaRetomada);
   if (ativo && (unsigned)geracao == sessao) {
-    liveRequestDesde = SDL_GetTicks() | 1;
+    liveRequestDesde = SDL_GetTicks();
+    liveRequestIniciado = 1;
     bufferDesde = liveRequestDesde;
   }
   pthread_mutex_unlock(&travaRetomada);
 }
 unsigned video_live_pedido_ms(void) {
   pthread_mutex_lock(&travaRetomada);
-  unsigned ms = liveRequestDesde ? SDL_GetTicks() - liveRequestDesde : 0;
+  unsigned ms = liveRequestIniciado ? SDL_GetTicks() - liveRequestDesde : 0;
   pthread_mutex_unlock(&travaRetomada);
   return ms;
 }
@@ -851,6 +853,7 @@ static int abrirSessao(int inicioMs, int fracao) {
   unsigned geracao = novaRetomada(-1);
   pthread_mutex_lock(&travaRetomada);
   liveRequestDesde = 0;
+  liveRequestIniciado = 0;
   pthread_mutex_unlock(&travaRetomada);
   env = ambiente();
   if (!env) { falhou = 1; printf("[video] android: NvPlayer indisponivel\n"); fflush(stdout); return 0; }

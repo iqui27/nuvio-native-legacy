@@ -1299,12 +1299,38 @@ object NvPlayer {
                 else props[nome] = valor
             }
             http.setDefaultRequestProperties(props)
+            val requested = java.util.concurrent.atomic.AtomicBoolean()
+            val response = java.util.concurrent.atomic.AtomicBoolean()
+            // Wrap HTTP inside the connection gate: queued time is not request time,
+            // and responseCode belongs to HTTP, not the LimitedDataSource wrapper.
+            val liveHttp = DataSource.Factory {
+                val d = http.createDataSource()
+                object : DataSource by d {
+                    override fun open(dataSpec: DataSpec): Long {
+                        if (requested.compareAndSet(false, true)) nativeLiveRequest(geracao)
+                        try {
+                            val length = d.open(dataSpec)
+                            if (response.compareAndSet(false, true)) {
+                                val status = (d as? HttpDataSource)?.responseCode ?: 0
+                                val type = d.responseHeaders.entries.firstOrNull { it.key.equals("Content-Type", true) }
+                                    ?.value?.firstOrNull()?.substringBefore(';')?.takeIf { it.matches(Regex("[A-Za-z0-9.+/-]+")) } ?: "unknown"
+                                Log.i(TAG, "[guia] response status=$status contentType=$type")
+                            }
+                            return length
+                        } catch (e: java.io.IOException) {
+                            val status = (e as? HttpDataSource.InvalidResponseCodeException)?.responseCode ?: 0
+                            Log.i(TAG, "[guia] request failed status=$status error=${e.javaClass.simpleName}")
+                            throw e
+                        }
+                    }
+                }
+            }
             val limited = !preparando && limitedNext
             // Check only once per player. HLS segments share the same connection gate.
             val checked = java.util.concurrent.atomic.AtomicBoolean()
-            val serialHttp: DataSource.Factory = if (limited) LimitedDataSource.Factory(http, { r.carga.cancelada }) {
+            val serialHttp: DataSource.Factory = if (limited) LimitedDataSource.Factory(if (live) liveHttp else http, { r.carga.cancelada }) {
                 if (checked.compareAndSet(false, true)) nativeLimitedStatus() else 0
-            } else http
+            } else if (live) liveHttp else http
             val baixa = url.lowercase()
             val adaptativo = baixa.contains(".m3u8") || baixa.contains("m3u8?") || baixa.contains(".mpd")
             // Cache off or not applicable for a VOD: whatever was kept is stale.
@@ -1337,31 +1363,7 @@ object NvPlayer {
             val origemPreparo = r.cache?.fabrica(serialHttp) ?: serialHttp
             val token = if (preparando) 0L else medidor.sessao(geracao).also { medidorToken = it }
             val network = if (preparando) origemPreparo else r.rede(token)
-            val requested = java.util.concurrent.atomic.AtomicBoolean()
-            val response = java.util.concurrent.atomic.AtomicBoolean()
-            val liveNetwork = DataSource.Factory {
-                val d = network.createDataSource()
-                object : DataSource by d {
-                    override fun open(dataSpec: DataSpec): Long {
-                        if (requested.compareAndSet(false, true)) nativeLiveRequest(geracao)
-                        try {
-                            val length = d.open(dataSpec)
-                            if (response.compareAndSet(false, true)) {
-                                val status = (d as? HttpDataSource)?.responseCode ?: 0
-                                val type = d.responseHeaders.entries.firstOrNull { it.key.equals("Content-Type", true) }
-                                    ?.value?.firstOrNull()?.substringBefore(';')?.takeIf { it.matches(Regex("[A-Za-z0-9.+/-]+")) } ?: "unknown"
-                                Log.i(TAG, "[guia] response status=$status contentType=$type")
-                            }
-                            return length
-                        } catch (e: java.io.IOException) {
-                            val status = (e as? HttpDataSource.InvalidResponseCodeException)?.responseCode ?: 0
-                            Log.i(TAG, "[guia] request failed status=$status error=${e.javaClass.simpleName}")
-                            throw e
-                        }
-                    }
-                }
-            }
-            r.origem = OrigemPlayer(if (live) liveNetwork else network, r.carga)
+            r.origem = OrigemPlayer(network, r.carga)
             // Prefer FFmpeg only on the single retry after an audio decoder failure.
             // F06 tap is at the sink input; F07 gain stays in its processors.
             r.renderizadores = object : androidx.media3.exoplayer.DefaultRenderersFactory(act) {

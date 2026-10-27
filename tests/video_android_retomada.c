@@ -111,8 +111,14 @@ int main(int argc, char **argv) {
   Java_space_nuvio_nativelegacy_NvPlayer_nativeLiveRequest(NULL, NULL, 41);
   assert(video_live_pedido_ms() == 0);
   Java_space_nuvio_nativelegacy_NvPlayer_nativeLiveRequest(NULL, NULL, 42);
-  relogio += 12001;
+  assert(video_live_pedido_ms() == 0); // Same even tick must not underflow.
+  relogio += 12000;
   assert(video_live_pedido_ms() == 12000);
+  relogio = 0;
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeLiveRequest(NULL, NULL, 42);
+  assert(video_live_pedido_ms() == 0);
+  relogio = 12;
+  assert(video_live_pedido_ms() == 12); // Tick zero is a valid request start.
   assert(video_bufferando_ms() == 0); // Buffering has not begun.
   canalTeste = 0; ativo = 0; relogio = 100;
   assert(argc == 2); // eventos produzidos pelo abrirMain real no teste JVM
