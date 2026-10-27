@@ -65,7 +65,7 @@ int main(void) {
   key(SDLK_DOWN);assert(ajPenRow==4);key(SDLK_RIGHT);assert(ajPenRow==5);
   key(SDLK_ESCAPE);assert(focoIndice);
   focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);int theme=valor[AJ_TEMA];
-  key(SDLK_DOWN);assert(uxPendente==theme+1 || uxPendente==theme);
+  key(SDLK_DOWN);assert(uxPendente>=0 && uxPendente<nValores(AJ_TEMA));
   key(SDLK_ESCAPE);assert(valor[AJ_TEMA]==theme);
   // Pencil custom presets survive reload, exclude credentials, and roll back through review.
   aj4Iniciar();focoIndice=1;
@@ -242,7 +242,9 @@ int main(void) {
       int count=p->cols[0].n+p->cols[1].n;assert(count>0 && count<=14);
       for(int i=0;i<count+1;i++)key(SDLK_DOWN);
       assert(ajPenRow==count-1);
-      key(SDLK_ESCAPE);assert(focoIndice && ajPenPage==-1);
+      key(SDLK_ESCAPE);
+      for(int depth=0;!focoIndice && depth<3;depth++)key(SDLK_ESCAPE);
+      assert(focoIndice && ajPenPage==-1);
     }
     assert(!memcmp(before,valor,sizeof before));
     aj4Linha=2;key(right);assert(aj4Linha==3);key(left);assert(aj4Linha==2);

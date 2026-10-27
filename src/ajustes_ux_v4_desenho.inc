@@ -29,6 +29,7 @@ static float aj4Bloco(TxtEstilo e,const char *s,float x,float y,float w,float lh
 #define ajIconeT aj4IconeT
 #define ajBloco aj4Bloco
 static void aj4PontAtivar(int zona,int row) {
+  if(zona==12) { if(row==4)ajPenOpen(AJ_PEN_COMPONENTS);else { ajPenRow=row;ajPenEvent(SDLK_RETURN); }return; }
   if(zona==5) { uxEvento(SDLK_ESCAPE); return; }
   if(zona==8) { ajPenRow=row;int handled=ajPenEvent(SDLK_RETURN);if(!handled) { SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.keysym.sym=SDLK_RETURN;eventoTela(&event); } return; }
   if(zona==10) { aj4Buscar();return; }
@@ -468,9 +469,11 @@ static void aj4PerfilDesenhar(void) {
 }
 #include "ajustes_pen_desenho.inc"
 #include "ajustes_pen_editor.inc"
+#include "ajustes_pen_secondary.inc"
 #include "ajustes_pen_util.inc"
 #include "ajustes_pen_especiais.inc"
 #include "ajustes_pen_presets.inc"
+#include "ajustes_pen_components.inc"
 static void aj4Desenhar(void) {
   ponteiro_camada();
   aj4SeloAviso=0;
@@ -480,6 +483,8 @@ static void aj4Desenhar(void) {
   else if(aj4Util==3 || (aj4Util==1 && !aj4Review))ajPenUtility();
   else if(aj4Util==2 && !aj4Review)ajPenPresets();
   else if(aj4Review || aj4Util)aj4UtilDesenhar();
+  else if(!focoIndice && ajPenPage==AJ_PEN_COMPONENTS)ajPenComponents();
+  else if(!focoIndice && ajPenPage==AJ_PEN_SECONDARY)ajPenSecondary();
   else if(!focoIndice && ajPenPage==AJ_PEN_RULES)ajPenRules();
   else if(!focoIndice && ajPenPage==AJ_PEN_TOUR)ajPenFeatures();
   else if(!focoIndice && ajPenCurrent())ajPenRows();

@@ -19,7 +19,7 @@ static void ajPenSavedLoad(void) {
     } else if(slot>=0) {
       char key[96];int value;
       if(sscanf(line,"%95[^=]=%d",key,&value)==2)
-        for(int op=0;op<AJ_N;op++)if(aj4Mutavel(op) && !strcmp(key,CHAVE[op]) && limita(op,value)==value) { ajPenSavedValues[slot][op]=value;break; }
+        for(int op=0;op<AJ_N;op++)if(aj4Mutavel(op) && !strcmp(key,CHAVE[op]) && (OPCOES[op].tipo==OP_NUMERO?limita(op,value)==value:value>=0 && value<nValores(op))) { ajPenSavedValues[slot][op]=value;break; }
     }
   }
   free(data);
@@ -63,12 +63,12 @@ static int ajPenSavedPrepare(int slot) {
   aj4Review=2;aj4Linha=aj4Acao=0;return aj4N;
 }
 static const int AJ_PEN_PRESET_OPS[4][8]={
-  {AJ_QUALIDADE,AJ_DTS_AC3,AJ_LEG2_TAMANHO,-1},
+  {AJ_QUALIDADE,AJ_DTS_AC3,AJ_ESCALA_TEXTO,-1},
   {AJ_LEG_SYNC_AUDIO,AJ_LEG_SYNC_AUTO,AJ_AUDIO_OFFSET,-1},
   {AJ_DET_BLUR_NAO_VISTOS,AJ_PAUSA_ELENCO,AJ_HERO_TRAILER,-1},
   {AJ_HERO,AJ_HERO_TRAILER,AJ_DET_TRAILER_AUTO,AJ_FOCO_TRAILER,-1}
 };
-static const int AJ_PEN_PRESET_VALS[4][8]={{0,0,11},{0,0,0},{0,0,0},{1,1,1,0}};
+static const int AJ_PEN_PRESET_VALS[4][8]={{0,0,4},{0,0,0},{0,0,0},{1,1,1,0}};
 static const char *const AJ_PEN_PRESET_NAMES[]={"Sala de TV","Voz clara","Filme em casa","Só o áudio"};
 static int ajPenPresetPrepare(int preset) {
   aj4N=0;if(preset<0 || preset>=4)return 0;

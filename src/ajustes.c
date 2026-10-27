@@ -10341,6 +10341,7 @@ void ajustes_fontes_atualizar(void) {
   if (fonteStatus) uxNotificar(fonteStatus);
 }
 void ajustes_atualizar(float dt, Uint32 agora) {
+  ajPenDt=dt;
   if(iptvForm.tipo && !nv_perfil_sessao_atual(iptvForm.sessao)) { ajIptvLimparForm();uxCancelar();stCampo=0;teclado_esquecer(); }
   ajLegendaEspelhar(); ajIptvEspelhar();
   AJ_ESCALA_INI();
@@ -11458,7 +11459,8 @@ int ajustes_teste_quadro(const char *id) {
   if(!strncmp(id,"pen-",4)) {
     static const char *const names[]={"Marina"};perfis_teste_definir(names,NULL,1,1);
     aj4Iniciar();pfTela=0;uxVeioBusca=0;valor[AJ_AVANCADAS]=0;valor[AJ_TEMA]=6;
-    if(!strcmp(id,"pen-parental"))ajPenOpen(AJ_PEN_PARENTAL);
+    if(!strcmp(id,"pen-components"))ajPenOpen(AJ_PEN_COMPONENTS);
+    else if(!strcmp(id,"pen-parental"))ajPenOpen(AJ_PEN_PARENTAL);
     else if(!strcmp(id,"pen-rules"))ajPenOpen(AJ_PEN_RULES);
     else if(!strcmp(id,"pen-features"))ajPenOpen(AJ_PEN_TOUR);
     else if(!strcmp(id,"pen-presets")) { aj4Util=2;focoIndice=0; }
@@ -11471,7 +11473,7 @@ int ajustes_teste_quadro(const char *id) {
     else if(!strncmp(id,"pen-adv-",8))ajPenOpen(atoi(id+8));
     else if(!strncmp(id,"pen-main-",9))ajPenOpen(29+atoi(id+9));
     else if(!strcmp(id,"pen-audio-idioma")) { ajPenOpen(27);focarOpcao(AJ_AUD_LINGUA);uxAbrirEditor(AJ_AUD_LINGUA); }
-    else if(!strcmp(id,"pen-segunda")) { ajPenOpen(27);focarOpcao(AJ_LEG_LINGUA2);uxAbrirEditor(AJ_LEG_LINGUA2); }
+    else if(!strcmp(id,"pen-segunda"))ajPenOpen(AJ_PEN_SECONDARY);
     else return 0;
     return 1;
   }

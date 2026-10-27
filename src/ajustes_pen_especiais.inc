@@ -52,11 +52,11 @@ static void ajPenRules(void) {
   long ram=tex_teto_ram_mb();
   char values[6][160];
   snprintf(values[0],sizeof values[0],"%dx%d",(int)NV_LAYOUT_REAL_W,(int)NV_LAYOUT_REAL_H);
-  /* Settings preferences are not hardware capability reports. */
-  for(int i=1;i<5;i++)snprintf(values[i],sizeof values[i],"%s",i18n("Desconhecida"));
-#ifdef NV_ANDROID
-  snprintf(values[4],sizeof values[4],"%s",i18n("Hardware"));
-#endif
+  int hdr,dv,hevc,av1;stream_capacidades(&hdr,&dv,&hevc,&av1);
+  snprintf(values[1],sizeof values[1],"%s",i18n(hdr<0?"Desconhecida":hdr?"Suportado":"Não suportado"));
+  snprintf(values[2],sizeof values[2],"%s",i18n(dv<0?"Desconhecida":dv?"Suportado":"Não suportado"));
+  snprintf(values[3],sizeof values[3],"%s",textoValor(AJ_DTS_AC3));
+  snprintf(values[4],sizeof values[4],"%s",i18n(hevc<0 && av1<0?"Desconhecida":hevc>0 || av1>0?"Hardware":"Não suportado"));
   if(ram>0)snprintf(values[5],sizeof values[5],"%ld MB",ram);
   else snprintf(values[5],sizeof values[5],"%s",i18n("Desconhecida"));
   for(int c=0;c<2;c++) {

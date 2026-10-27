@@ -6,13 +6,15 @@ static int aj4Opcoes[AJ_N], aj4Ops[AJ_N], aj4Antes[AJ_N], aj4Depois[AJ_N], aj4N;
 static int aj4UndoOps[AJ_N], aj4UndoAntes[AJ_N], aj4UndoDepois[AJ_N], aj4UndoN, aj4UndoPerfil;
 static int aj4FocoModo[2], aj4Excecao = -1;
 static int ajPenPage=-1,ajPenRow,ajPenReturn=-1;
+static float ajPenFocusY,ajPenFocusV,ajPenDt=1.0f/60;
+static int ajPenFocusPage=-1;
 static char aj4Consulta[128];
 static int aj4BuscaTeclado, aj4BuscaRetorno, aj4BuscaFoco, aj4TrocarPerfil, aj4PerfilRetorno;
 int ajustes_pediu_trocar_perfil(void) { int v=aj4TrocarPerfil; aj4TrocarPerfil=0; return v; }
 static AjusteBuscaResultado aj4Resultados[AJ_N];
 static void aj4Iniciar(void) {
   aj4Topo = -1; aj4Util = aj4Review = aj4Acao = aj4Linha = 0; aj4Excecao = -1;
-  aj4Mais = 0;ajPenPage=-1;ajPenReturn=-1;
+  aj4Mais = 0;ajPenPage=-1;ajPenReturn=-1;ajPenFocusPage=-1;
   aj4BuscaTeclado=aj4BuscaRetorno=aj4TrocarPerfil=aj4PerfilRetorno=0;
 }
 static const char *const AJ4_SECOES[] = {

@@ -41,6 +41,7 @@ int perfil_regra_classif(const char *certificate) {
   if(!certificate || !*certificate)return 0;
   int max=perfil_regra(perfis_ativo(),PR_IDADE);
   if(*certificate>='0' && *certificate<='9')return atoi(certificate)<=max;
+  if(!strcasecmp(certificate,"PG") || !strcasecmp(certificate,"TV-PG"))return max>=10;
   if(perfil_infantil_classif_ok(certificate))return 1;
   if(!strcasecmp(certificate,"PG-13") || !strcasecmp(certificate,"TV-14"))return max>=14;
   if(!strcasecmp(certificate,"R") || !strcasecmp(certificate,"NC-17") || !strcasecmp(certificate,"TV-MA"))return max>=18;

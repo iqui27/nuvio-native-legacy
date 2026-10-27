@@ -8,6 +8,11 @@ typedef struct { const char *title,*section; int part,total; AjPenColumn cols[2]
 #define AJ_PEN_PARENTAL 100
 #define AJ_PEN_RULES 101
 #define AJ_PEN_TOUR 102
+#define AJ_PEN_SECONDARY 103
+#define AJ_PEN_COMPONENTS 104
+static const AjPenPage AJ_PEN_SECOND_PAGE={"Segunda legenda","Áudio e legendas",3,3,{
+  {"",200,520,6,{{AJ_LEG2_FONTE,"Igual à principal","","aj_type",0},{AJ_LEG2_TAMANHO,"Tamanho","","aj_type",0},{AJ_LEG2_COR,"Cor","","aj_palette",0},{AJ_LEG2_FUNDO,"Fundo","","aj_square",0},{AJ_LEG2_BORDA,"Borda","","aj_scan",0},{AJ_LEG_LINGUA2,"Idioma da segunda legenda","","aj_languages",0}}},
+  {"",744,1080,0,{{0}}}}};
 static const AjPenPage AJ_PEN_FEATURES = {"O que o Nuvio faz?","Ajustes",3,3,{
   {"",200,800,6,{
     {AJ_CW_LIGADO,"Continuar assistindo","Retoma de onde parou, em qualquer perfil","aj_tv",1},
@@ -81,6 +86,7 @@ static int ajPenMissing(int *ops) {
   return n;
 }
 static const AjPenPage *ajPenCurrent(void) {
+  if(ajPenPage==AJ_PEN_SECONDARY)return &AJ_PEN_SECOND_PAGE;
   if(ajPenPage==AJ_PEN_PARENTAL)return &AJ_PEN_PARENT;
   if(ajPenPage==AJ_PEN_RULES)return NULL;
   if(ajPenPage==AJ_PEN_TOUR)return &AJ_PEN_FEATURES;
@@ -118,6 +124,14 @@ static void ajPenFind(int op) {
 }
 static int ajPenEvent(SDL_Keycode key) {
   if(ajPenParentEvent(key))return 1;
+  if(ajPenPage==AJ_PEN_COMPONENTS) {
+    if(uxVoltar(key))ajPenOpen(44);
+    else if(key==SDLK_DOWN || key==SDLK_RIGHT)ajPenRow=(ajPenRow+1)%4;
+    else if(key==SDLK_UP || key==SDLK_LEFT)ajPenRow=(ajPenRow+3)%4;
+    else if(uxOk(key)) { if(ajPenRow==0)aj4Buscar();else if(ajPenRow==1) { aj4Util=2;aj4Linha=0; }else if(ajPenRow==2)ajPenSavedAsk();else ajPenOpen(29); }
+    return 1;
+  }
+  if(ajPenPage==44 && key==SDLK_c) { ajPenOpen(AJ_PEN_COMPONENTS);return 1; }
   const AjPenPage *page=ajPenCurrent();
   if(ajPenPage==AJ_PEN_RULES && !uxEditor && !aj4Util && !focoIndice) {
     if(uxVoltar(key) || uxOk(key)) { ajPenPage=-1;focoIndice=1;aj4Linha=6; }
@@ -125,7 +139,7 @@ static int ajPenEvent(SDL_Keycode key) {
   }
   if(!page || uxEditor || aj4Util || focoIndice || aj4Topo>=0)return -1;
   if(uxVoltar(key)) {
-    int parent=ajPenPage==28?27:ajPenPage>=30 && ajPenPage<=32?29:ajPenPage==34?33:ajPenPage>=38 && ajPenPage<=40?37:ajPenPage==42?41:-1;
+    int parent=ajPenPage==AJ_PEN_SECONDARY || ajPenPage==28?27:ajPenPage>=30 && ajPenPage<=32?29:ajPenPage==34?33:ajPenPage>=38 && ajPenPage<=40?37:ajPenPage==42?41:-1;
     if(parent>=0)ajPenOpen(parent);else { ajPenPage=-1;focoIndice=1;aj4Linha=0; }
     return 1;
   }
@@ -170,6 +184,7 @@ static int ajPenEvent(SDL_Keycode key) {
       else uxNotificar(op==-4?"Perfil infantil: só classificação livre e até 10 anos.":"Ainda não disponível.");
       return 1;
     }
+    if(ajPenPage==27 && op==AJ_LEG_LINGUA2) { ajPenOpen(AJ_PEN_SECONDARY);return 1; }
     if(ajPenPage==AJ_PEN_TOUR) {
       if(ajPenRow==0) { definirValorDireto(AJ_CW_LIGADO,lig(AJ_CW_LIGADO)?1:0);return 1; }
       if(ajPenRow==1) { ajPenOpen(39);return 1; }

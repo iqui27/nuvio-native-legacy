@@ -1048,6 +1048,12 @@ static int fitPesadaAutoAlvo(const Stream *s, const char *alvo) {
 // penaliza: so um 0 explicito tira o formato da conta.
 static int telaHdr = -1, telaDv = -1;
 void stream_definir_tela(int hdr, int dv) { telaHdr = hdr; telaDv = dv; }
+void stream_capacidades(int *hdr,int *dv,int *hevc,int *av1) {
+  if(hdr)*hdr=telaHdr;if(dv)*dv=telaDv;
+  pthread_mutex_lock(&autoExclTrava);
+  if(hevc)*hevc=decoder4k[0];if(av1)*av1=decoder4k[3];
+  pthread_mutex_unlock(&autoExclTrava);
+}
 
 static int acha(const char *t, const char *termo) {
   size_t n = strlen(termo);

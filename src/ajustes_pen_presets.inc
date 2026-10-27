@@ -5,7 +5,7 @@ static void ajPenPresets(void) {
   aj4Texto("Combos de ajustes prontos. Salve o seu e use quando quiser.",TXT_G20M,200,291,1520,.58f);
   ajPenPanel(200,344,1040,640,0);ajPenPanel(1264,344,560,640,0);
   ajKicker("PRESETS PRONTOS",226,366,1);ajKicker("SEUS PRESETS",1290,366,1);
-  static const char *const desc[]={"Qualidade automática, áudio estéreo e legendas grandes","Sincronia ligada e atraso do áudio zerado","Sem spoiler, com o elenco e o trailer no destaque","Rádio e música: sem cartaz e sem trailer"};
+  static const char *const desc[]={"Qualidade automática, áudio estéreo e texto grande","Sincronia ligada e atraso do áudio zerado","Sem spoiler, com o elenco e o trailer no destaque","Rádio e música: sem cartaz e sem trailer"};
   static const char *const icons[]={"aj_sparkles","aj_volume-2","aj_clapperboard","aj_radio"};
   for(int i=0;i<4;i++) {
     float y=400+i*84;

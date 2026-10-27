@@ -404,6 +404,8 @@ long stream_pontos(const Stream *s);
 int  stream_e_mp4(const Stream *s);
 // R9b: o que a tela mostra (1/0; -1 = desconhecido, o padrao, nao penaliza).
 void stream_definir_tela(int hdr, int dv);
+/* Observed hardware capability, -1 when the backend has not reported it. */
+void stream_capacidades(int *hdr,int *dv,int *hevc,int *av1);
 // Android: -1 desconhecido, 0 sem decoder 3840x2160, 1 suportado. Nao filtra a folha manual.
 void stream_definir_decoder4k(int hevc, int avc, int vp9, int av1);
 // Erro Media3 no automatico: nao repetir tamanho/codec nesta lista. `renderer`

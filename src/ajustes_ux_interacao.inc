@@ -403,6 +403,10 @@ static int uxEvento(SDL_Keycode k) {
         uxPendente = limita(uxOp, uxPendente + d * OPCOES[uxOp].passo);
       else {
         int ant = uxPendente;
+        if(uxOp==AJ_TEMA && uxPendente<12) {
+          static const int colors[]={6,1,2,3,4,5,0,7,8,9,10,11};
+          for(int i=0;i<12;i++)if(colors[i]==uxPendente) { int next=i+d;if(next>=0 && next<12)uxPendente=colors[next];return 1; }
+        }
         do uxPendente += d;
         while ((uxOp == AJ_TEX_MB || uxOp == AJ_SALVOS_DEST) && uxPendente >= 0 && uxPendente < nValores(uxOp) &&
                (uxOp == AJ_TEX_MB ? texAcima(uxPendente)

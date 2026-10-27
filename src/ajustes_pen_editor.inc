@@ -4,7 +4,7 @@ static void ajPenEditor(void) {
     aj4Editor();return;
   }
   int op=uxOp;
-  int audio=ajPenPage==27 || ajPenPage==28;
+  int audio=ajPenPage==27 || ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY;
   int screen=op==AJ_ESCALA_TEXTO || op==AJ_TEMA;
   int quality=op==AJ_QUALIDADE;
   const char *section=audio?"Áudio e legendas":screen?"Minha tela":"Reprodução";
@@ -23,12 +23,11 @@ static void ajPenEditor(void) {
   char original[160];uxValorTexto(op,uxOriginal,original,sizeof original);
   const char *heads[]={quality?"Automática":op==AJ_ESCALA_TEXTO?"Escala do texto":op==AJ_TEMA?"Cor de destaque":op==AJ_AUD_LINGUA?"Preferir faixa original":op==AJ_LEG_LINGUA2?"Idioma da segunda legenda":op==AJ_FONTE_MANUAL?"Escolher na mão":"Valor atual",quality?"Limite desta TV":screen?op==AJ_TEMA?"Cor da logo":"Tamanho da interface":op==AJ_LEG_LINGUA2?"Posição":op==AJ_FONTE_MANUAL?"Ordem das fontes":"Faixa de reserva",quality?"O que o addon oferece":op==AJ_ESCALA_TEXTO?"Mínimo garantido":op==AJ_LEG_LINGUA2?"Estilo separado":op==AJ_FONTE_MANUAL?"Antes de abrir":"Onde isso vale"};
   const char *body[]={quality?"A TV pede a melhor qualidade que ela aguenta. Quem limita é a rede.":op==AJ_AUD_LINGUA?"Quando existe original em boa qualidade, ele vem primeiro — sem dublado por cima.":op==AJ_LEG_LINGUA2?"O idioma da tradução extra. Desligada, ela não aparece.":op==AJ_FONTE_MANUAL?"A TV mostra as fontes e você escolhe com o D-pad.":screen?caption:original,quality?ajudaOpcao(AJ_RESOLUCAO):op==AJ_AUD_LINGUA?"Se a escolhida não existir no título, tocamos a original.":op==AJ_LEG_LINGUA2?"No topo da tela ou junto da principal.":op==AJ_FONTE_MANUAL?"Por qualidade ou na ordem em que o addon montou.":screen?ajudaOpcao(op==AJ_TEMA?AJ_COR_LOGO:AJ_TAMANHO_UI):aj4Ajuda(op),quality?"Cada addon diz a qualidade do arquivo que ele tem.":op==AJ_LEG_LINGUA2?"A segunda legenda não muda quando você muda a principal.":op==AJ_FONTE_MANUAL?"O Nuvio confere a fonte e avisa antes de trocar.":op==AJ_ESCALA_TEXTO?"Com 85% as legendas continuam legíveis a 3 metros.":escopoDe(op)==ESC_TV?"Nesta TV e no app da sala. O celular segue a conta, não a TV.":"A escolha acompanha este perfil."};
-  for(int i=0;i<3;i++) {
+  for(int i=0;i<(op==AJ_TEMA?2:3);i++) {
     float y=i==0?400:i==1?584:728,h=i==0?170:i==1?130:140;
     ajNeutro((GfxRect){226,y,468,h},22,.05f,.10f,.11f,.13f,1);
     aj4Texto(heads[i],TXT_G21B,248,y+20,422,1);
     ajBloco(TXT_G18R,body[i],248,y+54,422,22,.58f,3);
-    if(op==AJ_TEMA && i==2)continue;
     if(screen && i==0) {
       if(op==AJ_ESCALA_TEXTO) {
         ajPenChip("−",NULL,248,512,44,0,11,-1);
@@ -48,11 +47,16 @@ static void ajPenEditor(void) {
     aj4Texto(value,TXT_TITULO2,800,480,900,1);
     aj4Texto("← →  Alterar     OK  Aplicar",TXT_G20M,800,580,900,.65f);
   } else {
-    int n=nValores(op),start=uxPendente/6*6;
-    for(int i=start;i<n && i<start+6;i++) {
-      float y=400+(i-start)*76;char value[160];uxValorTexto(op,i,value,sizeof value);
+    static const int colors[]={6,1,2,3,4,5,0,7,8,9,10,11};
+    int n=nValores(op),selected=uxPendente;
+    if(op==AJ_TEMA)for(int i=0;i<12;i++)if(colors[i]==uxPendente)selected=i;
+    int start=selected/6*6;
+    for(int pos=start;pos<n && pos<start+6;pos++) {
+      int i=op==AJ_TEMA && pos<12?colors[pos]:pos;
+      float y=400+(pos-start)*76;char value[160];uxValorTexto(op,i,value,sizeof value);
       if(i==uxPendente && !uxRodape)ajNeutro((GfxRect){770,y,1028,70},20,.14f,.169f,.176f,.204f,1);
       aj4Texto(value,TXT_G21B,770,y+5,800,1);
+      if(op==AJ_TEMA && i<AJ_N_TEMAS_OPC) { float r,g,b;corDeHex(TEMA_ACENTO[i].fill,&r,&g,&b);gfx_cor((GfxRect){1720,y+20,32,32},.5f,r,g,b,1); }
       if(quality && i) { TxtLinha t=ajTxt(TXT_G18R,value);txt_desenhar_alpha(t,1798-t.w,y+26,.58f); }
       static const char *const qhelp[]={"A melhor que a TV aguenta","2160p, quando o addon tem","Full HD","Leve, funciona em qualquer rede"};
       static const char *const shelp[]={"Compacto: cabe mais por linha","Um pouco menor","O padrão do app","Maior","Grande","O maior"};

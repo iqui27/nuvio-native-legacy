@@ -28,6 +28,7 @@ pairs = {
     'pen-source': 'Reproducao - Escolha do video',
     'pen-scale': 'Minha tela - Tamanho do texto',
     'pen-color': 'Minha tela - Cor de destaque',
+    'pen-components': 'Componentes',
     'v4-busca': 'Buscar ajuste',
     'v4-diferentes': 'Diferente do padrao',
 }
