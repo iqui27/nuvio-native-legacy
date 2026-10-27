@@ -1,6 +1,10 @@
 #include "nav21.h"
+// Keep render time out of the animation clock, as in the Detail fixture.
+static Uint32 clockFixture;
+#define SDL_GetTicks() clockFixture
 #include "../src/home.c"
 static void openFixture(void){
+  clockFixture+=2000;
   AddonRemoto addon={0};snprintf(addon.nome,sizeof addon.nome,"Offline");snprintf(addon.url,sizeof addon.url,"https://fixture.invalid");addon.ativo=1;addons_definir_lista(&addon,1);
   detail_fechar_seco();trailercinema_zerar(&heroCinema);
   memset(filEntraEm,0,sizeof filEntraEm);memset(filNAntes,0,sizeof filNAntes);
@@ -9,7 +13,7 @@ static void openFixture(void){
   nFileiras=2;for(int r=0;r<2;r++){memset(&fileiras[r],0,sizeof fileiras[r]);snprintf(fileiras[r].titulo,sizeof fileiras[r].titulo,"Fixture row %d",r);fileiras[r].tipo=FILEIRA_NORMAL;fileiras[r].n=4;fileiras[r].ini=r*4;}
   int cols[]={4,4};focus_iniciar(&foco,2,cols);
 }
-static void stepFixture(float dt){home_atualizar(dt,SDL_GetTicks());}
+static void stepFixture(float dt){clockFixture+=(Uint32)(dt*1000);home_atualizar(dt,SDL_GetTicks());}
 static void drawFixture(void){home_desenhar(SDL_GetTicks());for(int i=0;i<navigationCount;i++)nav21_target((navigation[i].row+1)*1000+navigation[i].col,navigation[i].rect);}
 static int focusFixture(void){return focoHero?0:(foco.fileira+1)*1000+foco.coluna;}
 static void selectFixture(int id){if(id==0)ponteiroHero(0,0);else ponteiroCard(id/1000-1,id%1000);}

@@ -71,7 +71,7 @@ int main(int argc, char **argv) {
   for (s = 0; s < 3; s++) for (g = 0; g < 2; g++) for (c = 0; c < 2; c++) for (l = 0; l < 3; l++) {
     char path[1024]; FILE *settings;
     float scale = scales[s] / 100.0f;
-    int width = (int)ceilf(776 * scale), height = (int)ceilf(140 * scale);
+    int width = (int)ceilf(776 * scale), height = (int)ceilf(225 * scale);
     SDL_Surface *sheet = SDL_CreateRGBSurfaceWithFormat(0, width, height * 6, 32, SDL_PIXELFORMAT_RGBA32);
     assert(sheet);
     snprintf(path, sizeof path, "%s/ajustes.txt", dir); settings = fopen(path, "w"); assert(settings);
@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
             langs[l], !g, !c, s == 0 ? 0 : s == 1 ? 2 : 5);
     fclose(settings); ajustes_dir(dir); ajustes_dir(dir);
     gfx_escala_ui_definir(1); gfx_escala_txt_definir(scale);
-    check(ajustes_foco_acento() == (g && c), "existing glass gate", scales[s], g, c, l, -1);
+    check(ajustes_foco_acento() == c, "accent focus independent of glass", scales[s], g, c, l, -1);
     for (t = 0; t < 6; t++) {
       float previous = gfx_escala_entrar();
       float rowY = SP_ABAS_Y, kickY = SP_KICK_Y;
@@ -88,7 +88,8 @@ int main(int argc, char **argv) {
       gfx_escala_sair(previous);
       aba = t == 5 ? SP_ABA_SOCIAL : t; editando = t == 5; foco = 0;
       editLapis = 0; pilIni = 0; nAg = 0; nSocial = nAtv = 0;
-      check(kickY + mini.h + 12 <= rowY + .01f, "kicker bottom + 12 <= tabs top", scales[s], g, c, l, t);
+      check(rowY + SP_ABAS_H + 12 <= kickY + .01f && kickY + mini.h <= SP_TIT_Y,
+            "tabs above kicker and title", scales[s], g, c, l, t);
       for (k = 0; k < 2; k++) { frame(); SDL_Delay(2); }
       if (t != 5) {
         /* Sample inside the moving selection, clear of its icon/count and rim. */

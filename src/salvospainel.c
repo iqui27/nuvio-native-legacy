@@ -75,31 +75,25 @@
 // design/glass-ilha/glass-ilha.html), em px de 1080p e RELATIVA AO TOPO E A
 // ESQUERDA DO PAINEL — o mockup poe a ilha a 40 da borda e a folha de Fontes
 // real a 24, entao o que se copia e a distancia de dentro, nao a absoluta:
-//   cabecalho  40 de ar; o kicker (15 caixa alta) e "Social" (40 bold) a 48 da
-//              borda. SEM o disco de fechar do mockup: o dono pediu para tirar
-//              o X (03/10); VOLTAR e ESQUERDA na borda fecham.
-//   abas       136 do topo, o seletor a 42 da borda: 5 de folga, segmentos de
-//              45 (19 semibold, 20 de recuo, contagem 16 em cinza a 9 do rotulo)
+//   Header order: labeled tabs first, then the kicker and selected tab title.
+//   Keep the sheet, row geometry and social destinations from the social merge.
+//   Back and LEFT at the edge close the sheet; no close button.
 //   lista      217 do topo; linhas de 26 a 26 das bordas, raio 22, 18/22 de
 //              recuo; secao 22 bold com um fio de 1 px a 8 % embaixo
-// Era o painel "parecido": abas no lugar do titulo, rotulos de secao em
-// cinza 22, rosto e capa juntos a esquerda (foto do dono lado a lado com o
-// mockup, 02/10: "o mockup ta bem mais polido que a build").
 #define SP_PAD          48.0f   // do painel ao texto (26 da linha + 22 dela)
 #define SP_INTERNO    (SP_W - SP_PAD * 2.0f)
 #define SP_LINHA_X      26.0f   // do painel a superficie da linha
 #define SP_LINHA_W    (SP_W - SP_LINHA_X * 2.0f)
 #define SP_LINHA_PADX   22.0f
 #define SP_LINHA_RAIO   22.0f
-// Reserve a full font line plus breathing room above the title/tab row.
-#define SP_KICK_Y      fminf(SP_Y + 40.0f, SP_ABAS_Y - txt_linha(TXT_MINI, "Ag", 255, 255, 255, 255).h - 12.0f)
-#define SP_TIT_Y       (SP_Y + 62.0f)
+// Keep the summary and title below the top tab row.
+#define SP_KICK_Y      (SP_Y + 112.0f)
+#define SP_TIT_Y       (SP_Y + 138.0f)
 // ABAS. Elas so existem quando o servico de recomendacoes foi compilado
 // (recomenda_ativo); sem ele o painel e exatamente o que era, sem uma linha a
 // mais de cromo para uma funcao que nao existe naquele pacote.
-// Restore the approved Social composition: labeled tabs below a stable heading.
-// Keep later destinations and tab editing in the same navigation order.
-#define SP_ABAS_Y      (SP_Y + 138.0f)
+// Keep all destinations and tab editing in the same navigation order.
+#define SP_ABAS_Y      (SP_Y + 40.0f)
 #define SP_ABAS_H        52.0f
 #define SP_ABAS_X       42.0f
 // AR DO FOCO entre o recorte da lista e a primeira linha. A superficie da linha
@@ -1114,7 +1108,7 @@ static int nVisiveis(void) {
 // A BARRA DE OPCOES (Ordenar, Agrupar, Estilo, categorias) mora entre as abas
 // e a lista, e empurra a lista SP_OPC_EXTRA para baixo so quando existe.
 #define SP_FOCO_BARRA  (-2)
-#define SP_OPC_Y     (SP_ABAS_Y + SP_ABAS_H + 14.0f)
+#define SP_OPC_Y     SP_LISTA_Y
 #define SP_OPC_H      NV_CTRL_H
 #define SP_OPC_EXTRA (SP_OPC_Y + SP_OPC_H + 12.0f - SP_LISTA_Y)
 static int temBarra(void);
@@ -1422,7 +1416,7 @@ static void reconstruirAgenda(void) {
 
 static const char *rotuloAba(int i);
 // O titulo que o cabecalho mostra agora (a aba aberta, ou a folha Editar).
-static const char *tituloAgora(void) { return editando ? i18n("Editar abas") : i18n("Social"); }
+static const char *tituloAgora(void) { return editando ? i18n("Editar abas") : i18n(rotuloAba(aba)); }
 static int posNaFaixa(int id) {
   int i;
   for (i = 0; i < SP_ABA_N; i++) if (abaOrdem[i] == id) return i;
@@ -4997,12 +4991,8 @@ static void desenharPainel(Uint32 agora) {
   // desenha por cima do cabecalho e por baixo da borda inferior.
   gfx_recorte(SP_X + x, SP_Y, SP_W, SP_H);
 
-  // O CABECALHO DO MOCKUP (".kick" + ".ttl" + ".dsc"): o resumo da aba em
-  // caixa alta pequena e espacada a 45 %, "Social" em 40 bold embaixo (o
-  // disco de fechar do mockup saiu a pedido do dono, 03/10). Era a contagem
-  // solta a direita das abas e nenhum titulo — o painel nao dizia o nome
-  // dele (dono, 02/10, comparando com o mockup). As PARTES passam por i18n; a
-  // juncao, nao (ver metaTexto).
+  // The localized summary and selected tab title sit below the tab row.
+  // Translate the summary parts, not their joined text (see metaTexto).
   // recomenda_n() E NAO nRecs: com a pergunta de consentimento na tela a lista
   // local esta vazia de proposito, e escrever "0 recomendações" ao lado de uma
   // aba com o selo em 2 seria o painel se contradizendo em dois centimetros.
@@ -5059,10 +5049,10 @@ static void desenharPainel(Uint32 agora) {
     // O que vem abaixo (barra de opcoes e lista) entra deslizando.
     xl = (float)trocaDir * SP_TROCA_DESLIZE * (1.0f - tt);
     al = ft; }
-  // The requested mock takes precedence over the later compact header.
+  // Reuse the same localized title for the incoming and outgoing animation.
   { float maxT = SP_INTERNO;
     TxtLinha t = txt_linha_corta(TXT_ILHA_TITULO,
-                                 editando ? i18n("Editar abas") : i18n("Social"),
+                                 tituloAgora(),
                                  SPI_FG_R, SPI_FG_G, SPI_FG_B, 255, editando ? SP_INTERNO : maxT);
     { float tt = trocaT;
       if (tt < 0.999f && tituloAnt[0]) {
@@ -5341,9 +5331,9 @@ void spainel_lateral(float e, const char *kick, const char *titulo, SpLateralCor
   else gfx_cor(p, SP_RAIO / SP_W, .071f, .075f, .086f, .98f * e);
   if (!vid) gfx_luz_canto(p, SP_RAIO / SP_W, p.w * .25f, -p.h * .25f, p.w * .9f, 1, 1, 1, .04f * e);
   gfx_recorte(p.x, p.y, p.w, p.h);
-  caixaAltaIlha(kick, SPI_FG_R, SPI_FG_G, SPI_FG_B, p.x + SP_PAD, SP_KICK_Y, e * 0.45f);
+  caixaAltaIlha(kick, SPI_FG_R, SPI_FG_G, SPI_FG_B, p.x + SP_PAD, SP_Y + 40.0f, e * 0.45f);
   txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_TITULO, titulo, SPI_FG_R, SPI_FG_G, SPI_FG_B, 255, SP_INTERNO),
-                     p.x + SP_PAD, SP_TIT_Y, e);
+                     p.x + SP_PAD, SP_Y + 62.0f, e);
   corpo((GfxRect){ p.x + SP_PAD, SP_LISTA_Y, SP_INTERNO, SP_LISTA_BASE - SP_LISTA_Y }, e, u);
   gfx_sem_recorte();
   ESCALA_FIM();

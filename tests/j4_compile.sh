@@ -21,7 +21,7 @@ for source in src/*.c src/dts/*.c "$source_test"; do
   object="$work/$(basename "$source" .c).o"
   "${compiler[@]}" -c "$source" -o "$object" -DAJUSTES_TESTE -O1 -g -Isrc \
     -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-    -Wno-deprecated-declarations -Wno-macro-redefined "${flags[@]}" &
+    -Wno-deprecated-declarations -Wno-macro-redefined ${flags[@]+"${flags[@]}"} &
   pids+=($!)
   objects+=("$object")
   if [ ${#pids[@]} -ge 4 ]; then wait "${pids[0]}"; pids=("${pids[@]:1}"); fi
