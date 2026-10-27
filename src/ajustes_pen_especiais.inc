@@ -27,7 +27,7 @@ static void ajPenFeatures(void) {
     aj4Texto(r->title,TXT_G21B,x+22,y+80,344,1);
     ajBloco(TXT_AJ_MINI14,r->help,x+22,y+112,344,22,.58f,2);
     int show=i==0 || i==1 || i==2 || i==4;
-    int on=i==0?lig(AJ_CW_LIGADO):i==1?debrid_ativo():i==2?addons_n()>0:1;
+    int on=lig(i==0?AJ_CW_LIGADO:i==1?AJ_DEBRID_LIGADO:i==2?AJ_ADDONS_LIGADO:AJ_LEG_ESTILO_LIGADO);
     if(show) {
       float red,green,blue;ajustes_acento(&red,&green,&blue);
       gfx_cor((GfxRect){x+300,y+22,64,36},.5f,on?red:.20f,on?green:.21f,on?blue:.24f,1);
@@ -66,7 +66,7 @@ static void ajPenRules(void) {
       ajIcone(icons[i],x+46,y+24,26,.75f);
       aj4Texto(names[i],TXT_G21B,x+88,y+13,470,1);
       char capability[240];const char *description=help[i];
-      if(i==0)description=aj4Ajuda(AJ_RESOLUCAO);
+      if(i==0) { snprintf(capability,sizeof capability,"%s: %s",i18n("Resolução da interface"),values[0]);description=capability; }
       if(i==1 || i==2) { snprintf(capability,sizeof capability,"%s · %s",i==1?"HDR":"Dolby Vision",values[i]);description=capability; }
       if(i==4) { snprintf(capability,sizeof capability,"HEVC: %s · AV1: %s",i18n(hevc<0?"Desconhecida":hevc?"Suportado":"Não suportado"),i18n(av1<0?"Desconhecida":av1?"Suportado":"Não suportado"));description=capability; }
       aj4Texto(description,TXT_AJ_MINI14,x+88,y+42,650,.4f);

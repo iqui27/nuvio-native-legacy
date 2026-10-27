@@ -11517,8 +11517,14 @@ int ajustes_teste_quadro(const char *id) {
     }
     else if(!strcmp(id,"pen-scale")) { ajPenOpen(34);focarOpcao(AJ_ESCALA_TEXTO);uxAbrirEditor(AJ_ESCALA_TEXTO);uxPendente=2; }
     else if(!strcmp(id,"pen-color")) { ajPenOpen(34);focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);uxPendente=3; }
-    else if(!strcmp(id,"pen-audio")) { ajPenOpen(27);ajPenRow=1; }
-    else if(!strcmp(id,"pen-estilo"))ajPenOpen(28);
+    else if(!strcmp(id,"pen-audio")) {
+      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=valor[AJ_LEG_LINGUA]=order[1];
+      valor[AJ_LEG_FORCADA]=valor[AJ_LEG_SYNC_AUDIO]=0;ajPenOpen(27);ajPenRow=1;
+    }
+    else if(!strcmp(id,"pen-estilo")) {
+      VideoLegendaEstilo *sample=player_leg_estilo();sample->tamanho=100;sample->fundo=2;sample->negrito=1;sample->posicao=0;
+      ajLegendaEspelhar();ajPenOpen(28);aj4Topo=2;
+    }
     else if(!strncmp(id,"pen-adv-",8))ajPenOpen(atoi(id+8));
     else if(!strncmp(id,"pen-main-",9))ajPenOpen(29+atoi(id+9));
     else if(!strcmp(id,"pen-audio-idioma")) {

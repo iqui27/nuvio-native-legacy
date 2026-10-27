@@ -8,6 +8,7 @@ static const char *const AJ_PEN_PARENT_LABEL[]={"Tempo de tela por perfil","Clas
 static void ajPenParentText(int rule,int value,char *out,size_t n) {
   if(rule==PR_TEMPO) {
     if(!value)snprintf(out,n,"%s",i18n("Sem limite"));
+    else if(value%60==0)snprintf(out,n,i18n("%d h"),value/60);
     else snprintf(out,n,i18n("%d min"),value);
   } else if(rule==PR_IDADE || rule==PR_FILMES) {
     if(!value)snprintf(out,n,"%s",i18n("Livre"));
@@ -21,8 +22,8 @@ static void ajPenParentOpen(int rule) {
 static void ajPenPinOpen(void) {
   if(ajPenPinRepeat<=0)ajPenPinProfile=perfis_ativo();
   if(ajPenPinRepeat<0)teclado_abrir_com("PIN do perfil","Use o mesmo PIN do perfil.",8,"0123456789",NULL);
-  else if(ajPenPinRepeat)teclado_abrir_com("Repita o PIN do perfil","Digite o mesmo PIN de novo.",8,"0123456789",NULL);
-  else teclado_abrir_com("PIN do perfil","De 4 a 8 números. Protege os ajustes deste perfil nesta TV.",8,"0123456789",NULL);
+  else if(ajPenPinRepeat)teclado_abrir_com("Repita o PIN do perfil","Digite o mesmo PIN de novo.",4,"0123456789",NULL);
+  else teclado_abrir_com("PIN do perfil","Um código de 4 dígitos",4,"0123456789",NULL);
   teclado_tipo(TECLADO_TIPO_SENHA);teclado_mascarar(1);
 }
 static int ajPenPinDigitado(const char *pin) {
@@ -32,9 +33,9 @@ static int ajPenPinDigitado(const char *pin) {
     ajPenPinRepeat=0;ajPenPinOpen();return 1;
   }
   if(!ajPenPinRepeat) {
-    size_t n=strlen(pin);int valid=n>=ADMIN_PIN_MIN && n<=ADMIN_PIN_MAX;
+    size_t n=strlen(pin);int valid=n==4;
     for(size_t i=0;i<n;i++)if(pin[i]<'0' || pin[i]>'9')valid=0;
-    if(!valid) { ajPenPinAsk=0;uxNotificar("O PIN precisa ter de 4 a 8 números.");return 0; }
+    if(!valid) { ajPenPinAsk=0;uxNotificar("Um código de 4 dígitos");return 0; }
     snprintf(ajPenPinDraft,sizeof ajPenPinDraft,"%s",pin);ajPenPinRepeat=1;ajPenPinOpen();return 1;
   }
   int equal=!strcmp(pin,ajPenPinDraft);
