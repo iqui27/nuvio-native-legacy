@@ -76,6 +76,19 @@ static const AjPenPage AJ_PEN_AUDIO[] = {
       {AJ_LEG1_RESTAURAR,"Restaurar o padrão","Volta o estilo que veio no arquivo","aj_rotate-ccw-clock",0},
       {AJ_LEG1_ATRASO,"Ajuste fino","Corrige o milissegundo","aj_sliders-horizontal",0}}}}}
 };
+static int ajPenLanguageOrder(int *order) {
+  static const char *const first[]={"~","pt-BR","en","es","fr","ja"};
+  int n=0,total=nValores(AJ_AUD_LINGUA);unsigned char seen[LING_MAX_OPC]={0};
+  for(int p=0;p<6;p++)for(int i=0;i<total;i++)if(!strcmp(ling_opcao_codigo(i),first[p])) { order[n++]=i;seen[i]=1;break; }
+  for(int i=0;i<total;i++)if(!seen[i])order[n++]=i;
+  return n;
+}
+static int ajPenLanguageMove(SDL_Keycode key) {
+  if(uxOp!=AJ_AUD_LINGUA || uxEditor!=1 || uxRodape || (key!=SDLK_DOWN && key!=SDLK_UP))return 0;
+  int order[LING_MAX_OPC],n=ajPenLanguageOrder(order),direction=key==SDLK_DOWN?1:-1;
+  for(int i=0;i<n;i++)if(order[i]==uxPendente) { int next=i+direction;if(next>=0 && next<n)uxPendente=order[next];return 1; }
+  return 0;
+}
 static AjPenPage ajPenOther;
 static int ajPenMissing(int *ops) {
   unsigned char seen[AJ_N]={0};

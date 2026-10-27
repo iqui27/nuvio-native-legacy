@@ -319,6 +319,7 @@ static int uxEvento(SDL_Keycode k) {
     else if (k == SDLK_RIGHT) k = SDLK_LEFT;
   }
   if (!uxEditor) return aj4Evento(k);
+  if(!uxRestaurar && !uxAvisoRisco && ajPenLanguageMove(k))return 1;
   int layoutOculto = !ajLayoutSelecionavel() && (uxCabLayout || uxTopo == AJ2_T_LAYOUT ||
                        (uxEditor && uxOp == AJ_LAYOUT_AJUSTES));
   uxLayoutDisponibilidade();

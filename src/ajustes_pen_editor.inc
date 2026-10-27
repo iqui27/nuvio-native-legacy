@@ -60,11 +60,12 @@ static void ajPenEditor(void) {
     aj4Texto("← →  Alterar     OK  Aplicar",TXT_G20M,800,580,900,.65f);
   } else {
     static const int colors[]={6,1,2,3,4,5,0,7,8,9,10,11};
-    int n=nValores(op),selected=uxPendente;
+    int n=nValores(op),selected=uxPendente,languageOrder[LING_MAX_OPC];
+    if(op==AJ_AUD_LINGUA) { n=ajPenLanguageOrder(languageOrder);for(int i=0;i<n;i++)if(languageOrder[i]==uxPendente)selected=i; }
     if(op==AJ_TEMA)for(int i=0;i<12;i++)if(colors[i]==uxPendente)selected=i;
     int start=selected/6*6;
     for(int pos=start;pos<n && pos<start+6;pos++) {
-      int i=op==AJ_TEMA && pos<12?colors[pos]:pos;
+      int i=op==AJ_TEMA && pos<12?colors[pos]:op==AJ_AUD_LINGUA?languageOrder[pos]:pos;
       float y=400+(pos-start)*76;char value[160];uxValorTexto(op,i,value,sizeof value);
       if(i==uxPendente && !uxRodape)ajNeutro((GfxRect){770,y,1028,70},20,.14f,.169f,.176f,.204f,1);
       aj4Texto(op==AJ_AUD_LINGUA && !strcmp(ling_opcao_codigo(i),"~")?"Original":value,TXT_G21B,770,y+5,800,1);

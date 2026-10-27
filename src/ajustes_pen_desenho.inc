@@ -23,7 +23,7 @@ static void ajPenBase(void) {
   gfx_luz_canto(screen,0,1098,247,763,.398f,.356f,.341f,.812f);
   gfx_luz_canto(screen,0,1473,561,1696,.184f,.188f,.335f,1);
   gfx_luz_canto(screen,0,396,977,879,.069f,.062f,.077f,1);
-  gfx_veu_css(screen,2,.107f,.422f,.405f);
+  gfx_veu_css(screen,2,1.0f,.58f,.405f);
   ajPenPanel(48,112,88,522,0);
   static const char *const icons[]={"aj_house","aj_compass","aj_tv","aj_search","aj_book-open","aj_calendar","aj_user-round","aj_sliders-horizontal"};
   for(int i=0;i<8;i++) {

@@ -2847,6 +2847,7 @@ static int ajOpcaoDisponivel(int op);
 static int aj4Evento(SDL_Keycode k);
 static void ajPenSavedForget(void);
 static int aj4RTL(void);
+static int ajPenLanguageMove(SDL_Keycode key);
 static const char *aj4Rotulo(int op);
 static int aj4Simples(int op);
 static int uxTemPadrao(int op);
@@ -11479,7 +11480,7 @@ int ajustes_teste_quadro(const char *id) {
     else if(!strcmp(id,"pen-source")) {
       Stream fixture[5]={0};const char *labels[]={"Torrentio · 4K Dolby Vision","Real-Debrid · 1080p","Torrentio · 720p","Mediafusion + · 1080p","YTS · 720p"};
       const int heights[]={2160,1080,720,1080,720};
-      for(int i=0;i<5;i++) { snprintf(fixture[i].rotulo,sizeof fixture[i].rotulo,"%s",labels[i]);fixture[i].altura=heights[i];fixture[i].debridServico=i==1; }
+      for(int i=0;i<5;i++) { snprintf(fixture[i].rotulo,sizeof fixture[i].rotulo,"%s",labels[i]);fixture[i].altura=heights[i];fixture[i].debridServico=i==1;snprintf(fixture[i].url,sizeof fixture[i].url,"https://example.invalid/source-%d.mp4",i); }
       stream_definir_lista(fixture,5);ajPenOpen(AJ_PEN_SOURCES);
     }
     else if(!strcmp(id,"pen-scale")) { ajPenOpen(34);focarOpcao(AJ_ESCALA_TEXTO);uxAbrirEditor(AJ_ESCALA_TEXTO);uxPendente=2; }
