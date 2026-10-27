@@ -280,6 +280,7 @@ static const char *uxSinonimos(int op) {
     case AJ_HERO_SINOPSE_TAM: return "sinopse tamanho destaque hero texto grande normal synopsis size";
     case AJ_HERO_NOTAS: return "nota notas imdb destaque hero avaliacao rating ratings esconder mostrar";
     case AJ_HERO_ANO: return "ano destaque hero lancamento year data esconder mostrar";
+    case AJ_HERO_PASTA_DETALHES: return "pasta colecao detalhes destaque hero folder collection details title";
     case AJ_HERO_DURACAO: return "duracao tempo destaque hero runtime minutos horas esconder mostrar";
     case AJ_HERO_TRAILER: return "trailer trailers destaque topo hero autoplay automatico";
     case AJ_FOCO_TRAILER: return "trailer trailers cartaz poster foco autoplay";

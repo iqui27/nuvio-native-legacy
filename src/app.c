@@ -890,6 +890,7 @@ static int iniciarPoliticaFonte(int preferida, int manual) {
 #include "logrede.h"
 #include "extras.h"
 #include "perfilinfantil.h"
+#include "perfilregras.h"
 #include <stdio.h>
 
 static Tela tela = TELA_HOME;
@@ -5058,8 +5059,8 @@ static int perfilPermiteReproduzir(int indice) {
   const CatItem *ci = cat_item(indice);
   const char *cert = indice == detail_indice() ? extras_ficha_classificacao() : NULL;
   if (!cert || !*cert) cert = ci ? ci->classificacao : NULL;
-  if (perfil_infantil_classif_ok(cert)) return 1;
-  glem_aviso_curto(i18n("Perfil infantil: só classificação livre e 10 anos"));
+  if (perfil_regra_classif(cert) && !perfil_regra_tempo(0)) return 1;
+  glem_aviso_curto(i18n("Este título ultrapassa os limites deste perfil."));
   return 0;
 }
 
@@ -5270,6 +5271,13 @@ static void recuperarErroFonte(void) {
 
 void app_atualizar(float dt, Uint32 agora) {
   aioui_atualizar(dt, agora);
+  if(tela!=TELA_LOGIN && tela!=TELA_ESCOLHA_PERFIL && perfil_regra_tempo(dt)) {
+    if(player_aberto() || player_mini_ativo()) { player_sair();player_encerrar();video_parar(); }
+    player_descartar_retido();fontevolta_esquecer("parental time limit");
+    invalidarPerfil();tela=TELA_ESCOLHA_PERFIL;perfilAntes=perfis_ativo();perfilsel_iniciar();
+    glem_aviso_curto(i18n("Tempo de tela esgotado para este perfil."));
+    return;
+  }
   relogioFocoValidar();
   ajustes_fontes_atualizar();
   { static int morno = -1; int ligado = ajustes_retomada_morna();
@@ -8015,7 +8023,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto() && !player_aberto() && sessao_logada() &&
       tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL) {
     ilha_relogio_visivel(relogioCabe() && ajustes_relogio_ligado());
-    ilha_posicionar(detail_tem_servidores() ? 2 : 1);
+    ilha_posicionar(tela==TELA_AJUSTES?3:detail_tem_servidores()?2:1);
     // O painel de Salvos que nasceu da pilula recolhe para ela (o retangulo
     // do quadro anterior) e, enquanto esta na tela, a cobre.
     { float ix = 0, iy = 0, iw = 0, ih = 0;

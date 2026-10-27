@@ -12,7 +12,7 @@ if [ "${SANITIZE:-0}" = 1 ]; then
   flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
   if [ "$(uname -s)" != Darwin ]; then flags+=(-fno-pie); gc+=(-no-pie); fi
 fi
-"${CC:-cc}" "${flags[@]}" tests/cw_prioridade.c src/perfis.c src/homeestado.c src/catalogo.c \
+"${CC:-cc}" "${flags[@]}" tests/cw_prioridade.c src/perfis.c src/admin.c src/homeestado.c src/catalogo.c \
   src/progresso.c src/cwordem.c src/cotacat.c src/js.c src/metaprov.c src/colecoes.c \
   src/redeurl.c src/catordem.c "${gc[@]}" -o "$work/test"
 for scenario in fresh cached clear stale; do

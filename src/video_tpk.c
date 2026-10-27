@@ -36,6 +36,7 @@
 #include "proxyts.h"
 #include "dts/dts_hls_tpk.h"
 #include "dts/dts_remux.h"
+#include "dts/dts_engine.h"
 #include "cdnlink.h"
 #include "debrid.h"
 #include "mkvfix.h"
@@ -1156,6 +1157,7 @@ static int ordinalAudio(int numero) {
 // Abre a sessao do conversor (a sonda roda num fio). 0: servidor/FFmpeg indisponivel.
 static int convAbrirSessao(int ordinal, int modo, double pos, char *url, size_t n) {
   dts_remux_set_audio_offset_ms(ajustes_audio_offset_ms());
+  dts_engine_set_normalize(ajustes_audio_normalizar());
   dts_remux_set_hdr10p_strip(ajustes_hdr10p_strip());   // #605
   if (dts_tpk_abrir(urlAtual, cabecalhos, ordinal, !ajustes_dts_ac3(), modo, pos, url, n))
     return 1;

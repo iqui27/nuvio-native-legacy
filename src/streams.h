@@ -407,6 +407,8 @@ long stream_pontos(const Stream *s);
 int  stream_e_mp4(const Stream *s);
 // R9b: o que a tela mostra (1/0; -1 = desconhecido, o padrao, nao penaliza).
 void stream_definir_tela(int hdr, int dv);
+/* Observed hardware capability, -1 when the backend has not reported it. */
+void stream_capacidades(int *hdr,int *dv,int *hevc,int *av1);
 // Android: -1 desconhecido, 0 sem decoder 3840x2160, 1 suportado. Nao filtra a folha manual.
 void stream_definir_decoder4k(int hevc, int avc, int vp9, int av1);
 // Erro Media3 no automatico: nao repetir tamanho/codec nesta lista. `renderer`
@@ -516,6 +518,8 @@ void stream_folha_atualizar(float dt, Uint32 agora);
 void stream_folha_desenhar(Uint32 agora);
 // Devolve 1 uma vez quando o usuario escolheu, com o indice em *escolhido.
 int  stream_folha_escolheu(int *escolhido);
+// Same explicit choice as OK in the source sheet; never resolves or plays here.
+int  stream_escolher_indice(int indice);
 
 // Captured at dispatch, so a delayed worker cannot adopt another profile's list.
 int stream_canal_primeira_viva_sessao(int tentativas, uint64_t sessao);

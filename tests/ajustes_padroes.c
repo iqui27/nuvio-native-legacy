@@ -213,7 +213,16 @@ int main(void) {
   assert(AJ_MIC_BUSCA == AJ_INTERFACE_MODO + 1);
   assert(AJ_MENU_TOPO == AJ_MIC_BUSCA + 1);
   assert(AJ_N > AJ_CONQ_DICAS && AJ_CONQ_LIGADO == AJ_MENU_TOPO + 1);
-  assert(AJ_GUIA_PREVIA_GRANDE == AJ_DET_ELENCO_VISTO + 1 && AJ_N == AJ_GUIA_PREVIA_GRANDE + 1);
+  assert(AJ_GUIA_PREVIA_GRANDE == AJ_DET_ELENCO_VISTO + 1 && AJ_AUD_ORIGINAL == AJ_GUIA_PREVIA_GRANDE + 1);
+  assert(AJ_HERO_PASTA_DETALHES == AJ_LEG_ESTILO_LIGADO + 1 && AJ_N == AJ_HERO_PASTA_DETALHES + 1);
+  const int added[] = {AJ_AUD_ORIGINAL, AJ_AUDIO_NORMALIZAR, AJ_DEBRID_LIGADO, AJ_ADDONS_LIGADO, AJ_LEG_ESTILO_LIGADO};
+  const int defaults[] = {1, 1, 0, 0, 0};
+  const char *keys[] = {"audioOriginalLocal", "audioNormalizarLocal", "debridLigadoLocal", "addonsLigadosLocal", "legEstiloLigadoLocal"};
+  for (int i = 0; i < 5; i++) {
+    assert(valor[added[i]] == defaults[i] && valorPadrao[added[i]] == defaults[i]);
+    assert(escopoDe(added[i]) == ESC_PERFIL_LOCAL && !strcmp(CHAVE[added[i]], keys[i]));
+  }
+  assert(valor[AJ_HERO_PASTA_DETALHES] == 0 && ajustes_hero_pasta_detalhes());
   // Guia TV v5: previa grande desligada de fabrica (vale o cartao do mock),
   // por perfil neste aparelho (ESC_PERFIL_LOCAL), chave propria.
   assert(valor[AJ_GUIA_PREVIA_GRANDE] == 1 && !ajustes_guia_previa_grande());
@@ -288,7 +297,7 @@ int main(void) {
   AJ_HDR_INTERFACE == AJ_AMPLIACAO_NITIDEZ + 1 &&
   AJ_LIMPAR_CACHE == AJ_HDR_INTERFACE + 1 &&
   AJ_TUNNELING == AJ_LIMPAR_CACHE + 1 && AJ_DV7 == AJ_TUNNELING + 1 &&
-  AJ_LOG_REDE == AJ_DV7 + 1 && AJ_N > AJ_LOG_REDE);
+  AJ_HDR10P_STRIP == AJ_DV7 + 1 && AJ_LOG_REDE == AJ_HDR10P_STRIP + 1 && AJ_N > AJ_LOG_REDE);
   assert(valor[AJ_LOG_REDE] == 1 && valorPadrao[AJ_LOG_REDE] == 1 &&
          uxValorPadrao(AJ_LOG_REDE) == 1 && !ajustes_log_rede()); // V_LIGA: 1 = Off
   // Comentarios do Trakt no painel de pausa: ligado de fabrica; fora do blob do web (como reacaoCreditosLocal).

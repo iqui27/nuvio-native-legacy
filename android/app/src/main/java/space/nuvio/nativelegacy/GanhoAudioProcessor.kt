@@ -19,6 +19,9 @@ import java.nio.ByteOrder
 @androidx.annotation.OptIn(UnstableApi::class)
 class GanhoAudioProcessor : BaseAudioProcessor() {
     @Volatile var ganho = 1f
+    @Volatile var normalizar = false
+    private var nivel = 1f
+    override fun onFlush() { nivel = 1f }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat =
         if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT || inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT)
@@ -29,14 +32,39 @@ class GanhoAudioProcessor : BaseAudioProcessor() {
         val n = inputBuffer.remaining()
         if (n == 0) return
         val out = replaceOutputBuffer(n)
-        val g = ganho
+        var g = ganho
         val src = inputBuffer.duplicate().order(ByteOrder.nativeOrder())
-        if (g <= 1f) {
+        if (normalizar) {
+            val probe = src.duplicate().order(ByteOrder.nativeOrder())
+            var squares = 0.0
+            var count = 0
+            val pcm16 = inputAudioFormat.encoding == C.ENCODING_PCM_16BIT
+            while (probe.remaining() >= if (pcm16) 2 else 4) {
+                val sample = if (pcm16) probe.short / 32768.0 else probe.float.toDouble()
+                squares += sample * sample
+                count++
+            }
+            if (count > 0) {
+                val rms = kotlin.math.sqrt(squares / count)
+                val target = if (rms < .001) 1f else (.15 / rms).toFloat().coerceIn(.25f, 4f)
+                val seconds = count.toDouble() / (inputAudioFormat.sampleRate * inputAudioFormat.channelCount)
+                val mix = (1 - kotlin.math.exp(-seconds / if (target < nivel) .03 else 1.0)).toFloat()
+                nivel += (target - nivel) * mix
+                g *= nivel
+            }
+        } else nivel = 1f
+        if (g == 1f) {
             out.put(src)
         } else if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT) {
-            while (src.remaining() >= 2) out.putShort(GanhoMath.pcm16(src.short, g))
+            while (src.remaining() >= 2) {
+                val sample = src.short
+                out.putShort(if (g < 1f) (sample * g).toInt().toShort() else GanhoMath.pcm16(sample, g))
+            }
         } else {
-            while (src.remaining() >= 4) out.putFloat(GanhoMath.amostra(src.float, g))
+            while (src.remaining() >= 4) {
+                val sample = src.float
+                out.putFloat(if (g < 1f) sample * g else GanhoMath.amostra(sample, g))
+            }
         }
         inputBuffer.position(inputBuffer.limit())
         out.flip()

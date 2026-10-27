@@ -29,9 +29,34 @@ static float aj4Bloco(TxtEstilo e,const char *s,float x,float y,float w,float lh
 #define ajIconeT aj4IconeT
 #define ajBloco aj4Bloco
 static void aj4PontAtivar(int zona,int row) {
+  if(zona==16) { uxRodape=row;uxEvento(SDLK_RETURN);return; }
+  if(zona==15) {
+    if(row==0)definirValorDireto(AJ_FONTE_MANUAL,!valor[AJ_FONTE_MANUAL]);
+    else { int op=row==1?AJ_FONTE_ORDEM_ADDON:AJ_FONTE_MANUAL;focarOpcao(op);uxAbrirEditor(op);if(row==2) { uxRodape=1;uxEvento(SDLK_RETURN); } }
+    return;
+  }
+  if(zona==14) {
+    if(row==AJ_TAMANHO_UI) { focarOpcao(row);uxAbrirEditor(row); }
+    else if(row==AJ_COR_LOGO || row==AJ_AUD_ORIGINAL)definirValorDireto(row,!valor[row]);
+    else if(row==AJ_FONTE_MANUAL)uxPendente=!uxPendente;
+    else if(row==AJ_QUALIDADE)uxPendente=uxPendente?0:1;
+    else { for(int i=0;i<nValores(AJ_AUD_LINGUA);i++)if(!strcmp(ling_opcao_codigo(i),"~")) { uxPendente=i;break; } }
+    return;
+  }
+  if(zona==13) {
+    if(row==0) { focarOpcao(AJ_LEG2_RESTAURAR);SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_RETURN;eventoTela(&e); }
+    else if(row==3)definirValorDireto(AJ_LEG2_POS,!valor[AJ_LEG2_POS]);
+    else { int op=row==1?AJ_LEG_LINGUA2:AJ_LEG2_POS;focarOpcao(op);uxAbrirEditor(op); }
+    return;
+  }
+  if(zona==12) { if(row==4)ajPenOpen(AJ_PEN_COMPONENTS);else { ajPenRow=row;ajPenEvent(SDLK_RETURN); }return; }
   if(zona==5) { uxEvento(SDLK_ESCAPE); return; }
+  if(zona==8) { ajPenRow=row;int handled=ajPenEvent(SDLK_RETURN);if(!handled) { SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.keysym.sym=SDLK_RETURN;eventoTela(&event); } return; }
+  if(zona==10) { aj4Buscar();return; }
+  if(zona==11 && uxEditor==1) { uxPendente=limita(uxOp,uxPendente+row);return; }
+  if(zona==9) { if(row==1) { uxRodape=1;uxEvento(SDLK_RETURN); }else if(row==2)ajPenSavedAsk();return; }
   aj4PontFoco(zona,row);
-  if(zona==4)uxAplicar();
+  if(zona==4) { if(uxOp==AJ_GUIA_CATEGORIAS)uxCategoriaAlternar(row);else uxAplicar(); }
   else if(zona==7) { snprintf(aj4Consulta,sizeof aj4Consulta,"%s",i18n(row==2?"Áudio":"Fontes")); aj4Acao=aj4Linha=0; }
   else aj4Evento(SDLK_RETURN);
 }
@@ -40,6 +65,8 @@ static void aj4Alvo(GfxRect r,int zona,int row) {
   if(!pfTela && !teclado_aberto())ponteiro_alvo(r.x,r.y,r.w,r.h,aj4PontFoco,aj4PontAtivar,zona,row);
 }
 static void aj4Texto(const char *s, TxtEstilo e, float x, float y, float w, float a) {
+  if(e==TXT_G21B)e=TXT_PEN_ROW;
+  else if(e==TXT_G18R)e=TXT_PEN_VALUE;
   txt_desenhar_alpha(ajTxtC(e, s, w), x, y, a);
 }
 static void aj4Botao(const char *s, const char *ic, float x, float y, float w, int foco, int ativo) {
@@ -462,14 +489,34 @@ static void aj4PerfilDesenhar(void) {
   for(int i=0;i<4;i++)aj4LinhaDesenhar(nomes[i],desc[i],i==0?nome:i==1?audio:i==2?"Ver estado":"Ajustes do aparelho",i==0?"":i==3?"Esta TV":"Este perfil",ic[i],387+i*123,i==aj4Linha && !aj4Acao && aj4Topo<0,0);
   aj4Botao("Gerenciar perfis","aj_user-round",622,895,365,aj4Acao,0);aj4Alvo((GfxRect){622,895,365,58},3,1);
 }
+#include "ajustes_pen_desenho.inc"
+#include "ajustes_pen_editor.inc"
+#include "ajustes_pen_secondary.inc"
+#include "ajustes_pen_sources.inc"
+#include "ajustes_pen_util.inc"
+#include "ajustes_pen_especiais.inc"
+#include "ajustes_pen_presets.inc"
+#include "ajustes_pen_providers.inc"
+#include "ajustes_pen_components.inc"
 static void aj4Desenhar(void) {
   ponteiro_camada();
   aj4SeloAviso=0;
-  if(uxEditor)aj4Editor();
+  if(iptvForm.tipo)ajDesenharTela();
+  else if(ajPenParentEditor>=0)ajPenParentChoice();
+  else if(uxEditor)ajPenEditor();
   else if(aj4Util==4)aj4PerfilDesenhar();
-  else if(aj4Util==3)aj4BuscaDesenhar();
-  else if(aj4Review || aj4Util)aj4UtilDesenhar();
-  else if(focoIndice)aj4Home();
+  else if(aj4Util==3 || (aj4Util==1 && !aj4Review))ajPenUtility();
+  else if(aj4Util==2 && !aj4Review)ajPenPresets();
+  else if(aj4Review)ajPenReview();
+  else if(aj4Util)aj4UtilDesenhar();
+  else if(!focoIndice && ajPenPage==AJ_PEN_SOURCES)ajPenSources();
+  else if(!focoIndice && ajPenPage==AJ_PEN_COMPONENTS)ajPenComponents();
+  else if(!focoIndice && ajPenPage==AJ_PEN_SECONDARY)ajPenRows();
+  else if(!focoIndice && ajPenPage==AJ_PEN_RULES)ajPenRules();
+  else if(!focoIndice && ajPenPage==AJ_PEN_TOUR)ajPenFeatures();
+  else if(!focoIndice && ajPenPage>=AJ_PEN_PROVIDER && ajPenPage<=AJ_PEN_ADDON_FAILURES)ajPenProviders();
+  else if(!focoIndice && ajPenCurrent())ajPenRows();
+  else if(focoIndice)ajPenHome();
   else aj4SecaoDesenhar();
 }
 #undef txt_desenhar

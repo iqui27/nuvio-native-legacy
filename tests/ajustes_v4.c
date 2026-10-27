@@ -1,6 +1,8 @@
 // V4 navigation and persistence contract, isolated from real profiles/accounts.
 #include "../src/ajustes.c"
 #include "nvtmp.h"
+#include "../src/audionorm.h"
+#include "../src/audioescolha.h"
 #include <assert.h>
 #include <unistd.h>
 
@@ -13,7 +15,7 @@ int main(void) {
   snprintf(dir, sizeof dir, "%s/nuvio-ajustes-v4-XXXXXX", nvt_dir());
   assert(mkdtemp(dir)); assert(SDL_Init(SDL_INIT_TIMER) == 0);
   assert(setenv("NUVIO_DADOS", dir, 1) == 0);
-  dados_iniciar(dir); snprintf(dirAjustes, sizeof dirAjustes, "%s", dir);
+  dados_iniciar(dir); snprintf(dirAjustes, sizeof dirAjustes, "%s", dir);player_dir(dir);fontefalha_dir(dir);
   ajustes_iniciar(); assert(gravar());
 #ifndef AJUSTES_V4
   assert(!"Settings v4 navigation is missing");
@@ -42,10 +44,146 @@ int main(void) {
     for (int j = 0; j < n; j++) seen += ops[j] == op;
     assert(seen == 1);
   }
+  // Every original setting is reachable through a designed page or the continuation.
+  {
+    unsigned char seen[AJ_N]={0};int missing[AJ_N],count=ajPenMissing(missing);
+    for(int p=0;p<46;p++) {
+      ajPenOpen(p);const AjPenPage *page=ajPenCurrent();assert(page);
+      for(int c=0;c<2;c++)for(int r=0;r<page->cols[c].n;r++) {
+        int op=page->cols[c].rows[r].op;if(op<0)continue;assert(op<AJ_N);seen[op]=1;
+      }
+    }
+    for(int i=0;i<count;i++)seen[missing[i]]=1;
+    for(int op=0;op<AJ_N;op++)if(aj4Secao(op)>=0 && ajOpcaoDisponivel(op))assert(seen[op]);
+    ajPenPage=-1;focoIndice=1;
+  }
+  // Specialized Pencil pages preserve navigation and cancel pending changes.
+  aj4Iniciar();focoIndice=1;aj4Linha=10;key(SDLK_RETURN);
+  assert(ajPenPage==AJ_PEN_PARENTAL && ajPenCurrent()==&AJ_PEN_PARENT);
+  key(SDLK_ESCAPE);assert(focoIndice && !uxEditor);
+  aj4Linha=6;key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_RULES);
+  key(SDLK_ESCAPE);assert(focoIndice && aj4Linha==6);
+  aj4Linha=7;key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_TOUR);
+  key(SDLK_DOWN);assert(ajPenRow==4);key(SDLK_RIGHT);assert(ajPenRow==5);
+  key(SDLK_ESCAPE);assert(focoIndice);
+  focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);int theme=valor[AJ_TEMA];
+  key(SDLK_DOWN);assert(uxPendente>=0 && uxPendente<nValores(AJ_TEMA));
+  key(SDLK_ESCAPE);assert(valor[AJ_TEMA]==theme);
+  // Overview switches persist independently and preserve configured sources/styles.
+  ajPenOpen(AJ_PEN_TOUR);ajPenRow=1;
+  debrid_definir_chave_local("realdebrid","overview-test-key");assert(debrid_ativo());
+  key(SDLK_RETURN);assert(!lig(AJ_DEBRID_LIGADO) && !debrid_ativo());
+  assert(debrid_origem("realdebrid")>0);
+  key(SDLK_RETURN);assert(lig(AJ_DEBRID_LIGADO) && debrid_ativo());
+  debrid_definir_chave_local("realdebrid","");
+  ajPenRow=2;key(SDLK_RETURN);assert(!lig(AJ_ADDONS_LIGADO));
+  key(SDLK_RETURN);assert(lig(AJ_ADDONS_LIGADO));
+  int savedSize=player_leg_estilo()->tamanho;
+  ajPenRow=4;key(SDLK_RETURN);assert(!ajustes_legenda_estilo_ligado());
+  assert(player_leg_estilo()->tamanho==savedSize);
+  assert(player_leg_estilo_efetivo()->tamanho==player_leg_estilo_padrao()->tamanho);
+  key(SDLK_RETURN);assert(ajustes_legenda_estilo_ligado());
+  assert(player_leg_estilo_efetivo()==player_leg_estilo());
+  ajPenOpen(39);ajPenRow=11;key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_PROVIDER);
+  key(SDLK_ESCAPE);assert(ajPenPage==39);
+  ajPenOpen(42);ajPenRow=11;key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_IPTV_PROVIDER);
+  key(SDLK_ESCAPE);assert(ajPenPage==42);
+  ajPenOpen(38);ajPenRow=7;key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_PROVIDER_FAILURES);
+  int retry=uxValorAtual(AJ_FALHA_PROVEDORES);key(SDLK_RETURN);
+  assert(uxValorAtual(AJ_FALHA_PROVEDORES)!=retry);key(SDLK_RETURN);
+  key(SDLK_ESCAPE);assert(ajPenPage==38);
+  // Generic editors inherit their actual page context.
+  ajPenOpen(33);assert(!strcmp(ajPenContext(),"Minha tela"));
+  // Pencil custom presets survive reload, exclude credentials, and roll back through review.
+  aj4Iniciar();focoIndice=1;
+  valor[AJ_QUALIDADE]=2;
+  assert(ajPenSavedSave("Friday movie"));
+  ajPenSavedProfile=0;ajPenSavedLoad();
+  assert(ajPenSavedCount==1 && !strcmp(ajPenSavedNames[0],"Friday movie"));
+  assert(ajPenSavedValues[0][AJ_DEBRID_RD]<0);
+  assert(ajPenSavedValues[0][AJ_LEG1_COR]==ajLegendaValor(AJ_LEG1_COR));
+  char *presetBlob=NULL;assert(ajustes_mesclar_blob("{}",&presetBlob)>0 && presetBlob);
+  assert(strstr(presetBlob,"store4"));
+  char presetFile[128];ajustesArquivoSync(4,presetFile,sizeof presetFile);
+  unsigned long long presetHash=ajustes_sync_hash();assert(dados_gravar(presetFile,""));
+  assert(ajustes_sync_hash()!=presetHash);
+  assert(ajustesExtrasAplicar(presetBlob,"{}")>0);free(presetBlob);
+  ajPenSavedLoad();assert(ajPenSavedCount==1 && !strcmp(ajPenSavedNames[0],"Friday movie"));
+  valor[AJ_QUALIDADE]=3;
+  int savedColor=ajPenSavedValues[0][AJ_LEG1_COR],changedColor=(savedColor+1)%6;
+  assert(ajLegendaDefinir(AJ_LEG1_COR,changedColor));
+  assert(ajPenSavedPrepare(0)>0 && aj4Aplicar());
+  assert(ajLegendaValor(AJ_LEG1_COR)==savedColor);
+  assert(valor[AJ_QUALIDADE]==2 && aj4Desfazer() && valor[AJ_QUALIDADE]==3);
+  assert(ajLegendaValor(AJ_LEG1_COR)==changedColor);
+  int subtitleSize=ajLegendaValor(AJ_LEG1_TAMANHO);
+  ajLegendaEspelhar();ajPenPresetPrepare(0);assert(aj4Aplicar());
+  assert(ajLegendaValor(AJ_LEG1_TAMANHO)==140 && aj4Desfazer());
+  assert(ajLegendaValor(AJ_LEG1_TAMANHO)==subtitleSize);
+  for(int p=0;p<4;p++) { ajPenPresetPrepare(p);assert(aj4Review==2);aj4Review=0; }
+  ajPenOpen(27);ajPenOpen(28);ajPenRow=11;focarOpcao(AJ_LEG1_ATRASO);uxAbrirEditor(AJ_LEG1_ATRASO);
+  int fineBefore=uxPendente;key(SDLK_RIGHT);assert(uxPendente==fineBefore+1);key(SDLK_ESCAPE);
+  key(SDLK_ESCAPE);assert(ajPenPage==27);
+  ajPenOpen(33);ajPenOpen(34);key(SDLK_ESCAPE);assert(ajPenPage==33);
+  ajPenPresetPrepare(1);assert(aj4Aplicar() && ajustes_audio_normalizar());assert(aj4Desfazer());
+  float quiet=1,loud=1;for(int i=0;i<100;i++) { quiet=audionorm_gain(.01,100,quiet,1000);loud=audionorm_gain(64,100,loud,1000); }
+  assert(quiet>3.9f && loud<.26f && audionorm_sample(1,quiet)==1);
+  assert(audionorm_gain(0,100,1,1000)==1);
+  // Local PINs gate profile entry and fail closed on a wrong PIN.
+  assert(dados_gravar("perfis.txt","1\t0\t1\t0\t336699\tTest profile\t\t\n"));
+  perfis_carregar_ativo();
+  assert(admin_perfil_pin_definir(1,"4826"));
+  assert(admin_perfil_pin_conferir(1,"4826") && !admin_perfil_pin_conferir(1,"0000"));
+  assert(perfis_acao(0)==PERFIL_ACAO_PIN);
+  assert(perfis_verificar_pin(1,"4826")==1 && perfis_verificar_pin(1,"0000")==0);
+  ajPenPinAsk=1;ajPenPinRepeat=-1;ajPenPinProfile=1;
+  assert(!ajPenPinDigitado("0000") && !ajPenPinAsk);
+  ajPenPinAsk=1;ajPenPinRepeat=-1;ajPenPinProfile=1;
+  assert(ajPenPinDigitado("4826") && ajPenPinRepeat==0);
+  assert(ajPenPinDigitado("5937") && ajPenPinRepeat==1);
+  assert(!ajPenPinDigitado("5937") && admin_perfil_pin_conferir(1,"5937"));
+  assert(!admin_perfil_pin_conferir(1,"4826"));
+  ajPenPinAsk=1;ajPenPinRepeat=0;ajPenPinProfile=1;
+  assert(!ajPenPinDigitado("12345") && !ajPenPinAsk);
+  assert(admin_perfil_pin_conferir(1,"5937"));
+  { SDL_Event close={0};close.type=SDL_KEYDOWN;close.key.keysym.sym=SDLK_ESCAPE;teclado_evento(&close);teclado_resultado();teclado_esquecer(); }
+  admin_pin_esquecer();
+  // Parental policy is validated, persisted, enforced, and remains profile-local.
+  assert(perfil_regra_definir(1,PR_IDADE,12));
+  assert(!perfil_regra_definir(1,PR_IDADE,99));
+  assert(perfil_infantil_definir(1,1));
+  assert(perfil_regra_classif("12") && !perfil_regra_classif("16") && !perfil_regra_classif(NULL));
+  assert(!perfil_regra_busca("16") && perfil_regra_compras());
+  assert(perfil_regra_definir(1,PR_FILMES,10));
+  assert(perfil_regra(1,PR_IDADE)==12 && !perfil_regra_classif("12"));
+  assert(perfil_regra_definir(1,PR_FILMES,18) && perfil_regra_classif("12"));
+  assert(perfil_regra_definir(1,PR_BUSCA_LIVRE,1) && perfil_regra_busca("16"));
+  assert(perfil_regra_definir(1,PR_TEMPO,1));
+  for(int i=0;i<61;i++)perfil_regra_tempo(1);
+  assert(perfil_regra_tempo(0));
+  assert(perfil_infantil_definir(1,0) && !perfil_regra_tempo(0));
+  perfil_regras_esquecer();aj4Iniciar();ajPenPage=-1;focoIndice=1;
+  // Special pages preserve editors and expose left-panel actions to the D-pad.
+  ajPenOpen(27);ajPenOpen(AJ_PEN_SECONDARY);assert(ajPenRow==0);
+  ajPenRow=6;key(SDLK_RETURN);assert(uxEditor && uxOp==AJ_LEG2_POS);key(SDLK_ESCAPE);
+  key(SDLK_RIGHT);assert(ajPenRow==7);key(SDLK_UP);assert(ajPenRow==6);
+  ajPenOpen(29);ajPenOpen(AJ_PEN_SOURCES);key(SDLK_LEFT);assert(ajPenRow==-1);
+  key(SDLK_DOWN);key(SDLK_RETURN);assert(uxEditor && uxOp==AJ_FONTE_ORDEM_ADDON);key(SDLK_ESCAPE);
+  key(SDLK_ESCAPE);assert(ajPenPage==29);
+  ajPenOpen(44);ajPenRow=AJ_PEN_MAIN[15].cols[0].n+AJ_PEN_MAIN[15].cols[1].n-1;key(SDLK_DOWN);assert(ajPenRow==99);
+  key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_COMPONENTS);key(SDLK_ESCAPE);assert(ajPenPage==44);
+  ajPenOpen(34);focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);
+  int logoBefore=valor[AJ_COR_LOGO];key(SDLK_LEFT);assert(uxRodape==2);
+  key(SDLK_DOWN);key(SDLK_RETURN);assert(valor[AJ_COR_LOGO]!=logoBefore && uxEditor);
+  key(SDLK_RIGHT);assert(!uxRodape);key(SDLK_ESCAPE);valor[AJ_COR_LOGO]=logoBefore;
+  ajPenOpen(29);focarOpcao(AJ_QUALIDADE);uxAbrirEditor(AJ_QUALIDADE);
+  key(SDLK_LEFT);key(SDLK_DOWN);key(SDLK_DOWN);assert(uxRodape==4);
+  key(SDLK_RETURN);assert(uxRestaurar);key(SDLK_ESCAPE);key(SDLK_ESCAPE);
+  aj4Iniciar();focoIndice=1;
   // APS-9: invalid IDs, absent routes and corrupt compiled sections are bounded.
   assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO);
   assert(AJ_HERO_TAMANHO + 1 == AJ_DET_TOPO && AJ_DET_TOPO + 1 == AJ_DET_ELENCO_VISTO);
-  assert(AJ_DET_ELENCO_VISTO + 1 == AJ_N);
+  assert(AJ_DET_ELENCO_VISTO + 1 == AJ_GUIA_PREVIA_GRANDE && AJ_GUIA_PREVIA_GRANDE + 1 == AJ_AUD_ORIGINAL && AJ_AUD_ORIGINAL + 1 == AJ_AUDIO_NORMALIZAR && AJ_AUDIO_NORMALIZAR + 1 == AJ_DEBRID_LIGADO && AJ_DEBRID_LIGADO + 1 == AJ_ADDONS_LIGADO && AJ_ADDONS_LIGADO + 1 == AJ_LEG_ESTILO_LIGADO && AJ_LEG_ESTILO_LIGADO + 1 == AJ_HERO_PASTA_DETALHES && AJ_HERO_PASTA_DETALHES + 1 == AJ_N);
   assert(!strcmp(CHAVE[AJ_AFR], "afrLocal") && !strcmp(CHAVE[AJ_HERO_TAMANHO], "heroSizeLocal"));
   assert(!strcmp(CHAVE[AJ_DET_TOPO], "detalheTopoLocal"));
   assert(!strcmp(CHAVE[AJ_DET_ELENCO_VISTO], "detalheElencoVistoLocal"));
@@ -104,7 +242,7 @@ int main(void) {
     int gs[AJ4_N_GRUPOS], ng;
     valor[AJ_AVANCADAS] = 0; focoIndice = 1; aj4Linha = 0; aj4Topo = -1; // advanced
     aj4Review = 0; aj4Util = 0; aj4Acao = 0; // clear the failed-save review state
-    key(SDLK_RETURN);
+    ajPenPage=-1;aj4Entrar(0);
     assert(aj4Grupos && aj4Atual == 0);
     ng = aj4GruposLista(aj4Atual, gs);
     assert(ng > 4);
@@ -145,6 +283,26 @@ int main(void) {
   key(SDLK_ESCAPE); assert(aj4Util==4);
   aj4Acao=1; key(SDLK_RETURN); assert(pfTela==PF_MENU);
   key(SDLK_ESCAPE); assert(!pfTela && aj4Util==4);
+  // Subtitle search preserves individual controls and returns to the exact hit.
+  aj4Util=3;ajPenPage=-1;focoIndice=0;aj4Acao=aj4Linha=0;
+  snprintf(aj4Consulta,sizeof aj4Consulta,"legenda");
+  n=aj4BuscarResultados();assert(n>4);
+  int subtitleHits[]={AJ_LEG1_FONTE,AJ_LEG2_ATRASO};
+  for(int h=0;h<2;h++) {
+    int hit=-1;for(int i=0;i<n;i++)if(aj4Resultados[i].op==subtitleHits[h])hit=i;
+    assert(hit>=0);aj4Linha=hit;key(SDLK_RETURN);
+    assert(uxEditor && uxOp==subtitleHits[h] && ajPenPage==(h?AJ_PEN_SECONDARY:28));
+    key(SDLK_ESCAPE);key(SDLK_ESCAPE);assert(aj4Util==3 && aj4Linha==hit);
+  }
+  aj4Util=0;ajPenOpen(27);valor[AJ_AUD_LINGUA]=2;valor[AJ_AUD_ORIGINAL]=1;
+  focarOpcao(AJ_AUD_LINGUA);uxAbrirEditor(AJ_AUD_LINGUA);
+  int languageDraft=uxPendente;key(SDLK_LEFT);key(SDLK_RETURN);
+  assert(ajustes_audio_original() && uxPendente==languageDraft && valor[AJ_AUD_LINGUA]==2);
+  ling_definir_original("en");assert(!strcmp(ling_audio_preferido(),"en"));
+  AudioCand tracks[2]={{0}};tracks[0].pode=tracks[1].pode=1;tracks[0].idioma="pt";tracks[1].idioma="en";
+  audioesc_soltar();assert(audioesc_escolher(tracks,2,NULL)==1);
+  key(SDLK_RETURN);assert(!ajustes_audio_original() && !strcmp(ling_audio_preferido(),"pt"));
+  key(SDLK_ESCAPE);ajPenPage=-1;
   // Blank search offers all-mode suggestions; task chips search without writing values.
   aj4Util=3; aj4Consulta[0]=0; aj4Acao=aj4Linha=0;
   n=aj4BuscarResultados(); assert(n==4 && aj4Resultados[0].op==AJ_QUALIDADE);
@@ -185,35 +343,32 @@ int main(void) {
     key(right); assert(aj4Topo==2);
     key(left); key(left); assert(aj4Topo==0);
     key(SDLK_DOWN); assert(aj4Topo==-1 && focoIndice);
-    // Every advanced section opens, enters its first group and returns to Home.
-    for (int sec=0;sec<8;sec++) {
-      aj4Set=sec/4; aj4Linha=sec%4; key(SDLK_RETURN);
-      assert(!focoIndice && aj4Atual==sec && aj4Grupos);
-      key(right); assert(!aj4Grupos);
-      key(left); assert(aj4Grupos);
-      key(left); assert(focoIndice);
+    // Pencil rows remain reachable in both reading directions; browsing never writes.
+    memcpy(before,valor,sizeof before);
+    for(int page=0;page<46;page++) {
+      ajPenOpen(page);const AjPenPage *p=ajPenCurrent();assert(p);
+      int count=p->cols[0].n+p->cols[1].n;assert(count>0 && count<=14);
+      for(int i=0;i<count+1;i++)key(SDLK_DOWN);
+      assert(ajPenRow==(page==44?99:count-1));
+      key(SDLK_ESCAPE);
+      for(int depth=0;!focoIndice && depth<3;depth++)key(SDLK_ESCAPE);
+      assert(focoIndice && ajPenPage==-1);
     }
-    // Group-set boundaries, vertical boundaries, help and differences remain reachable.
-    aj4Linha=2; key(right); assert(aj4Set==1 && aj4Linha==0);
-    key(right); assert(aj4Set==1); key(left); assert(aj4Set==0);
-    key(SDLK_UP); assert(aj4Topo==0); key(SDLK_DOWN);
-    aj4UndoN=0;
-    for(int i=0;i<10;i++)key(SDLK_DOWN);
-    assert(aj4Linha==6); key(SDLK_RETURN); assert(!focoIndice && aj4Atual==7);
-    key(SDLK_ESCAPE); assert(focoIndice);
+    assert(!memcmp(before,valor,sizeof before));
+    aj4Linha=2;key(right);assert(aj4Linha==3);key(left);assert(aj4Linha==2);
+    key(SDLK_UP);assert(aj4Topo==0);key(SDLK_DOWN);
+    key(SDLK_DOWN);assert(aj4Linha==9);
+    key(right);assert(aj4Linha==10);key(SDLK_DOWN);assert(aj4Linha==12);
+    key(SDLK_RETURN);assert(ajPenPage==44 && !focoIndice);
+    key(SDLK_ESCAPE);assert(focoIndice);
     aj4Linha=5; key(SDLK_RETURN); assert(aj4Util==1 && !focoIndice);
     key(SDLK_ESCAPE); assert(!aj4Util && focoIndice);
-    // Simple mode exposes each task, stops at both ends and returns to Home.
+    // Both modes open the same four tasks, preserving settings.
     valor[AJ_AVANCADAS]=1;
-    for (int sec=0;sec<4;sec++) {
-      aj4Linha=sec; key(SDLK_RETURN);
-      assert(!focoIndice && aj4Atual==sec && !aj4Grupos);
-      n=aj4Lista(sec,-1,ops); assert(n>0 && n<=4);
-      for(int i=0;i<n+1;i++)key(SDLK_DOWN);
-      assert(aj4Linha==n-1 && aj4Acao);
-      key(SDLK_UP); assert(!aj4Acao);
-      for(int i=0;i<n;i++)key(SDLK_UP);
-      assert(aj4Topo==0); key(SDLK_DOWN); key(left); assert(focoIndice);
+    const int taskPages[]={29,27,33,37};
+    for(int task=0;task<4;task++) {
+      aj4Linha=task;key(SDLK_RETURN);assert(!focoIndice && ajPenPage==taskPages[task]);
+      key(SDLK_ESCAPE);assert(focoIndice);
     }
     // Editor directions follow the mirror; cancellation preserves saved values.
     focarOpcao(AJ_QUALIDADE); int quality=valor[AJ_QUALIDADE];

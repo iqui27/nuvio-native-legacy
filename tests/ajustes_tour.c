@@ -52,6 +52,8 @@ static void tourNavigation(void) {
   anim_politica_reduzida = 0;
   aj4Iniciar(); focoIndice = 1; aj4Linha = 7; sair = 0;
   key(SDLK_RETURN);
+  assert(ajPenPage==AJ_PEN_TOUR);
+  ajPenRow=12;key(SDLK_RETURN);
   assert(tourAberto && tourVis == 0);
   tourAtualizar(dt);
   assert(tourVis > 0 && tourVis < 1 && tourFocoA[0] > 0 && tourFocoA[0] < 1);
@@ -93,7 +95,7 @@ static void tourNavigation(void) {
   // Back during Where-it-is exit must not escape Settings or lose its route.
   for (int nextFrame = 0; nextFrame < 2; nextFrame++) {
     aj4Iniciar(); focoIndice = 1; aj4Linha = 7; sair = 0;
-    key(SDLK_RETURN);
+    key(SDLK_RETURN);ajPenRow=12;key(SDLK_RETURN);
     for (int frame = 0; frame < 60; frame++) tourAtualizar(dt);
     key(SDLK_RIGHT); key(SDLK_RIGHT); key(SDLK_RIGHT); key(SDLK_RIGHT);
     assert(tourFoco == 2 && tourBtn == 0 && tourDisponivel(2));
@@ -111,7 +113,7 @@ static void tourNavigation(void) {
 
   // Editor Back restores the exact destination row while the tour fades out.
   aj4Iniciar(); focoIndice = 1; aj4Linha = 7;
-  key(SDLK_RETURN);
+  key(SDLK_RETURN);ajPenRow=12;key(SDLK_RETURN);
   for (int frame = 0; frame < 60; frame++) tourAtualizar(dt);
   tourLigar(2); tourAtualizar(dt);
   assert(uxEditor && uxOp == AJ_SEEKR_LIGADO);
@@ -137,7 +139,9 @@ int main(void) {
   }
   aj4Iniciar(); focoIndice = 1; aj4Linha = 7;
   aj4Evento(SDLK_RETURN);
-  assert(tourAberto && "Settings v4 must open functional tour");
+  assert(ajPenPage==AJ_PEN_TOUR && !tourAberto);
+  ajPenRow=12;ajPenEvent(SDLK_RETURN);
+  assert(tourAberto && "Pencil overview must retain the functional tour");
   tourSair();
   assert(focoIndice && aj4Linha == 7);
   for (int i = 0; i < n; i++) {

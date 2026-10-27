@@ -1,6 +1,7 @@
 // Exercise shared channel and source playback entries without network access.
 #include "catalogo.h"
 #include "streams.h"
+#include "perfilinfantil.h"
 #include <assert.h>
 static int kids, warnings, checks, source_checks, opened, detail_index, file_checks;
 static CatItem movie;
@@ -21,6 +22,11 @@ static int source_gate(int index, int t, int e) {
   return 1;
 }
 static int child_profile(void) { return kids; }
+// Default parental rules: classification up to 10, no time limit used up.
+static int rule_rating(const char *c) { return !kids || perfil_infantil_classif_ok(c); }
+static int rule_time(float seconds) { (void)seconds; return 0; }
+#define perfil_regra_classif rule_rating
+#define perfil_regra_tempo rule_time
 static void blocked_notice(const char *text) { (void)text; warnings++; }
 static int reject_channel(const CatItem *item) { (void)item; checks++; return 0; }
 #define perfil_infantil_ativo child_profile
@@ -36,6 +42,8 @@ static int reject_channel(const CatItem *item) { (void)item; checks++; return 0;
 #define stream_item file_source
 #include "../src/app.c"
 #undef perfil_infantil_ativo
+#undef perfil_regra_classif
+#undef perfil_regra_tempo
 #undef glem_aviso_curto
 #undef g5ui_check_channel
 static int source_restriction_tests(void) {

@@ -11,6 +11,13 @@
 #include <stdatomic.h>
 
 void fil_definir_perfil(int p) { (void)p; }
+void cf_definir_perfil(int p) { (void)p; }
+void ov_definir_perfil(int p) { (void)p; }
+void trava_invalidar_autorizacoes(void) {}
+int rewatch_n_ativas(void) { return 0; }
+int rewatch_ativa_n(int i,char *id,size_t n) { (void)i;(void)id;(void)n;return 0; }
+int rewatch_parcial_de(const char *id,int *t,int *e,int *pct) { (void)id;(void)t;(void)e;(void)pct;return 0; }
+int rewatch_alvo(const char *id,const CatEp *eps,int n,int *t,int *e,int *pct) { (void)id;(void)eps;(void)n;(void)t;(void)e;(void)pct;return 0; }
 void fontepref_definir_perfil(int p) { (void)p; }
 void legmem_definir_perfil(int p) { (void)p; }
 void audiomem_definir_perfil(int p) { (void)p; }

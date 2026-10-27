@@ -758,6 +758,10 @@ typedef enum {
   // tamanho/posicao do preview muda; a ficha reflui a esquerda. Por perfil,
   // como as outras opcoes do guia. No fim: valor[]/CHAVE[] posicionais.
   AJ_GUIA_PREVIA_GRANDE,
+  AJ_AUD_ORIGINAL, // Independent preference; language selection remains intact.
+  AJ_AUDIO_NORMALIZAR, // PCM normalization; passthrough remains untouched.
+  AJ_DEBRID_LIGADO, AJ_ADDONS_LIGADO, AJ_LEG_ESTILO_LIGADO,
+  AJ_HERO_PASTA_DETALHES, // Append-only: folder hero details, local and enabled by default.
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1906,6 +1910,12 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Topo da página", V_DET_TOPO, 3),
   ESC("Onde você já viu o elenco", V_LIGA, 2),
   ESC("Prévia grande no Guia TV",       V_LIGA, 2),          // local: guiaPreviaGrandeLocal
+  ESC("Preferir faixa original", V_LIGA, 2),
+  ESC("Normalizar volume", V_LIGA, 2),
+  ESC("Debrid", V_LIGA, 2),
+  ESC("Addons", V_LIGA, 2),
+  ESC("Legendas com estilo", V_LIGA, 2),
+  ESC("Mostrar detalhes da pasta no destaque", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2245,6 +2255,10 @@ static const char *CHAVE[] = {
   "detalheTopoLocal",
   "detalheElencoVistoLocal",
   "guiaPreviaGrandeLocal",
+  "audioOriginalLocal",
+  "audioNormalizarLocal",
+  "debridLigadoLocal", "addonsLigadosLocal", "legEstiloLigadoLocal",
+  "heroFolderDetailsLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2857,7 +2871,9 @@ static Uint32 uxAvisoAte;
 static const char *textoValor(int op);
 static int ajOpcaoDisponivel(int op);
 static int aj4Evento(SDL_Keycode k);
+static void ajPenSavedForget(void);
 static int aj4RTL(void);
+static int ajPenLanguageMove(SDL_Keycode key);
 static const char *aj4Rotulo(int op);
 static int aj4Simples(int op);
 static int uxTemPadrao(int op);
@@ -3262,6 +3278,12 @@ static int ajOpcaoDisponivel(int op) {
 }
 int ajustes_layout_lista(void) { return !ajLayoutSelecionavel() || valor[AJ_LAYOUT_AJUSTES] == 1; }
 int ajustes_esconder_logo_trailer(void) { return lig(AJ_LOGO_TRAILER); }
+int ajustes_audio_original(void) { return lig(AJ_AUD_ORIGINAL); }
+int ajustes_audio_normalizar(void) { return lig(AJ_AUDIO_NORMALIZAR); }
+int ajustes_legenda_estilo_ligado(void) { return lig(AJ_LEG_ESTILO_LIGADO); }
+static void ajPenFeaturesApply(void) {
+  debrid_habilitar(lig(AJ_DEBRID_LIGADO));addons_habilitar(lig(AJ_ADDONS_LIGADO));
+}
 int ajustes_audio_offset_ms(void) { return audsync_offset_ms(valor[AJ_AUDIO_OFFSET]); }
 int ajustes_legenda_sync_auto(void) { return lig(AJ_LEG_SYNC_AUTO); }
 int ajustes_teclado_android(void) { int v = valor[AJ_TECLADO_ANDROID]; return v < 0 || v > 2 ? 0 : v; }   // 0 auto, 1 do app, 2 do Android
@@ -3674,6 +3696,7 @@ int ajustes_hero_sinopse(void) { return lig(AJ_HERO_SINOPSE); }
 int ajustes_hero_notas(void)   { return lig(AJ_HERO_NOTAS); }
 int ajustes_hero_ano(void)     { return lig(AJ_HERO_ANO); }
 int ajustes_hero_duracao(void) { return lig(AJ_HERO_DURACAO); }
+int ajustes_hero_pasta_detalhes(void) { return lig(AJ_HERO_PASTA_DETALHES); }
 int ajustes_hero_cheio(void)          { return lig(AJ_HERO_CHEIO); }
 int ajustes_hero_sinopse_grande(void) { return valor[AJ_HERO_SINOPSE_TAM] == 1 || ajustes_hero_tamanho() > 0; }
 float ajustes_hero_escala_logo(void) { static const float e[3] = { 1.0f, 1.25f, 1.5f }; return e[ajustes_hero_tamanho()]; }
@@ -5304,6 +5327,7 @@ void ajustes_dir(const char *dir) {
   // de Ajustes e aberta. tex_iniciar ja rodou (main.c); isto so o corrige.
   if (valor[AJ_TEX_MB] > 0) tex_definir_orcamento_mb(ajustes_tex_mb());
   pstAplicar();
+  ajPenFeaturesApply();
   ajEpgMemoriaAplicar();
   legenda2_atualizar_offset_manual(ajustes_leg2_atraso());
   ppReconciliar();
@@ -6132,7 +6156,7 @@ static int somenteDesteAparelho(int op) {
     // traga algo com o mesmo nome.
     case AJ_HERO_FUNDO:
     case AJ_HERO_SINOPSE_TAM:
-    case AJ_HERO_TAMANHO:
+    case AJ_HERO_TAMANHO: case AJ_HERO_PASTA_DETALHES:
     case AJ_HERO_ARTE_DIF:
     case AJ_HERO_GENERO:
     case AJ_HERO_SINOPSE: case AJ_HERO_NOTAS: case AJ_HERO_ANO: case AJ_HERO_DURACAO: /* o web nao tem */
@@ -6186,6 +6210,8 @@ static int somenteDesteAparelho(int op) {
     case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS: /* conquistas: por perfil desta TV */
     case AJ_CW_RETIDO_TAMBEM: /* o web nao tem a ilha */
     case AJ_PS_CONTINUAR:   /* o web nao tem este cartao; escolha desta TV */
+    case AJ_AUD_ORIGINAL: case AJ_AUDIO_NORMALIZAR:
+    case AJ_DEBRID_LIGADO: case AJ_ADDONS_LIGADO: case AJ_LEG_ESTILO_LIGADO:
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
@@ -6478,7 +6504,11 @@ void ajustes_perfil_esquecer(void) {
   int i;
   // Os indices de perfil da conta sao pequenos (CONTA_PERFIL_MAX perfis); 32
   // cobre com folga. Apagar arquivo que nao existe nao custa nada.
-  for (i = 1; i <= 32; i++) { nomePerfil(nome, sizeof nome, i); dados_apagar(nome); }
+  for (i = 1; i <= 32; i++) {
+    nomePerfil(nome, sizeof nome, i); dados_apagar(nome);
+    snprintf(nome,sizeof nome,"settings-presets-%d.txt",i);dados_apagar(nome);
+  }
+  ajPenSavedForget();
   fonteregra_perfil_esquecer();
   provedoresPrivadosEsquecer();
   if (valor[AJ_COLECAO_EXIBICAO] != 0) { valor[AJ_COLECAO_EXIBICAO] = 0; gravar(); }
@@ -6540,6 +6570,7 @@ int ajustes_migrar_escopo(void) {
 // Efeitos que o valor[] do perfil dispara fora desta tabela (idiomas de
 // legenda/audio e o tamanho da UI). Chamado depois de trocar o valor[] inteiro.
 static void reaplicarEfeitosPerfil(void) {
+  ajPenFeaturesApply();
   aplicarIdioma(AJ_LEG_LINGUA);
   aplicarIdioma(AJ_LEG_LINGUA2);
   aplicarIdioma(AJ_AUD_LINGUA);
@@ -7057,6 +7088,7 @@ int ajustes_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return
 // guia; nada no disco ou na conta depende do rotulo.
 static const char *rotuloNovo(int op) {
   switch (op) {
+    case AJ_HERO_PASTA_DETALHES: return "Detalhes da pasta no destaque";
     case AJ_PULAR_CREDITOS: return "Pular os créditos sozinho";
     case AJ_PROXIMO_AUTO: return "Tocar o próximo episódio sozinho";
     case AJ_REACAO_CREDITOS: return "Perguntar o que achou no fim";
@@ -7785,6 +7817,7 @@ static void focarOpcao(int op) {
     focar(i);
     focoIndice = 0;
     aj4Focar(op);
+    focoIndice = 0;
     return;
   }
 }
@@ -7890,6 +7923,10 @@ static const char *ajudaOpcaoBase(int op) {
     if (op == AJ_DESCANSO_ESTILO || (op == AJ_DESCANSO_FONTE && valor[AJ_ESMAECER] == 0))
       return "Ative a Tela de descanso para escolher como ela fica.";
     if (op == AJ_DESCANSO_FONTE) return "Só vale no estilo Vitrine.";
+    if(op==AJ_PAUSA_COMENTARIOS || op==AJ_PAUSA_NOTAS || op==AJ_PAUSA_ELENCO)
+      return "Ative Painel ao pausar para ajustar os comentários, notas e elenco.";
+    if(op==AJ_PLR_FORMATO_POS || op==AJ_PLR_CODEC)
+      return "Ative Formato no player para ajustar a posição e o codec.";
     return "Indisponível com os ajustes atuais.";
   }
   switch (op) {
@@ -8239,6 +8276,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_AFR: return "Troca a taxa de atualização da TV para a do vídeo (24 Hz, 50 Hz...), reduzindo trepidação. Automático aplica a melhor correspondência ao abrir o vídeo e restaura ao sair; se a TV não oferecer um modo compatível, nada muda. Só Android TV.";
     case AJ_HDR_INTERFACE: return "HDR experimental para os menus. Branco limitado a 203 nits. Reinicie o app após mudar. Sem suporte, usa SDR.";
     case AJ_AMPLIAR_UI: return "Só vale com a resolução em 1080p ou 720p: o app amplia a interface para a tela (usa mais GPU). Na Automática e na 4K quem amplia é a TV. Reinicie o app depois de mudar.";
+    case AJ_AUDIO_NORMALIZAR: return "Normaliza áudio convertido de DTS para PCM e áudio do player Android. Não se aplica ao áudio nativo AAC/AC3 no webOS ou Tizen.";
     case AJ_AUDIO_OFFSET: return "Positivo atrasa; negativo adianta. Só áudio convertido, a partir do próximo vídeo.";
     case AJ_AMPLIACAO_ALGO: return "Como o app amplia a interface para a tela. Automático escolhe sozinho; SGSR nítido e FSR 1 usam mais GPU. Vale na hora.";
     case AJ_AMPLIACAO_NITIDEZ: return "Reforço de contorno do SGSR nítido e do FSR 1. 0 desliga.";
@@ -8476,6 +8514,13 @@ static const char *efeitoOpcao(int op) {
 // valores ("Equilibrio: ...") ou e longa demais, a frase e propria.
 static const char *beneficioProprio(int op) {
   switch (op) {
+    case AJ_PAUSA_COMENTARIOS: return "Comentários públicos do Trakt no painel ao pausar.";
+    case AJ_PAUSA_NOTAS: return "Notas do título no painel ao pausar.";
+    case AJ_PLR_FORMATO_POS: return "Posição da fileira de formato no player.";
+    case AJ_PLR_CODEC: return "Codec do áudio ao lado do idioma e dos canais.";
+    case AJ_HERO_TAMANHO: return "Tamanho da logo e das informações do destaque.";
+    case AJ_HERO_PASTA_DETALHES: return "Grupo, informações e dica de explorar a pasta no destaque.";
+    case AJ_AUDIO_NORMALIZAR: return "DTS convertido para PCM e player Android; não vale para AAC/AC3 nativo.";
     case AJ_FONTE_IDIOMA_AUDIO: return "Fontes com o seu idioma de áudio, ou áudio duplo, passam na frente.";
     case AJ_FONTE_GRUPO: return "No próximo episódio, tenta primeiro a mesma fonte do anterior.";
     case AJ_LINK_REUSAR: return "Ao abrir de novo o mesmo título, toca direto o link que funcionou.";
@@ -9950,6 +9995,9 @@ static int definirValorDireto(int op, int novo) {
     valor[op] = fil_limite_gravado();
     fil_confirmar_limite();
   }
+  if(op==AJ_DEBRID_LIGADO || op==AJ_ADDONS_LIGADO)ajPenFeaturesApply();
+  if(op==AJ_LEG_ESTILO_LIGADO)player_leg_estilo_mudou();
+  if(op==AJ_AUD_ORIGINAL)aplicarIdioma(AJ_AUD_LINGUA);
   if (op == AJ_LEG_LINGUA || op == AJ_LEG_LINGUA2 || op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2) aplicarIdioma(op);
   if (op == AJ_IDIOMA) { idiomaEscolhido(); desc_repetir(); }
   if (op == AJ_TAMANHO_UI) gfx_escala_ui_definir(ajustes_tamanho_ui());
@@ -10367,6 +10415,7 @@ void ajustes_fontes_atualizar(void) {
   if (fonteStatus) uxNotificar(fonteStatus);
 }
 void ajustes_atualizar(float dt, Uint32 agora) {
+  ajPenDt=dt;
   if(iptvForm.tipo && !nv_perfil_sessao_atual(iptvForm.sessao)) { ajIptvLimparForm();uxCancelar();stCampo=0;teclado_esquecer(); }
   ajLegendaEspelhar(); ajIptvEspelhar();
   AJ_ESCALA_INI();
@@ -10401,6 +10450,16 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   // resultado antes de ela ver (e o apelido digitado se perderia em silencio).
   if (!pessoas_aberto()) hcTecladoLer();
   { int r = pessoas_aberto() ? TECLADO_NADA : teclado_resultado();
+    if(ajPenPinAsk && r!=TECLADO_NADA) {
+      if(r==TECLADO_PRONTO) { if(ajPenPinDigitado(teclado_texto()))r=TECLADO_NADA;else teclado_esquecer(); }
+      else { ajPenPinAsk=ajPenPinRepeat=0;teclado_esquecer(); }
+      r=TECLADO_NADA;
+    }
+    if(ajPenPinAsk && r==TECLADO_CANCELOU)ajPenPinAsk=ajPenPinRepeat=0;
+    if(ajPenSaveKeyboard && r!=TECLADO_NADA) {
+      if(r==TECLADO_PRONTO && ajPenSaveProfile==perfis_ativo())uxNotificar(ajPenSavedSave(teclado_texto())?"Preset salvo.":"Não foi possível salvar. O valor anterior foi mantido.");
+      ajPenSaveKeyboard=0;teclado_esquecer();r=TECLADO_NADA;
+    }
     if (aj4BuscaTeclado && r != TECLADO_NADA) {
       if(r==TECLADO_PRONTO)snprintf(aj4Consulta,sizeof aj4Consulta,"%s",teclado_texto());
       aj4BuscaTeclado=0; teclado_esquecer(); r=TECLADO_NADA;
@@ -10553,6 +10612,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
 // Leva a escolha da linha para linguas.c. "Da conta" (indice 0) manda string
 // vazia, que e como linguas.c representa "sem escolha local, siga a conta".
 static void aplicarIdioma(int op) {
+  ling_preferir_original(ajustes_audio_original());
   const char *c = ling_opcao_codigo(valor[op]);
   if (op == AJ_LEG_LINGUA || op == AJ_LEG_LINGUA2) {
     if (op == AJ_LEG_LINGUA) ling_local_legenda(c); else ling_local_legenda2(c);
@@ -11099,7 +11159,7 @@ static AjPreview familiaPreviaOpcao(int op) {
       return AJPV_REPRO;
     case AJ_HOME_LAYOUT:
     case AJ_PALCO_FUNDO:
-    case AJ_HERO_SINOPSE_TAM: case AJ_HERO_TAMANHO:
+    case AJ_HERO_SINOPSE_TAM: case AJ_HERO_TAMANHO: case AJ_HERO_PASTA_DETALHES:
     case AJ_LANDSCAPE: case AJ_HERO_CHEIO: case AJ_FUNDO_DIN: case AJ_FUNDO_DIN_COR: case AJ_HERO_FUNDO:
     case AJ_HERO_ARTE_DIF: case AJ_HERO_TRAILER: case AJ_FIL_LIMITE:
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS:
@@ -11457,6 +11517,8 @@ int ajustes_teste_quadro(const char *id) {
   int tema = valor[AJ_TEMA], vidro = valor[AJ_VIDRO];
   memcpy(valor, valorPadrao, sizeof valor);
   valor[AJ_TEMA] = tema; valor[AJ_VIDRO] = vidro;
+  *player_leg_estilo()=*player_leg_estilo_padrao();ajLegendaEspelhar();
+  ling_local_legenda2("");
   ajustes_teste_vidro_env();   // the defaults above would drop NUVIO_SHOT_VIDRO_FOSCO / _OPAC
   valor[AJ_IDIOMA] = IDIOMA_PT + 1;
   // NUVIO_SHOT_IDIOMA=N (IDIOMA_*: 1 en, 4 ru, 6 de...): o quadro sai nesse idioma.
@@ -11483,12 +11545,91 @@ int ajustes_teste_quadro(const char *id) {
     if (!strcmp(id, "tour-edit")) { tourVis = 1; tourLigar(2); tourAtualizar(0); }
     return 1;
   }
+  if(!strncmp(id,"pen-",4)) {
+    static const char *const names[]={"Marina"};perfis_teste_definir(names,NULL,1,1);
+    aj4Iniciar();pfTela=0;uxVeioBusca=0;valor[AJ_AVANCADAS]=0;valor[AJ_TEMA]=6;
+    if(!strcmp(id,"pen-review")) { aj4Util=2;focoIndice=0;ajPenPresetPrepare(0); }
+    else if(!strcmp(id,"pen-provider"))ajPenOpen(AJ_PEN_PROVIDER);
+    else if(!strcmp(id,"pen-iptv-provider"))ajPenOpen(AJ_PEN_IPTV_PROVIDER);
+    else if(!strcmp(id,"pen-provider-failures"))ajPenOpen(AJ_PEN_PROVIDER_FAILURES);
+    else if(!strcmp(id,"pen-addon-failures"))ajPenOpen(AJ_PEN_ADDON_FAILURES);
+    else if(!strcmp(id,"pen-editor-number")) { ajPenOpen(28);focarOpcao(AJ_LEG1_TAMANHO);uxAbrirEditor(AJ_LEG1_TAMANHO); }
+    else if(!strcmp(id,"pen-editor-choice")) { ajPenOpen(33);focarOpcao(AJ_HOME_LAYOUT);uxAbrirEditor(AJ_HOME_LAYOUT); }
+    else if(!strcmp(id,"pen-components"))ajPenOpen(AJ_PEN_COMPONENTS);
+    else if(!strcmp(id,"pen-parental")) {
+      perfil_regras_amostra();
+      valor[AJ_ENQUETES]=1;valor[AJ_HERO_TRAILER]=0;ajPenOpen(AJ_PEN_PARENTAL);
+    }
+    else if(!strcmp(id,"pen-rules"))ajPenOpen(AJ_PEN_RULES);
+    else if(!strcmp(id,"pen-features"))ajPenOpen(AJ_PEN_TOUR);
+    else if(!strcmp(id,"pen-presets")) {
+      ajPenSavedLoad();ajPenSavedCount=2;
+      snprintf(ajPenSavedNames[0],64,"Filme de sexta");snprintf(ajPenSavedNames[1],64,"TV com a vó");
+      memset(ajPenSavedValues,-1,sizeof ajPenSavedValues);
+      ajPenSavedValues[0][AJ_AUD_LINGUA]=2;ajPenSavedValues[0][AJ_LEG1_TAMANHO]=140;
+      ajPenSavedValues[1][AJ_FONTE_MANUAL]=1;ajPenSavedValues[1][AJ_HERO_TRAILER]=1;ajPenSavedValues[1][AJ_LEG1_COR]=0;
+      aj4Util=2;focoIndice=0;
+    }
+    else if(!strcmp(id,"pen-quality")) { ajPenOpen(29);focarOpcao(AJ_QUALIDADE);uxAbrirEditor(AJ_QUALIDADE);uxPendente=1; }
+    else if(!strcmp(id,"pen-source")) {
+      Stream fixture[5]={0};const char *labels[]={"Torrentio · 4K Dolby Vision","Real-Debrid · 1080p","Torrentio · 720p","Mediafusion + · 1080p","YTS · 720p"};
+      const int heights[]={2160,1080,720,1080,720};
+      for(int i=0;i<5;i++) { snprintf(fixture[i].rotulo,sizeof fixture[i].rotulo,"%s",labels[i]);fixture[i].altura=heights[i];fixture[i].debridServico=i==1?DEBRID_RD+1:0;snprintf(fixture[i].url,sizeof fixture[i].url,"https://example.invalid/source-%d.mp4",i); }
+      stream_definir_lista(fixture,5);stream_definir_atual(1);ajPenOpen(AJ_PEN_SOURCES);ajPenRow=3;valor[AJ_FONTE_MANUAL]=0;
+    }
+    else if(!strcmp(id,"pen-scale")) { ajPenOpen(34);focarOpcao(AJ_ESCALA_TEXTO);uxAbrirEditor(AJ_ESCALA_TEXTO);uxPendente=2; }
+    else if(!strcmp(id,"pen-color")) { ajPenOpen(34);focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);uxPendente=3; }
+    else if(!strcmp(id,"pen-audio")) {
+      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=valor[AJ_LEG_LINGUA]=order[1];
+      valor[AJ_LEG_FORCADA]=valor[AJ_LEG_SYNC_AUDIO]=0;valor[AJ_LEG_LINGUA2]=0;
+      ajPenOpen(27);ajPenRow=1;
+    }
+    else if(!strcmp(id,"pen-estilo")) {
+      VideoLegendaEstilo *sample=player_leg_estilo();sample->tamanho=100;sample->fundo=2;sample->negrito=1;sample->posicao=0;
+      ajLegendaEspelhar();ajPenOpen(28);aj4Topo=2;
+    }
+    else if(!strncmp(id,"pen-adv-",8))ajPenOpen(atoi(id+8));
+    else if(!strncmp(id,"pen-main-",9)) {
+      int page=atoi(id+9);
+      if(page==0) { valor[AJ_FONTE_MANUAL]=0;valor[AJ_FONTE_REPOR]=0; }
+      if(page==1) { valor[AJ_PULAR_ABERTURA]=valor[AJ_PULAR_CREDITOS]=valor[AJ_PROXIMO_AUTO]=0;valor[AJ_REACAO_CREDITOS]=1;valor[AJ_PROXIMO_CONTAGEM]=10;valor[AJ_PROPORCAO_PADRAO]=1; }
+      if(page==2)valor[AJ_SELOS_CORES]=0;
+      if(page==3)valor[AJ_MANTER_VIDEO]=0;
+      if(page==4) { valor[AJ_HOME_LAYOUT]=0;valor[AJ_HERO_CHEIO]=0;valor[AJ_ITENS_FILEIRA]=1;valor[AJ_OCULTAR_NLANC]=0; }
+      if(page==5) { valor[AJ_ESCALA_TEXTO]=2;valor[AJ_TAMANHO_UI]=0;valor[AJ_VIDRO_OPAC]=2;valor[AJ_VIDRO_FOSCO]=0;valor[AJ_ANIM]=0;valor[AJ_FUNDO]=1; }
+      if(page==6) { valor[AJ_HERO_TRAILER]=0;valor[AJ_DET_TRAILER_AUTO]=0;valor[AJ_HERO_TRAILER_SOM]=0;valor[AJ_EXPANDIR_ATRASO]=2;valor[AJ_GRAD_CLASSICO]=0; }
+      if(page==7) { valor[AJ_DET_BLUR_NAO_VISTOS]=0;valor[AJ_DET_VEU]=40;valor[AJ_DET_TOPO]=2;valor[AJ_NT_TMDB]=0; }
+      if(page==9)valor[AJ_ADDONS_PRINCIPAL]=0;
+      if(page==13)valor[AJ_LIVETV_PROXY]=1;
+      if(page==14)valor[AJ_NAV_RAPIDA]=0;
+      if(page==16) { valor[AJ_COLECAO_EXIBICAO]=1;valor[AJ_DESCOBRIR]=1; }
+      ajPenOpen(29+page);
+      if(page==6 || page==16)aj4Topo=2;
+    }
+    else if(!strcmp(id,"pen-audio-idioma")) {
+      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];valor[AJ_AUD_ORIGINAL]=0;
+      ajPenOpen(27);focarOpcao(AJ_AUD_LINGUA);uxAbrirEditor(AJ_AUD_LINGUA);uxPendente=order[2];
+    }
+    else if(!strcmp(id,"pen-segunda")) {
+      ling_local_legenda2("en");valor[AJ_LEG_LINGUA2]=3;
+      ajPenOpen(AJ_PEN_SECONDARY);ajPenRow=4;valor[AJ_LEG2_BORDA]=2;
+    }
+    else return 0;
+    return 1;
+  }
   if (!strncmp(id, "v4-", 3)) {
-    static const char *const PF_V4[] = { "Henrique" };
+    static const char *const PF_V4[] = { "Marina" };
     perfis_teste_definir(PF_V4, NULL, 1, 1);   // chip e escopo com nome, como o mockup
     aj4Iniciar(); pfTela=0; uxVeioBusca=0;
     valor[AJ_TEMA]=2; valor[AJ_AVANCADAS]=1;
-    if (!strcmp(id,"v4-inicio-avancado")) valor[AJ_AVANCADAS]=0;
+    if (!strcmp(id,"v4-inicio-avancado") || !strcmp(id,"v4-inicio-simples")) {
+      static const char *const names[]={"Marina"};perfis_teste_definir(names,NULL,1,1);
+      valor[AJ_IDIOMA]=0;idiomaEfetivo=IDIOMA_PT;
+      valor[AJ_TEMA]=6;valor[AJ_HOME_LAYOUT]=1;
+      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];
+      aj4Linha=!strcmp(id,"v4-inicio-avancado")?3:1;
+      if(!strcmp(id,"v4-inicio-avancado")) { valor[AJ_AVANCADAS]=0;valor[AJ_QUALIDADE]=1; }
+    }
     else if (!strcmp(id,"v4-secao")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); aj4Grupos=0; }
     else if (!strcmp(id,"v4-secao-grupos")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); }   // pagina de grupos com "Mais grupos"
     else if (!strcmp(id,"v4-review")) {   // revisao com escopo misto (TV + perfil)
@@ -11500,9 +11641,17 @@ int ajustes_teste_quadro(const char *id) {
     else if (!strcmp(id,"v4-submenu")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); aj4Grupo=aj4GrupoDe(AJ_FONTE_MANUAL); aj4Grupos=0; }
     else if (!strcmp(id,"v4-opcao-lista")) { focarOpcao(AJ_QUALIDADE); uxAbrirEditor(AJ_QUALIDADE); }
     else if (!strcmp(id,"v4-predefinicoes")) { aj4Util=2; focoIndice=0; }
-    else if (!strcmp(id,"v4-diferentes")) { valor[AJ_TEMA]=valorPadrao[AJ_TEMA]; valor[AJ_QUALIDADE]=2; valor[AJ_AUD_LINGUA]=1; valor[AJ_LEG_LINGUA]=2; aj4Escopo=0; aj4Util=1; focoIndice=0; }
+    else if (!strcmp(id,"v4-diferentes")) {
+      memcpy(valor,valorPadrao,sizeof valor);valor[AJ_IDIOMA]=0;idiomaEfetivo=IDIOMA_PT;valor[AJ_TEMA]=2;valor[AJ_QUALIDADE]=1;
+      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];
+      aj4Escopo=0;aj4Util=1;focoIndice=0;
+    }
     else if (!strcmp(id,"v4-perfil")) { aj4AbrirPerfil(); }
-    else if (!strcmp(id,"v4-busca")) { aj4Consulta[0]=0; aj4Util=3; focoIndice=0; }
+    else if (!strcmp(id,"v4-busca")) {
+      valor[AJ_TEMA]=6;valor[AJ_LEG_LINGUA]=2;valor[AJ_LEG_LINGUA2]=0;valor[AJ_ESCALA_TEXTO]=2;
+      ling_local_legenda2("");ling_conta_legenda2("");
+      snprintf(aj4Consulta,sizeof aj4Consulta,"legenda");aj4Util=3;focoIndice=0;
+    }
     return 1;
   }
   if (!strncmp(id, "v2-", 3)) {   // Ajustes v2 (ajustes-v2.html): os quadros do mockup

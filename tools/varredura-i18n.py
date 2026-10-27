@@ -668,6 +668,8 @@ def varrer():
                                 "ajustes_ux_desenho.inc", "ajustes_ux_ilha.inc",
                                 "registro_ilha.inc", "registro_envio.inc") if (src / nome).exists()
     ]
+    arquivos += sorted(src.glob("ajustes_pen*.inc"))
+    arquivos += [src / "ajustes_ux_v4.inc"]
     for arq in sorted(arquivos):
         if arq.name == "idioma.c":
             continue
@@ -733,7 +735,10 @@ def varrer():
             # obvio — e a chave saiu da tela em portugues no ingles inteiro.
             # Escrever i18n( E a declaracao de que aquilo e interface; depois
             # dela, adivinhar o idioma so serve para errar.
-            direto = (RE_DESENHO.search(ctx) is not None
+            pencil = arq.name.startswith("ajustes_pen")
+            if pencil and (s.startswith(("aj_", "pl_")) or s.endswith((".inc", ".txt", ".h")) or s in ("%s", "%ld MB", "%dx%d", "%s → %s", "−", "+") or s.startswith(("name=", "%95[", "%s%d"))):
+                continue
+            direto = (pencil or RE_DESENHO.search(ctx) is not None
                       or RE_I18N.search(ctx) is not None)
             if not direto and not PT.search(s):
                 continue
@@ -749,7 +754,7 @@ def varrer():
             # MONTAGEM: o formato tem de ser envolvido na origem, porque a
             # string final nunca casa com chave. Sem "%", o literal chega
             # inteiro na tela e basta a chave.
-            if "%" in s and "i18n" not in ctx.split("(")[0][-40:] and "i18n" not in ctx:
+            if not pencil and "%" in s and "i18n" not in ctx.split("(")[0][-40:] and "i18n" not in ctx:
                 if s not in IGNORAR:
                     faltando_i18n.setdefault(s, []).append(onde)
             elif s not in chaves and s not in IGNORAR:

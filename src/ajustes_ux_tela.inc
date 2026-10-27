@@ -18,6 +18,7 @@ static const Item TELA[] = {
 #ifdef NV_TPK
       OPC(AJ_AUDIO_OFFSET),
 #endif
+      OPC(AJ_AUDIO_NORMALIZAR),
     ROT("Escolha da fonte"),
       OPC(AJ_FONTE_MANUAL), OPC(AJ_FONTE_PRIORIDADE), OPC(AJ_FONTE_IDIOMA_AUDIO), OPC(AJ_FONTE_PRAZO),
       OPC(AJ_FONTE_REPOR), OPC(AJ_TAM_MAX),
@@ -76,7 +77,7 @@ static const Item TELA[] = {
 
   SEC("Idiomas e legendas", "Idioma da interface, áudio, legenda e metadados", "aj_languages"),
     ROT("Idiomas"),
-      OPC(AJ_IDIOMA), OPC(AJ_AUD_LINGUA), OPC(AJ_AUD_LINGUA2), OPC(AJ_LEG_LINGUA), OPC(AJ_LEG_FORCADA),
+      OPC(AJ_IDIOMA), OPC(AJ_AUD_LINGUA), OPC(AJ_AUD_ORIGINAL), OPC(AJ_AUD_LINGUA2), OPC(AJ_LEG_LINGUA), OPC(AJ_LEG_FORCADA),
       OPC(AJ_LEG_MOSTRAR), OPC(AJ_LEG_SYNC_AUTO),
 #ifdef NV_ANDROID
       // Sincronia pelo audio (F06): so o player do Android entrega o PCM. Na LG e
@@ -101,7 +102,7 @@ static const Item TELA[] = {
   // A escolha da fonte foi para Reproducao (mockup v3, tela 02).
   SEC("Fontes e addons", "Addons, debrid e servidores pessoais", "aj_puzzle"),
     ROT("Addons"),
-      OPC(AJ_ADDONS), OPC(AJ_PLUGINS), OPC(AJ_ADDONS_PRINCIPAL), OPC(AJ_BUSCA_CINEMETA),
+      OPC(AJ_ADDONS), OPC(AJ_ADDONS_LIGADO), OPC(AJ_DEBRID_LIGADO), OPC(AJ_LEG_ESTILO_LIGADO), OPC(AJ_PLUGINS), OPC(AJ_ADDONS_PRINCIPAL), OPC(AJ_BUSCA_CINEMETA),
       OPC(AJ_BUSCA_NUVIO), OPC(AJ_BUSCA_ORIGEM),   // #311
     ROT("Falha na reprodução"),
       OPC(AJ_FILTROS_FONTES),
@@ -145,6 +146,7 @@ static const Item TELA[] = {
       OPC(AJ_FUNDO_DIN), OPC(AJ_FUNDO_DIN_COR),
       OPC(AJ_HERO_CATALOGOS), OPC(AJ_HERO_GENERO),
       OPC(AJ_HERO_SINOPSE), OPC(AJ_HERO_NOTAS), OPC(AJ_HERO_ANO), OPC(AJ_HERO_DURACAO),
+      OPC(AJ_HERO_PASTA_DETALHES),
       OPC(AJ_HERO_TAMANHO), OPC(AJ_HERO_SINOPSE_TAM),
     ROT("Fileiras"),
       OPC(AJ_FIL_ORDEM), OPC(AJ_FIL_LIMITE), OPC(AJ_ITENS_FILEIRA),

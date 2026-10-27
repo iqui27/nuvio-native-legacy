@@ -287,6 +287,11 @@ object NvPlayer {
     // With bitstream (passthrough) the processor is bypassed by the sink, so
     // its gain needs no passthrough state here; C caps the row at 100%.
     private var processador: GanhoAudioProcessor? = null
+    @Volatile private var normalizarVolume = false
+    @JvmStatic fun normalizar(ligado: Int) {
+        normalizarVolume = ligado != 0
+        principal.post { processador?.normalizar = normalizarVolume }
+    }
     private const val CACHE_RELATO_TIQUES = 8      // 8 x 250 ms: usage every 2 s
 
     private fun relatarCache(minha: Int) {
@@ -643,7 +648,7 @@ object NvPlayer {
         @Volatile var adotado = carga.adotada
         @Volatile var audioFormato = AudioSyncTap.FMT_NENHUM
         @Volatile var velocidadePcm = false
-        val proc = GanhoAudioProcessor()
+        val proc = GanhoAudioProcessor().also { it.normalizar = normalizarVolume }
         val tap = AudioSyncTap(
             { pcm, n, pts -> if (adotado) try { nativeAudioPcm(pcm, n, pts) } catch (_: UnsatisfiedLinkError) {} },
             { fmt ->

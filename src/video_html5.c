@@ -925,7 +925,7 @@ void video_escolher_audio(int i);
 // faixa que case, nao mexe — a escolha do navegador (ou do arquivo) e melhor
 // que uma trocada por chute.
 static void escolherAudioPreferido(void) {
-  const char *pref = ling_audio();
+  const char *pref = ling_audio_preferido();
   int i;
   if (!pref[0] || nAudio < 2) return;
   if (audioAtual >= 0 && audioAtual < nAudio &&

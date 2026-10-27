@@ -41,6 +41,8 @@ Uint32 SDL_GetTicks(void) { return relogio; }
 Uint64 SDL_GetTicks64(void) { return relogio; }
 SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex *)(uintptr_t)1; }
 const char *ling_audio(void) { return ""; }
+const char *ling_audio_preferido(void) { return ""; }
+int ajustes_audio_normalizar(void) { return 0; }
 void marco(const char *s) { (void)s; }
 void tex_pressao_reproducao(int l) { (void)l; }
 void vel_log(int cent, const char *estado) { (void)cent; (void)estado; }
@@ -63,6 +65,7 @@ static jmethodID JNICALL metodo(JNIEnv *e, jclass c, const char *nome, const cha
     return (jmethodID)(uintptr_t)9;
   }
   if (!strcmp(nome, "kbps")) return (jmethodID)(uintptr_t)8;
+  if (!strcmp(nome, "normalizar")) return (jmethodID)(uintptr_t)10;
   if (!strcmp(nome, "pausar")) return (jmethodID)(uintptr_t)6;
   if (!strcmp(nome, "buscar")) return (jmethodID)(uintptr_t)7;
   return (jmethodID)(uintptr_t)1;
@@ -75,7 +78,7 @@ static jboolean JNICALL temExcecao(JNIEnv *e) { (void)e; return excecao; }
 static void JNICALL limparExcecao(JNIEnv *e) { (void)e; excecao = 0; }
 static void JNICALL chamar(JNIEnv *e, jclass c, jmethodID m, ...) {
   (void)e; (void)c;
-  if (m == mParar || (uintptr_t)m == 8) return;
+  if (m == mParar || (uintptr_t)m == 8 || (uintptr_t)m == 10) return;
   if (m == mPausar) {
     va_list ap; va_start(ap, m); ultimoPausar = va_arg(ap, jint); va_end(ap);
     chamadasPausa++; return;

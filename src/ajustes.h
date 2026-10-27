@@ -360,6 +360,7 @@ int   ajustes_hero_sinopse(void);       // heroSinopseLocal: sinopse do destaque
 int   ajustes_hero_notas(void);        // heroNotasLocal: nota do IMDb no destaque
 int   ajustes_hero_ano(void);          // heroAnoLocal: ano no destaque
 int   ajustes_hero_duracao(void);      // heroDuracaoLocal: duracao no destaque
+int   ajustes_hero_pasta_detalhes(void); // folder group, metadata and explore hint
 int   ajustes_hero_sinopse_grande(void); // Normal (22/30) ou Grande (24/32)
 int   ajustes_hero_tamanho(void);       // heroSizeLocal: 0 Normal, 1 Grande, 2 Muito grande (logo + informacoes)
 float ajustes_hero_escala_logo(void);   // hero logo scale for ajustes_hero_tamanho: 1, 1.25, 1.5
@@ -621,6 +622,9 @@ int ajustes_leg2_atraso(void);
 int ajustes_leg2_definir_atraso(int ms);
 int   ajustes_legenda_forcada_auto(void);    // #287: 1 = audio in the subtitle language -> only the forced track (local, default on)
 int   ajustes_legenda_sync_auto(void);       // local, ligada por padrão
+int   ajustes_audio_original(void);
+int   ajustes_audio_normalizar(void);
+int   ajustes_legenda_estilo_ligado(void);
 int   ajustes_audio_offset_ms(void);        // Converted audio presentation, -500..500 ms; default 0.
 int   ajustes_legenda_sync_audio(void);      // 1 = offer "Por audio" in subtitle AutoSync (F06; local, default off)
 int   ajustes_trailer_zoom_tpk(void);        // #241: 1 = experimental trailer zoom on the native .tpk (local, default off)

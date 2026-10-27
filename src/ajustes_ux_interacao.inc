@@ -48,6 +48,8 @@ static int uxRequisito(int op) {
       (op == AJ_FONTE_AUTO || op == AJ_FONTE_GRUPO || op == AJ_FONTE_GRUPO_SESSOES || op == AJ_LINK_REUSAR || op == AJ_LINK_PRAZO))
     return AJ_FONTE_PRIORIDADE;
   switch (op) {
+    case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO: return AJ_PAUSA_OVERLAY;
+    case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC: return AJ_PLR_FORMATO;
     case AJ_MANTER_PRAZO: return AJ_MANTER_VIDEO;
     case AJ_DESCANSO_ESTILO: return AJ_ESMAECER;
     case AJ_DESCANSO_FONTE: return valor[AJ_ESMAECER] == 0 ? AJ_ESMAECER : AJ_DESCANSO_ESTILO;
@@ -318,7 +320,11 @@ static int uxEvento(SDL_Keycode k) {
     if (k == SDLK_LEFT) k = SDLK_RIGHT;
     else if (k == SDLK_RIGHT) k = SDLK_LEFT;
   }
-  if (!uxEditor) return aj4Evento(k);
+  if (!uxEditor) {
+    if(iptvForm.tipo && uxVoltar(k)) { ajIptvVoltar();return 1; }
+    return aj4Evento(k);
+  }
+  if(!uxRestaurar && !uxAvisoRisco && ajPenLanguageMove(k))return 1;
   int layoutOculto = !ajLayoutSelecionavel() && (uxCabLayout || uxTopo == AJ2_T_LAYOUT ||
                        (uxEditor && uxOp == AJ_LAYOUT_AJUSTES));
   uxLayoutDisponibilidade();
@@ -359,12 +365,13 @@ static int uxEvento(SDL_Keycode k) {
     // A REGUA DA COR: ← → na fileira, ↑ ↓ entre as fileiras (claros,
     // profundos, dinamicas, Textura), na ordem da tela.
     if (ajPaleta(uxOp) && ajEmLinha(uxOp) && uxEditor == 1 &&
+        uxOp != AJ_TEMA &&
         (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_UP || k == SDLK_DOWN)) {
       uxPendente = ajReguaMover(uxOp, uxPendente, k == SDLK_RIGHT ? 1 : k == SDLK_LEFT ? -1 : 0,
                                 k == SDLK_DOWN ? 1 : k == SDLK_UP ? -1 : 0);
       return 1;
     }
-    if (ajEmLinha(uxOp) && uxEditor == 1 && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
+    if (ajEmLinha(uxOp) && uxEditor == 1 && uxOp != AJ_TEMA && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
       uxPendente += k == SDLK_RIGHT ? 1 : -1;
       if (uxPendente < 0) uxPendente = 0;
       if (uxPendente >= nValores(uxOp)) uxPendente = nValores(uxOp) - 1;
@@ -402,6 +409,10 @@ static int uxEvento(SDL_Keycode k) {
         uxPendente = limita(uxOp, uxPendente + d * OPCOES[uxOp].passo);
       else {
         int ant = uxPendente;
+        if(uxOp==AJ_TEMA && uxPendente<12) {
+          static const int colors[]={6,1,2,3,4,5,0,7,8,9,10,11};
+          for(int i=0;i<12;i++)if(colors[i]==uxPendente) { int next=i+d;if(next>=0 && next<12)uxPendente=colors[next];return 1; }
+        }
         do uxPendente += d;
         while ((uxOp == AJ_TEX_MB || uxOp == AJ_SALVOS_DEST) && uxPendente >= 0 && uxPendente < nValores(uxOp) &&
                (uxOp == AJ_TEX_MB ? texAcima(uxPendente)

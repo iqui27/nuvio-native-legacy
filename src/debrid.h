@@ -58,6 +58,7 @@ void debrid_contexto_sair(void);
 // realdebrid/real-debrid, torbox e premiumize (com ou sem hifen). Uma chave
 // por servico; chamar de novo para outro servico NAO apaga a anterior.
 void debrid_definir_chave(const char *servico, const char *chave);
+void debrid_habilitar(int ligado); // Device-local switch; credentials remain intact.
 int  debrid_ativo(void);          // ha chave de um servico que sabemos resolver
 // "https://host" da API de cada servico com chave que pode resolver (aquecer.c).
 int  debrid_origens(const char **origens, int max);

@@ -692,9 +692,10 @@ void ilha_ancorar(float x, float y, int daDireita) {
 
 // Server Library and Detail use the mock's left clock/profile island.
 // Other pages keep the existing right clock.
-static int clockProfile;
+static int clockProfile,clockSettings;
 void ilha_posicionar(int guia) {
-  clockProfile = guia == 2;
+  clockSettings = guia == 3;
+  clockProfile = guia == 2 || clockSettings;
   if (clockProfile) ilha_ancorar(48.0f / gfx_escala_txt(), 36.0f / gfx_escala_txt(), 0);
   else ilha_ancorar(NV_TELA_W - NV_ILHA_MARGEM_D / gfx_escala_txt(), NV_ILHA_Y / gfx_escala_txt(), 1);
 }
@@ -1033,7 +1034,7 @@ static float larguraConteudo(int m, TxtLinha *t1, TxtLinha *t2) {
   float w;
   t1->w = t1->h = 0; t2->w = t2->h = 0;
   if (m == M_RELOGIO) {
-    *t1 = txt_linha(TXT_PG_RELOGIO, hora, 244, 245, 248, 255);
+    *t1 = txt_linha(clockSettings?TXT_ILHA_NOME:TXT_PG_RELOGIO, hora, 244, 245, 248, 255);
     return (float)t1->w + (pontoEnquete ? 12.0f + PONTO_ENQ : 0.0f) + (clockProfile ? 54.0f : 0);
   }
   if (atvV2) {
@@ -1086,7 +1087,10 @@ static void desenharConteudo(int m, GfxRect r, float a, Uint32 agora) {
       gfx_cor((GfxRect){ x + (float)t1.w + 12.0f, yc - PONTO_ENQ * 0.5f, PONTO_ENQ, PONTO_ENQ }, 0.5f, cr, cg, cb, a);
     }
     desempenho_linha(dsMostra, x + (float)t1.w + (pontoEnquete ? 12.0f + PONTO_ENQ : 0.0f), yc, a);
-    if (clockProfile) menu_avatar(x + cw - 36, yc - 18, 36, a);
+    if (clockProfile) {
+      gfx_cor((GfxRect){x+cw-60,yc-20,1,40},0,1,1,1,.14f*a);
+      menu_avatar(x + cw - 36, yc - 18, 36, a);
+    }
     if (bh > 0.0f) desempenho_corpo(dsMostra, (GfxRect){ r.x, r.y + NV_ILHA_H, r.w, r.h - NV_ILHA_H }, a);
     return;
   }
@@ -2115,7 +2119,7 @@ static void ilha_desenharCorpo_(Uint32 agora) {
     else if (alvo == M_AVISO) mostraA = cur;                       // texto trocado no lugar
   }
 
-  alvoH = alvo == M_RELOGIO ? NV_ILHA_H : NV_ILHA_H_ABERTA;
+  alvoH = alvo == M_RELOGIO ? (clockSettings?56:NV_ILHA_H) : NV_ILHA_H_ABERTA;
   if (alvo == M_AVISO && avisoV2(&cur)) alvoH = V2_AV_H;
   if (alvo == M_ATIVIDADE && atvV2) alvoH = V2_ATV_H;
   if (alvo == M_CARTAO) { LinhasCartao L; alvoW = PAD_E + PAD_D + larguraCartao(&cartoes[cartaoVez], cartaoVez, &L); }
@@ -2253,7 +2257,10 @@ static void ilha_desenharCorpo_(Uint32 agora) {
                1.0f, 0, 0, 0.5f, 0, 0, 0, (0.34f + 0.16f * k) * A); }
     // At rest (no modal, no body) the island is the A27 top chrome: the same
     // material and tint as the bar and the avatar chip (gfx_chrome).
-    if (repouso) gfx_chrome(R, raio, A);
+    if (repouso && clockSettings) {
+      if(ajustes_vidro())gfx_vidro_miolo(R,raio,.045f,.047f,.058f,.80f,A);
+      else gfx_cor(R,raio,.045f,.047f,.058f,.96f*A);
+    } else if (repouso) gfx_chrome(R, raio, A);
     else if (ajustes_vidro()) gfx_vidro_material(R, raio, fundo, A);
     else {
       // MATERIAL SOLIDO: a pilula em repouso tem de LER como pilula em paginas

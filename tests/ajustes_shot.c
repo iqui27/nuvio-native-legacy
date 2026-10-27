@@ -128,7 +128,7 @@ static void captura(const char *nome, SDL_Window *win) {
     }
     if (getenv("NUVIO_AJ_QUADROS")) {   // a ilha do relogio, como o app poe
       ilha_relogio_visivel(ajustes_relogio_cabe());
-      ilha_posicionar(1);
+      ilha_posicionar(3);
       ilha_desenhar(SDL_GetTicks());
     }
     // NUVIO_SHOT_TXT=1: text lines rasterized per frame once the screen has
