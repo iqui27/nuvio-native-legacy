@@ -67,6 +67,7 @@ static void pfFechar(void) { pfTela = PF_FECHADA; pfFoco = 0; }
 static void pfExecutar(void) {
   int acao = pfPend, alvo = pfPendAlvo;
   pfPend = PA_NADA;
+  if(acao==PA_DESBLOQ && admin_perfil_pin_definido(perfis_ativo())) { pfDesbloq=perfis_ativo();pfFechar();return; }
   if (acao == PA_EDITAR) {
     if (ajustes_edicao_iniciar(alvo)) { pfFechar(); uxNotificar("Editando os ajustes de outro perfil. As mudanças valem só para ele."); }
     else uxNotificar("Não foi possível abrir os ajustes desse perfil.");
@@ -105,6 +106,7 @@ static void pfExigirAdmin(int acao, int alvo) {
   pfPend = acao; pfPendAlvo = alvo;
   if (pfAdminOk == perfis_ativo() && acao != PA_DESBLOQ) { pfExecutar(); return; }
   for (i = 0; i < perfis_n(); i++) { const ContaPerfil *p = perfis_item(i); if (p && p->indice == perfis_principal()) pp = p; }
+  if(acao==PA_DESBLOQ && admin_perfil_pin_definido(perfis_ativo())) { pfFase=1;admIdx=perfis_ativo();pfAbrirPin("PIN do perfil","Digite o PIN para abrir os ajustes.");return; }
   if (pp && pp->temPin) { pfFase = 1; admIdx = pp->indice; pfAbrirPin("PIN de administrador", "O PIN do perfil principal da conta."); return; }
   if (admin_pin_definido()) { pfFase = 2; pfAbrirPin("PIN de administrador", "O PIN de administrador desta TV."); return; }
   if (pfEhAdmin() && !perfil_infantil_ativo()) {

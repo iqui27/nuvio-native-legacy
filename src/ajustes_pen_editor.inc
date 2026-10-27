@@ -28,6 +28,18 @@ static void ajPenEditor(void) {
     ajNeutro((GfxRect){226,y,468,h},22,.05f,.10f,.11f,.13f,1);
     aj4Texto(heads[i],TXT_G21B,248,y+20,422,1);
     ajBloco(TXT_G18R,body[i],248,y+54,422,22,.58f,3);
+    if(i==0 && (op==AJ_AUD_LINGUA || op==AJ_FONTE_MANUAL)) {
+      int setting=op==AJ_AUD_LINGUA?AJ_AUD_LINGUA:AJ_FONTE_MANUAL;
+      int on=op==AJ_AUD_LINGUA?!strcmp(ling_opcao_codigo(uxPendente),"~"):uxPendente==0;
+      float r,g,b;ajustes_acento(&r,&g,&b);
+      gfx_cor((GfxRect){248,506,64,36},.5f,on?r:.2f,on?g:.21f,on?b:.24f,1);
+      gfx_cor((GfxRect){252+(on?28:0),510,28,28},.5f,1,1,1,1);
+      aj4Texto(on?"Ligado":"Desligado",TXT_G18R,320,513,300,.58f);
+      aj4Alvo((GfxRect){248,506,400,36},14,setting);
+    }
+    if(op==AJ_TEMA && i==1) {
+      ajPenChip(lig(AJ_COR_LOGO)?"Ligado":"Desligado",NULL,248,682,160,0,14,AJ_COR_LOGO);
+    }
     if(screen && i==0) {
       if(op==AJ_ESCALA_TEXTO) {
         ajPenChip("−",NULL,248,512,44,0,11,-1);
@@ -55,7 +67,7 @@ static void ajPenEditor(void) {
       int i=op==AJ_TEMA && pos<12?colors[pos]:pos;
       float y=400+(pos-start)*76;char value[160];uxValorTexto(op,i,value,sizeof value);
       if(i==uxPendente && !uxRodape)ajNeutro((GfxRect){770,y,1028,70},20,.14f,.169f,.176f,.204f,1);
-      aj4Texto(value,TXT_G21B,770,y+5,800,1);
+      aj4Texto(op==AJ_AUD_LINGUA && !strcmp(ling_opcao_codigo(i),"~")?"Original":value,TXT_G21B,770,y+5,800,1);
       if(op==AJ_TEMA && i<AJ_N_TEMAS_OPC) { float r,g,b;corDeHex(TEMA_ACENTO[i].fill,&r,&g,&b);gfx_cor((GfxRect){1720,y+20,32,32},.5f,r,g,b,1); }
       if(quality && i) { TxtLinha t=ajTxt(TXT_G18R,value);txt_desenhar_alpha(t,1798-t.w,y+26,.58f); }
       static const char *const qhelp[]={"A melhor que a TV aguenta","2160p, quando o addon tem","Full HD","Leve, funciona em qualquer rede"};

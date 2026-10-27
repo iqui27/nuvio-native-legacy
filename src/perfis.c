@@ -543,7 +543,7 @@ void perfis_manter_ativo(void) { escolhido = 1; }
 
 int perfis_sem_escolha(void) {
   if (n <= 0) return 1;
-  if (n == 1) return !lista[0].temPin;
+  if (n == 1) return !lista[0].temPin && !admin_perfil_pin_definido(lista[0].indice);
   return 0;
 }
 
@@ -559,7 +559,7 @@ int perfis_pode_dispensar(void) {
   // Sem o perfil na lista nao da para saber se ele esta travado; recusar e a
   // resposta segura. Com ele, o Voltar so vale quando nao ha PIN — senao a
   // tecla de voltar seria a chave da fechadura.
-  return p && !p->temPin;
+  return p && !p->temPin && !admin_perfil_pin_definido(p->indice);
 }
 
 int perfis_indice_sugerido(void) {
@@ -570,11 +570,11 @@ int perfis_indice_sugerido(void) {
 
 PerfilAcao perfis_acao(int i) {
   if (i < 0 || i >= n) return PERFIL_ACAO_NADA;
-  return lista[i].temPin ? PERFIL_ACAO_PIN : PERFIL_ACAO_ENTRAR;
+  return lista[i].temPin || admin_perfil_pin_definido(lista[i].indice) ? PERFIL_ACAO_PIN : PERFIL_ACAO_ENTRAR;
 }
 
 int perfis_verificar_pin(int indice, const char *pin) {
-  if(admin_perfil_pin_conferir(indice,pin))return 1;   // local lock first, offline-capable
+  if(admin_perfil_pin_definido(indice))return admin_perfil_pin_conferir(indice,pin);
   Jsw w;
   char *r;
   int st = 0, ok = 0;

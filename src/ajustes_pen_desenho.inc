@@ -19,10 +19,11 @@ static void ajPenChip(const char *s,const char *ic,float x,float y,float w,int f
 static void ajPenRailFoco(int row,int unused) { (void)unused;menu_abrir();(void)row; }
 static void ajPenBase(void) {
   GfxRect screen={0,0,1920,1080};
-  gfx_cor(screen,0,.035f,.035f,.043f,1);
-  gfx_luz_canto(screen,0,1180,0,1450,.34f,.33f,.40f,.90f);
-  gfx_luz_canto(screen,0,1800,620,1250,.23f,.22f,.39f,.85f);
-  gfx_veu_css(screen,2,.8f,.44f,1);
+  gfx_cor(screen,0,.056f,.059f,.077f,1);
+  gfx_luz_canto(screen,0,1098,247,763,.398f,.356f,.341f,.812f);
+  gfx_luz_canto(screen,0,1473,561,1696,.184f,.188f,.335f,1);
+  gfx_luz_canto(screen,0,396,977,879,.069f,.062f,.077f,1);
+  gfx_veu_css(screen,2,.107f,.422f,.405f);
   ajPenPanel(48,112,88,522,0);
   static const char *const icons[]={"aj_house","aj_compass","aj_tv","aj_search","aj_book-open","aj_calendar","aj_user-round","aj_sliders-horizontal"};
   for(int i=0;i<8;i++) {
@@ -48,11 +49,11 @@ static void ajPenRodape(const char *page,int part,int total) {
   aj4Texto(uxEditor?"escolher":aj4Util==2?"usar":ajPenPage==AJ_PEN_RULES?"voltar":ajPenPage==AJ_PEN_TOUR?"ligar":"abrir",TXT_AJ_MINI14,246,1029,70,.45f);
   ajNeutro((GfxRect){289,1024,29,26},7,.07f,.14f,.15f,.17f,1);
   ajIcone("aj_arrow-left",297,1031,14,.8f);
-  const char *back=uxEditor?(ajPenPage==27 || ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":uxOp==AJ_TEMA || uxOp==AJ_ESCALA_TEXTO?"Minha tela":"Reprodução"):ajPenPage==28?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
+  const char *back=uxEditor?(ajPenPage==27 || ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":uxOp==AJ_TEMA || uxOp==AJ_ESCALA_TEXTO?"Minha tela":"Reprodução"):ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
   char backText[160];snprintf(backText,sizeof backText,i18n("voltar para %s"),i18n(back));
   aj4Texto(focoIndice?"voltar":backText,TXT_AJ_MINI14,328,1029,330,.45f);
   char text[200];
-  if(ajPenPage>=0 && ajPenPage<27)snprintf(text,sizeof text,"%s",i18n(page));
+  if((ajPenPage>=0 && ajPenPage<27) || ajPenPage==AJ_PEN_COMPONENTS)snprintf(text,sizeof text,"%s",i18n(page));
   else snprintf(text,sizeof text,i18n("%s · %d de %d"),i18n(page),part,total);
   TxtLinha t=ajTxt(TXT_AJ_MINI14,text);txt_desenhar_alpha(t,1824-t.w,1029,.45f);
   aj4Texto("navegar",TXT_AJ_MINI14,1720-t.w,1029,90,.45f);
@@ -103,7 +104,7 @@ static void ajPenRows(void) {
         gfx_cor((GfxRect){x+w-90,y+19,64,36},.5f,r,g,b,1);
         gfx_cor((GfxRect){x+w-86+(on?28:0),y+23,28,28},.5f,1,1,1,1);
       } else {
-        char val[160];snprintf(val,sizeof val,"%s",row->op>=0?textoValor(row->op):row->op==-3?i18n("Gerenciar perfis"):row->op==-4?i18n("Livre e até 10 anos"):i18n("Ainda não disponível."));
+        char val[160];snprintf(val,sizeof val,"%s",row->op>=0?textoValor(row->op):row->op==-3?i18n(admin_perfil_pin_definido(perfis_ativo())?"PIN definido":"Definir um PIN"):row->op==-4?i18n("Livre e até 10 anos"):i18n("Ainda não disponível."));
         if(row->op<=-10 && row->op>=-13)ajPenParentText(-10-row->op,perfil_regra(perfis_ativo(),-10-row->op),val,sizeof val);
         if(row->op==-4)ajPenParentText(PR_IDADE,perfil_regra(perfis_ativo(),PR_IDADE),val,sizeof val);
         TxtLinha t=ajTxtC(TXT_G18R,val,180);txt_desenhar_alpha(t,x+w-52-t.w,y+24,.58f);

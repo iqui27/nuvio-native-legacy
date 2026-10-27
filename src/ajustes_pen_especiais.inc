@@ -49,7 +49,7 @@ static void ajPenRules(void) {
   static const char *const help[]={"A TV desenha até 4K","HDR10 e HDR10+ são entregues como HDR10","Perfil 8, com DV se a TV pedir","Convertido em Dolby Digital ou estéreo","HEVC e AV1 por hardware","O teto de RAM do aparelho",
     "A TV decide o formato; o Nuvio avisa","Só quando você deixa o automático","O original é sempre a primeira opção","Só com o seu comando","Se a TV não aguenta, o efeito não vem","A busca por voz só liga com o botão"};
   static const char *const icons[]={"aj_monitor","aj_sun","aj_sparkles","aj_volume-2","aj_cpu","aj_hard-drive","aj_crop","aj_repeat","aj_eye-off","aj_history","aj_bug","aj_mic"};
-  long ram=tex_teto_ram_mb();
+  long ram=0;tex_orcamento_info(NULL,&ram,NULL,NULL);
   char values[6][160];
   snprintf(values[0],sizeof values[0],"%dx%d",(int)NV_LAYOUT_REAL_W,(int)NV_LAYOUT_REAL_H);
   int hdr,dv,hevc,av1;stream_capacidades(&hdr,&dv,&hevc,&av1);

@@ -14,7 +14,9 @@ static void ajPenSecondary(void) {
     aj4Texto(heads[i],TXT_G21B,248,y+20,422,1);ajBloco(TXT_G18R,body[i],248,y+54,422,22,.58f,3);
     if(i<2) {
       int op=i?AJ_LEG2_POS:AJ_LEG_LINGUA2;
+      aj4Alvo((GfxRect){226,y,468,i?140:170},13,i?2:1);
       char text[160];snprintf(text,sizeof text,"%s",textoValor(op));aj4Texto(text,TXT_G18M,306,y+104,364,1);
+      if(i) { ajPenChip("−",NULL,248,y+88,44,0,13,3);ajPenChip("+",NULL,430,y+88,44,0,13,3); }
     }
   }
   static const int ops[]={AJ_LEG2_FONTE,AJ_LEG2_TAMANHO,AJ_LEG2_COR,AJ_LEG2_FUNDO,AJ_LEG2_BORDA,AJ_LEG_LINGUA2};
@@ -28,5 +30,7 @@ static void ajPenSecondary(void) {
     aj4Alvo((GfxRect){770,y,1028,70},8,i);
   }
   aj4Texto("A segunda legenda aparece por cima, sem empurrar a principal.",TXT_AJ_MINI14,770,944,1028,.4f);
+  ajPenChip("Voltar ao padrão","aj_rotate-ccw-clock",226,902,206,0,13,0);
+  ajPenChip("Salvar como preset","aj_check",444,902,230,0,9,2);
   ajPenRodape("Áudio e legendas",3,3);
 }

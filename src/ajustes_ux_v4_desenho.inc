@@ -29,6 +29,18 @@ static float aj4Bloco(TxtEstilo e,const char *s,float x,float y,float w,float lh
 #define ajIconeT aj4IconeT
 #define ajBloco aj4Bloco
 static void aj4PontAtivar(int zona,int row) {
+  if(zona==14) {
+    if(row==AJ_COR_LOGO)definirValorDireto(row,!valor[row]);
+    else if(row==AJ_FONTE_MANUAL)uxPendente=!uxPendente;
+    else { for(int i=0;i<nValores(AJ_AUD_LINGUA);i++)if(!strcmp(ling_opcao_codigo(i),"~")) { uxPendente=i;break; } }
+    return;
+  }
+  if(zona==13) {
+    if(row==0) { focarOpcao(AJ_LEG2_RESTAURAR);SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_RETURN;eventoTela(&e); }
+    else if(row==3)definirValorDireto(AJ_LEG2_POS,!valor[AJ_LEG2_POS]);
+    else { int op=row==1?AJ_LEG_LINGUA2:AJ_LEG2_POS;focarOpcao(op);uxAbrirEditor(op); }
+    return;
+  }
   if(zona==12) { if(row==4)ajPenOpen(AJ_PEN_COMPONENTS);else { ajPenRow=row;ajPenEvent(SDLK_RETURN); }return; }
   if(zona==5) { uxEvento(SDLK_ESCAPE); return; }
   if(zona==8) { ajPenRow=row;int handled=ajPenEvent(SDLK_RETURN);if(!handled) { SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.keysym.sym=SDLK_RETURN;eventoTela(&event); } return; }

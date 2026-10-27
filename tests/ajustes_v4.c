@@ -80,6 +80,12 @@ int main(void) {
   for(int p=0;p<4;p++) { ajPenPresetPrepare(p);assert(aj4Review==2);aj4Review=0; }
   ajPenOpen(28);key(SDLK_ESCAPE);assert(ajPenPage==27);
   ajPenOpen(34);key(SDLK_ESCAPE);assert(ajPenPage==33);
+  // Local PINs gate profile entry and fail closed on a wrong PIN.
+  assert(admin_perfil_pin_definir(1,"4826"));
+  assert(admin_perfil_pin_conferir(1,"4826") && !admin_perfil_pin_conferir(1,"0000"));
+  assert(perfis_acao(0)==PERFIL_ACAO_PIN);
+  assert(perfis_verificar_pin(1,"4826")==1 && perfis_verificar_pin(1,"0000")==0);
+  admin_pin_esquecer();
   // Parental policy is validated, persisted, enforced, and remains profile-local.
   assert(perfil_regra_definir(1,PR_IDADE,12));
   assert(!perfil_regra_definir(1,PR_IDADE,99));
