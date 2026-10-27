@@ -67,7 +67,7 @@ static const AjPenPage AJ_PEN_AUDIO[] = {
       {AJ_LEG1_NEGRITO,"Negrito","Letra mais grossa","aj_type",1},
       {AJ_LEG1_ATRASO,"Atraso","Adianta ou atrasa a legenda","aj_timer",0},
       {AJ_LEG1_RESTAURAR,"Restaurar o padrão","Volta o estilo que veio no arquivo","aj_rotate-ccw-clock",0},
-      {AJ_LEG_SYNC_AUTO,"Sincronia automática","Ajusta a legenda ao áudio","aj_audio-lines",1}}}}}
+      {AJ_LEG1_ATRASO,"Ajuste fino","Corrige o milissegundo","aj_sliders-horizontal",0}}}}}
 };
 static AjPenPage ajPenOther;
 static int ajPenMissing(int *ops) {
@@ -122,7 +122,11 @@ static int ajPenEvent(SDL_Keycode key) {
     return 1;
   }
   if(!page || uxEditor || aj4Util || focoIndice || aj4Topo>=0)return -1;
-  if(uxVoltar(key)) { ajPenPage=-1;focoIndice=1;aj4Linha=0;return 1; }
+  if(uxVoltar(key)) {
+    int parent=ajPenPage==28?27:ajPenPage>=30 && ajPenPage<=32?29:ajPenPage==34?33:ajPenPage>=38 && ajPenPage<=40?37:ajPenPage==42?41:-1;
+    if(parent>=0)ajPenOpen(parent);else { ajPenPage=-1;focoIndice=1;aj4Linha=0; }
+    return 1;
+  }
   int n=page->cols[0].n+page->cols[1].n;
   if(ajPenPage==AJ_PEN_TOUR) {
     if(key==SDLK_DOWN && ajPenRow+4<n)ajPenRow+=4;

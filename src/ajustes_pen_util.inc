@@ -2,19 +2,21 @@ static void ajPenUtility(void) {
   int search=aj4Util==3;
   ajPenBase();
   ajPenChip("Ajustes","pl_chevron-left",200,112,124,0,5,0);
-  ajKicker("AJUSTES",200,200,.45f);
-  aj4Texto(search?"Buscar ajuste":"Diferente do padrão",TXT_TITULO2,200,218,1500,1);
-  aj4Texto(search?"Encontre o ajuste pelo nome ou pelo que quer mudar.":"Só o que você mudou. O resto está como o Nuvio entregou.",TXT_G20M,200,291,1520,.58f);
-  ajPenPanel(200,344,1624,640,0);
+  ajKicker("AJUSTES",200,198,1);
+  aj4Texto(search?"Buscar ajuste":"Diferente do padrão",TXT_TITULO2,200,212,1500,1);
   int n=search?aj4BuscarResultados():aj4Diferencas(aj4Opcoes),start=aj4Linha/5*5;
+  char subtitle[240];snprintf(subtitle,sizeof subtitle,i18n("As %d escolhas que você mudou em relação ao padrão do Nuvio."),n);
+  aj4Texto(search?"Digite o que você quer mudar. A lista mostra onde cada coisa mora.":subtitle,TXT_G20M,200,291,1520,.58f);
+  ajPenPanel(200,344,1624,640,0);
   if(search) {
     ajPenChip(aj4Consulta[0]?aj4Consulta:"Buscar ajuste","aj_search",226,360,1300,aj4Acao!=0,10,0);
-    char count[100];snprintf(count,sizeof count,i18n("%d resultados"),n);
+    char count[100];snprintf(count,sizeof count,i18n("%d ajustes encontrados"),n);
     aj4Texto(count,TXT_G18R,1570,377,230,.4f);
-    ajKicker("RESULTADOS",226,474,.45f);
+    char heading[240];snprintf(heading,sizeof heading,i18n("RESULTADOS PARA \"%s\""),aj4Consulta);
+    ajKicker(heading,226,474,1);
   } else {
     char count[100];snprintf(count,sizeof count,i18n("%d alterações"),n);
-    ajKicker(count,226,370,.45f);
+    ajKicker(count,226,366,1);
     ajPenChip(aj4Escopo?"Esta TV":"Este perfil",NULL,1600,112,224,0,6,!aj4Escopo);
   }
   for(int i=start;i<n && i<start+5;i++) {
