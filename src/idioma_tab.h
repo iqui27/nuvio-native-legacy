@@ -786,7 +786,7 @@
   { "Adicionar canal", "Add channel" },
   { "Adicionar conta Xtream", "Add Xtream account" },
   { "Adicionar fileira ao Início", "Add a Home row" },
-  { "Adicionar fonte", "Add font" },
+  { "Adicionar fonte", "Add source" },
   { "Adicionar fonte IPTV", "Add IPTV source" },
   { "Adicionar fonte XMLTV", "Add XMLTV source" },
   { "Adicionar guia XMLTV", "Add XMLTV guide" },

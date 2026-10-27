@@ -787,7 +787,7 @@
   T("Adicionar canal", "Προσθήκη καναλιού"),
   T("Adicionar conta Xtream", "Προσθήκη λογαριασμού Xtream"),
   T("Adicionar fileira ao Início", ""),
-  T("Adicionar fonte", "Προσθήκη γραμματοσειράς"),
+  T("Adicionar fonte", "Προσθήκη πηγής"),
   T("Adicionar fonte IPTV", "Προσθήκη πηγής IPTV"),
   T("Adicionar fonte XMLTV", "Add XMLTV source"),
   T("Adicionar guia XMLTV", "Προσθήκη οδηγού XMLTV"),

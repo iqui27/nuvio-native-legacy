@@ -57,6 +57,7 @@ static float g5_bloco_bruto(TxtEstilo e,const char *s,int r,int g,int b,float x,
 #define txt_bloco_bruto g5_bloco_bruto
 
 #define G5_CAP 4096
+#define VOD_ITEM 10000
 #define G5_GROUPS 96
 static struct {
   char server[256], user[96], password[96], playlist[2048], xmltv[1100], file[3100], name[96];
@@ -249,7 +250,7 @@ static void go(const char *name){
     if(i){pg_n=i-1;volta=1;vfoco=pg_pilha[pg_n].foco;}
     else if(!fecha&&pg_n<16){snprintf(pg_pilha[pg_n].nome,sizeof pg_pilha[0].nome,"%s",screen);pg_pilha[pg_n++].foco=focus;}
   }
-  snprintf(screen,sizeof screen,"%s",name);focus=volta?vfoco:modal_tela(name)?-1:0;nav=-1;message[0]=0;
+  snprintf(screen,sizeof screen,"%s",name);focus=volta?vfoco:modal_tela(name)?-1:!strncmp(name,"vod-",4)&&strcmp(name,"vod-titulo")&&strcmp(name,"vod-serie-temporadas")?VOD_ITEM:0;nav=-1;message[0]=0;
 }
 static void gv_voltar(void);
 static void pg_voltar(void){if(pg_n)go(pg_pilha[pg_n-1].nome);else gv_voltar();}
@@ -272,6 +273,16 @@ static void gv_abrir(const char *name);
 static void gv_go(const char *name);
 static void gv_deixa(void);
 static char gv_saida[48];   /* guide screen left for a v5 page; Back returns to it */
+static void merge_mixed_vod(void){
+  G5Item item;if(!guia_vod_item(0,&item))return;
+  if(!inventory)inventory=calloc(G5_CAP,sizeof *inventory);
+  for(int i=0;inventory&&count<G5_CAP&&guia_vod_item(i,&item);i++){
+    if(!ltv_fonte_ligada(item.source))continue;
+    int exists=0;for(int j=0;j<count;j++)if(!strcmp(inventory[j].source,item.source)&&!strcmp(inventory[j].id,item.id))exists=1;
+    if(!exists){inventory[count++]=item;total++;}
+  }
+  build_groups();
+}
 void g5ui_open(const char *name){context();if(gv_is(screen)&&!gv_is(name))gv_deixa();go(name);edit=-1;
   if(gv_is(name))gv_abrir(name);
   else{gv_side_open=0;vod_sidebar=0;}
@@ -296,16 +307,7 @@ void g5ui_open(const char *name){context();if(gv_is(screen)&&!gv_is(name))gv_dei
   }
   if(!strncmp(name,"setup-",6)&&!draft.live&&!draft.movies&&!draft.series){draft.live=draft.movies=draft.series=draft.epg=1;}
   if((!strcmp(name,"setup-credenciais")||!strcmp(name,"fontes-gerenciar"))&&use_saved)load_saved_credentials();
-  if(!strncmp(name,"vod-",4)&&!atomic_load(&busy)){
-    G5Item item;if(guia_vod_item(0,&item)){
-      if(!inventory)inventory=calloc(G5_CAP,sizeof *inventory);
-      for(int i=0;inventory&&count<G5_CAP&&guia_vod_item(i,&item);i++){
-        if(!ltv_fonte_ligada(item.source))continue;
-        int exists=0;for(int j=0;j<count;j++)if(!strcmp(inventory[j].source,item.source)&&!strcmp(inventory[j].id,item.id))exists=1;
-        if(!exists)inventory[count++]=item;
-      }total=count;source_loaded=1;build_groups();
-    }
-  }
+  if(!strncmp(name,"vod-",4)&&!episodes_mode&&!atomic_load(&busy))merge_mixed_vod();
   if(!strncmp(name,"vod-",4)&&!source_loaded&&!atomic_load(&busy)){
     if(draft.type==0 && xtream_configurado()){
       use_saved=1;action[0]=0;draft.movies=draft.series=1;start(2);
@@ -692,7 +694,7 @@ static void catalog(void){
   int loading=atomic_load(&busy)||!strcmp(screen,"vod-carregando"), empty=!nindices||!strcmp(screen,"vod-sem-catalogo")||!strcmp(screen,"vod-vazio");
   if(search)button(804,query[0]?query:i18n("Buscar canais, filmes e séries"),"aj_search",left,204,area,64,1);
   else if(!loading&&!empty){   /* the state message never sits on the hero */
-    G5Item *hero=&inventory[indices[focus>=0&&focus<nindices?focus:0]];
+    G5Item *hero=&inventory[indices[focus>=VOD_ITEM&&focus<VOD_ITEM+nindices?focus-VOD_ITEM:0]];
     GfxRect r={left,190,area,330};panel(r.x,r.y,r.w,r.h);
     GLuint art=!restricted(hero)&&hero->backdrop[0]?tex_obter_larg(hero->backdrop,1472):0;
     if(art){gfx_tex_aspect_atual=tex_aspecto(hero->backdrop);gfx_rect(r,art,GFX_CARD,0,0,0,.08,1,1,1,1);gfx_tex_aspect_atual=0;}
@@ -713,20 +715,20 @@ static void catalog(void){
     label(TXT_HEADLINE,i18n(s),650,420,1100,0);label(TXT_ILHA_CORPO,i18n("Seu provedor define o conteúdo disponível."),650,490,1100,1);
     button(0,i18n(query[0]?"Limpar busca":"Adicionar fonte"),"aj_plus",650,620,500,64,0);return;
   }
-  int page_size=6;int start=focus>=0&&focus<nindices?(focus/page_size)*page_size:vod_sidebar?(vod_return_focus/page_size)*page_size:0;
+  int page_size=6;int start=focus>=VOD_ITEM&&focus<VOD_ITEM+nindices?((focus-VOD_ITEM)/page_size)*page_size:vod_sidebar?((vod_return_focus-VOD_ITEM)/page_size)*page_size:0;
   for(int n=start;n<nindices&&n<start+page_size;n++){
     G5Item *it=&inventory[indices[n]];float x=left+((n-start)%6)*(cw+18),y=(search?304:596)+((n-start)/6)*324;
     GfxRect r={x,y,cw,270};int locked=restricted(it);GLuint tex=!locked&&it->poster[0]?tex_obter_larg(it->poster,230):0;
     if(tex){gfx_tex_aspect_atual=tex_aspecto(it->poster);gfx_rect(r,tex,GFX_CARD,0,0,0,.07,1,1,1,1);gfx_tex_aspect_atual=0;}else gfx_cor(r,.07,.12,.13,.15,1);
     gfx_cor((GfxRect){x+10,y+10,134,36},.25f,.05f,.05f,.06f,.85f);label(TXT_ILHA_SUB,i18n("Seu IPTV"),x+20,y+16,114,0);
     if(locked)gfx_icone((GfxRect){x+90,y+108,48,48},"aj_lock",.8,.8,.8,1);
-    if(focus==n&&nav<0&&!vod_sidebar)plrui_linha_foco(foco_rect((GfxRect){x-4,y+274,cw+8,76}),18,1);
+    if(focus==VOD_ITEM+n&&nav<0&&!vod_sidebar)plrui_linha_foco(foco_rect((GfxRect){x-4,y+274,cw+8,76}),18,1);
     label(TXT_W20_24B,locked?i18n("Conteúdo bloqueado"):it->name,x,y+282,cw,0);
     char meta[96];if(!locked&&it->age>=0)snprintf(meta,sizeof meta,i18n("%s · %d+"),g5_item_category(it,it->kind),it->age);
     else snprintf(meta,sizeof meta,"%s",g5_item_category(it,it->kind));
     label(TXT_ILHA_CORPO,meta,x,y+318,cw,1);
-    ponteiro_alvo(x,y,cw,350,point_focus,point_activate,n,0);
-    if(!vod_sidebar)reg_focus(n,x,y,cw,350);
+    ponteiro_alvo(x,y,cw,350,point_focus,point_activate,VOD_ITEM+n,0);
+    if(!vod_sidebar)reg_focus(VOD_ITEM+n,x,y,cw,350);
   }
   control_count=nindices;
 }
@@ -1057,8 +1059,8 @@ static void activate(int id){
   if(!strncmp(screen,"vod-",4)){
     if(id==800){episodes_mode=0;catalog_group[0]=0;go("vod-filmes");}else if(id==801){episodes_mode=0;catalog_group[0]=0;go("vod-series");}else if(id==802||id==804){go("vod-busca");input(5,"Buscar",query,0);}
     else if(id==808){vod_sidebar=0;go(!strcmp(screen,"vod-series")?"vod-filmes":"vod-series");}
-    else if(id==803)go("fontes-gerenciar");else if(id==805){catalog_group[0]=0;focus=0;}else if(id==806)go("setup-tipo");else if(id==807&&nindices)select_item(indices[0]);else if(id>=820&&id<820+group_count){snprintf(catalog_group,sizeof catalog_group,"%s",groups[id-820]);focus=0;}else if(nindices&&id<nindices)select_item(indices[id]);else if(query[0])query[0]=0;else go("setup-tipo");
-    if(id==800||id==801||id==805||(id>=820&&id<820+group_count)){vod_sidebar=0;focus=vod_return_focus=0;}
+    else if(id==803)go("fontes-gerenciar");else if(id==805){catalog_group[0]=0;focus=VOD_ITEM;}else if(id==806)go("setup-tipo");else if(id==807&&nindices)select_item(indices[0]);else if(id>=820&&id<820+group_count){snprintf(catalog_group,sizeof catalog_group,"%s",groups[id-820]);focus=VOD_ITEM;}else if(id>=VOD_ITEM&&id<VOD_ITEM+nindices)select_item(indices[id-VOD_ITEM]);else if(query[0])query[0]=0;else go("setup-tipo");
+    if(id==800||id==801||id==805||(id>=820&&id<820+group_count)){vod_sidebar=0;focus=vod_return_focus=VOD_ITEM;}
     return;
   }
   if(!strncmp(screen,"multiview-",10)){
@@ -1099,7 +1101,7 @@ static int g5ui_event_inner(const SDL_Event *e){
       }
     }return 1;
   }
-  if(vod&&k==SDLK_LEFT&&!vod_sidebar&&nav<0&&((focus>=0&&focus<nindices&&focus%6==0)||!nindices)){
+  if(vod&&k==SDLK_LEFT&&!vod_sidebar&&nav<0&&((focus>=VOD_ITEM&&focus<VOD_ITEM+nindices&&(focus-VOD_ITEM)%6==0)||!nindices)){
     vod_return_focus=focus;vod_sidebar=1;focus=800;nav=-1;return 1;
   }
   if(k==SDLK_ESCAPE||k==SDLK_AC_BACK||k==SDLK_BACKSPACE){
@@ -1114,16 +1116,16 @@ static int g5ui_event_inner(const SDL_Event *e){
   int md=modal_tela(screen);   /* a modal keeps the D-pad inside it */
   if(k==SDLK_TAB){if(!md)nav=nav<0?0:-1;return 1;}
   if(nav>=0){if(vod&&k==SDLK_LEFT&&nav==0){vod_return_focus=focus;vod_sidebar=1;nav=-1;focus=800;return 1;}if(k==SDLK_LEFT&&nav>0)nav--;if(k==SDLK_RIGHT&&nav<5)nav++;
-    if(k==SDLK_DOWN){nav=-1;if(vod)focus=vod_return_focus>=0&&vod_return_focus<nindices?vod_return_focus:0;}if((k==SDLK_RETURN||k==SDLK_KP_ENTER)&&!e->key.repeat)activate(1100+nav);return 1;}
+    if(k==SDLK_DOWN){nav=-1;if(vod)focus=vod_return_focus>=VOD_ITEM&&vod_return_focus<VOD_ITEM+nindices?vod_return_focus:VOD_ITEM;}if((k==SDLK_RETURN||k==SDLK_KP_ENTER)&&!e->key.repeat)activate(1100+nav);return 1;}
   if(k==SDLK_UP||k==SDLK_DOWN||k==SDLK_LEFT||k==SDLK_RIGHT){
     if(!strcmp(screen,"parental-pin")&&focus>=20&&focus<=31){
       int next=focus+(k==SDLK_UP?-3:k==SDLK_DOWN?3:k==SDLK_LEFT?-1:1);
       if(next>=20&&next<=31)focus=next;else focus=k==SDLK_DOWN?0:3;return 1;
     }
-    if(!strncmp(screen,"vod-",4)&&strcmp(screen,"vod-titulo")&&strcmp(screen,"vod-serie-temporadas")&&focus>=0&&focus<nindices&&nindices){
+    if(!strncmp(screen,"vod-",4)&&strcmp(screen,"vod-titulo")&&strcmp(screen,"vod-serie-temporadas")&&focus>=VOD_ITEM&&focus<VOD_ITEM+nindices&&nindices){
       int step=k==SDLK_UP?-6:k==SDLK_DOWN?6:k==SDLK_LEFT?-1:1;
-      if(focus+step<0){vod_return_focus=focus;nav=3;}
-      else if(focus+step<nindices&&(k!=SDLK_RIGHT||focus%6<5))focus+=step;
+      if(focus+step<VOD_ITEM){vod_return_focus=focus;nav=3;}
+      else if(focus+step<VOD_ITEM+nindices&&(k!=SDLK_RIGHT||(focus-VOD_ITEM)%6<5))focus+=step;
       return 1;
     }
     /* Paged lists: Up/Down walk the whole list and the page follows. */
@@ -1178,9 +1180,10 @@ void g5ui_update(void){
           else{g5_grant(&lease,profile,locked_item.source,locked_item.id,time(NULL),lease_seconds,1);if(locked_item.kind==G5_LIVE)g5ui_close();else go(previous[0]?previous:"vod-filmes");}}
         else{go("parental-pin");snprintf(message,sizeof message,"%s",i18n(pin_result==0?"PIN incorreto":"Não foi possível verificar o PIN"));}
       }else if(staging&&worker_ok){if(operation==4){free(series_catalog);series_catalog=inventory;series_count=count;parent_series=selected;}else free(inventory);inventory=staging;staging=NULL;count=staging_count;total=staging_total;build_groups();source_loaded=1;
+        if(operation==2)merge_mixed_vod();
         if(operation==4){episodes_mode=1;selected=0;go("vod-serie-temporadas");}
         if(committed)dirty=1;
-        if(operation==2&&strstr(screen,"vod-"))focus=0;
+        if(operation==2&&strstr(screen,"vod-"))focus=VOD_ITEM;
       }
       if(phone_stage==1&&operation==1){phone_stage=worker_ok?4:0;phone_fetch=worker_ok;if(!worker_ok)celular_status("{\"s\":\"err\"}");}
       else if(phone_stage==4&&operation==2){phone_stage=worker_ok?2:0;if(worker_ok)phone_status_counts("ok");else celular_status("{\"s\":\"err\"}");}
@@ -1763,10 +1766,15 @@ static void gv_broadcast(GfxRect pv,GVCh *c,EpgProg *p,int full){
   int troca=!strcmp(screen,"preview-troca");
   if(live)gfx_furo_raio(pv,raio);
   else{
-    float r,g,b;gv_hsl(gv_hue(c->nome),.45f,.30f,&r,&g,&b);
-    gfx_cor(pv,raio,r,g,b,1);
+    gfx_cor(pv,raio,.02f,.02f,.02f,1);
     float lado=fminf(pv.h*.44f,170);
-    gv_avatar(c->logo,c->nome,(GfxRect){pv.x+(pv.w-lado)/2,pv.y+(pv.h-lado)/2-(p&&pv.h>200?16:0),lado,lado});
+    GfxRect logo={pv.x+(pv.w-lado)/2,pv.y+(pv.h-lado)/2-(p&&pv.h>200?16:0),lado,lado};
+    if(c->logo[0])guia_logo_desenhar(c->logo,c->nome,logo,lado,lado,1,1);
+    else{
+      char ini[8];gv_iniciais(c->nome,ini,sizeof ini);
+      TxtLinha t=txt_linha_bruta(TXT_V2_TIT,ini,243,242,239,255);
+      txt_desenhar(t,logo.x+(logo.w-(float)t.w)/2,logo.y+(logo.h-(float)t.h)/2);
+    }
   }
   /* veu preto do modo grande/imersivo: emenda o video no heroi (2.0.8) */
   if(full||ajustes_guia_previa_grande()){
@@ -2492,7 +2500,6 @@ static void gv_screen(void){
   if(gv_side_open&&ov){gv_reg=0;gv_sidebar(base);}
   if(!gv_gfolha_visto)gv_gfolha.ok=0;
   if(ov||gv_cartoes()||gv_sports())gv_footer();
-  else gv_label(TXT_ILHA_APOIO,i18n("Ao selecionar inicia a prévia · selecionar de novo abre tela cheia."),GV_MX,156,GV_MW,1);
 }
 /* --- eventos da tela principal -------------------------------------------- */
 static void gv_go(const char *name){

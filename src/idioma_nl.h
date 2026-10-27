@@ -787,7 +787,7 @@
   T("Adicionar canal", "Kanaal toevoegen"),
   T("Adicionar conta Xtream", "Xtream-account toevoegen"),
   T("Adicionar fileira ao Início", ""),
-  T("Adicionar fonte", "Lettertype toevoegen"),
+  T("Adicionar fonte", "Bron toevoegen"),
   T("Adicionar fonte IPTV", "IPTV-bron toevoegen"),
   T("Adicionar fonte XMLTV", "Add XMLTV source"),
   T("Adicionar guia XMLTV", "XMLTV-gids toevoegen"),

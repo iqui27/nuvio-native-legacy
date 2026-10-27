@@ -787,7 +787,7 @@
   T("Adicionar canal", "チャンネルを追加"),
   T("Adicionar conta Xtream", "Xtreamアカウントを追加"),
   T("Adicionar fileira ao Início", ""),
-  T("Adicionar fonte", "フォントの追加"),
+  T("Adicionar fonte", "ソースを追加"),
   T("Adicionar fonte IPTV", "IPTVソースを追加"),
   T("Adicionar fonte XMLTV", "Add XMLTV source"),
   T("Adicionar guia XMLTV", "XMLTVガイドを追加"),

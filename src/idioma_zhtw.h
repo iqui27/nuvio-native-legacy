@@ -787,7 +787,7 @@
   T("Adicionar canal", "新增頻道"),
   T("Adicionar conta Xtream", "新增Xtream帳戶"),
   T("Adicionar fileira ao Início", ""),
-  T("Adicionar fonte", "新增字體"),
+  T("Adicionar fonte", "新增來源"),
   T("Adicionar fonte IPTV", "添加IPTV源"),
   T("Adicionar fonte XMLTV", "Add XMLTV source"),
   T("Adicionar guia XMLTV", "新增 XMLTV 節目指南"),

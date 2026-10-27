@@ -787,7 +787,7 @@
   T("Adicionar canal", "Pridať kanál"),
   T("Adicionar conta Xtream", "Pridať účet Xtream"),
   T("Adicionar fileira ao Início", ""),
-  T("Adicionar fonte", "Pridať písmo"),
+  T("Adicionar fonte", "Pridať zdroj"),
   T("Adicionar fonte IPTV", "Pridajte zdroj IPTV"),
   T("Adicionar fonte XMLTV", "Add XMLTV source"),
   T("Adicionar guia XMLTV", "Pridať sprievodcu XMLTV"),

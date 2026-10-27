@@ -787,7 +787,7 @@
   T("Adicionar canal", "Thêm kênh"),
   T("Adicionar conta Xtream", "Thêm tài khoản Xtream"),
   T("Adicionar fileira ao Início", ""),
-  T("Adicionar fonte", "Thêm phông chữ"),
+  T("Adicionar fonte", "Thêm nguồn"),
   T("Adicionar fonte IPTV", "Thêm nguồn IPTV"),
   T("Adicionar fonte XMLTV", "Add XMLTV source"),
   T("Adicionar guia XMLTV", "Thêm hướng dẫn XMLTV"),

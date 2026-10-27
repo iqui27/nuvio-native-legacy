@@ -786,7 +786,7 @@
   T("Adicionar canal", "Adăugați un canal"),
   T("Adicionar conta Xtream", "Adaugă cont Xtream"),
   T("Adicionar fileira ao Início", ""),
-  T("Adicionar fonte", "Adăugați font"),
+  T("Adicionar fonte", "Adăugați sursă"),
   T("Adicionar fonte IPTV", "Adăugați sursa IPTV"),
   T("Adicionar fonte XMLTV", "Add XMLTV source"),
   T("Adicionar guia XMLTV", "Adaugă ghid XMLTV"),

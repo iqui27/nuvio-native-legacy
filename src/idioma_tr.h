@@ -787,7 +787,7 @@
   T("Adicionar canal", "Kanal ekle"),
   T("Adicionar conta Xtream", "Xtream hesabı ekle"),
   T("Adicionar fileira ao Início", ""),
-  T("Adicionar fonte", "Yazı tipi ekle"),
+  T("Adicionar fonte", "Kaynak ekle"),
   T("Adicionar fonte IPTV", "IPTV kaynağı ekle"),
   T("Adicionar fonte XMLTV", "Add XMLTV source"),
   T("Adicionar guia XMLTV", "XMLTV rehberi ekle"),
