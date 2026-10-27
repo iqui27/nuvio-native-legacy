@@ -11489,8 +11489,11 @@ int ajustes_teste_quadro(const char *id) {
     else if(!strcmp(id,"pen-estilo"))ajPenOpen(28);
     else if(!strncmp(id,"pen-adv-",8))ajPenOpen(atoi(id+8));
     else if(!strncmp(id,"pen-main-",9))ajPenOpen(29+atoi(id+9));
-    else if(!strcmp(id,"pen-audio-idioma")) { ajPenOpen(27);focarOpcao(AJ_AUD_LINGUA);uxAbrirEditor(AJ_AUD_LINGUA); }
-    else if(!strcmp(id,"pen-segunda"))ajPenOpen(AJ_PEN_SECONDARY);
+    else if(!strcmp(id,"pen-audio-idioma")) {
+      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];
+      ajPenOpen(27);focarOpcao(AJ_AUD_LINGUA);uxAbrirEditor(AJ_AUD_LINGUA);uxPendente=order[2];
+    }
+    else if(!strcmp(id,"pen-segunda")) { ajPenOpen(AJ_PEN_SECONDARY);ajPenRow=4;valor[AJ_LEG2_BORDA]=2; }
     else return 0;
     return 1;
   }
@@ -11499,7 +11502,13 @@ int ajustes_teste_quadro(const char *id) {
     perfis_teste_definir(PF_V4, NULL, 1, 1);   // chip e escopo com nome, como o mockup
     aj4Iniciar(); pfTela=0; uxVeioBusca=0;
     valor[AJ_TEMA]=2; valor[AJ_AVANCADAS]=1;
-    if (!strcmp(id,"v4-inicio-avancado")) valor[AJ_AVANCADAS]=0;
+    if (!strcmp(id,"v4-inicio-avancado") || !strcmp(id,"v4-inicio-simples")) {
+      static const char *const names[]={"Marina"};perfis_teste_definir(names,NULL,1,1);
+      valor[AJ_TEMA]=6;valor[AJ_HOME_LAYOUT]=1;
+      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];
+      aj4Linha=!strcmp(id,"v4-inicio-avancado")?3:1;
+      if(!strcmp(id,"v4-inicio-avancado")) { valor[AJ_AVANCADAS]=0;valor[AJ_QUALIDADE]=1; }
+    }
     else if (!strcmp(id,"v4-secao")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); aj4Grupos=0; }
     else if (!strcmp(id,"v4-secao-grupos")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); }   // pagina de grupos com "Mais grupos"
     else if (!strcmp(id,"v4-review")) {   // revisao com escopo misto (TV + perfil)
@@ -11511,9 +11520,13 @@ int ajustes_teste_quadro(const char *id) {
     else if (!strcmp(id,"v4-submenu")) { valor[AJ_AVANCADAS]=0; aj4Entrar(0); aj4Grupo=aj4GrupoDe(AJ_FONTE_MANUAL); aj4Grupos=0; }
     else if (!strcmp(id,"v4-opcao-lista")) { focarOpcao(AJ_QUALIDADE); uxAbrirEditor(AJ_QUALIDADE); }
     else if (!strcmp(id,"v4-predefinicoes")) { aj4Util=2; focoIndice=0; }
-    else if (!strcmp(id,"v4-diferentes")) { valor[AJ_TEMA]=valorPadrao[AJ_TEMA]; valor[AJ_QUALIDADE]=2; valor[AJ_AUD_LINGUA]=1; valor[AJ_LEG_LINGUA]=2; aj4Escopo=0; aj4Util=1; focoIndice=0; }
+    else if (!strcmp(id,"v4-diferentes")) {
+      memcpy(valor,valorPadrao,sizeof valor);valor[AJ_TEMA]=2;valor[AJ_QUALIDADE]=1;
+      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];
+      aj4Escopo=0;aj4Util=1;focoIndice=0;
+    }
     else if (!strcmp(id,"v4-perfil")) { aj4AbrirPerfil(); }
-    else if (!strcmp(id,"v4-busca")) { aj4Consulta[0]=0; aj4Util=3; focoIndice=0; }
+    else if (!strcmp(id,"v4-busca")) { snprintf(aj4Consulta,sizeof aj4Consulta,"legenda");aj4Util=3;focoIndice=0; }
     return 1;
   }
   if (!strncmp(id, "v2-", 3)) {   // Ajustes v2 (ajustes-v2.html): os quadros do mockup
