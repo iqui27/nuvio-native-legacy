@@ -15,6 +15,7 @@ int em_connect_ler_conta(const char *body, char *token, size_t nt, char *user, s
 int em_connect_servidores(const char *token, const char *user, RedeJob *job, EmConnectServidor *out, int max);
 int em_connect_trocar(JfConta *c, const EmConnectServidor *server, const char *user, RedeJob *job);
 void srvsetup_abrir(int provider); // -1 choose service, -2 manage
+void srvsetup_abrir_codigo(int provider); // Explicit phone-code route from Settings.
 void srvsetup_fechar(void);
 int srvsetup_aberto(void);
 void srvsetup_evento(const SDL_Event *e);

@@ -334,6 +334,11 @@ void srvsetup_abrir(int p) {
   if (screen == DISCOVER) startWorker(JOB_DISCOVER);
   else if (screen == CODE) enterCode(); else if (screen == LIBRARIES) librariesLoad();
 }
+void srvsetup_abrir_codigo(int p) {
+  srvsetup_abrir(p);
+  if(p==2)connectCode();
+  else if(p==0 && screen!=CODE)enterCode();
+}
 static void discover(void) { cancelLogin(); change(DISCOVER); worker.n = 0; startWorker(JOB_DISCOVER); }
 static void userLogin(void) { cancelLogin(); change(USERS); worker.n = 0; startWorker(JOB_USERS); }
 static void enterScreen(int s) {

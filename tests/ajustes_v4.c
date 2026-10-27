@@ -69,6 +69,31 @@ int main(void) {
   focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);int theme=valor[AJ_TEMA];
   key(SDLK_DOWN);assert(uxPendente>=0 && uxPendente<nValores(AJ_TEMA));
   key(SDLK_ESCAPE);assert(valor[AJ_TEMA]==theme);
+  // Overview switches persist independently and preserve configured sources/styles.
+  ajPenOpen(AJ_PEN_TOUR);ajPenRow=1;
+  debrid_definir_chave_local("realdebrid","overview-test-key");assert(debrid_ativo());
+  key(SDLK_RETURN);assert(!lig(AJ_DEBRID_LIGADO) && !debrid_ativo());
+  assert(debrid_origem("realdebrid")>0);
+  key(SDLK_RETURN);assert(lig(AJ_DEBRID_LIGADO) && debrid_ativo());
+  debrid_definir_chave_local("realdebrid","");
+  ajPenRow=2;key(SDLK_RETURN);assert(!lig(AJ_ADDONS_LIGADO));
+  key(SDLK_RETURN);assert(lig(AJ_ADDONS_LIGADO));
+  int savedSize=player_leg_estilo()->tamanho;
+  ajPenRow=4;key(SDLK_RETURN);assert(!ajustes_legenda_estilo_ligado());
+  assert(player_leg_estilo()->tamanho==savedSize);
+  assert(player_leg_estilo_efetivo()->tamanho==player_leg_estilo_padrao()->tamanho);
+  key(SDLK_RETURN);assert(ajustes_legenda_estilo_ligado());
+  assert(player_leg_estilo_efetivo()==player_leg_estilo());
+  ajPenOpen(39);ajPenRow=11;key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_PROVIDER);
+  key(SDLK_ESCAPE);assert(ajPenPage==39);
+  ajPenOpen(42);ajPenRow=11;key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_IPTV_PROVIDER);
+  key(SDLK_ESCAPE);assert(ajPenPage==42);
+  ajPenOpen(38);ajPenRow=7;key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_PROVIDER_FAILURES);
+  int retry=uxValorAtual(AJ_FALHA_PROVEDORES);key(SDLK_RETURN);
+  assert(uxValorAtual(AJ_FALHA_PROVEDORES)!=retry);key(SDLK_RETURN);
+  key(SDLK_ESCAPE);assert(ajPenPage==38);
+  // Generic editors inherit their actual page context.
+  ajPenOpen(33);assert(!strcmp(ajPenContext(),"Minha tela"));
   // Pencil custom presets survive reload, exclude credentials, and roll back through review.
   aj4Iniciar();focoIndice=1;
   valor[AJ_QUALIDADE]=2;
@@ -118,6 +143,9 @@ int main(void) {
   assert(ajPenPinDigitado("5937") && ajPenPinRepeat==1);
   assert(!ajPenPinDigitado("5937") && admin_perfil_pin_conferir(1,"5937"));
   assert(!admin_perfil_pin_conferir(1,"4826"));
+  ajPenPinAsk=1;ajPenPinRepeat=0;ajPenPinProfile=1;
+  assert(!ajPenPinDigitado("12345") && !ajPenPinAsk);
+  assert(admin_perfil_pin_conferir(1,"5937"));
   { SDL_Event close={0};close.type=SDL_KEYDOWN;close.key.keysym.sym=SDLK_ESCAPE;teclado_evento(&close);teclado_resultado();teclado_esquecer(); }
   admin_pin_esquecer();
   // Parental policy is validated, persisted, enforced, and remains profile-local.

@@ -12,6 +12,10 @@ typedef struct { const char *title,*section; int part,total; AjPenColumn cols[2]
 #define AJ_PEN_SECONDARY 103
 #define AJ_PEN_COMPONENTS 104
 #define AJ_PEN_SOURCES 105
+#define AJ_PEN_PROVIDER 106
+#define AJ_PEN_IPTV_PROVIDER 107
+#define AJ_PEN_PROVIDER_FAILURES 108
+#define AJ_PEN_ADDON_FAILURES 109
 static const AjPenPage AJ_PEN_SECOND_PAGE={"Segunda legenda","Áudio e legendas",3,3,{
   {"",200,520,7,{{AJ_LEG2_FONTE,"Igual à principal","","aj_type",0},{AJ_LEG2_TAMANHO,"Tamanho","","aj_type",0},{AJ_LEG2_COR,"Cor","","aj_palette",0},{AJ_LEG2_FUNDO,"Fundo","","aj_square",0},{AJ_LEG2_BORDA,"Borda","","aj_scan",0},{AJ_LEG_LINGUA2,"Idioma da segunda legenda","","aj_languages",0},{AJ_LEG2_POS,"Posição","","aj_align-justify",0}}},
   {"",744,1080,0,{{0}}}}};
@@ -77,6 +81,12 @@ static const AjPenPage AJ_PEN_AUDIO[] = {
       {AJ_LEG1_RESTAURAR,"Restaurar o padrão","Volta o estilo que veio no arquivo","aj_rotate-ccw",0},
       {AJ_LEG1_ATRASO,"Ajuste fino","Corrige o milissegundo","aj_sliders-horizontal",0}}}}}
 };
+static const AjPenPage *ajPenCurrent(void);
+static const char *ajPenContext(void) {
+  if(ajPenPage==AJ_PEN_SECONDARY || ajPenPage==27 || ajPenPage==28)return "Áudio e legendas";
+  const AjPenPage *page=ajPenCurrent();
+  return page?page->section:"Ajustes";
+}
 static int ajPenLanguageOrder(int *order) {
   static const char *const first[]={"~","pt","en","es","fr","ja"};
   int n=0,total=nValores(AJ_AUD_LINGUA);unsigned char seen[LING_MAX_OPC]={0};
@@ -166,8 +176,34 @@ static void ajPenFind(int op) {
   int ops[AJ_N],n=ajPenMissing(ops);
   for(int i=0;i<n;i++)if(ops[i]==op) { ajPenOpen(46+i/14);ajPenRow=i%14;return; }
 }
+static int ajPenFailures(int providers) {
+  if(providers) {
+    int n=0;for(int i=0;i<DEBRID_N;i++)n+=debrid_origem(debrid_servico_id(i))>0 && !debrid_servico_disponivel(i);
+    return n;
+  }
+  AddonAba entries[ADDONS_MAX];int n=addons_parcial_abas(entries,ADDONS_MAX),failed=0;
+  for(int i=0;i<n;i++)failed+=entries[i].estado==ADDON_ABA_FALHOU;
+  return failed;
+}
 static int ajPenEvent(SDL_Keycode key) {
   if(ajPenParentEvent(key))return 1;
+  if(ajPenPage>=AJ_PEN_PROVIDER && ajPenPage<=AJ_PEN_ADDON_FAILURES && !uxEditor && !iptvForm.tipo) {
+    int page=ajPenPage,n=page==AJ_PEN_PROVIDER?DEBRID_N:page==AJ_PEN_IPTV_PROVIDER?3:2;
+    if(uxVoltar(key)) { ajPenOpen(page==AJ_PEN_PROVIDER?39:page==AJ_PEN_IPTV_PROVIDER?42:38);return 1; }
+    if(key==SDLK_DOWN && ajPenRow+1<n)ajPenRow++;
+    if(key==SDLK_UP && ajPenRow>0)ajPenRow--;
+    if(uxOk(key)) {
+      if(page==AJ_PEN_PROVIDER) {
+        static const int ops[]={AJ_DEBRID_RD,AJ_DEBRID_TB,AJ_DEBRID_PM,AJ_DEBRID_AD};
+        ajPenReturn=page;focarOpcao(ops[ajPenRow]);focoOp=ops[ajPenRow];return 0;
+      }
+      if(page==AJ_PEN_IPTV_PROVIDER) { ajIptvNovaAbrir(AJ_IPTV_ADD_XTREAM+ajPenRow);return 1; }
+      int op=page==AJ_PEN_PROVIDER_FAILURES?AJ_FALHA_PROVEDORES:AJ_FALHA_ADDONS;
+      if(!ajPenRow)definirValorDireto(op,!uxValorAtual(op));
+      else { ajPenReturn=page;focarOpcao(page==AJ_PEN_PROVIDER_FAILURES?AJ_FALHA_PROVEDOR_ORDEM:AJ_FALHA_ADDON_ORDEM);return 0; }
+    }
+    return 1;
+  }
   if(ajPenPage==AJ_PEN_SOURCES && !uxEditor && !aj4Util) {
     if(uxVoltar(key))ajPenOpen(29);
     else if(key==SDLK_LEFT)ajPenRow=-1;
@@ -204,6 +240,7 @@ static int ajPenEvent(SDL_Keycode key) {
     else if(uxOk(key)) { if(ajPenRow==0)aj4Buscar();else if(ajPenRow==1) { aj4Util=2;aj4Linha=0; }else if(ajPenRow==2)ajPenSavedAsk();else ajPenOpen(29); }
     return 1;
   }
+  if(iptvForm.tipo)return -1;
   if(ajPenPage==44 && key==SDLK_DOWN && ajPenRow==AJ_PEN_MAIN[15].cols[0].n+AJ_PEN_MAIN[15].cols[1].n-1) { ajPenRow=99;return 1; }
   if(ajPenPage==44 && ajPenRow==99) {
     if(uxVoltar(key) || key==SDLK_UP)ajPenRow=AJ_PEN_MAIN[15].cols[0].n+AJ_PEN_MAIN[15].cols[1].n-1;
@@ -268,14 +305,19 @@ static int ajPenEvent(SDL_Keycode key) {
       return 1;
     }
     if(ajPenPage==40 && ajPenRow==9) { juntosui_abrir_folha(-1,0,0);return 1; }
+    if(ajPenPage==39 && ajPenRow==11) { ajPenOpen(AJ_PEN_PROVIDER);return 1; }
+    if(ajPenPage==40 && (ajPenRow==10 || ajPenRow==11)) { srvsetup_abrir_codigo(ajPenRow==10?2:0);return 1; }
+    if(ajPenPage==42 && ajPenRow==11) { ajPenOpen(AJ_PEN_IPTV_PROVIDER);return 1; }
+    if(ajPenPage==38 && (op==AJ_FALHA_PROVEDORES || op==AJ_FALHA_ADDONS)) { ajPenOpen(op==AJ_FALHA_PROVEDORES?AJ_PEN_PROVIDER_FAILURES:AJ_PEN_ADDON_FAILURES);return 1; }
     if(ajPenPage==36 && op==AJ_DET_META_EXT) { ajPenOpen(17);return 1; }
     if(ajPenPage==29 && op==AJ_FONTE_MANUAL) { ajPenOpen(AJ_PEN_SOURCES);return 1; }
     if(ajPenPage==27 && op==AJ_LEG_LINGUA2) { ajPenOpen(AJ_PEN_SECONDARY);return 1; }
     if(ajPenPage==AJ_PEN_TOUR) {
       if(ajPenRow==0) { definirValorDireto(AJ_CW_LIGADO,lig(AJ_CW_LIGADO)?1:0);return 1; }
-      if(ajPenRow==1) { ajPenOpen(39);return 1; }
-      if(ajPenRow==2) { ajPenOpen(38);return 1; }
-      if(ajPenRow==4) { ajPenOpen(28);return 1; }
+      if(ajPenRow==1 || ajPenRow==2 || ajPenRow==4) {
+        int setting=ajPenRow==1?AJ_DEBRID_LIGADO:ajPenRow==2?AJ_ADDONS_LIGADO:AJ_LEG_ESTILO_LIGADO;
+        definirValorDireto(setting,!valor[setting]);return 1;
+      }
       if(ajPenRow==6) { ajPenOpen(AJ_PEN_PARENTAL);return 1; }
       if(ajPenRow==5) { ajPenOpen(AJ_PEN_SECONDARY);return 1; }
       if(ajPenRow==7) { ajPenOpen(40);return 1; }

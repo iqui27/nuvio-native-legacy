@@ -172,9 +172,9 @@ static const AjPenPage AJ_PEN_MAIN[] = {
     }},
     {"FALHA NA REPRODUÇÃO",1024,800,6, {
       {AJ_FILTROS_FONTES,"Filtros das fontes","As regras aplicadas às fontes","aj_funnel",0},
-      {AJ_FALHA_PROVEDORES,"Falha nos provedores","Provedores que não responderam","aj_triangle-alert",1},
+      {AJ_FALHA_PROVEDORES,"Falha nos provedores","Provedores que não responderam","aj_triangle-alert",0},
       {AJ_FALHA_PROVEDOR_ORDEM,"Ordem dos provedores","A ordem de tentativa","aj_list-ordered",0},
-      {AJ_FALHA_ADDONS,"Falha nos add-ons","Add-ons que não responderam","aj_triangle-alert",1},
+      {AJ_FALHA_ADDONS,"Falha nos add-ons","Add-ons que não responderam","aj_triangle-alert",0},
       {AJ_FALHA_ADDON_ORDEM,"Ordem dos add-ons","A ordem de tentativa","aj_list-ordered",0},
       {AJ_FALHA_ADDON_LIMITE,"Limite de links por addon","Quantos links cada addon pode dar","aj_gauge",0},
     }},

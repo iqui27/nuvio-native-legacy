@@ -1468,8 +1468,14 @@ static int prefsGravar(void) {
 // Lidos pela folha de faixas, que e quem desenha os controles.
 VideoLegendaEstilo *player_leg_estilo(void) { return &legEstilo; }
 void player_leg_estilo_carregar(void) { if (!prefsLidas) prefsLer(); }
+const VideoLegendaEstilo *player_leg_estilo_efetivo(void) {
+  if(ajustes_legenda_estilo_ligado())return &legEstilo;
+  static VideoLegendaEstilo plain;
+  plain=*player_leg_estilo_padrao();plain.atrasoMs=legEstilo.atrasoMs;
+  return &plain;
+}
 void player_leg_estilo_mudou(void) {
-  video_legenda_estilo(&legEstilo);
+  video_legenda_estilo(player_leg_estilo_efetivo());
   if (prefsGravar()) sync_proteger_ajustes_locais();
 }
 const VideoLegendaEstilo *player_leg_estilo_padrao(void) {
@@ -1513,7 +1519,7 @@ int player_leg_estilo_definir(const VideoLegendaEstilo *estilo, int tocou) {
   player_leg_estilo_carregar();
   EstiloCommit c = { estilo, tocou };
   if (!estiloConfirmar(&c)) return 0;
-  video_legenda_estilo(&legEstilo);
+  video_legenda_estilo(player_leg_estilo_efetivo());
   return 1;
 }
 // A bundled-font selection and Restore also clear the device-local override.
@@ -1522,7 +1528,7 @@ static int estiloSemFonteLocal(const VideoLegendaEstilo *novo, int tocou) {
   player_leg_estilo_carregar();
   EstiloCommit c = { novo, tocou };
   if (!legfontes_escolher_transacao(0, -1, estiloConfirmar, &c)) return 0;
-  video_legenda_estilo(&legEstilo);
+  video_legenda_estilo(player_leg_estilo_efetivo());
   return 1;
 }
 int player_leg_fonte_definir(int familia) {
@@ -1536,7 +1542,7 @@ int player_leg_fonte_local_definir(int indice) {
   VideoLegendaEstilo novo = legEstilo;
   EstiloCommit c = { &novo, PLR_LEG_FONTE };
   if (!legfontes_escolher_transacao(0, indice, estiloConfirmar, &c)) return 0;
-  video_legenda_estilo(&legEstilo);
+  video_legenda_estilo(player_leg_estilo_efetivo());
   return 1;
 }
 int player_leg_estilo_restaurar(void) {

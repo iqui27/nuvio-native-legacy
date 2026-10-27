@@ -495,11 +495,13 @@ static void aj4PerfilDesenhar(void) {
 #include "ajustes_pen_util.inc"
 #include "ajustes_pen_especiais.inc"
 #include "ajustes_pen_presets.inc"
+#include "ajustes_pen_providers.inc"
 #include "ajustes_pen_components.inc"
 static void aj4Desenhar(void) {
   ponteiro_camada();
   aj4SeloAviso=0;
-  if(ajPenParentEditor>=0)ajPenParentChoice();
+  if(iptvForm.tipo)ajDesenharTela();
+  else if(ajPenParentEditor>=0)ajPenParentChoice();
   else if(uxEditor)ajPenEditor();
   else if(aj4Util==4)aj4PerfilDesenhar();
   else if(aj4Util==3 || (aj4Util==1 && !aj4Review))ajPenUtility();
@@ -510,6 +512,7 @@ static void aj4Desenhar(void) {
   else if(!focoIndice && ajPenPage==AJ_PEN_SECONDARY)ajPenSecondary();
   else if(!focoIndice && ajPenPage==AJ_PEN_RULES)ajPenRules();
   else if(!focoIndice && ajPenPage==AJ_PEN_TOUR)ajPenFeatures();
+  else if(!focoIndice && ajPenPage>=AJ_PEN_PROVIDER && ajPenPage<=AJ_PEN_ADDON_FAILURES)ajPenProviders();
   else if(!focoIndice && ajPenCurrent())ajPenRows();
   else if(focoIndice)ajPenHome();
   else aj4SecaoDesenhar();

@@ -44,6 +44,8 @@ static const char *idServ[SN] = { "realdebrid", "torbox", "premiumize", "alldebr
 // da conta. O AllDebrid so entra por aqui: o app web oficial (0.3.38) nao
 // tem o servico (grep em debridProviders.js: so torbox, premiumize e
 // realdebrid), entao nenhuma conta o traz hoje.
+static atomic_int habilitado = 1;
+void debrid_habilitar(int ligado) { atomic_store(&habilitado,ligado!=0); }
 static char chave[SN][200];
 static char chaveConta[SN][200];
 static char chaveLocal[SN][200];
@@ -121,7 +123,8 @@ static const DebridContexto *contextoDoFio(void) {
 void debrid_contexto_capturar(DebridContexto *c) {
   if (!c) return;
   pthread_mutex_lock(&chaveTrava);
-  memcpy(c->chave, chave, sizeof c->chave);
+  if(atomic_load(&habilitado))memcpy(c->chave, chave, sizeof c->chave);
+  else memset(c->chave,0,sizeof c->chave);
   c->temporada = alvoT; c->episodio = alvoE;
   c->sessao = sessaoAtual; c->busca = atomic_load(&geracao);
   pthread_mutex_unlock(&chaveTrava);
@@ -177,7 +180,7 @@ int debrid_servico_por_nome(const char *nome) { return nome && *nome ? idServico
 int debrid_servico_disponivel(int q) {
   const DebridContexto *c = contextoDoFio();
   int vale = 0;
-  if (q < 0 || q >= SN) return 0;
+  if (q < 0 || q >= SN || !atomic_load(&habilitado)) return 0;
   pthread_mutex_lock(&chaveTrava);
   if (!c || contextoValeSemTrava(c))
     vale = (c ? c->chave[q][0] : chave[q][0]) &&
@@ -298,6 +301,7 @@ const char *debrid_chave_mascarada(const char *servico, char *dst, unsigned n) {
 // As origens das APIs dos servicos com chave que PODEM resolver, para aquecer.c.
 // Sem caminho, sem chave: so "https://host".
 int debrid_origens(const char **o, int max) {
+  if(!atomic_load(&habilitado))return 0;
   static const char *const API[SN] = { "https://api.real-debrid.com", "https://api.torbox.app",
                                        "https://www.premiumize.me", "https://api.alldebrid.com" };
   const DebridContexto *c = contextoDoFio();
@@ -310,6 +314,7 @@ int debrid_origens(const char **o, int max) {
   return k;
 }
 int debrid_ativo(void) {
+  if(!atomic_load(&habilitado))return 0;
   const DebridContexto *c = contextoDoFio();
   int q, r = 0;
   pthread_mutex_lock(&chaveTrava);

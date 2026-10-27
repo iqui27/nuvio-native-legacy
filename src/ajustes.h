@@ -621,6 +621,7 @@ int   ajustes_legenda_forcada_auto(void);    // #287: 1 = audio in the subtitle 
 int   ajustes_legenda_sync_auto(void);       // local, ligada por padrão
 int   ajustes_audio_original(void);
 int   ajustes_audio_normalizar(void);
+int   ajustes_legenda_estilo_ligado(void);
 int   ajustes_audio_offset_ms(void);        // Converted audio presentation, -500..500 ms; default 0.
 int   ajustes_legenda_sync_audio(void);      // 1 = offer "Por audio" in subtitle AutoSync (F06; local, default off)
 int   ajustes_trailer_zoom_tpk(void);        // #241: 1 = experimental trailer zoom on the native .tpk (local, default off)

@@ -2624,8 +2624,14 @@ static int semStreamSondado(const Consulta *c, int i) {
 static int semSegunda(const AddonPedido *a) {
   return a->mudoSeg >= 2 || addonstats_segunda_s(a->estatistica, ADD_PRAZO_VOD_S) == 0;
 }
+static atomic_int fontesHabilitadas = 1;
+void addons_habilitar(int ligado) {
+  if(atomic_exchange(&fontesHabilitadas,ligado!=0)!=(ligado!=0)) {
+    addons_lista_travar();listaMudou();
+  }
+}
 static int aceitaStream(const AddonPedido *p, const char *tipo, const char *id) {
-  if (!p->ativo || !p->fonte) return 0;
+  if (!atomic_load(&fontesHabilitadas) || !p->ativo || !p->fonte) return 0;
   // Capacidades so PRESUMIDAS: a consulta continua otimista, EXCETO quando o
   // manifesto declara positivamente so conteudo ao vivo (soVivo) — o
   // FrostView TV, um addon de canais, respondia 200 sem o recurso e virava
@@ -3488,7 +3494,7 @@ AddonsConsulta *addons_consulta_capturar(void) {
     AddonCapturado *a = &c->addons[i];
     snprintf(a->nome, sizeof a->nome, "%s", addon[i].nome);
     snprintf(a->base, sizeof a->base, "%s", addon[i].base);
-    a->ativo = addon[i].ativo; a->fonte = __atomic_load_n(&addon[i].fonte, __ATOMIC_ACQUIRE);
+    a->ativo = atomic_load(&fontesHabilitadas) && addon[i].ativo; a->fonte = __atomic_load_n(&addon[i].fonte, __ATOMIC_ACQUIRE);
     a->ordem = i;
   }
   nv_perfil_sessao_destravar();
@@ -3511,7 +3517,7 @@ int addons_consulta_atual(const AddonsConsulta *c) {
   int atual = c->versao == addons_versao() && c->n == nAddon;
   for (int i = 0; atual && i < c->n; i++) {
     const AddonCapturado *a = &c->addons[i];
-    if (a->ativo != addon[i].ativo || a->fonte != __atomic_load_n(&addon[i].fonte, __ATOMIC_ACQUIRE) ||
+    if (a->ativo != (atomic_load(&fontesHabilitadas) && addon[i].ativo) || a->fonte != __atomic_load_n(&addon[i].fonte, __ATOMIC_ACQUIRE) ||
         strcmp(a->nome, addon[i].nome) || strcmp(a->base, addon[i].base)) atual = 0;
   }
   nv_perfil_sessao_destravar();

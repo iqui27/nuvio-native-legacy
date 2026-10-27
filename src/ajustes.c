@@ -751,6 +751,7 @@ typedef enum {
   AJ_GUIA_PREVIA_GRANDE,
   AJ_AUD_ORIGINAL, // Independent preference; language selection remains intact.
   AJ_AUDIO_NORMALIZAR, // PCM normalization; passthrough remains untouched.
+  AJ_DEBRID_LIGADO, AJ_ADDONS_LIGADO, AJ_LEG_ESTILO_LIGADO,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1901,6 +1902,9 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Prévia grande no Guia TV",       V_LIGA, 2),          // local: guiaPreviaGrandeLocal
   ESC("Preferir faixa original", V_LIGA, 2),
   ESC("Normalizar volume", V_LIGA, 2),
+  ESC("Debrid", V_LIGA, 2),
+  ESC("Addons", V_LIGA, 2),
+  ESC("Legendas com estilo", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2242,6 +2246,7 @@ static const char *CHAVE[] = {
   "guiaPreviaGrandeLocal",
   "audioOriginalLocal",
   "audioNormalizarLocal",
+  "debridLigadoLocal", "addonsLigadosLocal", "legEstiloLigadoLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3260,6 +3265,10 @@ int ajustes_layout_lista(void) { return !ajLayoutSelecionavel() || valor[AJ_LAYO
 int ajustes_esconder_logo_trailer(void) { return lig(AJ_LOGO_TRAILER); }
 int ajustes_audio_original(void) { return lig(AJ_AUD_ORIGINAL); }
 int ajustes_audio_normalizar(void) { return lig(AJ_AUDIO_NORMALIZAR); }
+int ajustes_legenda_estilo_ligado(void) { return lig(AJ_LEG_ESTILO_LIGADO); }
+static void ajPenFeaturesApply(void) {
+  debrid_habilitar(lig(AJ_DEBRID_LIGADO));addons_habilitar(lig(AJ_ADDONS_LIGADO));
+}
 int ajustes_audio_offset_ms(void) { return audsync_offset_ms(valor[AJ_AUDIO_OFFSET]); }
 int ajustes_legenda_sync_auto(void) { return lig(AJ_LEG_SYNC_AUTO); }
 int ajustes_teclado_android(void) { int v = valor[AJ_TECLADO_ANDROID]; return v < 0 || v > 2 ? 0 : v; }   // 0 auto, 1 do app, 2 do Android
@@ -5302,6 +5311,7 @@ void ajustes_dir(const char *dir) {
   // de Ajustes e aberta. tex_iniciar ja rodou (main.c); isto so o corrige.
   if (valor[AJ_TEX_MB] > 0) tex_definir_orcamento_mb(ajustes_tex_mb());
   pstAplicar();
+  ajPenFeaturesApply();
   ajEpgMemoriaAplicar();
   legenda2_atualizar_offset_manual(ajustes_leg2_atraso());
   ppReconciliar();
@@ -6185,6 +6195,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_CW_RETIDO_TAMBEM: /* o web nao tem a ilha */
     case AJ_PS_CONTINUAR:   /* o web nao tem este cartao; escolha desta TV */
     case AJ_AUD_ORIGINAL: case AJ_AUDIO_NORMALIZAR:
+    case AJ_DEBRID_LIGADO: case AJ_ADDONS_LIGADO: case AJ_LEG_ESTILO_LIGADO:
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
@@ -6543,6 +6554,7 @@ int ajustes_migrar_escopo(void) {
 // Efeitos que o valor[] do perfil dispara fora desta tabela (idiomas de
 // legenda/audio e o tamanho da UI). Chamado depois de trocar o valor[] inteiro.
 static void reaplicarEfeitosPerfil(void) {
+  ajPenFeaturesApply();
   aplicarIdioma(AJ_LEG_LINGUA);
   aplicarIdioma(AJ_LEG_LINGUA2);
   aplicarIdioma(AJ_AUD_LINGUA);
@@ -9948,6 +9960,8 @@ static int definirValorDireto(int op, int novo) {
     valor[op] = fil_limite_gravado();
     fil_confirmar_limite();
   }
+  if(op==AJ_DEBRID_LIGADO || op==AJ_ADDONS_LIGADO)ajPenFeaturesApply();
+  if(op==AJ_LEG_ESTILO_LIGADO)player_leg_estilo_mudou();
   if(op==AJ_AUD_ORIGINAL)aplicarIdioma(AJ_AUD_LINGUA);
   if (op == AJ_LEG_LINGUA || op == AJ_LEG_LINGUA2 || op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2) aplicarIdioma(op);
   if (op == AJ_IDIOMA) { idiomaEscolhido(); desc_repetir(); }

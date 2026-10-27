@@ -280,6 +280,7 @@ static int aj4Aplicar(void) {
   memcpy(aj4UndoOps, aj4Ops, aj4N * sizeof(int));
   memcpy(aj4UndoAntes, aj4Antes, aj4N * sizeof(int));
   memcpy(aj4UndoDepois, aj4Depois, aj4N * sizeof(int));
+  ajPenFeaturesApply();player_leg_estilo_mudou();
   reaplicarEfeitosPerfil(); protegerLocais(); desc_repetir();
   aj4Review = 0; uxNotificar("Ajuste salvo nesta TV."); return 1;
 }
@@ -294,6 +295,7 @@ static int aj4Desfazer(void) {
   if(!ajPenStyleSize(aj4UndoOps,aj4UndoAntes,aj4UndoN)) {
     for(int i=0;i<aj4UndoN;i++)valor[aj4UndoOps[i]]=aj4UndoDepois[i];gravar();return 0;
   }
+  ajPenFeaturesApply();player_leg_estilo_mudou();
   aj4UndoN = 0; reaplicarEfeitosPerfil(); protegerLocais(); desc_repetir(); return 1;
 }
 static int aj4Diferencas(int *ops) {

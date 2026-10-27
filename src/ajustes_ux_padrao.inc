@@ -361,3 +361,4 @@
   1, /* Guia TV v5: previa grande Desligada — vale o cartao pequeno do mock; ligar volta ao 800x450 de hoje */
   1, /* Prefer original audio: off until explicitly chosen. */
   1, /* PCM normalization: off until explicitly chosen. */
+  0, 0, 0, /* Debrid, add-ons and custom subtitle styling: enabled. */
