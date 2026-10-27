@@ -349,6 +349,8 @@ IGNORAR = {
     # vao para a tela.
     "guia-fontes", "guia-fileiras", "guia-legendas", "guia-vindo-do-whatsnew",
     "h-fileiras",
+    # Sports route and bounded metadata cache filename, never rendered labels.
+    "esportes-catalogo", "esportes-fileira-%d.json",
     # Palavra que a folha de Fontes PROCURA no nome/descricao do arquivo para
     # saber se ha audio em portugues (streams.c, idiomaDa). Dado de comparacao,
     # nunca texto desenhado.

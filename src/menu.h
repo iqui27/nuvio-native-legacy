@@ -24,6 +24,7 @@ typedef enum {
   MENU_INICIO,
   MENU_EXPLORAR,
   MENU_GUIA,
+  MENU_ESPORTES,
   MENU_BUSCAR,
   MENU_BIBLIOTECA,
   // AGENDA — o calendario das series acompanhadas. Fica DEPOIS da Biblioteca

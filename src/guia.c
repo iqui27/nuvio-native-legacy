@@ -3495,7 +3495,7 @@ int guia_programas(const char *id, time_t t, EpgProg *out, int max) {
 // As telas v5 do guia principal pedem por id, nao por ponteiro interno.
 int guia_pedir_canal_id(const char *id) {
   GCanal *c = canalPorId(id);
-  if (!c) return 0;
+  if (!c || !guia_busca_elegivel((int)(c-canais))) return 0;
   pedirCanal(c);
   return pediuCanal;
 }
@@ -8015,4 +8015,25 @@ void guia_recarregar(int limparLista) {
   for (int i=0;i<n;i++) if(contas[i].tipo==IPTV_M3U) m3u_fonte_recarregar(contas[i].id);
   epgExtrasMontar(); epg_recarregar();
   recarregarPend = 1; recargaDoPainel = 1; estado = G_PARADO;
+}
+
+int guia_busca_elegivel(int i) {
+  if (i < 0 || i >= nCanais) return 0;
+  const GCanal *c = &canais[i];
+  if (c->fonte < 0 || c->fonte >= nLtvF) return 0;
+  return fonteVisivel(c->fonte) && fonteAtiva(c->fonte) && gLiberado(c) && !categoriaOculta(c->cat) &&
+    (!c->base[0] || (baseLigada(c->base) && !baseOculta(c->base))) &&
+    !guiafiltro_canal_oculto_fonte(&fltLive,ltvF[c->fonte].chave,c->id) &&
+    !(c->cat >= 0 && guiafiltro_cat_oculta(&fltLive,cats[c->cat].nome));
+}
+unsigned guia_busca_revisao(void) { return canaisRevisao; }
+int guia_busca_carregando(void) { return fioVivo || recarregarPend || estado == G_BAIXANDO; }
+const char *guia_busca_conta(int i) {
+  if (i < 0 || i >= nCanais) return "";
+  int f = canais[i].fonte;
+  return f >= 0 && f < nLtvF ? ltvF[f].nome : "";
+}
+int guia_busca_programas(int i, time_t de, time_t ate, int pular, EpgProg *out, int cap) {
+  if (i < 0 || i >= nCanais || !out || cap < 1 || pular < 0) return 0;
+  return gFaixaDesde(&canais[i], de, ate, pular, out, cap);
 }
