@@ -17,6 +17,6 @@ printf '%s\n' "${sources[@]}" tests/fontes_anim.c |
   xargs -P 8 -I{} sh -c 'cc "$@" -c "$0" -o "$NV_FONTES_OBJECTS/$(basename "$0").o"' '{}' "${flags[@]}"
 cc "$work/obj/"*.o -o "$work/test" -L/opt/homebrew/lib \
   -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
-for mode in warm cold full reduced; do
+for mode in warm cold full reduced solid; do
   NUVIO_DADOS="$work/data" NUVIO_TESTE_DIR="$work/data" "$work/test" "$out" "$mode"
 done

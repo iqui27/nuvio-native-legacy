@@ -76,6 +76,18 @@ int main(int argc,char **argv) {
   assert(ajustes_vidro()==!strcmp(argv[3],"glass"));
   assert(!ajustes_menu_topo() && !ajustes_rail_recolhida());
   menu_iniciar();
+  // Decode the Lucide assets before sampling the morph's fixed frame times.
+  const char *icons[]={"aj_film","aj_zap","aj_languages","aj_rotate-cw","aj_layers","aj_settings-2","aj_x"};
+  int ready=0;
+  for(int attempt=0;attempt<5000 && !ready;attempt++) {
+    ready=tex_obter_hero("deploy/app/art/00.jpg")!=0;
+    for(unsigned i=0;i<sizeof icons/sizeof *icons;i++) {
+      char path[256]; snprintf(path,sizeof path,"deploy/app/art/icones/%s.png",icons[i]);
+      if(!tex_obter_larg(path,24)) ready=0;
+    }
+    tex_bombear(16); if(!ready) SDL_Delay(1);
+  }
+  assert(ready && "capture artwork and Lucide actions must finish decoding");
   AddonRemoto a={.nome="AIOStreams",.url="https://example.invalid/stremio/test/test/manifest.json",.ativo=1};
   addons_definir_lista(&a,1);
   static Stream st[5];
@@ -96,7 +108,11 @@ int main(int argc,char **argv) {
     snprintf(st[0].provedor,sizeof st[0].provedor,"Plex · Casa");
     snprintf(st[0].bingeGroup,sizeof st[0].bingeGroup,"plex|fixture");
   }
+  if(getenv("FONTES_RETAINED_LIVE") && atoi(getenv("FONTES_RETAINED_LIVE"))) { stream_filtro_tipo("tv"); stream_folha_canal(1); }
   stream_definir_alvo("tt12637874:1:3"); stream_definir_lista(st,5); stream_definir_atual(0);
+  CatItem title={0}; snprintf(title.tipo,sizeof title.tipo,"series");
+  snprintf(title.imdb,sizeof title.imdb,"tt12637874"); cat_definir(&title,1);
+  stream_folha_item(0); stream_folha_canal(0);
   stream_folha_nome("Fallout"); stream_folha_contexto("Fallout · T1E3");
   frame(70); save("clock");
   float px,py,pw,ph,x,y,w,h; assert(ilha_rect(&px,&py,&pw,&ph));

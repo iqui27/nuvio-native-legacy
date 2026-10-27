@@ -8,7 +8,7 @@ static void openFixture(void){
   if(clockMode){ilha_abrir_sessao();ilha_coberta(0);ilha_relogio_visivel(1);ilha_posicionar(1);for(int i=0;i<90;i++)nav21_island_draw(clockFixture+=16);}
   stream_folha_abrir();if(!clockMode)folhaRelogio=0;
 }
-static void stepFixture(float dt){clockFixture+=(Uint32)(dt*1000);stream_folha_atualizar(dt,clockFixture);}
+static void stepFixture(float dt){clockFixture+=(Uint32)(dt*1000);stream_folha_atualizar(dt,clockFixture);if(clockMode){stream_folha_desenhar(clockFixture);nav21_island_draw(clockFixture);}}
 static void drawFixture(void){nav21_targets_reset();stream_folha_desenhar(clockFixture);if(clockMode)nav21_island_draw(clockFixture);for(int i=0;i<navigationCount;i++)nav21_target((navigation[i].group+2)*10000+navigation[i].id+100,navigation[i].rect);}
 static int focusFixture(void){return (grupo+2)*10000+(grupo==0?filtro:foco)+100;}
 static void selectFixture(int id){grupo=id/10000-2;if(grupo==0)filtro=id%10000-100;else foco=id%10000-100;}
