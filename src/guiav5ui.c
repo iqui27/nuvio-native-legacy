@@ -1981,14 +1981,6 @@ static void gv_hero(float base){
   GVCh *c=gv_focus();EpgProg *p=gv_prog(c);
   if(!c)return;
   GfxRect pv=gv_preview_rect();
-  /* Cartao da previa em foco (DIREITA depois dos botoes): cresce com sombra. */
-  int cardf=gv_zone==2&&gv_hbt==2&&!gv_overlay()&&!full;
-  static GVGlide gcard;
-  if(!full&&!grande){
-    GfxRect alvo=cardf?(GfxRect){pv.x-pv.w*.02f,pv.y-pv.h*.02f,pv.w*1.04f,pv.h*1.04f}:pv;
-    pv=gv_glide(&gcard,alvo);
-    if(cardf)gfx_rect((GfxRect){pv.x-22,pv.y-4,pv.w+44,pv.h+40},0,GFX_SOMBRA,1,0,0,.5f,0,0,0,.5f);
-  }
   gv_broadcast(pv,c,p,full||grande);
   float x=r.x+32,iw=(full?760:pv.x-r.x-64);char buf[200];
   int passado=p&&(p->fim<=time(NULL)||gv_past());
@@ -2024,7 +2016,7 @@ static void gv_hero_compact(float base){
   GfxRect r={GV_MX,base,GV_MW,208};float rr=28.0f/208;
   GVCh *c=gv_canal_cartao();EpgProg *p=gv_prog(c);
   if(!c)return;
-  GfxRect art={r.x+r.w-358,r.y+16,330,176};
+  GfxRect art=gv_preview_rect();
   gv_broadcast(art,c,p,0);
   if(player_mini_no_guia_ativo())player_mini_no_guia(art.x,art.y,art.w,art.h);
   float iw=art.x-r.x-64;char meta[180],hi[8],hf[8];

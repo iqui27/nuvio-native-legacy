@@ -143,6 +143,8 @@ static void semear(void) {
     c->fav = C[i].fav;
     c->numero = 101 + i;
   }
+  nLtvF = 1; ltvF[0].tipo = LTV_M3U; ltvF[0].base = "FrostView";
+  snprintf(ltvF[0].chave, sizeof ltvF[0].chave, "fixture");
   estado = G_PRONTO;
   dados_gravar("guia-fav.txt", "c1\nc2\nc3\nc5\n");
 }
@@ -272,7 +274,7 @@ int main(int argc, char **argv) {
       snprintf(gs_selected.nome, sizeof gs_selected.nome, "%s", "Brasileirão: Flamengo × Palmeiras");
     capture(window, dir, names[n]);
     if (!strcmp(names[n], "preview-playing")) player_encerrar();
-    nLtvF = 0;
+    nLtvF = 1;
     if (!strcmp(names[n], "vazio")) semear();
   }
   puts("PASS: native v5 guide states captured");
