@@ -4265,7 +4265,16 @@ static const char *ajudaFiltroAudio(void) {
 // fontes sao — e nao do episodio em foco no detalhe, que pode ser outro.
 static char nomeFolha[160];
 static int itemFolha = -1;
-void stream_folha_item(int indice) { itemFolha = indice; }
+void stream_folha_item(int indice) {
+  itemFolha = indice;
+  const CatItem *c = indice >= 0 ? cat_item(indice) : NULL;
+  if (c && (pedidoVod != nv_tipo_vod(c->tipo) || canalFolha != nv_tipo_canal(c->tipo))) {
+    // A retained list can outlive the last search's Live TV scope.
+    stream_filtro_tipo(c->tipo);
+    stream_folha_canal(nv_tipo_canal(c->tipo));
+    stream_filtro_atualizar();
+  }
+}
 void stream_folha_nome(const char *nome) {
   snprintf(nomeFolha, sizeof nomeFolha, "%s", nome ? nome : "");
 }

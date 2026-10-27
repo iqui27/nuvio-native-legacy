@@ -29,3 +29,15 @@ Evidence directory: `/Volumes/ExternalSSD/tmp/rev/21-21-fontes/`. `compare-{85,1
 The data reproduces the five Fallout sources from the repository's approved player screenshot fixture (9.4/18.2/7.8/2.1/1.8 GB, DV/HDR10/HDR10+/REMUX). These are offline reference fixtures, not a fresh live VOD response. The reference build shares current fonts/materials; this is renderer comparison, not a full historical binary. No TCL execution, deployment or push was performed.
 
 Validation: `bash tests/streams_folha_cache.sh`, `bash tests/fontes_restore_shot.sh`, `bash tools/build-local.sh`, `python3 tools/varredura-i18n.py`, all exit 0. Final build includes the server-footer geometry fix; subsequent source edits only reuse existing translated footer strings. The capture harness tolerates real clock minute rollovers when checking the collapsed pill.
+
+## Missing actions after Live TV
+
+Audit baseline: `integracao/2.0.5` (the 2.0.8 line) and 2.1 through `5423a59d4`, including `75432c801`, `fd44f4b48` (chipfonte), `bc7ee6bf8` (chipfonte2), and `949ea5b51`/`a3eee0b65` (fontesanim). `ess-fontes` changed settings rather than sheet actions.
+
+The retained source list could inherit the last Live TV request's `pedidoVod` and cached `naoVod` classification. The sheet then offered only Refresh and Close, hiding MP4, cache, audio language, AIO title inspection, and AIO dashboard. `stream_folha_item` now reconciles the scope with the actual catalog item and refreshes cached row scope when it changes. Existing Lucide icons, translated focus help, handlers, materials, and animation remain in use.
+
+Both versions retain OK to play, Info/yellow/channel-down for source metadata, hold OK for supported file browsing, and conditional Force SDR/reload actions. No removed Play with, copy/share URL, download, trailer, or manual-sort action was found in the shared sheet. Track selection remains in the player; source sorting remains settings-driven. The separate AIO layout's order summary was removed by the previously approved shared-sheet restoration.
+
+The animation regression now reproduces retained Live TV state before opening a series. It failed before the fix at the seven-action assertion, then checks action registration, source-row registration, filter toggles, refresh, Info/Back, and playback in warm, cold, full, reduced, and solid modes. The navigation clock fixture now advances the real island drawing on each simulated frame: the spring lives in drawing, so update-only settling previously left the reveal gate closed. Production reveal thresholds and spring timing are unchanged. Navigation timeouts allow the full native gate to complete on a loaded host.
+
+Evidence: `/Volumes/ExternalSSD/tmp/rev/fontesbotoes/after/`. `compare-{85,100}-{glass,solid}.png` shows historical renderer, current failure, and fixed renderer, respectively. `motion-*` shows the original opening and reverse close. The harness preloads Lucide assets before sampling frames. Historical captures use branch `streams.c` with current native graphics and link-only compatibility adapters; these are offline fixtures, not full historical binaries or TCL runs.

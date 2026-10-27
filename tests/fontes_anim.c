@@ -74,7 +74,7 @@ int main(int argc,char **argv) {
   gfx_tamanho_alvo(1920,1080); assert(gfx_iniciar()); assert(txt_iniciar("deploy/app",1)); assert(tex_iniciar(64));
   gfx_icones_dir("deploy/app/art"); badges_carregar("deploy/app/art");
   ajustes_dir(getenv("NUVIO_DADOS")); ajustes_iniciar();
-  ajustes_shot_valor("relogioTelaLocal",0); ajustes_definir_vidro(1);
+  ajustes_shot_valor("relogioTelaLocal",0); ajustes_definir_vidro(strcmp(argv[2],"solid")!=0);
   gfx_definir_efeitos_minimos(0);
   gfx_definir_efeitos_leves(strcmp(argv[2],"full")!=0); // TCL and full spring paths.
   anim_politica_reduzida=reduced;
@@ -87,8 +87,22 @@ int main(int argc,char **argv) {
     snprintf(sources[i].url,sizeof sources[i].url,"https://example.invalid/%d.mkv",i);
     sources[i].tamanhoMB=9600-i*1300; sources[i].altura=i<3?2160:1080; sources[i].fileIdx=-1;
   }
+  CatItem title={0}; snprintf(title.tipo,sizeof title.tipo,"series");
+  snprintf(title.imdb,sizeof title.imdb,"tt12637874"); cat_definir(&title,1);
+  // Live TV has no catalog index, even when the last catalog item is VOD.
+  stream_filtro_tipo("tv"); stream_folha_canal(1);
   stream_definir_alvo("tt12637874:1:3"); stream_definir_lista(sources,5); stream_definir_atual(0);
+  soMp4=soCache=soDub=1;
+  stream_folha_item(-1);
+  assert(itemFolha==-1 && canalFolha && !pedidoVod && !filtrosVod());
+  assert(nBotoes()==2 && "Live TV must not acquire VOD actions without a catalog item");
+  for(int i=0;i<5;i++)
+    assert(lista[i].filtro.naoVod && passaChips(i) && "retained VOD filters must not hide live streams");
+  soMp4=soCache=soDub=0;
+  // A retained live request must not hide a movie/episode's source actions.
+  stream_folha_item(0); stream_folha_canal(0);
   stream_folha_nome("Fallout"); stream_folha_contexto("Fallout · S1E3");
+  assert(nBotoes()==7 && "VOD must restore MP4/cache/audio and AIO actions after Live TV");
   if (!cold) for(int i=0;i<70;i++) frame();
   float px=0,py=0,pw=0,ph=0;
   if (!cold) assert(ilha_rect(&px,&py,&pw,&ph));
@@ -109,12 +123,35 @@ int main(int argc,char **argv) {
     if (i==19 && !reduced) assert(maxAlpha<.99f && "mid-open rows must not pop at full opacity");
   }
   assert(rowDraws>0 && maxAlpha>.99f);
+  int buttons=0, rows=0;
+  for(int i=0;i<navigationCount;i++) {
+    if(navigation[i].group==-1) buttons|=1<<botaoDe(navigation[i].id);
+    if(navigation[i].group==1) rows++;
+  }
+  assert(buttons==((1<<BT_SO_MP4)|(1<<BT_CACHE)|(1<<BT_DUB)|(1<<BT_RECARREGAR)|
+                   (1<<BT_AIO)|(1<<BT_AIO_GERENCIAR)|(1<<BT_FECHAR)));
+  assert(rows>0 && "settled Sources buttons and rows must be focusable");
+  SDL_Event ok={0}; ok.type=SDL_KEYDOWN; ok.key.keysym.sym=SDLK_RETURN;
+  grupo=-1;
+  for(int b=BT_SO_MP4;b<=BT_DUB;b++) {
+    for(foco=0;foco<nBotoes() && botaoDe(foco)!=b;foco++);
+    stream_folha_evento(&ok);
+    assert(botaoLigado(b)); stream_folha_evento(&ok); assert(!botaoLigado(b));
+  }
+  for(foco=0;foco<nBotoes() && botaoDe(foco)!=BT_RECARREGAR;foco++);
+  stream_folha_evento(&ok); assert(stream_folha_recarregar());
+  grupo=1; foco=0; ok.key.keysym.sym=SDLK_i; stream_folha_evento(&ok);
+  assert(stream_detalhe_aberto()); ok.key.keysym.sym=SDLK_ESCAPE; stream_folha_evento(&ok);
+  assert(!stream_detalhe_aberto() && aberta);
+  ok.key.keysym.sym=SDLK_RETURN; stream_folha_evento(&ok);
+  int chosen=-1; assert(!aberta && stream_folha_escolheu(&chosen) && chosen>=0);
+  stream_folha_abrir(); for(int i=0;i<100;i++) frame();
   if (!strcmp(argv[2],"warm")) { char path[1024]; snprintf(path,sizeof path,"%s/open-strip.png",output); assert(!IMG_SavePNG(strip,path)); }
   SDL_Event back={0}; back.type=SDL_KEYDOWN; back.key.keysym.sym=SDLK_ESCAPE; stream_folha_evento(&back);
   assert(!aberta);
   for(int i=0;i<100;i++) frame();
   assert(ilha_corpo_t()==0 && !rowDraws);
-  assert(checkedFrames==200);
+  assert(checkedFrames==300);
   printf("PASS: %s clock morph, mid-open alpha, clipped rows, reverse close (%d frames)\n",argv[2],checkedFrames);
   return 0;
 }
