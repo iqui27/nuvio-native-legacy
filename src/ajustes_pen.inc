@@ -177,6 +177,8 @@ static void ajPenOpen(int page) {
   ajPenPage=page;ajPenRow=page==AJ_PEN_SOURCES?-1:0;ajPenReturn=-1;focoIndice=0;aj4Util=0;aj4Topo=-1;
   uxVeioBusca=0;aj4BuscaRetorno=0;aj4PerfilRetorno=0;
 }
+/* Left/Right sibling paging replaces the current page; Back still goes up a level. */
+static void ajPenTurn(int page) { int n=ajPenHistoryN;ajPenOpen(page);ajPenHistoryN=n; }
 static void ajPenBack(int fallback) {
   if(ajPenHistoryN) {
     int i=--ajPenHistoryN;ajPenPage=ajPenHistoryPage[i];ajPenRow=ajPenHistoryRow[i];aj4Topo=-1;
@@ -288,19 +290,19 @@ static int ajPenEvent(SDL_Keycode key) {
   if(key==SDLK_UP) { if(ajPenRow>0)ajPenRow--;else aj4Topo=1; }
   if(key==SDLK_RIGHT) {
     if(ajPenRow<page->cols[0].n && page->cols[1].n)ajPenRow=page->cols[0].n;
-    else if(ajPenPage<26)ajPenOpen(ajPenPage+1);
-    else if(ajPenPage==26)ajPenOpen(46);
-    else if(ajPenPage>=46 && ajPenPage<AJ_PEN_PARENTAL) { int ops[AJ_N],n=ajPenMissing(ops);if((ajPenPage-45)*14<n)ajPenOpen(ajPenPage+1); }
-    else if(ajPenPage==27)ajPenOpen(28);
-    else if(ajPenPage>=29 && ajPenPage<45)ajPenOpen(ajPenPage+1);
+    else if(ajPenPage<26)ajPenTurn(ajPenPage+1);
+    else if(ajPenPage==26)ajPenTurn(46);
+    else if(ajPenPage>=46 && ajPenPage<AJ_PEN_PARENTAL) { int ops[AJ_N],n=ajPenMissing(ops);if((ajPenPage-45)*14<n)ajPenTurn(ajPenPage+1); }
+    else if(ajPenPage==27)ajPenTurn(28);
+    else if(ajPenPage>=29 && ajPenPage<45)ajPenTurn(ajPenPage+1);
     return 1;
   }
   if(key==SDLK_LEFT) {
     if(ajPenRow>=page->cols[0].n)ajPenRow=0;
-    else if(ajPenPage>0 && ajPenPage<27)ajPenOpen(ajPenPage-1);
-    else if(ajPenPage==28)ajPenOpen(27);
-    else if(ajPenPage==46)ajPenOpen(26);
-    else if(ajPenPage>29 && ajPenPage<AJ_PEN_PARENTAL)ajPenOpen(ajPenPage-1);
+    else if(ajPenPage>0 && ajPenPage<27)ajPenTurn(ajPenPage-1);
+    else if(ajPenPage==28)ajPenTurn(27);
+    else if(ajPenPage==46)ajPenTurn(26);
+    else if(ajPenPage>29 && ajPenPage<AJ_PEN_PARENTAL)ajPenTurn(ajPenPage-1);
     else ajPenBack(-1);
     return 1;
   }

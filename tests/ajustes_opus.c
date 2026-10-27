@@ -23,6 +23,9 @@ int main(void) {
   CHECK(ajPenPage==AJ_PEN_TOUR && ajPenRow==7,"P1 overview child returns to overview row");
   aj4Iniciar();ajPenOpen(27);ajPenRow=6;press(SDLK_RETURN);press(SDLK_ESCAPE);
   CHECK(ajPenPage==27 && ajPenRow==6,"P1 child returns to originating row");
+  aj4Iniciar();focoIndice=1;aj4Linha=0;press(SDLK_RETURN);for(int i=0;i<6;i++)press(SDLK_RIGHT);for(int i=0;i<6;i++)press(SDLK_LEFT);
+  int backs=0;while(!focoIndice && backs<10){press(SDLK_ESCAPE);backs++;}
+  CHECK(focoIndice && backs<=2,"P1 Back after Left/Right paging returns to index in two presses");
   aj4Iniciar();ajPenOpen(AJ_PEN_SOURCES);
   CHECK(ajPenRow==-1,"P1 empty sources retain visible focused manual row");
   Stream source={0};snprintf(source.url,sizeof source.url,"https://example.invalid/video.mp4");stream_definir_lista(&source,1);
