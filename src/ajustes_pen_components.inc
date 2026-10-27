@@ -37,7 +37,7 @@ static void ajPenComponents(void) {
   ajPenChip("−",NULL,218,892,44,0,11,-1);aj4Texto("100%",TXT_G21B,280,904,65,1);ajPenChip("+",NULL,348,892,44,0,11,1);
   ajNeutro((GfxRect){792,714,56,56},20,.09f,.18f,.19f,.21f,1);
   ajIcone("aj_play",806,728,28,1);aj4Texto("Reproduzir",TXT_G26B,792,791,420,1);
-  ajBloco(TXT_G18R,"Qualidade, vídeo escolhido e o que toca a seguir.",792,832,420,22,.58f,2);ajCaps(TXT_AJ_MINI12,"AGORA",1.5f,792,893,.4f);aj4Texto("Automática",TXT_G18M,862,889,300,1);
+  ajBloco(TXT_G18R,"Qualidade, vídeo escolhido e o que toca a seguir.",792,832,420,22,.58f,2);ajCaps(TXT_AJ_MINI12,"AGORA",1.5f,792,893+ajPenDy,.4f);aj4Texto("Automática",TXT_G18M,862,889,300,1);
   { float r,g,b;ajustes_acento(&r,&g,&b);char label[64];snprintf(label,sizeof label,i18n("%d alterados"),2);TxtLinha count=txt_linha(TXT_G14B,label,r*255,g*255,b*255,255);txt_desenhar(count,973,893); }
   static const char *const labels[]={"Título da página","Título de cartão","Linha de ajuste","Texto de apoio","Kicker"};
   static const char *const examples[]={"Ajustes","Reproduzir","Idioma do áudio","A faixa que você prefere","DO DIA A DIA"};

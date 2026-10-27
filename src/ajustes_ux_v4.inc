@@ -9,6 +9,8 @@ static int ajPenPage=-1,ajPenRow,ajPenReturn=-1;
 static int ajPenHistoryPage[128],ajPenHistoryRow[128],ajPenHistoryN,ajPenIndexRow;
 static float ajPenFocusY,ajPenFocusV,ajPenDt=1.0f/60;
 static int ajPenFocusPage=-1;
+static float ajPenMotion=1,ajPenDy;
+static int ajPenViewValid,ajPenBody,ajPenOutgoing;
 static char aj4Consulta[128];
 static int aj4BuscaTeclado, aj4BuscaRetorno, aj4BuscaFoco, aj4TrocarPerfil, aj4PerfilRetorno;
 int ajustes_pediu_trocar_perfil(void) { int v=aj4TrocarPerfil; aj4TrocarPerfil=0; return v; }
@@ -16,6 +18,7 @@ static AjusteBuscaResultado aj4Resultados[AJ_N];
 static void aj4Iniciar(void) {
   aj4Topo = -1; aj4Util = aj4Review = aj4Acao = aj4Linha = 0; aj4Excecao = -1;
   aj4Mais = 0;ajPenPage=-1;ajPenReturn=-1;ajPenFocusPage=-1;ajPenHistoryN=0;
+  ajPenViewValid=0;ajPenMotion=1;ajPenDy=0;ajPenBody=ajPenOutgoing=0;
   aj4BuscaTeclado=aj4BuscaRetorno=aj4TrocarPerfil=aj4PerfilRetorno=0;
 }
 static const char *const AJ4_SECOES[] = {
@@ -336,6 +339,20 @@ static void aj4Buscar(void) {
   teclado_abrir_com("Buscar ajuste","Pelo nome ou pelo que quer mudar",127,CUR_ALFA_URL,aj4Consulta);
 }
 #include "ajustes_pen.inc"
+// Snapshot only presentation state; Back history and saved values keep their owners.
+static int *const ajPenState[]={&ajPenPage,&ajPenRow,&focoIndice,&aj4Linha,&aj4Topo,
+  &aj4Util,&aj4Review,&aj4Acao,&uxEditor,&uxOp,&uxPendente,&uxOriginal,&uxRodape,
+  &ajPenParentEditor,&ajPenParentDraft,&aj4Atual,&aj4Grupo,&aj4Grupos,&aj4GrupoFoco};
+#define AJ_PEN_STATE_N (sizeof ajPenState/sizeof *ajPenState)
+static int ajPenLast[AJ_PEN_STATE_N],ajPenPrevious[AJ_PEN_STATE_N],ajPenRoute[6];
+static void ajPenMotionUpdate(float dt) {
+  int route[]={focoIndice? -1:ajPenPage,uxEditor,uxEditor?uxOp:-1,aj4Util,aj4Review,ajPenParentEditor};
+  if(ajPenViewValid && memcmp(route,ajPenRoute,sizeof route)) {
+    memcpy(ajPenPrevious,ajPenLast,sizeof ajPenLast);ajPenMotion=0;
+  }
+  memcpy(ajPenRoute,route,sizeof route);
+  ajPenMotion=ajustes_animacoes_reduzidas()?1:anim_rampa(ajPenMotion,1,dt,220);
+}
 static void ajPontEdValor(int i,int b);
 static void aj4PontFoco(int zona,int row) {
   navigationBackFocus=zona==5;

@@ -3,7 +3,7 @@
 #include "ajustes_pen_cabecalhos.inc"
 static void ajPenPanel(float x,float y,float w,float h,int focus) {
   GfxRect r={x,y,w,h};float radius=w==88?44:28;
-  if(focus)gfx_rect((GfxRect){x-10,y+2,w+20,h+26},0,GFX_SOMBRA,1,0,0,.5f,0,0,0,.30f);
+  if(focus)gfx_rect((GfxRect){x-10,y+2+ajPenDy,w+20,h+26},0,GFX_SOMBRA,1,0,0,.5f,0,0,0,.30f);
   if(ajVid()) gfx_vidro_miolo(r,radius/h,.055f,.059f,.071f,.80f,1);
   else gfx_cor(r,radius/h,.045f,.047f,.058f,.96f);
   if(focus)ajNeutro(r,radius,.14f,.125f,.133f,.153f,1);
@@ -29,6 +29,7 @@ static void ajPenScope(void) {
 }
 static void ajPenRailFoco(int row,int unused) { (void)unused;menu_abrir();(void)row; }
 static void ajPenBase(void) {
+  if(ajPenBody)return;
   GfxRect screen={0,0,1920,1080};
   gfx_cor(screen,0,.0424f,.0531f,.0638f,1);
   gfx_luz_canto(screen,0,1081,252,693,.5326f,.5058f,.5587f,.9163f);
@@ -103,11 +104,11 @@ static void ajPenRows(void) {
       const AjPenRow *row=&column->rows[i];float x=column->x+26,y=400+i*(ajPenPage<27 || ajPenPage>=46?82:84),w=column->w-52;
       int focus=index==ajPenRow && aj4Topo<0;
       int transform=focus && !gfx_transformado();
-      if(transform)gfx_transformar(x+w*.5f,y+37,1.015f,0,0);
+      if(transform)gfx_transformar(x+w*.5f,y+37+ajPenDy,1.015f,0,0);
       if(focus) {
         if(ajPenFocusPage!=ajPenPage || ajustes_animacoes_reduzidas()) { ajPenFocusY=y;ajPenFocusV=0;ajPenFocusPage=ajPenPage; }
         ajPenFocusY=anim_mola2(&ajPenFocusV,ajPenFocusY,y,ajPenDt,24);
-        gfx_rect((GfxRect){x-10,ajPenFocusY+2,w+20,100},0,GFX_SOMBRA,1,0,0,.5f,0,0,0,.30f);
+        gfx_rect((GfxRect){x-10,ajPenFocusY+2+ajPenDy,w+20,100},0,GFX_SOMBRA,1,0,0,.5f,0,0,0,.30f);
         ajNeutro((GfxRect){x,ajPenFocusY,w,74},20,.14f,.169f,.176f,.204f,1);
       }
       ajIcone(row->icon,x+20,y+24,26,focus?1:.75f);
@@ -178,7 +179,7 @@ static void ajPenHome(void) {
     ajIcone(icons[i],x+40,362,28,1);
     aj4Texto(names[i],TXT_G28B,x+26,425,336,1);
     ajBloco(TXT_G18R,av?advanced[i]:desc[i],x+26,464,336,22,.58f,2);
-    ajCaps(TXT_AJ_MINI12,"AGORA",1.5f,x+26,530,.40f);
+    ajCaps(TXT_AJ_MINI12,"AGORA",1.5f,x+26,530+ajPenDy,.40f);
     char value[160];snprintf(value,sizeof value,"%s",textoValor(valueOps[i]));
     if(i==3)snprintf(value,sizeof value,"%s",pfNome(perfis_ativo()));
     if(i==1 && !strcmp(ling_opcao_codigo(uxValorAtual(AJ_AUD_LINGUA)),"pt"))snprintf(value,sizeof value,"%s",i18n("Português (Brasil)"));

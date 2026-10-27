@@ -22,6 +22,7 @@ timeout 600 cc -DAJUSTES_TESTE -DNV_SHOT_HOOKS "${sources[@]}" tests/nav21_gate.
   -Wno-deprecated-declarations -o "$work/nav21"
 export NUVIO_DADOS="$work/data"
 timeout 900 "$work/nav21" "$out/violations.md"
+# Settings includes Pencil Open/Left/Right/Back render and reduced-motion checks.
 # Also preserve the tour and setup gates for real actions and recovery flows.
 bash tests/ajustes_tour.sh
 NUVIO_SHOT_FLOW_ONLY=1 bash tests/servidores_setup_fluxo.sh "$@"
