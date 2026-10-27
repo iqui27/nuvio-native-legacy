@@ -15,7 +15,8 @@ static int focusFixture(void){return focoHero?0:(foco.fileira+1)*1000+foco.colun
 static void selectFixture(int id){if(id==0)ponteiroHero(0,0);else ponteiroCard(id/1000-1,id%1000);}
 static float transitionFixture(void){return revela_entra(filEntraEm[0],0,SDL_GetTicks());}
 static int pageFixture(void){return !sair;}
-static int ownsArrow(SDL_Keycode k){return focoHero || k==SDLK_LEFT || k==SDLK_RIGHT;}
+// Row navigation follows logical order and saved columns, including clipped rows.
+static int ownsArrow(SDL_Keycode k){(void)k;return 1;}
 static void heroRegression(void){
   openFixture();for(int i=0;i<90;i++)stepFixture(1.f/60);drawFixture();
   SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_RIGHT;

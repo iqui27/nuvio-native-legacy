@@ -29,7 +29,8 @@ static int focusFixture(void){return nivel?(foco.fileira+1)*1000+foco.coluna:bot
 static void selectFixture(int id){ponteiroDetalhe(id/1000-1,id%1000);}
 static int ownsArrow(SDL_Keycode k){
   if(!nivel)return focoServidor>=0 || focoAmigos || focoVersao || k==SDLK_UP || (k==SDLK_DOWN && servidoresDisponiveis) || (carro&&!carCheia);
-  return (k==SDLK_LEFT||k==SDLK_RIGHT) && (foco.fileira==SEC_MUSICAS || foco.fileira==SEC_PROGTEMP);
+  return k==SDLK_UP || k==SDLK_DOWN ||
+    ((k==SDLK_LEFT||k==SDLK_RIGHT) && (foco.fileira==SEC_TEMPORADAS || foco.fileira==SEC_MUSICAS || foco.fileira==SEC_PROGTEMP));
 }
 static float transitionFixture(void){return t;}
 static int pageFixture(void){return detail_aberto();}

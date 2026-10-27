@@ -2532,28 +2532,10 @@ int home_iniciar(const char *dirArte) {
   return 1;
 }
 
-// DESCER/SUBIR DE FILEIRA NA MESMA POSICAO DA TELA (issue #205: "quando
-// desce de uma fileira pra outra nao ir pro inicio da fileira, descer na
-// mesma posicao"). O focus_mover pousa na COLUNA LEMBRADA da fileira nova
-// (a que ela tinha quando a pessoa saiu dela), e o salto era um pulo para
-// o comeco da fileira de baixo. Aqui o pouso e refeito na coluna cujo
-// centro x esta mais perto do centro do cartaz que estava em foco — a
-// mesma regra do vertudo (vizinhoNaLinha): largura e rolagem diferentes
-// entre fileiras entram na conta, e nColunas limita o pouso ao que existe.
+// Logical rows own vertical navigation, including rows outside the viewport.
+// focus_mover restores the destination row's saved column.
 static int focoVertical(int dy) {
-  int rAntes = foco.fileira;
-  float cx = homeFileiraX(rAntes, foco.coluna) + larguraFil(rAntes) * 0.5f;
-  if (!focus_mover(&foco, 0, dy)) return 0;
-  int r = foco.fileira;
-  int melhor = foco.coluna;
-  if (fileiras[r].tipo == FILEIRA_HEROI_DIVIDIDO) return 1;   // o painel nao tem x de coluna
-  for (int c = 0; c < foco.nColunas[r]; c++) {
-    if (fabsf(homeFileiraX(r, c) + larguraFil(r) * 0.5f - cx) <
-        fabsf(homeFileiraX(r, melhor) + larguraFil(r) * 0.5f - cx)) melhor = c;
-  }
-  foco.coluna = melhor;
-  if (r < FOCUS_MAX_FILEIRAS) foco.colunaLembrada[r] = melhor;
-  return 1;
+  return focus_mover(&foco, 0, dy);
 }
 
 static void home_evento_(const SDL_Event *e) {
@@ -5881,6 +5863,7 @@ static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,Ponte
 }
 #define ponteiro_alvo navigationTarget
 static int navigationMove(SDL_Keycode key){
+  if(key==SDLK_UP || key==SDLK_DOWN)return 0;
   if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
   GfxRect rects[512];int current=-1;
   for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].row==(focoHero?-1:foco.fileira)&&navigation[i].col==(focoHero?0:foco.coluna))current=i;}
