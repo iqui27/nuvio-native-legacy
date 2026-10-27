@@ -28,11 +28,11 @@ static void ajPenScope(void) {
 static void ajPenRailFoco(int row,int unused) { (void)unused;menu_abrir();(void)row; }
 static void ajPenBase(void) {
   GfxRect screen={0,0,1920,1080};
-  gfx_cor(screen,0,.056f,.059f,.077f,1);
-  gfx_luz_canto(screen,0,1098,247,763,.398f,.356f,.341f,.812f);
-  gfx_luz_canto(screen,0,1473,561,1696,.184f,.188f,.335f,1);
-  gfx_luz_canto(screen,0,396,977,879,.069f,.062f,.077f,1);
-  gfx_veu_css(screen,2,1.0f,.58f,.405f);
+  gfx_cor(screen,0,.0424f,.0531f,.0638f,1);
+  gfx_luz_canto(screen,0,1081,252,693,.5326f,.5058f,.5587f,.9163f);
+  gfx_luz_canto(screen,0,1470,502,1767,.1883f,.1818f,.3155f,1);
+  gfx_luz_canto(screen,0,754,491,1185,.0294f,.0046f,0,.4652f);
+  gfx_veu_css(screen,2,1.0f,.4659f,.65f);
   ajPenPanel(48,112,88,522,0);
   static const char *const icons[]={"aj_house","aj_compass","aj_tv","aj_search","aj_book-open","aj_calendar","aj_user-round","aj_sliders-horizontal"};
   for(int i=0;i<8;i++) {
@@ -156,13 +156,13 @@ static void ajPenHome(void) {
     if(i==3)snprintf(value,sizeof value,"%s",pfNome(perfis_ativo()));
     if(av) {
       char second[100];
-      if(i==0) { snprintf(second,sizeof second,"%s",textoValor(AJ_DV));snprintf(value,sizeof value,i18n("%s · %s"),textoValor(AJ_QUALIDADE),second); }
-      else if(i==1) { snprintf(second,sizeof second,"%s",textoValor(AJ_ATMOS));snprintf(value,sizeof value,i18n("%s · %s"),textoValor(AJ_AUD_LINGUA),second); }
+      if(i==0) { snprintf(second,sizeof second,"%s",textoValor(AJ_DV));snprintf(value,sizeof value,i18n("%s · Dolby Vision %s"),textoValor(AJ_QUALIDADE),second); }
+      else if(i==1) { snprintf(second,sizeof second,"%s",textoValor(AJ_ATMOS));snprintf(value,sizeof value,i18n("%s · Dolby Atmos %s"),textoValor(AJ_AUD_LINGUA),second); }
       else if(i==2) { snprintf(second,sizeof second,"%s",textoValor(AJ_ESCALA_TEXTO));snprintf(value,sizeof value,i18n("%s · %s"),textoValor(AJ_HOME_LAYOUT),second); }
     }
     int changed=0;for(int op=0;op<AJ_N;op++)if(aj4Simples(op)==i+1 && uxDiferente(op))changed++;
     aj4Texto(value,TXT_G18M,x+96,527,changed?194:260,1);
-    if(changed) { char count[64];snprintf(count,sizeof count,i18n("%d alterados"),changed);float r,g,b;ajustes_acento(&r,&g,&b);
+    if(changed) { char count[64];snprintf(count,sizeof count,i18n(changed==1?"%d alterado":"%d alterados"),changed);float r,g,b;ajustes_acento(&r,&g,&b);
       TxtLinha t=txt_linha_corta(TXT_G14B,count,r*255,g*255,b*255,255,100);
       txt_desenhar(t,x+388-26-t.w,530);
     }
