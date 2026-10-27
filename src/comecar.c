@@ -123,8 +123,7 @@ static void carregar(void) {
 // ------------------------------------------------------------------- estado
 static int foco_padrao(void) {
   if (passo == 0) return dados.nome[0] ? B_PRINC : I_NOME;
-  if (passo == 1) return I_NUVIO;
-  if (passo == 2) return I_TRAKT;
+  if (passo == 1 || passo == 2) return B_PRINC;
   return B_PRINC;
 }
 
@@ -155,6 +154,7 @@ static void abrir(void) {
   backPressionado = backVisto = 0;
   antes = dados;
   passo = 0;
+  for (int i = 0; i < PASSOS; i++) focoAnterior[i] = B_PRINC;
   foco = foco_padrao();
 }
 
@@ -198,6 +198,11 @@ static const char *rotulo_botao(int id) {
     case 2: return id == B_VOLTAR ? i18n("Voltar") : i18n("Continuar");
     default: return id == B_PRINC ? i18n("Ir para a Home") : i18n("Fazer o tour · 1 min");
   }
+}
+
+static const char *botao_icone(int id) {
+  if (passo != PASSOS - 1 || id == B_PULAR) return NULL;
+  return id == B_PRINC ? "aj_house" : "aj_sparkles";
 }
 
 // Defaults filled for the person (mock 3C): the first two chips step the real
@@ -292,7 +297,7 @@ static void rodape(Item *it, int *n) {
   }
   for (i = 0; i < k; i++) {
     int prim = ids[i] == B_PRINC;
-    float w = botao_largura(rotulo_botao(ids[i]), NULL, prim);
+    float w = botao_largura(rotulo_botao(ids[i]), botao_icone(ids[i]), prim);
     float h = prim ? BOTAO_H_PRIMARIO : BOTAO_H_SECUNDARIO;
     poe(it, n, ids[i], x, yc - h * 0.5f, w, h);
     x += w + BOTAO_GAP;
@@ -308,12 +313,13 @@ static int montar(Item *it) {
   origem();
   if (passo == 0) {
     float y = corpo_y(), v = p0_vao();
+    float h = fminf(108.0f, (rodape_topo() - T21_GAP_CARD - y - 84.0f - 72.0f - 2.0f * v - 10.0f) * .5f);
     poe(it, &n, I_NOME, MARGEM, y, coluna, 84.0f);
     y += 84.0f + v;
     for (i = 0; i < COMECAR_CORES; i++) poe(it, &n, I_COR0 + i, MARGEM + (float)i * 90.0f, y, 72.0f, 72.0f);
     y += 72.0f + v;
-    poe(it, &n, I_INFANTIL, MARGEM, y, coluna, 108.0f);
-    poe(it, &n, I_IDIOMA, MARGEM, y + 118.0f, coluna, 108.0f);
+    poe(it, &n, I_INFANTIL, MARGEM, y, coluna, h);
+    poe(it, &n, I_IDIOMA, MARGEM, y + h + 10.0f, coluna, h);
   } else if (passo == 1) {
     float h = fminf(118.0f, (rodape_topo() - T21_GAP_CARD - corpo_y()) / 4.0f);
     for (i = 0; i < 4; i++) poe(it, &n, i, MARGEM, corpo_y() + (float)i * h, coluna, h - 10.0f);
@@ -968,7 +974,7 @@ static void desenha_rodape(float a) {
   for (i = 0; i < n; i++) {
     int id = it[i].id, prim = id == B_PRINC;
     if (id < B_VOLTAR) continue;
-    botao_pilula(it[i].r, rotulo_botao(id), NULL, focoAnim[id], prim, 0, a * (id == B_PULAR ? .72f + .28f * focoAnim[id] : 1));
+    botao_pilula(it[i].r, rotulo_botao(id), botao_icone(id), focoAnim[id], prim, 0, a * (id == B_PULAR ? .72f + .28f * focoAnim[id] : 1));
     alvo(it[i].r, id);
     if (id != B_PULAR) fim = fmaxf(fim, it[i].r.x + it[i].r.w);
     else dx = it[i].r.x - T21_GAP_BIG;   // the hint sits left of "Skip all"

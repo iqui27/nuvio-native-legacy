@@ -11,5 +11,6 @@ for path in sorted(out.glob('*-app.png')):
     valid_size=(info[0]=='390' and int(info[1])>=844) if mobile else info[:2]==['1920','1080']
     assert valid_size and float(info[2])>.05, f'Blank or wrong-size image: {path}'
     if mobile and info[1]!='844':print(f'GAP: {name} height {info[1]} vs mock 844; full form preserved')
+    if not (mock/f'{name}.png').exists():print(f'NOTE: no approved mock for {name}');continue
     subprocess.run(['magick',str(mock/f'{name}.png'),str(path),'+append',str(out/f'{name}-compare.png')],check=True)
 print('PASS: native screenshots nonblank; mock | app comparisons written')

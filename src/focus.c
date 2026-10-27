@@ -1,5 +1,21 @@
 #include "focus.h"
 #include <string.h>
+#include <math.h>
+
+int focus_rect_nearest(const GfxRect *r, int n, int current, int dx, int dy) {
+  if (current < 0 || current >= n) return -1;
+  int best = current;
+  float distance = INFINITY;
+  for (int i = 0; i < n; i++) {
+    float x = r[i].x + r[i].w / 2 - r[current].x - r[current].w / 2;
+    float y = r[i].y + r[i].h / 2 - r[current].y - r[current].h / 2;
+    float along = x * dx + y * dy;
+    if (along < 1) continue;
+    float score = along + 3 * fabsf(dx ? y : x);
+    if (score < distance) { distance = score; best = i; }
+  }
+  return best;
+}
 
 void focus_iniciar(Foco *f, int nFileiras, const int *nColunas) {
   memset(f, 0, sizeof *f);

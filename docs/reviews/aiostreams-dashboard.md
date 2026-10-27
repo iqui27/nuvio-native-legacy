@@ -1,0 +1,13 @@
+# AIOStreams dashboard completeness
+
+Source contract: [User API](https://github.com/Viren070/AIOStreams/blob/6ca32ed21e3036d87c35c49b24f2cf507d065ed1/packages/server/src/routes/api/user.ts#L125), [UserData schema](https://github.com/Viren070/AIOStreams/blob/6ca32ed21e3036d87c35c49b24f2cf507d065ed1/packages/core/src/db/schemas.ts#L742). `GET /api/v1/user` returns the resolved `data.userData`; `?raw=true` returns the stored configuration before inheritance/template resolution. The dashboard keeps the resolved endpoint so it describes the effective configuration.
+
+Missing data had three causes: the extractor omitted schema fields (including 576p/240p/144p and capitalized Unknown ranges), stopped after 128 detail rows, and reduced regex/keyword/expression lists to counts. Sort and formatter were summaries with no reachable detail action. Refresh already scheduled a new worker and refetched the user endpoint. Requests now additionally send `Cache-Control: no-cache, no-store`; a synchronous worker test proves a second response replaces the first.
+
+The synthetic full-envelope fixture covers all include/exclude/required/preferred filter families, ranges, cache restrictions, seeders/age, regex objects and expressions, all sort scopes, services, presets, formatter definitions/templates, proxy, result limits, catalogs, matching, playback and other preferences. No real account response or credentials were used. The first regression run failed on `size.resolution.576p.movies`; the final parser and navigation checks pass.
+
+Known sections are traversed into scrollable leaf rows. List items retain order, long strings split at UTF-8 boundaries, sort criteria retain direction, and values preserve commas. Credential/address fields and arbitrary preset options show presence only; formatter templates remain hidden because they can embed signed links. The 2048-row/depth/path limits report omitted rows explicitly, with phone configuration access alongside. Unknown future root sections require schema review rather than automatically rendering potentially sensitive data.
+
+The existing island shell, fonts and motion owners remain. Overview columns now have equal widths. Ten filter cards share a balanced two-column grid; each opens a scrolling detail card with visible position/count. Sort, formatter, proxy and other preferences are all reachable by remote and pointer.
+
+Proof: `bash tests/aiostreams.sh`, `bash tests/aiostreams_dashboard_shot.sh`, `bash tools/build-local.sh`, `python3 tools/varredura-i18n.py`. Native pt-BR PNGs at 85/100%, glass/solid: `/Volumes/ExternalSSD/tmp/rev/aiodash/before/` and `/Volumes/ExternalSSD/tmp/rev/aiodash/after/`. Synthetic data only; physical TV performance was not measured.

@@ -83,7 +83,7 @@ static void run(int n, const char *id, const char *tipo) {
   const char *nomes[] = {"OpenSubtitles", "Subs.ro", "Community Subtitles"};
   memset(addon, 0, sizeof addon); nAddon = n;
   for (int i = 0; i < n; i++) {
-    addon[i].ativo = addon[i].legenda = 1;
+    addon[i].ativo = addon[i].legenda = addon[i].sondado = 1;
     if (i == desligaIdx) addon[i].ativo = 0;   // desligado na conta
     snprintf(addon[i].base, sizeof addon[i].base, "https://fixture.invalid/provider%d", i);
     snprintf(addon[i].nome, sizeof addon[i].nome, "%s", nomes[i]);
@@ -269,6 +269,34 @@ int main(void) {
       assert(agoraTeste <= 28500 && tentativasCauda == (atrasoInicio ? 1 : 2));
       assert(!strstr(ultimaUrl[0], "videoHash="));
     } }
+  // #606: first nonempty filename field wins, then the URL path basename.
+  {
+    const char *fields[] = {"subtitleFileName", "movieReleaseName", "filename",
+                            "fileName", "name", "title", "release"};
+    char json[2048], expected[96];
+    memset(&legExt, 0, sizeof legExt);
+    status[0] = 200;
+    ling_local_legenda("*"); ling_conta_legenda(""); ling_conta_legenda2("");
+    for (int first = 0; first <= 7; first++) {
+      int used = snprintf(json, sizeof json,
+        "{\"subtitles\":[{\"lang\":\"eng\",\"url\":\"https://fixture.invalid/urlbasename.srt?token=PRIVATE_TOKEN/path#fragment\",\"label\":\"Sync status\"");
+      for (int k = 0; k < 7; k++)
+        used += snprintf(json + used, sizeof json - used, ",\"%s\":\"%s%s\"",
+                         fields[k], k < first ? "" : fields[k], k < first ? "" : ".srt");
+      snprintf(json + used, sizeof json - used, "}]}");
+      snprintf(expected, sizeof expected, "%s.srt", first < 7 ? fields[first] : "urlbasename");
+      responses[0] = json; run(1, "tt606", "movie");
+      assert(nLegs == 1 && !strcmp(legs[0].arquivo, expected));
+      assert(!strcmp(legs[0].rotulo, "Sync status"));
+    }
+    // No path or an empty final segment must not become a hostname or query.
+    const char *urls[] = {"https://fixture.invalid", "https://fixture.invalid/?token=PRIVATE_TOKEN/path"};
+    for (int k = 0; k < 2; k++) {
+      snprintf(json, sizeof json, "{\"subtitles\":[{\"lang\":\"eng\",\"url\":\"%s\"}]}", urls[k]);
+      responses[0] = json; run(1, "tt606", "movie");
+      assert(nLegs == 1 && !legs[0].arquivo[0]);
+    }
+  }
 
   puts("addon subtitles: provider fairness, real origin, ordered languages, empty/missing/HTTP and episode checks ok");
 }

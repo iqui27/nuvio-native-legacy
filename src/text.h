@@ -292,6 +292,8 @@ void txt_encerrar(void);
 void txt_novo_quadro(void);
 
 TxtLinha txt_linha(TxtEstilo estilo, const char *s, int r, int g, int b, int a);
+// Render provider content verbatim; callers translate UI keys explicitly.
+TxtLinha txt_linha_bruta(TxtEstilo estilo, const char *s, int r, int g, int b, int a);
 
 // Igual a txt_linha, mas escolhe uma familia explicita. Usado pela legenda
 // para manter sua preferencia independente da interface. Familia indisponivel
@@ -317,6 +319,9 @@ TxtLinha txt_linha_corta_familia(TxtEstilo estilo, const char *s, int r, int g,
 TxtLinha txt_linha_corta_enfase(TxtEstilo estilo, const char *s, int r, int g,
                                 int b, int a, float maxW, TxtFamilia familia,
                                 int enfase);
+// Clip provider content verbatim, without treating it as a translation key.
+TxtLinha txt_linha_corta_bruta(TxtEstilo estilo, const char *s, int r, int g,
+                               int b, int a, float maxW);
 
 // Desenha no canto superior esquerdo (x,y).
 void txt_desenhar(TxtLinha l, float x, float y);
@@ -363,6 +368,9 @@ size_t txt_token_tam(const char *s);
 // Com alpha = 0, os blocos so medem: mesma quebra, sem rasterizacao nem GL.
 float txt_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
                 float x, float y, float larg, float leading, float alpha, int maxLinhas);
+// Wrap provider content without translating the text or individual lines.
+float txt_bloco_bruto(TxtEstilo estilo, const char *s, int r, int g, int b,
+                      float x, float y, float larg, float leading, float alpha, int maxLinhas);
 
 // Igual a txt_bloco, mas indica com reticencias quando `maxLinhas` omite texto.
 // Uma palavra maior que a linha tambem e cortada com reticencias sem estourar

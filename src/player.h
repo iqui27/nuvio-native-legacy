@@ -27,6 +27,7 @@ void player_rewatch(int sim); // 0: retomada normal mesmo com reprise ativa
 void player_do_inicio(void);
 // 1 depois de player_do_inicio nesta abertura ("Do inicio"): sem ponto salvo.
 int  player_sem_retomada(void);
+int  player_juntos_preparado(void); // first frame and resume applied
 // O arquivo tocando e bem mais curto que o titulo (o aviso de duracao viu):
 // pode ser uma parte de um filme em partes (partes.h).
 int  player_parece_parte(void);
@@ -124,6 +125,7 @@ void player_definir_tentativa(int n, int max);
 // 1 quando a fonte atual falhou. O app usa no watchdog de canal: stream de TV
 // ao vivo que nao abre troca sozinho para o proximo da lista.
 int  player_fonte_falhou(void);
+int  player_fonte_fora_cache(void); // Current source is a short warning clip.
 int  player_tem_video(void);   // esta sessao abriu um video (nao o trailer)
 
 // 1 quando ha video de verdade por tras desta sessao. O desenho usa isto para
@@ -213,6 +215,7 @@ void player_juntos_buscar(double seg);
 void player_sair(void);
 void player_atualizar(float dt, Uint32 agora);
 void player_desenhar(Uint32 agora);
+int  player_visivel(void); // Presentation/input; the prepared session can stay open while browsing.
 int  player_quer_sair(void);  // 1 assim que o Back foi apertado
 void player_encerrar(void);
 // 1 uma vez se a ultima saida marcou o titulo como visto (aviso das Conquistas).

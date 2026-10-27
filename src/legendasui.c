@@ -465,7 +465,7 @@ static void escolher(int slot, const LegUiCand *c) {
   }
   idPrimario(prim);
   if (!strcmp(prim, c->id)) { avisar(i18n("Já é a principal")); return; }
-  legenda2_escolher(c->id, c->leg.url, c->idioma, c->origem);
+  legenda2_escolher(c->id, c->leg.url, legenda_idioma(c->idioma, c->leg.arquivo), c->origem);
 }
 
 static int ativoNoSlot(int slot, const LegUiCand *c) {

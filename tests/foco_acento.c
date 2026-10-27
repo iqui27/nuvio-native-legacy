@@ -102,8 +102,8 @@ int main(void) {
       px(400 + 1, 345, rim2); px(400 + 30, 345, in);
       assert(memcmp(rim2, in, 3) == 0);
       valor[AJ_VIDRO_CONTORNO] = 0; }
-    // setting forced off when glass is off
-    valor[AJ_VIDRO] = 1; assert(!ajustes_foco_acento()); valor[AJ_VIDRO] = 0;
+    // Accent focus remains available without glass.
+    valor[AJ_VIDRO] = 1; assert(ajustes_foco_acento()); valor[AJ_VIDRO] = 0;
   }
   assert(!ajustes_foco_acento() || valor[AJ_FOCO_ACENTO] == 0);
   liga(0); assert(!ajustes_foco_acento());   // default stays OFF in the shipped table

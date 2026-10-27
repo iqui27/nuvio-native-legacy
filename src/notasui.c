@@ -294,8 +294,9 @@ float notasui_marca_cartao(int f, int cru, float xc, float yc, float h, float a)
 // (detail.c faz o cima/baixo dentro da grade).
 #include "telefoneui.h"
 static int notasEmpilhadas(void) { return telefoneui_ativo() && NV_TELA_W < 1500; }
-static int notasB2(void) { return ajustes_vidro() && !notasEmpilhadas(); }
-#define TILE_COLS    (notasB2() ? 4 : 2)
+/* Owner 26/10/2026: tall 217 cards, three per row, glass or solid alike. */
+static int notasB2(void) { return !notasEmpilhadas(); }
+#define TILE_COLS    (notasB2() ? 3 : 2)
 #define SEC_W       (NV_TELA_W - 2.0f * NV_DETP_X)
 #define SCORE_W     (notasEmpilhadas() ? SEC_W : notasB2() ? 420.0f : 520.0f)
 #define SCORE_MIN_H  448.0f
@@ -561,6 +562,38 @@ static void desenhaBloco(const NotasSecao *s, int fonte, int norm, const NfResum
   if (r->n > 1)
     gfx_cor((GfxRect){ bx + bw * (float)r->media / 100.0f - 1.0f, by - 4.0f, 2.0f, 16.0f },
             0, 1, 1, 1, 0.72f * a);
+}
+
+float notasui_cartao_largura(int resumo) { return resumo ? SCORE_W : TILE_W; }
+int notasui_colunas(void) { return TILE_COLS; }
+// Cell j (sources, then Your rating, then Friends) sits in a TILE_COLS grid to
+// the right of the summary column; `resumo` shifts it past that column.
+float notasui_celula_x(int resumo, int j) {
+  return (resumo && !notasEmpilhadas() ? SCORE_W + COL_GAP : 0) + (float)(j % TILE_COLS) * (TILE_W + TILE_GAP);
+}
+// Phone UI (stacked): the summary is a full-width card ABOVE the grid.
+static float resumoEmpilhado(const NotasSecao *s, int resumo) {
+  Medidas m; medir(s, &m);
+  return resumo && m.nFontes && notasEmpilhadas() ? fmaxf(SCORE_MIN_H, desenhaCartao(&m, 0, 0, 0, 0, 0)) + COL_GAP : 0;
+}
+float notasui_celula_y(const NotasSecao *s, int resumo, int j) {
+  return resumoEmpilhado(s, resumo) + (float)(j / TILE_COLS) * (TILE_H + TILE_GAP);
+}
+float notasui_celula_altura(void) { return TILE_H; }
+float notasui_cartao_altura(const NotasSecao *s, int resumo, int celulas) {
+  Medidas m; medir(s, &m);
+  int linhas = (celulas + TILE_COLS - 1) / TILE_COLS;
+  float grade = linhas ? (float)linhas * TILE_H + (float)(linhas - 1) * TILE_GAP : 0;
+  float score = resumo && m.nFontes ? fmaxf(SCORE_MIN_H, desenhaCartao(&m, 0, 0, 0, 0, 0)) : 0;
+  return notasEmpilhadas() ? resumoEmpilhado(s, resumo) + grade : fmaxf(grade, score);
+}
+void notasui_cartao(const NotasSecao *s, int fonte, float x, float y, float h, float f, float a) {
+  Medidas m; NfResumo r; medir(s, &m);
+  if (fonte < 0) desenhaCartao(&m, x, y, notasEmpilhadas() ? resumoEmpilhado(s, 1) - COL_GAP : h, f, a);
+  else {
+    nf_resumo(m.fontes, m.norm, m.nFontes, &r);
+    desenhaBloco(s, fonte, nf_norm100(fonte, s->cru[fonte]), &r, x, y, f, a);
+  }
 }
 
 // Portao do texto (textogate.h) de um bloco: aparece INTEIRO ou nao aparece.

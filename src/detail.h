@@ -264,6 +264,13 @@ int  detail_pediu_do_inicio(void);
 #define NV_DETW2_BTN_ICONE_H  24.0f
 #define NV_DETW2_BTN_GAPI     16.0f   // fim do triangulo -> tinta do rotulo
 #define NV_DETW2_CIRC         96.0f
+// 2.1 TV hero (owner, 25/10/2026: "o tamanho dos botoes igual do app atual"):
+// the 2.0.8 Play pill and discs, and the info block at the hero bottom.
+#define NV_DET21_BTN_H        72.0f
+#define NV_DET21_CIRC         72.0f
+#define NV_DET21_BTN_GAP      18.0f
+#define NV_DET21_GAP          30.0f   // logo/actions/synopsis/meta rhythm (2.0.8: 32/30/36)
+#define NV_DET21_FIM        1048.0f   // same physical bottom as the 2.0.8 info block
 #define NV_DETW2_BTN_GAP      24.0f
 // Glifo dentro do circular: 32 num circulo de 96 em repouso e 36 num de 110
 // focado — 0,333 do diametro nos dois. Estava 0,45, que vinha de uma captura

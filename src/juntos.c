@@ -12,6 +12,7 @@
 #include "recomenda.h"
 #include "rede.h"
 #include "video.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,11 +69,15 @@ static int fioLaco(void *u) {
     SDL_UnlockMutex(mtx);
     memset(&r, 0, sizeof r);
     r.tipo = op.tipo; r.gen = op.gen;
+    printf("[juntos] http: op=%d requesting auth\n", op.tipo);
     if (recomenda_cabecalhos(cab, aut, sizeof aut, via, sizeof via, pf, sizeof pf)) {
+      printf("[juntos] http: op=%d auth ready, request started\n", op.tipo);
       snprintf(url, sizeof url, "%s%s", NV_REC_URL, op.rota);
       r.txt = op.get ? rede_baixar_st(url, PRAZO_S, cab, &r.status)
                      : rede_postar_st(url, PRAZO_S, cab, op.corpo ? op.corpo : "{}", &r.status);
     }
+    printf("[juntos] http: op=%d status=%d transport=%s\n", op.tipo, r.status,
+           r.status ? "ok" : "failed");
     free(op.corpo);
     SDL_LockMutex(mtx);
     if (nCaixa < FILA) caixa[nCaixa++] = r;
@@ -84,9 +89,9 @@ static int fioLaco(void *u) {
 
 static void pedir(OpTipo tipo, const char *rota, const char *corpo, int get) {
   Op op;
-  if (!NV_REC_URL[0]) return;
+  if (!NV_REC_URL[0]) { printf("[juntos] http: service not configured\n"); return; }
   if (!mtx) { mtx = SDL_CreateMutex(); cond = SDL_CreateCond(); }
-  if (!mtx || !cond) return;
+  if (!mtx || !cond) { printf("[juntos] http: queue initialization failed\n"); return; }
   memset(&op, 0, sizeof op);
   op.tipo = tipo; op.gen = gen; op.get = get;
   snprintf(op.rota, sizeof op.rota, "%s", rota);
@@ -109,20 +114,22 @@ static void pedir(OpTipo tipo, const char *rota, const char *corpo, int get) {
     }
   }
   SDL_LockMutex(mtx);
-  if (nFila == FILA) { SDL_UnlockMutex(mtx); free(op.corpo); return; }
+  if (nFila == FILA) { SDL_UnlockMutex(mtx); free(op.corpo); printf("[juntos] http: queue full\n"); return; }
   fila[nFila++] = op;
   if (!fioVivo) {
     SDL_Thread *t = SDL_CreateThread(fioLaco, "nv-juntos", NULL);
     if (t) { SDL_DetachThread(t); fioVivo = 1; }
+    else printf("[juntos] http: worker creation failed\n");
   }
   SDL_CondSignal(cond);
   SDL_UnlockMutex(mtx);
+  printf("[juntos] room: request queued op=%d\n", tipo);
 }
 
 // ---- estado do fio principal ----------------------------------------------------------
 static JuntosFase fase;
 static JsMotor motor;
-static int temMotor;
+static int temMotor, salaFalhou;
 static DiscordWs *ws;
 static char salaId[40], codigo[12], wsBase[256], webBase[256], bilhete[1600], tituloSala[160];
 static Uint32 caiuEm, proxConexao, atrasoConexao;
@@ -130,7 +137,7 @@ static int pedindoBilhete;
 // anfitriao preparado
 static struct {
   char imdb[24], titulo[160], poster[512];
-  int t, e, soAnf, n;
+  int t, e, soAnf, n, enviados;   // enviados: already in the POST /v1/sala body
   char conv[JUNTOS_CONVIDADOS_MAX][96];
 } prep;
 // abrir o titulo (convidado / proximo episodio)
@@ -178,7 +185,7 @@ static double pPos(void *u, double *t) {
   return p;
 }
 static int pTocando(void *u) { (void)u; return video_tocando() && !player_pausado(); }
-static int pPronto(void *u) { (void)u; return player_aberto() && video_pronto() && video_duracao() > 0; }
+static int pPronto(void *u) { (void)u; return player_juntos_preparado() && video_duracao() > 0; }
 static unsigned pBuffer(void *u) { (void)u; return video_bufferando_ms(); }
 static double pDur(void *u) { (void)u; return video_duracao(); }
 static void pPausar(void *u, int p) { (void)u; player_juntos_pausar(p); }
@@ -205,7 +212,10 @@ static void iniciarMotor(void) {
 }
 
 static void fecharWs(void) {
-  if (ws) { dws_fechar(ws); ws = NULL; }
+  if (ws) {
+    printf("[juntos] websocket: close code=%d\n", dws_codigo_fechamento(ws));
+    dws_fechar(ws); ws = NULL;
+  }
   if (temMotor) jsm_caiu(&motor);
 }
 
@@ -228,7 +238,7 @@ static void zerar(void) {
   fecharWs();
   gen++;
   fase = JF_OCIOSO;
-  temMotor = 0;
+  temMotor = salaFalhou = 0;
   salaId[0] = codigo[0] = bilhete[0] = tituloSala[0] = urlCelular[0] = 0;
   pedindoBilhete = 0;
   escolhendo = 0; abrirPedido = 0; fonteEscolhida = -1; salaDurConferida = 0; fonteVista = -1;
@@ -240,10 +250,12 @@ static void zerar(void) {
 // ---- rotas ---------------------------------------------------------------------------------
 static void conectar(void) {
   char url[2048];
+  printf("[juntos] websocket: endpoint=%d ticket=%d\n", !!wsBase[0], !!bilhete[0]);
   if (!wsBase[0] || !bilhete[0]) return;
   snprintf(url, sizeof url, "%s?b=%s", wsBase, bilhete);
   bilhete[0] = 0;   // uso unico
   ws = dws_abrir(url);
+  printf("[juntos] websocket: handshake %s\n", ws ? "pending" : "allocation failed");
   if (fase != JF_AGUARDANDO) fase = fase == JF_DENTRO || fase == JF_RECONECTANDO ? JF_RECONECTANDO : JF_CONECTANDO;
 }
 
@@ -265,7 +277,10 @@ static void criarSala(void) {
   int i, k = 0;
   const Stream *s = stream_item(stream_atual());
   JsImpressao ii;
-  if (!s) return;
+  // Saved links and saved parts can play without an item in the current list.
+  // Duration is still useful; unknown release metadata must not block a room.
+  Stream desconhecida = {0};
+  if (!s) { desconhecida.fileIdx = -1; s = &desconhecida; }
   jsf_impressao(s, video_duracao(), &ii);
   impSala = ii;
   jsp_impressao(imp, sizeof imp, &ii);
@@ -284,6 +299,7 @@ static void criarSala(void) {
            ep, tit, pos, imp, prep.soAnf ? "anfitriao" : "todos", video_pos(), conv);
   snprintf(tituloSala, sizeof tituloSala, "%s", prep.titulo);
   fase = JF_CRIANDO;
+  prep.enviados = prep.n;
   pedir(OP_CRIAR, "/v1/sala", corpo, 0);
   printf("[juntos] criando sala (%d convidado(s), fonte %s)\n", prep.n, ii.rotulo);
 }
@@ -299,18 +315,43 @@ void juntos_preparar(const char *imdb, int t, int e, const char *titulo, const c
   prep.t = t; prep.e = e; prep.soAnf = soAnf;
   for (i = 0; i < n && i < JUNTOS_CONVIDADOS_MAX; i++) snprintf(prep.conv[prep.n++], sizeof prep.conv[0], "%s", conv[i]);
   fase = JF_PREPARADO;
-  printf("[juntos] sala preparada: nasce quando a fonte tocar\n");
+  snprintf(abrirImdb, sizeof abrirImdb, "%s", prep.imdb);
+  snprintf(abrirTitulo, sizeof abrirTitulo, "%s", prep.titulo);
+  snprintf(abrirPoster, sizeof abrirPoster, "%s", prep.poster);
+  abrirT = t; abrirE = e; abrirPedido = 1;
+  snprintf(tituloSala, sizeof tituloSala, "%s", prep.titulo);
+  iniciarMotor();
+  if (t > 0 && e > 0) snprintf(motor.sala.ep, sizeof motor.sala.ep, "%s:%d:%d", prep.imdb, t, e);
+  else snprintf(motor.sala.ep, sizeof motor.sala.ep, "%s", prep.imdb);
+  snprintf(motor.sala.titulo, sizeof motor.sala.titulo, "%s", prep.titulo);
+  snprintf(motor.sala.poster, sizeof motor.sala.poster, "%s", prep.poster);
+  motor.sala.n = 1;
+  snprintf(motor.sala.m[0].id, sizeof motor.sala.m[0].id, "%s", motor.eu);
+  snprintf(motor.sala.m[0].nome, sizeof motor.sala.m[0].nome, "%s", recomenda_vinculo_nome());
+  snprintf(motor.sala.m[0].st, sizeof motor.sala.m[0].st, "carregando");
+  motor.sala.m[0].anf = motor.sala.m[0].on = 1;
+  printf("[juntos] lobby open: preparing paused source\n");
 }
 
-void juntos_convidar(const char *const *conv, int n) {
+int juntos_convidar(const char *const *conv, int n) {
   char corpo[1600], e[200];
   int i, k;
-  if (!salaId[0] || !n) return;
+  // No server room yet (preparing, or POST /v1/sala in flight): queue; criarSala
+  // or the OP_CRIAR reply sends them.
+  if (!salaId[0] && (fase == JF_PREPARADO || fase == JF_CRIANDO)) {
+    if (prep.n + n > JUNTOS_CONVIDADOS_MAX) return 0;
+    for (i = 0; i < n; i++) snprintf(prep.conv[prep.n++], sizeof prep.conv[0], "%s", conv[i]);
+    printf("[juntos] lobby: %d invite(s) queued until the room opens\n", n);
+    return 1;
+  }
+  if (!salaId[0] || !n) return 0;
+  printf("[juntos] lobby: inviting %d friend(s)\n", n);
   k = snprintf(corpo, sizeof corpo, "{\"id\":\"%s\",\"convidados\":[", salaId);
   for (i = 0; i < n && i < JUNTOS_CONVIDADOS_MAX && (size_t)k < sizeof corpo - 200; i++)
     k += snprintf(corpo + k, sizeof corpo - (size_t)k, "%s\"%s\"", i ? "," : "", jsp_esc(e, sizeof e, conv[i]));
   snprintf(corpo + k, sizeof corpo - (size_t)k, "]}");
   pedir(OP_CONVIDAR, "/v1/sala/convidar", corpo, 0);
+  return 1;
 }
 
 void juntos_entrar_id(const char *id) {
@@ -347,8 +388,28 @@ void juntos_sair(void) {
   zerar();
 }
 
+int juntos_precarregando(void) {
+  return juntos_ativo() && (!temMotor || !motor.temSala ||
+    motor.sala.rel.estado == JSE_LOBBY ||
+    (motor.playArmado && motor.sala.rel.estado == JSE_TOCANDO &&
+     agoraLocal() < jsr_local(&motor.rel, motor.sala.rel.t0)));
+}
+
 int juntos_comecar(void) {
-  if (!temMotor) return -1;
+  if (!temMotor || !jsm_sou_anfitriao(&motor) ||
+      motor.sala.rel.estado != JSE_LOBBY) return -1;
+  if (!pPronto(NULL)) {
+    printf("[juntos] start: waiting for paused source readiness\n");
+    return -1;
+  }
+  if (salaFalhou || !motor.temSala || !motor.conectado) {
+    printf("[juntos] start: room unavailable, starting alone\n");
+    if (!salaFalhou) juntosui_erro("rede");
+    juntos_sair(); // invalidates in-flight room replies before releasing playback
+    player_juntos_pausar(0);
+    return 1;
+  }
+  printf("[juntos] start: source ready, sending cinema countdown\n");
   return jsm_cmd(&motor, "comecar", -1, NULL, agoraLocal());
 }
 int juntos_encerrar(void) {
@@ -427,7 +488,7 @@ static void pedirAbrir(const char *ep, const char *titulo, const char *poster) {
   snprintf(abrirPoster, sizeof abrirPoster, "%s", poster ? poster : "");
   abrirPedido = 1;
   escolhendo = 1;
-  fonteEscolhida = -1;
+  fonteEscolhida = fonteVista = -1;
   salaDurConferida = 0;
 }
 
@@ -438,19 +499,26 @@ static void resposta(Resp *r) {
       if (!ok) {
         printf("[juntos] criar sala falhou (%d)\n", r->status);
         juntosui_erro(r->status == 429 ? "limite" : "rede");
-        zerar();
+        salaFalhou = 1; // keep the paused host lobby and its Start action
+        fase = JF_PREPARADO;
         break;
       }
       js_texto(r->txt, NULL, "id", salaId, sizeof salaId);
       js_texto(r->txt, NULL, "codigo", codigo, sizeof codigo);
       js_texto(r->txt, NULL, "bilhete", bilhete, sizeof bilhete);
       lerEnderecos(r->txt);
-      iniciarMotor();
+      if (prep.n > prep.enviados) {   // invited while the room was being created
+        const char *mais[JUNTOS_CONVIDADOS_MAX];
+        for (int i = prep.enviados; i < prep.n; i++) mais[i - prep.enviados] = prep.conv[i];
+        juntos_convidar(mais, prep.n - prep.enviados);
+        prep.enviados = prep.n;
+      }
+      // Keep the prepared host until the first WebSocket room snapshot.
       jsm_fonte(&motor, "mesma");
       jsm_estado_app(&motor, "carregando", 0);
       conectar();
       juntosui_sala_abriu();
-      printf("[juntos] sala aberta, codigo %s\n", codigo);
+      printf("[juntos] room: created, invite code ready\n");
       break;
     case OP_ENTRAR: {
       pedindoBilhete = 0;
@@ -485,6 +553,9 @@ static void resposta(Resp *r) {
       conectar();
       break;
     }
+    case OP_CONVIDAR:
+      printf("[juntos] invite: request completed status=%d\n", r->status);
+      break;
     case OP_CONVITES:
       buscandoConvites = 0;
       if (ok && !juntos_ativo()) lerConvites(r->txt);
@@ -499,12 +570,13 @@ static void eventos(void) {
   while (jsm_evento(&motor, &e)) {
     switch (e.tipo) {
       case JSV_EPISODIO: {
-        // A sala trocou de episodio: todos abrem o mesmo, cada um com a fonte
-        // lembrada para a serie (fontepref/bingeGroup), nao a impressao velha.
-        char imdb[24]; int t, ep;
-        separarEpJ(e.txt, imdb, sizeof imdb, &t, &ep);
-        { int pt = 0, pe = 0; player_episodio_atual(&pt, &pe);
-          if (!(player_aberto() && pt == t && pe == ep)) { pedirAbrir(e.txt, tituloSala, ""); escolhendo = 0; } }
+        snprintf(tituloSala, sizeof tituloSala, "%s", motor.sala.titulo);
+        impSala = motor.sala.imp;
+        juntosui_sala_abriu();
+        // A different movie can also have episode 0/0: compare room identity,
+        // already checked by the motor, rather than just season/episode.
+        pedirAbrir(e.txt, tituloSala, motor.sala.poster);
+        escolhendo = 0;
         break;
       }
       case JSV_ACEITO:
@@ -554,7 +626,7 @@ static void websocket(Uint32 agora) {
     if (!entrouEm) entrouEm = agora ? agora : 1;
     caiuEm = 0;
     atrasoConexao = 0;
-    printf("[juntos] conectado a sala\n");
+    printf("[juntos] websocket: open\n");
   }
   while ((m = dws_receber(ws))) {
     jsm_receber(&motor, m, agoraLocal());
@@ -596,8 +668,17 @@ void juntos_passo(Uint32 agora) {
       free(lote[i].txt);
     }
   }
-  // Anfitriao: a sala nasce com a fonte tocando (a duracao entra na impressao).
-  if (fase == JF_PREPARADO && player_aberto() && video_pronto() && video_duracao() > 0 && stream_atual() >= 0)
+  if (fase == JF_PREPARADO) {
+    static Uint32 ultimoPreparo;
+    if (agora - ultimoPreparo >= 5000u) {
+      ultimoPreparo = agora;
+      printf("[juntos] source: waiting open=%d player=%d source=%d ready=%d duration=%d error=%d\n",
+             abrirPedido, player_aberto(), player_tem_video(), player_juntos_preparado(),
+             video_duracao() > 0, video_falhou());
+    }
+  }
+  // Host creates the room once the paused preparation has a duration.
+  if (fase == JF_PREPARADO && !salaFalhou && !abrirPedido && pPronto(NULL))
     criarSala();
   // Convites: so fora de sala, depois de o app assentar.
   if (!juntos_ativo() && juntos_disponivel() && !buscandoConvites && agora - iniciouEm > CONVITES_ESPERA &&
@@ -625,6 +706,25 @@ void juntos_passo(Uint32 agora) {
     if (v != veredito) { veredito = v; jsm_fonte(&motor, jsf_nome(v)); juntosui_fonte_diferente(v, pal); }
   }
   if (escolhendo && !player_aberto()) jsm_estado_app(&motor, "procurando", 0);
+  else if (player_aberto()) {
+    VideoStats stats;
+    const Stream *s = stream_item(stream_atual());
+    motor.altura = s ? s->altura : 0;
+    video_estatisticas(&stats);
+    int pct = stats.bufferPct;
+    if (pct < 0 && stats.bufferSeg >= 0 && stats.bufferAlvoSeg > 0)
+      pct = (int)fmin(100, 100 * stats.bufferSeg / stats.bufferAlvoSeg);
+    jsm_estado_app(&motor, video_falhou() ? "erro" : "carregando", pct > 0 ? pct : 0);
+    if (!motor.temSala && motor.sala.n) motor.sala.m[0].pct = pct > 0 ? pct : 0;
+  }
+  // The backend retains the previous playback error until a new source loads.
+  // Island updates run before app.c consumes abrirPedido: that error is not ours.
+  if (fase == JF_PREPARADO && !abrirPedido && player_tem_video() && video_falhou()) {
+    printf("[juntos] source: paused preparation failed\n");
+    juntosui_erro("rede");
+    zerar();
+    return;
+  }
   jsm_passo(&motor, agoraLocal());
   if (motor.sala.n > maxMembros) maxMembros = motor.sala.n;
   eventos();
@@ -634,6 +734,7 @@ void juntos_passo(Uint32 agora) {
 int juntos_pediu_abrir(char *imdb, size_t ni, int *t, int *e, char *titulo, size_t nt, char *poster, size_t np) {
   if (!abrirPedido) return 0;
   abrirPedido = 0;
+  printf("[juntos] source: open request handed to player\n");
   snprintf(imdb, ni, "%s", abrirImdb);
   *t = abrirT; *e = abrirE;
   snprintf(titulo, nt, "%s", abrirTitulo);
@@ -686,8 +787,9 @@ static void travado(void) {
 
 int juntos_ao_alternar(int tocandoAgora) {
   int r;
+  if (juntos_precarregando() && (!temMotor || !motor.temSala)) return 1;
   if (!temMotor || !motor.temSala) return 0;
-  if (motor.sala.rel.estado == JSE_LOBBY) r = jsm_cmd(&motor, "comecar", -1, NULL, agoraLocal());
+  if (motor.sala.rel.estado == JSE_LOBBY) { juntosui_sala_abriu(); return 1; }
   else r = jsm_cmd(&motor, tocandoAgora ? "pausa" : "play", -1, NULL, agoraLocal());
   if (r == 0) travado();
   return 1;
@@ -696,6 +798,7 @@ int juntos_ao_alternar(int tocandoAgora) {
 int juntos_ao_buscar(double seg) {
   int r;
   if (!temMotor || !motor.temSala) return 0;
+  if (juntos_precarregando()) return 1;
   r = jsm_cmd(&motor, "seek", seg, NULL, agoraLocal());
   if (r == 0) travado();
   return 1;
@@ -705,6 +808,18 @@ int juntos_ao_proximo(const char *alvo) {
   if (!temMotor || !motor.temSala) return 0;
   if (jsm_cmd(&motor, "proximo", -1, alvo, agoraLocal()) == 0) travado();
   return 1;   // Wait for the authoritative room update, including after send failure.
+}
+
+void juntos_escolher_titulo(const char *imdb, int t, int e, const char *titulo, const char *poster) {
+  char alvo[64], j[2048], tit[400], art[1100];
+  if (!temMotor || !motor.temSala || !jsm_pode_controlar(&motor) || !imdb ||
+      strncmp(imdb, "tt", 2) || strspn(imdb + 2, "0123456789") != strlen(imdb + 2)) return;
+  if (t > 0 && e > 0) snprintf(alvo, sizeof alvo, "%s:%d:%d", imdb, t, e);
+  else snprintf(alvo, sizeof alvo, "%s", imdb);
+  if (!strcmp(alvo, motor.sala.ep)) return;
+  snprintf(j, sizeof j, "{\"t\":\"cmd\",\"op\":\"proximo\",\"seqBase\":%d,\"ep\":\"%s\",\"titulo\":\"%s\",\"poster\":\"%s\"}",
+           motor.sala.seq, alvo, jsp_esc(tit, sizeof tit, titulo), jsp_esc(art, sizeof art, poster));
+  enviarWs(NULL, j);
 }
 
 int juntos_ao_voltar(void) {

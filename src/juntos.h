@@ -18,7 +18,7 @@
 
 typedef enum {
   JF_OCIOSO = 0,
-  JF_PREPARADO,     // anfitriao: a sala nasce quando a fonte estiver tocando
+  JF_PREPARADO,     // host: lobby visible while source prepares paused
   JF_CRIANDO,       // POST /v1/sala no ar
   JF_ENTRANDO,      // POST /v1/sala/entrar no ar
   JF_CONECTANDO,    // websocket abrindo
@@ -39,11 +39,11 @@ void juntos_perfil_trocado(void);
 
 // --- anfitriao ---------------------------------------------------------------------
 // "Abrir sala" na folha: guarda o pedido; a sala e criada assim que a fonte
-// escolhida estiver tocando (a impressao do release precisa da duracao).
+// escolhida estiver preparada e pausada (a impressao precisa da duracao).
 void juntos_preparar(const char *imdb, int temporada, int episodio, const char *titulo, const char *poster,
                      const char *const *convidados, int nConvidados, int soAnfitriao);
 // Convidar mais gente para a sala aberta (anfitriao).
-void juntos_convidar(const char *const *convidados, int n);
+int  juntos_convidar(const char *const *convidados, int n);   // 1 = sent or queued
 int  juntos_controle_anfitriao(int soAnfitriao);   // a trava "So eu controlo"
 const char *juntos_codigo(void);                   // "K7M2QX" da sala aberta ("" sem)
 
@@ -55,6 +55,7 @@ void juntos_silenciar(const char *de);     // "Nao receber convites de X" ("*" =
 
 // --- ambos --------------------------------------------------------------------------------
 void juntos_sair(void);
+int  juntos_precarregando(void); // paused preparation, including scheduled start
 int  juntos_comecar(void);       // "Comecar" no cartao da sala
 int  juntos_encerrar(void);      // anfitriao: "Encerrar sessao"
 void juntos_pedir_celular(void); // pede o codigo do QR; a URL sai em juntos_url_celular
@@ -81,6 +82,7 @@ int  juntos_ao_alternar(int tocandoAgora);
 int  juntos_ao_buscar(double seg);
 // O player pediu o proximo episodio. 1 = a sala cuidou (todos vao juntos).
 int  juntos_ao_proximo(const char *alvo);
+void juntos_escolher_titulo(const char *imdb, int t, int e, const char *titulo, const char *poster);
 // VOLTAR no player com a sala aberta: 1 = a pergunta "Sair da sessao?" foi
 // mostrada e o player nao deve fechar ainda.
 int  juntos_ao_voltar(void);

@@ -55,6 +55,7 @@ void plrui_cartao(GfxRect r, float raioPx, float a) {
 void plrui_linha_foco(GfxRect r, float raioPx, float a) {
   float raio = raioDe(r, raioPx);
   if (a <= 0.002f) return;
+  if (gfx_foco_placa(r, raio, 1.0f, a)) return;
   if (ajustes_vidro()) { gfx_cor(r, raio, 1, 1, 1, 0.12f * a); return; }
   gfx_rect((GfxRect){ r.x - 14.0f, r.y - 2.0f, r.w + 28.0f, r.h + 30.0f }, 0, GFX_SOMBRA,
            1.0f, 0, 0, 0.5f, 0, 0, 0, 0.40f * a);

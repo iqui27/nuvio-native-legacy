@@ -460,7 +460,9 @@ static void ajcCenaFocoAcento(int op) {
   for (i = 0; i < 3; i++) {
     float y = 92 + i * 62;
     if (i == 1) {
-      ajc_ret(136, y, 368, 50, 25, 1, 1, 1, 0.12f * (1 - k * v));
+      ajc_ret(136, y, 368, 50, 25, 1, 1, 1, 0.12f * (1 - k));
+      { float tint = ajustes_tinta_foco() == 18 ? .22f : .38f;
+        ajc_ret(136, y, 368, 50, 25, .055f + C.ar * tint, .055f + C.ag * tint, .055f + C.ab * tint, k * (1 - v)); }
       ajc_ret(136, y, 368, 50, 25, 1, 1, 1, 0.05f * k * v);
       ajc_ret(136, y, 368, 50, 25, C.ar, C.ag, C.ab, gfx_foco_placa_alfa(C.ar, C.ag, C.ab) * k * v);
       gfx_anel(ajc_r(136, y, 368, 50), 25.0f / 50.0f, ajc_px(1.5f), C.ar, C.ag, C.ab, 0.62f * k * v * C.a);

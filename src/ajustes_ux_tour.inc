@@ -35,8 +35,11 @@ static const TourCartao TOUR[] = {
 #define TOUR_Y0 230.0f
 
 static int uxAbrirEdicao;
-static int tourPend, tourFoco, tourBtn, tourTopo;
+static int tourFoco, tourBtn, tourTopo;
 static float tourRol, tourRolV, tourRolAlvo;
+// Springs: page visibility (enter and the retained exit over v4), each card's
+// focus and the focus sliding between the two pills of the focused card.
+static float tourVis, tourBtnA, tourFocoA[TOUR_N];
 static long tourInicio;
 
 int tourN(void) { return TOUR_N; }
@@ -104,10 +107,14 @@ static void tourAbrir(void) {
   tourPend = uxAbrirEdicao = 0;
   tourAberto = 1; tourFoco = 0; tourBtn = 0; tourTopo = 0;
   tourRol = tourRolV = tourRolAlvo = 0;
+  tourVis = tourBtnA = 0;
+  memset(tourFocoA, 0, sizeof tourFocoA);
 }
 static void tourSair(void) { tourAberto = 0; focoIndice = 1; aj4Linha = 7; aj4Topo = -1; }
 
 static void tourAtualizar(float dt) {
+  tourVis = anim_mola(tourVis, tourAberto ? 1.0f : 0.0f, dt, 14.0f);
+  if (!tourAberto && tourVis < 0.01f) tourVis = 0;
   if (tourPend && !tourAberto) {
     int op = uxAbrirOp == AJ_XTREAM_SERVIDOR ? AJ_IPTV_LISTA_XTREAM : uxAbrirOp, editar = uxAbrirEdicao;
     tourPend = uxAbrirEdicao = 0; uxAbrirOp = -1;
@@ -121,12 +128,19 @@ static void tourAtualizar(float dt) {
   }
   if (!tourAberto) return;
   tourRol = ajustes_animacoes_reduzidas() ? tourRolAlvo : anim_mola2(&tourRolV, tourRol, tourRolAlvo, dt, 14.0f);
+  tourBtnA = anim_mola(tourBtnA, (float)tourBtn, dt, 18.0f);
+  for (int i = 0; i < TOUR_N; i++) tourFocoA[i] = anim_mola(tourFocoA[i], i == tourFoco, dt, 18.0f);
 }
 static void tourMirar(void) {
   int r = tourFoco / TOUR_COLS;
   if (r < tourTopo) tourTopo = r;
   else if (r > tourTopo + 1) tourTopo = r - 1;
   tourRolAlvo = tourTopo * (TOUR_CH + TOUR_GAP);
+}
+static int tourSeta(SDL_Keycode k) {
+  return k==SDLK_LEFT || k==SDLK_RIGHT ||
+    (k==SDLK_DOWN && tourFoco+TOUR_COLS<TOUR_N) ||
+    (k==SDLK_UP && tourFoco>=TOUR_COLS);
 }
 static void tourEvento(const SDL_Event *e) {
   SDL_Keycode k;
@@ -154,14 +168,14 @@ static void tourLegenda(const char *s, float y, int secundaria) {
   float w = fminf(ajcLargura(s, px, 1), 580);
   if (!secundaria) ajc_ret(320 - w * .5f - 24, y - 8, w + 48, 54, 10, 0, 0, 0, .85f);
   ajTextoMini(s, ajc_px(px), 1, ajc_x(320 - w * .5f), ajc_y(y),
-              243, secundaria ? 216 : 242, secundaria ? 121 : 239, 1);
+              243, secundaria ? 216 : 242, secundaria ? 121 : 239, C.a);
 }
 
 // The same generated-scene kit, without switches or simulated setting controls.
 // Only the focused illustration moves; the other seven remain still.
-static void tourPrevia(int op, GfxRect r, int foco) {
+static void tourPrevia(int op, GfxRect r, int foco, float a) {
   gfx_recorte(r.x, r.y, r.w, r.h);
-  ajc_comecar(r.x, r.y, r.w, 1);
+  ajc_comecar(r.x, r.y, r.w, a);
   gfx_recorte(r.x, r.y, r.w, r.h);
   if (!foco) { C.red = 1; C.t = 0; }
   switch (op) {
@@ -244,65 +258,69 @@ static void tourPrevia(int op, GfxRect r, int foco) {
   }
   ajc_fim();
 }
-static void tourBotao(const char *rot, GfxRect r, int foco, int cartaoFoco, int primario, int ativo) {
-  int tinta = cartaoFoco ? (foco ? 243 : 22) : (foco || primario ? 22 : 243);
-  float bg = cartaoFoco ? (foco ? .08f : .86f) : (foco || primario ? .95f : .16f);
-  TxtLinha t = txt_linha_corta(TXT_G20M, i18n(rot), tinta, tinta, tinta, 255, r.w - 20);
-  gfx_cor(r, .5f, bg, bg, bg, ativo ? 1 : .4f);
-  txt_desenhar_alpha(t, r.x + (r.w - t.w) * .5f, r.y + (r.h - t.h) * .5f, ativo ? 1 : .4f);
-}
-static void tourCartao(int i, float x, float y, int foco) {
+// Shared Detail card material with the shared row focus surface on top (the
+// spring fades it in); the preview scene covers the top, text stays light.
+static void tourCartao(int i, float x, float y, float clipY, float a) {
   GfxRect c = { x, y, TOUR_CW, TOUR_CH }, pl = { x, y, TOUR_CW, 176 };
-  int ativo = tourDisponivel(i), tinta = foco ? 22 : 243;
-  gfx_recorte(0, TOUR_Y0, NV_VTELA_W, 2 * TOUR_CH + TOUR_GAP);
-  gfx_cor(c, 16 / c.h, foco ? .95f : .12f, foco ? .95f : .12f, foco ? .93f : .13f, 1);
-  tourPrevia(TOUR[i].op, pl, foco);
-  gfx_recorte(0, TOUR_Y0, NV_VTELA_W, 2 * TOUR_CH + TOUR_GAP);
+  int ativo = tourDisponivel(i);
+  float f = tourFocoA[i], al = ativo ? a : .4f * a;
+  gfx_recorte(0, clipY, NV_VTELA_W, 2 * TOUR_CH + TOUR_GAP);
+  plrui_cartao(c, 16, a);
+  plrui_linha_foco(c, 16, f * a);
+  tourPrevia(TOUR[i].op, pl, i == tourFoco, a);
+  gfx_recorte(0, clipY, NV_VTELA_W, 2 * TOUR_CH + TOUR_GAP);
   if (tourNovo(i)) {
-    TxtLinha n = ajTxt(TXT_G16B, "NOVO");
-    gfx_cor((GfxRect){ x + 14, y + 14, n.w + 18, 26 }, 7.0f / 26, 213 / 255.0f, 59 / 255.0f, 69 / 255.0f, 1);
-    txt_desenhar(n, x + 23, y + 14 + (26 - n.h) * .5f);
+    float ar, ag, ab;
+    ajustes_acento(&ar, &ag, &ab);
+    char up[32]; idioma_maiusc(up, sizeof up, i18n("NOVO"));
+    TxtLinha n = txt_linha_corta(TXT_ILHA_HORA, up, (int)(ar * 255), (int)(ag * 255), (int)(ab * 255), 255, 200);
+    GfxRect nr = { x + 14, y + 14, n.w + 24, 28 };
+    plrui_botao_repouso(nr, a);
+    txt_desenhar_alpha(n, nr.x + 12, nr.y + (nr.h - n.h) * .5f, a);
   }
-  txt_bloco_corta(TXT_W20_24B, tourTitulo(i), tinta, tinta, tinta, x + 22, y + 190, TOUR_CW - 44, 28, 1, 2);
-  txt_bloco_corta(TXT_SINOPSE_20, tourFrase(i), tinta, tinta, tinta, x + 22, y + 248, TOUR_CW - 44, 22, foco ? .75f : .65f, 3);
+  txt_bloco_corta(TXT_ILHA_NOME, tourTitulo(i), 243, 242, 239, x + 22, y + 190, TOUR_CW - 44, 28, a, 2);
+  txt_bloco_corta(TXT_ILHA_TEXTO, tourFrase(i), 243, 242, 239, x + 22, y + 248, TOUR_CW - 44, 22, (.62f + .13f * f) * a, 3);
   { const char *rot = TOUR[i].op < 0 ? "Escolher" : TOUR[i].op == AJ_PERFIL_ATIVO ? "Criar perfil" :
       TOUR[i].op == AJ_XTREAM_SERVIDOR ? "Conectar" : TOUR[i].op == AJ_FONTE_PRIORIDADE ? "Configurar" :
       TOUR[i].op == AJ_RELOGIO ? "Ver como" : "Ligar agora";
-    float bw = fminf(txt_largura(TXT_G20M, i18n(rot)) + 36, (TOUR_CW - 56) * .5f);
-    float bw1 = fminf(txt_largura(TXT_G20M, i18n("Onde fica")) + 36, TOUR_CW - 56 - bw);
+    float bw = fminf(botao_largura(rot, NULL, 1), (TOUR_CW - 56) * .5f);
+    float bw1 = fminf(botao_largura("Onde fica", NULL, 0), TOUR_CW - 56 - bw);
     GfxRect b0 = { x + 22, y + 320, bw, 44 }, b1 = { x + 34 + bw, y + 320, bw1, 44 };
-    tourBotao(rot, b0, foco && tourBtn == 0, foco, 1, ativo);
-    tourBotao("Onde fica", b1, foco && tourBtn == 1, foco, 0, ativo);
-    if (ativo) {
+    botao_pilula(b0, rot, NULL, f * (1 - tourBtnA), 1, 0, al);
+    botao_pilula(b1, "Onde fica", NULL, f * tourBtnA, 0, 0, al);
+    if (ativo && tourAberto) {
       ponteiro_alvo(b0.x, b0.y, b0.w, b0.h, tourPontFoco, tourPontAcao, i, 0);
       ponteiro_alvo(b1.x, b1.y, b1.w, b1.h, tourPontFoco, tourPontAcao, i, 1);
     }
   }
 }
+// tourVis < 1: entering or the retained exit, drawn over the v4 page.
 static void tourDesenhar(void) {
-  GfxRect h = { 48, 112, 1824, 92 };
+  float a = tourVis, dy = (1 - a) * 28;
+  GfxRect h = { 48, 112 + dy, 1824, 92 };
   TxtLinha t = ajTxt(TXT_ILHA_TITULO, "O que o Nuvio faz?");
   char q[96], mais[96];
   snprintf(mais, sizeof mais, i18n("Mais %d funções"), TOUR_N > 2 * TOUR_COLS ? TOUR_N - 2 * TOUR_COLS : 0);
   AjDica d[3] = { { "OK", "Ligar agora" }, { "→", mais }, { "Voltar", "Ajustes" } };
   int novos = 0;
-  ajFundo();
-  ajIlha(h, 26, 1, 0);
-  gfx_cor((GfxRect){ h.x + 22, h.y + 16, 60, 60 }, .23f, .95f, .95f, .93f, 1);
-  gfx_icone((GfxRect){ h.x + 36, h.y + 30, 32, 32 }, "aj_sparkles", .08f, .08f, .09f, 1);
-  txt_desenhar_alpha(ajTxt(TXT_V2_24, "AJUSTES"), h.x + 106, h.y + 10, .55f);
-  txt_desenhar(t, h.x + 106, h.y + 32);
+  // The page's own backdrop dissolves in with it, so v4 text never shows through the cards.
+  fundo_desenhar_modo(FUNDO_FROST, (GfxRect){ 0, 0, NV_VTELA_W, NV_VTELA_H }, 0.0f, ajFundoArte(), a);
+  ajIlha(h, 26, a, 0);
+  plrui_material_plano((GfxRect){ h.x + 22, h.y + 16, 60, 60 }, 14, a);
+  gfx_icone((GfxRect){ h.x + 36, h.y + 30, 32, 32 }, "aj_sparkles", .95f, .95f, .93f, a);
+  plrui_kicker("Ajustes", h.x + 106, h.y + 14, 158, 158, 158, a);
+  txt_desenhar_alpha(t, h.x + 106, h.y + 32, a);
   for (int i = 0; i < TOUR_N; i++) novos += tourNovo(i);
   snprintf(q, sizeof q, i18n("%d de %d funções ligadas"), tourLigadas(), TOUR_N);
-  { TxtLinha c = ajTxt(TXT_V2_24, q); txt_desenhar_alpha(c, h.x + h.w - 30 - c.w, h.y + 22, .9f); }
+  { TxtLinha c = ajTxt(TXT_ILHA_CORPO, q); txt_desenhar_alpha(c, h.x + h.w - 30 - c.w, h.y + 22, .9f * a); }
   snprintf(q, sizeof q, i18n("%d novas na 2.0.2"), novos);
-  { TxtLinha c = ajTxt(TXT_V2_24, q); txt_desenhar_alpha(c, h.x + h.w - 30 - c.w, h.y + 56, .55f); }
-  gfx_recorte(0, TOUR_Y0 - 2, NV_VTELA_W, 2 * TOUR_CH + TOUR_GAP + 4);
+  { TxtLinha c = ajTxt(TXT_ILHA_TEXTO, q); txt_desenhar_alpha(c, h.x + h.w - 30 - c.w, h.y + 56, .55f * a); }
+  gfx_recorte(0, TOUR_Y0 + dy - 2, NV_VTELA_W, 2 * TOUR_CH + TOUR_GAP + 4);
   for (int i = 0; i < TOUR_N; i++) {
-    float y = TOUR_Y0 + (i / TOUR_COLS) * (TOUR_CH + TOUR_GAP) - tourRol;
-    if (y + TOUR_CH < TOUR_Y0 || y > TOUR_Y0 + 2 * TOUR_CH + TOUR_GAP) continue;
-    tourCartao(i, TOUR_X0 + (i % TOUR_COLS) * (TOUR_CW + TOUR_GAP), y, i == tourFoco);
+    float y = TOUR_Y0 + dy + (i / TOUR_COLS) * (TOUR_CH + TOUR_GAP) - tourRol;
+    if (y + TOUR_CH < TOUR_Y0 + dy || y > TOUR_Y0 + dy + 2 * TOUR_CH + TOUR_GAP) continue;
+    tourCartao(i, TOUR_X0 + (i % TOUR_COLS) * (TOUR_CW + TOUR_GAP), y, TOUR_Y0 + dy, a);
   }
   gfx_sem_recorte();
-  ajDicasLinha(d, 3, NV_VTELA_W - 48 - ajDicasLargura(d, 3), 1030, 1);
+  ajDicasLinha(d, 3, NV_VTELA_W - 48 - ajDicasLargura(d, 3), 1030, a);
 }

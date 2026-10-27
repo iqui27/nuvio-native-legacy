@@ -1982,7 +1982,8 @@ static void desenhaLinha(int i, float x, float y, float a) {
   // inverte: o nome vai de 88 % a cheio.
   if (f > 0.01f) {
     float rr = 22.0f / r.h;
-    if (vidro) { if (!gfx_foco_placa(r, rr, f, a)) gfx_cor(r, rr, 1, 1, 1, .12f * f * a); }
+    if (gfx_foco_placa(r, rr, f, a)) { /* Shared accent plate. */ }
+    else if (vidro) gfx_cor(r, rr, 1, 1, 1, .12f * f * a);
     else gfx_cor(r, rr, .17f, .176f, .204f, f * a);
   }
   a1 = anim_mistura(.88f, 1.0f, f);

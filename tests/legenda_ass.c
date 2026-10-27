@@ -162,6 +162,53 @@ int main(void) {
     u = legenda_utf8(c1251, (long)strlen(c1251), &cs);
     OK(u && !strcmp(cs, "windows-1251") && !strcmp(u, "Привет, как дела"), "cp1251 cirilico (%s: %s)", cs, u ? u : "-");
     free(u);
+    // Declared language resolves bytes that the legacy detector cannot distinguish.
+    static const struct { const char *bytes, *text, *charset, *language, *filename; } extra[] = {
+      { "\xC3\xE5\xE9\xE1 \xF3\xEF\xF5 \xEA\xFC\xF3\xEC\xE5", "Γεια σου κόσμε", "windows-1253", "el" },
+      { "\xAB\xCA\xE1\xEB\xE7\xEC\xDD\xF1\xE1\xBB, \xE5\xDF\xF0\xE5 \x97 10\x80.", "«КблзмЭсб», еЯре — 10Ђ.", "windows-1251" },
+      { "\xC1\xD5\xD4\xCF \xC5\xC9\xCD\xC1\xC9 \xC5\xCB\xCB\xC7\xCD\xC9\xCA\xCF", "БХФП ЕЙНБЙ ЕЛЛЗНЙКП", "windows-1251" },
+      { "\xBA\xF3\xF9\xF2 \xBC\xEC\xF9\xF2 \xCA\xE1\xEB\xE7\xEC\xDD\xF1\xE1 \xEA\xFC\xF3\xEC\xE5", "Ίσως Όμως Καλημέρα κόσμε", "windows-1253", "gre" },
+      { "\xDDstanbul'da \xFE\xF6yle g\xFCzel", "Ýstanbul'da þöyle güzel", "windows-1252" },
+      { "\xDDstanbul", "Ýstanbul", "windows-1252" },
+      { "\xDDstanbul, \xFD\xFE\xFD\xF0\xFD g\xF6rd\xFCm. \xD0\xF0 \xDD\xFD \xDE\xFE.", "İstanbul, ışığı gördüm. Ğğ İı Şş.", "windows-1254", "tur" },
+      { "\xCF\xF0\xE8\xE2\xE5\xF2, \xEC\xE8\xF0 \x97 \xF1\xF3\xE1\xF2\xE8\xF2\xF0\xFB", "Привет, мир — субтитры", "windows-1251" },
+      { "\xD1\xE5\xE3\xEE\xE4\xED\xFF \xF5\xEE\xF0\xEE\xF8\xE8\xE9 \xE4\xE5\xED\xFC. \xDF \xEB\xFE\xE1\xEB\xFE \xF2\xE5\xE1\xFF!", "Сегодня хороший день. Я люблю тебя!", "windows-1251" },
+      { "\xC9T\xC9 \xC0 PARIS \x97 No\xEBl", "ÉTÉ À PARIS — Noël", "windows-1252" },
+      { "\xDEingvellir \xF0 og \xFE", "Þingvellir ð og þ", "windows-1252" },
+      { "\xDE" "a\xF0 er \xFE" "etta.", "Það er þetta.", "windows-1252" },
+      { "\xDE" "a\xF0 er n\xFDtt.", "Það er nýtt.", "windows-1252" },
+      { "N\xFDtt, n\xFDtt, n\xFDtt!", "Nýtt, nýtt, nýtt!", "windows-1252" },
+      { "\xDDmislegt er n\xFDtt.", "Ýmislegt er nýtt.", "windows-1252" },
+      { "\xDDttu \xE1 takkann.", "Ýttu á takkann.", "windows-1252" },
+      { "\xD3\xEC\xE5\xE9, \xF3\xEC\xE5\xE9, \xF3\xEC\xE5\xE9!", "Умей, умей, умей!", "windows-1251" },
+      // Ukrainian є/ї share bytes with accented Greek capitals.
+      { "\xD6\xE5 \xBF\xBF \xF3\xEA\xF0\xE0\xBF\xED\xF1\xFC\xEA\xE0 \xEC\xEE\xE2\xE0. \xC2\xEE\xED\xE0 \xF7\xE8\xF2\xE0\xBA \xEA\xED\xE8\xE6\xEA\xE8.", "Це її українська мова. Вона читає книжки.", "windows-1251" },
+      // A lone Turkish ş shares its byte with Icelandic þ: preserve the fallback.
+      { "Her \xFE" "ey \xE7ok g\xFCzel.", "Her þey çok güzel.", "windows-1252" },
+      { "Γεια σου κόσμε — İstanbul", "Γεια σου κόσμε — İstanbul", "utf-8", "el" },
+      { "\xDE" "a\xF0 er n\xFDtt.", "Það er nýtt.", "windows-1252", NULL, "film.release.srt" },
+      { "\xDF\xED\xE0 \xA2 \xF8\xEA\xEE\xEB\xE5. \xA8\xED \xEF\xF0\xE0\xF6\xF3\xE5 \xA2 \xF8\xEA\xEE\xEB\xE5.", "Яна ў школе. Ён працуе ў школе.", "windows-1251" },
+      { "Her \xFE" "ey \xE7ok g\xFCzel.", "Her şey çok güzel.", "windows-1254", "tr" },
+      { "\xC3\xE5\xE9\xE1 \xF3\xEF\xF5 \xEA\xFC\xF3\xEC\xE5", "Γεια σου κόσμε", "windows-1253", NULL, "film.ell.srt" },
+      { "\xDDttu \xE1 takkann.", "Ýttu á takkann.", "windows-1252", "isl", "film.tr.srt" }
+    };
+    for (size_t k = 0; k < sizeof extra / sizeof extra[0]; k++) {
+      char raw[512];
+      snprintf(raw, sizeof raw, "1\n00:00:01,000 --> 00:00:02,000\n%s\n\n", extra[k].bytes);
+      u = legenda_utf8_idioma(raw, (long)strlen(raw), extra[k].language, extra[k].filename, &cs);
+      n = u ? legenda_extrair(u, &v) : 0;
+      OK(u && !strcmp(cs, extra[k].charset) && n == 1 && !strcmp(v[0].texto, extra[k].text),
+         "charset %zu: %s (%s)", k, extra[k].text, cs);
+      if (n) free(v);
+      free(u);
+    }
+    static const struct { const char *file, *lang; } tags[] = {
+      { "film.el.srt", "el" }, { "film.gre.srt", "el" }, { "film.ELL.srt", "el" },
+      { "film.tr.srt", "tr" }, { "film.tur.srt", "tr" },
+      { "https://host.tr/film.srt?name=.el.", "" }, { "film.greekish.srt", "" }
+    };
+    for (size_t k = 0; k < sizeof tags / sizeof tags[0]; k++)
+      OK(!strcmp(legenda_idioma(NULL, tags[k].file), tags[k].lang), "filename tag %zu", k);
     // Arabe em Windows-1256 (#247, #261)
     static const char c1256[] = "\xE3\xD1\xCD\xC8\xC7\xA1" " \xDF\xED\xDD" " \xCD\xC7\xE1\xDF" " \xC7\xE1\xED\xE6\xE3\xBF" " \xC3\xE4\xC7" " \xC8\xCE\xED\xD1" " \xD4\xDF\xD1\xC7" " \xE1\xDF";
     u = legenda_utf8(c1256, (long)strlen(c1256), &cs);

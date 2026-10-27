@@ -28,7 +28,9 @@
 #ifdef NV_ANDROID
 #include "marco.h"
 #include "streams.h"
+#include "juntos.h"
 #include "video.h"
+#include "mediaurl.h"
 #include "ajustes.h"
 #include "xtream.h"
 #include "capmkv.h"
@@ -61,7 +63,7 @@ static jmethodID mAbrirPosicao, mJanelaPronta, mLimitedConnections;
 // 2.0.3 (opcional): abrirRetomada(url, cab, inicioMs, fracao, geracao). So o
 // percentual conhecido (retomada da conta, sem registro local): o Kotlin
 // aplica fracao/10000 da duracao do CONTAINER antes do primeiro quadro.
-static jmethodID mAbrirRetomada;
+static jmethodID mAbrirRetomada, mAbrirPausada;
 static jmethodID mPreparar, mPrepararProximo, mPrepararEstado, mCancelarPreparo, mAbrirPreparada;
 static jmethodID mPararMantendoPreparo;
 static unsigned preparoAdotar;
@@ -120,6 +122,8 @@ static int resolverMetodos(JNIEnv *env) {
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mCancelarPreparo = NULL; }
   mAbrirPreparada = (*env)->GetStaticMethodID(env, gCls, "abrirPreparada", "(Ljava/lang/String;Ljava/lang/String;IIIILjava/lang/String;)V");
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mAbrirPreparada = NULL; }
+  mAbrirPausada = (*env)->GetStaticMethodID(env, gCls, "abrirPausada", "(Ljava/lang/String;Ljava/lang/String;IIIILjava/lang/String;)V");
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mAbrirPausada = NULL; }
   mPararMantendoPreparo = (*env)->GetStaticMethodID(env, gCls, "pararMantendoPreparo", "(I)V");
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mPararMantendoPreparo = NULL; }
   return mAbrir && mParar && mPausar && mBuscar && mVolume && mJanela && mEscolher;
@@ -199,10 +203,10 @@ static int garantirPonte(JNIEnv *env) {
 // em tudo fora do BMP; cabecalhos e URLs raramente passam disso, mas o custo e
 // pequeno.
 static jstring paraJString(JNIEnv *env, const char *s) {
-  jchar buf[4096];
+  jchar buf[NV_MEDIA_URL_MAX];
   int n = 0;
   const unsigned char *p = (const unsigned char *)(s ? s : "");
-  while (*p && n < 4094) {
+  while (*p && n < NV_MEDIA_URL_MAX - 2) {
     unsigned c = *p++, extra = 0;
     if (c >= 0xF0) { c &= 0x07; extra = 3; }
     else if (c >= 0xE0) { c &= 0x0F; extra = 2; }
@@ -279,7 +283,7 @@ static int precarregarVideo(const char *url, const char *cab, double segundos,
                ? (int)(segundos * 1000.0) : 0;
   fracao = !inicioMs && isfinite(pct) && pct > 0.0 && pct < 100.0
                ? (int)(pct * 100.0 + 0.5) : 0;
-  u = paraJString(env, url);
+  u = paraJString(env, nv_media_url(url));
   c = u && !(*env)->ExceptionCheck(env) ? paraJString(env, cab ? cab : "") : NULL;
   a = c && !(*env)->ExceptionCheck(env) ? paraJString(env, idiomaAudio ? idiomaAudio : "") : NULL;
   if (!u || !c || !a) {
@@ -338,7 +342,7 @@ static SDL_mutex *travaLeg;
 static char legTexto[1024];
 static Uint32 legAte;
 
-static char urlAtual[4096];
+static char urlAtual[NV_MEDIA_URL_MAX];
 static char cabecalhos[2048];
 // ULTIMA JANELA ENTREGUE ao Kotlin (dedupe de reenvio; ver janelaSeMudou, la
 // embaixo, onde a regra vive junto das funcoes que enviam).
@@ -557,7 +561,7 @@ static RedeFit redeFit;
 static int statsValido, redeMinMs = -1, redeMaxMs = -1, redeMaxMb = -1;
 static double redeMbps = -1;
 JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeStats(JNIEnv *env, jclass cls,
-    jlong bytes, jint bufferMs, jint alvoMs, jint conexoes, jint primeiroByteMs,
+    jlong bytes, jint bufferMs, jint alvoMs, jint conexoes, jint poolConexoes, jint primeiroByteMs,
     jlong perdidos, jlong quadros, jstring host, jint minMs, jint alvoMb, jint carregando) {
   char h[96];
   double mbps = -1;
@@ -574,6 +578,7 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeStats(JNIEnv
   statsAndroid.bufferSeg = bufferMs >= 0 ? bufferMs / 1000.0 : -1.0;
   statsAndroid.bufferAlvoSeg = alvoMs > 0 ? alvoMs / 1000.0 : 0.0;
   statsAndroid.conexoes = conexoes;
+  statsAndroid.poolConexoes = poolConexoes;
   statsAndroid.primeiroByteMs = primeiroByteMs;
   statsAndroid.quadrosPerdidos = perdidos;
   statsAndroid.quadros = quadros;
@@ -809,7 +814,8 @@ static int abrirSessao(int inicioMs, int fracao) {
   posAmostraMs = 0; posAmostraEm = SDL_GetTicks64();
   pthread_mutex_unlock(&travaAmostra);
   tocandoDesde = 0; semDecoderAudio = 0; erroTxt[0] = 0; reconErroVideo = 0;
-  pausaPedida = pausaVista = 0;
+  pausaVista = 0;
+  pausaPedida = juntos_precarregando();
   hdrAtual = "none"; dvAtual = atmosAtual = 0;
   pthread_mutex_lock(&travaStats); statsValido = 0;
   redeMbps = -1; redeMinMs = redeMaxMs = redeMaxMb = -1;
@@ -851,7 +857,7 @@ static int abrirSessao(int inicioMs, int fracao) {
     }
   }
   {
-    jstring u = paraJString(env, urlAtual);
+    jstring u = paraJString(env, nv_media_url(urlAtual));
     jstring c = u && !(*env)->ExceptionCheck(env) ? paraJString(env, cabecalhos) : NULL;
     if (!u || !c) {
       if (u) (*env)->DeleteLocalRef(env, u);
@@ -863,7 +869,21 @@ static int abrirSessao(int inicioMs, int fracao) {
     // abrirPosicao also when starting at 0: it is how the Kotlin side learns
     // this session's generation (StreamFit passive telemetry). At 0 the
     // resume state stays -1, exactly as the plain abrir path left it.
-    if (preparado && mAbrirPreparada) {
+    // New shells receive initial pause atomically with the URL. Older shells
+    // retain the existing queued pause fallback from player.c.
+    if (pausaPedida && mAbrirPausada) {
+      jstring a = paraJString(env, ling_audio());
+      if (!a) {
+        (*env)->DeleteLocalRef(env, u); (*env)->DeleteLocalRef(env, c);
+        fimChamada(env);
+        if (preparado) video_precarregar_cancelar(preparado);
+        falhou = 1; return 0;
+      }
+      if (inicioMs > 0 || fracao > 0) estadoRetomada(0);
+      (*env)->CallStaticVoidMethod(env, gCls, mAbrirPausada, u, c,
+          (jint)inicioMs, (jint)fracao, (jint)geracao, (jint)preparado, a);
+      (*env)->DeleteLocalRef(env, a);
+    } else if (preparado && mAbrirPreparada) {
       jstring a = paraJString(env, ling_audio());
       if (!a) {
         (*env)->DeleteLocalRef(env, u); (*env)->DeleteLocalRef(env, c);

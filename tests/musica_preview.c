@@ -4,9 +4,19 @@
 #include "../src/musicaui.c"
 static int retained, mainOpen, active, trailer, blocked, starts, stops, vol=100;
 static int failed, ended, ready, startOk=1;
+static int refreshes, sameUrl, apiFails;
+char *rede_baixar(const char *url, int timeout) {
+ assert(!strcmp(url,"https://api.deezer.com/album/42") && timeout==10);
+ refreshes++;
+ if(apiFails) return NULL;
+ char json[300];
+ snprintf(json,sizeof json,"{\"tracks\":{\"data\":[{\"title\":\"Track\",\"preview\":\"https://cdnt-preview.dzcdn.net/fresh.mp3?hdnea=exp=4102444800~hmac=%d\"}]}}",sameUrl ? 1 : refreshes);
+ return strdup(json);
+}
 static double seconds;
 static Uint32 tick=100;
 Uint32 SDL_GetTicks(void){return tick;}
+void SDL_Delay(Uint32 ms){struct timespec t={0,ms*1000000L};nanosleep(&t,NULL);}
 int player_aberto(void){return mainOpen;}
 int player_retido(void){return retained;}
 int player_mini_ativo(void){return 0;}
@@ -17,7 +27,7 @@ void trailer_bloquear_musica(int sim){blocked=sim;}
 int video_ativo(void){return active;}
 void video_parar(void){active=0;stops++;}
 void video_volume(int v){vol=v;}
-void video_definir_cabecalhos(const char *s){assert(!s[0]);}
+void video_definir_cabecalhos(const char *s){assert(!s[0] || (strstr(s,"User-Agent: Mozilla/5.0") && strstr(s,"Referer: https://www.deezer.com/")));}
 void video_definir_mp4(int v){assert(v==1);}
 void video_definir_modo_live(int v){assert(v==2);}
 int video_tocar(const char *s){assert(!strncmp(s,"https://",8));starts++;active=startOk;return startOk;}
@@ -55,5 +65,31 @@ int main(void){
  musicaui_abrir(&a,"tt1","Film",2008,0);ui.foco=1;key(SDLK_RETURN);musicaui_atualizar(++tick);
  musicaui_abrir(&a,"tt2","Other",2009,0);assert(!active&&!ui.p.ativa);
  key(SDLK_DOWN);for(int i=0;i<7;i++)key(SDLK_DOWN);assert(pagina()==1);
- puts("music preview ownership: ok");return 0;
+ musicaui_fechar();
+ strcpy(a.deezer,"https://www.deezer.com/album/42");
+ strcpy(a.faixa[0].titulo,"Track");
+ strcpy(a.faixa[0].previa,"https://cdnt-preview.dzcdn.net/dead.mp3?hdnea=exp=1");
+ a.n=1; musicaui_abrir(&a,"tt1","Film",2008,0);
+ key(SDLK_RETURN);
+ for(int i=0;i<1000&&!active;i++){ musicaui_atualizar(++tick); SDL_Delay(1); }
+ assert(active && refreshes==1 && strstr(ui.a.faixa[0].previa,"/fresh.mp3"));
+ failed=1; musicaui_atualizar(++tick); failed=0;
+ for(int i=0;i<1000&&!active;i++){ musicaui_atualizar(++tick); SDL_Delay(1); }
+ assert(active && refreshes==2);
+ failed=1; musicaui_atualizar(++tick);
+ assert(!active&&!ui.p.ativa&&ui.indisponivel[0]&&refreshes==2);
+ musicaui_fechar(); failed=0; refreshes=0; sameUrl=1;
+ musicaui_abrir(&a,"tt1","Film",2008,0);key(SDLK_RETURN);
+ for(int i=0;i<1000&&!active;i++){ musicaui_atualizar(++tick); SDL_Delay(1); }
+ assert(active&&refreshes==1);
+ failed=1;musicaui_atualizar(++tick);failed=0;
+ for(int i=0;i<1000&&ui.p.ativa;i++){ musicaui_atualizar(++tick); SDL_Delay(1); }
+ assert(!active&&!ui.p.ativa&&ui.indisponivel[0]&&refreshes==2);
+ musicaui_fechar();apiFails=1;
+ musicaui_abrir(&a,"tt1","Film",2008,0);key(SDLK_RETURN);
+ int before=starts;
+ for(int i=0;i<1000&&ui.p.ativa;i++){ musicaui_atualizar(++tick); SDL_Delay(1); }
+ assert(starts==before&&!ui.p.ativa&&ui.indisponivel[0]);
+ musicaui_fechar();
+ puts("music preview ownership and Deezer refresh: ok");return 0;
 }

@@ -53,6 +53,7 @@
 #include "tex_cache.h"
 #include "badges.h"
 #include "anim.h"
+#include "movimento.h"
 #include "layout.h"
 #include "sessao.h"
 #include "contalib.h"
@@ -76,7 +77,17 @@
 #include "registro.h"
 #include "seguro.h"
 #include "botoes.h"
+#include "plrui.h"
 #include "ponteiro.h"
+#include "focus.h"
+#include "teclavoltar.h"
+static void navigationTarget(float,float,float,float,PonteiroFn,PonteiroFn,int,int);
+static int navigationMove(SDL_Keycode);
+static void navigationLayer(void);
+static void navigationRange(float,float,float,float,float,float,PonteiroFn,PonteiroFn,int,int);
+#define ponteiro_camada navigationLayer
+#define ponteiro_alvo_faixa navigationRange
+#define ponteiro_alvo navigationTarget
 #include "addonsui.h"
 #include "pluginsui.h"
 #include <math.h>
@@ -680,7 +691,7 @@ typedef enum {
   AJ_FONTE_GRUPO, AJ_FONTE_GRUPO_SESSOES,
   AJ_LINK_REUSAR, AJ_LINK_PRAZO,
   AJ_DET_ESPACO,       // title page row spacing (detail.h): 0 Compacto, 1 Normal (default), 2 Confortavel; local, append-only
-  AJ_FOCO_ACENTO,      // focus plate in the accent colour instead of gray (glass only); default off; local, append-only
+  AJ_FOCO_ACENTO,      // focus plate in the accent colour instead of gray; default off; local, append-only
   AJ_NT_ORDEM,         // local rating-source reorder sheet; append-only
   AJ_ARTE_TOM,         // Device-local, append-only: 0 Vivid (unchanged), 1 Light.
   AJ_PALCO_FUNDO,      // Device-local, append-only: PALCO_* (ajustes.h).
@@ -2690,9 +2701,10 @@ static void guiaDesenhar(void);
 static void guiaAtualizar(float dt);
 static int guiaAberto;
 // O tour "O que o Nuvio faz?" (ajustes_ux_tour.inc), tambem por cima das ilhas.
-static int tourAberto;
+static int tourAberto, tourPend;
 static void tourAbrir(void);
 static void tourEvento(const SDL_Event *e);
+static int tourSeta(SDL_Keycode k);
 static void tourDesenhar(void);
 static void tourAtualizar(float dt);
 static int apoioAberto;   // painel com os QRs de "Apoiar o projeto" (ajustes_ux_apoio.inc)
@@ -2802,6 +2814,8 @@ static float ajToqueRegistrar(int id, GfxRect r, float *offset, float maximo, fl
   return *offset;
 }
 #endif
+static float screenReveal, screenRoute=-1;
+static int navigationBackFocus;
 static float paginaA = 1.0f;   // entrada da pagina da categoria (0..1)
 static int sair = 0;
 static int pediuRelogio;
@@ -3114,7 +3128,7 @@ int ajustes_vidro_contorno(void) {
 }
 int ajustes_addons_do_principal(void) { return lig(AJ_ADDONS_PRINCIPAL); }
 #endif
-int ajustes_foco_acento(void) { return lig(AJ_FOCO_ACENTO) && ajustes_vidro(); }
+int ajustes_foco_acento(void) { return lig(AJ_FOCO_ACENTO); }
 float ajustes_vidro_opacidade(void) {
   static const float F[] = { 0.60f, 0.70f, 0.78f, 0.86f, 0.92f };
   int v = valor[AJ_VIDRO_OPAC];
@@ -6191,7 +6205,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_NT_ORDEM:       /* the web has no title rating line */
     case AJ_NT_EP:          /* nor episode cards with rating sources */
     case AJ_ARTE_TOM:       /* Art tone belongs to this device. */
-    case AJ_FOCO_ACENTO:    /* look of this screen (depends on the local glass) */
+    case AJ_FOCO_ACENTO:    /* local appearance */
     case AJ_LAYOUT_AJUSTES: /* #339: o arranjo dos Ajustes e desta TV */
     case AJ_INTERFACE_MODO: /* TV/Mobile follows this device, never the account */
     case AJ_MENU_TOPO:      /* #461: o web nao tem; por perfil (perfilLocal) */
@@ -6942,7 +6956,7 @@ int ajustes_iniciar(void) {
 #endif
   ppReconciliar();
   pfEntrada();
-  ajMovReiniciar();
+  ajMovReiniciar();screenReveal=0;screenRoute=-1;navigationBackFocus=0;
   faRetornarFolha = 0; faAddonEditar[0] = 0; ajFalhaEspelhar(); ajLegendaEspelhar(); ajIptvEspelhar();
   uxVeioBusca = uxAbrirOp >= 0;
   montarTela();
@@ -7022,7 +7036,12 @@ void ajustes_encerrar(void) {
   if (fileirasBusca) { fileirasBusca = 0; desc_repetir(); }
   pediuRelogio = 0; faRetornarFolha = 0; pfSaida(); uxCancelar(); uxRetornarOp = -1; guiaFechar(); ajlog_vazar_tudo();
 }
-int ajustes_quer_sair(void) { return sair; }
+void ajustes_suspender(void){
+  if(sessao_logada())sync_iniciar();
+  ajIptvLimparForm();teclado_esquecer();pfSaida();
+}
+void ajustes_retomar(void){sair=0;sairArmado=0;screenReveal=0;screenRoute=-1;pediuRelogio=0;}
+int ajustes_quer_sair(void) { return sair && screenReveal<.002f; }
 int ajustes_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return v; }
 
 // Valor das linhas so de leitura. O espaco em disco NAO e um numero inventado:
@@ -7559,7 +7578,9 @@ static int inativa(int op) {
       (op == AJ_FONTE_AUTO || op == AJ_FONTE_GRUPO || op == AJ_FONTE_GRUPO_SESSOES || op == AJ_LINK_REUSAR || op == AJ_LINK_PRAZO)) return 1;
   switch (op) {
     case AJ_AMPLIAR_UI: return !gpun_upscale_suportado() || !ampliarUiVale();
-    case AJ_VIDRO_CONTORNO: case AJ_FOCO_ACENTO: case AJ_VIDRO_OPAC: case AJ_VIDRO_FOSCO: case AJ_VIDRO_QUALIDADE: return !lig(AJ_VIDRO);
+    case AJ_AMPLIACAO_ALGO: case AJ_AMPLIACAO_NITIDEZ:
+      return !ampliarUiVale() || !ajustes_ampliar_app() || !gpun_ampliacao_ativa();
+    case AJ_VIDRO_CONTORNO: case AJ_VIDRO_OPAC: case AJ_VIDRO_FOSCO: case AJ_VIDRO_QUALIDADE: return !lig(AJ_VIDRO);
     case AJ_RAIL:         return ajustes_rail_moderna();
     case AJ_MENU_TOPO:    return ajustes_home_layout() == HOME_LAYOUT_DINAMICA;
     case AJ_RAIL_BLUR:    return !ajustes_rail_moderna();
@@ -7714,9 +7735,7 @@ static int visivel(int i) {
     if ((op == AJ_PERFIL_PESQ || op == AJ_PERFIL_EDITAR) && !recomenda_ativo()) return 0;
     if (op == AJ_BUSCA_CINEMETA && valor[op] == 0 && !cinemetaInstalado()) return 0;
     if (op == AJ_DIARIO_NUVEM && !diarionuvem_disponivel()) return 0;
-    // Only while the app upscales (App (4K) on a capable GPU); sharpness only for RCAS choices.
-    if ((op == AJ_AMPLIACAO_ALGO || op == AJ_AMPLIACAO_NITIDEZ) &&
-        !(ajustes_ampliar_app() && gpun_upscale_suportado())) return 0;
+    // Keep unavailable algorithms visible, disabled with the actual reason.
     if (op == AJ_AMPLIACAO_NITIDEZ && valor[AJ_AMPLIACAO_ALGO] != 2 && valor[AJ_AMPLIACAO_ALGO] != 3) return 0;
     if (uxAvancada(op) && !lig(AJ_AVANCADAS) && !maisAberto[secDoItem[i]]) return 0;
   }
@@ -7792,8 +7811,13 @@ static const char *ajudaOpcaoBase(int op) {
     if (ajustes_fonte_prioridade() == 3 &&
         (op == AJ_FONTE_AUTO || op == AJ_FONTE_GRUPO || op == AJ_FONTE_GRUPO_SESSOES || op == AJ_LINK_REUSAR || op == AJ_LINK_PRAZO))
       return "Só vale quando O que o Nuvio prioriza não está em Do addon.";
+    if (op == AJ_AMPLIACAO_ALGO || op == AJ_AMPLIACAO_NITIDEZ) {
+      if (!gpun_upscale_suportado()) return "Não disponível nesta TV";
+      if (!ampliarUiVale()) return "Na resolução Automática ou 4K quem amplia a interface é a TV. A escolha fica guardada e volta a valer em 1080p ou 720p.";
+      if (!ajustes_ampliar_app()) return "Só vale com a resolução em 1080p ou 720p: o app amplia a interface para a tela (usa mais GPU). Na Automática e na 4K quem amplia é a TV. Reinicie o app depois de mudar.";
+      return "Sem ampliação ativa nesta sessão. Escolha 720p ou 1080p abaixo da saída da TV e reinicie o app. O vídeo não muda.";
+    }
     if (op == AJ_VIDRO_CONTORNO) return "Ative a interface de vidro para ajustar o contorno.";
-    if (op == AJ_FOCO_ACENTO) return "Ative a interface de vidro para pintar o foco com a cor de destaque.";
     if (op == AJ_VIDRO_OPAC || op == AJ_VIDRO_FOSCO || op == AJ_VIDRO_QUALIDADE) return "Ative a interface de vidro para ajustar o vidro.";
     if (op == AJ_RAIL) return "Desative a barra lateral moderna para escolher entre recolhida e fixa.";
     if (op == AJ_MENU_TOPO) return "No layout Dinâmica o menu já fica no alto da tela.";
@@ -9318,6 +9342,11 @@ static const char *faResumo(int provedores) {
 // as OK/tap toggles one; size uses the existing explicit-confirmation editor.
 // Every edit reads the saved config first, so another field is never lost.
 static int ffCategoria = -1, ffFoco, ffValorFoco;
+// Centered modal lifecycle (clock/player sheets): the shape springs in and out
+// with the last body retained while closing, a category list eases in, row
+// focus and scroll follow the shared springs.
+static float ffForma, ffFormaV, ffCatA = 1.0f, ffFocoA[64], ffRol, ffRolV, ffRolAlvo;
+static int ffFechando, ffCatVista = -1, ffRolPronto;
 static const int FF_CATEGORIA[9] = {
   FONTEFILTRO_RESOLUCAO, FONTEFILTRO_QUALIDADE, -1,
   FONTEFILTRO_VISUAL, FONTEFILTRO_AUDIO, FONTEFILTRO_CANAIS,
@@ -9363,7 +9392,27 @@ static const char *ffResumo(void) {
 static void ffAbrir(void) {
   if (!ajOpcaoDisponivel(AJ_FILTROS_FONTES)) return;
   uxCancelar(); faRetornarFolha = 0; frAberta = 6;
-  ffCategoria = -1; ffFoco = ffValorFoco = 0;
+  ffCategoria = ffCatVista = -1; ffFoco = ffValorFoco = 0;
+  ffForma = ffFormaV = 0.0f; ffFechando = ffRolPronto = 0; ffCatA = 1.0f;
+  memset(ffFocoA, 0, sizeof ffFocoA); ffFocoA[0] = 1.0f;
+}
+static void ffAtualizar(float dt) {
+  int red = ajustes_animacoes_reduzidas(), aberta = frAberta == 6;
+  int foco = ffCategoria >= 0 ? ffValorFoco : ffFoco;
+  if (!aberta && (frAberta || !ffFechando)) { ffForma = ffFormaV = 0.0f; ffFechando = 0; return; }
+  ffForma = mov_mola_assenta(&ffFormaV, ffForma, aberta ? 1.0f : 0.0f, dt, MOV_MODAL_W, MOV_MODAL_Z);
+  if (!aberta) { if (ffForma <= 0.0f) ffFechando = 0; return; }
+  if (ffCategoria != ffCatVista) {
+    ffCatVista = ffCategoria; ffCatA = 0.0f; ffRolPronto = 0;
+    memset(ffFocoA, 0, sizeof ffFocoA);
+    if (foco >= 0 && foco < 64) ffFocoA[foco] = 1.0f;
+  }
+  ffCatA = red ? 1.0f : anim_rampa(ffCatA, 1.0f, dt, 220.0f);
+  for (int i = 0; i < 64; i++) {
+    float alvo = i == foco ? 1.0f : 0.0f;
+    ffFocoA[i] = red ? alvo : anim_mola(ffFocoA[i], alvo, dt, alvo > ffFocoA[i] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
+  }
+  ffRol = anim_mola2_reduzida(&ffRolV, ffRol, ffRolAlvo, dt, NV_MOLA2_SCROLL, red);
 }
 static void ffGruposDefinir(const char *texto) {
   FonteFiltroConfig cfg; fontefalha_filtro(&cfg);
@@ -9407,7 +9456,7 @@ static void ffEscolher(void) {
 static void ffVoltar(void) {
   if (frAberta != 6 || teclado_aberto()) return;
   if (ffCategoria >= 0) ffCategoria = -1;
-  else frAberta = 0;
+  else { frAberta = 0; ffFechando = 1; }
 }
 static void ffEvento(SDL_Keycode k) {
   int *foco = ffCategoria >= 0 ? &ffValorFoco : &ffFoco;
@@ -9984,8 +10033,19 @@ void ajustes_evento(const SDL_Event *e) {
   if (e->type == SDL_KEYDOWN) ajToqueLimpar();
 #endif
   AJ_ESCALA_INI();
+  if(navigationBackFocus&&nv_tecla_voltar(e))navigationBackFocus=0;
+  if(navigationBackFocus&&e->type==SDL_KEYDOWN&&(e->key.keysym.sym==SDLK_RETURN||e->key.keysym.sym==SDLK_KP_ENTER)){
+    navigationBackFocus=0;SDL_Event back=*e;back.key.keysym.sym=SDLK_ESCAPE;eventoTela(&back);AJ_ESCALA_FIM();return;
+  }
   if (guiaAberto) { guiaEvento(e); AJ_ESCALA_FIM(); return; }
+  // The tour owns horizontal card/button traversal and scrolling between rows.
+  if (tourAberto && e->type==SDL_KEYDOWN && tourSeta(e->key.keysym.sym)) {
+    tourEvento(e); AJ_ESCALA_FIM(); return;
+  }
+  if (e->type==SDL_KEYDOWN && navigationMove(e->key.keysym.sym)) { AJ_ESCALA_FIM(); return; }
   if (tourAberto) { tourEvento(e); AJ_ESCALA_FIM(); return; }
+  // Resolve the tour destination before another key can reach the old page.
+  if (tourPend) tourAtualizar(0);
   if (apoioAberto) { apoioEvento(e); AJ_ESCALA_FIM(); return; }
   eventoTela(e);
   // FIM DA EDICAO DO LIMITE (issue #197): qualquer tecla que solte a linha
@@ -10310,8 +10370,12 @@ void ajustes_atualizar(float dt, Uint32 agora) {
   if(iptvForm.tipo && !nv_perfil_sessao_atual(iptvForm.sessao)) { ajIptvLimparForm();uxCancelar();stCampo=0;teclado_esquecer(); }
   ajLegendaEspelhar(); ajIptvEspelhar();
   AJ_ESCALA_INI();
+  int route=tourAberto*1000+frAberta*10+ffCategoria+aj4Util*100+focoIndice*10000+uxEditor*100000+aj4Grupos*1000000;
+  if(screenRoute!=route){screenRoute=route;screenReveal=0;}
+  screenReveal=ajustes_animacoes_reduzidas()?!sair:anim_mola(screenReveal,!sair,dt,NV_MOLA_TELA);
   guiaAtualizar(dt);
   tourAtualizar(dt);
+  ffAtualizar(dt);
   if (uxAviso[0] && SDL_TICKS_PASSED(agora, uxAvisoAte)) uxAviso[0] = 0;
   montarTela();
   valor[AJ_PERFIL_PESQ] = recomenda_pesquisavel() ? 0 : 1;   // V_LIGA: 0 = Ligado
@@ -11143,12 +11207,15 @@ static int ajQuadroPlugins;  // captura: a de plugins (foco + 1)
 #endif
 static void ajDesenharTudo(Uint32 agora);
 // Own Settings scale: the virtual canvas and the active drawing factor agree.
+static int navigationCount;
 void ajustes_desenhar(Uint32 agora) {
+  navigationCount=0;
 #ifdef NV_TOUCH_UI
   ajToqueCamada();
 #endif
   AJ_ESCALA_INI();
-  ajDesenharTudo(agora);
+  float opacity=gfx_opacidade_grupo;gfx_opacidade_grupo*=screenReveal;
+  ajDesenharTudo(agora);gfx_opacidade_grupo=opacity;
   AJ_ESCALA_FIM();
 }
 static void ajDesenharTudo(Uint32 agora) {
@@ -11160,8 +11227,10 @@ static void ajDesenharTudo(Uint32 agora) {
 #endif
   montarTela();
   if (guiaAberto) { ponteiro_camada(); guiaDesenhar(); return; }
-  if (tourAberto) { ponteiro_camada(); tourDesenhar(); return; }
+  if (tourAberto && tourVis > .99f) { ponteiro_camada(); tourDesenhar(); return; }
   aj4Desenhar();
+  // Tour enter/exit: the page fades and rises over v4 instead of cutting.
+  if (tourVis > .01f) { if (tourAberto) ponteiro_camada(); tourDesenhar(); }
 
   // A folha de fileiras cobre a lista; o vinculo cobre as duas, porque ele e a
   // unica coisa aqui com prazo (o codigo do dispositivo expira).
@@ -11180,7 +11249,7 @@ static void ajDesenharTudo(Uint32 agora) {
   if (pfTela) pfDesenhar();
   else pfFaixaEdicao();
   if (frAberta == 7) desenhaFolhaOrdem();
-  else if (frAberta == 6) desenhaFolhaFiltros();
+  else if (frAberta == 6 || (!frAberta && ffFechando)) desenhaFolhaFiltros();
   else if (frAberta >= 4) desenhaFolhaFalha();
   else if (frAberta == 3) desenhaFolhaOrdem();
   else if (frAberta) desenhaFolhaPermitidos();
@@ -11410,8 +11479,8 @@ int ajustes_teste_quadro(const char *id) {
     tourAbrir(); tourInicio = (long)time(NULL);
     if (!strcmp(id, "tour-more")) { tourFoco = 8; tourTopo = 2; tourRol = tourRolAlvo = 808; }
     if (!strcmp(id, "tour-last")) { tourFoco = 16; tourTopo = 3; tourRol = tourRolAlvo = 1212; }
-    if (!strcmp(id, "tour-where")) { tourOnde(2); tourAtualizar(0); }
-    if (!strcmp(id, "tour-edit")) { tourLigar(2); tourAtualizar(0); }
+    if (!strcmp(id, "tour-where")) { tourVis = 1; tourOnde(2); tourAtualizar(0); }   // exit from a settled page
+    if (!strcmp(id, "tour-edit")) { tourVis = 1; tourLigar(2); tourAtualizar(0); }
     return 1;
   }
   if (!strncmp(id, "v4-", 3)) {
@@ -11610,6 +11679,49 @@ int ajustes_shot_valor(const char *chave, int v) {
   return 0;
 }
 #endif
+
+static struct { GfxRect rect; PonteiroFn focus; int a,b,id; } navigation[512];
+static int navigationFocus(void) {
+  if(tourAberto)return 100000+tourFoco*2+tourBtn;
+  if(frAberta==6)return 200000+(ffCategoria>=0?ffValorFoco:ffFoco);
+  if(navigationBackFocus)return 50000;
+  if(aj4Topo>=0)return aj4Topo;
+  if(aj4Grupos&&!focoIndice&&!aj4Util&&!uxEditor)return 20000+(aj4Mais?999:aj4GrupoFoco);
+  if(uxEditor)return 40000+uxPendente;
+  if(aj4Acao)return 30000+aj4Acao;
+  return 10000+aj4Linha;
+}
+#undef ponteiro_alvo
+static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int a,int b) {
+  int id=-1;
+  if(fn==aj4PontFoco)id=a*10000+b;
+  else if(fn==tourPontFoco)id=100000+a*2+b;
+  else if(fn==ffPont)id=200000+a;
+  if(id>=0&&navigationCount<512&&w>0&&h>0){
+    // The two mode labels share one remote focus target.
+    int duplicate=-1;for(int i=0;i<navigationCount;i++)if(navigation[i].id==id)duplicate=i;
+    if(duplicate>=0){GfxRect *r=&navigation[duplicate].rect;r->w=fmaxf(r->x+r->w,x+w)-r->x;}
+    else {navigation[navigationCount].rect=(GfxRect){x,y,w,h};navigation[navigationCount].focus=fn;navigation[navigationCount].a=a;navigation[navigationCount].b=b;navigation[navigationCount++].id=id;}
+  }
+  ponteiro_alvo(x,y,w,h,fn,activate,a,b);
+}
+#undef ponteiro_camada
+static void navigationLayer(void){navigationCount=0;ponteiro_camada();}
+#undef ponteiro_alvo_faixa
+static void navigationRange(float x,float y,float w,float h,float top,float bottom,PonteiroFn fn,PonteiroFn activate,int a,int b){
+  float low=fmaxf(y,top),high=fminf(y+h,bottom);
+  if(high>low)navigationTarget(x,low,w,high-low,fn,activate,a,b);
+}
+static int navigationMove(SDL_Keycode key) {
+  if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
+  if(teclado_aberto()||guiaAberto||apoioAberto||pfTela||uxEditor)return 0;
+  GfxRect rects[512];int current=-1;
+  for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].id==navigationFocus())current=i;}
+  int next=focus_rect_nearest(rects,navigationCount,current,(key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
+  if(next<0)return 0;
+  if(next==current)return 0;
+  navigation[next].focus(navigation[next].a,navigation[next].b);if(tourAberto)tourMirar();return 1;
+}
 
 // --- CENTRAL DE CONTROLE (central.h) -----------------------------------------
 // A porta da central para trocar uma opcao sem abrir esta tela. A opcao e

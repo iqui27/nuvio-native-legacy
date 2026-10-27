@@ -102,7 +102,7 @@ static void *trabalhar(void *u) {
     rc = b(p.url, LEG2_MAX_BYTES, LEG2_PRAZO_MS, pararDownload, &d, &bruto, &n);
     if (!rc && bruto && n > LEG2_MAX_BYTES) rc = -1;   // a downloader that ignored the cap
     if (!rc && bruto && !pararDownload(&d)) {
-      texto = legenda_utf8(bruto, n, NULL);
+      texto = legenda_utf8_idioma(bruto, n, p.idioma, p.url, NULL);
       if (texto && legenda_eh_ass(texto)) fim = LEG2_NAO_SUPORTADA;
       else if (texto) {
         LegendaDocumentoInfo info;

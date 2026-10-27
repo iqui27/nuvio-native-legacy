@@ -2,6 +2,7 @@
 #include "aiostreamsui.h"
 #include "addonmodo.h"
 #include "vaitocar.h"
+#include "mediaurl.h"
 #include "plrui.h"
 #include "ondever.h"
 #include "naovideo.h"
@@ -52,6 +53,10 @@
 #include "video.h"
 #include "botoes.h"
 #include "ponteiro.h"
+#include "focus.h"
+static void navigationTarget(float,float,float,float,PonteiroFn,PonteiroFn,int,int);
+static int navigationMove(SDL_Keycode);
+#define ponteiro_alvo navigationTarget
 #include "rolagemtoque.h"
 #include "player.h"
 #include "plrilha.h"
@@ -71,8 +76,7 @@
 // player-mockup de 03/10): 820 de largura, a 40 das bordas, raio 36 — a
 // mesma folha dos Episodios no player.
 #include "telefoneui.h"
-static int temAio(void);
-#define FOLHA_W        telefoneui_largura(temAio()?1336.0f:820.0f, NV_TELA_W, FOLHA_MARGEM)
+#define FOLHA_W        telefoneui_largura(820.0f, NV_TELA_W, FOLHA_MARGEM)
 #define FOLHA_MARGEM    40.0f
 #define FOLHA_RAIO_IL   36.0f
 #define FOLHA_PAD_E     48.0f  // da borda da folha ao cartao da linha
@@ -81,7 +85,9 @@ static int temAio(void);
 // Sources grows from the clock island: plrilha in the player, ilha_corpo on
 // browsing pages. Without a visible clock, keep the right-edge sheet.
 // folhaOY places content below the clock header; folhaBase ends the list.
-static float folhaOY, folhaBase, folhaDica;
+static float folhaOY, folhaBase, folhaDica, folhaSala;
+float (*stream_folha_sala_h)(void);
+void (*stream_folha_sala_desenhar)(float x, float y, float w, float a);
 // Tab change (add-on / filter tabs): the focus pill slides to the new tab and
 // the list slides in with a fade, 200 ms ease-out. Time based, no extra pass.
 #define FOLHA_TROCA_MS 200.0f
@@ -102,8 +108,9 @@ static int folhaRelogio; // Latched at opening, retained through closing.
 #define FOLHA_ABAS_Y   168.0f  // topo da faixa das abas
 #define FOLHA_ABAS_H    56.0f
 #define FOLHA_ABA_H     44.0f  // a pilula de cada aba, dentro da faixa
-#define FOLHA_TOPO     (FOLHA_ABAS_Y + FOLHA_ABAS_H + 24.0f + folhaOY + folhaDica)
+#define FOLHA_TOPO     (FOLHA_ABAS_Y + FOLHA_ABAS_H + 24.0f + folhaOY + folhaDica + folhaSala)
 static void medirCabecalho(void);
+#define FOLHA_SRV_PE    84.0f
 #define FOLHA_LINHA_H  112.0f  // linha sem marca e sem arquivo
 #define FOLHA_MARCA_H   30.0f  // "SUA ESCOLHA ANTERIOR" / "REPRODUZINDO AGORA"
 #define FOLHA_ARQ_H     34.0f  // nome do arquivo, so na linha em foco
@@ -505,6 +512,33 @@ static int mesmoAddon(const Stream *a, const Stream *b) {
   if (a->addonChave[0] || b->addonChave[0])
     return !strcmp(a->addonChave, b->addonChave);
   return !strcmp(a->provedor, b->provedor);
+}
+// Native routes identify the service explicitly; add-on labels identify
+// their own debrid routes. Unknown labels stay scoped to that add-on.
+static int debridDaFonte(const Stream *s) {
+  if (s->debridServico > 0) return s->debridServico - 1;
+  const char *tags[] = {"[RD", "[TB", "[PM", "[AD"};
+  const char *names[] = {"Real-Debrid", "TorBox", "Premiumize", "AllDebrid"};
+  for (int i = 0; i < DEBRID_N; i++)
+    if (nv_res_tem(s->rotulo, tags[i]) || nv_res_tem(s->rotulo, names[i])) return i;
+  return -1;
+}
+int stream_automatico_excluir_aviso(int indice) {
+  int k = 0;
+  pthread_mutex_lock(&verTrava);
+  if (indice >= 0 && indice < n) {
+    const Stream *s = &lista[indice];
+    int servico = debridDaFonte(s);
+    for (int i = 0; i < n; i++) {
+      const Stream *outra = &lista[i];
+      int mesma = s->debridServico > 0
+          ? outra->debridServico == s->debridServico
+          : !outra->debridServico && mesmoAddon(s, outra) && debridDaFonte(outra) == servico;
+      if (mesma) k += stream_automatico_excluir(i);
+    }
+  }
+  pthread_mutex_unlock(&verTrava);
+  return k;
 }
 static int irma(int i, int indice) {
   return i != indice && mesmoAddon(&lista[i], &lista[indice]) &&
@@ -1562,6 +1596,7 @@ int  stream_addon_no_escopo(const char *nome) {
 // arquivo ainda nao esta em cache no Real-Debrid. Os dois sao MP4 validos de
 // ~120s que TOCAM NORMALMENTE — nao ha erro para detectar, so o endereco.
 static int enderecoDeAviso(const char *u) {
+  u = nv_media_url(u);
   return strstr(u, "downloading.mp4") || strstr(u, "/slate") ||
          strstr(u, "slate.mp4") || strstr(u, "slate.m3u8") ? 1 : 0;
 }
@@ -1610,6 +1645,7 @@ static int playlistVazia(const char *url, const char *cabecalhos) {
   char copia[512];
   long n = 0;
   int vazia, status = 0, nc = 0;
+  url = nv_media_url(url);
   if (!strstr(url, ".m3u8") && !strstr(url, "m3u8")) return 0;
   // Os cabecalhos que o addon exigiu (behaviorHints.proxyHeaders). Sem eles um
   // CDN que confere Referer devolve 403 — medido: 403 sem, 200 com.
@@ -1738,7 +1774,7 @@ static int resolverUrl(const char *url, const char *cabecalhos, int segundos,
 void (*stream_cdn_lembrar)(const char *orig, const char *final, const char *cabecalhos, uint64_t sessao);
 
 static int verificarUma(int i, Conferencia *c) {
-  char fim[4096], url[4096], cab[512], mime[96], addon[sizeof lista->provedor];
+  char fim[NV_MEDIA_URL_MAX], url[NV_MEDIA_URL_MAX], cab[512], mime[96], addon[sizeof lista->provedor];
   int fileIdx, ok = 0;
   AddonModo modo;
   long corpo = -1;
@@ -1842,7 +1878,7 @@ static int verificarUma(int i, Conferencia *c) {
 // tocando a URL em paralelo e so quer saber cedo se ela morreu.
 int stream_url_serve(const char *url, const char *cabecalhos) {
   uint64_t sessao = nv_perfil_sessao_ler();
-  char fim[4096], mime[96];
+  char fim[NV_MEDIA_URL_MAX], mime[96];
   long corpo = -1;
   if (!url || !*url) return 0;
   if (!resolverUrl(url, cabecalhos, 5, fim, sizeof fim, mime, sizeof mime, &corpo)) return 0;
@@ -2288,7 +2324,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
                        &c, &fontes, &nc)) return FONTEFALHA_FIM;
   for (;;) {
     FonteFalhaRota r;
-    char resolvida[4096] = "", fim[4096], mime[96] = "";
+    char resolvida[NV_MEDIA_URL_MAX] = "", fim[NV_MEDIA_URL_MAX], mime[96] = "";
     long corpo = -1;
     int ok = 0, fora = 0;
     if (falhaCancelada(geracao, cancelado, ctx)) break;
@@ -2378,7 +2414,7 @@ int stream_vod_renovada_aplicar(int indice, unsigned geracao, const Stream *font
 int stream_falha_renovar(int indice, unsigned geracao, int servico,
                          int (*cancelado)(void *), void *ctx, char *url, unsigned tam) {
   Stream s;
-  char resolvida[4096] = "";
+  char resolvida[NV_MEDIA_URL_MAX] = "";
   int fora = 0, ok;
   if (!url || !tam || falhaCancelada(geracao, cancelado, ctx)) return 0;
   url[0] = 0;
@@ -2595,7 +2631,7 @@ int stream_preparo_resolver(StreamPreparo *p, int (*cancelado)(void *), void *ct
     FonteFalhaRota r;
     if (fontefalha_proxima(p->politica, p->candidatas, p->nc, 1, &r) != FONTEFALHA_PROXIMA) break;
     const Stream *s = &p->fontes[r.indice];
-    char url[4096] = "", fim[4096], mime[96] = "";
+    char url[NV_MEDIA_URL_MAX] = "", fim[NV_MEDIA_URL_MAX], mime[96] = "";
     long corpo = -1; int fora = 0, ok = 0;
     if (!fontefalha_tentar(p->politica, &p->candidatas[r.candidata], r.servico)) break;
     if (!nv_perfil_sessao_atual(p->sessaoPerfil) || (cancelado && cancelado(ctx))) { resultado = -1; break; }
@@ -2628,7 +2664,7 @@ int stream_preparo_renovar(StreamPreparo *p, int indice, int (*cancelado)(void *
       !nv_perfil_sessao_atual(p->sessaoPerfil) || (cancelado && cancelado(ctx))) return 0;
   const Stream *s = &p->fontes[indice];
   if (!fontefiltro_permite(&p->filtro, &s->filtro)) return 0;
-  char url[4096] = "", fim[4096], mime[96] = "";
+  char url[NV_MEDIA_URL_MAX] = "", fim[NV_MEDIA_URL_MAX], mime[96] = "";
   int ok = 0, fora = 0;
   long corpo = -1;
   debrid_contexto_entrar(&p->debrid);
@@ -3060,7 +3096,7 @@ int stream_n_candidatas(void) {
 // tempo que a pessoa fica olhando para a tela preta quando o canal esta fora.
 #define CANAL_PRAZO_S 3
 typedef struct {
-  char url[4096], cabecalhos[512];
+  char url[NV_MEDIA_URL_MAX], cabecalhos[512];
   int altura, cabe, preferida, tsContinuo;
 } CanalCandidata;
 typedef struct CanalConferencia {
@@ -4405,47 +4441,6 @@ static void porLinha(int i, float *y, int automatica) {
 // Tamanho para ordenar: desconhecido (0) vai para o fim do grupo.
 static long tamanhoOrdem(int i) { return lista[i].tamanhoMB > 0 ? lista[i].tamanhoMB : -1; }
 
-// CARTAO "ESCOLHA AUTOMATICA" (2.1, titulo.html 4B): no topo da lista da aba
-// Todos, a fonte que o automatico tocaria e cada criterio. Nao e linha: nao
-// recebe foco; a lista comeca `escAlt` mais abaixo (montar() parte de y = escAlt)
-// e o resto da conta de rolagem (linhaY, secY, alturaTotal) segue igual.
-#define ESC_PAD_Y   22.0f
-#define ESC_PAD_X   24.0f
-#define ESC_CAB_H   30.0f
-#define ESC_NOME_H  52.0f
-#define ESC_LIN_H   24.0f
-#define ESC_LIN_GAP 10.0f
-#define ESC_VAO     24.0f
-static VtEscolha escCartao;
-static float escAlt;   // cartao + vao ate a lista; 0 = sem cartao
-static void escolhaAtualizar(void) {
-  int linhas;
-  escAlt = 0.0f;
-  if (filtro != 0 || !vt_escolha(&escCartao)) return;
-  linhas = (escCartao.nLinha + 1) / 2;
-  escAlt = ESC_PAD_Y + ESC_CAB_H + 14.0f + ESC_NOME_H + (linhas ? 16.0f : 0.0f) +
-           linhas * ESC_LIN_H + (linhas > 1 ? (linhas - 1) * ESC_LIN_GAP : 0.0f) +
-           ESC_PAD_Y + ESC_VAO;
-}
-
-// COPIAS DO MESMO ARQUIVO (#457/#458): a copia de outro add-on dobra na primeira
-// (vt_copia_rep) quando as duas estao na lista e no mesmo estado de cache; a
-// que esta tocando, a lembrada e a automatica ficam sempre visiveis. No modo
-// "do addon" (#400) nada dobra: a ordem dele e preservada inteira.
-static int dobravel(int i) {
-  int r;
-  if (ajustes_fonte_ordem_addon()) return 0;
-  r = vt_copia_rep(i);
-  return r != i && i != atual && i != preferida && i != melhorFolha &&
-         passaFiltro(r) && !!lista[r].foraCache == !!lista[i].foraCache;
-}
-// Quantas copias dobraram em `i` (so quem esta na lista: dobravel).
-static int copiasDobradas(int i) {
-  int c = 0;
-  for (int j = 0; j < n; j++) if (j != i && vt_copia_rep(j) == i && dobravel(j)) c++;
-  return c;
-}
-
 // POR QUALIDADE (dono, 02/10): a fonte "Melhor para esta TV" e a PRIMEIRA linha,
 // sozinha e sem cabecalho — o selo dela ja diz o que ela e —, e cada grupo
 // vem do MAIOR arquivo para o menor. Tamanho e o que mais separa duas fontes
@@ -4468,8 +4463,7 @@ static void montarBase(int automatica) {
   int g, i, k, m = -1, nt;
   int needed = filtro == -1 ? ondever_n(alvoPedido) : n;
   serverSectionN = 0;
-  escolhaAtualizar();
-  y = escAlt;
+  y = 0;
   int saved = !canalFolha && ajustes_fonte_manual() && preferida >= 0 && preferida < n &&
               passaFiltro(preferida) ? preferida : -1;
   if (ordemCap < needed) {
@@ -4547,7 +4541,7 @@ static void montarBase(int automatica) {
     // addon (#221) e o empate de tamanho fica com a ordem do addon.
     for (k = 0; k < n; k++) {
       i = ORD(k);
-      if (i != m && !ehServidor(&lista[i]) && !lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g && !dobravel(i)) grupoTmp[nt++] = i;
+      if (i != m && !ehServidor(&lista[i]) && !lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g) grupoTmp[nt++] = i;
     }
     // Insercao estavel: em tamanho igual vale a ordem do addon.
     for (k = 1; k < nt; k++) {
@@ -4563,7 +4557,7 @@ static void montarBase(int automatica) {
     // secao do grupo as abriga, na ordem do addon.
     for (k = 0; k < n; k++) {
       i = ORD(k);
-      if (i != m && !ehServidor(&lista[i]) && lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g && !dobravel(i)) grupoTmp[nt++] = i;
+      if (i != m && !ehServidor(&lista[i]) && lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g) grupoTmp[nt++] = i;
     }
     if (!nt) continue;
     if (nOrdem) y += FOLHA_SEC_GAP;
@@ -4687,7 +4681,6 @@ static void montar(int automatica) {
   montarCache(automatica);
   if (alvo >= 0) {
     int r = linhaDe(alvo);
-    if (r < 0) r = linhaDe(vt_copia_rep(alvo));
     if (r >= 0) foco = r;
   }
 }
@@ -4705,9 +4698,11 @@ static void folhaGeometria(void) {
     folhaOY = 0.0f;
     folhaBase = NV_TELA_H - FOLHA_MARGEM - 16.0f;
   }
+  if (temServidor()) folhaBase -= FOLHA_SRV_PE;
   const char *dica = fraseDicaChips();
   folhaDica = dica ? 18.0f + txt_bloco(TXT_HERO_META, dica, 255,255,255, 0,0,
       FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D+4.0f-48.0f, 28.0f, 0, 0) : 0.0f;
+  folhaSala = stream_folha_sala_h ? stream_folha_sala_h() : 0.0f;
 }
 static float areaLista(void) { return folhaBase - FOLHA_TOPO; }
 // A linha em foco no meio da area; a primeira de um grupo leva o cabecalho
@@ -4876,24 +4871,17 @@ void stream_inspecao_ordem(int *ranks,int capacidade) {
   for(int i=0;i<capacidade;i++) { int r=linhaDe(i); ranks[i]=r<0?0:r+1; }
 }
 #ifdef NV_SHOT_HOOKS
-// Capturas: altura do cartao da escolha automatica (0 = sem cartao nesta aba),
-// linhas que a lista desenha e copias que dobraram em outra linha.
+// Preserve the capture API: the restored sheet has no extra card or folded rows.
 void stream_shot_folha(float *cartao, int *linhas, int *dobradas) {
-  int l = 0, d = 0;
-  for (int i = 0; i < n; i++) {
-    if (!passaFiltro(i)) continue;
-    if (dobravel(i)) d++; else l++;
-  }
-  if (cartao) *cartao = escAlt;
-  if (linhas) *linhas = l;
-  if (dobradas) *dobradas = d;
+  if (cartao) *cartao = 0;
+  if (linhas) *linhas = nFiltrados();
+  if (dobradas) *dobradas = 0;
 }
-// Linha em foco: indice em stream_item() (-1 = foco fora da lista) e se esse
-// indice e uma copia dobrada (nunca deveria: a linha dobrada nao tem foco).
+// Focused source index (-1 outside the list); every copy remains visible.
 void stream_shot_foco(int *indice, int *dobrada) {
   int i = filtrado(foco);
   if (indice) *indice = i;
-  if (dobrada) *dobrada = i >= 0 && dobravel(i);
+  if (dobrada) *dobrada = 0;
 }
 #endif
 // DETALHES DA FONTE (#355): o titulo e a descricao do addon sao cortados na
@@ -5227,6 +5215,8 @@ void stream_folha_evento(const SDL_Event *e) {
     if(i>=0) detalheAbrir(&lista[i]);
     return;
   }
+  // Left/Right switches providers even when a header target lies to the side.
+  if(k!=SDLK_LEFT && k!=SDLK_RIGHT && navigationMove(k))return;
   // ORDEM DO FOCO, de cima: fileira de botoes (grupo -1) -> abas de addon
   // (grupo 0) -> lista (grupo 1). CIMA na primeira linha vai as abas; CIMA
   // nas abas vai ao ultimo botao (Fechar, o mais perto do canto); BAIXO desce
@@ -5381,7 +5371,6 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   montar(automaticaDaFolha());
   if (focoFixo >= 0) {
     int r = grupo == 1 ? linhaDe(focoFixo) : -1;
-    if (r < 0 && grupo == 1) r = linhaDe(vt_copia_rep(focoFixo));
     if (r >= 0) {
 #ifdef NV_TOUCH_UI
       if (!toquerol_livre(&toqueFontes))
@@ -5409,6 +5398,21 @@ int stream_folha_escolheu(int *out) {
   if(out) *out=escolha;
   escolha=-1;return 1;
 }
+static struct {GfxRect rect; int group,id;} navigation[512];
+static int navigationCount;
+static int navigationMove(SDL_Keycode key){
+  if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
+  GfxRect rects[512];int current=-1;
+  for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].group==grupo&&navigation[i].id==(grupo==0?filtro:foco))current=i;}
+  int next=focus_rect_nearest(rects,navigationCount,current,(key==SDLK_RIGHT)-(key==SDLK_LEFT),(key==SDLK_DOWN)-(key==SDLK_UP));
+  if(next<0||next==current)return 0;
+  grupo=navigation[next].group;
+  if(grupo==0){
+    if(filtro!=navigation[next].id){filtroServidor=-1;foco=0;rolagem=0;velRol=0;}
+    filtro=navigation[next].id;
+  }else foco=navigation[next].id;
+  return 1;
+}
 // PONTEIRO (#99): as mesmas variaveis das setas (grupo, foco, filtro). O
 // provedor so troca no CLIQUE — trocar ao passar por cima mudaria a lista
 // debaixo da mao. Clicar fora do painel fecha, como o Voltar.
@@ -5421,8 +5425,15 @@ static void ponteiroFolhaFiltro(int i, int b) {
 #endif
   (void)b;
   if (i < -1 || i >= nProvedores) return;
-  filtroServidor = -1; filtro = i; foco = 0; rolagem = 0; grupo = 1;
+  filtroServidor = -1; filtro = i; foco = 0; rolagem = 0; velRol = 0; grupo = 1;
 }
+#undef ponteiro_alvo
+static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,PonteiroFn activate,int a,int b){
+  int group=fn==ponteiroFolhaBotao?-1:fn==ponteiroFolhaLinha?1:fn==ponteiroFolhaDica?2:activate==ponteiroFolhaFiltro?0:-99;
+  if(group!=-99&&navigationCount<512){navigation[navigationCount].rect=(GfxRect){x,y,w,h};navigation[navigationCount].group=group;navigation[navigationCount++].id=a;}
+  ponteiro_alvo(x,y,w,h,fn,activate,a,b);
+}
+#define ponteiro_alvo navigationTarget
 static void ponteiroFolhaFora(int a, int b) { (void)a; (void)b; aberta = 0; }
 
 // Availability lives in its own tab so asynchronous responses cannot shift
@@ -5722,61 +5733,6 @@ static void medirCabecalho(void) {
 }
 
 static void stream_folha_desenharCorpo_(Uint32 agora);
-static void corpoAio(float x,float w,float a) {
-  float left=x+45, width=w-90;
-  txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NUM,nomeFolha,170,179,185,255,width),left,174,a);
-  txt_desenhar_alpha(txt_linha(TXT_ILHA_TITULO,i18n("Fontes"),243,242,239,255),left,207,a);
-  medirCabecalho();
-  float bx=left+width;
-  for(int i=nBotoes()-1;i>=0;i--) {
-    int b=botaoDe(i), aio=b==BT_AIO || b==BT_AIO_GERENCIAR;
-    float bw=aio?280:bwCab[i];
-    GfxRect r={aio?left+width-bw:(bx-=bw),b==BT_AIO?217:b==BT_AIO_GERENCIAR?305:884,bw,56};
-    const char *label=aio?i18n(rotuloBotao(b)):rotCab[i];
-    chipFolha(r,label,aio?210:rotWCab[i],icoCab[i],grupo==-1 && foco==i,botaoLigado(b),a);
-    ponteiro_alvo(r.x,r.y,r.w,r.h,ponteiroFolhaBotao,NULL,i,0);
-    if(!aio) bx-=gapCab;
-  }
-  float sx=left;
-  for(int i=0;i<nProvedores;i++) {
-    GfxRect r={sx,305,i?230:150,56};
-    if(filtro==i) gfx_cor(r,.5f,.2f,.22f,.24f,a);
-    char label[128]; int count=0;
-    for(int j=0;j<n;j++) if(passaChips(j) && (!i || !strcmp(lista[j].provedor,provedores[i]))) count++;
-    snprintf(label,sizeof label,"%s %d",i?provedores[i]:i18n("Todos"),count);
-    txt_desenhar_alpha(txt_linha_corta(TXT_G20M,label,220,223,225,255,r.w-32),sx+16,323,a);
-    ponteiro_alvo(r.x,r.y,r.w,r.h,NULL,ponteiroFolhaFiltro,i,0); sx+=r.w+6; if(sx>left+width-520) break;
-  }
-  int automatica = automaticaDaFolha();
-  montar(automatica);
-  int first=foco>2?foco-2:0, prev=-1; float y=403;
-  gfx_recorte(left,390,width,485);
-  for(int row=first;row<nOrdem && y<875;row++) {
-    int i=filtrado(row); if(i<0) continue; const Stream *s=&lista[i]; int res=grupoRes(s)/2;
-    if(res!=prev) {
-      txt_desenhar_alpha(txt_linha(TXT_ILHA_NOME,GRUPO_NOME[res],240,241,242,255),left,y,a);
-      int count=0; for(int k=0;k<nOrdem;k++) { int j=filtrado(k); if(j>=0 && grupoRes(&lista[j])/2==res) count++; }
-      char label[24]; snprintf(label,sizeof label,"%d",count);
-      txt_desenhar_alpha(txt_linha(TXT_ILHA_NUM,label,174,179,185,255),left+width-40,y+6,a);
-      gfx_cor((GfxRect){left,y+39,width,1},0,1,1,1,.08f*a); y+=51; prev=res;
-    }
-    int best=i==automatica;
-    float h=best?119:94;
-    if(grupo==1 && foco==row) gfx_cor((GfxRect){left,y,width,h},22/h,.19f,.205f,.22f,a);
-    if(best) txt_desenhar_alpha(txt_linha(TXT_ILHA_NUM,i18n("Melhor para esta TV"),180,205,210,255),left+20,y+12,a);
-    float ty=y+(best?40:17);
-    txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,s->rotulo[0]?s->rotulo:s->provedor,240,241,242,255,width-210),left+20,ty,a);
-    char meta[256]; snprintf(meta,sizeof meta,"%s · %s",s->provedor,s->foraCache?i18n("Fora do cache"):i18n("Em cache"));
-    txt_desenhar_alpha(txt_linha_corta(TXT_G20M,meta,174,179,185,255,width-210),left+20,ty+35,a);
-    if(s->mp4) chipFolha((GfxRect){left+width-225,ty+10,60,32},"MP4",44,NULL,0,1,a);
-    char size[48]; snprintf(size,sizeof size,s->tamanhoMB?"%.1f GB":"—",s->tamanhoMB/1024.0);
-    txt_desenhar_alpha(txt_linha(TXT_G20M,size,174,179,185,255),left+width-150,ty+20,a);
-    ponteiro_alvo(left,y,width,h,ponteiroFolhaLinha,NULL,row,0); y+=h+6;
-  }
-  gfx_sem_recorte();
-  gfx_cor((GfxRect){left,976,width,1},0,1,1,1,.08f*a);
-  txt_desenhar_alpha(txt_linha(TXT_G20M,i18n("Ordem das fontes"),174,179,185,255),left,991,a);
-}
 static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha);
 // MODAL DE DETALHES: cartao de vidro no meio da folha, veu sobre a lista.
 // O corpo rola (CIMA/BAIXO) com esmaecido nas bordas; altura medida no proprio
@@ -5933,7 +5889,7 @@ static void desenhaPartes(float x, float w, int ptr, Uint32 agora) {
         continue;
       }
       GfxRect rr = {ix - 14, ry, iw + 28, ln->h - 6};
-      if (sel) {
+      if (sel && !gfx_foco_placa(rr, FOLHA_RAIO / rr.h, 1, a)) {
         if (ajustes_vidro()) gfx_cor(rr, FOLHA_RAIO / rr.h, 1, 1, 1, .12f * a);
         else gfx_cor(rr, FOLHA_RAIO / rr.h, .17f, .176f, .204f, a);
       }
@@ -6010,6 +5966,7 @@ static void desenhaPartes(float x, float w, int ptr, Uint32 agora) {
 }
 // Camada ampliada (escala.h): o corpo desenha na tela virtual.
 void stream_folha_desenhar(Uint32 agora) {
+  navigationCount=0;
   ESCALA_INI();
   stream_folha_desenharCorpo_(agora);
   ESCALA_FIM();
@@ -6040,87 +5997,21 @@ static void stream_folha_desenharCorpo_(Uint32 agora) {
       plrilha_pedir(&p); }
     return;
   }
-  if (folhaRelogio && !temAio()) {
-    if (aberta) { ilha_corpo(FOLHA_W, folhaBase + 16.0f - NV_ILHA_Y, corpoIlhaFolha, NULL); ilha_corpo_sem_sombra(); }
+  if (folhaRelogio) {
+    if (aberta) { ilha_corpo(FOLHA_W, folhaBase + (temServidor() ? FOLHA_SRV_PE : 0) + 16.0f - NV_ILHA_Y, corpoIlhaFolha, NULL); ilha_corpo_sem_sombra(); }
     return; // ilha_desenhar owns the surface, dim and closing.
   }
-  if(temAio()) {
-    folhaOY=118;
-    const CatItem *item=itemFolha>=0?cat_item(itemFolha):NULL;
-    GLuint art=item && item->backdrop[0]?tex_obter_hero(item->backdrop):0;
-    if(art) gfx_rect((GfxRect){0,0,NV_TELA_W,NV_TELA_H},art,GFX_HERO,0,0,0,0,0,0,0,1);
-  }
-  float x=NV_TELA_W-FOLHA_W-(temAio()?24:FOLHA_MARGEM)+(1-anim)*(FOLHA_W+FOLHA_MARGEM);
+  float x=NV_TELA_W-FOLHA_W-FOLHA_MARGEM+(1-anim)*(FOLHA_W+FOLHA_MARGEM);
   // A FOLHA E UMA ILHA (dono, 02/10, mockups "Glass UI — ilha"): flutua a
   // NV_FOLHA_MARGEM das tres bordas, raio NV_FOLHA_RAIO, sombra curta e uma
   // luz larga no canto de cima — o mesmo material da ilha do relogio. O ajuste
   // de vidro escolhe o miolo: translucido (gfx_vidro_folha) ou solido.
   { const int vid = ajustes_vidro();
-    GfxRect corpo={x,temAio()?136:FOLHA_MARGEM,FOLHA_W,temAio()?920:NV_TELA_H-2*FOLHA_MARGEM};
+    GfxRect corpo={x,FOLHA_MARGEM,FOLHA_W,NV_TELA_H-2*FOLHA_MARGEM};
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,(vid?.30f:.42f)*anim);
-    if (vid) {
-      gfx_rect((GfxRect){corpo.x-18.0f,corpo.y-8.0f,corpo.w+36.0f,corpo.h+40.0f},
-               0,GFX_SOMBRA,1.0f,0,0,.5f,0,0,0,.38f*anim);
-      gfx_vidro_folha(corpo,FOLHA_RAIO_IL/corpo.h,anim);
-    } else plrui_material(corpo,FOLHA_RAIO_IL,0,anim); }
-  if(temAio()) {
-    txt_bloco_corta(TXT_V2_A3TIT,nomeFolha,240,241,242,72,390,430,56,anim,4);
-    txt_bloco_corta(TXT_G22M,i18n("Melhor para esta TV"),174,179,185,72,555,410,32,anim,2);
-    corpoAio(x,FOLHA_W,anim);
-  } else corpoFolha(x, FOLHA_W, anim, agora, 0);
-}
-// Pinta o cartao da escolha automatica (ver escolhaAtualizar). (x, y, w, h) e o
-// retangulo do cartao, sem o vao. Linhas cumpridas no acento com "check"; as que
-// contam o que ficou de fora, em cinza com "x".
-static void escDesenhar(float x, float y, float w, float h, float ar, float ag, float ab, float a) {
-  const VtEscolha *e = &escCartao;
-  float px = x + ESC_PAD_X, pr = x + w - ESC_PAD_X, py = y + ESC_PAD_Y, ny, gy, colW;
-  TxtLinha t;
-  int ai = (int)(ar * 255.0f + .5f), k;
-  gfx_cor((GfxRect){x, y, w, h}, FOLHA_RAIO / h, 1, 1, 1, .05f * a);
-  // cabecalho: marca no acento a esquerda, "regras em Ajustes" a direita
-  gfx_cor((GfxRect){px, py + 5, 7, 7}, .5f, ar, ag, ab, a);
-  { float kw = caixaAlta("Escolha automática · melhor para esta TV", ai, (int)(ag * 255.0f + .5f),
-                         (int)(ab * 255.0f + .5f), px + 16, py, a);
-    // O link so ocupa o que sobra do kicker (em idiomas de rotulo longo os
-    // dois se atropelavam); sobrou menos de 80 px, ele some.
-    float sobra = (pr - px) - 16.0f - kw - 20.0f;
-    if (sobra >= 80.0f) {
-      t = txt_linha_corta(TXT_ILHA_APOIO, i18n("regras em Ajustes › Reprodução"), 115, 115, 113, 255,
-                          sobra < w * .38f ? sobra : w * .38f);
-      txt_desenhar_alpha(t, pr - t.w, py + (ESC_CAB_H - t.h) * .5f - 4.0f, a);
-    } }
-  // a fonte: nome amigavel a esquerda; tamanho e add-on a direita
-  ny = py + ESC_CAB_H + 14.0f;
-  { TxtLinha lg = txt_linha(TXT_PAINEL_ITEM, e->tamanho, 242, 242, 240, 255);
-    TxtLinha lp = txt_linha_corta(TXT_PG_FIM, e->prov, 150, 150, 148, 255, 300.0f);
-    float cw = lg.w > lp.w ? lg.w : lp.w;
-    if (e->tamanho[0]) txt_desenhar_alpha(lg, pr - lg.w, ny, a);
-    txt_desenhar_alpha(lp, pr - lp.w, ny + (e->tamanho[0] ? lg.h + 4.0f : 6.0f), a);
-    t = txt_linha_corta(TXT_CALLOUT, e->nome, 255, 255, 253, 255, (pr - px) - cw - 28.0f);
-    txt_desenhar_alpha(t, px, ny, a); }
-  // criterios, 2 colunas na ordem de leitura
-  gy = ny + ESC_NOME_H + 16.0f;
-  // A coluna da esquerda leva o que o texto dela pede (ate a metade); a da
-  // direita fica com o resto — frases longas ("Dolby Vision: mais cor e
-  // brilho...") deixam de ser cortadas quando a esquerda e curta.
-  colW = ((pr - px) - 28.0f) * .5f;
-  { float esqW = 0.0f, dirX;
-    for (k = 0; k < e->nLinha; k += 2) {
-      TxtLinha m = txt_linha(TXT_ILHA_APOIO, e->linha[k], 208, 208, 206, 255);
-      if ((float)m.w + 30.0f > esqW) esqW = (float)m.w + 30.0f;
-    }
-    if (esqW > colW) esqW = colW;
-    dirX = px + esqW + 28.0f;
-    for (k = 0; k < e->nLinha; k++) {
-      float cx = k % 2 ? dirX : px, ly = gy + (k / 2) * (ESC_LIN_H + ESC_LIN_GAP);
-      float cw = k % 2 ? pr - dirX : esqW;
-      int fora = e->fora[k], c = fora ? 115 : 208;
-      if (fora) gfx_icone((GfxRect){cx, ly + 1, 20, 20}, "aj_x", .45f, .45f, .45f, a);
-      else gfx_icone((GfxRect){cx, ly + 1, 20, 20}, "check", ar, ag, ab, a);
-      t = txt_linha_corta(TXT_ILHA_APOIO, e->linha[k], c, c, c - 2, 255, cw - 30.0f);
-      txt_desenhar_alpha(t, cx + 30.0f, ly + (ESC_LIN_H - t.h) * .5f, a);
-    } }
+    if (vid) gfx_vidro_folha(corpo,FOLHA_RAIO_IL/corpo.h,anim);
+    else plrui_material_s(corpo,FOLHA_RAIO_IL,0,anim,1); }
+  corpoFolha(x, FOLHA_W, anim, agora, 0);
 }
 // `anim` aqui e o alfa do corpo (sombra a variavel da mola de proposito: na
 // ilha quem manda na opacidade e a forma, nao a mola da folha).
@@ -6144,9 +6035,9 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   GfxRect ilhaR={x,0,w,NV_TELA_H};
   ajustes_acento(&ar,&ag,&ab);
   ai=(int)(ar*255.0f+.5f);
-  if (folhaRelogio) ilhaR = (GfxRect){x, NV_ILHA_Y, w, folhaBase + 16.0f - NV_ILHA_Y};
+  if (folhaRelogio) ilhaR = (GfxRect){x, NV_ILHA_Y, w, folhaBase + (temServidor() ? FOLHA_SRV_PE : 0) + 16.0f - NV_ILHA_Y};
   else if (ilha) plrilha_rect(&ilhaR);
-  int ptr = aberta && anim > .5f && ponteiro_ativo();
+  int ptr = aberta && anim > .5f;
 #ifdef NV_TOUCH_UI
   toquerol_vincular(&toqueFontes, (GfxRect){x, FOLHA_TOPO, w, areaLista()},
                    gfx_escala(), 0, alturaTotal - areaLista() + 40, 1, &rolagem);
@@ -6177,6 +6068,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
                i18n(botaoDe(foco)==BT_RECARREGAR ? "Fontes" : "Reproduzindo agora"));
       ajuda=acao;
     }
+    else if(botaoDe(foco)==BT_AIO)
+      ajuda="Inspecionar título";
+    else if(botaoDe(foco)==BT_AIO_GERENCIAR)
+      ajuda="Abrir painel";
     else if(botaoDe(foco)==BT_CACHE)
       ajuda=soCache
         ? "Mostrando só fontes que o debrid já tem: tocam na hora. OK tira o filtro."
@@ -6300,6 +6195,8 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       txt_bloco(TXT_HERO_META, dica, grupo==2?c:ai, grupo==2?c:(int)(ag*255),
                 grupo==2?c:(int)(ab*255), r.x+24.0f, r.y+6.0f, r.w-48.0f, 28.0f, anim, 0);
     } }
+  if (folhaSala > 0.0f)
+    stream_folha_sala_desenhar(lx-2.0f, FOLHA_ABAS_Y+oy+FOLHA_ABAS_H+6.0f+folhaDica, rw+4.0f, anim);
   // The list comes in from the side the new tab is on, fading up.
   const float animLista=anim, dxLista=trocaDir*28.0f*(1-trocaEase(agora));
   { float e=trocaEase(agora); anim*=.3f+.7f*e; lx+=dxLista; tx+=dxLista; tr+=dxLista; }
@@ -6312,8 +6209,6 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     folhaRecorteY = cy;
 #endif
     gfx_recorte(x,cy,w,folhaBase-cy); }
-  if (escAlt > 0.0f && FOLHA_TOPO - rolagem + escAlt - ESC_VAO > FOLHA_TOPO - 8)
-    escDesenhar(lx, FOLHA_TOPO - rolagem, rw, escAlt - ESC_VAO, ar, ag, ab, anim);
   if (serverSectionN) {
     float y = FOLHA_TOPO + serverSectionY - rolagem;
     if (y + FOLHA_SEC_H >= FOLHA_TOPO - 8 && y <= NV_TELA_H) {
@@ -6360,8 +6255,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       OndeVer o;
       if (ptr) ponteiro_alvo(r.x,r.y,r.w,r.h,ponteiroFolhaLinha,NULL,row,0);
       if (sel) {
-        if (ajustes_vidro()) gfx_cor(r,FOLHA_RAIO/h,1,1,1,.12f*anim);
-        else gfx_cor(r,FOLHA_RAIO/h,.17f,.176f,.204f,anim);
+        if (!gfx_foco_placa(r,FOLHA_RAIO/h,1,anim)) {
+          if (ajustes_vidro()) gfx_cor(r,FOLHA_RAIO/h,1,1,1,.12f*anim);
+          else gfx_cor(r,FOLHA_RAIO/h,.17f,.176f,.204f,anim);
+        }
       }
       if (ondever_item(alvoPedido,-i-2,&o)) desenharOnde(r,tx,tr,&o,sel,anim);
       continue;
@@ -6376,8 +6273,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     if(sel){
       // Foco so pela superficie clara: o contorno saiu a pedido do dono (02/10).
       // No solido a superficie e um cinza opaco um degrau acima do miolo.
-      if (ajustes_vidro()) gfx_cor(r,FOLHA_RAIO/h,1,1,1,.12f*anim);
-      else gfx_cor(r,FOLHA_RAIO/h,.17f,.176f,.204f,anim);
+      if (!gfx_foco_placa(r,FOLHA_RAIO/h,1,anim)) {
+        if (ajustes_vidro()) gfx_cor(r,FOLHA_RAIO/h,1,1,1,.12f*anim);
+        else gfx_cor(r,FOLHA_RAIO/h,.17f,.176f,.204f,anim);
+      }
     }
     // COLUNA DA DIREITA: tamanho grande, addon embaixo. Medida primeiro: o
     // titulo e a fileira de logos param antes dela.
@@ -6668,6 +6567,14 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   // Na ilha, de volta ao recorte dela (plrilha corta a forma inteira).
   if (ilha) gfx_recorte(ilhaR.x,ilhaR.y,ilhaR.w,ilhaR.h);
   else gfx_sem_recorte();
+  if (temServidor()) {
+    const char *keys[] = {"OK", "↓"};
+    const char *labels[] = {i18n("Assistir"), i18n("Detalhes da fonte")};
+    gfx_cor((GfxRect){tx,folhaBase+8,tr-tx,1},0,1,1,1,.08f*anim);
+    txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,i18n("A cópia do seu servidor aparece primeiro quando disponível."),
+                       150,153,162,255,tr-tx),tx,folhaBase+20,anim);
+    plrui_dicas(keys,labels,2,tx,folhaBase+70,0,anim);
+  }
   if (detAnim > .01f) {
     desenhaDetalhe(x,w,ptr);
     if (ilha) gfx_recorte(ilhaR.x,ilhaR.y,ilhaR.w,ilhaR.h);

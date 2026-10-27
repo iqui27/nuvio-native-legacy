@@ -268,8 +268,8 @@ static int montar(Item *it) {
   int n = 0, i;
   origem();
   filtrar();
+  if (view == V_DET) { poe(it, &n, B_FECHAR, r_voltar()); return n; }
   poe(it, &n, B_VOLTAR, r_voltar());
-  if (view == V_DET) return n;
   if (view == V_HUB) {
     if (!ajustes_conquistas()) return n;
     poe(it, &n, B_FAMS, r_fams());
@@ -329,30 +329,23 @@ static void mover_geo(int dx, int dy) {
 
 static void mover(int dx, int dy) {
   if (view == V_DET) return;
-  if (view == V_HUB) {
-    if (foco == B_VOLTAR && dx > 0) { foco = B_FAMS; return; }
-    if (foco == B_FAMS && dx < 0) { foco = B_VOLTAR; return; }
-    if (foco == B_FAMS && dy > 0) { foco = B_ORDEM; return; }
-    if (foco == B_ORDEM && dy < 0) { foco = B_FAMS; return; }
-  }
+
   if (view == V_HUB && foco >= C_CARD0) {
     int i = foco - C_CARD0, col = i % colunas, lin = i / colunas, ni;
     filtrar();
-    if (dx) {
+    if (dx && col + dx >= 0 && col + dx < colunas && i + dx < nvis) {
       ni = i + dx;
-      if (col + dx < 0) return;
-      if (col + dx >= colunas) { if (retomar_ligado()) foco = B_RETOMAR; return; }
       if (ni < nvis) foco = C_CARD0 + ni;
       return;
     }
-    if (dy > 0) {
+    if (dy > 0 && lin >= topo + LINHAS_VISIVEIS - 1) {
       ni = i + colunas;
       if (ni >= nvis) { if (lin < (nvis - 1) / colunas) ni = nvis - 1; else return; }
       foco = C_CARD0 + ni;
       garantir_visivel();
       return;
     }
-    if (lin > 0) { foco = C_CARD0 + i - colunas; garantir_visivel(); return; }
+    if (dy < 0 && lin > 0) { foco = C_CARD0 + i - colunas; garantir_visivel(); return; }
   }
   mover_geo(dx, dy);
   garantir_visivel();
@@ -398,7 +391,8 @@ void conquistas_abrir(void) {
   cqd_carregar(&st);
   aberto = 1; view = V_HUB; aba = A_TODAS; ordem = 0; famF = -1; topo = 0; detIdx = 0;
   backPressionado = backVisto = 0;
-  foco = ajustes_conquistas() ? T_ABA0 : B_VOLTAR;
+  filtrar();
+  foco = ajustes_conquistas() ? (nvis ? C_CARD0 : T_ABA0) : B_VOLTAR;
   if (ajustes_animacoes_reduzidas()) entrada = 1.0f;
 }
 
@@ -461,12 +455,11 @@ static void alvo(GfxRect r, int id) {
   if (aberto && (view != V_DET || id == B_FECHAR)) ponteiro_alvo(r.x, r.y, r.w, r.h, pt_foco, pt_ativar, id, 0);
 }
 
-// Cards retain light ink over the official neutral focus surface.
+// Shared island material (glass or solid, no rim: it read as an outline) plus
+// the player-row neutral focus driven by the focos[] spring. Light ink stays.
 static void superficie(GfxRect r, float raioPx, float f, float a, Tinta *pri, Tinta *sec) {
-  // Flat island surface for glass on or off: the glass rim and corner light read as an outline.
-  gfx_sombra_sob((GfxRect){r.x - 16, r.y - 4, r.w + 32, r.h + 30}, 1, 0, .5f, 0, 0, 0, .36f * a, r, raioPx, a);
-  gfx_cor(r, raioPx / fminf(r.w, r.h), .071f, .075f, .086f, .98f * a);
-  gfx_cor(r, raioPx / fminf(r.w, r.h), 1, 1, 1, .06f * f * a); // one step lighter, no outline
+  plrui_material_plano(r, raioPx, a);
+  plrui_linha_foco(r, raioPx, f * a);
   *pri = PRI; *sec = SEC;
 }
 
@@ -584,9 +577,7 @@ static void desenha_card(GfxRect r, const CqEntrada *e, float foc, float a) {
   superficie(r, T21_R_CARD, foc, a, &p, &s);
   mudo = MUDO;
   float lado = 176 * (1 + .06f * foc);
-  tinta_de(e, &fr, &fg, &fb);
-  // Focus surface tinted by the achievement accent (no outline, no glow).
-  gfx_cor(r, T21_R_CARD / fminf(r.w, r.h), fr, fg, fb, .12f * foc * a);
+  tinta_de(e, &fr, &fg, &fb);   // achievement tint: emblem, bar and level dots only
   emblema_e(r.x + 88 - lado / 2, r.y + 84 - lado / 2, lado, e, a); // breaks above the card top like the mock
   kicker_card(e, x, r.y + 24.0f, w, a);
   bloco(TXT_ILHA_NOME_L, e->nome, p, x, r.y + 48.0f, w, 30.0f, a, 2);   // long names wrap at 100 %
@@ -963,7 +954,7 @@ void conquistas_atualizar(float dt, Uint32 agora) {
     avAlfa = red ? 0.0f : anim_rampa(avAlfa, 0.0f, dt, AVISO_FADE_MS);
   }
   if (!aberto && entrada < 0.002f) { entrada = 0.0f; return; }
-  if (vistaAnim != (view == V_DET ? V_HUB : view)) { vistaAnim = view == V_DET ? V_HUB : view; tempo = 0; }
+  if (vistaAnim != (view == V_DET ? V_HUB : view)) { vistaAnim = view == V_DET ? V_HUB : view; tempo = 0; entrada = 0; }
   detP = red ? (view == V_DET) : mov_mola_assenta(&detV, detP, view == V_DET, dt, MOV_MODAL_W, MOV_MODAL_Z);
   tempo += dt;
   for (int i = 0; i < C_CARD0 + CQ_MAX; i++)

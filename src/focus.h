@@ -50,4 +50,8 @@ int  focus_mover_grade(Foco *f, int dx, int dy);
 
 int  focus_indice(const Foco *f, int fileira, int coluna);
 
+#include "gfx.h"
+// Directional distance between rectangle centers; ties retain draw order.
+int focus_rect_nearest(const GfxRect *rects, int count, int current, int dx, int dy);
+
 #endif
