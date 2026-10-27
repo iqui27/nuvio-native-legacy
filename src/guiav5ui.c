@@ -79,6 +79,8 @@ static int group_count, group_totals[G5_GROUPS];
 /* Phone-guided setup: 1 = test/fetch posted, waiting worker; 2 = counts on the
  * phone, waiting for the final choices. Status never carries credentials. */
 static int phone_stage, work_phone;
+// Published after each completed catalog request; drawing never reads staging.
+static atomic_int phone_counts[3], phone_parts;
 static atomic_int busy, ready;
 static int operation, worker_profile, worker_ok;
 static atomic_int worker_cancel;
@@ -192,11 +194,16 @@ static void *load(void *unused){
           }free(categories);
           staging_count+=n;staging_total+=t;
           if(work_phone){char st[160];int l=0,m=0,s=0;for(int i=0;i<staging_count;i++){if(staging[i].kind==G5_LIVE)l++;else if(staging[i].kind==G5_MOVIE)m++;else if(staging[i].kind==G5_SERIES)s++;}
+            atomic_store(&phone_counts[G5_LIVE],l);atomic_store(&phone_counts[G5_MOVIE],m);atomic_store(&phone_counts[G5_SERIES],s);atomic_fetch_add(&phone_parts,1);
             snprintf(st,sizeof st,"{\"s\":\"fetch\",\"live\":%d,\"movies\":%d,\"series\":%d}",l,m,s);celular_status(st);}
           if(action[0]||staging_count>=G5_CAP)break;
         }
       }
     }
+  }
+  if(work_phone&&operation==2&&work_draft.type!=0&&worker_ok){
+    int sizes[3]={0};for(int i=0;i<staging_count;i++)if(staging[i].kind<=G5_SERIES)sizes[staging[i].kind]++;
+    for(int i=0;i<3;i++)atomic_store(&phone_counts[i],sizes[i]);atomic_store(&phone_parts,1);
   }
   atomic_store_explicit(&ready,1,memory_order_release);return NULL;
 }
@@ -331,6 +338,8 @@ static void input(int field,const char *title,const char *initial,int secret){
  * everything and talks to the provider. */
 static void phone_status_counts(const char *state);
 static void phone(void){
+  phone_stage=0;message[0]=0;
+  atomic_store(&phone_parts,0);for(int i=0;i<3;i++)atomic_store(&phone_counts[i],0);
   static char html[24000];
   snprintf(html,sizeof html,"<!doctype html><html lang='pt-BR'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>%s</title>"
     "<style>*{box-sizing:border-box}body{margin:0;background:#0d0d0d;color:#f3f2ef;font:16px system-ui}main{max-width:480px;margin:auto;padding:20px 22px 16px}h1{font-size:27px;line-height:1.1;margin:14px 0 8px}p{color:#b2b4b8;line-height:1.45;margin:0 0 14px;font-size:14px}[hidden]{display:none!important}"
@@ -600,16 +609,81 @@ static void wizard(void){
     button(2,i18n("Gerenciar fontes"),"aj_settings-2",474,880,360,60,0);
   }
 }
+// Only count schedule windows belonging to this setup's XMLTV source.
+static float phone_epg_days(void){
+  if(!committed||!draft.epg||!draft.xmltv[0])return 0;
+  time_t end=0,now=time(NULL);for(int i=0;i<epg_n_canais();i++){
+    time_t a,b;if(!strcmp(epg_canal_fonte(i),"g5xmltv")&&epg_janela(i,&a,&b)&&b>end)end=b;
+  }
+  return end>now?(float)(end-now)/86400:0;
+}
+static int phone_step(void){
+  return phone_stage==3?4:phone_stage==2?3:phone_stage==4?2:phone_stage==1?1:celular_conectado()?1:0;
+}
 static void phone_screen(void){
-  panel(48,128,1824,848);label(TXT_TITULO2,i18n("Mais fácil pelo celular."),102,200,1500,0);
-  label(TXT_ILHA_CORPO,i18n("Leia o QR e continue no celular."),102,286,1500,1);
-  if(celular_estado()==CEL_ESPERANDO){celb_qr_desenhar(celular_url(),128,392,1);label(TXT_ILHA_SUB,celular_url(),102,740,740,0);}
-  else if(phone_stage==4)label(TXT_ILHA_CORPO,i18n("Testando conexão…"),102,450,660,0);
-  else if(phone_stage==2)label(TXT_ILHA_CORPO,i18n("Confira as opções e continue na TV."),102,450,660,0);
-  else label(TXT_ILHA_CORPO,i18n("Pareamento expirado"),102,450,660,0);
-  const char *names[]={"Dados do provedor","Teste de conexão","Escolha o que importar","Confira as opções e continue na TV."};
-  for(int i=0;i<4;i++)label(TXT_ILHA_CORPO,i18n(names[i]),876,410+i*108,830,1);
-  button(4,i18n("Continuar na TV"),"pl_chevron-left",102,880,400,60,0);button(5,i18n("Novo QR"),"aj_rotate-cw",550,880,260,60,0);
+  int step=phone_step(),done=step==4,fetch=phone_stage==4;
+  int expired=celular_estado()==CEL_EXPIROU||celular_estado()==CEL_FALHOU||celular_estado()==CEL_PARADO;
+  float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
+  panel(48,128,1824,848);
+  label(TXT_V2_KICK,i18n("Configurar pelo celular"),102,166,1000,1);
+  label(TXT_ILHA_TITULO,i18n(done?"Tudo pronto":expired?"Pareamento expirado":fetch?"Importando…":phone_stage==1?"Testando conexão…":step?"Conectado à TV":"Mais fácil pelo celular."),102,207,1540,0);
+  label(TXT_ILHA_CORPO,i18n(done?"Fonte adicionada ao perfil":step>=3?"Conectado. Escolha o conteúdo e os grupos antes de importar.":step?"Use os dados enviados pelo seu provedor.":"Leia o QR e continue no celular."),102,272,1620,1);
+  // Lucide vectors through the existing icon renderer: phone, transfer, TV.
+  gfx_icone((GfxRect){110,335,68,68},"aj_smartphone",.75f,.76f,.78f,1);
+  for(int i=0;i<3;i++){
+    float a=.25f;
+    if(step&&!done&&!expired)a=ajustes_animacoes_reduzidas()?.65f:.35f+.5f*(.5f+.5f*sinf(SDL_GetTicks()/350.0f-i));
+    gfx_icone((GfxRect){208+i*54,353,26,26},"aj_chevron-right",ar,ag,ab,a);
+  }
+  gfx_icone((GfxRect){390,335,68,68},done?"aj_check":"aj_tv",done?ar:.75f,done?ag:.76f,done?ab:.78f,1);
+  label(TXT_ILHA_SUB,i18n("Os dados ficam só na sua TV."),102,422,600,1);
+  if(!done&&!expired&&celular_url()[0]){
+    celb_qr_desenhar_lado(celular_url(),102,474,246,1);
+    const char *token=strrchr(celular_url(),'/');char code[32];
+    snprintf(code,sizeof code,"%.4s  %.4s",token?token+1:"",token?token+5:"");
+    label(TXT_ILHA_SUB,i18n("Conexão"),382,486,270,1);
+    label(TXT_ILHA_TITULO,code,382,530,350,0);
+    label(TXT_ILHA_APOIO,i18n("Não compartilhe este código."),382,602,330,1);
+    char host[96];snprintf(host,sizeof host,"%.*s",token?(int)(token-celular_url()):(int)strlen(celular_url()),celular_url());
+    char address[128];snprintf(address,sizeof address,"%s/",host);
+    label(TXT_ILHA_SUB,address,102,744,610,0);
+    label(TXT_ILHA_APOIO,i18n("Celular e TV na mesma rede Wi-Fi."),102,790,610,1);
+  }else{
+    gfx_icone((GfxRect){162,490,128,128},done?"aj_check":"aj_wifi-off",done?ar:.7f,done?ag:.7f,done?ab:.7f,1);
+    label(TXT_ILHA_NOME,i18n(done?"Pronto para assistir":"Novo QR"),102,660,570,0);
+    label(TXT_ILHA_CORPO,i18n(done?"Suas escolhas já estão na tela grande.":"Leia o QR e continue no celular."),102,710,570,1);
+  }
+  const char *names[]={"Conectado à TV","Dados do provedor","Importar","Categorias"};
+  for(int i=0;i<4;i++){
+    float y=342+i*68;int complete=done||i<step,active=!expired&&!done&&i==step;
+    gfx_cor((GfxRect){788,y,38,38},.5f,complete||active?ar:1,complete||active?ag:1,complete||active?ab:1,complete?.22f:.07f);
+    if(complete)gfx_icone((GfxRect){797,y+9,20,20},"aj_check",ar,ag,ab,1);
+    else if(active)gfx_arco((GfxRect){797,y+9,20,20},2,ajustes_animacoes_reduzidas()?0:(SDL_GetTicks()%1600)/1600.0f,.7f,ar,ag,ab,1);
+    label(TXT_ILHA_NOME,i18n(names[i]),848,y+1,620,!complete&&!active);
+    label(TXT_ILHA_APOIO,i18n(complete?"Pronto":active?"Em andamento":"A seguir"),1530,y+8,270,1);
+  }
+  if(fetch){
+    int parts=atomic_load(&phone_parts),parts_total=draft.type==0?3:1;char progress[64];snprintf(progress,sizeof progress,i18n("%d de %d"),parts,parts_total);
+    gfx_cor((GfxRect){788,622,1000,5},.5f,1,1,1,.08f);
+    if(parts)gfx_cor((GfxRect){788,622,1000*fminf((float)parts/parts_total,1),5},.5f,ar,ag,ab,1);
+    label(TXT_ILHA_SUB,progress,788,640,1000,1);
+  }
+  int sizes[3]={0},ng=0;
+  if(step>=3){for(int i=0;i<count;i++)if(inventory[i].kind<=G5_SERIES&&(!done||group_allowed(inventory[i].group)))sizes[inventory[i].kind]++;for(int i=0;i<group_count;i++)ng+=!done||group_on[i];}
+  else if(fetch)for(int i=0;i<3;i++)sizes[i]=atomic_load(&phone_counts[i]);
+  const char *stats[]={"Canais ao vivo","Filmes","Séries","Categorias"};
+  for(int i=0;i<4;i++){
+    float x=788+i*251;char n[24];snprintf(n,sizeof n,"%d",i<3?sizes[i]:ng);
+    label(TXT_ILHA_TITULO,step>=3||fetch?n:"—",x,689,230,0);
+    label(TXT_ILHA_SUB,i18n(stats[i]),x,744,230,1);
+  }
+  label(TXT_ILHA_SUB,i18n("Guia de programação"),788,800,340,1);
+  float days=phone_epg_days();char coverage[96];
+  if(days>0)snprintf(coverage,sizeof coverage,i18n("%.1f dias de programação"),days);
+  else snprintf(coverage,sizeof coverage,"%s · %s",i18n("Sem programação"),i18n(done&&draft.epg?"Abrir o Guia de TV":"Não configurado"));
+  label(TXT_ILHA_SUB,coverage,1150,800,630,1);
+  if(done){button(0,i18n("Abrir o Guia de TV"),"aj_tv",102,880,420,60,0);button(1,i18n("Filmes e séries"),"aj_film",550,880,330,60,0);button(2,i18n("Gerenciar fontes"),"aj_settings-2",908,880,360,60,0);}
+  else{button(4,i18n("Continuar na TV"),"pl_chevron-left",102,880,400,60,0);button(5,i18n("Novo QR"),"aj_rotate-cw",550,880,260,60,0);}
 }
 static int sources_offset;
 static void sources_screen(void){
@@ -856,7 +930,7 @@ static int gv_event(SDL_Keycode k,int repeat);
 static void gv_tick(void);
 static void gs_tick(void);
 static void page_draw(void){
-  if(!strcmp(screen,"setup-celular-tv"))phone_screen();
+  if(!strcmp(screen,"setup-celular-tv")||(!strcmp(screen,"setup-pronto")&&phone_stage==3))phone_screen();
   else if(!strncmp(screen,"setup-",6))wizard();
   else if(!strcmp(screen,"fontes-gerenciar"))sources_screen();
   else if(!strcmp(screen,"vod-titulo")||!strcmp(screen,"vod-serie-temporadas"))title_screen();
@@ -1138,8 +1212,9 @@ void g5ui_update(void){
       char file[3100]="";js_texto_linhas(data,NULL,"file",file,sizeof file);
       if(pstep==1){
         /* Authenticate first, then fetch real catalog counts and categories. */
-        use_saved=0;action[0]=0;if(file[0]){draft.type=2;snprintf(draft.file,sizeof draft.file,"%s",file);}
+        message[0]=0;use_saved=0;action[0]=0;if(file[0]){draft.type=2;snprintf(draft.file,sizeof draft.file,"%s",file);}
         draft.live=draft.movies=draft.series=1;draft.epg=0;phone_stage=1;
+        atomic_store(&phone_parts,0);for(int i=0;i<3;i++)atomic_store(&phone_counts[i],0);
         celular_status("{\"s\":\"fetch\"}");
         if(!start(1)){phone_stage=0;celular_status("{\"s\":\"err\"}");}
       }else if(pstep==2&&phone_stage==2){
@@ -1149,8 +1224,12 @@ void g5ui_update(void){
         else if(!draft.live&&!draft.movies&&!draft.series)celular_status("{\"s\":\"err\"}");
         else{
           for(int i=0;i<group_count;i++)group_on[i]=!adult_group(groups[i]);
-          const char *g=js_array(data,NULL,"off");while(g){const char *e=js_fim(g);if(!e)break;char value[24]="";snprintf(value,sizeof value,"%.*s",(int)(e-g),g);char *end;long i=strtol(value,&end,10);
-            if(end!=value&&!*end&&i>=0&&i<group_count)group_on[i]=0;g=js_prox(e);}
+          // js_array/js_prox only iterate objects and strings, not numeric IDs.
+          char off[CEL_CORPO_MAX+1];if(js_bruto(data,NULL,"off",off,sizeof off)&&off[0]=='['){const char *g=off+1;
+            for(int n=0;n<G5_GROUPS;n++){while(isspace((unsigned char)*g))g++;char *end;long i=strtol(g,&end,10);if(end==g)break;
+              g=end;while(isspace((unsigned char)*g))g++;if(*g!=','&&*g!=']')break;if(i>=0&&i<group_count)group_on[i]=0;if(*g==']')break;g++;
+            }
+          }
           persist();
           if(save_failed)celular_status("{\"s\":\"err\"}");
           else{if(!draft.live)drop_kind(G5_LIVE);if(!draft.movies)drop_kind(G5_MOVIE);if(!draft.series)drop_kind(G5_SERIES);phone_status_counts("done");phone_stage=3;go("setup-pronto");}
