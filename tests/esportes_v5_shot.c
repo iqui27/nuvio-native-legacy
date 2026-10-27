@@ -55,6 +55,7 @@ static void fixture(void){
   nLtvF=1;strcpy(ltvF[0].nome,"Fixture IPTV");strcpy(ltvF[0].chave,"fixture");ltvF[0].tipo=LTV_M3U;
   for(int i=0;i<nCanais;i++)canais[i].base="";
   fontesOk=cacheLido=1;perfilPrefs=perfis_ativo();estado=G_PRONTO;
+  epg_so_provedores(1); /* Fixture XML only; Sources must not download public EPG. */
 }
 int main(int argc,char **argv){
   const char *out=argc>1?argv[1]:"/Volumes/ExternalSSD/tmp/rev/esportes619";mkdir(out,0755);
