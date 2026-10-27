@@ -5159,10 +5159,14 @@ int stream_partes_escolheu(int *fonte, PartesLista *l, int *k) {
   ptEscolhaFonte = -1;
   return 1;
 }
+int stream_escolher_indice(int indice) {
+  if(indice<0 || indice>=n)return 0;
+  escolha=indice;escolhaGeracao=listaGeracao;aberta=0;return 1;
+}
 // O toque curto (ou o OK de sempre) numa linha da lista: a mesma acao de antes.
 static void okNaLinha(void) {
   int i = filtrado(foco);
-  if (i >= 0) { escolha=i; escolhaGeracao=listaGeracao; aberta=0; }
+  if (i >= 0)stream_escolher_indice(i);
   else if (i <= -2) {
     OndeVer o;
     if (ondever_item(alvoPedido,-i-2,&o) && ondever_abrir(o.nome)!=ONDE_INFO) aberta=0;

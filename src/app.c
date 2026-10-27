@@ -5156,9 +5156,12 @@ static void recuperarErroFonte(void) {
 
 void app_atualizar(float dt, Uint32 agora) {
   aioui_atualizar(dt, agora);
-  if(perfil_regra_tempo(dt) && player_aberto()) {
-    player_sair();video_parar();
+  if(tela!=TELA_LOGIN && tela!=TELA_ESCOLHA_PERFIL && perfil_regra_tempo(dt)) {
+    if(player_aberto() || player_mini_ativo()) { player_sair();player_encerrar();video_parar(); }
+    player_descartar_retido();fontevolta_esquecer("parental time limit");
+    invalidarPerfil();tela=TELA_ESCOLHA_PERFIL;perfilAntes=perfis_ativo();perfilsel_iniciar();
     glem_aviso_curto(i18n("Tempo de tela esgotado para este perfil."));
+    return;
   }
   relogioFocoValidar();
   ajustes_fontes_atualizar();

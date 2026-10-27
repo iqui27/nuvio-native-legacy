@@ -510,6 +510,8 @@ void stream_folha_atualizar(float dt, Uint32 agora);
 void stream_folha_desenhar(Uint32 agora);
 // Devolve 1 uma vez quando o usuario escolheu, com o indice em *escolhido.
 int  stream_folha_escolheu(int *escolhido);
+// Same explicit choice as OK in the source sheet; never resolves or plays here.
+int  stream_escolher_indice(int indice);
 
 // Captured at dispatch, so a delayed worker cannot adopt another profile's list.
 int stream_canal_primeira_viva_sessao(int tentativas, uint64_t sessao);

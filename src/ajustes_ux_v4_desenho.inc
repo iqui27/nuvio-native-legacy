@@ -29,6 +29,11 @@ static float aj4Bloco(TxtEstilo e,const char *s,float x,float y,float w,float lh
 #define ajIconeT aj4IconeT
 #define ajBloco aj4Bloco
 static void aj4PontAtivar(int zona,int row) {
+  if(zona==15) {
+    if(row==0)definirValorDireto(AJ_FONTE_MANUAL,!valor[AJ_FONTE_MANUAL]);
+    else { int op=row==1?AJ_FONTE_ORDEM_ADDON:AJ_FONTE_MANUAL;focarOpcao(op);uxAbrirEditor(op);if(row==2) { uxRodape=1;uxEvento(SDLK_RETURN); } }
+    return;
+  }
   if(zona==14) {
     if(row==AJ_COR_LOGO)definirValorDireto(row,!valor[row]);
     else if(row==AJ_FONTE_MANUAL)uxPendente=!uxPendente;
@@ -482,6 +487,7 @@ static void aj4PerfilDesenhar(void) {
 #include "ajustes_pen_desenho.inc"
 #include "ajustes_pen_editor.inc"
 #include "ajustes_pen_secondary.inc"
+#include "ajustes_pen_sources.inc"
 #include "ajustes_pen_util.inc"
 #include "ajustes_pen_especiais.inc"
 #include "ajustes_pen_presets.inc"
@@ -495,6 +501,7 @@ static void aj4Desenhar(void) {
   else if(aj4Util==3 || (aj4Util==1 && !aj4Review))ajPenUtility();
   else if(aj4Util==2 && !aj4Review)ajPenPresets();
   else if(aj4Review || aj4Util)aj4UtilDesenhar();
+  else if(!focoIndice && ajPenPage==AJ_PEN_SOURCES)ajPenSources();
   else if(!focoIndice && ajPenPage==AJ_PEN_COMPONENTS)ajPenComponents();
   else if(!focoIndice && ajPenPage==AJ_PEN_SECONDARY)ajPenSecondary();
   else if(!focoIndice && ajPenPage==AJ_PEN_RULES)ajPenRules();

@@ -11476,7 +11476,12 @@ int ajustes_teste_quadro(const char *id) {
     else if(!strcmp(id,"pen-features"))ajPenOpen(AJ_PEN_TOUR);
     else if(!strcmp(id,"pen-presets")) { aj4Util=2;focoIndice=0; }
     else if(!strcmp(id,"pen-quality")) { ajPenOpen(29);focarOpcao(AJ_QUALIDADE);uxAbrirEditor(AJ_QUALIDADE);uxPendente=1; }
-    else if(!strcmp(id,"pen-source")) { ajPenOpen(29);focarOpcao(AJ_FONTE_MANUAL);uxAbrirEditor(AJ_FONTE_MANUAL); }
+    else if(!strcmp(id,"pen-source")) {
+      Stream fixture[5]={0};const char *labels[]={"Torrentio · 4K Dolby Vision","Real-Debrid · 1080p","Torrentio · 720p","Mediafusion + · 1080p","YTS · 720p"};
+      const int heights[]={2160,1080,720,1080,720};
+      for(int i=0;i<5;i++) { snprintf(fixture[i].rotulo,sizeof fixture[i].rotulo,"%s",labels[i]);fixture[i].altura=heights[i];fixture[i].debridServico=i==1; }
+      stream_definir_lista(fixture,5);ajPenOpen(AJ_PEN_SOURCES);
+    }
     else if(!strcmp(id,"pen-scale")) { ajPenOpen(34);focarOpcao(AJ_ESCALA_TEXTO);uxAbrirEditor(AJ_ESCALA_TEXTO);uxPendente=2; }
     else if(!strcmp(id,"pen-color")) { ajPenOpen(34);focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);uxPendente=3; }
     else if(!strcmp(id,"pen-audio")) { ajPenOpen(27);ajPenRow=1; }

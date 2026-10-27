@@ -46,10 +46,10 @@ static void ajPenModo(float y) {
 static void ajPenRodape(const char *page,int part,int total) {
   ajNeutro((GfxRect){200,1024,36,26},7,.07f,.14f,.15f,.17f,1);
   aj4Texto("OK",TXT_G14B,208,1029,24,.8f);
-  aj4Texto(uxEditor?"escolher":aj4Util==2?"usar":ajPenPage==AJ_PEN_RULES?"voltar":ajPenPage==AJ_PEN_TOUR?"ligar":"abrir",TXT_AJ_MINI14,246,1029,70,.45f);
+  aj4Texto(uxEditor?"escolher":aj4Util==2?"usar":ajPenPage==AJ_PEN_RULES?"voltar":ajPenPage==AJ_PEN_TOUR?"ligar":ajPenPage==AJ_PEN_SECONDARY || ajPenPage==AJ_PEN_SOURCES?"escolher":"abrir",TXT_AJ_MINI14,246,1029,70,.45f);
   ajNeutro((GfxRect){289,1024,29,26},7,.07f,.14f,.15f,.17f,1);
   ajIcone("aj_arrow-left",297,1031,14,.8f);
-  const char *back=uxEditor?(ajPenPage==27 || ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":uxOp==AJ_TEMA || uxOp==AJ_ESCALA_TEXTO?"Minha tela":"Reprodução"):ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
+  const char *back=ajPenPage==AJ_PEN_SOURCES?"Reprodução":uxEditor?(ajPenPage==27 || ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":uxOp==AJ_TEMA || uxOp==AJ_ESCALA_TEXTO?"Minha tela":"Reprodução"):ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
   char backText[160];snprintf(backText,sizeof backText,i18n("voltar para %s"),i18n(back));
   aj4Texto(focoIndice?"voltar":backText,TXT_AJ_MINI14,328,1029,330,.45f);
   char text[200];

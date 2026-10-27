@@ -19,10 +19,12 @@ static void ajPenSecondary(void) {
       if(i) { ajPenChip("−",NULL,248,y+88,44,0,13,3);ajPenChip("+",NULL,430,y+88,44,0,13,3); }
     }
   }
-  static const int ops[]={AJ_LEG2_FONTE,AJ_LEG2_TAMANHO,AJ_LEG2_COR,AJ_LEG2_FUNDO,AJ_LEG2_BORDA,AJ_LEG_LINGUA2};
+  static const int ops[]={AJ_LEG2_FONTE,AJ_LEG2_TAMANHO,AJ_LEG2_COR,AJ_LEG2_FUNDO,AJ_LEG2_BORDA,AJ_LEG_LINGUA2,AJ_LEG2_POS};
   static const char *const labels[]={"Igual à principal","Tamanho","Cor","Fundo","Borda","Idioma da segunda legenda"};
   static const char *const help[]={"Usa o mesmo estilo da principal","De 50% a 300% do tamanho principal","Branco, amarelo, verde, azul, vermelho","Escuro de 25% a 100%","Nenhuma, contorno ou sombra","O idioma da tradução extra"};
-  for(int i=0;i<6;i++) {
+  if(ajPenRow==6)ajPenPanel(226,584,468,140,1);
+  if(ajPenRow==5)ajPenPanel(226,400,468,170,1);
+  for(int i=0;i<5;i++) {
     float y=400+i*76;
     if(ajPenRow==i)ajPenPanel(770,y,1028,70,1);
     aj4Texto(labels[i],TXT_G21B,770,y+5,800,1);aj4Texto(help[i],TXT_AJ_MINI14,770,y+40,800,.4f);
