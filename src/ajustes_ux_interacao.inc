@@ -359,12 +359,13 @@ static int uxEvento(SDL_Keycode k) {
     // A REGUA DA COR: ← → na fileira, ↑ ↓ entre as fileiras (claros,
     // profundos, dinamicas, Textura), na ordem da tela.
     if (ajPaleta(uxOp) && ajEmLinha(uxOp) && uxEditor == 1 &&
+        uxOp != AJ_TEMA &&
         (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_UP || k == SDLK_DOWN)) {
       uxPendente = ajReguaMover(uxOp, uxPendente, k == SDLK_RIGHT ? 1 : k == SDLK_LEFT ? -1 : 0,
                                 k == SDLK_DOWN ? 1 : k == SDLK_UP ? -1 : 0);
       return 1;
     }
-    if (ajEmLinha(uxOp) && uxEditor == 1 && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
+    if (ajEmLinha(uxOp) && uxEditor == 1 && uxOp != AJ_TEMA && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
       uxPendente += k == SDLK_RIGHT ? 1 : -1;
       if (uxPendente < 0) uxPendente = 0;
       if (uxPendente >= nValores(uxOp)) uxPendente = nValores(uxOp) - 1;
