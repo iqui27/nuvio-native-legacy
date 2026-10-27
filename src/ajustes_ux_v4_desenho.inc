@@ -35,7 +35,8 @@ static void aj4PontAtivar(int zona,int row) {
     return;
   }
   if(zona==14) {
-    if(row==AJ_COR_LOGO)definirValorDireto(row,!valor[row]);
+    if(row==AJ_TAMANHO_UI) { focarOpcao(row);uxAbrirEditor(row); }
+    else if(row==AJ_COR_LOGO)definirValorDireto(row,!valor[row]);
     else if(row==AJ_FONTE_MANUAL)uxPendente=!uxPendente;
     else { for(int i=0;i<nValores(AJ_AUD_LINGUA);i++)if(!strcmp(ling_opcao_codigo(i),"~")) { uxPendente=i;break; } }
     return;

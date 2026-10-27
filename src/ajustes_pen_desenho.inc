@@ -46,12 +46,14 @@ static void ajPenModo(float y) {
 static void ajPenRodape(const char *page,int part,int total) {
   ajNeutro((GfxRect){200,1024,36,26},7,.07f,.14f,.15f,.17f,1);
   aj4Texto("OK",TXT_G14B,208,1029,24,.8f);
-  aj4Texto(uxEditor?"escolher":aj4Util==2?"usar":ajPenPage==AJ_PEN_RULES?"voltar":ajPenPage==AJ_PEN_TOUR?"ligar":ajPenPage==AJ_PEN_SECONDARY || ajPenPage==AJ_PEN_SOURCES?"escolher":"abrir",TXT_AJ_MINI14,246,1029,70,.45f);
-  ajNeutro((GfxRect){289,1024,29,26},7,.07f,.14f,.15f,.17f,1);
-  ajIcone("aj_arrow-left",297,1031,14,.8f);
+  aj4Texto(uxEditor?"escolher":aj4Util==2?"usar":ajPenPage==AJ_PEN_RULES?"voltar":ajPenPage==AJ_PEN_TOUR?"ligar":ajPenPage==AJ_PEN_COMPONENTS?"experimentar":ajPenPage==AJ_PEN_SECONDARY || ajPenPage==AJ_PEN_SOURCES?"escolher":"abrir",TXT_AJ_MINI14,246,1029,70,.45f);
+  int choosing=uxEditor || ajPenPage==AJ_PEN_SECONDARY || ajPenPage==AJ_PEN_SOURCES;
+  float backX=choosing?317:289;
+  ajNeutro((GfxRect){backX,1024,29,26},7,.07f,.14f,.15f,.17f,1);
+  ajIcone("aj_arrow-left",backX+8,1031,14,.8f);
   const char *back=ajPenPage==AJ_PEN_SOURCES?"Reprodução":uxEditor?(ajPenPage==27 || ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":uxOp==AJ_TEMA || uxOp==AJ_ESCALA_TEXTO?"Minha tela":"Reprodução"):ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
   char backText[160];snprintf(backText,sizeof backText,i18n("voltar para %s"),i18n(back));
-  aj4Texto(focoIndice?"voltar":backText,TXT_AJ_MINI14,328,1029,330,.45f);
+  aj4Texto(focoIndice || ajPenPage==AJ_PEN_COMPONENTS?"voltar":backText,TXT_AJ_MINI14,backX+39,1029,400,.45f);
   char text[200];
   if((ajPenPage>=0 && ajPenPage<27) || ajPenPage==AJ_PEN_COMPONENTS)snprintf(text,sizeof text,"%s",i18n(page));
   else snprintf(text,sizeof text,i18n("%s · %d de %d"),i18n(page),part,total);
@@ -113,7 +115,7 @@ static void ajPenRows(void) {
       aj4Alvo((GfxRect){x,y,w,74},8,index);
     }
   }
-  if(ajPenPage==44)ajPenChip("Componentes",NULL,1510,112,180,0,12,4);
+  if(ajPenPage==44)ajPenChip("Componentes",NULL,1300,112,180,0,12,4);
   if(ajPenPage==29)aj4Texto("A TV é quem reproduz. O Nuvio converte o que a TV não entende.",TXT_AJ_MINI14,226,908,748,.4f);
   ajPenRodape(ajPenPage==27 || ajPenPage==28?"Áudio e legendas":ajPenPage<27?page->title:page->section,ajPenPage>=29 && ajPenPage<46?AJ_PEN_PART[ajPenPage-29]:page->part,ajPenPage>=29 && ajPenPage<46?AJ_PEN_TOTAL[ajPenPage-29]:page->total);
 }

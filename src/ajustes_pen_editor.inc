@@ -22,7 +22,7 @@ static void ajPenEditor(void) {
   ajKicker(quality?"COMO FUNCIONA":op==AJ_ESCALA_TEXTO?"ESCALA":op==AJ_TEMA?"COR DE DESTAQUE":op==AJ_LEG_LINGUA2?"SEGUNDA LEGENDA":op==AJ_FONTE_MANUAL?"COMO ESCOLHE":"PREFERÊNCIA",226,366,1);
   char original[160];uxValorTexto(op,uxOriginal,original,sizeof original);
   const char *heads[]={quality?"Automática":op==AJ_ESCALA_TEXTO?"Escala do texto":op==AJ_TEMA?"Cor de destaque":op==AJ_AUD_LINGUA?"Preferir faixa original":op==AJ_LEG_LINGUA2?"Idioma da segunda legenda":op==AJ_FONTE_MANUAL?"Escolher na mão":"Valor atual",quality?"Limite desta TV":screen?op==AJ_TEMA?"Cor da logo":"Tamanho da interface":op==AJ_LEG_LINGUA2?"Posição":op==AJ_FONTE_MANUAL?"Ordem das fontes":"Faixa de reserva",quality?"O que o addon oferece":op==AJ_ESCALA_TEXTO?"Mínimo garantido":op==AJ_LEG_LINGUA2?"Estilo separado":op==AJ_FONTE_MANUAL?"Antes de abrir":"Onde isso vale"};
-  const char *body[]={quality?"A TV pede a melhor qualidade que ela aguenta. Quem limita é a rede.":op==AJ_AUD_LINGUA?"Quando existe original em boa qualidade, ele vem primeiro — sem dublado por cima.":op==AJ_LEG_LINGUA2?"O idioma da tradução extra. Desligada, ela não aparece.":op==AJ_FONTE_MANUAL?"A TV mostra as fontes e você escolhe com o D-pad.":screen?caption:original,quality?ajudaOpcao(AJ_RESOLUCAO):op==AJ_AUD_LINGUA?"Se a escolhida não existir no título, tocamos a original.":op==AJ_LEG_LINGUA2?"No topo da tela ou junto da principal.":op==AJ_FONTE_MANUAL?"Por qualidade ou na ordem em que o addon montou.":screen?ajudaOpcao(op==AJ_TEMA?AJ_COR_LOGO:AJ_TAMANHO_UI):aj4Ajuda(op),quality?"Cada addon diz a qualidade do arquivo que ele tem.":op==AJ_LEG_LINGUA2?"A segunda legenda não muda quando você muda a principal.":op==AJ_FONTE_MANUAL?"O Nuvio confere a fonte e avisa antes de trocar.":op==AJ_ESCALA_TEXTO?"Com 85% as legendas continuam legíveis a 3 metros.":escopoDe(op)==ESC_TV?"Nesta TV e no app da sala. O celular segue a conta, não a TV.":"A escolha acompanha este perfil."};
+  const char *body[]={quality?"A TV pede a melhor qualidade que ela aguenta. Quem limita é a rede.":op==AJ_AUD_LINGUA?"Quando existe original em boa qualidade, ele vem primeiro — sem dublado por cima.":op==AJ_LEG_LINGUA2?"O idioma da tradução extra. Desligada, ela não aparece.":op==AJ_FONTE_MANUAL?"A TV mostra as fontes e você escolhe com o D-pad.":screen?caption:original,quality?"A qualidade é pedida à fonte a cada reprodução":op==AJ_AUD_LINGUA?"Se a escolhida não existir no título, tocamos a original.":op==AJ_LEG_LINGUA2?"No topo da tela ou junto da principal.":op==AJ_FONTE_MANUAL?"Por qualidade ou na ordem em que o addon montou.":screen?(op==AJ_TEMA?"A logo do app pode acompanhar a cor.":"Escala dos cartões e das listas. Não mexe nas letras."):aj4Ajuda(op),quality?"Cada addon diz a qualidade do arquivo que ele tem.":op==AJ_LEG_LINGUA2?"A segunda legenda não muda quando você muda a principal.":op==AJ_FONTE_MANUAL?"O Nuvio confere a fonte e avisa antes de trocar.":op==AJ_ESCALA_TEXTO?"Com 85% as legendas continuam legíveis a 3 metros.":escopoDe(op)==ESC_TV?"Nesta TV e no app da sala. O celular segue a conta, não a TV.":"A escolha acompanha este perfil."};
   for(int i=0;i<(op==AJ_TEMA?2:3);i++) {
     float y=i==0?400:i==1?584:728,h=i==0?170:i==1?130:140;
     ajNeutro((GfxRect){226,y,468,h},22,.05f,.10f,.11f,.13f,1);
@@ -37,13 +37,14 @@ static void ajPenEditor(void) {
       aj4Texto(on?"Ligado":"Desligado",TXT_G18R,320,513,300,.58f);
       aj4Alvo((GfxRect){248,506,400,36},14,setting);
     }
+    if(op==AJ_ESCALA_TEXTO && i==1)aj4Alvo((GfxRect){226,y,468,h},14,AJ_TAMANHO_UI);
     if(op==AJ_TEMA && i==1) {
       ajPenChip(lig(AJ_COR_LOGO)?"Ligado":"Desligado",NULL,248,682,160,0,14,AJ_COR_LOGO);
     }
     if(screen && i==0) {
       if(op==AJ_ESCALA_TEXTO) {
         ajPenChip("−",NULL,248,512,44,0,11,-1);
-        aj4Texto(original,TXT_G21B,306,524,80,1);
+        char draft[100];uxValorTexto(op,uxPendente,draft,sizeof draft);aj4Texto(draft,TXT_G21B,306,524,80,1);
         ajPenChip("+",NULL,375,512,44,0,11,1);
       } else {
         static const int colors[]={6,0,2,3,4,5,1,11};
@@ -78,6 +79,6 @@ static void ajPenEditor(void) {
       aj4Alvo((GfxRect){770,y,1028,70},4,i);
     }
   }
-  aj4Texto(op==AJ_AUD_LINGUA?"O Nuvio não corta faixas: a original é sempre a primeira opção da lista.":"OK aplica. Voltar mantém o valor atual.",TXT_AJ_MINI14,770,944,1028,.4f);
+  aj4Texto(op==AJ_AUD_LINGUA?"O Nuvio não corta faixas: a original é sempre a primeira opção da lista.":op==AJ_ESCALA_TEXTO?"A escala vale nesta TV. O celular segue a conta, não a TV.":op==AJ_TEMA?"A cor de destaque é a cor do foco. Da arte usa a cor da capa que está na tela.":quality?"A qualidade é pedida à fonte a cada reprodução. Se ela não tem, o Nuvio avisa antes de baixar.":"OK aplica. Voltar mantém o valor atual.",TXT_AJ_MINI14,770,944,1028,.4f);
   ajPenRodape(section,quality?2:3,quality?5:3);
 }

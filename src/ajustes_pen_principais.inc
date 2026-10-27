@@ -194,7 +194,7 @@ static const AjPenPage AJ_PEN_MAIN[] = {
       {AJ_FALHA_TB_LIMITE,"Links no TorBox","Quantos links o addon pode pedir","aj_globe",0},
       {AJ_FALHA_PM_LIMITE,"Links no Premiumize","Quantos links o addon pode pedir","aj_globe",0},
       {AJ_FALHA_AD_LIMITE,"Links no AllDebrid","Quantos links o addon pode pedir","aj_globe",0},
-      {AJ_DEBRID_PM_TESTAR,"Testar chave do Premiumize","","aj_plus",0},
+      {AJ_DEBRID_PM,"Provedor novo","","aj_plus",0},
     }},
   }},
   {"Servidores pessoais","Perfil e serviços",4,4, {
@@ -210,9 +210,9 @@ static const AjPenPage AJ_PEN_MAIN[] = {
       {AJ_PX_ENTRAR,"Entrar no Plex","","aj_log-in",0},
       {AJ_PX_SERVIDOR,"Servidor do Plex","","aj_server",0},
       {AJ_PX_SAIR,"Sair do Plex","","aj_log-out",0},
-      {AJ_SOCIAL,"Assistir Juntos","A sala com quem você conhece","aj_users",1},
+      {AJ_SOCIAL,"Assistir Juntos","A sala com quem você conhece","aj_users",0},
       {AJ_SYNC,"Código de entrada","O código para aprobar no celular","aj_film",0},
-      {AJ_EM_SAIR,"Sair do Emby","","aj_link",0},
+      {AJ_PX_ENTRAR,"Vínculo por QR","","aj_link",0},
     }},
   }},
   {"TV ao vivo e guia","TV ao vivo e guia",1,2, {
