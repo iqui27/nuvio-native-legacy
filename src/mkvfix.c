@@ -271,6 +271,10 @@ void mkvfix_parar(void) {}
 #include "debrid.h"
 #include <arpa/inet.h>
 #include <errno.h>
+#ifdef NV_TPK40
+#include <fcntl.h>
+#include <netinet/tcp.h>
+#endif
 #include <netinet/in.h>
 #include <poll.h>
 #include <pthread.h>
@@ -606,6 +610,10 @@ static int enviar(int sock, const void *b, size_t n, Sess *s) {
     if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
       // Player parado (pausa, buffer cheio): espera; so o fim da sessao solta.
       if (s->cancelar) return 0;
+#ifdef NV_TPK40
+      struct pollfd pfd = { sock, POLLOUT, 0 };
+      if (poll(&pfd, 1, 20) < 0 && errno != EINTR) return 0;
+#endif
       continue;
     }
     if (r <= 0) return 0;
@@ -721,7 +729,18 @@ static void *atender(void *u) {
   Envio e;
   free(cx);
   memset(&e, 0, sizeof e);
+#ifdef NV_TPK40
+  {
+    int sndbuf = 4 * 1024 * 1024;
+    setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof sndbuf);
+    int nodelay = 1;
+    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);
+    int flags = fcntl(sock, F_GETFL, 0);
+    if (flags >= 0) fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+  }
+#else
   { struct timeval tv = { 1, 0 }; setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv); }
+#endif
   b[0] = 0;
   while (tot < sizeof b - 1 && !strstr(b, "\r\n\r\n") && !strstr(b, "\n\n")) {
     struct pollfd p = { sock, POLLIN, 0 };
