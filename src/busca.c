@@ -109,8 +109,11 @@ static int buTecladoNativo(void) {
 }
 // .tpk com "Teclado: Do sistema": a grade do app some e o foco fica no campo.
 static int buSoSistema(void) { return st_teclado_so_sistema(); }
+// ...e na TV: sem a grade, o campo sobe ao topo, no meio, e os resultados (ou a
+// tela vazia) usam a largura toda por baixo dele. "Do app"/Automatico: igual a antes.
+static int buCampoTopo(void) { return buSoSistema() && !buTelefone(); }
 static int buResultadosPagina(void);
-static int buUmaColuna(void) { return layout_desktop_ativo() || buRetrato() || buTecladoNativo(); }
+static int buUmaColuna(void) { return layout_desktop_ativo() || buRetrato() || buTecladoNativo() || buCampoTopo(); }
 static float buCampoH(void) { return BU_DESKTOP ? 52.0f : buTecladoNativo() ? 104.0f : buTelefone() ? 76.0f : 88.0f; }
 static float buMargem(void) { return buTelefone() ? 48.0f : ANC(BU_MARG); }
 static float buX(void)   { return ANC(ajustes_rail_largura_fixa()) + (BU_DESKTOP ? 80.0f : buMargem()); }
@@ -317,7 +320,7 @@ static int  KB_COLUNAS[BU_KB_MAX_FIL + 1] = { 6, 6, 6, 6, 6, 6, 3 };
 static float buResY(void) {
   if (BU_DESKTOP) return 520.0f/3;   // below the typed field
   if (buResultadosPagina()) return buTopoEsq();
-  if (buTecladoNativo()) return buTopoEsq() + BU_CAMPO_H + 44.0f;
+  if (buTecladoNativo() || buCampoTopo()) return buTopoEsq() + BU_CAMPO_H + 44.0f;
   if (!buRetrato()) return ANC(64.0f);
   return BU_KB_Y + 2.0f * BU_KB_PAD + (kbFil + 1) * BU_TECLA_W
        + kbFil * BU_TECLA_GAP + 92.0f;
@@ -2020,6 +2023,10 @@ static void desenhaCampo(Uint32 agora) {
     return;
   }
 #endif
+  if (buCampoTopo()) {   // metade da largura, centrado sobre os resultados
+    c.w = fminf(c.w, ANC(960.0f));
+    c.x = (buX() + buDir() - c.w) * 0.5f;
+  }
   TxtEstilo estilo = buTecladoNativo() ? TXT_HEADLINE : TXT_CALLOUT;
   float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
@@ -2063,27 +2070,27 @@ static void desenhaCampo(Uint32 agora) {
       float maxW = fim - tx - 14.0f;
       if (buUmaColuna()) gfx_recorte(tx - 8.0f, c.y + 4.0f, fim - tx, c.h - 8.0f);
       const char *av = st_dono() == ST_BUSCA ? st_aviso() : "";
-      float cursorMeio = -1.0f;   // x do cursor quando a pessoa o moveu para dentro do texto
+      float cursorX = nConsulta ? tx + 5.0f : tx - 5.0f;
       if (nConsulta && !av[0]) {
         TxtLinha l = txt_linha_corta(estilo, consulta, BU_TX, maxW);
         float lw = buUmaColuna() ? fminf((float)l.w, maxW) : (float)l.w;
         char antes[BU_MAX_CONSULTA * 2];
         txt_desenhar(l, tx, c.y + (c.h - l.h) * 0.5f);
-        // Cursor no MEIO do texto (Esquerda/Direita no teclado do sistema, .tpk).
+        cursorX = tx + lw + 5.0f;
+        // Cursor no MEIO do texto (Esquerda/Direita no teclado do sistema, .tpk):
+        // no vao entre as letras, nao por cima da seguinte.
         if (st_cursor_prefixo(ST_BUSCA, consulta, antes, sizeof antes)) {
           TxtLinha p = txt_linha_corta(estilo, antes, BU_TX, maxW);
-          cursorMeio = tx + fminf((float)p.w, lw) + 2.0f;
+          cursorX = tx + fminf((float)p.w, lw) + 1.0f;
         }
-        tx += lw + 2.0f;
       } else {
         const char *ph = vozBusca() ? i18n("Ouvindo…") : av[0] ? i18n(av) : "Títulos, pessoas";
         TxtLinha l = txt_linha_corta(estilo, ph, 255, av[0] && !vozBusca() ? 200 : 243,
                                      av[0] && !vozBusca() ? 140 : 239, 255, maxW);
         txt_desenhar_alpha(l, tx, c.y + (c.h - l.h) * 0.5f, av[0] ? 0.9f : 0.42f);
       }
-      if (painel == 0 && (nConsulta > 0 || campoFoco == 1) && (agora / 500) % 2 == 0)
-        gfx_cor((GfxRect){ cursorMeio >= 0.0f ? cursorMeio + 2.0f : nConsulta ? tx + 2.0f : tx - 6.0f,
-                           c.y + (c.h - 30.0f) * 0.5f, 2.0f, 30.0f }, 0.5f, ar, ag, ab, 1.0f);
+      if (painel == 0 && (nConsulta > 0 || campoFoco == 1))
+        ajustes_ui_cursor(cursorX, c.y + c.h * 0.5f, 30.0f, agora, 1.0f);
       if (buUmaColuna()) gfx_sem_recorte();
     }
   }
