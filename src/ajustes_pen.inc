@@ -1,4 +1,5 @@
 /* The approved Pencil pages bind to the original setting IDs. */
+#include "juntosui.h"
 typedef struct { int op; const char *title,*help,*icon; int toggle; } AjPenRow;
 typedef struct { const char *title; int x,w,n; AjPenRow rows[7]; } AjPenColumn;
 typedef struct { const char *title,*section; int part,total; AjPenColumn cols[2]; } AjPenPage;
@@ -84,6 +85,9 @@ static int ajPenLanguageOrder(int *order) {
   return n;
 }
 static int ajPenLanguageMove(SDL_Keycode key) {
+  if(uxEditor==1 && uxOp==AJ_LEG1_ATRASO && ajPenPage==28 && ajPenRow==11 && !uxRodape && (key==SDLK_LEFT || key==SDLK_RIGHT)) {
+    uxPendente=limita(uxOp,uxPendente+(key==SDLK_RIGHT?1:-1));return 1;
+  }
   int supported=uxOp==AJ_AUD_LINGUA || uxOp==AJ_QUALIDADE || uxOp==AJ_ESCALA_TEXTO || uxOp==AJ_TEMA;
   if(uxEditor==1 && ajPenPage>=0 && supported) {
     int screen=uxOp==AJ_ESCALA_TEXTO || uxOp==AJ_TEMA;
@@ -259,10 +263,11 @@ static int ajPenEvent(SDL_Keycode key) {
       else if(op==-4)ajPenParentOpen(PR_IDADE);
       else if(op==-2)pfExigirAdmin(PA_INFANTIL,perfis_ativo());
       else if(op==-3) { if(perfil_infantil_ativo() || pfTravado())return 1;ajPenPinAsk=1;ajPenPinRepeat=admin_perfil_pin_definido(perfis_ativo())?-1:0;ajPenPinOpen(); }
-      else if(op==-5) { ajPenPage=-1;tourAbrir(); }
+      else if(op==-5)juntosui_abrir_folha(-1,0,0);
       else uxNotificar(op==-4?"Perfil infantil: só classificação livre e até 10 anos.":"Ainda não disponível.");
       return 1;
     }
+    if(ajPenPage==40 && ajPenRow==9) { juntosui_abrir_folha(-1,0,0);return 1; }
     if(ajPenPage==36 && op==AJ_DET_META_EXT) { ajPenOpen(17);return 1; }
     if(ajPenPage==29 && op==AJ_FONTE_MANUAL) { ajPenOpen(AJ_PEN_SOURCES);return 1; }
     if(ajPenPage==27 && op==AJ_LEG_LINGUA2) { ajPenOpen(AJ_PEN_SECONDARY);return 1; }

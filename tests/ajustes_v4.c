@@ -82,7 +82,9 @@ int main(void) {
   assert(ajLegendaValor(AJ_LEG1_TAMANHO)==140 && aj4Desfazer());
   assert(ajLegendaValor(AJ_LEG1_TAMANHO)==subtitleSize);
   for(int p=0;p<4;p++) { ajPenPresetPrepare(p);assert(aj4Review==2);aj4Review=0; }
-  ajPenOpen(28);key(SDLK_ESCAPE);assert(ajPenPage==27);
+  ajPenOpen(28);ajPenRow=11;focarOpcao(AJ_LEG1_ATRASO);uxAbrirEditor(AJ_LEG1_ATRASO);
+  int fineBefore=uxPendente;key(SDLK_RIGHT);assert(uxPendente==fineBefore+1);key(SDLK_ESCAPE);
+  key(SDLK_ESCAPE);assert(ajPenPage==27);
   ajPenOpen(34);key(SDLK_ESCAPE);assert(ajPenPage==33);
   // Local PINs gate profile entry and fail closed on a wrong PIN.
   assert(dados_gravar("perfis.txt","1\t0\t1\t0\t336699\tTest profile\t\t\n"));
