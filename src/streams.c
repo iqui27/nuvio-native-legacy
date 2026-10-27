@@ -4267,7 +4267,7 @@ static char nomeFolha[160];
 static int itemFolha = -1;
 void stream_folha_item(int indice) {
   itemFolha = indice;
-  const CatItem *c = cat_item(indice);
+  const CatItem *c = indice >= 0 ? cat_item(indice) : NULL;
   if (c && (pedidoVod != nv_tipo_vod(c->tipo) || canalFolha != nv_tipo_canal(c->tipo))) {
     // A retained list can outlive the last search's Live TV scope.
     stream_filtro_tipo(c->tipo);

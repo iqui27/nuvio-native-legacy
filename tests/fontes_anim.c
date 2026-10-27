@@ -87,11 +87,19 @@ int main(int argc,char **argv) {
     snprintf(sources[i].url,sizeof sources[i].url,"https://example.invalid/%d.mkv",i);
     sources[i].tamanhoMB=9600-i*1300; sources[i].altura=i<3?2160:1080; sources[i].fileIdx=-1;
   }
-  // A retained live request must not hide a movie/episode's source actions.
-  stream_filtro_tipo("tv"); stream_folha_canal(1);
-  stream_definir_alvo("tt12637874:1:3"); stream_definir_lista(sources,5); stream_definir_atual(0);
   CatItem title={0}; snprintf(title.tipo,sizeof title.tipo,"series");
   snprintf(title.imdb,sizeof title.imdb,"tt12637874"); cat_definir(&title,1);
+  // Live TV has no catalog index, even when the last catalog item is VOD.
+  stream_filtro_tipo("tv"); stream_folha_canal(1);
+  stream_definir_alvo("tt12637874:1:3"); stream_definir_lista(sources,5); stream_definir_atual(0);
+  soMp4=soCache=soDub=1;
+  stream_folha_item(-1);
+  assert(itemFolha==-1 && canalFolha && !pedidoVod && !filtrosVod());
+  assert(nBotoes()==2 && "Live TV must not acquire VOD actions without a catalog item");
+  for(int i=0;i<5;i++)
+    assert(lista[i].filtro.naoVod && passaChips(i) && "retained VOD filters must not hide live streams");
+  soMp4=soCache=soDub=0;
+  // A retained live request must not hide a movie/episode's source actions.
   stream_folha_item(0); stream_folha_canal(0);
   stream_folha_nome("Fallout"); stream_folha_contexto("Fallout · S1E3");
   assert(nBotoes()==7 && "VOD must restore MP4/cache/audio and AIO actions after Live TV");
