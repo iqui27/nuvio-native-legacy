@@ -263,7 +263,7 @@ static int ajPenEvent(SDL_Keycode key) {
       else if(op==-4)ajPenParentOpen(PR_IDADE);
       else if(op==-2)pfExigirAdmin(PA_INFANTIL,perfis_ativo());
       else if(op==-3) { if(perfil_infantil_ativo() || pfTravado())return 1;ajPenPinAsk=1;ajPenPinRepeat=admin_perfil_pin_definido(perfis_ativo())?-1:0;ajPenPinOpen(); }
-      else if(op==-5)juntosui_abrir_folha(-1,0,0);
+      else if(op==-5) { ajPenPage=-1;tourAbrir(); }
       else uxNotificar(op==-4?"Perfil infantil: só classificação livre e até 10 anos.":"Ainda não disponível.");
       return 1;
     }
