@@ -6578,7 +6578,6 @@
   T("Seus dados sociais foram apagados.", "Datele tale sociale au fost șterse."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Limbile dvs. și când apar subtitrări"),
-  T("Seus provedores, num só lugar.", "Furnizorii tăi, într-un singur loc."),
   T("Seus servidores", "Serverele tale"),
   T("Seus serviços e credenciais não entram nesta lista.", "Serviciile și datele de conectare nu apar în această listă."),
   T("Seus times, todas as competições", "Your teams, every competition"),

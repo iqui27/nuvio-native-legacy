@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "Dữ liệu mạng xã hội của bạn đã được xóa."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Ngôn ngữ của bạn và thời điểm phụ đề xuất hiện"),
-  T("Seus provedores, num só lugar.", "Nhà cung cấp của bạn, ở một nơi."),
   T("Seus servidores", "Máy chủ của bạn"),
   T("Seus serviços e credenciais não entram nesta lista.", "Dịch vụ và thông tin đăng nhập của bạn không có trong danh sách này."),
   T("Seus times, todas as competições", "Your teams, every competition"),

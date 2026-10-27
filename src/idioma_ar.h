@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "حُذفت بياناتك الاجتماعية."),
   T("Seus filmes e séries usam a rede local quando disponível.", "تستخدم أفلامك ومسلسلاتك الاتصال المحلي عند توفره."),
   T("Seus idiomas e quando as legendas aparecem", "لغاتك ومتى تظهر الترجمة"),
-  T("Seus provedores, num só lugar.", "Your providers, in one place."),
   T("Seus servidores", "خوادمك"),
   T("Seus serviços e credenciais não entram nesta lista.", "خدماتك وبيانات اعتمادك غير مضمّنة في هذه القائمة."),
   T("Seus times, todas as competições", "Your teams, every competition"),

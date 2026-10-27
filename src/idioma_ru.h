@@ -6578,7 +6578,6 @@
   T("Seus dados sociais foram apagados.", "Ваши социальные данные удалены."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Ваши языки и время появления субтитров"),
-  T("Seus provedores, num só lugar.", "Ваши провайдеры в одном месте."),
   T("Seus servidores", "Ваши серверы"),
   T("Seus serviços e credenciais não entram nesta lista.", "Ваших сервисов и учётных данных в этом списке нет."),
   T("Seus times, todas as competições", "Your teams, every competition"),

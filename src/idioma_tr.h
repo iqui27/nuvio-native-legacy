@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "Sosyal verilerin silindi."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Dilleriniz ve altyazıların ne zaman görüneceği"),
-  T("Seus provedores, num só lugar.", "Sağlayıcılarınız tek bir yerde."),
   T("Seus servidores", "Sunucularınız"),
   T("Seus serviços e credenciais não entram nesta lista.", "Hizmetleriniz ve giriş bilgileriniz bu listede yer almaz."),
   T("Seus times, todas as competições", "Your teams, every competition"),

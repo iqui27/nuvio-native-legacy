@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "Dine sociale data er slettet."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Dine sprog og hvornår undertekster vises"),
-  T("Seus provedores, num só lugar.", "Dine udbydere på ét sted."),
   T("Seus servidores", "Dine servere"),
   T("Seus serviços e credenciais não entram nesta lista.", "Dine tjenester og loginoplysninger er ikke med på listen."),
   T("Seus times, todas as competições", "Your teams, every competition"),

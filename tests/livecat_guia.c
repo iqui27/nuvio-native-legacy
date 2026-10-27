@@ -602,6 +602,48 @@ int main(int argc, char **argv) {
   assert(sNCanais == 1 && !strcmp(sCanais[0].nome, "Nimbo"));
   assert(posts == 2 && sLtvF[ctx.fl].cortada);
   puts("PASS: uncached suggestions filter before quota and retain at most the channel cap");
+  /* Owner inventory: every source group survives publication, including >48
+   * categories on native TVs, and all 2693 live rows have exactly one group. */
+  stagingZerar();sTeto=30000;enabled=0;
+  for(int f=0;f<3;f++){
+    char ref[80];snprintf(ref,sizeof ref,"https://coverage%d.test",f);
+    M3uCtx all={.fl=sFonte(LTV_M3U,ref,"Coverage","")};
+    int sizes[]={1978,647,68};
+    for(int i=0;i<sizes[f];i++){
+      char id[96],name[96],group[64];snprintf(id,sizeof id,"https://coverage%d.test/live/%d.ts",f,i);
+      snprintf(name,sizeof name,"Coverage %d %d",f,i);snprintf(group,sizeof group,"Source %d group %d",f,i%170);
+      addM3u(&all,name,i%7?group:"",id);
+    }
+  }
+  selecionarSecoes();assert(sNCanais==2693);
+  int grouped=0;for(int i=0;i<sNCanais;i++){assert(sCanais[i].cat>=0&&sCats[sCanais[i].cat].nome[0]);grouped++;}
+  assert(grouped==1978+647+68);
+  puts("PASS: all 1978 + 647 + 68 live channels retain a category after final admission");
+  stagingZerar();sTeto=30000;ltv_pref_carregar(perfis_ativo());
+  M3uCtx mixed={.fl=sFonte(LTV_M3U,"https://mixed.test","Mixed","")};
+  addM3u(&mixed,"Telecine","Filmes","https://mixed.test/live/1.ts");
+  addM3u(&mixed,"Film","VOD","https://mixed.test/movie/2");
+  addM3u(&mixed,"Show S01E02","Series","https://mixed.test/play/3");
+  addM3u(&mixed,"Film 2","Movies","https://mixed.test/4.mp4?token=test");
+  assert(sNCanais==1&&sNMixedVod==3&&sNCanais+sNMixedVod==4);
+  XtCtx mixed_xt={.fl=sFonte(LTV_XTREAM,"","Mixed Xtream","")};
+  XtreamItem film={.id="xtream:film",.nome="Film",.logo="",.epgId="",.categoria="Movies",.kind=1,.url="https://mixed.test/movie/film.mp4"};
+  xtCanal(&film,&mixed_xt);assert(sNCanais==1&&sNMixedVod==4);
+  GFonte af={.base="https://mixed-addon.test",.tipo="tv",.id="mixed",.nome="Mixed"};
+  nAddonsCarga=1;addonsCarga=calloc(1,sizeof *addonsCarga);addonsCarga[0].ativo=1;snprintf(addonsCarga[0].base,sizeof addonsCarga[0].base,"%s",af.base);
+  addonPage=strdup("{\"metas\":[{\"id\":\"live\",\"name\":\"Live\",\"type\":\"tv\"},{\"id\":\"film\",\"name\":\"Film\",\"type\":\"movie\"},{\"id\":\"show\",\"name\":\"Show\",\"type\":\"series\"}]}");
+  int added=0,addon_source=sFonte(LTV_ADDON,af.base,"Mixed addon",af.base);
+  assert(lerPagina(&af,addon_source,0,&added)==3&&sNCanais==2&&sNMixedVod==6);
+  free(addonPage);addonPage=NULL;free(addonsCarga);addonsCarga=NULL;nAddonsCarga=0;
+  const char *mixed_key=sLtvF[mixed.fl].chave;
+  LtvPref *power=ltv_pref(mixed_key,1);power->desligada=1;ltv_pref_gravar();
+  addM3u(&mixed,"Disabled","News","https://mixed.test/live/5.ts");assert(sNCanais==2);
+  char saved_key[LTV_CHAVE];snprintf(saved_key,sizeof saved_key,"%s",mixed_key);
+  ltv_pref_carregar(perfis_ativo());assert(!ltv_fonte_ligada(saved_key));
+  power=ltv_pref(saved_key,1);power->desligada=0;ltv_pref_gravar();
+  addM3u(&mixed,"Enabled","News","https://mixed.test/live/6.ts");assert(sNCanais==3);
+  puts("PASS: mixed live/VOD totals, disabled source adds zero, persisted switch, re-enable restores admission");
+  enabled=1;
   failures += xtreamLocalSections();
   failures += cacheWorkBound();
   failures += selectedOverflow();

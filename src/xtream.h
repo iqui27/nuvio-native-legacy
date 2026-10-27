@@ -76,6 +76,8 @@ typedef struct {
   int catOrdem;      // posicao da categoria na lista do painel
   int semCategoria;  // category id absent/unknown; preserve a real provider group named Outros
   int arquivo, arquivoDias;   // tv_archive (catch-up, v2)
+  int kind;                  // 0 live, 1 movie, 2 series, 3 episode
+  const char *url;            // Direct VOD URL, valid during the callback only.
 } XtreamItem;
 typedef int (*XtreamCb)(const XtreamItem *c, void *u);
 int xtream_canais_cb(void (*cat)(const char *nome, int ordem, int n, void *u),

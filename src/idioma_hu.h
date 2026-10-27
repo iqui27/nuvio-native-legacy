@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "A közösségi adataid törölve lettek."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Az Ön nyelve és mikor jelennek meg a feliratok"),
-  T("Seus provedores, num só lugar.", "Szolgáltatói egy helyen."),
   T("Seus servidores", "Saját szervereid"),
   T("Seus serviços e credenciais não entram nesta lista.", "A szolgáltatásaid és belépési adataid nincsenek ezen a listán."),
   T("Seus times, todas as competições", "Your teams, every competition"),

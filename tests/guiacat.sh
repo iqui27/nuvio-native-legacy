@@ -2,7 +2,13 @@
 # Offline guide coverage and ESPN crest pipeline, with native PNG evidence.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Includes 1978 + 647 + 68 category totals, mixed VOD and source power persistence.
 bash tests/livecat.sh --guide-only
+bash tests/xtream.sh
+parser=$(mktemp "${TMPDIR:-/tmp}/nuvio-g5-kind.XXXXXX")
+cc -std=gnu11 -Wall -Wextra -Werror -Isrc tests/guiav5.c src/guiav5.c src/js.c -o "$parser"
+"$parser"
+rm -f "$parser"
 bash tests/esportes.sh
 bash tests/esportes_estado.sh
 work=$(mktemp -d "${TMPDIR:-/tmp}/nuvio-guiacat.XXXXXX")

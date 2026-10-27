@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "你的社交数据已删除。"),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "您的语言以及字幕何时出现"),
-  T("Seus provedores, num só lugar.", "您的提供商位于一处。"),
   T("Seus servidores", "你的服务器"),
   T("Seus serviços e credenciais não entram nesta lista.", "你的服务和登录凭据不在此列表中。"),
   T("Seus times, todas as competições", "Your teams, every competition"),

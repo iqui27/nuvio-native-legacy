@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "Vaše sociálne údaje boli vymazané."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Vaše jazyky a kedy sa zobrazia titulky"),
-  T("Seus provedores, num só lugar.", "Vaši poskytovatelia na jednom mieste."),
   T("Seus servidores", "Vaše servery"),
   T("Seus serviços e credenciais não entram nesta lista.", "Vaše služby a prihlasovacie údaje v tomto zozname nie sú."),
   T("Seus times, todas as competições", "Your teams, every competition"),

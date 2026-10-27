@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "Data sosialmu sudah dihapus."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Bahasa Anda dan kapan subtitle muncul"),
-  T("Seus provedores, num só lugar.", "Penyedia Anda, di satu tempat."),
   T("Seus servidores", "Server Anda"),
   T("Seus serviços e credenciais não entram nesta lista.", "Layanan dan kredensial Anda tidak masuk daftar ini."),
   T("Seus times, todas as competições", "Your teams, every competition"),

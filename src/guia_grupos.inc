@@ -27,6 +27,7 @@ static int fonteOrdem(int f) {
 
 static int fonteAtiva(int f) {
   if(f<0 || f>=nLtvF)return 0;
+  if(!ltv_fonte_ligada(ltvF[f].chave))return 0;
   unsigned id;
   if(!fonteConta(&ltvF[f],&id))return 1;
   int tipo=ltvF[f].tipo==LTV_XTREAM?IPTV_XTREAM:ltvF[f].tipo==LTV_STALKER?IPTV_STALKER:IPTV_M3U;

@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "Twoje dane społecznościowe zostały usunięte."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Twoje języki i kiedy pojawiają się napisy"),
-  T("Seus provedores, num só lugar.", "Twoi dostawcy w jednym miejscu."),
   T("Seus servidores", "Twoje serwery"),
   T("Seus serviços e credenciais não entram nesta lista.", "Twoich usług i danych logowania nie ma na tej liście."),
   T("Seus times, todas as competições", "Your teams, every competition"),

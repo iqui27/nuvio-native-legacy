@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "ソーシャルデータを削除しました。"),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "あなたの言語と字幕が表示されるタイミング"),
-  T("Seus provedores, num só lugar.", "プロバイダーを 1 か所に。"),
   T("Seus servidores", "自分のサーバー"),
   T("Seus serviços e credenciais não entram nesta lista.", "サービスとログイン情報はこの一覧に含まれません。"),
   T("Seus times, todas as competições", "Your teams, every competition"),

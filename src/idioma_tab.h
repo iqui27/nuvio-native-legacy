@@ -6578,7 +6578,6 @@
   { "Seus dados sociais foram apagados.", "Your social data was deleted." },
   { "Seus filmes e séries usam a rede local quando disponível.", "Your films and series use the local connection when available." },
   { "Seus idiomas e quando as legendas aparecem", "Your languages and when subtitles appear" },
-  { "Seus provedores, num só lugar.", "Your providers, in one place." },
   { "Seus servidores", "Your servers" },
   { "Seus serviços e credenciais não entram nesta lista.", "Your services and credentials are not included in this list." },
   { "Seus times, todas as competições", "Your teams, every competition" },

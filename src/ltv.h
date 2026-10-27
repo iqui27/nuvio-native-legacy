@@ -96,6 +96,7 @@ int ltv_fav_linha(const char *linha, char *chave, size_t nc, char *id, size_t ni
 // grupos escolhidos quando a fonte passa do teto.
 typedef struct {
   char chave[LTV_CHAVE];
+  int desligada;   // Per-profile source switch; old files default to enabled.
   int  az;          // 1 = grupos em ordem alfabetica
   int  fusoMin;     // deslocamento da grade, -720..+840
   int  formato;     // 0 automatico, 1 HLS, 2 TS (diagnostico)
@@ -103,7 +104,7 @@ typedef struct {
   int  proxy;       // -1 = o de Ajustes; 0/1
   char grupos[2048];// grupos escolhidos, separados por '\n'; "" = sem escolha
 } LtvPref;
-#define LTV_PREF_MAX 16
+#define LTV_PREF_MAX 96
 int    ltv_pref_de_texto(const char *t, LtvPref *out, int max);
 size_t ltv_pref_texto(const LtvPref *p, int n, char *dst, size_t tam);
 // As prefs do perfil (cache em memoria, gravadas a cada mudanca). Ponteiro
@@ -111,6 +112,7 @@ size_t ltv_pref_texto(const LtvPref *p, int n, char *dst, size_t tam);
 void     ltv_pref_carregar(int perfil);
 LtvPref *ltv_pref(const char *chave, int criar);
 void     ltv_pref_gravar(void);
+int ltv_fonte_ligada(const char *chave);
 // Grupos escolhidos como vetor (aponta para dentro de p->grupos, ate mudar).
 int  ltv_pref_grupos(const LtvPref *p, const char **v, int max);
 void ltv_pref_definir_grupos(LtvPref *p, const char *const *v, int n);
@@ -122,6 +124,7 @@ typedef struct {
   const char *catchup, *catchupSrc;      // guardados para a v2 (catch-up)
   int chno;                              // tvg-chno (0 = nao veio)
   int catchupDias;
+  double duracao;
 } LtvM3uCanal;
 typedef int (*LtvM3uCb)(const LtvM3uCanal *c, void *u);   // 0 = parar
 // Parser em fluxo: alimenta pedacos de qualquer tamanho. Linha maior que

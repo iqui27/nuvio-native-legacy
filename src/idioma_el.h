@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "Τα κοινωνικά σου δεδομένα διαγράφηκαν."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Οι γλώσσες σας και πότε εμφανίζονται υπότιτλοι"),
-  T("Seus provedores, num só lugar.", "Οι πάροχοι σας, σε ένα μέρος."),
   T("Seus servidores", "Οι διακομιστές σας"),
   T("Seus serviços e credenciais não entram nesta lista.", "Οι υπηρεσίες και τα στοιχεία σύνδεσής σας δεν είναι σε αυτή τη λίστα."),
   T("Seus times, todas as competições", "Your teams, every competition"),

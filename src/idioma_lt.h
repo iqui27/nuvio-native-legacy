@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "Jūsų socialiniai duomenys ištrinti."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Jūsų kalbos ir kai rodomi subtitrai"),
-  T("Seus provedores, num só lugar.", "Jūsų teikėjai vienoje vietoje."),
   T("Seus servidores", "Jūsų serveriai"),
   T("Seus serviços e credenciais não entram nesta lista.", "Jūsų paslaugų ir prisijungimo duomenų šiame sąraše nėra."),
   T("Seus times, todas as competições", "Your teams, every competition"),

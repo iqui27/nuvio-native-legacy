@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "Dina sociala data har raderats."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Dina språk och när undertexter visas"),
-  T("Seus provedores, num só lugar.", "Dina leverantörer, på ett ställe."),
   T("Seus servidores", "Dina servrar"),
   T("Seus serviços e credenciais não entram nesta lista.", "Dina tjänster och inloggningar finns inte i den här listan."),
   T("Seus times, todas as competições", "Your teams, every competition"),

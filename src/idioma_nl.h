@@ -6579,7 +6579,6 @@
   T("Seus dados sociais foram apagados.", "Je sociale gegevens zijn gewist."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Uw talen en wanneer ondertitels verschijnen"),
-  T("Seus provedores, num só lugar.", "Uw leveranciers, op één plek."),
   T("Seus servidores", "Je servers"),
   T("Seus serviços e credenciais não entram nesta lista.", "Je diensten en inloggegevens staan niet in deze lijst."),
   T("Seus times, todas as competições", "Your teams, every competition"),
