@@ -69,11 +69,11 @@ static const AjPenPage AJ_PEN_AUDIO[] = {
       {AJ_LEG1_FUNDO,"Fundo","O fundo atrás da letra","aj_square",0},
       {AJ_LEG1_POSICAO,"Posição","Em que linha a legenda fica","aj_align-justify",0}}},
     {"BORDA E ATRASO",1024,800,6,{
-      {AJ_LEG1_BORDA,"Borda","Contorno ou sombra","aj_scan",0},
-      {AJ_LEG1_COR_BORDA,"Cor da borda","A cor do contorno","aj_pipette",0},
-      {AJ_LEG1_NEGRITO,"Negrito","Letra mais grossa","aj_type",1},
+      {AJ_LEG1_BORDA,"Borda","Contorno ou sombra","aj_square-dashed",0},
+      {AJ_LEG1_COR_BORDA,"Cor da borda","A cor do contorno","aj_pencil",0},
+      {AJ_LEG1_NEGRITO,"Negrito","Letra mais grossa","aj_bold",1},
       {AJ_LEG1_ATRASO,"Atraso","Adianta ou atrasa a legenda","aj_timer",0},
-      {AJ_LEG1_RESTAURAR,"Restaurar o padrão","Volta o estilo que veio no arquivo","aj_rotate-ccw-clock",0},
+      {AJ_LEG1_RESTAURAR,"Restaurar o padrão","Volta o estilo que veio no arquivo","aj_rotate-ccw",0},
       {AJ_LEG1_ATRASO,"Ajuste fino","Corrige o milissegundo","aj_sliders-horizontal",0}}}}}
 };
 static int ajPenLanguageOrder(int *order) {

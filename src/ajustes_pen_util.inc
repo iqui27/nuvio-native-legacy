@@ -46,8 +46,8 @@ static void ajPenUtility(void) {
   if(!n)aj4Texto("Nenhuma mudança em relação ao padrão neste escopo.",TXT_G21B,248,520,1450,.65f);
   if(search)aj4Texto("A busca olha o nome e a ajuda de cada ajuste.",TXT_AJ_MINI14,226,944,1500,.4f);
   else {
-    ajPenChip(aj4UndoN?"Desfazer":"Voltar tudo ao padrão","aj_rotate-ccw-clock",226,878,330,aj4Acao==1,3,1);
-    aj4Texto("O resto está como o Nuvio entregou.",TXT_G18R,900,900,800,.4f);
+    ajPenChip(aj4UndoN?"Desfazer":"Voltar tudo ao padrão","aj_rotate-ccw",226,886,275,aj4Acao==1,3,1);
+    aj4Texto("O resto está como o Nuvio entregou.",TXT_AJ_MINI14,900,907,800,.4f);
   }
   ajPenRodape(search?"Buscar ajuste":"Diferente do padrão",3,3);
 }

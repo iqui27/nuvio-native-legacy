@@ -14,7 +14,7 @@ static void ajPenSources(void) {
     ajNeutro((GfxRect){226,y,468,i?140:170},22,ajPenRow==-1-i?.14f:.05f,.10f,.11f,.13f,1);
     aj4Texto(heads[i],TXT_G21B,248,y+20,422,1);ajBloco(TXT_G18R,body[i],248,y+54,422,22,.58f,3);
     if(i==0) { ajPenToggle(248,512,lig(AJ_FONTE_MANUAL));aj4Texto(lig(AJ_FONTE_MANUAL)?"Ligado":"Desligado",TXT_G18R,326,519,300,.58f);aj4Alvo((GfxRect){248,512,400,36},15,0); }
-    if(i==1) { aj4Texto(textoValor(AJ_FONTE_ORDEM_ADDON),TXT_G18R,248,y+100,420,.58f);aj4Alvo((GfxRect){226,y,468,140},15,1); }
+    if(i==1)aj4Alvo((GfxRect){226,y,468,140},15,1);
   }
   int n=stream_n(),start=ajPenRow/6*6;
   for(int i=start;i<n && i<start+6;i++) {
@@ -23,8 +23,9 @@ static void ajPenSources(void) {
     if(i==ajPenRow)ajPenPanel(770,y,1028,70,1);
     aj4Texto(source->rotulo,TXT_G21B,770,y+5,840,1);
     aj4Texto(source->debridServico?"Debrid":"Addon",TXT_AJ_MINI14,770,y+40,840,.4f);
-    if(source->debridServico) { ajNeutro((GfxRect){990,y+5,95,24},6,.07f,.14f,.15f,.17f,1);aj4Texto("PRIVADO",TXT_AJ_MINI12,1000,y+11,80,.8f); }
-    if(source->altura>=2160) { ajNeutro((GfxRect){1060,y+5,40,24},6,.07f,.24f,.09f,.16f,1);aj4Texto("4K",TXT_AJ_MINI12,1069,y+11,25,.9f); }
+    float badgeX=770+ajTxtC(TXT_G21B,source->rotulo,840).w+16;
+    if(source->debridServico) { ajNeutro((GfxRect){badgeX,y+5,95,24},6,.07f,.14f,.15f,.17f,1);aj4Texto("PRIVADO",TXT_AJ_MINI12,badgeX+10,y+11,80,.8f); }
+    if(source->altura>=2160) { ajNeutro((GfxRect){badgeX,y+5,40,24},6,.07f,.24f,.09f,.16f,1);aj4Texto("4K",TXT_AJ_MINI12,badgeX+9,y+11,25,.9f); }
     char quality[40];if(source->altura>0)snprintf(quality,sizeof quality,"%dp",source->altura);else quality[0]=0;
     TxtLinha value=ajTxt(TXT_G18R,quality);txt_desenhar_alpha(value,1798-value.w,y+26,.58f);
     aj4Alvo((GfxRect){770,y,1028,70},8,i);

@@ -15,8 +15,10 @@ static void ajPenSecondary(void) {
     if(i<2) {
       int op=i?AJ_LEG2_POS:AJ_LEG_LINGUA2;
       aj4Alvo((GfxRect){226,y,468,i?140:170},13,i?2:1);
-      char text[160];snprintf(text,sizeof text,"%s",textoValor(op));aj4Texto(text,TXT_G18M,306,y+104,364,1);
-      if(i) { ajPenChip("−",NULL,248,y+88,44,0,13,3);ajPenChip("+",NULL,403,y+88,44,0,13,3); }
+      if(i) {
+        char text[160];snprintf(text,sizeof text,"%s",textoValor(op));aj4Texto(text,TXT_G18M,306,y+104,100,1);
+        ajPenChip("−",NULL,248,y+88,44,0,13,3);ajPenChip("+",NULL,403,y+88,44,0,13,3);
+      }
       else { int on=strcmp(ling_legenda2(),"none") && ling_legenda2()[0];ajPenToggle(248,512,on);aj4Texto(on?"Ligado":"Desligado",TXT_G18R,326,519,300,.58f); }
     }
   }
@@ -29,7 +31,12 @@ static void ajPenSecondary(void) {
     float y=400+i*76;
     if(ajPenRow==i)ajPenPanel(770,y,1028,70,1);
     aj4Texto(labels[i],TXT_G21B,770,y+5,800,1);aj4Texto(help[i],TXT_AJ_MINI14,770,y+40,800,.4f);
-    char text[160];snprintf(text,sizeof text,"%s",textoValor(ops[i]));TxtLinha value=ajTxtC(TXT_G18R,text,240);txt_desenhar_alpha(value,1798-value.w,y+26,.58f);
+    char text[160];snprintf(text,sizeof text,"%s",textoValor(ops[i]));
+    if(i==0) {
+      if(ajustes_leg2_fonte_principal()) { float r,g,b;ajustes_acento(&r,&g,&b);gfx_cor((GfxRect){1766,y+30,12,12},.5f,r,g,b,1); }
+    } else {
+      TxtLinha value=ajTxtC(TXT_G18R,text,240);txt_desenhar_alpha(value,1798-value.w,y+26,.58f);
+    }
     aj4Alvo((GfxRect){770,y,1028,70},8,i);
   }
   aj4Texto("A segunda legenda aparece por cima, sem empurrar a principal.",TXT_AJ_MINI14,770,944,1028,.4f);
