@@ -11486,7 +11486,14 @@ int ajustes_teste_quadro(const char *id) {
     else if(!strcmp(id,"pen-parental"))ajPenOpen(AJ_PEN_PARENTAL);
     else if(!strcmp(id,"pen-rules"))ajPenOpen(AJ_PEN_RULES);
     else if(!strcmp(id,"pen-features"))ajPenOpen(AJ_PEN_TOUR);
-    else if(!strcmp(id,"pen-presets")) { aj4Util=2;focoIndice=0; }
+    else if(!strcmp(id,"pen-presets")) {
+      ajPenSavedLoad();ajPenSavedCount=2;
+      snprintf(ajPenSavedNames[0],64,"Filme de sexta");snprintf(ajPenSavedNames[1],64,"TV com a vó");
+      memset(ajPenSavedValues,-1,sizeof ajPenSavedValues);
+      ajPenSavedValues[0][AJ_AUD_LINGUA]=2;ajPenSavedValues[0][AJ_LEG1_TAMANHO]=140;
+      ajPenSavedValues[1][AJ_FONTE_MANUAL]=1;ajPenSavedValues[1][AJ_HERO_TRAILER]=1;ajPenSavedValues[1][AJ_LEG1_COR]=0;
+      aj4Util=2;focoIndice=0;
+    }
     else if(!strcmp(id,"pen-quality")) { ajPenOpen(29);focarOpcao(AJ_QUALIDADE);uxAbrirEditor(AJ_QUALIDADE);uxPendente=1; }
     else if(!strcmp(id,"pen-source")) {
       Stream fixture[5]={0};const char *labels[]={"Torrentio · 4K Dolby Vision","Real-Debrid · 1080p","Torrentio · 720p","Mediafusion + · 1080p","YTS · 720p"};
@@ -11537,7 +11544,10 @@ int ajustes_teste_quadro(const char *id) {
       aj4Escopo=0;aj4Util=1;focoIndice=0;
     }
     else if (!strcmp(id,"v4-perfil")) { aj4AbrirPerfil(); }
-    else if (!strcmp(id,"v4-busca")) { snprintf(aj4Consulta,sizeof aj4Consulta,"legenda");aj4Util=3;focoIndice=0; }
+    else if (!strcmp(id,"v4-busca")) {
+      valor[AJ_TEMA]=6;valor[AJ_LEG_LINGUA]=2;valor[AJ_LEG_LINGUA2]=1;
+      snprintf(aj4Consulta,sizeof aj4Consulta,"legenda");aj4Util=3;focoIndice=0;
+    }
     return 1;
   }
   if (!strncmp(id, "v2-", 3)) {   // Ajustes v2 (ajustes-v2.html): os quadros do mockup

@@ -1,7 +1,7 @@
 #ifndef NV_PERFILREGRAS_H
 #define NV_PERFILREGRAS_H
 /* Local parental policy. Values are per profile; no credentials are stored. */
-enum { PR_TEMPO, PR_IDADE, PR_BUSCA_LIVRE, PR_COMPRAS, PR_N };
+enum { PR_TEMPO, PR_IDADE, PR_BUSCA_LIVRE, PR_COMPRAS, PR_FILMES, PR_N };
 int perfil_regra(int profile,int rule);
 int perfil_regra_definir(int profile,int rule,int value);
 int perfil_regra_classif(const char *certificate);

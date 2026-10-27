@@ -32,14 +32,14 @@ static void ajPenUtility(void) {
     int group=search?ajPenSearchGroup(op):-1;
     ajIcone(group>=0?aj4Resultados[i].icone:designed?designed->icon:search?aj4Resultados[i].icone:"aj_rotate-ccw-clock",246,y+24,26,.75f);
     aj4Texto(group>=0?AJ_PEN_SEARCH_TITLES[group]:designed?designed->title:aj4Rotulo(op),TXT_G21B,288,y+13,1010,1);
-    const char *path=search?aj4Resultados[i].caminho:uxCaminho(op);
+    const char *path=search?aj4Resultados[i].caminho:op==AJ_QUALIDADE?"Reprodução › Imagem e som":op==AJ_AUD_LINGUA?"Áudio e legendas › Idiomas":op==AJ_TEMA?"Minha tela › Cor, vidro e movimento":uxCaminho(op);
     aj4Texto(path,TXT_AJ_MINI14,288,y+42,1010,.4f);
     char value[350],current[160],standard[160];uxValorTexto(op,uxValorAtual(op),current,sizeof current);
     if(search)snprintf(value,sizeof value,"%s",group==1?textoValor(AJ_LEG1_TAMANHO):current);
     else { uxValorTexto(op,uxValorPadrao(op),standard,sizeof standard);snprintf(value,sizeof value,"%s → %s",standard,current); }
     TxtLinha t;
-    if(!search) { float r,g,b;ajustes_acento(&r,&g,&b);t=txt_linha_corta(TXT_G18R,value,r*255,g*255,b*255,255,450); }
-    else t=ajTxtC(TXT_G18R,value,450);
+    if(!search) { float r,g,b;ajustes_acento(&r,&g,&b);t=txt_linha_corta(TXT_PEN_VALUE,value,r*255,g*255,b*255,255,450); }
+    else t=ajTxtC(TXT_PEN_VALUE,value,450);
     txt_desenhar_alpha(t,1750-t.w,y+24,search?.58f:1);
     ajIcone("aj_chevron-right",1760,y+28,18,.45f);
     aj4Alvo((GfxRect){226,y,1572,74},1,i);

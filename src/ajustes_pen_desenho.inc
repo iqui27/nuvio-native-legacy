@@ -106,7 +106,8 @@ static void ajPenRows(void) {
       }
       ajIcone(row->icon,x+20,y+24,26,focus?1:.75f);
       int available=row->op>=0?ajOpcaoDisponivel(row->op):row->op!=-1;
-      aj4Texto(row->title,TXT_G21B,x+62,y+13,w-245,available?1:.45f);
+      int hasHelp=row->help && row->help[0];
+      aj4Texto(row->title,TXT_G21B,x+62,y+(hasHelp?13:24),w-245,available?1:.45f);
       aj4Texto(row->help,TXT_AJ_MINI14,x+62,y+42,w-210,.4f);
       if(row->toggle && row->op!=-1) {
         int on=row->op<=-10 && row->op>=-13?perfil_regra(perfis_ativo(),-10-row->op):row->op==-2?perfil_ajustes_travados(perfis_ativo()):uxValorAtual(row->op)==0;
@@ -121,8 +122,10 @@ static void ajPenRows(void) {
           snprintf(val,sizeof val,i18n("%d ajustes"),count);
         }
         if(row->op<=-10 && row->op>=-13)ajPenParentText(-10-row->op,perfil_regra(perfis_ativo(),-10-row->op),val,sizeof val);
-        if(row->op==-4)ajPenParentText(PR_IDADE,perfil_regra(perfis_ativo(),PR_IDADE),val,sizeof val);
-        TxtLinha t=ajTxtC(TXT_G18R,val,180);txt_desenhar_alpha(t,x+w-52-t.w,y+24,.58f);
+        if(row->op==-4)ajPenParentText(PR_FILMES,perfil_regra(perfis_ativo(),PR_FILMES),val,sizeof val);
+        if(ajPenPage==28 && row->op==AJ_LEG1_ATRASO && i==5)snprintf(val,sizeof val,i18n("%+.3f s"),uxValorAtual(row->op)/1000.0);
+        float valueWidth=w>1000?300:200;
+        TxtLinha t=ajTxtC(TXT_PEN_VALUE,val,valueWidth);txt_desenhar_alpha(t,x+w-52-t.w,y+24,.58f);
         ajIcone("aj_chevron-right",x+w-44,y+28,18,.45f);
       }
       aj4Alvo((GfxRect){x,y,w,74},8,index);
@@ -165,7 +168,8 @@ static void ajPenHome(void) {
       else if(i==2) { snprintf(second,sizeof second,"%s",textoValor(AJ_ESCALA_TEXTO));snprintf(value,sizeof value,i18n("%s · %s"),textoValor(AJ_HOME_LAYOUT),second); }
     }
     int changed=0;for(int op=0;op<AJ_N;op++)if(aj4Simples(op)==i+1 && uxDiferente(op))changed++;
-    aj4Texto(value,TXT_G18M,x+96,527,changed?194:260,1);
+    if(av)ajBloco(TXT_G18M,value,x+96,519,changed?194:260,21,1,2);
+    else aj4Texto(value,TXT_G18M,x+96,527,changed?194:260,1);
     if(changed) { char count[64];snprintf(count,sizeof count,i18n(changed==1?"%d alterado":"%d alterados"),changed);float r,g,b;ajustes_acento(&r,&g,&b);
       TxtLinha t=txt_linha_corta(TXT_G14B,count,r*255,g*255,b*255,255,100);
       txt_desenhar(t,x+388-26-t.w,530);

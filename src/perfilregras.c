@@ -13,25 +13,25 @@ static const char FILE_NAME[]="parental-rules.txt";
 static void load(void) {
   if(loaded)return;
   loaded=1;
-  for(int p=1;p<=PR_MAX;p++) { values[p][PR_IDADE]=10;values[p][PR_COMPRAS]=1; }
+  for(int p=1;p<=PR_MAX;p++) { values[p][PR_IDADE]=10;values[p][PR_COMPRAS]=1;values[p][PR_FILMES]=18; }
   char *data=dados_ler(FILE_NAME);if(!data)return;
   char *save=NULL;
   for(char *line=strtok_r(data,"\n",&save);line;line=strtok_r(NULL,"\n",&save)) {
-    int p,minutes,age,search,purchases,day,seconds;
-    if(sscanf(line,"%d %d %d %d %d %d %d",&p,&minutes,&age,&search,&purchases,&day,&seconds)==7 && p>=1 && p<=PR_MAX && minutes>=0 && minutes<=240 && age>=0 && age<=18 && (search==0 || search==1) && (purchases==0 || purchases==1) && seconds>=0) {
-      values[p][0]=minutes;values[p][1]=age;values[p][2]=search;values[p][3]=purchases;days[p]=day;used[p]=seconds;
+    int p,minutes,age,search,purchases,day,seconds,films=18;
+    if(sscanf(line,"%d %d %d %d %d %d %d %d",&p,&minutes,&age,&search,&purchases,&day,&seconds,&films)>=7 && p>=1 && p<=PR_MAX && minutes>=0 && minutes<=240 && age>=0 && age<=18 && (search==0 || search==1) && (purchases==0 || purchases==1) && seconds>=0 && films>=0 && films<=18) {
+      values[p][0]=minutes;values[p][1]=age;values[p][2]=search;values[p][3]=purchases;days[p]=day;used[p]=seconds;values[p][PR_FILMES]=films;
     }
   }
   free(data);
 }
 static int writeRules(void) {
   char data[4096];size_t pos=0;
-  for(int p=1;p<=PR_MAX;p++)pos+=snprintf(data+pos,sizeof data-pos,"%d %d %d %d %d %d %d\n",p,values[p][0],values[p][1],values[p][2],values[p][3],days[p],used[p]);
+  for(int p=1;p<=PR_MAX;p++)pos+=snprintf(data+pos,sizeof data-pos,"%d %d %d %d %d %d %d %d\n",p,values[p][0],values[p][1],values[p][2],values[p][3],days[p],used[p],values[p][PR_FILMES]);
   return dados_gravar(FILE_NAME,data);
 }
 int perfil_regra(int profile,int rule) { load();return profile>=1 && profile<=PR_MAX && rule>=0 && rule<PR_N?values[profile][rule]:0; }
 int perfil_regra_definir(int profile,int rule,int value) {
-  load();if(profile<1 || profile>PR_MAX || rule<0 || rule>=PR_N || value<0 || value>(rule==PR_TEMPO?240:rule==PR_IDADE?18:1))return 0;
+  load();if(profile<1 || profile>PR_MAX || rule<0 || rule>=PR_N || value<0 || value>(rule==PR_TEMPO?240:rule==PR_IDADE || rule==PR_FILMES?18:1))return 0;
   int old=values[profile][rule];values[profile][rule]=value;
   if(writeRules())return 1;
   values[profile][rule]=old;return 0;
@@ -39,7 +39,8 @@ int perfil_regra_definir(int profile,int rule,int value) {
 int perfil_regra_classif(const char *certificate) {
   if(!perfil_infantil_ativo())return 1;
   if(!certificate || !*certificate)return 0;
-  int max=perfil_regra(perfis_ativo(),PR_IDADE);
+  int max=perfil_regra(perfis_ativo(),PR_IDADE),films=perfil_regra(perfis_ativo(),PR_FILMES);
+  if(films<max)max=films;
   if(*certificate>='0' && *certificate<='9')return atoi(certificate)<=max;
   if(!strcasecmp(certificate,"PG") || !strcasecmp(certificate,"TV-PG"))return max>=10;
   if(perfil_infantil_classif_ok(certificate))return 1;

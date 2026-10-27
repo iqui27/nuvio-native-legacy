@@ -204,6 +204,8 @@ typedef enum {
   TXT_HERO_META_G,  // hero info Grande, 24/500
   TXT_HERO_META_GG, // hero info Muito grande, 27/500
   TXT_FILMO_ANO, // History chapter display, 84/700
+  TXT_PEN_ROW, // Pencil small-text optical compensation, 22/700.
+  TXT_PEN_VALUE, // Pencil values, 19/400.
   TXT_NFONTES
 } TxtEstilo;
 

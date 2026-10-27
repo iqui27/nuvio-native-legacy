@@ -121,6 +121,9 @@ int main(void) {
   assert(perfil_infantil_definir(1,1));
   assert(perfil_regra_classif("12") && !perfil_regra_classif("16") && !perfil_regra_classif(NULL));
   assert(!perfil_regra_busca("16") && perfil_regra_compras());
+  assert(perfil_regra_definir(1,PR_FILMES,10));
+  assert(perfil_regra(1,PR_IDADE)==12 && !perfil_regra_classif("12"));
+  assert(perfil_regra_definir(1,PR_FILMES,18) && perfil_regra_classif("12"));
   assert(perfil_regra_definir(1,PR_BUSCA_LIVRE,1) && perfil_regra_busca("16"));
   assert(perfil_regra_definir(1,PR_TEMPO,1));
   for(int i=0;i<61;i++)perfil_regra_tempo(1);
@@ -134,7 +137,7 @@ int main(void) {
   ajPenOpen(AJ_PEN_SOURCES);key(SDLK_LEFT);assert(ajPenRow==-1);
   key(SDLK_DOWN);key(SDLK_RETURN);assert(uxEditor && uxOp==AJ_FONTE_ORDEM_ADDON);key(SDLK_ESCAPE);
   key(SDLK_ESCAPE);assert(ajPenPage==29);
-  ajPenOpen(44);ajPenRow=11;key(SDLK_DOWN);assert(ajPenRow==99);
+  ajPenOpen(44);ajPenRow=AJ_PEN_MAIN[15].cols[0].n+AJ_PEN_MAIN[15].cols[1].n-1;key(SDLK_DOWN);assert(ajPenRow==99);
   key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_COMPONENTS);key(SDLK_ESCAPE);assert(ajPenPage==44);
   ajPenOpen(34);focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);
   int logoBefore=valor[AJ_COR_LOGO];key(SDLK_LEFT);assert(uxRodape==2);

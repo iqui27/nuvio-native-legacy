@@ -64,6 +64,8 @@ static void aj4Alvo(GfxRect r,int zona,int row) {
   if(!pfTela && !teclado_aberto())ponteiro_alvo(r.x,r.y,r.w,r.h,aj4PontFoco,aj4PontAtivar,zona,row);
 }
 static void aj4Texto(const char *s, TxtEstilo e, float x, float y, float w, float a) {
+  if(e==TXT_G21B)e=TXT_PEN_ROW;
+  else if(e==TXT_G18R)e=TXT_PEN_VALUE;
   txt_desenhar_alpha(ajTxtC(e, s, w), x, y, a);
 }
 static void aj4Botao(const char *s, const char *ic, float x, float y, float w, int foco, int ativo) {

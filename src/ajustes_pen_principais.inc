@@ -270,13 +270,12 @@ static const AjPenPage AJ_PEN_MAIN[] = {
     }},
   }},
   {"Sobre e ajuda","Sobre e ajuda",1,1, {
-    {"APP",200,800,6, {
+    {"APP",200,800,5, {
       {AJ_VERSAO_I,"Versão","","aj_info",0},
       {AJ_ATUALIZAR,"Atualizar o aplicativo","","aj_refresh-cw",0},
-      {AJ_GUIA,"Guia de uso","Como usar o Nuvio na TV","aj_calendar",0},
+      {AJ_GUIA,"Guia de uso","Como usar o Nuvio na TV","aj_book-open",0},
       {AJ_NOVIDADES20,"Novidades 2.0","O que mudou na versão grande","aj_sparkles",0},
-      {AJ_DICASCONTROLE,"Dicas de controle","Os botões da TV","aj_captions",0},
-      {AJ_ENVIO_AUTO,"Enviar registros sozinho","","aj_send",1},
+      {AJ_DICASCONTROLE,"Dicas de controle","Os botões da TV","aj_gamepad-2",0},
     }},
     {"AJUDA E REGISTRO",1024,800,6, {
       {AJ_APOIAR,"Apoiar o projeto","","aj_heart",0},

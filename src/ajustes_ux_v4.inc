@@ -285,7 +285,9 @@ static int aj4Desfazer(void) {
 }
 static int aj4Diferencas(int *ops) {
   int n = 0;
-  for (int i = 0; i < AJ_N; i++) if (aj4Secao(i) >= 0 && aj4Mutavel(i) && uxDiferente(i)) ops[n++] = i;
+  static const int first[]={AJ_QUALIDADE,AJ_AUD_LINGUA,AJ_TEMA};
+  for(int j=0;j<3;j++)if(aj4Mutavel(first[j]) && uxDiferente(first[j]))ops[n++]=first[j];
+  for (int i = 0; i < AJ_N; i++) if(i!=AJ_QUALIDADE && i!=AJ_AUD_LINGUA && i!=AJ_TEMA && aj4Secao(i) >= 0 && aj4Mutavel(i) && uxDiferente(i)) ops[n++] = i;
   return n;
 }
 static int ajPenSearchGroup(int op) {

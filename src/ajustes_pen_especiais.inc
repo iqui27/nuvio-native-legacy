@@ -4,9 +4,9 @@ static void ajPenParentChoice(void) {
   ajKicker("CONTROLE PARENTAL",200,198,1);aj4Texto(AJ_PEN_PARENT_LABEL[rule],TXT_TITULO2,200,212,1500,1);
   ajPenPanel(200,344,1624,640,0);
   const int *choices=rule==PR_TEMPO?AJ_PEN_TIME:AJ_PEN_AGE;
-  int n=rule==PR_TEMPO?7:rule==PR_IDADE?6:2;
+  int n=rule==PR_TEMPO?7:rule==PR_IDADE || rule==PR_FILMES?6:2;
   for(int i=0;i<n;i++) {
-    int value=rule>=PR_BUSCA_LIVRE?i:choices[i];float y=380+i*76;char label[96];
+    int value=rule==PR_BUSCA_LIVRE || rule==PR_COMPRAS?i:choices[i];float y=380+i*76;char label[96];
     ajPenParentText(rule,value,label,sizeof label);
     if(value==ajPenParentDraft)ajPenPanel(226,y,1572,70,1);
     aj4Texto(label,TXT_G21B,248,y+20,1500,1);
@@ -65,7 +65,11 @@ static void ajPenRules(void) {
       int i=c*6+r;float y=400+r*84;
       ajIcone(icons[i],x+46,y+24,26,.75f);
       aj4Texto(names[i],TXT_G21B,x+88,y+13,470,1);
-      aj4Texto(help[i],TXT_AJ_MINI14,x+88,y+42,650,.4f);
+      char capability[240];const char *description=help[i];
+      if(i==0)description=aj4Ajuda(AJ_RESOLUCAO);
+      if(i==1 || i==2) { snprintf(capability,sizeof capability,"%s · %s",i==1?"HDR":"Dolby Vision",values[i]);description=capability; }
+      if(i==4) { snprintf(capability,sizeof capability,"HEVC: %s · AV1: %s",i18n(hevc<0?"Desconhecida":hevc?"Suportado":"Não suportado"),i18n(av1<0?"Desconhecida":av1?"Suportado":"Não suportado"));description=capability; }
+      aj4Texto(description,TXT_AJ_MINI14,x+88,y+42,650,.4f);
       if(!c) { TxtLinha t=ajTxtC(TXT_G18R,values[i],220);txt_desenhar_alpha(t,x+710-t.w,y+24,.58f); }
     }
   }

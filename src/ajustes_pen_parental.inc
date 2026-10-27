@@ -4,12 +4,12 @@ static int ajPenParentEditor=-1,ajPenParentDraft,ajPenPinAsk,ajPenPinRepeat,ajPe
 static char ajPenPinDraft[ADMIN_PIN_MAX + 2];
 static const int AJ_PEN_TIME[]={0,30,60,90,120,180,240};
 static const int AJ_PEN_AGE[]={0,10,12,14,16,18};
-static const char *const AJ_PEN_PARENT_LABEL[]={"Tempo de tela por perfil","Classificação máxima","Busca sem filtro","Compras bloqueadas"};
+static const char *const AJ_PEN_PARENT_LABEL[]={"Tempo de tela por perfil","Classificação máxima","Busca sem filtro","Compras bloqueadas","Filmes permitidos"};
 static void ajPenParentText(int rule,int value,char *out,size_t n) {
   if(rule==PR_TEMPO) {
     if(!value)snprintf(out,n,"%s",i18n("Sem limite"));
     else snprintf(out,n,i18n("%d min"),value);
-  } else if(rule==PR_IDADE) {
+  } else if(rule==PR_IDADE || rule==PR_FILMES) {
     if(!value)snprintf(out,n,"%s",i18n("Livre"));
     else snprintf(out,n,i18n("%d anos"),value);
   } else snprintf(out,n,"%s",i18n(value?"Ligado":"Desligado"));
@@ -54,8 +54,8 @@ static int ajPenParentEvent(SDL_Keycode key) {
   }
   int direction=key==SDLK_DOWN || key==SDLK_RIGHT?1:key==SDLK_UP || key==SDLK_LEFT?-1:0;
   const int *choices=rule==PR_TEMPO?AJ_PEN_TIME:AJ_PEN_AGE;
-  int count=rule==PR_TEMPO?7:rule==PR_IDADE?6:2;
-  if(rule>=PR_BUSCA_LIVRE) { if(direction)ajPenParentDraft=!ajPenParentDraft;return 1; }
+  int count=rule==PR_TEMPO?7:rule==PR_IDADE || rule==PR_FILMES?6:2;
+  if(rule==PR_BUSCA_LIVRE || rule==PR_COMPRAS) { if(direction)ajPenParentDraft=!ajPenParentDraft;return 1; }
   for(int i=0;i<count;i++)if(choices[i]==ajPenParentDraft) { int next=i+direction;if(next>=0 && next<count)ajPenParentDraft=choices[next];break; }
   return 1;
 }

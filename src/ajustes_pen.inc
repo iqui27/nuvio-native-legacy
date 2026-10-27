@@ -260,7 +260,7 @@ static int ajPenEvent(SDL_Keycode key) {
     }
     if(op<0) {
       if(op<=-10 && op>=-13)ajPenParentOpen(-10-op);
-      else if(op==-4)ajPenParentOpen(PR_IDADE);
+      else if(op==-4)ajPenParentOpen(PR_FILMES);
       else if(op==-2)pfExigirAdmin(PA_INFANTIL,perfis_ativo());
       else if(op==-3) { if(perfil_infantil_ativo() || pfTravado())return 1;ajPenPinAsk=1;ajPenPinRepeat=admin_perfil_pin_definido(perfis_ativo())?-1:0;ajPenPinOpen(); }
       else if(op==-5) { ajPenPage=-1;tourAbrir(); }
