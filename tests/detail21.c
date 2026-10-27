@@ -70,7 +70,7 @@ static int ratingNavigation(void) {
   return failures;
 }
 
-// Ratings block (a 0 in ajustes.txt means ON for these toggles): 3 cards per row, 217-high cards, D-pad steps between rows.
+// Ratings block (0 means ON): three per row, 20% shorter, D-pad steps between rows.
 static int ratingsGrid(void) {
   int failures=0;
   char path[1024];
@@ -86,8 +86,12 @@ static int ratingsGrid(void) {
                xItem(SEC_NOTAS,off+1)<xItem(SEC_NOTAS,off+2) &&
                xItem(SEC_NOTAS,off+3)==xItem(SEC_NOTAS,off+0);
   printf("%s: R1 three cards per row\n",perRow ? "PASS" : "FAIL"); failures+=!perRow;
-  int tall = notasui_celula_altura()==217 && alturaSecao(SEC_NOTAS)>=3*217;
-  printf("%s: R2 cards 217 high, section holds three rows\n",tall ? "PASS" : "FAIL"); failures+=!tall;
+  float expected = (3*217.0f + 2*(14.0f + 8.0f*NV_DETP_ESP))*0.8f;
+  int tall = fabsf(notasui_celula_altura()-173.6f)<.001f &&
+             fabsf(alturaSecao(SEC_NOTAS)-expected)<.001f &&
+             fabsf(notaAlturaCel(0)-expected)<.001f &&
+             fabsf(notaY(off+6)+notaAlturaCel(off+6)-expected)<.001f;
+  printf("%s: R2 cards 173.6 high, grid and summary 20%% shorter\n",tall ? "PASS" : "FAIL"); failures+=!tall;
   nivel=1; botao=0; saindo=0; foco.fileira=SEC_NOTAS;
   foco.coluna=off+0; press(SDLK_DOWN); int d1=foco.coluna==off+3;
   press(SDLK_DOWN); int d2=foco.fileira==SEC_NOTAS && foco.coluna==off+6;
@@ -370,6 +374,7 @@ int main(int argc, char **argv) {
   nivel=0; botao=0; focoVersao=0; aberto=1; pediuRelogio=0;
   e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_UP; detail_evento(&e);
   assert(pediuRelogio && !reacao_aberta());
+  assert(ratingsGrid()==0);
   puts("detail21: content, navigation, profile isolation and personal status OK");
   SDL_Quit();
   return 0;

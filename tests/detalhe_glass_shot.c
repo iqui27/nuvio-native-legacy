@@ -386,6 +386,13 @@ const char *fx_trailer_miniatura(int i) {
 }
 int fx_nota_trakt(void) { return 85; }
 int fx_nota(int f) {
+  if (getenv("NUVIO_SHOT_RATING_BRANDS")) {
+    static const int ratings[EX_NFONTES] = {
+      [EX_IMDB]=82, [EX_TOMATOES]=950, [EX_METACRITIC]=770, [EX_METAUSER]=820,
+      [EX_TRAKT]=870, [EX_TMDB]=860, [EX_LETTERBOXD]=43, [EX_EBERT]=25
+    };
+    return ratings[f];
+  }
   switch (f) {
     case EX_IMDB: return 80; case EX_TOMATOES: return 920; case EX_METACRITIC: return 780;
     case EX_TRAKT: return 850; case EX_LETTERBOXD: return 39; default: return 0;
@@ -734,6 +741,8 @@ int main(int argc, char **argv) {
     fputs("selected_theme 2\n", f);
     if (getenv("NUVIO_DETAIL21_PROOF") || getenv("NUVIO_LEGACY_PROOF"))
       fputs("notaTituloTrakt 0\nnotaTituloMeta 0\nnotaTituloLetter 0\n",f);
+    if (getenv("NUVIO_SHOT_RATING_BRANDS"))
+      fputs("notaTituloMetaUser 0\nnotaTituloTmdb 0\nnotaTituloEbert 0\n",f);
     if (getenv("NUVIO_SHOT_REFERENCE")) fputs("blurUnwatchedEpisodes 0\n",f);
     if (getenv("NUVIO_SHOT_TOPO")) fprintf(f, "detalheTopoLocal %d\n", atoi(getenv("NUVIO_SHOT_TOPO")));
     if (getenv("NUVIO_SHOT_SPOILERS")) fputs("blurUnwatchedEpisodes 0\n",f);
@@ -1056,6 +1065,32 @@ int main(int argc, char **argv) {
       assert(comInteiro<0 && nivel==1 && foco.fileira==SEC_COMENTARIOS && foco.coluna==2);
     }
     puts("PASS: review focus, navigation, open and Back");
+    tex_encerrar(); SDL_Quit(); return 0;
+  }
+  if (quer(argc,argv,"rating-brands-proof")) {
+    const float scales[]={.85f,1};
+    for (int scale=0;scale<2;scale++) for (int glass=0;glass<2;glass++) {
+      gfx_escala_txt_definir(scales[scale]); ajustes_definir_vidro(glass);
+      montarCatalogo(); abrir(1,1,SEC_NOTAS,0);
+      assert(notaCelulas()==9 && notasui_colunas()==3);
+      for (int focused=0;focused<2;focused++) {
+        memset(animFoco[SEC_NOTAS],0,sizeof animFoco[SEC_NOTAS]);
+        animFoco[SEC_NOTAS][1]=focused;
+        for (int frame=0;frame<60;frame++) {
+          txt_novo_quadro(); gfx_novo_quadro();
+          glClearColor(.04f,.05f,.07f,1); glClear(GL_COLOR_BUFFER_BIT);
+          float previous=gfx_escala_txt_entrar();
+          desenhaNotasTiles(72,120,1);
+          gfx_escala_sair(previous);
+          tex_bombear(3);
+        }
+        char name[128];
+        snprintf(name,sizeof name,"%d-%s-ratings-%s",scale ? 100 : 85,
+                 glass ? "glass" : "solid",focused ? "focused" : "rest");
+        gravar(name);
+      }
+    }
+    puts("PASS: rating brands, three rows, both materials and text scales");
     tex_encerrar(); SDL_Quit(); return 0;
   }
   if (quer(argc,argv,"legacy-proof")) {
