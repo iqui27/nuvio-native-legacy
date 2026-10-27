@@ -17,8 +17,8 @@ typedef struct { const char *title,*section; int part,total; AjPenColumn cols[2]
 #define AJ_PEN_PROVIDER_FAILURES 108
 #define AJ_PEN_ADDON_FAILURES 109
 static const AjPenPage AJ_PEN_SECOND_PAGE={"Segunda legenda","Áudio e legendas",3,3,{
-  {"",200,520,7,{{AJ_LEG2_FONTE,"Igual à principal","","aj_type",0},{AJ_LEG2_TAMANHO,"Tamanho","","aj_type",0},{AJ_LEG2_COR,"Cor","","aj_palette",0},{AJ_LEG2_FUNDO,"Fundo","","aj_square",0},{AJ_LEG2_BORDA,"Borda","","aj_scan",0},{AJ_LEG_LINGUA2,"Idioma da segunda legenda","","aj_languages",0},{AJ_LEG2_POS,"Posição","","aj_align-justify",0}}},
-  {"",744,1080,0,{{0}}}}};
+  {"",200,800,7,{{AJ_LEG2_FONTE,"Igual à principal","","aj_type",0},{AJ_LEG2_TAMANHO,"Tamanho","","aj_type",0},{AJ_LEG2_COR,"Cor","","aj_palette",0},{AJ_LEG2_FUNDO,"Fundo","","aj_square",0},{AJ_LEG2_BORDA,"Borda","","aj_scan",0},{AJ_LEG_LINGUA2,"Idioma da segunda legenda","","aj_languages",0},{AJ_LEG2_POS,"Posição","","aj_align-justify",0}}},
+  {"BORDA E ATRASO",1024,800,5,{{AJ_LEG2_ATRASO,"Atraso","","aj_timer",0},{AJ_LEG2_NEGRITO,"Negrito","","aj_bold",1},{AJ_LEG2_OPACIDADE,"Opacidade","","aj_contrast",0},{AJ_LEG2_COR_BORDA,"Cor da borda","","aj_palette",0},{AJ_LEG2_POSICAO,"Posição","","aj_align-justify",0}}}}};
 static const AjPenPage AJ_PEN_FEATURES = {"O que o Nuvio faz?","Ajustes",3,3,{
   {"",200,800,6,{
     {AJ_CW_LIGADO,"Continuar assistindo","Retoma de onde parou, em qualquer perfil","aj_tv",1},
@@ -35,14 +35,16 @@ static const AjPenPage AJ_PEN_FEATURES = {"O que o Nuvio faz?","Ajustes",3,3,{
     {AJ_VELOCIDADE,"Teste de velocidade","Mede a banda da sua casa","aj_gauge",0},
     {AJ_ENVIAR_LOG,"Enviar registro","Ajuda a equipe do app a achar o erro","aj_file-text",0}}}}};
 static const AjPenPage AJ_PEN_PARENT = {"Controle parental","Controle parental",3,3,{
-  {"PERFIL INFANTIL",200,800,6,{
+  {"PERFIL INFANTIL",200,800,7,{
     {AJ_PERFIL_INFANTIL,"Perfil infantil","Marca o perfil em uso como infantil","aj_baby",0},
     {-2,"Ajustes travados","Só o PIN abre os ajustes","aj_lock",1},
     {-3,"PIN do perfil","Um código de 4 dígitos","aj_pin",0},
     {AJ_ENQUETES,"Sem enquetes no perfil infantil","","aj_eye-off",1},
     {AJ_PLR_CLASSIF,"Classificação no player","A etiqueta de idade no vídeo","aj_shield",0},
-    {-4,"Filmes permitidos","O que o perfil pode abrir","aj_tv",0}}},
-  {"LIMITES",1024,800,6,{
+    {-4,"Filmes permitidos","O que o perfil pode abrir","aj_tv",0},
+    {-7,"Remover PIN","Pede o PIN de administrador","aj_lock-open",0}}},
+  {"LIMITES",1024,800,7,{
+    {-6,"Perfil","Pede o PIN de administrador","aj_users",0},
     {-10,"Tempo de tela por perfil","Quanto tempo o perfil pode usar","aj_alarm-clock",0},
     {-11,"Classificação máxima","A idade mínima do perfil","aj_film",0},
     {-12,"Busca sem filtro","","aj_search",1},
@@ -50,7 +52,7 @@ static const AjPenPage AJ_PEN_PARENT = {"Controle parental","Controle parental",
     {AJ_PROXIMO_AUTO,"Reprodução automática","","aj_play",1},
     {AJ_HERO_TRAILER,"Mostrar trailer","","aj_eye",1}}}}};
 static const AjPenPage AJ_PEN_AUDIO[] = {
-  {"Áudio e legendas","AJUSTES",2,3,{
+  {"Áudio e legendas","AJUSTES",1,3,{
     {"IDIOMAS",200,800,6,{
       {AJ_IDIOMA,"Idioma do app","O idioma da interface da TV","aj_globe",0},
       {AJ_AUD_LINGUA,"Idioma do áudio","A faixa que você prefere","aj_volume-2",0},
@@ -58,14 +60,15 @@ static const AjPenPage AJ_PEN_AUDIO[] = {
       {AJ_LEG_FORCADA,"Legenda forçada automática","Liga quando o áudio é no seu idioma","aj_captions",1},
       {AJ_LEG_SYNC_AUDIO,"Sincronia por áudio","A sincronia segue o áudio do vídeo","aj_audio-lines",1},
       {AJ_LEG_MOSTRAR,"Mostrar no player","Só os seus idiomas ou todas","aj_funnel",0}}},
-    {"SEGUNDA LEGENDA",1024,800,6,{
+    {"SEGUNDA LEGENDA",1024,800,7,{
       {AJ_LEG_LINGUA2,"Idioma da legenda secundária","Uma tradução por cima da principal","aj_captions",0},
       {AJ_LEG2_POS,"Posição da segunda legenda","No topo ou junto da principal","aj_align-justify",0},
       {AJ_LEG2_TAMANHO,"Tamanho","O tamanho da segunda legenda","aj_type",0},
       {AJ_LEG2_COR,"Cor","A cor do texto da segunda","aj_palette",0},
       {AJ_LEG2_FUNDO,"Fundo","O fundo da segunda legenda","aj_square",0},
-      {AJ_LEG2_BORDA,"Borda","Contorno ou sombra","aj_square-dashed",0}}}}},
-  {"Estilo das legendas","ÁUDIO E LEGENDAS",3,3,{
+      {AJ_LEG2_BORDA,"Borda","Contorno ou sombra","aj_square-dashed",0},
+      {AJ_AUDIO_NORMALIZAR,"Normalizar volume","DTS convertido para PCM e player Android","aj_volume-2",1}}}}},
+  {"Estilo das legendas","ÁUDIO E LEGENDAS",2,3,{
     {"LEGENDA PRINCIPAL",200,800,6,{
       {AJ_LEG1_TAMANHO,"Tamanho","O tamanho da letra na tela","aj_type",0},
       {AJ_LEG1_FONTE,"Fonte","A letra que a legenda usa","aj_type",0},
@@ -137,7 +140,7 @@ static int ajPenMissing(int *ops) {
   unsigned char seen[AJ_N]={0};
   for(int p=0;p<46;p++) {
     const AjPenPage *page=p<27?&AJ_PEN_ADV[p]:p<29?&AJ_PEN_AUDIO[p-27]:&AJ_PEN_MAIN[p-29];
-    for(int c=0;c<2;c++)for(int i=0;i<page->cols[c].n;i++)seen[page->cols[c].rows[i].op]=1;
+    for(int c=0;c<2;c++)for(int i=0;i<page->cols[c].n;i++)if(page->cols[c].rows[i].op>=0)seen[page->cols[c].rows[i].op]=1;
   }
   int n=0;for(int op=0;op<AJ_N;op++)if(!seen[op] && aj4Secao(op)>=0 && ajOpcaoDisponivel(op))ops[n++]=op;
   return n;
@@ -167,14 +170,28 @@ static const AjPenPage *ajPenCurrent(void) {
   return NULL;
 }
 static void ajPenOpen(int page) {
-  ajPenPage=page;ajPenRow=0;ajPenReturn=-1;focoIndice=0;aj4Util=0;aj4Topo=-1;
+  if(focoIndice) { ajPenHistoryN=0;ajPenIndexRow=aj4Linha; }
+  else if(ajPenPage>=0 && ajPenPage!=page && ajPenHistoryN<128) {
+    ajPenHistoryPage[ajPenHistoryN]=ajPenPage;ajPenHistoryRow[ajPenHistoryN++]=ajPenRow;
+  }
+  ajPenPage=page;ajPenRow=page==AJ_PEN_SOURCES?-1:0;ajPenReturn=-1;focoIndice=0;aj4Util=0;aj4Topo=-1;
   uxVeioBusca=0;aj4BuscaRetorno=0;aj4PerfilRetorno=0;
 }
+static void ajPenBack(int fallback) {
+  if(ajPenHistoryN) {
+    int i=--ajPenHistoryN;ajPenPage=ajPenHistoryPage[i];ajPenRow=ajPenHistoryRow[i];aj4Topo=-1;
+  } else if(fallback>=0) { ajPenPage=fallback;ajPenRow=0;aj4Topo=-1; }
+  else { ajPenPage=-1;focoIndice=1;aj4Linha=ajPenIndexRow;aj4Topo=-1; }
+}
 static void ajPenFind(int op) {
-  for(int p=0;p<46;p++) {
-    const AjPenPage *page=p<27?&AJ_PEN_ADV[p]:p<29?&AJ_PEN_AUDIO[p-27]:&AJ_PEN_MAIN[p-29];
+  for(int c=0;c<2;c++)for(int i=0;i<AJ_PEN_SECOND_PAGE.cols[c].n;i++)if(AJ_PEN_SECOND_PAGE.cols[c].rows[i].op==op) {
+    ajPenOpen(AJ_PEN_SECONDARY);ajPenRow=i+(c?AJ_PEN_SECOND_PAGE.cols[0].n:0);return;
+  }
+  for(int p=27;p<73;p++) {
+    int route=p<46?p:p-46;
+    const AjPenPage *page=route<27?&AJ_PEN_ADV[route]:route<29?&AJ_PEN_AUDIO[route-27]:&AJ_PEN_MAIN[route-29];
     int row=0;
-    for(int c=0;c<2;c++)for(int i=0;i<page->cols[c].n;i++,row++)if(page->cols[c].rows[i].op==op) { ajPenOpen(p);ajPenRow=row;return; }
+    for(int c=0;c<2;c++)for(int i=0;i<page->cols[c].n;i++,row++)if(page->cols[c].rows[i].op==op) { ajPenOpen(route);ajPenRow=row;return; }
   }
   int ops[AJ_N],n=ajPenMissing(ops);
   for(int i=0;i<n;i++)if(ops[i]==op) { ajPenOpen(46+i/14);ajPenRow=i%14;return; }
@@ -192,7 +209,7 @@ static int ajPenEvent(SDL_Keycode key) {
   if(ajPenParentEvent(key))return 1;
   if(ajPenPage>=AJ_PEN_PROVIDER && ajPenPage<=AJ_PEN_ADDON_FAILURES && !uxEditor && !iptvForm.tipo) {
     int page=ajPenPage,n=page==AJ_PEN_PROVIDER?DEBRID_N:page==AJ_PEN_IPTV_PROVIDER?3:2;
-    if(uxVoltar(key)) { ajPenOpen(page==AJ_PEN_PROVIDER?39:page==AJ_PEN_IPTV_PROVIDER?42:38);return 1; }
+    if(uxVoltar(key)) { ajPenBack(page==AJ_PEN_PROVIDER?39:page==AJ_PEN_IPTV_PROVIDER?42:38);return 1; }
     if(key==SDLK_DOWN && ajPenRow+1<n)ajPenRow++;
     if(key==SDLK_UP && ajPenRow>0)ajPenRow--;
     if(uxOk(key)) {
@@ -208,9 +225,9 @@ static int ajPenEvent(SDL_Keycode key) {
     return 1;
   }
   if(ajPenPage==AJ_PEN_SOURCES && !uxEditor && !aj4Util) {
-    if(uxVoltar(key))ajPenOpen(29);
+    if(uxVoltar(key))ajPenBack(29);
     else if(key==SDLK_LEFT)ajPenRow=-1;
-    else if(key==SDLK_RIGHT)ajPenRow=0;
+    else if(key==SDLK_RIGHT)ajPenRow=stream_n()?0:-1;
     else if(key==SDLK_DOWN) {
       if(ajPenRow<0 && ajPenRow>-4)ajPenRow--;
       else if(ajPenRow>=0 && ajPenRow+1<stream_n())ajPenRow++;
@@ -221,23 +238,12 @@ static int ajPenEvent(SDL_Keycode key) {
       if(ajPenRow==-1)definirValorDireto(AJ_FONTE_MANUAL,!valor[AJ_FONTE_MANUAL]);
       else if(ajPenRow==-4)ajPenSavedAsk();
       else if(ajPenRow<0) { int op=ajPenRow==-2?AJ_FONTE_ORDEM_ADDON:AJ_FONTE_MANUAL;focarOpcao(op);uxAbrirEditor(op);if(ajPenRow==-3)uxRestaurar=1; }
-      else if(stream_escolher_indice(ajPenRow))sair=1;
+      // Source rows are read-only in Settings: no playback context.
     }
     return 1;
   }
-  if(ajPenPage==AJ_PEN_SECONDARY && !uxEditor && !aj4Util) {
-    if(key==SDLK_LEFT) { ajPenRow=5;return 1; }
-    if(key==SDLK_RIGHT) { ajPenRow=0;return 1; }
-    if(key==SDLK_DOWN && ajPenRow>=6) { if(ajPenRow<8)ajPenRow++;return 1; }
-    if(key==SDLK_UP && ajPenRow>=7) { ajPenRow--;return 1; }
-    if(uxOk(key) && ajPenRow>=7) {
-      if(ajPenRow==8)ajPenSavedAsk();
-      else { focarOpcao(AJ_LEG2_TAMANHO);uxAbrirEditor(AJ_LEG2_TAMANHO);uxRestaurar=1; }
-      return 1;
-    }
-  }
   if(ajPenPage==AJ_PEN_COMPONENTS && !uxEditor && !aj4Util) {
-    if(uxVoltar(key))ajPenOpen(44);
+    if(uxVoltar(key))ajPenBack(44);
     else if(key==SDLK_DOWN || key==SDLK_RIGHT)ajPenRow=(ajPenRow+1)%4;
     else if(key==SDLK_UP || key==SDLK_LEFT)ajPenRow=(ajPenRow+3)%4;
     else if(uxOk(key)) { if(ajPenRow==0)aj4Buscar();else if(ajPenRow==1) { aj4Util=2;aj4Linha=0; }else if(ajPenRow==2)ajPenSavedAsk();else ajPenOpen(29); }
@@ -253,17 +259,25 @@ static int ajPenEvent(SDL_Keycode key) {
   if(ajPenPage==44 && key==SDLK_c) { ajPenOpen(AJ_PEN_COMPONENTS);return 1; }
   const AjPenPage *page=ajPenCurrent();
   if(ajPenPage==AJ_PEN_RULES && !uxEditor && !aj4Util && !focoIndice) {
-    if(uxVoltar(key) || uxOk(key)) { ajPenPage=-1;focoIndice=1;aj4Linha=6; }
+    if(uxVoltar(key) || uxOk(key))ajPenBack(-1);
     return 1;
   }
   if(!page || uxEditor || aj4Util || aj4Review || focoIndice || aj4Topo>=0)return -1;
   if(uxVoltar(key)) {
     int parent=ajPenPage==AJ_PEN_SECONDARY || ajPenPage==28?27:ajPenPage>=30 && ajPenPage<=32?29:ajPenPage==34?33:ajPenPage>=38 && ajPenPage<=40?37:ajPenPage==42?41:-1;
-    if(parent>=0)ajPenOpen(parent);else { ajPenPage=-1;focoIndice=1;aj4Linha=0; }
+    ajPenBack(ajPenHistoryN?parent:-1);
     return 1;
   }
   int n=page->cols[0].n+page->cols[1].n;
+  if(!n)return 1;
+  if(ajPenRow<0)ajPenRow=0;if(ajPenRow>=n && !(ajPenPage==AJ_PEN_TOUR && ajPenRow==n))ajPenRow=n-1;
   if(ajPenPage==AJ_PEN_TOUR) {
+    if(ajPenRow==n) {
+      if(key==SDLK_UP)ajPenRow=n-1;
+      if(uxOk(key)) { ajPenPage=-1;tourAbrir(); }
+      return 1;
+    }
+    if(key==SDLK_DOWN && ajPenRow+4>=n) { ajPenRow=n;return 1; }
     if(key==SDLK_DOWN && ajPenRow+4<n)ajPenRow+=4;
     if(key==SDLK_UP && ajPenRow>=4)ajPenRow-=4;
     if(key==SDLK_RIGHT && ajPenRow<n-1)ajPenRow++;
@@ -287,7 +301,7 @@ static int ajPenEvent(SDL_Keycode key) {
     else if(ajPenPage==28)ajPenOpen(27);
     else if(ajPenPage==46)ajPenOpen(26);
     else if(ajPenPage>29 && ajPenPage<AJ_PEN_PARENTAL)ajPenOpen(ajPenPage-1);
-    else { ajPenPage=-1;focoIndice=1; }
+    else ajPenBack(-1);
     return 1;
   }
   if(uxOk(key)) {
@@ -295,15 +309,21 @@ static int ajPenEvent(SDL_Keycode key) {
     const AjPenRow *row=&page->cols[col].rows[ajPenRow-(col?page->cols[0].n:0)];
     int op=row->op;
     if(ajPenPage==AJ_PEN_PARENTAL && op==-2) {
-      if(perfil_infantil_ativo() && pfTravado())return 1;
-      perfil_ajustes_travar(perfis_ativo(),!perfil_ajustes_travados(perfis_ativo()));return 1;
+      if(perfil_infantil_ativo())return 1;
+      pfExigirAdmin(PA_TRAVAR,ajPenParentProfile());return 1;
     }
     if(op<0) {
-      if(op<=-10 && op>=-13)ajPenParentOpen(-10-op);
+      if(op<=-20 && op>=-22)ajPenOpen(op==-20?35:op==-21?36:45);
+      else if(op==-6) { if(!perfil_infantil_ativo()) { pfTela=PF_LIMITES;pfFoco=0; } }
+      else if(op==-7)pfExigirAdmin(PA_REMOVER_PIN,perfis_ativo());
+      else if(op==-12 || op==-13) {
+        if(!perfil_infantil_ativo() && !pfTravado())perfil_regra_definir(ajPenParentProfile(),-10-op,!perfil_regra(ajPenParentProfile(),-10-op));
+      }
+      else if(op<=-10 && op>=-13)ajPenParentOpen(-10-op);
       else if(op==-4)ajPenParentOpen(PR_FILMES);
       else if(op==-2)pfExigirAdmin(PA_INFANTIL,perfis_ativo());
       else if(op==-3) { if(perfil_infantil_ativo() || pfTravado())return 1;ajPenPinAsk=1;ajPenPinRepeat=admin_perfil_pin_definido(perfis_ativo())?-1:0;ajPenPinOpen(); }
-      else if(op==-5) { ajPenPage=-1;tourAbrir(); }
+      else if(op==-5) { juntosui_abrir_folha(-1,0,0); }
       else uxNotificar(op==-4?"Perfil infantil: só classificação livre e até 10 anos.":"Ainda não disponível.");
       return 1;
     }
@@ -325,6 +345,7 @@ static int ajPenEvent(SDL_Keycode key) {
       if(ajPenRow==5) { ajPenOpen(AJ_PEN_SECONDARY);return 1; }
       if(ajPenRow==7) { ajPenOpen(40);return 1; }
     }
+    if(row->toggle && nValores(op)==2 && OPCOES[op].tipo==OP_ESCOLHA && !inativa(op) && ajPenPage!=AJ_PEN_TOUR) { definirValorDireto(op,!uxValorAtual(op));return 1; }
     if(!ajOpcaoDisponivel(op))return 1;
     if(OPCOES[op].tipo==OP_LEITURA)return 1;
     if(inativa(op)) {

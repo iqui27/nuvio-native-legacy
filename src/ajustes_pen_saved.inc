@@ -31,7 +31,7 @@ static void ajPenSavedLoad(void) {
 }
 static int ajPenSavedWrite(void) {
   char file[80],*data=malloc(AJ_PEN_SAVED*AJ_N*128);if(!data)return 0;
-  size_t pos=0,cap=AJ_PEN_SAVED*AJ_N*128;
+  size_t pos=0,cap=AJ_PEN_SAVED*AJ_N*128;data[0]=0;
   for(int slot=0;slot<ajPenSavedCount;slot++) {
     pos+=snprintf(data+pos,cap-pos,"name=%s\n",ajPenSavedNames[slot]);
     for(int op=0;op<AJ_N;op++)if(ajPenSavedValues[slot][op]>=0)pos+=snprintf(data+pos,cap-pos,"%s=%d\n",CHAVE[op],ajPenSavedValues[slot][op]);
@@ -52,10 +52,24 @@ static int ajPenSavedSave(const char *name) {
 }
 static void ajPenSavedAsk(void) {
   ajPenSavedLoad();
-  if(pfTravado() || ajPenSavedCount>=AJ_PEN_SAVED)return;
+  if(pfTravado())return;
+  if(ajPenSavedCount>=AJ_PEN_SAVED) { uxNotificar("Limite de 8 presets. Exclua um para salvar outro.");return; }
   ajPenSaveProfile=perfis_ativo();ajPenSaveKeyboard=1;
   teclado_abrir_com("Salvar preset","Nome do preset",63,CUR_ALFA_URL,NULL);
   teclado_aceitar_utf8(1);
+}
+static int ajPenSavedDelete(int slot) {
+  ajPenSavedLoad();
+  if(pfTravado() || slot<0 || slot>=ajPenSavedCount)return 0;
+  char name[64];int values[AJ_N];
+  memcpy(name,ajPenSavedNames[slot],sizeof name);memcpy(values,ajPenSavedValues[slot],sizeof values);
+  memmove(ajPenSavedNames+slot,ajPenSavedNames+slot+1,(ajPenSavedCount-slot-1)*sizeof *ajPenSavedNames);
+  memmove(ajPenSavedValues+slot,ajPenSavedValues+slot+1,(ajPenSavedCount-slot-1)*sizeof *ajPenSavedValues);
+  ajPenSavedCount--;
+  if(ajPenSavedWrite()) { sync_marcar_ajustes_pendentes_perfil(ajPenSavedProfile);return 1; }
+  memmove(ajPenSavedNames+slot+1,ajPenSavedNames+slot,(ajPenSavedCount-slot)*sizeof *ajPenSavedNames);
+  memmove(ajPenSavedValues+slot+1,ajPenSavedValues+slot,(ajPenSavedCount-slot)*sizeof *ajPenSavedValues);
+  memcpy(ajPenSavedNames[slot],name,sizeof name);memcpy(ajPenSavedValues[slot],values,sizeof values);ajPenSavedCount++;return 0;
 }
 static int ajPenSavedPrepare(int slot) {
   ajPenSavedLoad();aj4N=0;

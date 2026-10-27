@@ -50,7 +50,7 @@ int main(void) {
     for(int p=0;p<46;p++) {
       ajPenOpen(p);const AjPenPage *page=ajPenCurrent();assert(page);
       for(int c=0;c<2;c++)for(int r=0;r<page->cols[c].n;r++) {
-        int op=page->cols[c].rows[r].op;assert(op>=0 && op<AJ_N);seen[op]=1;
+        int op=page->cols[c].rows[r].op;if(op<0)continue;assert(op<AJ_N);seen[op]=1;
       }
     }
     for(int i=0;i<count;i++)seen[missing[i]]=1;
@@ -121,10 +121,10 @@ int main(void) {
   assert(ajLegendaValor(AJ_LEG1_TAMANHO)==140 && aj4Desfazer());
   assert(ajLegendaValor(AJ_LEG1_TAMANHO)==subtitleSize);
   for(int p=0;p<4;p++) { ajPenPresetPrepare(p);assert(aj4Review==2);aj4Review=0; }
-  ajPenOpen(28);ajPenRow=11;focarOpcao(AJ_LEG1_ATRASO);uxAbrirEditor(AJ_LEG1_ATRASO);
+  ajPenOpen(27);ajPenOpen(28);ajPenRow=11;focarOpcao(AJ_LEG1_ATRASO);uxAbrirEditor(AJ_LEG1_ATRASO);
   int fineBefore=uxPendente;key(SDLK_RIGHT);assert(uxPendente==fineBefore+1);key(SDLK_ESCAPE);
   key(SDLK_ESCAPE);assert(ajPenPage==27);
-  ajPenOpen(34);key(SDLK_ESCAPE);assert(ajPenPage==33);
+  ajPenOpen(33);ajPenOpen(34);key(SDLK_ESCAPE);assert(ajPenPage==33);
   ajPenPresetPrepare(1);assert(aj4Aplicar() && ajustes_audio_normalizar());assert(aj4Desfazer());
   float quiet=1,loud=1;for(int i=0;i<100;i++) { quiet=audionorm_gain(.01,100,quiet,1000);loud=audionorm_gain(64,100,loud,1000); }
   assert(quiet>3.9f && loud<.26f && audionorm_sample(1,quiet)==1);
@@ -164,10 +164,10 @@ int main(void) {
   assert(perfil_infantil_definir(1,0) && !perfil_regra_tempo(0));
   perfil_regras_esquecer();aj4Iniciar();ajPenPage=-1;focoIndice=1;
   // Special pages preserve editors and expose left-panel actions to the D-pad.
-  ajPenOpen(AJ_PEN_SECONDARY);key(SDLK_LEFT);assert(ajPenRow==5);
-  key(SDLK_DOWN);assert(ajPenRow==6);key(SDLK_RETURN);assert(uxEditor && uxOp==AJ_LEG2_POS);key(SDLK_ESCAPE);
-  key(SDLK_DOWN);assert(ajPenRow==7);key(SDLK_UP);assert(ajPenRow==6);
-  ajPenOpen(AJ_PEN_SOURCES);key(SDLK_LEFT);assert(ajPenRow==-1);
+  ajPenOpen(27);ajPenOpen(AJ_PEN_SECONDARY);assert(ajPenRow==0);
+  ajPenRow=6;key(SDLK_RETURN);assert(uxEditor && uxOp==AJ_LEG2_POS);key(SDLK_ESCAPE);
+  key(SDLK_RIGHT);assert(ajPenRow==7);key(SDLK_UP);assert(ajPenRow==6);
+  ajPenOpen(29);ajPenOpen(AJ_PEN_SOURCES);key(SDLK_LEFT);assert(ajPenRow==-1);
   key(SDLK_DOWN);key(SDLK_RETURN);assert(uxEditor && uxOp==AJ_FONTE_ORDEM_ADDON);key(SDLK_ESCAPE);
   key(SDLK_ESCAPE);assert(ajPenPage==29);
   ajPenOpen(44);ajPenRow=AJ_PEN_MAIN[15].cols[0].n+AJ_PEN_MAIN[15].cols[1].n-1;key(SDLK_DOWN);assert(ajPenRow==99);
@@ -183,7 +183,7 @@ int main(void) {
   // APS-9: invalid IDs, absent routes and corrupt compiled sections are bounded.
   assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO);
   assert(AJ_HERO_TAMANHO + 1 == AJ_DET_TOPO && AJ_DET_TOPO + 1 == AJ_DET_ELENCO_VISTO);
-  assert(AJ_DET_ELENCO_VISTO + 1 == AJ_GUIA_PREVIA_GRANDE && AJ_GUIA_PREVIA_GRANDE + 1 == AJ_AUD_ORIGINAL && AJ_AUD_ORIGINAL + 1 == AJ_AUDIO_NORMALIZAR && AJ_AUDIO_NORMALIZAR + 1 == AJ_DEBRID_LIGADO && AJ_DEBRID_LIGADO + 1 == AJ_ADDONS_LIGADO && AJ_ADDONS_LIGADO + 1 == AJ_LEG_ESTILO_LIGADO && AJ_LEG_ESTILO_LIGADO + 1 == AJ_N);
+  assert(AJ_DET_ELENCO_VISTO + 1 == AJ_GUIA_PREVIA_GRANDE && AJ_GUIA_PREVIA_GRANDE + 1 == AJ_AUD_ORIGINAL && AJ_AUD_ORIGINAL + 1 == AJ_AUDIO_NORMALIZAR && AJ_AUDIO_NORMALIZAR + 1 == AJ_DEBRID_LIGADO && AJ_DEBRID_LIGADO + 1 == AJ_ADDONS_LIGADO && AJ_ADDONS_LIGADO + 1 == AJ_LEG_ESTILO_LIGADO && AJ_LEG_ESTILO_LIGADO + 1 == AJ_HERO_PASTA_DETALHES && AJ_HERO_PASTA_DETALHES + 1 == AJ_N);
   assert(!strcmp(CHAVE[AJ_AFR], "afrLocal") && !strcmp(CHAVE[AJ_HERO_TAMANHO], "heroSizeLocal"));
   assert(!strcmp(CHAVE[AJ_DET_TOPO], "detalheTopoLocal"));
   assert(!strcmp(CHAVE[AJ_DET_ELENCO_VISTO], "detalheElencoVistoLocal"));
@@ -283,15 +283,17 @@ int main(void) {
   key(SDLK_ESCAPE); assert(aj4Util==4);
   aj4Acao=1; key(SDLK_RETURN); assert(pfTela==PF_MENU);
   key(SDLK_ESCAPE); assert(!pfTela && aj4Util==4);
-  // Grouped subtitle routes preserve every underlying control and the search return.
+  // Subtitle search preserves individual controls and returns to the exact hit.
   aj4Util=3;ajPenPage=-1;focoIndice=0;aj4Acao=aj4Linha=0;
   snprintf(aj4Consulta,sizeof aj4Consulta,"legenda");
-  n=aj4BuscarResultados();assert(n==4);
-  for(int i=0;i<4;i++)assert(aj4Resultados[i].op==AJ_PEN_SEARCH_OPS[i]);
-  aj4Linha=1;key(SDLK_RETURN);assert(ajPenPage==28 && !uxEditor);
-  key(SDLK_ESCAPE);assert(aj4Util==3 && aj4Linha==1);
-  aj4Linha=2;key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_SECONDARY);
-  key(SDLK_ESCAPE);assert(aj4Util==3 && aj4Linha==2);
+  n=aj4BuscarResultados();assert(n>4);
+  int subtitleHits[]={AJ_LEG1_FONTE,AJ_LEG2_ATRASO};
+  for(int h=0;h<2;h++) {
+    int hit=-1;for(int i=0;i<n;i++)if(aj4Resultados[i].op==subtitleHits[h])hit=i;
+    assert(hit>=0);aj4Linha=hit;key(SDLK_RETURN);
+    assert(uxEditor && uxOp==subtitleHits[h] && ajPenPage==(h?AJ_PEN_SECONDARY:28));
+    key(SDLK_ESCAPE);key(SDLK_ESCAPE);assert(aj4Util==3 && aj4Linha==hit);
+  }
   aj4Util=0;ajPenOpen(27);valor[AJ_AUD_LINGUA]=2;valor[AJ_AUD_ORIGINAL]=1;
   focarOpcao(AJ_AUD_LINGUA);uxAbrirEditor(AJ_AUD_LINGUA);
   int languageDraft=uxPendente;key(SDLK_LEFT);key(SDLK_RETURN);

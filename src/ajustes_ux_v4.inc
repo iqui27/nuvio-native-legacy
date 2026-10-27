@@ -6,6 +6,7 @@ static int aj4Opcoes[AJ_N], aj4Ops[AJ_N], aj4Antes[AJ_N], aj4Depois[AJ_N], aj4N;
 static int aj4UndoOps[AJ_N], aj4UndoAntes[AJ_N], aj4UndoDepois[AJ_N], aj4UndoN, aj4UndoPerfil;
 static int aj4FocoModo[2], aj4Excecao = -1;
 static int ajPenPage=-1,ajPenRow,ajPenReturn=-1;
+static int ajPenHistoryPage[128],ajPenHistoryRow[128],ajPenHistoryN,ajPenIndexRow;
 static float ajPenFocusY,ajPenFocusV,ajPenDt=1.0f/60;
 static int ajPenFocusPage=-1;
 static char aj4Consulta[128];
@@ -14,7 +15,7 @@ int ajustes_pediu_trocar_perfil(void) { int v=aj4TrocarPerfil; aj4TrocarPerfil=0
 static AjusteBuscaResultado aj4Resultados[AJ_N];
 static void aj4Iniciar(void) {
   aj4Topo = -1; aj4Util = aj4Review = aj4Acao = aj4Linha = 0; aj4Excecao = -1;
-  aj4Mais = 0;ajPenPage=-1;ajPenReturn=-1;ajPenFocusPage=-1;
+  aj4Mais = 0;ajPenPage=-1;ajPenReturn=-1;ajPenFocusPage=-1;ajPenHistoryN=0;
   aj4BuscaTeclado=aj4BuscaRetorno=aj4TrocarPerfil=aj4PerfilRetorno=0;
 }
 static const char *const AJ4_SECOES[] = {
@@ -192,7 +193,7 @@ static int aj4PrepararReset(int sec, int tv) {
   aj4N = 0;
   for (int i = 0; i < AJ_N; i++) if (aj4Secao(i) >= 0 && (sec < 0 || aj4Secao(i) == sec) &&
       (sec>=-1 || aj4Simples(i)==-sec-1) &&
-      aj4Mutavel(i) && (escopoDe(i) == ESC_TV) == tv && uxDiferente(i)) {
+      aj4Mutavel(i) && (tv<0 || (escopoDe(i) == ESC_TV) == tv) && uxDiferente(i)) {
     aj4Ops[aj4N] = i; aj4Antes[aj4N] = valor[i]; aj4Depois[aj4N++] = uxValorPadrao(i);
   }
   aj4Review = 1; aj4Linha = 0; aj4Acao = 0; return aj4N;
@@ -317,25 +318,7 @@ static const char *const AJ_PEN_SEARCH_TITLES[]={"Idioma das legendas","Estilo d
 static const char *const AJ_PEN_SEARCH_PATHS[]={"Áudio e legendas › Idiomas","Áudio e legendas › Estilo","Áudio e legendas › Segunda legenda","Minha tela › Cor, vidro e movimento"};
 static int aj4BuscarResultados(void) {
   if(aj4Consulta[0]) {
-    int n=ajustes_buscar(aj4Consulta,aj4Resultados,AJ_N-4),out=0,groups[4]={0};
-    for(int i=0;i<n;i++) {
-      int group=ajPenSearchGroup(aj4Resultados[i].op);
-      if(group>=0)groups[group]=1;
-      else aj4Resultados[out++]=aj4Resultados[i];
-    }
-    char query[256],subtitle[256];uxNormalizar(aj4Consulta,query,sizeof query);
-    uxNormalizar(i18n("legenda"),subtitle,sizeof subtitle);
-    if(!strcmp(query,"legenda") || !strcmp(query,subtitle)) { groups[0]=groups[1]=groups[2]=groups[3]=1;out=0; }
-    int other=out,added=0;
-    memmove(aj4Resultados+4,aj4Resultados,(size_t)other*sizeof *aj4Resultados);
-    for(int g=0;g<4;g++)if(groups[g]) {
-      AjusteBuscaResultado *r=&aj4Resultados[added++];memset(r,0,sizeof *r);
-      r->op=AJ_PEN_SEARCH_OPS[g];
-      snprintf(r->caminho,sizeof r->caminho,"%s",i18n(AJ_PEN_SEARCH_PATHS[g]));
-      snprintf(r->icone,sizeof r->icone,"%s",g==0 || g==2?"aj_captions":"aj_type");
-    }
-    memmove(aj4Resultados+added,aj4Resultados+4,(size_t)other*sizeof *aj4Resultados);
-    return added+other;
+    return ajustes_buscar(aj4Consulta,aj4Resultados,AJ_N);
   }
   static const int sugestoes[]={AJ_QUALIDADE,AJ_FONTE_REGEX,AJ_AUD_LINGUA,AJ_TEX_MB};
   int n=0;
@@ -363,7 +346,7 @@ static void aj4PontFoco(int zona,int row) {
   else if(zona==4 && uxEditor==1)ajPontEdValor(row,0);
   else if(zona==6) { aj4Topo=-1; aj4Escopo=row; aj4Linha=0; aj4Acao=0; }
   if(zona==7) { aj4Topo=-1; aj4Acao=row; }
-  if(zona==5) { focoIndice=1; aj4Util=0; aj4Linha=aj4FocoModo[lig(AJ_AVANCADAS)]; }
+  if(zona==5) { aj4Topo=-1; }
 }
 static int aj4Evento(SDL_Keycode k) {
   if (uxEditor) return -1;
@@ -406,7 +389,14 @@ static int aj4Evento(SDL_Keycode k) {
   }
   if (aj4Util) {
     if (uxVoltar(k)) { aj4Util = 0; focoIndice = 1; aj4Linha = 0; aj4Acao = 0; return 1; }
-    if(aj4Util==2)ajPenSavedLoad();
+    if(aj4Util==2) {
+      ajPenSavedLoad();
+      if(k==SDLK_LEFT || k==SDLK_RIGHT) { aj4Acao=k==SDLK_RIGHT;return 1; }
+      if(uxOk(k) && aj4Acao && aj4Linha>=4 && aj4Linha<4+ajPenSavedCount) {
+        if(!ajPenSavedDelete(aj4Linha-4))uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");
+        aj4Acao=0;return 1;
+      }
+    }
     int n = aj4Util == 1 ? aj4Diferencas(aj4Opcoes) : aj4Util==3 ? aj4BuscarResultados() : aj4Util==4 ? 4 : 5+ajPenSavedCount;
     if(aj4Util==4 && uxOk(k)) {
       if(aj4Acao)pfAbrir();
@@ -423,7 +413,7 @@ static int aj4Evento(SDL_Keycode k) {
       return 1;
     }
     if (aj4Util == 1 && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
-      aj4Escopo = k == SDLK_RIGHT; aj4Linha = 0; aj4Acao = 0; return 1;
+      return 1;
     }
     if (k == SDLK_DOWN) { if (aj4Linha + 1 < n && !aj4Acao) aj4Linha++; else if(aj4Util!=2)aj4Acao = 1; }
     if (k == SDLK_UP) { if (aj4Acao) aj4Acao = 0; else if (aj4Linha) aj4Linha--; else aj4Topo = 0; }
@@ -431,19 +421,17 @@ static int aj4Evento(SDL_Keycode k) {
       if(aj4Util==3) {
         if(aj4Acao || !n)aj4Buscar();
         else {
-          int row=aj4Linha,op=aj4Resultados[row].op,group=ajPenSearchGroup(op);
+          int row=aj4Linha,op=aj4Resultados[row].op;
           aj4Util=0;
-          if(group==0) { ajPenOpen(27);focarOpcao(op);uxAbrirEditor(op); }
-          else if(group==1)ajPenOpen(28);
-          else if(group==2)ajPenOpen(AJ_PEN_SECONDARY);
-          else if(group==3) { ajPenOpen(34);focarOpcao(op);uxAbrirEditor(op); }
-          else { focarOpcao(op);ajPenFind(op); }
+          ajPenFind(op);focarOpcao(op);
           aj4BuscaRetorno=1;aj4BuscaFoco=row;
+          if(OPCOES[op].tipo==OP_ACAO)return 0;
+          uxAbrirEditor(op);
         }
         return 1;
       }
-      if (aj4Acao && aj4UndoN) { aj4Desfazer(); aj4Acao = 0; }
-      else if (aj4Acao && aj4Util == 1) aj4PrepararReset(-1, aj4Escopo);
+      if (aj4Util==1 && aj4Acao && aj4UndoN) { aj4Desfazer(); aj4Acao = 0; }
+      else if (aj4Acao && aj4Util == 1) aj4PrepararReset(-1, -1);
       else if (aj4Util == 2) {
         if(aj4Linha<4)ajPenPresetPrepare(aj4Linha);
         else if(aj4Linha==4+ajPenSavedCount)ajPenSavedAsk();
@@ -462,7 +450,7 @@ static int aj4Evento(SDL_Keycode k) {
       else aj4Linha=11;
     }
     if (k == SDLK_DOWN) {
-      if(aj4Linha<4)aj4Linha=9;
+      if(aj4Linha<4)aj4Linha=aj4Linha%2?10:9;
       else if(aj4Linha==9 || aj4Linha==10)aj4Linha+=2;
       else if(aj4Linha>=11 && aj4Linha<=12)aj4Linha=7;
     }
@@ -543,6 +531,7 @@ static int aj4Evento(SDL_Keycode k) {
     else aj4Acao=acoes[0];
   }
   if (aj4Topo >= 0) return 1;
+  if(uxOk(k) && aj4Excecao>=0 && !aj4Acao && focoOp==aj4Excecao && OPCOES[focoOp].tipo==OP_ACAO)return 0;
   if (uxOk(k) && aj4Acao) {
     if(aj4Acao==2 || aj4Acao==3) {
       int next=start+(aj4Acao==2?-4:4);
@@ -565,6 +554,7 @@ static int aj4Evento(SDL_Keycode k) {
       if (!lig(AJ_AVANCADAS) && op == AJ_TRAKT && aj4Excecao<0) {
         focarOpcao(AJ_TRAKT); aj4Util=0; aj4Grupos=1; return 1;
       }
+      if(op==AJ_FALHA_PROVEDORES || op==AJ_FALHA_ADDONS || op==AJ_IPTV_ATIVA) { definirValorDireto(op,!uxValorAtual(op));return 1; }
       if (OPCOES[op].tipo != OP_ACAO) { uxAbrirEditor(op); return 1; }
       return 0; // Existing action dispatcher owns keyboards, accounts and panels.
     }

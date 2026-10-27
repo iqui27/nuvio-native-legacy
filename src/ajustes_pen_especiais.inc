@@ -35,6 +35,7 @@ static void ajPenFeatures(void) {
     }
     aj4Alvo((GfxRect){x,y,388,186},8,i);
   }
+  ajPenChip("Abrir o Guia de uso",NULL,200,980,280,ajPenRow==12,8,12);
   ajPenRodape("O que o Nuvio faz",3,3);
 }
 static void ajPenRules(void) {

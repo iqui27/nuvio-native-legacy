@@ -22,6 +22,7 @@ void arteesc_definir_perfil(int perfil);
 int ajustes_addons_do_principal(void);
 #include "trava.h"
 #include "admin.h"
+#include "perfilregras.h"
 #include "js.h"
 #include "jsw.h"
 #include <stdio.h>
@@ -396,6 +397,7 @@ static int puxarPerfis(PedidoPerfis *pedido) {
 publicar:
   if (!perfis_sessao_travar(pedido->sessao)) return 0;
   if (!pedidoPerfisAtual(pedido)) { perfis_sessao_destravar(); return 0; }
+  if(dono[0] && strcmp(dono,novoDono))admin_pin_esquecer();
   memcpy(lista, tmp, sizeof lista); n = novos;
   snprintf(dono, sizeof dono, "%s", novoDono);
   if (publicarCache) gravarCache();
@@ -543,6 +545,7 @@ void perfis_definir_ativo(int indice) {
 void perfis_manter_ativo(void) { escolhido = 1; }
 
 int perfis_sem_escolha(void) {
+  if (perfil_regra_tempo(0)) return 0;
   if (n <= 0) return 1;
   if (n == 1) return !lista[0].temPin && !admin_perfil_pin_definido(lista[0].indice);
   return 0;
@@ -554,6 +557,7 @@ int perfis_precisa_escolher(void) {
 
 int perfis_pode_dispensar(void) {
   const ContaPerfil *p;
+  if (perfil_regra_tempo(0)) return 0;
   if (escolhido) return 1;
   if (!gravado) return 0;
   p = perfis_item_ativo();
@@ -571,11 +575,11 @@ int perfis_indice_sugerido(void) {
 
 PerfilAcao perfis_acao(int i) {
   if (i < 0 || i >= n) return PERFIL_ACAO_NADA;
+  if (lista[i].indice == perfis_ativo() && perfil_regra_tempo(0)) return PERFIL_ACAO_NADA;
   return lista[i].temPin || admin_perfil_pin_definido(lista[i].indice) ? PERFIL_ACAO_PIN : PERFIL_ACAO_ENTRAR;
 }
 
-int perfis_verificar_pin(int indice, const char *pin) {
-  if(admin_perfil_pin_definido(indice))return admin_perfil_pin_conferir(indice,pin);
+static int verificarPinConta(int indice, const char *pin) {
   Jsw w;
   char *r;
   int st = 0, ok = 0;
@@ -597,7 +601,22 @@ int perfis_verificar_pin(int indice, const char *pin) {
   return ok;
 }
 
+int perfis_verificar_pin(int indice, const char *pin) {
+  if(!admin_perfil_pin_definido(indice))return verificarPinConta(indice,pin);
+  if(admin_perfil_pin_conferir(indice,pin) || admin_pin_conferir(pin))return 1;
+  int result=0;
+  for(int i=0;i<n;i++)if(lista[i].indice==indice && lista[i].temPin)result=verificarPinConta(indice,pin);
+  if(result==1)return 1;
+  // Both the profile account PIN and the principal's account PIN can recover a local override.
+  for(int i=0;i<n;i++)if(lista[i].indice==perfis_principal() && lista[i].indice!=indice && lista[i].temPin) {
+    int principal=verificarPinConta(lista[i].indice,pin);
+    return principal==1?1:principal<0 || result<0?-1:0;
+  }
+  return result;
+}
+
 void perfis_esquecer(void) {
+  admin_pin_esquecer();
   trava_invalidar_autorizacoes();
   pthread_once(&sessaoUmaVez, sessaoTravaIniciar);
   pthread_mutex_lock(&sessaoTrava);

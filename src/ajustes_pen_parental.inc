@@ -15,9 +15,10 @@ static void ajPenParentText(int rule,int value,char *out,size_t n) {
     else snprintf(out,n,i18n("%d anos"),value);
   } else snprintf(out,n,"%s",i18n(value?"Ligado":"Desligado"));
 }
+static int ajPenParentProfile(void) { return pfParentalTarget?pfParentalTarget:perfis_ativo(); }
 static void ajPenParentOpen(int rule) {
   if(pfTravado() || perfil_infantil_ativo()) { uxNotificar("Indisponível em perfil infantil.");return; }
-  ajPenParentEditor=rule;ajPenParentDraft=perfil_regra(perfis_ativo(),rule);
+  ajPenParentEditor=rule;ajPenParentDraft=perfil_regra(ajPenParentProfile(),rule);
 }
 static void ajPenPinOpen(void) {
   if(ajPenPinRepeat<=0)ajPenPinProfile=perfis_ativo();
@@ -29,7 +30,7 @@ static void ajPenPinOpen(void) {
 static int ajPenPinDigitado(const char *pin) {
   if(ajPenPinProfile!=perfis_ativo() || perfil_infantil_ativo() || pfTravado()) { memset(ajPenPinDraft,0,sizeof ajPenPinDraft);ajPenPinAsk=ajPenPinRepeat=0;return 0; }
   if(ajPenPinRepeat<0) {
-    if(!admin_perfil_pin_conferir(perfis_ativo(),pin)) { ajPenPinAsk=ajPenPinRepeat=0;uxNotificar("PIN incorreto");return 0; }
+    if(perfis_verificar_pin(perfis_ativo(),pin)!=1) { ajPenPinAsk=ajPenPinRepeat=0;uxNotificar("PIN incorreto");return 0; }
     ajPenPinRepeat=0;ajPenPinOpen();return 1;
   }
   if(!ajPenPinRepeat) {
@@ -49,7 +50,7 @@ static int ajPenParentEvent(SDL_Keycode key) {
   if(uxVoltar(key)) { ajPenParentEditor=-1;return 1; }
   int rule=ajPenParentEditor;
   if(uxOk(key)) {
-    if(perfil_regra_definir(perfis_ativo(),rule,ajPenParentDraft)) { ajPenParentEditor=-1;uxNotificar("Ajuste salvo nesta TV."); }
+    if(!perfil_infantil_ativo() && !pfTravado() && perfil_regra_definir(ajPenParentProfile(),rule,ajPenParentDraft)) { ajPenParentEditor=-1;uxNotificar("Ajuste salvo nesta TV."); }
     else uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");
     return 1;
   }

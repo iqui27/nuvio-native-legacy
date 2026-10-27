@@ -72,13 +72,15 @@ int main(int argc,char **argv) {
   // Exactly three profile changes, like the approved home fixture.
   memcpy(valor,valorPadrao,sizeof valor);valor[AJ_IDIOMA]=IDIOMA_PT+1;aj4Escopo=0;
   valor[AJ_AVANCADAS]=1;valor[AJ_QUALIDADE]=2;valor[AJ_AUD_LINGUA]=1;valor[AJ_LEG_LINGUA]=2;
-  watch("4 tarefas do dia a dia","Diferente do padrão · 3","Perfil ativo: Henrique",NULL);
+  char difference[128];snprintf(difference,sizeof difference,"Diferente do padrão · %d",aj4Diferencas(aj4Opcoes));
+  watch("Reproduzir",difference,"Perfil e serviços",NULL);
   frame(win,output,"home");
-  expect(seen[0]&&!clipped[0],"home shows all four tasks");
+  expect(seen[0]&&!clipped[0],"home shows playback task card");
   expect(seen[1]&&!clipped[1],"home shows live profile difference count");
   expect(seen[2]&&!clipped[2],"home identifies active profile below presets");
   valor[AJ_QUALIDADE]=valorPadrao[AJ_QUALIDADE];
-  watch("Diferente do padrão · 2",NULL,NULL,NULL);frame(win,NULL,NULL);
+  snprintf(difference,sizeof difference,"Diferente do padrão · %d",aj4Diferencas(aj4Opcoes));
+  watch(difference,NULL,NULL,NULL);frame(win,NULL,NULL);
   expect(seen[0]&&!clipped[0],"difference count follows saved values");
   // More groups proof starts on Image and sound, rather than P2P.
   assert(ajustes_teste_quadro("v4-secao-grupos"));
@@ -127,5 +129,5 @@ int main(int argc,char **argv) {
   aj4Evento(SDLK_RETURN);
   expect(lig(AJ_SEEKR_LIGADO)&&lig(AJ_SEEKR_FITA),"OK enables thumbnail strip and prerequisite");
   frame(win,output,"strip-enabled");
-  txt_encerrar();SDL_DestroyWindow(win);SDL_Quit();return failures?1:0;
+  tex_encerrar();txt_encerrar();SDL_DestroyWindow(win);SDL_Quit();return failures?1:0;
 }

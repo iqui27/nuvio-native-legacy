@@ -752,6 +752,7 @@ typedef enum {
   AJ_AUD_ORIGINAL, // Independent preference; language selection remains intact.
   AJ_AUDIO_NORMALIZAR, // PCM normalization; passthrough remains untouched.
   AJ_DEBRID_LIGADO, AJ_ADDONS_LIGADO, AJ_LEG_ESTILO_LIGADO,
+  AJ_HERO_PASTA_DETALHES, // Append-only: folder hero details, local and enabled by default.
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1905,6 +1906,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Debrid", V_LIGA, 2),
   ESC("Addons", V_LIGA, 2),
   ESC("Legendas com estilo", V_LIGA, 2),
+  ESC("Mostrar detalhes da pasta no destaque", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2247,6 +2249,7 @@ static const char *CHAVE[] = {
   "audioOriginalLocal",
   "audioNormalizarLocal",
   "debridLigadoLocal", "addonsLigadosLocal", "legEstiloLigadoLocal",
+  "heroFolderDetailsLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3681,6 +3684,7 @@ int ajustes_hero_sinopse(void) { return lig(AJ_HERO_SINOPSE); }
 int ajustes_hero_notas(void)   { return lig(AJ_HERO_NOTAS); }
 int ajustes_hero_ano(void)     { return lig(AJ_HERO_ANO); }
 int ajustes_hero_duracao(void) { return lig(AJ_HERO_DURACAO); }
+int ajustes_hero_pasta_detalhes(void) { return lig(AJ_HERO_PASTA_DETALHES); }
 int ajustes_hero_cheio(void)          { return lig(AJ_HERO_CHEIO); }
 int ajustes_hero_sinopse_grande(void) { return valor[AJ_HERO_SINOPSE_TAM] == 1 || ajustes_hero_tamanho() > 0; }
 float ajustes_hero_escala_logo(void) { static const float e[3] = { 1.0f, 1.25f, 1.5f }; return e[ajustes_hero_tamanho()]; }
@@ -6140,7 +6144,7 @@ static int somenteDesteAparelho(int op) {
     // traga algo com o mesmo nome.
     case AJ_HERO_FUNDO:
     case AJ_HERO_SINOPSE_TAM:
-    case AJ_HERO_TAMANHO:
+    case AJ_HERO_TAMANHO: case AJ_HERO_PASTA_DETALHES:
     case AJ_HERO_ARTE_DIF:
     case AJ_HERO_GENERO:
     case AJ_HERO_SINOPSE: case AJ_HERO_NOTAS: case AJ_HERO_ANO: case AJ_HERO_DURACAO: /* o web nao tem */
@@ -7067,6 +7071,7 @@ int ajustes_pediu_relogio(void) { int v = pediuRelogio; pediuRelogio = 0; return
 // guia; nada no disco ou na conta depende do rotulo.
 static const char *rotuloNovo(int op) {
   switch (op) {
+    case AJ_HERO_PASTA_DETALHES: return "Detalhes da pasta no destaque";
     case AJ_PULAR_CREDITOS: return "Pular os créditos sozinho";
     case AJ_PROXIMO_AUTO: return "Tocar o próximo episódio sozinho";
     case AJ_REACAO_CREDITOS: return "Perguntar o que achou no fim";
@@ -7795,6 +7800,7 @@ static void focarOpcao(int op) {
     focar(i);
     focoIndice = 0;
     aj4Focar(op);
+    focoIndice = 0;
     return;
   }
 }
@@ -7900,6 +7906,10 @@ static const char *ajudaOpcaoBase(int op) {
     if (op == AJ_DESCANSO_ESTILO || (op == AJ_DESCANSO_FONTE && valor[AJ_ESMAECER] == 0))
       return "Ative a Tela de descanso para escolher como ela fica.";
     if (op == AJ_DESCANSO_FONTE) return "Só vale no estilo Vitrine.";
+    if(op==AJ_PAUSA_COMENTARIOS || op==AJ_PAUSA_NOTAS || op==AJ_PAUSA_ELENCO)
+      return "Ative Painel ao pausar para ajustar os comentários, notas e elenco.";
+    if(op==AJ_PLR_FORMATO_POS || op==AJ_PLR_CODEC)
+      return "Ative Formato no player para ajustar a posição e o codec.";
     return "Indisponível com os ajustes atuais.";
   }
   switch (op) {
@@ -8249,6 +8259,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_AFR: return "Troca a taxa de atualização da TV para a do vídeo (24 Hz, 50 Hz...), reduzindo trepidação. Automático aplica a melhor correspondência ao abrir o vídeo e restaura ao sair; se a TV não oferecer um modo compatível, nada muda. Só Android TV.";
     case AJ_HDR_INTERFACE: return "HDR experimental para os menus. Branco limitado a 203 nits. Reinicie o app após mudar. Sem suporte, usa SDR.";
     case AJ_AMPLIAR_UI: return "Só vale com a resolução em 1080p ou 720p: o app amplia a interface para a tela (usa mais GPU). Na Automática e na 4K quem amplia é a TV. Reinicie o app depois de mudar.";
+    case AJ_AUDIO_NORMALIZAR: return "Normaliza áudio convertido de DTS para PCM e áudio do player Android. Não se aplica ao áudio nativo AAC/AC3 no webOS ou Tizen.";
     case AJ_AUDIO_OFFSET: return "Positivo atrasa; negativo adianta. Só áudio convertido, a partir do próximo vídeo.";
     case AJ_AMPLIACAO_ALGO: return "Como o app amplia a interface para a tela. Automático escolhe sozinho; SGSR nítido e FSR 1 usam mais GPU. Vale na hora.";
     case AJ_AMPLIACAO_NITIDEZ: return "Reforço de contorno do SGSR nítido e do FSR 1. 0 desliga.";
@@ -8486,6 +8497,13 @@ static const char *efeitoOpcao(int op) {
 // valores ("Equilibrio: ...") ou e longa demais, a frase e propria.
 static const char *beneficioProprio(int op) {
   switch (op) {
+    case AJ_PAUSA_COMENTARIOS: return "Comentários públicos do Trakt no painel ao pausar.";
+    case AJ_PAUSA_NOTAS: return "Notas do título no painel ao pausar.";
+    case AJ_PLR_FORMATO_POS: return "Posição da fileira de formato no player.";
+    case AJ_PLR_CODEC: return "Codec do áudio ao lado do idioma e dos canais.";
+    case AJ_HERO_TAMANHO: return "Tamanho da logo e das informações do destaque.";
+    case AJ_HERO_PASTA_DETALHES: return "Grupo, informações e dica de explorar a pasta no destaque.";
+    case AJ_AUDIO_NORMALIZAR: return "DTS convertido para PCM e player Android; não vale para AAC/AC3 nativo.";
     case AJ_FONTE_IDIOMA_AUDIO: return "Fontes com o seu idioma de áudio, ou áudio duplo, passam na frente.";
     case AJ_FONTE_GRUPO: return "No próximo episódio, tenta primeiro a mesma fonte do anterior.";
     case AJ_LINK_REUSAR: return "Ao abrir de novo o mesmo título, toca direto o link que funcionou.";
@@ -11112,7 +11130,7 @@ static AjPreview familiaPreviaOpcao(int op) {
       return AJPV_REPRO;
     case AJ_HOME_LAYOUT:
     case AJ_PALCO_FUNDO:
-    case AJ_HERO_SINOPSE_TAM: case AJ_HERO_TAMANHO:
+    case AJ_HERO_SINOPSE_TAM: case AJ_HERO_TAMANHO: case AJ_HERO_PASTA_DETALHES:
     case AJ_LANDSCAPE: case AJ_HERO_CHEIO: case AJ_FUNDO_DIN: case AJ_FUNDO_DIN_COR: case AJ_HERO_FUNDO:
     case AJ_HERO_ARTE_DIF: case AJ_HERO_TRAILER: case AJ_FIL_LIMITE:
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS:

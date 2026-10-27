@@ -184,7 +184,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_PLR_CODEC: return "aj_audio-lines";
     case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: return "aj_clapperboard";
     case AJ_EP_TAMANHO: return "aj_layout-dashboard";
-    case AJ_HERO_SINOPSE_TAM: case AJ_HERO_TAMANHO: return "aj_layout-dashboard";
+    case AJ_HERO_SINOPSE_TAM: case AJ_HERO_TAMANHO: case AJ_HERO_PASTA_DETALHES: return "aj_layout-dashboard";
     case AJ_ESTAT_TAMANHO: return "aj_gauge";
     case AJ_ESTAT_LADO: return "aj_gauge";
     case AJ_REACAO_CREDITOS: return "aj_circle-play";
@@ -198,7 +198,13 @@ static const char *ajVisualIcone(int op) {
     case AJ_SEEKR_FITA: return "aj_film";
     case AJ_SEEKR_AJUSTE: return "aj_film";
     case AJ_IDIOMA: return "aj_languages";
-    case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: return "aj_audio-lines";
+    case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_AUD_ORIGINAL: case AJ_AUDIO_NORMALIZAR: return "aj_audio-lines";
+    case AJ_GUIA_PREVIA_GRANDE: return "aj_tv";
+    case AJ_DET_TOPO: return "aj_panel-top";
+    case AJ_DET_ELENCO_VISTO: return "aj_users";
+    case AJ_DEBRID_LIGADO: return "aj_key";
+    case AJ_ADDONS_LIGADO: return "aj_puzzle";
+    case AJ_LEG_ESTILO_LIGADO: return "aj_captions";
     case AJ_LEG_MOSTRAR: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_LEG_FORCADA: return "aj_captions";
     case AJ_CACHE_SEEK: return "aj_database";
     case AJ_TAM_MAX: case AJ_TAM_MIN: return "aj_database";

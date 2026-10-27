@@ -2,7 +2,7 @@
 static void ajPenSources(void) {
   ajPenBase();ajPenChip("Reprodução","pl_chevron-left",200,112,164,0,5,0);
   ajKicker("REPRODUÇÃO",200,198,1);aj4Texto("Escolha do vídeo",TXT_TITULO2,200,212,1500,1);
-  aj4Texto("As fontes deste título. O Nuvio pergunta antes de trocar de uma para a outra.",TXT_G20M,200,291,1520,.58f);
+  aj4Texto("Abra um título para ver as fontes disponíveis.",TXT_G20M,200,291,1520,.58f);
   ajPenScope();
   aj4Texto("O que está em Privado só você vê",TXT_AJ_MINI14,1450,178,374,.4f);
   ajPenPanel(200,344,520,640,0);ajPenPanel(744,344,1080,640,0);

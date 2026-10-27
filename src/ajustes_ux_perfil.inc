@@ -16,8 +16,8 @@
 // Ajustes para um travado volta a travar na hora.
 #include "admin.h"
 
-enum { PF_FECHADA = 0, PF_MENU, PF_EDITAR, PF_COPIAR, PF_INFANTIL, PF_CONFIRMA, PF_BLOQUEIO };
-enum { PA_NADA = 0, PA_EDITAR, PA_COPIAR, PA_INFANTIL, PA_DESBLOQ };
+enum { PF_FECHADA = 0, PF_MENU, PF_EDITAR, PF_COPIAR, PF_INFANTIL, PF_CONFIRMA, PF_BLOQUEIO, PF_LIMITES };
+enum { PA_NADA = 0, PA_EDITAR, PA_COPIAR, PA_INFANTIL, PA_DESBLOQ, PA_LIMITES, PA_REMOVER_PIN, PA_TRAVAR };
 enum { PL_FECHAR = 1, PL_EDITAR_OUTRO, PL_COPIAR, PL_RESTAURAR, PL_INFANTIL, PL_TERMINAR, PL_RESTAURAR_ED,
        PL_PERFIL, PL_COPIAR_AGORA, PL_SIM, PL_NAO, PL_DESBLOQ };
 #define PF_CAMPO (AJ_N + 7)     // stCampo da modal de PIN de administrador
@@ -31,6 +31,7 @@ static int pfConfirmaTipo;                  // PL_COPIAR ou PL_RESTAURAR ou PL_R
 static int pfMarca[CONTA_PERFIL_MAX + 1];   // checklist da copia, por lugar na lista
 static int pfPend, pfPendAlvo;              // acao esperando o PIN
 static int pfAdminOk;                       // profile_index para o qual o PIN ja foi dado (0 = nenhum)
+static int pfParentalTarget;
 static int pfDesbloq;                       // perfil travado aberto nesta visita
 static int pfFase;                          // 1 conta, 2 local, 3 criar, 4 repetir
 static char pfPinNovo[ADMIN_PIN_MAX + 2];
@@ -68,7 +69,14 @@ static void pfExecutar(void) {
   int acao = pfPend, alvo = pfPendAlvo;
   pfPend = PA_NADA;
   if(acao==PA_DESBLOQ && admin_perfil_pin_definido(perfis_ativo())) { pfDesbloq=perfis_ativo();pfFechar();return; }
-  if (acao == PA_EDITAR) {
+  if(acao==PA_TRAVAR) {
+    int locked=perfil_ajustes_travados(alvo);
+    if(!perfil_infantil(alvo)) { perfil_infantil_definir(alvo,1);ajustes_padroes_infantis(alvo); }
+    perfil_ajustes_travar(alvo,!locked);pfFechar();
+  }
+  else if (acao == PA_LIMITES) { pfParentalTarget=alvo;pfFechar(); }
+  else if (acao == PA_REMOVER_PIN) { admin_perfil_pin_remover(alvo);pfFechar();uxNotificar("PIN removido."); }
+  else if (acao == PA_EDITAR) {
     if (ajustes_edicao_iniciar(alvo)) { pfFechar(); uxNotificar("Editando os ajustes de outro perfil. As mudanças valem só para ele."); }
     else uxNotificar("Não foi possível abrir os ajustes desse perfil.");
   } else if (acao == PA_COPIAR) {
@@ -204,6 +212,7 @@ static void pfVigiar(void) {
 
 // A entrada nos Ajustes: o PIN e o desbloqueio valem por uma visita.
 static void pfEntrada(void) {
+  pfParentalTarget=0;
   pfAdminOk = 0; pfDesbloq = 0; pfPend = PA_NADA; pfTela = PF_FECHADA; pfFoco = 0;
   memset(pfMarca, 0, sizeof pfMarca);
   if (pfTravado()) { pfTela = PF_BLOQUEIO; }
@@ -243,11 +252,11 @@ static int pfLinhas(PfLinha *L) {
     pfRotulo(&L[n++], PL_FECHAR, "Fechar", NULL);
     return n;
   }
-  if (pfTela == PF_EDITAR || pfTela == PF_COPIAR || pfTela == PF_INFANTIL) {
+  if (pfTela == PF_EDITAR || pfTela == PF_COPIAR || pfTela == PF_INFANTIL || pfTela == PF_LIMITES) {
     for (i = 0; i < perfis_n() && n < PF_MAX - 3; i++) {
       const ContaPerfil *p = perfis_item(i);
       if (!p) continue;
-      if (pfTela != PF_INFANTIL && p->indice == perfis_ativo()) continue;
+      if (pfTela != PF_INFANTIL && pfTela != PF_LIMITES && p->indice == perfis_ativo()) continue;
       pfRotulo(&L[n], PL_PERFIL, p->nome, "");
       L[n].arg = p->indice;
       if (pfTela == PF_COPIAR) { L[n].marca = pfMarca[k]; L[n].ativa = 1; k++; }
@@ -313,7 +322,8 @@ static void pfEvento(SDL_Keycode k) {
         pfConfirmaTipo = l->id; pfConfirmaDe = PF_MENU; pfTela = PF_CONFIRMA; pfFoco = 1; break;
       case PL_TERMINAR: ajustes_edicao_encerrar(); pfFechar(); uxNotificar("Edição encerrada. Voltaram os seus ajustes."); break;
       case PL_PERFIL:
-        if (pfTela == PF_EDITAR) pfExigirAdmin(PA_EDITAR, l->arg);
+        if (pfTela == PF_LIMITES) pfExigirAdmin(PA_LIMITES, l->arg);
+        else if (pfTela == PF_EDITAR) pfExigirAdmin(PA_EDITAR, l->arg);
         else if (pfTela == PF_INFANTIL) pfExigirAdmin(PA_INFANTIL, l->arg);
         else if (pfTela == PF_COPIAR) {
           int i, kk = 0;

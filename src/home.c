@@ -5265,6 +5265,7 @@ static void desenhaHero(Uint32 agora, float saida) {
   if(!focoHero&&lay!=HOME_LAYOUT_DINAMICA&&foco.fileira>=0&&foco.fileira<nFileiras&&fileiras[foco.fileira].tipo==FILEIRA_CATALOGOS) {
     const ColFolder *folder=col_folder(fileiras[foco.fileira].folders[foco.coluna]);
     if(folder) {
+      int details=ajustes_hero_pasta_detalhes();
       if(folder->editorial) {
         /* Art is authored for this rectangle, not cropped as a movie backdrop.
            The neutral canvas continues below it; no art behind the shelves. */
@@ -5277,12 +5278,14 @@ static void desenhaHero(Uint32 agora, float saida) {
         heroArteRect=header;
         int director=!strcasecmp(folder->group,"Directors");
         const char *section=director?"DIRETORES":!strcmp(folder->group,"Streaming")?"STREAMING":!strcmp(folder->group,"Themes")?"TEMAS":!strcmp(folder->group,"Genres")?"GÊNEROS":"COLEÇÕES";
-        txt_desenhar_alpha(txt_linha(TXT_HERO_META,section,190,193,200,255),x,122,a);
+        if(details) txt_desenhar_alpha(txt_linha(TXT_HERO_META,section,190,193,200,255),x,122,a);
         txt_bloco(TXT_TITULO1,folder->title,244,243,247,x,183,homeTextoLargura(860),72,a,2);
-        char caption[160];
-        snprintf(caption,sizeof caption,"%s  ·  %d %s",i18n(director?"Filmografia":"Seleção de cinema e séries"),folder->nSources,i18n(folder->nSources==1?"lista":"listas"));
-        txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,caption,190,193,200,255,homeTextoLargura(860)),x,358,a);
-        txt_desenhar_alpha(txt_linha(TXT_HERO_META,"OK para explorar",224,225,230,255),x,406,a);
+        if(details) {
+          char caption[160];
+          snprintf(caption,sizeof caption,"%s  ·  %d %s",i18n(director?"Filmografia":"Seleção de cinema e séries"),folder->nSources,i18n(folder->nSources==1?"lista":"listas"));
+          txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,caption,190,193,200,255,homeTextoLargura(860)),x,358,a);
+          txt_desenhar_alpha(txt_linha(TXT_HERO_META,"OK para explorar",224,225,230,255),x,406,a);
+        }
         return;
       }
       int ehDiretor=!strcasecmp(folder->group,"Directors");
@@ -5311,11 +5314,14 @@ static void desenhaHero(Uint32 agora, float saida) {
         gfx_tex_aspect_atual=0;}
       heroArteRect=r;
       float x=homeConteudoX(),a=(1-saida)*heroVisivelToque();
-      TxtLinha group=txt_linha(TXT_HERO_META,folder->group,201,206,218,255);
-      txt_desenhar_alpha(group,x,NV_COLLECTION_HERO_GROUP_Y,a);
+      if(details) {
+        TxtLinha group=txt_linha(TXT_HERO_META,folder->group,201,206,218,255);
+        txt_desenhar_alpha(group,x,NV_COLLECTION_HERO_GROUP_Y,a);
+      }
       if (ehDiretor) {
         TxtLinha name=txt_linha_corta(TXT_TITULO1,folder->title,244,243,247,255,homeTextoLargura(780));
         txt_desenhar_alpha(name,x,NV_COLLECTION_HERO_LOGO_Y,a);
+        if(!details) return;
         const char *meta=diretor_meta(folder->title);
         if (meta[0])
           txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,meta,201,206,218,255,homeTextoLargura(780)),
@@ -5355,6 +5361,7 @@ static void desenhaHero(Uint32 agora, float saida) {
         txt_desenhar_alpha(name,x,NV_COLLECTION_HERO_LOGO_Y,a);
         fimTitulo=NV_COLLECTION_HERO_LOGO_Y+name.h;
       }
+      if(!details) return;
       char caption[96];snprintf(caption,sizeof caption,i18n("%d %s · OK para explorar"),folder->nSources,i18n(folder->nSources==1?"lista":"listas"));
       float yCap=NV_COLLECTION_HERO_CAPTION_Y;
       if(ehDiretor) {

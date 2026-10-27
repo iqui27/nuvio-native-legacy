@@ -47,13 +47,14 @@ static void ajPenPresets(void) {
     uxValorTexto(AJ_LEG1_TAMANHO,scale>=0?scale:uxValorAtual(AJ_LEG1_TAMANHO),size,sizeof size);
     snprintf(summary,sizeof summary,i18n("Áudio: %s · Legenda: %s"),language,size);
     aj4Texto(summary,TXT_AJ_MINI14,1352,y+42,330,.4f);
-    aj4Texto("Usar",TXT_G18R,1696,y+24,70,.58f);ajIcone("aj_chevron-right",1768,y+28,18,.45f);
+    aj4Texto(aj4Linha==4+i && aj4Acao?"Excluir":"Usar",TXT_G18R,1690,y+24,80,.58f);ajIcone("aj_chevron-right",1768,y+28,18,.45f);
     aj4Alvo((GfxRect){1290,y,508,74},1,4+i);
   }
   ajNeutro((GfxRect){1290,594,508,180},22,.05f,.10f,.11f,.13f,1);
   aj4Texto("Salvar o estado atual",TXT_G21B,1312,618,460,1);
   ajBloco(TXT_G18R,"A qualidade, o idioma e o estilo de hoje viram um preset novo.",1312,650,460,24,.58f,2);
   ajPenChip("Salvar preset","aj_plus",1312,704,177,aj4Linha==4+ajPenSavedCount,1,4+ajPenSavedCount);
+  aj4Texto("Direita: excluir o preset selecionado.",TXT_AJ_MINI14,1290,902,508,.4f);
   aj4Texto("O preset vale nesta TV e vai para a conta.",TXT_AJ_MINI14,1290,930,508,.4f);
   ajPenRodape("Presets",3,3);
 }

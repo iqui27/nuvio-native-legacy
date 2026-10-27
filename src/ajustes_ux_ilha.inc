@@ -412,6 +412,7 @@ static void ajPonteiroItem(int i, int b) {
   if (i == focoItem && !focoIndice && !uxCabLayout) return;
   focar(i);
   focoIndice = 0;
+  if(TELA[i].tipo==IT_OPC) { aj4Focar(TELA[i].op);aj4Acao=0; }
 }
 static void ajDesenharFolha(void) {
   GfxRect fr = aj2ListaR();

@@ -19,7 +19,7 @@ static void ajPenUtility(void) {
   } else {
     char count[100];snprintf(count,sizeof count,i18n("%d alterações"),n);
     ajKicker(count,226,366,1);
-    /* Left/right still changes the reset scope; the mock has no scope chip. */
+    /* Reset reviews the same union of TV and profile changes shown here. */
   }
   for(int i=start;i<n && i<start+5;i++) {
     int op=search?aj4Resultados[i].op:aj4Opcoes[i];float y=(search?504:400)+(i-start)*84;
@@ -29,7 +29,7 @@ static void ajPenUtility(void) {
       const AjPenPage *page=p<29?&AJ_PEN_AUDIO[p-27]:&AJ_PEN_MAIN[p-29];
       for(int c=0;c<2;c++)for(int r=0;r<page->cols[c].n;r++)if(page->cols[c].rows[r].op==op) { designed=&page->cols[c].rows[r];break; }
     }
-    int group=search?ajPenSearchGroup(op):-1;
+    int group=-1;
     ajIcone(group>=0?aj4Resultados[i].icone:designed?designed->icon:search?aj4Resultados[i].icone:"aj_rotate-ccw-clock",246,y+24,26,.75f);
     aj4Texto(group>=0?AJ_PEN_SEARCH_TITLES[group]:designed?designed->title:aj4Rotulo(op),TXT_G21B,288,y+13,1010,1);
     const char *path=search?aj4Resultados[i].caminho:op==AJ_QUALIDADE?"Reprodução › Imagem e som":op==AJ_AUD_LINGUA?"Áudio e legendas › Idiomas":op==AJ_TEMA?"Minha tela › Cor, vidro e movimento":uxCaminho(op);

@@ -1312,6 +1312,7 @@
   { "Ative Efeito de profundidade para personalizar este detalhe.", "Turn on Depth effect to customise this detail." },
   { "Ative Expandir pôster ao focar para ajustar o tempo de espera.", "Turn on Expand poster on focus to adjust the delay." },
   { "Ative Expandir pôster ao focar, ou Pôsteres horizontais, para usar o trailer do cartaz em foco.", "Turn on Expand poster on focus, or Landscape posters, to use the focused poster trailer." },
+  { "Ative Formato no player para ajustar a posição e o codec.", "Enable player format information to adjust its position and codec." },
   { "Ative MDBList para escolher as fontes de nota.", "Turn on MDBList to choose the rating sources." },
   { "Ative MDBList para mostrar esta nota.", "Turn on MDBList to show this rating." },
   { "Ative Manter o vídeo pronto ao sair para escolher por quanto tempo.", "Turn on Keep video ready on exit to choose how long." },
@@ -1319,6 +1320,7 @@
   { "Ative Miniaturas na barra de tempo para ajustar as miniaturas.", "Turn on Seek bar thumbnails to adjust the thumbnails." },
   { "Ative Mostrar destaque para exibir os catálogos no topo da Home.", "Turn on Show spotlight to display catalogs at the top of the Home screen." },
   { "Ative P2P para escolher onde guardar o cache.", "Enable P2P to choose where to store the cache." },
+  { "Ative Painel ao pausar para ajustar os comentários, notas e elenco.", "Enable the pause panel to adjust comments, ratings and cast." },
   { "Ative Preferir o mesmo grupo de fonte para usar isto.", "Turn on Prefer same source group to use this." },
   { "Ative Relógio na tela: sem ele o player não tem para onde minimizar.", "Turn on Clock on screen: without it the player has nowhere to minimise to." },
   { "Ative Reusar o último link para escolher o prazo.", "Turn on Reuse last link to choose the time limit." },
@@ -1927,6 +1929,7 @@
   { "Cobertura parcial; limite de oito minutos atingido", "Partial coverage; eight-minute limit reached" },
   { "Cobertura: período selecionado", "Coverage: selected period" },
   { "Codec do áudio", "Audio codec" },
+  { "Codec do áudio ao lado do idioma e dos canais.", "Audio codec beside the language and channels." },
   { "Codec · HDR", "Codec · HDR" },
   { "Codec, quadros e taxa: a TV não informa", "Codec, frames and bitrate: not reported by the TV" },
   { "Coincidência por regex", "Regex match" },
@@ -1988,6 +1991,7 @@
   { "Comentários do Trakt ao pausar", "Trakt comments when paused" },
   { "Comentários do episódio ao pausar", "Episode comments when paused" },
   { "Comentários no painel", "Dashboard comments" },
+  { "Comentários públicos do Trakt no painel ao pausar.", "Public Trakt comments in the pause panel." },
   { "Comentários seus que ajudam outras pessoas", "Your comments that help other people" },
   { "Começa agora", "Starting now" },
   { "Começa em %d min", "Starts in %d min" },
@@ -2357,6 +2361,8 @@
   { "DO DIA A DIA", "FROM DAY TO DAY" },
   { "DTS", "DTS" },
   { "DTS convertido em", "DTS converted to" },
+  { "DTS convertido para PCM e player Android", "DTS converted to PCM and Android player" },
+  { "DTS convertido para PCM e player Android; não vale para AAC/AC3 nativo.", "DTS converted to PCM and Android player; excludes native AAC/AC3." },
   { "DTS e Dolby Vision em MKV", "DTS and Dolby Vision in MKV" },
   { "DTS vira 5.1 compatível.", "DTS becomes compatible 5.1." },
   { "DURANTE O VIDEO", "DURING THE VIDEO" },
@@ -2536,6 +2542,7 @@
   { "Detalhe da linha", "Line detail" },
   { "Detalhes", "Details" },
   { "Detalhes da fonte", "Source details" },
+  { "Detalhes da pasta no destaque", "Folder details in the hero" },
   { "Detalhes do Filme", "Movie details" },
   { "Detalhes e episódios", "Details and episodes" },
   { "Detalhes mais elegantes", "Refined details" },
@@ -2594,6 +2601,7 @@
   { "Dinâmicas", "Dynamic" },
   { "Direita", "Right" },
   { "Direita ou Esquerda: o lado do player onde as estatísticas ao vivo ficam.", "Right or Left: the side of the player where live statistics sit." },
+  { "Direita: excluir o preset selecionado.", "Right: delete the selected preset." },
   { "Direto", "Instant" },
   { "Diretor", "Director" },
   { "Direção", "Directed by" },
@@ -3033,6 +3041,7 @@
   { "Escolhe o próximo episódio a partir do mais avançado marcado como assistido.", "Picks the next episode from the furthest one marked as watched." },
   { "Escolhemos por você · mude se quiser", "We chose for you · change if you like" },
   { "Escolher", "Choose" },
+  { "Escolher a fonte", "Choose the source" },
   { "Escolher a fonte ao reproduzir", "Choose the source on Play" },
   { "Escolher a fonte você mesmo", "Pick the source yourself" },
   { "Escolher automaticamente ou mostrar fontes.", "Choose automatically, or show the source list." },
@@ -3653,6 +3662,7 @@
   { "Grego", "Greek" },
   { "Grupo", "Group" },
   { "Grupo de coleções: uma pasta de atalhos para catálogos, montada na sua conta.", "A collection group: a folder of catalog shortcuts, built in your account." },
+  { "Grupo, informações e dica de explorar a pasta no destaque.", "Folder group, details and explore hint in the hero." },
   { "Grupos de lançamento excluídos", "Excluded release groups" },
   { "Grupos excluídos", "Deleted groups" },
   { "Grupos inválidos: use nomes separados por vírgulas.", "Invalid groups: use names separated by commas." },
@@ -4146,6 +4156,7 @@
   { "Ligue, desligue e mude a ordem de cada fileira. Cada uma pode ter o seu card: cartaz em pé, destaque largo, 4:3 e outros. O que não cabe espera na fila.", "Turn each row on or off and change its order. Each one can have its own card: portrait poster, wide spotlight, 4:3 and others. What doesn't fit waits in the queue." },
   { "Limite", "Limit" },
   { "Limite de %d fileiras — coleções não contam", "Limit of %d rows — collections don't count" },
+  { "Limite de 8 presets. Exclua um para salvar outro.", "Limit of 8 presets. Delete one to save another." },
   { "Limite de espaço do P2P", "P2P space limit" },
   { "Limite de fileiras", "Row limit" },
   { "Limite de fileiras e Itens por fileira", "Row limit and Items per row" },
@@ -4585,6 +4596,7 @@
   { "Mostrar ano no destaque", "Show year on hero" },
   { "Mostrar avançados · %d", "Show advanced · %d" },
   { "Mostrar destaque", "Show hero" },
+  { "Mostrar detalhes da pasta no destaque", "Show folder details on hero" },
   { "Mostrar duração no destaque", "Show runtime on hero" },
   { "Mostrar episódios não exibidos", "Show unaired episodes" },
   { "Mostrar gênero no destaque", "Show genre on hero" },
@@ -4923,6 +4935,7 @@
   { "Nome ou número do canal, ou o nome de um programa", "Channel name or number, or a show's name" },
   { "Nome técnico", "Technical name" },
   { "Normal", "Normal" },
+  { "Normaliza áudio convertido de DTS para PCM e áudio do player Android. Não se aplica ao áudio nativo AAC/AC3 no webOS ou Tizen.", "Normalizes audio converted from DTS to PCM and Android player audio. Does not apply to native AAC/AC3 audio on webOS or Tizen." },
   { "Normalizar volume", "Normalize volume" },
   { "Noruega", "Norway" },
   { "Norueguês", "Norwegian" },
@@ -4966,6 +4979,7 @@
   { "Notas do TMDB", "TMDB ratings" },
   { "Notas do Tomatoes", "Tomatoes Notes" },
   { "Notas do Trakt", "Trakt ratings" },
+  { "Notas do título no painel ao pausar.", "Title ratings in the pause panel." },
   { "Notas e críticas", "Notes and reviews" },
   { "Notas no destaque", "Highlight notes" },
   { "Notas no painel", "Notes on the dashboard" },
@@ -5778,6 +5792,7 @@
   { "Ordem das notas no título", "Order of ratings on the title" },
   { "Ordem do guia", "Guide order" },
   { "Ordem dos add-ons", "Add-on order" },
+  { "Ordem dos add-ons e plugins", "Add-on and plugin order" },
   { "Ordem dos grupos", "Group order" },
   { "Ordem dos provedores", "Order of providers" },
   { "Ordem dos rótulos na linha do título", "Order of labels in the title row" },
@@ -5912,6 +5927,7 @@
   { "PIN e limites por perfil", "PIN and limits per profile" },
   { "PIN incorreto", "Wrong PIN" },
   { "PIN incorreto. Tente de novo.", "Wrong PIN. Try again." },
+  { "PIN removido.", "PIN removed." },
   { "PLEX E JUNTOS", "PLEX AND TOGETHER" },
   { "PREFERÊNCIA", "PREFERENCE" },
   { "PRESETS PRONTOS", "READY PRESETS" },
@@ -6254,6 +6270,7 @@
   { "Positivo atrasa; negativo adianta. Só áudio convertido, a partir do próximo vídeo.", "Positive delays; negative advances. Converted audio only, starting with the next video." },
   { "Posição", "Position" },
   { "Posição Nuvio", "Nuvio rank" },
+  { "Posição da fileira de formato no player.", "Position of the format information row in the player." },
   { "Posição da segunda legenda", "Second subtitle position" },
   { "Posição do formato", "Format position" },
   { "Posição do formato no player", "Format position in the player" },
@@ -6789,6 +6806,7 @@
   { "Remover %s deste perfil?", "Remove %s from this profile?" },
   { "Remover %s dos amigos?", "Remove %s from friends?" },
   { "Remover %s? OK confirma", "Remove %s? OK confirms" },
+  { "Remover PIN", "Remove PIN" },
   { "Remover a conexão não apaga arquivos do servidor.", "Removing a connection does not delete files on the server." },
   { "Remover a conta", "Remove account" },
   { "Remover a escolhida", "Remove the chosen one" },
@@ -7658,6 +7676,7 @@
   { "Tamanho com que as Estatísticas ao vivo abrem pela Central de controle. Completo mostra todas as medidas; Compacto, as principais; Mínimo, uma linha fina. Lembrar o último reabre como você deixou. Com o painel aberto, OK troca o tamanho, Esquerda/Direita trocam o lado e Baixo fixa o painel no tamanho escolhido. Vale só nesta TV.", "The size Live statistics opens with from the Control Center. Full shows every metric; Compact, the main ones; Minimal, a thin line. Remember last reopens the way you left it. With the panel open, OK changes the size, Left/Right switch the side and Down pins the panel at the chosen size. Applies to this TV only." },
   { "Tamanho com que as Estatísticas ao vivo abrem pela Central de controle. Completo mostra todas as medidas; Compacto, as principais; Mínimo, uma linha fixa no canto. Lembrar o último reabre como você deixou. Com o painel aberto, OK ou Esquerda/Direita trocam o tamanho. Vale só nesta TV.", "The size Live statistics opens with from the Control Center. Full shows every metric; Compact, the main ones; Minimal, a thin line pinned to the corner. Remember last reopens the way you left it. With the panel open, OK or Left/Right change the size. Applies to this TV only." },
   { "Tamanho da interface", "Interface size" },
+  { "Tamanho da logo e das informações do destaque.", "Hero logo and information size." },
   { "Tamanho da prévia", "Preview size" },
   { "Tamanho da segunda legenda", "Second subtitle size" },
   { "Tamanho da sinopse", "Synopsis size" },
@@ -9259,21 +9278,38 @@
   { "↑ ↓  Navegar     OK  Abrir     Voltar  Retornar", "↑ ↓ Browse OK Open Back Return" },
   { "↑ ↓  rolar   ·   ← →  página   ·   OK  atualizar   ·   Voltar  fechar", "↑ ↓  scroll   ·   ← →  page   ·   OK  refresh   ·   Back  close" },
   { "↑ ↓ Escolher   ·   OK Aplicar   ·   Voltar Cancelar", "↑ ↓ Choose   ·   OK Apply   ·   Back Cancel" },
+
   { "↑ ↓ Escolher   ·   OK Confirmar", "↑ ↓ Choose   ·   OK Confirm" },
+
   { "↑ ↓ Escolher   ·   ← → Ordem   ·   OK Aplicar   ·   Voltar Cancelar", "↑ ↓ Choose   ·   ← → Order   ·   OK Apply   ·   Back Cancel" },
+
   { "↑ ↓ Escolher   ·   ← → Tamanho   ·   OK Aplicar   ·   Voltar Cancelar", "↑ ↓ Choose   ·   ← → Size   ·   OK Apply   ·   Back Cancel" },
+
   { "↑ ↓ Navegar   OK Fechar   Voltar Fechar", "↑ ↓ Navigate   OK Close   Back Close" },
+
   { "↑ ↓ Navegar   OK Selecionar   Voltar Anterior", "↑ ↓ Navigate   OK Select   Back Previous" },
+
   { "↑ ↓ Navegar   OK Selecionar   Voltar Fechar", "↑ ↓ Navigate   OK Select   Back Close" },
+
   { "↑ ↓ escolher · OK agir · Voltar fecha e marca tudo como lido", "↑ ↓ choose · OK act · Back closes and marks all as read" },
+
   { "↑ ↓ rola · OK ou Voltar fecha", "↑ ↓ scroll · OK or Back closes" },
+
   { "→   Buscas recentes", "→   Recent searches" },
+
   { "→   Populares", "→   Popular" },
+
   { "→   Restaurar padrão…", "→   Restore default…" },
+
   { "→   Resultados", "→   Results" },
+
   { "↓   Entrar na lista", "↓   Enter list" },
+
   { "↓ até o fim volta a seguir", "↓ to the end resumes following" },
+
   { "⇧ Maiúsculas", "⇧ Shift" },
+
   { "⌫ Apagar", "⌫ Delete" },
+
   { "✓ Assistido%s%s", "✓ Watched%s%s" },
   { "✓ Salvo", "✓ Saved" },

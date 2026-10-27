@@ -13,7 +13,8 @@ static void ajPenChip(const char *s,const char *ic,float x,float y,float w,int f
   if(focus)ajPilulaAcento(r,26,1);
   else ajNeutro(r,26,.07f,.14f,.15f,.17f,1);
   if(ic) { if(focus)ajIconeT(ic,x+20,y+17,18,1);else ajIcone(ic,x+20,y+17,18,.8f); }
-  TxtLinha t=focus?txt_linha_corta(TXT_G18M,s,ajTinta(),ajTinta(),ajTinta(),255,w-(ic?58:32)):ajTxtC(TXT_G18M,s,w-(ic?58:32));
+  TxtEstilo style=txt_largura(TXT_G18M,i18n(s))>w-(ic?58:32)?TXT_AJ_MINI14:TXT_G18M;
+  TxtLinha t=focus?txt_linha_corta(style,s,ajTinta(),ajTinta(),ajTinta(),255,w-(ic?58:32)):ajTxtC(style,s,w-(ic?58:32));
   txt_desenhar(t,x+(ic?48:(w-t.w)/2),y+(52-t.h)/2);
   aj4Alvo(r,zone,row);
 }
@@ -65,7 +66,7 @@ static void ajPenRodape(const char *page,int part,int total) {
   char backText[160];snprintf(backText,sizeof backText,i18n("voltar para %s"),i18n(back));
   aj4Texto(focoIndice || ajPenPage==AJ_PEN_COMPONENTS?"voltar":backText,TXT_AJ_MINI14,backX+39,1029,400,.45f);
   char text[200];
-  if((ajPenPage>=0 && ajPenPage<27) || ajPenPage==AJ_PEN_COMPONENTS)snprintf(text,sizeof text,"%s",i18n(page));
+  if(uxEditor || aj4Util || focoIndice || ajPenPage<27 || ajPenPage>=AJ_PEN_PARENTAL)snprintf(text,sizeof text,"%s",i18n(page));
   else snprintf(text,sizeof text,i18n("%s · %d de %d"),i18n(page),part,total);
   TxtLinha t=ajTxt(TXT_AJ_MINI14,text);txt_desenhar_alpha(t,1824-t.w,1029,.45f);
   TxtLinha nav=ajTxt(TXT_AJ_MINI14,"navegar");float navX=1824-t.w-22-nav.w;
@@ -82,16 +83,16 @@ static void ajPenRows(void) {
   ajPenBase();
   const char *back=ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
   ajPenChip(back,"pl_chevron-left",200,112,!strcmp(back,"Ajustes")?124:!strcmp(back,"Minha tela")?150:!strcmp(back,"Reprodução")?164:208,0,5,0);
-  ajKicker(ajPenPage<27?"AJUSTES AVANÇADOS":!strcmp(back,"Ajustes")?"AJUSTES":back,200,198,1);
+  ajKicker(ajPenPage<27?"AJUSTES AVANÇADOS":!strcmp(back,"Ajustes")?"AJUSTES":back,200,174,1);
   aj4Texto(page->title,TXT_TITULO2,200,212,1500,1);
   if(ajPenPage<27 || (ajPenPage>=46 && ajPenPage<AJ_PEN_PARENTAL)) {
     char sub[240];snprintf(sub,sizeof sub,i18n("Opções de %s que o modo Simples esconde. Valor atual à direita."),i18n(page->section));
     aj4Texto(sub,TXT_G20M,200,291,1520,.58f);
   } else {
     ajPenModo(118);
-    const char *help=ajPenPage==27?"Avançado mostra saída de som e sincronia fina":ajPenPage==28?"Avançado mostra o deslize da sincronia":ajPenPage==AJ_PEN_PARENTAL?"Avançado mostra os limites por perfil":AJ_PEN_MODE_HELP[ajPenPage-29];
+    const char *help=ajPenPage==27?"Avançado mostra saída de som e sincronia fina":ajPenPage==28?"Avançado mostra o deslize da sincronia":ajPenPage==AJ_PEN_PARENTAL?"Avançado mostra os limites por perfil":ajPenPage==AJ_PEN_SECONDARY?"Segunda legenda":AJ_PEN_MODE_HELP[ajPenPage-29];
     TxtLinha modeHelp=ajTxt(TXT_AJ_MINI14,help);txt_desenhar_alpha(modeHelp,1824-modeHelp.w,190,.4f);
-    aj4Texto(ajPenPage==AJ_PEN_PARENTAL?"Perfil infantil, PIN e os limites de cada perfil.":ajPenPage>=29?AJ_PEN_SUB[ajPenPage-29]:ajPenPage==27?"Vale para quase todo título. Se um filme não tiver a faixa escolhida, tocamos a original e avisamos.":"Tamanho, fonte, cor e borda da legenda principal.",TXT_G20M,200,291,1520,.58f);
+    aj4Texto(ajPenPage==AJ_PEN_PARENTAL?"Perfil infantil, PIN e os limites de cada perfil.":ajPenPage>=29 && ajPenPage<46?AJ_PEN_SUB[ajPenPage-29]:ajPenPage==27?"Vale para quase todo título. Se um filme não tiver a faixa escolhida, tocamos a original e avisamos.":ajPenPage==AJ_PEN_SECONDARY?"A segunda legenda não muda quando você muda a principal.":"Tamanho, fonte, cor e borda da legenda principal.",TXT_G20M,200,291,1520,.58f);
   }
   int index=0;
   for(int col=0;col<2;col++) {
@@ -112,16 +113,17 @@ static void ajPenRows(void) {
       ajIcone(row->icon,x+20,y+24,26,focus?1:.75f);
       int available=row->op>=0?ajOpcaoDisponivel(row->op):row->op!=-1;
       int hasHelp=row->help && row->help[0];
-      aj4Texto(row->title,TXT_G21B,x+62,y+(hasHelp?13:24),w-245,available?1:.45f);
+      aj4Texto(row->title,TXT_G21B,x+62,y+(hasHelp?13:24),w-365,available?1:.45f);
       aj4Texto(row->help,TXT_AJ_MINI14,x+62,y+42,w-210,.4f);
       if(row->toggle && row->op!=-1) {
-        int on=row->op<=-10 && row->op>=-13?perfil_regra(perfis_ativo(),-10-row->op):row->op==-2?perfil_ajustes_travados(perfis_ativo()):uxValorAtual(row->op)==0;
-        if(ajPenPage==AJ_PEN_PARENTAL && row->op==AJ_ENQUETES)on=perfil_infantil_ativo() || !on;float r=.20f,g=.21f,b=.24f;
+        int on=row->op<=-10 && row->op>=-13?perfil_regra(ajPenParentProfile(),-10-row->op):row->op==-2?perfil_ajustes_travados(ajPenParentProfile()):uxValorAtual(row->op)==0;
+        if(ajPenPage==AJ_PEN_PARENTAL && row->op==AJ_ENQUETES)on=!on;float r=.20f,g=.21f,b=.24f;
         if(on)ajustes_acento(&r,&g,&b);
         gfx_cor((GfxRect){x+w-90,y+19,64,36},.5f,r,g,b,1);
         gfx_cor((GfxRect){x+w-86+(on?28:0),y+23,28,28},.5f,1,1,1,1);
       } else {
-        char val[160];snprintf(val,sizeof val,"%s",row->op>=0?textoValor(row->op):row->op==-3?i18n(admin_perfil_pin_definido(perfis_ativo())?"PIN definido":"Definir um PIN"):row->op==-4?i18n("Livre e até 10 anos"):i18n("Ainda não disponível."));
+        char val[160];snprintf(val,sizeof val,"%s",row->op>=0?textoValor(row->op):row->op==-3?i18n(admin_perfil_pin_definido(perfis_ativo())?"PIN definido":"Definir um PIN"):row->op==-6?pfNome(ajPenParentProfile()):row->op==-4?i18n("Livre e até 10 anos"):i18n("Abrir"));
+        if((row->op==AJ_AUD_LINGUA || row->op==AJ_LEG_LINGUA) && !strcmp(ling_opcao_codigo(uxValorAtual(row->op)),"pt"))snprintf(val,sizeof val,"%s",i18n("Português (Brasil)"));
         if(row->op>=0 && OPCOES[row->op].tipo==OP_ACAO && !val[0])snprintf(val,sizeof val,"%s",i18n("Abrir"));
         if(ajPenPage==39 && i==5 && col==1)val[0]=0;
         if(ajPenPage==40 && col==1 && i==4)val[0]=0;
@@ -131,12 +133,13 @@ static void ajPenRows(void) {
           int count=0;for(int op=AJ_TMDB_ARTE;op<=AJ_TMDB_CW;op++)if(lig(op))count++;
           snprintf(val,sizeof val,i18n("%d ajustes"),count);
         }
-        if(row->op<=-10 && row->op>=-13)ajPenParentText(-10-row->op,perfil_regra(perfis_ativo(),-10-row->op),val,sizeof val);
-        if(row->op==-4)ajPenParentText(PR_FILMES,perfil_regra(perfis_ativo(),PR_FILMES),val,sizeof val);
+        if(row->op<=-10 && row->op>=-13)ajPenParentText(-10-row->op,perfil_regra(ajPenParentProfile(),-10-row->op),val,sizeof val);
+        if(row->op==-4)ajPenParentText(PR_FILMES,perfil_regra(ajPenParentProfile(),PR_FILMES),val,sizeof val);
         if(ajPenPage==28 && row->op==AJ_LEG1_RESTAURAR)val[0]=0;
         if(ajPenPage==28 && row->op==AJ_LEG1_ATRASO && i==5)snprintf(val,sizeof val,i18n("%+.3f s"),uxValorAtual(row->op)/1000.0);
-        float valueWidth=w>1000?300:200;
-        TxtLinha t=ajTxtC(TXT_PEN_VALUE,val,valueWidth);txt_desenhar_alpha(t,x+w-52-t.w,y+24,.58f);
+        float valueWidth=w>1000?430:300;
+        if(txt_largura(TXT_PEN_VALUE,val)>valueWidth)ajBloco(TXT_PEN_VALUE,val,x+w-52-valueWidth,y+13,valueWidth,23,.58f,2);
+        else { TxtLinha t=ajTxt(TXT_PEN_VALUE,val);txt_desenhar_alpha(t,x+w-52-t.w,y+24,.58f); }
         ajIcone("aj_chevron-right",x+w-44,y+28,18,.45f);
       }
       if(transform)gfx_sem_transformar();
@@ -145,7 +148,7 @@ static void ajPenRows(void) {
   }
   if(ajPenPage==44)ajPenChip("Componentes",NULL,1300,112,180,ajPenRow==99,12,4);
   if(ajPenPage==29)aj4Texto("A TV é quem reproduz. O Nuvio converte o que a TV não entende.",TXT_AJ_MINI14,226,908,748,.4f);
-  ajPenRodape(ajPenPage==27 || ajPenPage==28?"Áudio e legendas":ajPenPage<27?page->title:page->section,ajPenPage>=29 && ajPenPage<46?AJ_PEN_PART[ajPenPage-29]:page->part,ajPenPage>=29 && ajPenPage<46?AJ_PEN_TOTAL[ajPenPage-29]:page->total);
+  ajPenRodape(ajPenPage==27 || ajPenPage==28?"Áudio e legendas":ajPenPage<27?page->title:page->section,page->part,page->total);
 }
 static int ajPenChannels(void) {
   int total=0;GuiaFonteSaude source;
@@ -178,6 +181,7 @@ static void ajPenHome(void) {
     ajCaps(TXT_AJ_MINI12,"AGORA",1.5f,x+26,530,.40f);
     char value[160];snprintf(value,sizeof value,"%s",textoValor(valueOps[i]));
     if(i==3)snprintf(value,sizeof value,"%s",pfNome(perfis_ativo()));
+    if(i==1 && !strcmp(ling_opcao_codigo(uxValorAtual(AJ_AUD_LINGUA)),"pt"))snprintf(value,sizeof value,"%s",i18n("Português (Brasil)"));
     if(av) {
       char second[100];
       if(i==0)snprintf(value,sizeof value,i18n("%s · DV %s"),textoValor(AJ_QUALIDADE),i18n(lig(AJ_DV)?"ligado":"desligado"));
@@ -190,7 +194,7 @@ static void ajPenHome(void) {
     else aj4Texto(value,TXT_G18M,x+96,527,changed?194:260,1);
     if(changed) { char count[64];snprintf(count,sizeof count,i18n(changed==1?"%d alterado":"%d alterados"),changed);float r,g,b;ajustes_acento(&r,&g,&b);
       TxtLinha t=txt_linha_corta(TXT_G14B,count,r*255,g*255,b*255,255,100);
-      txt_desenhar(t,x+388-26-t.w,530);
+      txt_desenhar(t,x+96+fminf(txt_largura(TXT_G18M,value),194)+10,530);
     }
     aj4Alvo((GfxRect){x,322,388,250},1,i);
   }
@@ -208,9 +212,9 @@ static void ajPenHome(void) {
     aj4Alvo((GfxRect){x,y,544,78},1,row);
   }
   char val[160];snprintf(val,sizeof val,i18n("%s · %d canais"),textoValor(AJ_IPTV_CONTA),ajPenChannels());
-  aj4Texto(val,TXT_G18R,828,689,230,.55f);
+  aj4Texto(val,TXT_G18R,828,689,230,.55f);ajIcone("aj_chevron-right",1070,689,18,.45f);
   snprintf(val,sizeof val,"%s",textoValor(AJ_GPU_EFEITOS));
-  aj4Texto(val,TXT_G18R,828,781,230,.55f);
+  aj4Texto(val,TXT_G18R,828,781,230,.55f);ajIcone("aj_chevron-right",1070,781,18,.45f);
   ajPenPanel(200,876,1624,124,0);
   ajNeutro((GfxRect){226,910,56,56},20,.09f,.18f,.19f,.21f,1);
   ajIcone("aj_sparkles",240,924,28,1);

@@ -132,6 +132,7 @@ static int perfilArquivo(int profile,char file[48]) {
 int admin_perfil_pin_definido(int profile) { char file[48];return perfilArquivo(profile,file) && definidoArquivo(file); }
 int admin_perfil_pin_definir(int profile,const char *pin) { char file[48];return perfilArquivo(profile,file) && definirArquivo(file,pin); }
 int admin_perfil_pin_conferir(int profile,const char *pin) { char file[48];return perfilArquivo(profile,file) && conferirArquivo(file,pin); }
+void admin_perfil_pin_remover(int profile) { char file[48];if(perfilArquivo(profile,file))dados_apagar(file); }
 void admin_pin_esquecer(void) {
   dados_apagar(ARQ);
   for(int p=1;p<=32;p++) { char file[48];perfilArquivo(p,file);dados_apagar(file); }

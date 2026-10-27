@@ -511,7 +511,7 @@ static void aj4Desenhar(void) {
   else if(aj4Util)aj4UtilDesenhar();
   else if(!focoIndice && ajPenPage==AJ_PEN_SOURCES)ajPenSources();
   else if(!focoIndice && ajPenPage==AJ_PEN_COMPONENTS)ajPenComponents();
-  else if(!focoIndice && ajPenPage==AJ_PEN_SECONDARY)ajPenSecondary();
+  else if(!focoIndice && ajPenPage==AJ_PEN_SECONDARY)ajPenRows();
   else if(!focoIndice && ajPenPage==AJ_PEN_RULES)ajPenRules();
   else if(!focoIndice && ajPenPage==AJ_PEN_TOUR)ajPenFeatures();
   else if(!focoIndice && ajPenPage>=AJ_PEN_PROVIDER && ajPenPage<=AJ_PEN_ADDON_FAILURES)ajPenProviders();

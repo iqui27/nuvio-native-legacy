@@ -9,7 +9,7 @@ static const AjPenPage AJ_PEN_MAIN[] = {
       {AJ_HDR_UI,"Brilho da interface em HDR","A TV é quem reproduz","aj_monitor",0},
     }},
     {"ESCOLHA DA FONTE",1024,800,6, {
-      {AJ_FONTE_MANUAL,"Escolher a fonte ao reproduzir","A TV pergunta a cada título","aj_list-video",1},
+      {AJ_FONTE_MANUAL,"Escolher a fonte","A TV pergunta a cada título","aj_list-video",0},
       {AJ_FONTE_AUTO,"Fonte automática","Melhor fonte ou primeira da lista","aj_wand-sparkles",0},
       {AJ_FONTE_REPOR,"Outra fonte se falhar","Quantas fontes o automático tenta","aj_repeat",0},
       {AJ_FONTE_PRAZO,"Espera pelos add-ons","Quanto tempo esperar a resposta","aj_timer",0},
@@ -36,13 +36,14 @@ static const AjPenPage AJ_PEN_MAIN[] = {
     }},
   }},
   {"Fontes e regras","Reprodução",3,4, {
-    {"LISTA DE FONTES",200,800,6, {
+    {"LISTA DE FONTES",200,800,7, {
       {AJ_FONTE_TEXTO,"Texto das fontes","Do Nuvio, do addon ou o logo do título","aj_type",0},
       {AJ_SELOS_CORES,"Selos coloridos","Marca a qualidade de cada faixa","aj_palette",1},
       {AJ_SELOS_PACOTE,"Pacote de selos","O conjunto de selos usado na lista","aj_layers",0},
       {AJ_SELOS_PACOTE_ADD,"Adicionar pacote de selos","Instala um pacote novo","aj_plus",0},
       {AJ_SELOS_PACOTE_REM,"Remover pacote","Tira o pacote da TV","aj_minus",0},
       {AJ_FONTE_ORDEM_ADDON,"Ordem das fontes","Como a lista é montada","aj_list-ordered",0},
+      {AJ_FONTE_ORDEM,"Ordem dos add-ons e plugins","","aj_list-ordered",0},
     }},
     {"REGRAS DAS FONTES",1024,800,6, {
       {AJ_FONTE_ESCOPO,"Fontes do automático","O que o automático pode abrir","aj_funnel",0},
@@ -72,21 +73,23 @@ static const AjPenPage AJ_PEN_MAIN[] = {
     }},
   }},
   {"Minha tela","Minha tela",1,2, {
-    {"ESTILO DA TELA INICIAL",200,800,6, {
+    {"ESTILO DA TELA INICIAL",200,800,7, {
       {AJ_HOME_LAYOUT,"Layout da home","Moderna, Padrão ou Dinâmica","aj_layout-dashboard",0},
       {AJ_LANDSCAPE,"Pösteres horizontais","Cartazes deitados nas fileiras","aj_image",1},
       {AJ_HERO_CHEIO,"Fundo em tela cheia","A arte ocupa a tela toda","aj_monitor-play",1},
       {AJ_HERO,"Mostrar destaque","O titulo grande do topo","aj_sparkles",1},
       {AJ_HERO_CATALOGOS,"Catálogos do destaque","De onde vêm os títulos do topo","aj_library",0},
       {AJ_HERO_TRANSICAO,"Transição do destaque","Deslizar ou esmaecer","aj_move-horizontal",0},
+      {-20,"Cartazes e trailers","","aj_image",0},
     }},
-    {"FILEIRAS E BARRA",1024,800,6, {
+    {"FILEIRAS E BARRA",1024,800,7, {
       {AJ_FIL_ORDEM,"Ordenar e ativar fileiras","A ordem das fileiras da home","aj_list-ordered",0},
       {AJ_ITENS_FILEIRA,"Itens por fileira","Quantos cartazes cabem na tela","aj_layout-grid",0},
       {AJ_OCULTAR_NLANC,"Ocultar não lançados","Esconde o que ainda não chegou","aj_eye-off",1},
       {AJ_NOTAS_HOME,"Avaliações gerais","Nota embaixo do cartaz","aj_star",0},
       {AJ_RAIL,"Barra lateral","Recolhida ou fixa","aj_panel-left",0},
       {AJ_MENU_TOPO,"Posição do menu","Na lateral ou no topo","aj_menu",0},
+      {-21,"Página do título","","aj_film",0},
     }},
   }},
   {"Cor, vidro e movimento","Minha tela",2,2, {
@@ -108,13 +111,14 @@ static const AjPenPage AJ_PEN_MAIN[] = {
     }},
   }},
   {"Cartazes e trailers","Cartazes e trailers",1,1, {
-    {"CARTAZ EM FOCO",200,800,6, {
+    {"CARTAZ EM FOCO",200,800,7, {
       {AJ_EXPANDIR,"Expandir pôster ao focar","O cartaz cresce no foco","aj_maximize-2",1},
       {AJ_EXPANDIR_ATRASO,"Atraso da expansão","Quanto tempo até crescer","aj_timer",0},
       {AJ_BORDA_FOCO,"Borda no cartaz em foco","Contorno no cartaz ampliado","aj_square-dashed",1},
       {AJ_GRAD_CLASSICO,"Gradiente de foco clássico","Escurece o lado do cartaz","aj_layers",1},
       {AJ_HERO_FUNDO,"De onde vem a arte","O catálogo, o IMDb, o TMDB ou o Trakt","aj_image",0},
       {AJ_HERO_ARTE_DIF,"Destaque com outra arte","Usa outra arte no topo","aj_wand-sparkles",1},
+      {AJ_HERO_PASTA_DETALHES,"Mostrar detalhes da pasta no destaque","","aj_folders",1},
     }},
     {"TRAILERS",1024,800,6, {
       {AJ_HERO_TRAILER,"Trailer no destaque","O trailer do título grande","aj_clapperboard",1},
@@ -134,13 +138,14 @@ static const AjPenPage AJ_PEN_MAIN[] = {
       {AJ_DET_ELENCO_VISTO,"Onde você já viu o elenco","Marca quem você já viu","aj_users",1},
       {AJ_SELO_VISTO,"Selo de assistido","Icone, desligado ou escrito","aj_star",0},
     }},
-    {"NOTAS E DADOS",1024,800,6, {
+    {"NOTAS E DADOS",1024,800,7, {
       {AJ_NT_IMDB,"IMDb","A nota que a galera dá","aj_star",1},
       {AJ_NT_TOMATES,"Rotten Tomatoes (crítica)","A critica do tomatoes","aj_star",1},
       {AJ_NT_METAUSER,"Metacritic (usuarios)","A nota dos usuários","aj_star",1},
       {AJ_NT_TRAKT,"Trakt","A sua nota do Trakt","aj_star",1},
       {AJ_NT_TMDB,"TMDB","Os dados que o TMDB traz","aj_film",1},
       {AJ_DET_META_EXT,"Dados do título","Ficha, elenco, episódios e trailers","aj_database",0},
+      {AJ_TMDB_LIGADO,"Dados do TMDB","","aj_database",1},
     }},
   }},
   {"Perfil e serviços","Perfil e serviços",1,4, {
@@ -152,13 +157,14 @@ static const AjPenPage AJ_PEN_MAIN[] = {
       {AJ_PERFIL_INFANTIL,"Perfil infantil","Marca o perfil em uso como infantil","aj_baby",1},
       {AJ_SAIR,"Sair da conta","Sai do Nuvio nesta TV","aj_log-out",0},
     }},
-    {"CONTAS CONECTADAS",1024,800,6, {
+    {"CONTAS CONECTADAS",1024,800,7, {
       {AJ_TRAKT,"Trakt","Progresso e lista na conta Trakt","aj_clapperboard",0},
       {AJ_SIMKL,"SimkI","Progresso e lista na conta Simkl","aj_list-video",0},
       {AJ_CW_FONTE,"Fonte do Continuar assistindo","De onde vem o que você viu","aj_tv",0},
       {AJ_SALVOS_DEST,"Fonte da biblioteca","Onde o botão + salva","aj_bookmark",0},
       {AJ_HIST_CONTA,"Enviar histórico para a conta","","aj_history",1},
       {AJ_SOCIAL,"Recursos sociais","Amigos, enquetes e conquistas","aj_users",1},
+      {-22,"Continuar assistindo","","aj_tv",0},
     }},
   }},
   {"Addons e plugins","Perfil e serviços",2,4, {

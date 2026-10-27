@@ -31,7 +31,7 @@ int main(void) {
   // #400: escolha do aparelho; persistencia sem importar/exportar pela conta.
   assert(!ajustes_fonte_ordem_addon());
   assert(somenteDesteAparelho(AJ_FONTE_ORDEM_ADDON));
-  assert(!dePerfil(AJ_FONTE_ORDEM_ADDON));
+  assert(dePerfil(AJ_FONTE_ORDEM_ADDON) && escopoDe(AJ_FONTE_ORDEM_ADDON)==ESC_PERFIL_LOCAL);
   assert(!strcmp(CHAVE[AJ_FONTE_ORDEM_ADDON], "fonteOrdemLocal"));
   mudarValor(AJ_FONTE_ORDEM_ADDON, 1);
   assert(ajustes_fonte_ordem_addon());

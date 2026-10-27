@@ -48,6 +48,8 @@ static int uxRequisito(int op) {
       (op == AJ_FONTE_AUTO || op == AJ_FONTE_GRUPO || op == AJ_FONTE_GRUPO_SESSOES || op == AJ_LINK_REUSAR || op == AJ_LINK_PRAZO))
     return AJ_FONTE_PRIORIDADE;
   switch (op) {
+    case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO: return AJ_PAUSA_OVERLAY;
+    case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC: return AJ_PLR_FORMATO;
     case AJ_MANTER_PRAZO: return AJ_MANTER_VIDEO;
     case AJ_DESCANSO_ESTILO: return AJ_ESMAECER;
     case AJ_DESCANSO_FONTE: return valor[AJ_ESMAECER] == 0 ? AJ_ESMAECER : AJ_DESCANSO_ESTILO;
@@ -318,7 +320,10 @@ static int uxEvento(SDL_Keycode k) {
     if (k == SDLK_LEFT) k = SDLK_RIGHT;
     else if (k == SDLK_RIGHT) k = SDLK_LEFT;
   }
-  if (!uxEditor) return aj4Evento(k);
+  if (!uxEditor) {
+    if(iptvForm.tipo && uxVoltar(k)) { ajIptvVoltar();return 1; }
+    return aj4Evento(k);
+  }
   if(!uxRestaurar && !uxAvisoRisco && ajPenLanguageMove(k))return 1;
   int layoutOculto = !ajLayoutSelecionavel() && (uxCabLayout || uxTopo == AJ2_T_LAYOUT ||
                        (uxEditor && uxOp == AJ_LAYOUT_AJUSTES));

@@ -26,6 +26,7 @@ void admin_pin_esquecer(void);
 int  admin_perfil_pin_definido(int profile);
 int  admin_perfil_pin_definir(int profile,const char *pin);
 int  admin_perfil_pin_conferir(int profile,const char *pin);
+void admin_perfil_pin_remover(int profile);
 
 // SHA-256 hex (64 chars + NUL) de um buffer; exposto para o teste.
 void admin_sha256_hex(const unsigned char *buf, unsigned long n, char *hex65);

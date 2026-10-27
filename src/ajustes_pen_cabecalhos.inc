@@ -57,5 +57,3 @@ static const char *const AJ_PEN_MODE_HELP[] = {
   "Avançado mostra o registro da rede",
   "Avançado mostra a ordem dos continuados",
 };
-static const int AJ_PEN_PART[]={2,3,4,5,3,3,4,5,4,4,4,4,4,4,3,3,3};
-static const int AJ_PEN_TOTAL[]={3,4,5,5,3,3,4,5,4,4,4,4,4,4,3,3,3};
