@@ -61,7 +61,7 @@ static void ajPenRodape(const char *page,int part,int total) {
   float backX=ajPenPage==AJ_PEN_COMPONENTS?350:choosing?317:289;
   ajNeutro((GfxRect){backX,1024,29,26},7,.07f,.14f,.15f,.17f,1);
   ajIcone("aj_arrow-left",backX+8,1031,14,.8f);
-  const char *back=ajPenPage==AJ_PEN_SOURCES?"Reprodução":uxEditor?(ajPenPage==27 || ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":uxOp==AJ_TEMA || uxOp==AJ_ESCALA_TEXTO?"Minha tela":ajPenContext()):ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
+  const char *back=ajPenPage==AJ_PEN_IPTV_PROVIDER?"TV ao vivo e guia":ajPenPage>=AJ_PEN_PROVIDER && ajPenPage<=AJ_PEN_ADDON_FAILURES?"Perfil e serviços":ajPenPage==AJ_PEN_SOURCES?"Reprodução":uxEditor?(ajPenPage==27 || ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":uxOp==AJ_TEMA || uxOp==AJ_ESCALA_TEXTO?"Minha tela":ajPenContext()):ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
   char backText[160];snprintf(backText,sizeof backText,i18n("voltar para %s"),i18n(back));
   aj4Texto(focoIndice || ajPenPage==AJ_PEN_COMPONENTS?"voltar":backText,TXT_AJ_MINI14,backX+39,1029,400,.45f);
   char text[200];

@@ -10,4 +10,7 @@ int perfil_regra_compras(void);
 /* Accumulate visible app use against the local calendar day, returns 1 at limit. */
 int perfil_regra_tempo(float seconds);
 void perfil_regras_esquecer(void);
+#ifdef AJUSTES_TESTE
+void perfil_regras_amostra(void);
+#endif
 #endif

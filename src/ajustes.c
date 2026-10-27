@@ -11507,7 +11507,7 @@ int ajustes_teste_quadro(const char *id) {
     else if(!strcmp(id,"pen-editor-choice")) { ajPenOpen(33);focarOpcao(AJ_HOME_LAYOUT);uxAbrirEditor(AJ_HOME_LAYOUT); }
     else if(!strcmp(id,"pen-components"))ajPenOpen(AJ_PEN_COMPONENTS);
     else if(!strcmp(id,"pen-parental")) {
-      perfil_regra_definir(1,PR_TEMPO,60);perfil_regra_definir(1,PR_IDADE,12);perfil_regra_definir(1,PR_FILMES,0);
+      perfil_regras_amostra();
       valor[AJ_ENQUETES]=1;valor[AJ_HERO_TRAILER]=0;ajPenOpen(AJ_PEN_PARENTAL);
     }
     else if(!strcmp(id,"pen-rules"))ajPenOpen(AJ_PEN_RULES);
@@ -11531,7 +11531,7 @@ int ajustes_teste_quadro(const char *id) {
     else if(!strcmp(id,"pen-color")) { ajPenOpen(34);focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);uxPendente=3; }
     else if(!strcmp(id,"pen-audio")) {
       int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=valor[AJ_LEG_LINGUA]=order[1];
-      valor[AJ_LEG_FORCADA]=valor[AJ_LEG_SYNC_AUDIO]=0;valor[AJ_LEG_LINGUA2]=1;
+      valor[AJ_LEG_FORCADA]=valor[AJ_LEG_SYNC_AUDIO]=0;valor[AJ_LEG_LINGUA2]=0;
       ajPenOpen(27);ajPenRow=1;
     }
     else if(!strcmp(id,"pen-estilo")) {
@@ -11546,7 +11546,7 @@ int ajustes_teste_quadro(const char *id) {
       if(page==2)valor[AJ_SELOS_CORES]=0;
       if(page==3)valor[AJ_MANTER_VIDEO]=0;
       if(page==4) { valor[AJ_HOME_LAYOUT]=0;valor[AJ_HERO_CHEIO]=0;valor[AJ_ITENS_FILEIRA]=1;valor[AJ_OCULTAR_NLANC]=0; }
-      if(page==5) { valor[AJ_ESCALA_TEXTO]=2;valor[AJ_TAMANHO_UI]=0;valor[AJ_VIDRO_OPAC]=2;valor[AJ_VIDRO_FOSCO]=0;valor[AJ_ANIM]=1; }
+      if(page==5) { valor[AJ_ESCALA_TEXTO]=2;valor[AJ_TAMANHO_UI]=0;valor[AJ_VIDRO_OPAC]=2;valor[AJ_VIDRO_FOSCO]=0;valor[AJ_ANIM]=0;valor[AJ_FUNDO]=1; }
       if(page==6) { valor[AJ_HERO_TRAILER]=0;valor[AJ_DET_TRAILER_AUTO]=0;valor[AJ_HERO_TRAILER_SOM]=0;valor[AJ_EXPANDIR_ATRASO]=2;valor[AJ_GRAD_CLASSICO]=0; }
       if(page==7) { valor[AJ_DET_BLUR_NAO_VISTOS]=0;valor[AJ_DET_VEU]=40;valor[AJ_DET_TOPO]=2;valor[AJ_NT_TMDB]=0; }
       if(page==9)valor[AJ_ADDONS_PRINCIPAL]=0;

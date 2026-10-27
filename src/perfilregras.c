@@ -29,6 +29,11 @@ static int writeRules(void) {
   for(int p=1;p<=PR_MAX;p++)pos+=snprintf(data+pos,sizeof data-pos,"%d %d %d %d %d %d %d %d\n",p,values[p][0],values[p][1],values[p][2],values[p][3],days[p],used[p],values[p][PR_FILMES]);
   return dados_gravar(FILE_NAME,data);
 }
+#ifdef AJUSTES_TESTE
+void perfil_regras_amostra(void) {
+  load();values[1][PR_TEMPO]=60;values[1][PR_IDADE]=12;values[1][PR_FILMES]=0;
+}
+#endif
 int perfil_regra(int profile,int rule) { load();return profile>=1 && profile<=PR_MAX && rule>=0 && rule<PR_N?values[profile][rule]:0; }
 int perfil_regra_definir(int profile,int rule,int value) {
   load();if(profile<1 || profile>PR_MAX || rule<0 || rule>=PR_N || value<0 || value>(rule==PR_TEMPO?240:rule==PR_IDADE || rule==PR_FILMES?18:1))return 0;
