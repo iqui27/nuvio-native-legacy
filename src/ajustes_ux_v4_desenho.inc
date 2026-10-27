@@ -480,6 +480,7 @@ static void aj4Desenhar(void) {
   else if(aj4Util==2 && !aj4Review)ajPenPresets();
   else if(aj4Review || aj4Util)aj4UtilDesenhar();
   else if(!focoIndice && ajPenPage==AJ_PEN_RULES)ajPenRules();
+  else if(!focoIndice && ajPenPage==AJ_PEN_TOUR)ajPenFeatures();
   else if(!focoIndice && ajPenCurrent())ajPenRows();
   else if(focoIndice)ajPenHome();
   else aj4SecaoDesenhar();

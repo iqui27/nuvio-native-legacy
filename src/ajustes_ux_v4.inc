@@ -403,7 +403,7 @@ static int aj4Evento(SDL_Keycode k) {
       else if(aj4Linha==3)ajPenOpen(37);
       else if (aj4Linha == 4 || aj4Linha == 5) { aj4Util = aj4Linha == 4 ? 2 : 1; aj4Linha = 0; aj4Acao = 0; focoIndice = 0; }
       else if (aj4Linha == 6)ajPenOpen(AJ_PEN_RULES);
-      else if (aj4Linha == 7) tourAbrir();
+      else if (aj4Linha == 7)ajPenOpen(AJ_PEN_TOUR);
       else if(aj4Linha==9)ajPenOpen(41);
       else if(aj4Linha==10)ajPenOpen(AJ_PEN_PARENTAL);
       else if(aj4Linha==11)ajPenOpen(43);

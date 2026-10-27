@@ -1,4 +1,25 @@
 /* Specialized Pencil pages keep existing actions and report unsupported controls. */
+static void ajPenFeatures(void) {
+  ajPenBase();ajPenChip("Ajustes","pl_chevron-left",200,112,124,0,5,0);
+  ajKicker("AJUSTES",200,198,1);aj4Texto("O que o Nuvio faz?",TXT_TITULO2,200,212,1500,1);
+  aj4Texto("12 recursos prontos para ligar. A visita guiada liga um por um e explica cada um.",TXT_G20M,200,291,1520,.58f);
+  for(int i=0;i<12;i++) {
+    const AjPenRow *r=&AJ_PEN_FEATURES.cols[i/6].rows[i%6];
+    float x=200+i%4*408,y=344+i/4*206;
+    ajPenPanel(x,y,388,186,i==ajPenRow);
+    ajNeutro((GfxRect){x+22,y+22,44,44},16,.09f,.18f,.19f,.21f,1);
+    ajIcone(r->icon,x+32,y+32,24,.9f);
+    aj4Texto(r->title,TXT_G21B,x+22,y+80,344,1);
+    ajBloco(TXT_AJ_MINI14,r->help,x+22,y+112,344,22,.58f,2);
+    if(r->toggle && uxValorAtual(r->op)==0) {
+      float red,green,blue;ajustes_acento(&red,&green,&blue);
+      gfx_cor((GfxRect){x+300,y+22,64,36},.5f,red,green,blue,1);
+      gfx_cor((GfxRect){x+332,y+26,28,28},.5f,1,1,1,1);
+    }
+    aj4Alvo((GfxRect){x,y,388,186},8,i);
+  }
+  ajPenRodape("O que o Nuvio faz",3,3);
+}
 static void ajPenRules(void) {
   ajPenBase();
   ajPenChip("Ajustes","pl_chevron-left",200,112,124,0,5,0);

@@ -6,6 +6,22 @@ typedef struct { const char *title,*section; int part,total; AjPenColumn cols[2]
 #include "ajustes_pen_principais.inc"
 #define AJ_PEN_PARENTAL 100
 #define AJ_PEN_RULES 101
+#define AJ_PEN_TOUR 102
+static const AjPenPage AJ_PEN_FEATURES = {"O que o Nuvio faz?","Ajustes",3,3,{
+  {"",200,800,6,{
+    {AJ_CW_LIGADO,"Continuar assistindo","Retoma de onde parou, em qualquer perfil","aj_tv",1},
+    {AJ_DEBRID_RD,"Debrid","Link premium de verdade, sem publicidade","aj_key",0},
+    {AJ_ADDONS,"Addons","As fontes que você já usa","aj_puzzle",0},
+    {AJ_TRAKT,"Trakt e Simkl","Seu progresso e sua lista na conta","aj_clapperboard",0},
+    {AJ_LEG1_TAMANHO,"Legendas com estilo","Tamanho, cor, borda e fonte","aj_captions",0},
+    {AJ_LEG_LINGUA2,"Segunda legenda","Uma tradução por cima da principal","aj_type",0}}},
+  {"",1024,800,6,{
+    {AJ_PERFIL_INFANTIL,"Perfil infantil","PIN e limites por perfil","aj_baby",0},
+    {AJ_JF_LIGADO,"Servidores pessoais","Jellyfin, Emby e Plex dentro do app","aj_server",0},
+    {AJ_MIC_BUSCA,"Busca por voz","Fale o nome do que procura","aj_mic",0},
+    {-5,"Assistir Juntos","Assista junto com quem você conhece","aj_users",0},
+    {AJ_VELOCIDADE,"Teste de velocidade","Mede a banda da sua casa","aj_gauge",0},
+    {AJ_ENVIAR_LOG,"Enviar registro","Ajuda a equipe do app a achar o erro","aj_file-text",0}}}}};
 static const AjPenPage AJ_PEN_PARENT = {"Controle parental","Controle parental",3,3,{
   {"PERFIL INFANTIL",200,800,6,{
     {AJ_PERFIL_INFANTIL,"Perfil infantil","Marca o perfil em uso como infantil","aj_baby",0},
@@ -66,6 +82,7 @@ static int ajPenMissing(int *ops) {
 static const AjPenPage *ajPenCurrent(void) {
   if(ajPenPage==AJ_PEN_PARENTAL)return &AJ_PEN_PARENT;
   if(ajPenPage==AJ_PEN_RULES)return NULL;
+  if(ajPenPage==AJ_PEN_TOUR)return &AJ_PEN_FEATURES;
   if(ajPenPage>=0 && ajPenPage<27)return &AJ_PEN_ADV[ajPenPage];
   if(ajPenPage>=27 && ajPenPage<29)return &AJ_PEN_AUDIO[ajPenPage-27];
   if(ajPenPage>=29 && ajPenPage<46)return &AJ_PEN_MAIN[ajPenPage-29];
@@ -107,6 +124,13 @@ static int ajPenEvent(SDL_Keycode key) {
   if(!page || uxEditor || aj4Util || focoIndice || aj4Topo>=0)return -1;
   if(uxVoltar(key)) { ajPenPage=-1;focoIndice=1;aj4Linha=0;return 1; }
   int n=page->cols[0].n+page->cols[1].n;
+  if(ajPenPage==AJ_PEN_TOUR) {
+    if(key==SDLK_DOWN && ajPenRow+4<n)ajPenRow+=4;
+    if(key==SDLK_UP && ajPenRow>=4)ajPenRow-=4;
+    if(key==SDLK_RIGHT && ajPenRow<n-1)ajPenRow++;
+    if(key==SDLK_LEFT && ajPenRow>0)ajPenRow--;
+    if(!uxOk(key))return 1;
+  }
   if(key==SDLK_DOWN && ajPenRow<n-1)ajPenRow++;
   if(key==SDLK_UP) { if(ajPenRow>0)ajPenRow--;else aj4Topo=1; }
   if(key==SDLK_RIGHT) {
@@ -134,6 +158,7 @@ static int ajPenEvent(SDL_Keycode key) {
     if(op<0) {
       if(op==-2)pfExigirAdmin(PA_INFANTIL,perfis_ativo());
       else if(op==-3)pfAbrir();
+      else if(op==-5)tourAbrir();
       else uxNotificar(op==-4?"Perfil infantil: só classificação livre e até 10 anos.":"Ainda não disponível.");
       return 1;
     }
