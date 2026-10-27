@@ -9,6 +9,7 @@
 #include "ajustes.h"
 #include "idioma.h"
 #include "sistexto.h"
+#include "buscanorm.h"
 #include "entrada_texto.h"
 #include "ponteiro.h"
 #include "celbotao.h"
@@ -170,7 +171,8 @@ static float gradeW(void) {
 }
 // A coluna da esquerda existe como destino do foco se tiver algum alvo: um
 // modo que seja (o campo so e alvo onde ha teclado da TV, que ja e um modo).
-static int temBarra(void) { return imeOk() || vozOk() || celOk(); }
+static int teCursorApp(void);
+static int temBarra(void) { return imeOk() || vozOk() || celOk() || teCursorApp(); }
 
 // A altura da modal depende de quantas fileiras o alfabeto pediu, entao as tres
 // medidas que dela dependem viraram funcao. Continuam sendo a mesma conta.
@@ -259,6 +261,7 @@ static float teGradeY(void) {
 }
 static const char *alfa(void) { return alfabetoAtual ? alfabetoAtual : ALFABETO; }
 static char  texto[TECLADO_LONGO + 1];
+static int   cursorApp = -1;   // cursor do teclado do app, em caracteres; -1 = no fim
 static int   n, maxN, resultado;
 static int   confirmarVazio;
 static char  tituloAtual[96], dicaAtual[160];
@@ -272,7 +275,16 @@ static int   mascarar, tipoIme, ehSenha, aceitaUtf8, abriuComValor;
 static int campoCaixas(void) {
   return !mascarar && maxN > 0 && (teEsqW() - (float)(maxN - 1) * TE_CGAP) / (float)maxN >= TE_CX_MIN;
 }
-static int campoFocavel(void) { return imeOk() && !campoCaixas(); }
+// .tpk (6+) com a grade do app: o campo vira alvo de foco (ESQUERDA da primeira
+// coluna) e Esquerda/Direita nele andam o cursor; Direita no fim volta a grade.
+static int teCursorApp(void) {
+#if defined(NV_TPK) && !defined(NV_TPK40)
+  return !st_teclado_so_sistema() && !imeOk() && !campoCaixas();
+#else
+  return 0;
+#endif
+}
+static int campoFocavel(void) { return (imeOk() || teCursorApp()) && !campoCaixas(); }
 // O QR do celular aberto DENTRO da modal (celbotao.h, "hospedado"): 0..1.
 static float animQr;
 // ATALHOS DE E-MAIL (#216): uma fileira de teclas que digitam o pedaco
@@ -480,7 +492,7 @@ void teclado_teste_quebra(int f0, int f1, int f2) {
 }
 int teclado_caixa(void) { return caixa; }
 const char *teclado_texto(void) { return texto; }
-void teclado_esquecer(void) { volatile char *p = texto; size_t k = sizeof texto; while (k--) *p++ = 0; n = 0; }
+void teclado_esquecer(void) { volatile char *p = texto; size_t k = sizeof texto; while (k--) *p++ = 0; n = 0; cursorApp = -1; }
 
 int teclado_resultado(void) {
   int r = resultado;
@@ -498,7 +510,7 @@ void teclado_contexto(const char *kicker) {
   kickerQuando = SDL_GetTicks();
 }
 #ifdef AJUSTES_TESTE
-void teclado_teste_texto(const char *t) { snprintf(texto, sizeof texto, "%s", t); n = (int)strlen(texto); }
+void teclado_teste_texto(const char *t) { snprintf(texto, sizeof texto, "%s", t); n = (int)strlen(texto); cursorApp = -1; }
 void teclado_teste_foco(int f, int c) { fileira = f; coluna = c; }
 // O texto que chega do celular ou do teclado do sistema: o MESMO filtro de
 // alfabeto e teto de definirDoSistema (#390).
@@ -569,6 +581,7 @@ void teclado_abrir_com(const char *titulo, const char *dica, int max,
   texto[maxN] = 0;
   n = (int)strlen(texto);
   n = utf8Inteiro(texto, n);
+  cursorApp = -1;
   texto[n] = 0;
   abriuComValor = n > 0;
   snprintf(tituloAtual, sizeof tituloAtual, "%s", titulo ? titulo : "");
@@ -615,6 +628,7 @@ static void definirDoSistema(const char *t) {
   }
   texto[w] = 0;
   n = w;
+  cursorApp = -1;
 }
 
 static void fechar(int r) {
@@ -626,7 +640,9 @@ static void fechar(int r) {
 }
 
 static void abrirImeAgora(void) { pendIme = 0; st_ime_tipo(tipoIme); st_ime_abrir(ST_TECLADO, texto, maxN); }
+static void sairBarra(void);
 static void okBarra(void) {
+  if (coluna == TE_B_CAMPO && teCursorApp()) { sairBarra(); return; }   // OK volta as letras
   if (coluna == TE_B_CEL) {
     // O QR abre AQUI DENTRO, embaixo do segmentado (celb_desenhar_em). OK com
     // o codigo na tela nao faz nada (quem aperta esta "confirmando"); com o
@@ -755,7 +771,8 @@ static const char *rotuloExtra(int c) {
 static void aplicar(void) {
   if (ehChar(fileira)) {
     if (coluna >= colunasDe(fileira)) return;
-    if (n < maxN) { texto[n++] = teCaixa(celula[camada][fileira][coluna]); texto[n] = 0; }
+    { char c[2] = { teCaixa(celula[camada][fileira][coluna]), 0 };   // no cursor
+      n = (int)busca_inserir(texto, (size_t)n, (size_t)maxN + 1, &cursorApp, c); }
     if (caixa == 1) caixa = 0;   // um toque vale para UM caractere
     return;
   }
@@ -763,22 +780,19 @@ static void aplicar(void) {
     int k = teclaCam[coluna < nTeclasCam ? coluna : 0];
     if (k == TE_K_CAIXA) caixa = (caixa + 1) % 3;
     else if (k == TE_K_SINAIS) camada = !camada;
-    else if (n < maxN) { texto[n++] = ' '; texto[n] = 0; }
+    else n = (int)busca_inserir(texto, (size_t)n, (size_t)maxN + 1, &cursorApp, " ");
     return;
   }
   if (ehAtalho(fileira)) {
     const char *a = ATALHOS_EMAIL[coluna < nAtalhos ? coluna : 0];
     // "@gmail.com" depois de um "@" ja digitado nao duplica a arroba.
     if (a[0] == '@' && strchr(texto, '@')) a++;
-    if (n + (int)strlen(a) <= maxN) { memcpy(texto + n, a, strlen(a) + 1); n += (int)strlen(a); }
+    n = (int)busca_inserir(texto, (size_t)n, (size_t)maxN + 1, &cursorApp, a);
     return;
   }
-  // Apagar tira UM caractere, nao um byte (o texto pode ter UTF-8).
-  if (coluna == 0) {
-    if (n > 0) { do n--; while (n > 0 && ((unsigned char)texto[n] & 0xC0) == 0x80); texto[n] = 0; }
-    return;
-  }
-  if (coluna == 1) { n = 0; texto[0] = 0; return; }
+  // Apagar tira UM caractere (nao um byte: o texto pode ter UTF-8), o de antes do cursor.
+  if (coluna == 0) { n = (int)busca_apagar_antes(texto, (size_t)n, &cursorApp); return; }
+  if (coluna == 1) { n = 0; texto[0] = 0; cursorApp = -1; return; }
   if (ehSenha && coluna == 2) { mascarar = !mascarar; return; }
   // Preserve clearing an existing field; optional fields may also explicitly
   // confirm an empty value when they opened empty. Pairing remains nonempty.
@@ -806,6 +820,9 @@ static void teclado_evento_(const SDL_Event *e) {
     if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && !e->key.repeat) { okBarra(); return; }
     if (coluna == TE_B_CAMPO) {
       // O CAMPO, em cima: BAIXO desce para o segmentado, DIREITA volta a grade.
+      // Com o teclado do app, Esquerda/Direita antes andam o cursor do texto.
+      if (teCursorApp() && (k == SDLK_LEFT || k == SDLK_RIGHT) &&
+          (busca_cursor_mover(texto, &cursorApp, k == SDLK_LEFT ? -1 : 1) || k == SDLK_LEFT)) return;
       if (k == SDLK_DOWN && nm) coluna = col[0];
       else if (k == SDLK_RIGHT) sairBarra();
       return;
@@ -1436,9 +1453,12 @@ static void teDesenhar(Uint32 agora) {
         { char antes[TECLADO_LONGO * 3 + 1];
           int meio = 0;
           if (mascarar) {
-            int c = st_cursor_chars(ST_TECLADO);
+            int c = cursorApp >= 0 ? cursorApp : st_cursor_chars(ST_TECLADO);
             if (c >= 0 && c < n && c < TECLADO_LONGO) { memcpy(antes, pontos, (size_t)c * 3); antes[c * 3] = 0; meio = 1; }
-          } else meio = st_cursor_prefixo(ST_TECLADO, texto, antes, sizeof antes);
+          } else if (!(meio = st_cursor_prefixo(ST_TECLADO, texto, antes, sizeof antes)) && cursorApp >= 0) {
+            size_t b = busca_byte_cursor(texto, cursorApp);   // cursor do teclado do app
+            memcpy(antes, texto, b); antes[b] = 0; meio = 1;
+          }
           if (meio) pw = (float)txt_linha(TXT_AJ_INSP, antes, 243, 242, 239, 255).w;
         }
         ox = t.w > larg ? t.w - larg : 0.0f;
@@ -1507,7 +1527,8 @@ static void teDesenhar(Uint32 agora) {
       txt_desenhar_alpha(t, x, by + (30 - t.h) * 0.5f, 0.62f * a);
     } else if (fileira < 0) {
       const char *ks[3] = { "OK", "→", "Voltar" };
-      const char *ls[3] = { coluna == TE_B_CEL ? "Digitar pelo celular" : coluna == TE_B_FALAR ? "Falar" : "Teclado da TV", "Teclado", "Cancelar" };
+      const char *ls[3] = { coluna == TE_B_CEL ? "Digitar pelo celular" : coluna == TE_B_FALAR ? "Falar"
+                            : teCursorApp() ? "Digitar" : "Teclado da TV", "Teclado", "Cancelar" };
       teDicas(ks, ls, 3, x, by, ew, a);
     } else {
       const char *ks[3] = { "Setas", "OK", "Voltar" };

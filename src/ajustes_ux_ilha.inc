@@ -2481,11 +2481,11 @@ void ajustes_ui_neutro(GfxRect r, float raioPx, float vidA) { ajNeutro(r, raioPx
 void ajustes_ui_foco_linha(GfxRect r, float raioPx) { ajFocoLinha(r, raioPx, 1, 1); }
 // CURSOR DE TEXTO dos campos (Busca, Spotlight, teclado modal). O antigo (2 px,
 // piscar seco 50% apagado) sumia entre letras e apos Esquerda/Direita caia na
-// fase apagada; e o acento padrao e BRANCO como o texto. Agora: 3 px no
-// acento, mais alto que as letras (sobra em cima e embaixo) e sobre um vao
-// escuro de 7 px que separa as duas letras vizinhas; ACESO enquanto o x muda
-// (mover ou digitar) e, 700 ms parado, pulsa suave entre 100% e 25%, sem
-// sumir. So um campo tem cursor por vez.
+// fase apagada. Agora: 3 px no acento, mais alto que as letras (sobra em cima
+// e embaixo, o que o separa do texto mesmo com o acento branco); ACESO enquanto
+// o x muda (mover ou digitar) e, 700 ms parado, pulsa suave entre 100% e 25%,
+// sem sumir. Sem contorno escuro (feio, e nao acompanhava o pulso). So um
+// campo tem cursor por vez.
 void ajustes_ui_cursor(float x, float cy, float h, Uint32 agora, float a) {
   static float ultX = -1e9f;
   static Uint32 desde;
@@ -2497,7 +2497,6 @@ void ajustes_ui_cursor(float x, float cy, float h, Uint32 agora, float a) {
   ajustes_acento(&ar, &ag, &ab);
   // O raio do gfx_cor e fracao da ALTURA: 0.5 numa barra fina vira um pingo
   // (era o que o cursor antigo desenhava). Ponta redonda = meia LARGURA.
-  gfx_cor((GfxRect){ x - 3.5f, cy - h * 0.5f - 2.0f, 7.0f, h + 4.0f }, 3.5f / (h + 4.0f), 0.06f, 0.06f, 0.07f, 0.85f * a);
   gfx_cor((GfxRect){ x - 1.5f, cy - h * 0.5f, 3.0f, h }, 1.5f / h, ar, ag, ab, op * a);
 }
 // "Rotulo ........ a → b unidade" com a barra de cada valor na mesma escala.

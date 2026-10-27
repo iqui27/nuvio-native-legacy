@@ -97,6 +97,16 @@ static int buSoSistema(void) { return st_teclado_so_sistema(); }
 // tela vazia) usam a largura toda por baixo dele. "Do app"/Automatico: igual a antes.
 static int buCampoTopo(void) { return buSoSistema() && !buTelefone(); }
 static int buUmaColuna(void) { return buRetrato() || buTecladoNativo() || buCampoTopo(); }
+// .tpk (6+) com a grade do app (Automatico/"Do app"): o campo vira alvo de foco
+// e Esquerda/Direita andam o cursor do texto; Direita no fim segue ao
+// microfone e ao celular. Letras, espaco e apagar valem no cursor.
+static int buCursorApp(void) {
+#if defined(NV_TPK) && !defined(NV_TPK40)
+  return !buSoSistema() && !buTecladoNativo() && !st_ime_disponivel();
+#else
+  return 0;
+#endif
+}
 static float buCampoH(void) { return buTecladoNativo() ? 104.0f : 76.0f; }
 static float buMargem(void) { return buTelefone() ? 48.0f : ANC(BU_MARG); }
 static float buX(void)   { return ANC(ajustes_rail_largura_fixa()) + buMargem(); }
@@ -163,6 +173,7 @@ static Foco  focoRes;
 static int   painel = 0;
 static char  consulta[BU_MAX_CONSULTA];
 static int   nConsulta = 0;
+static int   cursorApp = -1;   // cursor do teclado do app, em caracteres; -1 = no fim
 static char consultaFiltrada[BU_MAX_CONSULTA];
 // Resultados agrupados por CATALOGO, como no web: uma fileira por catalogo que
 // teve pelo menos um titulo casando. Guardamos indices do catalogo global.
@@ -771,7 +782,7 @@ static int recentesVertical(int dy) {
     if (c >= fil[0].n) c = fil[0].n - 1;
     painel = 1; focoRes.fileira = 0; focoRes.coluna = c;
     return 1;
-  } else if (dy < 0 && buTecladoNativo()) {
+  } else if (dy < 0 && (buTecladoNativo() || buCampoTopo())) {   // o campo esta em cima
     painel = 0; campoFoco = 1; return 1;
   } else if (dy < 0 && !ajustes_menu_topo()) { pediuRelogio = 1; return 1; }
   return 0;
@@ -785,7 +796,7 @@ static void recentesAcionar(void) {
   int n = buscasrec_n();
   if (focoRec >= n) { buscasrec_limpar(); recentesAjustarFoco(); return; }
   snprintf(consulta, sizeof consulta, "%s", buscasrec_termo(focoRec));
-  nConsulta = (int)strlen(consulta);
+  nConsulta = (int)strlen(consulta); cursorApp = -1;
   buscasrec_registrar(consulta);
   painel = 0;
   refiltrarJa();
@@ -800,16 +811,13 @@ static void recentesRemover(void) {
 
 // --- Teclas ------------------------------------------------------------------
 // Acrescenta texto UTF-8 ao campo se couber inteiro (nunca meia sequencia).
+// Entra no cursor (no fim, fora do modo buCursorApp).
 static void campoAcrescentar(const char *t) {
-  size_t n = strlen(t);
-  if ((size_t)nConsulta + n + 1 > BU_MAX_CONSULTA) return;
-  memcpy(consulta + nConsulta, t, n);
-  nConsulta += (int)n;
-  consulta[nConsulta] = 0;
+  nConsulta = (int)busca_inserir(consulta, (size_t)nConsulta, BU_MAX_CONSULTA, &cursorApp, t);
 }
 
 static void campoApagar(void) {
-  nConsulta = (int)busca_apagar_ultimo(consulta, (size_t)nConsulta);
+  nConsulta = (int)busca_apagar_antes(consulta, (size_t)nConsulta, &cursorApp);
 }
 
 // O campo INTEIRO vindo do teclado/voz do sistema. Cortado sem meia sequencia
@@ -824,6 +832,7 @@ static void campoDefinir(const char *t, int aparar) {
   if (aparar) while (w > 0 && consulta[w - 1] == ' ') w--;
   consulta[w] = 0;
   nConsulta = (int)w;
+  cursorApp = -1;
 }
 
 // Consulta vinda de fora (deeplink): como o campo digitado, resultados na hora.
@@ -840,6 +849,7 @@ static int vozBusca(void) {
 static void campoOk(void) {
   if (campoFoco == 3) { st_fechar(ST_BUSCA); celb_abrir(CELB_BUSCA, "Buscar filmes e séries"); }
   else if (campoFoco == 2) st_voz_iniciar(ST_BUSCA);
+  else if (buCursorApp()) campoFoco = 0;   // OK no campo volta as letras
   else st_ime_abrir(ST_BUSCA, consulta, BU_MAX_CONSULTA - 1);
 }
 static void focarCampoPonteiro(int a, int b) {
@@ -883,12 +893,12 @@ static void aplicarTecla(void) {
     if (k < kbN) campoAcrescentar(kbTeclas[k]);
   } else if (focoKb.coluna == 0) {
     // espaco no comeco nao entra: nao muda o filtro e so acumula lixo no campo
-    if (nConsulta > 0) campoAcrescentar(" ");
+    if (nConsulta > 0 && cursorApp != 0) campoAcrescentar(" ");
   } else if (focoKb.coluna == 1) {
     campoApagar();
   } else if (focoKb.coluna == 2) {
     registrarConsulta();
-    nConsulta = 0;
+    nConsulta = 0; cursorApp = -1;
   } else {
     // Troca de pagina (?!#/abc, coluna 3) ou de layout (cirilico, coluna 4):
     // a tecla de troca continua no mesmo lugar da fileira de baixo.
@@ -951,7 +961,7 @@ int busca_iniciar(void) {
   focus_iniciar(&focoKb, kbFil + 1, KB_COLUNAS);
   painel = 0; sair = 0; pediuRelogio = 0; pedido = -1; pedidoPessoa = 0;
   sugestao = 0; nPess = 0; sugDesloc = 0.0f;
-  nConsulta = 0; consulta[0] = 0;
+  nConsulta = 0; consulta[0] = 0; cursorApp = -1;
   consultaFiltrada[0] = 0;
   scrollY = scrollAlvo = 0.0f; velY = 0.0f;
   animCampo = 0.0f;
@@ -1164,14 +1174,19 @@ static void busca_evento_(const SDL_Event *e) {
           else if (nFil > 0) painel = 1;
         } else campoFoco = 0;
         return;
-      // DIREITA anda campo -> Falar -> Celular, o que existir aqui.
+      // DIREITA anda campo -> Falar -> Celular, o que existir aqui. Com o
+      // cursor do teclado do app, antes anda o cursor ate o fim do texto.
       case SDLK_RIGHT:
+        if (campoFoco == 1 && buCursorApp() && busca_cursor_mover(consulta, &cursorApp, 1)) return;
         if (campoFoco == 1 && st_voz_disponivel()) campoFoco = 2;
         else if (campoFoco < 3 && celb_disponivel()) campoFoco = 3;
         return;
       case SDLK_LEFT:
+        // No comeco do texto, segurar ESQUERDA para ali; um novo toque sai.
+        if (campoFoco == 1 && buCursorApp() &&
+            (busca_cursor_mover(consulta, &cursorApp, -1) || e->key.repeat)) return;
         if (campoFoco == 3 && st_voz_disponivel()) campoFoco = 2;
-        else if (campoFoco >= 2 && st_ime_disponivel()) campoFoco = 1;
+        else if (campoFoco >= 2 && (st_ime_disponivel() || buCursorApp())) campoFoco = 1;
         else if (campoFoco >= 2) campoFoco = 0;
         else { registrarConsulta(); sair = 1; }
         return;
@@ -1219,7 +1234,7 @@ static void busca_evento_(const SDL_Event *e) {
         // da Samsung, ou ao celular onde nao ha voz. Sem esses alvos,
         // a primeira fileira abre a barra do topo.
         if (!focus_mover_grade(&focoKb, 0, -1)) {
-          if (st_ime_disponivel()) campoFoco = 1;
+          if (st_ime_disponivel() || buCursorApp()) campoFoco = 1;
           else if (st_voz_disponivel()) campoFoco = 2;
           else if (celb_disponivel()) campoFoco = 3;
           else if (ajustes_menu_topo()) sair = 1;
@@ -1291,6 +1306,9 @@ static float buPasso(void) {
     if (cols > 5) cols = 5;
     return (fmaxf(1.0f, larg) - (cols - 1) * 22.0f) / cols + 22.0f;
   } else {
+    // Campo no topo ("Do sistema"): o mesmo passo da tela de duas colunas, e
+    // a largura a mais mostra mais cartazes em vez de abrir vaos entre eles.
+    if (buCampoTopo()) larg -= ANC(520.0f + BU_COL_GAP);
     float passo = (larg - 4.0f * 22.0f) / 5.0f + 22.0f;
     return gfx_escala_txt() != 1.0f ? fmaxf(passo, BU_CARTAZ_W + 22.0f) : passo;
   }
@@ -1648,7 +1666,7 @@ static void desenhaCampo(Uint32 agora) {
     float cx = c.x + c.w - 10.0f - d;
     float mx = temCel ? cx - 10.0f - d : cx;
     float fim = temVoz ? mx - 10.0f : temCel ? cx - 10.0f : c.x + c.w;
-    if (temIme && animFocoCampo > 0.01f) {
+    if ((temIme || buCursorApp()) && animFocoCampo > 0.01f) {
       const float g = gfx_opacidade_grupo;
       gfx_opacidade_grupo = g * animFocoCampo;
       ajustes_ui_foco_linha(c, 38.0f);
@@ -1691,7 +1709,12 @@ static void desenhaCampo(Uint32 agora) {
         cursorX = tx + lw + 5.0f;
         // Cursor no MEIO do texto (Esquerda/Direita no teclado do sistema, .tpk):
         // no vao entre as letras, nao por cima da seguinte.
-        if (st_cursor_prefixo(ST_BUSCA, consulta, antes, sizeof antes)) {
+        int meio = st_cursor_prefixo(ST_BUSCA, consulta, antes, sizeof antes);
+        if (!meio && cursorApp >= 0) {   // cursor do teclado do app
+          size_t b = busca_byte_cursor(consulta, cursorApp);
+          memcpy(antes, consulta, b); antes[b] = 0; meio = 1;
+        }
+        if (meio) {
           TxtLinha p = txt_linha_corta(estilo, antes, BU_TX, maxW);
           cursorX = tx + fminf((float)p.w, lw) + 1.0f;
         }
@@ -1740,13 +1763,13 @@ static void desenhaTeclado(void) {
   }
   // Dicas do controle, 16 px a 16 abaixo da ilha (o texto mudo do mockup).
   { float y = ilha.y + ilha.h + 16.0f;
-    const char *d1 = campoFoco == 1 ? i18n("OK   Teclado da TV")
+    const char *d1 = campoFoco == 1 ? (buCursorApp() ? i18n("OK   Digitar") : i18n("OK   Teclado da TV"))
                    : campoFoco == 2 ? i18n("OK   Falar")
                    : campoFoco == 3 ? i18n("OK   Digitar pelo celular")
                    : temResultados() ? i18n("→   Resultados")
                    : recentesVisiveis() ? i18n("→   Buscas recentes")
                    : nFil ? i18n("→   Populares")
-                   : st_ime_disponivel() ? i18n("↑   Campo de busca")
+                   : st_ime_disponivel() || buCursorApp() ? i18n("↑   Campo de busca")
                    : celb_disponivel() ? i18n("↑   Digitar pelo celular")
                    : i18n("OK   Digitar");
     const char *d2 = i18n("Voltar   Menu");

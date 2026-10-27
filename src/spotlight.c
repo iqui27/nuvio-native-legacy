@@ -195,6 +195,7 @@ static float animMic;
 static int   focoL = -1;           // linha focada (indice em lin)
 static int   kbF, kbC;             // tecla focada
 static char  consulta[SP_MAX_TXT];
+static int   cursorApp = -1;   // cursor do teclado do app, em caracteres; -1 = no fim
 static int   nConsulta;
 static char  montada[SP_MAX_TXT];  // consulta da ultima remontagem
 static int   ultimoRemoto = -1, ultimoBuscando = -1, ultimaGeracao = -1;
@@ -254,6 +255,16 @@ static float botoesW(void) {
   return n ? n * SP_MIC_D + (n - 1) * 10.0f + 12.0f : 0.0f;
 }
 static int imeDisponivel(void) { return st_ime_disponivel(); }
+static int digitandoSis(void);
+// .tpk (6+) com a grade do app: Esquerda/Direita no campo andam o cursor do
+// texto (Direita no fim segue ao microfone/celular, como antes).
+static int spCursorApp(void) {
+#if defined(NV_TPK) && !defined(NV_TPK40)
+  return !st_teclado_so_sistema() && !imeDisponivel() && !digitandoSis();
+#else
+  return 0;
+#endif
+}
 static int ouvindo(void) {
   return st_dono() == ST_SPOT && (st_estado() == ST_OUVINDO || st_estado() == ST_PERMISSAO ||
                                   st_estado() == ST_VOZ_SISTEMA);
@@ -968,14 +979,16 @@ static void registrar(void) {
 }
 
 // --- Campo -------------------------------------------------------------------------
+// No cursor (no fim, fora do modo spCursorApp).
 static void acrescentar(const char *t) {
-  size_t n = strlen(t);
-  if ((size_t)nConsulta + n + 1 > SP_MAX_TXT) return;
-  memcpy(consulta + nConsulta, t, n);
-  nConsulta += (int)n;
-  consulta[nConsulta] = 0;
+  nConsulta = (int)busca_inserir(consulta, (size_t)nConsulta, SP_MAX_TXT, &cursorApp, t);
 }
-static void apagar(void) { nConsulta = (int)busca_apagar_ultimo(consulta, (size_t)nConsulta); }
+static void apagar(void) { nConsulta = (int)busca_apagar_antes(consulta, (size_t)nConsulta, &cursorApp); }
+// Espaco so depois de uma letra (nem no comeco, nem dobrado), olhando o cursor.
+static int cabeEspaco(void) {
+  size_t b = busca_byte_cursor(consulta, cursorApp);
+  return b > 0 && consulta[b - 1] != ' ';
+}
 
 // O campo inteiro de uma vez (ditado, teclado do sistema, testes). `aparar` tira
 // os espacos das pontas — o reconhecedor as vezes devolve; o IME NAO apara: o
@@ -999,6 +1012,7 @@ static void campoDefinir(const char *t, int aparar) {
   }
   consulta[w] = 0;
   nConsulta = (int)w;
+  cursorApp = -1;
   if (strcmp(consulta, montada)) remontar();
 }
 void spot_texto_externo(const char *t) { campoDefinir(t, 1); }
@@ -1065,7 +1079,7 @@ static void spotAbrirBase(int voz, int tecladoAuto) {
   painel = P_CAMPO; kbF = 0; kbC = 0;
   kbAberto = 0; kbAnim = 0.0f; spBW = SP_BW_BASE;
   corpoH = corpoV = 0.0f; animMic = 0.0f; nivelVoz = 0.0f;
-  nConsulta = 0; consulta[0] = 0; montada[0] = 0;
+  nConsulta = 0; consulta[0] = 0; montada[0] = 0; cursorApp = -1;
   scrollY = scrollAlvo = velY = 0.0f;
   temPedido = 0; okPress = okLongo = 0;
   memset(animTecla, 0, sizeof animTecla);
@@ -1126,7 +1140,7 @@ void spot_reabrir_ajustes(void) {
   modoAjustes = 1;
   spotAbrirBase(0, 0);
   snprintf(consulta, sizeof consulta, "%s", retornoAjustesConsulta);
-  nConsulta = (int)strlen(consulta);
+  nConsulta = (int)strlen(consulta); cursorApp = -1;
   painel = P_LISTA;
   kbAberto = 0;
   remontar();
@@ -1179,7 +1193,7 @@ static void acionar(int i) {
   switch (l->tipo) {
     case L_RECENTE:
       snprintf(consulta, sizeof consulta, "%s", buscasrec_termo(l->ref));
-      nConsulta = (int)strlen(consulta);
+      nConsulta = (int)strlen(consulta); cursorApp = -1;
       buscasrec_registrar(consulta);
       remontar();
       return;
@@ -1261,9 +1275,9 @@ static void aplicarTecla(void) {
     if (k < kbN) acrescentar(kbTeclas[k]);
   } else {
     switch (kbCmd[kbC]) {
-      case K_ESPACO: if (nConsulta > 0 && consulta[nConsulta - 1] != ' ') acrescentar(" "); break;
+      case K_ESPACO: if (cabeEspaco()) acrescentar(" "); break;
       case K_APAGAR: apagar(); break;
-      case K_LIMPAR: registrar(); nConsulta = 0; consulta[0] = 0; break;
+      case K_LIMPAR: registrar(); nConsulta = 0; consulta[0] = 0; cursorApp = -1; break;
       case K_FALAR:  ditar(); return;
       case K_TECLADO: abrirTecladoSis(); return;
       default: break;
@@ -1370,7 +1384,7 @@ void spot_evento(const SDL_Event *e) {
     if (kbAberto || painel == P_LISTA || painel == P_TECLADO || painel == P_CEL) {
       kbAberto = 0; painel = P_CAMPO; return;
     }
-    if (nConsulta > 0) { registrar(); nConsulta = 0; consulta[0] = 0; remontar(); return; }
+    if (nConsulta > 0) { registrar(); nConsulta = 0; consulta[0] = 0; cursorApp = -1; remontar(); return; }
     spot_fechar(); return;
   }
   if (k == SPOT_TECLA_VOZ) {
@@ -1387,7 +1401,7 @@ void spot_evento(const SDL_Event *e) {
   if (!(e->key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI)) &&
       e->key.keysym.scancode != NV_SCANCODE_BLUE &&
       ((k >= SDLK_a && k <= SDLK_z) || (k >= SDLK_0 && k <= SDLK_9) || k == SDLK_SPACE)) {
-    if (k != SDLK_SPACE || (nConsulta && consulta[nConsulta - 1] != ' ')) {
+    if (k != SDLK_SPACE || cabeEspaco()) {
       char um[2] = { (char)k, 0 };
       acrescentar(um);
       remontar();
@@ -1398,12 +1412,15 @@ void spot_evento(const SDL_Event *e) {
   switch (painel) {
     case P_CAMPO: case P_MIC: case P_CEL:
       switch (k) {
-        // DIREITA anda campo -> Falar -> Celular, o que existir aqui.
+        // DIREITA anda campo -> Falar -> Celular, o que existir aqui. Com o
+        // cursor do teclado do app, antes anda o cursor ate o fim do texto.
         case SDLK_RIGHT:
+          if (painel == P_CAMPO && spCursorApp() && busca_cursor_mover(consulta, &cursorApp, 1)) break;
           if (painel == P_CAMPO && ditadoDisponivel()) painel = P_MIC;
           else if (painel != P_CEL && celDisponivel()) painel = P_CEL;
           break;
         case SDLK_LEFT:
+          if (painel == P_CAMPO && spCursorApp()) { busca_cursor_mover(consulta, &cursorApp, -1); break; }
           if (painel == P_CEL && ditadoDisponivel()) painel = P_MIC;
           else if (painel != P_CAMPO) painel = P_CAMPO;
           break;
@@ -1666,7 +1683,12 @@ static void desenhaCampo(float dy, float a, Uint32 agora) {
     cursorX = tx + l.w + 5.0f;
     // Cursor no MEIO do texto (Esquerda/Direita no teclado do sistema, .tpk):
     // no vao entre as letras, nao por cima da seguinte.
-    if (st_cursor_prefixo(ST_SPOT, consulta, antes, sizeof antes)) {
+    int meio = st_cursor_prefixo(ST_SPOT, consulta, antes, sizeof antes);
+    if (!meio && cursorApp >= 0) {   // cursor do teclado do app
+      size_t b = busca_byte_cursor(consulta, cursorApp);
+      memcpy(antes, consulta, b); antes[b] = 0; meio = 1;
+    }
+    if (meio) {
       TxtLinha p = txt_linha_corta(TXT_CALLOUT, antes, SP_TINTA, 255, xMax - tx - 10.0f);
       cursorX = tx + fminf((float)p.w, (float)l.w) + 1.0f;
     }
