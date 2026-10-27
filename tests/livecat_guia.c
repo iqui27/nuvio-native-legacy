@@ -52,6 +52,16 @@ int stalker_canais_cb_sessao(StalkerCb cb, void *u, uint64_t session) {
   for (int i = 0; i < n; i++) if (!cb(&out[i], u)) break;
   return n;
 }
+int stalker_fonte_canais_cb(unsigned id, StalkerCb cb, void *u, uint64_t session) {
+  StalkerCanal out[2];
+  int n = stalker_canais_sessao(out, 2, session);
+  for (int i = 0; i < n; i++) {
+    char idFonte[80]; snprintf(idFonte, sizeof idFonte, "stalker:%u:%s", id, out[i].id);
+    snprintf(out[i].id, sizeof out[i].id, "%s", idFonte);
+    if (!cb(&out[i], u)) break;
+  }
+  return n;
+}
 uint64_t perfis_sessao_geracao(void) { return 0; }
 int perfis_sessao_atual(uint64_t g) { return g == 0; }
 int perfis_sessao_travar(uint64_t g) { return g == 0; }
@@ -374,10 +384,74 @@ static int cacheWorkBound(void) {
   return failures != 0;
 }
 
+/* 2000-channel fixture: every unclassified name gets a Jev section (cycled),
+ * provider groups stay, and no channel is left without a category. */
+static char *bulkWorker(const char *url, const char *body, int *status) {
+  (void)url;
+  static const char *const SECS[] = {"Esportes","Notícias","Infantil","Filmes","Abertos"};
+  size_t cap = 200 * 256 + 16;
+  char *reply = malloc(cap);
+  assert(reply);
+  size_t used = (size_t)snprintf(reply, cap, "{\"cats\":{");
+  const char *p = strchr(body, '[');
+  int count = 0;
+  while (p && (p = strchr(p, '"'))) {
+    const char *end = strchr(++p, '"');
+    assert(end && end - p < 128);
+    used += (size_t)snprintf(reply + used, cap - used,
+                             "%s\"%.*s\":\"%s\"", count ? "," : "", (int)(end - p), p,
+                             SECS[count % 5]);
+    count++;
+    p = end + 1;
+  }
+  assert(count <= 200);
+  snprintf(reply + used, cap - used, "}}");
+  posts++; *status = 200;
+  return reply;
+}
+static int bulk2000(void) {
+  int failures = 0, before = posts;
+  stagingZerar(); sTeto = 5000;
+  int fl = sFonte(LTV_M3U, "https://private/big", "Big list", "");
+  if (fl < 0) return 1;
+  M3uCtx ctx = {.fl = fl};
+  char nome[64];
+  for (int i = 0; i < 1000; i++) {
+    snprintf(nome, sizeof nome, "uncategorized %04d", i);
+    addM3u(&ctx, nome, "", "https://private/x");
+  }
+  /* Provider groups fill the rest of the 2000: they never reach Jev. */
+  for (int i = 0; i < 1000; i++) {
+    snprintf(nome, sizeof nome, "Canal Com Grupo %04d", i);
+    addM3u(&ctx, nome, "Provider Group", "https://private/g");
+  }
+  assert(sNCanais == 2000);
+  livecat_postar_teste(bulkWorker);
+  sugerirSecoes();
+  selecionarSecoes();
+  int semCat = 0, provider = 0;
+  for (int i = 0; i < sNCanais; i++) {
+    if (sCanais[i].cat < 0) semCat++;
+    else if (!strcmp(sCats[sCanais[i].cat].nome, "Provider Group")) provider++;
+  }
+  if (sNCanais != 2000 || semCat || provider != 1000) {
+    printf("FAIL: 2000-channel load -> %d canais, %d sem categoria, %d provider\n",
+           sNCanais, semCat, provider);
+    failures++;
+  } else puts("PASS: 2000-channel load categorizes every channel via livecat (provider groups untouched)");
+  /* Network budget shares the 2 s window: the run sends bounded batches. */
+  if (posts - before < 1) { puts("FAIL: livecat batches for 1000 uncached names"); failures++; }
+  /* The bulk source never reaches the disk cache: the restart run must still
+   * find only the original fixture. */
+  stagingZerar();
+  return failures;
+}
+
 int main(int argc, char **argv) {
   M3uCtx ctx = {0};
   dados_iniciar(NULL);
   (void)argv;
+  if (argc > 1 && !strcmp(argv[1], "bulk")) return bulk2000();
   if (argc > 1) {
     char source[LTV_CHAVE];
     const char *selected[] = {"Infantil"};
@@ -468,7 +542,8 @@ int main(int argc, char **argv) {
 
   stagingZerar(); sTeto = 1;
   ltv_pref_definir_grupos(ltv_pref("st", 1), selected, 1);
-  stalkerCarregar();
+  { IptvConta conta = { .id = 0, .tipo = IPTV_STALKER, .ativa = 1, .nome = "stalker" };
+    stalkerCarregar(&conta); }
   sugerirSecoes(); selecionarSecoes();
   if (sNCanais != 1 || strcmp(sCanais[0].nome, "Lumen") ||
       posts != 1) {

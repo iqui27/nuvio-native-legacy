@@ -190,6 +190,7 @@ static void *buscar(void *arg) {
     RedeMedida medida = {0}; RedeControle controle = {2 * 1024 * 1024, NULL};
     baixado = rede_baixar_medido_controle(j->url, 8, NULL, &controle, &medida);
     if (medida.status == 200 && baixado) corpo = baixado;
+    printf("[esportes] fetch tipo=%d modalidade=%d liga=%s HTTP=%d corpo=%s\n",j->tipo,j->modalidade,j->liga.id,medida.status,baixado?"ok":"ausente");
   }
   if (corpo) {
     if(j->tipo==7) {

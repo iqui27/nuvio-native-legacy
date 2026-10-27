@@ -2023,17 +2023,19 @@ static void fonteVaziaRecupera(int tipo, const char *ref, const char *nome, cons
 static void sugerirSecoes(void) {
   const char **nomes = NULL, **sec = NULL;
   unsigned char *sem = NULL;
-  int *idx = NULL, i, n = 0;
-  if (!ajustes_livetv_sugerir()) return;
+  int *idx = NULL, i, n = 0, jev = 0;
   for (i = 0; i < sNCanais; i++) if (sCanais[i].sug) n++;
-  if (!n) return;
+  printf("[guia] categorias: %d canais, %d sem categoria", sNCanais, n);
+  if (!ajustes_livetv_sugerir()) { printf(", Jev desligado\n"); return; }
+  if (!n) { printf(", 0 via Jev\n"); return; }
   nomes = malloc(sizeof *nomes * (size_t)n); sec = malloc(sizeof *sec * (size_t)n);
   sem = malloc((size_t)n); idx = malloc(sizeof *idx * (size_t)n);
   if (nomes && sec && sem && idx) {
     int k = 0;
     for (i = 0; i < sNCanais; i++)
       if (sCanais[i].sug) { idx[k] = i; nomes[k] = sCanais[i].nome; sem[k] = 1; k++; }
-    if (livecat_sugerir(nomes, sem, n, sec, cargaAtual) > 0 && cargaAtual())
+    jev = livecat_sugerir(nomes, sem, n, sec, cargaAtual);
+    if (jev > 0 && cargaAtual())
       for (k = 0; k < n; k++) {
         int cat;
         if (!sec[k]) continue;
@@ -2049,6 +2051,7 @@ static void sugerirSecoes(void) {
         }
       }
   }
+  printf(", %d via Jev\n", jev > 0 ? jev : 0);
   free(nomes); free(sec); free(sem); free(idx);
 }
 

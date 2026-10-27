@@ -1252,8 +1252,10 @@ typedef struct {
 #define GV_FAV "\001fav"     /* gv_grupo: Biblioteca > Favoritos */
 static GVCh gv_ch[GV_WIN]; static int gv_n, gv_off, gv_match, gv_top, gv_total_n, gv_favs, gv_cats, gv_cats_total;
 static GVCh gv_pins[6]; static int gv_npins;
-#define GV_NCAT 8
+#define GV_NCAT 128                     /* every published group may be listed */
+#define GV_CAT_WIN 8                   /* rows that fit in the sidebar */
 static char gv_cat[GV_NCAT][64]; static int gv_cat_n[GV_NCAT];
+static int gv_cat_off;               /* first category row drawn (scroll) */
 static char gv_grupo[64];   /* filtro de categoria ("Todos ao vivo" quando vazio) */
 static int gv_zone, gv_lin, gv_pin, gv_sb, gv_chipi, gv_card, gv_hbt;
 static int gv_tdesl;        /* grade adiantada, em minutos (passos de 30) */
@@ -1321,28 +1323,26 @@ static void gv_snapshot(void){
   if(gv_n && !gv_snap_force && agora-ult<2000 && !strcmp(ult_screen,screen))return;
   ult=agora;gv_snap_force=0;snprintf(ult_screen,sizeof ult_screen,"%s",screen);
   gv_n=0;gv_match=0;gv_npins=0;gv_favs=0;gv_cats=0;gv_cats_total=0;gv_total_n=0;
-  char seen[16][64];int ns=0;
   const char *id,*nome,*logo,*cat,*base;
   for(int i=0;guia_canal_regra_campos(i,NULL,NULL,NULL,NULL,NULL);i++){
     if(!guia_canal_campos(i,&id,&nome,NULL,&cat,&base))continue;
     gv_total_n++;
-    if(cat&&cat[0]){
-      int j;for(j=0;j<ns;j++)if(!strcmp(seen[j],cat))break;
-      if(j==ns&&ns<16)snprintf(seen[ns++],64,"%s",cat);
-      int g;for(g=0;g<gv_cats;g++)if(!strcmp(gv_cat[g],cat))break;
-      if(g==gv_cats&&g<GV_NCAT){snprintf(gv_cat[g],sizeof gv_cat[g],"%s",cat);gv_cat_n[g]=1;gv_cats=g+1;}
+    const char *catv=(cat&&cat[0])?cat:i18n("Outros");
+    {
+      int g;for(g=0;g<gv_cats;g++)if(!strcmp(gv_cat[g],catv))break;
+      if(g==gv_cats&&g<GV_NCAT){snprintf(gv_cat[g],sizeof gv_cat[g],"%s",catv);gv_cat_n[g]=1;gv_cats=g+1;}
       else if(g<gv_cats)gv_cat_n[g]++;
     }
     int fav=guia_e_favorito(id);
     if(fav){gv_favs++;
       if(gv_npins<6){guia_canal_campos(i,NULL,NULL,&logo,NULL,NULL);gv_copia(&gv_pins[gv_npins++],i,id,nome,logo,cat,base,0);}}
-    if(!gv_filtra(id,cat))continue;
+    if(!gv_filtra(id,catv))continue;
     int k=gv_match++;
     if(k<gv_off||k>=gv_off+GV_WIN)continue;
     guia_canal_campos(i,NULL,NULL,&logo,NULL,NULL);
     gv_copia(&gv_ch[gv_n++],i,id,nome,logo,cat,base,1);
   }
-  gv_cats_total=ns;
+  gv_cats_total=gv_cats;
   if(gv_lin>=gv_match)gv_lin=gv_match>0?gv_match-1:0;
 }
 /* Mantem o foco dentro da janela copiada (recentra e refaz a copia). */
@@ -1544,6 +1544,8 @@ static void gv_chips_row(void){
  * (6..13). Vistos recentemente, Adicionados, Ordem e Mostrar/ocultar ficam
  * fora ate o guia ter esses dados. */
 #define GV_SB_N (6+GV_NCAT)
+/* gv_sb carries the absolute category index (6+i); gv_cat_off picks the
+ * eight rows that are drawn. The D-pad scrolls the window under the focus. */
 static int gv_sb_tem(int idx){return (idx>=2&&idx<5)||(idx>=6&&idx<6+gv_cats);}
 static int gv_sb_ativo(int idx){
   if(idx==2)return !strcmp(gv_grupo,GV_FAV);
@@ -1551,10 +1553,16 @@ static int gv_sb_ativo(int idx){
   if(idx>=6&&idx<GV_SB_N)return idx-6<gv_cats&&!strcmp(gv_grupo,gv_cat[idx-6]);
   return 0;
 }
+static void gv_cat_scroll(void){
+  int sel=gv_sb>=6?gv_sb-6:0;
+  if(sel<gv_cat_off)gv_cat_off=sel;
+  if(sel>=gv_cat_off+GV_CAT_WIN)gv_cat_off=sel-GV_CAT_WIN+1;
+  if(gv_cat_off>gv_cats-GV_CAT_WIN)gv_cat_off=gv_cats>GV_CAT_WIN?gv_cats-GV_CAT_WIN:0;
+}
 static GfxRect gv_sb_rect(int idx,float base){
   float ycat=base+58+3*54+14;
   if(idx<5)return (GfxRect){GV_X+12,base+58+(idx-2)*54,GV_SB_W-24,48};
-  return (GfxRect){GV_X+12,ycat+62+(idx-6)*50,GV_SB_W-24,44};
+  return (GfxRect){GV_X+12,ycat+62+(idx-6-gv_cat_off)*50,GV_SB_W-24,44};
 }
 static const char *gv_cat_icone(const char *n){
   if(strstr(n,"sport")||strstr(n,"Sport"))return "aj_activity";
@@ -1588,6 +1596,7 @@ static void gv_sidebar(float base){
     txt_bloco(TXT_ILHA_CORPO,i18n("Categorias e pastas aparecem ao adicionar uma lista."),154,156,158,GV_X+26,base+136,GV_SB_W-52,32,1,3);
     return;
   }
+  gv_cat_scroll();
   /* Foco de linha (DESIGN 3): superficie um degrau mais clara, deslizando. */
   int si=gv_sb_foc();
   if(si>=0)plrui_linha_foco(gv_glide(&gv_gside,gv_sb_rect(si,base)),18,1);
@@ -1605,10 +1614,16 @@ static void gv_sidebar(float base){
   snprintf(nb,sizeof nb,"%d",gv_cats_total);
   gv_label(TXT_ILHA_NOME,i18n("Categorias"),GV_X+26,y+16,220,0);
   {TxtLinha l=txt_linha_bruta(TXT_ILHA_CORPO,nb,154,156,158,255);txt_desenhar(l,GV_X+GV_SB_W-28-(float)l.w,y+18);}
-  for(int i=0;i<gv_cats;i++){
-    snprintf(nb,sizeof nb,"%d",gv_cat_n[i]);
-    gv_side_row(6+i,gv_cat_icone(gv_cat[i]),gv_cat[i],nb,1320+i,base);
+  int shown=gv_cats-gv_cat_off;if(shown>GV_CAT_WIN)shown=GV_CAT_WIN;
+  for(int i=0;i<shown;i++){
+    int c=i+gv_cat_off;
+    snprintf(nb,sizeof nb,"%d",gv_cat_n[c]);
+    gv_side_row(6+c,gv_cat_icone(gv_cat[c]),gv_cat[c],nb,1320+c,base);
   }
+  /* Scroll hints when the list does not fit in the visible rows. */
+  float ycat=base+58+3*54+14;
+  if(gv_cat_off>0)gv_label(TXT_ILHA_SUB,"▲",GV_X+GV_SB_W-56,ycat+36,40,1);
+  if(gv_cat_off+GV_CAT_WIN<gv_cats)gv_label(TXT_ILHA_SUB,"▼",GV_X+GV_SB_W-56,ycat+62+GV_CAT_WIN*50,40,1);
 }
 
 /* --- heroi: ASSISTINDO AGORA + cartao de previa --------------------------- */

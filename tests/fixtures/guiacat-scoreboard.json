@@ -1,0 +1,47 @@
+{
+  "events": [
+    {
+      "id": "401841279",
+      "name": "Grêmio em Coritiba",
+      "date": "2026-10-26T22:30Z",
+      "status": {
+        "clock": 5400.0,
+        "displayClock": "90'+4'",
+        "period": 2,
+        "type": {
+          "id": "28",
+          "name": "STATUS_FULL_TIME",
+          "state": "post",
+          "completed": true,
+          "description": "Final da Partida",
+          "detail": "Finalizado",
+          "shortDetail": "F"
+        }
+      },
+      "competitions": [
+        {
+          "competitors": [
+            {
+              "team": {
+                "id": "3456",
+                "displayName": "Coritiba",
+                "shortDisplayName": "Coritiba",
+                "logo": "https://a.espncdn.com/i/teamlogos/soccer/500/3456.png"
+              },
+              "score": "0"
+            },
+            {
+              "team": {
+                "id": "6273",
+                "displayName": "Grêmio",
+                "shortDisplayName": "Grêmio",
+                "logo": "https://a.espncdn.com/i/teamlogos/soccer/500/6273.png"
+              },
+              "score": "1"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
