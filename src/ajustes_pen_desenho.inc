@@ -139,7 +139,7 @@ static void ajPenHome(void) {
   ajKicker("NUVIO · TV DA SALA",200,120,1);
   aj4Texto("Ajustes",TXT_TITULO2,200,140,1000,1);
   aj4Texto(av?"420 ajustes em 8 seções. O modo avançado mostra as opções técnicas de cada bloco.":"8 seções. Cada escolha mostra o valor atual antes de você abrir.",TXT_G20M,200,234,1360,.58f);
-  ajPenChip("Buscar ajuste","aj_search",1642,152,187,aj4Topo==0,0,0);
+  if(!av || aj4Topo==0)ajPenChip("Buscar ajuste","aj_search",1642,152,187,aj4Topo==0,0,0);
   ajPenModo(216);
   const char *modeText=av?"Avançado mostra as opções técnicas de cada seção":"Avançado revela 4 ajustes técnicos";
   TxtLinha modeHelp=ajTxt(TXT_AJ_MINI14,modeText);txt_desenhar_alpha(modeHelp,1824-modeHelp.w,289,.4f);
@@ -154,8 +154,14 @@ static void ajPenHome(void) {
     ajCaps(TXT_AJ_MINI12,"AGORA",1.5f,x+26,530,.40f);
     char value[160];snprintf(value,sizeof value,"%s",textoValor(valueOps[i]));
     if(i==3)snprintf(value,sizeof value,"%s",pfNome(perfis_ativo()));
+    if(av) {
+      char second[100];
+      if(i==0) { snprintf(second,sizeof second,"%s",textoValor(AJ_DV));snprintf(value,sizeof value,i18n("%s · %s"),textoValor(AJ_QUALIDADE),second); }
+      else if(i==1) { snprintf(second,sizeof second,"%s",textoValor(AJ_ATMOS));snprintf(value,sizeof value,i18n("%s · %s"),textoValor(AJ_AUD_LINGUA),second); }
+      else if(i==2) { snprintf(second,sizeof second,"%s",textoValor(AJ_ESCALA_TEXTO));snprintf(value,sizeof value,i18n("%s · %s"),textoValor(AJ_HOME_LAYOUT),second); }
+    }
     int changed=0;for(int op=0;op<AJ_N;op++)if(aj4Simples(op)==i+1 && uxDiferente(op))changed++;
-    aj4Texto(value,TXT_G18M,x+96,527,changed?168:260,1);
+    aj4Texto(value,TXT_G18M,x+96,527,changed?194:260,1);
     if(changed) { char count[64];snprintf(count,sizeof count,i18n("%d alterados"),changed);float r,g,b;ajustes_acento(&r,&g,&b);
       TxtLinha t=txt_linha_corta(TXT_G14B,count,r*255,g*255,b*255,255,100);
       txt_desenhar(t,x+388-26-t.w,530);
@@ -188,8 +194,8 @@ static void ajPenHome(void) {
   gfx_cor((GfxRect){av?940:960,906,1,64},0,1,1,1,.12f);
   ajPenChip("Presets","aj_sparkles",av?966:1192,912,134,aj4Linha==4 && aj4Topo<0,1,4);
   char count[128];snprintf(count,sizeof count,i18n("Diferente do padrão · %d"),aj4Diferencas(aj4Opcoes));
-  ajPenChip(count,"aj_rotate-ccw-clock",av?1112:1338,912,263,aj4Linha==5 && aj4Topo<0,1,5);
+  ajPenChip(count,"aj_rotate-ccw",av?1112:1338,912,263,aj4Linha==5 && aj4Topo<0,1,5);
   ajPenChip("Regras da TV","aj_shield",av?1387:1613,912,185,aj4Linha==6 && aj4Topo<0,1,6);
-  if(av)ajPenChip("Opções técnicas","aj_sliders-horizontal",1584,912,214,aj4Linha==13 && aj4Topo<0,1,13);
+  if(av)ajPenChip("Opções técnicas","aj_terminal",1584,912,214,aj4Linha==13 && aj4Topo<0,1,13);
   ajPenRodape("Ajustes",1,3);
 }
