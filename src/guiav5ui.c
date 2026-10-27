@@ -1660,10 +1660,12 @@ static void gv_broadcast(GfxRect pv,GVCh *c,EpgProg *p,int full){
   float raio=full?0:(ajustes_guia_previa_grande()?0:20.0f/pv.h);
   int live=guia_preview_no_ar();
   int troca=!strcmp(screen,"preview-troca");
+  // Keep the native plane aligned with the actual spring/focus geometry.
+  if(player_mini_no_guia_ativo()&&!player_janela_animando(NULL,NULL,NULL,NULL))
+    player_mini_no_guia(pv.x,pv.y,pv.w,pv.h);
   if(live)gfx_furo_raio(pv,raio);
   else{
-    float r,g,b;gv_hsl(gv_hue(c->nome),.45f,.30f,&r,&g,&b);
-    gfx_cor(pv,raio,r,g,b,1);
+    gfx_cor(pv,raio,.051f,.051f,.051f,1);
     float lado=fminf(pv.h*.44f,170);
     gv_avatar(c->logo,c->nome,(GfxRect){pv.x+(pv.w-lado)/2,pv.y+(pv.h-lado)/2-(p&&pv.h>200?16:0),lado,lado});
   }
@@ -1674,7 +1676,7 @@ static void gv_broadcast(GfxRect pv,GVCh *c,EpgProg *p,int full){
   }
   /* selos sobre o video (GL por cima do furo) */
   if(live||!strcmp(screen,"preview")||!strcmp(screen,"preview-foco")||troca||full){
-    TxtLinha cb=txt_linha_bruta(TXT_ILHA_NOME,c->nome,25,33,44,255);
+    TxtLinha cb=txt_linha_bruta(TXT_ILHA_NOME,live?player_titulo_canal():c->nome,25,33,44,255);
     GfxRect brand={pv.x+pv.w-(float)cb.w-48,pv.y+16,(float)cb.w+24,40};
     gfx_cor(brand,7.0f/40,.953f,.949f,.937f,1);
     txt_desenhar(cb,brand.x+12,brand.y+(40-(float)cb.h)/2);
@@ -1684,7 +1686,8 @@ static void gv_broadcast(GfxRect pv,GVCh *c,EpgProg *p,int full){
     gfx_cor((GfxRect){pill.x+14,pill.y+13,10,10},.5f,1,1,1,1);
     txt_desenhar(lv,pill.x+30,pill.y+(36-(float)lv.h)/2);
   }
-  if(p&&live){
+  int mesmo=!live||!strcmp(c->id,player_id_canal());
+  if(p&&live&&mesmo){
     char placar[96];
     if(gv_placar(p->titulo,placar,sizeof placar)){
       TxtLinha s=txt_linha_bruta(TXT_ILHA_CORPO,placar,243,242,239,255);
@@ -1697,7 +1700,7 @@ static void gv_broadcast(GfxRect pv,GVCh *c,EpgProg *p,int full){
     }
   }
   /* Faixa do programa: hora de inicio, progresso e fim (com ou sem video). */
-  if(p&&pv.h>150){
+  if(p&&pv.h>150&&mesmo){
     float by=pv.y+pv.h-50;char hi[8],hf[8];
     gv_hora(p->ini,hi,8);gv_hora(p->fim,hf,8);
     if(!live)gfx_rect((GfxRect){pv.x,pv.y+pv.h-90,pv.w,90},0,GFX_VEU_CSS,0,0,1,0,0,0,0,.5f);
@@ -1724,6 +1727,7 @@ static void gv_broadcast(GfxRect pv,GVCh *c,EpgProg *p,int full){
 static GfxRect gv_preview_rect(void){
   GfxRect r={GV_MX,!strcmp(screen,"fontes-erro")?256:GV_BASE,GV_MW,gv_hh};
   if(!strcmp(screen,"preview-hero-cheio"))return r;
+  if(!strcmp(gv_pagina,"cartoes"))return (GfxRect){r.x+r.w-358,r.y+16,330,176};
   if(ajustes_guia_previa_grande())return (GfxRect){r.x+r.w-GV_BIG_W,r.y,GV_BIG_W,r.h};
   float h=r.h-36,w=fminf(GV_CARD_W,h*16/9);
   return (GfxRect){r.x+r.w-w-18,r.y+18,w,h};
@@ -1734,9 +1738,7 @@ static void gv_hero(float base){
   int full=!strcmp(screen,"preview-hero-cheio"),grande=ajustes_guia_previa_grande();
   GVCh *c=gv_focus();EpgProg *p=gv_prog(c);
   if(!c){t21_ilha(r,28,1);return;}
-  float r2,g2,b2;gv_hsl(gv_hue(c->nome),.38f,.19f,&r2,&g2,&b2);
-  gfx_cor(r,rr,r2,g2,b2,1);
-  gfx_rect((GfxRect){r.x,r.y,r.w*0.70f,r.h},0,GFX_VEU_CSS,0,3,1.2f,0,r2,g2,b2,.9f);
+  gfx_cor(r,rr,.071f,.075f,.086f,1);
   GfxRect pv=gv_preview_rect();
   /* Cartao da previa em foco (DIREITA depois dos botoes): cresce com sombra. */
   int cardf=gv_zone==2&&gv_hbt==2&&!gv_overlay()&&!full;
@@ -1767,7 +1769,12 @@ static void gv_hero(float base){
   }else{
     gv_label(TXT_ILHA_CORPO,i18n("Sem programação"),x,y,iw,1);
   }
-  txt_bloco(TXT_ILHA_CORPO,p?i18n("Sem descrição no guia."):i18n("Vincule um guia ao canal · segure OK"),154,156,158,x,r.y+anim_mistura(126,180,k),iw,32,1,2);
+  EpgProg next;
+  if(guia_programa_proximo(c->id,time(NULL),0,&next)){
+    gv_hora(next.ini,hi,sizeof hi);
+    snprintf(buf,sizeof buf,"%s · %s · %s",i18n("A SEGUIR"),hi,next.titulo);
+    gv_label(TXT_ILHA_CORPO,buf,x,r.y+anim_mistura(126,180,k),iw,1);
+  }else gv_label(TXT_ILHA_CORPO,i18n(p?"Sem descrição no guia.":"Vincule um guia ao canal · segure OK"),x,r.y+anim_mistura(126,180,k),iw,1);
   if(k<.02f)return;
   /* Botoes: aparecem com a altura do heroi. */
   gfx_opacidade_grupo=og*k;
@@ -1775,9 +1782,9 @@ static void gv_hero(float base){
   if(gv_zone==2&&!gv_overlay())focus=1312+gv_hbt;
   if(passado)gv_button(1312,i18n("Assistir"),"aj_play",x,y,220,0,1);
   else{
-    gv_button(1312,i18n("Tela cheia"),"aj_maximize-2",x,y,240,0,1);
+    gv_button(1312,i18n(guia_preview_no_ar()&&!strcmp(c->id,player_id_canal())?"Tela cheia":"Assistir"),"aj_play",x,y,240,0,1);
     gv_button(1313,i18n(full?"Prévia na janela":"Ampliar prévia"),"aj_play",x+256,y,full?300:280,0,1);
-    if(!full)gv_label(TXT_ILHA_APOIO,i18n("Selecione novamente para tela cheia. A prévia continua sem som durante a navegação."),x,y+62,iw,1);
+    if(!full&&pv.w>520)gv_label(TXT_ILHA_APOIO,i18n("Selecione novamente para tela cheia. A prévia continua sem som durante a navegação."),x,y+62,iw,1);
   }
   gfx_opacidade_grupo=og;
 }
@@ -1787,10 +1794,8 @@ static void gv_hero_compact(float base){
   GfxRect r={GV_MX,base,GV_MW,208};float rr=28.0f/208;
   GVCh *c=gv_canal_cartao();EpgProg *p=gv_prog(c);
   if(!c){t21_ilha(r,28,1);return;}
-  float r2,g2,b2;gv_hsl(gv_hue(c->nome),.38f,.19f,&r2,&g2,&b2);
-  gfx_cor(r,rr,r2,g2,b2,1);
-  gfx_rect((GfxRect){r.x,r.y,r.w*.72f,r.h},0,GFX_VEU_CSS,0,3,1.2f,0,r2,g2,b2,.9f);
-  GfxRect art={r.x+r.w-358,r.y+16,330,176};
+  gfx_cor(r,rr,.071f,.075f,.086f,1);
+  GfxRect art=gv_preview_rect();
   gv_broadcast(art,c,p,0);
   float iw=art.x-r.x-64;char meta[180],hi[8],hf[8];
   gv_label(TXT_ILHA_TITULO,p?p->titulo:c->nome,r.x+32,r.y+28,iw,0);
@@ -1803,7 +1808,12 @@ static void gv_hero_compact(float base){
     TxtLinha t=txt_linha_corta_bruta(TXT_ILHA_NOME,meta,243,242,239,255,r.x+32+iw-mx);txt_desenhar(t,mx,r.y+88);mx+=(float)t.w+18;
     const char *q=gv_quali(c->nome);if(q[0]&&mx+80<r.x+32+iw)gv_badge(q,mx,r.y+82);
   }else gv_label(TXT_ILHA_CORPO,i18n("Sem programação"),r.x+32,r.y+90,iw,1);
-  txt_bloco(TXT_ILHA_CORPO,i18n("Sem descrição no guia."),154,156,158,r.x+32,r.y+140,iw,30,1,2);
+  EpgProg next;
+  if(guia_programa_proximo(c->id,time(NULL),0,&next)){
+    gv_hora(next.ini,hi,sizeof hi);
+    snprintf(meta,sizeof meta,"%s · %s · %s",i18n("A SEGUIR"),hi,next.titulo);
+    gv_label(TXT_ILHA_CORPO,meta,r.x+32,r.y+140,iw,1);
+  }else gv_label(TXT_ILHA_CORPO,i18n("Sem descrição no guia."),r.x+32,r.y+140,iw,1);
 }
 /* --- canais fixados (os favoritos, na ordem do guia) ---------------------- */
 static GVCh *gv_pin_ch(int i){return i>=0&&i<gv_npins?&gv_pins[i]:NULL;}

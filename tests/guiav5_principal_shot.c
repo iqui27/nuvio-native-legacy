@@ -32,7 +32,8 @@ static void capture(SDL_Window *window, const char *dir, const char *name) {
     glClearColor(.045f, .047f, .051f, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     if (shot_zap) desenharBanda(1, SDL_GetTicks());
-    else { g5ui_draw(); if(stream_folha_canais_aberta()){stream_folha_atualizar(.016f,SDL_GetTicks());stream_folha_desenhar(SDL_GetTicks());} }
+    else { if(!strcmp(name,"preview-focus-moving")&&frame==87)gv_event(SDLK_DOWN,0);
+      g5ui_draw(); if(stream_folha_canais_aberta()){stream_folha_atualizar(.016f,SDL_GetTicks());stream_folha_desenhar(SDL_GetTicks());} }
     if (frame == 89) {
       unsigned char *pixels = malloc(1920 * 1080 * 4);
       assert(pixels);
@@ -198,7 +199,7 @@ int main(int argc, char **argv) {
   {float y0=gv_gfolha.y;focus=1800;SDL_Delay(20);quadro();assert(gv_gfolha.ok&&gv_gfolha.y>y0+1&&gv_gfolha.y<347);}
   gv_voltar();query[0]=0;gv_sai_t=0;gv_zone=0;
   const char *names[] = {
-    "fontes-gerenciar", "preview-playing", "grade", "cartoes", "preview", "preview-grade", "preview-foco", "preview-hero-cheio",
+    "preview-idle-dark", "preview-focus-moving", "fontes-gerenciar", "preview-playing", "grade", "cartoes", "preview", "preview-grade", "preview-foco", "preview-hero-cheio",
     "preview-troca", "dock", "catchup", "categorias", "pastas", "busca", "canal-opcoes",
     "numero", "opcoes", "ajustes", "epg-saude", "epg-verificando", "epg-adicionado",
     "epg-falha", "erros", "fontes-erro", "vazio", "esportes-ligas", "esportes-liga",
@@ -230,7 +231,8 @@ int main(int argc, char **argv) {
     char page[48];
     snprintf(page, sizeof page, "%s", names[n]);
     if (strchr(page, '@')) *strchr(page, '@') = 0;
-    if (!strcmp(page, "preview-playing")) snprintf(page, sizeof page, "grade");
+    if (!strcmp(page, "preview-playing") || !strcmp(page,"preview-idle-dark") || !strcmp(page,"preview-focus-moving"))
+      snprintf(page, sizeof page, "grade");
     g5ui_open(page);
     if (!strcmp(names[n], "preview-playing")) {
       aberta = 1;
