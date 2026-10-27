@@ -114,9 +114,9 @@ int main(int argc, char **argv) {
 
     p = escolherCanal();
     assert(!strcmp(p.base, base));
-    // O que app.c faz com SPOT_CANAL (spotAtender -> tocarCanal).
+    // Preserve the fixture addon's declared TV type, as the guide does.
     assert(guia_item_do_canal(p.id, p.nome, p.base, &it));
-    assert(!strcmp(it.imdb, "teste:espn") && !strcmp(it.tipo, "channel"));
+    assert(!strcmp(it.imdb, "teste:espn") && !strcmp(it.tipo, "tv"));
     assert(!strcmp(guia_canal_origem(), base));
     addons_definir_origem(guia_canal_origem());
     addons_buscar(it.imdb, "tv");
@@ -134,11 +134,17 @@ int main(int argc, char **argv) {
     return 0;
   }
 
-  // cache: outro processo, sem servidor, sem guia_carregar.
+  // Cache loading keeps only configured sources. Restore the installed addon
+  // identity in this fresh process without requesting its offline manifest.
+  AddonRemoto installed = {0};
+  snprintf(installed.nome, sizeof installed.nome, "Canais Teste");
+  snprintf(installed.url, sizeof installed.url, "%s/manifest.json", base);
+  installed.ativo = 1;
+  assert(addons_definir_lista(&installed, 1) == 1);
   p = escolherCanal();
   assert(!strcmp(p.base, base));
   assert(guia_item_do_canal(p.id, p.nome, p.base, &it));
-  assert(!strcmp(it.imdb, "teste:espn") && !strcmp(it.tipo, "channel"));
+  assert(!strcmp(it.imdb, "teste:espn") && !strcmp(it.tipo, "tv"));
   assert(!strcmp(guia_canal_origem(), base));
   puts("PASS cache: sem rede e sem abrir o guia, Spotlight acha ESPN pela lista do cache.");
   return 0;

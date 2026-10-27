@@ -41,5 +41,13 @@ static void heroRegression(void){
 void nav21_home(void){
   CatItem v[8]={0};for(int i=0;i<8;i++){snprintf(v[i].titulo,sizeof v[i].titulo,"Fixture %d",i);snprintf(v[i].imdb,sizeof v[i].imdb,"tt%07d",i+1);snprintf(v[i].tipo,sizeof v[i].tipo,"movie");snprintf(v[i].sinopse,sizeof v[i].sinopse,"Offline fixture synopsis");}CatFileira rows[2]={0};for(int r=0;r<2;r++){snprintf(rows[r].chave,sizeof rows[r].chave,"fixture-%d",r);snprintf(rows[r].titulo,sizeof rows[r].titulo,"Fixture row %d",r);snprintf(rows[r].tipo,sizeof rows[r].tipo,"movie");rows[r].ini=r*4;rows[r].n=4;}cat_definir_tudo(v,8,rows,2);
   heroRegression();
+  sincronizarFileiras();
+  animFoco[0][0] = 0.75f;
+  CatItem search = {0};
+  strcpy(search.imdb, "tt9999999"); strcpy(search.titulo, "Search-only result");
+  int index = -1;
+  nav21_expect("Home/Search", "Search result appended", cat_acrescentar_lote(&search, 1, &index), 1);
+  sincronizarFileiras();
+  nav21_expect("Home/Search", "Appending search results preserves built Home rows", animFoco[0][0] == 0.75f, 1);
   Nav21Screen s={"Home 2.1",openFixture,home_evento,stepFixture,drawFixture,focusFixture,selectFixture,pageFixture,0,transitionFixture,ownsArrow};nav21_check(s);
 }

@@ -53,6 +53,7 @@
 #include "spotpessoa.h"
 #include "spotlight.h"
 #include "ctxlista.h"
+#include "corviva.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -90,7 +91,11 @@ static int buTelefone(void) {
 #endif
 }
 static int buRetratoTelefone(void) { return buRetrato() && buTelefone(); }
-static int buTecladoNativo(void) { return buTelefone() && st_ime_disponivel(); }
+static int buTecladoNativo(void) {
+  return st_ime_disponivel() && st_teclado_modo() != 1 &&
+         (buTelefone() || st_abre_sozinho());
+}
+static int buResultadosPagina(void);
 static int buUmaColuna(void) { return buRetrato() || buTecladoNativo(); }
 static float buCampoH(void) { return buTecladoNativo() ? 104.0f : 76.0f; }
 static float buMargem(void) { return buTelefone() ? 48.0f : ANC(BU_MARG); }
@@ -156,6 +161,8 @@ static Foco  focoKb;
 static Foco  focoRes;
 // 0 = teclado, 1 = resultados, 2 = buscas recentes (so com o campo vazio).
 static int   painel = 0;
+static GfxMini fundoBusca;
+static int buResultadosPagina(void) { return buTecladoNativo() && painel == 1; }
 static char  consulta[BU_MAX_CONSULTA];
 static int   nConsulta = 0;
 static char consultaFiltrada[BU_MAX_CONSULTA];
@@ -287,6 +294,7 @@ static int  kbTemLayout;                   // a tecla de layout aparece?
 static int  pagSim;                        // 1 = pagina de acentos e sinais (?!#)
 static int  KB_COLUNAS[BU_KB_MAX_FIL + 1] = { 6, 6, 6, 6, 6, 6, 3 };
 static float buResY(void) {
+  if (buResultadosPagina()) return buTopoEsq();
   if (buTecladoNativo()) return buTopoEsq() + BU_CAMPO_H + 44.0f;
   if (!buRetrato()) return ANC(64.0f);
   return BU_KB_Y + 2.0f * BU_KB_PAD + (kbFil + 1) * BU_TECLA_W
@@ -689,7 +697,7 @@ montado:
           encontrado = 1; break;
         }
   }
-  if (nFil == 0 && painel == 1) painel = 0;
+  if (nFil == 0 && painel == 1 && !buResultadosPagina()) painel = 0;
   memset(animRes, 0, sizeof animRes); memset(revRes, 0, sizeof revRes);
   if (!mesmaConsulta) {
 #ifdef NV_TOUCH_UI
@@ -837,6 +845,17 @@ static void campoOk(void) {
   else if (campoFoco == 2) st_voz_iniciar(ST_BUSCA);
   else st_ime_abrir(ST_BUSCA, consulta, BU_MAX_CONSULTA - 1);
 }
+static void voltarCampo(void) {
+  painel = 0;
+  if (buTecladoNativo()) {
+    campoFoco = 1;
+    st_ime_abrir(ST_BUSCA, consulta, BU_MAX_CONSULTA - 1);
+  }
+}
+static void buscarNovamente(int a, int b) {
+  (void)a; (void)b;
+  voltarCampo();
+}
 static void focarCampoPonteiro(int a, int b) {
   (void)b;
 #ifdef NV_TOUCH_UI
@@ -968,7 +987,11 @@ int busca_iniciar(void) {
   return 1;
 }
 
-void busca_encerrar(void) { temItemFoco = 0; pediuRelogio = 0; st_fechar(ST_BUSCA); celb_fechar_dono(CELB_BUSCA); }
+void busca_encerrar(void) {
+  temItemFoco = 0; pediuRelogio = 0;
+  st_fechar(ST_BUSCA); celb_fechar_dono(CELB_BUSCA);
+  gfx_mini_liberar(&fundoBusca);
+}
 const char *busca_consulta(void) { return consulta; }
 int busca_foco_campo(void) { return painel == 0 ? campoFoco : 0; }
 #ifdef NV_TESTE
@@ -1112,7 +1135,7 @@ static void busca_evento_(const SDL_Event *e) {
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) {
     // Nos resultados, o Back volta ao teclado: e o movimento inverso do que
     // levou ate la. So do teclado ele fecha a tela.
-    if (painel != 0) painel = 0;
+    if (painel != 0) voltarCampo();
     else { registrarConsulta(); sair = 1; }
     return;
   }
@@ -1229,10 +1252,10 @@ static void busca_evento_(const SDL_Event *e) {
   }
 
   switch (k) {
-    case SDLK_TAB: painel = 0; break;
+    case SDLK_TAB: voltarCampo(); break;
     case SDLK_LEFT:
       // Voltar da primeira coluna dos resultados devolve o foco ao teclado.
-      if (focoRes.coluna == 0) painel = 0;
+      if (focoRes.coluna == 0) voltarCampo();
       else focus_mover(&focoRes, -1, 0);
       break;
     case SDLK_RIGHT:
@@ -1260,7 +1283,7 @@ static void busca_evento_(const SDL_Event *e) {
           if (d < melhor) { melhor = d; focoRec = i; }
         }
         recentesAjustarFoco();
-      } else if (!moveu && buTecladoNativo()) { painel = 0; campoFoco = 1; }
+      } else if (!moveu && buTecladoNativo()) voltarCampo();
       else if (!moveu) { if (ajustes_menu_topo()) sair = 1; else pediuRelogio = 1; }
       break;
     }
@@ -1420,7 +1443,10 @@ static void busca_atualizar_(float dt, Uint32 agora) {
       campoDefinir(t, voz || r == ST_FIM);
       // Concluir / voz entregam o texto FINAL: sem esperar o debounce.
       if (voz || r == ST_FIM) refiltrarJa(); else refiltrar();
-      if (r == ST_FIM && temResultados()) { registrarConsulta(); painel = 1; campoFoco = 0; }
+      if (r == ST_FIM && (temResultados() || buTecladoNativo())) {
+        st_fechar(ST_BUSCA);
+        registrarConsulta(); painel = 1; campoFoco = 0;
+      }
     } }
   // O RESULTADO DA REDE CHEGA DEPOIS DA TECLA. refiltrar() so roda quando o
   // dono digita, entao sem isto a resposta do Cinemeta chegava, ficava guardada
@@ -1464,8 +1490,8 @@ static void busca_atualizar_(float dt, Uint32 agora) {
       animTecla[f][c] = anim_mola(animTecla[f][c], alvo, dt,
                                   alvo > animTecla[f][c] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
     }
-  for (int r = 0; r < BU_MAX_FILEIRAS; r++)
-    for (int c = 0; c < BU_MAX_POR_FIL; c++) {
+  for (int r = 0; r < nFil; r++)
+    for (int c = 0; c < fil[r].n; c++) {
       float alvo = (painel == 1 && focus_indice(&focoRes, r, c)) ? 1.0f : 0.0f;
       animRes[r][c] = anim_mola(animRes[r][c], alvo, dt,
                                 alvo > animRes[r][c] ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
@@ -2020,20 +2046,57 @@ static void desenhaResultados(Uint32 agora) {
   gfx_sem_recorte();
 }
 
+static void desenhaFundoDireto(void) {
+  ajustes_ui_fundo();
+  gfx_veu_css_base((GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H },
+                   0, 1.0f, 1.0f, 0.60f, 0.45f);
+}
+static void desenhaFundo(void) {
+  static float cor[3], largura, altura;
+  static int leves;
+  static unsigned long long modos;
+  float ac[3]; ajustes_acento(&ac[0], &ac[1], &ac[2]);
+  // Cache only the static backdrop. Live ambient light keeps its own clock.
+  if (nv_ambiente_forca > 0 || gfx_snap_ativo() || gfx_mini_ativo()) {
+    gfx_mini_liberar(&fundoBusca);
+    desenhaFundoDireto(); return;
+  }
+  if (fundoBusca.tex && !glIsTexture(fundoBusca.tex)) memset(&fundoBusca, 0, sizeof fundoBusca);
+  if (!fundoBusca.tex || largura != NV_TELA_W || altura != NV_TELA_H ||
+      leves != gfx_efeitos_leves() || modos != gfx_modos_desligados || memcmp(cor, ac, sizeof cor)) {
+    if (!gfx_mini_alvo(&fundoBusca, 480, (int)(480 * NV_TELA_H / NV_TELA_W))) {
+      desenhaFundoDireto(); return;
+    }
+    float grupo = gfx_opacidade_grupo;
+    gfx_opacidade_grupo = 1;
+    gfx_mini_comecar(&fundoBusca, 0, 0, 480.0f / NV_TELA_W);
+    desenhaFundoDireto();
+    gfx_mini_terminar();
+    gfx_opacidade_grupo = grupo;
+    memcpy(cor, ac, sizeof cor); largura = NV_TELA_W; altura = NV_TELA_H;
+    leves = gfx_efeitos_leves(); modos = gfx_modos_desligados;
+  }
+  gfx_mini_desenhar(&fundoBusca, (GfxRect){ 0, 0, NV_TELA_W, NV_TELA_H }, 0, 1);
+}
+
 static void busca_desenhar_(Uint32 agora) {
   buInterfaceAtualizar();
 #ifdef NV_TOUCH_UI
   if (buTelefone()) ponteiro_rolagem(toqueBuscaRolar);
 #endif
-  ajustes_ui_fundo();
-  // O .fundo da pagina no mockup (preto 70% em cima, 92% a 60%): os resultados
-  // e o teclado leem sobre a arte sem competir com ela.
-  { GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
-    gfx_cor(tela, 0, 0, 0, 0, 0.45f);
-    gfx_veu_css(tela, 0, 1.0f, 1.0f, 0.60f); }
-  desenhaCampo(agora);
-  desenhaTeclado();
+  desenhaFundo();
+  if (!buResultadosPagina()) {
+    desenhaCampo(agora);
+    desenhaTeclado();
+  }
   desenhaResultados(agora);
+  if (buResultadosPagina()) {
+    // Overlay the search action; reserve no row or keyboard space for it.
+    GfxRect b = { BU_DIR - 64.0f, buTopoEsq(), 64.0f, 64.0f };
+    ajustes_ui_ilha(b, 32.0f, 0);
+    gfx_icone((GfxRect){ b.x + 18, b.y + 18, 28, 28 }, "aj_search", 1, 1, 1, 1);
+    ponteiro_alvo(b.x, b.y, b.w, b.h, NULL, buscarNovamente, 0, 0);
+  }
 }
 
 void busca_evento(const SDL_Event *e) { TXT_INI(); busca_evento_(e); TXT_FIM(); }
