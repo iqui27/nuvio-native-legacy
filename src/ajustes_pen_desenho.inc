@@ -16,6 +16,15 @@ static void ajPenChip(const char *s,const char *ic,float x,float y,float w,int f
   txt_desenhar(t,x+(ic?48:(w-t.w)/2),y+(52-t.h)/2);
   aj4Alvo(r,zone,row);
 }
+static void ajPenToggle(float x,float y,int on) {
+  float r,g,b;ajustes_acento(&r,&g,&b);
+  gfx_cor((GfxRect){x,y,64,36},.5f,on?r:.20f,on?g:.21f,on?b:.24f,1);
+  gfx_cor((GfxRect){x+4+(on?28:0),y+4,28,28},.5f,1,1,1,1);
+}
+static void ajPenScope(void) {
+  ajPenChip("Só esta TV",NULL,1600,118,146,0,9,0);
+  float r,g,b;ajustes_acento(&r,&g,&b);gfx_cor((GfxRect){1618,139,6,6},.5f,r,g,b,1);
+}
 static void ajPenRailFoco(int row,int unused) { (void)unused;menu_abrir();(void)row; }
 static void ajPenBase(void) {
   GfxRect screen={0,0,1920,1080};

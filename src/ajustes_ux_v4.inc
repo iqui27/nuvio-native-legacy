@@ -285,8 +285,7 @@ static int aj4Desfazer(void) {
 }
 static int aj4Diferencas(int *ops) {
   int n = 0;
-  for (int i = 0; i < AJ_N; i++) if (aj4Secao(i) >= 0 && aj4Mutavel(i) && uxDiferente(i) &&
-      (escopoDe(i) == ESC_TV) == aj4Escopo) ops[n++] = i;
+  for (int i = 0; i < AJ_N; i++) if (aj4Secao(i) >= 0 && aj4Mutavel(i) && uxDiferente(i)) ops[n++] = i;
   return n;
 }
 static int aj4BuscarResultados(void) {

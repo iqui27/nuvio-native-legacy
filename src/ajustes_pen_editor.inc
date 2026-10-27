@@ -15,7 +15,7 @@ static void ajPenEditor(void) {
   const char *title=op==AJ_AUD_LINGUA?"Idioma do áudio":op==AJ_LEG_LINGUA2?"Segunda legenda":op==AJ_ESCALA_TEXTO?"Tamanho do texto":quality?"Qualidade do vídeo":op==AJ_FONTE_MANUAL?"Escolha do vídeo":aj4Rotulo(op);
   aj4Texto(title,TXT_TITULO2,200,212,1500,1);
   aj4Texto(caption,TXT_G20M,200,291,1520,.58f);
-  ajPenChip(escopoDe(op)==ESC_TV?"Só esta TV":"Este perfil",NULL,1650,118,174,0,9,0);
+  ajPenScope();
   const char *scopeHelp=op==AJ_AUD_LINGUA?"Vale para a sala, não para o celular":op==AJ_LEG_LINGUA2?"Não empurra a legenda principal":op==AJ_ESCALA_TEXTO?"A escala vale nesta TV; o celular segue a conta":op==AJ_TEMA?"A cor vale nesta TV; o celular segue a conta":quality?"A qualidade é pedida à fonte a cada reprodução":"O que está em Privado só você vê";
   TxtLinha scope=ajTxt(TXT_AJ_MINI14,scopeHelp);txt_desenhar_alpha(scope,1824-scope.w,178,.4f);
   ajPenPanel(200,344,520,640,0);ajPenPanel(744,344,1080,640,0);
@@ -24,22 +24,22 @@ static void ajPenEditor(void) {
   const char *heads[]={quality?"Automática":op==AJ_ESCALA_TEXTO?"Escala do texto":op==AJ_TEMA?"Cor de destaque":op==AJ_AUD_LINGUA?"Preferir faixa original":op==AJ_LEG_LINGUA2?"Idioma da segunda legenda":op==AJ_FONTE_MANUAL?"Escolher na mão":"Valor atual",quality?"Limite desta TV":screen?op==AJ_TEMA?"Cor da logo":"Tamanho da interface":op==AJ_LEG_LINGUA2?"Posição":op==AJ_FONTE_MANUAL?"Ordem das fontes":"Faixa de reserva",quality?"O que o addon oferece":op==AJ_ESCALA_TEXTO?"Mínimo garantido":op==AJ_LEG_LINGUA2?"Estilo separado":op==AJ_FONTE_MANUAL?"Antes de abrir":"Onde isso vale"};
   const char *body[]={quality?"A TV pede a melhor qualidade que ela aguenta. Quem limita é a rede.":op==AJ_AUD_LINGUA?"Quando existe original em boa qualidade, ele vem primeiro — sem dublado por cima.":op==AJ_LEG_LINGUA2?"O idioma da tradução extra. Desligada, ela não aparece.":op==AJ_FONTE_MANUAL?"A TV mostra as fontes e você escolhe com o D-pad.":screen?caption:original,quality?"A qualidade é pedida à fonte a cada reprodução":op==AJ_AUD_LINGUA?"Se a escolhida não existir no título, tocamos a original.":op==AJ_LEG_LINGUA2?"No topo da tela ou junto da principal.":op==AJ_FONTE_MANUAL?"Por qualidade ou na ordem em que o addon montou.":screen?(op==AJ_TEMA?"A logo do app pode acompanhar a cor.":"Escala dos cartões e das listas. Não mexe nas letras."):aj4Ajuda(op),quality?"Cada addon diz a qualidade do arquivo que ele tem.":op==AJ_LEG_LINGUA2?"A segunda legenda não muda quando você muda a principal.":op==AJ_FONTE_MANUAL?"O Nuvio confere a fonte e avisa antes de trocar.":op==AJ_ESCALA_TEXTO?"Com 85% as legendas continuam legíveis a 3 metros.":escopoDe(op)==ESC_TV?"Nesta TV e no app da sala. O celular segue a conta, não a TV.":"A escolha acompanha este perfil."};
   for(int i=0;i<(op==AJ_TEMA?2:3);i++) {
-    float y=i==0?400:i==1?584:728,h=i==0?170:i==1?130:140;
+    float y=i==0?400:i==1?(op==AJ_TEMA?614:quality?564:584):quality?718:728;
+    float h=i==0?(op==AJ_TEMA?200:quality?150:170):i==1?(op==AJ_TEMA?140:130):140;
     ajNeutro((GfxRect){226,y,468,h},22,.05f,.10f,.11f,.13f,1);
     aj4Texto(heads[i],TXT_G21B,248,y+20,422,1);
     ajBloco(TXT_G18R,body[i],248,y+54,422,22,.58f,3);
-    if(i==0 && (op==AJ_AUD_LINGUA || op==AJ_FONTE_MANUAL)) {
-      int setting=op==AJ_AUD_LINGUA?AJ_AUD_LINGUA:AJ_FONTE_MANUAL;
+    if(i==0 && (op==AJ_AUD_LINGUA || op==AJ_FONTE_MANUAL || quality)) {
+      int setting=op;
       int on=op==AJ_AUD_LINGUA?!strcmp(ling_opcao_codigo(uxPendente),"~"):uxPendente==0;
-      float r,g,b;ajustes_acento(&r,&g,&b);
-      gfx_cor((GfxRect){248,506,64,36},.5f,on?r:.2f,on?g:.21f,on?b:.24f,1);
-      gfx_cor((GfxRect){252+(on?28:0),510,28,28},.5f,1,1,1,1);
-      aj4Texto(on?"Ligado":"Desligado",TXT_G18R,320,513,300,.58f);
-      aj4Alvo((GfxRect){248,506,400,36},14,setting);
+      float toggleY=quality?492:506;ajPenToggle(248,toggleY,on);
+      aj4Texto(on?"Ligado":"Desligado",TXT_G18R,326,toggleY+7,300,.58f);
+      aj4Alvo((GfxRect){248,toggleY,400,36},14,setting);
     }
     if(op==AJ_ESCALA_TEXTO && i==1)aj4Alvo((GfxRect){226,y,468,h},14,AJ_TAMANHO_UI);
     if(op==AJ_TEMA && i==1) {
-      ajPenChip(lig(AJ_COR_LOGO)?"Ligado":"Desligado",NULL,248,682,160,0,14,AJ_COR_LOGO);
+      ajPenToggle(248,696,lig(AJ_COR_LOGO));aj4Texto(lig(AJ_COR_LOGO)?"Ligado":"Desligado",TXT_G18R,326,703,300,.58f);
+      aj4Alvo((GfxRect){248,696,400,36},14,AJ_COR_LOGO);
     }
     if(screen && i==0) {
       if(op==AJ_ESCALA_TEXTO) {
@@ -47,7 +47,7 @@ static void ajPenEditor(void) {
         char draft[100];uxValorTexto(op,uxPendente,draft,sizeof draft);aj4Texto(draft,TXT_G21B,306,524,80,1);
         ajPenChip("+",NULL,375,512,44,0,11,1);
       } else {
-        static const int colors[]={6,0,2,3,4,5,1,11};
+        static const int colors[]={0,6,1,3,2,4,5,11};
         for(int j=0;j<8;j++) { float r,g,b;corDeHex(TEMA_ACENTO[colors[j]].fill,&r,&g,&b);gfx_cor((GfxRect){248+j*54,510,40,40},.5f,r,g,b,1); }
       }
     }
@@ -69,12 +69,22 @@ static void ajPenEditor(void) {
       int i=op==AJ_TEMA && pos<12?colors[pos]:op==AJ_AUD_LINGUA?languageOrder[pos]:pos;
       float y=400+(pos-start)*76;char value[160];uxValorTexto(op,i,value,sizeof value);
       if(i==uxPendente && !uxRodape)ajNeutro((GfxRect){770,y,1028,70},20,.14f,.169f,.176f,.204f,1);
-      aj4Texto(op==AJ_AUD_LINGUA && !strcmp(ling_opcao_codigo(i),"~")?"Original":value,TXT_G21B,770,y+5,800,1);
-      if(op==AJ_TEMA && i<AJ_N_TEMAS_OPC) { float r,g,b;corDeHex(TEMA_ACENTO[i].fill,&r,&g,&b);gfx_cor((GfxRect){1720,y+20,32,32},.5f,r,g,b,1); }
+      const char *languageNames[]={"Original","Português (Brasil)","English","Español","Français","日本語"};
+      aj4Texto(op==AJ_AUD_LINGUA && pos<6?languageNames[pos]:value,TXT_G21B,770,y+5,800,1);
+      if((op==AJ_TEMA || op==AJ_ESCALA_TEXTO) && pos>0) { TxtLinha label=ajTxt(TXT_G18R,op==AJ_ESCALA_TEXTO && i==2?"Padrão":value);txt_desenhar_alpha(label,1798-label.w,y+26,.58f); }
+      if(op==AJ_AUD_LINGUA && pos>=2 && pos<6) { TxtLinha label=ajTxt(TXT_G18R,value);txt_desenhar_alpha(label,1798-label.w,y+26,.58f); }
+      if(op==AJ_AUD_LINGUA && pos==0) {
+        ajNeutro((GfxRect){954,y+4,158,24},6,.07f,.14f,.15f,.17f,1);aj4Texto("MELHOR PARA ESTA TV",TXT_AJ_MINI12,962,y+10,146,.8f);
+      }
+      if(op==AJ_AUD_LINGUA && i==uxOriginal && uxOriginal!=valorPadrao[op]) {
+        ajNeutro((GfxRect){1160,y+4,100,24},6,.07f,.24f,.09f,.16f,1);aj4Texto("ALTERADO",TXT_AJ_MINI12,1170,y+10,84,.9f);
+      }
       if(quality && i) { TxtLinha t=ajTxt(TXT_G18R,value);txt_desenhar_alpha(t,1798-t.w,y+26,.58f); }
       static const char *const qhelp[]={"A melhor que a TV aguenta","2160p, quando o addon tem","Full HD","Leve, funciona em qualquer rede"};
       static const char *const shelp[]={"Compacto: cabe mais por linha","Um pouco menor","O padrão do app","Maior","Grande","O maior"};
-      aj4Texto(quality && i<4?qhelp[i]:op==AJ_ESCALA_TEXTO && i<6?shelp[i]:i==uxOriginal?"Valor atual":"OK para aplicar",TXT_AJ_MINI14,770,y+40,800,.4f);
+      static const char *const colorsHelp[]={"O padrão do Nuvio","Vermelho escuro","Azul do fundo do app","Roxo","Verde","Quente"};
+      static const char *const languageHelp[]={"A faixa que veio no arquivo","Dublado","Original em inglês","Dublado em espanhol","Original em francês","Original em japonês"};
+      aj4Texto(quality && i<4?qhelp[i]:op==AJ_ESCALA_TEXTO && i<6?shelp[i]:op==AJ_TEMA && pos<6?colorsHelp[pos]:op==AJ_AUD_LINGUA && pos<6?languageHelp[pos]:i==uxOriginal?"Valor atual":"OK para aplicar",TXT_AJ_MINI14,770,y+40,800,.4f);
       if(i==uxOriginal) { float r,g,b;ajustes_acento(&r,&g,&b);gfx_cor((GfxRect){1766,y+30,12,12},.5f,r,g,b,1); }
       aj4Alvo((GfxRect){770,y,1028,70},4,i);
     }

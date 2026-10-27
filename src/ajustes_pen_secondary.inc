@@ -2,7 +2,7 @@ static void ajPenSecondary(void) {
   ajPenBase();ajPenChip("Áudio e legendas","pl_chevron-left",200,112,208,0,5,0);
   ajKicker("ÁUDIO E LEGENDAS",200,198,1);aj4Texto("Segunda legenda",TXT_TITULO2,200,212,1500,1);
   aj4Texto("Uma tradução por cima da principal, para quando a original não basta.",TXT_G20M,200,291,1520,.58f);
-  ajPenChip("Só esta TV",NULL,1650,118,174,0,9,0);
+  ajPenScope();
   aj4Texto("Não empurra a legenda principal",TXT_AJ_MINI14,1560,178,264,.4f);
   ajPenPanel(200,344,520,640,0);ajPenPanel(744,344,1080,640,0);
   ajKicker("SEGUNDA LEGENDA",226,366,1);ajKicker("ESTILO DA SEGUNDA",770,366,1);
@@ -16,7 +16,8 @@ static void ajPenSecondary(void) {
       int op=i?AJ_LEG2_POS:AJ_LEG_LINGUA2;
       aj4Alvo((GfxRect){226,y,468,i?140:170},13,i?2:1);
       char text[160];snprintf(text,sizeof text,"%s",textoValor(op));aj4Texto(text,TXT_G18M,306,y+104,364,1);
-      if(i) { ajPenChip("−",NULL,248,y+88,44,0,13,3);ajPenChip("+",NULL,430,y+88,44,0,13,3); }
+      if(i) { ajPenChip("−",NULL,248,y+88,44,0,13,3);ajPenChip("+",NULL,403,y+88,44,0,13,3); }
+      else { int on=strcmp(ling_legenda2(),"none") && ling_legenda2()[0];ajPenToggle(248,512,on);aj4Texto(on?"Ligado":"Desligado",TXT_G18R,326,519,300,.58f); }
     }
   }
   static const int ops[]={AJ_LEG2_FONTE,AJ_LEG2_TAMANHO,AJ_LEG2_COR,AJ_LEG2_FUNDO,AJ_LEG2_BORDA,AJ_LEG_LINGUA2,AJ_LEG2_POS};
