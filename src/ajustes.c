@@ -11467,6 +11467,8 @@ int ajustes_teste_quadro(const char *id) {
   int tema = valor[AJ_TEMA], vidro = valor[AJ_VIDRO];
   memcpy(valor, valorPadrao, sizeof valor);
   valor[AJ_TEMA] = tema; valor[AJ_VIDRO] = vidro;
+  *player_leg_estilo()=*player_leg_estilo_padrao();ajLegendaEspelhar();
+  ling_local_legenda2("");
   ajustes_teste_vidro_env();   // the defaults above would drop NUVIO_SHOT_VIDRO_FOSCO / _OPAC
   valor[AJ_IDIOMA] = IDIOMA_PT + 1;
   // NUVIO_SHOT_IDIOMA=N (IDIOMA_*: 1 en, 4 ru, 6 de...): o quadro sai nesse idioma.
@@ -11504,7 +11506,10 @@ int ajustes_teste_quadro(const char *id) {
     else if(!strcmp(id,"pen-editor-number")) { ajPenOpen(28);focarOpcao(AJ_LEG1_TAMANHO);uxAbrirEditor(AJ_LEG1_TAMANHO); }
     else if(!strcmp(id,"pen-editor-choice")) { ajPenOpen(33);focarOpcao(AJ_HOME_LAYOUT);uxAbrirEditor(AJ_HOME_LAYOUT); }
     else if(!strcmp(id,"pen-components"))ajPenOpen(AJ_PEN_COMPONENTS);
-    else if(!strcmp(id,"pen-parental"))ajPenOpen(AJ_PEN_PARENTAL);
+    else if(!strcmp(id,"pen-parental")) {
+      perfil_regra_definir(1,PR_TEMPO,60);perfil_regra_definir(1,PR_IDADE,12);perfil_regra_definir(1,PR_FILMES,0);
+      valor[AJ_ENQUETES]=1;valor[AJ_HERO_TRAILER]=0;ajPenOpen(AJ_PEN_PARENTAL);
+    }
     else if(!strcmp(id,"pen-rules"))ajPenOpen(AJ_PEN_RULES);
     else if(!strcmp(id,"pen-features"))ajPenOpen(AJ_PEN_TOUR);
     else if(!strcmp(id,"pen-presets")) {
@@ -11526,19 +11531,39 @@ int ajustes_teste_quadro(const char *id) {
     else if(!strcmp(id,"pen-color")) { ajPenOpen(34);focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);uxPendente=3; }
     else if(!strcmp(id,"pen-audio")) {
       int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=valor[AJ_LEG_LINGUA]=order[1];
-      valor[AJ_LEG_FORCADA]=valor[AJ_LEG_SYNC_AUDIO]=0;ajPenOpen(27);ajPenRow=1;
+      valor[AJ_LEG_FORCADA]=valor[AJ_LEG_SYNC_AUDIO]=0;valor[AJ_LEG_LINGUA2]=1;
+      ajPenOpen(27);ajPenRow=1;
     }
     else if(!strcmp(id,"pen-estilo")) {
       VideoLegendaEstilo *sample=player_leg_estilo();sample->tamanho=100;sample->fundo=2;sample->negrito=1;sample->posicao=0;
       ajLegendaEspelhar();ajPenOpen(28);aj4Topo=2;
     }
     else if(!strncmp(id,"pen-adv-",8))ajPenOpen(atoi(id+8));
-    else if(!strncmp(id,"pen-main-",9))ajPenOpen(29+atoi(id+9));
+    else if(!strncmp(id,"pen-main-",9)) {
+      int page=atoi(id+9);
+      if(page==0) { valor[AJ_FONTE_MANUAL]=0;valor[AJ_FONTE_REPOR]=0; }
+      if(page==1) { valor[AJ_PULAR_ABERTURA]=valor[AJ_PULAR_CREDITOS]=valor[AJ_PROXIMO_AUTO]=0;valor[AJ_REACAO_CREDITOS]=1;valor[AJ_PROXIMO_CONTAGEM]=10;valor[AJ_PROPORCAO_PADRAO]=1; }
+      if(page==2)valor[AJ_SELOS_CORES]=0;
+      if(page==3)valor[AJ_MANTER_VIDEO]=0;
+      if(page==4) { valor[AJ_HOME_LAYOUT]=0;valor[AJ_HERO_CHEIO]=0;valor[AJ_ITENS_FILEIRA]=1;valor[AJ_OCULTAR_NLANC]=0; }
+      if(page==5) { valor[AJ_ESCALA_TEXTO]=2;valor[AJ_TAMANHO_UI]=0;valor[AJ_VIDRO_OPAC]=2;valor[AJ_VIDRO_FOSCO]=0;valor[AJ_ANIM]=1; }
+      if(page==6) { valor[AJ_HERO_TRAILER]=0;valor[AJ_DET_TRAILER_AUTO]=0;valor[AJ_HERO_TRAILER_SOM]=0;valor[AJ_EXPANDIR_ATRASO]=2;valor[AJ_GRAD_CLASSICO]=0; }
+      if(page==7) { valor[AJ_DET_BLUR_NAO_VISTOS]=0;valor[AJ_DET_VEU]=40;valor[AJ_DET_TOPO]=2;valor[AJ_NT_TMDB]=0; }
+      if(page==9)valor[AJ_ADDONS_PRINCIPAL]=0;
+      if(page==13)valor[AJ_LIVETV_PROXY]=1;
+      if(page==14)valor[AJ_NAV_RAPIDA]=0;
+      if(page==16) { valor[AJ_COLECAO_EXIBICAO]=1;valor[AJ_DESCOBRIR]=1; }
+      ajPenOpen(29+page);
+      if(page==6 || page==16)aj4Topo=2;
+    }
     else if(!strcmp(id,"pen-audio-idioma")) {
       int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];valor[AJ_AUD_ORIGINAL]=0;
       ajPenOpen(27);focarOpcao(AJ_AUD_LINGUA);uxAbrirEditor(AJ_AUD_LINGUA);uxPendente=order[2];
     }
-    else if(!strcmp(id,"pen-segunda")) { ajPenOpen(AJ_PEN_SECONDARY);ajPenRow=4;valor[AJ_LEG2_BORDA]=2; }
+    else if(!strcmp(id,"pen-segunda")) {
+      ling_local_legenda2("en");valor[AJ_LEG_LINGUA2]=3;
+      ajPenOpen(AJ_PEN_SECONDARY);ajPenRow=4;valor[AJ_LEG2_BORDA]=2;
+    }
     else return 0;
     return 1;
   }
@@ -11549,6 +11574,7 @@ int ajustes_teste_quadro(const char *id) {
     valor[AJ_TEMA]=2; valor[AJ_AVANCADAS]=1;
     if (!strcmp(id,"v4-inicio-avancado") || !strcmp(id,"v4-inicio-simples")) {
       static const char *const names[]={"Marina"};perfis_teste_definir(names,NULL,1,1);
+      valor[AJ_IDIOMA]=0;idiomaEfetivo=IDIOMA_PT;
       valor[AJ_TEMA]=6;valor[AJ_HOME_LAYOUT]=1;
       int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];
       aj4Linha=!strcmp(id,"v4-inicio-avancado")?3:1;
@@ -11566,7 +11592,7 @@ int ajustes_teste_quadro(const char *id) {
     else if (!strcmp(id,"v4-opcao-lista")) { focarOpcao(AJ_QUALIDADE); uxAbrirEditor(AJ_QUALIDADE); }
     else if (!strcmp(id,"v4-predefinicoes")) { aj4Util=2; focoIndice=0; }
     else if (!strcmp(id,"v4-diferentes")) {
-      memcpy(valor,valorPadrao,sizeof valor);valor[AJ_IDIOMA]=IDIOMA_PT+1;valor[AJ_TEMA]=2;valor[AJ_QUALIDADE]=1;
+      memcpy(valor,valorPadrao,sizeof valor);valor[AJ_IDIOMA]=0;idiomaEfetivo=IDIOMA_PT;valor[AJ_TEMA]=2;valor[AJ_QUALIDADE]=1;
       int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];
       aj4Escopo=0;aj4Util=1;focoIndice=0;
     }
