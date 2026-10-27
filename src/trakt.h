@@ -58,6 +58,9 @@ int trakt_historico_aplicar(const char *imdb, const char *tipo, int visto,
 // 1 quando a ultima resposta do Trakt foi 401 para ESTE token. traktauth
 // observa isto para disparar a renovacao por refresh token.
 int  trakt_recusada(void);
+// Forward a 401 from a service using Trakt headers on this same worker.
+// The captured profile opening and credential generation must still match.
+void trakt_http_recusada(void);
 // Sessao confirmada morta: para os pedidos autenticados ate trakt_definir/esquecer.
 void trakt_sessao_morta(void);
 int  trakt_sessao_e_morta(void);

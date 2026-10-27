@@ -11,6 +11,7 @@
 #include "player.h"
 #include "recomenda.h"
 #include "rede.h"
+#include "trakt.h"
 #include "video.h"
 #include <math.h>
 #include <stdio.h>
@@ -75,6 +76,8 @@ static int fioLaco(void *u) {
       snprintf(url, sizeof url, "%s%s", NV_REC_URL, op.rota);
       r.txt = op.get ? rede_baixar_st(url, PRAZO_S, cab, &r.status)
                      : rede_postar_st(url, PRAZO_S, cab, op.corpo ? op.corpo : "{}", &r.status);
+      if (r.status == 401 && !strcmp(via, "X-Nuvio-Auth: trakt"))
+        trakt_http_recusada();
     } else {
       r.status = -1; // Local auth failure, not an HTTP response.
       printf("[juntos] http: op=%d auth unavailable (request not sent)\n", op.tipo);

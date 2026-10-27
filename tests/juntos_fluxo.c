@@ -29,7 +29,10 @@ const char *i18n(const char *s) { return s; }
 void player_toast_ex(const char *s, unsigned ms, const char *ic, int c) { (void)s; (void)ms; (void)ic; (void)c; }
 int video_velocidade_suportada(void) { return 1; }
 int video_velocidade_bloqueada(void) { return 0; }
+#ifndef JUNTOS_AUTH_INTEGRATION
+void trakt_http_recusada(void) {}
 int recomenda_ativo(void) { return 1; }
+#endif
 const char *recomenda_meu_id(void) { return "host"; }
 const char *recomenda_vinculo_nome(void) { return "Host"; }
 int player_aberto(void) { return 1; }
@@ -54,6 +57,7 @@ DiscordWs *dws_abrir(const char *u) { (void)u; return socketPending ? (DiscordWs
 void dws_fechar(DiscordWs *w) { (void)w; }
 int perfil_infantil_ativo(void) { return 0; }
 const char *rede_ultimo_erro(void) { return "fixture"; }
+#ifndef JUNTOS_AUTH_INTEGRATION
 int recomenda_cabecalhos(const char **c, char *a, size_t na, char *v, size_t nv, char *p, size_t np) { (void)c; (void)a; (void)na; (void)v; (void)nv; (void)p; (void)np;
 #ifdef JUNTOS_AUTH
   authCalls++;
@@ -71,6 +75,7 @@ char *rede_postar_st(const char *u, int s, const char *const *c, const char *b, 
 #endif
   return NULL; }
 char *rede_baixar_st(const char *u, int s, const char *const *c, int *st) { (void)u; (void)s; (void)c; (void)st; return NULL; }
+#endif
 static int send(void *u, const char *json) { (void)u; snprintf(sent, sizeof sent, "%s", json); return 0; }
 
 static void snapshot(JsMotor *m, int n, int seq, const char *state, double t0) {
@@ -240,4 +245,5 @@ int main(void) {
   puts("PASS: missing auth shown, loading cleared, room retried, social-sized JWT creates room");
 #endif
   puts("PASS: lobby preload gate; host + two guests; live stats; lobby-only start; shared countdown; invite during room creation");
+  return 0;
 }

@@ -221,6 +221,10 @@ static void avisoHttp401(const char *url) {
   // pedia remontagem da home. O fallback honesto ja existe em socialPorSeguidos.
   if (!strstr(url, "api.trakt.tv") || strstr(url, "/oauth/") ||
       strstr(url, "/activities")) return;
+  trakt_http_recusada();
+}
+
+void trakt_http_recusada(void) {
   pthread_once(&donoHttpUmaVez, donoHttpCriar);
   if (!donoHttpPronto) return;
   DonoHttp *d = pthread_getspecific(donoHttpChave);
