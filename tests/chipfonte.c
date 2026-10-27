@@ -33,9 +33,9 @@ int main(void) {
   assert(strstr(text,"18") && strstr(text,"GB"));
   float r,g,b; vt_estado_cor(FA_OK,&r,&g,&b); assert(g>r && g>b);
   vt_estado_cor(FA_RUIM,&r,&g,&b); assert(r>g && r>b);
-  float ar,ag,ab; ajustes_acento(&ar,&ag,&ab);
-  vt_estado_cor(FA_CONFERINDO,&r,&g,&b); assert(r==ar && g==ag && b==ab);
-  puts("PASS: chip includes declared GB; ready green, checking accent, failed red");
+  vt_estado_cor(FA_CONFERINDO,&r,&g,&b); assert(r>g && g>b);
+  vt_estado_cor(FA_NADA,&r,&g,&b); assert(fabsf(r-g)<.05f && fabsf(g-b)<.05f);
+  puts("PASS: chip includes declared GB; ready green, checking amber, failed red, unknown neutral");
   stream_automatico_excluir(0);
   assert(vt_montar(&vaiTocar,item.imdb,0,0) && vaiTocar.estado==FA_RUIM);
   puts("PASS: exhausted source remains visible as failed");

@@ -5661,11 +5661,9 @@ static void heroWeb(float a, float desloc) {
     TxtLinha l = txt_linha_corta(TXT_DET_META2, texto, 225, 227, 232, 255, larguraTextoHero() - 48);
     float yV = yVers + sobe + dyV, aV = a * kV;
     versaoRect = (GfxRect){NV_DETW2_X, yV, l.w + 64, 48};
-    botao_pilula_sem_aro(versaoRect,"",NULL,0,0,0,aV);
-    float cr, cg, cb; vt_estado_cor(vaiTocar.estado, &cr, &cg, &cb);
-    gfx_cor(versaoRect,.5f,cr,cg,cb,versaoFoco*aV);
-    gfx_cor((GfxRect){NV_DETW2_X + 20, yV + 19, 10, 10}, .5f, cr, cg, cb, aV);
-    int ink=versaoFoco>.5f ? (vaiTocar.estado == FA_OK || vaiTocar.estado == FA_RUIM ? 18 : ajustes_tinta_foco()) : 225;
+    botao_pilula_sem_aro(versaoRect,"",NULL,versaoFoco,0,0,aV);
+    vtui_estado_ponto(vaiTocar.estado, NV_DETW2_X + 20, yV + 19, aV);
+    int ink=versaoFoco>.5f ? ajustes_tinta_foco() : 225;
     l=txt_linha_corta(TXT_DET_META2,texto,ink,ink,ink,255,larguraTextoHero()-48);
     txt_desenhar_alpha(l, NV_DETW2_X + 40, yV + (48 - l.h) * .5f, aV);
     if (aV>.3f) ponteiro_alvo(versaoRect.x,versaoRect.y,versaoRect.w,versaoRect.h,ponteiroDetalhe,NULL,-4,0);

@@ -86,7 +86,6 @@ int vt_montar(VaiTocar *vt, const char *imdb, int temporada, int episodio);
 void vt_descrever(const Stream *s, VaiTocar *vt);
 void vt_chip_texto(const VaiTocar *vt, char *dst, size_t n);
 void vt_estado_cor(int estado, float *r, float *g, float *b);
-const char *vt_estado_rotulo(int estado);
 
 // Nome amigavel no lugar do nome cru do arquivo (#9 do mockup, decidido):
 // "WEB-DL · 4K Dolby Vision" na linha; o nome cru fica no detalhe da fonte

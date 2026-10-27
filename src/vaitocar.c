@@ -112,12 +112,8 @@ void vt_chip_texto(const VaiTocar *vt, char *dst, size_t n) {
 void vt_estado_cor(int estado, float *r, float *g, float *b) {
   if (estado == FA_OK) { *r=.40f; *g=.86f; *b=.56f; }
   else if (estado == FA_RUIM) { *r=1.0f; *g=.45f; *b=.42f; }
-  else ajustes_acento(r,g,b);
-}
-const char *vt_estado_rotulo(int estado) {
-  return estado == FA_OK ? i18n("Pronta para assistir.") :
-         estado == FA_RUIM ? i18n("Falha na verificação") :
-         estado == FA_CONFERINDO ? i18n("Verificando a fonte…") : i18n("Não informado");
+  else if (estado == FA_CONFERINDO) { *r=.96f; *g=.72f; *b=.32f; }
+  else { *r=.60f; *g=.61f; *b=.63f; }
 }
 
 int vt_pular_ligado(void) {

@@ -1,7 +1,7 @@
 #include "streams.h"
 #include "aiostreamsui.h"
 #include "addonmodo.h"
-#include "vaitocar.h"
+#include "vaitocarui.h"
 #include "mediaurl.h"
 #include "plrui.h"
 #include "ondever.h"
@@ -6319,25 +6319,22 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       lg=txt_linha(TXT_CW_TITULO,gb,250,250,248,255);
       lu=txt_linha(TXT_PG_FIM,"GB",120,120,118,255);
       int estado = stream_fonte_estado(i);
-      float sr, sg, sb; vt_estado_cor(estado, &sr, &sg, &sb);
-      TxtLinha status = txt_linha(TXT_PG_FIM, vt_estado_rotulo(estado),
-                                  (int)(sr*255), (int)(sg*255), (int)(sb*255), 255);
       // TORRENT SEM DEBRID: quantos semeiam vai junto do addon. E o numero que
       // diz se a fonte abre (log da 2.0.0 no Android: "metadados nao chegaram
       // em 30 s"); a pessoa escolhia as cegas. "seeds" fica sem traducao: e o
       // termo que quem usa torrent conhece em qualquer idioma.
       { char pv[160];
         legendaProvedor(s,pv,sizeof pv);
-        lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,fmaxf(40,340-status.w-12)); }
-      colW=lp.w+12+status.w;
+        lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,318); }
+      colW=lp.w+22;
       if(gb[0] && lg.w+6+lu.w>colW) colW=lg.w+6+lu.w;
       cy=y+20+(temMarca(i,automatica)?FOLHA_MARCA_H:0);
       if(gb[0]){
         txt_desenhar_alpha(lu,tr-lu.w,cy+(lg.h-lu.h)-3,anim);
         txt_desenhar_tom(lg,tr-lu.w-6-lg.w,cy,cg/250.0f,cg/250.0f,(cg-2)/248.0f,anim); }
-      float providerX=tr-colW, providerY=gb[0]?cy+40:cy+6;
+      float providerX=tr-lp.w-22, providerY=gb[0]?cy+40:cy+6;
       txt_desenhar_tom(lp,providerX,providerY,sel?1:110.0f/150,sel?1:110.0f/150,sel?1:108.0f/148,anim);
-      txt_desenhar_alpha(status,tr-status.w,providerY,anim);
+      vtui_estado_ponto(estado,tr-10,providerY+(lp.h-10)*.5f,anim);
       // Dica da tecla Info/Amarela: so na linha em foco, no canto do addon.
       if(sel) gfx_icone((GfxRect){providerX-30,providerY+3,20,20},"aj_info",.62f,.62f,.62f,anim*.85f); }
     txtW=tr-tx-colW-28;
