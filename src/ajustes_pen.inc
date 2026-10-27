@@ -77,9 +77,9 @@ static const AjPenPage AJ_PEN_AUDIO[] = {
       {AJ_LEG1_ATRASO,"Ajuste fino","Corrige o milissegundo","aj_sliders-horizontal",0}}}}}
 };
 static int ajPenLanguageOrder(int *order) {
-  static const char *const first[]={"~","pt-BR","en","es","fr","ja"};
+  static const char *const first[]={"~","pt","en","es","fr","ja"};
   int n=0,total=nValores(AJ_AUD_LINGUA);unsigned char seen[LING_MAX_OPC]={0};
-  for(int p=0;p<6;p++)for(int i=0;i<total;i++)if(!strcmp(ling_opcao_codigo(i),first[p])) { order[n++]=i;seen[i]=1;break; }
+  for(int p=0;p<6;p++)for(int i=0;i<total;i++)if(!strcasecmp(ling_opcao_codigo(i),first[p])) { order[n++]=i;seen[i]=1;break; }
   for(int i=0;i<total;i++)if(!seen[i])order[n++]=i;
   return n;
 }
