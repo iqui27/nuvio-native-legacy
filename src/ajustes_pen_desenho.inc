@@ -45,10 +45,12 @@ static void ajPenModo(float y) {
 static void ajPenRodape(const char *page,int part,int total) {
   ajNeutro((GfxRect){200,1024,36,26},7,.07f,.14f,.15f,.17f,1);
   aj4Texto("OK",TXT_G14B,208,1029,24,.8f);
-  aj4Texto("abrir",TXT_AJ_MINI14,246,1029,70,.45f);
+  aj4Texto(uxEditor?"escolher":aj4Util==2?"usar":ajPenPage==AJ_PEN_RULES?"voltar":ajPenPage==AJ_PEN_TOUR?"ligar":"abrir",TXT_AJ_MINI14,246,1029,70,.45f);
   ajNeutro((GfxRect){289,1024,29,26},7,.07f,.14f,.15f,.17f,1);
   ajIcone("aj_arrow-left",297,1031,14,.8f);
-  aj4Texto(focoIndice?"voltar":"voltar para Ajustes",TXT_AJ_MINI14,328,1029,330,.45f);
+  const char *back=uxEditor?(ajPenPage==27 || ajPenPage==28?"Áudio e legendas":uxOp==AJ_TEMA || uxOp==AJ_ESCALA_TEXTO?"Minha tela":"Reprodução"):ajPenPage==28?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
+  char backText[160];snprintf(backText,sizeof backText,i18n("voltar para %s"),i18n(back));
+  aj4Texto(focoIndice?"voltar":backText,TXT_AJ_MINI14,328,1029,330,.45f);
   char text[200];
   if(ajPenPage>=0 && ajPenPage<27)snprintf(text,sizeof text,"%s",i18n(page));
   else snprintf(text,sizeof text,i18n("%s · %d de %d"),i18n(page),part,total);
@@ -64,15 +66,17 @@ static void ajPenRows(void) {
   const AjPenPage *page=ajPenCurrent();
   if(!page)return;
   ajPenBase();
-  ajPenChip("Ajustes","pl_chevron-left",200,112,124,0,5,0);
-  ajKicker(ajPenPage<27?"AJUSTES AVANÇADOS":page->section,200,198,1);
+  const char *back=ajPenPage==28?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
+  ajPenChip(back,"pl_chevron-left",200,112,!strcmp(back,"Ajustes")?124:!strcmp(back,"Minha tela")?150:!strcmp(back,"Reprodução")?164:208,0,5,0);
+  ajKicker(ajPenPage<27?"AJUSTES AVANÇADOS":!strcmp(back,"Ajustes")?"AJUSTES":back,200,198,1);
   aj4Texto(page->title,TXT_TITULO2,200,212,1500,1);
   if(ajPenPage<27 || (ajPenPage>=46 && ajPenPage<AJ_PEN_PARENTAL)) {
     char sub[240];snprintf(sub,sizeof sub,i18n("Opções de %s que o modo Simples esconde. Valor atual à direita."),i18n(page->section));
     aj4Texto(sub,TXT_G20M,200,291,1520,.58f);
   } else {
     ajPenModo(118);
-    aj4Texto(ajPenPage==27?"Avançado mostra saída de som e sincronia fina":ajPenPage==28?"Avançado mostra o deslize da sincronia":"Avançado mostra as opções técnicas de cada seção",TXT_AJ_MINI14,1450,190,374,.4f);
+    const char *help=ajPenPage==27?"Avançado mostra saída de som e sincronia fina":ajPenPage==28?"Avançado mostra o deslize da sincronia":ajPenPage==AJ_PEN_PARENTAL?"Avançado mostra os limites por perfil":AJ_PEN_MODE_HELP[ajPenPage-29];
+    TxtLinha modeHelp=ajTxt(TXT_AJ_MINI14,help);txt_desenhar_alpha(modeHelp,1824-modeHelp.w,190,.4f);
     aj4Texto(ajPenPage==AJ_PEN_PARENTAL?"Perfil infantil, PIN e os limites de cada perfil.":ajPenPage>=29?AJ_PEN_SUB[ajPenPage-29]:ajPenPage==27?"Vale para quase todo título. Se um filme não tiver a faixa escolhida, tocamos a original e avisamos.":"Tamanho, fonte, cor e borda da legenda principal.",TXT_G20M,200,291,1520,.58f);
   }
   int index=0;
@@ -86,7 +90,7 @@ static void ajPenRows(void) {
       if(focus)ajNeutro((GfxRect){x,y,w,74},20,.14f,.169f,.176f,.204f,1);
       ajIcone(row->icon,x+20,y+24,26,focus?1:.75f);
       int available=row->op>=0?ajOpcaoDisponivel(row->op):row->op!=-1;
-      aj4Texto(row->title,TXT_G21B,x+62,y+13,w-300,available?1:.45f);
+      aj4Texto(row->title,TXT_G21B,x+62,y+13,w-245,available?1:.45f);
       aj4Texto(row->help,TXT_AJ_MINI14,x+62,y+42,w-210,.4f);
       if(row->toggle && row->op!=-1) {
         int on=row->op==-2?perfil_ajustes_travados(perfis_ativo()):uxValorAtual(row->op)==0;
@@ -102,7 +106,8 @@ static void ajPenRows(void) {
       aj4Alvo((GfxRect){x,y,w,74},8,index);
     }
   }
-  ajPenRodape(ajPenPage==27?"Áudio e legendas":ajPenPage<27?page->title:page->section,page->part,page->total);
+  if(ajPenPage==29)aj4Texto("A TV é quem reproduz. O Nuvio converte o que a TV não entende.",TXT_AJ_MINI14,226,908,748,.4f);
+  ajPenRodape(ajPenPage==27 || ajPenPage==28?"Áudio e legendas":ajPenPage<27?page->title:page->section,ajPenPage>=29 && ajPenPage<46?AJ_PEN_PART[ajPenPage-29]:page->part,ajPenPage>=29 && ajPenPage<46?AJ_PEN_TOTAL[ajPenPage-29]:page->total);
 }
 static void ajPenHome(void) {
   static const char *const names[]={"Reproduzir","Áudio e legendas","Minha tela","Perfil e serviços"};
@@ -117,7 +122,8 @@ static void ajPenHome(void) {
   aj4Texto(av?"420 ajustes em 8 seções. O modo avançado mostra as opções técnicas de cada bloco.":"8 seções. Cada escolha mostra o valor atual antes de você abrir.",TXT_G20M,200,234,1360,.58f);
   ajPenChip("Buscar ajuste","aj_search",1642,152,187,aj4Topo==0,0,0);
   ajPenModo(216);
-  aj4Texto(av?"Avançado mostra as opções técnicas de cada seção":"Avançado revela os ajustes técnicos",TXT_AJ_MINI14,av?1452:1574,289,av?372:250,.4f);
+  const char *modeText=av?"Avançado mostra as opções técnicas de cada seção":"Avançado revela 4 ajustes técnicos";
+  TxtLinha modeHelp=ajTxt(TXT_AJ_MINI14,modeText);txt_desenhar_alpha(modeHelp,1824-modeHelp.w,289,.4f);
   ajKicker("DO DIA A DIA",200,290,1);
   for(int i=0;i<4;i++) {
     float x=200+i*412;int focus=aj4Linha==i && aj4Topo<0;
@@ -141,7 +147,7 @@ static void ajPenHome(void) {
   ajPenPanel(200,634,1624,214,0);
   static const char *const other[]={"TV ao vivo e guia","Controle parental","Desempenho","Sobre e ajuda"};
   static const char *const help[]={"Canais, EPG e gravações","PIN e limites por perfil","Cache, decodificação e memória","Versão, suporte e código de log"};
-  static const char *const ic[]={"aj_tv-minimal-play","aj_lock","aj_cpu","aj_info"};
+  static const char *const ic[]={"aj_tv","aj_lock","aj_cpu","aj_info"};
   for(int i=0;i<4;i++) {
     float x=i%2?1254:226,y=i<2?660:752;int row=9+i;
     if(aj4Linha==row && aj4Topo<0)ajNeutro((GfxRect){x,y,544,78},20,.14f,.169f,.176f,.204f,1);

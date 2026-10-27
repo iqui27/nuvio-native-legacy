@@ -18,3 +18,44 @@ static const char *const AJ_PEN_SUB[] = {
   "Versão, atualização, guia de uso e o registro para quem faz o app.",
   "A fileira que continua o que você parou, e como ela é montada.",
 };
+
+static const char *const AJ_PEN_BACK[] = {
+  "Ajustes",
+  "Reprodução",
+  "Reprodução",
+  "Reprodução",
+  "Ajustes",
+  "Minha tela",
+  "Ajustes",
+  "Ajustes",
+  "Ajustes",
+  "Perfil e serviços",
+  "Perfil e serviços",
+  "Perfil e serviços",
+  "Ajustes",
+  "TV ao vivo e guia",
+  "Ajustes",
+  "Ajustes",
+  "Ajustes",
+};
+static const char *const AJ_PEN_MODE_HELP[] = {
+  "Avançado mostra saída de som e HDR",
+  "Avançado mostra o formato do cartaz no player",
+  "Avançado mostra os limites de link",
+  "Avançado mostra os plugins da TV",
+  "Avançado mostra a ordem das fileiras",
+  "Avançado mostra o fundo dinâmico",
+  "Avançado mostra os pôsteres personalizados",
+  "Avançado mostra a ordem das notas",
+  "Avançado mostra as contas ligadas",
+  "Avançado mostra os filtros avançados",
+  "Avançado mostra os provedores da conta",
+  "Avançado mostra as conexões abertas",
+  "Avançado mostra os formatos do canal",
+  "Avançado mostra as conexões do provedor",
+  "Avançado mostra a ampliação da interface",
+  "Avançado mostra o registro da rede",
+  "Avançado mostra a ordem dos continuados",
+};
+static const int AJ_PEN_PART[]={2,3,4,5,3,3,4,5,4,4,4,4,4,4,3,3,3};
+static const int AJ_PEN_TOTAL[]={3,4,5,5,3,3,4,5,4,4,4,4,4,4,3,3,3};
