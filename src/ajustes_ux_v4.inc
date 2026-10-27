@@ -243,6 +243,12 @@ static int aj4PrepararPreset(int preset) {
   }
   aj4Review = 2; aj4Linha = 0; aj4Acao = 0; return aj4N;
 }
+static int ajPenStyleSize(int *ops,int *values,int n) {
+  for(int i=0;i<n;i++)if(ops[i]==AJ_LEG1_TAMANHO) {
+    VideoLegendaEstilo style=*player_leg_estilo();style.tamanho=values[i];return player_leg_estilo_definir(&style,-1);
+  }
+  return 1;
+}
 static int aj4Aplicar(void) {
   if (pfTravado()) return 0;
   for (int i = 0; i < aj4N; i++) if (valor[aj4Ops[i]] != aj4Antes[i]) {
@@ -252,6 +258,10 @@ static int aj4Aplicar(void) {
   if (!gravar()) {
     for (int i = 0; i < aj4N; i++) valor[aj4Ops[i]] = aj4Antes[i];
     uxNotificar("Não foi possível salvar. O valor anterior foi mantido."); return 0;
+  }
+  if(!ajPenStyleSize(aj4Ops,aj4Depois,aj4N)) {
+    for(int i=0;i<aj4N;i++)valor[aj4Ops[i]]=aj4Antes[i];gravar();
+    uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");return 0;
   }
   aj4UndoN = aj4N; aj4UndoPerfil = edPerfil ? edPerfil : perfis_ativo();
   memcpy(aj4UndoOps, aj4Ops, aj4N * sizeof(int));
@@ -267,6 +277,9 @@ static int aj4Desfazer(void) {
   if (!gravar()) {
     for (int i = 0; i < aj4UndoN; i++) valor[aj4UndoOps[i]] = aj4UndoDepois[i];
     return 0;
+  }
+  if(!ajPenStyleSize(aj4UndoOps,aj4UndoAntes,aj4UndoN)) {
+    for(int i=0;i<aj4UndoN;i++)valor[aj4UndoOps[i]]=aj4UndoDepois[i];gravar();return 0;
   }
   aj4UndoN = 0; reaplicarEfeitosPerfil(); protegerLocais(); desc_repetir(); return 1;
 }

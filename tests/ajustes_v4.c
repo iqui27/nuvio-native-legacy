@@ -77,6 +77,10 @@ int main(void) {
   valor[AJ_QUALIDADE]=3;
   assert(ajPenSavedPrepare(0)>0 && aj4Aplicar());
   assert(valor[AJ_QUALIDADE]==2 && aj4Desfazer() && valor[AJ_QUALIDADE]==3);
+  int subtitleSize=ajLegendaValor(AJ_LEG1_TAMANHO);
+  ajLegendaEspelhar();ajPenPresetPrepare(0);assert(aj4Aplicar());
+  assert(ajLegendaValor(AJ_LEG1_TAMANHO)==140 && aj4Desfazer());
+  assert(ajLegendaValor(AJ_LEG1_TAMANHO)==subtitleSize);
   for(int p=0;p<4;p++) { ajPenPresetPrepare(p);assert(aj4Review==2);aj4Review=0; }
   ajPenOpen(28);key(SDLK_ESCAPE);assert(ajPenPage==27);
   ajPenOpen(34);key(SDLK_ESCAPE);assert(ajPenPage==33);

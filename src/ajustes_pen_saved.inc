@@ -7,6 +7,7 @@ static void ajPenSavedForget(void) {
   ajPenSavedProfile=ajPenSavedCount=ajPenSaveKeyboard=0;
   memset(ajPenSavedNames,0,sizeof ajPenSavedNames);memset(ajPenSavedValues,-1,sizeof ajPenSavedValues);
 }
+static int ajPenPresetStored(int op);
 static void ajPenSavedLoad(void) {
   int profile=edPerfil?edPerfil:perfis_ativo();
   if(ajPenSavedProfile==profile)return;
@@ -23,7 +24,7 @@ static void ajPenSavedLoad(void) {
     } else if(slot>=0) {
       char key[96];int value;
       if(sscanf(line,"%95[^=]=%d",key,&value)==2)
-        for(int op=0;op<AJ_N;op++)if(aj4Mutavel(op) && !strcmp(key,CHAVE[op]) && (OPCOES[op].tipo==OP_NUMERO?limita(op,value)==value:value>=0 && value<nValores(op))) { ajPenSavedValues[slot][op]=value;break; }
+        for(int op=0;op<AJ_N;op++)if(ajPenPresetStored(op) && !strcmp(key,CHAVE[op]) && (OPCOES[op].tipo==OP_NUMERO?limita(op,value)==value:value>=0 && value<nValores(op))) { ajPenSavedValues[slot][op]=value;break; }
     }
   }
   free(data);
@@ -38,12 +39,13 @@ static int ajPenSavedWrite(void) {
   snprintf(file,sizeof file,"settings-presets-%d.txt",ajPenSavedProfile);
   int ok=dados_gravar(file,data);free(data);return ok;
 }
+static int ajPenPresetStored(int op) { return aj4Mutavel(op) || op==AJ_LEG1_TAMANHO; }
 static int ajPenSavedSave(const char *name) {
   ajPenSavedLoad();
   if(pfTravado() || ajPenSavedCount>=AJ_PEN_SAVED || !name || !*name || strchr(name,'\n') || strchr(name,'\r'))return 0;
   int slot=ajPenSavedCount;
   snprintf(ajPenSavedNames[slot],64,"%s",name);
-  for(int op=0;op<AJ_N;op++)ajPenSavedValues[slot][op]=aj4Mutavel(op)?valor[op]:-1;
+  for(int op=0;op<AJ_N;op++)ajPenSavedValues[slot][op]=ajPenPresetStored(op)?uxValorAtual(op):-1;
   ajPenSavedCount++;
   if(ajPenSavedWrite())return 1;
   ajPenSavedCount--;return 0;
@@ -60,19 +62,19 @@ static int ajPenSavedPrepare(int slot) {
   if(slot<0 || slot>=ajPenSavedCount)return 0;
   for(int op=0;op<AJ_N;op++) {
     int value=ajPenSavedValues[slot][op];
-    if(value>=0 && aj4Mutavel(op) && ajOpcaoDisponivel(op) && valor[op]!=value) {
+    if(value>=0 && ajPenPresetStored(op) && ajOpcaoDisponivel(op) && valor[op]!=value) {
       aj4Ops[aj4N]=op;aj4Antes[aj4N]=valor[op];aj4Depois[aj4N++]=value;
     }
   }
   aj4Review=2;aj4Linha=aj4Acao=0;return aj4N;
 }
 static const int AJ_PEN_PRESET_OPS[4][8]={
-  {AJ_QUALIDADE,AJ_DTS_AC3,AJ_ESCALA_TEXTO,-1},
+  {AJ_QUALIDADE,AJ_DTS_AC3,AJ_LEG1_TAMANHO,-1},
   {AJ_LEG_SYNC_AUDIO,AJ_LEG_SYNC_AUTO,AJ_AUDIO_OFFSET,-1},
   {AJ_DET_BLUR_NAO_VISTOS,AJ_PAUSA_ELENCO,AJ_HERO_TRAILER,-1},
   {AJ_HERO,AJ_HERO_TRAILER,AJ_DET_TRAILER_AUTO,AJ_FOCO_TRAILER,-1}
 };
-static const int AJ_PEN_PRESET_VALS[4][8]={{0,0,4},{0,0,0},{0,0,0},{1,1,1,0}};
+static const int AJ_PEN_PRESET_VALS[4][8]={{0,0,140},{0,0,0},{0,0,0},{1,1,1,0}};
 static const char *const AJ_PEN_PRESET_NAMES[]={"Sala de TV","Voz clara","Filme em casa","Só o áudio"};
 static int ajPenPresetPrepare(int preset) {
   aj4N=0;if(preset<0 || preset>=4)return 0;
