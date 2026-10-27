@@ -97,6 +97,7 @@ static int filtroVisto = -2, trocaDir;
 static Uint32 trocaDesde;
 static float pillX, pillW = -1.0f, pillDeX, pillDeW;   // x relative to the list column
 static int folhaRelogio; // Latched at opening, retained through closing.
+static float folhaEntrada; // Visible-row stagger starts once the island fits.
 #define FOLHA_ILHA_Y     48.0f   // plrilha.c: Y_TOPO
 #define FOLHA_ILHA_CAB   64.0f   // plrilha.c: CAB_H (a linha da hora)
 #define FOLHA_ILHA_BASE  48.0f   // margem de baixo = a de cima
@@ -4803,7 +4804,8 @@ void stream_folha_servidor(int provider) {
 void stream_folha_canais_abrir(const char *titulo) {
   fontescanais_iniciar(titulo);canaisFolha=1;canaisAviso[0]=0;
   aberta=1;escolha=-1;grupo=1;foco=0;rolagem=velRol=0;recarregar=0;
-  { float x,y,w,h;folhaRelogio=!player_aberto() && ajustes_relogio_ligado() && ilha_rect(&x,&y,&w,&h); }
+  folhaRelogio=!player_aberto() && ajustes_relogio_ligado();
+  folhaEntrada=0;
 #ifdef NV_TOUCH_UI
   memset(&toqueFontes,0,sizeof toqueFontes);memset(&toqueFontesAbas,0,sizeof toqueFontesAbas);
 #endif
@@ -4823,8 +4825,8 @@ void stream_folha_abrir(void) {
   int excl, aut, alvo;
   fitAbrir();
   aberta=1; escolha=-1; grupo=1; filtro=0; filtroVisto=-2; pillW=-1.0f; trocaDesde=0; soMp4=0; soCache=0; soDub=0; recarregar=0;
-  { float ix, iy, iw, ih;
-    folhaRelogio = !player_aberto() && ajustes_relogio_ligado() && ilha_rect(&ix, &iy, &iw, &ih); }
+  folhaRelogio = !player_aberto() && ajustes_relogio_ligado();
+  folhaEntrada = 0;
   recarregarFonteConfirmacao = 0;
   recarregarFontePerfil = nv_perfil_sessao_ler();
   recarregarFonteContexto = canalFolha ? 0 : player_recarregar_contexto();
@@ -5395,7 +5397,7 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   // `upd`). Abrir (stream_folha_abrir), as teclas e o desenho montam de novo
   // por conta propria; o foco pedido com a folha fechada era sobrescrito ao
   // abrir, entao sai daqui tambem.
-  if (!aberta && anim < .005f) { focoFixo = -1; folhaRelogio = 0; return; }
+  if (!aberta && anim < .005f) { focoFixo = -1; return; }
   folhaGeometria();
   // #205: a carta em foco que um fio de conferencia acabou de achar fora do
   // cache deixa o grupo por um lugar atras dos cached do seu grupo. Prender o
@@ -5818,7 +5820,7 @@ static void desenhaDetalhe(float x, float w, int ptr) {
   y+=48.0f;
   // CORPO ROLAVEL
   float jy=y, jh=DET_JAN_H-60.0f;
-  gfx_recorte(ix-4,jy,iw+8,jh);
+  GfxRecorteAnt clip = gfx_recorte_dentro(ix-4,jy,iw+8,jh);
   float by=jy-detRol;
   if(detTit[0]) {
     by+=txt_bloco(TXT_PAINEL_ITEM,detTit,250,250,248,ix,by,iw,34.0f,a,0)+22.0f;
@@ -5844,7 +5846,7 @@ static void desenhaDetalhe(float x, float w, int ptr) {
       gfx_rect((GfxRect){ix-4,jy,iw+8,40},0,GFX_BRILHO_TOPO,0,1.0f,0,0,.09f,.095f,.108f,.92f*e*a); }
     if(detRol<detAlt-1.0f) { float e=detAlt-detRol>30?1:(detAlt-detRol)/30; (void)fr;
       gfx_rect((GfxRect){ix-4,jy+jh-40,iw+8,40},0,GFX_BRILHO_TOPO,0,1.0f,.02f,0,.09f,.095f,.108f,.92f*e*a); } }
-  gfx_sem_recorte();
+  gfx_recorte_voltar(clip);
   // Rodape: o que as teclas fazem.
   { const char *dica=detAlt>0?"↑ ↓ rola · OK ou Voltar fecha":"OK ou Voltar fecha";
     txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,dica,120,120,118,255,iw),ix,cy+ch-pad-8,a); }
@@ -5927,7 +5929,7 @@ static void desenhaPartes(float x, float w, int ptr, Uint32 agora) {
     // EPISODIO (id com temporada e episodio): o pacote tem episodios, nao
     // partes de um filme — sem "PARTE N" nas linhas.
     for (const char *c = alvoPedido; *c; c++) dois += *c == ':';
-    gfx_recorte(ix - 16, jy, iw + 32, jh);
+    GfxRecorteAnt clip = gfx_recorte_dentro(ix - 16, jy, iw + 32, jh);
     for (int r = 0; r < ptNLinhas; r++) {
       const PtLinha *ln = &ptLinhas[r];
       float ry = jy + ln->y - ptRol;
@@ -6011,7 +6013,7 @@ static void desenhaPartes(float x, float w, int ptr, Uint32 agora) {
         txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM, f->nome, sel ? 250 : 205, sel ? 250 : 205, sel ? 248 : 203, 255,
                                            iw - 140), ix, ry + (tag[0] || ln->idx == tocando || ln->idx == ptL.atual ? 44 : 30), a); }
     }
-    gfx_sem_recorte();
+    gfx_recorte_voltar(clip);
   }
   { const char *dica = msg ? "OK ou Voltar fecha" : copias ? "OK abre · Voltar volta"
                        : ptNAbas >= 2 ? "OK toca · ← → abas · Voltar fecha" : "OK toca · Voltar fecha";
@@ -6030,7 +6032,16 @@ static Uint32 folhaAgora;
 static void corpoIlhaFolha(GfxRect c, float a, void *u) {
   (void)u;
   if (folhaRelogio && aberta && a > .5f && ponteiro_ativo()) ponteiro_camada();
-  corpoFolha(c.x, c.w, a, folhaAgora, 1);
+  GfxRect panel = folhaRelogio ? ilha_corpo_rect() : c;
+  float height = folhaRelogio ? folhaBase + (temServidor() ? FOLHA_SRV_PE : 0) + 16 - NV_ILHA_Y : folhaIlhaH();
+  float coverage = fminf(panel.w / FOLHA_W, panel.h / height);
+  float reveal = anim_clamp((coverage - .96f) / .04f, 0, 1);
+  static Uint32 previous;
+  if (aberta && reveal > 0 && previous)
+    folhaEntrada += fminf(.05f, (folhaAgora - previous) / 1000.0f);
+  previous = folhaAgora;
+  // Keep text at its final width, pinned to the clock edge; never squeeze it.
+  corpoFolha(c.x + c.w - FOLHA_W, FOLHA_W, a * reveal, folhaAgora, 1);
 }
 static void stream_folha_desenharCorpo_(Uint32 agora) {
   if(anim<.005f) return;
@@ -6064,7 +6075,9 @@ static void stream_folha_desenharCorpo_(Uint32 agora) {
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,(vid?.30f:.42f)*anim);
     if (vid) gfx_vidro_folha(corpo,FOLHA_RAIO_IL/corpo.h,anim);
     else plrui_material_s(corpo,FOLHA_RAIO_IL,0,anim,1); }
+  GfxRecorteAnt clip = gfx_recorte_dentro(x,FOLHA_MARGEM,FOLHA_W,NV_TELA_H-2*FOLHA_MARGEM);
   corpoFolha(x, FOLHA_W, anim, agora, 0);
+  gfx_recorte_voltar(clip);
 }
 // `anim` aqui e o alfa do corpo (sombra a variavel da mola de proposito: na
 // ilha quem manda na opacidade e a forma, nao a mola da folha).
@@ -6157,7 +6170,7 @@ static void corpoCanais(float lx,float rw,float tx,float tr,float a,Uint32 agora
   }
   const char *nomes[]={i18n("Todos")};int contagem[]={s->n};
   plrui_seg(nomes,contagem,1,0,-1,tx,oy+FOLHA_ABAS_Y,a);
-  gfx_recorte(lx,FOLHA_TOPO,rw,areaLista());
+  GfxRecorteAnt clip = gfx_recorte_dentro(lx,FOLHA_TOPO,rw,areaLista());
   for(int i=0;i<s->n;i++) {
     GfxRect r={lx,FOLHA_TOPO+i*(FOLHA_LINHA_H+FOLHA_LINHA_GAP)-rolagem,rw,FOLHA_LINHA_H};
     if(r.y+r.h<FOLHA_TOPO || r.y>folhaBase)continue;
@@ -6178,7 +6191,7 @@ static void corpoCanais(float lx,float rw,float tx,float tr,float a,Uint32 agora
     const char *msg=s->buscando?"Buscando no guia…":"Nenhum canal encontrado para este evento";
     txt_desenhar_alpha(txt_linha_corta(TXT_BODY,i18n(msg),158,158,156,255,tr-tx),tx,FOLHA_TOPO+42,a);
   }
-  gfx_sem_recorte();
+  gfx_recorte_voltar(clip);
   if(s->buscando)plrui_anel(tx+12,folhaBase-20,20,1,agora,a);
   if(canaisAviso[0])txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,canaisAviso,158,158,156,255,tr-tx),tx,folhaBase+6,a);
 }
@@ -6192,7 +6205,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   GfxRect ilhaR={x,0,w,NV_TELA_H};
   ajustes_acento(&ar,&ag,&ab);
   ai=(int)(ar*255.0f+.5f);
-  if (folhaRelogio) ilhaR = (GfxRect){x, NV_ILHA_Y, w, folhaBase + (temServidor() ? FOLHA_SRV_PE : 0) + 16.0f - NV_ILHA_Y};
+  if (folhaRelogio) ilhaR = ilha_corpo_rect();
   else if (ilha) plrilha_rect(&ilhaR);
   int ptr = aberta && anim > .5f;
 #ifdef NV_TOUCH_UI
@@ -6362,11 +6375,11 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   melhor = melhorFolha = automaticoDaFolhaModo();
   montar(automatica);
   nf=nOrdem;
-  { float cy = FOLHA_TOPO - (rolagem > 1.0f ? 0.0f : 8.0f);   // scrolled: no sliver of a cut row above the first card
+  float clipY = FOLHA_TOPO - (rolagem > 1.0f ? 0.0f : 8.0f);
 #ifdef NV_SHOT_HOOKS
-    folhaRecorteY = cy;
+  folhaRecorteY = clipY;
 #endif
-    gfx_recorte(x,cy,w,folhaBase-cy); }
+  GfxRecorteAnt listClip = gfx_recorte_dentro(x,clipY,w,folhaBase-clipY);
   if (serverSectionN) {
     float y = FOLHA_TOPO + serverSectionY - rolagem;
     if (y + FOLHA_SEC_H >= FOLHA_TOPO - 8 && y <= NV_TELA_H) {
@@ -6401,8 +6414,13 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       txt_desenhar_alpha(l,tr-l.w,y+12,anim); }
     gfx_cor((GfxRect){lx,y+FOLHA_SEC_H-14,rw,1},0,1,1,1,.08f*anim);
   }
+  const float rowAlpha = anim;
+  int visibleRow = 0;
   for(int row=primeiraVisivel(rolagem-8);row<nf;row++) {
-    float y=FOLHA_TOPO+linhaTopo(row)-rolagem, h=linhaAltura(row), cy, colW, txtW;
+    float entry = !ilha || ajustes_animacoes_reduzidas() || gfx_efeitos_minimos() ? 1 :
+        anim_saida(anim_atraso(folhaEntrada, visibleRow++, 22, 160));
+    anim = rowAlpha * entry;
+    float y=FOLHA_TOPO+linhaTopo(row)-rolagem+12*(1-entry), h=linhaAltura(row), cy, colW, txtW;
     if (y>NV_TELA_H) break;
     int i=ordem[row], sel=grupo==1&&foco==row;
     const Stream *s=i>=0?&lista[i]:NULL;
@@ -6675,6 +6693,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
                                     : txt_linha_corta(TXT_PG_FIM,f2,c,c,c-2,255,tr-tx);
           txt_desenhar_alpha(l2,tx,fy+FOLHA_FIT_H,anim*a); } } } }
   }
+  anim = rowAlpha;
   // Top of the list: hard clip at the list top (gfx_recorte above). No dark
   // fade band under the tabs (owner: header shadow).
   // A FONTE DOS DADOS, como rodape da lista (era uma linha solta entre o
@@ -6725,9 +6744,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     txt_bloco(TXT_PG_FIM,s,196,199,204,tx,FOLHA_TOPO+20,rw-52,28,anim,3);
   }
   anim=animLista; lx-=dxLista; tx-=dxLista; tr-=dxLista;
-  // Na ilha, de volta ao recorte dela (plrilha corta a forma inteira).
-  if (ilha) gfx_recorte(ilhaR.x,ilhaR.y,ilhaR.w,ilhaR.h);
-  else gfx_sem_recorte();
+  gfx_recorte_voltar(listClip);
   if (temServidor()) {
     const char *keys[] = {"OK", "↓"};
     const char *labels[] = {i18n("Assistir"), i18n("Detalhes da fonte")};
