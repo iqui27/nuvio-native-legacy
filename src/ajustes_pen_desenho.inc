@@ -115,7 +115,7 @@ static void ajPenRows(void) {
       aj4Alvo((GfxRect){x,y,w,74},8,index);
     }
   }
-  if(ajPenPage==44)ajPenChip("Componentes",NULL,1300,112,180,0,12,4);
+  if(ajPenPage==44)ajPenChip("Componentes",NULL,1300,112,180,ajPenRow==99,12,4);
   if(ajPenPage==29)aj4Texto("A TV é quem reproduz. O Nuvio converte o que a TV não entende.",TXT_AJ_MINI14,226,908,748,.4f);
   ajPenRodape(ajPenPage==27 || ajPenPage==28?"Áudio e legendas":ajPenPage<27?page->title:page->section,ajPenPage>=29 && ajPenPage<46?AJ_PEN_PART[ajPenPage-29]:page->part,ajPenPage>=29 && ajPenPage<46?AJ_PEN_TOTAL[ajPenPage-29]:page->total);
 }

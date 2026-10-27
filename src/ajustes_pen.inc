@@ -138,18 +138,46 @@ static void ajPenFind(int op) {
 }
 static int ajPenEvent(SDL_Keycode key) {
   if(ajPenParentEvent(key))return 1;
-  if(ajPenPage==AJ_PEN_SOURCES) {
+  if(ajPenPage==AJ_PEN_SOURCES && !uxEditor && !aj4Util) {
     if(uxVoltar(key))ajPenOpen(29);
-    else if(key==SDLK_DOWN && ajPenRow+1<stream_n())ajPenRow++;
-    else if(key==SDLK_UP && ajPenRow>0)ajPenRow--;
-    else if(uxOk(key) && stream_escolher_indice(ajPenRow))sair=1;
+    else if(key==SDLK_LEFT)ajPenRow=-1;
+    else if(key==SDLK_RIGHT)ajPenRow=0;
+    else if(key==SDLK_DOWN) {
+      if(ajPenRow<0 && ajPenRow>-4)ajPenRow--;
+      else if(ajPenRow>=0 && ajPenRow+1<stream_n())ajPenRow++;
+    } else if(key==SDLK_UP) {
+      if(ajPenRow<-1)ajPenRow++;
+      else if(ajPenRow>0)ajPenRow--;
+    } else if(uxOk(key)) {
+      if(ajPenRow==-1)definirValorDireto(AJ_FONTE_MANUAL,!valor[AJ_FONTE_MANUAL]);
+      else if(ajPenRow==-4)ajPenSavedAsk();
+      else if(ajPenRow<0) { int op=ajPenRow==-2?AJ_FONTE_ORDEM_ADDON:AJ_FONTE_MANUAL;focarOpcao(op);uxAbrirEditor(op);if(ajPenRow==-3)uxRestaurar=1; }
+      else if(stream_escolher_indice(ajPenRow))sair=1;
+    }
     return 1;
   }
-  if(ajPenPage==AJ_PEN_COMPONENTS) {
+  if(ajPenPage==AJ_PEN_SECONDARY && !uxEditor && !aj4Util) {
+    if(key==SDLK_LEFT) { ajPenRow=5;return 1; }
+    if(key==SDLK_RIGHT) { ajPenRow=0;return 1; }
+    if(key==SDLK_DOWN && ajPenRow>=6) { if(ajPenRow<8)ajPenRow++;return 1; }
+    if(key==SDLK_UP && ajPenRow>=7) { ajPenRow--;return 1; }
+    if(uxOk(key) && ajPenRow>=7) {
+      if(ajPenRow==8)ajPenSavedAsk();
+      else { focarOpcao(AJ_LEG2_TAMANHO);uxAbrirEditor(AJ_LEG2_TAMANHO);uxRestaurar=1; }
+      return 1;
+    }
+  }
+  if(ajPenPage==AJ_PEN_COMPONENTS && !uxEditor && !aj4Util) {
     if(uxVoltar(key))ajPenOpen(44);
     else if(key==SDLK_DOWN || key==SDLK_RIGHT)ajPenRow=(ajPenRow+1)%4;
     else if(key==SDLK_UP || key==SDLK_LEFT)ajPenRow=(ajPenRow+3)%4;
     else if(uxOk(key)) { if(ajPenRow==0)aj4Buscar();else if(ajPenRow==1) { aj4Util=2;aj4Linha=0; }else if(ajPenRow==2)ajPenSavedAsk();else ajPenOpen(29); }
+    return 1;
+  }
+  if(ajPenPage==44 && key==SDLK_DOWN && ajPenRow==AJ_PEN_MAIN[15].cols[0].n+AJ_PEN_MAIN[15].cols[1].n-1) { ajPenRow=99;return 1; }
+  if(ajPenPage==44 && ajPenRow==99) {
+    if(uxVoltar(key) || key==SDLK_UP)ajPenRow=AJ_PEN_MAIN[15].cols[0].n+AJ_PEN_MAIN[15].cols[1].n-1;
+    else if(uxOk(key))ajPenOpen(AJ_PEN_COMPONENTS);
     return 1;
   }
   if(ajPenPage==44 && key==SDLK_c) { ajPenOpen(AJ_PEN_COMPONENTS);return 1; }
@@ -217,6 +245,7 @@ static int ajPenEvent(SDL_Keycode key) {
       if(ajPenRow==2) { ajPenOpen(38);return 1; }
       if(ajPenRow==4) { ajPenOpen(28);return 1; }
       if(ajPenRow==6) { ajPenOpen(AJ_PEN_PARENTAL);return 1; }
+      if(ajPenRow==5) { ajPenOpen(AJ_PEN_SECONDARY);return 1; }
       if(ajPenRow==7) { ajPenOpen(40);return 1; }
     }
     if(!ajOpcaoDisponivel(op))return 1;

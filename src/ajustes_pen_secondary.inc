@@ -32,7 +32,7 @@ static void ajPenSecondary(void) {
     aj4Alvo((GfxRect){770,y,1028,70},8,i);
   }
   aj4Texto("A segunda legenda aparece por cima, sem empurrar a principal.",TXT_AJ_MINI14,770,944,1028,.4f);
-  ajPenChip("Voltar ao padrão","aj_rotate-ccw-clock",226,902,206,0,13,0);
-  ajPenChip("Salvar como preset","aj_check",444,902,230,0,9,2);
+  ajPenChip("Voltar ao padrão","aj_rotate-ccw-clock",226,902,206,ajPenRow==7,13,0);
+  ajPenChip("Salvar como preset","aj_check",444,902,230,ajPenRow==8,9,2);
   ajPenRodape("Áudio e legendas",3,3);
 }

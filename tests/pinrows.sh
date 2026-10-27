@@ -37,7 +37,7 @@ flags=(-O1 -g -Isrc -Itests -I"$work" -pthread
   -Wno-deprecated-declarations -Wno-unused-function)
 gc=(-Wl,--gc-sections)
 if [ "$(uname -s)" = Darwin ]; then gc=(-Wl,-dead_strip); fi
-cc "${flags[@]}" tests/pinrows.c src/perfis.c src/jsw.c src/homeestado.c src/catalogo.c \
+cc "${flags[@]}" tests/pinrows.c src/perfis.c src/admin.c src/jsw.c src/homeestado.c src/catalogo.c \
   src/progresso.c src/cwordem.c src/cotacat.c src/js.c src/metaprov.c src/colecoes.c \
   src/redeurl.c src/catordem.c "${gc[@]}" -o "$work/test"
 result=0

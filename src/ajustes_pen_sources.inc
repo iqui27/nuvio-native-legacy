@@ -11,7 +11,7 @@ static void ajPenSources(void) {
   static const char *const body[]={"A TV mostra as fontes e você escolhe com o D-pad.","Por qualidade ou na ordem em que o addon montou.","O Nuvio confere a fonte e avisa antes de trocar."};
   for(int i=0;i<3;i++) {
     float y=i==0?400:i==1?584:738;
-    ajNeutro((GfxRect){226,y,468,i?140:170},22,.05f,.10f,.11f,.13f,1);
+    ajNeutro((GfxRect){226,y,468,i?140:170},22,ajPenRow==-1-i?.14f:.05f,.10f,.11f,.13f,1);
     aj4Texto(heads[i],TXT_G21B,248,y+20,422,1);ajBloco(TXT_G18R,body[i],248,y+54,422,22,.58f,3);
     if(i==0)ajPenChip(lig(AJ_FONTE_MANUAL)?"Ligado":"Desligado",NULL,248,506,160,0,15,0);
     if(i==1) { aj4Texto(textoValor(AJ_FONTE_ORDEM_ADDON),TXT_G18R,248,y+100,420,.58f);aj4Alvo((GfxRect){226,y,468,140},15,1); }
@@ -28,8 +28,8 @@ static void ajPenSources(void) {
     aj4Alvo((GfxRect){770,y,1028,70},8,i);
   }
   if(!n)aj4Texto("Abra um título para ver as fontes disponíveis.",TXT_G21B,770,430,1028,.58f);
-  ajPenChip("Voltar ao padrão","aj_rotate-ccw-clock",226,902,206,0,15,2);
-  ajPenChip("Salvar como preset","aj_check",444,902,230,0,9,2);
+  ajPenChip("Voltar ao padrão","aj_rotate-ccw-clock",226,902,206,ajPenRow==-3,15,2);
+  ajPenChip("Salvar como preset","aj_check",444,902,230,ajPenRow==-4,9,2);
   aj4Texto("Cada linha é uma fonte. O Nuvio nunca troca sozinho quando você escolheu na mão.",TXT_AJ_MINI14,770,944,1028,.4f);
   ajPenRodape("Reprodução",2,5);
 }

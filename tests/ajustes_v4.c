@@ -104,6 +104,16 @@ int main(void) {
   assert(perfil_regra_tempo(0));
   assert(perfil_infantil_definir(1,0) && !perfil_regra_tempo(0));
   perfil_regras_esquecer();aj4Iniciar();ajPenPage=-1;focoIndice=1;
+  // Special pages preserve editors and expose left-panel actions to the D-pad.
+  ajPenOpen(AJ_PEN_SECONDARY);key(SDLK_LEFT);assert(ajPenRow==5);
+  key(SDLK_DOWN);assert(ajPenRow==6);key(SDLK_RETURN);assert(uxEditor && uxOp==AJ_LEG2_POS);key(SDLK_ESCAPE);
+  key(SDLK_DOWN);assert(ajPenRow==7);key(SDLK_UP);assert(ajPenRow==6);
+  ajPenOpen(AJ_PEN_SOURCES);key(SDLK_LEFT);assert(ajPenRow==-1);
+  key(SDLK_DOWN);key(SDLK_RETURN);assert(uxEditor && uxOp==AJ_FONTE_ORDEM_ADDON);key(SDLK_ESCAPE);
+  key(SDLK_ESCAPE);assert(ajPenPage==29);
+  ajPenOpen(44);ajPenRow=11;key(SDLK_DOWN);assert(ajPenRow==99);
+  key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_COMPONENTS);key(SDLK_ESCAPE);assert(ajPenPage==44);
+  aj4Iniciar();focoIndice=1;
   // APS-9: invalid IDs, absent routes and corrupt compiled sections are bounded.
   assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO);
   assert(AJ_HERO_TAMANHO + 1 == AJ_DET_TOPO && AJ_DET_TOPO + 1 == AJ_DET_ELENCO_VISTO);
