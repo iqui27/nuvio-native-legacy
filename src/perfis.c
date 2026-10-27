@@ -441,6 +441,7 @@ void perfis_teste_definir(const char *const *nomes, const int *pin, int quantos,
     snprintf(lista[i].nome, sizeof lista[i].nome, "%s", nomes[i]);
     lista[i].primario = i == 0;
     lista[i].temPin = pin ? pin[i] : 0;
+    if(getenv("NUVIO_AJ_QUADROS"))snprintf(lista[i].corHex,sizeof lista[i].corHex,"#7B55FF");
   }
   ativo = ativo_;
 }

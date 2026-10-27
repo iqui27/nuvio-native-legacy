@@ -7904,7 +7904,7 @@ void app_desenhar(Uint32 agora) {
   if (!registro_aberto() && !player_aberto() && sessao_logada() &&
       tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL) {
     ilha_relogio_visivel(relogioCabe() && ajustes_relogio_ligado());
-    ilha_posicionar(detail_tem_servidores() || tela==TELA_AJUSTES ? 2 : 1);
+    ilha_posicionar(tela==TELA_AJUSTES?3:detail_tem_servidores()?2:1);
     // O painel de Salvos que nasceu da pilula recolhe para ela (o retangulo
     // do quadro anterior) e, enquanto esta na tela, a cobre.
     { float ix = 0, iy = 0, iw = 0, ih = 0;

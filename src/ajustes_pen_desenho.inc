@@ -3,9 +3,10 @@
 #include "ajustes_pen_cabecalhos.inc"
 static void ajPenPanel(float x,float y,float w,float h,int focus) {
   GfxRect r={x,y,w,h};float radius=w==88?44:28;
+  if(focus)gfx_rect((GfxRect){x-10,y+2,w+20,h+26},0,GFX_SOMBRA,1,0,0,.5f,0,0,0,.30f);
   if(ajVid()) gfx_vidro_miolo(r,radius/h,.055f,.059f,.071f,.80f,1);
   else gfx_cor(r,radius/h,.045f,.047f,.058f,.96f);
-  if(focus)ajNeutro(r,radius,.14f,.169f,.176f,.204f,1);
+  if(focus)ajNeutro(r,radius,.14f,.125f,.133f,.153f,1);
 }
 static void ajPenChip(const char *s,const char *ic,float x,float y,float w,int focus,int zone,int row) {
   GfxRect r={x,y,w,52};
@@ -60,16 +61,17 @@ static void ajPenRodape(const char *page,int part,int total) {
   float backX=ajPenPage==AJ_PEN_COMPONENTS?350:choosing?317:289;
   ajNeutro((GfxRect){backX,1024,29,26},7,.07f,.14f,.15f,.17f,1);
   ajIcone("aj_arrow-left",backX+8,1031,14,.8f);
-  const char *back=ajPenPage==AJ_PEN_SOURCES?"Reprodução":uxEditor?(ajPenPage==27 || ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":uxOp==AJ_TEMA || uxOp==AJ_ESCALA_TEXTO?"Minha tela":"Reprodução"):ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
+  const char *back=ajPenPage==AJ_PEN_SOURCES?"Reprodução":uxEditor?(ajPenPage==27 || ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":uxOp==AJ_TEMA || uxOp==AJ_ESCALA_TEXTO?"Minha tela":ajPenContext()):ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
   char backText[160];snprintf(backText,sizeof backText,i18n("voltar para %s"),i18n(back));
   aj4Texto(focoIndice || ajPenPage==AJ_PEN_COMPONENTS?"voltar":backText,TXT_AJ_MINI14,backX+39,1029,400,.45f);
   char text[200];
   if((ajPenPage>=0 && ajPenPage<27) || ajPenPage==AJ_PEN_COMPONENTS)snprintf(text,sizeof text,"%s",i18n(page));
   else snprintf(text,sizeof text,i18n("%s · %d de %d"),i18n(page),part,total);
   TxtLinha t=ajTxt(TXT_AJ_MINI14,text);txt_desenhar_alpha(t,1824-t.w,1029,.45f);
-  aj4Texto("navegar",TXT_AJ_MINI14,1720-t.w,1029,90,.45f);
+  TxtLinha nav=ajTxt(TXT_AJ_MINI14,"navegar");float navX=1824-t.w-22-nav.w;
+  txt_desenhar_alpha(nav,navX,1029,.45f);
   for(int i=0;i<2;i++) {
-    float x=1610-t.w+i*44;
+    float x=navX-110+i*44;
     ajNeutro((GfxRect){x,1024,28,26},7,.07f,.14f,.15f,.17f,1);
     ajIcone(i?"aj_arrow-down":"aj_arrow-up",x+6,1030,16,.65f);
   }
@@ -78,7 +80,7 @@ static void ajPenRows(void) {
   const AjPenPage *page=ajPenCurrent();
   if(!page)return;
   ajPenBase();
-  const char *back=ajPenPage==28?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
+  const char *back=ajPenPage==28 || ajPenPage==AJ_PEN_SECONDARY?"Áudio e legendas":ajPenPage>=29 && ajPenPage<46?AJ_PEN_BACK[ajPenPage-29]:"Ajustes";
   ajPenChip(back,"pl_chevron-left",200,112,!strcmp(back,"Ajustes")?124:!strcmp(back,"Minha tela")?150:!strcmp(back,"Reprodução")?164:208,0,5,0);
   ajKicker(ajPenPage<27?"AJUSTES AVANÇADOS":!strcmp(back,"Ajustes")?"AJUSTES":back,200,198,1);
   aj4Texto(page->title,TXT_TITULO2,200,212,1500,1);
@@ -99,9 +101,12 @@ static void ajPenRows(void) {
     for(int i=0;i<column->n;i++,index++) {
       const AjPenRow *row=&column->rows[i];float x=column->x+26,y=400+i*(ajPenPage<27 || ajPenPage>=46?82:84),w=column->w-52;
       int focus=index==ajPenRow && aj4Topo<0;
+      int transform=focus && !gfx_transformado();
+      if(transform)gfx_transformar(x+w*.5f,y+37,1.015f,0,0);
       if(focus) {
         if(ajPenFocusPage!=ajPenPage || ajustes_animacoes_reduzidas()) { ajPenFocusY=y;ajPenFocusV=0;ajPenFocusPage=ajPenPage; }
         ajPenFocusY=anim_mola2(&ajPenFocusV,ajPenFocusY,y,ajPenDt,24);
+        gfx_rect((GfxRect){x-10,ajPenFocusY+2,w+20,100},0,GFX_SOMBRA,1,0,0,.5f,0,0,0,.30f);
         ajNeutro((GfxRect){x,ajPenFocusY,w,74},20,.14f,.169f,.176f,.204f,1);
       }
       ajIcone(row->icon,x+20,y+24,26,focus?1:.75f);
@@ -117,23 +122,31 @@ static void ajPenRows(void) {
         gfx_cor((GfxRect){x+w-86+(on?28:0),y+23,28,28},.5f,1,1,1,1);
       } else {
         char val[160];snprintf(val,sizeof val,"%s",row->op>=0?textoValor(row->op):row->op==-3?i18n(admin_perfil_pin_definido(perfis_ativo())?"PIN definido":"Definir um PIN"):row->op==-4?i18n("Livre e até 10 anos"):i18n("Ainda não disponível."));
+        if(ajPenPage==38 && (row->op==AJ_FALHA_PROVEDORES || row->op==AJ_FALHA_ADDONS))snprintf(val,sizeof val,i18n(row->op==AJ_FALHA_PROVEDORES?"%d provedores":"%d addons"),ajPenFailures(row->op==AJ_FALHA_PROVEDORES));
         if(ajPenPage==36 && row->op==AJ_DET_META_EXT) {
           int count=0;for(int op=AJ_TMDB_ARTE;op<=AJ_TMDB_CW;op++)if(lig(op))count++;
           snprintf(val,sizeof val,i18n("%d ajustes"),count);
         }
         if(row->op<=-10 && row->op>=-13)ajPenParentText(-10-row->op,perfil_regra(perfis_ativo(),-10-row->op),val,sizeof val);
         if(row->op==-4)ajPenParentText(PR_FILMES,perfil_regra(perfis_ativo(),PR_FILMES),val,sizeof val);
+        if(ajPenPage==28 && row->op==AJ_LEG1_RESTAURAR)val[0]=0;
         if(ajPenPage==28 && row->op==AJ_LEG1_ATRASO && i==5)snprintf(val,sizeof val,i18n("%+.3f s"),uxValorAtual(row->op)/1000.0);
         float valueWidth=w>1000?300:200;
         TxtLinha t=ajTxtC(TXT_PEN_VALUE,val,valueWidth);txt_desenhar_alpha(t,x+w-52-t.w,y+24,.58f);
         ajIcone("aj_chevron-right",x+w-44,y+28,18,.45f);
       }
+      if(transform)gfx_sem_transformar();
       aj4Alvo((GfxRect){x,y,w,74},8,index);
     }
   }
   if(ajPenPage==44)ajPenChip("Componentes",NULL,1300,112,180,ajPenRow==99,12,4);
   if(ajPenPage==29)aj4Texto("A TV é quem reproduz. O Nuvio converte o que a TV não entende.",TXT_AJ_MINI14,226,908,748,.4f);
   ajPenRodape(ajPenPage==27 || ajPenPage==28?"Áudio e legendas":ajPenPage<27?page->title:page->section,ajPenPage>=29 && ajPenPage<46?AJ_PEN_PART[ajPenPage-29]:page->part,ajPenPage>=29 && ajPenPage<46?AJ_PEN_TOTAL[ajPenPage-29]:page->total);
+}
+static int ajPenChannels(void) {
+  int total=0;GuiaFonteSaude source;
+  for(int i=0;guia_fonte_saude(i,&source);i++)total+=source.canais;
+  return total;
 }
 static void ajPenHome(void) {
   static const char *const names[]={"Reproduzir","Áudio e legendas","Minha tela","Perfil e serviços"};
@@ -163,9 +176,10 @@ static void ajPenHome(void) {
     if(i==3)snprintf(value,sizeof value,"%s",pfNome(perfis_ativo()));
     if(av) {
       char second[100];
-      if(i==0) { snprintf(second,sizeof second,"%s",textoValor(AJ_DV));snprintf(value,sizeof value,i18n("%s · Dolby Vision %s"),textoValor(AJ_QUALIDADE),second); }
-      else if(i==1) { snprintf(second,sizeof second,"%s",textoValor(AJ_ATMOS));snprintf(value,sizeof value,i18n("%s · Dolby Atmos %s"),textoValor(AJ_AUD_LINGUA),second); }
+      if(i==0)snprintf(value,sizeof value,i18n("%s · DV %s"),textoValor(AJ_QUALIDADE),i18n(lig(AJ_DV)?"ligado":"desligado"));
+      else if(i==1) { const char *code=ling_opcao_codigo(uxValorAtual(AJ_AUD_LINGUA));snprintf(value,sizeof value,i18n("%s · %s"),!strcmp(code,"pt")?"pt-BR":code,lig(AJ_ATMOS)?"Dolby Atmos":i18n("Estéreo")); }
       else if(i==2) { snprintf(second,sizeof second,"%s",textoValor(AJ_ESCALA_TEXTO));snprintf(value,sizeof value,i18n("%s · %s"),textoValor(AJ_HOME_LAYOUT),second); }
+      else snprintf(value,sizeof value,i18n("%s · %d canais"),pfNome(perfis_ativo()),ajPenChannels());
     }
     int changed=0;for(int op=0;op<AJ_N;op++)if(aj4Simples(op)==i+1 && uxDiferente(op))changed++;
     if(av)ajBloco(TXT_G18M,value,x+96,519,changed?194:260,21,1,2);
@@ -189,7 +203,7 @@ static void ajPenHome(void) {
     aj4Texto(help[i],TXT_AJ_MINI14,x+58,y+42,460,.4f);
     aj4Alvo((GfxRect){x,y,544,78},1,row);
   }
-  char val[160];snprintf(val,sizeof val,"%s",textoValor(AJ_IPTV_CONTA));
+  char val[160];snprintf(val,sizeof val,i18n("%s · %d canais"),textoValor(AJ_IPTV_CONTA),ajPenChannels());
   aj4Texto(val,TXT_G18R,828,689,230,.55f);
   snprintf(val,sizeof val,"%s",textoValor(AJ_GPU_EFEITOS));
   aj4Texto(val,TXT_G18R,828,781,230,.55f);
