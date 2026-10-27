@@ -72,7 +72,7 @@ static void roomResult(int expected) {
 }
 int main(void) {
   assert(traktauth_carregar()); // Valid at load, rejected during this session.
-  juntos_preparar("ttauth", 0, 0, "Film", "", NULL, 0, 0);
+  juntos_preparar("tt123", 0, 0, "Film", "", NULL, 0, 0);
   abrirPedido = 0; prepared = 1;
   juntos_passo(40000);
   roomResult(401);

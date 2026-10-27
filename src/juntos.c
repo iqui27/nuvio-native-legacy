@@ -143,7 +143,7 @@ static Uint32 caiuEm, proxConexao, atrasoConexao;
 static int pedindoBilhete;
 // anfitriao preparado
 static struct {
-  char imdb[24], titulo[160], poster[512];
+  char imdb[24], ep[24], titulo[160], poster[512];
   int t, e, soAnf, n, enviados;   // enviados: already in the POST /v1/sala body
   char conv[JUNTOS_CONVIDADOS_MAX][96];
 } prep;
@@ -282,7 +282,10 @@ static void lerEnderecos(const char *t) {
 }
 
 static void criarSala(void) {
-  char corpo[4096], imp[1024], ep[48], tit[340], pos[400], conv[1400];
+  // Each input byte can expand to six JSON bytes (\\u00xx), plus delimiters.
+  char imp[2048], tit[sizeof prep.titulo * 6 + 8], pos[sizeof prep.poster * 6 + 8];
+  char conv[sizeof prep.conv * 6 + JUNTOS_CONVIDADOS_MAX * 3 + 8];
+  char corpo[sizeof imp + sizeof tit + sizeof pos + sizeof conv + 256];
   int i, k = 0;
   const Stream *s = stream_item(stream_atual());
   JsImpressao ii;
@@ -292,20 +295,30 @@ static void criarSala(void) {
   if (!s) { desconhecida.fileIdx = -1; s = &desconhecida; }
   jsf_impressao(s, video_duracao(), &ii);
   impSala = ii;
-  jsp_impressao(imp, sizeof imp, &ii);
-  if (prep.t > 0 && prep.e > 0) snprintf(ep, sizeof ep, "%s:%d:%d", prep.imdb, prep.t, prep.e);
-  else snprintf(ep, sizeof ep, "%s", prep.imdb);
+  if (jsp_impressao(imp, sizeof imp, &ii) < 0) {
+    juntosui_erro("json invalido");
+    return;
+  }
   conv[0] = 0;
   for (i = 0; i < prep.n; i++) {
-    char e[200];
+    char e[sizeof prep.conv[0] * 6 + 8];
     k += snprintf(conv + k, sizeof conv - (size_t)k, "%s\"%s\"", i ? "," : "", jsp_esc(e, sizeof e, prep.conv[i]));
-    if ((size_t)k >= sizeof conv) break;
+    if (k < 0 || (size_t)k >= sizeof conv) {
+      juntosui_erro("json invalido");
+      return;
+    }
   }
   jsp_esc(tit, sizeof tit, prep.titulo);
   jsp_esc(pos, sizeof pos, prep.poster);
-  snprintf(corpo, sizeof corpo,
+  double p = video_pos();
+  int len = snprintf(corpo, sizeof corpo,
            "{\"ep\":\"%s\",\"titulo\":\"%s\",\"poster\":\"%s\",\"imp\":%s,\"controle\":\"%s\",\"pos\":%.1f,\"convidados\":[%s]}",
-           ep, tit, pos, imp, prep.soAnf ? "anfitriao" : "todos", video_pos(), conv);
+           prep.ep, tit, pos, imp, prep.soAnf ? "anfitriao" : "todos",
+           isfinite(p) ? fmax(0, fmin(86400, p)) : 0, conv);
+  if (len < 0 || (size_t)len >= sizeof corpo) {
+    juntosui_erro("json invalido");
+    return;
+  }
   snprintf(tituloSala, sizeof tituloSala, "%s", prep.titulo);
   fase = JF_CRIANDO;
   prep.enviados = prep.n;
@@ -317,8 +330,27 @@ void juntos_preparar(const char *imdb, int t, int e, const char *titulo, const c
                      const char *const *conv, int n, int soAnf) {
   int i;
   if (!juntos_disponivel() || juntos_ativo()) return;
+  // Validate before copying: never turn a truncated or foreign ID into an IMDb ID.
+  const char *id = imdb ? imdb : "";
+  size_t digits = !strncmp(id, "tt", 2) ? strspn(id + 2, "0123456789") : 0;
+  const char *suffix = digits ? id + 2 + digits : id;
+  int st = 0, se = 0;
+  if (*suffix == ':') {
+    size_t nt = strspn(suffix + 1, "0123456789");
+    const char *next = suffix + 1 + nt;
+    size_t ne = *next == ':' ? strspn(next + 1, "0123456789") : 0;
+    if (!nt || nt > 4 || !ne || ne > 5 || next[1 + ne]) digits = 0;
+    else sscanf(suffix + 1, "%d:%d", &st, &se);
+  } else if (*suffix) digits = 0;
+  if (!digits || digits > 10 || t < 0 || t > 9999 || e < 0 || e > 99999 || (t > 0 && !e)) {
+    juntosui_erro("ep invalido");
+    return;
+  }
+  if (!t && !e && *suffix) { t = st; e = se; }
   memset(&prep, 0, sizeof prep);
-  snprintf(prep.imdb, sizeof prep.imdb, "%s", imdb ? imdb : "");
+  snprintf(prep.imdb, sizeof prep.imdb, "%.*s", (int)(digits + 2), id);
+  if (e > 0 || *suffix) snprintf(prep.ep, sizeof prep.ep, "%s:%d:%d", prep.imdb, t, e);
+  else snprintf(prep.ep, sizeof prep.ep, "%s", prep.imdb);
   snprintf(prep.titulo, sizeof prep.titulo, "%s", titulo ? titulo : "");
   snprintf(prep.poster, sizeof prep.poster, "%s", poster ? poster : "");
   prep.t = t; prep.e = e; prep.soAnf = soAnf;
@@ -330,8 +362,7 @@ void juntos_preparar(const char *imdb, int t, int e, const char *titulo, const c
   abrirT = t; abrirE = e; abrirPedido = 1;
   snprintf(tituloSala, sizeof tituloSala, "%s", prep.titulo);
   iniciarMotor();
-  if (t > 0 && e > 0) snprintf(motor.sala.ep, sizeof motor.sala.ep, "%s:%d:%d", prep.imdb, t, e);
-  else snprintf(motor.sala.ep, sizeof motor.sala.ep, "%s", prep.imdb);
+  snprintf(motor.sala.ep, sizeof motor.sala.ep, "%s", prep.ep);
   snprintf(motor.sala.titulo, sizeof motor.sala.titulo, "%s", prep.titulo);
   snprintf(motor.sala.poster, sizeof motor.sala.poster, "%s", prep.poster);
   motor.sala.n = 1;
@@ -506,9 +537,17 @@ static void resposta(Resp *r) {
   switch (r->tipo) {
     case OP_CRIAR:
       if (!ok) {
-        printf("[juntos] criar sala falhou (%d)\n", r->status);
+        char erro[64] = "";
+        if (r->txt) js_texto(r->txt, NULL, "erro", erro, sizeof erro);
+        // Only server-defined reasons: never echo arbitrary response text or credentials.
+        const char *motivo = NULL;
+        const char *seguros[] = {"ep invalido", "json invalido", "limite", "infantil",
+          "juntos indisponivel", "tente de novo"};
+        for (size_t i = 0; i < sizeof seguros / sizeof *seguros; i++)
+          if (!strcmp(erro, seguros[i])) motivo = seguros[i];
+        printf("[juntos] criar sala falhou (%d%s%s)\n", r->status, motivo ? ": " : "", motivo ? motivo : "");
         salaFalhou = r->status == -1 || r->status == 401 || r->status == 403 ? 2 : 1;
-        juntosui_erro(salaFalhou == 2 ? "auth" : r->status == 429 ? "limite" : "rede");
+        juntosui_erro(motivo ? motivo : salaFalhou == 2 ? "auth" : r->status == 429 ? "limite" : "rede");
         repetirSalaEm = agoraPasso + 10000u; // Retain solo Start while auth/network recovers.
         fase = JF_PREPARADO;
         break;
