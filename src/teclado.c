@@ -1403,7 +1403,7 @@ static void teDesenhar(Uint32 agora) {
       y += TE_CY;
     } else {
       GfxRect campo = { x, y, ew, 76.0f };
-      float tx = campo.x + 24.0f, cursorX = tx, larg;
+      float tx = campo.x + 24.0f, cursorX = tx + 5.0f, larg;
       char q[48];
       TxtLinha lq;
       teNeutro(campo, 24, 0.07f, 0.125f, 0.129f, 0.153f, a);
@@ -1449,10 +1449,10 @@ static void teDesenhar(Uint32 agora) {
         gfx_recorte(tx, campo.y, larg, campo.h);
         txt_desenhar_alpha(t, tx - ox, campo.y + (campo.h - t.h) * 0.5f, a);
         gfx_sem_recorte();
-        cursorX = tx + ((pw >= 0.0f ? pw : (float)t.w) - ox);
+        // No vao entre as letras quando o cursor esta no meio do texto.
+        cursorX = tx - ox + (pw >= 0.0f ? pw + 1.0f : (float)t.w + 5.0f);
       }
-      { float op = ajustes_animacoes_reduzidas() ? 0.95f : (((agora / 500) % 2) ? 0.35f : 0.95f);
-        gfx_cor((GfxRect){ cursorX + 3.0f, campo.y + 20.0f, 2.0f, 36.0f }, 0.5f, ar, ag, ab, op * a); }
+      ajustes_ui_cursor(cursorX, campo.y + 38.0f, 36.0f, agora, a);
       y += 76.0f;
     } }
   // MODOS: teclado da TV, falar e celular, num segmentado (o que existir).
