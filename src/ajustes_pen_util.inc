@@ -10,7 +10,7 @@ static void ajPenUtility(void) {
   if(search) { ajPenPanel(200,344,1624,84,0);ajPenPanel(200,452,1624,532,0); }
   else ajPenPanel(200,344,1624,640,0);
   if(search) {
-    ajIcone("aj_search",226,370,24,.65f);aj4Texto(aj4Consulta[0]?aj4Consulta:"Buscar ajuste",TXT_G21B,266,370,1260,1);
+    ajIcone("aj_search",226,370,24,.65f);aj4Texto(aj4Consulta[0]?aj4Consulta:"Buscar ajuste",TXT_G28B,266,370,1260,1);
     aj4Alvo((GfxRect){200,344,1624,84},10,0);
     char count[100];snprintf(count,sizeof count,i18n("%d ajustes encontrados"),n);
     aj4Texto(count,TXT_G18R,1570,377,230,.4f);
@@ -29,12 +29,13 @@ static void ajPenUtility(void) {
       const AjPenPage *page=p<29?&AJ_PEN_AUDIO[p-27]:&AJ_PEN_MAIN[p-29];
       for(int c=0;c<2;c++)for(int r=0;r<page->cols[c].n;r++)if(page->cols[c].rows[r].op==op) { designed=&page->cols[c].rows[r];break; }
     }
-    ajIcone(designed?designed->icon:search?aj4Resultados[i].icone:"aj_rotate-ccw-clock",246,y+24,26,.75f);
-    aj4Texto(designed?designed->title:aj4Rotulo(op),TXT_G21B,288,y+13,1010,1);
+    int group=search?ajPenSearchGroup(op):-1;
+    ajIcone(group>=0?aj4Resultados[i].icone:designed?designed->icon:search?aj4Resultados[i].icone:"aj_rotate-ccw-clock",246,y+24,26,.75f);
+    aj4Texto(group>=0?AJ_PEN_SEARCH_TITLES[group]:designed?designed->title:aj4Rotulo(op),TXT_G21B,288,y+13,1010,1);
     const char *path=search?aj4Resultados[i].caminho:uxCaminho(op);
     aj4Texto(path,TXT_AJ_MINI14,288,y+42,1010,.4f);
     char value[350],current[160],standard[160];uxValorTexto(op,uxValorAtual(op),current,sizeof current);
-    if(search)snprintf(value,sizeof value,"%s",current);
+    if(search)snprintf(value,sizeof value,"%s",group==1?textoValor(AJ_LEG1_TAMANHO):current);
     else { uxValorTexto(op,uxValorPadrao(op),standard,sizeof standard);snprintf(value,sizeof value,"%s → %s",standard,current); }
     TxtLinha t;
     if(!search) { float r,g,b;ajustes_acento(&r,&g,&b);t=txt_linha_corta(TXT_G18R,value,r*255,g*255,b*255,255,450); }

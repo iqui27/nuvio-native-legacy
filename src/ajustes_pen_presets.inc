@@ -5,7 +5,7 @@ static void ajPenPresets(void) {
   aj4Texto("Combos de ajustes prontos. Salve o seu e use quando quiser.",TXT_G20M,200,291,1520,.58f);
   ajPenPanel(200,344,1040,640,0);ajPenPanel(1264,344,560,640,0);
   ajKicker("PRESETS PRONTOS",226,366,1);ajKicker("SEUS PRESETS",1290,366,1);
-  static const char *const desc[]={"Qualidade automática, áudio estéreo e legendas grandes","Sincronia ligada e atraso do áudio zerado","Sem spoiler, com o elenco e o trailer no destaque","Rádio e música: sem cartaz e sem trailer"};
+  static const char *const desc[]={"Qualidade automática, áudio estéreo e legendas grandes","Sincronia ligada e volume normalizado","Sem spoiler, com o elenco e o trailer no destaque","Rádio e música: sem cartaz e sem trailer"};
   static const char *const icons[]={"aj_sparkles","aj_volume-2","aj_clapperboard","aj_radio"};
   for(int i=0;i<4;i++) {
     float y=400+i*84;
@@ -29,6 +29,6 @@ static void ajPenPresets(void) {
   aj4Texto("Salvar o estado atual",TXT_G21B,1312,618,460,1);
   ajBloco(TXT_G18R,"A qualidade, o idioma e o estilo de hoje viram um preset novo.",1312,650,460,24,.58f,2);
   ajPenChip("Salvar preset","aj_plus",1312,704,177,aj4Linha==4+ajPenSavedCount,1,4+ajPenSavedCount);
-  aj4Texto("O preset vale nesta TV e neste perfil.",TXT_AJ_MINI14,1290,930,508,.4f);
+  aj4Texto("O preset vale nesta TV e vai para a conta.",TXT_AJ_MINI14,1290,930,508,.4f);
   ajPenRodape("Presets",3,3);
 }

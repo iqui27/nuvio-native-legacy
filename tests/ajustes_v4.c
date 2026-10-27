@@ -1,6 +1,8 @@
 // V4 navigation and persistence contract, isolated from real profiles/accounts.
 #include "../src/ajustes.c"
 #include "nvtmp.h"
+#include "../src/audionorm.h"
+#include "../src/audioescolha.h"
 #include <assert.h>
 #include <unistd.h>
 
@@ -74,6 +76,13 @@ int main(void) {
   ajPenSavedProfile=0;ajPenSavedLoad();
   assert(ajPenSavedCount==1 && !strcmp(ajPenSavedNames[0],"Friday movie"));
   assert(ajPenSavedValues[0][AJ_DEBRID_RD]<0);
+  char *presetBlob=NULL;assert(ajustes_mesclar_blob("{}",&presetBlob)>0 && presetBlob);
+  assert(strstr(presetBlob,"store4"));
+  char presetFile[128];ajustesArquivoSync(4,presetFile,sizeof presetFile);
+  unsigned long long presetHash=ajustes_sync_hash();assert(dados_gravar(presetFile,""));
+  assert(ajustes_sync_hash()!=presetHash);
+  assert(ajustesExtrasAplicar(presetBlob,"{}")>0);free(presetBlob);
+  ajPenSavedLoad();assert(ajPenSavedCount==1 && !strcmp(ajPenSavedNames[0],"Friday movie"));
   valor[AJ_QUALIDADE]=3;
   assert(ajPenSavedPrepare(0)>0 && aj4Aplicar());
   assert(valor[AJ_QUALIDADE]==2 && aj4Desfazer() && valor[AJ_QUALIDADE]==3);
@@ -86,6 +95,10 @@ int main(void) {
   int fineBefore=uxPendente;key(SDLK_RIGHT);assert(uxPendente==fineBefore+1);key(SDLK_ESCAPE);
   key(SDLK_ESCAPE);assert(ajPenPage==27);
   ajPenOpen(34);key(SDLK_ESCAPE);assert(ajPenPage==33);
+  ajPenPresetPrepare(1);assert(aj4Aplicar() && ajustes_audio_normalizar());assert(aj4Desfazer());
+  float quiet=1,loud=1;for(int i=0;i<100;i++) { quiet=audionorm_gain(.01,100,quiet,1000);loud=audionorm_gain(64,100,loud,1000); }
+  assert(quiet>3.9f && loud<.26f && audionorm_sample(1,quiet)==1);
+  assert(audionorm_gain(0,100,1,1000)==1);
   // Local PINs gate profile entry and fail closed on a wrong PIN.
   assert(dados_gravar("perfis.txt","1\t0\t1\t0\t336699\tTest profile\t\t\n"));
   perfis_carregar_ativo();
@@ -134,7 +147,7 @@ int main(void) {
   // APS-9: invalid IDs, absent routes and corrupt compiled sections are bounded.
   assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO);
   assert(AJ_HERO_TAMANHO + 1 == AJ_DET_TOPO && AJ_DET_TOPO + 1 == AJ_DET_ELENCO_VISTO);
-  assert(AJ_DET_ELENCO_VISTO + 1 == AJ_GUIA_PREVIA_GRANDE && AJ_GUIA_PREVIA_GRANDE + 1 == AJ_N);
+  assert(AJ_DET_ELENCO_VISTO + 1 == AJ_GUIA_PREVIA_GRANDE && AJ_GUIA_PREVIA_GRANDE + 1 == AJ_AUD_ORIGINAL && AJ_AUD_ORIGINAL + 1 == AJ_AUDIO_NORMALIZAR && AJ_AUDIO_NORMALIZAR + 1 == AJ_N);
   assert(!strcmp(CHAVE[AJ_AFR], "afrLocal") && !strcmp(CHAVE[AJ_HERO_TAMANHO], "heroSizeLocal"));
   assert(!strcmp(CHAVE[AJ_DET_TOPO], "detalheTopoLocal"));
   assert(!strcmp(CHAVE[AJ_DET_ELENCO_VISTO], "detalheElencoVistoLocal"));
@@ -234,6 +247,24 @@ int main(void) {
   key(SDLK_ESCAPE); assert(aj4Util==4);
   aj4Acao=1; key(SDLK_RETURN); assert(pfTela==PF_MENU);
   key(SDLK_ESCAPE); assert(!pfTela && aj4Util==4);
+  // Grouped subtitle routes preserve every underlying control and the search return.
+  aj4Util=3;ajPenPage=-1;focoIndice=0;aj4Acao=aj4Linha=0;
+  snprintf(aj4Consulta,sizeof aj4Consulta,"legenda");
+  n=aj4BuscarResultados();assert(n==4);
+  for(int i=0;i<4;i++)assert(aj4Resultados[i].op==AJ_PEN_SEARCH_OPS[i]);
+  aj4Linha=1;key(SDLK_RETURN);assert(ajPenPage==28 && !uxEditor);
+  key(SDLK_ESCAPE);assert(aj4Util==3 && aj4Linha==1);
+  aj4Linha=2;key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_SECONDARY);
+  key(SDLK_ESCAPE);assert(aj4Util==3 && aj4Linha==2);
+  aj4Util=0;ajPenOpen(27);valor[AJ_AUD_LINGUA]=2;valor[AJ_AUD_ORIGINAL]=1;
+  focarOpcao(AJ_AUD_LINGUA);uxAbrirEditor(AJ_AUD_LINGUA);
+  int languageDraft=uxPendente;key(SDLK_LEFT);key(SDLK_RETURN);
+  assert(ajustes_audio_original() && uxPendente==languageDraft && valor[AJ_AUD_LINGUA]==2);
+  ling_definir_original("en");assert(!strcmp(ling_audio_preferido(),"en"));
+  AudioCand tracks[2]={{0}};tracks[0].pode=tracks[1].pode=1;tracks[0].idioma="pt";tracks[1].idioma="en";
+  audioesc_soltar();assert(audioesc_escolher(tracks,2,NULL)==1);
+  key(SDLK_RETURN);assert(!ajustes_audio_original() && !strcmp(ling_audio_preferido(),"pt"));
+  key(SDLK_ESCAPE);ajPenPage=-1;
   // Blank search offers all-mode suggestions; task chips search without writing values.
   aj4Util=3; aj4Consulta[0]=0; aj4Acao=aj4Linha=0;
   n=aj4BuscarResultados(); assert(n==4 && aj4Resultados[0].op==AJ_QUALIDADE);

@@ -359,3 +359,5 @@
   0, /* title hero: Ready version */
   0, /* cast history: On */
   1, /* Guia TV v5: previa grande Desligada — vale o cartao pequeno do mock; ligar volta ao 800x450 de hoje */
+  1, /* Prefer original audio: off until explicitly chosen. */
+  1, /* PCM normalization: off until explicitly chosen. */

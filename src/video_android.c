@@ -69,7 +69,7 @@ static jmethodID mPararMantendoPreparo;
 static unsigned preparoAdotar;
 // F07 (optional, like abrirPosicao): cache(mb) and ganho(pct). A shell without
 // them simply has no seek cache and no boost.
-static jmethodID mCache, mGanho, mBuffer, mKbps;
+static jmethodID mCache, mGanho, mBuffer, mKbps, mNormalizar;
 // Warm resume (#492, optional too): titulo(id) and descartarGuardado().
 static jmethodID mTitulo, mDescartar, mMorno, mQuadro;
 // #202 (opcional, como os de cima): velocidade(centesimos). Casca sem ele =
@@ -108,6 +108,8 @@ static int resolverMetodos(JNIEnv *env) {
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mBuffer = NULL; }
   mKbps = (*env)->GetStaticMethodID(env, gCls, "kbps", "(I)V");
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mKbps = NULL; }
+  mNormalizar = (*env)->GetStaticMethodID(env, gCls, "normalizar", "(I)V");
+  if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mNormalizar = NULL; }
   mGanho = (*env)->GetStaticMethodID(env, gCls, "ganho", "(I)V");
   if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); mGanho = NULL; }
   mVelocidade = (*env)->GetStaticMethodID(env, gCls, "velocidade", "(I)V");
@@ -832,6 +834,7 @@ static int abrirSessao(int inicioMs, int fracao) {
   // crosses JNI when it changes. Posted before the open on the same main
   // thread queue, it is in place when the open runs.
   // #338: buffer MiB (0 = Auto), sticky in Kotlin like the cache limit.
+  if(mNormalizar)(*env)->CallStaticVoidMethod(env,gCls,mNormalizar,(jint)ajustes_audio_normalizar());
   if (mBuffer && bufferPreset != bufferEnviado) {
     (*env)->CallStaticVoidMethod(env, gCls, mBuffer, (jint)bufferPreset);
     fimChamada(env);
@@ -872,7 +875,7 @@ static int abrirSessao(int inicioMs, int fracao) {
     // New shells receive initial pause atomically with the URL. Older shells
     // retain the existing queued pause fallback from player.c.
     if (pausaPedida && mAbrirPausada) {
-      jstring a = paraJString(env, ling_audio());
+      jstring a = paraJString(env, ling_audio_preferido());
       if (!a) {
         (*env)->DeleteLocalRef(env, u); (*env)->DeleteLocalRef(env, c);
         fimChamada(env);
@@ -884,7 +887,7 @@ static int abrirSessao(int inicioMs, int fracao) {
           (jint)inicioMs, (jint)fracao, (jint)geracao, (jint)preparado, a);
       (*env)->DeleteLocalRef(env, a);
     } else if (preparado && mAbrirPreparada) {
-      jstring a = paraJString(env, ling_audio());
+      jstring a = paraJString(env, ling_audio_preferido());
       if (!a) {
         (*env)->DeleteLocalRef(env, u); (*env)->DeleteLocalRef(env, c);
         fimChamada(env);

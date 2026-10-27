@@ -1,4 +1,5 @@
 #include "dts_engine.h"
+#include "../audionorm.h"
 #include "dv7.h"
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,8 @@ void dts_engine_set_hdr10p_strip(int on) { g_hdr10p_strip = on ? 1 : 0; }
 #include "hdr10plus.h"
 /* Output mode for the NEXT open: 0 = stereo AAC (default, the proven path),
  * 1 = AC3 5.1 at 640 kbps (falls back to AAC when the encoder is absent). */
+static volatile int g_normalize;
+void dts_engine_set_normalize(int on) { g_normalize=on!=0; }
 static volatile int g_surround_ac3;
 void dts_engine_set_ac3(int on) { g_surround_ac3 = on ? 1 : 0; }
 /* Samsung remux ring (read_fluxo) for engines created after this call, in MiB:
@@ -98,6 +101,7 @@ typedef struct {
 static const AVRational NS = {1,1000000000};
 struct DtsEngine {
   DtsMediaInfo info;
+  float normalize_gain;
   char error[160], *url, *headers, *cache;
   char *source_public_headers;
   int64_t pos, total, cache_start;
@@ -1105,6 +1109,13 @@ static int resample(DtsEngine *e,AVFrame *f) {
     e->sample_pts=av_rescale_q(pts,e->dec->pkt_timebase,e->enc->time_base); e->timeline=1;
     e->pad_anchor=e->sample_pts; e->pad_count=e->pad_samples=0;
   }
+  if(count>0 && g_normalize) {
+    int channels=e->enc->ch_layout.nb_channels;double squares=0;
+    for(int c=0;c<channels;c++)for(int i=0;i<count;i++) { float s=((float *)data[c])[i];squares+=(double)s*s; }
+    if(e->normalize_gain<=0)e->normalize_gain=1;
+    e->normalize_gain=audionorm_gain(squares,count*channels,e->normalize_gain,48000*channels);
+    for(int c=0;c<channels;c++)for(int i=0;i<count;i++)((float *)data[c])[i]=audionorm_sample(((float *)data[c])[i],e->normalize_gain);
+  } else e->normalize_gain=1;
   if(count>0 && av_audio_fifo_write(e->fifo,(void **)data,count)!=count) count=AVERROR(ENOMEM);
   av_freep(&data[0]); av_freep(&data);
   return count<0?fail(e,"Audio resample",count):count;

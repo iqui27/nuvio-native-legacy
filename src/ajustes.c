@@ -749,6 +749,8 @@ typedef enum {
   // tamanho/posicao do preview muda; a ficha reflui a esquerda. Por perfil,
   // como as outras opcoes do guia. No fim: valor[]/CHAVE[] posicionais.
   AJ_GUIA_PREVIA_GRANDE,
+  AJ_AUD_ORIGINAL, // Independent preference; language selection remains intact.
+  AJ_AUDIO_NORMALIZAR, // PCM normalization; passthrough remains untouched.
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1897,6 +1899,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Topo da página", V_DET_TOPO, 3),
   ESC("Onde você já viu o elenco", V_LIGA, 2),
   ESC("Prévia grande no Guia TV",       V_LIGA, 2),          // local: guiaPreviaGrandeLocal
+  ESC("Preferir faixa original", V_LIGA, 2),
+  ESC("Normalizar volume", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2236,6 +2240,8 @@ static const char *CHAVE[] = {
   "detalheTopoLocal",
   "detalheElencoVistoLocal",
   "guiaPreviaGrandeLocal",
+  "audioOriginalLocal",
+  "audioNormalizarLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3252,6 +3258,8 @@ static int ajOpcaoDisponivel(int op) {
 }
 int ajustes_layout_lista(void) { return !ajLayoutSelecionavel() || valor[AJ_LAYOUT_AJUSTES] == 1; }
 int ajustes_esconder_logo_trailer(void) { return lig(AJ_LOGO_TRAILER); }
+int ajustes_audio_original(void) { return lig(AJ_AUD_ORIGINAL); }
+int ajustes_audio_normalizar(void) { return lig(AJ_AUDIO_NORMALIZAR); }
 int ajustes_audio_offset_ms(void) { return audsync_offset_ms(valor[AJ_AUDIO_OFFSET]); }
 int ajustes_legenda_sync_auto(void) { return lig(AJ_LEG_SYNC_AUTO); }
 int ajustes_teclado_android(void) { int v = valor[AJ_TECLADO_ANDROID]; return v < 0 || v > 2 ? 0 : v; }   // 0 auto, 1 do app, 2 do Android
@@ -6176,6 +6184,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_CONQ_LIGADO: case AJ_CONQ_AVISO: case AJ_CONQ_DICAS: /* conquistas: por perfil desta TV */
     case AJ_CW_RETIDO_TAMBEM: /* o web nao tem a ilha */
     case AJ_PS_CONTINUAR:   /* o web nao tem este cartao; escolha desta TV */
+    case AJ_AUD_ORIGINAL: case AJ_AUDIO_NORMALIZAR:
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
@@ -9939,6 +9948,7 @@ static int definirValorDireto(int op, int novo) {
     valor[op] = fil_limite_gravado();
     fil_confirmar_limite();
   }
+  if(op==AJ_AUD_ORIGINAL)aplicarIdioma(AJ_AUD_LINGUA);
   if (op == AJ_LEG_LINGUA || op == AJ_LEG_LINGUA2 || op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2) aplicarIdioma(op);
   if (op == AJ_IDIOMA) { idiomaEscolhido(); desc_repetir(); }
   if (op == AJ_TAMANHO_UI) gfx_escala_ui_definir(ajustes_tamanho_ui());
@@ -10541,6 +10551,7 @@ void ajustes_atualizar(float dt, Uint32 agora) {
 // Leva a escolha da linha para linguas.c. "Da conta" (indice 0) manda string
 // vazia, que e como linguas.c representa "sem escolha local, siga a conta".
 static void aplicarIdioma(int op) {
+  ling_preferir_original(ajustes_audio_original());
   const char *c = ling_opcao_codigo(valor[op]);
   if (op == AJ_LEG_LINGUA || op == AJ_LEG_LINGUA2) {
     if (op == AJ_LEG_LINGUA) ling_local_legenda(c); else ling_local_legenda2(c);
@@ -11490,7 +11501,7 @@ int ajustes_teste_quadro(const char *id) {
     else if(!strncmp(id,"pen-adv-",8))ajPenOpen(atoi(id+8));
     else if(!strncmp(id,"pen-main-",9))ajPenOpen(29+atoi(id+9));
     else if(!strcmp(id,"pen-audio-idioma")) {
-      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];
+      int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];valor[AJ_AUD_ORIGINAL]=0;
       ajPenOpen(27);focarOpcao(AJ_AUD_LINGUA);uxAbrirEditor(AJ_AUD_LINGUA);uxPendente=order[2];
     }
     else if(!strcmp(id,"pen-segunda")) { ajPenOpen(AJ_PEN_SECONDARY);ajPenRow=4;valor[AJ_LEG2_BORDA]=2; }

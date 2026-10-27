@@ -30,8 +30,8 @@ static void ajPenEditor(void) {
     aj4Texto(heads[i],TXT_G21B,248,y+20,422,1);
     ajBloco(TXT_G18R,body[i],248,y+54,422,22,.58f,3);
     if(i==0 && (op==AJ_AUD_LINGUA || op==AJ_FONTE_MANUAL || quality)) {
-      int setting=op;
-      int on=op==AJ_AUD_LINGUA?!strcmp(ling_opcao_codigo(uxPendente),"~"):uxPendente==0;
+      int setting=op==AJ_AUD_LINGUA?AJ_AUD_ORIGINAL:op;
+      int on=op==AJ_AUD_LINGUA?ajustes_audio_original():uxPendente==0;
       float toggleY=quality?492:506;ajPenToggle(248,toggleY,on);
       aj4Texto(on?"Ligado":"Desligado",TXT_G18R,326,toggleY+7,300,.58f);
       aj4Alvo((GfxRect){248,toggleY,400,36},14,setting);

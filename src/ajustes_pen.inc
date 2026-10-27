@@ -107,7 +107,7 @@ static int ajPenLanguageMove(SDL_Keycode key) {
         else if(uxOp==AJ_ESCALA_TEXTO)uxPendente=(uxPendente+1)%nValores(uxOp);
         else if(uxOp==AJ_TEMA)uxPendente=(uxPendente+1)%nValores(uxOp);
         else if(uxOp==AJ_AUD_LINGUA) {
-          for(int i=0;i<nValores(uxOp);i++)if(!strcmp(ling_opcao_codigo(i),"~")) { uxPendente=i;break; }
+          if(uxRodape==2)definirValorDireto(AJ_AUD_ORIGINAL,!valor[AJ_AUD_ORIGINAL]);
         }
         return 1;
       }

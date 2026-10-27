@@ -47,7 +47,7 @@ static int ajPenSavedSave(const char *name) {
   snprintf(ajPenSavedNames[slot],64,"%s",name);
   for(int op=0;op<AJ_N;op++)ajPenSavedValues[slot][op]=ajPenPresetStored(op)?uxValorAtual(op):-1;
   ajPenSavedCount++;
-  if(ajPenSavedWrite())return 1;
+  if(ajPenSavedWrite()) { sync_marcar_ajustes_pendentes_perfil(ajPenSavedProfile);return 1; }
   ajPenSavedCount--;return 0;
 }
 static void ajPenSavedAsk(void) {
@@ -70,11 +70,11 @@ static int ajPenSavedPrepare(int slot) {
 }
 static const int AJ_PEN_PRESET_OPS[4][8]={
   {AJ_QUALIDADE,AJ_DTS_AC3,AJ_LEG1_TAMANHO,-1},
-  {AJ_LEG_SYNC_AUDIO,AJ_LEG_SYNC_AUTO,AJ_AUDIO_OFFSET,-1},
+  {AJ_LEG_SYNC_AUDIO,AJ_LEG_SYNC_AUTO,AJ_AUDIO_OFFSET,AJ_AUDIO_NORMALIZAR,-1},
   {AJ_DET_BLUR_NAO_VISTOS,AJ_PAUSA_ELENCO,AJ_HERO_TRAILER,-1},
   {AJ_HERO,AJ_HERO_TRAILER,AJ_DET_TRAILER_AUTO,AJ_FOCO_TRAILER,-1}
 };
-static const int AJ_PEN_PRESET_VALS[4][8]={{0,0,140},{0,0,0},{0,0,0},{1,1,1,0}};
+static const int AJ_PEN_PRESET_VALS[4][8]={{0,0,140},{0,0,0,0},{0,0,0},{1,1,1,0}};
 static const char *const AJ_PEN_PRESET_NAMES[]={"Sala de TV","Voz clara","Filme em casa","Só o áudio"};
 static int ajPenPresetPrepare(int preset) {
   aj4N=0;if(preset<0 || preset>=4)return 0;

@@ -16,7 +16,7 @@ static const Item TELA[] = {
     ROT("Imagem e som"),
       OPC(AJ_QUALIDADE), OPC(AJ_FONTE_HDR), OPC(AJ_DV), OPC(AJ_ATMOS),
 #ifdef NV_TPK
-      OPC(AJ_AUDIO_OFFSET),
+      OPC(AJ_AUDIO_OFFSET), OPC(AJ_AUDIO_NORMALIZAR),
 #endif
     ROT("Escolha da fonte"),
       OPC(AJ_FONTE_MANUAL), OPC(AJ_FONTE_PRIORIDADE), OPC(AJ_FONTE_IDIOMA_AUDIO), OPC(AJ_FONTE_PRAZO),
@@ -76,7 +76,7 @@ static const Item TELA[] = {
 
   SEC("Idiomas e legendas", "Idioma da interface, áudio, legenda e metadados", "aj_languages"),
     ROT("Idiomas"),
-      OPC(AJ_IDIOMA), OPC(AJ_AUD_LINGUA), OPC(AJ_AUD_LINGUA2), OPC(AJ_LEG_LINGUA), OPC(AJ_LEG_FORCADA),
+      OPC(AJ_IDIOMA), OPC(AJ_AUD_LINGUA), OPC(AJ_AUD_ORIGINAL), OPC(AJ_AUD_LINGUA2), OPC(AJ_LEG_LINGUA), OPC(AJ_LEG_FORCADA),
       OPC(AJ_LEG_MOSTRAR), OPC(AJ_LEG_SYNC_AUTO),
 #ifdef NV_ANDROID
       // Sincronia pelo audio (F06): so o player do Android entrega o PCM. Na LG e

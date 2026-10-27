@@ -307,6 +307,10 @@ const char *ling_legenda2(void) {
   return localLeg[0] ? "" : contaLeg2;
 }
 const char *ling_audio(void)    { return emVigor(localAud, contaAud); }
+static int preferirOriginal;
+void ling_preferir_original(int ligado) { preferirOriginal=ligado!=0; }
+int ling_prefere_original(void) { return preferirOriginal; }
+const char *ling_audio_preferido(void) { return preferirOriginal && origAtual[0]?origAtual:ling_audio(); }
 // O SEGUNDO IDIOMA DE AUDIO (secondary_preferred_audio_language do app
 // oficial): a mesma regra da segunda legenda acima.
 const char *ling_audio2(void) {

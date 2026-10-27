@@ -288,8 +288,38 @@ static int aj4Diferencas(int *ops) {
   for (int i = 0; i < AJ_N; i++) if (aj4Secao(i) >= 0 && aj4Mutavel(i) && uxDiferente(i)) ops[n++] = i;
   return n;
 }
+static int ajPenSearchGroup(int op) {
+  if(op==AJ_ESCALA_TEXTO)return 3;
+  if(op==AJ_LEG_LINGUA2 || ajLegendaSecundaria(op))return 2;
+  if(ajLegendaPrincipal(op) || op==AJ_LEG1_RESTAURAR)return 1;
+  if(op==AJ_LEG_LINGUA || op==AJ_LEG_FORCADA || op==AJ_LEG_MOSTRAR || op==AJ_LEG_SYNC_AUDIO || op==AJ_LEG_SYNC_AUTO)return 0;
+  return -1;
+}
+static const int AJ_PEN_SEARCH_OPS[]={AJ_LEG_LINGUA,AJ_LEG1_FONTE,AJ_LEG_LINGUA2,AJ_ESCALA_TEXTO};
+static const char *const AJ_PEN_SEARCH_TITLES[]={"Idioma das legendas","Estilo das legendas","Segunda legenda","Tamanho do texto"};
+static const char *const AJ_PEN_SEARCH_PATHS[]={"Áudio e legendas › Idiomas","Áudio e legendas › Estilo","Áudio e legendas › Segunda legenda","Minha tela › Cor, vidro e movimento"};
 static int aj4BuscarResultados(void) {
-  if(aj4Consulta[0]) return ajustes_buscar(aj4Consulta,aj4Resultados,AJ_N);
+  if(aj4Consulta[0]) {
+    int n=ajustes_buscar(aj4Consulta,aj4Resultados,AJ_N-4),out=0,groups[4]={0};
+    for(int i=0;i<n;i++) {
+      int group=ajPenSearchGroup(aj4Resultados[i].op);
+      if(group>=0)groups[group]=1;
+      else aj4Resultados[out++]=aj4Resultados[i];
+    }
+    char query[256],subtitle[256];uxNormalizar(aj4Consulta,query,sizeof query);
+    uxNormalizar(i18n("legenda"),subtitle,sizeof subtitle);
+    if(!strcmp(query,"legenda") || !strcmp(query,subtitle)) { groups[0]=groups[1]=groups[2]=groups[3]=1;out=0; }
+    int other=out,added=0;
+    memmove(aj4Resultados+4,aj4Resultados,(size_t)other*sizeof *aj4Resultados);
+    for(int g=0;g<4;g++)if(groups[g]) {
+      AjusteBuscaResultado *r=&aj4Resultados[added++];memset(r,0,sizeof *r);
+      r->op=AJ_PEN_SEARCH_OPS[g];
+      snprintf(r->caminho,sizeof r->caminho,"%s",i18n(AJ_PEN_SEARCH_PATHS[g]));
+      snprintf(r->icone,sizeof r->icone,"%s",g==0 || g==2?"aj_captions":"aj_type");
+    }
+    memmove(aj4Resultados+added,aj4Resultados+4,(size_t)other*sizeof *aj4Resultados);
+    return added+other;
+  }
   static const int sugestoes[]={AJ_QUALIDADE,AJ_FONTE_REGEX,AJ_AUD_LINGUA,AJ_TEX_MB};
   int n=0;
   for(int i=0;i<4;i++) if(aj4Disponivel(sugestoes[i])) {
@@ -383,7 +413,16 @@ static int aj4Evento(SDL_Keycode k) {
     if (uxOk(k)) {
       if(aj4Util==3) {
         if(aj4Acao || !n)aj4Buscar();
-        else { int row=aj4Linha; aj4Util=0; focarOpcao(aj4Resultados[row].op);ajPenFind(aj4Resultados[row].op); aj4BuscaRetorno=1; aj4BuscaFoco=row; }
+        else {
+          int row=aj4Linha,op=aj4Resultados[row].op,group=ajPenSearchGroup(op);
+          aj4Util=0;
+          if(group==0) { ajPenOpen(27);focarOpcao(op);uxAbrirEditor(op); }
+          else if(group==1)ajPenOpen(28);
+          else if(group==2)ajPenOpen(AJ_PEN_SECONDARY);
+          else if(group==3) { ajPenOpen(34);focarOpcao(op);uxAbrirEditor(op); }
+          else { focarOpcao(op);ajPenFind(op); }
+          aj4BuscaRetorno=1;aj4BuscaFoco=row;
+        }
         return 1;
       }
       if (aj4Acao && aj4UndoN) { aj4Desfazer(); aj4Acao = 0; }
