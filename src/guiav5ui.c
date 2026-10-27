@@ -609,11 +609,13 @@ static void wizard(void){
     button(2,i18n("Gerenciar fontes"),"aj_settings-2",474,880,360,60,0);
   }
 }
-// Only count schedule windows belonging to this setup's XMLTV source.
+// The guide can still hold the previous source while this setup is saved.
 static float phone_epg_days(void){
-  if(!committed||!draft.epg||!draft.xmltv[0])return 0;
-  time_t end=0,now=time(NULL);for(int i=0;i<epg_n_canais();i++){
-    time_t a,b;if(!strcmp(epg_canal_fonte(i),"g5xmltv")&&epg_janela(i,&a,&b)&&b>end)end=b;
+  if(!committed||!draft.epg)return 0;
+  time_t end=epg_fim_url(draft.xmltv),now=time(NULL);
+  char provider[1100];
+  if(draft.type==0&&xtream_url_xmltv(provider,sizeof provider)){
+    time_t b=epg_fim_url(provider);if(b>end)end=b;
   }
   return end>now?(float)(end-now)/86400:0;
 }
@@ -628,25 +630,63 @@ static void phone_screen(void){
   label(TXT_V2_KICK,i18n("Configurar pelo celular"),102,166,1000,1);
   label(TXT_ILHA_TITULO,i18n(done?"Tudo pronto":expired?"Pareamento expirado":fetch?"Importando…":phone_stage==1?"Testando conexão…":step?"Conectado à TV":"Mais fácil pelo celular."),102,207,1540,0);
   label(TXT_ILHA_CORPO,i18n(done?"Fonte adicionada ao perfil":step>=3?"Conectado. Escolha o conteúdo e os grupos antes de importar.":step?"Use os dados enviados pelo seu provedor.":"Leia o QR e continue no celular."),102,272,1620,1);
-  // Lucide vectors through the existing icon renderer: phone, transfer, TV.
-  gfx_icone((GfxRect){110,335,68,68},"aj_smartphone",.75f,.76f,.78f,1);
+  // Native vector scene: scan on the phone, transfer, then a populated TV.
+  gfx_cor((GfxRect){110,324,82,120},.14f,.32f,.34f,.38f,1);
+  gfx_cor((GfxRect){114,328,74,112},.12f,.09f,.10f,.12f,1);
+  gfx_cor((GfxRect){137,331,28,5},.5f,.32f,.34f,.38f,1);
   for(int i=0;i<3;i++){
-    float a=.25f;
-    if(step&&!done&&!expired)a=ajustes_animacoes_reduzidas()?.65f:.35f+.5f*(.5f+.5f*sinf(SDL_GetTicks()/350.0f-i));
-    gfx_icone((GfxRect){208+i*54,353,26,26},"aj_chevron-right",ar,ag,ab,a);
+    float x=126+(i==1?30:0),y=346+(i==2?30:0);
+    gfx_cor((GfxRect){x,y,15,15},0,.86f,.87f,.89f,1);
+    gfx_cor((GfxRect){x+3,y+3,9,9},0,.09f,.10f,.12f,1);
+    gfx_cor((GfxRect){x+6,y+6,3,3},0,.86f,.87f,.89f,1);
   }
-  gfx_icone((GfxRect){390,335,68,68},done?"aj_check":"aj_tv",done?ar:.75f,done?ag:.76f,done?ab:.78f,1);
-  label(TXT_ILHA_SUB,i18n("Os dados ficam só na sua TV."),102,422,600,1);
+  for(int i=0;i<7;i++)gfx_cor((GfxRect){147+(i%3)*6,365+(i/3)*7,4,4},0,.86f,.87f,.89f,1);
+  if(!done&&!expired){
+    float scan=ajustes_animacoes_reduzidas()?20:20+18*sinf(SDL_GetTicks()/350.0f);
+    gfx_cor((GfxRect){124,347+scan,54,2},.5f,ar,ag,ab,.8f);
+  }
+  for(int i=0;i<2;i++){
+    gfx_cor((GfxRect){124,399+i*12,8,7},.3f,ar,ag,ab,step?.7f:.2f);
+    gfx_cor((GfxRect){138,400+i*12,38-i*10,4},.5f,.7f,.72f,.76f,.5f);
+  }
+  gfx_cor((GfxRect){137,432,28,3},.5f,.6f,.62f,.66f,.7f);
+  gfx_cor((GfxRect){200,382,184,2},.5f,1,1,1,.12f);
+  for(int i=0;i<3;i++){
+    float a=.25f,p=(float)i/3;
+    if(step&&!done&&!expired){
+      a=ajustes_animacoes_reduzidas()?.65f:.35f+.5f*(.5f+.5f*sinf(SDL_GetTicks()/350.0f-i));
+      if(!ajustes_animacoes_reduzidas())p=fmodf(SDL_GetTicks()/1400.0f+p,1);
+    }
+    float x=204+p*156;
+    gfx_cor((GfxRect){x,373,22,18},.25f,ar,ag,ab,a);
+    gfx_cor((GfxRect){x+5,379,12,2},.5f,.95f,.95f,.95f,a);
+    gfx_cor((GfxRect){x+5,384,8,2},.5f,.95f,.95f,.95f,a);
+  }
+  gfx_cor((GfxRect){392,332,252,102},.1f,.32f,.34f,.38f,1);
+  gfx_cor((GfxRect){396,336,244,94},.08f,.09f,.10f,.12f,1);
+  gfx_cor((GfxRect){507,434,22,10},0,.32f,.34f,.38f,1);
+  gfx_cor((GfxRect){476,444,84,4},.5f,.32f,.34f,.38f,1);
+  if(done){
+    gfx_cor((GfxRect){498,354,40,40},.5f,ar,ag,ab,.22f);
+    gfx_icone((GfxRect){507,363,22,22},"aj_check",ar,ag,ab,1);
+    gfx_cor((GfxRect){471,406,94,3},.5f,.72f,.74f,.77f,.7f);
+  }else{
+    gfx_cor((GfxRect){407,348,71,10},.4f,.72f,.74f,.77f,.5f);
+    for(int i=0;i<3;i++){
+      gfx_cor((GfxRect){407+i*74,366,64,38},.12f,.18f,.20f,.24f,1);
+      gfx_icone((GfxRect){428+i*74,374,22,22},i==0?"aj_tv":i==1?"aj_film":"aj_clapperboard",.7f,.72f,.76f,step?.9f:.4f);
+      gfx_cor((GfxRect){407+i*74,411,42,3},.5f,.72f,.74f,.77f,.4f);
+    }
+  }
+  label(TXT_ILHA_SUB,i18n("Os dados ficam só na sua TV."),102,459,600,1);
   if(!done&&!expired&&celular_url()[0]){
-    celb_qr_desenhar_lado(celular_url(),102,474,246,1);
+    celb_qr_desenhar_lado(celular_url(),102,500,224,1);
     const char *token=strrchr(celular_url(),'/');char code[32];
     snprintf(code,sizeof code,"%.4s  %.4s",token?token+1:"",token?token+5:"");
     label(TXT_ILHA_SUB,i18n("Conexão"),382,486,270,1);
     label(TXT_ILHA_TITULO,code,382,530,350,0);
     label(TXT_ILHA_APOIO,i18n("Não compartilhe este código."),382,602,330,1);
-    char host[96];snprintf(host,sizeof host,"%.*s",token?(int)(token-celular_url()):(int)strlen(celular_url()),celular_url());
-    char address[128];snprintf(address,sizeof address,"%s/",host);
-    label(TXT_ILHA_SUB,address,102,744,610,0);
+    label(TXT_ILHA_SUB,celular_url(),102,744,630,0);
     label(TXT_ILHA_APOIO,i18n("Celular e TV na mesma rede Wi-Fi."),102,790,610,1);
   }else{
     gfx_icone((GfxRect){162,490,128,128},done?"aj_check":"aj_wifi-off",done?ar:.7f,done?ag:.7f,done?ab:.7f,1);
@@ -662,14 +702,22 @@ static void phone_screen(void){
     label(TXT_ILHA_NOME,i18n(names[i]),848,y+1,620,!complete&&!active);
     label(TXT_ILHA_APOIO,i18n(complete?"Pronto":active?"Em andamento":"A seguir"),1530,y+8,270,1);
   }
+  char progress[64];snprintf(progress,sizeof progress,i18n("%d de %d"),done?4:step+1,4);
+  label(TXT_ILHA_SUB,progress,788,640,1000,1);
   if(fetch){
-    int parts=atomic_load(&phone_parts),parts_total=draft.type==0?3:1;char progress[64];snprintf(progress,sizeof progress,i18n("%d de %d"),parts,parts_total);
+    int parts=atomic_load(&phone_parts),parts_total=draft.type==0?3:1;
     gfx_cor((GfxRect){788,622,1000,5},.5f,1,1,1,.08f);
     if(parts)gfx_cor((GfxRect){788,622,1000*fminf((float)parts/parts_total,1),5},.5f,ar,ag,ab,1);
-    label(TXT_ILHA_SUB,progress,788,640,1000,1);
   }
   int sizes[3]={0},ng=0;
-  if(step>=3){for(int i=0;i<count;i++)if(inventory[i].kind<=G5_SERIES&&(!done||group_allowed(inventory[i].group)))sizes[inventory[i].kind]++;for(int i=0;i<group_count;i++)ng+=!done||group_on[i];}
+  if(step>=3){
+    unsigned char retained[G5_GROUPS]={0};
+    for(int i=0;i<count;i++)if(inventory[i].kind<=G5_SERIES&&(!done||group_allowed(inventory[i].group))){
+      sizes[inventory[i].kind]++;
+      for(int g=0;g<group_count;g++)if(!strcmp(groups[g],inventory[i].group)){retained[g]=1;break;}
+    }
+    for(int i=0;i<group_count;i++)ng+=retained[i];
+  }
   else if(fetch)for(int i=0;i<3;i++)sizes[i]=atomic_load(&phone_counts[i]);
   const char *stats[]={"Canais ao vivo","Filmes","Séries","Categorias"};
   for(int i=0;i<4;i++){
