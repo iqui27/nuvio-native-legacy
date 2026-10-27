@@ -468,6 +468,7 @@ static void aj4PerfilDesenhar(void) {
 #include "ajustes_pen_desenho.inc"
 #include "ajustes_pen_editor.inc"
 #include "ajustes_pen_util.inc"
+#include "ajustes_pen_especiais.inc"
 static void aj4Desenhar(void) {
   ponteiro_camada();
   aj4SeloAviso=0;
@@ -475,6 +476,7 @@ static void aj4Desenhar(void) {
   else if(aj4Util==4)aj4PerfilDesenhar();
   else if(aj4Util==3 || (aj4Util==1 && !aj4Review))ajPenUtility();
   else if(aj4Review || aj4Util)aj4UtilDesenhar();
+  else if(!focoIndice && ajPenPage==AJ_PEN_RULES)ajPenRules();
   else if(!focoIndice && ajPenCurrent())ajPenRows();
   else if(focoIndice)ajPenHome();
   else aj4SecaoDesenhar();

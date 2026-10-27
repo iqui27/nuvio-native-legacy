@@ -402,10 +402,10 @@ static int aj4Evento(SDL_Keycode k) {
       else if(aj4Linha==2)ajPenOpen(33);
       else if(aj4Linha==3)ajPenOpen(37);
       else if (aj4Linha == 4 || aj4Linha == 5) { aj4Util = aj4Linha == 4 ? 2 : 1; aj4Linha = 0; aj4Acao = 0; focoIndice = 0; }
-      else if (aj4Linha == 6) { aj4Entrar(7); aj4Excecao = AJ_GUIA; aj4Atual = 7; aj4Grupo = aj4GrupoDe(AJ_GUIA); aj4Grupos = 1; }
+      else if (aj4Linha == 6)ajPenOpen(AJ_PEN_RULES);
       else if (aj4Linha == 7) tourAbrir();
       else if(aj4Linha==9)ajPenOpen(41);
-      else if(aj4Linha==10) { focarOpcao(AJ_PERFIL_INFANTIL);uxAbrirEditor(AJ_PERFIL_INFANTIL); }
+      else if(aj4Linha==10)ajPenOpen(AJ_PEN_PARENTAL);
       else if(aj4Linha==11)ajPenOpen(43);
       else if(aj4Linha==12)ajPenOpen(44);
       else if(aj4Linha==13) { ajPenOpen(0); }

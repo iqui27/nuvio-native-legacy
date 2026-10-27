@@ -4,6 +4,23 @@ typedef struct { const char *title; int x,w,n; AjPenRow rows[7]; } AjPenColumn;
 typedef struct { const char *title,*section; int part,total; AjPenColumn cols[2]; } AjPenPage;
 #include "ajustes_pen_avancados.inc"
 #include "ajustes_pen_principais.inc"
+#define AJ_PEN_PARENTAL 100
+#define AJ_PEN_RULES 101
+static const AjPenPage AJ_PEN_PARENT = {"Controle parental","Controle parental",3,3,{
+  {"PERFIL INFANTIL",200,800,6,{
+    {AJ_PERFIL_INFANTIL,"Perfil infantil","Marca o perfil em uso como infantil","aj_baby",0},
+    {-2,"Ajustes travados","Só o PIN abre os ajustes","aj_lock",1},
+    {-3,"PIN do perfil","Um código de 4 dígitos","aj_pin",0},
+    {AJ_ENQUETES,"Sem enquetes no perfil infantil","","aj_eye-off",1},
+    {AJ_PLR_CLASSIF,"Classificação no player","A etiqueta de idade no vídeo","aj_shield",0},
+    {-4,"Filmes permitidos","O que o perfil pode abrir","aj_tv",0}}},
+  {"LIMITES",1024,800,6,{
+    {-1,"Tempo de tela por perfil","Quanto tempo o perfil pode usar","aj_alarm-clock",0},
+    {-1,"Classificação máxima","A idade mínima do perfil","aj_film",0},
+    {-1,"Busca sem filtro","","aj_search",1},
+    {-1,"Compras bloqueadas","Não deixa comprar na loja","aj_shopping-bag",1},
+    {AJ_PROXIMO_AUTO,"Reprodução automática","","aj_play",1},
+    {AJ_HERO_TRAILER,"Mostrar trailer","","aj_eye",1}}}}};
 static const AjPenPage AJ_PEN_AUDIO[] = {
   {"Áudio e legendas","AJUSTES",2,3,{
     {"IDIOMAS",200,800,6,{
@@ -47,6 +64,8 @@ static int ajPenMissing(int *ops) {
   return n;
 }
 static const AjPenPage *ajPenCurrent(void) {
+  if(ajPenPage==AJ_PEN_PARENTAL)return &AJ_PEN_PARENT;
+  if(ajPenPage==AJ_PEN_RULES)return NULL;
   if(ajPenPage>=0 && ajPenPage<27)return &AJ_PEN_ADV[ajPenPage];
   if(ajPenPage>=27 && ajPenPage<29)return &AJ_PEN_AUDIO[ajPenPage-27];
   if(ajPenPage>=29 && ajPenPage<46)return &AJ_PEN_MAIN[ajPenPage-29];
@@ -81,6 +100,10 @@ static void ajPenFind(int op) {
 }
 static int ajPenEvent(SDL_Keycode key) {
   const AjPenPage *page=ajPenCurrent();
+  if(ajPenPage==AJ_PEN_RULES && !uxEditor && !aj4Util && !focoIndice) {
+    if(uxVoltar(key) || uxOk(key)) { ajPenPage=-1;focoIndice=1;aj4Linha=6; }
+    return 1;
+  }
   if(!page || uxEditor || aj4Util || focoIndice || aj4Topo>=0)return -1;
   if(uxVoltar(key)) { ajPenPage=-1;focoIndice=1;aj4Linha=0;return 1; }
   int n=page->cols[0].n+page->cols[1].n;
@@ -90,7 +113,7 @@ static int ajPenEvent(SDL_Keycode key) {
     if(ajPenRow<page->cols[0].n && page->cols[1].n)ajPenRow=page->cols[0].n;
     else if(ajPenPage<26)ajPenOpen(ajPenPage+1);
     else if(ajPenPage==26)ajPenOpen(46);
-    else if(ajPenPage>=46) { int ops[AJ_N],n=ajPenMissing(ops);if((ajPenPage-45)*14<n)ajPenOpen(ajPenPage+1); }
+    else if(ajPenPage>=46 && ajPenPage<AJ_PEN_PARENTAL) { int ops[AJ_N],n=ajPenMissing(ops);if((ajPenPage-45)*14<n)ajPenOpen(ajPenPage+1); }
     else if(ajPenPage==27)ajPenOpen(28);
     else if(ajPenPage>=29 && ajPenPage<45)ajPenOpen(ajPenPage+1);
     return 1;
@@ -100,7 +123,7 @@ static int ajPenEvent(SDL_Keycode key) {
     else if(ajPenPage>0 && ajPenPage<27)ajPenOpen(ajPenPage-1);
     else if(ajPenPage==28)ajPenOpen(27);
     else if(ajPenPage==46)ajPenOpen(26);
-    else if(ajPenPage>29)ajPenOpen(ajPenPage-1);
+    else if(ajPenPage>29 && ajPenPage<AJ_PEN_PARENTAL)ajPenOpen(ajPenPage-1);
     else { ajPenPage=-1;focoIndice=1; }
     return 1;
   }
@@ -108,7 +131,13 @@ static int ajPenEvent(SDL_Keycode key) {
     int col=ajPenRow>=page->cols[0].n;
     const AjPenRow *row=&page->cols[col].rows[ajPenRow-(col?page->cols[0].n:0)];
     int op=row->op;
-    if(op<0 || !ajOpcaoDisponivel(op))return 1;
+    if(op<0) {
+      if(op==-2)pfExigirAdmin(PA_INFANTIL,perfis_ativo());
+      else if(op==-3)pfAbrir();
+      else uxNotificar(op==-4?"Perfil infantil: só classificação livre e até 10 anos.":"Ainda não disponível.");
+      return 1;
+    }
+    if(!ajOpcaoDisponivel(op))return 1;
     if(OPCOES[op].tipo==OP_LEITURA)return 1;
     if(inativa(op)) {
       int req=uxRequisito(op);

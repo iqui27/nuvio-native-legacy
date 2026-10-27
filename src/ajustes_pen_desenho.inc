@@ -67,13 +67,13 @@ static void ajPenRows(void) {
   ajPenChip("Ajustes","pl_chevron-left",200,112,124,0,5,0);
   ajKicker(ajPenPage<27?"AJUSTES AVANÇADOS":page->section,200,198,1);
   aj4Texto(page->title,TXT_TITULO2,200,212,1500,1);
-  if(ajPenPage<27 || ajPenPage>=46) {
+  if(ajPenPage<27 || (ajPenPage>=46 && ajPenPage<AJ_PEN_PARENTAL)) {
     char sub[240];snprintf(sub,sizeof sub,i18n("Opções de %s que o modo Simples esconde. Valor atual à direita."),i18n(page->section));
     aj4Texto(sub,TXT_G20M,200,291,1520,.58f);
   } else {
     ajPenModo(118);
     aj4Texto(ajPenPage==27?"Avançado mostra saída de som e sincronia fina":ajPenPage==28?"Avançado mostra o deslize da sincronia":"Avançado mostra as opções técnicas de cada seção",TXT_AJ_MINI14,1450,190,374,.4f);
-    aj4Texto(ajPenPage>=29?AJ_PEN_SUB[ajPenPage-29]:ajPenPage==27?"Vale para quase todo título. Se um filme não tiver a faixa escolhida, tocamos a original e avisamos.":"Tamanho, fonte, cor e borda da legenda principal.",TXT_G20M,200,291,1520,.58f);
+    aj4Texto(ajPenPage==AJ_PEN_PARENTAL?"Perfil infantil, PIN e os limites de cada perfil.":ajPenPage>=29?AJ_PEN_SUB[ajPenPage-29]:ajPenPage==27?"Vale para quase todo título. Se um filme não tiver a faixa escolhida, tocamos a original e avisamos.":"Tamanho, fonte, cor e borda da legenda principal.",TXT_G20M,200,291,1520,.58f);
   }
   int index=0;
   for(int col=0;col<2;col++) {
@@ -85,16 +85,17 @@ static void ajPenRows(void) {
       int focus=index==ajPenRow && aj4Topo<0;
       if(focus)ajNeutro((GfxRect){x,y,w,74},20,.14f,.169f,.176f,.204f,1);
       ajIcone(row->icon,x+20,y+24,26,focus?1:.75f);
-      int available=ajOpcaoDisponivel(row->op);
+      int available=row->op>=0?ajOpcaoDisponivel(row->op):row->op!=-1;
       aj4Texto(row->title,TXT_G21B,x+62,y+13,w-300,available?1:.45f);
       aj4Texto(row->help,TXT_AJ_MINI14,x+62,y+42,w-210,.4f);
-      if(row->toggle) {
-        int on=uxValorAtual(row->op)==0;float r=.20f,g=.21f,b=.24f;
+      if(row->toggle && row->op!=-1) {
+        int on=row->op==-2?perfil_ajustes_travados(perfis_ativo()):uxValorAtual(row->op)==0;
+        if(ajPenPage==AJ_PEN_PARENTAL && row->op==AJ_ENQUETES)on=perfil_infantil_ativo() || !on;float r=.20f,g=.21f,b=.24f;
         if(on)ajustes_acento(&r,&g,&b);
         gfx_cor((GfxRect){x+w-90,y+19,64,36},.5f,r,g,b,1);
         gfx_cor((GfxRect){x+w-86+(on?28:0),y+23,28,28},.5f,1,1,1,1);
       } else {
-        char val[160];snprintf(val,sizeof val,"%s",textoValor(row->op));
+        char val[160];snprintf(val,sizeof val,"%s",row->op>=0?textoValor(row->op):row->op==-3?i18n("Gerenciar perfis"):row->op==-4?i18n("Livre e até 10 anos"):i18n("Ainda não disponível."));
         TxtLinha t=ajTxtC(TXT_G18R,val,180);txt_desenhar_alpha(t,x+w-52-t.w,y+24,.58f);
         ajIcone("aj_chevron-right",x+w-44,y+28,18,.45f);
       }
