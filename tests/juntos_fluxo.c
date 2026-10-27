@@ -213,7 +213,7 @@ int main(void) {
   prepared = 1; failedVideo = 0; playing = 0; fioVivo = 1;
   for (int i = 0; i < nFila; i++) free(fila[i].corpo);
   nFila = 0;
-  juntos_preparar("ttauth", 0, 0, "Auth film", "", NULL, 0, 0);
+  juntos_preparar("tt123", 0, 0, "Auth film", "", NULL, 0, 0);
   abrirPedido = 0;
   juntos_passo(40000);
   free(fila[0].corpo); nFila = 0;

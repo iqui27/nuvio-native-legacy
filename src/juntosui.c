@@ -350,6 +350,11 @@ void juntosui_erro(const char *k) {
   else if (!strcmp(k, "fim")) t = i18n("A sessão terminou");
   else if (!strcmp(k, "rede")) t = i18n("Sem conexão com o serviço de sessões");
   else if (!strcmp(k, "auth")) t = i18n("Entre na sua conta para enviar");
+  else if (!strcmp(k, "ep invalido")) t = i18n("A sessão precisa de um ID IMDb e episódio válidos");
+  else if (!strcmp(k, "json invalido")) t = i18n("Os dados da sessão não são um JSON válido");
+  else if (!strcmp(k, "infantil")) t = i18n("Este é um perfil infantil: as ações de administrador não ficam disponíveis aqui.");
+  else if (!strcmp(k, "juntos indisponivel")) t = i18n("Acesso ao serviço indisponível");
+  else if (!strcmp(k, "tente de novo")) t = i18n("Não foi possível carregar. Tente de novo mais tarde.");
   if (noPlayer()) player_toast_ex(t, 5000, "aj_triangle-alert", 1);
   else ilha_avisar("juntos:erro", ILHA_ERRO, "aj_triangle-alert", t, 6000u, 0);
 }
@@ -435,6 +440,8 @@ static void abrirSala(void) {
   if (!ci) return;
   for (i = 0; i < nAmigos; i++) if (marcado[i]) lista[n++] = amigoId[i];
   juntos_preparar(ci->imdb, folhaT, folhaE, ci->titulo, ci->poster, lista, n, soEu);
+  // Invalid IDs already produced a specific error; keep the current UI.
+  if (!juntos_ativo()) return;
   // juntos_preparar queues this exact title/episode for paused preparation.
   juntosui_sala_abriu();
   camada = CAMADA_SALA;
