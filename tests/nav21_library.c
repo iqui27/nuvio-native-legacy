@@ -1,4 +1,5 @@
 #include "nav21.h"
+#include <assert.h>
 #include "../src/biblioteca.c"
 #undef ponteiro_alvo
 static int fixture;
@@ -38,6 +39,31 @@ static void keyFixture(SDL_Keycode code){
   if(code==SDLK_RETURN){e.type=SDL_KEYUP;biblioteca_evento(&e);}
   stepFixture(.1f);nav21_targets_reset();drawFixture();
 }
+// Follow the rendered layout so these behavior checks survive wrapped chips.
+static void reachFixture(int id){
+  int parent[512],via[512],queue[512],head=0,tail=0,start=-1,target=-1;
+  GfxRect rects[512];
+  for(int i=0;i<navigationCount;i++){
+    parent[i]=-1;rects[i]=navigation[i].rect;
+    if(navigation[i].id==focusFixture())start=i;
+    if(navigation[i].id==id)target=i;
+  }
+  assert(start>=0 && target>=0);
+  queue[tail++]=start;parent[start]=start;
+  const SDL_Keycode keys[]={SDLK_UP,SDLK_DOWN,SDLK_LEFT,SDLK_RIGHT};
+  while(head<tail && parent[target]<0){
+    int from=queue[head++];
+    for(int d=0;d<4;d++){
+      int next=focus_rect_nearest(rects,navigationCount,from,(d==3)-(d==2),(d==1)-(d==0));
+      if(next>=0 && parent[next]<0){parent[next]=from;via[next]=d;queue[tail++]=next;}
+    }
+  }
+  assert(parent[target]>=0);
+  int path[512],n=0;
+  for(int i=target;i!=start;i=parent[i])path[n++]=via[i];
+  while(n)keyFixture(keys[path[--n]]);
+  nav21_expect("Library/routes","D-pad reaches rendered control",focusFixture(),id);
+}
 static void openListFixture(const CatItem *items){
   fixture=1;openFixture();fonte=FONTE_TRAKT;
   lst_teste_itens(NULL,0);
@@ -60,16 +86,16 @@ void nav21_library(void){
   fixture=0;openFixture();drawFixture();
   keyFixture(SDLK_UP);
   nav21_expect("Library/edges","To watch, Up: request clock",biblioteca_pediu_relogio(),1);
-  openFixture();drawFixture();keyFixture(SDLK_DOWN);keyFixture(SDLK_DOWN);
-  nav21_expect("Library/edges","To watch, Down, Down: Origins",focoOrigem,1);
+  openFixture();drawFixture();reachFixture(10000);
+  nav21_expect("Library/edges","To watch, D-pad to Origins",focoOrigem,1);
   keyFixture(SDLK_LEFT);
   nav21_expect("Library/edges","Origins, Left: exit requested",sair,1);
   for(int i=0;i<90;i++)stepFixture(1.f/60);
   nav21_expect("Library/edges","Origins, Left: request sidebar",biblioteca_quer_sair(),1);
 
   openListFixture(items);
-  keyFixture(SDLK_DOWN);keyFixture(SDLK_RIGHT);
-  nav21_expect("Lists/reorder","Open list, Down, Right: Order",focusFixture(),4);
+  reachFixture(4);
+  nav21_expect("Lists/reorder","Open list, D-pad to Order",focusFixture(),4);
   keyFixture(SDLK_RETURN);keyFixture(SDLK_RETURN);
   nav21_expect("Lists/reorder","Order, OK, title OK: picked first title",ordemPega,0);
   keyFixture(SDLK_DOWN);
@@ -103,7 +129,7 @@ void nav21_library(void){
     char path[160];snprintf(path,sizeof path,"Open list, from %d, %s",base[i].id,SDL_GetKeyName(arrows[d]));
     nav21_expect("Lists/directions",path,focusFixture(),expected);
   }
-  openListFixture(items);keyFixture(SDLK_DOWN);keyFixture(SDLK_RIGHT);keyFixture(SDLK_RIGHT);keyFixture(SDLK_RETURN);
+  openListFixture(items);reachFixture(5);keyFixture(SDLK_RETURN);
   nav21_expect("Lists/notes","Notes, OK: note mode",edModo,ED_NOTAS);
   keyFixture(SDLK_DOWN);keyFixture(SDLK_RETURN);
   nav21_expect("Lists/notes","Notes, Down, title OK: keyboard opens",teclado_aberto(),1);

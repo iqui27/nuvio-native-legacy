@@ -2832,17 +2832,19 @@ static void parteTocar(const char *url, double pos) {
     partes_arquivo_definir(a, parteArqLista.usenet, parteArqLista.item, parteArqLista.arq[parteArqK].id);
   }
 }
+static int perfilPermiteReproduzir(int indice);
 static void abrirParte(int fonte, const PartesLista *l, int k) {
+  int titulo = player_aberto() ? player_indice() : detail_indice();
+  if (!perfilPermiteReproduzir(titulo)) { aguardandoFonte = 0; folhaParaTocar = 0; return; }
   const Stream *s = stream_item(fonte);
   Stream escolhida;
   char alvo[64], imdb[64];
-  int titulo, t = 0, e = 0, serie;
+  int t = 0, e = 0, serie;
   PartesPonto pt;
   if (!s || !l || k < 0 || k >= l->n) return;
   escolhida = *s; s = &escolhida;
   aguardandoFonte = 0;
   limparFonteVOD();
-  titulo = player_aberto() ? player_indice() : detail_indice();
   { const CatItem *ci = cat_item(titulo); serie = ci && !strcmp(ci->tipo, "series");
     snprintf(imdb, sizeof imdb, "%s", ci ? ci->imdb : ""); }
   // Save the old file's resume point without completing a manual source switch.
@@ -3605,6 +3607,10 @@ static char ultCanalId[80], ultCanalNome[140], ultCanalBase[600];
 static char atualCanalBase[600];
 static void tocarCanal(const CatItem *it) {
   int ni;
+  if (perfil_infantil_ativo()) {
+    glem_aviso_curto(i18n("Perfil infantil: sem TV ao vivo"));
+    return;
+  }
   if (!it || !it->imdb[0] || !g5ui_check_channel(it)) return;
   if (player_aberto() && player_id_canal()[0] && strcmp(player_id_canal(), it->imdb)) {
     snprintf(ultCanalId, sizeof ultCanalId, "%s", player_id_canal());
@@ -4985,6 +4991,16 @@ static const char *homeTrailerBloqueio(void) {
   return NULL;
 }
 
+static int perfilPermiteReproduzir(int indice) {
+  if (!perfil_infantil_ativo()) return 1;
+  const CatItem *ci = cat_item(indice);
+  const char *cert = indice == detail_indice() ? extras_ficha_classificacao() : NULL;
+  if (!cert || !*cert) cert = ci ? ci->classificacao : NULL;
+  if (perfil_infantil_classif_ok(cert)) return 1;
+  glem_aviso_curto(i18n("Perfil infantil: só classificação livre e 10 anos"));
+  return 0;
+}
+
 static int juntosFontePendente = -1;
 static unsigned juntosFonteGeracao;
 static char juntosFonteAlvo[64];
@@ -4992,6 +5008,7 @@ static char juntosFonteAlvo[64];
 static void tocarFonteEscolhida(int fonte, int manual) {
   int navegando = juntosui_escolhendo_filme();
   int alvo = player_aberto() && !navegando ? player_indice() : detail_indice(), t = 0, e = 0;
+  if (!perfilPermiteReproduzir(alvo)) { aguardandoFonte = 0; folhaParaTocar = 0; return; }
   if (player_aberto() && !navegando) player_episodio_atual(&t, &e);
   else detail_ep_foco(&t, &e);
   if (manual) consumirFolhaTocar(&t, &e);
@@ -6231,15 +6248,7 @@ void app_atualizar(float dt, Uint32 agora) {
     // espera) nao toca: abre a folha de espera, que tem "Assistir mesmo assim".
     if (querTocar && aguardandoFonte != 2 && travaui_segurar_detalhe()) querTocar = 0;
     // PERFIL INFANTIL (perfilinfantil.h): so classificacao livre ou ate 10 anos.
-    if (querTocar && perfil_infantil_ativo()) {
-      const CatItem *ki = cat_item(detail_indice());
-      const char *cert = extras_ficha_classificacao();
-      if (!cert || !*cert) cert = ki ? ki->classificacao : NULL;
-      if (!perfil_infantil_classif_ok(cert)) {
-        glem_aviso_curto(i18n("Perfil infantil: só classificação livre e 10 anos"));
-        querTocar = 0;
-      }
-    }
+    if (querTocar && !perfilPermiteReproduzir(detail_indice())) querTocar = 0;
     if (querTocar && aguardandoFonte != 2) {
       marco("abrir: reproduzir pedido");
       // A tela abre JA, no estado "abrindo fonte", e a escolha acontece depois.

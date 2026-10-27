@@ -58,7 +58,7 @@ enum { B_VOLTAR = 100, B_PRINC, B_SEC, B_PULAR };
 typedef struct { int id; GfxRect r; } Item;
 
 static int   aberto, passo, foco = B_PRINC, pedido, esperaTeclado, decidido, temDados;
-static int previousFocus[PASSOS];
+static int focoAnterior[PASSOS];
 static Uint32 backDesde, backUltimo;   // relogio proprio: main.c zera o evento LG
 static int backPressionado, backVisto;
 static float entrada, pagina, tempoPasso, focoAnim[B_PULAR + 1];
@@ -128,16 +128,17 @@ static int foco_padrao(void) {
 }
 
 static void ir_passo(int p) {
-  int old = passo; previousFocus[old] = foco;
   if (p != passo && entrada > .99f && !gfx_mini_ativo() &&
       !ajustes_animacoes_reduzidas() && gfx_mini_alvo(&paginaAnterior, 1920, 1080)) {
     gfx_mini_comecar(&paginaAnterior, 0, 0, 1);
     comecar_desenhar(SDL_GetTicks());
     gfx_mini_terminar();
   }
+  int voltando = p < passo;
+  focoAnterior[passo] = foco;
   if (p != passo) importarfluxo_cancelar();
   passo = p < 0 ? 0 : p >= PASSOS ? PASSOS - 1 : p;
-  foco = passo < old ? previousFocus[passo] : foco_padrao();
+  foco = voltando ? focoAnterior[passo] : foco_padrao();
   pagina = tempoPasso = 0;
   memset(focoAnim, 0, sizeof focoAnim);
 }
@@ -153,7 +154,7 @@ static void abrir(void) {
   backPressionado = backVisto = 0;
   antes = dados;
   passo = 0;
-  for(int i=0;i<PASSOS;i++)previousFocus[i]=B_PRINC;
+  for (int i = 0; i < PASSOS; i++) focoAnterior[i] = B_PRINC;
   foco = foco_padrao();
 }
 
@@ -216,21 +217,36 @@ static int op_chip(int id) {
 // 72 px from the bottom. Anchors are REAL px (ANC); components grow with text.
 static float ox, oy, largura, coluna, lateral;
 
+static const char *const SUB[PASSOS] = {
+  "Cada perfil tem o próprio Continuar, as próprias listas e os próprios Ajustes. Dá para criar outros depois.",
+  "Add-ons, catálogos e o que estava assistindo. Escolha uma; dá para juntar outra depois.",
+  "O Nuvio avisa o tracker quando você termina um episódio e lê de lá o que falta ver. Pode ligar mais de um.",
+  "Arrumamos isto enquanto você lia:",
+};
+
 static void origem(void) {
-  t21_inicio(&ox, &largura);
-  ox -= MARGEM;
+  ox = ANC(MARGEM) - MARGEM;   // the mock's 120 px on both sides at every text scale
   oy = 0;
-  coluna = fminf(860.0f, (largura - T21_GAP_BIG) * 0.55f);
+  largura = NV_TELA_W - 2.0f * ANC(MARGEM);
+  coluna = fminf(passo == 0 ? 820.0f : 860.0f, (largura - T21_GAP_BIG) * 0.55f);
   lateral = largura - coluna - T21_GAP_BIG;
 }
 
-static float rodape_topo(void) {
-  return ANC(T21_SAFE_B) - BOTAO_H_PRIMARIO;
-}
+// Mock .rodape: 64 px controls centred 72 px above the bottom edge.
+static float rodape_centro(void) { return ANC(NV_LAYOUT_REAL_H - 72.0f) - 32.0f; }
+static float rodape_topo(void) { return rodape_centro() - BOTAO_H_PRIMARIO * 0.5f; }
 
-// Body starts under title + subtitle; the subtitle never meets the first row.
-static float titulo_y(void) { return ANC(170.0f); }
-static float corpo_y(void)  { return titulo_y() + 64.0f + 2.0f * 34.0f + 34.0f; }
+// Body starts under title + measured subtitle + the mock's per-step gap, so a
+// long or wrapped subtitle pushes the body instead of meeting the first row.
+static float titulo_y(void) { return ANC(200.0f); }
+static float sub_y(void)    { return titulo_y() + 67.0f + 18.0f; }
+static float titulo_largura(void) { return passo == 2 ? largura : coluna; }
+static float corpo_y(void) {
+  static const float VAO[PASSOS] = { 30.0f, 34.0f, 40.0f, 20.0f };
+  return sub_y() + txt_bloco(TXT_V2_26, i18n(SUB[passo]), 0, 0, 0, 0, 0, titulo_largura(), 34.0f, 0, 3) + VAO[passo];
+}
+// Right column of the mock (.dir): flush with the right margin.
+static float dir_x(float w) { return ox + MARGEM + largura - w; }
 
 // Step 1 stacks field, colours and two rows; the gap shrinks before anything leaves the safe area.
 static float p0_vao(void) {
@@ -239,6 +255,10 @@ static float p0_vao(void) {
 }
 
 static const char *rotulo_chip(int id, char *buf, size_t tam);
+// Mock .chip: 20 px sides, 18/600 label (+ 7 px dot and 10 px gap when "on").
+static float chip_largura(int id, char *buf, size_t tam) {
+  return 40.0f + (id == I_CH_HIST ? 17.0f : 0) + (float)txt_linha(TXT_AJ_SEG, rotulo_chip(id, buf, tam), 0, 0, 0, 255).w;
+}
 
 // Chip lines once wrapped to the content width (1 at 100%, more at large text).
 static int linhas_chips(void) {
@@ -246,7 +266,7 @@ static int linhas_chips(void) {
   float x = 0;
   int l = 1;
   for (int i = I_CH_CW; i <= I_CH_HIST; i++) {
-    float cw = fminf(largura, botao_largura(rotulo_chip(i, b, sizeof b), i == I_CH_HIST ? "aj_check" : NULL, 0));
+    float cw = fminf(largura, chip_largura(i, b, sizeof b));
     if (x > 0 && x + cw > largura) { l++; x = 0; }
     x += cw + 14.0f;
   }
@@ -254,7 +274,7 @@ static int linhas_chips(void) {
 }
 
 static float tracker_altura(void) {
-  float livre = rodape_topo() - T21_GAP_CARD - corpo_y() - (46.0f + 28.0f + linhas_chips() * (BOTAO_H_SECUNDARIO + 14.0f) - 14.0f);
+  float livre = rodape_topo() - T21_GAP_CARD - corpo_y() - (46.0f + 34.0f + linhas_chips() * (BOTAO_H_SECUNDARIO + 14.0f) - 14.0f);
   return fminf(330.0f, livre);
 }
 
@@ -268,7 +288,7 @@ static void poe(Item *it, int *n, int id, float x, float y, float w, float h) {
 // Rodape: os botoes da esquerda para a direita; o ultimo e o primario, salvo
 // no resumo, onde o primario vem primeiro.
 static void rodape(Item *it, int *n) {
-  float x = MARGEM, yc = ANC(T21_SAFE_B) - BOTAO_H_PRIMARIO * 0.5f;
+  float x = MARGEM, yc = rodape_centro();
   int ids[3], k = 0, i;
   if (passo == PASSOS - 1) { ids[k++] = B_PRINC; ids[k++] = B_SEC; }
   else {
@@ -284,7 +304,7 @@ static void rodape(Item *it, int *n) {
   }
   if (passo < PASSOS - 1) {
     float w = botao_largura(rotulo_botao(B_PULAR), NULL, 0);
-    poe(it, n, B_PULAR, MARGEM + largura - w, ANC(T21_SAFE_T), w, BOTAO_H_SECUNDARIO);
+    poe(it, n, B_PULAR, MARGEM + largura - w, yc - BOTAO_H_SECUNDARIO * 0.5f, w, BOTAO_H_SECUNDARIO);   // quiet, far from Continue
   }
 }
 
@@ -293,22 +313,23 @@ static int montar(Item *it) {
   origem();
   if (passo == 0) {
     float y = corpo_y(), v = p0_vao();
+    float h = fminf(108.0f, (rodape_topo() - T21_GAP_CARD - y - 84.0f - 72.0f - 2.0f * v - 10.0f) * .5f);
     poe(it, &n, I_NOME, MARGEM, y, coluna, 84.0f);
     y += 84.0f + v;
     for (i = 0; i < COMECAR_CORES; i++) poe(it, &n, I_COR0 + i, MARGEM + (float)i * 90.0f, y, 72.0f, 72.0f);
     y += 72.0f + v;
-    poe(it, &n, I_INFANTIL, MARGEM, y, coluna, 108.0f);
-    poe(it, &n, I_IDIOMA, MARGEM, y + 118.0f, coluna, 108.0f);
+    poe(it, &n, I_INFANTIL, MARGEM, y, coluna, h);
+    poe(it, &n, I_IDIOMA, MARGEM, y + h + 10.0f, coluna, h);
   } else if (passo == 1) {
-    float h = fminf(108.0f, (rodape_topo() - T21_GAP_CARD - corpo_y() - 30.0f) / 4.0f);
+    float h = fminf(118.0f, (rodape_topo() - T21_GAP_CARD - corpo_y()) / 4.0f);
     for (i = 0; i < 4; i++) poe(it, &n, i, MARGEM, corpo_y() + (float)i * h, coluna, h - 10.0f);
   } else if (passo == 2) {
-    float w = (largura - 2.0f * T21_GAP_CARD) / 3.0f, th = tracker_altura(), x = MARGEM;
-    float cy = corpo_y() + th + 46.0f + 28.0f;
+    float w = (largura - 2.0f * 28.0f) / 3.0f, th = tracker_altura(), x = MARGEM;
+    float cy = corpo_y() + th + 46.0f + 34.0f;
     char b[160];
-    for (i = 0; i < 3; i++) poe(it, &n, i, MARGEM + (float)i * (w + T21_GAP_CARD), corpo_y(), w, th);
+    for (i = 0; i < 3; i++) poe(it, &n, i, MARGEM + (float)i * (w + 28.0f), corpo_y(), w, th);
     for (i = I_CH_CW; i <= I_CH_HIST; i++) {
-      float cw = fminf(largura, botao_largura(rotulo_chip(i, b, sizeof b), i == I_CH_HIST ? "aj_check" : NULL, 0));
+      float cw = fminf(largura, chip_largura(i, b, sizeof b));
       if (x > MARGEM && x + cw > MARGEM + largura) { x = MARGEM; cy += BOTAO_H_SECUNDARIO + 14.0f; }   // wrap at large text
       poe(it, &n, i, x, cy, cw, BOTAO_H_SECUNDARIO);
       x += cw + 14.0f;
@@ -506,7 +527,7 @@ static void linha_opcao(GfxRect r, float f, const char *letra, const char *icone
   r = superficie(r, 24.0f, f, a, &p, &s);
   bola(r.x + 26.0f, r.y + (r.h - 64.0f) * .5f, 64.0f, letra, icone, p, f, a);
   txt_em(TXT_ILHA_NOME, t, r.x + 112.0f, r.y + r.h * .5f - 32.0f, r.w - 250.0f, p.r, p.g, p.b, a);
-  txt_em(TXT_CAPTION, d, r.x + 112.0f, r.y + r.h * .5f + 4.0f, r.w - 220.0f, s.r, s.g, s.b, a);
+  txt_em(TXT_ILHA_SUB, d, r.x + 112.0f, r.y + r.h * .5f + 4.0f, r.w - 220.0f, s.r, s.g, s.b, a);
 }
 
 static void seta(GfxRect r, float a) {
@@ -558,15 +579,15 @@ static const char *nome_exibido(void) { return dados.nome[0] ? dados.nome : i18n
 
 static void cabecalho(float a) {
   static const char *const ROT[PASSOS] = { "1 · Perfil", "2 · Trazer suas coisas", "3 · Acompanhar", "4 · Pronto" };
-  float inicio = fminf(400.0f, largura * .24f);
-  float skip = passo < PASSOS - 1 ? botao_largura(rotulo_botao(B_PULAR), NULL, 0) + BOTAO_GAP : 0;
-  float ar, ag, ab, segW = (largura - inicio - skip - 3.0f * 12.0f) / 4.0f;
+  // Mock .marca at (120, 64); .passos from x 520 to the right margin, top 70.
+  float inicio = fminf(ANC(520.0f) - ANC(MARGEM), largura * .3f);
+  float ar, ag, ab, segW = (largura - inicio - 3.0f * 12.0f) / 4.0f;
   int i;
-  txt_em(TXT_NOV_TITULO, "nuvio", ox + MARGEM, ANC(T21_SAFE_T), inicio - 24.0f, 243, 242, 239, a);
+  txt_em(TXT_LOG_T34, "nuvio", ox + MARGEM, ANC(64.0f) - 2.0f, inicio - 24.0f, 243, 242, 239, a);
   ajustes_acento(&ar, &ag, &ab);
   for (i = 0; i < PASSOS; i++) {
     float x = ox + MARGEM + inicio + (float)i * (segW + 12.0f);
-    GfxRect s = { x, ANC(T21_SAFE_T) + 10.0f, segW, 5.0f };
+    GfxRect s = { x, ANC(70.0f), segW, 5.0f };
     if (i < passo) gfx_cor(s, 0.5f, 1, 1, 1, 0.55f * a);
     else if (i == passo) {
       gfx_cor(s, .5f, 1, 1, 1, .12f * a);
@@ -574,15 +595,17 @@ static void cabecalho(float a) {
       if (s.w > .01f) gfx_cor(s, .5f, ar, ag, ab, a);
     }
     else gfx_cor(s, 0.5f, 1, 1, 1, 0.12f * a);
-    txt_em(TXT_CAPTION, i18n(ROT[i]), x, ANC(T21_SAFE_T) + 26.0f, segW, i <= passo ? 186 : 120, i <= passo ? 192 : 126, i <= passo ? 204 : 138, a);
+    txt_em(TXT_CAPTION, i18n(ROT[i]), x, ANC(70.0f) + 13.0f, segW, i <= passo ? 186 : 120, i <= passo ? 192 : 126, i <= passo ? 204 : 138, a);
   }
 }
 
-static void titulo(const char *t, const char *sub, float w, float a) {
-  float y = titulo_y();
-  w = fminf(w, largura);
-  txt_em(TXT_V2_TIT, t, ox + MARGEM, y, w, 248, 249, 252, a);
-  txt_bloco(TXT_V2_26, sub, 186, 192, 204, ox + MARGEM, y + 64.0f + 14.0f, w, 34.0f, 0.9f * a, 2);
+// Mock .h1 64/800 and .sub (muted), at the step's column width.
+static void titulo(const char *t, float a) {
+  float w = titulo_largura();
+  if (txt_tracking(TXT_AJ_NUM64, t, 0, 0, 0, -1, 0, 0, -1.28f) <= w)   // mock letter-spacing -.02em
+    txt_tracking(TXT_AJ_NUM64, t, 248, 249, 252, ox + MARGEM, titulo_y(), a, -1.28f);
+  else txt_em(TXT_AJ_NUM64, t, ox + MARGEM, titulo_y(), w, 248, 249, 252, a);
+  txt_bloco(TXT_V2_26, i18n(SUB[passo]), 160, 160, 158, ox + MARGEM, sub_y(), w, 34.0f, a, 3);
 }
 
 static void desenha_passo0(float a) {
@@ -590,9 +613,7 @@ static void desenha_passo0(float a) {
   int n = montar(it), i;
   Tinta p, s;
   char lng[160];
-  titulo(i18n("Quem vai assistir?"),
-         i18n("Cada perfil tem o próprio Continuar, as próprias listas e os próprios Ajustes. Dá para criar outros depois."),
-         820.0f, a);
+  titulo(i18n("Quem vai assistir?"), a);
   for (i = 0; i < n; i++) {
     GfxRect r = it[i].r;
     int id = it[i].id;
@@ -638,15 +659,16 @@ static void desenha_passo0(float a) {
     gfx_opacidade_grupo = grupo;
   }
   // O painel da direita: o perfil como vai ficar.
-  { float x = ox + MARGEM + coluna + T21_GAP_BIG, w = fminf(520.0f, lateral), px = x + (lateral - w) * .5f;
-    float y = corpo_y() - 34.0f, h = fminf(420.0f, rodape_topo() - T21_GAP_CARD - y - 110.0f);
-    float lado = fminf(200.0f, h - 150.0f);
+  // Mock: a 520 card centred in the 760 right column, top 250, sized by its content.
+  { float dw = fminf(760.0f, lateral), w = fminf(520.0f, dw), px = dir_x(dw) + (dw - w) * .5f;
+    float y = titulo_y() + 50.0f, h = fminf(395.0f, rodape_topo() - T21_GAP_CARD - y - 110.0f);
+    float lado = fminf(200.0f, h - 195.0f);
     GfxRect r = {px, y, w, h};
     float grupo = entrada_item(&r, 2);
     t21_ilha(r, T21_R_MODAL, a);
     avatar(px + w * .5f, r.y + 44.0f + lado * .5f, lado, dados.cor, TXT_TITULO1, a);
     { const char *nm = nome_exibido(); float nw = fminf(txt_w(TXT_ILHA_TITULO, nm), w - 64.0f);
-      txt_em(TXT_ILHA_TITULO, nm, px + (w - nw) * .5f, r.y + 44.0f + lado + 24.0f, w - 64.0f, 248, 249, 252, a); }
+      txt_em(TXT_ILHA_TITULO, nm, px + (w - nw) * .5f, r.y + 44.0f + lado + 22.0f, w - 64.0f, 248, 249, 252, a); }
     { const char *sb = i18n("Perfil principal · desta TV"); float sw = fminf(txt_w(TXT_ILHA_SUB, sb), w - 64.0f);
       txt_em(TXT_ILHA_SUB, sb, px + (w - sw) * .5f, r.y + 44.0f + lado + 80.0f, w - 64.0f, 150, 156, 168, a); }
     txt_bloco(TXT_ILHA_SUB, i18n("Já usa o Nuvio em outra TV? No próximo passo, “Conta Nuvio” traz os perfis de lá."),
@@ -662,26 +684,26 @@ static void codigo_espacado(const char *c, char *dst, size_t tam) {
 
 // Mock 3B side panel while Stremio waits: QR, link, spaced code, waiting dots, footnote.
 static void painel_stremio(float x, float y, float w, float ph, ImpfEstado e, const char *d, float a) {
-  float lado = fminf(fminf(268.0f, ph - 240.0f), (w - 108.0f) * .46f);
-  float qy = y + 96.0f, tx = x + 44.0f + lado + 36.0f, tw = w - (tx - x) - 44.0f;
-  float k = lado / celb_qr_lado(), sy;
+  // Mock 3B: 300 px QR card, text column centred beside it.
+  float lado = fminf(fminf(300.0f, ph - 286.0f), (w - 124.0f) * .5f);
+  float qy = y + 86.0f, tx = x + 44.0f + lado + 36.0f, tw = w - (tx - x) - 44.0f, sy;
+  const char *aponte = i18n("Aponte a câmera do celular e entre na sua conta lá.");
   char cod[32];
   kicker("Conta Stremio · pelo celular", x + 44.0f, y + 44.0f, a);
-  gfx_transformar(x + 44.0f, qy, k, 0, 0);
-  celb_qr_desenhar(ultimoLink, x + 44.0f, qy, a);
-  gfx_sem_transformar();
-  sy = qy + txt_bloco(TXT_V2_26, i18n("Aponte a câmera do celular e entre na sua conta lá."),
-                      220, 224, 230, tx, qy, tw, 34.0f, a, 3) + 20.0f;
+  celb_qr_desenhar_lado(ultimoLink, x + 44.0f, qy, lado, a);
+  sy = txt_bloco(TXT_AJ_TEXTO, aponte, 0, 0, 0, 0, 0, tw, 32.0f, 0, 3);
+  sy = qy + fmaxf(0, (lado - (sy + 20.0f + 28.0f + 28.0f + 64.0f)) * .5f);
+  sy += txt_bloco(TXT_AJ_TEXTO, aponte, 220, 224, 230, tx, sy, tw, 32.0f, a, 3) + 20.0f;
   txt_em(TXT_ILHA_SUB, i18n("ou digite no endereço"), tx, sy, tw, 150, 156, 168, a);
   txt_em(TXT_ILHA_SUB, ultimoLink, tx, sy + 28.0f, tw, 186, 192, 204, a);
   codigo_espacado(ultimoCodigo, cod, sizeof cod);
-  txt_tracking(TXT_V2_TIT, cod, 248, 249, 252, tx, sy + 62.0f, a, 6.0f);
+  txt_tracking(TXT_V2_TIT, cod, 248, 249, 252, tx, sy + 62.0f, a, 4.0f);
   sy = qy + lado + 30.0f;
   espera(x + 44.0f, sy, e == IMPF_OK ? d : i18n("Esperando o celular · código vale 10 min"), a);
   if (sy + 70.0f < y + ph - 60.0f) {
-    gfx_cor((GfxRect){ x + 44.0f, sy + 56.0f, w - 88.0f, 1 }, 0, 1, 1, 1, .08f * a);
+    gfx_cor((GfxRect){ x + 44.0f, sy + 54.0f, w - 88.0f, 1 }, 0, 1, 1, 1, .08f * a);
     txt_bloco(TXT_ILHA_SUB, i18n("Sua senha fica no celular; a TV recebe só a chave da conta. Os add-ons chegam na ordem em que estão no Stremio."),
-              186, 192, 204, x + 44.0f, sy + 76.0f, w - 88.0f, 28.0f, a, 2);
+              186, 192, 204, x + 44.0f, sy + 74.0f, w - 88.0f, 28.0f, a, 2);
   }
 }
 
@@ -694,8 +716,7 @@ static void desenha_passo1(float a) {
   };
   Item it[MAX_ITENS];
   int n = montar(it), i;
-  titulo(i18n("Traga o que você já usa"),
-         i18n("Add-ons, catálogos e o que estava assistindo. Escolha uma; dá para juntar outra depois."), 860.0f, a);
+  titulo(i18n("Traga o que você já usa"), a);
   for (i = 0; i < n; i++) {
     GfxRect r = it[i].r;
     int id = it[i].id;
@@ -707,7 +728,8 @@ static void desenha_passo1(float a) {
     gfx_opacidade_grupo = grupo;
   }
   // O painel da direita explica a opcao em foco; as apagadas dizem a verdade.
-  { float x = ox + MARGEM + coluna + T21_GAP_BIG, y = corpo_y() - 30.0f, w = lateral;
+  // Mock: 700 wide at the right margin, top 220, the same height for every option.
+  { float w = fminf(700.0f, lateral), x = dir_x(w), y = titulo_y() + 20.0f;
     const char *t, *d;
     int extra = 0;
     int opcao = foco <= I_ZERO ? foco : importarfluxo_fonte() == IMPF_STREMIO ? I_STREMIO :
@@ -736,7 +758,7 @@ static void desenha_passo1(float a) {
       t = i18n("Começar do zero");
       d = i18n("Você segue com o que já está nesta TV e junta o resto quando quiser.");
     }
-    float ph = rodape_topo() - T21_GAP_CARD - y;
+    float ph = fminf(586.0f, rodape_topo() - T21_GAP_CARD - y);
     GfxRect r = {x, y, w, ph};
     float grupo = entrada_item(&r, 4);
     y = r.y;
@@ -770,7 +792,7 @@ static void chip(GfxRect r, int id, float f, float a) {
   float tc = ajustes_tinta_foco() / 255.0f;
   int ti = (int)(243 + (ajustes_tinta_foco() - 243) * f);
   const char *pre = i18n(id == I_CH_CW ? "Continuar assistindo vem de" : "O + salva em");
-  float x = r.x + BOTAO_PAD_X2;
+  float x = r.x + 20.0f;
   plrui_botao_repouso(r, a);
   plrui_pilula_foco(r, f * a);
   if (id == I_CH_HIST) {
@@ -779,13 +801,13 @@ static void chip(GfxRect r, int id, float f, float a) {
     ajustes_acento(&ar, &ag, &ab);
     if (on) gfx_cor((GfxRect){ x, r.y + r.h * .5f - 4, 8, 8 }, .5f,
                     ar + (tc - ar) * f, ag + (tc - ag) * f, ab + (tc - ab) * f, a);
-    txt_em(TXT_V2_CHIP, rotulo_chip(id, b, sizeof b), x + 20.0f, r.y + (r.h - 30.0f) * .5f, r.w - 76.0f, ti, ti, ti, a);
+    txt_em(TXT_AJ_SEG, rotulo_chip(id, b, sizeof b), x + 17.0f, r.y + (r.h - 26.0f) * .5f, r.w - 57.0f, ti, ti, ti, a);
     return;
   }
-  txt_em(TXT_V2_CHIP, pre, x, r.y + (r.h - 30.0f) * .5f, r.w, ti, ti, ti, a);
-  x += txt_w(TXT_V2_CHIP, pre) + txt_w(TXT_V2_CHIP, " ");
+  txt_em(TXT_AJ_SEG, pre, x, r.y + (r.h - 26.0f) * .5f, r.w, ti, ti, ti, a);
+  x += txt_w(TXT_AJ_SEG, pre) + txt_w(TXT_AJ_SEG, " ");
   { int v = (int)(150 + (ajustes_tinta_foco2() - 150) * f);
-    txt_em(TXT_V2_CHIP, i18n(ajustes_rapido_valor(op_chip(id))), x, r.y + (r.h - 30.0f) * .5f, r.x + r.w - x, v, v, v, a); }
+    txt_em(TXT_AJ_SEG, i18n(ajustes_rapido_valor(op_chip(id))), x, r.y + (r.h - 26.0f) * .5f, r.x + r.w - x, v, v, v, a); }
 }
 
 static void desenha_passo2(float a) {
@@ -798,9 +820,7 @@ static void desenha_passo2(float a) {
   int n = montar(it), i;
   float ar, ag, ab;
   ajustes_acento_marca(&ar, &ag, &ab);
-  titulo(i18n("Onde marcar o que você assiste"),
-         i18n("O Nuvio avisa o tracker quando você termina um episódio e lê de lá o que falta ver. Pode ligar mais de um."),
-         1100.0f, a);
+  titulo(i18n("Onde marcar o que você assiste"), a);
   for (i = 0; i < n; i++) {
     GfxRect r = it[i].r;
     int id = it[i].id;
@@ -827,17 +847,17 @@ static void desenha_passo2(float a) {
     r = superficie(r, 28.0f, f, a, &p, &s);
     bola(r.x + 30.0f, r.y + 30.0f, 64.0f, TK[id].letra, TK[id].icone, p, f, a);
     { float tw = aguarda ? r.w - 60.0f - fminf(160.0f, r.w * .38f) - 20.0f : r.w - 60.0f;
-      float ty = r.y + 30.0f + 64.0f + 20.0f;
-      txt_em(TXT_ILHA_TITULO, i18n(TK[id].nome), r.x + 30.0f, ty, tw, p.r, p.g, p.b, a);
+      float ty = r.y + 30.0f + 64.0f + 22.0f;
+      txt_em(TXT_G30B, i18n(TK[id].nome), r.x + 30.0f, ty, tw, p.r, p.g, p.b, a);
       if (aguarda) {   // mock Simkl card: code + small QR inside the card
         float q = fminf(160.0f, r.w * .38f), k = q / celb_qr_lado();
-        txt_bloco(TXT_CAPTION, i18n("Entre pelo celular com o código:"), s.r, s.g, s.b, r.x + 30.0f, ty + 52.0f, tw, 28.0f, a, 2);
+        txt_bloco(TXT_CAPTION, i18n("Entre pelo celular com o código:"), s.r, s.g, s.b, r.x + 30.0f, ty + 44.0f, tw, 28.0f, a, 2);
         char ce[32]; codigo_espacado(cod, ce, sizeof ce);
         txt_tracking(TXT_ILHA_TITULO, ce, 248, 249, 252, r.x + 30.0f, ty + 116.0f, a, 5.0f);
         gfx_transformar(r.x + r.w - 30.0f - q, r.y + (r.h - q) * .5f, k, 0, 0);
         celb_qr_desenhar(url, r.x + r.w - 30.0f - q, r.y + (r.h - q) * .5f, a);
         gfx_sem_transformar();
-      } else txt_bloco(TXT_CAPTION, i18n(TK[id].desc), s.r, s.g, s.b, r.x + 30.0f, ty + 52.0f, tw, 30.0f, a, 3);
+      } else txt_bloco(TXT_CAPTION, i18n(TK[id].desc), s.r, s.g, s.b, r.x + 30.0f, ty + 44.0f, tw, 30.0f, a, 3);
     }
     { float sy = r.y + r.h - 30.0f - 26.0f;
       if (aguarda) espera(r.x + 30.0f, sy - 2.0f, i18n(st), a);
@@ -874,7 +894,7 @@ static float resumo_feito(float x, float y, float w, float h, const char *t, con
 static void mini_home(float x, float y, float w, float a) {
   static CatItem cw[4];
   int n = cat_copiar_fileira("continue_watching", cw, 4, NULL), i;
-  float h = w * 9.0f / 16.0f;
+  float h = w * 428.0f / 760.0f;
   GfxRect r = {x, y, w, h};
   float grupo = entrada_item(&r, 1);
   y = r.y;
@@ -896,7 +916,7 @@ static void mini_home(float x, float y, float w, float a) {
     else if (c->restanteMin > 0) snprintf(m, sizeof m, i18n("faltam %d min"), c->restanteMin);
     else snprintf(m, sizeof m, "%s", c->meta);
     txt_em(TXT_ILHA_SUB, m, x + 44, y + h * .28f + 62, w - 88, 200, 205, 215, a);
-    { float cw2 = (w - 88 - 3 * 12) / 4.0f, ch = cw2 * 84.0f / 150.0f;
+    { float cw2 = fminf(150.0f * w / 760.0f, (w - 88 - 3 * 12) / 4.0f), ch = cw2 * 84.0f / 150.0f;   // mock 150x84 tiles
       for (i = 0; i < n; i++) {
         GfxRect q = { x + 44 + i * (cw2 + 12), y + h - 30 - ch, cw2, ch };
         GLuint qt = tex_obter_larg(cw[i].backdrop[0] ? cw[i].backdrop : cw[i].poster, cw2);
@@ -913,14 +933,14 @@ static void desenha_passo3(float a) {
   static int vistos;
   static Uint32 contado;
   int tr = trakt_ativo(), sk = simkl_ativo(), na = addons_n(), nc = col_n(), i = 0;
-  float x = ox + MARGEM, y = corpo_y() - 54.0f, w = coluna;
-  float h = fminf(96.0f, (rodape_topo() - T21_GAP_CARD - y) / 5.0f);
+  float x = ox + MARGEM, y = corpo_y(), w = coluna;
+  float h = fminf(ANC(84.0f), (rodape_topo() - T21_GAP_CARD - y) / 5.0f);
   if (!contado || SDL_GetTicks() - contado > 1000) {   // the import keeps landing: recount each second
     contado = SDL_GetTicks() | 1; vistos = 0;
     for (int k = 0; k < cat_n(); k++) vistos += cat_visto(cat_item(k)) != 0;
   }
   snprintf(t, sizeof t, i18n("Pronto, %s."), nome_exibido());
-  titulo(t, i18n("Arrumamos isto enquanto você lia:"), 860.0f, a);
+  titulo(t, a);
   // Mock 3D: five independent outcomes, each from live state.
   snprintf(t, sizeof t, i18n("%d add-ons ativos"), na);
   y += resumo_feito(x, y, w, h, t, i18n(na ? "Na ordem em que chegaram. Mude em Ajustes › Fontes e addons."
@@ -938,7 +958,7 @@ static void desenha_passo3(float a) {
   resumo_feito(x, y, w, h, i18n("Pular abertura e créditos"),
                i18n(ajustes_pular_abertura() ? "Ligado. As marcas chegam junto com cada título."
                                              : "Desligado. Ligue em Ajustes › Reprodução."), 0, i++, a);
-  mini_home(ox + MARGEM + coluna + T21_GAP_BIG, corpo_y() - 54.0f, fminf(760.0f, lateral), a);
+  mini_home(dir_x(fminf(ANC(760.0f), lateral)), ANC(210.0f), fminf(ANC(760.0f), lateral), a);   // mock: 760 real px at the right margin, top 210
 }
 
 static void desenha_rodape(float a) {
@@ -950,17 +970,18 @@ static void desenha_rodape(float a) {
   };
   Item it[MAX_ITENS];
   int n = montar(it), i;
-  float fim = 0;
+  float fim = 0, dx = ox + MARGEM + largura;
   for (i = 0; i < n; i++) {
     int id = it[i].id, prim = id == B_PRINC;
     if (id < B_VOLTAR) continue;
     botao_pilula(it[i].r, rotulo_botao(id), botao_icone(id), focoAnim[id], prim, 0, a * (id == B_PULAR ? .72f + .28f * focoAnim[id] : 1));
     alvo(it[i].r, id);
     if (id != B_PULAR) fim = fmaxf(fim, it[i].r.x + it[i].r.w);
+    else dx = it[i].r.x - T21_GAP_BIG;   // the hint sits left of "Skip all"
   }
   { const char *d = i18n(DICA[passo]);
-    float dx = ox + MARGEM + largura, lw = dx - fim - T21_GAP_BIG, w = fminf(txt_w(TXT_ILHA_SUB, d), lw);
-    if (lw > 120.0f) txt_em(TXT_ILHA_SUB, d, dx - w, ANC(T21_SAFE_B) - BOTAO_H_PRIMARIO * .5f - 13.0f, lw, 130, 136, 148, a); }
+    float lw = dx - fim - T21_GAP_BIG, w = fminf(txt_w(TXT_ILHA_SUB, d), lw);
+    if (lw > 120.0f) txt_em(TXT_ILHA_SUB, d, dx - w, rodape_centro() - 13.0f, lw, 130, 136, 148, a); }
 }
 
 void comecar_desenhar(Uint32 agora) {

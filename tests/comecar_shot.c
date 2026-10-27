@@ -42,6 +42,13 @@
 // Compile the real screen here so bounds checks cover the shared drawing,
 // D-pad and pointer rectangles without adding a production test API.
 static int checkBounds;
+static int measureSummary, summaryLines;
+static float summaryY[4];
+static GfxRect previewRect;
+static void measured_veil(GfxRect r, float radius, float fraction, float alpha) {
+  if (measureSummary) previewRect = r;
+  gfx_veu_base(r, radius, fraction, alpha);
+}
 static void check_rect(GfxRect r) {
   float k = gfx_escala();
   if (r.x * k < -0.01f || r.y * k < -0.01f || r.w <= 0 || r.h <= 0 ||
@@ -70,7 +77,9 @@ static const char *shot_simkl_url(void) { return shotContas ? "https://simkl.com
 #define simklauth_codigo shot_simkl_codigo
 #define simklauth_url shot_simkl_url
 #define gfx_cor checked_cor
+#define gfx_veu_base measured_veil
 #include "../src/comecar.c"
+#undef gfx_veu_base
 #undef gfx_cor
 #undef importarfluxo_comecar
 #undef trakt_ativo
@@ -79,6 +88,8 @@ static const char *shot_simkl_url(void) { return shotContas ? "https://simkl.com
 #undef simklauth_url
 static void checked_cor(GfxRect r, float raio, float cr, float cg, float cb, float ca) {
   if (checkBounds) check_rect(r);
+  if (measureSummary && cr == 1 && cg == 1 && cb == 1 && ca == .07f && summaryLines < 4)
+    summaryY[summaryLines++] = r.y * gfx_escala();
   gfx_cor(r, raio, cr, cg, cb, ca);
 }
 static void check_controls(void) {
@@ -88,19 +99,23 @@ static void check_controls(void) {
   for (int i = 0; i < n; i++) {
     GfxRect r = items[i].r;
     check_rect(r);
-    assert(r.x * gfx_escala() >= T21_SAFE_L - .01f);
-    assert((r.x + r.w) * gfx_escala() <= 1816.01f);
+    assert(r.x * gfx_escala() >= 119.99f);   // mock: 120 px margins
+    assert((r.x + r.w) * gfx_escala() <= 1800.01f);
     assert(r.y * gfx_escala() >= 59.99f);
     assert((r.y + r.h) * gfx_escala() <= 1020.01f);
-    if (items[i].id == B_PRINC)
-      assert(fabsf((r.y + r.h) * gfx_escala() - 1020) < .01f);
+    if (items[i].id == B_PRINC)   // mock .rodape: 64 px row ending 72 px above the bottom
+      assert(fabsf((r.y + r.h * .5f) * gfx_escala() - (1008 - 32 * gfx_escala())) < .01f);
     for (int j = 0; j < i; j++) {
       GfxRect q = items[j].r;
-      assert(r.x >= q.x + q.w - .01f || q.x >= r.x + r.w - .01f ||
-             r.y >= q.y + q.h - .01f || q.y >= r.y + r.h - .01f);
+      int separate = r.x >= q.x + q.w - .01f || q.x >= r.x + r.w - .01f ||
+                     r.y >= q.y + q.h - .01f || q.y >= r.y + r.h - .01f;
+      if (!separate) fprintf(stderr, "Overlapping controls: step=%d scale=%.2f ids=%d,%d rects=(%.1f,%.1f,%.1f,%.1f),(%.1f,%.1f,%.1f,%.1f)\n",
+                             passo, gfx_escala(), items[i].id, items[j].id,
+                             r.x, r.y, r.w, r.h, q.x, q.y, q.w, q.h);
+      assert(separate);
     }
   }
-  assert(fabsf(items[0].r.x * gfx_escala() - T21_SAFE_L) < .01f);
+  assert(fabsf(items[0].r.x * gfx_escala() - 120) < .01f);
   TXT_FIM();
 }
 
@@ -154,6 +169,15 @@ static void captura(const char *nome, int quadros) {
   SDL_Surface *s;
   int y;
   adiantar(quadros);
+  // Decode art at the current size without advancing motion-proof timestamps.
+  int pending = 1;
+  for (int k = 0; pending && k < 600; k++) {
+    quadro(0);
+    SDL_Delay(2);
+    tex_bombear(8);
+    tex_estatisticas(NULL, &pending, NULL, NULL, NULL);
+  }
+  assert(!pending);
   glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pix);
   s = SDL_CreateRGBSurfaceWithFormat(0, 1920, 1080, 32, SDL_PIXELFORMAT_RGBA32);
   assert(s);
@@ -224,6 +248,7 @@ static void ir_para(int id) {
   int start = foco, queue[128], parent[128], via[128], head = 0, tail = 0;
   for (int i = 0; i < 128; i++) parent[i] = -1;
   queue[tail++] = start; parent[start] = start;
+  TXT_INI();
   while (head < tail && parent[id] < 0) {
     int current = queue[head++];
     for (int d = 0; d < 4; d++) {
@@ -231,6 +256,7 @@ static void ir_para(int id) {
       if (parent[foco] < 0) { parent[foco] = current; via[foco] = d; queue[tail++] = foco; }
     }
   }
+  TXT_FIM();
   foco = start; assert(parent[id] >= 0);
   int path[128], n = 0;
   for (int i = id; i != start; i = parent[i]) path[n++] = via[i];
@@ -345,6 +371,59 @@ int main(int argc, char **argv) {
   gfx_icones_dir(art);
   dados_gravar("ajustes.txt", "idioma 0\n"); ajustes_dir(dir);
   ajustes_definir_vidro(getenv("NUVIO_SHOT_VIDRO") ? atoi(getenv("NUVIO_SHOT_VIDRO")) : 0);
+
+  if (getenv("NUVIO_NAV21_REGRESSION")) {
+    int failures = 0;
+    previa("estado=nenhum\nnome=Ana\n");
+    tecla(SDLK_RETURN); tecla(SDLK_RETURN);
+    ir_para(I_TV); tecla(SDLK_RETURN); tecla(SDLK_AC_BACK);
+    if (comecar_passo() != 2 || comecar_foco() != I_TV) {
+      puts("FAIL: Back must restore Only on this TV focus"); failures++;
+    }
+    ir_para(I_TV); tecla(SDLK_RETURN); SDL_Delay(260); tecla(SDLK_AC_BACK);
+    if (comecar_foco() != I_TV) { puts("FAIL: repeated Back focus restoration"); failures++; }
+    CatItem item = {0}; CatFileira row = {0};
+    snprintf(item.titulo, sizeof item.titulo, "Fallout");
+    snprintf(item.backdrop, sizeof item.backdrop, "design/universo-2026/assets/00.jpg");
+    snprintf(row.chave, sizeof row.chave, "continue_watching"); row.n = 1;
+    cat_definir_tudo(&item, 1, &row, 1);
+    const float geometryScales[] = {.85f, 1};
+    for (unsigned i = 0; i < sizeof geometryScales / sizeof *geometryScales; i++) {
+      gfx_escala_txt_definir(geometryScales[i]);
+      ir_passo(3); entrada = pagina = 1; tempoPasso = 2;
+      measureSummary = 1; summaryLines = 0; quadro(0); measureSummary = 0;
+      float k = geometryScales[i];
+      if (fabsf(previewRect.x * k - 1040) > 4 || fabsf(previewRect.y * k - 210) > 4 ||
+          fabsf(previewRect.w * k - 760) > 4 || fabsf(previewRect.h * k - 428) > 4) {
+        printf("FAIL: preview at %.0f%%: %.1f %.1f %.1f %.1f\n", k * 100,
+               previewRect.x*k, previewRect.y*k, previewRect.w*k, previewRect.h*k); failures++;
+      }
+      if (summaryLines != 4 || fabsf(summaryY[1] - summaryY[0] - 84) > 4 ||
+          fabsf(summaryY[3] - summaryY[2] - 84) > 4) {
+        printf("FAIL: summary row pitch at %.0f%%: %.1f\n", k * 100, summaryY[1] - summaryY[0]); failures++;
+      }
+    }
+    gfx_escala_txt_definir(1);
+    if (failures) return 1;
+    for (int step = 0; step < PASSOS; step++) {
+      previa("estado=nenhum\nnome=Ana\n");
+      while (passo < step) { ir_para(B_PRINC); tecla(SDLK_RETURN); }
+      Item items[MAX_ITENS];
+      int count = montar(items);
+      for (int i = 0; i < count; i++) ir_para(items[i].id);
+      if (step < PASSOS - 1) {
+        ir_para(B_PRINC); adiantar(40); tecla(SDLK_RETURN);
+        assert(paginaAnterior.tex && pagina == 0);
+        quadro(.05f); assert(pagina > 0 && pagina < 1);
+        adiantar(40); assert(!paginaAnterior.tex && pagina == 1);
+        SDL_Delay(260); tecla(SDLK_AC_BACK);
+        assert(passo == step && foco == B_PRINC);
+      }
+    }
+    adiantar(40); pular(); quadro(.05f); assert(entrada > 0 && entrada < 1);
+    adiantar(40); assert(!comecar_visivel());
+    puts("PASS: review regressions: Back focus, mock geometry, reachability and transitions");
+  }
 
   // ---- Regras, por evento de tecla. (Ids: 0=campo, 1..6=cores, 100=Voltar,
   // 101=Continuar/principal, 102=secundario, 103=Pular tudo.)
@@ -636,6 +715,8 @@ int main(int argc, char **argv) {
   const float scales[] = { .8f, .85f, .9f, 1, 1.1f, 1.2f, 1.3f };
   for (unsigned scaleIndex = 0; scaleIndex < sizeof scales / sizeof *scales; scaleIndex++) {
   float scale = requestedScale ? (float)atof(requestedScale) : scales[scaleIndex];
+  // nav21 acceptance covers the review's 85%/100% matrix; standalone capture keeps every scale.
+  if (getenv("NUVIO_NAV21_REGRESSION") && !requestedScale && scale != .85f && scale != 1) continue;
   char prefix[700];
   snprintf(prefix, sizeof prefix, "%s", saida);
   if (!requestedScale) snprintf(prefix, sizeof prefix, "%s%.0f", saida, scale * 100);
@@ -726,6 +807,6 @@ int main(int argc, char **argv) {
   SDL_DestroyWindow(w);
   IMG_Quit();
   SDL_Quit();
-  puts("PASS: Onboarding rules, rendered bounds and controls at 80/85/100/115/130%.");
+  puts("PASS: Onboarding rules, rendered bounds and controls at requested capture scales.");
   return 0;
 }
