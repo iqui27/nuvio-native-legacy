@@ -3,6 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 tests/guiapreview_android.py
+bash tests/video_android_live_window.sh
 bash tests/guiav5_bugs.sh
 NUVIO_SHOT_SO='preview-idle-dark preview-playing preview-focus-moving' \
   bash tests/guiav5_principal_shot.sh /Volumes/ExternalSSD/tmp/rev/guiapreview

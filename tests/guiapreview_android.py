@@ -17,7 +17,24 @@ methods += source[start:end]
 start = source.index('            }\n', source.index('sv.holder.addCallback(depoisDoMedia3)', source.index('    private fun abrirMain('))) + len('            }\n')
 end = source.index('\n\n            if (preparada == null)', start)
 open_window = source[start:end]
+# Execute the production transport selection, including extensionless addon URLs.
+transport_start = source.index('            r.rede = { token ->')
+transport_end = source.index('            val origemPreparo', transport_start)
+transport = source[transport_start:transport_end]
 fixture = r'''
+interface DataSource { interface Factory }
+class Http : DataSource.Factory
+class Cache { fun fabrica(f: DataSource.Factory) = f }
+class Recursos { var rede: (Long) -> DataSource.Factory = { Http() }; val cache: Cache? = null }
+object ParaleloDataSource {
+    class Factory(ua: String?, props: Map<String, String>, http: Http, medidor: Int, token: Long) : DataSource.Factory
+}
+fun transport(live: Boolean, limited: Boolean): DataSource.Factory {
+    val r = Recursos(); val serialHttp = Http(); val http = serialHttp
+    val ua: String? = null; val props = emptyMap<String, String>(); val medidor = 0
+TRANSPORT
+    return r.rede(1L)
+}
 object Log { fun i(tag: String, message: String) {} }
 class Surface { val holder = Any() }
 object P {
@@ -37,6 +54,9 @@ object P {
 METHODS
 }
 fun main() {
+    check(transport(true, false) is Http) { "live addon entered VOD Range downloader" }
+    check(transport(true, true) is Http)
+    check(transport(false, false) is ParaleloDataSource.Factory)
     // TCL waits for the previous decoder release: no player when JNI window arrives.
     P.request(1294, 186, 560, 315)
     check(P.deliveries == 0) { "window applied before the decoder existed" }
@@ -59,7 +79,7 @@ fun main() {
     check(P.jx == 1294 && P.jw == 560 && P.jh == 315)
     println("PASS: Android delayed preview open, latest window, aspect containment and full-screen reset")
 }
-'''.replace('METHODS', methods).replace('OPEN_WINDOW', open_window)
+'''.replace('METHODS', methods).replace('OPEN_WINDOW', open_window).replace('TRANSPORT', transport)
 setup = (root / 'tests/android_window_layout.py').read_text()
 setup = setup[setup.index('cache = Path.home()'):setup.index('with tempfile.TemporaryDirectory(')]
 namespace = dict(Path=Path, os=os)

@@ -137,6 +137,8 @@ int video_live_progresso(double *pos, double *fim);
 int video_recuperando_live(void);
 // HLS target duration for this live session; zero for VOD/unknown.
 unsigned video_live_segmento_ms(void);
+// Elapsed since the current Android live HTTP request; zero during decoder release.
+unsigned video_live_pedido_ms(void);
 #endif
 // Afirmacao de Dolby Vision da FONTE escolhida (o addon descreve o arquivo).
 // Chamar ANTES de video_tocar/definir_fonte: e o que decide o hdrType que o

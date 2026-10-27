@@ -1336,13 +1336,13 @@ static void renovarListaDoPlayer(void) {
 // proxy, com os cabecalhos do addon em todo pedido (playlist e segmentos). O
 // proxy redireciona o que ja e TS continuo ou nao e playlist, entao o caminho
 // que ja tocava nao muda. Desligado em Ajustes > Live TV, como no Xtream.
-static const char *urlCanal(const Stream *s, char *buf, size_t n) {
+static const char *urlCanalRota(const Stream *s, char *buf, size_t n) {
   const char *id = player_id_canal();
   canalViaProxy = canalDiretoTentado = 0;
-  if (s && xtream_url_limitada(s->url)) return s->url;
   if (!s) return "";
   // Toda troca de fonte do guia passa aqui, inclusive a do watchdog.
   video_definir_cabecalhos(s->cabecalhos);
+  if (xtream_url_limitada(s->url)) return s->url;
   int salvoProxy = guia_proxy_do_canal(id, -1);
   int usarProxy = salvoProxy < 0 ? ajustes_livetv_proxy() : salvoProxy;
   // A source-specific diagnostic overrides the direct continuous-TS shortcut.
@@ -1378,6 +1378,37 @@ static const char *urlCanal(const Stream *s, char *buf, size_t n) {
   }
   proxyts_definir_cabecalhos("");
   return s->url;
+}
+
+static const char *urlCanal(const Stream *s, char *buf, size_t n) {
+  const char *url = urlCanalRota(s, buf, n);
+  const char *id = player_id_canal();
+  if (!s) return url;
+  // Log only source class, host and header names; values may contain credentials.
+  {
+    const char *u = s->url;
+    if (!strncmp(u, PROXYTS_PREFIXO, strlen(PROXYTS_PREFIXO))) u += strlen(PROXYTS_PREFIXO);
+    const char *host = strstr(u, "://"); host = host ? host + 3 : "";
+    size_t hn = strcspn(host, "/?#");
+    const char *at = memchr(host, '@', hn);
+    if (at) { hn -= (size_t)(at + 1 - host); host = at + 1; }
+    char names[256] = ""; size_t used = 0;
+    for (const char *p = s->cabecalhos; *p;) {
+      size_t len = strcspn(p, "\r\n"), key = strcspn(p, ":\r\n");
+      if (key < len && key && key < 96) {
+        int valid = 1;
+        for (size_t j = 0; j < key; j++)
+          if (!((p[j] >= 'A' && p[j] <= 'Z') || (p[j] >= 'a' && p[j] <= 'z') || p[j] == '-')) valid = 0;
+        if (valid && used + key + 2 < sizeof names)
+          used += (size_t)snprintf(names + used, sizeof names - used, "%s%.*s", used ? "," : "", (int)key, p);
+      }
+      p += len; while (*p == '\r' || *p == '\n') p++;
+    }
+    printf("[guia] attempt type=%s host=%.*s route=%s headers=%s status=pending\n",
+           xtream_e_id(id) ? "xtream" : (guia_e_m3u(id) || m3u_e_id(id) || !strncmp(id, "g5live:", 7)) ? "m3u" : "addon",
+           (int)hn, host, canalViaProxy ? "proxy" : "direct", names[0] ? names : "none");
+  }
+  return url;
 }
 
 // Return whether the current guide source was retried before advancing.
@@ -6712,6 +6743,9 @@ void app_atualizar(float dt, Uint32 agora) {
     // curto so vale enquanto nada chegou. Com dados e sem quadro, vale o teto
     // longo — o uMS que engole 39 s e nao toca em 45 s esta mesmo travado.
     Uint32 desde = SDL_GetTicks() - canalFonteDesde;
+#ifdef NV_ANDROID
+    desde = video_live_pedido_ms();
+#endif
     int xt = xtream_e_id(player_id_canal());
     const char *limitedError = video_erro_texto();
     if (xt && xtream_conexoes_limitadas() && limitedError &&
@@ -6728,10 +6762,17 @@ void app_atualizar(float dt, Uint32 agora) {
     Uint32 espera = ajustes_livetv_espera_ms();
     Uint32 semDecMs = espera ? espera : CANAL_SEM_DECODER_MS;
     Uint32 prazo = (espera && canalFontePrazo == CANAL_FONTE_PRAZO_MS) ? espera : canalFontePrazo;
+#ifdef NV_ANDROID
+    // Initial silence gets twelve seconds from HTTP open, independent of HLS stall recovery.
+    if (!video_pronto() && video_buffer_fim() <= 0.5) prazo = CANAL_TRAVA_MS;
+#endif
     Uint32 teto = espera > CANAL_ABRE_TETO_MS ? espera : CANAL_ABRE_TETO_MS;
     int semDecoder = (xt || canalViaProxy) && player_carregando() && desde > semDecMs &&
         video_buffer_fim() > 0.5 && !video_decoder_anunciou();
     unsigned bufferMs = video_bufferando_ms();
+#ifdef NV_ANDROID
+    if (!desde) bufferMs = 0; // Decoder release is not a stalled network request.
+#endif
     unsigned travaMs = CANAL_TRAVA_MS, paradoMs = NV_LS_PARADO_MS;
 #ifdef NV_ANDROID
     if (bufferMs) {
@@ -6818,8 +6859,10 @@ void app_atualizar(float dt, Uint32 agora) {
       // abriu", e a diferenca entre "erro do servidor", "sem dado" e "dado
       // sem decoder" e o que decide o proximo conserto.
       printf("[guia] fonte %d morta: falhou=%d erro='%s' buffer=%.1fs decoder=%d "
-             "carregando=%d %ums\n", canalFonteIdx, video_falhou(), video_erro_texto(),
-             video_buffer_fim(), video_decoder_anunciou(), player_carregando(), (unsigned)desde);
+             "carregando=%d %ums reason=%s\n", canalFonteIdx, video_falhou(), video_erro_texto(),
+             video_buffer_fim(), video_decoder_anunciou(), player_carregando(), (unsigned)desde,
+             video_falhou() ? "player-error" : semDecoder ? "no-decoder" :
+             video_buffer_fim() <= 0.5 ? "request-timeout" : "stalled");
       fflush(stdout);
       int prox = stream_canal_proxima(canalFonteIdx);
       const Stream *s;
