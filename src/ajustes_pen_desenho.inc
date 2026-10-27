@@ -3,9 +3,9 @@
 #include "ajustes_pen_cabecalhos.inc"
 static void ajPenPanel(float x,float y,float w,float h,int focus) {
   GfxRect r={x,y,w,h};float radius=w==88?44:28;
-  if(focus) ajNeutro(r,28,.14f,.169f,.176f,.204f,1);
-  else if(ajVid()) gfx_vidro_miolo(r,radius/h,.055f,.059f,.071f,.80f,1);
+  if(ajVid()) gfx_vidro_miolo(r,radius/h,.055f,.059f,.071f,.80f,1);
   else gfx_cor(r,radius/h,.045f,.047f,.058f,.96f);
+  if(focus)ajNeutro(r,radius,.14f,.169f,.176f,.204f,1);
 }
 static void ajPenChip(const char *s,const char *ic,float x,float y,float w,int focus,int zone,int row) {
   GfxRect r={x,y,w,52};

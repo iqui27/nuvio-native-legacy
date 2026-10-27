@@ -43,9 +43,9 @@ static void ajPenComponents(void) {
   static const TxtEstilo styles[]={TXT_TITULO2,TXT_G26B,TXT_G21B,TXT_AJ_MINI14,TXT_AJ_MINI12};
   static const char *const sizes[]={"56 px","26 px","21 px","15 px","13 px"};
   for(int i=0;i<5;i++) {
-    float y=i==0?680:764+(i-1)*45;aj4Texto(labels[i],TXT_AJ_MINI14,1300,y+18,160,.4f);
-    aj4Texto(examples[i],styles[i],1460,y,300,1);TxtLinha size=ajTxt(TXT_AJ_MINI14,sizes[i]);txt_desenhar_alpha(size,1800-size.w,y+18,.4f);
+    float y=i==0?680:764+(i-1)*45;aj4Texto(labels[i],TXT_AJ_MINI14,1300,i==0?704:y+8,160,.4f);
+    aj4Texto(examples[i],styles[i],1460,y,300,1);TxtLinha size=ajTxt(TXT_AJ_MINI14,sizes[i]);txt_desenhar_alpha(size,1800-size.w,i==0?704:y+8,.4f);
   }
-  aj4Texto("Inter Display. A escala de 85% mantém esta hierarquia.",TXT_AJ_MINI14,1300,928,500,.4f);
+  aj4Texto("Inter Display. A escala de 85% mantém esta hierarquia.",TXT_AJ_MINI14,1300,930,500,.4f);
   ajPenRodape("Componentes",1,1);
 }

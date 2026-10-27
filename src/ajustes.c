@@ -11521,7 +11521,7 @@ int ajustes_teste_quadro(const char *id) {
     else if (!strcmp(id,"v4-opcao-lista")) { focarOpcao(AJ_QUALIDADE); uxAbrirEditor(AJ_QUALIDADE); }
     else if (!strcmp(id,"v4-predefinicoes")) { aj4Util=2; focoIndice=0; }
     else if (!strcmp(id,"v4-diferentes")) {
-      memcpy(valor,valorPadrao,sizeof valor);valor[AJ_TEMA]=2;valor[AJ_QUALIDADE]=1;
+      memcpy(valor,valorPadrao,sizeof valor);valor[AJ_IDIOMA]=IDIOMA_PT+1;valor[AJ_TEMA]=2;valor[AJ_QUALIDADE]=1;
       int order[LING_MAX_OPC];ajPenLanguageOrder(order);valor[AJ_AUD_LINGUA]=order[1];
       aj4Escopo=0;aj4Util=1;focoIndice=0;
     }
