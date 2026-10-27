@@ -11,3 +11,14 @@ frames+=' pen-provider pen-iptv-provider pen-provider-failures pen-addon-failure
 export NUVIO_AJ_QUADROS="$frames"
 export NUVIO_SHOT_BIN="$output/shot"
 bash tests/ajustes_shot.sh "$output/app"
+# Reuse the same binary for Open, both sibling directions, and Back.
+for action in open right left back; do
+  frame=pen-audio;keys=;motion=b
+  case "$action" in
+    open) frame=v4-inicio-simples;motion=o;;
+    right) motion=rr;;
+    left) keys=rr;motion=l;;
+  esac
+  NUVIO_AJ_QUADROS="$frame" NUVIO_SHOT_TECLAS="$keys" NUVIO_SHOT_MOTION="$motion" \
+    NUVIO_SHOT_MOTION_CHECK=1 "$NUVIO_SHOT_BIN" "$output/$action"
+done

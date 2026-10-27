@@ -639,6 +639,8 @@ int   ajustes_buffer_preset(void);           // #338: 0 Automatico, 1 = 64, 2 = 
 int   ajustes_cache_seek_mb(void);           // F07: seek cache limit in MB for the next video (0 = off / not on this TV)
 #ifdef AJUSTES_TESTE
 void  ajustes_teste_escala(int percentual); // fixture only; does not persist
+// Last frame: two distinct Pencil titles drawn with intermediate alpha and slide.
+int   ajustes_teste_pen_motion(float *alpha, float *dy);
 #endif
 // Fundo atras dos paineis (Aparencia › Fundo): 0 Arte, 1 Arte borrada, 2 Frost.
 int   ajustes_fundo(void);

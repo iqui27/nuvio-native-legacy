@@ -10415,7 +10415,7 @@ void ajustes_fontes_atualizar(void) {
   if (fonteStatus) uxNotificar(fonteStatus);
 }
 void ajustes_atualizar(float dt, Uint32 agora) {
-  ajPenDt=dt;
+  ajPenDt=dt;ajPenMotionUpdate(dt);
   if(iptvForm.tipo && !nv_perfil_sessao_atual(iptvForm.sessao)) { ajIptvLimparForm();uxCancelar();stCampo=0;teclado_esquecer(); }
   ajLegendaEspelhar(); ajIptvEspelhar();
   AJ_ESCALA_INI();

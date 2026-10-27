@@ -28,7 +28,29 @@ int nav21_route_settings_focus(void){return aj4Linha*100000+guiaAberto*10000+gv.
 static int motionScene;
 static void internalNext(void){if(motionScene==1)focarOpcao(AJ_DEBRID_RD);else if(motionScene==2)ffAbrir();else if(motionScene==3){ffFoco=4;ffEscolher();}else tourAbrir();}
 static void internalBack(void){SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_ESCAPE;ajustes_evento(&e);}
-void nav21_settings(void){const char *names[]={"Settings/UX","Settings/Debrid","Settings/Filters","Settings/Filters-resolution","Settings/tour"};for(fixture=0;fixture<5;fixture++){openFixture();int primary=focusFixture();Nav21Screen s={names[fixture],openFixture,ajustes_evento,stepFixture,drawFixture,focusFixture,selectFixture,pageFixture,primary,transitionFixture,ownsArrow};nav21_check(s);}
+static void pencilFrame(void) {
+  nav21_targets_reset();txt_novo_quadro();stepFixture(1.f/60);drawFixture();
+}
+static void pencilMotion(void) {
+  fixture=0;openFixture();aj4Linha=1;
+  for(int i=0;i<90;i++)pencilFrame();
+  SDL_Event e={0};e.type=SDL_KEYDOWN;
+  const SDL_Keycode keys[]={SDLK_RETURN,SDLK_RIGHT,SDLK_RIGHT,SDLK_LEFT,SDLK_ESCAPE};
+  for(int k=0;k<5;k++) {
+    e.key.keysym.sym=keys[k];ajustes_evento(&e);
+    for(int i=0;i<6;i++)pencilFrame();
+    // Removing the page blend must fail for Open, sibling paging and Back.
+    int changed=k!=1;
+    nav21_expect("Settings/Pencil-motion","Old and new titles drawn at intermediate alpha and offset",
+      ajustes_teste_pen_motion(NULL,NULL),changed);
+    for(int i=0;i<20;i++)pencilFrame();
+  }
+  nav21_expect("Settings/Pencil-motion","Back restores Home row",aj4Linha,1);
+  valor[AJ_ANIM]=1;e.key.keysym.sym=SDLK_RETURN;ajustes_evento(&e);
+  pencilFrame();
+  nav21_expect("Settings/Pencil-motion","Reduced motion draws one settled page",ajustes_teste_pen_motion(NULL,NULL),0);
+}
+void nav21_settings(void){pencilMotion();const char *names[]={"Settings/UX","Settings/Debrid","Settings/Filters","Settings/Filters-resolution","Settings/tour"};for(fixture=0;fixture<5;fixture++){openFixture();int primary=focusFixture();Nav21Screen s={names[fixture],openFixture,ajustes_evento,stepFixture,drawFixture,focusFixture,selectFixture,pageFixture,primary,transitionFixture,ownsArrow};nav21_check(s);}
   for(motionScene=1;motionScene<5;motionScene++){fixture=motionScene==3?2:0;openFixture();for(int i=0;i<90;i++)stepFixture(1.f/60);Nav21Screen s={names[motionScene],openFixture,ajustes_evento,stepFixture,drawFixture,focusFixture,selectFixture,pageFixture,0,transitionFixture};nav21_motion(s,internalNext,"Open internal sheet: transition >=150ms");nav21_motion(s,internalBack,"Back internal sheet: transition >=150ms");}
   fixture=2;openFixture();ffFoco=4;ffEscolher();ffVoltar();
   nav21_expect("Settings/Filters-back","Filters, Audio, OK, Back: previous category",ffCategoria,-1);nav21_expect("Settings/Filters-back","Filters, Audio, OK, Back: previous focus",ffFoco,4);

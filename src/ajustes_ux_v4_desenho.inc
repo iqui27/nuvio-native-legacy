@@ -1,12 +1,36 @@
 // One island, four visible rows, shared geometry across the v4 screens.
 // Mirror placement only; glyphs and artwork retain their original orientation.
 static GfxRect aj4Rect(GfxRect r) { r.x = aj4X(r.x, r.w); return r; }
-static void aj4Draw(TxtLinha t,float x,float y) { txt_desenhar(t,aj4X(x,t.w),y); }
-static void aj4DrawAlpha(TxtLinha t,float x,float y,float a) { txt_desenhar_alpha(t,aj4X(x,t.w),y,a); }
-static void aj4Cor(GfxRect r,float raio,float cr,float cg,float cb,float ca) { gfx_cor(aj4Rect(r),raio,cr,cg,cb,ca); }
-static void aj4Vidro(GfxRect r,float raio,float cr,float cg,float cb,float ca,float a) { gfx_vidro_miolo(aj4Rect(r),raio,cr,cg,cb,ca,a); }
-static void aj4Neutro(GfxRect r,float raio,float va,float cr,float cg,float cb,float a) { ajNeutro(aj4Rect(r),raio,va,cr,cg,cb,a); }
-static void aj4Pilula(GfxRect r,float raio,float a) { ajPilulaAcento(aj4Rect(r),raio,a); }
+static GfxRect ajPenRect(GfxRect r) { r=aj4Rect(r);r.y+=ajPenDy;return r; }
+static void aj4Draw(TxtLinha t,float x,float y) { txt_desenhar(t,aj4X(x,t.w),y+ajPenDy); }
+static void aj4DrawAlpha(TxtLinha t,float x,float y,float a) { txt_desenhar_alpha(t,aj4X(x,t.w),y+ajPenDy,a); }
+static void aj4Cor(GfxRect r,float raio,float cr,float cg,float cb,float ca) { gfx_cor(ajPenRect(r),raio,cr,cg,cb,ca); }
+static void aj4Vidro(GfxRect r,float raio,float cr,float cg,float cb,float ca,float a) { gfx_vidro_miolo(ajPenRect(r),raio,cr,cg,cb,ca,a); }
+static void aj4Neutro(GfxRect r,float raio,float va,float cr,float cg,float cb,float a) { ajNeutro(ajPenRect(r),raio,va,cr,cg,cb,a); }
+static void aj4Pilula(GfxRect r,float raio,float a) { ajPilulaAcento(ajPenRect(r),raio,a); }
+static float ajPenKicker(const char *s,float x,float y,float a) {
+  float w=plrui_kicker(s,-1,0,243,242,239,1);
+  return plrui_kicker(s,aj4X(x,w),y+ajPenDy,243,242,239,.45f*a);
+}
+#ifdef AJUSTES_TESTE
+static struct { char title[200];float alpha,dy; } ajPenTitles[2];
+static int ajPenTitleCount;
+static void ajPenTitleDrawn(const char *s,float a) {
+  if(ajPenTitleCount>=2)return;
+  int i=ajPenTitleCount++;
+  snprintf(ajPenTitles[i].title,sizeof ajPenTitles[i].title,"%s",i18n(s));
+  ajPenTitles[i].alpha=a*gfx_opacidade_grupo;ajPenTitles[i].dy=ajPenDy;
+}
+int ajustes_teste_pen_motion(float *alpha,float *dy) {
+  for(int i=0;i<ajPenTitleCount;i++) {
+    if(alpha)alpha[i]=ajPenTitles[i].alpha;
+    if(dy)dy[i]=ajPenTitles[i].dy;
+  }
+  return ajPenTitleCount==2 && strcmp(ajPenTitles[0].title,ajPenTitles[1].title) &&
+    ajPenTitles[0].alpha>0 && ajPenTitles[0].alpha<1 && ajPenTitles[1].alpha>0 && ajPenTitles[1].alpha<1 &&
+    ajPenTitles[0].dy<0 && ajPenTitles[0].dy>-24 && ajPenTitles[1].dy>0 && ajPenTitles[1].dy<24;
+}
+#endif
 static const char *aj4IconeNome(const char *s) {
   if (aj4RTL()) {
     if (!strcmp(s,"aj_chevron-right")) return "aj_arrow-left";
@@ -14,10 +38,10 @@ static const char *aj4IconeNome(const char *s) {
   }
   return s;
 }
-static void aj4Icone(const char *s,float x,float y,float lado,float a) { ajIcone(aj4IconeNome(s),aj4X(x,lado),y,lado,a); }
-static void aj4IconeT(const char *s,float x,float y,float lado,float a) { ajIconeT(aj4IconeNome(s),aj4X(x,lado),y,lado,a); }
+static void aj4Icone(const char *s,float x,float y,float lado,float a) { ajIcone(aj4IconeNome(s),aj4X(x,lado),y+ajPenDy,lado,a); }
+static void aj4IconeT(const char *s,float x,float y,float lado,float a) { ajIconeT(aj4IconeNome(s),aj4X(x,lado),y+ajPenDy,lado,a); }
 static float aj4Bloco(TxtEstilo e,const char *s,float x,float y,float w,float lh,float a,int maxL) {
-  return aj4RTL() ? txt_bloco_dir(e,s,243,242,239,NV_VTELA_W-x,y,w,lh,a,maxL) : ajBloco(e,s,x,y,w,lh,a,maxL);
+  return aj4RTL() ? txt_bloco_dir(e,s,243,242,239,NV_VTELA_W-x,y+ajPenDy,w,lh,a,maxL) : ajBloco(e,s,x,y+ajPenDy,w,lh,a,maxL);
 }
 #define txt_desenhar aj4Draw
 #define txt_desenhar_alpha aj4DrawAlpha
@@ -28,6 +52,7 @@ static float aj4Bloco(TxtEstilo e,const char *s,float x,float y,float w,float lh
 #define ajIcone aj4Icone
 #define ajIconeT aj4IconeT
 #define ajBloco aj4Bloco
+#define ajKicker ajPenKicker
 static void aj4PontAtivar(int zona,int row) {
   if(zona==16) { uxRodape=row;uxEvento(SDLK_RETURN);return; }
   if(zona==15) {
@@ -61,13 +86,18 @@ static void aj4PontAtivar(int zona,int row) {
   else aj4Evento(SDLK_RETURN);
 }
 static void aj4Alvo(GfxRect r,int zona,int row) {
-  r = aj4Rect(r);
-  if(!pfTela && !teclado_aberto())ponteiro_alvo(r.x,r.y,r.w,r.h,aj4PontFoco,aj4PontAtivar,zona,row);
+  r = ajPenRect(r);
+  if(!ajPenOutgoing && !pfTela && !teclado_aberto())ponteiro_alvo(r.x,r.y,r.w,r.h,aj4PontFoco,aj4PontAtivar,zona,row);
 }
 static void aj4Texto(const char *s, TxtEstilo e, float x, float y, float w, float a) {
+  if(e==TXT_V2_KICK) { ajPenKicker(s,x,y,a/.45f);return; }
   if(e==TXT_G21B)e=TXT_PEN_ROW;
   else if(e==TXT_G18R)e=TXT_PEN_VALUE;
-  txt_desenhar_alpha(ajTxtC(e, s, w), x, y, a);
+  TxtLinha t=ajTxtC(e,s,w);
+  txt_desenhar_alpha(t,x,y,a);
+#ifdef AJUSTES_TESTE
+  if(e==TXT_TITULO2 && t.tex)ajPenTitleDrawn(s,a);
+#endif
 }
 static void aj4Botao(const char *s, const char *ic, float x, float y, float w, int foco, int ativo) {
   int segmento=y==179;
@@ -498,8 +528,7 @@ static void aj4PerfilDesenhar(void) {
 #include "ajustes_pen_presets.inc"
 #include "ajustes_pen_providers.inc"
 #include "ajustes_pen_components.inc"
-static void aj4Desenhar(void) {
-  ponteiro_camada();
+static void ajPenDrawPage(void) {
   aj4SeloAviso=0;
   if(iptvForm.tipo)ajDesenharTela();
   else if(ajPenParentEditor>=0)ajPenParentChoice();
@@ -519,6 +548,30 @@ static void aj4Desenhar(void) {
   else if(focoIndice)ajPenHome();
   else aj4SecaoDesenhar();
 }
+static void aj4Desenhar(void) {
+  ponteiro_camada();
+#ifdef AJUSTES_TESTE
+  ajPenTitleCount=0;
+#endif
+  int current[AJ_PEN_STATE_N];
+  for(size_t i=0;i<AJ_PEN_STATE_N;i++)current[i]=*ajPenState[i];
+  float opacity=gfx_opacidade_grupo,s=anim_suave(ajPenMotion);
+  // Paint the approved background and rail once, outside the page blend.
+  if(ajPenViewValid && s<1) {
+    ajPenBase();ajPenBody=1;
+    for(size_t i=0;i<AJ_PEN_STATE_N;i++)*ajPenState[i]=ajPenPrevious[i];
+    float focusY=ajPenFocusY,focusV=ajPenFocusV;int focusPage=ajPenFocusPage;
+    ajPenOutgoing=1;ajPenDy=-24*s;gfx_opacidade_grupo=opacity*(1-s);
+    ajPenDrawPage();
+    ajPenFocusY=focusY;ajPenFocusV=focusV;ajPenFocusPage=focusPage;
+    for(size_t i=0;i<AJ_PEN_STATE_N;i++)*ajPenState[i]=current[i];
+  }
+  ajPenOutgoing=0;ajPenDy=24*(1-s);gfx_opacidade_grupo=opacity*s;
+  ajPenDrawPage();
+  ajPenBody=0;ajPenDy=0;gfx_opacidade_grupo=opacity;
+  for(size_t i=0;i<AJ_PEN_STATE_N;i++)ajPenLast[i]=*ajPenState[i];
+  ajPenViewValid=1;
+}
 #undef txt_desenhar
 #undef txt_desenhar_alpha
 #undef gfx_cor
@@ -528,3 +581,4 @@ static void aj4Desenhar(void) {
 #undef ajIcone
 #undef ajIconeT
 #undef ajBloco
+#undef ajKicker
