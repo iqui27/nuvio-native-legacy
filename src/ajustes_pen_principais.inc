@@ -168,7 +168,7 @@ static const AjPenPage AJ_PEN_MAIN[] = {
       {AJ_PLUGINS,"Plugins","Os que Odds","aj_plug",0},
       {AJ_BUSCA_CINEMETA,"Buscar no Cinemeta","O catálogo vira resultado da busca","aj_search",1},
       {AJ_BUSCA_NUVIO,"Resultados do catálogo do Nuvio","Onde o catálogo aparece na busca","aj_list",0},
-      {AJ_FONTE_ORDEM,"Ordem dos add-ons","","aj_eye",0},
+      {AJ_BUSCA_ORIGEM,"Mostrar a fonte nos resultados","","aj_eye",1},
     }},
     {"FALHA NA REPRODUÇÃO",1024,800,6, {
       {AJ_FILTROS_FONTES,"Filtros das fontes","As regras aplicadas às fontes","aj_funnel",0},
@@ -284,7 +284,11 @@ static const AjPenPage AJ_PEN_MAIN[] = {
       {AJ_ENVIAR_LOG,"Enviar registro","Manda o log para a equipe do app","aj_file-text",0},
       {AJ_ENVIO_AUTO,"Enviar registros sozinho","","aj_send",1},
       {AJ_VER_REGISTRO,"Ver o registro na tela","","aj_list-ordered",0},
-      {AJ_DIAGNOSTICO,"Diagnóstico e otimização","","aj_stethoscope",0},
+#ifdef NV_ANDROID
+      {AJ_BAIXAR_REGISTRO,"Baixar o registro","","aj_download",0},
+#else
+      {AJ_VER_REGISTRO,"Baixar o registro","","aj_download",0},
+#endif
     }},
   }},
   {"Continuar assistindo","Continuar assistindo",1,1, {
