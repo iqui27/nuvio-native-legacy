@@ -11454,7 +11454,15 @@ int ajustes_teste_quadro(const char *id) {
   if(!strncmp(id,"pen-",4)) {
     static const char *const names[]={"Marina"};perfis_teste_definir(names,NULL,1,1);
     aj4Iniciar();pfTela=0;uxVeioBusca=0;valor[AJ_AVANCADAS]=0;valor[AJ_TEMA]=6;
-    if(!strcmp(id,"pen-audio")) { ajPenOpen(27);ajPenRow=1; }
+    if(!strcmp(id,"pen-parental"))ajPenOpen(AJ_PEN_PARENTAL);
+    else if(!strcmp(id,"pen-rules"))ajPenOpen(AJ_PEN_RULES);
+    else if(!strcmp(id,"pen-features"))ajPenOpen(AJ_PEN_TOUR);
+    else if(!strcmp(id,"pen-presets")) { aj4Util=2;focoIndice=0; }
+    else if(!strcmp(id,"pen-quality")) { ajPenOpen(29);focarOpcao(AJ_QUALIDADE);uxAbrirEditor(AJ_QUALIDADE);uxPendente=1; }
+    else if(!strcmp(id,"pen-source")) { ajPenOpen(29);focarOpcao(AJ_FONTE_MANUAL);uxAbrirEditor(AJ_FONTE_MANUAL); }
+    else if(!strcmp(id,"pen-scale")) { ajPenOpen(34);focarOpcao(AJ_ESCALA_TEXTO);uxAbrirEditor(AJ_ESCALA_TEXTO);uxPendente=2; }
+    else if(!strcmp(id,"pen-color")) { ajPenOpen(34);focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);uxPendente=3; }
+    else if(!strcmp(id,"pen-audio")) { ajPenOpen(27);ajPenRow=1; }
     else if(!strcmp(id,"pen-estilo"))ajPenOpen(28);
     else if(!strncmp(id,"pen-adv-",8))ajPenOpen(atoi(id+8));
     else if(!strncmp(id,"pen-main-",9))ajPenOpen(29+atoi(id+9));

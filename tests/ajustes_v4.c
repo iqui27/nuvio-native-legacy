@@ -55,6 +55,18 @@ int main(void) {
     for(int op=0;op<AJ_N;op++)if(aj4Secao(op)>=0 && ajOpcaoDisponivel(op))assert(seen[op]);
     ajPenPage=-1;focoIndice=1;
   }
+  // Specialized Pencil pages preserve navigation and cancel pending changes.
+  aj4Iniciar();focoIndice=1;aj4Linha=10;key(SDLK_RETURN);
+  assert(ajPenPage==AJ_PEN_PARENTAL && ajPenCurrent()==&AJ_PEN_PARENT);
+  key(SDLK_ESCAPE);assert(focoIndice && !uxEditor);
+  aj4Linha=6;key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_RULES);
+  key(SDLK_ESCAPE);assert(focoIndice && aj4Linha==6);
+  aj4Linha=7;key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_TOUR);
+  key(SDLK_DOWN);assert(ajPenRow==4);key(SDLK_RIGHT);assert(ajPenRow==5);
+  key(SDLK_ESCAPE);assert(focoIndice);
+  focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);int theme=valor[AJ_TEMA];
+  key(SDLK_DOWN);assert(uxPendente==theme+1 || uxPendente==theme);
+  key(SDLK_ESCAPE);assert(valor[AJ_TEMA]==theme);
   // APS-9: invalid IDs, absent routes and corrupt compiled sections are bounded.
   assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO);
   assert(AJ_HERO_TAMANHO + 1 == AJ_DET_TOPO && AJ_DET_TOPO + 1 == AJ_DET_ELENCO_VISTO);

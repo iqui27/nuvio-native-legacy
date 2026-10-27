@@ -158,7 +158,7 @@ static int ajPenEvent(SDL_Keycode key) {
     if(op<0) {
       if(op==-2)pfExigirAdmin(PA_INFANTIL,perfis_ativo());
       else if(op==-3)pfAbrir();
-      else if(op==-5)tourAbrir();
+      else if(op==-5) { ajPenPage=-1;tourAbrir(); }
       else uxNotificar(op==-4?"Perfil infantil: só classificação livre e até 10 anos.":"Ainda não disponível.");
       return 1;
     }

@@ -32,8 +32,12 @@ static void ajPenRules(void) {
   static const char *const help[]={"A TV desenha até 4K","HDR10 e HDR10+ são entregues como HDR10","Perfil 8, com DV se a TV pedir","Convertido em Dolby Digital ou estéreo","HEVC e AV1 por hardware","O teto de RAM do aparelho",
     "A TV decide o formato; o Nuvio avisa","Só quando você deixa o automático","O original é sempre a primeira opção","Só com o seu comando","Se a TV não aguenta, o efeito não vem","A busca por voz só liga com o botão"};
   static const char *const icons[]={"aj_monitor","aj_sun","aj_sparkles","aj_volume-2","aj_cpu","aj_hard-drive","aj_scan","aj_refresh-cw","aj_eye-off","aj_history","aj_cpu","aj_mic"};
-  char ram[64];snprintf(ram,sizeof ram,i18n("%d MB nesta TV"),tex_teto_ram_mb());
-  const char *values[]={textoValor(AJ_RESOLUCAO),textoValor(AJ_HDR_UI),textoValor(AJ_DV),textoValor(AJ_DTS_AC3),textoValor(AJ_GPU_EFEITOS),ram};
+  long ram=0;tex_orcamento_info(NULL,&ram,NULL,NULL);
+  char values[6][160];
+  const int ops[]={AJ_RESOLUCAO,AJ_HDR_UI,AJ_DV,AJ_DTS_AC3,AJ_GPU_EFEITOS};
+  for(int i=0;i<5;i++)snprintf(values[i],sizeof values[i],"%s",textoValor(ops[i]));
+  if(ram>0)snprintf(values[5],sizeof values[5],"%ld MB",ram);
+  else snprintf(values[5],sizeof values[5],"%s",i18n("Desconhecida"));
   for(int c=0;c<2;c++) {
     float x=c?1024:200;ajPenPanel(x,344,800,640,0);ajKicker(heads[c],x+26,366,1);
     for(int r=0;r<6;r++) {
