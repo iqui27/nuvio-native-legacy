@@ -84,6 +84,32 @@ static int ajPenLanguageOrder(int *order) {
   return n;
 }
 static int ajPenLanguageMove(SDL_Keycode key) {
+  int supported=uxOp==AJ_AUD_LINGUA || uxOp==AJ_QUALIDADE || uxOp==AJ_ESCALA_TEXTO || uxOp==AJ_TEMA;
+  if(uxEditor==1 && ajPenPage>=0 && supported) {
+    int screen=uxOp==AJ_ESCALA_TEXTO || uxOp==AJ_TEMA;
+    if(key==SDLK_LEFT && !uxRodape) { uxRodape=2;return 1; }
+    if(uxRodape>=2) {
+      if(key==SDLK_RIGHT) { uxRodape=0;return 1; }
+      if(key==SDLK_DOWN) { if(uxRodape<(screen?4:5))uxRodape++;return 1; }
+      if(key==SDLK_UP) { if(uxRodape>2)uxRodape--;return 1; }
+      if(uxOk(key)) {
+        if(uxRodape==4) { uxRodape=1;uxRestaurar=1;uxConfirmar=0; }
+        else if(uxRodape==5)ajPenSavedAsk();
+        else if(uxRodape==3 && screen) {
+          int op=uxOp==AJ_TEMA?AJ_COR_LOGO:AJ_TAMANHO_UI;
+          if(op==AJ_COR_LOGO)definirValorDireto(op,!valor[op]);
+          else { uxCancelar();focarOpcao(op);uxAbrirEditor(op); }
+        } else if(uxOp==AJ_QUALIDADE)uxPendente=uxPendente?0:1;
+        else if(uxOp==AJ_ESCALA_TEXTO)uxPendente=(uxPendente+1)%nValores(uxOp);
+        else if(uxOp==AJ_TEMA)uxPendente=(uxPendente+1)%nValores(uxOp);
+        else if(uxOp==AJ_AUD_LINGUA) {
+          for(int i=0;i<nValores(uxOp);i++)if(!strcmp(ling_opcao_codigo(i),"~")) { uxPendente=i;break; }
+        }
+        return 1;
+      }
+      return 0;
+    }
+  }
   if(uxOp!=AJ_AUD_LINGUA || uxEditor!=1 || uxRodape || (key!=SDLK_DOWN && key!=SDLK_UP))return 0;
   int order[LING_MAX_OPC],n=ajPenLanguageOrder(order),direction=key==SDLK_DOWN?1:-1;
   for(int i=0;i<n;i++)if(order[i]==uxPendente) { int next=i+direction;if(next>=0 && next<n)uxPendente=order[next];return 1; }

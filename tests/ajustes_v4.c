@@ -113,6 +113,13 @@ int main(void) {
   key(SDLK_ESCAPE);assert(ajPenPage==29);
   ajPenOpen(44);ajPenRow=11;key(SDLK_DOWN);assert(ajPenRow==99);
   key(SDLK_RETURN);assert(ajPenPage==AJ_PEN_COMPONENTS);key(SDLK_ESCAPE);assert(ajPenPage==44);
+  ajPenOpen(34);focarOpcao(AJ_TEMA);uxAbrirEditor(AJ_TEMA);
+  int logoBefore=valor[AJ_COR_LOGO];key(SDLK_LEFT);assert(uxRodape==2);
+  key(SDLK_DOWN);key(SDLK_RETURN);assert(valor[AJ_COR_LOGO]!=logoBefore && uxEditor);
+  key(SDLK_RIGHT);assert(!uxRodape);key(SDLK_ESCAPE);valor[AJ_COR_LOGO]=logoBefore;
+  ajPenOpen(29);focarOpcao(AJ_QUALIDADE);uxAbrirEditor(AJ_QUALIDADE);
+  key(SDLK_LEFT);key(SDLK_DOWN);key(SDLK_DOWN);assert(uxRodape==4);
+  key(SDLK_RETURN);assert(uxRestaurar);key(SDLK_ESCAPE);key(SDLK_ESCAPE);
   aj4Iniciar();focoIndice=1;
   // APS-9: invalid IDs, absent routes and corrupt compiled sections are bounded.
   assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO);

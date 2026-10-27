@@ -26,7 +26,7 @@ static void ajPenEditor(void) {
   for(int i=0;i<(op==AJ_TEMA?2:3);i++) {
     float y=i==0?400:i==1?(op==AJ_TEMA?614:quality?564:584):quality?718:738;
     float h=i==0?(op==AJ_TEMA?200:quality?150:170):140;
-    ajNeutro((GfxRect){226,y,468,h},22,.05f,.10f,.11f,.13f,1);
+    ajNeutro((GfxRect){226,y,468,h},22,i<2 && uxRodape==i+2?.14f:.05f,.10f,.11f,.13f,1);
     aj4Texto(heads[i],TXT_G21B,248,y+20,422,1);
     ajBloco(TXT_G18R,body[i],248,y+54,422,22,.58f,3);
     if(i==0 && (op==AJ_AUD_LINGUA || op==AJ_FONTE_MANUAL || quality)) {
@@ -52,8 +52,8 @@ static void ajPenEditor(void) {
       }
     }
   }
-  ajPenChip("Voltar ao padrão","aj_rotate-ccw-clock",226,902,206,uxRodape,9,1);
-  if(!screen)ajPenChip("Salvar como preset","aj_check",444,902,230,0,9,2);
+  ajPenChip("Voltar ao padrão","aj_rotate-ccw",226,902,206,uxRodape==1 || uxRodape==4,9,1);
+  if(!screen)ajPenChip("Salvar como preset","aj_check",444,902,230,uxRodape==5,9,2);
   ajKicker(quality?"QUALIDADE":op==AJ_TEMA?"CORES":op==AJ_ESCALA_TEXTO?"ESCALA DO TEXTO":op==AJ_AUD_LINGUA?"FAIXAS DISPONÍVEIS":"ESCOLHA UM VALOR",770,366,1);
   if(OPCOES[op].tipo==OP_NUMERO) {
     char value[160];uxValorTexto(op,uxPendente,value,sizeof value);
