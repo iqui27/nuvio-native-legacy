@@ -273,8 +273,11 @@ unsigned cat_geracao_episodios(void) { return __atomic_load_n(&epGeracao, __ATOM
 // quando disparava, a reconstrucao percorria o catalogo inteiro (2000 itens
 // de 15 KB cada, um desencontro de cache por item no ARM da TV). Atomico: a
 // descoberta escreve de outro fio. Ver cat_revisao_itens em catalogo.h.
-static unsigned catMudancas;
-static void mudou(void) { __atomic_add_fetch(&catMudancas, 1u, __ATOMIC_RELEASE); }
+static unsigned catMudancas, catConteudo;
+static void mudou(void) {
+  __atomic_add_fetch(&catConteudo, 1u, __ATOMIC_RELEASE);
+  __atomic_add_fetch(&catMudancas, 1u, __ATOMIC_RELEASE);
+}
 
 // O progresso de reproducao e uma posicao, nao uma prova de que o titulo foi
 // marcado como assistido. O historico do Trakt fica separado, por identidade
@@ -1864,6 +1867,7 @@ int cat_salvar_progresso_ep(int indice, double posSeg, double durSeg, int tempor
 
 unsigned cat_revisao(void) { return __atomic_load_n(&catRevisao, __ATOMIC_ACQUIRE); }
 unsigned cat_revisao_itens(void) { return __atomic_load_n(&catMudancas, __ATOMIC_ACQUIRE); }
+unsigned cat_revisao_conteudo(void) { return __atomic_load_n(&catConteudo, __ATOMIC_ACQUIRE); }
 
 // Leitores: epTrava so pelo tempo de ler dois inteiros. `indiceItem` alem de
 // nFaixas e "sem episodios", e nao leitura fora do vetor: cat_acrescentar*
@@ -2405,7 +2409,12 @@ int cat_acrescentar_lote(const CatItem *v, int qtd, int *saidaIdx) {
   garantirFaixas(nAlocado);
   pthread_mutex_unlock(&epTrava);
   __atomic_store_n(&n, novoN, __ATOMIC_RELEASE);
-  mudou();
+  // Search appends preserve row windows. Saved items also change Home's
+  // Library row, so retain content invalidation for account imports.
+  int saved = 0;
+  for (k = 0; k < qtd; k++) if (v[k].naLista) { saved = 1; break; }
+  if (saved) mudou();
+  else __atomic_add_fetch(&catMudancas, 1u, __ATOMIC_RELEASE);
   pthread_mutex_unlock(&pubTrava);
   return qtd;
 }

@@ -591,6 +591,8 @@ double        cat_relogio_ms(void);
 // substituido ou removido), alem de toda troca do bloco. Barata de ler por
 // quadro; quem deriva uma lista do catalogo reconstroi so quando ela muda.
 unsigned      cat_revisao_itens(void);
+// Existing item content changed; pure Search appends keep row windows intact.
+unsigned      cat_revisao_conteudo(void);
 int           cat_n_episodios(int indiceItem);
 const CatEp  *cat_episodio(int indiceItem, int i);   // indice circular; NULL se o catalogo esta vazio
 // O id que se pede aos addons de FONTE para o episodio (t,e) do item. Serie do

@@ -1008,7 +1008,7 @@ static void entrarLista(void);
 
 // --- Teclado e voz do sistema (sistexto.h) ----------------------------------------
 static void abrirTecladoSis(void) {
-  if (spTelefone()) { kbAberto = 0; painel = P_CAMPO; }
+  kbAberto = 0; painel = P_CAMPO;
   st_ime_abrir(ST_SPOT, consulta, SP_MAX_TXT - 1);
 }
 static void ditar(void) { if (ditadoDisponivel()) st_voz_iniciar(ST_SPOT); }
@@ -1039,6 +1039,8 @@ static void lerSistema(void) {
   if (r == ST_PEDE_TECLADO) { painel = P_CAMPO; abrirTecladoSis(); return; }
   if (r == ST_TEXTO || r == ST_FIM) campoDefinir(t, voz || r == ST_FIM);
   if (r == ST_FIM) {
+    st_fechar(ST_SPOT);
+    kbAberto = 0;
     registrar();
     // Fim da fala ou "Concluir": o proximo passo provavel e escolher.
     if (temResultados()) entrarLista(); else painel = P_CAMPO;
@@ -1368,7 +1370,9 @@ void spot_evento(const SDL_Event *e) {
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || e->key.keysym.scancode == NV_SCANCODE_BACK) {
     if (ouvindo()) { st_fechar(ST_SPOT); painel = P_CAMPO; return; }
     if (kbAberto || painel == P_LISTA || painel == P_TECLADO || painel == P_CEL) {
-      kbAberto = 0; painel = P_CAMPO; return;
+      kbAberto = 0; painel = P_CAMPO;
+      if (st_abre_sozinho() && imeDisponivel() && st_teclado_modo() != 1) abrirTecladoSis();
+      return;
     }
     if (nConsulta > 0) { registrar(); nConsulta = 0; consulta[0] = 0; remontar(); return; }
     spot_fechar(); return;

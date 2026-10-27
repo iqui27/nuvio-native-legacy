@@ -2471,10 +2471,14 @@ static void homeMarcarURL(const char *url, float largura) {
   tex_cache_marcar_larg(NV_CACHE_ARTE_GRUPO_HOME, url, largura, 1, 0);
 }
 
+static int referenciasArteFileira = -1, referenciasArteHero;
 static void homeAtualizarReferenciasArte(void) {
-  int r, i;
-  cachearte_limpar_referencias_grupo(NV_CACHE_ARTE_GRUPO_HOME);
-  for (r = 0; r < nFileiras; r++) {
+  // Register one row per frame. Returning from Search must not pin every
+  // row and every hero candidate synchronously on the event/draw thread.
+  if (referenciasArteFileira < 0) return;
+  int r = referenciasArteFileira, i;
+  if (r == 0) cachearte_limpar_referencias_grupo(NV_CACHE_ARTE_GRUPO_HOME);
+  if (r < nFileiras) {
     int limite = fileiras[r].n < 8 ? fileiras[r].n : 8;
     float largura = larguraFil(r);
     for (i = 0; i < limite; i++) {
@@ -2485,12 +2489,16 @@ static void homeAtualizarReferenciasArte(void) {
       homeMarcarURL(it->logo, largura * 0.65f);
       homeMarcarURL(it->backdrop, largura);
     }
+    referenciasArteFileira++;
+    return;
   }
-  // Pin the actual source selected for the large hero request, which can use a
-  // different backdrop URL and resolution from the row card.
+  // Hero references also advance one candidate per frame.
   heroSetGarantir();
-  for (i = 0; i < heroSetN; i++)
-    homeMarcarURL(arte_por_identidade(heroSet[i], 2), NV_TELA_W);
+  if (referenciasArteHero < heroSetN) {
+    homeMarcarURL(arte_por_identidade(heroSet[referenciasArteHero++], 2), NV_TELA_W);
+    return;
+  }
+  referenciasArteFileira = -1;
   cachearte_estatisticas_pedir();
 }
 
@@ -2978,7 +2986,7 @@ static void sincronizarFileiras(void) {
   // que troca fils[].
   static unsigned ultCatRev, ultFilRev, ultColRev, ultFilLim, ultCwoRev, ultOrdemRev, ultRetRev, ultCfRev, ultOvRev, ultItensRev, ultCurRev;
   unsigned catRev = cat_revisao(), filRev = fil_revisao();
-  unsigned itensRev = cat_revisao_itens();
+  unsigned itensRev = cat_revisao_conteudo();
   int filLim = fil_limite();
   // A CURADORIA da fileira Herói entra na guarda: a recomendação chega DEPOIS
   // do catálogo (e volta a cada 30 min), e sem este termo o cartão só trocaria
@@ -3648,7 +3656,7 @@ static void sincronizarFileiras(void) {
         break;
       }
   expFileira = expColuna = -1; expAbre = 0.0f;
-  homeAtualizarReferenciasArte();
+  referenciasArteFileira = referenciasArteHero = 0;
   if (nFileiras < 1) return;
   {
     int cols[MAX_FIL], k;
@@ -3784,6 +3792,7 @@ static void home_atualizar_(float dt, Uint32 agora) {
   if (!telefoneui_ativo()) { toqueHomeLimpar(); toqueHeroCancelar(); }
 #endif
   sincronizarFileiras();
+  homeAtualizarReferenciasArte();
   // A FILEIRA DE AMIGOS tem tantas colunas quantos rostos (+ "Adicionar"), e
   // isso muda sem o catalogo mudar (um amigo novo chega do recomenda.c).
   for (int r = 0; r < nFileiras; r++) {

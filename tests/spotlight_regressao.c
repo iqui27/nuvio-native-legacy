@@ -444,6 +444,20 @@ int main(void) {
 
   janelaCompartilhada();
 
+  st_teste_ligar(1);
+  spot_abrir(0);
+  spot_texto_externo("silo");
+  entrarLista();
+  st_teste_evento("Dsilo");
+  lerSistema();
+  check(st_estado() == ST_PARADO && painel == P_LISTA && !kbAberto,
+        "native submit hides both keyboards before browsing results");
+  SDL_Event back = {0}; back.type = SDL_KEYDOWN; back.key.keysym.sym = SDLK_AC_BACK;
+  spot_evento(&back);
+  check(spot_aberto() && painel == P_CAMPO && st_estado() == ST_DIGITANDO,
+        "Back from native results restores focused field and IME");
+  spot_fechar(); st_teste_ligar(0);
+
   // CH− da LG (481 cru) fecha o Spotlight, como a AMARELA.
   { aberto = 1;
     SDL_Event ch = {0}; ch.type = SDL_KEYDOWN;
