@@ -40,6 +40,7 @@
 // `pendPronto` e o fio de desenho copia para os vetores publicados. Leitores
 // nunca tocam no staging — mesma disciplina do epg.c.
 #include "horafmt.h"
+#include "ltvkind.h"
 #include "guia.h"
 #include "idcanal.h"
 #include "registro.h"
@@ -336,9 +337,13 @@ static LtvArena arena;
 static unsigned canaisRevisao;
 // Staging (so o fio de carga escreve).
 static GCanal *sCanais;  static int sNCanais, sCapCanais;
+/* VOD from mixed live lists follows the same staging publication boundary. */
+static G5Item *mixedVod,*sMixedVod;static int nMixedVod,sNMixedVod;
+
 static GCat   *sCats;    static int sNCats, sCapCats;
 static GFonteLtv sLtvF[G_MAX_LTV]; static int sNLtvF;
 static LtvArena sArena;
+#define G_CATEGORIAS_MAX 30000
 static int sTeto;            // visible channel limit
 // Bound the spool even when tmpfile() uses Emscripten's in-memory filesystem.
 #define G_RAW_BYTES_MAX (2 * 1024 * 1024)
@@ -372,6 +377,7 @@ static int fioVivo;
 static int recarregarPend;
 // Guide v5 M3U channels: copied on the UI thread, added as a source by the load thread.
 static G5Item *cargaG5; static int nCargaG5;
+static GFonteLtv cargaDesligadas[G_MAX_LTV];static int nCargaDesligadas;
 static GuiaCorte sCorte;       // staging: o que a carga deixou de fora
 static GuiaCorte corte;        // publicado: o que o cabecalho mostra
 static int sOk;                 // staging: a carga achou canal (antes de pendPronto)
@@ -436,12 +442,21 @@ static void stagingZerar(void) {
   free(sAlts); sAlts = NULL; sNAlts = 0;
   fontesLtvSoltar(sLtvF, sNLtvF);
   ltv_arena_soltar(&sArena);
+  free(sMixedVod);sMixedVod=NULL;sNMixedVod=0;
   free(sCanais); sCanais = NULL; sNCanais = sCapCanais = 0;
   free(sCats); sCats = NULL; sNCats = sCapCats = 0;
   memset(sLtvF, 0, sizeof sLtvF); sNLtvF = 0;
   sPendentes = 0; sTextoSubstituido = 0;
 }
 
+static void mixedVodAdd(int f,int kind,const char *id,const char *name,const char *url,const char *logo,const char *group){
+  if(f<0||!ltv_fonte_ligada(sLtvF[f].chave)||sNMixedVod>=30000)return;
+  G5Item *next=realloc(sMixedVod,(size_t)(sNMixedVod+1)*sizeof *next);if(!next)return;sMixedVod=next;
+  G5Item *it=&sMixedVod[sNMixedVod++];memset(it,0,sizeof *it);it->kind=kind;it->age=-1;
+  snprintf(it->source,sizeof it->source,"%s",sLtvF[f].chave);snprintf(it->id,sizeof it->id,"%s",id);
+  snprintf(it->name,sizeof it->name,"%s",name);snprintf(it->url,sizeof it->url,"%s",url?url:"");
+  snprintf(it->poster,sizeof it->poster,"%s",logo?logo:"");snprintf(it->group,sizeof it->group,"%s",group?group:"");
+}
 static int sFonteChave(const char *ch, int tipo, const char *nome, const char *base) {
   int i;
   for (i = 0; i < sNLtvF; i++) if (!strcmp(sLtvF[i].chave, ch)) return i;
@@ -538,6 +553,7 @@ static void sAltAdd(const char *dono, const char *id, const char *nome) {
   sNAlts++;
 }
 static int sCanalAdd(int f, const GCru *c) {
+  if(f<0||!ltv_fonte_ligada(sLtvF[f].chave))return 0;
   GCanal *g;
   const char *sel[256], *original = c->grupo && c->grupo[0] ? c->grupo : "Outros";
   int cat, ns = sGruposEscolhidos(f, sel, 256);
@@ -635,7 +651,7 @@ static int sCanalAdd(int f, const GCru *c) {
       if (sCats[i].fonte == f && !strcmp(sCats[i].nome, grupo)) found = 1;
     }
     if (sNCanais >= sTeto ||
-        (!found && nc >= GUIACORTE_MAX_CAT)) {
+        (!found && nc >= G_CATEGORIAS_MAX)) {
       sLtvF[f].cortada = 1; return 0;
     }
   }
@@ -898,6 +914,8 @@ static int cargaAtual(void) {
   return !cargaCancelada && nv_perfil_sessao_atual(cargaSessao);
 }
 static int cargaBaseLigada(const char *base) {
+  char key[LTV_CHAVE];ltv_chave_fonte(LTV_ADDON,base,key,sizeof key);
+  if(!ltv_fonte_ligada(key))return 0;
   for (int i = 0; i < nAddonsCarga; i++)
     if (!strcmp(addonsCarga[i].base, base)) return addonsCarga[i].ativo;
   return 0;
@@ -1271,6 +1289,8 @@ static void sondaManifestos(void) {
     GSabe *sb = sNSabe < G_MAX_SABE ? &sSabe[sNSabe] : NULL;
     base = ad->base;
     if (!base || !base[0]) continue;
+    char source_key[LTV_CHAVE];ltv_chave_fonte(LTV_ADDON,base,source_key,sizeof source_key);
+    if(!ltv_fonte_ligada(source_key)){sFonteChave(source_key,LTV_ADDON,ad->nome,base);continue;}
     if (sb) { snprintf(sb->base, sizeof sb->base, "%s", base); sb->canal = -1; sNSabe++; }
     // O MANIFESTO JA FOI LIDO PELA DESCOBERTA, no arranque e em paralelo: o
     // que ele declara de canal esta em addons.c. Reler aqui era um GET por
@@ -1376,7 +1396,7 @@ static int lerPagina(const GFonte *f, int fl, int skip, int *novos) {
   *novos = 0;
   // Pedido cortado nao sai (addonurl.h); o log leva o nome do catalogo.
   if (!nv_addon_pedido_coube(f->nome, w, sizeof url)) return 0;
-  if (!cargaAtual() || !cargaBaseLigada(f->base)) return 0;
+  if (!cargaAtual() || !cargaBaseLigada(f->base)||!ltv_fonte_ligada(sLtvF[fl].chave)) return 0;
   corpo = cargaBaixar(url);
   if (!corpo || !cargaAtual()) { free(corpo); return 0; }
   unsigned long pagina = ltv_hash(corpo);
@@ -1394,8 +1414,7 @@ static int lerPagina(const GFonte *f, int fl, int skip, int *novos) {
       int semCat;
       // O catalogo se declara de canal, mas um meta que se diz filme/serie
       // nao entra — protege o guia de catalogo mal declarado.
-      if (js_texto(p, fim, "type", mtipo, sizeof mtipo) &&
-          mtipo[0] && !ehCanal(mtipo)) { p = js_prox(fim); continue; }
+      js_texto(p,fim,"type",mtipo,sizeof mtipo);
       logo[0] = desc[0] = 0;
       if (!js_texto(p, fim, "poster", logo, sizeof logo))
         js_texto(p, fim, "logo", logo, sizeof logo);
@@ -1403,6 +1422,9 @@ static int lerPagina(const GFonte *f, int fl, int skip, int *novos) {
       { const char *g = js_array(p, fim, "genre");
         if (!g) g = js_array(p, fim, "genres");
         lerStrEl(g, gen, sizeof gen); }
+      char stream_url[2048]="",epg_id[80]="";js_texto(p,fim,"url",stream_url,sizeof stream_url);js_texto(p,fim,"tvg-id",epg_id,sizeof epg_id);
+      int kind=ltv_kind(mtipo,stream_url,nome,gen,epg_id,js_num(p,fim,"duration",0));
+      if(kind){mixedVodAdd(fl,kind,id,nome,stream_url,logo,gen);p=js_prox(fim);continue;}
       // SEM GENERO: primeiro o nome do canal (categoriaPorNome), depois o
       // nome do catalogo de onde ele veio ("Meu Futebol"). "Outros" fica so
       // para catalogo sem nome.
@@ -1437,7 +1459,7 @@ static int lerPagina(const GFonte *f, int fl, int skip, int *novos) {
 // With no filter rules, later pages cannot change a full final visible list.
 // Count eligible rows without applying caps or discarding staging candidates.
 static int sCotaCompleta(void) {
-  int nc = 0, n = 0, visiveis[GUIACORTE_MAX_CAT];
+  int nc = 0, n = 0, visiveis[G_CATEGORIAS_MAX];
   if (sInventarioCat[0]) return sInventarioMais;
   if (sFltLive.modo != GF_TODAS || sFltLive.nCat || sFltLive.nCan || sPendentes || sCategoriasTemOcultas()) return 0;
   for (int i = 0; i < sNCanais; i++) {
@@ -1447,7 +1469,7 @@ static int sCotaCompleta(void) {
     if (g->sug && ajustes_livetv_sugerir()) return 0;
     for (j = 0; j < nc && visiveis[j] != g->cat; j++) {}
     if (j == nc) {
-      if (nc == GUIACORTE_MAX_CAT) continue;
+      if (nc == G_CATEGORIAS_MAX) continue;
       visiveis[nc++] = g->cat;
     }
     if (++n >= sTeto) return 1;
@@ -1516,6 +1538,12 @@ static int xtCanal(const XtreamItem *it, void *u) {
   int gi;
   GCru c;
   gi = it->catOrdem >= 0 && it->catOrdem < x->nOrd ? x->giDe[it->catOrdem] : -1;
+  if(it->kind){
+    mixedVodAdd(x->fl,it->kind,it->id,it->nome,it->url,it->logo,it->categoria);
+    if(F->total>0)F->total--;
+    if(gi>=0&&F->gi[gi].n>0)F->gi[gi].n--;
+    return 1;
+  }
 
   memset(&c, 0, sizeof c);
   c.id = it->id; c.nome = it->nome; c.logo = it->logo; c.epgId = it->epgId;
@@ -1564,6 +1592,8 @@ static uint64_t m3uHash(uint64_t h,const char *s) {
 }
 static int m3uCanal(const LtvM3uCanal *m, void *u) {
   M3uCtx *x = u;
+  int kind=ltv_kind(NULL,m->url,m->nome,m->grupo,m->tvgId,m->duracao);
+  if(kind){mixedVodAdd(x->fl,kind,m->url,m->nome,m->url,m->logo,m->grupo);return 1;}
   char id[80], chave[300];
   const char *g = m->grupo && m->grupo[0] ? m->grupo : categoriaPorNome(m->nome);
   int semCat = !g, gi;
@@ -1608,7 +1638,7 @@ static int m3uCarregar(const LtvUrl *u, const char *chave, const char *epgUrl) {
   long long bytes = 0;
   memset(&x, 0, sizeof x);
   x.fl = chave ? sFonteChave(chave, LTV_M3U, u->nome, "") : sFonte(LTV_M3U, u->url, u->nome, "");
-  if (x.fl < 0) return 0;
+  if (x.fl < 0||!ltv_fonte_ligada(sLtvF[x.fl].chave)) return 0;
   x.nsel = sGruposEscolhidos(x.fl, x.sel, 256);
   x.conta=chave && fonteConta(&sLtvF[x.fl],&x.contaId);x.origem=u->url;
   if(x.conta) {
@@ -1788,6 +1818,7 @@ static int cacheFonteLer(const char *chave) {
   int tipo, nc, ngi, i, fl, total, cortada, versao, antes = sNCanais;
   long long quando;
   static char s1[1024], s2[1024], s3[1024];
+  if(!ltv_fonte_ligada(chave))return 0;
   cacheNomeFonte(chave, nome, sizeof nome);
   if (!dados_caminho(caminho, sizeof caminho, nome)) return -1;
 #ifdef __EMSCRIPTEN__
@@ -2023,17 +2054,19 @@ static void fonteVaziaRecupera(int tipo, const char *ref, const char *nome, cons
 static void sugerirSecoes(void) {
   const char **nomes = NULL, **sec = NULL;
   unsigned char *sem = NULL;
-  int *idx = NULL, i, n = 0;
-  if (!ajustes_livetv_sugerir()) return;
+  int *idx = NULL, i, n = 0, jev = 0;
   for (i = 0; i < sNCanais; i++) if (sCanais[i].sug) n++;
-  if (!n) return;
+  printf("[guia] categorias: %d canais, %d sem categoria", sNCanais, n);
+  if (!ajustes_livetv_sugerir()) { printf(", Jev desligado\n"); return; }
+  if (!n) { printf(", 0 via Jev\n"); return; }
   nomes = malloc(sizeof *nomes * (size_t)n); sec = malloc(sizeof *sec * (size_t)n);
   sem = malloc((size_t)n); idx = malloc(sizeof *idx * (size_t)n);
   if (nomes && sec && sem && idx) {
     int k = 0;
     for (i = 0; i < sNCanais; i++)
       if (sCanais[i].sug) { idx[k] = i; nomes[k] = sCanais[i].nome; sem[k] = 1; k++; }
-    if (livecat_sugerir(nomes, sem, n, sec, cargaAtual) > 0 && cargaAtual())
+    jev = livecat_sugerir(nomes, sem, n, sec, cargaAtual);
+    if (jev > 0 && cargaAtual())
       for (k = 0; k < n; k++) {
         int cat;
         if (!sec[k]) continue;
@@ -2049,6 +2082,7 @@ static void sugerirSecoes(void) {
         }
       }
   }
+  printf(", %d via Jev\n", jev > 0 ? jev : 0);
   free(nomes); free(sec); free(sem); free(idx);
 }
 
@@ -2058,6 +2092,7 @@ static void *fioGuia(void *u) {
   (void)u;
   stagingZerar();
   sTeto = tetoCarga;
+  for(int f=0;f<nCargaDesligadas;f++)sFonteChave(cargaDesligadas[f].chave,cargaDesligadas[f].tipo,cargaDesligadas[f].nome,"");
   sFalhas = 0; sXtFalha = XT_OK; sXtHttp = 0;
   // Fontes das fileiras primeiro — zero rede extra. A sonda de manifestos
   // completa com o que a home nao montou. ADDON DESLIGADO NAO ENTRA.
@@ -2071,7 +2106,7 @@ static void *fioGuia(void *u) {
   // Fonte de addon sem canal nenhum (todos os catalogos falharam): o cache.
   for (i = 0; i < sNFontes; i++) {
     int fl = sFonte(LTV_ADDON, sFontes[i].base, "", sFontes[i].base);
-    if (fl >= 0 && !sLtvF[fl].nCanais) fonteVaziaRecupera(LTV_ADDON, sFontes[i].base, sLtvF[fl].nome, sFontes[i].base);
+    if (fl >= 0 && ltv_fonte_ligada(sLtvF[fl].chave) && !sLtvF[fl].nCanais) fonteVaziaRecupera(LTV_ADDON, sFontes[i].base, sLtvF[fl].nome, sFontes[i].base);
   }
   // Native accounts retain the registry order, distinct IDs and cache per source.
   for (i = 0; cargaAtual() && i < nCargaContas; i++) {
@@ -2080,6 +2115,7 @@ static void *fioGuia(void *u) {
     if (!c->ativa) continue;
     contaChave(c, chave, sizeof chave);
     tipo = c->tipo == IPTV_XTREAM ? LTV_XTREAM : c->tipo == IPTV_STALKER ? LTV_STALKER : LTV_M3U;
+    if(!ltv_fonte_ligada(chave)){sFonteChave(chave,tipo,c->nome,"");continue;}
     if (c->tipo == IPTV_XTREAM && xtream_fonte_configurado(c->id)) n = xtreamCarregar(c);
     else if (c->tipo == IPTV_STALKER && stalker_fonte_configurado(c->id)) n = stalkerCarregar(c);
     else if (c->tipo == IPTV_M3U) {
@@ -2126,7 +2162,7 @@ static void *fioGuia(void *u) {
   for (i = 0; i < sNLtvF; i++) if (sLtvF[i].nCanais > 0) ok = 1;
   // FONTE ACHADA E NENHUMA PAGINA RESPONDEU tambem e "nao respondeu".
   if (sNFontes > 0 && !ok) sFalhas++;
-  sOk = ok || sFiltrados > 0;
+  sOk = ok || sFiltrados > 0 || sNMixedVod>0 || nCargaDesligadas>0;
   free(addonsCarga); addonsCarga = NULL; nAddonsCarga = 0;
   atomic_store_explicit(&pendPronto, 1, memory_order_release);
   return NULL;
@@ -2284,7 +2320,7 @@ static void empacotar(void) {
 
 // Resolve final sections before spending either visible-list quota.
 static void selecionarSecoes(void) {
-  int w = 0, nc = 0, visiveis[GUIACORTE_MAX_CAT];
+  int w = 0, nc = 0, visiveis[G_CATEGORIAS_MAX];
   for (int f = 0; f < sNLtvF; f++) {
     const char *sel[256];
     int ns = sGruposEscolhidos(f, sel, 256);
@@ -2306,7 +2342,7 @@ static void selecionarSecoes(void) {
   for (int i = 0, j; i < sNCanais; i++) {
     GCanal *g = &sCanais[i];
     for (j = 0; j < nc && visiveis[j] != g->cat; j++) {}
-    if ((j == nc && nc >= GUIACORTE_MAX_CAT) || w >= sTeto) {
+    if ((j == nc && nc >= G_CATEGORIAS_MAX) || w >= sTeto) {
       sLtvF[g->fonte].cortada = 1; continue;
     }
     if (j == nc) visiveis[nc++] = g->cat;
@@ -2390,6 +2426,7 @@ falhou:
 static void adotarStaging(void) {
   selecionarSecoes();
   if (!compactarStaging()) { stagingZerar(); return; }
+  free(mixedVod);mixedVod=sMixedVod;nMixedVod=sNMixedVod;sMixedVod=NULL;sNMixedVod=0;
   fontesLtvSoltar(ltvF, nLtvF);
   ltv_arena_soltar(&arena);
   free(canais); free(cats); free(alts);
@@ -2460,6 +2497,7 @@ static void epgExtrasMontar(void) {
   nomes = malloc(sizeof(char *) * (size_t)(2 * nCanais + 1));
   if (!ids || !nomes) { free(ids); free(nomes); return; }
   for (f = 0; f < nLtvF && nx < EPG_MAX_EXTRAS; f++) {
+    if(!fonteAtiva(f))continue;
     const char *url = NULL;
     int i0 = ni, n0 = nn;
     unsigned contaId=0;
@@ -2529,7 +2567,7 @@ static void publicar(void) {
   int i, igual;
   // REDE VAZIA NAO APAGA A LISTA QUE HA: sem resposta nenhuma (todos fora), a
   // lista de ontem continua valendo mais que uma tela vazia.
-  if (sNCanais == 0 && nCanais > 0 && !sFiltrados) {
+  if (sNCanais == 0 && nCanais > 0 && !sFiltrados&&!sNMixedVod&&!nCargaDesligadas) {
     falhas = sFalhas; xtFalha = sXtFalha; xtHttp = sXtHttp;
     memcpy(sabe, sSabe, sizeof sSabe); nSabe = sNSabe;
     stagingZerar();
@@ -2591,6 +2629,8 @@ static void iniciarCarga(void) {
   // Copia no desenho: nenhum pedido relera as URLs ou os manifestos do
   // perfil novo enquanto a resposta do anterior ainda estiver em voo.
   cargaSessao = nv_perfil_sessao_ler(); cargaCancelada = 0;
+  nCargaDesligadas=0;
+  for(int f=0;f<nLtvF;f++)if(!ltv_fonte_ligada(ltvF[f].chave))cargaDesligadas[nCargaDesligadas++]=ltvF[f];
   nCargaUrls = ltv_urls_copiar(cargaUrls, LTV_URLS_MAX);
   nCargaContas = iptv_contas(cargaContas, IPTV_MAX_CONTAS);
   nAddonsCarga = addons_n();
@@ -2606,8 +2646,8 @@ static void iniciarCarga(void) {
   sNFontes = 0;
   for (int i = 0; i < nFontes && sNFontes < G_MAX_FONTE; i++)
     if (cargaBaseLigada(fontes[i].base)) sFontes[sNFontes++] = fontes[i];
-  cargaG5 = calloc(768, sizeof *cargaG5);
-  nCargaG5 = cargaG5 ? g5ui_m3u_channels(cargaG5, 768) : 0;
+  cargaG5 = calloc(4096, sizeof *cargaG5);
+  nCargaG5 = cargaG5 ? g5ui_m3u_channels(cargaG5, 4096) : 0;
   fioVivo = 1;
   estado = G_BAIXANDO;
   if (pthread_create(&t, NULL, fioGuia, NULL) != 0) {
@@ -2857,7 +2897,7 @@ static void canalParaItem(const GCanal *c, CatItem *dst);
 static GCanal *canalPorId(const char *id) {
   int i;
   if (!id || !id[0]) return NULL;
-  for (i = 0; i < nCanais; i++) if (!strcmp(canais[i].id, id)) return &canais[i];
+  for (i = 0; i < nCanais; i++) if (fonteAtiva(canais[i].fonte) && !strcmp(canais[i].id, id)) return &canais[i];
   return NULL;
 }
 // O MESMO id pode existir em duas fontes (M1): o lembrete e o Spotlight guardam
@@ -2867,7 +2907,7 @@ static GCanal *canalPorIdBase(const char *id, const char *base) {
   GCanal *primeiro = NULL;
   if (!id || !id[0]) return NULL;
   for (i = 0; i < nCanais; i++)
-    if (!strcmp(canais[i].id, id)) {
+    if (fonteAtiva(canais[i].fonte) && !strcmp(canais[i].id, id)) {
       if (!base || !base[0] || !strcmp(canais[i].base, base)) return &canais[i];
       if (!primeiro) primeiro = &canais[i];
     }
@@ -2882,7 +2922,7 @@ int guia_variantes(const char *id, GuiaVariante *out, int max) {
   GCanal *c = canalPorId(id);
   char base[160], outra[160];
   int i, j, k, n = 0;
-  if (!c || max < 1 || !xtream_e_id(c->id) || !gLiberado(c)) return 0;
+  if (!c || !fonteAtiva(c->fonte) || max < 1 || !xtream_e_id(c->id) || !gLiberado(c)) return 0;
   nv_nome_base(c->nome, base, sizeof base);
   snprintf(out[n].id, sizeof out[n].id, "%s", c->id);
   snprintf(out[n].nome, sizeof out[n].nome, "%s", c->nome);
@@ -7935,14 +7975,33 @@ int guia_fonte_saude(int i, GuiaFonteSaude *o) {
   if (i < 0 || i >= nLtvF || !o) return 0;
   const GFonteLtv *F = &ltvF[i];
   o->nome = F->nome[0] ? F->nome : ltv_tipo_nome(F->tipo);
-  o->saude = F->saude; o->canais = F->nCanais; o->comGuia = F->epgCom;
+  o->saude = F->saude; o->canais = fonteAtiva(i)?F->nCanais:0; o->comGuia = fonteAtiva(i)?F->epgCom:0;
   o->deCache = F->deCache; o->atualizada = F->atualizada;
   return 1;
+}
+int guia_fonte_playback_permitida(const char *base){
+  char key[LTV_CHAVE];ltv_chave_fonte(LTV_ADDON,base,key,sizeof key);
+  return ltv_fonte_ligada(key);
+}
+const char *guia_vod_origem(const char *source){
+  for(int f=0;f<nLtvF;f++)if(!strcmp(source,ltvF[f].chave))return fonteAtiva(f)?ltvF[f].base:NULL;
+  return NULL;
+}
+int guia_vod_item(int i,G5Item *out){
+  if(i<0||i>=nMixedVod)return 0;
+  if(out)*out=mixedVod[i];return 1;
+}
+int guia_fonte_ligada(int i){return i>=0&&i<nLtvF&&ltv_fonte_ligada(ltvF[i].chave);}
+int guia_fonte_alternar(int i){
+  if(i<0||i>=nLtvF)return 0;
+  LtvPref *p=ltv_pref(ltvF[i].chave,1);if(!p)return 0;
+  p->desligada=!p->desligada;ltv_pref_gravar();
+  cargaCancelada=1;empacotar();epgExtrasMontar();epg_recarregar();guia_recarregar(0);return 1;
 }
 int guia_canal_campos(int i, const char **id, const char **nome, const char **logo,
                       const char **cat, const char **base) {
   if (i < 0 || i >= nCanais) return 0;
-  if(!gLiberado(&canais[i]))return 0;
+  if(!fonteAtiva(canais[i].fonte)||!gLiberado(&canais[i]))return 0;
   return guia_canal_regra_campos(i,id,nome,logo,cat,base);
 }
 /* Only the PIN-authenticated parental editor may use the unfiltered inventory. */
@@ -7960,6 +8019,7 @@ void guia_abrir_sessao(void) {
   // Nunca tocar no staging de um fio vivo. Ele sai no proximo limite de
   // pedido e o desenho descarta o resultado pela geracao da abertura.
   cargaCancelada = 1;
+  free(mixedVod);mixedVod=NULL;nMixedVod=0;
   estado = G_PARADO; recarregarPend = 0; recargaDoPainel = 0;
   nCanais = nCats = nFontes = nSabe = nFav = nFavOrd = 0;
   fontesOk = cacheLido = favLido = modoLido = previewLido = 0;

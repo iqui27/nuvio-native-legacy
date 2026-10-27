@@ -178,7 +178,15 @@ static void gv_sports_screen(void){
       char count[96];int n=i==0?esportes_noticias_n():i==4?gs_count:i==5?esportes_favoritos_times():gs_n;
       if(i>=1&&i<=3){n=0;for(int e=0;e<gs_n;e++)if(i==1?(gs_games[e].estado==1||gs_today(gs_games[e].inicio)):i==2?(gs_games[e].estado==0&&gs_games[e].inicio>time(NULL)):gs_games[e].estado==2)n++;}
       snprintf(count,sizeof count,"%d · %s",n,i18n(i==4?"Ligas":i==5?"Times":"Itens carregados"));
-      gs_card(2070+i,i18n(gs_sections[i]),count,gs_icons[i],GV_MX+(i%3)*486,340+(i/3)*264);
+      float x=GV_MX+(i%3)*486,y=340+(i/3)*264;
+      gs_card(2070+i,i18n(gs_sections[i]),count,gs_icons[i],x,y);
+      if(i>=1&&i<=3)for(int e=0;e<gs_n;e++){
+        const EspEvento *game=&gs_games[e];
+        if(!(i==1?(game->estado==1||gs_today(game->inicio)):i==2?(game->estado==0&&game->inicio>time(NULL)):game->estado==2))continue;
+        int m=gs_sport_id(game->modalidade);
+        for(int p=0;p<game->nParticipantes;p++)esportesui_logo(game->participantes[p].logo,m,(GfxRect){x+286+p*72,y+18,64,64});
+        break;
+      }
     }
     gv_label(TXT_ILHA_SUB,i18n("Jogos das ligas carregadas. Abra Por liga para consultar qualquer competição."),GV_MX,908,GV_MW,1);
     return;

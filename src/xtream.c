@@ -1,4 +1,5 @@
 #include "xtream.h"
+#include "ltvkind.h"
 #include "iptvid.h"
 int ajustes_livetv_formato(void);  // ajustes.h puxa SDL; o teste do xtream nao
 #include "rede.h"
@@ -578,7 +579,7 @@ int xtream_canais_cb_sessao(void (*cat)(const char *nome, int ordem, int n, void
         if (passo == 0) { contagens[ci >= 0 ? ci : nCat]++; total++; }
         else {
           XtreamItem it;
-          char arq[8];
+          char arq[8],streamType[32]="",ext[16]="mp4",vodUrl[2048]="";
           memset(&it, 0, sizeof it);
           snprintf(c.id, sizeof c.id, "xtream:%s", sid);
           c.logo[0] = c.epgId[0] = 0;
@@ -591,6 +592,10 @@ int xtream_canais_cb_sessao(void (*cat)(const char *nome, int ordem, int n, void
             if (strncmp(s, "http://", 7) && strncmp(s, "https://", 8)) *s = 0;
             memmove(c.logo, s, strlen(s) + 1); }
           js_texto(p, fim, "epg_channel_id", c.epgId, sizeof c.epgId);
+          js_texto(p,fim,"stream_type",streamType,sizeof streamType);
+          it.kind=ltv_kind(streamType,"",c.nome,"",c.epgId,0);
+          if(it.kind){js_texto(p,fim,"container_extension",ext,sizeof ext);xtream_vod_url(sid,ext[0]?ext:"mp4",it.kind==3,vodUrl,sizeof vodUrl);}
+          it.url=vodUrl;
           it.id = c.id; it.nome = c.nome; it.logo = c.logo; it.epgId = c.epgId;
           it.categoria = ci >= 0 ? cats[ci].nome : "Outros";
           it.catOrdem = ci >= 0 ? cats[ci].ordem : nCat;

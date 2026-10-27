@@ -42,6 +42,8 @@ static void fixture(void){
     e->nParticipantes=2;e->estado=i==0?1:i==1?2:0;e->inicio=time(NULL)+(i==0?-20:i==1?-180:120*i)*60;e->fim=e->inicio+7200;
     strcpy(e->participantes[0].id,"fla");strcpy(e->participantes[0].nome,"Flamengo");strcpy(e->participantes[0].curto,"Flamengo");strcpy(e->participantes[0].pontos,"2");
     strcpy(e->participantes[1].id,"pal");strcpy(e->participantes[1].nome,"Palmeiras");strcpy(e->participantes[1].curto,"Palmeiras");strcpy(e->participantes[1].pontos,"1");
+    strcpy(e->participantes[0].logo,"tests/fixtures/guiacat-team-0.png");
+    strcpy(e->participantes[1].logo,"tests/fixtures/guiacat-team-1.png");
   }
   catalogoUso=1;
   rowCache[0]=(EspRowCache){.linha=0,.n=8,.estado=1,.dia=8,.uso=1,.desde=time(NULL),.eventos=calloc(8,sizeof *eventos)};
@@ -65,6 +67,8 @@ int main(int argc,char **argv){
   glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(64);gfx_icones_dir("deploy/app/art");
   dados_iniciar(getenv("NUVIO_DADOS"));dados_gravar("ajustes.txt","idioma 0\nidiomaAutoLocal 0\nselected_theme 2\nescalaTextoLocal 2\nescalaTextoVersaoLocal 1\n");ajustes_dir(getenv("NUVIO_DADOS"));ajustes_definir_vidro(0);context();semear();fixture();
   g5ui_open("esportes-ligas");quadro();assert(gs_count==9&&gs_n==9);capture(w,out,"sports-home");
+  g5ui_open("esportes-hoje");quadro();assert(gs_n>0);capture(w,out,"sports-games-crests");
+  g5ui_open("esportes-ligas");quadro();
   focus=2074;gs_activate();assert(!strcmp(screen,"esportes-modalidades"));quadro();focus=2400;gs_activate();quadro();assert(!strcmp(screen,"esportes-catalogo")&&gs_count==9);
   focus=2061;gs_activate();quadro();assert(gs_page==1);focus=2500;gs_activate();assert(gs_league==6&&!strcmp(screen,"esportes-liga"));gs_back();quadro();assert(gs_page==1&&focus==2500);
   gs_page=0;focus=2500;gs_activate();quadro();capture(w,out,"league");
@@ -88,6 +92,30 @@ int main(int argc,char **argv){
   assert(!strcmp(screen,"esportes-ajustes")&&!strcmp(gv_pagina,"esportes-ligas"));
   focus=2031;gs_activate();quadro();assert(gs_count==9);gs_back();quadro();
   assert(!strcmp(screen,"esportes-ajustes")&&!strcmp(gv_pagina,"esportes-ligas"));gs_back();
+  /* Read the captured public ESPN payload through the production parser. */
+  FILE *payload=fopen("tests/fixtures/guiacat-scoreboard.json","rb");assert(payload);
+  char json[12000];size_t bytes=fread(json,1,sizeof json-1,payload);fclose(payload);json[bytes]=0;
+  EspEvento parsed[2];EspLiga brazil={0};strcpy(brazil.id,"bra.1");strcpy(brazil.nome,"Brasileirão");
+  assert(esportes_eventos_ler(json,"soccer",&brazil,parsed,2)==1);
+  assert(parsed[0].nParticipantes==2);
+  for(int p=0;p<2;p++)assert(strstr(parsed[0].participantes[p].logo,"https://a.espncdn.com/i/teamlogos/"));
+  /* 2000 published channels, 93 source groups and a missing group. */
+  g5ui_open("grade");free(canais);free(cats);
+  canais=calloc(2000,sizeof *canais);cats=calloc(93,sizeof *cats);assert(canais&&cats);
+  static char ids[2000][32],names[93][64];
+  nCanais=2000;nCats=93;
+  for(int i=0;i<93;i++){snprintf(names[i],64,"Provider group %02d",i+1);cats[i].nome=names[i];}
+  for(int i=0;i<2000;i++){
+    snprintf(ids[i],32,"fixture-%d",i);
+    canais[i]=(GCanal){.id=ids[i],.nome=ids[i],.cat=i%93,.base="",.logo="",.tipo="channel",.desc="",.epg=-1};
+  }
+  canais[1999].cat=-1;gv_grupo[0]=0;gv_off=gv_lin=0;gv_snap_force=1;gv_snapshot();
+  assert(gv_total_n==2000&&gv_cats==94&&gv_cats_total==94);
+  int sum=0;for(int i=0;i<gv_cats;i++)sum+=gv_cat_n[i];assert(sum==2000);
+  gv_zone=3;gv_sb=6+93;gv_cat_scroll();assert(gv_cat_off==94-GV_CAT_WIN);
+  assert(gv_sb_rect(gv_sb,GV_BASE).y+44<1000);
+  capture(w,out,"categories-2000-counts");
+  gv_filtrar("Outros","grade");assert(gv_match==1);
   g5ui_close();assert(!gs_started&&!gs_depth);
   puts("PASS Sports v5: sections, sport/league paging, Back, team options, combined favorites, confirmed Sources and hidden source exclusion");return 0;
 }

@@ -21,6 +21,7 @@
 #define NV_GUIA_H
 #include <SDL2/SDL.h>
 #include "catalogo.h"
+#include "guiav5.h"
 #include "epg.h"
 #include <stdint.h>
 #include "gfx.h"   /* GfxRect de guia_logo_desenhar */
@@ -188,6 +189,11 @@ int  guia_canal_numero(int i);   /* provider number of channel i, 0 outside */
  * channels with EPG, cached list and list time. 0 past the last source. */
 typedef struct { const char *nome; int saude, canais, comGuia, deCache; long long atualizada; } GuiaFonteSaude;
 int  guia_fonte_saude(int i, GuiaFonteSaude *o);
+int guia_fonte_ligada(int i);
+int guia_fonte_playback_permitida(const char *base);
+int guia_fonte_alternar(int i);
+int guia_vod_item(int i,G5Item *out);
+const char *guia_vod_origem(const char *source);
 int  guia_canal_campos(int i, const char **id, const char **nome, const char **logo,
                        const char **cat, const char **base);
 /* Unfiltered metadata for the authenticated parental rule editor only. */

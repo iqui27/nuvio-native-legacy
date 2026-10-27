@@ -11,15 +11,15 @@ compiler=(cc)
 if command -v ccache >/dev/null; then compiler=(ccache cc); fi
 objects=()
 pids=()
-flags=()
+flags=(-DAJUSTES_TESTE)
 if [ "$source_test" = tests/nav21.c ]; then flags+=('-DNV_REC_URL="http://127.0.0.1:8799"'); fi
 for source in src/*.c src/dts/*.c "$source_test"; do
   case "$source" in src/main.c) continue;; esac
   case "$source_test:$source" in
-    tests/nav21.c:src/app.c|tests/pessoas_shot.c:src/pessoas.c|tests/pessoas_shot.c:src/recomenda.c|tests/social_tela_shot.c:src/social.c|tests/filmografia_shot.c:src/filmodados.c) continue;;
+    tests/guiapreview.c:src/guia.c|tests/guiapreview.c:src/guiav5ui.c|tests/esportes_v5_shot.c:src/guia.c|tests/esportes_v5_shot.c:src/guiav5ui.c|tests/esportes_v5_shot.c:src/esportes.c|tests/nav21.c:src/app.c|tests/pessoas_shot.c:src/pessoas.c|tests/pessoas_shot.c:src/recomenda.c|tests/social_tela_shot.c:src/social.c|tests/filmografia_shot.c:src/filmodados.c) continue;;
   esac
   object="$work/$(basename "$source" .c).o"
-  "${compiler[@]}" -c "$source" -o "$object" -DAJUSTES_TESTE -O1 -g -Isrc \
+  "${compiler[@]}" -c "$source" -o "$object" -O1 -g -Isrc \
     -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
     -Wno-deprecated-declarations -Wno-macro-redefined ${flags[@]+"${flags[@]}"} &
   pids+=($!)

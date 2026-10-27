@@ -191,6 +191,7 @@ int ltv_pref_de_texto(const char *t, LtvPref *out, int max) {
         else if (!strcmp(nome, "fmt")) p.formato = atoi(val);
         else if (!strcmp(nome, "modo")) p.modo = atoi(val);
         else if (!strcmp(nome, "proxy")) p.proxy = atoi(val);
+        else if (!strcmp(nome, "off")) p.desligada = !!atoi(val);
         else if (!strcmp(nome, "g") && val[0]) {
           size_t u = strlen(p.grupos);
           if (u + kv + 2 < sizeof p.grupos) {
@@ -216,8 +217,8 @@ size_t ltv_pref_texto(const LtvPref *p, int n, char *dst, size_t tam) {
   dst[0] = 0;
   for (i = 0; i < n; i++) {
     const char *g = p[i].grupos;
-    int w = snprintf(dst + u, tam - u, "%s\taz=%d\ttz=%d\tfmt=%d\tmodo=%d\tproxy=%d",
-                     p[i].chave, p[i].az, p[i].fusoMin, p[i].formato, p[i].modo, p[i].proxy);
+    int w = snprintf(dst + u, tam - u, "%s\taz=%d\ttz=%d\tfmt=%d\tmodo=%d\tproxy=%d\toff=%d",
+                     p[i].chave, p[i].az, p[i].fusoMin, p[i].formato, p[i].modo, p[i].proxy,p[i].desligada);
     if (w < 0 || (size_t)w >= tam - u) break;
     u += (size_t)w;
     while (*g) {
@@ -261,6 +262,9 @@ LtvPref *ltv_pref(const char *chave, int criar) {
   snprintf(prefs[nPrefs].chave, sizeof prefs[nPrefs].chave, "%s", chave);
   prefs[nPrefs].modo = -1; prefs[nPrefs].proxy = -1;
   return &prefs[nPrefs++];
+}
+int ltv_fonte_ligada(const char *chave) {
+  const LtvPref *p=ltv_pref(chave,0);return !p||!p->desligada;
 }
 void ltv_pref_gravar(void) {
   static char buf[LTV_PREF_MAX * 2300];
@@ -424,6 +428,7 @@ static int linhaM3u(LtvM3u *p, char *l) {
     c.url = url; c.tvgId = id; c.tvgNome = nm; c.logo = logo; c.grupo = grp;
     c.ua = ua; c.referer = ref; c.catchup = cu; c.catchupSrc = cus;
     c.chno = atoi(chno); c.catchupDias = atoi(cud);
+    const char *duration=strchr(p->ext,':');c.duracao=duration?atof(duration+1):0;
     p->temExt = 0;
     if (!c.nome[0] || !url[0]) return 1;
     p->nCanais++;

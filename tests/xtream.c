@@ -130,6 +130,12 @@ static void checkCategory(const char *name,int order,int count,void *u) {
   assert(!strcmp(name,expected));
   s->seen[order]=1;s->categories++;
 }
+static int checkMixed(const XtreamItem *c,void *u) {
+  int *seen=u;(*seen)++;
+  if(c->kind==1){assert(c->url&&strstr(c->url,"/movie/")&&strstr(c->url,"/9.mp4"));}
+  else assert(c->kind==0&&!strcmp(c->nome,"Live"));
+  return 1;
+}
 static int checkChannel(const XtreamItem *c,void *u) {
   StreamCheck *s=u;
   assert(s->categories==s->expectedCategories);
@@ -188,6 +194,13 @@ int main(void) {
   puts("ok  lg: lista direto no painel");
 #endif
 
+  {
+    const char *saved=respStreams;int seen=0,total=0;
+    respStreams="[{\"stream_id\":8,\"name\":\"Live\",\"stream_type\":\"live\"},{\"stream_id\":9,\"name\":\"Film\",\"stream_type\":\"movie\"}]";
+    assert(xtream_canais_cb(NULL,checkMixed,&seen,&total)==2&&seen==2&&total==2);
+    respStreams=saved;
+    puts("PASS: native Xtream forwards live/VOD types and playable VOD URL");
+  }
   // #424: categories beyond 256 retain their names, including the last
   // channels of a large provider list. Preserve provider channel order.
   {

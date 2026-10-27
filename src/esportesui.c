@@ -471,8 +471,9 @@ static void logo(const char *url, int modalidadeLogo, GfxRect r) {
     if (h>r.h) { h=r.h; w=h*ap; }
     GfxRect arte={r.x+(r.w-w)*0.5f,r.y+(r.h-h)*0.5f,w,h};
     gfx_rect(arte,t,tex_marca_escura(url)&&tex_logo_tom_unico(url)==1?GFX_MARCA:GFX_TEXTO,0,0,0,0,1,1,1,1);
-  } else {
-    /* The event's sport selects the same local fallback for teams and leagues. */
+  } else if (!url || !url[0]) {
+    /* Use the sport default only when ESPN supplied no crest. Loading a
+     * supplied URL must not replace the team with an unrelated sport mark. */
     const EspModalidade *esporte=esportes_modalidade(modalidadeLogo);
     char generico[80]="menu_sports";
     if(esporte)snprintf(generico,sizeof generico,"esp_%s",esporte->id);

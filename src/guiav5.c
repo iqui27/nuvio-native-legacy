@@ -1,5 +1,6 @@
 #include "guiav5.h"
 #include "js.h"
+#include "ltvkind.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +40,8 @@ int g5_parse_xtream_page(const char *json,int kind,G5Item *out,int cap,int skip,
     const char *end=js_fim(p);
     if(*p!='{' || !end || end[-1]!='}')return -1;
     G5Item it={.kind=kind,.age=-1};
+    char stream_type[32]="";js_texto(p,end,"stream_type",stream_type,sizeof stream_type);
+    if(stream_type[0])it.kind=ltv_kind(stream_type,"","","","",0);
     snprintf(it.source,sizeof it.source,"xtream");
     number_id(p,end,kind==G5_SERIES?"series_id":"stream_id",it.id,sizeof it.id);
     js_texto(p,end,"name",it.name,sizeof it.name);
@@ -91,6 +94,7 @@ static int playlist_line(G5Playlist *p){
   if(!p->header){if(strncmp(s,"#EXTM3U",7))return 0;p->header=1;return 1;}
   if(!strncmp(s,"#EXTINF:",8)){
     memset(&p->pending,0,sizeof p->pending);p->pending.age=-1;
+    if(atof(s+8)>0)p->pending.kind=G5_MOVIE;
     /* Commas inside quoted attributes are not title separators. */
     const char *comma=NULL;int quote=0;for(const char *c=s;*c;c++){if(*c=='"')quote=!quote;else if(*c==','&&!quote){comma=c;break;}}
     if(comma)snprintf(p->pending.name,sizeof p->pending.name,"%s",comma+1);
@@ -106,8 +110,7 @@ static int playlist_line(G5Playlist *p){
   snprintf(it->source,sizeof it->source,"m3u");snprintf(it->url,sizeof it->url,"%s",s);
   uint64_t hash=UINT64_C(1469598103934665603);for(const char *c=s;*c;c++){hash^=(unsigned char)*c;hash*=UINT64_C(1099511628211);}
   snprintf(it->id,sizeof it->id,"%016llx",(unsigned long long)hash);
-  const char *dot=strrchr(s,'.');
-  it->kind=dot && (!strncasecmp(dot,".mp4",4)||!strncasecmp(dot,".mkv",4)||!strncasecmp(dot,".avi",4))?G5_MOVIE:G5_LIVE;
+  it->kind=ltv_kind(NULL,s,it->name,it->group,it->epg,it->kind==G5_MOVIE?1:0);
   p->total++;if(p->count<p->cap)p->items[p->count++]=*it;
   memset(it,0,sizeof *it);return 1;
 }

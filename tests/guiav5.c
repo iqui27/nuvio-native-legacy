@@ -24,6 +24,11 @@ int main(void) {
   assert(g5_playlist_finish(&p) == 2);
   assert(items[0].kind == G5_LIVE && items[1].kind == G5_MOVIE);
   assert(!strcmp(items[0].epg, "globo"));
+  const char *mixed="#EXTM3U\n#EXTINF:-1 tvg-id=\"hbo\" group-title=\"Filmes\",HBO\nhttps://tv.test/live/1.ts\n#EXTINF:-1 group-title=\"VOD\",Film\nhttps://tv.test/play/2\n#EXTINF:-1,Show S01E02\nhttps://tv.test/play/3\n#EXTINF:7200,Recorded film\nhttps://tv.test/play/4\n";
+  g5_playlist_init(&p,items,4);assert(g5_playlist_feed(&p,mixed,strlen(mixed)));assert(g5_playlist_finish(&p)==4&&p.total==4);
+  assert(items[0].kind==G5_LIVE&&items[1].kind==G5_MOVIE&&items[2].kind==G5_EPISODE&&items[3].kind==G5_MOVIE);
+  assert(g5_parse_xtream("[{\"stream_id\":1,\"name\":\"Film\",\"stream_type\":\"movie\"}]",G5_LIVE,items,4,&total)==1&&items[0].kind==G5_MOVIE);
+  g5_playlist_init(&p,items,4);assert(g5_playlist_feed(&p,a,strlen(a)));assert(g5_playlist_finish(&p)==2);
   G5Rules rules = { .hide_adult = 1, .max_age = 12, .ask_unrated = 1 };
   G5Lease lease = {0};
   G5Item item = {.kind=G5_MOVIE, .age=16}; strcpy(item.id,"17"); strcpy(item.source,"xtream");

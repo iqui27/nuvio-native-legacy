@@ -2655,8 +2655,12 @@ static int aceitaStream(const AddonPedido *p, const char *tipo, const char *id) 
   return 0;
 }
 
+/* Standalone addon transports have no guide preferences. The guide supplies
+ * the per-profile source switch in the application. */
+__attribute__((weak)) int guia_fonte_playback_permitida(const char *base) { (void)base; return 1; }
 // Keep declared type filtering while admitting IDs that ARM can translate.
 static int candidatoStream(const AddonPedido *p, const char *tipo, const char *id) {
+  if (!guia_fonte_playback_permitida(p->base)) return 0;
   if (aceitaStream(p, tipo, id)) return 1;
   if (!aceitaStream(p, tipo, NULL) ||
       (strcmp(tipo, "movie") && strcmp(tipo, "series")) ||

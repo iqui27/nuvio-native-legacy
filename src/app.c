@@ -7050,7 +7050,9 @@ void app_atualizar(float dt, Uint32 agora) {
       if(index>=0&&!travaui_abrir_espera(index,0,0)){
         if(player_aberto()||player_retido())player_encerrar();
         novaGeracaoFonte();limparFontePendente();limparFonteVOD();
-        player_abrir(index,NULL);player_definir_fonte(url);
+        player_abrir(index,NULL);
+        if(url[0])player_definir_fonte(url);
+        else{addons_definir_origem(guia_vod_origem(item.origem));addons_buscar(item.imdb,item.tipo);addons_definir_origem(NULL);aguardandoFonte=1;}
       }
     }
   }

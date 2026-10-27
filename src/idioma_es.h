@@ -6582,7 +6582,6 @@ T("Os dados da sessão não são um JSON válido", "The session data is not vali
   T("Seus dados sociais foram apagados.", "Tus datos sociales se han borrado."),
   T("Seus filmes e séries usam a rede local quando disponível.", ""),
   T("Seus idiomas e quando as legendas aparecem", "Tus idiomas y cuándo aparecen los subtítulos"),
-  T("Seus provedores, num só lugar.", "Tus proveedores, en un solo lugar."),
   T("Seus servidores", "Tus servidores"),
   T("Seus serviços e credenciais não entram nesta lista.", "Tus servicios y credenciales no aparecen en esta lista."),
   T("Seus times, todas as competições", "Your teams, every competition"),
