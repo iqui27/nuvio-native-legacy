@@ -17,9 +17,10 @@ panel = source('src/salvospainel.c')
 social = source('src/social.c')
 app = source('src/app.c')
 checks = {
-    'P1 composition: stable Social heading, labeled destinations below it':
-        'i18n("Social")' in panel and 'i18n(rotuloAba(i))' in panel
-        and '#define SP_ABAS_Y      (SP_Y + 138.0f)' in panel,
+    'P1 composition: top tabs and localized selected destination title':
+        'i18n(rotuloAba(aba))' in panel and 'i18n(rotuloAba(i))' in panel
+        and '#define SP_ABAS_Y      (SP_Y + 40.0f)' in panel
+        and '#define SP_TIT_Y       (SP_Y + 138.0f)' in panel,
     'P1 material: friend activity reuses shared sheet glass':
         'gfx_vidro_folha(il,SO_RAIO/il.h,1)' in social,
     'P1 production: blue panel and friend profiles retain their live owners':
