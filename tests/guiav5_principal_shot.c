@@ -43,6 +43,20 @@ static void capture(SDL_Window *window, const char *dir, const char *name) {
       for (int y = 0; y < 1080; y++)
         memcpy((char *)surface->pixels + y * surface->pitch,
                pixels + (1079 - y) * 1920 * 4, 1920 * 4);
+      if (!strcmp(name, "preview-playing")) {
+        /* Host player has no decoder: composite a declared still fixture behind
+         * the production video hole, as the TV video plane would be. */
+        SDL_Surface *frame = IMG_Load("design/glass-ilha/arte.jpg");
+        SDL_Surface *back = SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);
+        float x,y,w,h;guia_preview_rect(&x,&y,&w,&h);
+        SDL_Rect rect = {(int)x,(int)y,(int)w,(int)h};
+        assert(frame && back);
+        SDL_FillRect(back,NULL,SDL_MapRGBA(back->format,0,0,0,255));
+        assert(SDL_BlitScaled(frame,NULL,back,&rect)==0);
+        SDL_SetSurfaceBlendMode(surface,SDL_BLENDMODE_BLEND);
+        assert(SDL_BlitSurface(surface,NULL,back,NULL)==0);
+        SDL_FreeSurface(frame);SDL_FreeSurface(surface);surface=back;
+      }
       assert(IMG_SavePNG(surface, path) == 0);
       SDL_FreeSurface(surface);
       free(pixels);
@@ -122,6 +136,7 @@ static void semear(void) {
     c->id = IDS[i];
     c->nome = C[i].nome;
     c->base = "FrostView";
+    c->tipo = "channel"; c->logo = c->desc = "";
     c->cat = C[i].cat;
     c->epg = -1;
     c->fav = C[i].fav;
@@ -183,7 +198,7 @@ int main(int argc, char **argv) {
   {float y0=gv_gfolha.y;focus=1800;SDL_Delay(20);quadro();assert(gv_gfolha.ok&&gv_gfolha.y>y0+1&&gv_gfolha.y<347);}
   gv_voltar();query[0]=0;gv_sai_t=0;gv_zone=0;
   const char *names[] = {
-    "grade", "cartoes", "preview", "preview-grade", "preview-foco", "preview-hero-cheio",
+    "fontes-gerenciar", "preview-playing", "grade", "cartoes", "preview", "preview-grade", "preview-foco", "preview-hero-cheio",
     "preview-troca", "dock", "catchup", "categorias", "pastas", "busca", "canal-opcoes",
     "numero", "opcoes", "ajustes", "epg-saude", "epg-verificando", "epg-adicionado",
     "epg-falha", "erros", "fontes-erro", "vazio", "esportes-ligas", "esportes-liga",
@@ -205,10 +220,29 @@ int main(int argc, char **argv) {
       overlay = 0; shot_zap = 0;
       continue;
     }
+    if (!strcmp(names[n], "fontes-gerenciar")) {
+      nLtvF = 2;
+      snprintf(ltvF[0].nome, sizeof ltvF[0].nome, "IPTV playlist");
+      snprintf(ltvF[1].nome, sizeof ltvF[1].nome, "Live addon");
+      ltvF[0].tipo = LTV_M3U; ltvF[1].tipo = LTV_ADDON;
+      ltvF[0].nCanais = 4; ltvF[1].nCanais = 4;
+    }
     char page[48];
     snprintf(page, sizeof page, "%s", names[n]);
     if (strchr(page, '@')) *strchr(page, '@') = 0;
+    if (!strcmp(page, "preview-playing")) snprintf(page, sizeof page, "grade");
     g5ui_open(page);
+    if (!strcmp(names[n], "preview-playing")) {
+      aberta = 1;
+      gv_assistir("c1");
+      CatItem it; assert(guia_pediu_preview(&it));
+      float x,y,w,h;guia_preview_rect(&x,&y,&w,&h);
+      player_mini_no_guia(x,y,w,h);player_manter_mini();
+      cat_definir(&it,1);player_abrir(0,NULL);player_marcar_canal(&it);
+      static const VideoSimulacao sim = {.aceita=1,.pronto=1,.tocando=1};
+      video_simular(&sim);player_definir_fonte("https://example.invalid/live.m3u8");
+      assert(guia_preview_no_ar());
+    }
     gv_zone = 0; gv_lin = 0; gv_pin = 0; gv_sb = 3; gv_chipi = 0; gv_card = 0; gv_hbt = 0;
     gv_snap_force = 1; gv_snapshot();
     if (!strcmp(names[n], "grade@rolada")) gv_lin = 6;
@@ -235,6 +269,7 @@ int main(int argc, char **argv) {
     if (!strcmp(names[n], "esportes-onde-assistir"))
       snprintf(gv_jogo, sizeof gv_jogo, "%s", "Brasileirão: Flamengo × Palmeiras");
     capture(window, dir, names[n]);
+    if (!strcmp(names[n], "preview-playing")) player_encerrar();
     nLtvF = 0;
     if (!strcmp(names[n], "vazio")) semear();
   }
