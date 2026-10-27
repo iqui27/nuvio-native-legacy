@@ -606,9 +606,27 @@ static void phone_screen(void){
   for(int i=0;i<4;i++)label(TXT_ILHA_CORPO,i18n(names[i]),876,410+i*108,830,1);
   button(4,i18n("Continuar na TV"),"pl_chevron-left",102,880,400,60,0);button(5,i18n("Novo QR"),"aj_rotate-cw",550,880,260,60,0);
 }
+static int sources_offset;
 static void sources_screen(void){
   label(TXT_ILHA_SUB,i18n("GUIA TV / FONTES"),48,150,1600,1);label(TXT_TITULO2,i18n("Seus provedores, num só lugar."),48,194,1450,0);
   button(0,i18n("Adicionar fonte"),"aj_plus",1450,176,420,64,0);
+  GuiaFonteSaude source;
+  if(guia_fonte_saude(0,&source)){
+    if(!guia_fonte_saude(sources_offset,&source))sources_offset=0;
+    for(int i=0;i<4&&guia_fonte_saude(sources_offset+i,&source);i++){
+      float y=300+i*128;char status[96];
+      panel(48,y,1824,112);
+      label(TXT_HEADLINE,source.nome,84,y+16,1500,0);
+      snprintf(status,sizeof status,i18n("%d de %d canais com guia"),source.comGuia,source.canais);
+      label(TXT_ILHA_CORPO,status,84,y+64,1400,1);
+    }
+    button(1,i18n("Atualizar"),"aj_rotate-cw",48,840,280,64,0);
+    if(sources_offset)button(6,"‹",NULL,1470,840,180,64,0);
+    if(guia_fonte_saude(sources_offset+4,&source))button(7,"›",NULL,1680,840,180,64,0);
+    button(4,i18n("Controle parental"),"aj_shield-check",48,930,450,64,0);
+    button(5,i18n("Guia de programação"),"aj_clock",530,930,450,64,0);
+    return;
+  }
   panel(48,320,1824,180);gfx_icone((GfxRect){84,368,36,36},"aj_tv-minimal-play",.9f,.9f,.9f,1);label(TXT_HEADLINE,draft.name[0]?draft.name:xtream_configurado()?"Xtream Codes":draft.playlist[0]?"M3U":i18n("Nenhuma fonte"),140,350,900,0);
   label(TXT_ILHA_CORPO,i18n(atomic_load(&busy)?"Atualizando…":source_loaded?"Configurado":"Não configurado"),140,410,1000,1);
   button(1,i18n("Atualizar"),"aj_rotate-cw",1090,375,240,64,0);button(2,i18n("Editar"),"aj_settings-2",1344,375,225,64,0);button(3,i18n(remove_confirm?"Confirmar remoção":"Remover"),"aj_trash-2",1580,375,250,64,0);
@@ -755,7 +773,11 @@ static void kids_screen(void){
   int n=0;for(int i=0;i<nindices&&n<6;i++){G5Item *it=&inventory[indices[i]];if(restricted(it))continue;button(n,it->name,"aj_tv-minimal-play",48+(n%3)*614,500+(n/3)*150,580,120,1);indices[n++]=indices[i];}
   button(800,i18n("Controle parental"),"aj_lock",48,880,500,64,0);
 }
+static GfxRect gv_preview_rect(void);
 void g5ui_multiview_rect(float *x,float *y,float *w,float *h){
+  if(gv_is(screen)){
+    GfxRect r=gv_preview_rect();*x=r.x;*y=r.y;*w=r.w;*h=r.h;return;
+  }
   *x=48;*y=238;*w=mode==3?1160:904;*h=mode==4?324:650;
 }
 static void multiview_screen(void){
@@ -926,6 +948,13 @@ static void activate(int id){
   if(!strcmp(screen,"setup-epg")){if(id==0)draft.epg=!draft.epg;else if(id==1)input(4,"URL XMLTV",draft.xmltv,1);else{persist();if(save_failed)snprintf(message,sizeof message,"%s",i18n("Não foi possível salvar a lista"));else go("setup-pronto");}return;}
   if(!strcmp(screen,"setup-pronto")){if(id==0)gv_voltar();else if(id==1)go("vod-filmes");else{pg_n=0;go("fontes-gerenciar");}return;}
   if(!strcmp(screen,"fontes-gerenciar")){
+    GuiaFonteSaude source;
+    if(guia_fonte_saude(0,&source)){
+      if(id==1){guia_recarregar(0);return;}
+      if(id==6){sources_offset=sources_offset>=4?sources_offset-4:0;focus=1;return;}
+      if(id==7){if(guia_fonte_saude(sources_offset+4,&source))sources_offset+=4;focus=1;return;}
+      if(id==2||id==3)return;
+    }
     if(id==0)go("setup-tipo");else if(id==1){use_saved=1;action[0]=0;start(2);}else if(id==2)go("setup-credenciais");
     else if(id==3){if(!remove_confirm){remove_confirm=1;return;}xtream_esquecer();draft.playlist[0]=draft.xmltv[0]=0;char file[64];filename(file,sizeof file,"source");dados_apagar(file);clear_catalog();dirty=1;committed=0;remove_confirm=0;}
     else if(id==4)want_pin(1);else if(id==5)go("setup-epg");return;
@@ -1683,6 +1712,13 @@ static void gv_broadcast(GfxRect pv,GVCh *c,EpgProg *p,int full){
 }
 /* Heroi: GV_HERO_H com os botoes; 208 (o compacto do mock) com o foco na
  * lateral, para a grade mostrar mais canais. A altura anda na mola. */
+static GfxRect gv_preview_rect(void){
+  GfxRect r={GV_MX,!strcmp(screen,"fontes-erro")?256:GV_BASE,GV_MW,gv_hh};
+  if(!strcmp(screen,"preview-hero-cheio"))return r;
+  if(ajustes_guia_previa_grande())return (GfxRect){r.x+r.w-GV_BIG_W,r.y,GV_BIG_W,r.h};
+  float h=r.h-36,w=fminf(GV_CARD_W,h*16/9);
+  return (GfxRect){r.x+r.w-w-18,r.y+18,w,h};
+}
 static void gv_hero(float base){
   float h=gv_hh,k=anim_clamp((h-208)/(GV_HERO_H-208),0,1);
   GfxRect r={GV_MX,base,GV_MW,h};float rr=28.0f/h;
@@ -1692,10 +1728,7 @@ static void gv_hero(float base){
   float r2,g2,b2;gv_hsl(gv_hue(c->nome),.38f,.19f,&r2,&g2,&b2);
   gfx_cor(r,rr,r2,g2,b2,1);
   gfx_rect((GfxRect){r.x,r.y,r.w*0.70f,r.h},0,GFX_VEU_CSS,0,3,1.2f,0,r2,g2,b2,.9f);
-  GfxRect pv;
-  if(full)pv=r;
-  else if(grande)pv=(GfxRect){r.x+r.w-GV_BIG_W,r.y,GV_BIG_W,r.h};
-  else{float ch=h-36,cw=fminf(GV_CARD_W,ch*16/9);pv=(GfxRect){r.x+r.w-cw-18,r.y+18,cw,ch};}
+  GfxRect pv=gv_preview_rect();
   /* Cartao da previa em foco (DIREITA depois dos botoes): cresce com sombra. */
   int cardf=gv_zone==2&&gv_hbt==2&&!gv_overlay()&&!full;
   static GVGlide gcard;
@@ -2570,7 +2603,11 @@ static int gv_lembrete(GVCh *c,EpgProg *p){
   glem_aviso_curto(msg);
   return 1;
 }
-static void gv_assistir(const char *id){if(id&&id[0]&&guia_pedir_canal_id(id))g5ui_close();}
+static void gv_assistir(const char *id){
+  if(!id||!id[0])return;
+  if(player_mini_no_guia_ativo()&&!strcmp(id,player_id_canal()))guia_pedir_canal_id(id);
+  else guia_pedir_preview_id(id);
+}
 static int gv_activate(void){
   GVCh *c;
   if(!strcmp(screen,"busca")){
