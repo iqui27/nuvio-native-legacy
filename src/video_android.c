@@ -367,6 +367,10 @@ static Uint64 posAmostraEm;
 // mudar o tempo e o Media3 segue em 1x, sem erro — nao provado em TV.
 static volatile int velPedida = 100, velEnviada = 100, velRecusada;
 static volatile Uint32 bufferDesde, tocandoDesde;
+static Uint32 liveRequestDesde;
+static int liveRequestIniciado;
+extern int player_eh_canal(void);
+
 static volatile const char *hdrAtual = "none";
 static volatile int dvAtual, atmosAtual;
 static unsigned sessao;
@@ -393,6 +397,27 @@ static char tituloArmado[96], tituloSessao[96], tituloEnviado[96];
 static int ganhoEnviado = CB_VOL_NORMAL;
 static int retomadaInicialEstado = -1;
 static pthread_mutex_t travaRetomada = PTHREAD_MUTEX_INITIALIZER;
+
+JNIEXPORT jboolean JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeLive(JNIEnv *env, jclass cls) {
+  (void)env; (void)cls;
+  return player_eh_canal() != 0;
+}
+JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeLiveRequest(JNIEnv *env, jclass cls, jint geracao) {
+  (void)env; (void)cls;
+  pthread_mutex_lock(&travaRetomada);
+  if (ativo && (unsigned)geracao == sessao) {
+    liveRequestDesde = SDL_GetTicks();
+    liveRequestIniciado = 1;
+    bufferDesde = liveRequestDesde;
+  }
+  pthread_mutex_unlock(&travaRetomada);
+}
+unsigned video_live_pedido_ms(void) {
+  pthread_mutex_lock(&travaRetomada);
+  unsigned ms = liveRequestIniciado ? SDL_GetTicks() - liveRequestDesde : 0;
+  pthread_mutex_unlock(&travaRetomada);
+  return ms;
+}
 #define ANDROID_FURO_PRAZO_MS 3000u   // sem quadro (so audio): abre 3 s depois de tocar
 
 // RECONEXAO (video_reconexao.h): igual ao .tpk. O evento 5 so ANOTA; a
@@ -826,6 +851,10 @@ static int abrirSessao(int inicioMs, int fracao) {
   temEnv = 0;   // a SurfaceView nova ainda nao recebeu janela nenhuma
   if (!travaLeg) travaLeg = SDL_CreateMutex();
   unsigned geracao = novaRetomada(-1);
+  pthread_mutex_lock(&travaRetomada);
+  liveRequestDesde = 0;
+  liveRequestIniciado = 0;
+  pthread_mutex_unlock(&travaRetomada);
   env = ambiente();
   if (!env) { falhou = 1; printf("[video] android: NvPlayer indisponivel\n"); fflush(stdout); return 0; }
   // F07: the cache limit is sticky in Kotlin (read at each open), so it only
@@ -954,7 +983,7 @@ int video_tocar_retomada(const char *u, double segundos, double pct) {
   int fracao = !inicioMs && isfinite(pct) && pct > 0.0 && pct < 100.0
     ? (int)(pct * 100.0 + 0.5) : 0;
   snprintf(urlAtual, sizeof urlAtual, "%s", u ? u : "");
-  if (limited) capmkv_zerar(); else capmkv_iniciar(urlAtual);
+  if (limited || player_eh_canal()) capmkv_zerar(); else capmkv_iniciar(urlAtual);
   nv_recon_zerar(&recon);
   reconPermitida = reconProxima; reconProxima = 0;
   reconIniciou = 0; reconErroPend = 0;

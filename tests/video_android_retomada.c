@@ -14,6 +14,9 @@ void *SDL_AndroidGetActivity(void);
 
 int xtream_url_limitada(const char *u) { (void)u; return 0; }
 int xtream_conexoes_limitadas(void) { return 0; }
+static int canalTeste;
+int player_eh_canal(void) { return canalTeste; }
+int video_taxa_efetiva(void) { return 100; }
 int xtream_conta_ler(XtreamConta *c) { memset(c, 0, sizeof *c); return 0; }
 int stream_kbps_atual(void) { return 0; }
 static int cap4k[4];
@@ -101,6 +104,23 @@ static void JNICALL chamar(JNIEnv *e, jclass c, jmethodID m, ...) {
   va_end(ap);
 }
 int main(int argc, char **argv) {
+  // Waiting for decoder release must not consume the live request deadline.
+  canalTeste = 1; ativo = 1; sessao = 42; liveRequestDesde = 0;
+  relogio = 9000;
+  assert(video_live_pedido_ms() == 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeLiveRequest(NULL, NULL, 41);
+  assert(video_live_pedido_ms() == 0);
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeLiveRequest(NULL, NULL, 42);
+  assert(video_live_pedido_ms() == 0); // Same even tick must not underflow.
+  relogio += 12000;
+  assert(video_live_pedido_ms() == 12000);
+  relogio = 0;
+  Java_space_nuvio_nativelegacy_NvPlayer_nativeLiveRequest(NULL, NULL, 42);
+  assert(video_live_pedido_ms() == 0);
+  relogio = 12;
+  assert(video_live_pedido_ms() == 12); // Tick zero is a valid request start.
+  assert(video_bufferando_ms() == 0); // Buffering has not begun.
+  canalTeste = 0; ativo = 0; relogio = 100;
   assert(argc == 2); // eventos produzidos pelo abrirMain real no teste JVM
   Java_space_nuvio_nativelegacy_NvPlayer_nativeDecoder4k(NULL, NULL, 1, 0, -1, 1);
   assert(cap4k[0] == 1 && cap4k[1] == 0 && cap4k[2] == -1 && cap4k[3] == 1);
