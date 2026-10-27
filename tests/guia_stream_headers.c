@@ -22,6 +22,7 @@ void teste_video_cabecalhos(const char *c) { snprintf(videoCabs, sizeof videoCab
 void teste_proxy_cabecalhos(const char *c) { snprintf(proxyCabs, sizeof proxyCabs, "%s", c ? c : ""); }
 int teste_proxy_disponivel(void) { return 1; }
 int teste_proxy_ativo(void) { return proxyAtivo; }
+int guia_proxy_do_canal(const char *id, int padrao) { (void)id; return padrao; }
 const char *teste_id_canal(void) { return "m3u:canaisabertos:0"; }
 int xtream_e_id(const char *id) { (void)id; return 0; }
 int stalker_e_id(const char *id) { (void)id; return 0; }

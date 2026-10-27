@@ -26,13 +26,16 @@ falhou=0
 passaram=0
 pulados=0
 semProva=0
-# cache_contrato.sh is a required gate: never add it to the exclusions below.
+# cache_contrato.sh and nav21.sh are required gates; never exclude them.
+# nav21 compiles the native host and renders every fixture in the foreground.
 for f in tests/*.sh; do
   n=$(basename "$f")
   case "$n" in
     *_shot.sh|cinematic.sh|director.sh|webp-tizen.sh|webp-vidaa-st.sh|tizen-clock.sh|salvospainel_perf.sh|fluidez_perf_player.sh|fluidez_perf_guia.sh) pulados=$((pulados + 1)); continue;;
   esac
-  if timeout -k 5 "${TEST_TIMEOUT:-120}" bash "$f" >"$LOGS/$n.log" 2>&1; then
+  limit=${TEST_TIMEOUT:-120}
+  [ "$n" = nav21.sh ] && limit=${NAV21_TIMEOUT:-360}
+  if timeout -k 5 "$limit" bash "$f" >"$LOGS/$n.log" 2>&1; then
     # SKIP (ex.: p2pmotor_real.sh sem o motor compilado) sai com 0 mas NAO
     # provou nada: nao conta como passou.
     if grep -Eq '(^|[^A-Za-z])SKIP([^A-Za-z]|$)' "$LOGS/$n.log"; then

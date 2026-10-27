@@ -305,6 +305,7 @@ int main(void) {
     jsm_estado_app(&M[i], "carregando", 10);
     jsm_conectou(&M[i], localDe(i));
   }
+  difundir(); // Real connections receive a lobby snapshot before commands.
   for (agoraV = 0; agoraV < DURACAO; agoraV += PASSO) {
     const char *j;
     for (i = 0; i < N; i++) {

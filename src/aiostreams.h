@@ -3,6 +3,8 @@
 #define NV_AIOSTREAMS_H
 #include <stddef.h>
 #define AIO_MAX 128
+#define AIO_DETAIL_MAX 2048
+#define AIO_GROUPS 9
 #define AIO_ID_PREFIX "com.aiostreams."
 #define AIO_CATALOGO 1
 #define AIO_STREAM 2
@@ -18,12 +20,12 @@ typedef struct { char titulo[128], descricao[384]; int erro; } AioEvidencia;
 typedef struct {
   int valida, requerida, configurada, recursos, catalogos, servicos, addons;
   int resultados, links, p2p, regras[8], http[6], ms[6], retry[6];
-  int legendas, detalhes, search, estatisticas, erros, filtrados, searchAtiva, p2pInstancia;
+  int legendas, detalhes, detalhesOmitidos, search, estatisticas, erros, filtrados, searchAtiva, p2pInstancia;
   char versaoInstancia[40], canal[24];
   int evidencias;
   AioEvidencia evidencia[32];
   AioLegenda legenda[AIO_MAX];
-  AioRegra detalhe[AIO_MAX];
+  AioRegra detalhe[AIO_DETAIL_MAX];
   char nome[96], versao[40], host[256], resumo[8][256];
   int regraCache, regraUncached;
   char resolucaoObrigatoria[128], resolucaoExcluida[128], idiomaPreferido[128];

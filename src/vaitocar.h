@@ -53,7 +53,8 @@ typedef struct {
   char  audio[24];     // "EAC3 5.1", "AAC"... vazio = desconhecido
   char  idiomas[64];   // "Português · legendas PT" — vazio = desconhecido
   char  tamanho[24];   // "14,2 GB" — vazio = desconhecido
-  int   cache;         // 1 = em cache no debrid (sem previsao de tempo: ambar)
+  int   cache;         // Positive cache declaration, never absence of a negative.
+  int   estado;        // FA_* probe/cache state, shared with the Sources sheet.
   char  provedor[96];  // "AIOStreams" — quem entrega
   // FAIXA 2 — o que da para pular no episodio da faixa 1.
   int   pularOn;       // 0 (ajuste desligado) = a faixa 2 nao existe
@@ -83,6 +84,8 @@ int vt_montar(VaiTocar *vt, const char *imdb, int temporada, int episodio);
 // DESCREVE uma fonte (res, hdr, audio, idiomas, tamanho, cache, provedor).
 // Nao escolhe nada: `s` ja e a escolhida. Usado por vt_montar e pelo cartao.
 void vt_descrever(const Stream *s, VaiTocar *vt);
+void vt_chip_texto(const VaiTocar *vt, char *dst, size_t n);
+void vt_estado_cor(int estado, float *r, float *g, float *b);
 
 // Nome amigavel no lugar do nome cru do arquivo (#9 do mockup, decidido):
 // "WEB-DL · 4K Dolby Vision" na linha; o nome cru fica no detalhe da fonte

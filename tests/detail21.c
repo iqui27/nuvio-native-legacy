@@ -1,3 +1,4 @@
+#define extras_nota ratingFixture
 #define seriefrases_n quoteCountFixture
 #define seriefrases_n_fatos factCountFixture
 #define extras_comentario_spoiler comSpoilerFixture
@@ -9,6 +10,11 @@
 #define travaui_abrir lockOpenFixture
 #include "../src/detail.c"
 static int eligible, roomT, roomE, lockIdx=-1;
+static int richRatings;
+int ratingFixture(int f) {
+  if (richRatings && (f==EX_TMDB || f==EX_METACRITIC || f==EX_LETTERBOXD || f==EX_TRAKT)) return 70;
+  return f==EX_IMDB ? 80 : f==EX_TOMATOES ? 920 : 0;
+}
 int togetherAvailableFixture(void) { return eligible; }
 int lockAvailableFixture(void) { return eligible; }
 void togetherOpenFixture(int i,int t,int e) { (void)i; roomT=t; roomE=e; }
@@ -22,6 +28,87 @@ int comCountFixture(void) { return 3; }
 const char *relFixture(int i) { (void)i; return "tt9000011"; }
 #include <assert.h>
 #include "dados.h"
+#include "ilhaacao.h"
+
+static void press(SDL_Keycode code) {
+  SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = code;
+  detail_evento(&e);
+  e.type = SDL_KEYUP; detail_evento(&e);
+}
+
+static int ratingNavigation(void) {
+  int failures = 0;
+  nivel=0; botao=2; focoVersao=focoAmigos=0; focoServidor=-1;
+  aberto=1; saindo=0; carro=0;
+  press(SDLK_RETURN);
+  assert(detmais_aberto());
+  while (detmais_acao(detmais_foco()) != DMAIS_NOTA) press(SDLK_DOWN);
+  int row = detmais_foco();
+  press(SDLK_RETURN);
+  int island = reacao_aberta();
+  printf("%s: P1 More Rate reaches shared rating island\n", island ? "PASS" : "FAIL");
+  failures += !island;
+  press(SDLK_ESCAPE);
+  int parent = !reacao_aberta() && detmais_aberto() && detmais_foco()==row && botao==2 && nivel==0;
+  printf("%s: P1 rating Back restores More and focused Rate row\n", parent ? "PASS" : "FAIL");
+  failures += !parent;
+  if (parent) { press(SDLK_RETURN); assert(reacao_aberta()); press(SDLK_ESCAPE); press(SDLK_ESCAPE); }
+  detmais_zerar();
+  int personalColumn = notaMedia()->n>0 ? 1 : 0;
+  for (int n=0; notaFonte(n)>=0; n++) personalColumn++;
+  nivel=1; foco.fileira=SEC_NOTAS; foco.coluna=personalColumn;
+  press(SDLK_RETURN);
+  int personal = reacao_aberta();
+  printf("%s: P1 Your rating reaches shared rating island\n", personal ? "PASS" : "FAIL");
+  failures += !personal;
+  press(SDLK_ESCAPE);
+  assert(nivel==1 && foco.fileira==SEC_NOTAS && foco.coluna==personalColumn && !saindo);
+  nivel=0; botao=0;
+  SDL_Event up={0}; up.type=SDL_KEYDOWN; up.key.keysym.sym=SDLK_UP;
+  detail_evento(&up);
+  assert(pediuRelogio && !reacao_aberta());
+  return failures;
+}
+
+// Ratings block (0 means ON): three per row, 20% shorter, D-pad steps between rows.
+static int ratingsGrid(void) {
+  int failures=0;
+  char path[1024];
+  snprintf(path,sizeof path,"%s/ajustes.txt",dados_dir());
+  FILE *f=fopen(path,"w"); assert(f);
+  fputs("notaTituloImdb 0\nnotaTituloTomates 0\nnotaTituloTmdb 0\nnotaTituloMeta 0\n"
+        "notaTituloLetter 0\nnotaTituloTrakt 0\n",f);
+  fclose(f); ajustes_dir(dados_dir());
+  richRatings=1; recalcularLayout(); sincronizarColunas();
+  int off=notaMedia()->n>0, cells=nNotasTiles()-off;
+  assert(off==1 && cells==7);   // 6 sources + Your rating
+  int perRow = xItem(SEC_NOTAS,off+0)<xItem(SEC_NOTAS,off+1) &&
+               xItem(SEC_NOTAS,off+1)<xItem(SEC_NOTAS,off+2) &&
+               xItem(SEC_NOTAS,off+3)==xItem(SEC_NOTAS,off+0);
+  printf("%s: R1 three cards per row\n",perRow ? "PASS" : "FAIL"); failures+=!perRow;
+  float expected = (3*217.0f + 2*(14.0f + 8.0f*NV_DETP_ESP))*0.8f;
+  int tall = fabsf(notasui_celula_altura()-173.6f)<.001f &&
+             fabsf(alturaSecao(SEC_NOTAS)-expected)<.001f &&
+             fabsf(notaAlturaCel(0)-expected)<.001f &&
+             fabsf(notaY(off+6)+notaAlturaCel(off+6)-expected)<.001f;
+  printf("%s: R2 cards 173.6 high, grid and summary 20%% shorter\n",tall ? "PASS" : "FAIL"); failures+=!tall;
+  nivel=1; botao=0; saindo=0; foco.fileira=SEC_NOTAS;
+  foco.coluna=off+0; press(SDLK_DOWN); int d1=foco.coluna==off+3;
+  press(SDLK_DOWN); int d2=foco.fileira==SEC_NOTAS && foco.coluna==off+6;
+  foco.coluna=off+5; press(SDLK_DOWN); int d3=foco.coluna==off+6;
+  press(SDLK_UP); int u1=foco.coluna==off+3;
+  foco.coluna=off+4; press(SDLK_UP); int u2=foco.coluna==off+1;
+  int nav=d1 && d2 && d3 && u1 && u2;
+  printf("%s: R3 DOWN/UP move between rows\n",nav ? "PASS" : "FAIL"); failures+=!nav;
+  // Pointer targets: same-column cards sit on their own row, no overlap.
+  int rows=notaY(off+0)<notaY(off+3) && notaY(off+3)<notaY(off+6) &&
+           notaY(off+0)+notaAlturaCel(off+0)<=notaY(off+3) &&
+           notaY(off+3)+notaAlturaCel(off+3)<=notaY(off+6) &&
+           notaAlturaCel(off+6)==notasui_celula_altura();
+  printf("%s: R4 pointer targets do not overlap across rows\n",rows ? "PASS" : "FAIL"); failures+=!rows;
+  richRatings=0;
+  return failures;
+}
 
 int main(int argc, char **argv) {
   assert(SDL_Init(SDL_INIT_TIMER) == 0);
@@ -44,9 +131,36 @@ int main(int argc, char **argv) {
   snprintf(itemTeste.imdb, sizeof itemTeste.imdb, "tt9000011");
   itemTeste.temporadas[0] = 1; itemTeste.nTemporadas = 1;
   cat_definir_tudo(&itemTeste, 1, NULL, 0); idx = 0;
+  // TV retains legacy Play + Save, with other actions in More.
+  assert(nBotoes()==3 && acaoEm(0)==ACAO_PRIMARIO && acaoEm(1)==ACAO_LISTA && acaoEm(2)==ACAO_MAIS);
+  int available[DMAIS_N]; maisDisponiveis(available);
+  assert(available[DMAIS_VISTO] && !available[DMAIS_VISTO_SAI] && available[DMAIS_NOTA]);
+  executarMais(DMAIS_VISTO); assert(detail_pediu_assistido());
+  servidoresDisponiveis=1;
+  assert(nBotoes()==3 && acaoEm(1)==ACAO_LISTA);
+  maisDisponiveis(available); assert(available[DMAIS_NOTA]);
+  servidoresDisponiveis=0;
+  // Existing per-source settings govern both cards and their summary.
+  FILE *ratings=fopen(path,"w"); assert(ratings);
+  fputs("notaTituloImdb 1\nnotaTituloTomates 0\nmdblist_show_tomatoes 0\n",ratings); fclose(ratings);
+  ajustes_dir(dados_dir());
+  assert(notaFonte(0)==EX_TOMATOES && notaFonte(1)==-1);
+  assert(notaMedia()->n==1 && notaMedia()->media==92);
+  ratings=fopen(path,"w"); assert(ratings);
+  fputs("notaTituloImdb 0\nnotaTituloTomates 0\n",ratings); fclose(ratings); ajustes_dir(dados_dir());
   if (argc > 1) {
     SDL_Event key = {0}; key.type = SDL_KEYDOWN;
-    if (!strcmp(argv[1], "actions")) {
+    if (!strcmp(argv[1], "ratings-grid")) {
+      CatItem item = {0};
+      snprintf(item.tipo, sizeof item.tipo, "movie");
+      snprintf(item.imdb, sizeof item.imdb, "tt9000012");
+      cat_definir_tudo(&item, 1, NULL, 0); idx = 0;
+      int failures = ratingsGrid();
+      SDL_Quit(); return failures ? 1 : 0;
+    } else if (!strcmp(argv[1], "rating")) {
+      int failures = ratingNavigation();
+      SDL_Quit(); return failures ? 1 : 0;
+    } else if (!strcmp(argv[1], "actions")) {
       agenda_definir_hoje("2026-10-22");
       agenda_registrar(itemTeste.imdb,"Fixture",NULL,"Returning Series",2,1,"Premiere","2027-01-01","");
       eligible=1;
@@ -80,7 +194,7 @@ int main(int argc, char **argv) {
       for (int i=0;i<5;i++) {
         notaAbrir(); key.key.keysym.sym=backs[i];
         key.key.keysym.scancode=i==4 ? NV_SCANCODE_BACK : 0;
-        detail_evento(&key); assert(!notaAberta);
+        detail_evento(&key); assert(!reacao_aberta());
         assert(!saindo && notaMinha()==0);
       }
     }
@@ -186,6 +300,20 @@ int main(int argc, char **argv) {
   assert(progMelhorNaoVisto(&bestT,&bestE)==81 && bestT==1 && bestE==2);
   vaiTocar.tem=1; stream_invalidar("fixture target changed");
   assert(!topoFonteDisponivel()); // stale rendered source cannot take focus
+  nivel=0; focoVersao=1; pedFontes=0; botao=0;
+  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_DOWN; detail_evento(&e);
+  assert(!pedFontes && !focoVersao && nivel==1);
+  gfx_escala_txt_definir(.85f);
+  float priorScale=gfx_escala_txt_entrar();
+  recalcularLayout();
+  assert(fabsf(topoSec[SEC_TEMPORADAS]*.85f-(NV_DET21_FIM+56))<.01f);
+  gfx_escala_sair(priorScale); gfx_escala_txt_definir(1);
+  recalcularLayout();
+  assert(NV_DET21_BTN_H==72 && NV_DET21_CIRC==72);
+  assert(COL_CARD_W==760 && COL_CARD_H==300);
+  assert(COM_CARD_W==556 && COM_CARD_H==212 && COM_CARD_GAP==24);
+  assert(alturaCabComentarios()==48 && nPilulasCom()==0);
+  assert(MUS_W==960 && MUS_H==292 && MUS_CAPA==200);
   assert(secaoAlvo(SEC_NOTAS)==.42f);
   nivel=1; foco.fileira=SEC_NOTAS; assert(secaoAlvo(SEC_NOTAS)==1.f);
   nivel=0; assert(secaoAlvo(SEC_NOTAS)==1.f);
@@ -228,13 +356,25 @@ int main(int argc, char **argv) {
   char duration[32]; desc_duracao_min_curta(156,duration,sizeof duration);
   assert(!strcmp(duration,"2h36"));
   assert(ORDEM_SERIE[7]==SEC_COLECAO && ORDEM_SERIE[8]==SEC_TRAILERS);
-  diario_iniciar(); notaAbrir(); assert(notaAberta && notaEscolhida==5);
-  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_RIGHT; detail_evento(&e);
-  assert(notaEscolhida==6);
-  e.type=SDL_KEYUP; e.key.keysym.sym=SDLK_RETURN; detail_evento(&e);
-  assert(!notaAberta && notaMinha()==6);
+  diario_iniciar();
+  assert(ratingNavigation()==0);
+  notaAbrir(); assert(reacao_aberta());
+  press(SDLK_UP); press(SDLK_RIGHT); press(SDLK_RETURN);
+  assert(reacao_passo()==2 && reacao_nota(itemTeste.imdb)==9 && notaMinha()==9);
+  assert(ilhaacao_tem_desfazer());
+  ilhaacao_botao(1);
+  assert(reacao_nota(itemTeste.imdb)==0 && notaMinha()==0);
+  press(SDLK_ESCAPE); assert(!reacao_aberta());
+  notaAbrir(); press(SDLK_RIGHT); press(SDLK_RETURN);
+  assert(reacao_passo()==2 && reacao_nota(itemTeste.imdb)==5 && notaMinha()==5);
+  press(SDLK_ESCAPE);
   notaAbrir(); e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_ESCAPE; detail_evento(&e);
-  assert(!notaAberta && notaMinha()==6);
+  assert(!reacao_aberta() && notaMinha()==5);
+  // Up focuses the nearest global control; it never opens a rating editor.
+  nivel=0; botao=0; focoVersao=0; aberto=1; pediuRelogio=0;
+  e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_UP; detail_evento(&e);
+  assert(pediuRelogio && !reacao_aberta());
+  assert(ratingsGrid()==0);
   puts("detail21: content, navigation, profile isolation and personal status OK");
   SDL_Quit();
   return 0;

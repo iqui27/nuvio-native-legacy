@@ -2808,8 +2808,9 @@ static float focoTexto(float f) { (void)f; return 0.0f; }
 static void superficieItem(GfxRect r, float raio, float f, float a) {
   float v = focoVisual(f);
   if (v <= .001f || a <= .001f) return;
+  if (gfx_foco_placa(r, raio, v, a)) return;
   if (ajustes_vidro()) {
-    if (!gfx_foco_placa(r, raio, v, a)) gfx_cor(r, raio, 1, 1, 1, .12f * v * a);
+    gfx_cor(r, raio, 1, 1, 1, .12f * v * a);
     return;
   }
   // NO SOLIDO A LINHA FOCADA SOBE: #2b2d34 com a sombra curta do mockup
@@ -5320,3 +5321,40 @@ const char *spainel_foco_social(void) {
 }
 
 int spainel_n_continuar(void) { if (listaVelha()) reconstruir(); return nCont; }
+
+// THE SHELL FOR OTHER SIDEBARS (Watch Together on CH+, owner 26/10): the same
+// veil, island material, kicker, title, sections and focus rows as above, so a
+// second sidebar never drifts from this one. No tabs, no list of its own.
+void spainel_lateral(float e, const char *kick, const char *titulo, SpLateralCorpo corpo, void *u) {
+  float x = (1.0f - e) * (NV_TELA_W - SP_X);
+  GfxRect p = { SP_X + x, SP_Y, SP_W, SP_H };
+  const int vid = ajustes_vidro();
+  if (e < 0.002f) return;
+  ESCALA_INI();
+  { ESCALA_REAL_INI();
+    gfx_cor((GfxRect){ 0, 0, NV_LAYOUT_REAL_W, 1080.0f }, 0.0f, 0, 0, 0, SP_VEU * e);
+    ESCALA_REAL_FIM(); }
+  gfx_vidro_cobrir();
+  gfx_sombra_sob((GfxRect){ p.x - 18.0f, p.y - 8.0f, p.w + 36.0f, p.h + 40.0f }, 1.0f, 0, 0.5f,
+                 0, 0, 0, .38f * e, p, SP_RAIO / SP_W * p.h, vid ? 0.0f : .98f * e);
+  if (vid) gfx_vidro_folha(p, SP_RAIO / SP_W, e);
+  else gfx_cor(p, SP_RAIO / SP_W, .071f, .075f, .086f, .98f * e);
+  if (!vid) gfx_luz_canto(p, SP_RAIO / SP_W, p.w * .25f, -p.h * .25f, p.w * .9f, 1, 1, 1, .04f * e);
+  gfx_recorte(p.x, p.y, p.w, p.h);
+  caixaAltaIlha(kick, SPI_FG_R, SPI_FG_G, SPI_FG_B, p.x + SP_PAD, SP_KICK_Y, e * 0.45f);
+  txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_TITULO, titulo, SPI_FG_R, SPI_FG_G, SPI_FG_B, 255, SP_INTERNO),
+                     p.x + SP_PAD, SP_TIT_Y, e);
+  corpo((GfxRect){ p.x + SP_PAD, SP_LISTA_Y, SP_INTERNO, SP_LISTA_BASE - SP_LISTA_Y }, e, u);
+  gfx_sem_recorte();
+  ESCALA_FIM();
+}
+
+float spainel_lateral_secao(GfxRect area, float y, const char *rotulo, float a, int primeira) {
+  desenhaSecao(area.x - SP_PAD, y, rotulo, a, primeira);
+  return secaoAlt(primeira);
+}
+
+void spainel_lateral_linha(GfxRect area, float y, float h, float f, float a) {
+  GfxRect r = { area.x - SP_PAD + SP_LINHA_X, y, SP_LINHA_W, h };
+  superficieItem(r, SP_LINHA_RAIO / r.h, f, a);
+}

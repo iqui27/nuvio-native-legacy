@@ -1,4 +1,5 @@
 #include "fontevolta.h"
+#include "mediaurl.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,20 +82,26 @@ static char *campo(char **p) {
 
 static void gravarSemTrava(void) {
   size_t cap, k = 0;
-  char *buf, tmp[2 * 4096 + 8];
+  char *buf, *tmp;
+  size_t tmpTam = 2 * 4096 + 8;
   int i;
   if (!persistir || !arqGravar) return;
   if (!nEnt) { if (arqApagar) arqApagar(ARQUIVO); return; }
   cap = (size_t)nEnt * (2u * sizeof(Stream) + 2048u) + 64u;
-  buf = malloc(cap);
-  if (!buf) return;
+  for (i = 0; i < nEnt; i++) {
+    size_t len = strlen(nv_media_url(ent[i].s.url));
+    if (len > 4096) cap += 2 * (len - 4096);
+    if (2 * len + 8 > tmpTam) tmpTam = 2 * len + 8;
+  }
+  buf = malloc(cap); tmp = malloc(tmpTam);
+  if (!buf || !tmp) { free(buf); free(tmp); return; }
   k += (size_t)snprintf(buf, cap, "# nuvio fonte guardada v2\n");
   for (i = 0; i < nEnt && k + 1 < cap; i++) {
     const Entrada *e = &ent[i];
     const Stream *s = &e->s;
-#define CAMPO(txt) do { esc(tmp, sizeof tmp, (txt)); k += (size_t)snprintf(buf + k, cap - k, "%s\t", tmp); } while (0)
+#define CAMPO(txt) do { esc(tmp, tmpTam, (txt)); k += (size_t)snprintf(buf + k, cap - k, "%s\t", tmp); } while (0)
     k += (size_t)snprintf(buf + k, cap - k, "%lld\t%d\t", e->obtidoS, e->perfil);
-    CAMPO(e->alvo); CAMPO(e->conta); CAMPO(s->url); CAMPO(s->cabecalhos);
+    CAMPO(e->alvo); CAMPO(e->conta); CAMPO(nv_media_url(s->url)); CAMPO(s->cabecalhos);
     CAMPO(s->rotulo); CAMPO(s->provedor); CAMPO(s->addonChave); CAMPO(s->arquivo);
     CAMPO(s->bingeGroup); CAMPO(s->infoHash);
     CAMPO(s->audioIdiomas); CAMPO(s->legendaIdiomas); CAMPO(s->descricao);
@@ -109,7 +116,7 @@ static void gravarSemTrava(void) {
                             s->dolbyAtmos, s->mp4, s->fileIdx, s->tamanhoMB, s->debridServico);
   }
   arqGravar(ARQUIVO, buf);
-  free(buf);
+  free(buf); free(tmp);
 }
 
 static void carregarSemTrava(void) {
@@ -133,7 +140,14 @@ static void carregarSemTrava(void) {
     e->perfil = atoi(campo(&p));
     desesc(e->alvo, sizeof e->alvo, campo(&p));
     desesc(e->conta, sizeof e->conta, campo(&p));
-    desesc(e->s.url, sizeof e->s.url, campo(&p));
+    { const char *salva = campo(&p);
+      char *url = malloc(strlen(salva) + 1);
+      if (!url) continue;
+      desesc(url, strlen(salva) + 1, salva);
+      int ok = nv_media_url_guardar(url, e->s.url, sizeof e->s.url);
+      free(url);
+      if (!ok) continue;
+    }
     desesc(e->s.cabecalhos, sizeof e->s.cabecalhos, campo(&p));
     desesc(e->s.rotulo, sizeof e->s.rotulo, campo(&p));
     desesc(e->s.provedor, sizeof e->s.provedor, campo(&p));
@@ -347,7 +361,7 @@ static int confEstado;
 
 void fontevolta_definir_sonda(int (*s)(const char *, const char *)) { sonda = s; }
 
-typedef struct { unsigned geracao; char url[4096]; char cab[512]; } Pedido;
+typedef struct { unsigned geracao; char url[NV_MEDIA_URL_MAX]; char cab[512]; } Pedido;
 
 static void *conferir(void *u) {
   Pedido *p = u;

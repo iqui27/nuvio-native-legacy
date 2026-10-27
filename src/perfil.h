@@ -42,6 +42,8 @@ void perfil_abrir(void);
 // abre esta tela inteira. Sem chamador, o modo lateral era codigo morto
 // desenhando um terceiro estado que ninguem mais alcancava.
 void perfil_fechar(void);
+void perfil_suspender(void);
+void perfil_retomar(void);
 int  perfil_aberto(void);
 int  perfil_quer_sair(void);       // consome o pedido de voltar
 int  perfil_pediu_relogio(void);

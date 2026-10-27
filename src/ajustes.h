@@ -21,6 +21,8 @@
 #endif
 
 int  ajustes_iniciar(void);
+void ajustes_suspender(void);
+void ajustes_retomar(void);
 // Per device: 0 = TV (default), 1 = Mobile. Applied before the initial viewport.
 int  ajustes_interface_mobile(void);
 
@@ -267,7 +269,7 @@ int  ajustes_cor_logo(void);
 int  ajustes_vidro(void);
 // "Contorno do vidro": 1 = o fio fino dos cartoes/linhas em repouso aparece.
 int  ajustes_vidro_contorno(void);
-// "Foco na cor de destaque": 1 = o foco usa um vidro tingido com o realce em vez do cinza (so com vidro).
+// Accent focus is independent of glass: tinted glass or a solid tinted plate.
 int  ajustes_foco_acento(void);
 // Ajustes > Conta, "Usar os addons do perfil principal" (padrao ligado): o
 // perfil que nao e o principal le os addons do principal. Ver perfis_ativo_addons.
@@ -868,6 +870,9 @@ const char *ajustes_rapido_rotulo(int op);
 const char *ajustes_rapido_valor(int op);
 int         ajustes_rapido_ligado(int op);
 int         ajustes_rapido_passo(int op, int dir);
+// Interface language as a list value ("Automático", "English"...) and its next/previous step.
+const char *ajustes_idioma_nome(void);
+int         ajustes_idioma_passo(int dir);
 // A COR DE DESTAQUE (seletor da central): os 18 acentos fixos na ordem da
 // regua de Ajustes (0-8 claros, 9-17 profundos). `cor` devolve a tinta que
 // contrasta com o preenchimento (como ajustes_acento_tinta); `atual` = -1 com

@@ -1002,8 +1002,15 @@ namespace NuvioTpk
             return r > 0 ? 1 : 0;
         }
 
+        // #684: T7NSN5 pauses at 3.7-4.2 s with only two frames drawn.
+        // ponytail: one bounded retry; real Home presses after interaction or
+        // startup must stay paused. TV validation is needed for this heuristic.
+        bool RecuperaPausaInicial() => !jaPausou && !primeiraTecla && !saindo &&
+            !fim && !erroNaTela && trocados < 3 && relogio.ElapsedMilliseconds < 8000;
+
         protected override void OnPause()
         {
+            bool recuperar = RecuperaPausaInicial();
             pausado = true;
             if (!jaPausou) { jaPausou = true; Janela("primeira pausa (canario 8: video no gl, gl opaco, sem prime, sobe no appcontrol; ela ainda vem?)"); }
             Etapa("note pause" + Contagem() + " mainVisible=" + principalVisivel + (JanelaUnica ? " (glview)" : " glVisible=" + glVisivel));
@@ -1013,6 +1020,24 @@ namespace NuvioTpk
             try { nv_tpk_ciclo(0); } catch (EntryPointNotFoundException) { }
             video?.PausarPeloSistema();
             base.OnPause();
+            if (recuperar)
+            {
+                // Firmware hides the main window and then GL after OnPause.
+                // Wait for both events; an immediate raise is undone by that hide.
+                var t = new NuiTimer(100);
+                t.Tick += (s, e) => {
+                    if (saindo || soltou || fim || erroNaTela || primeiraTecla ||
+                        !pausado || relogio.ElapsedMilliseconds >= 8000) return false;
+                    if (principalVisivel || (!JanelaUnica && glVisivel)) return true;
+                    Etapa("note recovering startup pause" + Contagem());
+                    try { NuiWindow.Instance.Show(); NuiWindow.Instance.Raise(); }
+                    catch (Exception x) { Etapa("note startup raise failed " + x.GetType().Name + ": " + x.Message); }
+                    SobeGl("startup pause");
+                    OnResume();
+                    return false;
+                };
+                t.Start();
+            }
         }
 
         protected override void OnLowMemory(Tizen.Applications.LowMemoryEventArgs e)
@@ -1042,6 +1067,15 @@ namespace NuvioTpk
             try { op = e?.ReceivedAppControl?.Operation ?? "?"; } catch { }
             Etapa("note appcontrol op=" + op + Contagem() + " mainVisible=" + principalVisivel + " glVisible=" + glVisivel);
             try { base.OnAppControlReceived(e); } catch (Exception x) { Etapa("note appcontrol base threw " + x.GetType().Name + ": " + x.Message); }
+            // Cleanup has already disposed the player and hidden the windows.
+            // Never try to revive that instance, including a queued raise.
+            if (saindo || soltou)
+            {
+                Etapa("note appcontrol while exiting: finishing exit");
+                ArmaSaidaForcada("appcontrol while exiting");
+                Exit();
+                return;
+            }
             if (JanelaUnica) { Janela("appcontrol: janela unica (GLView), nada a subir"); return; }
             if (!JANELA_SOBE_GL_APPCONTROL || gl == null) return;
 #if NV_API8
@@ -1050,7 +1084,13 @@ namespace NuvioTpk
             try
             {
                 var t = new NuiTimer(300);
-                t.Tick += (s, a) => { Janela("appcontrol: sobe o gl"); SobeGl("appcontrol"); return false; };
+                t.Tick += (s, a) => {
+                    if (saindo || soltou) return false;
+                    Janela("appcontrol: sobe o gl");
+                    SobeGl("appcontrol");
+                    pausado = false; // Some firmware sends AppControl without OnResume.
+                    return false;
+                };
                 t.Start();
             }
             catch (Exception x) { Janela("appcontrol: timer falhou " + x.GetType().Name + ": " + x.Message); }

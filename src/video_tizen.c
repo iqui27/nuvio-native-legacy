@@ -82,6 +82,7 @@
 #if defined(__EMSCRIPTEN__) && !defined(NV_VIDAA)
 
 #include "video.h"
+#include "mediaurl.h"
 #include "avroi.h"
 #include "video_reconexao.h"
 #include "linguas.h"
@@ -142,6 +143,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
       pl: null,          // referencia ao webapis.avplay
       aberto: 0,         // open() foi aceito
       tocando: 0,
+      pausaPedida: 0,
       pronto: 0,         // prepareAsync terminou
       posMs: 0,
       // #147: relogios das leituras sincronas do "estado" (ver la).
@@ -274,7 +276,7 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
     // "abrir -> sair -> abrir" que o caminho da LG ja tinha.
     if (S.aberto && !encerrar()) return 0;
     var geracao = ++S.geracao;
-    S.aberto = 0; S.tocando = 0; S.pronto = 0; S.posMs = 0;
+    S.aberto = 0; S.tocando = 0; S.pronto = 0; S.posMs = 0; S.pausaPedida = 0;
     S.durMs = 0; S.tDur = 0; S.tEvento = 0; S.tSeek = 0; S.tPos = 0;
     S.erro = ""; S.fim = 0; S.bufPct = 0; S.larg = 0; S.alt = 0;
     S.trilhas = null;   // titulo novo: a lista de faixas do titulo anterior nao vale
@@ -310,7 +312,8 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
         // READY permite getTotalTrackInfo apenas com prepare SINCRONO.
         // Aqui usamos prepareAsync: entrar em PLAYING antes de ler metadados.
         var tPlay = avAgora();
-        try { p.play(); S.tocando = 1; S.pronto = 1; }
+        try { p.play(); S.tocando = 1; S.pronto = 1;
+              if (S.pausaPedida) { p.pause(); S.tocando = 0; } }
         catch (e) {
           S.pronto = 0; S.tocando = 0; S.aberto = 0;
           S.trilhas = null; S.erro = "play: " + e;
@@ -381,8 +384,10 @@ EM_JS(double, nv_av, (const char *cmd, const char *txt,
   }
 
   if (op === "pausar") {
+    S.pausaPedida = a ? 1 : 0;
     var p3 = pl();
     if (!p3 || !S.aberto) return 0;
+    if (!S.pronto) return 1;
     try {
       if (a) { p3.pause(); S.tocando = 0; }
       else   { p3.play();  S.tocando = 1; }
@@ -802,6 +807,7 @@ static void logarErro(const char *onde);
 static double avChamar(const char *cmd, const char *txt,
                        double a, double b, double c, double d,
                        char *dst, int dstTam) {
+  if (!strcmp(cmd, "abrir")) txt = nv_media_url(txt);
   Pedido p;
   p.cmd = cmd; p.txt = txt;
   p.a = a; p.b = b; p.c = c; p.d = d;
@@ -858,7 +864,7 @@ static int    vidW, vidH;
 static int    houveErro;
 static char   erroTexto[96];   // ver logarErro e video_erro_texto
 
-static char   urlAtual[1024];
+static char   urlAtual[NV_MEDIA_URL_MAX];
 static int    fonteMp4;
 static int    dvPedido;      // afirmacao do addon; sem uso no AVPlay (ver hdr)
 
@@ -1225,7 +1231,7 @@ static void lerFaixas(void) {
 static void *lerMkv(void *arg) {
   MkvFaixa fx[MKV_MAX_FAIXAS];
   MkvCap   caps[MKV_MAX_CAPS];
-  char url[1024];
+  char url[NV_MEDIA_URL_MAX];
   int n, nCaps = 0;
   (void)arg;
   snprintf(url, sizeof url, "%s", urlAtual);

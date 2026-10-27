@@ -106,7 +106,8 @@ int srv_usuarios(const JfConta *c, RedeJob *job, SrvUsuario *out, int max) {
     const char *end = js_fim(p); if (!end) break;
     SrvUsuario u = {0};
     js_texto(p, end, "Name", u.nome, sizeof u.nome); js_texto(p, end, "Id", u.id, sizeof u.id);
-    char id[40];
+    char id[40], hasPassword[8]="";
+    if(js_bruto(p,end,"HasPassword",hasPassword,sizeof hasPassword)) u.senha=!strcmp(hasPassword,"true");
     if (u.nome[0] && jfid_hex_limpo(u.id, id, 32)) {
       snprintf(u.imagem, sizeof u.imagem, "%s%s/Users/%s/Images/Primary?maxWidth=128", c->base, jf_prefixo(c), u.id);
       out[n++] = u;

@@ -1,4 +1,5 @@
 #include "streams.h"
+#include "mediaurl.h"
 #include "badges.h"
 #include "js.h"
 #include <ctype.h>
@@ -1061,6 +1062,15 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
     if (!fim || fim <= p) break;
     // externalUrl abre fora do player; sem midia/hash a fonte fica oculta.
     js_texto_raiz_em(p, fim, "url", s.url, sizeof s.url);
+    if (strlen(s.url) == sizeof s.url - 1) {
+      size_t tam = (size_t)(fim - p) + 1;
+      char *url = malloc(tam);
+      if (!url) { p = js_prox(fim); continue; }
+      js_texto_raiz_em(p, fim, "url", url, tam);
+      int ok = !strncmp(url, "http", 4) && nv_media_url_guardar(url, s.url, sizeof s.url);
+      free(url);
+      if (!ok) { p = js_prox(fim); continue; }
+    }
     { const char *bh = valorRaiz(p, fim, "behaviorHints");
       const char *hint = bh ? valorRaiz(bh, fim, "notWebReady") : NULL;
       s.notWebReady = hint && fim - hint >= 4 && !memcmp(hint, "true", 4) &&
@@ -1085,9 +1095,8 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       if (!js_texto(p, fim, "infoHash", s.hashTorrent, sizeof s.hashTorrent) && cr)
         js_texto(cr, fim, "infoHash", s.hashTorrent, sizeof s.hashTorrent);
     }
-    // Nao tocar URL cortada; sem url e sem hash nao ha o que tocar.
-    if ((s.infoHash[0] || !strncmp(s.url, "http", 4)) &&
-        strlen(s.url) < sizeof s.url - 1) {
+    // Without a complete URL/hash there is nothing to play.
+    if (s.infoHash[0] || !strncmp(s.url, "http", 4)) {
       js_texto_raiz_em(p, fim, "name", s.rotulo, sizeof s.rotulo);
       // So o name da PROPRIA fonte, inteiro, conta para o FHD (#402): o
       // rotulo de 192 bytes pode cortar "...FHDx" em "...FHD", e o provedor
@@ -1155,7 +1164,7 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
         s.altura = 1080;
         s.badges |= badges_bit("r-1080");
       }
-      s.mp4 = token(texto, "mp4") || contem(s.url, ".mp4");
+      s.mp4 = token(texto, "mp4") || contem(nv_media_url(s.url), ".mp4");
       // "av1" tambem casa "av1.0.0" (nivel/perfil, comum em nome de release);
       // token() basta porque nao ha AV1 escrito colado a outra palavra nos
       // nomes que os addons mandam (ao contrario de "dv", que precisa do

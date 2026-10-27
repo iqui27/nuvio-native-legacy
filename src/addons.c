@@ -1495,7 +1495,8 @@ static void *buscarUmAddon(void *u) {
       // Subtitle Sync serves explanatory SRTs as notice-* entries, not dialogue.
       if (!strncmp(id, "error.", 6) || !strncmp(id, "notice-", 7)) { q = js_prox(f); continue; }
       if (*q == '{' && episodioCorreto(q, f, B->temporada, B->episodio) &&
-          js_texto(q, f, "lang", l, sizeof l)) {
+          (js_texto(q, f, "lang", l, sizeof l) ||
+           js_texto(q, f, "language", l, sizeof l))) {
         // "PORTUGUESE" / "Portuguese (Brazil)" / "por" / "pt-BR" viram um
         // codigo so; antes o nome entrava cortado em 8 bytes ("PORTUGU") e
         // nao casava com a preferencia.
@@ -1511,6 +1512,18 @@ static void *buscarUmAddon(void *u) {
           if (legendaRepetida(lote->itens, lote->n, d)) { q = js_prox(f); continue; }
           js_texto(q, f, "subtitleFileName", nome, sizeof nome);
           if (!nome[0]) js_texto(q, f, "movieReleaseName", nome, sizeof nome);
+          if (!nome[0]) js_texto(q, f, "filename", nome, sizeof nome);
+          if (!nome[0]) js_texto(q, f, "fileName", nome, sizeof nome);
+          if (!nome[0]) js_texto(q, f, "name", nome, sizeof nome);
+          if (!nome[0]) js_texto(q, f, "title", nome, sizeof nome);
+          if (!nome[0]) js_texto(q, f, "release", nome, sizeof nome);
+          if (!nome[0]) {
+            const char *host = strstr(link, "://");
+            const char *path = host ? host + 3 : link;
+            const char *end = path + strcspn(path, "?#"), *last = end;
+            while (last > path && last[-1] != '/') last--;
+            if (last > path) snprintf(nome, sizeof nome, "%.*s", (int)(end - last), last);
+          }
           snprintf(d->idioma, sizeof d->idioma, "%s", cod);
           snprintf(d->provedor, sizeof d->provedor, "%s", origem->nome);
           snprintf(d->arquivo, sizeof d->arquivo, "%s", nome);

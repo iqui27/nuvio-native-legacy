@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Check native PNG output and create reviewable mock | app comparisons."""
-import itertools, json, pathlib, struct, subprocess, sys, zlib
+import itertools, json, os, pathlib, struct, subprocess, sys, zlib
 root = pathlib.Path(sys.argv[1])
 mock = pathlib.Path('/Volumes/ExternalSSD/tmp/servidores-polish')
 files = sorted(root.glob('*-app.png'))
@@ -37,6 +37,15 @@ for app in files:
         print('PASS: four detail rectangles do not overlap; source row and D-pad follow visual order')
     ref = mock / app.name.replace('-app.png', '.png')
     if ref.exists():
-        out = root / app.name.replace('-app.png', '-side-by-side.png')
-        subprocess.run(['magick', str(ref), str(app), '+append', str(out)], check=True)
+        trio = os.getenv('NUVIO_SHOT_TRIOS')
+        out = root / app.name.replace('-app.png', '-tri.png' if trio else '-side-by-side.png')
+        images = [str(ref)]
+        if trio:
+            material = 'glass' if os.getenv('NUVIO_SHOT_VIDRO') == '1' else 'solid'
+            # Round 3 retains the approved 2.0.8 reference in its middle column.
+            images.extend(['(', '/Volumes/ExternalSSD/tmp/rev/diretor21/21-j2/round3/' +
+                           f'setup-pronto-100-{material}-tri.png', '-crop',
+                           '1920x1080+1920+0', '+repage', ')'])
+        subprocess.run(['magick', '-limit', 'thread', '1', *images, str(app),
+                        '+append', '-define', 'png:compression-level=1', str(out)], check=True)
 print(f'{len(files)} nonblank 1920x1080 app captures checked')

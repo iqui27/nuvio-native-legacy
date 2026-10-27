@@ -1098,10 +1098,10 @@ void reacao_detalhe_dica(const CatItem *ci, float a) {
   float x, y, w;
   // O cartao aberto (pela pagina) desenha por cima de tudo, com a mola dele.
   if (c.aberto && !perfis_sessao_atual(c.sessao)) c.aberto = 0;
-  if (c.aberto && c.modoDetalhe && !c.modoPainel) {
+  if ((c.aberto || c.anim > .01f) && c.modoDetalhe && !c.modoPainel) {
     ultimoAgora = SDL_GetTicks();
     if (c.escrevendo) { teclado_atualizar(1.0f / 60.0f, SDL_GetTicks()); tecladoResultado(); }
-    c.anim = notaMola(c.anim, 1.0f, 1.0f / 60.0f, NV_MOLA_TELA);
+    c.anim = notaMola(c.anim, c.aberto ? 1.0f : 0.0f, 1.0f / 60.0f, NV_MOLA_TELA);
     { int i;
       for (i = 0; i < 3; i++)
         c.focoA[i] = notaMola(c.focoA[i], c.foco == i ? 1.0f : 0.0f, 1.0f / 60.0f,

@@ -294,14 +294,16 @@ float notasui_marca_cartao(int f, int cru, float xc, float yc, float h, float a)
 // (detail.c faz o cima/baixo dentro da grade).
 #include "telefoneui.h"
 static int notasEmpilhadas(void) { return telefoneui_ativo() && NV_TELA_W < 1500; }
-static int notasB2(void) { return ajustes_vidro() && !notasEmpilhadas(); }
-#define TILE_COLS    (notasB2() ? 4 : 2)
+/* Three cards per row; ratings heights and vertical gaps reduced by 20%. */
+static int notasB2(void) { return !notasEmpilhadas(); }
+#define TILE_COLS    (notasB2() ? 3 : 2)
 #define SEC_W       (NV_TELA_W - 2.0f * NV_DETP_X)
 #define SCORE_W     (notasEmpilhadas() ? SEC_W : notasB2() ? 420.0f : 520.0f)
-#define SCORE_MIN_H  448.0f
+#define SCORE_MIN_H  (448.0f * 0.8f)
 #define COL_GAP      (28.0f + 8.0f * NV_DETP_ESP)
 #define TILE_GAP     (14.0f + 8.0f * NV_DETP_ESP)
-#define TILE_H       (notasB2() ? 217.0f : 104.0f)
+#define TILE_VGAP    (TILE_GAP * 0.8f)
+#define TILE_H       ((notasB2() ? 217.0f : 104.0f) * 0.8f)
 #define TILE_W     ((SEC_W - (notasEmpilhadas() ? 0 : SCORE_W + COL_GAP) - (TILE_COLS - 1) * TILE_GAP) / TILE_COLS)
 #define TILE_PAD      24.0f
 #define TILE_LOGO_W   64.0f
@@ -367,13 +369,13 @@ static void medir(const NotasSecao *s, Medidas *m) {
   }
   if (m->nFontes) {
     int linhas = (m->nFontes + 1 + TILE_COLS - 1) / TILE_COLS;
-    float hg = (float)linhas * TILE_H + (float)(linhas - 1) * TILE_GAP;
+    float hg = (float)linhas * TILE_H + (float)(linhas - 1) * TILE_VGAP;
     // UMA fonte nao enche o cartao de resumo: sem "Menor/Maior" e sem a barra
     // critica x publico (os dois precisam de r.n > 1), um piso de 448 deixava
     // a metade de baixo do cartao vazia a cada titulo novo demais para o
     // MDBList — o "52 de 100 · so uma fonte" da TCL. 208 cabem o numero e a
     // linha "de 100"; com 2+ o resumo cheio volta a precisar da altura toda.
-    float minimo = m->nFontes == 1 ? 208.0f : SCORE_MIN_H;
+    float minimo = m->nFontes == 1 ? 208.0f * 0.8f : SCORE_MIN_H;
     if (notasB2()) minimo = fmaxf(minimo, desenhaCartao(m, 0, 0, 0, 0, 0));
     m->scoreH = notasEmpilhadas() ? minimo : fmaxf(hg, minimo);
     m->h = notasEmpilhadas() ? m->scoreH + COL_GAP + hg : m->scoreH;
@@ -418,7 +420,7 @@ static const char *nomeCurto(int f) { return f == EX_METAUSER ? "Metacritic" : n
 static float desenhaCartao(const Medidas *m, float x, float y, float h, float f, float a) {
   NfResumo r;
   GfxRect box = { x, y, SCORE_W, h };
-  float px = x + 40.0f, py = y + 34.0f, larg = SCORE_W - 80.0f;
+  float previousScale = gfx_escala();
   char buf[160];
   nf_resumo(m->fontes, m->norm, m->nFontes, &r);
   // O foco da secao mora AQUI, no numero grande: os blocos de fonte nao sao
@@ -427,11 +429,17 @@ static float desenhaCartao(const Medidas *m, float x, float y, float h, float f,
   if (a > 0) painel(box, CARD_RAIO, a);
   if (f > 0.01f) gfx_cor(box, CARD_RAIO / h, 1, 1, 1, 0.07f * f * a);
   if (ajustes_vidro() && a > 0) foco_anel(box, CARD_RAIO / h, f, a);
+  // Keep the summary content inside its shorter neutral surface.
+  float summaryWidth = SCORE_W;
+  gfx_escala_sair(previousScale * 0.8f);
+  x /= 0.8f; y /= 0.8f; h /= 0.8f;
+  float px = x + 40.0f, py = y + 34.0f, larg = summaryWidth / 0.8f - 80.0f;
   if (r.n == 0) {
     // So a nota agregada do MDBList (ou nenhuma que conte): nada a comparar.
     txt_bloco_corta(TXT_DET_META2, i18n("Só a nota agregada chegou; não há o que comparar."),
                     180, 184, 192, px, py, larg, 32.0f, a, 3);
-    return 34.0f + 3.0f * 32.0f + 34.0f;
+    gfx_escala_sair(previousScale);
+    return (34.0f + 3.0f * 32.0f + 34.0f) * 0.8f;
   }
   // MEDIA grande, com "de 100 / media de N fontes" na linha de base dela.
   { char n[8]; TxtLinha big, l1, l2;
@@ -500,7 +508,8 @@ static float desenhaCartao(const Medidas *m, float x, float y, float h, float f,
       if (yl < py + 8.0f) yl = py + 8.0f;
       py = yl + txt_bloco_corta(TXT_ILHA_SUB, buf, 140, 144, 152, px, yl, larg, 26.0f, a, 2); }
   }
-  return py - y + 34.0f;
+  gfx_escala_sair(previousScale);
+  return (py - y + 34.0f) * 0.8f;
 }
 
 // UM BLOCO DE FONTE. `f` = foco 0..1 (mola de detail.c).
@@ -512,35 +521,37 @@ static void desenhaBloco(const NotasSecao *s, int fonte, int norm, const NfResum
   float cr, cg, cb;
   float bx = notasB2() ? x + TILE_PAD : x + TILE_PAD + TILE_LOGO_W + 18.0f;
   float bw = notasB2() ? TILE_W - 2 * TILE_PAD : x + TILE_W - TILE_PAD - TILE_VAL_W - 16.0f - bx;
-  float by = y + TILE_H - 30.0f;
+  float by = y + TILE_H - 18.0f;
   char v[24];
   TxtLinha ln, lv;
   // Foco da Home (focoprof.h): anel so com "Foco no cartaz" ligado, senao o
   // bloco cresce. A superficie clareia um degrau, como o .f.on do mockup.
   if (!ajustes_vidro()) foco_anel(r0, raio, f, a);
   painel(rz, TILE_RAIO, a);
-  // B2: each source tile carries its brand colour, a glow from the top-left
-  // corner (the mockup's 150deg tint), one quad, no blur.
-  if (ajustes_vidro()) {
+  // Brand tint uses the dithered corner-light shader in both materials.
+  {
     static const unsigned char C[EX_NFONTES][3] = {
-      [EX_TRAKT] = {237, 28, 36}, [EX_IMDB] = {245, 197, 24}, [EX_TMDB] = {1, 210, 119},
-      [EX_TOMATOES] = {236, 72, 48}, [EX_AUDIENCE] = {236, 72, 48},
+      [EX_TRAKT] = {237, 28, 36}, [EX_IMDB] = {245, 197, 24}, [EX_TMDB] = {1, 180, 228},
+      [EX_TOMATOES] = {250, 50, 10}, [EX_AUDIENCE] = {250, 50, 10},
       [EX_METACRITIC] = {255, 204, 52}, [EX_METAUSER] = {255, 204, 52},
       [EX_LETTERBOXD] = {64, 188, 244}, [EX_MAL] = {46, 81, 162},
-      [EX_EBERT] = {243, 242, 239}, [EX_MDBSCORE] = {243, 242, 239} };
+      [EX_EBERT] = {242, 239, 230}, [EX_MDBSCORE] = {31, 181, 168} };
+    cr = C[fonte][0] / 255.0f;
+    cg = C[fonte][1] / 255.0f;
+    cb = C[fonte][2] / 255.0f;
     gfx_luz_canto(rz, raio, 0.0f, 0.0f, rz.w * 0.95f,
-                  C[fonte][0] / 255.0f, C[fonte][1] / 255.0f, C[fonte][2] / 255.0f, 0.24f * a);
+                  cr, cg, cb, 0.24f * a);
   }
   if (f > 0.01f) gfx_cor(rz, raio, 1, 1, 1, 0.07f * f * a);
   if (ajustes_vidro()) foco_anel(r0, raio, f, a);
   marcaCaixa(fonte, s->cru[fonte], x + TILE_PAD,
-             y + (notasB2() ? 38.0f : TILE_H * 0.5f), TILE_LOGO_W, a);
+             y + (notasB2() ? 30.4f : TILE_H * 0.5f), TILE_LOGO_W, a);
   ln = txt_linha_corta(TXT_DET_META2, rotulo(fonte), 190, 194, 202, 255, bw);
-  txt_desenhar_alpha(ln, bx, y + (notasB2() ? 72.0f : 22.0f), a);
+  txt_desenhar_alpha(ln, bx, y + (notasB2() ? 57.6f : 17.6f), a);
   // Valor no formato do site e a diferenca para a media.
   nf_texto(fonte, s->cru[fonte], virgula(), 1, v, sizeof v);
   lv = texto(TXT_LOG_T34, v, 245);
-  float valY = y + (notasB2() ? 110.0f : 14.0f);
+  float valY = y + (notasB2() ? 88.0f : 11.2f);
   txt_desenhar_alpha(lv, x + TILE_W - TILE_PAD - (float)lv.w, valY, a);
   if (r->n > 1 && nf_grupo(fonte) != NF_AGREGADA) {
     int d = norm - r->media;
@@ -552,15 +563,46 @@ static void desenhaBloco(const NotasSecao *s, int fonte, int norm, const NfResum
     else            ld = texto(TXT_G16B, dl, 140);
     txt_desenhar_alpha(ld, x + TILE_W - TILE_PAD - (float)ld.w, valY + (float)lv.h, a);
   }
-  // Barra 0..100 na escala comum, e a marca branca na media.
+  // Brand-coloured 0..100 bar; the white marker still shows the average.
   gfx_cor((GfxRect){ bx, by, bw, 8.0f }, 0.5f, 1, 1, 1, 0.07f * a);
-  notasui_cor_faixa(norm, &cr, &cg, &cb);
   { float fw = bw * (float)norm / 100.0f;
     if (fw < 8.0f) fw = 8.0f;
     gfx_cor((GfxRect){ bx, by, fw, 8.0f }, 0.5f, cr, cg, cb, a); }
   if (r->n > 1)
     gfx_cor((GfxRect){ bx + bw * (float)r->media / 100.0f - 1.0f, by - 4.0f, 2.0f, 16.0f },
             0, 1, 1, 1, 0.72f * a);
+}
+
+float notasui_cartao_largura(int resumo) { return resumo ? SCORE_W : TILE_W; }
+int notasui_colunas(void) { return TILE_COLS; }
+// Cell j (sources, then Your rating, then Friends) sits in a TILE_COLS grid to
+// the right of the summary column; `resumo` shifts it past that column.
+float notasui_celula_x(int resumo, int j) {
+  return (resumo && !notasEmpilhadas() ? SCORE_W + COL_GAP : 0) + (float)(j % TILE_COLS) * (TILE_W + TILE_GAP);
+}
+// Phone UI (stacked): the summary is a full-width card ABOVE the grid.
+static float resumoEmpilhado(const NotasSecao *s, int resumo) {
+  Medidas m; medir(s, &m);
+  return resumo && m.nFontes && notasEmpilhadas() ? fmaxf(SCORE_MIN_H, desenhaCartao(&m, 0, 0, 0, 0, 0)) + COL_GAP : 0;
+}
+float notasui_celula_y(const NotasSecao *s, int resumo, int j) {
+  return resumoEmpilhado(s, resumo) + (float)(j / TILE_COLS) * (TILE_H + TILE_VGAP);
+}
+float notasui_celula_altura(void) { return TILE_H; }
+float notasui_cartao_altura(const NotasSecao *s, int resumo, int celulas) {
+  Medidas m; medir(s, &m);
+  int linhas = (celulas + TILE_COLS - 1) / TILE_COLS;
+  float grade = linhas ? (float)linhas * TILE_H + (float)(linhas - 1) * TILE_VGAP : 0;
+  float score = resumo && m.nFontes ? fmaxf(SCORE_MIN_H, desenhaCartao(&m, 0, 0, 0, 0, 0)) : 0;
+  return notasEmpilhadas() ? resumoEmpilhado(s, resumo) + grade : fmaxf(grade, score);
+}
+void notasui_cartao(const NotasSecao *s, int fonte, float x, float y, float h, float f, float a) {
+  Medidas m; NfResumo r; medir(s, &m);
+  if (fonte < 0) desenhaCartao(&m, x, y, notasEmpilhadas() ? resumoEmpilhado(s, 1) - COL_GAP : h, f, a);
+  else {
+    nf_resumo(m.fontes, m.norm, m.nFontes, &r);
+    desenhaBloco(s, fonte, nf_norm100(fonte, s->cru[fonte]), &r, x, y, f, a);
+  }
 }
 
 // Portao do texto (textogate.h) de um bloco: aparece INTEIRO ou nao aparece.
@@ -587,14 +629,14 @@ float notasui_fontes_desenhar(const NotasSecao *s, float x, float y, float a,
   desenhaCartao(&m, x, y, m.scoreH, foco ? foco[0] : 0.0f, aa);
   for (i = 0; i < m.nFontes; i++) {
     float tx = gx + (float)(i % TILE_COLS) * (TILE_W + TILE_GAP);
-    float ty = y + (notasEmpilhadas() ? m.scoreH + COL_GAP : 0) + (float)(i / TILE_COLS) * (TILE_H + TILE_GAP);
+    float ty = y + (notasEmpilhadas() ? m.scoreH + COL_GAP : 0) + (float)(i / TILE_COLS) * (TILE_H + TILE_VGAP);
     if (ty > NV_TELA_H || ty + TILE_H < 0.0f) continue;
     desenhaBloco(s, m.fontes[i], m.norm[i], &r, tx, ty, 0.0f, aa);
   }
   // Personal score shares the source grid, with a solid surface in both materials.
   float px = gx + (m.nFontes % TILE_COLS) * (TILE_W + TILE_GAP);
   float py = y + (notasEmpilhadas() ? m.scoreH + COL_GAP : 0) +
-             (m.nFontes / TILE_COLS) * (TILE_H + TILE_GAP);
+             (m.nFontes / TILE_COLS) * (TILE_H + TILE_VGAP);
   GfxRect tile = {px, py, TILE_W, TILE_H};
   if (py < NV_TELA_H && py + TILE_H > 0) {
     float ar, ag, ab;

@@ -15,6 +15,7 @@
 #define NV_SALVOSPAINEL_H
 #include <SDL2/SDL.h>
 #include <stddef.h>
+#include "gfx.h"
 
 void spainel_abrir(void);
 void spainel_fechar(void);
@@ -76,5 +77,14 @@ int spainel_foco_indice(void);
 // Abre (se preciso) na aba Atividade e poe o foco no primeiro evento de amigo
 // do titulo `imdb` (a lista rola ate ele). Sem evento desse titulo, so a aba.
 void spainel_abrir_titulo(const char *imdb);
+
+// THE SAVED SIDEBAR SHELL for other layers (Watch Together on CH+): same veil,
+// island, kicker, title, sections and focus rows. `e` is the layer entrance
+// (0..1; it slides in from the right like Saved). `corpo` draws inside `area`,
+// the text column; sections and rows take the same area.
+typedef void (*SpLateralCorpo)(GfxRect area, float a, void *u);
+void  spainel_lateral(float e, const char *kick, const char *titulo, SpLateralCorpo corpo, void *u);
+float spainel_lateral_secao(GfxRect area, float y, const char *rotulo, float a, int primeira);   // its height
+void  spainel_lateral_linha(GfxRect area, float y, float h, float f, float a);                   // row focus surface
 
 #endif
