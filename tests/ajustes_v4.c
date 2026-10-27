@@ -15,7 +15,7 @@ int main(void) {
   snprintf(dir, sizeof dir, "%s/nuvio-ajustes-v4-XXXXXX", nvt_dir());
   assert(mkdtemp(dir)); assert(SDL_Init(SDL_INIT_TIMER) == 0);
   assert(setenv("NUVIO_DADOS", dir, 1) == 0);
-  dados_iniciar(dir); snprintf(dirAjustes, sizeof dirAjustes, "%s", dir);player_dir(dir);
+  dados_iniciar(dir); snprintf(dirAjustes, sizeof dirAjustes, "%s", dir);player_dir(dir);fontefalha_dir(dir);
   ajustes_iniciar(); assert(gravar());
 #ifndef AJUSTES_V4
   assert(!"Settings v4 navigation is missing");
@@ -183,7 +183,7 @@ int main(void) {
   // APS-9: invalid IDs, absent routes and corrupt compiled sections are bounded.
   assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO);
   assert(AJ_HERO_TAMANHO + 1 == AJ_DET_TOPO && AJ_DET_TOPO + 1 == AJ_DET_ELENCO_VISTO);
-  assert(AJ_DET_ELENCO_VISTO + 1 == AJ_GUIA_PREVIA_GRANDE && AJ_GUIA_PREVIA_GRANDE + 1 == AJ_AUD_ORIGINAL && AJ_AUD_ORIGINAL + 1 == AJ_AUDIO_NORMALIZAR && AJ_AUDIO_NORMALIZAR + 1 == AJ_N);
+  assert(AJ_DET_ELENCO_VISTO + 1 == AJ_GUIA_PREVIA_GRANDE && AJ_GUIA_PREVIA_GRANDE + 1 == AJ_AUD_ORIGINAL && AJ_AUD_ORIGINAL + 1 == AJ_AUDIO_NORMALIZAR && AJ_AUDIO_NORMALIZAR + 1 == AJ_DEBRID_LIGADO && AJ_DEBRID_LIGADO + 1 == AJ_ADDONS_LIGADO && AJ_ADDONS_LIGADO + 1 == AJ_LEG_ESTILO_LIGADO && AJ_LEG_ESTILO_LIGADO + 1 == AJ_N);
   assert(!strcmp(CHAVE[AJ_AFR], "afrLocal") && !strcmp(CHAVE[AJ_HERO_TAMANHO], "heroSizeLocal"));
   assert(!strcmp(CHAVE[AJ_DET_TOPO], "detalheTopoLocal"));
   assert(!strcmp(CHAVE[AJ_DET_ELENCO_VISTO], "detalheElencoVistoLocal"));

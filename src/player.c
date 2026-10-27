@@ -5487,6 +5487,7 @@ typedef struct { TxtLinha cor[PLR_LEG_LINHAS], borda[PLR_LEG_LINHAS]; int n; flo
 
 static void blocoLinha(LegBloco *bl, TxtEstilo est, const char *linha, int r, int g, int b,
                        TxtFamilia fam, int enf) {
+  const VideoLegendaEstilo legEstilo=*player_leg_estilo_efetivo();
   char visual[768];
   if (bl->n >= PLR_LEG_LINHAS) return;
   // Arabic/Hebrew: shape + visual order of the ALREADY WRAPPED line (bidi.c).
@@ -5508,8 +5509,9 @@ static void blocoLinha(LegBloco *bl, TxtEstilo est, const char *linha, int r, in
 // rasteriza, como em txt_bloco; o cache de linhas do text.c devolve as mesmas
 // no quadro seguinte.
 static void montarBloco(const LegendaCue *c, TxtEstilo est, int r, int g, int b, LegBloco *bl) {
+  const VideoLegendaEstilo legEstilo=*player_leg_estilo_efetivo();
   char texto[768], *linha, *salva;
-  TxtFamilia fam = legfontes_caminho(0) ? TXT_FAMILIA_IMPORTADA1 : (TxtFamilia)legEstilo.familia;
+  TxtFamilia fam = ajustes_legenda_estilo_ligado() && legfontes_caminho(0) ? TXT_FAMILIA_IMPORTADA1 : (TxtFamilia)legEstilo.familia;
   int enf = (c->negrito || legEstilo.negrito ? TXT_ENF_NEGRITO : 0) | (c->italico ? TXT_ENF_ITALICO : 0);
   bl->n = 0; bl->w = 0; bl->h = 0;
   snprintf(texto, sizeof texto, "%s", c->texto);
@@ -5533,6 +5535,7 @@ static void montarBloco(const LegendaCue *c, TxtEstilo est, int r, int g, int b,
 }
 
 static void desenharBloco(const LegBloco *bl, float x0, float y, float alpha, int alinha) {
+  const VideoLegendaEstilo legEstilo=*player_leg_estilo_efetivo();
   int i;
   for (i = 0; i < bl->n; i++) {
     TxtLinha l = bl->cor[i];
@@ -5607,7 +5610,7 @@ static PlrRect areaVideoLegenda(void) {
  * padrao e o tamanho que o autor escolheu. O resto e proporcional — tudo
  * cresce junto, como o sub-scale do mpv, sem mexer em cor, borda ou lugar. */
 static double escalaFonteAss(void) {
-  int pct = legEstilo.tamanho;
+  int pct = player_leg_estilo_efetivo()->tamanho;
   if (pct < TXT_LEG_PCT_MIN) pct = TXT_LEG_PCT_MIN;
   if (pct > TXT_LEG_PCT_MAX) pct = TXT_LEG_PCT_MAX;
   return pct / 120.0;
@@ -5623,6 +5626,7 @@ float player_base_legenda(float baseNormal, int cartaoProximoNoAr) {
   return cartaoProximoNoAr ? 690.f : baseNormal;
 }
 static float baseLegendaPrincipal(void) {
+  const VideoLegendaEstilo legEstilo=*player_leg_estilo_efetivo();
   float base = (visivel && !faixas_estilo_topo() ? 760.f : 1000.f) - leg2Reserva;
   if (visivel && transporteToque() && !faixas_estilo_topo())
     base = fminf(base, (transporteBarraY() - 48.0f) * gfx_escala_ui() - leg2Reserva);
@@ -5683,6 +5687,7 @@ static void desenharLegendaExternaCorpo(void) {
 }
 
 static void desenharLegendaPrincipal(float *topoPilha){
+  const VideoLegendaEstilo legEstilo=*player_leg_estilo_efetivo();
   // Gate collector output, preserving native callback rendering below.
   int overlay = faixas_legenda_overlay();
   PlrRect bitmapArea = areaVideoLegenda();
@@ -5729,8 +5734,8 @@ static void desenharLegendaPrincipal(float *topoPilha){
       style.background = legEstilo.fundo >= 0 && legEstilo.fundo <= 4 ? legEstilo.fundo : 0;
       style.border = legEstilo.borda; style.bold = legEstilo.negrito;
       style.outlineRgb = (int)ajustes_leg_borda_rgb(legEstilo.corBorda);
-      style.overrides = legTocado;
-      if (assrender_fonte_local_ativa(legfontes_caminho(0))) {
+      style.overrides = ajustes_legenda_estilo_ligado()?legTocado:0;
+      if (ajustes_legenda_estilo_ligado() && assrender_fonte_local_ativa(legfontes_caminho(0))) {
         snprintf(style.font, sizeof style.font, "%s", legfontes_nome_ass(0));
         style.overrides |= PLAIN_ASS_FONT;
       }
