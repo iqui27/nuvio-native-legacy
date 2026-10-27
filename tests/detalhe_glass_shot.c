@@ -771,6 +771,7 @@ int main(int argc, char **argv) {
   // As marcas das notas (IMDb, Rotten Tomatoes, Trakt) vem da pasta de arte.
   { char ar[1024]; if (realpath("deploy/app/art", ar)) extras_carregar(ar); }
   montarCatalogo();
+#include "chipfonte_shots.inc"
   cacheFrases();
 #ifdef NV_SHOT_HOOKS
   if (getenv("NUVIO_C9_CACHE")) return vc_run();

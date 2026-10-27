@@ -9,6 +9,7 @@
 #include "idioma.h"
 #include "badges.h"
 #include "plrui.h"
+#include "fonteantecipa.h"
 
 // O AUDIO como quem assiste nomeia: o codec que o addon cita e, quando o texto
 // diz, os canais. O que nao estiver no texto fica de fora — sem chute.
@@ -69,7 +70,8 @@ void vt_descrever(const Stream *s, VaiTocar *vt) {
   audioDo(s, vt->audio, sizeof vt->audio);
   idiomasDo(s, vt->idiomas, sizeof vt->idiomas);
   tamanhoDo(s, vt->tamanho, sizeof vt->tamanho);
-  vt->cache = !s->foraCache;
+  vt->cache = s->emCache && !s->cacheNegado && (!s->foraCache || s->cacheNativo) && !s->urlP2P && !s->naoVideo;
+  vt->estado = s->naoVideo ? FA_RUIM : s->conferencia ? s->conferencia : vt->cache ? FA_OK : FA_NADA;
   snprintf(vt->provedor, sizeof vt->provedor, "%s", s->provedor);
 }
 
@@ -83,15 +85,39 @@ int vt_montar(VaiTocar *vt, const char *imdb, int temporada, int episodio) {
   else snprintf(alvo, sizeof alvo, "%s", imdb);
   if (!stream_lista_do_alvo(alvo)) return 0;
   int i = stream_play_candidata();
+  // Keep the last failed choice visible when no playable candidate remains.
+  if (i < 0) for (int j = 0; j < stream_n(); j++)
+    if (stream_fonte_estado(j) == FA_RUIM) { i = j; break; }
   const Stream *s = i >= 0 ? stream_item(i) : NULL;
   if (!s) return 0;
   vt_descrever(s, vt);
+  vt->estado = stream_fonte_estado(i);
   vt->pularOn = vt_pular_ligado();
   if (vt->pularOn) {
     vt->marcas = vt_marcas_episodio(imdb, temporada, episodio);
     if (vt->marcas) intro_marcas(imdb, temporada, episodio, &vt->origem);
   }
   return 1;
+}
+
+void vt_chip_texto(const VaiTocar *vt, char *dst, size_t n) {
+  const char *parts[] = {vt->res, vt->hdr, vt->audio, vt->idiomas, vt->tamanho};
+  if (!n) return;
+  dst[0] = 0;
+  for (size_t i = 0; i < sizeof parts / sizeof parts[0]; i++) if (parts[i][0]) {
+    size_t used = strlen(dst);
+    snprintf(dst + used, n - used, "%s%s", used ? " · " : "", parts[i]);
+  }
+}
+void vt_estado_cor(int estado, float *r, float *g, float *b) {
+  if (estado == FA_OK) { *r=.40f; *g=.86f; *b=.56f; }
+  else if (estado == FA_RUIM) { *r=1.0f; *g=.45f; *b=.42f; }
+  else ajustes_acento(r,g,b);
+}
+const char *vt_estado_rotulo(int estado) {
+  return estado == FA_OK ? i18n("Pronta para assistir.") :
+         estado == FA_RUIM ? i18n("Falha na verificação") :
+         estado == FA_CONFERINDO ? i18n("Verificando a fonte…") : i18n("Não informado");
 }
 
 int vt_pular_ligado(void) {

@@ -135,6 +135,7 @@ static int n = 0;
 static _Atomic unsigned folhaRevisao;
 static unsigned folhaDadosVersao;
 static void folhaDados(void);
+static void conferenciaPublicar(int i, unsigned geracao, int estado);
 static float linhaTopo(int row);
 static int cacheConfirmado(const Stream *s) {
   return s->emCache && !s->cacheNegado && (!s->foraCache || s->cacheNativo) && !s->urlP2P && !s->naoVideo;
@@ -484,7 +485,10 @@ void stream_vod_falhou(int indice) {
 }
 void stream_vod_tocou(int indice) {
   atomic_fetch_add(&folhaRevisao, 1);
-  if (indice >= 0 && indice < n) fontesmortas_limpar(&lista[indice]);
+  if (indice >= 0 && indice < n) {
+    fontesmortas_limpar(&lista[indice]);
+    conferenciaPublicar(indice, stream_lista_geracao(), FA_OK);
+  }
 }
 int stream_automatico_excluir(int indice) {
   int resultado = 0;
@@ -1891,10 +1895,31 @@ int stream_url_serve(const char *url, const char *cabecalhos) {
 
 // fonteauto_primeira nao sabe de lista trocada: depois de uma conferencia
 // abortada, as candidatas seguintes "falham" sem tocar a rede.
+static void conferenciaPublicar(int i, unsigned geracao, int estado) {
+  pthread_mutex_lock(&verTrava);
+  if (geracao == listaGeracao && i >= 0 && i < n) {
+    lista[i].conferencia = estado;
+    atomic_fetch_add(&folhaRevisao, 1);
+  }
+  pthread_mutex_unlock(&verTrava);
+}
+int stream_fonte_estado(int i) {
+  int estado = FA_NADA;
+  pthread_mutex_lock(&verTrava);
+  if (i >= 0 && i < n) {
+    const Stream *s = &lista[i];
+    estado = s->conferencia;
+    if (s->naoVideo || automaticaExcluida(i) || fontesmortas_idade(s) >= 0) estado = FA_RUIM;
+    else if (estado == FA_NADA && cacheConfirmado(s)) estado = FA_OK;
+  }
+  pthread_mutex_unlock(&verTrava);
+  return estado;
+}
 static int verificarOuParar(int i, void *u) {
   Conferencia *c = u;
   int ok;
   if (c->abortou || !nv_perfil_sessao_atual(c->sessao)) { c->abortou = 1; return 0; }
+  conferenciaPublicar(i, c->geracao, FA_CONFERINDO);
   ok = verificarUma(i, c);
   // A antecipada pode ter falhado no decoder enquanto esta URL era conferida.
   pthread_mutex_lock(&verTrava);
@@ -1912,6 +1937,7 @@ static int verificarOuParar(int i, void *u) {
       fa_concluir(c->rodada, i, ok); nv_perfil_sessao_destravar();
     }
   }
+  conferenciaPublicar(i, c->geracao, c->abortou ? FA_NADA : ok ? FA_OK : FA_RUIM);
   return ok;
 }
 // Candidata que nao serviu sai da fila DESTA lista: a proxima escolha (o
@@ -2333,6 +2359,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
     const Stream *s = &fontes[r.indice];
     if (!fontefalha_tentar(sessao, &c[r.candidata], r.servico)) { resultado = FONTEFALHA_FIM; break; }
     if (falhaCancelada(geracao, cancelado, ctx)) { resultado = FONTEFALHA_FIM; break; }
+    conferenciaPublicar(r.indice, geracao, FA_CONFERINDO);
     if (r.servico >= 0) {
       ok = debrid_resolver_servico_cache(r.servico, s->infoHash, s->fileIdx,
                                          resolvida, sizeof resolvida, &fora);
@@ -2346,6 +2373,7 @@ int stream_falha_verificar(FonteFalhaSessao *sessao, unsigned geracao, int escol
       snprintf(resolvida, sizeof resolvida, "%s", fim); ok = 1;
     }
     if (falhaCancelada(geracao, cancelado, ctx)) { resultado = FONTEFALHA_FIM; break; }
+    conferenciaPublicar(r.indice, geracao, ok && resolvida[0] ? FA_OK : FA_RUIM);
     if (!ok || !resolvida[0]) continue;
     // Dedup da URL final acontece antes de qualquer abertura do pipeline.
     if (strlen(resolvida) >= tam || !fontefalha_url_registrar(sessao, resolvida)) continue;
@@ -2646,6 +2674,7 @@ int stream_preparo_resolver(StreamPreparo *p, int (*cancelado)(void *), void *ct
     if (!nv_perfil_sessao_atual(p->sessaoPerfil) || (cancelado && cancelado(ctx))) { resultado = -1; break; }
     if (!ok || !url[0] || !fontefalha_url_registrar(p->politica, url)) continue;
     *fonte = *s; snprintf(fonte->url, sizeof fonte->url, "%s", url);
+    fonte->conferencia = FA_OK;
     fonte->debridServico = r.servico + 1; fonte->urlP2P = 0;
     if (s->infoHash[0]) cacheConfirmar(fonte);
     p->fontes[r.indice] = *fonte;
@@ -2709,6 +2738,8 @@ int stream_falha_aplicar_sessao(int indice, unsigned geracao, int servico,
     memmove(lista[indice].url, url, strlen(url) + 1);
     lista[indice].debridServico = servico + 1;
     lista[indice].urlP2P = 0;
+    lista[indice].conferencia = FA_OK;
+    atomic_fetch_add(&folhaRevisao, 1);
     if (lista[indice].infoHash[0]) cacheConfirmar(&lista[indice]);
     ok = 1;
   }
@@ -6283,26 +6314,32 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     { char gb[24]="";
       TxtLinha lg, lu, lp;
       int cg=sel?250:218;
-      // No modo do addon o tamanho ja vem no texto dele; so o addon fica.
-      if(s->tamanhoMB && !ajustes_fonte_texto_addon()) { snprintf(gb,sizeof gb,s->tamanhoMB>=102400?"%.0f":"%.1f",s->tamanhoMB/1024.0); plrui_decimal(gb); }
+      unsigned long long mb = tamanhoMBFonte(s);
+      if(mb) { snprintf(gb,sizeof gb,"%.1f",mb/1024.0); plrui_decimal(gb); }
       lg=txt_linha(TXT_CW_TITULO,gb,250,250,248,255);
       lu=txt_linha(TXT_PG_FIM,"GB",120,120,118,255);
+      int estado = stream_fonte_estado(i);
+      float sr, sg, sb; vt_estado_cor(estado, &sr, &sg, &sb);
+      TxtLinha status = txt_linha(TXT_PG_FIM, vt_estado_rotulo(estado),
+                                  (int)(sr*255), (int)(sg*255), (int)(sb*255), 255);
       // TORRENT SEM DEBRID: quantos semeiam vai junto do addon. E o numero que
       // diz se a fonte abre (log da 2.0.0 no Android: "metadados nao chegaram
       // em 30 s"); a pessoa escolhia as cegas. "seeds" fica sem traducao: e o
       // termo que quem usa torrent conhece em qualquer idioma.
       { char pv[160];
         legendaProvedor(s,pv,sizeof pv);
-        lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,340); }
-      colW=lp.w;
+        lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,fmaxf(40,340-status.w-12)); }
+      colW=lp.w+12+status.w;
       if(gb[0] && lg.w+6+lu.w>colW) colW=lg.w+6+lu.w;
       cy=y+20+(temMarca(i,automatica)?FOLHA_MARCA_H:0);
       if(gb[0]){
         txt_desenhar_alpha(lu,tr-lu.w,cy+(lg.h-lu.h)-3,anim);
         txt_desenhar_tom(lg,tr-lu.w-6-lg.w,cy,cg/250.0f,cg/250.0f,(cg-2)/248.0f,anim); }
-      txt_desenhar_tom(lp,tr-lp.w,gb[0]?cy+40:cy+6,sel?1:110.0f/150,sel?1:110.0f/150,sel?1:108.0f/148,anim);
+      float providerX=tr-colW, providerY=gb[0]?cy+40:cy+6;
+      txt_desenhar_tom(lp,providerX,providerY,sel?1:110.0f/150,sel?1:110.0f/150,sel?1:108.0f/148,anim);
+      txt_desenhar_alpha(status,tr-status.w,providerY,anim);
       // Dica da tecla Info/Amarela: so na linha em foco, no canto do addon.
-      if(sel) gfx_icone((GfxRect){tr-lp.w-30,(gb[0]?cy+40:cy+6)+3,20,20},"aj_info",.62f,.62f,.62f,anim*.85f); }
+      if(sel) gfx_icone((GfxRect){providerX-30,providerY+3,20,20},"aj_info",.62f,.62f,.62f,anim*.85f); }
     txtW=tr-tx-colW-28;
     cy=y+20;
     // A MARCA: o que esta tocando (com o equalizador), a escolha anterior e a
