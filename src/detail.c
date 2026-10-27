@@ -1382,22 +1382,22 @@ static void desenhaNotasTiles(float x,float y,float a) {
       GfxRect b=detalheFoco((GfxRect){tx,ty,w,th},24.0f/th,f,.03f,a);
       notasui_painel(b,24,a);
       if (f>.01f) plrui_linha_foco(b,24,f*a);
-      txt_desenhar_alpha(txt_linha(TXT_G22M,i18n(c==nf ? "Sua nota" : "Amigos"),243,242,239,190),tx+24,ty+24,a);
+      txt_desenhar_alpha(txt_linha(TXT_G22M,i18n(c==nf ? "Sua nota" : "Amigos"),243,242,239,190),tx+24,ty+19.2f,a);
       if (c==nf) {
         float ar,ag,ab; char v[16]; ajustes_acento(&ar,&ag,&ab);
         int minha=notaMinha();
         snprintf(v,sizeof v,minha ? "%d" : "★",minha);
-        txt_desenhar_alpha(txt_linha(TXT_G52B,v,ar*255,ag*255,ab*255,255),tx+24,ty+68,a);
-        txt_desenhar_alpha(txt_linha(TXT_G18R,i18n("OK para avaliar"),243,242,239,160),tx+24,ty+166,a);
+        txt_desenhar_alpha(txt_linha(TXT_G52B,v,ar*255,ag*255,ab*255,255),tx+24,ty+54.4f,a);
+        txt_desenhar_alpha(txt_linha(TXT_G18R,i18n("OK para avaliar"),243,242,239,160),tx+24,ty+132.8f,a);
       } else {
         AmigosTitulo am;
         if (amigosDoTitulo(&am)) {
           static const float anel[3]={.075f,.08f,.095f};
           char l1[200],l2[220]; int ut,ue; ultimoEpisodio(&ut,&ue);
-          svd_amigos_pilha(tx+24,ty+66,48,&am,am.n<3 ? am.n : 3,1,anel,a);
+          svd_amigos_pilha(tx+24,ty+52.8f,38.4f,&am,am.n<3 ? am.n : 3,1,anel,a);
           amigostitulo_resumo(&am,ut,ue,(long long)time(NULL),l1,sizeof l1,l2,sizeof l2);
-          txt_desenhar_alpha(txt_linha_corta(TXT_G22M,l1,243,242,239,255,w-48),tx+24,ty+126,a);
-          txt_desenhar_alpha(txt_linha_corta(TXT_G18R,l2,243,242,239,160,w-48),tx+24,ty+164,a);
+          txt_desenhar_alpha(txt_linha_corta(TXT_G22M,l1,243,242,239,255,w-48),tx+24,ty+100.8f,a);
+          txt_desenhar_alpha(txt_linha_corta(TXT_G18R,l2,243,242,239,160,w-48),tx+24,ty+131.2f,a);
         }
       }
     }
