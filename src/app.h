@@ -24,7 +24,8 @@ typedef enum {
   TELA_PLAYER, TELA_SOCIAL, TELA_ADDONS, TELA_AGENDA,
   TELA_LIVETV_DIAG,  // diagnostico da Live TV (livetvdiag.c)
   TELA_PLUGINS,      // plugins Nuvio (pluginsui.c, F09)
-  TELA_CACA          // Caca a filmografia e conquistas (cacaui.c)
+  TELA_CACA,         // Caca a filmografia e conquistas (cacaui.c)
+  TELA_ESPORTES
 } Tela;
 
 int  app_iniciar(const char *dirArte);

@@ -37,6 +37,11 @@ static int streamfitpassiva_test_ok(int v) { return v; }
 Uint32 SDL_GetTicks(void) { return (Uint32)fakeNow; }
 float gfx_escala_ui(void) { return 1; }
 const char *i18n(const char *s) { return s; }
+int addons_n(void){return 0;}
+unsigned addons_parcial_rev(void){return 0;}
+int addons_parcial_abas(AddonAba *out,int max){(void)out;(void)max;return 0;}
+int aioui_detectar(int addon){(void)addon;return 0;}
+unsigned fontepref_revisao(void){return 0;}
 int debrid_ativo(void) { return 0; }
 int p2p_ativo(void) { return 0; }
 int selospacote_ativo(void) { return -1; }
@@ -379,6 +384,9 @@ int main(void) {
   playbackActions();
   addonOrder();
   threeSourceExample();
+  /* Opening normal movie Sources resets the independent channel chooser. */
+  stream_folha_canais_abrir("Sports event");assert(canaisFolha && fontescanais_estado()->ativo);
+  stream_folha_abrir();assert(!canaisFolha && !fontescanais_estado()->ativo);
   stream_definir_lista(NULL,0);free(ordem);free(linhaY);free(linhaH);free(grupoTmp);free(grupoFitTmp);free(fitResultados);free(fitClasses);
   puts("streamfit sheet: PASS (stable groups, raw identities, freeze, incremental/focus, OndeVer, first-source)");return 0;
 }

@@ -3,6 +3,8 @@
 #include "addonmodo.h"
 #include "vaitocar.h"
 #include "mediaurl.h"
+#include "fontescanais.h"
+#include "horafmt.h"
 #include "plrui.h"
 #include "ondever.h"
 #include "naovideo.h"
@@ -560,6 +562,10 @@ void stream_folha_contexto(const char *s) { snprintf(contexto, sizeof contexto, 
 int stream_folha_recarregar(void) { int r = recarregar; recarregar = 0; return r; }
 
 static int aberta = 0, foco = 0, escolha = -1;
+static int canaisFolha;
+static char canaisAviso[160];
+static void canaisEvento(const SDL_Event *e);
+static void canaisAtualizar(float dt);
 static unsigned escolhaGeracao;
 static float anim = 0.0f, rolagem = 0.0f;
 // Velocidade da mola de 2a ordem da rolagem (anim_mola2): partida macia e
@@ -3528,6 +3534,7 @@ static int folhaAuto, folhaVisiveis, folhaContagens[13], folhaOcultos, folhaBloq
 static int filtrosVisiveis(void) { folhaDados(); return folhaVisiveis; }
 static int automaticoDaFolhaModo(void) { folhaDados(); return folhaAuto; }
 static int botaoDe(int i) {
+  if (canaisFolha) return i==0?BT_RECARREGAR:BT_FECHAR;
   if (!video_pode_forcar_sdr()) i++;
   if (i == 0) return BT_SEM_HDR;
   // Live TV sources do not carry the same stable container, debrid-cache and
@@ -3547,6 +3554,7 @@ static int botaoDe(int i) {
   return BT_FECHAR;
 }
 static int nBotoes(void) {
+  if (canaisFolha) return 2;
   if (!filtrosVisiveis()) return video_pode_forcar_sdr() ? 3 : 2;
   return (video_pode_forcar_sdr() ? 6 : 5) + (recarregarFonteContexto != 0) + temAio() * 2;
 }
@@ -4699,7 +4707,7 @@ static void folhaGeometria(void) {
     folhaBase = NV_TELA_H - FOLHA_MARGEM - 16.0f;
   }
   if (temServidor()) folhaBase -= FOLHA_SRV_PE;
-  const char *dica = fraseDicaChips();
+  const char *dica = canaisFolha?NULL:fraseDicaChips();
   folhaDica = dica ? 18.0f + txt_bloco(TXT_HERO_META, dica, 255,255,255, 0,0,
       FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D+4.0f-48.0f, 28.0f, 0, 0) : 0.0f;
   folhaSala = stream_folha_sala_h ? stream_folha_sala_h() : 0.0f;
@@ -4761,8 +4769,19 @@ void stream_folha_servidor(int provider) {
   montar(aut);
   rolagem = alvoRolagem(); velRol = 0;
 }
+void stream_folha_canais_abrir(const char *titulo) {
+  fontescanais_iniciar(titulo);canaisFolha=1;canaisAviso[0]=0;
+  aberta=1;escolha=-1;grupo=1;foco=0;rolagem=velRol=0;recarregar=0;
+  { float x,y,w,h;folhaRelogio=!player_aberto() && ajustes_relogio_ligado() && ilha_rect(&x,&y,&w,&h); }
+#ifdef NV_TOUCH_UI
+  memset(&toqueFontes,0,sizeof toqueFontes);memset(&toqueFontesAbas,0,sizeof toqueFontesAbas);
+#endif
+}
+int stream_folha_canais_aberta(void) { return canaisFolha && aberta; }
+void stream_folha_canais_fechar(void) { if(canaisFolha){aberta=0;fontescanais_limpar();} }
 void stream_folha_abrir(void) {
-  filtroServidor = -1;
+  filtroServidor=-1;
+  canaisFolha=0;fontescanais_limpar();
   // A busca nova pode estar na fila enquanto a lista ainda e do episodio
   // anterior. A folha fica vazia ate chegarem fontes do alvo pedido (#513).
   if (alvoPedido[0] && n > 0 && !stream_lista_do_alvo(alvoPedido))
@@ -5168,6 +5187,7 @@ static void okNaLinha(void) {
 }
 
 void stream_folha_evento(const SDL_Event *e) {
+  if (canaisFolha) { if(aberta)canaisEvento(e);return; }
   if (e->type == SDL_WINDOWEVENT && (e->window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
       e->window.event == SDL_WINDOWEVENT_HIDDEN)) recarregarFonteConfirmacao = 0;
   if (aberta && recarregarFonteConfirmacao && e->type == SDL_KEYUP) {
@@ -5278,6 +5298,7 @@ void stream_folha_evento(const SDL_Event *e) {
   }
 }
 void stream_folha_atualizar(float dt, Uint32 agora) {
+  if (canaisFolha) { canaisAtualizar(dt);return; }
   int nf;
   medirCabecalho();
   if (aberta || anim > 0.001f) folhaGeometria();
@@ -5387,6 +5408,7 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   rolagem=anim_mola2(&velRol,rolagem,alvoRolagem(),dt,NV_MOLA2_SCROLL);
 }
 int stream_folha_escolheu(int *out) {
+  if (canaisFolha) return 0;
   if(escolha<0) return 0;
   // A resposta da busca pode substituir a lista entre o OK e este quadro.
   // O indice escolhido so vale na mesma lista e para o alvo pedido.
@@ -6026,6 +6048,110 @@ static float trocaEase(Uint32 agora) {
   if(ajustes_animacoes_reduzidas()||t>=1.0f) return 1.0f;
   t=1.0f-t; return 1.0f-t*t*t;
 }
+static void canaisFoco(int i,int b) { (void)b;grupo=1;foco=i; }
+static void canaisEscolher(int i,int b) {
+  canaisFoco(i,b);
+  int r=fontescanais_escolher(i,time(NULL));
+  if (r>0) {
+    printf("[esportes] canal escolhido: linha=%d\n",i);fflush(stdout);
+    aberta=0;
+  }
+}
+static void canaisBotao(int i,int b) { (void)b;grupo=-1;foco=i; }
+static void canaisBotaoAgir(int i,int b) {
+  canaisBotao(i,b);
+  if (i==0) { fontescanais_atualizar();canaisAviso[0]=0; }
+  else aberta=0;
+}
+static void canaisEvento(const SDL_Event *e) {
+  if (e->type!=SDL_KEYDOWN) return;
+  SDL_Keycode k=e->key.keysym.sym;
+#ifdef NV_TOUCH_UI
+  toquerol_limpar(&toqueFontes);
+#endif
+  const FontesCanais *s=fontescanais_estado();
+  if (k==SDLK_ESCAPE || k==SDLK_AC_BACK || k==SDLK_BACKSPACE || k==SDLK_DELETE) { aberta=0;return; }
+  if (k==SDLK_r) { fontescanais_atualizar();return; }
+  if (k==SDLK_UP) { if (grupo==1 && foco>0) foco--;else {grupo=-1;foco=0;} }
+  else if (k==SDLK_DOWN) { if(grupo==-1){grupo=1;foco=0;}else if(foco+1<s->n)foco++; }
+  else if (k==SDLK_LEFT || k==SDLK_RIGHT) { if(grupo==-1)foco=k==SDLK_LEFT?0:1; }
+  else if (k==SDLK_PAGEUP) foco=foco>5?foco-5:0;
+  else if (k==SDLK_PAGEDOWN) foco=foco+5<s->n?foco+5:s->n>0?s->n-1:0;
+  else if ((k==SDLK_RETURN || k==SDLK_KP_ENTER || k==SDLK_SPACE) && !e->key.repeat) {
+    if (grupo==-1) canaisBotaoAgir(foco,0);else canaisEscolher(foco,0);
+  }
+}
+static void canaisAtualizar(float dt) {
+  medirCabecalho();
+  const FontesCanais *s=fontescanais_estado();
+  if (!s->ativo || !nv_perfil_sessao_atual(s->perfil)) { aberta=0;fontescanais_limpar(); }
+  anim=anim_mola(anim,aberta?1:0,dt,NV_MOLA_TELA);
+  folhaGeometria();alturaTotal=s->n*(FOLHA_LINHA_H+FOLHA_LINHA_GAP);
+  if (foco>=s->n && grupo==1) foco=s->n?s->n-1:0;
+#ifdef NV_TOUCH_UI
+  if (toquerol_livre(&toqueFontes)) return;
+#endif
+  float alvo=rolagem;
+  if(grupo==1){float y=foco*(FOLHA_LINHA_H+FOLHA_LINHA_GAP);if(y<alvo)alvo=y;if(y+FOLHA_LINHA_H>alvo+areaLista())alvo=y+FOLHA_LINHA_H-areaLista();}
+  alvo=fmaxf(0,fminf(alvo,fmaxf(0,alturaTotal-areaLista())));
+  rolagem=anim_mola2(&velRol,rolagem,alvo,dt,NV_MOLA2_SCROLL);
+}
+/* EPG times describe the matched programme, not just a live channel. */
+static int canaisHorario(const FonteCanal *c,time_t agora,char *out,size_t n) {
+  if (!n) return 0;
+  out[0]=0;
+  if (c->inicio<=0) return 0;
+  if (c->inicio<=agora && c->fim>agora) {
+    snprintf(out,n,"%s",i18n("Ao vivo"));return 1;
+  }
+  struct tm inicio,hoje;char hora[24],data[24];
+  if (!localtime_r(&c->inicio,&inicio) || !localtime_r(&agora,&hoje)) return 0;
+  hora_tela(hora,sizeof hora,&inicio);
+  if (inicio.tm_year==hoje.tm_year && inicio.tm_yday==hoje.tm_yday) snprintf(out,n,"%s",hora);
+  else { strftime(data,sizeof data,ajustes_idioma()==IDIOMA_EN?"%m/%d":"%d/%m",&inicio);snprintf(out,n,"%s %s",data,hora); }
+  return 0;
+}
+static void corpoCanais(float lx,float rw,float tx,float tr,float a,Uint32 agora,int ptr) {
+  const FontesCanais *s=fontescanais_estado();float oy=folhaOY;
+  time_t agoraT=time(NULL);
+  medirCabecalho();
+  txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,s->titulo,158,158,156,255,tr-tx),tx,oy+72,a);
+  txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_TITULO,"Fontes",243,242,239,255,titMaxCab),tx,oy+94,a);
+  float bx=lx+rw-bwCab[0]-bwCab[1]-gapCab;
+  for(int i=0;i<2;i++) {
+    GfxRect r={bx,oy+FOLHA_CAB_Y,bwCab[i],FOLHA_CHIP_H};
+    chipFolha(r,rotCab[i],rotWCab[i],icoCab[i],grupo==-1&&foco==i,0,a);
+    if(ptr)ponteiro_alvo(r.x,r.y,r.w,r.h,canaisBotao,canaisBotaoAgir,i,0);
+    bx+=bwCab[i]+gapCab;
+  }
+  const char *nomes[]={i18n("Todos")};int contagem[]={s->n};
+  plrui_seg(nomes,contagem,1,0,-1,tx,oy+FOLHA_ABAS_Y,a);
+  gfx_recorte(lx,FOLHA_TOPO,rw,areaLista());
+  for(int i=0;i<s->n;i++) {
+    GfxRect r={lx,FOLHA_TOPO+i*(FOLHA_LINHA_H+FOLHA_LINHA_GAP)-rolagem,rw,FOLHA_LINHA_H};
+    if(r.y+r.h<FOLHA_TOPO || r.y>folhaBase)continue;
+    if(grupo==1&&foco==i)plrui_linha_foco(r,18,a);
+    const FonteCanal *c=&s->canais[i];
+    char quando[64];int vivo=canaisHorario(c,agoraT,quando,sizeof quando);
+    float nomeW=tr-tx;
+    if (quando[0]) {
+      TxtLinha q=txt_linha_corta(TXT_HERO_META,quando,vivo?114:158,vivo?201:158,vivo?158:156,255,(tr-tx)*.55f);
+      txt_desenhar_alpha(q,tr-q.w,r.y+21,a);nomeW=fmaxf(1,nomeW-q.w-20);
+    }
+    txt_desenhar_alpha(txt_linha_corta(TXT_CALLOUT,c->nome,243,242,239,255,nomeW),tx,r.y+15,a);
+    char meta[400];snprintf(meta,sizeof meta,"%s · %s",c->conta,c->programa);
+    txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,meta,158,158,156,255,tr-tx),tx,r.y+57,a);
+    if(ptr)ponteiro_alvo_faixa(r.x,r.y,r.w,r.h,FOLHA_TOPO,folhaBase,canaisFoco,canaisEscolher,i,0);
+  }
+  if(!s->n) {
+    const char *msg=s->buscando?"Buscando no guia…":"Nenhum canal encontrado para este evento";
+    txt_desenhar_alpha(txt_linha_corta(TXT_BODY,i18n(msg),158,158,156,255,tr-tx),tx,FOLHA_TOPO+42,a);
+  }
+  gfx_sem_recorte();
+  if(s->buscando)plrui_anel(tx+12,folhaBase-20,20,1,agora,a);
+  if(canaisAviso[0])txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,canaisAviso,158,158,156,255,tr-tx),tx,folhaBase+6,a);
+}
+
 static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   float ar, ag, ab;
   int ai, nf, automatica, melhor;
@@ -6051,6 +6177,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     // O painel em si absorve o clique no vazio (nao fecha, nao da OK).
     ponteiro_alvo(x, 0, FOLHA_W, NV_TELA_H, NULL, NULL, 0, 0);
   }
+  if (canaisFolha) { corpoCanais(lx,rw,tx,tr,anim,agora,ptr);return; }
   // CABECALHO, tres faixas (ver FOLHA_CAB_Y): kicker, titulo com os botoes a
   // direita, abas de addon.
   //
@@ -6185,7 +6312,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       sx+=iw[qidx]+6.0f; } }
   // AVISO DOS FILTROS RAPIDOS, sob as abas: quantas fontes eles escondem. OK
   // (ou toque) tira todos. Reserva todas as linhas, inclusive a acao de recuperar.
-  { const char *dica = fraseDicaChips();
+  { const char *dica = canaisFolha?NULL:fraseDicaChips();
     if (dica) {
       float tw = (float)txt_linha(TXT_HERO_META, dica, 255, 255, 255, 255).w;
       GfxRect r = {lx-2.0f, FOLHA_ABAS_Y+oy+FOLHA_ABAS_H+6.0f, fminf(tw+48.0f, rw+4.0f), folhaDica-6.0f};

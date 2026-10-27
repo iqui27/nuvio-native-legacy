@@ -32,7 +32,7 @@ static void capture(SDL_Window *window, const char *dir, const char *name) {
     glClearColor(.045f, .047f, .051f, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     if (shot_zap) desenharBanda(1, SDL_GetTicks());
-    else g5ui_draw();
+    else { g5ui_draw(); if(stream_folha_canais_aberta()){stream_folha_atualizar(.016f,SDL_GetTicks());stream_folha_desenhar(SDL_GetTicks());} }
     if (frame == 89) {
       unsigned char *pixels = malloc(1920 * 1080 * 4);
       assert(pixels);
@@ -233,7 +233,7 @@ int main(int argc, char **argv) {
       ltvF[0].tipo = LTV_M3U; ltvF[0].saude = LTV_SAUDE_OK; ltvF[0].nCanais = nCanais; ltvF[0].epgCom = 5;
     }
     if (!strcmp(names[n], "esportes-onde-assistir"))
-      snprintf(gv_jogo, sizeof gv_jogo, "%s", "Brasileirão: Flamengo × Palmeiras");
+      snprintf(gs_selected.nome, sizeof gs_selected.nome, "%s", "Brasileirão: Flamengo × Palmeiras");
     capture(window, dir, names[n]);
     nLtvF = 0;
     if (!strcmp(names[n], "vazio")) semear();

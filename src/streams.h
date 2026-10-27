@@ -464,6 +464,11 @@ int  stream_canal_prazo_longo(int idx);
 // --- folha de fontes (a lista que sobe por cima do player/detalhe) ---
 void stream_folha_abrir(void);
 void stream_folha_servidor(int provider); // -1 all, 0 Plex, 1 Jellyfin, 2 Emby
+/* Open the same Sources sheet for guide-channel choices without replacing
+ * the playback source list. Publish rows through fontescanais.h. */
+void stream_folha_canais_abrir(const char *titulo);
+int stream_folha_canais_aberta(void);
+void stream_folha_canais_fechar(void);
 // Root feeds an actual movie/episode metadata runtime or measured media
 // duration for this exact target. Never supply PLR_DUR_PADRAO, a season's
 // total runtime or a guessed "45 minutes". 0/unknown clears provenance.
