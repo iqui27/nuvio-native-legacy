@@ -1,5 +1,30 @@
 // Real LAN pairing, native worker handoff, persistence and production rendering.
-#include "../src/guiav5ui.c"
+#include "../src/guiav5ui.h"
+#include "../src/text.h"
+#include "../src/gfx.h"
+#include <stdio.h>
+#include <string.h>
+static char rendered[16000];
+static int vector_shapes,failures;
+static unsigned scene_geometry;
+static TxtLinha record_text(TxtEstilo e,const char *s,int r,int g,int b,int a,float w){
+  size_t n=strlen(rendered);snprintf(rendered+n,sizeof rendered-n,"%s\n",s);
+  return txt_linha_corta_bruta(e,s,r,g,b,a,w);
+}
+static void record_shape(GfxRect rect,float radius,float r,float g,float b,float a){
+  vector_shapes++;scene_geometry=scene_geometry*31+(unsigned)(rect.x*16)+(unsigned)(rect.y*16);gfx_cor(rect,radius,r,g,b,a);
+}
+#define txt_linha_corta_bruta record_text
+#define gfx_cor record_shape
+#ifndef SETUPTV_UI
+#define SETUPTV_UI "../src/guiav5ui.c"
+#endif
+#include SETUPTV_UI
+#undef gfx_cor
+#undef txt_linha_corta_bruta
+void setuptv_epg(const char *key,const char *url);
+static void check(int ok,const char *name){printf("%s: %s\n",ok?"PASS":"FAIL",name);if(!ok)failures++;}
+static void render_setup(void){rendered[0]=0;vector_shapes=0;scene_geometry=0;phone_screen();}
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <unistd.h>
@@ -40,7 +65,11 @@ int main(int argc,char **argv){
   dados_iniciar(getenv("NUVIO_DADOS"));dados_gravar("ajustes.txt","idioma 0\nidiomaAutoLocal 0\nselected_theme 2\n");ajustes_dir(dados_dir());ajustes_definir_vidro(0);context();
   phone();assert(phone_stage==0&&phone_step()==0&&!celular_conectado());
   capture("waiting");
-  char command[512];snprintf(command,sizeof command,"curl --fail -s --max-time 5 'http://127.0.0.1:%d%s' >/dev/null",celular_porta(),strrchr(celular_url(),'/'));assert(!system(command));
+  render_setup();check(vector_shapes>=35,"vector phone QR flow and TV catalog illustration");
+  char *address=strstr(rendered,"http://"),manual[128]="";if(address)sscanf(address,"%127s",manual);
+  check(!strcmp(manual,celular_url()),"manual URL includes pairing token");
+  char command[512];snprintf(command,sizeof command,"curl --fail -s --max-time 5 '%s' >/dev/null",manual);check(!system(command),"typed manual URL returns HTTP 200");capture("manual-url");
+  snprintf(command,sizeof command,"curl --fail -s --max-time 5 '%s' >/dev/null",celular_url());assert(!system(command));
   assert(celular_conectado()&&phone_step()==1);capture("connected");
   // Actual credential submission starts a worker; M3U fixture needs no provider.
   request("{\"step\":1,\"name\":\"Living room\",\"type\":2,\"file\":\"#EXTM3U\\n#EXTINF:-1 tvg-id=\\\"news\\\" group-title=\\\"News\\\",News HD\\nhttps://example.test/news.m3u8\\n#EXTINF:-1 tvg-id=\\\"sports\\\" group-title=\\\"Sports\\\",Sports HD\\nhttps://example.test/sports.m3u8\\n#EXTINF:-1 group-title=\\\"Adult\\\",Adult\\nhttps://example.test/adult.m3u8\\n\"}");
@@ -51,13 +80,28 @@ int main(int argc,char **argv){
   // Freeze a published Xtream worker snapshot, never read its mutable staging.
   phone_stage=4;draft.type=0;atomic_store(&phone_parts,2);
   atomic_store(&phone_counts[G5_LIVE],0);atomic_store(&phone_counts[G5_MOVIE],186);atomic_store(&phone_counts[G5_SERIES],42);
-  assert(phone_step()==2);capture("importing");
+  assert(phone_step()==2);render_setup();
+  check(strstr(rendered,"3 de 4")!=NULL,"counter matches four visible steps during import");
+  unsigned transfer=scene_geometry;SDL_Delay(80);render_setup();check(transfer!=scene_geometry,"import transfer animates native geometry");
+  capture("importing");
   phone_stage=2;draft.type=2;
   request("{\"step\":2,\"live\":1,\"movies\":0,\"series\":0,\"epg\":1,\"xmltv\":\"https://example.test/guide.xml\",\"off\":[1]}");
   assert(phone_stage==3&&phone_step()==4&&!strcmp(screen,"setup-pronto")&&committed&&!save_failed);
   assert(group_on[0]&&!group_on[1]&&!group_on[2]);
   assert(phone_epg_days()==0); // Never invent coverage from a URL alone.
   char file[64];filename(file,sizeof file,"source");char *saved=dados_ler(file);assert(saved&&strstr(saved,"Living room"));free(saved);
+  render_setup();check(strstr(rendered,"4 de 4")!=NULL,"completed counter matches four visible steps");
+  // Enabled movie-only group becomes empty when movie imports are disabled.
+  inventory[count]=(G5Item){.kind=G5_MOVIE};snprintf(inventory[count].group,sizeof inventory[count].group,"Cinema");count++;build_groups();drop_kind(G5_MOVIE);
+  assert(group_count==4&&group_on[3]);render_setup();
+  check(strstr(rendered,"1\nCanais ao vivo\n0\nFilmes\n0\nSéries\n1\nCategorias")!=NULL,"category total excludes enabled groups with no retained items");
+  setuptv_epg("g5xmltv",draft.xmltv);check(phone_epg_days()>2.9f,"current custom XMLTV coverage");
+  snprintf(draft.xmltv,sizeof draft.xmltv,"https://example.test/new.xml");check(phone_epg_days()==0,"previous XMLTV cache excluded before guide reload");
+  draft.type=0;draft.xmltv[0]=0;xtream_definir_servidor("https://provider.test");xtream_definir_usuario("viewer");xtream_definir_senha("secret");
+  char provider[1100];assert(xtream_url_xmltv(provider,sizeof provider));setuptv_epg("xt",provider);
+  check(phone_epg_days()>2.9f,"automatic Xtream provider coverage without custom URL");
+  xtream_definir_servidor("https://other-provider.test");check(phone_epg_days()==0,"previous Xtream account coverage excluded");
+  draft.type=2;snprintf(draft.xmltv,sizeof draft.xmltv,"https://example.test/guide.xml");setuptv_epg("g5xmltv",draft.xmltv);
   capture("done");
   // Same geometry with glass enabled; reduced motion retains state meaning.
   ajustes_definir_vidro(1);capture("done-glass");ajustes_definir_vidro(0);
@@ -68,5 +112,5 @@ int main(int argc,char **argv){
   phone();assert(phone_stage==0&&!celular_conectado()&&phone_step()==0);celular_fechar();
   assert(!celular_url()[0]);capture("expired");
   g5ui_close();puts("PASS: TV setup waiting, connection, worker progress, review, save, invalid choices, finish and reset");
-  return 0;
+  return failures?1:0;
 }

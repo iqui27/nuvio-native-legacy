@@ -127,6 +127,8 @@ int  epg_proximo(int epg, time_t agora, int k, EpgProg *p);
 // do ultimo. Devolve 0 (e nao toca *ini/*fim) se o canal nao tem grade. E a
 // unica forma de dizer com verdade "a programacao termina aqui".
 int  epg_janela(int epg, time_t *ini, time_t *fim);
+// Latest retained programme for this exact published source URL. No network.
+time_t epg_fim_url(const char *url);
 
 // Uniao das janelas de todos os canais. 0 = grade vazia.
 int  epg_janela_total(time_t *ini, time_t *fim);
