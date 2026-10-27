@@ -20,6 +20,8 @@ static void ajPenPresets(void) {
     float y=400+(i-start)*84;
     if(aj4Linha==4+i && aj4Topo<0)ajPenPanel(1290,y,508,74,1);
     ajIcone("aj_bookmark",1310,y+24,26,.8f);aj4Texto(ajPenSavedNames[i],TXT_G21B,1352,y+13,330,1);
+    int saved=0;for(int op=0;op<AJ_N;op++)if(ajPenSavedValues[i][op]>=0)saved++;
+    char count[96];snprintf(count,sizeof count,i18n("%d ajustes"),saved);aj4Texto(count,TXT_AJ_MINI14,1352,y+42,330,.4f);
     aj4Texto("Usar",TXT_G18R,1696,y+24,70,.58f);ajIcone("aj_chevron-right",1768,y+28,18,.45f);
     aj4Alvo((GfxRect){1290,y,508,74},1,4+i);
   }
