@@ -1,169 +1,149 @@
-// Offline host gate. Expectations use rendered rectangles; input uses real SDL handlers.
-#include "nav21.h"
-#include "dados.h"
-#include "ajustes.h"
-#include "text.h"
-#include "tex_cache.h"
-#include <SDL2/SDL_image.h>
+// Exercise production event routing and return ownership without login or network.
+#include "../src/app.c"
+#include "shot_arte.h"
+#include "socialvis.h"
 #include <assert.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-static Nav21Target targets[NAV21_MAX];
-static int count, failures, checks;
-static const char *filter;
-static FILE *logfile, *registry;
-static const char *artifactDir;
-void nav21_library(void);
-void nav21_router(void);
-static int fakePhase;
-static void fakeAction(void){fakePhase=0;}
-static void fakeStep(float dt){(void)dt;fakePhase++;}
-static void fakeDraw(void){gfx_cor((GfxRect){0,0,1920,1080},0,(fakePhase%10)/10.f,0,0,1);}
-static float fakeTransition(void){return 1;}
-static int fakeValue(void){return 0;}
-static void fakeKey(const SDL_Event *e){(void)e;}
-static void fakeSelect(int id){(void)id;}
-void nav21_aio(void);
-void nav21_library(void);
-void nav21_filmo(void);
-void nav21_addonguide(void);
-void nav21_detail(void);
-void nav21_social(void);
-void nav21_settings(void);
-void nav21_sources(void);
-void nav21_juntos(void);
-void nav21_home(void);
-void nav21_offline(void);
-void nav21_island(void);
-void nav21_rating(void);
-void nav21_player(void);
-static const SDL_Keycode keys[]={SDLK_UP,SDLK_DOWN,SDLK_LEFT,SDLK_RIGHT};
-static const char *names[]={"Up","Down","Left","Right"};
-void nav21_targets_reset(void){count=0;}
-void nav21_target(int id,GfxRect r) {
-  if(count==NAV21_MAX) { fprintf(stderr,"target overflow\n"); exit(2); }
-  targets[count++]=(Nav21Target){id,r};
+#include "j4_proof.h"
+#include <sys/stat.h>
+
+static int failures;
+static void check(const char *name, int ok) {
+  printf("%s: %s\n", ok ? "PASS" : "FAIL", name);
+  failures += !ok;
 }
-void nav21_expect(const char *screen,const char *path,int actual,int expected) {
-  checks++;
-  if(actual!=expected) { failures++; fprintf(logfile,"| %s | %s | %d | %d |\n",screen,path,actual,expected); }
+static void key(SDL_Keycode k) {
+  SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = k;
+  if (k==SDLK_s) e.key.keysym.scancode=NV_SCANCODE_BLUE;
+  app_evento(&e); e.type = SDL_KEYUP; app_evento(&e);
 }
-static void key(Nav21Screen s,SDL_Keycode code) {
-  SDL_Event e={0}; e.type=SDL_KEYDOWN; e.key.keysym.sym=code; s.key(&e);
-  e.type=SDL_KEYUP; s.key(&e);
-}
-static void frame(Nav21Screen s,float dt) {
-  s.step(dt); count=0; txt_novo_quadro(); tex_novo_quadro(); gfx_novo_quadro();
-  glClearColor(.01f,.01f,.01f,1); glClear(GL_COLOR_BUFFER_BIT); s.draw();
-}
-static void settle(Nav21Screen s) { for(int i=0;i<90;i++) s.step(1.f/60); for(int i=0;i<4;i++)frame(s,.1f); }
-static int nearest(Nav21Target *v,int n,int from,int direction) {
-  int best=from; float distance=INFINITY;
-  for(int i=0;i<n;i++) {
-    float x=v[i].r.x+v[i].r.w/2-v[from].r.x-v[from].r.w/2;
-    float y=v[i].r.y+v[i].r.h/2-v[from].r.y-v[from].r.h/2;
-    float along=direction==0?-y:direction==1?y:direction==2?-x:x;
-    if(along<1) continue;
-    // Directional TV distance: penalize movement across the requested axis.
-    float d=along+3*fabsf(direction<2?x:y);
-    if(d<distance) {distance=d;best=i;}
+static void step(int n) {
+  for (int i=0;i<n;i++) {
+    spainel_atualizar(.01f, SDL_GetTicks());
+    detail_atualizar(.01f, SDL_GetTicks());
+    voltarAoPainel();
   }
-  return best;
 }
-static unsigned char pixels[1920*1080*4];
-static unsigned long long hash(void) {
-  glReadPixels(0,0,1920,1080,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
-  unsigned long long h=1469598103934665603ULL;
-  for(size_t i=0;i<sizeof pixels;i+=16) h=(h^pixels[i])*1099511628211ULL;
-  return h;
+static void draw(void) {
+  txt_novo_quadro(); tex_novo_quadro(); tex_bombear(12); gfx_novo_quadro();
+  glClear(GL_COLOR_BUFFER_BIT);
+  shot_arte_desenhar(0);
+  spainel_desenhar(SDL_GetTicks());
 }
-void nav21_motion(Nav21Screen s,void (*action)(void),const char *path) {
-  action();frame(s,0);unsigned long long last=hash();
-  float previous=s.transition?s.transition():1;
-  int firstChange=-1,lastChange=-1,changed=0;
-  for(int ms=25;ms<=600;ms+=25){
-    SDL_Delay(25);frame(s,.025f);unsigned long long h=hash();
-    float progress=s.transition?s.transition():1;
-    if(fabsf(progress-previous)>.0001f && h!=last){changed++;if(firstChange<0)firstChange=ms;lastChange=ms;}
-    previous=progress;last=h;
+static void settle(void) {
+  for (int i=0;i<100;i++) { step(1); draw(); }
+}
+static void save(const char *dir, const char *name) {
+  char path[1024]; snprintf(path,sizeof path,"%s/%s.png",dir,name);
+  draw(); j4_save(path); printf("PNG: %s\n",path);
+}
+int main(void) {
+  const char *out = "/Volumes/ExternalSSD/tmp/rev/diretor21/redesign/social/fixed";
+  mkdir(out,0755);
+  assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)==0);
+  IMG_Init(IMG_INIT_PNG|IMG_INIT_JPG);
+  dados_iniciar(getenv("NUVIO_DADOS")); ajustes_iniciar();
+  j4_settings(0,0,2,0); ajustes_definir_vidro(1);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
+  SDL_Window *win=SDL_CreateWindow("Social navigation",0,0,1920,1080,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
+  assert(win && SDL_GL_CreateContext(win));
+  gfx_tamanho_alvo(1920,1080); assert(gfx_iniciar()); assert(txt_iniciar("deploy/app",1));
+  gfx_escala_ui_definir(1); gfx_escala_txt_definir(1);
+  tex_iniciar(96);
+  char *art = realpath("deploy/app/art", NULL); assert(art);
+  gfx_icones_dir(art);
+  char icon[1024]; snprintf(icon, sizeof icon, "%s/icones/aj_pencil.png", art);
+  tex_obter_larg(icon, 26); free(art);
+  GLuint fb,texture; glGenTextures(1,&texture); glBindTexture(GL_TEXTURE_2D,texture);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,1920,1080,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+  glGenFramebuffers(1,&fb);glBindFramebuffer(GL_FRAMEBUFFER,fb);
+  glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,texture,0);
+  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
+  glViewport(0,0,1920,1080);
+  recomenda_iniciar(); salvos_iniciar();
+  assert(home_iniciar("deploy/app/art"));
+  static CatItem items[4]; static CatFileira row; static SvEvento feed[4];
+  const char *names[]={"Gustavo","Marina","Carolina","Rafael"};
+  const char *titles[]={"Fallout","Widow's Bay","The Prestige","One Battle After Another"};
+  for(int i=0;i<4;i++) {
+    snprintf(items[i].imdb,sizeof items[i].imdb,"tt900000%d",i);
+    snprintf(items[i].tipo,sizeof items[i].tipo,"movie");
+    items[i].nElenco=1; snprintf(items[i].elenco[0].nome,sizeof items[i].elenco[0].nome,"Actor");
+    snprintf(items[i].logo,sizeof items[i].logo,"deploy/app/art/logo/00.png");
+    snprintf(items[i].titulo,sizeof items[i].titulo,"%s",titles[i]);
+    snprintf(items[i].poster,sizeof items[i].poster,"deploy/app/art/poster/%02d.jpg",i);
+    snprintf(items[i].backdrop,sizeof items[i].backdrop,"deploy/app/art/%02d.jpg",i);
+    snprintf(feed[i].imdb,sizeof feed[i].imdb,"%s",items[i].imdb);
+    snprintf(feed[i].titulo,sizeof feed[i].titulo,"%s",titles[i]);
+    snprintf(feed[i].tipo,sizeof feed[i].tipo,"movie");
+    snprintf(feed[i].pessoaId,sizeof feed[i].pessoaId,"nuvio:%s",names[i]);
+    snprintf(feed[i].pessoaNome,sizeof feed[i].pessoaNome,"%s",names[i]);
+    snprintf(feed[i].pessoaAvatar,sizeof feed[i].pessoaAvatar,"deploy/app/art/elenco/09_0.jpg");
+    snprintf(feed[i].poster,sizeof feed[i].poster,"%s",items[i].poster);
+    snprintf(feed[i].arte,sizeof feed[i].arte,"%s",items[i].backdrop);
+    feed[i].acao=i==1?SV_AGORA:i==2?SV_AVALIOU:i==3?SV_FIM:SV_MANDOU;
+    feed[i].nota=i==2?90:0;feed[i].quando=time(NULL)-(i<2?i*900:86400*(i-1));
+    tex_obter(feed[i].poster);tex_obter(feed[i].pessoaAvatar);
   }
-  nav21_expect(s.name,path,changed>1&&lastChange-firstChange>=150,1);
-}
-static Nav21Screen motionScreen;
-static void motionBack(void){key(motionScreen,SDLK_ESCAPE);}
-static void motion(Nav21Screen s,int closing){
-  s.open();settle(s);motionScreen=s;
-  nav21_motion(s,closing?motionBack:s.open,closing?"Back: transition and frames change through >=150ms":"Open: transition and frames change through >=150ms");
-}
-void nav21_check(Nav21Screen s) {
-  if(filter && !strstr(s.name,filter))return;
-  int before=failures; s.open(); settle(s);
-  nav21_expect(s.name,"Open: primary focus",s.focus(),s.primary);
-  Nav21Target base[NAV21_MAX]; int n=count; memcpy(base,targets,n*sizeof *base);
-  nav21_expect(s.name,"Open: nonempty focus registry",n>0,1);
-  for(int i=0;i<n;i++)fprintf(registry,"%s\t%d\t%.1f\t%.1f\t%.1f\t%.1f\n",s.name,base[i].id,base[i].r.x,base[i].r.y,base[i].r.w,base[i].r.h);
-  if(!strcmp(s.name,"Library + Origins")||!strcmp(s.name,"Settings/UX")){
-    hash();
-    SDL_Surface *upright=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);
-    for(int y=0;y<1080;y++)memcpy((char*)upright->pixels+y*upright->pitch,pixels+(1079-y)*1920*4,1920*4);
-    char path[1024];snprintf(path,sizeof path,"%s/%s.png",artifactDir,s.name[0]=='L'?"library":"settings");
-    if(IMG_SavePNG(upright,path))exit(2);SDL_FreeSurface(upright);
+  snprintf(row.chave,sizeof row.chave,"pop_movie"); row.n=4;
+  cat_definir_tudo(items,4,&row,1); socialvis_definir_feed(feed,4); socialvis_atualizar();
+  j4_art_ready();
+  SDL_Delay(410); key(SDLK_s);
+  check("blue key reaches production Social panel",spainel_aberto());
+  step(100);
+  for(int i=0;i<12;i++)key(SDLK_UP);
+  key(SDLK_RIGHT);
+  check("D-pad reaches Activity",spainel_aba_atual()==1);
+  key(SDLK_DOWN);check("D-pad reaches first activity",spainel_foco_indice()==0);
+  key(SDLK_DOWN);check("D-pad reaches second activity",spainel_foco_indice()==1);
+  settle();save(out,"social-100-glass");
+  unsigned char glass[4],solid[4];glReadPixels(1750,800,1,1,GL_RGBA,GL_UNSIGNED_BYTE,glass);
+  ajustes_definir_vidro(0);settle();save(out,"social-100-solid");
+  glReadPixels(1750,800,1,1,GL_RGBA,GL_UNSIGNED_BYTE,solid);
+  check("glass retains backdrop unlike solid",abs(glass[0]-solid[0])+abs(glass[1]-solid[1])+abs(glass[2]-solid[2])>6);
+  ajustes_definir_vidro(1);
+  gfx_escala_txt_definir(.85f);settle();save(out,"social-85-glass");
+  gfx_escala_txt_definir(1.3f);settle();save(out,"social-130-glass");
+  gfx_escala_txt_definir(1);settle();
+  int focus=spainel_foco_indice();
+  int expected=cat_indice_por_imdb(socialvis_evento(focus)->imdb);
+  key(SDLK_RETURN); abrirTituloDoPainel();
+  check("OK opens focused title through production route",
+        detail_aberto() && detail_indice()==expected && !spainel_aberto());
+  step(100);
+  menu_abrir_sobre(1); key(SDLK_ESCAPE); step(100);
+  check("canceling sidebar preserves title return ownership",detail_aberto() && !spainel_aberto());
+  key(SDLK_ESCAPE); step(100);
+  check("Back restores panel tab and exact prior row",!detail_aberto() && spainel_aberto() && spainel_aba_atual()==1 && spainel_foco_indice()==focus);
+  const Tela destinations[] = {TELA_AJUSTES, TELA_HOME};
+  for (unsigned i=0;i<sizeof destinations/sizeof *destinations;i++) {
+    key(SDLK_RETURN); abrirTituloDoPainel(); step(100);
+    check("navigation starts from panel-owned Detail",detail_aberto() && tituloDoPainel==2);
+    // Sidebar and configured player exit both close Detail and route here.
+    detail_fechar_seco(); trocarTela(destinations[i]); step(100);
+    check(i ? "Home exit does not restore Social on the same screen"
+            : "Settings navigation does not restore Social",
+          tela==destinations[i] && !spainel_aberto() && tituloDoPainel==0);
+    trocarTela(TELA_HOME);
+    abrirPorIndice(expected); step(100); key(SDLK_ESCAPE); step(100);
+    check("later unrelated Detail cannot restore stale Social",!detail_aberto() && !spainel_aberto());
+    spainel_voltar_titulo(); step(100);
   }
-  int edges[NAV21_MAX][4], expectedEdges[NAV21_MAX][4], actualEdges[NAV21_MAX][4]; memset(edges,-1,sizeof edges);memset(expectedEdges,-1,sizeof expectedEdges);
-  int initial=-1;
-  for(int i=0;i<n;i++) if(base[i].id==s.focus())initial=i;
-  for(int i=0;i<n;i++) for(int d=0;d<4;d++) {
-    s.open();s.select(base[i].id);settle(s);
-    int from=-1;for(int j=0;j<count;j++)if(targets[j].id==base[i].id)from=j;
-    if(from<0) { nav21_expect(s.name,"focus absent from rendered targets",base[i].id,-1);continue; }
-    int expected=targets[nearest(targets,count,from,d)].id;
-    // Origins' Left opens the sidebar outside this page's rectangle registry.
-    if((!strcmp(s.name,"Library + Origins") || !strcmp(s.name,"Lists")) &&
-       base[i].id>=10000 && base[i].id<20000 && keys[d]==SDLK_LEFT)expected=base[i].id;
-    int semantic=s.ownsArrow && s.ownsArrow(keys[d]);
-    key(s,keys[d]); int actual=s.focus();
-    actualEdges[i][d]=actual;
-    if(!semantic && expected!=base[i].id)expectedEdges[i][d]=expected;
-    for(int j=0;j<n;j++)if(base[j].id==actual)edges[i][d]=j;
-  }
-  int seen[NAV21_MAX]={0},parent[NAV21_MAX],via[NAV21_MAX];memset(parent,-1,sizeof parent);
-  if(initial>=0)seen[initial]=1;
-  for(int pass=0;pass<n;pass++)for(int i=0;i<n;i++)if(seen[i])for(int d=0;d<4;d++){int j=edges[i][d];if(j>=0&&!seen[j]){seen[j]=1;parent[j]=i;via[j]=d;}}
-  for(int i=0;i<n;i++){
-    int reverse[NAV21_MAX],depth=0;for(int j=i;parent[j]>=0&&depth<n;j=parent[j])reverse[depth++]=via[j];
-    char path[4096]="Open";
-    for(int j=depth-1;j>=0;j--){size_t used=strlen(path);snprintf(path+used,sizeof path-used,", %s",names[reverse[j]]);}
-    // Filmography tab arrows change the page: its static per-page graph cannot
-    // replay paths across tabs; reachability still holds on the per-edge graph.
-    int pageTabs=!strcmp(s.name,"History") || !strncmp(s.name,"Filmography",11);
-    if(!pageTabs && seen[i]){s.open();settle(s);for(int j=depth-1;j>=0;j--){key(s,keys[reverse[j]]);settle(s);}nav21_expect(s.name,path,s.focus(),base[i].id);}
-    else if(!seen[i]) {char missing[120];snprintf(missing,sizeof missing,"Open: no D-pad path to %d",base[i].id);nav21_expect(s.name,missing,0,1);}
-    for(int d=0;d<4;d++)if(expectedEdges[i][d]>=0){char edge[4300];snprintf(edge,sizeof edge,"%s; from %d, %s: went to %d, expected %d",path,base[i].id,names[d],actualEdges[i][d],expectedEdges[i][d]);nav21_expect(s.name,edge,actualEdges[i][d],expectedEdges[i][d]);}
-  }
-  motion(s,0);if(strcmp(s.name,"Home 2.1"))motion(s,1);
-  // Exact route/focus checks live beside each real internal navigation path and router fixture.
-  printf("SCREEN %s targets=%d violations=%d\n",s.name,n,failures-before);fflush(stdout);
-}
-int main(int argc,char **argv) {
-  assert(argc==2); filter=getenv("NAV21_SCREEN"); artifactDir=getenv("NAV21_OUT");assert(artifactDir);
-  char targetPath[1024];snprintf(targetPath,sizeof targetPath,"%s/targets.tsv",artifactDir);registry=fopen(targetPath,"w");assert(registry);
-  logfile=fopen(argv[1],"w");assert(logfile);
-  fprintf(logfile,"| Screen | Exact key path / check | Actual | Expected |\n|---|---|---:|---:|\n");
-  nav21_offline();
-  assert(getenv("NUVIO_DADOS"));dados_iniciar(getenv("NUVIO_DADOS"));ajustes_dir(dados_dir());
-  SDL_SetHint("SDL_MAC_BACKGROUND_APP","1");assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));IMG_Init(IMG_INIT_PNG);
-  SDL_Window *w=SDL_CreateWindow("nav21",0,0,64,64,SDL_WINDOW_HIDDEN|SDL_WINDOW_OPENGL);assert(w);assert(SDL_GL_CreateContext(w));
-  GLuint t,f;glGenTextures(1,&t);glBindTexture(GL_TEXTURE_2D,t);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,1920,1080,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
-  glGenFramebuffers(1,&f);glBindFramebuffer(GL_FRAMEBUFFER,f);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,t,0);assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
-  glViewport(0,0,1920,1080);gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));tex_iniciar(64);gfx_icones_dir("deploy/app/art");gfx_escala_txt_definir(1);
-  Nav21Screen hardCut={"Motion/negative-control",fakeAction,fakeKey,fakeStep,fakeDraw,fakeValue,fakeSelect,fakeValue,0,fakeTransition};
-  int savedFailures=failures;FILE *savedLog=logfile;logfile=tmpfile();assert(logfile);
-  nav21_motion(hardCut,fakeAction,"Hard cut plus unrelated animation must fail");
-  int rejected=failures==savedFailures+1;failures=savedFailures;fclose(logfile);logfile=savedLog;
-  nav21_expect("Motion/negative-control","Hard cut plus unrelated animation rejected",rejected,1);
-  nav21_router();nav21_servers();nav21_achievements();nav21_start();nav21_aio();nav21_filmo();nav21_addonguide();nav21_detail();nav21_social();nav21_settings();nav21_sources();nav21_island();nav21_rating();nav21_player();nav21_juntos();nav21_home();
-  fprintf(logfile,"\n%d checks, %d violations.\n",checks,failures);fclose(logfile);fclose(registry);
-  printf("nav21: %d checks, %d violations\n",checks,failures);return failures?1:0;
+  for(int i=0;i<5;i++)key(SDLK_UP);
+  key(SDLK_RIGHT);check("D-pad reaches Friends",spainel_aba_atual()==2);
+  key(SDLK_RIGHT);check("D-pad reaches Notices",spainel_aba_atual()==3);
+  key(SDLK_RIGHT);check("existing Agenda remains reachable",spainel_aba_atual()==4);
+  for(int i=0;i<4;i++)key(SDLK_LEFT);
+  check("D-pad returns to Saved",spainel_aba_atual()==0);
+  key(SDLK_RIGHT); key(SDLK_DOWN);settle();
+  save(out,"social-focus");
+  key(SDLK_ESCAPE);step(8);save(out,"social-exit-080");
+  step(100);check("Back closes one layer",!spainel_aberto() && !spainel_visivel());
+  spainel_abrir_de(48,24,260,64);step(8);
+  check("clock island entry remains in motion",spainel_visivel());
+  save(out,"social-entry-080");
+  step(100);key(SDLK_ESCAPE);step(100);
+  check("clock island transition finishes",!spainel_visivel());
+  printf("nav21: %d failures\n",failures);
+  return failures?1:0;
 }

@@ -63,14 +63,14 @@
 // em x=1120, 776x1032): quem ja tinha o gesto na memoria muscular encontra a
 // camada no mesmo lugar, so com outro conteudo.
 #include "telefoneui.h"
-#define SP_X          (NV_TELA_W - SP_W - 24.0f)
-#define SP_W          telefoneui_largura(776.0f, NV_TELA_W, 24.0f)
+#define SP_X          (NV_TELA_W - SP_W - 40.0f)
+#define SP_W          telefoneui_largura(760.0f, NV_TELA_W, 40.0f)
 // A ILHA FLUTUA A NV_FOLHA_MARGEM das tres bordas e com o raio da folha de
 // Fontes (streams.c): as duas camadas da direita sao o mesmo objeto, e uma
 // colada no topo ao lado da outra solta leria como dois materiais.
-#define SP_Y          NV_FOLHA_MARGEM
-#define SP_H          (NV_TELA_H - 2.0f * NV_FOLHA_MARGEM)
-#define SP_RAIO        NV_FOLHA_RAIO
+#define SP_Y          40.0f
+#define SP_H          (NV_TELA_H - 80.0f)
+#define SP_RAIO        36.0f
 // A GRAMATICA DO MOCKUP APROVADO ("Glass UI — ilha", tela 3; o CSS esta em
 // design/glass-ilha/glass-ilha.html), em px de 1080p e RELATIVA AO TOPO E A
 // ESQUERDA DO PAINEL — o mockup poe a ilha a 40 da borda e a folha de Fontes
@@ -97,10 +97,9 @@
 // ABAS. Elas so existem quando o servico de recomendacoes foi compilado
 // (recomenda_ativo); sem ele o painel e exatamente o que era, sem uma linha a
 // mais de cromo para uma funcao que nao existe naquele pacote.
-// A FAIXA DE ABAS MORA NA LINHA DO TITULO (pedido do dono, 07/10): o titulo grande
-// diz a aba aberta e as abas, compactas (icone + contagem), ficam a direita dele.
-// Era uma segunda fileira de 55 px abaixo do titulo; a lista subiu esses 77 px.
-#define SP_ABAS_Y      (SP_Y + 60.0f)
+// Restore the approved Social composition: labeled tabs below a stable heading.
+// Keep later destinations and tab editing in the same navigation order.
+#define SP_ABAS_Y      (SP_Y + 138.0f)
 #define SP_ABAS_H        52.0f
 #define SP_ABAS_X       42.0f
 // AR DO FOCO entre o recorte da lista e a primeira linha. A superficie da linha
@@ -112,7 +111,7 @@
 // da linha focada. O recorte fica 12 px abaixo das abas, e o conteudo nasce
 // em 217 do topo do painel, onde o mockup poe a lista.
 #define SP_FOCO_AR      14.0f
-#define SP_LISTA_Y     (SP_Y + 140.0f - SP_FOCO_AR)
+#define SP_LISTA_Y     (SP_Y + 225.0f - SP_FOCO_AR)
 #define SP_LISTA_BASE  (SP_Y + SP_H - 24.0f)
 // A LINHA DE SALVOS: cartaz 2:3 de 64x96 com 18 px de recuo em cima e
 // embaixo, a mesma altura de ritmo das linhas do feed (capa 52x76 e 114). O
@@ -590,6 +589,9 @@ int spainel_pediu_agenda(void) {
   return 1;
 }
 int spainel_visivel(void) { return aberto || entrada > 0.002f; }
+
+// Resume the existing list after its title closes; retain tab, row and scroll.
+void spainel_voltar_titulo(void) { aberto = 1; okDesde = 0; }
 
 const char *spainel_pediu_abrir(void) {
   if (!temPedido) return NULL;
@@ -1420,7 +1422,7 @@ static void reconstruirAgenda(void) {
 
 static const char *rotuloAba(int i);
 // O titulo que o cabecalho mostra agora (a aba aberta, ou a folha Editar).
-static const char *tituloAgora(void) { return editando ? i18n("Editar abas") : i18n(rotuloAba(aba)); }
+static const char *tituloAgora(void) { return editando ? i18n("Editar abas") : i18n("Social"); }
 static int posNaFaixa(int id) {
   int i;
   for (i = 0; i < SP_ABA_N; i++) if (abaOrdem[i] == id) return i;
@@ -3338,7 +3340,7 @@ static void desenhaRecLinha(int linha, int idx, float dx, float y, float a, Uint
 #define SP_SEG_PAD   5.0f
 #define SP_SEG_VAO   4.0f
 #define SP_SEG_ICO  26.0f   // o icone Lucide da aba
-#define SP_SEG_PX   16.0f   // recuo lateral de cada segmento
+#define SP_SEG_PX   12.0f   // recuo lateral de cada segmento
 #define SP_SEG_NUM   8.0f
 static const char *rotuloAba(int i) {
   return i == SP_ABA_SALVOS ? "Salvos" : i == SP_ABA_ATIVIDADE ? "Atividade"
@@ -3379,7 +3381,8 @@ static float segLargura(int i, TxtLinha *num, int cor, int comNum) {
     *num = novo ? txt_linha(TXT_ILHA_NUM, b, (int)(ar * 255), (int)(ag * 255), (int)(ab * 255), 255)
                 : txt_linha(TXT_ILHA_NUM, b, cor, cor, cor, 255);
   }
-  return SP_SEG_ICO + SP_SEG_PX * 2.0f + (num->w > 0 ? SP_SEG_NUM + (float)num->w : 0.0f);
+  TxtLinha label = txt_linha(TXT_ILHA_SEG, i18n(rotuloAba(i)), cor, cor, cor, 255);
+  return label.w + SP_SEG_PX * 2.0f + (num->w > 0 ? SP_SEG_NUM + (float)num->w : 0.0f);
 }
 #define SP_SEG_LAPIS (SP_SEG_ICO + SP_SEG_PX * 2.0f)
 // Largura da faixa. Com o titulo grande ao lado, o que sobra e o painel menos o
@@ -3537,7 +3540,7 @@ static void desenhaAbas(float dx, float a, float larguraDisp) {
   float x;
   if (abasLargura(1) > larguraDisp) todas = 0;
   w0 = abasLargura(todas);
-  x = SP_X + dx + SP_W - SP_ABAS_X - w0;
+  x = SP_X + dx + SP_ABAS_X;
   ajustes_acento(&ar, &ag, &ab);
   { GfxRect caixa = { x, SP_ABAS_Y, w0, SP_ABAS_H };
     if (ajustes_vidro()) gfx_cor(caixa, 0.5f, 1, 1, 1, .06f * a);
@@ -3590,8 +3593,13 @@ static void desenhaAbas(float dx, float a, float larguraDisp) {
       else { botao_luz(p, .55f, a); gfx_cor(p, 0.5f, ar, ag, ab, a); }
     }
     ic = (float)cor / 255.0f;
-    gfx_icone((GfxRect){ x + SP_SEG_PX, p.y + (p.h - SP_SEG_ICO) * 0.5f, SP_SEG_ICO, SP_SEG_ICO },
-              lapis ? "aj_pencil" : iconeAba(i), ic, ic, ic, a * alfaTxt);
+    TxtLinha label = {0};
+    if (lapis) gfx_icone((GfxRect){ x + SP_SEG_PX, p.y + (p.h - SP_SEG_ICO) * 0.5f, SP_SEG_ICO, SP_SEG_ICO },
+                         "aj_pencil", ic, ic, ic, a * alfaTxt);
+    else {
+      label = txt_linha(TXT_ILHA_SEG, i18n(rotuloAba(i)), cor, cor, cor, 255);
+      txt_desenhar_alpha(label, x + SP_SEG_PX, p.y + (p.h - label.h) * .5f, a * alfaTxt);
+    }
     if (num.w > 0) {
       int novo;
       contaDaAba(i, &novo);
@@ -3604,7 +3612,7 @@ static void desenhaAbas(float dx, float a, float larguraDisp) {
         num = txt_linha(TXT_ILHA_NUM, b, cor, cor, cor, 255);
         novo = 0;
       }
-      txt_desenhar_alpha(num, x + SP_SEG_PX + SP_SEG_ICO + SP_SEG_NUM,
+      txt_desenhar_alpha(num, x + SP_SEG_PX + label.w + SP_SEG_NUM,
                          p.y + (p.h - num.h) * 0.5f,
                          a * (novo ? 1.0f : focada || (ativa && ajustes_foco_acento()) ? 0.7f : 0.45f));
     }
@@ -5033,6 +5041,11 @@ static void desenharPainel(Uint32 agora) {
              nCont, i18n("para retomar"));
   }
   else snprintf(buf, sizeof buf, "%d %s", nLinhas, i18n(nLinhas == 1 ? "título" : "títulos"));
+  if (recursosSociais()) {
+    int online = socialvis_n_ao_vivo();
+    snprintf(buf, sizeof buf, "%d %s · %s", online,
+             i18n(online == 1 ? "amigo" : "amigos"), i18n("assistindo agora"));
+  }
   if (editando) snprintf(buf, sizeof buf, "%s", i18n("Ligue ou desligue as abas e mude a ordem."));
   xp = x;
   // A TROCA DE ABA (e de/para a folha Editar). `tt` e a mola do corpo, `ft` o
@@ -5046,11 +5059,10 @@ static void desenharPainel(Uint32 agora) {
     // O que vem abaixo (barra de opcoes e lista) entra deslizando.
     xl = (float)trocaDir * SP_TROCA_DESLIZE * (1.0f - tt);
     al = ft; }
-  // O TITULO GRANDE E A ABA ABERTA (pedido do dono, 07/10); as abas, compactas,
-  // ficam na mesma linha, a direita. O titulo cede se o idioma o faz comprido.
-  { float maxT = SP_W - SP_ABAS_X - SP_PAD - abasLargura(0) - 28.0f;
+  // The requested mock takes precedence over the later compact header.
+  { float maxT = SP_INTERNO;
     TxtLinha t = txt_linha_corta(TXT_ILHA_TITULO,
-                                 editando ? i18n("Editar abas") : i18n(rotuloAba(aba)),
+                                 editando ? i18n("Editar abas") : i18n("Social"),
                                  SPI_FG_R, SPI_FG_G, SPI_FG_B, 255, editando ? SP_INTERNO : maxT);
     { float tt = trocaT;
       if (tt < 0.999f && tituloAnt[0]) {
@@ -5061,7 +5073,7 @@ static void desenharPainel(Uint32 agora) {
       }
       txt_desenhar_alpha(t, SP_X + x + SP_PAD + (float)trocaDir * SP_TITULO_DESLIZE * (1.0f - tt),
                          SP_TIT_Y, a * anim_clamp((tt - 0.2f) / 0.5f, 0.0f, 1.0f)); }
-    if (temAbas() && !editando) desenhaAbas(x, a, SP_W - SP_ABAS_X - SP_PAD - (float)t.w - 28.0f); }
+    if (temAbas() && !editando) desenhaAbas(x, a, SP_W - 2.0f * SP_ABAS_X); }
   x = xp + xl; a *= al;   // dai para baixo e o corpo, que desliza na troca
   if (editando) { desenhaEditar(x, a); gfx_sem_recorte(); return; }
 #ifdef NV_TOUCH_UI

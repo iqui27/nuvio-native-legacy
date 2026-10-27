@@ -11,8 +11,9 @@ static void j4_art_ready(void) {
 }
 static void j4_settings(int layout,int fixed,int theme,int reduced) {
   char s[256];
-  snprintf(s,sizeof s,"idioma 0\nidiomaAutoLocal 0\nbordaFocoCartaz 1\nhomeLayoutLocal %d\ncollapseSidebar %d\nmodernSidebar %d\nselected_theme %d\nanimacoes %d\n",
-    layout,fixed,layout==1?0:1,theme,reduced);
+  // performanceAutoVersaoLocal: without it the settings migration resets "animacoes" to default.
+  snprintf(s,sizeof s,"idioma 0\nidiomaAutoLocal 0\nbordaFocoCartaz 1\nhomeLayoutLocal %d\ncollapseSidebar %d\nmodernSidebar %d\nselected_theme %d\nanimacoes %d\n%s",
+    layout,fixed,layout==1?0:1,theme,reduced,reduced?"performanceAutoVersaoLocal 1\n":"");
   assert(dados_gravar("ajustes.txt",s)); ajustes_dir(dados_dir());
   assert(ajustes_idioma()==0);
 }
