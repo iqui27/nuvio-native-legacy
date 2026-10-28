@@ -21,6 +21,7 @@
 #include "tela21.h"
 #include "botoes.h"
 #include "revela.h"
+#include "movimento.h"
 #include "teclavoltar.h"
 #include "ponteiro.h"
 #include "focus.h"
@@ -50,6 +51,7 @@ static GfxRect navigationRects[SRV_VISAO_MAX + 8];
 static int navigationIds[SRV_VISAO_MAX + 8];
 static float entry, page, pageSeconds, focusAnim[SRV_VISAO_MAX + 8], scroll, scrollVelocity, stepAnim = -1;
 static Uint32 motionTime;
+static float sheetShape, sheetVelocity;
 static float contentX, contentW;
 static GfxMini previousPage;
 static float bodyScroll, bodyVelocity, bodyTarget, userScroll, userVelocity, userTarget;
@@ -273,6 +275,7 @@ static void change(int next) {
   if(next==LOGIN && !worker.alive) { worker.kind=0;worker.n=0; }
   bodyScroll = bodyVelocity = bodyTarget = userScroll = userVelocity = userTarget = 0;
   page = pageSeconds = scroll = scrollVelocity = 0;
+  sheetShape = sheetVelocity = 0;
   memset(focusAnim, 0, sizeof focusAnim);
 }
 static void replaceScreen(int next) { keepHistory = 1; change(next); keepHistory = 0; }
@@ -553,6 +556,9 @@ void srvsetup_atualizar(Uint32 now) {
   int reduced = ajustes_animacoes_reduzidas();
   entry = t21_entrada(entry, dt, opened);
   page = reduced ? 1 : anim_rampa(page, 1, dt, T21_ENTER_MS);
+  // Shell growth accompanies the existing page ramp; content keeps its timing.
+  sheetShape = mov_mola_assenta(&sheetVelocity, sheetShape, opened ? 1 : 0,
+    dt, MOV_PILULA_W * 4, MOV_MODAL_Z);
   // The step rail walks to the new step instead of relabelling in place.
   stepAnim = reduced || stepAnim < 0 ? stepOf(screen) : anim_mola(stepAnim, stepOf(screen), dt, NV_MOLA_TELA);
   if (page >= 1) gfx_mini_liberar(&previousPage);
@@ -703,10 +709,14 @@ static void pointerTarget(GfxRect r, int id) {
 static void panel(float x, float y, float w, float h, int id) {
   GfxRect r = {px(x), sy(y), pw(w), bodyDrawing ? h : ANC(h)};
   if (id < 0) {
-    // Setup sheets use the approved quiet island, without the player's rim.
-    gfx_sombra_sob((GfxRect){r.x-16,r.y-4,r.w+32,r.h+30},1,0,.5f,0,0,0,.25f,r,30,1);
-    gfx_cor(r,30/fminf(r.w,r.h),.055f,.059f,.071f,ajustes_vidro()?.88f:.98f);
-    gfx_luz_canto(r,30/fminf(r.w,r.h),r.w*.2f,-r.h*.4f,r.w*.65f,1,1,1,.035f);
+    if (screen == ROWS) {
+      float inset = r.h * .02f * (1 - sheetShape);
+      r.y += inset; r.h -= inset * 2;
+    }
+    int rim = gfx_vidro_sem_aro;
+    gfx_vidro_sem_aro = 1;
+    plrui_material(r, T21_R_SHEET, screen == ROWS, 1);
+    gfx_vidro_sem_aro = rim;
   }
   else { plrui_linha_foco(r, T21_R_ROW, focusValue(id)); pointerTarget(r, id); }
 }
@@ -724,12 +734,7 @@ static void button(int i, const char *label, float x, float y, float w) {
   float reveal = ajustes_animacoes_reduzidas() ? 1 :
     revela_entra(1, revela_onda_atraso(i < 8 ? i : 7, 0), 1 + (Uint32)(pageSeconds * 1000));
   float buttonY=r.y+(1-reveal)*NV_ENTRA_DY, focus=focusValue(i);
-  if(focus>.005f) plrui_botao(r.x,buttonY,localized,NULL,focus,reveal);
-  else {
-    gfx_cor((GfxRect){r.x,buttonY,width,60},.5f,1,1,1,.07f*reveal);
-    TxtLinha label=txt_linha(TXT_G21B,localized,243,243,243,255);
-    txt_desenhar_alpha(label,r.x+28,buttonY+(60-label.h)/2,reveal);
-  }
+  plrui_botao(r.x,buttonY,localized,NULL,focus,reveal);
   pointerTarget((GfxRect){r.x, r.y + (1 - reveal) * NV_ENTRA_DY, width, r.h}, i);
   lastButtonY = by; nextButtonX = bx + width + 12;
   if (selected == i && bodyDrawing) {
@@ -740,19 +745,19 @@ static void button(int i, const char *label, float x, float y, float w) {
 }
 static void input(int i, const char *label, const char *value, float y) {
   GfxRect r={px(232),sy(y),pw(686),90};
-  gfx_cor(r,16/fminf(r.w,r.h),1,1,1,.045f+.025f*focusValue(i));
+  plrui_linha_foco(r, T21_R_ROW, focusValue(i));
   pointerTarget(r,i);
   text(TXT_ILHA_SUB_L,label,254,y+12,145,642);
   text(TXT_ILHA_CORPO,value,254,y+44,243,642);
 }
 static void inlineKeyboard(int passwordField) {
-  plrui_kicker(passwordField?"Senha · Teclado da TV":"Endereço · Teclado da TV",px(1052),sy(422),130,130,130,1);
+  plrui_kicker(i18n(passwordField?"Senha · Teclado da TV":"Endereço · Teclado da TV"),px(1052),sy(422),130,130,130,1);
   const char *keys=inlineKeys(passwordField);
   for(int i=0;keys[i];i++) {
     GfxRect r={px(1052+(i%10)*75),sy(456+(i/10)*62),pw(67),54};
     float focus=focusValue(KEY_FIRST+i);
-    float cr,cg,cb; ajustes_acento(&cr,&cg,&cb);
-    gfx_cor(r,12/fminf(r.w,r.h),anim_mistura(1,cr,focus),anim_mistura(1,cg,focus),anim_mistura(1,cb,focus),anim_mistura(.05f,1,focus));
+    plrui_botao_repouso(r, 1 - focus);
+    plrui_pilula_foco(r, focus);
     char key[2]={keys[i],0}; if(keyboardUpper && key[0]>='a' && key[0]<='z')key[0]-='a'-'A';
     int ink=(int)anim_mistura(225,ajustes_tinta_foco(),focus);
     TxtLinha line=txt_linha(TXT_ILHA_CORPO,key,ink,ink,ink,255);
@@ -760,15 +765,20 @@ static void inlineKeyboard(int passwordField) {
     pointerTarget(r,KEY_FIRST+i);
   }
   const char *labels[]={passwordField?"⇧ Maiúsculas":"https://","⌫ Apagar","Concluir"};
+  const char *icons[]={passwordField?"aj_arrow-up":NULL,"aj_delete",NULL};
   float x=px(1052);
   for(int i=0;i<3;i++) {
-    float focus=focusValue(KEY_SHIFT+i),cr,cg,cb;
-    int ink=(int)anim_mistura(225,ajustes_tinta_foco(),focus);
-    TxtLinha line=txt_linha(TXT_ILHA_SUB_L,i18n(labels[i]),ink,ink,ink,255);
+    float focus=focusValue(KEY_SHIFT+i);
+    const char *label=i18n(labels[i]);
+    TxtLinha line=txt_linha(TXT_ILHA_SUB_L,label,225,225,225,255);
     GfxRect r={x,sy(722),line.w+40,52};
-    ajustes_acento(&cr,&cg,&cb);
-    gfx_cor(r,.5f,anim_mistura(1,cr,focus),anim_mistura(1,cg,focus),anim_mistura(1,cb,focus),anim_mistura(.07f,1,focus));
-    txt_desenhar(line,r.x+20,r.y+(r.h-line.h)/2);
+    if(icons[i] && strchr(label,' ')) label=strchr(label,' ')+1;
+    plrui_botao_repouso(r, 1 - focus);
+    plrui_pilula_foco(r, focus);
+    int ink=focus>.5f?plrui_tinta():225;
+    line=txt_linha(TXT_ILHA_SUB_L,label,ink,ink,ink,255);
+    if(icons[i]) gfx_icone((GfxRect){r.x+16,r.y+16,20,20},icons[i],ink/255.f,ink/255.f,ink/255.f,1);
+    txt_desenhar(line,r.x+20+(icons[i]?24:0),r.y+(r.h-line.h)/2);
     pointerTarget(r,KEY_SHIFT+i); x+=r.w+12;
   }
 }
@@ -852,6 +862,7 @@ void srvsetup_desenhar(Uint32 now) {
   gfx_cor(background,0,.051f,.051f,.051f,1);
   gfx_luz_canto(background,0,NV_TELA_W*.85f,NV_TELA_H*.25f,NV_TELA_W*.7f,.16f,.23f,.25f,.75f);
   gfx_luz_canto(background,0,NV_TELA_W*.3f,NV_TELA_H*.05f,NV_TELA_W*.5f,.21f,.17f,.23f,.55f);
+  gfx_vidro_cobrir();
   if (!previousPage.tex) gfx_opacidade_grupo *= anim_saida(page);
   // A step change slides the new page in from the side it comes from while the
   // old one drifts out the other way (forward: right to left; Back: reversed).
@@ -902,22 +913,9 @@ void srvsetup_desenhar(Uint32 now) {
     paragraph(intro,200,250,screen==CHOOSE?740:1540);
     const char *steps[] = {i18n("Escolher serviço"),i18n("Conectar"),i18n("Entrar"),i18n("Bibliotecas"),i18n("Pronto")};
     if (screen != MANAGE) {
-      float x = px(200), y = ANC(screen==CHOOSE?347:328), at = stepAnim < 0 ? stepOf(screen) : stepAnim, markX[5], markW[5];
-      for (int i=0;i<5;i++) {
-        // Done steps settle to grey with a check, the current one lights up.
-        float done=fminf(fmaxf(at-i,0),1), lit=fmaxf(0,1-fabsf(at-i));
-        int tone=(int)anim_mistura(anim_mistura(105,165,done),243,lit);
-        char label[128];
-        if (done>.5f) snprintf(label,sizeof label,"✓  %s",steps[i]);
-        else snprintf(label,sizeof label,"%d  %s",i+1,steps[i]);
-        TxtLinha line=txt_linha(TXT_ILHA_SUB_L,label,tone,tone,tone,255);
-        txt_desenhar(line,x,y); markX[i]=x; markW[i]=line.w; x+=line.w+24;
-        if(i<4) { line=txt_linha(TXT_ILHA_SUB_L,"›",105,105,105,255);txt_desenhar(line,x,y);x+=line.w+24; }
-      }
-      // Progress mark under the current step slides with the rail spring.
-      int a=(int)floorf(at); if(a>3)a=3; if(a<0)a=0;
-      float t=fminf(fmaxf(at-a,0),1), cr,cg,cb; ajustes_acento(&cr,&cg,&cb);
-      gfx_cor((GfxRect){anim_mistura(markX[a],markX[a+1],t),y+34,anim_mistura(markW[a],markW[a+1],t),3},.5f,cr,cg,cb,.9f);
+      float x = px(200), y = ANC(screen==CHOOSE?335:316), at = stepAnim < 0 ? stepOf(screen) : stepAnim;
+      float width = plrui_seg(steps, NULL, 5, at, 1, x, y, 1);
+      plrui_trilho((GfxRect){x,y+54,width,3},anim_clamp(at/4,0,1),-1,-1,-1,.9f);
     }
   }
   bodyDrawing = screen != ROWS;
@@ -934,7 +932,7 @@ void srvsetup_desenhar(Uint32 now) {
       float old = gfx_opacidade_grupo, x=200+i*550;
       gfx_opacidade_grupo *= reveal;
       panel(x,405,523,274,-1);
-      gfx_cor((GfxRect){px(x),sy(405)+(1-reveal)*NV_ENTRA_DY,pw(523),274},26/274.f,1,1,1,.14f*focusValue(i));
+      plrui_linha_foco((GfxRect){px(x),sy(405)+(1-reveal)*NV_ENTRA_DY,pw(523),274},T21_R_SHEET,focusValue(i));
       pointerTarget((GfxRect){px(x),sy(405),pw(523),274},i);
       logo(i,x+34,428,66);
       text(TXT_V2_GRUPO,providers[i],x+34,520,243,450); paragraph(desc[i],x+34,568,455);
@@ -945,7 +943,7 @@ void srvsetup_desenhar(Uint32 now) {
     panel(200,386,750,410,-1); panel(1020,386,804,410,-1);
     const char *url = screen==CONNECT_CODE?"emby.media/pin":provider?"Quick Connect":"plex.tv/link";
     char eyebrow[160]; snprintf(eyebrow,sizeof eyebrow,i18n("Acesse %s e digite"),url);
-    plrui_kicker(provider==1?"No app Jellyfin conectado, abra Quick Connect":eyebrow,px(232),sy(422),130,130,130,1);
+    plrui_kicker(provider==1?i18n("No app Jellyfin conectado, abra Quick Connect"):eyebrow,px(232),sy(422),130,130,130,1);
     char displayCode[32];
     if(strlen(code)==6) snprintf(displayCode,sizeof displayCode,"%.3s %.3s",code,code+3);
     else snprintf(displayCode,sizeof displayCode,"%s",code);
@@ -1005,7 +1003,7 @@ void srvsetup_desenhar(Uint32 now) {
     char found[64];snprintf(found,sizeof found,"%s · %d",i18n("Seus servidores"),total);
     text(TXT_ILHA_SUB_L,worker.alive?i18n("Carregando…"):found,1020,820,155,740);
     panel(200,386,750,n?(screen==PLEX_SERVERS?182:210)+n*112:410,-1);
-    plrui_kicker(screen==PLEX_SERVERS?"Da sua conta Plex":"Sua rede",px(232),sy(422),130,130,130,1);
+    plrui_kicker(i18n(screen==PLEX_SERVERS?"Da sua conta Plex":"Sua rede"),px(232),sy(422),130,130,130,1);
     int start=(int)floorf(scroll); if(start+n>total)start=total-n; if(start<0)start=0;
     float scrollPart=scroll-start;
     if(worker.alive) {
@@ -1147,13 +1145,14 @@ void srvsetup_desenhar(Uint32 now) {
     librarySummary(1020,844);
   } else if(screen==LOGIN) {
     panel(200,386,750,470,-1); panel(1020,386,804,470,-1);
-    plrui_kicker("Na sua rede",px(232),sy(422),130,130,130,1);
+    plrui_kicker(i18n("Na sua rede"),px(232),sy(422),130,130,130,1);
     row(0,srv,i18n("Rede local · Conectado"),456,provider);
     button(2,"Buscar novamente",232,588,250);button(3,"Informar endereço",494,588,250);
     button(1,provider==2?"Usar Emby Connect":"Usar Quick Connect",232,674,330);
     text(TXT_V2_GRUPO,"Entrar neste servidor",1052,420,243,740);
     for(int i=0;!worker.alive&&i<worker.n&&i<3;i++) {
       float x=1084+i*182;GLuint avatar=tex_obter_larg(worker.users[i].imagem,100);
+      plrui_linha_foco((GfxRect){px(x)-12,sy(486),174,210},T21_R_ROW,focusValue(5+i));
       if(avatar) gfx_rect((GfxRect){px(x),sy(498),100,100},avatar,GFX_AVATAR,0,0,0,.5f,1,1,1,1);
       text(TXT_ILHA_NOME,worker.users[i].nome,x,616,243,150);
       if(worker.users[i].senha) text(TXT_ILHA_SUB_L,"Exige senha",x,650,145,150);

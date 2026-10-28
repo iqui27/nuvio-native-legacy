@@ -129,6 +129,40 @@ static void capture(const char *dir, const char *name) {
 static void key(SDL_Keycode k);
 #include "servidores_review.inc"
 static void key(SDL_Keycode k){reviewDraw();SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;srvsetup_evento(&e);}
+// Sample above the labels, where only the visible step highlight fills the track.
+static int stepHighlightX(void) {
+  unsigned char pixels[1920 * 4];
+  reviewDraw(); glFinish();
+  glReadPixels(0, 1079 - (int)(ANC(316) + 10), 1920, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+  for (int x = (int)px(200) + 5; x < (int)px(200) + 1000; x++)
+    if (pixels[x*4] > 45 || pixels[x*4+1] > 45 || pixels[x*4+2] > 45) return x;
+  assert(!"missing visible step highlight");
+  return -1;
+}
+static void stepHighlightProof(void) {
+  opened = 1; provider = 1; worker.alive = 0;
+  int endpoints[2];
+  for (int i = 0; i < 2; i++) {
+    change(i ? USERS : DISCOVER);
+    for (int f = 0; f < 90; f++) { shotTime += 16; srvsetup_atualizar(shotTime); }
+    endpoints[i] = stepHighlightX();
+  }
+  assert(endpoints[1] > endpoints[0]);
+  for (int direction = 0; direction < 2; direction++) {
+    int previous = endpoints[1-direction];
+    change(direction ? USERS : DISCOVER);
+    for (int f = 0; f < 4; f++) {
+      shotTime += 16; srvsetup_atualizar(shotTime);
+      int x = stepHighlightX();
+      assert(x > endpoints[0] && x < endpoints[1] && "step highlight must interpolate visibly");
+      assert(direction ? x > previous : x < previous);
+      previous = x;
+    }
+    for (int f = 0; f < 90; f++) { shotTime += 16; srvsetup_atualizar(shotTime); }
+    assert(stepHighlightX() == endpoints[direction]);
+  }
+  puts("PASS: visible step-highlight x interpolates across intermediate frames in both directions");
+}
 // Reap the worker a step started; the sandbox has no network, so it ends fast.
 static void settle(void) {
   for (int i = 0; i < 30; i++) { shotTime += 16; srvsetup_atualizar(shotTime); }
@@ -379,7 +413,9 @@ int main(int argc,char **argv){
   if (getenv("NUVIO_SHOT_FLOW")) return flowProof(argv[1]);
   if (getenv("NUVIO_SHOT_BEHIND")) { profile=perfis_ativo(); behindProof(argv[1]); stepMotion(argv[1]); return 0; }
   const char *filter=getenv("NUVIO_SHOT_SCREEN");
-  opened=1;profile=perfis_ativo();provider=0;codeSince=1000;change(CHOOSE);if(!filter) capture(argv[1],"setup-escolher");
+  opened=1;profile=perfis_ativo();provider=0;codeSince=1000;
+  if (getenv("NUVIO_ESSENCE")) stepHighlightProof();
+  change(CHOOSE);if(!filter) capture(argv[1],"setup-escolher");
   key(SDLK_RIGHT);assert(selected==1);key(SDLK_LEFT);assert(selected==0);key(SDLK_ESCAPE);assert(!opened);
   struct {int state,p;const char *name;} scenes[]={
     {CODE,0,"setup-plex-pin"},{CODE,1,"setup-jellyfin-quickconnect"},{CONNECT_CODE,2,"setup-emby-connect"},
@@ -391,7 +427,7 @@ int main(int argc,char **argv){
     {READY,0,"setup-plex-pronto"},{READY,1,"setup-pronto"},{READY,2,"setup-emby-pronto"},
     {MANAGE,0,"servidores-gerenciar"},{REMOVE,0,"servidor-remover"},{ERROR_SCREEN,2,"servidor-offline"},
     {ERROR_SCREEN,1,"setup-credencial-expirada"},{ROWS,0,"fileira-adicionar-servidor"},
-    {PLEX_SERVERS,0,"setup-plex-servidor"},{LOGIN,2,"setup-emby"},
+    {PLEX_SERVERS,0,"setup-plex-servidor"},{CONNECT_SERVERS,2,"setup-emby-servidores"},{LOGIN,2,"setup-emby"},
     {DISCOVER,1,"setup-buscando"},{DISCOVER,1,"setup-nenhum-servidor"}};
   for(unsigned i=0;i<sizeof scenes/sizeof *scenes;i++){
     if(filter && !strstr(scenes[i].name,filter) && !strstr(filter,scenes[i].name)) continue;
@@ -430,7 +466,7 @@ int main(int argc,char **argv){
       }
       worker.plex[2].visto=time(NULL)-86400;
     }
-    if(screen==CONNECT_PASSWORD) {
+    if(screen==CONNECT_PASSWORD || screen==CONNECT_SERVERS) {
       worker.n=1; strcpy(worker.connect[0].nome,"Estúdio");
     }
     nLibraries=3;memset(libraries,0,sizeof libraries);
@@ -447,6 +483,13 @@ int main(int argc,char **argv){
     if(!strcmp(scenes[i].name,"setup-buscando"))worker.alive=1;
     strcpy(username,screen==CONNECT_PASSWORD?"marina@example.test":"Marina");strcpy(password,"fixture");strcpy(addressText,"http://media.example.test:8096");
     int expectedScreen=screen;
+    if (getenv("NUVIO_ESSENCE")) {
+      motionCapture=1;
+      for(int f=0;f<6;f++){shotTime+=16;srvsetup_atualizar(shotTime);}
+      assert(page>0 && page<1 && previousPage.tex);
+      char name[180];snprintf(name,sizeof name,"%s-step-mid",scenes[i].name);
+      capture(argv[1],name);motionCapture=0;
+    }
     capture(argv[1],scenes[i].name);worker.alive=0;
     assert(screen==expectedScreen);
     if (gfx_escala_txt() > 1) {
@@ -468,6 +511,20 @@ int main(int argc,char **argv){
       }
       motionCapture=0;
     }
+  }
+  if(getenv("NUVIO_ESSENCE")) {
+    opened=1;change(CHOOSE);motionCapture=1;
+    for(int f=0;f<6;f++){shotTime+=16;srvsetup_atualizar(shotTime);}
+    capture(argv[1],"setup-escolher-step-mid");motionCapture=0;
+    capture(argv[1],"setup-escolher");
+    selected=1;shotTime+=16;srvsetup_atualizar(shotTime);
+    assert(focusAnim[0]>0 && focusAnim[0]<1 && focusAnim[1]>0 && focusAnim[1]<1);
+    srvsetup_fechar();shotTime+=16;srvsetup_atualizar(shotTime);
+    assert(entry>0 && entry<1 && srvsetup_aberto());
+    motionCapture=1;capture(argv[1],"setup-close-mid");motionCapture=0;
+    settle();assert(!srvsetup_aberto());
+    puts("PASS: every wizard state and retained step transition, focus and close interpolation");
+    return 0;
   }
   if(getenv("NUVIO_SHOT_WIZARD")) {
     screen=READY;selected=0;opened=1;key(SDLK_RETURN);assert(!opened);
