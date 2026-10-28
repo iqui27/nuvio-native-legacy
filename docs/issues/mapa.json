@@ -27603,5 +27603,789 @@
   "Sync 2026-10-17 11:00: agente/205-pr487v2 ac1ba9725 pronto para merge, review j-rev-pr487-v2.log OK 10-14 10:26.",
   "Sync 2026-10-17 11:00: agente/205-pr538 bc13aca67 pronto para merge, review j-rev-pr538v2.log OK 10-16 16:11.",
   "[sync 2026-10-17 12:15] tests/vidro_qualidade.sh FALHA em 0940ae7bf (\"Alta ignores the governor\"): regressao de vidro na janela dos merges, j-vidroqual investigando."
- ]
+ ],
+ "jobs": [
+  {
+   "branch": "agente/21-21-ios-m2",
+   "status": "em andamento",
+   "commits_a_frente": 5,
+   "ultimo_commit": "2026-10-28T15:13",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "Merge agente/21-21-ios-m2-tex: iOS texture budget and real RAM"
+  },
+  {
+   "branch": "agente/21-21-ios-m2-ajustes",
+   "status": "em andamento",
+   "commits_a_frente": 5,
+   "ultimo_commit": "2026-10-28T15:13",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "Merge agente/21-21-ios-m2-tex: iOS texture budget and real RAM"
+  },
+  {
+   "branch": "agente/21-21-ios-m2-tex",
+   "status": "em andamento",
+   "commits_a_frente": 4,
+   "ultimo_commit": "2026-10-28T15:11",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "ios: stop texture stall on portrait phone, real RAM and rss"
+  },
+  {
+   "branch": "agente/21-21-ios-m2-biblioteca",
+   "status": "em andamento",
+   "commits_a_frente": 3,
+   "ultimo_commit": "2026-10-28T14:42",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "ios: phone-portrait Home at the mock's physical sizes; one clock"
+  },
+  {
+   "branch": "agente/21-21-ios-m2-busca",
+   "status": "em andamento",
+   "commits_a_frente": 3,
+   "ultimo_commit": "2026-10-28T14:42",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "ios: phone-portrait Home at the mock's physical sizes; one clock"
+  },
+  {
+   "branch": "agente/21-21-ios-m2-detalhe",
+   "status": "em andamento",
+   "commits_a_frente": 3,
+   "ultimo_commit": "2026-10-28T14:42",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "ios: phone-portrait Home at the mock's physical sizes; one clock"
+  },
+  {
+   "branch": "agente/21-21-ajustesfable",
+   "status": "bloqueado",
+   "commits_a_frente": 9,
+   "ultimo_commit": "2026-10-28T14:11",
+   "review": "j-21-rev5-ajustesfable",
+   "veredito": "BLOQUEIA",
+   "motivo": "BLOQUEADO, review <24h (active fix loop)",
+   "assunto": "Settings: the sections island scrolls to the focus at large text sizes"
+  },
+  {
+   "branch": "agente/21-21-redondaanim",
+   "status": "em andamento",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-28T13:24",
+   "review": "j-21-redondaanim",
+   "veredito": null,
+   "motivo": "live job worktree",
+   "assunto": "Merge agente/21-21-ios-m1: iOS milestone 1, C core on iPhone Duo with system side bar (review approved)"
+  },
+  {
+   "branch": "agente/205-205-salvosremover",
+   "status": "em andamento",
+   "commits_a_frente": 37,
+   "ultimo_commit": "2026-10-26T18:37",
+   "review": "j-mrg-salvosremover",
+   "veredito": null,
+   "motivo": "no verdict, recent",
+   "assunto": "Merge integracao/2.0.5 into agente/205-205-salvosremover"
+  },
+  {
+   "branch": "agente/205-cw-addon",
+   "status": "em andamento",
+   "commits_a_frente": 5,
+   "ultimo_commit": "2026-10-26T09:01",
+   "review": "j-revn-cw-addon-nv-ui",
+   "veredito": null,
+   "motivo": "no verdict, recent",
+   "assunto": "fix: keep episode lists provisional until addon selection ends"
+  },
+  {
+   "branch": "agente/205-cw-lento",
+   "status": "em andamento",
+   "commits_a_frente": 3,
+   "ultimo_commit": "2026-10-26T01:05",
+   "review": "j-rev3-cw-lento-nv-ui",
+   "veredito": null,
+   "motivo": "no verdict, recent",
+   "assunto": "fix: retain recovery after saved-source resume"
+  },
+  {
+   "branch": "agente/205-pasta-titulo",
+   "status": "em andamento",
+   "commits_a_frente": 2,
+   "ultimo_commit": "2026-10-26T00:01",
+   "review": "j-rev-pasta-titulo-nv-ui",
+   "veredito": null,
+   "motivo": "no verdict, recent",
+   "assunto": "feat: allow hiding folder details in the Home hero"
+  },
+  {
+   "branch": "agente/205-foco-fileira",
+   "status": "em andamento",
+   "commits_a_frente": 2,
+   "ultimo_commit": "2026-10-25T23:55",
+   "review": "j-rev-foco-fileira-nv-ui",
+   "veredito": null,
+   "motivo": "no verdict, recent",
+   "assunto": "fix(home): refresh saved item positions after row rebuilds"
+  },
+  {
+   "branch": "agente/205-legembut",
+   "status": "em andamento",
+   "commits_a_frente": 2,
+   "ultimo_commit": "2026-10-25T23:50",
+   "review": "j-rev-legembut-nv-ui",
+   "veredito": null,
+   "motivo": "no verdict, recent",
+   "assunto": "fix(subtitles): keep embedded reader alive under memory pressure"
+  },
+  {
+   "branch": "agente/205-205-legsync21",
+   "status": "em andamento",
+   "commits_a_frente": 22,
+   "ultimo_commit": "2026-10-25T18:09",
+   "review": "j-rev-fin-legsync21-4",
+   "veredito": null,
+   "motivo": "no verdict, recent",
+   "assunto": "fix(subtitles): restore best choice group and candidate badges"
+  },
+  {
+   "branch": "agente/205-launchertcl-gemini-falha",
+   "status": "perdida",
+   "commits_a_frente": 239,
+   "ultimo_commit": "2026-10-24T15:45",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "fix(assistente): log every request; transport and 502/504 failures get their own message"
+  },
+  {
+   "branch": "agente/205-launchertcl-painel-leve",
+   "status": "perdida",
+   "commits_a_frente": 239,
+   "ultimo_commit": "2026-10-24T15:34",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "perf(launcher): Painel from a page copy, neighbour background baked ahead"
+  },
+  {
+   "branch": "agente/205-launchertcl-parallax-leve",
+   "status": "perdida",
+   "commits_a_frente": 237,
+   "ultimo_commit": "2026-10-24T13:32",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "fix(gfx): blur refusal only for targets larger than the screen; strips last"
+  },
+  {
+   "branch": "agente/205-launchertcl-polido-escala",
+   "status": "perdida",
+   "commits_a_frente": 234,
+   "ultimo_commit": "2026-10-24T10:54",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "Merge exp/casa-unica (Apps grid bake) into polido-escala"
+  },
+  {
+   "branch": "agente/205-launchertcl-apps-grade",
+   "status": "perdida",
+   "commits_a_frente": 227,
+   "ultimo_commit": "2026-10-24T10:44",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "fix(launcher): Apps grid bake review notes"
+  },
+  {
+   "branch": "agente/207-linguagem",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-24T10:43",
+   "review": "j-207-linguagem",
+   "veredito": null,
+   "motivo": "no verdict, stale >3d",
+   "assunto": "docs: codify v2.0.7 component and motion language"
+  },
+  {
+   "branch": "agente/205-launchertcl-launcher-perf",
+   "status": "perdida",
+   "commits_a_frente": 222,
+   "ultimo_commit": "2026-10-23T21:24",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "fix(screensaver): pin only the last drawn app frame's art under the veil"
+  },
+  {
+   "branch": "agente/205-launchertcl-rust-avaliacao",
+   "status": "perdida",
+   "commits_a_frente": 208,
+   "ultimo_commit": "2026-10-23T14:13",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "rust-avaliacao: run-cross.sh (Android NDK, Tizen 4 gcc, emscripten link proof) + tiny C probe"
+  },
+  {
+   "branch": "agente/205-launchertcl-luzes-cor",
+   "status": "perdida",
+   "commits_a_frente": 213,
+   "ultimo_commit": "2026-10-23T14:05",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "ajustes: picking Personalizado never applies a lights preset"
+  },
+  {
+   "branch": "agente/205-launchertcl-luzes-calibrar",
+   "status": "perdida",
+   "commits_a_frente": 204,
+   "ultimo_commit": "2026-10-23T11:45",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "luzcal: close at once when a player opens or the cards stop drawing; disarm on profile change; save each tweak"
+  },
+  {
+   "branch": "agente/205-launchertcl-ilha-polida",
+   "status": "perdida",
+   "commits_a_frente": 197,
+   "ultimo_commit": "2026-10-23T09:18",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "Merge branch 'exp/casa-unica' into agente/205-launchertcl-ilha-polida"
+  },
+  {
+   "branch": "agente/205-launchertcl-luzes-imersao",
+   "status": "perdida",
+   "commits_a_frente": 187,
+   "ultimo_commit": "2026-10-23T09:00",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "Merge exp/casa-unica (Saguao pages) into the lights immersion branch"
+  },
+  {
+   "branch": "agente/21-trilhas-shots",
+   "status": "em andamento",
+   "commits_a_frente": 4,
+   "ultimo_commit": "2026-10-23T06:50",
+   "review": null,
+   "veredito": null,
+   "motivo": "live job worktree",
+   "assunto": "fix(trails): share durable history and complete ordered navigation"
+  },
+  {
+   "branch": "agente/205-launchertcl-paginas",
+   "status": "perdida",
+   "commits_a_frente": 181,
+   "ultimo_commit": "2026-10-23T03:45",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "casaperfil: lock the store; the sync worker copies painelWidgets"
+  },
+  {
+   "branch": "agente/205-launchertcl-luzes-wled",
+   "status": "perdida",
+   "commits_a_frente": 133,
+   "ultimo_commit": "2026-10-23T01:37",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "lights: restore on quit, JNI copies the frame out, PixelCopy thread only while playing"
+  },
+  {
+   "branch": "agente/205-launchertcl-voz-fix",
+   "status": "perdida",
+   "commits_a_frente": 137,
+   "ultimo_commit": "2026-10-23T01:27",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "voice: MIC with another app in front moves the live task forward"
+  },
+  {
+   "branch": "agente/205-launchertcl-voz-assistente",
+   "status": "perdida",
+   "commits_a_frente": 135,
+   "ultimo_commit": "2026-10-23T01:12",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "voice: vozmicservico honors TMPDIR"
+  },
+  {
+   "branch": "agente/205-launchertcl-launcher-vivo",
+   "status": "perdida",
+   "commits_a_frente": 122,
+   "ultimo_commit": "2026-10-22T22:37",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "launcher: keep the icon choice in HOME mode; review fixes"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-fiel",
+   "status": "perdida",
+   "commits_a_frente": 125,
+   "ultimo_commit": "2026-10-22T22:31",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "design: Saguao pages v3 mockup (analog clock styles, weather widget, Showcase without back pill)"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-j4-baixo",
+   "status": "perdida",
+   "commits_a_frente": 92,
+   "ultimo_commit": "2026-10-22T18:04",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "saguao (J3/J4): base proof for the low content, keep the J2 proof building"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-fix-menu",
+   "status": "perdida",
+   "commits_a_frente": 99,
+   "ultimo_commit": "2026-10-22T17:54",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "test(menu): use the Apps home mode index after the 4-mode picker"
+  },
+  {
+   "branch": "agente/205-21-sync206",
+   "status": "perdida",
+   "commits_a_frente": 12,
+   "ultimo_commit": "2026-10-22T17:47",
+   "review": "j-sync206-r",
+   "veredito": null,
+   "motivo": "no verdict, stale >3d",
+   "assunto": "test: restore headless Home flow and document merge conflicts"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-j4a-seletor",
+   "status": "perdida",
+   "commits_a_frente": 93,
+   "ultimo_commit": "2026-10-22T17:46",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "fix(settings): show TV home mode only with active launcher"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-j5-ilhapag",
+   "status": "perdida",
+   "commits_a_frente": 93,
+   "ultimo_commit": "2026-10-22T17:43",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "Merge exp/casa-unica preserving page pulses and shared launcher rows"
+  },
+  {
+   "branch": "agente/205-perfis21",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "2026-10-22T17:26",
+   "review": "j-revn-perfis21",
+   "veredito": null,
+   "motivo": "no verdict, stale >3d",
+   "assunto": "Merge integracao/2.1 into agente/205-perfis21"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-j2-lista",
+   "status": "perdida",
+   "commits_a_frente": 88,
+   "ultimo_commit": "2026-10-22T17:19",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "Merge exp/casa-unica preserving shared rows and unified sidebar"
+  },
+  {
+   "branch": "agente/205-21-juntosmagia",
+   "status": "perdida",
+   "commits_a_frente": 3,
+   "ultimo_commit": "2026-10-22T16:33",
+   "review": "j-juntosmagia-pi",
+   "veredito": null,
+   "motivo": "no verdict, stale >3d",
+   "assunto": "design: polish Velvet Cinema lobby and journey"
+  },
+  {
+   "branch": "agente/205-launchertcl-render-4k",
+   "status": "perdida",
+   "commits_a_frente": 82,
+   "ultimo_commit": "2026-10-22T16:29",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "Render Android TV UI at physical resolution with session p95 fallback"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-nitidez",
+   "status": "perdida",
+   "commits_a_frente": 81,
+   "ultimo_commit": "2026-10-22T16:15",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "docs(saguao): bigger home scale and native 4K rendering requirement"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-j1-barra",
+   "status": "perdida",
+   "commits_a_frente": 81,
+   "ultimo_commit": "2026-10-22T16:12",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "fix(launcher): finish unified navigation and island voice routing"
+  },
+  {
+   "branch": "agente/205-herotamanho",
+   "status": "perdida",
+   "commits_a_frente": 4,
+   "ultimo_commit": "2026-10-22T15:27",
+   "review": "j-herotamanho-pi",
+   "veredito": null,
+   "motivo": "no verdict, stale >3d",
+   "assunto": "fix: reserve enlarged phone hero logo and add size captures"
+  },
+  {
+   "branch": "agente/205-heroglassfoco",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "2026-10-22T15:10",
+   "review": "j-heroglassfoco-r",
+   "veredito": null,
+   "motivo": "no verdict, stale >3d",
+   "assunto": "test(hero): capture focused Moderna button with explicit glass state"
+  },
+  {
+   "branch": "agente/205-launchertcl-launchertcl-plano-integrado",
+   "status": "perdida",
+   "commits_a_frente": 73,
+   "ultimo_commit": "2026-10-22T13:07",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "design(saguao-integrado): PLANO sections 5, 9 and 11 for the four home layouts"
+  },
+  {
+   "branch": "agente/205-launchertcl-launchertcl-home-modo",
+   "status": "perdida",
+   "commits_a_frente": 71,
+   "ultimo_commit": "2026-10-22T13:01",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "test(saguao): cover settings persistence voice and populated row return"
+  },
+  {
+   "branch": "agente/205-launchertcl-saguao-minimal",
+   "status": "perdida",
+   "commits_a_frente": 66,
+   "ultimo_commit": "2026-10-22T10:25",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "fix: keep launcher channel shortcut behind overlays"
+  },
+  {
+   "branch": "agente/205-205-traktlogin",
+   "status": "em andamento",
+   "commits_a_frente": 2,
+   "ultimo_commit": "2026-10-21T22:40",
+   "review": "j-revh-traktlogin-nv-ui",
+   "veredito": null,
+   "motivo": "no verdict, recent",
+   "assunto": "Fix translation table order for Trakt retry message"
+  },
+  {
+   "branch": "agente/205-launchertcl-gemini-ilha",
+   "status": "perdida",
+   "commits_a_frente": 42,
+   "ultimo_commit": "2026-10-21T00:51",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "fix: share assistant quota per account and strip voice-search prefix"
+  },
+  {
+   "branch": "agente/205-205-legaddonsync",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-20T14:37",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "test: cover Subtitle Sync public manifest compatibility"
+  },
+  {
+   "branch": "agente/205-legajuste",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-16T12:30",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "docs: spec for Stremio-style subtitle adjust and auto-sync improvements"
+  },
+  {
+   "branch": "agente/205-glassmock",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "2026-10-14T21:58",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "docs(design): retune glass chrome direction A to tvOS 27 (A27)"
+  },
+  {
+   "branch": "agente/205-tizenbrew",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-13T17:47",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "docs: TizenBrew research, module draft, submission draft"
+  },
+  {
+   "branch": "agente/205-homebrew",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-13T17:47",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "Add webOS Homebrew Channel publishing research and draft manifest"
+  },
+  {
+   "branch": "agente/205-mock21",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-13T00:20",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "design(2.1): friends row mockup with 5 modern styles (#205)"
+  },
+  {
+   "branch": "agente/205-respostas",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-11T23:35",
+   "review": "j-rascunhos-respostas",
+   "veredito": null,
+   "motivo": "no verdict, stale >3d",
+   "assunto": "docs(issues): draft replies for open issues in release 2.0.5"
+  },
+  {
+   "branch": "agente/rastreio",
+   "status": "perdida",
+   "commits_a_frente": 6,
+   "ultimo_commit": "2026-10-09T17:05",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "rastreio: guarda estrito (TEMPO/AUSENTE/pulado, falhas conhecidas por nome+rc+assinatura, sem teste listado, timeout 90 "
+  },
+  {
+   "branch": "agente/204-arabe370",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-09T16:38",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "mapa (#370): log H33SP3 confirma quadradinhos e recargas (v2.0.3); sincronismo sem prova de defeito nosso, rascunho da r"
+  },
+  {
+   "branch": "agente/2031-dvp5-hdr10",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "2026-10-09T14:47",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "fix(fonte): mp4 primeiro da LG nao poe o perfil 5 na frente de um HDR10 da faixa"
+  },
+  {
+   "branch": "agente/204-pr381",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "2026-10-09T09:57",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "scratch: icon mapping + tail assertion for AJ_AUTO_CREDITOS (integration-only registries)"
+  },
+  {
+   "branch": "agente/204-samsung-dts",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-08T19:21",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "docs(plans): spike DTS/TrueHD escondido na Samsung (2.0.4+)"
+  },
+  {
+   "branch": "agente/refatoracao-plano",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-08T17:00",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "docs: plano geral de refatoracao (Codex, graphify + ponytail)"
+  },
+  {
+   "branch": "agente/biblioteca-ilimitada-plano",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-08T13:44",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "docs(biblioteca): plano da biblioteca sem teto (indice leve, janela de CatItem, paginas sob demanda)"
+  },
+  {
+   "branch": "agente/204-webos-versao",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-08T09:56",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "webOS: versao real da TV (nyx os_info) em webosMaior, starfish e acb como reserva"
+  },
+  {
+   "branch": "agente/203-318-play",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "2026-10-07T21:04",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "android (#318): relator de queda nativa no Android < 12, encadeado a ART"
+  },
+  {
+   "branch": "agente/203-323",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-07T18:17",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "fix(streams): conferencia paralela lia pilha devolvida (SIGSEGV em verificarOuParar, #323)"
+  },
+  {
+   "branch": "agente/203-perfilsel",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-07T17:52",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "perfilsel (#203): continuar sob cada avatar (variante D2): capa 2:3, titulo, T2 · E5 · 23 min e fio de progresso, apagad"
+  },
+  {
+   "branch": "agente/202-biblioteca",
+   "status": "perdida",
+   "commits_a_frente": 7,
+   "ultimo_commit": "2026-10-06T20:51",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "fix(lists): only 2xx answers fill a shelf or a cover"
+  },
+  {
+   "branch": "agente/pr259-merge",
+   "status": "perdida",
+   "commits_a_frente": 4,
+   "ultimo_commit": "2026-10-06T00:24",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "DTS fallback: only for a known DTS track, back to native playback on failure"
+  },
+  {
+   "branch": "agente/codex-contexto",
+   "status": "perdida",
+   "commits_a_frente": 1,
+   "ultimo_commit": "2026-10-03T18:36",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "docs: consolidate Glass UI context"
+  },
+  {
+   "branch": "agente/plugins",
+   "status": "perdida",
+   "commits_a_frente": 14,
+   "ultimo_commit": "2026-10-01T22:36",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "addons: com fonte de addon na mao, a origem extra (plugins) ganha 6 s e e cortada; o que ja terminou fica"
+  },
+  {
+   "branch": "agente/p2p",
+   "status": "perdida",
+   "commits_a_frente": 6,
+   "ultimo_commit": "2026-10-01T21:57",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "p2p motor: build-mac.sh e teste real compilando fora da arvore"
+  },
+  {
+   "branch": "agente/icones",
+   "status": "perdida",
+   "commits_a_frente": 5,
+   "ultimo_commit": "2026-10-01T21:51",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "Android: troca do alias do launcher na saida do app (trocar na hora fechava a tarefa)"
+  },
+  {
+   "branch": "agente/ajustesvisual",
+   "status": "perdida",
+   "commits_a_frente": 2,
+   "ultimo_commit": "2026-10-01T21:44",
+   "review": null,
+   "veredito": null,
+   "motivo": "no review log",
+   "assunto": "ajustes visual: 'atual' nao cai em A; folha de aviso em vidro nas direcoes; indice de B sem cortar"
+  },
+  {
+   "branch": null,
+   "status": "em andamento",
+   "commits_a_frente": null,
+   "ultimo_commit": null,
+   "review": null,
+   "veredito": null,
+   "motivo": "separate repo iss-online-ios-duo; 12 live pi jobs",
+   "assunto": "/Users/hrocha/.t3/projects/iss-online-ios-duo"
+  }
+ ],
+ "jobs_atualizado_em": "2026-10-28T15:37:46",
+ "jobs_nota": "Escrivao 2026-10-28T15:37:46, HEAD 027105385. Uma entrada por branch a frente de integracao/2.1 e por job vivo; append-only (entradas anteriores preservadas). Status: em andamento / revisao / bloqueado / integrada / perdida. Perdidos detalhados em /Volumes/ExternalSSD/tmp/rev/escrivao/estado.md."
 }

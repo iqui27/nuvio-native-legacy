@@ -431,6 +431,7 @@ static void testarParsers(void) {
     assert(px_ler_decisao("{\"MediaContainer\":{}}", 21) == PX_DEC_DESCONHECIDO);
     assert(px_ler_decisao("<xml/>", 6) == PX_DEC_DESCONHECIDO); }
   assert(pb->fonte[0].tamanhoBytes == 12345678901ull && !pb->fonte[1].tamanhoBytes);
+  assert(pb->fonte[0].tamanhoMB > 0 && pb->fonte[1].tamanhoMB > 0);
   for (i = 0; i < pb->n; i++)
     assert(!strstr(pb->fonte[i].descricao, "/srv/private") && !strstr(pb->fonte[i].url, "evil.example") &&
            !strstr(pb->fonte[i].url, "a b"));

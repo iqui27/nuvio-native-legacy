@@ -11,7 +11,7 @@ def block(s, start, end):
 txt = block(g, '// GFX_TEXTO', '// GFX_FUNDO')
 bold = block(txt, 'if (uPar.x < 0.0)', 'return;')
 card = block(g, 'if (uVeu.x < 0.0) {', '// GFX_SOMBRA')
-episode = block(d, 'static void desenhaEpisodio(', '// Abas de informacao:')
+episode = block(d, 'static void desenhaEpisodioEm(', '// Abas de informacao:')
 fails = []
 if not re.search(r'uniform NV_HP vec3 uPeso;', g): fails.append('uPeso not highp')
 if re.search(r'(^|[^P] )vec2 (uv|p) =', bold) or 'uPar.y' in bold or 'uRaio' in bold:

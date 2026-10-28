@@ -185,6 +185,12 @@ int main(void) {
     limparWiki(s, sizeof s);
     CONFERE(!strcmp(s, "Voce sabe."), "rubrica: \"%s\"", s); }
 
+  {
+    SfFrase episode[2];
+    int n=extrairFalas("== Season 1 ==\n=== Pilot [1.1] ===\n: '''House''': Everybody lies, especially when they say otherwise.\n",episode,2);
+    CONFERE(n==1 && !strcmp(episode[0].quem,"House · S1:E1"),"episode credit was lost");
+  }
+
   // --- 3. EXTRACAO DAS FALAS, NOS DOIS FORMATOS -----------------------------
   { SfFrase c[32];
     int n, i, temGordonSecao = 0, temDetetive = 0;

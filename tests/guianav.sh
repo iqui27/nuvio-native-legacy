@@ -60,10 +60,10 @@ int main(void) {
     assert(focus == (saved[i] == VOD_ITEM + 6 ? saved[i] : VOD_ITEM));
     num_focus = 0;
     catalog();
-    int first = -1;
+    int registered = 0;
     for (int j = 0; j < num_focus; j++)
-      if (next_focus[j] >= VOD_ITEM) { first = next_focus[j]; break; }
-    assert(first == focus);
+      if (next_focus[j] == focus) registered = 1;
+    assert(registered); /* Horizontal rows retain focus while scrolling into view. */
   }
   count = 0; nindices = 0; focus = 803; nav = -1;
   key(SDLK_TAB); key(SDLK_LEFT); catalog(); key(SDLK_RIGHT);

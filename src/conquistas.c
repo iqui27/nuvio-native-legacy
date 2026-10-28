@@ -11,6 +11,8 @@
 #include "idioma.h"
 #include "ponteiro.h"
 #include "text.h"
+#include "trilhas.h"
+#include "trilhasdados.h"
 #define NV_TXT_TELA
 #include "tela21.h"
 #include <ctype.h>
@@ -31,11 +33,10 @@
 #define AVISO_S        6.0f
 #define AVISO_FADE_MS  220.0f
 #define LINHAS_VISIVEIS linhasVis
-#define TRILHA_LIGADA   0   // 1 quando conquistas_abrir_trilha() existir de verdade
 
 enum { V_HUB = CONQUISTAS_VISTA_HUB, V_FAM = CONQUISTAS_VISTA_FAMILIAS, V_DET = CONQUISTAS_VISTA_DETALHE };
 enum { A_TODAS, A_GANHAS, A_ANDAMENTO, A_SECRETAS, A_COMUNIDADE, A_N };
-enum { B_VOLTAR = 1, B_FAMS, B_ORDEM, B_RETOMAR, B_FECHAR, T_ABA0 = 10, F_CARD0 = 30, C_CARD0 = 100 };
+enum { B_VOLTAR = 1, B_FAMS, B_ORDEM, B_RETOMAR, B_FECHAR, B_DET_TRILHA, T_ABA0 = 10, F_CARD0 = 30, C_CARD0 = 100 };
 
 typedef struct { int id; GfxRect r; } Item;
 typedef struct { int r, g, b; } Tinta;
@@ -103,7 +104,7 @@ int  conquistas_foco(void) { return foco; }
 int  conquistas_aba(void) { return aba; }
 int  conquistas_topo(void) { return topo; }
 int  conquistas_filtradas(void) { return nvis; }
-int  conquistas_abrir_trilha(const char *chave) { (void)chave; return 0; }
+int  conquistas_abrir_trilha(const char *chave) { return trilhas_abrir(chave); }
 
 void conquistas_teste_esquecer(void) {
   memset(focos, 0, sizeof focos);
@@ -163,19 +164,24 @@ static int contar(int a) {
   return n;
 }
 
-// A trilha mais adiantada que ainda nao acabou.
+// A trilha mais adiantada que ainda nao acabou E existe no catalogo local: as
+// trilhas do servidor ficam para quando "Ir a trilha" puder abrir algo.
 static int cand_retomar(void) {
   int i, melhor = -1, k, bk = -1;
   for (i = 0; i < st.n; i++) {
     const CqEntrada *e = &st.e[i];
     if (e->vistos <= 0 || !andando(e)) continue;
+    if (!cqd_trilha_buscar(e->chave)) continue;
     k = e->vistos * 1000 / e->total;
     if (k > bk) { bk = k; melhor = i; }
   }
   return melhor;
 }
 
-static int retomar_ligado(void) { return TRILHA_LIGADA && cand_retomar() >= 0; }
+static int retomar_ligado(void) {
+  int c = cand_retomar();
+  return c >= 0 && cqd_trilha_buscar(st.e[c].chave) != NULL;
+}
 
 // Quantos filmes valem o nivel `n` (1..4) desta entrada.
 static int alvo_nivel(const CqEntrada *e, int n) {
@@ -264,11 +270,24 @@ static GfxRect r_famcard(int i) {
 
 static GfxRect r_retomar_btn(void) { return em(COL_X + 24.0f, GRADE_Y + 270.0f * fminf(1, (ANC(920.0f) - GRADE_Y) / 550.0f) - 80.0f, COL_W - 48.0f, PILULA_H); }
 
+static GfxRect r_trilha(void) {
+  float sc = gfx_escala_tela_txt();
+  float w = fminf(1200.0f / sc, NV_TELA_W - 120.0f / sc);
+  return (GfxRect){ (NV_TELA_W - w) * .5f + 48.0f / sc,
+                    (NV_TELA_H + 760.0f / sc) * .5f - 80.0f / sc,
+                    420.0f / sc, PILULA_H };
+}
+
 static int montar(Item *it) {
   int n = 0, i;
   origem();
   filtrar();
-  if (view == V_DET) { poe(it, &n, B_FECHAR, r_voltar()); return n; }
+  if (view == V_DET) {
+    poe(it, &n, B_FECHAR, r_voltar());
+    if (detIdx >= 0 && detIdx < st.n && cqd_trilha_buscar(st.e[detIdx].chave))
+      poe(it, &n, B_DET_TRILHA, r_trilha());
+    return n;
+  }
   poe(it, &n, B_VOLTAR, r_voltar());
   if (view == V_HUB) {
     if (!ajustes_conquistas()) return n;
@@ -276,9 +295,10 @@ static int montar(Item *it) {
     for (i = 0; i < A_N; i++) poe(it, &n, T_ABA0 + i, r_aba(i));
     poe(it, &n, B_ORDEM, r_ordem());
     for (i = 0; i < nvis; i++) if (card_visivel(i)) poe(it, &n, C_CARD0 + i, r_card(i));
-    if (retomar_ligado()) poe(it, &n, B_RETOMAR, r_retomar_btn());
+    if (cand_retomar() >= 0) poe(it, &n, B_RETOMAR, r_retomar_btn());
   } else if (view == V_FAM) {
     for (i = 0; i < CQ_FAM_N; i++) poe(it, &n, F_CARD0 + i, r_famcard(i));
+
   }
   return n;
 }
@@ -328,7 +348,7 @@ static void mover_geo(int dx, int dy) {
 }
 
 static void mover(int dx, int dy) {
-  if (view == V_DET) return;
+  if (view == V_DET) { mover_geo(dx, dy); return; }
 
   if (view == V_HUB && foco >= C_CARD0) {
     int i = foco - C_CARD0, col = i % colunas, lin = i / colunas, ni;
@@ -371,11 +391,12 @@ static void voltar(void) {
 }
 
 static void ok(void) {
+  if (foco == B_DET_TRILHA && view == V_DET) { conquistas_abrir_trilha(st.e[detIdx].chave); return; }
   if (view == V_DET) { voltar(); return; }
   if (foco == B_VOLTAR) { voltar(); return; }
   if (foco == B_FAMS) { view = V_FAM; foco = F_CARD0; return; }
   if (foco == B_ORDEM) { ordem = !ordem; topo = 0; return; }
-  if (foco == B_RETOMAR) { int c = cand_retomar(); if (c >= 0) conquistas_abrir_trilha(st.e[c].chave); return; }
+  if (foco == B_RETOMAR) { int c = cand_retomar(); if (c >= 0 && retomar_ligado()) conquistas_abrir_trilha(st.e[c].chave); return; }
   if (foco >= T_ABA0 && foco < T_ABA0 + A_N) { aba = foco - T_ABA0; topo = 0; return; }
   if (foco >= F_CARD0 && foco < F_CARD0 + CQ_FAM_N) {
     famF = foco - F_CARD0; aba = A_TODAS; topo = 0; view = V_HUB;
@@ -394,6 +415,20 @@ void conquistas_abrir(void) {
   filtrar();
   foco = ajustes_conquistas() ? (nvis ? C_CARD0 : T_ABA0) : B_VOLTAR;
   if (ajustes_animacoes_reduzidas()) entrada = 1.0f;
+}
+
+void conquistas_ocultar(void) { aberto = 0; entrada = 0; }
+
+void conquistas_abrir_emblema(const char *chave) {
+  conquistas_abrir();
+  const CqEntrada *e = cqregra_buscar(&st, chave);
+  if (!e) {
+    const CqTrilha *tr = cqd_trilha_buscar(chave);
+    if (!tr) return;
+    cqregra_registrar(&st, chave, CQ_FAM_PREMIO, tr->nome, 0, 0, tr->n, 0);
+    e = cqregra_buscar(&st, chave);
+  }
+  if (e) abrir_detalhe((int)(e - st.e));
 }
 
 static int eh_voltar(const SDL_Event *e) {
@@ -452,7 +487,7 @@ static void pt_foco(int id, int nada) { (void)nada; foco = id; }
 static void pt_ativar(int id, int nada) { (void)nada; foco = id; ok(); }
 
 static void alvo(GfxRect r, int id) {
-  if (aberto && (view != V_DET || id == B_FECHAR)) ponteiro_alvo(r.x, r.y, r.w, r.h, pt_foco, pt_ativar, id, 0);
+  if (aberto && (view != V_DET || id == B_FECHAR || id == B_DET_TRILHA)) ponteiro_alvo(r.x, r.y, r.w, r.h, pt_foco, pt_ativar, id, 0);
 }
 
 // Shared island material (glass or solid, no rim: it read as an outline) plus
@@ -655,7 +690,7 @@ static void desenha_retomar(float a) {
   bloco(TXT_ILHA_NOME, st.e[c].nome, PRI, p.x + 180.0f, p.y + 62.0f * k, COL_W - 204.0f, 28.0f, a, 2);
   snprintf(b, sizeof b, i18n("%d de %d filmes"), st.e[c].vistos, st.e[c].total);
   texto(TXT_V2_18, b, p.x + 180.0f, p.y + 128.0f * k, COL_W - 204.0f, SEC, a);
-  if (retomar_ligado()) botao_breve(r_retomar_btn(), i18n("Continuar a trilha"), "aj_play", foco == B_RETOMAR, a);
+  if (retomar_ligado()) pilula(r_retomar_btn(), i18n("Continuar a trilha"), "aj_play", foco == B_RETOMAR, 0, 0, a);
   else {
     snprintf(b, sizeof b, "%s · %s", i18n("Continuar a trilha"), i18n("Em breve"));
     botao_breve(r_retomar_btn(), b, NULL, 0, a);
@@ -873,6 +908,11 @@ static void desenha_detalhe(float a) {
   }
   bloco(TXT_V2_18, "Filme que você já viu antes de abrir a trilha conta para os níveis 1 a 4.", MUDO,
         rx, y0 + (336.0f / sc) + 5.0f * passo + (12.0f / sc), rw, (26.0f / sc), cA, 2);
+  if (cqd_trilha_buscar(e->chave)) {
+    r = r_trilha();
+    pilula(r, i18n("Ir à trilha"), "aj_play", qf(B_DET_TRILHA), 0, 0, cA);
+    if (view == V_DET) alvo(r, B_DET_TRILHA);
+  }
   r = (GfxRect){ x0 + W - (32.0f / sc) - larg_pilula(i18n("Fechar"), NULL), y0 + (28.0f / sc), larg_pilula(i18n("Fechar"), NULL), PILULA_H };
   pilula(r, i18n("Fechar"), NULL, qf(B_FECHAR), 0, 0, cA);
   if (view == V_DET) alvo(r, B_FECHAR);

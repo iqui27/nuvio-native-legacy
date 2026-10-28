@@ -12,6 +12,7 @@ typedef enum { DL_NENHUM = 0, DL_TITULO, DL_TOCAR, DL_BUSCA } DlTipo;
 
 typedef struct {
   DlTipo tipo;
+  int tvProfile;       // Android TV cards never cross profile boundaries.
   char imdb[24];        // "tt0111161"; vazio se o link trouxe id do TMDB
   long tmdb;            // > 0 se o link trouxe id do TMDB
   int serie;            // 1 = series, 0 = movie

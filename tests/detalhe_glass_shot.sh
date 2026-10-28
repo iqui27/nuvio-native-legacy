@@ -71,6 +71,7 @@ for s in src/*.c src/dts/*.c; do
 done
 shot_extra=()
 if [ -n "${NUVIO_DETAIL21_PROOF:-}" ]; then shot_extra+=(-DNV_DETAIL21_PROOF); fi
+if [ -n "${NUVIO_DETSECOES_PROOF:-}" ] && [ -z "${NUVIO_DETAIL_SOURCE:-}" ]; then shot_extra+=(-DNV_DETSECOES_PROOF); fi
 if [ -n "${NUVIO_LEGACY_PROOF:-}" ]; then shot_extra+=(-DNV_LEGACY_PROOF); fi
 if [ -n "${NUVIO_DETAIL_SOURCE:-}" ]; then
   shot_extra+=("-DNV_DETAIL_SOURCE=\"$NUVIO_DETAIL_SOURCE\"")

@@ -2,6 +2,14 @@
 #ifdef NV_ANDROID
 #include "android.h"
 #include "queda.h"
+#include "tvhome.h"
+#include "ajustes.h"
+#include "perfis.h"
+#include "perfilinfantil.h"
+#include "sessao.h"
+#include "proximo.h"
+#include "jsw.h"
+#include <time.h>
 #include <SDL2/SDL.h>
 #include <android/log.h>
 #include <jni.h>
@@ -627,6 +635,80 @@ void android_etapa(const char *nome) {
   if (nome) __atomic_store_n(&etapaAtual, nome, __ATOMIC_RELEASE);
 }
 void android_quadro(void) { __atomic_add_fetch(&quadrosFeitos, 1, __ATOMIC_RELAXED); }
+
+/* SDL thread only. Coalesce progress saves and asynchronous Home refreshes. */
+void android_tv_home(int ready) {
+  static Uint32 last;
+  static int supported = -1, previousProfile = -1;
+  static char *previous;
+  static ProgRegistro records[PROG_MAX];
+  static CatItem cards[TVHOME_MAX];
+  static TvHomeItem items[TVHOME_MAX];
+  if (supported == 0) return;
+  Uint32 now = SDL_GetTicks();
+  int profile = ready && sessao_logada() && ajustes_tv_home() && !perfil_infantil_ativo()
+                  ? perfis_ativo() : 0;
+  if (previousProfile == profile && now - last < 2000) return;
+  last = now;
+  JNIEnv *env = SDL_AndroidGetJNIEnv();
+  jobject act = env ? SDL_AndroidGetActivity() : NULL;
+  if (!act) return;
+  jclass cls = (*env)->GetObjectClass(env, act);
+  if (supported < 0 && cls) {
+    jmethodID method = (*env)->GetMethodID(env, cls, "tvHomeSupported", "()Z");
+    supported = method && (*env)->CallBooleanMethod(env, act, method);
+  }
+  if (!supported || !cls || (*env)->ExceptionCheck(env)) goto done;
+  int count = profile ? prog_ler(records, PROG_MAX) : 0;
+  int cardCount = profile ? cat_copiar_fileira("continue_watching", cards, TVHOME_MAX, NULL) : 0;
+  if (cardCount < 0) cardCount = 0;
+  /* Resolve completed anchors using the same next-episode policy as Home. */
+  for (int i = 0; i < cardCount; i++) {
+    CatItem *c = &cards[i];
+    if (c->progresso < ajustes_cw_concluido()) continue;
+    int idx = cat_indice_titulo(c->imdb, cat_indice_por_imdb(c->imdb));
+    ProxSugestao next;
+    if (idx >= 0 && prox_seguinte(c, cat_episodio(idx, 0), cat_n_episodios(idx),
+        ajustes_cw_concluido(), (long long)time(NULL) * 1000, &next)) {
+      c->temporada = next.temporada; c->episodio = next.episodio; c->progresso = 0;
+      snprintf(c->nomeEpisodio, sizeof c->nomeEpisodio, "%s", next.nome);
+    }
+  }
+  int n = tvhome_select(records, count, cards, cardCount, profile,
+                         ajustes_cw_minimo(), ajustes_cw_concluido(), items, TVHOME_MAX);
+  Jsw w; jsw_iniciar(&w); jsw_obj_ini(&w);
+  jsw_ci(&w, "profile", profile);
+  jsw_chave(&w, "items"); jsw_arr_ini(&w);
+  for (int i = 0; i < n; i++) {
+    TvHomeItem *v = &items[i];
+    jsw_obj_ini(&w);
+    jsw_cs(&w, "id", v->id); jsw_cs(&w, "type", v->type);
+    jsw_cs(&w, "title", v->title); jsw_cs(&w, "episodeTitle", v->episodeTitle);
+    jsw_cs(&w, "poster", v->poster); jsw_cs(&w, "backdrop", v->backdrop);
+    jsw_ci(&w, "season", v->season); jsw_ci(&w, "episode", v->episode);
+    jsw_cb(&w, "next", v->next); jsw_ci(&w, "position", v->positionMs);
+    jsw_ci(&w, "duration", v->durationMs); jsw_ci(&w, "watched", v->watchedMs);
+    jsw_obj_fim(&w);
+  }
+  jsw_arr_fim(&w); jsw_obj_fim(&w);
+  const char *json = jsw_texto_final(&w);
+  if (json && (!previous || strcmp(previous, json))) {
+    jmethodID method = (*env)->GetMethodID(env, cls, "tvHomePublish", "(Ljava/lang/String;)V");
+    jstring text = (*env)->NewStringUTF(env, json);
+    if (method && text) {
+      (*env)->CallVoidMethod(env, act, method, text);
+      if (!(*env)->ExceptionCheck(env)) {
+        free(previous); previous = strdup(json); previousProfile = profile;
+      }
+    }
+    if (text) (*env)->DeleteLocalRef(env, text);
+  }
+  jsw_livre(&w);
+done:
+  if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+  if (cls) (*env)->DeleteLocalRef(env, cls);
+  (*env)->DeleteLocalRef(env, act);
+}
 
 JNIEXPORT jstring JNICALL
 Java_space_nuvio_nativelegacy_NuvioActivity_nativeEtapa(JNIEnv *env, jobject act) {

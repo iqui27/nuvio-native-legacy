@@ -29,6 +29,8 @@ typedef enum {
 
 int  juntos_disponivel(void);   // pacote com servico social e conta ligada
 int  juntos_ativo(void);        // numa sala (de PREPARADO em diante)
+int  juntos_no_player(void);    // Sole playback/UI ownership gate, including source retry/switch.
+                               // Back clears ownership; only explicit entry/Rejoin restores it.
 JuntosFase juntos_fase(void);
 
 // A cada quadro (ilhasinais_passo), com o player aberto ou nao.
@@ -84,13 +86,21 @@ int  juntos_ao_buscar(double seg);
 // O player pediu o proximo episodio. 1 = a sala cuidou (todos vao juntos).
 int  juntos_ao_proximo(const char *alvo);
 void juntos_escolher_titulo(const char *imdb, int t, int e, const char *titulo, const char *poster);
-// VOLTAR no player com a sala aberta: 1 = a pergunta "Sair da sessao?" foi
-// mostrada e o player nao deve fechar ainda.
+// Back leaves playback while preserving membership; explicit Leave ends it.
 int  juntos_ao_voltar(void);
+// Reacquire only after an explicitly selected in-session replacement opens.
+void juntos_retomar_player(int escolherFonte);
 
 // --- leitura para a UI (juntosui.c) -----------------------------------------------------
 const JsMotor *juntos_motor(void);     // NULL fora de sala
 const char *juntos_titulo(void);
+const char *juntos_id(void);
+int juntos_reentrar(void);
+int juntos_banner(void);
+void juntos_banner_dispensar(void);
+// Source choice is distinct from transport/buffering progress.
+int juntos_aguarda_fonte(void);
+void juntos_fonte_escolhida(void);
 int  juntos_sou_anfitriao(void);
 int  juntos_pode_controlar(void);
 

@@ -303,11 +303,14 @@ static void urlenc(const char *s, char *dst, unsigned tam) {
 // que falam com ele: o do guia (lista) e o da grade curta (xtream_epg_curto).
 // Uma trava so para a rede do Xtream faz os dois esperarem a vez.
 static pthread_mutex_t travaRede = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t travaMetadata = PTHREAD_MUTEX_INITIALIZER;
 // Retry-After do ultimo pedido ao painel (s; 0 = nao veio). xtepg.c le depois
 // de um 429.
 
 static char *consultar(const char *srv, const char *user, const char *password,
-                       const char *acao, int prazo, int *status, NvPerfilSessao sessao) {
+                       const char *acao, int prazo, int *status, NvPerfilSessao sessao, int background) {
+  pthread_mutex_t *network_lock=background?&travaMetadata:&travaRede;
+  int metadata_retry=0;
   char u[300], s[300], url[1100];
   char *r;
   int st = 0;
@@ -321,10 +324,10 @@ static char *consultar(const char *srv, const char *user, const char *password,
   else
     snprintf(url, sizeof url, "%s/player_api.php?username=%s&password=%s", srv, u, s);
   /* Apply the same list budget to direct and browser/proxy transports. */
-  if (acao && (!strncmp(acao,"get_vod_",8) || !strncmp(acao,"get_series",10) ||
+  if (!background && acao && (!strncmp(acao,"get_vod_",8) || !strncmp(acao,"get_series",10) ||
                !strncmp(acao,"get_live_",9)) && prazo < 120) prazo = 120;
-  pthread_mutex_lock(&travaRede);
-  if (!nv_perfil_sessao_atual(sessao)) { pthread_mutex_unlock(&travaRede); return NULL; }
+  pthread_mutex_lock(network_lock);
+  if (!nv_perfil_sessao_atual(sessao)) { pthread_mutex_unlock(network_lock); return NULL; }
 #if XT_PROXY
   // SAMSUNG (#112): o Chromium do Tizen barra TODO `http://` que sai do app
   // (log D1 1647, 1.4.1: a lista morria aqui com o painel respondendo CORS),
@@ -343,14 +346,14 @@ static char *consultar(const char *srv, const char *user, const char *password,
     char via[300];
     snprintf(via, sizeof via, "%s/v1/xtream", NV_REC_URL);
     r = rede_postar_st(via, prazo, cab, url, &st);
-    pthread_mutex_unlock(&travaRede);
+    pthread_mutex_unlock(network_lock);
     if (!nv_perfil_sessao_atual(sessao)) { free(r); return NULL; }
     if (status) *status = st;
     return r;
   }
 #endif
-  r = rede_baixar_st_retry(url, prazo, NULL, &st, &retryAfterUltimo);
-  pthread_mutex_unlock(&travaRede);
+  r = rede_baixar_st_retry(url, prazo, NULL, &st, background?&metadata_retry:&retryAfterUltimo);
+  pthread_mutex_unlock(network_lock);
   if (!nv_perfil_sessao_atual(sessao)) { free(r); return NULL; }
   if (status) *status = st;
   return r;
@@ -358,7 +361,11 @@ static char *consultar(const char *srv, const char *user, const char *password,
 // Draft account (setup wizard): never persisted, same serialized transport.
 char *xtream_consultar(const char *srv, const char *user, const char *password,
                        const char *acao, int prazo, int *status) {
-  return consultar(srv, user, password, acao, prazo, status, nv_perfil_sessao_ler());
+  return consultar(srv, user, password, acao, prazo, status, nv_perfil_sessao_ler(), 0);
+}
+char *xtream_consultar_metadata(const char *srv, const char *user, const char *password,
+                               const char *acao, int prazo, int *status) {
+  return consultar(srv,user,password,acao,prazo,status,nv_perfil_sessao_ler(),1);
 }
 static char *chamarSt(const char *acao, int prazo, int *status, NvPerfilSessao sessao) {
   char srv[256], user[96], password[96];
@@ -372,7 +379,7 @@ static char *chamarSt(const char *acao, int prazo, int *status, NvPerfilSessao s
   snprintf(password, sizeof password, "%s", senha);
   nv_perfil_sessao_destravar();
   pthread_mutex_unlock(&trava);
-  r = consultar(srv, user, password, acao, prazo, status, sessao);
+  r = consultar(srv, user, password, acao, prazo, status, sessao, 0);
   memset(password, 0, sizeof password);
   return r;
 }

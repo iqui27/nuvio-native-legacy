@@ -644,6 +644,10 @@ static int fioInstalar(void *arg) {
    * an isolated diagnostic app, including through a stale update card. */
   (void)arg; return 0;
 #endif
+#ifdef NV_IOS
+  // iOS: the App Store / TestFlight installs updates; the card stays an advice.
+  (void)arg; return 0;
+#else
   char cmd[900];
   (void)arg;
 #ifdef NV_VIDAA
@@ -713,6 +717,7 @@ static int fioInstalar(void *arg) {
   SDL_LockMutex(mtx); estado = AT_FALHOU; SDL_UnlockMutex(mtx);
   printf("[atualizacao] instalador nao respondeu no prazo\n"); fflush(stdout);
   return 0;
+#endif
 }
 
 // 1 quando existe o que instalar: alvo que sabe, release com .ipk anexado e

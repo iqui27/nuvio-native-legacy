@@ -65,6 +65,9 @@ typedef struct {
   int  comentarios;       // comment_count, -1 = nao informado
   int  privada;           // 1 = privacy diferente de "public"
   int  propria;           // veio de /users/me/lists
+  int trilhaTipo;
+  long trilhaAlvo;
+  char capas[4][256];
 } LstLista;
 
 // Small per-profile session previews, populated only when a list is opened.
@@ -113,6 +116,7 @@ int lst_servidor_chave(const CatItem *item, char *out, size_t n);
 int lst_servidor_entrar(const CatItem *item);
 // Procura nas listas PUBLICAS do Trakt. `termo` vazio pede /lists/trending.
 void lst_buscar(const char *termo);
+void lst_pedir_trilhas(void);
 // As FIXADAS do perfil, no lugar de uma fonte. Nao tem rede.
 void lst_pedir_fixadas(void);
 
@@ -163,6 +167,7 @@ void lst_abrir(const LstLista *l, const char *midia);
 int  lst_itens_n(void);
 int  lst_item(int i, CatItem *dst);
 int  lst_itens_carregando(void);
+int  lst_itens_erro(void);
 // O que a lista diz do item `i` alem do titulo: posicao, quando entrou, nota do
 // curador (ver DescItemLista). 0 quando o indice nao existe ou a fonte nao e o
 // Trakt (Simkl/Nuvio devolvem 1 com tudo vazio).

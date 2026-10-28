@@ -44,6 +44,7 @@
 #include "idioma.h"
 #include "botoes.h"
 #include "socialvis.h"
+#include "juntos.h"
 #include "svdesenho.h"
 #include "recresp.h"
 #include "reacao.h"
@@ -305,7 +306,7 @@ enum { SPS_CONSENT_NAO = 0, SPS_CONSENT_SIM, SPS_REC, SPS_SUG,
        // lista. Agora os pedidos abrem a aba, cada um com Aceitar e Recusar.
        SPS_PEDIDO,
        // "Ver mais pessoas": abre as sugestoes cortadas (amigoslista.h).
-       SPS_MAIS };
+       SPS_MAIS, SPS_JUNTOS, SPS_JUNTOS_X };
 // A API do alcance e do nome so existe no socialsrv (branch agente/socialsrv).
 // Ate o merge as linhas ficam desligadas; NV_SOCIAL_V2_UI liga so a tela (o
 // teste de captura o usa com a API de mentira).
@@ -1120,17 +1121,22 @@ static float listaTopo(void) {
 
 // 1 enquanto a pergunta de primeira entrada esta na tela.
 static int consentindo(void) {
-  return aba == SP_ABA_SOCIAL && nSocial > 0 && social[0].tipo == SPS_CONSENT_NAO;
+  int i = juntos_banner() ? 2 : 0;
+  return aba == SP_ABA_SOCIAL && nSocial > i && social[i].tipo == SPS_CONSENT_NAO;
 }
 // 1 enquanto a pergunta do nivel (alcance) esta na tela.
 static int perguntandoAlcance(void) {
-  return aba == SP_ABA_SOCIAL && nSocial > 0 && social[0].tipo == SPS_ALC_0;
+  int i = juntos_banner() ? 2 : 0;
+  return aba == SP_ABA_SOCIAL && nSocial > i && social[i].tipo == SPS_ALC_0;
 }
 
+static int bannerVisto;
 static int spsConta(int t) { return t == SPS_IDENT || t == SPS_SIMKL || t == SPS_LETTERBOXD; }
 static float socialAlt(int i) {
   if (i < 0 || i >= nSocial) return 0.0f;
   switch (social[i].tipo) {
+    case SPS_JUNTOS: return 142;
+    case SPS_JUNTOS_X: return NV_CTRL_H;
     case SPS_REC:       return SPI_H;
     case SPS_SUG:       return SPS_H_SUG;
     case SPS_PEDIDO:    return SPS_H_SUG;
@@ -1167,6 +1173,10 @@ static float socialAntes(int i) {
   // A PRIMEIRA SECAO DA LISTA tem 6 px de ar, e nao 22 (ver SP_SECAO_AR1).
   float sh = (i == 0 && socialTopo() <= 0.0f) ? SP_SECAO_H1 : SP_SECAO_H;
   if (i < 0 || i >= nSocial) return 0.0f;
+  if (bannerVisto && i == 2) {
+    if (social[i].tipo == SPS_CONSENT_NAO) return SPS_CONSENT_TOPO;
+    if (social[i].tipo == SPS_ALC_0) return SPS_ALC_TOPO;
+  }
   // POR PESSOA: um rotulo com o nome de quem mandou antes da primeira
   // recomendacao de cada pessoa.
   if (social[i].tipo == SPS_REC && recVista[social[i].idx]) {
@@ -1190,7 +1200,7 @@ static float socialAntes(int i) {
 
 // Altura do bloco de texto que abre a lista e nao recebe foco.
 static float socialTopo(void) {
-  if (aba != SP_ABA_SOCIAL) return 0.0f;
+  if (aba != SP_ABA_SOCIAL || bannerVisto) return 0.0f;
 #ifdef NV_TOUCH_UI
   if (telefoneui_ativo() && (consentindo() || perguntandoAlcance()))
     return socialPerguntaTelefone(0, 0, 0, perguntandoAlcance());
@@ -1229,6 +1239,11 @@ static void reconstruirSocial(void) {
   consentEstado = -1;
   if (!temAbas()) return;
   consentEstado = recomenda_aparecer();
+  bannerVisto = juntos_banner();
+  if (bannerVisto) {
+    social[nSocial++].tipo = SPS_JUNTOS;
+    social[nSocial++].tipo = SPS_JUNTOS_X;
+  }
 
   // A PERGUNTA VEM ANTES DE TUDO, e ela e a lista inteira enquanto durar. Nao e
   // um cartaz por cima de uma lista que da para ler por baixo: o pedido foi
@@ -2094,6 +2109,14 @@ static void okSocial(void) {
   if (aba == SP_ABA_SOCIAL) {
     if (foco < 0 || foco >= nSocial) return;
     switch (social[foco].tipo) {
+      case SPS_JUNTOS:
+        if (juntos_reentrar()) spainel_fechar();
+        return;
+      case SPS_JUNTOS_X:
+        juntos_banner_dispensar();
+        reconstruirSocial();
+        foco = 0;
+        return;
       case SPS_CONSENT_NAO:
       case SPS_CONSENT_SIM:
         recomenda_responder_aparecer(social[foco].tipo == SPS_CONSENT_SIM);
@@ -2554,6 +2577,7 @@ void spainel_atualizar(float dt, Uint32 agora) {
   // reconstruir, a lista continuaria a do instante da abertura. Ver listaVelha:
   // a pergunta por quadro sao duas revisoes, e nao um retrato do catalogo.
   if (aberto && listaVelha()) reconstruir();
+  if (aberto && aba == SP_ABA_SOCIAL && bannerVisto != juntos_banner()) reconstruirSocial();
   // O teclado de nome de categoria e o que ele devolveu.
   if (tecladoPara) { teclado_atualizar(dt, agora); tecladoResultado(); }
   // "Mover para categoria" no menu do cartaz: a escolha abre aqui, por cima
@@ -5144,13 +5168,15 @@ static void desenharPainel(Uint32 agora) {
     // O BLOCO DE TEXTO ROLA COM A LISTA, e nao fica preso no topo: ele explica
     // a lista que vem logo abaixo, e um texto fixo com linhas passando por
     // baixo dele leria como duas telas empilhadas.
-    if (consentindo())    desenhaConsentimento(x, y, a);
-    else if (perguntandoAlcance()) desenhaAlcancePergunta(x, y, a);
+    if (!bannerVisto && consentindo()) desenhaConsentimento(x, y, a);
+    else if (!bannerVisto && perguntandoAlcance()) desenhaAlcancePergunta(x, y, a);
     y += socialTopo();
     for (i = 0; i < nSocial; i++) {
       float alt = socialAlt(i);
       float cab = socialAntes(i);
       if (cab > 0.0f) {
+        if (bannerVisto && i == 2 && consentindo()) desenhaConsentimento(x, y, a);
+        else if (bannerVisto && i == 2 && perguntandoAlcance()) desenhaAlcancePergunta(x, y, a);
         // So a secao das sugestoes tem rotulo; o vao do interruptor e mudo.
         if (social[i].tipo == SPS_PEDIDO && y + cab >= listaTopo() && y <= SP_LISTA_BASE) {
           char rotPed[96];
@@ -5185,6 +5211,21 @@ static void desenharPainel(Uint32 agora) {
           ponteiro_alvo_faixa(SP_X + x + SP_LINHA_X, y, SP_LINHA_W, alt, listaTopo(), SP_LISTA_BASE,
                               ponteiroLinhaAba, NULL, i, 0);
         switch (social[i].tipo) {
+          case SPS_JUNTOS: {
+            const JsMotor *m = juntos_motor();
+            char sub[240];
+            snprintf(sub, sizeof sub, "%s · %d %s", juntos_titulo(), m ? m->sala.n : 0, i18n("pessoas"));
+            GfxRect r = linhaIlhaRet(x, y, alt);
+            superficieItem(r, SP_LINHA_RAIO / alt, animFoco[i], a);
+            gfx_icone((GfxRect){ r.x + 22, y + 20, 32, 32 }, "aj_users", 1, 1, 1, a);
+            txt_desenhar_alpha(txtIlha(TXT_ILHA_NOME, i18n("Sessão em andamento"), SP_INTERNO - 52), r.x + 70, y + 16, a);
+            txt_desenhar_alpha(txtIlha(TXT_ILHA_META, sub, SP_INTERNO - 52), r.x + 70, y + 54, a * .7f);
+            txt_desenhar_alpha(txtIlha(TXT_ILHA_SEG, i18n("Voltar à sessão"), SP_INTERNO - 52), r.x + 70, y + 96, a);
+            break;
+          }
+          case SPS_JUNTOS_X:
+            desenhaBotaoLinha(i, x, y, alt, a, "Dispensar", NULL, "aj_x", 0);
+            break;
           case SPS_REC: desenhaRecLinha(i, social[i].idx, x, y, a, agora); break;
           case SPS_SUG: desenhaSugLinha(i, social[i].idx, x, y, a, agora); break;
           case SPS_PEDIDO: desenhaPedidoLinha(i, social[i].idx, x, y, a, agora); break;

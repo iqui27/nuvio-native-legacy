@@ -54,6 +54,9 @@ int xtream_url_limitada(const char *url);
  * persisting credentials before confirmation. Never log returned bodies/URLs. */
 char *xtream_consultar(const char *server, const char *user, const char *password,
                        const char *action, int seconds, int *status);
+/* Background metadata has its own transport lane and keeps the caller's timeout. */
+char *xtream_consultar_metadata(const char *server, const char *user, const char *password,
+                               const char *action, int seconds, int *status);
 int xtream_vod_url(const char *id, const char *ext, int episode, char *out, unsigned cap);
 char *xtream_consultar_salvo(const char *action, int seconds, int *status);
 void xtream_dados_copiar(char *server,unsigned ns,char *user,unsigned nu,char *password,unsigned np);

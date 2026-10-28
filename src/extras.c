@@ -1915,9 +1915,11 @@ static void *buscarEpComent(void *arg) {
   int n = 0, total = 0, raw = 0, source = p->tmdb, more = 0;
   ComentAchado achado[20] = {0};
   if (!source && trakt_cabecalhos_publicos(cab, chave, sizeof chave)) {
-    snprintf(url, sizeof url,
+    if (p->e>0) snprintf(url, sizeof url,
       "https://api.trakt.tv/shows/%s/seasons/%d/episodes/%d/comments/likes?page=%d&limit=%d",
       p->show, p->t, p->e, p->pagina, EP_PAGINA);
+    else snprintf(url,sizeof url,"https://api.trakt.tv/%s/%s/comments/likes?page=%d&limit=%d",
+      p->serie ? "shows" : "movies",p->show,p->pagina,EP_PAGINA);
     corpo = epBaixar(p, url, cab);
     const char *v = corpo ? strchr(corpo, '[') : NULL;
     v = v ? v + 1 : NULL;
@@ -1930,7 +1932,7 @@ static void *buscarEpComent(void *arg) {
     more = raw == EP_PAGINA;
     free(corpo); corpo = NULL;
   }
-  if (!source && p->pagina == 1 && rede_job_estado(p->job) == REDE_OK) {
+  if (!source && p->e>0 && p->pagina == 1 && rede_job_estado(p->job) == REDE_OK) {
     snprintf(url, sizeof url, "https://api.trakt.tv/shows/%s/seasons/%d/episodes/%d/ratings", p->show, p->t, p->e);
     corpo = cab[0] ? epBaixar(p, url, cab) : NULL;
     ExEpNotas notas = {0};
@@ -2034,7 +2036,7 @@ void extras_comentarios_ep_cancelar(void) {
   pthread_mutex_unlock(&trava);
 }
 void extras_pedir_comentarios_ep(const char *imdbSerie,int t,int e) {
-  if (!imdbSerie || !*imdbSerie || t<0 || e<=0) return;
+  if (!imdbSerie || !*imdbSerie || t<0 || e<0 || (!e && t)) return;
   char show[24]; snprintf(show,sizeof show,"%s",imdbSerie);
   char *dp=strchr(show,':'); if (dp) *dp=0;
   pthread_mutex_lock(&trava);
@@ -2381,7 +2383,7 @@ void extras_trailer_abrir(int i) {
   // quem chamou, e fica no registro.
   printf("[trailer] extras_trailer_abrir na Samsung ignorado (%s)\n", url);
   fflush(stdout);
-#elif defined(NV_LINUX_DESKTOP)
+#elif defined(NV_LINUX_DESKTOP) || defined(NV_IOS)
   SDL_OpenURL(url);
 #elif defined(__APPLE__)
   char cmd[160];

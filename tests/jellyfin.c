@@ -233,6 +233,7 @@ static void testarProtocolo(void) {
          !strstr(pb->fonte[1].url, "api_key="));            // the server's legacy name, renamed
   assert(midiaAbre(pb->fonte[0].url) && midiaAbre(pb->fonte[1].url));
   assert(!strcmp(pb->sessao[0].sessaoId, "ps0001") && !strcmp(pb->fonte[0].provedor, "Jellyfin"));
+  assert(pb->fonte[1].tamanhoMB == 1024 && !pb->fonte[1].tamanhoBytes);
   // Check-ins carry int64 ticks: 3 h = 108,000,000,000 ticks.
   free(controle("reset"));
   assert(jf_reportar(&c, NULL, JF_REL_INICIO, &pb->sessao[1], 0) == JF_OK);

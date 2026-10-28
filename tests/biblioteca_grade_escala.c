@@ -19,15 +19,15 @@ int main(void) {
         float vazio = bibDireita() - ultimo;
         float margemReal = realW - bibDireita() * txt;                  // right margin in real px
         float margemEsq = bibX() * txt;
-        { ESCALA_MIN_INI(BIB_TOPO_ESCALA_MIN);
+        { float previousScale = gfx_escala(); gfx_escala_sair(bibHS());
           float selo = hdrDir() * gfx_escala();                         // badge right edge, real px
           int ok = vazio >= 0.0f && vazio < BIB_CARD_W && fabsf(selo - bibDireita() * txt) < 0.5f
                    && fabsf(margemReal - NV_LEGACY_CONTENT_RIGHT) < 0.5f
-                   && fabsf(bibX() - paginaX() - 364.0f) < 0.5f;
+                   && fabsf(bibX() - paginaX() - ANC(364.0f)) < 0.5f;
           printf("txt=%.2f ui=%.2f cols=%d vazio=%.1f selo=%.1f dir=%.1f margem=%.1f/%.1f %s\n",
                  txt, UI[u], n, vazio, selo, bibDireita() * txt, margemEsq, margemReal, ok ? "ok" : "FAIL");
           fails += !ok;
-          ESCALA_MIN_FIM(); }
+          gfx_escala_sair(previousScale); }
         TXT_FIM(); }
     }
   if (fails) { printf("FAIL: %d combos\n", fails); return 1; }

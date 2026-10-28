@@ -12,7 +12,7 @@ for source in src/*.c src/dts/*.c; do
   sources+=("$source")
 done
 cc "${sources[@]}" tests/juntos_shot.c -Isrc -o "$NUVIO_DADOS/shot" \
-  -O1 -g -DNV_LEVE -DNV_SHOT_HOOKS -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
+  -O1 -g -DNV_LEVE -DNV_SHOT_HOOKS -DNV_REC_URL='"http://127.0.0.1:1"' -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
   -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL -w
 if [ "${NUVIO_JUNTOS_COMPARE:-0}" = 1 ]; then
   NUVIO_JUNTOS_UNCACHED=1 "$NUVIO_DADOS/shot" "${1%/}/before-" "${2:-}" > "${1%/}/before.log"

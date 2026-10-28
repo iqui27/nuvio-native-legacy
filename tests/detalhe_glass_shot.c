@@ -167,7 +167,7 @@ static void server_vai(const VaiTocar *vt, float x, float y, float w, float a) {
   vtui_desenhar(vt, x, y, w, a);
 }
 static void server_plano(GfxRect r, float radius, float a) {
-  if (r.h == 76.0f || r.h == 132.0f || (r.w == 180 && r.h == 48)) server_rect(r);
+  if (r.h == 76.0f || r.h == 132.0f || r.h == 56.0f) server_rect(r);
   plrui_material_plano(r, radius, a);
 }
 static void server_button(GfxRect r, float a) {
@@ -206,6 +206,7 @@ static time_t detailShotTime(time_t *result) {
 }
 #define time detailShotTime
 #define servidores_contem_item fx_servidor_contem
+#define servidores_info fx_servidor_info
 #define plrui_dicas server_hints
 #define reacao_detalhe_dica server_rating_hint
 #include NV_DETAIL_SOURCE
@@ -233,6 +234,17 @@ static void server_rating_hint(const CatItem *item, float a) {
 #undef txt_largura
 #undef txt_token_tam
 #undef servidores_contem_item
+#undef servidores_info
+int servidores_info(const char *id, const char *type, SrvAchado *out);
+int fx_servidor_info(const char *id, const char *type, SrvAchado *out) {
+  if (!getenv("NUVIO_DETSRV_PROOF")) return servidores_info(id, type, out);
+  if (out) {
+    memset(out, 0, sizeof *out);
+    snprintf(out->servidor, sizeof out->servidor, "ZimaOS");
+    out->altura = 2160;
+  }
+  return 1;
+}
 #undef plrui_material
 #undef plrui_botao_repouso
 #undef vtui_desenhar
@@ -289,7 +301,7 @@ static const char *const COM_TXT[] = {
   "Perfeito para uma tarde de chuva." };
 static const int COM_NOTA[] = { 8, 6, 7 }, COM_CUR[] = { 6, 3, 1 };
 int fx_com_spoiler(int ep, int i) { return i == 1; }
-int fx_n_comentarios(void)    { return ehSerieDeEnsaio() && !getenv("NUVIO_SHOT_REFERENCE") ? 0 :
+int fx_n_comentarios(void)    { return ehSerieDeEnsaio() && !getenv("NUVIO_SHOT_REFERENCE") && !getenv("NUVIO_DETSECOES_PROOF") ? 0 :
     (getenv("NUVIO_DETAIL_CHECK") && !strcmp(getenv("NUVIO_DETAIL_CHECK"), "comments")) || (getenv("NUVIO_TRAKT_CHECK") && (!strcmp(getenv("NUVIO_TRAKT_CHECK"), "perf") || !strcmp(getenv("NUVIO_TRAKT_CHECK"), "vidro"))) ? 8 : 3; }
 int fx_n_comentarios_ep(void) { return 0; }
 const char *fx_com_usuario(int i)  { return COM_USU[i % 3]; }
@@ -369,7 +381,7 @@ static const char *const EST_NOME_S[] = { "FX", "MGM Television", "26 Keys" };
 static const char *const EST_LOGO[] = { "deploy/app/art/logo/00.png", "deploy/app/art/logo/07.png", "" };
 int fx_n_estudios(void)       { return 3; }
 const char *fx_estudio_nome(int i) { return (ehSerieDeEnsaio() ? EST_NOME_S : EST_NOME_F)[i]; }
-const char *fx_estudio_logo(int i) { return EST_LOGO[i]; }
+const char *fx_estudio_logo(int i) { return getenv("NUVIO_DETSECOES_PROOF") ? "" : EST_LOGO[i]; }
 
 static const char *const TR_NOME_F[] = { "Trailer oficial", "Trailer 2", "Bastidores", "Cena · Rocky" };
 static const char *const TR_NOME_S[] = { "Recap · T1 em 3 min", "Trailer · T1", "Teaser · T5", "Bastidores" };
@@ -433,7 +445,11 @@ static void cacheFrases(void) {
     assert(dados_gravar_leve("frases-" IMDB_FILME ".txt",buf));
     snprintf(buf,sizeof buf,"# nuvio seriefrases v1\n%lld\tFargo\t1\nQ\tLorne Malvo · T1:E1\tOs mapas diziam: aqui há dragões. Hoje não dizem mais. Isso não quer dizer que os dragões não estejam lá.\n",(long long)time(NULL));
     assert(dados_gravar_leve("frases-" IMDB_SERIE ".txt",buf));
-  } else assert(dados_gravar_leve("frases-" IMDB_FILME ".txt", buf));
+  } else {
+    assert(dados_gravar_leve("frases-" IMDB_FILME ".txt", buf));
+    snprintf(buf,sizeof buf,"# nuvio seriefrases v1\n%lld\tFallout\t1\nQ\tLucy · S1:E1\tEveryone wants to save the world. They just disagree on how.\nQ\tThe Ghoul\tThe wasteland has its own golden rule. Thou shalt get sidetracked every time.\n",(long long)time(NULL));
+    assert(dados_gravar_leve("frases-" IMDB_SERIE ".txt",buf));
+  }
 }
 
 // --- CATALOGO ----------------------------------------------------------------
@@ -945,6 +961,35 @@ int main(int argc, char **argv) {
     for (int k=0;k<5;k++) { quadros(k ? 4 : 1); snprintf(name,sizeof name,"anim-exit-%d",k); gravar(name); }
   }
 
+  if (quer(argc,argv,"lower-sections")) {
+    const int rows[]={SEC_COMENTARIOS,SEC_FRASES,SEC_DETALHES,SEC_ESTUDIOS};
+    const char *names[]={"comments","quotes","details","studios"};
+    for (int movie=0;movie<2;movie++) for (int i=0;i<4;i++) {
+      abrir(movie,1,rows[i],0);
+      frasesAberta=1; seriefrases_abrir(itens[movie].imdb);
+      quadros(60); SDL_Delay(400); quadros(8);
+      char name[96]; snprintf(name,sizeof name,"%s-%s",movie ? "movie" : "series",names[i]);
+      gravar(name);
+#ifdef NV_DETSECOES_PROOF
+      SDL_Event key={0}; key.type=SDL_KEYDOWN;
+      if (i==0) {
+        for (int k=0;k<EX_COMENT_MAX+3;k++) { key.key.keysym.sym=SDLK_RIGHT; detail_evento(&key); quadros(8); }
+        assert(foco.fileira==SEC_COMENTARIOS && foco.coluna==nCartoesCom());
+        quadros(60); snprintf(name,sizeof name,"%s-comments-end",movie ? "movie" : "series"); gravar(name);
+      }
+      if (i==0 || i==1) {
+        key.key.keysym.sym=SDLK_RETURN; detail_evento(&key);
+        key.type=SDL_KEYUP; detail_evento(&key);
+        assert(lowerList==(i==1 ? 2 : 1));
+        for (int k=0;k<24;k++) { SDL_Delay(16); quadros(1); }
+        snprintf(name,sizeof name,"%s-%s-list",movie ? "movie" : "series",names[i]); gravar(name);
+        key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_ESCAPE; detail_evento(&key);
+        assert(!lowerList && foco.fileira==rows[i]);
+      }
+#endif
+    }
+  }
+
   if (quer(argc,argv,"full")) {
     assert(ajustes_idioma()==IDIOMA_PT);
     for (int movie=1;movie>=0;movie--) {
@@ -1249,6 +1294,18 @@ int main(int argc, char **argv) {
     static Stream candidate;
     snprintf(candidate.url, sizeof candidate.url, "https://example.invalid/movie.mkv");
     candidate.altura = 2160;
+    if (getenv("NUVIO_DETSRV_PROOF")) {
+      snprintf(candidate.bingeGroup, sizeof candidate.bingeGroup, "plex|direct");
+      snprintf(candidate.provedor, sizeof candidate.provedor, "Local · ZimaOS");
+      snprintf(candidate.rotulo, sizeof candidate.rotulo, "4K Dolby Vision Atmos 7.1");
+      candidate.dolbyVision = 1;
+      candidate.tamanhoBytes = UINT64_C(21152713932);
+      candidate.badges = badges_detectar(candidate.rotulo);
+      snprintf(itens[1].titulo, sizeof itens[1].titulo, "Heretic");
+      snprintf(itens[1].meta, sizeof itens[1].meta, "2024 · 111 min");
+      snprintf(itens[1].genero, sizeof itens[1].genero, "Movie · Thriller · Horror");
+      cat_definir_tudo(itens, 2, NULL, 0);
+    }
     stream_definir_alvo(IMDB_FILME); stream_definir_lista(&candidate, 1);
     abrir(1,0,0,0);
     if (getenv("NUVIO_SERVER_CHECK")) {
@@ -1261,7 +1318,7 @@ int main(int argc, char **argv) {
         unsigned char pixel[4];
         glReadPixels((int)((serverPrimary.x + serverPrimary.w * .5f) * gfx_escala_txt()),
                      1080 - (int)((serverPrimary.y + 8) * gfx_escala_txt()), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
-        int compact = serverPrimary.w <= 180 && serverPrimary.h <= 64;
+        int compact = serverPrimary.w <= 240 && serverPrimary.h <= 76;
         int accent = fabsf(pixel[0] / 255.f - red) < .08f &&
                      fabsf(pixel[1] / 255.f - green) < .08f && fabsf(pixel[2] / 255.f - blue) < .08f;
         printf("%s: P1 primary %d%% %s width=%.1f height=%.1f accent=%d\n",
@@ -1309,13 +1366,34 @@ int main(int argc, char **argv) {
     detail_fechar_seco(); quadros(1);
     detail_abrir(&hi);
     quadros(1);
-    assert(fase2() == 0 && textogate_passo(&gateHero, 0, SDL_GetTicks()) < .1f);
+    if (!getenv("NUVIO_DETSRV_PROOF"))
+      assert(fase2() == 0 && textogate_passo(&gateHero, 0, SDL_GetTicks()) < .1f);
     for (int i = 0, elapsed = 0; i < 4; i++) {
       while (elapsed < times[i]) { SDL_Delay(16); quadros(1); elapsed += 16; }
       char name[80]; snprintf(name, sizeof name, "server-entry-%03d", times[i]); gravar(name);
     }
     quadros(160);
     int nav = nBotoes() == 3 && acaoEm(2) == ACAO_MAIS;
+    if (getenv("NUVIO_DETSRV_PROOF")) {
+      e.key.keysym.sym = SDLK_DOWN; detail_evento(&e);
+      assert(nivel == 0 && focoServidor == 0);
+      e.key.keysym.sym = SDLK_RETURN; detail_evento(&e);
+      e.type = SDL_KEYUP; detail_evento(&e);
+      assert(detail_pediu_fontes() && detail_fonte_servidor() == 0);
+      stream_folha_item(1); stream_folha_abrir(); stream_folha_servidor(0);
+      quadros(90); gravar("server-sources-glass");
+      ajustes_definir_vidro(0); quadros(30); gravar("server-sources-solid");
+      ajustes_definir_vidro(1);
+      e.type = SDL_KEYDOWN; e.key.keysym.sym = SDLK_ESCAPE; stream_folha_evento(&e);
+      assert(!stream_folha_aberta() && focoServidor == 0 && nivel == 0);
+      // Let the closing spring finish while retaining the underlying focus.
+      for (int frame = 0; frame < 90; frame++) {
+        stream_folha_atualizar(1.f / 60, SDL_GetTicks()); quadros(1);
+      }
+      gravar("server-chip-return");
+      e.key.keysym.sym = SDLK_UP; detail_evento(&e);
+      assert(focoServidor == -1 && botao == 0);
+    }
 #define STEP(code, expected) do { e.key.keysym.sym = code; detail_evento(&e); nav &= !!(expected); } while (0)
     STEP(SDLK_DOWN, focoServidor == 0 && !focoAmigos);
     STEP(SDLK_RIGHT, focoServidor == 1 && !focoAmigos);

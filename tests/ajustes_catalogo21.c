@@ -15,7 +15,7 @@ static const int PLATAFORMA[] = {
   AJ_INTERFACE_MODO,                                  // touch builds
   AJ_TECLADO_ANDROID,                                 // system keyboard builds
   AJ_DV7, AJ_HDR10P_STRIP,                            // webOS / DV7 conversion builds
-  AJ_PLAYER_EXTERNO, AJ_PLAYER_ANIME,                 // Android (#501)
+  AJ_TV_HOME, AJ_PLAYER_EXTERNO, AJ_PLAYER_ANIME,     // Android (#501)
   AJ_FONTE_PRECARREGAR, AJ_LEG_SYNC_AUDIO, AJ_LIMPAR_CACHE, AJ_TUNNELING, AJ_AFR, // Android
   AJ_TRAILER_AUDIO,                                   // web (YouTube id)
   AJ_TRAILER_ZOOM_TPK, AJ_AUDIO_OFFSET,               // .tpk

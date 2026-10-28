@@ -23,6 +23,7 @@
 #include "travaui.h"
 #include "teclavoltar.h"
 #include "deeplink.h"
+#include "android.h"
 #include "telefoneui.h"
 #include "diario.h"
 #include "travajuntos.h"
@@ -91,6 +92,7 @@
 #include "detail.h"
 #include "musicaui.h"
 #include "menu.h"
+#include "ios.h"
 #include "busca.h"
 #include "spotlight.h"
 #include "biblioteca.h"
@@ -127,6 +129,7 @@
 #include "novidades142.h"
 #include "comecar.h"
 #include "conquistas.h"
+#include "trilhas.h"
 #include "novidades148.h"
 #include "novidades170.h"
 #include "novidades180.h"
@@ -895,6 +898,7 @@ static int iniciarPoliticaFonte(int preferida, int manual) {
 
 static Tela tela = TELA_HOME;
 static int tituloDoPainel;
+static int emblemaDaTrilha;
 static void voltarAoPainel(void) {
   if (tituloDoPainel && detail_aberto()) tituloDoPainel = 2;
   else if (tituloDoPainel == 2 && !player_aberto()) {
@@ -2906,6 +2910,7 @@ static void abrirParte(int fonte, const PartesLista *l, int k) {
   { const CatItem *ci = cat_item(titulo); serie = ci && !strcmp(ci->tipo, "series");
     snprintf(imdb, sizeof imdb, "%s", ci ? ci->imdb : ""); }
   // Save the old file's resume point without completing a manual source switch.
+  int retomarSala = juntos_no_player();
   if (player_aberto()) { player_episodio_atual(&t, &e); player_encerrar_fonte(); }
   else detail_ep_foco(&t, &e);
   parteZerar();
@@ -2919,6 +2924,7 @@ static void abrirParte(int fonte, const PartesLista *l, int k) {
   }
   diagnostico_cancelar_vazao();
   player_abrir(cat_indice_vivo(titulo, imdb), NULL);
+  if (retomarSala) juntos_retomar_player(0);
   player_definir_episodio(t, e);
   stream_definir_atual(fonte);
   voltaFonte = escolhida;
@@ -4044,8 +4050,16 @@ static int spotPode(void) {
 // outro app, o launcher ou o adb pediu. Fora do player e do detalhe de antes,
 // como um clique do Spotlight. Titulo fora do catalogo so abre (a descoberta o
 // busca num fio); o episodio pedido so toca se ele ja esta no catalogo.
+#ifdef NV_ANDROID
+static DeepLink tvHomePending;
+#endif
 static void deeplinkAbrir(const DeepLink *d) {
   int k = -1, i;
+#ifdef NV_ANDROID
+  tvHomePending.tipo = DL_NENHUM;
+  if (d->tvProfile && (d->tvProfile != perfis_ativo() || !ajustes_tv_home() || perfil_infantil_ativo())) return;
+  if (d->tvProfile) tvHomePending = *d;
+#endif
   // Invalidate outgoing source work before a new title can request Play.
   preparoInvalidar();
   novaGeracaoFonte();
@@ -4075,6 +4089,9 @@ static void deeplinkAbrir(const DeepLink *d) {
     if (d->tipo == DL_TOCAR && d->episodio > 0) { cwTocarT = d->temporada; cwTocarE = d->episodio; }
     abrirPorIndice(k);
     if (d->tipo == DL_TOCAR && detail_aberto()) detail_pedir_reproduzir();
+#ifdef NV_ANDROID
+    tvHomePending.tipo = DL_NENHUM;
+#endif
   } else if (d->imdb[0]) desc_pedir_titulo(d->imdb);
   else desc_pedir_titulo_tmdb(d->tmdb, d->serie ? "tv" : "movie");
 }
@@ -4517,8 +4534,11 @@ void app_evento(const SDL_Event *e) {
   // O AVISO DAS CONQUISTAS (depois dos creditos) nao toma o foco: so o Voltar e
   // dele, e so enquanto estiver na tela. Vem antes do Voltar do app.
   if (conquistas_aviso_evento(e)) return;
+  // A TRILHA (2.1), aberta pelas Conquistas ou pelo Detalhe: tela inteira,
+  // antes das Conquistas, que a chamam. Voltar fecha e devolve a tela de baixo.
+  if (trilhas_aberta()) { trilhas_evento(e); return; }
   // A TELA DE CONQUISTAS (2.1), aberta pelo Perfil: tela inteira, come o teclado.
-  if (conquistas_aberto()) { conquistas_evento(e); return; }
+  if (conquistas_aberto() && (emblemaDaTrilha || (!detail_aberto() && !desc_titulo_buscando()))) { conquistas_evento(e); return; }
   // O GUIA DA 2.0 (novidades20.h) e tela inteira e come o teclado todo,
   // inclusive a AZUL (pula para o resumo). "Abrir o Guia de uso" leva a
   // Ajustes › Sobre e ajuda › Guia de uso.
@@ -4983,6 +5003,17 @@ static void trocaDeTituloSeSolicitada(void) {
       if (player_aberto() || player_retido()) player_encerrar();
       detail_volta_notar(novo);
       abrirPorIndice(novo);
+#ifdef NV_ANDROID
+      const CatItem *linked = cat_item(novo);
+      if (tvHomePending.tipo == DL_TOCAR && linked && detail_aberto() &&
+          tvHomePending.tvProfile == perfis_ativo() && ajustes_tv_home() && !perfil_infantil_ativo() &&
+          !strcmp(linked->imdb, tvHomePending.imdb) &&
+          !strcmp(linked->tipo, tvHomePending.serie ? "series" : "movie")) {
+        cwTocarT = tvHomePending.temporada; cwTocarE = tvHomePending.episodio;
+        detail_pedir_reproduzir();
+      }
+      tvHomePending.tipo = DL_NENHUM;
+#endif
       if (spotPessoaDepois.tmdb > 0) {
         if (SDL_GetTicks() - spotPessoaDesde < SPOT_PESSOA_PRAZO_MS)
           detail_mostrar_pessoa(spotPessoaDepois.tmdb, spotPessoaDepois.nome, spotPessoaDepois.arte);
@@ -5031,6 +5062,7 @@ static const char *homeTrailerBloqueio(void) {
   if (!login_concluido()) return "login";
   if (!perfilsel_concluido()) return "profile-choice";
   if (player_aberto() || player_retido() || player_mini_ativo()) return "player";
+  if (trilhas_aberta()) return "trails";
   if (detail_aberto()) return "detail";
   if (spainel_aberto()) return "saved-panel";
   if (menu_aberto() || ctx_aberto()) return "menu";
@@ -5128,20 +5160,23 @@ static void tocarFonteEscolhida(int fonte, int manual) {
       char imdb[64];
       const CatItem *ci = cat_item(titulo);
       snprintf(imdb, sizeof imdb, "%s", ci ? ci->imdb : "");
+      int retomarSala = juntos_no_player(); // Explicit in-session source switch/retry.
       if (player_aberto()) {
         if (manual) player_encerrar_fonte();
         else player_encerrar();
       }
       diagnostico_cancelar_vazao();
       player_abrir(cat_indice_vivo(titulo, imdb),NULL);
+      if (retomarSala) juntos_retomar_player(0);
       player_definir_episodio(t,e);
-      if (!manual && juntos_ativo()) {
+      if (!manual && juntos_no_player()) {
         player_do_inicio(); // The room clock restores position after load.
         fonteVODAutomatica = 1;
         fonteVODTentativas = 1;
         fonteVODDesde = SDL_GetTicks();
       }
       stream_definir_atual(fonte);
+      if (juntos_no_player()) juntos_fonte_escolhida();
       // Qualquer escolha nova invalida a resposta de um torrent anterior; o
       // motor P2P corta o pedido velho ja (sem isso a escolha nova esperaria
       // ate 55 s na fila do fio unico).
@@ -5181,7 +5216,7 @@ static Uint32 juntosListaDesde;
 static void juntosAbrirEFonte(Uint32 agora) {
   char imdb[24], titulo[160], poster[512], alvo[64];
   int t, e;
-  if (!juntos_ativo()) juntosFontePendente = -1;
+  if (!juntos_no_player()) juntosFontePendente = -1;
   if (juntosui_pediu_fechar_player()) player_sair();
   if (juntosui_pediu_reproduzir()) detail_pedir_reproduzir();
   if (juntosui_pediu_escolher_filme()) {
@@ -5205,10 +5240,12 @@ static void juntosAbrirEFonte(Uint32 agora) {
         return;
       }
       printf("[juntos] source: opening paused player\n");
+      int escolherFonteSala = juntos_escolhendo_fonte();
       limparFonteVOD();
       if (player_aberto() || player_retido()) player_encerrar();
       diagnostico_cancelar_vazao();
       player_abrir(idx, NULL);
+      juntos_retomar_player(escolherFonteSala); // Explicit room/Rejoin opening.
       if (t > 0 && e > 0) player_definir_episodio(t, e);
       if (juntos_fase() != JF_PREPARADO) player_do_inicio(); // guests follow room time
       renovarListaDoPlayer();
@@ -5221,7 +5258,12 @@ static void juntosAbrirEFonte(Uint32 agora) {
         tocarFonteEscolhida(fonte, 1);
       } else {
         juntosFontePendente = -1;
-        if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
+        if (juntos_fase() == JF_PREPARADO) {
+          aguardandoFonte = 0;
+          folhaParaTocar = 1;
+          stream_folha_contexto(i18n("Escolha uma fonte para começar"));
+          nomeParaFolha(); stream_folha_abrir();
+        } else if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
       }
       printf("[juntos] abrindo o titulo da sala\n");
     }
@@ -5270,7 +5312,15 @@ static void recuperarErroFonte(void) {
 }
 
 void app_atualizar(float dt, Uint32 agora) {
+#ifdef NV_ANDROID
+  android_tv_home(tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL);
+#endif
   aioui_atualizar(dt, agora);
+#ifdef NV_IOS
+  // The host morphs its vertical bar from this (ios/ios.m): tabs on the root
+  // screens, Back + Detail actions on the title, nothing on login/player.
+  ios_quadro(app_tela_nome(), detail_aberto(), menu_destino());
+#endif
   if(tela!=TELA_LOGIN && tela!=TELA_ESCOLHA_PERFIL && perfil_regra_tempo(dt)) {
     if(player_aberto() || player_mini_ativo()) { player_sair();player_encerrar();video_parar(); }
     player_descartar_retido();fontevolta_esquecer("parental time limit");
@@ -5769,6 +5819,19 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   if (tela == TELA_PERFIL && perfil_pediu_atualizar()) pedirPerfil();
   if (tela == TELA_PERFIL && perfil_pediu_conquistas()) conquistas_abrir();
+  { char chave[96];
+    if (trilhas_pediu_conquistas(chave, sizeof chave)) {
+      emblemaDaTrilha = 1;
+      conquistas_abrir_emblema(chave);
+    } }
+  if (!conquistas_aberto() || trilhas_aberta()) emblemaDaTrilha = 0;
+  { CqPasso passo;
+    if (trilhas_pediu_titulo(&passo)) {
+      detail_trilha_notar();
+      int indice = cat_indice_por_imdb_tipo(passo.imdb, "movie");
+      if (indice >= 0) { detail_volta_notar(indice); abrirPorIndice(indice); }
+      else desc_pedir_titulo(passo.imdb);
+    } }
   // Titulo escolhido no painel de Salvos. Ele entrega o IMDb e nao um indice:
   // a lista dele inclui titulos que NAO estao no catalogo (vieram do arquivo
   // local, ver salvospainel.c), e um indice para esses nao existe. Sem item no
@@ -5824,6 +5887,10 @@ void app_atualizar(float dt, Uint32 agora) {
     o = ilha_pediu(&ic, &qual);
     if (o) retomamorna_cancelar();
     if (o && qual == ILHA_VIVO && !ilhacart_vivo_vale(&ic)) o = ILHA_PEDIU_NADA;
+    if (o && qual == ILHA_JUNTOS) {
+      if (o == ILHA_PEDIU_TOCAR) juntos_reentrar();
+      o = ILHA_PEDIU_NADA;
+    }
     if (o == ILHA_PEDIU_SALVOS) {
       // O PAINEL NASCE DO MODAL: o retangulo de agora e o do modal, que some
       // seco no mesmo quadro — o painel toma a forma dele e cresce.
@@ -6070,6 +6137,10 @@ void app_atualizar(float dt, Uint32 agora) {
   // aberta sobre a home e voltar para a home). Voltar/DIREITA nao passam aqui.
   // "Ver tudo" idem: a barra tambem abre por cima dela (coluna 0), e sem isto
   // a lista ficaria cobrindo a tela nova.
+#ifdef NV_IOS
+  { int d = ios_destino_pedido(); if (d >= 0) menu_ir(d); }
+  { int a = ios_acao_pedida(); if (a >= 0) detail_acao_barra(a); }
+#endif
   if (menu_escolheu()) {
     tituloDoPainel = 0;
     if (detail_aberto()) detail_fechar_seco();
@@ -6302,7 +6373,7 @@ void app_atualizar(float dt, Uint32 agora) {
     int querTocar = detail_pediu_reproduzir() || doInicio;
     const JsMotor *salaJ = juntos_motor();
     const CatItem *tituloJ = cat_item(detail_indice());
-    if (querTocar && juntos_ativo() && tituloJ) {
+    if (querTocar && juntos_no_player() && tituloJ) {
       char alvoJ[64];
       int tJ = 0, eJ = 0;
       detail_ep_foco(&tJ, &eJ);
@@ -6552,7 +6623,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // vivo, e la a escolha ja e feita pela playlist que responde.
       //
       // #667: a remembered source sets the sheet's focus, never consent to play.
-      if (ajustes_fonte_manual() && juntos_fase() != JF_PREPARADO && stream_n() > 0) {
+      if (ajustes_fonte_manual() && (!juntos_no_player() || juntos_fase() != JF_PREPARADO) && stream_n() > 0) {
         aguardandoFonte = 0;
         folhaParaTocar = 1;
         nomeParaFolha(); stream_folha_abrir();
@@ -7320,6 +7391,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // app_evento, no mesmo evento da ESQUERDA, e abre por cima dela.
   detail_sob_menu(detail_aberto() && menu_aberto());
   detail_atualizar(dt, agora);
+  if (!detail_aberto() && !desc_titulo_buscando()) trilhas_voltar_do_titulo();
   voltarAoPainel();
   menu_atualizar(dt, agora);
   // PÓS-REPRODUÇÃO. O proximo episodio reabre a busca de fonte com o id novo;
@@ -8050,8 +8122,13 @@ void app_desenhar(Uint32 agora) {
   }
   // As Conquistas: tela inteira (ou o esmaecer de saida) e, por baixo de tudo
   // que e aviso, o aviso depois dos creditos, que nao e camada do ponteiro.
-  CAMADA_SE(conquistas_aberto());
-  if (!registro_aberto()) { conquistas_desenhar(agora); conquistas_aviso_desenhar(); }
+  if (!registro_aberto()) {
+    CAMADA_SE(conquistas_aberto() && (emblemaDaTrilha || (!detail_aberto() && !desc_titulo_buscando())));
+    if (emblemaDaTrilha || (!detail_aberto() && !desc_titulo_buscando())) conquistas_desenhar(agora);
+    CAMADA_SE(trilhas_aberta());
+    trilhas_desenhar(agora);
+    conquistas_aviso_desenhar();
+  }
   // O cartao do lembrete fica acima do player e da tela: e um aviso com hora.
   CAMADA_SE(glem_cartao_aberto());
   if (!registro_aberto() && sessao_logada() && tela != TELA_LOGIN &&
@@ -8119,7 +8196,7 @@ int app_central_pode(void) {
          perfilsel_concluido() && !registro_aberto() && !spot_aberto() &&
          !teclado_aberto() && !diagnostico_intro_aberto() && !novidades20_aberto() &&
          !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() &&
-         !resolver_aberto() && !comecar_aberto() && !conquistas_aberto() && !dicascontrole_ocupado();
+         !resolver_aberto() && !comecar_aberto() && !conquistas_aberto() && !trilhas_aberta() && !dicascontrole_ocupado();
 }
 
 void app_encerrar(void) {

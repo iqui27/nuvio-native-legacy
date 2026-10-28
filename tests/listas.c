@@ -43,7 +43,10 @@ static char *ler(const char *caminho) {
 
 static void testeTraktMinhas(void) {
   char *j = ler("tests/fixtures/trakt_minhas_listas.json");
-  int n = lst_ler_trakt(j, 0);
+  char *spaced = malloc(strlen(j) + 5);
+  sprintf(spaced, " \r\n\t%s", j);
+  int n = lst_ler_trakt(spaced, 0);
+  free(spaced);
   const LstLista *a, *b;
   printf("\n[1] /users/me/lists\n");
   CONFERE(n == 2, "duas listas lidas (veio %d)", n);
@@ -88,7 +91,10 @@ static void testeExtraItem(void) {
 
 static void testeTraktBusca(void) {
   char *j = ler("tests/fixtures/trakt_busca_listas.json");
-  int n = lst_ler_trakt(j, 1);
+  char *spaced = malloc(strlen(j) + 5);
+  sprintf(spaced, " \r\n\t%s", j);
+  int n = lst_ler_trakt(spaced, 1);
+  free(spaced);
   const LstLista *a;
   printf("\n[2] /search/list (envelope)\n");
   // O terceiro elemento e um resultado de FILME. A busca do Trakt devolve tipos

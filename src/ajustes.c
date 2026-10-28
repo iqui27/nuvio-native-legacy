@@ -3,6 +3,9 @@
 // cancela. A lista mostra valor e chevron, a ficha explica alcance e padrao.
 // IDs, chaves persistidas e indices de valores continuam os legados.
 #include "ajustes.h"
+#ifdef NV_IOS
+#include "ios.h"
+#endif
 #include "legfontes.h"
 #include "logrede.h"
 #include "jsw.h"
@@ -765,6 +768,7 @@ typedef enum {
   AJ_HERO_PASTA_DETALHES, // Append-only: folder hero details, local and enabled by default.
   AJ_GUIA_PREVIA_DESTACAR, AJ_GUIA_PREVIA_SOM, AJ_GUIA_DIAS,
   AJ_FONTE_OCULTAR_DV, AJ_FONTE_OCULTAR_AUDIO, AJ_FONTE_OCULTAR_VIDEO, // Device-local, append-only.
+  AJ_TV_HOME, // Device-local, append-only; enabled by default.
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1928,6 +1932,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Ocultar Dolby Vision incompatível", V_AUTO_LIGA, 3),
   ESC("Ocultar áudio incompatível", V_AUTO_LIGA, 3),
   ESC("Ocultar vídeo incompatível", V_AUTO_LIGA, 3),
+  ESC("Mostrar na tela inicial do Android TV", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2273,6 +2278,7 @@ static const char *CHAVE[] = {
   "heroFolderDetailsLocal",
   "guiaPreviaDestacarLocal", "guiaPreviaSomLocal", "guiaDiasLocal",
   "fonteOcultarDvLocal", "fonteOcultarAudioLocal", "fonteOcultarVideoLocal",
+  "androidTvHomeLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2935,6 +2941,8 @@ int ajustes_interface_mobile(void) {
   int automaticoMobile = 0;
 #ifdef NV_ANDROID
   automaticoMobile = android_interface_mobile_auto();
+#elif defined(NV_IOS)
+  automaticoMobile = ios_interface_mobile_auto();
 #endif
   return layout_modo_resolver(valor[AJ_INTERFACE_MODO], automaticoMobile);
 #else
@@ -3030,6 +3038,8 @@ int ajustes_brilho_player(void)    { int v = valor[AJ_BRILHO_PLAYER]; return v <
 void ajustes_espelhar_enquetes(int ligado) { int n = ligado ? 0 : 1; if (valor[AJ_ENQUETES] != n) { valor[AJ_ENQUETES] = n; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); } }
 int ajustes_fonte_hdr(void)        { int v = valor[AJ_FONTE_HDR]; return v < 0 || v > 2 ? 0 : v; }
 int ajustes_fonte_ordem_addon(void)   { return valor[AJ_FONTE_ORDEM_ADDON] == 1; }
+int ajustes_tv_home(void) { return valor[AJ_TV_HOME] == 0; }
+
 int ajustes_fonte_ocultar(int regra) {
   if (regra < 0 || regra > 2) return 0;
   int v = valor[AJ_FONTE_OCULTAR_DV + regra];
@@ -6328,6 +6338,7 @@ static int somenteDesteAparelho(int op) {
 // memoria, rede e idioma da interface ficam. Segredos nunca estao em valor[].
 static int soNaTv(int op) {
   switch (op) {
+    case AJ_TV_HOME:
     case AJ_FONTE_OCULTAR_DV: case AJ_FONTE_OCULTAR_AUDIO: case AJ_FONTE_OCULTAR_VIDEO:
     case AJ_ICONE_APP: case AJ_LOGO_APP: case AJ_ABERTURA:
     case AJ_IDIOMA: case AJ_FONTE_UI: case AJ_ANIM:
@@ -6903,7 +6914,7 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_INTERFACE_MODO) return 1;
 #endif
 #ifndef NV_ANDROID
-  if (op == AJ_PLAYER_EXTERNO || op == AJ_PLAYER_ANIME) return 1;   // #501: so ha outro player no Android
+  if (op == AJ_TV_HOME || op == AJ_PLAYER_EXTERNO || op == AJ_PLAYER_ANIME) return 1;   // #501: so ha outro player no Android
 #endif
   if (op == AJ_RELOGIO_POS) return 1;   // saiu da tela em 7d69643a: a ilha e sempre no canto direito
   // 2.0.3: o Descobrir do web nao existe na TV (nada le AJ_DESCOBRIR).
@@ -8299,6 +8310,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_ESPACO_FILEIRAS: return "O espaço vertical entre uma fileira da Home e a seguinte. Com menos cabem mais fileiras na tela, com mais a Home fica mais arejada.";
     case AJ_ESPACO_TITULOS: return "O espaço horizontal entre os cartazes de uma fileira da Home.";
     case AJ_TUNNELING: return "Sincronização de áudio e vídeo por hardware. Pode melhorar a reprodução em alguns aparelhos Android TV. Vale a partir do próximo vídeo.";
+    case AJ_TV_HOME: return "Mostra Continuar assistindo e o canal Nuvio no Android TV. Perfis infantis ficam ocultos. Desligar remove os itens publicados. Vale só nesta TV.";
     case AJ_AFR: return "Troca a taxa de atualização da TV para a do vídeo (24 Hz, 50 Hz...), reduzindo trepidação. Automático aplica a melhor correspondência ao abrir o vídeo e restaura ao sair; se a TV não oferecer um modo compatível, nada muda. Só Android TV.";
     case AJ_HDR_INTERFACE: return "HDR experimental para os menus. Branco limitado a 203 nits. Reinicie o app após mudar. Sem suporte, usa SDR.";
     case AJ_AMPLIAR_UI: return "Só vale com a resolução em 1080p ou 720p: o app amplia a interface para a tela (usa mais GPU). Na Automática e na 4K quem amplia é a TV. Reinicie o app depois de mudar.";

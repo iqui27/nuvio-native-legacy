@@ -14,6 +14,13 @@ static int esperaVazio;
 void fil_definir_perfil(int p) { (void)p; }
 void fontepref_definir_perfil(int p) { (void)p; }
 void legmem_definir_perfil(int p) { (void)p; }
+void audiomem_definir_perfil(int p) { (void)p; }
+int perfil_regra_tempo(float seconds) { (void)seconds; return 0; }
+void trava_invalidar_autorizacoes(void) {}
+int sessao_identidade_local_copiar(char *u, size_t nu, char *jwt, size_t nj) {
+  snprintf(u, nu, "teste"); snprintf(jwt, nj, "test-token"); return 1;
+}
+void sessao_token_recusado(const char *token) { (void)token; }
 void arteesc_definir_perfil(int p) { (void)p; }
 void plugins_perfil_mudou(void) {}
 void servidores_perfil_trocou(void) {}

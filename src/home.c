@@ -370,6 +370,9 @@ static float animFoco[MAX_FIL][MAX_CARDS];
 // cinza secundario quando nao e (dono, 14/10: "quando a fileira nao tiver
 // focada deixar o titulo da fileira em cinza") — a mesma mola do foco do card.
 static float animFocoFil[MAX_FIL];
+// Special hero copy follows the same fade duration as a normal Home title.
+static int heroEspecialCol[MAX_FIL];
+static float heroEspecialAlpha[MAX_FIL];
 // MICRO-ANIMACOES DE CARD (revela.h). Um registro por lugar da grade para a
 // arte chegando; um so para a luz do foco, porque so ha um card em foco; e o
 // instante em que cada fileira comecou a entrar (0 = ja entrou).
@@ -1871,7 +1874,9 @@ static float extraTipo(TipoFileira t) {
        : t == FILEIRA_HEROI_DIVIDIDO ? NV_DIV_META_H : 0.0f;
 }
 static float alturaTotalFil(int r) {
-  return alturaFil(r) + (temRotulo(fileiras[r].tipo) && fileiras[r].tipo != FILEIRA_HEROI_DIVIDIDO
+  int rotulo = temRotulo(fileiras[r].tipo) ||
+    (fileiras[r].tipo == FILEIRA_CATALOGOS && fileiras[r].estiloCol == FILEIRA_REDONDA);
+  return alturaFil(r) + (rotulo && fileiras[r].tipo != FILEIRA_HEROI_DIVIDIDO
                          ? NV_POSTER_COPY_H : 0.0f) + extraTipo(fileiras[r].tipo);
 }
 static float alfaFileiraHome(int r, float y, float topo, float corte) {
@@ -3616,6 +3621,8 @@ static void sincronizarFileiras(void) {
   prefsAplicadas = assin;
   memset(animFoco, 0, sizeof animFoco);
   memset(animFocoFil, 0, sizeof animFocoFil);
+  memset(heroEspecialCol, 0, sizeof heroEspecialCol);
+  memset(heroEspecialAlpha, 0, sizeof heroEspecialAlpha);
   memset(revArte, 0, sizeof revArte);
   memset(velX, 0, sizeof velX);
   memset(scrollX, 0, sizeof scrollX);
@@ -3779,8 +3786,9 @@ static void home_atualizar_(float dt, Uint32 agora) {
   // isso muda sem o catalogo mudar (um amigo novo chega do recomenda.c).
   for (int r = 0; r < nFileiras; r++) {
     if (fileiras[r].tipo != FILEIRA_SOCIAL) continue;
-    int focada = !focoHero && foco.fileira == r, c = foco.coluna;
-    amigosfil_atualizar(dt, focada, focada ? &c : NULL);
+    int focada = !focoHero && foco.fileira == r;
+    int c = focada ? foco.coluna : foco.colunaLembrada[r];
+    amigosfil_atualizar(dt, focada, &c);
     int nc = amigosfil_n_colunas();
     // A FILEIRA DO CATALOGO QUE RESPONDEU VAZIA (estado 1) continua sem
     // coluna quando nao ha amigo nenhum: o convite so mora no lugar reservado
@@ -4091,6 +4099,14 @@ static void home_atualizar_(float dt, Uint32 agora) {
   // meio de qualquer teste.
 
   for (int r = 0; r < nFileiras; r++) {
+    if (!focoHero && foco.fileira == r &&
+        (fileiras[r].tipo == FILEIRA_SOCIAL || fileiras[r].tipo == FILEIRA_CATALOGOS)) {
+      int changed = heroEspecialCol[r] != foco.coluna;
+      heroEspecialAlpha[r] = motionReduzido ? 1.0f :
+        anim_rampa(heroEspecialAlpha[r], changed ? 0.0f : 1.0f, dt, NV_HERO_FADE_MS * .5f);
+      if (motionReduzido || (changed && heroEspecialAlpha[r] <= 0.0f))
+        heroEspecialCol[r] = foco.coluna;
+    }
     int nAnim = fileiras[r].n + (fileiras[r].verTudo ? 1 : 0);
     if (nAnim > MAX_CARDS) nAnim = MAX_CARDS;
     for (int c = 0; c < nAnim; c++) {
@@ -5174,10 +5190,13 @@ static void desenhaHero(Uint32 agora, float saida) {
 
   sinW = homeTextoLargura(sinW);
   if(!focoHero && lay==HOME_LAYOUT_MODERNA && foco.fileira>=0 && foco.fileira<nFileiras && fileiras[foco.fileira].tipo==FILEIRA_SOCIAL) {
-    float x=homeConteudoX(),a=(1-saida)*heroVisivelToque();
+    float fade = heroEspecialAlpha[foco.fileira];
+    float x=homeConteudoX(),a=(1-saida)*heroVisivelToque()*fade;
+    aArte *= fade;
     const Fileira *s=&fileiras[foco.fileira];
-    const CatItem *p=(fileiraItemIndice(s, foco.coluna) >= 0)
-                    ?cat_item_exato(fileiraItemIndice(s, foco.coluna)):NULL;
+    int column = heroEspecialCol[foco.fileira];
+    const CatItem *p=(fileiraItemIndice(s, column) >= 0)
+                    ?cat_item_exato(fileiraItemIndice(s, column)):NULL;
     const char *arte=p?arte_hero_do_item(p):NULL;   // tela cheia: arte grande
     GLuint ta=arte?tex_obter_hero(arte):0;
     // O fundo social so onde a arte NAO cobre. Com a arte do titulo opaca por
@@ -5259,13 +5278,15 @@ static void desenhaHero(Uint32 agora, float saida) {
   // Dinamica nao tem destaque parado no topo e mostra o mesmo banner por tras
   // do cabecalho da fileira (dinArteColecao).
   if(!focoHero&&lay!=HOME_LAYOUT_DINAMICA&&foco.fileira>=0&&foco.fileira<nFileiras&&fileiras[foco.fileira].tipo==FILEIRA_CATALOGOS) {
-    const ColFolder *folder=col_folder(fileiras[foco.fileira].folders[foco.coluna]);
+    float fade = heroEspecialAlpha[foco.fileira];
+    const ColFolder *folder=col_folder(fileiras[foco.fileira].folders[heroEspecialCol[foco.fileira]]);
+    aArte *= fade;
     if(folder) {
       int details=ajustes_hero_pasta_detalhes();
       if(folder->editorial) {
         /* Art is authored for this rectangle, not cropped as a movie backdrop.
            The neutral canvas continues below it; no art behind the shelves. */
-        float x=homeConteudoX(),a=(1-saida)*heroVisivelToque();
+        float x=homeConteudoX(),a=(1-saida)*heroVisivelToque()*fade;
         GLuint art=tex_obter_hero(folder->hero);
         GfxRect header=heroArtworkOverlayRect(heroEditorialRect(folder->editorial,
                       folder->editorial==2 ? tex_aspecto(folder->hero) : 0.0f), r);
@@ -5309,7 +5330,7 @@ static void desenhaHero(Uint32 agora, float saida) {
         else gfx_rect(r,t,modoHero,0,0,0,0,0,0,0,aArte);
         gfx_tex_aspect_atual=0;}
       heroArteRect=r;
-      float x=homeConteudoX(),a=(1-saida)*heroVisivelToque();
+      float x=homeConteudoX(),a=(1-saida)*heroVisivelToque()*fade;
       if(details) {
         TxtLinha group=txt_linha(TXT_HERO_META,folder->group,201,206,218,255);
         txt_desenhar_alpha(group,x,NV_COLLECTION_HERO_GROUP_Y,a);
@@ -5889,7 +5910,7 @@ static int navigationMove(SDL_Keycode key){
 }
 
 static void desenhaRedonda(const CatItem *ci, GLuint t, const char *caminho,
-                           float px, float py, float d, float f);
+                           GfxRect base, GfxRect disco, float f, const char *nome);
 
 static void desenhaAtalhos(int r, float y) {
   float w = larguraFil(r), h = alturaFil(r);
@@ -5923,15 +5944,7 @@ static void desenhaAtalhos(int r, float y) {
     alvoCard(x, cy, cw, ch, r, c);
     // O ANEL E OPCIONAL (Ajustes > Foco no cartaz). Sem ele o foco continua
     // dito pelo tamanho e pela animacao do cartaz — o que sai e so a borda.
-    if (!redonda && f > .01f && ajustes_borda_foco()) {
-      float menor = cw < ch ? cw : ch;
-      float ar, ag, ab; ajustes_acento(&ar, &ag, &ab);
-      if (ajustes_vidro()) gfx_vidro_cartao(card, raio, f, 1.0f);
-      else
-      gfx_cor((GfxRect){x - NV_ANEL_FOCO, cy - NV_ANEL_FOCO,
-        cw + 2*NV_ANEL_FOCO, ch + 2*NV_ANEL_FOCO},
-        (raio * menor + NV_ANEL_FOCO) / (menor + 2*NV_ANEL_FOCO), ar, ag, ab, f);
-    }
+    if (!redonda && ajustes_borda_foco()) svd_aro_foco(card, raio, f, 1.0f);
     if (!redonda) gfx_cor(card, raio, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G, NV_COR_ESQUELETO_B, 1);
     const ColFolder *folder=col_folder(fileiras[r].folders[c]);if(!folder)continue;
     const char *arte = col_capa(folder);
@@ -6052,7 +6065,8 @@ static void desenhaAtalhos(int r, float y) {
       }
     }
     if (redonda) {
-      desenhaRedonda(NULL, tex, gifDesenhando ? NULL : arte, x, cy, cw, f);
+      desenhaRedonda(NULL, tex, gifDesenhando ? NULL : arte,
+                     (GfxRect){x0, y, w, h}, card, f, folder->title);
       continue;
     }
     if (tex) {
@@ -7250,8 +7264,6 @@ static void desenhaHeroiCard(const CatItem *ci, int completo, const char *texto,
                              const char *caminho, GLuint t, float aArte,
                              float px, float py, float w, float h, float raio,
                              float f, float varre);   // o cartão da fileira Herói (#205)
-static void desenhaRedonda(const CatItem *ci, GLuint t, const char *caminho,
-                           float px, float py, float d, float f);
 
 // --- VITRINE DAS COLECOES (vertudo.c) -------------------------------------------
 // A exibicao "Vitrine" de uma colecao e a Home em miniatura: destaque no alto e
@@ -7324,10 +7336,10 @@ void home_vitrine_cartao(const CatItem *ci, GfxRect base, GfxRect card, float al
   int deitado = ajustes_posteres_deitados();
   const char *cam = arte_por_formato(ci, deitado);
   float raio = raioDe(card.w, card.h), og = gfx_opacidade_grupo;
-  GLuint t = cam ? tex_obter_larg(cam, card.w) : 0;
+  GLuint t = cam ? tex_obter_larg(cam, redonda ? base.w : card.w) : 0;
   gfx_opacidade_grupo = alfa;
   if (redonda) {
-    desenhaRedonda(ci, t, cam, card.x, card.y, card.w, foco);
+    desenhaRedonda(ci, t, cam, base, card, foco, NULL);
     gfx_opacidade_grupo = og;
     return;
   }
@@ -7373,24 +7385,24 @@ static void desenhaChipAmigos(const CatItem *ci, float px, float py, float w, fl
 // (o pacote do Xperience traz o nome assado nos ~20% de baixo; fora do disco) e
 // o nome centrado embaixo.
 static void desenhaRedonda(const CatItem *ci, GLuint t, const char *caminho,
-                           float px, float py, float d, float f) {
-  float pad = 5.0f * f, ar, ag, ab;
-  GfxRect disco = { px, py, d, d }, miolo = { px + pad, py + pad, d - pad * 2, d - pad * 2 };
-  ajustes_acento(&ar, &ag, &ab);
-  if (f > 0.01f && ajustes_borda_foco())
-    gfx_rect(disco, 0, GFX_DISCO, 0, 0, 0, 0, ar, ag, ab, f);
-  gfx_rect(miolo, 0, GFX_DISCO, 0, 0, 0, 0, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
+                           GfxRect base, GfxRect disco, float f, const char *nome) {
+  if (ajustes_borda_foco()) svd_aro_foco(disco, .5f, f, 1.0f);
+  gfx_rect(disco, 0, GFX_DISCO, 0, 0, 0, 0, NV_COR_ESQUELETO_R, NV_COR_ESQUELETO_G,
            NV_COR_ESQUELETO_B, 1);
   if (t) {
     gfx_tex_aspect_atual = caminho ? tex_aspecto(caminho) : 0.0f;
     // Collection covers stay centered; catalog portraits keep their face crop.
-    gfx_rect(miolo, t, GFX_AVATAR, 0, 0.0f, ci ? 0.10f : 0.0f, 0, 1, 1, 1, 1);
+    gfx_rect(disco, t, GFX_AVATAR, 0, 0.0f, ci ? 0.10f : 0.0f, 0, 1, 1, 1, 1);
     gfx_tex_aspect_atual = 0.0f;
   }
   if (ci && ajustes_selo_visto() && cat_visto(ci)) badges_check_cartao(disco, 1, 1.0f);
-  if (ci && ci->titulo[0]) {
-    TxtLinha tn = txt_linha_corta(TXT_CAPTION2, ci->titulo, 245, 246, 250, 255, d);
-    txt_desenhar_alpha(tn, px + (d - tn.w) * 0.5f, py + d + NV_POSTER_COPY_PADT, 0.98f);
+  if (!nome && ci) nome = ci->titulo;
+  if (nome && nome[0]) {
+    // Keep truncation and baseline fixed while the shared focus spring grows the photo.
+    TxtLinha tn = txt_linha_corta(TXT_CAPTION2, nome, 245, 246, 250, 255, base.w);
+    txt_desenhar_alpha(tn, base.x + (base.w - tn.w) * .5f,
+                      base.y + base.h + NV_POSTER_COPY_PADT,
+                      .65f + .33f * anim_clamp(f, 0, 1));
   }
 }
 
@@ -7576,7 +7588,12 @@ static void pintarCartao(const CartaoFoco *k, float raio) {
   const int deitado = k->deitado, rotuloFora = k->rotuloFora;
   const float abre = k->abre, esc = k->esc, f = k->f, px = k->px, py = k->py, w = k->w, h = k->h;
   const float varreFoco = k->varre;
-  if (tipo == FILEIRA_REDONDA) { desenhaRedonda(cItem, t, caminho, px, py, w, f); return; }
+  if (tipo == FILEIRA_REDONDA) {
+    float d = larguraFil(r);
+    GfxRect base = {px + (w - d) * .5f, py + (h - d) * .5f, d, d};
+    desenhaRedonda(cItem, t, caminho, base, (GfxRect){px, py, w, h}, f, NULL);
+    return;
+  }
   // Hero A keeps the curated copy or synopsis; the row heading names its source.
   if (tipo == FILEIRA_HEROI) {
     const char *texto = NULL;
@@ -8450,7 +8467,8 @@ static void home_desenhar_(Uint32 agora) {
           // Pede pela largura REAL do card: e esta fileira que multiplica.
           // Com o teto unico de 640 cada poster custava 2,4 MB e o cache
           // estourava com ~40 texturas, despejando o que ainda estava na tela.
-          GLuint t = caminho ? tex_obter_larg(caminho, tipo == FILEIRA_PALCO ? lw : w) : 0;
+          GLuint t = caminho ? tex_obter_larg(caminho,
+            tipo == FILEIRA_PALCO || tipo == FILEIRA_REDONDA ? lw : w) : 0;
           // ARTE CHEGANDO: so esvanece quem foi visto esperando (revela.h).
           float aArte = revela_arte(&revArte[r][c], t != 0, agora);
           // ANEL DE FOCO: 4 px de #FFFFFF, POR FORA da arte.

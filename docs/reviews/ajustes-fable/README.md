@@ -114,6 +114,12 @@ Ilha com a mola oficial (`anim_mola`/`mov_mola_assenta`); foco de linha interpol
 - [x] Revisão da central (28/10): 4 P1 — retrato sem navegação de seções, rotas utilitárias sem alvo de ponteiro, listas das rotas sem rolagem, escolha parental invisível sem ilha 3. Corrigidos com `tests/ajustes_tri_p1.sh` (15 FAIL no baseline 96d834d06, 0 depois). P2 anotados, não feitos: o chip "Diferente do padrão" conta com `AJ_N`/`triMutavel` e a lista com `AJ_N_TELA`; desempenho em TV fraca não medido.
 - [x] Merge de integracao/2.1 (fonteincompat + guiapolir): os 6 toggles novos já estavam em TELA[] e aparecem nas ilhas; ganharam ícone e os do guia ganharam ajuda (30 idiomas). Suíte verde de novo, nav21 0 violações, Android rc=0. `ajustes_ux_dados` já falha em integracao/2.1 (uxValorPadrao dos AJ_FONTE_OCULTAR_* devolve 0/1 e valorPadrao é 2) — herança, não desta branch.
 
+### Integration follow-up
+
+Merged `integracao/2.1` at `22386135de`, retaining the four Pencil/v4 deletions. The Android-only `AJ_TV_HOME` row is inherited through `TELA[]` in This TV; the catalog gate now classifies it with the other Android platform rows.
+
+Both reported assertions also failed on plain `integracao/2.1` in a detached temporary worktree: `ajustes_padroes` at line 210 and `ajustes_ux_dados` at line 479. Four misplaced translation keys caused `conferirOrdem()` to disable all translation lookup. Restoring byte order in the English table and all 29 aligned language tables fixes the cause without changing assertions or translations. All 11 requested Settings checks pass. The requested `tools/android.sh` build also passes (rc=0), producing local APKs only.
+
 ## 6. Desvios do mockup, de propósito
 
 - Linhas de 60 px com a frase curta só na linha em foco (2.0.3), não 76 px com frase em todas: cabem 9 opções por tela em vez de 7, e a ilha 3 já explica tudo.

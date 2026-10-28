@@ -89,27 +89,44 @@ int main(void) {
   }
   assert(h[0] == h[1] && h[1] == h[2]);
   assert(w[0] == w[1] && w[1] == w[2]);
-  // Refined shares Modern episode metrics in every card size.
+  // Dynamic retains the Apple TV cards from before 60043132c.
   for (v = 0; v < 3; v++) {
     char settings[80];
     snprintf(settings, sizeof settings, "homeLayoutLocal 2\nepTamanhoLocal %d\n", v);
     gravar(settings);
-    assert(epCardW() == w[v] && epCardH() == h[v]);
-    assert(epThumbH() == th[v] && epCardPasso() == p[v]);
-    assert(epCardH() - epThumbH() == 294);
+    assert(epApple() && !epModerno());
+    assert(epCardW() == 420 && epCardH() == 500);
+    assert(epThumbH() == 236 && epCardPasso() == 452);
+    assert(epCardH() - epThumbH() == 264);
+    assert(secaoN(SEC_ABAS_INFO) == (nAbasInfo() > 1 ? nAbasInfo() : 0));
+    nivel = 1; foco.fileira = SEC_EPISODIOS;
+    assert(secaoAlvo(SEC_TEMPORADAS) == .42f);
+    aberto=1; saindo=0; foco.coluna=2;
+    for (i=0;i<120;i++) detail_atualizar(1.f/60,4000+i*16);
+    assert(fabsf(scrollSec[SEC_EPISODIOS]-2*452)<1);
+    assert(fabsf(conteudoSec[SEC_EPISODIOS]-1286)<.01f);
+    { DET_INI();
+      assert(fabsf(scrollY-fmaxf(0,fminf(docFim-NV_TELA_H,
+                                       1286-NV_TELA_H*NV_DETP_ALVO_FILEIRA)))<1);
+      TXT_FIM(); }
+    e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_UP; detail_evento(&e);
+    assert(foco.fileira==SEC_TEMPORADAS && foco.coluna==colTemp(temporada));
+    e.key.keysym.sym=SDLK_DOWN; detail_evento(&e);
+    assert(foco.fileira==SEC_EPISODIOS && foco.coluna==2);
   }
 
-  // Standard shares the approved fixed Detail metrics.
+  // Standard retains its original landscape cards.
   for (v = 0; v < 3; v++) {
     char settings[80];
     snprintf(settings, sizeof settings, "homeLayoutLocal 1\nepTamanhoLocal %d\n", v);
     gravar(settings);
     assert(ajustes_home_layout() == HOME_LAYOUT_PADRAO);
-    assert(epCardW() == 420 && epThumbH() == 236 && epCardH() == 530);
-    assert(epCardPasso() == 448);
+    assert(!epApple() && !epModerno());
+    assert(epCardW() == NV_DETP_EP_W && epThumbH() == NV_DETP_EP_THUMB_H);
+    assert(epCardH() == NV_DETP_EP_H && epCardPasso() == NV_DETP_EP_PASSO);
     assert(epRowY() == conteudoSec[SEC_EPISODIOS]);
     assert(alturaSecao(SEC_EPISODIOS) == epCardH());
-    assert(epCardH() - epThumbH() == 294);
+    assert(epCardH() == epThumbH());
     aberto = 1; saindo = 0; nivel = 1;
     foco.fileira = SEC_EPISODIOS; foco.coluna = 0;
     for (i = 0; i < 30; i++) detail_atualizar(1.0f / 60.0f, 2000 + i * 16);
