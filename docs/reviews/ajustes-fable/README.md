@@ -99,8 +99,8 @@ Ilha com a mola oficial (`anim_mola`/`mov_mola_assenta`); foco de linha interpol
 - [x] Implementação (três ilhas, editores compactos, rotas, parental, remoção v4/Pencil)
 - [x] i18n (25 strings, 29 idiomas)
 - [x] Provas: ajustes_tri, ajustes_opus (28/28), padroes, tour, ux_interacao, escopo, toque_modo, categorias_ui, tri_review, ux_dados, busca, perfil, secoes, lista_cabecalho, tela_cobre_enum, nav21_live, sync, texto, dependencia, fonte, iptv, seguro, trakt610, tri_shot; nav21: 3586 checks, 0 violações
-- [ ] Build Android
-- [ ] Entrega à central (branch + commit)
+- [x] Build Android: build/android/Nuvio-2.0.8-android.apk (73 MB), lite armv7/arm64 — tools/android.sh rc=0 em 28/10
+- [x] Entrega à central: branch agente/21-21-ajustesfable, commit 66a9a16fa (+ este doc)
 
 ## 6. Desvios do mockup, de propósito
 
