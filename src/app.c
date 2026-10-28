@@ -6096,7 +6096,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // a lista ficaria cobrindo a tela nova.
 #ifdef NV_IOS
   { int d = ios_destino_pedido(); if (d >= 0) menu_ir(d); }
-  { int a = ios_acao_pedida(); if (a >= 0) detail_acao_barra(a); }
+  { int a = ios_acao_pedida(); if (a >= 0) { if (a >= 10) biblioteca_acao_barra(a); else detail_acao_barra(a); } }
 #endif
   // Botao do destaque em pe (+, fontes, trailer): a pagina abre primeiro e a
   // acao entra quando ela ja assentou, pelo mesmo caminho da barra do iOS.

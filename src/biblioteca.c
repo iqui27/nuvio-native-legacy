@@ -268,7 +268,7 @@ static int bibTinta2(void) { return 205; }
 // BIB_SUBIDA. Listas and an open list keep their own approved headers.
 #define BIB_LINHA1_Y      37.0f   // tabs top when there is no menu pill
 #define BIB_SUBIDA       152.0f   // chips 312 -> 160, grid 388 -> 236
-#define BIB_SEG_H         NV_CTRL_H   // .seg: 5 + (23 + 2 x 11) + 5
+#define BIB_SEG_H         (bibFone() ? hpt(40.0f) : NV_CTRL_H)   // .seg: 5 + (23 + 2 x 11) + 5
 #define BIB_SEG_PAD        5.0f
 #define BIB_SEG_ITEM_PADX 22.0f
 #define BIB_SEG_ITEM_GAP   4.0f
@@ -279,12 +279,18 @@ static int bibTinta2(void) { return 205; }
 #define BIB_COLUNAS_MAX      8
 // Cartazes mantem o tamanho real (Escala de texto nao os muda): k compensa a tela
 // virtual da camada de texto (gfx_poster_k, 1 em 100%).
-#define BIB_CARD_W       (220.0f * gfx_poster_k())
-#define BIB_POSTER_H     (330.0f * gfx_poster_k())
-#define BIB_CARD_GAP      26.0f
+// iOS (mock ios-08): no iPhone fechado 4 colunas de 78 pt, no display interno
+// aberto 8 colunas de 92 pt com 24 pt de vao; as funcoes ficam apos bibRetrato.
+static float bibCartaoW(void);
+static float bibCartaoGap(void);
+#define BIB_CARD_W       bibCartaoW()
+#define BIB_POSTER_H     (bibCartaoW() * 1.5f)
+#define BIB_CARD_GAP     bibCartaoGap()
 #define BIB_TIT_GAP       10.0f
-#define BIB_LINHA_PASSO  (BIB_POSTER_H * (1.0f + BIB_FOCO_ESCALA * 0.5f) + BIB_TIT_GAP + 14.0f + 52.0f + 2.8f)
+#define BIB_LINHA_PASSO  (BIB_POSTER_H * (1.0f + BIB_FOCO_ESCALA * 0.5f) + BIB_COLA + 2.8f)
 #define BIB_FOCO_ESCALA    0.08f
+// Caption tail under a poster: gap + title lines (phone: 8+20+17+8 pt).
+#define BIB_COLA          (bibFone() ? 53.0f * bibPt() : BIB_TIT_GAP + 14.0f + 52.0f)
 // Onde a grade comeca em cada estado: o mesmo y, com ou sem lista aberta — as
 // acoes da lista ocupam a faixa dos filtros.
 #define BIB_GRADE_Y_ABERTA BIB_GRADE_Y
@@ -404,6 +410,7 @@ static int  ordemPega = -1;      // posicao do titulo pego, -1 = solto
 static int  ordemMudou;
 static int  escrevendo;          // 1 = uma escrita DESTA tela esta em voo
 static int  compartilha;         // 1 = o QR do link da lista esta na tela
+static int  bibOpcoes;           // iPhone: 1 = Ordenar, 2 = Filtrar (abertos pela barra do sistema)
 static float compartA, compartForma, compartFormaV;  // mola da folha sem relogio
 static char urlLista[200];
 static char descNova[192];       // a descricao enviada, para espelhar no OK
@@ -581,12 +588,40 @@ static float paginaX(void) {
 }
 static int temOrigens(void) { return estado() != EST_ITENS && modo != MODO_ASSISTIDOS; }
 static int bibRetrato(void);
+static int bibFone(void);
+static int bibAmplo(void);
+static float bibPt(void);
+static float bibCartaoW(void);
+static float bibCartaoGap(void);
+static int bibColunasMax(void);
+// Grade do mock iOS: so a grade de cartazes (nao lista, nao pagina do Trakt).
+static int modoLinha(void);
+static int bibGradeIos(void) {
+  return (bibFone() || bibAmplo()) && estado() != EST_LISTAS && !modoLinha() &&
+         !(temAberta && aberta.fonte == LST_TRAKT);
+}
+// Origem e largura da grade do mock em unidades da camada: a grade corre por
+// baixo da barra (recuos nao a empurram); aberto, a lacuna entre as colunas 4
+// e 5 cai na dobra (centrada nos 951 pt).
+static float bibGradeIosW(void) {
+  int n = bibColunasMax();
+  return n * bibCartaoW() + (n - 1) * bibCartaoGap();
+}
+static float bibGradeIosX(void) {
+  if (bibFone()) return 40.0f * bibPt();
+  return ((float)NV_TELA_W - bibGradeIosW()) * 0.5f;
+}
 // The "Origens" chip exists where the title grid has the panel beside it.
 static int botaoOrigens(void) { return temOrigens() && !bibRetrato(); }
 // The panel takes its column only while open (layout snaps; drawing animates).
-static int origensNaGrade(void) { return temOrigens() && (origensAbertas || !botaoOrigens()); }
+static int bibFone(void);
+static int bibAmplo(void);
+// Mock do iPhone: a grade e a tela toda, sem painel de origens ao lado.
+static int origensIos(void) { return bibFone() || bibAmplo(); }
+static int origensNaGrade(void) { return temOrigens() && !origensIos() && (origensAbertas || !botaoOrigens()); }
 static int modoLinha(void);
 static float bibX(void) {
+  if (bibGradeIos()) return bibGradeIosX();
   if (temAberta && aberta.fonte == LST_TRAKT && !trilha) return paginaX() + 560;
   if (botaoOrigens() && modoLinha()) return paginaX() + ANC(364.0f) * animOrig;
   return paginaX() + (origensNaGrade() ? (modo == MODO_LISTAS ? 364.0f : ANC(364.0f)) : 0.0f);
@@ -601,6 +636,7 @@ static float bibDireita(void) {
   return x + w;
 }
 static float bibW(void) {
+  if (bibGradeIos()) return bibGradeIosW();
   if (temAberta && aberta.fonte == LST_TRAKT && !trilha)
     return fmaxf(320, bibDireita() - bibX() - 448);
   if (listasMinhas()) return bibDireita() - bibX() - lmPainel() - 36;
@@ -620,14 +656,58 @@ static int bibRetrato(void) {
   return 0;
 #endif
 }
+// iPhone retrato (fechado) e display interno aberto (largo), por LARGURA e nao
+// por "e Duo". Fora do touch UI (TV, Android paisagem, tablet) devolvem 0 e
+// tudo segue com as constantes de sempre.
+static int bibFone(void) {
+#ifdef NV_TOUCH_UI
+  return layout_modo_mobile() && NV_TELA_H > NV_TELA_W;
+#else
+  return 0;
+#endif
+}
+static int bibAmplo(void) {
+#if defined(NV_TOUCH_UI) && (defined(NV_IOS) || defined(NV_BIB_AMPLO))
+  return layout_modo_mobile() && NV_TELA_W > NV_TELA_H && NV_TELA_W < NV_TELA_H * 1.6f;
+#else
+  return 0;
+#endif
+}
+// pt do mock -> unidades da camada ativa (466 pt fechado, 951 pt aberto).
+static float bibPt(void) { return (float)NV_TELA_W / (bibAmplo() ? 951.0f : 466.0f); }
+static float bibCartaoW(void) {
+  if (bibFone()) return 78.0f * bibPt();
+  if (bibAmplo()) return 92.0f * bibPt();
+  return 220.0f * gfx_poster_k();
+}
+static float bibCartaoGap(void) {
+  if (bibFone()) return 8.0f * bibPt();
+  if (bibAmplo()) return 24.0f * bibPt();
+  return 26.0f;
+}
+static int bibColunasMax(void) { return bibFone() ? 4 : bibAmplo() ? 8 : 7; }
 static float bibHS(void) { return fmaxf(1.0f, escala_min(BIB_TOPO_ESCALA_MIN)); }
 static float bibRel(void) { return bibHS() / gfx_escala_txt(); }
+// pt of the 466 pt mock -> header units (header layer = layer / bibRel()).
+static float hpt(float pt) { return pt * bibPt() / bibRel(); }
 static float hdrX(void) { return paginaX() / bibRel(); }
-static float hdrDir(void) { return bibDireita() / bibRel(); }
+static float hdrDir(void) {
+  float d = bibDireita() / bibRel();
+#ifdef NV_TOUCH_UI
+  // Phone: controls stop at the system bar (84 pt); only art runs under it.
+  if (bibFone()) d = fminf(d, ((float)NV_TELA_W - 88.0f * bibPt()) / bibRel());
+#endif
+  return d;
+}
 static float hdrW(void) { return hdrDir() - hdrX(); }
 // Quantos seletores a faixa tem: "Para ver" ganha o quarto, "Origem".
 static int bibNPicks(void);
-static float bibControleMax(void) { return (hdrW() - BIB_FAIXA_GAP * 2.0f) / (float)bibNPicks(); }
+static float bibControleMax(void) {
+#ifdef NV_TOUCH_UI
+  if (bibFone()) return (hdrW() - BIB_FAIXA_GAP * 3.0f) / 4.0f;
+#endif
+  return (hdrW() - BIB_FAIXA_GAP * 2.0f) / (float)bibNPicks();
+}
 // Os chips descem para uma segunda linha sob as abas: sempre no retrato e, na
 // paisagem, quando abas + chips nao cabem na largura (ver bibFaixaQuebra).
 static int bibFaixaQuebra(void);
@@ -666,7 +746,7 @@ static float pickerY(void) {
 // o passo e a largura util dividida pelas colunas: 250,6 nos 1728.
 static int colunasCartaz(void) {
   int n = (int)((bibW() + BIB_CARD_GAP) / (BIB_CARD_W + BIB_CARD_GAP));
-  return n < 1 ? 1 : n > 7 ? 7 : n;
+  return n < 1 ? 1 : n > bibColunasMax() ? bibColunasMax() : n;
 }
 static int colunasLista(void) {
 #ifdef NV_TOUCH_UI
@@ -716,7 +796,7 @@ static float alturaLinha(void) {
          : paginaLista() ? BIB_LIN_H : BIB_TL_H;
   if (estado() == EST_LISTAS) return BIB_LC_H;
   // poster + 10 + o titulo em ate duas linhas (o focado abre a segunda)
-  return BIB_POSTER_H + BIB_TIT_GAP + 14.0f + 52.0f;
+  return BIB_POSTER_H + BIB_COLA;
 }
 static float passoLinha(void) {
   if (modo == MODO_ASSISTIDOS && modoLinha()) return 126;
@@ -734,6 +814,9 @@ static float gradeY(void) {
   // The Lists tabs share the Library header and chip row, so their rows anchor
   // the same way (y * bibRel() climbed into the chips at 85 %).
   y = !temAberta ? ANC(y) : y * bibRel();
+  // Phone: no chip row or summary line, the grid starts right under the tabs.
+  if (bibFone() && modo != MODO_LISTAS && !temAberta)
+    y = (faixaY() + BIB_SEG_H) * bibRel() + 16.0f * bibPt();
   if (modo == MODO_ASSISTIDOS && modoLinha()) y += 44;
   return paginaLista() && !trilha ? 160.0f : y;   // under the 6B column kicker
 }
@@ -1193,7 +1276,7 @@ int biblioteca_iniciar(void) {
   focoOrigem = focoBotaoOrig = faixaNoBotao = 0; origemSel = 0; esconderVistos = 0; generoSel = 0;
   pickSel = 0; temAberta = 0; acaoSel = 0; listaTab = 0; recado[0] = 0; recadoAte = 0.0f;
   tecPara = TEC_NADA; abertaPropria = 0; edModo = ED_NADA; ordemPega = -1;
-  ordemMudou = 0; compartilha = 0;
+  ordemMudou = 0; compartilha = 0; bibOpcoes = 0;
   memset(animModo, 0, sizeof animModo);
   memset(animPick, 0, sizeof animPick);
   sair = 0; pedido = -1; pediuRelogio = 0;
@@ -1476,6 +1559,10 @@ static void alternarOrigens(void) {
   remapear(1);
 }
 
+// First focusable picker: on a phone the Sort/Filter chips are hidden (system
+// bar owns them), so only the grid/list toggle takes D-pad focus.
+static int pickMin(void) { return bibFone() && modo != MODO_LISTAS && estado() != EST_ITENS ? bibViewStart() : 0; }
+
 static void subirParaFaixa(void) {
   if (faixaNoPicker) {
     foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel;
@@ -1651,6 +1738,10 @@ static void biblioteca_evento_(const SDL_Event *e) {
     if (e->type == SDL_KEYDOWN && !e->key.repeat) compartilha = 0;
     return;
   }
+  if (bibOpcoes) {   // a folha de Ordenar/Filtrar e modal: qualquer tecla a fecha
+    if (e->type == SDL_KEYDOWN && !e->key.repeat) bibOpcoes = 0;
+    return;
+  }
 #ifdef NV_TOUCH_UI
   if (e->type == SDL_KEYDOWN) toqueBibliotecaRetomarFoco();
 #endif
@@ -1753,7 +1844,7 @@ static void biblioteca_evento_(const SDL_Event *e) {
     if (k == SDLK_LEFT) { sair = 1; return; }   // 1a aba: o app abre a barra
     if (k == SDLK_RIGHT && foco.coluna < BIB_N_MODOS - 1) { foco.coluna++; return; }
     if (k == SDLK_RIGHT) return;
-    if (k == SDLK_DOWN) { foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel; return; }
+    if (k == SDLK_DOWN) { foco.fileira = BIB_FIL_PICK; pickSel = pickMin(); foco.coluna = pickSel; return; }
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
       int novo = foco.coluna;
       if (novo != modo) {
@@ -1786,9 +1877,10 @@ static void biblioteca_evento_(const SDL_Event *e) {
     return;
   }
   if (foco.fileira == BIB_FIL_PICK) {
+    if (pickSel < pickMin()) { pickSel = pickMin(); foco.coluna = pickSel; }   // phone: Sort/Filter chips are hidden
     if (k == SDLK_RIGHT && pickSel < bibNPicks() - 1) { pickSel++; foco.coluna = pickSel; return; }
-    if (k == SDLK_LEFT  && pickSel > 0) { pickSel--; foco.coluna = pickSel; return; }
-    if (k == SDLK_LEFT && botaoOrigens()) { focoBotaoOrig = 1; return; }
+    if (k == SDLK_LEFT  && pickSel > pickMin()) { pickSel--; foco.coluna = pickSel; return; }
+    if (k == SDLK_LEFT && botaoOrigens() && !pickMin()) { focoBotaoOrig = 1; return; }
     if (k == SDLK_LEFT)  { foco.fileira = BIB_FIL_MODO; foco.coluna = BIB_N_MODOS - 1; return; }
     if (k == SDLK_UP) { foco.fileira = BIB_FIL_MODO; foco.coluna = modo; return; }
     if (k == SDLK_DOWN) {
@@ -2222,6 +2314,25 @@ static int contagemModo(int a) {
   textoModo(a, num, sizeof num);
   return num[0] ? atoi(num) : -1;
 }
+// Phone: labels stay at their real size (11.5 pt, count 10 pt); only the item
+// padding shrinks (to a floor) so the five tab names fit on one line.
+static float textoFone(void) {
+  float w = 0;
+  for (int a = 0; a < BIB_N_MODOS; a++) {
+    char num[16];
+    w += (float)txt_linha(TXT_ROW_TITULO, ROT_MODO[a], 140, 140, 140, 255).w * (hpt(13.0f) / NV_FT_ROW_TITULO);
+    textoModo(a, num, sizeof num);
+    if (num[0]) w += 5.0f + (float)txt_linha(TXT_CAPTION2, num, 93, 93, 93, 255).w * (hpt(10.0f) / NV_FT_CAPTION2);
+  }
+  return w;
+}
+static float escM(void) { return bibFone() ? hpt(13.0f) / NV_FT_ROW_TITULO : BIB_ESC_MODO; }
+static float escN(void) { return bibFone() ? hpt(10.0f) / NV_FT_CAPTION2 : BIB_ESC_N; }
+static float padM(void) {
+  if (!bibFone()) return BIB_SEG_ITEM_PADX;
+  float livre = hdrW() - BIB_SEG_PAD * 2.0f - BIB_SEG_ITEM_GAP * (BIB_N_MODOS - 1) - textoFone();
+  return fmaxf(hpt(2.0f), fminf(hpt(9.0f), livre / (2.0f * BIB_N_MODOS)));
+}
 static float larguraModo(int a) {
   char num[16];
   if (!bibRetrato()) {
@@ -2234,11 +2345,13 @@ static float larguraModo(int a) {
     }
     return w;
   }
-  float w = (float)txt_linha(TXT_ROW_TITULO, ROT_MODO[a], 140, 140, 140, 255).w * BIB_ESC_MODO;
+  float w = (float)txt_linha(TXT_ROW_TITULO, ROT_MODO[a], 140, 140, 140, 255).w * escM();
   textoModo(a, num, sizeof num);
-  if (num[0]) w += 9.0f + (float)txt_linha(TXT_CAPTION2, num, 93, 93, 93, 255).w * BIB_ESC_N;
-  w += BIB_SEG_ITEM_PADX * 2.0f;
-  return bibRetrato() ? fminf(w, (hdrW() - BIB_SEG_PAD * 2.0f - BIB_SEG_ITEM_GAP * (BIB_N_MODOS - 1)) / BIB_N_MODOS) : w;
+  if (num[0]) w += (bibFone() ? 5.0f : 9.0f) + (float)txt_linha(TXT_CAPTION2, num, 93, 93, 93, 255).w * escN();
+  w += padM() * 2.0f;
+  if (!bibRetrato()) return w;
+  float cap = (hdrW() - BIB_SEG_PAD * 2.0f - BIB_SEG_ITEM_GAP * (BIB_N_MODOS - 1));
+  return bibFone() ? w : fminf(w, cap / BIB_N_MODOS);
 }
 static float larguraSeletor(void) {
   float w = BIB_SEG_PAD * 2.0f + BIB_SEG_ITEM_GAP * (BIB_N_MODOS - 1);
@@ -2331,19 +2444,19 @@ static void desenhaModos(void) {
     textoModo(a, num, sizeof num);
     ln = (TxtLinha){0};
     if (bibRetrato()) {
-      float util = r.w - BIB_SEG_ITEM_PADX * 2.0f;
-      if (num[0]) ln = txt_linha_corta(TXT_CAPTION2, num, tn, tn, tn, 255, util * .4f / BIB_ESC_N);
+      float util = r.w - padM() * 2.0f;
+      if (num[0]) ln = txt_linha_corta(TXT_CAPTION2, num, tn, tn, tn, 255, util * .4f / escN());
       l = txt_linha_corta(TXT_ROW_TITULO, ROT_MODO[a], t, t, t, 255,
-                          (util - (num[0] ? 9.0f + (float)ln.w * BIB_ESC_N : 0.0f)) / BIB_ESC_MODO);
+                          (util - (num[0] ? (bibFone() ? 5.0f : 9.0f) + (float)ln.w * escN() : 0.0f)) / escM() + 4.0f);
     } else l = txt_linha(TXT_ROW_TITULO, ROT_MODO[a], t, t, t, 255);
-    txtEsc(l, r.x + BIB_SEG_ITEM_PADX, r.y + (r.h - (float)l.h * BIB_ESC_MODO) * 0.5f,
-           BIB_ESC_MODO, 1.0f);
+    txtEsc(l, r.x + padM(), r.y + (r.h - (float)l.h * escM()) * 0.5f,
+           escM(), 1.0f);
     if (num[0]) {
       // Na linha de BASE do nome (align-items: baseline), nao no meio dele.
       if (!bibRetrato()) ln = txt_linha(TXT_CAPTION2, num, tn, tn, tn, 255);
-      txtEsc(ln, r.x + BIB_SEG_ITEM_PADX + (float)l.w * BIB_ESC_MODO + 9.0f,
-             r.y + (r.h + (float)l.h * BIB_ESC_MODO) * 0.5f - (float)ln.h * BIB_ESC_N - 1.0f,
-             BIB_ESC_N, 1.0f);
+      txtEsc(ln, r.x + padM() + (float)l.w * escM() + (bibFone() ? 5.0f : 9.0f),
+             r.y + (r.h + (float)l.h * escM()) * 0.5f - (float)ln.h * escN() - 1.0f,
+             escN(), 1.0f);
     }
     x += w + BIB_SEG_ITEM_GAP;
   }
@@ -2412,6 +2525,14 @@ static void desenhaBotaoOrig(void) {
   txt_desenhar(l, r.x + BIB_CHIP_PADX + BIB_BOTAO_ICONE + 10.0f, r.y + (r.h - (float)l.h) * 0.5f);
 }
 
+// Phone: the grid/list toggle sits on the title row so the 4 chips get the whole width.
+static float visY(void) {
+  float y = pickerY();
+#ifdef NV_TOUCH_UI
+  if (bibFone()) y -= 79.0f * bibPt() / bibRel();
+#endif
+  return y;
+}
 static float pickerLargura(int p) {
   float w = pickerLarguraNat(p);
   if (bibRetrato()) return fminf(w, bibControleMax());
@@ -2438,7 +2559,7 @@ static void desenhaPicker(int p, float f) {
     // The mock's grid/list .seg: rimless track, chosen = .sel, focus = accent pill.
     int grid = p == bibViewStart();
     int sel = grid != modoLinha();
-    r = (GfxRect){ r.x, pickerY() + (BIB_CHIP_H - 44.0f) * 0.5f, BIB_VIS_W, 44.0f };
+    r = (GfxRect){ r.x, visY() + (BIB_CHIP_H - 44.0f) * 0.5f, BIB_VIS_W, 44.0f };
     ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroPicker, NULL, p, 0);
     if (grid) {
       GfxRect tr = { r.x - 5.0f, r.y - 5.0f, BIB_VIS_TW, 54.0f };
@@ -2456,6 +2577,7 @@ static void desenhaPicker(int p, float f) {
               cor / 255.0f, cor / 255.0f, cor / 255.0f, 1);
     return;
   }
+  if (bibFone() && modo != MODO_LISTAS) return;   // phone: Sort/Filter live in the system bar
   ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroPicker, NULL, p, 0);
   if (modo == MODO_LISTAS) {
     if (p < 4) return; // The shared segmented control owns labels and focus.
@@ -2715,6 +2837,7 @@ static void linhaMeta(const CatItem *ci, char *dst, size_t n);
 // ("Borda no cartaz em foco") estiver ligado — o ajuste e da pessoa e e
 // respeitado aqui como na Home. O padrao de fabrica dele e LIGADO (ajustes.c,
 // valor[]), entao quem quer o Glass UI do mockup desliga la.
+static void linhaMetaFone(const CatItem *ci, char *dst, size_t n);
 static void desenhaCartaz(const CatItem *ci, GfxRect base, float f, float a,
                           RevelaArte *rv, Uint32 agora) {
   float esc = 1.0f + BIB_FOCO_ESCALA * f;
@@ -2755,7 +2878,19 @@ static void desenhaCartaz(const CatItem *ci, GfxRect base, float f, float a,
   // CatItem temporario com imdb/tipo: o historico responde igual.
   if (ci && ajustes_selo_visto() && cat_visto(ci))
     badges_selo_visto(card.x, card.y, card.w, a * aArte);
-  if (ci) {
+  if (ci && bibFone()) {
+    // Phone: 11 pt semibold title, 9.5 pt dim "year · type" under it (mock).
+    float pt = bibPt(), ty = base.y + base.h + 8.0f * pt;
+    // x0.83 / x0.67: measured on Duo D, the glyph atlas renders larger than nominal.
+    float et = 11.0f * 0.83f * pt / NV_FT_HERO_SEC, em = 9.5f * 0.67f * pt / NV_FT_MINI;
+    char meta[96]; linhaMetaFone(ci, meta, sizeof meta);
+    { char *sep = strstr(meta, " · ");   // does not fit the 78 pt column: keep the year
+      if (sep && (float)txt_linha(TXT_MINI, meta, 0, 0, 0, 0).w * em > base.w) *sep = 0; }
+    TxtLinha tl = txt_linha_corta(TXT_HERO_SEC, ci->titulo, 255, 255, 255, 255, base.w / et);
+    txtEsc(tl, base.x, ty, et, a);
+    TxtLinha m = txt_linha_corta(TXT_MINI, meta, 145, 147, 153, 255, base.w / em);
+    txtEsc(m, base.x, ty + 15.0f * pt, em, a);
+  } else if (ci) {
     float ty = base.y + base.h + BIB_TIT_GAP + 14.0f * f;
     if (f > 0.5f) {
       // Em foco: 18/600 branco (o Bold de 18, sem reducao), em ate duas
@@ -2928,6 +3063,19 @@ static void linhaMetaLista(const CatItem *ci, char *dst, size_t n) {
   acrescentarMeta(dst, n, &k,
                   i18n(ci->progresso > 0 && ci->progresso < 100
                          ? "Pode continuar" : "Não assistido"));
+}
+
+// Phone poster caption: "year · Movie/Series". CatItem has no year field, so
+// the year comes out of `meta` when it has one; otherwise only the type shows.
+static void linhaMetaFone(const CatItem *ci, char *dst, size_t n) {
+  char ano[8] = "", item[96];
+  const char *p;
+  dst[0] = 0;
+  if (!ci) return;
+  for (p = ci->meta; proximoMeta(&p, item, sizeof item); )
+    if (ehAnoMeta(item)) { snprintf(ano, sizeof ano, "%s", item); break; }
+  if (ano[0]) snprintf(dst, n, "%s · %s", ano, i18n(ehSerie(ci) ? "Série" : "Filme"));
+  else snprintf(dst, n, "%s", i18n(ehSerie(ci) ? "Série" : "Filme"));
 }
 
 // COLUNA DE DISPONIBILIDADE: a retomada quando ha, senao a melhor qualidade
@@ -3648,7 +3796,7 @@ static void desenhaCabecalho(void) {
   // Layout Dinamica: "Biblioteca" esta na pilula da barra. Com uma lista
   // aberta sobra o nome dela, ao lado da pilula e centrado nela.
   { float px, py, pw, ph;
-    if (menu_pilula_rect(&px, &py, &pw, &ph)) {
+    if (!bibFone() && menu_pilula_rect(&px, &py, &pw, &ph)) {
       // A pilula do menu e medida em px reais; o topo desenha na tela virtual.
       float hs = bibHS();
       px /= hs; py /= hs; pw /= hs; ph /= hs;
@@ -3674,9 +3822,17 @@ static void desenhaCabecalho(void) {
       // Compact header: the title sits on the tabs row, centred on it.
       if (bibCompacto()) ty = BIB_FAIXA_Y + (BIB_SEG_H - (float)t.h) * 0.5f + 6.0f;
       txt_desenhar(t, hdrX(), ty - (modo == MODO_LISTAS ? 0.0f : 6.0f));
-    } }
+      // Phone: the count rides the title ("Library  28 titles"), dim.
+      if (bibFone() && !temAberta && modo != MODO_LISTAS) {
+        char n[64];
+        snprintf(n, sizeof n, "%d %s", nFiltro, i18n(nFiltro == 1 ? "título" : "títulos"));
+        float ec = hpt(13.5f) / NV_FT_HERO_SEC;
+        TxtLinha c = txt_linha(TXT_HERO_SEC, n, 145, 147, 153, 255);
+        txtEsc(c, hdrX() + (float)t.w + hpt(10.0f), ty - 6.0f + ((float)t.h - (float)c.h * ec) * 0.5f, ec, 1.0f);
+      } } }
 
   if (listasMinhas()) return;   // 6D: the list panel owns the right side
+  if (!temAberta && bibFone()) return;   // phone: right edge is the system bar, no sync line
   if (!temAberta) {
     float x = hdrDir();
     char status[96];
@@ -3774,6 +3930,8 @@ static void desenhaCabecalho(void) {
 // Resumo a direita da barra de modos, e o recado da ultima acao quando houver.
 static void desenhaResumo(void) {
   if (paginaLista() && !trilha) return;
+  // Phone: the count lives on the title row; only a status note still shows.
+  if (bibFone() && !temAberta && modo != MODO_LISTAS && !(recadoAte > 0.0f && recado[0])) return;
   char resumo[220];
   const char *txt = resumo;
   if (recadoAte > 0.0f && recado[0]) txt = recado;
@@ -4006,6 +4164,60 @@ static void desenhaCompartilhar(void) {
   gfx_sem_transformar();
 }
 
+// ORDENAR / FILTRAR NO iPHONE. Os chips saem da tela (a barra do sistema tem os
+// dois simbolos); o toque abre esta folha. Ordenar escolhe e fecha; Filtrar
+// alterna a linha tocada e fica aberta para combinar tipo, genero e vistos.
+static int bibNOpcoes(void) { return bibOpcoes == 1 ? BIB_N_ORD : modo == MODO_ASSISTIDOS ? 1 : 3; }
+static void opcaoFecha(int a, int b) { (void)a; (void)b; bibOpcoes = 0; }
+static void opcaoToca(int i, int b) {
+  (void)b;
+  if (bibOpcoes == 1) { ordem = i; reconstruir(); bibOpcoes = 0; return; }
+  if (i == 0) tipo = (tipo + 1) % BIB_N_TIPOS;
+  else if (i == 1) generoSel = (generoSel + 1) % (int)(sizeof generos / sizeof generos[0]);
+  else esconderVistos = !esconderVistos;
+  reconstruir();
+}
+void biblioteca_acao_barra(int a) {
+  int quer = a == 10 ? 1 : a == 11 ? 2 : 0;
+  if (!quer || !bibFone() || modo == MODO_LISTAS) return;
+  bibOpcoes = bibOpcoes == quer ? 0 : quer;
+}
+static void desenhaOpcoes(void) {
+  if (!bibOpcoes || !bibFone()) return;
+  float pt = bibPt(), W = (float)NV_TELA_W, H = (float)NV_TELA_H;
+  int n = bibNOpcoes();
+  float rh = 48 * pt, pad = 16 * pt;
+  GfxRect r = { 16 * pt, 96 * pt, W - 32 * pt, pad * 2 + 24 * pt + rh * n };
+  float esc = 17 * pt / NV_FT_ROW_TITULO;
+  gfx_sem_recorte();
+  gfx_cor((GfxRect){ 0, 0, W, H }, 0, 0, 0, 0, T21_VEIL);
+  ponteiro_camada();
+  ponteiro_alvo(0, 0, W, H, NULL, opcaoFecha, 0, 0);
+  t21_ilha(r, T21_R_MODAL, 1);
+  ponteiro_alvo(r.x, r.y, r.w, r.h, NULL, NULL, 0, 0);
+  { TxtLinha t = txt_linha(TXT_MINI, i18n(bibOpcoes == 1 ? "Ordenar" : "Filtrar"), 145, 147, 153, 255);
+    txtEsc(t, r.x + pad, r.y + pad, 13 * pt / NV_FT_MINI, 1); }
+  for (int i = 0; i < n; i++) {
+    const char *nome, *val = "";
+    int sel = 0;
+    float y = r.y + pad + 24 * pt + rh * i;
+    if (bibOpcoes == 1) { nome = ROT_ORD[i]; sel = i == ordem; }
+    else if (i == 0) { nome = "Tipo"; val = ROT_TIPO[tipo]; }
+    else if (i == 1) { nome = "Gênero"; val = generos[generoSel]; }
+    else { nome = "Ocultar assistidos"; val = esconderVistos ? "Sim" : "Não"; }
+    TxtLinha l = txt_linha_corta(TXT_ROW_TITULO, i18n(nome), sel ? 255 : 243, sel ? 255 : 242, sel ? 255 : 239, 255, (r.w - pad * 2) / esc * 0.62f);
+    txtEsc(l, r.x + pad, y + (rh - (float)l.h * esc) * 0.5f, esc, sel || bibOpcoes == 2 ? 1.0f : 0.7f);
+    if (val[0]) {
+      TxtLinha v = txt_linha(TXT_ROW_TITULO, i18n(val), 145, 147, 153, 255);
+      txtEsc(v, r.x + r.w - pad - (float)v.w * esc, y + (rh - (float)v.h * esc) * 0.5f, esc, 1);
+    } else if (sel) {
+      TxtLinha v = txt_linha(TXT_ROW_TITULO, "•", 255, 255, 255, 255);
+      txtEsc(v, r.x + r.w - pad - (float)v.w * esc, y + (rh - (float)v.h * esc) * 0.5f, esc, 1);
+    }
+    ponteiro_alvo(r.x, y, r.w, rh, NULL, opcaoToca, i, 0);
+  }
+}
+
 static void desenhaVistaAnterior(Uint32 agora) {
   float alpha = 1 - anim_suave(animVista);
   if (temAberta || alpha <= .005f || ajustes_animacoes_reduzidas()) {
@@ -4109,7 +4321,7 @@ static void biblioteca_desenhar_(Uint32 agora) {
     }
     desenhaResumo();
     gfx_escala_sair(headerScale); }
-  if (origensNaGrade() || (temOrigens() && animOrig > 0.002f)) desenhaOrigens();
+  if (!origensIos() && (origensNaGrade() || (temOrigens() && animOrig > 0.002f))) desenhaOrigens();
   desenhaVistaAnterior(agora);
   nVistaAtual = 0; vistaModo = modo; vistaExibicao = exibicao;
   if (modo == MODO_ASSISTIDOS && modoLinha()) {
@@ -4347,5 +4559,6 @@ void biblioteca_desenhar(Uint32 agora) {
   gfx_sem_transformar();
   gfx_opacidade_grupo = opacity;
   desenhaCompartilhar();
+  desenhaOpcoes();
   TXT_FIM();
 }

@@ -215,6 +215,11 @@ static NuvioPainel *painelAtual(void) {
       [self item:@(i18n("Trailer")) icone:@"film" acao:DETAIL_BARRA_TRAILER],
       [self item:@(i18n("Assistido")) icone:@"eye" acao:DETAIL_BARRA_VISTO],
       [self item:@(i18n("Biblioteca")) icone:@"plus" acao:DETAIL_BARRA_LISTA] ]] ];
+  } else if (!strcmp(tela, "biblioteca")) {
+    // The chips leave the canvas on the phone; the core opens its sheets (ids 10/11).
+    n.trailingItemGroups = @[ [UIBarButtonItemGroup fixedGroupWithRepresentativeItem:nil items:@[
+      [self item:@(i18n("Ordenar")) icone:@"arrow.up.arrow.down" acao:10],
+      [self item:@(i18n("Filtrar")) icone:@"line.3.horizontal.decrease" acao:11] ]] ];
   } else {
     n.trailingItemGroups = @[];
   }
@@ -226,7 +231,7 @@ static NuvioPainel *painelAtual(void) {
   } else {
     n.leftBarButtonItems = @[];
   }
-  [self.navigationController setNavigationBarHidden:(raiz || imersiva) animated:YES];
+  [self.navigationController setNavigationBarHidden:((raiz && strcmp(tela, "biblioteca")) || imersiva) animated:YES];
   [abas setTabBarHidden:imersiva animated:YES];
   abasDobrar(0);   // navigation always folds the capsule to the active tab
 }
