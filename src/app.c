@@ -7603,12 +7603,18 @@ static void desenharAtrasDoPainel(void *ctx) {
     // home some com a pagina rolada. Telas fora do menu (Addons, Social,
     // diagnosticos) tem titulo proprio nesse canto: la ela some na hora, e a
     // barra abre pelo ESQUERDA na borda e pela faixa do ponteiro.
-    menu_pilula_mostrar(vertudo_aberta() || detail_aberto() ? -1.0f   // "Ver tudo"/colecao/pagina tem cabecalho proprio
-                        : tela == TELA_HOME ? home_topo_fracao()
-                        : ajustes_menu_topo() ? -1.0f   // #461: a barra no topo fechada so mora na home
-                        : (tela == TELA_EXPLORAR || tela == TELA_BUSCA ||
-                           tela == TELA_BIBLIOTECA || tela == TELA_AGENDA ||
-                           tela == TELA_PERFIL || tela == TELA_AJUSTES) ? 1.0f : -1.0f);
+    float pilula = vertudo_aberta() || detail_aberto() ? -1.0f   // "Ver tudo"/colecao/pagina tem cabecalho proprio
+                 : tela == TELA_HOME ? home_topo_fracao()
+                 : ajustes_menu_topo() ? -1.0f   // #461: a barra no topo fechada so mora na home
+                 : (tela == TELA_EXPLORAR || tela == TELA_BUSCA ||
+                    tela == TELA_BIBLIOTECA || tela == TELA_AGENDA ||
+                    tela == TELA_PERFIL || tela == TELA_AJUSTES) ? 1.0f : -1.0f;
+#ifdef NV_IOS
+    // Telefone em pe: a barra vertical do sistema ja diz a tela e leva as abas
+    // (mocks ios-02/08/11 sem pilula); a gaveta abre pelo gesto da borda.
+    if (layout_modo_mobile() && NV_TELA_H > NV_TELA_W) pilula = -1.0f;
+#endif
+    menu_pilula_mostrar(pilula);
     CAMADA_SE(menu_aberto());
     menu_desenhar(agora);
   }
