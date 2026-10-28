@@ -1,11 +1,45 @@
 // Offline production Home rendering, navigation and frame-counter proof.
+#include "../src/gfx.h"
+#include "../src/text.h"
+#include "../src/tex_cache.h"
+#include <string.h>
+static GfxRect roundAvatar;
+static float roundCaptionWidth, roundCaptionAlpha, roundDecodeWidth;
+static int roundCaptions;
+static void recordRect(GfxRect r, GLuint t, GfxModo mode, float f,
+                       float x, float y, float radius, float cr, float cg, float cb, float a) {
+  if (mode == GFX_AVATAR) roundAvatar = r;
+  gfx_rect(r, t, mode, f, x, y, radius, cr, cg, cb, a);
+}
+static TxtLinha recordCaption(TxtEstilo style, const char *s, int r, int g, int b, int a, float w) {
+  if (s && (!strncmp(s, "Round ", 6) || !strncmp(s, "Country ", 8))) {
+    roundCaptionWidth = w; roundCaptions++;
+  }
+  return txt_linha_corta(style, s, r, g, b, a, w);
+}
+static void recordAlpha(TxtLinha line, float x, float y, float a) {
+  if (line.w > 0) roundCaptionAlpha = a;
+  txt_desenhar_alpha(line, x, y, a);
+}
+static GLuint recordDecode(const char *path, float w) {
+  roundDecodeWidth = w;
+  return tex_obter_larg(path, w);
+}
+#define gfx_rect recordRect
+#define txt_linha_corta recordCaption
+#define txt_desenhar_alpha recordAlpha
+#define tex_obter_larg recordDecode
 #include "../src/home.c"
+#undef gfx_rect
+#undef txt_linha_corta
+#undef txt_desenhar_alpha
+#undef tex_obter_larg
 #include "../src/amigosfil.c"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 
 static Uint32 clockMs = 1000;
-static int failures, baseline;
+static int failures, baseline, roundShot;
 static const char *output;
 static double drawMs, frameTextMs;
 static int frameUploads, frameRaster;
@@ -52,6 +86,55 @@ static void focusRow(int r) {
   while (foco.fileira < r) { key(SDLK_DOWN); frames(80); }
   assert(!focoHero && foco.fileira == r);
 }
+static void roundFocus(int r) {
+  focusRow(r);
+  // Isolate the production drawer at a fixed base size throughout its spring.
+  const CatItem *ci = cat_item_exato(fileiraItemIndice(&fileiras[r], 0));
+  GLuint texture = tex_obter_larg(ci->poster, larguraFil(r));
+  check(texture != 0, "Round fixture artwork loaded");
+  roundCaptions = 0;
+  GfxRect baseRect = {200, 600, larguraFil(r), alturaFil(r)};
+  home_vitrine_cartao(ci, baseRect, baseRect, 1, 1, .5f);
+  check(fabsf(roundAvatar.w - larguraFil(r)) < .01f,
+        "Round ring stays outside photo without shrinking crop");
+  float base = larguraFil(r);
+  float unfocusedAlpha;
+  home_vitrine_cartao(ci, baseRect, baseRect, 1, 1, 0);
+  unfocusedAlpha = roundCaptionAlpha;
+  home_vitrine_cartao(ci, baseRect, baseRect, 1, 1, .5f);
+  check(roundCaptionAlpha > unfocusedAlpha && roundCaptionAlpha < .98f,
+        "Round name fades with shared focus value");
+  assert(ajustes_shot_valor("bordaFocoCartaz", 1));
+  key(SDLK_RIGHT); frame();
+  check(animFoco[r][0] > 0 && animFoco[r][1] > 0 && animFoco[r][1] < .999f,
+        "Round incoming and outgoing focus share Home spring");
+  GfxRect grown = {197, 597, base * 1.03f, base * 1.03f};
+  home_vitrine_cartao(ci, baseRect, grown, 1, 1, .5f);
+  check(fabsf(roundCaptionWidth - base) < .01f,
+        "Round name layout stays at resting width during focus growth");
+  check(fabsf(roundDecodeWidth - base) < .01f,
+        "Round texture decode stays at resting width during focus growth");
+  check(roundCaptions > 0, "Round names are drawn below photos");
+  frames(80);
+  assert(ajustes_shot_valor("bordaFocoCartaz", 0));
+  check(alturaTotalFil(r) >= alturaFil(r) + NV_POSTER_COPY_H,
+        "Round row reserves stable name space");
+}
+static void entryStrip(int r, const char *name) {
+  focusRow(r - 1);
+  SDL_Surface *strip = SDL_CreateRGBSurfaceWithFormat(0, 1920, 5400, 32, SDL_PIXELFORMAT_RGBA32);
+  assert(strip); capture(strip, 0);
+  float previous = scrollY;
+  key(SDLK_DOWN);
+  for (int i = 1; i < 5; i++) { frames(4); capture(strip, i); }
+  check(foco.fileira == r && scrollY > previous && fabsf(velY) > .1f,
+        "Down enters next row through shared vertical spring");
+  char path[1024];
+  snprintf(path, sizeof path, "%s/%s-down-%s.png", output, name, baseline ? "before" : "after");
+  assert(IMG_SavePNG(strip, path) == 0); SDL_FreeSurface(strip);
+  printf("STRIP %s frames=0,4,8,12,16 dt=1/60\n", path);
+  frames(100);
+}
 static void exercise(int r, const char *name) {
   focusRow(r);
   for (int i = 0; i < 8; i++) { key(SDLK_RIGHT); frames(50); }
@@ -60,7 +143,20 @@ static void exercise(int r, const char *name) {
   assert(strip);
   key(SDLK_RIGHT);
   capture(strip, 0);
+  float startX = scrollX[r];
+  float scaleBefore = gfx_escala_txt_entrar();
+  float targetX = alvoScrollFil(r, foco.coluna, startX, 0);
+  gfx_escala_sair(scaleBefore);
+  float expectedVelocity = velX[r];
+  float expectedX = anim_mola2_reduzida(&expectedVelocity, startX, targetX,
+                                      1.f / 60, NV_MOLA2_SCROLL, 0);
   int previous = heroEspecialCol[r]; frame();
+  if (fileiras[r].tipo != FILEIRA_SOCIAL) {
+    printf("SCROLL row=%s start=%.3f target=%.3f expected=%.3f actual=%.3f\n",
+           name, startX, targetX, expectedX, scrollX[r]);
+    check(fabsf(scrollX[r] - expectedX) < .01f && scrollX[r] > startX && scrollX[r] < targetX,
+          "Right scroll uses official Home spring without snapping");
+  }
   if (!baseline && (fileiras[r].tipo == FILEIRA_SOCIAL || fileiras[r].tipo == FILEIRA_CATALOGOS))
     check(heroEspecialCol[r] == previous && heroEspecialAlpha[r] > 0 && heroEspecialAlpha[r] < 1,
           "hero title and metadata fade before changing identity");
@@ -103,7 +199,12 @@ static void exercise(int r, const char *name) {
     GfxRect a = afRect(c, ultX0 - scroll, 0); left = a.x; right = a.x + a.w;
   } else { left = homeFileiraX(r, c); right = left + larguraFil(r); }
   check(left >= homeConteudoX() - 1 && right <= homeConteudoDireita() + 1, "settled focus visible");
-  for (int i = 0; i < 5; i++) { key(SDLK_RIGHT); frames(2); }
+  int rapidStart = foco.coluna;
+  int presses = foco.nColunas[r] - 1 - rapidStart;
+  if (presses > 5) presses = 5;
+  for (int i = 0; i < presses; i++) { key(SDLK_RIGHT); frames(2); }
+  check(presses > 0 && foco.coluna == rapidStart + presses,
+        "N rapid Right presses move exactly N cards before row end");
   float x = fileiras[r].tipo == FILEIRA_SOCIAL ? scroll : scrollX[r];
   key(SDLK_DOWN); frames(12);
   float next = fileiras[r].tipo == FILEIRA_SOCIAL ? scroll : scrollX[r];
@@ -115,7 +216,8 @@ static void exercise(int r, const char *name) {
   frames(100);
 }
 int main(int argc, char **argv) {
-  assert(argc >= 2); output = argv[1]; baseline = argc > 2;
+  assert(argc >= 2); output = argv[1]; baseline = argc > 2 && !strcmp(argv[2], "before");
+  roundShot = argc > 3 && !strcmp(argv[3], "round");
   SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
   assert(!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER)); IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
@@ -147,7 +249,18 @@ int main(int argc, char **argv) {
     snprintf(e->arte, sizeof e->arte, "%s", it->backdrop);
     e->acao = SV_FIM; e->pct = -1; e->quando = 1900000000 - i;
   }
-  cat_definir_tudo(items, ITEMS, &normal, 1); socialvis_definir_feed(events, ITEMS);
+  CatFileira rows[3] = {normal,
+    {.chave = "round_people", .titulo = "Round people", .tipo = "person", .n = ITEMS},
+    {.chave = "round_catalog", .titulo = "Round catalog", .tipo = "movie", .n = ITEMS}};
+  if (roundShot) {
+    for (int r = 1; r < 3; r++) {
+      fil_registrar(rows[r].chave, rows[r].titulo, "Offline", "Filmes", ITEMS);
+      fil_definir_tipo(rows[r].chave, FIL_TIPO_REDONDA);
+    }
+    for (int i = 0; i < ITEMS; i++)
+      snprintf(items[i].titulo, sizeof items[i].titulo, "Round %02d long portrait name", i + 1);
+  }
+  cat_definir_tudo(items, ITEMS, rows, roundShot ? 3 : 1); socialvis_definir_feed(events, ITEMS);
   static ColFolder folders[ITEMS];
   for (int i = 0; i < ITEMS; i++) {
     snprintf(folders[i].id, sizeof folders[i].id, "country-%d", i);
@@ -158,15 +271,35 @@ int main(int argc, char **argv) {
     folders[i].forma = COL_FORMA_POSTER;
   }
   assert(col_extra_definir_grupo("world", folders, ITEMS) == ITEMS);
+  if (roundShot) {
+    fil_registrar("collection_world", "Round collections", "Offline", "", ITEMS);
+    fil_definir_tipo("collection_world", FIL_TIPO_REDONDA);
+  }
   home_ir_topo(); frames(100);
   int world = row("collection_world");
   exercise(row("normal_movie"), "normal");
-  exercise(row("social_activity"), "friends");
+  if (!roundShot) exercise(row("social_activity"), "friends");
+  if (roundShot) {
+    roundFocus(row("round_people"));
+    exercise(row("round_people"), "round-people");
+    exercise(row("round_catalog"), "round-catalog");
+    entryStrip(row("round_people"), "round-people");
+    entryStrip(row("round_catalog"), "round-catalog");
+  }
   // Add a real trailing row so Down can interrupt the world row.
   Fileira trailing = fileiras[0];
   fileiras[nFileiras] = trailing; snprintf(fileiras[nFileiras].chave, sizeof trailing.chave, "trailing");
   foco.nColunas[nFileiras] = trailing.n; nFileiras++; foco.nFileiras = nFileiras;
-  exercise(world, "world");
+  exercise(world, roundShot ? "round-collection" : "world");
+  if (roundShot) {
+    entryStrip(world, "round-collection");
+    focusRow(world); roundCaptions = 0;
+    check(fileiras[world].estiloCol == FILEIRA_REDONDA, "collection fixture uses Round drawer");
+    check(alturaTotalFil(world) >= alturaFil(world) + NV_POSTER_COPY_H,
+          "Round collection reserves name space before next row");
+    desenhaAtalhos(world, 600);
+    check(roundCaptions > 0, "Round collections draw their names below photos");
+  }
   // Ring mode: incoming and outgoing cards share the same animated focus values.
   assert(ajustes_shot_valor("bordaFocoCartaz", 0));
   focusRow(row("social_activity")); key(SDLK_RIGHT); frame();
