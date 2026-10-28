@@ -391,7 +391,7 @@ int main(int argc,char **argv){
     {READY,0,"setup-plex-pronto"},{READY,1,"setup-pronto"},{READY,2,"setup-emby-pronto"},
     {MANAGE,0,"servidores-gerenciar"},{REMOVE,0,"servidor-remover"},{ERROR_SCREEN,2,"servidor-offline"},
     {ERROR_SCREEN,1,"setup-credencial-expirada"},{ROWS,0,"fileira-adicionar-servidor"},
-    {PLEX_SERVERS,0,"setup-plex-servidor"},{LOGIN,2,"setup-emby"},
+    {PLEX_SERVERS,0,"setup-plex-servidor"},{CONNECT_SERVERS,2,"setup-emby-servidores"},{LOGIN,2,"setup-emby"},
     {DISCOVER,1,"setup-buscando"},{DISCOVER,1,"setup-nenhum-servidor"}};
   for(unsigned i=0;i<sizeof scenes/sizeof *scenes;i++){
     if(filter && !strstr(scenes[i].name,filter) && !strstr(filter,scenes[i].name)) continue;
@@ -430,7 +430,7 @@ int main(int argc,char **argv){
       }
       worker.plex[2].visto=time(NULL)-86400;
     }
-    if(screen==CONNECT_PASSWORD) {
+    if(screen==CONNECT_PASSWORD || screen==CONNECT_SERVERS) {
       worker.n=1; strcpy(worker.connect[0].nome,"Estúdio");
     }
     nLibraries=3;memset(libraries,0,sizeof libraries);
@@ -447,6 +447,13 @@ int main(int argc,char **argv){
     if(!strcmp(scenes[i].name,"setup-buscando"))worker.alive=1;
     strcpy(username,screen==CONNECT_PASSWORD?"marina@example.test":"Marina");strcpy(password,"fixture");strcpy(addressText,"http://media.example.test:8096");
     int expectedScreen=screen;
+    if (getenv("NUVIO_ESSENCE")) {
+      motionCapture=1;
+      for(int f=0;f<6;f++){shotTime+=16;srvsetup_atualizar(shotTime);}
+      assert(page>0 && page<1 && previousPage.tex);
+      char name[180];snprintf(name,sizeof name,"%s-step-mid",scenes[i].name);
+      capture(argv[1],name);motionCapture=0;
+    }
     capture(argv[1],scenes[i].name);worker.alive=0;
     assert(screen==expectedScreen);
     if (gfx_escala_txt() > 1) {
@@ -468,6 +475,20 @@ int main(int argc,char **argv){
       }
       motionCapture=0;
     }
+  }
+  if(getenv("NUVIO_ESSENCE")) {
+    opened=1;change(CHOOSE);motionCapture=1;
+    for(int f=0;f<6;f++){shotTime+=16;srvsetup_atualizar(shotTime);}
+    capture(argv[1],"setup-escolher-step-mid");motionCapture=0;
+    capture(argv[1],"setup-escolher");
+    selected=1;shotTime+=16;srvsetup_atualizar(shotTime);
+    assert(focusAnim[0]>0 && focusAnim[0]<1 && focusAnim[1]>0 && focusAnim[1]<1);
+    srvsetup_fechar();shotTime+=16;srvsetup_atualizar(shotTime);
+    assert(entry>0 && entry<1 && srvsetup_aberto());
+    motionCapture=1;capture(argv[1],"setup-close-mid");motionCapture=0;
+    settle();assert(!srvsetup_aberto());
+    puts("PASS: every wizard state and retained step transition, focus and close interpolation");
+    return 0;
   }
   if(getenv("NUVIO_SHOT_WIZARD")) {
     screen=READY;selected=0;opened=1;key(SDLK_RETURN);assert(!opened);
