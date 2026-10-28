@@ -11,10 +11,25 @@ TxtLinha test_source_text(TxtEstilo, const char *, int, int, int, int, float);
 #ifndef GUIAV5_UNDER_TEST
 #define GUIAV5_UNDER_TEST "../src/guiav5ui.c"
 #endif
+static char *category_fixture(const char *,const char *,const char *,const char *,int,int *);
+#define xtream_consultar category_fixture
 #include GUIAV5_UNDER_TEST
+#undef xtream_consultar
 #include <assert.h>
 
 static int failures;
+static int category_failure, category_calls;
+static char *category_fixture(const char *server,const char *user,const char *password,const char *request,int timeout,int *status){
+  (void)server;(void)user;(void)password;(void)timeout;*status=200;
+  if(strstr(request,"categories")){
+    category_calls++;
+    if(category_failure==1){*status=503;return NULL;}
+    if(category_failure==2)return strdup("{}");
+    if(category_failure==3)return strdup("[");
+    return strdup("[{\"category_id\":\"7\",\"category_name\":\"Drama\"}]");
+  }
+  return strdup("[{\"stream_id\":11,\"series_id\":12,\"name\":\"Fixture\",\"category_id\":\"7\"}]");
+}
 static void *failed_catalog(void *unused){(void)unused;return NULL;}
 #define CHECK(ok, name) do { if (!(ok)) { fprintf(stderr, "FAIL: %s\n", name); failures++; } else puts("PASS: " name); } while (0)
 
@@ -100,6 +115,32 @@ int main(void) {
   atomic_store(&busy,1);atomic_store(&ready,1);
   g5ui_update();
   CHECK(!source_loaded&&!atomic_load(&busy),"failed VOD publication clears loaded flag for next open");
+  /* Exercise worker publication, fallback grouping and retry through real UI entry. */
+  assert(xtream_conta_definir("http://fixture.invalid","fixture","fixture"));
+  for(category_failure=1;category_failure<=3;category_failure++){
+    clear_catalog();memset(&draft,0,sizeof draft);draft.movies=draft.series=draft.live=1;
+    use_saved=0;category_calls=0;action[0]=0;
+    g5ui_open("vod-filmes");
+    assert(atomic_load(&busy));
+    while(!atomic_load(&ready))SDL_Delay(1);
+    g5ui_update();
+    CHECK(worker_ok&&count==3&&total==3&&source_loaded&&category_calls==3,
+          "category failure still publishes movie, series and live lists");
+    CHECK(count==3&&!strcmp(inventory[0].group,"Uncategorized")&&
+          !strcmp(inventory[1].group,"Uncategorized")&&!strcmp(inventory[2].group,"Uncategorized"),
+          "unavailable or malformed categories use Uncategorized");
+    int saved_failure=category_failure;category_failure=0;
+    g5ui_open("vod-filmes");
+    CHECK(atomic_load(&busy),"next VOD open retries missing category metadata");
+    if(atomic_load(&busy)){
+      while(!atomic_load(&ready))SDL_Delay(1);
+      g5ui_update();
+    }
+    CHECK(count==3&&source_loaded&&category_calls==6&&!strcmp(inventory[0].group,"Drama")&&
+          !strcmp(inventory[1].group,"Drama")&&!strcmp(inventory[2].group,"Drama"),
+          "category retry restores provider names without losing lists");
+    category_failure=saved_failure;
+  }
   SDL_Quit();
   return failures ? 1 : 0;
 }
