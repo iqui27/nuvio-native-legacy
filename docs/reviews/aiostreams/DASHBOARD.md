@@ -1,163 +1,124 @@
-# AIOStreams TV dashboard specification
+# AIOStreams dashboard: measured TV diagnostics
 
-Design contract only. Build on existing AIO dashboard and Sources inspectors; no new screen framework. Research, sources, measurements and implementation jobs: [PESQUISA.md](PESQUISA.md).
+Approval specification and static mockups, not implemented application behavior. Evidence, versioned source links, parser contract and owner-side suggestions: [PESQUISA.md](PESQUISA.md). Preview: [mockups/index.html](mockups/index.html). Numeric fixture: [mockups/data.js](mockups/data.js). Follow `/Volumes/ExternalSSD/tmp/rev/DESIGN.md` and existing 2.0.8 components. No push, deployment or remote configuration writes.
 
-## Purpose and information order
+## Product decision
 
-From the couch, answer three questions: can I watch; what is delaying me; what can I do now? Default overview gives one verdict, one supporting measurement and at most three next actions. Provider details and configuration rules are one OK press away. Do not make a viewer read HTTP tables or understand authentication to start a title.
+Answer from the couch: can I watch, where did waiting happen, what needs attention? Use existing AIO overview and Sources inspectors. Statistics now arrive with ordinary stream results; no separate Search request for every title, server analytics dependency, continuous polling or new telemetry service.
 
-The current owner observation should render **“Streams available”**, supporting **“Series search: 4.3 s median · 5 checks”**, secondary **“Source timing unavailable”**. Configuration gets a separate **“Phone sign-in needed”** state. Do not render “All add-ons healthy,” “host slow,” “Comet timing out” or “too many catalogs” as established faults from this sample.
+Latest episode: **Streams available**. Host responds in 467 ms; four observed source/service rows report SUCCESS; 20 playable candidates. Wrapper cache coverage is low: AllDebrid 8/503 (1.6%), Real-Debrid 18/503 (3.6%), with one unclassified input each. That is a coverage observation, not a broken debrid account or a failing host. All 248 catalogs enabled; dashboard currently stores only 128, so show **120 omitted from this inventory** until paging is fixed. Manual configure export is known; API config access remains restricted.
 
-## Shared visual and remote contract
+## Shared TV contract
 
-Follow the external Nuvio DESIGN.md and 2.0.8 shared components. Reference canvas 1920×1080, 24 px minimum outer island margin, existing shell/content geometry and clock island clearance. Keep ordinary content inside an approximately 1600×850 safe region; existing shell defines final placement. No independent dashboard chrome, nested cards, decorative outlines or web-style dense tables.
+Viewer sits in a dim living room, holding a remote; use the existing dark island material, flat rows and generous type. No independent web dashboard shell, score, nested cards, decorative panel outlines or raw upstream emoji.
 
-- `plrui_material` owns the main island and modal material; use same radius, corner light, short shadow and glass/solid fallback as clock island. Main sheet radius 28; rows 20–22; modal 30–36. Keep glass and solid geometry identical. Glass veil 30%, solid 42%; never simulate gradients with stacked flat fills.
-- `plrui_linha_foco` owns list/card focus: one brighter neutral surface, no border and no full-accent row. Row action button/chip focus uses existing full accent pill with contrast text. Accent from `ajustes_acento()` and tint helpers only; status uses semantic theme helpers plus text/icon, never color alone.
-- `plrui_seg` supplies four sections: **Overview**, **Add-ons**, **Configuration**, **Fixes**. Existing sidebar may carry the same destinations; do not keep two independent navigation models. Selected section and current focused control remain distinguishable.
-- `plrui_dicas` supplies footer **OK Details / Back Return** or screen-specific equivalents. Never display a shortcut without a working action. Normal arrows and OK suffice; no long-press, color-key or pointer dependency.
-- Clock island remains the global activity owner. During a check show `activity` icon and “Checking AIOStreams”; after navigation away, continue/cancel according to existing request owner. Do not create another floating progress toaster. Announce a result once; no recurring error pop-ups during browsing/playback.
-- Inter Display / existing `TXT_*`: title 40/700, verdict 32–36/700, row title 24–28/Bold, normal supporting text at least 19, prominent values 28. At most two lines per row, five visible data rows. 15–16 px only for nonessential timestamp/footer, never verdict/fix. Measure long translations at 85% and 100% text scale; wrap supporting copy instead of shrinking essential text.
-- Lucide icons only, through existing `aj_` asset mapping: `layout-dashboard`, `activity`, `server`, `puzzle`, `timer`, `circle-check`, `triangle-alert`, `circle-x`, `wifi-off`, `list-filter`, `sliders-horizontal`, `shield-check`, `lock-keyhole`, `refresh-cw`, `smartphone`, `chevron-right`, `arrow-left`, `clock-3`, `circle-help`. All use consistent stroke/size. Do not render remote emoji, ASCII art, decorative medals or remote provider logos as status.
-- Every visible string, plural, unit, duration, state and accessibility label uses i18n; new keys in byte order in `idioma_tab.h`, synchronized/translatable in all supported languages. Example English copy here is a semantic requirement, not a hardcoded literal. Source brand names are sanitized data, not translation keys. Numeric placeholders remain format-safe.
+| 2.0.8 component | Required use |
+|---|---|
+| `plrui_material` | Same material as clock island: glass rgba(14,15,18,.80), solid #121316; 28 px sheet radius; 24 px outer margin; short shadow, restrained corner light. Same geometry in both modes. |
+| `plrui_linha_foco` | Neutral brighter row, 20–22 px radius; no outline or full-accent row. |
+| `plrui_seg` | Overview / Add-ons / Pipeline / Configuration; section selection distinct from focus. Sources remains its existing sheet. |
+| Existing button/chip helpers | 56 px pill; resting white 8%, focused theme accent and contrast tint. Accent from `ajustes_acento()` helpers, never fixed in application code. |
+| `plrui_dicas` | Working OK and Back hints only; clock island owns global activity. |
+| Existing `TXT_*` | Inter Display 40/Bold title, 32–36 verdict, 24–28 row, 19 supporting copy; 15–16 only timestamps/footer. Five visible primary rows maximum. |
 
-Focus rules: Left/Right changes section only while section selector owns focus; Down enters its first saved content row; Up from first row returns to selector. Lists use Up/Down, page through existing scrolling helpers and retain logical focused identity when data updates. OK opens detail; Back returns to prior section, row and scroll, then exits to the originating Add-ons/Sources entry. No focus wrapping between unrelated sections. Loading/refresh never steals focus or moves a selected stream. Empty lists focus their first enabled action. Refresh is disabled while a same-scope check is in flight or until a rate-limit deadline; Back always works. On profile/account change, discard old results and focus state that references them.
+Lucide only via existing `aj_` assets: activity, server, puzzle, cloud, timer, circle-check, triangle-alert, circle-x, wifi-off, list-filter, sliders-horizontal, refresh-cw, smartphone, chevron-right, arrow-left, clock-3, circle-help. State always has words plus icon, never color alone. No phone-only QR containing installation secrets. Mockups use an illustrative user accent through a CSS variable; implementation reads the actual setting.
 
-## Evidence and verdict model
+All product copy, states, singular/plural, percentages, units, duration formatting, action labels and accessibility labels use i18n. Add keys in byte order to `idioma_tab.h`, synchronize all 28 languages. Public provider brands are sanitized data. Unknown source names become neutral local aliases. Upstream reason enums map to local translated strings; raw name/description/Details never reach UI. Preview English strings form a prototype dictionary, not production localization. Verify 85%/100% scaling and long translations on target devices before implementation acceptance.
 
-Keep transport, source search, config authorization and inventory distinct. Each fact has origin (this TV / upstream statistic), sample count, timestamp, content type and unavailable reason. Configured provider, provider seen in results and provider timed by server are different facts. A result list capped at 20 cannot enumerate every enabled source.
+Remote: Left/Right within section selector, Down into saved first content row; Up returns to selector. Content lists use Up/Down; OK opens focused detail; Back restores originating section/row/scroll, then exits to Add-ons or Sources. No pointer, color key or long-press requirement. Preserve logical focus across response updates; freeze ranking while a row is focused. Refresh disabled during same-scope request and Retry-After; Back always available. Empty/failing views focus their first enabled action. Profile/installation/variant switch clears foreign history and focus identities. Device implementation retains existing cancellation and request ownership.
 
-```mermaid
-flowchart TD
-    A[Check AIOStreams] --> B{Host reachable?}
-    B -->|No usable response| C[Offline / connection failed]
-    B -->|HTTP or JSON response| D{Health and manifest usable?}
-    D -->|5xx or invalid payload| E[Failing service]
-    D -->|Yes| F{Named source timeout evidence?}
-    F -->|Yes, some streams| G[Degraded: source timeout]
-    F -->|No| H{Search exceeds soft budget?}
-    H -->|Yes, health also slow| I[Host response slow; investigate]
-    H -->|Yes, health normal| J[Search slow; source unknown]
-    H -->|No| K[Streams available]
-```
+## Evidence, local history and verdicts
 
-Initial product thresholds are proposed defaults, not upstream guarantees: slow host response when at least two of the last three nearby health/manifest control samples have TTFB above 2 s; slow search when completed total exceeds 5 s, or a pending search crosses 5 s. Do not count three endpoints from one slow search as three independent controls. Display the actual number and “may be” language for attribution. Search at 5 s is still working; use existing hard VOD network deadline, initially 30 s, with cancellation and a user retry after completion. One failed control gives “Connection problem” until retried, not a confident claim the server is down.
+Classify `streamData.type=statistic/error` before external/playable dispatch. Statistics have no `url` but do carry `externalUrl`; exclude them from Sources, handoff, autoplay, download, result-limit counts and per-quality lists. Metadata-free fallback requires known heading plus grammar and no playback target; missing URL/emoji alone is insufficient. Exact upstream formats, optional clauses and safe parsing are in PESQUISA.md.
 
-Specific verdict rules:
+One bounded local ring: last **N=10 completed requests** per installation/profile/effective variant/content type. Reuse existing scoped stats. Record request timestamp, client elapsed, response state, safe source/service identities, status, reported count/time, cache coverage, removal enums and phase timings. No media IDs, stream URLs, hashes, tokens or raw Details retained in diagnostic history. Clear with profile removal/reset. No promised durable history until existing storage lifecycle is verified; memory-only is sufficient initially and restarts must state history reset.
 
-| Copy | Evidence required | Action |
-|---|---|---|
-| Streams available | Valid playable candidates; no known current fatal error | Return to Sources / inspect latest check |
-| Search is slow | Search >5 s; host control not slow or unknown | Source timing / phone configure guide |
-| Host response is slow | Multiple slow controls as above; show measured RTT/TTFB | Check connection / host dashboard guide |
-| Add-on {name} timed out | Structured upstream error or recognized Search error explicitly names source and timeout | Detail with evidence time, then phone configure |
-| Some add-ons failed | Named current errors plus playable candidates | Keep available streams; review providers |
-| No streams for this title | Valid empty results, no proven source outage | Try another title / inspect filters |
-| AIOStreams returned an error | Invalid configuration or valid server error with no playable results | Phone configure / retry appropriate to error |
-| Cannot reach AIOStreams | DNS/TLS/connect failure or expired deadline, distinguished in details | Retry / connection guide |
-| Configuration access unavailable | User endpoint 401/403; manifest/search may still work | Phone sign-in; no disconnect/reinstall requirement |
-| Source timing unavailable | Statistics absent/disabled/unknown format | Explain how to enable statistics on phone |
-| Many catalogs: {count} | Large inventory only | Review catalogs; informational, not a failure |
-| Too many catalogs loaded | Local row cap hit, measured Home load/memory budget exceeded, or explicit truncation | Reduce loaded rows / review catalog selection |
-| Wait before checking again | HTTP 429 or retry deadline | Countdown; one later explicit check |
+History updates only when a request completes, including failed attempts with explicit missing metrics. Missing source reports are gaps, not zero or success. Graph latest measured points among last 10 attempts; label actual count. Keep movie/episode/anime separate; do not compare mixed workloads as a latency trend. Coordinator earlier samples plus new requests provide **two episode observations**, not ten. Preview trend is previous/current 116/95 ms Comet, 228/360 ms Torrentio, 1320/194 ms Debridio AD, 2570/226 ms Debridio RD. Show exact values and sample count; no claim of statistically established improvement or cache warmth.
 
-Thresholds use small fixed sample history in existing scoped stats, not continuous polling. For a single manual check, default to measured facts and unknown attribution. Never subtract health RTT from search time and label the remainder exact “add-on time.” Public health only checks the DB path. Unknown response type/invalid JSON is failing data, not a successful empty result. Raw upstream text is untrusted: classify into local i18n copy, allowlist safe provider name and parsed duration, hide the rest.
+Verdicts use independent host / add-on / debrid axes:
+
+| Axis | Healthy | Degraded | Failing | Offline / unknown |
+|---|---|---|---|---|
+| Host | Valid health/manifest with measured latency | At least two of last three comparable controls exceed proposed 2 s TTFB | HTTP 5xx, invalid payload or explicit host failure | DNS/TLS/connect/deadline: cannot reach; no sample: unknown |
+| Add-ons | Observed source replies succeeded; zero-result SUCCESS says responded, not usable | Named timeout/error/partial success while other candidates remain; search >5 s says slow even without source blame | All observed sources error and no usable candidates | Missing statistics unknown; loss of host connection leaves old observations stale |
+| Debrid | Service checks complete and available cached candidates known separately | Low cache coverage informative; partial service error while alternatives remain | Explicit service/account error and no available alternative | No service report or incomplete/error counts unknown; never infer account failure from low ratio |
+
+Overview state follows usable candidates and confirmed errors, not worst decorative chip. Config 401 is a separate lock; it does not make host/playback failing. Valid empty result with no errors is “No streams for this title,” with filter/another-title action. HTTP 429 preserves facts and adds retry deadline. One failed control is a connection problem, not proof server is down. A source timeout needs structured or recognized named error, not just long duration or a configured 30 s ceiling. Current samples contain no errors; timeout/error states below are explicitly synthetic approval scenarios.
 
 ## Screen 1: Overview
 
-Entry: existing Add-ons › AIOStreams or Sources › AIO information. Header: `layout-dashboard`, “AIOStreams”, sanitized version/channel, “Checked {relative time}”. Right header has one labeled “Check now” chip with `refresh-cw`.
+Header “AIOStreams”, version Stable 2.37.0, workload, timestamp and one “Check now” chip. One verdict and one supporting line: “20 streams available · latest episode 2.01 s”. Three flat rows open detail:
 
-Body, top to bottom:
+- Host: “Responding · 467 ms”; health control, not media throughput.
+- Add-ons: “4 observed replies succeeded”; raw source counts stay in detail.
+- Debrid cache: “AD 1.6% · RD 3.6% of wrapper inputs”; low coverage, not account failure.
 
-1. One verdict line with semantic Lucide icon, e.g. `triangle-alert` “Search is slow”. Under it, “Streams still available” or “No streams received”. Show one concrete measurement: “Latest series search 5.9 s · Host check 0.5 s”. Do not show a decorative health score.
-2. Three flat rows: **Host**, **Add-ons**, **Configuration**. Each has status in words and one value. Example: “Host responds · 0.5 s”; “Source timings unavailable · 20 streams returned”; “Phone sign-in needed”. Entire row opens relevant detail, with `chevron-right`.
-3. Optional contextual catalog row: “248 catalogs advertised · Review selection”. It is not red or a diagnosis. Config unavailable does not hide the manifest count.
-4. Primary action matches verdict: healthy “Back to Sources”; degraded “Review fixes”; failing/offline “Try again” after backoff. Secondary “Configure on phone”. Keep two actions visible; version/raw HTTP details belong in details.
+Then a compact pipeline bar: Fetch 597 ms / Service wrap 549 ms / other serial work ~64 ms, total ~1.21 s. See Screen 3 for overlap rules. Catalog warning “248 catalogs enabled · 128 shown here · 120 omitted” opens configuration. Primary action “Back to Sources”; secondary “Configure on phone” uses existing safe handoff, not a displayed owner URL. Config snapshot provenance belongs in supporting details, never a false connected badge.
 
-State behavior:
+## Screen 2: Add-ons and errors
 
-| State | Content and action |
-|---|---|
-| Loading | Stable shell and cached facts with “Previous check”; indeterminate clock activity; show “Checking host” / “Searching for streams”; Back available |
-| Healthy | Streams available; measured latest check and sample count; no implication every configured source was tested |
-| Degraded | Available streams remain actionable; lead with confirmed named issue or honest search-slow verdict; never gate watching behind fix |
-| Failing | Server responded but no usable result due to HTTP/payload/config error; show local explanation and targeted fix |
-| Offline | “Cannot reach AIOStreams”; cached version/config visibly old; retry and connection guide; do not overwrite last success with zero |
+At most five flat rows, one per source **and service**; heading “Latest episode · reported by AIOStreams · 2 local observations”. Columns readable at TV distance: name/service, explicit status, current duration, raw source stream count, previous/current trend. Stable attention-first order, applied only on explicit refresh/return.
 
-Config restriction is a secondary capability state, not a reason to set the whole overview failing. A 401-only optional API gives a lock icon on Configuration. A 429 shows countdown on Check now and preserves prior data. A valid empty search offers another-title/filter guidance; it does not impersonate offline.
+| Add-on / service | Current status | Time | Reported entries | Previous time |
+|---|---|---:|---:|---:|
+| Debridio Scraper / RD | Responded (SUCCESS) | 226 ms | 1,037 | 2.57 s |
+| Debridio Scraper / AD | Responded (SUCCESS) | 194 ms | 1,037 | 1.32 s |
+| Torrentio / p2p | Responded (SUCCESS) | 360 ms | 98 | 228 ms |
+| Comet / p2p | Responded (SUCCESS) | 95 ms | 924 | 116 ms |
 
-## Screen 2: Add-on health and latency
+Counts are pre-filter source entries, can overlap and can include errors in partial replies; never sum into 20 final playable candidates. Anime has only Torrentio observed; other sources say “Not reported for this request.” OpenSub Pro/configured metadata sources are not failed merely because no stream scrape summary names them.
 
-Header `puzzle`, “Add-ons”, subtitle “Latest {movie/episode/anime} check”. Segment/filter inside the existing content slot: **Needs attention / All observed**; counts mean observed entries, not all installed providers. When config access exists, add separately labeled **Configured** inventory; never silently merge an enabled list with measured health.
+OK opens same island detail with current/previous time, sample count, source count, status, owner timeout snapshot (30 s Torrentio/Comet, 7 s Debridio), timestamp and safe error category. Attribute `streamData.error` using safe structured add-on identity or recognized named evidence. Timeout, authentication, rate limit and upstream unavailable get distinct translated copy. Ambiguous evidence says “Source not identified”; never guess from bingeGroup or formatter branding. A PARTIAL SUCCESS row opens both successes and parsed error categories. A thrown failure may have an error entry without a summary; merge without inventing time/count. Error details never display raw URLs, IDs or scripts.
 
-At most five flat rows per page. Each row: provider name left, verdict on second line; right column elapsed time and result count only when measured. Example synthetic row: “Comet / Timed out / 5.0 s limit”; healthy synthetic row: “Torrentio / Responded / 1.2 s · 12 results”. Timing source label “Reported by AIOStreams” appears in shared subtitle. Use “Not reported” rather than 0 ms. Unknown/custom provider labels are hidden unless they pass explicit safe-label rules.
+Actions: Back, Configure on phone; configuration changes are suggestions only. No add-on disable switch on this screen.
 
-Default stable order: current errors, slow measured providers, other measured providers, unknowns. Freeze order while focused; apply reordering on explicit refresh/return so focus identity survives. No live animated ranking or health percentages from one sample.
+## Screen 3: Pipeline, removals and debrid cache
 
-OK opens an add-on detail island with provider + local verdict, checked title type/time, reported duration/timeout budget if known, number returned, and one explanation/action. Examples: “This source exceeded its configured timeout. Other sources returned streams.” Actions “Configure on phone” and “Back”. If only Search error text is available, label “Reported timeout; duration not supplied”. No fabricated timer counting against an unknown provider budget.
+Two subviews within the existing inspector, selected with normal remote controls; keep five primary rows visible and page detail.
 
-| State | List / detail behavior |
-|---|---|
-| Loading | Cached rows remain, tagged previous; first visit shows “Waiting for source diagnostics”; footer Back |
-| Healthy | Measured sources responded; explain only observed sources assessed; no disabled provider counted as failed |
-| Degraded | Named failures shown first; keep successes and available stream count visible |
-| Failing | All observed sources errored or search invalid; distinguish no source metrics from all-source failure |
-| Offline | Cached observations marked old; cannot update; retry in overview |
+Pipeline view: server total ~1.21 s beside client total 2.01 s, each labeled. Total-length bar has Fetch 597 ms, Service wrap 549 ms, approximate residual 64 ms. Below it, separately labeled overlapping measures: Media info 220 ms, Filter 57 ms (2 calls), Dedup 9 ms, Precompute 3 ms, Sort 34 ms, Limit 0 ms, SEL 0 ms. Do **not** stack these all together: Media Info is nested; Filter/Precompute accumulate fetcher work. Nested filter detail: expressions 2 ms, regex test 6 ms, filter pass 33 ms, other measured subphases zero. Zero is a reported rounded value, not absence. Source fetches/service checks are parallel; their sums are not wall time. Missing or inconsistent total gives an unsegmented duration bar and “Breakdown unavailable”. No exact network-overhead label from client minus server.
 
-For the owner today: list returned contributors as **Seen in results** with no timings, plus “Timing statistics were not provided.” A “How to enable timings” action opens Fixes. No enabled count or green source-health verdict can be derived from result contribution. Error/statistic informational streams never appear in Sources' playable count or Links' phone targets.
+Removal view uses translated reason and count: latest episode Size 58, Excluded visual tag 10 (3D), Excluded keywords 3. Movie example: Size 222, Visual tag 24, Keywords 27, Quality 6 (2 SCR/4 TS). Keep repeated Removal Reasons entries, combine only identical known categories within one request. Never show unsafe keyword strings. Counts are upstream removal events; overlapping/repeated passes mean no guaranteed unique rejected total. Dedup, sorting and final result limiting are separate from removal reasons; 1,037 source entries minus 20 final results is not a valid removed count.
 
-## Screen 3: Configuration summary
+Debrid detail:
 
-Header `sliders-horizontal`, “Configuration”. Six flat groups, with at most five visible and existing scroll behavior:
+| Service | Cached / input | Uncached | Unclassified | Magnet check |
+|---|---:|---:|---:|---:|
+| AllDebrid | 8 / 503 (1.6%) | 494 | 1 | 344 ms |
+| Real-Debrid | 18 / 503 (3.6%) | 484 | 1 | 333 ms |
 
-- Sources and services: enabled/disabled counts when authenticated inventory exists; otherwise “Not available from installation link”. Show known service names, never credentials.
-- Catalogs: full advertised total, locally visible count only if independently known; OK opens catalog subpage with paged remote order and local show/hide. Clearly label “On this TV” vs “In AIOStreams”. Remote modification remains phone-only.
-- Filters and ranking: summary of required/excluded/preferred rules, cache policy and limits; opens existing detailed inspector. Keep required/excluded precedence explicit.
-- Formatter: name/passthrough mode if known; raw templates hidden because they can contain signed links.
-- Proxy and playback: enabled/type/proxied service count when known; no host/token or untested “working” badge. Explain it may be needed for playback.
-- Diagnostics and variants: statistics capability, Search availability, effective variant/inheritance uncertainty and config access state. Hide arbitrary scripts/expressions; use safe existing detail traversal only.
+Caption “Wrapper input checks only; direct debrid results excluded.” Percent uses cached/input; always label denominator. Optional classified-only ratio must also show coverage. Do not pool services as unique torrents, confuse low ratio with service failure, or derive final Sources cache badges from these ratios. Zero-count clauses may be omitted by upstream; `Error` makes counts unavailable. Missing unclassified counts are derived only when input/cached/uncached all parse consistently. OK service row shows processing and service total if reported; no media URL is opened.
 
-Footer “Configure on phone” and “Refresh summary”. Phone handoff uses existing private pairing; show a neutral session/pairing control on TV. Do not encode `<owner-manifest>` or `<owner-manager>` in a visible QR captured by screenshot tests. Official generic configure origin may be used through the existing safe flow; credential-bearing destinations stay in protected storage and private delivery.
+## Screen 4: Configuration and suggestions
 
-| State | Content and action |
-|---|---|
-| Loading | Cached config clearly previous; no zero-filled source/filter totals |
-| Healthy | Resolved known summary; timestamp and capability provenance; remote/local scope labels |
-| Degraded | Streams work but config locked/partial schema/truncated; show exact available subset and explicit omitted count |
-| Failing | Authenticated summary invalid or unavailable; no overwrite of useful cached summary; targeted phone guide |
-| Offline | Read-only cached summary marked old; offline “not changed” state; no implied remote save |
+Five visible groups with scroll/detail: catalog inventory; source timeouts; fetching/groups; playback/preload/formatter; diagnostics/access. Show provenance “Owner configure export” and snapshot age. No API refresh may replace a known count with zero after 401. Missing effective variant context is explicit.
 
-Config access 401/403 opens a dedicated lock state within this screen: “This installation link can play streams. Configuration details require sign-in on your phone.” Primary phone guide; secondary Back. No raw password keyboard, no uninstall recommendation. Search still usable independently. Catalog subpage counts all 248 even when only a bounded page is stored; last entry must be reachable. If a local budget excludes rows, explain the exclusion and scope without claiming remote disablement.
+Catalog group warns 248 advertised/enabled, 128 current dashboard capacity, 120 omitted. Remote catalog enablement and local inventory truncation are different. Offer local paging/show-hide once implemented; phone guide for reducing remote catalogs. Reducing catalogs targets Home memory/fan-out, not proven title scrape latency.
 
-## Screen 4: Fixes
+Phone-only suggestions: trial 7–10 s Torrentio/Comet ceilings, dynamic fetch early exit, priority groups, useful stream-resource selection, debrid/cache preference and optional stream caching where allowed. Explain late-result/coverage/staleness tradeoffs from PESQUISA.md. Preload/precache are already on; do not propose turning them on as a new fix. Preserve tamtaro and bingeGroup autoplay. “Configure on phone” follows existing protected handoff; static preview has no live destination or settings mutation. Health Checks are expression inputs configured by owner, not a public client diagnostics API.
 
-Header `list-filter`, “Recommended fixes”. Maximum three recommendations at once, ranked by supported evidence. Each row has one plain title, one consequence, and an action. No automatic remote configuration changes.
+## Existing Sources sheet
 
-| Trigger | Recommendation | What OK does |
-|---|---|---|
-| Named provider timeout | “Review {name}'s timeout or fallback group” | Detail explains reliability/coverage tradeoff, then phone configure |
-| Search slow, no source metrics | “Enable source timing statistics” | Phone instructions: Statistics enabled, Add-on and Timing; save there, then Check again |
-| Host controls slow | “Check your host connection and capacity” | Explain TV network vs host/DB possibilities; explicit Check again; no unsupported reboot button |
-| Large inventory only | “Load fewer catalog rows” | Local Home row controls; remote catalog guide separately labeled |
-| Config 401 | “Open configuration on your phone” | Existing sign-in/handoff flow; no attempt to decrypt credentials |
-| 429 | “Wait before checking again” | Countdown; retry disabled until deadline |
-| No results, no errors | “Review filters or try another title” | Existing filter inspector when available, else phone guide/title picker |
-| Proxy observed, playback untested | “Check proxy only if playback fails” | Explain required-header/IP use; no recommendation to disable from search latency alone |
+Keep playable results first, no diagnostic rows among them. Latest episode shows **20 sources**, never 31. Only supported playable targets pass to selection/player; error/statistic externalUrl does not become an external source. Retain structured final-candidate cache/quality/service, headers and bingeGroup. Preview source rows use generic redacted names, not copied filenames/URLs; they illustrate geometry only.
 
-Recommendation detail contains evidence, one short explanation and at most two steps, e.g. “1. Open Statistics on your phone. 2. Enable Add-on and Timing, save, then check again.” Footer primary “Open on phone”, secondary “Back”. “Check again” appears after returning, runs one scoped check and preserves prior screen focus. Never say fixed just because a phone page was opened.
+Optional compact chip “20 available · 4 add-ons responded” opens Overview with latest workload scope; degraded version “20 available · 1 source issue” keeps selection working. Loading chip stays “Checking sources”; no timing claim before completion. Cache unknown gets no invented cached badge. Refresh must not reorder selected stream or auto-play a diagnostic entry. No extra poll/Search call to populate chip.
 
-| State | Recommendations |
-|---|---|
-| Loading | Previous findings retained; “Checking for current issues” |
-| Healthy | “No action needed for the latest check”; optional catalog review stays neutral |
-| Degraded | Evidence-ranked fixes; available-stream action remains visible |
-| Failing | One most relevant recovery step; avoid unrelated cache/catalog advice |
-| Offline | Connection guide and one retry; configuration controls unavailable |
+## Every screen: required state matrix
 
-## Acceptance and scope limits
+These states apply to Overview, Add-ons, Pipeline, Configuration and Sources, including their detail sheets. Never replace cached observations with fabricated zeros.
 
-Future implementation must show every five-state screen with synthetic data, both glass/solid and 85/100% scale. Remote sequence: enter overview from Add-ons, switch Add-ons section, scroll to sixth item, open detail, Back restores item/scroll, open Fixes, return, refresh, retain focus, Back exits to original entry. Repeat from Sources with live updates; no selected stream displacement. Test long names/translations, unknown metrics, zero results, optional config 401, rate countdown, profile switch, stale cache and late worker response.
+| Screen | Loading | Healthy | Degraded | Failing | Offline |
+|---|---|---|---|---|---|
+| Overview | Stable shell, prior check labeled; Check disabled | Actual streams and three-axis facts | Streams usable plus named issue/slow search | Server responded, unusable data or fatal error; targeted fix | Cannot reach; old facts visibly previous; retry |
+| Add-ons | Previous rows or “Waiting for diagnostics” | Observed replies and measured trends | Named partial/error rows first; other sources usable | All observed replies error, or invalid diagnostics distinctly labeled | Cached rows stale; no current success claim |
+| Pipeline | Previous bar dimmed and labeled | Measured bar, ratios and removal groups | Partial/missing phase/service evidence; unknown gaps | Invalid response/error; no invented totals | Old timing/ratios labeled previous; retry in overview |
+| Configuration | Existing snapshot with provenance | Known snapshot, inventory and optional API capability | Restricted API/truncated inventory; independent of playback | Explicit malformed configuration response; retain last valid snapshot | Snapshot still readable as previous; no remote edit |
+| Sources | Previous choice stable, pending chip | Only playable rows | Available candidates selectable, health chip names issue count | No playable candidates due to explicit error; inspect health | Connection failure, prior sources marked previous/unverified |
 
-Accessibility: essential text contrast at least 4.5:1, large text 3:1, focused control visually distinct without color alone; reduce decorative motion with existing setting. Verify full text at couch distance on target TVs. Metadata/provider text must be sanitized before layout and never rendered as markup. Unknown timestamps/metrics are labeled unavailable. Screenshot fixtures use synthetic source names/targets only; no private URL, credential or encoded config appears in screenshots or logs.
+Valid empty search is a separate non-outage state with filters/another-title guidance. Missing statistics is capability unavailable, not failing add-ons. Rate limit is a deadline overlay retaining prior data, not an automatic retry loop. Synthetic failure/offline states in mockups are labeled “Scenario”; measured healthy data is labeled “Observation”.
 
-No rendered mockup or device screenshot is claimed in this research pass. Native layout, performance, screen-reader/platform accessibility and first-frame playback remain implementation/device acceptance tasks. Existing approved island/component appearance is the visual reference; this document specifies hierarchy, navigation and truthful states.
+## Approval artifacts and acceptance
+
+One dependency-free static HTML preview with local Inter Display/Lucide assets and redacted numeric data; no owner endpoint/network calls. Query `?screen=overview|addons|pipeline|configuration|sources&state=loading|healthy|degraded|failing|offline&material=glass|solid`. Reference viewport 1920×1080. Arrow keys navigate focus/sections; Enter opens detail/navigation; Escape returns. Preview “Check now” does not call the service; it explains the preview boundary. All 25 screen/state combinations render; PNG exports cover the five main screens, four overview states and solid overview. PNGs live externally in `/Volumes/ExternalSSD/tmp/rev/aiopesq/`; HTML/data/renderer and docs are committed.
+
+Acceptance check: `bash tests/aiostreams_round2_mockups.sh` validates numeric fixture invariants, secret-free allowlists, all screen states, no browser overflow, D-pad/Back behavior, local asset loading, and emits approval PNGs. Existing native build: `bash tools/build-local.sh`. Mockup is not proof of implemented C parser, device performance, first frame, subtitle flow or next-episode correctness. Those remain implementation jobs 1–8 in PESQUISA.md; owner approval of these artifacts remains pending.
