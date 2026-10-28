@@ -230,7 +230,7 @@ static void toque(void) {
     png("p1-retrato-revisao-arrastada");
     a = linha(triIlha2R(), 29);
     confere(visivelEm(a, topo, pilula), "Toque: o arrasto na previa traz a linha 30 para a janela");
-    if (a) { clicar(a); confere(!triUtil, "Toque: a linha 30 responde ao toque (OK aplica e fecha)"); } }
+    if (a) { clicar(a); confere(triUtil == TRI_U_REVISAO && triLinha == 29 && triAcao == 1, "Toque: a linha 30 responde ao toque (seleciona Aplicar, nao aplica)"); } }
   rvN = 0; triUtil = 0; triIlha = TRI_SECOES;
   layout_modo_definir(0); tela(1920, 1080); sair = 0;
 }
@@ -263,6 +263,73 @@ static void difJanela(void) {
   key(SDLK_ESCAPE); quadros(5);
   memcpy(valor, antes, sizeof antes); ajEscalaTestePct = 0;
 }
+// A real finger tap on a target (FINGERDOWN/UP through the pointer).
+static void tocar(const PonteiroAlvo *a) {
+  float x = a->x + a->w * 0.5f, y = a->y + a->h * 0.5f;
+  dedo(SDL_FINGERDOWN, x, y); relogio += 60; dedo(SDL_FINGERUP, x, y); relogio += 60; quadros(10);
+}
+static const PonteiroAlvo *alvoInline(int op, int diferenteDe) {
+  const PonteiroAlvo *v; int n = ponteiro_teste_lista(&v);
+  for (int i = 0; i < n; i++) if (v[i].ativar == ajToqueInlineValor && v[i].b == op && v[i].a != diferenteDe) return &v[i];
+  return NULL;
+}
+static const PonteiroAlvo *alvoAtivar(PonteiroFn fn) {
+  const PonteiroAlvo *v; int n = ponteiro_teste_lista(&v);
+  for (int i = 0; i < n; i++) if (v[i].ativar == fn) return &v[i];
+  return NULL;
+}
+// Re-review 3, P1 (a): on the phone the values of an inline editor (palette,
+// segmented choice) are touch targets; a tap changes the draft, Confirm saves.
+static void inlineToque(void) {
+  int ops[2] = { AJ_TEMA, -1 }, antes[AJ_N];
+  memcpy(antes, valor, sizeof antes);
+  for (int i = 0; i < AJ_N_TELA && ops[1] < 0; i++)
+    if (TELA[i].tipo == IT_OPC && TELA[i].op != AJ_TEMA && ajSegmentada(TELA[i].op) && triDisponivel(TELA[i].op) && !inativa(TELA[i].op)) ops[1] = TELA[i].op;
+  assert(ops[1] >= 0);
+  layout_modo_definir(1); tela(1080, 1920); assert(ajTelaCheia());
+  for (int k = 0; k < 2; k++) {
+    int op = ops[k], salvo; const PonteiroAlvo *a;
+    char msg[160];
+    triIniciar(); focarOpcao(op); triFocar(op); quadros(30);
+    key(SDLK_RETURN); quadros(40);
+    snprintf(msg, sizeof msg, "Inline %s: OK abre a edicao na linha", CHAVE[op]); confere(uxEditor == 1 && ajEditandoLinha(op), msg);
+    salvo = valor[op];
+    a = alvoInline(op, uxPendente);
+    snprintf(msg, sizeof msg, "Inline %s: cada valor tem alvo de toque", CHAVE[op]); confere(a != NULL, msg);
+    if (!a) { if (uxEditor) key(SDLK_ESCAPE); continue; }
+    { int v = a->a;
+      if (k == 0) png("p1-inline-paleta");
+      tocar(a);
+      snprintf(msg, sizeof msg, "Inline %s: toque no valor muda o rascunho, nao grava", CHAVE[op]); confere(uxPendente == v && valor[op] == salvo && uxEditor == 1, msg);
+      a = alvoAtivar(ajToqueConfirmar);
+      snprintf(msg, sizeof msg, "Inline %s: Confirmar tem alvo de toque", CHAVE[op]); confere(a != NULL, msg);
+      if (a) { tocar(a); snprintf(msg, sizeof msg, "Inline %s: Confirmar grava o valor tocado", CHAVE[op]); confere(!uxEditor && valor[op] == v, msg); } }
+    if (uxEditor) key(SDLK_ESCAPE);
+    quadros(5);
+  }
+  memcpy(valor, antes, sizeof antes);
+  layout_modo_definir(0); tela(1920, 1080); sair = 0;
+}
+// Re-review 3, P1 (b): a preview row only previews/selects; only Apply applies.
+static void previaNaoAplica(void) {
+  const PonteiroAlvo *a;
+  valor[AJ_DET_BLUR_NAO_VISTOS] = 1; valor[AJ_PAUSA_ELENCO] = 1; valor[AJ_HERO_TRAILER] = 1;
+  triIniciar(); assert(triPresetPreparar(2)); triUtilAbrir(TRI_U_REVISAO); triUtilVolta = TRI_U_PRESETS; quadros(30);
+  // remote: OK on a row
+  key(SDLK_RETURN);
+  confere(triUtil == TRI_U_REVISAO && valor[AJ_HERO_TRAILER] == 1, "Previa: OK numa linha nao aplica nada");
+  confere(triAcao == 1, "Previa: OK numa linha leva o foco a Aplicar");
+  // touch: tap on a row
+  triAcao = 0; triLinha = 0; quadros(20);
+  a = linha(triIlha2R(), 1);
+  confere(a != NULL, "Previa: a 2a linha tem alvo");
+  if (a) { tocar(a); confere(triUtil == TRI_U_REVISAO && valor[AJ_HERO_TRAILER] == 1 && valor[AJ_PAUSA_ELENCO] == 1, "Previa: toque numa linha nao aplica nada"); }
+  // only Apply applies
+  quadros(10);
+  { const PonteiroAlvo *v[64]; int n = listar(triIlha2R(), v, 64);
+    if (n >= 2) { tocar(v[n - 2]); confere(triUtil == TRI_U_PRESETS && valor[AJ_HERO_TRAILER] == 0, "Previa: so o toque em Aplicar aplica"); } }
+  key(SDLK_ESCAPE); quadros(5); if (triUtil) key(SDLK_ESCAPE);
+}
 int main(int argc, char **argv) {
   char dir[1024];
   if (argc > 1) dirPng = argv[1];
@@ -285,6 +352,8 @@ int main(int argc, char **argv) {
   escolhaSemInspetor();
   toque();
   difJanela();
+  inlineToque();
+  previaNaoAplica();
   if (!falhas) puts("PASS: three-island Settings P1s: portrait rail, utility targets, scrolling, parental chooser");
   return falhas ? 1 : 0;
 }

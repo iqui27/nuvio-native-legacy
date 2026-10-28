@@ -635,6 +635,11 @@ static void triRodape(void) {
   int nd;
   float x = triX0(), yc = NV_VTELA_H - 46.0f, xd = triXFim();
   char rota[260];
+#ifdef NV_TOUCH_UI
+  // Celular editando na linha: no lugar das dicas do controle, os botoes
+  // Confirmar/Cancelar do 2.0.3 (aj2RodapeA3), alvos de toque de verdade.
+  if (ajPontInline) { ajToqueBotoes(xd, yc, 1.0f); return; }
+#endif
   if (uxEditor) { d[0] = (AjDica){ "OK", "Confirmar" }; d[1] = (AjDica){ "Voltar", "Cancelar" }; nd = 2; }
   else if (triUtil) { d[0] = (AjDica){ "OK", "Abrir" }; d[1] = (AjDica){ "↑ ↓", "Navegar" }; d[2] = (AjDica){ "Voltar", "Sair" }; nd = 3; }
   else if (triIlha == TRI_SECOES) { d[0] = (AjDica){ "OK", "Entrar" }; d[1] = (AjDica){ "↑ ↓", "Navegar" }; d[2] = (AjDica){ "Voltar", "Sair" }; nd = 3; }
@@ -679,6 +684,13 @@ static void triDesenhar(void) {
   if (ajRetrato()) triFaixaSecoes(); else triIlhaSecoes();
   ajPontLista = !modal && !uxEditor && !triUtil && paginaA > 0.997f;
   ajPontUtil = !modal && !uxEditor && triUtil && triUtilA > 0.997f && ajPenParentEditor < 0 && !ajPenPinAsk;
+#ifdef NV_TOUCH_UI
+  // Celular: a edicao na linha (paleta, escolha segmentada, interruptor) tem um
+  // alvo por valor e o rodape Confirmar/Cancelar (ajToqueEscolhaAlvo,
+  // ajToqueBotoes); as linhas de tras nao recebem toque, a rolagem continua.
+  ajPontInline = layout_modo_mobile() && !modal && uxOp >= 0 && ajEditandoLinha(uxOp) && paginaA > 0.997f;
+  if (ajPontInline) ajPontLista = 1;
+#endif
   if (uxEditor && !modal) { ponteiro_camada();
 #ifdef NV_TOUCH_UI
     ajToqueCamada();

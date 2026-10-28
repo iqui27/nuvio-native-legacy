@@ -329,8 +329,11 @@ static int triRevisaoEvento(SDL_Keycode k) {
   if (k == SDLK_UP) { if (triAcao) triAcao = 0; else if (triLinha) triLinha--; return 1; }
   if (k == SDLK_LEFT) { triAcao = 1; return 1; }
   if (k == SDLK_RIGHT) { triAcao = 2; return 1; }
+  // So "Aplicar mudancas" grava. OK (ou toque) numa linha da previa so leva o
+  // foco a Aplicar: quem confirma o lote e o segundo OK, ali.
   if (uxOk(k)) {
     if (triAcao == 2) triRevisaoFechar(0);
+    else if (triAcao != 1) triAcao = 1;
     else if (rvAplicar()) triRevisaoFechar(1);
   }
   return 1;
