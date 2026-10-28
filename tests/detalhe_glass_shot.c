@@ -289,7 +289,7 @@ static const char *const COM_TXT[] = {
   "Perfeito para uma tarde de chuva." };
 static const int COM_NOTA[] = { 8, 6, 7 }, COM_CUR[] = { 6, 3, 1 };
 int fx_com_spoiler(int ep, int i) { return i == 1; }
-int fx_n_comentarios(void)    { return ehSerieDeEnsaio() && !getenv("NUVIO_SHOT_REFERENCE") ? 0 :
+int fx_n_comentarios(void)    { return ehSerieDeEnsaio() && !getenv("NUVIO_SHOT_REFERENCE") && !getenv("NUVIO_DETSECOES_PROOF") ? 0 :
     (getenv("NUVIO_DETAIL_CHECK") && !strcmp(getenv("NUVIO_DETAIL_CHECK"), "comments")) || (getenv("NUVIO_TRAKT_CHECK") && (!strcmp(getenv("NUVIO_TRAKT_CHECK"), "perf") || !strcmp(getenv("NUVIO_TRAKT_CHECK"), "vidro"))) ? 8 : 3; }
 int fx_n_comentarios_ep(void) { return 0; }
 const char *fx_com_usuario(int i)  { return COM_USU[i % 3]; }
@@ -369,7 +369,7 @@ static const char *const EST_NOME_S[] = { "FX", "MGM Television", "26 Keys" };
 static const char *const EST_LOGO[] = { "deploy/app/art/logo/00.png", "deploy/app/art/logo/07.png", "" };
 int fx_n_estudios(void)       { return 3; }
 const char *fx_estudio_nome(int i) { return (ehSerieDeEnsaio() ? EST_NOME_S : EST_NOME_F)[i]; }
-const char *fx_estudio_logo(int i) { return EST_LOGO[i]; }
+const char *fx_estudio_logo(int i) { return getenv("NUVIO_DETSECOES_PROOF") ? "" : EST_LOGO[i]; }
 
 static const char *const TR_NOME_F[] = { "Trailer oficial", "Trailer 2", "Bastidores", "Cena · Rocky" };
 static const char *const TR_NOME_S[] = { "Recap · T1 em 3 min", "Trailer · T1", "Teaser · T5", "Bastidores" };
@@ -433,7 +433,11 @@ static void cacheFrases(void) {
     assert(dados_gravar_leve("frases-" IMDB_FILME ".txt",buf));
     snprintf(buf,sizeof buf,"# nuvio seriefrases v1\n%lld\tFargo\t1\nQ\tLorne Malvo · T1:E1\tOs mapas diziam: aqui há dragões. Hoje não dizem mais. Isso não quer dizer que os dragões não estejam lá.\n",(long long)time(NULL));
     assert(dados_gravar_leve("frases-" IMDB_SERIE ".txt",buf));
-  } else assert(dados_gravar_leve("frases-" IMDB_FILME ".txt", buf));
+  } else {
+    assert(dados_gravar_leve("frases-" IMDB_FILME ".txt", buf));
+    snprintf(buf,sizeof buf,"# nuvio seriefrases v1\n%lld\tFallout\t1\nQ\tLucy · S1:E1\tEveryone wants to save the world. They just disagree on how.\nQ\tThe Ghoul\tThe wasteland has its own golden rule. Thou shalt get sidetracked every time.\n",(long long)time(NULL));
+    assert(dados_gravar_leve("frases-" IMDB_SERIE ".txt",buf));
+  }
 }
 
 // --- CATALOGO ----------------------------------------------------------------
@@ -943,6 +947,35 @@ int main(int argc, char **argv) {
     for (int k=0;k<4;k++) { quadros(k ? 4 : 1); snprintf(name,sizeof name,"anim-elenco-%d",k); gravar(name); }
     detail_fechar();
     for (int k=0;k<5;k++) { quadros(k ? 4 : 1); snprintf(name,sizeof name,"anim-exit-%d",k); gravar(name); }
+  }
+
+  if (quer(argc,argv,"lower-sections")) {
+    const int rows[]={SEC_COMENTARIOS,SEC_FRASES,SEC_DETALHES,SEC_ESTUDIOS};
+    const char *names[]={"comments","quotes","details","studios"};
+    for (int movie=0;movie<2;movie++) for (int i=0;i<4;i++) {
+      abrir(movie,1,rows[i],0);
+      frasesAberta=1; seriefrases_abrir(itens[movie].imdb);
+      quadros(60); SDL_Delay(400); quadros(8);
+      char name[96]; snprintf(name,sizeof name,"%s-%s",movie ? "movie" : "series",names[i]);
+      gravar(name);
+#ifdef NV_DETSECOES_PROOF
+      SDL_Event key={0}; key.type=SDL_KEYDOWN;
+      if (i==0) {
+        for (int k=0;k<EX_COMENT_MAX+3;k++) { key.key.keysym.sym=SDLK_RIGHT; detail_evento(&key); quadros(8); }
+        assert(foco.fileira==SEC_COMENTARIOS && foco.coluna==nCartoesCom());
+        quadros(60); snprintf(name,sizeof name,"%s-comments-end",movie ? "movie" : "series"); gravar(name);
+      }
+      if (i==0 || i==1) {
+        key.key.keysym.sym=SDLK_RETURN; detail_evento(&key);
+        key.type=SDL_KEYUP; detail_evento(&key);
+        assert(lowerList==(i==1 ? 2 : 1));
+        for (int k=0;k<24;k++) { SDL_Delay(16); quadros(1); }
+        snprintf(name,sizeof name,"%s-%s-list",movie ? "movie" : "series",names[i]); gravar(name);
+        key.type=SDL_KEYDOWN; key.key.keysym.sym=SDLK_ESCAPE; detail_evento(&key);
+        assert(!lowerList && foco.fileira==rows[i]);
+      }
+#endif
+    }
   }
 
   if (quer(argc,argv,"full")) {

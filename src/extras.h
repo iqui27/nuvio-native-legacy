@@ -91,6 +91,7 @@ const char *extras_comentario_ep_lingua(int i);
 //
 // `imdbSerie` aceita tanto "tt1234567" quanto o "tt1234567:2:4" que a lista de
 // episodios usa; a parte depois do primeiro ':' e ignorada.
+// temporada=episodio=0 opens the same paged feed for the whole title.
 void extras_pedir_comentarios_ep(const char *imdbSerie, int temporada, int episodio);
 int  extras_n_comentarios_ep(void);
 // Paged episode feed. Appends in the worker; repeated near-end requests coalesce.

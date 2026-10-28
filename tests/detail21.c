@@ -1,3 +1,10 @@
+#define extras_n_estudios studioCountFixture
+#define extras_estudio_tmdb studioIdFixture
+#define extras_estudio_nome studioNameFixture
+#define extras_estudio_rede studioNetworkFixture
+#define vertudo_colecao studioOpenFixture
+#define vertudo_aberta studioVisibleFixture
+#define vertudo_evento studioEventFixture
 #define extras_nota ratingFixture
 #define seriefrases_n quoteCountFixture
 #define seriefrases_n_fatos factCountFixture
@@ -9,6 +16,23 @@
 #define juntosui_abrir_folha togetherOpenFixture
 #define travaui_abrir lockOpenFixture
 #include "../src/detail.c"
+static int studios, studioVisible;
+static long openedStudio;
+static char openedType[16], openedMedia[16];
+int studioCountFixture(void) { return studios; }
+long studioIdFixture(int i) { return 100+i; }
+const char *studioNameFixture(int i) { return i ? "Universal Television" : "FOX"; }
+int studioNetworkFixture(int i) { return i==0; }
+void studioOpenFixture(const ColFolder *folder) {
+  openedStudio=folder->sources[0].tmdbId;
+  snprintf(openedType,sizeof openedType,"%s",folder->sources[0].tmdbTipo);
+  snprintf(openedMedia,sizeof openedMedia,"%s",folder->sources[0].midia);
+  studioVisible=1;
+}
+int studioVisibleFixture(void) { return studioVisible; }
+void studioEventFixture(const SDL_Event *e) {
+  if (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_ESCAPE) studioVisible=0;
+}
 static int eligible, roomT, roomE, lockIdx=-1;
 static int richRatings;
 int ratingFixture(int f) {
@@ -351,15 +375,13 @@ int main(int argc, char **argv) {
   cat_definir_tudo(&itemTeste,1,NULL,0); idx=0; cat_definir_episodios(0,grid,2);
   temporada=0; nivel=1; foco.fileira=SEC_EPISODIOS; foco.coluna=1;
   assert(!detail_ep_borda(1) && temporada==0); // switch/reminder are never adjacent seasons
-  // Footer is one horizontal row, including when a card disappears.
+  // Lower sections are separate rows; horizontal movement never changes rows.
   quoteCount=1; frasesAberta=1; sincronizarColunas(); recalcularLayout();
   nivel=1; foco.fileira=SEC_FRASES; foco.coluna=0;
-  assert(topoSec[SEC_FRASES]==topoSec[SEC_DETALHES]);
-  assert(parDir(SEC_FRASES)==SEC_DETALHES);
-  assert(!moverFileira(1));
-  assert(moverFileira(-1) && foco.fileira==SEC_COMENTARIOS);
-  foco.fileira=SEC_DETALHES;
-  assert(!moverFileira(1));
+  assert(topoSec[SEC_FRASES]<topoSec[SEC_DETALHES]);
+  assert(parDir(SEC_FRASES)==-1);
+  assert(moverFileira(1) && foco.fileira==SEC_DETALHES);
+  assert(moverFileira(-1) && foco.fileira==SEC_FRASES);
   assert(moverFileira(-1) && foco.fileira==SEC_COMENTARIOS);
   quoteCount=3; seriefrases_selecionar(1);
   foco.fileira=SEC_FRASES; e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_UP;
@@ -405,6 +427,43 @@ int main(int argc, char **argv) {
   e.type=SDL_KEYDOWN; e.key.keysym.sym=SDLK_UP; detail_evento(&e);
   assert(pediuRelogio && !reacao_aberta());
   assert(ratingsGrid()==0);
+  // Exercise the reported row-end escape with a visible target in another row.
+  saindo=carro=pessoaAberta=0; aberto=1; nivel=1; studios=2;
+  quoteCount=3; frasesAberta=1; sincronizarColunas(); recalcularLayout();
+  foco.fileira=SEC_COMENTARIOS; foco.coluna=nCartoesCom()-1;
+  navigationCount=0;
+  navigationTarget(100,200,556,212,ponteiroDetalhe,NULL,SEC_COMENTARIOS,foco.coluna);
+  navigationTarget(700,460,360,180,ponteiroDetalhe,NULL,SEC_ESTUDIOS,0);
+  press(SDLK_RIGHT);
+  assert(foco.fileira==SEC_COMENTARIOS && foco.coluna==nCartoesCom());
+  press(SDLK_RIGHT);
+  assert(foco.fileira==SEC_COMENTARIOS && foco.coluna==nCartoesCom());
+  press(SDLK_RETURN); assert(lowerList==1);
+  press(SDLK_DOWN); assert(lowerCursor==1);
+  press(SDLK_ESCAPE); assert(!lowerList && foco.fileira==SEC_COMENTARIOS);
+  press(SDLK_DOWN); assert(foco.fileira==SEC_FRASES);
+  foco.coluna=1; press(SDLK_RETURN);
+  assert(lowerList==2 && lowerCursor==1);
+  press(SDLK_DOWN); assert(lowerCursor==2);
+  press(SDLK_ESCAPE); assert(!lowerList && foco.fileira==SEC_FRASES && foco.coluna==1);
+  press(SDLK_RIGHT); press(SDLK_RIGHT);
+  assert(foco.fileira==SEC_FRASES && foco.coluna==2);
+  for (int movie=0;movie<2;movie++) {
+    snprintf(itemTeste.tipo,sizeof itemTeste.tipo,"%s",movie ? "movie" : "series");
+    cat_definir_tudo(&itemTeste,1,NULL,0); idx=0;
+    sincronizarColunas(); recalcularLayout();
+    assert(secaoN(SEC_ESTUDIOS)==2 && topoSec[SEC_ESTUDIOS]>topoSec[SEC_DETALHES]);
+    nivel=1; foco.fileira=SEC_ESTUDIOS; foco.coluna=1;
+    press(SDLK_RETURN);
+    assert(studioBrowse && openedStudio==101 && !strcmp(openedType,"COMPANY"));
+    assert(!strcmp(openedMedia,movie ? "MOVIE" : "TV") && !saindo);
+    press(SDLK_ESCAPE);
+    assert(!studioVisible && foco.fileira==SEC_ESTUDIOS && foco.coluna==1);
+    studioBrowse=0;
+    foco.coluna=0; press(SDLK_RETURN);
+    assert(!strcmp(openedType,"NETWORK")); press(SDLK_ESCAPE); studioBrowse=0;
+  }
+  puts("detail lower sections: row boundaries, See more, quote list/Back, studio routes/Back OK");
   puts("detail21: content, navigation, profile isolation and personal status OK");
   SDL_Quit();
   return 0;
