@@ -2,6 +2,7 @@
 #include "mediaurl.h"
 #include "badges.h"
 #include "js.h"
+#include "aionotice.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -979,9 +980,12 @@ static int marcaEmCache(const char *p, const char *fim) {
 // Booleano da PROPRIA fonte, nao de cabecalhos nem da fonte seguinte.
 // 0 = ausente/invalido; -1 = false; 1 = true. Strings e numeros nao contam.
 static int cacheDeclarado(const char *p, const char *fim) {
+  const char *data = objetoRaiz(p, fim, "streamData");
+  const char *service = data ? objetoRaiz(data, js_fim(data), "service") : NULL;
   const char *cr = objetoRaiz(p, fim, "clientResolve");
-  if (!cr) return 0;
-  const char *f = js_fim(cr), *v = valorRaiz(cr, f, "isCached");
+  const char *owner = service ? service : cr;
+  if (!owner) return 0;
+  const char *f = js_fim(owner), *v = valorRaiz(owner, f, service ? "cached" : "isCached");
   if (!v) return 0;
   unsigned n = *v == 't' ? 4 : 5;
   if (f - v < n || memcmp(v, n == 4 ? "true" : "false", n)) return 0;
@@ -1053,13 +1057,14 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
   int n = 0, cap = 0;
   Stream *v = NULL;
   *saida = NULL;
-  if (!json) return 0;
+  if (!aio_json_valid(json)) return 0;
   p = js_array(json, json + strlen(json), "streams");
   while (p && *p == '{') {
     Stream s = {0};
     char titulo[2048] = "", nomeFonte[1024] = "", texto[5000];
     fim = js_fim(p);
     if (!fim || fim <= p) break;
+    if(aio_notice(p,fim)) { p=js_prox(fim); continue; }
     // externalUrl abre fora do player; sem midia/hash a fonte fica oculta.
     js_texto_raiz_em(p, fim, "url", s.url, sizeof s.url);
     if (strlen(s.url) == sizeof s.url - 1) {

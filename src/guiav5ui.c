@@ -113,7 +113,8 @@ static int phone_stage, work_phone;
 // Published after each completed catalog request; drawing never reads staging.
 static atomic_int phone_counts[3], phone_parts;
 static atomic_int busy, ready;
-static int operation, worker_profile, worker_ok;
+static int operation, worker_profile, worker_ok, worker_categories_missing;
+static int categories_missing;
 static atomic_int worker_cancel;
 static char worker_account[96], action[160];
 static XtreamConta tested;
@@ -132,7 +133,7 @@ static const char *alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY
 static void erase(void *p,size_t n){volatile unsigned char *s=p;while(n--)*s++=0;}
 static void filename(char *out,size_t n,const char *what){snprintf(out,n,"guiav5-%s-p%d.json",what,perfis_ativo());}
 static void save_rules(void);
-static void clear_catalog(void){free(inventory);free(series_catalog);inventory=series_catalog=NULL;count=total=series_count=0;source_loaded=0;vod_selected_slot=-1;vod_revision++;vod_free(&vod_data);free(vod_order);free(vod_layout);vod_order=NULL;vod_layout=NULL;vod_size=vod_rows=0;}
+static void clear_catalog(void){free(inventory);free(series_catalog);inventory=series_catalog=NULL;count=total=series_count=0;source_loaded=categories_missing=0;vod_selected_slot=-1;vod_revision++;vod_free(&vod_data);free(vod_order);free(vod_layout);vod_order=NULL;vod_layout=NULL;vod_size=vod_rows=0;}
 static void gs_reset(void);
 static void context(void){
   int p=perfis_ativo();const char *owner=sessao_usuario();if(!owner)owner="";
@@ -200,7 +201,7 @@ static int load_playlist(G5Item *out,int cap){
   return ok?g5_playlist_finish(&parser):-1;
 }
 static void *load(void *unused){
-  (void)unused;worker_ok=0;staging_count=staging_total=0;
+  (void)unused;worker_ok=worker_categories_missing=0;staging_count=staging_total=0;
   vod_free(&vod_pending);
   if(operation==3){pin_result=perfis_verificar_pin(worker_profile,pin_value);erase(pin_value,sizeof pin_value);worker_ok=pin_result==1;}
   else if(operation==1){
@@ -225,7 +226,14 @@ static void *load(void *unused){
           if(operation==2&&k<2&&n>=0){vod_pending.json[k]=b;b=NULL;}
           free(b);if(n<0){worker_ok=0;break;}
           int category_status=0;char *categories=operation==4?NULL:xtream_consultar(work_draft.server,work_draft.user,work_draft.password,k==0?"get_vod_categories":k==1?"get_series_categories":"get_live_categories",15,&category_status);
-          const char *cat=categories&&category_status==200?js_raiz_array(categories):NULL;
+          const char *root=categories?categories+strspn(categories," \t\r\n"):NULL;
+          const char *end=root?js_fim(root):NULL;
+          int categories_ok=category_status==200&&root&&*root=='['&&end&&end[-1]==']';
+          if(operation!=4&&!categories_ok){
+            worker_categories_missing=1;
+            for(int i=staging_count;i<staging_count+n;i++)snprintf(staging[i].group,sizeof staging[i].group,"Uncategorized");
+          }
+          const char *cat=categories_ok?js_raiz_array(categories):NULL;
           while(cat){const char *end=js_fim(cat);if(!end)break;char id[64]="",name[64]="";js_texto(cat,end,"category_id",id,sizeof id);js_texto(cat,end,"category_name",name,sizeof name);
             if(name[0])for(int i=staging_count;i<staging_count+n;i++)if(!strcmp(staging[i].group,id)){snprintf(staging[i].group,sizeof staging[i].group,"%s",name);if(adult_group(name))staging[i].adult=1;}cat=js_prox(end);
           }
@@ -349,7 +357,7 @@ void g5ui_open(const char *name){context();if(gv_is(screen)&&!gv_is(name))gv_dei
   if(!strncmp(name,"setup-",6)&&!draft.live&&!draft.movies&&!draft.series){draft.live=draft.movies=draft.series=draft.epg=1;}
   if((!strcmp(name,"setup-credenciais")||!strcmp(name,"fontes-gerenciar"))&&use_saved)load_saved_credentials();
   if(!strncmp(name,"vod-",4)&&!episodes_mode&&!atomic_load(&busy))merge_mixed_vod();
-  if(!strncmp(name,"vod-",4)&&!source_loaded&&!atomic_load(&busy)){
+  if(!strncmp(name,"vod-",4)&&(!source_loaded||categories_missing)&&!atomic_load(&busy)){
     if(draft.type==0 && xtream_configurado()){
       use_saved=1;action[0]=0;draft.movies=draft.series=1;start(2);
     }else if(draft.playlist[0]){action[0]=0;start(2);}
@@ -367,7 +375,7 @@ static void persist(void){
   g5ui_save_source(draft.playlist,draft.xmltv,draft.type,draft.live,draft.movies,draft.series,draft.epg);
   if(save_failed)return;
   if(draft.type==0){xtream_definir_servidor(draft.server);xtream_definir_usuario(draft.user);if(draft.password[0])xtream_definir_senha(draft.password);}
-  erase(draft.password,sizeof draft.password);use_saved=1;dirty=1;source_loaded=1;committed=1;
+  erase(draft.password,sizeof draft.password);use_saved=1;dirty=1;committed=1;
 }
 #include "jsw.h"
 static void save_rules(void){
@@ -1557,14 +1565,17 @@ void g5ui_update(void){
           else{g5_grant(&lease,profile,locked_item.source,locked_item.id,time(NULL),lease_seconds,1);if(locked_item.kind==G5_LIVE)g5ui_close();else go(previous[0]?previous:"vod-filmes");}}
         else{go("parental-pin");snprintf(message,sizeof message,"%s",i18n(pin_result==0?"PIN incorreto":"Não foi possível verificar o PIN"));}
       }else if(staging&&worker_ok){if(operation==4){free(series_catalog);series_catalog=inventory;series_count=count;parent_series=selected;}else free(inventory);inventory=staging;staging=NULL;count=staging_count;total=staging_total;build_groups();source_loaded=1;
-        if(operation==2){vod_selected_slot=-1;vod_free(&vod_data);vod_data=vod_pending;memset(&vod_pending,0,sizeof vod_pending);merge_mixed_vod();vod_rebuild();}
+        if(operation==2){categories_missing=worker_categories_missing;vod_selected_slot=-1;vod_free(&vod_data);vod_data=vod_pending;memset(&vod_pending,0,sizeof vod_pending);merge_mixed_vod();vod_rebuild();}
         if(operation==4){episodes_mode=1;selected=0;go("vod-serie-temporadas");}
         if(committed)dirty=1;
         if(operation==2&&strstr(screen,"vod-"))focus=VOD_ITEM;
       }
       if(phone_stage==1&&operation==1){phone_stage=worker_ok?4:0;phone_fetch=worker_ok;if(!worker_ok)celular_status("{\"s\":\"err\"}");}
       else if(phone_stage==4&&operation==2){phone_stage=worker_ok?2:0;if(worker_ok)phone_status_counts("ok");else celular_status("{\"s\":\"err\"}");}
-      if(!worker_ok&&operation!=3&&operation!=5)snprintf(message,sizeof message,"%s",i18n("Falha na conexão"));
+      if(!worker_ok&&operation!=3&&operation!=5){
+        if(operation==2)source_loaded=0; /* Retry a failed catalog on the next open. */
+        snprintf(message,sizeof message,"%s",i18n("Falha na conexão"));
+      }
     }
     free(staging);staging=NULL;vod_free(&vod_pending);
     if(phone_fetch&&!start(2)){phone_stage=0;celular_status("{\"s\":\"err\"}");}
@@ -1747,7 +1758,7 @@ static int gv_is(const char *s){
     "erros","vazio","fontes-erro","esportes-ligas","esportes-liga","esportes-favoritos",
     "esportes-ajustes","esportes-onde-assistir","esportes-noticias","esportes-hoje",
     "esportes-proximos","esportes-resultados","esportes-modalidades","esportes-catalogo",
-    "esportes-visibilidade","esportes-modalidades-config","esportes-artigo",NULL};
+    "esportes-visibilidade","esportes-modalidades-config","esportes-artigo","esportes-canais",NULL};
   for(int i=0;ss[i];i++)if(!strcmp(s,ss[i]))return 1;
   return 0;
 }
@@ -2776,7 +2787,7 @@ static void gv_busca_resultado(const SpotTVResultado *r){
   if(r->tipo==SPOT_TV_CANAL)gv_assistir(r->id);
 }
 static void gv_busca_abrir(void){
-  if(!source_loaded&&!atomic_load(&busy)){
+  if((!source_loaded||categories_missing)&&!atomic_load(&busy)){
     if(xtream_configurado()){use_saved=1;load_saved_credentials();draft.movies=draft.series=1;start(2);}
     else if(draft.playlist[0])start(2);
   }

@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 out=${NUVIO_PROOF_OUT:-/Volumes/ExternalSSD/tmp/rev/j6-r4}
-export OBJ=${OBJ:-/tmp/nv21-obj-$(basename "$PWD")}
+export OBJ=${OBJ:-${TMPDIR:-/tmp}/nv21-obj-$(basename "$PWD")}
 mkdir -p "$out/reference" "$out/current" "$out/legacy" "$out/compare"
 for file in detail.c detail.h notasui.c musicaui.c; do
   git show "integracao/2.0.5:src/$file" > "$out/reference/$file"

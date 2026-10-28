@@ -22,6 +22,24 @@
 #ifndef NV_ADDONSTATS_H
 #define NV_ADDONSTATS_H
 
+#include "aiostreams.h"
+#include <stdint.h>
+#include <time.h>
+#define ADDONSTATS_AIO_HISTORY 10
+typedef enum { AIO_REQUEST_UNKNOWN, AIO_REQUEST_OK, AIO_REQUEST_EMPTY, AIO_REQUEST_SOURCE_ERROR, AIO_REQUEST_CONFIG_LOCKED, AIO_REQUEST_RATE_LIMITED, AIO_REQUEST_HTTP_ERROR, AIO_REQUEST_TRANSPORT_ERROR, AIO_REQUEST_INVALID } AioRequestState;
+typedef struct AddonAioRequest {
+  AioRequestState state;
+  time_t completed;
+  int http, transport, valid, playable, statistics, errors, omitted, evidenceCount;
+  unsigned long clientMs;
+  AioEvidencia evidence[AIO_EVIDENCE_MAX];
+} AddonAioRequest;
+// Key already includes account/profile/installation/variant; content type is separate.
+void addonstats_aio_complete(const char *key,const char *type,const char *json,int http,int transport,unsigned long ms,int retryAfter);
+int addonstats_aio_history(const char *key,const char *type,AddonAioRequest *out,int max);
+int addonstats_aio_wait(const char *key,const char *type);
+void addonstats_aio_reset(void);
+
 #define ADDONSTATS_JANELA 8          // amostras guardadas por identidade
 #define ADDONSTATS_MAX 288           // nomes (128 addons + 160 scrapers de plugin)
 #define ADDONSTATS_MUDO_IGNORA 2     // seguidas sem resposta: sai da espera
