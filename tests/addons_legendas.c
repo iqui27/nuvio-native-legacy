@@ -23,6 +23,8 @@ static void avancar(unsigned ms) {
   }
 }
 static const char *responses[3];
+static const char *manifests[3];
+static int unprobed = -1;
 static char ultimaUrl[3][2048];
 static int desligaIdx = -1;
 static int recusaExtras, semRange, trechos;
@@ -83,10 +85,12 @@ static void run(int n, const char *id, const char *tipo) {
   const char *nomes[] = {"OpenSubtitles", "Subs.ro", "Community Subtitles"};
   memset(addon, 0, sizeof addon); nAddon = n;
   for (int i = 0; i < n; i++) {
-    addon[i].ativo = addon[i].legenda = addon[i].sondado = 1;
+    addon[i].ativo = addon[i].legenda = 1;
+    addon[i].sondado = i != unprobed;
     if (i == desligaIdx) addon[i].ativo = 0;   // desligado na conta
     snprintf(addon[i].base, sizeof addon[i].base, "https://fixture.invalid/provider%d", i);
     snprintf(addon[i].nome, sizeof addon[i].nome, "%s", nomes[i]);
+    if (manifests[i]) capacidadesDoManifesto(i, manifests[i]);
   }
   snprintf(legId, sizeof legId, "%s", id); snprintf(legTipo, sizeof legTipo, "%s", tipo);
   legParar = 0; fioLegVivo = 1; buscarLegendas(NULL); assert(!fioLegVivo);
@@ -113,6 +117,42 @@ static char *fixture(const char *name) {
 }
 
 int main(void) {
+  // Adapted from 2a7858b24: public Subtitle Sync manifest compatibility,
+  // with synthetic episode responses and no configured provider requests.
+  {
+    char *manifest = fixture("manifest");
+    responses[0] = "{\"subtitles\":[{\"id\":\"same\",\"lang\":\"eng\",\"url\":\"https://example.invalid/first.srt\",\"season\":1,\"episode\":2}]}";
+    responses[1] = "{\"subtitles\":[{\"id\":\"same\",\"lang\":\"eng\",\"url\":\"https://example.invalid/second.srt\",\"season\":1,\"episode\":2}]}";
+    responses[2] = "{\"subtitles\":[{\"id\":\"same\",\"lang\":\"eng\",\"url\":\"https://example.invalid/third.srt\",\"season\":1,\"episode\":2}]}";
+    ling_local_legenda("*");
+    manifests[0] = manifest;
+    manifests[1] = "{\"resources\":[{\"name\":\"subtitles\",\"types\":[\"series\"],\"idPrefixes\":[\"tt\",\"kitsu:\"]}]}";
+    unprobed = 2; // A pending/failed probe must preserve assumed capability (#552).
+    int before = requests;
+    run(3, "tt123:1:2", "series");
+    assert(requests - before == 3 && nLegs == 3);
+    assert(addon[0].sondado && addon[0].legenda && !addon[0].fonte);
+    assert(addon[1].sondado && addon[1].legenda && !addon[1].fonte);
+    Legenda list[LEG_MAX]; int ready = 0;
+    assert(addons_legendas_copiar(list, LEG_MAX, NULL, &ready) == 3 && ready);
+    for (int i = 0; i < 3; i++) {
+      assert(list[i].addonIndice == i && !strcmp(list[i].id, "same"));
+      assert(strstr(ultimaUrl[i], "/subtitles/series/tt123:1:2.json"));
+    }
+    manifests[0] = NULL;
+    before = requests; run(3, "kitsu:41370:2", "series");
+    assert(requests - before == 3 && nLegs == 3);
+    for (int i = 0; i < 3; i++)
+      assert(strstr(ultimaUrl[i], "/subtitles/series/kitsu:41370:2.json"));
+    // An explicit manifest exclusion and a disabled add-on remain excluded.
+    manifests[1] = "{\"resources\":[\"stream\"]}";
+    desligaIdx = 2;
+    before = requests; run(3, "tt123:1:2", "series");
+    assert(requests - before == 1 && nLegs == 1);
+    manifests[1] = NULL; unprobed = desligaIdx = -1;
+    free(manifest);
+    puts("episode subtitle fixtures: three providers reach player list");
+  }
   // Captured Subtitle Sync 2.1.0 responses; download URLs replaced with markers.
   {
     char *body = fixture("movie"), *manifest = fixture("manifest");
