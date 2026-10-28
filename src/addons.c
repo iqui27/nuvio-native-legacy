@@ -1586,8 +1586,9 @@ static void *legFioPuxa(void *u) {
     i = B->proximo < B->nLotes ? B->proximo++ : -1;
     pthread_mutex_unlock(&B->m);
     if (i < 0) return NULL;
-    // Only a known manifest can authorize a subtitles request.
-    if (!B->origens || !B->origens[i].ativo || !B->origens[i].sondado || !B->origens[i].legenda) continue;
+    // Preserve assumed subtitle capability until probing finishes (#552).
+    // An explicit manifest exclusion still clears legenda.
+    if (!B->origens || !B->origens[i].ativo || !B->origens[i].legenda) continue;
     pthread_mutex_lock(&B->m);
     B->consultados++;
     pthread_mutex_unlock(&B->m);
