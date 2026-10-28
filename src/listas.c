@@ -719,33 +719,66 @@ typedef struct {
   int provider, profile;
 } ListaTarefa;
 
-// ponytail: warm ten cards per response; paginate previews if browsing grows.
-// Card titles publish first; bounded previews share the paced worker.
-static void carregarCapas(LstLista *v, int n, const ListaTarefa *t) {
-  const char *cab[] = { "trakt-api-version: 2", t->chave, t->aut[0] ? t->aut : NULL, NULL };
-  for (int i = 0; i < n && i < 10 && perfis_sessao_atual(t->sessao); i++) {
-    if (v[i].traktId <= 0 || v[i].itens <= 0) continue;
+typedef struct {
+  ListaTarefa tarefa;
+  LstLista lista;
+  int indice;
+} ListaCapa;
+static int capasVivas;
+
+static void *carregarCapa(void *u) {
+  ListaCapa *c = u;
+  const ListaTarefa *t = &c->tarefa;
+  LstLista *v = &c->lista;
+  int atual;
+  pthread_mutex_lock(&trava);
+  atual = t->geracao == tabs[t->tab].geracao;
+  pthread_mutex_unlock(&trava);
+  if (atual && perfis_sessao_atual(t->sessao)) {
+    const char *cab[] = { "trakt-api-version: 2", t->chave, t->aut[0] ? t->aut : NULL, NULL };
     char url[160]; int st = 0;
-    snprintf(url, sizeof url, "https://api.trakt.tv/lists/%ld/items?limit=4&page=1", v[i].traktId);
-    char *body = rede_baixar_st_retry(url, 10, cab, &st, NULL);
+    snprintf(url, sizeof url, "https://api.trakt.tv/lists/%ld/items?limit=4&page=1", v->traktId);
+    char *body = rede_baixar_st_retry(url, 2, cab, &st, NULL);
     if (body && st == 200) {
       int k = 0;
       for (const char *p = js_raiz_array(body); p && *p == '{' && k < 4; p = js_prox(js_fim(p))) {
         CatItem item = {0};
         js_texto(p, js_fim(p), "imdb", item.imdb, sizeof item.imdb);
         if (arte_metahub_preencher(&item))
-          snprintf(v[i].capas[k++], sizeof v[i].capas[0], "%s", item.poster);
+          snprintf(v->capas[k++], sizeof v->capas[0], "%s", item.poster);
       }
     }
     free(body);
     if (perfis_sessao_travar(t->sessao)) {
       pthread_mutex_lock(&trava);
-      if (t->geracao == tabs[t->tab].geracao && i < tabs[t->tab].n)
-        memcpy(tabs[t->tab].v[i].capas, v[i].capas, sizeof v[i].capas);
+      if (t->geracao == tabs[t->tab].geracao && c->indice < tabs[t->tab].n)
+        memcpy(tabs[t->tab].v[c->indice].capas, v->capas, sizeof v->capas);
       pthread_mutex_unlock(&trava); perfis_sessao_destravar();
     }
-    struct timespec pause = {0, 150000000L}; nanosleep(&pause, NULL);
   }
+  pthread_mutex_lock(&trava);
+  capasVivas--;
+  pthread_mutex_unlock(&trava);
+  memset(c, 0, sizeof *c); free(c);
+  return NULL;
+}
+
+// Optional previews never enter the list-data queue. At most ten requests
+// run concurrently, each bounded to two seconds; busy slots are skipped.
+static void carregarCapas(LstLista *v, int n, const ListaTarefa *t) {
+  pthread_mutex_lock(&trava);
+  for (int i = 0; i < n && i < 10 && capasVivas < 10 &&
+       t->geracao == tabs[t->tab].geracao; i++) {
+    if (v[i].traktId <= 0 || v[i].itens <= 0) continue;
+    ListaCapa *c = calloc(1, sizeof *c);
+    pthread_t fio;
+    if (!c) break;
+    c->tarefa = *t; c->lista = v[i]; c->indice = i;
+    capasVivas++;
+    if (pthread_create(&fio, NULL, carregarCapa, c) == 0) pthread_detach(fio);
+    else { capasVivas--; memset(c, 0, sizeof *c); free(c); }
+  }
+  pthread_mutex_unlock(&trava);
 }
 
 static void *fioListas(void *u) {

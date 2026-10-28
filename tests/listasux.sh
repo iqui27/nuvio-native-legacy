@@ -39,6 +39,7 @@ run_test() {
   mkdir -p "$work/data-$name"
   NUVIO_DADOS="$work/data-$name" "$work/$name"
 }
+run_test listasux_posters listas
 run_test listasux_parser listas
 run_test listasux biblioteca
 run_test listas
