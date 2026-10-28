@@ -19,6 +19,7 @@
 #include "text.h"
 #include "tex_cache.h"
 #include "plrui.h"
+#include "badges.h"
 #include "ponteiro.h"
 #include "buscanorm.h"
 #include "spotlight.h"
@@ -526,7 +527,8 @@ static void want_pin(int settings){if(gv_is(screen))gv_deixa();pin_settings=sett
 static void leave_episodes(void){free(inventory);inventory=series_catalog;series_catalog=NULL;count=series_count;selected=parent_series;episodes_mode=0;go("vod-serie-temporadas");focus=1;}
 static int control_count;
 static void activate(int id);
-static void point_focus(int id,int unused){(void)unused;focus=id;nav=-1;}
+static void gv_point_focus(int id);
+static void point_focus(int id,int unused){(void)unused;focus=id;nav=-1;if(gv_is(screen))gv_point_focus(id);}
 static void point_activate(int id,int unused){(void)unused;focus=id;activate(id);}
 static void label(TxtEstilo style,const char *text,float x,float y,float width,int dim){
   if(style==TXT_TITULO2)style=TXT_V2_A3TIT;
@@ -1780,7 +1782,6 @@ static time_t gv_tfoc;      /* instante do programa em foco; 0 = agora */
 static char gv_numero[8]; static Uint32 gv_numero_desde;
 static int gv_epg_extra, gv_verif_estado;   /* folhas: 0 verificando 1 ok 2 falha */
 
-static int gv_hue(const char *s){unsigned h=0;while(s&&*s)h=h*31u+(unsigned char)*s++;return (int)(h%360);}
 /* Aparelho de estado: quais "screens" sao da tela principal do guia. */
 static int gv_is(const char *s){
   static const char *const ss[]={"grade","cartoes","preview","preview-grade","preview-foco",
@@ -2150,57 +2151,40 @@ static void gv_sidebar(float base){
 }
 
 /* --- heroi: ASSISTINDO AGORA + cartao de previa --------------------------- */
-static void gv_hsl(int h,float s,float l,float *r,float *g,float *b){
-  float c=(1-fabsf(2*l-1))*s,hp=(h%360)/60.0f,x=c*(1-fabsf(fmodf(hp,2)-1));
-  float t[3]={0,0,0};
-  if(hp<1){t[0]=c;t[1]=x;}else if(hp<2){t[0]=x;t[1]=c;}else if(hp<3){t[1]=c;t[2]=x;}
-  else if(hp<4){t[1]=x;t[2]=c;}else if(hp<5){t[0]=x;t[2]=c;}else{t[0]=c;t[2]=x;}
-  float m=l-c/2;*r=t[0]+m;*g=t[1]+m;*b=t[2]+m;
-}
 static float gv_badge(const char *t,float x,float y){
-  if(!t||!*t)return 0;   /* unknown quality: no empty pill */
-  float w=(float)txt_linha_bruta(TXT_ILHA_CORPO,t,243,242,239,255).w+24;
-  gfx_cor((GfxRect){x,y,w,44},12.0f/44,.168f,.176f,.204f,1);
-  gv_label(TXT_ILHA_CORPO,t,x+12,y+9,w-20,0);
-  return w+6;
+  return t&&*t?badge_desenhar(x,y,t,BADGE_NEUTRO,1)+BADGE_GAP:0;
 }
-/* placar do titulo "Brasileirao: Flamengo x Palmeiras" -> "FLA 2 x 1 PAL" quando ha numeros */
-static int gv_placar(const char *titulo,char *dst,size_t n){
-  const char *x=strstr(titulo,"×");if(!x)return 0;
-  char esq[80],dir[80];const char *dp=strchr(titulo,':');
-  const char *ini=dp?dp+1:titulo;
-  snprintf(esq,sizeof esq,"%.*s",(int)(x-ini),ini);snprintf(dir,sizeof dir,"%s",x+strlen("×"));
-  char *e2=esq;while(*e2==' ')e2++;char *f=e2+strlen(e2);while(f>e2&&f[-1]==' ')f--;*f=0;
-  char *d2=dir;while(*d2==' ')d2++;f=d2+strlen(d2);while(f>d2&&f[-1]==' ')f--;*f=0;
-  snprintf(dst,n,"%s × %s",e2,d2);
-  return 1;
-}
-/* Logo real do canal num azulejo claro; sem logo, a inicial no azulejo da cor
- * do canal (mock v5). Nunca o nome cortado. */
-static void gv_avatar(const char *logo,const char *nome,GfxRect r){
-  float rr=fminf(r.w,r.h)*.25f;
-  if(logo&&logo[0]&&tex_obter_larg(logo,r.w)&&tex_aspecto(logo)>0){
-    gfx_cor(r,rr/r.h,1,1,1,.08f);
-    guia_logo_desenhar(logo,nome,(GfxRect){r.x+5,r.y+5,r.w-10,r.h-10},r.w-10,r.h-10,1,1);
-    return;
-  }
-  float cr,cg,cb;gv_hsl(gv_hue(nome),.45f,.30f,&cr,&cg,&cb);gfx_cor(r,rr/r.h,cr,cg,cb,1);
-  char ini[8];gv_iniciais(nome,ini,sizeof ini);
-  TxtLinha t=txt_linha_bruta(r.h>=100?TXT_V2_TIT:r.h>=48?TXT_HEADLINE:TXT_W20_24B,ini,243,242,239,255);
-  txt_desenhar(t,r.x+(r.w-(float)t.w)/2,r.y+(r.h-(float)t.h)/2);
+/* Shared URL texture cache and logo treatment; no extra background plate. */
+static void gv_avatar(const char *logo,const char *nome,GfxRect r,float tom){
+  if(logo&&logo[0]){guia_logo_desenhar(logo,nome,r,r.w,r.h,tom,1);return;}
+  gfx_icone(r,"aj_tv-minimal-play",tom,tom,tom,1);
 }
 static float gv_progresso(const EpgProg *p){
   if(!p||p->fim<=p->ini)return 0;
   return anim_clamp((float)(time(NULL)-p->ini)/(float)(p->fim-p->ini),0,1);
 }
 static GVCh *gv_canal_cartao(void){return gv_card>=gv_off&&gv_card<gv_off+gv_n?&gv_ch[gv_card-gv_off]:gv_focus();}
+/* The now-watching card owns the playing identity, independently of grid focus
+ * and filters. Cache the inventory index, validating it after publication. */
+static GVCh *gv_hero_channel(GVCh *selected){
+  static GVCh watching;static int index=-1;
+  if(!guia_preview_no_ar())return selected;
+  const char *id=player_id_canal(),*cid,*name,*logo,*group,*base;
+  if(!guia_canal_campos(index,&cid,&name,&logo,&group,&base)||strcmp(cid,id)){
+    for(index=0;guia_canal_regra_campos(index,NULL,NULL,NULL,NULL,NULL);index++)
+      if(guia_canal_campos(index,&cid,&name,&logo,&group,&base)&&!strcmp(cid,id))break;
+    if(!guia_canal_campos(index,&cid,&name,&logo,&group,&base))return NULL;
+  }
+  gv_copia(&watching,index,cid,name,logo,group,base,1);
+  return &watching;
+}
 static void gv_broadcast(GfxRect pv,GVCh *c,EpgProg *p,int full){
-  float raio=full?0:(ajustes_guia_previa_grande()?0:20.0f/pv.h);
+  float raio=full?0:20.0f/pv.h;
   int live=guia_preview_no_ar();
   int troca=!strcmp(screen,"preview-troca");
-  // Keep the native plane aligned with the actual spring/focus geometry.
-  if(player_mini_no_guia_ativo()&&!player_janela_animando(NULL,NULL,NULL,NULL))
-    player_mini_no_guia(pv.x,pv.y,pv.w,pv.h);
+  // Follow every frame of the native player transition, including its hole.
+  if(player_janela_animando(&pv.x,&pv.y,&pv.w,&pv.h))raio=20.0f/pv.h;
+  else if(player_mini_no_guia_ativo())player_mini_no_guia(pv.x,pv.y,pv.w,pv.h);
   if(live)gfx_furo_raio(pv,raio);
   else{
     gfx_cor(pv,raio,.02f,.02f,.02f,1);
@@ -2214,51 +2198,13 @@ static void gv_broadcast(GfxRect pv,GVCh *c,EpgProg *p,int full){
     }
   }
   /* veu preto do modo grande/imersivo: emenda o video no heroi (2.0.8) */
-  if(full||ajustes_guia_previa_grande()||strcmp(gv_pagina,"cartoes")){
+  if(full){
     gfx_rect((GfxRect){pv.x,pv.y,pv.w,pv.h},0,GFX_VEU_CSS,0,2,1,0,.045f,.047f,.051f,.9f);
     gfx_rect((GfxRect){pv.x,pv.y+pv.h-120,pv.w,120},0,GFX_VEU_CSS,0,0,1,0,.045f,.047f,.051f,.8f);
   }
-  /* selos sobre o video (GL por cima do furo) */
-  if(live||!strcmp(screen,"preview")||!strcmp(screen,"preview-foco")||troca||full){
-    TxtLinha cb=txt_linha_bruta(TXT_ILHA_NOME,live?player_titulo_canal():c->nome,25,33,44,255);
-    GfxRect brand={pv.x+pv.w-(float)cb.w-48,pv.y+16,(float)cb.w+24,40};
-    gfx_cor(brand,7.0f/40,.953f,.949f,.937f,1);
-    txt_desenhar(cb,brand.x+12,brand.y+(40-(float)cb.h)/2);
-    TxtLinha lv=txt_linha(TXT_ILHA_SUB,"AO VIVO",243,242,239,255);
-    GfxRect pill={full?brand.x-(float)lv.w-62:pv.x+18,pv.y+18,(float)lv.w+44,36};
-    gfx_cor(pill,.5f,.91f,.208f,.353f,1);
-    gfx_cor((GfxRect){pill.x+14,pill.y+13,10,10},.5f,1,1,1,1);
-    txt_desenhar(lv,pill.x+30,pill.y+(36-(float)lv.h)/2);
-  }
-  int mesmo=!live||!strcmp(c->id,player_id_canal());
-  if(p&&live&&mesmo){
-    char placar[96];
-    if(gv_placar(p->titulo,placar,sizeof placar)){
-      TxtLinha s=txt_linha_bruta(TXT_ILHA_CORPO,placar,243,242,239,255);
-      TxtLinha m=txt_linha(TXT_ILHA_SUB,ajustes_guia_previa_sem_som()?"Ao vivo · sem som":"Ao vivo · áudio ligado",25,33,44,255);
-      GfxRect sb={pv.x+18,pv.y+pv.h-118,(float)s.w+(float)m.w+52,40};
-      gfx_cor(sb,7.0f/40,.92f,.925f,.894f,1);
-      gfx_cor((GfxRect){sb.x,sb.y,(float)s.w+26,40},7.0f/40,.118f,.298f,.263f,1);
-      txt_desenhar(s,sb.x+13,sb.y+(40-(float)s.h)/2);
-      txt_desenhar(m,sb.x+(float)s.w+38,sb.y+(40-(float)m.h)/2);
-    }
-  }
-  /* Faixa do programa: hora de inicio, progresso e fim (com ou sem video). */
-  if(p&&pv.h>150&&mesmo){
-    float by=pv.y+pv.h-50;char hi[8],hf[8];
-    gv_hora(p->ini,hi,8);gv_hora(p->fim,hf,8);
-    if(!live)gfx_rect((GfxRect){pv.x,pv.y+pv.h-90,pv.w,90},0,GFX_VEU_CSS,0,0,1,0,0,0,0,.5f);
-    TxtLinha a=txt_linha_bruta(TXT_ILHA_SUB,hi,243,242,239,255),z=txt_linha_bruta(TXT_ILHA_SUB,hf,243,242,239,255);
-    const char *audio=i18n(ajustes_guia_previa_sem_som()?"Sem som":"Áudio");
-    float sw=live?(float)txt_linha_bruta(TXT_ILHA_SUB,audio,0,0,0,255).w+40:0;
-    txt_desenhar(a,pv.x+18,by);
-    GfxRect bar={pv.x+30+(float)a.w,by+(float)a.h/2-2,pv.w-60-(float)a.w-(float)z.w-sw,4};
-    gfx_cor(bar,.5f,1,1,1,.28f);
-    gfx_cor((GfxRect){bar.x,bar.y,bar.w*gv_progresso(p),4},.5f,.953f,.949f,.937f,1);
-    txt_desenhar(z,bar.x+bar.w+12,by);
-    if(live){gfx_icone((GfxRect){pv.x+pv.w-sw-6,by,22,22},"aj_volume-2",.7f,.7f,.7f,1);
-      gv_label(TXT_ILHA_SUB,audio,pv.x+pv.w-sw+22,by,sw,0);}
-  }
+  /* Program details belong to the card; keep the video unobstructed. */
+  if(live||!strcmp(screen,"preview")||!strcmp(screen,"preview-foco")||troca||full)
+    badge_desenhar(pv.x+16,pv.y+16,i18n("AO VIVO"),BADGE_REALCE_CHEIO,1);
   if(troca){
     gfx_cor(pv,raio,.067f,.09f,.098f,.55f);
     TxtLinha t=txt_linha(TXT_ILHA_CORPO,"Trocando canal…",243,242,239,255);
@@ -2273,17 +2219,22 @@ static GfxRect gv_preview_rect(void){
   GfxRect r={GV_MX,!strcmp(screen,"fontes-erro")?256:GV_BASE,GV_MW,gv_hh};
   if(!strcmp(screen,"preview-hero-cheio"))return r;
   if(!strcmp(gv_pagina,"cartoes"))return (GfxRect){r.x+r.w-358,r.y+16,330,176};
-  float w=ajustes_guia_previa_grande()?fminf(GV_BIG_W,r.w-640):626;
-  return (GfxRect){r.x+r.w-w,r.y,w,r.h};
+  float aspect=16.0f/9;
+  if(guia_preview_no_ar()&&video_largura()>1&&video_altura()>1)
+    aspect=(float)video_largura()/video_altura();
+  float maxw=ajustes_guia_previa_grande()?fminf(GV_BIG_W,r.w-640):626;
+  float h=fminf(r.h,maxw/aspect),w=h*aspect;
+  return (GfxRect){r.x+r.w-w,r.y+(r.h-h)/2,w,h};
 }
 static void gv_hero(float base){
   float h=gv_hh,k=anim_clamp((h-208)/(GV_HERO_H-208),0,1);
   GfxRect r={GV_MX,base,GV_MW,h};float rr=28.0f/h;
-  int full=!strcmp(screen,"preview-hero-cheio"),grande=ajustes_guia_previa_grande();
-  GVCh *c=gv_focus();EpgProg *p=gv_prog(c);
+  int full=!strcmp(screen,"preview-hero-cheio");
+  GVCh *c=gv_hero_channel(gv_focus());EpgProg current,*p=gv_prog(c);
   if(!c)return;
+  if(guia_preview_no_ar())p=guia_programa_agora(c->id,time(NULL),&current)?&current:NULL;
   GfxRect pv=gv_preview_rect();
-  gv_broadcast(pv,c,p,full||grande);
+  gv_broadcast(pv,c,p,full);
   float x=r.x+32,iw=(full?760:pv.x-r.x-64);char buf[200];
   int passado=p&&(p->fim<=time(NULL)||gv_past());
   if(passado)snprintf(buf,sizeof buf,"%s · %s %d",i18n("REVER"),i18n("CANAL"),c->num);
@@ -2292,20 +2243,24 @@ static void gv_hero(float base){
   gfx_opacidade_grupo=og*k;gv_label(TXT_ILHA_SUB,buf,x,r.y+28,iw,1);gfx_opacidade_grupo=og;
   gv_label(TXT_ILHA_TITULO,p?p->titulo:c->nome,x,r.y+anim_mistura(26,62,k),iw,0);
   float y=r.y+anim_mistura(82,124,k);char hi[8],hf[8],meta[180];
+  gv_avatar(c->logo,c->nome,(GfxRect){x,y-6,40,40},1);
+  float mx0=x+52;
   if(p){gv_hora(p->ini,hi,8);gv_hora(p->fim,hf,8);
     snprintf(meta,sizeof meta,"%s · %d · %s–%s",c->nome,c->num,hi,hf);
-    TxtLinha m=txt_linha_corta_bruta(TXT_ILHA_CORPO,meta,154,156,158,255,iw*.6f);txt_desenhar(m,x,y);
-    float mx=x+(float)m.w+20;
+    TxtLinha m=txt_linha_corta_bruta(TXT_ILHA_CORPO,meta,154,156,158,255,iw*.6f-52);txt_desenhar(m,mx0,y);
+    float mx=mx0+(float)m.w+20;
     meta[0]=0;
     if(p->fim<=time(NULL))snprintf(meta,sizeof meta,i18n("Exibido há %ld min"),(long)(time(NULL)-p->fim)/60);
     else if(p->ini<=time(NULL))snprintf(meta,sizeof meta,i18n("%ld min restantes"),(long)(p->fim-time(NULL))/60);
     if(meta[0]){TxtLinha t=txt_linha_corta_bruta(TXT_ILHA_NOME,meta,243,242,239,255,x+iw-mx);txt_desenhar(t,mx,y-2);mx+=(float)t.w+18;}
-    const char *q=gv_quali(c->nome);if(q[0]&&mx+80<x+iw)gv_badge(q,mx,y-8);
+    const char *q=gv_quali(c->nome);if(q[0]&&mx+80<x+iw)gv_badge(q,mx,y);
   }else{
-    gv_label(TXT_ILHA_CORPO,i18n("Sem programação"),x,y,iw,1);
+    snprintf(meta,sizeof meta,"%s · %d",c->nome,c->num);
+    gv_label(TXT_ILHA_CORPO,meta,mx0,y,iw-52,1);
   }
-  int pi=p?(int)(p-c->p):-1;
-  if(pi>=0&&pi+1<c->np){snprintf(buf,sizeof buf,i18n("A seguir: %s"),c->p[pi+1].titulo);gv_label(TXT_ILHA_CORPO,buf,x,r.y+anim_mistura(126,180,k),iw,1);}
+  EpgProg next;
+  if(guia_programa_proximo(c->id,p?p->ini:time(NULL),0,&next)){
+    snprintf(buf,sizeof buf,i18n("A seguir: %s"),next.titulo);gv_label(TXT_ILHA_CORPO,buf,x,r.y+anim_mistura(126,180,k),iw,1);}
   if(player_mini_no_guia_ativo())player_mini_no_guia(pv.x,pv.y,pv.w,pv.h);
   if(gv_zone==2&&!gv_overlay()){
     focus=1314;plrui_linha_foco(pv,20,1);
@@ -2316,22 +2271,24 @@ static void gv_hero(float base){
 /* --- heroi compacto do modo cartoes (mock v5, preview() do guia.html) ---- */
 static void gv_hero_compact(float base){
   GfxRect r={GV_MX,base,GV_MW,208};float rr=28.0f/208;
-  GVCh *c=gv_canal_cartao();EpgProg *p=gv_prog(c);
+  GVCh *c=gv_hero_channel(gv_canal_cartao());EpgProg current,*p=gv_prog(c);
   if(!c)return;
+  if(guia_preview_no_ar())p=guia_programa_agora(c->id,time(NULL),&current)?&current:NULL;
   GfxRect art=gv_preview_rect();
   gv_broadcast(art,c,p,0);
   if(player_mini_no_guia_ativo())player_mini_no_guia(art.x,art.y,art.w,art.h);
   float iw=art.x-r.x-64;char meta[180],hi[8],hf[8];
+  gv_avatar(c->logo,c->nome,(GfxRect){r.x+32,r.y+84,40,40},1);
   gv_label(TXT_ILHA_TITULO,p?p->titulo:c->nome,r.x+32,r.y+28,iw,0);
   if(p){gv_hora(p->ini,hi,8);gv_hora(p->fim,hf,8);
     snprintf(meta,sizeof meta,"%s · %d · %s–%s",c->nome,c->num,hi,hf);
-    TxtLinha m=txt_linha_corta_bruta(TXT_ILHA_CORPO,meta,154,156,158,255,iw*.6f);txt_desenhar(m,r.x+32,r.y+90);
-    float mx=r.x+32+(float)m.w+20;
+    TxtLinha m=txt_linha_corta_bruta(TXT_ILHA_CORPO,meta,154,156,158,255,iw*.6f-52);txt_desenhar(m,r.x+84,r.y+90);
+    float mx=r.x+84+(float)m.w+20;
     long min=p->fim>time(NULL)?(p->fim-time(NULL))/60:0;
     snprintf(meta,sizeof meta,i18n("%ld min restantes"),min);
     TxtLinha t=txt_linha_corta_bruta(TXT_ILHA_NOME,meta,243,242,239,255,r.x+32+iw-mx);txt_desenhar(t,mx,r.y+88);mx+=(float)t.w+18;
     const char *q=gv_quali(c->nome);if(q[0]&&mx+80<r.x+32+iw)gv_badge(q,mx,r.y+82);
-  }else gv_label(TXT_ILHA_CORPO,i18n("Sem programação"),r.x+32,r.y+90,iw,1);
+  }else{snprintf(meta,sizeof meta,"%s · %d",c->nome,c->num);gv_label(TXT_ILHA_CORPO,meta,r.x+84,r.y+90,iw-52,1);}
   EpgProg next;
   if(guia_programa_proximo(c->id,time(NULL),0,&next)){
     gv_hora(next.ini,hi,sizeof hi);
@@ -2345,8 +2302,6 @@ static void gv_dock(float base,float heroh){
   if(!gv_npins)return;
   float y=base+heroh+20;
   gv_label(TXT_ILHA_NOME,i18n("Canais fixados"),GV_MX,y,300,0);
-  char hint[160];snprintf(hint,sizeof hint,i18n("↑ %s · %d / 6 · %s"),i18n("na grade"),gv_npins,i18n("Segure OK para desafixar"));
-  {TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_CORPO,hint,154,156,158,255,800);txt_desenhar(l,GV_MX+GV_MW-(float)l.w,y+4);}
   y+=44;
   for(int i=0;i<gv_npins;i++){
     GVCh *c=&gv_pins[i];
@@ -2356,7 +2311,7 @@ static void gv_dock(float base,float heroh){
     if(f)plrui_pilula_foco(r,1);
     else if(ajustes_vidro())gfx_cor(r,.5f,1,1,1,.06f);else gfx_cor(r,.5f,.114f,.118f,.137f,1);
     gv_tinta(f,0,&cr,&cg,&cb);
-    gv_avatar(c->logo,c->nome,(GfxRect){r.x+12,y+12,42,42});
+    gv_avatar(c->logo,c->nome,(GfxRect){r.x+12,y+12,42,42},f?cr:1);
     TxtLinha l=txt_linha_corta_bruta(TXT_ILHA_CORPO,c->nome,(int)(cr*255),(int)(cg*255),(int)(cb*255),255,pinw-76);
     txt_desenhar(l,r.x+66,y+(66-(float)l.h)/2);
     ponteiro_alvo(r.x,r.y,r.w,r.h,point_focus,point_activate,1400+i,0);
@@ -2371,7 +2326,7 @@ static GVCh *gv_canal_focado_ou_primeiro(void){GVCh *c=gv_canal_focado();return 
 /* --- grade com regua e "agora" --------------------------------------------- */
 static float gv_rows_y(float base){return base+gv_hh+20+(gv_npins?108+16:0)+38;}
 static int gv_vis(float base){
-  int n=(int)((1060-gv_rows_y(base)+GV_ROW_GAP)/(GV_ROW_H+GV_ROW_GAP));return n<1?1:n;
+  int n=(int)(((gv_zone==1?1010:1060)-gv_rows_y(base)+GV_ROW_GAP)/(GV_ROW_H+GV_ROW_GAP));return n<1?1:n;
 }
 static float gv_px(time_t t){
   float t0=(float)gv_tbase()+gv_tmin*60.0f;
@@ -2401,7 +2356,7 @@ static void gv_row(float y,GVCh *c,int foc,int pass){
     }
     return;
   }
-  gv_avatar(c->logo,c->nome,(GfxRect){cr.x+14,y+12,52,52});
+  gv_avatar(c->logo,c->nome,(GfxRect){cr.x+14,y+12,52,52},1);
   char num[64];gv_num_quali(c,num,sizeof num);
   gv_label(TXT_ILHA_CORPO,c->nome,cr.x+80,y+12,c->fav?200:228,0);
   gv_label(TXT_ILHA_SUB,num,cr.x+80,y+42,228,1);
@@ -2452,7 +2407,8 @@ static void gv_grid(float base){
   if(pillv){gfx_cor(pill,.5f,.953f,.949f,.937f,1);txt_desenhar(al,pill.x+14,pill.y+(36-(float)al.h)/2);}
   gfx_recorte_voltar(ant);
   float y0=y+38;
-  ant=gfx_recorte_dentro(GV_MX,y0-4,GV_MW,1060-(y0-4));
+  float bottom=gv_zone==1?1010:1060;
+  ant=gfx_recorte_dentro(GV_MX,y0-4,GV_MW,bottom-(y0-4));
   int i0=(int)floorf(gv_rol),i1=i0+vis+1;
   for(int pass=0;pass<2;pass++){
     for(int i=i0;i<=i1;i++){
@@ -2460,7 +2416,7 @@ static void gv_grid(float base){
       float ry=y0+((float)i-gv_rol)*(GV_ROW_H+GV_ROW_GAP);
       /* Parado, so linhas inteiras; rolando, a que entra desliza pela borda. */
       int rolando=fabsf(gv_rol-(float)gv_top)>.02f;
-      if(ry+GV_ROW_H<y0-4||ry>1060||(!rolando&&ry+GV_ROW_H>1060))continue;
+      if(ry+GV_ROW_H<y0-4||ry>bottom||(!rolando&&ry+GV_ROW_H>bottom))continue;
       gv_row(ry,&gv_ch[i-gv_off],i==gv_lin,pass);
       if(!pass)ponteiro_alvo(GV_MX,ry,GV_MW,GV_ROW_H,point_focus,point_activate,1500+i,0);
     }
@@ -2496,7 +2452,7 @@ static void gv_cards(float base){
     if(foc){r.x+=gv_edge_x;r.y+=gv_edge_y;plrui_linha_foco(r,20,1);}
     else if(ajustes_vidro())gfx_cor(r,rr,1,1,1,.05f);else gfx_cor(r,rr,.086f,.094f,.11f,1);
     GfxRect tile={r.x+12,r.y+12,r.w-24,112};
-    gv_avatar(c->logo,c->nome,(GfxRect){tile.x+(tile.w-112)/2,tile.y,112,112});
+    gv_avatar(c->logo,c->nome,(GfxRect){tile.x+(tile.w-112)/2,tile.y,112,112},1);
     const char *qs=gv_quali(c->nome);
     if(qs[0]){TxtLinha q=txt_linha_bruta(TXT_ILHA_SUB,qs,243,242,239,255);
       gfx_cor((GfxRect){r.x+20,r.y+22,(float)q.w+20,32},.5f,.051f,.051f,.051f,.7f);
@@ -2631,7 +2587,7 @@ static void gv_opcoes_sheet(void){
   float x=gv_sheet_base(660,196,600,420);
   GVCh *c=gv_canal_focado_ou_primeiro();
   if(!c)return;
-  gv_avatar(c->logo,c->nome,(GfxRect){x,228,60,60});
+  gv_avatar(c->logo,c->nome,(GfxRect){x,228,60,60},1);
   {char tt[180];snprintf(tt,sizeof tt,"%d %s",c->num,c->nome);gv_label(TXT_TITULO2,tt,x+80,226,440,0);}
   char meta[96],nq[48];gv_num_quali(c,nq,sizeof nq);snprintf(meta,sizeof meta,"%s · %s",c->grupo[0]?c->grupo:"IPTV",nq);
   gv_label(TXT_ILHA_SUB,meta,x+80,274,440,1);
@@ -2882,7 +2838,7 @@ static void gv_screen(void){
   /* the closing sheet sits under a sheet opened over it, over one it returns to */
   int sai_sob=sai&&ov&&gv_npilha&&!strcmp(gv_pilha[gv_npilha-1].nome,gv_sai);
   /* Foco na lateral: heroi compacto e mais canais na grade (mock categorias). */
-  gv_hh=anim_mola2(&gv_hh_v,gv_hh,GV_HERO_H,gv_dt,T21_SCROLL);
+  gv_hh=anim_mola2(&gv_hh_v,gv_hh,ajustes_guia_previa_grande()?360:GV_HERO_H,gv_dt,T21_SCROLL);
   gv_side=anim_mola2(&gv_side_v,gv_side,gv_side_open?1:0,gv_dt,T21_SCROLL);
   int topo=gv_lista();   /* Tabs and content share the same focus registry. */
   gv_gfolha_visto=0;
@@ -2929,7 +2885,7 @@ static void gv_screen(void){
     if(!ok){focus=next_focus[0];if(topo)for(int i=0;i<num_focus;i++)if(next_focus[i]>=2000){focus=next_focus[i];break;}}}
   if(gv_side_open&&ov){gv_reg=0;gv_sidebar(base);}
   if(!gv_gfolha_visto)gv_gfolha.ok=0;
-  if(ov||gv_cartoes()||gv_sports())gv_footer();
+  if(ov||gv_cartoes()||gv_sports()||gv_zone==1)gv_footer();
 }
 /* --- eventos da tela principal -------------------------------------------- */
 static void gv_go(const char *name){
@@ -3075,7 +3031,7 @@ static int gv_activate(void){
     else if(gv_sb==3)gv_filtrar("",gv_cartoes()?"cartoes":"grade");
     else if(gv_sb==4)gv_go("pastas");
     return 1;}
-  if(gv_zone==2){c=gv_focus();if(c)gv_assistir(c->id);return 1;}
+  if(gv_zone==2){c=gv_hero_channel(gv_cartoes()?gv_canal_cartao():gv_focus());if(c)gv_assistir(c->id);return 1;}
   if(gv_zone==1){c=gv_canal_focado();if(c)gv_assistir(c->id);return 1;}
   if(gv_zone==6||gv_zone==0){c=gv_canal_focado();
     if(c){EpgProg *p=gv_prog(c);if(!gv_lembrete(c,p))gv_assistir(c->id);}
@@ -3155,6 +3111,14 @@ static void gv_ajustes_move(SDL_Keycode k){
   }
   focus=ids[row][col];
 }
+static void gv_point_focus(int id){
+  if(gv_overlay()||gv_sports())return;
+  if(id>=1100&&id<=1106)gv_zone=5;
+  else if(id>=1200&&id<1206){gv_zone=4;gv_chipi=id-1200;}
+  else if(id==1314)gv_zone=2;
+  else if(id>=1400&&id<1406){gv_zone=1;gv_pin=id-1400;}
+  else if(id>=1600&&id<1600+gv_match){gv_zone=6;gv_card=gv_lin=id-1600;}
+}
 static int gv_event(SDL_Keycode k,int repeat){
   int ok=k==SDLK_RETURN||k==SDLK_KP_ENTER;
   if(!strcmp(screen,"ajustes")&&gv_arrow(k)){gv_ajustes_move(k);return 1;}
@@ -3172,9 +3136,13 @@ static int gv_event(SDL_Keycode k,int repeat){
     if(gv_sports()||gv_past()){gv_go(gv_cartoes()?"cartoes":"grade");if(gv_zone!=6)gv_zone=0;return 1;}
     if(gv_exit_armed){guia_fechar();g5ui_close();gv_exit_armed=0;return 1;}
     if(gv_zone==0||gv_zone==6){gv_side_enter();return 1;}
-    /* Focus outside content returns there before leaving the guide. */
-    int base=gv_cartoes()?6:0;
-    if(gv_total_n&&gv_zone!=base&&gv_zona_ok(base)){gv_zone=base;return 1;}
+    /* Retrace the vertical controls before leaving content. */
+    if(gv_total_n){
+      if(gv_zone==5){gv_zone=4;return 1;}
+      if(gv_zone==4){gv_zone=2;return 1;}
+      if(gv_zone==2){gv_zone=gv_zona_ok(1)?1:gv_cartoes()?6:0;return 1;}
+      if(gv_zone==1){gv_zone=gv_cartoes()?6:0;return 1;}
+    }
     guia_fechar();g5ui_close();return 1;}
   if(gv_lista()){
     if(gv_sports()&&gv_arrow(k)&&gs_arrow(k,repeat))return 1;
@@ -3222,15 +3190,15 @@ static int gv_event(SDL_Keycode k,int repeat){
   if(k==SDLK_UP){
     if(gv_zone==0&&gv_lin>0)gv_mover_linha(-1);
     else if(gv_zone==6&&gv_card>=5){gv_card-=5;gv_lin=gv_card;gv_janela();}
-    else if(gv_zone==0||gv_zone==6){gv_zone=5;focus=1100+(gv_cartoes()?1:0);}
-    else if(gv_zone==1){gv_zone=5;focus=1100+(gv_cartoes()?1:0);}
-    else if(gv_zone==2){gv_zone=5;focus=1100+(gv_cartoes()?1:0);}
+    else if(gv_zone==0||gv_zone==6)gv_zone=gv_zona_ok(1)?1:2;
+    else if(gv_zone==1)gv_zone=2;
+    else if(gv_zone==2)gv_zone=4;
     else if(gv_zone==4){gv_zone=5;focus=1100+(gv_cartoes()?1:gv_past()?0:0);}
     else if(gv_zone==3){int s2=gv_sb-1;while(s2>=0&&!gv_sb_tem(s2))s2--;if(s2>=0)gv_sb=s2;else{gv_zone=4;gv_chipi=0;}}
     return 1;}
   if(k==SDLK_DOWN){
     if(gv_zone==5)gv_zone=4;
-    else if(gv_zone==4)gv_zone=gv_cartoes()?(gv_zona_ok(1)?1:grid):2;
+    else if(gv_zone==4)gv_zone=2;
     else if(gv_zone==2)gv_zone=gv_zona_ok(1)?1:grid;
     else if(gv_zone==1)gv_zone=grid;
     else if(gv_zone==0)gv_mover_linha(1);

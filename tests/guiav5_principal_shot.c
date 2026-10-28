@@ -47,7 +47,7 @@ static void capture(SDL_Window *window, const char *dir, const char *name) {
       for (int y = 0; y < 1080; y++)
         memcpy((char *)surface->pixels + y * surface->pitch,
                pixels + (1079 - y) * 1920 * 4, 1920 * 4);
-      if (!strcmp(name, "preview-playing")) {
+      if (!strcmp(name, "preview-playing") || !strcmp(name,"pins-focused")) {
         /* Host player has no decoder: composite a declared still fixture behind
          * the production video hole, as the TV video plane would be. */
         SDL_Surface *frame = IMG_Load("design/glass-ilha/arte.jpg");
@@ -56,7 +56,10 @@ static void capture(SDL_Window *window, const char *dir, const char *name) {
         SDL_Rect rect = {(int)x,(int)y,(int)w,(int)h};
         assert(frame && back);
         SDL_FillRect(back,NULL,SDL_MapRGBA(back->format,0,0,0,255));
-        assert(SDL_BlitScaled(frame,NULL,back,&rect)==0);
+        SDL_Rect crop={0,0,frame->w,frame->h};
+        if((float)crop.w/crop.h>(float)rect.w/rect.h){crop.w=(int)(crop.h*(float)rect.w/rect.h);crop.x=(frame->w-crop.w)/2;}
+        else{crop.h=(int)(crop.w*(float)rect.h/rect.w);crop.y=(frame->h-crop.h)/2;}
+        assert(SDL_BlitScaled(frame,&crop,back,&rect)==0);
         SDL_SetSurfaceBlendMode(surface,SDL_BLENDMODE_BLEND);
         assert(SDL_BlitSurface(surface,NULL,back,NULL)==0);
         SDL_FreeSurface(frame);SDL_FreeSurface(surface);surface=back;
@@ -267,7 +270,7 @@ int main(int argc, char **argv) {
     ajustes_definir_guia_previa_grande(1);capture(window,dir,"preview-large");
     GfxRect large=gv_preview_rect();
     if(!baseline) {
-      assert(card.w==626 && large.w>card.w && large.x-GV_MX>=640);
+      assert(fabsf(card.w/card.h-16.0f/9)<.001f && large.w>=card.w && large.x-GV_MX>=640);
 #ifndef GUIAPOLIR_BASELINE_CODE
       ajustes_definir_guia_previa_destacar(1);ajustes_definir_guia_previa_sem_som(0);ajustes_definir_guia_dias(3);
       ajustes_iniciar();
