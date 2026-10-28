@@ -26,4 +26,12 @@ nm "$APP/Nuvio" | grep ' [DSB] _nv_gl_fb_tela' >/dev/null || { echo "FAIL: nv_gl
 for s in _ios_hospedar _ios_quadro _ios_destino_pedido _ios_acao_pedida _layout_insets_definir _menu_ir _detail_acao_barra; do
   nm "$APP/Nuvio" | grep " T $s\$" >/dev/null || { echo "FAIL: $s not linked"; exit 1; }
 done
+# Texture budget: real RAM/rss come from the host (0 would shrink the budget
+# and the e*e scale on a portrait phone stalled fila-tex), and the cache pins
+# its budget scale to 1.0 on iOS.
+for s in _ios_ram_mb _ios_rss_mb; do
+  nm "$APP/Nuvio" | grep " T $s\$" >/dev/null || { echo "FAIL: $s not linked"; exit 1; }
+done
+grep -A8 'static float escalaOrc' src/tex_cache.c | grep -q 'NV_WEBOS) || defined(NV_IOS)' \
+  || { echo "FAIL: tex_cache escalaOrc is not pinned to 1.0 on iOS"; exit 1; }
 echo "PASS: iOS simulator build, bundle, scene manifest and vertical-bar bridge"

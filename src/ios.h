@@ -31,6 +31,10 @@ int ios_acao_pedida(void);
 // safe-area insets to layout.c. Idempotent; call after every GL context.
 void ios_hospedar(void *uiwindow);
 
+// Physical RAM in MB (NSProcessInfo) and the process footprint in MB (task_info).
+long ios_ram_mb(void);
+double ios_rss_mb(void);
+
 // HTTP through NSURLSession, the libcurl stand-in on iOS (there is no libcurl
 // in the iOS SDK). Same contract as android_http: GET/POST with "Name: value"
 // headers separated by '\n'; returns the body (malloc, NUL-terminated, *n =

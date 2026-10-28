@@ -231,7 +231,9 @@ static void aoSinalTerminar(int sig) {
 // processo ocupa de verdade na TV (a LG tem 2,2 GB e 860 MB livres). Zero
 // onde nao ha /proc (Emscripten tem o [mem] proprio).
 static double rssMB(void) {
-#ifdef __EMSCRIPTEN__
+#if defined(NV_IOS)
+  return ios_rss_mb();
+#elif defined(__EMSCRIPTEN__)
   return 0.0;
 #else
   FILE *f = fopen("/proc/self/statm", "r");
