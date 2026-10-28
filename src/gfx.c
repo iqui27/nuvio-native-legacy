@@ -4765,6 +4765,10 @@ void gfx_snap_encerrar(void) {
 
 // --- icones ------------------------------------------------------------------
 static char dirIcones[512];
+static char dirArteGfx[512] = "deploy/app/art";
+void gfx_arte_caminho(const char *rel, char *out, unsigned n) {
+  snprintf(out, n, "%s/%s", dirArteGfx, rel);
+}
 static GLuint smartphoneTex;
 static int smartphoneTentou;
 
@@ -4812,6 +4816,7 @@ static void iconesEncerrar(void) {
 }
 
 void gfx_icones_dir(const char *dirArte) {
+  snprintf(dirArteGfx, sizeof dirArteGfx, "%s", dirArte ? dirArte : ".");
   snprintf(dirIcones, sizeof dirIcones, "%s/icones", dirArte ? dirArte : ".");
 }
 

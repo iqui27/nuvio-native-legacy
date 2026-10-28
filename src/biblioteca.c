@@ -79,6 +79,7 @@
 #include "ilha.h"
 #include "teclado.h"
 #include "trakt.h"
+#include <pthread.h>
 #include "simkl.h"
 #include "gfx.h"
 #include "text.h"
@@ -520,6 +521,18 @@ static void lerPref(void) {
   }
   animOrig = flipDe = (float)origensAbertas; velOrig = 0;
 }
+typedef struct { char nome[64], texto[200]; unsigned serial; } BibPref;
+static unsigned prefSerial;
+static pthread_mutex_t prefWrite = PTHREAD_MUTEX_INITIALIZER;
+static void *gravarPrefFio(void *u) {
+  BibPref *p = u;
+  pthread_mutex_lock(&prefWrite);
+  if (p->serial == __atomic_load_n(&prefSerial, __ATOMIC_ACQUIRE))
+    dados_gravar(p->nome, p->texto);
+  pthread_mutex_unlock(&prefWrite);
+  free(p);
+  return NULL;
+}
 static void gravarPref(void) {
   char txt[200];
   snprintf(txt, sizeof txt,
@@ -527,7 +540,14 @@ static void gravarPref(void) {
            "exibicao\t%d\n"
            "# Painel Origens: 1 = aberto, 0 = fechado.\n"
            "origens\t%d\n", exibicao, origensAbertas);
-  dados_gravar(arquivoPref(), txt);
+  BibPref *p = calloc(1, sizeof *p);
+  pthread_t thread;
+  if (!p) return;
+  p->serial = __atomic_add_fetch(&prefSerial, 1, __ATOMIC_RELEASE);
+  snprintf(p->nome, sizeof p->nome, "%s", arquivoPref());
+  snprintf(p->texto, sizeof p->texto, "%s", txt);
+  if (pthread_create(&thread, NULL, gravarPrefFio, p)) free(p);
+  else pthread_detach(thread);
 }
 
 // ---------------------------------------------------------------- geometria
@@ -966,15 +986,7 @@ static int noModo(int m, const CatItem *ci, int i) {
 // contador do modo tambem nao pode contar o mesmo titulo duas vezes.
 static int contados[CAT_MAX];
 static int nContados;
-static int jaNoFiltro(const char *id) {
-  int i;
-  if (!id || !id[0]) return 0;
-  for (i = 0; i < nContados; i++) {
-    const CatItem *c = cat_item(contados[i]);
-    if (c && salvos_mesmo_titulo(c->imdb, id)) return 1;
-  }
-  return 0;
-}
+#include "bibliotecaids.h"
 
 // QUANTOS TITULOS o modo `m` tem, sem filtro de tipo: a contagem do seletor
 // segmentado ("Salvos 14"). A MESMA regra de entrada e de "um cartaz por
@@ -983,19 +995,19 @@ static int jaNoFiltro(const char *id) {
 static int contarModo(int m) {
   int n = cat_n(), total = 0;
   if (n > CAT_MAX) n = CAT_MAX;
-  nContados = 0;
+  bibIdsLimpar();
   for (int i = 0; i < n; i++) {
     const CatItem *ci = cat_item(i);
     if (!ci) continue;
     if (!noModo(m, ci, i)) continue;
-    if (jaNoFiltro(ci->imdb)) continue;
+    if (bibIdJaContado(i)) continue;
     if (nContados < CAT_MAX) contados[nContados++] = i;
     total++;
   }
   if (m == MODO_PARAVER)
     for (int k = salvos_n() - 1; k >= 0; k--) {
       const SalvoItem *sv = salvos_item(k);
-      if (sv && sv->id[0] && cat_indice_por_imdb(sv->id) < 0) total++;
+      if (sv && sv->id[0] && !bibIdNoCatalogo(sv->id)) total++;
     }
   return total;
 }
@@ -1012,6 +1024,7 @@ static void reconstruirFonte(int novaFonte) {
     if (gmtime_r(&agora, &tmv)) anoAtual = tmv.tm_year + 1900;
   }
   if (n > CAT_MAX) n = CAT_MAX;
+  bibIdsMontar(n);
   memset(serverMembership, 0, sizeof serverMembership);
   if (serverContains) for (int i = 0; i < n; i++) {
     const CatItem *ci = cat_item(i);
@@ -1030,29 +1043,27 @@ static void reconstruirFonte(int novaFonte) {
       if (nAddonOrigens == 8) continue;
       snprintf(addonOrigens[k].id, sizeof addonOrigens[k].id, "%s", ci->origem);
       const char *name = addons_nome_por_id(ci->origem);
-      snprintf(addonOrigens[k].nome, sizeof addonOrigens[k].nome, "%s", name && name[0] ? name : ci->origem);
+      snprintf(addonOrigens[k].nome, sizeof addonOrigens[k].nome, "%s", name && name[0] ? name : ci->origem[0] == '#' ? "Add-on" : ci->origem);
       nAddonOrigens++;
     }
-    int duplicate = 0;
-    for (int j = 0; j < i; j++) {
-      const CatItem *before = cat_item(j);
-      if (before && noModo(modo, before, j) && !strcmp(before->origem, ci->origem) && salvos_mesmo_titulo(before->imdb, ci->imdb)) { duplicate = 1; break; }
-    }
-    if (!duplicate) addonOrigens[k].count++;
+    int slot = bibSlot[i];
+    unsigned bit = 1u << k;
+    if (slot < 0 || !(bibIds[slot].addons & bit)) addonOrigens[k].count++;
+    if (slot >= 0) bibIds[slot].addons |= bit;
   }
-  nContados = 0;
+  bibIdsLimpar();
   for (int i = 0; i < n; i++) {
     const CatItem *ci = cat_item(i);
-    if (!ci || !noModo(modo, ci, i) || jaNoFiltro(ci->imdb)) continue;
+    if (!ci || !noModo(modo, ci, i) || bibIdJaContado(i)) continue;
     contados[nContados++] = i;
     contaOrigem[ORIG_TODAS]++;
   }
   // Deduplicate separately per provider: another copy may carry its membership.
   for (int o = ORIG_TRAKT; o < BIB_N_ORIG; o++) {
-    int saved = origem; origem = o; nContados = 0;
+    int saved = origem; origem = o; bibIdsLimpar();
     for (int i = 0; i < n; i++) {
       const CatItem *ci = cat_item(i);
-      if (!ci || !noModo(modo, ci, i) || !daOrigem(origemBits(ci)) || jaNoFiltro(ci->imdb)) continue;
+      if (!ci || !noModo(modo, ci, i) || !daOrigem(origemBits(ci)) || bibIdJaContado(i)) continue;
       contados[nContados++] = i;
       contaOrigem[o]++;
     }
@@ -1060,16 +1071,16 @@ static void reconstruirFonte(int novaFonte) {
   }
   memset(contaServidor, 0, sizeof contaServidor);
   for (int p = 0; p < 3; p++) {
-    nContados = 0;
+    bibIdsLimpar();
     for (int i = 0; i < n; i++) {
       const CatItem *ci = cat_item(i);
-      if (!ci || !noModo(modo, ci, i) || !(serverMembership[i] & (1 << p)) || jaNoFiltro(ci->imdb)) continue;
+      if (!ci || !noModo(modo, ci, i) || !(serverMembership[i] & (1 << p)) || bibIdJaContado(i)) continue;
       contados[nContados++] = i; contaServidor[p]++;
     }
   }
   nFiltro = 0;
   totalModo = 0;
-  nContados = 0;
+  bibIdsLimpar();
   for (int i = 0; i < n; i++) {
     const CatItem *ci = cat_item(i);
     if (!ci) continue;
@@ -1093,7 +1104,7 @@ static void reconstruirFonte(int novaFonte) {
     // regra e a de salvos_mesmo_titulo, a mesma do painel de Salvos.
     if (!daOrigem(origemBits(ci))) continue;
     if (origem >= BIB_N_ORIG && (origem - BIB_N_ORIG >= nAddonOrigens || strcmp(ci->origem, addonOrigens[origem - BIB_N_ORIG].id))) continue;
-    if (jaNoFiltro(ci->imdb)) continue;
+    if (bibIdJaContado(i)) continue;
     if (nContados < CAT_MAX) contados[nContados++] = i;
     totalModo++;
     if (esconderVistos && modo != MODO_ASSISTIDOS && cat_visto(ci)) continue;
@@ -1114,7 +1125,7 @@ static void reconstruirFonte(int novaFonte) {
   if (modo == MODO_PARAVER) {
     for (int k = salvos_n() - 1; k >= 0 && nFiltro < (int)(sizeof filtro / sizeof filtro[0]); k--) {
       const SalvoItem *s = salvos_item(k);
-      if (!s || !s->id[0] || cat_indice_por_imdb(s->id) >= 0) continue;
+      if (!s || !s->id[0] || bibIdNoCatalogo(s->id)) continue;
       contaOrigem[ORIG_TODAS]++;
       contaOrigem[ORIG_NUVIO]++;
       if (serverFilter >= 0 || !daOrigem(0) || origem >= BIB_N_ORIG) continue;
@@ -1934,6 +1945,11 @@ static void pollEscrita(void) {
 }
 
 static void biblioteca_atualizar_(float dt, Uint32 agora) {
+  static int listasAuth;
+  int auth = trakt_ativo() && !trakt_recusada();
+  if (auth && !listasAuth && modo == MODO_LISTAS && !temAberta && fonte == FONTE_TRAKT)
+    pedirFonte();
+  listasAuth = auth;
   int linhas, r, c, ini = gradeIni();
 #ifdef NV_TOUCH_UI
   if (!layout_modo_mobile()) toqueLivre = 0;
@@ -2692,14 +2708,19 @@ static void bibTitleCard(const CatItem *ci, GfxRect r, float a) {
     txt_bloco_corta(TXT_HERO_SEC, s, 243, 242, 239, r.x + 14, r.y + r.h - 85, r.w - 28, 23, a, 3);
 }
 
+static GLuint bibArte(const char *path, float width) {
+  char resolved[600];
+  gfx_arte_caminho(path + strlen("deploy/app/art/"), resolved, sizeof resolved);
+  return tex_obter_larg(resolved, width);
+}
 static void bibSourceBadges(const CatItem *ci, float x, float y, float a) {
   if (!ci) return;
   int bits = ci->fontes ? ci->fontes : ci->naLista ? CAT_FONTE_NUVIO : 0;
   const char *marks[] = { "deploy/app/art/marcas/trakt_logomark.png", NULL,
                           "deploy/app/art/marcas/logo-novo-simbolo.png" };
   for (int b = 0; b < 3; b++) if (bits & (1 << b)) {
-    GLuint mark = marks[b] ? tex_obter_larg(marks[b], 22) : 0;
-    if (!mark) mark = tex_obter_larg(b == 1 ? "deploy/app/art/icones/aj_bookmark.png" :
+    GLuint mark = marks[b] ? bibArte(marks[b], 22) : 0;
+    if (!mark) mark = bibArte(b == 1 ? "deploy/app/art/icones/aj_bookmark.png" :
                                    "deploy/app/art/icones/aj_layers.png", 22);
     if (!mark) continue;
     gfx_cor((GfxRect){x, y, 26, 26}, 8.0f / 26, .035f, .035f, .045f, .85f * a);
@@ -2707,7 +2728,7 @@ static void bibSourceBadges(const CatItem *ci, float x, float y, float a) {
     x += 31;
   }
   if (ci->origem[0] && strcmp(ci->origem,"plex") && strcmp(ci->origem,"jellyfin") && strcmp(ci->origem,"emby")) {
-    GLuint mark = tex_obter_larg("deploy/app/art/icones/aj_layers.png", 22);
+    GLuint mark = bibArte("deploy/app/art/icones/aj_layers.png", 22);
     if (mark) {
       gfx_cor((GfxRect){x, y, 26, 26}, 8.0f / 26, .035f, .035f, .045f, .85f * a);
       gfx_rect((GfxRect){x + 3,y + 3,20,20},mark,GFX_MARCA,0,0,0,0,1,1,1,a);
@@ -2721,8 +2742,8 @@ static void bibSourceBadges(const CatItem *ci, float x, float y, float a) {
     if (stored && !strcmp(stored->imdb, ci->imdb)) { membership = serverMembership[i]; break; }
   }
   for (int p = 0; p < 3; p++) if (membership & (1 << p)) {
-    GLuint t = tex_obter_larg(logos[p], 22);
-    if (!t) t = tex_obter_larg("deploy/app/art/icones/aj_server.png", 22);
+    GLuint t = bibArte(logos[p], 22);
+    if (!t) t = bibArte("deploy/app/art/icones/aj_server.png", 22);
     if (!t) continue;
     gfx_cor((GfxRect){x, y, 26, 26}, 8.0f / 26, .035f, .035f, .045f, .85f * a);
     gfx_rect((GfxRect){x + 3,y + 3,20,20},t,GFX_MARCA,0,0,0,0,1,1,1,a);
@@ -3559,7 +3580,7 @@ static void origemDados(int i, const char **name, const char **description, int 
     *logo = "deploy/app/art/marcas/logo-novo-simbolo.png";
 }
 static void origemMarca(GfxRect r, const char *icon, const char *logo, float alpha) {
-  GLuint brand = logo ? tex_obter_larg(logo, r.w) : 0;
+  GLuint brand = logo ? bibArte(logo, r.w) : 0;
   if (brand) gfx_rect(r, brand, GFX_MARCA, 0, 0, 0, 0, 1, 1, 1, alpha);
   else gfx_icone(r, icon, .94f, .94f, .94f, alpha);
 }
@@ -3612,7 +3633,7 @@ static void desenhaOrigens(void) {
 // onde esta, nao o nome do app.
 static void desenhaCabecalho(void) {
   char caminho[260];
-  const char *tit = modo == MODO_LISTAS ? (listaTab == 2 ? "Explorar listas" : listaTab == 3 ? "Trilhas" : listaTab == 1 ? "Seguindo" : "Minhas listas") : "Biblioteca";
+  const char *tit = !temAberta && bibCompacto() ? "Biblioteca" : modo == MODO_LISTAS ? (listaTab == 2 ? "Explorar listas" : listaTab == 3 ? "Trilhas" : listaTab == 1 ? "Seguindo" : "Minhas listas") : "Biblioteca";
   if (temAberta) {
     snprintf(caminho, sizeof caminho, "%s  ›  %s", i18n("Listas"), aberta.titulo);
     tit = caminho;
@@ -3639,8 +3660,9 @@ static void desenhaCabecalho(void) {
         txt_desenhar(t, x0, py + (ph - t.h) * 0.5f);
       }
     } else {
+      float titleWidth = bibCompacto() ? fmaxf(0, modosX() - hdrX() - 32) : hdrW() - 320.0f;
       TxtLinha t = txt_linha_corta(TXT_TITULO2, tit,
-                                   245, 245, 243, 255, hdrW() - 320.0f);
+                                   245, 245, 243, 255, titleWidth);
       // Lists (design/2.1/listas.html): the "BIBLIOTECA › LISTAS" kicker sits
       // where the subtitle was, so the title steps down under it.
       float ty = BIB_TOPO;
