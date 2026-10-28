@@ -215,7 +215,7 @@ int main(void) {
   assert(AJ_N > AJ_CONQ_DICAS && AJ_CONQ_LIGADO == AJ_MENU_TOPO + 1);
   assert(AJ_GUIA_PREVIA_GRANDE == AJ_DET_ELENCO_VISTO + 1 && AJ_AUD_ORIGINAL == AJ_GUIA_PREVIA_GRANDE + 1);
   assert(AJ_HERO_PASTA_DETALHES == AJ_LEG_ESTILO_LIGADO + 1);
-  assert(AJ_FONTE_OCULTAR_DV == AJ_HERO_PASTA_DETALHES + 1 && AJ_N == AJ_FONTE_OCULTAR_VIDEO + 1);
+  assert(AJ_FONTE_OCULTAR_DV == AJ_GUIA_DIAS + 1 && AJ_N == AJ_FONTE_OCULTAR_VIDEO + 1);
   const char *capKeys[] = {"fonteOcultarDvLocal", "fonteOcultarAudioLocal", "fonteOcultarVideoLocal"};
   for (int i=0;i<3;i++) {
     int op=AJ_FONTE_OCULTAR_DV+i;
