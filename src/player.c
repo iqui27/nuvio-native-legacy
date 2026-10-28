@@ -4421,7 +4421,7 @@ void player_evento(const SDL_Event *e) {
       }
       if (trechoPulavel(NULL)) { intro_botao_esconder(monoSeg()); return; }
     }
-    // Sala aberta: "Sair da sessao?" antes (juntosui). Confirmado, o app fecha.
+    // Watch Together keeps membership when returning to the catalog.
     if (!ehCanal() && juntos_ao_voltar()) return;
 #ifdef NV_ANDROID
     if (erroFonte && !ehCanal()) {

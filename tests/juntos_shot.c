@@ -19,6 +19,8 @@
 #include "central.h"
 #include "juntosui.h"
 #include "detail.h"
+#include "avisodisp.h"
+#include "salvospainel.h"
 #include "tex_cache.h"
 #include "text.h"
 #include <SDL2/SDL.h>
@@ -41,7 +43,7 @@ const char *juntosui_shot_ilha(void);
 
 static SDL_Window *win;
 static const char *base;
-static int sourcesOnly, proofsOnly, lobbyOnly, flowOnly, transitionsOnly, lobbyNovo, cinemaOnly;
+static int sourcesOnly, proofsOnly, lobbyOnly, flowOnly, transitionsOnly, lobbyNovo, cinemaOnly, uxOnly;
 void app_shot_escolher_fonte(int fonte);
 void app_shot_juntos_abrir(Uint32 agora);
 static GLuint fundoTex;
@@ -95,7 +97,9 @@ static void quadros(int n) {
     ilha_desenhar(agora);
     plrilha_desenhar(agora);
     if (!sob) juntosui_desenhar(agora);
-    if (transitionsOnly || lobbyNovo) {
+    spainel_atualizar(.016f, agora);
+    spainel_desenhar(agora);
+    if (transitionsOnly || lobbyNovo || uxOnly) {
       stream_folha_atualizar(.016f, agora);
       stream_folha_desenhar(agora);
     }
@@ -142,7 +146,8 @@ int main(int argc, char **argv) {
   sourcesOnly = argc > 2 && !strcmp(argv[2], "--sources");
   lobbyOnly = argc > 2 && !strcmp(argv[2], "--lobby");
   lobbyNovo = argc > 2 && !strcmp(argv[2], "--lobby21");
-  cinemaOnly = argc > 2 && !strcmp(argv[2], "--cinema");
+  uxOnly = argc > 2 && !strcmp(argv[2], "--ux");
+  cinemaOnly = uxOnly || (argc > 2 && !strcmp(argv[2], "--cinema"));
   flowOnly = flowOnly || lobbyNovo || cinemaOnly;
   proofsOnly = lobbyOnly || (argc > 2 && !strcmp(argv[2], "--proofs"));
   f = fopen(aj, "w"); fprintf(f, "idioma 0\nselected_theme 2\nescalaTextoLocal 2\n"); fclose(f);
@@ -284,7 +289,11 @@ int main(int argc, char **argv) {
     if (assetDir) { snprintf(arte, sizeof arte, "%s/duna-backdrop.jpg", assetDir); juntosui_shot_arte(arte); }
     ajustes_definir_vidro(1); ajustes_shot_valor("selected_theme", 2);
     juntosui_shot_folha(0, friends, 4);
-    for (int i = 0; i < 3; i++) snprintf(motor.sala.m[i].st, sizeof motor.sala.m[i].st, "pronto");
+    for (int i = 0; i < 3; i++) {
+      snprintf(motor.sala.m[i].st, sizeof motor.sala.m[i].st, "pronto");
+      motor.sala.m[i].stats = 1; motor.sala.m[i].pct = 100; motor.sala.m[i].drift = i * 24;
+    }
+    motor.conectado = 1;
     motor.sala.n = 3;
     juntosui_shot_camada(0, 0); juntosui_sala_abriu(); quadros(40);
     assert(juntosui_cobre_tela() && juntosui_shot_cinema() < 0);
@@ -318,10 +327,10 @@ int main(int argc, char **argv) {
     quadros(40);
     int dentro = !juntosui_aberta();
     printf("%s: Enter session hands the screen to the film\n", dentro ? "PASS" : "FAIL"); failed += !dentro;
-    // 2. Island during the film: session code and people on the pill.
+    // 2. Playback has no permanent Watch Together pill or avatar overlay.
     juntosui_shot_player(1); juntosui_shot_osd(1); quadros(40);
-    int ilha = strstr(juntosui_shot_ilha(), "K7M2QX") && strstr(juntosui_shot_ilha(), "3");
-    printf("%s: island shows the session during the film (%s)\n", ilha ? "PASS" : "FAIL", juntosui_shot_ilha()); failed += !ilha;
+    int ilha = !juntosui_shot_ilha()[0];
+    printf("%s: no persistent session overlay during playback\n", ilha ? "PASS" : "FAIL"); failed += !ilha;
     captura("3-island-movie", 1080);
     // 3. CH+ opens the session sidebar; invite reuses the lobby invite; Back closes.
     juntosui_shot_osd(0);
@@ -331,7 +340,8 @@ int main(int argc, char **argv) {
     quadros(50); captura("4-sidebar", 1080);
     JuntosFase fase0 = fase; fase = JF_CRIANDO; salaId[0] = 0; prep.n = prep.enviados = 0;
     int antes = prep.n;
-    for (int i = 0; i < 2; i++) { key.key.keysym.sym = SDLK_DOWN; juntosui_evento_sdl(&key); }
+    for (int i = 0; i < 6; i++) { key.key.keysym.sym = SDLK_DOWN; juntosui_evento_sdl(&key); }
+    assert(juntosui_shot_foco_atual() == 6);
     key.key.keysym.sym = SDLK_RETURN; juntosui_evento_sdl(&key);
     int convidou = prep.n == antes + 1;
     printf("%s: sidebar invite row sends through the lobby invite\n", convidou ? "PASS" : "FAIL"); failed += !convidou;
@@ -346,6 +356,67 @@ int main(int argc, char **argv) {
     int cedeu = juntosui_shot_camada_atual() != 8 && !juntosui_aberta();
     printf("%s: Control Center closes the session sidebar\n", cedeu ? "PASS" : "FAIL"); failed += !cedeu;
     central_fechar();
+    if (uxOnly) {
+      // Every participant plus Sources, control policy and Leave is reachable.
+      key.key.keysym.sym = SDLK_PAGEUP; juntosui_evento_sdl(&key); quadros(35);
+      for (int i = 1; i <= 10; i++) {
+        key.key.keysym.sym = SDLK_DOWN; assert(juntosui_evento_sdl(&key));
+        assert(juntosui_shot_foco_atual() == i); quadros(8);
+      }
+      quadros(35); captura("6-sidebar-leave", 1080);
+      key.key.keysym.sym = SDLK_ESCAPE; juntosui_evento_sdl(&key); quadros(35);
+      assert(!juntos_ao_voltar() && juntos_ativo());
+      snprintf(salaId, sizeof salaId, "0123456789abcdef0123456789abcdef");
+      snprintf(tituloSala, sizeof tituloSala, "%s", motor.sala.titulo);
+      juntosui_shot_player(0); quadros(80);
+      assert(ilha_cartao_na_tela()); captura("7-clock-rejoin", 1080);
+      assert(ilha_modal_abrir()); quadros(50);
+      key.key.keysym.sym = SDLK_RETURN; assert(ilha_evento(&key));
+      IlhaCartao card; int qual;
+      assert(ilha_pediu(&card, &qual) == ILHA_PEDIU_TOCAR && qual == ILHA_JUNTOS);
+      assert(juntos_reentrar() && abrirPedido && escolhendo);
+      assert(!strcmp(abrirImdb, "tt15239678")); abrirPedido = escolhendo = 0;
+      quadros(45);
+      assert(juntos_banner());
+      spainel_ir_aba(2); assert(spainel_aba_atual() == 2); quadros(80);
+      assert(spainel_foco_indice() == 0); captura("8-social-banner", 1080);
+      key.key.keysym.sym = SDLK_DOWN; spainel_evento(&key);
+      assert(spainel_foco_indice() == 1);
+      key.key.keysym.sym = SDLK_RETURN; spainel_evento(&key);
+      assert(!juntos_banner()); avisodisp_esquecer(); assert(!juntos_banner());
+      quadros(50); captura("9-social-dismissed", 1080);
+      spainel_fechar(); quadros(70); assert(ilha_cartao_na_tela());
+      salaId[0] = 'f'; assert(juntos_banner()); salaId[0] = '0';
+      // Host source selection opens through the real app handoff.
+      const CatItem item = {.imdb="tt15239678", .tipo="movie", .titulo="Duna: Parte 2"};
+      cat_definir(&item, 1);
+      fase = JF_PREPARADO; fonteSolicitada = 0;
+      snprintf(abrirImdb, sizeof abrirImdb, "tt15239678");
+      snprintf(abrirTitulo, sizeof abrirTitulo, "Duna: Parte 2");
+      abrirT = abrirE = 0; abrirPedido = 1; motor.temSala = 0;
+      motor.sala.rel.estado = JSE_LOBBY; motor.sala.n = 1;
+      snprintf(motor.sala.m[0].st, sizeof motor.sala.m[0].st, "procurando");
+      motor.sala.m[0].stats = 0; motor.sala.m[0].pct = 0;
+      juntosui_sala_abriu();
+      app_shot_juntos_abrir(SDL_GetTicks());
+      assert(juntos_aguarda_fonte() && stream_folha_aberta());
+      Stream choice = {.altura=1080};
+      snprintf(choice.rotulo, sizeof choice.rotulo, "Fixture 1080p WEB-DL");
+      snprintf(choice.url, sizeof choice.url, "http://fixture.invalid/movie.mp4");
+      stream_definir_alvo("tt15239678"); stream_definir_lista(&choice, 1);
+      quadros(80); captura("10-host-source", 1080);
+      key.key.keysym.sym = SDLK_ESCAPE; stream_folha_evento(&key); quadros(60);
+      fase = JF_CONECTANDO; snprintf(motor.eu, sizeof motor.eu, "nuvio:guest");
+      assert(juntos_aguarda_fonte() && !juntos_sou_anfitriao());
+      quadros(70); captura("11-guest-wait", 1080);
+      snprintf(motor.eu, sizeof motor.eu, "nuvio:h");
+      juntos_fonte_escolhida(); assert(!juntos_aguarda_fonte());
+      assert(!strcmp(motor.sala.m[0].st, "carregando"));
+      quadros(60); captura("12-source-loading", 1080);
+      zerar(); assert(!juntos_ativo() && !juntos_banner());
+      quadros(60); assert(!ilha_cartao_na_tela());
+      printf("juntos ux: D-pad, island rejoin, persistent banner dismissal, host/guest source states OK\n");
+    }
     assert(!failed);
     printf("juntos cinema: start, island, sidebar: ok\n");
     return 0;

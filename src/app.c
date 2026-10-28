@@ -5142,6 +5142,7 @@ static void tocarFonteEscolhida(int fonte, int manual) {
         fonteVODDesde = SDL_GetTicks();
       }
       stream_definir_atual(fonte);
+      if (juntos_ativo()) juntos_fonte_escolhida();
       // Qualquer escolha nova invalida a resposta de um torrent anterior; o
       // motor P2P corta o pedido velho ja (sem isso a escolha nova esperaria
       // ate 55 s na fila do fio unico).
@@ -5221,7 +5222,12 @@ static void juntosAbrirEFonte(Uint32 agora) {
         tocarFonteEscolhida(fonte, 1);
       } else {
         juntosFontePendente = -1;
-        if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
+        if (juntos_fase() == JF_PREPARADO) {
+          aguardandoFonte = 0;
+          folhaParaTocar = 1;
+          stream_folha_contexto(i18n("Escolha uma fonte para começar"));
+          nomeParaFolha(); stream_folha_abrir();
+        } else if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
       }
       printf("[juntos] abrindo o titulo da sala\n");
     }
@@ -5824,6 +5830,10 @@ void app_atualizar(float dt, Uint32 agora) {
     o = ilha_pediu(&ic, &qual);
     if (o) retomamorna_cancelar();
     if (o && qual == ILHA_VIVO && !ilhacart_vivo_vale(&ic)) o = ILHA_PEDIU_NADA;
+    if (o && qual == ILHA_JUNTOS) {
+      if (o == ILHA_PEDIU_TOCAR) juntos_reentrar();
+      o = ILHA_PEDIU_NADA;
+    }
     if (o == ILHA_PEDIU_SALVOS) {
       // O PAINEL NASCE DO MODAL: o retangulo de agora e o do modal, que some
       // seco no mesmo quadro — o painel toma a forma dele e cresce.
