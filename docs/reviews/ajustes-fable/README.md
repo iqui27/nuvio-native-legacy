@@ -101,6 +101,7 @@ Ilha com a mola oficial (`anim_mola`/`mov_mola_assenta`); foco de linha interpol
 - [x] Provas: ajustes_tri, ajustes_opus (28/28), padroes, tour, ux_interacao, escopo, toque_modo, categorias_ui, tri_review, ux_dados, busca, perfil, secoes, lista_cabecalho, tela_cobre_enum, nav21_live, sync, texto, dependencia, fonte, iptv, seguro, trakt610, tri_shot; nav21: 3586 checks, 0 violações
 - [x] Build Android: build/android/Nuvio-2.0.8-android.apk (73 MB), lite armv7/arm64 — tools/android.sh rc=0 em 28/10
 - [x] Entrega à central: branch agente/21-21-ajustesfable, commit 66a9a16fa (+ este doc)
+- [x] Merge de integracao/2.1 (fonteincompat + guiapolir): os 6 toggles novos já estavam em TELA[] e aparecem nas ilhas; ganharam ícone e os do guia ganharam ajuda (30 idiomas). Suíte verde de novo, nav21 0 violações, Android rc=0. `ajustes_ux_dados` já falha em integracao/2.1 (uxValorPadrao dos AJ_FONTE_OCULTAR_* devolve 0/1 e valorPadrao é 2) — herança, não desta branch.
 
 ## 6. Desvios do mockup, de propósito
 
