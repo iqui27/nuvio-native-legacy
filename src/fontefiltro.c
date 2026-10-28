@@ -440,6 +440,9 @@ void fontefiltro_classificar(const FonteFiltroEntrada *e, FonteFiltroDados *d) {
   if (!e) return;
   textoSeguro(e->filename,nome,sizeof nome); textoSeguro(e->texto,texto,sizeof texto);
   snprintf(busca,sizeof busca,"%s\n%s",nome,texto);
+  const char *audio[] = {e->audio, busca};
+  for (int i = 0; i < 2; i++) if (audio[i])
+    d->ac3Explicito |= tokenAudio(audio[i],"ac3") || tokenAudio(audio[i],"ac-3");
   const char *campos[FONTEFILTRO_N] = {e->resolucao,e->qualidade,e->visual,e->audio,e->canais,e->encode,e->linguas};
   for (int c = 0; c < FONTEFILTRO_N; c++) {
     d->valores[c] = c == FONTEFILTRO_LINGUAS ? linguasDeclaradas(campos[c]) :

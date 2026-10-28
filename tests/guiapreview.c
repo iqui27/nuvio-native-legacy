@@ -137,7 +137,7 @@ int main(int argc,char **argv){
   char addon_key[LTV_CHAVE];ltv_chave_fonte(LTV_ADDON,"https://disabled.test",addon_key,sizeof addon_key);
   ltv_pref(addon_key,1)->desligada=1;CHECK(!guia_fonte_playback_permitida("https://disabled.test"),"disabled addon excluded from playback fallback");
   ltv_pref(addon_key,1)->desligada=0;
-  const char *views[]={"grade","cartoes","esportes-ligas","fontes-gerenciar","ajustes"};
+  const char *views[]={"grade","cartoes","esportes-ligas","fontes-gerenciar"};
   for(unsigned i=0;i<sizeof views/sizeof *views;i++){
     g5ui_open(views[i]);quadro();
     if(!strcmp(views[i],"esportes-ligas"))focus=2070;

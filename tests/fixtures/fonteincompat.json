@@ -1,0 +1,8 @@
+{"streams":[
+{"name":"DV p5","title":"2160p HEVC Dolby Vision profile 5 AAC","url":"https://example.invalid/p5.mkv"},
+{"name":"DV p8","title":"2160p HEVC Dolby Vision profile 8 HDR10 AAC","url":"https://example.invalid/p8.mkv"},
+{"name":"TrueHD","title":"2160p HEVC TrueHD Atmos","url":"https://example.invalid/truehd.mkv"},
+{"name":"DTS-HD","title":"2160p HEVC DTS-HD MA","url":"https://example.invalid/dts.mkv"},
+{"name":"AV1","title":"2160p AV1 AAC","url":"https://example.invalid/av1.mkv"},
+{"name":"HEVC","title":"2160p HEVC AAC","url":"https://example.invalid/hevc.mkv"}
+]}

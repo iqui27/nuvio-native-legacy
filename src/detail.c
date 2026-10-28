@@ -323,6 +323,8 @@ static int pessoaColunas(void) {
 }
 
 static int maisAcoes;
+static float acoesVis, acoesVel;
+static int acoesJuntos;
 static int topoVersao(void) { return ajustes_detalhe_topo() != 1; }
 static int topoPessoal(void) { return ajustes_detalhe_topo() != 0; }
 static VaiTocar vaiTocar;
@@ -1947,7 +1949,7 @@ static void pessoaBuscar(const CatItem *ci, int coluna) {
 void detail_abrir(const HomeItem *it) {
   int replacing = aberto && !saindo;
   if (!replacing) { nVolta = 0; voltando = 0; }
-  maisAcoes = 0;
+  maisAcoes = 0; acoesVis = acoesVel = 0; acoesJuntos = 0;
   int pos = -1, n = 0;
   // CARROSSEL: so quando a pagina NASCE de um cartaz de fileira da Dinamica
   // (o item aberto e o focado na home). Trocar de titulo por dentro (credito,
@@ -2773,7 +2775,7 @@ static int temMais(void) {
   return 0;
 }
 static int nBotoesTodos(void) {
-  if (!detalheRetrato()) return 2 + (temMais() ? 1 : 0);
+  if (!detalheRetrato()) return 2 + (temMais() ? 1 + (maisAcoes ? 1 + temJuntos() : 0) : 0);
   return (ehSerie() ? 3 : 4) + (temInicio() ? 1 : 0) + (temLembrar() ? 1 : 0)
          + (temMais() ? 1 : 0) + (temJuntos() ? 1 : 0) + (temTravar() ? 1 : 0);
 }
@@ -2801,7 +2803,12 @@ enum { ACAO_PRIMARIO = 0, ACAO_LISTA = 1, ACAO_ASSISTIDO = 2, ACAO_FONTES = 3,
        ACAO_TRAVAR = 13 };
 static int acaoEm(int n) {
   if (n == 0) return ACAO_PRIMARIO;
-  if (!detalheRetrato()) return n==1 ? ACAO_LISTA : ACAO_MAIS;
+  if (!detalheRetrato()) {
+    if (n == 1) return ACAO_LISTA;
+    if (maisAcoes && n == 2) return ACAO_NOTA;
+    if (maisAcoes && temJuntos() && n == 3) return ACAO_JUNTOS;
+    return ACAO_MAIS;
+  }
   if (temInicio()) {
     if (n == 1) return ACAO_INICIO;
     n--;
@@ -3086,6 +3093,8 @@ static void detail_evento_(const SDL_Event *e) {
     if (dm >= 0) executarMais(dm);
     return;
   }
+  // Keep focus on More until its closing surface reaches the source pill.
+  if (detmais_visivel() >= .003f) return;
   // MODO CINEMA: a primeira tecla so devolve o bloco de texto (o trailer
   // segue); Voltar fecha o trailer e fica na pagina.
   if (trailerCinema.oculta && e->type == SDL_KEYDOWN && !e->key.repeat) {
@@ -3566,7 +3575,8 @@ static void detail_evento_(const SDL_Event *e) {
     // CARROSSEL: a primeira seta para baixo so estica o cartao (ver carCheia).
     if (k == SDLK_DOWN && carro && !carCheia) { carCheia = 1; return; }
     // After leaving a server chip or the friends card, enter sections without resolving from Play.
-    if (!estavaVersao && !desceuServidor && !(carro && !carCheia) && navigationMove(k)) return;
+    if (!estavaVersao && !desceuServidor && !(carro && !carCheia) &&
+        (detalheRetrato() || (k != SDLK_LEFT && k != SDLK_RIGHT)) && navigationMove(k)) return;
     if (k == SDLK_DOWN) {
       sincronizarEpisodioPadrao();
       epEscolhido = 1;
@@ -3594,6 +3604,7 @@ static void detail_evento_(const SDL_Event *e) {
     else if (k == SDLK_RIGHT) {
       // Carrossel: mais um direita na ponta da linha de botoes e o PROXIMO
       // titulo da fileira (o mesmo gesto do app da Apple).
+      if (!detalheRetrato() && botao == 1 && temMais()) maisAcoes = 1;
       if (botao < nBotoes() - 1) botao++;
       else if (carro && !carCheia) carPasso(1);
     }
@@ -3605,7 +3616,8 @@ static void detail_evento_(const SDL_Event *e) {
       else if (carro && !carCheia && carPos > 0) carPasso(-1);
       else if (!(carro && carCheia)) pediuMenu = 1;
     }
-    if (acoesAgrupadas()) maisAcoes = nivel == 0 && botao >= 1 + (temInicio() ? 1 : 0);
+    if (!detalheRetrato()) maisAcoes = nivel == 0 && botao >= 2;
+    else if (acoesAgrupadas()) maisAcoes = nivel == 0 && botao >= 1 + (temInicio() ? 1 : 0);
     return;
   }
   // Ratings grid: UP/DOWN step a row of cards before leaving the section.
@@ -4372,6 +4384,13 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     okDesceEm = 0;
   }
 
+  if (!detalheRetrato()) {
+    maisAcoes = nivel == 0 && botao >= 2 && !focoVersao && !focoAmigos &&
+                focoServidor < 0 && !pediuRelogio && !pediuMenu;
+    if (maisAcoes) acoesJuntos = temJuntos();
+    if (!detmais_aberto() && detmais_visivel() < .003f)
+      acoesVis = det_mola(&acoesVel, acoesVis, maisAcoes ? 1 : 0, dt, 16);
+  }
   versaoFoco=anim_mola(versaoFoco,focoVersao ? 1 : 0,dt,NV_MOLA_FOCO);
   for (int i = 0; i < 3; i++) {
     float action = nivel == 0 && focoServidor < 0 && !focoAmigos && !focoVersao && botao == i ? 1 : 0;
@@ -4675,10 +4694,7 @@ static void desenhaBotao(GfxRect r, const char *rot, int icone, float focado, fl
       // menu do cartaz, que zera o progresso) ficava com o olho riscado.
       gfx_icone(ig, "check", ic, ic, ic, a);
     } else if (icone == ACAO_NOTA) {
-      int minha=notaMinha(); char score[16];
-      if (minha) snprintf(score,sizeof score,"%d",minha); else snprintf(score,sizeof score,"★");
-      TxtLinha star=txt_linha(TXT_G30B,score,(int)(ic*255),(int)(ic*255),(int)(ic*255),255);
-      txt_desenhar_alpha(star,cx-star.w*.5f,cy-star.h*.5f,a);
+      gfx_icone(ig, "aj_star", ic, ic, ic, a);
     } else if (icone == ACAO_TRAVAR) {
       // CADEADO do Lucide: aberto = "Travar", fechado = a serie ja esta travada.
       const CatItem *ci = cat_item(idx);
@@ -5470,30 +5486,40 @@ static void heroWeb(float a, float desloc) {
     }
   }
 
-  if (heroServidor()) {
-    const char *label = !strcmp(rot, i18n("Reproduzir")) ? i18n("Assistir") : rot;
-    float x = NV_DETW2_X;
-    for (int i = 0; i < nBotoes(); i++) {
-      float h = i ? NV_DET21_CIRC : NV_DET21_BTN_H;
-      GfxRect r = {x, yAcoes + (NV_DET21_BTN_H - h) * .5f,
-                   i ? NV_DET21_CIRC : larguraPrimario(label), h};
-      float grow = 1 + .06f * serverActionFocus[i];
-      GfxRect focused = {r.x - r.w * (grow - 1) * .5f, r.y - r.h * (grow - 1) * .5f, r.w * grow, r.h * grow};
-      if (i) {
-        plrui_material_plano(focused, focused.h * .5f, a);
-        plrui_pilula_foco(focused, serverActionFocus[i] * a);
-        float ink = serverActionFocus[i] > .5f ? plrui_tinta() / 255.f : 1;
-        float g = focused.w * .333f;
-        gfx_icone((GfxRect){focused.x + (focused.w - g) * .5f, focused.y + (focused.h - g) * .5f, g, g},
-                  i == 1 ? (biblioteca_na_lista(idx) ? "check" : "mais") : "aj_ellipsis", ink, ink, ink, a);
-      } else {
-        gfx_transformar(r.x + r.w * .5f, r.y + r.h * .5f, grow, 0, 0);
-        desenhaBotao(r,label,0,1,a);
-        gfx_sem_transformar();
+  if (!detalheRetrato()) {
+    float x = NV_DETW2_X, p = anim_clamp(acoesVis, 0, 1);
+    float step = NV_DET21_CIRC + NV_DET21_BTN_GAP;
+    int extras = 1 + acoesJuntos;
+    int heroFocus = nivel == 0 && !focoVersao && !focoAmigos && focoServidor < 0;
+    for (int i = 0; i < 2; i++) {
+      GfxRect r = {x, yAcoes, i ? NV_DET21_CIRC : larguraPrimario(rot), NV_DET21_BTN_H};
+      float dy, k = heroOnda(.5f * i, &dy);
+      r.y += dy;
+      desenhaBotao(r, i ? NULL : rot, i ? ACAO_LISTA : ACAO_PRIMARIO,
+                   focoBotao(i, heroFocus && botao == i), a * k);
+      if (a > .3f) ponteiro_alvo(r.x,r.y,r.w,r.h,ponteiroDetalhe,NULL,-1,i);
+      if (i && heroFocus && botao == i)
+        desenhaDicaBotao(r,i18n(ci && ci->naLista ? "Remover da biblioteca" : "Adicionar à biblioteca"),a);
+      x += r.w + NV_DET21_BTN_GAP;
+    }
+    // Reveal under the moving More pill; its hit target survives the collapse.
+    for (int i = 0; i <= extras; i++) {
+      int more = i == extras, action = more ? ACAO_MAIS : i ? ACAO_JUNTOS : ACAO_NOTA;
+      int button = more && !maisAcoes ? 2 : 2 + i;
+      GfxRect r = {x + i * step * p, yAcoes, NV_DET21_CIRC, NV_DET21_CIRC};
+      if (more) r.x = x + extras * step * p;
+      float f = focoBotao(2+i, heroFocus && botao == button && (more || maisAcoes));
+      if (more) {
+        float grow = 1 + .04f * f;
+        maisAncora = (GfxRect){r.x-r.w*(grow-1)*.5f,r.y-r.h*(grow-1)*.5f,r.w*grow,r.h*grow};
       }
-      if (i == 2) maisAncora = r;
-      if (a > .3f) ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroDetalhe, NULL, -1, i);
-      x += r.w + NV_DETW2_BTN_GAP;
+      if (!more || (!detmais_aberto() && detmais_visivel() < .003f))
+        desenhaBotao(r,NULL,action,f,a * (more ? 1 : p));
+      if (heroFocus && botao == button && (more || maisAcoes) &&
+          !detmais_aberto() && detmais_visivel() < .003f)
+        desenhaDicaBotao(r,i18n(more ? "Mais opções" : i ? "Assistir Juntos" : "Avaliar"),a*(more ? 1 : p));
+      if (a > .3f && (more || (maisAcoes && p > .85f)))
+        ponteiro_alvo(r.x,r.y,r.w,r.h,ponteiroDetalhe,NULL,-1,button);
     }
   } else {
   { int tv = !detalheRetrato();   // 2.1 TV: the 2.0.8 sizes (owner, 25/10/2026)
@@ -8006,6 +8032,7 @@ static void ponteiroDetalhe(int r, int c) {
     focoAmigos = 0; focoServidor = -1;
     if (c < 0 || c >= nBotoes()) return;
     nivel = 0; botao = c;
+    if (!detalheRetrato()) maisAcoes = c >= 2;
     return;
   }
   if (r >= N_SECOES || c < 0 || c >= secaoColunas(r)) return;

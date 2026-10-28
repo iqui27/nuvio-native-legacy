@@ -141,7 +141,7 @@ const char *jf_prefixo(const JfConta *c) { return c && c->tipo == JF_TIPO_EMBY ?
 const char *jf_tipo_nome(int tipo) { return tipo == JF_TIPO_EMBY ? "Emby" : "Jellyfin"; }
 
 void jf_cabecalho_auth(const JfConta *c, char *dst, size_t tam) {
-  char dev[64], devId[96], tok[96];
+  char dev[64], devId[96], tok[JF_TOKEN_MAX];
   const char *nome = c && c->tipo == JF_TIPO_EMBY ? "X-Emby-Authorization" : "Authorization";
   campoAuth(dev, sizeof dev, c && c->dispositivoNome[0] ? c->dispositivoNome : jellyfin_backend_nome(jellyfin_backend()));
   campoAuth(devId, sizeof devId, c && c->dispositivoId[0] ? c->dispositivoId : "nuvio");
@@ -159,7 +159,7 @@ void jf_cabecalho_auth(const JfConta *c, char *dst, size_t tam) {
 static int pedir(const JfConta *c, const char *base, RedeJob *job, const char *metodo,
                  const char *caminho, const char *corpo, const char *operacao,
                  unsigned prazo, RedeResposta *r) {
-  char url[2048], auth[512], tokh[112];
+  char url[2048], auth[512 + JF_TOKEN_MAX], tokh[32 + JF_TOKEN_MAX];
   const char *cabs[5];
   int k = 0, emby = c && c->tipo == JF_TIPO_EMBY;
   RedePedido p;
@@ -174,7 +174,7 @@ static int pedir(const JfConta *c, const char *base, RedeJob *job, const char *m
   if (emby && c->token[0]) {
     // Emby also reads the token from its own header; harmless duplicate of
     // the Token= pair above, and what older Emby builds look for first.
-    snprintf(tokh, sizeof tokh, "X-Emby-Token: %.90s", c->token);
+    snprintf(tokh, sizeof tokh, "X-Emby-Token: %s", c->token);
     cabs[k++] = tokh;
   }
   if (corpo) cabs[k++] = "Content-Type: application/json";
@@ -280,10 +280,13 @@ int jf_qc_iniciar(const JfConta *c, RedeJob *job, char *segredo, size_t ns, char
   return segredo[0] && codigo[0] ? JF_OK : JF_ERR_FORMATO;
 }
 
+// Stock Jellyfin sends hex; AIOStreams sends URL-safe base64 ('-' and '_'),
+// which also goes unescaped in the ?secret= query.
 static int segredoValido(const char *s) {
   size_t n = 0;
   for (; s && *s; s++, n++)
-    if (!((*s >= '0' && *s <= '9') || (*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z'))) return 0;
+    if (!((*s >= '0' && *s <= '9') || (*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') ||
+          *s == '-' || *s == '_')) return 0;
   return n > 0 && n <= 128;
 }
 
@@ -306,7 +309,7 @@ int jf_qc_conferir(const JfConta *c, RedeJob *job, const char *segredo) {
 // the buffer: it holds the access token.
 int jf_ler_autenticacao(JfConta *c, char *corpo, size_t n) {
   const char *ui, *uf;
-  char tok[96] = "", uid[64] = "", nome[96] = "", limpo[40];
+  char tok[JF_TOKEN_MAX + 1] = "", uid[64] = "", nome[96] = "", limpo[40];
   txtRaiz(corpo, corpo + n, "AccessToken", tok, sizeof tok);
   if (blocoRaiz(corpo, corpo + n, "User", &ui, &uf)) {
     txtRaiz(ui, uf, "Id", uid, sizeof uid);
@@ -1108,7 +1111,7 @@ typedef struct {
   int tipo;
   unsigned geracao;
   unsigned entrada;   // cancelEntrada when queued: a cancel BEFORE the worker starts must still win
-  char a[600];
+  char a[600 + JF_TOKEN_MAX];   // T_SAIR: base \n token \n device
   char b[288];
 } Tarefa;
 enum { T_VERIFICAR = 1, T_QC, T_SENHA, T_BIBLIOTECAS, T_FONTES, T_SAIR };
@@ -1241,7 +1244,7 @@ static void garantir(JfInst *I) {
 static void arquivo(JfInst *I, char *dst, size_t tam, int perfil) { snprintf(dst, tam, I->arqFmt, perfil); }
 
 static void linha(char *dst, size_t tam, size_t *k, const char *chave, const char *v) {
-  char limpo[600];
+  char limpo[600 + JF_TOKEN_MAX];
   size_t i = 0;
   for (; v && *v && i + 1 < sizeof limpo; v++) limpo[i++] = (*v == '\n' || *v == '\r') ? ' ' : *v;
   limpo[i] = 0;
@@ -1252,7 +1255,7 @@ static void linha(char *dst, size_t tam, size_t *k, const char *chave, const cha
 // 0600 and atomic rename: the token file is never world-readable on POSIX
 // backends (dados_gravar uses fopen's default mode).
 static int gravarConta(JfInst *I, const JfConta *c, int perfil) {
-  char nome[40], caminho[640], tmp[660], txt[2048];
+  char nome[40], caminho[640], tmp[660], txt[2048 + JF_TOKEN_MAX];
   size_t k = 0;
   int fd, ok = 0;
   arquivo(I, nome, sizeof nome, perfil);
@@ -1450,7 +1453,7 @@ static void jfi_esquecer(JfInst *I) {
   avancarLocked(I);
   relatoriosDescartarLocked(I);
   if (I->conta.token[0] && I->conta.base[0]) {
-    char a[600];
+    char a[sizeof ((Tarefa *)0)->a];
     snprintf(a, sizeof a, "%s\n%s\n%s", I->conta.base, I->conta.token, I->conta.dispositivoId);
     enfileirarLocked(I, T_SAIR, a, "");
     apagarSegredo(a, sizeof a);
