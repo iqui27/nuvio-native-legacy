@@ -474,6 +474,7 @@ IGNORAR = {
     # Keys of the Search "?!#" page (busca.c SIMBOLOS): accented letters and
     # punctuation typed into the query, never a screen label.
     "áàâãéêíóôõúçñü.,:;'\"!?-_&()/@#+=*·",
+    "perfil 5",  # DV release metadata in streams.c; parser vocabulary, never a UI label.
     # Release-language matching terms in fontenota.c; input data, never UI labels.
     "français", "inglês", "japonês", "română", "türkçe",
     # O MESMO CODIGO EM MAIUSCULA (fontepref.c). E o valor da tabela TERMOS,

@@ -101,7 +101,8 @@ static void ajPenRows(void) {
     ajPenPanel(column->x,344,column->w,640,0);
     ajKicker(column->title,column->x+26,366,1);
     for(int i=0;i<column->n;i++,index++) {
-      const AjPenRow *row=&column->rows[i];float x=column->x+26,y=400+i*(ajPenPage<27 || ajPenPage>=46?82:84),w=column->w-52;
+      const AjPenRow *row=&column->rows[i];int compact=column->n>7;
+      float x=column->x+26,y=400+i*(compact?62:ajPenPage<27 || ajPenPage>=46?82:84),w=column->w-52;
       int focus=index==ajPenRow && aj4Topo<0;
       int transform=focus && !gfx_transformado();
       if(transform)gfx_transformar(x+w*.5f,y+37+ajPenDy,1.015f,0,0);
@@ -109,13 +110,13 @@ static void ajPenRows(void) {
         if(ajPenFocusPage!=ajPenPage || ajustes_animacoes_reduzidas()) { ajPenFocusY=y;ajPenFocusV=0;ajPenFocusPage=ajPenPage; }
         ajPenFocusY=anim_mola2(&ajPenFocusV,ajPenFocusY,y,ajPenDt,24);
         gfx_rect((GfxRect){x-10,ajPenFocusY+2+ajPenDy,w+20,100},0,GFX_SOMBRA,1,0,0,.5f,0,0,0,.30f);
-        ajNeutro((GfxRect){x,ajPenFocusY,w,74},20,.14f,.169f,.176f,.204f,1);
+        ajNeutro((GfxRect){x,ajPenFocusY,w,compact?60:74},20,.14f,.169f,.176f,.204f,1);
       }
       ajIcone(row->icon,x+20,y+24,26,focus?1:.75f);
       int available=row->op>=0?ajOpcaoDisponivel(row->op):row->op!=-1;
       int hasHelp=row->help && row->help[0];
-      aj4Texto(row->title,TXT_G21B,x+62,y+(hasHelp?13:24),w-365,available?1:.45f);
-      aj4Texto(row->help,TXT_AJ_MINI14,x+62,y+42,w-210,.4f);
+      aj4Texto(row->title,compact?TXT_G18M:TXT_G21B,x+62,y+(hasHelp?13:24),compact?w-170:w-365,available?1:.45f);
+      aj4Texto(row->help,TXT_AJ_MINI14,x+62,y+(compact?35:42),w-210,.4f);
       if(row->toggle && row->op!=-1) {
         int on=row->op<=-10 && row->op>=-13?perfil_regra(ajPenParentProfile(),-10-row->op):row->op==-2?perfil_ajustes_travados(ajPenParentProfile()):uxValorAtual(row->op)==0;
         if(ajPenPage==AJ_PEN_PARENTAL && row->op==AJ_ENQUETES)on=!on;float r=.20f,g=.21f,b=.24f;
@@ -144,7 +145,7 @@ static void ajPenRows(void) {
         ajIcone("aj_chevron-right",x+w-44,y+28,18,.45f);
       }
       if(transform)gfx_sem_transformar();
-      aj4Alvo((GfxRect){x,y,w,74},8,index);
+      aj4Alvo((GfxRect){x,y,w,compact?60:74},8,index);
     }
   }
   if(ajPenPage==44)ajPenChip("Componentes",NULL,1300,112,180,ajPenRow==99,12,4);

@@ -364,3 +364,4 @@
   0, 0, 0, /* Debrid, add-ons and custom subtitle styling: enabled. */
   0, /* Folder hero details: enabled. */
   1, 0, 0, /* Guide: start on OK, muted, one day. */
+  2, 2, 2, /* Capability exclusions: automatic defaults, resolved per device; unknown stays off. */
