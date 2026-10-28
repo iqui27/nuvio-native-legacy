@@ -20,8 +20,11 @@ int tvhome_select(const ProgRegistro *records, int count, const CatItem *cards, 
     if (newer || prog_removido_vence(r->contentId, r->lastWatchedMs) ||
         prog_oculto_vence(r->contentId, r->lastWatchedMs)) continue;
     const CatItem *c = NULL;
-    for (int j = 0; j < cardCount; j++)
-      if (!strcmp(cards[j].imdb, r->contentId) && !strcmp(cards[j].tipo, r->tipo)) { c = &cards[j]; break; }
+    for (int j = 0; j < cardCount; j++) {
+      char id[sizeof r->contentId];
+      prog_content_id(id, sizeof id, cards[j].imdb, NULL, NULL);
+      if (!strcmp(id, r->contentId) && !strcmp(cards[j].tipo, r->tipo)) { c = &cards[j]; break; }
+    }
     if (!c || c->rewatch || !c->titulo[0]) continue;
     int next = r->posSeg * 100.0 >= r->durSeg * completed;
     if (next) {
