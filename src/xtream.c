@@ -320,6 +320,9 @@ static char *consultar(const char *srv, const char *user, const char *password,
              srv, u, s, acao);
   else
     snprintf(url, sizeof url, "%s/player_api.php?username=%s&password=%s", srv, u, s);
+  /* Apply the same list budget to direct and browser/proxy transports. */
+  if (acao && (!strncmp(acao,"get_vod_",8) || !strncmp(acao,"get_series",10) ||
+               !strncmp(acao,"get_live_",9)) && prazo < 120) prazo = 120;
   pthread_mutex_lock(&travaRede);
   if (!nv_perfil_sessao_atual(sessao)) { pthread_mutex_unlock(&travaRede); return NULL; }
 #if XT_PROXY

@@ -2430,6 +2430,12 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
 #endif
   inicio = redeAgoraMs();
   prazoMs = (unsigned long)(segundos > 0 ? segundos : 30) * 1000UL;
+  /* Provider lists can stream for minutes. Keep the existing body-stall
+   * watchdog and connect deadline, with a larger bounded list budget. */
+  if (strstr(url, "/player_api.php?") &&
+      (strstr(url, "action=get_vod_") || strstr(url, "action=get_series") ||
+       strstr(url, "action=get_live_")) && prazoMs < 120000UL)
+    prazoMs = 120000UL;
   for (tentativa = 0; ; tentativa++) {
     unsigned long resta = prazoMs - gasto;
     c = pegarHandle(url);
@@ -2476,7 +2482,7 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
       reusada = novas == 0; }
     gasto = redeAgoraMs() - inicio;
     if (tentativa == 0 && r != 0 && valeRepetir(r, &vigia, b.n) &&
-        gasto + 1000 < prazoMs) {
+        (gasto + 1000 < prazoMs || (reusada && b.n == 0))) {
       char seg[120];
       printf("[rede] curl %d em %s (conexao %s, %ld bytes, %lu ms): de novo em conexao nova\n",
              r, rede_url_publica(url, seg, sizeof seg), reusada ? "reusada" : "nova",
@@ -2486,6 +2492,9 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
       // #382: conta so o resultado final, mas preserva a janela da primeira falha.
       primeiraMs = (unsigned)(inicio + gasto);
       descartarHandle(c);
+      /* A dead reused socket can consume the entire first budget. Give the
+       * single fresh attempt its own deadline; cancellation still applies. */
+      if (gasto + 1000 >= prazoMs) { inicio = redeAgoraMs(); gasto = 0; }
       free(b.p);
       b.p = NULL; b.n = b.cap = 0;
       if (etag && tamEtag) etag[0] = 0;
