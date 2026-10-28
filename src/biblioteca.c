@@ -582,7 +582,7 @@ static float paginaX(void) {
 static int temOrigens(void) { return estado() != EST_ITENS && modo != MODO_ASSISTIDOS; }
 static int bibRetrato(void);
 // The "Origens" chip exists where the title grid has the panel beside it.
-static int botaoOrigens(void) { return temOrigens() && modo != MODO_LISTAS && !bibRetrato(); }
+static int botaoOrigens(void) { return temOrigens() && !bibRetrato(); }
 // The panel takes its column only while open (layout snaps; drawing animates).
 static int origensNaGrade(void) { return temOrigens() && (origensAbertas || !botaoOrigens()); }
 static int modoLinha(void);
@@ -631,7 +631,7 @@ static float bibControleMax(void) { return (hdrW() - BIB_FAIXA_GAP * 2.0f) / (fl
 // Os chips descem para uma segunda linha sob as abas: sempre no retrato e, na
 // paisagem, quando abas + chips nao cabem na largura (ver bibFaixaQuebra).
 static int bibFaixaQuebra(void);
-static int bibCompacto(void) { return !temAberta && modo != MODO_LISTAS && !bibRetrato(); }
+static int bibCompacto(void) { return !temAberta && !bibRetrato(); }
 static float bibSubida(void) { return bibCompacto() ? BIB_SUBIDA : 0.0f; }
 // Tabs row top, in header units: centred on the menu pill when there is one.
 static float faixaY(void) {
@@ -692,7 +692,10 @@ static float larguraCartaoLista(void) {
 #define BIB_PAG_RANK_W   84.0f   // coluna do rank, antes da miniatura
 static int paginaLista(void) { return temAberta && aberta.fonte == LST_TRAKT; }
 static float paginaCabH(void) { return BIB_PAG_CAB_H - (aberta.descricao[0] ? 0.0f : BIB_PAG_DESC_H); }
-static int modoLinha(void) { return exibicao == VIS_LISTA || paginaLista() || listasMinhas(); }
+static int modoLinha(void) {
+  if (estado() == EST_LISTAS) return listasMinhas();
+  return exibicao == VIS_LISTA || paginaLista();
+}
 static int colunas(void) {
   if (trilha && temAberta) return 8;
   if (modoLinha()) return 1;
@@ -798,7 +801,7 @@ static int bibNPicks(void);
 static int estadoFalhou(void) {
   if (nCelulas) return 0;
   if (estado() == EST_ITENS)
-    return aberta.fonte != LST_SIMKL && !lst_itens_carregando() && desc_vertudo_erro();
+    return aberta.trilhaTipo ? lst_itens_erro() : aberta.fonte != LST_SIMKL && !lst_itens_carregando() && desc_vertudo_erro();
   return estado() == EST_LISTAS && !lst_carregando() && strstr(lst_aviso(), "Não foi possível");
 }
 // Quantos dos itens da lista aberta a pessoa ja viu, para o cabecalho da pagina.
@@ -828,7 +831,7 @@ static void remapear(int preservar) {
   linhas = nLinhas();
   if (linhas > FOCUS_MAX_FILEIRAS - ini) linhas = FOCUS_MAX_FILEIRAS - ini;
   if (estado() == EST_ITENS) cols[0] = nAcoes();    // as acoes
-  else { cols[BIB_FIL_MODO] = modo == MODO_LISTAS ? 4 : BIB_N_MODOS; cols[BIB_FIL_PICK] = bibNPicks(); }
+  else { cols[BIB_FIL_MODO] = BIB_N_MODOS; cols[BIB_FIL_PICK] = bibNPicks(); }
   for (r = 0; r < linhas; r++) {
     int resto = nCelulas - r * nc;
     cols[ini + r] = resto > nc ? nc : resto;
@@ -918,12 +921,10 @@ static int emAndamento(const CatItem *c) {
 // Quantos seletores a faixa tem: "Para ver" ganha o quarto, "Origem".
 // "Listas" ganha o quarto na fonte Trakt: "Nova lista".
 static int bibNPicks(void) {
-  if (listasMinhas()) return 1;
-  return modo == MODO_LISTAS ? (fonte == FONTE_TRAKT ? 4 : 3) : modo == MODO_ASSISTIDOS ? 5 : 6;
+  return modo == MODO_LISTAS ? 6 : modo == MODO_ASSISTIDOS ? 5 : 6;
 }
 // 6D keeps one chip: the Origens panel is the source, the rows are the view.
 // Trakt creates ("Nova lista"); other sources search public lists.
-static int pickId(int p) { return listasMinhas() ? (fonte == FONTE_TRAKT ? 3 : 2) : p; }
 static int bibViewStart(void) { return modo == MODO_ASSISTIDOS ? 3 : 4; }
 // 1 quando o titulo passa no seletor Origem. `fontes` 0 com naLista e o salvo
 // desta TV: Conta Nuvio.
@@ -1157,6 +1158,7 @@ static void atualizarFonte(void) {
 // Pede a fonte escolhida ao modulo de listas. Cada uma custa no maximo UM
 // pedido de rede (ver listas.h).
 static void pedirFonte(void) {
+  if (listaTab == 3) { lst_pedir_trilhas(); remapear(0); return; }
   if (fonte >= FONTE_PLEX) { lst_pedir_servidores(fonte - FONTE_PLEX, 0); remapear(0); return; }
   switch (fonte) {
     case FONTE_TRAKT:   lst_pedir(LST_TRAKT); break;
@@ -1687,7 +1689,11 @@ static void biblioteca_evento_(const SDL_Event *e) {
       k == SDLK_DELETE) {
     // Dentro de uma lista, o Back volta PARA A LISTA DE LISTAS antes de fechar
     // a tela — o movimento inverso do que levou ate la.
-    if (!temAberta && modo == MODO_LISTAS) { modo = MODO_PARAVER; focoOrigem = 0; reconstruir(); animTela = 0; }
+    if (!temAberta && modo == MODO_LISTAS && origensAbertas) {
+      alternarOrigens(); focoOrigem = 0; focoBotaoOrig = 1;
+      foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel;
+    }
+    else if (!temAberta && modo == MODO_LISTAS) { modo = MODO_PARAVER; focoOrigem = 0; reconstruir(); animTela = 0; }
     else if (!temAberta) sair = 1;
     else if (ordemPega >= 0) ordemPega = -1;       // solta; a edicao continua
     else if (edModo != ED_NADA) sairEdicao();
@@ -1716,7 +1722,11 @@ static void biblioteca_evento_(const SDL_Event *e) {
     else if (k == SDLK_LEFT) sair = 1;
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
       if (modo == MODO_LISTAS) {
-        if (origemSel >= 0 && origemSel < BIB_N_FONTES) { fonte = origemSel; pedirFonte(); }
+        if (origemSel >= 0 && origemSel < BIB_N_FONTES) {
+          fonte = origemSel; listaTab = fonte == FONTE_PUB ? 2 : fonte == FONTE_FIXADAS ? 1 : 0;
+          pedirFonte(); alternarOrigens(); focoBotaoOrig = 1;
+          foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel;
+        }
       }
       else if (origemSel >= BIB_N_ORIG + nAddonOrigens) {
         if (serverSelect) serverSelect(origemSel - BIB_N_ORIG - nAddonOrigens);
@@ -1737,19 +1747,6 @@ static void biblioteca_evento_(const SDL_Event *e) {
   // TROCAVA o modo, e isso era o que impedia o lado: para chegar nos seletores
   // a partir de "Salvos" era preciso atravessar "Coleção" e "Listas", trocando
   // de aba (e pedindo a rede, nas listas) a cada passo.
-  if (modo == MODO_LISTAS && foco.fileira == BIB_FIL_MODO) {
-    if (k == SDLK_UP) { if (ajustes_menu_topo()) sair = 1; else pediuRelogio = 1; return; }
-    if (k == SDLK_LEFT && foco.coluna > 0) foco.coluna--;
-    else if (k == SDLK_LEFT) { modo = MODO_PARAVER; reconstruir(); }
-    else if (k == SDLK_RIGHT && foco.coluna < 3) foco.coluna++;
-    else if (k == SDLK_DOWN) { foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel; }
-    else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
-      listaTab = foco.coluna;
-      fonte = listaTab == 1 || listaTab == 3 ? FONTE_FIXADAS : listaTab == 2 ? FONTE_PUB : FONTE_TRAKT;
-      pedirFonte(); foco.fileira = BIB_FIL_MODO; foco.coluna = listaTab;
-    }
-    return;
-  }
   if (foco.fileira == BIB_FIL_MODO) {
     if (k == SDLK_UP) { if (ajustes_menu_topo()) sair = 1; else pediuRelogio = 1; return; }
     if (k == SDLK_LEFT  && foco.coluna > 0) { foco.coluna--; return; }
@@ -1763,9 +1760,12 @@ static void biblioteca_evento_(const SDL_Event *e) {
         modo = novo;
         if (modo == MODO_ASSISTIDOS) exibicao = VIS_LISTA;
         recado[0] = 0;
-        if (modo == MODO_LISTAS) { listaTab = 0; fonte = FONTE_TRAKT; pedirFonte(); }
+        if (modo == MODO_LISTAS) {
+          listaTab = 0; fonte = FONTE_TRAKT; origensAbertas = 0;
+          flipDe = animOrig; pedirFonte();
+        }
         else reconstruir();
-        foco.fileira = BIB_FIL_MODO; foco.coluna = modo == MODO_LISTAS ? listaTab : modo;
+        foco.fileira = BIB_FIL_MODO; foco.coluna = modo;
       }
     }
     return;
@@ -1780,7 +1780,7 @@ static void biblioteca_evento_(const SDL_Event *e) {
     if (k == SDLK_RIGHT) { focoBotaoOrig = 0; pickSel = 0; foco.coluna = 0; }
     else if (k == SDLK_LEFT) sair = 1;
     else if (k == SDLK_UP) { focoBotaoOrig = 0; foco.fileira = BIB_FIL_MODO; foco.coluna = modo; }
-    else if (k == SDLK_DOWN && origensAbertas) { focoBotaoOrig = 0; focoOrigem = 1; origemSel = origem; }
+    else if (k == SDLK_DOWN && origensAbertas) { focoBotaoOrig = 0; focoOrigem = 1; origemSel = modo == MODO_LISTAS ? fonte : origem; }
     else if (k == SDLK_DOWN && nCelulas) { descerDaFaixa(); focoBotaoOrig = 0; }
     else if (ok) alternarOrigens();
     return;
@@ -1789,8 +1789,8 @@ static void biblioteca_evento_(const SDL_Event *e) {
     if (k == SDLK_RIGHT && pickSel < bibNPicks() - 1) { pickSel++; foco.coluna = pickSel; return; }
     if (k == SDLK_LEFT  && pickSel > 0) { pickSel--; foco.coluna = pickSel; return; }
     if (k == SDLK_LEFT && botaoOrigens()) { focoBotaoOrig = 1; return; }
-    if (k == SDLK_LEFT)  { foco.fileira = BIB_FIL_MODO; foco.coluna = modo == MODO_LISTAS ? listaTab : BIB_N_MODOS - 1; return; }
-    if (k == SDLK_UP) { foco.fileira = BIB_FIL_MODO; foco.coluna = modo == MODO_LISTAS ? listaTab : modo; return; }
+    if (k == SDLK_LEFT)  { foco.fileira = BIB_FIL_MODO; foco.coluna = BIB_N_MODOS - 1; return; }
+    if (k == SDLK_UP) { foco.fileira = BIB_FIL_MODO; foco.coluna = modo; return; }
     if (k == SDLK_DOWN) {
       if (origensNaGrade() && pickSel == 0) { focoOrigem = 1; origemSel = modo == MODO_LISTAS ? fonte : origem; }
       else descerDaFaixa();
@@ -1798,28 +1798,17 @@ static void biblioteca_evento_(const SDL_Event *e) {
     }
     if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) {
       if (modo == MODO_LISTAS) {
-        int ps = pickId(pickSel);
-        if (ps == 0) {
-          fonte = (fonte + 1) % BIB_N_FONTES;
-          pedirFonte();
-        } else if (ps == 1) alternarExibicao();
-        else if (ps == 3) {
-          // NOVA LISTA (fonte Trakt): so o nome; a descricao se edita depois,
-          // dentro da lista. Nasce privada, como no Trakt.
-          if (!trakt_ativo()) dizer("Conecte sua conta do Trakt em Ajustes para editar listas");
-          else {
-            tecPara = TEC_NOVA;
-            teclado_abrir_com("Nome da nova lista", "Ela nasce privada no Trakt.", 60,
-                              ALFA_TEXTO, NULL);
-          }
-        } else {
-          // O terceiro seletor no modo Listas E a busca publica. Ele abre a
-          // modal de digitacao que o app ja tem (src/teclado.c) em vez de uma
-          // segunda grade de letras — ver a nota no topo daquele arquivo.
-          fonte = FONTE_PUB;
-          tecPara = TEC_BUSCA;
-          teclado_abrir("Procurar listas públicas",
-                        "Listas de qualquer pessoa no Trakt", TECLADO_MAX);
+        if (pickSel < 4) {
+          listaTab = pickSel;
+          fonte = listaTab == 1 ? FONTE_FIXADAS : listaTab >= 2 ? FONTE_PUB : FONTE_TRAKT;
+          pedirFonte(); foco.fileira = BIB_FIL_PICK; foco.coluna = pickSel;
+        } else if (pickSel == 4) {
+          tecPara = TEC_BUSCA; fonte = FONTE_PUB; listaTab = 2;
+          teclado_abrir("Procurar listas públicas", "Listas de qualquer pessoa no Trakt", TECLADO_MAX);
+        } else if (!trakt_ativo()) dizer("Conecte sua conta do Trakt em Ajustes para editar listas");
+        else {
+          tecPara = TEC_NOVA;
+          teclado_abrir_com("Nome da nova lista", "Ela nasce privada no Trakt.", 60, ALFA_TEXTO, NULL);
         }
       } else {
         if (modo == MODO_ASSISTIDOS) {
@@ -1929,7 +1918,8 @@ static void biblioteca_atualizar_(float dt, Uint32 agora) {
   animTela = anim_mola(animTela, sair ? 0 : 1, dt, NV_MOLA_TELA);
   animVista = anim_rampa(animVista, 1, dt, 160);
   animEstado = anim_mola(animEstado, estadoFoco && estadoFalhou(), dt, NV_MOLA_FOCO);
-  animListaTab = anim_mola(animListaTab, listaTab, dt, NV_MOLA_FOCO);
+  animListaTab = anim_mola(animListaTab, foco.fileira == BIB_FIL_PICK && !focoBotaoOrig ? pickSel : listaTab, dt, NV_MOLA_FOCO);
+  if (modo == MODO_LISTAS && !temAberta && listaTab == 3) lst_pedir_trilhas();
   compartA = anim_mola(compartA, compartilha, dt, NV_MOLA_TELA);
   compartForma = mov_mola_assenta(&compartFormaV, compartForma, compartilha, dt, MOV_MODAL_W, MOV_MODAL_Z);
   // The tab focus pill slides from tab to tab; off the row it rests on the chosen one.
@@ -2299,19 +2289,6 @@ static void ponteiroCelula(int i, int b) {
 }
 
 static void desenhaModos(void) {
-  if (modo == MODO_LISTAS) {
-    // Same rimless seg as the Library tabs; the open tab counts its lists.
-    int cont[4] = { -1, -1, -1, -1 };
-    if (!lst_carregando() && nCelulas) cont[listaTab] = nCelulas;
-    plrui_seg_ex(ROT_LISTA_TAB, cont, 4, listaTab, animListaTab, animListaEd, hdrX(), BIB_FAIXA_Y, 1, 1);
-    float x = hdrX() + 5;
-    for (int i = 0; i < 4; i++) {
-      float w = txt_linha(TXT_AJ_SEG, ROT_LISTA_TAB[i], 243, 243, 243, 255).w + 44;
-      ponteiro_alvo(x, BIB_FAIXA_Y + 5, w, 48, ponteiroModo, NULL, i, 0);
-      x += w + 4;
-    }
-    return;
-  }
   if (!bibRetrato()) {
     // The shared segmented control (LINGUAGEM 2): chosen tab = .sel, the
     // accent pill follows the focus.
@@ -2374,9 +2351,8 @@ static void desenhaModos(void) {
 
 static void pickerTexto(int p, const char **rot, const char **val) {
   if (modo == MODO_LISTAS) {
-    p = pickId(p);
-    *rot = p == 0 ? "Fonte" : p == 1 ? "Exibição" : p == 2 ? "Listas públicas" : "+ Nova lista";
-    *val = p == 0 ? rotuloOrigem(fonte, 1) : p == 1 ? ROT_VIS[exibicao] : p == 2 ? "Procurar" : "nome no celular";
+    *rot = p < 4 ? ROT_LISTA_TAB[p] : p == 4 ? "Procurar" : "+ Nova lista";
+    *val = "";
   } else if (modo == MODO_ASSISTIDOS) {
     *rot = p == 0 ? "Origem" : p == 1 ? "Tipo" : p == 2 ? "Ordem" : "";
     const char *nomeOrigem = rotuloOrigem(origem, 0);
@@ -2397,6 +2373,7 @@ static void pickerTexto(int p, const char **rot, const char **val) {
 // "Esconder assistidos" ligado: o ponto (7) e o vao (10) antes do rotulo.
 static int pickerPonto(int p) { return modo != MODO_LISTAS && modo != MODO_ASSISTIDOS && p == 3 && esconderVistos; }
 static float pickerLarguraNat(int p) {
+  if (modo == MODO_LISTAS) return txt_linha(TXT_AJ_SEG, p < 4 ? ROT_LISTA_TAB[p] : p == 4 ? "Procurar" : "+ Nova lista", 243, 242, 239, 255).w + 44;
   if (modo != MODO_LISTAS && p >= bibViewStart()) return BIB_VIS_W;
   const char *rot, *val;
   pickerTexto(p, &rot, &val);
@@ -2447,7 +2424,7 @@ static float pickerX(int p) {
   float x = hdrX() + (bibFaixaQuebra() ? 0.0f : larguraSeletor() + BIB_FAIXA_GAP * 2.0f + 1.0f);
   int i;
   if (botaoOrigens()) x += larguraBotaoOrig() + BIB_FAIXA_GAP;
-  for (i = 0; i < p; i++) x += pickerLargura(i) + BIB_FAIXA_GAP;
+  for (i = 0; i < p; i++) x += pickerLargura(i) + (modo == MODO_LISTAS && i < 3 ? 4 : BIB_FAIXA_GAP);
   return x;
 }
 
@@ -2480,6 +2457,16 @@ static void desenhaPicker(int p, float f) {
     return;
   }
   ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroPicker, NULL, p, 0);
+  if (modo == MODO_LISTAS) {
+    if (p < 4) return; // The shared segmented control owns labels and focus.
+    plrui_botao_repouso(r, 1);
+    if (listaTab == p) plrui_linha_foco(r, .5f, 1 - v);
+    if (p >= 4) plrui_pilula_foco(r, v);
+    int t = v > .5f ? ajustes_tinta_foco() : listaTab == p ? 243 : 140;
+    TxtLinha label = txt_linha(TXT_AJ_SEG, p < 4 ? ROT_LISTA_TAB[p] : p == 4 ? "Procurar" : "+ Nova lista", t, t, t, 255);
+    txt_desenhar(label, r.x + 22, r.y + (r.h - label.h) * .5f);
+    return;
+  }
   // .chip of the mock: rimless light veil at rest, full accent pill on focus.
   if (vid) gfx_cor(r, 0.5f, 1, 1, 1, .07f * (1.0f - v));
   else gfx_cor(r, 0.5f, .110f, .114f, .133f, 1.0f - v);    // #1c1d22
@@ -2605,7 +2592,7 @@ static void desenhaVazio(void) {
     // nenhuma — visto na captura, nao deduzido.
     dica = "↑ Voltar às ações   ·   Voltar: lista de listas";
     if (lst_itens_carregando()) { kind = T21_LOADING; l1 = "Carregando os títulos"; l2 = "Um instante."; }
-    else if (aberta.fonte != LST_SIMKL && desc_vertudo_erro()) {
+    else if (lst_itens_erro()) {
       kind = T21_ERROR; l1 = "Não foi possível carregar. OK para tentar novamente."; l2 = NULL;
     } else { l1 = "Nada nesta lista";
            l2 = "Uma lista do Trakt vem por tipo: experimente trocar entre Filmes e Séries."; }
@@ -2618,7 +2605,7 @@ static void desenhaVazio(void) {
     else if (av[0])       { kind = strstr(av, "Não foi possível") ? T21_ERROR : T21_EMPTY;
                             l1 = "Nada para mostrar aqui"; l2 = av; }
     else                  { l1 = "Nada para mostrar aqui";
-                            l2 = "Escolha outra fonte no seletor acima."; }
+                            l2 = "Escolha outra fonte no botão Origens."; }
   } else {
     // "Salvos" com o "+" apontado para o Simkl e sem vinculo (issue #110): a
     // aba vazia diz o que falta, e nao "sua proxima sessao comeca aqui".
@@ -3203,7 +3190,9 @@ static float seloFonte(const LstLista *l, float x, float y, float h,
 static void desenhaCartaoLista(const LstLista *l, GfxRect r, float f, float a) {
   if (!telefoneui_ativo()) {
     if (!l) return;
+    gfx_vidro_sem_aro = 1;
     plrui_material_s(r, T21_R_CARD, 0, a, 1);
+    gfx_vidro_sem_aro = 0;
     plrui_linha_foco(r, T21_R_CARD, f * a);
     LstPrevia preview; lst_previa(l, &preview);
     for (int i = 0; i < 4; i++) {
@@ -3302,14 +3291,10 @@ static void apoioMinha(const LstLista *l, char *dst, size_t n) {
     juntarApoio(dst, n, s);
   }
 }
-static const char *letraFonte(int f) {
-  return f == LST_SIMKL ? "S" : f == LST_NUVIO ? "N" : f == LST_SERVIDOR ? "P" : "T";
-}
-// The source letter disc of the 6D rows and Origens panel.
-static void discoFonte(const char *letra, float x, float y) {
+static void discoFonte(int fonteLista, float x, float y) {
+  const char *icon = fonteLista == LST_NUVIO ? "aj_library" : fonteLista == LST_SERVIDOR ? "aj_server" : "aj_list-video";
   gfx_cor((GfxRect){x, y, 34, 34}, 10.0f / 34, 1, 1, 1, .08f);
-  TxtLinha t = txt_linha(TXT_HERO_SEC, letra, 235, 235, 235, 255);
-  txt_desenhar(t, x + (34 - t.w) / 2, y + (34 - t.h) / 2);
+  gfx_icone((GfxRect){x + 5, y + 5, 24, 24}, icon, .92f, .92f, .92f, 1);
 }
 static void desenhaLinhaMinha(const LstLista *l, float y, float f, float a) {
   GfxRect r = { bibX(), y, bibW(), BIB_LM_H };
@@ -3319,7 +3304,7 @@ static void desenhaLinhaMinha(const LstLista *l, float y, float f, float a) {
   if (!l) return;
   gfx_opacidade_grupo *= a;
   plrui_linha_foco(r, T21_R_ROW, f);
-  discoFonte(letraFonte(l->fonte), r.x + 20, y + (BIB_LM_H - 34) / 2);
+  discoFonte(l->fonte, r.x + 20, y + (BIB_LM_H - 34) / 2);
   if (lst_previa(l, &pv) && pv.vistos >= 0) snprintf(viu, sizeof viu, i18n("viu %d"), pv.vistos);
   TxtLinha v = txt_linha(TXT_G18R, viu, 150, 152, 158, 255);
   txt_desenhar(v, r.x + r.w - 20 - v.w, y + (BIB_LM_H - v.h) / 2);
@@ -3353,7 +3338,7 @@ static void desenhaPainelLista(void) {
   char k[200], url[200];
   LstPrevia pv;
   if (!l) return;
-  GfxRect p = { bibDireita() - lmPainel(), BIB_FAIXA_Y, lmPainel(), ANC(T21_SAFE_B) - BIB_FAIXA_Y };
+  GfxRect p = { bibDireita() - lmPainel(), gradeY(), lmPainel(), ANC(T21_SAFE_B) - gradeY() };
   t21_ilha(p, T21_R_SHEET, 1);
   float ga = gfx_opacidade_grupo;
   gfx_opacidade_grupo *= anim_suave(animPainelTroca);
@@ -3485,6 +3470,8 @@ static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,Ponte
   navigationTarget(x,fmaxf(y,top),w,fminf((y)+(h),bottom)-fmaxf(y,top),fn,activate,a,b)
 static int navigationMove(SDL_Keycode key) {
   if(key!=SDLK_UP && key!=SDLK_DOWN && key!=SDLK_LEFT && key!=SDLK_RIGHT)return 0;
+  // Lists rows own their arrows; geometric navigation can jump over tabs.
+  if (modo == MODO_LISTAS && !temAberta) return 0;
   // Grid rows own vertical movement even when the previous row is clipped.
   if((key==SDLK_UP || key==SDLK_DOWN) && !focoOrigem && !focoPainel &&
      !focoCont && !estadoFoco && foco.fileira>=gradeIni())return 0;
@@ -3504,16 +3491,21 @@ static int navigationMove(SDL_Keycode key) {
 }
 static void desenhaOrigens(void) {
   if (modo == MODO_LISTAS) {
-    // Same panel as the Library Origens (mock 6D): tracked kicker, letter disc
-    // (server brands as logos), name, what the source holds, and the count of
-    // the open source.
+    // Match the Library source island, including its reversible spring.
     GfxRect panel = {paginaX(), gradeY(), 320, fminf(590, ANC(T21_SAFE_B) - gradeY())};
     const char *sub[BIB_N_FONTES] = { "suas listas", "5 estados, sem nome", "pastas de coleção",
       "na Biblioteca", "do Trakt", "coleções do servidor", "coleções do servidor", "coleções do servidor" };
-    const char *letra = "TSNFP";
+    const char *icons[] = {"aj_list-video", "aj_list-video", "aj_library", "aj_pin", "aj_globe", "aj_server", "aj_server", "aj_server"};
     const char *logos[] = {"deploy/app/art/marcas/plex.png","deploy/app/art/marcas/jellyfin.png","deploy/app/art/marcas/emby.png"};
     int vis = (int)((panel.h - 62) / 72), start = focoOrigem && origemSel > vis - 1 ? origemSel - (vis - 1) : 0;
-    gfx_vidro_sem_aro = 1; t21_ilha(panel, T21_R_SHEET, 1); gfx_vidro_sem_aro = 0;
+    float p = animOrig, opacity = gfx_opacidade_grupo;
+    GfxRect button = {hdrX() * bibRel(), pickerY() * bibRel(), larguraBotaoOrig() * bibRel(), BIB_CHIP_H * bibRel()};
+    GfxRect shape = {button.x + (panel.x - button.x) * p, button.y + (panel.y - button.y) * p,
+      button.w + (panel.w - button.w) * p, button.h + (panel.h - button.h) * p};
+    gfx_opacidade_grupo *= anim_clamp(p * 3, 0, 1);
+    gfx_vidro_sem_aro = 1; t21_ilha(shape, T21_R_SHEET, 1); gfx_vidro_sem_aro = 0;
+    gfx_opacidade_grupo = opacity * anim_clamp((p - .45f) / .55f, 0, 1);
+    gfx_recorte(shape.x, shape.y, shape.w, shape.h);
     txt_tracking(TXT_MINI, seloCaixaAlta("Origens"), 115, 117, 122, panel.x + 30, panel.y + 20, 1.0f, 2.2f);
     for (int i = start; i < BIB_N_FONTES && i < start + vis; i++) {
       GfxRect row = {panel.x + 12, panel.y + 50 + (i - start) * 72, 296, 72};
@@ -3524,9 +3516,7 @@ static void desenhaOrigens(void) {
       GLuint brand = i >= FONTE_PLEX ? tex_obter_larg(logos[i - FONTE_PLEX], 28) : 0;
       if (brand) gfx_rect((GfxRect){tx + 4, row.y + 23, 26, 26}, brand, GFX_MARCA, 0, 0, 0, 0, 1, 1, 1, 1);
       else {
-        char l[2] = { i < FONTE_PLEX ? letra[i] : rotuloOrigem(i, 1)[0], 0 };
-        TxtLinha t = txt_linha(TXT_HERO_SEC, l, 235, 235, 235, 255);
-        txt_desenhar(t, tx + (34 - t.w) / 2, row.y + 19 + (34 - t.h) / 2);
+        gfx_icone((GfxRect){tx + 5, row.y + 24, 24, 24}, icons[i], .92f, .92f, .92f, 1);
       }
       tx += 48;
       if (fonte == i) {
@@ -3542,6 +3532,7 @@ static void desenhaOrigens(void) {
         txt_desenhar(ct, row.x + row.w - 18 - ct.w, row.y + 24);
       }
     }
+    gfx_sem_recorte(); gfx_opacidade_grupo = opacity;
     return;
   }
   // The mock's island and row rhythm stay in physical pixels at 85–100%.
@@ -3664,7 +3655,7 @@ static void desenhaCabecalho(void) {
       // Lists (design/2.1/listas.html): the "BIBLIOTECA › LISTAS" kicker sits
       // where the subtitle was, so the title steps down under it.
       float ty = BIB_TOPO;
-      if (modo == MODO_LISTAS && !temAberta) {
+      if (modo == MODO_LISTAS && !temAberta && !bibCompacto()) {
         char k[96];   // seloCaixaAlta returns one static buffer: one call each
         snprintf(k, sizeof k, "%s › ", seloCaixaAlta("Biblioteca"));
         snprintf(k + strlen(k), sizeof k - strlen(k), "%s", seloCaixaAlta("Listas"));
@@ -3813,7 +3804,7 @@ static void desenhaResumo(void) {
   if (!temAberta && foco.fileira == BIB_FIL_PICK && txt == resumo) {
     char comDica[260];
     snprintf(comDica, sizeof comDica, "%s%s%s",
-             i18n(modo == MODO_LISTAS && pickId(pickSel) >= 2 ? "OK: digitar" : "OK: alterar"),
+             i18n(modo == MODO_LISTAS && pickSel >= 4 ? "OK: digitar" : "OK: alterar"),
              resumo[0] ? "   ·   " : "", resumo);
     snprintf(resumo, sizeof resumo, "%s", comDica);
   }
@@ -4098,6 +4089,12 @@ static void biblioteca_desenhar_(Uint32 agora) {
     if (temAberta) desenhaAcoes();
     else {
       desenhaModos();
+      if (modo == MODO_LISTAS) {
+        int counts[4] = {-1, -1, -1, -1};
+        plrui_seg_ex(ROT_LISTA_TAB, counts, 4, listaTab, animListaTab,
+          anim_clamp(animPick[0] + animPick[1] + animPick[2] + animPick[3], 0, 1),
+          pickerX(0) - 5, pickerY() - 1, 1, 1);
+      }
       for (int p = 0; p < bibNPicks(); p++)  desenhaPicker(p, animPick[p]);
       if (botaoOrigens()) desenhaBotaoOrig();
     }

@@ -105,6 +105,7 @@ void caca_chave(int tipo, long alvo, const char *lista, char *dst, size_t tam);
 
 // --- previa (pagina da pessoa: "Voce viu 7 de 12 . Cacar") ---------------------
 void caca_previa(int tipo, long alvo, const char *nome, const char *foto);
+void caca_previa_lista(int tipo, long alvo, const char *lista, const char *nome, const char *foto);
 // Vira cacada de verdade. Devolve o indice ou -1.
 int  caca_previa_cacar(void);
 

@@ -1048,18 +1048,23 @@ int caca_alternar(int i, int marca) {
 }
 
 void caca_previa(int tipo, long alvo, const char *nome, const char *foto) {
+  caca_previa_lista(tipo, alvo, "", nome, foto);
+}
+
+void caca_previa_lista(int tipo, long alvo, const char *lista, const char *nome, const char *foto) {
   Slot *s = &slots[CACA_PREVIA];
   char ch[96];
-  caca_chave(tipo, alvo, "", ch, sizeof ch);
+  caca_chave(tipo, alvo, lista, ch, sizeof ch);
   if (s->i.tipo && !strcmp(s->chave, ch)) return;
   soltar(s);
   s->i.tipo = tipo; s->i.alvo = alvo;
+  snprintf(s->i.lista, sizeof s->i.lista, "%s", lista ? lista : "");
   snprintf(s->i.nome, sizeof s->i.nome, "%s", nome ? nome : "");
   snprintf(s->i.foto, sizeof s->i.foto, "%s", foto ? foto : "");
   snprintf(s->chave, sizeof s->chave, "%s", ch);
   // Ja e uma cacada: a previa e so um espelho, sem rede.
-  if (caca_achar(tipo, alvo, "") >= 0) {
-    const Slot *o = &slots[caca_achar(tipo, alvo, "")];
+  if (caca_achar(tipo, alvo, lista) >= 0) {
+    const Slot *o = &slots[caca_achar(tipo, alvo, lista)];
     s->i = o->i;
     if (o->nf > 0 && (s->f = malloc(sizeof *s->f * (size_t)o->nf)) != NULL) {
       memcpy(s->f, o->f, sizeof *s->f * (size_t)o->nf); s->nf = o->nf; }
