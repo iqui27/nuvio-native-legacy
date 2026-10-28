@@ -190,6 +190,8 @@ int ajustes_fonte_primeira(void);
 // #400: ordem visual do addon, local; nao altera autoplay.
 int ajustes_fonte_ordem_addon(void);
 // 1 = a folha de Fontes mostra o nome e a descricao do addon como vieram.
+// 0 = DV without fallback, 1 = audio, 2 = video decoder limits; device-local.
+int ajustes_fonte_ocultar(int regra);
 int ajustes_fonte_texto_addon(void);
 int ajustes_fonte_texto_logo(void);
 // "Outra fonte se falhar": quantas OUTRAS fontes o automatico tenta quando a
@@ -342,6 +344,12 @@ int   ajustes_livetv_sugerir(void);   // Jev sugere categoria so para canal sem 
 // do mock (560x315). Por perfil; padrao desligado.
 int   ajustes_guia_previa_grande(void);
 void  ajustes_definir_guia_previa_grande(int ligado);
+int ajustes_guia_previa_destacar(void);
+void ajustes_definir_guia_previa_destacar(int ligado);
+int ajustes_guia_previa_sem_som(void);
+void ajustes_definir_guia_previa_sem_som(int ligado);
+int ajustes_guia_dias(void);
+void ajustes_definir_guia_dias(int dias);
 void  ajustes_livetv_aplicar_proxy(int ligado);   // proxy de TS da Live TV (proxyts.c)
 void  ajustes_livetv_aplicar_modo(int modo);
 

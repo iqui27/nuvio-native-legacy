@@ -17,6 +17,7 @@ int g5ui_check_channel(const CatItem *item);
 int g5ui_channel_hidden(const char *id,const char *name,const char *group,const char *source);
 int g5ui_live(const char *id, char *url, size_t cap);
 int g5ui_multiview_channel(CatItem *item);
+int g5ui_preview_sem_som(void);
 int g5ui_m3u_channels(G5Item *out, int cap);
 const char *g5ui_xmltv(void);
 int g5ui_provider_epg(void);
