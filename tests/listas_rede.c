@@ -13,7 +13,9 @@ static const char *corpo;
 char *teste_rede_baixar_st_retry(const char *url, int segundos,
                                  const char *const *cab, int *st, int *ra) {
   struct timespec z = { 0, 10000000L };
-  (void)segundos; (void)cab;
+  (void)segundos;
+  if (strstr(url, "/users/me/lists")) assert(cab[0] && strstr(cab[0], "Bearer"));
+  else assert(cab[0] && !strstr(cab[0], "Bearer"));
   dentro++; if (dentro > maxDentro) maxDentro = dentro;
   if (nChamadas < 8) snprintf(chamadas[nChamadas++], sizeof chamadas[0], "%s", url);
   nanosleep(&z, NULL);
@@ -32,8 +34,8 @@ static void pedir(int tab, int qual, int st, const char *json) {
   t->geracao = ++tabs[tab].geracao;
   pthread_mutex_unlock(&trava);
   if (qual == PED_TRAKT_MINHAS)
-    snprintf(t->aut, sizeof t->aut, "Bearer tok-teste");
-  else snprintf(t->chave, sizeof t->chave, "trakt-api-key: chave-de-teste");
+    snprintf(t->aut, sizeof t->aut, "Authorization: Bearer fixture");
+  snprintf(t->chave, sizeof t->chave, "trakt-api-key: chave-de-teste");
   fioListas(t);
 }
 
@@ -68,6 +70,7 @@ int main(void) {
   pedir(LST_TAB_TRAKT, PED_TRAKT_MINHAS, 403, "[{\"error\":\"forbidden\"}]");
   assert(tabs[LST_TAB_PUBLICAS].n == 1);
   assert(lst_n() == 0);
+  assert(strstr(lst_aviso(), "403"));
   fonteAtual = LST_TAB_PUBLICAS;
   assert(lst_n() == 1 && !strcmp(lst_lista(0)->titulo, "De boa"));
 
