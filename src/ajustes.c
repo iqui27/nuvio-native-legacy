@@ -762,6 +762,7 @@ typedef enum {
   AJ_AUDIO_NORMALIZAR, // PCM normalization; passthrough remains untouched.
   AJ_DEBRID_LIGADO, AJ_ADDONS_LIGADO, AJ_LEG_ESTILO_LIGADO,
   AJ_HERO_PASTA_DETALHES, // Append-only: folder hero details, local and enabled by default.
+  AJ_GUIA_PREVIA_DESTACAR, AJ_GUIA_PREVIA_SOM, AJ_GUIA_DIAS,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -813,6 +814,8 @@ _Static_assert(sizeof V_FUNDO_DIN_COR / sizeof *V_FUNDO_DIN_COR == sizeof FUNDO_
                "V_FUNDO_DIN_COR: um nome por linha de FUNDO_DIN_TEMA");
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+static const char *V_GUIA_INICIO[] = { "Ao destacar", "Ao selecionar" };
+static const char *V_GUIA_DIAS[] = { "Um dia", "Três dias" };
 static const char *V_LIGA_AUTO[] = { "Ligado", "Desligado", "Automático" };
 // Estilo da fileira de formato do player; o indice e o PLR_FMT_* de ajustes.h
 // e o gravado em "plrFormatoLocal".
@@ -1916,6 +1919,9 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Addons", V_LIGA, 2),
   ESC("Legendas com estilo", V_LIGA, 2),
   ESC("Mostrar detalhes da pasta no destaque", V_LIGA, 2),
+  ESC("Quando iniciar a prévia", V_GUIA_INICIO, 2),
+  ESC("Prévia sem som", V_LIGA, 2),
+  ESC("Alcance do guia", V_GUIA_DIAS, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2259,6 +2265,7 @@ static const char *CHAVE[] = {
   "audioNormalizarLocal",
   "debridLigadoLocal", "addonsLigadosLocal", "legEstiloLigadoLocal",
   "heroFolderDetailsLocal",
+  "guiaPreviaDestacarLocal", "guiaPreviaSomLocal", "guiaDiasLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3807,6 +3814,12 @@ int   ajustes_livetv_proxy(void)      { return lig(AJ_LIVETV_PROXY); }
 int   ajustes_livetv_sugerir(void)    { return lig(AJ_LIVETV_SUGERIR); }
 int   ajustes_guia_previa_grande(void) { return valor[AJ_GUIA_PREVIA_GRANDE] == 0; }
 void  ajustes_definir_guia_previa_grande(int l) { valor[AJ_GUIA_PREVIA_GRANDE] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
+int ajustes_guia_previa_destacar(void) { return valor[AJ_GUIA_PREVIA_DESTACAR] == 0; }
+void ajustes_definir_guia_previa_destacar(int l) { valor[AJ_GUIA_PREVIA_DESTACAR] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
+int ajustes_guia_previa_sem_som(void) { return valor[AJ_GUIA_PREVIA_SOM] == 0; }
+void ajustes_definir_guia_previa_sem_som(int l) { valor[AJ_GUIA_PREVIA_SOM] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
+int ajustes_guia_dias(void) { return valor[AJ_GUIA_DIAS] ? 3 : 1; }
+void ajustes_definir_guia_dias(int dias) { valor[AJ_GUIA_DIAS] = dias == 3; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 void  ajustes_livetv_aplicar_proxy(int l) { valor[AJ_LIVETV_PROXY] = l ? 0 : 1; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); }
 void  ajustes_livetv_aplicar_modo(int m) { if (m >= 0 && m < 3) { valor[AJ_LIVETV_MODO] = m; AJ_COM_ORIGEM(AJLOG_CENTRAL, gravar()); } }
 unsigned ajustes_livetv_espera_ms(void) {
@@ -6182,6 +6195,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_LIVETV_RES: case AJ_LIVETV_FORMATO: case AJ_LIVETV_ESPERA:
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY: /* rede e provedor desta casa: o web nao tem */
     case AJ_LIVETV_SUGERIR:
+    case AJ_GUIA_PREVIA_DESTACAR: case AJ_GUIA_PREVIA_SOM: case AJ_GUIA_DIAS:
     case AJ_GUIA_PREVIA_GRANDE: /* tamanho do preview do guia: so este port tem */
     case AJ_HOME_LAYOUT:    /* a Dinamica nao tem par na conta (selected_layout) */
     case AJ_PERFIL_PESQ:    /* estado em recomenda.c, por conta: nunca no blob */
