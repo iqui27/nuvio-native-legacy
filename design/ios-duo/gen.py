@@ -694,17 +694,20 @@ def guide_inner():
 def library_outer():
     scr = ('<div class="scr"><div style="padding:66px 20px 0"><div style="display:flex;align-items:baseline;gap:10px"><h1 class="h1">Library</h1><span class="sub">142 titles</span></div>'
            '<div class="seg" style="margin-top:12px"><span class="on">All</span><span>Movies</span><span>Series</span><span>Lists <em>6</em></span></div>'
-           '<div style="margin-top:14px">' + search_grid(3, 107, 160, 9, 2) + '</div></div></div>')
+           '<div style="margin-top:14px">' + search_grid(4, 78, 117, 12, 2) + '</div></div></div>')
     bar = vbar('library', tools=['arrow-up-down', 'funnel'])
-    return dev('outer', scr, '<b>Closed</b> · 3 columns; Sort and Filter as symbols in the bar<br>segmented filter stays in content', bar=bar)
+    return dev('outer', scr, '<b>Closed</b> · 4 columns of 78 pt; Sort and Filter as symbols in the bar<br>segmented filter stays in content', bar=bar)
 
 
 def library_inner():
     scr = ('<div class="scr"><div style="padding:66px 20px 0"><div style="display:flex;align-items:center;gap:12px"><h1 class="h1" style="font-size:24px">Library</h1><span class="sub">142 titles</span>'
            '<span class="seg" style="margin-left:8px"><span class="on">All</span><span>Movies</span><span>Series</span><span>Lists <em>6</em></span></span></div>'
-           f'<div style="margin-top:14px">{search_grid(9, 86, 129, 18, 2).replace("gap:10px", "gap:14px 16px")}</div></div></div>')
+           # 8 columns of 92 pt with 24 pt gaps, centred on the full 951 pt: the gap
+           # between columns 4 and 5 is centred on the fold (475.5 pt), so no
+           # poster sits in the curve when the device is partly folded.
+           f'<div style="margin-top:14px;display:flex;justify-content:center">{search_grid(8, 92, 138, 16, 2).replace('class="gridp" style="', 'class="gridp" style="gap:16px 24px;')}</div></div></div>')
     bar = vbar('library', tools=['arrow-up-down', 'funnel'], cam=False)
-    cap = '<b>Open</b> · one continuous grid across the whole display, 9 columns<br>the grid scrolls on; Sort and Filter stay in the bar'
+    cap = '<b>Open</b> · one continuous grid across the whole display, 8 columns<br>the fold falls in the gap between columns 4 and 5; Sort and Filter stay in the bar'
     return dev('inner', scr, cap, bar=bar)
 
 
@@ -951,7 +954,7 @@ PAGES = [
     ('05-player-poses', 'Player · closed and open', 'Immersive video under the side region when closed; video | Up next + Watch Together on one continuous screen when open.', [player_outer_land(), player_inner_book()]),
     ('06-player-tabletop', 'Player · tabletop and open', 'On a table, folded like a laptop: picture on the raised half, every control on the flat half. Open, the video fills the display and the controls overlay it.', [player_tabletop(), player_inner_flat()]),
     ('07-guide', 'TV Guide', 'Grid first; the inner display adds the channel preview with Watch, Favourite and PiP next to it.', [guide_outer(), guide_inner()]),
-    ('08-library', 'Library', 'Three columns closed, nine open: one continuous grid across the whole display.', [library_outer(), library_inner()]),
+    ('08-library', 'Library', 'Four columns closed, eight open: one continuous grid across the whole display, the fold in the gap between columns 4 and 5.', [library_outer(), library_inner()]),
     ('09-onboarding', 'Sign-in', 'QR and code as on the TV. Opening the device expands the same step into two panes; it never asks the user to open it.', [onboarding_outer(), onboarding_inner()]),
     ('10-profiles', 'Profiles', 'Who is watching, on both displays. Touch ID in the side button for the PIN-locked profile (no Face ID on this device).', [profiles_outer(), profiles_inner()]),
     ('11-settings', 'Settings', 'A list that pushes pages when closed and becomes list | page when open.', [settings_outer(), settings_inner()]),

@@ -166,17 +166,39 @@ regular = tela interna = um painel de celular + um painel extra.** Nunca "se Duo
 |---|---|---|---|
 | Home | Herói + fileiras, barra vertical à direita | Herói cruza a dobra (mídia pode), fileiras com nº par de colunas | TabView + canvas |
 | Busca | Lista | Lista \| Detalhe | `NavigationSplitView` |
-| Detalhe | Herói, ações, episódios empilhados | Detalhe \| Fontes (ou Episódios) | `ArrangementView(.split)` |
+| Detalhe | Logo e botões centrados na tela inteira, sinopse de duas linhas | O detalhe da TV numa tela contínua (aprovado pelo dono): bloco de texto e botões à esquerda, linha de provedor e notas colada na borda de baixo; Fontes e Episódios abrem como folha, não como segundo painel | canvas; dobra parcial: texto e botões dentro da metade esquerda |
 | Fontes | Folha | Folha trailing com barra vertical, nunca na dobra | sheet, `preferredPlacement` |
 | Player | Controles sobre o vídeo | Mesa: vídeo em cima, controles/episódios/chat embaixo; livro: vídeo \| lista | `ArrangementView(.overlay)` → `.split` |
 | Guia de TV | Grade em paisagem forçada hoje | Grade \| preview do canal | `ArrangementView(.split.axes(.horizontal))` |
-| Biblioteca / Listas | Grade 4 col | 4 + 4 colunas, nenhuma na dobra | canvas, `ReservedRegion(.division)` |
+| Biblioteca / Listas | Grade de 4 colunas (78 pt) | Grade contínua de 8 colunas (92 pt, vão de 24 pt) centrada nos 951 pt: o vão entre a 4ª e a 5ª coluna cai na dobra (464–488 pt), sem buraco | canvas, `ReservedRegion(.division)` |
 | Perfis / Onboarding | Fluxo de uma coluna | Mesmo passo expande em dois painéis, nunca reinicia | cover full-screen |
 | Ajustes | Lista → página | Lista \| página | `NavigationSplitView` |
 
-Para o C: `layout_insets(l,t,r,b)` e `layout_dobra(x,y,w,h,ativa)` alimentados
-pelo hospedeiro (`safeAreaInsets` + `reservedRegions(kind:)`). Hinge só para
-efeito (parallax do herói, "fechar salva"), nunca para layout.
+O conteúdo corre por baixo da barra lateral (pedido do dono, sangria total): os
+insets não empurram arte, fileiras nem grades; só o cromo do núcleo que
+duplicaria o do sistema (a ilha do relógio) sai de baixo dela.
+
+Para o C: `layout_insets_definir(e,t,d,b)` já existe (marco 1: frações do
+drawable, `nv_inset_e/t/d/b` em unidades de layout). Falta
+`layout_dobra(x,y,w,h,ativa)`, alimentado pelo hospedeiro com
+`-[UIView reservedRegionsOfKind:UIViewReservedRegionKind.divisionRegionKind]`
+(`frame`, `isActive`; aberto e plano a região existe com largura zero e
+inativa). Não há aviso de mudança: ler em `viewDidLayoutSubviews` e no
+`UIHingeInteraction`. A câmera da tela externa é
+`occlusionRegionKind`, não um número fixo. Regras para o núcleo com a dobra
+ativa: texto e botões nunca sobre ela (o herói e a linha de notas do Detalhe
+quebram na metade esquerda); grades e fileiras roláveis podem atravessar, com
+número par de colunas e o vão na dobra; mídia pode cruzar.
+
+Hinge só para efeito (parallax do herói, "fechar salva"), nunca para layout:
+`UIHingeInteraction initWithUpdateHandler:` entrega `UIHingeInteractionUpdate.hinge`
+(`nil` fora de hierarquia com dobradiça), `UIHinge.angle` em radianos e
+`UIHinge.status` (`Unknown`, `Closed`, `PartiallyOpen`, `FullyOpen`). O status
+vem do sistema (ângulo e orientação), nunca de limiar de ângulo nosso; não
+há par (antigo, novo), o anterior fica conosco; `Unknown` mantém o último
+valor; sem dobradiça, efeito no estado final; Reduzir movimento troca o efeito
+por esmaecimento. A tela interna desenha a 3x dos pontos (2853×2007, o sistema
+reduz para o painel): o buffer GL segue `traitCollection.displayScale`.
 
 ## Marcos
 
@@ -193,10 +215,15 @@ efeito (parallax do herói, "fechar salva"), nunca para layout.
 3. **Vídeo** (1–2 semanas): spike AVPlayer × libmpv no iOS com três fontes reais
    (MKV HEVC DV, MP4 HLS, MKV DTS-HD). Backend escolhido com o contrato de
    `video_android.c` (faixas, legenda, HDR/DV, reconexão).
-4. **Duo de verdade** (1–2 semanas): `ArrangementView` em Detalhe/Player/Guia,
-   `ReservedRegion` nas grades, folha de Fontes fora da dobra, hinge nos efeitos.
-   Matriz de teste: {fechado, livro, aberto, mesa} × {retrato, paisagem} × {tela
-   cheia, Split View esq/dir}.
+4. **Duo de verdade** (1–2 semanas): `layout_dobra` no núcleo (o canvas é um só,
+   então `ArrangementView` não se aplica às telas desenhadas em GL): Detalhe e
+   herói com texto e botões fora da dobra, Player em mesa (vídeo em cima,
+   controles embaixo), Guia com grade | preview; grades com nº par de colunas e o
+   vão na dobra; folha de Fontes fora da dobra; hinge nos efeitos.
+   Matriz de teste no Device Hub (deslizando a dobradiça devagar): {fechado,
+   livro, aberto, mesa} × {retrato, paisagem} × {tela cheia, Split View
+   esq/dir}, conferindo nada tocável na dobra e o estado mantido ao abrir e
+   fechar (o `simctl` não tem comando de dobradiça).
 5. **Mac + Windows + Linux** (2–3 semanas): `video_mpv.c` compartilhado; `.app`
    assinado a partir do `tools/mac.sh`; `.exe` portátil + winget no Windows;
    janela redimensionável já cai no mesmo caminho do dobrar.
