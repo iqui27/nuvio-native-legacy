@@ -1,5 +1,7 @@
 #include "aiostreams.h"
 #include "js.h"
+#include "aionotice.h"
+#include <math.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -350,6 +352,133 @@ void aio_status(AioSnapshot *s,const char *json) {
   if(disabled==1) s->searchAccess=AIO_DISABLED;
   s->p2pInstancia=boolean(member(u,"settings"),"allowP2P",-1);
 }
+static void public_provider(char *dst,size_t n,const char *s) {
+  static const char *const names[]={"Comet","Torrentio","Debridio","Debridio Scraper","Debridio RD","Debridio AD","MediaFusion","Orion","Jackettio","TorBox"};
+  snprintf(dst,n,"Source");
+  for(unsigned i=0;i<sizeof names/sizeof *names;i++) if(!strcmp(s,names[i])) { snprintf(dst,n,"%s",s); break; }
+}
+static int number(const char *s,const char **end) {
+  if(!isdigit((unsigned char)*s)) return -1;
+  char *tail; double v=strtod(s,&tail);
+  for(const char *p=s;p<tail;p++) if(!isdigit((unsigned char)*p)) return -1;
+  if(tail==s || !isfinite(v) || v<0 || v>100000000 || floor(v)!=v) return -1;
+  if(end) *end=tail;
+  return (int)v;
+}
+static double duration(const char *s,int *approximate) {
+  while(*s==' ') s++;
+  if(*s=='~') { *approximate=1; s++; }
+  if(!isdigit((unsigned char)*s)) return -1;
+  char *end; double value=strtod(s,&end);
+  for(const char *p=s;p<end;p++) if(!isdigit((unsigned char)*p) && *p!='.') return -1;
+  if(!isfinite(value) || value<0) return -1;
+  if(!strncmp(end,"ms",2)) end+=2;
+  else if(*end=='s') { value*=1000; end++; }
+  else return -1;
+  while(*end==' ') end++;
+  if((*end && *end!='(') || value>3600000) return -1;
+  return value;
+}
+static AioPoint *point(AioEvidencia *e,const char *label) {
+  if(e->points>=AIO_POINTS_MAX) { e->pointsOmitted++; return NULL; }
+  AioPoint *p=&e->point[e->points++]; memset(p,0,sizeof *p);
+  snprintf(p->label,sizeof p->label,"%s",label);
+  p->ms=-1; p->count=p->cached=p->uncached=p->unclassified=-1;
+  return p;
+}
+static int known_label(const char *s) {
+  static const char *const labels[]={"Total","Fetch","Service Wrap","Media Info","Filter","Dedup","Precompute","Sort","Limit","SEL","Metadata","Expressions","Regex compile","Regex test","Filter pass","Title match","Year match","Season/Ep","Fetcher","Pipeline","Preferred regex","Required regex","Excluded regex","Included regex","Ranked regex","Magnet check","Processing"};
+  for(unsigned i=0;i<sizeof labels/sizeof *labels;i++) if(!strcmp(s,labels[i])) return 1;
+  return 0;
+}
+static void reason(AioEvidencia *e,char *line) {
+  static const char *const reasons[]={"Excluded Quality","Excluded Visual Tag","Excluded Keywords","Size","Required Quality","Required Keywords","Excluded Resolution","Required Resolution","Excluded Language","Required Language","Excluded Stream Type","Excluded Regex","Included Quality","Included Keywords","Included Visual Tag"};
+  for(unsigned i=0;i<sizeof reasons/sizeof *reasons;i++) {
+    size_t n=strlen(reasons[i]);
+    if(!strncmp(line,reasons[i],n) && line[n]==' ' && line[n+1]=='(') {
+      const char *end=NULL; int count=number(line+n+2,&end);
+      if(count>=0 && end && !strcmp(end,")")) { AioPoint *p=point(e,reasons[i]); if(p) p->count=count; }
+      return;
+    }
+  }
+}
+static void service(AioEvidencia *e,char *line) {
+  const char *code=!strncmp(line,"AD (",4)?"AD":!strncmp(line,"RD (",4)?"RD":!strncmp(line,"TB (",4)?"TB":NULL;
+  if(!code) return;
+  AioPoint *p=point(e,code); if(!p) return;
+  const char *end=NULL; p->count=number(line+4,&end);
+  if(p->count<0 || !end || strncmp(end," torrents",9) || !strchr(end,')') || strchr(end,')')[1]) { p->count=-1; return; }
+  if(strstr(end,"❌ Error")) { p->error=1; return; }
+  // Only this pinned service grammar omits zero cached/uncached clauses.
+  p->cached=p->uncached=0;
+  const char *cached=strstr(end,"✅ "), *uncached=strstr(end,"⏳ ");
+  if(cached) { const char *tail=NULL; p->cached=number(cached+strlen("✅ "),&tail); if(!tail || strncmp(tail," cached",7)) p->cached=-1; }
+  if(uncached) { const char *tail=NULL; p->uncached=number(uncached+strlen("⏳ "),&tail); if(!tail || strncmp(tail," uncached",9)) p->uncached=-1; }
+  if(p->cached>=0 && p->uncached>=0 && p->count>=p->cached+p->uncached)
+    p->unclassified=p->count-p->cached-p->uncached;
+  else p->cached=p->uncached=p->unclassified=-1;
+}
+void aio_evidence(AioSnapshot *s,const char *entry,const char *end,int error,int search) {
+  if(s->evidencias>=AIO_EVIDENCE_MAX) { s->evidenceOmitted++; return; }
+  AioEvidencia *e=&s->evidencia[s->evidencias++]; memset(e,0,sizeof *e);
+  e->erro=error; e->status=e->streams=-1; e->elapsedMs=-1;
+  char name[256]="", text[8192]="";
+  js_texto_raiz_em(entry,end,search?"title":"name",name,sizeof name);
+  if(!js_cadeia_linhas(aio_member(entry,"description"),text,sizeof text)) text[0]=0;
+  aio_text_normalize(name); aio_text_normalize(text);
+  char *heading=aio_label(name);
+  e->kind=error?AIO_SOURCE_ERROR:(AioEvidenceKind)aio_heading(heading);
+  static const char *const titles[]={"Unrecognized evidence","Scrape Summary","Removal Reasons","Included Reasons","Pipeline Timing","Filter Breakdown","Precompute Breakdown","Service Wrap Breakdown","Config Variants","Digital Release Filter","Source error"};
+  snprintf(e->titulo,sizeof e->titulo,"%s",titles[e->kind]);
+  if(error) {
+    const char *sd=aio_member(entry,"streamData"); char provider[128]="";
+    js_texto_raiz_em(sd,sd?js_fim(sd):NULL,"addon",provider,sizeof provider);
+    public_provider(e->provider,sizeof e->provider,provider);
+    e->timeout=-1;
+    const char *failure=sd?aio_member(sd,"error"):entry;
+    char title[256]=""; js_texto_raiz_em(failure,failure?js_fim(failure):NULL,"title",title,sizeof title);
+    if(!strcmp(title,"Timeout") || !strcmp(title,"TIMEOUT")) e->timeout=1;
+    return; // Neither error titles nor private descriptions are displayable.
+  }
+  if(e->kind==AIO_NOTICE_UNKNOWN || e->kind==AIO_VARIANTS || e->kind==AIO_DIGITAL) return;
+  if(e->kind==AIO_SCRAPE) {
+    char *close=strchr(heading,']'); if(close) *close=0;
+    char *provider=heading+1, *suffix=strrchr(provider,' ');
+    if(suffix && (!strcmp(suffix+1,"RD") || !strcmp(suffix+1,"AD") || !strcmp(suffix+1,"p2p"))) {
+      snprintf(e->service,sizeof e->service,"%s",suffix+1); *suffix=0;
+    }
+    public_provider(e->provider,sizeof e->provider,provider);
+  }
+  char *cursor=NULL; int lines=0; AioPoint *currentService=NULL;
+  for(char *raw=strtok_r(text,"\n",&cursor);raw && lines++<128;raw=strtok_r(NULL,"\n",&cursor)) {
+    char *line=aio_label(raw); size_t length=strlen(line);
+    while(length && isspace((unsigned char)line[length-1])) line[--length]=0;
+    if(e->kind==AIO_REMOVAL || e->kind==AIO_INCLUDED) { reason(e,line); continue; }
+    if(e->kind==AIO_SERVICE_WRAP && (!strncmp(line,"AD (",4)||!strncmp(line,"RD (",4)||!strncmp(line,"TB (",4))) {
+      int before=e->points; service(e,line); currentService=e->points>before?&e->point[before]:NULL; continue;
+    }
+    char *colon=strchr(line,':'); if(!colon) continue;
+    *colon=0; length=strlen(line); while(length && line[length-1]==' ') line[--length]=0;
+    char *value=colon+1; while(*value==' ') value++;
+    if(e->kind==AIO_SCRAPE) {
+      if(!strcmp(line,"Status")) e->status=!strcmp(value,"SUCCESS")?1:!strcmp(value,"PARTIAL SUCCESS")?2:!strcmp(value,"FAILURE")?3:-1;
+      else if(!strcmp(line,"Streams")) { const char *tail=NULL; int n=number(value,&tail); if(tail && !*tail) e->streams=n; }
+      else if(!strcmp(line,"Time")) e->elapsedMs=duration(value,&e->approximate);
+      continue;
+    }
+    if(!known_label(line)) continue;
+    int approximate=0; double ms=duration(value,&approximate);
+    if(e->kind==AIO_SERVICE_WRAP && currentService) {
+      if(!strcmp(line,"Total")) currentService->ms=ms;
+      else { char label[40]; snprintf(label,sizeof label,"%s %s",currentService->label,line); AioPoint *p=point(e,label); if(p) p->ms=ms; }
+      continue;
+    }
+    AioPoint *p=point(e,line); if(p) { p->ms=ms; p->approximate=approximate; }
+    if(!strcmp(line,"Total")) { e->elapsedMs=ms; e->approximate=approximate; }
+  }
+  if(lines>=128) e->pointsOmitted++;
+}
+
 static int count_array(const char *a) {
   int n=0; const char *p=a&&*a=='['?a+1:NULL;
   while(p) { while(isspace((unsigned char)*p)||*p==',') p++; if(!*p||*p==']') break;
@@ -358,24 +487,25 @@ static int count_array(const char *a) {
 }
 void aio_search(AioSnapshot *s,const char *json) {
   const char *u=member(json,"data");
-  s->search=boolean(json,"success",0) && u;
+  s->search=aio_json_valid(json) && boolean(json,"success",0) && u;
   s->searchAccess=s->search?AIO_AVAILABLE:AIO_FAILED;
-  s->evidencias=0;
+  s->evidencias=s->evidenceOmitted=0;
+  s->estatisticas=s->erros=s->filtrados=-1;
   if(!s->search) return;
   for(int kind=0;kind<2;kind++) {
     const char *list=member(u,kind?"errors":"statistics"), *p=list&&*list=='['?list+1:NULL;
-    while(p && s->evidencias<32) {
+    while(p) {
       while(isspace((unsigned char)*p)||*p==',') p++;
       if(*p!='{') break;
       const char *end=value_end(p); if(!end||end<=p) break;
-      AioEvidencia *e=&s->evidencia[s->evidencias++]; memset(e,0,sizeof *e); e->erro=kind;
-      js_texto_raiz_em(p,end,"title",e->titulo,sizeof e->titulo); safe(e->titulo);
-      js_texto_raiz_em(p,end,"description",e->descricao,sizeof e->descricao); safe(e->descricao);
+      aio_evidence(s,p,end,kind,1);
       p=end;
     }
   }
-  s->estatisticas=count_array(member(u,"statistics")); s->erros=count_array(member(u,"errors"));
-  const char *f=member(u,"filtered"); s->filtrados=f&&isdigit((unsigned char)*f)?atoi(f):0;
+  const char *stats=member(u,"statistics"), *errors=member(u,"errors");
+  s->estatisticas=stats && *stats=='['?count_array(stats):-1;
+  s->erros=errors && *errors=='['?count_array(errors):-1;
+  const char *f=member(u,"filtered"); s->filtrados=f?number(f,NULL):-1;
 }
 void aio_legendas(AioSnapshot *s,const char *json) {
   const char *a=member(json,"subtitles"), *p=a&&*a=='['?a+1:NULL;
@@ -401,13 +531,27 @@ unsigned long long aio_identidade(const char *s) {
 }
 void aio_resultados(AioSnapshot *s, const char *json) {
   const char *a = member(json,"streams"), *p = a && *a == '[' ? a+1 : NULL;
-  s->resultados = s->links = s->p2p = 0;
-  while (p && s->resultados < AIO_MAX) {
+  s->resultados = s->links = s->p2p = s->playable = 0;
+  s->evidencias=s->evidenceOmitted=0;
+  s->estatisticas=s->erros=-1;
+  const char *documentEnd=json?js_fim(json):NULL;
+  s->responseValid=a && *a=='[' && aio_json_valid(json);
+  if(!s->responseValid) return;
+  for(const char *tail=documentEnd;*tail;tail++) if(!isspace((unsigned char)*tail)) { s->responseValid=0; return; }
+  while (p) {
     while (isspace((unsigned char)*p) || *p == ',') p++;
     if (*p != '{') break;
     const char *end = js_fim(p); if (!end) break;
+    int notice=aio_notice(p,end);
+    if(notice==3) { aio_evidence(s,p,end,0,0); p=end; continue; }
+    if(notice) {
+      int *count=notice==2?&s->erros:&s->estatisticas;
+      if(*count<0) *count=0;
+      (*count)++; aio_evidence(s,p,end,notice==2,0); p=end; continue;
+    }
+    if(s->resultados>=AIO_MAX) { p=end; continue; }
     AioResultado r = {0}; r.cache = -1;
-    js_texto_raiz_em(p,end,"name",r.nome,sizeof r.nome); safe(r.nome);
+    snprintf(r.nome,sizeof r.nome,"Stream %d",s->resultados+1);
     const char *kind = member(p,"externalUrl") ? "Externo" : member(p,"nzbUrl") ? "NZB" :
       member(p,"ytId") ? "YouTube" : member(p,"url") ? "HTTP" : member(p,"infoHash") ? "P2P" : "Desconhecido";
     char target[2048]="", origin[256];
@@ -422,10 +566,16 @@ void aio_resultados(AioSnapshot *s, const char *json) {
     js_texto_raiz_em(p,end,!strcmp(kind,"P2P")?"infoHash":"url",identity,sizeof identity);
     r.identidade=aio_identidade(identity); memset(identity,0,sizeof identity);
     snprintf(r.tipo,sizeof r.tipo,"%s",kind);
+    char playTarget[4096]="";
+    if(js_texto_raiz_em(p,end,"url",playTarget,sizeof playTarget) &&
+       (!strncmp(playTarget,"https://",8) || !strncmp(playTarget,"http://",7))) s->playable++;
+    else if(!strcmp(kind,"P2P")) s->playable++;
     if (!strcmp(kind,"P2P")) s->p2p++;
     if (!strcmp(kind,"Externo") || !strcmp(kind,"NZB") || !strcmp(kind,"YouTube")) s->links++;
     const char *sd = member(p,"streamData");
-    js_texto_raiz_em(sd,sd?js_fim(sd):NULL,"addon",r.provedor,sizeof r.provedor); safe(r.provedor);
+    char provider[128]="";
+    js_texto_raiz_em(sd,sd?js_fim(sd):NULL,"addon",provider,sizeof provider);
+    public_provider(r.provedor,sizeof r.provedor,provider);
     r.cache = boolean(sd,"cached",-1);
     if(r.cache<0) r.cache=boolean(member(sd,"service"),"cached",-1);
     if(r.cache<0) r.cache=boolean(member(p,"clientResolve"),"isCached",-1);

@@ -163,7 +163,7 @@ int main(void) {
   Pedido *locked=calloc(1,sizeof *locked);
   strcpy(locked->host,"https://example.invalid");
   strcpy(locked->base,"https://example.invalid/stremio/sample/encrypted/manifest.json");
-  strcpy(locked->id,"tt1"); strcpy(locked->tipo,"movie");
+  strcpy(locked->id,"tt1"); strcpy(locked->tipo,"movie"); locked->diagnostic=1;
   worker(locked); snap=entrega; entregue=0;
   assert(snap.valida && snap.http[2]==401 && snap.search && !snap.configurada);
   assert(conectada()); // Config denial must not disconnect the installation.

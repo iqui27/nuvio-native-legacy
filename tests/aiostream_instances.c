@@ -20,6 +20,11 @@ char *rede_baixar_st(const char *url, int seconds, const char *const *headers, i
   if (status) *status = body ? 200 : 0;
   return body;
 }
+int rede_pedir(const RedePedido *p,RedeResposta *r) {
+  assert(p->cabecalhos && !strcmp(p->cabecalhos[0],"User-Agent: AIO-NuvioLegacy"));
+  memset(r,0,sizeof *r); r->status=200; r->corpo=rede_baixar(p->url,10); r->n_corpo=r->corpo?strlen(r->corpo):0; return 0;
+}
+void rede_resposta_limpar(RedeResposta *r) { free(r->corpo); }
 const char *rede_ultimo_erro(void) { return ""; }
 static RedeMedida medidaFalsa;
 char *rede_baixar_medido(const char *url, int segundos, const char *const *cabecalhos, RedeMedida *m) {

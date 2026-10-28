@@ -15,6 +15,7 @@
 #include "marco.h"
 #include "ondever.h"
 #include "addonstats.h"
+#include "aionotice.h"
 #include "fontecache.h"
 #include "fontefalha.h"
 #include "sessao.h"
@@ -105,6 +106,7 @@ void addons_lista_destravar(void) { pthread_mutex_unlock(&listaTrava); }
 // Ordem: addonTrava (snapshot por sessao) -> listaTrava (leitores de fora).
 static _Atomic unsigned versaoLista;   // ver addons_versao
 typedef struct {
+  uint64_t statsSession;
   char nome[64], base[NV_ADDON_URL_MAX], estatistica[32], tipoCanal[16];
   int ativo, fonte, legenda, sondado, capPresumida, soVivo, mudoSeg, aio;
   char streamTipos[64];
@@ -126,6 +128,7 @@ static void copiarPedido(int i, AddonPedido *p) {
   p->legenda = addon[i].legenda; p->sondado = addon[i].sondado;
   p->capPresumida = addon[i].capPresumida;
   p->soVivo = addon[i].soVivo;
+  p->statsSession=nv_perfil_sessao_ler();
   p->mudoSeg = addon[i].mudoSeg;
   p->aio = !strncasecmp(addon[i].nome,"AIOStreams",10) ||
     !strncasecmp(addon[i].id,"aiostreams",10) ||
@@ -157,6 +160,10 @@ static void chaveDoAddon(int i, char chave[32]) {
   pthread_mutex_lock(&addonTrava);
   chaveEstatistica(i >= 0 && i < nAddon ? addon[i].base : "", 0, chave);
   pthread_mutex_unlock(&addonTrava);
+}
+int addons_aio_history(int index,const char *type,struct AddonAioRequest *out,int max) {
+  char key[32]; chaveDoAddon(index,key);
+  return addonstats_aio_history(key,type,out,max);
 }
 typedef struct { char addon[32], plugin[32]; } ChavesEstatistica;
 static pthread_key_t chavesStats;
@@ -2721,11 +2728,11 @@ static int prazoDoAddon(const Consulta *c, int i) {
 // `semRecurso` (quando nao NULL) recebe 1 = HTTP ok mas o corpo nao traz o
 // array "streams" — resposta valida de quem nao serve esse endpoint, e nao
 // uma falha; 0 = veio o array (vazio conta). 4xx/sem corpo: *semRecurso = -1.
-static char *baixarStream(const char *nome, int aio, const char *url, int segundos,
+static char *baixarStream(const AddonPedido *origin, const char *type, const char *url, int segundos,
                           int *semRecurso, RedeMedida *medida) {
   int status = 0;
   RedeMedida m = {0};
-  (void)nome;
+  int aio=origin->aio;
   if (semRecurso) *semRecurso = -1;
   char host[256];
   const char *h = strstr(url, "://");
@@ -2735,7 +2742,19 @@ static char *baixarStream(const char *nome, int aio, const char *url, int segund
   if (at) { len -= (size_t)(at + 1 - h); h = at + 1; }
   snprintf(host, sizeof host, "%.*s", (int)len, h);
   const char *headers[]={"User-Agent: AIO-NuvioLegacy",NULL};
-  char *corpo = rede_baixar_medido(url, segundos, aio?headers:NULL, &m);
+  char *corpo=NULL;
+  if(aio) {
+    if(addonstats_aio_wait(origin->estatistica,type)) return NULL;
+    RedePedido request={.url=url,.cabecalhos=headers,.prazo_ms=(unsigned)segundos*1000u,.max_bytes=REDE_CORPO_PADRAO,.seguir=1};
+    RedeResposta response={0}; rede_pedir(&request,&response);
+    m.status=response.status; m.bytes=(long)response.n_corpo; m.ms=response.ms;
+    if(!origin->statsSession || nv_perfil_sessao_travar(origin->statsSession)) {
+      addonstats_aio_complete(origin->estatistica,type,response.corpo,response.status,response.erro,response.ms,response.retry_after_s);
+      if(origin->statsSession) nv_perfil_sessao_destravar();
+    }
+    if(response.erro==REDE_OK && aio_json_valid(response.corpo)) { corpo=response.corpo; response.corpo=NULL; }
+    rede_resposta_limpar(&response);
+  } else corpo=rede_baixar_medido(url,segundos,NULL,&m);
   status = m.status;
   if (medida) *medida = m;
   printf("[addons] stream host=%s HTTP %d\n", host, status);
@@ -2792,7 +2811,7 @@ static void *fioIdsExtras(void *u) {
     if (!nv_addon_id(idX, sizeof idX, x->extra[x->xi]) || !idX[0]) continue;
     cx = nv_addon_pedido_coube(x->a->nome, nv_addon_url(url, sizeof url, x->a->base, "/stream/%s/%s.json",
                                  x->c->tipo, idX), sizeof url)
-         ? baixarStream(x->a->nome, x->a->aio, url, restanteS, NULL, NULL) : NULL;
+         ? baixarStream(x->a, x->c->tipo, url, restanteS, NULL, NULL) : NULL;
     if (!cx) continue;
     x->respondeu = 1;
     nx = stream_extrair(cx, x->a->nome, &ax);
@@ -2900,7 +2919,7 @@ static void *fioFontes(void *u) {
     int semRecurso = -1, semRecursoAlt = -1;
     corpo = nv_addon_pedido_coube(origem->nome, nv_addon_url(url, sizeof url, origem->base, "/stream/%s/%s.json",
                                     t1, idUrl), sizeof url) && idUrl[0]
-            ? baixarStream(origem->nome, origem->aio, url, prazoS, &semRecurso, &medida) : NULL;
+            ? baixarStream(origem, c->tipo, url, prazoS, &semRecurso, &medida) : NULL;
     if (consultaCancelada(c)) {
       if (exVivo) pthread_join(exFio, NULL);
       if (exUsar) free(ex.l);
@@ -2946,7 +2965,7 @@ static void *fioFontes(void *u) {
       RedeMedida alternativa = {0};
       alt = nv_addon_pedido_coube(origem->nome, nv_addon_url(url, sizeof url, origem->base, "/stream/%s/%s.json",
                                     t2, idUrl), sizeof url) && idUrl[0]
-            ? baixarStream(origem->nome, origem->aio, url, restanteS, &semRecursoAlt, &alternativa) : NULL;
+            ? baixarStream(origem, c->tipo, url, restanteS, &semRecursoAlt, &alternativa) : NULL;
       if (consultaCancelada(c)) {
         if (exVivo) pthread_join(exFio, NULL);
         if (exUsar) free(ex.l);

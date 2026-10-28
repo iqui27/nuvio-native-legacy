@@ -83,6 +83,9 @@ int  addons_n(void);
 // adicao). app.c refaz a busca de fontes do titulo aberto quando ele muda —
 // era o titulo aberto antes de a lista da conta chegar ficando sem fonte.
 unsigned addons_versao(void);
+struct AddonAioRequest;
+// Local completed AIO requests for the current account/profile/installation/type.
+int addons_aio_history(int index,const char *type,struct AddonAioRequest *out,int max);
 // Capturar na UI para a consulta independente do proximo episodio. Bases
 // privadas e proveniencia pertencem ao snapshot; nenhum worker le a lista
 // de addons do perfil que entrou depois. NULL = captura indisponivel/incompleta.

@@ -124,7 +124,7 @@ static unsigned entregaGeracao;
 static AioSnapshot entrega;
 static int entregaInstalar;
 static char entregaBase[2048];
-typedef struct { unsigned geracao; int instalar; char base[2048], host[256], id[128], tipo[32]; } Pedido;
+typedef struct { unsigned geracao; int instalar, diagnostic; char base[2048], host[256], id[128], tipo[32]; } Pedido;
 
 int aioui_detectar(int i) {
   return i >= 0 && (!strncasecmp(addons_nome(i),"AIOStreams",10) ||
@@ -138,7 +138,7 @@ static void qrAtual(void) {
 static void buscar(AioSnapshot *s, const char *u, const char *auth, int k, char **corpo) {
   RedeResposta r = {0}; const char *h[] = {"User-Agent: AIO-NuvioLegacy","Cache-Control: no-cache, no-store",auth,NULL};
   RedePedido p = {.url=u,.cabecalhos=h,.prazo_ms=12000,.max_bytes=1024*1024,.seguir=0};
-  rede_pedir(&p,&r); s->http[k]=r.status; s->ms[k]=(int)r.ms; s->retry[k]=r.retry_after_s;
+  rede_pedir(&p,&r); s->http[k]=r.status; s->ms[k]=(int)r.ms; s->retry[k]=r.status==429 && r.retry_after_s<=0?60:r.retry_after_s;
   AioCapability *cap=k==0?&s->manifestAccess:k==2?&s->configAccess:k==5?&s->searchAccess:NULL;
   if(cap) aio_capability(cap,r.status);
   if(r.erro==REDE_OK && r.status>=200 && r.status<300) { *corpo=r.corpo; r.corpo=NULL; }
@@ -147,6 +147,7 @@ static void buscar(AioSnapshot *s, const char *u, const char *auth, int k, char 
 static void *worker(void *arg) {
   Pedido *p=arg; AioSnapshot *s=calloc(1,sizeof *s); char *body=NULL, url[3072], auth[4096];
   if(s) {
+    s->estatisticas=s->erros=s->filtrados=-1;
     snprintf(s->host,sizeof s->host,"%s",p->host);
     buscar(s,p->base,NULL,0,&body);
     if(body) { aio_manifesto(s,body); free(body); body=NULL; }
@@ -156,7 +157,7 @@ static void *worker(void *arg) {
     if(s->valida && aio_autorizacao(p->base,auth,sizeof auth) && !strncmp(p->host,"https://",8)) {
       snprintf(url,sizeof url,"%s/api/v1/user",p->host); buscar(s,url,auth,2,&body);
       if(body) { aio_configuracao(s,body); memset(body,0,strlen(body)); free(body); body=NULL; }
-      if(p->id[0] && s->searchAtiva) {
+      if(p->diagnostic && p->id[0] && s->searchAtiva) {
         char encoded[512];
         if(nv_addon_id(encoded,sizeof encoded,p->id)) {
           snprintf(url,sizeof url,"%s/api/v1/search?type=%s&id=%s&format=true",p->host,p->tipo,encoded);
@@ -243,7 +244,7 @@ void aioui_abrir(int i) {
   abertura=0; saindo=0; paginaAnterior=-1; historyCount=0; navigationCount=0;
   aberto=1; geracao++; foco=0; lateral=0; entrada=pendente=0; indice=i; alvo[0]=0; proximaConsulta=0;
   regraSelecionada=linkSelecionado=-1; evidenciaSelecionada=0; soManifesto=0;
-  memset(&snap,0,sizeof snap); mensagem[0]=0;
+  memset(&snap,0,sizeof snap); snap.estatisticas=snap.erros=snap.filtrados=-1; mensagem[0]=0;
   perfil=perfis_ativo(); versao=addons_versao(); snprintf(usuario,sizeof usuario,"%s",sessao_usuario());
   snprintf(host,sizeof host,"%s",hosts[hostIdx]); base[0]=0;
   if(i>=0) {
@@ -1077,10 +1078,10 @@ static void workspace(void) {
   } else if(pagina==SAUDE) {
     char state[192]; snprintf(state,sizeof state,"%s · %s · %d ms",snap.versaoInstancia[0]?snap.versaoInstancia:i18n("Não informado"),snap.canal,snap.ms[1]);
     gfx_cor((GfxRect){453,286,980,112},.25f,.21f,.27f,.29f,.35f);
-    gfx_icone((GfxRect){475,325,28,28},"aj_circle-check",.65f,.84f,.83f,1);
+    gfx_icone((GfxRect){475,325,28,28},"aj_info",.65f,.84f,.83f,1);
     texto(TXT_ILHA_NOME_L,i18n("Status da instância"),550,310,670,236);
     texto(TXT_ILHA_SUB,state,550,350,670,174);
-    char total[24]; snprintf(total,sizeof total,"%d",snap.erros);
+    char total[24]; if(snap.erros<0) snprintf(total,sizeof total,"—"); else snprintf(total,sizeof total,"%d",snap.erros);
     texto(TXT_ILHA_NOME_L,total,1320,309,100,236);
     texto(TXT_ILHA_NUM,i18n("Saúde"),1320,366,100,174);
     const char *names[]={i18n("Manifesto"),i18n("Status da instância"),i18n("Configuração"),i18n("Consulta de fontes"),i18n("Legendas"),i18n("Inspeção do título")};
