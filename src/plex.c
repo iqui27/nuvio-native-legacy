@@ -894,7 +894,9 @@ int px_ler_fontes(const PxConta *c, const char *rk, const char *corpo, size_t n,
       s->fileIdx = -1;
       s->mp4 = metodo == PX_METODO_DIRETO && (!strcmp(cont, "mp4") || !strcmp(cont, "m4v"));
       s->tamanhoBytes = metodo == PX_METODO_DIRETO && tam > 0 ? (uint64_t)tam : 0;
-      s->tamanhoMB = (long)(s->tamanhoBytes / (1024u * 1024u));
+      // Original file size is useful in Sources even when playback uses HLS.
+      // Exact playback bytes remain unknown for StreamFit on transformed streams.
+      s->tamanhoMB = tam > 0 ? (long)(tam / (1024u * 1024u)) : 0;
       snprintf(s->bingeGroup, sizeof s->bingeGroup, "plex|%s", px_metodo_nome(metodo));
       descreverMidia(p, f, s, metodo, nomeV);
       out->n++;

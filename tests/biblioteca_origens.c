@@ -4,8 +4,16 @@
 #endif
 #define perfis_ativo biblioteca_perfil_teste
 #define tex_obter_larg biblioteca_texture_teste
+#define gfx_cor biblioteca_badge_background
 #include BIB_FONTE
 #undef tex_obter_larg
+#undef gfx_cor
+void gfx_cor(GfxRect r, float radius, float red, float green, float blue, float alpha);
+static int badgeBackgrounds;
+void biblioteca_badge_background(GfxRect r, float radius, float red, float green, float blue, float alpha) {
+  badgeBackgrounds++;
+  gfx_cor(r, radius, red, green, blue, alpha);
+}
 #include <assert.h>
 #include <limits.h>
 #include <sys/stat.h>
@@ -225,6 +233,14 @@ int main(void) {
   SDL_GLContext context = SDL_GL_CreateContext(window);
   assert(context && gfx_iniciar() && txt_iniciar("deploy/app", 1));
   gfx_tamanho_alvo(1920, 1080);
+  CatItem emptyBadge = {0};
+  badgeBackgrounds = 0;
+  bibSourceBadges(&emptyBadge, 100, 100, 1);
+  assert(!badgeBackgrounds);
+  emptyBadge.fontes = CAT_FONTE_NUVIO | CAT_FONTE_TRAKT | CAT_FONTE_SIMKL;
+  strcpy(emptyBadge.origem, "test-addon");
+  bibSourceBadges(&emptyBadge, 100, 100, 1);
+  assert(!badgeBackgrounds); // Missing logo and fallback: never leave an empty background.
   reflow();
   // List header, rows and width follow the same spring, including reversal.
   exibicao = VIS_LISTA; origensAbertas = 1; animOrig = flipDe = 1;
