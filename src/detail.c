@@ -417,10 +417,11 @@ static int corpoOculto(int serie) { (void)serie; return 0; }
 // aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
 static float velSec[N_SECOES], alvoScrollSec[N_SECOES], velY = 0.0f;
 #ifdef NV_TOUCH_UI
-static ToqueRolagem toqueDetalhe, toqueSec[N_SECOES], toqueColecao, toquePessoa;
+static ToqueRolagem toqueDetalhe, toqueSec[N_SECOES], toqueColecao, toquePessoa, toqueLower;
 static int toqueSecAtiva = -1;
 static float toquePessoaOffset;
 static void toqueDetalheLimpar(void) {
+  toquerol_limpar(&toqueLower);
   toquerol_limpar(&toqueDetalhe); toquerol_limpar(&toqueColecao); toquerol_limpar(&toquePessoa);
   for (int r = 0; r < N_SECOES; r++) toquerol_limpar(&toqueSec[r]);
   toqueSecAtiva = -1;
@@ -2447,7 +2448,7 @@ static float alturaSecao(int r) {
     // empilhada usando so a altura dos cartoes e saia POR CIMA deles.
     case SEC_COMENTARIOS:  return alturaCabComentarios() + COM_CARD_H;
     case SEC_ESTUDIOS:    return EST_CARD_H;
-    case SEC_DETALHES:    return 80 + ceilf(nLinhasDetalhe()/2.0f)*76;
+    case SEC_DETALHES:    return 80 + ceilf(nLinhasDetalhe()/(detalheRetrato() ? 1.0f : 2.0f))*76;
     // As duas sob demanda: a CHAMADA enquanto ninguem entrou (titulo +
     // procedencia + custo, tres linhas) e a altura MEDIDA no ultimo desenho
     // depois disso.
@@ -3044,6 +3045,7 @@ static void detail_evento_(const SDL_Event *e) {
   }
 #ifdef NV_TOUCH_UI
   if (toquerol_navegacao(e)) {
+    toquerol_limpar(&toqueLower);
     toquerol_limpar(&toqueDetalhe); toquerol_limpar(&toqueColecao); toquerol_limpar(&toquePessoa);
     for (int r = 0; r < N_SECOES; r++) toquerol_limpar(&toqueSec[r]);
   }
@@ -3425,6 +3427,9 @@ static void detail_evento_(const SDL_Event *e) {
       lowerList=foco.fileira==SEC_FRASES ? 2 : 1;
       lowerCursor=lowerList==2 ? foco.coluna : 0;
       lowerScroll=lowerScrollVel=lowerTarget=0;
+#ifdef NV_TOUCH_UI
+      toquerol_limpar(&toqueLower);
+#endif
       if (lowerList==1 && !(ehSerie() && comentEp)) {
         const CatItem *ci=cat_item(idx);
         if (ci) extras_pedir_comentarios_ep(ci->imdb,0,0);
@@ -3976,6 +3981,10 @@ static void detail_atualizar_(float dt, Uint32 agora) {
   if (musicaui_visivel()) { musicaui_atualizar(agora); return; }
   colListaEntrada=anim_mola(colListaEntrada,colListaAberta ? 1 : 0,dt,NV_MOLA_FOCO);
   lowerEnter=anim_clamp(anim_mola(lowerEnter,lowerList ? 1 : 0,dt,NV_MOLA_FOCO),0,1);
+#ifdef NV_TOUCH_UI
+  if (toquerol_livre(&toqueLower)) { lowerTarget=lowerScroll; lowerScrollVel=0; }
+  else
+#endif
   lowerScroll=anim_mola2(&lowerScrollVel,lowerScroll,lowerTarget,dt,NV_MOLA2_SCROLL);
   for (int i=0;i<N_ITENS;i++) lowerFocus[i]=anim_mola(lowerFocus[i],i==lowerCursor ? 1 : 0,dt,NV_MOLA_FOCO);
   if (studioBrowse && !vertudo_aberta()) studioBrowse=0;
@@ -8335,34 +8344,52 @@ static void desenhaRodape(int r,float a) {
   } else {
     LinhaDet rows[NV_DETF_DET_MAXL]; int n=montarDetalhes(rows,NV_DETF_DET_MAXL);
     float h=alturaSecao(r);
-    for (int col=0;col<2;col++) {
-      GfxRect card={96+col*876,y,852,h};
+    int cols=detalheRetrato() ? 1 : 2;
+    for (int col=0;col<cols;col++) {
+      GfxRect card={96+col*876,y,detalheRetrato() ? NV_TELA_W-192 : 852,h};
       moldura(card,22,a);
-      for (int i=col;i<n;i+=2) {
-        float cy=y+28+(i/2)*76;
+      for (int i=col;i<n;i+=cols) {
+        float cy=y+28+(i/cols)*76;
         txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,i18n(rows[i].chave),156,165,179,255,220),card.x+28,cy,a);
-        txt_bloco_corta(TXT_ILHA_NOME,rows[i].valor,239,241,246,card.x+264,cy,560,30,a,2);
+        txt_bloco_corta(TXT_ILHA_NOME,rows[i].valor,239,241,246,card.x+264,cy,card.w-292,30,a,2);
       }
     }
-    if (a>.3f) navigationTarget(96,y,1728,h,ponteiroDetalhe,NULL,r,0);
+    if (a>.3f) navigationTarget(96,y,detalheRetrato() ? NV_TELA_W-192 : 1728,h,ponteiroDetalhe,NULL,r,0);
   }
 }
 
 // Both lists retain the parent row/column. Closing only changes their spring
 // target, so Back plays the full exit and returns to that same card.
+#ifdef NV_TOUCH_UI
+static int toqueLowerRolar(const PonteiroRolagem *e) {
+  if (!lowerList) return 0;
+  int r=toquerol_evento(&toqueLower,e);
+  if (r) { lowerTarget=lowerScroll; lowerScrollVel=0; }
+  return r;
+}
+static void toqueLowerFocar(int i,int unused) { (void)unused; lowerCursor=i; }
+static void toqueLowerFechar(int unused,int unused2) {
+  (void)unused; (void)unused2; lowerList=0;
+}
+#endif
 static void desenhaLowerList(float a) {
   int quotes=lowerList==2 || (!lowerList && foco.fileira==SEC_FRASES);
   int n=quotes ? seriefrases_n() : lowerCount();
   float s=lowerEnter;
   ponteiro_camada();
   gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,.30f*a*s);
-  gfx_transformar(960,540,.96f+.04f*s,0,24*(1-s));
-  GfxRect sheet={120,48,1680,984};
+  int portrait=detalheRetrato();
+  GfxRect sheet=portrait ? (GfxRect){48,48,NV_TELA_W-96,NV_TELA_H-96} : (GfxRect){120,48,1680,984};
+  gfx_transformar(NV_TELA_W/2,NV_TELA_H/2,.96f+.04f*s,0,24*(1-s));
   gfx_cor(sheet,30.0f/sheet.h,.07f,.075f,.085f,.94f*a*s);
   plrui_material(sheet,30,0,a*s);
-  txt_desenhar_alpha(txt_linha(TXT_ILHA_TITULO,i18n(quotes ? "Frases" : "Comentários"),243,242,239,255),168,84,a*s);
-  txt_desenhar_alpha(txt_linha(TXT_ILHA_SUB,i18n("Voltar para fechar"),180,188,200,255),1450,98,a*s);
-  GfxRect clip={156,166,1608,818};
+  txt_desenhar_alpha(txt_linha(TXT_ILHA_TITULO,i18n(quotes ? "Frases" : "Comentários"),243,242,239,255),sheet.x+48,84,a*s);
+  txt_desenhar_alpha(txt_linha(TXT_ILHA_SUB,i18n("Voltar para fechar"),180,188,200,255),sheet.x+sheet.w-(portrait ? 380 : 350),98,a*s);
+  GfxRect clip={sheet.x+36,166,sheet.w-72,sheet.h-166};
+  float textWidth=clip.w-128;
+#ifdef NV_TOUCH_UI
+  int freeScroll=toquerol_livre(&toqueLower);
+#endif
   gfx_recorte(clip.x,clip.y,clip.w,clip.h);
   float cy=clip.y;
   for (int i=0;i<n;i++) {
@@ -8373,23 +8400,41 @@ static void desenhaLowerList(float a) {
     if (quotes) quoteCredit(i,credit,sizeof credit);
     else snprintf(credit,sizeof credit,"%s",ep ? extras_comentario_ep_usuario(i) : extras_comentario_usuario(i));
     // Measure the same wrapping used below; quotes are never truncated here.
-    float th=txt_bloco(TXT_LOG_T34,text,243,242,239,-10000,-10000,1480,44,0,200);
+    float th=txt_bloco(TXT_LOG_T34,text,243,242,239,-10000,-10000,textWidth,44,0,200);
     float h=fmaxf(180,th+104);
-    if (i==lowerCursor) {
+    if (i==lowerCursor
+#ifdef NV_TOUCH_UI
+        && !freeScroll
+#endif
+    ) {
       float top=cy-clip.y,bottom=top+h;
       if (top<lowerTarget) lowerTarget=top;
       else if (bottom>lowerTarget+clip.h) lowerTarget=bottom-clip.h;
     }
-    GfxRect row={168,cy-lowerScroll,1584,h-16};
+    GfxRect row={sheet.x+48,cy-lowerScroll,clip.w-24,h-16};
     if (row.y+row.h>clip.y && row.y<clip.y+clip.h) {
+#ifdef NV_TOUCH_UI
+      if (lowerList && layout_modo_mobile())
+        ponteiro_alvo_faixa(row.x,row.y,row.w,row.h,clip.y,clip.y+clip.h,toqueLowerFocar,NULL,i,0);
+#endif
       plrui_linha_foco(row,20,(i<N_ITENS ? lowerFocus[i] : i==lowerCursor ? 1 : 0)*a*s);
-      txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,credit,174,185,200,255,1480),row.x+32,row.y+22,a*s);
-      txt_bloco(TXT_LOG_T34,text,243,242,239,row.x+32,row.y+64,1480,44,a*s,200);
+      txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,credit,174,185,200,255,textWidth),row.x+32,row.y+22,a*s);
+      txt_bloco(TXT_LOG_T34,text,243,242,239,row.x+32,row.y+64,textWidth,44,a*s,200);
     }
     cy+=h;
   }
   lowerTarget=fmaxf(0,fminf(lowerTarget,cy-clip.y-clip.h));
-  gfx_sem_recorte(); gfx_sem_transformar();
+  gfx_sem_recorte();
+#ifdef NV_TOUCH_UI
+  if (lowerList && layout_modo_mobile()) {
+    toquerol_vincular(&toqueLower,clip,gfx_escala(),0,cy-clip.y-clip.h,1,&lowerScroll);
+    ponteiro_rolagem(toqueLowerRolar);
+    ponteiro_alvo(sheet.x+sheet.w-400,64,364,80,NULL,toqueLowerFechar,0,0);
+    if (lowerList==1 && lowerScroll+clip.h>=cy-clip.y-180 && lowerFeed() && extras_comentarios_ep_tem_mais())
+      extras_comentarios_ep_mais();
+  }
+#endif
+  gfx_sem_transformar();
 }
 
 static void desenhaSecao(int r, float a, Uint32 agora) {

@@ -24,3 +24,4 @@ cc "${flags[@]}" tests/detail_remonta.c "${all[@]}" "$work/detail.o" -o "$work/r
 NUVIO_DADOS="$work" "$work/remonta" > "$work/remonta.log"
 ! grep -Eq 'catalogo remontou: .* saiu de ([0-9]+) para \1$' "$work/remonta.log"
 grep -q '^FIM$' "$work/remonta.log"
+bash tests/detail_lower_touch.sh
