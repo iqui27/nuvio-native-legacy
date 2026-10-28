@@ -636,6 +636,7 @@ static void iosFramebufferTela(SDL_Window *w) {
     if (nv_gl_fb_tela != wm.info.uikit.framebuffer)
       printf("[ios] framebuffer da tela = %u (antes %u)\n", wm.info.uikit.framebuffer, nv_gl_fb_tela);
     nv_gl_fb_tela = wm.info.uikit.framebuffer;
+    ios_hospedar((void *)wm.info.uikit.window);
   }
 }
 #endif

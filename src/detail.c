@@ -3050,6 +3050,14 @@ static void executarMais(int dm) {
   }
 }
 
+void detail_acao_barra(int acao) {
+  if (!detail_aberto()) return;
+  if (acao == DETAIL_BARRA_FONTES) pedFontes = 1;
+  else if (acao == DETAIL_BARRA_TRAILER) executarMais(DMAIS_TRAILER);
+  else if (acao == DETAIL_BARRA_VISTO) executarMais(DMAIS_VISTO);
+  else if (acao == DETAIL_BARRA_LISTA) pedMarcar = 1;
+}
+
 static void detail_evento_(const SDL_Event *e) {
   if (musicaui_visivel()) { if (musicaui_aberta()) musicaui_evento(e); return; }
   pediuRelogio = 0;

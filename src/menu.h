@@ -60,6 +60,8 @@ int  menu_sobre(void);
 // 1 uma vez quando a pessoa ESCOLHEU algo na barra (destino, rodape, pasta;
 // o Spotlight nao, ele abre por cima) — ao contrario de Voltar/DIREITA por cima. Consome a flag.
 int  menu_escolheu(void);
+// Go to a destination as if it was confirmed in the sidebar (iOS tab bar).
+void menu_ir(int destino);
 
 // 1 enquanto a barra e dona do D-pad. Vira 0 no instante da escolha, ainda com
 // a animacao de saida rodando — e esse o sinal que o conteudo deve usar para

@@ -18,6 +18,19 @@ int ios_interface_mobile_auto(void);
 // Returns 0 when there is no window yet (all four left untouched).
 int ios_insets(float *left, float *top, float *right, float *bottom);
 
+// The host's vertical bar (ios.m). Each frame the core reports the screen in
+// view (app_tela_nome), whether a Detail page is open over it (app_tela_nome
+// only names it over the Home) and the sidebar destination; the bar answers with a
+// destination picked on a tab (MENU_*) and a Detail action (DETAIL_BARRA_*),
+// each -1 when there is none. Main thread only.
+void ios_quadro(const char *tela, int detalhe, int destino);
+int ios_destino_pedido(void);
+int ios_acao_pedida(void);
+// Moves SDL's view controller under the host's tab bar controller (the
+// container that gives iOS 27.1 its vertical bar) and starts feeding the
+// safe-area insets to layout.c. Idempotent; call after every GL context.
+void ios_hospedar(void *uiwindow);
+
 // HTTP through NSURLSession, the libcurl stand-in on iOS (there is no libcurl
 // in the iOS SDK). Same contract as android_http: GET/POST with "Name: value"
 // headers separated by '\n'; returns the body (malloc, NUL-terminated, *n =

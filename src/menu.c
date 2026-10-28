@@ -499,6 +499,14 @@ static void escolher(void) {
   aberto = 0;
 }
 
+// A destination chosen outside the sidebar (the iOS tab bar): the same path as
+// confirming that row in the open sidebar.
+void menu_ir(int d) {
+  if (d < 0 || d >= MENU_N) return;
+  linha = d;
+  escolher();
+}
+
 int menu_pediu_trocar(void) { int p = pediuTrocar; pediuTrocar = 0; return p; }
 int menu_pediu_colecao(void) { int c = pediuColecao; pediuColecao = -1; return c; }
 int menu_pediu_spotlight(void) { int p = pediuSpot; pediuSpot = 0; return p; }
