@@ -126,6 +126,6 @@ set_target_properties(Nuvio PROPERTIES
 # and the core finds the fonts next to it (../fonts).
 add_custom_command(TARGET Nuvio POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_BUNDLE_CONTENT_DIR:Nuvio>/art" "$<TARGET_BUNDLE_CONTENT_DIR:Nuvio>/fonts"
-  COMMAND ${CMAKE_COMMAND} -E copy_directory "${NUVIO_RAIZ}/deploy/app/art" "$<TARGET_BUNDLE_CONTENT_DIR:Nuvio>/art"
-  COMMAND ${CMAKE_COMMAND} -E copy_directory "${NUVIO_RAIZ}/deploy/app/fonts" "$<TARGET_BUNDLE_CONTENT_DIR:Nuvio>/fonts"
+  # Only git-tracked art and fonts: ignored personal files live next to them.
+  COMMAND bash "${NUVIO_RAIZ}/tools/ios-assets.sh" "${NUVIO_RAIZ}" "$<TARGET_BUNDLE_CONTENT_DIR:Nuvio>"
   COMMENT "copying art and fonts into Nuvio.app")
