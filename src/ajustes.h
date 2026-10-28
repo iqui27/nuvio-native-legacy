@@ -9,6 +9,7 @@
 // Os valores sao gravados em <dir>/ajustes.txt, uma chave por linha.
 #ifndef NV_AJUSTES_H
 #define NV_AJUSTES_H
+int ajustes_tv_home(void);
 #include <SDL2/SDL.h>
 #include "idiomacod.h"
 #include "gfx.h"

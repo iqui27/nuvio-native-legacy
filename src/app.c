@@ -23,6 +23,7 @@
 #include "travaui.h"
 #include "teclavoltar.h"
 #include "deeplink.h"
+#include "android.h"
 #include "telefoneui.h"
 #include "diario.h"
 #include "travajuntos.h"
@@ -4044,8 +4045,16 @@ static int spotPode(void) {
 // outro app, o launcher ou o adb pediu. Fora do player e do detalhe de antes,
 // como um clique do Spotlight. Titulo fora do catalogo so abre (a descoberta o
 // busca num fio); o episodio pedido so toca se ele ja esta no catalogo.
+#ifdef NV_ANDROID
+static DeepLink tvHomePending;
+#endif
 static void deeplinkAbrir(const DeepLink *d) {
   int k = -1, i;
+#ifdef NV_ANDROID
+  tvHomePending.tipo = DL_NENHUM;
+  if (d->tvProfile && (d->tvProfile != perfis_ativo() || !ajustes_tv_home() || perfil_infantil_ativo())) return;
+  if (d->tvProfile) tvHomePending = *d;
+#endif
   // Invalidate outgoing source work before a new title can request Play.
   preparoInvalidar();
   novaGeracaoFonte();
@@ -4075,6 +4084,9 @@ static void deeplinkAbrir(const DeepLink *d) {
     if (d->tipo == DL_TOCAR && d->episodio > 0) { cwTocarT = d->temporada; cwTocarE = d->episodio; }
     abrirPorIndice(k);
     if (d->tipo == DL_TOCAR && detail_aberto()) detail_pedir_reproduzir();
+#ifdef NV_ANDROID
+    tvHomePending.tipo = DL_NENHUM;
+#endif
   } else if (d->imdb[0]) desc_pedir_titulo(d->imdb);
   else desc_pedir_titulo_tmdb(d->tmdb, d->serie ? "tv" : "movie");
 }
@@ -4983,6 +4995,17 @@ static void trocaDeTituloSeSolicitada(void) {
       if (player_aberto() || player_retido()) player_encerrar();
       detail_volta_notar(novo);
       abrirPorIndice(novo);
+#ifdef NV_ANDROID
+      const CatItem *linked = cat_item(novo);
+      if (tvHomePending.tipo == DL_TOCAR && linked && detail_aberto() &&
+          tvHomePending.tvProfile == perfis_ativo() && ajustes_tv_home() && !perfil_infantil_ativo() &&
+          !strcmp(linked->imdb, tvHomePending.imdb) &&
+          !strcmp(linked->tipo, tvHomePending.serie ? "series" : "movie")) {
+        cwTocarT = tvHomePending.temporada; cwTocarE = tvHomePending.episodio;
+        detail_pedir_reproduzir();
+      }
+      tvHomePending.tipo = DL_NENHUM;
+#endif
       if (spotPessoaDepois.tmdb > 0) {
         if (SDL_GetTicks() - spotPessoaDesde < SPOT_PESSOA_PRAZO_MS)
           detail_mostrar_pessoa(spotPessoaDepois.tmdb, spotPessoaDepois.nome, spotPessoaDepois.arte);
@@ -5270,6 +5293,9 @@ static void recuperarErroFonte(void) {
 }
 
 void app_atualizar(float dt, Uint32 agora) {
+#ifdef NV_ANDROID
+  android_tv_home(tela != TELA_LOGIN && tela != TELA_ESCOLHA_PERFIL);
+#endif
   aioui_atualizar(dt, agora);
   if(tela!=TELA_LOGIN && tela!=TELA_ESCOLHA_PERFIL && perfil_regra_tempo(dt)) {
     if(player_aberto() || player_mini_ativo()) { player_sair();player_encerrar();video_parar(); }

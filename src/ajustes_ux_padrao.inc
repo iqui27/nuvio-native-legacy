@@ -365,3 +365,4 @@
   0, /* Folder hero details: enabled. */
   1, 0, 0, /* Guide: start on OK, muted, one day. */
   2, 2, 2, /* Capability exclusions: automatic defaults, resolved per device; unknown stays off. */
+  0, /* Android TV home: enabled. */

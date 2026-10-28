@@ -48,6 +48,7 @@ static const char *const AJ4_GRUPOS[] = {
 enum { AJ4_N_GRUPOS = sizeof AJ4_GRUPOS / sizeof *AJ4_GRUPOS };
 static const int AJ4_GRUPO_BASE[] = {0,8,10,13,15,23,34,38};
 static int aj4MapaSecao(int op) {
+  if (op == AJ_TV_HOME) return 7;
   if (op >= AJ_FONTE_OCULTAR_DV && op <= AJ_FONTE_OCULTAR_VIDEO) return 0;
   switch (op) {
     case AJ_DET_TOPO: case AJ_DET_ELENCO_VISTO: return 4;
@@ -63,6 +64,7 @@ static int aj4MapaSecao(int op) {
   }
 }
 static int aj4MapaGrupo(int op) {
+  if (op == AJ_TV_HOME) return 38;
   if (op >= AJ_FONTE_OCULTAR_DV && op <= AJ_FONTE_OCULTAR_VIDEO) return 3;
   switch (op) {
     case AJ_QUALIDADE: case AJ_DV: case AJ_ATMOS: case AJ_FONTE_HDR: return 0;
