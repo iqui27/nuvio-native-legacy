@@ -51,6 +51,10 @@ typedef struct {
 // e exatamente o borrao que o dono viu comparando com o app web, onde o
 // navegador rasteriza no devicePixelRatio.
 static float escalaTxt = 1.0f;
+// Only provider text opts into verbatim glyphs; UI modes retain their policy.
+static int addonVerbatim;
+static char addonEmojiPath[600];
+static void addonEmojiFechar(void);
 // CAMADA AMPLIADA (gfx.h, "Tamanho da interface"). Dentro de uma camada com
 // gfx_escala() != 1 o texto e rasterizado em `corpo * escalaTxt * s` e a
 // linha guarda a medida dividida por esse fator: o layout da camada mede em
@@ -582,6 +586,7 @@ static Uint32 decodifica(const unsigned char *p, int *n) {
 // entao este passe roda por quadro; e por isso que a saida rapida importa.
 static const char *semDecorativoSemGlifo(TTF_Font *fonte, TTF_Font *alt, TTF_Font *alt2,
                                          const char *s, char *dst, size_t tam) {
+  if (addonVerbatim) return s;
   const unsigned char *p = (const unsigned char *)s;
   size_t k = 0;
   int algum = 0;
@@ -1326,6 +1331,7 @@ int txt_iniciar(const char *dirRecursos, float escala) {
     if (bp) { snprintf(base, sizeof base, "%s", bp); SDL_free(bp); }
   }
 
+  snprintf(addonEmojiPath, sizeof addonEmojiPath, "%sfonts/addon-emoji.png", base);
   snprintf(caminhoPeso[TXT_FAMILIA_INTER][0], 512, "%sfonts/InterDisplay-Regular.ttf", base);
   snprintf(caminhoPeso[TXT_FAMILIA_INTER][1], 512, "%sfonts/InterDisplay-Medium.ttf", base);
   snprintf(caminhoPeso[TXT_FAMILIA_INTER][2], 512, "%sfonts/InterDisplay-Bold.ttf", base);
@@ -1462,6 +1468,7 @@ int txt_iniciar(const char *dirRecursos, float escala) {
 }
 
 void txt_encerrar(void) {
+  addonEmojiFechar();
   for (int k = 0; k < TXT_NCAM; k++) importadasFechar(k);
   importadasRevisao = 0;
   arabeBoldFechar();
@@ -1665,6 +1672,125 @@ static SDL_Surface *renderCorridas(TTF_Font *f, TTF_Font *a, TTF_Font *b,
   return out;
 }
 
+// Color emoji are composed into the same cached surface as their text runs.
+#include <SDL2/SDL_image.h>
+#include "emoji_atlas.h"
+static SDL_Surface *addonAtlas;
+static int addonAtlasTried;
+static void addonEmojiFechar(void) {
+  SDL_FreeSurface(addonAtlas); addonAtlas = NULL; addonAtlasTried = 0;
+}
+// Longest match keeps regional-indicator pairs and variation selectors atomic.
+static int addonEmoji(const char *s, int *bytes) {
+  unsigned cp[3] = {0}; int ends[3] = {0}, count = 0;
+  const unsigned char *p = (const unsigned char *)s;
+  while (*p && count < 3) {
+    int nb;
+    cp[count] = decodifica(p, &nb); p += nb;
+    ends[count++] = (int)((const char *)p - s);
+  }
+  size_t low = 0, high = sizeof emojiKeys / sizeof *emojiKeys;
+  while (low < high) {
+    size_t mid = low + (high - low) / 2;
+    if (emojiKeys[mid][0] < cp[0]) low = mid + 1; else high = mid;
+  }
+  for (int len = count; len > 0; len--)
+    for (size_t i = low; i < sizeof emojiKeys / sizeof *emojiKeys && emojiKeys[i][0] == cp[0]; i++) {
+      int match = 1;
+      for (int j = 0; j < 3; j++) if (emojiKeys[i][j] != (j < len ? cp[j] : 0)) match = 0;
+      if (match) {
+        *bytes = ends[len - 1];
+        if (!strncmp(s + *bytes, "\xef\xb8\x8f", 3)) *bytes += 3;
+        return (int)i;
+      }
+    }
+  return -1;
+}
+
+static int addonRun(TxtEstilo style, const char *p, char *run, int *emoji) {
+  int nb;
+  *emoji = addonEmoji(p, &nb);
+  if (*emoji >= 0) { run[0] = 0; return nb; }
+  int n = 0;
+  while (p[n] && n < 2040) {
+    int k;
+    if (n && addonEmoji(p + n, &k) >= 0) break;
+    decodifica((const unsigned char *)p + n, &k);
+    if (n + k >= 2048) break;
+    memcpy(run + n, p + n, (size_t)k); n += k;
+  }
+  run[n] = 0;
+  (void)style;
+  return n;
+}
+
+// Both measurement and rasterization use these exact run widths/heights.
+static SDL_Surface *addonSurface(TxtEstilo style, const char *s, SDL_Color color,
+                                  TxtFamilia family, int draw, int *width, int *height) {
+  int w = 0, h = 0, pass;
+  SDL_Surface *out = NULL;
+  int em = (int)(corpoAtual(style) * ESC_T + .5f);
+  for (pass = 0; pass <= draw; pass++) {
+    int x = 0;
+    for (const char *p = s; *p;) {
+      char run[2048]; int id, n = addonRun(style, p, run, &id), rw = em, rh = em;
+      SDL_Surface *part = NULL;
+      if (!n) break;
+      if (id < 0) {
+        TTF_Font *f = fonteDe(family, style, run), *a, *b;
+        if (f) {
+          char vis[4096]; altDe(family, style, f, &a, &b);
+          const char *v = visualDe(f, run, vis, sizeof vis);
+          medirCorridas(f, a, b, v, 0, &rw);
+          // Run height includes every fallback face, even during measure-only.
+          Corrida c[TXT_CORR_MAX]; int nc = corridasDe(f, a, b, v, c, TXT_CORR_MAX);
+          int ascent = 0, below = 0;
+          for (int j = 0; j < nc; j++) {
+            int a = TTF_FontAscent(c[j].f), b = TTF_FontHeight(c[j].f) - a;
+            if (a > ascent) ascent = a;
+            if (b > below) below = b;
+          }
+          rh = ascent + below;
+          if (pass) {
+            part = renderCorridas(f, a, b, v, color, 0);
+            if (part) { rw = part->w; rh = part->h; }
+          }
+        }
+      }
+      if (!pass) { w += rw; if (rh > h) h = rh; }
+      else if (out) {
+        SDL_Rect dest = {x, (h - rh) / 2, rw, rh};
+        if (id >= 0) {
+          if (!addonAtlasTried) {
+            addonAtlasTried = 1;
+            SDL_Surface *loaded = IMG_Load(addonEmojiPath);
+            if (loaded) addonAtlas = SDL_ConvertSurfaceFormat(loaded, SDL_PIXELFORMAT_ARGB8888, 0);
+            SDL_FreeSurface(loaded);
+          }
+          if (addonAtlas) {
+            SDL_Rect src = {(id % EMOJI_COLUMNS) * 32, (id / EMOJI_COLUMNS) * 32, 32, 32};
+            SDL_BlitScaled(addonAtlas, &src, out, &dest);
+          }
+        } else if (part) SDL_BlitSurface(part, NULL, out, &dest);
+      }
+#ifdef NV_ADDON_LAYOUT_TEST
+      if (pass && out) {
+        extern void fonte_addon_box(int x, int y, int w, int h, int emoji);
+        fonte_addon_box(x, (h-rh)/2, rw, rh, id);
+      }
+#endif
+      SDL_FreeSurface(part); x += rw; p += n;
+    }
+    if (!pass && draw && w > 0 && h > 0) {
+      out = nv_superficie(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+      if (out) SDL_FillRect(out, NULL, 0);
+    }
+  }
+  if (width) *width = w;
+  if (height) *height = h;
+  return out;
+}
+
 // O que linhaFamilia desenharia para `s` (ver text.h): a string visual, em
 // quantas corridas e quantos caracteres ficam sem glifo na fonte da corrida
 // (o quadradinho). Para o teste e o diagnostico, como txt_fonte_da_linha.
@@ -1746,6 +1872,11 @@ static TxtLinha linhaCache(TxtEstilo estilo, const char *s, int r, int g, int b,
     if (!*s) return vazia;
   } else snprintf(pre, sizeof pre, "T%d|", (int)(*trk * 100.0f + (*trk < 0 ? -0.5f : 0.5f)));
 
+  if (addonVerbatim) {
+    unsigned textHash = 2166136261u;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) textHash = (textHash ^ *p) * 16777619u;
+    snprintf(pre, sizeof pre, "A%08x|", textHash);
+  }
   char chave[288];
   // A VARIANTE CJK entra na chave: o mesmo hanzi tem forma de japones, de chines
   // simplificado e de tradicional (ver Escrita), e trocar o idioma da interface
@@ -1858,6 +1989,11 @@ static TxtLinha linhaFamilia(TxtEstilo estilo, const char *s, int r, int g,
 // A superficie de uma linha ja limpa, no formato da textura.
 static SDL_Surface *rasterLinha(TxtEstilo estilo, const char *s, SDL_Color cor,
                                 TxtFamilia familia, int enfase) {
+  if (addonVerbatim) {
+    SDL_Surface *sf = addonSurface(estilo, s, cor, familia, 1, NULL, NULL);
+    SDL_Surface *cv = sf ? SDL_ConvertSurfaceFormat(sf, SDL_PIXELFORMAT_ABGR8888, 0) : NULL;
+    SDL_FreeSurface(sf); return cv;
+  }
   TTF_Font *fonte = fonteLegendaDe(estilo, s, familia), *alt1, *alt2;
   if (!fonte) return NULL;
   altDe(familia, estilo, fonte, &alt1, &alt2);
@@ -1958,7 +2094,7 @@ static int larguraLinhaMedir(TxtEstilo estilo, const char *s, TxtFamilia familia
                              int enfase);
 static int larguraLinha(TxtEstilo estilo, const char *s, TxtFamilia familia,
                         int enfase) {
-  unsigned long long h = 1469598103934665603ull;
+  unsigned long long h = 1469598103934665603ull ^ (unsigned)addonVerbatim;
   unsigned n = 0, slot;
   unsigned char var;
   int w;
@@ -2000,6 +2136,11 @@ static int larguraLinha(TxtEstilo estilo, const char *s, TxtFamilia familia,
 
 static int larguraLinhaMedir(TxtEstilo estilo, const char *s, TxtFamilia familia,
                              int enfase) {
+  if (addonVerbatim) {
+    int w = 0;
+    addonSurface(estilo, s, (SDL_Color){255,255,255,255}, familia, 0, &w, NULL);
+    return (int)(w / ESC_T + .5f);
+  }
   char limpo[1024], vis[1600];
   TTF_Font *fl = fonteDe(familia, estilo, s), *a1, *a2;
   if (!fl) return 0;
@@ -2027,6 +2168,79 @@ static int larguraLinhaMedir(TxtEstilo estilo, const char *s, TxtFamilia familia
   if (enfase && novo != estiloAnt) TTF_SetFontStyle(fonte, estiloAnt);
   if (ok != 0) return 0;
   return (int)(w / ESC_T + 0.5f);
+}
+
+// One iterator for measuring and drawing provider text: hard breaks and spaces
+// remain intact, oversized filenames wrap at UTF-8/emoji cluster boundaries.
+float txt_addon_bloco(TxtEstilo style, const char *s, float x, float y, float width,
+                       int gray, float alpha, int *lines) {
+  float used = 0;
+  int count = 0;
+  if (!s || !*s || width <= 0) { if (lines) *lines = 0; return 0; }
+  camadaAtualizar();
+  addonVerbatim++;
+  const char *end = s + strlen(s);
+  while (end > s && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n')) end--;
+  while (s < end) {
+    const char *hard = memchr(s, '\n', (size_t)(end - s));
+    const char *stop = hard ? hard : end;
+    do {
+      char line[2048]; size_t len = 0, word = 0;
+      const char *p = s;
+      while (p < stop) {
+        int nb, id = addonEmoji(p, &nb);
+        if (id < 0) decodifica((const unsigned char *)p, &nb);
+        if (len + nb >= sizeof line) break;
+        memcpy(line + len, p, (size_t)nb); line[len + nb] = 0;
+        int w = larguraLinha(style, line, fonteInterface, 0);
+        if (w > width && len) { line[len] = 0; break; }
+        if (*p == ' ' || *p == '\t') word = len + nb;
+        len += nb; p += nb;
+      }
+      if (p < stop && word && word < len) { len = word; p = s + len; }
+      line[len] = 0;
+      int w, h;
+      addonSurface(style, line[0] ? line : " ", (SDL_Color){255,255,255,255}, fonteInterface, 0, &w, &h);
+      float height = h / ESC_T;
+      float leading = height > 28 ? height + 2 : 28;
+#ifdef NV_ADDON_LAYOUT_TEST
+      extern void fonte_addon_line(const char *text, float y, float w, float h, float limit);
+      fonte_addon_line(line,y+used,w/ESC_T,height,width);
+#endif
+      if (alpha > 0 && line[0]) {
+        TxtLinha l = txt_linha_bruta(style, line, gray, gray, gray, 255);
+        txt_desenhar_alpha(l, x, y + used, alpha);
+      }
+      used += leading; count++;
+      s = p;
+    } while (s < stop);
+    s = hard ? hard + 1 : end;
+  }
+  addonVerbatim--;
+  if (lines) *lines = count;
+  return used;
+}
+
+#ifdef NV_ADDON_LAYOUT_TEST
+int txt_addon_test_surface(TxtEstilo style, const char *s, int *width, int *height) {
+  camadaAtualizar(); addonVerbatim++;
+  SDL_Surface *surface = addonSurface(style,s,(SDL_Color){255,255,255,255},fonteInterface,1,width,height);
+  int color = 0;
+  if (surface) {
+    for (int y = 0; y < surface->h; y++) for (int x = 0; x < surface->w; x++) {
+      Uint8 r,g,b,a;
+      Uint32 pixel = ((Uint32 *)((char *)surface->pixels + y * surface->pitch))[x];
+      SDL_GetRGBA(pixel,surface->format,&r,&g,&b,&a);
+      if (a && (r != g || g != b)) color++;
+    }
+  }
+  SDL_FreeSurface(surface); addonVerbatim--;
+  return color;
+}
+#endif
+int txt_addon_emoji(const char *s, int *bytes) {
+  int id = addonEmoji(s, bytes);
+  return id >= 0;
 }
 
 int txt_largura_familia(TxtEstilo estilo, const char *s, TxtFamilia familia) {

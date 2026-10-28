@@ -10,11 +10,13 @@
 #include "text.h"
 #include "tex_cache.h"
 #include "episodios.h"
-#include "streams.h"
+// Include the sheet to verify its actual row geometry.
+#include "../src/streams.c"
 #include "plrilha.h"
 #include "video.h"
 #include "badges.h"
 #include "idioma.h"
+#include "ilha.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -59,6 +61,7 @@ static void quadros(int n) {
     }
     stream_folha_desenhar(relogio);
     if (noPlayer) plrilha_desenhar(relogio);
+    else ilha_desenhar(relogio);
   }
 }
 static void tecla(SDL_Keycode k) {
@@ -69,19 +72,54 @@ static void tecla(SDL_Keycode k) {
 }
 
 
-// Real add-on JSON, parsed by the app's own parser, shown with
-// Ajustes > Texto das fontes = "Do addon" (fonteTextoLocal 1).
-static const char *JSON =
-  "{\"streams\":["
-  "{\"url\":\"https://x.invalid/1.mkv\",\"name\":\"[RD+] AIOStreams 4K\","
-  "\"description\":\"\xF0\x9F\x92\xBE 12.3 GB \xF0\x9F\x91\xA4 45\\n\xF0\x9F\x8E\x9E\xEF\xB8\x8F HEVC \xE2\x80\xA2 HDR10 \xE2\x80\xA2 DV\\n"
-  "\xF0\x9F\x94\x8A DDP 5.1 Atmos\\n\xF0\x9F\x8C\x90 EN | PT\\n\xE2\x9A\x99\xEF\xB8\x8F RD+ \xE2\x9A\xA1 cached \xF0\x9F\x8F\xB7\xEF\xB8\x8F WEB-DL \xF0\x9F\x93\xA6 Silo.S02E05.2160p.WEB-DL.DV.HDR10.HEVC.DDP5.1.Atmos-GROUP.mkv\"},"
-  "{\"url\":\"https://x.invalid/2.mkv\",\"name\":\"Torrentio\\n1080p\","
-  "\"title\":\"Silo.S02E05.1080p.WEB-DL.x265.mkv\\n\xF0\x9F\x91\xA4 120 \xF0\x9F\x92\xBE 2.3 GB \xE2\x9A\x99\xEF\xB8\x8F YTS\\n\xF0\x9F\x87\xA7\xF0\x9F\x87\xB7 Dublado\"},"
-  "{\"url\":\"https://x.invalid/3.mkv\",\"name\":\"Comet 720p\",\"description\":\"\xE2\x8F\xB1\xEF\xB8\x8F 1h 40m\\n720p WEB\"},"
-  "{\"url\":\"https://x.invalid/4.mkv\",\"name\":\"One line\",\"description\":\"900 MB\"}"
-  "]}";
-
+#ifdef NV_ADDON_LAYOUT_TEST
+static int lastRight, boxCount, checking, lineCount;
+static float lastBottom;
+void fonte_addon_line(const char *text, float y, float w, float h, float limit) {
+  if (!checking) return;
+  assert(y >= lastBottom && w <= limit && h > 0);
+  lastBottom = y+h; lineCount++;
+  (void)text;
+}
+void fonte_addon_box(int x, int y, int w, int h, int emoji) {
+  if (!checking) return;
+  assert(x >= lastRight && y >= 0 && w >= 0 && h > 0);
+  lastRight = x+w; boxCount++;
+  (void)emoji;
+}
+void fonte_addon_check(const Stream *s) {
+  checking=1;
+  int lines = 0; lastBottom=0; lineCount=0;
+  float height = txt_addon_bloco(TXT_PG_FIM,s->descricao,0,0,10000,255,0,&lines);
+  assert(lines == 7 && lineCount == 7 && height >= lastBottom && height >= 7*28);
+  const char *emoji[] = {"🇺🇸","🇸🇦","🇯🇵","⚡","🎞️","🔊","📦","⏱️","🏷️","💾"};
+  for (unsigned i=0;i<sizeof emoji/sizeof *emoji;i++) {
+    int bytes=0,w=0,h=0;
+    assert(txt_addon_emoji(emoji[i],&bytes) && bytes == (int)strlen(emoji[i]));
+    lastRight=boxCount=0;
+    assert(txt_addon_test_surface(TXT_PG_FIM,emoji[i],&w,&h)>0);
+    assert(w>0 && h>0 && boxCount==1 && lastRight==w);
+  }
+  char line[2048]; const char *p=s->descricao;
+  while (*p) {
+    const char *end=strchr(p,'\n'); size_t n=end?(size_t)(end-p):strlen(p);
+    memcpy(line,p,n); line[n]=0;
+    int w=0,h=0; lastRight=boxCount=0;
+    txt_addon_test_surface(TXT_PG_FIM,line,&w,&h);
+    assert(boxCount>0 && lastRight==w && h<=height/7+2);
+    if(!end) break;
+    p=end+1;
+  }
+  lastBottom=0;
+  float full=txt_addon_bloco(TXT_PG_FIM,"A\n\nB",0,0,500,255,0,&lines);
+  assert(lines==3 && full>=84);
+  lastBottom=0;
+  txt_addon_bloco(TXT_PG_FIM,"📦Averylongfilenamewithoutspaces.mkv🇯🇵",0,0,80,255,0,&lines);
+  assert(lines>1);
+  checking=0;
+  printf("PASS: seven lines; color emoji/flags; non-overlapping run boxes; wrap and blank lines\n");
+}
+#endif
 int main(int argc, char **argv) {
   Stream *v = NULL;
   int count;
@@ -110,18 +148,36 @@ int main(int argc, char **argv) {
     fclose(f);
     ajustes_dir(getenv("NUVIO_DADOS")); }
   ajustes_iniciar();
-  count = stream_extrair(JSON, "AIOStreams | ElfHosted", &v);
-  assert(count == 4);
+  char fixture[8192];
+  FILE *input = fopen("tests/fixtures/fonte-addon.json", "rb"); assert(input);
+  size_t bytes = fread(fixture, 1, sizeof fixture - 1, input); fclose(input);
+  fixture[bytes] = 0;
+  count = stream_extrair(fixture, "AIOStreams", &v);
+  assert(count == 2);
   stream_definir_alvo("tt14688458:2:5");
   stream_definir_lista(v, count);
   stream_folha_nome("Silo");
   stream_folha_contexto("T2:E5 · Silo");
+  ilha_abrir_sessao(); ilha_coberta(0); ilha_relogio_visivel(1);
   stream_folha_abrir();
   gfx_cor((GfxRect){ 0, 0, 1, 1 }, 0, 0, 0, 0, 0);
   quadros(50);
   salvar("1-foco-primeira");
-  tecla(SDLK_DOWN); tecla(SDLK_DOWN);
+  tecla(SDLK_DOWN);
   quadros(40);
-  salvar("2-foco-terceira");
+  salvar("2-foco-segunda");
+  if (!getenv("NV_CAPTURE_ONLY")) {
+    // Seven description lines plus two name lines must survive parsing/layout.
+    assert(strchr(v[0].rotulo, '\n'));
+    assert(strstr(v[0].descricao, "SUB (AR🇸🇦)"));
+    float h = alturaLinha(0, -1, 0);
+    assert(h >= 20 + 40 + 7 * 28 + 18);
+    assert(h == alturaLinha(0, -1, 1));
+#ifdef NV_ADDON_LAYOUT_TEST
+    extern void fonte_addon_check(const Stream *s);
+    fonte_addon_check(&v[0]);
+#endif
+  }
+  free(v);
   return 0;
 }
