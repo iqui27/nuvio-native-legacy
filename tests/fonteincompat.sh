@@ -19,5 +19,9 @@ flags=(-DNV_SHOT_HOOKS -Isrc -O1 -g -I/opt/homebrew/include -I/opt/homebrew/incl
 printf '%s\n' "${sources[@]}" tests/fonteincompat.c tests/fonteincompat_settings.c |
   xargs -P 8 -I{} sh -c 'cc "$@" -c {} -o "$0/$(echo {} | tr / _).o"' "$D" "${flags[@]}"
 cc "$D"/*.o -o "$D/test" -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
+# Exercise the webOS list branch with a failing adapter, using the same objects.
+cc "${flags[@]}" -DNV_WEBOS -c tests/fonteincompat.c -o "$D/tests_fonteincompat.c.o"
+cc "$D"/*.o -o "$D/webos-probe" -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL
+"$D/webos-probe" unused
 mkdir -p "$D/data"
 NUVIO_DADOS="$D/data" NUVIO_TESTE_DIR="$D/data" "$D/test" "$out"

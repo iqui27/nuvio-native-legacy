@@ -1095,7 +1095,10 @@ static void incompatPlataforma(void) {
   audioCap[0] = audioCap[1] = audioCap[2] = convert ? -1 : 0;
 #elif defined(NV_WEBOS)
   int major = nv_webos_major();
-  int convert = dts_playback_enabled();
+  static int convert = -1;
+  pthread_mutex_lock(&autoExclTrava);
+  if (convert < 0) convert = dts_playback_enabled();
+  pthread_mutex_unlock(&autoExclTrava);
   audioCap[0] = convert ? -1 : 0;
   // 2023/2024 DTS depends on model; keep it unknown. No guessed model support.
   audioCap[1] = audioCap[2] = !convert && ((major >= 5 && major <= 7) || major >= 10) ? 0 : -1;
@@ -1229,7 +1232,7 @@ static int incompatRegra(const Stream *s) {
   if (a & (UINT64_C(1)<<8)) { seen=1; possible |= audioCap[0] != 0; }
   if (a & (UINT64_C(1)<<7)) { seen=1; possible |= audioCap[1] != 0 || ((a & ((UINT64_C(1)<<3)|(UINT64_C(1)<<5))) && audioCap[2] != 0); }
   if (a & (UINT64_C(1)<<1)) { seen=1; possible |= audioCap[3] != 0; }
-  else if (a & (UINT64_C(1)<<2)) { seen=1; possible |= audioCap[4] != 0; }
+  if ((a & (UINT64_C(1)<<2)) && (!(a & (UINT64_C(1)<<1)) || d.ac3Explicito)) { seen=1; possible |= audioCap[4] != 0; }
   pthread_mutex_unlock(&autoExclTrava);
   if (a & ((UINT64_C(1)<<9)|(UINT64_C(1)<<10)|(UINT64_C(1)<<11))) possible=1;
   return seen && !possible ? 2 : 0;
@@ -5296,7 +5299,9 @@ void stream_folha_evento(const SDL_Event *e) {
   }
   addonRolFim=k==SDLK_UP;
   // Left/Right switches providers even when a header target lies to the side.
-  if(k!=SDLK_LEFT && k!=SDLK_RIGHT && navigationMove(k))return;
+  int dicaVertical = fraseDicaChips() && (grupo==2 ||
+      (grupo==1 && foco==0 && k==SDLK_UP) || (grupo==0 && k==SDLK_DOWN));
+  if(k!=SDLK_LEFT && k!=SDLK_RIGHT && !dicaVertical && navigationMove(k))return;
   // ORDEM DO FOCO, de cima: fileira de botoes (grupo -1) -> abas de addon
   // (grupo 0) -> lista (grupo 1). CIMA na primeira linha vai as abas; CIMA
   // nas abas vai ao ultimo botao (Fechar, o mais perto do canto); BAIXO desce
@@ -5438,7 +5443,7 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
     } }
   montar(automaticaDaFolha());
   nf=nOrdem;
-  if(grupo==2 && !chipsOcultos(NULL,0)) grupo=0;
+  if(grupo==2 && !fraseDicaChips()) grupo=0;
   if(grupo==1 && foco>=nf) foco=nf>0?nf-1:0;
   {
     int linha = grupo==1 ? foco : -1;

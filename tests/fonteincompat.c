@@ -1,5 +1,14 @@
 // Actual parser, sheet and auto-pick paths; no network or user data.
+#ifdef NV_WEBOS
+#define dts_playback_enabled test_dts_playback_enabled
+#define nv_webos_major test_webos_major
+#endif
 #include "../src/streams.c"
+#ifdef NV_WEBOS
+static int adapterProbes;
+int test_dts_playback_enabled(void) { adapterProbes++; return 0; }
+int test_webos_major(void) { return 6; }
+#endif
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include "ilha.h"
@@ -7,22 +16,28 @@ extern void fonteincompat_settings(void);
 extern void fonteincompat_settings_draw(void);
 static unsigned char pixels[1920*1080*3];
 static GLuint framebuffer;
-static void shot(const char *dir,const char *name,int settings) {
-  for(int i=0;i<70;i++) {
+static void frames(int count,int settings) {
+  static Uint32 now=100000;
+  for(int i=0;i<count;i++,now+=16) {
     txt_novo_quadro(); tex_novo_quadro(); tex_bombear(8);
     glBindFramebuffer(GL_FRAMEBUFFER,framebuffer); glViewport(0,0,1920,1080);
     glClearColor(.035,.04,.05,1);glClear(GL_COLOR_BUFFER_BIT);gfx_novo_quadro();
     if(settings) fonteincompat_settings_draw();
-    else {stream_folha_atualizar(1.f/60,100000+i*16);stream_folha_desenhar(100000+i*16);ilha_desenhar(100000+i*16);}
+    else {stream_folha_atualizar(1.f/60,now);stream_folha_desenhar(now);ilha_desenhar(now);}
   }
+}
+static void shot(const char *dir,const char *name,int settings) {
+  frames(70,settings);
   glFinish();glBindFramebuffer(GL_FRAMEBUFFER,framebuffer);glPixelStorei(GL_PACK_ALIGNMENT,1);glReadPixels(0,0,1920,1080,GL_RGB,GL_UNSIGNED_BYTE,pixels);
   SDL_Surface *s=SDL_CreateRGBSurface(0,1920,1080,24,0xff,0xff00,0xff0000,0);assert(s);
   for(int y=0;y<1080;y++)memcpy((char*)s->pixels+y*s->pitch,pixels+(1080-1-y)*1920*3,1920*3);
   char path[700];snprintf(path,sizeof path,"%s/%s.png",dir,name);assert(IMG_SavePNG(s,path)==0);SDL_FreeSurface(s);
 }
-static void reveal(void) {
-  grupo=2;SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_RETURN;
+static void key(SDL_Keycode code) {
+  SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=code;
   stream_folha_evento(&e);
+  e.type=SDL_KEYUP;stream_folha_evento(&e);
+  frames(8,0);
 }
 static void profile(int dv,int thd,int dts,int hd,int av1) {
   stream_definir_tela(1,dv);stream_definir_audio_capacidades(thd,dts,hd,1,1);
@@ -30,6 +45,12 @@ static void profile(int dv,int thd,int dts,int hd,int av1) {
 }
 int main(int argc,char **argv) {
   assert(argc==2);
+#ifdef NV_WEBOS
+  for(int i=0;i<100;i++)incompatPlataforma();
+  assert(adapterProbes==1&&audioCap[0]==0&&audioCap[1]==0&&audioCap[2]==0);
+  puts("PASS: failed webOS adapter probe cached across list capability checks");
+  return 0;
+#endif
   SDL_SetHint("SDL_MAC_BACKGROUND_APP","1");assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)==0);IMG_Init(IMG_INIT_PNG);
   SDL_Window *window=SDL_CreateWindow("Sources compatibility",0,0,64,64,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);assert(window);
   assert(SDL_GL_CreateContext(window));GLuint texture;glGenTextures(1,&texture);glBindTexture(GL_TEXTURE_2D,texture);
@@ -59,8 +80,16 @@ int main(int argc,char **argv) {
   stream_folha_nome("Capability fixtures");stream_folha_abrir();montar(-1);assert(nOrdem==3);
   shot(argv[1],"sources-hidden",0);
   int target=0;for(int i=0;i<navigationCount;i++)target|=navigation[i].group==2;assert(target);
-  ponteiroFolhaDica(0,0);assert(grupo==2);
-  reveal();montar(-1);assert(incompatRevelada&&nOrdem==6);shot(argv[1],"sources-revealed",0);
+  // Real D-pad input, with multiple update/draw frames between presses.
+  assert(grupo==1);
+  for(int i=0;i<10&&grupo==1;i++)key(SDLK_UP);
+  assert(grupo==2&&!incompatRevelada);
+  key(SDLK_DOWN);assert(grupo==1);
+  key(SDLK_UP);assert(grupo==2);
+  shot(argv[1],"sources-hidden-focused",0);assert(grupo==2);
+  key(SDLK_RETURN);assert(incompatRevelada&&nOrdem==6);
+  assert(grupo==1&&foco>=0&&foco<nOrdem&&filtrado(foco)>=0);
+  shot(argv[1],"sources-revealed",0);
   aberta=0;stream_folha_abrir();assert(incompatRevelada);
   stream_definir_alvo("tt-android");stream_definir_lista(sources,6);
   // Android: decodes DV and audio, AV1 decoder explicitly rejects UHD.
@@ -83,6 +112,16 @@ int main(int argc,char **argv) {
   Stream hd=sources[5];hd.altura=1080;assert(!incompatRegra(&hd));
   stream_definir_audio_capacidades(0,0,0,0,0);
   Stream ac3=sources[5];ac3.filtroLido=0;snprintf(ac3.descricao,sizeof ac3.descricao,"1080p HEVC AC3");ac3.altura=1080;assert(incompatRegra(&ac3)==2);
+  stream_definir_audio_capacidades(0,0,0,0,1);
+  const char *audioJson="{\"streams\":["
+    "{\"title\":\"1080p HEVC EAC3\",\"url\":\"https://example.invalid/eac3.mkv\"},"
+    "{\"title\":\"1080p HEVC EAC3 AC3\",\"url\":\"https://example.invalid/multi.mkv\"},"
+    "{\"title\":\"1080p HEVC EAC3\",\"audioCodec\":\"AC3\",\"url\":\"https://example.invalid/fallback.mkv\"},"
+    "{\"title\":\"1080p HEVC EAC3\",\"behaviorHints\":{\"filename\":\"Movie.EAC3.AC3.mkv\"},\"url\":\"https://example.invalid/file.mkv\"}]}";
+  Stream *audio=NULL;assert(stream_extrair(audioJson,"Fixture",&audio)==4);
+  assert(incompatRegra(&audio[0])==2);
+  for(int i=1;i<4;i++)assert(!incompatRegra(&audio[i]));
+  free(audio);
   profile(-1,-1,-1,-1,-1);assert(incompatRegra(&sources[0])==0&&incompatRegra(&sources[2])==0);
   profile(0,0,0,0,-1);fonteincompat_settings();shot(argv[1],"settings-sources",1);
   free(sources);puts("PASS: Samsung/Android; hidden count; reveal; auto skip; all-hidden; fallback; local toggles/search");
