@@ -3,6 +3,25 @@
 #include "guiav5_principal_shot.c"
 #undef main
 
+static void check_clean_preview(void){
+  GfxRect pv=gv_preview_rect();
+  EpgProg current;GVCh *c=gv_hero_channel(gv_focus());
+  assert(c&&guia_programa_agora(c->id,time(NULL),&current));
+  txt_novo_quadro();gfx_novo_quadro();
+  glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);
+  gv_broadcast(pv,c,&current,0);
+  int w=(int)pv.w,h=(int)pv.h;
+  unsigned char *pixels=malloc((size_t)w*h*4);assert(pixels);
+  glReadPixels((int)pv.x,1080-(int)pv.y-h,w,h,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+  float badge_w=badge_largura(i18n("AO VIVO"));
+  for(int y=22;y<h-22;y++)for(int x=22;x<w-22;x++){
+    if(x<18+badge_w&&y<18+BADGE_H)continue;
+    assert(pixels[((h-1-y)*w+x)*4+3]==0);
+  }
+  free(pixels);
+  puts("PASS: preview video is transparent except for the live badge");
+}
+
 int main(int argc,char **argv){
   assert(argc==2);
   assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)==0);
@@ -28,5 +47,7 @@ int main(int argc,char **argv){
   assert(tex_obter_larg(canais[0].logo,52)&&tex_aspecto(canais[0].logo)>0);
   puts("PASS: channel logo URL downloaded, decoded and uploaded through texture cache");
   gv_zone=1;capture(window,argv[1],"pins-focused");
+  check_clean_preview();
+  snprintf(gv_pagina,sizeof gv_pagina,"cartoes");check_clean_preview();
   player_encerrar();tex_encerrar();SDL_Quit();return 0;
 }

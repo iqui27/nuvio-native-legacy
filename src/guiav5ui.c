@@ -2154,17 +2154,6 @@ static void gv_sidebar(float base){
 static float gv_badge(const char *t,float x,float y){
   return t&&*t?badge_desenhar(x,y,t,BADGE_NEUTRO,1)+BADGE_GAP:0;
 }
-/* placar do titulo "Brasileirao: Flamengo x Palmeiras" -> "FLA 2 x 1 PAL" quando ha numeros */
-static int gv_placar(const char *titulo,char *dst,size_t n){
-  const char *x=strstr(titulo,"×");if(!x)return 0;
-  char esq[80],dir[80];const char *dp=strchr(titulo,':');
-  const char *ini=dp?dp+1:titulo;
-  snprintf(esq,sizeof esq,"%.*s",(int)(x-ini),ini);snprintf(dir,sizeof dir,"%s",x+strlen("×"));
-  char *e2=esq;while(*e2==' ')e2++;char *f=e2+strlen(e2);while(f>e2&&f[-1]==' ')f--;*f=0;
-  char *d2=dir;while(*d2==' ')d2++;f=d2+strlen(d2);while(f>d2&&f[-1]==' ')f--;*f=0;
-  snprintf(dst,n,"%s × %s",e2,d2);
-  return 1;
-}
 /* Shared URL texture cache and logo treatment; no extra background plate. */
 static void gv_avatar(const char *logo,const char *nome,GfxRect r,float tom){
   if(logo&&logo[0]){guia_logo_desenhar(logo,nome,r,r.w,r.h,tom,1);return;}
@@ -2213,48 +2202,9 @@ static void gv_broadcast(GfxRect pv,GVCh *c,EpgProg *p,int full){
     gfx_rect((GfxRect){pv.x,pv.y,pv.w,pv.h},0,GFX_VEU_CSS,0,2,1,0,.045f,.047f,.051f,.9f);
     gfx_rect((GfxRect){pv.x,pv.y+pv.h-120,pv.w,120},0,GFX_VEU_CSS,0,0,1,0,.045f,.047f,.051f,.8f);
   }
-  /* selos sobre o video (GL por cima do furo) */
-  if(live||!strcmp(screen,"preview")||!strcmp(screen,"preview-foco")||troca||full){
-    const char *q=gv_quali(c->nome);float bx=pv.x+16,by=pv.y+16;
-    bx+=badge_desenhar(bx,by,i18n("AO VIVO"),BADGE_REALCE_CHEIO,1)+BADGE_GAP;
-    float qw=q[0]?badge_largura(q)+BADGE_GAP:0;
-    /* Fit UTF-8 channel text within the official badge's available width. */
-    char label[140];snprintf(label,sizeof label,"%s",c->nome);
-    while(label[0]&&badge_largura(label)>pv.x+pv.w-16-bx-qw){
-      size_t n=strlen(label);do{n--;}while(n&&((unsigned char)label[n]&0xc0)==0x80);label[n]=0;
-    }
-    bx+=badge_desenhar(bx,by,label,BADGE_NEUTRO,1)+BADGE_GAP;
-    if(q[0])gv_badge(q,bx,by);
-  }
-  int mesmo=!live||!strcmp(c->id,player_id_canal());
-  if(p&&live&&mesmo){
-    char placar[96];
-    if(gv_placar(p->titulo,placar,sizeof placar)){
-      TxtLinha s=txt_linha_bruta(TXT_ILHA_CORPO,placar,243,242,239,255);
-      TxtLinha m=txt_linha(TXT_ILHA_SUB,ajustes_guia_previa_sem_som()?"Ao vivo · sem som":"Ao vivo · áudio ligado",25,33,44,255);
-      GfxRect sb={pv.x+18,pv.y+pv.h-118,(float)s.w+(float)m.w+52,40};
-      gfx_cor(sb,7.0f/40,.92f,.925f,.894f,1);
-      gfx_cor((GfxRect){sb.x,sb.y,(float)s.w+26,40},7.0f/40,.118f,.298f,.263f,1);
-      txt_desenhar(s,sb.x+13,sb.y+(40-(float)s.h)/2);
-      txt_desenhar(m,sb.x+(float)s.w+38,sb.y+(40-(float)m.h)/2);
-    }
-  }
-  /* Faixa do programa: hora de inicio, progresso e fim (com ou sem video). */
-  if(p&&pv.h>150&&mesmo){
-    float by=pv.y+pv.h-50;char hi[8],hf[8];
-    gv_hora(p->ini,hi,8);gv_hora(p->fim,hf,8);
-    if(!live)gfx_rect((GfxRect){pv.x,pv.y+pv.h-90,pv.w,90},0,GFX_VEU_CSS,0,0,1,0,0,0,0,.5f);
-    TxtLinha a=txt_linha_bruta(TXT_ILHA_SUB,hi,243,242,239,255),z=txt_linha_bruta(TXT_ILHA_SUB,hf,243,242,239,255);
-    const char *audio=i18n(ajustes_guia_previa_sem_som()?"Sem som":"Áudio");
-    float sw=live?(float)txt_linha_bruta(TXT_ILHA_SUB,audio,0,0,0,255).w+40:0;
-    txt_desenhar(a,pv.x+18,by);
-    GfxRect bar={pv.x+30+(float)a.w,by+(float)a.h/2-2,pv.w-60-(float)a.w-(float)z.w-sw,4};
-    gfx_cor(bar,.5f,1,1,1,.28f);
-    gfx_cor((GfxRect){bar.x,bar.y,bar.w*gv_progresso(p),4},.5f,.953f,.949f,.937f,1);
-    txt_desenhar(z,bar.x+bar.w+12,by);
-    if(live){gfx_icone((GfxRect){pv.x+pv.w-sw-6,by,22,22},"aj_volume-2",.7f,.7f,.7f,1);
-      gv_label(TXT_ILHA_SUB,audio,pv.x+pv.w-sw+22,by,sw,0);}
-  }
+  /* Program details belong to the card; keep the video unobstructed. */
+  if(live||!strcmp(screen,"preview")||!strcmp(screen,"preview-foco")||troca||full)
+    badge_desenhar(pv.x+16,pv.y+16,i18n("AO VIVO"),BADGE_REALCE_CHEIO,1);
   if(troca){
     gfx_cor(pv,raio,.067f,.09f,.098f,.55f);
     TxtLinha t=txt_linha(TXT_ILHA_CORPO,"Trocando canal…",243,242,239,255);
