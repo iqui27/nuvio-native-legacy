@@ -13,6 +13,7 @@ _Static_assert(AJS_HOME == 4 && AJS_CONTAS == 8, "triGrupo segue a ordem dos SEC
 #define TRI_INSP_W    480.0f
 #define TRI_SEC_LN     54.0f
 #define TRI_LISTA_CAB  70.0f
+#define TRI_FAIXA_H    64.0f   // retrato: a faixa horizontal de secoes, entre o cabecalho e a lista
 
 // Onde o conteudo comeca: depois da rail fixa (Padrao e Moderna, como a home
 // faz com ajustes_conteudo_x), ou na margem de 48 quando nao ha rail na tela
@@ -24,11 +25,14 @@ static float triX0(void) {
 }
 static float triXFim(void) { return NV_VTELA_W - 48.0f; }
 static int triTemSecoes(void) { return !ajRetrato(); }
+// Retrato: as secoes nao cabem numa ilha ao lado; viram uma faixa horizontal
+// sobre a lista (triFaixaSecoes), e as ilhas comecam depois dela.
+static float triIlhaTopo(void) { return ajRetrato() ? TRI_TOPO + TRI_FAIXA_H + TRI_VAO : TRI_TOPO; }
 static int triTemInsp(void) {
   if (ajustes_layout_lista() || ajRetrato()) return 0;
   return triXFim() - triX0() - TRI_SEC_W - TRI_VAO - TRI_INSP_W - TRI_VAO >= 560.0f;
 }
-static GfxRect triSecR(void) { return (GfxRect){ triX0(), TRI_TOPO, triTemSecoes() ? TRI_SEC_W : 0.0f, TRI_BASE - TRI_TOPO }; }
+static GfxRect triSecR(void) { return (GfxRect){ triX0(), triIlhaTopo(), triTemSecoes() ? TRI_SEC_W : 0.0f, TRI_BASE - triIlhaTopo() }; }
 // Editores que precisam da largura do 2.0.3 (lista + painel): a ilha 3 cresce.
 static int triEditorLargo(int op) {
   if (ajTelaCheia()) return 1;   // celular: o editor 2.0.3 toma a pagina (aj2EditorR)
@@ -38,12 +42,12 @@ static int triEditorLargo(int op) {
 // que mede esta ilha (recursao infinita). Os editores largos nunca sao "na linha".
 static GfxRect triInspR(void) {
   float w = triTemInsp() ? (uxEditor == 1 && uxOp >= 0 && triEditorLargo(uxOp) ? 760.0f : TRI_INSP_W) : 0.0f;
-  return (GfxRect){ triXFim() - w, TRI_TOPO, w, TRI_BASE - TRI_TOPO };
+  return (GfxRect){ triXFim() - w, triIlhaTopo(), w, TRI_BASE - triIlhaTopo() };
 }
 static GfxRect triIlha2R(void) {
   float x = triX0() + (triTemSecoes() ? TRI_SEC_W + TRI_VAO : 0.0f);
   float fim = triTemInsp() ? triInspR().x - TRI_VAO : triXFim();
-  return (GfxRect){ x, TRI_TOPO, fim - x, TRI_BASE - TRI_TOPO };
+  return (GfxRect){ x, triIlhaTopo(), fim - x, TRI_BASE - triIlhaTopo() };
 }
 // O retangulo que o nucleo 2.0.3 usa como "a lista": a ilha 2 sem o cabecalho.
 static GfxRect triListaR(void) { GfxRect r = triIlha2R(); r.y += TRI_LISTA_CAB; r.h -= TRI_LISTA_CAB; return r; }
@@ -78,20 +82,29 @@ static void triCabecalho(void) {
     ajKicker(k, x, y, 1);
     txt_desenhar(t, x, y + 30.0f);
   }
+  float total = 0.0f;
+  int compacto;
   for (i = 0; i < AJ_N; i++) if (TELA[i].tipo == IT_OPC && ajOpcaoDisponivel(TELA[i].op) && uxDiferente(TELA[i].op) && triMutavel(TELA[i].op)) difs++;
   for (i = 0; i < TRI_C_N; i++) n[i][0] = 0;
   if (difs) snprintf(n[TRI_C_DIF], sizeof n[0], "· %d", difs);
+  for (i = 0; i < TRI_C_N; i++) total += triChipLargura(i, i18n(rot[i]), n[i]) + 12.0f;
+  // Tela estreita (retrato, celular): os quatro chips viram so o icone, e o
+  // rotulo aparece no chip em foco. Nenhum chip some: todos continuam alvo.
+  compacto = total - 12.0f > xd - (x + 300.0f);
   // Da direita para a esquerda, para a pilula da busca ficar onde couber.
   for (i = TRI_C_N - 1; i >= 0; i--) {
-    float w = triChipLargura(i, i18n(rot[i]), n[i]), f = triChipF[i];
+    float f = triChipF[i];
+    int rotulo = !compacto || f > 0.5f;
+    float w = rotulo ? triChipLargura(i, i18n(rot[i]), n[i]) : 56.0f;
     GfxRect r = { xd - w, y + 20.0f, w, 56.0f };
     TxtLinha t = f > 0.5f ? ajTxtT(TXT_V2_SEG, rot[i]) : ajTxt(TXT_V2_SEG, rot[i]);
-    float tx = r.x + 22.0f;
-    if (r.x < x + 300.0f) break;   // tela estreita: os chips que nao cabem saem
+    float tx = r.x + (rotulo ? 22.0f : 17.0f);
+    if (r.x < x + 300.0f && !compacto) break;   // nao deveria acontecer: compacto cobre
     ponteiro_alvo(r.x, r.y, r.w, r.h, triPontChip, NULL, i, 0);
     if (f > 0.01f) ajPilulaAcento(r, 28.0f, f);
     if (f < 0.99f) ajNeutro(r, 28.0f, 0.08f * (1.0f - f), AJ_CHIP_SOL, 1.0f - f);
     if (f > 0.5f) ajIconeT(icones[i], tx, r.y + 17.0f, 22.0f, 1); else ajIcone(icones[i], tx, r.y + 17.0f, 22.0f, 0.8f);
+    if (!rotulo) { xd = r.x - 12.0f; continue; }
     tx += 22.0f + 12.0f;
     txt_desenhar_alpha(t, tx, r.y + (56.0f - t.h) * 0.5f, f > 0.5f ? 1.0f : 0.86f);
     tx += t.w;
@@ -147,6 +160,36 @@ static void triIlhaSecoes(void) {
     }
     y += TRI_SEC_LN;
   }
+}
+
+// Retrato: a faixa horizontal de secoes (pilulas com icone e titulo) sob o
+// cabecalho. ← → trocam de secao, ↓ entra na lista; a faixa rola ate a pilula
+// em foco (triSecRolX, mola em triAtualizar). Os mesmos alvos de ponteiro da ilha.
+static void triFaixaSecoes(void) {
+  float x0 = triX0(), x1 = triXFim(), y = TRI_TOPO + 4.0f, x = x0 - triSecRolX, fx0 = -1.0f, fx1 = -1.0f, total, vis, alvo;
+  int j;
+  gfx_recorte(x0, TRI_TOPO, x1 - x0, TRI_FAIXA_H);
+  for (j = 0; j <= nSecoes; j++) {
+    int foco = triIlha == TRI_SECOES && j == triSecFoco;
+    int aberta = !triUtil ? (!triParental(j) && j == secAtual) : triUtil == TRI_U_PARENTAL ? triParental(j) : 0;
+    float f = triSecF[j], al = (foco || aberta) ? 1.0f : 0.72f;
+    const char *titulo = triParental(j) ? "Controle parental" : TELA[secIni[j]].titulo;
+    const char *icone = triParental(j) ? "aj_shield" : TELA[secIni[j]].icone;
+    TxtLinha t = f > 0.5f ? ajTxtT(TXT_V2_SEG, titulo) : ajTxt(TXT_V2_SEG, titulo);
+    float w = 20.0f + 26.0f + 10.0f + t.w + 20.0f;
+    GfxRect r = { x, y, w, TRI_FAIXA_H - 8.0f };
+    if (foco) { fx0 = x + triSecRolX; fx1 = fx0 + w; }
+    ponteiro_alvo(r.x, r.y, r.w, r.h, triPontSecao, NULL, j, 0);
+    if (f > 0.01f) ajPilulaAcento(r, r.h * 0.5f, f);
+    if (f < 0.99f) ajNeutro(r, r.h * 0.5f, (aberta ? 0.16f : 0.08f) * (1.0f - f), AJ_CHIP_SOL, 1.0f - f);
+    if (f > 0.5f) ajIconeT(icone, r.x + 20.0f, r.y + (r.h - 26.0f) * 0.5f, 26.0f, 1); else ajIcone(icone, r.x + 20.0f, r.y + (r.h - 26.0f) * 0.5f, 26.0f, al);
+    txt_desenhar_alpha(t, r.x + 56.0f, r.y + (r.h - t.h) * 0.5f, f > 0.5f ? 1.0f : al);
+    x += w + 10.0f;
+  }
+  gfx_sem_recorte();
+  total = x + triSecRolX - 10.0f - x0; vis = x1 - x0; alvo = triSecRolXAlvo;
+  if (fx0 >= 0.0f) { if (fx1 - alvo > x1) alvo = fx1 - x1; if (fx0 - alvo < x0) alvo = fx0 - x0; }
+  triSecRolXAlvo = fmaxf(0.0f, fminf(alvo, fmaxf(0.0f, total - vis)));
 }
 
 // --- ILHA 2: a lista da secao ---------------------------------------------------------------
@@ -240,6 +283,19 @@ static void triLinhaUtil(GfxRect r, float f, float a, const char *icone, const c
     } else txt_desenhar_alpha(tt, tx, yc - tt.h * 0.5f, (f > 0.5f ? 1.0f : 0.88f) * aT);
   }
 }
+// A linha em foco de uma rota utilitaria fica visivel: o desenho sabe onde ela
+// esta (y sem a rolagem) e deixa o alvo; triAtualizar leva triUtilRol ate la.
+static void triUtilRolar(float topoLinha, float baseLinha, float topo, float base, float total) {
+  float alvo = triUtilRolAlvo;
+  if (topoLinha >= 0.0f) {
+    if (baseLinha - alvo > base) alvo = baseLinha - base;
+    if (topoLinha - alvo < topo) alvo = topoLinha - topo;
+  }
+  triUtilRolAlvo = fmaxf(0.0f, fminf(alvo, fmaxf(0.0f, total - (base - topo))));
+}
+static void triUtilAlvoLinha(GfxRect r, float topo, float base, int i) {
+  if (ajPontUtil) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, triPontUtilLinha, NULL, i, 0);
+}
 // Duas pilulas de acao no pe da ilha (Aplicar / Manter; Restaurar tudo / Desfazer).
 static float triPilulas(GfxRect ilha, const char *const *rot, const char *const *ic, int n, int foco, float a) {
   float x = ilha.x + 30.0f, y = ilha.y + ilha.h - 30.0f - 56.0f;
@@ -249,6 +305,7 @@ static float triPilulas(GfxRect ilha, const char *const *rot, const char *const 
     GfxRect r = { x, y, w, 56.0f };
     int f = foco == i + 1;
     TxtLinha t = f ? ajTxtT(TXT_V2_SEG, rot[i]) : ajTxt(TXT_V2_SEG, rot[i]);
+    if (ajPontUtil) ponteiro_alvo(r.x, r.y, r.w, r.h, triPontUtilAcao, NULL, i + 1, 0);
     if (f) ajPilulaAcento(r, 28.0f, a); else ajNeutro(r, 28.0f, 0.08f, AJ_CHIP_SOL, a);
     if (f) ajIconeT(ic[i], r.x + 22.0f, r.y + 17.0f, 22.0f, a); else ajIcone(ic[i], r.x + 22.0f, r.y + 17.0f, 22.0f, 0.8f * a);
     txt_desenhar_alpha(t, r.x + 56.0f, r.y + (56.0f - t.h) * 0.5f, (f ? 1.0f : 0.86f) * a);
@@ -258,7 +315,7 @@ static float triPilulas(GfxRect ilha, const char *const *rot, const char *const 
 }
 static void triPresetsDesenhar(void) {
   GfxRect ilha = triIlha2R(), fr = triListaR();
-  float topo = fr.y + 6.0f, base, y;
+  float topo = fr.y + 6.0f, base, y, fl0 = -1.0f, fl1 = -1.0f;
   int i, n;
   static const char *const rot[] = { "Salvar o estado atual" };
   static const char *const ic[] = { "aj_plus" };
@@ -268,11 +325,13 @@ static void triPresetsDesenhar(void) {
   triListaCabecalho(ilha, "Predefinições", "Combos prontos ou os seus; nada muda sem o OK em Aplicar", 1);
   base = triPilulas(ilha, rot, ic, 1, triLinha == n ? 1 : 0, 1) - 16.0f;
   gfx_recorte(fr.x, topo, fr.w, base - topo);
-  y = topo;
+  y = topo - triUtilRol;
   ajKicker("Prontos", fr.x + 30.0f, y + 6.0f, 1); y += 34.0f;
   for (i = 0; i < n; i++) {
     GfxRect r = { fr.x + 18.0f, y, fr.w - 36.0f, 72.0f };
     if (i == TRI_PRESET_N) { ajKicker("Seus presets", fr.x + 30.0f, y + 14.0f, 1); y += 42.0f; r.y = y; }
+    if (i == triLinha) { fl0 = r.y + triUtilRol; fl1 = fl0 + r.h; }
+    triUtilAlvoLinha(r, topo, base, i);
     if (i < TRI_PRESET_N) triLinhaUtil(r, triUtilF[i], ajMascara(r.y + 36.0f, topo, base), TRI_PRESET_ICONE[i], AJ_PEN_PRESET_NAMES[i], TRI_PRESET_DESC[i], triPresetCombina(i) ? i18n("em uso") : "", 1, -1);
     else {
       char lang[96], size[96], resumo[240];
@@ -289,12 +348,14 @@ static void triPresetsDesenhar(void) {
     TxtLinha t = ajTxt(TXT_V2_24, "Nenhum preset salvo. OK em \"Salvar o estado atual\" guarda o de hoje.");
     ajKicker("Seus presets", fr.x + 30.0f, y + 14.0f, 1); y += 42.0f;
     txt_desenhar_alpha(t, fr.x + 40.0f, y + 10.0f, 0.5f);
+    y += 50.0f;
   }
   gfx_sem_recorte();
+  triUtilRolar(fl0, fl1, topo, base, y + triUtilRol - topo);
 }
 static void triRevisaoDesenhar(void) {
   GfxRect ilha = triIlha2R(), fr = triListaR();
-  float topo = fr.y + 6.0f, base, y;
+  float topo = fr.y + 6.0f, base, y, fl0 = -1.0f, fl1 = -1.0f;
   int i;
   static const char *const rot[] = { "Aplicar mudanças", "Manter como está" };
   static const char *const ic[] = { "aj_check", "aj_x" };
@@ -312,12 +373,15 @@ static void triRevisaoDesenhar(void) {
     uxValorTexto(op, rvAntes[i], antes, sizeof antes);
     uxValorTexto(op, rvDepois[i], depois, sizeof depois);
     snprintf(troca, sizeof troca, "%s → %s", antes, depois);
+    if (i == triLinha && !triAcao) { fl0 = r.y + triUtilRol; fl1 = fl0 + r.h; }
+    triUtilAlvoLinha(r, topo, base, i);
     triLinhaUtil(r, triUtilF[i], ajMascara(r.y + 36.0f, topo, base), NULL, rotuloOpcao(op),
                  escopoDe(op) == ESC_TV ? "Só esta TV" : "A escolha acompanha este perfil.", troca, 0, -1);
     y += 76.0f;
   }
   if (!rvN) { TxtLinha t = ajTxt(TXT_V2_LN, "Nenhuma alteração"); txt_desenhar_alpha(t, fr.x + 40.0f, topo + 20.0f, 0.6f); }
   gfx_sem_recorte();
+  triUtilRolar(fl0, fl1, topo, base, y + triUtilRol - topo);
 }
 static void triParentalLinha(int i, char *titulo, size_t nt, char *apoio, size_t na, char *valor, size_t nv, const char **icone, int *ligado) {
   int alvo = ajPenParentProfile();
@@ -339,22 +403,25 @@ static void triParentalLinha(int i, char *titulo, size_t nt, char *apoio, size_t
 }
 static void triParentalDesenhar(void) {
   GfxRect ilha = triIlha2R(), fr = triListaR();
-  float topo = fr.y + 6.0f, base = AJ_BASE, y = topo;
+  float topo = fr.y + 6.0f, base = AJ_BASE, y = topo - triUtilRol, fl0 = -1.0f, fl1 = -1.0f;
   int i;
   ajIlha(ilha, 28.0f, 1, 0);
   triListaCabecalho(ilha, "Controle parental", "PIN e limites por perfil", 1);
   gfx_recorte(fr.x, topo, fr.w, base - topo);
   for (i = 0; i < TRI_P_N; i++) {
-    GfxRect r = { fr.x + 18.0f, y, fr.w - 36.0f, 60.0f };
+    GfxRect r = { fr.x + 18.0f, y, fr.w - 36.0f, 72.0f };
     char titulo[96], apoio[120], valor[96];
     const char *icone = NULL; int ligado;
     if (i == TRI_P_TEMPO) { ajKicker("Limites", fr.x + 30.0f, y + 8.0f, 1); y += 34.0f; r.y = y; }
     else if (i == 0) { ajKicker("Perfil infantil", fr.x + 30.0f, y + 2.0f, 1); y += 28.0f; r.y = y; }
     triParentalLinha(i, titulo, sizeof titulo, apoio, sizeof apoio, valor, sizeof valor, &icone, &ligado);
-    triLinhaUtil(r, triUtilF[i], ajMascara(r.y + 30.0f, topo, base), icone, titulo, apoio, valor, ligado < 0, ligado);
-    y += 62.0f;
+    if (i == triLinha) { fl0 = r.y + triUtilRol; fl1 = fl0 + r.h; }
+    triUtilAlvoLinha(r, topo, base, i);
+    triLinhaUtil(r, triUtilF[i], ajMascara(r.y + 36.0f, topo, base), icone, titulo, apoio, valor, ligado < 0, ligado);
+    y += 76.0f;
   }
   gfx_sem_recorte();
+  triUtilRolar(fl0, fl1, topo, base, y + triUtilRol - topo);
 }
 // A escolha de uma regra (tempo, idade, filmes) na ilha 3.
 static void triParentalEscolha(GfxRect m) {
@@ -372,6 +439,7 @@ static void triParentalEscolha(GfxRect m) {
     char label[96];
     TxtLinha t;
     ajPenParentText(rule, value, label, sizeof label);
+    ponteiro_alvo(r.x, r.y, r.w, r.h, triPontParentalValor, NULL, value, 0);
     if (foco) ajFocoLinha(r, 18.0f, 1, 1);
     t = ajTxtC(foco ? TXT_V3_LN_B : TXT_V3_LN, label, r.w - 40.0f);
     txt_desenhar_alpha(t, r.x + 20.0f, r.y + (r.h - t.h) * 0.5f, foco ? 1.0f : 0.8f);
@@ -580,8 +648,9 @@ static void triDesenhar(void) {
   if (modal) gfx_opacidade_grupo = 0.16f;
   g0 = gfx_opacidade_grupo;
   triCabecalho();
-  triIlhaSecoes();
+  if (ajRetrato()) triFaixaSecoes(); else triIlhaSecoes();
   ajPontLista = !modal && !uxEditor && !triUtil && paginaA > 0.997f;
+  ajPontUtil = !modal && !uxEditor && triUtil && triUtilA > 0.997f && ajPenParentEditor < 0 && !ajPenPinAsk;
   if (uxEditor && !modal) { ponteiro_camada();
 #ifdef NV_TOUCH_UI
     ajToqueCamada();
@@ -594,14 +663,18 @@ static void triDesenhar(void) {
       triPilulas(triIlha2R(), rot, ic, 1 + (rvUndoN > 0), triAcao, 1); } }
   else if (triUtil == TRI_U_PRESETS) triPresetsDesenhar();
   else if (triUtil == TRI_U_REVISAO) triRevisaoDesenhar();
-  else if (triUtil == TRI_U_PARENTAL) triParentalDesenhar();
+  else if (triUtil == TRI_U_PARENTAL) {
+    // Sem ilha 3 ("Lista", retrato): a escolha parental toma o lugar da lista.
+    if (!triTemInsp() && ajPenParentEditor >= 0) { GfxRect m = triIlha2R(); ponteiro_camada(); ajIlha(m, 28.0f, 1, 0); triParentalEscolha(m); }
+    else triParentalDesenhar();
+  }
   else triLista();
   if (triUtil) { gfx_sem_transformar(); gfx_opacidade_grupo = g0; }
   // ILHA 3: o editor cobre o inspetor; a escolha parental tambem.
   ajPontEditor = aj2EditorPainel() && !(uxRestaurar || uxAvisoRisco) && !riscoFolha && !frAberta;
   if (triTemInsp()) {
     GfxRect m = triInspR();
-    if (ajPenParentEditor >= 0) { ajIlha(m, 28.0f, 1, 0); triParentalEscolha(m); }
+    if (ajPenParentEditor >= 0) { ponteiro_camada(); ajIlha(m, 28.0f, 1, 0); triParentalEscolha(m); }
     else if (aj2EditorPainel() && uxOp >= 0) {
       float k = anim_suave(triEditorF);
       if (modal || uxEditor) { ponteiro_camada();

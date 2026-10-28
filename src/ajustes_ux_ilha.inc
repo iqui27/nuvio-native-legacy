@@ -1253,7 +1253,7 @@ static void aj2DesenharDiferencas(void) {
     float xd = x + w - 22, a = ajMascara(y + 38, topo, base), yc = y + 38;
     TxtLinha la, lp, lr, ls;
     if (y > base) break;
-    if (ajPontLista) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, ajPontDif, NULL, i, 0);
+    if (ajPontLista || ajPontUtil) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, ajPontDif, NULL, i, 0);
     if (foco) {
       float ar, ag, ab;
       ajFocoLinha(r, 18, 1, a);

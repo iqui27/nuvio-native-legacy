@@ -35,7 +35,9 @@ static int triSecaoDeixada = -1;   // a secao de onde ← saiu: → volta a mesm
 static int triLinha, triAcao;      // linha e acao (pilulas) da rota utilitaria
 static int triTrocarPerfil;        // "Trocar de perfil" pedido na folha do perfil
 static float triChipF[TRI_C_N], triSecF[AJ_MAX_SECOES + 1], triUtilF[AJ_N];
-static float triUtilRol, triUtilRolV;   // rolagem das rotas utilitarias
+static float triUtilRol, triUtilRolAlvo;   // rolagem das rotas utilitarias: o desenho acha o alvo, triAtualizar segue
+static float triSecRolX, triSecRolXAlvo;   // retrato: a faixa horizontal de secoes rola ate a secao em foco
+static int ajPontUtil;                     // a rota utilitaria aceita o ponteiro (sem editor/modal, entrada feita)
 // Movimento por ilha (nada de fade da tela inteira ao trocar de ilha):
 static float triListaF;   // 1 com o foco na lista (a ilha 2 acende)
 static float triEditorF;  // 1 com o editor aberto na ilha 3 (entra deslizando)
@@ -76,7 +78,7 @@ static int triDisponivel(int op) {
 }
 static void triIniciar(void) {
   triIlha = TRI_SECOES; triChip = 0; triUtil = TRI_U_NADA; triUtilVolta = 0;
-  triLinha = triAcao = 0; triTrocarPerfil = 0; triUtilRol = triUtilRolV = 0;
+  triLinha = triAcao = 0; triTrocarPerfil = 0; triUtilRol = triUtilRolAlvo = 0;
   triSecFoco = secAtual; triSecaoDeixada = -1;
 }
 // Foco direto numa opcao (busca, atalhos, tour): a lista da secao dela.
@@ -94,13 +96,13 @@ static void triIrSecoes(void) {
   triIlha = TRI_SECOES; focoIndice = 1; triSecFoco = secAtual; triSecaoDeixada = secAtual; sairArmado = 0; uxRetornarOp = -1;
 }
 static void triEntrar(int s) {
-  if (triParental(s)) { triUtil = TRI_U_PARENTAL; triLinha = triAcao = 0; triIlha = TRI_LISTA; focoIndice = 0; triUtilRol = triUtilRolV = 0; return; }
+  if (triParental(s)) { triUtil = TRI_U_PARENTAL; triLinha = triAcao = 0; triIlha = TRI_LISTA; focoIndice = 0; triUtilRol = triUtilRolAlvo = 0; return; }
   focarSecao(s);
   if (s != triSecaoDeixada) focar(primeiroDaSecao(s));   // secao nova: a 1.ª linha
   triSecaoDeixada = -1; focoIndice = 0; triIlha = TRI_LISTA;
 }
 static void triUtilAbrir(int u) {
-  triUtil = u; triLinha = triAcao = 0; triIlha = TRI_LISTA; focoIndice = 0; triUtilRol = triUtilRolV = 0;
+  triUtil = u; triLinha = triAcao = 0; triIlha = TRI_LISTA; focoIndice = 0; triUtilRol = triUtilRolAlvo = 0;
   if (u == TRI_U_DIF) { uxListarDiferencas(); uxDifFoco = 0; uxIndice = 1; }
 }
 static void triUtilFechar(void) {
@@ -183,6 +185,23 @@ static int rvDesfazer(void) {
 }
 #include "ajustes_presets.inc"
 #include "ajustes_parental.inc"
+// --- PONTEIRO NAS ROTAS UTILITARIAS -----------------------------------------------------
+// Linha de preset/revisao/parental, pilula de acao e escolha parental: o clique
+// foca (e o ponteiro entrega o OK em seguida, como em toda linha da tela).
+static void triPontUtilLinha(int i, int b) {
+  (void)b;
+  if (!ajPontUtil || !triUtil || triUtil == TRI_U_DIF || i < 0) return;
+  triIlha = TRI_LISTA; focoIndice = 0; triLinha = i; triAcao = 0;
+}
+static void triPontUtilAcao(int i, int b) {
+  (void)b;
+  if (!ajPontUtil || !triUtil) return;
+  triIlha = TRI_LISTA; focoIndice = 0;
+  if (triUtil == TRI_U_PRESETS) { ajPenSavedLoad(); triLinha = TRI_PRESET_N + ajPenSavedCount; triAcao = 0; }
+  else triAcao = i;
+}
+static void triPontParentalValor(int v, int b) { (void)b; if (ajPenParentEditor < 0) return; ajPenParentDraft = v; }
+
 
 // --- EVENTOS -------------------------------------------------------------------------
 static int triNavLista(int dir) {
@@ -206,7 +225,20 @@ static int triChipEvento(SDL_Keycode k) {
   }
   return 1;
 }
+static void triSecoesIr(int dir) {
+  int s = triSecFoco + dir;
+  if (s < 0 || s > nSecoes) return;
+  triSecFoco = s; if (!triParental(s)) focarSecao(s);
+}
 static int triSecoesEvento(SDL_Keycode k) {
+  if (ajRetrato()) {   // a faixa horizontal: ← → trocam de secao, ↓ entra, ↑ chips
+    if (uxVoltar(k)) { sair = 1; return 1; }
+    if (k == SDLK_LEFT) { if (triSecFoco > 0) triSecoesIr(-1); else sair = 1; return 1; }
+    if (k == SDLK_RIGHT) { triSecoesIr(1); return 1; }
+    if (k == SDLK_UP) { triIlha = TRI_CHIPS; return 1; }
+    if (uxOk(k) || k == SDLK_DOWN) { triEntrar(triSecFoco); return 1; }
+    return 1;
+  }
   if (uxVoltar(k) || k == SDLK_LEFT) { sair = 1; return 1; }
   if (k == SDLK_UP) {
     if (triSecFoco > 0) { triSecFoco--; if (!triParental(triSecFoco)) focarSecao(triSecFoco); }
@@ -224,7 +256,10 @@ static int triListaEvento(SDL_Keycode k) {
   if (k == SDLK_UP || k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) uxRetornarOp = -1;
   if (uxVoltar(k) || k == SDLK_LEFT) { triIrSecoes(); return 1; }
   if (k == SDLK_UP || k == SDLK_DOWN) {
-    if (!triNavLista(k == SDLK_DOWN ? 1 : -1) && k == SDLK_UP) { triIlha = TRI_CHIPS; focoIndice = 1; triSecFoco = secAtual; }
+    if (!triNavLista(k == SDLK_DOWN ? 1 : -1) && k == SDLK_UP) {
+      if (ajRetrato()) triIrSecoes();   // a faixa de secoes fica entre a lista e os chips
+      else { triIlha = TRI_CHIPS; focoIndice = 1; triSecFoco = secAtual; }
+    }
     return 1;
   }
   if (k == SDLK_RIGHT) return 1;
@@ -339,8 +374,8 @@ static int triUtilEvento(SDL_Keycode k) {
 static int triSetaSemantica(SDL_Keycode k) {
   if (k != SDLK_UP && k != SDLK_DOWN && k != SDLK_LEFT && k != SDLK_RIGHT) return 0;
   if (uxEditor || tourAberto || frAberta || filAberta || pfTela || hcAberta || riscoFolha || apoioAberto || guiaAberto) return 0;
-  if (teclado_aberto() || iptvForm.tipo || ajPenParentEditor >= 0 || ajPenPinAsk) return 0;
-  return 1;
+  if (teclado_aberto() || iptvForm.tipo || ajPenPinAsk) return 0;
+  return 1;   // inclusive a escolha parental (ajPenParentEvent): ↑↓ trocam o valor
 }
 // Chamado por uxEvento quando nao ha editor aberto. 1 = tratou; 0 = eventoTela
 // segue (acoes, teclados, "Mais opcoes", editor de escolha/numero).
@@ -376,6 +411,9 @@ static void triAtualizar(float dt) {
     triListaF = red ? alvo : anim_mola(triListaF, alvo, dt, alvo > triListaF ? NV_MOLA_FOCO : NV_MOLA_DESFOCO); }
   { float alvo = uxEditor == 1 && uxOp >= 0 && aj2EditorPainel() ? 1.0f : 0.0f;
     triEditorF = red ? alvo : anim_mola(triEditorF, alvo, dt, alvo > triEditorF ? NV_MOLA_FOCO : NV_MOLA_DESFOCO); }
+  if (!triUtil) triUtilRolAlvo = 0.0f;
+  triUtilRol = red ? triUtilRolAlvo : anim_mola(triUtilRol, triUtilRolAlvo, dt, NV_MOLA_FOCO);
+  triSecRolX = red ? triSecRolXAlvo : anim_mola(triSecRolX, triSecRolXAlvo, dt, NV_MOLA_FOCO);
   if (triUtil != triUtilVisto) { triUtilVisto = triUtil; triUtilA = 0.0f; }
   triUtilA = red ? 1.0f : anim_rampa(triUtilA, 1.0f, dt, 220.0f);
   ajMovAtualizar(dt);

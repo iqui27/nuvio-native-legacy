@@ -8408,9 +8408,9 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_NT_METAUSER: case AJ_NT_TRAKT: case AJ_NT_TMDB: case AJ_NT_LETTER:
     case AJ_NT_MAL: case AJ_NT_EBERT: case AJ_NT_SCORE:
       return "Mostra esta nota na linha do título, com a marca e a escala do próprio site. Se a linha não couber, saem primeiro as menos importantes. A aba de notas continua mostrando todas.";
-    case AJ_GUIA_PREVIA_DESTACAR: return "Quando a prévia do canal começa no Guia de TV: já ao destacar o canal, ou só depois de selecionar. Ao destacar é mais rápido; ao selecionar poupa rede e evita a prévia enquanto você só passa pela lista.";
+    case AJ_GUIA_PREVIA_DESTACAR: return "Quando a prévia do canal começa no Guia de TV: ao destacar ou só ao selecionar. Ao destacar é mais rápido; ao selecionar poupa rede e evita a prévia enquanto você só passa pela lista.";
     case AJ_GUIA_PREVIA_SOM: return "A prévia do canal no Guia de TV toca sem som. Desligado, o áudio do canal entra junto com a prévia.";
-    case AJ_GUIA_DIAS: return "Quantos dias de programação o Guia de TV carrega e guarda: um dia é mais leve e abre mais rápido; três dias deixam ver o que vem nos próximos dias.";
+    case AJ_GUIA_DIAS: return "Quantos dias de programação o Guia de TV carrega e guarda. Um dia é mais leve e abre mais rápido; três dias deixam ver o que vem nos próximos dias.";
     default: return "Use as setas laterais para escolher. A preferência é aplicada ao alterar o valor.";
   }
 }
@@ -11784,6 +11784,9 @@ static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,Ponte
   if(fn==triPontChip)id=a;
   else if(fn==triPontSecao)id=1000+a;
   else if(fn==ajPonteiroItem)id=10000+a;
+  else if(fn==triPontUtilLinha)id=60000+triUtil*1000+a*10;
+  else if(fn==ajPontDif)id=61000+a*10;
+  else if(fn==triPontUtilAcao)id=60000+triUtil*1000+(triUtil==TRI_U_PRESETS?TRI_PRESET_N+ajPenSavedCount:triUtil==TRI_U_DIF?uxDifFoco:triLinha)*10+(triUtil==TRI_U_PRESETS?0:a);
   else if(fn==tourPontFoco)id=100000+a*2+b;
   else if(fn==ffPont)id=200000+a;
   if(id>=0&&navigationCount<512&&w>0&&h>0){
