@@ -4738,6 +4738,11 @@ void player_atualizar(float dt, Uint32 agora) {
   if (memQuadroPendente && comVideo && video_pronto() && video_tocando() && video_pos() > 0.0) {
     memQuadroPendente = 0;
     memlog_evento("primeiro-quadro");
+    if (medirAbertura && !ehCanal()) {
+      printf("[player] play->first-frame %u ms (load->first-frame %u ms)\n",
+             (unsigned)(SDL_GetTicks() - abertoEm), loadEm ? (unsigned)(SDL_GetTicks() - loadEm) : 0u);
+      fflush(stdout);
+    }
   }
   if (!inicioImagem && comVideo && video_pronto()) {
     inicioImagem = agora; acordar();
