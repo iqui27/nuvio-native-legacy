@@ -5135,14 +5135,14 @@ static void tocarFonteEscolhida(int fonte, int manual) {
       diagnostico_cancelar_vazao();
       player_abrir(cat_indice_vivo(titulo, imdb),NULL);
       player_definir_episodio(t,e);
-      if (!manual && juntos_ativo()) {
+      if (!manual && juntos_no_player()) {
         player_do_inicio(); // The room clock restores position after load.
         fonteVODAutomatica = 1;
         fonteVODTentativas = 1;
         fonteVODDesde = SDL_GetTicks();
       }
       stream_definir_atual(fonte);
-      if (juntos_ativo()) juntos_fonte_escolhida();
+      if (juntos_no_player()) juntos_fonte_escolhida();
       // Qualquer escolha nova invalida a resposta de um torrent anterior; o
       // motor P2P corta o pedido velho ja (sem isso a escolha nova esperaria
       // ate 55 s na fila do fio unico).
@@ -6312,7 +6312,7 @@ void app_atualizar(float dt, Uint32 agora) {
     int querTocar = detail_pediu_reproduzir() || doInicio;
     const JsMotor *salaJ = juntos_motor();
     const CatItem *tituloJ = cat_item(detail_indice());
-    if (querTocar && juntos_ativo() && tituloJ) {
+    if (querTocar && juntos_no_player() && tituloJ) {
       char alvoJ[64];
       int tJ = 0, eJ = 0;
       detail_ep_foco(&tJ, &eJ);

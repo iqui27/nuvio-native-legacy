@@ -29,6 +29,7 @@ typedef enum {
 
 int  juntos_disponivel(void);   // pacote com servico social e conta ligada
 int  juntos_ativo(void);        // numa sala (de PREPARADO em diante)
+int  juntos_no_player(void);    // room playback hooks belong to this player
 JuntosFase juntos_fase(void);
 
 // A cada quadro (ilhasinais_passo), com o player aberto ou nao.

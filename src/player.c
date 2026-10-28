@@ -2270,7 +2270,7 @@ static void sairParaExterno(void) { saindo = 1; pediuSair = 1; }
 static void tocarFonte(const char *url) {
 #ifdef NV_ANDROID
   const CatItem *c = item();   // #501: Interno / Externo / Perguntar sempre
-  if (!juntos_ativo() && extplayer_tentar(url, c ? c->titulo : "", c && artehero_eh_anime(c), tocarFonteInterno, sairParaExterno)) return;
+  if (!juntos_no_player() && extplayer_tentar(url, c ? c->titulo : "", c && artehero_eh_anime(c), tocarFonteInterno, sairParaExterno)) return;
 #endif
   tocarFonteInterno(url);
 }
@@ -5133,7 +5133,7 @@ void player_atualizar(float dt, Uint32 agora) {
       !saindo && !erroFonte && !esperandoFonte && !pedFontes && !pedFaixas &&
       !stream_folha_aberta() && !faixas_aberta() && !episodios_aberto() &&
       !episodios_menu_aberto_qualquer() && !pausao_visivel() &&
-      !video_bufferando_ms() && !creditosAuto.buscaPendente && !juntos_ativo()) {
+      !video_bufferando_ms() && !creditosAuto.buscaPendente && !juntos_no_player()) {
     double fimT = 0.0; int tipoT = 0;
     if (intro_auto_ativo(posSeg, &fimT, &tipoT) &&
         intro_auto_pular(tipoT, fimT, duracaoSeg, ajustes_pular_abertura(), ajustes_pular_resumo(),

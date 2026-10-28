@@ -10,8 +10,9 @@ static int authAvailable, authCalls;
 #endif
 int video_falhou(void) { return failedVideo; }
 int player_tem_video(void) { return prepared; }
-int video_velocidade_atual(void) { return 100; }
-void video_velocidade(int v) { (void)v; }
+static int personalSpeed = 100;
+int video_velocidade_atual(void) { return personalSpeed; }
+void video_velocidade(int v) { personalSpeed = v; }
 void video_estatisticas(VideoStats *s) { memset(s, 0, sizeof *s); }
 int dws_estado(DiscordWs *w) { (void)w; return DWS_CONECTANDO; }
 int dws_codigo_fechamento(DiscordWs *w) { (void)w; return 0; }
@@ -24,7 +25,8 @@ int stream_atual(void) { return prepared ? selectedStream : -1; }
 static double position, now = 10000;
 double video_pos(void) { return position; }
 static char sent[1024];
-int dws_enviar(DiscordWs *w, const char *j) { (void)w; (void)j; return 0; }
+static int socketSends;
+int dws_enviar(DiscordWs *w, const char *j) { (void)w; (void)j; socketSends++; return 0; }
 const char *i18n(const char *s) { return s; }
 void player_toast_ex(const char *s, unsigned ms, const char *ic, int c) { (void)s; (void)ms; (void)ic; (void)c; }
 int video_velocidade_suportada(void) { return 1; }
