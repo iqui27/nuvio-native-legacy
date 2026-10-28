@@ -342,6 +342,12 @@ int   ajustes_livetv_sugerir(void);   // Jev sugere categoria so para canal sem 
 // do mock (560x315). Por perfil; padrao desligado.
 int   ajustes_guia_previa_grande(void);
 void  ajustes_definir_guia_previa_grande(int ligado);
+int ajustes_guia_previa_destacar(void);
+void ajustes_definir_guia_previa_destacar(int ligado);
+int ajustes_guia_previa_sem_som(void);
+void ajustes_definir_guia_previa_sem_som(int ligado);
+int ajustes_guia_dias(void);
+void ajustes_definir_guia_dias(int dias);
 void  ajustes_livetv_aplicar_proxy(int ligado);   // proxy de TS da Live TV (proxyts.c)
 void  ajustes_livetv_aplicar_modo(int modo);
 
