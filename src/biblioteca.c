@@ -686,11 +686,23 @@ static int bibColunasMax(void) { return bibFone() ? 4 : bibAmplo() ? 8 : 7; }
 static float bibHS(void) { return fmaxf(1.0f, escala_min(BIB_TOPO_ESCALA_MIN)); }
 static float bibRel(void) { return bibHS() / gfx_escala_txt(); }
 static float hdrX(void) { return paginaX() / bibRel(); }
-static float hdrDir(void) { return bibDireita() / bibRel(); }
+static float hdrDir(void) {
+  float d = bibDireita() / bibRel();
+#ifdef NV_TOUCH_UI
+  // Phone: controls stop at the system bar (84 pt); only art runs under it.
+  if (bibFone()) d = fminf(d, ((float)NV_TELA_W - 88.0f * bibPt()) / bibRel());
+#endif
+  return d;
+}
 static float hdrW(void) { return hdrDir() - hdrX(); }
 // Quantos seletores a faixa tem: "Para ver" ganha o quarto, "Origem".
 static int bibNPicks(void);
-static float bibControleMax(void) { return (hdrW() - BIB_FAIXA_GAP * 2.0f) / (float)bibNPicks(); }
+static float bibControleMax(void) {
+#ifdef NV_TOUCH_UI
+  if (bibFone()) return (hdrW() - BIB_FAIXA_GAP * 3.0f) / 4.0f;
+#endif
+  return (hdrW() - BIB_FAIXA_GAP * 2.0f) / (float)bibNPicks();
+}
 // Os chips descem para uma segunda linha sob as abas: sempre no retrato e, na
 // paisagem, quando abas + chips nao cabem na largura (ver bibFaixaQuebra).
 static int bibFaixaQuebra(void);
@@ -2285,6 +2297,10 @@ static int contagemModo(int a) {
   textoModo(a, num, sizeof num);
   return num[0] ? atoi(num) : -1;
 }
+// Phone portrait: tab labels a bit smaller so the five modes fit untruncated.
+static float escM(void) { return bibFone() ? BIB_ESC_MODO * 0.78f : BIB_ESC_MODO; }
+static float escN(void) { return bibFone() ? BIB_ESC_N * 0.78f : BIB_ESC_N; }
+static float padM(void) { return bibFone() ? 12.0f : BIB_SEG_ITEM_PADX; }
 static float larguraModo(int a) {
   char num[16];
   if (!bibRetrato()) {
@@ -2297,11 +2313,13 @@ static float larguraModo(int a) {
     }
     return w;
   }
-  float w = (float)txt_linha(TXT_ROW_TITULO, ROT_MODO[a], 140, 140, 140, 255).w * BIB_ESC_MODO;
+  float w = (float)txt_linha(TXT_ROW_TITULO, ROT_MODO[a], 140, 140, 140, 255).w * escM();
   textoModo(a, num, sizeof num);
-  if (num[0]) w += 9.0f + (float)txt_linha(TXT_CAPTION2, num, 93, 93, 93, 255).w * BIB_ESC_N;
-  w += BIB_SEG_ITEM_PADX * 2.0f;
-  return bibRetrato() ? fminf(w, (hdrW() - BIB_SEG_PAD * 2.0f - BIB_SEG_ITEM_GAP * (BIB_N_MODOS - 1)) / BIB_N_MODOS) : w;
+  if (num[0]) w += 9.0f + (float)txt_linha(TXT_CAPTION2, num, 93, 93, 93, 255).w * escN();
+  w += padM() * 2.0f;
+  if (!bibRetrato()) return w;
+  float cap = (hdrW() - BIB_SEG_PAD * 2.0f - BIB_SEG_ITEM_GAP * (BIB_N_MODOS - 1));
+  return fminf(w, bibFone() ? cap * 0.32f : cap / BIB_N_MODOS);
 }
 static float larguraSeletor(void) {
   float w = BIB_SEG_PAD * 2.0f + BIB_SEG_ITEM_GAP * (BIB_N_MODOS - 1);
@@ -2394,19 +2412,19 @@ static void desenhaModos(void) {
     textoModo(a, num, sizeof num);
     ln = (TxtLinha){0};
     if (bibRetrato()) {
-      float util = r.w - BIB_SEG_ITEM_PADX * 2.0f;
-      if (num[0]) ln = txt_linha_corta(TXT_CAPTION2, num, tn, tn, tn, 255, util * .4f / BIB_ESC_N);
+      float util = r.w - padM() * 2.0f;
+      if (num[0]) ln = txt_linha_corta(TXT_CAPTION2, num, tn, tn, tn, 255, util * .4f / escN());
       l = txt_linha_corta(TXT_ROW_TITULO, ROT_MODO[a], t, t, t, 255,
-                          (util - (num[0] ? 9.0f + (float)ln.w * BIB_ESC_N : 0.0f)) / BIB_ESC_MODO);
+                          (util - (num[0] ? 9.0f + (float)ln.w * escN() : 0.0f)) / escM());
     } else l = txt_linha(TXT_ROW_TITULO, ROT_MODO[a], t, t, t, 255);
-    txtEsc(l, r.x + BIB_SEG_ITEM_PADX, r.y + (r.h - (float)l.h * BIB_ESC_MODO) * 0.5f,
-           BIB_ESC_MODO, 1.0f);
+    txtEsc(l, r.x + padM(), r.y + (r.h - (float)l.h * escM()) * 0.5f,
+           escM(), 1.0f);
     if (num[0]) {
       // Na linha de BASE do nome (align-items: baseline), nao no meio dele.
       if (!bibRetrato()) ln = txt_linha(TXT_CAPTION2, num, tn, tn, tn, 255);
-      txtEsc(ln, r.x + BIB_SEG_ITEM_PADX + (float)l.w * BIB_ESC_MODO + 9.0f,
-             r.y + (r.h + (float)l.h * BIB_ESC_MODO) * 0.5f - (float)ln.h * BIB_ESC_N - 1.0f,
-             BIB_ESC_N, 1.0f);
+      txtEsc(ln, r.x + padM() + (float)l.w * escM() + 9.0f,
+             r.y + (r.h + (float)l.h * escM()) * 0.5f - (float)ln.h * escN() - 1.0f,
+             escN(), 1.0f);
     }
     x += w + BIB_SEG_ITEM_GAP;
   }
@@ -2475,6 +2493,14 @@ static void desenhaBotaoOrig(void) {
   txt_desenhar(l, r.x + BIB_CHIP_PADX + BIB_BOTAO_ICONE + 10.0f, r.y + (r.h - (float)l.h) * 0.5f);
 }
 
+// Phone: the grid/list toggle sits on the title row so the 4 chips get the whole width.
+static float visY(void) {
+  float y = pickerY();
+#ifdef NV_TOUCH_UI
+  if (bibFone()) y -= 79.0f * bibPt() / bibRel();
+#endif
+  return y;
+}
 static float pickerLargura(int p) {
   float w = pickerLarguraNat(p);
   if (bibRetrato()) return fminf(w, bibControleMax());
@@ -2501,7 +2527,7 @@ static void desenhaPicker(int p, float f) {
     // The mock's grid/list .seg: rimless track, chosen = .sel, focus = accent pill.
     int grid = p == bibViewStart();
     int sel = grid != modoLinha();
-    r = (GfxRect){ r.x, pickerY() + (BIB_CHIP_H - 44.0f) * 0.5f, BIB_VIS_W, 44.0f };
+    r = (GfxRect){ r.x, visY() + (BIB_CHIP_H - 44.0f) * 0.5f, BIB_VIS_W, 44.0f };
     ponteiro_alvo(r.x, r.y, r.w, r.h, ponteiroPicker, NULL, p, 0);
     if (grid) {
       GfxRect tr = { r.x - 5.0f, r.y - 5.0f, BIB_VIS_TW, 54.0f };
@@ -3711,7 +3737,7 @@ static void desenhaCabecalho(void) {
   // Layout Dinamica: "Biblioteca" esta na pilula da barra. Com uma lista
   // aberta sobra o nome dela, ao lado da pilula e centrado nela.
   { float px, py, pw, ph;
-    if (menu_pilula_rect(&px, &py, &pw, &ph)) {
+    if (!bibFone() && menu_pilula_rect(&px, &py, &pw, &ph)) {
       // A pilula do menu e medida em px reais; o topo desenha na tela virtual.
       float hs = bibHS();
       px /= hs; py /= hs; pw /= hs; ph /= hs;
@@ -3740,6 +3766,7 @@ static void desenhaCabecalho(void) {
     } }
 
   if (listasMinhas()) return;   // 6D: the list panel owns the right side
+  if (!temAberta && bibFone()) return;   // phone: right edge is the system bar, no sync line
   if (!temAberta) {
     float x = hdrDir();
     char status[96];
