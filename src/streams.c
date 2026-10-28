@@ -78,8 +78,22 @@ static int navigationMove(SDL_Keycode);
 // player-mockup de 03/10): 820 de largura, a 40 das bordas, raio 36 — a
 // mesma folha dos Episodios no player.
 #include "telefoneui.h"
-#define FOLHA_W        telefoneui_largura(820.0f, NV_TELA_W, FOLHA_MARGEM)
+// iPhone Duo closed portrait (ios-04-sources): the sheet is left-anchored and
+// leaves the trailing strip to the system bar. Everything else is unchanged.
 #define FOLHA_MARGEM    40.0f
+static int folhaRelogio;
+static inline int folhaFone(void) {
+#ifdef NV_TOUCH_UI
+  return telefoneui_ativo() && nv_layout_h > nv_layout_w && !player_aberto() && !folhaRelogio;
+#else
+  return 0;
+#endif
+}
+static inline float folhaLarg(void) {
+  if (folhaFone()) return fmaxf(1, NV_TELA_W * 0.84f - 2 * FOLHA_MARGEM);
+  return telefoneui_largura(820.0f, NV_TELA_W, FOLHA_MARGEM);
+}
+#define FOLHA_W        folhaLarg()
 #define FOLHA_RAIO_IL   36.0f
 #define FOLHA_PAD_E     48.0f  // da borda da folha ao cartao da linha
 #define FOLHA_PAD_D     56.0f
@@ -96,7 +110,7 @@ void (*stream_folha_sala_desenhar)(float x, float y, float w, float a);
 static int filtroVisto = -2, trocaDir;
 static Uint32 trocaDesde;
 static float pillX, pillW = -1.0f, pillDeX, pillDeW;   // x relative to the list column
-static int folhaRelogio; // Latched at opening, retained through closing.
+// folhaRelogio is declared with folhaFone(); latched at opening, retained through closing.
 static float folhaEntrada; // Visible-row stagger starts once the island fits.
 #define FOLHA_ILHA_Y     48.0f   // plrilha.c: Y_TOPO
 #define FOLHA_ILHA_CAB   64.0f   // plrilha.c: CAB_H (a linha da hora)
@@ -108,7 +122,7 @@ static float folhaEntrada; // Visible-row stagger starts once the island fits.
 // titulo com TODOS os botoes a direita (nunca mais desce uma linha, ver
 // medirCabecalho) e as abas de addon. A lista comeca logo abaixo das abas.
 #define FOLHA_CAB_Y    100.0f  // topo dos botoes, centrados no titulo
-#define FOLHA_ABAS_Y   168.0f  // topo da faixa das abas
+#define FOLHA_ABAS_Y   (168.0f + (folhaFone() ? 64.0f : 0.0f))  // topo da faixa das abas; fone: chips ganham linha propria
 #define FOLHA_ABAS_H    56.0f
 #define FOLHA_ABA_H     44.0f  // a pilula de cada aba, dentro da faixa
 #define FOLHA_TOPO     (FOLHA_ABAS_Y + FOLHA_ABAS_H + 24.0f + folhaOY + folhaDica + folhaSala)
@@ -5839,6 +5853,8 @@ static void medirCabecalho(void) {
   float tit = (float)txt_linha(TXT_ILHA_TITULO, "Fontes", 255, 255, 255, 255).w;
   float livre = rw - FOLHA_TXT - tit - 24.0f, soma = 0;
   int nbt = nBotoes();
+  // Fone fechado: os chips ficam em linha propria abaixo do titulo.
+  if (folhaFone()) livre = rw - FOLHA_TXT;
   for (nivelCab = 0; nivelCab < 3; nivelCab++) {
     float pad = nivelCab == 0 ? 20.0f : 14.0f;
     gapCab = nivelCab < 2 ? FOLHA_CHIP_GAP : 8.0f;
@@ -5881,7 +5897,8 @@ static void medirCabecalho(void) {
     else { rotWCab[foco] = w; bwCab[foco] = 16.0f + g + 10.0f + w + 18.0f; soma += bwCab[foco] - antes; }
   }
   titMaxCab = rw - FOLHA_TXT - 24.0f - soma;
-  if (titMaxCab < tit) titMaxCab = titMaxCab < 80.0f ? 80.0f : titMaxCab;
+  if (folhaFone()) titMaxCab = rw - FOLHA_TXT;
+  else if (titMaxCab < tit) titMaxCab = titMaxCab < 80.0f ? 80.0f : titMaxCab;
   else titMaxCab = tit + 1.0f;
 }
 
@@ -6164,6 +6181,7 @@ static void stream_folha_desenharCorpo_(Uint32 agora) {
     return; // ilha_desenhar owns the surface, dim and closing.
   }
   float x=NV_TELA_W-FOLHA_W-FOLHA_MARGEM+(1-anim)*(FOLHA_W+FOLHA_MARGEM);
+  if (folhaFone()) x = FOLHA_MARGEM*.5f + (1-anim)*(FOLHA_W+FOLHA_MARGEM);
   // A FOLHA E UMA ILHA (dono, 02/10, mockups "Glass UI — ilha"): flutua a
   // NV_FOLHA_MARGEM das tres bordas, raio NV_FOLHA_RAIO, sombra curta e uma
   // luz larga no canto de cima — o mesmo material da ilha do relogio. O ajuste
@@ -6382,9 +6400,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   // visivel, da esquerda: [Sem HDR] Só MP4, Em cache, Dublado, Recarregar, Fechar.
   { int nbt=nBotoes(); float bx=lx+rw;
     for(int i=0;i<nbt;i++) bx-=bwCab[i]+(i?gapCab:0.0f);
+    if (folhaFone()) bx = tx;
     for(int i=0;i<nbt;i++){
       int b=botaoDe(i);
-      GfxRect r={bx,oy+FOLHA_CAB_Y,bwCab[i],FOLHA_CHIP_H};
+      GfxRect r={bx,oy+FOLHA_CAB_Y+(folhaFone()?64.0f-8.0f:0.0f),bwCab[i],FOLHA_CHIP_H};
       int habilitado = b != BT_RECARREGAR_FONTE || recarregarFontePode();
       if (ptr) ponteiro_alvo(r.x, r.y, r.w, r.h, habilitado ? ponteiroFolhaBotao : NULL, NULL, i, 0);
       chipFolha(r,rotCab[i],rotWCab[i],icoCab[i],grupo==-1&&foco==i,botaoLigado(b),
