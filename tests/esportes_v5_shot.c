@@ -100,6 +100,8 @@ static void sportsux_proof(SDL_Window *w,const char *out){
   focus=1102;gv_return_focus=2505;gv_zone=5;gv_event(SDLK_DOWN,0);assert(focus==2001);
   focus=2070;gv_event(SDLK_DOWN,0);assert(focus==2073);
   gv_event(SDLK_UP,0);assert(focus==2070);
+  gv_event(SDLK_LEFT,0);assert(gv_side_open);gv_event(SDLK_RIGHT,0);assert(!gv_side_open&&focus==2070);
+  gv_event(SDLK_LEFT,0);gv_event(SDLK_ESCAPE,0);assert(!gv_side_open&&!strcmp(screen,"esportes-ligas"));
   g5ui_open("esportes-visibilidade");quadro();focus=2500;
   for(int i=1;i<9;i++){gv_event(SDLK_RIGHT,0);assert(gs_page*6+focus-2500==i);quadro();}
   gs_page=0;focus=2500;gv_event(SDLK_DOWN,0);assert(focus==2503);gv_event(SDLK_UP,0);assert(focus==2500);

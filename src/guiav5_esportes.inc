@@ -150,6 +150,7 @@ static int gs_arrow(SDL_Keycode k,int repeat){
   /* Section grid has two rows, with no wrap into unrelated controls. */
   if(focus>=2070&&focus<2076){
     int i=focus-2070,j=i;
+    if(k==SDLK_LEFT&&i%3==0){gv_side_enter();return 1;}
     if(k==SDLK_LEFT&&i%3)j--;
     else if(k==SDLK_RIGHT&&i%3<2)j++;
     else if(k==SDLK_DOWN&&i<3)j+=3;
