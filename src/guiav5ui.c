@@ -259,7 +259,7 @@ static void *load(void *unused){
 }
 static void *load_metadata(void *unused){
   (void)unused;int status=0;
-  char *body=xtream_consultar(metadata.server,metadata.user,metadata.password,metadata.action,15,&status);
+  char *body=xtream_consultar_metadata(metadata.server,metadata.user,metadata.password,metadata.action,15,&status);
   erase(metadata.password,sizeof metadata.password);
   memset(&vod_info_pending,0,sizeof vod_info_pending);metadata.ok=body&&status==200;
   if(metadata.ok){const char *end=body+strlen(body);while(end>body&&isspace((unsigned char)end[-1]))end--;g5_parse_xtream_item(body,end,G5_MOVIE,&vod_info_pending);}free(body);
@@ -383,7 +383,7 @@ void g5ui_open(const char *name){context();if(gv_is(screen)&&!gv_is(name))gv_dei
   if(!strncmp(name,"vod-",4)&&!episodes_mode&&!atomic_load(&busy))merge_mixed_vod();
   if(!strncmp(name,"vod-",4)&&(!source_loaded||categories_missing)&&!atomic_load(&busy)){
     if(draft.type==0 && xtream_configurado()){
-      use_saved=1;action[0]=0;draft.movies=draft.series=1;start(2);
+      use_saved=1;action[0]=0;if(!committed)draft.movies=draft.series=1;start(2);
     }else if(draft.playlist[0]){action[0]=0;start(2);}
   }
 }
@@ -502,7 +502,11 @@ static void phone_status_counts(const char *state){
   jsw_chave(&w,"groups");jsw_arr_ini(&w);for(int i=0;i<group_count;i++){jsw_obj_ini(&w);jsw_cs(&w,"n",groups[i]);jsw_ci(&w,"c",group_totals[i]);jsw_ci(&w,"on",group_on[i]);jsw_obj_fim(&w);}jsw_arr_fim(&w);jsw_obj_fim(&w);
   const char *j=jsw_texto_final(&w);celular_status(j?j:"{\"s\":\"err\"}");jsw_livre(&w);
 }
-static void drop_kind(int kind){int w=0;for(int i=0;i<count;i++)if(inventory[i].kind!=kind)inventory[w++]=inventory[i];count=w;}
+static void drop_kind(int kind){
+  int w=0;for(int i=0;i<count;i++)if(inventory[i].kind!=kind)inventory[w++]=inventory[i];count=w;
+  if(kind==G5_MOVIE||kind==G5_SERIES){int k=kind==G5_SERIES;free(vod_data.json[k]);free(vod_data.categories[k]);vod_data.json[k]=vod_data.categories[k]=NULL;}
+  vod_selected_slot=-1;vod_rebuild();
+}
 static int match_query(const char *name){char hay[256],needle[256];busca_normalizar(name,hay,sizeof hay);busca_normalizar(query,needle,sizeof needle);return !needle[0]||strstr(hay,needle);}
 static int item_source_on(const G5Item *it){
   return ltv_fonte_ligada(!strcmp(it->source,"xtream")?"xt":!strcmp(it->source,"m3u")?"g5m3u":it->source);

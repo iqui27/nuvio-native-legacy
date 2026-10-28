@@ -18,8 +18,10 @@ static char *slow_metadata(const char *server,const char *user,const char *passw
   return strdup("{\"info\":{\"plot\":\"Background result\"}}");
 }
 #define xtream_consultar slow_metadata
+#define xtream_consultar_metadata slow_metadata
 #include GUIAV5_UNDER_TEST
 #undef xtream_consultar
+#undef xtream_consultar_metadata
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <sys/stat.h>
@@ -141,7 +143,16 @@ int main(int argc,char **argv){
   vod_select(4299,0);assert(selected==0&&!strcmp(inventory[selected].name,"Movie 4299")&&count==1);
   go("vod-filmes");snprintf(query,sizeof query,"Movie 4299");vod_filter();assert(vod_size==1);
   query[0]=0;rules.hide_locked=1;rules.ask_unrated=1;vod_filter();assert(vod_size==0);
-  puts("PASS: six category rows, movie/series order, poster focus, activation during stalled metadata, concurrent foreground worker, hero actions, Back, scrolling, fallback and uncapped lazy records");
+  /* Import confirmation must discard retained catalogs and invalidate cached rows. */
+  rules.hide_locked=rules.ask_unrated=0;vod_filter();assert(vod_size==4301);
+  drop_kind(G5_MOVIE);vod_filter();
+  assert(vod_size==1&&vod_rows==1&&vod_layout[0].kind==G5_SERIES);
+  assert(!vod_data.json[0]&&!vod_data.categories[0]);
+  vod_select(0,0);assert(inventory[selected].kind==G5_SERIES);
+  drop_kind(G5_SERIES);vod_filter();
+  assert(vod_size==0&&vod_rows==0&&count==0);
+  assert(!vod_data.json[1]&&!vod_data.categories[1]);
+  puts("PASS: disabled import kinds stay removed; six category rows, movie/series order, poster focus, activation during stalled metadata, concurrent foreground worker, hero actions, Back, scrolling, fallback and uncapped lazy records");
 #endif
   return 0;
 }

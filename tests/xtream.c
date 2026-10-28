@@ -37,12 +37,51 @@ static char ultimaPedida[4000];   // o endereco que a rede recebeu de fato
 static char ultimoCorpo[1200];    // o corpo do POST ao proxy (Tizen)
 static int ultimoPost;
 static int ultimoPrazo;
+#include <pthread.h>
+#include <errno.h>
+static pthread_mutex_t request_lock=PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t request_cond=PTHREAD_COND_INITIALIZER;
+static int concurrent,background_entered,background_release,foreground_done,background_seconds;
+static char *concurrent_response(const char *url,int seconds,int *status){
+  pthread_mutex_lock(&request_lock);
+  if(strstr(url,"get_vod_info")){
+    background_entered=1;pthread_cond_broadcast(&request_cond);
+    while(!background_release)pthread_cond_wait(&request_cond,&request_lock);
+    background_seconds=seconds;
+  }else{foreground_done=1;pthread_cond_broadcast(&request_cond);}
+  pthread_mutex_unlock(&request_lock);*status=200;return strdup("{}");
+}
+static void *background_request(void *unused){
+  (void)unused;int status;char *body=xtream_consultar_metadata("http://fixture","u","p","get_vod_info&vod_id=3",15,&status);
+  assert(body&&status==200);free(body);return NULL;
+}
+static void *foreground_request(void *unused){
+  (void)unused;int status;char *body=xtream_consultar("http://fixture","u","p","get_series_info&series_id=4",15,&status);
+  assert(body&&status==200);free(body);return NULL;
+}
+static void concurrent_requests(void){
+  pthread_t background,foreground;concurrent=1;
+  assert(!pthread_create(&background,NULL,background_request,NULL));
+  pthread_mutex_lock(&request_lock);
+  while(!background_entered)pthread_cond_wait(&request_cond,&request_lock);
+  pthread_mutex_unlock(&request_lock);
+  assert(!pthread_create(&foreground,NULL,foreground_request,NULL));
+  struct timespec deadline;clock_gettime(CLOCK_REALTIME,&deadline);deadline.tv_sec+=2;
+  pthread_mutex_lock(&request_lock);int rc=0;
+  while(!foreground_done&&rc!=ETIMEDOUT)rc=pthread_cond_timedwait(&request_cond,&request_lock,&deadline);
+  int completed=foreground_done;background_release=1;pthread_cond_broadcast(&request_cond);
+  pthread_mutex_unlock(&request_lock);
+  pthread_join(background,NULL);pthread_join(foreground,NULL);concurrent=0;
+  assert(completed&&"foreground provider request waited for background metadata");
+  assert(background_seconds==15);
+}
 // Build do teste do Tizen (-DNV_XTREAM_PROXY_TESTE): a chamada chega como
 // POST <NV_REC_URL>/v1/xtream com a url do painel crua no corpo.
 static char *responder(const char *url);
 // #158: o chamar() do xtream.c agora usa rede_baixar_st (corpo + status),
 // para o log e a tela saberem se foi 401, 403, 458, 429 ou pagina HTML.
 char *rede_baixar_st(const char *url, int segundos, const char *const *cab, int *status) {
+  if(concurrent)return concurrent_response(url,segundos,status);
   ultimoPrazo=segundos; (void)cab;
   ultimoPost = 0;
   snprintf(ultimaPedida, sizeof ultimaPedida, "%s", url);
@@ -56,6 +95,7 @@ char *rede_baixar_st_retry(const char *url, int segundos, const char *const *cab
 }
 char *rede_postar_st(const char *url, int segundos, const char *const *cab,
                      const char *corpo, int *status) {
+  if(concurrent)return concurrent_response(corpo,segundos,status);
   ultimoPrazo=segundos;
   ultimoPost = 1;
   assert(cab && !strcmp(cab[0], "Content-Type: text/plain"));
@@ -152,6 +192,7 @@ static int checkChannel(const XtreamItem *c,void *u) {
 }
 
 int main(void) {
+  concurrent_requests();
   int st=0;
   char *list=xtream_consultar("http://fixture.invalid","fixture","fixture","get_vod_categories",15,&st);
   free(list);assert(ultimoPrazo==120);
