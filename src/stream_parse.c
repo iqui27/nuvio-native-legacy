@@ -979,9 +979,12 @@ static int marcaEmCache(const char *p, const char *fim) {
 // Booleano da PROPRIA fonte, nao de cabecalhos nem da fonte seguinte.
 // 0 = ausente/invalido; -1 = false; 1 = true. Strings e numeros nao contam.
 static int cacheDeclarado(const char *p, const char *fim) {
+  const char *data = objetoRaiz(p, fim, "streamData");
+  const char *service = data ? objetoRaiz(data, js_fim(data), "service") : NULL;
   const char *cr = objetoRaiz(p, fim, "clientResolve");
-  if (!cr) return 0;
-  const char *f = js_fim(cr), *v = valorRaiz(cr, f, "isCached");
+  const char *owner = service ? service : cr;
+  if (!owner) return 0;
+  const char *f = js_fim(owner), *v = valorRaiz(owner, f, service ? "cached" : "isCached");
   if (!v) return 0;
   unsigned n = *v == 't' ? 4 : 5;
   if (f - v < n || memcmp(v, n == 4 ? "true" : "false", n)) return 0;
