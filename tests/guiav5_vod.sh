@@ -25,7 +25,7 @@ for source in "${sources[@]}"; do
   objects+=("$object")
 done
 libs=(-L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL)
-git show 0bbce98ed:src/guiav5ui.c > "$work/before.c"
+git show 7b8ece3b4:src/guiav5ui.c > "$work/before.c"
 cc "${flags[@]}" -DVOD_BASELINE -DGUIAV5_UNDER_TEST=\""$work/before.c"\" tests/guiav5_vod.c "${objects[@]}" "${libs[@]}" -o "$work/before"
 "$work/before" "$out"
 cc "${flags[@]}" tests/guiav5_vod.c "${objects[@]}" "${libs[@]}" -o "$work/after"

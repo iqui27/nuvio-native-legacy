@@ -967,7 +967,7 @@ static void catalog(void){
   button(806,i18n("Adicionar fonte"),"aj_plus",68,915,280,54,1);
   gfx_sem_transformar();gfx_opacidade_grupo=sidebar_alpha;sem_foco=saved_sem;
   float left=64+352*gv_side,area=1856-left,cw=186,gap=34,stride=cw+gap;
-  int loading=atomic_load(&busy)||!strcmp(screen,"vod-carregando"),empty=!vod_size||!strcmp(screen,"vod-sem-catalogo")||!strcmp(screen,"vod-vazio");
+  int loading=(atomic_load(&busy)&&operation!=5)||!strcmp(screen,"vod-carregando"),empty=!vod_size||!strcmp(screen,"vod-sem-catalogo")||!strcmp(screen,"vod-vazio");
   if(loading||empty){
     const char *s=loading?"Carregando catálogo…":query[0]||!strcmp(screen,"vod-vazio")?"Nenhum resultado":"Esta fonte não tem catálogo VOD";
     label(TXT_HEADLINE,i18n(s),left,420,area,0);label(TXT_ILHA_CORPO,i18n("Seu provedor define o conteúdo disponível."),left,490,area,1);

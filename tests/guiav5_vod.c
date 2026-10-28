@@ -57,6 +57,16 @@ int main(int argc,char **argv){
   assert(!strcmp(vod_category("SERIES:"),i18n("Outros")));
   assert(!strcmp(vod_category("  FILMES: Adventure"),"Adventure"));
   focus=VOD_ITEM+2;frame(window);
+  /* Metadata-only refresh must retain poster controls and remote focus. */
+  operation=5;atomic_store(&busy,1);
+  for(int i=0;i<3;i++){
+    g5ui_update();frame(window);assert(focus==VOD_ITEM+2);
+    int visible=0;for(int j=0;j<num_focus;j++)if(next_focus[j]==focus)visible=1;
+    assert(visible);
+  }
+  key(SDLK_RIGHT);assert(focus==VOD_ITEM+3);g5ui_update();frame(window);
+  assert(focus==VOD_ITEM+3);key(SDLK_LEFT);assert(focus==VOD_ITEM+2);
+  atomic_store(&busy,0);g5ui_update();frame(window);assert(focus==VOD_ITEM+2);
   int initial=focus;key(SDLK_RIGHT);assert(focus==initial+1);frame(window);
   assert(poster_focus(focus)>0);key(SDLK_DOWN);assert(focus==VOD_ITEM+15);frame(window);assert(vod_row_at(vod_position())==1);
   key(SDLK_UP);assert(focus==VOD_ITEM+3);key(SDLK_UP);assert(focus==807&&nav<0);
