@@ -1192,6 +1192,12 @@ static int contemSemCaixa(const char *texto, const char *chave) {
     if (!strncasecmp(texto, chave, n)) return 1;
   return 0;
 }
+static const char *categoriaPorNome(const char *nome);
+int guia_canal_esporte(const char *nome, const char *grupo) {
+  const char *cat = categoriaPorNome(nome);
+  const char *sec = categoriaPorNome(grupo);
+  return (cat && !strcmp(cat, "Esportes")) || (sec && !strcmp(sec, "Esportes"));
+}
 static const char *categoriaPorNome(const char *nome) {
   static const struct { const char *cat; const char *chaves[40]; } tab[] = {
     { "Esportes", { "espn", "sportv", "sport", "premiere", "combate", "dazn", "ufc",

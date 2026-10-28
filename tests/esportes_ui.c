@@ -156,19 +156,19 @@ void teclado_desenhar(Uint32 a) { (void)a; }
 static void tecla(SDL_Keycode k) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;esportesui_evento(&e); }
 static void soltar(SDL_Keycode k) { SDL_Event e={0};e.type=SDL_KEYUP;e.key.keysym.sym=k;esportesui_evento(&e); }
 int main(void) {
-  /* Missing, downloading and failed logos have a local, centered icon;
-   * a recovered image replaces it without changing the card geometry. */
+  /* Absent URLs use the centered sport icon. Supplied crests stay blank
+   * while unavailable, matching the identity policy introduced in a3c279ed4. */
   GfxRect caixa={20,40,320,160};int ic=icones,draw=imagensDesenhadas;
   logo("",1,caixa);assert(icones==ic+1 && !strcmp(ultimoIcone,"esp_football"));
   assert(caixaIcone.x==100 && caixaIcone.y==40 && caixaIcone.w==160 && caixaIcone.h==160);
   logo(NULL,0,caixa);assert(icones==ic+2 && !strcmp(ultimoIcone,"esp_soccer"));
   imagemPronta=0;logo("https://art.example/missing.png",1,caixa);
   logo("https://art.example/missing.png",1,caixa);
-  assert(icones==ic+4 && imagensDesenhadas==draw);
+  assert(icones==ic+2 && imagensDesenhadas==draw);
   imagemPronta=1;logo("https://art.example/recovered.png",1,caixa);
-  assert(icones==ic+4 && imagensDesenhadas==draw+1);
+  assert(icones==ic+2 && imagensDesenhadas==draw+1);
   aspectoTeste=0;logo("https://art.example/invalid.png",1,caixa);
-  assert(icones==ic+5 && imagensDesenhadas==draw+1);aspectoTeste=2;
+  assert(icones==ic+2 && imagensDesenhadas==draw+1);aspectoTeste=2;
   for(int m=0;m<esportes_modalidades_n();m++) {
     char esperado[80];snprintf(esperado,sizeof esperado,"esp_%s",esportes_modalidade(m)->id);
     logo("",m,caixa);assert(!strcmp(ultimoIcone,esperado));

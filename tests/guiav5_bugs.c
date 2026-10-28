@@ -15,6 +15,7 @@ TxtLinha test_source_text(TxtEstilo, const char *, int, int, int, int, float);
 #include <assert.h>
 
 static int failures;
+static void *failed_catalog(void *unused){(void)unused;return NULL;}
 #define CHECK(ok, name) do { if (!(ok)) { fprintf(stderr, "FAIL: %s\n", name); failures++; } else puts("PASS: " name); } while (0)
 
 int main(void) {
@@ -73,6 +74,32 @@ int main(void) {
   gv_hh=GV_HERO_H;guia_preview_rect(&x,&y,&w,&h);
   CHECK(fabsf(w/h-16.0f/9)<.001f && h==GV_HERO_H-36,
         "expanded guide exports its preview geometry");
+  /* Sports must remain usable without ESPN events or any EPG. */
+  stagingZerar();
+  int sports_source=sFonte(LTV_M3U,"sports-fixture","Fixture","");
+  const char *sports_groups[]={"SPORTS","Esportes","DAZN","ESPN","News"};
+  for(int i=0;i<5;i++){
+    char id[32];snprintf(id,sizeof id,"fixture-%d",i);
+    GCru c={0};c.id=id;c.nome=i==4?"CNN":"Live fixture";c.grupo=sports_groups[i];
+    c.logo=c.desc=c.epgId=c.tvgNome=c.url=c.ua=c.ref="";
+    sGrupoInfo(sports_source,c.grupo,1);sCanalAdd(sports_source,&c);sLtvF[sports_source].total++;
+  }
+  adotarStaging();estado=G_PRONTO;query[0]=0;
+  CHECK(gs_live(-1,NULL,NULL,NULL)==4,"Sports uses live SPORTS, Esportes, DAZN and ESPN groups without EPG");
+  snprintf(query,sizeof query,"unmatched fixture");
+  CHECK(gs_live(-1,NULL,NULL,NULL)==0,"Sports search has an explicit empty result");
+  query[0]=0;gs_page=0;focus=2700;
+  gs_activate();
+  CHECK(guia_pediu_preview(&it),"Sports live card uses guide playback pipeline");
+  source_loaded=0;draft.type=1;persist();
+  CHECK(!source_loaded,"saving source settings does not mark an unfetched catalog loaded");
+  snprintf(screen,sizeof screen,"vod-filmes");source_loaded=1;
+  operation=2;worker_ok=worker_cancel=0;worker_profile=profile;
+  snprintf(worker_account,sizeof worker_account,"%s",account);
+  assert(!pthread_create(&worker,NULL,failed_catalog,NULL));
+  atomic_store(&busy,1);atomic_store(&ready,1);
+  g5ui_update();
+  CHECK(!source_loaded&&!atomic_load(&busy),"failed VOD publication clears loaded flag for next open");
   SDL_Quit();
   return failures ? 1 : 0;
 }

@@ -201,6 +201,10 @@ static void *load(void *unused){
           if(b&&status>=200&&status<300){if(operation==4){n=g5_parse_episodes(b,selected_season,staging,G5_CAP);t=n;}else n=g5_parse_xtream(b,kinds[k],staging+staging_count,G5_CAP/3,&t);}else n=-1;
           free(b);if(n<0){worker_ok=0;break;}
           int category_status=0;char *categories=operation==4?NULL:xtream_consultar(work_draft.server,work_draft.user,work_draft.password,k==0?"get_vod_categories":k==1?"get_series_categories":"get_live_categories",15,&category_status);
+          if(operation!=4&&(!categories||category_status!=200||
+             categories[strspn(categories," \t\r\n")]!='[')){
+            free(categories);worker_ok=0;break;
+          }
           const char *cat=categories&&category_status==200?js_raiz_array(categories):NULL;
           while(cat){const char *end=js_fim(cat);if(!end)break;char id[64]="",name[64]="";js_texto(cat,end,"category_id",id,sizeof id);js_texto(cat,end,"category_name",name,sizeof name);
             if(name[0])for(int i=staging_count;i<staging_count+n;i++)if(!strcmp(staging[i].group,id)){snprintf(staging[i].group,sizeof staging[i].group,"%s",name);if(adult_group(name))staging[i].adult=1;}cat=js_prox(end);
@@ -338,7 +342,7 @@ static void persist(void){
   g5ui_save_source(draft.playlist,draft.xmltv,draft.type,draft.live,draft.movies,draft.series,draft.epg);
   if(save_failed)return;
   if(draft.type==0){xtream_definir_servidor(draft.server);xtream_definir_usuario(draft.user);if(draft.password[0])xtream_definir_senha(draft.password);}
-  erase(draft.password,sizeof draft.password);use_saved=1;dirty=1;source_loaded=1;committed=1;
+  erase(draft.password,sizeof draft.password);use_saved=1;dirty=1;committed=1;
 }
 #include "jsw.h"
 static void save_rules(void){
@@ -1315,7 +1319,10 @@ void g5ui_update(void){
       }
       if(phone_stage==1&&operation==1){phone_stage=worker_ok?4:0;phone_fetch=worker_ok;if(!worker_ok)celular_status("{\"s\":\"err\"}");}
       else if(phone_stage==4&&operation==2){phone_stage=worker_ok?2:0;if(worker_ok)phone_status_counts("ok");else celular_status("{\"s\":\"err\"}");}
-      if(!worker_ok&&operation!=3)snprintf(message,sizeof message,"%s",i18n("Falha na conexão"));
+      if(!worker_ok&&operation!=3){
+        if(operation==2)source_loaded=0; /* Retry a failed catalog on the next open. */
+        snprintf(message,sizeof message,"%s",i18n("Falha na conexão"));
+      }
     }
     free(staging);staging=NULL;
     if(phone_fetch&&!start(2)){phone_stage=0;celular_status("{\"s\":\"err\"}");}

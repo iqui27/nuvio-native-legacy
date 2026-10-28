@@ -143,6 +143,18 @@ static void gs_pager(int n,int per){
   char s[80];snprintf(s,sizeof s,"%d / %d",gs_page+1,n?(n+per-1)/per:1);
   gv_label(TXT_ILHA_SUB,s,GV_MX+430,970,200,1);
 }
+/* Read the published live guide, including category and parental filters.
+ * ESPN and EPG are optional metadata, never prerequisites for watching. */
+static int gs_live(int nth,const char **id,const char **name,const char **group){
+  int n=0;const char *cid,*title,*cat,*base;
+  for(int i=0;guia_canal_regra_campos(i,NULL,NULL,NULL,NULL,NULL);i++){
+    if(!guia_canal_campos(i,&cid,&title,NULL,&cat,&base)||
+       !guia_canal_esporte(title,cat)||!g5ui_channel_allowed(cid,title,cat,base)||
+       (!gs_contains(title)&&!gs_contains(cat)))continue;
+    if(n++==nth){if(id)*id=cid;if(name)*name=title;if(group)*group=cat;}
+  }
+  return n;
+}
 static void gs_hold(int id,int unused){(void)unused;focus=id;int i=gs_page*3+id-2200;if(i>=0&&i<gs_n){gs_selected=gs_games[i];gs_open("esportes-onde-assistir");}}
 static void gv_sports_screen(void){
   gs_collect();
@@ -173,6 +185,17 @@ static void gv_sports_screen(void){
   if(!strcmp(screen,"esportes-visibilidade"))title=i18n("Ligas visíveis");
   if(!strcmp(screen,"esportes-modalidades-config"))title=i18n("Esportes neste perfil");
   gv_sports_header(title,sub,NULL);
+  int live=gs_live(-1,NULL,NULL,NULL);
+  if(live&&(!strcmp(screen,"esportes-ligas")||(!strcmp(screen,"esportes-hoje")&&!gs_n))){
+    gv_button(2022,i18n("Ligas"),"aj_calendar",GV_MX,314,260,0,1);
+    if(gs_page*6>=live)gs_page=0;
+    for(int j=0;j<6&&gs_page*6+j<live;j++){
+      const char *id=NULL,*name=NULL,*group=NULL;
+      gs_live(gs_page*6+j,&id,&name,&group);
+      gs_card(2700+j,name,group,"aj_activity",GV_MX+(j%3)*486,392+(j/3)*264);
+    }
+    gs_pager(live,6);return;
+  }
   if(!strcmp(screen,"esportes-ligas")){
     for(int i=0;i<6;i++){
       char count[96];int n=i==0?esportes_noticias_n():i==4?gs_count:i==5?esportes_favoritos_times():gs_n;
@@ -188,7 +211,8 @@ static void gv_sports_screen(void){
         break;
       }
     }
-    gv_label(TXT_ILHA_SUB,i18n("Jogos das ligas carregadas. Abra Por liga para consultar qualquer competição."),GV_MX,908,GV_MW,1);
+    gs_empty(884);
+    if(!live)gv_label(TXT_ILHA_SUB,i18n("Seu provedor define o conteúdo disponível."),GV_MX,928,GV_MW,1);
     return;
   }
   gv_button(2020,i18n("Voltar"),"pl_chevron-left",GV_MX,314,180,0,1);
@@ -241,6 +265,8 @@ static void gv_sports_screen(void){
   gs_pager(gs_n,3);
 }
 static int gs_activate(void){
+  if(focus>=2700&&focus<2706){const char *id=NULL;gs_live(gs_page*6+focus-2700,&id,NULL,NULL);if(id)gv_assistir(id);return 1;}
+  if(focus==2022){gs_open("esportes-modalidades");return 1;}
   if(focus==2000){gs_depth=gs_page=0;gs_sport=-1;query[0]=0;esportes_catalogo_iniciar(-1,0);gv_go("esportes-ligas");return 1;}
   if(focus==2001){gs_open("esportes-favoritos");esportes_pedir_favoritos(0);return 1;}
   if(focus==2002){gs_open("esportes-ajustes");return 1;}
