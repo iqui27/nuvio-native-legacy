@@ -2270,7 +2270,7 @@ static void sairParaExterno(void) { saindo = 1; pediuSair = 1; }
 static void tocarFonte(const char *url) {
 #ifdef NV_ANDROID
   const CatItem *c = item();   // #501: Interno / Externo / Perguntar sempre
-  if (!juntos_ativo() && extplayer_tentar(url, c ? c->titulo : "", c && artehero_eh_anime(c), tocarFonteInterno, sairParaExterno)) return;
+  if (!juntos_no_player() && extplayer_tentar(url, c ? c->titulo : "", c && artehero_eh_anime(c), tocarFonteInterno, sairParaExterno)) return;
 #endif
   tocarFonteInterno(url);
 }
@@ -2644,6 +2644,7 @@ static void lembrarFonte(void) {
 }
 
 static void fecharSessao(int manter, int trocaFonte) {
+  juntos_ao_voltar();
   saiuVisto = 0;
   imgsub_gl_limpar();
   atualizarIdentidade();
@@ -3088,6 +3089,7 @@ void player_ciclo_evento(Uint32 tipo) {
       if (isfinite(p) && p >= 0) posSeg = (float)p;
       gravarProgressoParcial(1, "background");
     }
+    if (aberto && juntos_no_player()) player_encerrar();
     player_descartar_retido(); retomamorna_cancelar();
   }
 }
@@ -4421,8 +4423,6 @@ void player_evento(const SDL_Event *e) {
       }
       if (trechoPulavel(NULL)) { intro_botao_esconder(monoSeg()); return; }
     }
-    // Sala aberta: "Sair da sessao?" antes (juntosui). Confirmado, o app fecha.
-    if (!ehCanal() && juntos_ao_voltar()) return;
 #ifdef NV_ANDROID
     if (erroFonte && !ehCanal()) {
       player_voltar_a_esperar(); pedFontes = 1;
@@ -5133,7 +5133,7 @@ void player_atualizar(float dt, Uint32 agora) {
       !saindo && !erroFonte && !esperandoFonte && !pedFontes && !pedFaixas &&
       !stream_folha_aberta() && !faixas_aberta() && !episodios_aberto() &&
       !episodios_menu_aberto_qualquer() && !pausao_visivel() &&
-      !video_bufferando_ms() && !creditosAuto.buscaPendente && !juntos_ativo()) {
+      !video_bufferando_ms() && !creditosAuto.buscaPendente && !juntos_no_player()) {
     double fimT = 0.0; int tipoT = 0;
     if (intro_auto_ativo(posSeg, &fimT, &tipoT) &&
         intro_auto_pular(tipoT, fimT, duracaoSeg, ajustes_pular_abertura(), ajustes_pular_resumo(),

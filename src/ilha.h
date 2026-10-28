@@ -229,7 +229,7 @@ int  ilha_ocupada(void);
 // ILHA_AMIGO (02/10, mockup aprovado): o terceiro cartao, "Ana · Severance ·
 // agora", com o rosto dela e a capa — o evento de inicio mais novo do feed
 // enquanto ele tiver menos de 15 min (a regra de RecAmigo.temAgora).
-enum { ILHA_VIVO = 0, ILHA_ESTREIA, ILHA_AMIGO, ILHA_N_CARTOES };
+enum { ILHA_VIVO = 0, ILHA_ESTREIA, ILHA_AMIGO, ILHA_JUNTOS, ILHA_N_CARTOES };
 #define ILHA_ALTERNA_MS 6000u
 typedef struct {
   char chave[80];        // muda = outro conteudo (a pilula remorfa)

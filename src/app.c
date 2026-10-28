@@ -2906,6 +2906,7 @@ static void abrirParte(int fonte, const PartesLista *l, int k) {
   { const CatItem *ci = cat_item(titulo); serie = ci && !strcmp(ci->tipo, "series");
     snprintf(imdb, sizeof imdb, "%s", ci ? ci->imdb : ""); }
   // Save the old file's resume point without completing a manual source switch.
+  int retomarSala = juntos_no_player();
   if (player_aberto()) { player_episodio_atual(&t, &e); player_encerrar_fonte(); }
   else detail_ep_foco(&t, &e);
   parteZerar();
@@ -2919,6 +2920,7 @@ static void abrirParte(int fonte, const PartesLista *l, int k) {
   }
   diagnostico_cancelar_vazao();
   player_abrir(cat_indice_vivo(titulo, imdb), NULL);
+  if (retomarSala) juntos_retomar_player(0);
   player_definir_episodio(t, e);
   stream_definir_atual(fonte);
   voltaFonte = escolhida;
@@ -5128,20 +5130,23 @@ static void tocarFonteEscolhida(int fonte, int manual) {
       char imdb[64];
       const CatItem *ci = cat_item(titulo);
       snprintf(imdb, sizeof imdb, "%s", ci ? ci->imdb : "");
+      int retomarSala = juntos_no_player(); // Explicit in-session source switch/retry.
       if (player_aberto()) {
         if (manual) player_encerrar_fonte();
         else player_encerrar();
       }
       diagnostico_cancelar_vazao();
       player_abrir(cat_indice_vivo(titulo, imdb),NULL);
+      if (retomarSala) juntos_retomar_player(0);
       player_definir_episodio(t,e);
-      if (!manual && juntos_ativo()) {
+      if (!manual && juntos_no_player()) {
         player_do_inicio(); // The room clock restores position after load.
         fonteVODAutomatica = 1;
         fonteVODTentativas = 1;
         fonteVODDesde = SDL_GetTicks();
       }
       stream_definir_atual(fonte);
+      if (juntos_no_player()) juntos_fonte_escolhida();
       // Qualquer escolha nova invalida a resposta de um torrent anterior; o
       // motor P2P corta o pedido velho ja (sem isso a escolha nova esperaria
       // ate 55 s na fila do fio unico).
@@ -5181,7 +5186,7 @@ static Uint32 juntosListaDesde;
 static void juntosAbrirEFonte(Uint32 agora) {
   char imdb[24], titulo[160], poster[512], alvo[64];
   int t, e;
-  if (!juntos_ativo()) juntosFontePendente = -1;
+  if (!juntos_no_player()) juntosFontePendente = -1;
   if (juntosui_pediu_fechar_player()) player_sair();
   if (juntosui_pediu_reproduzir()) detail_pedir_reproduzir();
   if (juntosui_pediu_escolher_filme()) {
@@ -5205,10 +5210,12 @@ static void juntosAbrirEFonte(Uint32 agora) {
         return;
       }
       printf("[juntos] source: opening paused player\n");
+      int escolherFonteSala = juntos_escolhendo_fonte();
       limparFonteVOD();
       if (player_aberto() || player_retido()) player_encerrar();
       diagnostico_cancelar_vazao();
       player_abrir(idx, NULL);
+      juntos_retomar_player(escolherFonteSala); // Explicit room/Rejoin opening.
       if (t > 0 && e > 0) player_definir_episodio(t, e);
       if (juntos_fase() != JF_PREPARADO) player_do_inicio(); // guests follow room time
       renovarListaDoPlayer();
@@ -5221,7 +5228,12 @@ static void juntosAbrirEFonte(Uint32 agora) {
         tocarFonteEscolhida(fonte, 1);
       } else {
         juntosFontePendente = -1;
-        if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
+        if (juntos_fase() == JF_PREPARADO) {
+          aguardandoFonte = 0;
+          folhaParaTocar = 1;
+          stream_folha_contexto(i18n("Escolha uma fonte para começar"));
+          nomeParaFolha(); stream_folha_abrir();
+        } else if (!juntos_escolhendo_fonte() && !tocarFonteGuardada()) aguardandoFonte = 1;
       }
       printf("[juntos] abrindo o titulo da sala\n");
     }
@@ -5824,6 +5836,10 @@ void app_atualizar(float dt, Uint32 agora) {
     o = ilha_pediu(&ic, &qual);
     if (o) retomamorna_cancelar();
     if (o && qual == ILHA_VIVO && !ilhacart_vivo_vale(&ic)) o = ILHA_PEDIU_NADA;
+    if (o && qual == ILHA_JUNTOS) {
+      if (o == ILHA_PEDIU_TOCAR) juntos_reentrar();
+      o = ILHA_PEDIU_NADA;
+    }
     if (o == ILHA_PEDIU_SALVOS) {
       // O PAINEL NASCE DO MODAL: o retangulo de agora e o do modal, que some
       // seco no mesmo quadro — o painel toma a forma dele e cresce.
@@ -6302,7 +6318,7 @@ void app_atualizar(float dt, Uint32 agora) {
     int querTocar = detail_pediu_reproduzir() || doInicio;
     const JsMotor *salaJ = juntos_motor();
     const CatItem *tituloJ = cat_item(detail_indice());
-    if (querTocar && juntos_ativo() && tituloJ) {
+    if (querTocar && juntos_no_player() && tituloJ) {
       char alvoJ[64];
       int tJ = 0, eJ = 0;
       detail_ep_foco(&tJ, &eJ);
@@ -6552,7 +6568,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // vivo, e la a escolha ja e feita pela playlist que responde.
       //
       // #667: a remembered source sets the sheet's focus, never consent to play.
-      if (ajustes_fonte_manual() && juntos_fase() != JF_PREPARADO && stream_n() > 0) {
+      if (ajustes_fonte_manual() && (!juntos_no_player() || juntos_fase() != JF_PREPARADO) && stream_n() > 0) {
         aguardandoFonte = 0;
         folhaParaTocar = 1;
         nomeParaFolha(); stream_folha_abrir();
