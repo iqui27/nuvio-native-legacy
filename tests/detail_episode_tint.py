@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 
 source = Path('src/detail.c').read_text()
-start = source.index('    if (f > .005f) {', source.index('static void desenhaEpisodio('))
+start = source.index('    if (f > .005f) {', source.index('static void desenhaEpisodioEm('))
 tile = source[start:source.index('    float metaY', start)]
 program = r'''
 #include <assert.h>
