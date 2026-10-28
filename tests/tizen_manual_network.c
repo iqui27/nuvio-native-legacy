@@ -3,6 +3,7 @@
 #include "redesaude.h"
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 typedef unsigned Uint32;
 static int fonteVODRetentou, vodRenovou, aguardandoFonte, preparoEspera;
@@ -22,14 +23,19 @@ static void player_definir_fonte(const char *url) {
   delivered++;
 }
 #include "manual.inc"
-int main(void) {
+int main(int argc, char **argv) {
   Stream s = {0};
   strcpy(s.url, "https://stream.example.invalid/video.mkv");
   abrirFonteManualDireta(&s);
   assert(delivered == 1 && fonteManualDesde);
   rede_saude_nota(0, "https://metadata.example.invalid/meta");
-  for (int i = 0; i < 8; i++)
-    rede_saude_nota_desde(6, s.url, 1);
+  assert(argc > 1);
+  for (int i = 1; i < argc; i++) {
+    assert(atoi(argv[i]) == 6);
+    rede_saude_nota_desde(atoi(argv[i]), s.url, 1);
+    abrirFonteManualDireta(&s);
+    assert(delivered == i + 1 && !rede_saude_offline());
+  }
   assert(!rede_saude_offline());
   rede_saude_nota(0, "https://subtitle.example.invalid/sub");
   assert(!rede_saude_offline());

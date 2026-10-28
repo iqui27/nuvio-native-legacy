@@ -14,16 +14,15 @@ def function(name):
 Path(sys.argv[1]).write_text(function('definirFonteVOD') + '\n' + function('abrirFonteManualDireta'))
 PY
 cc -std=gnu11 -Wall -Wextra -Werror -Isrc -I/opt/homebrew/include -I"$work" tests/tizen_manual_network.c src/redesaude.c -pthread -o "$work/manual"
-# Prove the fixture catches the original Chromium 63 incompatibility without
-# modifying the checkout (the default ref is the task's integration baseline).
-git show "${TIZEN_NETWORK_BASELINE:-integracao/2.1}:src/rede.c" > "$work/baseline.c"
+# Prove the no-headers fixture catches the leaking transport without changing the checkout.
+git show "${TIZEN_NETWORK_BASELINE:-0c80e6f9e}:src/rede.c" > "$work/baseline.c"
 if TIZEN_NETWORK_SOURCE="$work/baseline.c" node tests/tizen_manual_network.cjs "$work/manual" > "$work/baseline.log" 2>&1; then
-  echo "FAIL: integration baseline unexpectedly passed" >&2
+  echo "FAIL: no-headers baseline unexpectedly passed" >&2
   exit 1
 fi
-if ! rg -q 'ReferenceError: AbortController is not a constructor|TypeError: AbortController is not a constructor|ReferenceError: AbortController is not defined' "$work/baseline.log"; then
+if ! rg -q 'no active request remains after no-headers timeout' "$work/baseline.log"; then
   echo "FAIL: baseline failed for an unexpected reason" >&2
   exit 1
 fi
-echo "PASS: integration baseline fails on Chromium 63 AbortController"
+echo "PASS: 0c80e6f9e fails on active request after no-headers timeout"
 node tests/tizen_manual_network.cjs "$work/manual"

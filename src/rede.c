@@ -235,12 +235,12 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
     var i = linha.indexOf(":");
     if (i > 0) cab[linha.slice(0, i).trim()] = linha.slice(i + 1).trim();
   });
-  // Chromium 63 has fetch, but neither AbortController nor Promise.finally.
-  var controle = typeof AbortController !== "undefined" ? new AbortController() : null;
-  var reader;
+  // Promise.finally shipped in Chrome 63; AbortController followed in Chrome 66.
+  var controle = typeof AbortController === "function" ? new AbortController() : null;
+  var xhr;
   var abortar = function () {
     if (controle) controle.abort();
-    else if (reader) reader.cancel().catch(function () {});
+    else if (xhr) xhr.abort();
   };
   var reg = { pronto: false, erro: false, status: 0, url: "", etag: "", bytes: null,
               mime: "", tamanho: -1, retry: 0, limitado: false };
@@ -257,11 +257,7 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
   if (controle) init.signal = controle.signal;
   if (corpo) init.body = UTF8ToString(corpo);
   teto = teto > 0 ? teto : 33554432;
-  fetch(UTF8ToString(url), init).then(async function (res) {
-    if (reg.pronto) {
-      if (res.body) res.body.cancel().catch(function () {});
-      return;
-    }
+  var cabecalhos = function (res) {
     reg.status = res.status;
     reg.url = res.headers.get("x-nuvio-url-final") || res.url || "";
     reg.etag = res.headers.get("etag") || "";
@@ -274,14 +270,58 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
       var until = Date.parse(raw);
       if (isFinite(until)) reg.retry = Math.min(2147483647, Math.max(0, Math.ceil((until - Date.now()) / 1000)));
     }
+  };
+  if (!controle) {
+    // XHR follows redirects and can abort even before response headers arrive.
+    // x-user-defined preserves raw bytes while allowing a bounded partial read.
+    try {
+      xhr = new XMLHttpRequest();
+      xhr.open(init.method, UTF8ToString(url), true);
+      xhr.timeout = prazo;
+      xhr.overrideMimeType("text/plain; charset=x-user-defined");
+      Object.keys(cab).forEach(function (nome) { xhr.setRequestHeader(nome, cab[nome]); });
+      var colher = function () {
+        var texto = xhr.responseText || "";
+        reg.n = Math.min(texto.length, teto);
+        reg.bytes = new Uint8Array(modo === 2 ? 0 : reg.n);
+        if (modo !== 2) for (var i = 0; i < reg.n; i++) reg.bytes[i] = texto.charCodeAt(i) & 255;
+      };
+      xhr.onreadystatechange = function () {
+        if (reg.pronto || xhr.readyState !== 2) return;
+        cabecalhos({status: xhr.status, url: xhr.responseURL,
+          headers: {get: function (nome) { return xhr.getResponseHeader(nome); }}});
+        if (modo === 1) {
+          reg.bytes = new Uint8Array(0); terminar(); abortar();
+        }
+      };
+      xhr.onprogress = function (event) {
+        if (reg.pronto || (event.loaded < teto && (xhr.responseText || "").length < teto)) return;
+        colher(); reg.limitado = true; terminar(); abortar();
+      };
+      xhr.onload = function () {
+        if (reg.pronto) return;
+        colher(); reg.limitado = reg.n === teto; terminar();
+      };
+      xhr.onerror = xhr.ontimeout = function () {
+        if (reg.pronto) return;
+        reg.erro = true; terminar(); abortar();
+      };
+      xhr.send(init.body === undefined ? null : init.body);
+    } catch (e) { reg.erro = true; terminar(); abortar(); }
+    return id;
+  }
+  fetch(UTF8ToString(url), init).then(async function (res) {
+    if (reg.pronto) {
+      if (res.body) res.body.cancel().catch(function () {});
+      return;
+    }
+    cabecalhos(res);
     if (modo === 1) {
-      if (controle) controle.abort();
-      else if (res.body) res.body.cancel().catch(function () {});
-      reg.bytes = new Uint8Array(0); return;
+      abortar(); reg.bytes = new Uint8Array(0); return;
     }
     if (!res.body) { reg.bytes = new Uint8Array(0); return; }
     // No arrayBuffer fallback: it would allocate an unbounded body.
-    reader = res.body.getReader();
+    var reader = res.body.getReader();
     var parts = [], n = 0;
     while (!reg.pronto) {
       var part = await reader.read();
