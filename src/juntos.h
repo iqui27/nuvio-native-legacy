@@ -29,7 +29,8 @@ typedef enum {
 
 int  juntos_disponivel(void);   // pacote com servico social e conta ligada
 int  juntos_ativo(void);        // numa sala (de PREPARADO em diante)
-int  juntos_no_player(void);    // room playback hooks belong to this player
+int  juntos_no_player(void);    // Sole playback/UI ownership gate, including source retry/switch.
+                               // Back clears ownership; only explicit entry/Rejoin restores it.
 JuntosFase juntos_fase(void);
 
 // A cada quadro (ilhasinais_passo), com o player aberto ou nao.

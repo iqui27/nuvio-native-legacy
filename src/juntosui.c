@@ -183,9 +183,9 @@ int juntosui_shot_foco_atual(void) { return foco; }
 int juntosui_shot_camada_atual(void) { return camada; }
 void juntosui_shot_arte(const char *caminho) { snprintf(shotArte, sizeof shotArte, "%s", caminho); }
 void juntosui_shot_contagem(int n) { shotContagem = n; }
-static int noPlayer(void) { return player_aberto() || shotPlayer; }
+static int noPlayer(void) { return juntos_no_player() && (player_aberto() || shotPlayer); }
 #else
-static int noPlayer(void) { return player_aberto(); }
+static int noPlayer(void) { return juntos_no_player() && player_aberto(); }
 #endif
 
 // --- avisos ---------------------------------------------------------------------------------
@@ -193,7 +193,7 @@ static int noPlayer(void) { return player_aberto(); }
 static void aviso(const char *chave, const char *texto, const char *icone, const char *quem, unsigned ms) {
   const JsMotor *m = juntos_motor();
   const JsMembro *p = m && quem ? jsm_membro(m, quem) : NULL;
-  if (!texto || !*texto) return;
+  if (!texto || !*texto || (juntos_ativo() && !juntos_no_player())) return;
   if (!noPlayer() && juntos_id()[0] && !juntos_banner()) return;
   if (noPlayer()) { player_toast_ex(texto, ms, icone ? icone : "aj_users", 0); return; }
   {
@@ -284,6 +284,7 @@ static void textoAcao(const JsEvento *e, char *t, size_t n) {
 }
 
 void juntosui_evento(const JsEvento *e) {
+  if (!juntos_no_player()) return;
   const JsMotor *m = juntos_motor();
   char t[300];
   int souEu = m && !strcmp(e->quem, m->eu);
@@ -341,6 +342,7 @@ void juntosui_evento(const JsEvento *e) {
 }
 
 void juntosui_erro(const char *k) {
+  if (juntos_ativo() && !juntos_no_player()) return;
   const char *t = i18n("Não foi possível entrar nesta sessão");
   if (!strcmp(k, "sem_sala") || !strcmp(k, "sala_fechada")) t = i18n("Essa sessão não existe mais");
   else if (!strcmp(k, "cheia")) t = i18n("A sessão está cheia");
@@ -359,6 +361,7 @@ void juntosui_erro(const char *k) {
 }
 
 void juntosui_sala_abriu(void) {
+  if (!juntos_no_player()) return;
   if (escolhendoFilme || camada == CAMADA_CODIGO) { foco = focoSala; escolhendoFilme = 0; }
   else if (camada != CAMADA_SALA) foco = focoAcao = 0;
   if (camada != CAMADA_SALA) printf("[juntos] lobby: shown (focus %d)\n", foco);
@@ -370,8 +373,9 @@ void juntosui_sala_abriu(void) {
 
 void juntosui_sala_fechou(void) {
   ilha_cartao(ILHA_JUNTOS, NULL);
-  if (camada == CAMADA_SALA || camada == CAMADA_SAIR || camada == CAMADA_PEDIDO || camada == CAMADA_REACOES || camada == CAMADA_FONTES)
-    camada = CAMADA_NADA;
+  camada = camadaVisual = CAMADA_NADA;
+  entrada = 0;
+  okSegurando = pediuReproduzir = pediuEscolherFilme = pediuFontes = pediuFecharPlayer = 0;
   memset(bolha, 0, sizeof bolha);
   lobbyAberto = escolhendoFilme = qrPendente = cinema = 0;
   mostrarQr = 0;
@@ -387,12 +391,13 @@ void juntosui_fonte_diferente(int v, int pal) {
 }
 
 void juntosui_perguntar_sair(void) {
+  if (!juntos_no_player()) return;
   if (camada == CAMADA_SALA) focoSala = foco;
   camada = CAMADA_SAIR; foco = 1;
 }
-int juntosui_escolhendo_filme(void) { return escolhendoFilme; }
+int juntosui_escolhendo_filme(void) { return juntos_no_player() && escolhendoFilme; }
 int juntosui_voltar_filme(void) {
-  if (!escolhendoFilme) return 0;
+  if (!juntos_no_player() || !escolhendoFilme) return 0;
   juntosui_sala_abriu();
   return 1;
 }
@@ -404,6 +409,7 @@ void juntosui_abrir_folha(int idx, int t, int e) {
     ilha_avisar("juntos:erro", ILHA_INFO, "aj_users", i18n("Ligue a conta Nuvio e o Social para assistir junto"), 5000u, 0);
     return;
   }
+  if (juntos_ativo() && !juntos_no_player()) return;
   if (juntos_ativo()) {
     const CatItem *ci = cat_item(idx);
     if (escolhendoFilme && ci) juntos_escolher_titulo(ci->imdb, t, e, ci->titulo, ci->poster);
@@ -447,12 +453,13 @@ static void abrirSala(void) {
   camada = CAMADA_SALA;
 }
 
-int juntosui_pediu_reproduzir(void) { int p = pediuReproduzir; pediuReproduzir = 0; return p; }
-int juntosui_pediu_escolher_filme(void) { int p = pediuEscolherFilme; pediuEscolherFilme = 0; return p; }
-int juntosui_pediu_fechar_player(void) { int p = pediuFecharPlayer; pediuFecharPlayer = 0; return p; }
-int juntosui_pediu_fontes(void) { int p = pediuFontes; pediuFontes = 0; return p; }
-int juntosui_aberta(void) { return camada != CAMADA_NADA || okSegurando; }
+int juntosui_pediu_reproduzir(void) { int p = pediuReproduzir && (!juntos_ativo() || juntos_no_player()); pediuReproduzir = 0; return p; }
+int juntosui_pediu_escolher_filme(void) { int p = pediuEscolherFilme && juntos_no_player(); pediuEscolherFilme = 0; return p; }
+int juntosui_pediu_fechar_player(void) { int p = pediuFecharPlayer && (!juntos_ativo() || juntos_no_player()); pediuFecharPlayer = 0; return p; }
+int juntosui_pediu_fontes(void) { int p = pediuFontes && juntos_no_player(); pediuFontes = 0; return p; }
+int juntosui_aberta(void) { return (!juntos_ativo() || juntos_no_player()) && (camada != CAMADA_NADA || okSegurando); }
 int juntosui_cobre_tela(void) {
+  if (juntos_ativo() && !juntos_no_player()) return 0;
   return camadaVisual == CAMADA_SALA && !escolhendoFilme &&
          !cinema && anim_suave(entrada) >= .9999f;
 }
@@ -516,6 +523,7 @@ static void convidarAmigo(int i) {
 }
 
 static void apertarSala(int b) {
+  if (!juntos_no_player()) return;
   const JsMotor *m = juntos_motor();
   printf("[juntos] lobby: OK on %s\n", NOME_BT[b]);
   switch (b) {
@@ -528,13 +536,15 @@ static void apertarSala(int b) {
     // The shared 2.0.8 Sources sheet (app.c); the lobby keeps focus on this button.
     case BT_FONTES: focoSala = foco; mostrarQr = 0; pediuFontes = 1; break;
     case BT_TRAVA: if (m) juntos_controle_anfitriao(!m->sala.controleAnf); break;
-    case BT_SAIR:
-      pediuFecharPlayer = juntos_precarregando();
+    case BT_SAIR: {
+      int fechar = juntos_precarregando();
       if (juntos_sou_anfitriao() && m && m->sala.n > 1) { juntos_sair(); }
       else if (juntos_sou_anfitriao()) juntos_encerrar(), juntos_sair();
       else juntos_sair();
+      pediuFecharPlayer = fechar;
       camada = CAMADA_NADA;
       break;
+    }
   }
 }
 
@@ -548,6 +558,7 @@ static void abrirPainel(void) {
   printf("[juntos] sidebar: open (%d friend(s))\n", nAmigos);
 }
 static void apertarPainel(int i) {
+  if (!juntos_no_player()) return;
   const JsMotor *m = juntos_motor();
   if (!m) { juntosui_perguntar_sair(); return; }
   if (i <= painelMembros()) return; // Session and member details are readable focus rows.
@@ -573,6 +584,7 @@ static int ehVoltar(SDL_Keycode k) {
 }
 
 int juntosui_evento_sdl(const SDL_Event *e) {
+  if (juntos_ativo() && !juntos_no_player()) return 0;
   SDL_Keycode k;
   if (e->type != SDL_KEYDOWN && e->type != SDL_KEYUP) return 0;
   if (stream_folha_aberta()) return 0;
@@ -735,6 +747,13 @@ void juntosui_atualizar(Uint32 agora) {
   float dt = ultimoQuadro ? fminf((Uint32)(agora - ultimoQuadro) / 1000.0f, .05f) : 0;
   ultimoQuadro = agora;
   agoraUlt = agora;
+  if (juntos_ativo() && !juntos_no_player()) {
+    camada = camadaVisual = CAMADA_NADA;
+    entrada = 0;
+    lobbyAberto = cinema = mostrarQr = qrPendente = escolhendoFilme = okSegurando = 0;
+    pediuReproduzir = pediuEscolherFilme = pediuFontes = pediuFecharPlayer = 0;
+    memset(bolha, 0, sizeof bolha);
+  }
   if (okSegurando && agora - okDesceEm >= SEGURAR_OK_MS && camada == CAMADA_NADA) {
     okSegurando = 0;
     camada = CAMADA_REACOES; linhaReacao = 0; foco = 0;
@@ -802,7 +821,7 @@ void juntosui_atualizar(Uint32 agora) {
   // Persistent room information belongs outside playback, on the clock island.
   ilhaTexto[0] = 0;
   if (camadaVisual == CAMADA_PAINEL && !central_aberta()) plrilha_esconder();
-  if (!noPlayer() && juntos_ativo() && sala) {
+  if (!juntos_no_player() && juntos_ativo() && sala) {
     IlhaCartao c = {0};
     snprintf(c.chave, sizeof c.chave, "juntos:active:%s", juntos_id());
     snprintf(c.titulo, sizeof c.titulo, "%s", i18n("Assistir Juntos em andamento"));
@@ -1281,7 +1300,7 @@ static void desenharFontes(void) {
 #define SALA_FOLHA_LINHA 60.0f
 static int salaFolhaN(void) {
   const JsMotor *m = juntos_motor();
-  if (!juntos_ativo() || !m) return 0;
+  if (!juntos_no_player() || !m) return 0;
   return m->sala.n < 5 ? m->sala.n : 5;
 }
 static float salaFolhaH(void) {
@@ -1684,6 +1703,7 @@ static int camadaCorpo(Camada c) {
 
 float juntosui_shot_corpo_alfa(void) { return corpoAlfaAtual; }
 static void desenharCorpo(GfxRect c, float a, void *u) {
+  if (juntos_ativo() && !juntos_no_player()) return;
   Camada visual = (Camada)(intptr_t)u;
   float opacidade = gfx_opacidade_grupo;
   Camada anterior = camadaVisual;
@@ -1718,6 +1738,7 @@ static void desenharCorpo(GfxRect c, float a, void *u) {
 }
 
 static void pedirCorpo(void) {
+  if (juntos_ativo() && !juntos_no_player()) return;
   if (camadaCorpo(camada)) {
     switch (camada) {
       case CAMADA_FOLHA: {
@@ -1745,6 +1766,7 @@ static void pedirCorpo(void) {
 }
 
 void juntosui_desenhar(Uint32 agora) {
+  if (juntos_ativo() && !juntos_no_player()) return;
   navigationCount=0;
   int medir = camadaVisual == CAMADA_SALA && entrada > .005f;
   if (medir) custoInicio();
@@ -1757,7 +1779,7 @@ void juntosui_desenhar(Uint32 agora) {
   gfx_opacidade_grupo *= anim_suave(entrada);
   int folha = camadaVisual != CAMADA_SALA && camadaVisual != CAMADA_FONTES && camadaVisual != CAMADA_REACOES && camadaVisual != CAMADA_PAINEL;
   if (folha) gfx_transformar(960, 540, T21_SHEET_SCALE + (1 - T21_SHEET_SCALE) * anim_suave(entrada), origemX, origemY);
-  int contagem = juntos_ativo() ? contagemRestante() : 0;
+  int contagem = juntos_no_player() ? contagemRestante() : 0;
   if (camadaVisual == CAMADA_SALA && !contagem) desenharSala();
   gfx_transformar(960, 540, 1, origemX, origemY);
   gfx_opacidade_grupo = opacidade;

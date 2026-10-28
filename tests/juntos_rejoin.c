@@ -3,6 +3,44 @@
 #include "juntos_fluxo.c"
 #undef main
 
+// Compile production UI boundaries, counting every draw and sidebar opening.
+#include "gfx.h"
+static int camada, camadaVisual, okSegurando, escolhendoFilme, lobbyAberto;
+static int origemX, origemY, navigationCount, draws;
+static Uint32 okDesceEm;
+static SDL_Event okEvento;
+static float entrada = 1;
+enum { CAMADA_NADA, CAMADA_SALA, CAMADA_PAINEL, CAMADA_FONTES, CAMADA_REACOES };
+#define SEGURAR_OK_MS 500
+#define T21_SHEET_SCALE .96f
+#define NV_VTELA_W 1920
+#define NV_VTELA_H 1080
+float gfx_opacidade_grupo = 1;
+static int noPlayer(void) { return player_aberto(); }
+int stream_folha_aberta(void) { return 0; }
+int player_controles_visiveis(void) { return 0; }
+void player_evento(const SDL_Event *e) { (void)e; }
+static int ehOk(SDL_Keycode k) { return k == SDLK_RETURN || k == SDLK_SPACE; }
+static int uiCanal(const SDL_Event *e, int mais) { (void)mais; return e->key.keysym.sym == SDLK_PAGEUP; }
+static void abrirPainel(void) { camada = CAMADA_PAINEL; }
+static void custoInicio(void) {}
+static void custoFim(void) {}
+static void custoCamada(int n) { (void)n; }
+float gfx_escala_entrar(void) { draws++; return 1; }
+void gfx_escala_sair(float e) { (void)e; }
+void gfx_transformar(float x, float y, float s, float dx, float dy) { (void)x; (void)y; (void)s; (void)dx; (void)dy; }
+void gfx_sem_transformar(void) {}
+float anim_suave(float t) { return t; }
+static void desenharBolhas(Uint32 t) { (void)t; draws++; }
+static void desenharSala(void) { draws++; }
+static void desenharContagem(int n) { (void)n; draws++; }
+static int contagemRestante(void) { return 3; }
+static void corpoPainel(GfxRect r, float a, void *u) { (void)r; (void)a; (void)u; }
+void spainel_lateral(float a, const char *t, const char *s, void (*c)(GfxRect, float, void *), void *u) { (void)a; (void)t; (void)s; (void)c; (void)u; draws++; }
+#define ehCanal uiCanal
+#include "juntos_ui_boundary.h"
+#undef ehCanal
+
 static void remoteTitle(int seq, const char *ep, const char *title) {
   char json[1024];
   snprintf(json, sizeof json,
@@ -18,7 +56,8 @@ static void remoteTitle(int seq, const char *ep, const char *title) {
 static void isolationMatrix(void) {
   enum Path { PLAY, PAUSE, SEEK, NEXT, TITLE, PRELOAD, SCHEDULED, READY,
     REMOTE_PLAY, REMOTE_PAUSE, REMOTE_SEEK, REMOTE_TITLE, REMOTE_LOBBY,
-    RATE, FRAME, SOURCE, OPEN, CLOSE };
+    RATE, FRAME, SOURCE, OPEN, CLOSE, KEY_OK, KEY_CHANNEL, KEY_STALE, POINTER,
+    OVERLAY, COUNTDOWN, SIDEBAR };
   const struct { const char *name; enum Path path; } cases[] = {
     {"local play", PLAY}, {"local pause", PAUSE}, {"local seek", SEEK},
     {"local next", NEXT}, {"local title", TITLE}, {"preload", PRELOAD},
@@ -27,7 +66,11 @@ static void isolationMatrix(void) {
     {"remote seek", REMOTE_SEEK}, {"remote title", REMOTE_TITLE},
     {"remote lobby", REMOTE_LOBBY}, {"sync rate", RATE},
     {"frame/source reporting", FRAME}, {"source selection", SOURCE},
-    {"pending open", OPEN}, {"room close", CLOSE}
+    {"pending open", OPEN}, {"room close", CLOSE},
+    {"OK outside player", KEY_OK}, {"CH+ outside player", KEY_CHANNEL},
+    {"stale sidebar input", KEY_STALE}, {"pointer outside player", POINTER},
+    {"overlay outside player", OVERLAY}, {"countdown outside player", COUNTDOWN},
+    {"stale sidebar drawing", SIDEBAR}
   };
   int failures = 0;
   for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
@@ -95,6 +138,21 @@ static void isolationMatrix(void) {
         break;
       }
       case CLOSE: zerar(); break;
+      case KEY_OK: case KEY_CHANNEL: case KEY_STALE: case POINTER: {
+        camada = cases[i].path == KEY_STALE ? CAMADA_PAINEL : CAMADA_NADA;
+        okSegurando = 0;
+        SDL_Event e = {0};
+        e.type = cases[i].path == POINTER ? SDL_MOUSEBUTTONDOWN : SDL_KEYDOWN;
+        e.key.keysym.sym = cases[i].path == KEY_CHANNEL ? SDLK_PAGEUP : SDLK_RETURN;
+        ok = !juntosui_evento_sdl(&e) && !okSegurando;
+        break;
+      }
+      case OVERLAY: case COUNTDOWN: case SIDEBAR:
+        camadaVisual = cases[i].path == SIDEBAR ? CAMADA_PAINEL : CAMADA_SALA;
+        lobbyAberto = 0; draws = 0;
+        juntosui_desenhar((Uint32)now);
+        ok = draws == 0;
+        break;
     }
     ok &= position == expectedPosition && playing && syncRate == 1050 && personalSpeed == 125;
     ok &= lobby == before && socketSends == sentBefore && !strstr(sent, "\"t\":\"cmd\"");

@@ -5182,7 +5182,7 @@ static Uint32 juntosListaDesde;
 static void juntosAbrirEFonte(Uint32 agora) {
   char imdb[24], titulo[160], poster[512], alvo[64];
   int t, e;
-  if (!juntos_ativo()) juntosFontePendente = -1;
+  if (!juntos_no_player()) juntosFontePendente = -1;
   if (juntosui_pediu_fechar_player()) player_sair();
   if (juntosui_pediu_reproduzir()) detail_pedir_reproduzir();
   if (juntosui_pediu_escolher_filme()) {
@@ -6562,7 +6562,7 @@ void app_atualizar(float dt, Uint32 agora) {
       // vivo, e la a escolha ja e feita pela playlist que responde.
       //
       // #667: a remembered source sets the sheet's focus, never consent to play.
-      if (ajustes_fonte_manual() && juntos_fase() != JF_PREPARADO && stream_n() > 0) {
+      if (ajustes_fonte_manual() && (!juntos_no_player() || juntos_fase() != JF_PREPARADO) && stream_n() > 0) {
         aguardandoFonte = 0;
         folhaParaTocar = 1;
         nomeParaFolha(); stream_folha_abrir();
