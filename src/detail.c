@@ -293,6 +293,7 @@ static int  pedAbrir = -1;
 static int  voltaPilha[8], nVolta, voltando;
 static struct { int fileira,coluna,nivel,botao,temporada,aba; float y; int colunas[N_SECOES]; } voltaEstado[8];
 static int restaurarVolta;
+static int trilhaPendente, trilhaVolta = -1;
 // Foco DENTRO da aba "Mais como este", que e uma lista vertical propria e nao
 // uma das fileiras horizontais do focus.c.
 static int  relFoco;
@@ -3572,6 +3573,12 @@ static void detail_evento_(const SDL_Event *e) {
     else if (focoVersao) { focoVersao = 0; botao = 0; }
 
     else if (carro && carCheia) carCheia = 0;   // tela cheia no topo -> cartao
+    else if (trilhaVolta == nVolta) {
+      trilhaVolta = -1;
+      trilhas_voltar_do_titulo();
+      if (nVolta > 0) { pedAbrir = voltaPilha[--nVolta]; voltando = 1; restaurarVolta = 1; }
+      else { saindo = 1; pediuMenu = 0; }
+    }
     else if (nVolta > 0) { pedAbrir = voltaPilha[--nVolta]; voltando = 1; restaurarVolta=1; }   // volta ao titulo de onde veio
     else { saindo = 1; pediuMenu = 0; }   // Voltar nao abre um menu pedido antes
     return;
@@ -9312,9 +9319,13 @@ int detail_pediu_reproduzir(void) { int v = pedReproduzir; pedReproduzir = 0; re
 // detail_pediu_reproduzir do app.c, com a pagina ja aberta por baixo.
 void detail_pedir_reproduzir(void) { pedReproduzir = 1; }
 int detail_pediu_abrir(void) { int v = pedAbrir; pedAbrir = -1; return v; }
+void detail_trilha_notar(void) { trilhaPendente = 1; }
 void detail_volta_notar(int novo) {
+  int trilha = trilhaPendente;
+  trilhaPendente = 0;
+  if (trilha) trilhaVolta = nVolta;
   if (voltando) { voltando = 0; return; }       // esta troca E a volta: nao empilha
-  if (!aberto || saindo || novo == idx || idx < 0) return;
+  if (!aberto || saindo || (!trilha && novo == idx) || idx < 0) return;
   if (nVolta == (int)(sizeof voltaPilha / sizeof *voltaPilha)) {
     memmove(voltaPilha, voltaPilha + 1, sizeof voltaPilha - sizeof *voltaPilha);
     memmove(voltaEstado,voltaEstado+1,sizeof voltaEstado-sizeof *voltaEstado);
@@ -9326,6 +9337,7 @@ void detail_volta_notar(int novo) {
   voltaEstado[nVolta].y=scrollY;
   memcpy(voltaEstado[nVolta].colunas,foco.colunaLembrada,sizeof voltaEstado[nVolta].colunas);
   voltaPilha[nVolta++] = idx;
+  if (trilha) trilhaVolta = nVolta;
 }
 // Consume only on the same title that received the request.
 int detail_pediu_assistido(void) {

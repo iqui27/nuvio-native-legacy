@@ -898,6 +898,7 @@ static int iniciarPoliticaFonte(int preferida, int manual) {
 
 static Tela tela = TELA_HOME;
 static int tituloDoPainel;
+static int emblemaDaTrilha;
 static void voltarAoPainel(void) {
   if (tituloDoPainel && detail_aberto()) tituloDoPainel = 2;
   else if (tituloDoPainel == 2 && !player_aberto()) {
@@ -4537,7 +4538,7 @@ void app_evento(const SDL_Event *e) {
   // antes das Conquistas, que a chamam. Voltar fecha e devolve a tela de baixo.
   if (trilhas_aberta()) { trilhas_evento(e); return; }
   // A TELA DE CONQUISTAS (2.1), aberta pelo Perfil: tela inteira, come o teclado.
-  if (conquistas_aberto() && !detail_aberto() && !desc_titulo_buscando()) { conquistas_evento(e); return; }
+  if (conquistas_aberto() && (emblemaDaTrilha || (!detail_aberto() && !desc_titulo_buscando()))) { conquistas_evento(e); return; }
   // O GUIA DA 2.0 (novidades20.h) e tela inteira e come o teclado todo,
   // inclusive a AZUL (pula para o resumo). "Abrir o Guia de uso" leva a
   // Ajustes › Sobre e ajuda › Guia de uso.
@@ -5819,12 +5820,16 @@ void app_atualizar(float dt, Uint32 agora) {
   if (tela == TELA_PERFIL && perfil_pediu_atualizar()) pedirPerfil();
   if (tela == TELA_PERFIL && perfil_pediu_conquistas()) conquistas_abrir();
   { char chave[96];
-    if (trilhas_pediu_conquistas(chave, sizeof chave)) conquistas_abrir_emblema(chave); }
+    if (trilhas_pediu_conquistas(chave, sizeof chave)) {
+      emblemaDaTrilha = 1;
+      conquistas_abrir_emblema(chave);
+    } }
+  if (!conquistas_aberto() || trilhas_aberta()) emblemaDaTrilha = 0;
   { CqPasso passo;
     if (trilhas_pediu_titulo(&passo)) {
-      // Keep the originating Achievements view and focus for the return trip.
+      detail_trilha_notar();
       int indice = cat_indice_por_imdb_tipo(passo.imdb, "movie");
-      if (indice >= 0) abrirPorIndice(indice);
+      if (indice >= 0) { detail_volta_notar(indice); abrirPorIndice(indice); }
       else desc_pedir_titulo(passo.imdb);
     } }
   // Titulo escolhido no painel de Salvos. Ele entrega o IMDb e nao um indice:
@@ -8118,8 +8123,8 @@ void app_desenhar(Uint32 agora) {
   // As Conquistas: tela inteira (ou o esmaecer de saida) e, por baixo de tudo
   // que e aviso, o aviso depois dos creditos, que nao e camada do ponteiro.
   if (!registro_aberto()) {
-    CAMADA_SE(conquistas_aberto() && !detail_aberto() && !desc_titulo_buscando());
-    if (!detail_aberto() && !desc_titulo_buscando()) conquistas_desenhar(agora);
+    CAMADA_SE(conquistas_aberto() && (emblemaDaTrilha || (!detail_aberto() && !desc_titulo_buscando())));
+    if (emblemaDaTrilha || (!detail_aberto() && !desc_titulo_buscando())) conquistas_desenhar(agora);
     CAMADA_SE(trilhas_aberta());
     trilhas_desenhar(agora);
     conquistas_aviso_desenhar();

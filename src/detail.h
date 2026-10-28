@@ -63,6 +63,8 @@ int  detail_pediu_abrir(void);
 // Chamar ANTES de abrir outro titulo com a pagina aberta: guarda o atual para o
 // Voltar retornar a ele em vez de fechar a pagina.
 void detail_volta_notar(int novo);
+// Mark the next title switch as a return boundary through the trail.
+void detail_trilha_notar(void);
 
 // O botao do olho: marcar o titulo como ASSISTIDO. Nao e o mesmo que
 // detail_pediu_marcar, que e "adicionar a lista" — o olho caia no mesmo `else`
