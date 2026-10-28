@@ -107,7 +107,48 @@ static void isolationMatrix(void) {
   personalSpeed = 100;
 }
 
+static int erroFonte, pedFontes, saindo, pediuSair;
+static int ehCanal(void) { return 0; }
+void player_voltar_a_esperar(void) { erroFonte = 0; prepared = 0; }
+static void androidBack(void) {
+#define NV_ANDROID
+#include "player_back.h"
+#undef NV_ANDROID
+}
+
+static void sourceRecoveryMatrix(void) {
+  const struct { const char *name; int error, exits; } cases[] = {
+    {"source error -> Sources -> replacement", 1, 0},
+    {"Back past Sources exits session playback", 0, 1}
+  };
+  for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+    zerar(); iniciarMotor(); fase = JF_DENTRO;
+    snapshot(&motor, 1, 1, "pausado", now);
+    abrirPedido = escolhendo = 0;
+    playerOpen = prepared = playing = 1;
+    erroFonte = cases[i].error;
+    pedFontes = saindo = pediuSair = 0;
+    androidBack();
+    assert(saindo == cases[i].exits && pediuSair == cases[i].exits);
+    assert(pedFontes == !cases[i].exits);
+    prepared = 1; // A working replacement source is selected in Sources.
+    if (juntos_no_player() == cases[i].exits) {
+      fprintf(stderr, "FAIL recovery: %s\n", cases[i].name);
+      assert(0);
+    }
+    assert(pPronto(NULL) == !cases[i].exits);
+    position = 42;
+    motor.p.buscar(motor.p.u, 77);
+    motor.p.pausar(motor.p.u, 1);
+    assert(position == (cases[i].exits ? 42 : 77));
+    assert(playing == cases[i].exits);
+    assert(juntos_ativo());
+  }
+  zerar();
+}
+
 int main(void) {
+  sourceRecoveryMatrix();
   isolationMatrix();
   iniciarMotor();
   fase = JF_DENTRO;

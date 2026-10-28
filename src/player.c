@@ -4421,14 +4421,14 @@ void player_evento(const SDL_Event *e) {
       }
       if (trechoPulavel(NULL)) { intro_botao_esconder(monoSeg()); return; }
     }
-    // Watch Together keeps membership when returning to the catalog.
-    if (!ehCanal() && juntos_ao_voltar()) return;
 #ifdef NV_ANDROID
     if (erroFonte && !ehCanal()) {
       player_voltar_a_esperar(); pedFontes = 1;
       return;
     }
 #endif
+    // Watch Together keeps membership when returning to the catalog.
+    if (!ehCanal() && juntos_ao_voltar()) return;
     saindo = 1; pediuSair = 1;
     return;
   }
