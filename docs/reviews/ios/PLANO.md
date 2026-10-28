@@ -170,7 +170,7 @@ regular = tela interna = um painel de celular + um painel extra.** Nunca "se Duo
 | Fontes | Folha | Folha trailing com barra vertical, nunca na dobra | sheet, `preferredPlacement` |
 | Player | Controles sobre o vídeo | Mesa: vídeo em cima, controles/episódios/chat embaixo; livro: vídeo \| lista | `ArrangementView(.overlay)` → `.split` |
 | Guia de TV | Grade em paisagem forçada hoje | Grade \| preview do canal | `ArrangementView(.split.axes(.horizontal))` |
-| Biblioteca / Listas | Grade de 4 colunas (78 pt) | Grade contínua de 8 colunas (92 pt, vão de 24 pt) centrada nos 951 pt: o vão entre a 4ª e a 5ª coluna cai na dobra (464–488 pt), sem buraco | canvas, `ReservedRegion(.division)` |
+| Biblioteca / Listas | Grade de 4 colunas (78 pt) | Grade contínua de 8 colunas (92 pt, vão de 24 pt) centrada nos 951 pt: o vão entre a 4ª e a 5ª coluna cai na dobra (464–488 pt), sem buraco (aprovado pelo dono em 28/10/2026, `ios-08-library.jpg`) | canvas, `ReservedRegion(.division)` |
 | Perfis / Onboarding | Fluxo de uma coluna | Mesmo passo expande em dois painéis, nunca reinicia | cover full-screen |
 | Ajustes | Lista → página | Lista \| página | `NavigationSplitView` |
 
