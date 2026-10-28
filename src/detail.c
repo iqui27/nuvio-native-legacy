@@ -1213,6 +1213,7 @@ static float vaoAntes(int r) {
   }
 }
 
+static float epDyFone;
 static void recalcularLayout(void) {
   static int ready, lastSeries, counts[N_SECOES];
   static float heights[N_SECOES], lastScale;
@@ -1240,10 +1241,13 @@ static void recalcularLayout(void) {
     topoSec[r]=conteudoSec[r]=y;
     if (secaoN(r)<=0) continue;
     if (r==SEC_TEMPORADAS && !epModerno()) {
-      topoSec[r]=serieGrupo(0);
-      conteudoSec[r]=epApple() ? 1160 : NV_DETP_TEMP_Y;
-      topoSec[SEC_EPISODIOS]=serieGrupo(1);
-      conteudoSec[SEC_EPISODIOS]=epApple() ? 1286 : NV_DETP_EP_Y;
+      // Retrato do telefone: o heroi e mais alto que o da TV; a faixa de
+      // temporadas/episodios desce pelo mesmo tanto (zero na TV).
+      epDyFone = fone ? fmaxf(0, y - serieGrupo(0)) : 0;
+      topoSec[r]=serieGrupo(0)+epDyFone;
+      conteudoSec[r]=(epApple() ? 1160 : NV_DETP_TEMP_Y)+epDyFone;
+      topoSec[SEC_EPISODIOS]=serieGrupo(1)+epDyFone;
+      conteudoSec[SEC_EPISODIOS]=(epApple() ? 1286 : NV_DETP_EP_Y)+epDyFone;
       alvoSec[r]=alvoSec[SEC_EPISODIOS]=NV_DETP_ALVO_FILEIRA;
       y=conteudoSec[SEC_EPISODIOS]+epCardH()+60;
       continue;
@@ -2459,7 +2463,7 @@ static float notasBloco(void) {
 static float epExtraAltura(void) { return epAppleExtra() + notasBloco(); }
 static float epTempY(void) { return conteudoSec[SEC_TEMPORADAS]; }
 static float epRowY(void) { return conteudoSec[SEC_EPISODIOS]; }
-static float epAbasY(void) { return (epApple() ? 1758.0f : NV_DETP_ABA_Y) + epExtraAltura(); }
+static float epAbasY(void) { return (epApple() ? 1758.0f : NV_DETP_ABA_Y) + epExtraAltura() + epDyFone; }
 static float epElencoY(void) { return conteudoSec[SEC_ELENCO]; }
 static float serieGrupo(int r) {
   static const float glass[] = { NV_DETP_G_TEMP, NV_DETP_G_EP, NV_DETP_G_ABAS, NV_DETP_G_ELENCO };
