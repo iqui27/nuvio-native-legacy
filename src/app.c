@@ -129,6 +129,7 @@
 #include "novidades142.h"
 #include "comecar.h"
 #include "conquistas.h"
+#include "trilhas.h"
 #include "novidades148.h"
 #include "novidades170.h"
 #include "novidades180.h"
@@ -4532,8 +4533,11 @@ void app_evento(const SDL_Event *e) {
   // O AVISO DAS CONQUISTAS (depois dos creditos) nao toma o foco: so o Voltar e
   // dele, e so enquanto estiver na tela. Vem antes do Voltar do app.
   if (conquistas_aviso_evento(e)) return;
+  // A TRILHA (2.1), aberta pelas Conquistas ou pelo Detalhe: tela inteira,
+  // antes das Conquistas, que a chamam. Voltar fecha e devolve a tela de baixo.
+  if (trilhas_aberta()) { trilhas_evento(e); return; }
   // A TELA DE CONQUISTAS (2.1), aberta pelo Perfil: tela inteira, come o teclado.
-  if (conquistas_aberto()) { conquistas_evento(e); return; }
+  if (conquistas_aberto() && !detail_aberto() && !desc_titulo_buscando()) { conquistas_evento(e); return; }
   // O GUIA DA 2.0 (novidades20.h) e tela inteira e come o teclado todo,
   // inclusive a AZUL (pula para o resumo). "Abrir o Guia de uso" leva a
   // Ajustes › Sobre e ajuda › Guia de uso.
@@ -5057,6 +5061,7 @@ static const char *homeTrailerBloqueio(void) {
   if (!login_concluido()) return "login";
   if (!perfilsel_concluido()) return "profile-choice";
   if (player_aberto() || player_retido() || player_mini_ativo()) return "player";
+  if (trilhas_aberta()) return "trails";
   if (detail_aberto()) return "detail";
   if (spainel_aberto()) return "saved-panel";
   if (menu_aberto() || ctx_aberto()) return "menu";
@@ -5813,6 +5818,15 @@ void app_atualizar(float dt, Uint32 agora) {
   }
   if (tela == TELA_PERFIL && perfil_pediu_atualizar()) pedirPerfil();
   if (tela == TELA_PERFIL && perfil_pediu_conquistas()) conquistas_abrir();
+  { char chave[96];
+    if (trilhas_pediu_conquistas(chave, sizeof chave)) conquistas_abrir_emblema(chave); }
+  { CqPasso passo;
+    if (trilhas_pediu_titulo(&passo)) {
+      // Keep the originating Achievements view and focus for the return trip.
+      int indice = cat_indice_por_imdb_tipo(passo.imdb, "movie");
+      if (indice >= 0) abrirPorIndice(indice);
+      else desc_pedir_titulo(passo.imdb);
+    } }
   // Titulo escolhido no painel de Salvos. Ele entrega o IMDb e nao um indice:
   // a lista dele inclui titulos que NAO estao no catalogo (vieram do arquivo
   // local, ver salvospainel.c), e um indice para esses nao existe. Sem item no
@@ -7372,6 +7386,7 @@ void app_atualizar(float dt, Uint32 agora) {
   // app_evento, no mesmo evento da ESQUERDA, e abre por cima dela.
   detail_sob_menu(detail_aberto() && menu_aberto());
   detail_atualizar(dt, agora);
+  if (!detail_aberto() && !desc_titulo_buscando()) trilhas_voltar_do_titulo();
   voltarAoPainel();
   menu_atualizar(dt, agora);
   // PÓS-REPRODUÇÃO. O proximo episodio reabre a busca de fonte com o id novo;
@@ -8102,8 +8117,13 @@ void app_desenhar(Uint32 agora) {
   }
   // As Conquistas: tela inteira (ou o esmaecer de saida) e, por baixo de tudo
   // que e aviso, o aviso depois dos creditos, que nao e camada do ponteiro.
-  CAMADA_SE(conquistas_aberto());
-  if (!registro_aberto()) { conquistas_desenhar(agora); conquistas_aviso_desenhar(); }
+  if (!registro_aberto()) {
+    CAMADA_SE(conquistas_aberto() && !detail_aberto() && !desc_titulo_buscando());
+    if (!detail_aberto() && !desc_titulo_buscando()) conquistas_desenhar(agora);
+    CAMADA_SE(trilhas_aberta());
+    trilhas_desenhar(agora);
+    conquistas_aviso_desenhar();
+  }
   // O cartao do lembrete fica acima do player e da tela: e um aviso com hora.
   CAMADA_SE(glem_cartao_aberto());
   if (!registro_aberto() && sessao_logada() && tela != TELA_LOGIN &&
@@ -8171,7 +8191,7 @@ int app_central_pode(void) {
          perfilsel_concluido() && !registro_aberto() && !spot_aberto() &&
          !teclado_aberto() && !diagnostico_intro_aberto() && !novidades20_aberto() &&
          !novidades201_aberto() && !novidades202_aberto() && !novcartao_aberto() &&
-         !resolver_aberto() && !comecar_aberto() && !conquistas_aberto() && !dicascontrole_ocupado();
+         !resolver_aberto() && !comecar_aberto() && !conquistas_aberto() && !trilhas_aberta() && !dicascontrole_ocupado();
 }
 
 void app_encerrar(void) {
