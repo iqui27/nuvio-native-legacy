@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
+    <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Para a auto-atualizacao instalar o APK baixado (fase seguinte). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -14,6 +16,7 @@
     <!-- Android 11+: sem isto resolveActivity nao enxerga a tela de voz do
          sistema e o ditado do Spotlight diria "sem reconhecedor" em toda TV. -->
     <queries>
+        <provider android:authorities="android.media.tv" />
         <intent>
             <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
         </intent>
@@ -57,6 +60,9 @@
         android:hasCode="true"
         android:extractNativeLibs="true"
         android:theme="@style/Tema.Nuvio">
+
+        <service android:name=".TvHomeJob" android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="true" />
 
         <!-- configChanges cobre TODA mudanca que a Activity aguenta sem nascer de
              novo. O nucleo C nao sobrevive a uma recriacao: medido no emulador

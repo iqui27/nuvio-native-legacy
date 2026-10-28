@@ -318,6 +318,9 @@ class NuvioActivity : SDLActivity() {
     // LINK EXTERNO (docs/deeplink.md): o C valida; aqui so se limita o tamanho.
     private external fun nativeDeepLink(url: String)
 
+    fun tvHomeSupported(): Boolean = TvHome.supported(this)
+    fun tvHomePublish(json: String) = TvHome.publish(this, json)
+
     private fun entregarDeepLink(i: Intent?) {
         if (mBrokenLibraries || i?.action != Intent.ACTION_VIEW) return
         val url = i.dataString ?: return

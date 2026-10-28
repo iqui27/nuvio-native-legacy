@@ -183,7 +183,7 @@ int main(void) {
   // APS-9: invalid IDs, absent routes and corrupt compiled sections are bounded.
   assert(nSecoes == 11 && AJ_AFR + 1 == AJ_HERO_TAMANHO);
   assert(AJ_HERO_TAMANHO + 1 == AJ_DET_TOPO && AJ_DET_TOPO + 1 == AJ_DET_ELENCO_VISTO);
-  assert(AJ_DET_ELENCO_VISTO + 1 == AJ_GUIA_PREVIA_GRANDE && AJ_GUIA_PREVIA_GRANDE + 1 == AJ_AUD_ORIGINAL && AJ_AUD_ORIGINAL + 1 == AJ_AUDIO_NORMALIZAR && AJ_AUDIO_NORMALIZAR + 1 == AJ_DEBRID_LIGADO && AJ_DEBRID_LIGADO + 1 == AJ_ADDONS_LIGADO && AJ_ADDONS_LIGADO + 1 == AJ_LEG_ESTILO_LIGADO && AJ_LEG_ESTILO_LIGADO + 1 == AJ_HERO_PASTA_DETALHES && AJ_HERO_PASTA_DETALHES + 1 == AJ_N);
+  assert(AJ_DET_ELENCO_VISTO + 1 == AJ_GUIA_PREVIA_GRANDE && AJ_GUIA_PREVIA_GRANDE + 1 == AJ_AUD_ORIGINAL && AJ_AUD_ORIGINAL + 1 == AJ_AUDIO_NORMALIZAR && AJ_AUDIO_NORMALIZAR + 1 == AJ_DEBRID_LIGADO && AJ_DEBRID_LIGADO + 1 == AJ_ADDONS_LIGADO && AJ_ADDONS_LIGADO + 1 == AJ_LEG_ESTILO_LIGADO && AJ_LEG_ESTILO_LIGADO + 1 == AJ_HERO_PASTA_DETALHES && AJ_HERO_PASTA_DETALHES + 1 == AJ_GUIA_PREVIA_DESTACAR && AJ_GUIA_DIAS + 1 == AJ_FONTE_OCULTAR_DV && AJ_FONTE_OCULTAR_VIDEO + 1 == AJ_TV_HOME && AJ_TV_HOME + 1 == AJ_N);
   assert(!strcmp(CHAVE[AJ_AFR], "afrLocal") && !strcmp(CHAVE[AJ_HERO_TAMANHO], "heroSizeLocal"));
   assert(!strcmp(CHAVE[AJ_DET_TOPO], "detalheTopoLocal"));
   assert(!strcmp(CHAVE[AJ_DET_ELENCO_VISTO], "detalheElencoVistoLocal"));
@@ -347,7 +347,8 @@ int main(void) {
     memcpy(before,valor,sizeof before);
     for(int page=0;page<46;page++) {
       ajPenOpen(page);const AjPenPage *p=ajPenCurrent();assert(p);
-      int count=p->cols[0].n+p->cols[1].n;assert(count>0 && count<=14);
+      int count=p->cols[0].n+p->cols[1].n;
+      assert(p->cols[0].n <= 10 && p->cols[1].n <= 10 && count > 0 && count <= 20);
       for(int i=0;i<count+1;i++)key(SDLK_DOWN);
       assert(ajPenRow==(page==44?99:count-1));
       key(SDLK_ESCAPE);

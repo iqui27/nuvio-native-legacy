@@ -350,7 +350,16 @@ static const AjPenPage AJ_PEN_ADV[] = {
       {AJ_AMPLIACAO_ALGO,"Algoritmo de ampliação","Como a imagem é ampliada","aj_cpu",0},
       {AJ_AMPLIACAO_NITIDEZ,"Nitidez","Ajuste fino da nitidez","aj_focus",0},
     }},
-    {"Desempenho",976,744,2, {
+    {"Desempenho",976,744,
+#ifdef NV_ANDROID
+      3,
+#else
+      2,
+#endif
+    {
+#ifdef NV_ANDROID
+      {AJ_TV_HOME,"Mostrar na tela inicial do Android TV","","aj_tv",1},
+#endif
       {AJ_HDR_INTERFACE,"Interface em HDR","Teste de interface em HDR","aj_sun",0},
       {AJ_LIMPAR_CACHE,"Limpar cache","Apaga o cache do aplicativo","aj_trash-2",0},
     }},

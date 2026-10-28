@@ -261,7 +261,16 @@ static const AjPenPage AJ_PEN_MAIN[] = {
     }},
   }},
   {"Desempenho","Desempenho",1,1, {
-    {"DESEMPENHO",200,800,6, {
+    {"DESEMPENHO",200,800,
+#ifdef NV_ANDROID
+      7,
+#else
+      6,
+#endif
+    {
+#ifdef NV_ANDROID
+      {AJ_TV_HOME,"Mostrar na tela inicial do Android TV","","aj_tv",1},
+#endif
       {AJ_RESOLUCAO,"Resolução da interface","A resoluçao em que o app desenha","aj_gauge",0},
       {AJ_QUALIDADE_IMG,"Qualidade da imagem","Baixa, padrão ou alta","aj_image",0},
       {AJ_GPU_EFEITOS,"Efeitos visuais","O que a GPU desenha","aj_sparkles",0},
