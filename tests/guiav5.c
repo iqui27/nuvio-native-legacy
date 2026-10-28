@@ -12,6 +12,12 @@ int main(void) {
   assert(g5_parse_xtream(movies, G5_MOVIE, items, 2, &total) == 2);
   assert(total == 3 && !strcmp(items[0].id, "17") && !strcmp(items[0].group, "4"));
   assert(items[0].age == -1); /* provider review score is not an age rating */
+  assert(!strcmp(items[0].rating,"8.1"));
+  G5Item metadata;
+  const char *info="{\"stream_id\":21,\"name\":\"Artwork\",\"year\":\"2026\",\"genre\":\"Adventure\",\"rating\":8.4,\"backdrop_path\":[\"https://img.test/back.jpg\"]}";
+  assert(g5_parse_xtream_item(info,info+strlen(info),G5_MOVIE,&metadata));
+  assert(!strcmp(metadata.year,"2026")&&!strcmp(metadata.genre,"Adventure")&&!strcmp(metadata.rating,"8.4"));
+  assert(!strcmp(metadata.backdrop,"https://img.test/back.jpg")&&metadata.age==-1);
   assert(items[1].adult);
   assert(g5_parse_xtream("{\"error\":\"denied\"}", G5_MOVIE, items, 4, &total) == -1);
   assert(g5_parse_xtream("[]", G5_MOVIE, items, 4, &total) == 0 && total == 0);

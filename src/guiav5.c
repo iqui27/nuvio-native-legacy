@@ -26,6 +26,35 @@ static void number_id(const char *p,const char *end,const char *key,char *out,si
   }
   for(const char *s=out;*s;s++) if(!isdigit((unsigned char)*s)){out[0]=0;break;}
 }
+int g5_parse_xtream_item(const char *p,const char *end,int kind,G5Item *out){
+  if(!p||!end||!out||*p!='{'||end<=p||end[-1]!='}')return 0;
+  G5Item it={.kind=kind,.age=-1};
+  char stream_type[32]="";js_texto(p,end,"stream_type",stream_type,sizeof stream_type);
+  if(stream_type[0])it.kind=ltv_kind(stream_type,"","","","",0);
+  snprintf(it.source,sizeof it.source,"xtream");
+  number_id(p,end,kind==G5_SERIES?"series_id":"stream_id",it.id,sizeof it.id);
+  js_texto(p,end,"name",it.name,sizeof it.name);
+  number_id(p,end,"category_id",it.group,sizeof it.group);
+  js_texto(p,end,kind==G5_SERIES?"cover":"stream_icon",it.poster,sizeof it.poster);
+  if(!it.poster[0])js_texto(p,end,"movie_image",it.poster,sizeof it.poster);
+  if(!g5_http_url(it.poster))it.poster[0]=0;
+  js_texto(p,end,"container_extension",it.ext,sizeof it.ext);
+  for(const char *s=it.ext;*s;s++)if(!isalnum((unsigned char)*s)){it.ext[0]=0;break;}
+  js_texto(p,end,"plot",it.plot,sizeof it.plot);
+  const char *background=js_array(p,end,"backdrop_path");
+  if(background)js_cadeia(background,it.backdrop,sizeof it.backdrop);
+  else js_texto(p,end,"backdrop_path",it.backdrop,sizeof it.backdrop);
+  if(!g5_http_url(it.backdrop))it.backdrop[0]=0;
+  it.adult=js_num(p,end,"is_adult",0)>0;
+  char adult[8]="";js_texto(p,end,"is_adult",adult,sizeof adult);it.adult|=!strcmp(adult,"1");
+  js_texto(p,end,"year",it.year,sizeof it.year);
+  if(!it.year[0]){int year=(int)js_num(p,end,"year",0);if(year>=1888&&year<=2200)snprintf(it.year,sizeof it.year,"%d",year);}
+  if(!it.year[0]){char date[32]="";js_texto(p,end,"releaseDate",date,sizeof date);if(!date[0])js_texto(p,end,"releasedate",date,sizeof date);if(!date[0])js_texto(p,end,"release_date",date,sizeof date);if(strlen(date)>=4)snprintf(it.year,sizeof it.year,"%.4s",date);}
+  js_texto(p,end,"genre",it.genre,sizeof it.genre);
+  js_texto(p,end,"rating",it.rating,sizeof it.rating);
+  if(!it.rating[0]){double score=js_num(p,end,"rating",0);if(score>0&&score<=10)snprintf(it.rating,sizeof it.rating,"%.1f",score);}
+  *out=it;return it.id[0]&&it.name[0];
+}
 int g5_parse_xtream(const char *json,int kind,G5Item *out,int cap,int *total) {
   return g5_parse_xtream_page(json,kind,out,cap,0,total);
 }
@@ -39,25 +68,8 @@ int g5_parse_xtream_page(const char *json,int kind,G5Item *out,int cap,int skip,
   while(p){
     const char *end=js_fim(p);
     if(*p!='{' || !end || end[-1]!='}')return -1;
-    G5Item it={.kind=kind,.age=-1};
-    char stream_type[32]="";js_texto(p,end,"stream_type",stream_type,sizeof stream_type);
-    if(stream_type[0])it.kind=ltv_kind(stream_type,"","","","",0);
-    snprintf(it.source,sizeof it.source,"xtream");
-    number_id(p,end,kind==G5_SERIES?"series_id":"stream_id",it.id,sizeof it.id);
-    js_texto(p,end,"name",it.name,sizeof it.name);
-    number_id(p,end,"category_id",it.group,sizeof it.group);
-    js_texto(p,end,kind==G5_SERIES?"cover":"stream_icon",it.poster,sizeof it.poster);
-    if(!g5_http_url(it.poster))it.poster[0]=0;
-    js_texto(p,end,"container_extension",it.ext,sizeof it.ext);
-    for(const char *s=it.ext;*s;s++)if(!isalnum((unsigned char)*s)){it.ext[0]=0;break;}
-    js_texto(p,end,"plot",it.plot,sizeof it.plot);
-    const char *background=js_array(p,end,"backdrop_path");
-    if(background)js_cadeia(background,it.backdrop,sizeof it.backdrop);
-    else js_texto(p,end,"backdrop_path",it.backdrop,sizeof it.backdrop);
-    if(!g5_http_url(it.backdrop))it.backdrop[0]=0;
-    it.adult=js_num(p,end,"is_adult",0)>0;
-    char adult[8]="";js_texto(p,end,"is_adult",adult,sizeof adult);it.adult|=!strcmp(adult,"1");
-    if(it.id[0] && it.name[0]){t++;if(skip>0)skip--;else if(n<cap)out[n++]=it;}
+    G5Item it;
+    if(g5_parse_xtream_item(p,end,kind,&it)){t++;if(skip>0)skip--;else if(n<cap)out[n++]=it;}
     p=js_prox(end);
   }
   if(total)*total=t;

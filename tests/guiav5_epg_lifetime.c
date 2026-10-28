@@ -86,6 +86,7 @@ int main(void) {
   assert(gv_n == 1 && gv_ch[0].np == 6);
   EpgProg *cached = gv_prog(&gv_ch[0]);
   assert(cached);
+  translations=0; /* Ignore snapshot UI labels; measure provider text below. */
   schedule("Replacement programme"); // Frees the original EPG arena.
   gv_snapshot(); // Still inside the two-second cache window.
   translations=0; // Count only provider-text drawing, not category labels.
