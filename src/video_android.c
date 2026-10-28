@@ -702,6 +702,11 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeCache(JNIEnv
   }
 }
 
+JNIEXPORT jboolean JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeStereoDownmix(JNIEnv *env, jclass cls) {
+  (void)env; (void)cls;
+  return ajustes_android_estereo();
+}
+
 JNIEXPORT jboolean JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeTunneling(JNIEnv *env, jclass cls) {
   (void)env; (void)cls;
   return ajustes_tunneling();

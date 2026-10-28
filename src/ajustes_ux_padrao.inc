@@ -353,3 +353,5 @@
   0, /* gradient smoothing: Automatic */
   0, /* hero logo and information size: Normal */
   0, /* folder hero details: On (V_LIGA 0) */
+
+  1, /* Android stereo downmix: Off (V_LIGA 1) */
