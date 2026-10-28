@@ -186,7 +186,10 @@ static void ajDesenharInspetor(void) {
                   : rotuloOpcao(op);
     y += ajBloco(TXT_V2_A3TIT, t, x, y, w, 56.0f, 1, 2); }
   y += 10.0f;
-  { int maxL = (int)((fim - y) / 32.0f);
+  // 2.1: "Vale para" e "Recomendado" tem lugar garantido; a descricao e o
+  // "O que muda" cabem no que sobra (a ilha 3 tem 720 de altura util).
+  { float reserva = (!categoria && uxTemPadrao(op) && op != AJ_TEMA) ? 26.0f + 2 * 57.0f : 0.0f;
+    int maxL = (int)((fim - reserva - y) / 32.0f);
     if (maxL > 5) maxL = 5;   // a descricao inteira: cortar no meio da frase nao serve
     if (maxL < 1) maxL = 1;
     if (naMais) {
@@ -213,7 +216,7 @@ static void ajDesenharInspetor(void) {
       const char *t = i18n(ef);
       TxtLinha lp = ajTxt(TXT_V3_INSP_B, "O que muda:");
       float hh = txt_bloco(TXT_V3_INSP, t, 0, 0, 0, x, -4000, w, 37.0f, 0, 4) + 37.0f;
-      if (y + 4.0f + hh <= fim) {
+      if (y + 4.0f + hh <= fim - reserva) {
         // A primeira linha continua depois do rotulo em negrito: as palavras
         // que cabem nela; o resto quebra normalmente embaixo.
         char l1[400];
@@ -412,7 +415,7 @@ static void ajPonteiroItem(int i, int b) {
   if (i == focoItem && !focoIndice && !uxCabLayout) return;
   focar(i);
   focoIndice = 0;
-  if(TELA[i].tipo==IT_OPC) { aj4Focar(TELA[i].op);aj4Acao=0; }
+  if(TELA[i].tipo==IT_OPC) triFocar(TELA[i].op);
 }
 static void ajDesenharFolha(void) {
   GfxRect fr = aj2ListaR();

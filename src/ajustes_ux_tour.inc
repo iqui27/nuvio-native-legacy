@@ -77,7 +77,7 @@ int tourOp(int i) { return TOUR[i].op; }
 const char *tourTitulo(int i) { return i18n(TOUR[i].tit); }
 const char *tourFrase(int i) { return i18n(TOUR[i].txt); }
 int tourDisponivel(int i) {
-  return i >= 0 && i < TOUR_N && (TOUR[i].op < 0 || aj4Disponivel(TOUR[i].op == AJ_XTREAM_SERVIDOR ? AJ_IPTV_LISTA_XTREAM : TOUR[i].op));
+  return i >= 0 && i < TOUR_N && (TOUR[i].op < 0 || triDisponivel(TOUR[i].op == AJ_XTREAM_SERVIDOR ? AJ_IPTV_LISTA_XTREAM : TOUR[i].op));
 }
 int tourNovoJanela(long inicio, long agora) {
   return inicio > 0 && agora >= inicio && agora - inicio < (long)TOUR_NOVO_DIAS * 86400L;
@@ -110,7 +110,7 @@ static void tourAbrir(void) {
   tourVis = tourBtnA = 0;
   memset(tourFocoA, 0, sizeof tourFocoA);
 }
-static void tourSair(void) { tourAberto = 0; focoIndice = 1; aj4Linha = 7; aj4Topo = -1; }
+static void tourSair(void) { tourAberto = 0; focoIndice = 1; triUtil = TRI_U_NADA; triIlha = TRI_CHIPS; triChip = TRI_C_TOUR; }
 
 static void tourAtualizar(float dt) {
   tourVis = anim_mola(tourVis, tourAberto ? 1.0f : 0.0f, dt, 14.0f);
@@ -118,10 +118,10 @@ static void tourAtualizar(float dt) {
   if (tourPend && !tourAberto) {
     int op = uxAbrirOp == AJ_XTREAM_SERVIDOR ? AJ_IPTV_LISTA_XTREAM : uxAbrirOp, editar = uxAbrirEdicao;
     tourPend = uxAbrirEdicao = 0; uxAbrirOp = -1;
-    aj4Util = aj4Review = 0; uxVeioBusca = 0;
+    triUtil = TRI_U_NADA; uxVeioBusca = 0;
     focarOpcao(op);
     if (editar) {
-      if (op == AJ_PERFIL_ATIVO) aj4AbrirPerfil();
+      if (op == AJ_PERFIL_ATIVO) pfAbrir();
       else uxAbrirEditor(op);
     }
     return;

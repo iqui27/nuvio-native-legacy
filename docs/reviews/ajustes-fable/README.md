@@ -78,20 +78,32 @@ Nada de página irmã, nada de tecla com dois sentidos. Valor só muda com OK (d
 ### 3.2 Movimento
 Ilha com a mola oficial (`anim_mola`/`mov_mola_assenta`); foco de linha interpola a superfície; troca de seção faz a ilha 2 deslizar (velha sai, nova entra, 220 ms como `ajCenaTroca`); prévia da ilha 3 faz o fade já existente. Nada é cortado por TV fraca: o nível automático de GPU cuida.
 
-## 4. Arquitetura da implementação (uma geração só)
+## 4. Arquitetura da implementação (o que foi feito)
 
-- Novo `src/ajustes_tri*.inc` (estado + eventos + desenho) incluído por `ajustes.c` no lugar de `ajustes_ux_v4*.inc` e `ajustes_pen*.inc`. Lê **só** `TELA[]` (catálogo), `OPCOES[]`, `ajudaOpcao`, `uxValorAtual/uxValorPadrao/uxEscopoValor`, `ajPrevia`, `ajVisualCena` — nenhuma lista nova de opções.
-- Reaproveita os componentes 2.0.8: `ajIlha`, `ajFocoLinha`, `ajNeutro`, `ajPilulaAcento`, `ajDicasLinha`, `plrui_kicker`, `plrui_seg`, `botao_pilula`, `TXT_ILHA_*`, ícones `aj_*` (Lucide).
-- Mantém intactos: editores/folhas existentes (perfil, parental, PIN, IPTV, filtros, ordem de provedores, fileiras, presets, review de diferenças, busca/Spotlight, tour, guia, apoio, aviso legal, sync, device). Eles abrem por cima da ilha, como hoje; o `ajPenFind`/`focarOpcao` vira "abrir seção + rolar até a linha".
-- Remove: `ajustes_ux_v2.inc`, `ajustes_ux_v4.inc`, `ajustes_ux_v4_desenho.inc`, `ajustes_ux_v4_mapa.inc`, `ajustes_pen*.inc` (as frases de ajuda curtas dos `AjPenRow` migram para uma tabela `AJ_FRASE[op]` reutilizada na linha). As cenas `ajustes_ux_cenas*`, `previa`, `visual`, `secoes` ficam (são a ilha 3).
-- Strings novas em `src/idioma_tab.h` (ordem de bytes) + `tools/idiomas.py --sincronizar`.
-- Provas: `tests/nav21_settings.c` reescrito para as regras da §3.1; `tests/ajustes_pen_shot.sh` → `ajustes_tri_shot.sh` com um quadro por seção, "Mais opções" aberto, seletor, número, vidro e sólido; `ajustes_opus`, `ajustes_padroes`, `nav21_live`, `ajustes_ux_dados`, `ajustes_busca`, `ajustes_perfil` verdes.
+- **Casca nova** `src/ajustes_tri.inc` (estado + eventos) e `src/ajustes_tri_desenho.inc` (desenho), incluídas por `ajustes.c` onde v4 e Pencil entravam. Leem **só** o núcleo 2.0.3 que já lia o catálogo: `TELA[]`, `focar`/`focavel`/`focarSecao`, `maisAberto`, `ajDesenharLinha`/`ajDesenharGrupo`/`ajDesenharMais`, `ajDesenharInspetor` (prévias reais), `aj2InspetorDiferencas`, o editor `ux*` e os modais. Nenhuma lista nova de opções: o que está em `TELA[]` aparece, inclusive o que o Pencil jogava em "Outros ajustes".
+- **Menu lateral nunca imitado**: o app desenha o menu real por cima (`menu.c`) em qualquer layout; a tela só reserva espaço. `triX0` = `ajustes_conteudo_x()` quando há rail fixa (Padrão, Moderna com a pílula flutuante), 48 sem rail (recolhida, menu no topo, Dinâmica/Apple TV, onde a pílula do canto já diz "Ajustes" e o título grande some, como em `perfil.c`). As capturas com `NUVIO_RAIL=fixa|moderna|dinamica|recolhida` provam os quatro casos.
+- **Geometria** redirecionada: `aj2ListaR`/`aj2InspR`/`aj2EditorR`/`aj2TemInsp` agora devolvem as ilhas 2 e 3 (`triListaR`, `triInspMiolo`, `triInspR`); `AJ_TOPO`/`AJ_BASE` idem. "Lista" em Aparência › Texto e tamanho continua valendo: sem ilha 3, a lista toma a largura e a ajuda abre embaixo da linha.
+- **Editores compactos** na ilha 3 (`triEditorEscolha`, `triEditorNumero`): kicker, título, "Vale para · Padrão", lista de valores com o salvo marcado, a ajuda da opção e "Restaurar padrão". Os editores que precisam de largura (categorias do guia, pendrive do P2P, limite de fileiras com a ordem da Home, contas de TV ao vivo) abrem o editor 2.0.3 com a ilha 3 alargada para 760.
+- **Rotas utilitárias na ilha 2** (chips do cabeçalho): Buscar = Spotlight em modo Ajustes (como 2.0.3); Predefinições (4 prontas + até 8 salvas por perfil, `ajustes_presets.inc`); Diferente do padrão (lista 2.0.3 + "Restaurar tudo"/"Desfazer"); Prévia da mudança (revisão em lote `rv*`: nada grava sem o OK em "Aplicar"); O que o Nuvio faz? (tour). **Controle parental** virou a 12.ª entrada da ilha 1 (`ajustes_parental.inc`: PIN do perfil, travar, remover, tempo de tela, classificação, busca, compras, filmes, perfil-alvo).
+- **D-pad semântico**: `triSetaSemantica` tira as setas das ilhas do vizinho geométrico (`navigationMove`), que continua servindo folhas, filtros e tour. Valor só muda com OK; toggles viram interruptor (52×30) no acento; a estrela de "padrão de fábrica" e os selos "ESTE PERFIL/ESTA TV/AVANÇADO" saíram da linha (o inspetor diz "Vale para" e "Recomendado").
+- **Movimento por ilha**, sem fade da tela inteira: lista entra em 220 ms ao trocar de seção (`paginaA`), a ilha 2 acende com o foco (`triListaF`), o editor entra deslizando (`triEditorF`), as rotas utilitárias idem (`triUtilA`). `ajustes_teste_transicao`/`ajustes_teste_movimento` expõem isso ao gate.
+- **Removido**: `ajustes_ux_v4.inc`, `ajustes_ux_v4_desenho.inc`, `ajustes_ux_v4_mapa.inc`, os 15 `ajustes_pen*.inc`, `tools/import-ajustes-pen.py`, `tests/ajustes_v4.c`, `ajustes_pen_shot.sh`, `ajustes_v4_shot.sh`. `ajustes_pen_saved.inc` → `ajustes_presets.inc`; `ajustes_pen_parental.inc` → `ajustes_parental.inc`. **Fica para uma segunda poda**: `ajustes_ux_v2.inc` (grade/menu 2.0.3, hoje sem chamador, mas dona de `aj2DicasLinha`, `aj2CorMedidas`, `aj2Mola` e cia) e o ramo morto de `uxEvento` depois de `return triEvento(k)`.
+- **i18n**: 25 strings novas em `src/idioma_tab.h` (ordem de bytes) e traduzidas nas 29 irmãs; `tools/idiomas.py` continua com os 42 problemas pré-existentes de cirílico em `idioma_sr.h` (iguais em `integracao/2.1`).
+- **Provas**: `tests/ajustes_tri.c` (rotas, alcance de toda opção, revisão/desfazer, presets, parental), `tests/ajustes_opus.c` portado item a item, `tests/nav21_settings.c` reescrito (ilhas semânticas + movimento), `tests/ajustes_tri_review.c` (fontes reais, texto cortado), `tests/ajustes_tri_shot.sh` (14 quadros + prova de movimento), `ajustes_tour`/`ajustes_ux_interacao`/`ajustes_escopo` ajustados.
 
 ## 5. Estado
 
 - [x] Inventário (426 opções, 11 seções) — INVENTARIO.md
 - [x] Auditoria UX
-- [x] Mockup (4 quadros + 2 antes/depois) — **aguardando OK do dono na PNG antes de implementar**
-- [ ] Implementação
-- [ ] Provas (nav, shots, i18n, testes existentes)
+- [x] Mockup (4 quadros + 2 antes/depois) — aprovado pelo dono em 27/10 ("Aprovado, implementa")
+- [x] Implementação (três ilhas, editores compactos, rotas, parental, remoção v4/Pencil)
+- [x] i18n (25 strings, 29 idiomas)
+- [x] Provas: ajustes_tri, ajustes_opus (28/28), padroes, tour, ux_interacao, escopo, toque_modo, categorias_ui, tri_review, ux_dados, busca, perfil, secoes, lista_cabecalho, tela_cobre_enum, nav21_live, sync, texto, dependencia, fonte, iptv, seguro, trakt610, tri_shot; nav21: 3586 checks, 0 violações
+- [ ] Build Android
 - [ ] Entrega à central (branch + commit)
+
+## 6. Desvios do mockup, de propósito
+
+- Linhas de 60 px com a frase curta só na linha em foco (2.0.3), não 76 px com frase em todas: cabem 9 opções por tela em vez de 7, e a ilha 3 já explica tudo.
+- O "alterado" é o ponto discreto depois do rótulo (2.0.3), não um chip no acento: o chip "Diferente do padrão · N" do cabeçalho já conta.
+- O kicker do cabeçalho é "Nuvio · <perfil>" (o nome da TV não existe no app).

@@ -1,5 +1,5 @@
-#include "perfilregras.h"
-#include "admin.h"
+// CONTROLE PARENTAL: regras por perfil (perfilregras.h) e o PIN do perfil.
+// A tela e a rota TRI_U_PARENTAL (ajustes_tri*.inc); aqui so o estado e as teclas.
 static int ajPenParentEditor=-1,ajPenParentDraft,ajPenPinAsk,ajPenPinRepeat,ajPenPinProfile;
 static char ajPenPinDraft[ADMIN_PIN_MAX + 2];
 static const int AJ_PEN_TIME[]={0,30,60,90,120,180,240};

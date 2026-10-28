@@ -668,8 +668,8 @@ def varrer():
                                 "ajustes_ux_desenho.inc", "ajustes_ux_ilha.inc",
                                 "registro_ilha.inc", "registro_envio.inc") if (src / nome).exists()
     ]
-    arquivos += sorted(src.glob("ajustes_pen*.inc"))
-    arquivos += [src / "ajustes_ux_v4.inc"]
+    # 2.1: as tres ilhas (ajustes_tri*.inc), os presets e o parental.
+    arquivos += [src / nome for nome in ("ajustes_tri.inc", "ajustes_tri_desenho.inc", "ajustes_presets.inc", "ajustes_parental.inc") if (src / nome).exists()]
     for arq in sorted(arquivos):
         if arq.name == "idioma.c":
             continue
@@ -735,7 +735,7 @@ def varrer():
             # obvio — e a chave saiu da tela em portugues no ingles inteiro.
             # Escrever i18n( E a declaracao de que aquilo e interface; depois
             # dela, adivinhar o idioma so serve para errar.
-            pencil = arq.name.startswith("ajustes_pen")
+            pencil = arq.name.startswith(("ajustes_tri", "ajustes_presets", "ajustes_parental"))
             if pencil and (s.startswith(("aj_", "pl_")) or s.endswith((".inc", ".txt", ".h")) or s in ("%s", "%ld MB", "%dx%d", "%s → %s", "−", "+") or s.startswith(("name=", "%95[", "%s%d"))):
                 continue
             direto = (pencil or RE_DESENHO.search(ctx) is not None

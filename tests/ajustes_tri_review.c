@@ -1,4 +1,4 @@
-// Render the reviewed states with real fonts; reject missing or clipped guidance.
+// Render the three-island states with real fonts; reject missing or clipped guidance.
 #include "../src/text.h"
 static TxtLinha checked_line(TxtEstilo, const char *, int, int, int, int, float);
 static TxtLinha checked_full(TxtEstilo, const char *, int, int, int, int);
@@ -56,8 +56,9 @@ static void watch(const char *a,const char *b,const char *c,const char *d) {
   wanted[0]=a;wanted[1]=b;wanted[2]=c;wanted[3]=d;
   memset(seen,0,sizeof seen);memset(clipped,0,sizeof clipped);
 }
+static void key(SDL_Keycode k) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;ajustes_evento(&e); }
 int main(int argc,char **argv) {
-  char dir[1024];snprintf(dir,sizeof dir,"%s/nuvio-v4-review-XXXXXX",nvt_dir());
+  char dir[1024];snprintf(dir,sizeof dir,"%s/nuvio-tri-review-XXXXXX",nvt_dir());
   assert(mkdtemp(dir));assert(setenv("NUVIO_DADOS",dir,1)==0);dados_iniciar(dir);
   snprintf(dirAjustes,sizeof dirAjustes,"%s",dir);
   assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)==0);IMG_Init(IMG_INIT_PNG);
@@ -67,67 +68,53 @@ int main(int argc,char **argv) {
   assert(gfx_iniciar() && txt_iniciar("deploy/app",1));tex_iniciar(64);
   gfx_icones_dir("deploy/app/art");ajustes_recursos("deploy/app/art");ajustes_iniciar();
   const char *output=argc>1?argv[1]:NULL;
-  assert(ajustes_teste_quadro("v4-inicio-simples"));
+  assert(ajustes_teste_quadro("tri-indice"));
   ajustes_teste_fonte_interface(TXT_FAMILIA_MONTSERRAT);
-  // Exactly three profile changes, like the approved home fixture.
-  memcpy(valor,valorPadrao,sizeof valor);valor[AJ_IDIOMA]=IDIOMA_PT+1;aj4Escopo=0;
+  // The sections island names every section and the parental route; the chip counts live differences.
+  memcpy(valor,valorPadrao,sizeof valor);valor[AJ_IDIOMA]=IDIOMA_PT+1;
   valor[AJ_AVANCADAS]=1;valor[AJ_QUALIDADE]=2;valor[AJ_AUD_LINGUA]=1;valor[AJ_LEG_LINGUA]=2;
-  char difference[128];snprintf(difference,sizeof difference,"Diferente do padrão · %d",aj4Diferencas(aj4Opcoes));
-  watch("Reproduzir",difference,"Perfil e serviços",NULL);
-  frame(win,output,"home");
-  expect(seen[0]&&!clipped[0],"home shows playback task card");
-  expect(seen[1]&&!clipped[1],"home shows live profile difference count");
-  expect(seen[2]&&!clipped[2],"home identifies active profile below presets");
+  int difs=0;for(int i=0;i<AJ_N_TELA;i++)if(TELA[i].tipo==IT_OPC && ajOpcaoDisponivel(TELA[i].op) && uxDiferente(TELA[i].op) && triMutavel(TELA[i].op))difs++;
+  char difference[128];snprintf(difference,sizeof difference,"· %d",difs);
+  watch("Reprodução","Controle parental","Diferente do padrão",difference);
+  frame(win,output,"indice");
+  expect(seen[0]&&!clipped[0],"sections island shows Playback");
+  expect(seen[1]&&!clipped[1],"sections island shows the parental route");
+  expect(seen[2]&&!clipped[2]&&seen[3],"header chip shows live difference count");
   valor[AJ_QUALIDADE]=valorPadrao[AJ_QUALIDADE];
-  snprintf(difference,sizeof difference,"Diferente do padrão · %d",aj4Diferencas(aj4Opcoes));
+  difs=0;for(int i=0;i<AJ_N_TELA;i++)if(TELA[i].tipo==IT_OPC && ajOpcaoDisponivel(TELA[i].op) && uxDiferente(TELA[i].op) && triMutavel(TELA[i].op))difs++;
+  snprintf(difference,sizeof difference,"· %d",difs);
   watch(difference,NULL,NULL,NULL);frame(win,NULL,NULL);
-  expect(seen[0]&&!clipped[0],"difference count follows saved values");
-  // More groups proof starts on Image and sound, rather than P2P.
-  assert(ajustes_teste_quadro("v4-secao-grupos"));
-  watch("Imagem e som","Mais grupos",NULL,NULL);frame(win,output,"groups");
-  expect(seen[0]&&seen[1],"More groups proof keeps matching Image and sound state");
-  assert(ajustes_teste_quadro("v4-inicio-simples"));
-  aj4Entrar(1);aj4Linha=1;
-  watch("Ajustes / Áudio e legendas · Idiomas","NESTA SEÇÃO","Quatro escolhas do dia a dia.","Mude para Avançado para ver o catálogo completo.");
-  frame(win,output,"languages");
-  expect(seen[0]&&seen[1]&&seen[2]&&!clipped[2]&&seen[3]&&!clipped[3],"Simple languages restores breadcrumb, sidebar and Advanced guidance");
-  char hour[48];ajCenaHora(hour,sizeof hour);
-  watch("Sala",hour,NULL,NULL);frame(win,NULL,NULL);
-  expect(seen[0]&&seen[1]&&!clipped[0]&&!clipped[1],"shared header shows room context and current formatted clock");
+  expect(seen[0],"difference count follows saved values");
+  // A focused row explains itself in the inspector, with scope and recommended value.
+  focarOpcao(AJ_QUALIDADE);
+  watch("Qualidade máxima","Vale para","Recomendado",NULL);frame(win,output,"opcao");
+  expect(seen[0]&&!clipped[0]&&seen[1]&&seen[2],"inspector shows title, scope and recommended value");
+  // Dependencies explain themselves on the row and OK enables both.
   valor[AJ_CW_LIGADO]=0;valor[AJ_CW_THUMB]=1;valor[AJ_CW_BLUR_PROX]=1;
   focarOpcao(AJ_CW_BLUR_PROX);
   watch("Precisa ligar \"Miniatura do episódio\"","OK liga as duas",NULL,NULL);
   frame(win,output,"episode-dependency");
   expect(seen[0]&&!clipped[0]&&seen[1]&&!clipped[1],"episode dependency and OK action fit completely");
-  int pageRow=aj4Linha;
-  watch("Itens anteriores","Próximos itens",NULL,NULL);frame(win,NULL,NULL);
-  expect(seen[0]&&seen[1]&&!clipped[0]&&!clipped[1],"middle page visibly offers previous and next items");
-  if(seen[0]&&seen[1]) {
-    aj4Acao=0;aj4Linha=7;aj4Evento(SDLK_DOWN);
-    expect(aj4Acao==2,"Down from last visible row focuses Previous items");
-    aj4PontAtivar(3,2);
-    expect(aj4Linha==0 && !aj4Acao && !aj4Review,"pointer Previous items opens first page without reset");
-    watch("Itens anteriores","Próximos itens",NULL,NULL);frame(win,NULL,NULL);
-    expect(!seen[0]&&seen[1],"first page only offers next items");
-    aj4PontAtivar(3,3);
-    expect(aj4Linha==4 && !aj4Acao && !aj4Review,"pointer Next items opens middle page without reset");
-    aj4Linha=7;aj4Evento(SDLK_DOWN);aj4Evento(SDLK_RIGHT);aj4Evento(SDLK_RETURN);
-    expect(aj4Linha==8 && !aj4Acao && !aj4Review,"D-pad Next items opens final partial page");
-    watch("Itens anteriores","Próximos itens",NULL,NULL);frame(win,NULL,NULL);
-    expect(seen[0]&&!seen[1],"final partial page only offers previous items");
-    aj4PontAtivar(3,4);
-    expect(aj4Escopo==1 && !aj4Review,"scope chip toggles reset scope without resetting");
-    aj4Escopo=0;aj4Acao=0;
-  }
-  aj4Linha=pageRow;aj4Acao=aj4Review=0;
   valor[AJ_SEEKR_LIGADO]=1;valor[AJ_SEEKR_FITA]=1;
   snprintf(seekrChave,sizeof seekrChave,"offline-test-key");focarOpcao(AJ_SEEKR_FITA);
   watch("Precisa ligar \"Miniaturas na barra de tempo\"","OK liga as duas",NULL,NULL);
   frame(win,output,"strip-dependency");
   expect(seen[0]&&!clipped[0]&&seen[1]&&!clipped[1],"thumbnail strip prerequisite and OK action fit completely");
   expect(!lig(AJ_SEEKR_LIGADO)&&!lig(AJ_SEEKR_FITA),"rendering leaves both dependency values unchanged");
-  aj4Evento(SDLK_RETURN);
+  key(SDLK_RETURN);
   expect(lig(AJ_SEEKR_LIGADO)&&lig(AJ_SEEKR_FITA),"OK enables thumbnail strip and prerequisite");
   frame(win,output,"strip-enabled");
+  // The compact editors fit the third island: title, restore pill and the saved mark.
+  focarOpcao(AJ_AUD_LINGUA);uxAbrirEditor(AJ_AUD_LINGUA);
+  watch("Idioma do áudio","Restaurar padrão",NULL,NULL);frame(win,output,"editor");
+  expect(seen[0]&&!clipped[0]&&seen[1]&&!clipped[1],"choice editor shows the title and the restore pill unclipped");
+  uxCancelar();focarOpcao(AJ_LEG1_TAMANHO);uxAbrirEditor(AJ_LEG1_TAMANHO);
+  watch("Tamanho","salvo:",NULL,NULL);frame(win,output,"numero");
+  expect(seen[0]&&!clipped[0]&&seen[1]&&!clipped[1],"number editor shows the title and the saved value unclipped");
+  uxCancelar();
+  // The batch review names what changes before anything is applied.
+  assert(ajustes_teste_quadro("tri-revisao"));
+  watch("Prévia da mudança","Aplicar mudanças","Manter como está",NULL);frame(win,output,"revisao");
+  expect(seen[0]&&seen[1]&&!clipped[1]&&seen[2]&&!clipped[2],"review names both actions unclipped");
   tex_encerrar();txt_encerrar();SDL_DestroyWindow(win);SDL_Quit();return failures?1:0;
 }

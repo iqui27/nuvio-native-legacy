@@ -86,11 +86,11 @@ static void rail_shot_desenhar(int destino) {
   if (!rail_shot_ligado()) { rail_shot_relogio(); return; }
   menu_definir_destino(destino);
   { const char *m = getenv("NUVIO_RAIL");
-    if (m && !strcmp(m, "dinamica")) {   // the pill fades in like app.c asks for it
-      int k;
-      menu_pilula_mostrar(1.0f);
-      for (k = 0; k < 30; k++) menu_atualizar(1.0f / 60.0f, SDL_GetTicks());
-    } }
+    int k;
+    // The pill (Dinamica) and the rail (Padrao/Moderna) fade in like app.c
+    // asks for them: a few updates before the first paint, or nothing shows.
+    if (m && !strcmp(m, "dinamica")) menu_pilula_mostrar(1.0f);
+    for (k = 0; k < 30; k++) menu_atualizar(1.0f / 60.0f, SDL_GetTicks()); }
   menu_desenhar(SDL_GetTicks());
   rail_shot_relogio();
 }
