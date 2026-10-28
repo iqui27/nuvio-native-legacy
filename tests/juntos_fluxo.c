@@ -46,7 +46,8 @@ unsigned video_bufferando_ms(void) { return 0; }
 double video_pos_amostra(Uint64 *t) { *t = now; return position; }
 void player_juntos_pausar(int p) { playing = !p; if (p) pauses++; else starts++; }
 void player_juntos_buscar(double p) { position = p; }
-void video_taxa_sync(int v) { (void)v; }
+static int syncRate = 1000;
+void video_taxa_sync(int v) { syncRate = v; }
 void juntosui_sala_abriu(void) { lobby++; }
 // Network/socket edges of the room replies: never reached (worker held, no ticket).
 void juntosui_sala_fechou(void) {}

@@ -222,12 +222,12 @@ static double pPos(void *u, double *t) {
   return p;
 }
 static int pTocando(void *u) { (void)u; return player_aberto() && video_tocando() && !player_pausado(); }
-static int pPronto(void *u) { (void)u; return player_aberto() && player_juntos_preparado() && video_duracao() > 0; }
+static int pPronto(void *u) { (void)u; return !foraDoPlayer && player_aberto() && player_juntos_preparado() && video_duracao() > 0; }
 static unsigned pBuffer(void *u) { (void)u; return video_bufferando_ms(); }
 static double pDur(void *u) { (void)u; return video_duracao(); }
-static void pPausar(void *u, int p) { (void)u; player_juntos_pausar(p); }
-static void pBuscar(void *u, double s) { (void)u; player_juntos_buscar(s); }
-static void pVel(void *u, int c) { (void)u; video_taxa_sync(c * 10); }
+static void pPausar(void *u, int p) { (void)u; if (!foraDoPlayer) player_juntos_pausar(p); }
+static void pBuscar(void *u, double s) { (void)u; if (!foraDoPlayer) player_juntos_buscar(s); }
+static void pVel(void *u, int c) { (void)u; if (!foraDoPlayer) video_taxa_sync(c * 10); }
 
 static int enviarWs(void *u, const char *j) { (void)u; return ws ? dws_enviar(ws, j) : -1; }
 
