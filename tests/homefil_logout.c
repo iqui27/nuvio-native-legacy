@@ -5,6 +5,21 @@
 #include "homefil.h"
 #include "catalogo.h"
 
+void ajustes_edicao_encerrar(void) {}
+int ajustes_edicao_perfil(void) { return 0; }
+int ajustes_migrar_escopo(void) { return 0; }
+void diario_dono(const char *owner) { (void)owner; }
+void diario_esquecer(void) {}
+void g5ui_forget(void) {}
+void perfil_infantil_esquecer(void) {}
+char *rewatch_blob_costurar(const char *blob) { return strdup(blob); }
+int rewatch_blob_ler(const char *blob) { (void)blob; return 0; }
+void rewatch_esquecer(void) {}
+void rewatch_sujar(void) {}
+int rewatch_sujo(void) { return 0; }
+void trava_definir_conta(const char *owner) { (void)owner; }
+void trava_esquecer(void) {}
+
 int col_n(void) { return 0; }
 const ColFolder *col_folder(int i) { (void)i; return NULL; }
 int cat_n_fileiras(void) { return 0; }

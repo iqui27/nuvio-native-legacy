@@ -13,6 +13,13 @@ __attribute__((weak)) int trakt_ativo(void) { return 0; }
 __attribute__((weak)) int simkl_ativo(void) { return 0; }
 __attribute__((weak)) int gpun_efeito_ativo(int effect) { (void)effect; return 0; }
 
+#include "addons.h"
+#include <stdio.h>
+__attribute__((weak)) void addons_catalogo_chave(const char *id, const char *base,
+    const char *type, const char *catalogue, char *dst, unsigned size) {
+  (void)base; snprintf(dst, size, "%s_%s_%s", id, type, catalogue);
+}
+
 #include "proximo.h"
 __attribute__((weak)) int prox_seguinte(const CatItem *ci, const CatEp *eps, int n, int pct, long long agora, ProxSugestao *out) {
   (void)ci; (void)eps; (void)n; (void)pct; (void)agora; (void)out; return 0;
