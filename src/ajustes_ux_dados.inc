@@ -11,12 +11,14 @@ static int uxTemPadrao(int op) {
 }
 
 static int uxValorPadrao(int op) {
+  if (op >= AJ_FONTE_OCULTAR_DV && op <= AJ_FONTE_OCULTAR_VIDEO) return !stream_incompat_padrao(op - AJ_FONTE_OCULTAR_DV);
   if (op == AJ_SALVOS_DEST) return ajustes_fonte_resolver(valorPadrao[op], trakt_ativo(), simkl_ativo());
   return uxTemPadrao(op) ? valorPadrao[op] : 0;
 }
 
 /* Fileiras tem uma fonte propria. valor[] e apenas seu espelho na tela. */
 static int uxValorAtual(int op) {
+  if (op >= AJ_FONTE_OCULTAR_DV && op <= AJ_FONTE_OCULTAR_VIDEO) return !ajustes_fonte_ocultar(op - AJ_FONTE_OCULTAR_DV);
   if (op < 0 || op >= AJ_N) return 0;
   if (ajFonte(op)) return ajFonteAtual(op);
   if (op == AJ_XTREAM_CONEXOES) return xtream_conexoes_modo();
@@ -192,6 +194,7 @@ static const char *uxSinonimos(int op) {
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
       return "legenda secundaria segunda dupla dual posicao topo junto empilhada tamanho cor fundo borda contorno estilo second subtitle position size color";
     case AJ_FONTE_IDIOMA_AUDIO: return "fonte automatica idioma audio dublado dublagem dual multi anime ingles japones preferir dub language";
+    case AJ_FONTE_OCULTAR_DV: case AJ_FONTE_OCULTAR_AUDIO: case AJ_FONTE_OCULTAR_VIDEO: return "sources fontes ocultar incompatível tv dolby vision profile perfil fallback truehd atmos dts dts-hd ac3 eac3 av1 hevc codec decoder resolução";
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR: return "fonte automatica prioridade qualidade equilibrio fluidez hdr dolby vision dv hdr10 sdr cor escolha melhor resolucao addon aiostreams ordem primeira order first";
     case AJ_LOGO_APP: return "logo marca simbolo novo classico icone identidade nuvio tv retro play gradiente splash";
     case AJ_ABERTURA: return "abertura splash inicio animacao zoom esmaecer fade direto rapido logo entrada boot arranque";

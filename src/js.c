@@ -154,6 +154,10 @@ int js_cadeia(const char *p, char *dst, size_t tam) {
   return lerTextoEm(p, p + strlen(p), dst, tam);
 }
 
+int js_cadeia_linhas(const char *p, char *dst, size_t tam) {
+  return p && tam ? lerTextoEm2(p,p+strlen(p),dst,tam,1) : 0;
+}
+
 int js_texto(const char *ini, const char *fim, const char *chave,
              char *dst, size_t tam) {
   const char *p;
