@@ -25,12 +25,17 @@ SERIES = "abcdef0123456789abcdef0123456789"
 PASSWORD = "pässwörd \"quoted\""
 
 lock = threading.Lock()
+# AIOStreams mints URL-safe base64 tokens of ~600 characters.
+QC_TOKEN = "qctoken" + "Ab0-_z9Y" * 75
+# Fake Quick Connect secret with the URL-safe characters AIOStreams uses.
+QC_SECRET = "-".join(["QcSecret_0123", "456789"])
+
 state = {
     "tokens": set(),
     "events": [],
     "polls": 0,
     "slow": 0.0,
-    "secret": "QcSecret0123456789",
+    "secret": QC_SECRET,
 }
 
 
@@ -140,12 +145,12 @@ class Handler(BaseHTTPRequestHandler):
             with lock:
                 ok = b.get("Secret") == state["secret"] and state["polls"] >= 2
                 if ok:
-                    state["tokens"].add("qctoken000000000000000000000001")
+                    state["tokens"].add(QC_TOKEN)
             if not ok:
                 return self.reply(401)
             return self.reply(200, {"User": {"Name": "ana", "Id": USER_ID, "ServerId": SERVER_ID},
                                     "SessionInfo": {"Id": "s1", "UserId": USER_ID},
-                                    "AccessToken": "qctoken000000000000000000000001", "ServerId": SERVER_ID})
+                                    "AccessToken": QC_TOKEN, "ServerId": SERVER_ID})
         if p == "/Users/AuthenticateByName" and method == "POST":
             b = self.body()
             if b.get("Username") != "ana" or b.get("Pw") != PASSWORD:
