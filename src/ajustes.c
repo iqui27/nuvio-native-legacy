@@ -3,6 +3,9 @@
 // cancela. A lista mostra valor e chevron, a ficha explica alcance e padrao.
 // IDs, chaves persistidas e indices de valores continuam os legados.
 #include "ajustes.h"
+#ifdef NV_IOS
+#include "ios.h"
+#endif
 #include "legfontes.h"
 #include "logrede.h"
 #include "jsw.h"
@@ -2937,6 +2940,8 @@ int ajustes_interface_mobile(void) {
   int automaticoMobile = 0;
 #ifdef NV_ANDROID
   automaticoMobile = android_interface_mobile_auto();
+#elif defined(NV_IOS)
+  automaticoMobile = ios_interface_mobile_auto();
 #endif
   return layout_modo_resolver(valor[AJ_INTERFACE_MODO], automaticoMobile);
 #else

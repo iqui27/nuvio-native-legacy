@@ -22,7 +22,7 @@ checks = {
         'return aberto && !juntosui_escolhendo_filme();' in player and
         'if (!player_visivel()) return;\n  const CatItem *c = item();' in player and
         'if (player_visivel()) { player_evento(e); return; }' in app and
-        'if (!player_visivel() || player_janela_animando' in app and
+        '(!player_visivel() || player_janela_animando' in app and
         'juntosui_voltar_filme()' in app and
         'detail_fechar_seco();\n    trocarTela(TELA_BUSCA);' in app,
     'P2: QR Back closes only QR; Sources and exit restore invoking focus':

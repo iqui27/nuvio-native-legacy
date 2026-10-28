@@ -10,8 +10,9 @@ static int authAvailable, authCalls;
 #endif
 int video_falhou(void) { return failedVideo; }
 int player_tem_video(void) { return prepared; }
-int video_velocidade_atual(void) { return 100; }
-void video_velocidade(int v) { (void)v; }
+static int personalSpeed = 100;
+int video_velocidade_atual(void) { return personalSpeed; }
+void video_velocidade(int v) { personalSpeed = v; }
 void video_estatisticas(VideoStats *s) { memset(s, 0, sizeof *s); }
 int dws_estado(DiscordWs *w) { (void)w; return DWS_CONECTANDO; }
 int dws_codigo_fechamento(DiscordWs *w) { (void)w; return 0; }
@@ -24,7 +25,8 @@ int stream_atual(void) { return prepared ? selectedStream : -1; }
 static double position, now = 10000;
 double video_pos(void) { return position; }
 static char sent[1024];
-int dws_enviar(DiscordWs *w, const char *j) { (void)w; (void)j; return 0; }
+static int socketSends;
+int dws_enviar(DiscordWs *w, const char *j) { (void)w; (void)j; socketSends++; return 0; }
 const char *i18n(const char *s) { return s; }
 void player_toast_ex(const char *s, unsigned ms, const char *ic, int c) { (void)s; (void)ms; (void)ic; (void)c; }
 int video_velocidade_suportada(void) { return 1; }
@@ -35,7 +37,8 @@ int recomenda_ativo(void) { return 1; }
 #endif
 const char *recomenda_meu_id(void) { return "host"; }
 const char *recomenda_vinculo_nome(void) { return "Host"; }
-int player_aberto(void) { return 1; }
+static int playerOpen = 1;
+int player_aberto(void) { return playerOpen; }
 int player_pausado(void) { return !playing; }
 int video_pronto(void) { return prepared; }
 int player_juntos_preparado(void) { return prepared && !failedVideo; }
@@ -45,7 +48,8 @@ unsigned video_bufferando_ms(void) { return 0; }
 double video_pos_amostra(Uint64 *t) { *t = now; return position; }
 void player_juntos_pausar(int p) { playing = !p; if (p) pauses++; else starts++; }
 void player_juntos_buscar(double p) { position = p; }
-void video_taxa_sync(int v) { (void)v; }
+static int syncRate = 1000;
+void video_taxa_sync(int v) { syncRate = v; }
 void juntosui_sala_abriu(void) { lobby++; }
 // Network/socket edges of the room replies: never reached (worker held, no ticket).
 void juntosui_sala_fechou(void) {}

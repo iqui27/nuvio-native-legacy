@@ -7,6 +7,7 @@
 #include "js.h"
 #include "juntosfonte.h"
 #include "juntosui.h"
+#include "avisodisp.h"
 #include "perfilinfantil.h"
 #include "player.h"
 #include "recomenda.h"
@@ -148,12 +149,13 @@ static struct {
   char conv[JUNTOS_CONVIDADOS_MAX][96];
 } prep;
 // abrir o titulo (convidado / proximo episodio)
-static int abrirPedido, escolhendo;
+static int abrirPedido, escolhendo, foraDoPlayer;
 static char abrirImdb[24], abrirTitulo[160], abrirPoster[512];
 static int abrirT, abrirE;
 static JsImpressao impSala;
 static JsVeredito veredito;
 static int fonteEscolhida = -1, salaDurConferida, fonteVista = -1;
+static int fonteSolicitada;
 // convites
 static Uint32 iniciouEm, proxConvites;
 static int buscandoConvites;
@@ -165,9 +167,38 @@ static int juntoMandado, maxMembros;
 
 int juntos_disponivel(void) { return NV_REC_URL[0] && recomenda_ativo() && recomenda_meu_id()[0]; }
 int juntos_ativo(void) { return fase != JF_OCIOSO; }
+int juntos_no_player(void) { return juntos_ativo() && !foraDoPlayer; }
 JuntosFase juntos_fase(void) { return fase; }
 const JsMotor *juntos_motor(void) { return temMotor ? &motor : NULL; }
 const char *juntos_titulo(void) { return tituloSala; }
+const char *juntos_id(void) { return salaId; }
+int juntos_banner(void) {
+  char chave[80];
+  if (!juntos_ativo() || !salaId[0]) return 0;
+  snprintf(chave, sizeof chave, "juntos:banner:%s", salaId);
+  return !avisodisp_tem(chave);
+}
+void juntos_banner_dispensar(void) {
+  char chave[80];
+  if (!salaId[0]) return;
+  snprintf(chave, sizeof chave, "juntos:banner:%s", salaId);
+  avisodisp_por(chave);
+}
+int juntos_aguarda_fonte(void) {
+  return juntos_no_player() && !fonteSolicitada && (fase == JF_PREPARADO || !temMotor || !motor.temSala ||
+    motor.sala.rel.estado == JSE_LOBBY);
+}
+void juntos_fonte_escolhida(void) {
+  if (!juntos_no_player()) return;
+  fonteSolicitada = 1;
+  if (temMotor) {
+    jsm_estado_app(&motor, "carregando", 0);
+    for (int i = 0; i < motor.sala.n; i++) if (!strcmp(motor.sala.m[i].id, motor.eu)) {
+      snprintf(motor.sala.m[i].st, sizeof motor.sala.m[i].st, "carregando");
+      motor.sala.m[i].pct = 0;
+    }
+  }
+}
 const char *juntos_codigo(void) { return codigo; }
 int juntos_precisa_auth(void) { return salaFalhou == 2; }
 const char *juntos_url_celular(void) { return urlCelular; }
@@ -187,18 +218,19 @@ static void separarEpJ(const char *ep, char *imdb, size_t n, int *t, int *e) {
 // ---- o player de verdade, para o motor -------------------------------------------------
 static double pPos(void *u, double *t) {
   Uint64 stamp;
+  if (!juntos_no_player()) { *t = agoraLocal(); return 0; }
   double p = video_pos_amostra(&stamp);
   (void)u;
   *t = (double)stamp;
   return p;
 }
-static int pTocando(void *u) { (void)u; return video_tocando() && !player_pausado(); }
-static int pPronto(void *u) { (void)u; return player_juntos_preparado() && video_duracao() > 0; }
-static unsigned pBuffer(void *u) { (void)u; return video_bufferando_ms(); }
-static double pDur(void *u) { (void)u; return video_duracao(); }
-static void pPausar(void *u, int p) { (void)u; player_juntos_pausar(p); }
-static void pBuscar(void *u, double s) { (void)u; player_juntos_buscar(s); }
-static void pVel(void *u, int c) { (void)u; video_taxa_sync(c * 10); }
+static int pTocando(void *u) { (void)u; return juntos_no_player() && player_aberto() && video_tocando() && !player_pausado(); }
+static int pPronto(void *u) { (void)u; return juntos_no_player() && player_aberto() && player_juntos_preparado() && video_duracao() > 0; }
+static unsigned pBuffer(void *u) { (void)u; return !juntos_no_player() ? 0 : video_bufferando_ms(); }
+static double pDur(void *u) { (void)u; return !juntos_no_player() ? 0 : video_duracao(); }
+static void pPausar(void *u, int p) { (void)u; if (juntos_no_player()) player_juntos_pausar(p); }
+static void pBuscar(void *u, double s) { (void)u; if (juntos_no_player()) player_juntos_buscar(s); }
+static void pVel(void *u, int c) { (void)u; if (juntos_no_player()) video_taxa_sync(c * 10); }
 
 static int enviarWs(void *u, const char *j) { (void)u; return ws ? dws_enviar(ws, j) : -1; }
 
@@ -244,15 +276,17 @@ static void zerar(void) {
   mandarJunto();
   entrouEm = 0; juntoMandado = 0; maxMembros = 0;
   fecharWs();
+  if (juntos_no_player()) video_taxa_sync(1000);
   gen++;
   fase = JF_OCIOSO;
   temMotor = salaFalhou = 0;
   repetirSalaEm = 0;
   salaId[0] = codigo[0] = bilhete[0] = tituloSala[0] = urlCelular[0] = 0;
   pedindoBilhete = 0;
+  fonteSolicitada = 0;
+  foraDoPlayer = 0;
   escolhendo = 0; abrirPedido = 0; fonteEscolhida = -1; salaDurConferida = 0; fonteVista = -1;
   memset(&prep, 0, sizeof prep);
-  video_taxa_sync(1000);
   juntosui_sala_fechou();
 }
 
@@ -355,6 +389,7 @@ void juntos_preparar(const char *imdb, int t, int e, const char *titulo, const c
   snprintf(prep.poster, sizeof prep.poster, "%s", poster ? poster : "");
   prep.t = t; prep.e = e; prep.soAnf = soAnf;
   for (i = 0; i < n && i < JUNTOS_CONVIDADOS_MAX; i++) snprintf(prep.conv[prep.n++], sizeof prep.conv[0], "%s", conv[i]);
+  fonteSolicitada = 0;
   fase = JF_PREPARADO;
   snprintf(abrirImdb, sizeof abrirImdb, "%s", prep.imdb);
   snprintf(abrirTitulo, sizeof abrirTitulo, "%s", prep.titulo);
@@ -429,14 +464,14 @@ void juntos_sair(void) {
 }
 
 int juntos_precarregando(void) {
-  return juntos_ativo() && (!temMotor || !motor.temSala ||
+  return juntos_no_player() && (!temMotor || !motor.temSala ||
     motor.sala.rel.estado == JSE_LOBBY ||
     (motor.playArmado && motor.sala.rel.estado == JSE_TOCANDO &&
      agoraLocal() < jsr_local(&motor.rel, motor.sala.rel.t0)));
 }
 
 int juntos_comecar(void) {
-  if (!temMotor || !jsm_sou_anfitriao(&motor) ||
+  if (!juntos_no_player() || !temMotor || !jsm_sou_anfitriao(&motor) ||
       motor.sala.rel.estado != JSE_LOBBY) return -1;
   if (!pPronto(NULL)) {
     printf("[juntos] start: waiting for paused source readiness\n");
@@ -523,10 +558,12 @@ void juntos_silenciar(const char *de) {
 // ---- respostas do fio ----------------------------------------------------------------------
 
 static void pedirAbrir(const char *ep, const char *titulo, const char *poster) {
+  if (!juntos_no_player()) return;
   separarEpJ(ep, abrirImdb, sizeof abrirImdb, &abrirT, &abrirE);
   snprintf(abrirTitulo, sizeof abrirTitulo, "%s", titulo ? titulo : "");
   snprintf(abrirPoster, sizeof abrirPoster, "%s", poster ? poster : "");
   abrirPedido = 1;
+  fonteSolicitada = 0;
   escolhendo = 1;
   fonteEscolhida = fonteVista = -1;
   salaDurConferida = 0;
@@ -595,6 +632,10 @@ static void resposta(Resp *r) {
         }
         snprintf(tituloSala, sizeof tituloSala, "%s", tit);
         iniciarMotor();
+        // The REST summary is usable before the first websocket snapshot.
+        snprintf(motor.sala.ep, sizeof motor.sala.ep, "%s", ep);
+        snprintf(motor.sala.titulo, sizeof motor.sala.titulo, "%s", tit);
+        snprintf(motor.sala.poster, sizeof motor.sala.poster, "%s", pos);
         jsm_estado_app(&motor, "procurando", 0);
         if ((int)js_num(r->txt, NULL, "pend", 0)) fase = JF_AGUARDANDO;
         else if (ep[0]) pedirAbrir(ep, tit, pos);
@@ -622,6 +663,8 @@ static void eventos(void) {
       case JSV_EPISODIO: {
         snprintf(tituloSala, sizeof tituloSala, "%s", motor.sala.titulo);
         impSala = motor.sala.imp;
+        // Back retains room updates, but only explicit Rejoin may reopen playback.
+        if (!juntos_no_player()) break;
         juntosui_sala_abriu();
         // A different movie can also have episode 0/0: compare room identity,
         // already checked by the motor, rather than just season/episode.
@@ -744,6 +787,14 @@ void juntos_passo(Uint32 agora) {
   if (!temMotor) return;
   websocket(agora);
   if (!temMotor) return;
+  if (!juntos_no_player()) {
+    jsm_estado_app(&motor, "procurando", 0);
+    motor.altura = 0;
+    jsm_passo(&motor, agoraLocal());
+    if (motor.sala.n > maxMembros) maxMembros = motor.sala.n;
+    eventos();
+    return;
+  }
   // The room owns time; personal speed stays at 1x. Sync uses its own rate.
   if (video_velocidade_atual() != 100) video_velocidade(100);
   // A retry or manual source change needs a fresh duration verdict.
@@ -759,7 +810,13 @@ void juntos_passo(Uint32 agora) {
     salaDurConferida = 1;
     if (v != veredito) { veredito = v; jsm_fonte(&motor, jsf_nome(v)); juntosui_fonte_diferente(v, pal); }
   }
-  if (escolhendo && !player_aberto()) jsm_estado_app(&motor, "procurando", 0);
+  if (salaFalhou) {
+    jsm_estado_app(&motor, "erro", 0);
+    if (!motor.temSala && motor.sala.n) {
+      motor.sala.m[0].pct = 0;
+      snprintf(motor.sala.m[0].st, sizeof motor.sala.m[0].st, "erro");
+    }
+  } else if (!player_aberto() || juntos_aguarda_fonte()) jsm_estado_app(&motor, "procurando", 0);
   else if (player_aberto()) {
     VideoStats stats;
     const Stream *s = stream_item(stream_atual());
@@ -790,7 +847,7 @@ void juntos_passo(Uint32 agora) {
 
 // ---- app.c -----------------------------------------------------------------------------------
 int juntos_pediu_abrir(char *imdb, size_t ni, int *t, int *e, char *titulo, size_t nt, char *poster, size_t np) {
-  if (!abrirPedido) return 0;
+  if (!juntos_no_player() || !abrirPedido) return 0;
   abrirPedido = 0;
   printf("[juntos] source: open request handed to player\n");
   snprintf(imdb, ni, "%s", abrirImdb);
@@ -800,12 +857,12 @@ int juntos_pediu_abrir(char *imdb, size_t ni, int *t, int *e, char *titulo, size
   return 1;
 }
 
-int juntos_escolhendo_fonte(void) { return escolhendo && temMotor; }
+int juntos_escolhendo_fonte(void) { return juntos_no_player() && escolhendo && temMotor; }
 
 int juntos_escolher_fonte(const Stream *lista, int n, Uint32 agora, Uint32 desde) {
   int i = -1;
   JsVeredito v;
-  if (!escolhendo || !temMotor) return -1;
+  if (!juntos_no_player() || !escolhendo || !temMotor) return -1;
   v = jsf_casar(&impSala, lista, n, NULL, &i);
   // A mesma fonte decide na hora; sem ela, espera os outros addons um pouco.
   if (v != JSF_MESMA && agora - desde < FONTE_ESPERA_MS) return -1;
@@ -823,7 +880,7 @@ void juntos_preferir_reserva(void) {
   int best = -1, n = stream_n();
   const Stream *base = stream_item(0);
   unsigned char *excluded;
-  if (!temMotor || !motor.temSala || n <= 0 || !base || stream_item(n - 1) != base + n - 1) return;
+  if (!juntos_no_player() || !temMotor || !motor.temSala || n <= 0 || !base || stream_item(n - 1) != base + n - 1) return;
   excluded = malloc((size_t)n);
   if (!excluded) return;
   for (int i = 0; i < n; i++) excluded[i] = (unsigned char)stream_automatico_excluida(i);
@@ -845,6 +902,7 @@ static void travado(void) {
 
 int juntos_ao_alternar(int tocandoAgora) {
   int r;
+  if (!juntos_no_player()) return 0;
   if (juntos_precarregando() && (!temMotor || !motor.temSala)) return 1;
   if (!temMotor || !motor.temSala) return 0;
   if (motor.sala.rel.estado == JSE_LOBBY) { juntosui_sala_abriu(); return 1; }
@@ -855,6 +913,7 @@ int juntos_ao_alternar(int tocandoAgora) {
 
 int juntos_ao_buscar(double seg) {
   int r;
+  if (!juntos_no_player()) return 0;
   if (!temMotor || !motor.temSala) return 0;
   if (juntos_precarregando()) return 1;
   r = jsm_cmd(&motor, "seek", seg, NULL, agoraLocal());
@@ -863,14 +922,14 @@ int juntos_ao_buscar(double seg) {
 }
 
 int juntos_ao_proximo(const char *alvo) {
-  if (!temMotor || !motor.temSala) return 0;
+  if (!juntos_no_player() || !temMotor || !motor.temSala) return 0;
   if (jsm_cmd(&motor, "proximo", -1, alvo, agoraLocal()) == 0) travado();
   return 1;   // Wait for the authoritative room update, including after send failure.
 }
 
 void juntos_escolher_titulo(const char *imdb, int t, int e, const char *titulo, const char *poster) {
   char alvo[64], j[2048], tit[400], art[1100];
-  if (!temMotor || !motor.temSala || !jsm_pode_controlar(&motor) || !imdb ||
+  if (!juntos_no_player() || !temMotor || !motor.temSala || !jsm_pode_controlar(&motor) || !imdb ||
       strncmp(imdb, "tt", 2) || strspn(imdb + 2, "0123456789") != strlen(imdb + 2)) return;
   if (t > 0 && e > 0) snprintf(alvo, sizeof alvo, "%s:%d:%d", imdb, t, e);
   else snprintf(alvo, sizeof alvo, "%s", imdb);
@@ -880,10 +939,29 @@ void juntos_escolher_titulo(const char *imdb, int t, int e, const char *titulo, 
   enviarWs(NULL, j);
 }
 
-int juntos_ao_voltar(void) {
-  if (!juntos_ativo()) return 0;
-  juntosui_perguntar_sair();
+void juntos_retomar_player(int escolherFonte) {
+  foraDoPlayer = 0;
+  escolhendo = escolherFonte;
+}
+
+int juntos_reentrar(void) {
+  if (!juntos_ativo() || !temMotor || !motor.sala.ep[0]) return 0;
+  foraDoPlayer = 0;
+  pedirAbrir(motor.sala.ep, motor.sala.titulo, motor.sala.poster);
+  if (fase == JF_PREPARADO) escolhendo = 0;
+  if (juntos_precarregando()) juntosui_sala_abriu();
   return 1;
+}
+
+int juntos_ao_voltar(void) {
+  // Back leaves playback; membership ends only through Leave session.
+  if (juntos_ativo()) {
+    foraDoPlayer = 1;
+    abrirPedido = escolhendo = 0;
+    motor.rajadaSeek = motor.prontoAnterior = 0;
+    juntosui_sala_fechou();
+  }
+  return 0;
 }
 
 void juntos_acao(const char *chave, int botao) { juntosui_acao(chave, botao); }

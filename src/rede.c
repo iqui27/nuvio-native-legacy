@@ -2,6 +2,14 @@
 #ifdef NV_ANDROID
 #include "android.h"
 #endif
+#ifdef NV_IOS
+#include "ios.h"
+#endif
+// Targets whose system HTTP stack stands in for libcurl (android_http /
+// nv_host_http): Android always has it; iOS has no libcurl at all.
+#if defined(NV_ANDROID) || defined(NV_IOS)
+#define NV_HTTP_HOST 1
+#endif
 #include "negcache.h"
 #include "addonurl.h"
 #include "mediaurl.h"
@@ -1956,7 +1964,7 @@ static void prepararOpenSSL(void) {
   fflush(stdout);
 }
 
-#ifdef NV_ANDROID
+#ifdef NV_HTTP_HOST
 #include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
@@ -2118,7 +2126,7 @@ static int abrirReal(void) {
   return 1;
 }
 
-#ifdef NV_ANDROID
+#ifdef NV_HTTP_HOST
 // #266: na Shield (Tegra, Android 11) o app nunca terminava de abrir, parado em
 // rede_preparar. Suspeita nao provada: dlopen da libcurl / curl_global_init
 // (mbedTLS 3.6 PSA/entropia) bloqueando. No Android isso roda num fio proprio;
@@ -2340,7 +2348,7 @@ char *rede_baixar_com(const char *url, int segundos, const char *const *cab) {
 
 char *rede_baixar_st(const char *url, int segundos, const char *const *cab,
                      int *status) {
-#ifdef NV_ANDROID
+#ifdef NV_HTTP_HOST
   char *r;
   int st = 0;
   if (!url || !*url) { if (status) *status = 0; return NULL; }
@@ -2422,7 +2430,7 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
   // Endereco de API de metadados que ja respondeu "nao existe" (ou host em
   // recuo por timeout): nao pede de novo — ver negcache.h.
   if (!status && negcache_barra(url, (long)time(NULL))) return NULL;
-#ifdef NV_ANDROID
+#ifdef NV_HTTP_HOST
   // libcurl nunca ficou pronta: GET simples (catalogo, imagem) pelo Android.
   if (!abrir()) return viaAndroid("GET", url, segundos, cab, NULL, status, tam, retry, "libcurl fora");
 #else
@@ -2925,7 +2933,7 @@ char *rede_postar_st(const char *url, int segundos, const char *const *cab,
 // se ela nao respondeu). `verbo` NULL = POST.
 static char *enviarNativo(const char *verbo, const char *url, int segundos, const char *const *cab,
                           const char *corpo, int *status, int *retryAfter) {
-#ifdef NV_ANDROID
+#ifdef NV_HTTP_HOST
   const char *v = verbo ? verbo : "POST";
   char *r;
   int st = 0;
