@@ -332,6 +332,8 @@ static int autoParcialPronto(void) {
 // instante ainda nao tem a lista de episodios nem o "proximo" que
 // continuar_desenhar calculou para desenhar o card.
 static int cwTocarT, cwTocarE;
+static int homeAcaoDet = -1;   // home_pediu_acao_detalhe, esperando a pagina
+static Uint32 homeAcaoDetEm;
 static int cwRewatch = -1;
 // Episode the source sheet was opened FOR (#513). Not cwTocar: that slot is
 // rewritten every frame by Continue Watching, the island and the agenda, and
@@ -6096,6 +6098,13 @@ void app_atualizar(float dt, Uint32 agora) {
   { int d = ios_destino_pedido(); if (d >= 0) menu_ir(d); }
   { int a = ios_acao_pedida(); if (a >= 0) detail_acao_barra(a); }
 #endif
+  // Botao do destaque em pe (+, fontes, trailer): a pagina abre primeiro e a
+  // acao entra quando ela ja assentou, pelo mesmo caminho da barra do iOS.
+  if (homeAcaoDet >= 0) {
+    Uint32 t = SDL_GetTicks() - homeAcaoDetEm;
+    if (detail_aberto() && t >= 450) { detail_acao_barra(homeAcaoDet); homeAcaoDet = -1; }
+    else if (!detail_aberto() && t >= 1000) homeAcaoDet = -1;
+  }
   if (menu_escolheu()) {
     tituloDoPainel = 0;
     if (detail_aberto()) detail_fechar_seco();
@@ -6149,7 +6158,11 @@ void app_atualizar(float dt, Uint32 agora) {
     HomeItem it;
     SpotPedido pedPessoa;
     if (tela == TELA_HOME && home_pediu_abrir()) {
-      if (home_item_focado(&it)) abrirTitulo(&it, 1, 1);
+      int acaoDet = home_pediu_acao_detalhe();
+      if (home_item_focado(&it)) {
+        abrirTitulo(&it, 1, 1);
+        if (acaoDet >= 0) { homeAcaoDet = acaoDet; homeAcaoDetEm = SDL_GetTicks(); }
+      }
     } else if (tela == TELA_EXPLORAR && explorar_pediu_abrir(&idx)) {
       abrirPorIndice(idx);
     } else if (tela == TELA_HOME && home_pediu_tocar()) {
