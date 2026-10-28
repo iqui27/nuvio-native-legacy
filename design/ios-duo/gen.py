@@ -74,7 +74,7 @@ body{margin:0;background:#141416;color:var(--fg);font-family:Inter,system-ui,san
 .dev.inner{width:951px;height:669px;border-radius:34px}
 .dev.inner.port{width:669px;height:951px;border-radius:34px}
 .dev.mac{width:1280px;height:800px;border-radius:14px;box-shadow:0 0 0 1px #333,0 30px 80px rgba(0,0,0,.6)}
-.scr{position:absolute;left:0;top:0;bottom:0;right:84px;overflow:hidden}
+.scr{position:absolute;left:0;top:0;bottom:0;right:0;overflow:hidden}
 .scr.full{right:0}
 .dev.port .scr{right:0}
 /* fold: division region. flat = inactive (hairline), book/tabletop = active band */
@@ -277,6 +277,44 @@ body{margin:0;background:#141416;color:var(--fg);font-family:Inter,system-ui,san
 .pane{position:absolute;top:0;bottom:0}
 .sym{display:flex}.sym svg{width:100%;height:100%;fill:currentColor}
 .note{position:absolute;left:50%;transform:translateX(-50%);bottom:10px;font-size:10.5px;color:rgba(255,255,255,.4);letter-spacing:.06em;text-transform:uppercase;z-index:40;white-space:nowrap}
+/* TV sidebar as a drawer (swipe right from the left edge) */
+.drawer{position:absolute;left:0;top:0;bottom:0;width:300px;padding:64px 14px 18px;display:flex;flex-direction:column;gap:2px;border-radius:0 32px 32px 0;z-index:25}
+.drawer a{display:flex;gap:12px;align-items:center;height:46px;padding:0 12px;border-radius:14px;font-size:16px;font-weight:500;color:rgba(243,242,239,.82)}
+.drawer a.on{background:var(--foco);color:#fff}
+.drawer a .ic{width:22px;height:22px}
+.drawer .k{font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--mut2);padding:14px 12px 6px;text-transform:uppercase}
+.drawer .hd{display:flex;align-items:center;gap:10px;padding:0 12px 10px}
+.drawer .hd b{font-size:20px;font-weight:700}
+.grip{position:absolute;left:6px;top:50%;transform:translateY(-50%);width:4px;height:56px;border-radius:2px;background:rgba(255,255,255,.35);z-index:26}
+.hand{position:absolute;width:44px;height:44px;border-radius:50%;border:2.5px solid rgba(255,255,255,.9);box-shadow:0 0 0 6px rgba(255,255,255,.18);z-index:40}
+.hand::after{content:"";position:absolute;left:46px;top:50%;width:70px;height:2.5px;background:linear-gradient(90deg,rgba(255,255,255,.9),rgba(255,255,255,0));transform:translateY(-50%)}
+/* bar gallery cards: the right 300 pt of a closed display */
+.bc{position:relative;width:300px;height:520px;overflow:hidden;border-radius:0 40px 40px 0;background:var(--bg);box-shadow:0 0 0 2px #2b2b2f,0 24px 60px rgba(0,0,0,.55)}
+.bc img.bg{position:absolute;left:-200px;top:0;width:500px;height:520px;object-fit:cover;object-position:60% 20%}
+.bc .veil{position:absolute;inset:0;background:linear-gradient(90deg,rgba(13,13,13,.1),rgba(13,13,13,.55) 70%)}
+.bc .vbar{padding-top:12px}
+.lbl{display:flex;flex-direction:column;gap:6px;width:300px}
+.lbl b{font-size:15px;font-weight:700}
+.lbl span{font-size:12.5px;color:#9a9a9e;line-height:1.45}
+.grid3{display:grid;grid-template-columns:repeat(3,300px);gap:44px 48px;padding:36px 44px;width:max-content}
+.tabs.wide{width:196px;align-items:stretch;padding:10px}
+.tabs.wide i.tb{width:auto;justify-content:flex-start;gap:12px;padding:0 12px;font-size:15px;font-weight:600;font-style:normal;color:rgba(255,255,255,.8)}
+.tabs.wide i.tb.on{background:rgba(255,255,255,.14);color:#fff}
+.tabs.wide i.tb.on .ic svg{fill:none;stroke:#fff}
+.tabs.mini{width:60px;padding:6px 0;gap:0}
+.tabs.mini .dd{display:flex;flex-direction:column;gap:5px;align-items:center;padding:6px 0 4px}
+.tabs.mini .dd i{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.4);display:block}
+.tabs.mini .dd i.on{background:var(--ac)}
+.tabs.tint{background:linear-gradient(180deg,rgba(226,120,60,.28),rgba(236,64,122,.22));box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 10px 28px rgba(0,0,0,.42)}
+.tabs .thumb{position:absolute;left:6px;width:48px;height:48px;border-radius:24px;background:rgba(255,255,255,.18);transition:top .2s}
+.np{position:relative;width:56px;height:56px;border-radius:50%;overflow:hidden;margin-top:12px}
+.np img{width:100%;height:100%;object-fit:cover}
+.np::after{content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(var(--ac) 38%,rgba(255,255,255,.18) 0);-webkit-mask:radial-gradient(circle,transparent 72%,#000 74%);mask:radial-gradient(circle,transparent 72%,#000 74%)}
+.edge{position:absolute;right:0;top:120px;bottom:120px;width:4px;border-radius:2px 0 0 2px;background:linear-gradient(180deg,rgba(236,64,122,0),var(--ac) 30%,var(--ac) 70%,rgba(236,64,122,0));box-shadow:-2px 0 14px rgba(236,64,122,.55)}
+.isl{width:64px;border-radius:32px;padding:10px 0 12px;display:flex;flex-direction:column;align-items:center;gap:8px;background:var(--ilha);box-shadow:0 10px 28px rgba(0,0,0,.4)}
+.isl .ic{width:22px;height:22px;color:#fff}
+.isl b{font-size:12px;font-weight:700;color:var(--ac)}
+.isl small{font-size:10px;color:var(--mut);writing-mode:vertical-rl;transform:rotate(180deg);letter-spacing:.04em}
 /* mac */
 .mac .tb{position:absolute;left:0;right:0;top:0;height:52px;display:flex;align-items:center;padding:0 16px;gap:8px;z-index:30}
 .mac .tb i.tl{width:12px;height:12px;border-radius:50%;display:block}
@@ -790,6 +828,120 @@ def mac_home():
     return dev('mac', side + tb + cont, '<b>macOS</b> · 1280×800 window · the Apple TV / Dynamic sidebar becomes the Mac sidebar, toolbar search in the title bar<br>same hero, rows and material; the window resizes down to the inner-display layout', cls='')
 
 
+
+# ---------- SIDEBAR DRAWER ----------
+SIDE = [('house', 'Home'), ('search', 'Search'), ('tv', 'TV Guide'), ('library', 'Library'), ('list', 'Lists'), ('trophy', 'Achievements')]
+SIDE2 = [('layers', 'Sources and add-ons'), ('activity', 'Sports'), ('users', 'Watch Together'), ('settings', 'Settings')]
+
+
+def sidebar_panel(x=0, w=300, on='Home'):
+    body = (f'<div class="hd"><span class="av" style="width:34px;height:34px;font-size:14px;background:#5B6CF2">H</span><b>Henrique</b><span class="chip" style="margin-left:auto;height:26px;font-size:11px">{ic("chevron-down", "s")}</span></div>'
+            + ''.join(f'<a class="{"on" if l == on else ""}">{ic(i)}{l}</a>' for i, l in SIDE)
+            + '<div class="k">Streaming</div>' + ''.join(f'<a>{ic(i)}{l}</a>' for i, l in SIDE2[:3])
+            + '<div style="flex:1"></div>' + f'<a>{ic("settings")}Settings</a>')
+    return f'<div class="drawer ilha" style="left:{x}px;width:{w}px">{body}</div>'
+
+
+def drawer_outer():
+    # mid-gesture: the panel follows the finger from the left edge; Home dims behind it
+    scr = (f'<div class="scr full"><div class="hero full"><img class="bg" src="{f(FALLOUT)}" style="object-position:58% 20%">'
+           '<div class="veu" style="background:linear-gradient(180deg,rgba(13,13,13,0) 38%,rgba(13,13,13,.72) 62%,var(--bg) 82%)"></div></div>'
+           '<div style="position:absolute;left:20px;right:104px;top:296px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px">'
+           f'<img src="{f(FALLOUT_LOGO)}" style="height:84px;object-fit:contain">'
+           '<div class="meta big" style="justify-content:center;font-size:16px"><span>Series</span><span class="pt"></span><span>Sci-Fi</span><span class="pt"></span><span>2024</span></div>'
+           f'<span class="pill xl wide" style="margin-top:6px">{ic("play")}Continue S1:E3</span></div>'
+           '<div class="dim" style="background:rgba(0,0,0,.45)"></div>'
+           + sidebar_panel(-54) + '<span class="hand" style="left:226px;top:330px"></span></div>')
+    bar = vbar('home', cam=True)
+    return dev('outer', scr, '<b>Closed · swipe right from the left edge</b> · the TV sidebar follows the finger as an island<br>Home dims behind it; release past a third and it snaps open; the vertical bar stays', bar=bar)
+
+
+def drawer_outer_open():
+    scr = (f'<div class="scr full"><div class="hero full"><img class="bg" src="{f(FALLOUT)}" style="object-position:58% 20%">'
+           '<div class="veu" style="background:linear-gradient(180deg,rgba(13,13,13,0) 38%,rgba(13,13,13,.72) 62%,var(--bg) 82%)"></div></div>'
+           '<div class="dim" style="background:rgba(0,0,0,.55)"></div>' + sidebar_panel(0, 312) + '</div>')
+    bar = vbar('home', cam=True)
+    return dev('outer', scr, '<b>Closed · sidebar open</b> · the same rail, sections and profile as on the TV<br>tap outside or swipe left to close; the active page is the lit row', bar=bar)
+
+
+def drawer_inner():
+    # open display, book pose: the sidebar lives entirely in the left half; content keeps the right half
+    scr = (f'<div class="scr full"><div class="hero full"><img class="bg" src="{f(FALLOUT)}" style="object-position:50% 18%">'
+           '<div class="veu" style="background:linear-gradient(90deg,rgba(13,13,13,.78) 0,rgba(13,13,13,.45) 34%,rgba(13,13,13,0) 60%),linear-gradient(180deg,rgba(13,13,13,0) 45%,rgba(13,13,13,.7) 78%,var(--bg) 100%)"></div></div>'
+           '<div style="position:absolute;left:380px;bottom:78px;display:flex;flex-direction:column;gap:14px;max-width:460px">'
+           f'<img src="{f(FALLOUT_LOGO)}" style="height:110px;width:auto;object-fit:contain;object-position:left">'
+           '<div class="meta big"><span>Series</span><span class="pt"></span><span>Sci-Fi</span><span class="pt"></span><span>2 seasons</span></div>'
+           f'<p class="sub big" style="margin:0;max-width:440px">{SYN_FALLOUT}</p>'
+           f'<div class="acts" style="gap:12px"><span class="pill xl">{ic("play")}Continue S1:E3</span><span class="dsc xl">{ic("plus")}</span><span class="dsc xl">{ic("ellipsis")}</span></div></div>'
+           + sidebar_panel(0, 330) + '</div>')
+    bar = vbar('home', cam=False)
+    cap = ('<b>Open · sidebar open</b> · the drawer sits inside the left half, never over the fold<br>Home reflows beside it instead of dimming: on regular width the sidebar can stay pinned, like the Apple TV layout')
+    return dev('inner', scr, cap, pose='book', bar=bar)
+
+
+# ---------- SIDE BAR OPTIONS ----------
+def barcard(inner_bar, title, text, extra=''):
+    return (f'<div class="lbl"><div class="bc"><img class="bg" src="{f(FALLOUT)}"><div class="veil"></div>{extra}{inner_bar}</div>'
+            f'<b>{title}</b><span>{text}</span></div>')
+
+
+def bar_option_cards():
+    cards_ = []
+    # 1 system default
+    cards_.append(barcard(vbar('home', cam=True), '1 · System bar (today)',
+                          'Status, nav and the tab capsule share the 84 pt region. Free from UITabBarController; fold and camera avoidance included.'))
+    # 2 expand on hold
+    wide = ('<aside class="vbar">' + status(True) + '<div class="vsp"></div><div class="tabs wide gl" style="margin-right:-0px;align-self:flex-end">'
+            + ''.join(f'<i class="tb{" on" if k == 0 else ""}">{ic(i)}{l}</i>' for k, (i, l) in enumerate([('house', 'Home'), ('search', 'Search'), ('tv', 'TV Guide'), ('library', 'Library')]))
+            + '</div></aside>')
+    cards_.append(barcard(wide, '2 · Expands on hold',
+                          'Touch and hold the capsule: it grows leftwards into icon + label, like the TV rail opening. Release on a row to go there.'))
+    # 3 context morph
+    ctx = ('<aside class="vbar">' + status(True) + f'<div class="nav"><span class="nb gl">{ic("chevron-left")}</span></div>'
+           f'<div class="tools">' + ''.join(f'<span class="nb gl">{ic(i)}</span>' for i in ['layers', 'clapperboard', 'eye-off', 'plus']) + '</div>'
+           '<div class="vsp"></div><div class="tabs mini gl"><i class="tb on">' + ic('house') + '</i></div></aside>')
+    cards_.append(barcard(ctx, '3 · Morphs per screen',
+                          'Detail: Back, then Sources / Trailer / Watched / Library. The tab capsule folds to the active icon; the items cross-fade as you navigate (the 2.1 "More" morph).'))
+    # 4 scroll aware
+    mini = ('<aside class="vbar">' + status(True) + '<div class="vsp"></div><div class="tabs mini gl"><i class="tb on">' + ic('house')
+            + '</i><div class="dd"><i class="on"></i><i></i><i></i><i></i></div></div></aside>')
+    cards_.append(barcard(mini, '4 · Shrinks while scrolling',
+                          'Rows moving: the capsule collapses to the active icon and four dots. Stop, or pull up, and it springs back. More art, less chrome.'))
+    # 5 clock island on the side
+    isl = ('<aside class="vbar"><div class="isl" style="margin-top:8px"><span style="font-size:14px;font-weight:700">9:41</span>' + ic('cloud') + '<b>14</b><small>add-ons synced</small></div>'
+           '<div class="vsp"></div>' + tabs('home') + '</aside>')
+    cards_.append(barcard(isl, '5 · The clock island, vertical',
+                          'The TV\'s clock island moves into the side region: time on top, then the toast (sync, download, reminder) grows downwards like a vertical Dynamic Island.'))
+    # 6 now playing dock
+    npd = ('<aside class="vbar">' + status(True) + '<div class="vsp"></div>' + tabs('home')
+           + f'<div class="np"><img src="{f(EPS[1])}"></div></aside>')
+    cards_.append(barcard(npd, '6 · Now-playing dock',
+                          'Leave the player and its episode docks under the capsule with a progress ring. Tap to return, swipe up for PiP, swipe down to stop.'))
+    # 7 thumb scrub
+    scrub = ('<aside class="vbar">' + status(True) + '<div class="vsp"></div><div class="tabs gl" style="position:relative"><span class="thumb" style="top:68px"></span>'
+             + ''.join(f'<i class="tb" style="position:relative;z-index:1;{"color:#fff" if k == 1 else ""}">{ic(i)}</i>' for k, i in enumerate(['house', 'search', 'tv', 'library']))
+             + '<i class="tb" style="position:relative;z-index:1"><span class="avp"></span></i></div>'
+             '<span class="hand" style="right:14px;bottom:214px;width:40px;height:40px"></span></aside>')
+    cards_.append(barcard(scrub, '7 · Scrub the capsule',
+                          'Drag along the capsule and the highlight follows the thumb with a haptic tick per tab; the page underneath switches live. Lift to commit.'))
+    # 8 tinted glass
+    tint = ('<aside class="vbar">' + status(True) + '<div class="vsp"></div>' + tabs('home').replace('class="tabs gl"', 'class="tabs gl tint"') + '</aside>')
+    cards_.append(barcard(tint, '8 · Glass tinted by the hero',
+                          'The capsule takes the hero palette (the same source as ajustes_acento on the TV). Liquid Glass refracts the art; the tint shifts as the hero changes.'))
+    # 9 immersive edge
+    edge = ('<aside class="vbar">' + status(True) + '</aside><span class="edge"></span>')
+    cards_.append(barcard(edge, '9 · Immersive edge',
+                          'In the player the bar fades to a thin glow on the hardware edge. Swipe in from it to bring the controls back; nothing else sits over the picture.'))
+    return cards_
+
+
+def bar_options_page():
+    cards_ = bar_option_cards()
+    return (f'<!doctype html><html><head><meta charset="utf-8"><title>Side bar options</title><style>{font_css()}{CSS}</style></head><body>'
+            '<div class="head"><h1>Nuvio · iPhone Duo · The side region, nine ways</h1><p>Every option keeps the system contract: back on top, tab bar at the bottom, nothing in the fold. '
+            '1 is free; 2, 4, 7 and 8 are tab-capsule customisations; 3, 5, 6 and 9 are Nuvio behaviours layered on the bar. They combine: 1 + 3 + 6 is the recommended set.</p></div>'
+            f'<div class="grid3">{"".join(cards_)}</div></body></html>')
+
 # ---------- PAGES ----------
 PAGES = [
     ('01-home', 'Home', 'Compact width is the phone you know; regular width shows one more level. Same hierarchy, same tab bar, nothing tied to a pose.', [home_outer(), home_inner()]),
@@ -804,13 +956,15 @@ PAGES = [
     ('10-profiles', 'Profiles', 'Who is watching, on both displays. Touch ID in the side button for the PIN-locked profile (no Face ID on this device).', [profiles_outer(), profiles_inner()]),
     ('11-settings', 'Settings', 'A list that pushes pages when closed and becomes list | page when open.', [settings_outer(), settings_inner()]),
     ('12-mac', 'Mac', 'The same design on macOS: sidebar navigation, title-bar search, Liquid Glass chrome, Nuvio islands inside.', [mac_home()]),
+    ('13-sidebar', 'Sidebar by swipe', 'The TV sidebar (rail, sections, profile) is a drawer: swipe right from the left edge on any screen. Closed, it overlays; open, it sits in the left half or stays pinned.', [drawer_outer(), drawer_outer_open(), drawer_inner()]),
+    ('14-sidebar-options', 'Side bar options', '', None),
 ]
 
 
 def build():
     OUT.mkdir(exist_ok=True)
     for slug, title, note, figs in PAGES:
-        (OUT / f'{slug}.html').write_text(page(title, note, figs))
+        (OUT / f'{slug}.html').write_text(page(title, note, figs) if figs is not None else bar_options_page())
     print(f'{len(PAGES)} pages in {OUT}')
 
 
@@ -823,7 +977,7 @@ def shoot():
             url = (OUT / f'{slug}.html').as_uri()
             ctx = b.new_context(viewport={'width': 400, 'height': 300}, device_scale_factor=1)
             pg = ctx.new_page(); pg.goto(url); pg.wait_for_timeout(300)
-            w, h = pg.evaluate('[Math.ceil(document.querySelector(".page").getBoundingClientRect().right + 44), document.documentElement.scrollHeight]')
+            w, h = pg.evaluate('[Math.ceil((document.querySelector(".page")||document.querySelector(".grid3")).getBoundingClientRect().right + 44), document.documentElement.scrollHeight]')
             ctx.close()
             w, h = min(int(w), 4000), min(int(h), 4000)
             s = min(2.0, 2000 / w, 2000 / h)

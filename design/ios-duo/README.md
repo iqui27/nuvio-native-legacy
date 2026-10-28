@@ -8,7 +8,8 @@ come from `deploy/app/art`.
     /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 design/ios-duo/gen.py
 
 Pages: Home, Search, Detail, Sources, Player (closed + book, tabletop + flat),
-TV Guide, Library, Sign-in, Profiles, Settings, Mac. Each page shows the outer
+TV Guide, Library, Sign-in, Profiles, Settings, Mac, Sidebar by swipe (the TV
+sidebar as a drawer from the left edge) and a gallery of nine side-bar options. Each page shows the outer
 display (466x678 pt, compact width, vertical bar) next to the inner display
 (951x669 pt, regular width; fold at 475.5) in the pose the flow needs.
 Device numbers are mockup constants only; code reads size class, safe area and
