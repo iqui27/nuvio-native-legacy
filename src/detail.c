@@ -8239,6 +8239,8 @@ static void menuDeVisto(Uint32 agora) {
     if (episodios_menu_resumo(&summary)) {
       float e = gfx_escala_ui();
       summary = (GfxRect){summary.x*e, summary.y*e, summary.w*e, summary.h*e};
+      // The menu rectangle is already in real pixels; do not scale it twice.
+      ESCALA_REAL_INI();
       float scale = summary.w / 420.0f;
       int dir;
       float fade=fabsf(2*episodios_menu_transicao(&dir)-1);
@@ -8247,6 +8249,7 @@ static void menuDeVisto(Uint32 agora) {
       summary.w=420; summary.h=740;
       desenhaEpisodioEm(summary, menuOrigemCol, 0, content, agora, 1);
       gfx_sem_transformar();
+      ESCALA_REAL_FIM();
     }
   }
   menuOrigem.w = 0.0f;   // so vale a caixa do quadro em que a peca foi desenhada

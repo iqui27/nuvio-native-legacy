@@ -1,13 +1,19 @@
 // Identical fixtures for before/after captures, including menu edge cases.
-static void epsModernoShots(const char *out) {
+static void epsModernoShots(const char *root) {
   extras_carregar("deploy/app/art");
   dados_gravar("aparencia-20.txt", "1\n");
+  const int textScales[] = {100, 115, 130};
+  for (int s = 0; s < 3; s++) {
+    char out[900];
+    snprintf(out, sizeof out, "%s/scale-%d", root, textScales[s]);
+    assert(mkdir(out, 0755) == 0 || errno == EEXIST);
   for (int layout = 0; layout < 3; layout += 2) {
-    char settings[400], path[900];
+    char settings[400], path[1000];
     snprintf(settings, sizeof settings,
       "performanceAutoVersaoLocal 1\nidioma 1\nhomeLayoutLocal %d\nvidroLocal 1\n"
       "bordaFocoCartaz 1\nepTamanhoLocal 1\nescalaTextoVersaoLocal 1\nescalaTextoLocal 2\n", layout);
     dados_gravar("ajustes.txt", settings); ajustes_dir(dados_dir());
+    gfx_escala_txt_definir(textScales[s] / 100.0f);
     montarCatalogo();
     for (int i = 0; i < T1_N; i++) {
       snprintf(episodios[i].thumb, sizeof episodios[i].thumb,
@@ -39,8 +45,14 @@ static void epsModernoShots(const char *out) {
       if (getenv("NV_EPSMODERNO_VERIFY") && layout == HOME_LAYOUT_MODERNA) {
         GfxRect summary, menu;
         assert(episodios_menu_resumo(&summary) && episodios_menu_caixa(&menu));
-        assert(summary.x >= 48 && summary.x+summary.w+20 <= menu.x);
-        assert(summary.y >= 48 && summary.y+summary.h <= NV_TELA_H-48);
+        float ui = gfx_escala_ui();
+        assert(summary.x*ui >= 47.9f && (summary.x+summary.w)*ui+16 <= menu.x*ui);
+        assert(summary.y*ui >= 47.9f && (summary.y+summary.h)*ui <= NV_LAYOUT_REAL_H-47.9f);
+        // Observe the actual Detail transform, after conversion to real pixels.
+        // Every title/info line is bounded by this same 420 px summary width.
+        assert(fxSummaryRight <= menu.x * gfx_escala_ui());
+        assert(fabsf(fxSummaryScale - 1.0f) < .001f);
+        assert(fabsf(gfx_escala() - 1.0f) < .001f);
         assert(secA[SEC_TEMPORADAS] > .99f);
       }
       snprintf(path, sizeof path, "%s/%s-menu-%d.png", out, layout ? "dynamic" : "modern", k); gravar(path);
@@ -49,5 +61,6 @@ static void epsModernoShots(const char *out) {
       episodios_menu_evento(&ev); parado = 0; quadros(120);
     }
   }
-  puts("PASS: Modern and Dynamic row, tabs and first/middle/last menu captures");
+  }
+  puts("PASS: Modern and Dynamic menus at 100/115/130% text; summary stays clear of actions");
 }

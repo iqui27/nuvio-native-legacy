@@ -33,6 +33,8 @@
 #include "nvtmp.h"
 #include <SDL2/SDL_image.h>
 #include <assert.h>
+#include <errno.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -103,6 +105,17 @@ static float fx_kicker(const char *s, float x, float y, int r, int g, int b, flo
 static float fx_titulo_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
                             float x, float y, float larg, float leading,
                             float alpha, int maxLinhas);
+#include "episodios.h"
+static float fxSummaryRight, fxSummaryScale;
+static void fx_summary_transform(float x, float y, float scale, float dx, float dy) {
+  GfxRect summary;
+  if (episodios_menu_resumo(&summary) && fabsf(x-summary.x*gfx_escala_ui()) < .1f) {
+    fxSummaryScale = gfx_escala();
+    fxSummaryRight = (x + 420*scale + dx) * gfx_escala();
+  }
+  gfx_transformar(x,y,scale,dx,dy);
+}
+#define gfx_transformar fx_summary_transform
 #define txt_bloco fx_titulo_bloco
 #define gfx_icone fx_icone
 #define plrui_kicker fx_kicker
@@ -135,6 +148,7 @@ static void rwRemoto(const char *id,const char *chave,int ocultar) { (void)id; (
 #undef tirarremoto_executar
 #undef SDL_GetTicks
 #undef gfx_rect_furos
+#undef gfx_transformar
 #include "menu.h"
 #include "intro.h"
 #include "ilha.h"
