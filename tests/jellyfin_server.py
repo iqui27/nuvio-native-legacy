@@ -321,7 +321,7 @@ class Handler(BaseHTTPRequestHandler):
                  "SupportsDirectStream": True, "SupportsTranscoding": True,
                  "MediaStreams": [{"Codec": "hevc", "Type": "Video", "Height": 2160, "VideoRangeType": "HDR10"},
                                   {"Codec": "eac3", "Type": "Audio", "Channels": 6}]},
-                {"Protocol": "File", "Id": "%032x" % 77, "Container": "avi", "Name": "Film - old",
+                {"Protocol": "File", "Id": "%032x" % 77, "Container": "avi", "Name": "Film - old", "Size": 1073741824,
                  "SupportsDirectPlay": False, "SupportsDirectStream": False, "SupportsTranscoding": True,
                  # 10.x servers embed the legacy name; 12.x embeds no token here.
                  "TranscodingUrl": "/videos/%s/master.m3u8?MediaSourceId=%032x&PlaySessionId=ps0001%s" % (

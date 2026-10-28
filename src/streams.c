@@ -84,8 +84,8 @@ static int navigationMove(SDL_Keycode);
 #define FOLHA_PAD_E     48.0f  // da borda da folha ao cartao da linha
 #define FOLHA_PAD_D     56.0f
 #define FOLHA_TXT       26.0f  // do cartao ao texto
-// Sources grows from the clock island: plrilha in the player, ilha_corpo on
-// browsing pages. Without a visible clock, keep the right-edge sheet.
+// Player Sources uses plrilha. Browsing Sources slides from the right edge
+// so a clock anchored on the left never covers the detail hero.
 // folhaOY places content below the clock header; folhaBase ends the list.
 static float folhaOY, folhaBase, folhaDica, folhaSala;
 float (*stream_folha_sala_h)(void);
@@ -355,7 +355,10 @@ static StreamfitClasse fitTexto2(int i, char *l1, size_t n1, char *l2, size_t n2
       if (STREAMFIT_REDE_EXISTE) snprintf(l1, n1, "%s", i18n("Conexão: sem dados desta rede"));
       else if (n1) l1[0] = 0;
       break;
-    case SF_SEM_TAMANHO: snprintf(l1, n1, "%s", i18n("Conexão: tamanho do arquivo não informado")); break;
+    case SF_SEM_TAMANHO:
+      if (ehServidor(&lista[i]) && lista[i].tamanhoMB > 0) { if (n1) l1[0] = 0; }
+      else snprintf(l1, n1, "%s", i18n("Conexão: tamanho do arquivo não informado"));
+      break;
     case SF_SEM_DURACAO: snprintf(l1, n1, "%s", i18n("Conexão: duração do título desconhecida")); break;
     case SF_SEM_HOST:    snprintf(l1, n1, "%s", i18n("Conexão: servidor só conhecido ao tocar")); break;
     default:             snprintf(l1, n1, "%s", i18n("Conexão: servidor ainda não medido")); break;
@@ -3549,7 +3552,9 @@ static int automaticoDaFolhaModoCalcular(void) {
 static int grupo, filtro, soMp4, soCache, soDub;
 static int filtroServidor = -1;
 static int serverSectionN;
-static float serverSectionY;
+static int serversTab = -2;
+static int serverGroupIndex[32], serverGroupN[32], nServerGroups;
+static float serverGroupY[32];
 
 // BOTOES DO CABECALHO. "Sem HDR" so existe onde ha o que renegociar (webOS);
 // ver o bloco "TELA PRETA COM AUDIO TOCANDO" em video.h. Oferecer um botao que
@@ -3632,11 +3637,22 @@ static char provedores[13][96];
 static char provChaves[13][FONTEFALHA_CHAVE];
 static unsigned char provEstado[13];
 static int doProvedor(const Stream *s, int p) {
+  if (p == serversTab) return ehServidor(s);
   if (s->addonChave[0] || provChaves[p][0])
     return !strcmp(s->addonChave, provChaves[p]);
   return !strcmp(s->provedor, provedores[p]);
 }
 static int nProvedores;
+// Display personal servers before Where to watch / All, without changing
+// the stable provider indices used by counts, snapshots and pointer targets.
+static int tabAt(int position) {
+  if (serversTab < 0 || position > 1) return position;
+  return position == -1 ? serversTab : position == 0 ? -1 : 0;
+}
+static int tabPosition(int provider) {
+  if (serversTab < 0 || provider > 1) return provider;
+  return provider == serversTab ? -1 : provider == -1 ? 0 : 1;
+}
 
 static int temAudioPreferido(const Stream *s);
 // Os chips (MP4, cache, dublado) valem para a lista E para a contagem de cada
@@ -3734,7 +3750,7 @@ static void atualizarProvedores(void) {
   snprintf(chave, sizeof chave, "%s", filtro > 0 && filtro < nProvedores ? provChaves[filtro] : "");
   for (int k = 0; k < n; k++) {
     int i = ORD(k), j;
-    if (stream_ordem_addon(i) == -1) continue;
+    if (ehServidor(&lista[i]) || stream_ordem_addon(i) == -1) continue;
     for (j = 0; j < nAbas; j++)
       if (lista[i].addonChave[0] ? !strcmp(abas[j].chave, lista[i].addonChave) :
           (!abas[j].chave[0] && !strcmp(abas[j].nome, lista[i].provedor))) break;
@@ -3767,8 +3783,15 @@ static void atualizarProvedores(void) {
     for (int j = i + 1; j < nAbas; j++)
       if (abas[j].ordem < abas[i].ordem) { ProvAba t = abas[i]; abas[i] = abas[j]; abas[j] = t; }
   nProvedores = 1;
+  serversTab = -2;
   snprintf(provedores[0], sizeof provedores[0], "Todos");
   provEstado[0] = ADDON_ABA_PRONTO;
+  if (temServidor()) {
+    serversTab = nProvedores++;
+    snprintf(provedores[serversTab], sizeof provedores[serversTab], "%s", i18n("Seus servidores"));
+    snprintf(provChaves[serversTab], sizeof provChaves[serversTab], "nuvio-servers");
+    provEstado[serversTab] = ADDON_ABA_PRONTO;
+  }
   for (int i = 0; i < nAbas && nProvedores < 13; i++) {
     snprintf(provedores[nProvedores], sizeof provedores[nProvedores], "%s", abas[i].nome);
     snprintf(provChaves[nProvedores], sizeof provChaves[nProvedores], "%s", abas[i].chave);
@@ -4408,7 +4431,8 @@ static void montarBase(int automatica) {
   float y;
   int g, i, k, m = -1, nt;
   int needed = filtro == -1 ? ondever_n(alvoPedido) : n;
-  serverSectionN = 0;
+  serverSectionN = nServerGroups = 0;
+  memset(secN, 0, sizeof secN);
   y = 0;
   int saved = !canalFolha && ajustes_fonte_manual() && preferida >= 0 && preferida < n &&
               passaFiltro(preferida) ? preferida : -1;
@@ -4435,7 +4459,7 @@ static void montarBase(int automatica) {
   }
   // #400/#402: ordem do addon, com negativas de cache conhecidas no fim.
   // Rebuilt only when the source data or settings change.
-  if (ordemDoAddon() || ajustes_fonte_ordem_addon()) {
+  if ((ordemDoAddon() || ajustes_fonte_ordem_addon()) && filtro != serversTab) {
     // A classificacao do StreamFit (avisos "Acima da conexao") e o
     // enriquecimento de canal (grupoRes -> stream_canal_enriquecer) continuam;
     // so a ordem e a do addon.
@@ -4466,9 +4490,31 @@ static void montarBase(int automatica) {
   // melhor fonte de addon, que so e promovida entre as demais.
   for (k = 0; k < n; k++) { i = ORD(k); if (ehServidor(&lista[i]) && passaFiltro(i)) serverSectionN++; }
   if (serverSectionN) {
-    serverSectionY = y; y += FOLHA_SEC_H;
-    for (k = 0; k < n; k++) { i = ORD(k); if (ehServidor(&lista[i]) && passaFiltro(i)) porLinha(i, &y, automatica); }
-    y += FOLHA_SEC_GAP;
+    for (k = 0; k < n; k++) {
+      i = ORD(k);
+      if (!ehServidor(&lista[i]) || !passaFiltro(i)) continue;
+      int seen = 0;
+      for (int q = 0; q < k; q++) {
+        int previous = ORD(q);
+        if (ehServidor(&lista[previous]) && passaFiltro(previous) &&
+            !strcmp(lista[previous].provedor, lista[i].provedor)) { seen = 1; break; }
+      }
+      if (seen) continue;
+      int group = nServerGroups < 32 ? nServerGroups++ : -1;
+      if (group >= 0) {
+        serverGroupIndex[group] = i; serverGroupY[group] = y; serverGroupN[group] = 0;
+        y += FOLHA_SEC_H;
+      }
+      for (int q = k; q < n; q++) {
+        int copy = ORD(q);
+        if (ehServidor(&lista[copy]) && passaFiltro(copy) &&
+            !strcmp(lista[copy].provedor, lista[i].provedor)) {
+          porLinha(copy, &y, automatica);
+          if (group >= 0) serverGroupN[group]++;
+        }
+      }
+      y += FOLHA_SEC_GAP;
+    }
   }
   if (saved >= 0 && !ehServidor(&lista[saved])) {
     m = saved;
@@ -4714,7 +4760,7 @@ void stream_folha_servidor(int provider) {
 void stream_folha_canais_abrir(const char *titulo) {
   fontescanais_iniciar(titulo);canaisFolha=1;canaisAviso[0]=0;
   aberta=1;escolha=-1;grupo=1;foco=0;rolagem=velRol=0;recarregar=0;
-  folhaRelogio=!player_aberto() && ajustes_relogio_ligado();
+  folhaRelogio=0;
   folhaEntrada=0;
 #ifdef NV_TOUCH_UI
   memset(&toqueFontes,0,sizeof toqueFontes);memset(&toqueFontesAbas,0,sizeof toqueFontesAbas);
@@ -4735,7 +4781,7 @@ void stream_folha_abrir(void) {
   int excl, aut, alvo;
   fitAbrir();
   aberta=1; escolha=-1; grupo=1; filtro=0; filtroVisto=-2; pillW=-1.0f; trocaDesde=0; soMp4=0; soCache=0; soDub=0; recarregar=0;
-  folhaRelogio = !player_aberto() && ajustes_relogio_ligado();
+  folhaRelogio = 0; // Browsing Sources always slides from the right, independent of the clock.
   folhaEntrada = 0;
   recarregarFonteConfirmacao = 0;
   recarregarFontePerfil = nv_perfil_sessao_ler();
@@ -4744,6 +4790,7 @@ void stream_folha_abrir(void) {
   if (!canalFolha) partes_aquecer();
   folhaGeometria();
   atualizarProvedores();
+  if (serversTab > 0) filtro = serversTab;
   ondever_apps_atualizar();
   // A FOLHA ABRE NA FONTE QUE IMPORTA: a que esta tocando, senao a que o
   // automatico tocaria. Com a lista agrupada por resolucao a primeira linha ja
@@ -5222,9 +5269,10 @@ void stream_folha_evento(const SDL_Event *e) {
   // trocar de addon eram duas teclas a mais a cada troca.
   if(grupo>=0 && (k==SDLK_LEFT || k==SDLK_RIGHT)) {
     filtroServidor = -1;
-    filtro+=k==SDLK_RIGHT?1:-1;
-    if(filtro < -1) filtro=-1;
-    if(filtro>=nProvedores) filtro=nProvedores-1;
+    int position = tabPosition(filtro) + (k == SDLK_RIGHT ? 1 : -1);
+    if (position < -1) position = -1;
+    if (position >= nProvedores) position = nProvedores - 1;
+    filtro = tabAt(position);
     foco=0;rolagem=0;velRol=0;
   }
   if(grupo==-1 && (k==SDLK_LEFT || k==SDLK_RIGHT)) {
@@ -6005,8 +6053,15 @@ static void stream_folha_desenharCorpo_(Uint32 agora) {
   { const int vid = ajustes_vidro();
     GfxRect corpo={x,FOLHA_MARGEM,FOLHA_W,NV_TELA_H-2*FOLHA_MARGEM};
     gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,(vid?.30f:.42f)*anim);
-    if (vid) gfx_vidro_folha(corpo,FOLHA_RAIO_IL/corpo.h,anim);
-    else plrui_material_s(corpo,FOLHA_RAIO_IL,0,anim,1); }
+    int rim = gfx_vidro_sem_aro;
+    gfx_vidro_sem_aro = 1;
+    if (vid) {
+      gfx_vidro_folha(corpo,FOLHA_RAIO_IL/corpo.h,anim);
+      // Frost samples the frame captured before this surface. Apply density
+      // after the glass so that captured hero text cannot bypass the backing.
+      gfx_cor(corpo,FOLHA_RAIO_IL/corpo.h,.055f,.059f,.071f,.88f*anim);
+    } else plrui_material_s(corpo,FOLHA_RAIO_IL,0,anim,1);
+    gfx_vidro_sem_aro = rim; }
   GfxRecorteAnt clip = gfx_recorte_dentro(x,FOLHA_MARGEM,FOLHA_W,NV_TELA_H-2*FOLHA_MARGEM);
   corpoFolha(x, FOLHA_W, anim, agora, 0);
   gfx_recorte_voltar(clip);
@@ -6225,8 +6280,8 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     TxtLinha nome[14], num[14];
     folhaDados();
     memcpy(cnt, folhaContagens, sizeof cnt);
-    for(int i=-1;i<nProvedores;i++){
-      int qidx=i+1;
+    for(int position=-1;position<nProvedores;position++){
+      int i=tabAt(position), qidx=position+1;
       int sel=i==filtro, foc=sel&&grupo==0, c=foc?ajustes_tinta_foco():sel?250:150;
       char q[16];
       const char *cont = contagemProvedorAba(i);
@@ -6234,10 +6289,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       else snprintf(q, sizeof q, "%d", i < 0 ? ondever_n(alvoPedido) : cnt[i]);
       nome[qidx]=txt_linha_corta(TXT_HERO_META,i<0?"Onde ver":i?provedores[i]:"Todos",c,c,c,255,260);
       num[qidx]=txt_linha(TXT_PG_FIM,q,foc?c:sel?170:100,foc?c:sel?170:100,foc?c:sel?170:100,255);
-      iw[qidx]=nome[qidx].w+10.0f+num[qidx].w+44.0f; }
+      iw[qidx]=nome[qidx].w+10.0f+num[qidx].w+44.0f+(i==serversTab?28:0); }
     int ini=-1; float soma;
-    for(;;){ soma=2*pin; for(int i=ini;i<=filtro&&i<nProvedores;i++) soma+=iw[i+1]+6.0f;
-      if(soma<=maxW||ini>=filtro) break; ini++; }
+    for(;;){ soma=2*pin; for(int i=ini;i<=tabPosition(filtro)&&i<nProvedores;i++) soma+=iw[i+1]+6.0f;
+      if(soma<=maxW||ini>=tabPosition(filtro)) break; ini++; }
     soma=2*pin; int fim=ini;
     while(fim<nProvedores && soma+iw[fim+1]+6.0f<=maxW){ soma+=iw[fim+1]+6.0f; fim++; }
     if(fim==ini) fim=ini+1;
@@ -6260,7 +6315,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     if (layout_modo_mobile()) sx -= toqueFontesAbasOffset;
 #endif
     { float tx0=sx, tw=0;
-      for(int i=ini;i<fim;i++){ if(i==filtro) tw=iw[i+1]; else if(!tw) tx0+=iw[i+1]+6.0f; }
+      for(int i=ini;i<fim;i++){ if(tabAt(i)==filtro) tw=iw[i+1]; else if(!tw) tx0+=iw[i+1]+6.0f; }
       tx0-=lx;
       if(filtro!=filtroVisto){
         if(filtroVisto==-2||pillW<0) pillW=tw, pillX=tx0;
@@ -6271,8 +6326,8 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       { GfxRect r={lx+pillX,segY+pin,pillW,FOLHA_ABA_H};
         if(grupo==0) focoFonte(r,.5f,anim);
         else if (ajustes_vidro()) gfx_cor(r,.5f,1,1,1,.12f*anim); else gfx_cor(r,.5f,.204f,.212f,.243f,anim); } }
-    for(int i=ini;i<fim;i++){
-      int qidx=i+1;
+    for(int position=ini;position<fim;position++){
+      int i=tabAt(position), qidx=position+1;
       GfxRect r={sx,segY+pin,iw[qidx],FOLHA_ABA_H}; int sel=i==filtro;
       if (ptr) {
 #ifdef NV_TOUCH_UI
@@ -6283,8 +6338,13 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
 #endif
         ponteiro_alvo(r.x, r.y, r.w, r.h, NULL, ponteiroFolhaFiltro, i, 0);
       }
-      txt_desenhar_alpha(nome[qidx],r.x+22,r.y+(FOLHA_ABA_H-nome[qidx].h)*.5f,anim);
-      txt_desenhar_alpha(num[qidx],r.x+22+nome[qidx].w+10,r.y+(FOLHA_ABA_H-num[qidx].h)*.5f+1,anim);
+      float iconW = i == serversTab ? 28 : 0;
+      if (iconW) {
+        int c = sel && grupo == 0 ? ajustes_tinta_foco() : sel ? 250 : 150;
+        gfx_icone((GfxRect){r.x+20,r.y+(FOLHA_ABA_H-20)*.5f,20,20},"aj_server",c/255.f,c/255.f,c/255.f,anim);
+      }
+      txt_desenhar_alpha(nome[qidx],r.x+22+iconW,r.y+(FOLHA_ABA_H-nome[qidx].h)*.5f,anim);
+      txt_desenhar_alpha(num[qidx],r.x+22+iconW+nome[qidx].w+10,r.y+(FOLHA_ABA_H-num[qidx].h)*.5f+1,anim);
       sx+=iw[qidx]+6.0f; } }
   // AVISO DOS FILTROS RAPIDOS, sob as abas: quantas fontes eles escondem. OK
   // (ou toque) tira todos. Reserva todas as linhas, inclusive a acao de recuperar.
@@ -6312,11 +6372,14 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   folhaRecorteY = clipY;
 #endif
   GfxRecorteAnt listClip = gfx_recorte_dentro(x,clipY,w,folhaBase-clipY);
-  if (serverSectionN) {
-    float y = FOLHA_TOPO + serverSectionY - rolagem;
+  for (int group = 0; group < nServerGroups; group++) {
+    float offset = grupo == 1 && foco < nOrdem && linhaY[foco] < serverGroupY[group] ? expansaoFoco : 0;
+    if (linhaAnt >= 0 && linhaAnt < nOrdem && linhaY[linhaAnt] < serverGroupY[group] &&
+        !(grupo == 1 && linhaAnt == foco)) offset += expansaoAnt;
+    float y = FOLHA_TOPO + serverGroupY[group] + offset - rolagem;
     if (y + FOLHA_SEC_H >= FOLHA_TOPO - 8 && y <= NV_TELA_H) {
-      txt_desenhar_alpha(txt_linha(TXT_PAINEL_ITEM,"No seu servidor",242,242,240,255),tx,y+8,anim);
-      char count[48]; snprintf(count,sizeof count,i18n(serverSectionN==1?"%d fonte":"%d fontes"),serverSectionN);
+      txt_desenhar_alpha(txt_linha_corta(TXT_PAINEL_ITEM,lista[serverGroupIndex[group]].provedor,242,242,240,255,tr-tx-120),tx,y+8,anim);
+      char count[48]; snprintf(count,sizeof count,i18n(serverGroupN[group]==1?"%d fonte":"%d fontes"),serverGroupN[group]);
       TxtLinha c=txt_linha(TXT_PG_FIM,count,110,110,108,255); txt_desenhar_alpha(c,tr-c.w,y+12,anim);
     }
   }
@@ -6411,6 +6474,9 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
         txt_desenhar_tom(lg,tr-lu.w-6-lg.w,cy,cg/250.0f,cg/250.0f,(cg-2)/248.0f,anim); }
       float providerX=tr-lp.w-22, providerY=gb[0]?cy+40:cy+6;
       txt_desenhar_tom(lp,providerX,providerY,sel?1:110.0f/150,sel?1:110.0f/150,sel?1:108.0f/148,anim);
+      // Automatic decoder exclusions do not mean a personal server is offline.
+      if (ehServidor(s)) estado = s->naoVideo || s->conferencia == FA_RUIM ? FA_RUIM :
+                                 s->conferencia == FA_OK ? FA_OK : FA_NADA;
       vtui_estado_ponto(estado,tr-10,providerY+(lp.h-10)*.5f,anim);
       // Dica da tecla Info/Amarela: so na linha em foco, no canto do addon.
       if(sel) gfx_icone((GfxRect){providerX-30,providerY+3,20,20},"aj_info",.62f,.62f,.62f,anim*.85f); }

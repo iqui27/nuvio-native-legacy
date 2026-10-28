@@ -343,7 +343,7 @@ static unsigned char servidoresDisponiveis;
 static float serverActionFocus[3], serverChipFocus[3];
 static int srvAvailabilityIndex = -1;
 static unsigned srvAvailabilityVersion;
-static void ponteiroServidor(int p, int unused) { (void)unused; nivel = 0; focoAmigos = 0; focoServidor = p; }
+static void ponteiroServidor(int p, int unused) { (void)unused; nivel = 0; focoVersao = 0; focoAmigos = 0; focoServidor = p; }
 static int  pedAmigos = 0;
 static int  pedExplorar = 0;   // circular "Explorar": o roteador abre a toca neste titulo
 #define DET_PTR_AMIGOS 99
@@ -3535,7 +3535,7 @@ static void detail_evento_(const SDL_Event *e) {
       else if (k == SDLK_RIGHT) { focoVersao = 0; botao = 1; return; }
       else return;
     }
-    if (k == SDLK_DOWN && !estavaVersao && !heroServidor() && botao==0 && topoVersao() && topoFonteDisponivel() && !(carro && !carCheia)) {
+    if (k == SDLK_DOWN && !estavaVersao && !servidoresDisponiveis && topoVersao() && topoFonteDisponivel() && !(carro && !carCheia)) {
       focoVersao = 1; return;
     }
     int desceuServidor = (focoServidor >= 0 || focoAmigos) && k == SDLK_DOWN;
@@ -5260,7 +5260,7 @@ static void heroWeb(float a, float desloc) {
       else memset(&vaiTocar, 0, sizeof vaiTocar);
       vaiTocarIdx = idx; vaiTocarT = vt_t; vaiTocarE = vt_e; vaiTocarEm = agoraH;
     }
-    { float alvo = vaiTocar.tem && topoVersao() ? 38.0f + DET_VAI_GAP : 0.0f;
+    { float alvo = vaiTocar.tem && topoVersao() ? 56.0f + DET_VAI_GAP : 0.0f;
       float dt = hVaiTick ? (float)(Uint32)(agoraH - hVaiTick) : 0.0f;
       hVaiTick = agoraH;
       if (dt > 100.0f) dt = 100.0f;
@@ -5270,9 +5270,18 @@ static void heroWeb(float a, float desloc) {
         if (fabsf(alvo - hVaiVis) < 0.5f) hVaiVis = alvo;
       }
       hVai = hVaiVis; } }
-  float srvH = servidoresDisponiveis ? 64.0f : 0.0f;
+  char srvQuality[240] = "";
+  float srvQualityW = 0;
+  if (heroServidor() && vaiTocar.tem) {
+    VaiTocar compact = vaiTocar;
+    compact.idiomas[0] = compact.tamanho[0] = 0;
+    vt_chip_texto(&compact, srvQuality, sizeof srvQuality);
+    srvQualityW = txt_linha(TXT_ILHA_SUB, srvQuality, 225, 227, 232, 255).w +
+      txt_linha(TXT_ILHA_SUB, i18n("Vai tocar"), 158, 158, 158, 255).w + 62;
+  }
+  float srvH = servidoresDisponiveis ? 68.0f : 0.0f;
   float yAcoes = heroServidor() ? ySin - NV_DETW2_GAP_ACOES - NV_DETW2_BTN_H -
-    fmaxf(vaiTocar.tem ? vtui_altura(&vaiTocar) : 0, 48) - 24 : 600.0f;
+    56 - 24 : 600.0f;
   // BLOCO DE LINHAS DE ESTADO, empilhado de baixo para cima logo acima dos
   // botoes. Sao duas, e a ordem tem razao: a retomada explica o BOTAO e fica
   // colada nele; a agenda ("Próximo episódio T2E5 · em 3 dias") explica o
@@ -5300,14 +5309,14 @@ static void heroWeb(float a, float desloc) {
       const char *q = sa.altura >= 2160 ? "4K" : sa.altura >= 1080 ? "1080p" : sa.altura >= 720 ? "720p" : "";
       const char *h = sa.hdr == SRVIDX_HDR_DV ? "Dolby Vision" : sa.hdr == SRVIDX_HDR_HDR10P ? "HDR10+" :
                       sa.hdr == SRVIDX_HDR_HDR10 ? "HDR10" : sa.hdr == SRVIDX_HDR_HLG ? "HLG" : "";
-      snprintf(srvLinha, sizeof srvLinha, "\xe2\x96\xb6 %s \xc2\xb7 %s%s%s%s%s", i18n("No seu servidor"), sa.servidor,
+      snprintf(srvLinha, sizeof srvLinha, "%s \xc2\xb7 %s%s%s%s%s", i18n("No seu servidor"), sa.servidor,
                q[0] ? " \xc2\xb7 " : "", q, h[0] ? " " : "", h);
     } }
   float yEstado = yAcoes - NV_DETW_GAP_RETOM;
   float yRetom = yEstado, yAgenda = yEstado;
   if (temRetom > 0.0f) { yEstado -= NV_DETW_RETOM_H; yRetom = yEstado; }
   if (agLinha[0]) { yEstado -= carro ? 46.0f : NV_DETW_RETOM_H; yAgenda = yEstado; }
-  yRetom = 494.0f;
+  yRetom = heroServidor() ? yAcoes - 46.0f : 494.0f;
   // 2.1 TV (owner, 25/10/2026): the info sits at the BOTTOM like 2.0.8 — logo,
   // Play + Save + More, source, synopsis and metadata — stacked up from
   // NV_DET21_FIM, just above the first section kicker.
@@ -5358,9 +5367,11 @@ static void heroWeb(float a, float desloc) {
     { float f = (float)(SDL_GetTicks() - logoDesde) / 260.0f;
       if (f < 1.0f) aLogo *= f < 0.0f ? 0.0f : f; }
   } else logoVisto[0] = 0;
+  float srvTitleH = heroServidor() ? txt_bloco_corta(TXT_TITULO1, tituloDe(idx),
+    243, 242, 239, -1, 0, 700, 76, 0, 2) : 0;
   if (heroServidor()) {
     txt_bloco_corta(TXT_TITULO1, tituloDe(idx), 243, 242, 239, NV_DETW2_X,
-                    yAcoes - 218, 620, 76, a, 2);
+                    yAcoes - 58 - srvTitleH, 700, 76, a, 2);
   } else if (texLogo) {
     float asp = tex_aspecto(arqLogo);
     if (asp <= 0.0f) asp = 2.5f;
@@ -5677,21 +5688,29 @@ static void heroWeb(float a, float desloc) {
   // Same target and source description as Play; no extra resolver or decoder.
   versaoRect = (GfxRect){0};
   if (heroServidor() && vaiTocar.tem) {
-    int previous = gfx_vidro_sem_aro;
-    gfx_vidro_sem_aro = 1;
-    vtui_desenhar(&vaiTocar, NV_DETW2_X, yAcoes + NV_DETW2_BTN_H + 12, 420, a);
-    gfx_vidro_sem_aro = previous;
+    GfxRect quality = {NV_DETW2_X, yAcoes + NV_DETW2_BTN_H + 12, srvQualityW, 56};
+    plrui_material_plano(quality, 28, a);
+    TxtLinha label = txt_linha(TXT_ILHA_SUB, i18n("Vai tocar"), 158, 158, 158, 255);
+    TxtLinha value = txt_linha(TXT_ILHA_SUB, srvQuality, 225, 227, 232, 255);
+    txt_desenhar_alpha(label, quality.x + 20, quality.y + (56 - label.h) * .5f, a);
+    txt_desenhar_alpha(value, quality.x + 42 + label.w, quality.y + (56 - value.h) * .5f, a);
   } else if (topoVersao() && vaiTocar.tem && hVai > 1.0f) {
     char texto[240];
-    vt_chip_texto(&vaiTocar, texto, sizeof texto);
-    TxtLinha l = txt_linha_corta(TXT_DET_META2, texto, 225, 227, 232, 255, larguraTextoHero() - 48);
+    VaiTocar compact = vaiTocar;
+    compact.idiomas[0] = compact.tamanho[0] = 0;
+    vt_chip_texto(&compact, texto, sizeof texto);
     float yV = yVers + sobe + dyV, aV = a * kV;
-    versaoRect = (GfxRect){NV_DETW2_X, yV, l.w + 64, 48};
-    botao_pilula_sem_aro(versaoRect,"",NULL,versaoFoco,0,0,aV);
-    vtui_estado_ponto(vaiTocar.estado, NV_DETW2_X + 20, yV + 19, aV);
+    TxtLinha quality = txt_linha(TXT_ILHA_SUB, texto, 225, 227, 232, 255);
+    float qualityW = quality.w + 48;
+    plrui_material_plano((GfxRect){NV_DETW2_X,yV,qualityW,56},28,aV);
+    txt_desenhar_alpha(quality,NV_DETW2_X+24,yV+(56-quality.h)*.5f,aV);
     int ink=versaoFoco>.5f ? ajustes_tinta_foco() : 225;
-    l=txt_linha_corta(TXT_DET_META2,texto,ink,ink,ink,255,larguraTextoHero()-48);
-    txt_desenhar_alpha(l, NV_DETW2_X + 40, yV + (48 - l.h) * .5f, aV);
+    TxtLinha source = txt_linha_corta(TXT_ILHA_SUB,vaiTocar.provedor[0] ? vaiTocar.provedor : i18n("Fontes"),
+                                     ink,ink,ink,255,larguraTextoHero()-qualityW-84);
+    versaoRect = (GfxRect){NV_DETW2_X+qualityW+12,yV,source.w+72,56};
+    botao_pilula_sem_aro(versaoRect,"",NULL,versaoFoco,0,0,aV);
+    gfx_icone((GfxRect){versaoRect.x+16,yV+16,24,24},"aj_layers",ink/255.f,ink/255.f,ink/255.f,aV);
+    txt_desenhar_alpha(source,versaoRect.x+52,yV+(56-source.h)*.5f,aV);
     if (aV>.3f) ponteiro_alvo(versaoRect.x,versaoRect.y,versaoRect.w,versaoRect.h,ponteiroDetalhe,NULL,-4,0);
   }
   if (pessoal[0]) {
@@ -5787,18 +5806,19 @@ static void heroWeb(float a, float desloc) {
     const char *logos[] = {"deploy/app/art/marcas/plex.png","deploy/app/art/marcas/jellyfin.png","deploy/app/art/marcas/emby.png"};
     float x = NV_DETW2_X, y = yAcoes + NV_DETW2_BTN_H + hAcoesExtra + 12;
     if (heroServidor() && vaiTocar.tem) {
-      x += 432;
-      y += (vtui_altura(&vaiTocar) - 48) * .5f;
+      x += srvQualityW + 12;
     }
     for (int p = 0; p < 3; p++) if (servidoresDisponiveis & (1 << p)) {
-      GfxRect chip = {x,y,180,48}; int sel = nivel == 0 && focoServidor == p;
+      GfxRect chip = {x,y,180,56}; int sel = nivel == 0 && focoServidor == p;
       plrui_material_plano(chip, chip.h * .5f, a);
       plrui_pilula_foco(chip, serverChipFocus[p] * a);
       int ink = sel ? ajustes_tinta_foco() : 243;
       GLuint mark = tex_obter_larg(logos[p],28);
-      if (mark) gfx_rect((GfxRect){x+16,y+10,28,28},mark,GFX_MARCA,0,0,0,0,ink/255.f,ink/255.f,ink/255.f,a);
-      txt_desenhar_alpha(txt_linha(TXT_ILHA_SUB,names[p],ink,ink,ink,255),x+56,y+13,a);
-      if (a > .3f) ponteiro_alvo(x,y,180,48,ponteiroServidor,NULL,p,0);
+      if (mark) gfx_rect((GfxRect){x+16,y+14,28,28},mark,GFX_MARCA,0,0,0,0,ink/255.f,ink/255.f,ink/255.f,a);
+      else gfx_icone((GfxRect){x+16,y+14,28,28},"aj_server",ink/255.f,ink/255.f,ink/255.f,a);
+      TxtLinha name = txt_linha(TXT_ILHA_SUB,names[p],ink,ink,ink,255);
+      txt_desenhar_alpha(name,x+56,y+(56-name.h)*.5f,a);
+      if (a > .3f) ponteiro_alvo(x,y,180,56,ponteiroServidor,NULL,p,0);
       x += 192;
     }
   }
@@ -6007,7 +6027,7 @@ static void heroWeb(float a, float desloc) {
   if (heroServidor()) {
     char heading[180];
     snprintf(heading, sizeof heading, "%s · %s · %s", ano, generoDe(idx), dur);
-    plrui_kicker(heading, NV_DETW2_X, yAcoes - 256, 163, 167, 175, a);
+    plrui_kicker(heading, NV_DETW2_X, yAcoes - 96 - srvTitleH, 163, 167, 175, a);
     float mx = NV_DETW2_X, my = yMeta1;
     if (ci && ci->classificacao[0]) {
       TxtLinha age = txt_linha(TXT_CAPTION2, ci->classificacao, 179, 182, 188, 255);

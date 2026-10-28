@@ -1014,7 +1014,9 @@ int jf_ler_playbackinfo(const JfConta *c, const char *itemLimpo, const char *cor
       s->fileIdx = -1;
       s->mp4 = metodo == JF_METODO_DIRETO && (!strcmp(cont, "mp4") || !strcmp(cont, "m4v"));
       s->tamanhoBytes = metodo == JF_METODO_DIRETO ? (uint64_t)numRaiz(p, f, "Size", 0) : 0;
-      s->tamanhoMB = (long)(s->tamanhoBytes / (1024u * 1024u));
+      // Display the original copy size; HLS playback bytes stay unknown.
+      double originalSize = numRaiz(p, f, "Size", 0);
+      s->tamanhoMB = originalSize > 0 ? (long)(originalSize / (1024u * 1024u)) : 0;
       snprintf(s->bingeGroup, sizeof s->bingeGroup, "%s|%s", c->tipo == JF_TIPO_EMBY ? "emby" : "jellyfin",
                jellyfin_metodo_nome(metodo));
       if (blocoRaiz(p, f, "MediaStreams", &msi, &msf))

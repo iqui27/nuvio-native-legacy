@@ -1,4 +1,4 @@
-// Real GL proof: row opacity and scissors must follow the morphing island.
+// Real GL proof: Sources slides from the right and clips rows to its surface.
 #include "text.h"
 static void checkedAlpha(TxtLinha l, float x, float y, float a);
 static void checkedTom(TxtLinha l, float x, float y, float r, float g, float b, float a);
@@ -20,10 +20,9 @@ static const char *output;
 static void checkText(TxtLinha l, float x, float y, float a) {
   (void)l; (void)x;
   if (!probing || y<FOLHA_TOPO || a<.001f) return;
-  GfxRect panel=ilha_corpo_rect();
-  float coverage=fminf(panel.w/FOLHA_W,panel.h/(folhaBase+16-NV_ILHA_Y));
-  float reveal=anim_clamp((coverage-.96f)/.04f,0,1);
-  assert(a<=reveal+.002f && "row alpha must wait for the island to settle");
+  GfxRect panel={NV_TELA_W-FOLHA_W-FOLHA_MARGEM+(1-anim)*(FOLHA_W+FOLHA_MARGEM),
+                 FOLHA_MARGEM,FOLHA_W,NV_TELA_H-2*FOLHA_MARGEM};
+  assert(a<=anim+.002f && "row alpha must follow the opening spring");
   GLint clip[4]; glGetIntegerv(GL_SCISSOR_BOX,clip);
   float s=gfx_escala();
   assert(glIsEnabled(GL_SCISSOR_TEST));
@@ -87,6 +86,25 @@ int main(int argc,char **argv) {
     snprintf(sources[i].url,sizeof sources[i].url,"https://example.invalid/%d.mkv",i);
     sources[i].tamanhoMB=9600-i*1300; sources[i].altura=i<3?2160:1080; sources[i].fileIdx=-1;
   }
+  // Personal copies occupy their own first tab; All retains every copy.
+  Stream serverCopies[4] = {0};
+  for (int i=0;i<4;i++) {
+    snprintf(serverCopies[i].url,sizeof serverCopies[i].url,"https://fixture.invalid/server-%d.mkv",i);
+    snprintf(serverCopies[i].provedor,sizeof serverCopies[i].provedor,"%s",i<2?"Local · ZimaOS":i==2?"Local · Jellyfin":"AIOStreams");
+    snprintf(serverCopies[i].bingeGroup,sizeof serverCopies[i].bingeGroup,"%s",i<2?"plex|direct":i==2?"jellyfin|direct":"");
+    serverCopies[i].altura=2160; serverCopies[i].tamanhoMB=19000;
+  }
+  stream_definir_lista(serverCopies,4); stream_folha_abrir();
+  folhaDados(); montar(automaticaDaFolha());
+  assert(serversTab>0 && filtro==serversTab && tabAt(-1)==serversTab);
+  assert(folhaContagens[0]==4 && folhaContagens[serversTab]==3 && nOrdem==3);
+  assert(nServerGroups==2 && serverGroupN[0]==2 && serverGroupN[1]==1);
+  for(int i=0;i<nOrdem;i++) assert(ehServidor(&lista[ordem[i]]));
+  assert(!lista[0].tamanhoBytes && tamanhoMBFonte(&lista[0])==19000);
+  char sizeLine[160], sizeLine2[128]; fitTexto2(0,sizeLine,sizeof sizeLine,sizeLine2,sizeof sizeLine2);
+  assert(!sizeLine[0]); // Original size is present; HLS connection bitrate remains unknown.
+  filtro=0; montar(automaticaDaFolha()); assert(nOrdem==4);
+  aberta=0; anim=0;
   CatItem title={0}; snprintf(title.tipo,sizeof title.tipo,"series");
   snprintf(title.imdb,sizeof title.imdb,"tt12637874"); cat_definir(&title,1);
   // Live TV has no catalog index, even when the last catalog item is VOD.
@@ -107,7 +125,7 @@ int main(int argc,char **argv) {
   float px=0,py=0,pw=0,ph=0;
   if (!cold) assert(ilha_rect(&px,&py,&pw,&ph));
   stream_folha_abrir();
-  assert(folhaRelogio && "clock-enabled Sources must morph even before the first clock frame");
+  assert(!folhaRelogio && "Sources must use the right edge with either clock position");
   strip=SDL_CreateRGBSurfaceWithFormat(0,3840,540,32,SDL_PIXELFORMAT_RGBA32); assert(strip);
   probing=1;
   int tile=0;
@@ -116,9 +134,9 @@ int main(int argc,char **argv) {
     // Samples at 25/50/75/100% of the existing 640 ms opening window.
     if (!strcmp(argv[2],"warm") && (i==9 || i==19 || i==29 || i==39)) capture(tile++);
     if (!i && !cold && !reduced) {
-      GfxRect panel=ilha_corpo_rect();
-      assert(panel.w>pw && panel.w<pw+100 && panel.h>ph);
-      assert(fabsf(panel.x+panel.w-px-pw)<1 && fabsf(panel.y-py)<1);
+      assert(anim>0 && anim<1);
+      float x=NV_TELA_W-FOLHA_W-FOLHA_MARGEM+(1-anim)*(FOLHA_W+FOLHA_MARGEM);
+      assert(x>NV_TELA_W-FOLHA_W-FOLHA_MARGEM && x<NV_TELA_W);
     }
     if (i==19 && !reduced) assert(maxAlpha<.99f && "mid-open rows must not pop at full opacity");
   }
@@ -150,8 +168,8 @@ int main(int argc,char **argv) {
   SDL_Event back={0}; back.type=SDL_KEYDOWN; back.key.keysym.sym=SDLK_ESCAPE; stream_folha_evento(&back);
   assert(!aberta);
   for(int i=0;i<100;i++) frame();
-  assert(ilha_corpo_t()==0 && !rowDraws);
+  assert(anim<.005f && !rowDraws);
   assert(checkedFrames==300);
-  printf("PASS: %s clock morph, mid-open alpha, clipped rows, reverse close (%d frames)\n",argv[2],checkedFrames);
+  printf("PASS: %s right-edge slide, mid-open alpha, clipped rows, reverse close (%d frames)\n",argv[2],checkedFrames);
   return 0;
 }

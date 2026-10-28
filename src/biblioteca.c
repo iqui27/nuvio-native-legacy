@@ -2682,17 +2682,24 @@ static void bibTitleCard(const CatItem *ci, GfxRect r, float a) {
 static void bibSourceBadges(const CatItem *ci, float x, float y, float a) {
   if (!ci) return;
   int bits = ci->fontes ? ci->fontes : ci->naLista ? CAT_FONTE_NUVIO : 0;
-  const char *letters[] = { "T", "S", "N" };
+  const char *marks[] = { "deploy/app/art/marcas/trakt_logomark.png", NULL,
+                          "deploy/app/art/marcas/logo-novo-simbolo.png" };
   for (int b = 0; b < 3; b++) if (bits & (1 << b)) {
+    GLuint mark = marks[b] ? tex_obter_larg(marks[b], 22) : 0;
+    if (!mark) mark = tex_obter_larg(b == 1 ? "deploy/app/art/icones/aj_bookmark.png" :
+                                   "deploy/app/art/icones/aj_layers.png", 22);
+    if (!mark) continue;
     gfx_cor((GfxRect){x, y, 26, 26}, 8.0f / 26, .035f, .035f, .045f, .85f * a);
-    TxtLinha t = txt_linha(TXT_MINI, letters[b], 230, 230, 230, 255);
-    txt_desenhar_alpha(t, x + (26 - t.w) / 2, y + (26 - t.h) / 2, a);
+    gfx_rect((GfxRect){x + 3,y + 3,20,20},mark,GFX_MARCA,0,0,0,0,1,1,1,a);
     x += 31;
   }
   if (ci->origem[0] && strcmp(ci->origem,"plex") && strcmp(ci->origem,"jellyfin") && strcmp(ci->origem,"emby")) {
-    gfx_cor((GfxRect){x, y, 26, 26}, 8.0f / 26, .035f, .035f, .045f, .85f * a);
-    txt_desenhar_alpha(txt_linha(TXT_MINI, "A", 230, 230, 230, 255), x + 8, y + 5, a);
-    x += 31;
+    GLuint mark = tex_obter_larg("deploy/app/art/icones/aj_layers.png", 22);
+    if (mark) {
+      gfx_cor((GfxRect){x, y, 26, 26}, 8.0f / 26, .035f, .035f, .045f, .85f * a);
+      gfx_rect((GfxRect){x + 3,y + 3,20,20},mark,GFX_MARCA,0,0,0,0,1,1,1,a);
+      x += 31;
+    }
   }
   const char *logos[] = { "deploy/app/art/marcas/plex.png", "deploy/app/art/marcas/jellyfin.png", "deploy/app/art/marcas/emby.png" };
   int membership = 0;
@@ -2701,9 +2708,11 @@ static void bibSourceBadges(const CatItem *ci, float x, float y, float a) {
     if (stored && !strcmp(stored->imdb, ci->imdb)) { membership = serverMembership[i]; break; }
   }
   for (int p = 0; p < 3; p++) if (membership & (1 << p)) {
-    gfx_cor((GfxRect){x, y, 26, 26}, 8.0f / 26, .035f, .035f, .045f, .85f * a);
     GLuint t = tex_obter_larg(logos[p], 22);
-    if (t) gfx_rect((GfxRect){x + 3,y + 3,20,20},t,GFX_MARCA,0,0,0,0,1,1,1,a);
+    if (!t) t = tex_obter_larg("deploy/app/art/icones/aj_server.png", 22);
+    if (!t) continue;
+    gfx_cor((GfxRect){x, y, 26, 26}, 8.0f / 26, .035f, .035f, .045f, .85f * a);
+    gfx_rect((GfxRect){x + 3,y + 3,20,20},t,GFX_MARCA,0,0,0,0,1,1,1,a);
     x += 31;
   }
 }
