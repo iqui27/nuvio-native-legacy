@@ -530,7 +530,7 @@ def detail_outer():
     # closed: the art fills the display; logo, actions, quality line, two-line synopsis and the ratings line centred
     scr = (f'<div class="scr full"><div class="hero full"><img class="bg" src="{f(FALLOUT)}" style="object-position:58% 12%">'
            '<div class="veu" style="background:linear-gradient(180deg,rgba(13,13,13,0) 32%,rgba(13,13,13,.78) 60%,var(--bg) 84%)"></div></div>'
-           '<div style="position:absolute;left:20px;right:96px;top:272px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px">'
+           '<div style="position:absolute;left:24px;right:24px;top:272px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px">'
            f'<img src="{f(FALLOUT_LOGO)}" style="height:104px;object-fit:contain">'
            f'<div class="acts" style="gap:12px;margin-top:4px"><span class="pill xl" style="padding:0 34px">{ic("play")}Continue S1:E3</span><span class="dsc xl">{ic("plus")}</span><span class="dsc xl">{ic("ellipsis")}</span></div>'
            '<span class="qline" style="font-size:13px"><i class="dot"></i>4K · Dolby Vision · Atmos · 8.3 GB</span>'
@@ -545,15 +545,14 @@ def detail_inner(pose='flat'):
     # open: the TV detail as it is, on the inner display
     scr = (f'<div class="scr full"><div class="hero full"><img class="bg" src="{f(FALLOUT)}" style="object-position:70% 20%">'
            '<div class="veu" style="background:linear-gradient(90deg,rgba(13,13,13,.88) 0,rgba(13,13,13,.62) 32%,rgba(13,13,13,.12) 62%,rgba(13,13,13,0) 78%),linear-gradient(180deg,rgba(13,13,13,0) 50%,rgba(13,13,13,.72) 84%,var(--bg) 100%)"></div></div>'
-           '<div style="position:absolute;left:40px;bottom:96px;display:flex;flex-direction:column;gap:16px;max-width:800px">'
+           '<div style="position:absolute;left:40px;bottom:26px;display:flex;flex-direction:column;gap:16px;max-width:800px">'
            f'<img src="{f(FALLOUT_LOGO)}" style="height:150px;width:auto;object-fit:contain;object-position:left">'
            f'<div class="acts" style="gap:12px"><span class="pill xl" style="padding:0 34px">{ic("play")}Continue S1:E3</span><span class="dsc xl">{ic("plus")}</span><span class="dsc xl">{ic("ellipsis")}</span></div>'
            '<span class="qline" style="font-size:14px;align-self:flex-start"><i class="dot"></i>4K · Dolby Vision · Atmos · 8.3 GB</span>'
            f'<p class="sub big" style="margin:0;font-size:17px;max-width:620px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{SYN_FALLOUT}</p>'
-           + meta_tv(size=16) + '</div>'
-           '<div class="peek" style="padding:0 40px;bottom:14px"><div class="rowh" style="margin:0"><h2 class="h2" style="font-size:22px">Episodes</h2><span>Season 1 · 8</span></div></div></div>')
+           + meta_tv(size=16) + '</div></div>')
     bar = vbar('home', nav=[('chevron-left', 'gl')], tools=['share-2'], cam=False, show_tabs=False)
-    cap = ('<b>Open</b> · the TV detail as it is: logo, Continue · + · ···, quality line, two-line synopsis, provider and ratings on one line<br>Episodes follow below')
+    cap = ('<b>Open</b> · the TV detail as it is: logo, Continue · + · ···, quality line, two-line synopsis<br>provider and ratings on the bottom edge; Episodes come on scroll')
     return dev('inner', scr, cap, pose=pose, bar=bar)
 
 
