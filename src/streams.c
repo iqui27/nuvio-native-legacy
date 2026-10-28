@@ -1776,6 +1776,16 @@ static int resolverUrl(const char *url, const char *cabecalhos, int segundos,
   // O tipo e o tamanho do corpo vem da MESMA sonda: nenhum pedido a mais.
   if (rede_url_final_tipo(url, segundos, nc ? vetor : NULL, fim, tam, &http,
                           mime, mimeTam, corpo)) return 1;
+#if defined(__EMSCRIPTEN__) && !defined(NV_VIDAA)
+  // Fetch status 0 is inconclusive: CORS/TLS in the browser does not prove
+  // that the native AVPlay transport cannot open the original URL.
+  if (!http && strlen(url) < tam) {
+    memcpy(fim, url, strlen(url) + 1);
+    if (mime && mimeTam) mime[0] = 0;
+    if (corpo) *corpo = -1;
+    return 1;
+  }
+#endif
 #ifdef __EMSCRIPTEN__
   // XHR nao manda estes cabecalhos; AVPlay manda. A recusa nao prova que a
   // fonte morreu (mesmo contrato de playlistVazia). 5xx nao entram aqui.

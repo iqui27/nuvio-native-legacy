@@ -1,6 +1,4 @@
-// Compila streams.c no ramo WGT, rede simulada: navegador nao manda Referer,
-// Origin nem User-Agent, mas AVPlay manda. 401/403 com esses headers sao
-// inconclusivos; 5xx, transporte e recusa sem header continuam falha.
+// Exercise the production source gate with browser/native transport fixtures.
 #include "streams.h"
 #include "rede.h"
 #include <assert.h>
@@ -29,22 +27,34 @@ char *rede_baixar_st(const char *u, int seg, const char *const *cab, int *st) {
   (void)u; (void)seg; (void)cab; *st = 403; return strdup("denied");
 }
 int main(void) {
-  const char *url = "https://media.example/media.m3u8";
+  const char *url = "https://example.invalid/media.m3u8";
+  const char *headers = "Referer: https://example.invalid/";
   statusSonda = 403;
   assert(!stream_url_serve(url, NULL));
-  assert(!stream_url_serve(url, "X-Token: test"));
-  assert(stream_url_serve(url, "Referer: https://addon.example/"));
+  assert(!stream_url_serve(url, "X-Fixture: test"));
+#ifdef __EMSCRIPTEN__
+  assert(stream_url_serve(url, headers));
   assert(strstr(cabEnviado, "Referer:"));
-  assert(stream_url_serve(url, "origin: https://addon.example/"));
+  assert(stream_url_serve(url, "origin: https://example.invalid/"));
   assert(stream_url_serve(url, "User-Agent: Player"));
   statusSonda = 401;
-  assert(stream_url_serve(url, "Referer: https://addon.example/"));
+  assert(stream_url_serve(url, headers));
+#else
+  assert(!stream_url_serve(url, headers));
+#endif
   statusSonda = 500;
-  assert(!stream_url_serve(url, "Referer: https://addon.example/"));
+  assert(!stream_url_serve(url, headers));
+  // CORS rejection exposes no HTTP status, even when AVPlay can play media.
   statusSonda = 0;
-  assert(!stream_url_serve(url, "Referer: https://addon.example/"));
+#if defined(__EMSCRIPTEN__) && !defined(NV_VIDAA)
+  assert(stream_url_serve(url, NULL));
+  assert(stream_url_serve(url, headers));
+#else
+  assert(!stream_url_serve(url, NULL));
+  assert(!stream_url_serve(url, headers));
+#endif
   statusSonda = 200;
-  assert(stream_url_serve(url, "Referer: https://addon.example/"));
-  puts("streams_sonda_wgt: AVPlay decide 401/403 com header restrito, 500/transporte recusados");
+  assert(stream_url_serve(url, headers));
+  puts("streams_sonda_wgt: PASS (HTTP refusal, browser restrictions, transport policy)");
   return 0;
 }
