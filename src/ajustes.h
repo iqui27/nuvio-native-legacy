@@ -120,6 +120,7 @@ int ajustes_animacoes_reduzidas_usuario(void);
 // V_BRILHO_PLAYER (padrao 1 = 80%).
 int ajustes_esmaecer(void);
 int ajustes_brilho_player(void);
+int ajustes_android_estereo(void); /* Android stereo PCM downmix */
 int ajustes_tunneling(void); // Android-only tunneled playback; default off.
 int ajustes_hdr_interface(void); // Experimental Android HDR output; default off.
 int ajustes_hdr_ui(void);   // #205: 1 = Automatico (padrao), 0 = Desligado
