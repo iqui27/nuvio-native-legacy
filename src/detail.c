@@ -201,8 +201,8 @@ static GfxRect colecaoListaRect(void) {
 // Glass UI (mockup "Detalhe", "Producao"): o .estu e uma pilula de 52 com o
 // nome em 18/500 a 80%, padding 22, vao 12, quebrando linha na largura da
 // coluna.
-#define EST_CARD_W 240.0f
-#define EST_CARD_H   100.0f
+#define EST_CARD_W 360.0f
+#define EST_CARD_H   180.0f
 #define EST_GAP       18.0f
 #define EST_PAD       22.0f
 // MEDIDO na referencia (TCL, 1920x1080): cartao 722x466, vao 25, canto 20.
@@ -364,9 +364,12 @@ static float pg = 0.0f;              // 0..1: hero -> pagina rolada
 static float alvoPg = 0.0f;         // destino do pg (detail_transicao)
 static Foco foco;
 static float animFoco[N_SECOES][N_ITENS];
-static float comFocoTempo[N_ITENS], comFocoInicio[N_ITENS];
-static unsigned char comFocoAlvo[N_ITENS];
-static float comScrollInicio, comScrollAlvo, comScrollTempo;
+// Lower-section readers share the row focus/scroll springs.
+static int lowerList, lowerCursor, studioBrowse;
+static float lowerEnter, lowerScroll, lowerScrollVel, lowerTarget;
+static float lowerFocus[N_ITENS];
+static int lowerFeed(void);
+static int lowerCount(void);
 // C.13: section dim eases with the focus spring (1 focused row, .42 others) and
 // each section reveals once, the first time it is on screen after the open.
 static float secA[N_SECOES];
@@ -939,6 +942,7 @@ static const char *cabecalhoDe(int r) {
   if (r == SEC_RELACIONADOS) return "Mais como este";
   if (r == SEC_MUSICAS) return "Músicas";
   if (r == SEC_ELENCO) return "Elenco";
+  if (r == SEC_ESTUDIOS) return "Estúdios e produção";
   if (ehSerie()) {
     if (r == SEC_TRAILERS) return "Trailers e extras";
     if (r == SEC_ESTUDIOS) return "Redes e estúdios";
@@ -1159,14 +1163,8 @@ static int relacionadosCarregando(void) {
 }
 
 // O PAR DA LINHA (filme, Glass UI): quem divide a linha com quem.
-static int parEsq(int r) {
-  if (r==SEC_ESTUDIOS) return secaoN(SEC_DETALHES)>0 ? SEC_DETALHES : secaoN(SEC_FRASES)>0 ? SEC_FRASES : -1;
-  return r==SEC_DETALHES && secaoN(SEC_FRASES)>0 ? SEC_FRASES : -1;
-}
-static int parDir(int r) {
-  if (r==SEC_FRASES) return secaoN(SEC_DETALHES)>0 ? SEC_DETALHES : secaoN(SEC_ESTUDIOS)>0 ? SEC_ESTUDIOS : -1;
-  return r==SEC_DETALHES && secaoN(SEC_ESTUDIOS)>0 ? SEC_ESTUDIOS : -1;
-}
+static int parEsq(int r) { (void)r; return -1; }
+static int parDir(int r) { (void)r; return -1; }
 static int secaoPresente(int r) {
   return secaoN(r) > 0 || (r == SEC_ELENCO && elencoCarregando()) ||
          (r == SEC_RELACIONADOS && relacionadosCarregando());
@@ -1233,14 +1231,14 @@ static void recalcularLayout(void) {
       r==SEC_COLECAO ? (ehSerie() ? 90 : 40) : r==SEC_COMENTARIOS ? 60 : 80;
     y=conteudoSec[r]+alturaSecao(r)+gap;
   }
-  int col=0;
   const int footer[]={SEC_FRASES,SEC_DETALHES,SEC_ESTUDIOS};
   for (int i=0;i<3;i++) {
     int r=footer[i]; topoSec[r]=conteudoSec[r]=y;
     if (secaoN(r)<=0) continue;
-    dxSec[r]=col++*580; wSec[r]=556;
+    conteudoSec[r]=y+48;
+    y=conteudoSec[r]+alturaSecao(r)+80;
   }
-  docFim=y+(col ? 300 : 0)+80;
+  docFim=y+80;
   if (docFim<NV_TELA_H) docFim=NV_TELA_H;
 }
 
@@ -1696,6 +1694,9 @@ static void abrirInterno(const HomeItem *it) {
   heroReiniciar();
   focoVersao = 0; epRevelaT = epRevelaE = -1;
   memset(comRevelados,0,sizeof comRevelados); comInteiro=-1;
+  lowerList=lowerCursor=studioBrowse=0;
+  lowerEnter=lowerScroll=lowerScrollVel=lowerTarget=0;
+  memset(lowerFocus,0,sizeof lowerFocus);
   t = 0.0f; pg = 0.0f; scrollY = 0.0f; velY = 0.0f; abaInfo = 0; pessoaAberta = 0;
   for (int r = 0; r < N_SECOES; r++) secA[r] = 1.0f, secVisto[r] = 0;
 #ifdef NV_TOUCH_UI
@@ -1832,10 +1833,7 @@ static void abrirInterno(const HomeItem *it) {
   memset(serverChipFocus, 0, sizeof serverChipFocus);
   versaoFoco=0;
   colListaEntrada=0;
-  memset(comFocoAlvo,0,sizeof comFocoAlvo);
-  memset(comFocoTempo,0,sizeof comFocoTempo);
-  memset(comFocoInicio,0,sizeof comFocoInicio);
-  comScrollInicio=comScrollAlvo=scrollY; comScrollTempo=.7f;
+
   memset(alvoScrollSec,0,sizeof alvoScrollSec);
   memset(scrollSec, 0, sizeof scrollSec); memset(velSec, 0, sizeof velSec);
   memset(revEp, 0, sizeof revEp); memset(revRel, 0, sizeof revRel);
@@ -2446,8 +2444,8 @@ static float alturaSecao(int r) {
     // + o cabecalho: sem ele a secao seguinte ("Detalhes do Filme") era
     // empilhada usando so a altura dos cartoes e saia POR CIMA deles.
     case SEC_COMENTARIOS:  return alturaCabComentarios() + COM_CARD_H;
-    case SEC_ESTUDIOS:
-    case SEC_DETALHES:     return 300;
+    case SEC_ESTUDIOS:    return EST_CARD_H;
+    case SEC_DETALHES:    return 80 + ceilf(nLinhasDetalhe()/2.0f)*76;
     // As duas sob demanda: a CHAMADA enquanto ninguem entrou (titulo +
     // procedencia + custo, tres linhas) e a altura MEDIDA no ultimo desenho
     // depois disso.
@@ -2563,12 +2561,12 @@ static int secaoN(int r) {
     case SEC_COMENTARIOS: {
       int nc = nCartoesCom();
       if (nc <= 0 && extras_n_comentarios() <= 0) return 0;
-      return nPilulasCom() + nc;
+      return nPilulasCom() + nc + 1;
     }
     // Produtoras (filme) e redes+produtoras (serie) vindos do TMDB. Cada logo
     // e uma coluna focavel que abre o browse da entidade — o mesmo caminho das
     // pastas sinteticas TMDB das colecoes.
-    case SEC_ESTUDIOS: return extras_n_estudios()>0 ? 1 : 0;
+    case SEC_ESTUDIOS: return extras_n_estudios()<N_ITENS ? extras_n_estudios() : N_ITENS;
     // A tabela e UMA coluna focavel, nao uma por linha: o D-pad desce ate ela,
     // ela rola para a tela e pronto. Zero colunas faria focus_mover PULA-LA
     // (focus.c:25) e a secao viraria inalcancavel — logo, tambem irrolavel.
@@ -2614,7 +2612,7 @@ static int secaoN(int r) {
     // nem ao Wikidata nem ao Wikiquote, e a frase de vazio seria sobre uma
     // consulta que nunca aconteceu.
     case SEC_FRASES:
-      return ci && ci->imdb[0] && frasesAberta && seriefrases_n()>0 ? 1 : 0;
+      return ci && ci->imdb[0] && frasesAberta ? seriefrases_n() : 0;
     // Each visible source, summary and personal/social card takes focus.
     case SEC_NOTAS:
       return heroServidor() ? 0 : nNotasTiles();
@@ -3044,6 +3042,32 @@ static void detail_evento_(const SDL_Event *e) {
   }
 #endif
   if (saindo) return;
+  if (studioBrowse && vertudo_aberta()) {
+    vertudo_evento(e);
+    if (!vertudo_aberta()) studioBrowse=0;
+    return;
+  }
+  if (lowerList || lowerEnter>.01f) {
+    if (!lowerList || e->type!=SDL_KEYDOWN) return;
+    int k=e->key.keysym.sym;
+    int n=lowerList==2 ? seriefrases_n() : lowerCount();
+    if (k==SDLK_ESCAPE || k==SDLK_AC_BACK || k==SDLK_BACKSPACE ||
+        e->key.keysym.scancode==NV_SCANCODE_BACK) lowerList=0;
+    else if (k==SDLK_DOWN && lowerCursor+1<n) lowerCursor++;
+    else if (k==SDLK_UP && lowerCursor>0) lowerCursor--;
+    else if (lowerList==1 && (k==SDLK_RETURN || k==SDLK_KP_ENTER)) {
+      if (!lowerFeed() && comOculto(lowerCursor)) comAbrir(lowerCursor);
+      else {
+        int ep=lowerFeed();
+        sinopse_comentario(ep ? extras_comentario_ep_usuario(lowerCursor) : extras_comentario_usuario(lowerCursor),
+          ep ? extras_comentario_ep_texto(lowerCursor) : extras_comentario_texto(lowerCursor),"",
+          ep ? extras_comentario_ep_nota(lowerCursor) : extras_comentario_nota(lowerCursor),
+          ep ? extras_comentario_ep_curtidas(lowerCursor) : extras_comentario_curtidas(lowerCursor),0,
+          ep ? extras_comentario_ep_spoiler(lowerCursor) : 0,lowerCursor+1,n);
+      }
+    }
+    return;
+  }
   // The shared rating island owns every event until it closes.
   if (reacao_aberta()) {
     if (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_DELETE) reacao_fechar();
@@ -3220,25 +3244,6 @@ static void detail_evento_(const SDL_Event *e) {
 
 
 
-  // AS FRASES SAO UMA LISTA VERTICAL, como a aba "Coleção": cima e baixo andam
-  // DENTRO dela. A secao tem uma coluna so de proposito (ver secaoN), entao nao
-  // ha o que fazer com esquerda/direita aqui.
-  //
-  // NAS PONTAS O EVENTO PASSA ADIANTE e o foco sai da secao — a mesma regra da
-  // colecao, e o que impede a ultima secao do documento de virar uma armadilha
-  // de onde so se sai pelo Voltar.
-
-  if (e->type == SDL_KEYDOWN && nivel >= 1 && foco.fileira == SEC_FRASES &&
-      !pessoaAberta && seriefrases_n() > 0) {
-    int i = seriefrases_selecionado(), n = seriefrases_n();
-    if (detalheRetrato() && e->key.keysym.sym == SDLK_DOWN && i + 1 < n) {
-      seriefrases_selecionar(i + 1); return;
-    }
-    if (detalheRetrato() && e->key.keysym.sym == SDLK_UP && i > 0) {
-      seriefrases_selecionar(i - 1); return;
-    }
-  }
-
   if (e->type == SDL_KEYDOWN && (e->key.keysym.sym == SDLK_RETURN ||
                                  e->key.keysym.sym == SDLK_KP_ENTER)) {
     if (!okDesceEm) okDesceEm = SDL_GetTicks();
@@ -3406,6 +3411,15 @@ static void detail_evento_(const SDL_Event *e) {
       // Segurar OK em "Episódio": escolher temporada e episodio nas proprias
       // fileiras da pagina; o OK de la devolve o foco para ca.
       if (comentEp && dur >= NV_HOLD_MS) comentariosEscolher();
+    } else if (foco.fileira == SEC_FRASES ||
+               (foco.fileira == SEC_COMENTARIOS && foco.coluna-nPilulasCom()==nCartoesCom())) {
+      lowerList=foco.fileira==SEC_FRASES ? 2 : 1;
+      lowerCursor=lowerList==2 ? foco.coluna : 0;
+      lowerScroll=lowerScrollVel=lowerTarget=0;
+      if (lowerList==1 && !(ehSerie() && comentEp)) {
+        const CatItem *ci=cat_item(idx);
+        if (ci) extras_pedir_comentarios_ep(ci->imdb,0,0);
+      }
     } else if (foco.fileira == SEC_COMENTARIOS) {
       comAbrir(foco.coluna-nPilulasCom());
     } else if (foco.fileira == SEC_TRAILERS) {
@@ -3445,11 +3459,9 @@ static void detail_evento_(const SDL_Event *e) {
                  "%s", ehSerie() ? "TV" : "MOVIE");
         pasta.nSources = 1;
         vertudo_colecao(&pasta);
-        // vertudo vive ABAIXO do detalhe na pilha de telas: os eventos so
-        // chegam a ela quando o detalhe nao esta aberto, e o desenho idem.
-        // Sem `saindo` a lista abria escondida atras da pagina — e so
-        // aparecia quando a pessoa desistia e voltava para a home.
-        saindo = 1;
+        // Route/draw the existing browser above Detail until Back closes it.
+        // Parent focus and its scroll springs remain intact underneath.
+        studioBrowse = 1;
       }
     } else if (foco.fileira == SEC_EPISODIOS) {
       // PRESSAO LONGA ABRE O MENU DE VISTO; o toque curto continua abrindo as
@@ -3743,7 +3755,7 @@ static float larguraItem(int r, int c) {
     case SEC_AUD_DIGITAL:
     case SEC_NOTAS_EP:
     case SEC_PROGTEMP:
-    case SEC_FRASES:      return NV_TELA_W - NV_DETP_X * 2;
+    case SEC_FRASES:      return 760;
     case SEC_COLECAO:     return COL_CARD_W;
     default:              return NV_DETP_EL_W;
   }
@@ -3761,6 +3773,7 @@ static float xItem(int r, int c) {
     if (r == SEC_TRAILERS)  { x += NV_DETF_TR_PASSO;  continue; }
     if (r == SEC_RELACIONADOS) { x += REL_CARD_W + REL_CARD_GAP; continue; }
     if (r == SEC_ESTUDIOS)     { x += EST_CARD_W + EST_GAP; continue; }
+    if (r == SEC_FRASES)       { x += 784; continue; }
     if (r == SEC_COMENTARIOS) {
       // As pilulas somam largura + vao; os CARTOES recomecam em NV_DETP_X
       // porque ficam numa LINHA de baixo. xItem deixa de ser monotonico nesta
@@ -3911,7 +3924,7 @@ static void trailerDetalheTela(void) {
 }
 static int toqueDetalheRolar(const PonteiroRolagem *e) {
   int r = 0;
-  if (!aberto || saindo || pessoaAberta || colListaAberta || trailer_cheia() || corpoSobArte()) return 0;
+  if (!aberto || saindo || pessoaAberta || colListaAberta || lowerList || studioBrowse || trailer_cheia() || corpoSobArte()) return 0;
   if (e->eixoY) r = toquerol_evento(&toqueDetalhe, e);
   else {
     if (e->fase == PONT_ROL_INICIO) {
@@ -3950,6 +3963,12 @@ static float blocoAnt[3] = { -1.0f, -1.0f, -1.0f };   // Notas / Numeros / Progr
 static void detail_atualizar_(float dt, Uint32 agora) {
   if (musicaui_visivel()) { musicaui_atualizar(agora); return; }
   colListaEntrada=anim_mola(colListaEntrada,colListaAberta ? 1 : 0,dt,NV_MOLA_FOCO);
+  lowerEnter=anim_clamp(anim_mola(lowerEnter,lowerList ? 1 : 0,dt,NV_MOLA_FOCO),0,1);
+  lowerScroll=anim_mola2(&lowerScrollVel,lowerScroll,lowerTarget,dt,NV_MOLA2_SCROLL);
+  for (int i=0;i<N_ITENS;i++) lowerFocus[i]=anim_mola(lowerFocus[i],i==lowerCursor ? 1 : 0,dt,NV_MOLA_FOCO);
+  if (studioBrowse && !vertudo_aberta()) studioBrowse=0;
+  if (lowerList==1 && lowerCursor>=lowerCount()-2 && lowerFeed() && extras_comentarios_ep_tem_mais())
+    extras_comentarios_ep_mais();
   if (aberto) {
     revalidarIdx();
     unsigned version = servidores_fileiras_versao();
@@ -4384,14 +4403,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
   for (int r = 0; r < N_SECOES; r++)
     for (int c = 0; c < secaoN(r) && c < N_ITENS; c++) {
       float alvo = (nivel >= 1 && focus_indice(&foco, r, c)) ? 1.0f : 0.0f;
-      if (r==SEC_COMENTARIOS) {
-        if (comFocoAlvo[c]!=(int)alvo) {
-          comFocoAlvo[c]=(int)alvo; comFocoInicio[c]=animFoco[r][c]; comFocoTempo[c]=0;
-        }
-        comFocoTempo[c]=fminf(.24f,comFocoTempo[c]+dt);
-        animFoco[r][c]=anim_politica_reduzida ? alvo :
-          anim_mistura(comFocoInicio[c],alvo,detalheExpo(comFocoTempo[c]/.24f));
-      } else animFoco[r][c]=anim_politica_reduzida ? alvo : anim_mola(animFoco[r][c],alvo,dt,
+      animFoco[r][c]=anim_politica_reduzida ? alvo : anim_mola(animFoco[r][c],alvo,dt,
         alvo ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
     }
   for (int r = 0; r < N_SECOES; r++) {
@@ -4423,7 +4435,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
         // sair da tela. Sem esta linha a regra geral abaixo empurrava a secao
         // inteira 24 px para a esquerda assim que o foco saia da coluna 0.
         // NOTAS is a 3-per-row grid that always fits the width.
-        else if (EH_AUD(r) || r == SEC_FRASES || r == SEC_NOTAS_EP ||
+        else if (EH_AUD(r) || r == SEC_NOTAS_EP ||
                  r == SEC_PROGTEMP || r == SEC_NOTAS) alvo = 0.0f;
         else if (foco.coluna == 0) alvo = 0.0f;
         else if (x + w > alvo + vista - 24.0f) alvo = x + w - vista + 24.0f;
@@ -4508,12 +4520,6 @@ static void detail_atualizar_(float dt, Uint32 agora) {
     // conforme a escolha desce. Proporcional, e nao por citacao, porque a
     // altura de cada uma depende de quantas linhas a fala ocupou e o unico
     // numero que o modulo devolve e o TOTAL.
-    if (foco.fileira == SEC_FRASES && seriefrases_n() > 1) {
-      float sobra = frasesAlt - NV_TELA_H * 0.62f;
-      if (sobra > 0.0f)
-        alvoY += sobra * (float)seriefrases_selecionado()
-                       / (float)(seriefrases_n() - 1);
-    }
     if (alvoY > maxY) alvoY = maxY;
     if (alvoY < 0.0f) alvoY = 0.0f;
   }
@@ -4522,17 +4528,7 @@ static void detail_atualizar_(float dt, Uint32 agora) {
   else
 #endif
   {
-    if (nivel>=1 && foco.fileira==SEC_COMENTARIOS) {
-      if (alvoY!=comScrollAlvo) { comScrollInicio=scrollY; comScrollAlvo=alvoY; comScrollTempo=0; }
-      comScrollTempo=fminf(.7f,comScrollTempo+dt);
-      float anterior=scrollY;
-      scrollY=anim_politica_reduzida ? alvoY :
-        anim_mistura(comScrollInicio,comScrollAlvo,detalheExpo(comScrollTempo/.7f));
-      velY=dt>0 ? (scrollY-anterior)/dt : 0;
-    } else {
-      scrollY=anim_mola2_reduzida(&velY,scrollY,alvoY,dt,NV_MOLA2_SCROLL,anim_politica_reduzida);
-      comScrollInicio=comScrollAlvo=scrollY; comScrollTempo=0;
-    }
+    scrollY=anim_mola2_reduzida(&velY,scrollY,alvoY,dt,NV_MOLA2_SCROLL,anim_politica_reduzida);
   }
 }
 
@@ -7259,12 +7255,12 @@ static void desenhaEstudio(float x, float y, int i, float f, float a) {
     float ap = tex_aspecto(logo), w, h, fr, fg, fb;
     int recorte;
     if (ap <= 0.0f) ap = 3.0f;
-    h = 52.0f; w = h * ap;
+    h = 64.0f; w = h * ap;
     if (w > EST_CARD_W - 36.0f) { w = EST_CARD_W - 36.0f; h = w / ap; }
     recorte = tex_cor_fundo(logo, &fr, &fg, &fb) != 1;
     { float k = r.w / EST_CARD_W;
       GfxRect rl = { r.x + (r.w - w * k) * 0.5f,
-                     r.y + (r.h - h * k) * 0.5f, w * k, h * k };
+                     r.y + (r.h - h * k) * 0.38f, w * k, h * k };
       gfx_tex_aspect_atual = 0.0f;
       // Logo recortado sempre branco; logo com fundo proprio fica como veio.
       if (recorte) {
@@ -7275,11 +7271,15 @@ static void desenhaEstudio(float x, float y, int i, float f, float a) {
       } }
   } else {
     int c = f > 0.5f ? 245 : 208;
-    TxtLinha ln = txt_linha_corta(TXT_DET_META2, extras_estudio_nome(i),
+    TxtLinha ln = txt_linha_corta(TXT_ILHA_NOME, extras_estudio_nome(i),
                                   c, c, 220, 255,
                                   EST_CARD_W - 28.0f);
     txt_desenhar_alpha(ln, r.x + (r.w - ln.w) * 0.5f,
                        r.y + (r.h - ln.h) * 0.5f, a * 0.95f);
+  }
+  if (t) {
+    TxtLinha name=txt_linha_corta(TXT_ILHA_NOME,extras_estudio_nome(i),235,238,245,255,r.w-32);
+    txt_desenhar_alpha(name,r.x+(r.w-name.w)*.5f,r.y+r.h-46,a);
   }
 }
 
@@ -7701,6 +7701,13 @@ static int nCartoesCom(void) {
   return n > EX_COMENT_MAX ? EX_COMENT_MAX : n;
 }
 
+static int lowerFeed(void) {
+  const CatItem *ci=cat_item(idx);
+  if (ehSerie() && comentEp) return 1;
+  return ci && extras_comentarios_ep_do(ci->imdb,0,0) && extras_n_comentarios_ep()>0;
+}
+static int lowerCount(void) { return lowerFeed() ? extras_n_comentarios_ep() : nCartoesCom(); }
+
 static float larguraPilulaCom(const char *rot) {
   TxtLinha l = txt_linha(TXT_PLR_CORPO, rot, 255, 255, 255, 255);
   return l.w + COM_PILL_PAD * 2;
@@ -7815,7 +7822,7 @@ static float cabecalhoComentarios(float x, float y, float a) {
 
 static void desenhaComentarios(float x, float y, float a) {
   int daSerie = !(ehSerie() && comentEp);
-  int n = daSerie ? extras_n_comentarios() : extras_n_comentarios_ep();
+  int n = nCartoesCom();
   int i;
   y = cabecalhoComentarios(x, y, a);
   // Carregando e "nao ha" sao a MESMA lista vazia; sem separar os dois o
@@ -7831,7 +7838,7 @@ static void desenhaComentarios(float x, float y, float a) {
   // TODOS os cartoes, nao tres: os outros que o Trakt manda ficavam
   // inalcancaveis. Quem limita o que aparece e o recorte lateral abaixo, e quem
   // traz os de fora da tela e a rolagem horizontal da fileira.
-  for (i = 0; i < n; i++) {
+  for (i = 0; i <= n; i++) {
     float cx = x + i * (COM_CARD_W + COM_CARD_GAP) - scrollSec[SEC_COMENTARIOS];
     GfxRect card = { cx, y, COM_CARD_W, COM_CARD_H };
     int foc = (nivel >= 1 && foco.fileira == SEC_COMENTARIOS &&
@@ -7852,9 +7859,19 @@ static void desenhaComentarios(float x, float y, float a) {
     // rasterizada na cor pedida, entao uma cor que varia por quadro seria uma
     // entrada nova de cache por quadro.
     float fc=i+nPilulasCom()<N_ITENS ? animFoco[SEC_COMENTARIOS][i+nPilulasCom()] : 0;
-    card=detalheEscala(card,fc,detalheFocoEscala(.03f));
-    if (fc>.005f && ajustes_borda_foco()) gfx_anel(card,20.0f/COM_CARD_H,3,1,1,1,fc*a);
-    gfx_cor(card,20.0f/COM_CARD_H,1,1,1,.06f*a);
+    GfxRect zoom=foco_zoom(card,fc);
+    int group=!gfx_transformado();
+    if (group) gfx_transformar(cx+COM_CARD_W*.5f,y+COM_CARD_H*.5f,zoom.w/card.w,0,0);
+    moldura(card,20,a);
+    plrui_linha_foco(card,20,fc*a);
+    foco_anel(card,20.0f/COM_CARD_H,fc,a);
+    if (i==n) {
+      gfx_icone((GfxRect){cx+COM_CARD_W*.5f-18,y+52,36,36},"aj_chevron-right",.9f,.92f,.96f,a);
+      TxtLinha more=txt_linha(TXT_ILHA_NOME,i18n("Ver todos os comentários"),243,242,239,255);
+      txt_desenhar_alpha(more,cx+(COM_CARD_W-more.w)*.5f,y+114,a);
+      if (group) gfx_sem_transformar();
+      continue;
+    }
     int tintaEsc = 1;   // tinta escura sobre o foco (realce claro); 0 = clara
     // Vidro: o cartao em foco segue translucido (contorno no realce), entao o
     // texto NAO inverte; `focCor` e o "foco cheio" das cores abaixo.
@@ -7889,9 +7906,11 @@ static void desenhaComentarios(float x, float y, float a) {
                                     focCor ? (tintaEsc ? 20 : 255) : 248, 255, larg - larguraTag);
       txt_desenhar_alpha(lu,px+58,y+30,a);
       int rating=daSerie ? extras_comentario_nota(i) : extras_comentario_ep_nota(i);
-      if (rating>0) { char score[24]; snprintf(score,sizeof score,"★ %d",rating);
+      if (rating>0) { char score[24]; snprintf(score,sizeof score,"%d",rating);
         TxtLinha ls=txt_linha(TXT_G18R,score,243,242,239,140);
-        txt_desenhar_alpha(ls,cx+COM_CARD_W-26-ls.w,y+32,a); }
+        float sx=cx+COM_CARD_W-26-ls.w;
+        gfx_icone((GfxRect){sx-26,y+34,20,20},"aj_star",.8f,.82f,.86f,a);
+        txt_desenhar_alpha(ls,sx,y+32,a); }
       GfxRect av={px,y+22,44,44}; gfx_cor(av,.5f,.62f,.83f,.78f,a);
       const char *user=daSerie ? extras_comentario_usuario(i) : extras_comentario_ep_usuario(i);
       char ini[12]; elencoMonograma(user,ini,sizeof ini);
@@ -7920,6 +7939,7 @@ static void desenhaComentarios(float x, float y, float a) {
                                 foc ? (tintaEsc ? 88 : 215) : 132, foc ? (tintaEsc ? 90 : 216) : 138,
                                 foc ? (tintaEsc ? 96 : 222) : 150, 255);
         (void)lr; } }
+    if (group) gfx_sem_transformar();
   }
 }
 
@@ -8008,7 +8028,7 @@ static void ponteiroDetalhe(int r, int c) {
     nivel = 0; botao = c;
     return;
   }
-  if (r >= N_SECOES || c < 0 || c >= secaoColunas(r)) return;
+  if (lowerList || studioBrowse || r >= N_SECOES || c < 0 || c >= secaoColunas(r)) return;
   nivel = 1;
   foco.fileira = r; foco.coluna = c; foco.colunaLembrada[r] = c;
 }
@@ -8027,7 +8047,8 @@ static void navigationTarget(float x,float y,float w,float h,PonteiroFn fn,Ponte
 #define ponteiro_alvo navigationTarget
 static int navigationMove(SDL_Keycode key){
   // Section order and saved columns must survive clipping and scroll motion.
-  if(nivel && (key==SDLK_UP || key==SDLK_DOWN || foco.fileira==SEC_TEMPORADAS))return 0;
+  if(nivel && (key==SDLK_UP || key==SDLK_DOWN || foco.fileira==SEC_TEMPORADAS ||
+      foco.fileira==SEC_COMENTARIOS || foco.fileira==SEC_FRASES || foco.fileira==SEC_ESTUDIOS))return 0;
   if(key!=SDLK_UP&&key!=SDLK_DOWN&&key!=SDLK_LEFT&&key!=SDLK_RIGHT)return 0;
   GfxRect rects[512];int current=-1;
   for(int i=0;i<navigationCount;i++){rects[i]=navigation[i].rect;if(navigation[i].row==(nivel?foco.fileira:focoServidor>=0?-2:-1)&&navigation[i].col==(nivel?foco.coluna:focoServidor>=0?focoServidor:botao))current=i;}
@@ -8081,11 +8102,8 @@ static int moverFileira(int dy) {
   const int *ordem = ordemSecoes();
   for (o = 0; o < N_ORDEM; o++) if (ordem[o] == foco.fileira) pos = o;
   if (pos < 0) return focus_mover(&foco, 0, dy);
-  int footer = foco.fileira==SEC_FRASES || foco.fileira==SEC_DETALHES || foco.fileira==SEC_ESTUDIOS;
   for (o = pos + dy; o >= 0 && o < N_ORDEM; o += dy) {
     int r = ordem[o];
-    // Footer cards share one row; only Left/Right moves between them.
-    if (footer && (r==SEC_FRASES || r==SEC_DETALHES || r==SEC_ESTUDIOS)) continue;
     if (foco.nColunas[r] > 0) {
       int alvo = foco.colunaLembrada[r];
       if (foco.fileira==SEC_EPISODIOS && r==SEC_TEMPORADAS) alvo=colTemp(temporada);
@@ -8250,41 +8268,106 @@ static float secaoEntra(int r, Uint32 agora) {
   return secVisto[r] ? revela_entra(secVisto[r], 0, agora) : 0.0f;
 }
 
-static void desenhaRodape(int r,float a) {
-  float x=96+dxSec[r],y=conteudoSec[r]-scrollY;
-  if (y>1080 || y+300<0) return;
-  GfxRect card={x,y,556,300};
-  float f=animFoco[r][0];
-  if(a>.3f)navigationTarget(card.x,card.y,card.w,card.h,ponteiroDetalhe,NULL,r,0);
-  // The text grows with the card: the whole tile is one group transform.
-  int grupo=f>.005f && !gfx_transformado();
-  if (grupo) gfx_transformar(x+278,y+150,1+detalheFocoEscala(.03f)*f,0,0);
-  gfx_cor(card,20.0f/300,1,1,1,.06f*a);
-  if (f>.005f && ajustes_borda_foco()) gfx_anel(card,20.0f/300,3,1,1,1,f*a);
-  const char *title=r==SEC_FRASES ? "Frases" : r==SEC_DETALHES ? "Ficha técnica" : "Produção";
-  char caps[80]; idioma_maiusc_em(ajustes_idioma(),caps,sizeof caps,i18n(title));
-  txt_tracking(TXT_G20M,caps,243,242,239,x+28,y+24,a*.6f,3.6f);
-  if (r==SEC_FRASES) {
-    int sel=seriefrases_selecionado(); if (sel<0 || sel>=seriefrases_n()) sel=0;
-    const char *quote=seriefrases_texto(sel);
-    char text[1200]; snprintf(text,sizeof text,"“%s”",quote);
-    txt_bloco_corta(strlen(quote)<60 ? TXT_LOG_T34 : TXT_DET_SIN,text,243,242,239,
-                    x+28,y+66,500,strlen(quote)<60 ? 50 : 38,a,4);
-    txt_desenhar_alpha(txt_linha_corta(TXT_G18R,seriefrases_quem(sel),243,242,239,140,500),x+28,y+252,a);
-  } else if (r==SEC_DETALHES) {
-    LinhaDet rows[NV_DETF_DET_MAXL]; int n=montarDetalhes(rows,NV_DETF_DET_MAXL);
-    for (int i=0;i<n && i<5;i++) {
-      txt_desenhar_alpha(txt_linha_corta(TXT_G20M,rows[i].chave,243,242,239,128,180),x+28,y+62+i*42,a);
-      txt_desenhar_alpha(txt_linha_corta(TXT_G22M,rows[i].valor,243,242,239,255,300),x+218,y+62+i*42,a);
+// Wikiquote supplies the speaker (and sometimes episode in that credit).
+// Add the actor only when this title's cast contains that character.
+static void quoteCredit(int i,char *out,size_t cap) {
+  const char *who=seriefrases_quem(i);
+  const CatItem *ci=cat_item(idx);
+  snprintf(out,cap,"%s",who[0] ? who : "Wikiquote");
+  for (int c=0;ci && c<ci->nElenco;c++) {
+    const char *role=ci->elenco[c].papel;
+    if (role[0] && who[0] && (!strcmp(role,who) || strstr(who,role))) {
+      snprintf(out,cap,"%s · %s",who,ci->elenco[c].nome); break;
     }
-  } else for (int i=0;i<extras_n_estudios() && i<4;i++)
-    txt_desenhar_alpha(txt_linha_corta(TXT_DET_SIN,extras_estudio_nome(i),243,242,239,204,500),x+28,y+70+i*48,a);
-  if (grupo) gfx_sem_transformar();
+  }
+}
+
+static void desenhaRodape(int r,float a) {
+  float y=conteudoSec[r]-scrollY;
+  if (y>NV_TELA_H || y+alturaSecao(r)<0) return;
+  const char *title=r==SEC_FRASES ? "Frases" : "Ficha técnica";
+  char caps[100]; idioma_maiusc_em(ajustes_idioma(),caps,sizeof caps,i18n(title));
+  txt_tracking(TXT_G20M,caps,243,242,239,96,y-48,a*.6f,3.6f);
+  if (r==SEC_FRASES) {
+    for (int i=0;i<secaoN(r);i++) {
+      GfxRect card={xItem(r,i)-scrollSec[r],y,760,300};
+      if (card.x>NV_TELA_W || card.x+card.w<0) continue;
+      float f=animFoco[r][i];
+      if (a>.3f) navigationTarget(card.x,card.y,card.w,card.h,ponteiroDetalhe,NULL,r,i);
+      GfxRect zoom=foco_zoom(card,f);
+      int group=!gfx_transformado();
+      if (group) gfx_transformar(card.x+380,y+150,zoom.w/card.w,0,0);
+      moldura(card,22,a); plrui_linha_foco(card,22,f*a); foco_anel(card,22.0f/300,f,a);
+      char text[1200],credit[256];
+      snprintf(text,sizeof text,"“%s”",seriefrases_texto(i)); quoteCredit(i,credit,sizeof credit);
+      txt_bloco_corta(TXT_LOG_T34,text,243,242,239,card.x+32,y+30,696,44,a,4);
+      txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,credit,186,193,204,255,696),card.x+32,y+222,a);
+      txt_desenhar_alpha(txt_linha(TXT_G20M,i18n("OK para ver todas as frases"),160,170,184,255),card.x+32,y+264,a);
+      if (group) gfx_sem_transformar();
+    }
+  } else {
+    LinhaDet rows[NV_DETF_DET_MAXL]; int n=montarDetalhes(rows,NV_DETF_DET_MAXL);
+    float h=alturaSecao(r);
+    for (int col=0;col<2;col++) {
+      GfxRect card={96+col*876,y,852,h};
+      moldura(card,22,a);
+      for (int i=col;i<n;i+=2) {
+        float cy=y+28+(i/2)*76;
+        txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,i18n(rows[i].chave),156,165,179,255,220),card.x+28,cy,a);
+        txt_bloco_corta(TXT_ILHA_NOME,rows[i].valor,239,241,246,card.x+264,cy,560,30,a,2);
+      }
+    }
+    if (a>.3f) navigationTarget(96,y,1728,h,ponteiroDetalhe,NULL,r,0);
+  }
+}
+
+// Both lists retain the parent row/column. Closing only changes their spring
+// target, so Back plays the full exit and returns to that same card.
+static void desenhaLowerList(float a) {
+  int quotes=lowerList==2 || (!lowerList && foco.fileira==SEC_FRASES);
+  int n=quotes ? seriefrases_n() : lowerCount();
+  float s=lowerEnter;
+  ponteiro_camada();
+  gfx_cor((GfxRect){0,0,NV_TELA_W,NV_TELA_H},0,0,0,0,.30f*a*s);
+  gfx_transformar(960,540,.96f+.04f*s,0,24*(1-s));
+  GfxRect sheet={120,48,1680,984};
+  gfx_cor(sheet,30.0f/sheet.h,.07f,.075f,.085f,.94f*a*s);
+  plrui_material(sheet,30,0,a*s);
+  txt_desenhar_alpha(txt_linha(TXT_ILHA_TITULO,i18n(quotes ? "Frases" : "Comentários"),243,242,239,255),168,84,a*s);
+  txt_desenhar_alpha(txt_linha(TXT_ILHA_SUB,i18n("Voltar para fechar"),180,188,200,255),1450,98,a*s);
+  GfxRect clip={156,166,1608,818};
+  gfx_recorte(clip.x,clip.y,clip.w,clip.h);
+  float cy=clip.y;
+  for (int i=0;i<n;i++) {
+    int ep=lowerFeed();
+    const char *text=quotes ? seriefrases_texto(i) : (ep ? extras_comentario_ep_spoiler(i) : comOculto(i)) ? i18n("Contém spoiler · OK para ler") :
+      ep ? extras_comentario_ep_texto(i) : extras_comentario_texto(i);
+    char credit[256];
+    if (quotes) quoteCredit(i,credit,sizeof credit);
+    else snprintf(credit,sizeof credit,"%s",ep ? extras_comentario_ep_usuario(i) : extras_comentario_usuario(i));
+    // Measure the same wrapping used below; quotes are never truncated here.
+    float th=txt_bloco(TXT_LOG_T34,text,243,242,239,-10000,-10000,1480,44,0,200);
+    float h=fmaxf(180,th+104);
+    if (i==lowerCursor) {
+      float top=cy-clip.y,bottom=top+h;
+      if (top<lowerTarget) lowerTarget=top;
+      else if (bottom>lowerTarget+clip.h) lowerTarget=bottom-clip.h;
+    }
+    GfxRect row={168,cy-lowerScroll,1584,h-16};
+    if (row.y+row.h>clip.y && row.y<clip.y+clip.h) {
+      plrui_linha_foco(row,20,(i<N_ITENS ? lowerFocus[i] : i==lowerCursor ? 1 : 0)*a*s);
+      txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_NOME,credit,174,185,200,255,1480),row.x+32,row.y+22,a*s);
+      txt_bloco(TXT_LOG_T34,text,243,242,239,row.x+32,row.y+64,1480,44,a*s,200);
+    }
+    cy+=h;
+  }
+  lowerTarget=fmaxf(0,fminf(lowerTarget,cy-clip.y-clip.h));
+  gfx_sem_recorte(); gfx_sem_transformar();
 }
 
 static void desenhaSecao(int r, float a, Uint32 agora) {
   if (corpoSobArte()) return;
-  if (r==SEC_FRASES || r==SEC_DETALHES || r==SEC_ESTUDIOS) {
+  if (r==SEC_FRASES || r==SEC_DETALHES) {
     if (secaoN(r)>0) desenhaRodape(r,a*secaoAlpha(r));
     return;
   }
@@ -8977,6 +9060,8 @@ static void detail_desenhar_(Uint32 agora) {
   }
   // E o menu de visto por cima da ficha tambem: ele e o ultimo a abrir.
   if (episodios_menu_aberto()) ponteiro_camada();
+  if (lowerList || lowerEnter>.005f) desenhaLowerList(s);
+  if (studioBrowse && vertudo_aberta()) { ponteiro_camada(); vertudo_desenhar(agora); }
   if (comInteiro>=0) {
     int ep=ehSerie() && comentEp;
     GfxRect folha={240,220,1440,640};
@@ -9056,6 +9141,7 @@ int detail_relogio_navegavel(void) {
   return aberto && !musicaui_visivel() && !saindo && !sinopse_aberta() && !corpoSobArte() &&
          !trailer_cheia() && !trocaarte_aberto() && !reacao_aberta() &&
          !amtui_aberta() && !detmais_aberto() && !episodios_menu_aberto() &&
+         !lowerList && !studioBrowse &&
          !trailerCinema.oculta;
 }
 // O episodio travado com o pedido, se havia um card/menu por tras dele.
