@@ -277,15 +277,17 @@ static void ajFoneTopo(float L,float R,float T,int pagina,const char *titulo) {
     ajNeutro(b,ajPt(18),.09f,.18f,.19f,.21f,1);
     ajIcone("aj_arrow-left",b.x+ajPt(9),b.y+ajPt(9),ajPt(18),1);
     aj4Alvo((GfxRect){b.x-ajPt(4),b.y-ajPt(4),ajPt(44),ajPt(44)},5,0);
-    ajFT(titulo,TXT_G28B,28,22,L+ajPt(48),y,R-L-ajPt(48+110),1,0);
-  } else ajFT(titulo,TXT_G28B,28,22,L,y+ajPt(2),R-L-ajPt(120),1,0);
+    ajFT(titulo,TXT_G28B,28,22,L+ajPt(48),y,R-L-ajPt(48+44),1,0);
+  } else ajFT(titulo,TXT_G28B,28,22,L,y+ajPt(2),R-L-ajPt(44),1,0);
   GfxRect q={R-ajPt(36),y-ajPt(4),ajPt(36),ajPt(36)};
   int foco=aj4Topo==0;
   if(foco)ajPilulaAcento(q,ajPt(18),1);else ajNeutro(q,ajPt(18),.07f,.14f,.15f,.17f,1);
   if(foco)ajIconeT("aj_search",q.x+ajPt(9),q.y+ajPt(9),ajPt(18),1);else ajIcone("aj_search",q.x+ajPt(9),q.y+ajPt(9),ajPt(18),.85f);
   aj4Alvo((GfxRect){q.x-ajPt(4),q.y-ajPt(4),ajPt(44),ajPt(44)},0,0);
+#ifndef NV_IOS
   char hora[32];ajCenaHora(hora,sizeof hora);
   ajFT(hora,TXT_G18M,18,15,q.x-ajPt(10),y+ajPt(2),ajPt(70),.7f,1);
+#endif
 }
 static void ajFoneLinha(float L,float R,float y,float h,const char *icone,const char *nome,const char *valor,int foco,int zona,int row,int ultima) {
   GfxRect r={L,y,R-L,h};
@@ -301,7 +303,7 @@ static void ajFoneLinha(float L,float R,float y,float h,const char *icone,const 
 }
 static void ajFoneLista(void) {
   ajFoneFundo();
-  float esc=gfx_escala(),L=ajPt(16),R=NV_VTELA_W-nv_inset_d/esc-ajPt(16),T=nv_inset_t/esc;
+  float esc=gfx_escala(),L=ajPt(16),R=NV_VTELA_W-nv_inset_d/esc-ajPt(16),RB=NV_VTELA_W,T=nv_inset_t/esc;
   ajFoneTopo(L,R,T,0,"Ajustes");
   static const char *const nome[14]={"Reproduzir","Áudio e legendas","Minha tela","Perfil e serviços","Presets","Diferente do padrão","Regras da TV","O que o Nuvio faz?",NULL,"TV ao vivo e guia","Controle parental","Desempenho","Sobre e ajuda","Opções técnicas"};
   static const char *const icone[14]={"aj_play","aj_languages","aj_layout-grid","aj_users","aj_sparkles","aj_rotate-ccw","aj_shield","aj_sparkles",NULL,"aj_tv","aj_lock","aj_cpu","aj_info","aj_terminal"};
@@ -311,7 +313,7 @@ static void ajFoneLista(void) {
   for(int i=0;i<12;i++)ordem[n++]=base[i];
   if(lig(AJ_AVANCADAS))ordem[n++]=13;
   float h=ajPt(48),y0=T+ajPt(62);
-  ajNeutro((GfxRect){L,y0,R-L,h*n},ajPt(18),.07f,.11f,.12f,.14f,1);
+  ajNeutro((GfxRect){L,y0,RB-L+ajPt(18),h*n},ajPt(18),.07f,.11f,.12f,.14f,1);
   for(int k=0;k<n;k++) {
     int id=ordem[k];char val[160]="";
     if(id<4) {
@@ -321,7 +323,7 @@ static void ajFoneLista(void) {
     } else if(id==9)snprintf(val,sizeof val,i18n("%s · %d canais"),textoValor(AJ_IPTV_CONTA),ajPenChannels());
     else if(id==11)snprintf(val,sizeof val,"%s",textoValor(AJ_GPU_EFEITOS));
     else if(id==5)snprintf(val,sizeof val,"%d",aj4Diferencas(aj4Opcoes));
-    ajFoneLinha(L,R,y0+k*h,h,icone[id],nome[id],val,aj4Linha==id && aj4Topo<0,1,id,k==n-1);
+    ajFoneLinha(L,RB,y0+k*h,h,icone[id],nome[id],val,aj4Linha==id && aj4Topo<0,1,id,k==n-1);
   }
 }
 static void ajFoneValor(const AjPenRow *row,int col,int i,char *val,size_t n) {
@@ -344,7 +346,7 @@ static void ajFoneValor(const AjPenRow *row,int col,int i,char *val,size_t n) {
 static void ajFonePagina(void) {
   const AjPenPage *page=ajPenCurrent();
   ajFoneFundo();
-  float esc=gfx_escala(),L=ajPt(16),R=NV_VTELA_W-nv_inset_d/esc-ajPt(16),T=nv_inset_t/esc;
+  float esc=gfx_escala(),L=ajPt(16),R=NV_VTELA_W-nv_inset_d/esc-ajPt(16),RB=NV_VTELA_W,T=nv_inset_t/esc;
   ajFoneEsc=esc;
   float top=T+ajPt(56),bottom=NV_VTELA_H,hr=ajPt(52),hk=ajPt(30);
   /* total content height */
@@ -373,10 +375,10 @@ static void ajFonePagina(void) {
   float y=top-ajFoneRol;int index=0;
   for(int c=0;c<2;c++) {
     const AjPenColumn *col=&page->cols[c];if(!col->n)continue;
-    if(col->title && col->title[0])ajFT(col->title,TXT_AJ_MINI14,14,11,L+ajPt(4),y+ajPt(10),R-L,.45f,0);
+    if(col->title && col->title[0])ajFT(col->title,TXT_AJ_MINI14,14,11,L+ajPt(4),y+ajPt(10),RB-L,.45f,0);
     y+=hk;
     float py=y;
-    ajPenPanel(L,py,R-L,col->n*hr,0);
+    ajPenPanel(L,py,RB-L+ajPt(18),col->n*hr,0);
     for(int i=0;i<col->n;i++,index++) {
       const AjPenRow *row=&col->rows[i];float ry=y+i*hr;
       int visible=ry+hr>top && ry<bottom;
@@ -384,9 +386,9 @@ static void ajFonePagina(void) {
       int foco=index==ajPenRow && aj4Topo<0;
       int ok=row->op>=0?ajOpcaoDisponivel(row->op):row->op!=-1;
       float a=ok?1:.45f;
-      if(foco)ajNeutro((GfxRect){L+ajPt(6),ry+ajPt(2),R-L-ajPt(12),hr-ajPt(4)},ajPt(14),.14f,.169f,.176f,.204f,1);
+      if(foco)ajNeutro((GfxRect){L+ajPt(6),ry+ajPt(2),RB-L-ajPt(12),hr-ajPt(4)},ajPt(14),.14f,.169f,.176f,.204f,1);
       ajIcone(row->icon,L+ajPt(16),ry+(hr-ajPt(20))/2,ajPt(20),foco?1:.75f);
-      float rx=R-ajPt(16),tx=L+ajPt(52);
+      float rx=RB-ajPt(16),tx=L+ajPt(52);
       int help=row->help && row->help[0];
       float ty=ry+(help?ajPt(9):(hr-ajPt(16))/2-ajPt(2));
       if(row->toggle && row->op!=-1) {
@@ -400,13 +402,13 @@ static void ajFonePagina(void) {
       } else {
         char val[160];ajFoneValor(row,c,i,val,sizeof val);
         float vx=rx-ajPt(14)-ajPt(4),vw=0;
-        if(val[0])vw=ajFT(val,TXT_G18R,18,13,vx,ry+(hr-ajPt(14))/2-ajPt(1),(R-L)*.38f,.55f,1)+ajPt(8);
+        if(val[0])vw=ajFT(val,TXT_G18R,18,13,vx,ry+(hr-ajPt(14))/2-ajPt(1),(RB-L)*.38f,.55f,1)+ajPt(8);
         ajIcone("aj_chevron-right",rx-ajPt(14),ry+(hr-ajPt(14))/2,ajPt(14),.45f);
         ajFT(row->title,TXT_G18M,18,16,tx,ty,vx-vw-tx-ajPt(6),a,0);
       }
       if(help)ajFT(row->help,TXT_AJ_MINI14,14,11,tx,ty+ajPt(21),rx-tx-ajPt(54),.4f,0);
       if(i<col->n-1)gfx_cor((GfxRect){tx,ry+hr-1,rx-tx,1},0,1,1,1,.08f);
-      GfxRect t={L,fmaxf(ry,top),R-L,fminf(ry+hr,bottom)-fmaxf(ry,top)};
+      GfxRect t={L,fmaxf(ry,top),RB-L,fminf(ry+hr,bottom)-fmaxf(ry,top)};
       if(t.h>ajPt(8))aj4Alvo(t,8,index);
     }
     y+=col->n*hr;
