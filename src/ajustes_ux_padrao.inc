@@ -353,3 +353,8 @@
   0, /* gradient smoothing: Automatic */
   0, /* hero logo and information size: Normal */
   0, /* folder hero details: On (V_LIGA 0) */
+  0, /* seek preview provider: Seekr.tv (existing installs unchanged) */
+  0, 0, 0, /* OpenSeek server / pair / status: actions */
+  0, 0, 0, 0, 0, 0, 0, 0, 0, /* OpenSeek shared library: info + offset/undo/reject actions */
+
+  0, // miniaturaResolutionLocal: Auto

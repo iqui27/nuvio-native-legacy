@@ -77,7 +77,18 @@ typedef struct {
   /* 1 = media Range read: follow an https->http redirect like the player does
    * (debrid links). Cross-origin hops already drop every caller header. */
   int rebaixar_midia;
+  /* OpenSeek (SR-3): CURLOPT_PINNEDPUBLICKEY, only "sha256//<base64>[;sha256//...]"
+   * (a file name is refused: REDE_ENTRADA). Applied on every hop through the
+   * fail-closed option path: a libcurl/TLS backend without pinning fails the
+   * request with REDE_INDISPONIVEL and curl_erro = the setopt code (4/48),
+   * BEFORE any byte is sent. A mismatch is REDE_TRANSPORTE, curl_erro 90.
+   * Requires https://. Combine with tls_pessoal for a self-signed server: the
+   * pin is still enforced with peer verification off. Never log it. */
+  const char *pino_publico;
 } RedePedido;
+#define REDE_CURL_PINO_DIFERENTE 90 /* CURLE_SSL_PINNEDPUBKEYNOTMATCH */
+/* 1 = the string is a well-formed pin list for pino_publico. */
+int rede_pino_valido(const char *pino);
 typedef struct {
   int status, curl_erro;
   RedeErro erro;        /* HTTP 4xx/5xx e uma resposta, nao erro de transporte */

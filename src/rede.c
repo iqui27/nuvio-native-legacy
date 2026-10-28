@@ -431,7 +431,7 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
   if (p && p->receber_corpo && p->url && !strncmp(p->url,"https://",8) &&
       (!p->metodo || !strcmp(p->metodo,"GET")) && !p->seguir && !p->cabecalhos &&
       !p->corpo && !p->n_corpo && !p->job && !p->parar && !p->intervalo &&
-      !p->janela_corpo_ms && !p->ca_arquivo && !p->tls_pessoal &&
+      !p->janela_corpo_ms && !p->ca_arquivo && !p->tls_pessoal && !p->pino_publico &&
       !p->max_cabecalhos && p->prazo_ms<=300000 && p->max_bytes<=REDE_CORPO_MAXIMO) {
     unsigned total=0;
     r->erro=nv_http_fluxo(p->url,p->prazo_ms?p->prazo_ms:15000,

@@ -41,8 +41,12 @@ android {
                     "-DNUVIO_RAIZ=$raiz",
                     "-DNUVIO_SDL_SRC=$sdlSrc",
                     "-DNUVIO_ENV_CMAKE=$estagio/nuvio-env.cmake",
+                    "-DNV_VERSAO_APP=$versao",   // a versao COMPILADA vem sempre do appinfo.json (o arquivo de chaves pode estar velho)
                     "-DNUVIO_P2P_MOTOR=${(findProperty("nuvio.p2pMotor") as String?) ?: ""}",
                     "-DNUVIO_RUST_MKVCORE=${(findProperty("nuvio.rustMkvcore") as String?) ?: ""}",
+                    // FFmpeg so das miniaturas (tools/android/ffmpeg-miniaturas.sh); sem a pasta, a rota de CPU fica de fora
+                    "-DNUVIO_MINI_FFMPEG=${(findProperty("nuvio.miniFfmpeg") as String?)
+                        ?: File(System.getProperty("user.home"), ".cache/nuvio-android/mini-ffmpeg").takeIf { it.isDirectory }?.path?.replace('\\', '/') ?: ""}",
                 )
                 arguments += "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
             }
@@ -87,6 +91,7 @@ android {
             isMinifyEnabled = false
             if (ks != null) signingConfig = signingConfigs.getByName("release")
         }
+
     }
 
     // O nucleo abre libcurl.so/libjpeg.so por dlopen: precisam estar em
@@ -129,6 +134,7 @@ val copiaSdlJava = tasks.register<Copy>("copiaSdlJava") {
 tasks.named("preBuild") { dependsOn(copiaSdlJava) }
 
 dependencies {
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // Video (NvPlayer.kt, de outro agente): Media3 ExoPlayer.
     implementation("androidx.media3:media3-exoplayer:1.8.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.8.0")

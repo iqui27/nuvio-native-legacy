@@ -20,6 +20,73 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class ParaleloDataSourceTest {
+
+    @Test fun tailProbeAndThumbnailCompeteForTheSameFourConnectionLeases() {
+        val active = AtomicInteger()
+        val peak = AtomicInteger()
+        val firstFour = CountDownLatch(4)
+        val release = CountDownLatch(1)
+        fun opened() { val n = active.incrementAndGet(); peak.accumulateAndGet(n, ::maxOf); firstFour.countDown() }
+        val total = 50L shl 20
+        val source = ParaleloDataSource(null, emptyMap(), novaConexao = { url ->
+            object : ConexaoFaixa(url, total) {
+                private val closed = AtomicBoolean()
+                init { opened() }
+                override fun getInputStream(): InputStream {
+                    assertTrue(release.await(5, TimeUnit.SECONDS))
+                    return super.getInputStream()
+                }
+                override fun disconnect() {
+                    if (closed.compareAndSet(false, true)) active.decrementAndGet()
+                    super.disconnect()
+                }
+            }
+        })
+        val thumbnail = MediaHttpBudget.open(URL("https://thumb.example/frame"), "thumbnail", { url ->
+            object : ConexaoFalsa(url) {
+                private val closed = AtomicBoolean()
+                init { opened() }
+                override fun disconnect() { if (closed.compareAndSet(false, true)) active.decrementAndGet() }
+            }
+        })
+        val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val task = worker.submit<Long> {
+            try {
+                source.open(DataSpec.Builder().setUri(android.net.Uri.parse("https://player.example/video.mkv"))
+                    .setPosition(total - (3 shl 20)).build())
+                val bytes = ByteArray(65536)
+                var count = 0L
+                while (true) { val n = source.read(bytes, 0, bytes.size); if (n < 0) break; count += n }
+                count
+            } finally { source.close() }
+        }
+        try {
+            assertTrue(firstFour.await(5, TimeUnit.SECONDS))
+            assertEquals(4, active.get())
+            release.countDown()
+            MediaHttpBudget.close(thumbnail)
+            assertEquals(3L shl 20, task.get(10, TimeUnit.SECONDS))
+            assertTrue(peak.get() <= 4)
+        } finally {
+            release.countDown(); source.close(); MediaHttpBudget.close(thumbnail)
+            worker.shutdownNow(); worker.awaitTermination(5, TimeUnit.SECONDS)
+        }
+        assertEquals(4, MediaHttpBudget.available())
+    }
+
+    @Test fun diagnosticSingleConnectionBypassesTheParallelPoolForLargeFiles() {
+        val opened = AtomicInteger()
+        val source = ParaleloDataSource(null, emptyMap(), singleConnection = true,
+            novaConexao = { url -> opened.incrementAndGet(); ConexaoFaixa(url, 12L shl 20) })
+        try {
+            source.open(DataSpec.Builder().setUri(android.net.Uri.parse("https://player.example/movie.mp4")).build())
+            val exec = ParaleloDataSource::class.java.getDeclaredField("exec").apply { isAccessible = true }
+            assertEquals(null, exec.get(source))
+            assertEquals(1, opened.get()) // real single streaming request, no extra probe/reopen
+            assertTrue(source.read(ByteArray(1024), 0, 1024) > 0)
+        } finally { source.close() }
+        assertEquals(4, MediaHttpBudget.available())
+    }
     private open class ConexaoFalsa(url: URL) : HttpURLConnection(url) {
         val desconectou = AtomicBoolean()
         override fun connect() = Unit

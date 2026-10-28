@@ -101,6 +101,8 @@ class ParaleloDataSource(
     // Injetaveis para os testes de falha/cancelamento; producao usa a rede real.
     private val novaConexao: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
     private val dormir: (Long) -> Unit = { Thread.sleep(it) },
+    private val singleConnection: Boolean = false,
+    private val closeSockets: Boolean = false,
 ) : BaseDataSource(true) {
 
     // ESTATISTICAS AO VIVO (src/estatvivo.h, via NvPlayer.nativeStats): o que
@@ -122,6 +124,7 @@ class ParaleloDataSource(
     companion object {
         private const val TAG = "nuvio-paralelo"
         const val CONEXOES = 4
+        // MediaHttpBudget owns permits at each connection open, including probes and redirects.
         const val PEDACO = 4 shl 20           // 4 MB por pedido
         private const val ADIANTE = 3         // pedacos em voo por conexao
         private const val TENTATIVAS = 3
@@ -149,7 +152,8 @@ class ParaleloDataSource(
         // Uma fabrica por sessao do player (NvPlayer): o destino vale para todas
         // as aberturas dela.
         private val destinos = DestinosAddon()
-        override fun createDataSource(): DataSource = Seletor(ua, props, unica.createDataSource(), medidor, token, destinos)
+        private val experiment = 0
+        override fun createDataSource(): DataSource = Seletor(ua, props, unica.createDataSource(), medidor, token, destinos, experiment)
     }
 
     // Escolhe por pedido: paralelo para arquivo progressivo, unica para o resto.
@@ -157,11 +161,12 @@ class ParaleloDataSource(
     private class Seletor(private val ua: String?, private val props: Map<String, String>,
                           private val unica: DataSource,
                           private val medidor: PassivoMedidor?, private val token: Long,
-                          private val destinos: DestinosAddon) : DataSource {
+                          private val destinos: DestinosAddon, private val experiment: Int) : DataSource {
         private var atual: DataSource? = null
         private val ouvintes = ArrayList<androidx.media3.datasource.TransferListener>()
         override fun open(dataSpec: DataSpec): Long {
-            val d = if (serve(dataSpec.uri)) ParaleloDataSource(ua, props, medidor = medidor, token = token, destinos = destinos).also { p ->
+            val d = if (serve(dataSpec.uri)) ParaleloDataSource(ua, props, medidor = medidor, token = token, destinos = destinos,
+                singleConnection = experiment and 1 != 0, closeSockets = experiment and 2 != 0).also { p ->
                 for (o in ouvintes) p.addTransferListener(o)
             } else unica
             atual = d
@@ -216,7 +221,7 @@ class ParaleloDataSource(
     private fun desconectar(c: HttpURLConnection?) {
         if (c == null) return
         ativas.remove(c)
-        c.disconnect()
+        MediaHttpBudget.close(c)
     }
 
     private fun esperarTentativa(indice: Int, atrasoMs: Long = -1L) {
@@ -231,7 +236,7 @@ class ParaleloDataSource(
 
     private fun conectar1(u: URL, ini: Long, ultimo: Long): HttpURLConnection {
         conferirCancelamento()
-        val c = novaConexao(u)
+        val c = MediaHttpBudget.open(u, "player", novaConexao, ::conferirCancelamento)
         ativas.add(c)
         if (fechado) { desconectar(c); throw cancelado() }
         c.connectTimeout = 15000
@@ -243,6 +248,7 @@ class ParaleloDataSource(
         if (ua != null) c.setRequestProperty("User-Agent", ua)
         for ((k, v) in props) c.setRequestProperty(k, v)
         c.setRequestProperty("Accept-Encoding", "identity")
+        if (closeSockets) c.setRequestProperty("Connection", "close")
         c.setRequestProperty("Range", if (ultimo >= 0) "bytes=$ini-$ultimo" else "bytes=$ini-")
         return c
     }
@@ -337,7 +343,11 @@ class ParaleloDataSource(
         Estat.usado = true
         Estat.conexoes.incrementAndGet()
         try { return abrir(dataSpec) }
-        catch (e: IOException) { if (foiCancelado(e)) throw cancelado(e) else throw e }
+        catch (e: IOException) {
+            val cancelled = foiCancelado(e)
+            close() // release probes/workers even when open fails before returning a usable source
+            if (cancelled) throw cancelado(e) else throw e
+        }
         finally { Estat.conexoes.decrementAndGet(); medidor?.fim(token) }
     }
 
@@ -359,7 +369,9 @@ class ParaleloDataSource(
         // buraco do cache maior que a janela (seek para tras sobre regiao
         // sem cache) entraria inteiro num ByteArray so, na thread de quem
         // chamou, antes do pool existir.
-        val primeiroUltimo = pos + (if (pedido != C.LENGTH_UNSET.toLong()) minOf(pedido, PRIMEIRO.toLong()) else PRIMEIRO.toLong()) - 1
+        val primeiroUltimo = if (singleConnection) {
+            if (pedido == C.LENGTH_UNSET.toLong()) -1L else pos + pedido - 1
+        } else pos + (if (pedido != C.LENGTH_UNSET.toLong()) minOf(pedido, PRIMEIRO.toLong()) else PRIMEIRO.toLong()) - 1
         // Primeiro pedaco pela URL original: segue os redirecionamentos do debrid
         // uma vez so; os pedacos seguintes vao direto ao endereco final. Uma
         // abertura seguinte da mesma sessao ja comeca no destino (DestinosAddon).
@@ -378,7 +390,7 @@ class ParaleloDataSource(
             total > 0 -> total - pos
             else -> C.LENGTH_UNSET.toLong()
         }
-        val paralelo = code == 206 && total > 0 && janela > pedaco.toLong() * 2
+        val paralelo = !singleConnection && code == 206 && total > 0 && janela > pedaco.toLong() * 2
         // FIM DO ARQUIVO: o indice do MKV (Cues) e o moov do MP4 ficam nos
         // ultimos MB, e o Media3 vai ate la ANTES do primeiro quadro. Pela
         // conexao unica, os 4 MB finais de um remux de 50 GB levaram 24 s no
@@ -387,7 +399,7 @@ class ParaleloDataSource(
         // janela que vai ate o fim e tem mais de dois pedacos minimos vai pelo
         // pool: a sonda fica com a sua parte e o resto se divide entre as
         // outras conexoes, todas ao mesmo tempo.
-        val cauda = !paralelo && code == 206 && total > 0 &&
+        val cauda = !singleConnection && !paralelo && code == 206 && total > 0 &&
             janela > PEDACO_CAUDA_MIN.toLong() * 2 && pos + janela >= total
         if (!paralelo && !cauda) {
             Log.i(TAG, "conexao unica: HTTP $code, total=$total, pos=$pos (${dataSpec.uri.host})")
@@ -395,7 +407,7 @@ class ParaleloDataSource(
             if (code == 206 || code == 200) {
                 // 206 so da sonda: reabre ate o fim da janela pedida (sem teto
                 // se ela e o arquivo inteiro). Janela que cabe na sonda segue.
-                if (code == 206 && (pedido == C.LENGTH_UNSET.toLong() || pedido > PRIMEIRO)) {
+                if (!singleConnection && code == 206 && (pedido == C.LENGTH_UNSET.toLong() || pedido > PRIMEIRO)) {
                     // A sonda acabou de resolver o destino: reabre nele.
                     val alvo = c.url
                     desconectar(c)
@@ -488,7 +500,9 @@ class ParaleloDataSource(
         while (pedidos.size < conexoes * ADIANTE && proximoPedido < fim) {
             val ini = proximoPedido
             val ult = minOf(fim, ini + pedacoAtual) - 1
-            pedidos[ini] = ex.submit<ByteArray> { baixar(u, ini, ult) }
+            pedidos[ini] = ex.submit<ByteArray> {
+                baixar(u,ini,ult)
+            }
             proximoPedido = ult + 1
         }
     }
@@ -538,6 +552,7 @@ class ParaleloDataSource(
             return n
         }
         if (pos >= fim) return C.RESULT_END_OF_INPUT
+
         var b = buf
         if (b == null || pos >= bufIni + b.size) {
             val f = pedidos.remove(pos) ?: run { encher(); pedidos.remove(pos) }
@@ -568,7 +583,9 @@ class ParaleloDataSource(
         for (f in pedidos.values) f.cancel(true)
         pedidos.clear()
         // Interrompe connect/read antigos imediatamente ao buscar outra posicao.
-        for (c in ativas.toList()) desconectar(c)
+        // Iterate the concurrent set directly: Kotlin toList() has a size==1 fast path
+        // that races a worker removing the last connection (NoSuchElementException).
+        for (c in ativas) desconectar(c)
         buf = null
         if (unicaIn != null) Estat.conexoes.decrementAndGet()
         try { unicaIn?.close() } catch (_: IOException) {}

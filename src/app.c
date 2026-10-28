@@ -1010,6 +1010,12 @@ static void abrirPorIndice(int i) {
 static void idDoAlvo(const CatItem *ci, char *dst, size_t n) {
   int t = 0, e = 0;
   if (!ci) { if (n) dst[0] = 0; return; }
+  // A sheet opened for a specific episode owns its target until it closes.
+  // Focus beneath the sheet can resolve back to the resume/default episode.
+  if (!strcmp(ci->tipo, "series") && stream_folha_aberta() && folhaTocarT >= 0 && folhaTocarE > 0) {
+    cat_id_stream(detail_indice(), folhaTocarT, folhaTocarE, dst, (unsigned)n);
+    return;
+  }
   if (!strcmp(ci->tipo, "series") && detail_ep_foco(&t, &e) && t >= 0 && e > 0)
     // cat_id_stream: "tt:T:E" no IMDb; o id do video do addon nos demais
     // ("kitsu:41370:5"). Os dois callers passam o item do detalhe.
@@ -5975,6 +5981,17 @@ void app_atualizar(float dt, Uint32 agora) {
       // um "Assistir T2E5" da agenda colaria no pedido.
       int temEp = detail_pediu_fontes_ep(&epT, &epE);
       gravarFolhaTocar(epT, epE, temEp);
+      // Do not expose the previous episode's list during the focus debounce.
+      if (temEp) {
+        const CatItem *ci = cat_item(detail_indice());
+        char alvo[64];
+        cat_id_stream(detail_indice(), epT, epE, alvo, sizeof alvo);
+        if (ci && alvo[0] && !stream_lista_do_alvo(alvo)) {
+          stream_invalidar("episode selected for sources");
+          stream_definir_alvo(alvo);
+          addons_buscar(alvo, ci->tipo);
+        }
+      }
       idBaseDoTitulo(base, sizeof base);
       stream_preferir(base[0] ? fontepref_escolher_manual(base) : -1);
       nomeParaFolha(); stream_folha_abrir();

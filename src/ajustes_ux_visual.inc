@@ -196,6 +196,9 @@ static const char *ajVisualIcone(int op) {
     case AJ_SEEKR_TESTAR: return "aj_film";
     case AJ_SEEKR_FITA: return "aj_film";
     case AJ_SEEKR_AJUSTE: return "aj_film";
+    case AJ_PREVIA_PROVEDOR: return "aj_film";
+    case AJ_OPENSEEK_SERVIDOR: case AJ_OPENSEEK_PAREAR: case AJ_OPENSEEK_ESTADO: return "aj_link";
+    case AJ_OPENSEEK_COMPART: case AJ_OPENSEEK_AJ_M30: case AJ_OPENSEEK_AJ_M5: case AJ_OPENSEEK_AJ_M1: case AJ_OPENSEEK_AJ_P1: case AJ_OPENSEEK_AJ_P5: case AJ_OPENSEEK_AJ_P30: case AJ_OPENSEEK_DESFAZER: case AJ_OPENSEEK_REJEITAR: return "aj_film";
     case AJ_IDIOMA: return "aj_languages";
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: return "aj_audio-lines";
     case AJ_LEG_MOSTRAR: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_LEG_FORCADA: return "aj_captions";

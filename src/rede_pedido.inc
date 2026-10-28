@@ -254,7 +254,8 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
       p->n_corpo > REDE_CORPO_PADRAO || ((c.head || !strcmp(metodo, "GET")) && p->n_corpo) ||
       p->janela_corpo_ms > 60000 || (p->janela_corpo_ms &&
         (strcmp(metodo, "GET") || !p->max_descartado || p->max_descartado > UINT64_C(2147483648))) ||
-      !pedidoCabsValidos(p->cabecalhos, c.tetoCab)) {
+      !pedidoCabsValidos(p->cabecalhos, c.tetoCab) ||
+      (p->pino_publico && (!tls || !rede_pino_valido(p->pino_publico)))) {
     r->erro = REDE_ENTRADA; return 0;
   }
   /* `origem` follows redirects; the personal-server origin is the first one. */
@@ -306,6 +307,10 @@ int rede_pedir(const RedePedido *p, RedeResposta *r) {
       PEDIDO_OPT(OPT_SSL_VERIFYHOST, pessoal ? 0L : 2L);
     }
     if (p->ca_arquivo || discordCa[0]) PEDIDO_OPT(OPT_CAINFO, p->ca_arquivo ? p->ca_arquivo : discordCa);
+    if (p->pino_publico) { /* SR-3: fail closed, keep the setopt code for the UI */
+      int e = curl_setopt(curl, 10230 /* CURLOPT_PINNEDPUBLICKEY */, p->pino_publico);
+      if (e) { r->erro = REDE_INDISPONIVEL; r->curl_erro = e; goto fim; }
+    }
     PEDIDO_OPT(OPT_USERAGENT, "Nuvio/1.8");
     /* Media diagnostics measure the player's wire body, without transparent
      * gzip inflation. Buffered requests retain negotiated decompression. */

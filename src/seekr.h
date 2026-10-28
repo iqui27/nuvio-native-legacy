@@ -92,4 +92,37 @@ void seekr_definir_ajuste_ms(long ms);
 // BLOQUEIA: confere a chave em /v1/keys/validate. 1 valida, 0 recusada,
 // -1 sem resposta. Chamar fora do fio de desenho.
 int  seekr_validar(const char *chave);
+
+// --- OUTRO PROVEDOR (OpenSeek, servidor proprio: openseek.h) -----------------
+// Sem provedor registrado (o padrao) tudo acima e o Seekr de sempre, sem um
+// byte de diferenca. Com um registrado, as funcoes publicas que o player usa
+// (estado, rotulo, uso, quadros, ocioso, desligar, tem_chave, tentar) passam a
+// ele; seekr_pedir_fonte vai a ele, e sem ele vira o seekr_pedir de sempre.
+typedef struct {
+  const char *imdb; int t, e; long durMs; // o que o seekr_pedir sempre recebeu
+  const char *url;          // video_url_atual(): SEGREDO, nunca logar
+  const char *cabecalhos;   // video_cabecalhos(): "Nome: valor\n"
+  unsigned long long tamanho;
+  const char *videoHash, *arquivo;
+  long posMs;               // posicao mostrada (a do scrub, enquanto avanca)
+  long playheadMs;          // video_pos()
+  int scrubbing;            // 1 enquanto a pessoa avanca/volta
+} SeekrFonte;
+typedef struct {
+  int  (*tem_chave)(void);
+  int  (*estado)(void);
+  const char *(*rotulo)(int estado);
+  void (*uso)(SeekrUso *uso);
+  void (*tentar_novamente)(void);
+  void (*pedir)(const SeekrFonte *f);
+  void (*desligar)(void);
+  int  (*quadros)(double posSeg, int n, GLuint *texs, double *cueSeg);
+  int  (*quadro_velho)(void);
+  void (*ocioso)(void);
+} SeekrProvedor;
+// NULL volta ao Seekr. Trocar de provedor desliga o anterior.
+void seekr_usar_provedor(const SeekrProvedor *p);
+int  seekr_provedor_alternativo(void);
+int  seekr_provedor_e(const SeekrProvedor *p);   // 1 when p is the active alternative provider
+void seekr_pedir_fonte(const SeekrFonte *f);
 #endif

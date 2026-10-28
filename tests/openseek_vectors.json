@@ -1,0 +1,57 @@
+{
+ "source": "tests/openseek_vectors.py (contract v1, stdlib)",
+ "primitives": {
+  "sha256_empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sha256_abc": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+  "sha256_448": "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
+  "sha256_million_a": "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0",
+  "hmac_rfc4231_1": "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
+  "hmac_long_key": "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54",
+  "pbkdf2_password_salt_1": "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b",
+  "pbkdf2_password_salt_4096": "c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a"
+ },
+ "osp1": [
+  {
+   "name": "contract_600k",
+   "code": "K7QF-M2XD",
+   "code_norm": "K7QFM2XD",
+   "pair_id": "00112233445566778899aabbccddeeff",
+   "salt": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+   "spki_pin": "sha256//q9YgerAwudEl8aPB6EHFOrfu1A5IDLIqNHAr4Zqw8J4=",
+   "iterations": 600000,
+   "device_name": "Shield",
+   "token": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+   "K_hex": "af685df24cd91caa91e1444d39f168aa4c892354cc85dfea3d9204074d49e0de",
+   "client_proof": "ecb0b00bff4571ae0fdcc2e4161ba770f377368164dfe5ca3ca41aa09c900301",
+   "server_proof": "6bf8a9ea186825c804e65f67f15b6e7b2c08c019ecac1663dd24cd6ccbf8cbb8"
+  },
+  {
+   "name": "lowercase_spaces_200k",
+   "code": "k7qf m2xd",
+   "code_norm": "K7QFM2XD",
+   "pair_id": "ffeeddccbbaa99887766554433221100",
+   "salt": "00000000000000000000000000000001",
+   "spki_pin": "sha256//RgZiC82hqpI1OEXvwa48z8/KodkbLiXEkknsdiGsMdw=",
+   "iterations": 200000,
+   "device_name": "SHIELD Android TV",
+   "token": "8hHdwxGakBGXYRFUMhERAxDO0ADLoQCIcgBFQwACEAA",
+   "K_hex": "3a011980c53c2460501e0a9a756a7a94af93cf42fabaaf859230f85aeaef6e5f",
+   "client_proof": "55c67c6c7e3a5c19ff5d600e1e777d4db3b73fc1353fedd396009c7f556d74dc",
+   "server_proof": "455b7628a942896c7afe5efe0506276866a2f368b2a9041f8c8d967221e757cc"
+  },
+  {
+   "name": "fast_1000",
+   "code": "2345-6789",
+   "code_norm": "23456789",
+   "pair_id": "0123456789abcdef0123456789abcdef",
+   "salt": "fedcba9876543210fedcba9876543210",
+   "spki_pin": "sha256//LXEWQrcmsEQBYnyp+6wy9chTD7GQPMTbAiWHF5IaSIE=",
+   "iterations": 1000,
+   "device_name": "Shield",
+   "token": "tok",
+   "K_hex": "eecc0c02d777809d6e97883f55f87f0c45f15697b6ceaef36245d1835fda7820",
+   "client_proof": "a1b9425daaff67ff8d64d92499aceed37228416d01dceddf4b0e796cc5d7e2f9",
+   "server_proof": "67de9e38a2464d256a22e7b5773cdb42dd841e58f6212ad23b1350719ebba38d"
+  }
+ ]
+}

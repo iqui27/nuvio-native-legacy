@@ -143,7 +143,10 @@ const char *desc_tmdb_idioma(void);
 // O modulo `pessoa` precisa dela para a filmografia, e ler o arquivo duas vezes
 // daria duas fontes de verdade para o mesmo segredo.
 const char *desc_chave_tmdb(void);
-const char *desc_chave_tmdb_reserva(void);   // para artereserva.c: ignora o ajuste "TMDB"
+const char *desc_chave_tmdb_reserva(void);
+// The IMDb id ("tt...") of a title opened under another id, for OpenSeek. tmdb:/tvdb: only (same
+// seasons as IMDb); kitsu & co are one season per entry and stay out. 1 = found. Network: worker threads only.
+int desc_imdb_para(const char *id, int serie, char *tt, size_t n);   // para artereserva.c: ignora o ajuste "TMDB"
 
 // "2026-07-29" -> "29 de julho de 2026". Vive aqui porque a descoberta ja
 // precisava dela para a data de episodio; a tabela "Detalhes do Filme" e o

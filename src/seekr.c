@@ -58,6 +58,10 @@ typedef struct { GLuint tex; int cue; unsigned g; Uint32 uso; } Slot;
 static Slot slots[SK_SLOTS];
 static Uint32 relogioUso;
 
+// Outro provedor (seekr.h, SeekrProvedor). NULL = Seekr, o caminho de sempre.
+static const SeekrProvedor *alt;
+#define ALT() __atomic_load_n(&alt, __ATOMIC_ACQUIRE)
+
 void seekr_definir_chave(const char *c) {
   pthread_mutex_lock(&trava);
   if (!strcmp(chave, c ? c : "")) { pthread_mutex_unlock(&trava); return; }
@@ -71,6 +75,8 @@ void seekr_chave_propria(int propria) {
   pthread_mutex_lock(&trava); chavePropria = propria != 0; pthread_mutex_unlock(&trava);
 }
 int seekr_tem_chave(void) {
+  const SeekrProvedor *a = ALT();
+  if (a) return a->tem_chave();
   int r; pthread_mutex_lock(&trava); r = chave[0] != 0; pthread_mutex_unlock(&trava);
   return r;
 }
@@ -82,10 +88,14 @@ int seekr_estado(void) {
 #ifdef NV_SHOT_HOOKS
   if (shotEstado) return shotEstado;
 #endif
+  const SeekrProvedor *a = ALT();
+  if (a) return a->estado();
   pthread_mutex_lock(&trava); r = estado; pthread_mutex_unlock(&trava);
   return r;
 }
 const char *seekr_estado_rotulo(int est) {
+  const SeekrProvedor *a = ALT();
+  if (a) return a->rotulo(est);
   switch (est) {
     case SEEKR_BUSCANDO: return "Buscando miniaturas";
     case SEEKR_PRONTO: return "Miniaturas disponíveis";
@@ -115,6 +125,8 @@ int seekr_horario_local(long long utc, char *saida, size_t tamanho) {
 }
 void seekr_uso(SeekrUso *uso) {
   if (!uso) return;
+  const SeekrProvedor *a = ALT();
+  if (a) { a->uso(uso); return; }
   SeekrQuotaUso q;
   seekrquota_uso((long long)time(NULL), &q);
   pthread_mutex_lock(&trava);
@@ -124,6 +136,8 @@ void seekr_uso(SeekrUso *uso) {
   pthread_mutex_unlock(&trava);
 }
 void seekr_tentar_novamente(void) {
+  const SeekrProvedor *a = ALT();
+  if (a) { a->tentar_novamente(); return; }
   pthread_mutex_lock(&trava);
   if (estado != SEEKR_BUSCANDO && (long long)time(NULL) >= retryUtc) pedImdb[0] = 0;
   pthread_mutex_unlock(&trava);
@@ -148,6 +162,8 @@ static void limparTudo(void) {
 }
 
 void seekr_ocioso(void) {
+  const SeekrProvedor *a = ALT();
+  if (a) { a->ocioso(); return; }
   pthread_mutex_lock(&trava);
   if (!emVoo) soltarFolha();
   pthread_mutex_unlock(&trava);
@@ -157,6 +173,8 @@ void seekr_definir_ajuste_ms(long ms) {
 }
 
 void seekr_desligar(void) {
+  const SeekrProvedor *a = ALT();
+  if (a) { a->desligar(); return; }
   pthread_mutex_lock(&trava);
   geracao++; estado = SEEKR_DESLIGADO;
   limparTudo();
@@ -298,6 +316,7 @@ static void *consultar(void *u) {
 void seekr_pedir(const char *imdb, int t, int e, long durMs) {
   Pedido *p; pthread_t fio;
   char url[512];
+  if (ALT()) return; // o outro provedor recebe seekr_pedir_fonte
   if (!seekr_url_lookup(url, sizeof url, imdb, t, e, durMs)) { seekr_desligar(); return; }
   pthread_mutex_lock(&trava);
   if (!chave[0]) { pthread_mutex_unlock(&trava); return; }
@@ -463,7 +482,11 @@ static int slotLivre(const int *proteger, int n) {
 
 // 1 quando a atual devolvida e a ULTIMA USADA no lugar da que ainda chega.
 static int quadroVelho;
-int seekr_quadro_velho(void) { return quadroVelho; }
+int seekr_quadro_velho(void) {
+  const SeekrProvedor *a = ALT();
+  if (a) return a->quadro_velho();
+  return quadroVelho;
+}
 #ifdef NV_SHOT_HOOKS
 // Capturas: quadros fixos (anterior, atual, seguinte), sem rede nem cota.
 static int shotVelho;
@@ -494,6 +517,7 @@ int seekr_quadros(double posSeg, int n, GLuint *texs, double *cueSeg) {
     return texs[n == 1 ? 0 : 1] != 0;
   }
 #endif
+  { const SeekrProvedor *a = ALT(); if (a) return a->quadros(posSeg, n, texs, cueSeg); }
   for (k = 0; k < n; k++) { texs[k] = 0; if (cueSeg) cueSeg[k] = -1.0; }
   pthread_mutex_lock(&trava);
   g = geracao;
@@ -608,4 +632,21 @@ int seekr_validar(const char *c) {
   printf("[seekr] validate http=%d result=%d\n", st, r); fflush(stdout);
   free(corpo);
   return r;
+}
+
+void seekr_usar_provedor(const SeekrProvedor *p) {
+  const SeekrProvedor *antes = ALT();
+  if (antes == p) return;
+  // Desliga quem sai: o Seekr limpa o estado dele; o outro para os fios.
+  seekr_desligar();
+  __atomic_store_n(&alt, p, __ATOMIC_RELEASE);
+}
+int seekr_provedor_alternativo(void) { return ALT() != NULL; }
+int seekr_provedor_e(const SeekrProvedor *p) { return p && ALT() == p; }
+void seekr_pedir_fonte(const SeekrFonte *f) {
+  const SeekrProvedor *a = ALT();
+  if (!f) return;
+  if (a) { a->pedir(f); return; }
+  // Seekr: exatamente a chamada de antes (player.c), so com imdb tt.
+  if (f->imdb && !strncmp(f->imdb, "tt", 2)) seekr_pedir(f->imdb, f->t, f->e, f->durMs);
 }
