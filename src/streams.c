@@ -1238,7 +1238,9 @@ static int incompatRegra(const Stream *s) {
   return seen && !possible ? 2 : 0;
 }
 static int incompatContar(void) {
-  static _Thread_local unsigned revision; static _Thread_local int valid, previous[8], count;
+  static pthread_mutex_t cacheTrava = PTHREAD_MUTEX_INITIALIZER;
+  static unsigned revision; static int valid, previous[8], count;
+  pthread_mutex_lock(&cacheTrava);
   int settings[]={ajustes_fonte_ocultar(0),ajustes_fonte_ocultar(1),ajustes_fonte_ocultar(2),
     audioCap[0],audioCap[1],audioCap[2],audioCap[3],audioCap[4]};
   unsigned current=atomic_load(&folhaRevisao);
@@ -1246,7 +1248,9 @@ static int incompatContar(void) {
     count=0; for(int i=0;i<n;i++) count += incompatRegra(&lista[i]) != 0;
     revision=current; memcpy(previous,settings,sizeof settings); valid=1;
   }
-  return count;
+  int result=count;
+  pthread_mutex_unlock(&cacheTrava);
+  return result;
 }
 static int incompatOculta(const Stream *s) {
   if (incompatRevelada || !incompatRegra(s)) return 0;
