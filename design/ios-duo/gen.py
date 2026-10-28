@@ -520,38 +520,40 @@ def detail_actions(xl=True):
             f'<span class="{c}">{ic("eye-off")}</span><span class="{c}">{ic("plus")}</span><span class="{c}">{ic("share-2")}</span>')
 
 
+def meta_tv(center=False, size=15):
+    # the TV detail's bottom line: provider, genre, year, seasons, then the ratings
+    return (f'<div class="meta" style="gap:12px;font-size:{size}px;{"justify-content:center" if center else ""}"><b style="font-weight:700;letter-spacing:.04em">PRIME</b><span style="color:var(--mut)">Sci-Fi</span><span class="pt"></span><span style="font-weight:600">2024</span><span class="pt"></span><span style="font-weight:600">2 seasons</span><span class="pt"></span>'
+            '<span class="rate"><span class="lg imdb">IMDb</span>8.4</span><span class="rate"><span class="lg">RT</span>93%</span><span class="rate"><span class="lg">MC</span>74</span><span class="rate"><span class="lg">Trakt</span>92%</span><span class="rate"><span class="lg">TMDB</span>87</span></div>')
+
+
 def detail_outer():
-    # closed: art on top, logo and genres centred over it, full-width Continue pill, action circles, your rating
-    scr = (f'<div class="scr full"><div style="position:absolute;left:0;right:0;top:0;height:380px"><img class="bg" src="{f(FALLOUT)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:58% 20%">'
-           '<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(13,13,13,0) 45%,rgba(13,13,13,.75) 78%,var(--bg) 100%)"></div></div>'
-           '<div style="position:absolute;left:20px;right:104px;top:248px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:11px">'
-           f'<img src="{f(FALLOUT_LOGO)}" style="height:80px;object-fit:contain">'
-           '<div class="meta big" style="justify-content:center;font-size:16px;color:var(--mut)"><span>Sci-Fi</span><span class="pt"></span><span>Drama</span><span class="pt"></span><span>2 seasons</span><span class="pt"></span><span>TV-MA</span></div>'
-           '<div class="meta" style="justify-content:center;gap:12px"><span class="rate"><span class="lg imdb">IMDb</span>8.4</span><span class="rate"><span class="lg">Trakt</span>92%</span><span class="rate"><span class="lg">RT</span>93%</span></div>'
-           f'<span class="pill xl wide" style="margin-top:4px">{ic("play")}Continue S1:E3</span>'
-           f'<div class="acts" style="gap:12px">{detail_actions()}</div>'
-           + stars() + '</div>'
-           f'<div class="peek" style="bottom:-58px"><div class="rowh"><h2 class="h2">Episodes</h2><span>Season 1 · 8</span></div><div class="strip">{cards([0, 1, 2], 150, 84, labels=False)}</div></div></div>')
+    # closed: the art fills the display; logo, actions, quality line, two-line synopsis and the ratings line centred
+    scr = (f'<div class="scr full"><div class="hero full"><img class="bg" src="{f(FALLOUT)}" style="object-position:58% 12%">'
+           '<div class="veu" style="background:linear-gradient(180deg,rgba(13,13,13,0) 32%,rgba(13,13,13,.78) 60%,var(--bg) 84%)"></div></div>'
+           '<div style="position:absolute;left:20px;right:96px;top:272px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px">'
+           f'<img src="{f(FALLOUT_LOGO)}" style="height:104px;object-fit:contain">'
+           f'<div class="acts" style="gap:12px;margin-top:4px"><span class="pill xl" style="padding:0 34px">{ic("play")}Continue S1:E3</span><span class="dsc xl">{ic("plus")}</span><span class="dsc xl">{ic("ellipsis")}</span></div>'
+           '<span class="qline" style="font-size:13px"><i class="dot"></i>4K · Dolby Vision · Atmos · 8.3 GB</span>'
+           f'<p class="sub" style="margin:0;font-size:14.5px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{SYN_FALLOUT}</p>'
+           + meta_tv(center=True, size=13.5).replace('gap:12px', 'gap:9px;row-gap:8px') + '</div>'
+           f'<div class="peek" style="bottom:-66px"><div class="rowh"><h2 class="h2">Episodes</h2><span>Season 1 · 8</span></div><div class="strip">{cards([0, 1, 2], 150, 84, labels=False)}</div></div></div>')
     bar = vbar('home', nav=[('chevron-left', 'gl')], cam=True, show_tabs=False)
-    return dev('outer', scr, '<b>Closed</b> · art on top, logo and genres centred, full-width Continue pill<br>Sources · Trailer · Mark watched · Library · Share as circles; your rating in stars; episodes peek below', bar=bar)
+    return dev('outer', scr, '<b>Closed</b> · the art fills the display; logo, Continue · + · ···, quality line, two-line synopsis and the ratings line, all centred<br>the TV detail, one column; Episodes peek below', bar=bar)
 
 
 def detail_inner(pose='flat'):
-    # open: the reference layout at full width, with Nuvio's information and buttons
-    scr = (f'<div class="scr full"><div class="hero full"><img class="bg" src="{f(FALLOUT)}" style="object-position:72% 20%">'
-           '<div class="veu" style="background:linear-gradient(90deg,rgba(13,13,13,.94) 0,rgba(13,13,13,.86) 30%,rgba(13,13,13,.45) 55%,rgba(13,13,13,.1) 78%),linear-gradient(180deg,rgba(13,13,13,0) 60%,rgba(13,13,13,.55) 100%)"></div></div>'
-           '<div style="position:absolute;left:40px;top:70px;right:280px;display:flex;flex-direction:column;gap:14px">'
+    # open: the TV detail as it is, on the inner display
+    scr = (f'<div class="scr full"><div class="hero full"><img class="bg" src="{f(FALLOUT)}" style="object-position:70% 20%">'
+           '<div class="veu" style="background:linear-gradient(90deg,rgba(13,13,13,.88) 0,rgba(13,13,13,.62) 32%,rgba(13,13,13,.12) 62%,rgba(13,13,13,0) 78%),linear-gradient(180deg,rgba(13,13,13,0) 50%,rgba(13,13,13,.72) 84%,var(--bg) 100%)"></div></div>'
+           '<div style="position:absolute;left:40px;bottom:96px;display:flex;flex-direction:column;gap:16px;max-width:800px">'
            f'<img src="{f(FALLOUT_LOGO)}" style="height:150px;width:auto;object-fit:contain;object-position:left">'
-           '<div class="meta big" style="font-size:20px;gap:18px"><span>2 seasons</span><span>1h</span><span class="tag" style="font-size:12px">TV-MA</span></div>'
-           + ratings(big=True) +
-           '<div class="meta" style="font-size:16px;color:var(--mut)"><span>Sci-Fi</span><span class="pt"></span><span>Drama</span><span class="pt"></span><span>Adventure</span></div>'
-           '<div class="meta" style="font-size:16px"><span style="color:var(--mut)">Created by</span><span>Geneva Robertson-Dworet, Graham Wagner</span></div>'
-           f'<p class="sub big" style="margin:4px 0 0;max-width:760px;font-size:17px;color:rgba(243,242,239,.85)">{SYN_FALLOUT} Lucy, a vault dweller, leaves the safety of her shelter to find her kidnapped father; above ground she meets Maximus, a Brotherhood of Steel squire, and a ghoul bounty hunter who has survived the wasteland for two hundred years.</p>'
-           f'<div class="acts" style="gap:22px;margin-top:10px"><span class="pill xl" style="padding:0 40px">{ic("play")}Continue S1:E3</span>{stars()}<span style="flex:1"></span>{detail_actions()}</div></div>'
-           '<div class="peek" style="padding:0 40px;bottom:10px"><div class="rowh"><h2 class="h2" style="font-size:24px">Episodes</h2><span>Season 1 · 8</span></div></div></div>')
-    bar = vbar('home', nav=[('chevron-left', 'gl')], cam=False, show_tabs=False)
-    cap = ('<b>Open · flat</b> · the whole display: big logo, ratings from every service, creators, full synopsis<br>'
-           'Continue pill, your rating and the action circles on one line; Episodes follow below')
+           f'<div class="acts" style="gap:12px"><span class="pill xl" style="padding:0 34px">{ic("play")}Continue S1:E3</span><span class="dsc xl">{ic("plus")}</span><span class="dsc xl">{ic("ellipsis")}</span></div>'
+           '<span class="qline" style="font-size:14px;align-self:flex-start"><i class="dot"></i>4K · Dolby Vision · Atmos · 8.3 GB</span>'
+           f'<p class="sub big" style="margin:0;font-size:17px;max-width:620px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{SYN_FALLOUT}</p>'
+           + meta_tv(size=16) + '</div>'
+           '<div class="peek" style="padding:0 40px;bottom:14px"><div class="rowh" style="margin:0"><h2 class="h2" style="font-size:22px">Episodes</h2><span>Season 1 · 8</span></div></div></div>')
+    bar = vbar('home', nav=[('chevron-left', 'gl')], tools=['share-2'], cam=False, show_tabs=False)
+    cap = ('<b>Open</b> · the TV detail as it is: logo, Continue · + · ···, quality line, two-line synopsis, provider and ratings on one line<br>Episodes follow below')
     return dev('inner', scr, cap, pose=pose, bar=bar)
 
 
@@ -945,7 +947,7 @@ def bar_options_page():
 PAGES = [
     ('01-home', 'Home', 'Compact width is the phone you know; open, one continuous screen with the same hierarchy and the same tab bar.', [home_outer(), home_inner()]),
     ('02-search', 'Search', 'List-detail: the result list is the hierarchy on the outer display; the inner display shows the list and the selected title at once.', [search_outer(), search_inner()]),
-    ('03-detail', 'Detail', 'Full-width detail: big logo, every rating, creators and the whole synopsis, then Continue, your rating and the action circles. Episodes follow below; in book pose they take the right half.', [detail_outer(), detail_inner()]),
+    ('03-detail', 'Detail', 'The TV detail on both displays: logo, Continue · + · ···, quality line, two-line synopsis and the provider + ratings line. Centred when closed, left-aligned when open.', [detail_outer(), detail_inner()]),
     ('04-sources', 'Sources', 'The Sources sheet keeps Nuvio\'s island material. Closed, it gets a vertical bar; open, it slides in from the trailing edge over the detail.', [sources_outer(), sources_inner()]),
     ('05-player-poses', 'Player · closed and open', 'Immersive video under the side region when closed; video | Up next + Watch Together on one continuous screen when open.', [player_outer_land(), player_inner_book()]),
     ('06-player-tabletop', 'Player · tabletop and open', 'On a table, folded like a laptop: picture on the raised half, every control on the flat half. Open, the video fills the display and the controls overlay it.', [player_tabletop(), player_inner_flat()]),
