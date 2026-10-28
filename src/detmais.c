@@ -1,5 +1,6 @@
 // "Mais opcoes" da pagina do titulo — ver detmais.h.
 #include "detmais.h"
+#include "detail_acoes.h"
 #include "ajustes.h"
 #include "anim.h"
 #include "idioma.h"
@@ -18,12 +19,13 @@
 #define DM_PAD     14.0f
 #define DM_RAIO    32.0f
 #define DM_ICONE   24.0f
-#define DM_VAO     16.0f    // do circular a ilha
 #define DM_BORDA   40.0f    // margem minima da tela
 
 static int aberto, n, foco, okArmado;
 static int linhas[DMAIS_N];
-static float vis, visV, focoAnim[DMAIS_N];
+static float vis, visV, content, contentV, focoAnim[DMAIS_N];
+static GfxRect origem;
+static int temOrigem;
 static Uint32 tickAnt;
 
 void detmais_abrir(const int disp[DMAIS_N]) {
@@ -35,7 +37,10 @@ void detmais_abrir(const int disp[DMAIS_N]) {
   for (i = 0; i < DMAIS_N; i++) focoAnim[i] = 0.0f;
 }
 void detmais_fechar(void) { aberto = 0; okArmado = 0; }
-void detmais_zerar(void) { detmais_fechar(); vis = visV = 0.0f; }
+void detmais_zerar(void) {
+  detmais_fechar(); vis = visV = content = contentV = 0.0f;
+  temOrigem = 0; tickAnt = 0;
+}
 int detmais_aberto(void) { return aberto; }
 float detmais_visivel(void) { return vis; }
 int detmais_n(void) { return n; }
@@ -67,7 +72,7 @@ const char *detmais_icone(int acao) {
   switch (acao) {
     case DMAIS_VISTO:      return "check";
     case DMAIS_VISTO_SAI:  return "aj_x";
-    case DMAIS_NOTA:       return "pl_star";
+    case DMAIS_NOTA:       return "aj_star";
     case DMAIS_TRAILER:    return "aj_clapperboard";
     case DMAIS_EXPLORAR:   return "aj_compass";
     case DMAIS_ARTE:       return "arte";
@@ -111,10 +116,9 @@ GfxRect detmais_caixa(GfxRect anc) {
   r.w = DM_W; r.h = h;
   r.x = anc.x;
   if (r.x + r.w > NV_TELA_W - DM_BORDA) r.x = NV_TELA_W - DM_BORDA - r.w;
-  // ABAIXO do circular, como um menu que desce do botao; perto do pe da tela
-  // (filme com as quatro acoes) sobe e cobre o logo, que nao e lido agora.
-  r.y = anc.y + anc.h + DM_VAO;
-  if (r.y + r.h > NV_TELA_H - DM_BORDA) r.y = anc.y - DM_VAO - r.h;
+  // Keep the source pill inside the final island: one surface stretches out.
+  r.y = anc.y;
+  if (r.y + r.h > NV_TELA_H - DM_BORDA) r.y = anc.y + anc.h - r.h;
   if (r.y < DM_BORDA) r.y = DM_BORDA;
   return r;
 }
@@ -124,19 +128,24 @@ static void ptrFora(int a, int b) { (void)a; (void)b; detmais_fechar(); }
 
 void detmais_desenhar(GfxRect anc, float a) {
   Uint32 agora = SDL_GetTicks();
-  float dt = tickAnt ? (float)(Uint32)(agora - tickAnt) * 0.001f : 0.0f;
+  float dt = tickAnt ? (float)(Uint32)(agora - tickAnt) * 0.001f : 1.0f / 60.0f;
   float p, pc, raio;
   GfxRect fim, r;
   int i;
   tickAnt = agora;
-  vis = ajustes_animacoes_reduzidas() ? (aberto ? 1.0f : 0.0f)
-                                      : anim_mola2(&visV, vis, aberto ? 1.0f : 0.0f, dt, 22.0f);
+  if (aberto && !temOrigem) { origem = anc; temOrigem = 1; }
+  if (temOrigem) anc = origem;
+  // Fade content only once the spring has settled; reverse that order on Back.
+  content = det_mola(&contentV, content, aberto && vis > .96f ? 1 : 0, dt, 26);
+  vis = det_mola(&visV, vis, aberto || content > .01f ? 1 : 0, dt, 22);
+  int finishing = !aberto && vis < .003f && temOrigem;
+  if (finishing) { temOrigem = 0; vis = visV = 0; }
   for (i = 0; i < DMAIS_N; i++) {
     float alvo = aberto && i == foco ? 1.0f : 0.0f;
     focoAnim[i] = ajustes_animacoes_reduzidas() ? alvo
                   : focoAnim[i] + (alvo - focoAnim[i]) * anim_clamp(dt * 18.0f, 0.0f, 1.0f);
   }
-  if (vis < 0.003f || n == 0 || a <= 0.002f) return;
+  if ((!aberto && vis < 0.003f && !finishing) || n == 0 || a <= 0.002f) return;
   // O CIRCULAR VIRA A ILHA: o retangulo sai do "..." (um disco) e cresce ate
   // a caixa final, e o raio vai de meia altura ate o da ilha. O conteudo so
   // entra na segunda metade, quando ja ha lugar para ele.
@@ -149,8 +158,17 @@ void detmais_desenhar(GfxRect anc, float a) {
   raio = anc.h * 0.5f + (DM_RAIO - anc.h * 0.5f) * p;
   ponteiro_camada();
   if (aberto) ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ptrFora, 0, 0);
-  plrui_cartao(r, raio, a * anim_clamp(p * 2.0f, 0.0f, 1.0f));
-  pc = anim_clamp((p - 0.45f) / 0.55f, 0.0f, 1.0f) * a;
+  int rim = gfx_vidro_sem_aro;
+  gfx_vidro_sem_aro = 1;
+  plrui_cartao(r, raio, a);
+  gfx_vidro_sem_aro = rim;
+  // The original focused fill and ellipsis dissolve into the same surface.
+  float pill = 1 - anim_clamp(p * 5, 0, 1);
+  plrui_pilula_foco(r, pill * a);
+  float g = anc.w * .333f, ink = plrui_tinta() / 255.f;
+  gfx_icone((GfxRect){anc.x+(anc.w-g)*.5f,anc.y+(anc.h-g)*.5f,g,g},
+            "aj_ellipsis",ink,ink,ink,pill*a);
+  pc = content * a;
   if (pc <= 0.002f) return;
   gfx_recorte(r.x, r.y, r.w, r.h);
   for (i = 0; i < n; i++) {
