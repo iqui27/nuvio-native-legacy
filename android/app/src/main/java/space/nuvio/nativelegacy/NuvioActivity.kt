@@ -95,8 +95,8 @@ class NuvioActivity : SDLActivity() {
     private var touchInsetLeft = 0
     private var touchInsetTop = 0
     private var touchInsetRight = 0
+    private var touchInsetBottom = 0
     @Volatile private var interfaceMobile = false
-    @Volatile private var playerTelaCheiaTouch = false
     private var superficieTvW = 0
     private var superficieTvH = 0
     private var cutoutModoTv = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
@@ -124,18 +124,15 @@ class NuvioActivity : SDLActivity() {
     }
 
     private fun aplicarOrientacaoTouch() {
-        val orientacao = when (InterfaceMode.orientation(interfaceMobile, playerTelaCheiaTouch)) {
+        val orientacao = when (InterfaceMode.orientation(interfaceMobile)) {
             InterfaceMode.Orientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             InterfaceMode.Orientation.SENSOR_LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            InterfaceMode.Orientation.FULL_USER -> ActivityInfo.SCREEN_ORIENTATION_FULL_USER
         }
         if (requestedOrientation != orientacao) requestedOrientation = orientacao
     }
 
-    // Called by the SDL thread only for the full-screen player. Trailer,
-    // retained-video and guide/PiP surfaces keep the browsing orientation.
+    // Called by the SDL thread only for the full-screen player.
     fun orientarPlayer(telaCheia: Boolean) {
-        playerTelaCheiaTouch = telaCheia
         // Player saiu da frente (inclusive com video retido): devolve o modo
         // do painel; o retomar re-aplica pelo pausar(0).
         if (!telaCheia) NvPlayer.afrSair()
@@ -242,13 +239,14 @@ class NuvioActivity : SDLActivity() {
         NvPlayer.interfaceModo(interfaceMobile)
     }
 
-    // SDL and video fill the window, including the camera cutout edges. Keeping
-    // mLayout intact also keeps SDL's touch coordinates relative to the video.
+    // Keep SDL, video and text entry inside the same safe bounds, so touch
+    // coordinates stay aligned and controls remain clear of camera cutouts.
     private fun prepararViewportTouch() {
         val raiz = object : FrameLayout(this) {
             override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
                 val r = InterfaceMode.viewport(interfaceMobile, View.MeasureSpec.getSize(widthMeasureSpec),
-                    View.MeasureSpec.getSize(heightMeasureSpec))
+                    View.MeasureSpec.getSize(heightMeasureSpec),
+                    touchInsetLeft, touchInsetTop, touchInsetRight, touchInsetBottom)
                 val atual = mLayout.layoutParams as FrameLayout.LayoutParams
                 if (r != null) {
                     if (atual.width != r.width || atual.height != r.height ||
@@ -273,10 +271,16 @@ class NuvioActivity : SDLActivity() {
             if (interfaceMobile) {
                 val barras = ins.getInsets(WindowInsetsCompat.Type.systemBars())
                 val recorte = ins.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.displayCutout())
-                touchInsetLeft = maxOf(barras.left, recorte.left)
-                touchInsetTop = maxOf(barras.top, recorte.top)
-                touchInsetRight = maxOf(barras.right, recorte.right)
-                posicionarCampoTouch()
+                val left = maxOf(barras.left, recorte.left)
+                val top = maxOf(barras.top, recorte.top)
+                val right = maxOf(barras.right, recorte.right)
+                val bottom = maxOf(barras.bottom, recorte.bottom)
+                if (touchInsetLeft != left || touchInsetTop != top ||
+                    touchInsetRight != right || touchInsetBottom != bottom) {
+                    touchInsetLeft = left; touchInsetTop = top
+                    touchInsetRight = right; touchInsetBottom = bottom
+                    raiz.requestLayout()
+                }
             }
             ins
         }
@@ -293,6 +297,20 @@ class NuvioActivity : SDLActivity() {
             window.attributes = window.attributes.apply { layoutInDisplayCutoutMode = cutoutModoTv }
         }
         telaCheiaTouch()
+        ViewCompat.requestApplyInsets(window.decorView)
+    }
+
+    // System Back gestures reach this callback; physical Back already reaches
+    // SDL as key events. SDL's trapped default callback would discard gestures.
+    @Deprecated("Legacy Back callback used by SDLActivity")
+    override fun onBackPressed() {
+        if (campoAberto) {
+            fecharCampo("X")
+            return
+        }
+        if (mBrokenLibraries) return
+        SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_BACK)
+        SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_BACK)
     }
 
     private external fun nativeToqueCancelou()
@@ -1054,9 +1072,9 @@ class NuvioActivity : SDLActivity() {
         val c = campo ?: return
         val p = c.layoutParams as? RelativeLayout.LayoutParams ?: return
         fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
-        val left = dp(16) + touchInsetLeft
-        val right = dp(16) + touchInsetRight
-        val top = dp(12) + touchInsetTop
+        val left = dp(16)
+        val right = dp(16)
+        val top = dp(12)
         if (p.leftMargin == left && p.rightMargin == right && p.topMargin == top) return
         p.leftMargin = left; p.rightMargin = right; p.topMargin = top
         c.layoutParams = p

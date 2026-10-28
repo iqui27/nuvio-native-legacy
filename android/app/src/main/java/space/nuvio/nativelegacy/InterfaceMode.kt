@@ -8,7 +8,7 @@ object InterfaceMode {
     const val TV = 0
     const val MOBILE = 1
     const val AUTO = 2
-    enum class Orientation { LANDSCAPE, SENSOR_LANDSCAPE, FULL_USER }
+    enum class Orientation { LANDSCAPE, SENSOR_LANDSCAPE }
 
     fun automaticMobile(tvUiMode: Boolean, televisionFeature: Boolean,
                         leanbackFeature: Boolean): Boolean =
@@ -20,14 +20,12 @@ object InterfaceMode {
         else -> automaticMobile
     }
 
-    fun orientation(mobile: Boolean, fullScreenPlayer: Boolean): Orientation = when {
-        !mobile -> Orientation.LANDSCAPE
-        fullScreenPlayer -> Orientation.SENSOR_LANDSCAPE
-        else -> Orientation.FULL_USER
-    }
+    fun orientation(mobile: Boolean): Orientation =
+        if (mobile) Orientation.SENSOR_LANDSCAPE else Orientation.LANDSCAPE
 
-    internal fun viewport(mobile: Boolean, width: Int, height: Int): TouchViewport.Bounds? =
-        if (mobile) TouchViewport.fit(width, height, 0, 0, 0, 0) else null
+    internal fun viewport(mobile: Boolean, width: Int, height: Int,
+                          left: Int = 0, top: Int = 0, right: Int = 0, bottom: Int = 0): TouchViewport.Bounds? =
+        if (mobile) TouchViewport.fit(width, height, left, top, right, bottom) else null
 
     fun preference(lines: Sequence<String>): Int {
         var preference = AUTO
