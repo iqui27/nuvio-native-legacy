@@ -363,3 +363,4 @@
   1, /* PCM normalization: off until explicitly chosen. */
   0, 0, 0, /* Debrid, add-ons and custom subtitle styling: enabled. */
   0, /* Folder hero details: enabled. */
+  2, 2, 2, /* Capability exclusions: automatic defaults, resolved per device; unknown stays off. */

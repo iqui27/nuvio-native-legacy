@@ -179,6 +179,7 @@ object NvPlayer {
                                       sampleBytes: Int, geracao: Int)
     @JvmStatic external fun nativeDecoder4k(hevc: Int, avc: Int, vp9: Int, av1: Int)
     @JvmStatic external fun nativeTela(hdr: Int, dv: Int)
+    @JvmStatic external fun nativeAudioCap(truehd: Int, dts: Int, dtshd: Int, eac3: Int, ac3: Int)
     @JvmStatic external fun nativeHdr(hdr: String, dv: Int, atmos: Int)
     @JvmStatic external fun nativeErroTexto(texto: String)
     @JvmStatic external fun nativeAudioLog(texto: String)
@@ -1005,6 +1006,12 @@ object NvPlayer {
             Log.w(TAG, "nativeIniciar sem a lib ainda; o C acha a classe pelo ClassLoader da Activity: $e")
         }
         informarTela(activity)
+        informarAudio(activity)
+        val audio = activity.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+        audio.registerAudioDeviceCallback(object : android.media.AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(devices: Array<out android.media.AudioDeviceInfo>) { informarAudio(activity) }
+            override fun onAudioDevicesRemoved(devices: Array<out android.media.AudioDeviceInfo>) { informarAudio(activity) }
+        }, principal)
         val d = decoders4k
         try { nativeDecoder4k(d[0], d[1], d[2], d[3]) }
         catch (e: UnsatisfiedLinkError) { Log.w(TAG, "decoder4k sem lib: $e") }
@@ -1017,9 +1024,46 @@ object NvPlayer {
             @Suppress("DEPRECATION")
             val tipos = activity.windowManager.defaultDisplay.hdrCapabilities?.supportedHdrTypes
             if (tipos == null || tipos.isEmpty()) { nativeTela(-1, -1); return }
-            val dv = if (tipos.contains(android.view.Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)) 1 else 0
+            val decoderDv = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS)
+                .codecInfos.any { !it.isEncoder && it.supportedTypes.any { mime -> mime.equals("video/dolby-vision", true) } }
+            val dv = if (decoderDv) {
+                if (tipos.contains(android.view.Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)) 1 else -1
+            } else 0
             nativeTela(1, dv)
         } catch (e: Throwable) { Log.w(TAG, "informarTela: $e") }
+    }
+
+    // Effective audio support includes the bundled FFmpeg renderer and the
+    // current receiver. An unavailable query is unknown, never a negative.
+    private fun informarAudio(activity: Activity) {
+        val mimes = arrayOf("audio/true-hd", "audio/vnd.dts", "audio/vnd.dts.hd", "audio/eac3", "audio/ac3")
+        val encodings = intArrayOf(14, 7, 8, 6, 5)
+        val caps = IntArray(5) { -1 }
+        try {
+            val codecs = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
+            val manager = activity.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            val outputs = manager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
+            for (i in mimes.indices) {
+                val decode = codecs.any { !it.isEncoder && it.supportedTypes.any { mime -> mime.equals(mimes[i], true) } }
+                val ffmpeg = try {
+                    val cls = Class.forName("androidx.media3.decoder.ffmpeg.FfmpegLibrary")
+                    cls.getMethod("supportsFormat", String::class.java).invoke(null, mimes[i]) == true
+                } catch (_: Throwable) { false }
+                var passthrough = outputs.any { it.encodings.contains(encodings[i]) }
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    val format = android.media.AudioFormat.Builder().setEncoding(encodings[i])
+                        .setSampleRate(48000).setChannelMask(android.media.AudioFormat.CHANNEL_OUT_5POINT1).build()
+                    val attributes = android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MOVIE).build()
+                    passthrough = passthrough || android.media.AudioTrack.isDirectPlaybackSupported(format, attributes)
+                }
+                caps[i] = if (decode || ffmpeg || passthrough) 1 else if (codecs.isNotEmpty() && outputs.isNotEmpty()) 0 else -1
+            }
+            nativeAudioCap(caps[0], caps[1], caps[2], caps[3], caps[4])
+        } catch (e: Throwable) {
+            try { nativeAudioCap(-1,-1,-1,-1,-1) } catch (_: Throwable) { }
+            Log.w(TAG, "informarAudio: capability query unavailable")
+        }
     }
 
     // #409: uma consulta por processo, independente da resolucao da tela.

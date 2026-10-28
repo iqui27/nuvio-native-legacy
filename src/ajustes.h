@@ -190,6 +190,8 @@ int ajustes_fonte_primeira(void);
 // #400: ordem visual do addon, local; nao altera autoplay.
 int ajustes_fonte_ordem_addon(void);
 // 1 = a folha de Fontes mostra o nome e a descricao do addon como vieram.
+// 0 = DV without fallback, 1 = audio, 2 = video decoder limits; device-local.
+int ajustes_fonte_ocultar(int regra);
 int ajustes_fonte_texto_addon(void);
 int ajustes_fonte_texto_logo(void);
 // "Outra fonte se falhar": quantas OUTRAS fontes o automatico tenta quando a

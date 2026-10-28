@@ -45,7 +45,10 @@ static const AjPenPage AJ_PEN_MAIN[] = {
       {AJ_FONTE_ORDEM_ADDON,"Ordem das fontes","Como a lista é montada","aj_list-ordered",0},
       {AJ_FONTE_ORDEM,"Ordem dos add-ons e plugins","","aj_list-ordered",0},
     }},
-    {"REGRAS DAS FONTES",1024,800,6, {
+    {"REGRAS DAS FONTES",1024,800,9, {
+      {AJ_FONTE_OCULTAR_DV,"Ocultar Dolby Vision incompatível","Só sem fallback nesta TV","aj_eye-off",1},
+      {AJ_FONTE_OCULTAR_AUDIO,"Ocultar áudio incompatível","Só sem decoder, conversão ou passthrough","aj_eye-off",1},
+      {AJ_FONTE_OCULTAR_VIDEO,"Ocultar vídeo incompatível","Só limites confirmados do decoder","aj_eye-off",1},
       {AJ_FONTE_ESCOPO,"Fontes do automático","O que o automático pode abrir","aj_funnel",0},
       {AJ_FONTE_ADDONS_PERM,"Add-ons permitidos","A whitelist de add-ons do automatico","aj_shield",0},
       {AJ_FONTE_PLUGINS_PERM,"Plugins permitidos","A whitelist de plugins","aj_puzzle",0},
