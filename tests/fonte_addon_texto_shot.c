@@ -73,7 +73,17 @@ static void tecla(SDL_Keycode k) {
 
 
 #ifdef NV_ADDON_LAYOUT_TEST
-static int lastRight, boxCount, checking, lineCount;
+static int lastRight, boxCount, checking, lineCount, measurements;
+static int sawFirst, sawLast;
+void fonte_addon_measure(void) { measurements++; }
+void fonte_addon_visible(const char *text, float y, float h) {
+  int clip[4]; glGetIntegerv(GL_SCISSOR_BOX,clip);
+  float scale=gfx_escala();
+  if (y < FOLHA_TOPO || y + h > folhaBase ||
+      LH-(y+h)*scale<clip[1] || LH-y*scale>clip[1]+clip[3]) return;
+  if (!strcmp(text, "FIRST LINE")) sawFirst = 1;
+  if (!strcmp(text, "LAST LINE")) sawLast = 1;
+}
 static float lastBottom;
 void fonte_addon_line(const char *text, float y, float w, float h, float limit) {
   if (!checking) return;
@@ -163,19 +173,84 @@ int main(int argc, char **argv) {
   gfx_cor((GfxRect){ 0, 0, 1, 1 }, 0, 0, 0, 0, 0);
   quadros(50);
   salvar("1-foco-primeira");
+#ifdef NV_ADDON_LAYOUT_TEST
+  int failed = 0;
+  // A fresh block is measured once, then reused across layout-only frames.
+  measurements=0;
+  txt_addon_bloco(TXT_PG_FIM,"Cache probe 🇯🇵\nSecond line",0,0,600,255,0,NULL);
+  assert(measurements>0);
+  measurements=0;
+  for (int j=0;j<30;j++) {
+    txt_novo_quadro();
+    txt_addon_bloco(TXT_PG_FIM,"Cache probe 🇯🇵\nSecond line",0,0,600,255,0,NULL);
+  }
+  assert(measurements==0);
+  txt_addon_bloco(TXT_PG_FIM,"Cache probe 🇯🇵\nSecond line",0,0,300,255,0,NULL);
+  assert(measurements>0); measurements=0;
+  txt_addon_bloco(TXT_CALLOUT,"Cache probe 🇯🇵\nSecond line",0,0,300,255,0,NULL);
+  assert(measurements>0); measurements=0;
+  txt_addon_bloco(TXT_PG_FIM,"Changed probe 🇯🇵",0,0,300,255,0,NULL);
+  assert(measurements>0);
+  measurements = 0;
+  quadros(30);
+  if (measurements) { fprintf(stderr,"FAIL P1 cache: %d measurements in 30 steady frames\n",measurements); failed++; }
+  float closed = alturaLinha(0,-1,0), full = alturaLinha(0,-1,1);
+  float half = alturaLinha(0,-1,.5f);
+  if (!(closed < half && half < full)) { fprintf(stderr,"FAIL P1 spring: no intermediate height\n"); failed++; }
+#endif
   tecla(SDLK_DOWN);
+#ifdef NV_ADDON_LAYOUT_TEST
+  int firstRow = linhaDe(0);
+  if (!(linhaAltura(firstRow) > closed && linhaAltura(firstRow) < full)) {
+    fprintf(stderr,"FAIL P1 spring: closing row did not animate\n"); failed++;
+  }
+#endif
   quadros(40);
   salvar("2-foco-segunda");
+  tecla(SDLK_UP);
+#ifdef NV_ADDON_LAYOUT_TEST
+  if (!(linhaAltura(firstRow)>closed && linhaAltura(firstRow)<full)) {
+    fprintf(stderr,"FAIL P1 spring: focused row did not expand\n"); failed++;
+  }
+#endif
+  salvar("3-mid-expansion");
+  quadros(40);
   if (!getenv("NV_CAPTURE_ONLY")) {
     // Seven description lines plus two name lines must survive parsing/layout.
     assert(strchr(v[0].rotulo, '\n'));
     assert(strstr(v[0].descricao, "SUB (AR🇸🇦)"));
-    float h = alturaLinha(0, -1, 0);
-    assert(h >= 20 + 40 + 7 * 28 + 18);
-    assert(h == alturaLinha(0, -1, 1));
+    assert(alturaLinha(0, -1, 1) >= 20 + 40 + 7 * 28 + 18);
 #ifdef NV_ADDON_LAYOUT_TEST
     extern void fonte_addon_check(const Stream *s);
     fonte_addon_check(&v[0]);
+    input = fopen("tests/fixtures/fonte-addon-tall.json", "rb"); assert(input);
+    bytes = fread(fixture, 1, sizeof fixture - 1, input); fclose(input); fixture[bytes] = 0;
+    Stream *tall = NULL;
+    assert(stream_extrair(fixture, "AIOStreams", &tall) == 2);
+    tecla(SDLK_ESCAPE); quadros(40);
+    stream_definir_lista(tall,2); stream_folha_abrir(); quadros(60);
+    assert(strstr(tall[0].descricao,"LAST LINE"));
+    int row = foco;
+    sawFirst = sawLast = 0; quadros(1);
+    salvar("4-tall-top");
+    if (!sawFirst || sawLast) { fprintf(stderr,"FAIL P1 tall: first line clipped at entry\n"); failed++; }
+    tecla(SDLK_DOWN);
+    if (foco != row) { fprintf(stderr,"FAIL P1 tall: Down left tall card\n"); failed++; }
+    for (int j=0; j<30 && foco==row && !sawLast; j++) { tecla(SDLK_DOWN); quadros(30); }
+    if (!sawLast) { fprintf(stderr,"FAIL P1 tall: last line unreachable\n"); failed++; }
+    quadros(60); salvar("5-tall-bottom");
+    if (!failed) {
+      tecla(SDLK_DOWN); quadros(60); assert(foco==row+1);
+      tecla(SDLK_UP); quadros(60); assert(foco==row);
+      sawFirst=0;
+      for (int j=0;j<30 && !sawFirst;j++) { tecla(SDLK_UP); quadros(30); assert(foco==row); }
+      assert(sawFirst);
+      quadros(60);
+      tecla(SDLK_UP); assert(grupo!=1 || foco!=row);
+      printf("PASS: zero measurements in 30 steady frames; spring intermediate heights; tall card first/last lines via Down/Up\n");
+    }
+    free(tall);
+    assert(!failed);
 #endif
   }
   free(v);

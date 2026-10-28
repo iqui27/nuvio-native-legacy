@@ -3869,6 +3869,8 @@ static int secN[FOLHA_GRUPOS];
 // a lista inteira de uma vez.
 static float abreFoco = 1.0f, abreAnt;
 static int linhaAnt = -1, focoVisto = -1;
+static float addonRol;
+static int addonRolFim;
 
 
 static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
@@ -3882,7 +3884,7 @@ static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   d[k] = 0;
 }
 // Reserve the existing metadata column above the full-width description.
-// Provider text uses one measured block, independent of focus expansion.
+// The full measured text is revealed by the existing focused-row spring.
 static float blocoAddon(const Stream *s, float x, float y, float w, int c, float alpha) {
   float title = txt_addon_bloco(TXT_CALLOUT, s->rotulo, x,y,w-340,c,alpha,NULL);
   float top = fmaxf(title + 8, 72);
@@ -4346,7 +4348,14 @@ static float alturaLinha(int i, int automatica, float abertura) {
   float h = FOLHA_LINHA_H + (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
   if (ajustes_fonte_texto_addon()) {
     float w = FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D-2*FOLHA_TXT;
-    h = 20 + blocoAddon(&lista[i],0,0,w,255,0) + 18 +
+    const Stream *s=&lista[i];
+    // Fallback glyph heights must use the same font scale as the drawing pass.
+    ESCALA_INI();
+    float top=fmaxf(txt_addon_altura(TXT_CALLOUT,s->rotulo,w-340,0)+8,72);
+    float full=txt_addon_altura(TXT_PG_FIM,s->descricao,w,0);
+    float closed=txt_addon_altura(TXT_PG_FIM,s->descricao,w,2);
+    ESCALA_FIM();
+    h = 20 + top + closed + (full-closed)*abertura + 18 +
         (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
     if (h < 96) h = 96;
   } else {
@@ -4637,9 +4646,13 @@ static float areaLista(void) { return folhaBase - FOLHA_TOPO; }
 static float alvoRolagem(void) {
   float area = areaLista(), alvo, max;
   if (grupo != 1 || foco >= nOrdem) return rolagem;
-  alvo = linhaTopo(foco) - (area - linhaAltura(foco)) * .5f;
+  float height=linhaAltura(foco);
+  if (ajustes_fonte_texto_addon() && height>area)
+    alvo=linhaTopo(foco)+fminf(addonRol,height-area);
+  else alvo = linhaTopo(foco) - (area - height) * .5f;
   for (int g = 0; g < FOLHA_GRUPOS; g++)
-    if (secN[g] && secTopo(g) + FOLHA_SEC_H == linhaTopo(foco) && alvo > secTopo(g)) alvo = secTopo(g);
+    if ((!ajustes_fonte_texto_addon() || height<=area) && secN[g] &&
+        secTopo(g) + FOLHA_SEC_H == linhaTopo(foco) && alvo > secTopo(g)) alvo = secTopo(g);
   max = alturaTotal - area + 40.0f;
   if (alvo > max) alvo = max;
   if (alvo < 0) alvo = 0;
@@ -4730,6 +4743,7 @@ void stream_folha_abrir(void) {
   melhorFolha = automaticoDaFolhaModo();
   alvo = atual >= 0 ? atual : aut;
   abreFoco = 1; abreAnt = 0; linhaAnt = -1; foco = 0;
+  addonRol=0; addonRolFim=0;
   montar(aut);
   foco = linhaDe(alvo);
   if (foco < 0) foco = 0;
@@ -5159,6 +5173,19 @@ void stream_folha_evento(const SDL_Event *e) {
     if(i>=0) detalheAbrir(&lista[i]);
     return;
   }
+  // A tall card consumes vertical keys until its top/bottom has been read.
+  if (grupo==1 && ajustes_fonte_texto_addon() && filtrado(foco)>=0 &&
+      (k==SDLK_UP || k==SDLK_DOWN)) {
+    float max=fmaxf(0,alturaLinha(filtrado(foco),automaticaDaFolha(),1)-areaLista());
+    float step=fmaxf(28,areaLista()*.75f);
+    if (k==SDLK_DOWN && max>0 && (addonRol<max || rolagem<linhaTopo(foco)+max-1)) {
+      addonRol=fminf(max,addonRol+step); return;
+    }
+    if (k==SDLK_UP && max>0 && (addonRol>0 || rolagem>linhaTopo(foco)+1)) {
+      addonRol=fmaxf(0,addonRol-step); return;
+    }
+  }
+  addonRolFim=k==SDLK_UP;
   // Left/Right switches providers even when a header target lies to the side.
   if(k!=SDLK_LEFT && k!=SDLK_RIGHT && navigationMove(k))return;
   // ORDEM DO FOCO, de cima: fileira de botoes (grupo -1) -> abas de addon
@@ -5307,6 +5334,10 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   {
     int linha = grupo==1 ? foco : -1;
     if (linha != focoVisto) {
+      addonRol=0;
+      if (addonRolFim && linha>=0 && filtrado(linha)>=0 && ajustes_fonte_texto_addon())
+        addonRol=fmaxf(0,alturaLinha(filtrado(linha),automaticaDaFolha(),1)-areaLista());
+      addonRolFim=0;
       linhaAnt = focoVisto; abreAnt = abreFoco; abreFoco = 0; focoVisto = linha;
     }
   }
@@ -6430,7 +6461,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       cy+=FOLHA_MARCA_H;
     }
     if (ajustes_fonte_texto_addon()) {
-      float used = blocoAddon(s,tx,cy,tr-tx,sel?215:180,anim);
+      float used=h-(cy-y)-18-linhasFaixas(s)*FOLHA_FAIXA_H;
+      GfxRecorteAnt textClip=gfx_recorte_dentro(tx,cy,tr-tx,used);
+      blocoAddon(s,tx,cy,tr-tx,sel?215:180,anim);
+      gfx_recorte_voltar(textClip);
       desenharFaixas(s,tx,cy+used,tr-tx,sel,anim);
       continue;
     }

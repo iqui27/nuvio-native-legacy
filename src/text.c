@@ -55,6 +55,7 @@ static float escalaTxt = 1.0f;
 static int addonVerbatim;
 static char addonEmojiPath[600];
 static void addonEmojiFechar(void);
+static void addonLayoutFechar(void);
 // CAMADA AMPLIADA (gfx.h, "Tamanho da interface"). Dentro de uma camada com
 // gfx_escala() != 1 o texto e rasterizado em `corpo * escalaTxt * s` e a
 // linha guarda a medida dividida por esse fator: o layout da camada mede em
@@ -719,7 +720,7 @@ static struct { unsigned long long h; unsigned n; unsigned char fam, estilo, var
 #define LG_MEM 4096
 #define LG_VIAS 4
 static struct { unsigned long long h; unsigned n; unsigned char fam, estilo, enf, var, ok, cam; int w; unsigned uso; } lgMem[LG_MEM];
-static unsigned lgRelogio;
+static unsigned lgRelogio, addonLayoutRevisao;
 // COBERTURA DAS FORMAS ARABES (bidi.c). Um bit por codepoint de FB50-FEFF, por
 // fonte: "ja perguntei" e "tem". Chaveado pelo ponteiro da fonte, esquecido junto
 // com as outras tabelas (a fonte pode ser fechada e reaberta).
@@ -728,7 +729,7 @@ static unsigned lgRelogio;
 #define AR_FONTES 8
 static struct { TTF_Font *f; unsigned char viu[(AR_N + 7) / 8], tem[(AR_N + 7) / 8]; } arMem[AR_FONTES];
 static TTF_Font *arLogada;
-static void fdEsquecer(void) { memset(fdMem, 0, sizeof fdMem); memset(lgMem, 0, sizeof lgMem); memset(arMem, 0, sizeof arMem); arLogada = NULL; }
+static void fdEsquecer(void) { addonLayoutRevisao++; memset(fdMem, 0, sizeof fdMem); memset(lgMem, 0, sizeof lgMem); memset(arMem, 0, sizeof arMem); arLogada = NULL; }
 
 // Fonte com que a linha `s` deve ser desenhada. Devolve a principal quando ela
 // da conta — que e o caso da esmagadora maioria das linhas.
@@ -1469,6 +1470,7 @@ int txt_iniciar(const char *dirRecursos, float escala) {
 
 void txt_encerrar(void) {
   addonEmojiFechar();
+  addonLayoutFechar();
   for (int k = 0; k < TXT_NCAM; k++) importadasFechar(k);
   importadasRevisao = 0;
   arabeBoldFechar();
@@ -1607,6 +1609,10 @@ static void estiloVolta(TTF_Font *g, TTF_Font *f, int ant) {
 
 static int medirCorridas(TTF_Font *f, TTF_Font *a, TTF_Font *b, const char *s,
                          int extra, int *w) {
+#ifdef NV_ADDON_LAYOUT_TEST
+  extern void fonte_addon_measure(void);
+  fonte_addon_measure();
+#endif
   Corrida c[TXT_CORR_MAX];
   int n = corridasDe(f, a, b, s, c, TXT_CORR_MAX), i, soma = 0;
   if (n <= 1) { int h; return TTF_SizeUTF8(f, s, w, &h); }
@@ -2170,14 +2176,44 @@ static int larguraLinhaMedir(TxtEstilo estilo, const char *s, TxtFamilia familia
   return (int)(w / ESC_T + 0.5f);
 }
 
-// One iterator for measuring and drawing provider text: hard breaks and spaces
-// remain intact, oversized filenames wrap at UTF-8/emoji cluster boundaries.
-float txt_addon_bloco(TxtEstilo style, const char *s, float x, float y, float width,
-                       int gray, float alpha, int *lines) {
-  float used = 0;
-  int count = 0;
-  if (!s || !*s || width <= 0) { if (lines) *lines = 0; return 0; }
-  camadaAtualizar();
+typedef struct { size_t start, len; float y, w, h; } AddonLine;
+typedef struct {
+  char *text;
+  AddonLine *line;
+  int count, style, family, layer, variant;
+  unsigned revision, use;
+  float width, height;
+} AddonLayout;
+// Only measured blocks live here; color and animation never invalidate layout.
+#define ADDON_LAYOUT_MAX 128
+static AddonLayout addonLayouts[ADDON_LAYOUT_MAX];
+static unsigned addonLayoutClock;
+static void addonLayoutFechar(void) {
+  for (int i=0;i<ADDON_LAYOUT_MAX;i++) {
+    free(addonLayouts[i].text); free(addonLayouts[i].line);
+  }
+  memset(addonLayouts,0,sizeof addonLayouts);
+}
+static AddonLayout *addonLayout(TxtEstilo style, const char *text, float width) {
+  camadaAtualizar(); importadasAtualizar();
+  int slot=0, variant=variacaoCjk();
+  for (int i=0;i<ADDON_LAYOUT_MAX;i++) {
+    AddonLayout *l=&addonLayouts[i];
+    if (l->text && l->style==style && l->family==fonteInterface &&
+        l->layer==camada && l->variant==variant && l->revision==addonLayoutRevisao &&
+        l->width==width && !strcmp(l->text,text)) {
+      l->use=++addonLayoutClock; return l;
+    }
+    if (l->use<addonLayouts[slot].use) slot=i;
+  }
+  AddonLayout *layout=&addonLayouts[slot];
+  free(layout->text); free(layout->line); memset(layout,0,sizeof *layout);
+  layout->text=strdup(text);
+  if (!layout->text) return NULL;
+  layout->style=style; layout->family=fonteInterface; layout->layer=camada;
+  layout->variant=variant; layout->width=width;
+  const char *s=layout->text;
+  float used=0;
   addonVerbatim++;
   const char *end = s + strlen(s);
   while (end > s && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n')) end--;
@@ -2203,22 +2239,55 @@ float txt_addon_bloco(TxtEstilo style, const char *s, float x, float y, float wi
       addonSurface(style, line[0] ? line : " ", (SDL_Color){255,255,255,255}, fonteInterface, 0, &w, &h);
       float height = h / ESC_T;
       float leading = height > 28 ? height + 2 : 28;
-#ifdef NV_ADDON_LAYOUT_TEST
-      extern void fonte_addon_line(const char *text, float y, float w, float h, float limit);
-      fonte_addon_line(line,y+used,w/ESC_T,height,width);
-#endif
-      if (alpha > 0 && line[0]) {
-        TxtLinha l = txt_linha_bruta(style, line, gray, gray, gray, 255);
-        txt_desenhar_alpha(l, x, y + used, alpha);
-      }
-      used += leading; count++;
+      AddonLine *next=realloc(layout->line,(layout->count+1)*sizeof *next);
+      if (!next) { addonVerbatim--; free(layout->text); free(layout->line); memset(layout,0,sizeof *layout); return NULL; }
+      layout->line=next;
+      next[layout->count++]=(AddonLine){(size_t)(s-layout->text),len,used,w/ESC_T,height};
+      used += leading;
       s = p;
     } while (s < stop);
     s = hard ? hard + 1 : end;
   }
   addonVerbatim--;
-  if (lines) *lines = count;
-  return used;
+  layout->height=used; layout->revision=addonLayoutRevisao;
+  layout->use=++addonLayoutClock;
+  return layout;
+}
+
+float txt_addon_altura(TxtEstilo style, const char *s, float width, int maxLines) {
+  if (!s || !*s || width<=0) return 0;
+  AddonLayout *l=addonLayout(style,s,width);
+  if (!l) return 0;
+  if (maxLines>0 && maxLines<l->count) return l->line[maxLines].y;
+  return l->height;
+}
+
+// Drawing reuses the measured line boundaries and tallest fallback glyph.
+float txt_addon_bloco(TxtEstilo style, const char *s, float x, float y, float width,
+                       int gray, float alpha, int *lines) {
+  if (lines) *lines=0;
+  if (!s || !*s || width<=0) return 0;
+  AddonLayout *layout=addonLayout(style,s,width);
+  if (!layout) return 0;
+  addonVerbatim++;
+  for (int i=0;i<layout->count;i++) {
+    AddonLine *l=&layout->line[i];
+    char line[2048]; memcpy(line,layout->text+l->start,l->len); line[l->len]=0;
+#ifdef NV_ADDON_LAYOUT_TEST
+    extern void fonte_addon_line(const char *text, float y, float w, float h, float limit);
+    fonte_addon_line(line,y+l->y,l->w,l->h,width);
+#endif
+    if (alpha>0 && line[0]) {
+#ifdef NV_ADDON_LAYOUT_TEST
+      extern void fonte_addon_visible(const char *text, float y, float h);
+      fonte_addon_visible(line,y+l->y,l->h);
+#endif
+      txt_desenhar_alpha(txt_linha_bruta(style,line,gray,gray,gray,255),x,y+l->y,alpha);
+    }
+  }
+  addonVerbatim--;
+  if (lines) *lines=layout->count;
+  return layout->height;
 }
 
 #ifdef NV_ADDON_LAYOUT_TEST
