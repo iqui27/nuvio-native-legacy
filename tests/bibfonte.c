@@ -120,6 +120,7 @@ int main(int argc, char **argv) {
   // Merge must preserve membership even when the shared mark was already set.
   CatItem shared = *cat_item(1);
   shared.listaFontes = (1u << AJ_SALVOS_TRAKT) | (1u << AJ_SALVOS_SIMKL);
+  shared.fontes = CAT_FONTE_TRAKT | CAT_FONTE_SIMKL;
   cat_mesclar_listas(&shared, 1);
   ajustes_definir_salvos_destino(AJ_SALVOS_TRAKT);
   CHECK("merge retains overlapping sources", bibfonte_library_count() == 2);
