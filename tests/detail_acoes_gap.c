@@ -15,6 +15,10 @@ static GfxRect drawn[8], maisAncora;
 static float growth[8];
 static CatItem item = {"test"}, *ci = &item;
 static const char *rot = "Play", *morphLogo;
+static float dyP, kP=1;
+static int focoVersao;
+static float focoBotao(int i,int selected) { return selected; }
+static float heroOnda(float i,float *dy) { *dy=0; return 1; }
 static int ponteiroDetalhe;
 #define TXT_DET_BOTAO 0
 #define BOTAO_PAD_X 24
@@ -24,6 +28,7 @@ static int ponteiroDetalhe;
 #define ACAO_MAIS 3
 #define ACAO_JUNTOS 11
 #define ACAO_TRAVAR 13
+#define ACAO_NOTA 12
 #define BT_TEXTO_REP 235
 #define NV_RAIO_PILL .5f
 static void record(GfxRect r, int action, float extra) { (void)action; growth[count]=extra; drawn[count++] = r; }
@@ -38,10 +43,8 @@ static float larguraPrimario(const char *s) { (void)s; return 321; }
 static float larguraSecundario(const char *s) { (void)s; return 200; }
 static GfxRect heroAcaoRect(float *x,float *y,float w,float h) { return (GfxRect){*x,*y-h*.5f,w,h}; }
 static Uint32 SDL_GetTicks(void) { static Uint32 t; return t+=16; }
-static void anim_expande(float *w,float *r,float target,float dt,float a,float b) { *w=expansion; *r=1; }
-static float anim_suave(float f) { return f; }
-static float anim_clamp(float x,float lo,float hi) { return fminf(hi,fmaxf(lo,x)); }
-static float anim_mola2(float *v,float x,float target,float dt,float k) { return target; }
+static void fixture_expande(float *w,float *r,float target,float dt,float a,float b) { *w=expansion; *r=1; }
+#define anim_expande fixture_expande
 static int ajustes_animacoes_reduzidas(void) { return 1; }
 static int ajustes_vidro(void) { return vidro; }
 static float ajustes_acento_tinta(void *r,void *g,void *b) { return 1; }
@@ -85,7 +88,7 @@ int main(void) {
         }
       for (int i=1; i<count; i++) {
         float gap=drawn[i].x-drawn[i-1].x-drawn[i-1].w;
-        float expected=NV_DETW2_BTN_GAP-growth[i-1]-growth[i];
+        float expected=(grouped && i>1 ? NV_DETW2_BTN_GAP : NV_DET21_BTN_GAP)-growth[i-1]-growth[i];
         if (fabsf(gap-expected)>.01f || gap<=0) {
           if (failures++<12) printf("FAIL grouped=%d restart=%d focus=%d level=%d expansion=%.2f neighbour=%d gap=%.3f\n",grouped,restart,botao,nivel,expansion,i,gap);
         }

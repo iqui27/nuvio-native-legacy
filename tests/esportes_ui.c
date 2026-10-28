@@ -156,8 +156,8 @@ void teclado_desenhar(Uint32 a) { (void)a; }
 static void tecla(SDL_Keycode k) { SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=k;esportesui_evento(&e); }
 static void soltar(SDL_Keycode k) { SDL_Event e={0};e.type=SDL_KEYUP;e.key.keysym.sym=k;esportesui_evento(&e); }
 int main(void) {
-  /* Absent URLs use the centered sport icon. Supplied crests stay blank
-   * while unavailable, matching the identity policy introduced in a3c279ed4. */
+  /* Absent crest URLs use a centered sport icon. Supplied URLs stay blank
+   * while loading or invalid, then recover without changing card geometry. */
   GfxRect caixa={20,40,320,160};int ic=icones,draw=imagensDesenhadas;
   logo("",1,caixa);assert(icones==ic+1 && !strcmp(ultimoIcone,"esp_football"));
   assert(caixaIcone.x==100 && caixaIcone.y==40 && caixaIcone.w==160 && caixaIcone.h==160);
