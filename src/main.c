@@ -30,6 +30,10 @@
 #ifdef NV_ANDROID
 #include "android.h"
 #endif
+#ifdef NV_IOS
+#include "ios.h"
+#include <SDL2/SDL_syswm.h>   // the UIKit framebuffer id (iosFramebufferTela)
+#endif
 #include <stdio.h>
 #include <locale.h>
 #include <stdlib.h>
@@ -621,9 +625,26 @@ static int resolucaoTvJanela(Uint32 agora, Uint32 inicio, int w, int h, int pedi
   return 1;
 #endif
 }
+#ifdef NV_IOS
+// The screen on iOS is the framebuffer SDL's GL view owns; the core's binds of
+// "0" are redirected to it (gl_compat.h). Read after the context exists and
+// again on every resize, in case SDL rebuilt its view.
+static void iosFramebufferTela(SDL_Window *w) {
+  SDL_SysWMinfo wm;
+  SDL_VERSION(&wm.version);
+  if (w && SDL_GetWindowWMInfo(w, &wm) && wm.subsystem == SDL_SYSWM_UIKIT) {
+    if (nv_gl_fb_tela != wm.info.uikit.framebuffer)
+      printf("[ios] framebuffer da tela = %u (antes %u)\n", wm.info.uikit.framebuffer, nv_gl_fb_tela);
+    nv_gl_fb_tela = wm.info.uikit.framebuffer;
+  }
+}
+#endif
 #ifdef NV_TOUCH_UI
 static void interfaceViewport(SDL_Window *win, int *width, int *height, int *modo) {
   int novoW = 0, novoH = 0;
+#ifdef NV_IOS
+  iosFramebufferTela(win);
+#endif
   int novoModo = layout_modo_mobile();
   SDL_GL_GetDrawableSize(win, &novoW, &novoH);
   if (novoW <= 0 || novoH <= 0 ||
@@ -1056,7 +1077,7 @@ int main(int argc, char **argv) {
   // Antes de qualquer fio: ver nv_blindar_formatos em sdlcompat.h (issue #65).
   nv_blindar_formatos();
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && !defined(NV_IOS)
   // Perfil de compatibilidade: e o unico do macOS que ainda aceita GLSL 1.20 e
   // as funcoes fixas que o GLES2 tem como core.
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
@@ -1386,6 +1407,9 @@ int main(int argc, char **argv) {
   NV_ETAPA("SDL_GL_CreateContext");
   arranque_etapa("SDL_GL_CreateContext");
   SDL_GLContext ctx = SDL_GL_CreateContext(win);
+#ifdef NV_IOS
+  iosFramebufferTela(win);
+#endif
 #if NV_ARRANQUE_REDE
   if (!ctx) {
     printf("[arranque] SDL_GL_CreateContext falhou: %s\n", SDL_GetError()); fflush(stdout);
@@ -1431,6 +1455,9 @@ int main(int argc, char **argv) {
     win = SDL_CreateWindow(windowTitle, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                            pedeW, pedeH, flags);
     ctx = win ? SDL_GL_CreateContext(win) : NULL;
+#ifdef NV_IOS
+    iosFramebufferTela(win);
+#endif
   }
   if (!ctx) { printf("[android] sem contexto GL: %s\n", SDL_GetError()); SDL_Quit(); return 2; }
 #endif
@@ -1481,7 +1508,7 @@ int main(int argc, char **argv) {
   // O cursor do Magic Remote e desenhado pelo app (ponteiro.c). Depois do
   // contexto: o log de arranque dele le a janela corrente.
   ponteiro_iniciar();
-#ifdef __APPLE__
+#if defined(__APPLE__) && !defined(NV_IOS)
   // Sem vsync no Mac. O SDL2 do Homebrew virou uma camada sobre o SDL3
   // (sdl2-compat), e nela o SwapWindow fica preso esperando um sinal de vsync
   // que nunca chega quando a janela nao esta em primeiro plano — o app trava no

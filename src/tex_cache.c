@@ -446,7 +446,9 @@ static long bytesTexturaMip(int w, int h, int comPiramide) {
 #define NV_TEX_MIP_LARG 1024
 static int temPiramide(int w, int h, int card) {
   if (w >= NV_TEX_MIP_LARG && !card) return 0;
-#ifdef __EMSCRIPTEN__
+  // WebGL 1 and iOS GLES2 (no full OES_texture_npot): a non-power-of-two
+  // texture cannot carry a pyramid; glGenerateMipmap answers GL_INVALID_OPERATION.
+#if defined(__EMSCRIPTEN__) || defined(NV_IOS)
   { int lp = (w > 0) && ((w & (w - 1)) == 0);
     int ap = (h > 0) && ((h & (h - 1)) == 0);
     if (!lp || !ap) return 0; }
