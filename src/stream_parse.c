@@ -1097,7 +1097,7 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
     }
     // Without a complete URL/hash there is nothing to play.
     if (s.infoHash[0] || !strncmp(s.url, "http", 4)) {
-      js_texto_raiz_em(p, fim, "name", s.rotulo, sizeof s.rotulo);
+      textoRaizLinhas(p, fim, "name", s.rotulo, sizeof s.rotulo);
       // So o name da PROPRIA fonte, inteiro, conta para o FHD (#402): o
       // rotulo de 192 bytes pode cortar "...FHDx" em "...FHD", e o provedor
       // entra no lugar do name que falta mais abaixo.
