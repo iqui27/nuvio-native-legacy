@@ -13,6 +13,12 @@ APP="$NUVIO_IOS_BUILD/Nuvio.app"
 [ -f "$APP/fonts/InterDisplay-Regular.ttf" ] || { echo "FAIL: fonts missing from the bundle"; exit 1; }
 /usr/libexec/PlistBuddy -c 'Print :UIApplicationSceneManifest:UISceneConfigurations:UIWindowSceneSessionRoleApplication:0:UISceneDelegateClassName' "$APP/Info.plist" | grep NuvioSceneDelegate >/dev/null \
   || { echo "FAIL: scene manifest missing (iOS 27 refuses to launch)"; exit 1; }
+# Deployment target is iOS 26 (PLANO.md) and the build refuses newer APIs used
+# without an @available guard, so nothing iOS 27-only can crash an iOS 26 launch.
+minos=$(xcrun vtool -show-build "$APP/Nuvio" | awk '/minos/ {print $2; exit}')
+[ "$minos" = 26.0 ] || { echo "FAIL: deployment target is '$minos', expected 26.0"; exit 1; }
+grep -q 'unguarded-availability-new' "$NUVIO_IOS_BUILD/build.ninja" \
+  || { echo "FAIL: build lacks -Werror=unguarded-availability-new"; exit 1; }
 # The iOS-only symbols the core relies on are really in the binary.
 nm "$APP/Nuvio" | grep ' T _nv_host_http' >/dev/null || { echo "FAIL: nv_host_http not linked"; exit 1; }
 nm "$APP/Nuvio" | grep ' [DSB] _nv_gl_fb_tela' >/dev/null || { echo "FAIL: nv_gl_fb_tela not linked"; exit 1; }
