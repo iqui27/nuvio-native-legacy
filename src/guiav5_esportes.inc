@@ -155,7 +155,7 @@ static int gs_arrow(SDL_Keycode k,int repeat){
     else if(k==SDLK_RIGHT&&i%3<2)j++;
     else if(k==SDLK_DOWN&&i<3)j+=3;
     else if(k==SDLK_UP&&i>=3)j-=3;
-    else if(k==SDLK_UP){focus=2001;return 1;}
+    else if(k==SDLK_UP){gv_zone=5;focus=1102;return 1;}
     focus=2070+j;return 1;
   }
   if(focus>=2000&&k==SDLK_UP){if(nav_spatial(k))return 1;focus=1102;return 1;}
