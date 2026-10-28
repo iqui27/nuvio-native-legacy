@@ -2790,8 +2790,8 @@ static float scrollY = 0.0f;
 // aqui partia na velocidade maxima e o primeiro quadro ja saltava 12%.
 static float velY = 0.0f;
 #ifdef NV_TOUCH_UI
-enum { AJT_MENU, AJT_INDICE, AJT_LISTA, AJT_EDITOR, AJT_DIFS, AJT_SUB, AJT_FONTES, AJT_FILEIRAS, AJT_N };
-typedef struct { GfxRect r; float *offset, maximo, escala; int id; } AjToqueRegiao;
+enum { AJT_MENU, AJT_INDICE, AJT_LISTA, AJT_EDITOR, AJT_DIFS, AJT_SUB, AJT_FONTES, AJT_FILEIRAS, AJT_FAIXA, AJT_UTIL, AJT_N };
+typedef struct { GfxRect r; float *offset, maximo, escala; int id, eixoX; } AjToqueRegiao;
 static AjToqueRegiao ajToqueRegioes[AJT_N];
 static int ajToqueN, ajToqueAtivo = -1, ajToqueLivre[AJT_N], ajToqueChave[AJT_N];
 static float ajToqueOffset[AJT_N];
@@ -2804,9 +2804,9 @@ static void ajToqueCamada(void) { ajToqueN = 0; }
 static int ajToqueRolar(const PonteiroRolagem *e) {
   if (!layout_modo_mobile()) return 0;
   if (e->fase == PONT_ROL_INICIO) {
-    if (!e->eixoY) return 0;
     for (int i = ajToqueN - 1; i >= 0; i--) {
       AjToqueRegiao *r = &ajToqueRegioes[i];
+      if (r->eixoX == e->eixoY) continue;   // a regiao rola num eixo so (a faixa de secoes e horizontal)
       if (e->x >= r->r.x && e->x < r->r.x + r->r.w && e->y >= r->r.y && e->y < r->r.y + r->r.h) {
         ajToqueAtivo = r->id; ajToqueLivre[r->id] = 1; return 1;
       }
@@ -2826,7 +2826,7 @@ static int ajToqueRolar(const PonteiroRolagem *e) {
   return 1;
 }
 // Guarda a escala durante o desenho: no fio de eventos a escala ja voltou a 1.
-static float ajToqueRegistrar(int id, GfxRect r, float *offset, float maximo, float alvo, int chave) {
+static float ajToqueRegistrarEixo(int id, GfxRect r, float *offset, float maximo, float alvo, int chave, int eixoX) {
   if (!ajTelaCheia()) return alvo;
   float s = gfx_escala();
   if (ajToqueChave[id] != chave) {
@@ -2836,10 +2836,13 @@ static float ajToqueRegistrar(int id, GfxRect r, float *offset, float maximo, fl
   if (!ajToqueLivre[id]) *offset = alvo;
   maximo = fmaxf(0.0f, maximo); *offset = anim_clamp(*offset, 0.0f, maximo);
   if (ajToqueN < AJT_N && s > 0.0f && r.w > 0.0f && r.h > 0.0f) {
-    ajToqueRegioes[ajToqueN++] = (AjToqueRegiao){ {r.x * s, r.y * s, r.w * s, r.h * s}, offset, maximo, s, id };
+    ajToqueRegioes[ajToqueN++] = (AjToqueRegiao){ {r.x * s, r.y * s, r.w * s, r.h * s}, offset, maximo, s, id, eixoX };
     ponteiro_rolagem(ajToqueRolar);
   }
   return *offset;
+}
+static float ajToqueRegistrar(int id, GfxRect r, float *offset, float maximo, float alvo, int chave) {
+  return ajToqueRegistrarEixo(id, r, offset, maximo, alvo, chave, 0);
 }
 #endif
 static float screenReveal, screenRoute=-1;

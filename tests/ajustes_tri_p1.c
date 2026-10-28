@@ -36,11 +36,13 @@ static void png(const char *nome) {
   snprintf(path, sizeof path, "%s/%s.png", dirPng, nome);
   assert(IMG_SavePNG(sf, path) == 0); SDL_FreeSurface(sf); free(px);
 }
-// The hidden window follows the layout: portrait draws on a 1080 x 1920 target.
+// One square hidden window (1920 x 1920): the layout only moves the viewport,
+// so portrait draws on a 1080 x 1920 target without resizing the window
+// (SDL applies a resize of a hidden window late and the scissor lagged).
 static void tela(int w, int h) {
   telaW = w; telaH = h;
-  SDL_SetWindowSize(win, w, h); glViewport(0, 0, w, h); gfx_tamanho_alvo(w, h);
-  layout_tela_definir(w, h); ponteiro_teste_janela(w, h);
+  layout_tela_definir(w, h);   // first: gfx_tamanho_alvo reads NV_TELA_W/H for its projection
+  glViewport(0, 0, w, h); gfx_tamanho_alvo(w, h); ponteiro_teste_janela(w, h);
 }
 static void clique(float x, float y) {
   SDL_Event e; SDL_zero(e);
@@ -51,6 +53,25 @@ static void clique(float x, float y) {
   quadros(8);
 }
 static void clicar(const PonteiroAlvo *a) { clique(a->x + a->w * 0.5f, a->y + a->h * 0.5f); }
+// A finger drag through the pointer (Mobile: captured by the registered scroll region).
+static void dedo(Uint32 tipo, float x, float y) {
+  SDL_Event e; SDL_zero(e);
+  e.type = tipo; e.tfinger.touchId = 1; e.tfinger.fingerId = 1;
+  e.tfinger.x = x / NV_TELA_W; e.tfinger.y = y / NV_TELA_H;
+  ponteiro_evento(&e, ajustes_evento);
+}
+static void arrastar(float x0, float y0, float x1, float y1) {
+  dedo(SDL_FINGERDOWN, x0, y0); relogio += 40;
+  for (int i = 1; i <= 20; i++) { dedo(SDL_FINGERMOTION, x0 + (x1 - x0) * i / 20.0f, y0 + (y1 - y0) * i / 20.0f); relogio += 40; }
+  dedo(SDL_FINGERUP, x1, y1); relogio += 40;
+  quadros(40);
+}
+static const PonteiroAlvo *secao(int a) {
+  const PonteiroAlvo *v; int n = ponteiro_teste_lista(&v);
+  for (int i = 0; i < n; i++) if (v[i].focar == triPontSecao && v[i].a == a) return &v[i];
+  return NULL;
+}
+static int visivelEm(const PonteiroAlvo *a, float topo, float base) { return a && a->y >= topo - 1.0f && a->y + a->h <= base + 1.0f; }
 // Targets whose centre lies inside a virtual rect of the screen (real = virtual x scale).
 static int dentro(const PonteiroAlvo *v, GfxRect r) {
   float s = ajustes_tamanho_ajustes(), cx = v->x + v->w * 0.5f, cy = v->y + v->h * 0.5f;
@@ -173,6 +194,75 @@ static void escolhaSemInspetor(void) {
   key(SDLK_ESCAPE); valor[AJ_LAYOUT_AJUSTES] = 0;
 }
 
+// Re-review P1 (a): the portrait rail and the long route lists scroll by finger;
+// the last section and the last control are reached by touch alone.
+static void toque(void) {
+  const PonteiroAlvo *a, *v[64]; int n;
+  layout_modo_definir(1); tela(1080, 1920); assert(ajRetrato() && ajTelaCheia());
+  triIniciar(); triSecFoco = 0; focarSecao(0); quadros(30);
+  a = secao(nSecoes);
+  confere(a && a->x + a->w > NV_LAYOUT_REAL_W, "Toque: antes do arrasto a ultima secao esta fora da tela");
+  a = secao(0); assert(a);
+  // swipes until the last pill is on screen (a long rail takes a few), at most 8
+  { float y = a->y + a->h * 0.5f; int k;
+    for (k = 0; k < 8; k++) { a = secao(nSecoes); if (a && a->x + a->w <= NV_LAYOUT_REAL_W) break; arrastar(900.0f, y, 150.0f, y); } }
+  png("p1-retrato-faixa-arrastada");
+  a = secao(nSecoes);
+  confere(a && a->x >= 0.0f && a->x + a->w <= NV_LAYOUT_REAL_W, "Toque: o arrasto na faixa traz a ultima secao para a tela");
+  if (a) { clicar(a); confere(triUtil == TRI_U_PARENTAL, "Toque: a ultima secao abre pelo toque"); }
+  // parental: the last control by touch
+  quadros(20);
+  a = linha(triIlha2R(), TRI_P_N - 1);
+  confere(a != NULL, "Toque: a ultima linha parental tem alvo");
+  if (a) { clicar(a); confere(pfTela == PF_LIMITES, "Toque: a ultima linha parental abre pelo toque"); key(SDLK_ESCAPE); quadros(5); }
+  key(SDLK_ESCAPE); quadros(5); if (triUtil) key(SDLK_ESCAPE); quadros(5);
+  // a 30-row review: the last row only by dragging the list
+  rvN = 0;
+  for (int op = 0; op < AJ_N && rvN < 30; op++)
+    if (triMutavel(op) && ajOpcaoDisponivel(op)) { rvOps[rvN] = op; rvAntes[rvN] = valor[op]; rvDepois[rvN] = valor[op]; rvN++; }
+  assert(rvN == 30);
+  triUtilAbrir(TRI_U_REVISAO); triUtilVolta = 0; quadros(40);
+  n = listar(triIlha2R(), v, 64); assert(n >= 2);
+  { float pilula = v[n - 1]->y, topo = v[0]->y;
+    a = linha(triIlha2R(), 29);
+    confere(!visivelEm(a, topo, pilula), "Toque: antes do arrasto a linha 30 da previa esta fora da janela");
+    arrastar(540.0f, 1500.0f, 540.0f, 200.0f); arrastar(540.0f, 1500.0f, 540.0f, 200.0f);
+    png("p1-retrato-revisao-arrastada");
+    a = linha(triIlha2R(), 29);
+    confere(visivelEm(a, topo, pilula), "Toque: o arrasto na previa traz a linha 30 para a janela");
+    if (a) { clicar(a); confere(!triUtil, "Toque: a linha 30 responde ao toque (OK aplica e fecha)"); } }
+  rvN = 0; triUtil = 0; triIlha = TRI_SECOES;
+  layout_modo_definir(0); tela(1920, 1080); sair = 0;
+}
+// Re-review P1 (b): "Different from the standard" keeps the focused row inside the
+// island, above the action pills, at 100% Settings scale.
+static void difJanela(void) {
+  const PonteiroAlvo *v[64], *a; int n, antes[AJ_N], feitos = 0;
+  memcpy(antes, valor, sizeof antes);
+  ajEscalaTestePct = 100; assert(ajustes_tamanho_ajustes() == 1.0f);   // the supported 100% scale
+  for (int i = secIni[0] + 1; i < secFim(0) && feitos < 16; i++) {
+    int op = TELA[i].tipo == IT_OPC ? TELA[i].op : -1;
+    if (op < 0 || !triMutavel(op) || !ajOpcaoDisponivel(op) || uxDiferente(op) || OPCOES[op].tipo != OP_ESCOLHA || nValores(op) < 2) continue;
+    valor[op] = (valorPadrao[op] + 1) % nValores(op); if (uxDiferente(op)) feitos++;
+  }
+  assert(feitos == 16);
+  triIniciar(); triUtilAbrir(TRI_U_DIF); quadros(30);
+  assert(uxNDifs >= 16);
+  for (int i = 0; i < 12; i++) key(SDLK_DOWN);
+  quadros(60); png("p1-diferentes-linha13");
+  n = listar(triIlha2R(), v, 64); assert(n >= 2);
+  { float pilula = v[n - 1]->y, topo = triListaR().y * ajustes_tamanho_ajustes();
+    a = NULL; for (int i = 0; i < n; i++) if (v[i]->focar == ajPontDif && v[i]->a == uxDifFoco) a = v[i];
+    confere(uxDifFoco == 12 && a != NULL, "Diferentes: a 13a linha em foco tem alvo");
+    confere(visivelEm(a, topo, pilula), "Diferentes: a linha em foco fica dentro da ilha, acima das pilulas");
+    for (int i = 0; i < 12; i++) key(SDLK_UP);
+    quadros(60);
+    n = listar(triIlha2R(), v, 64);
+    a = NULL; for (int i = 0; i < n; i++) if (v[i]->focar == ajPontDif && v[i]->a == 0) a = v[i];
+    confere(uxDifFoco == 0 && visivelEm(a, topo, pilula), "Diferentes: de volta ao topo a 1a linha esta visivel"); }
+  key(SDLK_ESCAPE); quadros(5);
+  memcpy(valor, antes, sizeof antes); ajEscalaTestePct = 0;
+}
 int main(int argc, char **argv) {
   char dir[1024];
   if (argc > 1) dirPng = argv[1];
@@ -180,7 +270,7 @@ int main(int argc, char **argv) {
   assert(mkdtemp(dir)); assert(setenv("NUVIO_DADOS", dir, 1) == 0);
   assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-  win = SDL_CreateWindow("Settings P1", 0, 0, 1920, 1080, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+  win = SDL_CreateWindow("Settings P1", 0, 0, 1920, 1920, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
   assert(win && SDL_GL_CreateContext(win)); glViewport(0, 0, 1920, 1080); gfx_tamanho_alvo(1920, 1080);
   assert(gfx_iniciar() && txt_iniciar("deploy/app", 1)); tex_iniciar(64); IMG_Init(IMG_INIT_PNG);
   gfx_icones_dir("deploy/app/art"); ajustes_recursos("deploy/app/art");
@@ -193,6 +283,8 @@ int main(int argc, char **argv) {
   alvosUtil();
   rolagem();
   escolhaSemInspetor();
+  toque();
+  difJanela();
   if (!falhas) puts("PASS: three-island Settings P1s: portrait rail, utility targets, scrolling, parental chooser");
   return falhas ? 1 : 0;
 }

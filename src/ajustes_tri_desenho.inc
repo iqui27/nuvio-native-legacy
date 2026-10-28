@@ -166,8 +166,19 @@ static void triIlhaSecoes(void) {
 // cabecalho. ← → trocam de secao, ↓ entra na lista; a faixa rola ate a pilula
 // em foco (triSecRolX, mola em triAtualizar). Os mesmos alvos de ponteiro da ilha.
 static void triFaixaSecoes(void) {
-  float x0 = triX0(), x1 = triXFim(), y = TRI_TOPO + 4.0f, x = x0 - triSecRolX, fx0 = -1.0f, fx1 = -1.0f, total, vis, alvo;
+  float x0 = triX0(), x1 = triXFim(), y = TRI_TOPO + 4.0f, x, fx0 = -1.0f, fx1 = -1.0f, total = 0.0f, vis = x1 - x0, alvo;
   int j;
+  // A largura total primeiro: a regiao de toque (arrasto horizontal) precisa do maximo.
+  for (j = 0; j <= nSecoes; j++) {
+    const char *titulo = triParental(j) ? "Controle parental" : TELA[secIni[j]].titulo;
+    total += 20.0f + 26.0f + 10.0f + (float)txt_largura(TXT_V2_SEG, i18n(titulo)) + 20.0f + 10.0f;
+  }
+  total -= 10.0f;
+#ifdef NV_TOUCH_UI
+  if (ajTelaCheia() && !uxEditor && !ajModalAberto())
+    triSecRolX = ajToqueRegistrarEixo(AJT_FAIXA, (GfxRect){ x0, TRI_TOPO, vis, TRI_FAIXA_H }, &triSecRolX, total - vis, triSecRolX, 0, 1);
+#endif
+  x = x0 - triSecRolX;
   gfx_recorte(x0, TRI_TOPO, x1 - x0, TRI_FAIXA_H);
   for (j = 0; j <= nSecoes; j++) {
     int foco = triIlha == TRI_SECOES && j == triSecFoco;
@@ -187,7 +198,7 @@ static void triFaixaSecoes(void) {
     x += w + 10.0f;
   }
   gfx_sem_recorte();
-  total = x + triSecRolX - 10.0f - x0; vis = x1 - x0; alvo = triSecRolXAlvo;
+  alvo = triSecRolXAlvo;
   if (fx0 >= 0.0f) { if (fx1 - alvo > x1) alvo = fx1 - x1; if (fx0 - alvo < x0) alvo = fx0 - x0; }
   triSecRolXAlvo = fmaxf(0.0f, fminf(alvo, fmaxf(0.0f, total - vis)));
 }
@@ -293,6 +304,19 @@ static void triUtilRolar(float topoLinha, float baseLinha, float topo, float bas
   }
   triUtilRolAlvo = fmaxf(0.0f, fminf(alvo, fmaxf(0.0f, total - (base - topo))));
 }
+// O pe da lista das rotas: acima das pilulas de acao (triPilulas) com folga.
+static float triUtilBase(void) { return TRI_BASE - 30.0f - 56.0f - 16.0f; }
+// No celular a lista da rota rola pelo dedo (regiao vertical); `total` e a
+// altura do conteudo, que o desenho sabe de antemao.
+static float triUtilRolToque(GfxRect fr, float topo, float base, float total) {
+#ifdef NV_TOUCH_UI
+  if (ajTelaCheia() && ajPontUtil)
+    triUtilRol = ajToqueRegistrar(AJT_UTIL, (GfxRect){ fr.x, topo, fr.w, base - topo }, &triUtilRol, total - (base - topo), triUtilRol, triUtil);
+#else
+  (void)fr; (void)topo; (void)base; (void)total;
+#endif
+  return triUtilRol;
+}
 static void triUtilAlvoLinha(GfxRect r, float topo, float base, int i) {
   if (ajPontUtil) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, triPontUtilLinha, NULL, i, 0);
 }
@@ -324,6 +348,7 @@ static void triPresetsDesenhar(void) {
   ajIlha(ilha, 28.0f, 1, 0);
   triListaCabecalho(ilha, "Predefinições", "Combos prontos ou os seus; nada muda sem o OK em Aplicar", 1);
   base = triPilulas(ilha, rot, ic, 1, triLinha == n ? 1 : 0, 1) - 16.0f;
+  triUtilRolToque(fr, topo, base, 34.0f + n * 76.0f + 42.0f + (ajPenSavedCount ? 0.0f : 50.0f));
   gfx_recorte(fr.x, topo, fr.w, base - topo);
   y = topo - triUtilRol;
   ajKicker("Prontos", fr.x + 30.0f, y + 6.0f, 1); y += 34.0f;
@@ -364,6 +389,7 @@ static void triRevisaoDesenhar(void) {
   ajIlha(ilha, 28.0f, 1, 0);
   triListaCabecalho(ilha, "Prévia da mudança", sub, 1);
   base = triPilulas(ilha, rot, ic, 2, triAcao, 1) - 16.0f;
+  triUtilRolToque(fr, topo, base, rvN * 76.0f);
   gfx_recorte(fr.x, topo, fr.w, base - topo);
   y = topo - triUtilRol;
   for (i = 0; i < rvN; i++) {
@@ -407,6 +433,8 @@ static void triParentalDesenhar(void) {
   int i;
   ajIlha(ilha, 28.0f, 1, 0);
   triListaCabecalho(ilha, "Controle parental", "PIN e limites por perfil", 1);
+  triUtilRolToque(fr, topo, base, 28.0f + 34.0f + TRI_P_N * 76.0f);
+  y = topo - triUtilRol;
   gfx_recorte(fr.x, topo, fr.w, base - topo);
   for (i = 0; i < TRI_P_N; i++) {
     GfxRect r = { fr.x + 18.0f, y, fr.w - 36.0f, 72.0f };

@@ -15,6 +15,8 @@
 #include "admin.h"
 static void ajMovAtualizar(float dt);        // ajustes_ux_desenho.inc
 static int aj2EditorPainel(void);            // ajustes_ux_ilha.inc
+static void triUtilRolar(float topoLinha, float baseLinha, float topo, float base, float total);   // ajustes_tri_desenho.inc
+static float triUtilBase(void);             // idem: o pe da lista das rotas (acima das pilulas)
 static int triRota(void);                    // a rota (ilha + rota utilitaria), lida pelos testes
 static void ajCenaTrocaAtualizar(float dt);  // ajustes_ux_secoes.inc
 
@@ -412,7 +414,15 @@ static void triAtualizar(float dt) {
   { float alvo = uxEditor == 1 && uxOp >= 0 && aj2EditorPainel() ? 1.0f : 0.0f;
     triEditorF = red ? alvo : anim_mola(triEditorF, alvo, dt, alvo > triEditorF ? NV_MOLA_FOCO : NV_MOLA_DESFOCO); }
   if (!triUtil) triUtilRolAlvo = 0.0f;
+  // No celular o dedo manda enquanto a regiao esta "livre" (ajToqueRolar); a
+  // mola volta a seguir o foco na primeira tecla (ajToqueLimpar).
+#ifdef NV_TOUCH_UI
+  if (!(ajTelaCheia() && ajToqueLivre[AJT_UTIL]))
+#endif
   triUtilRol = red ? triUtilRolAlvo : anim_mola(triUtilRol, triUtilRolAlvo, dt, NV_MOLA_FOCO);
+#ifdef NV_TOUCH_UI
+  if (!(ajTelaCheia() && ajToqueLivre[AJT_FAIXA]))
+#endif
   triSecRolX = red ? triSecRolXAlvo : anim_mola(triSecRolX, triSecRolXAlvo, dt, NV_MOLA_FOCO);
   if (triUtil != triUtilVisto) { triUtilVisto = triUtil; triUtilA = 0.0f; }
   triUtilA = red ? 1.0f : anim_rampa(triUtilA, 1.0f, dt, 220.0f);

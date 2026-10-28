@@ -1223,17 +1223,19 @@ static void ajPontDif(int i, int b) {
   if (uxEditor || uxIndice != 1 || i < 0 || i >= uxNDifs || (!focoIndice && i == uxDifFoco)) return;
   focoIndice = 0; uxDifFoco = i;
 }
+// 2.1: a janela de rolagem vem da ilha (acima das pilulas Restaurar/Desfazer),
+// nao de "dez linhas": a linha em foco fica visivel por triUtilRol (mola em
+// triAtualizar; o dedo manda no celular).
 static void aj2DesenharDiferencas(void) {
   GfxRect fr = aj2ListaR();
-  float topo = AJ_TOPO, base = AJ_BASE + AJ_A3_RODAPE, y = topo + 8.0f;
-  int primeiro = uxDifFoco > 9 ? uxDifFoco - 9 : 0, i;
+  float topo = AJ_TOPO, base = triUtil == TRI_U_DIF ? triUtilBase() : AJ_BASE + AJ_A3_RODAPE, y, fl0 = -1.0f, fl1 = -1.0f;
+  float rol = triUtilRol, total = uxNDifs * 78.0f + 16.0f;
+  int i;
 #ifdef NV_TOUCH_UI
-  if (ajTelaCheia() && ajPontLista) {
-    float off = ajToqueRegistrar(AJT_DIFS, (GfxRect){fr.x, topo, fr.w, base - topo}, &ajToqueOffset[AJT_DIFS],
-                                uxNDifs * 78.0f - (base - topo), primeiro * 78.0f, 0);
-    primeiro = 0; y = topo + 8.0f - off;
-  }
+  if (ajTelaCheia() && (ajPontLista || ajPontUtil))
+    rol = triUtilRol = ajToqueRegistrar(AJT_DIFS, (GfxRect){fr.x, topo, fr.w, base - topo}, &triUtilRol, total - (base - topo), triUtilRol, 0);
 #endif
+  y = topo + 8.0f - rol;
   float x = fr.x + 18, w = fr.w - 36;
   ajPaginaIlha(fr, 40.0f, 1);
   aj2CabecalhoA3(fr, "Diferentes do padrão", 0, 1);
@@ -1243,16 +1245,14 @@ static void aj2DesenharDiferencas(void) {
     txt_desenhar(t, x + 22, y + 20);
     y += 76;
   }
-  for (i = primeiro; i < uxNDifs; i++) {
+  for (i = 0; i < uxNDifs; i++) {
     char atual[160], padrao[160], det[300];
     int op = uxDifs[i], foco = !focoIndice && i == uxDifFoco;
     GfxRect r = { x, y, w, 76 };
-#ifdef NV_TOUCH_UI
-    if (ajTelaCheia() && y + 76 < topo) { y += 78; continue; }
-#endif
     float xd = x + w - 22, a = ajMascara(y + 38, topo, base), yc = y + 38;
     TxtLinha la, lp, lr, ls;
-    if (y > base) break;
+    if (foco) { fl0 = y + rol; fl1 = fl0 + 76.0f; }
+    if (y + 76 < topo || y > base) { y += 78; continue; }   // fora da janela: so conta a altura
     if (ajPontLista || ajPontUtil) ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, ajPontDif, NULL, i, 0);
     if (foco) {
       float ar, ag, ab;
@@ -1289,6 +1289,7 @@ static void aj2DesenharDiferencas(void) {
     txt_desenhar_alpha(n, x + 22, y + 24, 0.42f);
   }
   gfx_sem_recorte();
+  if (triUtil == TRI_U_DIF) triUtilRolar(fl0, fl1, topo, base, total);
 }
 static void aj2InspetorDiferencas(void) {
   GfxRect ir = aj2InspR();
