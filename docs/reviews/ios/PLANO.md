@@ -1,4 +1,4 @@
-# Plano: Nuvio nativo no iPhone Duo, iOS 27.2 e Mac
+# Plano: Nuvio nativo no iPhone Duo, iOS 27.2, Mac e Windows
 
 28/10/2026. Base: `integracao/2.1` (34c7984ae). Só plano; nada implementado.
 Pedido do dono: mockups do app para iOS 27.2 com o iPhone Duo como aparelho
@@ -79,13 +79,57 @@ Riscos do C, com mitigação:
 |---|---|---|
 | iOS 27.1 SDK+ (iPhone, Duo) | `ios/Nuvio.xcodeproj`, SDL2 estático via o projeto Xcode do SDL, `libnuvio.a` por CMake (o mesmo `CMakeLists` do Android, toolchain iOS) | Marco 1 |
 | iPadOS | O mesmo binário; o Duo aberto **é** regular×regular, então o layout de iPad sai de graça (e vice-versa: nada de "regular = iPad") | Marco 2 |
-| macOS | Nativo (não Catalyst): o `tools/mac.sh` já roda; vira `.app` assinado com `video_apple.m`. Catalyst só se a loja do Mac pedir o mesmo bundle | Marco 3 |
+| macOS | Nativo (não Catalyst): o `tools/mac.sh` já roda; vira `.app` assinado com o player de desktop (ver "Vídeo nos desktops") | Marco 5 |
+| Windows 10/11 | O mesmo núcleo SDL2 que já compila para Mac e Linux desktop (`tools/linux.sh`, `NV_LINUX_DESKTOP`); MSVC ou clang/MinGW-w64 pelo mesmo CMake. Ver seção Windows | Marco 5 |
+| Linux | Já existe (`tools/linux.sh`); ganha vídeo de graça com o player de desktop | Marco 5 |
 | tvOS | Fora deste plano; entra quando o PR do Dexter (NV_TVOS) chegar. `video_apple.m` serve lá também |
 
 Mínimo: **iOS 27.1 SDK** (Xcode 27.1). É o degrau que liga barras verticais,
 `ReservedRegion`, `ArrangementView` e `UIHingeInteraction`. Alvo de
 implantação iOS 26 com `@available(iOS 27.1)` nas APIs novas; a partir de
 abril/2027 a loja exige SDK 27+.
+
+## Vídeo nos desktops (Mac, Windows, Linux): um backend só
+
+O plano original punha AVPlayer no Mac. AVPlayer **não toca MKV, DTS, TrueHD nem
+legendas ASS**, e a maioria das fontes de um cliente de add-ons é MKV. Para os
+três desktops a escolha é **libmpv** (`src/video_mpv.c`, mesmo contrato de
+`video.h` dos outros cinco backends): toca tudo que os add-ons entregam,
+decodificação por hardware (VideoToolbox no Mac, D3D11VA no Windows, VAAPI no
+Linux), HDR10 e Dolby Vision perfil 8 com tone-map, ASS nativo (dispensa o
+`mkvass.c` lá), faixas, capítulos, e desenha no mesmo contexto GL do app por
+`mpv_render_context` (sem janela separada, sem furo alfa). LGPL 2.1 quando
+compilado com `--enable-lgpl`; ffmpeg LGPL.
+
+No iOS a decisão fica para o marco 3: AVPlayer dá PiP, AirPlay e o controle do
+sistema de graça, mas não dá MKV; libmpv no iOS é aceito na App Store (VLC,
+Outplayer) e toca tudo, mas PiP e AirPlay são trabalho nosso. Provável: mpv como
+padrão e AVPlayer só para HLS/MP4 de "onde assistir".
+
+## Windows
+
+É o Mac com outro empacotamento. O núcleo já compila para Mac e Linux desktop
+sem vídeo; Windows é o terceiro alvo SDL2 de desktop.
+
+| Item | Windows |
+|---|---|
+| Compilador | clang ou MSVC pelo CMake do Android (toolchain nativa); MinGW-w64 serve para cruzar do Mac/Linux no CI |
+| Janela/GL | SDL2 oficial; OpenGL 2.1/ES 2 pelo driver (Intel/AMD/NVIDIA todos servem). ANGLE sobre D3D11 só se um driver velho reclamar |
+| Pastas | `%LOCALAPPDATA%\Nuvio` no lugar de `~/.nuvio`; nada de `/tmp` (já tratado no porte Android); `setlocale(LC_NUMERIC,"C")`; console em UTF-8 |
+| Entrada | teclado, mouse, controle (SDL), toque no Surface. Janela redimensionável usa o mesmo caminho do dobrar do Duo (`NV_TOUCH_UI` + `SIZE_CHANGED`) |
+| Vídeo | `video_mpv.c` (acima); D3D11VA; HDR quando o monitor está em HDR no Windows 11 |
+| HEVC/AC3 | Pelo ffmpeg do mpv; não depende das "HEVC Video Extensions" da loja |
+| Distribuição | 1) `.zip`/`.exe` portátil no GitHub Release, como o Android; 2) `winget`; 3) MSIX na Microsoft Store depois. Assinatura de código (certificado) para o SmartScreen não avisar: custo anual, decidir no marco 5 |
+| Loja | Política 10.8 da Microsoft Store é parecida com a 5.2.3 da Apple: lista de add-ons limpa e sem P2P no pacote da loja. **Fora da loja não há regra**: o `.exe` do GitHub pode levar o `NV_P2P_MOTOR` |
+| Auto-atualização | `atualizacao.c` já baixa release do GitHub; no Windows só troca o pacote |
+
+Layout: o mesmo dos mockups de Mac (barra lateral, busca na barra de título,
+mesmas ilhas); a janela encolhe até o layout da tela interna do Duo. Barra de
+título nativa do Windows 11 com `SDL_HINT_WINDOWS_...` ou sem moldura e
+controles desenhados; decidir pela PNG.
+
+Esforço: **1–2 semanas depois do Mac**, quase tudo em `video_mpv.c` (compartilhado)
+e empacotamento. Linux cai junto.
 
 ## Restrições da App Store para um cliente de add-ons estilo Stremio
 
@@ -146,26 +190,28 @@ efeito (parallax do herói, "fechar salva"), nunca para layout.
 2. **Retrato no modo Mobile** (2–3 semanas, maior item): canvas lógico retrato,
    Home/Busca/Detalhe/Biblioteca/Ajustes reagindo a largura<altura. Testes
    `*_shot` novos por orientação. É aqui que os mockups aprovados viram código.
-3. **Vídeo** (1–2 semanas): `video_apple.m` sobre AVPlayer com o contrato de
-   `video_android.c` (faixas, legenda embutida, HDR/DV pelo `AVAsset`,
-   reconexão). Furo alfa como nas TVs. Serve Mac no mesmo passo.
+3. **Vídeo** (1–2 semanas): spike AVPlayer × libmpv no iOS com três fontes reais
+   (MKV HEVC DV, MP4 HLS, MKV DTS-HD). Backend escolhido com o contrato de
+   `video_android.c` (faixas, legenda, HDR/DV, reconexão).
 4. **Duo de verdade** (1–2 semanas): `ArrangementView` em Detalhe/Player/Guia,
    `ReservedRegion` nas grades, folha de Fontes fora da dobra, hinge nos efeitos.
    Matriz de teste: {fechado, livro, aberto, mesa} × {retrato, paisagem} × {tela
    cheia, Split View esq/dir}.
-5. **Mac** (1 semana): `.app` assinado a partir do `tools/mac.sh` + vídeo;
+5. **Mac + Windows + Linux** (2–3 semanas): `video_mpv.c` compartilhado; `.app`
+   assinado a partir do `tools/mac.sh`; `.exe` portátil + winget no Windows;
    janela redimensionável já cai no mesmo caminho do dobrar.
 6. **Loja** (1 semana): lista de add-ons limpa, sem P2P, manifesto de
    privacidade, capturas do Duo em todas as poses (ganha o selo "Made for
    iPhone Duo"), TestFlight para a comunidade antes da App Store.
 
 Total realista para o primeiro TestFlight (marcos 0–3): **5–7 semanas** de um
-agente dedicado; Duo completo e Mac (4–5): mais 2–3. Mockups aprovados pelo dono
+agente dedicado; Duo completo e os três desktops (4–5): mais 3–4. Mockups aprovados pelo dono
 antes do marco 2 (regra de UI: PNG aprovada antes de implementar).
 
 ## Fora do plano
 
 - tvOS (espera o porte do Dexter).
 - Catalyst.
-- Backend Metal (só se a Apple tirar o GL ES).
+- Backend Metal/D3D (só se a Apple tirar o GL ES; no Windows o GL do driver basta).
+- Microsoft Store e certificado de assinatura: só depois do `.exe` do GitHub rodar na comunidade.
 - Android em retrato: cai de graça quando o marco 2 fechar, mas não é meta aqui.
