@@ -6906,10 +6906,8 @@ static int foraDestaPlataforma(int op) {
   if (op == AJ_PLAYER_EXTERNO || op == AJ_PLAYER_ANIME) return 1;   // #501: so ha outro player no Android
 #endif
   if (op == AJ_RELOGIO_POS) return 1;   // saiu da tela em 7d69643a: a ilha e sempre no canto direito
-  // 2.0.3: o Descobrir do web nao existe na TV; "Avancadas" e a pilula do alto
-  // do indice; os oito AJ_MDB_* seguem as "Notas no titulo" (notaLigarPar).
-  if (op == AJ_DESCOBRIR || op == AJ_AVANCADAS) return 1;
-  if (op >= AJ_MDB_TRAKT && op <= AJ_MDB_MAL) return 1;
+  // 2.0.3: o Descobrir do web nao existe na TV (nada le AJ_DESCOBRIR).
+  if (op == AJ_DESCOBRIR) return 1;
   // #509: um so interruptor de som; AJ_DET_TRAILER_SOM fica so para a migracao.
   if (op == AJ_DET_TRAILER_SOM) return 1;
 #ifndef __EMSCRIPTEN__
