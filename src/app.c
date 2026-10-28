@@ -2906,6 +2906,7 @@ static void abrirParte(int fonte, const PartesLista *l, int k) {
   { const CatItem *ci = cat_item(titulo); serie = ci && !strcmp(ci->tipo, "series");
     snprintf(imdb, sizeof imdb, "%s", ci ? ci->imdb : ""); }
   // Save the old file's resume point without completing a manual source switch.
+  int retomarSala = juntos_no_player();
   if (player_aberto()) { player_episodio_atual(&t, &e); player_encerrar_fonte(); }
   else detail_ep_foco(&t, &e);
   parteZerar();
@@ -2919,6 +2920,7 @@ static void abrirParte(int fonte, const PartesLista *l, int k) {
   }
   diagnostico_cancelar_vazao();
   player_abrir(cat_indice_vivo(titulo, imdb), NULL);
+  if (retomarSala) juntos_retomar_player(0);
   player_definir_episodio(t, e);
   stream_definir_atual(fonte);
   voltaFonte = escolhida;
@@ -5128,12 +5130,14 @@ static void tocarFonteEscolhida(int fonte, int manual) {
       char imdb[64];
       const CatItem *ci = cat_item(titulo);
       snprintf(imdb, sizeof imdb, "%s", ci ? ci->imdb : "");
+      int retomarSala = juntos_no_player(); // Explicit in-session source switch/retry.
       if (player_aberto()) {
         if (manual) player_encerrar_fonte();
         else player_encerrar();
       }
       diagnostico_cancelar_vazao();
       player_abrir(cat_indice_vivo(titulo, imdb),NULL);
+      if (retomarSala) juntos_retomar_player(0);
       player_definir_episodio(t,e);
       if (!manual && juntos_no_player()) {
         player_do_inicio(); // The room clock restores position after load.
@@ -5206,10 +5210,12 @@ static void juntosAbrirEFonte(Uint32 agora) {
         return;
       }
       printf("[juntos] source: opening paused player\n");
+      int escolherFonteSala = juntos_escolhendo_fonte();
       limparFonteVOD();
       if (player_aberto() || player_retido()) player_encerrar();
       diagnostico_cancelar_vazao();
       player_abrir(idx, NULL);
+      juntos_retomar_player(escolherFonteSala); // Explicit room/Rejoin opening.
       if (t > 0 && e > 0) player_definir_episodio(t, e);
       if (juntos_fase() != JF_PREPARADO) player_do_inicio(); // guests follow room time
       renovarListaDoPlayer();

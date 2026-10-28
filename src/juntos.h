@@ -88,6 +88,8 @@ int  juntos_ao_proximo(const char *alvo);
 void juntos_escolher_titulo(const char *imdb, int t, int e, const char *titulo, const char *poster);
 // Back leaves playback while preserving membership; explicit Leave ends it.
 int  juntos_ao_voltar(void);
+// Reacquire only after an explicitly selected in-session replacement opens.
+void juntos_retomar_player(int escolherFonte);
 
 // --- leitura para a UI (juntosui.c) -----------------------------------------------------
 const JsMotor *juntos_motor(void);     // NULL fora de sala

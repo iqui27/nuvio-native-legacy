@@ -2644,6 +2644,7 @@ static void lembrarFonte(void) {
 }
 
 static void fecharSessao(int manter, int trocaFonte) {
+  juntos_ao_voltar();
   saiuVisto = 0;
   imgsub_gl_limpar();
   atualizarIdentidade();
@@ -3088,6 +3089,7 @@ void player_ciclo_evento(Uint32 tipo) {
       if (isfinite(p) && p >= 0) posSeg = (float)p;
       gravarProgressoParcial(1, "background");
     }
+    if (aberto && juntos_no_player()) player_encerrar();
     player_descartar_retido(); retomamorna_cancelar();
   }
 }
@@ -4427,8 +4429,6 @@ void player_evento(const SDL_Event *e) {
       return;
     }
 #endif
-    // Watch Together keeps membership when returning to the catalog.
-    if (!ehCanal() && juntos_ao_voltar()) return;
     saindo = 1; pediuSair = 1;
     return;
   }

@@ -168,10 +168,9 @@ static void isolationMatrix(void) {
 static int erroFonte, pedFontes, saindo, pediuSair;
 static int ehCanal(void) { return 0; }
 void player_voltar_a_esperar(void) { erroFonte = 0; prepared = 0; }
-static void androidBack(void) {
-#define NV_ANDROID
+#include "player_close.h"
+static void platformBack(void) {
 #include "player_back.h"
-#undef NV_ANDROID
 }
 
 static void sourceRecoveryMatrix(void) {
@@ -186,7 +185,11 @@ static void sourceRecoveryMatrix(void) {
     playerOpen = prepared = playing = 1;
     erroFonte = cases[i].error;
     pedFontes = saindo = pediuSair = 0;
-    androidBack();
+    platformBack();
+#ifndef NV_ANDROID
+    if (erroFonte) { pedFontes = 1; saindo = pediuSair = 0; }
+#endif
+    if (saindo) fecharSessao(0, 0);
     assert(saindo == cases[i].exits && pediuSair == cases[i].exits);
     assert(pedFontes == !cases[i].exits);
     prepared = 1; // A working replacement source is selected in Sources.
@@ -205,7 +208,50 @@ static void sourceRecoveryMatrix(void) {
   zerar();
 }
 
+static void teardownMatrix(void) {
+  const struct { const char *name; int retain, sourceSwitch; } cases[] = {
+    {"Back", 0, 0}, {"source-error Back", 0, 0},
+    {"Dolby Vision exit", 0, 0}, {"EOF", 0, 0},
+    {"title change", 0, 0}, {"app background", 0, 0},
+    {"retained exit", 1, 0}, {"source switch/retry", 0, 1}
+  };
+  int failures = 0;
+  for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+    zerar(); iniciarMotor(); fase = JF_DENTRO;
+    snapshot(&motor, 1, 1, "pausado", now);
+    abrirPedido = escolhendo = 0;
+    playerOpen = prepared = playing = 1;
+    int retomarSala = cases[i].sourceSwitch && juntos_no_player();
+    fecharSessao(cases[i].retain, cases[i].sourceSwitch);
+    if (retomarSala) juntos_retomar_player(0);
+    playerOpen = prepared = playing = 1; // Replacement or unrelated playback.
+    position = 42;
+    motor.p.buscar(motor.p.u, 77);
+    motor.p.pausar(motor.p.u, 1);
+    int owned = cases[i].sourceSwitch;
+    int controlled = position == (owned ? 77 : 42) && playing == !owned;
+    remoteTitle(2, "tt2", "Latest title");
+    if (!juntos_ativo() || juntos_no_player() != owned || !controlled ||
+        (!owned && (position != 42 || !playing)) || !!abrirPedido != owned) {
+      fprintf(stderr, "FAIL teardown: %s\n", cases[i].name);
+      failures++;
+    }
+  }
+  assert(failures == 0);
+  // Explicit room/Rejoin opening must restore pending guest source selection.
+  zerar(); iniciarMotor(); fase = JF_DENTRO;
+  snapshot(&motor, 1, 1, "pausado", now);
+  escolhendo = 1;
+  int chooseSource = juntos_escolhendo_fonte();
+  fecharSessao(0, 0);
+  assert(!juntos_escolhendo_fonte());
+  juntos_retomar_player(chooseSource);
+  assert(juntos_no_player() && juntos_escolhendo_fonte());
+  zerar();
+}
+
 int main(void) {
+  teardownMatrix();
   sourceRecoveryMatrix();
   isolationMatrix();
   iniciarMotor();

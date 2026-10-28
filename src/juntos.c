@@ -939,6 +939,11 @@ void juntos_escolher_titulo(const char *imdb, int t, int e, const char *titulo, 
   enviarWs(NULL, j);
 }
 
+void juntos_retomar_player(int escolherFonte) {
+  foraDoPlayer = 0;
+  escolhendo = escolherFonte;
+}
+
 int juntos_reentrar(void) {
   if (!juntos_ativo() || !temMotor || !motor.sala.ep[0]) return 0;
   foraDoPlayer = 0;
