@@ -235,7 +235,13 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
     var i = linha.indexOf(":");
     if (i > 0) cab[linha.slice(0, i).trim()] = linha.slice(i + 1).trim();
   });
-  var controle = new AbortController();
+  // Chromium 63 has fetch, but neither AbortController nor Promise.finally.
+  var controle = typeof AbortController !== "undefined" ? new AbortController() : null;
+  var reader;
+  var abortar = function () {
+    if (controle) controle.abort();
+    else if (reader) reader.cancel().catch(function () {});
+  };
   var reg = { pronto: false, erro: false, status: 0, url: "", etag: "", bytes: null,
               mime: "", tamanho: -1, retry: 0, limitado: false };
   Module.nvFioReqs[id] = reg;
@@ -245,12 +251,17 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
     clearTimeout(timer);
   };
   var timer = setTimeout(function () {
-    reg.erro = true; controle.abort(); terminar();
+    reg.erro = true; abortar(); terminar();
   }, prazo);
-  var init = { method: UTF8ToString(metodo), headers: cab, redirect: "follow", signal: controle.signal };
+  var init = { method: UTF8ToString(metodo), headers: cab, redirect: "follow" };
+  if (controle) init.signal = controle.signal;
   if (corpo) init.body = UTF8ToString(corpo);
   teto = teto > 0 ? teto : 33554432;
   fetch(UTF8ToString(url), init).then(async function (res) {
+    if (reg.pronto) {
+      if (res.body) res.body.cancel().catch(function () {});
+      return;
+    }
     reg.status = res.status;
     reg.url = res.headers.get("x-nuvio-url-final") || res.url || "";
     reg.etag = res.headers.get("etag") || "";
@@ -263,10 +274,15 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
       var until = Date.parse(raw);
       if (isFinite(until)) reg.retry = Math.min(2147483647, Math.max(0, Math.ceil((until - Date.now()) / 1000)));
     }
-    if (modo === 1) { controle.abort(); reg.bytes = new Uint8Array(0); return; }
+    if (modo === 1) {
+      if (controle) controle.abort();
+      else if (res.body) res.body.cancel().catch(function () {});
+      reg.bytes = new Uint8Array(0); return;
+    }
     if (!res.body) { reg.bytes = new Uint8Array(0); return; }
     // No arrayBuffer fallback: it would allocate an unbounded body.
-    var reader = res.body.getReader(), parts = [], n = 0;
+    reader = res.body.getReader();
+    var parts = [], n = 0;
     while (!reg.pronto) {
       var part = await reader.read();
       if (part.done) break;
@@ -274,7 +290,7 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
         if (modo !== 2 && take) parts.push(part.value.slice(0, take));
       n += take;
       if (part.value.length > take || n === teto) {
-        reg.limitado = true; controle.abort(); break;
+        reg.limitado = true; abortar(); break;
       }
     }
     if (reg.pronto) return;
@@ -283,8 +299,8 @@ EM_JS(int, nv_http_iniciar_bruto, (const char *metodo, const char *url,
     reg.bytes = new Uint8Array(modo === 2 ? 0 : n);
     var offset = 0;
     parts.forEach(function (p) { reg.bytes.set(p, offset); offset += p.length; });
-  }).catch(function (e) { if (!reg.pronto && e && e.name === 'AbortError') reg.erro = true; })
-    .finally(terminar);
+  }).catch(function () { if (!reg.pronto) reg.erro = true; })
+    .then(terminar, terminar);
   return id;
 });
 
