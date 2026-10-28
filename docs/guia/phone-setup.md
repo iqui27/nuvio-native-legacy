@@ -5,6 +5,27 @@ account**, and this app pulls everything from that account: add-ons, collections
 Home rows and stream badges. Install once on the phone, open the app on the TV,
 and it's there.
 
+## Installing the app on an Android phone
+
+The standard Android APK also supports ARM Android phones running Android 7.0
+or newer; there is no separate phone APK. Download the Android `.apk` from the
+[releases page](https://github.com/iqui27/nuvio-native-legacy/releases/latest),
+open it on the phone, and allow installation from that browser or file manager
+when Android asks. Both the phone launcher and Android TV launcher are supported.
+
+Open the app in landscape and use touch. **Settings → Interface mode → Auto**
+selects Mobile on phones and TV on Android TV devices. If a saved preference
+keeps the remote interface active, select **Mobile** there. The setting belongs
+to this device. **Settings → Keyboard → From Android** selects the system
+keyboard if needed. System Back closes text entry first, then navigates back.
+
+This uses the existing interface on a smaller screen. The compatibility fix
+keeps Mobile browsing and playback in landscape and places the canvas inside
+notch/system-bar bounds. Physical phone installation, gesture navigation, IME
+placement and playback still need device verification; desktop/JVM tests do
+not establish those results. The account-setup instructions below work through
+phone browsers and do not require installing the APK.
+
 ## How it works
 
 The app signs in with your Nuvio account and syncs every ~5 minutes (and at
