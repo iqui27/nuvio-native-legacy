@@ -23,7 +23,7 @@ grep -q 'unguarded-availability-new' "$NUVIO_IOS_BUILD/build.ninja" \
 nm "$APP/Nuvio" | grep ' T _nv_host_http' >/dev/null || { echo "FAIL: nv_host_http not linked"; exit 1; }
 nm "$APP/Nuvio" | grep ' [DSB] _nv_gl_fb_tela' >/dev/null || { echo "FAIL: nv_gl_fb_tela not linked"; exit 1; }
 # The vertical-bar bridge: host side (tabs, morph, insets) and core side.
-for s in _ios_hospedar _ios_quadro _ios_destino_pedido _ios_acao_pedida _layout_insets_definir _menu_ir _detail_acao_barra; do
+for s in _ios_hospedar _ios_quadro _ios_destino_pedido _ios_acao_pedida _layout_insets_definir _menu_ir _detail_acao_barra _biblioteca_acao_barra; do
   nm "$APP/Nuvio" | grep " T $s\$" >/dev/null || { echo "FAIL: $s not linked"; exit 1; }
 done
 # Texture budget: real RAM/rss come from the host (0 would shrink the budget
